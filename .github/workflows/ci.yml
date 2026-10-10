@@ -77,12 +77,15 @@ jobs:
         with:
           workspaces: '. -> apps/desktop/src-tauri/target'
       - run: pnpm install --frozen-lockfile
+      - name: Read the checked application version
+        id: package-version
+        run: node scripts/release-check.mjs
       - name: Build the fixture update verifier for this platform
         run: cargo build -p strata-update-verifier --locked --target ${{ matrix.target }}
       - name: Version and release guard tests
         env:
           UPDATE_VERIFIER_BIN: ${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/debug/strata-update-verifier${{ runner.os == 'Windows' && '.exe' || '' }}
-        run: node --test scripts/release-check.test.mjs
+        run: node --test scripts/release-check.test.mjs scripts/preview-package-smoke.test.mjs
       - name: Frontend types, core and HTTP fixture tests, build
         run: pnpm check
       - name: Prepare independent background binary
@@ -113,3 +116,10 @@ jobs:
           uploadWorkflowArtifacts: true
           workflowArtifactNamePattern: 'ci-[platform]-[arch]-[bundle]'
           uploadUpdaterJson: false
+
+      - name: Verify installed Windows package and background IPC
+        if: runner.os == 'Windows'
+        run: node scripts/preview-package-smoke.mjs --bundle-dir "${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/release/bundle" --version "${{ steps.package-version.outputs.version }}"
+      - name: Verify Linux AppImage and DEB startup under Xvfb
+        if: runner.os == 'Linux'
+        run: dbus-run-session -- xvfb-run -a bash scripts/release-linux-tests.sh node scripts/preview-package-smoke.mjs --bundle-dir "${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/release/bundle" --version "${{ steps.package-version.outputs.version }}"
