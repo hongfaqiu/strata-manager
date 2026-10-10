@@ -381,8 +381,10 @@ fn listener_identity(
         Some(url::Host::Ipv6(ip)) => {
             let octets = ip.octets();
             let address = octets
-                .chunks_exact(4)
-                .map(|chunk| format!("{:08X}", u32::from_ne_bytes(chunk.try_into().unwrap())))
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|chunk| format!("{:08X}", u32::from_ne_bytes(*chunk)))
                 .collect::<String>();
             ("tcp6", address, "00000000000000000000000000000000")
         }

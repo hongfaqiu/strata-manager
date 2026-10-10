@@ -169,5 +169,25 @@ export interface EnvironmentInfo {
   appVersion: string;
 }
 
+export interface SetupDiskVolume {
+  directory: string;
+  mountPoint: string | null;
+  availableBytes: number | null;
+  requiredAdditionalBytesEstimate: number;
+}
+
+export interface SetupDiskPreflight {
+  status: 'ready' | 'insufficient' | 'unknown';
+  dataDirectory: string;
+  modelDirectory: string;
+  modelDownloadBytesEstimate: number | null;
+  reusableModelBytes: number;
+  additionalBytesEstimate: number | null;
+  estimate: true;
+  volumes: SetupDiskVolume[];
+  reason: string;
+  source: string;
+}
+
 export interface StreamEvent { kind: 'data' | 'error' | 'done'; data?: string }
 export type JsonObject = Record<string, unknown>;

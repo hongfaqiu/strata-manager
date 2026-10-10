@@ -101,6 +101,7 @@ Tauri 窗口启动尺寸按显示器工作区和缩放计算，常见分辨率�
 - Windows 干净环境：无 Git、无 Python 的自动准备完整安装；已有安装检测/导入及自动就绪；新模型 setup、失败重试与取消。
 - 最新 Tauri 界面的自动引导、官方功能、中英布局、窗口/托盘行为和真实截图。
 - 真实 GPU：新架构聊天/附件/MCP、背景持续统计、重连/切换/恢复和调优完整闭环；不能只引用旧原型证明本轮通过。
+- 按已接受方案完成完整场景调优：编程 Agent 和长文分析、worker/异步换入/prefill/reserve 分阶段重启候选、工具参数及续答/视觉/长文检索质量检查、冷输入/热前缀/切换会话/持续生成/完整 Agent 总耗时分别评分。当前短 Chat/Code/Chinese 和请求级 PCIe/MTP 比较是已实现子集；它们的通过不代表计划第 3、4、6 项或 P3 已整体完成。
 - 注销并重新登录后的后台自启动；正式签名更新下载、验签、安装、后台接续与失败恢复。
 - Linux 实机 IPC、进程树、崩溃、自动准备、安装/卸载、自启动及 GPU；缺项继续在 Release 标明。
 - 发布隐私检查、来源/许可证、版本一致、全部 Release 资产与 `latest.json` 对应关系。
@@ -184,3 +185,21 @@ Code 调优使用有限 Rust 检查器验证 `merge_sorted(a,b)`，不启动或�
 本批最终前端 `pnpm check` 通过：核心 **36 passed**、HTTP **5 passed**、类型检查及生产构建成功。本机串行 `cargo test --workspace --locked` 全部通过：IPC **5**、desktop **5**、Core **128 passed / 3 ignored**（163.98 秒）、独立后台生命周期 **2**（59.14 秒）、Rust 更新验签 **7**。Core 包含真实标准 venv 和旧档案迁移、健康检查、请求历史、Code 检查及更新基础夹具；生命周期覆盖客户端断开后后台继续运行、单实例、双模型排空与切换失败恢复。该完整快照在最后共享采样补丁前编译，补丁用上述 17 项定向回归闭合，不能把两次数量相加作为一次完整运行。ignored 为只读本机发现、官方安装和完整网络候选准备，不代表通过。测试均使用隔离 HTTP/OwnedProcess，不操作真实 GPU、默认数据或原服务。
 
 workspace Clippy `-D warnings` 通过（8.25 秒），共享采样补丁后的 Core Clippy 与 fmt 再次通过。最新独立后台 debug sidecar 已重新构建并暂存（6.53 秒编译）；它是打包前构建证据，不是原生界面或真实模型接管验收。最新跨平台 CI 和最终安装包另行记录。
+
+## 目标磁盘、自动下载和 Linux 崩溃保护补测
+
+[第十轮 CI](https://github.com/hongfaqiu/strata-manager/actions/runs/38072257350) 对应 `d70535ccec9f8280af0d546fa3eb8c8c7fe85717`，两平台 observer 16（无跳过）、前端 Core 36、HTTP 5、Node 真实验签 17 均通过。Linux IPC 4、desktop 2、Core 108 passed / 2 ignored 和 Rust 验签 7 通过；Clippy 在 `health_watch.rs` 的 `chunks_exact_to_as_chunks` 新 lint 失败，未进入安装包。Windows IPC 5、desktop 5、Core 130 passed / 1 failed / 3 ignored；原有运行中 venv 的迁移夹具已通过，唯一失败转为外部引擎 Job 子树夹具读取完整 PowerShell/CIM 命令行超时或权限错误，尚未完成 Rust 验签、Clippy 和 NSIS。本轮不是完整跨平台通过。
+
+后续修复改为从同一已持有 Windows 进程句柄读取完整原生命令行，动态解析系统接口，严格验证缓冲范围、长度、对齐和 UTF-16；保留创建时间、映像、完整参数、venv 父链、监听归属和空闲条件。8 项本机 platform 回归通过（3.06 秒），包括上述 CI 失败用例、精确子树、真实 venv 及损坏响应拒绝。系统查询不可用时拒绝接管，不重新按 PID 查询替代已核验句柄。Linux lint 改为 `as_chunks::<4>()`，保留原 IPv6 地址解析。
+
+准备磁盘接口及模型卡片显示实际数据目录和目标卷可用容量。后台在配置备份、任务登记及 Python 启动前再次预检，并固定传入 `--data-dir`；完整 GGUF 分片原位通过 `--gguf-dir` 复用，不强加第二份权重的下载空间。不完整分片按完成文件或可续传 `.part` 扣减一次，不同卷分别比较，同卷合计；未知挂载、权限或不足均拒绝启动准备。10 项 Rust 磁盘测试通过（0 ignored），包含实际只读卷查询和拒绝后零任务/零子进程。所有需求数字是估计，GGUF 内容仍由上游核验，不代表内存、驱动或完整安装已就绪。
+
+磁盘提示的实际 App 浏览器内存 RPC 验证 **20/20 passed**：中英、600/1440 宽度、ready/insufficient/unknown/error 共 16 组，加上 4 组选项及刷新交互。量化和图像切换重新预检，待查询或阻断状态不能准备；恢复 ready 后点击仅发一次模拟任务且参数正确。所有阻断状态仍可导入已有模型，不额外要求下载预检。长路径、展开说明及卡片均无横向溢出，页面/控制台错误为 0。独立随机端口服务和浏览器已关闭。此证据使用真实页面与 bridge、模拟 native RPC，不代表真实模型安装或最终 Tauri WebView 已通过。
+
+自动更新新增独立下载状态：打开应用及每 12 小时检查/下载，成功下载并验证后由用户选择安装；下载不调用后台维护准备，只有显式安装前调用安全检查。11 项 controller 行为测试已加入 `pnpm test` / CI，覆盖关闭开关、StrictMode、晚到事件、下载失败重试、签名拒绝模拟和准备失败保留已下载内容。实际 App/React hook 的隔离浏览器内存 IPC 测试 8 项通过：中英 390/1280 宽度无整体横向溢出，自动下载前后没有提前 prepare/install，显式安装、进度和失败重试符合状态。该测试使用真实 updater JavaScript API，native IPC 为内存模拟；它不证明正式端点下载、真实签名或原生安装。
+
+Linux 新 guardian 在真实 owner 预先持有 pidfd，跟随新进程组并监测 owner/根进程和私有控制 socket；退出时终止它自身仍所属的组，父端不向已退出的历史 PGID 补发信号。ACK 前封闭继承文件描述符，避免阻塞 exec 或日志 EOF。新增 3 个 Linux Rust 夹具覆盖 owner 真 SIGKILL、Python TCP 孙进程清理/外部进程保留、根自行退出/日志 EOF、20 次线程创建与反复停止、快速退出和 exec 失败；原有 2 个 Supervisor lifecycle 夹具已移植到 Linux，不再以 Windows gate 跳过。需要 64 位 Linux 5.9+ 和允许 pidfd/clone/close_range；失败时拒绝受管子进程启动。当前普通继承进程组的后代属于覆盖范围，官方 MCP 的主动 `start_new_session` 脱组尚未纳入，不能声称所有 Linux 工具树已被清理。此处新增 Linux 实际运行证据须由下一轮 CI 提供，本机 Windows 测试不能替代。
+
+集中本机 workspace：IPC 5、desktop 5、Core **143 passed / 3 ignored**（116.96 秒）、Supervisor lifecycle **2 passed**（51.74 秒）、Rust 验签 7 全部通过；workspace Clippy `-D warnings` 通过（5.57 秒），fmt / workflow actionlint / diff check 通过。3 个 ignored 分别是只读本机安装发现、真实官方源码安装、完整候选网络下载；已明确记录候选依赖下载曾失败，未把 ignored 算通过。子 Agent 分别实施磁盘、自动下载和 Linux guardian，另有独立只读身份/guardian复核及完整调优范围核查；它们继承当前设置，工具未提供可独立确认的实际模型或推理档位。
+
+本批最终 `pnpm check` 包含核心协议 **36**、更新 controller **11**、HTTP 契约 **5**，全部通过；类型检查及生产构建通过。最新 debug sidecar 重新构建成功（21.10 秒）。这些是构建与隔离夹具证据，真实签名安装和 GPU 验收仍按上面的边界记录。

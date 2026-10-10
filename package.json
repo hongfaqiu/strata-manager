@@ -9,7 +9,7 @@
     "build": "pnpm --filter @strata-manager/desktop build",
     "bundle": "pnpm --filter @strata-manager/desktop tauri build",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm --filter @strata-manager/core test && node --test scripts/contract-server.test.mjs",
+    "test": "pnpm --filter @strata-manager/core test && pnpm --filter @strata-manager/desktop test && node --test scripts/contract-server.test.mjs",
     "check": "pnpm typecheck && pnpm test && pnpm build",
     "native:check": "cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml",
     "native:test": "cargo test --workspace --target-dir apps/desktop/src-tauri/target",

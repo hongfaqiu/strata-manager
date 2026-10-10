@@ -66,6 +66,30 @@ pub struct EnvironmentInfo {
     pub app_version: String,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetupDiskVolume {
+    pub directory: String,
+    pub mount_point: Option<String>,
+    pub available_bytes: Option<u64>,
+    pub required_additional_bytes_estimate: u64,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetupDiskPreflight {
+    pub status: String,
+    pub data_directory: String,
+    pub model_directory: String,
+    pub model_download_bytes_estimate: Option<u64>,
+    pub reusable_model_bytes: u64,
+    pub additional_bytes_estimate: Option<u64>,
+    pub estimate: bool,
+    pub volumes: Vec<SetupDiskVolume>,
+    pub reason: String,
+    pub source: String,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalModel {

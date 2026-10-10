@@ -15,9 +15,11 @@ A running installation owned by another program must pass identity and activity 
 **Starting fresh?** Use automatic preparation. Manager downloads a fixed official Strata source revision, verifies its SHA256 and prepares a private environment in its own data directory. The normal path does not require Git or a manually entered Python path.
 
 - Windows uses a suitable 64-bit Python 3.10+ when available. Otherwise, it can prepare a verified official Python installer for a private installation. Executing this fallback still needs acceptance on a clean machine without Python.
-- Linux needs Python 3.10+, venv and ensurepip. Missing system dependencies produce instructions; Manager does not run sudo. Complete automatic preparation still needs real Linux acceptance.
+- Linux needs Python 3.10+, venv and ensurepip. Crash containment also needs a 64-bit Linux 5.9+ environment that permits pidfd, clone and close_range; managed child startup is refused when these are unavailable. Missing system dependencies produce instructions; Manager does not run sudo. Complete automatic preparation still needs real Linux acceptance.
 
 Then choose the model, quantization, context and image support. Strata's official setup prepares the engine and weights. Model downloads may be large: check free disk space, RAM, VRAM and driver requirements against the [upstream requirements](https://github.com/Niko1221/Strata#what-you-need).
+
+Model cards show the actual data destination, free space on each destination disk and estimated additional bytes after counting reusable weights or resumable files. The background checks again before preparation and refuses to start downloads when space is insufficient or unknown. These are estimates from the reviewed installer, not proof of driver, memory or complete dependency readiness. Importing an existing model does not require downloading or reserving room for another full copy of its weights.
 
 Tasks show actual log output and downloaded bytes when available. Cancel a task if necessary, then retry after correcting its error. A completed, verified preparation appears in My models without replacing your current selection. Select **Use** when you are ready to switch.
 
@@ -105,7 +107,7 @@ Controlled tests validate the comparison and recovery workflow. Real speed impro
 
 ## Application updates
 
-Settings supports automatic update checks, manual checking and explicit installation. Downloads show received bytes; a total is shown only when known. The updater uses the embedded public key to verify official Tauri signatures.
+Settings can automatically check and download updates when the app opens and every 12 hours. Choose when to install the downloaded update, or disable automatic downloading and check/download manually. Failed downloads preserve the current app and can be retried. Downloading does not stop the local API; explicit installation checks that the background can update safely. Downloads show received bytes; a total is shown only when known. The updater uses the embedded public key to verify official Tauri signatures.
 
 Application, Strata runtime and model weights are separate. Updating Manager does not normally require another model-weight download. Read the version's release notes for restart and recovery behavior.
 

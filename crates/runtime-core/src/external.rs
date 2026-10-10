@@ -250,7 +250,7 @@ mod platform {
             TCP_TABLE_OWNER_PID_LISTENER,
         },
         Networking::WinSock::{AF_INET, AF_INET6},
-        System::{Diagnostics::ToolHelp::*, Threading::*},
+        System::{Diagnostics::ToolHelp::*, LibraryLoader::*, Threading::*},
         UI::Shell::CommandLineToArgvW,
     };
     pub struct VerifiedExternal {
@@ -293,6 +293,9 @@ mod platform {
         }
     }
     fn arguments(command: &str) -> Result<Vec<String>, String> {
+        if command.is_empty() || command.encode_utf16().count() > 32767 || command.contains('\0') {
+            return Err("完整启动参数为空、超长或包含无效字符".into());
+        }
         let wide: Vec<_> = command.encode_utf16().chain(std::iter::once(0)).collect();
         let mut count = 0;
         unsafe {
@@ -301,6 +304,9 @@ mod platform {
                 return Err("无法解析完整启动参数".into());
             }
             let result = (|| {
+                if !(1..=256).contains(&count) {
+                    return Err("启动参数数量超出可核验范围".into());
+                }
                 let mut args = vec![];
                 for index in 0..count as usize {
                     let pointer = *pointers.add(index);
@@ -319,14 +325,82 @@ mod platform {
             result
         }
     }
-    fn command_for(pid: u32) -> Result<String, String> {
-        let script=format!("$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); (Get-CimInstance Win32_Process -Filter 'ProcessId={pid}').CommandLine");
-        crate::output(
-            "powershell.exe",
-            &["-NoProfile", "-NonInteractive", "-Command", &script],
-        )
-        .filter(|line| !line.is_empty())
-        .ok_or_else(|| "无法读取完整进程命令行（权限不足或探测超时）".into())
+    #[repr(C)]
+    struct NativeUnicodeString {
+        length: u16,
+        maximum_length: u16,
+        buffer: *const u16,
+    }
+    fn decode_command_buffer(words: &[usize], returned: usize) -> Result<String, String> {
+        let header_size = std::mem::size_of::<NativeUnicodeString>();
+        if returned < header_size || returned > std::mem::size_of_val(words) {
+            return Err("进程命令行响应长度无效".into());
+        }
+        // usize storage aligns the native pointer-bearing header. The kernel
+        // returns a local pointer; validate its entire UTF-16 range before use.
+        let header = unsafe { &*words.as_ptr().cast::<NativeUnicodeString>() };
+        let base = words.as_ptr() as usize;
+        let start = header.buffer as usize;
+        let length = usize::from(header.length);
+        let maximum = usize::from(header.maximum_length);
+        if length == 0
+            || !length.is_multiple_of(2)
+            || !maximum.is_multiple_of(2)
+            || maximum < length
+            || !start.is_multiple_of(std::mem::align_of::<u16>())
+            || start < base + header_size
+            || start
+                .checked_add(maximum)
+                .is_none_or(|end| end > base + returned)
+        {
+            return Err("进程命令行Unicode范围无效".into());
+        }
+        let wide = unsafe { std::slice::from_raw_parts(header.buffer, length / 2) };
+        if wide.contains(&0) {
+            return Err("进程命令行包含嵌入的空字符".into());
+        }
+        String::from_utf16(wide).map_err(|_| "进程命令行Unicode无效".into())
+    }
+    fn command_for(handle: HANDLE) -> Result<String, String> {
+        type Query =
+            unsafe extern "system" fn(HANDLE, i32, *mut std::ffi::c_void, u32, *mut u32) -> i32;
+        // ProcessCommandLineInformation is also used by sysinfo on Windows 8.1+.
+        // Resolve dynamically and fail closed when unavailable. Query the held
+        // handle instead of looking the PID up again or starting a WMI helper.
+        unsafe {
+            if WaitForSingleObject(handle, 0) != WAIT_TIMEOUT {
+                return Err("进程已经退出，无法核验完整命令行".into());
+            }
+            let module_name: Vec<u16> = "ntdll.dll\0".encode_utf16().collect();
+            let module = GetModuleHandleW(module_name.as_ptr());
+            if module.is_null() {
+                return Err("系统进程命令行接口不可用".into());
+            }
+            let address = GetProcAddress(module, c"NtQueryInformationProcess".as_ptr().cast())
+                .ok_or("系统进程命令行接口不可用")?;
+            let query: Query = std::mem::transmute(address);
+            const CAPACITY: usize = 128 * 1024;
+            let mut words = vec![0usize; CAPACITY / std::mem::size_of::<usize>()];
+            let mut returned = 0;
+            let status = query(
+                handle,
+                60,
+                words.as_mut_ptr().cast(),
+                CAPACITY as u32,
+                &mut returned,
+            );
+            if status < 0 {
+                return Err(format!(
+                    "无法读取完整进程命令行（系统状态 0x{:08X}）",
+                    status as u32
+                ));
+            }
+            let command = decode_command_buffer(&words, returned as usize)?;
+            if WaitForSingleObject(handle, 0) != WAIT_TIMEOUT {
+                return Err("进程在核验命令行时退出".into());
+            }
+            Ok(command)
+        }
     }
     fn parent_pid(pid: u32) -> Result<u32, String> {
         unsafe {
@@ -366,7 +440,7 @@ mod platform {
                 pid,
                 created,
                 image,
-                command: command_for(pid)?,
+                command: command_for(handle)?,
                 handle,
                 launcher: None,
             })
@@ -552,7 +626,7 @@ mod platform {
                 return Err("已核验实例已经退出，拒绝接管".into());
             }
             let (created, image) = identity(self.handle)?;
-            let command = command_for(self.pid)?;
+            let command = command_for(self.handle)?;
             if created != self.created || image != self.image || command != self.command {
                 return Err("PID创建时间或进程身份已变化，拒绝接管".into());
             }
@@ -782,6 +856,82 @@ mod platform {
                 );
                 std::thread::sleep(std::time::Duration::from_millis(30));
             }
+        }
+        #[test]
+        fn command_query_uses_a_live_handle_and_preserves_unicode_arguments() {
+            let handle = unsafe {
+                OpenProcess(
+                    PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE,
+                    0,
+                    std::process::id(),
+                )
+            };
+            assert!(!handle.is_null());
+            let result = command_for(handle);
+            unsafe {
+                CloseHandle(handle);
+            }
+            let command = result.unwrap();
+            let actual = arguments(&command).unwrap();
+            assert_eq!(actual, std::env::args().collect::<Vec<_>>());
+            assert!(command_for(std::ptr::null_mut()).is_err());
+            assert!(arguments("").is_err());
+            assert!(arguments("python\0 -m serve.server").is_err());
+            assert!(arguments(&"x".repeat(32768)).is_err());
+            assert!(arguments(&format!("python {}", "x ".repeat(256))).is_err());
+        }
+        #[test]
+        fn command_buffer_rejects_truncation_foreign_pointers_and_invalid_unicode() {
+            let header_size = std::mem::size_of::<NativeUnicodeString>();
+            let mut words = vec![0usize; 64];
+            let text = "python \"D:\\模型 配置.json\""
+                .encode_utf16()
+                .collect::<Vec<_>>();
+            let text_pointer = unsafe {
+                words
+                    .as_mut_ptr()
+                    .cast::<u8>()
+                    .add(header_size)
+                    .cast::<u16>()
+            };
+            unsafe {
+                std::ptr::copy_nonoverlapping(text.as_ptr(), text_pointer, text.len());
+                std::ptr::write(
+                    words.as_mut_ptr().cast::<NativeUnicodeString>(),
+                    NativeUnicodeString {
+                        length: (text.len() * 2) as u16,
+                        maximum_length: (text.len() * 2 + 2) as u16,
+                        buffer: text_pointer,
+                    },
+                );
+            }
+            let returned = header_size + text.len() * 2 + 2;
+            assert_eq!(
+                decode_command_buffer(&words, returned).unwrap(),
+                "python \"D:\\模型 配置.json\""
+            );
+            for truncated in [
+                0,
+                header_size - 1,
+                returned - 1,
+                std::mem::size_of_val(words.as_slice()) + 1,
+            ] {
+                assert!(decode_command_buffer(&words, truncated).is_err());
+            }
+            let header = unsafe { &mut *words.as_mut_ptr().cast::<NativeUnicodeString>() };
+            header.buffer = std::ptr::dangling::<u16>();
+            assert!(decode_command_buffer(&words, returned).is_err());
+            unsafe {
+                (*words.as_mut_ptr().cast::<NativeUnicodeString>()).buffer = text_pointer;
+            }
+            unsafe {
+                *text_pointer = 0xD800;
+            }
+            assert!(decode_command_buffer(&words, returned).is_err());
+            unsafe {
+                *text_pointer = 0;
+            }
+            assert!(decode_command_buffer(&words, returned).is_err());
         }
         #[test]
         fn native_listener_table_parser_checks_bounds_family_port_order_and_pid() {

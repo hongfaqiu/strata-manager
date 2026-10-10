@@ -14,11 +14,12 @@ interface Props {
   onAutoCheck: (enabled: boolean) => void;
   update: AppUpdateState;
   onCheck: () => Promise<void>;
+  onDownload: () => Promise<void>;
   onInstall: () => Promise<void>;
   onError: (error: unknown) => void;
 }
 
-export function DesktopLifecycleSettings({ desktop, streaming, autoCheck, onAutoCheck, update, onCheck, onInstall, onError }: Props) {
+export function DesktopLifecycleSettings({ desktop, streaming, autoCheck, onAutoCheck, update, onCheck, onDownload, onInstall, onError }: Props) {
   const { t } = useTranslation();
   const query = useQueryClient();
   const [saving, setSaving] = useState(false);
@@ -33,7 +34,7 @@ export function DesktopLifecycleSettings({ desktop, streaming, autoCheck, onAuto
     finally { setSaving(false); }
   };
   const row = (title: string, hint: string, checked: boolean, disabled: boolean, change: (checked: boolean) => void) => <label className="setting-toggle"><span><strong>{title}</strong><small>{hint}</small></span><Toggle ariaLabel={title} checked={checked} disabled={disabled || saving} onCheckedChange={change}/></label>;
-  const phaseKey = { checking: 'checkingUpdates', current: 'noAppUpdates', available: 'updateAvailable', downloading: 'downloadingAppUpdate', installing: 'installingAppUpdate', installed: 'restartForUpdate' };
+  const phaseKey = { checking: 'checkingUpdates', current: 'noAppUpdates', available: 'updateAvailable', downloading: 'downloadingAppUpdate', downloaded: 'downloadedAppUpdate', installing: 'installingAppUpdate', installed: 'restartForUpdate' };
   const downloading = update.phase === 'downloading' || update.phase === 'installing';
   const formatBytes = (value: number) => `${(value / 1024 ** 2).toFixed(1)} MiB`;
 
@@ -53,12 +54,13 @@ export function DesktopLifecycleSettings({ desktop, streaming, autoCheck, onAuto
       {row(t('checkUpdatesAutomatically'), t('checkUpdatesAutomaticallyHint'), autoCheck, !desktop, onAutoCheck)}
       <p className="subtle">{t('updaterHint')}</p>
       {update.phase in phaseKey && <p role="status" aria-live="polite">{t(phaseKey[update.phase as keyof typeof phaseKey], { version: update.version })}</p>}
-      {update.error && <div className="notice error" role="alert">{t('updateCheckFailed')}<details><summary>{t('details')}</summary>{update.error}</details></div>}
+      {update.error && <div className="notice error" role="alert">{t(update.errorStage === 'download' ? 'updateDownloadFailed' : update.errorStage === 'install' ? 'updateInstallFailed' : 'updateCheckFailed')}<details><summary>{t('details')}</summary>{update.error}</details></div>}
       {downloading && <p role="status">{t(update.total ? 'downloadBytes' : 'downloadBytesUnknown', { received: formatBytes(update.received), total: formatBytes(update.total ?? 0) })}</p>}
       {update.notes && <details><summary>{t('details')}</summary><p className="subtle" style={{ whiteSpace: 'pre-wrap' }}>{update.notes}</p></details>}
       <div className="actions">
-        <button type="button" disabled={!desktop || downloading || update.phase === 'checking'} onClick={() => void onCheck()}>{update.phase === 'checking' ? <LoaderCircle className="spin" size={15}/> : <RefreshCw size={15}/>} {t('checkUpdates')}</button>
-        {update.version && update.phase !== 'current' && update.phase !== 'installed' && <button type="button" className="primary" disabled={!desktop || streaming || downloading || update.phase === 'checking'} onClick={() => void onInstall()}><Download size={15}/>{t('installAppUpdate')}</button>}
+        <button type="button" disabled={!desktop || downloading || update.downloaded || update.phase === 'checking' || update.phase === 'installed'} onClick={() => void onCheck()}>{update.phase === 'checking' ? <LoaderCircle className="spin" size={15}/> : <RefreshCw size={15}/>} {t('checkUpdates')}</button>
+        {update.version && !update.downloaded && update.phase !== 'current' && update.phase !== 'installed' && <button type="button" className="primary" disabled={!desktop || downloading || update.phase === 'checking'} onClick={() => void onDownload()}><Download size={15}/>{t(update.errorStage === 'download' ? 'retryAppUpdateDownload' : 'downloadAppUpdate')}</button>}
+        {update.downloaded && <button type="button" className="primary" disabled={!desktop || streaming || downloading} onClick={() => void onInstall()}><Download size={15}/>{t('installAppUpdate')}</button>}
         {update.phase === 'installed' && <button type="button" className="primary" disabled={streaming} onClick={() => void core.restartInterface().catch(onError)}><RotateCw size={15}/>{t('restartForUpdate')}</button>}
       </div>
     </Panel>

@@ -1,4 +1,4 @@
-#![cfg(windows)]
+#![cfg(any(windows, target_os = "linux"))]
 use serde_json::{json, Value};
 use std::{
     fs,
@@ -39,13 +39,107 @@ async fn wait_exit(child: &mut Child) {
     panic!("isolated supervisor did not stop");
 }
 fn python() -> String {
-    let mut probe = Command::new("py");
-    probe.args(["-I", "-S", "-c", "import sys;print(sys.executable)"]);
-    strata_runtime_core::processes::hidden(&mut probe);
-    let result = probe.output().unwrap();
-    assert!(result.status.success());
-    String::from_utf8(result.stdout).unwrap().trim().to_owned()
+    #[cfg(windows)]
+    let programs = ["py"];
+    #[cfg(target_os = "linux")]
+    let programs = ["python3", "python"];
+    for program in programs {
+        let mut probe = Command::new(program);
+        probe.args([
+            "-I",
+            "-S",
+            "-c",
+            "import sys;assert sys.version_info.major==3;print(sys.executable)",
+        ]);
+        strata_runtime_core::processes::hidden(&mut probe);
+        let Ok(result) = probe.output() else {
+            continue;
+        };
+        if result.status.success() {
+            let executable = String::from_utf8(result.stdout).unwrap().trim().to_owned();
+            assert!(Path::new(&executable).is_absolute());
+            assert!(Path::new(&executable).is_file());
+            return executable;
+        }
+    }
+    panic!("isolated lifecycle fixture requires Python 3");
 }
+
+// The fixture reports its OS creation identity. Termination holds a Windows
+// process handle or a Linux pidfd, so a recycled PID cannot target another process.
+const FIXTURE_IDENTITY: &str = r#"
+import ctypes,json,os,pathlib,signal,sys
+if sys.platform=='win32':
+ kernel=ctypes.WinDLL('kernel32',use_last_error=True)
+ kernel.GetCurrentProcess.restype=ctypes.c_void_p
+ kernel.OpenProcess.argtypes=[ctypes.c_uint32,ctypes.c_int,ctypes.c_uint32];kernel.OpenProcess.restype=ctypes.c_void_p
+ kernel.GetProcessTimes.argtypes=[ctypes.c_void_p]+[ctypes.POINTER(ctypes.c_uint64)]*4;kernel.GetProcessTimes.restype=ctypes.c_int
+ kernel.QueryFullProcessImageNameW.argtypes=[ctypes.c_void_p,ctypes.c_uint32,ctypes.c_wchar_p,ctypes.POINTER(ctypes.c_uint32)];kernel.QueryFullProcessImageNameW.restype=ctypes.c_int
+ kernel.TerminateProcess.argtypes=[ctypes.c_void_p,ctypes.c_uint32];kernel.TerminateProcess.restype=ctypes.c_int
+ kernel.CloseHandle.argtypes=[ctypes.c_void_p];kernel.CloseHandle.restype=ctypes.c_int
+def windows_created(handle):
+ times=[ctypes.c_uint64() for _ in range(4)]
+ assert kernel.GetProcessTimes(handle,*[ctypes.byref(value) for value in times]),ctypes.get_last_error()
+ return str(times[0].value)
+def linux_stat(pid):
+ return pathlib.Path('/proc',str(pid),'stat').read_text().rsplit(') ',1)[1].split()
+def identity():
+ pid=os.getpid()
+ return {'pid':pid,'parentPid':os.getppid(),'created':windows_created(kernel.GetCurrentProcess()) if sys.platform=='win32' else linux_stat(pid)[19],'executable':str(pathlib.Path(sys.executable).resolve()),'directory':str(pathlib.Path.cwd().resolve())}
+def terminate(expected):
+ pid=expected['pid'];assert pid>0 and pid!=os.getpid()
+ executable=pathlib.Path(expected['executable']).resolve()
+ assert executable==pathlib.Path(sys.executable).resolve()
+ if sys.platform=='win32':
+  handle=kernel.OpenProcess(0x1001,False,pid);assert handle,ctypes.get_last_error()
+  try:
+   assert windows_created(handle)==expected['created'],'fixture PID was recycled'
+   image=ctypes.create_unicode_buffer(32768);length=ctypes.c_uint32(len(image))
+   assert kernel.QueryFullProcessImageNameW(handle,0,image,ctypes.byref(length)),ctypes.get_last_error()
+   assert pathlib.Path(image.value).resolve()==executable,'fixture executable changed'
+   assert kernel.TerminateProcess(handle,1),ctypes.get_last_error()
+  finally:kernel.CloseHandle(handle)
+ else:
+  descriptor=os.pidfd_open(pid)
+  try:
+   stat=linux_stat(pid)
+   assert stat[19]==expected['created'],'fixture PID was recycled'
+   assert int(stat[1])==expected['parentPid'],'fixture supervisor changed'
+   assert os.getpgid(pid)==pid,'fixture is not the owned process-group leader'
+   assert pathlib.Path('/proc',str(pid),'exe').resolve()==executable,'fixture executable changed'
+   assert pathlib.Path('/proc',str(pid),'cwd').resolve()==pathlib.Path(expected['directory']).resolve(),'fixture directory changed'
+   signal.pidfd_send_signal(descriptor,signal.SIGKILL)
+  finally:os.close(descriptor)
+if __name__=='__main__':terminate(json.loads(sys.argv[1]))
+"#;
+
+fn terminate_owned_fixture(status: &Value, health: &Value, directory: &Path, owner: u64) -> u64 {
+    assert_eq!(status["running"], true);
+    assert_eq!(status["owned"], true);
+    let identity = &health["fixture"];
+    let pid = status["pid"].as_u64().unwrap();
+    assert_eq!(identity["pid"].as_u64(), Some(pid));
+    assert_eq!(identity["parentPid"].as_u64(), Some(owner));
+    assert_eq!(
+        dunce::canonicalize(identity["directory"].as_str().unwrap()).unwrap(),
+        dunce::canonicalize(directory).unwrap()
+    );
+    let mut terminate = Command::new(python());
+    terminate
+        .args(["-I", "-S"])
+        .arg(directory.join("fixture_identity.py"))
+        .arg(serde_json::to_string(identity).unwrap())
+        .stdin(Stdio::null());
+    strata_runtime_core::processes::hidden(&mut terminate);
+    let result = terminate.output().unwrap();
+    assert!(
+        result.status.success(),
+        "verified fixture termination failed: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    pid
+}
+
 fn fixture(directory: &Path) {
     let reserved = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = reserved.local_addr().unwrap().port();
@@ -57,6 +151,7 @@ fn fixture(directory: &Path) {
     fs::write(directory.join("tokenizer/merges.txt"), "#version: 0.2").unwrap();
     fs::write(directory.join("tokenizer/token_type.json"), "{}").unwrap();
     fs::write(directory.join("setup.py"), "# isolated fixture").unwrap();
+    fs::write(directory.join("fixture_identity.py"), FIXTURE_IDENTITY).unwrap();
     fs::write(
         directory.join("fixture.gguf"),
         b"GGUF isolated test; never sent to real engine",
@@ -65,12 +160,13 @@ fn fixture(directory: &Path) {
     fs::write(directory.join("serve/server.py"), r#"
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 import argparse,json
+from fixture_identity import identity
 p=argparse.ArgumentParser();p.add_argument('--port',type=int);p.add_argument('--host');args,_=p.parse_known_args()
 loaded=False
 class Handler(BaseHTTPRequestHandler):
  def log_message(self,*args):pass
  def do_GET(self):
-  if self.path=='/health':out={'status':'ok','service':'strata','loaded':loaded,'model':'isolated-fixture'}
+  if self.path=='/health':out={'status':'ok','service':'strata','loaded':loaded,'model':'isolated-fixture','fixture':identity()}
   elif self.path=='/v1/status':out={'service':'strata','activity':{'in_flight':0}}
   elif self.path=='/metrics':out={'live':{'state':'idle' if loaded else 'unloaded','queued':0,'running':0,'waiting':0,'outside_slots':0}}
   else:out={}
@@ -220,14 +316,7 @@ async fn real_background_process_survives_client_disconnect_and_reconnects_with_
 
     // Only the PID returned by this isolated owned fixture is terminated.
     // No user's real Python/runtime or port is touched.
-    let killed = status["pid"].as_u64().unwrap();
-    let mut terminate = Command::new("taskkill");
-    terminate
-        .args(["/PID", &killed.to_string(), "/T", "/F"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    strata_runtime_core::processes::hidden(&mut terminate);
-    assert!(terminate.status().unwrap().success());
+    let killed = terminate_owned_fixture(&status, &health, &runtime, owner);
     let mut restored = None;
     for _ in 0..200 {
         let current = call(&data, "service_status", json!({"profileId":id}))
@@ -304,8 +393,8 @@ async fn real_background_process_survives_client_disconnect_and_reconnects_with_
     call(&data, "ensure_local_service", json!({"profileId":id}))
         .await
         .unwrap();
-    // Simulate a supervisor crash: its Windows Job must release only this
-    // fixture's process tree, so a stale running model is never duplicated.
+    // Simulate a supervisor crash: its platform ownership mechanism must release
+    // only this fixture's process tree, so a stale model is never duplicated.
     let crashed = ready(&data).await;
     let marker = data.join("analytics").join(format!("{id}.maintenance"));
     fs::write(&marker,serde_json::to_vec(&json!({"mode":"tuning","token":"isolated-stale-owner-token-00000000000000","supervisorPid":crashed["pid"],"supervisorStartedAt":crashed["startedAt"]})).unwrap()).unwrap();
@@ -321,7 +410,7 @@ async fn real_background_process_survives_client_disconnect_and_reconnects_with_
     }
     assert!(
         stopped,
-        "fixture model escaped supervisor's Job after simulated crash"
+        "fixture model escaped supervisor ownership after simulated crash"
     );
     guard.child = Some(launch(&data));
     ready(&data).await;

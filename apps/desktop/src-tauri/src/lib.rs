@@ -346,6 +346,24 @@ async fn environment_info(state: State<'_, ClientState>) -> Result<Value, String
 }
 
 #[tauri::command]
+async fn setup_disk_preflight(
+    state: State<'_, ClientState>,
+    profile: ServiceProfile,
+    model: String,
+    quant: String,
+    images: bool,
+) -> Result<Value, String> {
+    state
+        .ipc
+        .request(
+            "setup_disk_preflight",
+            json!({"profile":profile,"model":model,"quant":quant,"images":images}),
+        )
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn run_setup(
     state: State<'_, ClientState>,
     profile: ServiceProfile,
@@ -774,6 +792,7 @@ pub fn run() {
             service_status,
             read_logs,
             environment_info,
+            setup_disk_preflight,
             run_setup,
             install_runtime,
             update_runtime,

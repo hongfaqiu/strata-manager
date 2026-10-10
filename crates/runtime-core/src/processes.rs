@@ -14,6 +14,298 @@ use uuid::Uuid;
 
 pub type Logs = Arc<Mutex<HashMap<String, VecDeque<LogEntry>>>>;
 
+#[cfg(target_os = "linux")]
+mod linux_guardian {
+    use std::{
+        io,
+        os::{
+            fd::{AsRawFd, FromRawFd, OwnedFd, RawFd},
+            unix::{net::UnixStream, process::CommandExt},
+        },
+        process::Command,
+        time::{Duration, Instant},
+    };
+
+    pub(super) struct Guardian(UnixStream);
+
+    fn above_stdio(fd: RawFd) -> io::Result<OwnedFd> {
+        let original = unsafe { OwnedFd::from_raw_fd(fd) };
+        let duplicate = unsafe { libc::fcntl(original.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 3) };
+        if duplicate < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(unsafe { OwnedFd::from_raw_fd(duplicate) })
+    }
+
+    pub(super) fn prepare(command: &mut Command) -> io::Result<Guardian> {
+        if !cfg!(target_pointer_width = "64") {
+            return Err(io::Error::from_raw_os_error(libc::ENOTSUP));
+        }
+        // Open in the real parent, before spawning: the pidfd names this process,
+        // not its creating thread or a PID that could be recycled after a crash.
+        let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, libc::getpid(), 0u32) } as RawFd;
+        if fd < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let supervisor = above_stdio(fd)?;
+        let mut sockets = [-1; 2];
+        if unsafe {
+            libc::socketpair(
+                libc::AF_UNIX,
+                libc::SOCK_STREAM | libc::SOCK_CLOEXEC,
+                0,
+                sockets.as_mut_ptr(),
+            )
+        } < 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        let server = unsafe { OwnedFd::from_raw_fd(sockets[1]) };
+        let client = above_stdio(sockets[0])?;
+        // Both ends must survive Command's stdio remapping even when fd 0/1/2
+        // were initially closed in the supervisor.
+        let duplicated_server =
+            unsafe { libc::fcntl(server.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 3) };
+        if duplicated_server < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let server = unsafe { OwnedFd::from_raw_fd(duplicated_server) };
+        let client_fd = client.as_raw_fd();
+        unsafe {
+            command.pre_exec(move || {
+                let result = establish(supervisor.as_raw_fd(), client_fd, server.as_raw_fd());
+                if result == 0 {
+                    Ok(())
+                } else {
+                    Err(io::Error::from_raw_os_error(result))
+                }
+            });
+        }
+        Ok(Guardian(UnixStream::from(client)))
+    }
+
+    // After fork, only fixed-size stack values and libc syscalls are used.
+    // No allocator, Rust locks, logging, destructors, or libc atfork callbacks.
+    unsafe fn establish(supervisor: RawFd, client: RawFd, control: RawFd) -> i32 {
+        let root = libc::getpid();
+        if libc::getpgrp() != root {
+            return libc::EPERM;
+        }
+        let target = libc::syscall(libc::SYS_pidfd_open, root, 0u32) as RawFd;
+        if target < 0 {
+            return *libc::__errno_location();
+        }
+        let mut ready = [-1; 2];
+        if libc::pipe2(ready.as_mut_ptr(), libc::O_CLOEXEC) < 0 {
+            let error = *libc::__errno_location();
+            libc::close(target);
+            return error;
+        }
+        // Raw clone with no shared VM/FD flags is fork-like, without running
+        // inherited libc atfork handlers. s390x reverses the first two arguments.
+        #[cfg(not(target_arch = "s390x"))]
+        let pid = libc::syscall(
+            libc::SYS_clone,
+            libc::SIGCHLD as libc::c_ulong,
+            0usize,
+            0usize,
+            0usize,
+            0usize,
+        );
+        #[cfg(target_arch = "s390x")]
+        let pid = libc::syscall(
+            libc::SYS_clone,
+            0usize,
+            libc::SIGCHLD as libc::c_ulong,
+            0usize,
+            0usize,
+            0usize,
+        );
+        if pid == 0 {
+            watch(supervisor, target, control, ready[1], root);
+        }
+        let error = if pid < 0 {
+            *libc::__errno_location()
+        } else {
+            0
+        };
+        libc::close(ready[1]);
+        libc::close(target);
+        libc::close(supervisor);
+        libc::close(client);
+        libc::close(control);
+        if error != 0 {
+            libc::close(ready[0]);
+            return error;
+        }
+        let mut poll = libc::pollfd {
+            fd: ready[0],
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        let mut clock = libc::timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
+        if libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut clock) < 0 {
+            let error = *libc::__errno_location();
+            libc::close(ready[0]);
+            return error;
+        }
+        let deadline = clock.tv_sec as i128 * 1000 + clock.tv_nsec as i128 / 1_000_000 + 5000;
+        let mut ack = 0u8;
+        let result = loop {
+            if libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut clock) < 0 {
+                break *libc::__errno_location();
+            }
+            let remaining =
+                deadline - (clock.tv_sec as i128 * 1000 + clock.tv_nsec as i128 / 1_000_000);
+            if remaining <= 0 {
+                break libc::ETIMEDOUT;
+            }
+            let milliseconds = remaining.min(5000) as libc::time_t;
+            let timeout = libc::timespec {
+                tv_sec: milliseconds / 1000,
+                tv_nsec: (milliseconds % 1000 * 1_000_000) as libc::c_long,
+            };
+            let ready_count = libc::syscall(
+                libc::SYS_ppoll,
+                &mut poll as *mut libc::pollfd,
+                1usize,
+                &timeout as *const libc::timespec,
+                std::ptr::null::<libc::sigset_t>(),
+                0usize,
+            );
+            if ready_count < 0 && *libc::__errno_location() == libc::EINTR {
+                continue;
+            }
+            if ready_count <= 0 {
+                break if ready_count == 0 {
+                    libc::ETIMEDOUT
+                } else {
+                    *libc::__errno_location()
+                };
+            }
+            let count = libc::read(ready[0], &mut ack as *mut u8 as *mut libc::c_void, 1);
+            if count < 0 && *libc::__errno_location() == libc::EINTR {
+                continue;
+            }
+            break if count == 1 && ack == 1 { 0 } else { libc::EIO };
+        };
+        libc::close(ready[0]);
+        result
+    }
+
+    unsafe fn watch(
+        supervisor: RawFd,
+        target: RawFd,
+        control: RawFd,
+        ready: RawFd,
+        group: libc::pid_t,
+    ) -> ! {
+        let mut blocked: libc::sigset_t = std::mem::zeroed();
+        if libc::sigfillset(&mut blocked) < 0
+            || libc::sigprocmask(libc::SIG_SETMASK, &blocked, std::ptr::null_mut()) < 0
+        {
+            libc::_exit(125);
+        }
+        if libc::getpgrp() != group
+            || group <= 1
+            || libc::dup2(supervisor, 0) < 0
+            || libc::dup2(target, 1) < 0
+            || libc::dup2(control, 2) < 0
+            || libc::dup2(ready, 3) < 0
+            || libc::syscall(libc::SYS_close_range, 4u32, u32::MAX, 0u32) < 0
+        {
+            libc::_exit(125);
+        }
+        // In particular, stdout/stderr and Command's exec-error pipe are closed
+        // before ACK, so the guardian cannot delay spawn completion or log EOF.
+        let ack = 1u8;
+        if libc::write(3, &ack as *const u8 as *const libc::c_void, 1) != 1 {
+            libc::_exit(125);
+        }
+        libc::close(3);
+        let mut fds = [
+            libc::pollfd {
+                fd: 0,
+                events: libc::POLLIN,
+                revents: 0,
+            },
+            libc::pollfd {
+                fd: 1,
+                events: libc::POLLIN,
+                revents: 0,
+            },
+            libc::pollfd {
+                fd: 2,
+                events: libc::POLLIN,
+                revents: 0,
+            },
+        ];
+        loop {
+            let result = libc::syscall(
+                libc::SYS_ppoll,
+                fds.as_mut_ptr(),
+                fds.len(),
+                std::ptr::null::<libc::timespec>(),
+                std::ptr::null::<libc::sigset_t>(),
+                0usize,
+            );
+            if result < 0 && *libc::__errno_location() == libc::EINTR {
+                continue;
+            }
+            if result != 0 {
+                // We are still a member of this group: its identity cannot be
+                // reused. Only kill our own group, never a saved or searched PID.
+                libc::kill(-libc::getpgrp(), libc::SIGKILL);
+                libc::_exit(125);
+            }
+        }
+    }
+
+    impl Guardian {
+        pub(super) fn stop(&self) -> io::Result<()> {
+            let byte = 1u8;
+            let sent = unsafe {
+                libc::send(
+                    self.0.as_raw_fd(),
+                    &byte as *const u8 as *const libc::c_void,
+                    1,
+                    libc::MSG_NOSIGNAL | libc::MSG_DONTWAIT,
+                )
+            };
+            if sent < 0 {
+                let error = io::Error::last_os_error();
+                if !matches!(error.raw_os_error(), Some(libc::EPIPE | libc::ECONNRESET)) {
+                    return Err(error);
+                }
+            }
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                let mut fd = libc::pollfd {
+                    fd: self.0.as_raw_fd(),
+                    events: libc::POLLIN,
+                    revents: 0,
+                };
+                let result = unsafe { libc::poll(&mut fd, 1, 100) };
+                if result > 0 && fd.revents & (libc::POLLHUP | libc::POLLERR) != 0 {
+                    return Ok(());
+                }
+                if result < 0 {
+                    let error = io::Error::last_os_error();
+                    if error.kind() != io::ErrorKind::Interrupted {
+                        return Err(error);
+                    }
+                }
+                if Instant::now() >= deadline {
+                    return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
+                }
+            }
+        }
+    }
+}
+
 #[cfg(windows)]
 fn external_argument(value: &std::ffi::OsStr) -> Result<std::ffi::OsString, String> {
     let Some(text) = value.to_str() else {
@@ -53,6 +345,8 @@ pub struct OwnedProcess {
     pub readers_pending: Arc<AtomicUsize>,
     #[cfg(windows)]
     job: windows_sys::Win32::Foundation::HANDLE,
+    #[cfg(target_os = "linux")]
+    guardian: linux_guardian::Guardian,
 }
 // A Job handle is only accessed while the process is held under the process mutex.
 #[cfg(windows)]
@@ -176,7 +470,16 @@ impl OwnedProcess {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let mut child = command.spawn().map_err(|e| format!("启动进程失败: {e}"))?;
+        #[cfg(target_os = "linux")]
+        let guardian = linux_guardian::prepare(&mut command).map_err(|e| {
+            format!("无法建立 Linux 父死亡进程组守护（需要允许 pidfd、clone 和 close_range 的 64 位 Linux 5.9+ 内核），启动已取消: {e}")
+        })?;
+        let mut child = command.spawn().map_err(|e| {
+            #[cfg(target_os = "linux")]
+            { format!("受管进程启动失败: {e}；请核验可执行权限及允许 pidfd/clone/close_range 的 64 位 Linux 5.9+ 内核") }
+            #[cfg(not(target_os = "linux"))]
+            { format!("启动进程失败: {e}") }
+        })?;
         #[cfg(windows)]
         let job = {
             use std::os::windows::io::AsRawHandle;
@@ -262,6 +565,8 @@ impl OwnedProcess {
             readers_pending,
             #[cfg(windows)]
             job,
+            #[cfg(target_os = "linux")]
+            guardian,
         })
     }
     pub fn refresh(&mut self) -> Result<ProcessStatus, String> {
@@ -282,12 +587,32 @@ impl OwnedProcess {
                 ));
             }
         }
-        #[cfg(unix)]
+        #[cfg(all(unix, not(target_os = "linux")))]
         unsafe {
             libc::kill(-(self.child.id() as i32), libc::SIGKILL);
         }
+        #[cfg(not(target_os = "linux"))]
         let _ = self.child.kill();
+        #[cfg(not(target_os = "linux"))]
         let result = self.child.wait().map_err(|e| e.to_string())?;
+        #[cfg(target_os = "linux")]
+        let result = {
+            // The guardian is the still-pinned group member. Never signal an
+            // old PGID after try_wait may have reaped the root process.
+            self.guardian
+                .stop()
+                .map_err(|e| format!("停止受管 Linux 进程组失败: {e}"))?;
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            loop {
+                if let Some(exit) = self.child.try_wait().map_err(|e| e.to_string())? {
+                    break exit;
+                }
+                if std::time::Instant::now() >= deadline {
+                    return Err("Linux 守护已关闭但根进程仍未退出，无法确认整个受管组已停止".into());
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        };
         self.status.running = false;
         self.status.exit_code = result.code();
         Ok(())
@@ -1021,6 +1346,219 @@ pub fn python(profile: &ServiceProfile) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "linux")]
+    const LINUX_TREE: &str = r#"
+import pathlib, subprocess, sys, time
+engine = "import socket,sys; s=socket.socket(); s.bind(('127.0.0.1',int(sys.argv[1]))); s.listen(); exec('while True:\\n c,_=s.accept(); c.close()')"
+child = subprocess.Popen([sys.executable, '-c', engine, sys.argv[1]])
+print(child.pid, flush=True)
+while not pathlib.Path(sys.argv[2]).exists(): time.sleep(.01)
+sys.exit(7)
+"#;
+    #[cfg(target_os = "linux")]
+    fn linux_fixture_tree(logs: Logs, directory: &Path) -> (OwnedProcess, u16, u32) {
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let mut command = Command::new("python3");
+        command.args(["-u", "-c", LINUX_TREE, &port.to_string()]);
+        command.arg(directory.join("exit-root"));
+        let owned = OwnedProcess::spawn(command, logs.clone(), "linux-owned-tree").unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(8);
+        let pid = loop {
+            let pid = logs
+                .lock()
+                .unwrap()
+                .get("linux-owned-tree")
+                .and_then(|entries| {
+                    entries
+                        .iter()
+                        .find_map(|entry| entry.message.parse::<u32>().ok())
+                });
+            if let Some(pid) = pid {
+                if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+                    break pid;
+                }
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "isolated grandchild listener was not ready"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        assert!(owned.owns_pid(pid).unwrap());
+        (owned, port, pid)
+    }
+    #[cfg(target_os = "linux")]
+    fn linux_watch_pid(pid: u32) -> std::os::fd::OwnedFd {
+        use std::os::fd::FromRawFd;
+        let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0u32) };
+        assert!(
+            fd >= 0,
+            "fixture pidfd: {}",
+            std::io::Error::last_os_error()
+        );
+        unsafe { std::os::fd::OwnedFd::from_raw_fd(fd as i32) }
+    }
+    #[cfg(target_os = "linux")]
+    fn linux_wait_dead(fd: &std::os::fd::OwnedFd) {
+        use std::os::fd::AsRawFd;
+        let mut poll = libc::pollfd {
+            fd: fd.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        assert_eq!(
+            unsafe { libc::poll(&mut poll, 1, 5000) },
+            1,
+            "owned process did not exit"
+        );
+        assert_ne!(poll.revents & (libc::POLLIN | libc::POLLHUP), 0);
+    }
+    #[cfg(target_os = "linux")]
+    fn linux_wait_port_closed(port: u16) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "owned grandchild listener survived"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_hard_killed_owner_stops_owned_grandchild_and_keeps_external_process() {
+        const ACTOR: &str = "STRATA_MANAGER_LINUX_GUARDIAN_ACTOR";
+        if let Some(directory) = std::env::var_os(ACTOR) {
+            let logs = Arc::new(Mutex::new(HashMap::new()));
+            let (owned, port, pid) = linux_fixture_tree(logs, Path::new(&directory));
+            std::fs::write(
+                Path::new(&directory).join("report.json.tmp"),
+                serde_json::to_vec(
+                    &serde_json::json!({"port":port,"root":owned.child.id(),"child":pid}),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            std::fs::rename(
+                Path::new(&directory).join("report.json.tmp"),
+                Path::new(&directory).join("report.json"),
+            )
+            .unwrap();
+            std::thread::sleep(Duration::from_secs(120));
+            return;
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let mut external = Command::new("sleep").arg("120").spawn().unwrap();
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        command.args(["--exact", "processes::tests::linux_hard_killed_owner_stops_owned_grandchild_and_keeps_external_process", "--nocapture"]).env(ACTOR, temp.path());
+        let mut actor = OwnedProcess::spawn(
+            command,
+            Arc::new(Mutex::new(HashMap::new())),
+            "linux-owner-actor",
+        )
+        .unwrap();
+        let report = temp.path().join("report.json");
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !report.exists() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "owner actor did not become ready"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let report: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(report).unwrap()).unwrap();
+        let root = linux_watch_pid(report["root"].as_u64().unwrap() as u32);
+        let child = linux_watch_pid(report["child"].as_u64().unwrap() as u32);
+        actor.child.kill().unwrap(); // SIGKILL bypasses Rust Drop in the owner.
+        actor.child.wait().unwrap();
+        linux_wait_dead(&root);
+        linux_wait_dead(&child);
+        linux_wait_port_closed(report["port"].as_u64().unwrap() as u16);
+        actor.stop().unwrap(); // Safe even after the owner root PID was reaped.
+        assert!(external.try_wait().unwrap().is_none());
+        external.kill().unwrap();
+        external.wait().unwrap();
+    }
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_root_exit_stops_engine_and_closes_capture_without_old_pgid_signal() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut external = Command::new("sleep").arg("120").spawn().unwrap();
+        let logs = Arc::new(Mutex::new(HashMap::new()));
+        let (mut owned, port, pid) = linux_fixture_tree(logs, temp.path());
+        let child = linux_watch_pid(pid);
+        std::fs::write(temp.path().join("exit-root"), b"exit now").unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while owned.refresh().unwrap().running {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "root process did not exit"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(owned.status.exit_code, Some(7));
+        linux_wait_dead(&child);
+        linux_wait_port_closed(port);
+        owned.stop().unwrap();
+        while owned.readers_pending.load(Ordering::Acquire) != 0 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "guardian retained capture descriptors"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(external.try_wait().unwrap().is_none());
+        external.kill().unwrap();
+        external.wait().unwrap();
+    }
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_repeated_spawn_stop_and_creator_thread_exit_preserve_guardian_ownership() {
+        for _ in 0..20 {
+            let mut owned = std::thread::spawn(|| {
+                let mut command = Command::new("sleep");
+                command.arg("120");
+                OwnedProcess::spawn(
+                    command,
+                    Arc::new(Mutex::new(HashMap::new())),
+                    "linux-thread-fixture",
+                )
+                .unwrap()
+            })
+            .join()
+            .unwrap();
+            assert!(
+                owned.refresh().unwrap().running,
+                "creator thread exit killed service"
+            );
+            let root = linux_watch_pid(owned.child.id());
+            owned.stop().unwrap();
+            linux_wait_dead(&root);
+            owned.stop().unwrap();
+            assert!(!owned.refresh().unwrap().running);
+        }
+        let mut quick = Command::new("sh");
+        quick.args(["-c", "printf 'fixture log\\n'; exit 0"]);
+        let mut owned = OwnedProcess::spawn(
+            quick,
+            Arc::new(Mutex::new(HashMap::new())),
+            "linux-quick-fixture",
+        )
+        .unwrap();
+        assert!(owned.child.wait().unwrap().success());
+        owned.stop().unwrap();
+        assert!(OwnedProcess::spawn(
+            Command::new("/strata-manager-fixture-does-not-exist"),
+            Arc::new(Mutex::new(HashMap::new())),
+            "linux-failed-exec"
+        )
+        .is_err());
+    }
     #[cfg(windows)]
     #[test]
     fn owned_restart_observes_old_exit_before_new_pid_and_rejects_unowned_ids() {

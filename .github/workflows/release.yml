@@ -140,6 +140,9 @@ jobs:
             Windows x64: download the setup.exe installer. Linux x64: download the AppImage or DEB package.
             安装与功能范围 / Installation and feature scope: https://github.com/${{ github.repository }}#readme
 
+            Linux packages are verified by CI; physical installation, background lifecycle, login startup and GPU acceptance are still pending. / Linux 包已通过 CI，实机安装、后台生命周期、登录自启动与 GPU 仍待验收。
+            Acceptance evidence and current limitations / 验收证据与当前限制: https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/docs/VERIFICATION.md
+
             Model weights and the Strata inference runtime are installed separately. / 模型权重与 Strata 推理运行时独立安装。
             Based on / 基于 https://github.com/Niko1221/Strata — see THIRD_PARTY_NOTICES.md.
           releaseDraft: true

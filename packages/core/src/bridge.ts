@@ -1,4 +1,4 @@
-import type { AppSettings, BackgroundPolicy, EnvironmentInfo, JsonObject, LocalCandidate, LogEntry, ProcessStatus, ServiceProfile, SetupHandoff, StartupStatus, StreamEvent, SupervisorStatus, TaskStatus } from './types';
+import type { AppSettings, BackgroundPolicy, EnvironmentInfo, JsonObject, LocalCandidate, LogEntry, ProcessStatus, ServiceProfile, SetupDiskPreflight, SetupHandoff, StartupStatus, StreamEvent, SupervisorStatus, TaskStatus } from './types';
 import { normalizeError, StrataError } from './errors';
 import { decodeChatChunk, SSEParser, type ChatDelta, type StreamToolEvent } from './chat';
 
@@ -190,6 +190,7 @@ export const restartService = (profile: ServiceProfile): Promise<ProcessStatus> 
 export const takeOverService = (profile: ServiceProfile): Promise<ProcessStatus> => native('take_over_service', { profile });
 export const readLogs = (profile: ServiceProfile, limit = 200): Promise<LogEntry[]> => native('read_logs', { profile, limit });
 export const environmentInfo = (): Promise<EnvironmentInfo> => native('environment_info');
+export const setupDiskPreflight = (profile: ServiceProfile, model: string, quant: string, images: boolean): Promise<SetupDiskPreflight> => native('setup_disk_preflight', { profile, model, quant, images });
 export const runSetup = (profile: ServiceProfile, model: string, quant: string, context: number, images: boolean): Promise<TaskStatus> => native('run_setup', { profile, model, quant, context, images });
 export const installRuntime = (directory: string): Promise<TaskStatus> => native('install_runtime', { directory });
 /** Prepare the application-owned official source and private Python environment, without models. */

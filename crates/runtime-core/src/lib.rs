@@ -1,5 +1,6 @@
 pub mod analytics;
 pub mod discovery;
+pub mod disk;
 pub mod external;
 pub mod health_watch;
 pub mod http;
@@ -722,6 +723,12 @@ impl RuntimeState {
             }
             "read_logs" => value(read_logs(&self, profile()?, arg(&params, "limit")?)),
             "environment_info" => value(environment_info(self.clone()).await),
+            "setup_disk_preflight" => value(Ok(disk::preflight(
+                &profile()?,
+                &arg::<String>(&params, "model")?,
+                &arg::<String>(&params, "quant")?,
+                arg(&params, "images")?,
+            ))),
             "run_setup" => value(run_setup(
                 self.clone(),
                 profile()?,
@@ -1991,6 +1998,18 @@ fn run_setup(
     context: u32,
     images: bool,
 ) -> Result<TaskStatus, String> {
+    run_setup_with_preflight(state, profile, model, quant, context, images, disk::plan)
+}
+
+fn run_setup_with_preflight(
+    state: Arc<RuntimeState>,
+    profile: ServiceProfile,
+    model: String,
+    quant: String,
+    context: u32,
+    images: bool,
+    preflight: impl FnOnce(&ServiceProfile, &str, &str, bool) -> Result<disk::Plan, String>,
+) -> Result<TaskStatus, String> {
     let _operation = state.runtime_operations.lock().map_err(|e| e.to_string())?;
     runtime_upgrade::assert_available(&state)?;
     let root = processes::runtime_dir(&profile)?;
@@ -2008,6 +2027,8 @@ fn run_setup(
     if !supported {
         return Err("模型 family / quant 组合不被已核实的官方安装器支持".into());
     }
+    let disk_plan = preflight(&profile, &model, &quant, images)?;
+    disk_plan.require_space()?;
     for entry in fs::read_dir(&root).map_err(|e| e.to_string())? {
         let path = entry.map_err(|e| e.to_string())?.path();
         if path
@@ -2029,26 +2050,35 @@ fn run_setup(
         context,
         images,
     };
+    let mut args = vec![
+        "-u".into(),
+        "setup.py".into(),
+        "--yes".into(),
+        "--setup".into(),
+        "--no-start".into(),
+        "--no-browser".into(),
+        "--family".into(),
+        model,
+        "--model".into(),
+        quant,
+        "--context".into(),
+        context.to_string(),
+        "--vision".into(),
+        if images { "yes" } else { "no" }.into(),
+        "--port".into(),
+        url.port_or_known_default().unwrap_or(8080).to_string(),
+        "--data-dir".into(),
+        disk_plan.data_directory.to_string_lossy().into_owned(),
+    ];
+    if let Some(directory) = disk_plan.gguf_directory {
+        args.extend([
+            "--gguf-dir".into(),
+            directory.to_string_lossy().into_owned(),
+        ]);
+    }
     let step = Step {
         program: setup_python,
-        args: vec![
-            "-u".into(),
-            "setup.py".into(),
-            "--yes".into(),
-            "--setup".into(),
-            "--no-start".into(),
-            "--no-browser".into(),
-            "--family".into(),
-            model,
-            "--model".into(),
-            quant,
-            "--context".into(),
-            context.to_string(),
-            "--vision".into(),
-            if images { "yes" } else { "no" }.into(),
-            "--port".into(),
-            url.port_or_known_default().unwrap_or(8080).to_string(),
-        ],
+        args,
         cwd: root,
     };
     steps.push(step);
