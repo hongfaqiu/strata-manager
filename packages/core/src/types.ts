@@ -39,8 +39,25 @@ export interface SupervisorStatus {
   updatePending?: boolean;
   updateReason?: string | null;
   recovery?: { attempts: number; nextRetryAt: number; lastStartedAt: number; repairRequired: boolean; lastError?: string | null };
+  health?: Record<string, BackgroundHealthSnapshot>;
   migration?: LocalInstallationMigration;
   preparationFailures?: { profileId: string; lastError: string; failedAt: number; retryable: boolean; phase: 'prepare' }[];
+}
+
+export interface BackgroundHealthSnapshot {
+  profileId: string;
+  phase: 'healthy' | 'checking' | 'degraded' | 'deferred' | 'unknown' | 'stopped';
+  apiHealthy: boolean | null;
+  loaded: boolean | null;
+  observerState: 'idle' | 'busy' | 'unknown';
+  activeRequests: number | null;
+  pid: number | null;
+  reason: string;
+  checkedAt: number;
+  lastHealthyAt: number | null;
+  probeAttempted: boolean;
+  consecutiveFailures: number;
+  failures: { at: number; kind: string; httpStatus: number | null; reason: string }[];
 }
 
 export interface LocalInstallationMigration {

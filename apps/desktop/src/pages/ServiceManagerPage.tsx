@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQueries } from '@tanstack/react-query';
-import { ArrowRight, ChevronDown, Download, FileText, FolderOpen, LoaderCircle, MessageSquare, Pencil, Play, Plus, RefreshCw, ScanSearch, Server, Settings2, Square, Trash2 } from 'lucide-react';
+import { ArrowRight, ChevronDown, Download, FileText, FolderOpen, LoaderCircle, MessageSquare, PackageCheck, Pencil, Play, Plus, RefreshCw, ScanSearch, Server, Settings2, Square, Trash2 } from 'lucide-react';
 import * as core from '@strata-manager/core';
 import type { JsonObject, ProcessStatus, ServiceProfile } from '@strata-manager/core';
 import { Badge, Empty } from '../components';
@@ -9,7 +9,7 @@ import './service-manager.css';
 
 type Action = (profile: ServiceProfile) => void | Promise<unknown>;
 type InspectedProcess = ProcessStatus & { external?: boolean; canTakeOver?: boolean; reason?: string };
-type ConfirmationAction = 'stop' | 'restart' | 'takeover' | 'unload' | 'delete';
+type ConfirmationAction = 'stop' | 'restart' | 'takeover' | 'unload' | 'delete' | 'update';
 
 export interface ServiceManagerPageProps {
   profiles: ServiceProfile[];
@@ -28,6 +28,7 @@ export interface ServiceManagerPageProps {
   onStart: Action;
   onStop: Action;
   onRestart: Action;
+  onUpdate: Action;
   /** Called only after explicit confirmation, and only for a verified canTakeOver process. */
   onTakeover: Action;
   onLoad: Action;
@@ -55,6 +56,8 @@ const words = {
     process: '进程', stopped: '未运行', running: '运行中', modelState: '模型状态', health: '服务状态',
     selected: '当前选择', select: '使用此模型', chat: '开始聊天', start: '启用此模型', retryEnable: '重试启用', prepare: '准备模型', stop: '停止模型服务', restart: '重启模型服务',
     load: '加载模型', unload: '卸载模型', takeover: '接管并启用', config: '运行配置', logs: '查看日志',
+    update: '检查并更新 Strata', updateTitle: '更新此模型的 Strata 运行环境',
+    updateBody: '后台会检查应用支持的兼容版本，在新目录准备运行环境。当前请求结束后才切换，期间 API 会短暂不可用；验证失败会恢复原环境。原仓库、配置和模型文件保留，不重复下载模型权重。',
     details: '详情与管理', hideDetails: '收起详情', edit: '重命名模型', remove: '移出模型列表',
     installDir: 'Strata 目录', python: 'Python 路径', configPath: '模型配置文件', logPath: '引擎日志配置', version: '引擎版本', pid: '进程 ID',
     desktopRequired: '请在桌面应用中准备本机模型。',
@@ -87,6 +90,8 @@ const words = {
     process: 'Process', stopped: 'Not running', running: 'Running', modelState: 'Model state', health: 'Service status',
     selected: 'Selected', select: 'Use this model', chat: 'Start chatting', start: 'Enable this model', retryEnable: 'Retry enabling', prepare: 'Prepare model', stop: 'Stop model service', restart: 'Restart model service',
     load: 'Load model', unload: 'Unload model', takeover: 'Take ownership and enable', config: 'Runtime settings', logs: 'View logs',
+    update: 'Check and update Strata', updateTitle: 'Update this model’s Strata runtime',
+    updateBody: 'The background checks the app-supported compatible version and prepares it in a new directory. It waits for current requests before switching, with a brief API interruption. Failed verification restores the original environment. Your source, configuration and model files are retained; model weights are not downloaded again.',
     details: 'Details and management', hideDetails: 'Hide details', edit: 'Rename model', remove: 'Remove from model list',
     installDir: 'Strata directory', python: 'Python path', configPath: 'Model configuration', logPath: 'Engine log setting', version: 'Engine version', pid: 'Process ID',
     desktopRequired: 'Prepare local models in the desktop app.',
@@ -165,6 +170,7 @@ export function ServiceManagerPage(props: ServiceManagerPageProps) {
     takeover: { label: w.takeover, title: w.takeoverTitle, body: w.takeoverBody, callback: props.onTakeover },
     unload: { label: w.unload, title: w.unloadTitle, body: w.unloadBody, callback: props.onUnload },
     delete: { label: w.remove, title: w.deleteTitle, body: w.deleteBody, callback: props.onDelete },
+    update: { label: w.update, title: w.updateTitle, body: w.updateBody, callback: props.onUpdate },
   };
   const confirm = confirmation ? confirmActions[confirmation.action] : null;
   return <div className="service-manager" data-testid="service-manager">
@@ -221,7 +227,7 @@ export function ServiceManagerPage(props: ServiceManagerPageProps) {
           {isExpanded && <div className="service-manager-details" id={`service-details-${profile.id}`}>
             <dl><div><dt>{w.health}</dt><dd>{online ? w.online : w.offline}</dd></div><div><dt>{w.api}</dt><dd><code>{profile.baseUrl}</code></dd></div><div><dt>{w.version}</dt><dd>{metricQueries[index]?.isFetching ? w.checking : version ?? w.unknown}</dd></div><div><dt>{w.installDir}</dt><dd><code>{profile.installDir || w.configurationMissing}</code></dd></div><div><dt>{w.python}</dt><dd><code>{profile.pythonPath || w.configurationMissing}</code></dd></div><div><dt>{w.configPath}</dt><dd><code>{profile.configPath || w.configurationMissing}</code></dd></div><div><dt>{w.logPath}</dt><dd><code>{configQueries[index]?.isFetching ? w.checking : textValue(config?.log) ?? w.unknown}</code></dd></div>{process?.pid && <div><dt>{w.pid}</dt><dd>{process.pid}</dd></div>}</dl>
             {(metricQueries[index]?.isError || configQueries[index]?.isError) && <p className="service-manager-error">{w.detailFailed}: {core.normalizeError(configQueries[index]?.error ?? metricQueries[index]?.error).message}</p>}
-            <div className="service-manager-detail-actions"><button onClick={() => void run('edit', profile, props.onEdit)} disabled={locked || !desktop}><Pencil size={15} />{w.edit}</button><button onClick={() => void run('config', profile, props.onConfig)} disabled={locked}><Settings2 size={15} />{w.config}</button><button onClick={() => void run('logs', profile, props.onLogs)} disabled={locked || !desktop} title={desktop ? w.logsHint : w.desktopRequired}><FileText size={15} />{w.logs}</button>{owned && <><button onClick={() => setConfirmation({ action: 'stop', profile })} disabled={locked}><Square size={14} />{w.stop}</button><button onClick={() => setConfirmation({ action: 'restart', profile })} disabled={locked}><RefreshCw size={14} />{w.restart}</button></>}{owned && online && loaded === false && <button onClick={() => void run('load', profile, props.onLoad)} disabled={locked}><Play size={15}/>{w.load}</button>}{owned && online && loaded === true && <button onClick={() => setConfirmation({ action: 'unload', profile })} disabled={locked}><Square size={14} />{w.unload}</button>}<button className="danger" onClick={() => setConfirmation({ action: 'delete', profile })} disabled={locked || !desktop}><Trash2 size={15} />{w.remove}</button></div>
+            <div className="service-manager-detail-actions"><button onClick={() => void run('edit', profile, props.onEdit)} disabled={locked || !desktop}><Pencil size={15} />{w.edit}</button><button onClick={() => void run('config', profile, props.onConfig)} disabled={locked}><Settings2 size={15} />{w.config}</button><button onClick={() => void run('logs', profile, props.onLogs)} disabled={locked || !desktop} title={desktop ? w.logsHint : w.desktopRequired}><FileText size={15} />{w.logs}</button>{desktop && profile.managed && profile.installDir && profile.configPath && !external && <button onClick={() => setConfirmation({ action: 'update', profile })} disabled={locked || processQuery.isPending}><PackageCheck size={15} />{w.update}</button>}{owned && <><button onClick={() => setConfirmation({ action: 'stop', profile })} disabled={locked}><Square size={14} />{w.stop}</button><button onClick={() => setConfirmation({ action: 'restart', profile })} disabled={locked}><RefreshCw size={14} />{w.restart}</button></>}{owned && online && loaded === false && <button onClick={() => void run('load', profile, props.onLoad)} disabled={locked}><Play size={15}/>{w.load}</button>}{owned && online && loaded === true && <button onClick={() => setConfirmation({ action: 'unload', profile })} disabled={locked}><Square size={14} />{w.unload}</button>}<button className="danger" onClick={() => setConfirmation({ action: 'delete', profile })} disabled={locked || !desktop}><Trash2 size={15} />{w.remove}</button></div>
             {external && <div className="service-manager-ownership"><p>{canTakeOver ? w.takeoverHelp : w.externalHelp}</p>{process?.reason && <span>{process.reason}</span>}</div>}
             {!owned && !canTakeOver && (!profile.managed || !profile.installDir || !profile.pythonPath || !profile.configPath) && <div className="service-manager-configure"><FolderOpen size={16} /><p>{w.configure}</p></div>}
             {health.api_key === true && <p className="service-manager-hint">{w.authHelp}</p>}

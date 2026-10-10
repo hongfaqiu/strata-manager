@@ -8,10 +8,11 @@ export interface DropdownOption { value: string; label: string; disabled?: boole
 export interface DropdownProps {
   value: string; options: DropdownOption[]; onValueChange: (value: string) => void; ariaLabel: string;
   disabled?: boolean; placeholder?: string; compact?: boolean; editable?: boolean; className?: string; id?: string;
+  editableDisplayValue?: string; onInputChange?: (value: string) => void;
 }
 
 /** A custom listbox: no native select, option, datalist or hidden select is mounted. */
-export function Dropdown({ value, options, onValueChange, ariaLabel, disabled = false, placeholder, compact = false, editable = false, className = '', id }: DropdownProps) {
+export function Dropdown({ value, options, onValueChange, ariaLabel, disabled = false, placeholder, compact = false, editable = false, className = '', id, editableDisplayValue, onInputChange }: DropdownProps) {
   const { t } = useTranslation();
   const uid = useId();
   const root = useRef<HTMLDivElement>(null);
@@ -22,7 +23,8 @@ export function Dropdown({ value, options, onValueChange, ariaLabel, disabled = 
   const [position, setPosition] = useState<CSSProperties>({});
   const search = useRef({ text: '', at: 0 });
   const selected = options.find(option => option.value === value);
-  const visible = editable && value && !selected ? options.filter(option => `${option.label} ${option.value}`.toLowerCase().includes(value.toLowerCase())) : options;
+  const inputValue = editableDisplayValue ?? value;
+  const visible = editable && inputValue && !selected ? options.filter(option => (editableDisplayValue === undefined ? `${option.label} ${option.value}` : option.label).toLowerCase().includes(inputValue.toLowerCase())) : options;
   const enabled = visible.map((option, index) => option.disabled ? -1 : index).filter(index => index >= 0);
   const selectedIndex = visible.findIndex(option => option.value === value && !option.disabled);
   const openMenu = (last = false) => { if (!disabled) { setActive(selectedIndex >= 0 ? selectedIndex : (last ? enabled.at(-1) : enabled[0]) ?? -1); setOpen(true); } };
@@ -64,7 +66,7 @@ export function Dropdown({ value, options, onValueChange, ariaLabel, disabled = 
   const aria = { id, role: 'combobox', 'aria-label': ariaLabel, 'aria-haspopup': 'listbox' as const, 'aria-expanded': open, 'aria-controls': `${uid}-listbox`, 'aria-activedescendant': open && active >= 0 ? `${uid}-option-${active}` : undefined };
   const target = root.current?.closest('[role="dialog"]') ?? document.body;
   return <div className={`official-dropdown ${compact ? 'compact' : ''} ${editable ? 'editable' : ''} ${className}`} ref={root}>
-    {editable ? <div className="official-combobox-input"><input {...aria} ref={element => { trigger.current = element; }} autoComplete="off" value={value} placeholder={placeholder} disabled={disabled} onKeyDown={keyboard} onFocus={() => openMenu()} onChange={event => { onValueChange(event.target.value); setActive(0); setOpen(true); }} /><button type="button" tabIndex={-1} className="official-combobox-arrow" aria-label={ariaLabel} disabled={disabled} onClick={() => { if (open) closeMenu(true); else openMenu(); }}><OfficialIcon name="chevron" size={16} /></button></div> : <button type="button" {...aria} className="official-dropdown-trigger" ref={element => { trigger.current = element; }} disabled={disabled} onKeyDown={keyboard} onClick={() => open ? closeMenu() : openMenu()}><span>{selected?.icon}{selected?.label ?? placeholder ?? value}</span><OfficialIcon name="chevron" size={16} /></button>}
+    {editable ? <div className="official-combobox-input"><input {...aria} ref={element => { trigger.current = element; }} autoComplete="off" value={inputValue} placeholder={placeholder} disabled={disabled} onKeyDown={keyboard} onFocus={() => openMenu()} onChange={event => { (onInputChange ?? onValueChange)(event.target.value); setActive(0); setOpen(true); }} /><button type="button" tabIndex={-1} className="official-combobox-arrow" aria-label={ariaLabel} disabled={disabled} onClick={() => { if (open) closeMenu(true); else openMenu(); }}><OfficialIcon name="chevron" size={16} /></button></div> : <button type="button" {...aria} className="official-dropdown-trigger" ref={element => { trigger.current = element; }} disabled={disabled} onKeyDown={keyboard} onClick={() => open ? closeMenu() : openMenu()}><span>{selected?.icon}{selected?.label ?? placeholder ?? value}</span><OfficialIcon name="chevron" size={16} /></button>}
     {open && createPortal(<div ref={menu} className="official-dropdown-menu" role="listbox" id={`${uid}-listbox`} aria-label={ariaLabel} style={position} onKeyDown={keyboard}>{visible.length ? visible.map((option, index) => <div id={`${uid}-option-${index}`} key={option.value} role="option" aria-selected={option.value === value} aria-disabled={option.disabled || undefined} data-index={index} className={`official-dropdown-option ${active === index ? 'highlighted' : ''} ${option.value === value ? 'selected' : ''}`} onPointerDown={event => event.preventDefault()} onPointerMove={() => { if (!option.disabled) setActive(index); }} onClick={() => choose(index)}><span>{option.icon}{option.label}</span>{option.value === value && <OfficialIcon name="check" size={16} />}</div>) : <div className="official-dropdown-empty">{t('empty')}</div>}</div>, target)}
   </div>;
 }

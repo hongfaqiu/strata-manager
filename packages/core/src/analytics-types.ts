@@ -2,8 +2,13 @@
 export type ApiRoute = 'chat' | 'responses' | 'anthropic' | 'token_count';
 export type ApiOutcome = 'pending' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
 export interface ApiAnalyticsQuery {
-  action?: 'summary' | 'recent' | 'trends';
+  action?: 'summary' | 'recent' | 'trends' | 'requests' | 'request_options' | 'export_csv';
   startMs?: number; endMs?: number; serviceId?: string; limit?: number; bucketMs?: number;
+  /** Empty means all; null selects unlabelled requests, not an empty string. */
+  clientId?: string | null; modelId?: string | null; outcome?: ApiOutcome;
+  sort?: 'newest' | 'oldest'; cursor?: string; snapshotRowId?: number;
+  /** Native save dialog target. CSV is generated only from backend metadata. */
+  path?: string;
 }
 export interface ApiDistribution { samples: number; p50: number | null; p95: number | null }
 export interface ApiHttpTotals {
@@ -29,6 +34,17 @@ export interface ApiUsageRequest {
   stream: boolean | null; inputTokens: number | null; outputTokens: number | null;
   cacheReadTokens: number | null; firstTokenS: number | null; durationS: number | null;
   errorKind: string | null; mcpToolCalls: number; inferenceRuns: number;
+  /** Older observer records have no verified model identity. */
+  modelId: string | null;
+}
+export interface ApiRequestPage {
+  items: ApiUsageRequest[]; nextCursor: string | null; snapshotRowId: number; limit: number;
+}
+export interface ApiRequestOptions {
+  clients: string[]; models: string[]; unknownClient: boolean; unknownModel: boolean; truncated: boolean;
+}
+export interface ApiCsvExport {
+  path: string; rows: number; rowLimit: number; snapshotRowId: number;
 }
 export interface ApiTrendBucket {
   startMs: number; requests: number; succeeded: number; failed: number; cancelled: number;
@@ -53,6 +69,6 @@ export interface ApiAnalyticsCoverage {
   journalPresent: boolean; metadataOnly: boolean; dataAvailableFromMs: number | null;
   collectionScope: string[]; historyRetentionDays: number; journalRetentionDays: number; journalMaxEvents: number;
 }
-export type ApiAnalyticsData = ApiUsageSummary | ApiUsageRequest[] | ApiUsageTrends;
+export type ApiAnalyticsData = ApiUsageSummary | ApiUsageRequest[] | ApiUsageTrends | ApiRequestPage | ApiRequestOptions | ApiCsvExport;
 export interface ApiAnalyticsResult<T = ApiAnalyticsData> { data: T; coverage: ApiAnalyticsCoverage }
 export type ApiAnalyticsClient = (query: ApiAnalyticsQuery) => Promise<ApiAnalyticsResult<unknown>>;

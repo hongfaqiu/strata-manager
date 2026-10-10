@@ -163,7 +163,8 @@ export function App() {
   const tasks = useQuery({ queryKey: ['tasks'], queryFn: core.listTasks, enabled: desktop && ready, refetchInterval: settings.pollInterval, refetchIntervalInBackground: true });
   const handoffs = useQuery({ queryKey: ['setupHandoffs'], queryFn: core.listSetupHandoffs, enabled: desktop && ready, refetchInterval: settings.pollInterval, refetchIntervalInBackground: true });
   const registeredSetupTasks = handoffs.data?.filter(item => item.status === 'registered').map(item => item.taskId).sort().join(',') ?? '';
-  const preparedProfiles = useQuery({ queryKey: ['setupRegistrations', registeredSetupTasks], queryFn: core.localInstallations, enabled: desktop && ready && !!registeredSetupTasks, refetchOnWindowFocus: false });
+  const finishedRuntimeUpdates = tasks.data?.filter(task => task.kind.includes('update') && task.state !== 'running').map(task => `${task.id}:${task.state}`).sort().join(',') ?? '';
+  const preparedProfiles = useQuery({ queryKey: ['setupRegistrations', registeredSetupTasks, finishedRuntimeUpdates], queryFn: core.localInstallations, enabled: desktop && ready && !!(registeredSetupTasks || finishedRuntimeUpdates), refetchOnWindowFocus: false });
   useEffect(() => {
     if (!ready || !preparedProfiles.data) return;
     const firstPrepared = maySelectFirstPrepared.current ? preparedProfiles.data.find(item => handoffs.data?.some(handoff => handoff.status === 'registered' && handoff.profileId === item.id)) : undefined;
@@ -432,7 +433,7 @@ export function App() {
     if (guideDirectory) { void act('taskProfile', () => createTaskProfile({ kind: 'install', directory: guideDirectory })); return; }
     go('models');
   };
-  const renderOverviewPage=()=> !profile ? renderLocalSetup() : <OverviewPage profile={profile} health={healthData} metric={metric} process={process.data} tasks={tasks.data??[]} tasksLoading={tasks.isPending} language={settings.language} online={online} connecting={!!localProgress || health.isFetching&&!health.data} desktop={desktop} healthError={health.error?errorText(health.error):undefined} metricsError={metrics.error?errorText(metrics.error):undefined} taskError={tasks.error?errorText(tasks.error):undefined} processError={process.error?errorText(process.error):supervisor.data?.preparationFailures?.find(item=>item.profileId===profile.id)?.lastError} controls={serviceActions} usage={<OverviewUsage key={profile.id} profile={profile} language={settings.language} desktop={desktop} onOpen={()=>go('usage')} onCopy={content=>void copy(content)}/>} stateLabel={serviceState} onRefresh={()=>void query.invalidateQueries()} onCreateProfile={()=>go('localSetup')} onChat={()=>conversation?go('chat'):addConversation()} onNavigate={go}/>;
+  const renderOverviewPage=()=> !profile ? renderLocalSetup() : <OverviewPage profile={profile} health={healthData} backgroundHealth={supervisor.data?.health?.[profile.id]} metric={metric} process={process.data} tasks={tasks.data??[]} tasksLoading={tasks.isPending} language={settings.language} online={online} connecting={!!localProgress || health.isFetching&&!health.data} desktop={desktop} healthError={health.error?errorText(health.error):undefined} metricsError={metrics.error?errorText(metrics.error):undefined} taskError={tasks.error?errorText(tasks.error):undefined} processError={process.error?errorText(process.error):supervisor.data?.preparationFailures?.find(item=>item.profileId===profile.id)?.lastError} controls={serviceActions} usage={<OverviewUsage key={profile.id} profile={profile} language={settings.language} desktop={desktop} onOpen={()=>go('usage')} onCopy={content=>void copy(content)}/>} stateLabel={serviceState} onRefresh={()=>void query.invalidateQueries()} onCreateProfile={()=>go('localSetup')} onChat={()=>conversation?go('chat'):addConversation()} onNavigate={go}/>;
 
   const operateService = async (action: () => Promise<unknown>) => { await action(); await query.invalidateQueries(); notify(t('success')); };
   const servicePage = async (p: ServiceProfile, next: Page) => {
@@ -449,10 +450,11 @@ export function App() {
     setConversationIds(old=>Object.fromEntries(Object.entries(old).filter(([key])=>key!==p.id)));
     notify(t('success'));
   };
-  const ProfilesPage = () => <ServiceManagerPage profiles={profiles} activeId={activeId} language={settings.language} desktop={desktop} pollInterval={settings.pollInterval} streaming={streaming} busyProfileIds={busy?profiles.map(p=>p.id):[]}
+  const ProfilesPage = () => <ServiceManagerPage profiles={profiles} activeId={activeId} language={settings.language} desktop={desktop} pollInterval={settings.pollInterval} streaming={streaming} busyProfileIds={busy || tasks.data?.some(task => task.state === 'running' && task.kind.includes('update')) ? profiles.map(p=>p.id) : []}
     onSelect={activateLocal} onAdd={()=>go('localSetup')} onImport={()=>go('localSetup')}
     onEdit={p=>setModal({kind:'profile',profile:p})} onDelete={removeService}
     onStart={p=>operateService(()=>activateLocal(p))} onStop={p=>operateService(()=>core.stopService(p.id))} onRestart={p=>operateService(()=>core.restartService(p))} onTakeover={p=>operateService(()=>activateLocal(p))}
+    onUpdate={async p => { const task = await runRecipe({ kind: 'update', profile: p }); setSelectedTaskId(task.id); await query.invalidateQueries({ queryKey: ['tasks'] }); go('tasks'); }}
     onLoad={p=>operateService(()=>core.request(p,'/load','POST',{}))} onUnload={p=>operateService(()=>core.request(p,'/unload','POST',{}))}
     onConfig={p=>servicePage(p,'config')} onLogs={p=>servicePage(p,'tasks')} onChat={p=>servicePage(p,'chat')}
     onOnboarding={()=>go('localSetup')} onEnvironment={()=>go('environment')} onInstall={()=>go('environment')}

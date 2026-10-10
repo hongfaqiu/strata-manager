@@ -80,6 +80,8 @@ pub fn status(state: &RuntimeState) -> Result<InstallationStatus, String> {
 
 /// The RPC returns immediately; cancellation uses the existing persisted task flag.
 pub fn start(state: Arc<RuntimeState>) -> Result<TaskStatus, String> {
+    let _operation = state.runtime_operations.lock().map_err(|e| e.to_string())?;
+    crate::runtime_upgrade::assert_available(&state)?;
     let runtime = owned_directory(state.data_dir(), &["runtimes"])?
         .join(format!("strata-{}", &SOURCE_REVISION[..12]));
     let id = uuid::Uuid::new_v4().to_string();
@@ -129,6 +131,7 @@ pub fn start(state: Arc<RuntimeState>) -> Result<TaskStatus, String> {
         })
         .map_err(|e| e.to_string())?,
     )?;
+    drop(_operation);
     tokio::spawn(async move {
         let outcome = prepare(&state, &id, &runtime).await;
         if let Ok(mut tasks) = state.tasks.lock() {
@@ -197,7 +200,7 @@ fn progress(state: &RuntimeState, id: &str, message: impl Into<String>) -> Resul
 }
 
 /// All installer paths are derived from the real app data directory, never UI input.
-fn owned_directory(data: &Path, components: &[&str]) -> Result<PathBuf, String> {
+pub(crate) fn owned_directory(data: &Path, components: &[&str]) -> Result<PathBuf, String> {
     let root = dunce::canonicalize(data).map_err(|e| e.to_string())?;
     let mut path = root.clone();
     for component in components {
@@ -311,7 +314,7 @@ fn save_claim(value: &Claim) -> Result<(), String> {
     temporary.persist(marker).map_err(|e| e.to_string())?;
     Ok(())
 }
-fn file_hash(path: &Path) -> Result<String, String> {
+pub(crate) fn file_hash(path: &Path) -> Result<String, String> {
     if path.is_symlink() {
         return Err("受管文件被重定向".into());
     }
@@ -328,12 +331,58 @@ fn file_hash(path: &Path) -> Result<String, String> {
     Ok(format!("{:x}", digest.finalize()))
 }
 
-async fn download(
+pub(crate) async fn download(
     state: &RuntimeState,
     id: &str,
     url: &str,
     expected: &str,
     limit: u64,
+) -> Result<PathBuf, String> {
+    download_with_client(state, id, url, expected, limit, &state.client).await
+}
+
+/// Release assets redirect to GitHub's asset origin. Every destination stays HTTPS
+/// and the archive still must match the application's fixed digest.
+pub(crate) async fn download_release(
+    state: &RuntimeState,
+    id: &str,
+    url: &str,
+    expected: &str,
+    limit: u64,
+) -> Result<PathBuf, String> {
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= 5 {
+                return attempt.error("release redirect limit exceeded");
+            }
+            if attempt.url().scheme() == "https"
+                && matches!(
+                    attempt.url().host_str(),
+                    Some(
+                        "github.com"
+                            | "release-assets.githubusercontent.com"
+                            | "objects.githubusercontent.com"
+                    )
+                )
+            {
+                attempt.follow()
+            } else {
+                attempt.error("release redirect origin refused")
+            }
+        }))
+        .build()
+        .map_err(|e| e.to_string())?;
+    download_with_client(state, id, url, expected, limit, &client).await
+}
+
+async fn download_with_client(
+    state: &RuntimeState,
+    id: &str,
+    url: &str,
+    expected: &str,
+    limit: u64,
+    client: &reqwest::Client,
 ) -> Result<PathBuf, String> {
     let directory = owned_directory(state.data_dir(), &["downloads"])?;
     let mut cache = directory.join(format!("{expected}.download"));
@@ -346,8 +395,7 @@ async fn download(
         cache = directory.join(format!("{expected}-{}.download", uuid::Uuid::new_v4()));
     }
     progress(state, id, format!("正在从官方 HTTPS 来源下载: {url}"))?;
-    let response = state
-        .client
+    let response = client
         .get(url)
         .timeout(Duration::from_secs(300))
         .send()
@@ -658,7 +706,7 @@ fn find_python(data_dir: &Path) -> Option<String> {
     None
 }
 
-async fn run_owned(
+pub(crate) async fn run_owned(
     state: &RuntimeState,
     id: &str,
     mut command: Command,
@@ -778,7 +826,11 @@ async fn ensure_python(state: &RuntimeState, id: &str) -> Result<String, String>
     }
 }
 
-async fn prepare(state: &RuntimeState, id: &str, root: &Path) -> Result<PreparedRuntime, String> {
+pub(crate) async fn prepare(
+    state: &RuntimeState,
+    id: &str,
+    root: &Path,
+) -> Result<PreparedRuntime, String> {
     let mut owner = claim(state, root, SOURCE_REVISION)?;
     if owner.ready {
         for (relative, expected) in &owner.critical_hashes {

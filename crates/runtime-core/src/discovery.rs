@@ -534,31 +534,116 @@ fn config_paths(root: &Path) -> Vec<PathBuf> {
     paths
 }
 
+/// Enumerate the complete native snapshot before reading only Python argv.
+/// Discovery hints never authorize adoption; external identity checks still do.
 #[cfg(windows)]
-fn split_command(command: &str) -> Option<Vec<String>> {
-    use windows_sys::Win32::{Foundation::LocalFree, UI::Shell::CommandLineToArgvW};
-    let wide: Vec<_> = command.encode_utf16().chain(std::iter::once(0)).collect();
-    let mut count = 0;
-    unsafe {
-        let pointers = CommandLineToArgvW(wide.as_ptr(), &mut count);
-        if pointers.is_null() {
-            return None;
+fn windows_process_args() -> Result<Vec<Vec<String>>, String> {
+    use std::time::{Duration, Instant};
+    use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+    use windows_sys::Win32::{
+        Foundation::{CloseHandle, GetLastError, ERROR_NO_MORE_FILES, INVALID_HANDLE_VALUE},
+        System::Diagnostics::ToolHelp::{
+            CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+            TH32CS_SNAPPROCESS,
+        },
+    };
+    let started = Instant::now();
+    let pids = unsafe {
+        let handle = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if handle == INVALID_HANDLE_VALUE {
+            return Err("无法获取完整本机进程清单，已停止自动操作".into());
         }
-        let parsed = (|| {
-            let mut args = Vec::new();
-            for index in 0..count as usize {
-                let pointer = *pointers.add(index);
-                let mut length = 0;
-                while *pointer.add(length) != 0 {
-                    length += 1;
+        let result = (|| {
+            let mut entry: PROCESSENTRY32W = std::mem::zeroed();
+            entry.dwSize = std::mem::size_of_val(&entry) as u32;
+            let mut next = Process32FirstW(handle, &mut entry);
+            let mut count = 0;
+            let mut pids = Vec::new();
+            while next != 0 {
+                count += 1;
+                if count > 4096 || started.elapsed() >= Duration::from_secs(3) {
+                    return Err("本机进程清单超过检测上限或时间预算，已停止自动操作".to_string());
                 }
-                args.push(String::from_utf16(std::slice::from_raw_parts(pointer, length)).ok()?);
+                let end = entry
+                    .szExeFile
+                    .iter()
+                    .position(|c| *c == 0)
+                    .ok_or("本机进程文件名不完整，已停止自动操作")?;
+                let name = String::from_utf16(&entry.szExeFile[..end])
+                    .map_err(|_| "本机进程文件名无效，已停止自动操作")?;
+                if name.eq_ignore_ascii_case("python.exe")
+                    || name.eq_ignore_ascii_case("pythonw.exe")
+                {
+                    pids.push(Pid::from_u32(entry.th32ProcessID));
+                    if pids.len() > 64 {
+                        return Err("本机 Python 进程超过检测上限，已停止自动操作".into());
+                    }
+                }
+                next = Process32NextW(handle, &mut entry);
             }
-            Some(args)
+            if GetLastError() != ERROR_NO_MORE_FILES {
+                return Err("本机进程清单读取不完整，已停止自动操作".into());
+            }
+            Ok(pids)
         })();
-        LocalFree(pointers as _);
-        parsed
+        CloseHandle(handle);
+        result?
+    };
+    if started.elapsed() >= Duration::from_secs(3) {
+        return Err("读取本机进程清单超过时间预算，已停止自动操作".into());
     }
+    if pids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut system = System::new();
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&pids),
+        true,
+        ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always),
+    );
+    if started.elapsed() >= Duration::from_secs(3) {
+        return Err("读取本机 Python 参数超过时间预算，已停止自动操作".into());
+    }
+    let mut commands = Vec::with_capacity(pids.len());
+    for pid in pids {
+        // A disappeared or unreadable process is an incomplete observation.
+        // A later detection may retry; this pass must not declare it absent.
+        let process = system
+            .process(pid)
+            .ok_or("Python 进程清单发生变化，请重新检测；未自动启动")?;
+        let name = process
+            .name()
+            .to_str()
+            .ok_or("Python 进程名称无法核验，未自动启动")?;
+        if !name.eq_ignore_ascii_case("python.exe") && !name.eq_ignore_ascii_case("pythonw.exe") {
+            return Err("Python 进程身份发生变化，请重新检测；未自动启动".into());
+        }
+        commands.push(checked_windows_args(process.cmd())?);
+    }
+    if started.elapsed() >= Duration::from_secs(3) {
+        return Err("读取本机 Python 参数超过时间预算，已停止自动操作".into());
+    }
+    Ok(commands)
+}
+
+#[cfg(windows)]
+fn checked_windows_args(command: &[std::ffi::OsString]) -> Result<Vec<String>, String> {
+    if command.is_empty() || command.len() > 256 {
+        return Err("无法完整读取 Python 启动参数，请检查进程权限后重新检测；未自动启动".into());
+    }
+    let mut args = Vec::with_capacity(command.len());
+    let mut bytes = 0usize;
+    for value in command {
+        let value = value
+            .to_str()
+            .ok_or("Python 启动参数包含无效文本，未自动启动")?;
+        bytes = bytes.saturating_add(value.len());
+        if bytes > 128 * 1024 {
+            return Err("Python 启动参数超过检测上限，未自动启动".into());
+        }
+        args.push(value.to_owned());
+    }
+    Ok(args)
 }
 
 fn hint_from_args(args: &[String]) -> Option<ProcessHint> {
@@ -586,21 +671,8 @@ fn hint_from_args(args: &[String]) -> Option<ProcessHint> {
 fn process_hints() -> Result<Vec<ProcessHint>, String> {
     #[cfg(windows)]
     {
-        // Fixed script: paths from a config/frontend are never interpolated into PowerShell.
-        let script = "$ErrorActionPreference='Stop';[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);$p=@(Get-CimInstance Win32_Process -Filter \"Name='python.exe' OR Name='pythonw.exe'\" | Where-Object {$_.CommandLine -match '(?:^|\\s)serve\\.server(?:\\s|$)'} | Select-Object -First 65 -ExpandProperty CommandLine);ConvertTo-Json -InputObject $p -Compress";
-        let text = crate::output(
-            "powershell.exe",
-            &["-NoProfile", "-NonInteractive", "-Command", script],
-        )
-        .ok_or("无法读取本机 Strata 进程清单（权限不足或超时），为避免重复启动已停止自动操作")?;
-        let commands = serde_json::from_str::<Vec<String>>(&text)
-            .map_err(|_| "本机进程清单响应无效，无法安全自动启动")?;
-        if commands.len() > 64 {
-            return Err("本机 Strata 进程超过检测上限，无法安全自动启动".into());
-        }
         let mut hints = Vec::new();
-        for command in commands {
-            let args = split_command(&command).ok_or("无法完整解析本机 Strata 进程启动参数")?;
+        for args in windows_process_args()? {
             if !args
                 .windows(2)
                 .any(|pair| pair[0] == "-m" && pair[1] == "serve.server")
@@ -1018,6 +1090,30 @@ fn prepare_import_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn native_python_args_preserve_unicode_spaces_and_reject_incomplete_observations() {
+        use std::{ffi::OsString, os::windows::ffi::OsStringExt};
+        let args = [
+            r"C:\模型 环境\python.exe",
+            "-m",
+            "serve.server",
+            "--config",
+            r"D:\现有 模型\参数.json",
+        ]
+        .map(OsString::from);
+        assert_eq!(
+            checked_windows_args(&args).unwrap(),
+            args.iter()
+                .map(|value| value.to_str().unwrap())
+                .collect::<Vec<_>>()
+        );
+        assert!(checked_windows_args(&[]).is_err());
+        assert!(checked_windows_args(&vec![OsString::from("x"); 257]).is_err());
+        assert!(checked_windows_args(&[OsString::from("x".repeat(128 * 1024 + 1))]).is_err());
+        assert!(checked_windows_args(&[OsString::from_wide(&[0xd800])]).is_err());
+    }
 
     fn test_python() -> Option<String> {
         #[cfg(windows)]

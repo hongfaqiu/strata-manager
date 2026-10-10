@@ -16,12 +16,12 @@ const zh = {
   pcie: 'PCIe 预算', mtp: 'MTP 阈值', gain: '生成速度收益', drift: '基线漂移', result: '重复测量结论', apply: '应用并验证',
   restore: '恢复原参数', noRecommendation: '没有发现可靠收益，继续使用当前参数。', recommended: '已通过重复收益和输出一致性检查。',
   details: '测量明细', scene: '场景', role: '位置', cache: '提示缓存', ttft: '首 Token', visible: '首个正文', speed: '生成速度',
-  output: '输出 Token', quality: '完整性 / 输出一致性', ok: '通过', mismatch: '未通过', export: '导出报告',
+  output: '输出 Token', quality: '输出检查', ok: '通过', mismatch: '未通过', export: '导出报告',
   distinctPrompt: '独立提示', repeatedPrefix: '重复前缀', baselineBefore: '前基线', candidate: '候选', baselineAfter: '后基线',
   checking: '检查模型与环境', running: '测量中', canceling: '正在取消', completed: '测量完成', canceled: '已取消', failed: '测量失败',
   interrupted: '测量中断', applying: '正在应用与验证', applied: '已应用', rollingBack: '正在恢复', restored: '已恢复',
   reproducibleGain: '收益可重复', noReliableGain: '收益未超过漂移', qualityMismatch: '输出质量不一致', incomplete: '输出不完整', missingMetrics: '缺少性能数据',
-  explanation: '独立提示与重复前缀区分缓存条件；首 Token 与首个正文区分思考时间。收益来自本次测量，不代表其他机器或所有任务。',
+  explanation: '检查输出完整性与重复结果一致性；代码场景还检查合并算法在空列表、重复值等输入上的正确性。收益来自本次测量，不代表完整项目或所有任务。',
 };
 const en: Record<keyof typeof zh, string> = {
   title: 'Measure tuning on this computer', intro: 'Compare parameters with the same model and representative tasks. Review repeated measurements and output checks before applying.',
@@ -32,12 +32,12 @@ const en: Record<keyof typeof zh, string> = {
   pcie: 'PCIe budget', mtp: 'MTP threshold', gain: 'Decode speed gain', drift: 'Baseline drift', result: 'Repeated measurement result', apply: 'Apply and verify',
   restore: 'Restore original parameters', noRecommendation: 'No reliable gain was found. Keep the current parameters.', recommended: 'Passed repeated performance and output consistency checks.',
   details: 'Measurement details', scene: 'Scenario', role: 'Position', cache: 'Prompt cache', ttft: 'First token', visible: 'First visible text', speed: 'Decode speed',
-  output: 'Output tokens', quality: 'Completion / output consistency', ok: 'Passed', mismatch: 'Not passed', export: 'Export report',
+  output: 'Output tokens', quality: 'Output checks', ok: 'Passed', mismatch: 'Not passed', export: 'Export report',
   distinctPrompt: 'Distinct prompt', repeatedPrefix: 'Repeated prefix', baselineBefore: 'Baseline before', candidate: 'Candidate', baselineAfter: 'Baseline after',
   checking: 'Checking model and environment', running: 'Measuring', canceling: 'Canceling', completed: 'Measurement complete', canceled: 'Canceled', failed: 'Measurement failed',
   interrupted: 'Measurement interrupted', applying: 'Applying and verifying', applied: 'Applied', rollingBack: 'Restoring', restored: 'Restored',
   reproducibleGain: 'Reproducible gain', noReliableGain: 'Gain below measured drift', qualityMismatch: 'Output quality mismatch', incomplete: 'Incomplete output', missingMetrics: 'Missing performance data',
-  explanation: 'Distinct prompts and repeated prefixes separate cache conditions. First token and first visible text separate reasoning time. Gains describe this measurement, not every computer or workload.',
+  explanation: 'Checks require complete, consistent outputs. Code also checks the merge algorithm on inputs including empty lists and duplicates. Gains describe this measurement, not a complete project or every workload.',
 };
 const activeStates = new Set<TuningJob['state']>(['checking', 'running', 'canceling', 'applying', 'rollingBack']);
 const cancelableStates = new Set<TuningJob['state']>(['checking', 'running', 'canceling']);

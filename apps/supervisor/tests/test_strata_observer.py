@@ -194,6 +194,45 @@ class ObserverHttp(unittest.TestCase):
         self.assertIsNone(end["inputTokens"])
         self.assertFalse(self.events("run_end"))
 
+    def test_actual_loaded_model_is_metadata_not_request_model_or_alias(self):
+        self.start()
+        self.svc.model = "actual-loaded-model"
+        self.svc.aliases = ["public-alias"]
+        status, text = self.post("/v1/chat/completions", {
+            "model": "public-alias", "messages": [{"role": "user", "content": "PRIVATE_PROMPT_MODEL_TEST"}], "max_tokens": 64,
+        })
+        self.assertEqual(status, 200, text)
+        self.assertEqual(self.events("request_start")[0]["modelId"], "actual-loaded-model")
+        self.assertEqual(self.events("request_end")[0]["modelId"], "actual-loaded-model")
+        self.assertNotIn("public-alias", json.dumps(self.events()))
+        self.assertNotIn("PRIVATE_PROMPT_MODEL_TEST", json.dumps(self.events()))
+
+    def test_unloaded_missing_or_unsafe_model_identity_stays_unknown(self):
+        self.start()
+        for identity, loaded in [("not-loaded", False), (None, True), ("C:\\private\\weights.gguf", True), ("C:/private/weights.gguf", True), ("/private/weights.gguf", True), ("=HYPERLINK(private)", True)]:
+            self.svc.model = identity
+            self.svc.loaded = lambda: loaded
+            status, text = self.post("/v1/messages/count_tokens", {"model": "PRIVATE_REQUEST_MODEL", "messages": [{"role": "user", "content": "hi"}]})
+            self.assertEqual(status, 200, text)
+            self.assertIsNone(self.events("request_start")[-1]["modelId"])
+            self.assertIsNone(self.events("request_end")[-1]["modelId"])
+        self.assertNotIn("PRIVATE_REQUEST_MODEL", json.dumps(self.events()))
+
+    def test_lazy_request_records_model_only_after_actual_load(self):
+        self.start()
+        self.svc.model = "lazy-loaded-model"
+        original = self.svc.begin_request
+        loaded = [False]
+        self.svc.loaded = lambda: loaded[0]
+        def begin(*args, **kwargs):
+            loaded[0] = True
+            return original(*args, **kwargs)
+        self.svc.begin_request = begin
+        status, text = self.post("/v1/chat/completions", {"messages": [{"role": "user", "content": "hello"}], "max_tokens": 64})
+        self.assertEqual(status, 200, text)
+        self.assertIsNone(self.events("request_start")[0]["modelId"])
+        self.assertEqual(self.events("request_end")[0]["modelId"], "lazy-loaded-model")
+
     def test_maintenance_drains_existing_request_and_blocks_new_admission(self):
         self.start("</think>\n\n"+"xy"*80, delay=0.002)
         box={}

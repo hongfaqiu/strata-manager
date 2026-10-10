@@ -5,6 +5,7 @@ import { lifecycleEn, lifecycleZh } from './LifecycleStrings';
 
 export const zh = {
   ...lifecycleZh,
+  backgroundHealth: '后台健康检查', backgroundHealth_healthy: 'API 健康', backgroundHealth_checking: '正在确认 API 异常', backgroundHealth_degraded: 'API 连续异常', backgroundHealth_deferred: '忙碌或维护中，延后检查', backgroundHealth_unknown: '尚无法确认完整状态', backgroundHealth_stopped: '已停止', backgroundHealth_stale: '等待重新检查', backgroundHealthCheckedAt: '检查时间', backgroundHealthObservationUnknown: 'API 可用，活动请求状态尚无法确认。', backgroundHealthPreserved: '当前进程已保留。可查看诊断或稍后重试。',
   tuning: '参数调优', localSetup: '本机设置', supervisorRunning: '后台正在运行', supervisorOffline: '后台不可用', preparingLocal: '正在启动并准备模型', backgroundKeepsServing: '关闭界面后仍可使用本机 API',
   desktopNavigation: '工作台导航', desktopLocalWorkspace: '本机工作台',
   modelWorkspace: '模型', myModels: '我的模型', downloadModels: '下载模型',
@@ -60,6 +61,7 @@ export const zh = {
 } as const;
 export type TextKey = keyof typeof zh;
 const en: Record<TextKey, string> = {
+  backgroundHealth: 'Background health check', backgroundHealth_healthy: 'API healthy', backgroundHealth_checking: 'Verifying an API failure', backgroundHealth_degraded: 'Repeated API failures', backgroundHealth_deferred: 'Busy or under maintenance; check deferred', backgroundHealth_unknown: 'Full state not yet verified', backgroundHealth_stopped: 'Stopped', backgroundHealth_stale: 'Waiting for a fresh check', backgroundHealthCheckedAt: 'Last checked', backgroundHealthObservationUnknown: 'API available; request activity has not been verified.', backgroundHealthPreserved: 'The current process has been preserved. View diagnostics or retry later.',
   ...lifecycleEn,
   tuning: 'Tuning', localSetup: 'Local setup', supervisorRunning: 'Background running', supervisorOffline: 'Background unavailable', preparingLocal: 'Starting and preparing model', backgroundKeepsServing: 'The local API remains available after closing the interface',
   desktopNavigation: 'Workspace navigation', desktopLocalWorkspace: 'Local workspace',

@@ -1,18 +1,18 @@
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Activity, ArrowRight, MessageSquare, Plus, RefreshCw, Server, Settings2 } from 'lucide-react';
-import { normalizeBaseUrl, type JsonObject, type MetricSnapshot, type ProcessStatus, type ServiceProfile, type TaskStatus } from '@strata-manager/core';
+import { normalizeBaseUrl, type BackgroundHealthSnapshot, type JsonObject, type MetricSnapshot, type ProcessStatus, type ServiceProfile, type TaskStatus } from '@strata-manager/core';
 import { Badge, Empty, Metric, Panel } from '../components';
 
 interface OverviewPageProps {
-  profile?:ServiceProfile;health:JsonObject;metric?:MetricSnapshot;process?:ProcessStatus;tasks:TaskStatus[];language:'zh-CN'|'en';
+  profile?:ServiceProfile;health:JsonObject;backgroundHealth?:BackgroundHealthSnapshot;metric?:MetricSnapshot;process?:ProcessStatus;tasks:TaskStatus[];language:'zh-CN'|'en';
   online:boolean;connecting:boolean;desktop:boolean;tasksLoading:boolean;healthError?:string;metricsError?:string;taskError?:string;processError?:string;
   controls:ReactNode;usage?:ReactNode;stateLabel:(state:string)=>string;onRefresh:()=>void;onCreateProfile:()=>void;onChat:()=>void;
   onNavigate:(page:'monitoring'|'config'|'tasks'|'requests'|'profiles')=>void;
 }
 const obj=(v:unknown):JsonObject=>v&&typeof v==='object'&&!Array.isArray(v)?v as JsonObject:{};
 const num=(v:unknown):number|null=>typeof v==='number'&&Number.isFinite(v)?v:null;
-export function OverviewPage({profile,health,metric,process,tasks,language,online,connecting,desktop,tasksLoading,healthError,metricsError,taskError,processError,controls,usage,stateLabel,onRefresh,onCreateProfile,onChat,onNavigate}:OverviewPageProps) {
+export function OverviewPage({profile,health,backgroundHealth,metric,process,tasks,language,online,connecting,desktop,tasksLoading,healthError,metricsError,taskError,processError,controls,usage,stateLabel,onRefresh,onCreateProfile,onChat,onNavigate}:OverviewPageProps) {
   const {t}=useTranslation();const fmt=(v:unknown,d=1)=>num(v)===null?'–':num(v)!.toLocaleString(language,{maximumFractionDigits:d});
   const bytes=(v:unknown)=>num(v)===null?'–':`${fmt(num(v)!/1024**3)} GB`;
   const engine=obj(metric?.raw.engine),live=obj(metric?.raw.live),last=metric?.requests[0];
@@ -23,11 +23,21 @@ export function OverviewPage({profile,health,metric,process,tasks,language,onlin
   let endpoint='–';if(profile){try{endpoint=`${normalizeBaseUrl(profile.baseUrl)}/v1`;}catch{endpoint=profile.baseUrl;}}
   const running=tasks.filter(task=>task.state==='running');
   const ownership=!profile?.managed?t('external'):!desktop?t('nativeRequired'):process?t(process.owned?'owned':'unownedProcess'):t('noProcessEvidence');
+  const currentBackgroundHealth = backgroundHealth && process?.running && process.owned
+    && backgroundHealth.pid === process.pid && backgroundHealth.checkedAt > 0
+    && Date.now() - backgroundHealth.checkedAt < 65_000 ? backgroundHealth : undefined;
+  const backgroundPhase = currentBackgroundHealth?.phase ?? 'stale';
   const jump=(page:'monitoring'|'config'|'tasks'|'requests'|'profiles',label:string)=> <button className="text-button" onClick={()=>onNavigate(page)}>{label}<ArrowRight size={14}/></button>;
   return <div className="overview-page"><div className="overview-intro"><p>{t('overviewIntro')}</p><button onClick={onRefresh}><RefreshCw size={15}/>{t('refresh')}</button></div>
     {!profile?<Empty title={t('noProfile')} hint={t('noProfileHint')}><button className="primary" onClick={onCreateProfile}><Plus size={16}/>{t('createProfile')}</button></Empty>:<>
       <section className="service-hero"><div className="hero-icon"><Server size={30} strokeWidth={1.5}/></div><div className="hero-copy"><div className="eyebrow">{t('service')}</div><h2>{profile.name}</h2><div className="hero-meta"><code>{profile.baseUrl}</code><Badge>{t(desktop && process?.owned !== true ? 'importedAwaitingPreparation' : 'managedLabel')}</Badge></div></div><div className="hero-state"><Badge tone={online?'positive':'muted'}>{t(connecting?'connecting':online?'online':'offline')}</Badge><span>{online?t(health.loaded===true?'loaded':'notLoaded'):'–'}</span></div></section>
       {healthError&&<div className="notice error" role="alert">{healthError}</div>}
+      {desktop && process?.owned && process.running && <div className="info-list" aria-label={t('backgroundHealth')}>
+        <div><span>{t('backgroundHealth')}</span><Badge tone={backgroundPhase === 'healthy' ? 'positive' : backgroundPhase === 'degraded' ? 'warning' : 'muted'}>{t(`backgroundHealth_${backgroundPhase}`)}</Badge></div>
+        {currentBackgroundHealth && <div><span>{t('backgroundHealthCheckedAt')}</span><time dateTime={new Date(currentBackgroundHealth.checkedAt).toISOString()}>{new Date(currentBackgroundHealth.checkedAt).toLocaleTimeString(language)}</time></div>}
+        {currentBackgroundHealth && backgroundPhase === 'unknown' && currentBackgroundHealth.apiHealthy && <p className="subtle">{t('backgroundHealthObservationUnknown')}</p>}
+        {currentBackgroundHealth && backgroundPhase === 'degraded' && <p className="subtle" role="status">{t('backgroundHealthPreserved')}</p>}
+      </div>}
       {usage}
       <div className="metrics-grid four"><Metric label={t('decode')} value={fmt(metric?.decodeTokS)} unit="tok/s"/><Metric label={t('gpuUtil')} value={fmt(metric?.gpuUtil)} unit="%"/><Metric label={t('activeRequests')} value={fmt(metric?.running,0)}/><Metric label={t('queued')} value={fmt(metric?.queued,0)}/></div>
       <div className="overview-grid"><Panel title={t('health')} action={jump('profiles',t('profiles'))}><div className="info-list"><div><span>{t('model')}</span><strong>{String(health.model??engine.model??'–')}</strong></div><div><span>{t('modelState')}</span><strong>{online?t(health.loaded===true?'loaded':'notLoaded'):'–'}</strong></div><div><span>{t('status')}</span><strong>{metric?stateLabel(metric.state):'–'}</strong></div><div><span>{t('endpoint')}</span><code>{endpoint}</code></div><div><span>{t('processOwnership')}</span><strong>{ownership}</strong></div>{profile.managed&&desktop&&<div><span>{t('process')}</span><strong>{process?t(process.running?'running':'stopped'):'–'}{process?.pid?` · ${t('pid')} ${process.pid}`:''}</strong></div>}<div><span>{t('images')}</span><strong>{typeof health.images==='boolean'?t(health.images?'enabledOn':'enabledOff'):'–'}</strong></div></div>{processError&&<div className="notice error" role="alert">{processError}</div>}</Panel>

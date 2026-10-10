@@ -1,6 +1,7 @@
 pub mod analytics;
 pub mod discovery;
 pub mod external;
+pub mod health_watch;
 pub mod http;
 pub mod installation;
 pub mod legacy;
@@ -8,6 +9,7 @@ pub mod maintenance;
 pub mod observer;
 pub mod policy;
 pub mod processes;
+pub mod runtime_upgrade;
 pub mod setup_handoff;
 pub mod storage;
 pub mod store;
@@ -54,11 +56,13 @@ pub struct RuntimeState {
     ensure_locks: tokio::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     shutting_down: AtomicBool,
     recovery: Mutex<RecoveryStatus>,
+    health_snapshots: Mutex<HashMap<String, health_watch::HealthSnapshot>>,
     executable_path: PathBuf,
     executable_hash: String,
     selection_lock: tokio::sync::Mutex<()>,
     selection_changing: AtomicBool,
     legacy_migration: Mutex<()>,
+    runtime_upgrading: AtomicBool,
 }
 impl RuntimeState {
     pub fn open(data_dir: PathBuf) -> Result<Arc<Self>, String> {
@@ -99,12 +103,15 @@ impl RuntimeState {
             ensure_locks: tokio::sync::Mutex::new(HashMap::new()),
             shutting_down: AtomicBool::new(false),
             recovery: Mutex::new(RecoveryStatus::default()),
+            health_snapshots: Mutex::new(HashMap::new()),
             executable_path,
             executable_hash,
             selection_lock: tokio::sync::Mutex::new(()),
             selection_changing: AtomicBool::new(false),
             legacy_migration: Mutex::new(()),
+            runtime_upgrading: AtomicBool::new(false),
         });
+        runtime_upgrade::recover(&state)?;
         tuning::recover_pending_configs(&state)?;
         setup_handoff::recover(&state)?;
         Ok(state)
@@ -187,7 +194,7 @@ impl RuntimeState {
             }
         }
         Ok(
-            json!({"running":true,"pid":std::process::id(),"protocolVersion":1,"startedAt":self.started_at,"activeServices":active_services,"dataDir":self.data_dir,"version":env!("CARGO_PKG_VERSION"),"executablePath":self.executable_path,"executableHash":self.executable_hash,"recovery":*self.recovery.lock().map_err(|e|e.to_string())?,"migration":legacy::report(self)?,"preparationFailures":store_get(self,"localPreparationFailures".into())?.as_object().map(|entries|entries.values().cloned().collect::<Vec<_>>()).unwrap_or_default()}),
+            json!({"running":true,"pid":std::process::id(),"protocolVersion":1,"startedAt":self.started_at,"activeServices":active_services,"dataDir":self.data_dir,"version":env!("CARGO_PKG_VERSION"),"executablePath":self.executable_path,"executableHash":self.executable_hash,"recovery":*self.recovery.lock().map_err(|e|e.to_string())?,"health":*self.health_snapshots.lock().map_err(|e|e.to_string())?,"migration":legacy::report(self)?,"preparationFailures":store_get(self,"localPreparationFailures".into())?.as_object().map(|entries|entries.values().cloned().collect::<Vec<_>>()).unwrap_or_default()}),
         )
     }
     pub fn data_dir(&self) -> &Path {
@@ -199,18 +206,18 @@ impl RuntimeState {
         }
         let selected = store_get(&self, "activeLocalInstallation".into())?;
         if let Some(profile_id) = selected.as_str() {
-            let preload = policy::get(&self)?.mode == "alwaysReady";
+            let preload = runtime_upgrade::recovery_load(&self, profile_id)?
+                .unwrap_or(policy::get(&self)?.mode == "alwaysReady");
             self.clone()
                 .ensure_runtime(profile_id.into(), preload)
                 .await?;
+            runtime_upgrade::clear_recovery_load(&self, profile_id)?;
         }
         Ok(())
     }
     pub async fn recover_tick(self: Arc<Self>) -> Result<(), String> {
         if self.shutting_down.load(Ordering::Acquire)
             || self.selection_changing.load(Ordering::Acquire)
-            || !policy::get(&self)?.auto_recover
-            || store_get(&self, "localServiceDesired".into())?.as_bool() == Some(false)
         {
             return Ok(());
         }
@@ -218,6 +225,14 @@ impl RuntimeState {
         let Some(id) = selected.as_str() else {
             return Ok(());
         };
+        if store_get(&self, "localServiceDesired".into())?.as_bool() == Some(false) {
+            self.health_snapshots
+                .lock()
+                .map_err(|e| e.to_string())?
+                .remove(id);
+            return Ok(());
+        }
+        let policy = policy::get(&self)?;
         let running = self
             .processes
             .lock()
@@ -226,15 +241,46 @@ impl RuntimeState {
             .map(|p| p.refresh())
             .transpose()?
             .is_some_and(|p| p.running);
-        if running {
-            let mut recovery = self.recovery.lock().map_err(|e| e.to_string())?;
-            if recovery.last_started_at > 0
-                && now().saturating_sub(recovery.last_started_at) >= 60_000
+        let preload = if running {
+            let previous = self
+                .health_snapshots
+                .lock()
+                .map_err(|e| e.to_string())?
+                .get(id)
+                .cloned();
+            let health = health_watch::check(&self, id, previous.as_ref()).await?;
             {
-                *recovery = RecoveryStatus::default();
+                let mut snapshots = self.health_snapshots.lock().map_err(|e| e.to_string())?;
+                snapshots.retain(|profile_id, _| profile_id == id);
+                snapshots.insert(id.into(), health.snapshot);
             }
-            return Ok(());
-        }
+            if health.recovery_may_reset && health.action == health_watch::HealthAction::None {
+                let mut recovery = self.recovery.lock().map_err(|e| e.to_string())?;
+                if recovery.last_started_at > 0
+                    && now().saturating_sub(recovery.last_started_at) >= 60_000
+                {
+                    *recovery = RecoveryStatus::default();
+                }
+            }
+            if health.action != health_watch::HealthAction::Preload || !policy.auto_recover {
+                return Ok(());
+            }
+            true
+        } else {
+            self.health_snapshots
+                .lock()
+                .map_err(|e| e.to_string())?
+                .remove(id);
+            if !policy.auto_recover
+                || self.runtime_upgrading.load(Ordering::Acquire)
+                || self.runtime_operations.try_lock().is_err()
+                || self.selection_lock.try_lock().is_err()
+                || tuning::assert_no_active_tuning(&self).is_err()
+            {
+                return Ok(());
+            }
+            policy.mode == "alwaysReady"
+        };
         if self
             .ensure_locks
             .lock()
@@ -258,10 +304,7 @@ impl RuntimeState {
             recovery.next_retry_at =
                 now() + [2_000, 5_000, 15_000][usize::from(recovery.attempts - 1)];
         }
-        let result = self
-            .clone()
-            .ensure_runtime(id.into(), policy::get(&self)?.mode == "alwaysReady")
-            .await;
+        let result = self.clone().ensure_runtime(id.into(), preload).await;
         let mut recovery = self.recovery.lock().map_err(|e| e.to_string())?;
         match result {
             Ok(_) => {
@@ -334,6 +377,7 @@ impl RuntimeState {
         Ok(())
     }
     pub async fn prepare_shutdown(self: Arc<Self>) -> Result<(), String> {
+        runtime_upgrade::assert_available(&self)?;
         if self.selection_changing.load(Ordering::Acquire) {
             return Err("正在切换模型，请完成后再停止后台".into());
         }
@@ -348,6 +392,7 @@ impl RuntimeState {
         result
     }
     pub async fn prepare_upgrade(self: Arc<Self>) -> Result<(), String> {
+        runtime_upgrade::assert_available(&self)?;
         if self.selection_changing.load(Ordering::Acquire) {
             return Err("正在切换模型，请完成后再更新后台".into());
         }
@@ -490,6 +535,56 @@ impl RuntimeState {
             serde_json::to_value(result?).map_err(|e| e.to_string())
         }
         let profile = || self.authoritative_profile(arg(&params, "profile")?);
+        if matches!(
+            method,
+            "start_service"
+                | "stop_service"
+                | "restart_service"
+                | "take_over_service"
+                | "run_setup"
+                | "install_runtime"
+                | "prepare_local_runtime"
+                | "write_config"
+                | "set_api_key"
+                | "import_local"
+                | "resolve_setup_handoff"
+                | "rename_local_installation"
+                | "remove_local_installation"
+                | "ensure_local_service"
+                | "switch_local_service"
+                | "tuning_start"
+                | "tuning_apply"
+                | "tuning_restore"
+                | "set_background_policy"
+                | "prepare_app_update"
+        ) {
+            runtime_upgrade::assert_available(&self)?;
+        }
+        if method == "strata_request"
+            && params
+                .get("method")
+                .and_then(Value::as_str)
+                .is_some_and(|m| m != "GET")
+            && params.get("path").and_then(Value::as_str).is_some_and(|p| {
+                matches!(
+                    p,
+                    "/load"
+                        | "/unload"
+                        | "/v1/load"
+                        | "/v1/unload"
+                        | "/v1/vram"
+                        | "/api/load"
+                        | "/api/unload"
+                        | "/config"
+                        | "/settings"
+                        | "/api/settings"
+                        | "/mcp"
+                        | "/api/mcp"
+                )
+            })
+        {
+            runtime_upgrade::assert_available(&self)?;
+        }
         if self.selection_changing.load(Ordering::Acquire)
             && matches!(
                 method,
@@ -604,6 +699,8 @@ impl RuntimeState {
             "has_api_key" => value(has_api_key(arg(&params, "profileId")?)),
             "start_service" => value(start_service(self.clone(), profile()?).await),
             "stop_service" => {
+                let _selection = self.selection_lock.lock().await;
+                runtime_upgrade::assert_available(&self)?;
                 let id: String = arg(&params, "profileId")?;
                 if store_get(&self, "activeLocalInstallation".into())?.as_str() == Some(&id) {
                     store_set(&self, "localServiceDesired".into(), json!(false))?;
@@ -634,7 +731,10 @@ impl RuntimeState {
                 arg(&params, "images")?,
             )),
             "install_runtime" => value(install_runtime(&self, arg(&params, "directory")?)),
-            "update_runtime" => value(update_runtime(&self, profile()?)),
+            "update_runtime" => value(runtime_upgrade::start(self.clone(), profile()?.id)),
+            "runtime_upgrade_status" => {
+                value(runtime_upgrade::status(&self, arg(&params, "profileId")?))
+            }
             "list_tasks" => value(list_tasks(&self)),
             "list_setup_handoffs" => value(setup_handoff::list(&self)),
             "resolve_setup_handoff" => {
@@ -722,6 +822,7 @@ impl RuntimeState {
 
     fn import_local(&self, candidate: discovery::LocalCandidate) -> Result<ServiceProfile, String> {
         let _operation = self.runtime_operations.lock().map_err(|e| e.to_string())?;
+        runtime_upgrade::assert_available(self)?;
         // The pure helper revalidates all candidate files; no caller-supplied
         // executable or URL becomes authoritative without this validation.
         let prepared = discovery::prepare_import(&candidate, &self.data_dir, None)?;
@@ -730,6 +831,7 @@ impl RuntimeState {
 
     fn import_legacy_local(&self, previous: ServiceProfile) -> Result<ServiceProfile, String> {
         let _operation = self.runtime_operations.lock().map_err(|e| e.to_string())?;
+        runtime_upgrade::assert_available(self)?;
         let prepared = discovery::prepare_legacy_import(&previous, &self.data_dir)?;
         self.register_import(prepared, Some(previous))
     }
@@ -820,6 +922,7 @@ impl RuntimeState {
         }
         let _operation = self.runtime_operations.lock().map_err(|e| e.to_string())?;
         let mut profile = self.registered_profile(&id)?;
+        runtime_upgrade::assert_available(self)?;
         profile.name = name.into();
         self.database
             .lock()
@@ -836,6 +939,7 @@ impl RuntimeState {
     }
     fn remove_local_installation(&self, id: String) -> Result<(), String> {
         let _operation = self.runtime_operations.lock().map_err(|e| e.to_string())?;
+        runtime_upgrade::assert_available(self)?;
         if self
             .processes
             .lock()
@@ -926,6 +1030,7 @@ impl RuntimeState {
         profile_id: String,
     ) -> Result<ProcessStatus, String> {
         let _selection = self.selection_lock.lock().await;
+        runtime_upgrade::assert_available(&self)?;
         if self.shutting_down.load(Ordering::Acquire) {
             return Err("后台正在退出，未切换模型".into());
         }
@@ -1062,6 +1167,7 @@ impl RuntimeState {
         let startup_profile = profile.clone();
         tokio::task::spawn_blocking(move || {
             let _operation = state.runtime_operations.lock().map_err(|e| e.to_string())?;
+            runtime_upgrade::assert_available(&state)?;
             if state.shutting_down.load(Ordering::Acquire) {
                 return Err("后台正在退出，停止新服务启动".into());
             }
@@ -1272,6 +1378,7 @@ async fn start_service(
 ) -> Result<ProcessStatus, String> {
     tokio::task::spawn_blocking(move || {
         let _operation = state.runtime_operations.lock().map_err(|e| e.to_string())?;
+        runtime_upgrade::assert_available(&state)?;
         start_service_locked(&state, profile)
     })
     .await
@@ -1443,6 +1550,7 @@ fn start_prepared_service(
     Ok(status)
 }
 async fn stop_service(state: &RuntimeState, profile_id: String) -> Result<ProcessStatus, String> {
+    runtime_upgrade::assert_available(state)?;
     let profile = {
         let mut processes = state.processes.lock().map_err(|e| e.to_string())?;
         match processes.get_mut(&profile_id) {
@@ -1611,6 +1719,7 @@ async fn restart_service(
 ) -> Result<ProcessStatus, String> {
     tokio::task::spawn_blocking(move || {
         let _operation = state.runtime_operations.lock().map_err(|e| e.to_string())?;
+        runtime_upgrade::assert_available(&state)?;
         let secret = http::key(&profile.id)?;
         let plan = prepare_owned_restart(&profile, &state.processes, &state.tasks)?;
         start_prepared_service(&state, profile, plan, secret)
@@ -1635,6 +1744,7 @@ async fn take_over_service(
 ) -> Result<ProcessStatus, String> {
     tokio::task::spawn_blocking(move || {
         let _operation = state.runtime_operations.lock().map_err(|e| e.to_string())?;
+        runtime_upgrade::assert_available(&state)?;
         assert_stopped(&state, &profile)?;
         let plan = prepare_startup(&profile, &state.processes, &state.tasks)?;
         let secret = http::key(&profile.id)?;
@@ -1882,6 +1992,7 @@ fn run_setup(
     images: bool,
 ) -> Result<TaskStatus, String> {
     let _operation = state.runtime_operations.lock().map_err(|e| e.to_string())?;
+    runtime_upgrade::assert_available(&state)?;
     let root = processes::runtime_dir(&profile)?;
     assert_stopped(&state, &profile)?;
     if !(512..=1_048_576).contains(&context) {
@@ -1945,94 +2056,12 @@ fn run_setup(
 }
 fn install_runtime(state: &RuntimeState, directory: String) -> Result<TaskStatus, String> {
     let _operation = state.runtime_operations.lock().map_err(|e| e.to_string())?;
+    runtime_upgrade::assert_available(state)?;
     processes::launch_install(
         state.tasks.clone(),
         state.logs.clone(),
         state.database.clone(),
         Path::new(&directory),
-    )
-}
-fn update_runtime(state: &RuntimeState, profile: ServiceProfile) -> Result<TaskStatus, String> {
-    let _operation = state.runtime_operations.lock().map_err(|e| e.to_string())?;
-    let root = processes::runtime_dir(&profile)?;
-    assert_stopped(state, &profile)?;
-    let root_arg = root.to_string_lossy();
-    let remote = output("git", &["-C", &root_arg, "remote", "get-url", "origin"])
-        .ok_or("该运行环境没有可识别的 Git origin；请新建官方运行环境")?;
-    if ![
-        "https://github.com/Niko1221/Strata.git",
-        "https://github.com/Niko1221/Strata",
-        "git@github.com:Niko1221/Strata.git",
-    ]
-    .contains(&remote.as_str())
-    {
-        return Err("更新只支持官方 Niko1221/Strata origin".into());
-    }
-    let dirty = output(
-        "git",
-        &[
-            "-C",
-            &root_arg,
-            "status",
-            "--porcelain",
-            "--untracked-files=no",
-        ],
-    )
-    .ok_or("无法读取 Git 工作区状态")?;
-    if !dirty.is_empty() {
-        return Err("运行环境有已跟踪文件改动，更新已拒绝；请先保存这些修改".into());
-    }
-    for entry in fs::read_dir(&root).map_err(|e| e.to_string())? {
-        let path = entry.map_err(|e| e.to_string())?.path();
-        if path
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .starts_with("strata-")
-            && path.extension().is_some_and(|x| x == "json")
-        {
-            storage::backup(&path)?;
-        }
-    }
-    let revision = output("git", &["-C", &root_arg, "rev-parse", "HEAD"]).unwrap_or_default();
-    processes::log(
-        &state.logs,
-        &profile.id,
-        "info",
-        format!("更新前源码版本: {revision}；配置已备份；仅允许 fast-forward"),
-    );
-    let (setup_python, mut steps) = processes::setup_python(&profile, &root)?;
-    steps.extend(vec![
-        Step {
-            program: "git".into(),
-            args: vec![
-                "pull".into(),
-                "--ff-only".into(),
-                "origin".into(),
-                "main".into(),
-            ],
-            cwd: root.clone(),
-        },
-        Step {
-            program: setup_python,
-            args: vec![
-                "-u".into(),
-                "setup.py".into(),
-                "--update".into(),
-                "--yes".into(),
-                "--no-start".into(),
-                "--no-browser".into(),
-            ],
-            cwd: root,
-        },
-    ]);
-    processes::launch_task(
-        state.tasks.clone(),
-        state.logs.clone(),
-        state.database.clone(),
-        "update",
-        Some(profile.id),
-        steps,
     )
 }
 fn list_tasks(state: &RuntimeState) -> Result<Vec<TaskStatus>, String> {

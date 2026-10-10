@@ -79,6 +79,10 @@ Success rate uses completed requests; unfinished requests are excluded. Failures
 
 Check collection state and coverage before interpreting a quiet chart. Older or modified runtimes may not be supported, and collection gaps are labeled. Metadata from before observation began cannot be reconstructed as complete usage history. Large model loads, long prompts and tool calls can explain latency without indicating a service fault.
 
+Request history supports custom times, client, actual model, outcome and time order, with pagination. Pages keep the same boundary for newly ingested records until refreshed; an active request can still acquire its final status. Older records without an observed model remain unknown rather than being assigned the current model.
+
+CSV export opens the system save dialog and exports metadata matching the current range and filters. Each export allows at most 5,000 rows; narrow the range or filters for larger results. Cancelling the dialog writes no file. Prompts, responses, reasoning, tool arguments and keys are excluded.
+
 ## Local storage and privacy
 
 Usage analytics records metadata without prompts, responses, reasoning, attachments, tool arguments or API keys. Chat history and attachments are stored separately on your computer; metadata-only collection does not mean the app stores no conversation content.
@@ -93,7 +97,7 @@ Choose a use case and run a comparison. Manager measures limited candidates in *
 
 Review duration, first-output latency, decode speed, caching and output consistency together. A recommendation requires a benefit greater than the measured baseline drift; unstable results do not justify a change.
 
-Current consistency checks require complete, identical deterministic test outputs. Matching output hashes do not establish semantic quality. These probes do not replace a full Agent workload, vision tests, long-context quality, session recovery or cold-load testing. Automatic comparison currently covers limited request-level settings; context, KV and startup settings also need capacity and quality checks.
+Consistency checks require complete, identical deterministic outputs. Code also checks `merge_sorted(a,b)` against empty lists, duplicates, negative numbers, unequal lengths and fixed randomized inputs, including preservation of the input lists. Only a limited Python syntax for this task is supported; generated Python is not executed and unsupported forms cannot qualify for a recommendation. Old Code reports remain readable and applied settings remain restorable; applying them again requires a new measurement. These probes do not replace a full Agent workload, general code-quality evaluation, vision, long-context quality, session recovery or cold-load testing. Automatic comparison currently covers limited request-level settings; context, KV and startup settings also need capacity and quality checks.
 
 Applying a result saves a recovery record, restarts the owned service and checks model loading. A failed application restores the original configuration. This briefly affects the local API; avoid concurrent maintenance and active client work when applying a change. Cancellation affects the comparison's own request.
 
@@ -105,9 +109,15 @@ Settings supports automatic update checks, manual checking and explicit installa
 
 Application, Strata runtime and model weights are separate. Updating Manager does not normally require another model-weight download. Read the version's release notes for restart and recovery behavior.
 
-**Current acceptance status:** the first formal release has not been published. Linux CI has built AppImage and DEB previews. Windows installer verification is waiting on a background-upgrade identity check. Node's real-signature release checks and Linux Rust signature tests have passed, but installing a signed update from a previous version and restoring the service still need acceptance. Follow the [verification record](VERIFICATION.md) for current evidence.
+**Current acceptance status:** the first formal release has not been published. Linux CI has built AppImage and DEB previews. Windows background handover, standard venv identity and existing-installation migration tests have passed locally; the latest cross-platform CI and Windows installer verification remain pending. Node's real-signature release checks and Rust signature tests have passed, but installing a signed update from a previous version and restoring the service still need acceptance. Follow the [verification record](VERIFICATION.md) for current evidence.
 
 Tauri update signatures are separate from Windows Authenticode publisher signing. The project does not currently claim a Windows publisher certificate. A successful signature test does not by itself prove installer behavior, background handover or model restoration.
+
+## Update the Strata runtime
+
+Use **Models → Details and management → Check and update Strata** and follow the task progress after confirming. The background prepares a reviewed version, private Python environment and engine in a new directory, reusing the original model and tokenizer. The original installation and configuration are retained. The current API remains available during preparation; switching waits for active work and briefly closes admission to new requests. Failed or cancelled candidate checks restore the previous registration and loaded state.
+
+The current candidate is fixed to Strata 0.1.41, rather than automatically following upstream latest. Verified engine archives target Windows x64; a missing Linux release archive is reported without replacing the existing install. External startup hooks or ambiguous configuration semantics are rejected before stopping the service. Actual GPU, driver and model compatibility still require real acceptance evidence.
 
 ## Common questions
 

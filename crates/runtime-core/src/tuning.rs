@@ -19,6 +19,9 @@ use std::{
 };
 use tokio_util::sync::CancellationToken;
 
+#[path = "tuning_quality.rs"]
+mod quality;
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum Scene {
@@ -211,6 +214,39 @@ fn update(
     entry.job.updated_at = now();
     persist(state, &entry.job)?;
     Ok(entry.job.clone())
+}
+fn register_active(
+    state: &RuntimeState,
+    job: &TuningJob,
+    cancel: CancellationToken,
+) -> Result<(), String> {
+    let mut registry = registry().lock().map_err(|e| e.to_string())?;
+    let jobs = registry.entry(state.data_dir().to_path_buf()).or_default();
+    // Pair this locked recheck with the updater's CAS-before-tuning-check.
+    // If upgrading wins first, registration fails. If tuning registers first,
+    // the updater observes the active entry and releases its upgrade flag.
+    crate::runtime_upgrade::assert_available(state)?;
+    if state
+        .selection_changing
+        .load(std::sync::atomic::Ordering::Acquire)
+    {
+        return Err("正在切换模型，未登记调优维护任务".into());
+    }
+    if jobs.values().any(|entry| entry.job.state.active()) {
+        return Err("已有调优维护任务".into());
+    }
+    if !job.state.active() {
+        return Err("只能登记活动调优维护任务".into());
+    }
+    persist(state, job)?;
+    jobs.insert(
+        job.id.clone(),
+        Entry {
+            job: job.clone(),
+            cancel,
+        },
+    );
+    Ok(())
 }
 fn read_job(state: &RuntimeState, id: &str) -> Result<TuningJob, String> {
     if let Some(entry) = registry()
@@ -412,7 +448,7 @@ async fn read_metrics(state: &RuntimeState, profile: &ServiceProfile) -> Result<
     )
     .await
 }
-fn identity(profile: &ServiceProfile, config: &Value, metrics: &Value) -> Value {
+fn identity(profile: &ServiceProfile, config: &Value, metrics: &Value, scenes: &[Scene]) -> Value {
     fn metadata(path: &Path, hash: bool) -> Value {
         match fs::metadata(path) {
             Ok(meta) => {
@@ -457,7 +493,7 @@ fn identity(profile: &ServiceProfile, config: &Value, metrics: &Value) -> Value 
             cwd.join(path)
         }
     };
-    json!({"benchmarkVersion":"request-aba-v1","model":metrics["engine"]["model"],"engineVersion":metrics["engine"]["version"],"maxContext":metrics["engine"]["max_context"],"engineFile":config.get("exe").and_then(Value::as_str).map(|exe|metadata(&resolve(exe), true)),"runtimeSource":metadata(&Path::new(&profile.install_dir).join("serve/server.py"), true),"modelFile":model.map(|name|metadata(&resolve(name), false)),"hardware":metrics["hardware_static"],"ramTotal":metrics["hardware"]["ram_total"],"gpuMemoryTotal":metrics["hardware"]["gpu_mem_total"],"driverVersion":null,"limits":"Synthetic deterministic text probes; not complete Agent, vision, long-context or quality-suite acceptance. Model file uses size/mtime identity, not a full weight hash. Driver version is unknown."})
+    json!({"benchmarkVersion":if scenes.contains(&Scene::Code) { quality::VERSION } else { "request-aba-v1" },"model":metrics["engine"]["model"],"engineVersion":metrics["engine"]["version"],"maxContext":metrics["engine"]["max_context"],"engineFile":config.get("exe").and_then(Value::as_str).map(|exe|metadata(&resolve(exe), true)),"runtimeSource":metadata(&Path::new(&profile.install_dir).join("serve/server.py"), true),"modelFile":model.map(|name|metadata(&resolve(name), false)),"hardware":metrics["hardware_static"],"ramTotal":metrics["hardware"]["ram_total"],"gpuMemoryTotal":metrics["hardware"]["gpu_mem_total"],"driverVersion":null,"limits":"Synthetic deterministic text probes; not complete Agent, vision, long-context or quality-suite acceptance. Model file uses size/mtime identity, not a full weight hash. Driver version is unknown."})
 }
 pub async fn start(
     state: Arc<RuntimeState>,
@@ -465,6 +501,7 @@ pub async fn start(
     request: TuningStartRequest,
 ) -> Result<TuningJob, String> {
     validate_request(&request)?;
+    crate::runtime_upgrade::assert_available(&state)?;
     assert_available(&state)?;
     let profile = state.registered_profile(&profile_id)?;
     assert_managed_config(&state, &profile)?;
@@ -491,34 +528,15 @@ pub async fn start(
     let config: Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
     let total_requests = candidates.len() * request.rounds * request.scenes.len() * 6;
     let token = CancellationToken::new();
+    let job_identity = identity(&profile, &config, &metrics, &request.scenes);
     let job=TuningJob{
         id:uuid::Uuid::new_v4().to_string(),profile_id, state:Phase::Checking,scenes:request.scenes,rounds:request.rounds,max_tokens:request.max_tokens,
         started_at:now(),updated_at:now(),finished_at:None,completed_requests:0,total_requests,
         current_step:"waitingForIdle".into(),baseline,candidates,measurements:vec![],recommended_candidate_id:None,
-        identity:identity(&profile,&config,&metrics),config_fingerprint:fingerprint(&bytes),applied_config_fingerprint:None,error:None,
+        identity:job_identity,config_fingerprint:fingerprint(&bytes),applied_config_fingerprint:None,error:None,
         notes:vec!["distinctPrompt uses a fresh nonce; repeatedPrefix immediately repeats that prompt. Actual cached tokens are reported; this does not measure loading or session restore.".into(),"Only complete, identical deterministic outputs qualify. A/B/A drift is measured on this machine; a universal gain threshold is not used.".into(),"Request-level measurement leaves configuration unchanged. Applying a result restarts the owned service and can briefly interrupt its API.".into()],
     };
-    {
-        let mut registry = registry().lock().map_err(|e| e.to_string())?;
-        let jobs = registry.entry(state.data_dir().to_path_buf()).or_default();
-        if state
-            .selection_changing
-            .load(std::sync::atomic::Ordering::Acquire)
-        {
-            return Err("正在切换模型，未开始调优".into());
-        }
-        if jobs.values().any(|entry| entry.job.state.active()) {
-            return Err("已有调优维护任务".into());
-        }
-        persist(&state, &job)?;
-        jobs.insert(
-            job.id.clone(),
-            Entry {
-                job: job.clone(),
-                cancel: token.clone(),
-            },
-        );
-    }
+    register_active(&state, &job, token.clone())?;
     let id = job.id.clone();
     tokio::spawn(async move {
         let result = run(state.clone(), profile, pid, id.clone(), token.clone()).await;
@@ -888,13 +906,18 @@ async fn consume_response(
         && record.finish.as_deref() == Some("stop")
         && !text.trim().is_empty()
         && record.output_tokens.is_some_and(|tokens| tokens >= 8);
-    // This check proves deterministic equality later, not semantic correctness.
     record.quality_passed = record.complete;
     if !text.is_empty() {
         record.output_fingerprint = Some(fingerprint(text.trim().as_bytes()));
     }
     if !done {
         return Err("测量流缺少结束标记，不能作为成功样本".into());
+    }
+    if record.complete && record.scene == Scene::Code {
+        if let Err(error) = quality::validate_merge_sorted(&text) {
+            record.quality_passed = false;
+            return Err(error.reason().into());
+        }
     }
     Ok(())
 }
@@ -1006,14 +1029,19 @@ fn annotate_consistency(measurements: &mut [Measurement]) {
         };
         let before = matching(Position::BaselineBefore);
         let after = matching(Position::BaselineAfter);
-        sample.quality_passed = sample.complete
+        sample.quality_passed = sample.quality_passed
+            && sample.complete
             && sample.output_fingerprint.is_some()
             && before.is_some_and(|before| {
-                before.complete && before.output_fingerprint == sample.output_fingerprint
+                before.complete
+                    && before.quality_passed
+                    && before.output_fingerprint == sample.output_fingerprint
             })
             && (sample.position != Position::Candidate
                 || after.is_some_and(|after| {
-                    after.complete && after.output_fingerprint == sample.output_fingerprint
+                    after.complete
+                        && after.quality_passed
+                        && after.output_fingerprint == sample.output_fingerprint
                 }));
     }
 }
@@ -1111,6 +1139,13 @@ pub async fn apply(
     if job.state != Phase::Completed {
         return Err("只能应用已完整完成且未应用的报告".into());
     }
+    // Historic reports remain readable/restorable. A pre-semantic Code report
+    // cannot qualify for a new application based only on matching hashes.
+    if job.scenes.contains(&Scene::Code)
+        && job.identity["benchmarkVersion"].as_str() != Some(quality::VERSION)
+    {
+        return Err("旧编程调优报告缺少语义复验，请重新测量后应用".into());
+    }
     let candidate = job
         .candidates
         .iter()
@@ -1138,6 +1173,7 @@ async fn change_configuration(
     mut job: TuningJob,
     parameters: Option<Parameters>,
 ) -> Result<TuningJob, String> {
+    crate::runtime_upgrade::assert_available(&state)?;
     let profile = state.registered_profile(&job.profile_id)?;
     require_owned(&state, &profile).await?;
     let path = assert_managed_config(&state, &profile)?;
@@ -1179,7 +1215,9 @@ async fn change_configuration(
     }
     let old_metrics = read_metrics(&state, &profile).await?;
     let config: Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-    if parameters.is_some() && identity(&profile, &config, &old_metrics) != job.identity {
+    if parameters.is_some()
+        && identity(&profile, &config, &old_metrics, &job.scenes) != job.identity
+    {
         return Err("模型、引擎或硬件身份已变化，请重新测量".into());
     }
     job.state = if parameters.is_some() {
@@ -1192,27 +1230,7 @@ async fn change_configuration(
     if parameters.is_some() {
         job.applied_config_fingerprint = Some(fingerprint(&target));
     }
-    {
-        let mut registry = registry().lock().map_err(|e| e.to_string())?;
-        let jobs = registry.entry(state.data_dir().to_path_buf()).or_default();
-        if state
-            .selection_changing
-            .load(std::sync::atomic::Ordering::Acquire)
-        {
-            return Err("正在切换模型，未应用参数".into());
-        }
-        if jobs.values().any(|entry| entry.job.state.active()) {
-            return Err("已有调优维护任务".into());
-        }
-        persist(&state, &job)?;
-        jobs.insert(
-            job.id.clone(),
-            Entry {
-                job: job.clone(),
-                cancel: CancellationToken::new(),
-            },
-        );
-    }
+    register_active(&state, &job, CancellationToken::new())?;
     let result = async {
         atomic_bytes(&path, &target)?;
         crate::restart_service(state.clone(), profile.clone()).await?;
@@ -1408,6 +1426,125 @@ mod tests {
         assert_eq!(evaluate(&samples, "test", 2).reason, "missingMetrics");
     }
     #[test]
+    fn identical_but_semantically_wrong_code_cannot_become_a_recommendation() {
+        let mut samples = triplet(100.0, 200.0, 100.0, 0);
+        for sample in &mut samples {
+            sample.scene = Scene::Code;
+            sample.quality_passed = false;
+        }
+        annotate_consistency(&mut samples);
+        assert!(samples.iter().all(|sample| !sample.quality_passed));
+        let result = evaluate(&samples, "test", 1);
+        assert!(!result.accepted);
+        assert_eq!(result.reason, "qualityMismatch");
+        // One bad member invalidates the candidate even when all hashes agree.
+        for sample in &mut samples {
+            sample.quality_passed = true;
+        }
+        samples[2].quality_passed = false;
+        annotate_consistency(&mut samples);
+        assert!(!samples[1].quality_passed);
+        assert!(!evaluate(&samples, "test", 1).accepted);
+    }
+    fn admission_fixture_job(phase: Phase) -> TuningJob {
+        TuningJob {
+            id: uuid::Uuid::new_v4().to_string(),
+            profile_id: "isolated-admission".into(),
+            state: phase,
+            scenes: vec![Scene::Code],
+            rounds: 2,
+            max_tokens: 128,
+            started_at: now(),
+            updated_at: now(),
+            finished_at: None,
+            completed_requests: 0,
+            total_requests: 12,
+            current_step: "fixture-registration".into(),
+            baseline: Parameters {
+                pcie_frac: 0.5,
+                spec_min_p: 0.5,
+            },
+            candidates: vec![],
+            measurements: vec![],
+            recommended_candidate_id: None,
+            identity: json!({"benchmarkVersion":quality::VERSION}),
+            config_fingerprint: "fixture".into(),
+            applied_config_fingerprint: None,
+            error: None,
+            notes: vec![],
+        }
+    }
+    #[test]
+    fn registration_rechecks_upgrade_selection_and_active_tasks_before_persisting() {
+        use std::sync::atomic::Ordering;
+        let temp = tempfile::tempdir().unwrap();
+        let state = RuntimeState::open(temp.path().into()).unwrap();
+        let job = admission_fixture_job(Phase::Checking);
+        state.runtime_upgrading.store(true, Ordering::Release);
+        // The shared GUI/API availability check must still allow the old
+        // service during preparation. Only tuning admission is excluded.
+        assert!(assert_available(&state).is_ok());
+        assert!(register_active(&state, &job, CancellationToken::new()).is_err());
+        assert!(!report_path(&state, &job.id).unwrap().exists());
+        state.runtime_upgrading.store(false, Ordering::Release);
+        state.selection_changing.store(true, Ordering::Release);
+        assert!(register_active(&state, &job, CancellationToken::new()).is_err());
+        state.selection_changing.store(false, Ordering::Release);
+        register_active(&state, &job, CancellationToken::new()).unwrap();
+        assert!(assert_no_active_tuning(&state).is_err());
+        let applying = admission_fixture_job(Phase::Applying);
+        assert!(register_active(&state, &applying, CancellationToken::new()).is_err());
+        assert!(!report_path(&state, &applying.id).unwrap().exists());
+        registry().lock().unwrap().remove(state.data_dir());
+    }
+    #[test]
+    fn tuning_registration_and_upgrade_cas_cannot_both_win_the_race() {
+        use std::sync::{atomic::Ordering, Barrier};
+        let temp = tempfile::tempdir().unwrap();
+        let state = RuntimeState::open(temp.path().into()).unwrap();
+        for phase in [Phase::Checking, Phase::Applying] {
+            for _ in 0..20 {
+                let barrier = Arc::new(Barrier::new(2));
+                let tuning_state = state.clone();
+                let tuning_barrier = barrier.clone();
+                let tuning = std::thread::spawn(move || {
+                    tuning_barrier.wait();
+                    register_active(
+                        &tuning_state,
+                        &admission_fixture_job(phase),
+                        CancellationToken::new(),
+                    )
+                    .is_ok()
+                });
+                let upgrade_state = state.clone();
+                let upgrade = std::thread::spawn(move || {
+                    barrier.wait();
+                    upgrade_state
+                        .runtime_upgrading
+                        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                        .unwrap();
+                    let admitted = assert_no_active_tuning(&upgrade_state).is_ok();
+                    // Match UpgradeFlag's rollback on failure. Keep successful
+                    // admission held until the competing tuning attempt ends.
+                    if !admitted {
+                        upgrade_state
+                            .runtime_upgrading
+                            .store(false, Ordering::Release);
+                    }
+                    admitted
+                });
+                let tuning_admitted = tuning.join().unwrap();
+                let upgrade_admitted = upgrade.join().unwrap();
+                assert_ne!(
+                    tuning_admitted, upgrade_admitted,
+                    "exactly one concurrent maintenance path may be admitted"
+                );
+                state.runtime_upgrading.store(false, Ordering::Release);
+                registry().lock().unwrap().remove(state.data_dir());
+            }
+        }
+    }
+    #[test]
     fn arguments_replace_both_spellings_without_touching_other_config() {
         let config = json!({"args":["--native","weights.gguf","--pcie-frac","0.5","--spec-min-p=0.7","--pool-workers","4"],"sampling":{"temperature":0.8},"vision":{"exe":"encoder"},"api_key":"keep-private"});
         let edited = with_parameters(
@@ -1566,6 +1703,38 @@ mod tests {
         .is_err());
     }
     #[tokio::test]
+    async fn complete_code_sse_requires_semantics_and_never_persists_the_answer() {
+        let correct = "def merge_sorted(a, b):\n    \"\"\"Merge without sorting or modifying inputs.\"\"\"\n    out = []\n    i = j = 0\n    while i < len(a) and j < len(b):\n        if a[i] <= b[j]:\n            out.append(a[i]); i += 1\n        else:\n            out.append(b[j]); j += 1\n    return out + a[i:] + b[j:]\nassert merge_sorted([1], [1]) == [1, 1]\nassert merge_sorted([], [1]) == [1]\n";
+        let wrong = "def merge_sorted(a, b):\n    \"\"\"DO_NOT_PERSIST_CODE_OR_RESPONSE\"\"\"\n    return []\nassert merge_sorted([], []) == []\nassert merge_sorted([], []) == []\n";
+        for (source, passed) in [(correct, true), (wrong, false)] {
+            let event = json!({"choices":[{"delta":{"content":source},"finish_reason":"stop"}],"usage":{"completion_tokens":100},"timings":{"predicted_per_second":120}});
+            let body = format!("data: {event}\n\ndata: [DONE]\n\n");
+            let url = fixture_response(&body, Duration::ZERO);
+            let response = reqwest::Client::new().get(url).send().await.unwrap();
+            let mut record = empty_measurement(Scene::Code);
+            let result = consume_response(
+                response,
+                Instant::now(),
+                &CancellationToken::new(),
+                &mut record,
+            )
+            .await;
+            assert_eq!(result.is_ok(), passed);
+            assert!(record.complete);
+            assert_eq!(record.quality_passed, passed);
+            assert_eq!(
+                record.output_fingerprint,
+                Some(fingerprint(source.trim().as_bytes()))
+            );
+            if let Err(reason) = result {
+                record.error = Some(reason);
+            }
+            let serialized = serde_json::to_string(&record).unwrap();
+            assert!(!serialized.contains("DO_NOT_PERSIST_CODE_OR_RESPONSE"));
+            assert!(!serialized.contains("def merge_sorted"));
+        }
+    }
+    #[tokio::test]
     async fn cancellation_disconnects_only_its_own_http_stream() {
         let url = fixture_response("data: [DONE]\n\n", Duration::from_millis(500));
         let response = reqwest::Client::new().get(url).send().await.unwrap();
@@ -1711,6 +1880,20 @@ mod tests {
         assert_eq!(fs::read(&profile.config_path).unwrap(), original);
         let source = Path::new(&profile.install_dir).join("source-config.json");
         assert_eq!(fs::read(&source).unwrap(), original);
+        // Emulate a historic hash-only Code report. It remains readable, but
+        // cannot be newly applied even when its recorded gain was accepted.
+        update(&state, &completed.id, |job| job.scenes = vec![Scene::Code]).unwrap();
+        assert_eq!(
+            read_job(&state, &completed.id).unwrap().identity["benchmarkVersion"],
+            "request-aba-v1"
+        );
+        let legacy_rejection = apply(state.clone(), completed.id.clone(), "candidate-1".into())
+            .await
+            .err()
+            .unwrap();
+        assert!(legacy_rejection.contains("旧编程调优报告"));
+        assert_eq!(fs::read(&profile.config_path).unwrap(), original);
+        update(&state, &completed.id, |job| job.scenes = vec![Scene::Chat]).unwrap();
         let before = require_owned(&state, &profile).await.unwrap();
         let applied = apply(state.clone(), completed.id.clone(), "candidate-1".into())
             .await
@@ -1725,6 +1908,10 @@ mod tests {
                 .abs()
                 < 0.000001
         );
+        // Upgrading the Code quality gate must never disable recovery of an
+        // already applied historic configuration. Verify the real owned
+        // fixture restart/load/health path still restores the original bytes.
+        update(&state, &completed.id, |job| job.scenes = vec![Scene::Code]).unwrap();
         let restored = restore(state.clone(), completed.id).await.unwrap();
         assert_eq!(restored.state, Phase::Restored, "{:?}", restored.error);
         assert_eq!(fs::read(&profile.config_path).unwrap(), original);

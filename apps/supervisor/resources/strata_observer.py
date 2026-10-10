@@ -283,6 +283,19 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
     namespace["_strata_manager_instrumented"] = True
     original_run, original_note, original_begin = service.run, service._note, service.begin_request
 
+    def observed_model(svc):
+        """The loaded service identity, never an untrusted request model/alias."""
+        try:
+            name = getattr(svc, "model", None)
+            loaded = getattr(svc, "loaded", None)
+            if (callable(loaded) and loaded() is True and isinstance(name, str)
+                    and not re.match(r"^[A-Za-z]:[\\/]", name)
+                    and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:+/-]{0,159}", name)):
+                return name
+        except Exception:
+            pass  # Observability must not change request behavior.
+        return None
+
     @functools.wraps(original_begin)
     def begin(self, path, req):
         ctx = _ctx()
@@ -307,6 +320,11 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
         if not ctx:
             yield from original_run(self, ids, thinking, tools, max_new, sampling, cancel, force)
             return
+        # A lazy model may have become ready after HTTP admission. Record only
+        # its verified loaded service identity; failed loads remain unknown.
+        actual_model = observed_model(self)
+        if actual_model is not None:
+            ctx["modelId"] = actual_model
         clock = time.perf_counter()
         info = {"runId": uuid.uuid4().hex, "requestId": ctx["requestId"], "sessionId": journal.session_id,
                 "serviceId": journal.service_id, "startedAtMs": int(time.time()*1000),
@@ -403,7 +421,7 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
                 client = None
             ctx = {"requestId": uuid.uuid4().hex, "sessionId": journal.session_id,
                    "serviceId": journal.service_id, "startedAtMs": int(time.time()*1000),
-                   "route": route, "clientId": client, "stream": False, "httpStatus": None,
+                   "route": route, "clientId": client, "modelId": observed_model(svc), "stream": False, "httpStatus": None,
                    "inputTokens": None, "outputTokens": None, "cacheReadTokens": None,
                    "cacheCreationTokens": None, "firstTokenS": None, "errorKind": None,
                    "mcpToolCalls": 0, "mcpToolFailures": 0, "cancelled": False,
@@ -412,7 +430,7 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
             previous = _ctx()
             _local.request = ctx
             journal.append("request_start", {key: ctx[key] for key in
-                           ("requestId", "sessionId", "serviceId", "startedAtMs", "route", "clientId")})
+                           ("requestId", "sessionId", "serviceId", "startedAtMs", "route", "clientId", "modelId")})
             admission = journal.admit(ctx["requestId"],self.headers.get("X-Strata-Manager-Maintenance-Token") or self.headers.get("X-Strata-Manager-Tuning-Id"))
             try:
                 if admission is False:
