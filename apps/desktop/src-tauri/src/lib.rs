@@ -89,13 +89,17 @@ impl ClientState {
 }
 
 #[tauri::command]
-fn get_startup_status() -> Result<Value, String> {
-    startup::status()
+fn get_startup_status(state: State<'_, ClientState>) -> Result<Value, String> {
+    startup::status(&state.ipc.data_dir)
 }
 
 #[tauri::command]
 fn set_startup_enabled(state: State<'_, ClientState>, enabled: bool) -> Result<Value, String> {
-    let executable = state.ipc.staged_executable().map_err(|e| e.to_string())?;
+    let executable = if enabled {
+        state.ipc.staged_executable().map_err(|e| e.to_string())?
+    } else {
+        std::path::PathBuf::new()
+    };
     startup::set(enabled, &executable, &state.ipc.data_dir)
 }
 
