@@ -82,6 +82,7 @@ export function App() {
   const preparingLocal = useRef(false);
   const preparationGeneration = useRef(0);
   const automaticallyPrepared = useRef(new Set<string>());
+  const maySelectFirstPrepared = useRef(false);
   const exporting = useRef(false);
   const [toast, setToast] = useState<{ text: string; error?: boolean; taskId?: string } | null>(null);
   const [draft, setDraft] = useState(()=>new URLSearchParams(location.search).get('q')??'');
@@ -130,11 +131,12 @@ export function App() {
     let mounted = true;
     setBootError('');
     void Promise.all([desktop ? core.localInstallations() : core.loadStore<ServiceProfile[]>('profiles', []), core.loadStore<AppSettings>('settings', defaults), core.loadStore<Conversation[]>('conversations', []), core.loadStore<string>('activeProfile', ''), core.loadStore<Record<string, ChatOptions>>('chatOptionsByProfile', {}), core.loadStore<Record<string, Recipe>>('taskRecipes', {}), core.loadStore<ChatPreferences>('chatPreferences', defaultChatPreferences),core.loadStore<Record<string,string>>('activeConversationIds',{}),core.loadStore<boolean>('sidebarCollapsed',false),core.loadStore<boolean>('onboardingOpen',true)]).then(([p, s, c, a, o, r, ui, ids, collapsed, guide]) => {
-      if (!mounted) return; setGuideOpen(guide); setSidebarCollapsed(collapsed); setProfiles(p); setSettings({ ...defaults, ...s }); setConversations(c); setActiveId(p.some(x => x.id === a) ? a : p[0]?.id ?? ''); setProfileOptions(o); setRecipes(r);setConversationIds(ids);const selectedProfile=p.some(x=>x.id===a)?a:p[0]?.id??'';setConversationId(c.find(x=>x.id===ids[selectedProfile]&&x.profileId===selectedProfile)?.id??c.find(x=>x.profileId===selectedProfile)?.id??''); setChatPreferences({ ...defaultChatPreferences, ...ui }); setPreferencesReady(true); setReady(true);
+      if (!mounted) return; maySelectFirstPrepared.current = p.length === 0; setGuideOpen(guide); setSidebarCollapsed(collapsed); setProfiles(p); setSettings({ ...defaults, ...s }); setConversations(c); setActiveId(p.some(x => x.id === a) ? a : p[0]?.id ?? ''); setProfileOptions(o); setRecipes(r);setConversationIds(ids);const selectedProfile=p.some(x=>x.id===a)?a:p[0]?.id??'';setConversationId(c.find(x=>x.id===ids[selectedProfile]&&x.profileId===selectedProfile)?.id??c.find(x=>x.profileId===selectedProfile)?.id??''); setChatPreferences({ ...defaultChatPreferences, ...ui }); setPreferencesReady(true); setReady(true);
       if (desktop) void core.applySettings({ ...defaults, ...s }).catch(error => notify(errorText(error), true));
     }).catch(error => { if (mounted) setBootError(errorText(error)); });
     return () => { mounted = false; abort.current?.abort(); };
   }, [bootAttempt]);
+  useEffect(() => { if (ready && profiles.length) maySelectFirstPrepared.current = false; }, [ready, profiles.length]);
   useEffect(() => { if (!ready) return; void Promise.all([...(desktop ? [] : [core.saveStore('profiles', profiles)]), core.saveStore('settings', settings), core.saveStore('activeProfile', activeId), core.saveStore('chatOptionsByProfile', profileOptions), core.saveStore('taskRecipes', recipes),core.saveStore('activeConversationIds',conversationIds),core.saveStore('sidebarCollapsed',sidebarCollapsed),core.saveStore('onboardingOpen',guideOpen)]).catch(error => notify(errorText(error), true)); }, [ready, profiles, settings, activeId, profileOptions, recipes,conversationIds,sidebarCollapsed,guideOpen]);
   useEffect(() => { if (preferencesReady) void core.saveStore('chatPreferences', chatPreferences).catch(error => notify(errorText(error), true)); }, [preferencesReady, chatPreferences]);
   useEffect(() => { if (ready && !streaming) void core.saveStore('conversations', conversations).catch(error => notify(errorText(error), true)); }, [ready, conversations, streaming]);
@@ -164,8 +166,10 @@ export function App() {
   const preparedProfiles = useQuery({ queryKey: ['setupRegistrations', registeredSetupTasks], queryFn: core.localInstallations, enabled: desktop && ready && !!registeredSetupTasks, refetchOnWindowFocus: false });
   useEffect(() => {
     if (!ready || !preparedProfiles.data) return;
+    const firstPrepared = maySelectFirstPrepared.current ? preparedProfiles.data.find(item => handoffs.data?.some(handoff => handoff.status === 'registered' && handoff.profileId === item.id)) : undefined;
+    if (preparedProfiles.data.length) maySelectFirstPrepared.current = false;
     setProfiles(preparedProfiles.data);
-    setActiveId(current => current || preparedProfiles.data!.find(item => handoffs.data?.some(handoff => handoff.status === 'registered' && handoff.profileId === item.id))?.id || '');
+    if (firstPrepared) setActiveId(current => current || firstPrepared.id);
   }, [ready, preparedProfiles.data]);
   const supervisor = useQuery({ queryKey: ['supervisor'], queryFn: core.supervisorStatus, enabled: desktop && ready, refetchInterval: 10000, refetchOnWindowFocus: false });
   useEffect(() => {
@@ -393,7 +397,7 @@ export function App() {
   };
   const taskNextActions = (task: TaskStatus) => {
     const handoff = handoffs.data?.find(item => item.taskId === task.id);
-    if (handoff) return <SetupHandoffActions handoff={handoff} disabled={!!busy || streaming || !!localProgress} onResolve={async path => { await core.resolveSetupHandoff(task.id, path); await query.invalidateQueries(); }} onUse={async profileId => { const registered = await core.localInstallations(); const selected = registered.find(item => item.id === profileId); if (!selected) throw new Error(t('noProfileHint')); setProfiles(registered); await activateLocal(selected); go('chat'); }} onView={() => go('profiles')} onError={error => notify(errorText(error), true)}/>;
+    if (handoff) return <SetupHandoffActions handoff={handoff} canRecheck={task.state === 'completed'} disabled={!!busy || streaming || !!localProgress} onResolve={async path => { await core.resolveSetupHandoff(task.id, path); await query.invalidateQueries(); }} onUse={async profileId => { const registered = await core.localInstallations(); const selected = registered.find(item => item.id === profileId); if (!selected) throw new Error(t('noProfileHint')); setProfiles(registered); await activateLocal(selected); go('chat'); }} onView={() => go('profiles')} onError={error => notify(errorText(error), true)}/>;
     const recipe = recipes[task.id];
     if (task.state !== 'completed' || !recipe || recipe.kind === 'update') return null;
     return <>{recipe.kind === 'install' && <button className="st-btn st-btn--secondary" disabled={streaming} onClick={() => selectPreparationRuntime(recipe.directory)}>{t('prepareModels')}</button>}<button className="st-btn st-btn--secondary" disabled={!!busy || streaming || !!localProgress} onClick={() => void act('taskProfile', () => createTaskProfile(recipe))}>{t('usePreparedModel')}</button></>;

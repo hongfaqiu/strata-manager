@@ -4,8 +4,9 @@ import { LoaderCircle } from 'lucide-react';
 import type { SetupHandoff } from '@strata-manager/core';
 import { Dropdown } from '../OfficialControls';
 
-export function SetupHandoffActions({ handoff, disabled, onResolve, onUse, onView, onError }: {
+export function SetupHandoffActions({ handoff, canRecheck, disabled, onResolve, onUse, onView, onError }: {
   handoff: SetupHandoff;
+  canRecheck: boolean;
   disabled: boolean;
   onResolve: (configPath?: string) => Promise<unknown>;
   onUse: (profileId: string) => Promise<unknown>;
@@ -28,6 +29,7 @@ export function SetupHandoffActions({ handoff, disabled, onResolve, onUse, onVie
   };
   if (handoff.status === 'cancelled') return null;
   if (handoff.status === 'pending') return <span className="subtle" role="status"><LoaderCircle size={14} className="spin"/> {t('setupRegistering')}</span>;
+  if (handoff.status === 'failed' && !canRecheck) return handoff.error ? <p className="notice error" role="alert">{handoff.error}</p> : null;
   return <div>
     {handoff.error && <p className="notice error" role="alert">{handoff.error}</p>}
     <div className="actions">
