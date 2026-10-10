@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { request, streamChat, serviceStatus, restartService, takeOverService, discoverLocal, importLocal, ensureLocalService, supervisorStatus } from '../src';
+import { request, streamChat, serviceStatus, restartService, takeOverService, discoverLocal, importLocal, ensureLocalService, supervisorStatus, listSetupHandoffs, resolveSetupHandoff } from '../src';
 import type { ChatDelta, ServiceProfile, StreamEvent } from '../src';
 
 const native = vi.hoisted(() => ({ invoke: vi.fn() }));
@@ -14,6 +14,15 @@ afterEach(async () => {
 });
 
 describe('native bridge protocol', () => {
+  it('reads durable setup registration and resolves only the explicit task configuration', async () => {
+    native.invoke.mockResolvedValue([]);
+    await listSetupHandoffs();
+    expect(native.invoke).toHaveBeenLastCalledWith('list_setup_handoffs', undefined);
+    await resolveSetupHandoff('setup-task');
+    expect(native.invoke).toHaveBeenLastCalledWith('resolve_setup_handoff', { taskId: 'setup-task' });
+    await resolveSetupHandoff('setup-task', '/tmp/strata/strata-qwen-iq3_s.json');
+    expect(native.invoke).toHaveBeenLastCalledWith('resolve_setup_handoff', { taskId: 'setup-task', configPath: '/tmp/strata/strata-qwen-iq3_s.json' });
+  });
   it('rejects remote services before sending either HTTP or stream commands', async () => {
     for (const baseUrl of ['http://192.168.1.10:8080', 'https://models.example.com', 'http://127.0.0.1.example.com', 'https://127.0.0.1:8080']) {
       await expect(request({ ...profile, baseUrl }, '/health')).rejects.toMatchObject({ code: 'LOCAL_SERVICE_ONLY' });

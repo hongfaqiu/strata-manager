@@ -1,6 +1,7 @@
 mod http;
 mod startup;
 mod supervisor_client;
+mod window_layout;
 
 #[tauri::command]
 async fn prepare_local_runtime(
@@ -390,6 +391,31 @@ async fn list_tasks(state: State<'_, ClientState>) -> Result<Value, String> {
 }
 
 #[tauri::command]
+async fn list_setup_handoffs(state: State<'_, ClientState>) -> Result<Value, String> {
+    state
+        .ipc
+        .request("list_setup_handoffs", json!({}))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn resolve_setup_handoff(
+    state: State<'_, ClientState>,
+    task_id: String,
+    config_path: Option<String>,
+) -> Result<Value, String> {
+    state
+        .ipc
+        .request(
+            "resolve_setup_handoff",
+            json!({"taskId":task_id,"configPath":config_path}),
+        )
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn cancel_task(state: State<'_, ClientState>, task_id: String) -> Result<Value, String> {
     state
         .ipc
@@ -615,6 +641,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            let _ = window_layout::fit_initial_window(app);
             let data_dir = supervisor_client::data_directory(&app.path().app_data_dir()?);
             if !data_dir.is_absolute() {
                 return Err("后台数据目录必须是绝对路径".into());
@@ -751,6 +778,8 @@ pub fn run() {
             install_runtime,
             update_runtime,
             list_tasks,
+            list_setup_handoffs,
+            resolve_setup_handoff,
             cancel_task,
             read_config,
             write_config,

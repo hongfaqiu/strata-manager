@@ -9,7 +9,7 @@
 | 项目 | 已取得的证据 | 实际范围 |
 | --- | --- | --- |
 | 后台架构 | Rust workspace、独立 `strata-supervisor`、用户限定 IPC 与打包 sidecar 已实现 | Windows 使用 Job Object 管理子树；Linux IPC/进程实现尚待真实系统验收 |
-| Core / IPC | 后端阶段快照：`cargo test -p strata-runtime-core -p strata-local-ipc --lib --target-dir apps/desktop/src-tauri/target`，Core 60 passed / 2 ignored，IPC 5 passed | ignored 包括只读本机发现及真实官方安装；真实安装另行显式运行。后续新增测试与最终总数须统一复验 |
+| Core / IPC | 最新后端快照：Core **79 passed / 2 ignored**；此前 IPC 5 passed | 包括新模型准备后自动登记的 10 项测试；ignored 为只读本机发现及真实官方安装，真实安装另行显式运行。最终跨平台结果由 CI 单独记录 |
 | Supervisor 生命周期 | `cargo test -p strata-supervisor --test lifecycle --target-dir apps/desktop/src-tauri/target`，2 passed，56.41 秒 | 真实后台进程与 Python HTTP 夹具：客户端退出服务继续、重复启动/重连、显式停止、有限 3 次恢复、后台硬崩溃释放 Job 子树、恢复时受控清理遗留维护 gate |
 | 模型切换 | 同一生命周期测试覆盖双服务切换 | 繁忙时拒切换、目标加载失败恢复旧模型、成功切换维持单模型；夹具不执行 GPU 推理 |
 | GUI HTTP 归属 | 后端报告 2 个新增所有权合同测试通过 | 未导入/未受管实例不能接收桌面变更；流式请求使用已登记且存活的受管身份。最终 workspace 总数待合并复验 |
@@ -20,7 +20,7 @@
 | Python 来源校验 | 官方 Python 3.13.16 x64 安装器真实下载 29,935,584 字节，SHA256 与 Python.org .sigstore 元数据一致 | 仅校验下载；本机已有 Python 3.10.11，没有实际执行缺 Python 时的安装分支 |
 | 格式与静态检查 | 本轮后台报告四 crate Clippy 通过；安装模块最终 `cargo clippy -p strata-runtime-core --all-targets --target-dir .local/install-test-target -- -D warnings` 通过 | 后续代码变更仍需在最终提交运行统一 fmt、Clippy 和 tests |
 
-准备完成返回的 profile 只用于现有模型 setup；生成实际配置和模型文件后，需检测/导入才可启动。模型准备使用官方 `setup.py --yes --setup --no-start --no-browser` 流程，不重造模型下载器。Linux 缺少 Python/venv 时给出可行动诊断，不执行 sudo；此分支未实际验收。
+运行环境准备返回的 profile 只用于模型 setup。模型准备任务和意图在启动子进程前同事务保存；官方命令成功后，核验配置、模型资产及任务选择并自动登记，后台重开可恢复。失败、取消或资产不完整不会登记，多配置和旧快照冲突返回明确选择结果；保留当前选用模型与源文件，不自动启动或切换。新增 10 项夹具覆盖实际 setup RPC、Python 子进程、登记、跨重开恢复、去重、取消、非法候选和事务失败时不启动子进程。模型准备使用官方 `setup.py --yes --setup --no-start --no-browser` 流程，不重造模型下载器。Linux 缺少 Python/venv 时给出可行动诊断，不执行 sudo；此分支未实际验收。
 
 固定源下载：`https://codeload.github.com/Niko1221/Strata/zip/fb58e0dbc8399662c0e47c76578c6e878b14f6cf`，实际 19,149,640 字节，SHA256：
 
@@ -66,6 +66,14 @@ Core 的 analytics 测试覆盖事务重放/重启去重、未知值与成功率
 | Ubuntu 22.04 x64 | 固定上游 observer 13 passed（7.773 秒、无跳过），最小 Python 依赖、Linux 系统依赖安装、发布门禁 5 passed、前端类型检查 | `packages/core/tests/native.test.ts:96` 原生错误归一化 mock 未命中，得到 `NETWORK_ERROR` 而不是预期 `UNAUTHORIZED`，34 passed / 1 failed；尚未进入 Rust/安装包检查 |
 
 上述失败须由后续提交的完整 CI 复验关闭。工作流另加入上游 LF 字节保留和 hash 前置门禁，避免不支持源码触发 `SkipTest` 后仍把 observer 步骤误报为完整覆盖。
+
+[第二轮 CI](https://github.com/hongfaqiu/strata-manager/actions/runs/38061810219) 对应 `6c50b72758360fd2e117e3b4d413099296138e13`：Windows 的 target-triple fixture 路径已实际修复（升级测试通过），Linux 的动态 mock 竞争已实际修复（前端 35 passed）。两平台仍未完成安装包构建：Windows Core 64 passed / 5 failed / 2 ignored，失败集中在并行 WMI/监听端口探测超时；Linux Core 46 passed / 4 failed / 2 ignored，失败为缺失解锁的默认 Secret Service 集合。
+
+本地后续修复保持全部断言和超时：Windows 原生测试改为串行；Linux 测试使用隔离的空凭据库、显式创建和解锁 login/default 集合，并先实际存取删除验证。Linux 会话脚本在 Ubuntu 22.04 容器实测退出码 0；三个 Linux 条件编译 Clippy 警告也已修复。两项 CI 环境修复仍需下一轮完整 Actions 验证，不据此声称跨平台流水线已通过。
+
+本地最新前端检查为核心协议 **36 passed**、HTTP 合同 **5 passed**、类型检查及生产构建通过；四 crate 的 workspace Clippy `-D warnings` 和 fmt 通过。独立实际 App + 内存 RPC 验证了中英、侧栏展开/收起与 10 个路由的 **180 个宽度组合**，未发现页面整体横向溢出。设置页另外验证 600、800、1440、2560 宽度，去除内容宽度上限，按工作区宽度使用单列或两列。长表格与代码允许在组件内滚动。这些界面测试使用演示数据，不作为真实 GPU/采集证据。
+
+Tauri 窗口启动尺寸按显示器工作区和缩放计算，常见分辨率及 100/125/150/200% 缩放的尺寸计算单元测试通过；真实高 DPI 桌面视觉仍待验收。旧版有效档案的真实迁移已恢复模型登记与会话，未重新下载权重。启动最新版桌面程序以验证既有 GPU 服务接管时，自动审批返回 `blocked by policy`；该次启动未执行，原有服务未停止，不能声称最新实际接管、持续采集或 GPU 调优已经通过。
 
 桌面保留官方 Strata 视觉与组件，沿用共享页头、可折叠侧栏和嵌套管理布局。本轮新的自动准备入口、最新布局、中英文、键盘操作、托盘和三张 WebP 截图仍需在最终 Tauri WebView 中统一验收。此前页面几何对照的结果保留在历史部分，不据此宣称当前全部页面逐像素一致或新的原生视觉已经验收。
 

@@ -50,6 +50,14 @@ export interface LocalInstallationMigration {
   failed: number;
 }
 
+export interface SetupHandoff {
+  taskId: string;
+  status: 'pending' | 'registered' | 'needs-choice' | 'failed' | 'cancelled';
+  profileId?: string;
+  error?: string;
+  choices?: { configPath: string; name: string }[];
+}
+
 export interface AppSettings {
   language: 'zh-CN' | 'en';
   theme: 'dark' | 'light' | 'system';

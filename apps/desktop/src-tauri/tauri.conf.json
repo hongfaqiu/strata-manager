@@ -16,8 +16,8 @@
         "title": "Strata Manager",
         "width": 1440,
         "height": 960,
-        "minWidth": 920,
-        "minHeight": 650
+        "minWidth": 720,
+        "minHeight": 520
       }
     ],
     "security": {

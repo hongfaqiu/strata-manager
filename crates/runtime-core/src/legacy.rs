@@ -342,6 +342,7 @@ fn same_path(left: &str, right: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
     use serde_json::json;
 
     fn put_raw(state: &RuntimeState, raw: &str) {

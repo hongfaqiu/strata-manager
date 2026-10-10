@@ -50,3 +50,19 @@
 - 任务日志按每秒及任务结束写入 SQLite，最多保留 100 个任务、每任务 500 行、每行 4096 字符；任务状态与脱敏输出跨重启可读。
 - 独立 Supervisor 使用 Windows Job Object 约束受管进程树；停止服务、取消任务及明确停止后台才清理它创建的子进程。关闭 GUI 保持后台 API 运行。
 - 二次启动通过单实例插件聚焦已有主窗口。
+
+## 独立后台和本机登记
+
+- `local_installations() -> ServiceProfile[]` 为桌面模型列表的权威来源；首次读取会迁移旧版有效档案，保留档案 ID、名称、选中状态、密钥关联和会话。失效项返回迁移原因，修复配置后可重试。
+- `local_installation_migration() -> LocalInstallationMigration` 返回逐项迁移结果；迁移只核验和登记，不启停服务或下载权重。
+- `discover_local({directories?}) -> LocalCandidate[]` 只读检测；`import_local({candidate}) -> ServiceProfile` 重新核验后保存应用专用配置快照，保留源配置和模型文件。
+- `ensure_local_service({profileId})` 准备已登记模型；`switch_local_service({profileId})` 串行切换单个模型，检查活动请求，失败时恢复原选择与服务。
+- `supervisor_status()` 包含后台版本、进程、恢复状态、迁移结果和 `preparationFailures`。准备失败按档案持久保存 `{profileId,lastError,failedAt,retryable,phase:'prepare'}`，成功重试后清除。
+- `rename_local_installation({profileId,name})` 只改名称；`remove_local_installation({profileId})` 只移除登记，不删除安装或模型文件，拒绝移除运行中的受管服务。
+- `prepare_local_runtime()` 创建源码和私有 Python 环境的后台任务，`local_runtime_installation()` 恢复任务 ID 和经过核验的结果，不下载模型权重。
+- `list_setup_handoffs() -> SetupHandoff[]` 返回最近 100 个模型准备任务的持久登记结果；状态为 `pending`、`registered`、`needs-choice`、`failed` 或 `cancelled`，可包含 `profileId`、`error` 和 `{configPath,name}[]` 候选。
+- `resolve_setup_handoff({taskId,configPath?}) -> SetupHandoff` 重新核验已成功完成的任务并登记模型；选择只能来自同一安装目录且匹配任务的模型/量化。任务和准备意图在子进程启动前同事务落盘，成功命令标记支持后台重开恢复。失败、取消或文件不完整不登记，也不自动启动或切换当前模型。
+- `get_startup_status()` / `set_startup_enabled({enabled})` 管理独立后台登录启动；`get_background_policy()` / `set_background_policy({mode,autoRecover})` 管理延迟加载、常驻就绪和有限自动恢复。
+- `prepare_app_update()` 核验任务、调优及活动请求并备份本机数据库；GUI 安装签名更新并重启界面，独立后台的版本接替使用受控空闲检查。
+
+原生修改请求与聊天流必须对应权威登记和后台活体受管进程，单凭前端提交路径无法取得运行权限。外部实例接管核验进程身份、创建时间、配置、监听端口与空闲状态；Windows 对既有嵌套 Job 的已核验支树分别捕获，失败不停止源实例，并保留原 Job 内无关进程。

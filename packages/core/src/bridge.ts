@@ -1,4 +1,4 @@
-import type { AppSettings, BackgroundPolicy, EnvironmentInfo, JsonObject, LocalCandidate, LogEntry, ProcessStatus, ServiceProfile, StartupStatus, StreamEvent, SupervisorStatus, TaskStatus } from './types';
+import type { AppSettings, BackgroundPolicy, EnvironmentInfo, JsonObject, LocalCandidate, LogEntry, ProcessStatus, ServiceProfile, SetupHandoff, StartupStatus, StreamEvent, SupervisorStatus, TaskStatus } from './types';
 import { normalizeError, StrataError } from './errors';
 import { decodeChatChunk, SSEParser, type ChatDelta, type StreamToolEvent } from './chat';
 
@@ -199,6 +199,8 @@ export const localRuntimeInstallation = (): Promise<import('./installation-types
 export const readTaskLogs = (taskId: string, limit = 200): Promise<LogEntry[]> => readLogs({ id: taskId, name: '', baseUrl: 'http://127.0.0.1:8000', installDir: '', pythonPath: '', configPath: '', managed: false }, limit);
 export const updateRuntime = (profile: ServiceProfile): Promise<TaskStatus> => native('update_runtime', { profile });
 export const listTasks = (): Promise<TaskStatus[]> => native('list_tasks');
+export const listSetupHandoffs = (): Promise<SetupHandoff[]> => native('list_setup_handoffs');
+export const resolveSetupHandoff = (taskId: string, configPath?: string): Promise<SetupHandoff> => native('resolve_setup_handoff', { taskId, ...(configPath ? { configPath } : {}) });
 export const cancelTask = (taskId: string): Promise<void> => native('cancel_task', { taskId });
 export const readConfig = (profile: ServiceProfile): Promise<JsonObject> => native('read_config', { profile });
 export const writeConfig = (profile: ServiceProfile, config: JsonObject): Promise<void> => native('write_config', { profile, config });

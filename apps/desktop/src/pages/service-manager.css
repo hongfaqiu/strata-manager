@@ -22,7 +22,7 @@
 .service-manager-symbol{width:44px;height:44px;border-radius:var(--st-r-md);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--st-icon);background:var(--st-surface-2)}
 .service-manager-name{display:flex;align-items:center;gap:var(--st-s-3);flex-wrap:wrap;min-width:0}
 .service-manager-name h2{font-size:var(--st-fs-lg);font-weight:700;margin:0;overflow-wrap:anywhere}
-.service-manager-identity code{display:block;margin-top:var(--st-s-1);font-size:var(--st-fs-xs);color:var(--st-ink-muted);overflow-wrap:anywhere}
+.service-manager-subtitle{display:block;margin-top:var(--st-s-1);font-size:var(--st-fs-xs);color:var(--st-ink-muted);overflow-wrap:anywhere}
 .service-manager-card-top>.badge{flex-shrink:0}
 .service-manager-statuses{display:grid;grid-template-columns:1.15fr 1fr .8fr 1.6fr;gap:var(--st-s-5);margin:var(--st-s-5) 0}
 .service-manager-statuses>div{display:flex;flex-direction:column;gap:var(--st-s-1);min-width:0}

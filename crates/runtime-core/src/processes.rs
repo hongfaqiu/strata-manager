@@ -681,6 +681,50 @@ fn launch_task_with_install(
     runtime_path: Option<PathBuf>,
     install: Option<InstallClaim>,
 ) -> Result<TaskStatus, String> {
+    launch_task_with_handoff(
+        tasks,
+        logs,
+        database,
+        kind,
+        profile_id,
+        steps,
+        runtime_path,
+        install,
+        None,
+    )
+}
+
+pub fn launch_setup_task(
+    state: Arc<crate::RuntimeState>,
+    intent: crate::setup_handoff::SetupIntent,
+    steps: Vec<Step>,
+) -> Result<TaskStatus, String> {
+    let runtime_path = Some(runtime_dir(&intent.profile)?);
+    launch_task_with_handoff(
+        state.tasks.clone(),
+        state.logs.clone(),
+        state.database.clone(),
+        "setup",
+        Some(intent.profile.id.clone()),
+        steps,
+        runtime_path,
+        None,
+        Some(crate::setup_handoff::SetupHook { state, intent }),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn launch_task_with_handoff(
+    tasks: Tasks,
+    logs: Logs,
+    database: Arc<Mutex<rusqlite::Connection>>,
+    kind: &str,
+    profile_id: Option<String>,
+    steps: Vec<Step>,
+    runtime_path: Option<PathBuf>,
+    install: Option<InstallClaim>,
+    setup: Option<crate::setup_handoff::SetupHook>,
+) -> Result<TaskStatus, String> {
     let id = Uuid::new_v4().to_string();
     let status = TaskStatus {
         id: id.clone(),
@@ -720,7 +764,16 @@ fn launch_task_with_install(
                 process: None,
             },
         );
-        persist_task(&database, records.get(&id).ok_or("任务不存在")?)?;
+        let record = records.get(&id).ok_or("任务不存在")?;
+        let persisted = if let Some(hook) = &setup {
+            crate::setup_handoff::persist_launch(hook, record)
+        } else {
+            persist_task(&database, record)
+        };
+        if let Err(error) = persisted {
+            records.remove(&id);
+            return Err(error);
+        }
     }
     std::thread::spawn(move || {
         let log_id = id.clone();
@@ -784,6 +837,9 @@ fn launch_task_with_install(
                 }
                 publish_install(&database, &install)?;
             }
+            if let Some(hook) = &setup {
+                crate::setup_handoff::commands_completed(hook, &id)?;
+            }
             Ok(())
         })();
         if let Ok(mut records) = tasks.lock() {
@@ -796,8 +852,13 @@ fn launch_task_with_install(
                     "failed"
                 }
                 .into();
-                record.status.message =
-                    outcome.err().unwrap_or_else(|| "所有命令已成功结束".into());
+                record.status.message = outcome.err().unwrap_or_else(|| {
+                    if setup.is_some() {
+                        record.status.message.clone()
+                    } else {
+                        "所有命令已成功结束".into()
+                    }
+                });
                 record.status.finished_at = Some(now());
                 if let Some(process) = record.process.as_ref() {
                     let deadline = std::time::Instant::now() + Duration::from_millis(500);
@@ -812,6 +873,11 @@ fn launch_task_with_install(
                 if let Err(error) = persist_task(&database, record) {
                     log(&logs, &log_id, "error", error);
                 }
+                if let Some(hook) = &setup {
+                    if let Err(error) = crate::setup_handoff::terminated(hook, &record.status) {
+                        log(&logs, &log_id, "error", error);
+                    }
+                }
                 if let Err(error) = persist_task_logs(&database, &logs, &id) {
                     log(&logs, &log_id, "error", error);
                 }
@@ -825,11 +891,18 @@ pub fn persist_task(
     database: &Arc<Mutex<rusqlite::Connection>>,
     record: &TaskRecord,
 ) -> Result<(), String> {
+    let connection = database.lock().map_err(|e| e.to_string())?;
+    persist_task_connection(&connection, record)
+}
+
+pub(crate) fn persist_task_connection(
+    connection: &rusqlite::Connection,
+    record: &TaskRecord,
+) -> Result<(), String> {
     let mut status = record.status.clone();
     status.message = redact_log(&status.message);
     let status = serde_json::to_string(&status).map_err(|e| e.to_string())?;
-    let connection = database.lock().map_err(|e| e.to_string())?;
-    init_task_storage(&connection)?;
+    init_task_storage(connection)?;
     connection.execute("INSERT INTO tasks(id,status,profile_id) VALUES(?1,?2,?3) ON CONFLICT(id) DO UPDATE SET status=excluded.status,profile_id=excluded.profile_id", rusqlite::params![record.status.id,status,record.profile_id]).map_err(|e| e.to_string())?;
     connection
         .execute(
@@ -997,6 +1070,7 @@ mod tests {
         );
         stop_owned_for_restart(&processes, "owned").unwrap();
     }
+    #[cfg(windows)]
     fn wait_task(tasks: &Tasks, id: &str) -> TaskStatus {
         let deadline = std::time::Instant::now() + Duration::from_secs(20);
         loop {

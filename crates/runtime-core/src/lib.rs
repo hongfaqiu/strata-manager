@@ -8,6 +8,7 @@ pub mod maintenance;
 pub mod observer;
 pub mod policy;
 pub mod processes;
+pub mod setup_handoff;
 pub mod storage;
 pub mod store;
 pub mod tuning;
@@ -105,6 +106,7 @@ impl RuntimeState {
             legacy_migration: Mutex::new(()),
         });
         tuning::recover_pending_configs(&state)?;
+        setup_handoff::recover(&state)?;
         Ok(state)
     }
     pub fn registered_profiles(&self) -> Result<Vec<ServiceProfile>, String> {
@@ -470,6 +472,7 @@ impl RuntimeState {
                     | "local_installations"
                     | "read_logs"
                     | "list_tasks"
+                    | "list_setup_handoffs"
             )
         {
             return Err("后台正在退出，已拒绝新的变更操作".into());
@@ -500,6 +503,7 @@ impl RuntimeState {
                     | "write_config"
                     | "set_api_key"
                     | "import_local"
+                    | "resolve_setup_handoff"
                     | "remove_local_installation"
                     | "resolve_profile"
                     | "tuning_start"
@@ -522,6 +526,7 @@ impl RuntimeState {
                 | "write_config"
                 | "set_api_key"
                 | "import_local"
+                | "resolve_setup_handoff"
                 | "ensure_local_service"
                 | "rename_local_installation"
                 | "remove_local_installation"
@@ -621,7 +626,7 @@ impl RuntimeState {
             "read_logs" => value(read_logs(&self, profile()?, arg(&params, "limit")?)),
             "environment_info" => value(environment_info(self.clone()).await),
             "run_setup" => value(run_setup(
-                &self,
+                self.clone(),
                 profile()?,
                 arg(&params, "model")?,
                 arg(&params, "quant")?,
@@ -631,6 +636,16 @@ impl RuntimeState {
             "install_runtime" => value(install_runtime(&self, arg(&params, "directory")?)),
             "update_runtime" => value(update_runtime(&self, profile()?)),
             "list_tasks" => value(list_tasks(&self)),
+            "list_setup_handoffs" => value(setup_handoff::list(&self)),
+            "resolve_setup_handoff" => {
+                let task_id: String = arg(&params, "taskId")?;
+                let config_path = params
+                    .get("configPath")
+                    .filter(|value| !value.is_null())
+                    .map(|value| value.as_str().ok_or("configPath 必须为配置文件路径字符串"))
+                    .transpose()?;
+                value(setup_handoff::resolve(&self, &task_id, config_path))
+            }
             "cancel_task" => value(cancel_task(&self, arg(&params, "taskId")?)),
             "read_config" => read_config(profile()?),
             "write_config" => value(write_config(profile()?, arg(&params, "config")?)),
@@ -1760,7 +1775,7 @@ fn collect_environment() -> EnvironmentInfo {
     let mut system = sysinfo::System::new();
     system.refresh_memory();
     system.refresh_cpu_all();
-    let mut gpus: Vec<String> = output(
+    let gpus: Vec<String> = output(
         "nvidia-smi",
         &[
             "--query-gpu=name,driver_version,memory.total",
@@ -1769,6 +1784,8 @@ fn collect_environment() -> EnvironmentInfo {
     )
     .map(|text| text.lines().map(str::to_owned).collect())
     .unwrap_or_default();
+    #[cfg(windows)]
+    let mut gpus = gpus;
     #[cfg(windows)]
     if gpus.is_empty() {
         gpus = output(
@@ -1857,7 +1874,7 @@ fn assert_stopped(state: &RuntimeState, profile: &ServiceProfile) -> Result<(), 
     Ok(())
 }
 fn run_setup(
-    state: &RuntimeState,
+    state: Arc<RuntimeState>,
     profile: ServiceProfile,
     model: String,
     quant: String,
@@ -1866,7 +1883,7 @@ fn run_setup(
 ) -> Result<TaskStatus, String> {
     let _operation = state.runtime_operations.lock().map_err(|e| e.to_string())?;
     let root = processes::runtime_dir(&profile)?;
-    assert_stopped(state, &profile)?;
+    assert_stopped(&state, &profile)?;
     if !(512..=1_048_576).contains(&context) {
         return Err("context 必须为 512–1048576；实际容量由安装器检查内存和模型决定".into());
     }
@@ -1894,6 +1911,13 @@ fn run_setup(
     }
     let url = http::endpoint(&profile, "/health")?;
     let (setup_python, mut steps) = processes::setup_python(&profile, &root)?;
+    let intent = setup_handoff::SetupIntent {
+        profile: profile.clone(),
+        family: model.clone(),
+        quant: quant.clone(),
+        context,
+        images,
+    };
     let step = Step {
         program: setup_python,
         args: vec![
@@ -1917,14 +1941,7 @@ fn run_setup(
         cwd: root,
     };
     steps.push(step);
-    processes::launch_task(
-        state.tasks.clone(),
-        state.logs.clone(),
-        state.database.clone(),
-        "setup",
-        Some(profile.id),
-        steps,
-    )
+    processes::launch_setup_task(state.clone(), intent, steps)
 }
 fn install_runtime(state: &RuntimeState, directory: String) -> Result<TaskStatus, String> {
     let _operation = state.runtime_operations.lock().map_err(|e| e.to_string())?;

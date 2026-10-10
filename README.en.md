@@ -19,10 +19,10 @@ Installers include the desktop application and independent background process, b
 
 ## First use
 
-1. **Open the app and wait for automatic detection.** It checks local installations and the environment. Import an existing Strata installation if one is found; select its folder only if detection misses it. Model files stay in place, the original configuration is retained, and the application uses a managed copy.
+1. **Open the app and check “My models.”** Valid profiles and conversations from an earlier Manager version are restored automatically; existing models do not need another download or preparation. On first use, import any other local Strata installation found by detection; select its folder only if detection misses it. Model files stay in place, the original configuration is retained, and the application uses a managed copy.
 2. **Prepare the environment automatically if you have no installation.** The app downloads a fixed official source revision into its own data directory, verifies it, detects usable Python, and creates a private environment. The normal workflow needs no Git, manually entered Python path, or chosen installation directory.
-3. **Choose and prepare a model.** Follow the setup steps for model, quantization, context, and image support. Existing models can be imported with a local installation; Strata's official setup prepares new ones. Actual logs explain progress and errors. Tasks can be cancelled or retried; first-time weight downloads can take a while.
-4. **Wait for “Model ready,” then chat.** The application handles service startup and loading after import and preparation. You do not need to run a startup script or enable a process-management switch. Chat contains conversation history, attachments, reasoning, MCP tools, and sampling settings.
+3. **Download only when you want another model.** Choose the model, quantization, context, and image support in the setup flow. Strata's official setup prepares the files, and verified results automatically appear in “My models” without replacing the current model. Resolve ambiguous configurations when prompted. Actual logs explain progress and errors. Tasks can be cancelled or retried; first-time weight downloads can take a while.
+4. **Choose “Use,” wait for “Model ready,” then chat.** The application handles service startup and loading. You do not need a startup script or a process-management switch. An instance running under another program must pass identity and idle checks before takeover. Chat contains conversation history, attachments, reasoning, MCP tools, and sampling settings.
 5. **Copy the local API address when connecting another application.** Use the displayed address and API path in your client. Chat Completions, Responses, and Anthropic Messages support depends on the installed Strata runtime.
 
 Windows detects 64-bit Python 3.10+. If none is usable, it provides an SHA256-verified official Python installer for a private installation; execution of that fallback still requires clean-machine acceptance. Linux needs Python 3.10+, venv, and ensurepip. Missing system dependencies produce actionable instructions; the app does not run sudo. The completed Windows no-Git test used existing Python and created a real private venv.
@@ -68,7 +68,7 @@ The application, Strata runtime, and model weights are managed separately. Appli
 
 ## Screenshots
 
-These locations will receive verified desktop screenshots for the first release, compressed as WebP.
+These Chinese UI screenshots show the current App layout rendered with an isolated in-memory RPC fixture, compressed as WebP. Model status, performance metrics, API counts, and chat content are demonstration data, not real service results or performance benchmarks.
 
 | Overview | Chat | Monitor |
 | --- | --- | --- |
