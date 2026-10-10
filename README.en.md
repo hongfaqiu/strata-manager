@@ -4,7 +4,7 @@
 
 <h1>Strata Manager</h1>
 <p><strong>Local models. One workspace.</strong></p>
-<p>A desktop home for your Strata models, conversations and local API.</p>
+<p>Manage local models, conversations, background services and your local API in one desktop app.</p>
 
 <p>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license" /></a>
@@ -20,16 +20,16 @@
 
 **First release under verification; try [source](#build-from-source) or [current Linux CI artifacts](https://github.com/hongfaqiu/strata-manager/actions/runs/38066271017).** See the [verification record](docs/VERIFICATION.md).
 
-Strata Manager brings [Strata](https://github.com/Niko1221/Strata) and its supported models into one local workspace. Import what you already have, prepare a new model when you need one, and use it from Chat or your favorite API client. Available models and API capabilities depend on your installed Strata runtime.
+Strata Manager is an open-source desktop app for local model management. Import and prepare models, manage configurations, start and load services, chat, monitor activity, and connect to your local API in one workspace. Existing weights stay in place, and an independent background process manages running services. The app uses the [Strata](https://github.com/Niko1221/Strata) runtime; available models, image input and API protocols depend on your installed runtime and chosen model.
 
 ## Features
 
 - **Keep existing models.** Detect and import local Strata installations without downloading their weights again.
 - **Skip the setup chores.** Prepare the official runtime and a private Python environment through the app, without finding Git or entering Python paths.
 - **Keep your API available.** An independent background process manages startup and reconnects when you reopen the desktop window.
-- **Chat in one place.** Conversation history, streaming replies, text and image attachments, reasoning and MCP tools share the same workspace.
+- **Chat in one place.** Keep conversation history, streaming replies and text attachments together. Reasoning, image input and MCP tool events require model and runtime support.
 - **Understand your usage.** Follow request volume, tokens, latency, cache reuse, errors and activity over time, with unknown values clearly identified.
-- **Tune with measurements.** Compare a baseline and candidate, review the result, then apply it or restore the original settings.
+- **Tune with measurements.** Compare supported PCIe budget and MTP speculation parameters against the baseline, review drift and output consistency, then apply a candidate or restore the original settings. This is a bounded comparison, not a search of every configuration or a speed guarantee.
 
 Chinese and English, light and dark themes, a collapsible sidebar, tray actions, startup settings and update controls make the workspace fit daily use. The interface follows Strata's visual style.
 
