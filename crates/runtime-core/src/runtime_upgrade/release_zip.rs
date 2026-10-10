@@ -2489,40 +2489,80 @@ mod tests {
             },
         );
         state.runtime_upgrading.store(true, Ordering::Release);
-        let cached = start_release_request(
-            state.clone(),
-            root.to_string_lossy().into(),
-            None,
-            Some(id.clone()),
-            false,
-        )
-        .unwrap();
-        assert_eq!(cached.id, status.id);
-        assert_eq!(cached.message, status.message);
-        assert!(start_release_request(
-            state.clone(),
-            root.to_string_lossy().into(),
-            Some("strata-windows-x64-cuda12.zip".into()),
-            Some(id.clone()),
-            false
-        )
-        .err()
-        .unwrap()
-        .contains("不一致"));
-        assert!(start_release_request(
-            state.clone(),
-            root.to_string_lossy().into(),
-            None,
-            Some(id),
-            true
-        )
-        .err()
-        .unwrap()
-        .contains("不一致"));
+        if cfg!(all(windows, target_arch = "x86_64")) {
+            let cached = start_release_request(
+                state.clone(),
+                root.to_string_lossy().into(),
+                None,
+                Some(id.clone()),
+                false,
+            )
+            .unwrap();
+            assert_eq!(cached.id, status.id);
+            assert_eq!(cached.message, status.message);
+            assert!(start_release_request(
+                state.clone(),
+                root.to_string_lossy().into(),
+                Some("strata-windows-x64-cuda12.zip".into()),
+                Some(id.clone()),
+                false
+            )
+            .err()
+            .unwrap()
+            .contains("不一致"));
+            assert!(start_release_request(
+                state.clone(),
+                root.to_string_lossy().into(),
+                None,
+                Some(id.clone()),
+                true
+            )
+            .err()
+            .unwrap()
+            .contains("不一致"));
+        } else {
+            // A stored Windows request never bypasses the local platform guard.
+            for (asset, confirmed) in [
+                (None, false),
+                (Some("strata-windows-x64-cuda12.zip".into()), false),
+                (None, true),
+            ] {
+                let error = start_release_request(
+                    state.clone(),
+                    root.to_string_lossy().into(),
+                    asset,
+                    Some(id.clone()),
+                    confirmed,
+                )
+                .err()
+                .expect("unsupported platforms must refuse even a cached ZIP request");
+                assert_eq!(
+                    error,
+                    "官方引擎ZIP自动安装目前支持Windows x64；可使用源码安装方式"
+                );
+            }
+        }
+        let unchanged: String = state
+            .database
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT journal FROM runtime_zip_updates WHERE task_id=?1",
+                [&id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(unchanged, serde_json::to_string(&journal).unwrap());
+        assert_eq!(fs::read(root.join("setup.py")).unwrap(), b"# not executed");
+        assert_eq!(
+            fs::read(root.join("serve/server.py")).unwrap(),
+            b"# not executed"
+        );
         assert_eq!(state.tasks.lock().unwrap().len(), 1);
         assert!(state.processes.lock().unwrap().is_empty());
         assert!(!state.data_dir().join("zip-updates").exists());
     }
+
     use std::io::Cursor;
     fn archive(entries: &[(&str, &str)]) -> Vec<u8> {
         let mut zip = zip::ZipWriter::new(Cursor::new(vec![]));
@@ -2685,15 +2725,20 @@ mod tests {
         )
         .unwrap();
         let mut info=super::super::release_update_info(&json!({"tag_name":"v0.1.42","assets":[{"name":"strata-windows-x64.zip","size":12,"browser_download_url":"https://github.com/Niko1221/Strata/releases/download/v0.1.42/strata-windows-x64.zip","digest":format!("sha256:{}","a".repeat(64))},{"name":"strata-windows-x64-cuda12.zip","size":12,"browser_download_url":"https://github.com/Niko1221/Strata/releases/download/v0.1.42/strata-windows-x64-cuda12.zip","digest":format!("sha256:{}","b".repeat(64))}]})).unwrap();
-        assert!(info.installable);
-        assert_eq!(
-            choose_asset(&info, temp.path(), None).unwrap().variant,
-            "cuda12"
-        );
+        assert_eq!(info.installable, cfg!(all(windows, target_arch = "x86_64")));
+        assert_eq!(info.latest_version.as_deref(), Some("0.1.42"));
+        assert_eq!(info.assets.len(), 2);
+        // Metadata discovery and safe CUDA selection remain available on Linux;
+        // selecting a Windows asset does not authorize installing it there.
+        let selected = choose_asset(&info, temp.path(), None).unwrap();
+        assert_eq!(selected.variant, "cuda12");
+        assert_eq!(selected.name, "strata-windows-x64-cuda12.zip");
+        assert_eq!(selected.sha256, "b".repeat(64));
         assert!(choose_asset(&info, temp.path(), Some("strata-windows-x64.zip")).is_err());
         info.assets.clear();
         assert!(choose_asset(&info, temp.path(), None).is_err());
     }
+
     #[test]
     fn cuda13_build_without_backend_never_selects_or_accepts_cuda12() {
         let temp = tempfile::tempdir().unwrap();

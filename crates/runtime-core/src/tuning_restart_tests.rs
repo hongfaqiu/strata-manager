@@ -37,6 +37,125 @@ fn assert_original(profile: &ServiceProfile, original: &[u8]) {
     );
 }
 
+async fn stable_request_fixture() -> (
+    tempfile::TempDir,
+    Arc<RuntimeState>,
+    ServiceProfile,
+    Vec<u8>,
+) {
+    let fixture = live_fixture().await;
+    let (_, state, profile, _) = &fixture;
+    crate::stop_service(state, profile.id.clone())
+        .await
+        .unwrap();
+    let source_path = Path::new(&profile.install_dir).join("serve/server.py");
+    let source = fs::read_to_string(&source_path).unwrap();
+    let delay = "time.sleep(.004 if workers == 2 or abs(requested_pcie - .35) < .001 else .035)";
+    assert_eq!(source.matches(delay).count(), 1);
+    // These two contracts require a usable recommendation before testing apply
+    // and rollback. Only their private CPU fixture gets a clear wall-time signal;
+    // the shared failure/no-gain fixtures and all production gates stay intact.
+    // The candidate also remains live long enough for actual HTTP resource
+    // sampling. These synthetic delays and resources are not model benchmarks.
+    fs::write(
+        &source_path,
+        source.replace(
+            delay,
+            "time.sleep(.050 if workers == 2 or abs(requested_pcie - .35) < .001 else .300)",
+        ),
+    )
+    .unwrap();
+    crate::start_service(state.clone(), profile.clone())
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if http::strata_request(state, profile.clone(), "/health".into(), "GET".into(), None)
+                .await
+                .is_ok()
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("private stable CPU fixture must become ready within five seconds");
+    http::strata_request(
+        state,
+        profile.clone(),
+        "/load".into(),
+        "POST".into(),
+        Some(json!({})),
+    )
+    .await
+    .unwrap();
+    let metrics = read_metrics(state, profile).await.unwrap();
+    assert_eq!(metrics["hardware"]["ram_total"], json!(64u64 << 30));
+    assert_eq!(metrics["hardware"]["ram_used"], json!(32u64 << 30));
+    assert_eq!(metrics["hardware"]["gpu_mem_total"], json!(16u64 << 30));
+    assert_eq!(metrics["hardware"]["gpu_mem_used"], json!(8u64 << 30));
+    check_live_resources(&metrics).unwrap();
+    fixture
+}
+
+fn request_report_diagnostics(job: &TuningJob) -> String {
+    let candidates = job
+        .candidates
+        .iter()
+        .map(|candidate| {
+            json!({"id":candidate.id,"evaluation":candidate.evaluation,
+            "resources":candidate.resource_assessment,"dimensions":candidate.dimensions})
+        })
+        .collect::<Vec<_>>();
+    let measurements = job.full.workload_measurements.iter().map(|measurement| {
+        let walls = measurement.result["turns"].as_array().map(|turns| {
+            turns.iter().map(|turn| &turn["wallMs"]).collect::<Vec<_>>()
+        });
+        json!({"round":measurement.round,"position":measurement.position,
+            "workload":measurement.workload_id,"kind":measurement.kind,
+            "complete":measurement.result["complete"],"qualityPassed":measurement.result["qualityPassed"],
+            "qualityReason":measurement.result["qualityReason"],
+            "resources":measurement.result["resourcePeak"],"wallMs":walls})
+    }).collect::<Vec<_>>();
+    json!({"state":job.state,"error":job.error,"ramTotal":job.identity["ramTotal"],
+        "gpuMemoryTotal":job.identity["gpuMemoryTotal"],"candidates":candidates,
+        "measurements":measurements})
+    .to_string()
+}
+
+fn assert_request_fixture_evidence(job: &TuningJob) {
+    let diagnostic = request_report_diagnostics(job);
+    let resource = job.candidates[0]
+        .resource_assessment
+        .as_ref()
+        .unwrap_or_else(|| panic!("missing resource assessment: {diagnostic}"));
+    assert_eq!(resource.status, ResourceStatus::Checked, "{diagnostic}");
+    assert!(resource.sample_count > 0, "{diagnostic}");
+    assert_eq!(resource.ram_peak_bytes, Some(32u64 << 30), "{diagnostic}");
+    assert_eq!(resource.gpu_peak_bytes, Some(8u64 << 30), "{diagnostic}");
+    assert!(
+        job.full.workload_measurements.iter().all(|measurement| {
+            measurement.result["complete"] == true && measurement.result["qualityPassed"] == true
+        }),
+        "{diagnostic}"
+    );
+    assert!(
+        job.full
+            .workload_measurements
+            .iter()
+            .filter(|measurement| measurement.position == Position::Candidate)
+            .all(|measurement| {
+                let peak = &measurement.result["resourcePeak"];
+                peak["sampleCount"].as_u64().unwrap_or(0) > 0
+                    && peak["dataScope"] == "systemAndPrimaryGpu"
+                    && peak["ramUsedBytes"] == json!(32u64 << 30)
+                    && peak["gpuMemoryUsedBytes"] == json!(8u64 << 30)
+            }),
+        "{diagnostic}"
+    );
+}
+
 #[test]
 fn finite_flags_preserve_model_rope_kv_and_legacy_defaults() {
     let config = json!({"exe":"engine","cwd":".","args":["--native","weights.gguf","--max-context","524288","--kv","q4","--rope-scale","4","--prefill=auto:32768","--pool-workers","4"],"env":{"KEEP":"yes"},"sampling":{"temperature":0.7},"mcp":{"servers":[]}});
@@ -105,7 +224,7 @@ fn finite_flags_preserve_model_rope_kv_and_legacy_defaults() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn full_request_aba_has_semantic_coverage_and_public_apply_restore() {
-    let (_temp, state, profile, original) = live_fixture().await;
+    let (_temp, state, profile, original) = stable_request_fixture().await;
     let started = start(state.clone(), profile.id.clone(), full_request(None))
         .await
         .unwrap();
@@ -127,9 +246,12 @@ async fn full_request_aba_has_semantic_coverage_and_public_apply_restore() {
         .iter()
         .filter(|m| m.kind == WorkloadKind::ColdInput)
         .all(|m| m.freshly_loaded && m.result["coldModelVerified"] == true));
+    assert_request_fixture_evidence(&done);
     assert_eq!(
         done.recommended_candidate_id.as_deref(),
-        Some("candidate-1")
+        Some("candidate-1"),
+        "{}",
+        request_report_diagnostics(&done)
     );
     assert_original(&profile, &original);
     // A historical safe resource sample does not permit applying after other
@@ -165,7 +287,7 @@ async fn full_request_aba_has_semantic_coverage_and_public_apply_restore() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn failed_apply_and_failed_rollback_publish_only_this_transactions_verified_flags() {
     for external_edit in [false, true] {
-        let (_temp, state, profile, original) = live_fixture().await;
+        let (_temp, state, profile, original) = stable_request_fixture().await;
         let source_path = Path::new(&profile.install_dir).join("serve/server.py");
         let source = fs::read_to_string(&source_path)
             .unwrap()
@@ -190,9 +312,12 @@ async fn failed_apply_and_failed_rollback_publish_only_this_transactions_verifie
         let done = await_job(&state, &profile).await;
         assert_eq!(done.state, Phase::Completed, "{:?}", done.error);
         assert!(done.full.recovery.configuration_restored && done.full.recovery.service_verified);
+        assert_request_fixture_evidence(&done);
         assert_eq!(
             done.recommended_candidate_id.as_deref(),
-            Some("candidate-1")
+            Some("candidate-1"),
+            "{}",
+            request_report_diagnostics(&done)
         );
         let marker = if external_edit {
             "edit-on-apply"

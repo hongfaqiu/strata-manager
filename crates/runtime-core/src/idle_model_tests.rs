@@ -3,6 +3,10 @@ use super::*;
 use crate::{processes::TaskRecord, types::TaskStatus};
 use std::process::Command;
 
+// Use the shortest supported policy interval. A 40 ms synthetic interval can
+// expire during the journal's own durable commit on a hosted runner.
+const TEST_IDLE_MS: u64 = 60_000;
+
 const SCRIPT: &str = r#"
 import argparse,json,os,threading,time,uuid
 from pathlib import Path
@@ -67,6 +71,7 @@ class Handler(BaseHTTPRequestHandler):
   finally:
    if inference:journal.append('request_end',dict(metadata,endedAtMs=int(time.time()*1000),outcome='succeeded'))
    if admission:journal.release(request_id)
+   if inference:(root/'request-completed').write_text(request_id)
 ThreadingHTTPServer((args.host,args.port),Handler).serve_forever()
 "#;
 
@@ -164,13 +169,19 @@ impl Fixture {
             self.state.clone(),
             &self.profile.id,
             &CancellationToken::new(),
-            40,
+            TEST_IDLE_MS,
         )
         .await
         .unwrap()
     }
     async fn expire(&self) {
-        tokio::time::sleep(Duration::from_millis(70)).await;
+        // Age only this fixture's persisted idle observation. Keep the actual
+        // heartbeat, checked_at, activity revision and process identity intact;
+        // a missing observation must still start a fresh interval.
+        if let Some(mut previous) = latest(&self.state, &self.profile.id).unwrap() {
+            previous.idle_since = previous.checked_at.saturating_sub(TEST_IDLE_MS + 1);
+            save(&self.state, &self.profile.id, &previous).unwrap();
+        }
     }
     async fn state(&self) -> Value {
         self.state
@@ -280,6 +291,7 @@ async fn idle_release_keeps_same_api_process_and_first_use_reloads() {
     f.preserved();
     let response = f.chat().await.unwrap();
     assert!(response.status().is_success());
+    f.wait("request-completed").await;
     assert_eq!(f.state().await["loaded"], true);
     f.health().await;
     assert_eq!(f.tick().await, IdleOutcome::Observing);
@@ -308,6 +320,11 @@ async fn active_request_never_unloads_and_completion_restarts_idle_period() {
     assert_eq!(f.state().await["unloads"], 0);
     fs::remove_file(f.root.join("hold-request")).unwrap();
     assert!(request.await.unwrap().status().is_success());
+    // Receiving response headers does not prove the handler's finally block
+    // has journaled completion and released admission. Wait for that boundary
+    // before requiring an idle health snapshot; keep the strict outcome check.
+    f.wait("request-completed").await;
+    assert_eq!(f.state().await["active"], 0);
     f.health().await;
     assert_eq!(f.tick().await, IdleOutcome::Observing);
     f.preserved();
@@ -322,7 +339,7 @@ async fn request_admitted_between_check_and_gate_drains_then_defers_unload() {
     let state = f.state.clone();
     let id = f.profile.id.clone();
     let work = tokio::spawn(async move {
-        tick_with_window(state, &id, &CancellationToken::new(), 40)
+        tick_with_window(state, &id, &CancellationToken::new(), TEST_IDLE_MS)
             .await
             .unwrap()
     });
@@ -353,7 +370,7 @@ async fn request_after_gate_is_rejected_and_recent_attempt_defers_unload() {
     let state = f.state.clone();
     let id = f.profile.id.clone();
     let work = tokio::spawn(async move {
-        tick_with_window(state, &id, &CancellationToken::new(), 40)
+        tick_with_window(state, &id, &CancellationToken::new(), TEST_IDLE_MS)
             .await
             .unwrap()
     });
@@ -374,7 +391,7 @@ async fn completed_model_control_after_check_resets_idle_without_inference_event
         let state = f.state.clone();
         let id = f.profile.id.clone();
         let work = tokio::spawn(async move {
-            tick_with_window(state, &id, &CancellationToken::new(), 40)
+            tick_with_window(state, &id, &CancellationToken::new(), TEST_IDLE_MS)
                 .await
                 .unwrap()
         });
@@ -548,7 +565,7 @@ async fn cancellation_after_server_commits_unload_keeps_api_and_does_not_claim_r
     let state = f.state.clone();
     let id = f.profile.id.clone();
     let work = tokio::spawn(async move {
-        tick_with_window(state, &id, &task_cancel, 40)
+        tick_with_window(state, &id, &task_cancel, TEST_IDLE_MS)
             .await
             .unwrap()
     });
@@ -642,7 +659,7 @@ async fn dropping_expired_operation_cannot_late_unload_and_explicit_stop_stays_s
     let state = f.state.clone();
     let id = f.profile.id.clone();
     let work = tokio::spawn(async move {
-        tick_with_window(state, &id, &task_cancel, 40)
+        tick_with_window(state, &id, &task_cancel, TEST_IDLE_MS)
             .await
             .unwrap()
     });
@@ -690,7 +707,7 @@ async fn real_update_registration_cannot_enter_the_idle_commit_window() {
     let state = f.state.clone();
     let id = f.profile.id.clone();
     let unloading = tokio::spawn(async move {
-        tick_with_window(state, &id, &CancellationToken::new(), 40)
+        tick_with_window(state, &id, &CancellationToken::new(), TEST_IDLE_MS)
             .await
             .unwrap()
     });
@@ -816,7 +833,7 @@ async fn real_setup_rpc_cannot_prepare_during_idle_or_mistake_unloaded_api_for_s
     let state = f.state.clone();
     let id = f.profile.id.clone();
     let unloading = tokio::spawn(async move {
-        tick_with_window(state, &id, &CancellationToken::new(), 40)
+        tick_with_window(state, &id, &CancellationToken::new(), TEST_IDLE_MS)
             .await
             .unwrap()
     });

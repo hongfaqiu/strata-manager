@@ -19,6 +19,10 @@
 
 workspace fmt 与 Clippy `-D warnings` 通过；使用实际构建的 Rust 验签器运行发布门禁，**82 项通过、0 skipped**，覆盖 NSIS/AppImage/DEB 验签、版本与 tag/SHA 绑定、不可变公开版本、安装及 beta.2 升级合同。门禁单元合同不能替代 GitHub Runner 的实际安装、升级或公开资产验收。本地真实模型没有为构建释放或改变。
 
+首轮冻结提交 `be27346b4ddf061a7a82dfe02cf872022923267a` 的 [Windows/Linux CI](https://github.com/hongfaqiu/strata-manager/actions/runs/38093701346) 未通过：Windows 原生核心测试 262 通过、9 失败、8 ignored；Linux 219 通过、3 失败、3 ignored。因此该提交没有创建正式 tag 或发布。后续修正按平台断言、HTTP 请求完成边界、空闲到期状态及资源采样等夹具条件进行；本地通过不能代替修正提交的完整两平台 CI 和发行包验收。
+
+夹具修正后的 Windows 定向检查通过：空闲释放 **16 项**，ZIP 资产选择与重复请求 **2 项**，完整调优采用及失败恢复 **2 项**；请求诊断 **9 项**分别在本机 fallback 和 CI `pythonLocation` 模式通过，其中包括四项解释器及真实无依赖 venv 合同。统一 fmt、Clippy `-D warnings` 和 diff-check 通过。生产策略、资源/质量门槛与原有严格断言没有放宽，四份源码变动均限于测试；Linux 新平台拒绝分支和最终安装包仍由后续实际 CI 验证。
+
 ### 特定 Windows 机器的 Strata 0.1.42 实机更新
 
 2026-10-11，在一台 Windows 机器上通过原生开发构建的后台 IPC 完成既有 Strata 从 0.1.41 到 0.1.42 的更新。使用上游 `strata-windows-x64.zip`（CUDA 13），大小 **137,300,495 字节**，SHA256 为 `bbf2fca32f98e490bc3c53c05c29136dcc53c606fbb619d842558ea69c50c9d6`；对应上游源码 commit 为 `61b3fb5dd3f1e8ec09cf7e4e05208bc6d3c46406`。实际更新任务为 completed、error 为空，检测返回 version=0.1.42、readiness=ready；旧失败任务仍保留 failed 状态。
