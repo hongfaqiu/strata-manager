@@ -51,6 +51,10 @@ pub struct SingleInstance {
 }
 impl SingleInstance {
     pub fn acquire(data_dir: &Path) -> Result<Self, RpcError> {
+        Self::acquire_scoped(data_dir, "supervisor")
+    }
+    pub fn acquire_scoped(data_dir: &Path, scope: &str) -> Result<Self, RpcError> {
+        crate::validate_lock_scope(scope)?;
         let directory = ipc_directory(data_dir)?;
         let file = OpenOptions::new()
             .create(true)
@@ -59,7 +63,7 @@ impl SingleInstance {
             .write(true)
             .mode(0o600)
             .custom_flags(libc::O_NOFOLLOW)
-            .open(directory.join("supervisor.lock"))
+            .open(directory.join(format!("{scope}.lock")))
             .map_err(|e| RpcError::new("instance_lock", e.to_string()))?;
         if file
             .metadata()
@@ -79,7 +83,7 @@ impl SingleInstance {
         // Only the owner holding this kernel lock may remove an abandoned socket.
         // Live owners retain the lock until the process or guard exits.
         let socket = crate::socket_path(data_dir)?;
-        if socket.exists() {
+        if scope == "supervisor" && socket.exists() {
             std::fs::remove_file(socket)
                 .map_err(|e| RpcError::new("stale_socket", e.to_string()))?;
         }

@@ -18,6 +18,8 @@ interface Dependencies {
   loadLastCheck: () => Promise<number>;
   saveLastCheck: (time: number) => Promise<unknown>;
   now: () => number;
+  acquire?: () => boolean;
+  release?: () => void;
 }
 interface HeldUpdate {
   update: UpdateResource;
@@ -25,9 +27,11 @@ interface HeldUpdate {
   received: number;
   total?: number;
   closed?: boolean;
+  confirmed?: boolean;
 }
 
 export const CHECK_INTERVAL = 12 * 60 * 60 * 1000;
+interface Options { desktop: boolean; enabled: boolean; ready: boolean; idle?: boolean }
 
 // Keep one native operation in flight; close its resources only after it settles.
 export class AppUpdateController {
@@ -35,7 +39,8 @@ export class AppUpdateController {
   private held: HeldUpdate | null = null;
   private session = 0;
   private active = false;
-  private options = { desktop: false, enabled: false, ready: false };
+  private options = { desktop: false, enabled: false, ready: false, idle: true };
+  private automaticGeneration = 0;
   private listener?: (state: AppUpdateState) => void;
   private operation: Promise<void> | null = null;
   private operationSession = 0;
@@ -63,13 +68,23 @@ export class AppUpdateController {
     if (!this.operation) void this.release();
   }
 
-  configure(options: typeof this.options) { this.options = options; }
+  configure(options: Options) {
+    if (options.enabled !== this.options.enabled || options.desktop !== this.options.desktop || options.ready !== this.options.ready) {
+      this.automaticGeneration += 1;
+      this.pendingAutomatic = false;
+      this.pendingAutomaticForce = false;
+    }
+    this.options = { ...options, idle: options.idle ?? true };
+  }
 
   private usable(session: number) {
     return this.active && session === this.session && this.options.desktop && this.options.ready;
   }
 
   private automaticEnabled(session: number) { return this.usable(session) && this.options.enabled; }
+  private automaticAllowed(session: number, generation: number) {
+    return this.automaticEnabled(session) && generation === this.automaticGeneration;
+  }
 
   private publish(phase: AppUpdateState['phase'], extra: Partial<AppUpdateState> = {}) {
     const held = this.held;
@@ -119,7 +134,7 @@ export class AppUpdateController {
 
   private async downloadHeld(session: number) {
     const held = this.held;
-    if (!held || held.downloaded || !this.usable(session)) return;
+    if (!held || !held.confirmed || held.downloaded || !this.usable(session)) return;
     this.stage = 'download';
     held.received = 0;
     held.total = undefined;
@@ -147,27 +162,38 @@ export class AppUpdateController {
     this.held = next;
     this.publish(next ? 'available' : 'current');
     await this.dependencies.saveLastCheck(this.dependencies.now());
-    if (next && this.automaticEnabled(session)) await this.downloadHeld(session);
   }
 
   check = () => this.run(session => this.checkUpdate(session));
 
-  download = () => this.run(session => this.downloadHeld(session));
-
-  install = () => this.run(async session => {
+  private async installHeld(session: number) {
     const held = this.held;
-    if (!held?.downloaded || !this.usable(session)) return;
+    if (!held?.confirmed || !held.downloaded || !this.usable(session) || !this.options.idle) return;
     this.stage = 'install';
     this.publish('installing');
     await this.dependencies.prepare();
     if (!this.usable(session)) return;
+    if (!this.options.idle) { this.publish('downloaded'); return; }
     await held.update.install({ restartAfterInstall: true });
     if (this.usable(session)) this.publish('installed', { downloaded: false });
     await this.release();
+  }
+
+  /** Approval is bound to the displayed candidate, never a later check result. */
+  confirm = (version: string) => this.run(async session => {
+    const held = this.held;
+    if (!held || held.update.version !== version || !this.options.idle) return;
+    this.stage = held.downloaded ? 'install' : 'download';
+    if (this.dependencies.acquire && !this.dependencies.acquire()) throw new Error('Another update is already running.');
+    try {
+      held.confirmed = true;
+      await this.downloadHeld(session);
+      if (this.held === held && this.usable(session)) await this.installHeld(session);
+    } finally { this.dependencies.release?.(); }
   });
 
   automatic = (force = false): Promise<void> => {
-    if (!this.automaticEnabled(this.session) || this.held?.downloaded || this.state.phase === 'installed') return Promise.resolve();
+    if (!this.automaticEnabled(this.session) || this.state.phase === 'installed') return Promise.resolve();
     if (this.operation) {
       if (this.operationSession !== this.session) {
         this.pendingAutomatic = true;
@@ -175,13 +201,14 @@ export class AppUpdateController {
       }
       return this.operation;
     }
+    const generation = this.automaticGeneration;
     return this.run(async session => {
-      if (!this.automaticEnabled(session)) return;
-      if (this.held) { await this.downloadHeld(session); return; }
+      if (!this.automaticAllowed(session, generation)) return;
+      if (this.held?.downloaded) return;
       this.stage = 'check';
       if (force) { await this.checkUpdate(session); return; }
       const last = await this.dependencies.loadLastCheck();
-      if (this.automaticEnabled(session) && this.dependencies.now() - last >= CHECK_INTERVAL) await this.checkUpdate(session);
+      if (this.automaticAllowed(session, generation) && this.dependencies.now() - last >= CHECK_INTERVAL) await this.checkUpdate(session);
     });
   };
 }

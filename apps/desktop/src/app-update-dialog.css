@@ -1,0 +1,20 @@
+.app-update-dialog{display:flex;flex-direction:column;gap:14px;min-width:0}
+.app-update-dialog>h3{font-size:13px;font-weight:600}
+.app-update-release-notes{max-height:min(44vh,400px);overflow:auto;scrollbar-gutter:stable;padding:16px;border:1px solid var(--border);border-radius:8px;background:var(--bg);font-size:13px;line-height:1.8;overflow-wrap:anywhere}
+.app-update-release-notes p{margin:0 0 10px}
+.app-update-release-notes p:last-child{margin-bottom:0}
+.app-update-release-notes h1,.app-update-release-notes h2,.app-update-release-notes h3,.app-update-release-notes h4{font-size:14px;line-height:1.5;margin:14px 0 8px}
+.app-update-release-notes :first-child{margin-top:0}
+.app-update-release-notes ul,.app-update-release-notes ol{padding-left:22px;margin:8px 0 12px}
+.app-update-release-notes li{margin:4px 0}
+.app-update-release-notes pre{padding:10px;overflow:auto;border-radius:5px;background:var(--surface);font-size:11px}
+.app-update-release-notes code{color:var(--text);font-size:12px}
+.app-update-release-notes blockquote{margin:10px 0;padding-left:12px;border-left:3px solid var(--border);color:var(--muted)}
+.app-update-release-notes img{max-width:100%;height:auto}
+.app-update-release-notes table{display:block;overflow:auto}
+.app-update-confirm-hint{font-size:12px;color:var(--muted);line-height:1.65}
+.app-update-progress{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--accent);line-height:1.6}
+.app-update-dialog .notice{margin:0}
+.app-update-dialog .dialog-footer{margin-top:2px;flex-wrap:wrap}
+@media(max-width:480px){.app-update-release-notes{max-height:38vh;padding:12px}.app-update-dialog .dialog-footer>button{flex:1}}
+@media(prefers-reduced-motion:reduce){.app-update-dialog .spin{animation:none}}

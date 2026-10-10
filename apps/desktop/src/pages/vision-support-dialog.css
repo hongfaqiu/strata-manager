@@ -1,0 +1,17 @@
+.vision-support-dialog{display:flex;flex-direction:column;gap:14px;min-width:0}
+.vision-support-intro,.vision-support-settings{font-size:12px;line-height:1.65;color:var(--muted)}
+.vision-support-paths{display:flex;flex-direction:column;gap:14px}
+.vision-support-paths label,.vision-support-options label{display:flex;flex-direction:column;gap:7px;font-size:12px;min-width:0}
+.vision-support-paths label>span,.vision-support-options label>span{font-weight:500}
+.vision-support-paths label>div{display:flex;gap:7px;min-width:0}
+.vision-support-paths input{min-width:0;flex:1}
+.vision-support-paths button{flex-shrink:0;padding:7px 10px}
+.vision-support-options{border-top:1px solid var(--border);padding-top:12px;font-size:12px}
+.vision-support-options summary{cursor:pointer;color:var(--muted)}
+.vision-support-options>div{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:14px}
+.vision-support-dialog .notice{margin:0}
+.vision-support-dialog .dialog-footer{margin-top:4px;flex-wrap:wrap}
+.vision-support-status{display:flex;align-items:center;gap:8px;font-size:12px;line-height:1.6;color:var(--muted)}
+.vision-support-enabled{color:var(--accent)}
+@media(max-width:480px){.vision-support-options>div{grid-template-columns:minmax(0,1fr)}.vision-support-dialog .dialog-footer>button{flex:1}}
+@media(prefers-reduced-motion:reduce){.vision-support-dialog .spin{animation:none}}

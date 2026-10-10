@@ -11,6 +11,7 @@ import { Badge, Chart, Dialog, Empty, Field, Header, JsonView, Metric, OfficialI
 import { SamplingDrawer, officialSamplingDefaults, defaultChatPreferences, type ChatPreferences } from './ChatSettings';
 import { ChatPage } from './pages/ChatPage';
 import { OverviewPage } from './pages/OverviewPage';
+import { selectOverviewStartup } from './pages/overviewStartup';
 import { Onboarding, type DiscoveredService, type GuidePath } from './Onboarding';
 import { RuntimeConfigPage } from './pages/RuntimeConfigPage';
 import { ServiceManagerPage } from './pages/ServiceManagerPage';
@@ -18,8 +19,9 @@ import { RequestViewer } from './RequestViewer';
 import { MonitoringPage } from './OfficialMonitoring';
 import { AboutPage } from './OfficialAbout';
 import { AppLayout, Sidebar } from './layouts/AppLayout';
-import { WorkspaceHeader, WorkspaceLayout, WorkspaceStatusBar } from './layouts/WorkspaceLayout';
-import { LocalSetupPage, type LocalSetupProgress } from './pages/LocalSetupPage';
+import { WorkspaceLayout } from './layouts/WorkspaceLayout';
+import { ServiceTelemetryStatusBar } from './layouts/ServiceTelemetryStatusBar';
+import type { LocalSetupProgress } from './pages/LocalSetupPage';
 import { DesktopLifecycleSettings } from './pages/DesktopLifecycleSettings';
 import { useAppUpdates } from './useAppUpdates';
 import { TuningPage } from './pages/TuningPage';
@@ -28,15 +30,24 @@ import { OverviewUsage } from './pages/OverviewUsage';
 import { InstallRuntimePage } from './pages/InstallRuntimePage';
 import { SetupHandoffActions } from './pages/SetupHandoffActions';
 import { SetupDiskStatus } from './pages/SetupDiskStatus';
+import { StartupProgress } from './pages/StartupProgress';
+import { WindowTitleBar } from './WindowTitleBar';
+import { useWindowClose } from './useWindowClose';
+import { useRuntimeUpdates } from './useRuntimeUpdates';
+import { AppUpdateDialog } from './AppUpdateDialog';
+import { VisionSupportDialog } from './pages/VisionSupportDialog';
+import { ConfigurationList } from './pages/ConfigurationList';
+import { ConfigurationDeletionDialog } from './pages/ConfigurationDeletionDialog';
+import { RunningServicesPanel } from './pages/RunningServicesPanel';
 import strataLicense from './official/LICENSE.strata?raw';
 import outfitLicense from './fonts/OFL.txt?raw';
 import { Dropdown, NumberField, Segmented, Toggle } from './OfficialControls';
 
-type Page = 'overview' | 'profiles' | 'models' | 'localSetup' | 'tuning' | 'chat' | 'monitoring' | 'usage' | 'requests' | 'tasks' | 'environment' | 'settings' | 'about' | 'config';
-const navigation: { id: Page; icon: typeof Activity }[] = [{ id: 'overview', icon: LayoutDashboard }, { id: 'models', icon: HardDrive }, { id: 'chat', icon: MessageSquare }, { id: 'tuning', icon: SlidersHorizontal }, { id: 'monitoring', icon: Activity }, { id: 'settings', icon: Settings2 }];
-const routePage=(hash:string):Page=>{const value=hash.slice(1);return value==='monitor'?'monitoring':([...navigation.map(item=>item.id),'profiles','localSetup','usage','requests','tasks','environment','about','config'] as string[]).includes(value)?value as Page:'overview';};
-const parentPage=(page:Page):Page=>['profiles','localSetup'].includes(page)?'models':['usage','requests','tasks'].includes(page)?'monitoring':['environment','about','config'].includes(page)?'settings':page;
-const defaults: AppSettings = { language: 'zh-CN', theme: 'system', closeToTray: false, pollInterval: 3000, autoCheckUpdates: true };
+type Page = 'overview' | 'profiles' | 'models' | 'catalog' | 'tuning' | 'chat' | 'monitoring' | 'usage' | 'requests' | 'tasks' | 'environment' | 'settings' | 'about' | 'config';
+const navigation: { id: Page; icon: typeof Activity }[] = [{ id: 'overview', icon: LayoutDashboard }, { id: 'environment', icon: Server }, { id: 'models', icon: HardDrive }, { id: 'chat', icon: MessageSquare }, { id: 'monitoring', icon: Activity }, { id: 'tuning', icon: SlidersHorizontal }, { id: 'tasks', icon: Terminal }, { id: 'settings', icon: Settings2 }];
+const routePage=(hash:string):Page=>{const value=hash.slice(1);return value==='localSetup'?'models':value==='monitor'?'monitoring':([...navigation.map(item=>item.id),'profiles','catalog','usage','requests','tasks','environment','about','config'] as string[]).includes(value)?value as Page:'overview';};
+const parentPage=(page:Page):Page=>['profiles','catalog','config'].includes(page)?'models':['usage','requests'].includes(page)?'monitoring':page==='about'?'settings':page;
+const defaults: AppSettings = { language: 'zh-CN', theme: 'system', closeToTray: true, skipExitConfirmation: false, pollInterval: 3000, autoCheckUpdates: true };
 const defaultOptions: ChatOptions = officialSamplingDefaults;
 const id = () => crypto.randomUUID();
 const numeric = (value: unknown): number | null => typeof value === 'number' && Number.isFinite(value) ? value : null;
@@ -49,7 +60,7 @@ const markdownFileName = (title: string) => {
   return `${/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(clean) ? '_' : ''}${clean}.md`;
 };
 type Recipe = { kind: 'setup'; profile: ServiceProfile; model: string; quant: string; context: number; images: boolean } | { kind: 'install'; directory: string } | { kind: 'update'; profile: ServiceProfile };
-type Modal = { kind: 'profile'; profile?: ServiceProfile } | { kind: 'modelProfiles'; models: core.LocalModel[]; runtime: ServiceProfile } | { kind: 'rename'; conversation: Conversation } | { kind: 'deleteConversation'; conversation: Conversation } | { kind: 'request'; value: unknown } | { kind: 'options' } | null;
+type Modal = { kind: 'profile'; profile?: ServiceProfile } | { kind: 'modelProfiles'; models: core.LocalModel[]; runtime: ServiceProfile } | { kind: 'rename'; conversation: Conversation } | { kind: 'deleteConversation'; conversation: Conversation } | { kind: 'request'; value: unknown } | { kind: 'options' } | { kind: 'vision'; profile: ServiceProfile } | { kind: 'deleteConfiguration'; profile: ServiceProfile } | null;
 
 export function App() {
   const { t: translate } = useTranslation();
@@ -65,7 +76,13 @@ export function App() {
   const [discovery, setDiscovery] = useState<{ busy: boolean; searched: boolean; services: DiscoveredService[] }>({ busy: false, searched: false, services: [] });
   const [sidebarCollapsed,setSidebarCollapsed]=useState(false);
   const [profiles, setProfiles] = useState<ServiceProfile[]>([]);
+  const [updateOwner, setUpdateOwner] = useState<'app' | 'runtime' | null>(null);
+  const updateOwnerRef = useRef<'app' | 'runtime' | null>(null);
+  const [modelDirectories, setModelDirectories] = useState<string[]>([]);
   const [activeId, setActiveId] = useState('');
+  const [configProfileId, setConfigProfileId] = useState('');
+  const [discoveredConfigProfile, setDiscoveredConfigProfile] = useState<ServiceProfile>();
+  const [configurationDirty, setConfigurationDirty] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(defaults);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [conversationId, setConversationId] = useState('');
@@ -80,17 +97,19 @@ export function App() {
   const [modal, setModal] = useState<Modal>(null);
   const [busy, setBusy] = useState('');
   const [localProgress, setLocalProgress] = useState<LocalSetupProgress>();
+  const [startupTarget, setStartupTarget] = useState<ServiceProfile>();
+  const [startupStartedAt, setStartupStartedAt] = useState(0);
+  const [lastUsedId, setLastUsedId] = useState('');
   const preparingLocal = useRef(false);
   const preparationGeneration = useRef(0);
-  const automaticallyPrepared = useRef(new Set<string>());
   const maySelectFirstPrepared = useRef(false);
   const exporting = useRef(false);
   const [toast, setToast] = useState<{ text: string; error?: boolean; taskId?: string } | null>(null);
+  const windowClose = useWindowClose({ desktop, ready, settings, onSettings: setSettings, onError: error => setToast({ text: core.normalizeError(error).message, error: true }) });
   const [draft, setDraft] = useState(()=>new URLSearchParams(location.search).get('q')??'');
   const initialPromptPending=useRef(new URLSearchParams(location.search).has('q'));
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [streaming, setStreaming] = useState(false);
-  const appUpdates = useAppUpdates(desktop, settings.autoCheckUpdates !== false, ready);
   const [installDirectory, setInstallDirectory] = useState('');
   const [logSearch, setLogSearch] = useState('');
   const [selectedTaskId, setSelectedTaskId] = useState('');
@@ -98,6 +117,7 @@ export function App() {
   const abort = useRef<AbortController | null>(null);
   const conversationsRef = useRef(conversations); conversationsRef.current = conversations;
   const profile = profiles.find(item => item.id === activeId);
+  const configProfile = discoveredConfigProfile ?? profiles.find(item => item.id === configProfileId) ?? profile;
   const modelRuntime = preparationRuntime ?? profile;
   const logProfile: ServiceProfile | undefined = selectedTaskId ? { ...(profile ?? { name: '', baseUrl: 'http://127.0.0.1:8080', installDir: '', pythonPath: '', managed: false }), id: selectedTaskId, configPath: '' } : profile;
   const conversation = conversations.find(item => item.id === conversationId);
@@ -131,14 +151,19 @@ export function App() {
   useEffect(() => {
     let mounted = true;
     setBootError('');
-    void Promise.all([desktop ? core.localInstallations() : core.loadStore<ServiceProfile[]>('profiles', []), core.loadStore<AppSettings>('settings', defaults), core.loadStore<Conversation[]>('conversations', []), core.loadStore<string>('activeProfile', ''), core.loadStore<Record<string, ChatOptions>>('chatOptionsByProfile', {}), core.loadStore<Record<string, Recipe>>('taskRecipes', {}), core.loadStore<ChatPreferences>('chatPreferences', defaultChatPreferences),core.loadStore<Record<string,string>>('activeConversationIds',{}),core.loadStore<boolean>('sidebarCollapsed',false),core.loadStore<boolean>('onboardingOpen',true)]).then(([p, s, c, a, o, r, ui, ids, collapsed, guide]) => {
-      if (!mounted) return; maySelectFirstPrepared.current = p.length === 0; setGuideOpen(guide); setSidebarCollapsed(collapsed); setProfiles(p); setSettings({ ...defaults, ...s }); setConversations(c); setActiveId(p.some(x => x.id === a) ? a : p[0]?.id ?? ''); setProfileOptions(o); setRecipes(r);setConversationIds(ids);const selectedProfile=p.some(x=>x.id===a)?a:p[0]?.id??'';setConversationId(c.find(x=>x.id===ids[selectedProfile]&&x.profileId===selectedProfile)?.id??c.find(x=>x.profileId===selectedProfile)?.id??''); setChatPreferences({ ...defaultChatPreferences, ...ui }); setPreferencesReady(true); setReady(true);
+    void Promise.all([desktop ? core.localInstallations() : core.loadStore<ServiceProfile[]>('profiles', []), core.loadStore<AppSettings>('settings', defaults), core.loadStore<Conversation[]>('conversations', []), core.loadStore<string>('activeProfile', ''), core.loadStore<Record<string, ChatOptions>>('chatOptionsByProfile', {}), core.loadStore<Record<string, Recipe>>('taskRecipes', {}), core.loadStore<ChatPreferences>('chatPreferences', defaultChatPreferences),core.loadStore<Record<string,string>>('activeConversationIds',{}),core.loadStore<boolean>('sidebarCollapsed',false),core.loadStore<boolean>('onboardingOpen',true),core.loadStore<string[]>('modelDiscoveryDirectories',[])]).then(async ([p, s, c, a, o, r, ui, ids, collapsed, guide, directories]) => {
+      const restored = desktop ? await core.restoreServiceSelection(p, a, item => core.serviceStatus(item.id, item), () => core.discoverLocal(directories.length ? directories : undefined)) : undefined;
+      if (!mounted) return;
+      const selectedProfile = restored?.selectedId ?? (p.some(x => x.id === a) ? a : p[0]?.id ?? '');
+      maySelectFirstPrepared.current = p.length === 0; setGuideOpen(guide); setSidebarCollapsed(collapsed); setModelDirectories(directories); setProfiles(p); setSettings({ ...defaults, ...s }); setConversations(c); setActiveId(selectedProfile); setProfileOptions(o); setRecipes(r);setConversationIds(ids);setConversationId(c.find(x=>x.id===ids[selectedProfile]&&x.profileId===selectedProfile)?.id??c.find(x=>x.profileId===selectedProfile)?.id??''); setChatPreferences({ ...defaultChatPreferences, ...ui }); setPreferencesReady(true); setReady(true);
       if (desktop) void core.applySettings({ ...defaults, ...s }).catch(error => notify(errorText(error), true));
     }).catch(error => { if (mounted) setBootError(errorText(error)); });
     return () => { mounted = false; abort.current?.abort(); };
   }, [bootAttempt]);
   useEffect(() => { if (ready && profiles.length) maySelectFirstPrepared.current = false; }, [ready, profiles.length]);
-  useEffect(() => { if (!ready) return; void Promise.all([...(desktop ? [] : [core.saveStore('profiles', profiles)]), core.saveStore('settings', settings), core.saveStore('activeProfile', activeId), core.saveStore('chatOptionsByProfile', profileOptions), core.saveStore('taskRecipes', recipes),core.saveStore('activeConversationIds',conversationIds),core.saveStore('sidebarCollapsed',sidebarCollapsed),core.saveStore('onboardingOpen',guideOpen)]).catch(error => notify(errorText(error), true)); }, [ready, profiles, settings, activeId, profileOptions, recipes,conversationIds,sidebarCollapsed,guideOpen]);
+  useEffect(() => { if (ready) void core.loadStore<string>('lastUsedLocalInstallation', '').then(setLastUsedId); }, [ready]);
+  useEffect(() => { if (!desktop || !ready) return; let disposed=false;let unlisten: (() => void) | undefined; void import('@tauri-apps/api/event').then(({listen}) => listen<string>('tray-action-error', event => {if(!disposed)notify(event.payload, true);})).then(fn => {if(disposed)fn();else unlisten=fn;}).catch(error=>{if(!disposed)notify(errorText(error),true);}); return () => {disposed=true;unlisten?.();}; }, [desktop, ready]);
+  useEffect(() => { if (!ready) return; void Promise.all([...(desktop ? [] : [core.saveStore('profiles', profiles)]), core.saveStore('settings', settings), core.saveStore('activeProfile', activeId), core.saveStore('chatOptionsByProfile', profileOptions), core.saveStore('taskRecipes', recipes),core.saveStore('activeConversationIds',conversationIds),core.saveStore('sidebarCollapsed',sidebarCollapsed),core.saveStore('onboardingOpen',guideOpen),core.saveStore('modelDiscoveryDirectories',modelDirectories)]).catch(error => notify(errorText(error), true)); }, [ready, profiles, settings, activeId, profileOptions, recipes,conversationIds,sidebarCollapsed,guideOpen,modelDirectories]);
   useEffect(() => { if (preferencesReady) void core.saveStore('chatPreferences', chatPreferences).catch(error => notify(errorText(error), true)); }, [preferencesReady, chatPreferences]);
   useEffect(() => { if (ready && !streaming) void core.saveStore('conversations', conversations).catch(error => notify(errorText(error), true)); }, [ready, conversations, streaming]);
   useEffect(()=>{if(ready)setConversationId(conversations.find(c=>c.id===conversationIds[activeId]&&c.profileId===activeId)?.id??conversations.find(c=>c.profileId===activeId)?.id??'');},[ready,activeId]);
@@ -148,14 +173,17 @@ export function App() {
   useEffect(() => { setSamples({ decode: [], gpu: [] }); }, [activeId, profile?.baseUrl]);
 
 
-  const health = useQuery({ queryKey: ['health', activeId, profile?.baseUrl], queryFn: () => core.request(profile!, '/health'), enabled: ready && !!profile, refetchInterval: settings.pollInterval });
-  const healthData = object(health.data);
-  const online = health.isSuccess;
+  const process = useQuery({ queryKey: ['process', activeId, profile?.baseUrl, profile?.configPath, profile?.pythonPath, profile?.managed], queryFn: () => core.serviceStatus(activeId, profile), enabled: desktop && !!profile, refetchInterval: Math.max(10000,settings.pollInterval), refetchOnWindowFocus: false });
+  const serviceRunning = !desktop || process.data?.running === true;
+  const health = useQuery({ queryKey: ['health', activeId, profile?.baseUrl], queryFn: () => core.request(profile!, '/health'), enabled: ready && !!profile && serviceRunning, refetchInterval: settings.pollInterval });
+  const online = serviceRunning && health.isSuccess;
+  const healthData = online ? object(health.data) : {};
+  const connecting = !!localProgress || serviceRunning && health.isLoading;
+  const serviceStopped = desktop && !!profile && process.data?.running === false && !localProgress;
   const loaded = online && healthData.loaded === true;
   const supportsImages = online && healthData.images === true;
-  const process = useQuery({ queryKey: ['process', activeId, profile?.baseUrl, profile?.configPath, profile?.pythonPath, profile?.managed], queryFn: () => core.serviceStatus(activeId, profile), enabled: desktop && !!profile, refetchInterval: Math.max(10000,settings.pollInterval), refetchOnWindowFocus: false });
   const chatReady = online && (!desktop || (loaded && process.data?.owned === true && process.data?.running === true && !localProgress));
-  const metrics = useQuery({ queryKey: ['metrics', activeId, profile?.baseUrl, showAllRequests], queryFn: async () => core.normalizeMetrics(await core.request(profile!, `/metrics${showAllRequests ? '?requests=all' : ''}`)), enabled: !!profile && online && (page === 'overview' || page === 'monitoring' || page === 'chat' || page === 'about' || page === 'config'), refetchInterval: settings.pollInterval });
+  const metrics = useQuery({ queryKey: ['metrics', activeId, profile?.baseUrl, showAllRequests], queryFn: async () => core.normalizeMetrics(await core.request(profile!, `/metrics${showAllRequests ? '?requests=all' : ''}`)), enabled: !!profile && online, refetchInterval: settings.pollInterval });
   const metric = online ? metrics.data : undefined;
   const projection = object(metric?.raw.engine).cvec;
   const hasProjection = !!projection && projection !== '0';
@@ -168,12 +196,37 @@ export function App() {
   const preparedProfiles = useQuery({ queryKey: ['setupRegistrations', registeredSetupTasks, finishedRuntimeUpdates], queryFn: core.localInstallations, enabled: desktop && ready && !!(registeredSetupTasks || finishedRuntimeUpdates), refetchOnWindowFocus: false });
   useEffect(() => {
     if (!ready || !preparedProfiles.data) return;
+    let disposed = false;
     const firstPrepared = maySelectFirstPrepared.current ? preparedProfiles.data.find(item => handoffs.data?.some(handoff => handoff.status === 'registered' && handoff.profileId === item.id)) : undefined;
     if (preparedProfiles.data.length) maySelectFirstPrepared.current = false;
     setProfiles(preparedProfiles.data);
     if (firstPrepared) setActiveId(current => current || firstPrepared.id);
-  }, [ready, preparedProfiles.data]);
+    void core.restoreServiceSelection(preparedProfiles.data, activeId, selected => core.serviceStatus(selected.id, selected)).then(selection => {
+      if (disposed || selection.runningOwnedIds.length !== 1 || !selection.selectedId) return;
+      setActiveId(selection.selectedId);
+    }).catch(error => { if (!disposed) notify(errorText(error), true); });
+    return () => { disposed = true; };
+  }, [ready, preparedProfiles.data, activeId]);
+  const discoveredCandidates = useQuery({ queryKey: ['discovered-local-models', modelDirectories.join('|')], queryFn: () => core.discoverLocal(modelDirectories.length ? modelDirectories : undefined), enabled: desktop && ready, staleTime: 30000, refetchInterval: ['overview', 'models', 'profiles', 'environment'].includes(page) ? 30000 : false, refetchOnWindowFocus: false });
   const supervisor = useQuery({ queryKey: ['supervisor'], queryFn: core.supervisorStatus, enabled: desktop && ready, refetchInterval: 10000, refetchOnWindowFocus: false });
+  const backgroundTuning = useQuery({ queryKey: ['automatic-update-tuning', profiles.map(item => item.id).join(',')], queryFn: () => Promise.all(profiles.map(item => core.tuningStatus(item.id))), enabled: desktop && ready && settings.autoCheckUpdates !== false, refetchInterval: settings.autoCheckUpdates !== false ? 10000 : false, refetchOnWindowFocus: false });
+  const backgroundHealth = Object.values(supervisor.data?.health ?? {}).filter(item => item.pid !== null && item.phase !== 'stopped');
+  const unobservedRunningService = discoveredCandidates.data?.some(candidate => candidate.running === true && !profiles.some(saved =>
+    core.configurationPathKey(saved.configPath, saved.installDir) === core.configurationPathKey(candidate.configPath, candidate.installDir)
+    && supervisor.data?.health?.[saved.id]?.pid != null && supervisor.data.health[saved.id]?.phase !== 'stopped'));
+  const automaticUpdatesIdle = (!desktop || discoveredCandidates.isSuccess && !unobservedRunningService) && !streaming && !busy && !localProgress && !modal && !!tasks.data && !tasks.data.some(task => task.state === 'running') && !!supervisor.data && (supervisor.data.activeServices === 0 || backgroundHealth.length >= supervisor.data.activeServices && backgroundHealth.every(item => item.observerState === 'idle' && item.activeRequests === 0 && Date.now() - item.checkedAt < 20000)) && !!backgroundTuning.data && !backgroundTuning.data.some(job => job && ['checking', 'running', 'canceling', 'applying', 'rollingBack'].includes(job.state));
+  const updateGate = (owner: 'app' | 'runtime') => ({
+    acquire: () => { if (updateOwnerRef.current) return false; updateOwnerRef.current=owner; setUpdateOwner(owner); return true; },
+    release: () => { if (updateOwnerRef.current===owner) { updateOwnerRef.current=null; setUpdateOwner(null); } },
+  });
+  const appUpdates = useAppUpdates(desktop, settings.autoCheckUpdates !== false, ready, automaticUpdatesIdle && updateOwner !== 'runtime', updateGate('app'));
+  const runtimeUpdates = useRuntimeUpdates(desktop, ready, settings.autoCheckUpdates !== false, automaticUpdatesIdle && updateOwner !== 'app' && !appUpdates.dialogOpen && !['checking','downloading','installing'].includes(appUpdates.state.phase), tasks.data, settings.language, error => notify(errorText(error), true), updateGate('runtime'));
+  const installationDetails = useQuery({ queryKey: ['localInstallationDetails', profiles.map(p => p.id).join(',')], queryFn: core.localInstallationDetails, enabled: desktop && ready, staleTime: 5000 });
+  const startupLogs = useQuery({ queryKey: ['startupLogs', startupTarget?.id], queryFn: () => core.readLogs(startupTarget!, 80), enabled: desktop && !!localProgress && !!startupTarget, refetchInterval: 1000, refetchIntervalInBackground: true, retry: false });
+  useEffect(() => {
+    if (!localProgress || localProgress.phase === 'loading') return;
+    if (startupLogs.data?.some(log => log.timestamp >= startupStartedAt && log.message.includes('本机 API 已就绪，正在加载模型'))) setLocalProgress(old => old ? {...old,phase:'loading',message:undefined} : old);
+  }, [startupLogs.data, startupStartedAt, localProgress?.phase]);
   useEffect(() => {
     if (!desktop || !ready || !tasks.data) return;
     const previous = observedTasks.current;
@@ -192,8 +245,9 @@ export function App() {
     });
   }, [desktop, ready, tasks.data, query]);
   const logs = useQuery({ queryKey: ['logs', selectedTaskId || activeId], queryFn: () => core.readLogs(logProfile!, 2000), enabled: desktop && !!logProfile && page === 'tasks', refetchInterval: settings.pollInterval });
-  const environment = useQuery({ queryKey: ['environment'], queryFn: core.environmentInfo, enabled: desktop && page === 'environment' });
-  const localModels = useQuery({ queryKey: ['localModels', modelRuntime?.id, modelRuntime?.installDir, modelRuntime?.configPath], queryFn: () => core.listLocalModels(modelRuntime!), enabled: desktop && !!modelRuntime?.installDir && page === 'models' });
+  const environment = useQuery({ queryKey: ['environment'], queryFn: core.environmentInfo, enabled: desktop && ready && page === 'environment' });
+  const overviewRuntime = useQuery({ queryKey: ['runtime-installation'], queryFn: core.localRuntimeInstallation, enabled: desktop && ready && page === 'overview' && !profile, staleTime: 30000 });
+  const localModels = useQuery({ queryKey: ['localModels', modelRuntime?.id, modelRuntime?.installDir, modelRuntime?.configPath], queryFn: () => core.listLocalModels(modelRuntime!), enabled: desktop && !!modelRuntime?.installDir && page === 'catalog' });
   const availableModels = useQuery({ queryKey: ['availableModels', activeId, profile?.baseUrl], queryFn: () => core.request(profile!, '/v1/models'), enabled: !!profile && online && page === 'chat' });
   const apiModels = Array.isArray(object(availableModels.data).data) ? (object(availableModels.data).data as unknown[]).map(x => String(object(x).id ?? '')).filter(Boolean) : [];
 
@@ -240,51 +294,60 @@ export function App() {
     finally { exporting.current = false; }
   };
   const go=(next:Page)=>{setPage(next);const hash=`#${next==='monitoring'?'monitor':next}`;if(location.hash!==hash)history.pushState(null,'',`${location.pathname}${location.search}${hash}`);};
-  const prepareImported = async (candidate: core.LocalCandidate) => {
+  const prepareImported = async (candidate: core.LocalCandidate, destination: Page = 'models') => {
     if (preparingLocal.current || streaming) throw new Error(t('busyHint'));
+    // A detected private copy or its recorded source is already registered.
+    // Reuse that record so choosing the current configuration cannot re-import/restart it.
+    const candidatePath = core.configurationPathKey(candidate.configPath, candidate.installDir);
+    const registered = profiles.find(item => core.configurationPathKey(item.configPath, item.installDir) === candidatePath
+      || installationDetails.data?.some(detail => detail.profileId === item.id && detail.originalConfigPath
+        && core.configurationPathKey(detail.originalConfigPath, item.installDir) === candidatePath));
+    if (registered) { await activateLocal(registered); go(destination); return; }
     preparingLocal.current = true;
     const generation = ++preparationGeneration.current;
+    setStartupStartedAt(Date.now());
     setLocalProgress({ phase: 'importing' });
     try {
       const imported = await core.importLocal(candidate);
-      setLocalProgress({ phase: 'starting', message: t('preparingLocal') });
-      await core.ensureLocalService(imported.id);
-      automaticallyPrepared.current.add(imported.id);
+      setProfiles(old => old.some(item => item.id === imported.id) ? old.map(item => item.id === imported.id ? imported : item) : [...old, imported]);
+      setStartupTarget(imported);
+      go(destination);
+      setLocalProgress({ phase: 'starting' });
+      await core.switchLocalService(imported.id);
       setProfiles(old => old.some(item => item.id === imported.id) ? old.map(item => item.id === imported.id ? imported : item) : [...old, imported]);
       setActiveId(imported.id);
+      setLastUsedId(activeId || imported.id); void core.saveStore('lastUsedLocalInstallation', activeId || imported.id);
       setPreparationRuntime(null);
       await query.invalidateQueries();
     } catch (error) {
       notify(errorText(error), true);
       throw error;
     } finally {
-      if (generation === preparationGeneration.current) { preparingLocal.current = false; setLocalProgress(undefined); }
+      if (generation === preparationGeneration.current) { preparingLocal.current = false; setLocalProgress(undefined); setStartupTarget(undefined); }
     }
   };
   const activateLocal = async (selected: ServiceProfile) => {
     if (!desktop) { setActiveId(selected.id); return; }
     if (streaming || preparingLocal.current) throw new Error(t('busyHint'));
-    const generation = ++preparationGeneration.current;
-    preparingLocal.current = true;
-    setLocalProgress({ phase: 'starting', message: t('preparingLocal') });
-    try {
-      await core.switchLocalService(selected.id);
-      automaticallyPrepared.current.add(selected.id);
+    const existing = await core.serviceStatus(selected.id, selected);
+    if (existing.owned && existing.running) {
       setActiveId(selected.id);
       await query.invalidateQueries();
+      return;
+    }
+    const generation = ++preparationGeneration.current;
+    preparingLocal.current = true;
+    setStartupStartedAt(Date.now()); setStartupTarget(selected);
+    setLocalProgress({ phase: 'starting' });
+    try {
+      await core.switchLocalService(selected.id);
+      setActiveId(selected.id);
+      if(selected.id !== activeId){setLastUsedId(activeId || selected.id); void core.saveStore('lastUsedLocalInstallation', activeId || selected.id);}
+      await query.invalidateQueries();
     } finally {
-      if (generation === preparationGeneration.current) { preparingLocal.current = false; setLocalProgress(undefined); }
+      if (generation === preparationGeneration.current) { preparingLocal.current = false; setLocalProgress(undefined); setStartupTarget(undefined); }
     }
   };
-  useEffect(() => {
-    if (!desktop || !ready || !profile?.managed || !profile.installDir || !profile.configPath || automaticallyPrepared.current.has(profile.id) || preparingLocal.current) return;
-    automaticallyPrepared.current.add(profile.id);
-    preparingLocal.current = true;
-    const generation = ++preparationGeneration.current;
-    setLocalProgress({ phase: 'starting', message: t('preparingLocal') });
-    void core.ensureLocalService(profile.id).then(() => query.invalidateQueries()).catch(error => { automaticallyPrepared.current.delete(profile.id); notify(errorText(error), true); }).finally(() => { if (generation === preparationGeneration.current) { preparingLocal.current = false; setLocalProgress(undefined); } });
-  }, [desktop, ready, profile?.id]);
-  const renderLocalSetup = () => <LocalSetupPage language={settings.language} desktop={desktop} progress={localProgress} onDiscover={core.discoverLocal} onChooseDirectory={() => choose(true)} onImport={prepareImported} onInstall={() => go('environment')} onChat={() => conversation ? go('chat') : addConversation()}/>;
   useEffect(()=>{const change=()=>setPage(routePage(location.hash));window.addEventListener('hashchange',change);window.addEventListener('popstate',change);return()=>{window.removeEventListener('hashchange',change);window.removeEventListener('popstate',change);};},[]);
   const nativeTitle = desktop ? undefined : t('nativeRequired');
   const addConversation = () => {
@@ -377,7 +440,7 @@ export function App() {
   };
   const selectPreparationRuntime = (directory: string) => {
     setPreparationRuntime({ id: id(), name: 'Strata', baseUrl: 'http://127.0.0.1:8080', installDir: directory, configPath: '', pythonPath: '', managed: true });
-    go('models');
+    go('catalog');
   };
   const createTaskProfile = async (recipe: Recipe) => {
     const runtime: ServiceProfile = recipe.kind === 'install'
@@ -407,12 +470,12 @@ export function App() {
   const diagnostics = () => { if (profile) void act('diagnostics', async () => { const path = await core.exportDiagnostics(profile); notify(`${t('diagnosticSaved')} ${path}`); }); };
 
   const ErrorBlock = ({ error }: { error: unknown }) => error ? <div className="notice error" role="alert">{errorText(error)}</div> : null;
-  const NeedProfile = () => <Empty title={t('noProfile')} hint={t('localSetupIntro')}><button className="primary" onClick={() => go('localSetup')}><FolderOpen size={16} />{t('localSetupTitle')}</button></Empty>;
+  const NeedProfile = () => <Empty title={t('noProfile')}><button className="primary" onClick={() => go('models')}><FolderOpen size={16} />{t('myModels')}</button></Empty>;
   const serviceActions = <div className="actions service-actions">
-    <button title={nativeTitle} disabled={!desktop || !profile?.managed || !!busy || !!localProgress || (process.data?.owned === true && loaded)} onClick={() => profile && void act('start', () => activateLocal(profile), 'success')}><Zap size={15} />{t('start')}</button>
-    <button title={nativeTitle} disabled={!desktop || !profile?.managed || !!busy || (process.data?.running !== true || process.data?.owned !== true)} onClick={() => void act('stop', () => core.stopService(activeId), 'success')}><Square size={14} />{t('stop')}</button>
-    <button disabled={!profile || !online || loaded || !!busy || (desktop && process.data?.owned !== true)} onClick={() => profile && void act('load', () => core.request(profile, '/load', 'POST', {}), 'success')}><Upload size={15} />{t('load')}</button>
-    <button disabled={!profile || !online || !loaded || !!busy || (desktop && process.data?.owned !== true)} onClick={() => profile && void act('unload', () => core.request(profile, '/unload', 'POST', {}), 'success')}><Download size={15} />{t('unload')}</button>
+    {process.data?.running !== true && <button className="primary" title={!desktop ? nativeTitle : settings.language === 'zh-CN' ? '启动本机 API 并准备模型' : 'Start the local API and prepare the model'} disabled={!desktop || !profile?.managed || !!busy || !!localProgress} onClick={() => profile && void act('start', () => activateLocal(profile), 'success')}><Zap size={15} />{t('start')}</button>}
+    <button className="danger" title={!desktop ? nativeTitle : settings.language === 'zh-CN' ? '停止本机 API 服务并释放模型内存，不删除模型文件' : 'Stop the local API and release model memory; model files are preserved'} disabled={!desktop || !profile?.managed || !!busy || !!localProgress || (process.data?.running !== true || process.data?.owned !== true)} onClick={() => void act('stop', () => core.stopService(activeId), 'success')}><Square size={14} />{t('stop')}</button>
+    {online && healthData.loaded === false && <button title={settings.language === 'zh-CN' ? '将已有模型载入内存和显存，供正在运行的 API 使用' : 'Load the existing model into RAM and VRAM for the running API'} disabled={!profile || !!busy || !!localProgress || (desktop && process.data?.owned !== true)} onClick={() => profile && void act('load', () => core.request(profile, '/load', 'POST', {}), 'success')}><Upload size={15} />{t('load')}</button>}
+    {loaded && <button title={settings.language === 'zh-CN' ? '释放模型占用的内存和显存，保留 API 服务和模型文件；再次使用时可重新加载' : 'Release model RAM and VRAM, keeping the API and model files; load again when needed'} disabled={!profile || !!busy || !!localProgress || (desktop && process.data?.owned !== true)} onClick={() => profile && void act('unload', () => core.request(profile, '/unload', 'POST', {}), 'success')}><Download size={15} />{t('unload')}</button>}
   </div>;
 
   const guideTasks = [...(tasks.data ?? [])].sort((a, b) => b.startedAt - a.startedAt);
@@ -434,13 +497,40 @@ export function App() {
     if (guideDirectory) { void act('taskProfile', () => createTaskProfile({ kind: 'install', directory: guideDirectory })); return; }
     go('models');
   };
-  const renderOverviewPage=()=> !profile ? renderLocalSetup() : <OverviewPage profile={profile} health={healthData} backgroundHealth={supervisor.data?.health?.[profile.id]} metric={metric} process={process.data} tasks={tasks.data??[]} tasksLoading={tasks.isPending} language={settings.language} online={online} connecting={!!localProgress || health.isFetching&&!health.data} desktop={desktop} healthError={health.error?errorText(health.error):undefined} metricsError={metrics.error?errorText(metrics.error):undefined} taskError={tasks.error?errorText(tasks.error):undefined} processError={process.error?errorText(process.error):supervisor.data?.preparationFailures?.find(item=>item.profileId===profile.id)?.lastError} controls={serviceActions} usage={<OverviewUsage key={profile.id} profile={profile} language={settings.language} desktop={desktop} onOpen={()=>go('usage')} onCopy={content=>void copy(content)}/>} stateLabel={serviceState} onRefresh={()=>void query.invalidateQueries()} onCreateProfile={()=>go('localSetup')} onChat={()=>conversation?go('chat'):addConversation()} onNavigate={go}/>;
+  const overviewStartup = desktop ? selectOverviewStartup(profiles, installationDetails.data, discoveredCandidates.data, lastUsedId) : undefined;
+  const overviewModel = overviewStartup?.profile ?? overviewStartup?.candidate;
+  const legacyOverviewRuntime = overviewRuntime.data?.result;
+  const overviewRuntimes = overviewRuntime.data?.detectedRuntimes ?? (legacyOverviewRuntime?[{readiness:'ready' as const}]:[]);
+  const hasOverviewRuntime = !!overviewModel || overviewRuntimes.length > 0 || !!discoveredCandidates.data?.length;
+  const overviewNeedsRepair = hasOverviewRuntime && !overviewModel && !overviewRuntimes.some(runtime => runtime.readiness === 'ready');
+  const overviewSetupError = discoveredCandidates.error ?? overviewRuntime.error ?? installationDetails.error;
+  const renderOverviewPage=()=> <OverviewPage
+    profile={profile} health={healthData} backgroundHealth={profile?supervisor.data?.health?.[profile.id]:undefined} metric={metric} process={process.data}
+    tasks={tasks.data??[]} tasksLoading={tasks.isPending} language={settings.language} online={online} connecting={connecting} desktop={desktop}
+    healthError={serviceRunning&&health.error?errorText(health.error):undefined} metricsError={online&&metrics.error?errorText(metrics.error):undefined} taskError={tasks.error?errorText(tasks.error):undefined}
+    processError={process.error?errorText(process.error):supervisor.data?.preparationFailures?.find(item=>item.profileId===profile?.id)?.lastError}
+    controls={serviceActions}
+    usage={<OverviewUsage key={profile?.id??'unconfigured'} profile={profile} language={settings.language} desktop={desktop} onOpen={()=>go('usage')}/>}
+    startupModel={overviewModel&&overviewStartup?{name:overviewModel.name,configPath:overviewModel.configPath,lastActivatedAt:overviewStartup.lastActivatedAt,onStart:()=>void act('overviewStart',async()=>{if(overviewStartup.profile)await activateLocal(overviewStartup.profile);else if(overviewStartup.candidate)await prepareImported(overviewStartup.candidate,'overview');},'success')}:undefined}
+    hasRuntime={hasOverviewRuntime} runtimeNeedsRepair={overviewNeedsRepair} setupLoading={desktop&&(discoveredCandidates.isPending||overviewRuntime.isPending||installationDetails.isPending)}
+    setupError={overviewSetupError?errorText(overviewSetupError):undefined} startupBusy={busy==='overviewStart'||!!localProgress} startupDisabled={!!busy||streaming||!!tasks.data?.some(task=>task.state==='running'&&task.kind.includes('update'))}
+    onCopy={content=>void copy(content)} onImages={desktop&&profile?.configPath&&!busy&&!streaming&&!localProgress?()=>setModal({kind:'vision',profile}):undefined}
+    stateLabel={serviceState} onRefresh={()=>void query.invalidateQueries()} onCreateProfile={()=>go('models')} onChat={()=>conversation?go('chat'):addConversation()} onNavigate={go}/>;
 
   const operateService = async (action: () => Promise<unknown>) => { await action(); await query.invalidateQueries(); notify(t('success')); };
   const servicePage = async (p: ServiceProfile, next: Page) => {
     if (p.id !== activeId) await activateLocal(p);
     if (next === 'tasks') setSelectedTaskId('');
     go(next);
+  };
+  const openModelConfig = (selected?: ServiceProfile) => {
+    setDiscoveredConfigProfile(undefined);
+    setConfigProfileId(selected?.id ?? activeId);
+    go('config');
+  };
+  const openDiscoveredConfig = (candidate: core.LocalCandidate) => {
+    setDiscoveredConfigProfile({id:`configuration-${candidate.id}`,name:candidate.name,baseUrl:`http://127.0.0.1:${candidate.detectedPort ?? 8080}`,installDir:candidate.installDir,pythonPath:candidate.pythonPath,configPath:candidate.configPath,managed:false});
+    go('config');
   };
   const removeService = async (p:ServiceProfile) => {
     if(desktop) { const status=await core.serviceStatus(p.id); if(status.running&&status.owned)throw new Error(t('profileStopFirst')); }
@@ -451,17 +541,16 @@ export function App() {
     setConversationIds(old=>Object.fromEntries(Object.entries(old).filter(([key])=>key!==p.id)));
     notify(t('success'));
   };
-  const ProfilesPage = () => <ServiceManagerPage profiles={profiles} activeId={activeId} language={settings.language} desktop={desktop} pollInterval={settings.pollInterval} streaming={streaming} busyProfileIds={busy || tasks.data?.some(task => task.state === 'running' && task.kind.includes('update')) ? profiles.map(p=>p.id) : []}
-    onSelect={activateLocal} onAdd={()=>go('localSetup')} onImport={()=>go('localSetup')}
-    onEdit={p=>setModal({kind:'profile',profile:p})} onDelete={removeService}
+  const addModelDirectory = () => { void choose(true).then(directory => { if (!directory) return; setModelDirectories(old => [...new Set([...old, directory])]); void query.invalidateQueries({ queryKey: ['discovered-local-models'] }); }).catch(error => notify(errorText(error), true)); };
+  const ProfilesPage = () => <ServiceManagerPage profiles={profiles} activeId={activeId} lastUsedId={lastUsedId} preparingId={startupTarget?.id} details={installationDetails.data} candidates={discoveredCandidates.data} discoveryLoading={discoveredCandidates.isFetching} discoveryError={discoveredCandidates.error} onUseCandidate={prepareImported} onConfigCandidate={openDiscoveredConfig} onRefreshDiscovery={()=>discoveredCandidates.refetch()} language={settings.language} desktop={desktop} pollInterval={settings.pollInterval} streaming={streaming} busyProfileIds={busy || localProgress || tasks.data?.some(task => task.state === 'running' && task.kind.includes('update')) ? profiles.map(p=>p.id) : []}
+    onSelect={activateLocal} onAdd={addModelDirectory} onImport={addModelDirectory}
+    onEdit={p=>setModal({kind:'profile',profile:p})} onDelete={removeService} onModelDeleted={()=>query.invalidateQueries()}
     onStart={p=>operateService(()=>activateLocal(p))} onStop={p=>operateService(()=>core.stopService(p.id))} onRestart={p=>operateService(()=>core.restartService(p))} onTakeover={p=>operateService(()=>activateLocal(p))}
-    onUpdate={async p => { const task = await runRecipe({ kind: 'update', profile: p }); setSelectedTaskId(task.id); await query.invalidateQueries({ queryKey: ['tasks'] }); go('tasks'); }}
     onLoad={p=>operateService(()=>core.request(p,'/load','POST',{}))} onUnload={p=>operateService(()=>core.request(p,'/unload','POST',{}))}
-    onConfig={p=>servicePage(p,'config')} onLogs={p=>servicePage(p,'tasks')} onChat={p=>servicePage(p,'chat')}
-    onOnboarding={()=>go('localSetup')} onEnvironment={()=>go('environment')} onInstall={()=>go('environment')}
+    onConfig={openModelConfig} onLogs={p=>servicePage(p,'tasks')} onChat={p=>servicePage(p,'chat')}
     onError={error=>notify(errorText(error),true)}/>;
 
-  const ModelsPage = () => <><Header title={t('officialModels')} hint={t('catalogHint')}><button title={nativeTitle} disabled={!desktop || streaming || !!busy} onClick={() => void choose(true).then(directory => directory && selectPreparationRuntime(directory))}><FolderOpen size={15}/>{t('selectRuntime')}</button><button title={nativeTitle} disabled={!desktop || streaming || !!busy} onClick={() => void act('import', async () => { const path = await choose(false); if (!path) return; await openConfigProfile(path, profile); })}><FolderOpen size={15} />{t('importConfig')}</button></Header>{modelRuntime?.installDir && <Panel title={t('preparationRuntime')}><code>{modelRuntime.installDir}</code>{preparationRuntime && profile && <div className="panel-footer"><button onClick={() => setPreparationRuntime(null)}>{t('useCurrentRuntime')}</button></div>}</Panel>}{!modelRuntime && <div className="notice">{t('modelRuntimeNeeded')}<div className="actions"><button className="primary" onClick={() => go('environment')}>{t('automaticRuntime')}</button><button onClick={() => go('localSetup')}>{t('useExistingModel')}</button></div></div>}<div className="model-grid">{core.MODEL_CATALOG.map(entry => <ModelCard key={entry.id} entry={entry} desktop={desktop} profile={modelRuntime} busy={!!busy} onPrepare={recipe => void act('setup', () => runRecipe(recipe), 'modelPrepared')} />)}</div><p className="subtle">{t('snapshot')}: {core.MODEL_CATALOG[0]?.snapshotDate}</p><Panel title={t('localModels')} action={<button title={nativeTitle} disabled={!desktop || !modelRuntime?.installDir} onClick={() => void localModels.refetch()}><RefreshCw size={14} />{t('refresh')}</button>}><p className="subtle">{t('localHint')}</p><ErrorBlock error={localModels.error} />{localModels.data?.length ? <div className="table-wrap"><table><thead><tr><th>{t('name')}</th><th>{t('configPath')}</th><th>{t('modelPath')}</th><th>{t('size')}</th><th>{t('actions')}</th></tr></thead><tbody>{localModels.data.map((m, index) => <tr key={index}><td>{m.name}</td><td><code>{m.configPath}</code></td><td><code>{m.modelPath}</code></td><td>{bytes(m.sizeBytes)}</td><td><button disabled={streaming || !!busy} onClick={() => modelRuntime && void act('import', () => openConfigProfile(m.configPath, modelRuntime))}>{t('createProfile')}</button></td></tr>)}</tbody></table></div> : <Empty title={t('noLocalModels')} hint={!desktop ? t('nativeRequired') : t('localHint')} />}</Panel></>;
+  const ModelsPage = () => <><Header title={t('officialModels')} hint={t('catalogHint')}><button title={nativeTitle} disabled={!desktop || streaming || !!busy} onClick={() => void choose(true).then(directory => directory && selectPreparationRuntime(directory))}><FolderOpen size={15}/>{t('selectRuntime')}</button><button title={nativeTitle} disabled={!desktop || streaming || !!busy} onClick={() => void act('import', async () => { const path = await choose(false); if (!path) return; await openConfigProfile(path, profile); })}><FolderOpen size={15} />{t('importConfig')}</button></Header>{modelRuntime?.installDir && <Panel title={t('preparationRuntime')}><code>{modelRuntime.installDir}</code>{preparationRuntime && profile && <div className="panel-footer"><button onClick={() => setPreparationRuntime(null)}>{t('useCurrentRuntime')}</button></div>}</Panel>}{!modelRuntime && <div className="notice">{t('modelRuntimeNeeded')}<div className="actions"><button className="primary" onClick={() => go('environment')}>{t('automaticRuntime')}</button><button onClick={() => go('models')}>{t('useExistingModel')}</button></div></div>}<div className="model-grid">{core.MODEL_CATALOG.map(entry => <ModelCard key={entry.id} entry={entry} desktop={desktop} profile={modelRuntime} busy={!!busy} onPrepare={recipe => void act('setup', () => runRecipe(recipe), 'modelPrepared')} />)}</div><p className="subtle">{t('snapshot')}: {core.MODEL_CATALOG[0]?.snapshotDate}</p><Panel title={t('localModels')} action={<button title={nativeTitle} disabled={!desktop || !modelRuntime?.installDir} onClick={() => void localModels.refetch()}><RefreshCw size={14} />{t('refresh')}</button>}><p className="subtle">{t('localHint')}</p><ErrorBlock error={localModels.error} />{localModels.data?.length ? <div className="table-wrap"><table><thead><tr><th>{t('name')}</th><th>{t('configPath')}</th><th>{t('modelPath')}</th><th>{t('size')}</th><th>{t('actions')}</th></tr></thead><tbody>{localModels.data.map((m, index) => <tr key={index}><td>{m.name}</td><td><code>{m.configPath}</code></td><td><code>{m.modelPath}</code></td><td>{bytes(m.sizeBytes)}</td><td><button disabled={streaming || !!busy} onClick={() => modelRuntime && void act('import', () => openConfigProfile(m.configPath, modelRuntime))}>{t('createProfile')}</button></td></tr>)}</tbody></table></div> : <Empty title={t('noLocalModels')} hint={!desktop ? t('nativeRequired') : t('localHint')} />}</Panel></>;
 
   const renderChatPage=()=> <ChatPage conversation={conversation} conversations={conversations} activeConversationId={conversationId} onSelectConversation={selectConversation} onRenameConversation={conversation=>setModal({kind:'rename',conversation})} onDeleteConversation={conversation=>setModal({kind:'deleteConversation',conversation})} profile={profile} online={chatReady} supportsImages={supportsImages} modelName={healthData.model} language={settings.language} draft={draft} onDraftChange={setDraft} attachments={attachments} streaming={streaming} showReasoning={chatPreferences.showReasoning} onSend={send} onCancel={()=>abort.current?.abort()} onNewConversation={addConversation} onExport={exportConversation} onOpenSampling={()=>setModal({kind:'options'})} onAddFiles={addFiles} onRemoveAttachment={id=>setAttachments(old=>old.filter(file=>file.id!==id))} stateLabel={serviceState} onCopy={copy}/>;
 
@@ -470,40 +559,84 @@ export function App() {
     return <div className="table-wrap"><table><thead><tr><th>{t('timestamp')}</th><th>{t('status')}</th><th>{t('promptTokens')}</th><th>{t('reusedTokens')}</th><th>{t('outputTokens')}</th><th>Tok/s</th><th>{t('cacheHit')}</th><th>{t('duration')}</th></tr></thead><tbody>{records.map((r, index) => <tr key={String(r.id ?? `${r.time}-${index}`)}><td><button className="text-button" aria-label={`${t('details')} ${index + 1}`} onClick={() => setModal({kind:'request',value:r})}>{typeof r.time === 'number' ? new Date(r.time * 1000).toLocaleTimeString(settings.language) : '—'}</button></td><td><Badge tone={r.finish === 'error' ? 'warning' : ''}>{finish(r.finish)}</Badge>{r.projection === true && <Badge>ESP</Badge>}</td><td>{number(numeric(r.prompt_tokens),0)}</td><td>{number(numeric(r.reused),0)}</td><td>{number(numeric(r.output_tokens),0)}</td><td>{number(numeric(r.decode_tok_s))}</td><td>{number(numeric(r.hit_rate) === null ? null : numeric(r.hit_rate)! * 100)}{numeric(r.hit_rate) !== null && '%'}{numeric(r.pcie_share) !== null && <small> +{number(numeric(r.pcie_share)! * 100)}% PCIe</small>}</td><td>{number(numeric(r.duration_s))} {numeric(r.duration_s) !== null && 's'}</td></tr>)}</tbody></table></div>;
   };
   const renderMonitoringPage = () => <MonitoringPage raw={{...(metric?.raw??{}),...(mcpQuery.data?{mcp:mcpQuery.data}:{})}} language={settings.language} showAll={showAllRequests} onShowAll={()=>setShowAllRequests(!showAllRequests)} onRequest={value=>setModal({kind:'request',value})} error={metrics.error?errorText(metrics.error):undefined}/>;
-  const renderAboutPage = () => <AboutPage raw={metric?.raw??{}} health={healthData} profile={profile} online={online} language={settings.language} desktop={desktop} onOpenSettings={()=>go('settings')} onOpenConfig={()=>go('config')} onCopy={content=>copy(content)} onError={error=>notify(errorText(error),true)}/>;
-  const RequestsPage = () => <RequestViewer embedded profile={profile} online={online} language={settings.language} pollInterval={settings.pollInterval} noProfile={<NeedProfile/>} errorText={errorText} onError={error => notify(errorText(error),true)} onMessage={notify}/>;
+  const renderAboutPage = () => <AboutPage raw={metric?.raw??{}} health={healthData} profile={profile} online={online} language={settings.language} desktop={desktop} onOpenSettings={()=>go('settings')} onOpenConfig={()=>openModelConfig(profile)} onCopy={content=>copy(content)} onError={error=>notify(errorText(error),true)}/>;
+  const enableRequestViewer = async (minutes: 0 | 5 | 15 | 30) => {
+    if (!profile || !desktop || process.data?.owned !== true || (minutes > 0 && (localProgress || busy || streaming))) throw new Error(t('busyHint'));
+    return core.setRequestCapture(profile.id, minutes);
+  };
+  const RequestsPage = () => <RequestViewer embedded profile={profile} online={online} language={settings.language} pollInterval={settings.pollInterval} noProfile={<NeedProfile/>} errorText={errorText} onError={error => notify(errorText(error),true)} onMessage={notify} onEnableViewer={desktop && process.data?.owned === true ? enableRequestViewer : undefined} onOpenUsage={()=>go('usage')}/>;
   const taskState = (state: TaskStatus['state']): TextKey => state === 'completed' ? 'completed' : state === 'failed' ? 'taskFailed' : state === 'cancelled' ? 'taskCancelled' : 'taskRunning';
-  const TasksPage = () => <><Header title={t('tasks')} hint={t('taskIntro')}><button disabled={!desktop || !profile || !!busy} title={nativeTitle} onClick={diagnostics}><Download size={15} />{t('diagnostics')}</button><button disabled={!desktop} title={nativeTitle} onClick={() => void query.invalidateQueries()}><RefreshCw size={15} />{t('refresh')}</button></Header><ErrorBlock error={tasks.error} /><ErrorBlock error={handoffs.error ?? preparedProfiles.error} /><Panel title={t('tasks')}>{tasks.data?.length ? <div className="task-list">{[...tasks.data].sort((a, b) => b.startedAt - a.startedAt).map(task => <div className="task-row" key={task.id}><div className={`task-icon ${task.state}`}>{task.state === 'running' ? <LoaderCircle className="spin" size={20} /> : task.state === 'completed' ? <Check size={20} /> : <Terminal size={20} />}</div><div className="task-copy"><div><strong>{t(task.kind.includes('setup') ? 'setupTask' : task.kind.includes('install') ? 'installTask' : task.kind.includes('update') ? 'updateTask' : 'task')}</strong><Badge tone={task.state === 'completed' ? 'positive' : task.state === 'failed' ? 'warning' : ''}>{t(taskState(task.state))}</Badge></div><p>{task.message}</p><small>{new Date(task.startedAt).toLocaleString(settings.language)} · {task.id}</small></div><div className="actions">{taskNextActions(task)}<button disabled={!desktop} onClick={() => setSelectedTaskId(task.id)}><FileText size={14}/>{t('viewLogs')}</button>{task.state === 'running' ? <button disabled={!!busy} onClick={() => void act('cancelTask', () => core.cancelTask(task.id), 'success')}><Square size={13} />{t('cancelTask')}</button> : task.state !== 'completed' && <button disabled={!!busy} onClick={() => { const recipe = recipes[task.id]; if (!recipe) notify(t('retryUnavailable'), true); else void act('retryTask', () => runRecipe(recipe), 'taskStarted'); }}><RefreshCw size={14} />{t('retry')}</button>}</div></div>)}</div> : <Empty title={t('noTasks')} hint={!desktop ? t('nativeRequired') : undefined} />}</Panel><Panel title={t('logs')} action={<div className="search-field"><Search size={15} /><input aria-label={t('searchLogs')} placeholder={t('searchLogs')} value={logSearch} onChange={event => setLogSearch(event.target.value)} /></div>}><Field label={t('logSource')}><Dropdown ariaLabel={t('logSource')} value={selectedTaskId} disabled={!desktop} onValueChange={setSelectedTaskId} options={[{value:'',label:t('serviceLogs'),disabled:!profile},...(tasks.data ?? []).map(task => ({value:task.id,label:`${t(task.kind.includes('setup') ? 'setupTask' : task.kind.includes('install') ? 'installTask' : task.kind.includes('update') ? 'updateTask' : 'task')} · ${new Date(task.startedAt).toLocaleString(settings.language)} · ${task.id.slice(0,8)}`}))]} /></Field><ErrorBlock error={logs.error} />{logs.data?.length ? <div className="log-view" role="log">{logs.data.filter(log => `${log.level} ${log.message}`.toLowerCase().includes(logSearch.toLowerCase())).map((log, index) => <div className="log-line" key={index}><time>{new Date(log.timestamp).toLocaleTimeString(settings.language)}</time><span className={`log-level ${log.level.toLowerCase()}`}>{log.level}</span><span>{log.message}</span></div>)}</div> : <Empty title={t('noLogs')} hint={!desktop ? t('nativeRequired') : !logProfile ? t('selectLogSourceHint') : undefined} />}</Panel></>;
-  const EnvironmentPage = () => <><InstallRuntimePage language={settings.language} desktop={desktop} onPrepared={runtime => { setPreparationRuntime(runtime.profile); go('models'); }}/><Panel title={t('system')} action={<button disabled={!desktop} onClick={() => void environment.refetch()}><RefreshCw size={15}/>{t('refresh')}</button>}><ErrorBlock error={environment.error}/>{environment.data ? <div className="environment-grid">{[[t('system'),environment.data.os],[t('architecture'),environment.data.arch],[t('cpu'),environment.data.cpuName],[t('totalMemory'),bytes(environment.data.totalMemory)],[t('availableMemory'),bytes(environment.data.availableMemory)],[t('gpus'),environment.data.gpus.join(', ')||t('missing')],['Python',environment.data.python??t('missing')],[t('appVersion'),environment.data.appVersion]].map(([label,value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div> : <Empty title={desktop?environment.isPending?t('loading'):t('empty'):t('nativeRequired')}/>}</Panel></>;
+  const TasksPage = () => <><Header title={t('tasks')} hint={t('taskIntro')}><button disabled={!desktop || !profile || !!busy} title={nativeTitle} onClick={diagnostics}><Download size={15} />{t('diagnostics')}</button><button disabled={!desktop} title={nativeTitle} onClick={() => void query.invalidateQueries()}><RefreshCw size={15} />{t('refresh')}</button></Header><ErrorBlock error={tasks.error} /><ErrorBlock error={handoffs.error ?? preparedProfiles.error} /><Panel title={t('tasks')}>{tasks.data?.length ? <div className="task-list">{[...tasks.data].sort((a, b) => b.startedAt - a.startedAt).map(task => <div className="task-row" key={task.id}><div className={`task-icon ${task.state}`}>{task.state === 'running' ? <LoaderCircle className="spin" size={20} /> : task.state === 'completed' ? <Check size={20} /> : <Terminal size={20} />}</div><div className="task-copy"><div><strong>{t(task.kind.includes('setup') ? 'setupTask' : task.kind.includes('install') ? 'installTask' : task.kind.includes('update') ? 'updateTask' : 'task')}</strong><Badge tone={task.state === 'completed' ? 'positive' : task.state === 'failed' ? 'warning' : ''}>{t(taskState(task.state))}</Badge></div><p>{task.message}</p><small>{new Date(task.startedAt).toLocaleString(settings.language)} · {task.id}</small></div><div className="actions">{taskNextActions(task)}<button disabled={!desktop} onClick={() => setSelectedTaskId(task.id)}><FileText size={14}/>{t('viewLogs')}</button>{task.state === 'running' ? <button disabled={!!busy} onClick={() => void act('cancelTask', () => core.cancelTask(task.id), 'success')}><Square size={13} />{t('cancelTask')}</button> : task.state !== 'completed' && <button disabled={!!busy} onClick={() => { if (task.kind.includes('update')) { go('environment'); return; } const recipe = recipes[task.id]; if (!recipe) notify(t('retryUnavailable'), true); else void act('retryTask', () => runRecipe(recipe), 'taskStarted'); }}><RefreshCw size={14} />{t('retry')}</button>}</div></div>)}</div> : <Empty title={t('noTasks')} hint={!desktop ? t('nativeRequired') : undefined} />}</Panel><Panel title={t('logs')} action={<div className="search-field"><Search size={15} /><input aria-label={t('searchLogs')} placeholder={t('searchLogs')} value={logSearch} onChange={event => setLogSearch(event.target.value)} /></div>}><Field label={t('logSource')}><Dropdown ariaLabel={t('logSource')} value={selectedTaskId} disabled={!desktop} onValueChange={setSelectedTaskId} options={[{value:'',label:t('serviceLogs'),disabled:!profile},...(tasks.data ?? []).map(task => ({value:task.id,label:`${t(task.kind.includes('setup') ? 'setupTask' : task.kind.includes('install') ? 'installTask' : task.kind.includes('update') ? 'updateTask' : 'task')} · ${new Date(task.startedAt).toLocaleString(settings.language)} · ${task.id.slice(0,8)}`}))]} /></Field><ErrorBlock error={logs.error} />{logs.data?.length ? <div className="log-view" role="log">{logs.data.filter(log => `${log.level} ${log.message}`.toLowerCase().includes(logSearch.toLowerCase())).map((log, index) => <div className="log-line" key={index}><time>{new Date(log.timestamp).toLocaleTimeString(settings.language)}</time><span className={`log-level ${log.level.toLowerCase()}`}>{log.level}</span><span>{log.message}</span></div>)}</div> : <Empty title={t('noLogs')} hint={!desktop ? t('nativeRequired') : !logProfile ? t('selectLogSourceHint') : undefined} />}</Panel></>;
+  const EnvironmentPage = () => <><InstallRuntimePage autoCheck={settings.autoCheckUpdates !== false} language={settings.language} desktop={desktop}/><Panel title={t('system')} action={<button disabled={!desktop} onClick={() => void environment.refetch()}><RefreshCw size={15}/>{t('refresh')}</button>}><ErrorBlock error={environment.error}/>{environment.data ? <div className="environment-grid">{[[t('system'),environment.data.os],[t('architecture'),environment.data.arch],[t('cpu'),environment.data.cpuName],[t('totalMemory'),bytes(environment.data.totalMemory)],[t('availableMemory'),bytes(environment.data.availableMemory)],[t('gpus'),environment.data.gpus.join(', ')||t('missing')],['Python',environment.data.python??t('missing')],[t('appVersion'),environment.data.appVersion]].map(([label,value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div> : <Empty title={desktop?environment.isPending?t('loading'):t('empty'):t('nativeRequired')}/>}</Panel></>;
   const changeSettings = (patch: Partial<AppSettings>) => { const next = { ...settings, ...patch }; setSettings(next); if (desktop) void core.applySettings(next).catch(error => notify(errorText(error), true)); };
-  const SettingsPage = () => <><Header title={t('settings')} hint={t('settingsIntro')} /><div className="settings-layout"><DesktopLifecycleSettings desktop={desktop} streaming={streaming} autoCheck={settings.autoCheckUpdates !== false} onAutoCheck={enabled => changeSettings({autoCheckUpdates:enabled})} update={appUpdates.state} onCheck={appUpdates.check} onDownload={appUpdates.download} onInstall={appUpdates.install} onError={error => notify(errorText(error),true)}/><Panel title={t('appearance')}><Field label={t('theme')}><Segmented ariaLabel={t('theme')} value={settings.theme} onValueChange={theme => changeSettings({theme:theme as AppSettings['theme']})} options={(['dark','light','system'] as const).map(theme => ({value:theme,label:t(theme === 'system' ? 'systemTheme' : theme),icon:theme === 'dark' ? <OfficialIcon name="moon" size={15}/> : theme === 'light' ? <OfficialIcon name="sun" size={15}/> : <Settings2 size={15}/>}))} /></Field><Field label={t('language')}><Dropdown ariaLabel={t('language')} value={settings.language} onValueChange={language => changeSettings({language:language as AppSettings['language']})} options={[{value:'zh-CN',label:'简体中文'},{value:'en',label:'English'}]} /></Field></Panel><Panel title={t('behavior')}><label className="setting-toggle"><span><strong>{t('closeToTray')}</strong><small>{t('closeToTrayHint')}</small></span><Toggle ariaLabel={t('closeToTray')} disabled={!desktop} title={nativeTitle} checked={settings.closeToTray} onCheckedChange={checked => changeSettings({closeToTray:checked})} /></label><Field label={t('pollInterval')}><Dropdown ariaLabel={t('pollInterval')} value={String(settings.pollInterval)} onValueChange={value => changeSettings({pollInterval:Number(value)})} options={[2000,3000,5000,10000,30000].map(value => ({value:String(value),label:`${value/1000} ${t('seconds')}`}))} /></Field></Panel><Panel title={t('chatOptions')}><Field label={t('model')}><Dropdown editable ariaLabel={t('model')} value={options.model} placeholder={t('modelPlaceholder')} options={apiModels.map(model=>({value:model,label:model}))} onValueChange={model=>setOptions({...options,model})}/></Field><Field label={t('systemPrompt')}><textarea rows={4} value={options.systemPrompt} placeholder={t('systemPromptPlaceholder')} onChange={event=>setOptions({...options,systemPrompt:event.target.value})}/></Field></Panel></div></>;
+  const SettingsPage = () => <><Header title={t('settings')} hint={t('settingsIntro')} /><div className="settings-layout"><DesktopLifecycleSettings desktop={desktop} streaming={streaming} autoCheck={settings.autoCheckUpdates !== false} onAutoCheck={enabled => changeSettings({autoCheckUpdates:enabled})} update={appUpdates.state} onCheck={appUpdates.check} onDownload={appUpdates.download} onInstall={appUpdates.install} onError={error => notify(errorText(error),true)}/><Panel title={t('appearance')}><Field label={t('theme')}><Segmented ariaLabel={t('theme')} value={settings.theme} onValueChange={theme => changeSettings({theme:theme as AppSettings['theme']})} options={(['dark','light','system'] as const).map(theme => ({value:theme,label:t(theme === 'system' ? 'systemTheme' : theme),icon:theme === 'dark' ? <OfficialIcon name="moon" size={15}/> : theme === 'light' ? <OfficialIcon name="sun" size={15}/> : <Settings2 size={15}/>}))} /></Field><Field label={t('language')}><Dropdown ariaLabel={t('language')} value={settings.language} onValueChange={language => changeSettings({language:language as AppSettings['language']})} options={[{value:'zh-CN',label:'简体中文'},{value:'en',label:'English'}]} /></Field></Panel><Panel title={t('behavior')}><label className="setting-toggle"><span><strong>{t('closeToTray')}</strong><small>{t('closeToTrayHint')}</small></span><Toggle ariaLabel={t('closeToTray')} disabled={!desktop} title={nativeTitle} checked={settings.closeToTray} onCheckedChange={checked => changeSettings({closeToTray:checked})} /></label>{!settings.closeToTray && <label className="setting-toggle"><span><strong>{settings.language === 'zh-CN' ? '退出前询问' : 'Confirm before exiting'}</strong></span><Toggle ariaLabel={settings.language === 'zh-CN' ? '退出前询问' : 'Confirm before exiting'} checked={!settings.skipExitConfirmation} onCheckedChange={checked => changeSettings({skipExitConfirmation:!checked})}/></label>}<Field label={t('pollInterval')}><Dropdown ariaLabel={t('pollInterval')} value={String(settings.pollInterval)} onValueChange={value => changeSettings({pollInterval:Number(value)})} options={[2000,3000,5000,10000,30000].map(value => ({value:String(value),label:`${value/1000} ${t('seconds')}`}))} /></Field></Panel><Panel title={t('chatOptions')}><Field label={t('model')}><Dropdown editable ariaLabel={t('model')} value={options.model} placeholder={t('modelPlaceholder')} options={apiModels.map(model=>({value:model,label:model}))} onValueChange={model=>setOptions({...options,model})}/></Field><Field label={t('systemPrompt')}><textarea rows={4} value={options.systemPrompt} placeholder={t('systemPromptPlaceholder')} onChange={event=>setOptions({...options,systemPrompt:event.target.value})}/></Field></Panel></div></>;
 
   const exportConversation = (c: Conversation) => { const content = `# ${c.title}\n\n${c.messages.map(m => `## ${t(m.role === 'user' ? 'you' : 'assistant')}\n\n${m.reasoning ? `<details><summary>${t('thinking')}</summary>\n\n${m.reasoning}\n\n</details>\n\n` : ''}${m.content}${m.attachments?.length ? '\n\n' + m.attachments.map(a => a.type === 'image' ? `![${a.name}](${a.content})` : `### ${a.name}\n\n\`\`\`\n${a.content}\n\`\`\``).join('\n\n') : ''}${m.tools?.length ? `\n\n\`\`\`json\n${JSON.stringify(m.tools, null, 2)}\n\`\`\`` : ''}${m.error ? `\n\n> ${m.error}` : ''}`).join('\n\n---\n\n')}\n`; void saveFile(markdownFileName(c.title), content); };
-  const renderRuntimeConfig = () => <RuntimeConfigPage profile={profile} online={online} language={settings.language} desktop={desktop} onSampling={()=>setModal({kind:'options'})} onServices={()=>go('profiles')} onKeySaved={()=>{void query.invalidateQueries();notify(t('saved'));}} onError={error=>notify(errorText(error),true)} onMessage={notify}/>;
-  const pages: Record<Page, () => ReactNode> = { about: renderAboutPage, overview: renderOverviewPage, localSetup: renderLocalSetup, tuning: () => <TuningPage key={profile?.id} profileId={profile?.id} language={settings.language} desktop={desktop} owned={process.data?.owned === true && process.data?.running === true} streaming={streaming} onChanged={() => void query.invalidateQueries()}/>, config: renderRuntimeConfig, profiles: ProfilesPage, models: ModelsPage, chat: renderChatPage, monitoring: renderMonitoringPage, usage: () => <ApiUsagePage language={settings.language} profileId={profile?.id} desktop={desktop} onQuery={core.analyticsQuery}/>, requests: RequestsPage, tasks: TasksPage, environment: EnvironmentPage, settings: SettingsPage };
+  const configProcess = useQuery({queryKey:['model-config-process',configProfile?.id],queryFn:()=>core.serviceStatus(configProfile!.id,configProfile),enabled:desktop && page==='config' && !!configProfile && !discoveredConfigProfile,refetchInterval:settings.pollInterval});
+  const configOnline = configProfile?.id===activeId ? online : !desktop || configProcess.data?.running===true && configProcess.data?.owned===true;
+  const restartSelectedService = async (selected:ServiceProfile) => {
+    if (selected.id!==activeId || selected.configPath!==profile?.configPath || !desktop || busy || streaming || preparingLocal.current) throw new Error(t('busyHint'));
+    const current = await core.serviceStatus(selected.id,selected);
+    if (!current.owned || !current.running) throw new Error(t('busyHint'));
+    const generation=++preparationGeneration.current;
+    preparingLocal.current=true;
+    setBusy('restart-config'); setStartupStartedAt(Date.now()); setStartupTarget(selected); setLocalProgress({phase:'starting'});
+    try {
+      await core.restartService(selected);
+      await core.switchLocalService(selected.id);
+      await query.invalidateQueries();
+    } finally {
+      setBusy('');
+      if(generation===preparationGeneration.current){preparingLocal.current=false;setLocalProgress(undefined);setStartupTarget(undefined);}
+    }
+  };
+  const configurationCopied = (copied:ServiceProfile) => {
+    const directory=copied.configPath.replace(/[\\/][^\\/]+$/,'');
+    setModelDirectories(previous=>[...new Set([...previous,directory])]);
+    setDiscoveredConfigProfile(copied);setConfigProfileId('');go('config');
+  };
+  const configurationDeleted = async (deleted:ServiceProfile) => {
+    const remaining=await core.localInstallations();setProfiles(remaining);
+    if(activeId===deleted.id)setActiveId('');
+    setDiscoveredConfigProfile(undefined);setConfigProfileId('');go('models');
+  };
+  const allConfigurationGroups=core.groupLocalModels(profiles,discoveredCandidates.data,installationDetails.data);
+  const selectedConfigurationGroup=allConfigurationGroups.find(group=>group.configurations.some(entry=>entry.profile?.id===configProfile?.id||!!configProfile?.configPath&&core.configurationPathKey(entry.configPath)===core.configurationPathKey(configProfile.configPath)));
+  const renderRuntimeConfig = () => <>
+    {desktop && <ConfigurationList groups={selectedConfigurationGroup?[selectedConfigurationGroup]:[]} selectedPath={configProfile?.configPath} activeId={activeId} running={process.data?.owned===true&&process.data?.running===true} lastUsedId={lastUsedId} disabled={!!busy||streaming||!!localProgress} dirty={configurationDirty} loading={discoveredCandidates.isFetching} error={discoveredCandidates.error?errorText(discoveredCandidates.error):undefined} language={settings.language} onRefresh={()=>{void discoveredCandidates.refetch();void installationDetails.refetch();}} onDelete={entry=>{const candidate=entry.candidate;const selected=entry.profile??(candidate?{id:`configuration-${candidate.id}`,name:candidate.name,baseUrl:`http://127.0.0.1:${candidate.detectedPort??8080}`,installDir:candidate.installDir,pythonPath:candidate.pythonPath,configPath:candidate.configPath,managed:false}:undefined);if(selected)setModal({kind:'deleteConfiguration',profile:selected});}} onOpen={entry=>{if(entry.profile)openModelConfig(entry.profile);else if(entry.candidate)openDiscoveredConfig(entry.candidate);}} onUse={async(entry,restart)=>{if(entry.profile){if(restart)await restartSelectedService(entry.profile);else await activateLocal(entry.profile);openModelConfig(entry.profile);}else if(entry.candidate)await prepareImported(entry.candidate);}}/>}
+    <RuntimeConfigPage profile={configProfile} online={configOnline} language={settings.language} desktop={desktop} onSampling={configProfile?.id===activeId?()=>setModal({kind:'options'}):undefined} onServices={()=>go('models')} onImages={desktop&&configProfile?.configPath&&!busy&&!streaming&&!localProgress?()=>setModal({kind:'vision',profile:configProfile}):undefined} onDirtyChange={setConfigurationDirty} onCopied={configurationCopied} onDeleted={configurationDeleted} onRestart={desktop && configProfile?.id===activeId && configProcess.data?.owned===true && configProcess.data?.running===true && !busy && !streaming && !localProgress ? ()=>restartSelectedService(configProfile) : undefined} onKeySaved={()=>{void query.invalidateQueries();notify(t('saved'));}} onError={error=>notify(errorText(error),true)} onMessage={message=>{void query.invalidateQueries({queryKey:['discovered-local-models']});void query.invalidateQueries({queryKey:['localInstallationDetails']});notify(message);}}/></>;
+  const renderTuningPage = () => <><div className="tuning-config-entry"><div><strong>{settings.language==='zh-CN'?'启动参数与完整配置':'Startup parameters and full configuration'}</strong><p>{settings.language==='zh-CN'?'按模型调整资源、引擎和接口参数，支持图形化或 JSON 编辑；保存后重启服务生效。':'Edit model resources, engine and API settings with forms or JSON. Restart the service after saving to apply changes.'}</p></div><button disabled={!profile} onClick={()=>openModelConfig(profile)}><Settings2 size={15}/>{t('config')}</button></div><TuningPage key={profile?.id} profileId={profile?.id} language={settings.language} desktop={desktop} owned={process.data?.owned === true && process.data?.running === true} streaming={streaming} onChanged={() => void query.invalidateQueries()}/></>;
+  const pages: Record<Page, () => ReactNode> = { about: renderAboutPage, overview: renderOverviewPage, tuning: renderTuningPage, config: renderRuntimeConfig, profiles: ProfilesPage, models: ProfilesPage, catalog: ModelsPage, chat: renderChatPage, monitoring: renderMonitoringPage, usage: () => <ApiUsagePage language={settings.language} profileId={profile?.id} desktop={desktop} onQuery={core.analyticsQuery} onOpenDiagnostics={()=>go('requests')}/>, requests: RequestsPage, tasks: TasksPage, environment: EnvironmentPage, settings: SettingsPage };
 
-  if (!ready) return <div className="boot">{bootError ? <><p role="alert">{t('workspaceLoadFailed')}</p><details><summary>{t('details')}</summary>{bootError}</details><button onClick={() => setBootAttempt(value => value + 1)}><RefreshCw size={15}/>{t('retry')}</button></> : <><LoaderCircle className="spin" size={28}/><span>{t('loading')}</span></>}</div>;
+  if (!ready) return <div className="desktop-app-frame"><WindowTitleBar desktop={desktop} language={settings.language} collapsed={sidebarCollapsed} onClose={windowClose.requestClose} onError={error=>notify(errorText(error),true)}/>{windowClose.dialog}<div className="boot">{bootError ? <><p role="alert">{t('workspaceLoadFailed')}</p><details><summary>{t('details')}</summary>{bootError}</details><button onClick={() => setBootAttempt(value => value + 1)}><RefreshCw size={15}/>{t('retry')}</button></> : <><LoaderCircle className="spin" size={28}/><span>{t('loading')}</span></>}</div></div>;
+  const runningCandidates = (discoveredCandidates.data ?? []).filter(candidate => candidate.running === true && typeof candidate.pid === 'number' && candidate.pid > 0 && typeof candidate.detectedPort === 'number' && candidate.detectedPort > 0);
+  const observedRunningCandidates = runningCandidates.filter(candidate => !profiles.some(saved =>
+    core.configurationPathKey(saved.configPath, saved.installDir) === core.configurationPathKey(candidate.configPath, candidate.installDir)
+    && (saved.id === activeId && process.data?.running === true && process.data.owned === true || (supervisor.data?.health?.[saved.id]?.pid != null && supervisor.data.health[saved.id]?.phase !== 'stopped'))));
+  const runningServicePanel = desktop && ['overview', 'models', 'profiles', 'environment'].includes(page) ? <RunningServicesPanel candidates={observedRunningCandidates} language={settings.language} loading={discoveredCandidates.isFetching} error={discoveredCandidates.error} onRefresh={()=>{void discoveredCandidates.refetch();}} onCopy={content=>{void copy(content);}}/> : null;
   const officialPage = page==='chat'||page==='monitoring'||page==='about'||page==='config';
-  const live=object(metric?.raw.live);const pillState=!online?'queued':Number(live.queued)>0?'queued':String(live.state??'unknown');
-  const pillText=!profile?t('noProfile'):!online?t(health.isFetching?'connecting':'offline'):Number(live.queued)>0?`${number(numeric(live.queued),0)} ${t('queuedState')}`:pillState==='generating'?`${t('generatingState')} · ${number(numeric(live.tok_s))} tok/s`:pillState==='reading'?`${t('readingState')}${Number(live.prompt_total)>0?` · ${Math.round(Number(live.prompt_read)/Number(live.prompt_total)*100)}%`:''}`:typeof live.state==='string'?serviceState(live.state):typeof healthData.loaded==='boolean'?t(loaded?'loaded':'notLoaded'):t('online');
-  const toggleTheme=()=>changeSettings({theme:document.documentElement.dataset.theme==='dark'?'light':'dark'});
-  const toggleLanguage=()=>changeSettings({language:settings.language==='zh-CN'?'en':'zh-CN'});
-  const navItems=navigation.map(item=>({id:item.id,label:item.id==='monitoring'?t('monitorWorkspace'):item.id==='models'?t('modelWorkspace'):t(item.id as TextKey),group:'',icon:<item.icon size={18}/>}));
+  const live=object(metric?.raw.live);const pillState=!online?'disconnected':Number(live.queued)>0?'queued':String(live.state??'unknown');
+  const pillText=!profile?runningCandidates.length?(settings.language==='zh-CN'?'检测到运行中服务':'Running service detected'):t('noProfile'):serviceStopped?(settings.language==='zh-CN'?'未启动':'Not started'):!online?t(connecting?'connecting':'offline'):Number(live.queued)>0?`${number(numeric(live.queued),0)} ${t('queuedState')}`:pillState==='generating'?`${t('generatingState')} · ${number(numeric(live.tok_s))} tok/s`:pillState==='reading'?`${t('readingState')}${Number(live.prompt_total)>0?` · ${Math.round(Number(live.prompt_read)/Number(live.prompt_total)*100)}%`:''}`:typeof live.state==='string'?serviceState(live.state):typeof healthData.loaded==='boolean'?t(loaded?'loaded':'notLoaded'):t('online');
+  const navItems=navigation.map(item=>({id:item.id,label:item.id==='monitoring'?t('monitorWorkspace'):item.id==='models'?t('modelWorkspace'):item.id==='environment'?'Strata':t(item.id as TextKey),group:'',icon:<item.icon size={18}/>}));
   const parent=parentPage(page);
-  const subpages:Page[]=parent==='models'?['profiles','models','localSetup']:parent==='monitoring'?['usage','monitoring','requests','tasks']:parent==='settings'?['settings','config','environment','about']:[];
-  const sidebarNode=<Sidebar items={navItems} page={parent} profiles={profiles} activeId={activeId} disabled={streaming} collapsed={sidebarCollapsed} language={settings.language} theme={document.documentElement.dataset.theme??'light'} onCollapse={()=>setSidebarCollapsed(old=>!old)} onNavigate={next=>go(next as Page)} onProfile={setActiveId} onLanguage={toggleLanguage} onTheme={toggleTheme}/>;
-  const headerNode=<WorkspaceHeader title={navItems.find(item=>item.id===parent)?.label} status={<span className="st-pill" id="pill" data-state={pillState} role="status" aria-live="polite"><span className="st-pill__dot"/><span id="pill-text">{localProgress?t('preparingLocal'):pillText}</span></span>}/>;
-  const statusBar=<WorkspaceStatusBar status={desktop?t(supervisor.data?.running?'supervisorRunning':'supervisorOffline'):t('nativeRequired')} activity={profile?.name} actions={<span title={t('backgroundKeepsServing')}>{supervisor.data?.pid?`PID ${supervisor.data.pid}`:null}</span>}/>;
-  const subnavigation=subpages.length>0&&<nav className="workspace-subnav" aria-label={navItems.find(item=>item.id===parent)?.label}>{subpages.map(item=><button key={item} type="button" className={page===item?'is-active':''} aria-current={page===item?'page':undefined} onClick={()=>go(item)}>{item==='requests'?t('apiMonitorTitle'):item==='profiles'?t('myModels'):item==='models'?t('downloadModels'):item==='localSetup'?t('localSetupTitle'):t(item as TextKey)}</button>)}</nav>;
-  return <AppLayout sidebar={sidebarNode} collapsed={sidebarCollapsed}><WorkspaceLayout header={headerNode} statusBar={statusBar}>{subnavigation}{officialPage?pages[page]():<div className={`management-content management-content--${page}`}><div className="main-content">{pages[page]()}</div></div>}</WorkspaceLayout>
+  const subpages:Page[]=parent==='models'?['models','catalog']:parent==='monitoring'?['monitoring','usage']:parent==='settings'?['settings','about']:[];
+  const sidebarNode=<Sidebar showBrand={false} items={navItems.filter(item=>item.id!=='settings')} page={parent} profiles={profiles} activeId={activeId} disabled={streaming} collapsed={sidebarCollapsed} onCollapse={()=>setSidebarCollapsed(old=>!old)} onNavigate={next=>go(next as Page)} onProfile={profileId=>{const selected=profiles.find(p=>p.id===profileId);if(selected)void activateLocal(selected).catch(error=>notify(errorText(error),true));}}/>;
+  const titleBar=<WindowTitleBar desktop={desktop} language={settings.language} collapsed={sidebarCollapsed} title={navItems.find(item=>item.id===parent)?.label} onClose={windowClose.requestClose} onError={error=>notify(errorText(error),true)} status={<span className="st-pill" id="pill" data-state={pillState} role="status" aria-live="polite"><span className="st-pill__dot"/><span id="pill-text">{localProgress?t('loadingState'):pillText}</span></span>}/>;
+  const statusBar=<ServiceTelemetryStatusBar language={settings.language} hasProfile={!!profile} online={online} connecting={connecting} stopped={serviceStopped} metric={metric} unavailable={metrics.isError} stateLabel={serviceState}/>;
+  const subnavigation=page==='config'?<nav className="workspace-subnav model-config-breadcrumb" aria-label={t('config')}><button type="button" onClick={()=>go('models')}><ArrowRight size={15} className="back-arrow"/>{t('myModels')}</button><span aria-hidden="true">/</span><strong>{configProfile?.name ?? t('model')} · {t('config')}</strong></nav>:subpages.length>0&&<nav className="workspace-subnav" aria-label={navItems.find(item=>item.id===parent)?.label}>{subpages.map(item=><button key={item} type="button" className={(page===item || item==='models' && page==='profiles')?'is-active':''} aria-current={(page===item || item==='models' && page==='profiles')?'page':undefined} onClick={()=>go(item)}>{item==='requests'?t('apiMonitorTitle'):item==='models'?t('myModels'):item==='catalog'?t('downloadModels'):t(item as TextKey)}</button>)}</nav>;
+  return <div className="desktop-app-frame">{titleBar}<AppLayout sidebar={sidebarNode} collapsed={sidebarCollapsed}><WorkspaceLayout statusBar={statusBar}>{subnavigation}{localProgress && <StartupProgress language={settings.language} progress={{...localProgress,startedAt:startupStartedAt,logs:startupLogs.data??[]}} modelName={startupTarget?.name} apiUrl={startupTarget?.baseUrl}/>} {officialPage?pages[page]():<div className={`management-content management-content--${page}`}><div className="main-content">{runningServicePanel}{pages[page]()}</div></div>}</WorkspaceLayout>
     {toast&&<div className="st-toasts" id="toasts" aria-live="polite"><div className={`st-toast st-toast--${toast.error?'error':'success'}`} role={toast.error?'alert':'status'}><OfficialIcon name={toast.error?'error':'check'}/><div><div className="st-toast__title">{t(toast.error?'error':'success')}</div><span>{toast.text}</span>{toast.taskId && <div className="actions">{tasks.data?.find(task => task.id === toast.taskId) && taskNextActions(tasks.data.find(task => task.id === toast.taskId)!)}<button className="st-btn st-btn--secondary" onClick={() => go('tasks')}>{t('viewAllTasks')}</button></div>}</div><button className="st-btn st-btn--icon" aria-label={t('close')} onClick={()=>setToast(null)}><X size={16}/></button></div></div>}{busy&&<div className="busy-indicator" role="status"><LoaderCircle className="spin" size={14}/>{t('working')}</div>}
     {modal?.kind === 'modelProfiles' && <ModelProfilesDialog models={modal.models} disabled={!!busy} onClose={() => setModal(null)} onChoose={path => void act('taskProfile', () => openConfigProfile(path, modal.runtime))}/>}
     {modal?.kind === 'profile' && <ProfileDialog key={modal.profile?.id ?? 'new'} existing={modal.profile} onClose={() => setModal(null)} onSave={async (p, key) => { if (desktop) p = await core.renameLocalInstallation(p.id, p.name); if (key.trim()) await core.setApiKey(p.id, key.trim()); setProfiles(old => old.some(x => x.id === p.id) ? old.map(x => x.id === p.id ? p : x) : [...old, p]); if (!desktop && !profiles.some(item => item.id === p.id)) setActiveId(p.id); setModal(null); await query.invalidateQueries(); notify(t('saved')); }} choose={choose} native={desktop} errorText={errorText} />}
     {modal?.kind === 'rename' && <RenameDialog title={modal.conversation.title} onClose={() => setModal(null)} onSave={title => { const cid = modal.conversation.id; setConversations(old => old.map(c => c.id === cid ? { ...c, title, updatedAt: Date.now() } : c)); setModal(null); }} />}
     {modal?.kind === 'deleteConversation' && <Dialog title={t('deleteConversation')} onClose={() => setModal(null)}><p>{t('deleteConversationHint')}</p><div className="dialog-footer"><button onClick={() => setModal(null)}>{t('cancel')}</button><button className="danger-solid" onClick={() => { const cid = modal.conversation.id; setConversations(old => old.filter(c => c.id !== cid)); if (conversationId === cid) setConversationId('');setConversationIds(old=>Object.fromEntries(Object.entries(old).filter(([,value])=>value!==cid))); setModal(null); }}>{t('confirmDelete')}</button></div></Dialog>}
-    {modal?.kind === 'request' && <Dialog title={t('requestDetails')} wide onClose={() => setModal(null)}><RequestViewer profile={profile} online={online} language={settings.language} pollInterval={settings.pollInterval} initialSelected={typeof object(modal.value).id==='string'?String(object(modal.value).id):undefined} noProfile={<NeedProfile/>} errorText={errorText} onError={error=>notify(errorText(error),true)} onMessage={notify}/></Dialog>}
+    {modal?.kind === 'request' && <Dialog title={t('requestDetails')} wide onClose={() => setModal(null)}><RequestViewer profile={profile} online={online} language={settings.language} pollInterval={settings.pollInterval} onEnableViewer={desktop && process.data?.owned === true ? enableRequestViewer : undefined} onOpenUsage={()=>{setModal(null);go('usage');}} initialSelected={typeof object(modal.value).id==='string'?String(object(modal.value).id):undefined} noProfile={<NeedProfile/>} errorText={errorText} onError={error=>notify(errorText(error),true)} onMessage={notify}/></Dialog>}
     {modal?.kind === 'options' && <SamplingDrawer profile={profile} options={options} preferences={chatPreferences} models={apiModels} hasProjection={hasProjection} online={online} mcpInfo={mcpQuery.data} onApply={(next, ui) => { setOptions(next); setChatPreferences(ui); notify(t('saved')); }} onClose={() => setModal(null)} onError={error => notify(errorText(error), true)} onMessage={notify} />}
-  </AppLayout>;
+    {modal?.kind==='deleteConfiguration'&&<ConfigurationDeletionDialog profile={modal.profile} language={settings.language} onClose={()=>setModal(null)} onDeleted={async deleted=>{if(configProfile?.configPath&&core.configurationPathKey(deleted.configPath)===core.configurationPathKey(configProfile.configPath))await configurationDeleted(deleted);await query.invalidateQueries();}}/>}
+    {modal?.kind === 'vision' && <VisionSupportDialog key={`${modal.profile.id}:${modal.profile.configPath}`} profile={modal.profile} language={settings.language} onClose={()=>setModal(null)} onSaved={()=>query.invalidateQueries()} onRestart={modal.profile.id===activeId && process.data?.owned && process.data.running && !busy && !streaming && !localProgress ? ()=>restartSelectedService(modal.profile) : undefined}/>}
+    {windowClose.dialog}
+    {!modal && (appUpdates.dialogOpen ? <AppUpdateDialog language={settings.language} state={appUpdates.state} idle={automaticUpdatesIdle && updateOwner !== 'runtime'} onConfirm={appUpdates.confirm} onClose={appUpdates.dismiss}/> : runtimeUpdates.dialog)}
+  </AppLayout></div>;
 }
 
 function ProfileDialog({ existing, onClose, onSave, errorText }: { existing?: ServiceProfile; onClose: () => void; onSave: (profile: ServiceProfile, key: string) => Promise<void>; choose: (directory: boolean) => Promise<string | null>; native: boolean; errorText: (error: unknown) => string }) {

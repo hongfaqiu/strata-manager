@@ -1,4 +1,13 @@
 .official-surface .view--runtime-config{overflow:auto;min-height:0}
+.model-config-breadcrumb>button{display:flex;align-items:center;gap:6px;color:var(--st-accent-text)}
+.model-config-breadcrumb .back-arrow{transform:rotate(180deg)}
+.model-config-breadcrumb>span{color:var(--st-ink-muted)}
+.model-config-breadcrumb>strong{font-size:13px;font-weight:500;color:var(--st-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tuning-config-entry{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:16px 20px;background:var(--st-surface);border:1px solid var(--st-line);border-radius:var(--st-r-md);margin-bottom:20px}
+.tuning-config-entry strong{font-size:14px}
+.tuning-config-entry p{font-size:12px;color:var(--st-ink-muted);margin:6px 0 0;line-height:1.6}
+.tuning-config-entry button{flex:none}
+@media(max-width:740px){.tuning-config-entry{align-items:flex-start;flex-direction:column;gap:12px}}
 .official-surface .runtime-config{padding:var(--st-s-6);display:grid;gap:var(--st-s-4);max-width:1200px;margin:0 auto;width:100%;box-sizing:border-box}
 .official-surface .runtime-config-connection .st-field{max-width:520px}
 .official-surface .runtime-config-address{display:block;overflow-wrap:anywhere;margin-top:var(--st-s-2);font-size:var(--st-fs-sm);color:var(--st-ink-muted)}
@@ -9,10 +18,21 @@
 .official-surface .runtime-config .cfg-form label{overflow-wrap:anywhere}
 @container workspace (max-width:1000px){.official-surface .runtime-config .cfg-form{grid-template-columns:minmax(0,1fr)}}
 @container workspace (max-width:640px){.official-surface .runtime-config{padding:var(--st-s-4)}}
-.official-surface .runtime-config-guide{display:grid;grid-template-columns:1fr 1fr;gap:var(--st-s-6)}
-.runtime-config-guide strong{font-size:var(--st-fs-md);font-weight:700}
-.runtime-config-guide p{margin:var(--st-s-2) 0 var(--st-s-3);font-size:var(--st-fs-sm);color:var(--st-ink-muted);line-height:var(--st-lh-body)}
-.runtime-config-guide button{height:36px;min-height:36px;padding:0 var(--st-s-3);font-size:var(--st-fs-sm);font-weight:500}
+.runtime-config-section-heading{display:flex;align-items:center;justify-content:space-between;gap:var(--st-s-3);flex-wrap:wrap}
+.runtime-config-section-heading h2{margin:0;font-size:var(--st-fs-md);font-weight:700;line-height:var(--st-lh-body);color:var(--st-ink)}
+.runtime-config-apply-badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:var(--st-r-sm);font-size:var(--st-fs-xs);font-weight:500;background:var(--st-accent-tint);color:var(--st-accent-text)}
+.runtime-config-apply-badge--restart{background:var(--st-surface-2);color:var(--st-ink-soft);border:1px solid var(--st-line)}
+.runtime-config-sampling-entry{display:flex;align-items:center;gap:var(--st-s-5);justify-content:space-between;margin-top:var(--st-s-3)}
+.runtime-config-sampling-entry p,.runtime-config-startup-intro p,.runtime-config-scope p{margin:0;font-size:var(--st-fs-sm);color:var(--st-ink-muted);line-height:var(--st-lh-body)}
+.runtime-config-sampling-entry>button{flex:none;white-space:nowrap}
+.runtime-config-sampling-unavailable{max-width:220px;flex:none;font-size:var(--st-fs-xs);color:var(--st-ink-muted);line-height:var(--st-lh-body)}
+.runtime-config-scope{margin-top:var(--st-s-4);border-top:1px solid var(--st-line-soft);padding-top:var(--st-s-3)}
+.runtime-config-scope summary{cursor:pointer;font-size:var(--st-fs-sm);font-weight:500;color:var(--st-ink-soft)}
+.runtime-config-scope p{margin-top:var(--st-s-3)}
+.runtime-config-startup{display:grid;gap:var(--st-s-4);min-width:0;padding-top:var(--st-s-3);border-top:1px solid var(--st-line)}
+.runtime-config-startup-intro{display:grid;gap:var(--st-s-3);padding:var(--st-s-2) 0}
+.runtime-config-section-actions{display:flex;gap:var(--st-s-3);flex-wrap:wrap}
+.runtime-config-section-actions button{height:36px;min-height:36px;padding:0 var(--st-s-3);font-size:var(--st-fs-sm);font-weight:500}
 .runtime-config-restart-note{font-size:var(--st-fs-sm);line-height:var(--st-lh-body);color:var(--st-ink-soft);background:var(--st-surface-2);border-radius:var(--st-r-md);padding:var(--st-s-3) var(--st-s-4);margin:var(--st-s-4) 0}
 .official-surface .runtime-config .cfg-form.runtime-config-form{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--st-s-5)}
 .runtime-config-group{min-width:0;padding:0;border:0;margin:0}
@@ -27,4 +47,4 @@
 .runtime-config-control .official-dropdown{min-width:0}
 .runtime-config-control .official-dropdown-trigger{width:100%}
 .runtime-config-control .runtime-config-reset{height:34px;min-height:34px;padding:0 var(--st-s-2);border-color:transparent;font-size:var(--st-fs-xs);font-weight:500;color:var(--st-ink-muted);background:transparent;white-space:nowrap}
-@container workspace (max-width:850px){.official-surface .runtime-config-guide{grid-template-columns:1fr;gap:var(--st-s-5)}.runtime-config-field{grid-template-columns:minmax(0,1fr);gap:var(--st-s-2)}.runtime-config-control{max-width:420px}}
+@container workspace (max-width:850px){.runtime-config-sampling-entry{align-items:flex-start;flex-direction:column;gap:var(--st-s-3)}.runtime-config-sampling-unavailable{max-width:none}.runtime-config-field{grid-template-columns:minmax(0,1fr);gap:var(--st-s-2)}.runtime-config-control{max-width:420px}}

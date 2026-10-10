@@ -1,0 +1,23 @@
+.configuration-list-floating { position: sticky; top: 12px; height: 0; z-index: 40; display: flex; align-items: flex-start; justify-content: flex-end; padding: 0 24px; pointer-events: none; }
+.configuration-list-floating-anchor { position: relative; pointer-events: auto; padding-bottom: 6px; }
+.configuration-list-trigger { box-shadow: 0 3px 14px #0001; background: var(--surface); }
+.configuration-list-popover { position: absolute; right: 0; top: 100%; width: min(540px, calc(100vw - 70px)); max-width: calc(100vw - 70px); }
+.configuration-list-popover[hidden] { display: none; }
+.configuration-list-popover > .panel { margin: 0; box-shadow: var(--shadow); }
+.configuration-list { display: grid; gap: 14px; max-height: 360px; overflow: auto; padding-right: 3px; }
+.configuration-list-group h3 { display: flex; gap: 9px; align-items: center; margin: 0 0 7px; font-size: 14px; overflow-wrap: anywhere; }
+.configuration-list-group h3 > span { color: var(--muted); font-weight: 400; }
+.configuration-list-row { position: relative; display: flex; align-items: center; gap: 12px; border: 1px solid var(--border); border-radius: 9px; padding: 9px 94px 9px 11px; margin-top: 6px; }
+.configuration-list-row.selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+button.configuration-list-open { display: flex; justify-content: flex-start; flex: 1; min-width: 0; text-align: left; gap: 10px; border: 0; background: transparent; padding: 3px; }
+.configuration-list-open > svg { flex-shrink: 0; }
+.configuration-list-open > span { min-width: 0; display: grid; gap: 5px; }
+.configuration-list-open strong { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; overflow-wrap: anywhere; }
+.configuration-list-open em { font-size: 11px; font-style: normal; color: var(--accent); font-weight: 500; }
+.configuration-list-open em.previous { color: var(--muted); }
+.configuration-list-times { display: flex; flex-wrap: wrap; gap: 5px 16px; font-size: 12px; color: var(--muted); }
+.configuration-list-actions { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); display: flex; gap: 5px; opacity: 0; pointer-events: none; transition: opacity .12s; }
+.configuration-list-actions button { padding: 6px; min-width: 30px; min-height: 30px; }
+.configuration-list-row:hover .configuration-list-actions, .configuration-list-row:focus-within .configuration-list-actions { opacity: 1; pointer-events: auto; }
+.configuration-confirm-path { display: block; overflow-wrap: anywhere; }
+@media (hover: none) { .configuration-list-actions { opacity: 1; pointer-events: auto; } }

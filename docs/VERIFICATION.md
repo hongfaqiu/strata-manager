@@ -4,12 +4,47 @@
 
 本文件区分本轮独立后台实现与此前原型验证。自动检测/导入、运行时准备、元数据统计、调优、自启动与更新已经进入实现和测试阶段，不再只是方案；实现存在、夹具通过、真实 GPU 运行、最终安装包和跨版本更新是不同验收层级。下面记录阶段证据，最终提交后仍需统一检查及真实发布验收。
 
-## 本轮独立后台与本机流程
+## 公开发布证据与 0.1.0 候选
+
+- **v0.1.0-beta.2 已公开发布。** 对应源码 `0db2fea5128144fe2fe00cca992bd5139c831508`；[签名发布流水线](https://github.com/hongfaqiu/strata-manager/actions/runs/38080808731)的 Windows、Linux、publish 均成功。[发布页](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0-beta.2)的公开时间为 `2026-10-10T20:25:24Z`，共有八项资产：NSIS、AppImage、DEB、三份 Tauri 签名、`latest.json`、`SHA256SUMS`。发布门禁已执行真实更新包验签及资产/元数据检查；beta.2 不替换稳定 `latest` 通道。
+- **后续 main CI 已通过。** 源码 `ac16c4ce537b7e42e976c04791c3bad907f2c7ea` 的 [Windows/Linux CI](https://github.com/hongfaqiu/strata-manager/actions/runs/38088221840)均成功，包含隔离的原生私有凭据库、安装包 GUI、私有后台 IPC，以及 Windows 新装/关闭/卸载门禁。Linux 包在 Ubuntu 22.04 Xvfb/DBus 下启动 AppImage 和解包 DEB；这不等于系统 DEB 安装、真实登录或 GPU 模型验收。
+- **0.1.0 候选已冻结，本地检查通过。** 全部共享编辑完成后，候选快照及版本已同步。本地结果见下一节；上述历史 revision 的 CI 结果不能归到此候选。正式版仍须记录本次提交的 Windows/Linux CI、签名 Release、公开资产及验签结果。本文中新增下载入口和功能说明不构成该候选已经公开发布的证据。
+- **跨版本检查分开记录。** NSIS 将旧版覆盖安装为新版、文件/注册项和私有 IPC 检查，与 Tauri 客户端检查更新、从正式端点下载、验签、执行原生安装、后台接续和真实模型/API 恢复是不同合同。只通过安装器检查或发布侧验签不能将客户端自动更新端到端项记为通过。下述 Windows Strata 实机更新是局部验证；登录自启动、Tauri 客户端跨版本更新、其他 GPU/模型与 Linux 系统安装仍需各自的环境验收。
+
+### 0.1.0 冻结候选的本地检查
+
+2026-10-11，隔离发布工作树完成 `pnpm check`：前端与核心合同共 **180 项通过**，类型检查和生产构建通过。Windows 原生 `cargo test --workspace --locked -j 1 -- --test-threads=1` 共 **350 项通过、0 失败、11 项显式 ignored**：IPC 6、桌面 63、核心 271、独立后台进程集成 3、更新验签 7。单编译任务用于避免本机并行编译的内存不足，原有测试与时间限制未放宽。
+
+显式 ignored 包括需单独授权的真实服务检查、下载与安装夹具、符号链接权限及 child-only TCP 夹具；最后一项由归属回归测试实际作为子进程调用。它们不记作常规全量测试通过。独立后台的冷启动停止状态、升级恢复及跨客户端持续运行检查通过，使用私有临时目录和 CPU 模拟引擎，不启动原有模型。
+
+workspace fmt 与 Clippy `-D warnings` 通过；使用实际构建的 Rust 验签器运行发布门禁，**82 项通过、0 skipped**，覆盖 NSIS/AppImage/DEB 验签、版本与 tag/SHA 绑定、不可变公开版本、安装及 beta.2 升级合同。门禁单元合同不能替代 GitHub Runner 的实际安装、升级或公开资产验收。本地真实模型没有为构建释放或改变。
+
+### 特定 Windows 机器的 Strata 0.1.42 实机更新
+
+2026-10-11，在一台 Windows 机器上通过原生开发构建的后台 IPC 完成既有 Strata 从 0.1.41 到 0.1.42 的更新。使用上游 `strata-windows-x64.zip`（CUDA 13），大小 **137,300,495 字节**，SHA256 为 `bbf2fca32f98e490bc3c53c05c29136dcc53c606fbb619d842558ea69c50c9d6`；对应上游源码 commit 为 `61b3fb5dd3f1e8ec09cf7e4e05208bc6d3c46406`。实际更新任务为 completed、error 为空，检测返回 version=0.1.42、readiness=ready；旧失败任务仍保留 failed 状态。
+
+安装后的 `setup.py`、`serve/server.py` 和三个引擎文件与解包暂存一致，原有 data 中的两份文件按保留策略未替换。**24 份原配置的 SHA256 全部不变**，原有模型和配置未删除。更新前正在运行的服务及已有模型加载状态恢复，健康结果为 status=ok、loaded=true、max_context=131072。这里的 131072 是恢复后的上下文配置值，不是填满 128K 上下文的容量或检索测试。
+
+实际 `/v1/chat/completions` 短请求在 64 token 输出上限下返回 `OK`、finish_reason=stop；此前 16 token 上限请求只产生推理内容，未得到最终回答，不记作成功回答。只读检测阶段的原进程保持不变；真正更新后后台和模型进程已更换，不能将两个阶段混为一谈。
+
+用户按 Esc 中止桌面自动操作后，最终核验通过后台 IPC 与本机 HTTP 完成，没有继续点击或视觉复核原生界面。该记录证明这台机器、这个已有模型的更新、配置保留、加载恢复和短 API 推理，不代表所有 GPU/模型、Linux、完整原生 GUI、调优收益、长上下文持续稳定性或 Tauri 应用自身跨版本更新已经通过，也不是最终 0.1.0 发行安装包的验收。
+
+本机原始报告保留在忽略产物 `output/native-detection/verification.md`，更新与短请求记录为 `completed-update-proof.json`、`confirmed-update-retry-3-after.json` 和 `update-inference-smoke.json`。公开文档不收录机器绝对路径、凭证、私人模型标识或原始配置；这些实测结果不替代尚待记录的 0.1.0 最终候选 CI、签名发布与公开资产验证。
+
+下方保留阶段历史。各段的“最新”“最终”指当段测试快照；测试数量、失败和待验证项不能跨 revision 累加或作为当前候选结论。
+
+### 0.1.0 文档与官网定向检查（候选未冻结）
+
+中英文 README、下载/使用/故障文档的当前下载入口统一为 v0.1.0；对应版本的中英文 CHANGELOG 已可由实际 `releaseNotes` 函数严格提取，beta.1 和 beta.2 历史保留。文档明确 Windows x64 ZIP 引擎更新边界、兼容受管运行时的 5/15/30 分钟 RAM 临时正文诊断、原 `api_monitor` 配置单独管理及 MCP 网络行为。
+
+`node --test scripts/website-releases.test.mjs scripts/render-website-docs.test.mjs scripts/release-notes.test.mjs` **18 passed / 0 skipped**，其中官网新增 **9** 项合同测试调用实际生产目录选择函数，覆盖稳定 SemVer 优先、稳定版不存在时才回退预览、未知稳定端点不误判、其它仓库/缺失/重复资产拒绝、清除旧下载链接及首屏禁用。下载属性使用隔离 DOM 对象；不是浏览器、真实 GitHub 请求或客户端更新验收。`node --check website/app.js` 和限定文件 `git diff --check` 通过。静态站构建生成 **11** 篇用户文档，核验 **401** 个本地链接/资产。该范围不启动服务、GUI 或模型，也不把本轮候选视为已经通过跨平台 CI/签名 Release。
+
+## 早期独立后台与本机流程
 
 | 项目 | 已取得的证据 | 实际范围 |
 | --- | --- | --- |
-| 后台架构 | Rust workspace、独立 `strata-supervisor`、用户限定 IPC 与打包 sidecar 已实现 | Windows 使用 Job Object 管理子树；Linux IPC/进程实现尚待真实系统验收 |
-| Core / IPC | 最新后端快照：Core **79 passed / 2 ignored**；此前 IPC 5 passed | 包括新模型准备后自动登记的 10 项测试；ignored 为只读本机发现及真实官方安装，真实安装另行显式运行。最终跨平台结果由 CI 单独记录 |
+| 后台架构 | Rust workspace、独立 `strata-supervisor`、用户限定 IPC 与打包 sidecar 已实现 | Windows 使用 Job Object 管理子树；Linux 编译、隔离 IPC 和包启动后续已由上方 CI 记录，真实登录/GPU 仍需实机验收 |
+| Core / IPC | 早期后端快照：Core **79 passed / 2 ignored**；此前 IPC 5 passed | 包括新模型准备后自动登记的 10 项测试；ignored 为只读本机发现及真实官方安装，真实安装另行显式运行。最终跨平台结果由 CI 单独记录 |
 | Supervisor 生命周期 | `cargo test -p strata-supervisor --test lifecycle --target-dir apps/desktop/src-tauri/target`，2 passed，56.41 秒 | 真实后台进程与 Python HTTP 夹具：客户端退出服务继续、重复启动/重连、显式停止、有限 3 次恢复、后台硬崩溃释放 Job 子树、恢复时受控清理遗留维护 gate |
 | 模型切换 | 同一生命周期测试覆盖双服务切换 | 繁忙时拒切换、目标加载失败恢复旧模型、成功切换维持单模型；夹具不执行 GPU 推理 |
 | GUI HTTP 归属 | 后端报告 2 个新增所有权合同测试通过 | 未导入/未受管实例不能接收桌面变更；流式请求使用已登记且存活的受管身份。最终 workspace 总数待合并复验 |
@@ -46,6 +81,12 @@ Core 的 analytics 测试覆盖事务重放/重启去重、未知值与成功率
 
 ## 本轮实测调优实现
 
+完整场景实现另见 [中文调优指南](TUNING.md) / [English tuning guide](TUNING.en.md)：新增按日常聊天、编程 Agent、长文分析选择的有限任务、独立重启候选、A/B/A、启动参数核验、资源门槛和原配置恢复 journal。普通生成耗时与包含计数校准的任务总耗时分别记录，Agent 保留含工具处理的总耗时；完整推荐按实测漂移复验，不套固定百分比。未知资源／有效状态不当作通过；旧报告和短诊断不可新应用，历史已应用报告仍能恢复。
+
+workload 的 **13 项隔离真实 HTTP 合同通过（0 ignored，6.91 秒）**，覆盖工具 SSE ID/index 与多轮参数、实际 Token 计数后的长文冷／热／会话、截断及语义拒绝、条件视觉、自身流取消、资源单位及归属、报告不含正文。实际 App + 内存 RPC 的初轮中英 × 600/1440 浏览器 **48/48 用例通过**，文档／页面溢出和错误为零；资源推荐门槛最后接线仍在定向复测。后端重启、故障和 journal 的最终定向及 workspace 结果在完成后追加。这里没有启动真实大模型、GPU 或默认本机服务，不据此声称完整 P3／生产安装验收通过。
+
+以下保留较早的短请求实现证据，不能替代新版完整任务验收：
+
 `cargo test -p strata-runtime-core tuning::tests -- --nocapture --test-threads=1` **10 passed**；对应 Core Clippy 通过。包含实际回环 SSE 分块/UTF-8/no-DONE 拒绝、受管 HTTP 夹具 A/B/A、候选采用后参数写入及重启/load/probe、恢复原配置、较慢候选不推荐、加载失败回滚、只取消自身流、维护 gate 清理、服务退出时收尾、不碰未知 PID，以及配置 CLI/SHA256 恢复。
 
 `request-aba-v1` 对有限请求级候选执行基线 A → 候选 B → 恢复 A；distinctPrompt 使用新 nonce，repeatedPrefix 立即重复同一提示，记录实际缓存。推荐要求完整且一致的确定性输出，收益超过该轮 A 漂移。输出 hash 一致只证明一致性，不证明语义质量；这些探针不测试冷加载、会话恢复、完整 Agent、视觉或长上下文。
@@ -56,7 +97,7 @@ Core 的 analytics 测试覆盖事务重放/重启去重、未知值与成功率
 
 公开仓库已创建；正式 GitHub updater endpoint、公钥、updater artifacts 与 Actions 私钥 secret 已配置。最初的发布门禁单元测试为 **5 passed**；后续加入实际更新包验签及草稿查询，最新 Node 门禁 **17 passed / 0 skipped**、Rust 验签 **7 passed**，此前 release 模式 CLI 的三个密码学集成场景也通过。测试覆盖内置公钥、载荷篡改、签名及唯一合法版本、平台别名去重、DEB 签名、下载截断/失败/超时、自建临时目录清理及有界分页草稿查找；公开夹具不包含私钥。最终五 crate workspace Clippy `-D warnings`、fmt、版本一致和 GitHub workflow actionlint 通过。跨平台 sidecar 脚本已实际构建 Windows debug 后台，并核对目标与打包副本 SHA256 一致。
 
-当前尚未记录完整 Windows/Linux tag Release 构建结果、公开安装包资产核验、更新器密码学验签及上一版 → 新版安装闭环。更新签名不是 Windows Authenticode 发布者签名，尚未配置发布者证书。安装成功、后台版本切换和 API/模型恢复必须分别验收。
+本段写作时尚未完成完整 Windows/Linux tag Release；后续 beta.2 已完成两平台签名发布、公开资产和密码学验签，逐 revision 证据见上方。客户端上一版 → 新版的 Tauri 更新安装、后台接续和实际模型/API 恢复仍不能据此判定通过。更新签名不是 Windows Authenticode 发布者签名，尚未配置发布者证书。
 
 首次公开提交为 `65298a066c5fd48420729b437589cdf2cdce9e3f`；[首次 Windows/Linux CI](https://github.com/hongfaqiu/strata-manager/actions/runs/38060267872) 已实际运行，两平台均失败，不能作为安装包验收通过：
 
@@ -101,7 +142,7 @@ Tauri 窗口启动尺寸按显示器工作区和缩放计算，常见分辨率�
 - Windows 干净环境：无 Git、无 Python 的自动准备完整安装；已有安装检测/导入及自动就绪；新模型 setup、失败重试与取消。
 - 最新 Tauri 界面的自动引导、官方功能、中英布局、窗口/托盘行为和真实截图。
 - 真实 GPU：新架构聊天/附件/MCP、背景持续统计、重连/切换/恢复和调优完整闭环；不能只引用旧原型证明本轮通过。
-- 按已接受方案完成完整场景调优：编程 Agent 和长文分析、worker/异步换入/prefill/reserve 分阶段重启候选、工具参数及续答/视觉/长文检索质量检查、冷输入/热前缀/切换会话/持续生成/完整 Agent 总耗时分别评分。当前短 Chat/Code/Chinese 和请求级 PCIe/MTP 比较是已实现子集；它们的通过不代表计划第 3、4、6 项或 P3 已整体完成。
+- 按已接受方案验收完整场景调优：编程 Agent 和长文分析、worker/异步换入/prefill/reserve 分阶段重启候选、工具参数及续答/视觉/长文检索质量检查、冷输入/热前缀/切换会话/持续生成/完整 Agent 总耗时分别评分。新版实现与隔离合同见上方；真实 GPU、目标上下文持续稳定性及最终安装包中的完整闭环尚未验收，不能据此称 P3 已整体通过。
 - 注销并重新登录后的后台自启动；正式签名更新下载、验签、安装、后台接续与失败恢复。
 - Linux 实机 IPC、进程树、崩溃、自动准备、安装/卸载、自启动及 GPU；缺项继续在 Release 标明。
 - 发布隐私检查、来源/许可证、版本一致、全部 Release 资产与 `latest.json` 对应关系。

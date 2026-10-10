@@ -14,4 +14,17 @@ export interface PreparedRuntime {
 export interface RuntimeInstallationStatus {
   taskId?: string;
   result?: PreparedRuntime;
+  detectedRuntimes?: DetectedRuntime[];
+}
+
+/** A source/Python installation, independent of any model config being valid. */
+export interface DetectedRuntime {
+  installDir: string;
+  pythonPath: string;
+  runtimeVersion?: string;
+  sourceRevision?: string;
+  readiness: 'ready' | 'repair';
+  reason?: string;
+  /** Unregistered runtimes have an empty configPath; use only for model setup. */
+  profile: ServiceProfile;
 }

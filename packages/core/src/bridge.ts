@@ -121,6 +121,10 @@ export async function request<T = JsonObject>(profile: ServiceProfile, path: str
   return await responseJSON(await browserFetch(profile, path, method, body)) as T;
 }
 
+export interface RequestCaptureStatus { state: 'disabled' | 'temporary' | 'external' | 'unavailable'; expiresAtMs: number | null; reason: string | null }
+export const requestCaptureStatus = (profileId: string): Promise<RequestCaptureStatus> => native('request_capture_status', { profileId });
+export const setRequestCapture = (profileId: string, minutes: 0 | 5 | 15 | 30): Promise<RequestCaptureStatus> => native('request_capture_set', { profileId, minutes });
+
 export async function streamChat(profile: ServiceProfile, body: JsonObject, onDelta: (delta: ChatDelta) => void, signal?: AbortSignal): Promise<void> {
   if (signal?.aborted) throw new StrataError('CANCELLED', '请求已取消');
   let completed = false, contentLength = 0;
@@ -199,12 +203,26 @@ export const localRuntimeInstallation = (): Promise<import('./installation-types
 /** Task logs use the existing read-only log source contract; no engine configuration is read. */
 export const readTaskLogs = (taskId: string, limit = 200): Promise<LogEntry[]> => readLogs({ id: taskId, name: '', baseUrl: 'http://127.0.0.1:8000', installDir: '', pythonPath: '', configPath: '', managed: false }, limit);
 export const updateRuntime = (profile: ServiceProfile): Promise<TaskStatus> => native('update_runtime', { profile });
+export const runtimeUpdateInfo = (force = false): Promise<import('./runtime-types').RuntimeUpdateInfo> => native('runtime_update_info', { force });
+/** Install the official matching Release ZIP and tag source, preserving models and configuration. */
+/** Service interruption is authorized only by the explicit update confirmation dialog. */
+export const updateRuntimeZip = (installDir: string, assetName?: string, stopCurrentService = false): Promise<TaskStatus> => native('update_runtime_zip', { installDir, ...(assetName ? { assetName } : {}), stopCurrentService });
 export const listTasks = (): Promise<TaskStatus[]> => native('list_tasks');
 export const listSetupHandoffs = (): Promise<SetupHandoff[]> => native('list_setup_handoffs');
 export const resolveSetupHandoff = (taskId: string, configPath?: string): Promise<SetupHandoff> => native('resolve_setup_handoff', { taskId, ...(configPath ? { configPath } : {}) });
 export const cancelTask = (taskId: string): Promise<void> => native('cancel_task', { taskId });
 export const readConfig = (profile: ServiceProfile): Promise<JsonObject> => native('read_config', { profile });
+/** Read-only validation of required vision files using the service working directory. */
+export const validateVisionFiles = (profile: ServiceProfile, config: JsonObject): Promise<void> => native('validate_vision_files', { profile, config });
 export const writeConfig = (profile: ServiceProfile, config: JsonObject): Promise<void> => native('write_config', { profile, config });
+/** Save the full editor draft as a new file; discovery and activation remain explicit. */
+export const copyConfiguration = (profile: ServiceProfile, filename: string, config: JsonObject): Promise<ServiceProfile> => native('copy_configuration', { profile, filename, config });
+/** Archive the actual configuration JSON after confirming all matching services are stopped. */
+export const deleteConfiguration = (profile: ServiceProfile): Promise<{ archivedPath: string }> => native('delete_configuration', { profile });
+/** Inspect only the primary GGUF bundle; configuration files and companions are retained. */
+export const planModelDeletion = (profiles: ServiceProfile[]): Promise<import('./types').ModelDeletionPlan> => native('plan_model_deletion', { profiles });
+/** Permanently remove the confirmed primary files after repeating reference, process and stat checks. */
+export const deleteModelFiles = (profiles: ServiceProfile[], expectedFiles: import('./types').ModelDeletionFile[]): Promise<import('./types').ModelDeletionSummary> => native('delete_model_files', { profiles, expectedFiles });
 export const listLocalModels = (profile: ServiceProfile): Promise<LocalModel[]> => native('list_local_models', { profile });
 export const exportDiagnostics = (profile: ServiceProfile): Promise<string> => native('export_diagnostics', { profile });
 export const applySettings = (settings: AppSettings): Promise<void> => native('apply_settings', { settings });
@@ -216,12 +234,13 @@ export const switchLocalService = (profileId: string): Promise<ProcessStatus> =>
 export const supervisorStatus = (): Promise<SupervisorStatus> => native('supervisor_status');
 export const shutdownSupervisor = (): Promise<void> => native('shutdown_supervisor');
 export const localInstallations = (): Promise<ServiceProfile[]> => native('local_installations');
+export const localInstallationDetails = (): Promise<import('./types').LocalInstallationDetails[]> => native('local_installation_details');
 export const renameLocalInstallation = (profileId: string, name: string): Promise<ServiceProfile> => native('rename_local_installation', { profileId, name });
 export const removeLocalInstallation = (profileId: string): Promise<void> => native('remove_local_installation', { profileId });
 export const startupStatus = (): Promise<StartupStatus> => native('get_startup_status');
 export const setStartupEnabled = (enabled: boolean): Promise<StartupStatus> => native('set_startup_enabled', { enabled });
 export const backgroundPolicy = (): Promise<BackgroundPolicy> => native('get_background_policy');
-export const setBackgroundPolicy = (mode: BackgroundPolicy['mode'], autoRecover: boolean): Promise<BackgroundPolicy> => native('set_background_policy', { mode, autoRecover });
+export const setBackgroundPolicy = (mode: BackgroundPolicy['mode'], autoRecover: boolean, idleUnloadMinutes = 15): Promise<BackgroundPolicy> => native('set_background_policy', { mode, autoRecover, idleUnloadMinutes });
 export const prepareAppUpdate = (): Promise<void> => native('prepare_app_update');
 export const restartInterface = (): Promise<void> => native('restart_interface');
 export const tuningStart = (profileId: string, request: import('./tuning-types').TuningStartRequest): Promise<import('./tuning-types').TuningJob> => native('tuning_start', { profileId, request });

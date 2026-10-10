@@ -1,14 +1,16 @@
-"""Strata Manager's optional, metadata-only observer (Python standard library).
+"""Strata Manager's optional metadata observer (Python standard library).
 
 Loaded from an application-owned sitecustomize directory. Original Strata files,
-HTTP payloads, credentials, prompts, images and tool arguments are never changed
-or written by this observer. The official API monitor remains an independent,
-explicitly enabled upstream feature.
+HTTP payloads and original configuration are never changed. Durable journals
+contain metadata only. An explicit application lease can temporarily retain the
+official bounded body records in RAM, with automatic erase; manually enabled
+upstream monitoring remains entirely under the user's control.
 """
 from __future__ import annotations
 
 import ast
 import atexit
+import collections
 import functools
 import hashlib
 import hmac
@@ -24,6 +26,8 @@ import sys
 import threading
 import time
 import uuid
+import weakref
+from urllib.parse import parse_qs, urlsplit
 
 SCHEMA_VERSION = 1
 SUPPORTED_HASHES = {
@@ -31,11 +35,19 @@ SUPPORTED_HASHES = {
     # Canonical LF and the same Windows autocrlf checkout are equivalent code.
     "017efa1f4e76d72396738555d13eb1f9898d1c1c12730cf046d9b267b29987e5",
     "458612e929771181d4e5419dbff5bb6499b5e8fef29a5c42aa08824d4e1d9dbf",
+    # Niko1221/Strata 61b3fb5dd3f1e8ec09cf7e4e05208bc6d3c46406 (0.1.42),
+    # canonical LF. Verified against the tagged server with real MockEngine HTTP
+    # tests: public run now delegates to _run under a keep-awake finally block;
+    # event/done, request_stats and handler instrumentation boundaries are intact.
+    "ce9266730b632e919ff93809ea6f9ecd6f91f12da19597a2d95a7edb29700dfa",
 }
 ROUTES = {"/v1/chat/completions": "chat", "/v1/responses": "responses",
           "/v1/messages": "anthropic", "/v1/messages/count_tokens": "token_count"}
+MODEL_CONTROL_ROUTES = {"/load", "/unload", "/settings", "/config",
+                        "/v1/load", "/v1/unload", "/v1/vram"}
 _local = threading.local()
 _journal = None
+_captures = weakref.WeakSet()
 
 
 def _number(value, integer=False):
@@ -81,6 +93,12 @@ class Journal:
             CREATE TABLE IF NOT EXISTS active_requests(
                 request_id TEXT PRIMARY KEY,service_id TEXT NOT NULL,
                 session_id TEXT NOT NULL,started_ms INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS service_activity(
+                service_id TEXT PRIMARY KEY,session_id TEXT NOT NULL,
+                revision INTEGER NOT NULL CHECK(typeof(revision)='integer' AND revision>=0),
+                last_activity_ms INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS request_capture_leases(service_id TEXT PRIMARY KEY,payload TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS request_capture_status(service_id TEXT PRIMARY KEY,payload TEXT NOT NULL);
             INSERT OR IGNORE INTO meta VALUES('ack','0');
             INSERT OR IGNORE INTO meta VALUES('dropped_through','0');
             INSERT OR IGNORE INTO meta VALUES('schema_version','1');
@@ -89,7 +107,12 @@ class Journal:
         # The supervisor guarantees one process per installation. A fresh
         # observer session replaces stale admission entries from a crashed one.
         self.db.execute("DELETE FROM active_requests WHERE service_id=?", (service_id,))
+        self.db.execute("INSERT INTO service_activity VALUES(?,?,0,?) "
+                        "ON CONFLICT(service_id) DO UPDATE SET session_id=excluded.session_id,"
+                        "revision=0,last_activity_ms=excluded.last_activity_ms",
+                        (service_id,self.session_id,int(time.time()*1000)))
         self.db.commit()
+        self._activity_requests = set()
         self.status_path = self.directory / ("status-" + service_id + ".json")
         self._writes = 0
 
@@ -100,7 +123,16 @@ class Journal:
                   file=sys.stderr, flush=True)
             self.status(False, error="journal_write_failed")
 
-    def admit(self, request_id, tuning_token=None):
+    def _touch_activity(self):
+        # One metadata-only row per service. Session ownership prevents a late
+        # completion from the old observer from changing a replacement session.
+        changed = self.db.execute("UPDATE service_activity SET revision=revision+1,"
+                                  "last_activity_ms=? WHERE service_id=? AND session_id=?",
+                                  (int(time.time()*1000),self.service_id,self.session_id)).rowcount
+        if changed != 1:
+            raise sqlite3.DatabaseError("activity session changed")
+
+    def admit(self, request_id, tuning_token=None, activity=True):
         """Linearized with supervisor maintenance creation under BEGIN IMMEDIATE.
 
         The optional maintenance token is only compared, never journaled. None
@@ -124,7 +156,11 @@ class Journal:
                 if allowed:
                     self.db.execute("INSERT INTO active_requests VALUES(?,?,?,?)",
                                     (request_id,self.service_id,self.session_id,int(time.time()*1000)))
+                    if activity:
+                        self._touch_activity()
                 self.db.commit()
+                if allowed and activity:
+                    self._activity_requests.add(request_id)
                 return allowed
         except (sqlite3.Error,OSError):
             try:
@@ -137,9 +173,19 @@ class Journal:
     def release(self, request_id):
         try:
             with self.lock:
-                self.db.execute("DELETE FROM active_requests WHERE request_id=?", (request_id,))
+                self.db.execute("BEGIN IMMEDIATE")
+                changed = self.db.execute("DELETE FROM active_requests WHERE request_id=? "
+                                          "AND service_id=? AND session_id=?",
+                                          (request_id,self.service_id,self.session_id)).rowcount
+                if changed and request_id in self._activity_requests:
+                    self._touch_activity()
                 self.db.commit()
+                self._activity_requests.discard(request_id)
         except sqlite3.Error:
+            try:
+                self.db.rollback()
+            except sqlite3.Error:
+                pass
             self._write_failed()
 
     def status(self, supported, source_hash=None, error=None):
@@ -258,6 +304,135 @@ def _inspect_item(ctx, item, api):
             _usage(ctx, container.get("usage"))
 
 
+class RequestCapture:
+    """An expiring, application-owned body viewer; the upstream flag is never changed.
+
+    Only lease metadata is durable. Bodies use the upstream bounded in-memory
+    records and are erased on disable, expiry, identity change or a DB failure.
+    Existing manual monitoring belongs to the user and is never claimed.
+    """
+    def __init__(self, svc, journal, source_hash):
+        self.svc = weakref.ref(svc)
+        self.journal, self.source_hash = journal, source_hash
+        self.lock = threading.RLock()
+        self.token, self.expires, self.deadline = None, 0, 0
+        self.active_records = {}
+        self.revoked = collections.deque(maxlen=128)
+        self.last_wall = int(time.time()*1000)
+        self.last_poll = 0
+        _captures.add(self)
+        self.refresh()
+
+    def erase(self, svc):
+        if self.token:
+            self.revoked.append(self.token)
+        with svc.status_lock:
+            records = list(svc.api_requests) + list(self.active_records.values())
+            for record in records:
+                if record.get("_manager_capture_token"):
+                    for key in ("input", "output", "reasoning", "response", "error"):
+                        record.pop(key, None)
+                    # Preserve lifecycle keys still used by the upstream's finally.
+                    record["_manager_capture_erased"] = True
+            svc.api_requests = type(svc.api_requests)(
+                (r for r in svc.api_requests if not r.get("_manager_capture_token")), maxlen=100)
+        self.token, self.expires, self.deadline = None, 0, 0
+
+    def refresh(self, force=False):
+        with self.lock:
+            svc = self.svc()
+            if svc is None or self.journal.closed:
+                return False
+            now = int(time.time()*1000)
+            clock = time.monotonic()
+            if (not force and clock-self.last_poll < 0.05 and now >= self.last_wall-1000
+                    and svc.api_monitor is not True and (not self.token or (now < self.expires and clock < self.deadline))):
+                return bool(self.token)
+            self.last_poll = clock
+            error = None
+            lease = None
+            try:
+                with self.journal.lock:
+                    row = self.journal.db.execute("SELECT payload FROM request_capture_leases WHERE service_id=?",
+                                                  (self.journal.service_id,)).fetchone()
+                if row:
+                    if len(row[0]) > 4096:
+                        raise ValueError()
+                    lease = json.loads(row[0])
+                    valid = (isinstance(lease, dict) and set(lease) == {
+                        "protocolVersion", "serviceId", "sessionId", "pid", "sourceHash", "token", "createdAtMs", "expiresAtMs"}
+                        and lease["protocolVersion"] == 1 and lease["serviceId"] == self.journal.service_id
+                        and lease["sessionId"] == self.journal.session_id and lease["pid"] == os.getpid()
+                        and lease["sourceHash"] == self.source_hash
+                        and isinstance(lease["token"], str) and re.fullmatch(r"[a-f0-9]{32}", lease["token"])
+                        and lease["token"] not in self.revoked
+                        and type(lease["createdAtMs"]) is int and type(lease["expiresAtMs"]) is int
+                        and 0 < lease["expiresAtMs"]-lease["createdAtMs"] <= 1800000
+                        and lease["createdAtMs"] <= now + 1000 and now < lease["expiresAtMs"]
+                        and now >= self.last_wall - 1000)
+                    if not valid:
+                        lease = None
+                        error = "capture_lease_invalid_or_expired"
+            except (sqlite3.Error, ValueError, TypeError, KeyError, OSError):
+                error = "capture_lease_unavailable"
+                lease = None
+            manual = svc.api_monitor is True
+            if manual or lease is None or (self.token == lease["token"] and time.monotonic() >= self.deadline):
+                if self.token:
+                    self.erase(svc)
+                lease = None
+            elif self.token != lease["token"]:
+                if self.token:
+                    self.erase(svc)
+                self.token, self.expires = lease["token"], lease["expiresAtMs"]
+                self.deadline = time.monotonic() + min(1800, (self.expires-now)/1000)
+            self.last_wall = now
+            status = {"protocolVersion": 1, "serviceId": self.journal.service_id,
+                      "sessionId": self.journal.session_id, "pid": os.getpid(), "sourceHash": self.source_hash,
+                      "updatedAtMs": now, "manualEnabled": manual, "active": bool(self.token),
+                      "token": self.token, "expiresAtMs": self.expires if self.token else None, "error": error}
+            try:
+                with self.journal.lock:
+                    self.journal.db.execute("INSERT INTO request_capture_status VALUES(?,?) ON CONFLICT(service_id) DO UPDATE SET payload=excluded.payload",
+                                            (self.journal.service_id, json.dumps(status, separators=(",", ":"))))
+                    self.journal.db.commit()
+            except sqlite3.Error:
+                if self.token:
+                    self.erase(svc)
+                return False
+            return bool(self.token)
+
+    def begin(self, path, req):
+        with self.lock:
+            svc = self.svc()
+            if svc is None or not self.refresh():
+                return None
+            # Exact verified upstream record format and 256 KiB limits. Unlike
+            # toggling api_monitor around begin_request, this has no global race.
+            raw = json.dumps(req, ensure_ascii=False, indent=2)
+            record = {"id": uuid.uuid4().hex[:12], "path": path, "model": req.get("model") or svc.model,
+                      "started_at": time.time(), "state": "queued", "stream": bool(req.get("stream")),
+                      "response_format": (req.get("response_format") or {}).get("type") if isinstance(req.get("response_format"), dict) else None,
+                      "input": raw[:262144], "input_truncated": len(raw) > 262144,
+                      "output": "", "reasoning": "", "output_truncated": False, "reasoning_truncated": False,
+                      "queue_s": 0.0, "load_s": 0.0, "first_token_s": None, "_clock": time.perf_counter(),
+                      "_manager_capture_token": self.token}
+            with svc.status_lock:
+                svc.api_requests.append(record)
+            svc.request_trace.record = record
+            self.active_records[threading.get_ident()] = record
+            return record
+
+    def allowed_record(self, handler):
+        self.refresh()
+        record = getattr(handler, "record", None)
+        if record is not None and record.get("_manager_capture_token"):
+            if not self.token or record.get("_manager_capture_token") != self.token or record.get("_manager_capture_erased"):
+                handler.record = None
+                return False
+        return True
+
+
 def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=False):
     """Executed immediately before the official module's main guard."""
     global _journal
@@ -283,6 +458,21 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
     namespace["_strata_manager_instrumented"] = True
     original_run, original_note, original_begin = service.run, service._note, service.begin_request
 
+    original_stats = namespace.get("request_stats")
+    if callable(original_stats):
+        @functools.wraps(original_stats)
+        def observed_stats(segments):
+            values = original_stats(segments)
+            current = getattr(_local, "run", None)
+            if current is not None and isinstance(values, dict):
+                # request_stats runs while the upstream still owns this request's
+                # FIFO/slot. Reading the shared engine.last afterwards could
+                # accidentally attribute the next request's expert-cache figures.
+                current["expertCacheHits"] = _number(values.get("hits"), True)
+                current["expertCacheLookups"] = _number(values.get("lookups"), True)
+            return values
+        namespace["request_stats"] = observed_stats
+
     def observed_model(svc):
         """The loaded service identity, never an untrusted request model/alias."""
         try:
@@ -301,6 +491,9 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
         ctx = _ctx()
         if ctx:
             ctx["stream"] = bool(req.get("stream"))
+        capture = getattr(self, "_manager_capture", None)
+        if capture is not None and self.api_monitor is not True:
+            return capture.begin(path, req)
         return original_begin(self, path, req)
 
     @functools.wraps(original_note)
@@ -330,6 +523,8 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
                 "serviceId": journal.service_id, "startedAtMs": int(time.time()*1000),
                 "promptTotal": len(ids), "inputTokens": None, "outputTokens": 0,
                 "cacheReadTokens": None, "firstTokenS": None, "decodeTokS": None,
+                "prefillTokens": None, "prefillS": None, "prefillTokS": None, "decodeS": None,
+                "expertCacheHits": None, "expertCacheLookups": None,
                 "finish": "interrupted", "toolCalls": 0, "clock": clock}
         previous_run = getattr(_local, "run", None)
         _local.run = info
@@ -352,6 +547,16 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
                             len(ids) if info["finish"] not in {"cancel", "disconnect", "error"} else None)
                         info["cacheReadTokens"] = cached
                         info["decodeTokS"] = _number(timings.get("predicted_per_second"))
+                        info["prefillTokens"] = prompt
+                        prompt_ms = _number(timings.get("prompt_ms"))
+                        decode_ms = _number(timings.get("predicted_ms"))
+                        info["prefillS"] = prompt_ms / 1000 if prompt_ms is not None else None
+                        info["decodeS"] = decode_ms / 1000 if decode_ms is not None else None
+                        # Use engine timings rather than request wall time, which
+                        # also includes queueing, loading, tools and decoding.
+                        info["prefillTokS"] = _number(timings.get("prompt_per_second"))
+                        if info["prefillTokS"] is None and prompt and prompt_ms:
+                            info["prefillTokS"] = prompt * 1000 / prompt_ms
                     if info["finish"] in {"cancel", "disconnect"}:
                         ctx["cancelled"] = True
                     elif info["finish"] == "error":
@@ -400,15 +605,41 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
     @functools.wraps(make_handler)
     def observed_handler(svc):
         handler = make_handler(svc)
+        capture_control = getattr(svc, "_manager_capture", None)
+        if capture_control is None and all(hasattr(svc, name) for name in ("api_monitor", "api_requests", "status_lock", "request_trace")):
+            capture_control = svc._manager_capture = RequestCapture(svc, journal, source_hash)
         post, send, handler_note = handler.do_POST, handler.send_response, handler._note
         emit_json, capture = handler._json, handler._capture
+        get = handler.do_GET
+
+        @functools.wraps(get)
+        def observed_get(self):
+            if (self.path.partition("?")[0].rstrip("/") == "/api/requests" and svc.api_monitor is not True
+                    and capture_control is not None):
+                with capture_control.lock:
+                    enabled = capture_control.refresh()
+                if enabled:
+                    if self._authorized():
+                        with capture_control.lock:
+                            if not capture_control.refresh(force=True):
+                                return get(self)
+                            request_id = parse_qs(urlsplit(self.path).query).get("id", [None])[0]
+                            records = svc.request_records(request_id)
+                        return self._json(404 if records is None else 200,
+                            {"error": {"message": "request no longer retained"}} if records is None else records if request_id else
+                            {"requests": records, "retention": 100, "persistent": False, "loaded": svc.loaded(),
+                             "auto_load": hasattr(svc.engine, "restart")})
+                    return
+            return get(self)
 
         @functools.wraps(post)
         def observed_post(self):
-            route = ROUTES.get(self.path.partition("?")[0].rstrip("/"))
+            path = self.path.partition("?")[0].rstrip("/")
+            route = ROUTES.get(path)
             if route is None:
                 request_id = uuid.uuid4().hex
-                admission = journal.admit(request_id,self.headers.get("X-Strata-Manager-Maintenance-Token") or self.headers.get("X-Strata-Manager-Tuning-Id"))
+                admission = journal.admit(request_id,self.headers.get("X-Strata-Manager-Maintenance-Token") or self.headers.get("X-Strata-Manager-Tuning-Id"),
+                                          activity=path in MODEL_CONTROL_ROUTES or path.startswith("/slots/"))
                 try:
                     if admission is False:
                         return self._json(503,{"error":{"type":"server_error","code":"strata_manager_maintenance","message":"The local service is being maintained. Retry shortly."}})
@@ -454,6 +685,9 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
                     journal.release(ctx["requestId"])
                 _local.request = previous
                 self._manager_context = None
+                if capture_control is not None:
+                    with capture_control.lock:
+                        capture_control.active_records.pop(threading.get_ident(), None)
 
         @functools.wraps(send)
         def observed_send(self, code, message=None):
@@ -470,6 +704,11 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
                     ctx["errorKind"] = _error_kind(values["error"])
                 if values.get("outcome") == "disconnected":
                     ctx["cancelled"] = True
+            if capture_control is not None:
+                with capture_control.lock:
+                    if not capture_control.allowed_record(self):
+                        return
+                    return handler_note(self, **values)
             return handler_note(self, **values)
 
         @functools.wraps(emit_json)
@@ -482,19 +721,71 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
                 if ctx["route"] == "token_count":
                     # Token-count requests do not perform inference or consume tokens.
                     ctx["countedTokens"] = _number(obj.get("input_tokens"), True)
+            if capture_control is not None:
+                detached = None
+                with capture_control.lock:
+                    capture_control.allowed_record(self)
+                    record = getattr(self, "record", None)
+                    if record is not None and record.get("_manager_capture_token"):
+                        with svc.status_lock:
+                            raw = json.dumps(obj, ensure_ascii=False, indent=2)
+                            record.update(http_status=code, response=raw[:262144], response_truncated=len(raw) > 262144)
+                            for key in ("error", "usage", "timings"):
+                                if key in obj:
+                                    record[key] = obj[key]
+                        self.record = None
+                        detached = record
+                try:
+                    return emit_json(self, code, obj)
+                finally:
+                    # Restore lifecycle bookkeeping for the upstream finally;
+                    # all later capture writes still validate this exact lease.
+                    if detached is not None:
+                        self.record = detached
             return emit_json(self, code, obj)
 
         @functools.wraps(capture)
         def observed_capture(self, items, api):
-            original = capture(self, items, api)
+            record = getattr(self, "record", None)
+            temporary = record is not None and record.get("_manager_capture_token")
+            # Never hold the capture lock while awaiting the engine's next token.
+            # Otherwise a slow stream could prevent the TTL thread from erasing.
+            original = items if temporary else capture(self, items, api)
             try:
                 for item in original:
+                    if temporary and item is not None:
+                        with capture_control.lock:
+                            if capture_control.allowed_record(self) and self.record is not None:
+                                if api == "openai":
+                                    delta = item["choices"][0]["delta"]
+                                    content, reasoning = delta.get("content", ""), delta.get("reasoning_content", "")
+                                    usage, timings = item.get("usage"), item.get("timings")
+                                elif api == "responses":
+                                    content = item["delta"] if item["type"] == "response.output_text.delta" else ""
+                                    reasoning = item["delta"] if item["type"] == "response.reasoning_text.delta" else ""
+                                    usage, timings = (item.get("response") or {}).get("usage"), None
+                                else:
+                                    _, event = item
+                                    delta = event.get("delta", {})
+                                    content, reasoning = delta.get("text", ""), delta.get("thinking", "")
+                                    usage, timings = event.get("usage"), None
+                                with svc.status_lock:
+                                    for name, value in (("output", content), ("reasoning", reasoning)):
+                                        if value:
+                                            combined = self.record[name] + value
+                                            self.record[name] = combined[:262144]
+                                            self.record[name + "_truncated"] |= len(combined) > 262144
+                                    if usage:
+                                        self.record["usage"] = usage
+                                    if timings:
+                                        self.record["timings"] = timings
                     _inspect_item(getattr(self, "_manager_context", None), item, api)
                     yield item
             finally:
                 original.close()
 
         handler.do_POST, handler.send_response, handler._note = observed_post, observed_send, observed_note
+        handler.do_GET = observed_get
         handler._json, handler._capture = observed_json, observed_capture
         return handler
 
@@ -502,14 +793,24 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
     stopped = threading.Event()
 
     def heartbeat():
-        while not stopped.wait(30):
+        last_status = time.monotonic()
+        while not stopped.wait(0.5):
             if journal.closed:
                 return
-            journal.status(not journal.failed, source_hash,
-                           "journal_write_failed" if journal.failed else None)
+            for control in list(_captures):
+                if control.journal is journal:
+                    control.refresh(force=True)
+            if time.monotonic() - last_status >= 30:
+                journal.status(not journal.failed, source_hash,
+                               "journal_write_failed" if journal.failed else None)
+                last_status = time.monotonic()
 
     def finish_session():
         stopped.set()
+        for control in list(_captures):
+            if control.journal is journal and control.svc() is not None:
+                with control.lock:
+                    control.erase(control.svc())
         journal.append("session_end", {"sessionId": journal.session_id,
                        "serviceId": journal.service_id, "endedAtMs": int(time.time()*1000)})
         if not journal.closed:

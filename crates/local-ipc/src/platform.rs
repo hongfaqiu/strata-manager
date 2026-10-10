@@ -124,15 +124,21 @@ unsafe impl Send for SingleInstance {}
 unsafe impl Sync for SingleInstance {}
 impl SingleInstance {
     pub fn acquire(data_dir: &std::path::Path) -> Result<Self, RpcError> {
+        Self::acquire_scoped(data_dir, "supervisor")
+    }
+    /// Independent UI operation locks share the user's protected ACL but never
+    /// occupy the supervisor instance or create directories in roaming storage.
+    pub fn acquire_scoped(data_dir: &std::path::Path, scope: &str) -> Result<Self, RpcError> {
+        crate::validate_lock_scope(scope)?;
         let security = UserSecurity::new()?;
         let attrs = security.attributes();
-        let name: Vec<u16> = format!(
-            "Global\\StrataSupervisor-{}",
-            crate::endpoint_key(data_dir)?
-        )
-        .encode_utf16()
-        .chain(Some(0))
-        .collect();
+        let endpoint = crate::endpoint_key(data_dir)?;
+        let name = if scope == "supervisor" {
+            format!("Global\\StrataSupervisor-{endpoint}")
+        } else {
+            format!("Global\\StrataSupervisor-{endpoint}-{scope}")
+        };
+        let name: Vec<u16> = name.encode_utf16().chain(Some(0)).collect();
         let handle = unsafe { CreateMutexW(&attrs, 0, name.as_ptr()) };
         if handle.is_null() {
             return Err(RpcError::new(

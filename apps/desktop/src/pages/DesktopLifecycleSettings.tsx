@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Download, LoaderCircle, RefreshCw, RotateCw } from 'lucide-react';
 import * as core from '@strata-manager/core';
 import { Panel } from '../components';
-import { Toggle } from '../OfficialControls';
+import { Dropdown, Toggle } from '../OfficialControls';
 import type { AppUpdateState } from '../useAppUpdates';
 import { startupStatusHint } from '../startupStatusText';
 
@@ -30,7 +30,7 @@ export function DesktopLifecycleSettings({ desktop, streaming, autoCheck, onAuto
   const mutate = async (operation: () => Promise<unknown>) => {
     if (saving) return;
     setSaving(true);
-    try { await operation(); await query.invalidateQueries({ queryKey: ['startup-status'] }); await query.invalidateQueries({ queryKey: ['background-policy'] }); }
+    try { await operation(); await Promise.all([query.invalidateQueries({ queryKey: ['startup-status'] }), query.invalidateQueries({ queryKey: ['background-policy'] })]); }
     catch (error) { onError(error); }
     finally { setSaving(false); }
   };
@@ -38,14 +38,23 @@ export function DesktopLifecycleSettings({ desktop, streaming, autoCheck, onAuto
   const phaseKey = { checking: 'checkingUpdates', current: 'noAppUpdates', available: 'updateAvailable', downloading: 'downloadingAppUpdate', downloaded: 'downloadedAppUpdate', installing: 'installingAppUpdate', installed: 'restartForUpdate' };
   const downloading = update.phase === 'downloading' || update.phase === 'installing';
   const formatBytes = (value: number) => `${(value / 1024 ** 2).toFixed(1)} MiB`;
+  const idleMinutes = policy.data?.idleUnloadMinutes ?? 15;
+  const idleSupported = Number.isInteger(policy.data?.idleUnloadMinutes) && idleMinutes >= 0 && idleMinutes <= 1440;
+  const idlePeriods = [0, 5, 15, 30, 60];
+  if (idleSupported && !idlePeriods.includes(idleMinutes)) idlePeriods.push(idleMinutes);
+  const idleHint = policy.data && !idleSupported ? 'idleModelReleaseUpdate' : policy.data?.mode === 'alwaysReady' ? 'idleModelReleaseReady' : 'idleModelReleaseHint';
 
   return <>
     <Panel title={t('backgroundSettings')}>
       {!desktop && <p className="subtle">{t('nativeRequired')}</p>}
       {startup.error || policy.error ? <div className="notice error" role="alert">{t('settingsUnavailable')}: {String(startup.error ?? policy.error)}</div> : null}
       {row(t('launchOnLogin'), startupStatusHint(startup.data, i18n.resolvedLanguage ?? i18n.language, t('launchOnLoginHint')), startup.data?.enabled === true, !desktop || !startup.data?.supported, enabled => void mutate(() => core.setStartupEnabled(enabled)))}
-      {row(t('prepareAtStartup'), t('prepareAtStartupHint'), policy.data?.mode === 'alwaysReady', !desktop || !policy.data, enabled => void mutate(() => core.setBackgroundPolicy(enabled ? 'alwaysReady' : 'lazy', policy.data!.autoRecover)))}
-      {row(t('recoverService'), t('recoverServiceHint'), policy.data?.autoRecover === true, !desktop || !policy.data, enabled => void mutate(() => core.setBackgroundPolicy(policy.data!.mode, enabled)))}
+      {row(t('prepareAtStartup'), t('prepareAtStartupHint'), policy.data?.mode === 'alwaysReady', !desktop || !policy.data, enabled => void mutate(() => core.setBackgroundPolicy(enabled ? 'alwaysReady' : 'lazy', policy.data!.autoRecover, idleMinutes)))}
+      {row(t('recoverService'), t('recoverServiceHint'), policy.data?.autoRecover === true, !desktop || !policy.data, enabled => void mutate(() => core.setBackgroundPolicy(policy.data!.mode, enabled, idleMinutes)))}
+      <div className="setting-toggle">
+        <span style={{ minWidth: 0 }}><strong>{t('idleModelRelease')}</strong><small>{t(idleHint)}</small></span>
+        <div style={{ width: 180, maxWidth: '50%', flexShrink: 0 }}><Dropdown ariaLabel={t('idleModelRelease')} value={String(idleMinutes)} options={idlePeriods.map(value => ({ value: String(value), label: value === 0 ? t('idleModelReleaseOff') : t('idleModelReleaseMinutes', { count: value }) }))} disabled={!desktop || !idleSupported || policy.data?.mode !== 'lazy' || saving} onValueChange={value => { if (Number(value) !== idleMinutes) void mutate(() => core.setBackgroundPolicy(policy.data!.mode, policy.data!.autoRecover, Number(value))); }}/></div>
+      </div>
       {backend.data?.version && <p className="subtle">{t('backendVersion')}: {backend.data.version} · PID {backend.data.pid ?? '—'}</p>}
       {backend.data?.updatePending && <div className="notice" role="status">{t('backendUpdatePending')}: {backend.data.updateReason}</div>}
       {backend.data?.recovery?.repairRequired && <div className="notice error" role="alert">{t('backendRepair')}: {backend.data.recovery.lastError}</div>}
@@ -57,11 +66,10 @@ export function DesktopLifecycleSettings({ desktop, streaming, autoCheck, onAuto
       {update.phase in phaseKey && <p role="status" aria-live="polite">{t(phaseKey[update.phase as keyof typeof phaseKey], { version: update.version })}</p>}
       {update.error && <div className="notice error" role="alert">{t(update.errorStage === 'download' ? 'updateDownloadFailed' : update.errorStage === 'install' ? 'updateInstallFailed' : 'updateCheckFailed')}<details><summary>{t('details')}</summary>{update.error}</details></div>}
       {downloading && <p role="status">{t(update.total ? 'downloadBytes' : 'downloadBytesUnknown', { received: formatBytes(update.received), total: formatBytes(update.total ?? 0) })}</p>}
-      {update.notes && <details><summary>{t('details')}</summary><p className="subtle" style={{ whiteSpace: 'pre-wrap' }}>{update.notes}</p></details>}
       <div className="actions">
         <button type="button" disabled={!desktop || downloading || update.downloaded || update.phase === 'checking' || update.phase === 'installed'} onClick={() => void onCheck()}>{update.phase === 'checking' ? <LoaderCircle className="spin" size={15}/> : <RefreshCw size={15}/>} {t('checkUpdates')}</button>
-        {update.version && !update.downloaded && update.phase !== 'current' && update.phase !== 'installed' && <button type="button" className="primary" disabled={!desktop || downloading || update.phase === 'checking'} onClick={() => void onDownload()}><Download size={15}/>{t(update.errorStage === 'download' ? 'retryAppUpdateDownload' : 'downloadAppUpdate')}</button>}
-        {update.downloaded && <button type="button" className="primary" disabled={!desktop || streaming || downloading} onClick={() => void onInstall()}><Download size={15}/>{t('installAppUpdate')}</button>}
+        {update.version && !update.downloaded && update.phase !== 'current' && update.phase !== 'installed' && <button type="button" className="primary" disabled={!desktop || downloading || update.phase === 'checking'} onClick={() => void onDownload()}><Download size={15}/>{t('reviewAppUpdate')}</button>}
+        {update.downloaded && <button type="button" className="primary" disabled={!desktop || downloading} onClick={() => void onInstall()}><Download size={15}/>{t('reviewDownloadedUpdate')}</button>}
         {update.phase === 'installed' && <button type="button" className="primary" disabled={streaming} onClick={() => void core.restartInterface().catch(onError)}><RotateCw size={15}/>{t('restartForUpdate')}</button>}
       </div>
     </Panel>

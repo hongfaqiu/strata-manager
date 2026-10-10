@@ -89,7 +89,14 @@ jobs:
       - name: Version and release guard tests
         env:
           UPDATE_VERIFIER_BIN: ${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/debug/strata-update-verifier${{ runner.os == 'Windows' && '.exe' || '' }}
-        run: node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-assets.test.mjs scripts/release-publish.test.mjs scripts/preview-package-smoke.test.mjs
+        run: node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-assets.test.mjs scripts/release-publish.test.mjs scripts/preview-package-smoke.test.mjs scripts/download-upgrade-fixture.test.mjs
+      - name: Verify the signed beta.2 installer for the first stable upgrade
+        if: runner.os == 'Windows' && steps.package-version.outputs.version == '0.1.0'
+        id: upgrade-fixture
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPDATE_VERIFIER_BIN: ${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/debug/strata-update-verifier.exe
+        run: node scripts/download-upgrade-fixture.mjs
       - name: Frontend types, core and HTTP fixture tests, build
         run: pnpm check
       - name: Prepare independent background binary
@@ -124,6 +131,12 @@ jobs:
       - name: Verify installed Windows package and background IPC
         if: runner.os == 'Windows'
         run: node scripts/preview-package-smoke.mjs --bundle-dir "${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/release/bundle" --version "${{ steps.package-version.outputs.version }}"
+      - name: Verify beta.2 to first stable upgrade and retained application data
+        if: runner.os == 'Windows' && steps.package-version.outputs.version == '0.1.0'
+        env:
+          UPGRADE_FROM_INSTALLER: ${{ steps.upgrade-fixture.outputs.installer }}
+          UPGRADE_FROM_VERSION: ${{ steps.upgrade-fixture.outputs.version }}
+        run: node scripts/preview-package-smoke.mjs --bundle-dir "${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/release/bundle" --version "${{ steps.package-version.outputs.version }}" --upgrade-from-installer "$env:UPGRADE_FROM_INSTALLER" --upgrade-from-version "$env:UPGRADE_FROM_VERSION"
       - name: Verify Linux AppImage and DEB startup under Xvfb
         if: runner.os == 'Linux'
         run: dbus-run-session -- xvfb-run -a bash scripts/release-linux-tests.sh node scripts/preview-package-smoke.mjs --bundle-dir "${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/release/bundle" --version "${{ steps.package-version.outputs.version }}"

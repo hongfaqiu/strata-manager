@@ -119,7 +119,7 @@ fn validate_server_arguments(profile: &ServiceProfile, argv: &[String]) -> Resul
     let mut options = std::collections::HashMap::new();
     while index < argv.len() {
         let name = argv[index].as_str();
-        if matches!(name, "--api-monitor" | "--no-open-browser") {
+        if matches!(name, "--api-monitor" | "--no-open-browser" | "--lazy") {
             index += 1;
             continue;
         }
@@ -269,7 +269,7 @@ mod platform {
             }
         }
     }
-    fn identity(handle: HANDLE) -> Result<(u64, PathBuf), String> {
+    pub(crate) fn identity(handle: HANDLE) -> Result<(u64, PathBuf), String> {
         unsafe {
             let mut created: FILETIME = std::mem::zeroed();
             let mut exit = created;
@@ -292,7 +292,7 @@ mod platform {
             ))
         }
     }
-    fn arguments(command: &str) -> Result<Vec<String>, String> {
+    pub(crate) fn arguments(command: &str) -> Result<Vec<String>, String> {
         if command.is_empty() || command.encode_utf16().count() > 32767 || command.contains('\0') {
             return Err("完整启动参数为空、超长或包含无效字符".into());
         }
@@ -361,7 +361,7 @@ mod platform {
         }
         String::from_utf16(wide).map_err(|_| "进程命令行Unicode无效".into())
     }
-    fn command_for(handle: HANDLE) -> Result<String, String> {
+    pub(crate) fn command_for(handle: HANDLE) -> Result<String, String> {
         type Query =
             unsafe extern "system" fn(HANDLE, i32, *mut std::ffi::c_void, u32, *mut u32) -> i32;
         // ProcessCommandLineInformation is also used by sysinfo on Windows 8.1+.
@@ -1197,6 +1197,11 @@ time.sleep(90)
                 "18339".into(),
             ];
             assert!(validate_arguments(&profile, &image, &argv).is_ok());
+            let mut lazy = argv.clone();
+            lazy.push("--lazy".into());
+            assert!(validate_arguments(&profile, &image, &lazy).is_ok());
+            lazy.push("true".into());
+            assert!(validate_arguments(&profile, &image, &lazy).is_err());
             let parsed=arguments(&format!("\"{}\" -u -m serve.server --engine strata --config \"{}\" --host 127.0.0.1 --port 18339",image.display(),config.display())).unwrap();
             assert_eq!(parsed, argv);
             for (index, value) in [

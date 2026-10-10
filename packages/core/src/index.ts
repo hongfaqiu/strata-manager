@@ -9,3 +9,7 @@ export * from './config-tuning';
 export * from './tuning-types';
 export * from './analytics-types';
 export * from './installation-types';
+export * from './runtime-types';
+export * from './model-groups';
+export * from './configuration-match';
+export * from './service-selection';

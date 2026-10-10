@@ -83,7 +83,7 @@ export function Segmented({ value, options, onValueChange, ariaLabel, id }: { va
     const next = event.key === 'Home' ? available[0] : event.key === 'End' ? available.at(-1) : available[(position + (event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1) + available.length) % available.length];
     if (next !== undefined) { onValueChange(options[next]!.value); ref.current?.querySelectorAll<HTMLButtonElement>('button')[next]?.focus(); }
   };
-  return <div id={id} className="seg official-segmented" role="radiogroup" aria-label={ariaLabel} ref={ref}>{options.map((option, index) => <button type="button" role="radio" aria-checked={option.value === value} tabIndex={option.value === value || (!options.some(o => o.value === value) && index === 0) ? 0 : -1} key={option.value} disabled={option.disabled} onClick={() => onValueChange(option.value)} onKeyDown={event => move(event, index)}>{option.icon}{option.label}</button>)}</div>;
+  return <div id={id} className="seg official-segmented" role="radiogroup" aria-label={ariaLabel} ref={ref}>{options.map((option, index) => <button type="button" role="radio" aria-label={option.label} aria-checked={option.value === value} tabIndex={option.value === value || (!options.some(o => o.value === value) && index === 0) ? 0 : -1} key={option.value} disabled={option.disabled} onClick={() => onValueChange(option.value)} onKeyDown={event => move(event, index)}>{option.icon}{option.label}</button>)}</div>;
 }
 
 export function Slider({ value, min, max, step, onValueChange, ariaLabel, disabled, id }: { value: number; min: number; max: number; step: number; onValueChange: (value: number) => void; ariaLabel: string; disabled?: boolean; id?:string }) {

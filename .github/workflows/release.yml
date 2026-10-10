@@ -121,7 +121,14 @@ jobs:
       - name: Version and complete release guard tests
         env:
           UPDATE_VERIFIER_BIN: ${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/debug/strata-update-verifier${{ runner.os == 'Windows' && '.exe' || '' }}
-        run: node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-assets.test.mjs scripts/release-publish.test.mjs scripts/preview-package-smoke.test.mjs
+        run: node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-assets.test.mjs scripts/release-publish.test.mjs scripts/preview-package-smoke.test.mjs scripts/download-upgrade-fixture.test.mjs
+      - name: Verify the signed beta.2 installer for the first stable upgrade
+        if: runner.os == 'Windows' && needs.validate.outputs.version == '0.1.0'
+        id: upgrade-fixture
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPDATE_VERIFIER_BIN: ${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/debug/strata-update-verifier.exe
+        run: node scripts/download-upgrade-fixture.mjs
       - run: pnpm check
       - run: node scripts/prepare-sidecar.mjs --profile debug --target ${{ matrix.target }}
       - run: cargo fmt --all -- --check
@@ -141,6 +148,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: node scripts/release-assets.mjs
+      - name: Read localized changelog for this exact version
+        id: release-notes
+        run: node scripts/release-notes.mjs --version "${{ needs.validate.outputs.version }}"
       - name: Build signed installers and populate draft release
         uses: tauri-apps/tauri-action@v1
         env:
@@ -156,21 +166,10 @@ jobs:
           # avoids a Workflows:write requirement for an older tag's workflow.
           releaseCommitish: ${{ github.event.repository.default_branch }}
           releaseName: Strata Manager ${{ github.ref_name }}
-          releaseBody: |
-            本地模型，一站管理。 / Local models. One workspace.
-
-            Windows x64: download the setup.exe installer. Linux x64: download the AppImage or DEB package.
-            安装与功能范围 / Installation and feature scope: https://github.com/${{ github.repository }}#readme
-
-            Packages are checked on Windows and Ubuntu CI runners, including package startup and background IPC. Real GPU inference, login startup and cross-version update installation have separate acceptance requirements. / 安装包在 Windows 与 Ubuntu CI 环境检查，包括包启动和后台通信；真实 GPU 推理、登录自启动与跨版本更新安装分别验收。
-
-            Prereleases are installed manually and do not replace the stable automatic update channel. Tauri updater signatures are included; Windows Authenticode publisher signing is not configured. / 预览版本手工下载安装，不替换稳定自动更新通道；附 Tauri 更新签名，Windows 发布者代码签名尚未配置。
-
-            Model weights and the Strata inference runtime are installed separately. / 模型权重与 Strata 推理运行时独立安装。
-            Based on / 基于 https://github.com/Niko1221/Strata — see THIRD_PARTY_NOTICES.md.
+          releaseBody: ${{ steps.release-notes.outputs.body }}
           releaseDraft: true
           prerelease: ${{ needs.validate.outputs.prerelease }}
-          generateReleaseNotes: true
+          generateReleaseNotes: false
           retryAttempts: 3
           uploadUpdaterJson: true
           updaterJsonPreferNsis: true
@@ -178,9 +177,15 @@ jobs:
           uploadWorkflowArtifacts: true
           workflowArtifactNamePattern: 'release-[platform]-[arch]-[bundle]'
 
-      - name: Verify installed Windows preview and packaged background
+      - name: Verify installed Windows package and background IPC
         if: runner.os == 'Windows'
         run: node scripts/preview-package-smoke.mjs --bundle-dir "${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/release/bundle" --version "${{ needs.validate.outputs.version }}"
+      - name: Verify beta.2 to first stable upgrade and retained application data
+        if: runner.os == 'Windows' && needs.validate.outputs.version == '0.1.0'
+        env:
+          UPGRADE_FROM_INSTALLER: ${{ steps.upgrade-fixture.outputs.installer }}
+          UPGRADE_FROM_VERSION: ${{ steps.upgrade-fixture.outputs.version }}
+        run: node scripts/preview-package-smoke.mjs --bundle-dir "${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/release/bundle" --version "${{ needs.validate.outputs.version }}" --upgrade-from-installer "$env:UPGRADE_FROM_INSTALLER" --upgrade-from-version "$env:UPGRADE_FROM_VERSION"
       - name: Verify Linux AppImage and DEB startup under Xvfb
         if: runner.os == 'Linux'
         run: dbus-run-session -- xvfb-run -a bash scripts/release-linux-tests.sh node scripts/preview-package-smoke.mjs --bundle-dir "${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/release/bundle" --version "${{ needs.validate.outputs.version }}"
@@ -215,7 +220,7 @@ jobs:
           node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-assets.test.mjs scripts/release-publish.test.mjs
       - name: Verify installer bytes, built-in public key, signed version and both platforms
         run: node scripts/release-verify.mjs
-      - name: Publish SHA256 checksums for the preview installers
+      - name: Publish SHA256 checksums for the installers
         shell: bash
         run: |
           preview_checksums_dir="$RUNNER_TEMP/strata-release-checksums"

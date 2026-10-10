@@ -72,6 +72,7 @@ export function validateRelease(release, manifest, { repository, tag, version, e
   if (debs.length !== 1) throw new Error('Expected exactly one current-version .deb installer.');
   validateInstallerName(debs[0], 'deb', version, productName);
   const deb = { asset: debs[0], signature: assets.get(`${debs[0].name}.sig`) };
+  if (!deb.signature) throw new Error('DEB update signature is missing.');
   for (const [platform, target] of Object.entries(platformAliases)) {
     if (!Object.hasOwn(manifest.platforms, platform)) continue;
     const alias = referencedAsset(manifest.platforms[platform], assets, repository, tag, platform);
@@ -172,9 +173,8 @@ export async function verifyRelease({ repository = process.env.GITHUB_REPOSITORY
     await fetchAsset(repository, manifestAsset, manifestPath);
     const manifest = JSON.parse(await limitedText(manifestPath, 1024 * 1024, 'latest.json'));
     const { updates, deb } = validateRelease(release, manifest, { repository, tag, version, expectedSha, tagCommitSha, productName });
-    // An ordinary DEB without an updater entry needs its current-version name;
-    // if a signature was uploaded, it must be genuine even without an alias.
-    if (deb.signature && !updates['linux-x86_64-deb']) updates.deb = deb;
+    // Every installer must verify, even when DEB has no updater manifest alias.
+    if (!updates['linux-x86_64-deb']) updates.deb = deb;
     const downloaded = new Set();
     for (const [platform, update] of Object.entries(updates)) {
       if (downloaded.has(update.asset.id)) continue;
@@ -189,7 +189,7 @@ export async function verifyRelease({ repository = process.env.GITHUB_REPOSITORY
       execFileSync(verifierPath, ['--config', configPath, '--signature', signaturePath, '--artifact', artifactPath, '--version', version, '--require-signed-version'], { stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 32768 });
       downloaded.add(update.asset.id);
     }
-    logger(`Draft release verified: ${tag}; both updater artifacts match the built-in public key, signed version and uploaded signatures.`);
+    logger(`Draft release verified: ${tag}; all three installers (NSIS, AppImage, DEB) match the built-in public key, signed version and uploaded signatures.`);
   } finally {
     await cleanupOwnedDirectory(directory, parent);
   }

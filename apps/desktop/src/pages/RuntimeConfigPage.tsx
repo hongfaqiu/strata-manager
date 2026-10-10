@@ -59,6 +59,12 @@ export interface RuntimeConfigPageProps {
   onSampling?: () => void;
   /** Navigate to service management; restarting remains an explicit user action. */
   onServices?: () => void;
+  onImages?: () => void;
+  onCopied?: (profile: ServiceProfile) => void | Promise<void>;
+  onDeleted?: (profile: ServiceProfile) => void | Promise<void>;
+  onDirtyChange?: (dirty: boolean) => void;
+  /** Available only for the current owned service; a separate confirmation precedes restart. */
+  onRestart?: () => Promise<unknown>;
 }
 
 /** A new service gets an independent editing session, including its key and unsaved changes. */
@@ -67,9 +73,10 @@ export function RuntimeConfigPage(props: RuntimeConfigPageProps) {
   return <RuntimeConfigSession key={identity} {...props} />;
 }
 
-function RuntimeConfigSession({ profile, online, language, desktop = core.isDesktop(), onKeySaved, onError, onMessage, onSampling, onServices }: RuntimeConfigPageProps) {
+function RuntimeConfigSession({ profile, online, language, desktop = core.isDesktop(), onKeySaved, onError, onMessage, onSampling, onServices, onImages, onCopied, onDeleted, onDirtyChange, onRestart }: RuntimeConfigPageProps) {
   const { t } = useTranslation();
   const zh = language === 'zh-CN';
+  const localFile = desktop && !!profile?.configPath;
   const active = useRef(true);
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   const [key, setKey] = useState('');
@@ -78,18 +85,28 @@ function RuntimeConfigSession({ profile, online, language, desktop = core.isDesk
   const [keyMessage, setKeyMessage] = useState('');
   const [keyError, setKeyError] = useState('');
   const [values, setValues] = useState<Record<string, string>>({});
+  const [startupDirty, setStartupDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [saveError, setSaveError] = useState('');
   const config = useQuery({
     queryKey: ['official-config', profile?.id, profile?.baseUrl, profile?.configPath],
     queryFn: () => core.request(profile!, '/config'),
-    enabled: !!profile && online,
+    enabled: !!profile && online && !localFile,
     refetchOnWindowFocus: false,
     retry: false,
   });
   const credential = useQuery({ queryKey: ['runtime-config-key', profile?.id], queryFn: () => core.hasApiKey(profile!.id), enabled: !!profile, retry: false });
   const keys = useMemo(() => Array.isArray(config.data?.keys) ? config.data.keys.map(core.asObject) : [], [config.data]);
+  const originalValues = useMemo(() => valuesOf(keys), [keys]);
+  const remoteDirty = !localFile && keys.some(field => {
+    const name = String(field.key);
+    return (values[name] ?? originalValues[name]) !== originalValues[name];
+  });
+  const dirtyCallback = useRef(onDirtyChange);
+  dirtyCallback.current = onDirtyChange;
+  useEffect(() => { onDirtyChange?.(startupDirty || remoteDirty); }, [startupDirty, remoteDirty, onDirtyChange]);
+  useEffect(() => () => dirtyCallback.current?.(false), []);
   const groups = useMemo(() => {
     const grouped = configGroups.map(group => ({ title: zh ? group.zh : group.en, fields: group.keys.flatMap(name => keys.filter(key => key.key === name)) }));
     const known = new Set<string>(configGroups.flatMap(group => [...group.keys]));
@@ -97,8 +114,8 @@ function RuntimeConfigSession({ profile, online, language, desktop = core.isDesk
     return [...grouped, ...(other.length ? [{ title: zh ? '其他服务参数' : 'Other service parameters', fields: other }] : [])].filter(group => group.fields.length);
   }, [keys, zh]);
   useEffect(() => {
-    setValues(valuesOf(keys));
-  }, [keys]);
+    setValues(originalValues);
+  }, [originalValues]);
   const fail = (error: unknown, setError: (message: string) => void) => {
     if (!active.current) return;
     setError(core.normalizeError(error).message);
@@ -160,25 +177,17 @@ function RuntimeConfigSession({ profile, online, language, desktop = core.isDesk
   };
   const locked = saving || config.isFetching || !online || config.isError;
   return <section className="view view--runtime-config" id="view-config" aria-labelledby="workspace-page-title"><div className="runtime-config">
-    <section className="st-card runtime-config-guide" aria-label={zh ? '参数调整说明' : 'Parameter guide'}>
-      <div><strong>{zh ? '聊天采样：下一次提问生效' : 'Chat sampling: applies to your next request'}</strong><p>{zh ? '温度、Top P、Top K 与思考强度影响回答方式。可先调整聊天采样并比较回答，无需重启服务。' : 'Temperature, Top P, Top K and reasoning effort affect responses. Adjust chat sampling and compare answers without restarting.'}</p>{onSampling && <button type="button" onClick={onSampling} disabled={!profile}><SlidersHorizontal size={15}/>{zh ? '调整聊天采样' : 'Adjust chat sampling'}</button>}</div>
-      <div><strong>{zh ? '服务配置：保存后重启生效' : 'Service configuration: restart after saving'}</strong><p>{zh ? '下方的启动参数和默认运行配置保存到文件，不会立即改变正在运行的服务。保存后请到服务管理页主动重启；未接管的外部服务需从原启动程序重启。' : 'Startup parameters and default runtime settings below are saved to the file. Restart explicitly in Service management to apply them; restart an external service using its launcher until it is taken over.'}</p>{onServices && <button type="button" onClick={onServices}><ArrowRight size={15}/>{zh ? '前往服务管理' : 'Open Service management'}</button>}</div>
+    <section className="st-card runtime-config-sampling" aria-labelledby="runtime-config-sampling-title">
+      <div className="runtime-config-section-heading"><h2 id="runtime-config-sampling-title">{zh ? '聊天采样' : 'Chat sampling'}</h2><span className="runtime-config-apply-badge">{zh ? '下次请求生效' : 'Applies to the next request'}</span></div>
+      <div className="runtime-config-sampling-entry"><p>{zh ? '温度、Top P、Top K、思考强度和输出上限无需重启。应用后用于下一次提问，正在生成的回答保持原参数。' : 'Temperature, Top P, Top K, reasoning effort and output limits need no restart. Applying them affects your next request; a response in progress keeps its original settings.'}</p>{onSampling ? <button className="st-btn st-btn--primary" type="button" onClick={onSampling} disabled={!profile}><SlidersHorizontal size={15}/>{zh ? '调整聊天采样' : 'Adjust chat sampling'}</button> : <span className="runtime-config-sampling-unavailable">{zh ? '在聊天中选择此服务后，可调整它的采样参数。' : 'Select this service in Chat to adjust its sampling settings.'}</span>}</div>
+      <details className="runtime-config-scope"><summary>{zh ? '共享采样与默认值' : 'Shared sampling and defaults'}</summary><p>{zh ? '聊天设置中可将采样共享给其他客户端，无需重启。共享值仅补全新请求未指定的参数；使用配置文件启动的服务会保存共享值。请求中指定的参数优先于共享采样，共享采样优先于模型配置中的默认采样。下方配置文件里的采样默认值仍需保存并重启。' : 'Chat settings can share sampling with other clients without restarting. Shared values fill parameters omitted by new requests; services started with a configuration file persist them. Explicit request parameters take priority over shared sampling, which takes priority over the model configuration defaults. Sampling defaults in the configuration below still require saving and restarting.'}</p></details>
     </section>
-    <div className="st-card runtime-config-connection"><span className="card-title">{zh ? '服务连接' : 'Service connection'}</span>
-      {profile ? <><p><strong>{profile.name}</strong><code className="runtime-config-address">{core.normalizeBaseUrl(profile.baseUrl)}</code></p>
-        <form onSubmit={event => { event.preventDefault(); void saveKey(); }}>
-          <div className="st-field"><label className="st-label" htmlFor="api-key">{t('apiKey')}<output>{t('apiKeyOnly')}</output></label>
-            <input className="st-input" id="api-key" type="password" autoComplete="new-password" placeholder={credential.data ? (zh ? '已保存；输入以替换' : 'Saved; enter to replace') : t('notNeeded')} disabled={keySaving} value={key} onChange={event => { setKey(event.target.value); setKeyDirty(true); setKeyMessage(''); }} />
-          </div><p className="muted small">{desktop ? (zh ? '保存在系统凭据库，不会回显。' : 'Stored in the system credential vault and never displayed.') : (zh ? '密钥仅在当前会话保留，关闭后清除。' : 'Keys are kept only for the current session.')}</p>
-          <div className="cfg-actions"><button className="st-btn st-btn--primary" type="submit" disabled={keySaving || !keyDirty}>{keySaving ? (zh ? '保存中…' : 'Saving…') : t('save')}</button>
-            <button className="st-btn st-btn--secondary" type="button" disabled={keySaving || !credential.data} onClick={() => void saveKey(true)}>{zh ? '移除密钥' : 'Remove key'}</button><span className="muted small" role="status">{keyMessage}</span></div>
-        </form>{(keyError || credential.error) && <p className="runtime-config-error" role="alert">{keyError || core.normalizeError(credential.error).message}</p>}
-      </> : <p className="muted">{zh ? '先创建或选择一个服务配置。' : 'Create or select a service profile first.'}</p>}
-    </div>
-    <StartupTuningPanel profile={profile} desktop={desktop} language={language} onError={onError} onMessage={onMessage}/>
-    <div className="st-card cfg-card" id="cfg-card"><div className="req-head"><span className="card-title">{t('modelSettings')}</span><span className="muted small" id="cfg-file">{online ? String(config.data?.file ?? '') : ''}</span></div>
-      <p className="muted small">{zh ? '默认采样用于未指定采样参数的请求；其他运行项影响所有客户端。配置保存到此服务的模型配置文件。' : 'Sampling defaults apply to requests that omit those parameters; other runtime settings affect all clients. Changes are saved to this service’s model configuration file.'}</p><p className="runtime-config-restart-note">{zh ? '此处所有字段保存后均需重启 Strata 服务才能生效。恢复默认会清除此字段的自定义值，点击保存后写入配置。' : 'All fields here require a Strata service restart after saving. Resetting a field clears its custom value; save to write that change to the file.'}</p>
-      {!profile ? <p className="muted">{zh ? '选择服务后可读取运行配置。' : 'Select a service to read its run configuration.'}</p> : !online ? <p className="muted" role="status">{zh ? '服务离线。连接成功后会自动读取运行配置；API Key 可在上方保存。' : 'Service is offline. Run configuration loads when connected; the API key can still be saved above.'}</p> : <>
+    <section className="runtime-config-startup" aria-labelledby="runtime-config-startup-title">
+      <div className="runtime-config-startup-intro"><div className="runtime-config-section-heading"><h2 id="runtime-config-startup-title">{zh ? '模型启动配置' : 'Model startup configuration'}</h2><span className="runtime-config-apply-badge runtime-config-apply-badge--restart">{zh ? '保存后重启生效' : 'Restart after saving'}</span></div><p>{localFile ? (zh ? '图形界面与 JSON 编辑同一份完整配置。保存会备份原文件；当前服务在重启前继续使用已有配置。' : 'Graphical controls and JSON edit the same complete configuration. Saving backs up the previous file; the running service keeps its existing configuration until restarted.') : (zh ? '服务提供的运行配置字段只写入配置文件，重启后生效。完整本地 JSON 可在桌面应用中编辑。' : 'The run configuration fields exposed by this service are saved to its configuration file and applied after a restart. Edit the complete local JSON in the desktop app.')}</p><div className="runtime-config-section-actions">{onImages && <button className="st-btn st-btn--secondary" type="button" onClick={onImages}>{zh ? '快捷配置图像支持' : 'Set up image support'}</button>}{onServices && <button className="st-btn st-btn--secondary" type="button" onClick={onServices}><ArrowRight size={15}/>{zh ? '返回我的模型' : 'Return to My models'}</button>}</div></div>
+    <StartupTuningPanel profile={profile} desktop={desktop} language={language} onError={onError} onMessage={onMessage} onRestart={onRestart} onCopied={onCopied} onDeleted={onDeleted} onDirtyChange={setStartupDirty}/>
+    {!localFile && <div className="st-card cfg-card" id="cfg-card"><div className="req-head"><span className="card-title">{zh ? '服务配置文件字段' : 'Service configuration file fields'}</span><span className="muted small" id="cfg-file">{online ? String(config.data?.file ?? '') : ''}</span></div>
+      <p className="runtime-config-restart-note">{zh ? '这些字段保存后均需重启 Strata 服务。默认采样用于未被共享设置或请求参数覆盖的值。恢复默认会清除此字段的自定义值，点击保存后写入配置。' : 'All fields here require a Strata service restart after saving. Sampling defaults apply where shared settings and request parameters do not override them. Reset clears a custom value; save to write that change to the file.'}</p>
+      {!profile ? <p className="muted">{zh ? '选择服务后可读取运行配置。' : 'Select a service to read its run configuration.'}</p> : !online ? <p className="muted" role="status">{zh ? '服务离线。连接成功后会自动读取运行配置；API Key 可在下方保存。' : 'Service is offline. Run configuration loads when connected; the API key can still be saved below.'}</p> : <>
         <div className="runtime-config-refresh"><button className="st-btn st-btn--secondary" type="button" disabled={saving || config.isFetching} onClick={() => void reloadConfig()}>{config.isFetching ? (zh ? '读取中…' : 'Loading…') : (zh ? '重新读取' : 'Reload')}</button><span className="muted small">{zh ? '重新读取会舍弃未保存的改动。' : 'Reloading discards unsaved changes.'}</span></div>
         {config.error && <p className="runtime-config-error" role="alert">{core.normalizeError(config.error).message}</p>}
         {!!keys.length && <><form className="cfg-form runtime-config-form" id="cfg-form" noValidate onSubmit={event => { event.preventDefault(); void saveConfig(); }}>{groups.map(group => <fieldset className="runtime-config-group" key={group.title}><legend>{group.title}</legend>{group.fields.map(k => {
@@ -191,10 +200,22 @@ function RuntimeConfigSession({ profile, online, language, desktop = core.isDesk
                 : <input className="st-input" id={field} aria-label={label} aria-describedby={`${field}-help`} disabled={locked} autoComplete="off" value={values[name] ?? ''} placeholder={t('configDefault')} onChange={event => update(event.target.value)} />}
             <button type="button" className="runtime-config-reset" disabled={locked || !values[name]} aria-label={`${zh ? '恢复默认' : 'Reset to default'}: ${label}`} title={zh ? '清除自定义值，保存后采用默认值' : 'Clear the custom value; defaults apply after saving'} onClick={() => update('')}><RotateCcw size={14}/>{zh ? '默认' : 'Default'}</button>
           </div></div>;
-        })}</fieldset>)}</form><div className="cfg-actions"><button className="st-btn st-btn--primary" id="cfg-save" type="button" disabled={locked} onClick={() => void saveConfig()}>{saving ? (zh ? '保存中…' : 'Saving…') : t('save')}</button><span className="muted small" id="cfg-msg" role="status">{message}</span>{message && onServices && <button className="st-btn st-btn--secondary" type="button" onClick={onServices}>{zh ? '前往服务管理重启' : 'Restart in Service management'}<ArrowRight size={14}/></button>}</div></>}
+        })}</fieldset>)}</form><div className="cfg-actions"><button className="st-btn st-btn--primary" id="cfg-save" type="button" disabled={locked} onClick={() => void saveConfig()}>{saving ? (zh ? '保存中…' : 'Saving…') : (zh ? '保存配置（重启后生效）' : 'Save configuration (restart to apply)')}</button><span className="muted small" id="cfg-msg" role="status">{message}</span>{message && onServices && <button className="st-btn st-btn--secondary" type="button" onClick={onServices}>{zh ? '前往服务管理重启' : 'Restart in Service management'}<ArrowRight size={14}/></button>}</div></>}
         {!config.isPending && !config.error && !keys.length && <p className="muted">{zh ? '此服务未提供可编辑的运行配置字段。' : 'This service provides no editable run configuration fields.'}</p>}
         {saveError && <p className="runtime-config-error" role="alert">{saveError}</p>}
       </>}
+    </div>}
+    </section>
+    <div className="st-card runtime-config-connection"><span className="card-title">{zh ? '服务连接与 API Key' : 'Service connection and API key'}</span>
+      {profile ? <><p><strong>{profile.name}</strong><code className="runtime-config-address">{core.normalizeBaseUrl(profile.baseUrl)}</code></p>
+        <form onSubmit={event => { event.preventDefault(); void saveKey(); }}>
+          <div className="st-field"><label className="st-label" htmlFor="api-key">{t('apiKey')}<output>{t('apiKeyOnly')}</output></label>
+            <input className="st-input" id="api-key" type="password" autoComplete="new-password" placeholder={credential.data ? (zh ? '已保存；输入以替换' : 'Saved; enter to replace') : t('notNeeded')} disabled={keySaving} value={key} onChange={event => { setKey(event.target.value); setKeyDirty(true); setKeyMessage(''); }} />
+          </div><p className="muted small">{desktop ? (zh ? '保存在系统凭据库，不会回显。' : 'Stored in the system credential vault and never displayed.') : (zh ? '密钥仅在当前会话保留，关闭后清除。' : 'Keys are kept only for the current session.')}</p>
+          <div className="cfg-actions"><button className="st-btn st-btn--primary" type="submit" disabled={keySaving || !keyDirty}>{keySaving ? (zh ? '保存中…' : 'Saving…') : t('save')}</button>
+            <button className="st-btn st-btn--secondary" type="button" disabled={keySaving || !credential.data} onClick={() => void saveKey(true)}>{zh ? '移除密钥' : 'Remove key'}</button><span className="muted small" role="status">{keyMessage}</span></div>
+        </form>{(keyError || credential.error) && <p className="runtime-config-error" role="alert">{keyError || core.normalizeError(credential.error).message}</p>}
+      </> : <p className="muted">{zh ? '先创建或选择一个服务配置。' : 'Create or select a service profile first.'}</p>}
     </div>
   </div></section>;
 }

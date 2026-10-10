@@ -120,9 +120,9 @@ function renderDocument(entry, markdown) {
   const en = entry.lang === 'en';
   const alternate = documents.find((item) => item.key === entry.key && item.lang !== entry.lang);
   const chrome = en ? {
-    home: 'Website', index: 'Documentation', contents: 'On this page', source: 'Source file', original: 'View on GitHub', theme: 'Switch theme', skip: 'Skip to content', language: 'Document language', nav: 'Documentation navigation', foot: 'Local models. One workspace.',
+    home: 'Website', index: 'Documentation', contents: 'On this page', source: 'Source file', original: 'View on GitHub', theme: 'Switch theme', skip: 'Skip to content', language: 'Document language', nav: 'Documentation navigation', foot: 'Strata runtimes and local model services, in one workspace.',
   } : {
-    home: '返回官网', index: '文档中心', contents: '本页目录', source: '来源文件', original: 'GitHub 原文', theme: '切换主题', skip: '跳转到正文', language: '文档语言', nav: '文档导航', foot: '本地模型，一站管理。',
+    home: '返回官网', index: '文档中心', contents: '本页目录', source: '来源文件', original: 'GitHub 原文', theme: '切换主题', skip: '跳转到正文', language: '文档语言', nav: '文档导航', foot: 'Strata 运行环境与本地模型服务，一站管理。',
   };
   const content = entry.plain
     ? { html: `<h1 id="${escape(entry.key)}">${escape(entry.label)}</h1><pre class="license-text">${escape(markdown)}</pre>`, headings: [] }

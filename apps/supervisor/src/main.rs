@@ -5,6 +5,7 @@ use strata_runtime_core::RuntimeState;
 use tokio_util::sync::CancellationToken;
 
 fn main() {
+    let _ = strata_runtime_core::installation::initialize_installer_package_identity();
     if let Some(result) = strata_runtime_core::mcp_stdio::run_if_requested() {
         match result {
             Ok(code) => std::process::exit(code),
@@ -28,13 +29,15 @@ async fn supervisor_main() {
 async fn run() -> Result<(), RpcError> {
     let mut args = std::env::args_os().skip(1);
     let mut data_dir = None;
+    let mut defer_restore = false;
     while let Some(arg) = args.next() {
         match arg.to_str() {
             Some("--data-dir") => data_dir = args.next().map(PathBuf::from),
+            Some("--defer-restore") => defer_restore = true,
             _ => {
                 return Err(RpcError::new(
                     "invalid_arguments",
-                    "用法: strata-supervisor --data-dir <绝对目录>",
+                    "用法: strata-supervisor --data-dir <绝对目录> [--defer-restore]",
                 ))
             }
         }
@@ -56,8 +59,12 @@ async fn run() -> Result<(), RpcError> {
         Err(error) if error.code == "already_running" => return Ok(()),
         Err(error) => return Err(error),
     };
-    let state = RuntimeState::open(data_dir.clone())
-        .map_err(|e| RpcError::new("runtime_initialization", e))?;
+    let state = if defer_restore {
+        RuntimeState::open_deferred(data_dir.clone())
+    } else {
+        RuntimeState::open(data_dir.clone())
+    }
+    .map_err(|e| RpcError::new("runtime_initialization", e))?;
     let shutdown = CancellationToken::new();
     let token = shutdown.clone();
     let runtime = state.clone();
@@ -66,6 +73,10 @@ async fn run() -> Result<(), RpcError> {
     let collector = state.clone();
     let collector_stop = shutdown.clone();
     tokio::spawn(async move {
+        tokio::select! {
+            _ = collector_stop.cancelled() => return,
+            _ = collector.wait_for_recovery_resume() => {}
+        }
         loop {
             tokio::select! { _=collector_stop.cancelled()=>break, _=tokio::time::sleep(Duration::from_secs(1))=>{} }
             let collect = collector.clone();
@@ -81,6 +92,12 @@ async fn run() -> Result<(), RpcError> {
         }
     });
     tokio::spawn(async move {
+        tokio::select! {
+            _ = recovery_stop.cancelled() => return,
+            _ = recovery.wait_for_recovery_resume() => {}
+        }
+        // Ordinary startup only observes saved selections. Restore is reserved
+        // for a service interrupted by an explicit runtime/supervisor upgrade.
         if let Err(error) = recovery.clone().restore_default().await {
             eprintln!("后台恢复需要处理: {error}");
         }
@@ -97,6 +114,13 @@ async fn run() -> Result<(), RpcError> {
         async move {
             if request.method == "shutdown_supervisor" {
                 let preparation = if request
+                    .params
+                    .get("forClose")
+                    .and_then(serde_json::Value::as_bool)
+                    == Some(true)
+                {
+                    state.clone().prepare_window_close().await
+                } else if request
                     .params
                     .get("forUpdate")
                     .and_then(serde_json::Value::as_bool)

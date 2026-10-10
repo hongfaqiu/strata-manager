@@ -1,0 +1,80 @@
+.workspace-statusbar.service-telemetry-statusbar {
+  min-height: 32px;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+}
+
+.service-telemetry-statusbar .service-telemetry-state {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 1 auto;
+  gap: 7px;
+}
+
+.service-telemetry-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--st-ink-muted);
+}
+
+.service-telemetry-statusbar[data-state="generating"] .service-telemetry-dot,
+.service-telemetry-statusbar[data-state="idle"] .service-telemetry-dot,
+.service-telemetry-statusbar[data-state="running"] .service-telemetry-dot {
+  background: var(--st-accent);
+}
+
+.service-telemetry-statusbar[data-state="reading"] .service-telemetry-dot,
+.service-telemetry-statusbar[data-state="prefill"] .service-telemetry-dot {
+  background: var(--st-info);
+}
+
+.service-telemetry-statusbar[data-state="connecting"] .service-telemetry-dot,
+.service-telemetry-statusbar[data-state="waiting"] .service-telemetry-dot,
+.service-telemetry-statusbar[data-state="loading"] .service-telemetry-dot,
+.service-telemetry-statusbar[data-state="unavailable"] .service-telemetry-dot {
+  background: var(--st-warn);
+}
+
+.service-telemetry-statusbar[data-state="error"] .service-telemetry-dot,
+.service-telemetry-statusbar[data-state="failed"] .service-telemetry-dot,
+.service-telemetry-statusbar[data-state="disconnected"] .service-telemetry-dot {
+  background: var(--st-danger);
+}
+
+.service-telemetry-values {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 16px;
+  min-width: 0;
+}
+
+.service-telemetry-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.service-telemetry-value strong {
+  color: var(--st-ink-soft);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.service-telemetry-speed strong {
+  min-width: 4ch;
+  text-align: right;
+}
+
+@media (max-width: 740px) {
+  .workspace-statusbar.service-telemetry-statusbar {
+    gap: 5px 12px;
+  }
+
+  .service-telemetry-values {
+    gap: 5px 12px;
+  }
+}

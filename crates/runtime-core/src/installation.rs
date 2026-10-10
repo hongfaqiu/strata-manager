@@ -54,6 +54,8 @@ pub struct InstallationStatus {
     pub task_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<PreparedRuntime>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub detected_runtimes: Vec<crate::discovery::DetectedRuntime>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -72,14 +74,54 @@ struct Claim {
 
 pub fn status(state: &RuntimeState) -> Result<InstallationStatus, String> {
     let value = crate::store_get(state, RESULT_KEY.into())?;
-    if value.is_null() {
-        return Ok(InstallationStatus::default());
+    let mut status: InstallationStatus = if value.is_null() {
+        InstallationStatus::default()
+    } else {
+        serde_json::from_value(value).map_err(|e| e.to_string())?
+    };
+    // Installation polling should not start another Python/process probe every
+    // 1.5 seconds. Cache only read-only discovery, never installation results.
+    type DiscoveryCache = HashMap<PathBuf, (Instant, Vec<crate::discovery::DetectedRuntime>)>;
+    static CACHE: std::sync::OnceLock<Mutex<DiscoveryCache>> = std::sync::OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let key = state.data_dir().to_owned();
+    let cached = cache
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get(&key)
+        .filter(|(at, _)| at.elapsed() < Duration::from_secs(10))
+        .map(|(_, runtimes)| runtimes.clone());
+    if let Some(runtimes) = cached {
+        status.detected_runtimes = runtimes;
+    } else {
+        status.detected_runtimes = crate::discovery::discover_runtimes_for_state(
+            &state.registered_profiles()?,
+            state.data_dir(),
+        );
+        let mut cache = cache.lock().map_err(|e| e.to_string())?;
+        if cache.len() >= 32 {
+            cache.retain(|_, (at, _)| at.elapsed() < Duration::from_secs(10));
+        }
+        cache.insert(key, (Instant::now(), status.detected_runtimes.clone()));
     }
-    serde_json::from_value(value).map_err(|e| e.to_string())
+    Ok(status)
 }
 
 /// The RPC returns immediately; cancellation uses the existing persisted task flag.
 pub fn start(state: Arc<RuntimeState>) -> Result<TaskStatus, String> {
+    #[cfg(all(windows, target_arch = "x86_64"))]
+    {
+        crate::runtime_upgrade::start_install_release(state)
+    }
+    #[cfg(not(all(windows, target_arch = "x86_64")))]
+    {
+        start_fallback(state)
+    }
+}
+
+/// Fixed-source preparation remains available for unsupported package platforms
+/// and explicit fallback workflows. Windows normally installs the latest Release.
+pub fn start_fallback(state: Arc<RuntimeState>) -> Result<TaskStatus, String> {
     let _operation = state.runtime_operations.lock().map_err(|e| e.to_string())?;
     crate::runtime_upgrade::assert_available(&state)?;
     let runtime = owned_directory(state.data_dir(), &["runtimes"])?
@@ -128,6 +170,7 @@ pub fn start(state: Arc<RuntimeState>) -> Result<TaskStatus, String> {
         serde_json::to_value(InstallationStatus {
             task_id: Some(id.clone()),
             result: None,
+            detected_runtimes: Vec::new(),
         })
         .map_err(|e| e.to_string())?,
     )?;
@@ -165,6 +208,7 @@ pub fn start(state: Arc<RuntimeState>) -> Result<TaskStatus, String> {
                 let saved = serde_json::to_value(InstallationStatus {
                     task_id: Some(id.clone()),
                     result,
+                    detected_runtimes: Vec::new(),
                 });
                 if let Err(error) = saved
                     .map_err(|e| e.to_string())
@@ -199,9 +243,295 @@ fn progress(state: &RuntimeState, id: &str, message: impl Into<String>) -> Resul
     processes::persist_task_logs(&state.database, &state.logs, id)
 }
 
-/// All installer paths are derived from the real app data directory, never UI input.
-pub(crate) fn owned_directory(data: &Path, components: &[&str]) -> Result<PathBuf, String> {
+fn reject_installer_link(path: &Path) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
+    #[cfg(windows)]
+    let reparse = {
+        use std::os::windows::fs::MetadataExt;
+        metadata.file_attributes() & 0x400 != 0
+    };
+    #[cfg(not(windows))]
+    let reparse = false;
+    reject_installer_link_kind(metadata.file_type().is_symlink(), reparse)
+}
+
+fn reject_installer_link_kind(symbolic: bool, reparse: bool) -> Result<(), String> {
+    if symbolic || reparse {
+        return Err("安装路径被重定向，已拒绝写入".into());
+    }
+    Ok(())
+}
+
+fn reject_installer_path_links(path: &Path) -> Result<(), String> {
+    for ancestor in path.ancestors() {
+        reject_installer_link(ancestor)?;
+    }
+    Ok(())
+}
+
+/// A packaged process may see the Roaming directory in its original location,
+/// but open the existing database in its package's LocalCache. Only that exact
+/// OS-confirmed mapping is allowed; an arbitrary redirected database is refused.
+fn select_installer_root(
+    data_root: &Path,
+    database_root: &Path,
+    package_root: Option<&Path>,
+) -> Result<PathBuf, String> {
+    if database_root == data_root || package_root.is_some_and(|root| root == database_root) {
+        Ok(database_root.to_path_buf())
+    } else {
+        Err("安装路径被重定向，已拒绝写入".into())
+    }
+}
+
+#[cfg(windows)]
+fn valid_installer_parent_time(parent: u64, child: u64) -> bool {
+    parent <= child
+}
+
+#[cfg(windows)]
+static INSTALLER_PACKAGE_FAMILY: std::sync::OnceLock<Result<Option<String>, String>> =
+    std::sync::OnceLock::new();
+
+#[cfg(windows)]
+fn installer_package_family_once(
+    cache: &std::sync::OnceLock<Result<Option<String>, String>>,
+    capture: impl FnOnce() -> Result<Option<String>, String>,
+) -> Result<Option<&str>, String> {
+    cache
+        .get_or_init(capture)
+        .as_ref()
+        .map(|family| family.as_deref())
+        .map_err(Clone::clone)
+}
+
+/// Capture the OS-confirmed package context while the launching process is
+/// still alive. Call before publishing the supervisor's IPC listener; failure
+/// does not affect a normal data root, and never authorizes a redirected root.
+pub fn initialize_installer_package_identity() -> Result<(), String> {
+    #[cfg(windows)]
+    installer_package_family_once(&INSTALLER_PACKAGE_FAMILY, capture_installer_package_family)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn capture_installer_package_family() -> Result<Option<String>, String> {
+    use std::ptr;
+    use windows_sys::Win32::{
+        Foundation::{CloseHandle, FILETIME, HANDLE, INVALID_HANDLE_VALUE},
+        System::{
+            Diagnostics::ToolHelp::{
+                CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+                TH32CS_SNAPPROCESS,
+            },
+            Threading::{
+                GetCurrentProcess, GetCurrentProcessId, GetProcessTimes, OpenProcess,
+                PROCESS_QUERY_LIMITED_INFORMATION,
+            },
+        },
+    };
+    // Keep the package query local to this helper without changing the IPC or
+    // runtime state's data-directory identity.
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetCurrentPackageFamilyName(length: *mut u32, name: *mut u16) -> u32;
+        fn GetPackageFamilyName(process: HANDLE, length: *mut u32, name: *mut u16) -> u32;
+    }
+    fn family_name(
+        mut query: impl FnMut(*mut u32, *mut u16) -> u32,
+    ) -> Result<Option<String>, String> {
+        let mut length = 0;
+        let result = query(&mut length, ptr::null_mut());
+        if result == 15700 {
+            // APPMODEL_ERROR_NO_PACKAGE
+            return Ok(None);
+        }
+        if result != 122 || !(2..=16384).contains(&length) {
+            // ERROR_INSUFFICIENT_BUFFER
+            return Err("无法核验当前应用包身份，已拒绝安装写入".into());
+        }
+        let mut buffer = vec![0u16; length as usize];
+        if query(&mut length, buffer.as_mut_ptr()) != 0 || length as usize > buffer.len() {
+            return Err("无法核验当前应用包身份，已拒绝安装写入".into());
+        }
+        let family = String::from_utf16(&buffer[..length.saturating_sub(1) as usize])
+            .map_err(|_| "当前应用包身份无效")?;
+        if family.is_empty()
+            || !family
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+        {
+            return Err("当前应用包身份无效，已拒绝安装写入".into());
+        }
+        Ok(Some(family))
+    }
+    fn process_created(process: HANDLE) -> Result<u64, String> {
+        let mut created: FILETIME = unsafe { std::mem::zeroed() };
+        let mut exited: FILETIME = unsafe { std::mem::zeroed() };
+        let mut kernel: FILETIME = unsafe { std::mem::zeroed() };
+        let mut user: FILETIME = unsafe { std::mem::zeroed() };
+        if unsafe { GetProcessTimes(process, &mut created, &mut exited, &mut kernel, &mut user) }
+            == 0
+        {
+            return Err("无法核验应用进程创建时间，已拒绝安装写入".into());
+        }
+        Ok(((created.dwHighDateTime as u64) << 32) | created.dwLowDateTime as u64)
+    }
+    fn inherited_family() -> Result<Option<String>, String> {
+        if let Some(family) =
+            family_name(|length, name| unsafe { GetCurrentPackageFamilyName(length, name) })?
+        {
+            return Ok(Some(family));
+        }
+        // Desktop Bridge descendants can inherit file virtualization without
+        // receiving an AppModel identity. Follow only the OS-recorded parent
+        // chain, bounded in time/depth, and reject reused parent process IDs.
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+        if snapshot == INVALID_HANDLE_VALUE {
+            return Err("无法核验应用父进程，已拒绝安装写入".into());
+        }
+        let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
+        entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+        let mut parents = HashMap::new();
+        let mut available = unsafe { Process32FirstW(snapshot, &mut entry) } != 0;
+        while available && Instant::now() < deadline {
+            parents.insert(entry.th32ProcessID, entry.th32ParentProcessID);
+            available = unsafe { Process32NextW(snapshot, &mut entry) } != 0;
+        }
+        unsafe { CloseHandle(snapshot) };
+        let mut child = unsafe { GetCurrentProcessId() };
+        let mut child_created = process_created(unsafe { GetCurrentProcess() })?;
+        let mut visited = HashSet::new();
+        for _ in 0..16 {
+            if Instant::now() >= deadline {
+                return Err("核验应用包身份超时，已拒绝安装写入".into());
+            }
+            let Some(&parent) = parents.get(&child) else {
+                return Ok(None);
+            };
+            if parent == 0 {
+                return Ok(None);
+            }
+            if !visited.insert(parent) {
+                return Err("应用父进程清单无效，已拒绝安装写入".into());
+            }
+            let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, parent) };
+            if process.is_null() {
+                return Err("无法核验应用父进程，已拒绝安装写入".into());
+            }
+            let result: Result<(u64, Option<String>), String> = (|| {
+                let created = process_created(process)?;
+                if !valid_installer_parent_time(created, child_created) {
+                    return Err("应用父进程已被替换，已拒绝安装写入".into());
+                }
+                Ok((
+                    created,
+                    family_name(|length, name| unsafe {
+                        GetPackageFamilyName(process, length, name)
+                    })?,
+                ))
+            })();
+            unsafe { CloseHandle(process) };
+            let (created, family) = result?;
+            if family.is_some() {
+                return Ok(family);
+            }
+            child = parent;
+            child_created = created;
+        }
+        Err("应用父进程层级超出上限，已拒绝安装写入".into())
+    }
+    inherited_family()
+}
+
+#[cfg(windows)]
+fn current_package_roaming_root(data_root: &Path) -> Result<Option<PathBuf>, String> {
+    use std::{ffi::c_void, os::windows::ffi::OsStringExt, ptr};
+    use windows_sys::Win32::UI::Shell::{
+        FOLDERID_LocalAppData, FOLDERID_RoamingAppData, SHGetKnownFolderPath,
+        KF_FLAG_NO_PACKAGE_REDIRECTION,
+    };
+    #[link(name = "ole32")]
+    extern "system" {
+        fn CoTaskMemFree(memory: *const c_void);
+    }
+    fn known_folder(id: &windows_sys::core::GUID) -> Result<PathBuf, String> {
+        let mut value = ptr::null_mut();
+        let result = unsafe {
+            SHGetKnownFolderPath(
+                id,
+                KF_FLAG_NO_PACKAGE_REDIRECTION as u32,
+                ptr::null_mut(),
+                &mut value,
+            )
+        };
+        if result < 0 || value.is_null() {
+            if !value.is_null() {
+                unsafe { CoTaskMemFree(value.cast()) };
+            }
+            return Err("无法核验系统应用数据目录，已拒绝安装写入".into());
+        }
+        let mut length = 0;
+        while length < 32768 && unsafe { *value.add(length) } != 0 {
+            length += 1;
+        }
+        let path = (length < 32768).then(|| {
+            PathBuf::from(std::ffi::OsString::from_wide(unsafe {
+                std::slice::from_raw_parts(value, length)
+            }))
+        });
+        unsafe { CoTaskMemFree(value.cast()) };
+        path.ok_or_else(|| "系统应用数据目录无效，已拒绝安装写入".into())
+    }
+    let Some(family) =
+        installer_package_family_once(&INSTALLER_PACKAGE_FAMILY, capture_installer_package_family)?
+    else {
+        return Ok(None);
+    };
+    let roaming = known_folder(&FOLDERID_RoamingAppData)?;
+    reject_installer_path_links(&roaming)?;
+    let roaming = dunce::canonicalize(roaming).map_err(|e| e.to_string())?;
+    let Ok(relative) = data_root.strip_prefix(&roaming) else {
+        return Ok(None);
+    };
+    if relative.as_os_str().is_empty() {
+        return Ok(None);
+    }
+    let mapped = known_folder(&FOLDERID_LocalAppData)?
+        .join("Packages")
+        .join(family)
+        .join("LocalCache")
+        .join("Roaming")
+        .join(relative);
+    reject_installer_path_links(&mapped)?;
+    Ok(Some(
+        dunce::canonicalize(mapped).map_err(|e| e.to_string())?,
+    ))
+}
+
+fn installer_data_root(data: &Path) -> Result<PathBuf, String> {
+    reject_installer_path_links(data)?;
     let root = dunce::canonicalize(data).map_err(|e| e.to_string())?;
+    let database = data.join("strata-manager.sqlite3");
+    reject_installer_link(&database)?;
+    let database = dunce::canonicalize(database).map_err(|e| e.to_string())?;
+    reject_installer_path_links(&database)?;
+    let database_root = database.parent().ok_or("安装数据库没有父目录")?;
+    if database_root == root {
+        return Ok(root);
+    }
+    #[cfg(windows)]
+    let package_root = current_package_roaming_root(&root)?;
+    #[cfg(not(windows))]
+    let package_root: Option<PathBuf> = None;
+    select_installer_root(&root, database_root, package_root.as_deref())
+}
+
+/// Installer caches use the database's verified physical directory, never UI
+/// input or the virtualized spelling of a newly created Roaming child.
+pub(crate) fn owned_directory(data: &Path, components: &[&str]) -> Result<PathBuf, String> {
+    let root = installer_data_root(data)?;
     let mut path = root.clone();
     for component in components {
         if component.is_empty() || component.contains(['/', '\\', ':']) || *component == ".." {
@@ -211,16 +541,14 @@ pub(crate) fn owned_directory(data: &Path, components: &[&str]) -> Result<PathBu
         if !path.exists() {
             fs::create_dir(&path).map_err(|e| e.to_string())?;
         }
-        if fs::symlink_metadata(&path)
-            .map_err(|e| e.to_string())?
-            .file_type()
-            .is_symlink()
-            || !dunce::canonicalize(&path)
-                .map_err(|e| e.to_string())?
-                .starts_with(&root)
+        reject_installer_link(&path)?;
+        let canonical = dunce::canonicalize(&path).map_err(|e| e.to_string())?;
+        if !canonical.starts_with(&root)
+            || !fs::metadata(&path).map_err(|e| e.to_string())?.is_dir()
         {
             return Err("安装路径被重定向，已拒绝写入".into());
         }
+        path = canonical;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -767,7 +1095,7 @@ pub(crate) async fn run_owned(
     }
 }
 
-async fn ensure_python(state: &RuntimeState, id: &str) -> Result<String, String> {
+pub(crate) async fn ensure_python(state: &RuntimeState, id: &str) -> Result<String, String> {
     progress(state, id, "正在检测 64 位 Python 3.10+、venv 与 ensurepip")?;
     if let Some(python) = find_python(state.data_dir()) {
         progress(state, id, "已找到可创建私有环境的本机 Python")?;
@@ -931,6 +1259,220 @@ pub(crate) async fn prepare(
 mod tests {
     use super::*;
     use std::io::Cursor;
+
+    #[test]
+    fn installer_owned_path_rejects_symbolic_links_and_reparse_points() {
+        assert!(reject_installer_link_kind(false, false).is_ok());
+        assert!(reject_installer_link_kind(true, false).is_err());
+        assert!(reject_installer_link_kind(false, true).is_err());
+        assert!(reject_installer_link_kind(true, true).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn installer_owned_package_parent_identity_rejects_reused_process_ids() {
+        assert!(valid_installer_parent_time(100, 200));
+        assert!(valid_installer_parent_time(200, 200));
+        assert!(!valid_installer_parent_time(201, 200));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn installer_package_identity_survives_parent_exit_without_querying_again() {
+        let cache = std::sync::OnceLock::new();
+        let queries = std::cell::Cell::new(0);
+        let family = installer_package_family_once(&cache, || {
+            queries.set(queries.get() + 1);
+            Ok(Some("OS-confirmed-family".to_owned()))
+        })
+        .unwrap();
+        assert_eq!(family, Some("OS-confirmed-family"));
+        let family = installer_package_family_once(&cache, || {
+            queries.set(queries.get() + 1);
+            Err("launching parent has exited".into())
+        })
+        .unwrap();
+        assert_eq!(family, Some("OS-confirmed-family"));
+        assert_eq!(queries.get(), 1);
+
+        let temp = tempfile::tempdir().unwrap();
+        let data = temp.path().join("Roaming/io.strata.manager");
+        let mapped = temp
+            .path()
+            .join("Packages")
+            .join(family.unwrap())
+            .join("LocalCache/Roaming/io.strata.manager");
+        assert_eq!(
+            select_installer_root(&data, &mapped, Some(&mapped)).unwrap(),
+            mapped
+        );
+        let stranger = temp
+            .path()
+            .join("Packages/another-family/LocalCache/Roaming/io.strata.manager");
+        assert!(select_installer_root(&data, &stranger, Some(&mapped)).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn installer_package_identity_missing_or_failed_capture_cannot_be_promoted() {
+        for captured in [Ok(None), Err("OS identity unavailable".to_owned())] {
+            let expected = captured.clone();
+            let cache = std::sync::OnceLock::new();
+            let queries = std::cell::Cell::new(0);
+            assert_eq!(
+                installer_package_family_once(&cache, || captured),
+                expected
+                    .as_ref()
+                    .map(|family| family.as_deref())
+                    .map_err(Clone::clone)
+            );
+            let retry = installer_package_family_once(&cache, || {
+                queries.set(queries.get() + 1);
+                Ok(Some("family-found-in-directory-name".to_owned()))
+            });
+            assert_eq!(
+                retry,
+                expected
+                    .as_ref()
+                    .map(|family| family.as_deref())
+                    .map_err(Clone::clone)
+            );
+            assert_eq!(queries.get(), 0);
+            let data = Path::new("C:/Roaming/io.strata.manager");
+            let stranger = Path::new(
+                "C:/Packages/family-found-in-directory-name/LocalCache/Roaming/io.strata.manager",
+            );
+            assert!(select_installer_root(data, stranger, None).is_err());
+            assert_eq!(select_installer_root(data, data, None).unwrap(), data);
+        }
+    }
+
+    #[test]
+    fn installer_owned_root_accepts_only_exact_system_confirmed_mapping() {
+        let temp = tempfile::tempdir().unwrap();
+        let data = temp.path().join("Roaming/io.strata.manager");
+        let mapped = temp
+            .path()
+            .join("Packages/current-family/LocalCache/Roaming/io.strata.manager");
+        assert_eq!(select_installer_root(&data, &data, None).unwrap(), data);
+        assert_eq!(
+            select_installer_root(&data, &mapped, Some(&mapped)).unwrap(),
+            mapped
+        );
+        assert!(select_installer_root(&data, &mapped, None).is_err());
+        for other in [
+            mapped.join("nested"),
+            temp.path()
+                .join("Packages/other-family/LocalCache/Roaming/io.strata.manager"),
+            temp.path().join("untrusted/io.strata.manager"),
+        ] {
+            assert!(select_installer_root(&data, &other, Some(&mapped)).is_err());
+        }
+    }
+
+    #[test]
+    fn installer_owned_directory_uses_physical_database_root_and_rejects_invalid_parts() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = RuntimeState::open(temp.path().join("data")).unwrap();
+        let root = installer_data_root(state.data_dir()).unwrap();
+        assert_eq!(root, dunce::canonicalize(state.data_dir()).unwrap());
+        let cache = owned_directory(state.data_dir(), &["zip-updates", "fixture"]).unwrap();
+        assert_eq!(cache, root.join("zip-updates/fixture"));
+        assert_eq!(dunce::canonicalize(&cache).unwrap(), cache);
+        for part in ["..", "escape/nested", "escape\\nested", "C:escape", ""] {
+            assert!(owned_directory(state.data_dir(), &[part]).is_err());
+        }
+    }
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    #[cfg_attr(
+        windows,
+        ignore = "Requires Windows symbolic-link privilege; the link policy is tested without elevation"
+    )]
+    fn installer_owned_directory_rejects_linked_database() {
+        let temp = tempfile::tempdir().unwrap();
+        let data = temp.path().join("data");
+        fs::create_dir(&data).unwrap();
+        let external = temp.path().join("external.sqlite3");
+        fs::write(&external, "preserve external database").unwrap();
+        let database = data.join("strata-manager.sqlite3");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&external, &database).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(&external, &database).unwrap();
+        assert!(owned_directory(&data, &["zip-updates"])
+            .unwrap_err()
+            .contains("重定向"));
+        assert!(!data.join("zip-updates").exists());
+        assert_eq!(
+            fs::read_to_string(external).unwrap(),
+            "preserve external database"
+        );
+    }
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn installer_owned_directory_rejects_linked_root_and_child() {
+        let temp = tempfile::tempdir().unwrap();
+        let data = temp.path().join("data");
+        let state = RuntimeState::open(data.clone()).unwrap();
+        let outside = temp.path().join("outside");
+        fs::create_dir(&outside).unwrap();
+        let root_alias = temp.path().join("root-alias");
+        // A previous successful directory check must not authorize a link
+        // substituted afterwards, even when the package identity is cached.
+        let child_alias = owned_directory(state.data_dir(), &["zip-updates"]).unwrap();
+        fs::remove_dir(&child_alias).unwrap();
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&data, &root_alias).unwrap();
+            std::os::unix::fs::symlink(&outside, &child_alias).unwrap();
+        }
+        #[cfg(windows)]
+        {
+            // Junctions do not require the symbolic-link privilege and exercise
+            // the Windows reparse-point guard rather than only is_symlink().
+            for (alias, target) in [(&root_alias, &data), (&child_alias, &outside)] {
+                let output = Command::new("cmd")
+                    .args(["/C", "mklink", "/J"])
+                    .arg(alias)
+                    .arg(target)
+                    .output()
+                    .unwrap();
+                assert!(
+                    output.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+        }
+        assert!(owned_directory(&root_alias, &["downloads"]).is_err());
+        assert!(owned_directory(state.data_dir(), &["zip-updates", "fixture"]).is_err());
+        assert!(fs::read_dir(&outside).unwrap().next().is_none());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "Explicit read-only check of the current packaged process data path"]
+    fn installer_owned_root_live_readonly_verifies_existing_msix_mapping() {
+        let data = PathBuf::from(
+            std::env::var_os("STRATA_INSTALLER_READONLY_DATA_DIR")
+                .expect("provide the existing data directory"),
+        );
+        eprintln!(
+            "data={:?}; database={:?}; package mapping={:?}",
+            dunce::canonicalize(&data),
+            dunce::canonicalize(data.join("strata-manager.sqlite3")),
+            current_package_roaming_root(&dunce::canonicalize(&data).unwrap())
+        );
+        let root = installer_data_root(&data).unwrap();
+        let database = dunce::canonicalize(data.join("strata-manager.sqlite3")).unwrap();
+        assert_eq!(root, database.parent().unwrap());
+        assert!(data.join("strata-manager.sqlite3").is_file());
+        // This test does not open a second RuntimeState or create any directory.
+    }
+
     fn source_zip(entries: &[(&str, &str)]) -> Vec<u8> {
         let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
         for (name, content) in entries {

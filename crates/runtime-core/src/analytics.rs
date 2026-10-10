@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS analytics_runs(
  run_id TEXT PRIMARY KEY,request_id TEXT NOT NULL,service_id TEXT NOT NULL,session_id TEXT NOT NULL,
  started_ms INTEGER NOT NULL,prompt_total INTEGER NOT NULL,input_tokens INTEGER,output_tokens INTEGER,
  cache_read_tokens INTEGER,first_token_s REAL,duration_s REAL,decode_tok_s REAL,
- finish TEXT NOT NULL,tool_calls INTEGER NOT NULL);
+ finish TEXT NOT NULL,tool_calls INTEGER NOT NULL,prefill_tokens INTEGER,prefill_s REAL,
+ prefill_tok_s REAL,decode_s REAL,expert_cache_hits INTEGER,expert_cache_lookups INTEGER);
 CREATE INDEX IF NOT EXISTS analytics_runs_request ON analytics_runs(request_id);
 CREATE TABLE IF NOT EXISTS analytics_gaps(
  source_id TEXT NOT NULL,first_seq INTEGER NOT NULL,last_seq INTEGER NOT NULL,
@@ -51,6 +52,24 @@ fn ensure_schema(database: &Connection) -> Result<(), String> {
     drop(columns);
     if !has_model {
         sql(database.execute_batch("ALTER TABLE analytics_requests ADD COLUMN model_id TEXT;"))?;
+    }
+    let mut statement = sql(database.prepare("PRAGMA table_info(analytics_runs)"))?;
+    let run_columns = sql(statement.query_map([], |row| row.get::<_, String>(1)))?;
+    let run_names = sql(run_columns.collect::<rusqlite::Result<Vec<_>>>())?;
+    drop(statement);
+    for (name, kind) in [
+        ("prefill_tokens", "INTEGER"),
+        ("prefill_s", "REAL"),
+        ("prefill_tok_s", "REAL"),
+        ("decode_s", "REAL"),
+        ("expert_cache_hits", "INTEGER"),
+        ("expert_cache_lookups", "INTEGER"),
+    ] {
+        if !run_names.iter().any(|column| column == name) {
+            sql(database.execute_batch(&format!(
+                "ALTER TABLE analytics_runs ADD COLUMN {name} {kind};"
+            )))?;
+        }
     }
     sql(database.execute_batch("CREATE INDEX IF NOT EXISTS analytics_requests_order ON analytics_requests(started_ms,request_id); CREATE INDEX IF NOT EXISTS analytics_requests_model ON analytics_requests(model_id,started_ms,request_id); CREATE INDEX IF NOT EXISTS analytics_requests_client ON analytics_requests(client_id,started_ms,request_id); CREATE INDEX IF NOT EXISTS analytics_requests_outcome ON analytics_requests(outcome,started_ms,request_id);"))?;
     let order_empty = !sql(database.query_row(
@@ -130,6 +149,18 @@ struct Run {
     first_token_s: Option<f64>,
     duration_s: Option<f64>,
     decode_tok_s: Option<f64>,
+    #[serde(default)]
+    prefill_tokens: Option<i64>,
+    #[serde(default)]
+    prefill_s: Option<f64>,
+    #[serde(default)]
+    prefill_tok_s: Option<f64>,
+    #[serde(default)]
+    decode_s: Option<f64>,
+    #[serde(default)]
+    expert_cache_hits: Option<i64>,
+    #[serde(default)]
+    expert_cache_lookups: Option<i64>,
     finish: String,
     tool_calls: i64,
 }
@@ -267,7 +298,7 @@ fn apply(tx: &Transaction<'_>, kind: &str, payload: &str) -> Result<(), String> 
             {
                 return Err("invalid analytics run metadata".into());
             }
-            sql(tx.execute("INSERT INTO analytics_runs(run_id,request_id,service_id,session_id,started_ms,prompt_total,input_tokens,output_tokens,cache_read_tokens,first_token_s,duration_s,decode_tok_s,finish,tool_calls) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14) ON CONFLICT(run_id) DO UPDATE SET input_tokens=excluded.input_tokens,output_tokens=excluded.output_tokens,cache_read_tokens=excluded.cache_read_tokens,first_token_s=excluded.first_token_s,duration_s=excluded.duration_s,decode_tok_s=excluded.decode_tok_s,finish=excluded.finish,tool_calls=excluded.tool_calls",params![s.run_id,s.request_id,s.service_id,s.session_id,s.started_at_ms,s.prompt_total.max(0),positive_i(s.input_tokens),positive_i(s.output_tokens),positive_i(s.cache_read_tokens),positive_f(s.first_token_s),positive_f(s.duration_s),positive_f(s.decode_tok_s),s.finish,s.tool_calls.max(0)]))?;
+            sql(tx.execute("INSERT INTO analytics_runs(run_id,request_id,service_id,session_id,started_ms,prompt_total,input_tokens,output_tokens,cache_read_tokens,first_token_s,duration_s,decode_tok_s,finish,tool_calls,prefill_tokens,prefill_s,prefill_tok_s,decode_s,expert_cache_hits,expert_cache_lookups) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20) ON CONFLICT(run_id) DO UPDATE SET input_tokens=excluded.input_tokens,output_tokens=excluded.output_tokens,cache_read_tokens=excluded.cache_read_tokens,first_token_s=excluded.first_token_s,duration_s=excluded.duration_s,decode_tok_s=excluded.decode_tok_s,finish=excluded.finish,tool_calls=excluded.tool_calls,prefill_tokens=excluded.prefill_tokens,prefill_s=excluded.prefill_s,prefill_tok_s=excluded.prefill_tok_s,decode_s=excluded.decode_s,expert_cache_hits=excluded.expert_cache_hits,expert_cache_lookups=excluded.expert_cache_lookups",params![s.run_id,s.request_id,s.service_id,s.session_id,s.started_at_ms,s.prompt_total.max(0),positive_i(s.input_tokens),positive_i(s.output_tokens),positive_i(s.cache_read_tokens),positive_f(s.first_token_s),positive_f(s.duration_s),positive_f(s.decode_tok_s),s.finish,s.tool_calls.max(0),positive_i(s.prefill_tokens),positive_f(s.prefill_s),positive_f(s.prefill_tok_s),positive_f(s.decode_s),positive_i(s.expert_cache_hits),positive_i(s.expert_cache_lookups)]))?;
         }
         _ => return Err("unknown analytics event kind".into()),
     }
@@ -469,12 +500,26 @@ fn summary(database: &Connection, range: &Range) -> Result<Value, String> {
     } else {
         Value::Null
     };
-    let run_totals=sql(database.query_row("SELECT COUNT(*),SUM(x.input_tokens),SUM(x.output_tokens),SUM(x.cache_read_tokens),SUM(x.tool_calls),COUNT(x.input_tokens),COUNT(x.decode_tok_s) FROM analytics_runs x JOIN analytics_requests r ON x.request_id=r.request_id WHERE r.started_ms>=?1 AND r.started_ms<?2 AND (?3='' OR r.service_id=?3)",params![range.start,range.end,range.service],|r|Ok(json!({"runs":r.get::<_,i64>(0)?,"inputTokens":r.get::<_,Option<i64>>(1)?,"outputTokens":r.get::<_,Option<i64>>(2)?,"cacheReadTokens":r.get::<_,Option<i64>>(3)?,"toolCalls":r.get::<_,Option<i64>>(4)?.unwrap_or(0),"inputTokenSamples":r.get::<_,i64>(5)?,"decodeSpeedSamples":r.get::<_,i64>(6)?}))))?;
+    let mut run_totals=sql(database.query_row("SELECT COUNT(*),SUM(x.input_tokens),SUM(x.output_tokens),SUM(x.cache_read_tokens),SUM(x.tool_calls),COUNT(x.input_tokens),COUNT(x.decode_tok_s),COUNT(x.prefill_tok_s),SUM(x.prefill_tokens),SUM(x.prefill_s),SUM(x.decode_s) FROM analytics_runs x JOIN analytics_requests r ON x.request_id=r.request_id WHERE r.started_ms>=?1 AND r.started_ms<?2 AND (?3='' OR r.service_id=?3)",params![range.start,range.end,range.service],|r|Ok(json!({"runs":r.get::<_,i64>(0)?,"inputTokens":r.get::<_,Option<i64>>(1)?,"outputTokens":r.get::<_,Option<i64>>(2)?,"cacheReadTokens":r.get::<_,Option<i64>>(3)?,"toolCalls":r.get::<_,Option<i64>>(4)?.unwrap_or(0),"inputTokenSamples":r.get::<_,i64>(5)?,"decodeSpeedSamples":r.get::<_,i64>(6)?,"prefillSpeedSamples":r.get::<_,i64>(7)?,"prefillTokens":r.get::<_,Option<i64>>(8)?,"prefillS":r.get::<_,Option<f64>>(9)?,"decodeS":r.get::<_,Option<f64>>(10)?}))))?;
+    // Cache ratios use the same known runs for both numerator and denominator.
+    // An unknown cache counter must not be treated as zero or dilute the rate.
+    let (cache_samples, cached, prompt) = sql(database.query_row("SELECT COUNT(*),SUM(x.cache_read_tokens),SUM(x.input_tokens) FROM analytics_runs x JOIN analytics_requests r ON x.request_id=r.request_id WHERE r.started_ms>=?1 AND r.started_ms<?2 AND (?3='' OR r.service_id=?3) AND x.input_tokens>0 AND x.cache_read_tokens BETWEEN 0 AND x.input_tokens", params![range.start,range.end,range.service], |row| Ok((row.get::<_,i64>(0)?,row.get::<_,Option<i64>>(1)?,row.get::<_,Option<i64>>(2)?))))?;
+    run_totals["cacheRateSamples"] = json!(cache_samples);
+    run_totals["cacheHitRate"] = match (cached, prompt) {
+        (Some(cached), Some(prompt)) if prompt > 0 => json!(cached as f64 / prompt as f64),
+        _ => Value::Null,
+    };
+    let (expert_samples, hits, lookups) = sql(database.query_row("SELECT COUNT(*),SUM(x.expert_cache_hits),SUM(x.expert_cache_lookups) FROM analytics_runs x JOIN analytics_requests r ON x.request_id=r.request_id WHERE r.started_ms>=?1 AND r.started_ms<?2 AND (?3='' OR r.service_id=?3) AND x.expert_cache_lookups>0 AND x.expert_cache_hits BETWEEN 0 AND x.expert_cache_lookups", params![range.start,range.end,range.service], |row| Ok((row.get::<_,i64>(0)?,row.get::<_,Option<i64>>(1)?,row.get::<_,Option<i64>>(2)?))))?;
+    run_totals["expertCacheSamples"] = json!(expert_samples);
+    run_totals["expertCacheHitRate"] = match (hits, lookups) {
+        (Some(hits), Some(lookups)) if lookups > 0 => json!(hits as f64 / lookups as f64),
+        _ => Value::Null,
+    };
     let mut stmt=sql(database.prepare("SELECT route,client_id,COUNT(*),SUM(outcome='succeeded') FROM analytics_requests WHERE started_ms>=?1 AND started_ms<?2 AND (?3='' OR service_id=?3) GROUP BY route,client_id ORDER BY COUNT(*) DESC"))?;
     let groups=sql(stmt.query_map(params![range.start,range.end,range.service],|r|Ok(json!({"route":r.get::<_,String>(0)?,"clientId":r.get::<_,Option<String>>(1)?,"requests":r.get::<_,i64>(2)?,"succeeded":r.get::<_,i64>(3)?}))))?;
     let groups = sql(groups.collect::<rusqlite::Result<Vec<_>>>())?;
     Ok(
-        json!({"startMs":range.start,"endMs":range.end,"http":totals,"inference":run_totals,"groups":groups,"ttftS":distribution(database,"first_token_s",range,false)?,"durationS":distribution(database,"duration_s",range,false)?,"decodeTokS":distribution(database,"decode_tok_s",range,true)?,"retentionDays":90,"successRateDefinition":"succeeded / (succeeded + failed + cancelled + interrupted); pending excluded","tokenDefinition":"HTTP usage and inference work are separate; unavailable counters remain null"}),
+        json!({"startMs":range.start,"endMs":range.end,"http":totals,"inference":run_totals,"groups":groups,"ttftS":distribution(database,"first_token_s",range,false)?,"durationS":distribution(database,"duration_s",range,false)?,"decodeTokS":distribution(database,"decode_tok_s",range,true)?,"prefillTokS":distribution(database,"prefill_tok_s",range,true)?,"retentionDays":90,"successRateDefinition":"succeeded / (succeeded + failed + cancelled + interrupted); pending excluded","tokenDefinition":"HTTP usage and inference work are separate; unavailable counters remain null"}),
     )
 }
 
@@ -487,11 +532,11 @@ fn recent(database: &Connection, range: &Range, limit: i64) -> Result<Value, Str
     Ok(json!(sql(rows.collect::<rusqlite::Result<Vec<_>>>())?))
 }
 
-const REQUEST_COLUMNS: &str = "SELECT r.request_id,r.service_id,r.started_ms,r.ended_ms,r.route,r.client_id,r.outcome,r.http_status,r.stream,r.input_tokens,r.output_tokens,r.cache_read_tokens,r.first_token_s,r.duration_s,r.error_kind,r.mcp_tool_calls,(SELECT COUNT(*) FROM analytics_runs x WHERE x.request_id=r.request_id),r.model_id";
+const REQUEST_COLUMNS: &str = "SELECT r.request_id,r.service_id,r.started_ms,r.ended_ms,r.route,r.client_id,r.outcome,r.http_status,r.stream,r.input_tokens,r.output_tokens,r.cache_read_tokens,r.first_token_s,r.duration_s,r.error_kind,r.mcp_tool_calls,(SELECT COUNT(*) FROM analytics_runs x WHERE x.request_id=r.request_id),r.model_id,(SELECT AVG(x.prefill_tok_s) FROM analytics_runs x WHERE x.request_id=r.request_id),(SELECT AVG(x.decode_tok_s) FROM analytics_runs x WHERE x.request_id=r.request_id),(SELECT 1.0*SUM(x.cache_read_tokens)/SUM(x.input_tokens) FROM analytics_runs x WHERE x.request_id=r.request_id AND x.input_tokens>0 AND x.cache_read_tokens BETWEEN 0 AND x.input_tokens),(SELECT 1.0*SUM(x.expert_cache_hits)/SUM(x.expert_cache_lookups) FROM analytics_runs x WHERE x.request_id=r.request_id AND x.expert_cache_lookups>0 AND x.expert_cache_hits BETWEEN 0 AND x.expert_cache_lookups)";
 const EXPORT_LIMIT: usize = 5000;
 fn request_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
     Ok(
-        json!({"requestId":row.get::<_,String>(0)?,"serviceId":row.get::<_,String>(1)?,"startedAtMs":row.get::<_,i64>(2)?,"endedAtMs":row.get::<_,Option<i64>>(3)?,"route":row.get::<_,String>(4)?,"clientId":row.get::<_,Option<String>>(5)?,"outcome":row.get::<_,String>(6)?,"httpStatus":row.get::<_,Option<i64>>(7)?,"stream":row.get::<_,Option<bool>>(8)?,"inputTokens":row.get::<_,Option<i64>>(9)?,"outputTokens":row.get::<_,Option<i64>>(10)?,"cacheReadTokens":row.get::<_,Option<i64>>(11)?,"firstTokenS":row.get::<_,Option<f64>>(12)?,"durationS":row.get::<_,Option<f64>>(13)?,"errorKind":row.get::<_,Option<String>>(14)?,"mcpToolCalls":row.get::<_,i64>(15)?,"inferenceRuns":row.get::<_,i64>(16)?,"modelId":row.get::<_,Option<String>>(17)?}),
+        json!({"requestId":row.get::<_,String>(0)?,"serviceId":row.get::<_,String>(1)?,"startedAtMs":row.get::<_,i64>(2)?,"endedAtMs":row.get::<_,Option<i64>>(3)?,"route":row.get::<_,String>(4)?,"clientId":row.get::<_,Option<String>>(5)?,"outcome":row.get::<_,String>(6)?,"httpStatus":row.get::<_,Option<i64>>(7)?,"stream":row.get::<_,Option<bool>>(8)?,"inputTokens":row.get::<_,Option<i64>>(9)?,"outputTokens":row.get::<_,Option<i64>>(10)?,"cacheReadTokens":row.get::<_,Option<i64>>(11)?,"firstTokenS":row.get::<_,Option<f64>>(12)?,"durationS":row.get::<_,Option<f64>>(13)?,"errorKind":row.get::<_,Option<String>>(14)?,"mcpToolCalls":row.get::<_,i64>(15)?,"inferenceRuns":row.get::<_,i64>(16)?,"modelId":row.get::<_,Option<String>>(17)?,"prefillTokS":row.get::<_,Option<f64>>(18)?,"decodeTokS":row.get::<_,Option<f64>>(19)?,"cacheHitRate":row.get::<_,Option<f64>>(20)?,"expertCacheHitRate":row.get::<_,Option<f64>>(21)?}),
     )
 }
 
@@ -816,6 +861,10 @@ fn export_csv(database: &Connection, range: &Range, value: &Value) -> Result<Val
         "inputTokens",
         "outputTokens",
         "cacheReadTokens",
+        "cacheHitRate",
+        "expertCacheHitRate",
+        "prefillTokS",
+        "decodeTokS",
         "firstTokenS",
         "durationS",
         "mcpToolCalls",
@@ -862,13 +911,36 @@ fn trends(database: &Connection, range: &Range, bucket_ms: i64) -> Result<Value,
     }
     // Buckets are anchored to startMs, so a user's local midnight is supported
     // without assuming a UTC day or the supervisor machine's local timezone.
-    let mut stmt=sql(database.prepare("SELECT ((started_ms-?1)/?4),COUNT(*),SUM(outcome='succeeded'),SUM(outcome='failed'),SUM(outcome='cancelled'),SUM(input_tokens),SUM(output_tokens) FROM analytics_requests WHERE started_ms>=?1 AND started_ms<?2 AND (?3='' OR service_id=?3) GROUP BY ((started_ms-?1)/?4) ORDER BY 1"))?;
-    let rows=sql(stmt.query_map(params![range.start,range.end,range.service,bucket_ms],|r|Ok((r.get::<_,i64>(0)?,json!({"requests":r.get::<_,i64>(1)?,"succeeded":r.get::<_,i64>(2)?,"failed":r.get::<_,i64>(3)?,"cancelled":r.get::<_,i64>(4)?,"inputTokens":r.get::<_,Option<i64>>(5)?,"outputTokens":r.get::<_,Option<i64>>(6)?})))))?;
+    let mut stmt=sql(database.prepare("SELECT ((started_ms-?1)/?4),COUNT(*),SUM(outcome='succeeded'),SUM(outcome='failed'),SUM(outcome='cancelled'),SUM(input_tokens),SUM(output_tokens),SUM(outcome='interrupted'),SUM(outcome='pending'),AVG(first_token_s),COUNT(first_token_s),AVG(duration_s),COUNT(duration_s),COUNT(input_tokens),COUNT(output_tokens) FROM analytics_requests WHERE started_ms>=?1 AND started_ms<?2 AND (?3='' OR service_id=?3) GROUP BY ((started_ms-?1)/?4) ORDER BY 1"))?;
+    let rows=sql(stmt.query_map(params![range.start,range.end,range.service,bucket_ms],|r|Ok((r.get::<_,i64>(0)?,json!({"requests":r.get::<_,i64>(1)?,"succeeded":r.get::<_,i64>(2)?,"failed":r.get::<_,i64>(3)?,"cancelled":r.get::<_,i64>(4)?,"inputTokens":r.get::<_,Option<i64>>(5)?,"outputTokens":r.get::<_,Option<i64>>(6)?,"interrupted":r.get::<_,i64>(7)?,"pending":r.get::<_,i64>(8)?,"firstTokenS":r.get::<_,Option<f64>>(9)?,"firstTokenSamples":r.get::<_,i64>(10)?,"durationS":r.get::<_,Option<f64>>(11)?,"durationSamples":r.get::<_,i64>(12)?,"inputTokenSamples":r.get::<_,i64>(13)?,"outputTokenSamples":r.get::<_,i64>(14)?})))))?;
     let mut occupied = sql(rows.collect::<rusqlite::Result<std::collections::BTreeMap<_, _>>>())?;
+    // Aggregate engine work separately: joining runs into HTTP totals would
+    // multiply requests and protocol usage when a tool call triggers more runs.
+    let mut statement = sql(database.prepare(r#"SELECT ((r.started_ms-?1)/?4),
+        AVG(x.prefill_tok_s),COUNT(x.prefill_tok_s),AVG(x.decode_tok_s),COUNT(x.decode_tok_s),
+        1.0*SUM(CASE WHEN x.input_tokens>0 AND x.cache_read_tokens BETWEEN 0 AND x.input_tokens THEN x.cache_read_tokens END)/SUM(CASE WHEN x.input_tokens>0 AND x.cache_read_tokens BETWEEN 0 AND x.input_tokens THEN x.input_tokens END),
+        SUM(CASE WHEN x.input_tokens>0 AND x.cache_read_tokens BETWEEN 0 AND x.input_tokens THEN 1 ELSE 0 END),
+        1.0*SUM(CASE WHEN x.expert_cache_lookups>0 AND x.expert_cache_hits BETWEEN 0 AND x.expert_cache_lookups THEN x.expert_cache_hits END)/SUM(CASE WHEN x.expert_cache_lookups>0 AND x.expert_cache_hits BETWEEN 0 AND x.expert_cache_lookups THEN x.expert_cache_lookups END),
+        SUM(CASE WHEN x.expert_cache_lookups>0 AND x.expert_cache_hits BETWEEN 0 AND x.expert_cache_lookups THEN 1 ELSE 0 END)
+        FROM analytics_runs x JOIN analytics_requests r ON x.request_id=r.request_id
+        WHERE r.started_ms>=?1 AND r.started_ms<?2 AND (?3='' OR r.service_id=?3)
+        GROUP BY ((r.started_ms-?1)/?4) ORDER BY 1"#))?;
+    let rows = sql(statement.query_map(params![range.start,range.end,range.service,bucket_ms], |row| Ok((row.get::<_,i64>(0)?, json!({
+        "prefillTokS":row.get::<_,Option<f64>>(1)?,"prefillSamples":row.get::<_,i64>(2)?,
+        "decodeTokS":row.get::<_,Option<f64>>(3)?,"decodeSamples":row.get::<_,i64>(4)?,
+        "cacheHitRate":row.get::<_,Option<f64>>(5)?,"cacheRateSamples":row.get::<_,i64>(6)?,
+        "expertCacheHitRate":row.get::<_,Option<f64>>(7)?,"expertCacheSamples":row.get::<_,i64>(8)?
+    })))))?;
+    let mut engine = sql(rows.collect::<rusqlite::Result<std::collections::BTreeMap<_, _>>>())?;
     let count = (range.end - range.start + bucket_ms - 1) / bucket_ms;
     let mut result = Vec::with_capacity(count as usize);
     for index in 0..count {
-        let mut bucket=occupied.remove(&index).unwrap_or_else(||json!({"requests":0,"succeeded":0,"failed":0,"cancelled":0,"inputTokens":null,"outputTokens":null}));
+        let mut bucket=occupied.remove(&index).unwrap_or_else(||json!({"requests":0,"succeeded":0,"failed":0,"cancelled":0,"interrupted":0,"pending":0,"inputTokens":null,"outputTokens":null,"inputTokenSamples":0,"outputTokenSamples":0,"firstTokenS":null,"firstTokenSamples":0,"durationS":null,"durationSamples":0}));
+        let performance = engine.remove(&index).unwrap_or_else(||json!({"prefillTokS":null,"prefillSamples":0,"decodeTokS":null,"decodeSamples":0,"cacheHitRate":null,"cacheRateSamples":0,"expertCacheHitRate":null,"expertCacheSamples":0}));
+        bucket
+            .as_object_mut()
+            .unwrap()
+            .extend(performance.as_object().unwrap().clone());
         bucket["startMs"] = json!(range.start + index * bucket_ms);
         result.push(bucket);
     }
@@ -925,7 +997,16 @@ fn coverage(database: &Connection, data_dir: &Path, range: &Range) -> Result<Val
 
 pub fn query(state: &RuntimeState, params: Value) -> Result<Value, String> {
     let range = Range::from(&params)?;
-    let database = state.database.lock().map_err(|e| e.to_string())?;
+    let mut database = state.database.lock().map_err(|e| e.to_string())?;
+    // Restore the last durable observer events immediately on reopen, including
+    // calls made just before the supervisor stopped or while its UI was closed.
+    let journal_sync_failed = consume(
+        &mut database,
+        &state.data_dir.join("analytics/journal.sqlite3"),
+    )
+    .is_err();
+    // A damaged or temporarily busy observer journal must not hide history
+    // already committed to the application database.
     ensure_schema(&database)?;
     let action = params
         .get("action")
@@ -955,7 +1036,9 @@ pub fn query(state: &RuntimeState, params: Value) -> Result<Value, String> {
         )?,
         _ => return Err("unknown analytics query action".into()),
     };
-    Ok(json!({"data":data,"coverage":coverage(&database,&state.data_dir,&range)?}))
+    let mut coverage = coverage(&database, &state.data_dir, &range)?;
+    coverage["journalSyncFailed"] = json!(journal_sync_failed);
+    Ok(json!({"data":data,"coverage":coverage}))
 }
 
 #[cfg(test)]
@@ -1019,6 +1102,99 @@ mod tests {
         assert_eq!(summary(&db, &range(at)).unwrap()["http"]["requests"], 1);
     }
     #[test]
+    fn app_reopen_imports_durable_tail_and_retains_engine_performance() {
+        let temp = tempfile::tempdir().unwrap();
+        let analytics = temp.path().join("analytics");
+        fs::create_dir(&analytics).unwrap();
+        let source = journal(&analytics.join("journal.sqlite3"));
+        let at = now_ms();
+        start(&source, "http", "old-session", at);
+        end(&source, "http", "succeeded", at + 2, json!(0.25));
+        event(
+            &source,
+            "run_end",
+            json!({"runId":"engine-run","requestId":"http","serviceId":"local","sessionId":"old-session","startedAtMs":at,"promptTotal":10,"inputTokens":10,"outputTokens":4,"cacheReadTokens":3,"firstTokenS":0.25,"durationS":2.0,"decodeTokS":20.0,"prefillTokens":7,"prefillS":0.1,"prefillTokS":70.0,"decodeS":0.2,"expertCacheHits":60,"expertCacheLookups":100,"finish":"stop","toolCalls":0}),
+        );
+        let params = json!({"startMs":at-1,"endMs":at+10000,"serviceId":"local"});
+        let state = RuntimeState::open(temp.path().to_owned()).unwrap();
+        let first = query(&state, params.clone()).unwrap();
+        assert_eq!(first["data"]["http"]["requests"], 1);
+        assert_eq!(first["data"]["inference"]["cacheHitRate"], 0.3);
+        assert_eq!(first["data"]["inference"]["expertCacheHitRate"], 0.6);
+        assert_eq!(first["data"]["prefillTokS"]["p50"], 70.0);
+        assert_eq!(first["data"]["decodeTokS"]["p50"], 20.0);
+        drop(state);
+        // A durable final call not yet imported by the old supervisor must show
+        // immediately, without waiting for its background poll after reopening.
+        start(&source, "tail", "old-session", at + 3);
+        end(&source, "tail", "succeeded", at + 4, Value::Null);
+        let reopened = RuntimeState::open(temp.path().to_owned()).unwrap();
+        let restored = query(&reopened, params.clone()).unwrap();
+        assert_eq!(restored["data"]["http"]["requests"], 2);
+        assert_eq!(restored["data"]["inference"]["cacheHitRate"], 0.3);
+        assert_eq!(restored["data"]["prefillTokS"]["samples"], 1);
+        assert_eq!(query(&reopened, params).unwrap()["data"], restored["data"]);
+        let rows = query(
+            &reopened,
+            json!({"action":"requests","startMs":at-1,"endMs":at+10000}),
+        )
+        .unwrap();
+        let record = rows["data"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["requestId"] == "http")
+            .unwrap();
+        assert_eq!(record["prefillTokS"], 70.0);
+        assert_eq!(record["cacheHitRate"], 0.3);
+        assert_eq!(record["expertCacheHitRate"], 0.6);
+    }
+    #[test]
+    fn additive_engine_schema_and_unknown_cache_samples_preserve_history() {
+        let database = Connection::open_in_memory().unwrap();
+        database.execute_batch("CREATE TABLE analytics_runs(run_id TEXT PRIMARY KEY,request_id TEXT NOT NULL,service_id TEXT NOT NULL,session_id TEXT NOT NULL,started_ms INTEGER NOT NULL,prompt_total INTEGER NOT NULL,input_tokens INTEGER,output_tokens INTEGER,cache_read_tokens INTEGER,first_token_s REAL,duration_s REAL,decode_tok_s REAL,finish TEXT NOT NULL,tool_calls INTEGER NOT NULL);INSERT INTO analytics_runs VALUES('old','http','local','session',1000,10,10,4,3,0.1,1.0,20.0,'stop',0);").unwrap();
+        ensure_schema(&database).unwrap();
+        database.execute("INSERT INTO analytics_requests(request_id,service_id,session_id,started_ms,route) VALUES('http','local','session',1000,'chat')", []).unwrap();
+        database.execute("INSERT INTO analytics_runs(run_id,request_id,service_id,session_id,started_ms,prompt_total,input_tokens,cache_read_tokens,finish,tool_calls) VALUES('unknown','http','local','session',1000,1000,1000,NULL,'stop',0),('invalid','http','local','session',1000,5,5,10,'stop',0)", []).unwrap();
+        let summary = summary(
+            &database,
+            &Range {
+                start: 0,
+                end: 10000,
+                service: String::new(),
+            },
+        )
+        .unwrap();
+        assert_eq!(summary["inference"]["runs"], 3);
+        assert_eq!(summary["inference"]["cacheRateSamples"], 1);
+        assert_eq!(summary["inference"]["cacheHitRate"], 0.3);
+        assert_eq!(summary["prefillTokS"]["samples"], 0);
+        assert!(summary["prefillTokS"]["p50"].is_null());
+        assert_eq!(summary["decodeTokS"]["p50"], 20.0);
+    }
+    #[test]
+    fn unavailable_journal_does_not_hide_committed_history() {
+        let temp = tempfile::tempdir().unwrap();
+        let directory = temp.path().join("analytics");
+        fs::create_dir(&directory).unwrap();
+        let path = directory.join("journal.sqlite3");
+        let source = journal(&path);
+        let at = now_ms();
+        start(&source, "http", "session", at);
+        end(&source, "http", "succeeded", at + 1, Value::Null);
+        let state = RuntimeState::open(temp.path().to_owned()).unwrap();
+        let params = json!({"startMs":at-1,"endMs":at+10000});
+        assert_eq!(
+            query(&state, params.clone()).unwrap()["data"]["http"]["requests"],
+            1
+        );
+        drop(source);
+        fs::write(path, b"fixture corrupt journal").unwrap();
+        let result = query(&state, params).unwrap();
+        assert_eq!(result["data"]["http"]["requests"], 1);
+        assert_eq!(result["coverage"]["journalSyncFailed"], true);
+    }
+    #[test]
     fn empty_and_failure_denominators_keep_unknown_null() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("j.sqlite3");
@@ -1073,6 +1249,79 @@ mod tests {
         assert_eq!(trend["buckets"][0]["requests"], 1);
         assert_eq!(trend["buckets"][1]["requests"], 1);
         assert_eq!(data["ttftS"]["samples"], 1);
+    }
+    #[test]
+    fn trend_buckets_keep_http_counts_distinct_and_only_aggregate_known_engine_samples() {
+        let database = Connection::open_in_memory().unwrap();
+        ensure_schema(&database).unwrap();
+        database.execute_batch(r#"INSERT INTO analytics_requests(request_id,service_id,session_id,started_ms,route,outcome,input_tokens,output_tokens,first_token_s,duration_s) VALUES
+            ('one','local','session',1000,'chat','succeeded',100,30,0.2,2.0),
+            ('two','local','session',2000,'chat','failed',200,10,0.4,4.0),
+            ('unknown','local','session',61000,'chat','pending',NULL,NULL,NULL,NULL),
+            ('cancelled','local','session',62000,'chat','cancelled',NULL,NULL,NULL,NULL),
+            ('interrupted','local','session',63000,'chat','interrupted',NULL,NULL,NULL,NULL),
+            ('zero','local','session',181000,'chat','succeeded',0,0,NULL,NULL),
+            ('foreign','other','session',1000,'chat','succeeded',9000,9000,9.0,99.0);
+            INSERT INTO analytics_runs(run_id,request_id,service_id,session_id,started_ms,prompt_total,input_tokens,cache_read_tokens,prefill_tok_s,decode_tok_s,expert_cache_hits,expert_cache_lookups,finish,tool_calls) VALUES
+            ('run1','one','local','session',1000,100,100,50,1000,10,20,100,'stop',0),
+            ('run2','one','local','session',2000,300,300,270,3000,30,180,200,'stop',1),
+            ('unknown-run','two','local','session',2000,200,200,NULL,NULL,NULL,NULL,NULL,'error',0),
+            ('invalid-cache','two','local','session',2000,100,100,500,NULL,NULL,900,100,'error',0),
+            ('zero-run','zero','local','session',181000,0,0,0,0,0,0,0,'stop',0),
+            ('foreign-run','foreign','other','session',1000,9000,9000,9000,9000,90,9000,9000,'stop',0);"#).unwrap();
+        let result = trends(
+            &database,
+            &Range {
+                start: 0,
+                end: 240000,
+                service: "local".into(),
+            },
+            60000,
+        )
+        .unwrap();
+        let buckets = result["buckets"].as_array().unwrap();
+        assert_eq!(buckets.len(), 4);
+        let first = &buckets[0];
+        assert_eq!(first["requests"], 2);
+        assert_eq!(first["succeeded"], 1);
+        assert_eq!(first["failed"], 1);
+        assert_eq!(first["inputTokens"], 300);
+        assert_eq!(first["outputTokens"], 40);
+        assert_eq!(first["inputTokenSamples"], 2);
+        assert_eq!(first["firstTokenSamples"], 2);
+        assert!((first["firstTokenS"].as_f64().unwrap() - 0.3).abs() < 1e-10);
+        assert_eq!(first["durationS"], 3.0);
+        assert_eq!(first["prefillTokS"], 2000.0);
+        assert_eq!(first["decodeTokS"], 20.0);
+        assert_eq!(first["prefillSamples"], 2);
+        assert_eq!(first["cacheRateSamples"], 2);
+        assert_eq!(first["cacheHitRate"], 0.8);
+        assert_eq!(first["expertCacheSamples"], 2);
+        assert!((first["expertCacheHitRate"].as_f64().unwrap() - 2.0 / 3.0).abs() < 1e-10);
+        assert_eq!(buckets[1]["pending"], 1);
+        assert_eq!(buckets[1]["cancelled"], 1);
+        assert_eq!(buckets[1]["interrupted"], 1);
+        for bucket in buckets {
+            let outcomes: i64 = ["succeeded", "failed", "cancelled", "interrupted", "pending"]
+                .iter()
+                .map(|key| bucket[*key].as_i64().unwrap())
+                .sum();
+            assert_eq!(outcomes, bucket["requests"].as_i64().unwrap());
+        }
+        assert_eq!(buckets[2]["requests"], 0);
+        for bucket in [&buckets[1], &buckets[2]] {
+            assert!(bucket["inputTokens"].is_null());
+            assert!(bucket["prefillTokS"].is_null());
+            assert!(bucket["cacheHitRate"].is_null());
+            assert_eq!(bucket["prefillSamples"], 0);
+        }
+        // A measured zero remains a real sample, distinct from no observation.
+        assert_eq!(buckets[3]["inputTokens"], 0);
+        assert_eq!(buckets[3]["inputTokenSamples"], 1);
+        assert_eq!(buckets[3]["decodeTokS"], 0.0);
+        assert_eq!(buckets[3]["decodeSamples"], 1);
+        assert!(buckets[3]["cacheHitRate"].is_null());
+        assert!(buckets[3]["expertCacheHitRate"].is_null());
     }
     #[test]
     fn retention_gaps_and_crashed_sessions_are_explicit() {
@@ -1322,7 +1571,7 @@ mod tests {
         );
         add_request(&db, "three", 1002, None, None, "pending");
         add_request(&db, "four", 1003, None, None, "interrupted");
-        db.execute("INSERT INTO analytics_runs VALUES('run1','one','local','session',1000,0,NULL,NULL,NULL,NULL,NULL,NULL,'error',0),('run2','one','local','session',1000,0,NULL,NULL,NULL,NULL,NULL,NULL,'error',0)",[]).unwrap();
+        db.execute("INSERT INTO analytics_runs(run_id,request_id,service_id,session_id,started_ms,prompt_total,input_tokens,output_tokens,cache_read_tokens,first_token_s,duration_s,decode_tok_s,finish,tool_calls) VALUES('run1','one','local','session',1000,0,NULL,NULL,NULL,NULL,NULL,NULL,'error',0),('run2','one','local','session',1000,0,NULL,NULL,NULL,NULL,NULL,NULL,'error',0)",[]).unwrap();
         let range = Range {
             start: 1000,
             end: 1004,

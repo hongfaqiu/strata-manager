@@ -4,7 +4,10 @@ import { AppUpdateController, CHECK_INTERVAL, type AppUpdateState } from './appU
 
 export type { AppUpdateState } from './appUpdateController';
 
-export function useAppUpdates(desktop: boolean, enabled: boolean, ready: boolean) {
+export interface AutomaticUpdateGate { acquire: () => boolean; release: () => void }
+
+export function useAppUpdates(desktop: boolean, enabled: boolean, ready: boolean, idle = true, gate?: AutomaticUpdateGate) {
+  const gateRef = useRef(gate); gateRef.current = gate;
   const controllerRef = useRef<AppUpdateController | null>(null);
   if (!controllerRef.current) controllerRef.current = new AppUpdateController({
     check: async () => {
@@ -15,9 +18,13 @@ export function useAppUpdates(desktop: boolean, enabled: boolean, ready: boolean
     loadLastCheck: () => loadStore<number>('lastAppUpdateCheck', 0),
     saveLastCheck: time => saveStore('lastAppUpdateCheck', time),
     now: Date.now,
+    acquire: () => gateRef.current?.acquire() ?? true,
+    release: () => gateRef.current?.release(),
   });
   const controller = controllerRef.current;
   const [state, setState] = useState<AppUpdateState>(controller.state);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const presentedVersion = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     controller.attach(setState);
@@ -25,12 +32,26 @@ export function useAppUpdates(desktop: boolean, enabled: boolean, ready: boolean
   }, [controller]);
 
   useEffect(() => {
-    controller.configure({ desktop, enabled, ready });
+    controller.configure({ desktop, enabled, ready, idle });
+  }, [controller, desktop, ready, enabled, idle]);
+
+  useEffect(() => {
     if (!desktop || !ready || !enabled) return;
     void controller.automatic(true);
-    const timer = setInterval(() => void controller.automatic(), CHECK_INTERVAL);
-    return () => clearInterval(timer);
+    const checkTimer = setInterval(() => void controller.automatic(), CHECK_INTERVAL);
+    return () => clearInterval(checkTimer);
   }, [controller, desktop, ready, enabled]);
 
-  return { state, check: controller.check, download: controller.download, install: controller.install };
+  useEffect(() => {
+    if (state.phase === 'available' && state.version && presentedVersion.current !== state.version) {
+      presentedVersion.current = state.version;
+      setDialogOpen(true);
+    }
+    if (state.phase === 'installed') setDialogOpen(false);
+  }, [state.phase, state.version]);
+
+  const openDialog = async () => { if (controller.state.version) setDialogOpen(true); };
+  const check = async () => { await controller.check(); if (controller.state.version && controller.state.phase !== 'installed') setDialogOpen(true); };
+  const confirm = async (version: string) => { await controller.confirm(version); };
+  return { state, dialogOpen, check, download: openDialog, install: openDialog, openDialog, confirm, dismiss: () => setDialogOpen(false) };
 }

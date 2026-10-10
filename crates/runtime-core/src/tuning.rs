@@ -1,12 +1,13 @@
-//! Bounded, request-level A/B/A measurements. No benchmark changes production
-//! configuration; application is a separate, journaled operation on the import
-//! snapshot. Prompt/response text is never written to the report.
+//! Bounded A/B/A measurements. Complete scenarios may temporarily restart the
+//! owned import snapshot under a durable recovery journal; imported originals
+//! remain untouched. Prompt/response text is never written to the report.
 use crate::{
     http, storage,
     types::{now, ServiceProfile},
     RuntimeState,
 };
 use futures_util::StreamExt;
+use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
@@ -21,6 +22,12 @@ use tokio_util::sync::CancellationToken;
 
 #[path = "tuning_quality.rs"]
 mod quality;
+#[path = "tuning_restart.rs"]
+mod restart;
+#[path = "tuning_workloads.rs"]
+pub(crate) mod workloads;
+pub use restart::{CandidateKind, FullOptions, FullReport, RestartParameters};
+pub use workloads::UseCase;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -38,6 +45,7 @@ pub struct Parameters {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TuningStartRequest {
+    #[serde(default = "default_scenes")]
     pub scenes: Vec<Scene>,
     #[serde(default = "default_rounds")]
     pub rounds: usize,
@@ -45,6 +53,11 @@ pub struct TuningStartRequest {
     pub max_tokens: usize,
     #[serde(default)]
     pub candidates: Option<Vec<Parameters>>,
+    #[serde(flatten)]
+    pub full: FullOptions,
+}
+fn default_scenes() -> Vec<Scene> {
+    vec![Scene::Chat, Scene::Code, Scene::Chinese]
 }
 fn default_rounds() -> usize {
     2
@@ -129,6 +142,16 @@ pub struct Candidate {
     pub id: String,
     pub pcie_frac: f64,
     pub spec_min_p: f64,
+    #[serde(default)]
+    pub kind: CandidateKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub restart: Option<RestartParameters>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub startup_verification: Option<restart::StartupVerification>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource_assessment: Option<restart::ResourceAssessment>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub dimensions: HashMap<String, Evaluation>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub evaluation: Option<Evaluation>,
 }
@@ -167,10 +190,25 @@ pub struct TuningJob {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     pub notes: Vec<String>,
+    #[serde(flatten)]
+    pub full: FullReport,
 }
 struct Entry {
     job: TuningJob,
     cancel: CancellationToken,
+}
+/// Expiration of a surrounding timeout must revoke any queued/native spawn.
+/// Recovery always creates a separate guard from the canceled measurement.
+struct NativeOperation(CancellationToken);
+impl NativeOperation {
+    fn new() -> Self {
+        Self(CancellationToken::new())
+    }
+}
+impl Drop for NativeOperation {
+    fn drop(&mut self) {
+        self.0.cancel();
+    }
 }
 type Registry = HashMap<PathBuf, HashMap<String, Entry>>;
 fn registry() -> &'static Mutex<Registry> {
@@ -184,13 +222,150 @@ fn report_path(state: &RuntimeState, id: &str) -> Result<PathBuf, String> {
     uuid::Uuid::parse_str(id).map_err(|_| "无效调优任务标识")?;
     Ok(report_dir(state).join(format!("{id}.json")))
 }
+const MAX_REPORT_BYTES: usize = 4 * 1024 * 1024;
+fn ensure_report_index(database: &rusqlite::Connection) -> Result<(), String> {
+    database
+        .execute_batch(
+            "CREATE TABLE IF NOT EXISTS tuning_report_index(
+           job_id TEXT PRIMARY KEY,profile_id TEXT NOT NULL,
+           started_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,
+           created_order INTEGER NOT NULL DEFAULT 0);
+         CREATE TABLE IF NOT EXISTS tuning_report_orders(
+           job_id TEXT PRIMARY KEY,created_order INTEGER NOT NULL UNIQUE);",
+        )
+        .map_err(|e| format!("调优报告索引不可用：{e}"))?;
+    let has_order: bool = database
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('tuning_report_index') WHERE name='created_order')",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("调优报告索引版本不可用：{e}"))?;
+    if !has_order {
+        database
+            .execute(
+                "ALTER TABLE tuning_report_index ADD COLUMN created_order INTEGER NOT NULL DEFAULT 0",
+                [],
+            )
+            .map_err(|e| format!("调优报告索引迁移失败：{e}"))?;
+    }
+    database
+        .execute(
+            "CREATE INDEX IF NOT EXISTS tuning_report_ordered_latest ON
+             tuning_report_index(profile_id,created_order DESC,started_at DESC,updated_at DESC,job_id DESC)",
+            [],
+        )
+        .map_err(|e| format!("调优报告索引不可用：{e}"))?;
+    database
+        .execute(
+            "CREATE INDEX IF NOT EXISTS tuning_report_creation_order ON tuning_report_index(created_order)",
+            [],
+        )
+        .map_err(|e| format!("调优报告顺序索引不可用：{e}"))?;
+    Ok(())
+}
+fn report_order(
+    database: &rusqlite::Connection,
+    id: &str,
+    newly_published: bool,
+) -> Result<i64, String> {
+    let existing: Option<i64> = database
+        .query_row(
+            "SELECT created_order FROM tuning_report_index WHERE job_id=?1
+             UNION ALL SELECT created_order FROM tuning_report_orders WHERE job_id=?1 LIMIT 1",
+            [id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| format!("调优报告顺序读取失败：{e}"))?;
+    if let Some(order) = existing {
+        return Ok(order);
+    }
+    if !newly_published {
+        return Ok(0);
+    }
+    let previous: i64 = database
+        .query_row(
+            "SELECT COALESCE(MAX(created_order),0) FROM (
+               SELECT MAX(created_order) AS created_order FROM tuning_report_index
+               UNION ALL SELECT MAX(created_order) FROM tuning_report_orders)",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("调优报告顺序不可用：{e}"))?;
+    let order = previous.checked_add(1).ok_or("调优报告顺序超限")?;
+    // Reserve durably before writing the JSON, so startup backfill can
+    // reconstruct ordering after a crash between file and index publication.
+    database
+        .execute(
+            "INSERT INTO tuning_report_orders(job_id,created_order) VALUES(?1,?2)",
+            rusqlite::params![id, order],
+        )
+        .map_err(|e| format!("调优报告顺序保存失败：{e}"))?;
+    Ok(order)
+}
+fn index_report(state: &RuntimeState, job: &TuningJob) -> Result<(), String> {
+    index_report_with_order(state, job, true)
+}
+fn index_report_with_order(
+    state: &RuntimeState,
+    job: &TuningJob,
+    newly_published: bool,
+) -> Result<(), String> {
+    let _ = report_path(state, &job.id)?;
+    let started = i64::try_from(job.started_at).map_err(|_| "调优报告开始时间无效")?;
+    let updated = i64::try_from(job.updated_at).map_err(|_| "调优报告更新时间无效")?;
+    let database = state.database.lock().map_err(|e| e.to_string())?;
+    ensure_report_index(&database)?;
+    // Preserve a task's creation order across updates and wall-clock changes.
+    // Legacy reports have no reliable sequence: migrate with order zero and
+    // use their recorded timestamps only within that historic group.
+    let order = report_order(&database, &job.id, newly_published)?;
+    database.execute(
+        "INSERT INTO tuning_report_index(job_id,profile_id,started_at,updated_at,created_order)
+         VALUES(?1,?2,?3,?4,?5) ON CONFLICT(job_id) DO UPDATE SET
+         profile_id=excluded.profile_id,started_at=excluded.started_at,updated_at=excluded.updated_at",
+        rusqlite::params![job.id,job.profile_id,started,updated,order],
+    ).map_err(|e| format!("调优报告索引发布失败：{e}"))?;
+    Ok(())
+}
+fn read_persisted_job(state: &RuntimeState, id: &str) -> Result<TuningJob, String> {
+    let path = report_path(state, id)?;
+    let path = dunce::canonicalize(path).map_err(|e| e.to_string())?;
+    let directory = dunce::canonicalize(report_dir(state)).map_err(|e| e.to_string())?;
+    if path.parent() != Some(directory.as_path()) {
+        return Err("调优报告不在本应用报告目录中".into());
+    }
+    let mut bytes = Vec::new();
+    fs::File::open(path)
+        .map_err(|e| e.to_string())?
+        .take(MAX_REPORT_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    if bytes.len() > MAX_REPORT_BYTES {
+        return Err("调优报告超过大小限制".into());
+    }
+    let job: TuningJob = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+    if job.id != id {
+        return Err("调优报告文件与任务标识不一致".into());
+    }
+    Ok(job)
+}
 fn persist(state: &RuntimeState, job: &TuningJob) -> Result<(), String> {
     let directory = report_dir(state);
     fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
-    atomic_bytes(
-        &report_path(state, &job.id)?,
-        &serde_json::to_vec_pretty(job).map_err(|e| e.to_string())?,
-    )
+    let bytes = serde_json::to_vec_pretty(job).map_err(|e| e.to_string())?;
+    if bytes.len() > MAX_REPORT_BYTES {
+        return Err("调优报告超过持久化大小限制".into());
+    }
+    let path = report_path(state, &job.id)?;
+    {
+        let database = state.database.lock().map_err(|e| e.to_string())?;
+        ensure_report_index(&database)?;
+        report_order(&database, &job.id, true)?;
+    }
+    atomic_bytes(&path, &bytes)?;
+    index_report(state, job)
 }
 fn atomic_bytes(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let mut file = tempfile::NamedTempFile::new_in(path.parent().ok_or("文件缺少父目录")?)
@@ -220,6 +395,13 @@ fn register_active(
     job: &TuningJob,
     cancel: CancellationToken,
 ) -> Result<(), String> {
+    // Linearize registration with idle unload and owned start/stop. Taking
+    // this lock before registry matches their global -> registry order.
+    // Reject contention instead of queueing an outdated maintenance job.
+    let _operation = state
+        .runtime_operations
+        .try_lock()
+        .map_err(|_| "模型正在切换或维护，未登记调优任务")?;
     let mut registry = registry().lock().map_err(|e| e.to_string())?;
     let jobs = registry.entry(state.data_dir().to_path_buf()).or_default();
     // Pair this locked recheck with the updater's CAS-before-tuning-check.
@@ -257,12 +439,7 @@ fn read_job(state: &RuntimeState, id: &str) -> Result<TuningJob, String> {
     {
         return Ok(entry.job.clone());
     }
-    let path = report_path(state, id)?;
-    if fs::metadata(&path).map_err(|e| e.to_string())?.len() > 4 * 1024 * 1024 {
-        return Err("调优报告超过大小限制".into());
-    }
-    let mut job: TuningJob = serde_json::from_slice(&fs::read(path).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())?;
+    let mut job = read_persisted_job(state, id)?;
     if job.state.active() {
         job.state = Phase::Interrupted;
         job.finished_at = Some(now());
@@ -272,33 +449,48 @@ fn read_job(state: &RuntimeState, id: &str) -> Result<TuningJob, String> {
 }
 pub fn status(state: &RuntimeState, profile_id: String) -> Result<Option<TuningJob>, String> {
     state.registered_profile(&profile_id)?;
-    let directory = report_dir(state);
-    if !directory.exists() {
-        return Ok(None);
-    }
-    let mut latest: Option<TuningJob> = None;
-    for item in fs::read_dir(directory)
+    // A real active task always wins over history, even if its start time is
+    // older after a wall-clock adjustment or a damaged report/index file.
+    let live = registry()
+        .lock()
         .map_err(|e| e.to_string())?
-        .take(1000)
-    {
-        let path = item.map_err(|e| e.to_string())?.path();
-        if path.extension().and_then(|s| s.to_str()) != Some("json") {
-            continue;
-        }
-        let Some(id) = path.file_stem().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        if let Ok(job) = read_job(state, id) {
-            if job.profile_id == profile_id
-                && latest
-                    .as_ref()
-                    .is_none_or(|other| job.started_at > other.started_at)
-            {
-                latest = Some(job);
-            }
-        }
+        .get(state.data_dir())
+        .and_then(|jobs| {
+            jobs.values()
+                .filter(|entry| entry.job.profile_id == profile_id)
+                .max_by_key(|entry| {
+                    (
+                        entry.job.state.active(),
+                        entry.job.started_at,
+                        entry.job.updated_at,
+                    )
+                })
+                .map(|entry| entry.job.clone())
+        });
+    if live.as_ref().is_some_and(|job| job.state.active()) {
+        return Ok(live);
     }
-    Ok(latest)
+    let id: Option<String> = {
+        let database = state.database.lock().map_err(|e| e.to_string())?;
+        ensure_report_index(&database)?;
+        database
+            .query_row(
+                "SELECT job_id FROM tuning_report_index WHERE profile_id=?1
+             ORDER BY created_order DESC,started_at DESC,updated_at DESC,job_id DESC LIMIT 1",
+                [&profile_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| format!("调优报告索引读取失败：{e}"))?
+    };
+    let indexed = id.map(|id| read_job(state, &id)).transpose()?;
+    if indexed
+        .as_ref()
+        .is_some_and(|job| job.profile_id != profile_id)
+    {
+        return Err("调优报告索引与安装身份不一致".into());
+    }
+    Ok(indexed.or(live))
 }
 pub fn assert_available(state: &RuntimeState) -> Result<(), String> {
     if state
@@ -319,6 +511,30 @@ pub fn assert_no_active_tuning(state: &RuntimeState) -> Result<(), String> {
         return Err("正在调优或恢复参数，请等待完成或取消调优".into());
     }
     Ok(())
+}
+/// Guarded native operations must belong to a live in-memory task. Reading an
+/// interrupted report from disk is never authorization to spawn or stop.
+pub(crate) fn assert_current_service_operation(
+    state: &RuntimeState,
+    job_id: &str,
+    profile_id: &str,
+) -> Result<(), String> {
+    let registry = registry().lock().map_err(|e| e.to_string())?;
+    let entry = registry
+        .get(state.data_dir())
+        .and_then(|jobs| jobs.get(job_id))
+        .ok_or("调优原生操作没有活动任务归属")?;
+    if entry.job.profile_id != profile_id || !entry.job.state.active() {
+        return Err("调优原生操作任务已结束或安装身份不符".into());
+    }
+    Ok(())
+}
+#[cfg(test)]
+pub(crate) fn register_service_operation_fixture(
+    state: &RuntimeState,
+    job: &TuningJob,
+) -> Result<(), String> {
+    register_active(state, job, CancellationToken::new())
 }
 pub fn cancel(state: &RuntimeState, job_id: String) -> Result<(), String> {
     let mut registry = registry().lock().map_err(|e| e.to_string())?;
@@ -398,6 +614,11 @@ fn bounded_candidates(baseline: Parameters, requested: Option<Vec<Parameters>>) 
                 id: format!("candidate-{}", out.len() + 1),
                 pcie_frac: value.pcie_frac,
                 spec_min_p: value.spec_min_p,
+                kind: CandidateKind::Request,
+                restart: None,
+                startup_verification: None,
+                resource_assessment: None,
+                dimensions: HashMap::new(),
                 evaluation: None,
             });
         }
@@ -519,23 +740,26 @@ pub async fn start(
     }
     let metrics = read_metrics(&state, &profile).await?;
     let baseline = baseline_parameters(&metrics)?;
-    let candidates = bounded_candidates(baseline, request.candidates);
-    if candidates.is_empty() {
-        return Err("候选与现有参数相同，无需测量".into());
-    }
     let config_path = assert_managed_config(&state, &profile)?;
     let bytes = fs::read(&config_path).map_err(|e| e.to_string())?;
     let config: Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-    let total_requests = candidates.len() * request.rounds * request.scenes.len() * 6;
+    let mut candidates = bounded_candidates(baseline, request.candidates.clone());
+    let full = restart::prepare_report(&request, &config, &metrics, baseline, &mut candidates)?;
+    if candidates.is_empty() {
+        return Err("候选与现有参数相同，无需测量".into());
+    }
+    let total_requests = restart::request_total(&full, candidates.len(), request.rounds)?
+        .unwrap_or(candidates.len() * request.rounds * request.scenes.len() * 6);
     let token = CancellationToken::new();
     let job_identity = identity(&profile, &config, &metrics, &request.scenes);
-    let job=TuningJob{
+    let mut job=TuningJob{
         id:uuid::Uuid::new_v4().to_string(),profile_id, state:Phase::Checking,scenes:request.scenes,rounds:request.rounds,max_tokens:request.max_tokens,
         started_at:now(),updated_at:now(),finished_at:None,completed_requests:0,total_requests,
         current_step:"waitingForIdle".into(),baseline,candidates,measurements:vec![],recommended_candidate_id:None,
         identity:job_identity,config_fingerprint:fingerprint(&bytes),applied_config_fingerprint:None,error:None,
-        notes:vec!["distinctPrompt uses a fresh nonce; repeatedPrefix immediately repeats that prompt. Actual cached tokens are reported; this does not measure loading or session restore.".into(),"Only complete, identical deterministic outputs qualify. A/B/A drift is measured on this machine; a universal gain threshold is not used.".into(),"Request-level measurement leaves configuration unchanged. Applying a result restarts the owned service and can briefly interrupt its API.".into()],
+        notes:vec!["A/B/A runs on this machine. Full workloads use semantic quality checks; full output hashes are not compared across legal asynchronous variations.".into(),"Cold model does not prove cold OS file cache. Resource peaks are sampled and unknown values remain null.".into(),"Restart candidates are opt-in; original managed snapshot bytes are restored and verified before finishing.".into()],full,
     };
+    job.identity = restart::bound_identity(&profile, &config, &metrics, &job);
     register_active(&state, &job, token.clone())?;
     let id = job.id.clone();
     tokio::spawn(async move {
@@ -543,7 +767,9 @@ pub async fn start(
         let _ = update(&state, &id, |job| {
             job.finished_at = Some(now());
             if let Err(error) = result {
-                job.state = if token.is_cancelled() {
+                job.state = if job.full.recovery.state == restart::RecoveryState::Failed {
+                    Phase::Failed
+                } else if token.is_cancelled() {
                     Phase::Canceled
                 } else {
                     Phase::Failed
@@ -562,6 +788,9 @@ async fn run(
     id: String,
     cancel: CancellationToken,
 ) -> Result<(), String> {
+    if read_job(&state, &id)?.full.scope == restart::Scope::FullScenario {
+        return restart::run_full(state, profile, pid, id, cancel).await;
+    }
     let lock = {
         let mut locks = state.ensure_locks.lock().await;
         locks.entry(profile.id.clone()).or_default().clone()
@@ -1080,26 +1309,38 @@ fn with_parameters(config: &Value, parameters: Parameters) -> Result<Value, Stri
 }
 /// Restore private original bytes after a backend crash during a config switch.
 /// Call before restore_default() and before opening the UI to new mutations.
-pub fn recover_pending_configs(state: &RuntimeState) -> Result<(), String> {
+pub fn recover_pending_configs(state: &Arc<RuntimeState>) -> Result<(), String> {
+    // Backfill legacy reports in the existing startup recovery scan. Keep
+    // the durable task order; filesystem enumeration is not chronological.
+    // Status never traverses an arbitrary prefix of the directory.
+    {
+        let database = state.database.lock().map_err(|e| e.to_string())?;
+        ensure_report_index(&database)?;
+    }
+    restart::recover_pending(state)?;
     let directory = report_dir(state);
     if !directory.exists() {
         return Ok(());
     }
-    for item in fs::read_dir(&directory)
-        .map_err(|e| e.to_string())?
-        .take(1000)
-    {
+    for item in fs::read_dir(&directory).map_err(|e| e.to_string())? {
         let path = item.map_err(|e| e.to_string())?.path();
         if path.extension().and_then(|s| s.to_str()) != Some("json") {
             continue;
         }
-        let bytes = fs::read(&path).map_err(|e| e.to_string())?;
-        if bytes.len() > 4 * 1024 * 1024 {
-            continue;
-        }
-        let Ok(mut job) = serde_json::from_slice::<TuningJob>(&bytes) else {
+        let Some(id) = path.file_stem().and_then(|s| s.to_str()) else {
             continue;
         };
+        let Ok(mut job) = read_persisted_job(state, id) else {
+            continue;
+        };
+        index_report_with_order(state, &job, false)?;
+        // Full-scenario temporary restarts have their own durable stage journal.
+        // Do not race its asynchronous health recovery with legacy apply recovery.
+        if job.full.scope == restart::Scope::FullScenario
+            && restart::has_active_stage(state, &job.id)?
+        {
+            continue;
+        }
         if matches!(job.state, Phase::Applying | Phase::RollingBack) {
             let profile = state.registered_profile(&job.profile_id)?;
             let config = assert_managed_config(state, &profile)?;
@@ -1139,9 +1380,15 @@ pub async fn apply(
     if job.state != Phase::Completed {
         return Err("只能应用已完整完成且未应用的报告".into());
     }
+    if job.full.report_version != 2 || job.full.scope != restart::Scope::FullScenario {
+        return Err(
+            "旧报告或短请求诊断没有完整场景复验，请重新按用途调优后应用；已应用参数仍可恢复".into(),
+        );
+    }
     // Historic reports remain readable/restorable. A pre-semantic Code report
     // cannot qualify for a new application based only on matching hashes.
-    if job.scenes.contains(&Scene::Code)
+    if job.full.scope == restart::Scope::RequestDiagnostic
+        && job.scenes.contains(&Scene::Code)
         && job.identity["benchmarkVersion"].as_str() != Some(quality::VERSION)
     {
         return Err("旧编程调优报告缺少语义复验，请重新测量后应用".into());
@@ -1158,7 +1405,8 @@ pub async fn apply(
         })
         .ok_or("候选没有通过收益和质量复验，保持原参数")?
         .clone();
-    change_configuration(state, job, Some(candidate.parameters())).await
+    restart::validate_application(&job, &candidate)?;
+    change_configuration(state, job, Some(candidate)).await
 }
 pub async fn restore(state: Arc<RuntimeState>, job_id: String) -> Result<TuningJob, String> {
     assert_available(&state)?;
@@ -1171,8 +1419,9 @@ pub async fn restore(state: Arc<RuntimeState>, job_id: String) -> Result<TuningJ
 async fn change_configuration(
     state: Arc<RuntimeState>,
     mut job: TuningJob,
-    parameters: Option<Parameters>,
+    candidate: Option<Candidate>,
 ) -> Result<TuningJob, String> {
+    let parameters = candidate.as_ref().map(Candidate::parameters);
     crate::runtime_upgrade::assert_available(&state)?;
     let profile = state.registered_profile(&job.profile_id)?;
     require_owned(&state, &profile).await?;
@@ -1189,9 +1438,13 @@ async fn change_configuration(
     let backup_path = report_dir(&state).join(format!("{}.original", job.id));
     let target = if let Some(parameters) = parameters {
         atomic_bytes(&backup_path, &bytes)?;
-        serde_json::to_vec_pretty(&with_parameters(
+        let config = with_parameters(
             &serde_json::from_slice(&bytes).map_err(|e| e.to_string())?,
             parameters,
+        )?;
+        serde_json::to_vec_pretty(&restart::with_restart(
+            &config,
+            candidate.as_ref().and_then(|c| c.restart.as_ref()),
         )?)
         .map_err(|e| e.to_string())?
     } else {
@@ -1214,9 +1467,13 @@ async fn change_configuration(
         return Err("等待空闲时配置发生变化，未应用".into());
     }
     let old_metrics = read_metrics(&state, &profile).await?;
+    if parameters.is_some() && job.full.scope == restart::Scope::FullScenario {
+        restart::check_live_resources(&old_metrics)?;
+    }
     let config: Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+    restart::check_restart_ram(&config, candidate.as_ref().and_then(|c| c.restart.as_ref()))?;
     if parameters.is_some()
-        && identity(&profile, &config, &old_metrics, &job.scenes) != job.identity
+        && restart::bound_identity(&profile, &config, &old_metrics, &job) != job.identity
     {
         return Err("模型、引擎或硬件身份已变化，请重新测量".into());
     }
@@ -1227,40 +1484,100 @@ async fn change_configuration(
     };
     job.current_step = "switchingConfiguration".into();
     job.updated_at = now();
+    job.full.recovery = restart::Recovery {
+        state: restart::RecoveryState::Pending,
+        configuration_restored: false,
+        service_verified: false,
+        error: None,
+    };
     if parameters.is_some() {
         job.applied_config_fingerprint = Some(fingerprint(&target));
     }
     register_active(&state, &job, CancellationToken::new())?;
-    let result = async {
+    let operation = async {
+        let native_operation = NativeOperation::new();
+        restart::begin_application(&state, &job, &profile, &bytes, &target)?;
+        if fs::read(&path).map_err(|e| e.to_string())? != bytes {
+            return Err("应用发布前配置被另行编辑，未覆盖".into());
+        }
         atomic_bytes(&path, &target)?;
-        crate::restart_service(state.clone(), profile.clone()).await?;
+        update(&state, &job.id, |job| {
+            // A successful candidate write is deliberately not restoration.
+            job.full.recovery.configuration_restored = parameters.is_none();
+        })?;
+        crate::restart_service_for_tuning(
+            state.clone(),
+            profile.clone(),
+            &job.id,
+            &native_operation.0,
+        )
+        .await?;
         verify_restarted(
             &state,
             &profile,
             &maintenance_token,
             parameters.unwrap_or(job.baseline),
         )
+        .await?;
+        restart::verify_flags(
+            &state,
+            &profile,
+            candidate.as_ref().and_then(|c| c.restart.as_ref()),
+        )
         .await
-    }
-    .await;
-    match result {
-        Ok(()) => update(&state, &job.id, |job| {
-            job.state = if parameters.is_some() {
-                Phase::Applied
+        .map(|_| ())?;
+        update(&state, &job.id, |job| {
+            job.full.recovery.state = if parameters.is_some() {
+                restart::RecoveryState::NotNeeded
             } else {
-                Phase::Restored
+                restart::RecoveryState::Restored
             };
-            job.current_step = "finished".into();
-            job.finished_at = Some(now());
-            job.error = None;
-        }),
+            job.full.recovery.service_verified = true;
+        })?;
+        Ok(())
+    };
+    let result: Result<(), String> = tokio::time::timeout(
+        Duration::from_secs(job.full.limits.recovery_deadline_seconds),
+        operation,
+    )
+    .await
+    .unwrap_or_else(|_| Err("配置应用超过硬时限，正在独立恢复原配置/服务".into()));
+    match result {
+        Ok(()) => {
+            let done = update(&state, &job.id, |job| {
+                job.state = if parameters.is_some() {
+                    Phase::Applied
+                } else {
+                    Phase::Restored
+                };
+                job.current_step = "finished".into();
+                job.finished_at = Some(now());
+                job.error = None;
+            })?;
+            if let Err(error) = restart::settle_application(&state, &job, &profile) {
+                return update(&state, &job.id, |job| {
+                    job.state = Phase::Failed;
+                    job.error = Some(error.clone());
+                    job.full.recovery.state = restart::RecoveryState::Failed;
+                    job.full.recovery.error = Some(error);
+                });
+            }
+            Ok(done)
+        }
         Err(error) => {
             update(&state, &job.id, |job| {
                 job.state = Phase::RollingBack;
                 job.error = Some(error.clone());
+                job.full.recovery = restart::Recovery {
+                    state: restart::RecoveryState::Restoring,
+                    configuration_restored: false,
+                    service_verified: false,
+                    error: None,
+                };
             })?;
-            let original = fs::read(&backup_path).map_err(|e| e.to_string())?;
             let rollback = async {
+                let native_operation = NativeOperation::new();
+                let original = fs::read(&backup_path).map_err(|e| e.to_string())?;
                 let current = fs::read(&path).map_err(|e| e.to_string())?;
                 if current != target && current != bytes && current != original {
                     return Err("配置已有其它变更，未覆盖该配置；需要手动检查".into());
@@ -1269,11 +1586,31 @@ async fn change_configuration(
                     return Err("原配置副本校验失败".into());
                 }
                 atomic_bytes(&path, &original)?;
-                crate::restart_service(state.clone(), profile.clone()).await?;
-                verify_restarted(&state, &profile, &maintenance_token, job.baseline).await
-            }
-            .await;
-            update(&state, &job.id, |job| {
+                update(&state, &job.id, |job| {
+                    job.full.recovery.configuration_restored = true
+                })?;
+                crate::restart_service_for_tuning(
+                    state.clone(),
+                    profile.clone(),
+                    &job.id,
+                    &native_operation.0,
+                )
+                .await?;
+                verify_restarted(&state, &profile, &maintenance_token, job.baseline).await?;
+                update(&state, &job.id, |job| {
+                    job.full.recovery.state = restart::RecoveryState::Restored;
+                    job.full.recovery.service_verified = true;
+                })?;
+                Ok(())
+            };
+            let rollback: Result<(), String> = tokio::time::timeout(
+                Duration::from_secs(job.full.limits.recovery_deadline_seconds),
+                rollback,
+            )
+            .await
+            .unwrap_or_else(|_| Err("原配置/服务恢复超过硬时限，journal保留".into()));
+            let recovered = rollback.is_ok();
+            let done = update(&state, &job.id, |job| {
                 job.state = if rollback.is_ok() {
                     Phase::Restored
                 } else {
@@ -1281,14 +1618,45 @@ async fn change_configuration(
                 };
                 job.current_step = "finished".into();
                 job.finished_at = Some(now());
+                if !recovered {
+                    job.full.recovery.state = restart::RecoveryState::Failed;
+                    job.full.recovery.error = rollback.as_ref().err().cloned();
+                }
                 job.error = Some(match rollback {
                     Ok(()) => format!("应用失败，原配置和服务已恢复：{error}"),
                     Err(rollback) => {
                         format!("应用失败：{error}；恢复失败：{rollback}；请重新准备模型")
                     }
                 });
-            })
+            })?;
+            if recovered {
+                if let Err(error) = restart::settle_application(&state, &job, &profile) {
+                    return update(&state, &job.id, |job| {
+                        job.state = Phase::Failed;
+                        job.error = Some(error.clone());
+                        job.full.recovery.state = restart::RecoveryState::Failed;
+                        job.full.recovery.error = Some(error);
+                    });
+                }
+            }
+            Ok(done)
         }
+    }
+}
+async fn wait_restarted_api(state: &RuntimeState, profile: &ServiceProfile) -> Result<(), String> {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        if let Ok(response) =
+            http::strata_request(state, profile.clone(), "/health".into(), "GET".into(), None).await
+        {
+            if response.get("service").and_then(Value::as_str) == Some("strata") {
+                return Ok(());
+            }
+        }
+        if Instant::now() > deadline {
+            return Err("配置切换后API未恢复".into());
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
     }
 }
 async fn verify_restarted(
@@ -1297,20 +1665,7 @@ async fn verify_restarted(
     token: &str,
     parameters: Parameters,
 ) -> Result<(), String> {
-    let deadline = Instant::now() + Duration::from_secs(30);
-    loop {
-        if let Ok(response) =
-            http::strata_request(state, profile.clone(), "/health".into(), "GET".into(), None).await
-        {
-            if response.get("service").and_then(Value::as_str) == Some("strata") {
-                break;
-            }
-        }
-        if Instant::now() > deadline {
-            return Err("配置切换后API未恢复".into());
-        }
-        tokio::time::sleep(Duration::from_millis(250)).await;
-    }
+    wait_restarted_api(state, profile).await?;
     let response = http::request_builder(&state.client, profile, "/load", "POST", Some(json!({})))?
         .header("X-Strata-Manager-Tuning-Id", token)
         .timeout(Duration::from_secs(300))
@@ -1360,6 +1715,10 @@ pub fn fingerprint(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     format!("{:x}", Sha256::digest(bytes))
 }
+
+#[cfg(test)]
+#[path = "tuning_status_tests.rs"]
+mod status_tests;
 
 #[cfg(test)]
 mod tests {
@@ -1472,6 +1831,7 @@ mod tests {
             applied_config_fingerprint: None,
             error: None,
             notes: vec![],
+            full: FullReport::default(),
         }
     }
     #[test]
@@ -1636,6 +1996,7 @@ mod tests {
             applied_config_fingerprint: Some(fingerprint(changed)),
             error: None,
             notes: vec![],
+            full: FullReport::default(),
         };
         persist(&state, &job).unwrap();
         fs::write(
@@ -1758,7 +2119,7 @@ mod tests {
         assert!(result.status.success());
         String::from_utf8(result.stdout).unwrap().trim().into()
     }
-    async fn live_fixture() -> (
+    pub(super) async fn live_fixture() -> (
         tempfile::TempDir,
         Arc<RuntimeState>,
         ServiceProfile,
@@ -1808,6 +2169,7 @@ mod tests {
                 ],
             )
             .unwrap();
+        crate::store_set(&state, "activeLocalInstallation".into(), json!(profile.id)).unwrap();
         crate::start_service(state.clone(), profile.clone())
             .await
             .unwrap();
@@ -1837,8 +2199,8 @@ mod tests {
         .unwrap();
         (temp, state, profile, original)
     }
-    async fn await_job(state: &RuntimeState, profile: &ServiceProfile) -> TuningJob {
-        for _ in 0..300 {
+    pub(super) async fn await_job(state: &RuntimeState, profile: &ServiceProfile) -> TuningJob {
+        for _ in 0..1500 {
             let job = status(state, profile.id.clone()).unwrap().unwrap();
             if !job.state.active() {
                 return job;
@@ -1853,6 +2215,7 @@ mod tests {
             rounds: 2,
             max_tokens: 128,
             candidates: Some(vec![parameters]),
+            full: FullOptions::default(),
         }
     }
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -1891,13 +2254,19 @@ mod tests {
             .await
             .err()
             .unwrap();
-        assert!(legacy_rejection.contains("旧编程调优报告"));
+        assert!(legacy_rejection.contains("旧报告"));
         assert_eq!(fs::read(&profile.config_path).unwrap(), original);
         update(&state, &completed.id, |job| job.scenes = vec![Scene::Chat]).unwrap();
         let before = require_owned(&state, &profile).await.unwrap();
-        let applied = apply(state.clone(), completed.id.clone(), "candidate-1".into())
-            .await
-            .unwrap();
+        // Historical recovery still exercises the real restart transaction.
+        // Public apply requires a full semantic workload report from now on.
+        let applied = change_configuration(
+            state.clone(),
+            read_job(&state, &completed.id).unwrap(),
+            Some(completed.candidates[0].clone()),
+        )
+        .await
+        .unwrap();
         assert_eq!(applied.state, Phase::Applied, "{:?}", applied.error);
         assert_ne!(require_owned(&state, &profile).await.unwrap(), before);
         assert!(
@@ -1956,9 +2325,13 @@ mod tests {
             "fixture fault injection",
         )
         .unwrap();
-        let reverted = apply(state.clone(), completed.id, "candidate-1".into())
-            .await
-            .unwrap();
+        let reverted = change_configuration(
+            state.clone(),
+            completed.clone(),
+            Some(completed.candidates[0].clone()),
+        )
+        .await
+        .unwrap();
         assert_eq!(reverted.state, Phase::Restored, "{:?}", reverted.error);
         assert!(reverted
             .error

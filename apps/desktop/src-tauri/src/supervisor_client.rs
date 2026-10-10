@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
@@ -10,6 +11,39 @@ use std::{
     time::Duration,
 };
 use strata_local_ipc::RpcError;
+use strata_runtime_core::types::ServiceProfile;
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RegistrySnapshot {
+    pub profiles: Vec<ServiceProfile>,
+    pub originals: Vec<ServiceProfile>,
+    pub active_local_installation: Value,
+    pub active_profile: Value,
+    pub local_service_desired: Value,
+    #[serde(default)]
+    pub preserved_values: Vec<(String, Value)>,
+}
+
+pub(crate) fn original_profile(
+    profile: &ServiceProfile,
+    details: &Value,
+    data_dir: &Path,
+) -> Option<ServiceProfile> {
+    let mut original = profile.clone();
+    let detailed = details
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|entry| entry["profileId"] == profile.id)
+        .and_then(|entry| entry["originalConfigPath"].as_str())
+        .map(str::to_owned);
+    let config = detailed
+        .or_else(|| crate::configuration_details::source_path(profile, data_dir))
+        .filter(|path| Path::new(path).is_absolute() && Path::new(path).is_file())?;
+    original.config_path = config;
+    Some(original)
+}
 
 pub struct SupervisorClient {
     pub data_dir: PathBuf,
@@ -40,6 +74,7 @@ impl SupervisorClient {
     pub async fn ensure_connected(&self) -> Result<(), RpcError> {
         match self.connected().await {
             Ok(status) if self.matches_package(&status)? => return Ok(()),
+            Ok(status) if self.defer_background_upgrade(&status)? => return Ok(()),
             Ok(_) => {}
             Err(error) if error.code != "supervisor_unavailable" => return Err(error),
             Err(_) => {}
@@ -48,6 +83,13 @@ impl SupervisorClient {
         match self.connected().await {
             Ok(status) if self.matches_package(&status)? => return Ok(()),
             Ok(status) => {
+                // A read-only UI request must not unload an already running
+                // model merely to replace the UI's packaged supervisor. Check
+                // again under the lock because services may have started since
+                // the first hello. Missing counts are an incomplete observation.
+                if self.defer_background_upgrade(&status)? {
+                    return Ok(());
+                }
                 if self.next_upgrade.load(Ordering::Acquire) > strata_runtime_core::types::now() {
                     return Ok(());
                 }
@@ -86,6 +128,21 @@ impl SupervisorClient {
             .await
             .map(|_| ())
     }
+    fn defer_background_upgrade(&self, status: &Value) -> Result<bool, RpcError> {
+        let active = status.get("activeServices").and_then(Value::as_u64);
+        if active == Some(0) {
+            return Ok(false);
+        }
+        let reason = match active {
+            Some(count) => format!("已有 {count} 个本机服务运行；服务停止后更新后台"),
+            None => "无法核实已有后台的服务状态；保持运行，请停止服务后重试更新".into(),
+        };
+        *self
+            .update_pending
+            .lock()
+            .map_err(|e| RpcError::new("supervisor_state", e.to_string()))? = Some(reason);
+        Ok(true)
+    }
     fn matches_package(&self, status: &Value) -> Result<bool, RpcError> {
         self.staged_executable()?;
         let (_, hash) = self
@@ -98,6 +155,13 @@ impl SupervisorClient {
         )
     }
     async fn start_and_wait(&self, executable: &Path) -> Result<Value, RpcError> {
+        self.start_and_wait_mode(executable, false).await
+    }
+    async fn start_and_wait_mode(
+        &self,
+        executable: &Path,
+        defer_restore: bool,
+    ) -> Result<Value, RpcError> {
         let mut command = Command::new(executable);
         command
             .args(["--data-dir"])
@@ -105,6 +169,9 @@ impl SupervisorClient {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
+        if defer_restore {
+            command.arg("--defer-restore");
+        }
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
@@ -213,6 +280,17 @@ impl SupervisorClient {
     async fn replace_background(&self, previous: Value) -> Result<(), RpcError> {
         let executable = self.staged_executable()?;
         let old = self.previous_executable(&previous)?;
+        // Capture authoritative RPC metadata before the old process exits. A
+        // packaged child may see a different physical roaming DB despite using
+        // the same logical --data-dir and named pipe, so health alone is not an
+        // acceptable handoff check.
+        let snapshot = self.registry_snapshot().await?;
+        let queue = strata_local_ipc::call(
+            &self.data_dir,
+            "store_get",
+            json!({"key":"nativeRuntimeZipUpdates"}),
+        )
+        .await?;
         // This RPC blocks new POST admission, drains accepted requests and then
         // unloads only application-owned services. Unknown observers refuse it.
         strata_local_ipc::call(
@@ -223,10 +301,24 @@ impl SupervisorClient {
         .await?;
         self.wait_background_stopped().await?;
         let result = async {
-            let current = self.start_and_wait(&executable).await?;
+            let current = self.start_and_wait_mode(&executable, true).await?;
             if !self.matches_package(&current)? {
                 return Err(RpcError::new("supervisor_upgrade", "新后台版本身份不匹配"));
             }
+            if current["recoveryDeferred"] != true {
+                return Err(RpcError::new(
+                    "supervisor_registry",
+                    "候选后台未暂停服务恢复，未交接模型登记",
+                ));
+            }
+            self.restore_registry_snapshot(&snapshot).await?;
+            strata_local_ipc::call(
+                &self.data_dir,
+                "store_set",
+                json!({"key":"nativeRuntimeZipUpdates","value":queue}),
+            )
+            .await?;
+            strata_local_ipc::call(&self.data_dir, "resume_supervisor", json!({})).await?;
             // Wait for the persisted selected API to recover, including when a
             // model is deliberately lazy. A pipe alone is not readiness proof.
             self.wait_selected_health().await?;
@@ -294,6 +386,151 @@ impl SupervisorClient {
         }
         Ok(())
     }
+
+    pub(crate) async fn registry_snapshot(&self) -> Result<RegistrySnapshot, RpcError> {
+        let profiles: Vec<ServiceProfile> = serde_json::from_value(
+            strata_local_ipc::call(&self.data_dir, "local_installations", json!({})).await?,
+        )
+        .map_err(|error| RpcError::new("supervisor_registry", error.to_string()))?;
+        let details =
+            match strata_local_ipc::call(&self.data_dir, "local_installation_details", json!({}))
+                .await
+            {
+                Ok(details) => details,
+                Err(error) if error.code == "unknown_method" => Value::Null,
+                Err(error) => return Err(error),
+            };
+        let originals = profiles
+            .iter()
+            .filter_map(|profile| original_profile(profile, &details, &self.data_dir))
+            .collect();
+        let mut values = Vec::new();
+        for key in [
+            "activeLocalInstallation",
+            "activeProfile",
+            "localServiceDesired",
+            "backgroundPolicy",
+            "strataUpstreamUpdateInfo",
+            "automaticRuntimeInstallation",
+            "automaticRuntimeUpdateTask",
+        ] {
+            values.push((
+                key.to_owned(),
+                strata_local_ipc::call(&self.data_dir, "store_get", json!({"key":key})).await?,
+            ));
+        }
+        let value = |key: &str| {
+            values
+                .iter()
+                .find(|(name, _)| name == key)
+                .map(|(_, value)| value.clone())
+                .unwrap_or(Value::Null)
+        };
+        let mut snapshot = RegistrySnapshot {
+            profiles,
+            originals,
+            active_local_installation: value("activeLocalInstallation"),
+            active_profile: value("activeProfile"),
+            local_service_desired: value("localServiceDesired"),
+            preserved_values: values,
+        };
+        let queue = strata_local_ipc::call(
+            &self.data_dir,
+            "store_get",
+            json!({"key":"nativeRuntimeZipUpdates"}),
+        )
+        .await?;
+        crate::runtime_update_queue::merge_recovery_snapshot(&self.data_dir, &mut snapshot, queue)?;
+        // Capture the actual running selection before shutdown. This metadata
+        // crosses the registry handoff even when the replacement sees another DB.
+        let mut recovery = json!({"profileId":snapshot.active_local_installation,"restore":false});
+        if snapshot.local_service_desired.as_bool() != Some(false) {
+            if let Some(profile) = snapshot.profiles.iter().find(|profile| {
+                snapshot.active_local_installation.as_str() == Some(profile.id.as_str())
+            }) {
+                let status = strata_local_ipc::call(
+                    &self.data_dir,
+                    "service_status",
+                    json!({"profileId":profile.id}),
+                )
+                .await?;
+                if status["running"] == true && status["owned"] == true {
+                    let health = strata_local_ipc::call(
+                        &self.data_dir,
+                        "strata_request",
+                        json!({"profile":profile,"path":"/health","method":"GET"}),
+                    )
+                    .await?;
+                    if health["service"] != "strata" || health["status"] != "ok" {
+                        return Err(RpcError::new(
+                            "supervisor_registry",
+                            "无法核验升级前的本机服务",
+                        ));
+                    }
+                    let loaded = health["loaded"].as_bool().ok_or_else(|| {
+                        RpcError::new("supervisor_registry", "无法确认升级前模型是否已加载")
+                    })?;
+                    recovery = json!({"profileId":profile.id,"loaded":loaded});
+                }
+            }
+        }
+        snapshot
+            .preserved_values
+            .push(("supervisorUpgradeRecoveryLoad".into(), recovery));
+        Ok(snapshot)
+    }
+
+    pub(crate) async fn restore_registry_snapshot(
+        &self,
+        snapshot: &RegistrySnapshot,
+    ) -> Result<(), RpcError> {
+        strata_local_ipc::call(&self.data_dir, "restore_local_registry", json!({"profiles":snapshot.profiles,"originals":snapshot.originals,"activeLocalInstallation":snapshot.active_local_installation,"activeProfile":snapshot.active_profile,"localServiceDesired":snapshot.local_service_desired})).await?;
+        for (key, value) in &snapshot.preserved_values {
+            if !matches!(
+                key.as_str(),
+                "activeLocalInstallation" | "activeProfile" | "localServiceDesired"
+            ) {
+                strata_local_ipc::call(
+                    &self.data_dir,
+                    "store_set",
+                    json!({"key":key,"value":value}),
+                )
+                .await?;
+            }
+        }
+        let profiles: Vec<ServiceProfile> = serde_json::from_value(
+            strata_local_ipc::call(&self.data_dir, "local_installations", json!({})).await?,
+        )
+        .map_err(|error| RpcError::new("supervisor_registry", error.to_string()))?;
+        for saved in &snapshot.profiles {
+            if !profiles.iter().any(|profile| {
+                serde_json::to_value(profile).ok() == serde_json::to_value(saved).ok()
+            }) {
+                return Err(RpcError::new(
+                    "supervisor_registry",
+                    format!("后台升级未保留模型登记 {}；未恢复或替换模型服务", saved.id),
+                ));
+            }
+        }
+        for (key, expected) in [
+            (
+                "activeLocalInstallation",
+                &snapshot.active_local_installation,
+            ),
+            ("activeProfile", &snapshot.active_profile),
+            ("localServiceDesired", &snapshot.local_service_desired),
+        ] {
+            if strata_local_ipc::call(&self.data_dir, "store_get", json!({"key":key})).await?
+                != *expected
+            {
+                return Err(RpcError::new(
+                    "supervisor_registry",
+                    format!("后台升级未保留 {key}"),
+                ));
+            }
+        }
+        Ok(())
+    }
     async fn wait_selected_health(&self) -> Result<(), RpcError> {
         let selected = strata_local_ipc::call(
             &self.data_dir,
@@ -313,6 +550,16 @@ impl SupervisorClient {
         let Some(id) = selected.as_str() else {
             return Ok(());
         };
+        let recovery = strata_local_ipc::call(
+            &self.data_dir,
+            "store_get",
+            json!({"key":"supervisorUpgradeRecoveryLoad"}),
+        )
+        .await?;
+        if recovery["restore"] == false {
+            return Ok(());
+        }
+        let restore_loaded = recovery["loaded"].as_bool() == Some(true);
         let profiles =
             strata_local_ipc::call(&self.data_dir, "local_installations", json!({})).await?;
         let profile = profiles
@@ -328,7 +575,10 @@ impl SupervisorClient {
             )
             .await
             {
-                if health["service"] == "strata" && health["status"] == "ok" {
+                if health["service"] == "strata"
+                    && health["status"] == "ok"
+                    && (!restore_loaded || health["loaded"] == true)
+                {
                     return Ok(());
                 }
             }
@@ -533,6 +783,200 @@ mod tests {
             .unwrap()
             .unwrap();
     }
+    #[test]
+    fn upgrade_requires_an_explicit_zero_active_service_count() {
+        let temp = tempfile::tempdir().unwrap();
+        let client = SupervisorClient::new(temp.path().into(), temp.path().into());
+        for status in [
+            json!({}),
+            json!({"activeServices": null}),
+            json!({"activeServices": "0"}),
+            json!({"activeServices": -1}),
+            json!({"activeServices": 0.5}),
+            json!({"activeServices": 1}),
+        ] {
+            assert!(client.defer_background_upgrade(&status).unwrap());
+            assert!(client.update_pending.lock().unwrap().is_some());
+        }
+        assert!(!client
+            .defer_background_upgrade(&json!({"activeServices": 0}))
+            .unwrap());
+    }
+    #[tokio::test]
+    async fn read_only_request_keeps_loaded_service_and_previous_supervisor_alive() {
+        let temp = tempfile::tempdir().unwrap();
+        let data = temp.path().join("data");
+        fs::create_dir(&data).unwrap();
+        let source = source();
+        let _previous = initial(&data, &source).await;
+        let runtime = data.join("runtimes/release-preserved-fixture");
+        fs::create_dir_all(runtime.join("serve")).unwrap();
+        fs::write(
+            runtime.join("setup.py"),
+            "# isolated fixture; never executed",
+        )
+        .unwrap();
+        fs::write(
+            runtime.join("serve/server.py"),
+            include_str!(
+                "../../../../crates/runtime-core/tests/fixtures/runtime_upgrade_service.py"
+            ),
+        )
+        .unwrap();
+        let mut probe = Command::new("py");
+        probe.args(["-I", "-S", "-c", "import sys;print(sys.executable)"]);
+        strata_runtime_core::processes::hidden(&mut probe);
+        let output = probe
+            .output()
+            .expect("Python is required for the isolated lifecycle fixture");
+        assert!(output.status.success());
+        let python = String::from_utf8(output.stdout).unwrap().trim().to_owned();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let profile = json!({
+            "id": format!("preserve-fixture-{}", uuid::Uuid::new_v4()),
+            "name": "Isolated CPU fixture",
+            "baseUrl": format!("http://127.0.0.1:{port}"),
+            "installDir": runtime,
+            "pythonPath": python,
+            "configPath": runtime.join("config.json"),
+            "managed": true,
+        });
+        fs::write(
+            runtime.join("config.json"),
+            serde_json::to_vec(&json!({
+                "exe": python,
+                "args": [],
+                "cwd": runtime,
+                "model_name": "isolated-preserved-model",
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let mut client = SupervisorClient::new(data.clone(), temp.path().into());
+        client.package_override = Some(source);
+        let client = std::sync::Arc::new(client);
+        let connection_guard = client.connection_lock.lock().await;
+        let connecting_client = client.clone();
+        let connecting = tokio::spawn(async move { connecting_client.ensure_connected().await });
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        // Package staging follows the first inactive hello. Holding the lock
+        // lets a service start before the second hello, without timing guesses.
+        while client.staged.get().is_none() {
+            assert!(tokio::time::Instant::now() < deadline);
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        strata_local_ipc::call(
+            &data,
+            "restore_local_registry",
+            json!({
+                "profiles":[profile],"originals":[profile],"activeLocalInstallation":profile["id"],
+                "activeProfile":profile["id"],"localServiceDesired":true,
+            }),
+        )
+        .await
+        .unwrap();
+        let started = strata_local_ipc::call(&data, "start_service", json!({"profile": profile}))
+            .await
+            .unwrap();
+        let service_pid = started["pid"].clone();
+        assert!(service_pid.as_u64().is_some_and(|pid| pid > 0));
+        let http = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(2))
+            .build()
+            .unwrap();
+        let health_url = format!("http://127.0.0.1:{port}/health");
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            if http.get(&health_url).send().await.is_ok() {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "Fixture did not become ready"
+            );
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        http.post(format!("http://127.0.0.1:{port}/load"))
+            .json(&json!({}))
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+        let before = strata_local_ipc::call(&data, "hello", json!({}))
+            .await
+            .unwrap();
+        assert_eq!(before["activeServices"], 1);
+        let snapshot = client.registry_snapshot().await.unwrap();
+        assert_eq!(
+            snapshot
+                .preserved_values
+                .iter()
+                .find(|(key, _)| key == "supervisorUpgradeRecoveryLoad")
+                .unwrap()
+                .1,
+            json!({"profileId":profile["id"],"loaded":true})
+        );
+        drop(connection_guard);
+        connecting.await.unwrap().unwrap();
+        let after = client
+            .request("supervisor_status", json!({}))
+            .await
+            .unwrap();
+        assert_eq!(after["pid"], before["pid"]);
+        assert_eq!(after["executableHash"], before["executableHash"]);
+        assert_eq!(after["updatePending"], true);
+        let installation = crate::runtime_detection::installation_status(&client)
+            .await
+            .unwrap();
+        let canonical_runtime = dunce::canonicalize(&runtime).unwrap();
+        assert!(installation["detectedRuntimes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(
+                |detected| Path::new(detected["installDir"].as_str().unwrap()) == canonical_runtime
+            ));
+        let service = client
+            .request(
+                "service_status",
+                json!({"profileId": profile["id"], "profile": profile}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(service["pid"], service_pid);
+        assert_eq!(service["running"], true);
+        let health: Value = http
+            .get(&health_url)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(
+            health["loaded"], true,
+            "A read-only check unloaded the model"
+        );
+        // The user's explicit stop is still served by the existing background.
+        client
+            .request("stop_service", json!({"profileId": profile["id"]}))
+            .await
+            .unwrap();
+        let upgraded = client
+            .request("supervisor_status", json!({}))
+            .await
+            .unwrap();
+        assert_ne!(upgraded["pid"], before["pid"]);
+        assert_eq!(upgraded["updatePending"], false);
+        assert!(client.matches_package(&upgraded).unwrap());
+        strata_local_ipc::call(&data, "shutdown_supervisor", json!({}))
+            .await
+            .unwrap();
+    }
     #[tokio::test]
     async fn package_identity_switches_idle_background_and_bad_candidate_rolls_back() {
         let temp = tempfile::tempdir().unwrap();
@@ -543,8 +987,70 @@ mod tests {
         let before = strata_local_ipc::call(&data, "hello", json!({}))
             .await
             .unwrap();
+        let runtime = temp.path().join("stopped-runtime");
+        fs::create_dir(&runtime).unwrap();
+        let python = runtime.join("python-never-executed.exe");
+        let config = runtime.join("config.json");
+        fs::write(&python, b"stopped fixture must not execute").unwrap();
+        fs::write(&config, br#"{"model_name":"stopped-model"}"#).unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let profile = json!({"id":"stopped-history","name":"Stopped history","baseUrl":format!("http://127.0.0.1:{port}"),
+            "installDir":runtime,"pythonPath":python,"configPath":config,"managed":true});
+        strata_local_ipc::call(
+            &data,
+            "restore_local_registry",
+            json!({
+                "profiles":[profile],"originals":[profile],"activeLocalInstallation":profile["id"],
+                "activeProfile":profile["id"],"localServiceDesired":true,
+            }),
+        )
+        .await
+        .unwrap();
+        strata_local_ipc::call(
+            &data,
+            "set_background_policy",
+            json!({"mode":"alwaysReady","autoRecover":true,"idleUnloadMinutes":15}),
+        )
+        .await
+        .unwrap();
         let mut client = SupervisorClient::new(data.clone(), temp.path().into());
         client.package_override = Some(source.clone());
+        let snapshot = client.registry_snapshot().await.unwrap();
+        let no_restore = json!({"profileId":profile["id"],"restore":false});
+        assert_eq!(
+            snapshot
+                .preserved_values
+                .iter()
+                .find(|(key, _)| key == "supervisorUpgradeRecoveryLoad")
+                .unwrap()
+                .1,
+            no_restore
+        );
+        // Exercise the same preserved-values RPC path against a separate DB.
+        let transferred_data = temp.path().join("transferred-data");
+        let _transferred = initial(&transferred_data, &source).await;
+        let transferred_client =
+            SupervisorClient::new(transferred_data.clone(), temp.path().into());
+        transferred_client
+            .restore_registry_snapshot(&snapshot)
+            .await
+            .unwrap();
+        assert_eq!(
+            strata_local_ipc::call(
+                &transferred_data,
+                "store_get",
+                json!({"key":"supervisorUpgradeRecoveryLoad"})
+            )
+            .await
+            .unwrap(),
+            no_restore
+        );
+        transferred_client.wait_selected_health().await.unwrap();
+        strata_local_ipc::call(&transferred_data, "shutdown_supervisor", json!({}))
+            .await
+            .unwrap();
         let after = client
             .request("supervisor_status", json!({}))
             .await
@@ -555,6 +1061,18 @@ mod tests {
             "Candidate package was not retained: before={before}, after={after}"
         );
         assert_eq!(after["updatePending"], false);
+        assert_eq!(after["activeServices"], 0);
+        assert!(
+            strata_local_ipc::call(
+                &data,
+                "store_get",
+                json!({"key":"localPreparationFailures"})
+            )
+            .await
+            .unwrap()
+            .is_null(),
+            "upgrading a stopped selection attempted to prepare its model"
+        );
         let broken = temp.path().join("broken-supervisor.exe");
         fs::write(&broken, b"invalid native package fixture").unwrap();
         let mut broken_client = SupervisorClient::new(data.clone(), temp.path().into());

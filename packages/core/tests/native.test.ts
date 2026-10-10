@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { request, streamChat, serviceStatus, restartService, takeOverService, discoverLocal, importLocal, ensureLocalService, supervisorStatus, listSetupHandoffs, resolveSetupHandoff } from '../src';
+import { request, streamChat, serviceStatus, restartService, takeOverService, discoverLocal, importLocal, ensureLocalService, supervisorStatus, listSetupHandoffs, resolveSetupHandoff, setBackgroundPolicy } from '../src';
 import type { ChatDelta, ServiceProfile, StreamEvent } from '../src';
 
 const native = vi.hoisted(() => ({ invoke: vi.fn() }));
@@ -14,6 +14,15 @@ afterEach(async () => {
 });
 
 describe('native bridge protocol', () => {
+  it('preserves disabled and custom idle release periods when saving background policy', async () => {
+    native.invoke.mockResolvedValue({ mode: 'lazy', autoRecover: false, idleUnloadMinutes: 0 });
+    await setBackgroundPolicy('lazy', false, 0);
+    expect(native.invoke).toHaveBeenLastCalledWith('set_background_policy', { mode: 'lazy', autoRecover: false, idleUnloadMinutes: 0 });
+    await setBackgroundPolicy('alwaysReady', true, 37);
+    expect(native.invoke).toHaveBeenLastCalledWith('set_background_policy', { mode: 'alwaysReady', autoRecover: true, idleUnloadMinutes: 37 });
+    await setBackgroundPolicy('lazy', true);
+    expect(native.invoke).toHaveBeenLastCalledWith('set_background_policy', { mode: 'lazy', autoRecover: true, idleUnloadMinutes: 15 });
+  });
   it('reads durable setup registration and resolves only the explicit task configuration', async () => {
     native.invoke.mockResolvedValue([]);
     await listSetupHandoffs();

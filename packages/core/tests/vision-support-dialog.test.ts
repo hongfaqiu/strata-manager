@@ -1,0 +1,38 @@
+import { describe, expect, it } from 'vitest';
+import { assertVisionBaseline, configureVisionSupport, visionDraftOf } from '../../../apps/desktop/src/pages/visionSupportConfiguration';
+
+describe('quick vision configuration', () => {
+  const draft = { exe: 'D:\\Strata\\engine\\strata-vision.exe', model: 'D:\\Models\\weights.gguf', mmproj: 'D:\\Models\\mmproj.gguf', gpu: false, threads: '8', maxTokens: '1024' };
+  it('defaults to CPU without guessing a projector and reads model argv safely', () => {
+    expect(visionDraftOf({ args: ['--model', 'D:\\Models\\main.gguf'] }, 'D:\\Strata\\')).toEqual({ ...draft, model: 'D:\\Models\\main.gguf', mmproj: '' });
+    expect(visionDraftOf({ args: ['--native', '/models/main.gguf'] }, '/strata')).toMatchObject({ exe: '/strata/engine/strata-vision.exe', model: '/models/main.gguf', mmproj: '' });
+    expect(visionDraftOf({ args: ['--model', '--vision'] }, 'D:\\Strata').model).toBe('');
+    expect(visionDraftOf({ args: ['--model', 'a.gguf', '--model', 'b.gguf'] }, 'D:\\Strata').model).toBe('');
+  });
+  it('prefills the existing paths and encoder settings', () => {
+    expect(visionDraftOf({ args: ['--model', 'other.gguf'], vision: { exe: 'vision.exe', model: 'current.gguf', mmproj: 'projector.gguf', gpu: true, threads: 3, max_tokens: 2048 } }, 'D:\\Strata')).toEqual({ exe: 'vision.exe', model: 'current.gguf', mmproj: 'projector.gguf', gpu: true, threads: '3', maxTokens: '2048' });
+  });
+  it('preserves complete configuration and unknown vision fields without mutating its baseline', () => {
+    const config = { exe: 'engine.exe', args: ['--native', 'weights.gguf', '--max-context', '65536', '--custom', 'keep'], api_key: 'secret', sampling: { temperature: .6 }, env: { CUSTOM: 'keep' }, mcp: [{ name: 'tool' }], vision: { min_tokens: 256, cuda_device: 2, custom: [false, null, 3] } };
+    const original = structuredClone(config);
+    const next = configureVisionSupport(config, draft);
+    expect(next).toEqual({ ...config, args: [...config.args, '--vision'], vision: { ...config.vision, exe: draft.exe, model: draft.model, mmproj: draft.mmproj, gpu: false, threads: 8, max_tokens: 1024 } });
+    expect(config).toEqual(original);
+  });
+  it('keeps exactly one main-engine vision flag and preserves every other token', () => {
+    const config = { args: ['--vision', '--native', 'weights.gguf', '--custom', 'value', '--vision', '--max-context', '4096', '--vision'] };
+    expect(configureVisionSupport(config, draft).args).toEqual(['--vision', '--native', 'weights.gguf', '--custom', 'value', '--max-context', '4096']);
+  });
+  it('rejects missing files, malformed encoder limits and invalid startup configuration', () => {
+    for (const key of ['exe', 'model', 'mmproj']) expect(() => configureVisionSupport({ args: [] }, { ...draft, [key]: ' ' })).toThrow('file path');
+    for (const value of ['0', '-1', '1.5', 'not-a-number']) expect(() => configureVisionSupport({ args: [] }, { ...draft, threads: value })).toThrow();
+    expect(() => configureVisionSupport({ args: ['--max-context'] }, draft)).toThrow();
+    expect(() => configureVisionSupport({ args: [], vision: 'invalid' }, draft)).toThrow('vision');
+  });
+  it('rejects stale read baselines rather than overwriting external configuration changes', () => {
+    const baseline = { args: ['--max-context', '4096'], api_key: 'keep' };
+    expect(() => assertVisionBaseline(baseline, structuredClone(baseline))).not.toThrow();
+    expect(() => assertVisionBaseline(baseline, { ...baseline, api_key: 'changed' })).toThrow('Configuration changed');
+    expect(() => assertVisionBaseline(baseline, { ...baseline, args: ['--max-context', '8192'] })).toThrow();
+  });
+});
