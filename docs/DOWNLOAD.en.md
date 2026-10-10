@@ -4,35 +4,41 @@
 
 Strata Manager is a desktop app for local model management. The desktop package contains the app and its independent background process. Model weights and the Strata runtime are prepared or imported separately.
 
-## Choose a preview
+## Preview v0.1.0-beta.1
 
-As of 2026-10-11, the repository has no formal Release. An empty Releases list does not mean source or documentation is unavailable, and it does not provide a release installer.
+Preview **v0.1.0-beta.1** is available. Select a package for your system below and install it manually. Read the [release notes](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0-beta.1) or [try source](#try-source).
 
-| Platform | Available entry points | Scope |
+| Platform | Package | Scope |
 | --- | --- | --- |
-| Windows x64 | [Try source](#try-source); [view build progress](https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml) | NSIS is the installer target. Only uploaded artifacts are downloadable packages. |
-| Linux x64 | [Historical CI previews](#linux-preview-builds) or source | AppImage / DEB test packages, separate from a formal signed release and real GPU acceptance. |
+| Windows x64 | [NSIS installer](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_x64-setup.exe) | Requires WebView2; installation steps below. |
+| Linux x64 | [AppImage](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_amd64.AppImage) / [DEB](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_amd64.deb) | Built in Ubuntu 22.04 CI; system installation and GPU scope below. |
+
+[Download SHA256SUMS](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/SHA256SUMS) and compare your file's SHA256 with its matching filename before installing. Update signature files are for updater verification; use the `.exe`, `.AppImage` or `.deb` above for initial installation.
 
 Models, image input and API protocols depend on your Strata runtime. Check hardware, drivers, RAM, VRAM and disk requirements before preparing weights. A supported existing installation can be imported.
 
-## Linux preview builds
+## Install on Windows
 
-The verified [historical run 38066271017](https://github.com/hongfaqiu/strata-manager/actions/runs/38066271017) belongs to commit d1e2155. Its Linux job succeeded and uploaded these artifacts; its Windows job failed, so the complete workflow was not successful:
+1. Download the Windows x64 NSIS installer `Strata.Manager_0.1.0-beta.1_x64-setup.exe` above.
+2. Confirm the version and source, then run the installer and follow its wizard. Windows requires WebView2; follow installer or system instructions if it is missing.
+3. Open Strata Manager from the Start menu or the installer completion screen.
+4. Follow the [user guide](USER_GUIDE.en.md#prepare-or-reuse-a-model) to import an existing Strata installation or prepare a model. Installing the desktop app does not automatically download weights.
+5. To uninstall, choose **Stop services and quit** from the tray first, then uninstall through Windows **Installed apps**.
 
-- **ci-linux-amd64-appimage**
-- **ci-linux-amd64-deb**
+The project currently has no Windows Authenticode publisher certificate. Windows may show an unknown publisher or SmartScreen prompt. Confirm that the file comes from this project's versioned release page; Tauri update signatures do not establish a trusted Windows publisher.
 
-These previews come from an older commit and do not include all later changes. Build current source for current code. Check other runs in the [CI workflow](https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml), confirming that the platform job succeeded and uploaded Artifacts before treating a run as a download.
+## Install on Linux
 
-### Download steps
+### AppImage
 
-1. Sign in to GitHub and open the run summary above.
-2. Find **Artifacts** and select the required artifact name.
-3. Extract the downloaded ZIP to find the AppImage or DEB package.
-4. Give the AppImage executable permission before running it, or open the DEB with your system package installer. Resolve system dependencies using your distribution's instructions.
-5. Follow the [user guide](USER_GUIDE.en.md#prepare-or-reuse-a-model) to import or prepare a model.
+1. Download `Strata.Manager_0.1.0-beta.1_amd64.AppImage` above.
+2. Allow execution in its file properties or run `chmod +x ./Strata.Manager_0.1.0-beta.1_amd64.AppImage` in your download directory.
+3. Run the AppImage. Follow your distribution's instructions if FUSE or system dependencies are missing.
+4. Follow the [user guide](USER_GUIDE.en.md#prepare-or-reuse-a-model) to import or prepare a local model.
 
-Artifact downloads require a signed-in account with repository read access, and artifacts can expire. See [GitHub's download instructions](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/download-workflow-artifacts). If Artifacts is missing, check sign-in, run completion, the platform job and retention; a run with no uploaded files is not a package download.
+### DEB
+
+Download `Strata.Manager_0.1.0-beta.1_amd64.deb` above and open it in the Ubuntu/Debian system package installer. Follow system instructions for installation and dependencies, then launch it from the application menu. Ubuntu 22.04 is the CI build environment; the DEB check covers launching its extracted contents. System-level installation, uninstall, login startup and real GPU workflows remain unverified.
 
 ## Try source
 
@@ -45,10 +51,22 @@ pnpm install --frozen-lockfile
 pnpm desktop
 ~~~
 
-pnpm desktop starts the complete desktop app and background process. pnpm dev runs the frontend only and does not replace installation, process management or operating-system integration. See [development instructions](DEVELOPMENT.md) for builds and checks.
+pnpm desktop starts the complete desktop app and background process. pnpm dev runs the frontend only and does not replace installation, process management or operating-system integration.
+
+## Support scope
+
+- Current targets are Windows/Linux x64. Models, hardware, image input and API capabilities depend on the Strata runtime and chosen model.
+- Local import and preparation, background services, Chat, metadata usage statistics, bounded tuning and update controls are implemented. Screenshot examples do not establish real-model performance.
+- Previews use manual download and installation and do not replace the stable `latest` automatic update channel.
+- Windows package checks cover silent installation, desktop startup, private background IPC, clean shutdown and uninstall.
+- Linux package checks cover AppImage and extracted DEB startup, private background IPC and clean shutdown in Ubuntu 22.04 with Xvfb.
+- Complete real GPU workflows, Linux system DEB installation/uninstall, login startup, Windows automatic setup without Python, and cross-version installation updates remain unverified.
+- Windows installers currently have no Authenticode publisher certificate. Tauri update signatures verify update files and are separate from Windows publisher signing.
 
 ## Releases and updates
 
-A formal version will list its packages and release notes on [GitHub Releases](https://github.com/hongfaqiu/strata-manager/releases). Formal releases, CI previews and local builds are separate sources; check the version and verified scope first.
+[GitHub Releases](https://github.com/hongfaqiu/strata-manager/releases) lists versioned packages and release notes. Previews, stable releases, CI artifacts and local builds are separate sources; check the version and support scope first.
 
-App updates, the Strata runtime and model weights are managed separately. Automatic checking/downloading is not installation. Runtime updates use a reviewed fixed candidate, not upstream latest automatically. The [user guide](USER_GUIDE.en.md) explains behavior; the [verification record](VERIFICATION.md) maintains detailed evidence in Chinese.
+v0.1.0-beta.1 is a preview for manual download and installation from its release page; it is not pushed through the stable `latest` channel. Update checks in Settings use the stable update source. Failing to find a beta update does not prove that the latest preview is installed.
+
+App updates, the Strata runtime and model weights are managed separately. Automatic checking/downloading is not installation. Runtime updates use a reviewed fixed candidate, not upstream latest automatically. The [user guide](USER_GUIDE.en.md) explains behavior.

@@ -98,6 +98,7 @@
       </a>
 
       <nav class="primary-nav" id="primary-nav" aria-label="主导航" data-label-en="Main navigation">
+        <a href="#strata" data-en="About Strata">关于 Strata</a>
         <a href="#features" data-en="Features">功能特性</a>
         <a href="#workspace" data-en="Workspace">工作台全景</a>
         <a href="#how-it-works" data-en="Workflow">运行架构</a>
@@ -198,7 +199,7 @@
                 <span class="chip-port">127.0.0.1:8080</span>
               </div>
               <div class="window-actions">
-                <button class="window-preview-btn open-lightbox-btn" data-target="overview" type="button" title="点击放大查看高清原图" data-title-en="Click to view full-resolution image">
+                <button class="window-preview-btn open-lightbox-btn" data-target="overview" type="button" aria-label="放大查看总览界面" data-label-en="Enlarge the overview screenshot">
                   <svg class="icon" aria-hidden="true"><use href="#icon-maximize"/></svg>
                   <span data-en="Expand">全屏</span>
                 </button>
@@ -265,6 +266,32 @@
             <h3 data-en="Compare Tuning Results">比较调优结果</h3>
             <p data-en="Compare supported parameters against the baseline before applying a change.">测量受支持的候选参数，查看基线漂移与输出一致性，再决定是否应用。</p>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-padding" id="strata" aria-labelledby="strata-title">
+      <div class="container">
+        <div class="section-header text-center">
+          <div class="section-tag" data-en="MEET STRATA">了解 Strata</div>
+          <h2 id="strata-title" class="section-title" data-en="The runtime behind your local workspace.">认识工作台背后的本地推理项目。</h2>
+          <p class="section-subtitle" data-en="Model and hardware support depend on the Strata runtime version you install.">模型与硬件支持以你安装的 Strata 运行时版本为准。</p>
+        </div>
+        <div class="strata-about-grid">
+          <article class="bento-card">
+            <div class="bento-content">
+              <h3 data-en="Strata · Local inference">Strata · 本地模型推理</h3>
+              <p data-en="Strata is an open-source project for running supported language models on your own PC. It coordinates GPU memory, RAM and CPU resources, and provides a browser interface and local APIs for chat and other applications.">Strata 是开源的本地大语言模型推理项目，协调显存、内存和 CPU 资源，让支持的模型在你的电脑上运行，并提供浏览器界面和本机 API，供聊天及其它软件使用。</p>
+              <a href="https://github.com/Niko1221/Strata" target="_blank" rel="noopener noreferrer" data-en="Explore the Strata project →">了解 Strata 项目 →</a>
+            </div>
+          </article>
+          <article class="bento-card">
+            <div class="bento-content">
+              <h3 data-en="Strata Manager · Desktop management">Strata Manager · 桌面管理</h3>
+              <p data-en="Strata Manager is an independent community desktop app built on that runtime. It brings model import and preparation, configurations, chat, background services and usage into one workspace. The runtime and model weights are prepared separately from the desktop package.">Strata Manager 是基于该运行时构建的独立社区桌面应用，把模型导入与准备、配置、聊天、后台服务和用量集中在一个工作台中。运行时与模型权重独立于桌面安装包准备。</p>
+              <a href="docs/user-guide.html" data-href-en="docs/user-guide.en.html" data-en="Read the Manager user guide →">查看 Manager 使用指南 →</a>
+            </div>
+          </article>
         </div>
       </div>
     </section>
@@ -460,14 +487,8 @@
           </div>
 
           <div class="display-image-wrap">
-            <a id="screen-link" class="screen-lightbox-trigger open-lightbox-btn" href="assets/screenshots/overview.zh.webp" data-target="overview" title="点击放大查看高清原图" data-title-en="Click to enlarge screenshot">
+            <a id="screen-link" class="screen-lightbox-trigger open-lightbox-btn" href="assets/screenshots/overview.zh.webp" data-target="overview" aria-label="放大查看当前界面" data-label-en="Enlarge the current screenshot">
               <img id="screen-image" class="display-screenshot" src="assets/screenshots/overview.zh.webp" width="2880" height="1920" alt="总览：查看当前模型、后台服务、API 用量与资源概况" loading="lazy" decoding="async">
-              <div class="image-hover-overlay">
-                <span class="overlay-btn">
-                  <svg class="icon" aria-hidden="true"><use href="#icon-maximize"/></svg>
-                  <span data-en="Click to view full-resolution image">点击查看高清原图</span>
-                </span>
-              </div>
             </a>
           </div>
 
@@ -557,8 +578,8 @@
         <div class="section-header text-center">
           <div class="section-tag" data-en="GET STARTED TODAY">立即开始体验</div>
           <h2 id="get-started-title" class="section-title" data-en="Ready to Elevate Your Local LLM Experience?">准备好开启全新本地大模型体验了吗？</h2>
-          <p class="section-subtitle" data-en="The first official release is still under verification. Try source or available Linux CI artifacts; CI packages are preview builds.">
-            首个正式版本仍在验收中。可从源码体验或使用已有 Linux CI 构建产物；CI 安装包属于测试预览版。
+          <p class="section-subtitle" data-en="Download v0.1.0-beta.1 for Windows or Linux x64. Install this preview manually; prepare or import the Strata runtime and model weights separately.">
+            下载 v0.1.0-beta.1 Windows 或 Linux x64 预览版。手工安装桌面应用，再准备或导入 Strata 运行环境与模型权重。
           </p>
         </div>
 
@@ -573,15 +594,16 @@
               </div>
             </div>
             <ul class="dl-specs-list">
-              <li><svg class="icon" aria-hidden="true"><use href="#icon-check"/></svg><span data-en="Planned NSIS installer (*-setup.exe)">计划提供 NSIS 安装包（*-setup.exe）</span></li>
+              <li><svg class="icon" aria-hidden="true"><use href="#icon-check"/></svg><span data-en="v0.1.0-beta.1 · NSIS installer">v0.1.0-beta.1 · NSIS 安装包</span></li>
               <li><svg class="icon" aria-hidden="true"><use href="#icon-check"/></svg><span data-en="WebView2 required; GPU support depends on Strata">需要 WebView2；GPU 支持以 Strata 为准</span></li>
-              <li><svg class="icon" aria-hidden="true"><use href="#icon-check"/></svg><span data-en="Build from source; installer verification in progress">可从源码体验；安装包仍在验收</span></li>
+              <li><svg class="icon" aria-hidden="true"><use href="#icon-check"/></svg><span data-en="Model runtime and weights are prepared separately">模型运行环境与权重独立准备</span></li>
             </ul>
             <div class="dl-actions">
-              <a class="btn btn-primary btn-block" href="docs/download.html#从源码体验" data-href-en="docs/download.en.html#try-source">
+              <a class="btn btn-primary btn-block" data-download="windows" href="https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_x64-setup.exe">
                 <svg class="icon" aria-hidden="true"><use href="#icon-download"/></svg>
-                <span data-en="Windows Preview Instructions">Windows 体验说明</span>
+                <span data-en="Download Windows Installer">下载 Windows 安装包</span>
               </a>
+              <a class="btn btn-secondary btn-block" href="docs/download.html#windows-安装" data-href-en="docs/download.en.html#install-on-windows" data-en="Installation guide">安装说明</a>
             </div>
           </div>
 
@@ -595,18 +617,22 @@
               </div>
             </div>
             <ul class="dl-specs-list">
-              <li><svg class="icon" aria-hidden="true"><use href="#icon-check"/></svg><span data-en="AppImage & .deb CI artifacts available">已有 AppImage 与 .deb CI 构建产物</span></li>
-              <li><svg class="icon" aria-hidden="true"><use href="#icon-check"/></svg><span data-en="Real installation and GPU acceptance still pending">实机安装与 GPU 验收仍待完成</span></li>
+              <li><svg class="icon" aria-hidden="true"><use href="#icon-check"/></svg><span data-en="v0.1.0-beta.1 · AppImage / DEB (amd64)">v0.1.0-beta.1 · AppImage / DEB (amd64)</span></li>
+              <li><svg class="icon" aria-hidden="true"><use href="#icon-check"/></svg><span data-en="Built on Ubuntu 22.04; see the installation guide">基于 Ubuntu 22.04 构建，详见安装说明</span></li>
               <li><svg class="icon" aria-hidden="true"><use href="#icon-check"/></svg><span data-en="Model weights are prepared separately">模型权重独立准备</span></li>
             </ul>
             <div class="dl-actions">
-              <a class="btn btn-primary btn-block" href="docs/download.html#linux-预览包" data-href-en="docs/download.en.html#linux-preview-builds">
+              <a class="btn btn-primary btn-block" data-download="appimage" href="https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_amd64.AppImage">
                 <svg class="icon" aria-hidden="true"><use href="#icon-download"/></svg>
-                <span data-en="Linux Preview Instructions">Linux 预览下载说明</span>
+                <span data-en="Download AppImage">下载 AppImage</span>
               </a>
+              <a class="btn btn-secondary btn-block" data-download="deb" href="https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_amd64.deb" data-en="Download DEB">下载 DEB</a>
+              <a class="btn btn-secondary btn-block" href="docs/download.html#linux-安装" data-href-en="docs/download.en.html#install-on-linux" data-en="Installation guide">安装说明</a>
             </div>
           </div>
         </div>
+
+        <p class="section-subtitle text-center download-release-notes"><a href="https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0-beta.1" data-en="Release notes">版本说明</a> · <a data-download="checksums" href="https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/SHA256SUMS" data-en="SHA256 checksums">SHA256 校验文件</a></p>
 
         <!-- 源码编译终端盒 (Source Code Box) -->
         <div class="source-terminal-box">
@@ -632,7 +658,7 @@ pnpm install --frozen-lockfile
 pnpm desktop</code></pre>
           <div class="source-box-footer">
             <span data-en="Prerequisites: Node.js 22.13+, Rust stable, and OS Tauri packages.">前置条件：Node.js 22.13+、项目固定 pnpm 11、Rust stable 及操作系统 Tauri 编译依赖。</span>
-            <a class="source-footer-link" href="docs/development.html" data-en="Full development docs →">查看完整开发文档 →</a>
+            <a class="source-footer-link" href="docs/user-guide.html" data-href-en="docs/user-guide.en.html" data-en="Read the user guide →">查看使用指南 →</a>
           </div>
         </div>
       </div>
@@ -747,10 +773,11 @@ pnpm desktop</code></pre>
 
         <div class="footer-links-col">
           <h4 data-en="Resources">文档与生态</h4>
+          <a href="#strata" data-en="About Strata">关于 Strata</a>
           <a href="docs/index.html" data-href-en="docs/index.en.html" data-en="Documentation">文档目录</a>
           <a href="docs/user-guide.html" data-href-en="docs/user-guide.en.html" data-en="User Guide">使用指南</a>
-          <a href="docs/development.html" data-en="Development">开发文档</a>
-          <a href="docs/verification.html" data-en="Verification (Chinese)">验收记录</a>
+          <a href="docs/download.html" data-href-en="docs/download.en.html" data-en="Download and try">下载与体验</a>
+          <a href="docs/troubleshooting.html" data-href-en="docs/troubleshooting.en.html" data-en="Troubleshooting">故障排查</a>
           <a href="https://github.com/Niko1221/Strata" target="_blank" rel="noopener noreferrer">Upstream Strata</a>
         </div>
 

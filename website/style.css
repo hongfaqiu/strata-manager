@@ -1502,6 +1502,18 @@ code, pre {
   margin-bottom: 48px;
 }
 
+.strata-about-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 32px;
+}
+
+@media (max-width: 700px) {
+  .strata-about-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .dl-card {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
@@ -1573,6 +1585,16 @@ code, pre {
   width: 16px;
   height: 16px;
   color: var(--emerald-400);
+}
+
+.dl-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.download-release-notes {
+  margin: 0 auto 40px;
 }
 
 /* 源码编译终端盒 (Source Terminal Box) */

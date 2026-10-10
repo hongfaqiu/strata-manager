@@ -1,8 +1,8 @@
 # Strata Manager user guide
 
-[Website](https://hongfaqiu.github.io/strata-manager/?lang=en) · [Product overview](../README.en.md) · [Documentation](README.en.md) · [简体中文](USER_GUIDE.md)
+[Website](https://hongfaqiu.github.io/strata-manager/?lang=en) · [Product overview](../README.md) · [Documentation](README.en.md) · [简体中文](USER_GUIDE.md)
 
-[Download and try](DOWNLOAD.en.md) · [Troubleshooting](TROUBLESHOOTING.en.md) · [Verification record](VERIFICATION.md)
+[Download and try](DOWNLOAD.en.md) · [Troubleshooting](TROUBLESHOOTING.en.md) · [Support scope](DOWNLOAD.en.md#support-scope)
 
 Strata Manager is an open-source desktop app for local model management. Import or prepare supported local Strata installations, manage configurations, start and load services, chat, monitor activity, and connect other software to your local API in one workspace. Existing model weights stay in place. Available models, image input, reasoning, MCP tools and API protocols depend on the installed Strata runtime and chosen model.
 
@@ -67,7 +67,7 @@ Settings provides:
 - **Prepare at startup:** choose early preparation instead of the default lightweight, on-demand policy.
 - **Service recovery:** enable up to three recovery attempts after the selected, managed service exits. Repeated failures surface a repair state rather than an endless restart loop. This does not promise automatic recovery from every API failure or stalled process.
 
-Startup configuration and isolated operating-system checks are implemented. Real logout/login, Linux installation, startup and GPU workflows still need acceptance. Linux containment requires the environment described above and covers descendants that stay in the managed process group; it does not establish cleanup of every MCP tool that creates its own session. Follow the [verification record](VERIFICATION.md) for the tested scope.
+See [support scope](DOWNLOAD.en.md#support-scope) for current platform and usage limits. Linux containment requires the environment described above and covers descendants that stay in the managed process group; it does not establish cleanup of every MCP tool that creates its own session.
 
 ## Read background health
 
@@ -133,11 +133,13 @@ Controlled tests validate the comparison and recovery workflow. Real speed impro
 
 Settings can automatically check and download updates when the app opens and every 12 hours. Choose when to install the downloaded update, or disable automatic downloading and check/download manually. Failed downloads preserve the current app and can be retried. Downloading does not stop the local API; explicit installation checks that the background can update safely. Downloads show received bytes; a total is shown only when known. The updater uses the embedded public key to verify official Tauri signatures.
 
+Preview v0.1.0-beta.1 is available for manual installation. Download the [Windows installer](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_x64-setup.exe), [AppImage](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_amd64.AppImage) or [DEB](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_amd64.deb) and compare [SHA256SUMS](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/SHA256SUMS). Previews do not replace the stable `latest` update channel. Settings checks the stable update source; finding no beta update does not establish that the latest preview is installed.
+
 Application, Strata runtime and model weights are separate. Updating Manager does not normally require another model-weight download. Read the version's release notes for restart and recovery behavior.
 
-See [Download and try](DOWNLOAD.en.md) for available packages and [the verification record](VERIFICATION.md) for current acceptance evidence. A successful build or signature test does not establish a complete signed update from a previous version, native installer behavior, background handover or model/API restoration. Real GPU and Linux installation workflows have separate acceptance requirements.
+See [Download and try](DOWNLOAD.en.md) for versions, packages and the current support scope.
 
-Tauri update signatures are separate from Windows Authenticode publisher signing. The project does not currently claim a Windows publisher certificate. A successful signature test does not by itself prove installer behavior, background handover or model restoration.
+Tauri update signatures are separate from Windows Authenticode publisher signing. The project does not currently have a Windows publisher certificate; follow the download guide when your system displays an installation warning.
 
 ## Update the Strata runtime
 

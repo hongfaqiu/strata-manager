@@ -1,67 +1,116 @@
 <div align="center">
 
-<a href="https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.webp"><img src="docs/screenshots/product-cover.webp" alt="Strata Manager：本地模型，一站管理" width="100%"></a>
+<a href="https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.webp"><img src="docs/screenshots/product-cover.webp" alt="Strata Manager — overview, chat and local model management" width="1200" /></a>
 
 <h1>Strata Manager</h1>
-
-<p><strong>本地模型，一站管理。</strong><br>
-集中管理本地模型、聊天、后台服务与本机 API。</p>
-
-<p>
-<a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/License-MIT-118577"></a>
-<img alt="Tauri 2" src="https://img.shields.io/badge/Tauri-2-24C8DB">
-<img alt="Windows and Linux x64" src="https://img.shields.io/badge/Windows%20%7C%20Linux-x64-51606F">
-<img alt="中文 and English" src="https://img.shields.io/badge/Language-中文%20%7C%20English-118577">
-<a href="https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml"><img alt="Build and test" src="https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml/badge.svg"></a>
-</p>
+<p><strong>Local models. One workspace.</strong></p>
+<p>Manage local models, conversations, background services and your local API in one desktop app.</p>
 
 <p>
-<a href="https://hongfaqiu.github.io/strata-manager/">官网</a> ·
-<a href="README.en.md">English</a> ·
-<a href="#下载与体验">下载与体验</a> ·
-<a href="#三步开始使用">快速上手</a> ·
-<a href="#看看它的样子">界面展示</a> ·
-<a href="https://hongfaqiu.github.io/strata-manager/docs/user-guide.html">使用指南</a> ·
-<a href="https://hongfaqiu.github.io/strata-manager/docs/index.html">文档目录</a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license" /></a>
+<a href="https://tauri.app/"><img src="https://img.shields.io/badge/desktop-Tauri%202-24c8d8" alt="Tauri 2 desktop" /></a>
+<img src="https://img.shields.io/badge/targets-Windows%20%2F%20Linux%20x64-64748b" alt="Windows and Linux x64 targets" />
+<a href="README.zh-CN.md"><img src="https://img.shields.io/badge/languages-中文%20%2F%20English-6366f1" alt="Chinese and English" /></a>
+<a href="https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml"><img src="https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml/badge.svg" alt="Current build and test status" /></a>
 </p>
+
+<p><a href="https://hongfaqiu.github.io/strata-manager/?lang=en">Website</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="#download">Download</a> · <a href="#get-started">Get started</a> · <a href="#features">Features</a> · <a href="#screenshots">Screenshots</a> · <a href="https://hongfaqiu.github.io/strata-manager/docs/user-guide.en.html">User guide</a> · <a href="https://hongfaqiu.github.io/strata-manager/docs/index.en.html">Documentation</a></p>
 
 </div>
 
-Strata Manager 是开源的本地模型管理桌面应用，将模型导入与准备、配置管理、服务启动与加载、聊天、监控和本机 API 集中在一个工作台中。已有模型权重保持原位，已启动的服务由独立后台管理。项目基于 [Strata](https://github.com/Niko1221/Strata) 运行时；可用模型、图像输入与 API 协议以所安装的运行时和具体模型为准。
+**Preview v0.1.0-beta.1 is available.** Download below or read the [release notes](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0-beta.1) and [installation guide](https://hongfaqiu.github.io/strata-manager/docs/download.en.html).
 
-> **首版仍在验收中。** 正式安装包尚未发布，可从源码体验或使用历史 Linux 预览包。步骤与版本范围见[下载说明](https://hongfaqiu.github.io/strata-manager/docs/download.html)，各平台的实际支持范围见[验收记录](docs/VERIFICATION.md)。
+Strata Manager is an open-source desktop app for local model management. Import and prepare models, manage configurations, start and load services, chat, monitor activity, and connect to your local API in one workspace. Existing weights stay in place, and an independent background process manages running services. The app uses the [Strata](https://github.com/Niko1221/Strata) runtime; available models, image input and API protocols depend on your installed runtime and chosen model.
 
-## 为什么使用 Strata Manager
+## What is Strata?
 
-| | |
-| --- | --- |
-| **已有模型，继续使用**<br>自动检测本机安装，恢复旧版有效档案与会话；原有模型不用重新下载。 | **聊天和工具，在同一处**<br>多会话、流式回答、文本附件；思考过程、图片输入与 MCP 工具事件取决于模型和运行时支持。 |
-| **关闭窗口，API 继续运行**<br>独立后台管理已启动的服务；重新打开界面即可连接回来。 | **知道模型是怎么被使用的**<br>查看请求量、tokens、成功率、等待时间、缓存和最近请求。 |
-| **调优，先比较再决定**<br>比较支持的 PCIe 预算与 MTP 推测参数，检查基线漂移和输出一致性，再选择应用；收益取决于实际模型与硬件。 | **熟悉的 Strata 风格**<br>保留官方组件风格，中文/英文、浅色/深色主题、可折叠侧栏和自适应布局。 |
+[Strata](https://github.com/Niko1221/Strata) is an open-source local inference project. It coordinates GPU memory, RAM and CPU resources to run the models it supports, and provides a browser interface and a local API.
 
-## 三步开始使用
+Strata Manager is an independent community desktop management app built on Strata. It handles model import and preparation, configurations, background services and the desktop workspace. Inference capabilities come from the Strata runtime and chosen model.
 
-1. **找到你的模型。** 打开“模型”。旧版 Manager 的有效档案会自动恢复；检测到已有 Strata 时选择导入。如果还没有安装，再使用准备向导。
-2. **点击“使用”。** 等待“模型可用”，后台会检查运行环境、启动 Strata 并加载模型。新模型准备成功后自动加入列表，不会替换当前选择。
-3. **开始聊天，或连接本机 API。** 在聊天页发送消息；需要接入其它软件时，使用总览或模型页显示的本机地址。API 协议能力取决于当前 Strata 运行时。
+## Features
 
-已有模型保持原位，应用使用受管配置副本。首次下载新模型可能需要较长时间，进度与失败原因会显示在任务中。遇到问题可查看[第一次使用指南](docs/USER_GUIDE.md#第一次使用)。
+- **Keep existing models.** Detect and import supported local Strata installations without downloading their weights again.
+- **Skip the setup chores.** Prepare the official runtime and a private Python environment through the app, without finding Git or entering Python paths.
+- **Keep your API available.** An independent background process manages startup and reconnects when you reopen the desktop window.
+- **Chat in one place.** Keep conversation history, streaming replies and text attachments together. Reasoning, image input and MCP tool events require model and runtime support.
+- **Understand your usage.** Follow request volume, tokens, latency, cache reuse, errors and activity over time, with unknown values clearly identified.
+- **Tune with measurements.** Compare supported PCIe budget and MTP speculation parameters against the baseline, review drift and output consistency, then apply a candidate or restore the original settings. This is a bounded comparison, not a search of every configuration or a speed guarantee.
 
-## 下载与体验
+Chinese and English, light and dark themes, a collapsible sidebar, tray actions, startup settings and update controls make the workspace fit daily use. The interface follows Strata's visual style.
 
-完整的[下载与体验说明](https://hongfaqiu.github.io/strata-manager/docs/download.html)提供源码启动步骤、Linux 预览包的版本范围及 Artifacts 下载方法。正式版本发布后会通过 [GitHub Releases](https://github.com/hongfaqiu/strata-manager/releases)提供；当前 CI 产物用于测试。
+## Download
 
-| 平台 | 安装形式 | 当前体验方式 |
+Download preview **v0.1.0-beta.1** for your system and install it manually. The [download guide](https://hongfaqiu.github.io/strata-manager/docs/download.en.html) provides installation steps and support scope.
+
+| Platform | Package | Installation |
 | --- | --- | --- |
-| Windows x64 | NSIS `*-setup.exe` | [从源码启动](https://hongfaqiu.github.io/strata-manager/docs/download.html#从源码体验)；安装包验收进度见[构建记录](https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml)。 |
-| Linux x64 | `*.AppImage` / `*.deb` | [历史 CI 预览包下载步骤](https://hongfaqiu.github.io/strata-manager/docs/download.html#linux-预览包)；实机安装与 GPU 验收仍待完成。 |
+| Windows x64 | [NSIS installer](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_x64-setup.exe) | Requires WebView2; [installation guide](https://hongfaqiu.github.io/strata-manager/docs/download.en.html#install-on-windows). |
+| Linux x64 | [AppImage](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_amd64.AppImage) / [DEB](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_amd64.deb) | Built in Ubuntu 22.04 CI; [installation and support scope](https://hongfaqiu.github.io/strata-manager/docs/download.en.html#install-on-linux). |
 
-安装包包含桌面应用和后台，模型权重独立准备。硬件、显存、内存与驱动要求请按所选模型查看 [Strata 说明](https://github.com/Niko1221/Strata)；本项目目前面向 Windows/Linux x64。
+[SHA256 checksums](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/SHA256SUMS) · [Release notes](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0-beta.1)
+
+Windows package checks cover silent installation, desktop startup, private background IPC, shutdown and uninstall. Linux checks cover AppImage and extracted DEB startup, private IPC and shutdown in Ubuntu 22.04 with Xvfb. System-level DEB installation, real GPU use, login startup and cross-version updates remain unverified.
+
+Previews use manual installation and do not replace the stable `latest` update channel. Tauri update signatures are separate from Windows Authenticode publisher signing. macOS and ARM are currently outside the release targets.
+
+The desktop package contains the app and background process. Model weights and the Strata runtime are prepared or imported separately. Hardware, drivers and free disk space depend on the model; check [Strata's documentation](https://github.com/Niko1221/Strata) before preparing one.
+
+## Get started
+
+1. **Have a model already? Open My models.** Valid models and conversations from earlier Manager versions are restored automatically. Import a supported local Strata installation, selecting its folder only if detection misses it. Weights from that installation stay in place and do not need another download.
+2. **Need a new model? Follow preparation.** Let the app prepare the runtime, then choose the model, size, context and image support. Follow the task log; cancel or retry when needed. Only download new weights when you choose to add them. Verified results appear in My models without replacing your current selection.
+3. **Choose Use, wait for Model ready, then chat.** Service startup is handled by the app. To connect another application, copy the local API address and use its matching API path. Closing the window keeps an already running service available; use the tray's Stop services and quit action to stop it.
+
+Only installations prepared or imported on **this computer** are managed. See the [user guide](docs/USER_GUIDE.en.md) for preparation requirements, background behavior, API connections and troubleshooting.
+
+## Screenshots
+
+These are actual App screens rendered with isolated in-memory RPC example data. Model status, chat content and metrics are examples disclosed here outside the images, not live inference results or benchmarks. The cover combines these screens and is not performance evidence. Screenshots use 2× pixel density and lossless WebP; click any image to open its full-resolution version.
+
+**Your workspace at a glance**
+
+[![Overview — model readiness, next steps and local activity](docs/screenshots/overview.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/overview.zh.webp)
+
+**Conversations, attachments and tools**
+
+[![Chat — conversations and streaming replies](docs/screenshots/chat.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/chat.zh.webp)
 
 <details>
-<summary><strong>从源码体验</strong></summary>
+<summary>Explore models, API usage, tuning, monitoring and settings</summary>
 
-需要 Node.js 22.13+、项目固定的 pnpm 11 和 Rust stable。Windows 还需要 MSVC、Windows SDK 与 WebView2；Linux 前置依赖见 [Tauri 文档](https://v2.tauri.app/start/prerequisites/)。
+**Models — reuse what you have, prepare what you need**
+
+[![Models — local installations and preparation](docs/screenshots/models.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/models.zh.webp)
+
+**API usage — see how your local service is used**
+
+[![API usage — request trends, tokens and latency](docs/screenshots/usage.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/usage.zh.webp)
+
+**Tuning — compare before choosing**
+
+[![Tuning — baseline and candidate comparison](docs/screenshots/tuning.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/tuning.zh.webp)
+
+**Monitor — inspect service and hardware activity**
+
+[![Monitor — service state and performance](docs/screenshots/monitor.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/monitor.zh.webp)
+
+**Settings — make the workspace yours**
+
+[![Settings — language, theme, background and updates](docs/screenshots/settings.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/settings.zh.webp)
+
+</details>
+
+## Learn more
+
+The [user guide](docs/USER_GUIDE.en.md) explains API counters, local storage and privacy, tuning limits, startup and updates, and common problems. See the [download guide](https://hongfaqiu.github.io/strata-manager/docs/download.en.html) for versions and current support scope.
+
+<details>
+<summary>Build from source</summary>
+
+### Build from source
+
+Use Node.js **22.13+** (CI uses 24), pnpm **11.21.0** and Rust stable. Windows needs MSVC C++ Build Tools, Windows SDK and WebView2; Linux dependencies are listed in [Tauri's prerequisites](https://v2.tauri.app/start/prerequisites/).
 
 ```sh
 git clone https://github.com/hongfaqiu/strata-manager.git
@@ -70,71 +119,14 @@ pnpm install --frozen-lockfile
 pnpm desktop
 ```
 
-开发、测试和打包详见[开发说明](docs/DEVELOPMENT.md)。
+Local builds are separate from published signed packages. Maintainers can refer to the [release source document](https://github.com/hongfaqiu/strata-manager/blob/main/docs/RELEASING.md).
+
+Source layout and checks remain in the [development source document](https://github.com/hongfaqiu/strata-manager/blob/main/docs/DEVELOPMENT.md) on GitHub.
 
 </details>
 
-## 看看它的样子
+## Credits and license
 
-截图来自应用界面，模型状态、聊天、用量和调优数值使用示例数据；在此图外说明数据来源，不代表真实运行结果或性能承诺。截图采用 2 倍像素密度与无损 WebP，点击图片可查看高清原图。
+Built on [Niko1221/Strata](https://github.com/Niko1221/Strata), with its official interface style and capabilities. Thank you to the upstream author and contributors. Strata Manager is an independent community desktop application.
 
-### 一个总览，知道下一步做什么
-
-查看当前模型、服务状态、资源和使用情况，从这里进入聊天或管理模型。
-
-[![总览：模型状态、后台服务与用量入口](docs/screenshots/overview.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/overview.zh.webp)
-
-### 聊天，保留熟悉的官方体验
-
-会话历史直接放在聊天页，回答、思考与附件集中展示。
-
-[![聊天：多会话历史、流式内容与附件](docs/screenshots/chat.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/chat.zh.webp)
-
-### 我的模型，从准备到使用
-
-检测已有安装，准备新模型，查看任务进度；选中模型后由后台完成启动与加载。
-
-[![模型：本机模型、准备与任务](docs/screenshots/models.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/models.zh.webp)
-
-### API 用量，看见日常使用
-
-请求趋势、成功率、tokens、首个输出等待时间与缓存复用，让使用情况有据可查。
-
-[![API 用量：请求趋势与使用数据](docs/screenshots/usage.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/usage.zh.webp)
-
-### 参数调优，让选择有依据
-
-比较受支持的 PCIe 预算与 MTP 推测参数，检查基线漂移和输出一致性，再决定是否应用。没有稳定收益时保留当前设置。
-
-[![调优：场景选择、测量和结果](docs/screenshots/tuning.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/tuning.zh.webp)
-
-<details>
-<summary><strong>更多界面：性能监控与设置</strong></summary>
-
-<br>
-
-[![性能监控：硬件、吞吐和请求状态](docs/screenshots/monitor.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/monitor.zh.webp)
-
-[![设置：语言、主题、后台策略、自启动和更新](docs/screenshots/settings.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/settings.zh.webp)
-
-</details>
-
-## 常见问题
-
-**我已经有模型，为什么还要下载？** 不需要。先查看“我的模型”或导入已有 Strata；仅在准备新模型时下载权重。
-
-**关掉窗口，API 会停止吗？** 已启动的服务由独立后台继续运行。需要释放模型并结束受管服务时，使用托盘中的“停止服务并退出”。
-
-**聊天和统计会上传吗？** 聊天记录保存在本机，使用统计只保存元数据。模型下载和更新需要网络；MCP 工具按你的配置运行。请求正文诊断与用量统计是两个独立功能，详见[数据与隐私](docs/USER_GUIDE.md#数据与隐私)。
-
-**调优一定会更快吗？** 收益取决于模型、硬件和请求场景。当前调优比较有限的 PCIe 预算与 MTP 推测参数，不是自动搜索所有配置。应用会提供比较结果；没有稳定收益时保留当前配置，截图中的示例数值不代表实测提速。
-
-更多安装、API 接入、用量、调优和更新说明见[使用指南](docs/USER_GUIDE.md)。发现问题可在 [Issues](https://github.com/hongfaqiu/strata-manager/issues) 反馈，请移除密钥和个人聊天内容。
-
-## 致谢与许可
-
-感谢 [Niko1221/Strata](https://github.com/Niko1221/Strata) 的作者与贡献者。本项目复用 Strata 的官方前端设计和功能，是独立社区桌面应用；Strata 推理运行时与模型权重独立安装，模型许可由提供方规定。
-
-本仓库采用 [MIT](LICENSE)。复用代码与界面保留上游版权声明，Outfit 字体使用 SIL OFL 1.1；详见[第三方声明](THIRD_PARTY_NOTICES.md)。
-
-<p align="center"><sub><a href="https://hongfaqiu.github.io/strata-manager/">Strata Manager 官网</a> · 本地模型，一站管理。</sub></p>
+Strata Manager uses [MIT](LICENSE); reused Strata resources retain their MIT attribution. The bundled Outfit font uses SIL OFL 1.1. See [third-party notices](THIRD_PARTY_NOTICES.md). Model weights are installed separately and retain their providers' licenses.

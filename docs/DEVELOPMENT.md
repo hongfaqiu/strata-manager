@@ -1,6 +1,6 @@
 # 开发与构建 / Development
 
-[中文产品介绍](../README.md) · [English README](../README.en.md) · [验收记录](VERIFICATION.md) · [发布指南](RELEASING.md)
+[中文产品介绍](../README.zh-CN.md) · [English README](../README.md) · [验收记录](VERIFICATION.md) · [发布指南](RELEASING.md)
 
 ## 环境 / Requirements
 

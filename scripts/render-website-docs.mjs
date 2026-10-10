@@ -24,9 +24,6 @@ export const documents = [
   { source: 'docs/DOWNLOAD.en.md', page: 'docs/download.en.html', lang: 'en', key: 'download', label: 'Download and try' },
   { source: 'docs/TROUBLESHOOTING.md', page: 'docs/troubleshooting.html', lang: 'zh', key: 'troubleshooting', label: '故障排查' },
   { source: 'docs/TROUBLESHOOTING.en.md', page: 'docs/troubleshooting.en.html', lang: 'en', key: 'troubleshooting', label: 'Troubleshooting' },
-  { source: 'docs/DEVELOPMENT.md', page: 'docs/development.html', lang: 'zh', key: 'development', label: '开发与构建', languageLabel: '中文 / English（同页）' },
-  { source: 'docs/VERIFICATION.md', page: 'docs/verification.html', lang: 'zh', key: 'verification', label: '验收记录', languageLabel: '中文' },
-  { source: 'docs/RELEASING.md', page: 'docs/releasing.html', lang: 'zh', key: 'releasing', label: '构建与发布', languageLabel: '中文 / English（同页）' },
   { source: 'THIRD_PARTY_NOTICES.md', page: 'docs/third-party-notices.html', lang: 'zh', key: 'notices', label: '第三方声明', languageLabel: '中文 / English 许可原文' },
   { source: 'LICENSE', page: 'docs/license.html', lang: 'en', key: 'license', label: 'MIT license', languageLabel: 'English original', plain: true },
   { source: 'apps/desktop/public/licenses/outfit-OFL.txt', page: 'docs/outfit-license.html', lang: 'en', key: 'outfit', label: 'Outfit font license', languageLabel: 'English original', plain: true },
@@ -91,8 +88,8 @@ export function rewriteDocumentUrl(value, source, outputPage) {
   const target = posix.resolve('/', posix.dirname(source), pathname).slice(1);
   const document = bySource.get(target);
   if (document) return relativePage(outputPage, document.page) + suffix;
-  if (target === 'README.md' || target === 'README.en.md') {
-    const lang = target === 'README.en.md' ? 'en' : 'zh';
+  if (target === 'README.md' || target === 'README.en.md' || target === 'README.zh-CN.md') {
+    const lang = target === 'README.zh-CN.md' ? 'zh' : 'en';
     // The landing page and repository README have different section names.
     // Preserve README-specific anchors at their original source.
     if (parts[3]) return repository + encodePath(target) + suffix;
@@ -136,9 +133,6 @@ function renderDocument(entry, markdown) {
     ['guide', '使用指南', 'User guide'],
     ['download', '下载与体验', 'Download and try'],
     ['troubleshooting', '故障排查', 'Troubleshooting'],
-    ['development', '开发与构建（中英同页）', 'Development (Chinese / English)'],
-    ['verification', '验收记录（中文）', 'Verification (Chinese)'],
-    ['releasing', '构建与发布（中英同页）', 'Build and release (Chinese / English)'],
     ['notices', '第三方声明（中文及许可原文）', 'Third-party notices (Chinese / license originals)'],
     ['license', 'MIT 许可（英文原文）', 'MIT license (English original)'],
     ['outfit', 'Outfit 字体许可（英文原文）', 'Outfit font license (English original)'],

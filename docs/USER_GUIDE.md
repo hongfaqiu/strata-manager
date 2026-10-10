@@ -1,8 +1,8 @@
 # Strata Manager 使用指南
 
-[官网](https://hongfaqiu.github.io/strata-manager/) · [返回产品介绍](../README.md) · [文档目录](README.md) · [English](USER_GUIDE.en.md)
+[官网](https://hongfaqiu.github.io/strata-manager/?lang=zh) · [返回产品介绍](../README.zh-CN.md) · [文档目录](README.md) · [English](USER_GUIDE.en.md)
 
-[下载与体验](DOWNLOAD.md) · [故障排查](TROUBLESHOOTING.md) · [当前验收范围](VERIFICATION.md)
+[下载与体验](DOWNLOAD.md) · [故障排查](TROUBLESHOOTING.md) · [支持范围](DOWNLOAD.md#支持范围)
 
 Strata Manager 是开源的本地模型管理桌面应用，把模型导入与准备、配置管理、服务启动与加载、聊天、监控和本机 API 集中在一个工作台中。项目基于 Strata 运行时；可用模型、图像输入、思考、MCP 工具和 API 协议以已安装的运行时和具体模型为准。
 
@@ -46,7 +46,7 @@ Windows 检测 64 位 Python 3.10+；未找到时提供经 SHA256 校验的官�
 
 默认后台轻量运行，模型按需加载；可以选择启动时提前准备模型。登录自启动启动后台，不先打开聊天窗口。“自动恢复”针对所选受管服务退出后执行最多 3 次恢复尝试，连续失败会显示需要修复的状态，不保证自动解决所有 API 异常或卡死。
 
-真实注销/重登、Linux 实机安装、自启动和 GPU 流程仍以[验收记录](VERIFICATION.md)为准。Linux 崩溃保护要求满足前述运行环境，覆盖保留在受管进程组内的子进程；不能外推为所有另建会话的 MCP 工具都会被清理。
+当前平台与实际使用限制见[支持范围](DOWNLOAD.md#支持范围)。Linux 崩溃保护要求满足前述运行环境，覆盖保留在受管进程组内的子进程；不能外推为所有另建会话的 MCP 工具都会被清理。
 
 ### 聊天、附件与运行配置
 
@@ -118,7 +118,9 @@ HTTP 请求、模型推理轮次和工具调用分别计数。一次 MCP 请求�
 
 设置中的“自动检查并下载更新”会在打开应用时及每 12 小时检查新版本，下载完成后由你选择安装时间。也可以关闭自动下载，手动检查和下载；失败时保留当前版本并提供重试。下载不会提前停止本机 API，点击安装时才检查后台是否能够安全更新。正式更新使用内置公钥验证 Tauri 签名；应用、Strata 运行环境和模型权重分别管理，应用更新不会以重新下载模型作为正常流程。
 
-正式版本与预览包入口见[下载与体验](DOWNLOAD.md)。跨版本签名下载安装、真实 GPU 和 Linux 实机流程的证据见[验收记录](VERIFICATION.md)。Tauri 更新签名与 Windows 发布者代码签名不同，本项目目前没有 Windows Authenticode 发布者证书；安装、后台版本切换和模型/API 恢复分别验收。
+v0.1.0-beta.1 预览版已发布，可手工下载 [Windows 安装包](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_x64-setup.exe)、[AppImage](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_amd64.AppImage) 或 [DEB](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_amd64.deb)，并核对 [SHA256SUMS](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/SHA256SUMS)。预览版不替换稳定版 `latest` 更新通道；设置中的更新检查面向稳定更新来源，未检测到 beta 不代表当前预览版已经最新。
+
+版本、安装包和当前支持范围见[下载与体验](DOWNLOAD.md)。Tauri 更新签名与 Windows 发布者代码签名不同，本项目目前没有 Windows Authenticode 发布者证书；请按下载说明处理系统的安装提示。
 
 ## 更新 Strata 运行环境
 
