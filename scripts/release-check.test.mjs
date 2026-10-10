@@ -12,10 +12,11 @@ const repository = 'example/strata-manager';
 const version = '0.1.0';
 const tag = `v${version}`;
 const filenames = { windows: 'Strata.Manager_0.1.0_x64-setup.exe', linux: 'Strata.Manager_0.1.0_amd64.AppImage', deb: 'Strata.Manager_0.1.0_amd64.deb' };
-const options = { repository, tag, version, expectedSha: '123' };
+const commitSha = '1'.repeat(40);
+const options = { repository, tag, version, expectedSha: commitSha, tagCommitSha: commitSha };
 function releaseFixture(signature = 'x'.repeat(50)) {
   const assets = [filenames.windows, `${filenames.windows}.sig`, filenames.linux, `${filenames.linux}.sig`, filenames.deb, `${filenames.deb}.sig`, 'latest.json'].map((name, id) => ({ name, id: id + 1, size: 100 }));
-  const release = { tag_name: tag, draft: true, target_commitish: '123', assets };
+  const release = { tag_name: tag, draft: true, target_commitish: 'main', assets };
   const update = name => ({ signature, url: `https://github.com/${repository}/releases/download/${tag}/${name}` });
   const manifest = { version, platforms: { 'windows-x86_64': update(filenames.windows), 'linux-x86_64': update(filenames.linux) } };
   return { release, manifest, update };
@@ -73,7 +74,8 @@ test('a partial, foreign or unsigned release stays a draft', () => {
   const foreign = structuredClone(manifest);
   foreign.platforms['linux-x86_64'].url = 'https://github.com/other/repo/releases/download/v0.1.0/linux.AppImage';
   assert.throws(() => validateRelease(release, foreign, options), /exact repository/);
-  assert.throws(() => validateRelease({ ...release, target_commitish: '456' }, manifest, options), /workflow commit/);
+  assert.throws(() => validateRelease(release, manifest, { ...options, tagCommitSha: '4'.repeat(40) }), /workflow commit/);
+  assert.doesNotThrow(() => validateRelease({ ...release, target_commitish: 'another-creation-hint' }, manifest, options));
   assert.throws(() => validateRelease({ ...release, assets: assets.filter(asset => asset.name !== `${filenames.windows}.sig`) }, manifest, options), /signature is missing/);
   assert.throws(() => validateRelease({ ...release, assets: assets.filter(asset => asset.name !== 'latest.json') }, manifest, options), /latest.json/);
 });
@@ -277,6 +279,13 @@ test('an uploaded DEB signature is verified even without a manifest alias', { sk
   });
 });
 
+test('a moved remote tag prevents publication before any installer or manifest download', { skip: !process.env.UPDATE_VERIFIER_BIN }, async () => {
+  await cryptoReleaseFixture({ tagMismatch: true }, async ({ run, downloads }) => {
+    await assert.rejects(run(), /commit/);
+    assert.deepEqual(downloads, []);
+  });
+});
+
 async function cryptoReleaseFixture(scenario, operation) {
   const temporary = await ownedTemporary();
   const fixtureDirectory = resolve('crates/update-verifier/tests/fixtures');
@@ -298,6 +307,9 @@ async function cryptoReleaseFixture(scenario, operation) {
     const run = () => verifyRelease({ ...options, root: temporary.directory, verifierPath: process.env.UPDATE_VERIFIER_BIN, fetchRelease: async path => {
       assert.equal(path, `/repos/${repository}/releases?per_page=100&page=1`);
       return [release];
+    }, fetchTag: async path => {
+      assert.equal(path, `/repos/${repository}/git/ref/tags/${tag}`);
+      return { ref: `refs/tags/${tag}`, object: { type: 'commit', sha: scenario.tagMismatch ? '4'.repeat(40) : commitSha } };
     }, logger: () => {}, fetchAsset: async (_repository, asset, destination) => {
       downloads.push(asset.name); paths.push(destination);
       const bytes = asset.name === 'latest.json' ? JSON.stringify(manifest) : asset.name.endsWith('.sig') ? (scenario.mismatch || scenario.fakeDebSignature && asset.name.endsWith('.deb.sig') ? 'signature mismatch' : signature) : scenario.tamper || scenario.tamperDeb && asset.name.endsWith('.deb') ? 'tampered installer' : payload;

@@ -37,7 +37,12 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: node scripts/release-check.mjs --require-signing
-      - run: node --test scripts/release-check.test.mjs
+      - name: Bind the existing remote tag to the workflow source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node scripts/release-tag.mjs
+      - run: node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs
 
   build:
     needs: validate
@@ -113,7 +118,7 @@ jobs:
       - name: Version and complete release guard tests
         env:
           UPDATE_VERIFIER_BIN: ${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/debug/strata-update-verifier${{ runner.os == 'Windows' && '.exe' || '' }}
-        run: node --test scripts/release-check.test.mjs scripts/preview-package-smoke.test.mjs
+        run: node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/preview-package-smoke.test.mjs
       - run: pnpm check
       - run: node scripts/prepare-sidecar.mjs --profile debug --target ${{ matrix.target }}
       - run: cargo fmt --all -- --check
@@ -128,6 +133,11 @@ jobs:
           dbus-run-session -- xvfb-run -a bash scripts/release-linux-tests.sh cargo test --workspace --locked --target ${{ matrix.target }}
       - run: cargo clippy --workspace --locked --all-targets --target ${{ matrix.target }} -- -D warnings
       - run: node scripts/prepare-sidecar.mjs --profile release --target ${{ matrix.target }}
+      - name: Recheck the source tag before uploading release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node scripts/release-tag.mjs
       - name: Build signed installers and populate draft release
         uses: tauri-apps/tauri-action@v1
         env:
@@ -139,7 +149,9 @@ jobs:
           tauriScript: pnpm tauri
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
           tagName: ${{ github.ref_name }}
-          releaseCommitish: ${{ github.sha }}
+          # The existing tag is bound to github.sha above. This creation hint
+          # avoids a Workflows:write requirement for an older tag's workflow.
+          releaseCommitish: ${{ github.event.repository.default_branch }}
           releaseName: Strata Manager ${{ github.ref_name }}
           releaseBody: |
             本地模型，一站管理。 / Local models. One workspace.
@@ -191,7 +203,7 @@ jobs:
         run: |
           cargo test -p strata-update-verifier --locked
           cargo build -p strata-update-verifier --release --locked
-          node --test scripts/release-check.test.mjs
+          node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs
       - name: Verify installer bytes, built-in public key, signed version and both platforms
         run: node scripts/release-verify.mjs
       - name: Publish SHA256 checksums for the preview installers
@@ -205,7 +217,11 @@ jobs:
           gh release upload "$RELEASE_TAG" SHA256SUMS --clobber
       - name: Publish stable release
         if: needs.validate.outputs.prerelease == 'false'
-        run: gh release edit "$RELEASE_TAG" --draft=false --latest
+        run: |
+          node scripts/release-tag.mjs
+          gh release edit "$RELEASE_TAG" --draft=false --latest
       - name: Publish prerelease without replacing the stable update channel
         if: needs.validate.outputs.prerelease == 'true'
-        run: gh release edit "$RELEASE_TAG" --draft=false --latest=false
+        run: |
+          node scripts/release-tag.mjs
+          gh release edit "$RELEASE_TAG" --draft=false --latest=false

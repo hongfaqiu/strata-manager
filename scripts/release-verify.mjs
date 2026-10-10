@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { lstat, mkdtemp, readFile, realpath, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { pipeline } from 'node:stream/promises';
+import { requireReleaseTagCommit } from './release-tag.mjs';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const requiredPlatforms = { 'windows-x86_64': 'windows', 'linux-x86_64': 'appimage' };
@@ -53,9 +54,9 @@ function validateInstallerName(asset, kind, version, productName) {
   if (!match || product(match[1]) !== product(productName)) throw new Error(`Expected the current-version ${kind} installer for ${productName}: ${asset.name}`);
 }
 
-export function validateRelease(release, manifest, { repository, tag, version, expectedSha, productName = 'Strata Manager' }) {
+export function validateRelease(release, manifest, { repository, tag, version, expectedSha, tagCommitSha, productName = 'Strata Manager' }) {
   if (release.tag_name !== tag || release.draft !== true) throw new Error('Expected a draft release for the exact requested tag.');
-  if (expectedSha && release.target_commitish !== expectedSha) throw new Error('Release commit does not match the workflow commit.');
+  if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(expectedSha ?? '') || tagCommitSha !== expectedSha) throw new Error('The actual release tag does not match the workflow commit.');
   if (typeof manifest.version !== 'string' || manifest.version.replace(/^v/, '') !== version) throw new Error('latest.json version does not match the application.');
   const assets = assetIndex(release);
   if (!assets.has('latest.json')) throw new Error('Missing nonempty release asset: latest.json');
@@ -152,12 +153,15 @@ async function cleanupOwnedDirectory(directory, parent) {
   await rm(checked, { recursive: true, force: true });
 }
 
-export async function verifyRelease({ repository = process.env.GITHUB_REPOSITORY, tag = process.env.RELEASE_TAG, expectedSha = process.env.GITHUB_SHA, root = repositoryRoot, verifierPath = process.env.UPDATE_VERIFIER_BIN, fetchRelease = ghJson, fetchAsset = downloadAssetToFile, logger = console.log } = {}) {
+export async function verifyRelease({ repository = process.env.GITHUB_REPOSITORY, tag = process.env.RELEASE_TAG, expectedSha = process.env.GITHUB_SHA, root = repositoryRoot, verifierPath = process.env.UPDATE_VERIFIER_BIN, fetchRelease = ghJson, fetchTag = ghJson, fetchAsset = downloadAssetToFile, logger = console.log } = {}) {
   if (!repository || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) || !tag) throw new Error('GITHUB_REPOSITORY and RELEASE_TAG are required.');
   if (!verifierPath) throw new Error('Build strata-update-verifier and set UPDATE_VERIFIER_BIN before publishing.');
   const configPath = resolve(root, 'apps/desktop/src-tauri/tauri.conf.json');
   const { version, productName } = JSON.parse(await readFile(configPath, 'utf8'));
   const release = await findDraftRelease(repository, tag, { fetchPage: fetchRelease });
+  // target_commitish is only a creation hint when the tag already exists.
+  // Resolve the exact tag ref, including annotated tags, for source identity.
+  const tagCommitSha = await requireReleaseTagCommit(repository, tag, expectedSha, { fetchJson: fetchTag });
   const assets = assetIndex(release);
   const manifestAsset = assets.get('latest.json');
   if (!manifestAsset) throw new Error('The official Tauri action did not upload latest.json.');
@@ -167,7 +171,7 @@ export async function verifyRelease({ repository = process.env.GITHUB_REPOSITORY
     const manifestPath = join(directory, 'latest.json');
     await fetchAsset(repository, manifestAsset, manifestPath);
     const manifest = JSON.parse(await limitedText(manifestPath, 1024 * 1024, 'latest.json'));
-    const { updates, deb } = validateRelease(release, manifest, { repository, tag, version, expectedSha, productName });
+    const { updates, deb } = validateRelease(release, manifest, { repository, tag, version, expectedSha, tagCommitSha, productName });
     // An ordinary DEB without an updater entry needs its current-version name;
     // if a signature was uploaded, it must be genuine even without an alias.
     if (deb.signature && !updates['linux-x86_64-deb']) updates.deb = deb;
