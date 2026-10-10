@@ -446,7 +446,13 @@ mod tests {
         }
     }
     fn source() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/strata-supervisor.exe")
+        std::env::current_exe()
+            .expect("desktop test executable path")
+            .parent()
+            .expect("desktop test deps directory")
+            .parent()
+            .expect("desktop test profile directory")
+            .join("strata-supervisor.exe")
     }
     async fn initial(data: &Path, source: &Path) -> Background {
         let directory = data.join("supervisor/previous");

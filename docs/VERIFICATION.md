@@ -58,6 +58,15 @@ Core 的 analytics 测试覆盖事务重放/重启去重、未知值与成功率
 
 当前尚未记录完整 Windows/Linux tag Release 构建结果、公开安装包资产核验、更新器密码学验签及上一版 → 新版安装闭环。更新签名不是 Windows Authenticode 发布者签名，尚未配置发布者证书。安装成功、后台版本切换和 API/模型恢复必须分别验收。
 
+首次公开提交为 `65298a066c5fd48420729b437589cdf2cdce9e3f`；[首次 Windows/Linux CI](https://github.com/hongfaqiu/strata-manager/actions/runs/38060267872) 已实际运行，两平台均失败，不能作为安装包验收通过：
+
+| 平台 | 已通过的实际检查 | 未通过检查 |
+| --- | --- | --- |
+| Windows x64 | 固定上游 observer 13 passed（9.425 秒、无跳过），前端协议 35 passed、HTTP 契约 5 passed、发布门禁 5 passed、前端构建、debug 后台构建、Rust fmt、IPC 5 passed、隔离自启动 2 passed | 桌面后台包升级测试读取硬编码 `target/debug` fixture 路径失败；CI 使用 `target/<triple>/debug`，未继续完成其余 Rust 检查和安装包 |
+| Ubuntu 22.04 x64 | 固定上游 observer 13 passed（7.773 秒、无跳过），最小 Python 依赖、Linux 系统依赖安装、发布门禁 5 passed、前端类型检查 | `packages/core/tests/native.test.ts:96` 原生错误归一化 mock 未命中，得到 `NETWORK_ERROR` 而不是预期 `UNAUTHORIZED`，34 passed / 1 failed；尚未进入 Rust/安装包检查 |
+
+上述失败须由后续提交的完整 CI 复验关闭。工作流另加入上游 LF 字节保留和 hash 前置门禁，避免不支持源码触发 `SkipTest` 后仍把 observer 步骤误报为完整覆盖。
+
 桌面保留官方 Strata 视觉与组件，沿用共享页头、可折叠侧栏和嵌套管理布局。本轮新的自动准备入口、最新布局、中英文、键盘操作、托盘和三张 WebP 截图仍需在最终 Tauri WebView 中统一验收。此前页面几何对照的结果保留在历史部分，不据此宣称当前全部页面逐像素一致或新的原生视觉已经验收。
 
 ## 发布前尚需完成

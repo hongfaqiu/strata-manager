@@ -6,7 +6,12 @@ const native = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: native.invoke, Channel: class { onmessage: (event: StreamEvent) => void = () => {}; } }));
 const profile: ServiceProfile = { id: 'native', name: 'native', baseUrl: 'http://127.0.0.1:8080', installDir: '', configPath: '', pythonPath: '', managed: true };
 beforeEach(() => { native.invoke.mockReset(); vi.stubGlobal('window', { __TAURI_INTERNALS__: {} }); });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(async () => {
+  // streamChat starts cancellation imports without awaiting them. Keep the
+  // desktop globals alive until those imports finish before resetting a test.
+  await vi.dynamicImportSettled();
+  vi.unstubAllGlobals();
+});
 
 describe('native bridge protocol', () => {
   it('rejects remote services before sending either HTTP or stream commands', async () => {
@@ -92,9 +97,16 @@ describe('native bridge protocol', () => {
       }
     });
     await expect(streamChat(profile, {}, () => {})).rejects.toMatchObject({ status: 503, message: 'engine crashed' });
+    // The Channel error also starts cancel_stream. Vitest 3 shares the manual
+    // mock import callstack: a second import during cancellation can bypass
+    // the factory. Finish cancellation before changing this mock to HTTP errors.
+    await vi.dynamicImportSettled();
+    expect(native.invoke.mock.calls.map(([command]) => command)).toEqual(['strata_stream', 'cancel_stream']);
     native.invoke.mockRejectedValue('HTTP 401: {"error":{"message":"key required"}}');
     await expect(request(profile, '/metrics')).rejects.toMatchObject({ code: 'UNAUTHORIZED', status: 401, message: 'key required' });
+    expect(native.invoke).toHaveBeenLastCalledWith('strata_request', { profile, path: '/metrics', method: 'GET' });
     native.invoke.mockRejectedValue('HTTP 409 Conflict: {"status":"busy"}');
     await expect(request(profile, '/unload', 'POST', {})).rejects.toMatchObject({ code: 'BUSY', status: 409 });
+    expect(native.invoke).toHaveBeenLastCalledWith('strata_request', { profile, path: '/unload', method: 'POST', body: {} });
   });
 });

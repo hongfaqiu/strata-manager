@@ -43,6 +43,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+      - name: Preserve the verified upstream source bytes
+        # The observer verifies server.py by SHA256 on every platform.
+        run: git config --global core.autocrlf false
       - name: Check out the verified upstream API fixture
         uses: actions/checkout@v4
         with:
@@ -57,7 +60,9 @@ jobs:
       - name: Verify the API metadata observer without model weights
         env:
           STRATA_TEST_ROOT: ${{ github.workspace }}/.reference/strata
-        run: python apps/supervisor/tests/test_strata_observer.py
+        run: |
+          python -c "import hashlib, os, pathlib, sys; sys.path.insert(0, 'apps/supervisor/resources'); import strata_observer; source = pathlib.Path(os.environ['STRATA_TEST_ROOT']) / 'serve/server.py'; digest = hashlib.sha256(source.read_bytes()).hexdigest(); sys.exit(0 if digest in strata_observer.SUPPORTED_HASHES else 'The pinned upstream source hash is unsupported; refusing to skip API tests.')"
+          python apps/supervisor/tests/test_strata_observer.py
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy

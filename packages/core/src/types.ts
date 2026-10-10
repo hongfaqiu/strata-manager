@@ -40,6 +40,7 @@ export interface SupervisorStatus {
   updateReason?: string | null;
   recovery?: { attempts: number; nextRetryAt: number; lastStartedAt: number; repairRequired: boolean; lastError?: string | null };
   migration?: LocalInstallationMigration;
+  preparationFailures?: { profileId: string; lastError: string; failedAt: number; retryable: boolean; phase: 'prepare' }[];
 }
 
 export interface LocalInstallationMigration {

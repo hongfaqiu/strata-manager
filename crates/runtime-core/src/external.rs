@@ -461,8 +461,8 @@ mod platform {
                     }
                 }
                 // No KILL_ON_JOB_CLOSE: any failed verification leaves the external instance alive.
-                let job = NoKillJob(CreateJobObjectW(std::ptr::null(), std::ptr::null()));
-                if job.0.is_null() {
+                let root_job = NoKillJob(CreateJobObjectW(std::ptr::null(), std::ptr::null()));
+                if root_job.0.is_null() {
                     return Err("无法建立接管子树核验Job，未停止实例".into());
                 }
                 let root_handle = OpenProcess(
@@ -495,9 +495,13 @@ mod platform {
                     return Err("实例PID身份已变化，未停止任何进程".into());
                 }
                 root.revalidate_with_launcher(profile, self.launcher.as_deref())?;
-                if AssignProcessToJobObject(job.0, root.handle) == 0 {
-                    return Err("现有实例的Job权限不允许安全接管，未停止任何进程".into());
+                if AssignProcessToJobObject(root_job.0, root.handle) == 0 {
+                    return Err(format!(
+                        "现有实例的 Job 不允许安全接管，未停止任何进程：{}",
+                        std::io::Error::last_os_error()
+                    ));
                 }
+                let mut jobs = vec![root_job];
                 let mut tree: Vec<VerifiedExternal> = vec![];
                 let mut parents = std::collections::HashMap::from([(self.pid, self.created)]);
                 let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
@@ -555,11 +559,51 @@ mod platform {
                         if created < parent_created {
                             return Err("检测到父PID复用，子树关联不可靠；未停止任何进程".into());
                         }
-                        let mut in_job = 0;
-                        if IsProcessInJob(child.handle, job.0, &mut in_job) == 0
-                            || (in_job == 0 && AssignProcessToJobObject(job.0, child.handle) == 0)
-                        {
-                            return Err("子进程Job权限无法核验，未停止实例".into());
+                        let mut captured = false;
+                        for job in &jobs {
+                            let mut in_job = 0;
+                            if IsProcessInJob(child.handle, job.0, &mut in_job) == 0 {
+                                return Err(format!(
+                                    "无法核验子进程 {pid} 的 Job 归属，未停止实例：{}",
+                                    std::io::Error::last_os_error()
+                                ));
+                            }
+                            if in_job != 0 {
+                                captured = true;
+                                break;
+                            }
+                        }
+                        if !captured {
+                            // An engine may already be in its own Job, created
+                            // before the server entered our capture Job. Windows
+                            // cannot merge those disjoint non-empty hierarchies.
+                            // A fresh empty Job captures this exact verified
+                            // branch as a nested subset, including future children
+                            // while leaving unrelated peers of its old Job alive.
+                            let branch_job =
+                                NoKillJob(CreateJobObjectW(std::ptr::null(), std::ptr::null()));
+                            if branch_job.0.is_null() {
+                                return Err(format!(
+                                    "无法建立子进程 {pid} 的接管 Job，未停止实例：{}",
+                                    std::io::Error::last_os_error()
+                                ));
+                            }
+                            if AssignProcessToJobObject(branch_job.0, child.handle) == 0 {
+                                return Err(format!(
+                                    "子进程 {pid} 的既有 Job 无法安全纳管，未停止实例：{}",
+                                    std::io::Error::last_os_error()
+                                ));
+                            }
+                            let mut member = 0;
+                            if IsProcessInJob(child.handle, branch_job.0, &mut member) == 0
+                                || member == 0
+                            {
+                                return Err(format!(
+                                    "子进程 {pid} 未进入已核验的接管 Job，未停止实例：{}",
+                                    std::io::Error::last_os_error()
+                                ));
+                            }
+                            jobs.push(branch_job);
                         }
                         parents.insert(pid, created);
                         tree.push(child);
@@ -584,8 +628,13 @@ mod platform {
                 if identity(root.handle)? != (self.created, self.image.clone()) {
                     return Err("实例身份已变化，未停止实例".into());
                 }
-                if TerminateJobObject(job.0, 1) == 0 {
-                    return Err("已核验实例子树停止失败，未启动新的服务".into());
+                for job in jobs.iter().rev() {
+                    if TerminateJobObject(job.0, 1) == 0 {
+                        return Err(format!(
+                            "已核验实例支树停止失败，未启动新的服务：{}",
+                            std::io::Error::last_os_error()
+                        ));
+                    }
                 }
                 for process in tree.iter().chain(std::iter::once(&root)) {
                     if WaitForSingleObject(process.handle, 5000) != WAIT_OBJECT_0 {
@@ -616,6 +665,143 @@ mod platform {
                 );
                 std::thread::sleep(std::time::Duration::from_millis(30));
             }
+        }
+        #[test]
+        fn existing_engine_job_is_captured_as_its_exact_branch_without_killing_unrelated_peers() {
+            use windows_sys::Win32::System::JobObjects::*;
+            struct EngineJob(HANDLE);
+            impl Drop for EngineJob {
+                fn drop(&mut self) {
+                    unsafe {
+                        TerminateJobObject(self.0, 1);
+                        CloseHandle(self.0);
+                    }
+                }
+            }
+            struct ProcessHandle(HANDLE);
+            impl Drop for ProcessHandle {
+                fn drop(&mut self) {
+                    unsafe {
+                        CloseHandle(self.0);
+                    }
+                }
+            }
+            let python = crate::output(
+                "py",
+                &["-I", "-S", "-c", "import sys;print(sys.executable)"],
+            )
+            .unwrap();
+            let temp = tempfile::tempdir().unwrap();
+            let name = format!("Local\\StrataFixtureEngine-{}", uuid::Uuid::new_v4());
+            let wide: Vec<_> = name.encode_utf16().chain(std::iter::once(0)).collect();
+            let engine_job =
+                EngineJob(unsafe { CreateJobObjectW(std::ptr::null(), wide.as_ptr()) });
+            assert!(!engine_job.0.is_null());
+            std::fs::create_dir(temp.path().join("serve")).unwrap();
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            drop(listener);
+            let config = temp.path().join("strata.json");
+            std::fs::write(
+                &config,
+                serde_json::to_vec(&serde_json::json!({"port":port,"host":"127.0.0.1"})).unwrap(),
+            )
+            .unwrap();
+            std::fs::write(temp.path().join("serve/server.py"),r#"import ctypes,json,os,pathlib,socket,subprocess,sys,time
+k=ctypes.WinDLL('kernel32',use_last_error=True)
+k.OpenJobObjectW.argtypes=[ctypes.c_uint32,ctypes.c_int,ctypes.c_wchar_p];k.OpenJobObjectW.restype=ctypes.c_void_p
+k.AssignProcessToJobObject.argtypes=[ctypes.c_void_p,ctypes.c_void_p];k.AssignProcessToJobObject.restype=ctypes.c_int
+job=k.OpenJobObjectW(1,False,os.environ['FIXTURE_ENGINE_JOB'])
+assert job,ctypes.get_last_error()
+engine_code='''import json,os,pathlib,subprocess,sys,time
+while not pathlib.Path('allow-engine').exists():time.sleep(0.01)
+grandchild=subprocess.Popen([sys.executable,'-c','import time;time.sleep(90)'],creationflags=0x08000000)
+pathlib.Path('engine-tree.json').write_text(json.dumps({'engine':os.getpid(),'grandchild':grandchild.pid}))
+time.sleep(90)
+'''
+engine=subprocess.Popen([sys.executable,'-c',engine_code],creationflags=0x08000000)
+assert k.AssignProcessToJobObject(job,int(engine._handle)),ctypes.get_last_error()
+pathlib.Path('allow-engine').write_text('ready')
+while not pathlib.Path('engine-tree.json').exists():time.sleep(0.01)
+s=socket.socket();s.bind(('127.0.0.1',int(sys.argv[sys.argv.index('--port')+1])));s.listen()
+pathlib.Path('ready').write_text('ready')
+time.sleep(90)
+"#).unwrap();
+            let profile = ServiceProfile {
+                id: "nested-job-fixture".into(),
+                name: String::new(),
+                base_url: format!("http://127.0.0.1:{port}"),
+                install_dir: temp.path().to_string_lossy().into(),
+                python_path: python.clone(),
+                config_path: config.to_string_lossy().into(),
+                managed: true,
+            };
+            let mut command = Command::new(&python);
+            command
+                .current_dir(temp.path())
+                .args(["-u", "-m", "serve.server", "--engine", "strata", "--config"])
+                .arg(&config)
+                .args(["--host", "127.0.0.1", "--port", &port.to_string()])
+                .env("FIXTURE_ENGINE_JOB", &name);
+            crate::processes::hidden(&mut command);
+            let mut server = Fixture(command.spawn().unwrap());
+            wait_for(&temp.path().join("ready"));
+            let tree: Value = serde_json::from_slice(
+                &std::fs::read(temp.path().join("engine-tree.json")).unwrap(),
+            )
+            .unwrap();
+            let open = |pid: u32| {
+                let handle = unsafe {
+                    OpenProcess(
+                        PROCESS_QUERY_LIMITED_INFORMATION
+                            | PROCESS_SYNCHRONIZE
+                            | PROCESS_TERMINATE
+                            | PROCESS_SET_QUOTA,
+                        0,
+                        pid,
+                    )
+                };
+                assert!(!handle.is_null());
+                ProcessHandle(handle)
+            };
+            let engine = open(tree["engine"].as_u64().unwrap() as u32);
+            let grandchild = open(tree["grandchild"].as_u64().unwrap() as u32);
+            let mut peer_command = Command::new(&python);
+            peer_command.args(["-c", "import time;time.sleep(90)"]);
+            crate::processes::hidden(&mut peer_command);
+            let mut unrelated = Fixture(peer_command.spawn().unwrap());
+            let peer = open(unrelated.0.id());
+            assert_ne!(unsafe { AssignProcessToJobObject(engine_job.0, peer.0) }, 0);
+            let candidate = detect(&profile).unwrap().unwrap();
+            // Reproduce the previous failure with a non-empty disjoint Job.
+            let rejected_job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+            let root = open(candidate.pid);
+            assert_ne!(unsafe { AssignProcessToJobObject(rejected_job, root.0) }, 0);
+            assert_eq!(
+                unsafe { AssignProcessToJobObject(rejected_job, engine.0) },
+                0
+            );
+            assert_eq!(unsafe { GetLastError() }, ERROR_ACCESS_DENIED);
+            unsafe {
+                CloseHandle(rejected_job);
+            }
+            assert!(candidate
+                .stop_verified_tree(&profile, || Err("fixture idle/auth guard refusal".into()))
+                .is_err());
+            for process in [&root, &engine, &grandchild, &peer] {
+                assert_eq!(unsafe { WaitForSingleObject(process.0, 0) }, WAIT_TIMEOUT);
+            }
+            candidate.revalidate(&profile).unwrap();
+            candidate.stop_verified_tree(&profile, || Ok(())).unwrap();
+            for process in [&root, &engine, &grandchild] {
+                assert_eq!(
+                    unsafe { WaitForSingleObject(process.0, 5000) },
+                    WAIT_OBJECT_0
+                );
+            }
+            assert_eq!(unsafe { WaitForSingleObject(peer.0, 0) }, WAIT_TIMEOUT);
+            assert!(server.0.try_wait().unwrap().is_some());
+            assert!(unrelated.0.try_wait().unwrap().is_none());
         }
         #[test]
         fn full_python_arguments_reject_wrong_config_port_module_and_extra_flags() {

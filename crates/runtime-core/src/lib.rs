@@ -185,7 +185,7 @@ impl RuntimeState {
             }
         }
         Ok(
-            json!({"running":true,"pid":std::process::id(),"protocolVersion":1,"startedAt":self.started_at,"activeServices":active_services,"dataDir":self.data_dir,"version":env!("CARGO_PKG_VERSION"),"executablePath":self.executable_path,"executableHash":self.executable_hash,"recovery":*self.recovery.lock().map_err(|e|e.to_string())?,"migration":legacy::report(self)?}),
+            json!({"running":true,"pid":std::process::id(),"protocolVersion":1,"startedAt":self.started_at,"activeServices":active_services,"dataDir":self.data_dir,"version":env!("CARGO_PKG_VERSION"),"executablePath":self.executable_path,"executableHash":self.executable_hash,"recovery":*self.recovery.lock().map_err(|e|e.to_string())?,"migration":legacy::report(self)?,"preparationFailures":store_get(self,"localPreparationFailures".into())?.as_object().map(|entries|entries.values().cloned().collect::<Vec<_>>()).unwrap_or_default()}),
         )
     }
     pub fn data_dir(&self) -> &Path {
@@ -860,6 +860,56 @@ impl RuntimeState {
         self: Arc<Self>,
         profile_id: String,
     ) -> Result<ProcessStatus, String> {
+        let result = self
+            .clone()
+            .switch_local_service_inner(profile_id.clone())
+            .await;
+        self.record_preparation_result(&profile_id, &result)?;
+        result
+    }
+    fn record_preparation_result(
+        &self,
+        profile_id: &str,
+        result: &Result<ProcessStatus, String>,
+    ) -> Result<(), String> {
+        if profile_id.is_empty()
+            || profile_id.len() > 80
+            || !profile_id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+        {
+            return Ok(());
+        }
+        let mut database = self.database.lock().map_err(|e| e.to_string())?;
+        let mut failures = store::get(&database, "localPreparationFailures")?
+            .as_object()
+            .cloned()
+            .unwrap_or_default();
+        match result {
+            Ok(_) => {
+                failures.remove(profile_id);
+            }
+            Err(error) => {
+                failures.insert(profile_id.into(),json!({"profileId":profile_id,"lastError":error.chars().take(2048).collect::<String>(),"failedAt":now(),"retryable":true,"phase":"prepare"}));
+            }
+        }
+        store::set(
+            &mut database,
+            "localPreparationFailures",
+            Value::Object(failures),
+        )
+    }
+    fn preparation_error(&self, profile_id: &str) -> Result<Option<String>, String> {
+        Ok(store_get(self, "localPreparationFailures".into())?
+            .get(profile_id)
+            .and_then(|entry| entry.get("lastError"))
+            .and_then(Value::as_str)
+            .map(String::from))
+    }
+    async fn switch_local_service_inner(
+        self: Arc<Self>,
+        profile_id: String,
+    ) -> Result<ProcessStatus, String> {
         let _selection = self.selection_lock.lock().await;
         if self.shutting_down.load(Ordering::Acquire) {
             return Err("后台正在退出，未切换模型".into());
@@ -968,6 +1018,18 @@ impl RuntimeState {
         Ok(())
     }
     async fn ensure_runtime(
+        self: Arc<Self>,
+        profile_id: String,
+        load_model: bool,
+    ) -> Result<ProcessStatus, String> {
+        let result = self
+            .clone()
+            .ensure_runtime_inner(profile_id.clone(), load_model)
+            .await;
+        self.record_preparation_result(&profile_id, &result)?;
+        result
+    }
+    async fn ensure_runtime_inner(
         self: Arc<Self>,
         profile_id: String,
         load_model: bool,
@@ -1460,22 +1522,32 @@ async fn service_status(
     profile_id: String,
     profile: Option<ServiceProfile>,
 ) -> Result<ProcessStatus, String> {
+    let preparation_error = state.preparation_error(&profile_id)?;
     {
         let mut processes = state.processes.lock().map_err(|e| e.to_string())?;
         if let Some(process) = processes.get_mut(&profile_id) {
-            let status = process.refresh()?;
+            let mut status = process.refresh()?;
             if status.running || profile.is_none() {
+                status.reason = preparation_error;
                 return Ok(status);
             }
         }
     }
     let Some(profile) = profile else {
-        return Ok(ProcessStatus::default());
+        return Ok(ProcessStatus {
+            reason: preparation_error,
+            ..ProcessStatus::default()
+        });
     };
     if profile.id != profile_id {
         return Err("profileId 与档案不一致".into());
     }
-    tokio::task::spawn_blocking(move || match external::detect(&profile) {
+    let observed = state
+        .original_profiles()?
+        .into_iter()
+        .find(|original| original.id == profile_id)
+        .unwrap_or_else(|| profile.clone());
+    tokio::task::spawn_blocking(move || match external::detect(&observed) {
         Ok(Some(instance)) => {
             let reason = if !profile.managed {
                 Err("请先将档案设为本地受管，并填写运行环境/Python/配置路径".into())
@@ -1483,7 +1555,7 @@ async fn service_status(
                 assert_stopped(&state, &profile).and_then(|_| {
                     prepare_startup(&profile, &state.processes, &state.tasks)?;
                     http::key(&profile.id)?;
-                    tokio::runtime::Handle::current().block_on(inspect_idle_http(&state, &profile))
+                    tokio::runtime::Handle::current().block_on(inspect_idle_http(&state, &observed))
                 })
             };
             Ok(ProcessStatus {
@@ -1492,15 +1564,18 @@ async fn service_status(
                 pid: Some(instance.pid),
                 external: Some(true),
                 can_take_over: Some(reason.is_ok()),
-                reason: reason.err(),
+                reason: reason.err().or(preparation_error),
                 creation_time: Some(instance.created.to_string()),
                 ..ProcessStatus::default()
             })
         }
-        Ok(None) => Ok(ProcessStatus::default()),
+        Ok(None) => Ok(ProcessStatus {
+            reason: preparation_error,
+            ..ProcessStatus::default()
+        }),
         Err(reason) => {
-            let running =
-                external::port_accepting(&profile).map_err(|error| format!("{reason}; {error}"))?;
+            let running = external::port_accepting(&observed)
+                .map_err(|error| format!("{reason}; {error}"))?;
             Ok(ProcessStatus {
                 running,
                 owned: false,
@@ -2034,6 +2109,47 @@ async fn export_diagnostics(
 #[cfg(test)]
 mod native_probe_tests {
     use super::*;
+    #[tokio::test]
+    async fn preparation_failures_survive_reopen_and_successful_results_clear_the_retry_diagnostic()
+    {
+        let temp = tempfile::tempdir().unwrap();
+        let state = RuntimeState::open(temp.path().into()).unwrap();
+        let profile = gui_fixture_profile(18997);
+        register_gui_fixture(&state, &profile);
+        let error = state
+            .clone()
+            .ensure_local_service(profile.id.clone())
+            .await
+            .err()
+            .unwrap();
+        let first = state.status().unwrap()["preparationFailures"].clone();
+        assert_eq!(first[0]["profileId"], profile.id);
+        assert_eq!(first[0]["lastError"], error);
+        assert_eq!(first[0]["retryable"], true);
+        assert!(state.processes.lock().unwrap().is_empty());
+        drop(state);
+        let reopened = RuntimeState::open(temp.path().into()).unwrap();
+        assert_eq!(reopened.status().unwrap()["preparationFailures"], first);
+        let status = service_status(reopened.clone(), profile.id.clone(), None)
+            .await
+            .unwrap();
+        assert_eq!(status.reason.as_deref(), Some(error.as_str()));
+        assert!(!status.running);
+        reopened
+            .record_preparation_result(
+                &profile.id,
+                &Ok(ProcessStatus {
+                    running: true,
+                    owned: true,
+                    ..ProcessStatus::default()
+                }),
+            )
+            .unwrap();
+        assert!(reopened.status().unwrap()["preparationFailures"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+    }
     fn gui_fixture_profile(port: u16) -> ServiceProfile {
         ServiceProfile {
             id: format!("gui-ownership-{}", uuid::Uuid::new_v4()),

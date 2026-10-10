@@ -594,7 +594,10 @@ p=argparse.ArgumentParser();p.add_argument('--port',type=int);args,_=p.parse_kno
 class Handler(BaseHTTPRequestHandler):
  def log_message(self,*args):pass
  def do_GET(self):
-  body=json.dumps({'status':'ok','service':'strata','loaded':True}).encode();self.send_response(200);self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
+  if self.path=='/v1/status':out={'service':'strata','activity':{'in_flight':0}}
+  elif self.path=='/metrics':out={'live':{'state':'idle','queued':0,'running':0,'waiting':0,'outside_slots':0}}
+  else:out={'status':'ok','service':'strata','loaded':True}
+  body=json.dumps(out).encode();self.send_response(200);self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
  def do_POST(self):
   print('UNEXPECTED_MODEL_MUTATION',flush=True);self.send_error(500)
 ThreadingHTTPServer(('127.0.0.1',args.port),Handler).serve_forever()
@@ -631,6 +634,14 @@ ThreadingHTTPServer(('127.0.0.1',args.port),Handler).serve_forever()
             format!("http://127.0.0.1:{port}")
         );
         assert_eq!(fs::read(&profile.config_path).unwrap(), source);
+        let snapshot = state.registered_profiles().unwrap().pop().unwrap();
+        let status = crate::service_status(state.clone(), snapshot.id.clone(), Some(snapshot))
+            .await
+            .unwrap();
+        assert!(status.running && !status.owned);
+        assert_eq!(status.pid, Some(original.pid));
+        assert_eq!(status.can_take_over, Some(true));
+        assert!(status.reason.is_none(), "{:?}", status.reason);
         assert!(state.processes.lock().unwrap().is_empty());
         assert!(!state
             .logs
