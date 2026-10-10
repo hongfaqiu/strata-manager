@@ -4,8 +4,21 @@ use strata_local_ipc::{Request, RpcError};
 use strata_runtime_core::RuntimeState;
 use tokio_util::sync::CancellationToken;
 
+fn main() {
+    if let Some(result) = strata_runtime_core::mcp_stdio::run_if_requested() {
+        match result {
+            Ok(code) => std::process::exit(code),
+            Err(error) => {
+                eprintln!("Strata MCP guardian: {error}");
+                std::process::exit(1);
+            }
+        }
+    }
+    supervisor_main();
+}
+
 #[tokio::main]
-async fn main() {
+async fn supervisor_main() {
     if let Err(error) = run().await {
         eprintln!("Strata Supervisor: {error}");
         std::process::exit(1);

@@ -15,18 +15,37 @@ use uuid::Uuid;
 pub type Logs = Arc<Mutex<HashMap<String, VecDeque<LogEntry>>>>;
 
 #[cfg(target_os = "linux")]
-mod linux_guardian {
+pub(crate) mod linux_guardian {
     use std::{
         io,
         os::{
-            fd::{AsRawFd, FromRawFd, OwnedFd, RawFd},
+            fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd, RawFd},
             unix::{net::UnixStream, process::CommandExt},
         },
         process::Command,
         time::{Duration, Instant},
     };
 
-    pub(super) struct Guardian(UnixStream);
+    pub(crate) struct Guardian(UnixStream);
+
+    /// Join the current, newly created MCP wrapper group and watch the actual
+    /// Strata parent's inherited pidfd. The wrapper keeps its standard streams.
+    pub(crate) fn attach_parent(parent: OwnedFd) -> io::Result<Guardian> {
+        if !cfg!(target_pointer_width = "64") {
+            return Err(io::Error::from_raw_os_error(libc::ENOTSUP));
+        }
+        let parent = above_stdio(parent.into_raw_fd())?;
+        let (client, server) = UnixStream::pair()?;
+        let client = UnixStream::from(above_stdio(client.into_raw_fd())?);
+        let server = above_stdio(server.into_raw_fd())?;
+        // establish owns and closes these two raw descriptors in this process.
+        // Keep the client owned here; only Command's forked child closes it.
+        let error = unsafe { establish(parent.into_raw_fd(), -1, server.into_raw_fd()) };
+        if error != 0 {
+            return Err(io::Error::from_raw_os_error(error));
+        }
+        Ok(Guardian(client))
+    }
 
     fn above_stdio(fd: RawFd) -> io::Result<OwnedFd> {
         let original = unsafe { OwnedFd::from_raw_fd(fd) };
@@ -132,7 +151,9 @@ mod linux_guardian {
         libc::close(ready[1]);
         libc::close(target);
         libc::close(supervisor);
-        libc::close(client);
+        if client >= 0 {
+            libc::close(client);
+        }
         libc::close(control);
         if error != 0 {
             libc::close(ready[0]);

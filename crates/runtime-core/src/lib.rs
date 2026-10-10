@@ -7,6 +7,7 @@ pub mod http;
 pub mod installation;
 pub mod legacy;
 pub mod maintenance;
+pub mod mcp_stdio;
 pub mod observer;
 pub mod policy;
 pub mod processes;
@@ -1534,6 +1535,11 @@ fn start_prepared_service(
         command.env("STRATA_API_KEY", secret);
     }
     let observer = observer::install_bootstrap(&state.data_dir)?;
+    #[cfg(target_os = "linux")]
+    command.env(
+        "STRATA_MANAGER_MCP_HELPER",
+        std::env::current_exe().map_err(|e| e.to_string())?,
+    );
     command
         .env("PYTHONPATH", observer)
         .env(

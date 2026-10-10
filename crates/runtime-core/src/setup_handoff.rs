@@ -1033,6 +1033,25 @@ sys.exit(spec.get('exit',0))
     #[tokio::test]
     async fn run_setup_rpc_uses_durable_handoff_contract() {
         let fixture = fixture();
+        // This CPU-only handoff test reuses fixture assets. A fresh 68 GB
+        // download/pack estimate must not be charged to a small CI filesystem.
+        // Production disk checks remain active; these files are never loaded.
+        let root = Path::new(&fixture.intent.profile.install_dir);
+        let models = root.join("models/IQ2_XS");
+        let pack = root.join("packs/iq2_xs");
+        let mtp = root.join("mtp/rt");
+        for directory in [&models, &pack, &mtp] {
+            fs::create_dir_all(directory).unwrap();
+        }
+        for shard in [
+            "Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS-00001-of-00002.gguf",
+            "Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS-00002-of-00002.gguf",
+        ] {
+            fs::write(models.join(shard), b"CPU-only fixture, never load").unwrap();
+        }
+        fs::write(pack.join("experts.bin"), b"CPU-only fixture").unwrap();
+        fs::write(pack.join("index.txt"), b"CPU-only fixture").unwrap();
+        fs::write(mtp.join("experts.bin"), b"CPU-only fixture").unwrap();
         spec(&fixture, vec![("strata-iq2_xs.json", config(8192))], 0.0, 0);
         let task:TaskStatus=serde_json::from_value(fixture.state.clone().dispatch("run_setup",json!({"profile":fixture.intent.profile,"model":"qwen","quant":"IQ2_XS","context":8192,"images":false})).await.unwrap()).unwrap();
         let state = fixture.state.clone();

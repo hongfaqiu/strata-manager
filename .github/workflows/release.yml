@@ -88,6 +88,7 @@ jobs:
         run: |
           python -c "import hashlib, os, pathlib, sys; sys.path.insert(0, 'apps/supervisor/resources'); import strata_observer; source = pathlib.Path(os.environ['STRATA_TEST_ROOT']) / 'serve/server.py'; digest = hashlib.sha256(source.read_bytes()).hexdigest(); sys.exit(0 if digest in strata_observer.SUPPORTED_HASHES else 'The pinned upstream source hash is unsupported; refusing to skip API tests.')"
           python apps/supervisor/tests/test_strata_observer.py
+          python apps/supervisor/tests/test_strata_mcp_guard.py
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy

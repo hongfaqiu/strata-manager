@@ -5,13 +5,15 @@ use std::{
 };
 
 const OBSERVER: &str = include_str!("../../../apps/supervisor/resources/strata_observer.py");
-const BOOTSTRAP: &str = "import strata_observer\nstrata_observer.install()\n";
+const MCP_GUARD: &str = include_str!("../../../apps/supervisor/resources/strata_mcp_guard.py");
+const BOOTSTRAP: &str = "import strata_observer\nstrata_observer.install()\nimport strata_mcp_guard\nstrata_mcp_guard.install()\n";
 
 pub fn install_bootstrap(data_dir: &Path) -> Result<PathBuf, String> {
     let directory = data_dir.join("observer-v1");
     fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
     for (name, content) in [
         ("strata_observer.py", OBSERVER),
+        ("strata_mcp_guard.py", MCP_GUARD),
         ("sitecustomize.py", BOOTSTRAP),
     ] {
         let target = directory.join(name);

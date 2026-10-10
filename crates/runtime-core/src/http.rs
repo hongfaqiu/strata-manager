@@ -55,6 +55,7 @@ pub fn endpoint(profile: &ServiceProfile, path: &str) -> Result<url::Url, String
             | "/v1/models"
             | "/v1/chat/completions"
             | "/v1/messages"
+            | "/v1/messages/count_tokens"
             | "/v1/responses"
             | "/load"
             | "/unload"
@@ -285,6 +286,8 @@ mod tests {
             "http://127.0.0.1:8080/health"
         );
         assert!(endpoint(&p, "/metrics?requests=all").is_ok());
+        assert!(endpoint(&p, "/v1/messages/count_tokens").is_ok());
+        assert!(endpoint(&p, "/v1/messages/count_tokens?url=https://evil").is_err());
         assert!(endpoint(&p, "/api/requests?id=req-123").is_ok());
         assert!(endpoint(&p, "/metrics?url=https://evil").is_err());
         assert!(endpoint(&p, "/api/requests?id=a&id=b").is_err());

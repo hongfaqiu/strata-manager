@@ -203,3 +203,11 @@ Linux 新 guardian 在真实 owner 预先持有 pidfd，跟随新进程组并监
 集中本机 workspace：IPC 5、desktop 5、Core **143 passed / 3 ignored**（116.96 秒）、Supervisor lifecycle **2 passed**（51.74 秒）、Rust 验签 7 全部通过；workspace Clippy `-D warnings` 通过（5.57 秒），fmt / workflow actionlint / diff check 通过。3 个 ignored 分别是只读本机安装发现、真实官方源码安装、完整候选网络下载；已明确记录候选依赖下载曾失败，未把 ignored 算通过。子 Agent 分别实施磁盘、自动下载和 Linux guardian，另有独立只读身份/guardian复核及完整调优范围核查；它们继承当前设置，工具未提供可独立确认的实际模型或推理档位。
 
 本批最终 `pnpm check` 包含核心协议 **36**、更新 controller **11**、HTTP 契约 **5**，全部通过；类型检查及生产构建通过。最新 debug sidecar 重新构建成功（21.10 秒）。这些是构建与隔离夹具证据，真实签名安装和 GPU 验收仍按上面的边界记录。
+
+提交 `41a0e99d696d473afb3d59ff788458bed1785a6f` 的本机 Windows x64 NSIS 完整构建成功，包含 release Supervisor 和前端；Tauri 主程序 release 编译 4 分 25 秒，产物约 6.43 MiB。本次仅构建，没有启动安装包或应用，没有改变已有模型服务。为了验证打包结构，使用本机临时配置关闭 updater 产物生成；因此它不是正式签名发行版，也不代表安装、真实升级或运行验收。该提交的[完整跨平台 CI](https://github.com/hongfaqiu/strata-manager/actions/runs/38074545936)结果另行记录。
+
+该轮 CI 两平台均未整体通过：Windows IPC 5、desktop 5、Core **142 passed / 1 failed / 3 ignored**（144.65 秒）；Linux IPC 4、desktop 2、Core **120 passed / 1 failed / 2 ignored**（58.30 秒）。Windows 完整原生命令行、真实 venv、精确 Job 子树通过；Linux 新 guardian 3 项实际通过。唯一失败均为 CPU-only handoff 夹具模拟已有模型却未提供对应的可复用资产，被真实磁盘预检按完整下载及打包需求拒绝（Windows 可用 33.94 GB，Linux 82.36 GB，需求 114.50 GB）。补齐该夹具的已有模型、pack 与 MTP 小型占位资产，文件明确不加载；生产空间校验及不足时零任务/零子进程断言保持。本机修复后的 handoff 定向 **1 passed**（8.62 秒）。尚未进入该轮 Supervisor lifecycle、Clippy 或安装包步骤，不能标为完整 CI 通过。
+
+Linux MCP stdio 新增同步 wrapper，在 Tokio/数据库初始化之前接收真实 Strata 父进程的 pidfd 和独立 ACK 管道。内核 fdinfo 必须匹配当前父进程；guardian 附着新工具组，ACK 前关闭继承管道，工具 stdin/stdout 原样保留，TERM 优雅退出时间沿用官方行为。固定上游 MCP 源码 hash 的独立适配由应用自有 bootstrap 导入，不修改用户仓库，不回退到无守护启动。未知版本或不支持 pidfd 时该 stdio 工具明确不可用；HTTP MCP 保持原逻辑。Python 拒绝/导入/固定 hash 检查 **4 passed / 0 skipped**，Windows bootstrap 幂等检查 **1 passed**。独立只读复核未发现阻断项，工具未提供可确认的子 Agent 实际模型或推理档位。
+
+新增 4 项 Linux 集成测试覆盖官方多字节 stdio、自然退出、TERM grace、忽略 TERM 的硬退出、真实 Strata owner SIGKILL、TCP 孙进程结束、外部进程保留、错误/foreign pidfd 拒绝。它们须由后续 Linux CI 实际运行；本机 Windows 检查不替代这些证据。普通继承进程组的 MCP 后代属于设计范围；自行再调用 setsid/setpgid 脱组的任意第三方工具需要额外 cgroup 机制，尚未实现，不能宣称任意工具全部子树均已受控。
