@@ -68,7 +68,7 @@ pnpm --filter @strata-manager/desktop tauri signer generate -w $strataSigningKey
 
 ## 日常 CI
 
-`.github/workflows/ci.yml` 在主分支、`codex/**` 分支、Pull Request 和手动触发时运行 Windows/Linux 矩阵。使用 Node 24、`package.json` 固定的 pnpm 和 Rust stable；pnpm 11.21.0 要求 Node >=22.13。
+`.github/workflows/ci.yml` 在主分支 push、Pull Request 和手动触发时运行 Windows/Linux 矩阵。功能分支通过 PR 自动打包；尚未创建 PR 时，可选择该分支手动运行。PR 使用合并结果进行验收，避免同一功能分支 push 与 PR 重复构建；手动运行使用独立并发组，不取消自动验收。使用 Node 24、`package.json` 固定的 pnpm 和 Rust stable；pnpm 11.21.0 要求 Node >=22.13。
 
 检查范围为版本一致性和发布门禁测试、TypeScript、核心与 HTTP 协议夹具测试、前端生产构建、Rust 格式、workspace 单元/集成测试、Clippy，以及两平台桌面安装包构建。Linux 安装 GTK/WebKitGTK、托盘、AppImage 依赖，在 Xvfb 下运行 native 测试。
 
