@@ -85,6 +85,63 @@ fn monitor_shift_and_dpi_change_keep_logical_size_and_accessible_position() {
 }
 
 #[test]
+fn maximized_cross_screen_sample_projects_normal_position_and_restarts_on_new_monitor() {
+    let old = monitor("primary", 0, 0, 1920, 1040, 1.0);
+    let next = monitor("left", -2560, -200, 2560, 1400, 1.25);
+    let previous = saved(old.clone());
+    let sampled = sample_maximized(&previous, next.clone()).unwrap();
+    assert!(sampled.maximized);
+    assert_eq!((sampled.width, sampled.height), (1000.0, 700.0));
+    assert_eq!((sampled.x, sampled.y), (-2427, -133));
+    assert_eq!(sampled.monitor.name, next.name);
+    assert!(!previous.maximized);
+    assert_eq!((previous.x, previous.y), (100, 50));
+
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join(STATE_FILE);
+    save(&path, &sampled).unwrap();
+    let reopened = load(&path).unwrap();
+    let layout = restore(Some(&reopened), &[old, next.clone()], 0).unwrap();
+    assert!(layout.maximized);
+    assert_eq!((layout.width, layout.height), (1000.0, 700.0));
+    assert_eq!((layout.x, layout.y), (sampled.x, sampled.y));
+    fits(&layout, &next);
+}
+
+#[test]
+fn maximized_sample_on_smaller_high_dpi_monitor_preserves_size_and_clamps_restoration() {
+    let old = monitor("primary", 0, 0, 1920, 1040, 1.0);
+    let next = monitor("small", -1280, -200, 1280, 680, 2.0);
+    let mut previous = saved(old.clone());
+    previous.x = 1900;
+    previous.y = 1000;
+    let sampled = sample_maximized(&previous, next.clone()).unwrap();
+    assert_eq!((sampled.width, sampled.height), (1000.0, 700.0));
+    assert_eq!((sampled.x, sampled.y), (-1248, -152));
+    let layout = restore(Some(&sampled), &[old, next.clone()], 0).unwrap();
+    assert!(layout.maximized);
+    assert_eq!((layout.width, layout.height), (592.0, 268.0));
+    fits(&layout, &next);
+
+    // Further maximized resize/focus events on the same display must not drift.
+    let repeated = sample_maximized(&sampled, next).unwrap();
+    assert_eq!((repeated.x, repeated.y), (sampled.x, sampled.y));
+    assert_eq!((repeated.width, repeated.height), (1000.0, 700.0));
+}
+
+#[test]
+fn maximized_sample_rejects_invalid_monitor_or_previous_normal_rectangle() {
+    let area = monitor("primary", 0, 0, 1920, 1040, 1.0);
+    let previous = saved(area.clone());
+    let mut invalid_area = area.clone();
+    invalid_area.scale = f64::NAN;
+    assert!(sample_maximized(&previous, invalid_area).is_none());
+    let mut invalid_previous = previous;
+    invalid_previous.width = f64::INFINITY;
+    assert!(sample_maximized(&invalid_previous, area).is_none());
+}
+
+#[test]
 fn duplicate_names_choose_original_area_and_clamp_offscreen_position() {
     let left = monitor("display", -1920, 0, 1920, 1040, 1.0);
     let right = monitor("display", 0, 0, 1920, 1040, 1.0);

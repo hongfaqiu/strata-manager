@@ -111,9 +111,18 @@ fn restore(saved: Option<&SavedWindow>, areas: &[MonitorArea], primary: usize) -
             .map(|(index, _)| index)
     });
     let area = areas.get(target.unwrap_or(primary))?;
+    layout_on_area(saved, area, target.is_some())
+}
+
+fn layout_on_area(
+    saved: Option<&SavedWindow>,
+    area: &MonitorArea,
+    project_position: bool,
+) -> Option<Layout> {
     if !area.valid() {
         return None;
     }
+    let saved = saved.filter(|value| value.valid());
     let (default_width, default_height) = initial_size(area.width, area.height, area.scale)?;
     let max_width = (f64::from(area.width) / area.scale - 48.0).max(1.0);
     let max_height = (f64::from(area.height) / area.scale - 72.0).max(1.0);
@@ -125,8 +134,8 @@ fn restore(saved: Option<&SavedWindow>, areas: &[MonitorArea], primary: usize) -
         .clamp(520.0_f64.min(max_height), max_height);
     let right = f64::from(area.x) + f64::from(area.width) - (width + 32.0) * area.scale;
     let bottom = f64::from(area.y) + f64::from(area.height) - (height + 48.0) * area.scale;
-    let (x, y) = match (saved, target) {
-        (Some(value), Some(_)) => (
+    let (x, y) = match saved.filter(|_| project_position) {
+        Some(value) => (
             f64::from(area.x)
                 + (f64::from(value.x) - f64::from(value.monitor.x))
                     / f64::from(value.monitor.width)
@@ -136,7 +145,7 @@ fn restore(saved: Option<&SavedWindow>, areas: &[MonitorArea], primary: usize) -
                     / f64::from(value.monitor.height)
                     * f64::from(area.height),
         ),
-        _ => (
+        None => (
             (f64::from(area.x) + right.max(f64::from(area.x))) / 2.0,
             (f64::from(area.y) + bottom.max(f64::from(area.y))) / 2.0,
         ),
@@ -182,19 +191,32 @@ fn save(path: &Path, state: &SavedWindow) -> std::io::Result<()> {
     Ok(())
 }
 
+fn sample_maximized(previous: &SavedWindow, monitor: MonitorArea) -> Option<SavedWindow> {
+    if !previous.valid() {
+        return None;
+    }
+    let layout = layout_on_area(Some(previous), &monitor, true)?;
+    // Keep the normal logical size, even on a smaller display. Restoration
+    // clamps the visible rectangle without recording the maximized size.
+    Some(SavedWindow {
+        x: layout.x,
+        y: layout.y,
+        monitor,
+        maximized: true,
+        ..previous.clone()
+    })
+}
+
 fn sample(window: &tauri::WebviewWindow, previous: &SavedWindow) -> Option<SavedWindow> {
     // Minimizing/fullscreen must not destroy the last normal rectangle.
     if window.is_minimized().ok()? || window.is_fullscreen().ok()? {
         return None;
     }
     let maximized = window.is_maximized().ok()?;
-    if maximized {
-        return Some(SavedWindow {
-            maximized,
-            ..previous.clone()
-        });
-    }
     let monitor = MonitorArea::from_monitor(&window.current_monitor().ok()??);
+    if maximized {
+        return sample_maximized(previous, monitor);
+    }
     let size = window.inner_size().ok()?;
     let position = window.outer_position().ok()?;
     let scale = window.scale_factor().ok()?;
@@ -245,8 +267,7 @@ fn install_persistence(window: &tauri::WebviewWindow, path: PathBuf, initial: Sa
                 event,
                 WindowEvent::CloseRequested { .. } | WindowEvent::Focused(false)
             ) {
-                // Flush even if close goes to the tray; installer/tray exit
-                // also loses focus before terminating the UI process.
+                // Flush on observed close or focus loss, including close-to-tray.
                 let _ = save(&path, &value);
             } else {
                 let _ = sender.try_send(());
