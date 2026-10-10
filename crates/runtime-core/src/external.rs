@@ -16,6 +16,12 @@ pub fn local_port(profile: &ServiceProfile) -> Result<u16, String> {
         .ok_or_else(|| "服务端口无效".into())
 }
 
+/// Read the native LISTEN owner table; errors never become an empty owner set.
+#[cfg(windows)]
+pub fn listener_ids(profile: &ServiceProfile) -> Result<Vec<u32>, String> {
+    platform::listening_ids(local_port(profile)?)
+}
+
 #[cfg(windows)]
 fn same_path(a: &Path, b: &Path) -> bool {
     match (dunce::canonicalize(a), dunce::canonicalize(b)) {
@@ -384,10 +390,9 @@ mod platform {
                 || parent.created >= instance.created
                 || !same_path(Path::new(&profile.python_path), &parent.image)
                 || argv.first().is_none_or(|value| {
-                    !same_path(
-                        Path::new(value.trim_start_matches("\\??\\")),
-                        &instance.image,
-                    )
+                    let executable = Path::new(value.trim_start_matches("\\??\\"));
+                    !same_path(executable, &instance.image)
+                        && !same_path(executable, Path::new(&profile.python_path))
                 })
                 || argv.get(1..) != parent_argv.get(1..)
             {
@@ -397,6 +402,12 @@ mod platform {
             validate_venv_base(Path::new(&profile.python_path), &instance.image)?;
             validate_server_arguments(profile, &argv)
         } else {
+            // A Windows venv can retain its redirector path in argv[0] while
+            // the child image is the base Python. Either argv spelling still
+            // requires the exact live launcher and its complete arguments.
+            if !same_path(Path::new(&profile.python_path), &instance.image) {
+                return Err("venv 基础解释器需要核验存活的启动器父进程".into());
+            }
             validate_arguments(profile, &instance.image, &argv)
         }
     }
@@ -1166,6 +1177,28 @@ while time.monotonic()<deadline:
             assert!(port_accepting(&unknown).unwrap());
             candidate.revalidate(&profile).unwrap();
             let saved_command = candidate.command.clone();
+            for executable in [&selected, &candidate.image.clone()] {
+                let mut redirected = arguments(&saved_command).unwrap();
+                redirected[0] = executable.to_string_lossy().into();
+                candidate.command = redirected
+                    .iter()
+                    .map(|argument| format!("\"{argument}\""))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                assert!(
+                    validate_chain(&profile, &candidate, candidate.launcher.as_deref()).is_ok()
+                );
+                assert!(validate_chain(&profile, &candidate, None).is_err());
+            }
+            let mut redirected = arguments(&saved_command).unwrap();
+            redirected[0] = std::env::current_exe().unwrap().to_string_lossy().into();
+            candidate.command = redirected
+                .iter()
+                .map(|argument| format!("\"{argument}\""))
+                .collect::<Vec<_>>()
+                .join(" ");
+            assert!(validate_chain(&profile, &candidate, candidate.launcher.as_deref()).is_err());
+            candidate.command = saved_command.clone();
             candidate.command.push_str(" --no-open-browser");
             assert!(validate_chain(&profile, &candidate, candidate.launcher.as_deref()).is_err());
             candidate.command = saved_command;

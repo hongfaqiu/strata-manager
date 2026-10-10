@@ -81,6 +81,10 @@ Core 的 analytics 测试覆盖事务重放/重启去重、未知值与成功率
 
 后台包切换的后续修复等待 RPC 关闭且同用户/数据目录的单实例锁真正释放，再启动候选或回滚，不以端口关闭代替进程退出完成，也不停止未知 PID。新增确定性夹具在旧逻辑下失败、修复后通过；最新 desktop 库 5 passed（4.60 秒），相关两项再连续两轮通过，Clippy 和 fmt 通过。回滚继续验证原 hash/version；测试编译隔离真实自启动注册项。CI 当次缺少锁状态日志，因此此修复的代码与回归证据不能写成当次具体竞态已实测，完整流水线待下一轮确认。
 
+[第五轮 CI](https://github.com/hongfaqiu/strata-manager/actions/runs/38068353432) 对应 `b539e1291f64f9737dcc22b165eb92d0b8fd412f`。两平台 Node 17 passed / 0 skipped、observer 13、前端 36 和 HTTP 5 均通过。Linux IPC 4、desktop 2、Core 60 passed / 2 ignored、Rust 验签 7、Clippy、AppImage 和 DEB 全部通过；已上传同提交的 [AppImage](https://github.com/hongfaqiu/strata-manager/actions/runs/38068353432/artifacts/11675433479) 与 [DEB](https://github.com/hongfaqiu/strata-manager/actions/runs/38068353432/artifacts/11675538299)。Windows IPC 5、desktop 5 通过，后台包交接及锁释放回归已由此 CI 关闭。Core 80 passed / 1 failed / 2 ignored，原生监听表与 PID 检查通过；唯一失败是标准 venv fixture 中 `candidate.launcher` 为 None，尚未运行到其余 crate、Clippy 和 NSIS。
+
+venv 后续修复要求实际进程 image 与所选 venv Python 不同时核验存活的启动器父进程，不因子进程 argv[0] 保留 venv 路径而跳过父子归属。子进程 argv[0] 仅接受已核验的基础解释器或所选 venv 路径，完整参数、venv home、父 PID、创建顺序和再次核验全部保留。新增两种 argv 形式、缺失父进程和未知可执行文件的断言；本机真实 venv/监听进程夹具 1 passed（19.85 秒），Windows platform 合同共 6 passed（41.11 秒），包含精确 Job 子树与未知实例拒绝；完整 Windows CI 仍待下一轮确认。
+
 本地最新前端检查为核心协议 **36 passed**、HTTP 合同 **5 passed**、类型检查及生产构建通过；四 crate 的 workspace Clippy `-D warnings` 和 fmt 通过。独立实际 App + 内存 RPC 验证了中英、侧栏展开/收起与 10 个路由的 **180 个宽度组合**，未发现页面整体横向溢出。设置页另外验证 600、800、1440、2560 宽度，去除内容宽度上限，按工作区宽度使用单列或两列。长表格与代码允许在组件内滚动。这些界面测试使用演示数据，不作为真实 GPU/采集证据。
 
 准备结果的界面接线另在真实 App、QueryClient、StrictMode 和 core bridge 的隔离内存 RPC 夹具中验证：新登记刷新模型列表并保留已有选择；移除当前模型后再登记不自动选用；首次空列表只自动准备一次；明确点击使用等待一次受管切换成功再进入聊天。组件覆盖双击去重、跨刷新保留配置选择、旧快照冲突使用现有配置、准备命令失败无无效登记重检，以及命令成功但登记失败时的重新核验。没有使用真实 GPU 数据。

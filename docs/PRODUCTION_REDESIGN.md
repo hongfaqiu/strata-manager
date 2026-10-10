@@ -169,13 +169,13 @@ Tauri内容仍由WebView渲染，桌面感靠系统窗口行为与一致交互�
 | P3调优 | 场景基准、有限候选、A/B/A、原子应用/回滚与报告 | 基线可复现，无收益不变更；异常恢复；质量不退步；完整Agent与容量稳定性分开验 |
 | P4发布 | 三级更新、签名链、数据库迁移、安装/卸载恢复 | UI活动请求期间升级；runtime坏包/启动失败回滚；离线/睡眠唤醒/长期负载；真实安装包升级链 |
 
-编译、Clippy、协议夹具和限定真实模型验证分别记录，不能替代生产验收。新后台、统计、自动调优和更新是待实施能力。
+编译、Clippy、协议夹具和限定真实模型验证分别记录，不能替代生产验收。新后台、统计、请求级调优和更新链已经进入实现与测试；完整场景调优、运行时候选切换及真实安装升级等剩余工作，以 [验收记录](VERIFICATION.md) 为准。
 
 ## 依据与已知兼容问题
 
-当前流程现场证据见 [UX审查](PRODUCTION_UX_AUDIT.md)。本次仅研究与计划整理，没有执行新大模型测速、接管或runtime升级。3个独立子Agent复核生命周期、API口径和调优，工具未提供其实际模型/推理档位。
+原始研究阶段的流程现场证据见 [UX审查](PRODUCTION_UX_AUDIT.md)。该研究阶段没有执行新大模型测速、接管或 runtime 升级；后续实现证据见验收记录。研究时 3 个独立子 Agent 复核生命周期、API 口径和调优，工具未提供其实际模型/推理档位。
 
-代码入口：`App.tsx` 的ProfileDialog/发现；`src-tauri/src/lib.rs` 的AppState/cleanup/update_runtime；`processes.rs` 的Job；`store.rs` 的schema；`packages/core/src/metrics.ts`。
+当前代码入口：`apps/desktop/src/App.tsx`、`pages/LocalSetupPage.tsx` 和共享布局；`apps/desktop/src-tauri/src/supervisor_client.rs` 的后台连接与包交接；`apps/supervisor/src/main.rs` 的 IPC、采集和恢复循环；`crates/runtime-core/src/lib.rs` 的运行流程，以及 `processes.rs`、`analytics.rs`、`tuning.rs` 和 `store.rs`。
 
 上游本机固定HEAD：`fb58e0dbc8399662c0e47c76578c6e878b14f6cf`。核对 `serve/server.py` 的api_record/history/totals、Service.load、三个推理端点及lazy CLI，`runconfig.py`，`tools/calibrate.py`和`docs/DETAILS.md`。该版CLI/服务支持视觉惰性加载，但 `/config` 仍限制text-only；先做版本适配与真实验收，不能直接宣称全模型兼容。加载发生在SSE响应头之前，冷启动可能使外部客户端超时，因此接入需预热。
 
