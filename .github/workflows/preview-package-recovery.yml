@@ -1,0 +1,61 @@
+name: Verify recovered beta preview
+
+on:
+  push:
+    branches: ['codex/preview-release']
+    paths: ['.github/workflows/preview-package-recovery.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ab3bacc68fd8c9a95cc92de05ae2439976c91e5f
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify original build and download immutable Windows artifact
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expectedCommit = 'ab3bacc68fd8c9a95cc92de05ae2439976c91e5f'
+          $sourceRun = gh api repos/hongfaqiu/strata-manager/actions/runs/38076336283 | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $sourceRun.head_sha -ne $expectedCommit -or $sourceRun.event -ne 'push' -or $sourceRun.path -ne '.github/workflows/release.yml') { throw 'Unexpected source build.' }
+          $sourceJob = gh api repos/hongfaqiu/strata-manager/actions/jobs/114283983520 | ConvertFrom-Json
+          $requiredSteps = @('Version and complete release guard tests', 'pnpm check', 'cargo fmt --all -- --check', 'Native tests (Windows)', 'cargo clippy --workspace --locked --all-targets --target x86_64-pc-windows-msvc -- -D warnings', 'node scripts/prepare-sidecar.mjs --profile release --target x86_64-pc-windows-msvc')
+          foreach ($stepName in $requiredSteps) {
+            $matchingSteps = @($sourceJob.steps | Where-Object name -eq $stepName)
+            if ($matchingSteps.Count -ne 1 -or $matchingSteps[0].conclusion -ne 'success') { throw "Required source check failed: $stepName" }
+          }
+          $artifact = gh api repos/hongfaqiu/strata-manager/actions/artifacts/11679353385 | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $artifact.expired -or $artifact.name -ne 'release-windows-x64-nsis' -or $artifact.workflow_run.head_sha -ne $expectedCommit -or $artifact.size_in_bytes -ne 6702261 -or $artifact.digest -ne 'sha256:57abf250704dbd4da84a9f74e3c57f661f01fb51780f92c4011f1bd438d6bbef') { throw 'Unexpected source artifact.' }
+          $recoveryRoot = Join-Path $env:RUNNER_TEMP 'preview-beta1-recovery'
+          New-Item -ItemType Directory -Path $recoveryRoot | Out-Null
+          $archive = Join-Path $recoveryRoot 'windows.zip'
+          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
+          Invoke-WebRequest -Uri 'https://api.github.com/repos/hongfaqiu/strata-manager/actions/artifacts/11679353385/zip' -Headers $headers -OutFile $archive
+          if ((Get-Item -LiteralPath $archive).Length -ne 6702261 -or (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne '57abf250704dbd4da84a9f74e3c57f661f01fb51780f92c4011f1bd438d6bbef') { throw 'Artifact ZIP digest mismatch.' }
+          Expand-Archive -LiteralPath $archive -DestinationPath (Join-Path $recoveryRoot 'bundle')
+      - name: Build the public-key verifier
+        run: cargo build -p strata-update-verifier --locked
+      - name: Verify installer signature and signed version before execution
+        shell: pwsh
+        run: |
+          $bundle = Join-Path $env:RUNNER_TEMP 'preview-beta1-recovery/bundle'
+          $installers = @(Get-ChildItem -LiteralPath $bundle -Filter '*.exe' -Recurse -File)
+          if ($installers.Count -ne 1 -or $installers[0].Name -ne 'Strata Manager_0.1.0-beta.1_x64-setup.exe') { throw 'Unexpected Windows installer.' }
+          & "$env:CARGO_TARGET_DIR/debug/strata-update-verifier.exe" --config apps/desktop/src-tauri/tauri.conf.json --artifact $installers[0].FullName --signature "$($installers[0].FullName).sig" --version 0.1.0-beta.1 --require-signed-version
+          if ($LASTEXITCODE -ne 0) { throw 'Installer signature failed.' }
+      - name: Verify installed Windows preview and packaged background
+        run: node scripts/preview-package-smoke.mjs --bundle-dir "${{ runner.temp }}/preview-beta1-recovery/bundle" --version 0.1.0-beta.1
