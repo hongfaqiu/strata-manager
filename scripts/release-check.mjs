@@ -51,7 +51,7 @@ export async function checkRelease({ root = repositoryRoot, tag, requireSigning 
   }
   const workspace = tomlVersion(await readFile(resolve(root, 'Cargo.toml'), 'utf8'), 'workspace.package');
   versions.push({ file: 'Cargo.toml [workspace.package]', version: workspace });
-  for (const file of ['apps/desktop/src-tauri/Cargo.toml', 'apps/supervisor/Cargo.toml', 'crates/runtime-core/Cargo.toml', 'crates/local-ipc/Cargo.toml']) {
+  for (const file of ['apps/desktop/src-tauri/Cargo.toml', 'apps/supervisor/Cargo.toml', 'crates/runtime-core/Cargo.toml', 'crates/local-ipc/Cargo.toml', 'crates/update-verifier/Cargo.toml']) {
     const declared = tomlVersion(await readFile(resolve(root, file), 'utf8'), 'package');
     versions.push({ file, version: declared === 'workspace' ? workspace : declared });
   }

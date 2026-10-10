@@ -76,7 +76,11 @@ jobs:
         with:
           workspaces: '. -> apps/desktop/src-tauri/target'
       - run: pnpm install --frozen-lockfile
+      - name: Build the fixture update verifier for this platform
+        run: cargo build -p strata-update-verifier --locked --target ${{ matrix.target }}
       - name: Version and release guard tests
+        env:
+          UPDATE_VERIFIER_BIN: ${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/debug/strata-update-verifier${{ runner.os == 'Windows' && '.exe' || '' }}
         run: node --test scripts/release-check.test.mjs
       - name: Frontend types, core and HTTP fixture tests, build
         run: pnpm check

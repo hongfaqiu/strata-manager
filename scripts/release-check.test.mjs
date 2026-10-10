@@ -1,7 +1,37 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
+import { PassThrough, Readable } from 'node:stream';
+import { mkdtemp, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, dirname, join, resolve } from 'node:path';
 import { checkRelease, tomlVersion, validateSigning, validateVersions } from './release-check.mjs';
-import { validateRelease } from './release-verify.mjs';
+import { downloadAssetToFile, validateRelease, verifyRelease } from './release-verify.mjs';
+
+const repository = 'example/strata-manager';
+const version = '0.1.0';
+const tag = `v${version}`;
+const filenames = { windows: 'Strata.Manager_0.1.0_x64-setup.exe', linux: 'Strata.Manager_0.1.0_amd64.AppImage', deb: 'Strata.Manager_0.1.0_amd64.deb' };
+const options = { repository, tag, version, expectedSha: '123' };
+function releaseFixture(signature = 'x'.repeat(50)) {
+  const assets = [filenames.windows, `${filenames.windows}.sig`, filenames.linux, `${filenames.linux}.sig`, filenames.deb, `${filenames.deb}.sig`, 'latest.json'].map((name, id) => ({ name, id: id + 1, size: 100 }));
+  const release = { tag_name: tag, draft: true, target_commitish: '123', assets };
+  const update = name => ({ signature, url: `https://github.com/${repository}/releases/download/${tag}/${name}` });
+  const manifest = { version, platforms: { 'windows-x86_64': update(filenames.windows), 'linux-x86_64': update(filenames.linux) } };
+  return { release, manifest, update };
+}
+
+async function ownedTemporary() {
+  const parent = await realpath(tmpdir());
+  const directory = await mkdtemp(join(parent, 'strata-release-test-'));
+  return { directory, cleanup: async () => {
+    const checked = await realpath(directory);
+    assert.equal(dirname(checked), parent);
+    assert.equal(checked, directory);
+    assert.ok(basename(checked).startsWith('strata-release-test-'));
+    await rm(checked, { recursive: true, force: true });
+  } };
+}
 
 test('all workspace versions agree', async () => {
   const { version } = await checkRelease();
@@ -29,12 +59,8 @@ test('release signing fails closed without exposing secret values', () => {
   assert.throws(() => validateSigning({ ...config, plugins: { updater: { ...config.plugins.updater, pubkey: 'placeholder' } } }, env), /public key/);
 });
 test('a partial, foreign or unsigned release stays a draft', () => {
-  const repository = 'example/strata-manager';
-  const tag = 'v0.1.0';
-  const assets = ['windows.exe', 'windows.exe.sig', 'linux.AppImage', 'linux.AppImage.sig', 'linux.deb'].map((name, id) => ({ name, id: id + 1, size: 100 }));
-  const release = { tag_name: tag, draft: true, target_commitish: '123', assets };
-  const manifest = { version: '0.1.0', platforms: Object.fromEntries([['windows-x86_64', 'windows.exe'], ['linux-x86_64', 'linux.AppImage']].map(([platform, name]) => [platform, { signature: 'x'.repeat(50), url: `https://github.com/${repository}/releases/download/${tag}/${name}` }])) };
-  const options = { repository, tag, version: '0.1.0', expectedSha: '123' };
+  const { release, manifest } = releaseFixture();
+  const assets = release.assets;
   assert.doesNotThrow(() => validateRelease(release, manifest, options));
   const officialApiUrls = structuredClone(manifest);
   officialApiUrls.platforms['windows-x86_64'].url = `https://api.github.com/repos/${repository}/releases/assets/1`;
@@ -48,4 +74,140 @@ test('a partial, foreign or unsigned release stays a draft', () => {
   foreign.platforms['linux-x86_64'].url = 'https://github.com/other/repo/releases/download/v0.1.0/linux.AppImage';
   assert.throws(() => validateRelease(release, foreign, options), /exact repository/);
   assert.throws(() => validateRelease({ ...release, target_commitish: '456' }, manifest, options), /workflow commit/);
+  assert.throws(() => validateRelease({ ...release, assets: assets.filter(asset => asset.name !== `${filenames.windows}.sig`) }, manifest, options), /signature is missing/);
+  assert.throws(() => validateRelease({ ...release, assets: assets.filter(asset => asset.name !== 'latest.json') }, manifest, options), /latest.json/);
 });
+
+test('only current installers and official aliases may enter the updater manifest', () => {
+  const { release, manifest, update } = releaseFixture();
+  manifest.platforms['windows-x86_64-nsis'] = update(filenames.windows);
+  manifest.platforms['linux-x86_64-appimage'] = update(filenames.linux);
+  manifest.platforms['linux-x86_64-deb'] = update(filenames.deb);
+  assert.doesNotThrow(() => validateRelease(release, manifest, options));
+  const extraPlatform = structuredClone(manifest);
+  extraPlatform.platforms['darwin-x86_64'] = { signature: 'x'.repeat(50), url: 'https://foreign.example/update.dmg' };
+  assert.throws(() => validateRelease(release, extraPlatform, options), /Unsupported updater platform/);
+  const wrongAlias = structuredClone(manifest);
+  wrongAlias.platforms['windows-x86_64-nsis'] = update(filenames.linux);
+  assert.throws(() => validateRelease(release, wrongAlias, options), /alias must reference/);
+  const wrongSignature = structuredClone(manifest);
+  wrongSignature.platforms['linux-x86_64-appimage'].signature = 'y'.repeat(50);
+  assert.throws(() => validateRelease(release, wrongSignature, options), /alias must reference/);
+  for (const name of ['foreign-old-installer.exe', 'Strata.Manager_0.0.9_x64-setup.exe', 'foreign.deb.sig', 'foreign-installer.zip']) {
+    assert.throws(() => validateRelease({ ...release, assets: [...release.assets, { name, id: 99, size: 1 }] }, manifest, options), /Unexpected release asset/);
+  }
+  assert.doesNotThrow(() => validateRelease({ ...release, assets: [...release.assets, { name: 'LICENSE', id: 98, size: 1 }, { name: 'SHA256SUMS', id: 99, size: 1 }] }, manifest, options));
+  assert.throws(() => validateRelease({ ...release, assets: [...release.assets, { name: 'Strata.Manager_0.1.0_arm64.deb', id: 99, size: 1 }] }, manifest, options), /exactly one/);
+  assert.throws(() => validateRelease({ ...release, assets: [...release.assets, { ...release.assets[0] }] }, manifest, options), /Duplicate/);
+});
+
+test('wrong product, version or architecture cannot masquerade as the required installer', () => {
+  for (const replacement of ['Other.App_0.1.0_x64-setup.exe', 'Strata.Manager_0.0.9_x64-setup.exe', 'Strata.Manager_0.1.0_arm64-setup.exe']) {
+    const { release, manifest, update } = releaseFixture();
+    release.assets[0].name = replacement;
+    release.assets[1].name = replacement + '.sig';
+    manifest.platforms['windows-x86_64'] = update(replacement);
+    assert.throws(() => validateRelease(release, manifest, options), /current-version windows installer/);
+  }
+});
+
+test('large binary downloads stream to disk and reject truncated data', async () => {
+  const temporary = await ownedTemporary();
+  const content = Buffer.alloc(8 * 1024 * 1024, 0xff);
+  const mockSpawn = () => {
+    const child = new EventEmitter();
+    child.stdout = Readable.from((function* () { for (let offset = 0; offset < content.length; offset += 65536) yield content.subarray(offset, offset + 65536); })());
+    child.stderr = new PassThrough();
+    child.kill = () => child.emit('close', null);
+    child.stdout.once('end', () => child.emit('close', 0));
+    return child;
+  };
+  try {
+    const destination = join(temporary.directory, 'large-artifact');
+    await downloadAssetToFile(repository, { id: 1, name: 'large.exe', size: content.length }, destination, { spawnProcess: mockSpawn });
+    assert.equal((await stat(destination)).size, content.length);
+    assert.deepEqual(await readFile(destination), content);
+    await assert.rejects(downloadAssetToFile(repository, { id: 1, name: 'truncated.exe', size: content.length + 1 }, join(temporary.directory, 'truncated-artifact'), { spawnProcess: mockSpawn }), /size does not match/);
+  } finally { await temporary.cleanup(); }
+});
+
+test('disk failure terminates its download and a stalled child cannot block timeout cleanup', async () => {
+  const temporary = await ownedTemporary();
+  try {
+    const existing = join(temporary.directory, 'existing-file');
+    await writeFile(existing, 'retained');
+    let killed = false;
+    const failedSpawn = () => {
+      const child = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough();
+      child.kill = () => { killed = true; child.emit('close', null); return true; };
+      return child;
+    };
+    await assert.rejects(downloadAssetToFile(repository, { id: 1, name: 'fixture.exe', size: 1 }, existing, { spawnProcess: failedSpawn }), /EEXIST/);
+    assert.ok(killed);
+    assert.equal(await readFile(existing, 'utf8'), 'retained');
+    const signals = [];
+    const stalledSpawn = () => {
+      const child = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough();
+      child.kill = signal => { signals.push(signal); return false; };
+      return child;
+    };
+    const started = Date.now();
+    await assert.rejects(downloadAssetToFile(repository, { id: 1, name: 'fixture.exe', size: 1 }, join(temporary.directory, 'timed-out'), { spawnProcess: stalledSpawn, timeoutMs: 20 }), /timed out/);
+    assert.ok(Date.now() - started < 2500, 'A child ignoring kill must still finish within the bounded fallback');
+    assert.deepEqual(signals, [undefined, 'SIGKILL']);
+  } finally { await temporary.cleanup(); }
+});
+
+test('real verifier checks every exposed installer and deduplicates official aliases', { skip: !process.env.UPDATE_VERIFIER_BIN }, async () => {
+  await cryptoReleaseFixture({}, async ({ run, downloads, paths }) => {
+    await run();
+    assert.equal(downloads.filter(name => name.endsWith('.exe')).length, 1);
+    assert.equal(downloads.filter(name => name.endsWith('.AppImage')).length, 1);
+    assert.equal(downloads.filter(name => name.endsWith('.deb')).length, 1);
+    for (const path of paths) await assert.rejects(stat(path), { code: 'ENOENT' });
+  });
+});
+
+test('wrong key, altered bytes or matching fake signature refuses publication and cleans its files', { skip: !process.env.UPDATE_VERIFIER_BIN }, async () => {
+  for (const scenario of [{ wrongKey: true }, { tamper: true }, { signature: 'x'.repeat(50) }, { signature: '' }, { mismatch: true }, { publicWhitespace: true }, { signatureWhitespace: true }, { noDebAlias: true, tamperDeb: true }, { noDebAlias: true, fakeDebSignature: true }]) {
+    await cryptoReleaseFixture(scenario, async ({ run, paths }) => {
+      await assert.rejects(run());
+      for (const path of paths) await assert.rejects(stat(path), { code: 'ENOENT' });
+    });
+  }
+});
+
+test('an uploaded DEB signature is verified even without a manifest alias', { skip: !process.env.UPDATE_VERIFIER_BIN }, async () => {
+  await cryptoReleaseFixture({ noDebAlias: true }, async ({ run, downloads }) => {
+    await run();
+    assert.equal(downloads.filter(name => name.endsWith('.deb')).length, 1);
+    assert.equal(downloads.filter(name => name.endsWith('.deb.sig')).length, 1);
+  });
+});
+
+async function cryptoReleaseFixture(scenario, operation) {
+  const temporary = await ownedTemporary();
+  const fixtureDirectory = resolve('crates/update-verifier/tests/fixtures');
+  let publicKey = (await readFile(join(fixtureDirectory, scenario.wrongKey ? 'wrong-public.txt' : 'public.txt'), 'utf8')).trim();
+  let signature = scenario.signature ?? (await readFile(join(fixtureDirectory, 'artifact.sig'), 'utf8')).trim();
+  if (scenario.publicWhitespace) publicKey = ' ' + publicKey;
+  if (scenario.signatureWhitespace) signature = ' ' + signature;
+  const payload = await readFile(join(fixtureDirectory, 'artifact.bin'));
+  const { release, manifest, update } = releaseFixture(signature);
+  manifest.platforms['windows-x86_64-nsis'] = update(filenames.windows);
+  manifest.platforms['linux-x86_64-appimage'] = update(filenames.linux);
+  manifest.platforms['linux-x86_64-deb'] = update(filenames.deb);
+  if (scenario.noDebAlias) delete manifest.platforms['linux-x86_64-deb'];
+  const downloads = []; const paths = [];
+  try {
+    const configDirectory = join(temporary.directory, 'apps/desktop/src-tauri');
+    await mkdir(configDirectory, { recursive: true });
+    await writeFile(join(configDirectory, 'tauri.conf.json'), JSON.stringify({ version, productName: 'Strata Manager', plugins: { updater: { pubkey: publicKey } } }));
+    const run = () => verifyRelease({ ...options, root: temporary.directory, verifierPath: process.env.UPDATE_VERIFIER_BIN, fetchRelease: async () => release, logger: () => {}, fetchAsset: async (_repository, asset, destination) => {
+      downloads.push(asset.name); paths.push(destination);
+      const bytes = asset.name === 'latest.json' ? JSON.stringify(manifest) : asset.name.endsWith('.sig') ? (scenario.mismatch || scenario.fakeDebSignature && asset.name.endsWith('.deb.sig') ? 'signature mismatch' : signature) : scenario.tamper || scenario.tamperDeb && asset.name.endsWith('.deb') ? 'tampered installer' : payload;
+      await writeFile(destination, bytes, { flag: 'wx' });
+    } });
+    await operation({ run, downloads, paths });
+  } finally { await temporary.cleanup(); }
+}

@@ -6,7 +6,9 @@
 
 2026-10-10：公开仓库已创建，正式 HTTPS 更新地址、公钥与 `createUpdaterArtifacts` 已配置，Actions 的 `TAURI_SIGNING_PRIVATE_KEY` secret 已设置。当前密钥没有密码，因此密码 secret 可缺省为空。发布门禁测试 5 项通过，两个工作流 actionlint 检查通过，Windows debug sidecar 已实际构建并核对打包副本 hash。
 
-这些证据只说明发布设施已准备，不能当作 Windows/Linux tag 构建、公开签名产物或客户端更新安装完成。完整发布结果与当前产品验收缺项见 [VERIFICATION](VERIFICATION.md)。Windows Authenticode 发布者签名尚未配置，Tauri updater 签名不提供该能力。
+2026-10-11：发布门禁新增真实更新包密码学验签，Node 12 项、Rust 7 项、release CLI 集成 3 项通过；最终五 crate workspace Clippy、fmt、版本检查通过。普通 CI 和 Release 构建阶段会构建验签 helper 并运行完整 Node 门禁；publish 阶段再次使用 release helper 检查实际草稿资产，全部成功后才公开。夹具公钥及签名不含用户私钥。
+
+随后第三轮 CI 已实际生成 Linux AppImage/DEB；Windows 的一个监听探测夹具仍未通过，修复后的完整 CI 待复验。这些证据不能当作 Windows/Linux tag 构建、公开签名产物或客户端更新安装完成。完整发布结果与当前产品验收缺项见 [VERIFICATION](VERIFICATION.md)。Windows Authenticode 发布者签名尚未配置，Tauri updater 签名不提供该能力。
 
 ## 发布内容
 
@@ -17,7 +19,7 @@
 
 每个安装包包含桌面外壳及独立 `strata-supervisor` 后台。Python、Strata 运行时和模型权重使用应用内的独立安装/导入流程，模型不进入 GitHub 构建工件。平台安装包构建成功不等于对应 GPU 推理已验收；必须在发布说明中列出实际测试的平台、驱动和范围。
 
-普通用户首次使用应进入自动检测/准备流程，不能以安装 Git、填写 Python 路径和手选安装目录作为默认操作步骤。已有本机安装导入时保留原源码、配置与权重；模型准备完成后检测并导入实际配置，再由后台启动/加载。首次模型请求按后台策略加载，或提前预载；登录自启动只启动后台。
+普通用户首次使用应进入自动检测/准备流程，不能以安装 Git、填写 Python 路径和手选安装目录作为默认操作步骤。旧版 Manager 有效档案和会话自动迁移，已有模型无需再准备；其它本机安装导入时保留原源码、配置与权重。新模型准备完成后自动核验登记，保留当前选择；用户选用后由后台启动/加载。首次模型请求按后台策略加载，或提前预载；登录自启动只启动后台。
 
 ## 固定运行环境下载来源
 
@@ -63,13 +65,13 @@ CI 产物以 `ci-<platform>-<arch>-<bundle>` 名称上传为 Actions artifacts�
 ## 发布一个版本
 
 1. 在同一变更中同步根 `package.json`、`apps/desktop/package.json`、`packages/core/package.json`、Tauri config、Cargo workspace 和任何显式 Cargo package version。`node scripts/release-check.mjs --tag v0.1.0` 检查版本；tag 必须与应用版本严格一致。
-2. 完成 [VERIFICATION](VERIFICATION.md) 的最终检查和发布验收，更新中英文 README、WebP 截图与实际 revision。截图放在 `docs/screenshots/overview.zh.webp`、`chat.zh.webp`、`monitor.zh.webp`；检查内容没有 API 密钥、个人会话、用户名、私有模型路径或伪造监控数据。保留历史原型证据，同时单列本轮未通过/未运行项。
+2. 完成 [VERIFICATION](VERIFICATION.md) 的最终检查和发布验收，更新中英文 README、WebP 截图与实际 revision。截图放在 `docs/screenshots/overview.zh.webp`、`chat.zh.webp`、`monitor.zh.webp`；检查内容没有 API 密钥、个人会话、用户名或私有模型路径。演示数据在图内及文档中明确标注，不能写成真实服务或性能证据。保留历史原型证据，同时单列本轮未通过/未运行项。
 3. 推送已审核的代码，再创建并推送 `v<version>` tag，例如 `v0.1.0` 或 `v0.2.0-beta.1`。版本 tag 触发 `.github/workflows/release.yml`；手动重跑必须选中同一个 tag，选择分支不会发布。
 4. 流水线先校验 tag、版本和签名配置，再通过 Windows/Linux 全部检查。官方 Tauri action 构建签名安装包、上传签名和 workflow artifacts，并合并生成 `latest.json` 到**草稿 Release**。正式矩阵顺序执行，避免两个 action 同时读写 updater manifest 时丢失平台条目。
-5. 两个平台均成功后，`scripts/release-verify.mjs` 核对完整的 NSIS/AppImage/DEB、每个平台的 updater URL、签名文件与 `latest.json` 的一致性、tag 和构建 SHA。通过后才自动公开；任何失败都保留草稿。
+5. 两个平台均成功后，`scripts/release-verify.mjs` 核对完整的 NSIS/AppImage/DEB、支持的平台及官方别名、每个 updater URL、签名文件与 `latest.json` 的一致性、tag 和构建 SHA。下载实际更新包，再通过 `strata-update-verifier` 使用应用内置公钥验证载荷、可信注释和签名中的版本；错误公钥、篡改或缺失签名均拒绝发布。通过后才自动公开；任何失败都保留草稿。
 6. 稳定版本成为 latest；带 SemVer prerelease 的版本标记为 prerelease，且不覆盖稳定自动更新通道。
 
-`release-verify.mjs` 校验远程资产存在和 manifest 一致性，不替代更新器的密码学验签或真实安装验收。请从 Release 下载安装包，在干净环境验证安装、启动、导入和卸载，随后用上一版本验证下载、签名检查、安装及后台保持。更新失败后不得把客户端“检查成功”当作安装成功。
+发布侧的密码学验签与客户端更新器都使用 `minisign-verify` 和 Tauri 的编码格式；发布验签不替代真实安装验收。请从 Release 下载安装包，在干净环境验证安装、启动、导入和卸载，随后用上一版本验证下载、签名检查、安装及后台保持。更新失败后不得把客户端“检查成功”当作安装成功。
 
 客户端更新验收必须覆盖维护排空、繁忙/身份不明时拒绝变更、后台包版本切换、失败恢复以及重新连接后的实际模型/API 状态。后台 staged PE 切换测试已通过，但尚不能代替公开 Release 的签名下载安装。注销/重登后检查后台自启动，并区分默认轻量启动与提前加载模型；只验证注册表写入不代表登录流程通过。
 

@@ -171,36 +171,39 @@ fn validate_server_arguments(profile: &ServiceProfile, argv: &[String]) -> Resul
     Ok(())
 }
 
-/// A successful loopback TCP connection proves a listener exists even if identity probes fail.
+/// Check listeners without treating a failed ownership query as an unused port.
 pub fn port_accepting(profile: &ServiceProfile) -> Result<bool, String> {
     let port = local_port(profile)?;
     #[cfg(windows)]
-    if let Ok(ids) = platform::listening_ids(port) {
-        return Ok(!ids.is_empty());
+    {
+        platform::listening_ids(port).map(|ids| !ids.is_empty())
     }
-    let url = crate::http::endpoint(profile, "/health")?;
-    let ips = match url.host() {
-        Some(url::Host::Ipv4(ip)) => vec![std::net::IpAddr::V4(ip)],
-        Some(url::Host::Ipv6(ip)) => vec![std::net::IpAddr::V6(ip)],
-        _ => vec![
-            std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
-            std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST),
-        ],
-    };
-    let mut uncertain = None;
-    for ip in ips {
-        match std::net::TcpStream::connect_timeout(
-            &std::net::SocketAddr::new(ip, port),
-            std::time::Duration::from_millis(500),
-        ) {
-            Ok(_) => return Ok(true),
-            Err(error) if error.kind() == std::io::ErrorKind::ConnectionRefused => {}
-            Err(error) => uncertain = Some(error),
+    #[cfg(not(windows))]
+    {
+        let url = crate::http::endpoint(profile, "/health")?;
+        let ips = match url.host() {
+            Some(url::Host::Ipv4(ip)) => vec![std::net::IpAddr::V4(ip)],
+            Some(url::Host::Ipv6(ip)) => vec![std::net::IpAddr::V6(ip)],
+            _ => vec![
+                std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+                std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST),
+            ],
+        };
+        let mut uncertain = None;
+        for ip in ips {
+            match std::net::TcpStream::connect_timeout(
+                &std::net::SocketAddr::new(ip, port),
+                std::time::Duration::from_millis(500),
+            ) {
+                Ok(_) => return Ok(true),
+                Err(error) if error.kind() == std::io::ErrorKind::ConnectionRefused => {}
+                Err(error) => uncertain = Some(error),
+            }
         }
-    }
-    match uncertain {
-        Some(error) => Err(format!("无法确认监听状态: {error}")),
-        None => Ok(false),
+        match uncertain {
+            Some(error) => Err(format!("无法确认监听状态: {error}")),
+            None => Ok(false),
+        }
     }
 }
 
@@ -236,6 +239,11 @@ mod platform {
     use super::*;
     use windows_sys::Win32::{
         Foundation::*,
+        NetworkManagement::IpHelper::{
+            GetExtendedTcpTable, MIB_TCP6ROW_OWNER_PID, MIB_TCPROW_OWNER_PID, MIB_TCP_STATE_LISTEN,
+            TCP_TABLE_OWNER_PID_LISTENER,
+        },
+        Networking::WinSock::{AF_INET, AF_INET6},
         System::{Diagnostics::ToolHelp::*, Threading::*},
         UI::Shell::CommandLineToArgvW,
     };
@@ -392,14 +400,112 @@ mod platform {
             validate_arguments(profile, &instance.image, &argv)
         }
     }
+    fn parse_listener_table(
+        words: &[u32],
+        length: usize,
+        family: u32,
+        port: u16,
+    ) -> Result<Vec<u32>, String> {
+        let row_size = match family {
+            value if value == AF_INET as u32 => std::mem::size_of::<MIB_TCPROW_OWNER_PID>(),
+            value if value == AF_INET6 as u32 => std::mem::size_of::<MIB_TCP6ROW_OWNER_PID>(),
+            _ => return Err("监听端口查询地址族无效".into()),
+        };
+        let header_size = std::mem::size_of::<u32>();
+        if length < header_size || length > std::mem::size_of_val(words) {
+            return Err("监听端口表长度无效".into());
+        }
+        let count = words[0] as usize;
+        let required = count
+            .checked_mul(row_size)
+            .and_then(|rows| rows.checked_add(header_size))
+            .ok_or("监听端口表大小溢出")?;
+        if required > length {
+            return Err("监听端口表记录被截断".into());
+        }
+        let mut ids = Vec::new();
+        for index in 0..count {
+            // The checked byte range covers each SDK row. Avoid relying on struct
+            // alignment when reading the trailing variable-length table array.
+            let pointer = unsafe {
+                words
+                    .as_ptr()
+                    .cast::<u8>()
+                    .add(header_size + index * row_size)
+            };
+            let (state, network_port, pid) = unsafe {
+                if family == AF_INET as u32 {
+                    let row = pointer.cast::<MIB_TCPROW_OWNER_PID>().read_unaligned();
+                    (row.dwState, row.dwLocalPort, row.dwOwningPid)
+                } else {
+                    let row = pointer.cast::<MIB_TCP6ROW_OWNER_PID>().read_unaligned();
+                    (row.dwState, row.dwLocalPort, row.dwOwningPid)
+                }
+            };
+            // Windows stores the port in network byte order in the low 16 bits.
+            if state == MIB_TCP_STATE_LISTEN as u32 && u16::from_be(network_port as u16) == port {
+                if pid == 0 {
+                    return Err("监听端口进程 PID 无效，无法确认归属".into());
+                }
+                ids.push(pid);
+            }
+        }
+        Ok(ids)
+    }
+    fn listener_ids_for_family(port: u16, family: u32) -> Result<Vec<u32>, String> {
+        let mut length = 0u32;
+        let status = unsafe {
+            GetExtendedTcpTable(
+                std::ptr::null_mut(),
+                &mut length,
+                0,
+                family,
+                TCP_TABLE_OWNER_PID_LISTENER,
+                0,
+            )
+        };
+        if status != ERROR_INSUFFICIENT_BUFFER && status != NO_ERROR {
+            return Err(format!(
+                "无法读取监听端口表（地址族 {family}，系统错误 {status}）"
+            ));
+        }
+        // A changing connection table can require a larger buffer between calls.
+        // Bound both allocation and retries; failure is never an empty result.
+        for _ in 0..4 {
+            if !(4..=4 * 1024 * 1024).contains(&length) {
+                return Err("监听端口表大小无效".into());
+            }
+            // The native API writes DWORD-based records, so allocate DWORD-aligned
+            // storage rather than assuming that a Vec<u8> has sufficient alignment.
+            let mut words = vec![0u32; (length as usize).div_ceil(4)];
+            let status = unsafe {
+                GetExtendedTcpTable(
+                    words.as_mut_ptr().cast(),
+                    &mut length,
+                    0,
+                    family,
+                    TCP_TABLE_OWNER_PID_LISTENER,
+                    0,
+                )
+            };
+            if status == ERROR_INSUFFICIENT_BUFFER {
+                continue;
+            }
+            if status != NO_ERROR {
+                return Err(format!(
+                    "无法读取监听端口表（地址族 {family}，系统错误 {status}）"
+                ));
+            }
+            return parse_listener_table(&words, length as usize, family, port);
+        }
+        Err("监听端口表持续变化，无法确认归属".into())
+    }
     pub(super) fn listening_ids(port: u16) -> Result<Vec<u32>, String> {
-        let script=format!("$ErrorActionPreference='Stop'; $ids=@(Get-NetTCPConnection -LocalPort {port} -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique); ConvertTo-Json -InputObject $ids -Compress");
-        let text = crate::output(
-            "powershell.exe",
-            &["-NoProfile", "-NonInteractive", "-Command", &script],
-        )
-        .ok_or("无法读取监听端口进程（权限不足或探测超时）")?;
-        serde_json::from_str(&text).map_err(|_| "监听端口查询结果无效".into())
+        let mut ids = listener_ids_for_family(port, AF_INET as u32)?;
+        ids.extend(listener_ids_for_family(port, AF_INET6 as u32)?);
+        ids.sort_unstable();
+        ids.dedup();
+        Ok(ids)
     }
     pub fn detect(profile: &ServiceProfile) -> Result<Option<VerifiedExternal>, String> {
         let ids = listening_ids(local_port(profile)?)?;
@@ -667,6 +773,103 @@ mod platform {
             }
         }
         #[test]
+        fn native_listener_table_parser_checks_bounds_family_port_order_and_pid() {
+            let port = 0x1234u16;
+            let mut ipv4 = vec![
+                1,
+                MIB_TCP_STATE_LISTEN as u32,
+                0,
+                port.to_be() as u32,
+                0,
+                0,
+                42,
+            ];
+            let length = std::mem::size_of_val(ipv4.as_slice());
+            assert_eq!(
+                parse_listener_table(&ipv4, length, AF_INET as u32, port).unwrap(),
+                vec![42]
+            );
+            assert!(
+                parse_listener_table(&ipv4, length, AF_INET as u32, port + 1)
+                    .unwrap()
+                    .is_empty()
+            );
+            for invalid_length in [0, 3, length - 1, length + 1] {
+                assert!(parse_listener_table(&ipv4, invalid_length, AF_INET as u32, port).is_err());
+            }
+            assert!(parse_listener_table(&ipv4, length, 999, port).is_err());
+            assert!(
+                listener_ids_for_family(port, 999).is_err(),
+                "native API failures must not be converted to an empty listener list"
+            );
+            ipv4[0] = u32::MAX;
+            assert!(parse_listener_table(&ipv4, length, AF_INET as u32, port).is_err());
+            ipv4[0] = 1;
+            ipv4[6] = 0;
+            assert!(parse_listener_table(&ipv4, length, AF_INET as u32, port).is_err());
+            let mut ipv6 = vec![0; 15];
+            ipv6[0] = 1;
+            ipv6[6] = port.to_be() as u32;
+            ipv6[13] = MIB_TCP_STATE_LISTEN as u32;
+            ipv6[14] = 43;
+            let length = std::mem::size_of_val(ipv6.as_slice());
+            assert_eq!(
+                parse_listener_table(&ipv6, length, AF_INET6 as u32, port).unwrap(),
+                vec![43]
+            );
+            assert!(parse_listener_table(&ipv6, length - 1, AF_INET6 as u32, port).is_err());
+        }
+        #[test]
+        fn native_listener_tables_track_ipv4_ipv6_owners_and_closed_sockets() {
+            let ipv4 = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+            let port = ipv4.local_addr().unwrap().port();
+            let ipv6 = std::net::TcpListener::bind((std::net::Ipv6Addr::LOCALHOST, port)).unwrap();
+            let pid = std::process::id();
+            assert_eq!(
+                listener_ids_for_family(port, AF_INET as u32).unwrap(),
+                vec![pid]
+            );
+            assert_eq!(
+                listener_ids_for_family(port, AF_INET6 as u32).unwrap(),
+                vec![pid]
+            );
+            assert_eq!(
+                listening_ids(port).unwrap(),
+                vec![pid],
+                "one PID across two address families must be deduplicated"
+            );
+            for listener in [&ipv4, &ipv6] {
+                let client = std::net::TcpStream::connect_timeout(
+                    &listener.local_addr().unwrap(),
+                    std::time::Duration::from_secs(1),
+                )
+                .unwrap();
+                let accepted = listener.accept().unwrap();
+                drop(client);
+                drop(accepted);
+            }
+            let profile = ServiceProfile {
+                id: "native-listener-fixture".into(),
+                name: "".into(),
+                base_url: format!("http://127.0.0.1:{port}"),
+                install_dir: "".into(),
+                config_path: "".into(),
+                python_path: std::env::current_exe().unwrap().to_string_lossy().into(),
+                managed: false,
+            };
+            assert!(port_accepting(&profile).unwrap());
+            assert!(
+                detect(&profile).is_err(),
+                "a Rust listener must never be identified as Strata"
+            );
+            assert_eq!(listening_ids(port).unwrap(), vec![pid]);
+            drop(ipv4);
+            drop(ipv6);
+            assert!(listening_ids(port).unwrap().is_empty());
+            assert!(!port_accepting(&profile).unwrap());
+            assert!(detect(&profile).unwrap().is_none());
+        }
+        #[test]
         fn existing_engine_job_is_captured_as_its_exact_branch_without_killing_unrelated_peers() {
             use windows_sys::Win32::System::JobObjects::*;
             struct EngineJob(HANDLE);
@@ -930,7 +1133,28 @@ while time.monotonic()<deadline:
                 python_path: selected.to_string_lossy().into(),
                 managed: true,
             };
-            let mut candidate = detect(&profile).unwrap().unwrap();
+            assert!(
+                launcher.0.try_wait().unwrap().is_none(),
+                "venv launcher exited after writing fixture readiness"
+            );
+            assert_eq!(
+                unsafe { WaitForSingleObject(handle, 0) },
+                WAIT_TIMEOUT,
+                "venv server exited after writing fixture readiness"
+            );
+            let address = std::net::SocketAddr::new(std::net::Ipv4Addr::LOCALHOST.into(), port);
+            let connection =
+                std::net::TcpStream::connect_timeout(&address, std::time::Duration::from_secs(1))
+                    .expect("ready fixture must accept a real loopback TCP connection");
+            drop(connection);
+            assert_eq!(
+                listening_ids(port).unwrap(),
+                vec![child_pid],
+                "native listener table must identify the ready fixture's Python child"
+            );
+            let mut candidate = detect(&profile)
+                .unwrap()
+                .expect("ready TCP fixture missing from native owner-PID table");
             assert_eq!(candidate.pid, child_pid);
             assert_ne!(child_pid, launcher.0.id());
             assert!(same_path(&candidate.image, Path::new(&python)));

@@ -1,6 +1,6 @@
 # 开发与验收记录
 
-更新日期：2026-10-10。上游参考 revision：`fb58e0dbc8399662c0e47c76578c6e878b14f6cf`。
+更新日期：2026-10-11。上游参考 revision：`fb58e0dbc8399662c0e47c76578c6e878b14f6cf`。
 
 本文件区分本轮独立后台实现与此前原型验证。自动检测/导入、运行时准备、元数据统计、调优、自启动与更新已经进入实现和测试阶段，不再只是方案；实现存在、夹具通过、真实 GPU 运行、最终安装包和跨版本更新是不同验收层级。下面记录阶段证据，最终提交后仍需统一检查及真实发布验收。
 
@@ -54,7 +54,7 @@ Core 的 analytics 测试覆盖事务重放/重启去重、未知值与成功率
 
 ## 发布与桌面界面状态
 
-公开仓库已创建；正式 GitHub updater endpoint、公钥、updater artifacts 与 Actions 私钥 secret 已配置。发布门禁单元测试 **5 passed**，GitHub workflow actionlint 检查通过；跨平台 sidecar 脚本已实际构建 Windows debug 后台，并核对目标与打包副本 SHA256 一致。
+公开仓库已创建；正式 GitHub updater endpoint、公钥、updater artifacts 与 Actions 私钥 secret 已配置。最初的发布门禁单元测试为 **5 passed**；后续加入实际更新包验签，Node 门禁 **12 passed / 0 skipped**、Rust 验签 **7 passed**，release 模式 CLI 的三个集成场景也通过。测试覆盖内置公钥、载荷篡改、签名及唯一合法版本、平台别名去重、DEB 签名、下载截断/失败/超时和自建临时目录清理；公开夹具不包含私钥。最终五 crate workspace Clippy `-D warnings`、fmt、版本一致和 GitHub workflow actionlint 通过。跨平台 sidecar 脚本已实际构建 Windows debug 后台，并核对目标与打包副本 SHA256 一致。
 
 当前尚未记录完整 Windows/Linux tag Release 构建结果、公开安装包资产核验、更新器密码学验签及上一版 → 新版安装闭环。更新签名不是 Windows Authenticode 发布者签名，尚未配置发布者证书。安装成功、后台版本切换和 API/模型恢复必须分别验收。
 
@@ -69,7 +69,13 @@ Core 的 analytics 测试覆盖事务重放/重启去重、未知值与成功率
 
 [第二轮 CI](https://github.com/hongfaqiu/strata-manager/actions/runs/38061810219) 对应 `6c50b72758360fd2e117e3b4d413099296138e13`：Windows 的 target-triple fixture 路径已实际修复（升级测试通过），Linux 的动态 mock 竞争已实际修复（前端 35 passed）。两平台仍未完成安装包构建：Windows Core 64 passed / 5 failed / 2 ignored，失败集中在并行 WMI/监听端口探测超时；Linux Core 46 passed / 4 failed / 2 ignored，失败为缺失解锁的默认 Secret Service 集合。
 
-本地后续修复保持全部断言和超时：Windows 原生测试改为串行；Linux 测试使用隔离的空凭据库、显式创建和解锁 login/default 集合，并先实际存取删除验证。Linux 会话脚本在 Ubuntu 22.04 容器实测退出码 0；三个 Linux 条件编译 Clippy 警告也已修复。两项 CI 环境修复仍需下一轮完整 Actions 验证，不据此声称跨平台流水线已通过。
+本地后续修复保持全部断言和超时：Windows 原生测试改为串行；Linux 测试使用隔离的空凭据库、显式创建和解锁 login/default 集合，并先实际存取删除验证。Linux 会话脚本在 Ubuntu 22.04 容器实测退出码 0；三个 Linux 条件编译 Clippy 警告也已修复。当时两项环境修复待完整 Actions 复验，结果见下方第三轮记录。
+
+[第三轮 CI](https://github.com/hongfaqiu/strata-manager/actions/runs/38063646588) 对应 `38a3bb13b987f4ab44f56594370516ce6969b909`，Linux 完整构建通过：observer 13、前端 36、HTTP 5、发布检查 5；IPC 4、desktop 2、Core 60 passed / 2 ignored；隔离凭据库存读删、workspace Clippy、release sidecar、AppImage 与 DEB 构建均成功。已上传 [AppImage 产物](https://github.com/hongfaqiu/strata-manager/actions/runs/38063646588/artifacts/11674084782)和 [DEB 产物](https://github.com/hongfaqiu/strata-manager/actions/runs/38063646588/artifacts/11675085686)，分别约 85.12 MiB 和 10.96 MiB。这是 CI 安装包，不是正式 Release，也不证明 Linux GPU 或实机崩溃恢复。
+
+该轮 Windows 前端 36、observer 13、IPC 5、desktop 4 均通过；Core 78 passed / 1 failed / 2 ignored。唯一失败是标准 venv fixture 的监听进程列表返回空，未进入 Python 身份核验；Windows Clippy 和 NSIS 因此没有执行。本地后续改为 Windows 原生 IPv4/IPv6 TCP owner-PID 表，并保留完整身份、创建时间、参数、活动请求与二次核验；修复须由下一轮 Windows CI 确认。
+
+原生监听修复的本地回归：Windows platform 6 passed（52.83 秒），包括实际 IPv4/IPv6 监听 PID、标准 venv 身份及精确 Job 子树；Discovery 6 passed（7.91 秒），API 错误拒绝另单独 1 passed。保留原有身份不匹配时拒绝接管的断言，没有操作原有模型进程。以上范围不能替代下一轮完整 CI 和 NSIS 安装包验收。
 
 本地最新前端检查为核心协议 **36 passed**、HTTP 合同 **5 passed**、类型检查及生产构建通过；四 crate 的 workspace Clippy `-D warnings` 和 fmt 通过。独立实际 App + 内存 RPC 验证了中英、侧栏展开/收起与 10 个路由的 **180 个宽度组合**，未发现页面整体横向溢出。设置页另外验证 600、800、1440、2560 宽度，去除内容宽度上限，按工作区宽度使用单列或两列。长表格与代码允许在组件内滚动。这些界面测试使用演示数据，不作为真实 GPU/采集证据。
 

@@ -101,6 +101,12 @@ jobs:
         with:
           workspaces: '. -> apps/desktop/src-tauri/target'
       - run: pnpm install --frozen-lockfile
+      - name: Build the fixture update verifier for this platform
+        run: cargo build -p strata-update-verifier --locked --target ${{ matrix.target }}
+      - name: Version and complete release guard tests
+        env:
+          UPDATE_VERIFIER_BIN: ${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/debug/strata-update-verifier${{ runner.os == 'Windows' && '.exe' || '' }}
+        run: node --test scripts/release-check.test.mjs
       - run: pnpm check
       - run: node scripts/prepare-sidecar.mjs --profile debug --target ${{ matrix.target }}
       - run: cargo fmt --all -- --check
@@ -154,12 +160,19 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       RELEASE_TAG: ${{ github.ref_name }}
+      UPDATE_VERIFIER_BIN: ${{ github.workspace }}/target/release/strata-update-verifier
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Verify both platforms, release asset ownership and uploaded signatures
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test and build the Tauri-compatible release verifier
+        run: |
+          cargo test -p strata-update-verifier --locked
+          cargo build -p strata-update-verifier --release --locked
+          node --test scripts/release-check.test.mjs
+      - name: Verify installer bytes, built-in public key, signed version and both platforms
         run: node scripts/release-verify.mjs
       - name: Publish stable release
         if: needs.validate.outputs.prerelease == 'false'
