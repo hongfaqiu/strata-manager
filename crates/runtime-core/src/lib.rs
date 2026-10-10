@@ -2513,11 +2513,9 @@ mod native_probe_tests {
         )
         .is_none());
         assert!(start.elapsed() < Duration::from_secs(6));
+        // Use the native shell for the empty successful-output contract.
         assert_eq!(
-            output(
-                "powershell.exe",
-                &["-NoProfile", "-NonInteractive", "-Command", "exit 0"]
-            ),
+            output("cmd.exe", &["/d", "/q", "/c", "exit 0"]),
             Some(String::new())
         );
     }
