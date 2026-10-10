@@ -4,6 +4,10 @@
 
 ## 当前发布准备状态
 
+2026-10-11：已公开 [v0.1.0-beta.1 预览版](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0-beta.1)，包含 Windows x64 NSIS、Linux x64 AppImage/DEB、三份更新签名、`latest.json` 和 `SHA256SUMS`。发布源码为 `ab3bacc68fd8c9a95cc92de05ae2439976c91e5f`。Windows 原始 tag 构建在创建草稿时因 GitHub 工作流写权限规则收到 403；保留原始已签名产物，经[恢复检查](https://github.com/hongfaqiu/strata-manager/actions/runs/38078576661)核对构建身份、artifact 摘要并实际完成安装、启动、IPC 和卸载。Linux 原始签名构建通过 AppImage/解包 DEB 启动检查。发布前独立下载全部实际更新包，使用内置公钥验证签名及签名中的版本，并比对三个安装包的 SHA256；本次预览通过验证后恢复发布，原失败记录仍保留。
+
+[Windows/Linux 完整 CI](https://github.com/hongfaqiu/strata-manager/actions/runs/38077681492) 已通过，三种安装包均上传并通过启动检查。后续发布流程已加入实际 tag commit 绑定、默认分支创建提示、明确的手动 tag 门禁及临时目录下的 `GH_REPO` 绑定；新增发布门禁本地 36 项全部通过。GPU 实机、登录自启动和跨版本更新安装仍单独验收，不能由安装包启动或发布验签结果外推。
+
 2026-10-10：公开仓库已创建，正式 HTTPS 更新地址、公钥与 `createUpdaterArtifacts` 已配置，Actions 的 `TAURI_SIGNING_PRIVATE_KEY` secret 已设置。当前密钥没有密码，因此密码 secret 可缺省为空。发布门禁测试 5 项通过，两个工作流 actionlint 检查通过，Windows debug sidecar 已实际构建并核对打包副本 hash。
 
 2026-10-11：发布门禁新增真实更新包密码学验签和有界分页草稿查询，最新 Node 17 项、Rust 7 项通过，此前 release CLI 的 3 个密码学场景通过；最终五 crate workspace Clippy、fmt、版本检查通过。普通 CI 和 Release 构建阶段会构建验签 helper 并运行完整 Node 门禁；publish 阶段再次使用 release helper 检查实际草稿资产，全部成功后才公开。夹具公钥及签名不含用户私钥。
