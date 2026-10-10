@@ -62,6 +62,10 @@ pnpm --filter @strata-manager/desktop tauri signer generate -w $strataSigningKey
 
 CI 产物以 `ci-<platform>-<arch>-<bundle>` 名称上传为 Actions artifacts。它们关闭 updater artifacts，不是正式签名发行版。拉取请求不接触更新私钥。
 
+普通 CI 与签名 Release 使用同一套实际安装包启动检查：Windows 在临时目录静默安装 NSIS，启动桌面并核对独立后台的版本、IPC、打包二进制 SHA256 和空白私有数据目录，再停止并卸载；Linux 在 Xvfb/DBus 环境分别解包并启动 AppImage 与 DEB，检查同样的后台通信。检查限于一次性 GitHub runner，不在开发电脑上自动安装或接管模型。包启动成功不代表 GPU 推理、登录自启动或跨版本更新安装完成。
+
+校验和发布会切换到 runner 临时目录，因此 publish job 显式设置 `GH_REPO`，让 `gh release download/upload/edit` 始终定位当前仓库。手动发版必须选择已存在的 `v<version>` tag；从分支运行会给出明确错误，避免显示全部跳过却没有发布产物。
+
 ## 发布一个版本
 
 1. 在同一变更中同步根 `package.json`、`apps/desktop/package.json`、`packages/core/package.json`、Tauri config、Cargo workspace 和任何显式 Cargo package version。`node scripts/release-check.mjs --tag v0.1.0` 检查版本；tag 必须与应用版本严格一致。
