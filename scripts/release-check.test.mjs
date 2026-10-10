@@ -6,7 +6,7 @@ import { mkdtemp, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { checkRelease, tomlVersion, validateSigning, validateVersions } from './release-check.mjs';
-import { downloadAssetToFile, validateRelease, verifyRelease } from './release-verify.mjs';
+import { downloadAssetToFile, findDraftRelease, ghJson, validateRelease, verifyRelease } from './release-verify.mjs';
 
 const repository = 'example/strata-manager';
 const version = '0.1.0';
@@ -111,6 +111,98 @@ test('wrong product, version or architecture cannot masquerade as the required i
   }
 });
 
+test('draft lookup uses the authenticated release list and scans beyond the first matching page', async () => {
+  const { release } = releaseFixture();
+  const calls = [];
+  const firstPage = Array.from({ length: 100 }, (_, index) => ({ tag_name: `v-old-${index}`, draft: false }));
+  const found = await findDraftRelease(repository, tag, { fetchPage: async path => {
+    calls.push(path);
+    return calls.length === 1 ? firstPage : [release];
+  } });
+  assert.equal(found, release);
+  assert.deepEqual(calls, [`/repos/${repository}/releases?per_page=100&page=1`, `/repos/${repository}/releases?per_page=100&page=2`]);
+
+  // Finding a draft in a full page must not hide another exact-tag release.
+  firstPage[0] = release;
+  const duplicateCalls = [];
+  await assert.rejects(findDraftRelease(repository, tag, { fetchPage: async path => {
+    duplicateCalls.push(path);
+    return duplicateCalls.length === 1 ? firstPage : [{ ...release, draft: false }];
+  } }), /Duplicate releases/);
+  assert.equal(duplicateCalls.length, 2);
+
+  const terminalCalls = [];
+  assert.equal(await findDraftRelease(repository, tag, { fetchPage: async path => {
+    terminalCalls.push(path);
+    return terminalCalls.length === 1 ? firstPage : [];
+  } }), release);
+  assert.equal(terminalCalls.length, 2, 'A full page needs an additional empty terminal page');
+});
+
+test('draft lookup rejects published, duplicate, missing and malformed release metadata', async () => {
+  const { release } = releaseFixture();
+  const rejected = [
+    [[{ ...release, draft: false }], /unpublished draft/],
+    [[release, { ...release }], /Duplicate releases/],
+    [[], /No release found/],
+    [[{ ...release, tag_name: `${tag}-other` }], /No release found/],
+    [release, /Expected a release list/],
+    [null, /Expected a release list/],
+    [[null], /Invalid release list entry/],
+    [[[]], /Invalid release list entry/],
+    [[{ draft: true }], /Invalid release list entry/],
+    [[{ ...release, tag_name: 1 }], /Invalid release list entry/],
+    [[{ ...release, draft: 'true' }], /Invalid release list entry/],
+    [Array.from({ length: 101 }, () => release), /Expected a release list/],
+  ];
+  for (const [metadata, error] of rejected) await assert.rejects(findDraftRelease(repository, tag, { fetchPage: async () => metadata }), error);
+  await assert.rejects(findDraftRelease(repository, tag, { fetchPage: async () => { throw new Error('HTTP 403'); } }), /HTTP 403/);
+});
+
+test('draft pagination cannot succeed at its bound even after finding a matching draft', async () => {
+  const { release } = releaseFixture();
+  for (const includeMatch of [true, false]) {
+    const calls = [];
+    await assert.rejects(findDraftRelease(repository, tag, { maxPages: 2, fetchPage: async path => {
+      calls.push(path);
+      const page = Array.from({ length: 100 }, (_, index) => ({ tag_name: `v-other-${calls.length}-${index}`, draft: false }));
+      if (includeMatch && calls.length === 1) page[0] = release;
+      return page;
+    } }), /pagination limit reached/);
+    assert.deepEqual(calls, [`/repos/${repository}/releases?per_page=100&page=1`, `/repos/${repository}/releases?per_page=100&page=2`]);
+  }
+  for (const maxPages of [0, -1, 1.5, 11, Infinity]) await assert.rejects(findDraftRelease(repository, tag, { maxPages, fetchPage: async () => { assert.fail('Invalid bounds must not make a request'); } }), /bounded/);
+});
+
+test('GitHub release metadata commands have a finite timeout and forced termination signal', () => {
+  const endpoint = `/repos/${repository}/releases?per_page=100&page=1`;
+  assert.deepEqual(ghJson(endpoint, { execute: (command, arguments_, executionOptions) => {
+    assert.equal(command, 'gh');
+    assert.deepEqual(arguments_, ['api', endpoint]);
+    assert.equal(executionOptions.timeout, 30000);
+    assert.equal(executionOptions.killSignal, 'SIGKILL');
+    assert.equal(executionOptions.encoding, 'utf8');
+    assert.equal(executionOptions.maxBuffer, 4 * 1024 * 1024);
+    return '[]';
+  } }), []);
+  assert.throws(() => ghJson(endpoint, { execute: () => { throw new Error('ETIMEDOUT'); } }), /ETIMEDOUT/);
+});
+
+test('invalid draft metadata refuses verification before any asset download', async () => {
+  const temporary = await ownedTemporary();
+  try {
+    const configDirectory = join(temporary.directory, 'apps/desktop/src-tauri');
+    await mkdir(configDirectory, { recursive: true });
+    await writeFile(join(configDirectory, 'tauri.conf.json'), JSON.stringify({ version, productName: 'Strata Manager' }));
+    const { release } = releaseFixture();
+    for (const fetchRelease of [async () => [], async () => [{ ...release, draft: false }], async () => [release, release], async () => release, async () => { throw new Error('ETIMEDOUT'); }]) {
+      let downloaded = false;
+      await assert.rejects(verifyRelease({ ...options, root: temporary.directory, verifierPath: 'must-not-be-executed', fetchRelease, fetchAsset: async () => { downloaded = true; assert.fail('Invalid metadata must not download release assets'); }, logger: () => {} }));
+      assert.equal(downloaded, false);
+    }
+  } finally { await temporary.cleanup(); }
+});
+
 test('large binary downloads stream to disk and reject truncated data', async () => {
   const temporary = await ownedTemporary();
   const content = Buffer.alloc(8 * 1024 * 1024, 0xff);
@@ -203,7 +295,10 @@ async function cryptoReleaseFixture(scenario, operation) {
     const configDirectory = join(temporary.directory, 'apps/desktop/src-tauri');
     await mkdir(configDirectory, { recursive: true });
     await writeFile(join(configDirectory, 'tauri.conf.json'), JSON.stringify({ version, productName: 'Strata Manager', plugins: { updater: { pubkey: publicKey } } }));
-    const run = () => verifyRelease({ ...options, root: temporary.directory, verifierPath: process.env.UPDATE_VERIFIER_BIN, fetchRelease: async () => release, logger: () => {}, fetchAsset: async (_repository, asset, destination) => {
+    const run = () => verifyRelease({ ...options, root: temporary.directory, verifierPath: process.env.UPDATE_VERIFIER_BIN, fetchRelease: async path => {
+      assert.equal(path, `/repos/${repository}/releases?per_page=100&page=1`);
+      return [release];
+    }, logger: () => {}, fetchAsset: async (_repository, asset, destination) => {
       downloads.push(asset.name); paths.push(destination);
       const bytes = asset.name === 'latest.json' ? JSON.stringify(manifest) : asset.name.endsWith('.sig') ? (scenario.mismatch || scenario.fakeDebSignature && asset.name.endsWith('.deb.sig') ? 'signature mismatch' : signature) : scenario.tamper || scenario.tamperDeb && asset.name.endsWith('.deb') ? 'tampered installer' : payload;
       await writeFile(destination, bytes, { flag: 'wx' });

@@ -87,8 +87,31 @@ export function validateRelease(release, manifest, { repository, tag, version, e
   return { updates, deb };
 }
 
-function ghJson(path) {
-  return JSON.parse(execFileSync('gh', ['api', path], { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 }));
+export function ghJson(path, { execute = execFileSync } = {}) {
+  return JSON.parse(execute('gh', ['api', path], { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024, timeout: 30000, killSignal: 'SIGKILL' }));
+}
+
+export async function findDraftRelease(repository, tag, { fetchPage = ghJson, maxPages = 10 } = {}) {
+  if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 10) throw new Error('Release pagination must be bounded to 1–10 pages.');
+  const matches = [];
+  // The tag endpoint only finds published releases. Authenticated listReleases
+  // includes drafts; scan until its last page to prove the exact tag is unique.
+  for (let page = 1; page <= maxPages; page++) {
+    const releases = await fetchPage(`/repos/${repository}/releases?per_page=100&page=${page}`);
+    if (!Array.isArray(releases) || releases.length > 100) throw new Error('Expected a release list of at most 100 entries.');
+    for (const release of releases) {
+      if (!release || typeof release !== 'object' || Array.isArray(release) || typeof release.tag_name !== 'string' || typeof release.draft !== 'boolean') throw new Error('Invalid release list entry: tag_name and draft are required.');
+      if (release.tag_name !== tag) continue;
+      matches.push(release);
+      if (matches.length > 1) throw new Error('Duplicate releases for the exact requested tag.');
+    }
+    if (releases.length < 100) {
+      if (!matches.length) throw new Error('No release found for the exact requested tag.');
+      if (matches[0].draft !== true) throw new Error('Expected an unpublished draft release for the exact requested tag.');
+      return matches[0];
+    }
+  }
+  throw new Error('Release pagination limit reached before uniqueness could be verified.');
 }
 export async function downloadAssetToFile(repository, asset, destination, { spawnProcess = spawn, timeoutMs = 600000 } = {}) {
   const child = spawnProcess('gh', ['api', `/repos/${repository}/releases/assets/${asset.id}`, '-H', 'Accept: application/octet-stream'], { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -134,7 +157,7 @@ export async function verifyRelease({ repository = process.env.GITHUB_REPOSITORY
   if (!verifierPath) throw new Error('Build strata-update-verifier and set UPDATE_VERIFIER_BIN before publishing.');
   const configPath = resolve(root, 'apps/desktop/src-tauri/tauri.conf.json');
   const { version, productName } = JSON.parse(await readFile(configPath, 'utf8'));
-  const release = await fetchRelease(`/repos/${repository}/releases/tags/${encodeURIComponent(tag)}`);
+  const release = await findDraftRelease(repository, tag, { fetchPage: fetchRelease });
   const assets = assetIndex(release);
   const manifestAsset = assets.get('latest.json');
   if (!manifestAsset) throw new Error('The official Tauri action did not upload latest.json.');

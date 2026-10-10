@@ -177,6 +177,39 @@ impl SupervisorClient {
         }
         Ok(canonical)
     }
+    async fn wait_background_stopped(&self) -> Result<(), RpcError> {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+        loop {
+            match tokio::time::timeout_at(deadline, self.connected())
+                .await
+                .map_err(|_| {
+                    RpcError::new("supervisor_upgrade", "旧后台尚未退出，未启动重复后台")
+                })? {
+                Err(error) if error.code == "supervisor_unavailable" => {
+                    // The listener closes before runtime cleanup drops the
+                    // instance lock. Starting in that gap exits as a duplicate.
+                    // Probe the same user/data-dir kernel lock, never a PID kill.
+                    match strata_local_ipc::SingleInstance::acquire(&self.data_dir) {
+                        Ok(instance) => {
+                            drop(instance);
+                            return Ok(());
+                        }
+                        Err(error) if error.code == "already_running" => {}
+                        Err(error) => return Err(error),
+                    }
+                }
+                Err(error) => return Err(error),
+                Ok(_) => {}
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return Err(RpcError::new(
+                    "supervisor_upgrade",
+                    "旧后台尚未退出，未启动重复后台",
+                ));
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
     async fn replace_background(&self, previous: Value) -> Result<(), RpcError> {
         let executable = self.staged_executable()?;
         let old = self.previous_executable(&previous)?;
@@ -188,21 +221,7 @@ impl SupervisorClient {
             json!({"forUpdate":true}),
         )
         .await?;
-        let deadline = std::time::Instant::now() + Duration::from_secs(15);
-        loop {
-            match self.connected().await {
-                Err(error) if error.code == "supervisor_unavailable" => break,
-                Err(error) => return Err(error),
-                Ok(_) => {}
-            }
-            if std::time::Instant::now() >= deadline {
-                return Err(RpcError::new(
-                    "supervisor_upgrade",
-                    "旧后台尚未退出，未启动重复后台",
-                ));
-            }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
+        self.wait_background_stopped().await?;
         let result = async {
             let current = self.start_and_wait(&executable).await?;
             if !self.matches_package(&current)? {
@@ -230,19 +249,27 @@ impl SupervisorClient {
                         format!("{error}; 无法安全退出候选后台: {stop}"),
                     )
                 })?;
-                for _ in 0..150 {
-                    if self.connected().await.is_err() {
-                        break;
-                    }
-                    tokio::time::sleep(Duration::from_millis(100)).await;
-                }
             }
-            self.start_and_wait(&old).await.map_err(|rollback| {
+            self.wait_background_stopped().await.map_err(|stop| {
+                RpcError::new(
+                    "supervisor_rollback",
+                    format!("{error}; 候选后台尚未完整退出: {stop}"),
+                )
+            })?;
+            let restored = self.start_and_wait(&old).await.map_err(|rollback| {
                 RpcError::new(
                     "supervisor_rollback",
                     format!("{error}; 回滚启动失败: {rollback}"),
                 )
             })?;
+            if restored["executableHash"] != previous["executableHash"]
+                || restored["version"] != previous["version"]
+            {
+                return Err(RpcError::new(
+                    "supervisor_rollback",
+                    format!("{error}; 回滚后台版本身份不匹配"),
+                ));
+            }
             self.wait_selected_health().await.map_err(|rollback| {
                 RpcError::new(
                     "supervisor_rollback",
@@ -254,6 +281,9 @@ impl SupervisorClient {
                 format!("新后台验证失败，已经恢复原版本: {error}"),
             ));
         }
+        // Lifecycle fixtures use a disposable data directory; they must never
+        // repoint the real user's login startup entry at a temporary package.
+        #[cfg(not(test))]
         if crate::startup::status()
             .ok()
             .and_then(|v| v["enabled"].as_bool())
@@ -483,6 +513,27 @@ mod tests {
         panic!("isolated previous supervisor failed to start");
     }
     #[tokio::test]
+    async fn shutdown_waits_for_instance_release_after_the_rpc_listener_is_gone() {
+        let data = tempfile::tempdir().unwrap();
+        let owner = strata_local_ipc::SingleInstance::acquire(data.path()).unwrap();
+        assert!(strata_local_ipc::call(data.path(), "hello", json!({}))
+            .await
+            .is_err());
+        let client = SupervisorClient::new(data.path().into(), data.path().into());
+        let mut stopped = Box::pin(client.wait_background_stopped());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), &mut stopped)
+                .await
+                .is_err(),
+            "A closed RPC listener does not prove the old instance released its lock"
+        );
+        drop(owner);
+        tokio::time::timeout(Duration::from_secs(2), stopped)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+    #[tokio::test]
     async fn package_identity_switches_idle_background_and_bad_candidate_rolls_back() {
         let temp = tempfile::tempdir().unwrap();
         let data = temp.path().join("data");
@@ -499,7 +550,10 @@ mod tests {
             .await
             .unwrap();
         assert_ne!(before["pid"], after["pid"]);
-        assert!(client.matches_package(&after).unwrap());
+        assert!(
+            client.matches_package(&after).unwrap(),
+            "Candidate package was not retained: before={before}, after={after}"
+        );
         assert_eq!(after["updatePending"], false);
         let broken = temp.path().join("broken-supervisor.exe");
         fs::write(&broken, b"invalid native package fixture").unwrap();
