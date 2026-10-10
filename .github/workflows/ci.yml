@@ -2,7 +2,7 @@ name: Build and test
 
 on:
   push:
-    branches: [main, 'codex/**']
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -10,7 +10,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # Keep PR merge validation and manually requested builds independent.
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && format('manual-{0}', github.ref) || github.ref }}
   cancel-in-progress: true
 
 jobs:
