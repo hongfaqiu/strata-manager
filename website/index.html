@@ -160,7 +160,7 @@
               <svg class="icon" aria-hidden="true"><use href="#icon-download"/></svg>
               <span data-en="Get Started Free">立即体验预览版</span>
             </a>
-            <a class="btn btn-secondary" href="https://github.com/hongfaqiu/strata-manager/blob/main/docs/USER_GUIDE.md" data-href-en="https://github.com/hongfaqiu/strata-manager/blob/main/docs/USER_GUIDE.en.md" target="_blank" rel="noopener noreferrer">
+            <a class="btn btn-secondary" href="docs/user-guide.html" data-href-en="docs/user-guide.en.html">
               <span data-en="Explore User Guide">阅读使用指南</span>
               <svg class="icon icon-subtle" aria-hidden="true"><use href="#icon-external"/></svg>
             </a>
@@ -461,7 +461,7 @@
 
           <div class="display-image-wrap">
             <a id="screen-link" class="screen-lightbox-trigger open-lightbox-btn" href="assets/screenshots/overview.zh.webp" data-target="overview" title="点击放大查看高清原图" data-title-en="Click to enlarge screenshot">
-              <img id="screen-image" class="display-screenshot" src="assets/screenshots/overview.zh.webp" width="2880" height="1920" alt="总览：查看当前模型、后台服务、API 用量与资源概况；数值为演示数据" loading="lazy" decoding="async">
+              <img id="screen-image" class="display-screenshot" src="assets/screenshots/overview.zh.webp" width="2880" height="1920" alt="总览：查看当前模型、后台服务、API 用量与资源概况" loading="lazy" decoding="async">
               <div class="image-hover-overlay">
                 <span class="overlay-btn">
                   <svg class="icon" aria-hidden="true"><use href="#icon-maximize"/></svg>
@@ -578,9 +578,9 @@
               <li><svg class="icon" aria-hidden="true"><use href="#icon-check"/></svg><span data-en="Build from source; installer verification in progress">可从源码体验；安装包仍在验收</span></li>
             </ul>
             <div class="dl-actions">
-              <a class="btn btn-primary btn-block" href="https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml" target="_blank" rel="noopener noreferrer">
+              <a class="btn btn-primary btn-block" href="docs/download.html#从源码体验" data-href-en="docs/download.en.html#try-source">
                 <svg class="icon" aria-hidden="true"><use href="#icon-download"/></svg>
-                <span data-en="View Windows Build Status">查看 Windows 构建进度</span>
+                <span data-en="Windows Preview Instructions">Windows 体验说明</span>
               </a>
             </div>
           </div>
@@ -600,9 +600,9 @@
               <li><svg class="icon" aria-hidden="true"><use href="#icon-check"/></svg><span data-en="Model weights are prepared separately">模型权重独立准备</span></li>
             </ul>
             <div class="dl-actions">
-              <a class="btn btn-primary btn-block" href="https://github.com/hongfaqiu/strata-manager/actions/runs/38066271017" target="_blank" rel="noopener noreferrer">
+              <a class="btn btn-primary btn-block" href="docs/download.html#linux-预览包" data-href-en="docs/download.en.html#linux-preview-builds">
                 <svg class="icon" aria-hidden="true"><use href="#icon-download"/></svg>
-                <span data-en="Get Linux Preview (CI)">下载 Linux CI 构建产物</span>
+                <span data-en="Linux Preview Instructions">Linux 预览下载说明</span>
               </a>
             </div>
           </div>
@@ -632,7 +632,7 @@ pnpm install --frozen-lockfile
 pnpm desktop</code></pre>
           <div class="source-box-footer">
             <span data-en="Prerequisites: Node.js 22.13+, Rust stable, and OS Tauri packages.">前置条件：Node.js 22.13+、项目固定 pnpm 11、Rust stable 及操作系统 Tauri 编译依赖。</span>
-            <a class="source-footer-link" href="https://github.com/hongfaqiu/strata-manager/blob/main/docs/DEVELOPMENT.md" target="_blank" rel="noopener noreferrer" data-en="Full development docs →">查看完整开发文档 →</a>
+            <a class="source-footer-link" href="docs/development.html" data-en="Full development docs →">查看完整开发文档 →</a>
           </div>
         </div>
       </div>
@@ -647,7 +647,7 @@ pnpm desktop</code></pre>
           <p class="section-subtitle" data-en="Practical questions about local model imports, memory release, background processes, and data safety.">
             梳理了你在日常安装、服务常驻与隐私考量中最常关心的问题。
           </p>
-          <a class="btn btn-secondary faq-ask-btn" href="https://github.com/hongfaqiu/strata-manager/issues" target="_blank" rel="noopener noreferrer">
+          <a class="btn btn-secondary faq-ask-btn" href="https://github.com/hongfaqiu/strata-manager/issues/new/choose" target="_blank" rel="noopener noreferrer">
             <svg class="icon" aria-hidden="true"><use href="#icon-github"/></svg>
             <span data-en="Ask on GitHub Issues">在 GitHub 提交反馈</span>
           </a>
@@ -747,17 +747,18 @@ pnpm desktop</code></pre>
 
         <div class="footer-links-col">
           <h4 data-en="Resources">文档与生态</h4>
-          <a href="https://github.com/hongfaqiu/strata-manager/blob/main/docs/USER_GUIDE.md" data-href-en="https://github.com/hongfaqiu/strata-manager/blob/main/docs/USER_GUIDE.en.md" target="_blank" rel="noopener noreferrer" data-en="User Guide">使用指南</a>
-          <a href="https://github.com/hongfaqiu/strata-manager/blob/main/docs/DEVELOPMENT.md" target="_blank" rel="noopener noreferrer" data-en="Development">开发文档</a>
-          <a href="https://github.com/hongfaqiu/strata-manager/blob/main/docs/VERIFICATION.md" target="_blank" rel="noopener noreferrer" data-en="Verification">验收记录</a>
+          <a href="docs/index.html" data-href-en="docs/index.en.html" data-en="Documentation">文档目录</a>
+          <a href="docs/user-guide.html" data-href-en="docs/user-guide.en.html" data-en="User Guide">使用指南</a>
+          <a href="docs/development.html" data-en="Development">开发文档</a>
+          <a href="docs/verification.html" data-en="Verification (Chinese)">验收记录</a>
           <a href="https://github.com/Niko1221/Strata" target="_blank" rel="noopener noreferrer">Upstream Strata</a>
         </div>
 
         <div class="footer-links-col">
           <h4 data-en="Community">社区与条款</h4>
-          <a href="https://github.com/hongfaqiu/strata-manager/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT License</a>
-          <a href="https://github.com/hongfaqiu/strata-manager/blob/main/THIRD_PARTY_NOTICES.md" target="_blank" rel="noopener noreferrer" data-en="Third-Party Notices">第三方声明</a>
-          <a href="https://github.com/hongfaqiu/strata-manager/issues" target="_blank" rel="noopener noreferrer" data-en="Report Issue">反馈与建议</a>
+          <a href="docs/license.html">MIT License</a>
+          <a href="docs/third-party-notices.html" data-en="Third-Party Notices">第三方声明</a>
+          <a href="docs/troubleshooting.html" data-href-en="docs/troubleshooting.en.html" data-en="Troubleshooting & Feedback">故障排查与反馈</a>
         </div>
       </div>
 

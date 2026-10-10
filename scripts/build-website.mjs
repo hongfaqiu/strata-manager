@@ -1,8 +1,9 @@
 import { cp, mkdir, readdir, rm, lstat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { renderWebsiteDocs, verifyStaticWebsite } from './render-website-docs.mjs';
 
-// Package only public website assets, without desktop or runtime dependencies.
+// Publish static assets and pre-rendered docs, without a browser-side runtime.
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const source = join(root, 'website');
 const output = join(root, 'dist', 'website');
@@ -23,4 +24,6 @@ for (const filename of screenshots.filter((name) => name.endsWith('.webp'))) {
   await cp(join(root, 'docs', 'screenshots', filename), join(output, 'assets', 'screenshots', filename));
 }
 await writeFile(join(output, '.nojekyll'), '');
-console.log(`Static website ready: ${output}`);
+const documentCount = await renderWebsiteDocs(output);
+const checked = await verifyStaticWebsite(output);
+console.log(`Static website ready: ${output} (${documentCount} documents; ${checked.localTargets} local links/assets verified)`);

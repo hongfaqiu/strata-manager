@@ -1,0 +1,29 @@
+name: 功能建议 / Feature request
+description: 说明本地模型管理中希望改进的工作流 / Describe a local model management workflow to improve.
+title: "[Feature] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        当前功能范围见[使用指南](https://hongfaqiu.github.io/strata-manager/docs/user-guide.html) /
+        [User guide](https://hongfaqiu.github.io/strata-manager/docs/user-guide.en.html).
+        提交建议不表示该功能已经实现 / A request does not establish implemented support.
+  - type: textarea
+    id: workflow
+    attributes:
+      label: 当前工作流 / Current workflow
+      description: 你在做什么，哪一步遇到困难？ / What are you doing and where does it become difficult?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: 期望结果 / Desired outcome
+      description: 描述希望改善的行为或结果 / Describe the behavior or result you want.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: 补充背景 / Additional context
+      description: 系统、模型、现有替代方法或约束 / OS, model, alternatives or constraints.

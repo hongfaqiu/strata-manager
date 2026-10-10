@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 使用指南 / User guide
+    url: https://hongfaqiu.github.io/strata-manager/docs/index.html
+    about: 查找模型导入、准备、聊天、API 和更新说明 / Find import, preparation, chat, API and update instructions.
+  - name: 故障排查 / Troubleshooting
+    url: https://hongfaqiu.github.io/strata-manager/docs/troubleshooting.html
+    about: 查看排错步骤后提交脱敏复现信息 / Check troubleshooting before reporting a problem.

@@ -1,8 +1,12 @@
 # Strata Manager user guide
 
-[Product overview](../README.en.md) · [简体中文](../README.md) · [Verification record](VERIFICATION.md)
+[Website](https://hongfaqiu.github.io/strata-manager/?lang=en) · [Product overview](../README.en.md) · [Documentation](README.en.md) · [简体中文](USER_GUIDE.md)
 
-Strata Manager manages Strata models on your own computer. Start with **My models**, use **Chat** for conversations, and copy the displayed local API address to connect other software. Remote nodes and arbitrary service addresses are outside the current scope.
+[Download and try](DOWNLOAD.en.md) · [Troubleshooting](TROUBLESHOOTING.en.md) · [Verification record](VERIFICATION.md)
+
+Strata Manager is an open-source desktop app for local model management. Import or prepare supported local Strata installations, manage configurations, start and load services, chat, monitor activity, and connect other software to your local API in one workspace. Existing model weights stay in place. Available models, image input, reasoning, MCP tools and API protocols depend on the installed Strata runtime and chosen model.
+
+Start with **Models → My models**, select **Use**, wait for **Model ready**, then open **Chat** or copy the displayed local API address. Manager manages installations prepared or imported on this computer; it does not manage remote nodes.
 
 ## Prepare or reuse a model
 
@@ -17,7 +21,7 @@ A running installation owned by another program must pass identity and activity 
 - Windows uses a suitable 64-bit Python 3.10+ when available. Otherwise, it can prepare a verified official Python installer for a private installation. Executing this fallback still needs acceptance on a clean machine without Python.
 - Linux needs Python 3.10+, venv and ensurepip. Crash containment also needs a 64-bit Linux 5.9+ environment that permits pidfd, clone and close_range; managed child startup is refused when these are unavailable. Missing system dependencies produce instructions; Manager does not run sudo. Complete automatic preparation still needs real Linux acceptance.
 
-Then choose the model, quantization, context and image support. Strata's official setup prepares the engine and weights. Model downloads may be large: check free disk space, RAM, VRAM and driver requirements against the [upstream requirements](https://github.com/Niko1221/Strata#what-you-need).
+Then choose from the preparation catalog, selecting the available quantization, context and image options for that model. Strata's setup prepares the engine and weights. The catalog follows the reviewed runtime; it is not an installer for every model or arbitrary GGUF file. Model downloads may be large: check free disk space, RAM, VRAM and driver requirements against the [Strata documentation](https://github.com/Niko1221/Strata).
 
 Model cards show the actual data destination, free space on each destination disk and estimated additional bytes after counting reusable weights or resumable files. The background checks again before preparation and refuses to start downloads when space is insufficient or unknown. These are estimates from the reviewed installer, not proof of driver, memory or complete dependency readiness. Importing an existing model does not require downloading or reserving room for another full copy of its weights.
 
@@ -27,7 +31,11 @@ Tasks show actual log output and downloaded bytes when available. Cancel a task 
 
 Select Use and wait for **Model ready**. A healthy API process and a loaded model are different states; a service that has started may still be loading weights.
 
-Chat includes conversation history, streaming replies, text and image attachments, reasoning controls, sampling settings and MCP tools. Available image and API capabilities depend on the imported or prepared Strata runtime and model.
+Chat includes multiple conversations, streaming replies, Markdown and text attachments. Image input, reasoning controls and MCP tool events require support from the imported or prepared Strata runtime and model; they are not guaranteed for every installation. Use the attachment control or drop a supported file into Chat. Text attachments are limited to 512 KiB per file; images require the service to report image support.
+
+Use the sampling controls for supported request settings. MCP tools also require configured servers with available tools; enabling the option alone does not add a tool or make an unsupported model capable of using it.
+
+Chat sampling settings apply to subsequent requests. **Settings → Runtime configuration** edits the managed configuration file; after saving, actively restart the service from model details to apply file-based changes. Saving alone does not establish that the running service uses the new settings.
 
 Use the stop control to cancel your active reply. Partial content can remain in the conversation. A slow first reply may include loading or prompt processing, especially with a long document; it is not the same measurement as steady answer generation.
 
@@ -57,9 +65,23 @@ Settings provides:
 
 - **Launch on login:** start the background without first opening Chat.
 - **Prepare at startup:** choose early preparation instead of the default lightweight, on-demand policy.
-- **Service recovery:** enable bounded recovery attempts; repeated failures surface an actionable repair state.
+- **Service recovery:** enable up to three recovery attempts after the selected, managed service exits. Repeated failures surface a repair state rather than an endless restart loop. This does not promise automatic recovery from every API failure or stalled process.
 
-Startup configuration and isolated operating-system checks are implemented. A real logout/login still needs acceptance. Linux startup, process-tree cleanup and crash recovery still require real-system verification; a successful Linux build is not evidence for these behaviors.
+Startup configuration and isolated operating-system checks are implemented. Real logout/login, Linux installation, startup and GPU workflows still need acceptance. Linux containment requires the environment described above and covers descendants that stay in the managed process group; it does not establish cleanup of every MCP tool that creates its own session. Follow the [verification record](VERIFICATION.md) for the tested scope.
+
+## Read background health
+
+Overview shows a **Background health check** for the current running service owned by Manager. A live process, a healthy API and a loaded model are separate states.
+
+| Status | What to do |
+| --- | --- |
+| API healthy | Check the separate model-loading status before chatting. |
+| Verifying an API failure | Wait for a fresh result and inspect diagnostics if it persists. |
+| Repeated API failures | The current process is preserved. Inspect diagnostics and decide whether to retry or stop it. |
+| Busy or under maintenance; check deferred | Let the active request, loading or maintenance finish. |
+| Full state not yet verified / waiting for a fresh check | Treat the result as unknown rather than healthy or failed. |
+
+Health checks defer while verified work or maintenance is active. Repeated failures while idle are reported; the check itself does not stop or restart a process. The service-recovery setting is a separate policy for a managed service that exits, with bounded attempts as described above.
 
 ## Read API usage
 
@@ -95,13 +117,15 @@ Runtime and model downloads, update checks, and configured MCP tools can make ne
 
 ## Compare tuning results
 
-Choose a use case and run a comparison. Manager measures limited candidates in **baseline A → candidate B → restored A** order. Fresh prompts and immediately repeated prefixes are measured separately to reveal cache effects.
+Automatic comparison currently covers **PCIe budget** and **MTP speculation threshold** request parameters. Choose the implemented **Short chat**, **Code generation** or **Long Chinese response** scenarios, a repeat count and an output limit, then start measurement. Manager measures limited candidates in **baseline A → candidate B → restored A** order. Fresh prompts and immediately repeated prefixes are measured separately to reveal cache effects.
+
+The comparison temporarily occupies the model; other requests may wait or report busy. Measurements preserve the current configuration. Stop the comparison with its cancel control when needed; cancellation affects the comparison's own request. Applying a recommendation is a separate action that restarts the managed service.
 
 Review duration, first-output latency, decode speed, caching and output consistency together. A recommendation requires a benefit greater than the measured baseline drift; unstable results do not justify a change.
 
-Consistency checks require complete, identical deterministic outputs. Code also checks `merge_sorted(a,b)` against empty lists, duplicates, negative numbers, unequal lengths and fixed randomized inputs, including preservation of the input lists. Only a limited Python syntax for this task is supported; generated Python is not executed and unsupported forms cannot qualify for a recommendation. Old Code reports remain readable and applied settings remain restorable; applying them again requires a new measurement. These probes do not replace a full Agent workload, general code-quality evaluation, vision, long-context quality, session recovery or cold-load testing. Automatic comparison currently covers limited request-level settings; context, KV and startup settings also need capacity and quality checks.
+Consistency checks require complete, identical deterministic outputs. Code also checks `merge_sorted(a,b)` against empty lists, duplicates, negative numbers, unequal lengths and fixed randomized inputs, including preservation of the input lists. Only a limited Python syntax for this task is supported; generated Python is not executed and unsupported forms cannot qualify for a recommendation. Old Code reports remain readable and already applied settings can be restored when their configuration and identity checks pass; applying them again requires a new measurement. These probes do not replace a full Agent workload, general code-quality evaluation, vision, long-context quality, session recovery or cold-load testing. Context, KV and startup configuration are not included in this automatic comparison and need separate capacity and quality checks.
 
-Applying a result saves a recovery record, restarts the owned service and checks model loading. A failed application restores the original configuration. This briefly affects the local API; avoid concurrent maintenance and active client work when applying a change. Cancellation affects the comparison's own request.
+Applying a result saves a recovery record, restarts the owned service and checks model loading. If application fails, Manager attempts to restore the original configuration and service. Recovery can also fail; follow the displayed diagnostics, repair the cause and prepare the model again rather than assuming it is available. Applying or restoring parameters briefly affects the local API; avoid concurrent maintenance and active client work during these actions.
 
 Controlled tests validate the comparison and recovery workflow. Real speed improvements need a report from the actual model, hardware and workload. Screenshot metrics and demonstration timing are not GPU benchmarks.
 
@@ -111,15 +135,15 @@ Settings can automatically check and download updates when the app opens and eve
 
 Application, Strata runtime and model weights are separate. Updating Manager does not normally require another model-weight download. Read the version's release notes for restart and recovery behavior.
 
-**Current acceptance status:** the first formal release has not been published. Linux CI has built AppImage and DEB previews. Windows background handover, standard venv identity and existing-installation migration tests have passed locally; the latest cross-platform CI and Windows installer verification remain pending. Node's real-signature release checks and Rust signature tests have passed, but installing a signed update from a previous version and restoring the service still need acceptance. Follow the [verification record](VERIFICATION.md) for current evidence.
+See [Download and try](DOWNLOAD.en.md) for available packages and [the verification record](VERIFICATION.md) for current acceptance evidence. A successful build or signature test does not establish a complete signed update from a previous version, native installer behavior, background handover or model/API restoration. Real GPU and Linux installation workflows have separate acceptance requirements.
 
 Tauri update signatures are separate from Windows Authenticode publisher signing. The project does not currently claim a Windows publisher certificate. A successful signature test does not by itself prove installer behavior, background handover or model restoration.
 
 ## Update the Strata runtime
 
-Use **Models → Details and management → Check and update Strata** and follow the task progress after confirming. The background prepares a reviewed version, private Python environment and engine in a new directory, reusing the original model and tokenizer. The original installation and configuration are retained. The current API remains available during preparation; switching waits for active work and briefly closes admission to new requests. Failed or cancelled candidate checks restore the previous registration and loaded state.
+Use **Models → Details and management → Check and update Strata** and follow the task progress after confirming. The background prepares a reviewed version, private Python environment and engine in a new directory, reusing the original model and tokenizer. The original installation and configuration are retained. Preparation does not intentionally stop the current API; switching waits for active work and briefly closes admission to new requests. If candidate checks fail or the update is cancelled after switching begins, Manager attempts to restore the previous registration and loaded state. Recovery can fail and will be reported in the task; follow its diagnostics before retrying or preparing the original model.
 
-The current candidate is fixed to Strata 0.1.41, rather than automatically following upstream latest. Verified engine archives target Windows x64; a missing Linux release archive is reported without replacing the existing install. External startup hooks or ambiguous configuration semantics are rejected before stopping the service. Actual GPU, driver and model compatibility still require real acceptance evidence.
+The current candidate is fixed to Strata 0.1.41, rather than automatically following upstream latest. Hash-checked engine archives target Windows x64; a missing Linux release archive is reported without replacing the existing install. External startup hooks or ambiguous configuration semantics are rejected before stopping the service. Complete candidate preparation and a real GPU update have not passed acceptance; source/archive checks and controlled recovery tests cover only their stated scope. Actual GPU, driver and model compatibility still require real acceptance evidence.
 
 ## Common questions
 
@@ -139,7 +163,7 @@ The current candidate is fixed to Strata 0.1.41, rather than automatically follo
 
 **The window closed, but GPU memory is still used.** An active background service can keep the model loaded. Use Stop services and quit when you want to release it.
 
-**An update check fails before the first release.** No official first update is available yet. Check the verification and release pages; do not substitute an unverified installer or manifest.
+**An update check or download fails.** Read the displayed error and retry when the network or release source is available. The current application remains installed. Check [Download and try](DOWNLOAD.en.md) for release availability and [Troubleshooting](TROUBLESHOOTING.en.md) for the next steps.
 
 ## Screenshots and project credits
 

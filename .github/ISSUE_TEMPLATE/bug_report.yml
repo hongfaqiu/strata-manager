@@ -1,0 +1,38 @@
+name: 问题反馈 / Bug report
+description: 提交可复现的本地模型管理问题 / Report a reproducible local model management problem.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先阅读[故障排查 / Troubleshooting](https://hongfaqiu.github.io/strata-manager/docs/troubleshooting.html)。
+        不要提交 API 密钥、私人聊天、附件、工具参数或未脱敏诊断。
+        Read the [English guide](https://hongfaqiu.github.io/strata-manager/docs/troubleshooting.en.html) and redact private content.
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境 / Environment
+      description: 系统、应用版本或提交、包来源、Strata 版本、模型和相关硬件 / OS, app version or commit, package origin, Strata version, model and relevant hardware.
+      placeholder: "OS:\nApp / commit:\nPackage source:\nStrata / model:\nGPU / RAM / VRAM:"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤 / Steps to reproduce
+      description: 最少可重复步骤，以及发生问题的页面或任务 / Minimal repeatable steps and the affected page or task.
+      placeholder: "1. \n2. \n3. "
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: 预期与实际结果 / Expected and actual behavior
+      placeholder: "Expected:\nActual:"
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 脱敏错误与截图 / Redacted error or screenshot
+      description: 添加相关任务、健康状态或日志片段；分享前检查个人内容 / Include relevant task, health or log excerpts after redaction.

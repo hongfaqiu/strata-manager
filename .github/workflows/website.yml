@@ -6,7 +6,18 @@ on:
     paths:
       - 'website/**'
       - 'scripts/build-website.mjs'
+      - 'scripts/render-website-docs.mjs'
+      - 'scripts/render-website-docs.test.mjs'
+      - 'docs/**/*.md'
       - 'docs/screenshots/**'
+      - 'README*'
+      - 'LICENSE'
+      - 'THIRD_PARTY_NOTICES.md'
+      - 'apps/desktop/public/licenses/**'
+      - 'apps/desktop/package.json'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
       - 'assets/icon.svg'
       - '.github/workflows/website.yml'
   workflow_dispatch:
@@ -29,7 +40,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Install locked static rendering dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
       - uses: actions/configure-pages@v5
+      - name: Check documentation rendering
+        run: node --test scripts/render-website-docs.test.mjs
       - name: Package the static website
         run: node scripts/build-website.mjs
       - uses: actions/upload-pages-artifact@v4

@@ -14,11 +14,11 @@
 <a href="https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml"><img src="https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml/badge.svg" alt="Current build and test status" /></a>
 </p>
 
-<p><a href="https://hongfaqiu.github.io/strata-manager/">Website</a> · <a href="README.md">简体中文</a> · <a href="#download">Download</a> · <a href="#get-started">Get started</a> · <a href="#features">Features</a> · <a href="#screenshots">Screenshots</a> · <a href="docs/USER_GUIDE.en.md">User guide</a></p>
+<p><a href="https://hongfaqiu.github.io/strata-manager/?lang=en">Website</a> · <a href="README.md">简体中文</a> · <a href="#download">Download</a> · <a href="#get-started">Get started</a> · <a href="#features">Features</a> · <a href="#screenshots">Screenshots</a> · <a href="https://hongfaqiu.github.io/strata-manager/docs/user-guide.en.html">User guide</a> · <a href="https://hongfaqiu.github.io/strata-manager/docs/index.en.html">Documentation</a></p>
 
 </div>
 
-**First release under verification; try [source](#build-from-source) or [current Linux CI artifacts](https://github.com/hongfaqiu/strata-manager/actions/runs/38066271017).** See the [verification record](docs/VERIFICATION.md).
+**First release under verification; try source or historical Linux preview builds.** See [download instructions and version scope](https://hongfaqiu.github.io/strata-manager/docs/download.en.html) and the [verification record](docs/VERIFICATION.md).
 
 Strata Manager is an open-source desktop app for local model management. Import and prepare models, manage configurations, start and load services, chat, monitor activity, and connect to your local API in one workspace. Existing weights stay in place, and an independent background process manages running services. The app uses the [Strata](https://github.com/Niko1221/Strata) runtime; available models, image input and API protocols depend on your installed runtime and chosen model.
 
@@ -35,12 +35,12 @@ Chinese and English, light and dark themes, a collapsible sidebar, tray actions,
 
 ## Download
 
-The [Releases page](https://github.com/hongfaqiu/strata-manager/releases) will host verified releases. **No first official release is available yet.**
+The [download guide](https://hongfaqiu.github.io/strata-manager/docs/download.en.html) provides source setup, the Linux preview version scope and Artifacts download steps. The [Releases page](https://github.com/hongfaqiu/strata-manager/releases) will host verified releases. **No first official release is available yet.**
 
 | Platform | Preview option | Planned release package |
 | --- | --- | --- |
-| Windows x64 | Build from source; installer verification is still in progress | `*-setup.exe` |
-| Linux x64 | [Current CI artifacts](https://github.com/hongfaqiu/strata-manager/actions/runs/38066271017) or source | `*.AppImage` / `*.deb` |
+| Windows x64 | [Build from source](https://hongfaqiu.github.io/strata-manager/docs/download.en.html#try-source); installer verification is still in progress | `*-setup.exe` |
+| Linux x64 | [Historical CI preview instructions](https://hongfaqiu.github.io/strata-manager/docs/download.en.html#linux-preview-builds) or source | `*.AppImage` / `*.deb` |
 
 CI packages are preview builds, not formal releases. Linux builds target Ubuntu 22.04; real Linux installation and GPU use still need acceptance. Windows requires WebView2. macOS and ARM are currently outside the release targets.
 

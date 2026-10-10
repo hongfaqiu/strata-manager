@@ -21,14 +21,15 @@
 <a href="#下载与体验">下载与体验</a> ·
 <a href="#三步开始使用">快速上手</a> ·
 <a href="#看看它的样子">界面展示</a> ·
-<a href="docs/USER_GUIDE.md">使用指南</a>
+<a href="https://hongfaqiu.github.io/strata-manager/docs/user-guide.html">使用指南</a> ·
+<a href="https://hongfaqiu.github.io/strata-manager/docs/index.html">文档目录</a>
 </p>
 
 </div>
 
 Strata Manager 是开源的本地模型管理桌面应用，将模型导入与准备、配置管理、服务启动与加载、聊天、监控和本机 API 集中在一个工作台中。已有模型权重保持原位，已启动的服务由独立后台管理。项目基于 [Strata](https://github.com/Niko1221/Strata) 运行时；可用模型、图像输入与 API 协议以所安装的运行时和具体模型为准。
 
-> **首版仍在验收中。** 正式安装包尚未发布，可从源码体验或查看 [CI 构建产物](https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml)。各平台的实际支持范围见[验收记录](docs/VERIFICATION.md)。
+> **首版仍在验收中。** 正式安装包尚未发布，可从源码体验或使用历史 Linux 预览包。步骤与版本范围见[下载说明](https://hongfaqiu.github.io/strata-manager/docs/download.html)，各平台的实际支持范围见[验收记录](docs/VERIFICATION.md)。
 
 ## 为什么使用 Strata Manager
 
@@ -36,7 +37,7 @@ Strata Manager 是开源的本地模型管理桌面应用，将模型导入与�
 | --- | --- |
 | **已有模型，继续使用**<br>自动检测本机安装，恢复旧版有效档案与会话；原有模型不用重新下载。 | **聊天和工具，在同一处**<br>多会话、流式回答、文本附件；思考过程、图片输入与 MCP 工具事件取决于模型和运行时支持。 |
 | **关闭窗口，API 继续运行**<br>独立后台管理已启动的服务；重新打开界面即可连接回来。 | **知道模型是怎么被使用的**<br>查看请求量、tokens、成功率、等待时间、缓存和最近请求。 |
-| **调优，先比较再决定**<br>测量当前参数与候选参数，查看报告，再选择应用或恢复。 | **熟悉的 Strata 风格**<br>保留官方组件风格，中文/英文、浅色/深色主题、可折叠侧栏和自适应布局。 |
+| **调优，先比较再决定**<br>比较支持的 PCIe 预算与 MTP 推测参数，检查基线漂移和输出一致性，再选择应用；收益取决于实际模型与硬件。 | **熟悉的 Strata 风格**<br>保留官方组件风格，中文/英文、浅色/深色主题、可折叠侧栏和自适应布局。 |
 
 ## 三步开始使用
 
@@ -48,12 +49,12 @@ Strata Manager 是开源的本地模型管理桌面应用，将模型导入与�
 
 ## 下载与体验
 
-正式版本将通过 [GitHub Releases](https://github.com/hongfaqiu/strata-manager/releases) 提供。当前 CI 产物用于测试，不能当作正式签名发行版。
+完整的[下载与体验说明](https://hongfaqiu.github.io/strata-manager/docs/download.html)提供源码启动步骤、Linux 预览包的版本范围及 Artifacts 下载方法。正式版本发布后会通过 [GitHub Releases](https://github.com/hongfaqiu/strata-manager/releases)提供；当前 CI 产物用于测试。
 
 | 平台 | 安装形式 | 当前体验方式 |
 | --- | --- | --- |
-| Windows x64 | NSIS `*-setup.exe` | 从源码启动；安装包验收进度见[构建记录](https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml)。 |
-| Linux x64 | `*.AppImage` / `*.deb` | 已有 [CI 构建产物](https://github.com/hongfaqiu/strata-manager/actions/runs/38066271017)；实机安装与 GPU 验收仍待完成。 |
+| Windows x64 | NSIS `*-setup.exe` | [从源码启动](https://hongfaqiu.github.io/strata-manager/docs/download.html#从源码体验)；安装包验收进度见[构建记录](https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml)。 |
+| Linux x64 | `*.AppImage` / `*.deb` | [历史 CI 预览包下载步骤](https://hongfaqiu.github.io/strata-manager/docs/download.html#linux-预览包)；实机安装与 GPU 验收仍待完成。 |
 
 安装包包含桌面应用和后台，模型权重独立准备。硬件、显存、内存与驱动要求请按所选模型查看 [Strata 说明](https://github.com/Niko1221/Strata)；本项目目前面向 Windows/Linux x64。
 
