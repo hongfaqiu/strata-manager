@@ -284,7 +284,7 @@ impl SupervisorClient {
         // Lifecycle fixtures use a disposable data directory; they must never
         // repoint the real user's login startup entry at a temporary package.
         #[cfg(not(test))]
-        if crate::startup::status()
+        if crate::startup::status(&self.data_dir)
             .ok()
             .and_then(|v| v["enabled"].as_bool())
             == Some(true)

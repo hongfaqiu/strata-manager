@@ -87,6 +87,11 @@ export interface StartupStatus {
   enabled: boolean;
   supported: boolean;
   backgroundOnly: boolean;
+  configured?: boolean;
+  healthy?: boolean;
+  registeredVersion?: string;
+  reasonCode?: string;
+  executableHash?: string;
   reason?: string;
 }
 

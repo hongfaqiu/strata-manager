@@ -6,6 +6,7 @@ import * as core from '@strata-manager/core';
 import { Panel } from '../components';
 import { Toggle } from '../OfficialControls';
 import type { AppUpdateState } from '../useAppUpdates';
+import { startupStatusHint } from '../startupStatusText';
 
 interface Props {
   desktop: boolean;
@@ -20,7 +21,7 @@ interface Props {
 }
 
 export function DesktopLifecycleSettings({ desktop, streaming, autoCheck, onAutoCheck, update, onCheck, onDownload, onInstall, onError }: Props) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const query = useQueryClient();
   const [saving, setSaving] = useState(false);
   const startup = useQuery({ queryKey: ['startup-status'], queryFn: core.startupStatus, enabled: desktop });
@@ -42,7 +43,7 @@ export function DesktopLifecycleSettings({ desktop, streaming, autoCheck, onAuto
     <Panel title={t('backgroundSettings')}>
       {!desktop && <p className="subtle">{t('nativeRequired')}</p>}
       {startup.error || policy.error ? <div className="notice error" role="alert">{t('settingsUnavailable')}: {String(startup.error ?? policy.error)}</div> : null}
-      {row(t('launchOnLogin'), startup.data?.reason ?? t('launchOnLoginHint'), startup.data?.enabled === true, !desktop || !startup.data?.supported, enabled => void mutate(() => core.setStartupEnabled(enabled)))}
+      {row(t('launchOnLogin'), startupStatusHint(startup.data, i18n.resolvedLanguage ?? i18n.language, t('launchOnLoginHint')), startup.data?.enabled === true, !desktop || !startup.data?.supported, enabled => void mutate(() => core.setStartupEnabled(enabled)))}
       {row(t('prepareAtStartup'), t('prepareAtStartupHint'), policy.data?.mode === 'alwaysReady', !desktop || !policy.data, enabled => void mutate(() => core.setBackgroundPolicy(enabled ? 'alwaysReady' : 'lazy', policy.data!.autoRecover)))}
       {row(t('recoverService'), t('recoverServiceHint'), policy.data?.autoRecover === true, !desktop || !policy.data, enabled => void mutate(() => core.setBackgroundPolicy(policy.data!.mode, enabled)))}
       {backend.data?.version && <p className="subtle">{t('backendVersion')}: {backend.data.version} · PID {backend.data.pid ?? '—'}</p>}
