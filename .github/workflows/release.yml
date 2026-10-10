@@ -171,6 +171,8 @@ jobs:
       contents: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Checksum generation changes cwd to RUNNER_TEMP; keep gh bound to this repo.
+      GH_REPO: ${{ github.repository }}
       RELEASE_TAG: ${{ github.ref_name }}
       UPDATE_VERIFIER_BIN: ${{ github.workspace }}/target/release/strata-update-verifier
     steps:
