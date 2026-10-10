@@ -35,7 +35,7 @@ jobs:
           $sourceJob = gh api repos/hongfaqiu/strata-manager/actions/jobs/114283983520 | ConvertFrom-Json
           $requiredSteps = @('Version and complete release guard tests', 'pnpm check', 'cargo fmt --all -- --check', 'Native tests (Windows)', 'cargo clippy --workspace --locked --all-targets --target x86_64-pc-windows-msvc -- -D warnings', 'node scripts/prepare-sidecar.mjs --profile release --target x86_64-pc-windows-msvc')
           foreach ($stepName in $requiredSteps) {
-            $matchingSteps = @($sourceJob.steps | Where-Object name -eq $stepName)
+            $matchingSteps = @($sourceJob.steps | Where-Object { ($_.name -replace '^Run ', '') -eq $stepName })
             if ($matchingSteps.Count -ne 1 -or $matchingSteps[0].conclusion -ne 'success') { throw "Required source check failed: $stepName" }
           }
           $artifact = gh api repos/hongfaqiu/strata-manager/actions/artifacts/11679353385 | ConvertFrom-Json
@@ -49,6 +49,17 @@ jobs:
           Expand-Archive -LiteralPath $archive -DestinationPath (Join-Path $recoveryRoot 'bundle')
       - name: Build the public-key verifier
         run: cargo build -p strata-update-verifier --locked
+      - name: Restore the missing updater signature for the immutable installer
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        shell: pwsh
+        run: |
+          $bundle = Join-Path $env:RUNNER_TEMP 'preview-beta1-recovery/bundle'
+          $installers = @(Get-ChildItem -LiteralPath $bundle -Filter '*.exe' -Recurse -File)
+          if ($installers.Count -ne 1 -or $installers[0].Name -ne 'Strata Manager_0.1.0-beta.1_x64-setup.exe') { throw 'Unexpected Windows installer.' }
+          npm exec --yes --package=@tauri-apps/cli@2.12.1 -- tauri signer sign --app-version 0.1.0-beta.1 $installers[0].FullName
+          if ($LASTEXITCODE -ne 0) { throw 'Updater signing failed.' }
       - name: Verify installer signature and signed version before execution
         shell: pwsh
         run: |
@@ -59,3 +70,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Installer signature failed.' }
       - name: Verify installed Windows preview and packaged background
         run: node scripts/preview-package-smoke.mjs --bundle-dir "${{ runner.temp }}/preview-beta1-recovery/bundle" --version 0.1.0-beta.1
+      - name: Preserve only the verified public signature
+        uses: actions/upload-artifact@v4
+        with:
+          name: recovered-beta1-windows-signature
+          path: ${{ runner.temp }}/preview-beta1-recovery/bundle/**/*.sig
+          if-no-files-found: error
