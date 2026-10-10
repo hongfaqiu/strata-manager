@@ -107,7 +107,7 @@ jobs:
       - name: Version and complete release guard tests
         env:
           UPDATE_VERIFIER_BIN: ${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/debug/strata-update-verifier${{ runner.os == 'Windows' && '.exe' || '' }}
-        run: node --test scripts/release-check.test.mjs
+        run: node --test scripts/release-check.test.mjs scripts/preview-package-smoke.test.mjs
       - run: pnpm check
       - run: node scripts/prepare-sidecar.mjs --profile debug --target ${{ matrix.target }}
       - run: cargo fmt --all -- --check
@@ -136,13 +136,14 @@ jobs:
           releaseCommitish: ${{ github.sha }}
           releaseName: Strata Manager ${{ github.ref_name }}
           releaseBody: |
-            本机 Strata 模型工作台 / A local Strata model desktop workspace.
+            本地模型，一站管理。 / Local models. One workspace.
 
             Windows x64: download the setup.exe installer. Linux x64: download the AppImage or DEB package.
             安装与功能范围 / Installation and feature scope: https://github.com/${{ github.repository }}#readme
 
-            Linux packages are verified by CI; physical installation, background lifecycle, login startup and GPU acceptance are still pending. / Linux 包已通过 CI，实机安装、后台生命周期、登录自启动与 GPU 仍待验收。
-            Acceptance evidence and current limitations / 验收证据与当前限制: https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/docs/VERIFICATION.md
+            Preview builds are checked on Windows and Ubuntu CI runners, including package startup and background IPC. Real GPU inference, login startup and cross-version update installation have separate acceptance requirements. / 预览包在 Windows 与 Ubuntu CI 环境检查，包括包启动和后台通信；真实 GPU 推理、登录自启动与跨版本更新安装分别验收。
+
+            This prerelease is installed manually and does not replace the stable automatic update channel. Tauri updater signatures are included; Windows Authenticode publisher signing is not configured. / 预览版手工下载安装，不替换稳定自动更新通道；附 Tauri 更新签名，Windows 发布者代码签名尚未配置。
 
             Model weights and the Strata inference runtime are installed separately. / 模型权重与 Strata 推理运行时独立安装。
             Based on / 基于 https://github.com/Niko1221/Strata — see THIRD_PARTY_NOTICES.md.
@@ -155,6 +156,13 @@ jobs:
           uploadUpdaterSignatures: true
           uploadWorkflowArtifacts: true
           workflowArtifactNamePattern: 'release-[platform]-[arch]-[bundle]'
+
+      - name: Verify installed Windows preview and packaged background
+        if: runner.os == 'Windows'
+        run: node scripts/preview-package-smoke.mjs --bundle-dir "${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/release/bundle" --version "${{ needs.validate.outputs.version }}"
+      - name: Verify Linux AppImage and DEB startup under Xvfb
+        if: runner.os == 'Linux'
+        run: dbus-run-session -- xvfb-run -a bash scripts/release-linux-tests.sh node scripts/preview-package-smoke.mjs --bundle-dir "${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/release/bundle" --version "${{ needs.validate.outputs.version }}"
 
   publish:
     needs: [validate, build]
@@ -178,6 +186,15 @@ jobs:
           node --test scripts/release-check.test.mjs
       - name: Verify installer bytes, built-in public key, signed version and both platforms
         run: node scripts/release-verify.mjs
+      - name: Publish SHA256 checksums for the preview installers
+        shell: bash
+        run: |
+          preview_checksums_dir="$RUNNER_TEMP/strata-release-checksums"
+          mkdir "$preview_checksums_dir"
+          gh release download "$RELEASE_TAG" --pattern '*.exe' --pattern '*.AppImage' --pattern '*.deb' --dir "$preview_checksums_dir"
+          cd "$preview_checksums_dir"
+          sha256sum -- *.exe *.AppImage *.deb > SHA256SUMS
+          gh release upload "$RELEASE_TAG" SHA256SUMS --clobber
       - name: Publish stable release
         if: needs.validate.outputs.prerelease == 'false'
         run: gh release edit "$RELEASE_TAG" --draft=false --latest
