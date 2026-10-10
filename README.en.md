@@ -14,13 +14,13 @@
 <a href="https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml"><img src="https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml/badge.svg" alt="Current build and test status" /></a>
 </p>
 
-<p><a href="README.md">简体中文</a> · <a href="#download">Download</a> · <a href="#get-started">Get started</a> · <a href="#features">Features</a> · <a href="#screenshots">Screenshots</a> · <a href="docs/USER_GUIDE.en.md">User guide</a></p>
+<p><a href="https://hongfaqiu.github.io/strata-manager/">Website</a> · <a href="README.md">简体中文</a> · <a href="#download">Download</a> · <a href="#get-started">Get started</a> · <a href="#features">Features</a> · <a href="#screenshots">Screenshots</a> · <a href="docs/USER_GUIDE.en.md">User guide</a></p>
 
 </div>
 
 **First release under verification; try [source](#build-from-source) or [current Linux CI artifacts](https://github.com/hongfaqiu/strata-manager/actions/runs/38066271017).** See the [verification record](docs/VERIFICATION.md).
 
-Strata Manager brings [Strata](https://github.com/Niko1221/Strata) and models such as [Qwen3.8-Flash-Next](https://huggingface.co/Qwen/Qwen3.8-Flash-Next) into one local workspace. Import what you already have, prepare a new model when you need one, and use it from Chat or your favorite API client.
+Strata Manager brings [Strata](https://github.com/Niko1221/Strata) and its supported models into one local workspace. Import what you already have, prepare a new model when you need one, and use it from Chat or your favorite API client. Available models and API capabilities depend on your installed Strata runtime.
 
 ## Features
 

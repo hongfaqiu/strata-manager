@@ -5,7 +5,7 @@
 <h1>Strata Manager</h1>
 
 <p><strong>本地模型，一站管理。</strong><br>
-让 Strata 和 Qwen3.8-Flash-Next 的安装、聊天、监控与调优，更容易上手。</p>
+让 Strata 本地模型的安装、聊天、监控与调优，更容易上手。</p>
 
 <p>
 <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/License-MIT-118577"></a>
@@ -16,6 +16,7 @@
 </p>
 
 <p>
+<a href="https://hongfaqiu.github.io/strata-manager/">官网</a> ·
 <a href="README.en.md">English</a> ·
 <a href="#下载与体验">下载与体验</a> ·
 <a href="#三步开始使用">快速上手</a> ·
@@ -25,7 +26,7 @@
 
 </div>
 
-Strata Manager 是 [Strata](https://github.com/Niko1221/Strata) 的社区桌面工作台，面向在自己电脑上运行 [Qwen3.8-Flash-Next](https://huggingface.co/Qwen/Qwen3.8-Flash-Next) 等 Strata 支持模型的用户。已有模型直接导入；服务启动、模型加载和后台监控交给应用。你可以专心聊天，也可以把本机 API 接入自己的工具。
+Strata Manager 是 [Strata](https://github.com/Niko1221/Strata) 的社区桌面工作台，面向在自己电脑上运行 Strata 支持模型的用户。已有模型直接导入；服务启动、模型加载和后台监控交给应用。你可以专心聊天，也可以把本机 API 接入自己的工具。可用模型与 API 能力以所安装的 Strata 运行时为准。
 
 > **首版仍在验收中。** 正式安装包尚未发布，可从源码体验或查看 [CI 构建产物](https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml)。各平台的实际支持范围见[验收记录](docs/VERIFICATION.md)。
 
@@ -135,4 +136,4 @@ pnpm desktop
 
 本仓库采用 [MIT](LICENSE)。复用代码与界面保留上游版权声明，Outfit 字体使用 SIL OFL 1.1；详见[第三方声明](THIRD_PARTY_NOTICES.md)。
 
-<p align="center"><sub>Strata · Qwen3.8-Flash-Next · 本地 AI · Local LLM · API Monitoring · Tauri</sub></p>
+<p align="center"><sub><a href="https://hongfaqiu.github.io/strata-manager/">Strata Manager 官网</a> · 本地模型，一站管理。</sub></p>

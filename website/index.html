@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f8f2">
+  <meta name="description" content="Strata Manager 是 Strata 的社区桌面工作台。在本机导入和准备模型、聊天、保持 API 运行、查看用量并比较调优结果。" data-content-en="Strata Manager is a community desktop workspace for Strata. Import and prepare local models, chat, keep your API running, understand usage, and compare tuning results.">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Strata Manager">
+  <meta property="og:title" content="Strata Manager · 本地模型，一站管理" data-content-en="Strata Manager · Local models. One workspace.">
+  <meta property="og:description" content="把 Strata 模型、聊天和本机 API 放在同一处。免费开源，面向 Windows / Linux x64。" data-content-en="A desktop home for Strata models, conversations, and your local API. Free and open source, targeting Windows / Linux x64.">
+  <meta property="og:url" content="https://hongfaqiu.github.io/strata-manager/">
+  <meta property="og:locale" content="zh_CN" id="og-locale">
+  <meta property="og:locale:alternate" content="en_US" id="og-locale-alternate">
+  <meta property="og:image" content="https://hongfaqiu.github.io/strata-manager/assets/screenshots/product-cover.webp">
+  <meta property="og:image:alt" content="Strata Manager 当前应用界面的组合展示，包含标注的演示数据" data-content-en="A composition of current Strata Manager app screens with labeled demonstration data">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Strata Manager · 本地模型，一站管理" data-content-en="Strata Manager · Local models. One workspace.">
+  <meta name="twitter:description" content="Strata 的社区桌面工作台：模型、聊天、本机 API、用量与调优。" data-content-en="A community desktop workspace for Strata: models, chat, local API, usage, and tuning.">
+  <meta name="twitter:image" content="https://hongfaqiu.github.io/strata-manager/assets/screenshots/product-cover.webp">
+  <link rel="canonical" href="https://hongfaqiu.github.io/strata-manager/">
+  <link rel="alternate" hreflang="zh-CN" href="https://hongfaqiu.github.io/strata-manager/?lang=zh">
+  <link rel="alternate" hreflang="en" href="https://hongfaqiu.github.io/strata-manager/?lang=en">
+  <link rel="alternate" hreflang="x-default" href="https://hongfaqiu.github.io/strata-manager/">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+  <title>Strata Manager · 本地模型，一站管理</title>
+  <script type="application/ld+json">
+  {"@context":"https://schema.org","@type":"SoftwareApplication","name":"Strata Manager","url":"https://hongfaqiu.github.io/strata-manager/","applicationCategory":"UtilitiesApplication","operatingSystem":"Windows x64, Linux x64","description":"A community desktop workspace for local models supported by Strata, conversations, API usage and tuning comparisons.","license":"https://github.com/hongfaqiu/strata-manager/blob/main/LICENSE","isAccessibleForFree":true,"codeRepository":"https://github.com/hongfaqiu/strata-manager","screenshot":"https://hongfaqiu.github.io/strata-manager/assets/screenshots/overview.zh.webp"}
+  </script>
+</head>
+<body>
+  <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+    <symbol id="icon-external" viewBox="0 0 24 24"><path d="M14 5h5v5m0-5-9 9M10 5H5v14h14v-5"/></symbol>
+    <symbol id="icon-github" viewBox="0 0 24 24"><path d="M9 19c-4 1-4-2-6-2m12 5v-4c0-1-.1-1.5-.5-2 3.3-.4 6.5-1.7 6.5-7a5.5 5.5 0 0 0-1.5-3.8 5 5 0 0 0-.1-3.7S18.1 1.1 15 3a13 13 0 0 0-6 0C5.9 1.1 4.7 1.5 4.7 1.5a5 5 0 0 0-.2 3.7A5.5 5.5 0 0 0 3 9c0 5.3 3.2 6.6 6.5 7-.4.5-.5 1-.5 2v4"/></symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="icon-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a17 17 0 0 1 0 18 17 17 0 0 1 0-18Z"/></symbol>
+  </svg>
+
+  <a class="skip-link" href="#main" data-en="Skip to content">跳到正文</a>
+
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="#" aria-label="Strata Manager 首页" data-label-en="Strata Manager home">
+        <img src="assets/icon.svg" width="38" height="38" alt="Strata Manager 品牌图标" data-alt-en="Strata Manager brand icon">
+        <span><strong>Strata</strong> <span class="brand-manager">Manager</span></span>
+      </a>
+      <nav class="primary-nav" aria-label="主导航" data-label-en="Main navigation">
+        <a href="#workspace" data-en="Workspace">界面</a>
+        <a href="#features" data-en="Features">功能</a>
+        <a href="#get-started" data-en="Get started">开始使用</a>
+      </nav>
+      <div class="header-actions">
+        <button class="language-switch" id="language-switch" type="button" hidden aria-label="切换到 English" title="切换到 English">
+          <svg class="icon" aria-hidden="true"><use href="#icon-globe"/></svg>
+          <span id="language-label">EN</span>
+        </button>
+        <a class="header-github" href="https://github.com/hongfaqiu/strata-manager" title="在 GitHub 查看源码" data-title-en="View source on GitHub">
+          <svg class="icon" aria-hidden="true"><use href="#icon-github"/></svg>
+          <span>GitHub</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="container hero-inner">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span><span data-en="A community workspace for Strata">Strata 的社区桌面工作台</span></p>
+          <h1 id="hero-title"><span data-en="Local models.">本地模型，</span><span class="hero-title-accent" data-en="One workspace.">一站管理。</span></h1>
+          <p class="hero-description" data-en="Bring your models, conversations, and local API together. Import what you have, let the app handle startup, and make room for the work you want to do.">让模型、聊天和本机 API 各就其位。导入已有模型，把启动和加载交给应用，专心做你想做的事。</p>
+          <div class="hero-buttons">
+            <a class="button button-primary" href="#get-started"><span data-en="Try the preview">体验当前预览</span><svg class="icon" aria-hidden="true"><use href="#icon-arrow"/></svg></a>
+            <a class="button button-quiet" href="https://github.com/hongfaqiu/strata-manager/blob/main/docs/USER_GUIDE.md" data-href-en="https://github.com/hongfaqiu/strata-manager/blob/main/docs/USER_GUIDE.en.md"><span data-en="Read the guide">阅读使用指南</span><svg class="icon" aria-hidden="true"><use href="#icon-external"/></svg></a>
+          </div>
+          <p class="hero-note"><span class="note-line" aria-hidden="true"></span><span data-en="First release under verification. Source and CI previews are available.">首版验收中，可从源码或 CI 预览体验。</span></p>
+          <div class="platform-list" aria-label="项目目标平台与许可" data-label-en="Project target platforms and license">
+            <span>Windows / Linux x64</span><span class="platform-divider" aria-hidden="true">/</span><span data-en="Free & open source">免费开源</span><span class="platform-divider" aria-hidden="true">/</span><span>MIT</span>
+          </div>
+        </div>
+        <figure class="hero-product">
+          <div class="product-window">
+            <div class="window-bar" aria-hidden="true"><span class="window-dots"><i></i><i></i><i></i></span><span>Strata Manager</span><span class="window-local">localhost</span></div>
+            <a href="assets/screenshots/overview.zh.webp" title="打开总览截图原图" data-title-en="Open the full-resolution Overview screenshot">
+              <img class="hero-image" src="assets/screenshots/overview.zh.webp" width="2880" height="1920" alt="Strata Manager 总览：模型状态、本机 API、用量与资源；界面含演示数据" data-alt-en="Strata Manager Overview: model state, local API, usage, and resources; the screen contains demonstration data" fetchpriority="high">
+            </a>
+          </div>
+          <figcaption><span class="small-dot" aria-hidden="true"></span><span data-en="Actual app screen · labeled demo data">真实应用界面 · 已标注演示数据</span></figcaption>
+        </figure>
+      </div>
+      <div class="container hero-bottom"><span data-en="Your computer. Your models. Your workflow.">你的电脑，你的模型，你的工作方式。</span><a href="#workspace"><span data-en="Take a closer look">看看工作台</span><span aria-hidden="true">↓</span></a></div>
+    </section>
+
+    <section class="workspace section-pad" id="workspace" aria-labelledby="workspace-title">
+      <div class="container">
+        <div class="section-heading">
+          <div><p class="eyebrow" data-en="01 / THE WORKSPACE">01 / 认识工作台</p><h2 id="workspace-title" data-en="Everything has its place.">每件事，都有合适的位置。</h2></div>
+          <p class="section-intro" data-en="From a model's first preparation to your next conversation, follow the whole journey in one familiar interface.">从第一次准备模型，到下一次对话，在熟悉的界面里完成整个过程。</p>
+        </div>
+        <div class="screenshot-tabs" role="tablist" aria-label="选择应用界面" data-label-en="Choose an app screen" hidden>
+          <button id="tab-overview" role="tab" aria-selected="true" aria-controls="screen-panel" tabindex="0" type="button" data-screen="overview" data-en="Overview">总览</button>
+          <button id="tab-chat" role="tab" aria-selected="false" aria-controls="screen-panel" tabindex="-1" type="button" data-screen="chat" data-en="Chat">聊天</button>
+          <button id="tab-models" role="tab" aria-selected="false" aria-controls="screen-panel" tabindex="-1" type="button" data-screen="models" data-en="Models">模型</button>
+          <button id="tab-usage" role="tab" aria-selected="false" aria-controls="screen-panel" tabindex="-1" type="button" data-screen="usage" data-en="API usage">API 用量</button>
+          <button id="tab-tuning" role="tab" aria-selected="false" aria-controls="screen-panel" tabindex="-1" type="button" data-screen="tuning" data-en="Tuning">参数调优</button>
+        </div>
+        <div id="screen-panel" class="screen-panel" aria-labelledby="tab-overview">
+          <figure class="screen-figure">
+            <a id="screen-link" href="assets/screenshots/overview.zh.webp" title="打开高清截图" data-title-en="Open the full-resolution screenshot">
+              <img id="screen-image" src="assets/screenshots/overview.zh.webp" width="2880" height="1920" alt="总览：查看当前模型、后台服务、API 用量与资源概况；数值为演示数据" loading="lazy" decoding="async">
+              <span class="image-expand"><svg class="icon" aria-hidden="true"><use href="#icon-external"/></svg><span data-en="Full resolution">查看原图</span></span>
+            </a>
+          </figure>
+          <div class="screen-caption" aria-live="polite" aria-atomic="true"><div><span class="screen-index" id="screen-index">01</span><h3 id="screen-title">打开应用，知道下一步做什么。</h3></div><p id="screen-description">当前模型、服务状态、资源和用量汇于总览，从这里进入聊天或管理模型。</p></div>
+        </div>
+        <p class="demo-note" data-en="Screens are from the actual app with labeled demonstration data. Model state, chats, usage, and tuning values are examples, not live inference results or performance claims. Screenshots currently show the Chinese interface.">截图来自当前应用，使用已标注的演示数据。模型状态、聊天、用量与调优数值均为示例，不代表真实推理结果或性能承诺。截图目前展示中文界面。</p>
+        <noscript><p class="noscript-links">更多界面：<a href="assets/screenshots/chat.zh.webp">聊天</a> / <a href="assets/screenshots/models.zh.webp">模型</a> / <a href="assets/screenshots/usage.zh.webp">API 用量</a> / <a href="assets/screenshots/tuning.zh.webp">参数调优</a>。<a href="https://github.com/hongfaqiu/strata-manager/blob/main/README.en.md">Read the English introduction</a>.</p></noscript>
+      </div>
+    </section>
+
+    <section class="features section-pad" id="features" aria-labelledby="features-title">
+      <div class="container feature-layout">
+        <div class="feature-introduction"><p class="eyebrow" data-en="02 / THE EVERYDAY DETAILS">02 / 日常使用，更顺手</p><h2 id="features-title"><span data-en="A little less setup.">少一些准备，</span><span data-en="A little more clarity.">多一些从容。</span></h2><p data-en="A desktop home for models supported by Strata, built around local use. Keep the files you already have and see what your service is doing.">为 Strata 支持的模型提供本机桌面工作台。继续使用已有的文件，也看清服务正在做什么。</p><a class="text-link" href="https://github.com/hongfaqiu/strata-manager/blob/main/docs/USER_GUIDE.md" data-href-en="https://github.com/hongfaqiu/strata-manager/blob/main/docs/USER_GUIDE.en.md"><span data-en="Explore the user guide">展开使用指南</span><svg class="icon" aria-hidden="true"><use href="#icon-arrow"/></svg></a><div class="brand-layers" aria-hidden="true"><span></span><span></span><span></span></div></div>
+        <div class="feature-list">
+          <article class="feature-row"><span class="feature-number">01</span><div><h3 data-en="Keep the models you already have.">已有模型，继续使用。</h3><p data-en="Detect and import local Strata installations. Existing weights stay in place; the app uses a managed configuration copy. Prepare new models only when you need them.">检测并导入本机 Strata。原有权重保持原位，应用使用受管配置副本；需要新模型时，再走准备向导。</p></div></article>
+          <article class="feature-row"><span class="feature-number">02</span><div><h3 data-en="Chat, with context close at hand.">聊天，把上下文放在身边。</h3><p data-en="Conversation history, streaming replies, reasoning, text and image attachments, and MCP events share one workspace. Capabilities depend on your runtime and model.">多会话、流式回答、思考过程、文本和图片附件，以及 MCP 工具事件集中展示。实际能力取决于运行时与模型。</p></div></article>
+          <article class="feature-row"><span class="feature-number">03</span><div><h3 data-en="Close the window. Keep the API.">关闭窗口，API 继续运行。</h3><p data-en="An independent background process manages services you have started. Reopen the app to reconnect, or stop managed services from the tray when you want to release the model.">独立后台管理已启动的服务。重新打开界面即可连接回来；需要释放模型时，从托盘停止受管服务。</p></div></article>
+          <article class="feature-row"><span class="feature-number">04</span><div><h3 data-en="Know how your model is being used.">知道模型是怎么被使用的。</h3><p data-en="Follow requests, tokens, success rate, latency, cache reuse, and recent activity. Usage analytics stores metadata; missing values stay unknown.">查看请求、tokens、成功率、等待时间、缓存和最近活动。用量统计保存元数据，缺失值会明确显示未知。</p></div></article>
+          <article class="feature-row"><span class="feature-number">05</span><div><h3 data-en="Measure before changing settings.">调优，先比较再决定。</h3><p data-en="Compare the baseline with limited candidate settings, review consistency and variation, then apply or restore. Keep your configuration when gains are not stable.">比较基线与有限候选参数，查看一致性和波动，再决定应用或恢复。没有稳定收益时，保留当前配置。</p></div></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="start section-pad" id="get-started" aria-labelledby="start-title">
+      <div class="container">
+        <div class="section-heading"><div><p class="eyebrow" data-en="03 / MAKE IT YOURS">03 / 开始你的工作流</p><h2 id="start-title" data-en="Three steps to your local workspace.">三步，开始使用。</h2></div><p class="section-intro" data-en="The app handles startup and loading. Start with your models, then choose how you want to use them.">启动和加载由应用处理。从你的模型开始，再选择适合自己的使用方式。</p></div>
+        <ol class="steps">
+          <li><span class="step-number" aria-hidden="true">1</span><h3 data-en="Find your model.">找到你的模型。</h3><p data-en="Open My models to restore valid earlier profiles or import an existing Strata installation. If you are starting fresh, use the preparation guide.">打开“模型”，恢复旧版有效档案，或导入已有 Strata。还没有安装时，使用准备向导。</p></li>
+          <li><span class="step-number" aria-hidden="true">2</span><h3 data-en="Select Use. Wait for ready.">点击“使用”，等待可用。</h3><p data-en="The background checks the environment, starts Strata, and loads the model. Follow the task log as it prepares your workspace.">后台检查环境、启动 Strata 并加载模型。通过任务日志查看准备进度，等待“模型可用”。</p></li>
+          <li><span class="step-number" aria-hidden="true">3</span><h3 data-en="Chat, or connect your tools.">开始聊天，或连接工具。</h3><p data-en="Send a message in Chat, or copy the displayed local API address into your client. API protocol support depends on the installed runtime.">进入聊天发送消息，或把界面显示的本机 API 地址配置到客户端。协议能力以当前运行时为准。</p></li>
+        </ol>
+        <div class="preview-callout">
+          <div class="preview-intro"><span class="preview-label" data-en="PREVIEW / FIRST RELEASE">PREVIEW / 首版验收中</span><h3 data-en="Ready to take a look?">从这里，体验当前版本。</h3><p data-en="The first formal release is not published yet. Try the source or inspect CI preview artifacts. CI builds are for testing; platform acceptance is still in progress.">首个正式版本尚未发布。可以从源码体验，或查看 CI 预览产物。CI 构建用于测试，平台实机验收仍在进行。</p></div>
+          <div class="preview-links">
+            <a href="https://github.com/hongfaqiu/strata-manager"><span><strong data-en="Get the source">从源码体验</strong><small data-en="Repository & development instructions">仓库与开发说明</small></span><svg class="icon" aria-hidden="true"><use href="#icon-arrow"/></svg></a>
+            <a href="https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml"><span><strong data-en="Explore CI previews">查看 CI 预览</strong><small data-en="Build history & test artifacts">构建记录与测试产物</small></span><svg class="icon" aria-hidden="true"><use href="#icon-arrow"/></svg></a>
+            <a href="https://github.com/hongfaqiu/strata-manager/releases"><span><strong data-en="Follow formal releases">关注正式 Releases</strong><small data-en="Verified releases will appear here">验收后的正式版本将在这里发布</small></span><svg class="icon" aria-hidden="true"><use href="#icon-arrow"/></svg></a>
+          </div>
+        </div>
+        <p class="start-note"><span data-en="Targets: Windows / Linux x64. Model weights are installed separately; hardware and driver requirements depend on the model.">目标平台为 Windows / Linux x64。模型权重独立准备，硬件与驱动要求取决于所选模型。</span> <a href="https://github.com/hongfaqiu/strata-manager/blob/main/docs/VERIFICATION.md" data-en="See current verification →">查看当前验收记录 →</a></p>
+        <details class="source-details"><summary><span data-en="Prefer building from source?">想从源码启动？</span><span aria-hidden="true">+</span></summary><div class="source-content"><p data-en="You need Node.js 22.13+, the project's pinned pnpm 11, Rust stable, and the operating system's Tauri prerequisites.">需要 Node.js 22.13+、项目固定的 pnpm 11、Rust stable，以及对应系统的 Tauri 前置依赖。</p><pre><code>git clone https://github.com/hongfaqiu/strata-manager.git
+cd strata-manager
+pnpm install --frozen-lockfile
+pnpm desktop</code></pre><a class="text-link" href="https://github.com/hongfaqiu/strata-manager/blob/main/docs/DEVELOPMENT.md"><span data-en="Full development instructions">完整开发说明</span><svg class="icon" aria-hidden="true"><use href="#icon-arrow"/></svg></a></div></details>
+      </div>
+    </section>
+
+    <section class="faq section-pad" aria-labelledby="faq-title">
+      <div class="container faq-layout">
+        <div class="faq-heading"><p class="eyebrow" data-en="A FEW GOOD QUESTIONS">你可能还想知道</p><h2 id="faq-title" data-en="Before you begin.">开始之前。</h2><p data-en="A few practical details about models, background services, and your data.">关于模型、后台服务和本机数据的几个实际问题。</p><a class="text-link" href="https://github.com/hongfaqiu/strata-manager/issues"><span data-en="Ask on GitHub">在 GitHub 反馈</span><svg class="icon" aria-hidden="true"><use href="#icon-arrow"/></svg></a></div>
+        <div class="faq-list">
+          <details open><summary><span data-en="Which models can I use?">可以使用哪些模型？</span><span class="faq-plus" aria-hidden="true">+</span></summary><p data-en="Strata Manager manages models supported by Strata that you prepare or import on this computer. Model, image, and API capabilities depend on your installed runtime and chosen model. Check upstream requirements before preparing one.">Strata Manager 管理在这台电脑上准备或导入的、Strata 支持的模型。模型、图像和 API 能力取决于已安装的运行时与所选模型，准备前请查看上游要求。</p><a href="https://github.com/Niko1221/Strata" data-en="View Strata requirements →">查看 Strata 说明 →</a></details>
+          <details><summary><span data-en="Do I have to download my models again?">已有模型，需要重新下载吗？</span><span class="faq-plus" aria-hidden="true">+</span></summary><p data-en="No. Import an existing local Strata installation or restore valid profiles from an earlier Manager version. Existing model files stay in place. New weights are downloaded only when you choose to prepare a new model.">不需要。导入已有的本机 Strata，或恢复旧版 Manager 的有效档案。模型文件保持原位，仅在选择准备新模型时下载新权重。</p></details>
+          <details><summary><span data-en="What happens when I close the window?">关闭窗口后，服务会停止吗？</span><span class="faq-plus" aria-hidden="true">+</span></summary><p data-en="An independent background keeps services that have already started available. Reopen the app to reconnect. To release the model and stop managed services, choose Stop services and quit in the tray.">已启动的服务由独立后台继续提供。重新打开应用即可连接回来；需要释放模型并停止受管服务时，使用托盘的“停止服务并退出”。</p></details>
+          <details><summary><span data-en="Where do my conversations and usage data go?">聊天记录和用量数据保存在哪里？</span><span class="faq-plus" aria-hidden="true">+</span></summary><p data-en="Chat history is stored on your computer. Usage analytics stores metadata without prompts, replies, attachments, or API keys. Request-body capture is a separate diagnostic setting. Downloads, updates, and configured MCP tools can access the network.">聊天历史保存在本机。用量统计保存元数据，不保存提示词、回答、附件或 API 密钥。请求正文捕获是独立诊断设置；下载、更新及配置的 MCP 工具可能访问网络。</p><a href="https://github.com/hongfaqiu/strata-manager/blob/main/docs/USER_GUIDE.md#数据与隐私" data-href-en="https://github.com/hongfaqiu/strata-manager/blob/main/docs/USER_GUIDE.en.md#local-storage-and-privacy" data-en="Read storage & privacy details →">查看数据与隐私说明 →</a></details>
+          <details><summary><span data-en="Will tuning make my model faster?">调优一定能让模型更快吗？</span><span class="faq-plus" aria-hidden="true">+</span></summary><p data-en="Benefits depend on your model, hardware, and workload. The app compares limited request-level settings and reports consistency and variation. Keep the current settings when improvement is unstable; screenshot metrics are demonstration data.">收益取决于模型、硬件和实际工作负载。应用比较有限的请求级参数，并报告一致性和波动。提升不稳定时保留当前设置；截图中的数值是演示数据。</p></details>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-top">
+      <div class="footer-brand"><a class="brand" href="#"><img src="assets/icon.svg" width="42" height="42" alt="Strata Manager 品牌图标" data-alt-en="Strata Manager brand icon"><span><strong>Strata</strong> <span class="brand-manager">Manager</span></span></a><p data-en="A calmer home for your local models.">给本地模型，一个从容的工作台。</p></div>
+      <div class="footer-credits"><p><span data-en="Built on ">基于 </span><a href="https://github.com/Niko1221/Strata">Niko1221/Strata</a><span data-en=". Thank you to the upstream author and contributors. An independent community desktop app, retaining upstream attribution.">。感谢上游作者与贡献者。本项目是独立社区桌面应用，保留上游版权声明。</span></p><p><span data-en="The repository uses MIT. Model weights are installed separately and retain their providers' licenses.">仓库采用 MIT 许可。模型权重独立安装，遵循提供方的许可。</span></p></div>
+    </div>
+    <div class="container footer-bottom"><span>© 2026 Strata Manager</span><nav aria-label="项目资源" data-label-en="Project resources"><a href="https://github.com/hongfaqiu/strata-manager">GitHub</a><a href="https://github.com/hongfaqiu/strata-manager/blob/main/LICENSE">MIT</a><a href="https://github.com/hongfaqiu/strata-manager/blob/main/THIRD_PARTY_NOTICES.md" data-en="Third-party notices">第三方声明</a><a href="#" data-en="Back to top ↑">回到顶部 ↑</a></nav></div>
+  </footer>
+</body>
+</html>
