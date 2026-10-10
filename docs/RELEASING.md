@@ -2,7 +2,15 @@
 
 公开仓库：[hongfaqiu/strata-manager](https://github.com/hongfaqiu/strata-manager)。正式更新源为该仓库 Release 中的 `latest.json`；签名私钥不得进入 Git、前端资源、构建工件或截图。
 
-## 当前发布准备状态
+## 当前发布状态
+
+2026-10-11：[v0.1.0-beta.2 预览版](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0-beta.2)已由[签名 Release 流水线](https://github.com/hongfaqiu/strata-manager/actions/runs/38080808731)自动公开，validate、Windows、Linux 与 publish 四个 job 全部通过。源码固定为 `0db2fea5128144fe2fe00cca992bd5139c831508`；[同源码 main CI](https://github.com/hongfaqiu/strata-manager/actions/runs/38082527318)也全部通过。此次无需恢复上传，Windows 草稿创建权限修复已在新 tag 上实际验证。
+
+Windows 完成 NSIS 静默安装、实际桌面启动、私有后台 IPC、版本及打包二进制身份检查和卸载；Linux 完成 AppImage、解包 DEB 的桌面启动与 IPC 检查。公开前流水线下载实际更新包，使用内置公钥验证载荷、签名和签名中的版本，再生成 `SHA256SUMS`。公开后独立检查 8 个非空资产、真实 tag commit、5 个 updater 平台及别名、签名文件与 manifest 一致性，并核对三个安装包校验和及小型元数据实际字节与 GitHub digest 一致。预览版不进入稳定更新通道；目前没有已公开稳定版本。
+
+后续 main 增加已公开同名 tag 的提前拒绝门禁；本地完整发布守卫测试 58 项通过、0 失败、0 跳过，工作流检查通过，并使用 GitHub 上已公开 beta.2 的真实元数据完成只读拒绝检查。该保护不修改 beta.2 的历史 tag 或工作流，由之后的新 tag 使用；历史公开版本一律禁止重跑。系统级 DEB 安装、真实 GPU、登录自启动和客户端跨版本更新安装仍需各自验收。
+
+### 历史验证记录
 
 2026-10-11：已公开 [v0.1.0-beta.1 预览版](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0-beta.1)，包含 Windows x64 NSIS、Linux x64 AppImage/DEB、三份更新签名、`latest.json` 和 `SHA256SUMS`。发布源码为 `ab3bacc68fd8c9a95cc92de05ae2439976c91e5f`。Windows 原始 tag 构建在创建草稿时因 GitHub 工作流写权限规则收到 403；保留原始已签名产物，经[恢复检查](https://github.com/hongfaqiu/strata-manager/actions/runs/38078576661)核对构建身份、artifact 摘要并实际完成安装、启动、IPC 和卸载。Linux 原始签名构建通过 AppImage/解包 DEB 启动检查。发布前独立下载全部实际更新包，使用内置公钥验证签名及签名中的版本，并比对三个安装包的 SHA256；本次预览通过验证后恢复发布，原失败记录仍保留。
 
@@ -74,12 +82,14 @@ CI 产物以 `ci-<platform>-<arch>-<bundle>` 名称上传为 Actions artifacts�
 
 1. 在同一变更中同步根 `package.json`、`apps/desktop/package.json`、`packages/core/package.json`、Tauri config、Cargo workspace 和任何显式 Cargo package version。`node scripts/release-check.mjs --tag v0.1.0` 检查版本；tag 必须与应用版本严格一致。
 2. 完成 [VERIFICATION](VERIFICATION.md) 的最终检查和发布验收，更新中英文 README、用户指南、`docs/screenshots/` 的 WebP 封面及页面图与实际 revision；检查内容没有 API 密钥、个人会话、用户名或私有模型路径。截图使用示例数据时，在图片所在文档及官网的图外说明数据来源；图内使用正常模型名和界面内容，不能写成真实服务或性能证据。保留历史原型证据，同时单列本轮未通过/未运行项。
-3. 推送已审核的代码，再创建并推送 `v<version>` tag，例如 `v0.1.0` 或 `v0.2.0-beta.1`。版本 tag 触发 `.github/workflows/release.yml`；手动重跑必须选中同一个 tag，选择分支不会发布。
-4. 流水线先校验 tag、版本和签名配置，再通过 Windows/Linux 全部检查。`release-tag.mjs` 从 GitHub 精确 tag ref 解析真实 commit，包括有界解析 annotated tag，并与 workflow SHA 比较；上传前和公开前再次检查。官方 Tauri action 构建签名安装包、上传签名和 workflow artifacts，并合并生成 `latest.json` 到**草稿 Release**。正式矩阵顺序执行，避免两个 action 同时读写 updater manifest 时丢失平台条目。
+3. 推送已审核的代码，再创建并推送 `v<version>` tag，例如 `v0.1.0` 或 `v0.2.0-beta.1`。版本 tag 触发 `.github/workflows/release.yml`；只可重跑尚未公开、没有 Release 或只有唯一草稿的同一个 tag，选择分支不会发布。**已公开版本禁止重跑或覆盖资产；修复必须创建新版本、新 tag。** 历史 tag 保存原工作流，不会自动获得 main 上后来新增的门禁。
+4. 流水线先校验 tag、版本和签名配置，再通过 Windows/Linux 全部检查。`release-assets.mjs` 完整读取有界 Release 列表，拒绝同 tag 已公开或重复记录；`release-tag.mjs` 从 GitHub 精确 tag ref 解析真实 commit，包括有界解析 annotated tag，并与 workflow SHA 比较。构建前、矩阵上传前和校验和上传前复查状态与来源，公开前再检查真实 tag commit。官方 Tauri action 构建签名安装包、上传签名和 workflow artifacts，并合并生成 `latest.json` 到**草稿 Release**。正式矩阵顺序执行，避免两个 action 同时读写 updater manifest 时丢失平台条目。
 5. 两个平台均成功后，`scripts/release-verify.mjs` 核对完整的 NSIS/AppImage/DEB、支持的平台及官方别名、每个 updater URL、签名文件与 `latest.json` 的一致性、实际 tag commit 和构建 SHA。下载实际更新包，再通过 `strata-update-verifier` 使用应用内置公钥验证载荷、可信注释和签名中的版本；错误公钥、篡改或缺失签名均拒绝发布。通过后才自动公开；任何失败都保留草稿。
 6. 发布阶段使用仓库级队列锁，并在锁内完整检查已公开稳定版本。只有 SemVer 严格更高的稳定版本成为 latest；旧版本或等价版本仍可公开下载，但不替换更新通道。带 SemVer prerelease 的版本始终不覆盖稳定自动更新通道。公开状态和 latest 选择在同一次 PATCH 中提交；发布前再次核对真实 tag commit。
 
 发布队列采用 GitHub 的 `queue: max`，最多保留 100 个 pending 发布，避免默认队列只保留一个等待任务而取消其它版本。超出队列上限会被 GitHub 取消；超过版本列表分页上限则拒绝发布。人工发布或没有采用此锁的旧工作流仍可能竞争，不能视作已获得服务器级版本比较 CAS。[GitHub 并发队列文档](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)。
+
+上传状态门禁能提前拒绝已公开 tag 的无效重发，但读取状态与上传之间不是服务器事务。维护者不得在流水线上传期间手工公开草稿；外部发布者在检查后改变状态仍存在竞态。`releaseDraft: true` 不等于公开资产不可变；严格不可变需要服务器提供的 immutable release 保护，当前流程不声称已启用该能力。[Tauri action 上传行为](https://github.com/tauri-apps/tauri-action/blob/1deb371b0cd8bd54025b384f1cd735e725c4060f/src/upload-release-assets.ts)。
 
 GitHub 对相对默认分支修改工作流的 `target_commitish` 要求额外的 Workflows 写权限，内置 `GITHUB_TOKEN` 无法授予该权限。对于已经存在且核验了真实 commit 的 tag，工作流将默认分支用作 Release 创建提示，避免该权限要求；该提示不会重写现有 tag，也不用于判断产物来源。当前 tag 的真实提交始终由独立 ref 检查绑定。[GitHub Release 权限规则](https://docs.github.com/en/rest/releases/releases#create-a-release)。
 

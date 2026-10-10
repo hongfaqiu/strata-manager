@@ -118,7 +118,7 @@ HTTP 请求、模型推理轮次和工具调用分别计数。一次 MCP 请求�
 
 设置中的“自动检查并下载更新”会在打开应用时及每 12 小时检查新版本，下载完成后由你选择安装时间。也可以关闭自动下载，手动检查和下载；失败时保留当前版本并提供重试。下载不会提前停止本机 API，点击安装时才检查后台是否能够安全更新。正式更新使用内置公钥验证 Tauri 签名；应用、Strata 运行环境和模型权重分别管理，应用更新不会以重新下载模型作为正常流程。
 
-v0.1.0-beta.1 预览版已发布，可手工下载 [Windows 安装包](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_x64-setup.exe)、[AppImage](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_amd64.AppImage) 或 [DEB](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_amd64.deb)，并核对 [SHA256SUMS](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/SHA256SUMS)。预览版不替换稳定版 `latest` 更新通道；设置中的更新检查面向稳定更新来源，未检测到 beta 不代表当前预览版已经最新。
+v0.1.0-beta.2 预览版已发布，可手工下载 [Windows 安装包](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.2/Strata.Manager_0.1.0-beta.2_x64-setup.exe)、[AppImage](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.2/Strata.Manager_0.1.0-beta.2_amd64.AppImage) 或 [DEB](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.2/Strata.Manager_0.1.0-beta.2_amd64.deb)，并核对 [SHA256SUMS](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.2/SHA256SUMS)。预览版不替换稳定版 `latest` 更新通道；设置中的更新检查面向稳定更新来源，未检测到 beta 不代表当前预览版已经最新。
 
 版本、安装包和当前支持范围见[下载与体验](DOWNLOAD.md)。Tauri 更新签名与 Windows 发布者代码签名不同，本项目目前没有 Windows Authenticode 发布者证书；请按下载说明处理系统的安装提示。
 

@@ -85,7 +85,7 @@ jobs:
       - name: Version and release guard tests
         env:
           UPDATE_VERIFIER_BIN: ${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/debug/strata-update-verifier${{ runner.os == 'Windows' && '.exe' || '' }}
-        run: node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-publish.test.mjs scripts/preview-package-smoke.test.mjs
+        run: node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-assets.test.mjs scripts/release-publish.test.mjs scripts/preview-package-smoke.test.mjs
       - name: Frontend types, core and HTTP fixture tests, build
         run: pnpm check
       - name: Prepare independent background binary

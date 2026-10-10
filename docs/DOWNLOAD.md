@@ -4,22 +4,22 @@
 
 Strata Manager 是本地模型管理桌面应用。桌面安装包包含应用和独立后台，模型权重与 Strata 运行环境另行准备或导入。
 
-## 预览版 v0.1.0-beta.1
+## 预览版 v0.1.0-beta.2
 
-**v0.1.0-beta.1** 预览版已发布。选择下方对应系统的安装包手工安装，版本说明见 [GitHub 发布页](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0-beta.1)；也可以[从源码体验](#从源码体验)。
+**v0.1.0-beta.2** 预览版已发布。选择下方对应系统的安装包手工安装，版本说明见 [GitHub 发布页](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0-beta.2)；也可以[从源码体验](#从源码体验)。
 
 | 平台 | 安装形式 | 说明 |
 | --- | --- | --- |
-| Windows x64 | [NSIS 安装包](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_x64-setup.exe) | 需要 WebView2；安装步骤见下方 |
-| Linux x64 | [AppImage](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_amd64.AppImage) / [DEB](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_amd64.deb) | Ubuntu 22.04 CI 环境构建；系统安装与 GPU 支持范围见下方 |
+| Windows x64 | [NSIS 安装包](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.2/Strata.Manager_0.1.0-beta.2_x64-setup.exe) | 需要 WebView2；安装步骤见下方 |
+| Linux x64 | [AppImage](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.2/Strata.Manager_0.1.0-beta.2_amd64.AppImage) / [DEB](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.2/Strata.Manager_0.1.0-beta.2_amd64.deb) | Ubuntu 22.04 CI 环境构建；系统安装与 GPU 支持范围见下方 |
 
-[下载 SHA256SUMS](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/SHA256SUMS)，将下载文件的 SHA256 与其中同名文件的值核对后再安装。发布页的更新签名文件供更新器验签，初次安装使用表中的 `.exe`、`.AppImage` 或 `.deb`。
+[下载 SHA256SUMS](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.2/SHA256SUMS)，将下载文件的 SHA256 与其中同名文件的值核对后再安装。发布页的更新签名文件供更新器验签，初次安装使用表中的 `.exe`、`.AppImage` 或 `.deb`。
 
 模型、图像和 API 协议以所选 Strata 运行时为准。检查硬件、驱动、RAM、VRAM 和磁盘要求后再准备模型；已有受支持安装可直接导入。
 
 ## Windows 安装
 
-1. 下载上方的 Windows x64 NSIS 安装包 `Strata.Manager_0.1.0-beta.1_x64-setup.exe`。
+1. 下载上方的 Windows x64 NSIS 安装包 `Strata.Manager_0.1.0-beta.2_x64-setup.exe`。
 2. 核对版本与来源后运行安装器，按向导完成安装。Windows 需要 WebView2；缺少时按安装器或系统提示补齐。
 3. 从开始菜单或安装完成后的入口打开 Strata Manager。
 4. 按[第一次使用](USER_GUIDE.md#第一次使用)导入已有 Strata 安装或准备新模型。安装桌面应用不会自动下载权重。
@@ -31,14 +31,14 @@ Strata Manager 是本地模型管理桌面应用。桌面安装包包含应用�
 
 ### AppImage
 
-1. 下载上方的 `Strata.Manager_0.1.0-beta.1_amd64.AppImage`。
-2. 在文件属性中允许执行，或在下载目录运行 `chmod +x ./Strata.Manager_0.1.0-beta.1_amd64.AppImage`。
+1. 下载上方的 `Strata.Manager_0.1.0-beta.2_amd64.AppImage`。
+2. 在文件属性中允许执行，或在下载目录运行 `chmod +x ./Strata.Manager_0.1.0-beta.2_amd64.AppImage`。
 3. 运行 AppImage；遇到 FUSE 或系统依赖提示时，按发行版说明处理。
 4. 按[使用指南](USER_GUIDE.md#第一次使用)准备或导入本机模型。
 
 ### DEB
 
-下载上方的 `Strata.Manager_0.1.0-beta.1_amd64.deb`，在 Ubuntu/Debian 的系统软件安装器中打开，按系统提示安装和处理依赖，再从应用菜单启动。Ubuntu 22.04 是 CI 构建环境；DEB 目前验证的是解包后启动，系统中的安装、卸载、登录自启动和真实 GPU 流程仍未验证。
+下载上方的 `Strata.Manager_0.1.0-beta.2_amd64.deb`，在 Ubuntu/Debian 的系统软件安装器中打开，按系统提示安装和处理依赖，再从应用菜单启动。Ubuntu 22.04 是 CI 构建环境；DEB 目前验证的是解包后启动，系统中的安装、卸载、登录自启动和真实 GPU 流程仍未验证。
 
 ## 从源码体验
 
@@ -67,6 +67,6 @@ pnpm desktop 启动完整桌面应用和后台。pnpm dev 只运行前端，不�
 
 [GitHub Releases](https://github.com/hongfaqiu/strata-manager/releases)列出各版本的安装包和发布说明。预览版、稳定版、CI 测试包和自行构建的安装包是不同来源，请先核对版本及支持范围。
 
-v0.1.0-beta.1 是预览版，使用上述发布页手工下载安装，不通过稳定版 `latest` 通道推送。设置中的更新检查面向稳定更新来源；不要把未检测到 beta 当作已安装最新版的证明。
+v0.1.0-beta.2 是预览版，使用上述发布页手工下载安装，不通过稳定版 `latest` 通道推送。设置中的更新检查面向稳定更新来源；不要把未检测到 beta 当作已安装最新版的证明。
 
 应用更新、Strata 运行环境和模型权重分开管理。自动检查/下载不等于已经安装；运行时更新使用应用核验过的固定候选，不自动追随上游最新版本。详细行为见[使用指南](USER_GUIDE.md)。

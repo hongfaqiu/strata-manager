@@ -22,7 +22,7 @@
 - 调优只比较受支持的 PCIe 预算和 MTP 推测参数；没有固定提速保证。
 - 当前面向 Windows/Linux x64。正式发行、GPU、Linux 实机和跨版本更新的证据分别记录，不把界面截图或夹具当作实际模型验收。
 
-v0.1.0-beta.1 预览版已发布：[Windows 安装包](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_x64-setup.exe) · [AppImage](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_amd64.AppImage) · [DEB](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_amd64.deb) · [SHA256 校验](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/SHA256SUMS)。[下载说明](DOWNLOAD.md)列出安装步骤和当前支持范围。预览版采用手工安装，不替换稳定更新通道。
+v0.1.0-beta.2 预览版已发布：[Windows 安装包](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.2/Strata.Manager_0.1.0-beta.2_x64-setup.exe) · [AppImage](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.2/Strata.Manager_0.1.0-beta.2_amd64.AppImage) · [DEB](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.2/Strata.Manager_0.1.0-beta.2_amd64.deb) · [SHA256 校验](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.2/SHA256SUMS)。[下载说明](DOWNLOAD.md)列出安装步骤和当前支持范围。预览版采用手工安装，不替换稳定更新通道。
 
 ## 许可与来源
 

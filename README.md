@@ -18,7 +18,7 @@
 
 </div>
 
-**Preview v0.1.0-beta.1 is available.** Download below or read the [release notes](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0-beta.1) and [installation guide](https://hongfaqiu.github.io/strata-manager/docs/download.en.html).
+**Preview v0.1.0-beta.2 is available.** Download below or read the [release notes](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0-beta.2) and [installation guide](https://hongfaqiu.github.io/strata-manager/docs/download.en.html).
 
 Strata Manager is an open-source desktop app for local model management. Import and prepare models, manage configurations, start and load services, chat, monitor activity, and connect to your local API in one workspace. Existing weights stay in place, and an independent background process manages running services. The app uses the [Strata](https://github.com/Niko1221/Strata) runtime; available models, image input and API protocols depend on your installed runtime and chosen model.
 
@@ -41,14 +41,14 @@ Chinese and English, light and dark themes, a collapsible sidebar, tray actions,
 
 ## Download
 
-Download preview **v0.1.0-beta.1** for your system and install it manually. The [download guide](https://hongfaqiu.github.io/strata-manager/docs/download.en.html) provides installation steps and support scope.
+Download preview **v0.1.0-beta.2** for your system and install it manually. The [download guide](https://hongfaqiu.github.io/strata-manager/docs/download.en.html) provides installation steps and support scope.
 
 | Platform | Package | Installation |
 | --- | --- | --- |
-| Windows x64 | [NSIS installer](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_x64-setup.exe) | Requires WebView2; [installation guide](https://hongfaqiu.github.io/strata-manager/docs/download.en.html#install-on-windows). |
-| Linux x64 | [AppImage](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_amd64.AppImage) / [DEB](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_amd64.deb) | Built in Ubuntu 22.04 CI; [installation and support scope](https://hongfaqiu.github.io/strata-manager/docs/download.en.html#install-on-linux). |
+| Windows x64 | [NSIS installer](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.2/Strata.Manager_0.1.0-beta.2_x64-setup.exe) | Requires WebView2; [installation guide](https://hongfaqiu.github.io/strata-manager/docs/download.en.html#install-on-windows). |
+| Linux x64 | [AppImage](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.2/Strata.Manager_0.1.0-beta.2_amd64.AppImage) / [DEB](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.2/Strata.Manager_0.1.0-beta.2_amd64.deb) | Built in Ubuntu 22.04 CI; [installation and support scope](https://hongfaqiu.github.io/strata-manager/docs/download.en.html#install-on-linux). |
 
-[SHA256 checksums](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/SHA256SUMS) · [Release notes](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0-beta.1)
+[SHA256 checksums](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.2/SHA256SUMS) · [Release notes](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0-beta.2)
 
 Windows package checks cover silent installation, desktop startup, private background IPC, shutdown and uninstall. Linux checks cover AppImage and extracted DEB startup, private IPC and shutdown in Ubuntu 22.04 with Xvfb. System-level DEB installation, real GPU use, login startup and cross-version updates remain unverified.
 

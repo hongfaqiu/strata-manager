@@ -35,7 +35,7 @@ Strata Manager 是开源的本地模型管理桌面应用，将模型导入与�
 
 Strata Manager 是基于 Strata 的独立社区桌面管理应用，负责导入与准备模型、配置管理、后台服务和桌面工作台；具体推理能力由 Strata 运行时和模型提供。
 
-> **预览版 v0.1.0-beta.1 已发布。** 可从下方直接下载，版本说明见[发布页](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0-beta.1)，安装步骤见[下载说明](https://hongfaqiu.github.io/strata-manager/docs/download.html)。
+> **预览版 v0.1.0-beta.2 已发布。** 可从下方直接下载，版本说明见[发布页](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0-beta.2)，安装步骤见[下载说明](https://hongfaqiu.github.io/strata-manager/docs/download.html)。
 
 ## 为什么使用 Strata Manager
 
@@ -55,14 +55,14 @@ Strata Manager 是基于 Strata 的独立社区桌面管理应用，负责导入
 
 ## 下载与体验
 
-选择对应系统的 **v0.1.0-beta.1** 安装包手工安装；完整步骤见[下载与体验说明](https://hongfaqiu.github.io/strata-manager/docs/download.html)。
+选择对应系统的 **v0.1.0-beta.2** 安装包手工安装；完整步骤见[下载与体验说明](https://hongfaqiu.github.io/strata-manager/docs/download.html)。
 
 | 平台 | 安装形式 | 当前体验方式 |
 | --- | --- | --- |
-| Windows x64 | [NSIS 安装包](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_x64-setup.exe) | 需要 WebView2；[安装说明](https://hongfaqiu.github.io/strata-manager/docs/download.html#windows-安装)。 |
-| Linux x64 | [AppImage](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_amd64.AppImage) / [DEB](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_amd64.deb) | Ubuntu 22.04 CI 环境构建；[安装与支持范围](https://hongfaqiu.github.io/strata-manager/docs/download.html#linux-安装)。 |
+| Windows x64 | [NSIS 安装包](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.2/Strata.Manager_0.1.0-beta.2_x64-setup.exe) | 需要 WebView2；[安装说明](https://hongfaqiu.github.io/strata-manager/docs/download.html#windows-安装)。 |
+| Linux x64 | [AppImage](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.2/Strata.Manager_0.1.0-beta.2_amd64.AppImage) / [DEB](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.2/Strata.Manager_0.1.0-beta.2_amd64.deb) | Ubuntu 22.04 CI 环境构建；[安装与支持范围](https://hongfaqiu.github.io/strata-manager/docs/download.html#linux-安装)。 |
 
-[SHA256 校验文件](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/SHA256SUMS) · [版本说明](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0-beta.1)
+[SHA256 校验文件](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.2/SHA256SUMS) · [版本说明](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0-beta.2)
 
 Windows 已验证静默安装、桌面启动、私有后台 IPC、关闭及卸载。Linux 已验证 Ubuntu 22.04 的 Xvfb 环境中 AppImage 与解包 DEB 启动、私有 IPC 和关闭；系统 DEB 安装、真实 GPU、登录自启动和跨版本更新仍未验证。
 
