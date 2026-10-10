@@ -626,7 +626,12 @@ ThreadingHTTPServer(('127.0.0.1',args.port),Handler).serve_forever()
         let original = crate::external::detect(&profile).unwrap().unwrap();
         put_raw(&state, &serde_json::to_string(&json!([profile])).unwrap());
         let report = migrate(&state).unwrap();
-        assert_eq!((report.imported, report.failed), (1, 0));
+        assert_eq!(
+            (report.imported, report.failed),
+            (1, 0),
+            "{}",
+            serde_json::to_string(&report).unwrap()
+        );
         let after = crate::external::detect(&profile).unwrap().unwrap();
         assert_eq!((after.pid, after.created), (original.pid, original.created));
         assert!(external.refresh().unwrap().running);
