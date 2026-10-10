@@ -1,111 +1,125 @@
-# Strata Manager
+<div align="center">
 
-[简体中文](README.md) · [Downloads](https://github.com/hongfaqiu/strata-manager/releases) · [Original Strata project](https://github.com/Niko1221/Strata)
+<a href="https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.webp"><img src="docs/screenshots/product-cover.webp" alt="Strata Manager — overview, chat and local model management" width="1200" /></a>
 
-A desktop workspace for local Strata models: detect and import installations, prepare runtimes and models, keep the local API available, chat, inspect usage, and compare measured tuning results. Built with Tauri 2, with Simplified Chinese and English interfaces. It retains the official Strata component style within a shared header, collapsible sidebar, and nested management layout.
+<h1>Strata Manager</h1>
+<p><strong>Local models. One workspace.</strong></p>
+<p>A desktop home for your Strata models, conversations and local API.</p>
 
-**The first release is still being verified.** Scoped Windows checks cover background lifecycle, metadata analytics, preparation without Git, and the tuning workflow. Linux, executing the Python installer on a machine without Python, a real logout/login, and installation through a signed version update still require acceptance. See [release notes](https://github.com/hongfaqiu/strata-manager/releases) and the [verification record](docs/VERIFICATION.md).
+<p>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license" /></a>
+<a href="https://tauri.app/"><img src="https://img.shields.io/badge/desktop-Tauri%202-24c8d8" alt="Tauri 2 desktop" /></a>
+<img src="https://img.shields.io/badge/targets-Windows%20%2F%20Linux%20x64-64748b" alt="Windows and Linux x64 targets" />
+<a href="README.md"><img src="https://img.shields.io/badge/languages-中文%20%2F%20English-6366f1" alt="Chinese and English" /></a>
+<a href="https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml"><img src="https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml/badge.svg" alt="Current build and test status" /></a>
+</p>
 
-## Download and requirements
+<p><a href="README.md">简体中文</a> · <a href="#download">Download</a> · <a href="#get-started">Get started</a> · <a href="#features">Features</a> · <a href="#screenshots">Screenshots</a> · <a href="docs/USER_GUIDE.en.md">User guide</a></p>
 
-Download the matching file from [Releases](https://github.com/hongfaqiu/strata-manager/releases):
+</div>
 
-| System | Package | Current scope |
+**First release under verification; try [source](#build-from-source) or [current Linux CI artifacts](https://github.com/hongfaqiu/strata-manager/actions/runs/38066271017).** See the [verification record](docs/VERIFICATION.md).
+
+Strata Manager brings [Strata](https://github.com/Niko1221/Strata) and models such as [Qwen3.8-Flash-Next](https://huggingface.co/Qwen/Qwen3.8-Flash-Next) into one local workspace. Import what you already have, prepare a new model when you need one, and use it from Chat or your favorite API client.
+
+## Features
+
+- **Keep existing models.** Detect and import local Strata installations without downloading their weights again.
+- **Skip the setup chores.** Prepare the official runtime and a private Python environment through the app, without finding Git or entering Python paths.
+- **Keep your API available.** An independent background process manages startup and reconnects when you reopen the desktop window.
+- **Chat in one place.** Conversation history, streaming replies, text and image attachments, reasoning and MCP tools share the same workspace.
+- **Understand your usage.** Follow request volume, tokens, latency, cache reuse, errors and activity over time, with unknown values clearly identified.
+- **Tune with measurements.** Compare a baseline and candidate, review the result, then apply it or restore the original settings.
+
+Chinese and English, light and dark themes, a collapsible sidebar, tray actions, startup settings and update controls make the workspace fit daily use. The interface follows Strata's visual style.
+
+## Download
+
+The [Releases page](https://github.com/hongfaqiu/strata-manager/releases) will host verified releases. **No first official release is available yet.**
+
+| Platform | Preview option | Planned release package |
 | --- | --- | --- |
-| Windows x64 | `*-setup.exe` | Requires WebView2. Scoped local checks are complete; installer and update acceptance are tracked separately. |
-| Linux x64 | `*.AppImage` or `*.deb` | The pipeline targets Ubuntu 22.04. Linux installation, background lifecycle, and GPU inference have not been accepted on a real system. |
+| Windows x64 | Build from source; installer verification is still in progress | `*-setup.exe` |
+| Linux x64 | [Current CI artifacts](https://github.com/hongfaqiu/strata-manager/actions/runs/38066271017) or source | `*.AppImage` / `*.deb` |
 
-Installers include the desktop application and independent background process, but no large model weights. CPU/GPU, RAM, VRAM, and driver requirements depend on your model and the [upstream documentation](https://github.com/Niko1221/Strata). Release targets are Windows/Linux x64; macOS and ARM are currently unsupported.
+CI packages are preview builds, not formal releases. Linux builds target Ubuntu 22.04; real Linux installation and GPU use still need acceptance. Windows requires WebView2. macOS and ARM are currently outside the release targets.
 
-## First use
+The desktop package does not include model weights. Hardware, drivers and free disk space depend on the model; check [Strata's requirements](https://github.com/Niko1221/Strata#what-you-need) before preparing one.
 
-1. **Open the app and check “My models.”** Valid profiles and conversations from an earlier Manager version are restored automatically; existing models do not need another download or preparation. On first use, import any other local Strata installation found by detection; select its folder only if detection misses it. Model files stay in place, the original configuration is retained, and the application uses a managed copy.
-2. **Prepare the environment automatically if you have no installation.** The app downloads a fixed official source revision into its own data directory, verifies it, detects usable Python, and creates a private environment. The normal workflow needs no Git, manually entered Python path, or chosen installation directory.
-3. **Download only when you want another model.** Choose the model, quantization, context, and image support in the setup flow. Strata's official setup prepares the files, and verified results automatically appear in “My models” without replacing the current model. Resolve ambiguous configurations when prompted. Actual logs explain progress and errors. Tasks can be cancelled or retried; first-time weight downloads can take a while.
-4. **Choose “Use,” wait for “Model ready,” then chat.** The application handles service startup and loading. You do not need a startup script or a process-management switch. An instance running under another program must pass identity and idle checks before takeover. Chat contains conversation history, attachments, reasoning, MCP tools, and sampling settings.
-5. **Copy the local API address when connecting another application.** Use the displayed address and API path in your client. Chat Completions, Responses, and Anthropic Messages support depends on the installed Strata runtime.
+## Get started
 
-Windows detects 64-bit Python 3.10+. If none is usable, it provides an SHA256-verified official Python installer for a private installation; execution of that fallback still requires clean-machine acceptance. Linux needs Python 3.10+, venv, and ensurepip. Missing system dependencies produce actionable instructions; the app does not run sudo. The completed Windows no-Git test used existing Python and created a real private venv.
+1. **Have a model already? Open My models.** Valid models and conversations from earlier Manager versions are restored automatically. Import another detected local Strata installation, selecting its folder only if detection misses it. Existing model files stay in place and do not need another download.
+2. **Need a new model? Follow preparation.** Let the app prepare the runtime, then choose the model, size, context and image support. Follow the task log; cancel or retry when needed. Only download new weights when you choose to add them. Verified results appear in My models without replacing your current selection.
+3. **Choose Use, wait for Model ready, then chat.** Service startup is handled by the app. To connect another application, copy the local API address and use its matching API path. Closing the window keeps an already running service available; use the tray's Stop services and quit action to stop it.
 
-The application manages only **local Strata installations it installed or imported**, without remote nodes or arbitrary service addresses. A running instance owned by another program must pass identity and activity checks; unidentified or busy processes are not forcibly stopped.
-
-## Daily use
-
-| Screen | Purpose |
-| --- | --- |
-| Overview | Model readiness, next actions, background state, and key usage information |
-| Models | Automatic preparation, detection/import, download tasks, and local model switching |
-| Chat | Multiple conversations, streaming, text/image attachments, reasoning, MCP, and sampling |
-| Tuning | Measure candidates, compare results, apply a choice, or restore the original settings |
-| Monitor | API usage, official performance monitoring, optional request-body inspection, and task logs |
-| Settings | Chinese/English, theme, background policy, login startup, app updates, and runtime configuration |
-
-**Closing the window keeps an already running API service available through the independent background process.** Closing the window, quitting the interface, and stopping services are separate actions. Use the tray's “Stop services and quit” action to release the model and stop managed services. Reopening the app reconnects to the existing background process for the same user.
-
-The background defaults to lightweight operation, with model loading on first request; select preloading in Settings when you need it ready sooner. Login startup launches the background without first opening Chat. Startup configuration is implemented; a real logout and login still need acceptance.
-
-## API usage and privacy
-
-“Monitor → API usage” shows today, the last 24 hours, or the last 7 days: request trends, success rate, failures/cancellations/interruptions, input/output tokens, cache reuse, first-output latency, total duration, decode speed, MCP calls, and recent requests. Today follows your local timezone; request metadata is retained for 90 days. Collection continues in the background when the monitoring page is closed.
-
-HTTP requests, inference runs, and tool calls are separate counters. One MCP request may include multiple inference runs; token-count requests count only as HTTP requests. HTTP usage and inference work are shown separately and must not be added as total token usage. Success rate excludes unfinished requests. Missing counters remain unknown; gaps, unsupported runtimes, and collection state are labeled. Clients without identifiable labels appear as unknown sources.
-
-Usage analytics stores metadata only, without prompts, responses, reasoning, attachments, tool arguments, or API keys. Chat history is stored separately on your computer. The official API Monitor's body capture is a separate diagnostic feature; an imported configuration may already enable it. Check that setting as needed; metadata collection does not require body capture.
-
-## Measured tuning
-
-Choose a use case and start a comparison. The application measures limited candidates in **baseline A → candidate B → restored A** order, separating distinct prompts from immediately repeated prefixes. Reports include duration, first-output latency, speed, caching, and output consistency. A benefit must exceed the measured baseline drift; unstable results do not produce a recommendation.
-
-Current checks accept only complete, identical deterministic test outputs. They verify consistency and workflow, not a full Agent workload, semantic quality, vision, long-context quality, or cold loading. Automatic tuning currently tests limited request-level settings. Context, KV, and startup settings still require capacity and quality checks.
-
-Applying a result saves a recovery record, restarts the owned service, and checks loading; a failure restores the original configuration. Applying briefly affects the local API, so avoid concurrent maintenance. Controlled fixtures cover comparison, cancellation, application, and rollback. GPU benefits require a report for the actual model and hardware.
-
-## Updates
-
-Check for application updates in Settings. Official updates use the embedded public key to verify Tauri update signatures. Signing configuration and release workflows are prepared; downloading and installing a signed version upgrade still requires real acceptance. Tauri update signatures differ from Windows Authenticode publisher signing; this project does not currently claim a Windows publisher certificate.
-
-The application, Strata runtime, and model weights are managed separately. Application updates do not use model re-downloads as their normal workflow. Release notes describe each version's update and recovery scope.
+Only installations prepared or imported on **this computer** are managed. See the [user guide](docs/USER_GUIDE.en.md) for preparation requirements, background behavior, API connections and troubleshooting.
 
 ## Screenshots
 
-These Chinese UI screenshots show the current App layout rendered with an isolated in-memory RPC fixture, compressed as WebP. Model status, performance metrics, API counts, and chat content are demonstration data, not real service results or performance benchmarks.
+These are actual App screens rendered with isolated in-memory RPC demonstration data. Model status, chat content and metrics are labeled examples, not live inference results or benchmarks. The cover combines these screens and is not performance evidence. Screenshots use 2× pixel density and lossless WebP; click any image to open its full-resolution version.
 
-| Overview | Chat | Monitor |
-| --- | --- | --- |
-| ![Overview](docs/screenshots/overview.zh.webp) | ![Chat](docs/screenshots/chat.zh.webp) | ![Monitor](docs/screenshots/monitor.zh.webp) |
+**Your workspace at a glance**
 
-## FAQ
+[![Overview — model readiness, next steps and local activity](docs/screenshots/overview.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/overview.zh.webp)
 
-**My installation was not found.** Select the Strata folder from detection. The app needs verifiable source, Python, configuration, and model files; diagnostics explain missing items.
+**Conversations, attachments and tools**
 
-**The service started but the model cannot be used.** API startup and model loading are separate stages. Wait for model readiness and inspect tasks/logs. With loading on demand, the first request can take longer.
+[![Chat — conversations and streaming replies](docs/screenshots/chat.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/chat.zh.webp)
 
-**An external client cannot connect.** Copy the current loopback address and API path, check model state and client timeouts, and use the matching API key if configured.
+<details>
+<summary>Explore models, API usage, tuning, monitoring and settings</summary>
 
-**Analytics has no data or unknown values.** Check collection state and compatibility. Unknown does not mean zero; older or modified runtimes may lack complete observation support.
+**Models — reuse what you have, prepare what you need**
 
-**Tuning did not improve speed.** Hardware, model, caching, and workload affect results. Keep the current settings when gains are not repeatable, and test complete tasks with your actual workload.
+[![Models — local installations and preparation](docs/screenshots/models.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/models.zh.webp)
 
-## Build from source
+**API usage — see how your local service is used**
 
-Requirements: Node.js **22.13+** (CI uses 24), the pinned pnpm 11 version, and Rust stable. Windows also needs MSVC C++ Build Tools, Windows SDK, and WebView2. See [Tauri's official prerequisites](https://v2.tauri.app/start/prerequisites/) for Linux packages.
+[![API usage — request trends, tokens and latency](docs/screenshots/usage.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/usage.zh.webp)
+
+**Tuning — compare before choosing**
+
+[![Tuning — baseline and candidate comparison](docs/screenshots/tuning.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/tuning.zh.webp)
+
+**Monitor — inspect service and hardware activity**
+
+[![Monitor — service state and performance](docs/screenshots/monitor.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/monitor.zh.webp)
+
+**Settings — make the workspace yours**
+
+[![Settings — language, theme, background and updates](docs/screenshots/settings.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/settings.zh.webp)
+
+</details>
+
+## Learn more
+
+The [user guide](docs/USER_GUIDE.en.md) explains API counters, local storage and privacy, tuning limits, startup and updates, and common problems. For version acceptance and current limitations, see the [verification record](docs/VERIFICATION.md).
+
+<details>
+<summary>Build from source</summary>
+
+### Build from source
+
+Use Node.js **22.13+** (CI uses 24), pnpm **11.21.0** and Rust stable. Windows needs MSVC C++ Build Tools, Windows SDK and WebView2; Linux dependencies are listed in [Tauri's prerequisites](https://v2.tauri.app/start/prerequisites/).
 
 ```sh
+git clone https://github.com/hongfaqiu/strata-manager.git
+cd strata-manager
 pnpm install --frozen-lockfile
-pnpm desktop       # Prepare the background process and start Tauri development
-pnpm check         # Types, core/HTTP protocol tests, and frontend build
-pnpm native:test   # Rust workspace tests
-pnpm bundle        # Build a local installer; official updater artifacts need signing
+pnpm desktop       # Start the desktop app and its background process
+pnpm check         # Check types, protocol tests and frontend build
+pnpm native:test   # Run Rust workspace tests
+pnpm bundle        # Build a local installer
 ```
 
-Build the background directly with `node scripts/prepare-sidecar.mjs --profile release`. Use `pnpm dev` for frontend-only development. Browser mode can verify UI and loopback protocols; native installation, process management, and operating-system features require the desktop app.
+Local builds do not constitute official signed releases. Maintainers can refer to the [release guide](docs/RELEASING.md).
 
-`apps/desktop` contains the interface and Tauri shell, `apps/supervisor` the background process, `crates/runtime-core` and `crates/local-ipc` runtime management and user-scoped local communication, and `packages/core` shared types/protocols. See the [verification record](docs/VERIFICATION.md) and [release guide](docs/RELEASING.md). Design documents record architectural evolution and do not replace release acceptance.
+See the [development guide](docs/DEVELOPMENT.md) for source layout and checks.
 
-`node scripts/contract-server.mjs` starts a protocol fixture at `http://127.0.0.1:18091`. It performs no model inference; fixture data is not GPU performance evidence.
+</details>
 
-## Upstream and licensing
+## Credits and license
 
-This project integrates [Niko1221/Strata](https://github.com/Niko1221/Strata) and reuses its official frontend design and functionality. Thanks to the original author and contributors. Strata Manager is an independent community desktop application, not an official upstream distribution. Runtimes and model weights are installed separately; model providers determine their model licenses.
+Built on [Niko1221/Strata](https://github.com/Niko1221/Strata), with its official interface style and capabilities. Thank you to the upstream author and contributors. Strata Manager is an independent community desktop application.
 
-This repository uses [MIT](LICENSE). Reused Strata code/interface resources retain MIT attribution and copyright notices. The Outfit font uses SIL OFL 1.1. See [third-party notices](THIRD_PARTY_NOTICES.md).
+Strata Manager uses [MIT](LICENSE); reused Strata resources retain their MIT attribution. The bundled Outfit font uses SIL OFL 1.1. See [third-party notices](THIRD_PARTY_NOTICES.md). Model weights are installed separately and retain their providers' licenses.

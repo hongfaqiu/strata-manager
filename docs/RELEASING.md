@@ -6,9 +6,9 @@
 
 2026-10-10：公开仓库已创建，正式 HTTPS 更新地址、公钥与 `createUpdaterArtifacts` 已配置，Actions 的 `TAURI_SIGNING_PRIVATE_KEY` secret 已设置。当前密钥没有密码，因此密码 secret 可缺省为空。发布门禁测试 5 项通过，两个工作流 actionlint 检查通过，Windows debug sidecar 已实际构建并核对打包副本 hash。
 
-2026-10-11：发布门禁新增真实更新包密码学验签，Node 12 项、Rust 7 项、release CLI 集成 3 项通过；最终五 crate workspace Clippy、fmt、版本检查通过。普通 CI 和 Release 构建阶段会构建验签 helper 并运行完整 Node 门禁；publish 阶段再次使用 release helper 检查实际草稿资产，全部成功后才公开。夹具公钥及签名不含用户私钥。
+2026-10-11：发布门禁新增真实更新包密码学验签和有界分页草稿查询，最新 Node 17 项、Rust 7 项通过，此前 release CLI 的 3 个密码学场景通过；最终五 crate workspace Clippy、fmt、版本检查通过。普通 CI 和 Release 构建阶段会构建验签 helper 并运行完整 Node 门禁；publish 阶段再次使用 release helper 检查实际草稿资产，全部成功后才公开。夹具公钥及签名不含用户私钥。
 
-随后第三轮 CI 已实际生成 Linux AppImage/DEB；Windows 的一个监听探测夹具仍未通过，修复后的完整 CI 待复验。这些证据不能当作 Windows/Linux tag 构建、公开签名产物或客户端更新安装完成。完整发布结果与当前产品验收缺项见 [VERIFICATION](VERIFICATION.md)。Windows Authenticode 发布者签名尚未配置，Tauri updater 签名不提供该能力。
+第三、四轮 CI 已实际生成 Linux AppImage/DEB。第四轮 Windows 在 desktop 后台包身份断言失败，未运行到此前的监听 fixture；后台锁同步修复已通过本地回归，完整 CI 待复验。这些证据不能当作 Windows/Linux tag 构建、公开签名产物或客户端更新安装完成。完整发布结果与当前产品验收缺项见 [VERIFICATION](VERIFICATION.md)。Windows Authenticode 发布者签名尚未配置，Tauri updater 签名不提供该能力。
 
 ## 发布内容
 
@@ -65,7 +65,7 @@ CI 产物以 `ci-<platform>-<arch>-<bundle>` 名称上传为 Actions artifacts�
 ## 发布一个版本
 
 1. 在同一变更中同步根 `package.json`、`apps/desktop/package.json`、`packages/core/package.json`、Tauri config、Cargo workspace 和任何显式 Cargo package version。`node scripts/release-check.mjs --tag v0.1.0` 检查版本；tag 必须与应用版本严格一致。
-2. 完成 [VERIFICATION](VERIFICATION.md) 的最终检查和发布验收，更新中英文 README、WebP 截图与实际 revision。截图放在 `docs/screenshots/overview.zh.webp`、`chat.zh.webp`、`monitor.zh.webp`；检查内容没有 API 密钥、个人会话、用户名或私有模型路径。演示数据在图内及文档中明确标注，不能写成真实服务或性能证据。保留历史原型证据，同时单列本轮未通过/未运行项。
+2. 完成 [VERIFICATION](VERIFICATION.md) 的最终检查和发布验收，更新中英文 README、用户指南、`docs/screenshots/` 的 WebP 封面及页面图与实际 revision；检查内容没有 API 密钥、个人会话、用户名或私有模型路径。演示数据在图内及文档中明确标注，不能写成真实服务或性能证据。保留历史原型证据，同时单列本轮未通过/未运行项。
 3. 推送已审核的代码，再创建并推送 `v<version>` tag，例如 `v0.1.0` 或 `v0.2.0-beta.1`。版本 tag 触发 `.github/workflows/release.yml`；手动重跑必须选中同一个 tag，选择分支不会发布。
 4. 流水线先校验 tag、版本和签名配置，再通过 Windows/Linux 全部检查。官方 Tauri action 构建签名安装包、上传签名和 workflow artifacts，并合并生成 `latest.json` 到**草稿 Release**。正式矩阵顺序执行，避免两个 action 同时读写 updater manifest 时丢失平台条目。
 5. 两个平台均成功后，`scripts/release-verify.mjs` 核对完整的 NSIS/AppImage/DEB、支持的平台及官方别名、每个 updater URL、签名文件与 `latest.json` 的一致性、tag 和构建 SHA。下载实际更新包，再通过 `strata-update-verifier` 使用应用内置公钥验证载荷、可信注释和签名中的版本；错误公钥、篡改或缺失签名均拒绝发布。通过后才自动公开；任何失败都保留草稿。

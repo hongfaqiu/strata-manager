@@ -54,7 +54,7 @@ Core 的 analytics 测试覆盖事务重放/重启去重、未知值与成功率
 
 ## 发布与桌面界面状态
 
-公开仓库已创建；正式 GitHub updater endpoint、公钥、updater artifacts 与 Actions 私钥 secret 已配置。最初的发布门禁单元测试为 **5 passed**；后续加入实际更新包验签，Node 门禁 **12 passed / 0 skipped**、Rust 验签 **7 passed**，release 模式 CLI 的三个集成场景也通过。测试覆盖内置公钥、载荷篡改、签名及唯一合法版本、平台别名去重、DEB 签名、下载截断/失败/超时和自建临时目录清理；公开夹具不包含私钥。最终五 crate workspace Clippy `-D warnings`、fmt、版本一致和 GitHub workflow actionlint 通过。跨平台 sidecar 脚本已实际构建 Windows debug 后台，并核对目标与打包副本 SHA256 一致。
+公开仓库已创建；正式 GitHub updater endpoint、公钥、updater artifacts 与 Actions 私钥 secret 已配置。最初的发布门禁单元测试为 **5 passed**；后续加入实际更新包验签及草稿查询，最新 Node 门禁 **17 passed / 0 skipped**、Rust 验签 **7 passed**，此前 release 模式 CLI 的三个密码学集成场景也通过。测试覆盖内置公钥、载荷篡改、签名及唯一合法版本、平台别名去重、DEB 签名、下载截断/失败/超时、自建临时目录清理及有界分页草稿查找；公开夹具不包含私钥。最终五 crate workspace Clippy `-D warnings`、fmt、版本一致和 GitHub workflow actionlint 通过。跨平台 sidecar 脚本已实际构建 Windows debug 后台，并核对目标与打包副本 SHA256 一致。
 
 当前尚未记录完整 Windows/Linux tag Release 构建结果、公开安装包资产核验、更新器密码学验签及上一版 → 新版安装闭环。更新签名不是 Windows Authenticode 发布者签名，尚未配置发布者证书。安装成功、后台版本切换和 API/模型恢复必须分别验收。
 
@@ -77,13 +77,19 @@ Core 的 analytics 测试覆盖事务重放/重启去重、未知值与成功率
 
 原生监听修复的本地回归：Windows platform 6 passed（52.83 秒），包括实际 IPv4/IPv6 监听 PID、标准 venv 身份及精确 Job 子树；Discovery 6 passed（7.91 秒），API 错误拒绝另单独 1 passed。保留原有身份不匹配时拒绝接管的断言，没有操作原有模型进程。以上范围不能替代下一轮完整 CI 和 NSIS 安装包验收。
 
+[第四轮 CI](https://github.com/hongfaqiu/strata-manager/actions/runs/38066271017) 对应 `d1e2155ddcb140fba53cc02895d152a2721f4b2e`。两平台 observer 13、前端 36、HTTP 5 和 Node 真实验签 12 passed / 0 skipped。Linux 完整通过：IPC 4、desktop 2、Core 60 passed / 2 ignored、Rust 验签 7、Clippy、release sidecar 和安装包；同 revision 的 [AppImage](https://github.com/hongfaqiu/strata-manager/actions/runs/38066271017/artifacts/11674709903) 与 [DEB](https://github.com/hongfaqiu/strata-manager/actions/runs/38066271017/artifacts/11675278930) 已上传。Windows IPC 5 passed，desktop 3 passed / 1 failed，失败为后台包切换后的身份断言；尚未运行到 Core、Rust 验签、Clippy 或 NSIS，不能据此关闭上一轮 venv 失败。
+
+后台包切换的后续修复等待 RPC 关闭且同用户/数据目录的单实例锁真正释放，再启动候选或回滚，不以端口关闭代替进程退出完成，也不停止未知 PID。新增确定性夹具在旧逻辑下失败、修复后通过；最新 desktop 库 5 passed（4.60 秒），相关两项再连续两轮通过，Clippy 和 fmt 通过。回滚继续验证原 hash/version；测试编译隔离真实自启动注册项。CI 当次缺少锁状态日志，因此此修复的代码与回归证据不能写成当次具体竞态已实测，完整流水线待下一轮确认。
+
 本地最新前端检查为核心协议 **36 passed**、HTTP 合同 **5 passed**、类型检查及生产构建通过；四 crate 的 workspace Clippy `-D warnings` 和 fmt 通过。独立实际 App + 内存 RPC 验证了中英、侧栏展开/收起与 10 个路由的 **180 个宽度组合**，未发现页面整体横向溢出。设置页另外验证 600、800、1440、2560 宽度，去除内容宽度上限，按工作区宽度使用单列或两列。长表格与代码允许在组件内滚动。这些界面测试使用演示数据，不作为真实 GPU/采集证据。
 
 准备结果的界面接线另在真实 App、QueryClient、StrictMode 和 core bridge 的隔离内存 RPC 夹具中验证：新登记刷新模型列表并保留已有选择；移除当前模型后再登记不自动选用；首次空列表只自动准备一次；明确点击使用等待一次受管切换成功再进入聊天。组件覆盖双击去重、跨刷新保留配置选择、旧快照冲突使用现有配置、准备命令失败无无效登记重检，以及命令成功但登记失败时的重新核验。没有使用真实 GPU 数据。
 
 Tauri 窗口启动尺寸按显示器工作区和缩放计算，常见分辨率及 100/125/150/200% 缩放的尺寸计算单元测试通过；真实高 DPI 桌面视觉仍待验收。旧版有效档案的真实迁移已恢复模型登记与会话，未重新下载权重。启动最新版桌面程序以验证既有 GPU 服务接管时，自动审批返回 `blocked by policy`；该次启动未执行，原有服务未停止，不能声称最新实际接管、持续采集或 GPU 调优已经通过。
 
-桌面保留官方 Strata 视觉与组件，沿用共享页头、可折叠侧栏和嵌套管理布局。本轮新的自动准备入口、最新布局、中英文、键盘操作、托盘和三张 WebP 截图仍需在最终 Tauri WebView 中统一验收。此前页面几何对照的结果保留在历史部分，不据此宣称当前全部页面逐像素一致或新的原生视觉已经验收。
+桌面保留官方 Strata 视觉与组件，沿用共享页头、可折叠侧栏和嵌套管理布局。本轮新的自动准备入口、最新布局、中英文、键盘操作、托盘和页面截图仍需在最终 Tauri WebView 中统一验收。此前页面几何对照的结果保留在历史部分，不据此宣称当前全部页面逐像素一致或新的原生视觉已经验收。
+
+产品 README 改为中英文用户入口，详细口径移至双语用户指南。产品封面与总览/聊天/模型/API 用量/调优/监控/设置共 8 张无损 WebP，总计约 1.2 MiB，来源为实际 App 的隔离内存 RPC 演示；所有页面在图内标注模拟数据，统一使用 Qwen3.8-Flash-Next 演示模型。按用户清晰度反馈，截图以浏览器 2 倍像素密度重新渲染：页面图 2880×1920，封面 3200×1800，WebP 解码像素与原始浏览器 PNG 完全一致，README 可点击打开高清原图。封面由 HTML/CSS 组合实际总览图，非真实运行或性能证据。已逐张解码和视觉检查，CSS 1440×960 页面无整体横向溢出、控制台零错误。GitHub 仓库简介与 Topics 已加入 Strata、Qwen3.8-Flash-Next、本机模型、API 监控和 Tauri 等关键词。
 
 ## 发布前尚需完成
 

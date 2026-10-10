@@ -1,111 +1,138 @@
-# Strata Manager
+<div align="center">
 
-[English](README.en.md) · [下载安装](https://github.com/hongfaqiu/strata-manager/releases) · [原始 Strata 项目](https://github.com/Niko1221/Strata)
+<a href="https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.webp"><img src="docs/screenshots/product-cover.webp" alt="Strata Manager：本地模型，一站管理" width="100%"></a>
 
-本机 Strata 模型的桌面工作台：自动发现和导入已有安装、准备运行环境与模型、维持本机 API 服务、聊天、查看使用情况和实测调优。使用 Tauri 2，提供简体中文和英文界面，沿用官方 Strata 的组件风格，使用共享页头、可折叠侧栏和嵌套管理布局。
+<h1>Strata Manager</h1>
 
-**当前处于首版发布验收阶段。** Windows 的后台生命周期、元数据统计、无 Git 环境准备和调优闭环已有限定验证；Linux、缺少 Python 时执行安装器、真实登录重启及跨版本签名更新仍需完成验收。以 [Release 说明](https://github.com/hongfaqiu/strata-manager/releases)和[验收记录](docs/VERIFICATION.md)为准。
+<p><strong>本地模型，一站管理。</strong><br>
+让 Strata 和 Qwen3.8-Flash-Next 的安装、聊天、监控与调优，更容易上手。</p>
 
-## 下载与环境
+<p>
+<a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/License-MIT-118577"></a>
+<img alt="Tauri 2" src="https://img.shields.io/badge/Tauri-2-24C8DB">
+<img alt="Windows and Linux x64" src="https://img.shields.io/badge/Windows%20%7C%20Linux-x64-51606F">
+<img alt="中文 and English" src="https://img.shields.io/badge/Language-中文%20%7C%20English-118577">
+<a href="https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml"><img alt="Build and test" src="https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml/badge.svg"></a>
+</p>
 
-从 [Releases](https://github.com/hongfaqiu/strata-manager/releases) 下载与你系统匹配的文件：
+<p>
+<a href="README.en.md">English</a> ·
+<a href="#下载与体验">下载与体验</a> ·
+<a href="#三步开始使用">快速上手</a> ·
+<a href="#看看它的样子">界面展示</a> ·
+<a href="docs/USER_GUIDE.md">使用指南</a>
+</p>
 
-| 系统 | 安装包 | 当前边界 |
-| --- | --- | --- |
-| Windows x64 | `*-setup.exe` | 需要 WebView2；已完成本机限定验证，首次安装包与更新流程见验收记录 |
-| Linux x64 | `*.AppImage` 或 `*.deb` | 流水线面向 Ubuntu 22.04 构建；Linux 安装、后台生命周期和 GPU 推理尚未实际验收 |
+</div>
 
-安装包包含桌面应用和独立后台，不含大型模型权重。CPU/GPU、内存、显存和驱动要求取决于所选模型及[上游说明](https://github.com/Niko1221/Strata)。目前发布目标为 Windows/Linux x64，macOS 和 ARM 尚未支持。
+Strata Manager 是 [Strata](https://github.com/Niko1221/Strata) 的社区桌面工作台，面向在自己电脑上运行 [Qwen3.8-Flash-Next](https://huggingface.co/Qwen/Qwen3.8-Flash-Next) 等 Strata 支持模型的用户。已有模型直接导入；服务启动、模型加载和后台监控交给应用。你可以专心聊天，也可以把本机 API 接入自己的工具。
 
-## 第一次使用
+> **首版仍在验收中。** 正式安装包尚未发布，可从源码体验或查看 [CI 构建产物](https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml)。各平台的实际支持范围见[验收记录](docs/VERIFICATION.md)。
 
-1. **打开应用，查看“我的模型”。** 旧版 Manager 的有效模型档案和聊天记录会自动恢复，已有模型不需要重新下载或准备。首次使用检测到其它本机 Strata 时选择导入；检测遗漏时才需要选择其文件夹。原有模型文件保持原位，原配置保留，应用使用受管配置副本。
-2. **没有安装时，自动准备环境。** 应用将固定版本的官方源码下载到自己的数据目录，校验后解包，检测可用 Python 并创建私有环境。普通流程不需要 Git、手填 Python 路径或选择安装目录。
-3. **需要新模型时再下载。** 按向导选择模型、量化、上下文和图像能力，由 Strata 官方 setup 流程准备。完成后经过验证的模型自动加入“我的模型”，不会替换当前使用的模型；配置有歧义时按提示选择。查看真实日志，失败后重试，也可取消任务。首次下载权重可能需要较长时间。
-4. **选择“使用”，等待“模型可用”，开始聊天。** 应用管理服务启动与加载；不需要手动执行启动脚本或开启“由应用管理”。正在被其它程序使用的实例需通过身份与空闲检查后接管。聊天页包含会话历史、附件、思考输出、MCP 工具和采样设置。
-5. **需要连接其它软件时，复制本机 API 地址。** 将显示的地址和 API 路径粘贴到客户端。Chat Completions、Responses 与 Anthropic Messages 的具体能力取决于当前 Strata 运行时。
+## 为什么使用 Strata Manager
 
-Windows 检测 64 位 Python 3.10+；未找到时提供经 SHA256 核验的官方 Python 私有安装路径，该安装分支尚待干净机器验收。Linux 需要可用的 Python 3.10+、venv 和 ensurepip；缺少系统依赖时会给出安装提示，应用不执行 sudo。已完成的 Windows 无 Git 测试使用本机现有 Python，并实际创建了私有 venv。
-
-应用只管理**它安装或导入的本机 Strata**，不添加远程节点或任意服务地址。发现其它程序正在运行的实例时先核验来源和活动状态；身份不明或繁忙的进程不会被强制停止。
-
-## 日常使用
-
-| 页面 | 用途 |
+| | |
 | --- | --- |
-| 总览 | 当前模型是否可用、下一步操作、后台状态与主要使用数据 |
-| 模型 | 自动准备、检测导入、下载任务与本机模型切换 |
-| 聊天 | 多会话历史、流式回答、文本/图像附件、思考、MCP 和请求采样 |
-| 调优 | 实测候选参数，比较结果，按需应用或恢复原配置 |
-| 监控 | API 用量、官方性能监控、可选请求正文查看和任务日志 |
-| 设置 | 中文/英文、主题、后台策略、登录自启动、应用更新和运行配置 |
+| **已有模型，继续使用**<br>自动检测本机安装，恢复旧版有效档案与会话；原有模型不用重新下载。 | **聊天和工具，在同一处**<br>多会话、流式回答、思考过程、图片和文本附件，以及 MCP 工具事件。 |
+| **关闭窗口，API 继续运行**<br>独立后台管理已启动的服务；重新打开界面即可连接回来。 | **知道模型是怎么被使用的**<br>查看请求量、tokens、成功率、等待时间、缓存和最近请求。 |
+| **调优，先比较再决定**<br>测量当前参数与候选参数，查看报告，再选择应用或恢复。 | **熟悉的 Strata 风格**<br>保留官方组件风格，中文/英文、浅色/深色主题、可折叠侧栏和自适应布局。 |
 
-**关闭窗口后，独立后台继续提供已启动的 API 服务。** 关闭桌面界面、退出界面、停止服务是不同操作；需要释放模型和结束受管服务时，使用托盘中的“停止服务并退出”。后台与窗口分离，同一用户重复打开应用会连接已有后台。
+## 三步开始使用
 
-后台默认轻量运行，模型可在首次请求时加载；需要提前就绪时可在设置中选择提前加载。登录自启动启动后台，无需先打开聊天窗口。自启动设置已实现，真正注销并重新登录的验收仍待完成。
+1. **找到你的模型。** 打开“模型”。旧版 Manager 的有效档案会自动恢复；检测到已有 Strata 时选择导入。如果还没有安装，再使用准备向导。
+2. **点击“使用”。** 等待“模型可用”，后台会检查运行环境、启动 Strata 并加载模型。新模型准备成功后自动加入列表，不会替换当前选择。
+3. **开始聊天，或连接本机 API。** 在聊天页发送消息；需要接入其它软件时，使用总览或模型页显示的本机地址。API 协议能力取决于当前 Strata 运行时。
 
-## API 使用情况与隐私
+已有模型保持原位，应用使用受管配置副本。首次下载新模型可能需要较长时间，进度与失败原因会显示在任务中。遇到问题可查看[第一次使用指南](docs/USER_GUIDE.md#第一次使用)。
 
-“监控 → API 用量”展示今日、最近 24 小时或最近 7 天的请求趋势、成功率、失败/取消/中断、输入输出 tokens、缓存复用、首个输出等待时间、总耗时、解码速度、MCP 调用以及最近请求。今日按本机时区计算；历史元数据保留 90 天。后台持续采集，关闭监控页不会停止采集。
+## 下载与体验
 
-HTTP 请求、模型推理轮次与工具调用分别计数：一次 MCP 请求可能有多个推理轮次，token-count 请求只计 HTTP 请求。HTTP usage 与推理工作量分别展示，不能相加当作总 token 用量。成功率排除尚未结束的请求；缺失的 token 和耗时显示为未知，断档、不兼容运行时与采集状态会明确标注。客户端未提供可识别标签时显示为未知来源。
+正式版本将通过 [GitHub Releases](https://github.com/hongfaqiu/strata-manager/releases) 提供。当前 CI 产物用于测试，不能当作正式签名发行版。
 
-使用统计只保存元数据，不保存提示词、回答、思考、附件、工具参数或 API 密钥。聊天历史另行保存在本机。官方 API Monitor 的正文捕获是独立诊断功能；导入的原配置可能已开启它，请按需检查，不将正文捕获当成元数据统计的前提。
-
-## 实测调优
-
-选择用途后启动比较，应用按**基线 A → 候选 B → 恢复 A**测量有限候选，并区分新提示和立即重复前缀的表现。报告显示耗时、首个输出等待时间、速度、缓存与输出一致性；收益必须超过本轮基线漂移，结果不够稳定时不会推荐更改。
-
-只有完整且一致的确定性测试输出才能通过当前检查。它验证流程与输出一致性，不代替完整 Agent、语义质量、视觉或长上下文测试，也不代表冷加载速度。当前自动调优针对有限的请求级参数；上下文、KV 和启动配置仍应结合容量与质量验证。
-
-采用结果会保存恢复记录，重启受管服务并验证加载；失败时恢复原配置。应用过程中会短暂影响本机 API，调优时不要并行发起其它维护操作。受控夹具已验证比较、取消、应用和回滚；真实 GPU 收益以具体报告为准。
-
-## 更新
-
-在设置中检查应用更新。正式更新使用内置公钥验证 Tauri 更新签名；签名配置和发布流水线已经准备，跨版本下载安装闭环仍待实际验收。Tauri 更新签名与 Windows Authenticode 发布者签名不同，本项目目前不声称拥有 Windows 发布者证书。
-
-应用更新、Strata 运行环境与模型权重分别管理。应用更新不会以重新下载模型为默认流程；实际版本的更新与恢复范围见 Release 说明。
-
-## 截图
-
-以下为当前 App 界面的中文演示截图，使用隔离的内存 RPC 夹具渲染，采用压缩 WebP。模型状态、性能指标、API 数量和聊天内容均为演示数据，不代表真实服务运行结果或性能测试。
-
-| 总览 | 聊天 | 监控 |
+| 平台 | 安装形式 | 当前体验方式 |
 | --- | --- | --- |
-| ![总览](docs/screenshots/overview.zh.webp) | ![聊天](docs/screenshots/chat.zh.webp) | ![监控](docs/screenshots/monitor.zh.webp) |
+| Windows x64 | NSIS `*-setup.exe` | 从源码启动；安装包验收进度见[构建记录](https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml)。 |
+| Linux x64 | `*.AppImage` / `*.deb` | 已有 [CI 构建产物](https://github.com/hongfaqiu/strata-manager/actions/runs/38066271017)；实机安装与 GPU 验收仍待完成。 |
+
+安装包包含桌面应用和后台，模型权重独立准备。硬件、显存、内存与驱动要求请按所选模型查看 [Strata 说明](https://github.com/Niko1221/Strata)；本项目目前面向 Windows/Linux x64。
+
+<details>
+<summary><strong>从源码体验</strong></summary>
+
+需要 Node.js 22.13+、项目固定的 pnpm 11 和 Rust stable。Windows 还需要 MSVC、Windows SDK 与 WebView2；Linux 前置依赖见 [Tauri 文档](https://v2.tauri.app/start/prerequisites/)。
+
+```sh
+git clone https://github.com/hongfaqiu/strata-manager.git
+cd strata-manager
+pnpm install --frozen-lockfile
+pnpm desktop
+```
+
+开发、测试和打包详见[开发说明](docs/DEVELOPMENT.md)。
+
+</details>
+
+## 看看它的样子
+
+截图来自当前应用界面，使用明确标注的演示数据；模型、聊天、用量和调优数值均不代表真实运行结果或性能承诺。截图采用 2 倍像素密度与无损 WebP，点击图片可查看高清原图。
+
+### 一个总览，知道下一步做什么
+
+查看当前模型、服务状态、资源和使用情况，从这里进入聊天或管理模型。
+
+[![总览：模型状态、后台服务与用量入口](docs/screenshots/overview.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/overview.zh.webp)
+
+### 聊天，保留熟悉的官方体验
+
+会话历史直接放在聊天页，回答、思考与附件集中展示。
+
+[![聊天：多会话历史、流式内容与附件](docs/screenshots/chat.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/chat.zh.webp)
+
+### 我的模型，从准备到使用
+
+检测已有安装，准备新模型，查看任务进度；选中模型后由后台完成启动与加载。
+
+[![模型：本机模型、准备与任务](docs/screenshots/models.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/models.zh.webp)
+
+### API 用量，看见日常使用
+
+请求趋势、成功率、tokens、首个输出等待时间与缓存复用，让使用情况有据可查。
+
+[![API 用量：请求趋势与使用数据](docs/screenshots/usage.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/usage.zh.webp)
+
+### 参数调优，让选择有依据
+
+比较基线与候选结果，检查一致性和波动，再决定是否应用。没有稳定收益时保留当前设置。
+
+[![调优：场景选择、测量和结果](docs/screenshots/tuning.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/tuning.zh.webp)
+
+<details>
+<summary><strong>更多界面：性能监控与设置</strong></summary>
+
+<br>
+
+[![性能监控：硬件、吞吐和请求状态](docs/screenshots/monitor.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/monitor.zh.webp)
+
+[![设置：语言、主题、后台策略、自启动和更新](docs/screenshots/settings.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/settings.zh.webp)
+
+</details>
 
 ## 常见问题
 
-**找不到已有安装？** 在检测结果中选择 Strata 文件夹。应用需要能够验证的源码、Python、配置和模型文件，缺失项会显示在诊断中。
+**我已经有模型，为什么还要下载？** 不需要。先查看“我的模型”或导入已有 Strata；仅在准备新模型时下载权重。
 
-**服务启动了，模型还不能用？** API 进程启动与模型加载是两个阶段。等待模型可用，查看任务和日志；默认按需加载时，第一个请求可能需要更长时间。
+**关掉窗口，API 会停止吗？** 已启动的服务由独立后台继续运行。需要释放模型并结束受管服务时，使用托盘中的“停止服务并退出”。
 
-**外部客户端连接不上？** 复制当前显示的回环地址和 API 路径，确认模型状态及客户端超时；配置了 API 密钥时客户端也需要使用对应密钥。
+**聊天和统计会上传吗？** 聊天记录保存在本机，使用统计只保存元数据。模型下载和更新需要网络；MCP 工具按你的配置运行。请求正文诊断与用量统计是两个独立功能，详见[数据与隐私](docs/USER_GUIDE.md#数据与隐私)。
 
-**统计没有数据或出现未知值？** 先查看采集状态与兼容性。未知值不等于零；旧版本或修改过的运行时可能不支持完整观测。
+**调优一定会更快吗？** 收益取决于模型、硬件和请求场景。应用会提供比较结果；没有稳定收益时保留当前配置，界面演示数值不代表实测提速。
 
-**调优后没有更快？** 硬件、模型、缓存和请求会影响结果。没有可重复收益时保留当前配置；完整任务表现需要用你的实际工作负载验证。
+更多安装、API 接入、用量、调优和更新说明见[使用指南](docs/USER_GUIDE.md)。发现问题可在 [Issues](https://github.com/hongfaqiu/strata-manager/issues) 反馈，请移除密钥和个人聊天内容。
 
-## 源码开发
+## 致谢与许可
 
-环境：Node.js **22.13+**（CI 使用 24）、项目固定的 pnpm 11、Rust stable。Windows 需要 MSVC C++ Build Tools、Windows SDK 和 WebView2；Linux 依赖参见 [Tauri 官方前置要求](https://v2.tauri.app/start/prerequisites/)。
+感谢 [Niko1221/Strata](https://github.com/Niko1221/Strata) 的作者与贡献者。本项目复用 Strata 的官方前端设计和功能，是独立社区桌面应用；Strata 推理运行时与模型权重独立安装，模型许可由提供方规定。
 
-```sh
-pnpm install --frozen-lockfile
-pnpm desktop       # 自动准备独立后台，启动 Tauri 开发
-pnpm check         # 类型、核心/HTTP 协议测试、前端构建
-pnpm native:test   # Rust workspace 测试
-pnpm bundle        # 构建本机安装包；正式 updater 产物需要签名环境
-```
+本仓库采用 [MIT](LICENSE)。复用代码与界面保留上游版权声明，Outfit 字体使用 SIL OFL 1.1；详见[第三方声明](THIRD_PARTY_NOTICES.md)。
 
-独立后台可直接构建：`node scripts/prepare-sidecar.mjs --profile release`。前端单独开发使用 `pnpm dev`；浏览器模式可验证界面和回环协议，原生安装、进程管理及系统功能需要桌面应用。
-
-`apps/desktop` 为界面与 Tauri 外壳，`apps/supervisor` 为独立后台，`crates/runtime-core` 与 `crates/local-ipc` 提供运行时管理和用户限定的本机通信，`packages/core` 提供共享类型与协议。查看[验收记录](docs/VERIFICATION.md)和[发布指南](docs/RELEASING.md)；设计文档记录架构演进，不替代版本验收。
-
-`node scripts/contract-server.mjs` 启动无模型推理的协议夹具，地址为 `http://127.0.0.1:18091`。它验证传输、错误和流式行为，夹具数据不代表 GPU 性能。
-
-## 来源与许可
-
-本项目对接并复用 [Niko1221/Strata](https://github.com/Niko1221/Strata) 的官方前端设计与功能，感谢原作者及贡献者。Strata Manager 是独立的社区桌面管理应用，不是上游官方发行版。Strata 运行时与模型权重独立安装，模型许可由模型提供方规定。
-
-本仓库采用 [MIT](LICENSE)。复用的 Strata 代码与界面按 MIT 保留来源和版权说明；Outfit 字体采用 SIL OFL 1.1。详见 [第三方声明](THIRD_PARTY_NOTICES.md)。
+<p align="center"><sub>Strata · Qwen3.8-Flash-Next · 本地 AI · Local LLM · API Monitoring · Tauri</sub></p>

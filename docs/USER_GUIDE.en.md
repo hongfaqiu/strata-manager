@@ -1,0 +1,136 @@
+# Strata Manager user guide
+
+[Product overview](../README.en.md) · [简体中文](../README.md) · [Verification record](VERIFICATION.md)
+
+Strata Manager manages Strata models on your own computer. Start with **My models**, use **Chat** for conversations, and copy the displayed local API address to connect other software. Remote nodes and arbitrary service addresses are outside the current scope.
+
+## Prepare or reuse a model
+
+**Already used an earlier Manager version?** Valid model profiles and conversations are restored automatically. Review My models before starting a new preparation; existing weights do not need to be downloaded again.
+
+**Already have Strata elsewhere on this computer?** Use detection and import. If it is not found, select the Strata folder. Import checks source, Python, model files and configuration. Model files stay where they are; the original configuration is retained and Manager uses a managed copy. Resolve any ambiguous configuration when prompted.
+
+A running installation owned by another program must pass identity and activity checks before takeover. Unknown or busy processes are not forcibly stopped. Read the displayed reason if an installation needs repair or cannot be imported.
+
+**Starting fresh?** Use automatic preparation. Manager downloads a fixed official Strata source revision, verifies its SHA256 and prepares a private environment in its own data directory. The normal path does not require Git or a manually entered Python path.
+
+- Windows uses a suitable 64-bit Python 3.10+ when available. Otherwise, it can prepare a verified official Python installer for a private installation. Executing this fallback still needs acceptance on a clean machine without Python.
+- Linux needs Python 3.10+, venv and ensurepip. Missing system dependencies produce instructions; Manager does not run sudo. Complete automatic preparation still needs real Linux acceptance.
+
+Then choose the model, quantization, context and image support. Strata's official setup prepares the engine and weights. Model downloads may be large: check free disk space, RAM, VRAM and driver requirements against the [upstream requirements](https://github.com/Niko1221/Strata#what-you-need).
+
+Tasks show actual log output and downloaded bytes when available. Cancel a task if necessary, then retry after correcting its error. A completed, verified preparation appears in My models without replacing your current selection. Select **Use** when you are ready to switch.
+
+## Start chatting
+
+Select Use and wait for **Model ready**. A healthy API process and a loaded model are different states; a service that has started may still be loading weights.
+
+Chat includes conversation history, streaming replies, text and image attachments, reasoning controls, sampling settings and MCP tools. Available image and API capabilities depend on the imported or prepared Strata runtime and model.
+
+Use the stop control to cancel your active reply. Partial content can remain in the conversation. A slow first reply may include loading or prompt processing, especially with a long document; it is not the same measurement as steady answer generation.
+
+MCP servers can execute tools and may contact other systems according to their own configuration. Review the tools you enable and their permissions.
+
+## Connect a local API client
+
+Copy the address shown by Manager rather than assuming a fixed port. Select the API supported by your client and runtime:
+
+| Client protocol | Typical API path |
+| --- | --- |
+| OpenAI Chat Completions | `/v1/chat/completions` |
+| OpenAI Responses | `/v1/responses` |
+| Anthropic Messages | `/v1/messages` |
+
+For an OpenAI-compatible client, the base URL commonly includes `/v1`; follow that client's URL convention to avoid duplicating the path. Use the configured API key if the runtime requires one. Endpoint support depends on the installed Strata version.
+
+Keep the client timeout long enough for model loading and lengthy prompts. Check readiness and the current address before changing client settings. Manager's local-only scope does not provide remote-node management.
+
+## Window, background and startup
+
+An independent background process manages imported or prepared services. Reopening the desktop app reconnects to the background for the same user.
+
+Closing the window, quitting the interface and stopping services are separate actions. Closing the window keeps an already running API service available. To release the model and stop managed services, use the tray's **Stop services and quit** action.
+
+Settings provides:
+
+- **Launch on login:** start the background without first opening Chat.
+- **Prepare at startup:** choose early preparation instead of the default lightweight, on-demand policy.
+- **Service recovery:** enable bounded recovery attempts; repeated failures surface an actionable repair state.
+
+Startup configuration and isolated operating-system checks are implemented. A real logout/login still needs acceptance. Linux startup, process-tree cleanup and crash recovery still require real-system verification; a successful Linux build is not evidence for these behaviors.
+
+## Read API usage
+
+API usage shows today, the last 24 hours or the last 7 days. Today uses your local timezone. Metadata is retained for **90 days** and collection continues in the background when the usage page is closed.
+
+| Measurement | Meaning |
+| --- | --- |
+| HTTP requests | Incoming API requests, including failures and token-count requests |
+| Inference runs | Model work performed within a request; one tool-assisted request can include several runs |
+| Tool calls | MCP/tool activity counted separately from HTTP requests and model runs |
+| HTTP token usage | Usage reported for the API response |
+| Inference workload | Token work across observed runs; do not add it to HTTP usage as a total |
+| First-output latency | Waiting time to the first observed output |
+| Total duration | Time observed for the complete request |
+| Decode speed | Output-generation rate where enough timing information is available |
+| Cache reuse | Reported reuse; a repeated prefix can behave differently from a fresh prompt |
+
+Success rate uses completed requests; unfinished requests are excluded. Failures, cancellations and interruptions are distinct outcomes. Missing counters stay **unknown**, not zero. Source labels are unknown when the client supplies no identifiable label.
+
+Check collection state and coverage before interpreting a quiet chart. Older or modified runtimes may not be supported, and collection gaps are labeled. Metadata from before observation began cannot be reconstructed as complete usage history. Large model loads, long prompts and tool calls can explain latency without indicating a service fault.
+
+## Local storage and privacy
+
+Usage analytics records metadata without prompts, responses, reasoning, attachments, tool arguments or API keys. Chat history and attachments are stored separately on your computer; metadata-only collection does not mean the app stores no conversation content.
+
+The official API Monitor's **request-body capture** is a separate diagnostic feature. An imported configuration may already have it enabled. Check that setting before sending sensitive content; API usage collection does not require it.
+
+Runtime and model downloads, update checks, and configured MCP tools can make network requests. Local inference does not make every enabled integration offline. Keep API keys and diagnostic exports private, and review exports or logs before sharing them.
+
+## Compare tuning results
+
+Choose a use case and run a comparison. Manager measures limited candidates in **baseline A → candidate B → restored A** order. Fresh prompts and immediately repeated prefixes are measured separately to reveal cache effects.
+
+Review duration, first-output latency, decode speed, caching and output consistency together. A recommendation requires a benefit greater than the measured baseline drift; unstable results do not justify a change.
+
+Current consistency checks require complete, identical deterministic test outputs. Matching output hashes do not establish semantic quality. These probes do not replace a full Agent workload, vision tests, long-context quality, session recovery or cold-load testing. Automatic comparison currently covers limited request-level settings; context, KV and startup settings also need capacity and quality checks.
+
+Applying a result saves a recovery record, restarts the owned service and checks model loading. A failed application restores the original configuration. This briefly affects the local API; avoid concurrent maintenance and active client work when applying a change. Cancellation affects the comparison's own request.
+
+Controlled tests validate the comparison and recovery workflow. Real speed improvements need a report from the actual model, hardware and workload. Screenshot metrics and demonstration timing are not GPU benchmarks.
+
+## Application updates
+
+Settings supports automatic update checks, manual checking and explicit installation. Downloads show received bytes; a total is shown only when known. The updater uses the embedded public key to verify official Tauri signatures.
+
+Application, Strata runtime and model weights are separate. Updating Manager does not normally require another model-weight download. Read the version's release notes for restart and recovery behavior.
+
+**Current acceptance status:** the first formal release has not been published. Linux CI has built AppImage and DEB previews. Windows installer verification is waiting on a background-upgrade identity check. Node's real-signature release checks and Linux Rust signature tests have passed, but installing a signed update from a previous version and restoring the service still need acceptance. Follow the [verification record](VERIFICATION.md) for current evidence.
+
+Tauri update signatures are separate from Windows Authenticode publisher signing. The project does not currently claim a Windows publisher certificate. A successful signature test does not by itself prove installer behavior, background handover or model restoration.
+
+## Common questions
+
+**My installation was not found.** Select its Strata folder and read the detection reason. Verify the source, Python environment, configuration and model files before attempting import.
+
+**Do I have to download the model again?** No, valid existing installations can be imported and earlier Manager profiles restored. Only choose new model preparation when you need additional weights.
+
+**The API is up, but Chat cannot answer.** Check Model ready, task logs and available memory. Loading on demand can delay the first request. Avoid starting another large GPU workload during loading.
+
+**Another application cannot connect.** Check the copied loopback address, API path, model readiness, key and timeout. A client that cannot reach local services may have its own network restrictions.
+
+**The app refuses to take over a running installation.** Read the identity or activity diagnostic. Wait for active work to finish; an unverified process is not stopped merely because it occupies the expected port.
+
+**Usage is empty or has unknown values.** Check collection state, runtime compatibility and coverage. Missing observation is different from zero usage.
+
+**Tuning did not find an improvement.** Keep the current settings if gains are not repeatable. Compare complete tasks with your own workload; cache state and background activity can affect results.
+
+**The window closed, but GPU memory is still used.** An active background service can keep the model loaded. Use Stop services and quit when you want to release it.
+
+**An update check fails before the first release.** No official first update is available yet. Check the verification and release pages; do not substitute an unverified installer or manifest.
+
+## Screenshots and project credits
+
+The README images show the actual App rendered with isolated in-memory RPC demonstration data. Model status, metrics and chat content are examples labeled in the images. The cover combines those screens. Neither the screenshots nor the cover demonstrate inference speed or real API usage.
+
+This independent community application builds on [Niko1221/Strata](https://github.com/Niko1221/Strata) and its official interface. See [MIT](../LICENSE) and [third-party notices](../THIRD_PARTY_NOTICES.md); Outfit uses SIL OFL 1.1, and separately downloaded models retain their own licenses.
