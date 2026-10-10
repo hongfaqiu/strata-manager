@@ -56,7 +56,7 @@ Only installations prepared or imported on **this computer** are managed. See th
 
 ## Screenshots
 
-These are actual App screens rendered with isolated in-memory RPC demonstration data. Model status, chat content and metrics are labeled examples, not live inference results or benchmarks. The cover combines these screens and is not performance evidence. Screenshots use 2× pixel density and lossless WebP; click any image to open its full-resolution version.
+These are actual App screens rendered with isolated in-memory RPC example data. Model status, chat content and metrics are examples disclosed here outside the images, not live inference results or benchmarks. The cover combines these screens and is not performance evidence. Screenshots use 2× pixel density and lossless WebP; click any image to open its full-resolution version.
 
 **Your workspace at a glance**
 

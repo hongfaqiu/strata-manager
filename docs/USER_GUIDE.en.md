@@ -131,6 +131,6 @@ Tauri update signatures are separate from Windows Authenticode publisher signing
 
 ## Screenshots and project credits
 
-The README images show the actual App rendered with isolated in-memory RPC demonstration data. Model status, metrics and chat content are examples labeled in the images. The cover combines those screens. Neither the screenshots nor the cover demonstrate inference speed or real API usage.
+The README images show the actual App rendered with isolated in-memory RPC example data. Model status, metrics and chat content are examples; their source is disclosed outside the images in the README and website. The cover combines those screens. Neither the screenshots nor the cover demonstrate inference speed or real API usage.
 
 This independent community application builds on [Niko1221/Strata](https://github.com/Niko1221/Strata) and its official interface. See [MIT](../LICENSE) and [third-party notices](../THIRD_PARTY_NOTICES.md); Outfit uses SIL OFL 1.1, and separately downloaded models retain their own licenses.

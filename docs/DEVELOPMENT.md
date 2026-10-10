@@ -44,11 +44,11 @@ pnpm bundle        # Build a local installer; updater artifacts require signing
 node scripts/build-website.mjs
 ```
 
-输出为 `dist/website`，可用任意静态 HTTP 服务预览。打包脚本从 `assets/icon.svg` 和 `docs/screenshots` 复制品牌与截图，不需要重复维护图片。截图仍是已标注的演示数据，不代表真实推理或性能结果。
+输出为 `dist/website`，可用任意静态 HTTP 服务预览。打包脚本从 `assets/icon.svg` 和 `docs/screenshots` 复制品牌与截图，不需要重复维护图片。截图使用示例数据，来源在 README 和官网的图外说明，不代表真实推理或性能结果。
 
 GitHub Pages 的发布源使用 **GitHub Actions**；推送 `main` 上的官网、截图、图标或打包脚本改动时，`Publish website` 工作流自动发布，也可手动运行。官网部署与桌面应用的发行版本独立。
 
-The website uses plain HTML/CSS/JavaScript with a Chinese/English switch. Package it with the command above and serve `dist/website` with any static HTTP server. The dedicated `Publish website` workflow deploys relevant changes on `main` to GitHub Pages; it can also be dispatched manually. Screenshots show labeled demonstration data, not inference or performance results.
+The website uses plain HTML/CSS/JavaScript with a Chinese/English switch. Package it with the command above and serve `dist/website` with any static HTTP server. The dedicated `Publish website` workflow deploys relevant changes on `main` to GitHub Pages; it can also be dispatched manually. Screenshots use example data disclosed outside the images, not inference or performance results.
 
 ## 发布 / Release
 
