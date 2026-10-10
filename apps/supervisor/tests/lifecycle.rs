@@ -255,7 +255,15 @@ async fn real_background_process_survives_client_disconnect_and_reconnects_with_
         .as_array()
         .unwrap()
         .iter()
-        .find(|c| c["name"] == "isolated-fixture")
+        // Discovery intentionally lists other running installations first.
+        // Parallel lifecycle fixtures share the display name, so select this
+        // test's exact root/config rather than another test's active listener.
+        .find(|c| {
+            dunce::canonicalize(c["installDir"].as_str().unwrap()).unwrap()
+                == dunce::canonicalize(&runtime).unwrap()
+                && dunce::canonicalize(c["configPath"].as_str().unwrap()).unwrap()
+                    == dunce::canonicalize(runtime.join("strata-fixture.json")).unwrap()
+        })
         .unwrap()
         .clone();
     let original = fs::read(runtime.join("strata-fixture.json")).unwrap();
