@@ -1,0 +1,12 @@
+[workspace]
+members = ["apps/desktop/src-tauri", "apps/supervisor", "crates/runtime-core", "crates/local-ipc"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+

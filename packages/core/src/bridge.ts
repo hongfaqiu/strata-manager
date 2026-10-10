@@ -1,0 +1,229 @@
+import type { AppSettings, BackgroundPolicy, EnvironmentInfo, JsonObject, LocalCandidate, LogEntry, ProcessStatus, ServiceProfile, StartupStatus, StreamEvent, SupervisorStatus, TaskStatus } from './types';
+import { normalizeError, StrataError } from './errors';
+import { decodeChatChunk, SSEParser, type ChatDelta, type StreamToolEvent } from './chat';
+
+export interface LocalModel { name: string; configPath: string; modelPath: string; sizeBytes: number | null }
+
+export function isDesktop(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+async function native<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  if (!isDesktop()) throw new StrataError('DESKTOP_REQUIRED', '此操作需要 Strata Manager 桌面应用');
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return await invoke<T>(command, args);
+  } catch (error) { throw normalizeError(error); }
+}
+
+let dbPromise: Promise<IDBDatabase> | undefined;
+function appDB(): Promise<IDBDatabase> {
+  if (typeof indexedDB === 'undefined') return Promise.reject(new StrataError('STORAGE_UNAVAILABLE', '当前浏览器不可使用 IndexedDB'));
+  if (!dbPromise) dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
+    const open = indexedDB.open('strata-manager', 1);
+    open.onupgradeneeded = () => { if (!open.result.objectStoreNames.contains('app-state')) open.result.createObjectStore('app-state'); };
+    open.onsuccess = () => {
+      const db = open.result;
+      db.onversionchange = () => { db.close(); dbPromise = undefined; };
+      resolve(db);
+    };
+    open.onerror = () => { dbPromise = undefined; reject(new StrataError('STORAGE_ERROR', open.error?.message ?? '无法打开应用存储')); };
+    open.onblocked = () => { dbPromise = undefined; reject(new StrataError('STORAGE_BLOCKED', '应用存储升级被其它窗口阻止')); };
+  });
+  return dbPromise;
+}
+
+export async function loadStore<T>(key: string, fallback: T): Promise<T> {
+  if (isDesktop()) { const value = await native<T | null>('store_get', { key }); return value ?? fallback; }
+  const db = await appDB();
+  return new Promise<T>((resolve, reject) => {
+    const tx = db.transaction('app-state', 'readonly');
+    const read = tx.objectStore('app-state').get(key);
+    tx.oncomplete = () => resolve(read.result === undefined ? fallback : read.result as T);
+    tx.onerror = () => reject(new StrataError('STORAGE_ERROR', tx.error?.message ?? '无法读取应用存储'));
+    tx.onabort = () => reject(new StrataError('STORAGE_ERROR', tx.error?.message ?? '应用存储读取中断'));
+  });
+}
+export async function saveStore(key: string, value: unknown): Promise<void> {
+  if (isDesktop()) return native<void>('store_set', { key, value });
+  const db = await appDB();
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction('app-state', 'readwrite');
+    tx.objectStore('app-state').put(value, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(new StrataError('STORAGE_ERROR', tx.error?.message ?? '无法保存应用存储'));
+    tx.onabort = () => reject(new StrataError('STORAGE_ERROR', tx.error?.message ?? '应用存储保存中断'));
+  });
+}
+
+// Preview keys exist only in this JS session, never in IndexedDB/localStorage or URLs.
+const sessionKeys = new Map<string, string>();
+export async function setApiKey(profileId: string, apiKey: string): Promise<void> {
+  if (isDesktop()) return native<void>('set_api_key', { profileId, apiKey });
+  if (apiKey.trim()) sessionKeys.set(profileId, apiKey.trim()); else sessionKeys.delete(profileId);
+}
+export async function hasApiKey(profileId: string): Promise<boolean> {
+  return isDesktop() ? native<boolean>('has_api_key', { profileId }) : sessionKeys.has(profileId);
+}
+
+function validatePath(path: string): void {
+  if (!path.startsWith('/') || path.startsWith('//') || path.includes('#') || path.includes('\\')) throw new StrataError('INVALID_API_PATH', '仅支持 Strata 相对 API 路径');
+  let decoded: string;
+  try { decoded = decodeURIComponent(path.split('?')[0] ?? ''); } catch { throw new StrataError('INVALID_API_PATH', 'API 路径编码无效'); }
+  if (decoded.startsWith('//') || decoded.includes('\\') || decoded.split('/').some(x => x === '..' || x === '.')) throw new StrataError('INVALID_API_PATH', 'API 路径不可包含跳转');
+}
+
+/** Strata APIs are at the service root; tolerate copied OpenAI /v1 endpoints without duplicating it. */
+export function normalizeBaseUrl(baseUrl: string): string {
+  let base: URL;
+  try { base = new URL(baseUrl.trim()); } catch { throw new StrataError('INVALID_BASE_URL', '服务地址无效'); }
+  if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password || base.search || base.hash) throw new StrataError('INVALID_BASE_URL', '服务地址需为无内嵌凭据的 HTTP(S) URL');
+  if (!['/', '/v1', '/v1/'].includes(base.pathname)) throw new StrataError('INVALID_BASE_URL', '服务地址需为根地址或 /v1 API 地址');
+  if (base.protocol !== 'http:' || !['localhost', '127.0.0.1', '[::1]'].includes(base.hostname)) throw new StrataError('LOCAL_SERVICE_ONLY', 'Strata Manager 仅管理本机回环地址的 Strata 服务');
+  return base.origin;
+}
+
+function normalizedProfile(profile: ServiceProfile): ServiceProfile {
+  return { ...profile, baseUrl: normalizeBaseUrl(profile.baseUrl) };
+}
+
+function proxyURL(profile: ServiceProfile, path: string): string {
+  validatePath(path);
+  const baseUrl = normalizeBaseUrl(profile.baseUrl);
+  const host = new URL(baseUrl).hostname;
+  if (!(host === 'localhost' || host === '[::1]' || host === '127.0.0.1')) throw new StrataError('LOCAL_SERVICE_ONLY', 'Strata Manager 仅管理本机 Strata 服务');
+  return `/__strata_proxy?baseUrl=${encodeURIComponent(baseUrl)}&path=${encodeURIComponent(path)}`;
+}
+
+async function browserFetch(profile: ServiceProfile, path: string, method: string, body?: unknown, signal?: AbortSignal): Promise<Response> {
+  const headers: Record<string, string> = { Accept: 'application/json', 'X-Strata-Client': 'strata-manager.desktop' };
+  const apiKey = sessionKeys.get(profile.id);
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  try {
+    return await fetch(proxyURL(profile, path), { method, headers, ...(body !== undefined ? { body: JSON.stringify(body) } : {}), signal });
+  } catch (error) { throw normalizeError(error); }
+}
+
+async function responseJSON(response: Response): Promise<unknown> {
+  const text = await response.text();
+  let value: unknown;
+  try { value = text ? JSON.parse(text) : null; } catch {
+    if (!response.ok) throw normalizeError(text || `HTTP ${response.status}`, response.status);
+    throw new StrataError('INVALID_RESPONSE', '服务返回了非 JSON 响应', response.status);
+  }
+  if (!response.ok) throw normalizeError(value ?? `HTTP ${response.status}`, response.status);
+  return value;
+}
+export async function request<T = JsonObject>(profile: ServiceProfile, path: string, method = 'GET', body?: unknown): Promise<T> {
+  validatePath(path);
+  if (isDesktop()) return native<T>('strata_request', { profile: normalizedProfile(profile), path, method, ...(body !== undefined ? { body } : {}) });
+  return await responseJSON(await browserFetch(profile, path, method, body)) as T;
+}
+
+export async function streamChat(profile: ServiceProfile, body: JsonObject, onDelta: (delta: ChatDelta) => void, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) throw new StrataError('CANCELLED', '请求已取消');
+  let completed = false, contentLength = 0;
+  const tools = new Map<string, StreamToolEvent>();
+  const parser = new SSEParser(data => {
+    if (completed) return;
+    for (const delta of decodeChatChunk(data)) {
+      if (delta.tool?.id) {
+        const previous = tools.get(delta.tool.id);
+        // Result events omit name/round, so merge with the call without overwriting those fields.
+        const tool = { ...previous, ...delta.tool, name: delta.tool.name === 'MCP' && previous ? previous.name : delta.tool.name, at: previous?.at ?? contentLength };
+        tools.set(delta.tool.id, tool);
+        delta.tool = tool;
+      }
+      contentLength += delta.content?.length ?? 0;
+      if (delta.done) completed = true;
+      onDelta(delta);
+    }
+  });
+  if (isDesktop()) {
+    const { Channel } = await import('@tauri-apps/api/core');
+    const requestId = crypto.randomUUID();
+    const channel = new Channel<StreamEvent>();
+    let streamError: unknown;
+    const cancel = () => { void native<void>('cancel_stream', { requestId }).catch(error => { streamError ??= error; }); };
+    channel.onmessage = event => {
+      if (streamError || signal?.aborted) return;
+      try {
+        if (event.kind === 'data') parser.push(event.data ?? '');
+        else if (event.kind === 'error') { streamError = normalizeError(event.data ?? '服务流失败'); cancel(); }
+        else if (event.kind === 'done') parser.finish();
+      } catch (error) { streamError = error; cancel(); }
+    };
+    signal?.addEventListener('abort', cancel, { once: true });
+    try {
+      if (signal?.aborted) throw new StrataError('CANCELLED', '请求已取消');
+      await native<void>('strata_stream', { profile: normalizedProfile(profile), path: '/v1/chat/completions', body, requestId, onEvent: channel });
+      if (signal?.aborted) throw new StrataError('CANCELLED', '请求已取消');
+      if (streamError) throw streamError;
+      parser.finish();
+    } finally { signal?.removeEventListener('abort', cancel); }
+  } else {
+    const response = await browserFetch(profile, '/v1/chat/completions', 'POST', body, signal);
+    if (!response.ok) await responseJSON(response);
+    if (!response.body) throw new StrataError('STREAM_UNAVAILABLE', '服务没有返回可读取的数据流');
+    if (!response.headers.get('content-type')?.includes('text/event-stream')) throw new StrataError('INVALID_RESPONSE', '服务未返回 SSE 数据流');
+    const reader = response.body.getReader();
+    try {
+      for (;;) {
+        const next = await reader.read();
+        if (next.done) break;
+        parser.push(next.value);
+        if (completed) { await reader.cancel(); break; }
+      }
+      parser.finish();
+    } catch (error) { await reader.cancel().catch(() => {}); throw normalizeError(error); }
+    finally { reader.releaseLock(); }
+  }
+  if (signal?.aborted) throw new StrataError('CANCELLED', '请求已取消');
+  if (!completed) throw new StrataError('STREAM_INCOMPLETE', '服务数据流中断，未收到完成标记');
+}
+
+export const startService = (profile: ServiceProfile): Promise<ProcessStatus> => native('start_service', { profile });
+export const stopService = (profileId: string): Promise<ProcessStatus> => native('stop_service', { profileId });
+export const serviceStatus = (profileId: string, profile?: ServiceProfile): Promise<ProcessStatus> => native('service_status', { profileId, ...(profile ? { profile } : {}) });
+export const restartService = (profile: ServiceProfile): Promise<ProcessStatus> => native('restart_service', { profile });
+export const takeOverService = (profile: ServiceProfile): Promise<ProcessStatus> => native('take_over_service', { profile });
+export const readLogs = (profile: ServiceProfile, limit = 200): Promise<LogEntry[]> => native('read_logs', { profile, limit });
+export const environmentInfo = (): Promise<EnvironmentInfo> => native('environment_info');
+export const runSetup = (profile: ServiceProfile, model: string, quant: string, context: number, images: boolean): Promise<TaskStatus> => native('run_setup', { profile, model, quant, context, images });
+export const installRuntime = (directory: string): Promise<TaskStatus> => native('install_runtime', { directory });
+/** Prepare the application-owned official source and private Python environment, without models. */
+export const prepareLocalRuntime = (): Promise<TaskStatus> => native('prepare_local_runtime');
+export const localRuntimeInstallation = (): Promise<import('./installation-types').RuntimeInstallationStatus> => native('local_runtime_installation');
+/** Task logs use the existing read-only log source contract; no engine configuration is read. */
+export const readTaskLogs = (taskId: string, limit = 200): Promise<LogEntry[]> => readLogs({ id: taskId, name: '', baseUrl: 'http://127.0.0.1:8000', installDir: '', pythonPath: '', configPath: '', managed: false }, limit);
+export const updateRuntime = (profile: ServiceProfile): Promise<TaskStatus> => native('update_runtime', { profile });
+export const listTasks = (): Promise<TaskStatus[]> => native('list_tasks');
+export const cancelTask = (taskId: string): Promise<void> => native('cancel_task', { taskId });
+export const readConfig = (profile: ServiceProfile): Promise<JsonObject> => native('read_config', { profile });
+export const writeConfig = (profile: ServiceProfile, config: JsonObject): Promise<void> => native('write_config', { profile, config });
+export const listLocalModels = (profile: ServiceProfile): Promise<LocalModel[]> => native('list_local_models', { profile });
+export const exportDiagnostics = (profile: ServiceProfile): Promise<string> => native('export_diagnostics', { profile });
+export const applySettings = (settings: AppSettings): Promise<void> => native('apply_settings', { settings });
+export const saveMarkdown = (path: string, content: string): Promise<string> => native('write_markdown_export', { path, content });
+export const discoverLocal = (directories?: string[]): Promise<LocalCandidate[]> => native('discover_local', { ...(directories ? { directories } : {}) });
+export const importLocal = (candidate: LocalCandidate): Promise<ServiceProfile> => native('import_local', { candidate });
+export const ensureLocalService = (profileId: string): Promise<ProcessStatus> => native('ensure_local_service', { profileId });
+export const switchLocalService = (profileId: string): Promise<ProcessStatus> => native('switch_local_service', { profileId });
+export const supervisorStatus = (): Promise<SupervisorStatus> => native('supervisor_status');
+export const shutdownSupervisor = (): Promise<void> => native('shutdown_supervisor');
+export const localInstallations = (): Promise<ServiceProfile[]> => native('local_installations');
+export const renameLocalInstallation = (profileId: string, name: string): Promise<ServiceProfile> => native('rename_local_installation', { profileId, name });
+export const removeLocalInstallation = (profileId: string): Promise<void> => native('remove_local_installation', { profileId });
+export const startupStatus = (): Promise<StartupStatus> => native('get_startup_status');
+export const setStartupEnabled = (enabled: boolean): Promise<StartupStatus> => native('set_startup_enabled', { enabled });
+export const backgroundPolicy = (): Promise<BackgroundPolicy> => native('get_background_policy');
+export const setBackgroundPolicy = (mode: BackgroundPolicy['mode'], autoRecover: boolean): Promise<BackgroundPolicy> => native('set_background_policy', { mode, autoRecover });
+export const prepareAppUpdate = (): Promise<void> => native('prepare_app_update');
+export const restartInterface = (): Promise<void> => native('restart_interface');
+export const tuningStart = (profileId: string, request: import('./tuning-types').TuningStartRequest): Promise<import('./tuning-types').TuningJob> => native('tuning_start', { profileId, request });
+export const tuningStatus = (profileId: string): Promise<import('./tuning-types').TuningJob | null> => native('tuning_status', { profileId });
+export const tuningCancel = (jobId: string): Promise<void> => native('tuning_cancel', { jobId });
+export const tuningApply = (jobId: string, candidateId: string): Promise<import('./tuning-types').TuningJob> => native('tuning_apply', { jobId, candidateId });
+export const tuningRestore = (jobId: string): Promise<import('./tuning-types').TuningJob> => native('tuning_restore', { jobId });
+export const analyticsQuery = <T extends import('./analytics-types').ApiAnalyticsData = import('./analytics-types').ApiAnalyticsData>(query: import('./analytics-types').ApiAnalyticsQuery): Promise<import('./analytics-types').ApiAnalyticsResult<T>> => native('analytics_query', { query });

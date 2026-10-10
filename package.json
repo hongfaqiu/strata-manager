@@ -1,0 +1,19 @@
+{
+  "name": "strata-manager",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.21.0",
+  "scripts": {
+    "dev": "pnpm --filter @strata-manager/desktop dev",
+    "desktop": "pnpm --filter @strata-manager/desktop tauri dev",
+    "build": "pnpm --filter @strata-manager/desktop build",
+    "bundle": "pnpm --filter @strata-manager/desktop tauri build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm --filter @strata-manager/core test && node --test scripts/contract-server.test.mjs",
+    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "native:check": "cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml",
+    "native:test": "cargo test --workspace --target-dir apps/desktop/src-tauri/target",
+    "native:sidecar:dev": "node scripts/prepare-sidecar.mjs --profile debug",
+    "native:sidecar": "node scripts/prepare-sidecar.mjs --profile release"
+  }
+}

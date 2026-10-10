@@ -1,0 +1,33 @@
+.official-surface .view.chat-workspace{position:relative;display:flex;flex-direction:row;flex:1;min-width:0;min-height:0;overflow:hidden}
+.official-surface .chat-main{display:flex;flex-direction:column;flex:1;min-width:0;min-height:0;overflow:hidden}
+.official-surface .chat-main>.chat-scroll{flex:1;min-height:0;overflow-y:auto}
+.official-surface .chat-history{display:flex;flex-direction:column;flex:0 0 248px;min-width:0;min-height:0;gap:var(--st-s-3);padding:var(--st-s-4) var(--st-s-3);border-right:1px solid var(--st-line);background:var(--st-surface);overflow:hidden}
+.official-surface .chat-history[hidden]{display:none}
+.official-surface .chat-history-heading{display:flex;align-items:center;justify-content:space-between;gap:var(--st-s-2);font-size:var(--st-fs-md)}
+.official-surface .chat-history-heading .st-icon{transform:rotate(90deg)}
+.official-surface .chat-history-heading .st-btn{width:30px;height:30px}
+.official-surface .chat-history-new{width:100%;flex:none;gap:var(--st-s-2)}
+.official-surface .chat-history-search{display:flex;align-items:center;gap:var(--st-s-2);padding:0 var(--st-s-3);min-height:36px;flex:none;border:1px solid var(--st-line);border-radius:var(--st-r-sm);background:var(--st-bg);color:var(--st-ink-muted)}
+.official-surface .chat-history-search:focus-within{outline:2px solid var(--st-focus);outline-offset:2px}
+.official-surface .chat-history-search input{min-width:0;width:100%;height:34px;min-height:0;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;outline:none;color:var(--st-ink);font:400 var(--st-fs-sm)/var(--st-lh-body) var(--st-font)}
+.official-surface .chat-history-list{flex:1;min-height:0;overflow-y:auto;scrollbar-gutter:stable}
+.official-surface .chat-history-group{margin-bottom:var(--st-s-4)}
+.official-surface .chat-history-group h2{margin:var(--st-s-3) var(--st-s-2) var(--st-s-2);color:var(--st-ink-muted);font:500 var(--st-fs-xs)/var(--st-lh-body) var(--st-font)}
+.official-surface .chat-history-item{display:flex;align-items:center;min-width:0;gap:var(--st-s-1);margin-bottom:var(--st-s-1);border-radius:var(--st-r-sm);background:transparent}
+.official-surface .chat-history-item:hover{background:var(--st-surface-2)}
+.official-surface .chat-history-item.is-active{background:var(--st-accent-tint);color:var(--st-accent-text)}
+.official-surface .chat-history-select{display:flex;flex-direction:column;align-items:flex-start;flex:1;min-width:0;height:auto;min-height:60px;gap:var(--st-s-1);padding:var(--st-s-2);border:0;border-radius:var(--st-r-sm);background:transparent;color:inherit;text-align:left;font:500 var(--st-fs-sm)/var(--st-lh-body) var(--st-font)}
+.official-surface .chat-history-select:hover:not(:disabled){background:transparent}
+.official-surface .chat-history-select>span{flex-shrink:0;width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.official-surface .chat-history-select small{flex-shrink:0;color:var(--st-ink-muted);font-size:var(--st-fs-xs);font-weight:400;white-space:nowrap}
+.official-surface .chat-history-actions{display:flex;flex:none;padding-right:var(--st-s-1);gap:2px}
+.official-surface .chat-history-actions .st-btn{width:26px;height:30px;color:var(--st-ink-muted)}
+.official-surface .chat-history-actions .chat-history-delete:hover:not(:disabled){color:var(--st-danger-text);background:var(--st-danger-tint)}
+.official-surface .chat-history button:disabled{opacity:.45;cursor:not-allowed}
+.official-surface .chat-history-empty{padding:var(--st-s-4) var(--st-s-2);color:var(--st-ink-muted);font-size:var(--st-fs-sm)}
+.official-surface .chat-history-toolbar{display:flex;align-items:center;flex:none;min-width:0;gap:var(--st-s-2);padding:var(--st-s-2) var(--st-s-4);border-bottom:1px solid var(--st-line-soft)}
+.official-surface .chat-history-toolbar>.st-btn{width:30px;height:30px}
+.official-surface .chat-history-toolbar>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--st-ink-muted);font-size:var(--st-fs-sm)}
+.official-surface .chat-workspace--narrow .chat-history{position:absolute;inset:0 auto 0 0;width:min(280px,calc(100% - 36px));z-index:5;box-shadow:var(--st-sh-pop)}
+.official-surface .chat-history-scrim{position:absolute;inset:0;z-index:4;border:0;border-radius:0;background:rgba(0,0,0,.18);cursor:default}
+.official-surface .chat-history-scrim:hover:not(:disabled){background:rgba(0,0,0,.18)}

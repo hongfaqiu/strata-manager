@@ -1,0 +1,1135 @@
+//! Application-owned source/Python preparation, with no Git or model download.
+//! Upstream setup.py remains responsible for engine packages and model weights.
+use crate::{
+    processes::{self, Logs, OwnedProcess, TaskRecord},
+    types::{now, ServiceProfile, TaskStatus},
+    RuntimeState,
+};
+use futures_util::StreamExt;
+use rusqlite::OptionalExtension;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::{
+    collections::{HashMap, HashSet},
+    fs::{self, File},
+    io::{Read, Write},
+    path::{Path, PathBuf},
+    process::Command,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
+
+// The reviewed upstream revision also determines observer compatibility.
+pub const SOURCE_REVISION: &str = "fb58e0dbc8399662c0e47c76578c6e878b14f6cf";
+pub const SOURCE_URL: &str =
+    "https://codeload.github.com/Niko1221/Strata/zip/fb58e0dbc8399662c0e47c76578c6e878b14f6cf";
+// Downloaded from the exact HTTPS URL and independently hashed on 2026-10-10.
+pub const SOURCE_SHA256: &str = "b6b559866cf7d422d7acace638d542049ea7e3543720f574cb97b2d0bd530d7b";
+#[cfg(windows)]
+const PYTHON_VERSION: &str = "3.13.16";
+#[cfg(windows)]
+const PYTHON_URL: &str = "https://www.python.org/ftp/python/3.13.16/python-3.13.16-amd64.exe";
+// Python.org's .exe.sigstore messageSignature.messageDigest (SHA2_256).
+#[cfg(windows)]
+const PYTHON_SHA256: &str = "fb4f9f5d438b2396da0086dc70b935c530cb578e37adc6d354f7ad2037fee83b";
+const RESULT_KEY: &str = "automaticRuntimeInstallation";
+const MARKER: &str = ".strata-manager-runtime.json";
+const MAX_ARCHIVE: u64 = 128 * 1024 * 1024;
+const MAX_EXPANDED: u64 = 512 * 1024 * 1024;
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreparedRuntime {
+    pub installation_id: String,
+    pub source_revision: String,
+    pub install_dir: String,
+    pub python_path: String,
+    pub prepared_at: u64,
+    pub profile: ServiceProfile,
+}
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallationStatus {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<PreparedRuntime>,
+}
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Claim {
+    token: String,
+    destination: PathBuf,
+    revision: String,
+    installation_id: String,
+    source_ready: bool,
+    venv_claimed: bool,
+    ready: bool,
+    #[serde(default)]
+    critical_hashes: HashMap<String, String>,
+    result: Option<PreparedRuntime>,
+}
+
+pub fn status(state: &RuntimeState) -> Result<InstallationStatus, String> {
+    let value = crate::store_get(state, RESULT_KEY.into())?;
+    if value.is_null() {
+        return Ok(InstallationStatus::default());
+    }
+    serde_json::from_value(value).map_err(|e| e.to_string())
+}
+
+/// The RPC returns immediately; cancellation uses the existing persisted task flag.
+pub fn start(state: Arc<RuntimeState>) -> Result<TaskStatus, String> {
+    let runtime = owned_directory(state.data_dir(), &["runtimes"])?
+        .join(format!("strata-{}", &SOURCE_REVISION[..12]));
+    let id = uuid::Uuid::new_v4().to_string();
+    let task = TaskStatus {
+        id: id.clone(),
+        kind: "install-runtime".into(),
+        state: "running".into(),
+        message: "正在检测 Python 和准备官方 Strata；无需 Git".into(),
+        started_at: now(),
+        finished_at: None,
+    };
+    {
+        let mut tasks = state.tasks.lock().map_err(|e| e.to_string())?;
+        if let Some(existing) = tasks.values().find(|record| {
+            record.status.state == "running" && record.runtime_path.as_ref() == Some(&runtime)
+        }) {
+            return Ok(existing.status.clone());
+        }
+        if tasks.len() >= 100 {
+            if let Some(oldest) = tasks
+                .values()
+                .filter(|r| r.status.state != "running")
+                .min_by_key(|r| r.status.started_at)
+                .map(|r| r.status.id.clone())
+            {
+                tasks.remove(&oldest);
+            }
+        }
+        tasks.insert(
+            id.clone(),
+            TaskRecord {
+                status: task.clone(),
+                profile_id: None,
+                runtime_path: Some(runtime.clone()),
+                cancelled: false,
+                process: None,
+            },
+        );
+        processes::persist_task(&state.database, tasks.get(&id).ok_or("安装任务不存在")?)?;
+    }
+    crate::store_set(
+        &state,
+        RESULT_KEY.into(),
+        serde_json::to_value(InstallationStatus {
+            task_id: Some(id.clone()),
+            result: None,
+        })
+        .map_err(|e| e.to_string())?,
+    )?;
+    tokio::spawn(async move {
+        let outcome = prepare(&state, &id, &runtime).await;
+        if let Ok(mut tasks) = state.tasks.lock() {
+            if let Some(record) = tasks.get_mut(&id) {
+                record.process.take();
+                record.status.finished_at = Some(now());
+                let (result, message) = match outcome {
+                    Ok(result) if !record.cancelled => {
+                        record.status.state = "completed".into();
+                        (
+                            Some(result),
+                            "Strata 源码与私有 Python 环境已就绪；下一步准备模型".to_owned(),
+                        )
+                    }
+                    Ok(_) => {
+                        record.status.state = "cancelled".into();
+                        (None, "准备任务已取消；已校验的文件保留以供重试".to_owned())
+                    }
+                    Err(error) => {
+                        record.status.state = if record.cancelled {
+                            "cancelled"
+                        } else {
+                            "failed"
+                        }
+                        .into();
+                        (None, error)
+                    }
+                };
+                record.status.message = message.clone();
+                processes::log(&state.logs, &id, &record.status.state, message);
+                let saved = serde_json::to_value(InstallationStatus {
+                    task_id: Some(id.clone()),
+                    result,
+                });
+                if let Err(error) = saved
+                    .map_err(|e| e.to_string())
+                    .and_then(|v| crate::store_set(&state, RESULT_KEY.into(), v))
+                {
+                    record.status.state = "failed".into();
+                    record.status.message = format!("准备结果保存失败，请重试: {error}");
+                }
+                let _ = processes::persist_task(&state.database, record);
+                let _ = processes::persist_task_logs(&state.database, &state.logs, &id);
+            }
+        }
+    });
+    Ok(task)
+}
+
+fn cancelled(state: &RuntimeState, id: &str) -> Result<(), String> {
+    let tasks = state.tasks.lock().map_err(|e| e.to_string())?;
+    if tasks.get(id).is_none_or(|record| record.cancelled) {
+        return Err("准备任务已取消；受管下载文件保留以供重试".into());
+    }
+    Ok(())
+}
+fn progress(state: &RuntimeState, id: &str, message: impl Into<String>) -> Result<(), String> {
+    cancelled(state, id)?;
+    let message = message.into();
+    processes::log(&state.logs, id, "info", &message);
+    let mut tasks = state.tasks.lock().map_err(|e| e.to_string())?;
+    let record = tasks.get_mut(id).ok_or("安装任务不存在")?;
+    record.status.message = message;
+    processes::persist_task(&state.database, record)?;
+    processes::persist_task_logs(&state.database, &state.logs, id)
+}
+
+/// All installer paths are derived from the real app data directory, never UI input.
+fn owned_directory(data: &Path, components: &[&str]) -> Result<PathBuf, String> {
+    let root = dunce::canonicalize(data).map_err(|e| e.to_string())?;
+    let mut path = root.clone();
+    for component in components {
+        if component.is_empty() || component.contains(['/', '\\', ':']) || *component == ".." {
+            return Err("内部安装路径无效".into());
+        }
+        path.push(component);
+        if !path.exists() {
+            fs::create_dir(&path).map_err(|e| e.to_string())?;
+        }
+        if fs::symlink_metadata(&path)
+            .map_err(|e| e.to_string())?
+            .file_type()
+            .is_symlink()
+            || !dunce::canonicalize(&path)
+                .map_err(|e| e.to_string())?
+                .starts_with(&root)
+        {
+            return Err("安装路径被重定向，已拒绝写入".into());
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o700))
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(path)
+}
+
+fn claim(state: &RuntimeState, destination: &Path, revision: &str) -> Result<Claim, String> {
+    let mut database = state.database.lock().map_err(|e| e.to_string())?;
+    database.execute_batch("CREATE TABLE IF NOT EXISTS automatic_runtime_claims(path TEXT PRIMARY KEY,token TEXT NOT NULL,revision TEXT NOT NULL);").map_err(|e| e.to_string())?;
+    let recorded: Option<(String, String)> = database
+        .query_row(
+            "SELECT token,revision FROM automatic_runtime_claims WHERE path=?1",
+            [destination.to_string_lossy().as_ref()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    if destination.exists() {
+        let metadata = fs::symlink_metadata(destination).map_err(|e| e.to_string())?;
+        if metadata.file_type().is_symlink()
+            || !metadata.is_dir()
+            || dunce::canonicalize(destination).map_err(|e| e.to_string())? != destination
+        {
+            return Err("运行时目录被替换或重定向，拒绝修改".into());
+        }
+        let marker = destination.join(MARKER);
+        if !marker.is_file()
+            || marker.is_symlink()
+            || fs::metadata(&marker).map_err(|e| e.to_string())?.len() > 16_384
+        {
+            return Err(
+                "默认安装目录已存在但不属于本应用，保留原文件；请在本机检测中导入它".into(),
+            );
+        }
+        let existing: Claim = serde_json::from_slice(&fs::read(marker).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+        if existing.destination != destination
+            || existing.revision != revision
+            || recorded != Some((existing.token.clone(), revision.into()))
+        {
+            return Err("运行时目录归属校验失败，拒绝覆盖非本应用文件".into());
+        }
+        return Ok(existing);
+    }
+    fs::create_dir(destination).map_err(|e| e.to_string())?;
+    let value = Claim {
+        token: uuid::Uuid::new_v4().to_string(),
+        destination: destination.into(),
+        revision: revision.into(),
+        installation_id: uuid::Uuid::new_v4().to_string(),
+        source_ready: false,
+        venv_claimed: false,
+        ready: false,
+        critical_hashes: HashMap::new(),
+        result: None,
+    };
+    let transaction = database.transaction().map_err(|e| e.to_string())?;
+    transaction
+        .execute(
+            "INSERT OR REPLACE INTO automatic_runtime_claims(path,token,revision) VALUES(?1,?2,?3)",
+            rusqlite::params![destination.to_string_lossy(), value.token, revision],
+        )
+        .map_err(|e| e.to_string())?;
+    let mut marker = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(destination.join(MARKER))
+        .map_err(|e| e.to_string())?;
+    marker
+        .write_all(&serde_json::to_vec_pretty(&value).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    marker.sync_all().map_err(|e| e.to_string())?;
+    transaction.commit().map_err(|e| e.to_string())?;
+    Ok(value)
+}
+fn save_claim(value: &Claim) -> Result<(), String> {
+    let marker = value.destination.join(MARKER);
+    if marker.is_symlink() {
+        return Err("运行时归属标记被重定向".into());
+    }
+    let mut temporary =
+        tempfile::NamedTempFile::new_in(&value.destination).map_err(|e| e.to_string())?;
+    temporary
+        .write_all(&serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    temporary.as_file().sync_all().map_err(|e| e.to_string())?;
+    temporary.persist(marker).map_err(|e| e.to_string())?;
+    Ok(())
+}
+fn file_hash(path: &Path) -> Result<String, String> {
+    if path.is_symlink() {
+        return Err("受管文件被重定向".into());
+    }
+    let mut reader = File::open(path).map_err(|e| e.to_string())?;
+    let mut digest = Sha256::new();
+    let mut bytes = [0u8; 65_536];
+    loop {
+        let count = reader.read(&mut bytes).map_err(|e| e.to_string())?;
+        if count == 0 {
+            break;
+        }
+        digest.update(&bytes[..count]);
+    }
+    Ok(format!("{:x}", digest.finalize()))
+}
+
+async fn download(
+    state: &RuntimeState,
+    id: &str,
+    url: &str,
+    expected: &str,
+    limit: u64,
+) -> Result<PathBuf, String> {
+    let directory = owned_directory(state.data_dir(), &["downloads"])?;
+    let mut cache = directory.join(format!("{expected}.download"));
+    if cache.exists() {
+        if file_hash(&cache)? == expected {
+            progress(state, id, "已复用经过 SHA256 校验的下载缓存")?;
+            return Ok(cache);
+        }
+        progress(state, id, "已有下载缓存校验不符，保留原文件并重新下载")?;
+        cache = directory.join(format!("{expected}-{}.download", uuid::Uuid::new_v4()));
+    }
+    progress(state, id, format!("正在从官方 HTTPS 来源下载: {url}"))?;
+    let response = state
+        .client
+        .get(url)
+        .timeout(Duration::from_secs(300))
+        .send()
+        .await
+        .map_err(|e| format!("官方下载失败，可重试: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "官方下载返回 HTTP {}，请检查网络后重试",
+            response.status()
+        ));
+    }
+    if response
+        .content_length()
+        .is_some_and(|length| length > limit)
+    {
+        return Err("下载超过预期体积，拒绝安装".into());
+    }
+    let mut output = tempfile::NamedTempFile::new_in(&directory).map_err(|e| e.to_string())?;
+    let mut hash = Sha256::new();
+    let mut received = 0u64;
+    let mut last_log = Instant::now();
+    let mut stream = response.bytes_stream();
+    loop {
+        cancelled(state, id)?;
+        tokio::select! {
+            next = stream.next() => {
+                let Some(bytes) = next else { break; };
+                let bytes = bytes.map_err(|e| format!("下载中断，可重试: {e}"))?;
+                received = received.checked_add(bytes.len() as u64).ok_or("下载大小无效")?;
+                if received > limit { return Err("下载超过安全体积上限，已拒绝安装".into()); }
+                hash.update(&bytes);
+                output.write_all(&bytes).map_err(|e| format!("磁盘写入失败: {e}"))?;
+                if last_log.elapsed() >= Duration::from_secs(1) {
+                    progress(state,id,format!("已收到 {received} 字节；下载结束后核验 SHA256"))?;
+                    last_log = Instant::now();
+                }
+            }
+            _ = tokio::time::sleep(Duration::from_millis(100)) => {}
+        }
+    }
+    if format!("{:x}", hash.finalize()) != expected {
+        return Err("官方下载内容的 SHA256 不符，已拒绝解包或执行".into());
+    }
+    cancelled(state, id)?;
+    output.as_file().sync_all().map_err(|e| e.to_string())?;
+    output
+        .persist_noclobber(&cache)
+        .map_err(|e| e.to_string())?;
+    progress(state, id, format!("SHA256 校验通过，共 {received} 字节"))?;
+    Ok(cache)
+}
+
+fn safe_entry(name: &str, prefix: &str) -> Result<Option<PathBuf>, String> {
+    if name.contains(['\\', ':', '\0']) || name.starts_with('/') {
+        return Err("压缩包含不安全路径".into());
+    }
+    let components: Vec<_> = name.trim_end_matches('/').split('/').collect();
+    if components.first() != Some(&prefix) {
+        return Err("源码压缩包根目录与固定 revision 不一致".into());
+    }
+    if components.len() == 1 {
+        return Ok(None);
+    }
+    let mut relative = PathBuf::new();
+    for component in &components[1..] {
+        let reserved = component
+            .split('.')
+            .next()
+            .unwrap_or("")
+            .to_ascii_uppercase();
+        if component.is_empty()
+            || *component == "."
+            || *component == ".."
+            || component.ends_with([' ', '.'])
+            || component.chars().any(char::is_control)
+            || ["CON", "PRN", "AUX", "NUL"].contains(&reserved.as_str())
+            || (reserved.len() == 4
+                && (reserved.starts_with("COM") || reserved.starts_with("LPT"))
+                && reserved.ends_with(['1', '2', '3', '4', '5', '6', '7', '8', '9']))
+        {
+            return Err("压缩包含跨平台不安全文件名".into());
+        }
+        relative.push(component);
+    }
+    if relative.to_string_lossy().len() > 240 {
+        return Err("压缩包路径过长".into());
+    }
+    Ok(Some(relative))
+}
+
+/// Preflight every name/type/size before writing; never replace a differing file.
+fn extract_source(
+    archive: &Path,
+    root: &Path,
+    mut check: impl FnMut() -> Result<(), String>,
+) -> Result<HashMap<String, String>, String> {
+    let root = dunce::canonicalize(root).map_err(|e| e.to_string())?;
+    let prefix = format!("Strata-{SOURCE_REVISION}");
+    let mut zip = zip::ZipArchive::new(File::open(archive).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    if zip.len() > 30_000 {
+        return Err("压缩包文件数量超过上限".into());
+    }
+    let mut names = HashSet::new();
+    let mut expanded = 0u64;
+    for index in 0..zip.len() {
+        check()?;
+        let entry = zip.by_index(index).map_err(|e| e.to_string())?;
+        let relative = safe_entry(entry.name(), &prefix)?;
+        if entry
+            .unix_mode()
+            .is_some_and(|mode| !matches!(mode & 0o170000, 0 | 0o100000 | 0o040000))
+        {
+            return Err("压缩包链接或特殊文件被拒绝".into());
+        }
+        if let Some(relative) = relative {
+            if !names.insert(relative.to_string_lossy().to_lowercase()) {
+                return Err("压缩包含重名文件".into());
+            }
+        }
+        expanded = expanded.checked_add(entry.size()).ok_or("解压体积无效")?;
+        if expanded > MAX_EXPANDED || entry.size() > MAX_ARCHIVE {
+            return Err("解压体积超过上限".into());
+        }
+    }
+    let mut critical = HashMap::new();
+    for index in 0..zip.len() {
+        check()?;
+        let mut entry = zip.by_index(index).map_err(|e| e.to_string())?;
+        let Some(relative) = safe_entry(entry.name(), &prefix)? else {
+            continue;
+        };
+        let destination = root.join(&relative);
+        let parent = if entry.is_dir() {
+            destination.as_path()
+        } else {
+            destination.parent().ok_or("文件父目录为空")?
+        };
+        let mut current = root.clone();
+        for component in parent
+            .strip_prefix(&root)
+            .map_err(|e| e.to_string())?
+            .components()
+        {
+            current.push(component);
+            if !current.exists() {
+                fs::create_dir(&current).map_err(|e| e.to_string())?;
+            }
+            if current.is_symlink()
+                || !dunce::canonicalize(&current)
+                    .map_err(|e| e.to_string())?
+                    .starts_with(&root)
+            {
+                return Err("解包路径被重定向".into());
+            }
+        }
+        if entry.is_dir() {
+            continue;
+        }
+        let mut output = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
+        let mut digest = Sha256::new();
+        let mut buffer = [0u8; 65_536];
+        loop {
+            check()?;
+            let count = entry.read(&mut buffer).map_err(|e| e.to_string())?;
+            if count == 0 {
+                break;
+            }
+            digest.update(&buffer[..count]);
+            output
+                .write_all(&buffer[..count])
+                .map_err(|e| e.to_string())?;
+        }
+        let expected = format!("{:x}", digest.finalize());
+        if destination.exists() {
+            if file_hash(&destination)? != expected {
+                return Err(format!(
+                    "已存在文件与固定源码不同，保留原文件并拒绝覆盖: {}",
+                    relative.display()
+                ));
+            }
+        } else {
+            output.as_file().sync_all().map_err(|e| e.to_string())?;
+            output
+                .persist_noclobber(&destination)
+                .map_err(|e| e.to_string())?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                // Retain only reviewed source executable bits, never privileged bits.
+                let mode = if entry.unix_mode().is_some_and(|mode| mode & 0o111 != 0) {
+                    0o700
+                } else {
+                    0o600
+                };
+                fs::set_permissions(&destination, fs::Permissions::from_mode(mode))
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+        let name = relative.to_string_lossy().replace('\\', "/");
+        if [
+            "setup.py",
+            "serve/server.py",
+            "requirements.txt",
+            "serve/runconfig.py",
+        ]
+        .contains(&name.as_str())
+        {
+            critical.insert(name, expected);
+        }
+    }
+    if !critical.contains_key("setup.py") || !critical.contains_key("serve/server.py") {
+        return Err("官方源码缺少 setup.py 或 serve/server.py".into());
+    }
+    Ok(critical)
+}
+
+fn python_probe(program: &Path, prefix: &[&str]) -> Option<String> {
+    let logs: Logs = Arc::new(Mutex::new(HashMap::new()));
+    let id = uuid::Uuid::new_v4().to_string();
+    let mut command = Command::new(program);
+    command.args(prefix).args(["-I","-S","-c","import sys,json,venv,ensurepip;assert sys.version_info>=(3,10) and sys.maxsize>2**32;print(json.dumps({'executable':sys.executable}))"]);
+    let mut process = OwnedProcess::spawn(command, logs.clone(), &id).ok()?;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let status = process.refresh().ok()?;
+        if !status.running {
+            if status.exit_code != Some(0) {
+                return None;
+            }
+            for _ in 0..10 {
+                if let Ok(entries) = logs.lock() {
+                    if let Some(path) = entries.get(&id).into_iter().flatten().find_map(|entry| {
+                        serde_json::from_str::<serde_json::Value>(&entry.message)
+                            .ok()?
+                            .get("executable")?
+                            .as_str()
+                            .map(str::to_owned)
+                    }) {
+                        return dunce::canonicalize(path)
+                            .ok()
+                            .map(|p| p.to_string_lossy().into_owned());
+                    }
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            return None;
+        }
+        if Instant::now() >= deadline {
+            let _ = process.stop();
+            return None;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+fn find_python(data_dir: &Path) -> Option<String> {
+    #[cfg(not(windows))]
+    let _ = data_dir;
+    #[cfg(windows)]
+    {
+        let private = data_dir
+            .join("toolchains")
+            .join(format!("python-{PYTHON_VERSION}"))
+            .join("python.exe");
+        if private.is_file() {
+            if let Some(path) = python_probe(&private, &[]) {
+                return Some(path);
+            }
+        }
+    }
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    for directory in std::env::split_paths(&path) {
+        #[cfg(windows)]
+        if directory
+            .to_string_lossy()
+            .to_ascii_lowercase()
+            .contains("microsoft\\windowsapps")
+        {
+            continue;
+        }
+        #[cfg(windows)]
+        let candidates = [("py.exe", vec!["-3"]), ("python.exe", vec![])];
+        #[cfg(not(windows))]
+        let candidates = [("python3", vec![]), ("python", vec![])];
+        for (name, args) in candidates {
+            let candidate = directory.join(name);
+            if candidate.is_file() {
+                if let Some(path) = python_probe(&candidate, &args) {
+                    return Some(path);
+                }
+            }
+        }
+    }
+    #[cfg(windows)]
+    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+        for version in ["313", "312", "311", "310"] {
+            let candidate = PathBuf::from(&local)
+                .join("Programs/Python")
+                .join(format!("Python{version}"))
+                .join("python.exe");
+            if candidate.is_file() {
+                if let Some(path) = python_probe(&candidate, &[]) {
+                    return Some(path);
+                }
+            }
+        }
+    }
+    None
+}
+
+async fn run_owned(
+    state: &RuntimeState,
+    id: &str,
+    mut command: Command,
+    description: &str,
+) -> Result<(), String> {
+    progress(state, id, description)?;
+    command.env("PYTHONUNBUFFERED", "1");
+    {
+        let mut tasks = state.tasks.lock().map_err(|e| e.to_string())?;
+        let record = tasks.get_mut(id).ok_or("安装任务不存在")?;
+        if record.cancelled {
+            return Err("准备任务已取消".into());
+        }
+        record.process = Some(OwnedProcess::spawn(command, state.logs.clone(), id)?);
+    }
+    let deadline = Instant::now() + Duration::from_secs(600);
+    let mut last_persist = Instant::now();
+    loop {
+        cancelled(state, id)?;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let finished = {
+            let mut tasks = state.tasks.lock().map_err(|e| e.to_string())?;
+            let record = tasks.get_mut(id).ok_or("安装任务不存在")?;
+            let process = record.process.as_mut().ok_or("安装进程不存在")?;
+            let process_status = process.refresh()?;
+            if !process_status.running {
+                let pending = process.readers_pending.clone();
+                record.process.take();
+                Some((process_status.exit_code, pending))
+            } else {
+                if Instant::now() >= deadline {
+                    process.stop()?;
+                    return Err(format!("{description}超时，已停止本任务进程，可重试"));
+                }
+                None
+            }
+        };
+        if let Some((exit_code, pending)) = finished {
+            let drain_deadline = Instant::now() + Duration::from_millis(500);
+            while pending.load(std::sync::atomic::Ordering::Acquire) > 0
+                && Instant::now() < drain_deadline
+            {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            processes::persist_task_logs(&state.database, &state.logs, id)?;
+            if exit_code == Some(0) {
+                return Ok(());
+            }
+            return Err(format!(
+                "{description}失败，退出码 {:?}；查看日志后重试",
+                exit_code
+            ));
+        }
+        if last_persist.elapsed() >= Duration::from_secs(1) {
+            processes::persist_task_logs(&state.database, &state.logs, id)?;
+            last_persist = Instant::now();
+        }
+    }
+}
+
+async fn ensure_python(state: &RuntimeState, id: &str) -> Result<String, String> {
+    progress(state, id, "正在检测 64 位 Python 3.10+、venv 与 ensurepip")?;
+    if let Some(python) = find_python(state.data_dir()) {
+        progress(state, id, "已找到可创建私有环境的本机 Python")?;
+        return Ok(python);
+    }
+    #[cfg(not(windows))]
+    {
+        Err("本机缺少 64 位 Python 3.10+ 或 venv/ensurepip。本应用不会执行 sudo。Ubuntu/Debian 请由系统管理员安装 python3、python3-venv、python3-pip；Fedora 安装 python3、python3-pip；NixOS 需提供可运行 pip wheel 的 Python/uv 环境。安装后点击重试。".into())
+    }
+    #[cfg(windows)]
+    {
+        if std::env::consts::ARCH != "x86_64" {
+            return Err(
+                "自动 Python 安装目前支持 Windows x64；请提供 64 位 Python 3.10+ 后重试".into(),
+            );
+        }
+        let root = owned_directory(state.data_dir(), &["toolchains"])?;
+        let destination = root.join(format!("python-{PYTHON_VERSION}"));
+        let python_claim = claim(state, &destination, &format!("python-{PYTHON_VERSION}"))?;
+        let installer = download(state, id, PYTHON_URL, PYTHON_SHA256, 64 * 1024 * 1024).await?;
+        let mut command = Command::new(installer);
+        command
+            .args([
+                "/quiet",
+                "InstallAllUsers=0",
+                "PrependPath=0",
+                "AppendPath=0",
+                "Include_launcher=0",
+                "InstallLauncherAllUsers=0",
+                "AssociateFiles=0",
+                "Shortcuts=0",
+                "Include_test=0",
+                "Include_tcltk=0",
+                "Include_doc=0",
+                "Include_pip=1",
+            ])
+            .arg(format!("TargetDir={}", destination.display()))
+            .arg("/log")
+            .arg(destination.join("installer.log"));
+        run_owned(
+            state,
+            id,
+            command,
+            "正在将官方 Python 安装到应用私有目录；不改变 PATH 或系统 Python",
+        )
+        .await?;
+        let candidate = destination.join("python.exe");
+        let python = python_probe(&candidate, &[]).ok_or(
+            "Python 安装未形成有效的私有解释器；已保留日志，请重试或安装 Python 3.10+ 后重试",
+        )?;
+        if !Path::new(&python).starts_with(&destination) {
+            return Err("Python 安装结果不在受管目录，拒绝继续".into());
+        }
+        save_claim(&python_claim)?;
+        Ok(python)
+    }
+}
+
+async fn prepare(state: &RuntimeState, id: &str, root: &Path) -> Result<PreparedRuntime, String> {
+    let mut owner = claim(state, root, SOURCE_REVISION)?;
+    if owner.ready {
+        for (relative, expected) in &owner.critical_hashes {
+            if file_hash(&root.join(relative))? != *expected {
+                return Err(
+                    "已安装的官方源码已改变，拒绝自动覆盖；请保留改动并导入或修复后重试".into(),
+                );
+            }
+        }
+        let result = owner.result.ok_or("准备结果缺失，请查看诊断")?;
+        if python_probe(Path::new(&result.python_path), &[]).is_none() {
+            return Err("已准备的私有 Python 环境损坏，请在诊断中修复后重试".into());
+        }
+        progress(
+            state,
+            id,
+            "已验证现有受管运行时；没有重新下载模型或替换用户文件",
+        )?;
+        return Ok(result);
+    }
+    let python = ensure_python(state, id).await?;
+    if !owner.source_ready {
+        let archive = download(state, id, SOURCE_URL, SOURCE_SHA256, MAX_ARCHIVE).await?;
+        progress(state, id, "正在安全解包固定版本的 Strata 官方源码")?;
+        owner.critical_hashes = extract_source(&archive, root, || cancelled(state, id))?;
+        owner.source_ready = true;
+        save_claim(&owner)?;
+    }
+    for (relative, expected) in &owner.critical_hashes {
+        if file_hash(&root.join(relative))? != *expected {
+            return Err("源码校验失败，拒绝执行安装脚本".into());
+        }
+    }
+    let venv = root.join(".venv");
+    if venv.exists() && !owner.venv_claimed {
+        return Err("检测到未归属的 Python 环境，拒绝覆盖".into());
+    }
+    if venv.is_symlink() {
+        return Err("私有 Python 环境被重定向，拒绝安装".into());
+    }
+    owner.venv_claimed = true;
+    save_claim(&owner)?;
+    #[cfg(windows)]
+    let venv_python = venv.join("Scripts/python.exe");
+    #[cfg(not(windows))]
+    let venv_python = venv.join("bin/python");
+    if python_probe(&venv_python, &[]).is_none() {
+        let mut command = Command::new(&python);
+        command
+            .args(["-I", "-m", "venv"])
+            .arg(&venv)
+            .current_dir(root);
+        run_owned(state, id, command, "正在创建 Strata 私有 Python 环境").await?;
+    }
+    let verified = python_probe(&venv_python, &[])
+        .ok_or("私有 Python 环境无法通过版本/位数/venv 检查，可重试")?;
+    #[cfg(not(windows))]
+    let _ = verified;
+    #[cfg(windows)]
+    if dunce::canonicalize(&venv_python).map_err(|e| e.to_string())? != Path::new(&verified) {
+        return Err("私有 Python 解释器路径不一致".into());
+    }
+    let mut pip = Command::new(&venv_python);
+    pip.args(["-I", "-m", "pip", "--version"]).current_dir(root);
+    run_owned(state, id, pip, "正在验证私有 Python 环境的 pip").await?;
+    cancelled(state, id)?;
+    let port = std::net::TcpListener::bind(("127.0.0.1", 0))
+        .map_err(|e| e.to_string())?
+        .local_addr()
+        .map_err(|e| e.to_string())?
+        .port();
+    let result = PreparedRuntime {
+        installation_id: owner.installation_id.clone(),
+        source_revision: SOURCE_REVISION.into(),
+        install_dir: root.to_string_lossy().into(),
+        python_path: venv_python.to_string_lossy().into(),
+        prepared_at: now(),
+        profile: ServiceProfile {
+            id: format!("runtime-{}", owner.installation_id),
+            name: "Strata".into(),
+            base_url: format!("http://127.0.0.1:{port}"),
+            install_dir: root.to_string_lossy().into(),
+            python_path: venv_python.to_string_lossy().into(),
+            config_path: root
+                .join("strata-unconfigured.json")
+                .to_string_lossy()
+                .into(),
+            managed: true,
+        },
+    };
+    owner.ready = true;
+    owner.result = Some(result.clone());
+    save_claim(&owner)?;
+    Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+    fn source_zip(entries: &[(&str, &str)]) -> Vec<u8> {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        for (name, content) in entries {
+            writer
+                .start_file(*name, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(content.as_bytes()).unwrap();
+        }
+        writer.finish().unwrap().into_inner()
+    }
+    fn fixture_task(state: &RuntimeState) -> String {
+        let id = uuid::Uuid::new_v4().to_string();
+        state.tasks.lock().unwrap().insert(
+            id.clone(),
+            TaskRecord {
+                status: TaskStatus {
+                    id: id.clone(),
+                    kind: "install-runtime".into(),
+                    state: "running".into(),
+                    message: "fixture".into(),
+                    started_at: now(),
+                    finished_at: None,
+                },
+                profile_id: None,
+                runtime_path: None,
+                cancelled: false,
+                process: None,
+            },
+        );
+        id
+    }
+    fn fixture_download(bytes: &'static [u8]) -> (String, std::thread::JoinHandle<()>) {
+        let server = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let url = format!("http://{}/artifact", server.local_addr().unwrap());
+        let worker = std::thread::spawn(move || {
+            let (mut stream, _) = server.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut request = [0u8; 4096];
+            assert!(stream.read(&mut request).unwrap() > 0);
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                bytes.len()
+            )
+            .unwrap();
+            stream.write_all(bytes).unwrap();
+        });
+        (url, worker)
+    }
+    #[tokio::test]
+    async fn download_checks_hash_and_retries_without_overwriting_a_bad_cache() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = RuntimeState::open(temp.path().join("data")).unwrap();
+        let id = fixture_task(&state);
+        let expected = format!("{:x}", Sha256::digest(b"verified official fixture"));
+        let downloads = owned_directory(state.data_dir(), &["downloads"]).unwrap();
+        let old = downloads.join(format!("{expected}.download"));
+        fs::write(&old, "preserve unknown bytes").unwrap();
+        let (url, worker) = fixture_download(b"verified official fixture");
+        let downloaded = download(&state, &id, &url, &expected, 1024).await.unwrap();
+        worker.join().unwrap();
+        assert_ne!(downloaded, old);
+        assert_eq!(file_hash(&downloaded).unwrap(), expected);
+        assert_eq!(fs::read_to_string(old).unwrap(), "preserve unknown bytes");
+        let wrong_expected = "0".repeat(64);
+        let (url, worker) = fixture_download(b"tampered bytes");
+        assert!(download(&state, &id, &url, &wrong_expected, 1024)
+            .await
+            .unwrap_err()
+            .contains("SHA256"));
+        worker.join().unwrap();
+        assert!(!downloads
+            .join(format!("{wrong_expected}.download"))
+            .exists());
+    }
+    #[tokio::test]
+    async fn cancelled_download_does_not_publish_an_artifact() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = RuntimeState::open(temp.path().join("data")).unwrap();
+        let id = fixture_task(&state);
+        let server = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let url = format!("http://{}/artifact", server.local_addr().unwrap());
+        let worker = std::thread::spawn(move || {
+            let (mut stream, _) = server.accept().unwrap();
+            let mut request = [0u8; 4096];
+            assert!(stream.read(&mut request).unwrap() > 0);
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 10000\r\nConnection: close\r\n\r\npartial",
+                )
+                .unwrap();
+            std::thread::sleep(Duration::from_millis(500));
+        });
+        let task_state = state.clone();
+        let task_id = id.clone();
+        let download_task = tokio::spawn(async move {
+            download(&task_state, &task_id, &url, &"0".repeat(64), 20_000).await
+        });
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        state.tasks.lock().unwrap().get_mut(&id).unwrap().cancelled = true;
+        assert!(download_task.await.unwrap().unwrap_err().contains("取消"));
+        worker.join().unwrap();
+        let directory = state.data_dir().join("downloads");
+        assert_eq!(fs::read_dir(directory).unwrap().count(), 0);
+    }
+    #[test]
+    fn archive_paths_reject_traversal_ads_windows_aliases_and_foreign_roots() {
+        let prefix = format!("Strata-{SOURCE_REVISION}");
+        for tail in [
+            "../outside.py",
+            "serve/../../escape",
+            "C:evil",
+            "serve\\evil",
+            "con.txt",
+            "AUX",
+            "foo.",
+            "foo ",
+        ] {
+            assert!(
+                safe_entry(&format!("{prefix}/{tail}"), &prefix).is_err(),
+                "{tail}"
+            );
+        }
+        assert!(safe_entry("other/setup.py", &prefix).is_err());
+        assert_eq!(
+            safe_entry(&format!("{prefix}/serve/server.py"), &prefix).unwrap(),
+            Some(PathBuf::from("serve/server.py"))
+        );
+    }
+    #[test]
+    fn archive_preflight_prevents_escape_and_preserves_existing_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("runtime");
+        fs::create_dir(&root).unwrap();
+        let prefix = format!("Strata-{SOURCE_REVISION}");
+        let setup = format!("{prefix}/setup.py");
+        let server = format!("{prefix}/serve/server.py");
+        let archive = temp.path().join("fixture.zip");
+        fs::write(
+            &archive,
+            source_zip(&[(&setup, "official"), (&server, "server")]),
+        )
+        .unwrap();
+        let hashes = extract_source(&archive, &root, || Ok(())).unwrap();
+        assert_eq!(hashes.len(), 2);
+        extract_source(&archive, &root, || Ok(())).unwrap(); // safe retry reuses identical files
+        fs::write(root.join("setup.py"), "user change").unwrap();
+        assert!(extract_source(&archive, &root, || Ok(())).is_err());
+        assert_eq!(
+            fs::read_to_string(root.join("setup.py")).unwrap(),
+            "user change"
+        );
+        fs::write(
+            &archive,
+            source_zip(&[
+                (&setup, "official"),
+                (&format!("{prefix}/../escape"), "bad"),
+            ]),
+        )
+        .unwrap();
+        assert!(extract_source(&archive, &root, || Ok(())).is_err());
+        assert!(!temp.path().join("escape").exists());
+    }
+    #[test]
+    fn installation_claim_requires_database_and_filesystem_identity() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = RuntimeState::open(temp.path().join("data")).unwrap();
+        let base = owned_directory(state.data_dir(), &["runtimes"]).unwrap();
+        let root = base.join("fixture");
+        let first = claim(&state, &root, "fixture-rev").unwrap();
+        assert_eq!(
+            claim(&state, &root, "fixture-rev").unwrap().token,
+            first.token
+        );
+        let unknown = base.join("unknown");
+        fs::create_dir(&unknown).unwrap();
+        fs::write(unknown.join("user.txt"), "keep").unwrap();
+        assert!(claim(&state, &unknown, "fixture-rev").is_err());
+        assert_eq!(
+            fs::read_to_string(unknown.join("user.txt")).unwrap(),
+            "keep"
+        );
+        state
+            .database
+            .lock()
+            .unwrap()
+            .execute("DELETE FROM automatic_runtime_claims", [])
+            .unwrap();
+        assert!(claim(&state, &root, "fixture-rev").is_err());
+    }
+    #[test]
+    fn extraction_cancellation_does_not_publish_incomplete_source_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("runtime");
+        fs::create_dir(&root).unwrap();
+        let archive = temp.path().join("fixture.zip");
+        let prefix = format!("Strata-{SOURCE_REVISION}");
+        fs::write(
+            &archive,
+            source_zip(&[
+                (&format!("{prefix}/setup.py"), "official"),
+                (&format!("{prefix}/serve/server.py"), "server"),
+            ]),
+        )
+        .unwrap();
+        assert!(extract_source(&archive, &root, || Err("cancelled".into())).is_err());
+        assert!(!root.join("setup.py").exists());
+    }
+    #[tokio::test]
+    #[ignore = "Uses the externally verified official source archive and creates a real private venv; no model download"]
+    async fn official_archive_prepares_without_git_and_returns_only_a_setup_profile() {
+        let archive = PathBuf::from(
+            std::env::var_os("STRATA_MANAGER_TEST_SOURCE_ARCHIVE")
+                .expect("provide the verified official zip"),
+        );
+        assert_eq!(file_hash(&archive).unwrap(), SOURCE_SHA256);
+        let temp = tempfile::tempdir().unwrap();
+        let state = RuntimeState::open(temp.path().join("data")).unwrap();
+        let downloads = owned_directory(state.data_dir(), &["downloads"]).unwrap();
+        if std::env::var("STRATA_MANAGER_TEST_NETWORK_SOURCE").as_deref() != Ok("1") {
+            fs::copy(
+                &archive,
+                downloads.join(format!("{SOURCE_SHA256}.download")),
+            )
+            .unwrap();
+        }
+        let task = start(state.clone()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(120);
+        loop {
+            let status = state
+                .tasks
+                .lock()
+                .unwrap()
+                .get(&task.id)
+                .unwrap()
+                .status
+                .clone();
+            if status.state != "running" {
+                assert_eq!(status.state, "completed", "{}", status.message);
+                break;
+            }
+            assert!(Instant::now() < deadline);
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        let result = status(&state).unwrap().result.unwrap();
+        assert!(Path::new(&result.python_path).is_file());
+        assert!(!Path::new(&result.profile.config_path).exists());
+        assert!(state.registered_profiles().unwrap().is_empty());
+        assert_eq!(result.source_revision, SOURCE_REVISION);
+        assert!(!Path::new(&result.install_dir).join(".git").exists());
+    }
+}

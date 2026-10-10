@@ -1,0 +1,54 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Strata Manager",
+  "version": "0.1.0",
+  "identifier": "io.strata.manager",
+  "build": {
+    "beforeDevCommand": "pnpm -w native:sidecar:dev && pnpm -w dev",
+    "devUrl": "http://127.0.0.1:1427",
+    "beforeBuildCommand": "pnpm -w native:sidecar && pnpm -w build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Strata Manager",
+        "width": 1440,
+        "height": 960,
+        "minWidth": 920,
+        "minHeight": 650
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost data: blob:; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost; font-src 'self' data:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "externalBin": ["binaries/strata-supervisor"],
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico",
+      "icons/icon.icns"
+    ],
+    "shortDescription": "Strata local model desktop manager",
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "windows": {
+        "installMode": "passive"
+      },
+      "endpoints": [
+        "https://github.com/hongfaqiu/strata-manager/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDEzNDlEODc0OTNBN0YzQTcKUldTbjg2ZVRkTmhKRTJrajE3WVo4eForQjVKcVY5WmVia05WbWp1aUtqQVNYTkFSVG1jZlFxUUkK"
+    }
+  }
+}

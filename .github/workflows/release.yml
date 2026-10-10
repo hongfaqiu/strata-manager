@@ -1,0 +1,167 @@
+name: Release desktop
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Check exact tag, package versions, updater key and required signing key
+        id: version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: node scripts/release-check.mjs --require-signing
+      - run: node --test scripts/release-check.test.mjs
+
+  build:
+    needs: validate
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      # The official action merges latest.json with a read/delete/write cycle.
+      # Serial uploads keep one platform from overwriting the other's entry.
+      max-parallel: 1
+      matrix:
+        include:
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: nsis
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: appimage,deb
+    runs-on: ${{ matrix.runner }}
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/apps/desktop/src-tauri/target
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Node before installing pnpm 11
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Check out the verified upstream API fixture
+        uses: actions/checkout@v4
+        with:
+          repository: Niko1221/Strata
+          ref: fb58e0dbc8399662c0e47c76578c6e878b14f6cf
+          path: .reference/strata
+          persist-credentials: false
+      - name: Install MockEngine test dependencies only
+        # These exact pins come from the verified upstream requirements.txt.
+        # MockEngine needs Jinja2/MarkupSafe; GPU, build and model packages are unused.
+        run: python -m pip install jinja2==3.1.6 markupsafe==3.0.3
+      - name: Verify the API metadata observer without model weights
+        env:
+          STRATA_TEST_ROOT: ${{ github.workspace }}/.reference/strata
+        run: python apps/supervisor/tests/test_strata_observer.py
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: ${{ matrix.target }}
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev libgtk-3-dev libssl-dev librsvg2-dev libxdo-dev libdbus-1-dev pkg-config patchelf xdg-utils xvfb dbus-x11 gnome-keyring python3-venv
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> apps/desktop/src-tauri/target'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: node scripts/prepare-sidecar.mjs --profile debug --target ${{ matrix.target }}
+      - run: cargo fmt --all -- --check
+      - name: Native tests (Windows)
+        if: runner.os == 'Windows'
+        run: cargo test --workspace --locked --target ${{ matrix.target }}
+      - name: Native tests under Xvfb (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          # Only fixture credentials are stored in this disposable runner session.
+          # Xvfb supplies a display; Secret Service also needs an unlocked DBus session.
+          dbus-run-session -- xvfb-run -a bash -e -c '
+            printf "" | gnome-keyring-daemon --unlock --components=secrets >/dev/null
+            cargo test --workspace --locked --target ${{ matrix.target }}
+          '
+      - run: cargo clippy --workspace --locked --all-targets --target ${{ matrix.target }} -- -D warnings
+      - run: node scripts/prepare-sidecar.mjs --profile release --target ${{ matrix.target }}
+      - name: Build signed installers and populate draft release
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: apps/desktop
+          tauriScript: pnpm tauri
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+          tagName: ${{ github.ref_name }}
+          releaseCommitish: ${{ github.sha }}
+          releaseName: Strata Manager ${{ github.ref_name }}
+          releaseBody: |
+            本机 Strata 模型工作台 / A local Strata model desktop workspace.
+
+            Windows x64: download the setup.exe installer. Linux x64: download the AppImage or DEB package.
+            安装与功能范围 / Installation and feature scope: https://github.com/${{ github.repository }}#readme
+
+            Model weights and the Strata inference runtime are installed separately. / 模型权重与 Strata 推理运行时独立安装。
+            Based on / 基于 https://github.com/Niko1221/Strata — see THIRD_PARTY_NOTICES.md.
+          releaseDraft: true
+          prerelease: ${{ needs.validate.outputs.prerelease }}
+          generateReleaseNotes: true
+          retryAttempts: 3
+          uploadUpdaterJson: true
+          updaterJsonPreferNsis: true
+          uploadUpdaterSignatures: true
+          uploadWorkflowArtifacts: true
+          workflowArtifactNamePattern: 'release-[platform]-[arch]-[bundle]'
+
+  publish:
+    needs: [validate, build]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify both platforms, release asset ownership and uploaded signatures
+        run: node scripts/release-verify.mjs
+      - name: Publish stable release
+        if: needs.validate.outputs.prerelease == 'false'
+        run: gh release edit "$RELEASE_TAG" --draft=false --latest
+      - name: Publish prerelease without replacing the stable update channel
+        if: needs.validate.outputs.prerelease == 'true'
+        run: gh release edit "$RELEASE_TAG" --draft=false --latest=false

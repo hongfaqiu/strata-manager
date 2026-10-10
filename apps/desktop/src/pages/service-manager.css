@@ -1,0 +1,59 @@
+.official-surface .service-manager{display:grid;gap:var(--st-s-5);min-width:0}
+.service-manager-intro{display:grid;gap:var(--st-s-4)}
+.service-manager-intro>p{margin:0;max-width:880px;font-size:var(--st-fs-md);color:var(--st-ink-muted);line-height:var(--st-lh-body)}
+.service-manager-toolbar{display:flex;align-items:center;gap:var(--st-s-3);flex-wrap:wrap}
+.service-manager-toolbar .text-button{margin-left:auto;font-weight:500}
+.service-manager-guide{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--st-s-6)}
+.service-manager-guide>div{min-width:0}
+.service-manager-guide strong{display:flex;align-items:center;gap:var(--st-s-2);font-size:var(--st-fs-md);font-weight:700}
+.service-manager-guide strong>span{display:flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:var(--st-r-pill);color:var(--st-accent-text);background:var(--st-accent-tint);font-size:var(--st-fs-xs)}
+.service-manager-guide p{font-size:var(--st-fs-sm);color:var(--st-ink-muted);margin:var(--st-s-2) 0 0;line-height:var(--st-lh-body)}
+.service-manager-empty .empty{padding:var(--st-s-10) var(--st-s-4)}
+.service-manager-empty .empty p{max-width:540px}
+.service-manager-empty .service-manager-toolbar{justify-content:center;margin-top:var(--st-s-4)}
+.service-manager-list-heading{display:flex;align-items:center;justify-content:space-between;gap:var(--st-s-4);font-size:var(--st-fs-sm);color:var(--st-ink-muted)}
+.service-manager-list-heading button{height:34px;min-height:34px;padding:0 var(--st-s-3);font-size:var(--st-fs-sm);font-weight:500}
+.service-manager-list{display:grid;gap:var(--st-s-4)}
+.service-manager-card{min-width:0;position:relative}
+.service-manager-card.is-current{border-color:color-mix(in srgb,var(--st-accent) 55%,var(--st-line))}
+.service-manager-card-top{display:flex;align-items:center;justify-content:space-between;gap:var(--st-s-4)}
+.service-manager-identity{display:flex;align-items:center;gap:var(--st-s-3);min-width:0}
+.service-manager-identity>div{min-width:0}
+.service-manager-symbol{width:44px;height:44px;border-radius:var(--st-r-md);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--st-icon);background:var(--st-surface-2)}
+.service-manager-name{display:flex;align-items:center;gap:var(--st-s-3);flex-wrap:wrap;min-width:0}
+.service-manager-name h2{font-size:var(--st-fs-lg);font-weight:700;margin:0;overflow-wrap:anywhere}
+.service-manager-identity code{display:block;margin-top:var(--st-s-1);font-size:var(--st-fs-xs);color:var(--st-ink-muted);overflow-wrap:anywhere}
+.service-manager-card-top>.badge{flex-shrink:0}
+.service-manager-statuses{display:grid;grid-template-columns:1.15fr 1fr .8fr 1.6fr;gap:var(--st-s-5);margin:var(--st-s-5) 0}
+.service-manager-statuses>div{display:flex;flex-direction:column;gap:var(--st-s-1);min-width:0}
+.service-manager-statuses span{font-size:var(--st-fs-xs);color:var(--st-ink-muted)}
+.service-manager-statuses strong{font-size:var(--st-fs-sm);font-weight:500;overflow-wrap:anywhere;color:var(--st-ink-soft)}
+.service-manager-actions,.service-manager-detail-actions{display:flex;align-items:center;gap:var(--st-s-2);flex-wrap:wrap}
+.service-manager-actions button,.service-manager-detail-actions button{height:36px;min-height:36px;padding:0 var(--st-s-3);font-size:var(--st-fs-sm);font-weight:500}
+.service-manager-actions .primary{font-weight:700}
+.service-manager-actions .service-manager-expand{margin-left:auto;background:transparent;border-color:transparent;color:var(--st-ink-muted)}
+.service-manager-expand svg{transition:transform 180ms var(--st-ease)}
+.service-manager-expand[aria-expanded=true] svg{transform:rotate(180deg)}
+.service-manager-working{display:flex;align-items:center;gap:var(--st-s-2);font-size:var(--st-fs-xs);color:var(--st-ink-muted)}
+.service-manager-hint{font-size:var(--st-fs-sm);color:var(--st-ink-muted);line-height:var(--st-lh-body);margin:var(--st-s-3) 0;overflow-wrap:anywhere}
+.service-manager-hint p{margin:0 0 var(--st-s-1)}
+.service-manager-hint span{font-size:var(--st-fs-xs)}
+.service-manager-error{font-size:var(--st-fs-sm);color:var(--st-danger-text);line-height:var(--st-lh-body);margin:var(--st-s-3) 0;overflow-wrap:anywhere}
+.service-manager-details{border-top:1px solid var(--st-line-soft);padding-top:var(--st-s-4);margin-top:var(--st-s-4);animation:service-detail-enter 180ms var(--st-ease)}
+.service-manager-details dl{display:grid;grid-template-columns:1fr 1fr;gap:var(--st-s-3) var(--st-s-5);margin:0 0 var(--st-s-5)}
+.service-manager-details dl>div{display:grid;gap:var(--st-s-1);min-width:0}
+.service-manager-details dt{font-size:var(--st-fs-xs);color:var(--st-ink-muted)}
+.service-manager-details dd{margin:0;font-size:var(--st-fs-sm);color:var(--st-ink-soft);overflow-wrap:anywhere}
+.service-manager-details dd code{font-size:var(--st-fs-xs);color:inherit}
+.service-manager-ownership,.service-manager-configure{margin-top:var(--st-s-4);padding:var(--st-s-3) var(--st-s-4);background:var(--st-surface-2);border-radius:var(--st-r-md);font-size:var(--st-fs-sm);color:var(--st-ink-muted);line-height:var(--st-lh-body)}
+.service-manager-ownership p,.service-manager-configure p{margin:0}
+.service-manager-ownership>span{display:block;overflow-wrap:anywhere;font-size:var(--st-fs-xs);margin-top:var(--st-s-2)}
+.service-manager-ownership>button{margin-top:var(--st-s-3);height:36px;min-height:36px;font-size:var(--st-fs-sm)}
+.service-manager-configure{display:flex;align-items:flex-start;gap:var(--st-s-2)}
+.service-manager-configure svg{flex-shrink:0;margin-top:2px}
+.service-manager-confirm-identity{display:grid;gap:var(--st-s-2);padding:var(--st-s-3) var(--st-s-4);border:1px solid var(--st-line);border-radius:var(--st-r-md);font-size:var(--st-fs-sm);overflow-wrap:anywhere}
+.service-manager-confirm-identity code{font-size:var(--st-fs-xs);color:var(--st-ink-muted)}
+@keyframes service-detail-enter{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+@container workspace (max-width:900px){.service-manager-guide{gap:var(--st-s-4)}.service-manager-statuses{grid-template-columns:1fr 1fr}.service-manager-actions .service-manager-expand{margin-left:0}}
+@container workspace (max-width:640px){.service-manager-guide{grid-template-columns:1fr;gap:var(--st-s-4)}.service-manager-card{padding:var(--st-s-4)}.service-manager-card-top{align-items:flex-start}.service-manager-symbol{display:none}.service-manager-toolbar{gap:var(--st-s-2)}.service-manager-toolbar .text-button{margin-left:0}.service-manager-details dl{grid-template-columns:1fr}.service-manager-statuses{gap:var(--st-s-3)}.service-manager-name{gap:var(--st-s-2)}.service-manager-name h2{font-size:var(--st-fs-base)}}
+@media(prefers-reduced-motion:reduce){.service-manager-details{animation:none}.service-manager-expand svg{transition:none}}

@@ -1,0 +1,66 @@
+import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
+import { Download, LoaderCircle, RefreshCw, RotateCw } from 'lucide-react';
+import * as core from '@strata-manager/core';
+import { Panel } from '../components';
+import { Toggle } from '../OfficialControls';
+import type { AppUpdateState } from '../useAppUpdates';
+
+interface Props {
+  desktop: boolean;
+  streaming: boolean;
+  autoCheck: boolean;
+  onAutoCheck: (enabled: boolean) => void;
+  update: AppUpdateState;
+  onCheck: () => Promise<void>;
+  onInstall: () => Promise<void>;
+  onError: (error: unknown) => void;
+}
+
+export function DesktopLifecycleSettings({ desktop, streaming, autoCheck, onAutoCheck, update, onCheck, onInstall, onError }: Props) {
+  const { t } = useTranslation();
+  const query = useQueryClient();
+  const [saving, setSaving] = useState(false);
+  const startup = useQuery({ queryKey: ['startup-status'], queryFn: core.startupStatus, enabled: desktop });
+  const policy = useQuery({ queryKey: ['background-policy'], queryFn: core.backgroundPolicy, enabled: desktop });
+  const backend = useQuery({ queryKey: ['supervisor'], queryFn: core.supervisorStatus, enabled: desktop, refetchInterval: 10000 });
+  const mutate = async (operation: () => Promise<unknown>) => {
+    if (saving) return;
+    setSaving(true);
+    try { await operation(); await query.invalidateQueries({ queryKey: ['startup-status'] }); await query.invalidateQueries({ queryKey: ['background-policy'] }); }
+    catch (error) { onError(error); }
+    finally { setSaving(false); }
+  };
+  const row = (title: string, hint: string, checked: boolean, disabled: boolean, change: (checked: boolean) => void) => <label className="setting-toggle"><span><strong>{title}</strong><small>{hint}</small></span><Toggle ariaLabel={title} checked={checked} disabled={disabled || saving} onCheckedChange={change}/></label>;
+  const phaseKey = { checking: 'checkingUpdates', current: 'noAppUpdates', available: 'updateAvailable', downloading: 'downloadingAppUpdate', installing: 'installingAppUpdate', installed: 'restartForUpdate' };
+  const downloading = update.phase === 'downloading' || update.phase === 'installing';
+  const formatBytes = (value: number) => `${(value / 1024 ** 2).toFixed(1)} MiB`;
+
+  return <>
+    <Panel title={t('backgroundSettings')}>
+      {!desktop && <p className="subtle">{t('nativeRequired')}</p>}
+      {startup.error || policy.error ? <div className="notice error" role="alert">{t('settingsUnavailable')}: {String(startup.error ?? policy.error)}</div> : null}
+      {row(t('launchOnLogin'), startup.data?.reason ?? t('launchOnLoginHint'), startup.data?.enabled === true, !desktop || !startup.data?.supported, enabled => void mutate(() => core.setStartupEnabled(enabled)))}
+      {row(t('prepareAtStartup'), t('prepareAtStartupHint'), policy.data?.mode === 'alwaysReady', !desktop || !policy.data, enabled => void mutate(() => core.setBackgroundPolicy(enabled ? 'alwaysReady' : 'lazy', policy.data!.autoRecover)))}
+      {row(t('recoverService'), t('recoverServiceHint'), policy.data?.autoRecover === true, !desktop || !policy.data, enabled => void mutate(() => core.setBackgroundPolicy(policy.data!.mode, enabled)))}
+      {backend.data?.version && <p className="subtle">{t('backendVersion')}: {backend.data.version} · PID {backend.data.pid ?? '—'}</p>}
+      {backend.data?.updatePending && <div className="notice" role="status">{t('backendUpdatePending')}: {backend.data.updateReason}</div>}
+      {backend.data?.recovery?.repairRequired && <div className="notice error" role="alert">{t('backendRepair')}: {backend.data.recovery.lastError}</div>}
+      {!!backend.data?.migration?.failed && <div className="notice error" role="alert"><p>{t('migrationNeedsAttention')}</p><ul>{backend.data.migration.entries.filter(entry => entry.status === 'failed').map((entry, index) => <li key={entry.id ?? index}>{entry.name ?? entry.id}: {entry.reason}</li>)}</ul></div>}
+    </Panel>
+    <Panel title={t('appUpdates')}>
+      {row(t('checkUpdatesAutomatically'), t('checkUpdatesAutomaticallyHint'), autoCheck, !desktop, onAutoCheck)}
+      <p className="subtle">{t('updaterHint')}</p>
+      {update.phase in phaseKey && <p role="status" aria-live="polite">{t(phaseKey[update.phase as keyof typeof phaseKey], { version: update.version })}</p>}
+      {update.error && <div className="notice error" role="alert">{t('updateCheckFailed')}<details><summary>{t('details')}</summary>{update.error}</details></div>}
+      {downloading && <p role="status">{t(update.total ? 'downloadBytes' : 'downloadBytesUnknown', { received: formatBytes(update.received), total: formatBytes(update.total ?? 0) })}</p>}
+      {update.notes && <details><summary>{t('details')}</summary><p className="subtle" style={{ whiteSpace: 'pre-wrap' }}>{update.notes}</p></details>}
+      <div className="actions">
+        <button type="button" disabled={!desktop || downloading || update.phase === 'checking'} onClick={() => void onCheck()}>{update.phase === 'checking' ? <LoaderCircle className="spin" size={15}/> : <RefreshCw size={15}/>} {t('checkUpdates')}</button>
+        {update.version && update.phase !== 'current' && update.phase !== 'installed' && <button type="button" className="primary" disabled={!desktop || streaming || downloading || update.phase === 'checking'} onClick={() => void onInstall()}><Download size={15}/>{t('installAppUpdate')}</button>}
+        {update.phase === 'installed' && <button type="button" className="primary" disabled={streaming} onClick={() => void core.restartInterface().catch(onError)}><RotateCw size={15}/>{t('restartForUpdate')}</button>}
+      </div>
+    </Panel>
+  </>;
+}

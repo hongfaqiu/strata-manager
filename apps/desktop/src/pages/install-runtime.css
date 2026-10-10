@@ -1,0 +1,38 @@
+.install-runtime{max-width:1050px;min-width:0;width:100%}
+.install-runtime-steps{display:flex;gap:24px;list-style:none;padding:0;margin:0 0 17px;flex-wrap:wrap}
+.install-runtime-steps li{display:flex;align-items:center;gap:7px;font-size:12px;line-height:1.5;color:var(--st-ink-muted)}
+.install-runtime-steps li>span,.install-runtime-steps li>svg{display:flex;align-items:center;justify-content:center;width:20px;height:20px;border:1px solid var(--st-line);border-radius:50%;font-size:11px;flex:none}
+.install-runtime-steps li>svg{padding:3px}
+.install-runtime-steps .is-current,.install-runtime-steps .is-complete{color:var(--st-accent-text)}
+.install-runtime-steps .is-current>span,.install-runtime-steps .is-complete>svg{background:var(--st-accent-tint);border-color:var(--st-accent)}
+.install-runtime-state{display:flex;align-items:flex-start;gap:13px}
+.install-runtime-state>svg{margin-top:2px;color:var(--st-icon);flex:none}
+.install-runtime-card.is-ready .install-runtime-state>svg{color:var(--st-accent-text)}
+.install-runtime-state h3{font-size:16px;font-weight:600;line-height:1.5}
+.install-runtime-state p{max-width:720px;color:var(--st-ink-muted);font-size:12px;line-height:1.7;margin-top:5px}
+.install-runtime-message{font-size:12px;line-height:1.7;color:var(--st-ink-soft);background:var(--st-surface-2);border:1px solid var(--st-line-soft);border-radius:5px;padding:9px 11px;margin-top:17px;overflow-wrap:anywhere;white-space:pre-wrap;user-select:text}
+.install-runtime-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:20px}
+.install-runtime-error{display:flex;align-items:flex-start;gap:9px;border:1px solid color-mix(in srgb,var(--st-danger) 22%,transparent);border-radius:6px;background:var(--st-danger-tint);color:var(--st-danger-text);padding:11px 13px;margin-bottom:14px;font-size:12px;line-height:1.65;overflow-wrap:anywhere}
+.install-runtime-error>svg{margin-top:2px;flex:none}
+.install-runtime-error strong{font-weight:600}
+.install-runtime-error p{white-space:pre-wrap;margin-top:3px}
+.install-runtime-card>.install-runtime-error{margin:17px 0 0}
+.install-runtime-logs{max-height:260px;overflow:auto;scrollbar-width:thin;scrollbar-color:transparent transparent;font-family:"Cascadia Code","SFMono-Regular",Consolas,monospace;font-size:11px;line-height:1.65;user-select:text}
+.install-runtime-logs:hover,.install-runtime-logs:focus-within{scrollbar-color:var(--st-line) transparent}
+.install-runtime-logs::-webkit-scrollbar{width:6px;height:6px}
+.install-runtime-logs::-webkit-scrollbar-thumb{background:transparent;border-radius:4px}
+.install-runtime-logs:hover::-webkit-scrollbar-thumb,.install-runtime-logs:focus-within::-webkit-scrollbar-thumb{background:var(--st-line)}
+.install-runtime-log-line{display:grid;grid-template-columns:72px 68px minmax(0,1fr);gap:8px;margin:3px 0}
+.install-runtime-log-line>time,.install-runtime-log-level{color:var(--st-ink-muted)}
+.install-runtime-log-line>span:last-child{white-space:pre-wrap;overflow-wrap:anywhere}
+.install-runtime-log-level.failed,.install-runtime-log-level.error{color:var(--st-danger-text)}
+.install-runtime-log-level.completed{color:var(--st-accent-text)}
+.install-runtime-logs>p{color:var(--st-ink-muted);padding:9px 0}
+.install-runtime-log-error{font-size:12px;line-height:1.6;color:var(--st-danger-text);padding:10px 14px;overflow-wrap:anywhere}
+.install-runtime-details{margin-top:17px}
+.install-runtime-details dl{display:flex;flex-direction:column;gap:10px;margin:12px 0;font-size:11px;line-height:1.6}
+.install-runtime-details dl>div{display:grid;grid-template-columns:125px minmax(0,1fr);gap:12px}
+.install-runtime-details dt{color:var(--st-ink-muted)}
+.install-runtime-details dd{margin:0;color:var(--st-ink-soft);overflow-wrap:anywhere;user-select:text}
+@container workspace (max-width:640px){.install-runtime-steps{gap:10px 16px}.install-runtime-steps li{font-size:11px}.install-runtime-log-line{grid-template-columns:60px minmax(0,1fr);gap:7px}.install-runtime-log-level{display:none}.install-runtime-details dl>div{grid-template-columns:100px minmax(0,1fr)}}
+@media(prefers-reduced-motion:reduce){.install-runtime .spin{animation:none}}

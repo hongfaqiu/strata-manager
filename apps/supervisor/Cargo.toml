@@ -1,0 +1,17 @@
+[package]
+name = "strata-supervisor"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+strata-runtime-core = { path = "../../crates/runtime-core" }
+strata-local-ipc = { path = "../../crates/local-ipc" }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "signal"] }
+tokio-util = "0.7"
+dunce = "1"
+
+[dev-dependencies]
+tempfile = "3"
+reqwest = {version="0.12",default-features=false,features=["json","rustls-tls"]}
+

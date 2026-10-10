@@ -1,0 +1,30 @@
+.official-surface .view--runtime-config{overflow:auto;min-height:0}
+.official-surface .runtime-config{padding:var(--st-s-6);display:grid;gap:var(--st-s-4);max-width:1200px;margin:0 auto;width:100%;box-sizing:border-box}
+.official-surface .runtime-config-connection .st-field{max-width:520px}
+.official-surface .runtime-config-address{display:block;overflow-wrap:anywhere;margin-top:var(--st-s-2);font-size:var(--st-fs-sm);color:var(--st-ink-muted)}
+.official-surface .runtime-config .cfg-actions{flex-wrap:wrap}
+.official-surface .runtime-config-refresh{display:flex;align-items:center;gap:var(--st-s-3);flex-wrap:wrap;margin-bottom:var(--st-s-4)}
+.official-surface .runtime-config-error{color:var(--st-danger,#d45f62);overflow-wrap:anywhere;font-size:var(--st-fs-sm)}
+.official-surface .runtime-config .cfg-form{grid-template-columns:minmax(0,1fr) minmax(220px,360px)}
+.official-surface .runtime-config .cfg-form label{overflow-wrap:anywhere}
+@container workspace (max-width:1000px){.official-surface .runtime-config .cfg-form{grid-template-columns:minmax(0,1fr)}}
+@container workspace (max-width:640px){.official-surface .runtime-config{padding:var(--st-s-4)}}
+.official-surface .runtime-config-guide{display:grid;grid-template-columns:1fr 1fr;gap:var(--st-s-6)}
+.runtime-config-guide strong{font-size:var(--st-fs-md);font-weight:700}
+.runtime-config-guide p{margin:var(--st-s-2) 0 var(--st-s-3);font-size:var(--st-fs-sm);color:var(--st-ink-muted);line-height:var(--st-lh-body)}
+.runtime-config-guide button{height:36px;min-height:36px;padding:0 var(--st-s-3);font-size:var(--st-fs-sm);font-weight:500}
+.runtime-config-restart-note{font-size:var(--st-fs-sm);line-height:var(--st-lh-body);color:var(--st-ink-soft);background:var(--st-surface-2);border-radius:var(--st-r-md);padding:var(--st-s-3) var(--st-s-4);margin:var(--st-s-4) 0}
+.official-surface .runtime-config .cfg-form.runtime-config-form{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--st-s-5)}
+.runtime-config-group{min-width:0;padding:0;border:0;margin:0}
+.runtime-config-group legend{font-size:var(--st-fs-md);font-weight:700;color:var(--st-ink);margin:0;padding:var(--st-s-3) 0;border-bottom:1px solid var(--st-line);width:100%}
+.runtime-config-field{display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,360px);gap:var(--st-s-5);padding:var(--st-s-4) 0;border-bottom:1px solid var(--st-line-soft);align-items:center;min-width:0}
+.runtime-config-field:last-child{border-bottom:0}
+.official-surface .runtime-config .cfg-form .runtime-config-field label{display:grid;gap:var(--st-s-1);min-width:0;font-size:var(--st-fs-sm)}
+.runtime-config-field label strong{font-weight:500;color:var(--st-ink-soft)}
+.runtime-config-field label code{font-size:var(--st-fs-xs);color:var(--st-ink-muted)}
+.runtime-config-field label small{font-size:var(--st-fs-xs);font-weight:400;color:var(--st-ink-muted);line-height:var(--st-lh-body)}
+.runtime-config-control{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:var(--st-s-2);min-width:0}
+.runtime-config-control .official-dropdown{min-width:0}
+.runtime-config-control .official-dropdown-trigger{width:100%}
+.runtime-config-control .runtime-config-reset{height:34px;min-height:34px;padding:0 var(--st-s-2);border-color:transparent;font-size:var(--st-fs-xs);font-weight:500;color:var(--st-ink-muted);background:transparent;white-space:nowrap}
+@container workspace (max-width:850px){.official-surface .runtime-config-guide{grid-template-columns:1fr;gap:var(--st-s-5)}.runtime-config-field{grid-template-columns:minmax(0,1fr);gap:var(--st-s-2)}.runtime-config-control{max-width:420px}}
