@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { documents, headingSlug, renderMarkdownContent, rewriteDocumentUrl, verifyStaticWebsite } from './render-website-docs.mjs';
+import { documents, headingSlug, renderChangelog, renderMarkdownContent, rewriteDocumentUrl, verifyStaticWebsite } from './render-website-docs.mjs';
 
 test('Markdown publishes GFM tables, task lists and fenced code as complete HTML', () => {
   const { html } = renderMarkdownContent('# Guide\n\n| Model | State |\n| --- | --- |\n| Local | Ready |\n\n- [x] Import\n\n```sh\npnpm desktop\n```', 'docs/USER_GUIDE.md', 'docs/user-guide.html');
@@ -50,7 +50,31 @@ test('Maintainer records stay at their source instead of becoming user documenta
     assert.ok(!documents.some((document) => document.source === `docs/${source}`));
     assert.equal(rewrite(`${source}#current-scope`), `https://github.com/hongfaqiu/strata-manager/blob/main/docs/${source}#current-scope`);
   }
-  assert.equal(documents.length, 11);
+  assert.equal(documents.length, 13);
+});
+
+test('Changelog pages keep version status and only the requested language from the shared source', () => {
+  const markdown = '# Changelog\r\n\r\n## [Unreleased]\r\n### 中文\r\n- 开发中的功能\r\n### English\r\n- Feature in development\r\n## [1.0.0] - Unpublished\r\n### 中文\r\n- 中文修复\r\n### English\r\n- English fix\r\n';
+  const chinese = renderChangelog(markdown, 'zh');
+  const english = renderChangelog(markdown, 'en');
+  assert.match(chinese, /## 未发布/);
+  assert.match(chinese, /## 1\.0\.0 - 未公开发布/);
+  assert.match(chinese, /中文修复/);
+  assert.doesNotMatch(chinese, /Feature in development|English fix|### English/);
+  assert.match(english, /## Unreleased/);
+  assert.match(english, /## 1\.0\.0 - Unpublished/);
+  assert.doesNotMatch(english, /开发中的功能|中文修复|### 中文/);
+  assert.throws(() => renderChangelog(markdown.replace('- English fix', ''), 'en'), /requires nonempty en/);
+  assert.equal(rewriteDocumentUrl('../CHANGELOG.md', 'docs/USER_GUIDE.md', 'docs/user-guide.html'), 'changelog.html');
+  assert.equal(rewriteDocumentUrl('../CHANGELOG.md', 'docs/USER_GUIDE.en.md', 'docs/user-guide.en.html'), 'changelog.en.html');
+});
+
+test('An empty unreleased placeholder does not block publishing a versioned changelog', () => {
+  const released = '## [1.0.0]\n### 中文\n- 修复\n### English\n- Fix';
+  for (const placeholder of ['## [Unreleased]\n\n', '## [Unreleased]\n### 中文\n\n### English\n\n']) {
+    assert.match(renderChangelog(placeholder + released, 'zh'), /## 1\.0\.0/);
+    assert.match(renderChangelog(placeholder + released, 'en'), /## 1\.0\.0/);
+  }
 });
 
 test('Publication checks catch missing files and stale document anchors', async () => {

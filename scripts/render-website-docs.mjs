@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { dirname, join, posix, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { documentSeo, homePage, site } from './website-seo.mjs';
+import { localizedReleaseNotes } from '../apps/desktop/src/updateReleaseNotes.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const requireDesktop = createRequire(join(root, 'apps', 'desktop', 'package.json'));
@@ -22,13 +23,15 @@ export const documents = [
   { source: 'docs/USER_GUIDE.en.md', page: 'docs/user-guide.en.html', lang: 'en', key: 'guide', label: 'User guide' },
   { source: 'docs/DOWNLOAD.md', page: 'docs/download.html', lang: 'zh', key: 'download', label: '下载与体验' },
   { source: 'docs/DOWNLOAD.en.md', page: 'docs/download.en.html', lang: 'en', key: 'download', label: 'Download and try' },
+  { source: 'CHANGELOG.md', page: 'docs/changelog.html', lang: 'zh', key: 'changelog', label: '更新日志', changelog: true },
+  { source: 'CHANGELOG.md', page: 'docs/changelog.en.html', lang: 'en', key: 'changelog', label: 'Changelog', changelog: true },
   { source: 'docs/TROUBLESHOOTING.md', page: 'docs/troubleshooting.html', lang: 'zh', key: 'troubleshooting', label: '故障排查' },
   { source: 'docs/TROUBLESHOOTING.en.md', page: 'docs/troubleshooting.en.html', lang: 'en', key: 'troubleshooting', label: 'Troubleshooting' },
   { source: 'THIRD_PARTY_NOTICES.md', page: 'docs/third-party-notices.html', lang: 'zh', key: 'notices', label: '第三方声明', languageLabel: '中文 / English 许可原文' },
   { source: 'LICENSE', page: 'docs/license.html', lang: 'en', key: 'license', label: 'MIT license', languageLabel: 'English original', plain: true },
   { source: 'apps/desktop/public/licenses/outfit-OFL.txt', page: 'docs/outfit-license.html', lang: 'en', key: 'outfit', label: 'Outfit font license', languageLabel: 'English original', plain: true },
 ];
-const bySource = new Map(documents.map((entry) => [entry.source, entry]));
+const bySource = new Map(documents.map((entry) => [entry.source, documents.filter((item) => item.source === entry.source)]));
 const escape = (value) => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 const encodePath = (path) => path.split('/').map(encodeURIComponent).join('/');
 const relativePage = (from, to) => posix.relative(posix.dirname(from), to) || posix.basename(to);
@@ -86,7 +89,9 @@ export function rewriteDocumentUrl(value, source, outputPage) {
   const pathname = decodeURIComponent(parts[1]);
   const suffix = (parts[2] || '') + (parts[3] || '');
   const target = posix.resolve('/', posix.dirname(source), pathname).slice(1);
-  const document = bySource.get(target);
+  const language = documents.find((entry) => entry.page === outputPage)?.lang || 'zh';
+  const targets = bySource.get(target);
+  const document = targets?.find((entry) => entry.lang === language) || targets?.[0];
   if (document) return relativePage(outputPage, document.page) + suffix;
   if (target === 'README.md' || target === 'README.en.md' || target === 'README.zh-CN.md') {
     const lang = target === 'README.zh-CN.md' ? 'zh' : 'en';
@@ -116,6 +121,25 @@ export function renderMarkdownContent(markdown, source, outputPage) {
   return { html, headings };
 }
 
+export function renderChangelog(markdown, language) {
+  const english = language === 'en';
+  const versions = [...markdown.matchAll(/^##[ \t]+\[([^\]]+)\]([^\r\n]*)\r?$/gm)];
+  if (!versions.length) throw new Error('CHANGELOG.md requires version sections.');
+  const introduction = english
+    ? '# Changelog\n\nChanges by version. **Unreleased changes are not included in publicly available installers.** Package availability is established by [GitHub Releases](https://github.com/hongfaqiu/strata-manager/releases).'
+    : '# 更新日志\n\n按版本记录功能与修复。**未发布内容尚未包含在公开安装包中。** 安装包是否可用，以 [GitHub 发布页](https://github.com/hongfaqiu/strata-manager/releases)为准。';
+  return introduction + '\n\n' + versions.map((version, index) => {
+    const section = markdown.slice(version.index + version[0].length, versions[index + 1]?.index ?? markdown.length);
+    // Moving all pending notes into a release leaves a valid empty placeholder.
+    if (version[1] === 'Unreleased' && !section.replace(/^###[ \t]+(?:中文|English)[ \t]*\r?$/gm, '').trim()) return null;
+    const notes = localizedReleaseNotes(section, english ? 'en' : 'zh-CN');
+    if (!notes) throw new Error(`Changelog ${version[1]} requires nonempty ${language} notes.`);
+    const label = version[1] === 'Unreleased' ? (english ? 'Unreleased' : '未发布') : version[1];
+    const suffix = english ? version[2] : version[2].replace(/Unreleased/g, '尚未发布').replace(/Unpublished/g, '未公开发布');
+    return `## ${label}${suffix}\n\n${notes}`;
+  }).filter(Boolean).join('\n\n') + '\n';
+}
+
 function renderDocument(entry, markdown) {
   const en = entry.lang === 'en';
   const alternate = documents.find((item) => item.key === entry.key && item.lang !== entry.lang);
@@ -126,7 +150,7 @@ function renderDocument(entry, markdown) {
   };
   const content = entry.plain
     ? { html: `<h1 id="${escape(entry.key)}">${escape(entry.label)}</h1><pre class="license-text">${escape(markdown)}</pre>`, headings: [] }
-    : renderMarkdownContent(markdown, entry.source, entry.page);
+    : renderMarkdownContent(entry.changelog ? renderChangelog(markdown, entry.lang) : markdown, entry.source, entry.page);
   const title = content.headings.find((heading) => heading.depth === 1)?.text || entry.label;
   const description = en
     ? `${title}: Strata Manager guides for Niko1221/Strata local LLM inference, model management, services and monitoring.`
@@ -136,6 +160,7 @@ function renderDocument(entry, markdown) {
     ['index', '文档中心', 'Documentation'],
     ['guide', '使用指南', 'User guide'],
     ['download', '下载与体验', 'Download and try'],
+    ['changelog', '更新日志', 'Changelog'],
     ['troubleshooting', '故障排查', 'Troubleshooting'],
     ['notices', '第三方声明（中文及许可原文）', 'Third-party notices (Chinese / license originals)'],
     ['license', 'MIT 许可（英文原文）', 'MIT license (English original)'],
@@ -154,7 +179,7 @@ function renderDocument(entry, markdown) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
-  <meta name="theme-color" content="#06130e" id="theme-color">
+  <meta name="theme-color" content="#f5f4ef" id="theme-color">
   <title>${escape(title)} · Strata Manager</title>
   <meta name="description" content="${escape(description)}">
   ${documentSeo({ title: `${title} · Strata Manager`, description, page: entry.page, lang: entry.lang, alternates: documents.filter((item) => item.key === entry.key) })}
@@ -165,7 +190,7 @@ function renderDocument(entry, markdown) {
 <body>
   <a class="skip-link" href="#content">${chrome.skip}</a>
   <header class="doc-header">
-    <a class="doc-brand" href="${home}"><img src="../assets/icon.svg" width="32" height="32" alt=""><span>Strata Manager</span></a>
+    <a class="doc-brand" href="${home}"><img src="../assets/icon.svg" width="32" height="32" alt=""><span>Strata <span class="brand-subtitle">Manager</span></span></a>
     <nav class="header-actions" aria-label="${escape(en ? 'Page controls' : '页面操作')}">
       <a class="header-action" href="${home}">${chrome.home}</a>
       ${langLink}

@@ -455,5 +455,119 @@
       "bytes": 286628,
       "sha256": "c861318edb94c2de9bcb477709e59d67bd13f1f369837110460653b00227043d"
     }
-  ]
+  ],
+  "benchmarkCapture": {
+    "capturedOn": "2026-10-12",
+    "capturedAt": "2026-10-11T17:57:17.184Z",
+    "sourceBaseCommit": "9accee1a8bcab2842658abbab8c5b81738b1aa80",
+    "source": "Real current App/BenchmarkPage imported through src/main.tsx with every production stylesheet in its original order",
+    "sourceIncludesWorkingTreeChanges": true,
+    "scope": "In-memory RPC and saved report examples. Zero real inference, model/GPU load, installation, runtime update or service lifecycle operations.",
+    "sourceContentDigests": [
+      {
+        "file": "apps/desktop/src/main.tsx",
+        "sha256": "a8ad75da9867304314eb2597fede5a9e4fe04955653d093d0964e23bcf69aafc"
+      },
+      {
+        "file": "apps/desktop/src/App.tsx",
+        "sha256": "81667c8eb8096efe576b2ec4cf80a64cdb96f45a883548a38823f664692bbfed"
+      },
+      {
+        "file": "apps/desktop/src/pages/BenchmarkPage.tsx",
+        "sha256": "ee016c5b7aacf5d99b14736a2c53abc3c00ee4e9bcd02d3009d67cd4f1ab462f"
+      },
+      {
+        "file": "apps/desktop/src/pages/benchmark.css",
+        "sha256": "033f833d2e3c2782d536fc9ffb03c211b5ccea593242e37bbc7bf32ded542f40"
+      },
+      {
+        "file": "packages/core/src/benchmark.ts",
+        "sha256": "7a24357310583c9f3021031502a3a1b3a84db0de57dc67543f6c8ffa292c9f01"
+      },
+      {
+        "file": "packages/core/src/benchmark-suite.ts",
+        "sha256": "66d40ade052448f420aaa794a561db96f8636e2bbdc9352635afd4a26e34e4fa"
+      },
+      {
+        "file": "packages/core/src/benchmark-suite-types.ts",
+        "sha256": "9522d6ab561ae9035816534b834d8f90da2fbc152e0dd20aeb43b88b862b4683"
+      },
+      {
+        "file": "apps/desktop/tests/optimization/native-fixture.js",
+        "sha256": "5927b4146dcb84f34bb940643d057639847e1b4914aaf8fe4cdbe3d387fe1737"
+      },
+      {
+        "file": "apps/desktop/tests/optimization/benchmark-native-fixture.js",
+        "sha256": "e4fc989299f7282e600e560ea92499094340273593d847a6d8eac7c0d746e49f"
+      },
+      {
+        "file": "output/design/benchmark-screenshot/index.html",
+        "sha256": "a190c8b470587ab20357e24e74203639e6364eadd79e35545872a57e02e7954b"
+      },
+      {
+        "file": "output/design/benchmark-screenshot/documentation-data.js",
+        "sha256": "729422bb39334aec72d183a8bf614b50a661860a69c45ad5907ba996c77f41bc"
+      }
+    ],
+    "browserValidation": {
+      "screens": 2,
+      "pageErrors": 0,
+      "consoleErrors": 0,
+      "externalRequests": 0,
+      "horizontalDocumentOverflow": false,
+      "jsonAndCsvExportsVerified": true
+    },
+    "screens": [
+      {
+        "file": "benchmark.zh.webp",
+        "screen": "benchmark",
+        "route": "benchmark",
+        "language": "zh",
+        "theme": "light",
+        "width": 2880,
+        "height": 1920,
+        "cssViewport": {
+          "width": 1440,
+          "height": 960
+        },
+        "deviceScaleFactor": 2,
+        "sourceFormat": "PNG",
+        "lossless": true,
+        "pixelIdenticalToBrowserPng": true,
+        "bytes": 99966,
+        "sha256": "f775bdca889a2fad2ef2360e6e9028556a709eb33c7a22c1c113722d3a9b4241",
+        "sourcePngSha256": "ae6e5d2b4486b586e4a6aa2bd42fa532961b25f9a2eb77b965c9cd56fa0f6cbc",
+        "sourcePng": "output/playwright/benchmark-documentation/benchmark-settings.zh.png",
+        "sourceBaseCommit": "9accee1a8bcab2842658abbab8c5b81738b1aa80",
+        "source": "Real current App/BenchmarkPage imported through src/main.tsx with every production stylesheet in its original order",
+        "scope": "In-memory RPC and saved report examples. Zero real inference, model/GPU load, installation, runtime update or service lifecycle operations.",
+        "view": "Test plan, scenario selection, JSON/CSV export controls and concurrency/load parameters. Completed reports, resource trends and scenario/stage comparisons are separate supplemental evidence."
+      },
+      {
+        "file": "benchmark.en.webp",
+        "screen": "benchmark",
+        "route": "benchmark",
+        "language": "en",
+        "theme": "light",
+        "width": 2880,
+        "height": 1920,
+        "cssViewport": {
+          "width": 1440,
+          "height": 960
+        },
+        "deviceScaleFactor": 2,
+        "sourceFormat": "PNG",
+        "lossless": true,
+        "pixelIdenticalToBrowserPng": true,
+        "bytes": 82714,
+        "sha256": "380fc5cd006f7726ae4cc99c99af07c0fe00acce46ad053dd0c26c8ff6e711b4",
+        "sourcePngSha256": "416fff1bd5206f54621b6ff30a74f9d55294866f780c0adfa54a96d172b8f7eb",
+        "sourcePng": "output/playwright/benchmark-documentation/benchmark-settings.en.png",
+        "sourceBaseCommit": "9accee1a8bcab2842658abbab8c5b81738b1aa80",
+        "source": "Real current App/BenchmarkPage imported through src/main.tsx with every production stylesheet in its original order",
+        "scope": "In-memory RPC and saved report examples. Zero real inference, model/GPU load, installation, runtime update or service lifecycle operations.",
+        "view": "Test plan, scenario selection, JSON/CSV export controls and concurrency/load parameters. Completed reports, resource trends and scenario/stage comparisons are separate supplemental evidence."
+      }
+    ]
+  }
 }

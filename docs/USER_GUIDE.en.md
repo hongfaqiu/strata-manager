@@ -150,7 +150,24 @@ Applying a result saves a recovery record, restarts the owned service and checks
 
 Controlled tests validate the comparison and recovery workflow. Real speed improvements need a report from the actual model, hardware and workload. Screenshot metrics and demonstration timing are not GPU benchmarks.
 
-## New in 0.1.3
+## Benchmark
+
+Start the model you want to test, open the Benchmark workspace and select the current configuration. Use a scenario suite to compare workloads, or stress mode to observe latency, throughput and resource use under concurrent requests.
+
+| Mode | How to use it |
+| --- | --- |
+| **Scenario suite** | Select Short answer, Code review, Long input, Sustained generation, Repeated input cache, Conversation or Custom. Set warmup, repeated runs and input/output lengths, then compare results by scenario. |
+| **Concurrent stress** | Choose fixed concurrency or ramp-up mode, with 1–32 concurrent clients, a request budget and a duration. When either the budget or duration limit is reached, no new requests are started. Review load changes by stage. |
+
+Reports separate time to first token (TTFT), request duration, P50/P95, token counts, input-processing and generation rates, cache reuse, and resource and queue trends. Scenarios and stress stages are summarized separately for comparison. Metrics not provided by the engine remain unavailable.
+
+Follow progress or cancel a running test. The workspace coordinates with chat, tuning and other inference operations. Historical reports stay on this computer and can be exported as JSON or CSV. Compare runs using the same model, configuration, scenarios and hardware conditions.
+
+![Benchmark test plans, scenario selection and concurrent stress settings](screenshots/benchmark.en.webp)
+
+<sub>Interface preview using example data to illustrate test settings.</sub>
+
+## Structured output and session tools
 
 Chat supports text, JSON and JSON Schema output, sampling controls and reusable long-document prefixes. Common actions are visible directly; the question mark beside a heading opens help. Runtime configuration is organized by category, with advanced editors retaining access to the full configuration.
 
@@ -158,13 +175,13 @@ Model preparation exposes supported download sources and GPU selection, local GG
 
 Service tools expose slots, session save/restore, prefill progress and supported VRAM adjustment. MCP shows servers, tools and model-supported tool calls. Existing-runtime management handoff and expert tuning candidates have dedicated controls. Session files remain local and should be handled as data containing user input.
 
-Windows test builds were exercised with JSON/Schema, long-document caching, session save/restore, concurrent slots and management handoff. The tested low-RAM resident mode rejects dynamic VRAM adjustment; the app explains that upstream rejection. Full long-running tuning, new model downloads and restoration across Windows sign-in still need separate acceptance. Those test-build GPU results do not establish repeated acceptance of the final release package.
+Dynamic VRAM adjustment depends on runtime support. If the engine rejects adjustment in low-RAM resident mode, the app explains the reason.
 
 ## Application updates
 
 Automatic checks in Settings are enabled by default, on launch and every 12 hours. An available update displays that Release's original notes and requires confirmation before downloading and installing. Disable automatic checks to check manually. Failures preserve the current app and can be retried; installation checks that the background is idle. Downloads show progress, and the updater verifies official Tauri signatures with the embedded public key.
 
-Use the v0.1.3 release entry for the [Windows installer](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.3/Strata.Manager_0.1.3_x64-setup.exe), [AppImage](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.3/Strata.Manager_0.1.3_amd64.AppImage) or [DEB](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.3/Strata.Manager_0.1.3_amd64.deb) and compare [SHA256SUMS](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.3/SHA256SUMS). Install only assets actually listed on the release page. Stable releases use `latest`; previews remain manual downloads and do not replace the stable channel. Finding no beta update does not establish that the latest preview is installed.
+Choose a Windows installer, AppImage or DEB from the [latest stable release](https://github.com/hongfaqiu/strata-manager/releases/latest) or the [website download section](https://hongfaqiu.github.io/strata-manager/en/#get-started), then check that release's `SHA256SUMS`. Stable releases use `latest`; previews remain manual downloads and do not replace the stable channel.
 
 Application, Strata runtime and model weights are separate. Updating Manager does not normally require another model-weight download. Read the version's release notes for restart and recovery behavior.
 
@@ -175,6 +192,12 @@ Tauri update signatures are separate from Windows Authenticode publisher signing
 ## Update the Strata runtime
 
 Strata is a global runtime managed on its own **Strata** page. View installed and upstream versions, official release links and notes. The update package matches the current engine type by default; you can also select an available package. After confirmation, the task downloads the official engine ZIP and same-version source, verifies and extracts them into a preparation directory, then backs up and replaces program files while retaining weights, configurations and conversations.
+
+The confirmation dialog shows the official engine ZIP's complete download URL, size and SHA256, with copy actions for the URL and checksum. Choose automatic downloading, a downloaded local ZIP, or a complete HTTPS mirror URL for the engine ZIP (not the mirror homepage). Local files and mirrors require an explicit matching official package; the version, Windows x64 platform and CUDA/HIP variant must match. Every source is verified against the official release manifest's SHA256, without accepting a user-provided checksum. Files that do not match are rejected.
+
+Choosing or canceling a file only changes the dialog selection. The final confirmation creates the update task and authorizes any required service stop. A local ZIP skips only the engine download; same-version source and official release information still require network access. Changing the target release or runtime clears the file and mirror selections.
+
+Interrupted or canceled engine downloads retain their received bytes. Confirming the update again attempts to resume them. Network errors, HTTP 408/429 and server errors receive at most three automatic attempts, with the reason and downloaded byte count in the task log. A server that ignores byte ranges triggers a complete download instead. Downloads no longer have a five-minute whole-file deadline; sixty seconds without a network response triggers a retry. A SHA256 mismatch deletes the partial file, while complete verified caches can be reused.
 
 Automatic checks share the app's default-enabled setting and still require confirmation. Preparation preserves the current service; switching follows idle and process-identity checks and briefly interrupts the local API. The updated service is checked, and failure or cancellation after switching attempts to restore backups and previous registrations. Recovery failures retain diagnostics for repair before retrying.
 
