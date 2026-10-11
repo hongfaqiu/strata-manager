@@ -32,6 +32,12 @@
 
 后续源码 `3fc9adffdad8f59e0550557ce54535139c017b6b` 的 [CI 38177234879](https://github.com/hongfaqiu/strata-manager/actions/runs/38177234879)通过 Linux Clippy，但 Linux 原生分片发现浮条只读测试的平台断言错误：Unix IPC 客户端会创建空的私有 `.ipc` 目录，Windows 则保持空根目录。测试修复保留 Windows 空目录要求；Unix 严格核对根目录仅含 `.ipc`、真实非符号链接目录、当前用户所有、权限 `0700` 且目录为空，不允许套接字、锁文件或数据库。生产行为未修改，本地四项浮条合同、格式和严格 Clippy 通过；修复后的 Unix 分支仍由最终完整 CI 验证。
 
+应用源码 `a2f8f78aa71914178a306a6458518ec4a0be8e01` 的 [最终 CI 38177753892](https://github.com/hongfaqiu/strata-manager/actions/runs/38177753892)在同一次 attempt 1 完成全部 **8/8 job 成功**，包含六个完整原生分片及 Windows/Linux 安装包门禁。Linux 日志实际确认修复后的浮条只读断言和调用白名单通过，Windows 安装、后台 IPC 与升级检查也通过。`v0.1.4` 标签固定指向该应用源码。
+
+首轮 [Release 38178757394](https://github.com/hongfaqiu/strata-manager/actions/runs/38178757394)成功复用同源 CI 并完成三个安装包签名，但创建 draft 的 `gh api --input -` 命令失败，未留下该版本的 Release 或资产。发布控制器的统一子进程包装器将标准输入设为 `ignore`；真实 Node 子进程实测确认传入 JSON 收到零字节，而 `pipe` 可完整传递。修复只让显式请求体走 `pipe`，无输入仍关闭 stdin，并补充真实子进程合同；原始 GitHub stderr 已被旧包装器丢弃，因此不推断具体 HTTP 错误。恢复发布使用新 main 控制器及显式应用标签、源码 SHA 和 CI id，保留应用标签与所有签名、资产和发布门禁，不重建或移动已验证的应用源码。
+
+修复控制器的本地发行与 CI 门禁合同 **232 passed / 0 failed / 0 skipped**，证据为 `.local/release-0.1.4/controller-release-guards.log`。新增四项真实子进程合同覆盖 POST/PATCH Unicode JSON 字节完整传递、无输入立即 EOF，以及失败不泄漏请求体或敏感 stderr；这不替代重新执行的发布任务和公开资产核验。
+
 ## 0.1.2 发版准备与 0.1.1 未公开记录
 
 - **新候选为 0.1.2，尚未公开。** 版本、当前用户文档、官网默认日志入口与 Windows beta.2 升级门禁已同步；完整 Linux 原生测试改为串行执行，后台生命周期夹具补充启动诊断。测试断言、原就绪期限、生产资源/质量/身份门槛、Clippy、签名及安装门禁保持。须在冻结后记录本次同源码 Windows/Linux CI、签名 Release、公开资产及实际验签结果，不能归用旧版本的通过证据。

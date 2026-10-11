@@ -10,7 +10,7 @@ import {
   validateSourceProtocol, validateCiEvidence, validateInstallerEntries, validateLiveWriters,
   validateLatestManifest, validateReleaseInventory, validateReleaseMetadata, creationBranch,
   requireSourceRelease, validatePreparedRecord, readPrepared,
-  findReusableCi, inventory, WRITER_JOBS, validateWriterProtocol,
+  findReusableCi, inventory, WRITER_JOBS, validateWriterProtocol, command,
 } from './release-from-ci.mjs';
 
 const clone = value => structuredClone(value);
@@ -19,6 +19,44 @@ const makePlan = (version = '0.2.0') => createPlan({
   tag: 'v' + version, version, sourceSha: 'a'.repeat(40), productName: 'Strata Manager',
 });
 const plan = makePlan();
+for (const method of ['POST', 'PATCH']) {
+  test(`real ${method} subprocess receives the complete Unicode JSON request through stdin`, () => {
+    const body = { tag_name: 'v0.1.4', body: '中文更新 🌱\n第二行含 "引号" 与 \\ 路径', draft: true };
+    const input = JSON.stringify(body, null, 2) + '\n';
+    const endpoint = '/repos/hongfaqiu/strata-manager/releases' + (method === 'PATCH' ? '/123' : '');
+    const args = ['api', '--method', method, endpoint, '--input', '-'];
+    const probe = [
+      'const fs = require("node:fs");',
+      'const input = fs.readFileSync(0);',
+      'process.stdout.write(JSON.stringify({args: process.argv.slice(1), hex: input.toString("hex"), body: JSON.parse(input.toString("utf8"))}));',
+    ].join('\n');
+    const received = JSON.parse(command(process.execPath, ['-e', probe, '--', ...args], { input, timeout: 5000 }));
+    assert.deepEqual(received.args, args);
+    assert.equal(received.hex, Buffer.from(input, 'utf8').toString('hex'));
+    assert.deepEqual(received.body, body);
+  });
+}
+test('a real subprocess without input receives immediate EOF and completes within its deadline', () => {
+  const probe = 'const fs = require("node:fs"); process.stdout.write(String(fs.readFileSync(0).length));';
+  assert.equal(command(process.execPath, ['-e', probe], { timeout: 5000 }), '0');
+});
+test('real subprocess failure never exposes its input, stdout or sensitive stderr', () => {
+  const input = JSON.stringify({ body: 'synthetic-private-input 中文\n"quoted"' });
+  const probe = [
+    'const input = require("node:fs").readFileSync(0, "utf8");',
+    'process.stdout.write("synthetic-private-stdout:" + input);',
+    'process.stderr.write("synthetic-sensitive-stderr:" + input);',
+    'process.exitCode = 42;',
+  ].join('\n');
+  assert.throws(() => command(process.execPath, ['-e', probe], { input, timeout: 5000 }), error => {
+    assert.equal(error.message, 'Command failed: Node tool');
+    for (const value of [input, 'synthetic-private-input', 'synthetic-private-stdout', 'synthetic-sensitive-stderr']) {
+      assert.equal(String(error.stack).includes(value), false);
+    }
+    for (const field of ['input', 'stdout', 'stderr', 'cause']) assert.equal(Object.hasOwn(error, field), false);
+    return true;
+  });
+});
 function ciFixture(p = plan, runId = 123) {
   const run = { id: runId, path: p.workflowPath, event: 'workflow_dispatch', status: 'completed',
     conclusion: 'success', head_sha: p.sourceSha, run_attempt: 2, created_at: '2026-01-01T00:00:00Z',

@@ -211,9 +211,9 @@ export function validateLatestManifest(manifest, assets, plan) {
   return true;
 }
 
-function command(binary, args, options = {}) {
+export function command(binary, args, options = {}) {
   try { return execFileSync(binary, args, { encoding: 'utf8', timeout: 120000, maxBuffer: 4 * 1024 * 1024,
-    stdio: ['ignore', 'pipe', 'pipe'], ...options }); }
+    ...options, stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] }); }
   catch { fail('Command failed: ' + (binary === process.execPath ? 'Node tool' : binary)); }
 }
 const json = path => JSON.parse(command('gh', ['api', path]));
