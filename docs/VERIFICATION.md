@@ -311,3 +311,9 @@ Linux MCP stdio 新增同步 wrapper，在 Tokio/数据库初始化之前接收�
 Windows 夹具改为写完同目录临时文件后原子发布标记，全部断言与等待期限保留，相关测试连续 5 次通过。Linux 先用与原管理判定相同的真实 `setup.py` / `strata_mcp.py` 脚本或模块入口筛选；完整参数明确无关的进程不读取可执行文件身份，受限或身份不明的真实候选仍拒绝恢复管理。WSL 实测确认无关的 root 所有系统自动更新 Python 服务触发了原错误，并加入相应负对照。空参数只允许内核线程或死亡状态跳过，无法确认的存活进程继续拒绝。
 
 独立工作目录使用与 CI 相同的 Rust 1.99.0，在 Ubuntu 24.04 实际运行发现回归 21 passed / 1 ignored、外部管理 5 passed / 0 ignored；原生核心、Supervisor、IPC 和更新验签的 all-targets Clippy `-D warnings` 通过。Windows 发现回归 22 passed / 2 ignored、监听交接回归 1 passed；ignored 是既有显式实机只读验收，不计通过。此处为定向 CPU 回归，不替代最终源码的完整 Windows / Linux CI、正式签名及安装包启动验收；未操作真实模型或默认应用数据。
+
+提交 `2ed125756cf129445a6d201ad19c58e7b2852ac9` 的完整 CI `38156107537`：Windows 原生 **404 passed / 0 failed / 12 ignored**，Rust 1.99 Clippy、NSIS 构建、隔离安装、GUI 启动、后台 IPC、关闭与卸载全部通过。升级保留数据步骤仅适用于 0.1.2，本轮按版本条件跳过，不能记录为 0.1.3 升级验收。Linux 原生已执行部分 **321 passed / 2 failed / 5 ignored**；两个管理扫描失败用例已通过，新的两项失败伴随原隔离 GNOME keyring daemon 的断言崩溃与 DBus 断线。Linux 后续检查和安装包启动尚未执行，整轮 CI 未通过。
+
+独立核查将该崩溃链对应到 GNOME keyring 的首次客户端注册竞态及协商失败后空结果被当作成功返回；官方 [MR !112](https://gitlab.gnome.org/GNOME/gnome-keyring/-/merge_requests/112) 的固定 head 为 `8fcdeffe67ae8c1600eae9637816acbf73f66b81`，核查时仍未合并。CI 使用固定官方 40.0 源码、校验和及窄范围回移补丁，构建到私有目录；不替换用户系统 daemon，不修改生产凭据客户端，不跳过或吞掉凭据错误。保留真实 Secret Service 读写删除、原 owner/PID 检查、断言和全部原生测试，并增加直接首次 OpenSession 的新连接压力门禁。Linux 发行程序仍使用用户的系统凭据服务；该 CI 环境修复不能证明所有未修复系统 daemon 均无此上游问题。
+
+回移补丁 SHA256 为 `e0e33127048532ed6b6a39a319a1fcd7ee51f6765ec018157dd0efde964e54bd`，仅比固定上游 diff 多保留既有 `error != NULL` 防御条件。WSL Ubuntu 24.04 实际构建成功，确认 `G_DISABLE_ASSERT` 未定义；私有 daemon 的真实存取删除通过。上述两项原失败 Rust 用例分别通过（10.36 秒、28.39 秒），0 ignored。直接首次 OpenSession 压力覆盖单线程 1000 次及 16 线程各 200 次，全部 **4200** 个独立连接、会话关闭和连接关闭通过；原 unique owner、PID 和进程启动时间保持一致，daemon 正常退出。原有 wrapper 的 8 项故障/隔离合同全部通过，0 skipped；合同使用 PATH stub，真实压力及 Rust 用例使用实际 daemon，两类证据单列。后续完整 CI 和公开发行验收仍须绑定最终提交。

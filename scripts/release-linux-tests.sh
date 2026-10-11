@@ -7,6 +7,17 @@ if [[ $# -eq 0 || -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
   exit 2
 fi
 
+if [[ -v STRATA_TEST_KEYRING_DAEMON ]]; then
+  keyring_daemon=$STRATA_TEST_KEYRING_DAEMON
+else
+  # Retain the system/default path for local runs and the PATH-stub contracts.
+  keyring_daemon=$(command -v gnome-keyring-daemon || true)
+fi
+if [[ "$keyring_daemon" != /* || ! -f "$keyring_daemon" || ! -x "$keyring_daemon" || -L "$keyring_daemon" ]]; then
+  echo 'The Linux test Secret Service daemon must be an absolute regular executable path.' >&2
+  exit 2
+fi
+
 # Never read the desktop login keyring: the runner starts with an empty private
 # data directory. This fixed password is only for disposable CI fixture data.
 session_dir=$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/strata-keyring.XXXXXX")
@@ -14,6 +25,9 @@ export XDG_DATA_HOME="$session_dir/data"
 export XDG_RUNTIME_DIR="$session_dir/runtime"
 export GNOME_KEYRING_CONTROL="$session_dir/control"
 mkdir -m 700 "$XDG_DATA_HOME" "$XDG_RUNTIME_DIR" "$GNOME_KEYRING_CONTROL"
+# GNOME otherwise permits a legacy $HOME/.gnome2/keyrings alias fallback when
+# this directory does not yet exist, despite the private XDG_DATA_HOME.
+mkdir -m 700 "$XDG_DATA_HOME/keyrings"
 # dbus-run-session was started by the caller before these private paths existed.
 # Its activation environment must never fall back to the runner's login keyring.
 dbus-update-activation-environment XDG_DATA_HOME XDG_RUNTIME_DIR GNOME_KEYRING_CONTROL
@@ -133,7 +147,7 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-gnome-keyring-daemon \
+"$keyring_daemon" \
   --foreground --unlock --components=secrets --control-directory "$session_dir/control" \
   < <(printf '%s' 'strata-manager-ci-fixture') \
   >"$session_dir/daemon.stdout" 2>"$session_dir/daemon.stderr" &
@@ -145,6 +159,8 @@ if ! verify_owner; then
   exit 70
 fi
 expected_owner=$current_owner
+export STRATA_TEST_KEYRING_OWNER="$expected_owner"
+export STRATA_TEST_KEYRING_PID="$keyring_pid"
 service=(gdbus call --session --dest "$expected_owner" --object-path /org/freedesktop/secrets)
 "${service[@]}" --method org.freedesktop.Secret.Service.SetAlias \
   default /org/freedesktop/secrets/collection/login >/dev/null

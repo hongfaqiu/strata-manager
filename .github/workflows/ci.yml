@@ -73,10 +73,18 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev libgtk-3-dev libssl-dev librsvg2-dev libxdo-dev libdbus-1-dev pkg-config patchelf xdg-utils xvfb dbus-x11 gnome-keyring libglib2.0-bin libsecret-tools python3-venv
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev libgtk-3-dev libssl-dev librsvg2-dev libxdo-dev libdbus-1-dev pkg-config patchelf xdg-utils xvfb dbus-x11 gnome-keyring libglib2.0-bin libsecret-tools python3-venv python3-dbus build-essential curl gettext libgcr-3-dev libgcrypt20-dev libtasn1-6-dev libp11-kit-dev libcap-ng-dev
       - name: Linux Secret Service wrapper contracts
         if: runner.os == 'Linux'
         run: python scripts/tests/release-linux-tests-contract.py
+      - name: Build the pinned private Linux test keyring
+        if: runner.os == 'Linux'
+        run: |
+          daemon_path=$(bash scripts/build-linux-test-keyring.sh)
+          printf 'STRATA_TEST_KEYRING_DAEMON=%s\n' "$daemon_path" >> "$GITHUB_ENV"
+      - name: Linux Secret Service fresh-connection regression
+        if: runner.os == 'Linux'
+        run: timeout --kill-after=5s 120s dbus-run-session -- xvfb-run -a bash scripts/release-linux-tests.sh /usr/bin/python3 scripts/tests/linux-secret-service-stress.py --deadline-seconds 100
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: '. -> apps/desktop/src-tauri/target'
