@@ -69,6 +69,14 @@ test('Changelog pages keep version status and only the requested language from t
   assert.equal(rewriteDocumentUrl('../CHANGELOG.md', 'docs/USER_GUIDE.en.md', 'docs/user-guide.en.html'), 'changelog.en.html');
 });
 
+test('An empty unreleased placeholder does not block publishing a versioned changelog', () => {
+  const released = '## [1.0.0]\n### 中文\n- 修复\n### English\n- Fix';
+  for (const placeholder of ['## [Unreleased]\n\n', '## [Unreleased]\n### 中文\n\n### English\n\n']) {
+    assert.match(renderChangelog(placeholder + released, 'zh'), /## 1\.0\.0/);
+    assert.match(renderChangelog(placeholder + released, 'en'), /## 1\.0\.0/);
+  }
+});
+
 test('Publication checks catch missing files and stale document anchors', async () => {
   const output = await mkdtemp(join(tmpdir(), 'strata-doc-links-'));
   try {

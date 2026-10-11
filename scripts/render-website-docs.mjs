@@ -130,12 +130,14 @@ export function renderChangelog(markdown, language) {
     : '# 更新日志\n\n按版本记录功能与修复。**未发布内容尚未包含在公开安装包中。** 安装包是否可用，以 [GitHub 发布页](https://github.com/hongfaqiu/strata-manager/releases)为准。';
   return introduction + '\n\n' + versions.map((version, index) => {
     const section = markdown.slice(version.index + version[0].length, versions[index + 1]?.index ?? markdown.length);
+    // Moving all pending notes into a release leaves a valid empty placeholder.
+    if (version[1] === 'Unreleased' && !section.replace(/^###[ \t]+(?:中文|English)[ \t]*\r?$/gm, '').trim()) return null;
     const notes = localizedReleaseNotes(section, english ? 'en' : 'zh-CN');
     if (!notes) throw new Error(`Changelog ${version[1]} requires nonempty ${language} notes.`);
     const label = version[1] === 'Unreleased' ? (english ? 'Unreleased' : '未发布') : version[1];
     const suffix = english ? version[2] : version[2].replace(/Unreleased/g, '尚未发布').replace(/Unpublished/g, '未公开发布');
     return `## ${label}${suffix}\n\n${notes}`;
-  }).join('\n\n') + '\n';
+  }).filter(Boolean).join('\n\n') + '\n';
 }
 
 function renderDocument(entry, markdown) {
