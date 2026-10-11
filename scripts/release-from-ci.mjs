@@ -182,8 +182,11 @@ export function validateReleaseInventory(release, plan, { allowPartial = false }
   }
   return true;
 }
+export function draftMetadataPayload(plan, body) {
+  return { tag_name: plan.tag, name: plan.productName + ' ' + plan.tag, body, draft: true, prerelease: plan.prerelease };
+}
 export function validateReleaseMetadata(release, plan, body) {
-  if (release.name !== plan.productName + ' ' + plan.tag || release.body !== body) fail('Draft notes/name do not match the explicit source release.');
+  if (Object.entries(draftMetadataPayload(plan, body)).some(([key, value]) => release?.[key] !== value)) fail('Draft metadata does not match the explicit source release.');
   return true;
 }
 export async function requireSourceRelease(plan, { validateOnly = false, requireTag, requireWritable }) {
@@ -469,7 +472,7 @@ export async function publish() {
     const target = creationBranch(json(base));
     await assertWriters(p); await guard(false);
     const created = JSON.parse(command('gh', ['api', '--method', 'POST', base + '/releases', '--input', '-'], {
-      input: JSON.stringify({ tag_name: p.tag, target_commitish: target, name: p.productName + ' ' + p.tag, body, draft: true, prerelease: p.prerelease }),
+      input: JSON.stringify({ ...draftMetadataPayload(p, body), target_commitish: target }),
     }));
     validateReleaseInventory(created, p, { allowPartial: true });
     validateReleaseMetadata(created, p, body);
@@ -479,7 +482,7 @@ export async function publish() {
   validateReleaseInventory(draft, p, { allowPartial: true });
   await assertWriters(p); await guard(true);
   const updated = JSON.parse(command('gh', ['api', '--method', 'PATCH', base + '/releases/' + draft.id, '--input', '-'], {
-    input: JSON.stringify({ name: p.productName + ' ' + p.tag, body }),
+    input: JSON.stringify(draftMetadataPayload(p, body)),
   }));
   if (updated.id !== draft.id) fail('Draft identity changed during metadata refresh.');
   validateReleaseInventory(updated, p, { allowPartial: true });

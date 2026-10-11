@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 import {
   CI_PROTOCOL, REPOSITORY, COMMON_GATES, PLATFORM_GATES, SHARD_GATES, WINDOWS_SHARD_GATES, createPlan, assetNames,
   validateSourceProtocol, validateCiEvidence, validateInstallerEntries, validateLiveWriters,
-  validateLatestManifest, validateReleaseInventory, validateReleaseMetadata, creationBranch,
+  validateLatestManifest, validateReleaseInventory, validateReleaseMetadata, draftMetadataPayload, creationBranch,
   requireSourceRelease, validatePreparedRecord, readPrepared,
   findReusableCi, inventory, WRITER_JOBS, validateWriterProtocol, command,
 } from './release-from-ci.mjs';
@@ -21,8 +21,6 @@ const makePlan = (version = '0.2.0') => createPlan({
 const plan = makePlan();
 for (const method of ['POST', 'PATCH']) {
   test(`real ${method} subprocess receives the complete Unicode JSON request through stdin`, () => {
-    const body = { tag_name: 'v0.1.4', body: '中文更新 🌱\n第二行含 "引号" 与 \\ 路径', draft: true };
-    const input = JSON.stringify(body, null, 2) + '\n';
     const endpoint = '/repos/hongfaqiu/strata-manager/releases' + (method === 'PATCH' ? '/123' : '');
     const args = ['api', '--method', method, endpoint, '--input', '-'];
     const probe = [
@@ -30,10 +28,15 @@ for (const method of ['POST', 'PATCH']) {
       'const input = fs.readFileSync(0);',
       'process.stdout.write(JSON.stringify({args: process.argv.slice(1), hex: input.toString("hex"), body: JSON.parse(input.toString("utf8"))}));',
     ].join('\n');
-    const received = JSON.parse(command(process.execPath, ['-e', probe, '--', ...args], { input, timeout: 5000 }));
-    assert.deepEqual(received.args, args);
-    assert.equal(received.hex, Buffer.from(input, 'utf8').toString('hex'));
-    assert.deepEqual(received.body, body);
+    for (const p of [makePlan('0.1.4'), makePlan('1.0.0-rc.1')]) {
+      const notes = '中文更新 🌱\n第二行含 "引号" 与 \\ 路径';
+      const input = JSON.stringify(draftMetadataPayload(p, notes), null, 2) + '\n';
+      const received = JSON.parse(command(process.execPath, ['-e', probe, '--', ...args], { input, timeout: 5000 }));
+      assert.deepEqual(received.args, args);
+      assert.equal(received.hex, Buffer.from(input, 'utf8').toString('hex'));
+      assert.deepEqual(received.body, { tag_name: p.tag, name: p.productName + ' ' + p.tag, body: notes, draft: true, prerelease: p.prerelease });
+      assert.equal(validateReleaseMetadata(received.body, p, notes), true);
+    }
   });
 }
 test('a real subprocess without input receives immediate EOF and completes within its deadline', () => {
@@ -356,11 +359,19 @@ test('an actual new empty draft can start from zero; public releases cannot be o
   f.release.draft = false;
   assert.throws(() => validateReleaseInventory(f.release, plan, { allowPartial: true }));
 });
-test('refreshed draft source notes and name cannot drift before publication', () => {
-  const release = { name: plan.productName + ' ' + plan.tag, body: 'Current source notes' };
-  assert.equal(validateReleaseMetadata(release, plan, release.body), true);
-  assert.throws(() => validateReleaseMetadata({ ...release, body: 'Legacy notes' }, plan, release.body));
-  assert.throws(() => validateReleaseMetadata({ ...release, name: 'Legacy release' }, plan, release.body));
+test('refreshed draft preserves its exact source tag, notes, name and stable/prerelease state', () => {
+  for (const p of [plan, makePlan('1.0.0-rc.1')]) {
+    const release = draftMetadataPayload(p, 'Current source notes');
+    assert.equal(validateReleaseMetadata(release, p, release.body), true);
+    for (const changed of [
+      { body: 'Legacy notes' }, { name: 'Legacy release' }, { tag_name: 'untagged-fixture' },
+      { draft: false }, { prerelease: !p.prerelease },
+    ]) assert.throws(() => validateReleaseMetadata({ ...release, ...changed }, p, release.body));
+    for (const key of Object.keys(release)) {
+      const omitted = { ...release }; delete omitted[key];
+      assert.throws(() => validateReleaseMetadata(omitted, p, release.body));
+    }
+  }
 });
 test('release refuses wrong version/prerelease, extra, duplicate, empty, and reused asset IDs', () => {
   for (const change of [
