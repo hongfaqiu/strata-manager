@@ -9,6 +9,7 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+- 调优报告成功完成后保留其完成时间，避免后台成功回调再次改写已完成的报告。
 - 现有 Windows 运行环境更新时保留配置，并恢复更新前正在运行的服务。
 - 改善 Windows 本机检测，避免已退出的临时 Python 进程干扰扫描；更新前再次核验实际服务、安装目录和监听归属。
 - 受支持运行时增加 5/15/30 分钟临时请求正文诊断，仅在 RAM 保留，关闭或到期清空；用户已有 `api_monitor` 配置单独管理。
@@ -35,6 +36,7 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### English
 
+- Preserve a successfully completed tuning report's completion time instead of rewriting it in the background success callback.
 - Preserve configurations and restore the previously running service when updating an existing Windows runtime.
 - Improve Windows local detection so exited temporary Python processes do not disrupt scans, and recheck the actual service, installation directory and listener ownership before an update.
 - Add 5/15/30-minute temporary request-body diagnostics on supported runtimes, retaining bodies only in RAM and clearing them on disable or expiry; existing user `api_monitor` settings remain separately managed.

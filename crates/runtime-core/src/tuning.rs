@@ -764,9 +764,12 @@ pub async fn start(
     let id = job.id.clone();
     tokio::spawn(async move {
         let result = run(state.clone(), profile, pid, id.clone(), token.clone()).await;
-        let _ = update(&state, &id, |job| {
-            job.finished_at = Some(now());
-            if let Err(error) = result {
+        // Both successful request and full runs durably publish Completed and
+        // their final timestamps before returning. Preserve that report once
+        // consumers observe completion; only an error needs outer finalization.
+        if let Err(error) = result {
+            let _ = update(&state, &id, |job| {
+                job.finished_at = Some(now());
                 job.state = if job.full.recovery.state == restart::RecoveryState::Failed {
                     Phase::Failed
                 } else if token.is_cancelled() {
@@ -776,8 +779,8 @@ pub async fn start(
                 };
                 job.error = Some(error);
                 job.current_step = "finished".into();
-            }
-        });
+            });
+        }
     });
     Ok(job)
 }
