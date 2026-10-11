@@ -113,7 +113,19 @@ async fn run() -> Result<(), RpcError> {
         let shutdown = shutdown.clone();
         async move {
             if request.method == "shutdown_supervisor" {
-                let preparation = if request.params.get("forClose").and_then(serde_json::Value::as_bool) == Some(true) {
+                let preparation = if request
+                    .params
+                    .get("forClose")
+                    .and_then(serde_json::Value::as_bool)
+                    == Some(true)
+                {
+                    state.clone().prepare_window_close().await
+                } else if request
+                    .params
+                    .get("forClose")
+                    .and_then(serde_json::Value::as_bool)
+                    == Some(true)
+                {
                     state.clone().prepare_window_close().await
                 } else if request
                     .params

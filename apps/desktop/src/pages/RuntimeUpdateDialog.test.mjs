@@ -11,6 +11,7 @@ const deferred = () => { let resolve, reject; const promise = new Promise((yes, 
 const jsx = (type, props) => ({ type, props: props ?? {} });
 const nodes = tree => !tree || typeof tree !== 'object' ? [] : [tree, ...[tree.props?.children].flat(Infinity).flatMap(nodes)];
 const text = tree => typeof tree === 'string' || typeof tree === 'number' ? String(tree) : !tree || typeof tree !== 'object' ? '' : [tree.props?.children].flat(Infinity).map(text).join('');
+const hasClasses = (node, ...classes) => classes.every(value => (node.props.className ?? '').split(/\s+/).includes(value));
 const source = ts.transpileModule(readFileSync(new URL('./RuntimeUpdateDialog.tsx', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
 const runtime = { id: 'strata', installDir: 'D:\\AI\\Strata', runtimeVersion: '0.1.41' };
 const profiles = [
@@ -110,7 +111,7 @@ test('pending or failed service status cannot authorize an update, including sta
 
 test('running service warnings identify the exact model, process and configuration being stopped', async () => {
   const f = fixture(); await f.settle();
-  const notice = nodes(f.tree()).find(node => node.props.role === 'status' && node.props.className?.split(' ').includes('warning'));
+  const notice = nodes(f.tree()).find(node => node.props.role === 'status' && hasClasses(node, 'notice', 'warning'));
   assert.ok(notice); const message = text(notice);
   assert.ok(message.includes(profiles[0].name)); assert.ok(message.includes('PID 10152'));
   assert.ok(message.includes(profiles[0].configPath)); assert.ok(message.includes('正在进行的请求会中断'));
@@ -138,7 +139,7 @@ test('a busy or unavailable parent cannot authorize an update even when services
     assert.equal(f.calls.confirmed, 0); assert.deepEqual(f.calls.mutations, []);
   }
   const idle = fixture({ status: async () => ({ running: false }) }); await idle.settle();
-  assert.equal(nodes(idle.tree()).some(node => node.props.role === 'status' && node.props.className?.split(' ').includes('warning')), false);
+  assert.equal(nodes(idle.tree()).some(node => hasClasses(node, 'notice', 'warning')), false);
   assert.ok(text(idle.confirm()).includes('确认更新')); assert.equal(idle.confirm().props.disabled, false);
 });
 

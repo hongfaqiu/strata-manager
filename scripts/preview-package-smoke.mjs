@@ -24,15 +24,48 @@ const alive = pid => {
   } catch (error) { if (['ESRCH', 'ENOENT'].includes(error.code)) return false; throw error; }
 };
 
-export function parseArguments(arguments_) {
+export function compareVersions(left, right) {
+  const a = semver.exec(left); const b = semver.exec(right);
+  if (!a || !b) throw new Error('Upgrade versions must be valid SemVer.');
+  for (let index = 1; index <= 3; index++) {
+    const difference = BigInt(a[index]) - BigInt(b[index]);
+    if (difference) return difference > 0n ? 1 : -1;
+  }
+  if (!a[4] || !b[4]) return a[4] ? -1 : b[4] ? 1 : 0;
+  const first = a[4].split('.'); const second = b[4].split('.');
+  for (let index = 0; index < Math.max(first.length, second.length); index++) {
+    if (first[index] === second[index]) continue;
+    if (first[index] === undefined || second[index] === undefined) return first[index] === undefined ? -1 : 1;
+    const firstNumeric = /^\d+$/.test(first[index]); const secondNumeric = /^\d+$/.test(second[index]);
+    if (firstNumeric && secondNumeric) return BigInt(first[index]) > BigInt(second[index]) ? 1 : -1;
+    if (firstNumeric !== secondNumeric) return firstNumeric ? -1 : 1;
+    return first[index] > second[index] ? 1 : -1;
+  }
+  return 0;
+}
+
+function validateUpgrade(upgradeFrom, version, platform) {
+  if (platform !== 'win32') throw new Error('Same-directory NSIS upgrade smoke requires Windows.');
+  if (!isAbsolute(upgradeFrom.installer ?? '') || /[\x00-\x1f\x7f]/.test(upgradeFrom.installer)) throw new Error('The upgrade installer must have an absolute path without control characters.');
+  if (compareVersions(version, upgradeFrom.version) <= 0) throw new Error('The candidate version must be strictly newer than the upgrade source.');
+  selectPackages([upgradeFrom.installer], upgradeFrom.version, 'win32');
+}
+
+export function parseArguments(arguments_, platform = process.platform) {
   const values = {};
   for (let index = 0; index < arguments_.length; index += 2) {
     const flag = arguments_[index]; const value = arguments_[index + 1];
-    if (!['--bundle-dir', '--version'].includes(flag) || !value || values[flag]) throw new Error('Use --bundle-dir <absolute directory> --version <SemVer>.');
+    if (!['--bundle-dir', '--version', '--upgrade-from-installer', '--upgrade-from-version'].includes(flag) || !value || values[flag]) throw new Error('Use --bundle-dir <absolute directory> --version <SemVer>, optionally with both --upgrade-from-installer and --upgrade-from-version.');
     values[flag] = value;
   }
   if (!isAbsolute(values['--bundle-dir'] ?? '') || !semver.test(values['--version'] ?? '')) throw new Error('An absolute bundle directory and version are required.');
-  return { bundleDirectory: values['--bundle-dir'], version: values['--version'] };
+  const options = { bundleDirectory: values['--bundle-dir'], version: values['--version'] };
+  if (values['--upgrade-from-installer'] || values['--upgrade-from-version']) {
+    if (!values['--upgrade-from-installer'] || !values['--upgrade-from-version']) throw new Error('Both upgrade source arguments are required.');
+    options.upgradeFrom = { installer: values['--upgrade-from-installer'], version: values['--upgrade-from-version'] };
+    validateUpgrade(options.upgradeFrom, options.version, platform);
+  }
+  return options;
 }
 
 export function assertInside(root, target) {
@@ -182,7 +215,7 @@ async function findExecutables(root, packageDirectory) {
   return { desktop: desktop[0], supervisor: supervisor[0] };
 }
 
-async function verifySupervisor(status, { root, dataDirectory, version, supervisor }) {
+export async function verifySupervisor(status, { root, dataDirectory, version, supervisor }) {
   if (!status || status.protocolVersion !== protocolVersion || status.version !== version || status.running !== true || !Number.isSafeInteger(status.pid) || status.pid < 1 || status.pid === process.pid) throw new Error('Packaged supervisor protocol, process or version does not match.');
   const actualData = await realpath(status.dataDir);
   if (actualData !== await realpath(dataDirectory)) throw new Error('The package connected to another data directory.');
@@ -257,11 +290,22 @@ async function stopSupervisor(address, status, root, dataDirectory, tolerateFail
   if (gracefulError && !tolerateFailure) throw gracefulError;
 }
 
-async function runInstalledPackage(root, label, packageDirectory, launcher, version) {
+export async function upgradeStoreCheckpoint(address, { marker, seed }) {
+  const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+  if (!marker || !new RegExp(`^packageUpgradeSmoke:${uuid}$`).test(marker.key) || !new RegExp(`^${uuid}$`).test(marker.value) || typeof seed !== 'boolean') throw new Error('Invalid package-upgrade store marker.');
+  if (seed) await rpc(address, 'store_set', { key: marker.key, value: marker.value });
+  if (await rpc(address, 'store_get', { key: marker.key }) !== marker.value) throw new Error('The package-upgrade private store marker was not preserved.');
+}
+
+async function runInstalledPackage(root, label, packageDirectory, launcher, version, options = {}) {
   const { desktop, supervisor } = await findExecutables(root, packageDirectory);
   await ownedPath(root, launcher ?? desktop);
-  const dataDirectory = join(root, `${label}-data`);
-  await mkdir(dataDirectory, { mode: 0o700 });
+  const dataDirectory = options.dataDirectory ?? join(root, `${label}-data`);
+  if (options.dataDirectory) {
+    await ownedPath(root, dataDirectory);
+    if (!(await lstat(dataDirectory)).isDirectory()) throw new Error('The reused package-test store is not a directory.');
+  } else await mkdir(dataDirectory, { mode: 0o700 });
+  const desktopHash = createHash('sha256').update(await readFile(desktop)).digest('hex');
   const environment = { ...process.env, STRATA_MANAGER_DATA_DIR: dataDirectory };
   delete environment.STRATA_MANAGER_SUPERVISOR;
   delete environment.TAURI_SIGNING_PRIVATE_KEY;
@@ -288,6 +332,7 @@ async function runInstalledPackage(root, label, packageDirectory, launcher, vers
     // A blank private store must stay empty; this smoke never prepares a model.
     const profiles = await rpc(address, 'local_installations');
     if (!Array.isArray(profiles) || profiles.length) throw new Error('Package-test store contains unexpected model registrations.');
+    if (options.upgradeCheckpoint) await upgradeStoreCheckpoint(address, options.upgradeCheckpoint);
     console.log(`${label}: x64 desktop + sidecar; actual GUI launch; protocol ${protocolVersion}; version ${version}; packaged sidecar SHA256 ${background.executableHash}; private empty store verified.`);
   } catch (error) { failure = error; }
   finally {
@@ -305,6 +350,21 @@ async function runInstalledPackage(root, label, packageDirectory, launcher, vers
   }
   if (failure) throw failure;
   console.log(`${label}: test GUI closed; isolated supervisor acknowledged shutdown and exited. GPU, model inference, login startup and interactive UI flows are outside this smoke.`);
+  return { desktopHash, supervisorHash: background.executableHash };
+}
+
+async function uninstallWindowsPackage(root, installDirectory, installed, command = boundedCommand, logger = console.log) {
+  const uninstall = join(installDirectory, 'uninstall.exe');
+  try {
+    if ((await lstat(uninstall)).isFile()) {
+      await ownedPath(root, uninstall);
+      // _?= suppresses the asynchronous temporary copy and keeps uninstall synchronous.
+      await command(uninstall, ['/S', `_?=${installDirectory}`], { cwd: root, timeout: 120000, verbatim: true });
+      const files = await filesUnder(installDirectory).catch(error => error.code === 'ENOENT' ? [] : Promise.reject(error));
+      if (files.some(file => /^strata[ ._-]*manager\.exe$/i.test(basename(file)) || basename(file) === 'strata-supervisor.exe')) throw new Error('NSIS uninstall left packaged executables behind.');
+      logger('windows-nsis: silent installation and silent uninstallation verified on the disposable runner.');
+    } else if (installed) throw new Error('NSIS package did not install its uninstaller.');
+  } catch (error) { if (error.code !== 'ENOENT' || installed) throw error; }
 }
 
 async function windowsSmoke(root, installer, version) {
@@ -316,18 +376,50 @@ async function windowsSmoke(root, installer, version) {
     installed = true;
     await runInstalledPackage(root, 'windows-nsis', installDirectory, undefined, version);
   } finally {
-    const uninstall = join(installDirectory, 'uninstall.exe');
-    try {
-      if ((await lstat(uninstall)).isFile()) {
-        await ownedPath(root, uninstall);
-        // _?= suppresses the asynchronous temporary copy and keeps uninstall synchronous.
-        await boundedCommand(uninstall, ['/S', `_?=${installDirectory}`], { cwd: root, timeout: 120000, verbatim: true });
-        const files = await filesUnder(installDirectory).catch(error => error.code === 'ENOENT' ? [] : Promise.reject(error));
-        if (files.some(file => /^strata[ ._-]*manager\.exe$/i.test(basename(file)) || basename(file) === 'strata-supervisor.exe')) throw new Error('NSIS uninstall left packaged executables behind.');
-        console.log('windows-nsis: silent installation and silent uninstallation verified on the disposable runner.');
-      } else if (installed) throw new Error('NSIS package did not install its uninstaller.');
-    } catch (error) { if (error.code !== 'ENOENT' || installed) throw error; }
+    await uninstallWindowsPackage(root, installDirectory, installed);
   }
+}
+
+// This checks offline NSIS installation, not Tauri updater check/download/install.
+// The workflow must independently verify the source package signature before entry.
+export async function windowsUpgradeSmoke(root, installer, version, upgradeFrom, {
+  command = boundedCommand, runPackage = runInstalledPackage,
+  environment = process.env, platform = process.platform, architecture = process.arch, logger = console.log,
+} = {}) {
+  validateRunner(environment, platform, architecture);
+  validateUpgrade(upgradeFrom, version, platform);
+  const actualRoot = await realpath(root); const parent = await realpath(environment.RUNNER_TEMP);
+  if (dirname(actualRoot) !== parent || !basename(actualRoot).startsWith('strata-preview-smoke-') || (await lstat(root)).isSymbolicLink()) throw new Error('Upgrade smoke requires its owned disposable sandbox.');
+  for (const [path, expectedVersion] of [[upgradeFrom.installer, upgradeFrom.version], [installer, version]]) {
+    if (!isAbsolute(path) || !semver.test(expectedVersion)) throw new Error('Invalid upgrade package path or version.');
+    selectPackages([path], expectedVersion, 'win32');
+    const file = await lstat(path);
+    if (!file.isFile() || !file.size || file.isSymbolicLink()) throw new Error('Upgrade installers must be nonempty regular files.');
+    selectPackages([await realpath(path)], expectedVersion, 'win32');
+  }
+  const installDirectory = join(actualRoot, 'windows-install');
+  const dataDirectory = join(actualRoot, 'windows-upgrade-data');
+  await mkdir(dataDirectory, { mode: 0o700 });
+  const marker = { key: `packageUpgradeSmoke:${randomUUID()}`, value: randomUUID() };
+  let installed = false; let failure;
+  try {
+    // /D is intentionally last for both installers, including directories with spaces.
+    await command(upgradeFrom.installer, ['/S', `/D=${installDirectory}`], { cwd: actualRoot, timeout: 180000, verbatim: true });
+    installed = true;
+    const before = await runPackage(actualRoot, 'windows-upgrade-before', installDirectory, undefined, upgradeFrom.version, { dataDirectory, upgradeCheckpoint: { marker, seed: true } });
+    // runPackage only resolves after our GUI and verified supervisor have exited.
+    await command(installer, ['/S', `/D=${installDirectory}`], { cwd: actualRoot, timeout: 180000, verbatim: true });
+    const after = await runPackage(actualRoot, 'windows-upgrade-after', installDirectory, undefined, version, { dataDirectory, upgradeCheckpoint: { marker, seed: false } });
+    for (const key of ['desktopHash', 'supervisorHash']) {
+      if (!/^[0-9a-f]{64}$/.test(before?.[key]) || !/^[0-9a-f]{64}$/.test(after?.[key]) || before[key] === after[key]) throw new Error(`Same-directory upgrade did not replace ${key}.`);
+    }
+  } catch (error) { failure = error; }
+  finally {
+    try { await uninstallWindowsPackage(actualRoot, installDirectory, installed, command, logger); }
+    catch (error) { failure = failure ? new AggregateError([failure, error], `${failure.message}; upgrade cleanup failed: ${error.message}`) : error; }
+  }
+  if (failure) throw failure;
+  logger(`windows-nsis-upgrade: ${upgradeFrom.version} -> ${version}; same install directory and private store; changed desktop/sidecar bytes; retained KV; both verified backgrounds exited; uninstall verified. This is not Tauri updater end-to-end acceptance.`);
 }
 
 async function linuxSmoke(root, packages, version) {
@@ -363,7 +455,7 @@ export function validateRunner(environment, platform, architecture) {
 }
 
 export async function main(arguments_ = process.argv.slice(2)) {
-  const { bundleDirectory, version } = parseArguments(arguments_);
+  const { bundleDirectory, version, upgradeFrom } = parseArguments(arguments_);
   validateRunner(process.env, process.platform, process.arch);
   const packages = selectPackages(await filesUnder(await realpath(bundleDirectory)), version, process.platform);
   for (const package_ of packages) if (!(await stat(package_)).size) throw new Error('A preview package is empty.');
@@ -371,7 +463,8 @@ export async function main(arguments_ = process.argv.slice(2)) {
   const root = await mkdtemp(join(parent, 'strata-preview-smoke-'));
   console.log(`Preview package smoke: ${process.platform} x64 ${version}; disposable sandbox ${root}`);
   try {
-    if (process.platform === 'win32') await windowsSmoke(root, packages[0], version);
+    if (upgradeFrom) await windowsUpgradeSmoke(root, packages[0], version, upgradeFrom);
+    else if (process.platform === 'win32') await windowsSmoke(root, packages[0], version);
     else await linuxSmoke(root, packages, version);
   } finally { await cleanSandbox(root, parent); }
 }

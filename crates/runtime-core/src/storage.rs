@@ -12,22 +12,36 @@ use std::{
 // canonical path. External editors must still coordinate their own writes.
 static CONFIG_WRITES: Mutex<()> = Mutex::new(());
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
-pub struct ConfigSnapshot { pub config: Value, pub revision: String }
+pub struct ConfigSnapshot {
+    pub config: Value,
+    pub revision: String,
+}
 #[derive(Debug, serde::Serialize)]
-pub struct ConfigWriteResult { pub revision: String }
+pub struct ConfigWriteResult {
+    pub revision: String,
+}
 
 fn config_bytes(path: &Path) -> Result<Vec<u8>, String> {
     let file = fs::File::open(path).map_err(|e| format!("配置读取失败: {e}"))?;
     let mut bytes = Vec::new();
-    file.take(4 * 1024 * 1024 + 1).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
-    if bytes.len() > 4 * 1024 * 1024 { return Err("配置文件超过 4 MB".into()); }
+    file.take(4 * 1024 * 1024 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    if bytes.len() > 4 * 1024 * 1024 {
+        return Err("配置文件超过 4 MB".into());
+    }
     Ok(bytes)
 }
-fn revision(bytes: &[u8]) -> String { format!("{:x}", Sha256::digest(bytes)) }
+fn revision(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
 pub fn read_snapshot(profile: &ServiceProfile) -> Result<ConfigSnapshot, String> {
     let bytes = config_bytes(&config_path(profile)?)?;
     let config = serde_json::from_slice(&bytes).map_err(|e| format!("配置 JSON 无效: {e}"))?;
-    Ok(ConfigSnapshot { config, revision: revision(&bytes) })
+    Ok(ConfigSnapshot {
+        config,
+        revision: revision(&bytes),
+    })
 }
 
 pub fn engine_logs(
@@ -188,8 +202,16 @@ pub fn write(profile: &ServiceProfile, config: &Value) -> Result<(), String> {
     let _guard = CONFIG_WRITES.lock().map_err(|e| e.to_string())?;
     write_locked(&config_path(profile)?, config).map(|_| ())
 }
-pub fn write_cas(profile: &ServiceProfile, config: &Value, expected_revision: &str) -> Result<ConfigWriteResult, String> {
-    if expected_revision.len() != 64 || !expected_revision.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+pub fn write_cas(
+    profile: &ServiceProfile,
+    config: &Value,
+    expected_revision: &str,
+) -> Result<ConfigWriteResult, String> {
+    if expected_revision.len() != 64
+        || !expected_revision
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
+    {
         return Err("必须提供读取配置时的有效版本号".into());
     }
     let _guard = CONFIG_WRITES.lock().map_err(|e| e.to_string())?;
@@ -203,16 +225,19 @@ pub fn write_cas(profile: &ServiceProfile, config: &Value, expected_revision: &s
 fn write_locked(path: &Path, config: &Value) -> Result<ConfigWriteResult, String> {
     validate(config)?;
     let bytes = serde_json::to_vec_pretty(config).map_err(|e| e.to_string())?;
-    if bytes.len() > 4 * 1024 * 1024 { return Err("配置文件超过 4 MB".into()); }
+    if bytes.len() > 4 * 1024 * 1024 {
+        return Err("配置文件超过 4 MB".into());
+    }
     let mut temp = tempfile::NamedTempFile::new_in(path.parent().ok_or("配置父目录无效")?)
         .map_err(|e| e.to_string())?;
-    temp.write_all(&bytes)
-        .map_err(|e| e.to_string())?;
+    temp.write_all(&bytes).map_err(|e| e.to_string())?;
     temp.as_file().sync_all().map_err(|e| e.to_string())?;
     backup(&path)?;
     temp.persist(&path)
         .map_err(|e| format!("配置原子替换失败（原文件保留）: {e}"))?;
-    Ok(ConfigWriteResult { revision: revision(&bytes) })
+    Ok(ConfigWriteResult {
+        revision: revision(&bytes),
+    })
 }
 
 pub fn write_markdown_export(path: &Path, content: &str) -> Result<(), String> {
@@ -371,22 +396,45 @@ pub fn redact(value: &mut Value) {
 mod tests {
     use super::*;
     fn fixture_profile(directory: &Path) -> ServiceProfile {
-        ServiceProfile { id: "cas-fixture".into(), name: "fixture".into(), base_url: "http://127.0.0.1:19009".into(), install_dir: directory.to_string_lossy().into(), python_path: "".into(), config_path: directory.join("config.json").to_string_lossy().into(), managed: true }
+        ServiceProfile {
+            id: "cas-fixture".into(),
+            name: "fixture".into(),
+            base_url: "http://127.0.0.1:19009".into(),
+            install_dir: directory.to_string_lossy().into(),
+            python_path: "".into(),
+            config_path: directory.join("config.json").to_string_lossy().into(),
+            managed: true,
+        }
     }
     #[test]
     fn config_cas_rejects_stale_and_raw_byte_changes_without_extra_files() {
-        let directory = tempfile::tempdir().unwrap(); let profile = fixture_profile(directory.path());
-        let original = b"{ \"port\": 8080 }\n"; fs::write(&profile.config_path, original).unwrap();
-        let first = read_snapshot(&profile).unwrap(); let second = read_snapshot(&profile).unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let profile = fixture_profile(directory.path());
+        let original = b"{ \"port\": 8080 }\n";
+        fs::write(&profile.config_path, original).unwrap();
+        let first = read_snapshot(&profile).unwrap();
+        let second = read_snapshot(&profile).unwrap();
         assert_eq!(first.revision, revision(original));
-        let saved = write_cas(&profile, &serde_json::json!({"port":8081}), &first.revision).unwrap();
+        let saved =
+            write_cas(&profile, &serde_json::json!({"port":8081}), &first.revision).unwrap();
         assert_eq!(saved.revision, read_snapshot(&profile).unwrap().revision);
         let before = fs::read_dir(directory.path()).unwrap().count();
-        assert!(write_cas(&profile, &serde_json::json!({"port":8082}), &second.revision).unwrap_err().contains("CONFIG_REVISION_CONFLICT"));
+        assert!(write_cas(
+            &profile,
+            &serde_json::json!({"port":8082}),
+            &second.revision
+        )
+        .unwrap_err()
+        .contains("CONFIG_REVISION_CONFLICT"));
         assert_eq!(fs::read_dir(directory.path()).unwrap().count(), before);
         assert_eq!(read(&profile).unwrap()["port"], 8081);
-        let backups: Vec<_> = fs::read_dir(directory.path()).unwrap().map(|item| item.unwrap().path()).filter(|path| path.extension().is_some_and(|ext| ext == "bak")).collect();
-        assert_eq!(backups.len(), 1); assert_eq!(fs::read(&backups[0]).unwrap(), original);
+        let backups: Vec<_> = fs::read_dir(directory.path())
+            .unwrap()
+            .map(|item| item.unwrap().path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "bak"))
+            .collect();
+        assert_eq!(backups.len(), 1);
+        assert_eq!(fs::read(&backups[0]).unwrap(), original);
         fs::write(&profile.config_path, b"{\"port\":8081}\n").unwrap();
         assert!(write_cas(&profile, &serde_json::json!({"port":8083}), &saved.revision).is_err());
         fs::remove_file(&profile.config_path).unwrap();
@@ -395,18 +443,39 @@ mod tests {
     }
     #[test]
     fn config_cas_concurrent_profiles_sharing_one_file_have_exactly_one_winner() {
-        let directory = tempfile::tempdir().unwrap(); let profile = fixture_profile(directory.path());
+        let directory = tempfile::tempdir().unwrap();
+        let profile = fixture_profile(directory.path());
         fs::write(&profile.config_path, b"{\"port\":8080}").unwrap();
-        let snapshot = read_snapshot(&profile).unwrap(); let barrier = std::sync::Arc::new(std::sync::Barrier::new(3));
-        let handles: Vec<_> = (0..2).map(|index| {
-            let mut profile = profile.clone(); profile.id = format!("profile-{index}"); let revision = snapshot.revision.clone(); let barrier = barrier.clone();
-            std::thread::spawn(move || { barrier.wait(); write_cas(&profile, &serde_json::json!({"port":8081 + index}), &revision) })
-        }).collect();
-        barrier.wait(); let results: Vec<_> = handles.into_iter().map(|handle| handle.join().unwrap()).collect();
+        let snapshot = read_snapshot(&profile).unwrap();
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(3));
+        let handles: Vec<_> = (0..2)
+            .map(|index| {
+                let mut profile = profile.clone();
+                profile.id = format!("profile-{index}");
+                let revision = snapshot.revision.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    write_cas(
+                        &profile,
+                        &serde_json::json!({"port":8081 + index}),
+                        &revision,
+                    )
+                })
+            })
+            .collect();
+        barrier.wait();
+        let results: Vec<_> = handles
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .collect();
         assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
-        assert!(results.iter().filter_map(|result| result.as_ref().err()).all(|error| error.contains("CONFIG_REVISION_CONFLICT")));
+        assert!(results
+            .iter()
+            .filter_map(|result| result.as_ref().err())
+            .all(|error| error.contains("CONFIG_REVISION_CONFLICT")));
         assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 2);
-        assert!([8081,8082].contains(&read(&profile).unwrap()["port"].as_u64().unwrap()));
+        assert!([8081, 8082].contains(&read(&profile).unwrap()["port"].as_u64().unwrap()));
     }
     #[test]
     fn markdown_export_writes_exact_utf8_and_rejects_invalid_targets_without_changes() {

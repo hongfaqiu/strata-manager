@@ -87,7 +87,7 @@ struct ImportManifest {
     original_config_path: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct ProcessHint {
     config: PathBuf,
     python: PathBuf,
@@ -862,6 +862,9 @@ fn config_paths(root: &Path) -> Vec<PathBuf> {
 /// Enumerate the complete native snapshot before reading only Python argv.
 /// Discovery hints never authorize adoption; external identity checks still do.
 #[cfg(windows)]
+mod windows_census;
+
+#[cfg(windows)]
 fn windows_python_inventory(read_cwd: bool) -> Result<Vec<(Vec<String>, Option<PathBuf>)>, String> {
     use std::time::{Duration, Instant};
     use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
@@ -922,12 +925,10 @@ fn windows_python_inventory(read_cwd: bool) -> Result<Vec<(Vec<String>, Option<P
     }
     let mut system = System::new();
     let mut refresh = ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always);
-    if read_cwd { refresh = refresh.with_cwd(UpdateKind::Always); }
-    system.refresh_processes_specifics(
-        ProcessesToUpdate::Some(&pids),
-        true,
-        refresh,
-    );
+    if read_cwd {
+        refresh = refresh.with_cwd(UpdateKind::Always);
+    }
+    system.refresh_processes_specifics(ProcessesToUpdate::Some(&pids), true, refresh);
     if started.elapsed() >= Duration::from_secs(3) {
         return Err("读取本机 Python 参数超过时间预算，已停止自动操作".into());
     }
@@ -945,18 +946,15 @@ fn windows_python_inventory(read_cwd: bool) -> Result<Vec<(Vec<String>, Option<P
         if !name.eq_ignore_ascii_case("python.exe") && !name.eq_ignore_ascii_case("pythonw.exe") {
             return Err("Python 进程身份发生变化，请重新检测；未自动启动".into());
         }
-        commands.push((checked_windows_args(process.cmd())?,process.cwd().map(Path::to_path_buf)));
+        commands.push((
+            checked_windows_args(process.cmd())?,
+            process.cwd().map(Path::to_path_buf),
+        ));
     }
     if started.elapsed() >= Duration::from_secs(3) {
         return Err("读取本机 Python 参数超过时间预算，已停止自动操作".into());
     }
     Ok(commands)
-}
-
-#[cfg(windows)]
-fn windows_process_args() -> Result<Vec<Vec<String>>, String> {
-    // Existing server discovery keeps exactly its previous argument-only scan.
-    Ok(windows_python_inventory(false)?.into_iter().map(|(args,_)|args).collect())
 }
 
 #[cfg(windows)]
@@ -1004,19 +1002,7 @@ fn hint_from_args(args: &[String]) -> Option<ProcessHint> {
 fn process_hints() -> Result<Vec<ProcessHint>, String> {
     #[cfg(windows)]
     {
-        let mut hints = Vec::new();
-        for args in windows_process_args()? {
-            if !args
-                .windows(2)
-                .any(|pair| pair[0] == "-m" && pair[1] == "serve.server")
-            {
-                continue;
-            }
-            hints.push(hint_from_args(&args).ok_or(
-                "检测到无法定位配置的 Strata 进程，不能启动第二个实例；请先完成既有实例的迁移",
-            )?);
-        }
-        Ok(hints)
+        windows_census::process_hints()
     }
     #[cfg(not(windows))]
     {
@@ -1100,66 +1086,154 @@ pub fn has_running_installation(installation: &Path) -> Result<bool, String> {
 
 /// The Python entry script, rather than an incidental argument or `-c` text.
 fn python_entry_script(args: &[String]) -> Option<&str> {
-    let mut index=1;
-    while let Some(arg)=args.get(index) {
-        if arg.starts_with("-c") { return None; }
-        if arg=="-m" || arg.starts_with("-m") {
-            let module=if arg=="-m" { args.get(index+1)?.as_str() } else { &arg[2..] };
-            return match module { "tools.strata_mcp"=>Some("tools/strata_mcp.py"),"setup"=>Some("setup.py"),_=>None };
+    let mut index = 1;
+    while let Some(arg) = args.get(index) {
+        if arg.starts_with("-c") {
+            return None;
         }
-        if arg=="--" { return args.get(index+1).map(String::as_str); }
-        if ["-W","-X","--check-hash-based-pycs"].contains(&arg.as_str()) { index+=2;continue; }
-        if arg.starts_with('-') { index+=1;continue; }
+        if arg == "-m" || arg.starts_with("-m") {
+            let module = if arg == "-m" {
+                args.get(index + 1)?.as_str()
+            } else {
+                &arg[2..]
+            };
+            return match module {
+                "tools.strata_mcp" => Some("tools/strata_mcp.py"),
+                "setup" => Some("setup.py"),
+                _ => None,
+            };
+        }
+        if arg == "--" {
+            return args.get(index + 1).map(String::as_str);
+        }
+        if ["-W", "-X", "--check-hash-based-pycs"].contains(&arg.as_str()) {
+            index += 2;
+            continue;
+        }
+        if arg.starts_with('-') {
+            index += 1;
+            continue;
+        }
         return Some(arg);
     }
     None
 }
 
-fn management_script_matches(root:&Path,args:&[String],cwd:Option<&Path>) -> Result<bool,String> {
-    let Some(script)=python_entry_script(args) else { return Ok(false); };
-    let path=Path::new(script);
-    let name=path.file_name().and_then(|name|name.to_str()).unwrap_or_default();
-    if !name.eq_ignore_ascii_case("setup.py") && !name.eq_ignore_ascii_case("strata_mcp.py") { return Ok(false); }
-    let path=if path.is_absolute() { path.to_path_buf() } else { cwd.ok_or("管理脚本使用相对路径但工作目录不可核验，禁止恢复本应用管理")?.join(path) };
-    let actual=dunce::canonicalize(&path).map_err(|_|"存活管理脚本的文件身份不可核验，禁止恢复本应用管理")?;
-    let expected=root.join(if name.eq_ignore_ascii_case("setup.py") { "setup.py" } else { "tools/strata_mcp.py" });
-    if path_key(&actual)==path_key(&expected) { return Ok(true); }
+fn management_script_matches(
+    root: &Path,
+    args: &[String],
+    cwd: Option<&Path>,
+) -> Result<bool, String> {
+    let Some(script) = python_entry_script(args) else {
+        return Ok(false);
+    };
+    let path = Path::new(script);
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    if !name.eq_ignore_ascii_case("setup.py") && !name.eq_ignore_ascii_case("strata_mcp.py") {
+        return Ok(false);
+    }
+    let path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        cwd.ok_or("管理脚本使用相对路径但工作目录不可核验，禁止恢复本应用管理")?
+            .join(path)
+    };
+    let actual = dunce::canonicalize(&path)
+        .map_err(|_| "存活管理脚本的文件身份不可核验，禁止恢复本应用管理")?;
+    let expected = root.join(if name.eq_ignore_ascii_case("setup.py") {
+        "setup.py"
+    } else {
+        "tools/strata_mcp.py"
+    });
+    if path_key(&actual) == path_key(&expected) {
+        return Ok(true);
+    }
     // An unrelated root's management script must not require this root to have
     // the same optional script. Canonical aliases still identify the same file.
-    Ok(dunce::canonicalize(expected).is_ok_and(|expected|path_key(&actual)==path_key(&expected)))
+    Ok(
+        dunce::canonicalize(expected)
+            .is_ok_and(|expected| path_key(&actual) == path_key(&expected)),
+    )
 }
 
 #[cfg(not(windows))]
-fn unix_management_inventory() -> Result<Vec<(Vec<String>,Option<PathBuf>)>,String> {
+fn unix_management_inventory() -> Result<Vec<(Vec<String>, Option<PathBuf>)>, String> {
     use std::io::Read;
-    let mut commands=Vec::new();let mut entries=0;
-    let processes=fs::read_dir("/proc").map_err(|_|"此平台无法核验完整管理进程清单，禁止恢复本应用管理")?;
+    let mut commands = Vec::new();
+    let mut entries = 0;
+    let processes =
+        fs::read_dir("/proc").map_err(|_| "此平台无法核验完整管理进程清单，禁止恢复本应用管理")?;
     for entry in processes {
-        let entry=entry.map_err(|_|"管理进程清单不完整")?;
-        if entry.file_name().to_string_lossy().parse::<u32>().is_err() { continue; }
-        entries+=1;if entries>4096 { return Err("管理进程清单超过核验上限".into()); }
-        let exe=match fs::read_link(entry.path().join("exe")) { Ok(exe)=>exe,Err(error) if error.kind()==std::io::ErrorKind::NotFound=>continue,Err(_)=>return Err("进程文件身份无法核验，禁止恢复本应用管理".into()) };
-        let name=exe.file_name().and_then(|name|name.to_str()).unwrap_or_default().to_ascii_lowercase();
-        if !(name=="python" || name=="python3" || name=="pythonw" || name.starts_with("python3.")) { continue; }
-        let mut bytes=Vec::new();fs::File::open(entry.path().join("cmdline")).map_err(|_|"Python 管理进程清单发生变化")?.take(128*1024+1).read_to_end(&mut bytes).map_err(|_|"Python 管理参数无法读取")?;
-        if bytes.is_empty() || bytes.len()>128*1024 || bytes.last()!=Some(&0) { return Err("Python 管理参数不完整或超过核验上限".into()); }
+        let entry = entry.map_err(|_| "管理进程清单不完整")?;
+        if entry.file_name().to_string_lossy().parse::<u32>().is_err() {
+            continue;
+        }
+        entries += 1;
+        if entries > 4096 {
+            return Err("管理进程清单超过核验上限".into());
+        }
+        let exe = match fs::read_link(entry.path().join("exe")) {
+            Ok(exe) => exe,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(_) => return Err("进程文件身份无法核验，禁止恢复本应用管理".into()),
+        };
+        let name = exe
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if !(name == "python"
+            || name == "python3"
+            || name == "pythonw"
+            || name.starts_with("python3."))
+        {
+            continue;
+        }
+        let mut bytes = Vec::new();
+        fs::File::open(entry.path().join("cmdline"))
+            .map_err(|_| "Python 管理进程清单发生变化")?
+            .take(128 * 1024 + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|_| "Python 管理参数无法读取")?;
+        if bytes.is_empty() || bytes.len() > 128 * 1024 || bytes.last() != Some(&0) {
+            return Err("Python 管理参数不完整或超过核验上限".into());
+        }
         // Remove only /proc's final terminator; empty argv values still consume
         // their real option position (for example Python -W '' setup.py).
-        let args=bytes[..bytes.len()-1].split(|b|*b==0).map(|value|String::from_utf8(value.to_vec()).map_err(|_|"Python 管理参数包含无效文本".to_string())).collect::<Result<Vec<_>,_>>()?;
-        if args.len()>256 { return Err("Python 管理参数超过核验上限".into()); }
-        commands.push((args,fs::read_link(entry.path().join("cwd")).ok()));
-        if commands.len()>64 { return Err("Python 管理进程超过核验上限".into()); }
+        let args = bytes[..bytes.len() - 1]
+            .split(|b| *b == 0)
+            .map(|value| {
+                String::from_utf8(value.to_vec())
+                    .map_err(|_| "Python 管理参数包含无效文本".to_string())
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if args.len() > 256 {
+            return Err("Python 管理参数超过核验上限".into());
+        }
+        commands.push((args, fs::read_link(entry.path().join("cwd")).ok()));
+        if commands.len() > 64 {
+            return Err("Python 管理进程超过核验上限".into());
+        }
     }
     Ok(commands)
 }
 
 /// Official stdio MCP and setup can survive without a serving TCP listener.
 /// This read-only scan complements server discovery; it never adopts/stops them.
-pub fn has_running_management(installation:&Path) -> Result<bool,String> {
-    let root=canonical_local(installation)?;
-    #[cfg(windows)] let commands=windows_python_inventory(true)?;
-    #[cfg(not(windows))] let commands=unix_management_inventory()?;
-    for (args,cwd) in commands { if management_script_matches(&root,&args,cwd.as_deref())? { return Ok(true); } }
+pub fn has_running_management(installation: &Path) -> Result<bool, String> {
+    let root = canonical_local(installation)?;
+    #[cfg(windows)]
+    let commands = windows_python_inventory(true)?;
+    #[cfg(not(windows))]
+    let commands = unix_management_inventory()?;
+    for (args, cwd) in commands {
+        if management_script_matches(&root, &args, cwd.as_deref())? {
+            return Ok(true);
+        }
+    }
     Ok(false)
 }
 
@@ -1503,32 +1577,95 @@ mod tests {
     use super::*;
     #[test]
     fn management_entry_matches_exact_canonical_scripts_not_incidental_text() {
-        let directory=tempfile::tempdir().unwrap();let root=directory.path().join("root 中文");let other=directory.path().join("other");
-        for path in [&root,&other] { fs::create_dir_all(path.join("tools")).unwrap();fs::write(path.join("setup.py"),b"# fixture").unwrap();fs::write(path.join("tools/strata_mcp.py"),b"# fixture").unwrap(); }
-        let root=canonical_local(&root).unwrap();
-        let args=|values:&[&str]|values.iter().map(|s|(*s).to_owned()).collect::<Vec<_>>();
-        for values in [args(&["python","-I","-u","setup.py"]),args(&["python","-W","","setup.py"]),args(&["python","tools/strata_mcp.py","--root","ignored"]),args(&["python","-m","tools.strata_mcp"])] { assert!(management_script_matches(&root,&values,Some(&root)).unwrap());assert!(!management_script_matches(&root,&values,Some(&other)).unwrap()); }
-        let absolute=root.join("tools/../tools/strata_mcp.py").to_string_lossy().into_owned();assert!(management_script_matches(&root,&args(&["python",&absolute]),None).unwrap());
-        for values in [args(&["python","-c","print('setup.py')","setup.py"]),args(&["python","-cprint('x')","setup.py"]),args(&["python","unrelated.py","tools/strata_mcp.py"]),args(&["python","-m","other.module","setup.py"])] { assert!(!management_script_matches(&root,&values,Some(&root)).unwrap()); }
-        assert!(management_script_matches(&root,&args(&["python","setup.py"]),None).is_err());
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("root 中文");
+        let other = directory.path().join("other");
+        for path in [&root, &other] {
+            fs::create_dir_all(path.join("tools")).unwrap();
+            fs::write(path.join("setup.py"), b"# fixture").unwrap();
+            fs::write(path.join("tools/strata_mcp.py"), b"# fixture").unwrap();
+        }
+        let root = canonical_local(&root).unwrap();
+        let args = |values: &[&str]| values.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        for values in [
+            args(&["python", "-I", "-u", "setup.py"]),
+            args(&["python", "-W", "", "setup.py"]),
+            args(&["python", "tools/strata_mcp.py", "--root", "ignored"]),
+            args(&["python", "-m", "tools.strata_mcp"]),
+        ] {
+            assert!(management_script_matches(&root, &values, Some(&root)).unwrap());
+            assert!(!management_script_matches(&root, &values, Some(&other)).unwrap());
+        }
+        let absolute = root
+            .join("tools/../tools/strata_mcp.py")
+            .to_string_lossy()
+            .into_owned();
+        assert!(management_script_matches(&root, &args(&["python", &absolute]), None).unwrap());
+        for values in [
+            args(&["python", "-c", "print('setup.py')", "setup.py"]),
+            args(&["python", "-cprint('x')", "setup.py"]),
+            args(&["python", "unrelated.py", "tools/strata_mcp.py"]),
+            args(&["python", "-m", "other.module", "setup.py"]),
+        ] {
+            assert!(!management_script_matches(&root, &values, Some(&root)).unwrap());
+        }
+        assert!(management_script_matches(&root, &args(&["python", "setup.py"]), None).is_err());
         fs::remove_file(root.join("tools/strata_mcp.py")).unwrap();
-        assert!(!management_script_matches(&root,&args(&["python","tools/strata_mcp.py"]),Some(&other)).unwrap(),"another installation's MCP must not require this root's optional script");
+        assert!(
+            !management_script_matches(
+                &root,
+                &args(&["python", "tools/strata_mcp.py"]),
+                Some(&other)
+            )
+            .unwrap(),
+            "another installation's MCP must not require this root's optional script"
+        );
     }
 
     #[test]
     fn management_inventory_detects_live_stdio_and_relative_setup_only_in_their_root() {
-        use std::{process::Command,time::{Duration,Instant}};
-        let python=test_python().expect("isolated management fixture requires Python");let directory=tempfile::tempdir().unwrap();
-        let root=directory.path().join("runtime 中文 空格");let other=directory.path().join("other");
-        for path in [&root,&other] { fs::create_dir_all(path.join("tools")).unwrap();fs::write(path.join("setup.py"),b"# fixture").unwrap();fs::write(path.join("tools/strata_mcp.py"),b"# fixture").unwrap(); }
-        let root=canonical_local(&root).unwrap();
-        for script in ["tools/strata_mcp.py","setup.py"] {
-            let marker=root.join("ready");let body=format!("import time\nfrom pathlib import Path\nPath({}).write_text('CPU fixture')\ntime.sleep(15)\n",serde_json::to_string(&marker.to_string_lossy()).unwrap());fs::write(root.join(script),body).unwrap();
-            let mut command=Command::new(python.trim());command.args(["-I","-S",script]).current_dir(&root);
-            let mut process=crate::processes::OwnedProcess::spawn(command,Default::default(),"management-inventory-fixture").unwrap();
-            let deadline=Instant::now()+Duration::from_secs(5);while !marker.exists(){assert!(Instant::now()<deadline,"fixture not ready");std::thread::sleep(Duration::from_millis(10));}
-            assert!(has_running_management(&root.join("tools/..")).unwrap());assert!(!has_running_management(&other).unwrap(),"another root must remain separate");
-            assert!(process.refresh().unwrap().running,"read-only inventory must retain the fixture");process.stop().unwrap();fs::remove_file(marker).unwrap();
+        use std::{
+            process::Command,
+            time::{Duration, Instant},
+        };
+        let python = test_python().expect("isolated management fixture requires Python");
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("runtime 中文 空格");
+        let other = directory.path().join("other");
+        for path in [&root, &other] {
+            fs::create_dir_all(path.join("tools")).unwrap();
+            fs::write(path.join("setup.py"), b"# fixture").unwrap();
+            fs::write(path.join("tools/strata_mcp.py"), b"# fixture").unwrap();
+        }
+        let root = canonical_local(&root).unwrap();
+        for script in ["tools/strata_mcp.py", "setup.py"] {
+            let marker = root.join("ready");
+            let body=format!("import time\nfrom pathlib import Path\nPath({}).write_text('CPU fixture')\ntime.sleep(15)\n",serde_json::to_string(&marker.to_string_lossy()).unwrap());
+            fs::write(root.join(script), body).unwrap();
+            let mut command = Command::new(python.trim());
+            command.args(["-I", "-S", script]).current_dir(&root);
+            let mut process = crate::processes::OwnedProcess::spawn(
+                command,
+                Default::default(),
+                "management-inventory-fixture",
+            )
+            .unwrap();
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while !marker.exists() {
+                assert!(Instant::now() < deadline, "fixture not ready");
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            assert!(has_running_management(&root.join("tools/..")).unwrap());
+            assert!(
+                !has_running_management(&other).unwrap(),
+                "another root must remain separate"
+            );
+            assert!(
+                process.refresh().unwrap().running,
+                "read-only inventory must retain the fixture"
+            );
+            process.stop().unwrap();
+            fs::remove_file(marker).unwrap();
         }
     }
 
@@ -1545,8 +1682,7 @@ mod tests {
             fs::write(root.join("setup.py"), "# never executed").unwrap();
             fs::write(root.join("serve/server.py"), "# never executed").unwrap();
             fs::write(root.join("engine/strata.exe"), "# never executed").unwrap();
-            fs::write(root.join("engine/BUILD.json"), r#"{"version":"0.1.42"}"#)
-                .unwrap();
+            fs::write(root.join("engine/BUILD.json"), r#"{"version":"0.1.42"}"#).unwrap();
         }
         let incomplete = roaming.join("io.strata.manager/runtimes/incomplete");
         fs::create_dir_all(&incomplete).unwrap();
@@ -1974,7 +2110,12 @@ mod tests {
         fs::create_dir(root.join("configs")).unwrap();
         for index in 0..MAX_CONFIGS {
             fs::write(root.join(format!("strata-variant-{index:03}.json")), b"{}").unwrap();
-            fs::write(root.join("configs").join(format!("strata-variant-{index:03}.json")), b"{}").unwrap();
+            fs::write(
+                root.join("configs")
+                    .join(format!("strata-variant-{index:03}.json")),
+                b"{}",
+            )
+            .unwrap();
         }
         let observed = temp.path().join("managed-config.json");
         fs::write(&observed, fs::read(&profile.config_path).unwrap()).unwrap();
@@ -1983,14 +2124,14 @@ mod tests {
             python: PathBuf::from(&profile.python_path),
             port: Some(18099),
         };
-        assert_eq!(
-            canonical_local(&hint_root(&hint).unwrap()).unwrap(),
-            root
-        );
+        assert_eq!(canonical_local(&hint_root(&hint).unwrap()).unwrap(), root);
         assert_eq!(config_paths(&root).len(), MAX_CONFIGS);
         let paths = prioritized_config_paths(&root, &[profile], &[hint]);
         assert_eq!(paths.first(), Some(&observed));
-        assert!(paths.into_iter().take(MAX_CONFIGS).any(|path| path == observed));
+        assert!(paths
+            .into_iter()
+            .take(MAX_CONFIGS)
+            .any(|path| path == observed));
     }
 
     #[cfg(windows)]
@@ -2001,7 +2142,8 @@ mod tests {
             std::env::var(name).unwrap_or_else(|_| panic!("set {name} for explicit verification"))
         };
         let root = canonical_local(Path::new(&required("STRATA_DISCOVERY_READONLY_ROOT"))).unwrap();
-        let config = canonical_local(Path::new(&required("STRATA_DISCOVERY_READONLY_CONFIG"))).unwrap();
+        let config =
+            canonical_local(Path::new(&required("STRATA_DISCOVERY_READONLY_CONFIG"))).unwrap();
         let port: u16 = required("STRATA_DISCOVERY_READONLY_PORT").parse().unwrap();
         let expected_pid: u32 = required("STRATA_DISCOVERY_READONLY_PID").parse().unwrap();
         let value = read_json(&config).unwrap();
@@ -2010,34 +2152,68 @@ mod tests {
             name: "Read-only verification".into(),
             base_url: format!("http://127.0.0.1:{port}"),
             install_dir: root.to_string_lossy().into(),
-            python_path: root.join(".venv/Scripts/python.exe").to_string_lossy().into(),
+            python_path: root
+                .join(".venv/Scripts/python.exe")
+                .to_string_lossy()
+                .into(),
             config_path: config.to_string_lossy().into(),
             managed: false,
         };
-        let before = external::detect(&profile).unwrap().expect("expected a verified live process");
+        let before = external::detect(&profile)
+            .unwrap()
+            .expect("expected a verified live process");
         assert_eq!(before.pid, expected_pid);
         let mut files = config_paths(&root);
         files.push(config.clone());
-        let snapshots: Vec<_> = files.into_iter().map(|path| {
-            let bytes = fs::read(&path).unwrap();
-            (path, bytes)
-        }).collect();
+        let snapshots: Vec<_> = files
+            .into_iter()
+            .map(|path| {
+                let bytes = fs::read(&path).unwrap();
+                (path, bytes)
+            })
+            .collect();
         let candidates = discover_local(&[], &[]).unwrap();
-        let running: Vec<_> = candidates.iter().filter(|candidate| candidate.running == Some(true)).collect();
-        let observed = running.iter().find(|candidate| {
-            canonical_local(Path::new(&candidate.config_path)).as_ref().is_ok_and(|path| path == &config)
-        }).expect("exact runtime command-line configuration must be detected");
+        let running: Vec<_> = candidates
+            .iter()
+            .filter(|candidate| candidate.running == Some(true))
+            .collect();
+        let observed = running
+            .iter()
+            .find(|candidate| {
+                canonical_local(Path::new(&candidate.config_path))
+                    .as_ref()
+                    .is_ok_and(|path| path == &config)
+            })
+            .expect("exact runtime command-line configuration must be detected");
         assert_eq!(observed.pid, Some(expected_pid));
         assert_eq!(observed.detected_port, Some(port));
-        assert_eq!(observed.config.as_ref().unwrap()["model_name"], value["model_name"]);
-        assert!(candidates.iter().filter(|candidate| {
-            canonical_local(Path::new(&candidate.install_dir)).as_ref().is_ok_and(|path| path == &root)
-                && canonical_local(Path::new(&candidate.config_path)).as_ref().is_ok_and(|path| path != &config)
-        }).all(|candidate| candidate.running != Some(true)));
+        assert_eq!(
+            observed.config.as_ref().unwrap()["model_name"],
+            value["model_name"]
+        );
+        assert!(candidates
+            .iter()
+            .filter(|candidate| {
+                canonical_local(Path::new(&candidate.install_dir))
+                    .as_ref()
+                    .is_ok_and(|path| path == &root)
+                    && canonical_local(Path::new(&candidate.config_path))
+                        .as_ref()
+                        .is_ok_and(|path| path != &config)
+            })
+            .all(|candidate| candidate.running != Some(true)));
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let health: Value = runtime.block_on(async {
-            reqwest::Client::new().get(format!("{}/health", profile.base_url)).send().await.unwrap()
-                .error_for_status().unwrap().json().await.unwrap()
+            reqwest::Client::new()
+                .get(format!("{}/health", profile.base_url))
+                .send()
+                .await
+                .unwrap()
+                .error_for_status()
+                .unwrap()
+                .json()
+                .await
+                .unwrap()
         });
         assert_eq!(health["service"], "strata");
         assert_eq!(health["status"], "ok");
@@ -2049,11 +2225,14 @@ mod tests {
         for (path, bytes) in snapshots {
             assert_eq!(fs::read(path).unwrap(), bytes);
         }
-        println!("{}", serde_json::json!({
-            "installDir": observed.install_dir, "configPath": observed.config_path,
-            "pid": observed.pid, "port": observed.detected_port, "running": observed.running,
-            "model": health["model"], "loaded": health["loaded"], "unchanged": true,
-        }));
+        println!(
+            "{}",
+            serde_json::json!({
+                "installDir": observed.install_dir, "configPath": observed.config_path,
+                "pid": observed.pid, "port": observed.detected_port, "running": observed.running,
+                "model": health["model"], "loaded": health["loaded"], "unchanged": true,
+            })
+        );
     }
 
     #[test]

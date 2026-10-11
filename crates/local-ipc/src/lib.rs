@@ -162,8 +162,16 @@ pub async fn write_frame<W: AsyncWrite + Unpin>(
 }
 
 fn validate_lock_scope(scope: &str) -> Result<(), RpcError> {
-    if scope.is_empty() || scope.len() > 64 || !scope.bytes().all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-') {
-        return Err(RpcError::new("instance_lock", "锁作用域必须为小写字母、数字或连字符"));
+    if scope.is_empty()
+        || scope.len() > 64
+        || !scope
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+    {
+        return Err(RpcError::new(
+            "instance_lock",
+            "锁作用域必须为小写字母、数字或连字符",
+        ));
     }
     Ok(())
 }
@@ -413,12 +421,23 @@ mod tests {
         let data = tempfile::tempdir().unwrap();
         let supervisor = SingleInstance::acquire(data.path()).unwrap();
         #[cfg(unix)]
-        std::fs::write(socket_path(data.path()).unwrap(), "live supervisor sentinel").unwrap();
+        std::fs::write(
+            socket_path(data.path()).unwrap(),
+            "live supervisor sentinel",
+        )
+        .unwrap();
         let update = SingleInstance::acquire_scoped(data.path(), "runtime-update-queue").unwrap();
-        assert!(matches!(SingleInstance::acquire_scoped(data.path(), "runtime-update-queue"), Err(error) if error.code == "already_running"));
-        assert!(matches!(SingleInstance::acquire(data.path()), Err(error) if error.code == "already_running"));
+        assert!(
+            matches!(SingleInstance::acquire_scoped(data.path(), "runtime-update-queue"), Err(error) if error.code == "already_running")
+        );
+        assert!(
+            matches!(SingleInstance::acquire(data.path()), Err(error) if error.code == "already_running")
+        );
         #[cfg(unix)]
-        assert_eq!(std::fs::read_to_string(socket_path(data.path()).unwrap()).unwrap(), "live supervisor sentinel");
+        assert_eq!(
+            std::fs::read_to_string(socket_path(data.path()).unwrap()).unwrap(),
+            "live supervisor sentinel"
+        );
         for invalid in ["", "../supervisor", "RUNTIME", "update/lock"] {
             assert!(SingleInstance::acquire_scoped(data.path(), invalid).is_err());
         }

@@ -21,4 +21,3 @@ button.configuration-list-open { display: flex; justify-content: flex-start; fle
 .configuration-list-row:hover .configuration-list-actions, .configuration-list-row:focus-within .configuration-list-actions { opacity: 1; pointer-events: auto; }
 .configuration-confirm-path { display: block; overflow-wrap: anywhere; }
 @media (hover: none) { .configuration-list-actions { opacity: 1; pointer-events: auto; } }
-

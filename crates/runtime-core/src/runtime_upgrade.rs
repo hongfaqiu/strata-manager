@@ -66,11 +66,7 @@ fn zip_installable(assets: &[RuntimeReleaseAsset], os: &str, arch: &str) -> bool
 fn constrain_installable(mut info: RuntimeUpdateInfo) -> RuntimeUpdateInfo {
     // Cached metadata may have been collected on another platform. Release
     // discovery remains available everywhere; installability is local.
-    info.installable &= zip_installable(
-        &info.assets,
-        std::env::consts::OS,
-        std::env::consts::ARCH,
-    );
+    info.installable &= zip_installable(&info.assets, std::env::consts::OS, std::env::consts::ARCH);
     info
 }
 
@@ -518,7 +514,9 @@ pub fn start(state: Arc<RuntimeState>, profile_id: String) -> Result<TaskStatus,
         processes::persist_task(&state.database, tasks.get(&id).ok_or("更新任务不存在")?)
     {
         tasks.remove(&id);
-        if let Ok(mut logs) = state.logs.lock() { logs.retire(&id); }
+        if let Ok(mut logs) = state.logs.lock() {
+            logs.retire(&id);
+        }
         return Err(format!("更新任务保存失败，原服务未改变：{error}"));
     }
     drop(tasks);
@@ -1883,13 +1881,20 @@ mod tests {
     fn windows_zip_capability_is_local_and_does_not_hide_release_metadata() {
         let info = release_update_info(&windows_release_fixture()).unwrap();
         assert!(zip_installable(&info.assets, "windows", "x86_64"));
-        for (os, arch) in [("linux", "x86_64"), ("macos", "x86_64"), ("windows", "aarch64")] {
+        for (os, arch) in [
+            ("linux", "x86_64"),
+            ("macos", "x86_64"),
+            ("windows", "aarch64"),
+        ] {
             assert!(!zip_installable(&info.assets, os, arch));
         }
         assert!(!zip_installable(&[], "windows", "x86_64"));
         assert_eq!(info.assets.len(), 1);
         assert_eq!(info.notes.as_deref(), Some("Official release notes"));
-        assert_eq!(info.installable, cfg!(all(target_os = "windows", target_arch = "x86_64")));
+        assert_eq!(
+            info.installable,
+            cfg!(all(target_os = "windows", target_arch = "x86_64"))
+        );
         let mut refused = info;
         refused.installable = false;
         assert!(!constrain_installable(refused).installable);
@@ -1903,7 +1908,12 @@ mod tests {
         // Portable data or an older manager may have cached a Windows proposal.
         info.installable = true;
         info.source_revision = Some("61b3fb5dd3f1e8ec09cf7e4e05208bc6d3c46406".into());
-        crate::store_set(&state, UPDATE_INFO_KEY.into(), serde_json::to_value(&info).unwrap()).unwrap();
+        crate::store_set(
+            &state,
+            UPDATE_INFO_KEY.into(),
+            serde_json::to_value(&info).unwrap(),
+        )
+        .unwrap();
         drop(state);
         let reopened = RuntimeState::open(temp.path().to_path_buf()).unwrap();
         let current = update_info(&reopened, false).await.unwrap();
@@ -1912,7 +1922,10 @@ mod tests {
         assert_eq!(current.latest_version, info.latest_version);
         assert_eq!(current.notes, info.notes);
         assert_eq!(current.assets.len(), 1);
-        assert_eq!(current.installable, cfg!(all(target_os = "windows", target_arch = "x86_64")));
+        assert_eq!(
+            current.installable,
+            cfg!(all(target_os = "windows", target_arch = "x86_64"))
+        );
     }
 
     #[test]

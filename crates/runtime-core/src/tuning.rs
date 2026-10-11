@@ -414,9 +414,16 @@ fn register_active_checked(
     crate::external_management::assert_profile_manager_owned(state, &profile)?;
     if let Some(pid) = expected_pid {
         let mut processes = state.processes.lock().map_err(|e| e.to_string())?;
-        let process = processes.get_mut(&profile.id).ok_or("调优登记前受管进程已消失")?;
+        let process = processes
+            .get_mut(&profile.id)
+            .ok_or("调优登记前受管进程已消失")?;
         let status = process.refresh()?;
-        let same_profile = process.profile.as_ref().map(serde_json::to_value).transpose().map_err(|e| e.to_string())?
+        let same_profile = process
+            .profile
+            .as_ref()
+            .map(serde_json::to_value)
+            .transpose()
+            .map_err(|e| e.to_string())?
             == Some(serde_json::to_value(&profile).map_err(|e| e.to_string())?);
         if !status.running || !status.owned || status.pid != Some(pid) || !same_profile {
             return Err("调优登记前受管进程或安装身份已改变，未开始测量".into());
@@ -784,9 +791,12 @@ pub async fn start(
     let id = job.id.clone();
     tokio::spawn(async move {
         let result = run(state.clone(), profile, pid, id.clone(), token.clone()).await;
-        let _ = update(&state, &id, |job| {
-            job.finished_at = Some(now());
-            if let Err(error) = result {
+        // Both successful request and full runs durably publish Completed and
+        // their final timestamps before returning. Preserve that report once
+        // consumers observe completion; only an error needs outer finalization.
+        if let Err(error) = result {
+            let _ = update(&state, &id, |job| {
+                job.finished_at = Some(now());
                 job.state = if job.full.recovery.state == restart::RecoveryState::Failed {
                     Phase::Failed
                 } else if token.is_cancelled() {
@@ -796,8 +806,8 @@ pub async fn start(
                 };
                 job.error = Some(error);
                 job.current_step = "finished".into();
-            }
-        });
+            });
+        }
     });
     Ok(job)
 }
@@ -1855,9 +1865,29 @@ mod tests {
         }
     }
     fn register_admission_profile(state: &RuntimeState) {
-        let profile = ServiceProfile { id:"isolated-admission".into(), name:"Isolated admission".into(), base_url:"http://127.0.0.1:1".into(), install_dir:state.data_dir().to_string_lossy().into(), python_path:"unused".into(), config_path:state.data_dir().join("unused.json").to_string_lossy().into(), managed:true };
+        let profile = ServiceProfile {
+            id: "isolated-admission".into(),
+            name: "Isolated admission".into(),
+            base_url: "http://127.0.0.1:1".into(),
+            install_dir: state.data_dir().to_string_lossy().into(),
+            python_path: "unused".into(),
+            config_path: state
+                .data_dir()
+                .join("unused.json")
+                .to_string_lossy()
+                .into(),
+            managed: true,
+        };
         let text = serde_json::to_string(&profile).unwrap();
-        state.database.lock().unwrap().execute("INSERT INTO local_installations VALUES(?1,?2,?3,?4)", rusqlite::params![profile.id,text,text,now() as i64]).unwrap();
+        state
+            .database
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO local_installations VALUES(?1,?2,?3,?4)",
+                rusqlite::params![profile.id, text, text, now() as i64],
+            )
+            .unwrap();
     }
     #[test]
     fn registration_rechecks_external_handoff_inside_the_operation_lock() {
@@ -1865,12 +1895,27 @@ mod tests {
         let state = RuntimeState::open(temp.path().into()).unwrap();
         register_admission_profile(&state);
         let profile = state.registered_profile("isolated-admission").unwrap();
-        let mut root = dunce::canonicalize(&profile.install_dir).unwrap().to_string_lossy().into_owned();
-        if cfg!(windows) { root = root.to_lowercase(); }
+        let mut root = dunce::canonicalize(&profile.install_dir)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        if cfg!(windows) {
+            root = root.to_lowercase();
+        }
         state.database.lock().unwrap().execute_batch("CREATE TABLE external_management(install_root TEXT PRIMARY KEY,profile_id TEXT,external INTEGER,updated_at INTEGER)").unwrap();
-        state.database.lock().unwrap().execute("INSERT INTO external_management VALUES(?1,?2,1,0)",rusqlite::params![root,profile.id]).unwrap();
+        state
+            .database
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO external_management VALUES(?1,?2,1,0)",
+                rusqlite::params![root, profile.id],
+            )
+            .unwrap();
         let job = admission_fixture_job(Phase::Checking);
-        assert!(register_active(&state,&job,CancellationToken::new()).unwrap_err().contains("外部助手"));
+        assert!(register_active(&state, &job, CancellationToken::new())
+            .unwrap_err()
+            .contains("外部助手"));
         assert!(!report_path(&state, &job.id).unwrap().exists());
         assert!(assert_no_active_tuning(&state).is_ok());
     }

@@ -2,6 +2,6 @@
 
 [Read the English product overview](README.md) · [简体中文](README.zh-CN.md)
 
-Strata Manager is a desktop workspace for managing the Strata runtime and local model services: installation and ZIP updates, model configurations, and service lifecycle, with chat, monitoring, usage statistics and tuning alongside them.
+Strata Manager is an open-source desktop app for Strata on your computer. Detect existing installations and models, manage Strata and model configurations, and use chat, monitoring, API usage statistics and tuning in one workspace. Choose **Use** to enable a model; an independent background process then manages its service lifecycle. Existing model weights stay in place.
 
-The English README, current-source feature descriptions and refreshed screenshots are maintained in [README.md](README.md). The published preview's capabilities are documented in its release notes. This file keeps older links working.
+The English product overview, light-theme screenshots and product hero are maintained in [README.md](README.md). Published capabilities and packages are listed in the [v0.1.3 release entry](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.3). This file keeps older links working.

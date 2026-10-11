@@ -452,15 +452,20 @@ impl SupervisorClient {
                     &self.data_dir,
                     "service_status",
                     json!({"profileId":profile.id}),
-                ).await?;
+                )
+                .await?;
                 if status["running"] == true && status["owned"] == true {
                     let health = strata_local_ipc::call(
                         &self.data_dir,
                         "strata_request",
                         json!({"profile":profile,"path":"/health","method":"GET"}),
-                    ).await?;
+                    )
+                    .await?;
                     if health["service"] != "strata" || health["status"] != "ok" {
-                        return Err(RpcError::new("supervisor_registry", "无法核验升级前的本机服务"));
+                        return Err(RpcError::new(
+                            "supervisor_registry",
+                            "无法核验升级前的本机服务",
+                        ));
                     }
                     let loaded = health["loaded"].as_bool().ok_or_else(|| {
                         RpcError::new("supervisor_registry", "无法确认升级前模型是否已加载")
@@ -469,7 +474,9 @@ impl SupervisorClient {
                 }
             }
         }
-        snapshot.preserved_values.push(("supervisorUpgradeRecoveryLoad".into(), recovery));
+        snapshot
+            .preserved_values
+            .push(("supervisorUpgradeRecoveryLoad".into(), recovery));
         Ok(snapshot)
     }
 
@@ -547,7 +554,8 @@ impl SupervisorClient {
             &self.data_dir,
             "store_get",
             json!({"key":"supervisorUpgradeRecoveryLoad"}),
-        ).await?;
+        )
+        .await?;
         if recovery["restore"] == false {
             return Ok(());
         }
@@ -567,7 +575,8 @@ impl SupervisorClient {
             )
             .await
             {
-                if health["service"] == "strata" && health["status"] == "ok"
+                if health["service"] == "strata"
+                    && health["status"] == "ok"
                     && (!restore_loaded || health["loaded"] == true)
                 {
                     return Ok(());
@@ -600,11 +609,20 @@ impl SupervisorClient {
         // ignoring full-scenario fields and running the legacy short diagnostic.
         let method = if method == "tuning_start" && !params["request"]["useCase"].is_null() {
             let status = self.connected().await?;
-            if status["capabilities"]["fullScenarioTuning"].as_u64().unwrap_or(0) < 1 {
-                return Err(RpcError::new("SUPERVISOR_CAPABILITY_REQUIRED", "当前后台不支持完整场景实测，请在模型服务停止并完成后台更新后重试"));
+            if status["capabilities"]["fullScenarioTuning"]
+                .as_u64()
+                .unwrap_or(0)
+                < 1
+            {
+                return Err(RpcError::new(
+                    "SUPERVISOR_CAPABILITY_REQUIRED",
+                    "当前后台不支持完整场景实测，请在模型服务停止并完成后台更新后重试",
+                ));
             }
             "tuning_start_full_v1"
-        } else { method };
+        } else {
+            method
+        };
         // Never retry a mutation after an ambiguous transport failure. The caller
         // polls persisted state rather than potentially installing/starting twice.
         let mut result = strata_local_ipc::call(&self.data_dir, method, params).await.map_err(|error| {
@@ -877,10 +895,16 @@ mod tests {
             assert!(tokio::time::Instant::now() < deadline);
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        strata_local_ipc::call(&data, "restore_local_registry", json!({
-            "profiles":[profile],"originals":[profile],"activeLocalInstallation":profile["id"],
-            "activeProfile":profile["id"],"localServiceDesired":true,
-        })).await.unwrap();
+        strata_local_ipc::call(
+            &data,
+            "restore_local_registry",
+            json!({
+                "profiles":[profile],"originals":[profile],"activeLocalInstallation":profile["id"],
+                "activeProfile":profile["id"],"localServiceDesired":true,
+            }),
+        )
+        .await
+        .unwrap();
         let started = strata_local_ipc::call(&data, "start_service", json!({"profile": profile}))
             .await
             .unwrap();
@@ -915,8 +939,15 @@ mod tests {
             .unwrap();
         assert_eq!(before["activeServices"], 1);
         let snapshot = client.registry_snapshot().await.unwrap();
-        assert_eq!(snapshot.preserved_values.iter().find(|(key, _)| key == "supervisorUpgradeRecoveryLoad").unwrap().1,
-            json!({"profileId":profile["id"],"loaded":true}));
+        assert_eq!(
+            snapshot
+                .preserved_values
+                .iter()
+                .find(|(key, _)| key == "supervisorUpgradeRecoveryLoad")
+                .unwrap()
+                .1,
+            json!({"profileId":profile["id"],"loaded":true})
+        );
         drop(connection_guard);
         connecting.await.unwrap().unwrap();
         let after = client
@@ -995,24 +1026,59 @@ mod tests {
         drop(listener);
         let profile = json!({"id":"stopped-history","name":"Stopped history","baseUrl":format!("http://127.0.0.1:{port}"),
             "installDir":runtime,"pythonPath":python,"configPath":config,"managed":true});
-        strata_local_ipc::call(&data, "restore_local_registry", json!({
-            "profiles":[profile],"originals":[profile],"activeLocalInstallation":profile["id"],
-            "activeProfile":profile["id"],"localServiceDesired":true,
-        })).await.unwrap();
-        strata_local_ipc::call(&data, "set_background_policy", json!({"mode":"alwaysReady","autoRecover":true,"idleUnloadMinutes":15})).await.unwrap();
+        strata_local_ipc::call(
+            &data,
+            "restore_local_registry",
+            json!({
+                "profiles":[profile],"originals":[profile],"activeLocalInstallation":profile["id"],
+                "activeProfile":profile["id"],"localServiceDesired":true,
+            }),
+        )
+        .await
+        .unwrap();
+        strata_local_ipc::call(
+            &data,
+            "set_background_policy",
+            json!({"mode":"alwaysReady","autoRecover":true,"idleUnloadMinutes":15}),
+        )
+        .await
+        .unwrap();
         let mut client = SupervisorClient::new(data.clone(), temp.path().into());
         client.package_override = Some(source.clone());
         let snapshot = client.registry_snapshot().await.unwrap();
         let no_restore = json!({"profileId":profile["id"],"restore":false});
-        assert_eq!(snapshot.preserved_values.iter().find(|(key, _)| key == "supervisorUpgradeRecoveryLoad").unwrap().1, no_restore);
+        assert_eq!(
+            snapshot
+                .preserved_values
+                .iter()
+                .find(|(key, _)| key == "supervisorUpgradeRecoveryLoad")
+                .unwrap()
+                .1,
+            no_restore
+        );
         // Exercise the same preserved-values RPC path against a separate DB.
         let transferred_data = temp.path().join("transferred-data");
         let _transferred = initial(&transferred_data, &source).await;
-        let transferred_client = SupervisorClient::new(transferred_data.clone(), temp.path().into());
-        transferred_client.restore_registry_snapshot(&snapshot).await.unwrap();
-        assert_eq!(strata_local_ipc::call(&transferred_data, "store_get", json!({"key":"supervisorUpgradeRecoveryLoad"})).await.unwrap(), no_restore);
+        let transferred_client =
+            SupervisorClient::new(transferred_data.clone(), temp.path().into());
+        transferred_client
+            .restore_registry_snapshot(&snapshot)
+            .await
+            .unwrap();
+        assert_eq!(
+            strata_local_ipc::call(
+                &transferred_data,
+                "store_get",
+                json!({"key":"supervisorUpgradeRecoveryLoad"})
+            )
+            .await
+            .unwrap(),
+            no_restore
+        );
         transferred_client.wait_selected_health().await.unwrap();
-        strata_local_ipc::call(&transferred_data, "shutdown_supervisor", json!({})).await.unwrap();
+        strata_local_ipc::call(&transferred_data, "shutdown_supervisor", json!({}))
+            .await
+            .unwrap();
         let after = client
             .request("supervisor_status", json!({}))
             .await
@@ -1024,8 +1090,17 @@ mod tests {
         );
         assert_eq!(after["updatePending"], false);
         assert_eq!(after["activeServices"], 0);
-        assert!(strata_local_ipc::call(&data, "store_get", json!({"key":"localPreparationFailures"})).await.unwrap().is_null(),
-            "upgrading a stopped selection attempted to prepare its model");
+        assert!(
+            strata_local_ipc::call(
+                &data,
+                "store_get",
+                json!({"key":"localPreparationFailures"})
+            )
+            .await
+            .unwrap()
+            .is_null(),
+            "upgrading a stopped selection attempted to prepare its model"
+        );
         let broken = temp.path().join("broken-supervisor.exe");
         fs::write(&broken, b"invalid native package fixture").unwrap();
         let mut broken_client = SupervisorClient::new(data.clone(), temp.path().into());

@@ -1,230 +1,433 @@
 {
   "capturedOn": "2026-10-11",
-  "appVersion": "0.1.0-beta.1",
-  "build": "current working tree",
-  "source": "Real App components with isolated in-memory RPC documentation examples",
-  "scope": "No real inference, installation, update or performance measurement",
-  "cover": "runtime.zh.webp",
+  "appVersion": "0.1.3",
+  "build": "0.1.3 release working tree after merging origin/main; captured before the release commit",
+  "sourceBaseCommit": "067c7d7909c545490258a49d2dc157c87bc33b32",
+  "mergedSourceCommit": "678b7136872f0d53b40d8ea02e2272cc57ec1bf9",
+  "sourceTreeSha256": "63b46a0118359c73c901fe0163b45d3180525e2d1beaf51f03d83c34643959c1",
+  "sourceTreeHashScope": "Sorted apps/desktop/src and packages/core/src file paths and LF-normalized bytes, followed by the desktop and core package.json files; each path and content is NUL-delimited",
+  "source": "Real App components from the current 0.1.3 checkout, rendered in a browser with isolated in-memory RPC documentation examples",
+  "scope": "No real inference, installation, runtime update, operating-system startup or performance measurement. Models, conversations, hardware, status and metrics are synthetic.",
+  "browserValidation": {
+    "screens": 20,
+    "pageErrors": 0,
+    "consoleErrors": 0,
+    "externalRequests": 0,
+    "horizontalDocumentOverflow": false,
+    "fontsLoaded": true
+  },
+  "cover": "product-cover.webp",
+  "coverProvenance": {
+    "kind": "Retained prior brand hero composition",
+    "appVersion": "0.1.2",
+    "sourceCommit": "2fac51edd7147526442ddbb109a6a28d7b276ef7",
+    "unchangedFromCommit": "678b7136872f0d53b40d8ea02e2272cc57ec1bf9",
+    "note": "This separately composed brand image contains a prior 0.1.2 overview example and is not a new 0.1.3 page screenshot.",
+    "width": 3200,
+    "height": 1800,
+    "bytes": 886362,
+    "sha256": "c06f64ac7fec26a414cd696794b1acea6f827c4f6d07d3b111cc02d0a80c412a"
+  },
   "screens": [
     {
       "file": "overview.zh.webp",
       "screen": "overview",
+      "route": "overview",
       "language": "zh",
       "theme": "light",
-      "width": 1633,
-      "height": 1244,
-      "sourceFormat": "JPEG",
-      "bytes": 159844,
-      "sha256": "a024d33ad7b55d514c8963b0ee53709a71e1d0cd93b89ab1db6febbdea4273e9"
+      "width": 2880,
+      "height": 1920,
+      "cssViewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "deviceScaleFactor": 2,
+      "sourceFormat": "PNG",
+      "lossless": true,
+      "pixelIdenticalToBrowserPng": true,
+      "bytes": 98376,
+      "sha256": "2d4a03caeddbba88e5c62d76d5f45766e4f1883a105ddfae15f78cec7718e01c",
+      "sourcePngSha256": "b0308b5d515cbe6aece97d53d03066d35defd9b8f2f502a3d70c2131ceade666"
     },
     {
       "file": "runtime.zh.webp",
       "screen": "runtime",
+      "route": "environment",
       "language": "zh",
       "theme": "light",
-      "width": 1633,
-      "height": 1244,
-      "sourceFormat": "JPEG",
-      "bytes": 120040,
-      "sha256": "dc1f5748f995f66362bc868191e625bcf41b376c0710a79fabb03751442654fe"
+      "width": 2880,
+      "height": 1920,
+      "cssViewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "deviceScaleFactor": 2,
+      "sourceFormat": "PNG",
+      "lossless": true,
+      "pixelIdenticalToBrowserPng": true,
+      "bytes": 65800,
+      "sha256": "815f3bf622e825feec4cef3c6b527719eb4c07d533ece7abe22a8bb7b26c97fc",
+      "sourcePngSha256": "3edbd6e279895a5c87ace124ad2c48834a8d493289afd3ff8a8e017eb6354f1e"
     },
     {
       "file": "models.zh.webp",
       "screen": "models",
+      "route": "models",
       "language": "zh",
       "theme": "light",
-      "width": 1633,
-      "height": 1244,
-      "sourceFormat": "JPEG",
-      "bytes": 227326,
-      "sha256": "b72940dce3878749ede0ff9169811f00ef1c8f2024843e4812e98e8a90e89c1b"
+      "width": 2880,
+      "height": 1920,
+      "cssViewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "deviceScaleFactor": 2,
+      "sourceFormat": "PNG",
+      "lossless": true,
+      "pixelIdenticalToBrowserPng": true,
+      "bytes": 87132,
+      "sha256": "2fd283c1887f8f366e74337387cbae87a5a2af5d0585988db7f39e2fdf0d7828",
+      "sourcePngSha256": "69ecc36835ea357c842a7b207586703beee369c152fe908098c6b249d25f2342"
     },
     {
       "file": "config.zh.webp",
       "screen": "config",
+      "route": "config",
       "language": "zh",
       "theme": "light",
-      "width": 1633,
-      "height": 1244,
-      "sourceFormat": "JPEG",
-      "bytes": 169868,
-      "sha256": "69014b02166b5d4d9f40f90181ff8f12ab3129edcb376cfbc144098c0dd2c233"
+      "width": 2880,
+      "height": 1920,
+      "cssViewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "deviceScaleFactor": 2,
+      "sourceFormat": "PNG",
+      "lossless": true,
+      "pixelIdenticalToBrowserPng": true,
+      "bytes": 90344,
+      "sha256": "e7e6ecd5b2e5fdd275b0845bb7b32cb26466c4a24ae8d1c53ef680b6b6f1953f",
+      "sourcePngSha256": "10b435bc6d432e99bff1ffe57ca2b835bea12ca8f14de4580485f550fc794a81"
     },
     {
       "file": "chat.zh.webp",
       "screen": "chat",
+      "route": "chat",
       "language": "zh",
       "theme": "light",
-      "width": 1633,
-      "height": 1244,
-      "sourceFormat": "JPEG",
-      "bytes": 181626,
-      "sha256": "f01359aed951042c322403caa258a88b90ebcb922ba9b9e27f9af5de015f968a"
+      "width": 2880,
+      "height": 1920,
+      "cssViewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "deviceScaleFactor": 2,
+      "sourceFormat": "PNG",
+      "lossless": true,
+      "pixelIdenticalToBrowserPng": true,
+      "bytes": 115530,
+      "sha256": "1b3d130adee21ca416cdb87345f80aa93876d4c070a1cabc7bf7380a16477eed",
+      "sourcePngSha256": "c278f4f874b87bba1fc5754f76bae1a0c0cc198e41f7079b6254ace6858040a1"
     },
     {
       "file": "usage.zh.webp",
       "screen": "usage",
+      "route": "usage",
       "language": "zh",
       "theme": "light",
-      "width": 1633,
-      "height": 1244,
-      "sourceFormat": "JPEG",
-      "bytes": 249906,
-      "sha256": "6f46bde94ee0e8d0be669c2f8fc73a2b1b101e968864b0e06f7ff11badd709cf"
+      "width": 2880,
+      "height": 1920,
+      "cssViewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "deviceScaleFactor": 2,
+      "sourceFormat": "PNG",
+      "lossless": true,
+      "pixelIdenticalToBrowserPng": true,
+      "bytes": 83758,
+      "sha256": "f1c7bac31137d3a71c17505195e4935befdcecec24c64dbda095938304bea563",
+      "sourcePngSha256": "f9a4dc2a4ff06efb1a09350dd6a8be99f39606ec6a11c44ad0dda2503878ad44"
     },
     {
       "file": "tuning.zh.webp",
       "screen": "tuning",
+      "route": "tuning",
       "language": "zh",
       "theme": "light",
-      "width": 1633,
-      "height": 1244,
-      "sourceFormat": "JPEG",
-      "bytes": 140674,
-      "sha256": "14b9af708d1ecec38b18964797a5e8c5b1760474417485db31346b6b83893f97"
+      "width": 2880,
+      "height": 1920,
+      "cssViewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "deviceScaleFactor": 2,
+      "sourceFormat": "PNG",
+      "lossless": true,
+      "pixelIdenticalToBrowserPng": true,
+      "bytes": 75062,
+      "sha256": "06883a9aac46f6478b9d7b00e5ac4cbd2eff94cf87949b22a94b254be0735aca",
+      "sourcePngSha256": "87a5b79c1b5a9d460954361f3291b44544e01001b2e6ae20458562a152fcd82c"
     },
     {
       "file": "monitor.zh.webp",
       "screen": "monitor",
+      "route": "monitoring",
       "language": "zh",
       "theme": "light",
-      "width": 1633,
-      "height": 1244,
-      "sourceFormat": "JPEG",
-      "bytes": 215462,
-      "sha256": "1ce5f3fbb150511e59d7b3bbcf5c8d1ce7dfb3b21cc8a0816665798b89666f10"
+      "width": 2880,
+      "height": 1920,
+      "cssViewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "deviceScaleFactor": 2,
+      "sourceFormat": "PNG",
+      "lossless": true,
+      "pixelIdenticalToBrowserPng": true,
+      "bytes": 87228,
+      "sha256": "230b1d09f4d09d6e9adceff06ed1320a43cc844611ff5bbc580ad9b8764d075a",
+      "sourcePngSha256": "916e3972f584247a4543f6d3c8603c48214283a8fc67c08bd667d7917ff1f3e1"
     },
     {
       "file": "settings.zh.webp",
       "screen": "settings",
+      "route": "settings",
       "language": "zh",
       "theme": "light",
-      "width": 1633,
-      "height": 1244,
-      "sourceFormat": "JPEG",
-      "bytes": 143796,
-      "sha256": "7615533c606a6b8ae1687672ffd733cd43b1d868346c3503d628f457e9f15d19"
+      "width": 2880,
+      "height": 1920,
+      "cssViewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "deviceScaleFactor": 2,
+      "sourceFormat": "PNG",
+      "lossless": true,
+      "pixelIdenticalToBrowserPng": true,
+      "bytes": 68628,
+      "sha256": "a6f5a5d18312c2c3f5ba29d191b75a52e432d1b69cef74ca7aa9f7afab4fe208",
+      "sourcePngSha256": "a65e78cae70798ec558770cd61d8870dfc1193a1a066c849e9cb8fc6fe565a06"
     },
     {
       "file": "about.zh.webp",
       "screen": "about",
+      "route": "about",
       "language": "zh",
       "theme": "light",
-      "width": 1633,
-      "height": 1244,
-      "sourceFormat": "JPEG",
-      "bytes": 143206,
-      "sha256": "c2657d16ea011690dc685d7e9efc10d6c92fa406bdf46ab1100a4e08723ac137"
+      "width": 2880,
+      "height": 1920,
+      "cssViewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "deviceScaleFactor": 2,
+      "sourceFormat": "PNG",
+      "lossless": true,
+      "pixelIdenticalToBrowserPng": true,
+      "bytes": 75760,
+      "sha256": "ffbee27ca5bc9cede1f85ed5b2b56af8e31264894801e01e7f5b7221c67f249a",
+      "sourcePngSha256": "8213fe49428a5dc311ffbf1d97a5dd34a99793ac053cac21aaef19da526a4405"
     },
     {
       "file": "overview.en.webp",
       "screen": "overview",
+      "route": "overview",
       "language": "en",
-      "theme": "dark",
-      "width": 1633,
-      "height": 1244,
-      "sourceFormat": "JPEG",
-      "bytes": 185650,
-      "sha256": "2ea90dfec112071b8c8021e9a78dd8c63cffefb8a7bebf8279dac3709bd5b124"
+      "theme": "light",
+      "width": 2880,
+      "height": 1920,
+      "cssViewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "deviceScaleFactor": 2,
+      "sourceFormat": "PNG",
+      "lossless": true,
+      "pixelIdenticalToBrowserPng": true,
+      "bytes": 96800,
+      "sha256": "0e2416beda9d2ce135a40439c2f652fe8f897935e30efe4867d9b524e59fe4fa",
+      "sourcePngSha256": "3a85a45fd39608d78adb3d41907f49af86c2b885aa3408d14c57b3f156d50bc5"
     },
     {
       "file": "runtime.en.webp",
       "screen": "runtime",
+      "route": "environment",
       "language": "en",
-      "theme": "dark",
-      "width": 1633,
-      "height": 1244,
-      "sourceFormat": "JPEG",
-      "bytes": 200912,
-      "sha256": "384670044e892cc5ef3bbc046a4e1d9d0208ad6610dc554690ab265c4037eb8f"
+      "theme": "light",
+      "width": 2880,
+      "height": 1920,
+      "cssViewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "deviceScaleFactor": 2,
+      "sourceFormat": "PNG",
+      "lossless": true,
+      "pixelIdenticalToBrowserPng": true,
+      "bytes": 65380,
+      "sha256": "78d7170101506628a503d63714a1450bb7fd27e37ea75f08287634641c4ba257",
+      "sourcePngSha256": "2511a03bb21c28ba328ca15ae6828464f7cec8f36b3d53f398711549dd8a8c73"
     },
     {
       "file": "models.en.webp",
       "screen": "models",
+      "route": "models",
       "language": "en",
-      "theme": "dark",
-      "width": 1633,
-      "height": 1244,
-      "sourceFormat": "JPEG",
-      "bytes": 268886,
-      "sha256": "5388dccec2aef331fea648f1eaca8998d857747f72a6f973b4ec541660dd6b33"
+      "theme": "light",
+      "width": 2880,
+      "height": 1920,
+      "cssViewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "deviceScaleFactor": 2,
+      "sourceFormat": "PNG",
+      "lossless": true,
+      "pixelIdenticalToBrowserPng": true,
+      "bytes": 87998,
+      "sha256": "175979e604928bb16d01cdd90ba0be9b82c96ffbc2eb3c31fbff804b84d1e43f",
+      "sourcePngSha256": "5c6666e548752d22cb007c5207d29383e1781d811b9691cf4c53bbc3ad645b42"
     },
     {
       "file": "config.en.webp",
       "screen": "config",
+      "route": "config",
       "language": "en",
-      "theme": "dark",
-      "width": 1633,
-      "height": 1244,
-      "sourceFormat": "JPEG",
-      "bytes": 246878,
-      "sha256": "7de43a4b4e0dd83bb8698aee377ace0f8fad35fdbd42200281675dcc58a50578"
+      "theme": "light",
+      "width": 2880,
+      "height": 1920,
+      "cssViewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "deviceScaleFactor": 2,
+      "sourceFormat": "PNG",
+      "lossless": true,
+      "pixelIdenticalToBrowserPng": true,
+      "bytes": 86946,
+      "sha256": "8b834faa2befd7013ce8481774d4944607e897eaa9cbd78505b7bc53a6e622e8",
+      "sourcePngSha256": "3ad0d36a1d57badab9736885124c962799ec05454f5e4b2d9accce0890d3578a"
     },
     {
       "file": "chat.en.webp",
       "screen": "chat",
+      "route": "chat",
       "language": "en",
-      "theme": "dark",
-      "width": 1633,
-      "height": 1244,
-      "sourceFormat": "JPEG",
-      "bytes": 221670,
-      "sha256": "45c654104e093f315310837b3e65965005fa1e0a9e8c9673b7931fd3445d7c6c"
+      "theme": "light",
+      "width": 2880,
+      "height": 1920,
+      "cssViewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "deviceScaleFactor": 2,
+      "sourceFormat": "PNG",
+      "lossless": true,
+      "pixelIdenticalToBrowserPng": true,
+      "bytes": 101854,
+      "sha256": "3492cb17ef90499efc8129bb8bc561ab66883354f123adadf268dcc237091ca7",
+      "sourcePngSha256": "aa9a7ad79b9eae76b77d736f64db4cc3f59aca445c5f9b656453a071d83976c3"
     },
     {
       "file": "usage.en.webp",
       "screen": "usage",
+      "route": "usage",
       "language": "en",
-      "theme": "dark",
-      "width": 1633,
-      "height": 1244,
-      "sourceFormat": "JPEG",
-      "bytes": 271412,
-      "sha256": "bf80596ce79a4241fa1c6d5ba0981362fb45afbf46c25798d2ecd72b9c48167a"
+      "theme": "light",
+      "width": 2880,
+      "height": 1920,
+      "cssViewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "deviceScaleFactor": 2,
+      "sourceFormat": "PNG",
+      "lossless": true,
+      "pixelIdenticalToBrowserPng": true,
+      "bytes": 80242,
+      "sha256": "27c0088c6a96fc54362ba86ae571f612ff3157d6731e279960fe0a03de3ab189",
+      "sourcePngSha256": "53ca2301b0b9df8e20f4c5812cce89a693aaed4430aad7e261f720102f038c2b"
     },
     {
       "file": "tuning.en.webp",
       "screen": "tuning",
+      "route": "tuning",
       "language": "en",
-      "theme": "dark",
-      "width": 1633,
-      "height": 1244,
-      "sourceFormat": "JPEG",
-      "bytes": 173892,
-      "sha256": "bb5dbde6e455f5f85bd72f280958117988f9779ad897233629659d2d16a00d66"
+      "theme": "light",
+      "width": 2880,
+      "height": 1920,
+      "cssViewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "deviceScaleFactor": 2,
+      "sourceFormat": "PNG",
+      "lossless": true,
+      "pixelIdenticalToBrowserPng": true,
+      "bytes": 71470,
+      "sha256": "19ca01029367e916e93a4deb5ff62c7cffd8188588362eda42746b33837c6401",
+      "sourcePngSha256": "3f90f9938158ee880ba4b717f0623325d3e743d2e3e95c727c9964c8bc7cee3c"
     },
     {
       "file": "monitor.en.webp",
       "screen": "monitor",
+      "route": "monitoring",
       "language": "en",
-      "theme": "dark",
-      "width": 1633,
-      "height": 1244,
-      "sourceFormat": "JPEG",
-      "bytes": 240178,
-      "sha256": "bcf6d4cde30e3e5e13f3dc4a2d03789ea70f2570644bd8f5754056bea6cd23f5"
+      "theme": "light",
+      "width": 2880,
+      "height": 1920,
+      "cssViewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "deviceScaleFactor": 2,
+      "sourceFormat": "PNG",
+      "lossless": true,
+      "pixelIdenticalToBrowserPng": true,
+      "bytes": 82764,
+      "sha256": "2c310849c80609c3101fe766273c023a3177aa9cd2defa6ff7c691791aba09b4",
+      "sourcePngSha256": "68c30a522ae143c2f68ea61097aaeb3ce3a188a5bd91b1a4e9b8ee05d1de52e3"
     },
     {
       "file": "settings.en.webp",
       "screen": "settings",
+      "route": "settings",
       "language": "en",
-      "theme": "dark",
-      "width": 1633,
-      "height": 1244,
-      "sourceFormat": "JPEG",
-      "bytes": 187552,
-      "sha256": "e584e1aa1190d3593957eb18919cdab51e5d35f1a14c6797de1fc29654b229e1"
+      "theme": "light",
+      "width": 2880,
+      "height": 1920,
+      "cssViewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "deviceScaleFactor": 2,
+      "sourceFormat": "PNG",
+      "lossless": true,
+      "pixelIdenticalToBrowserPng": true,
+      "bytes": 69350,
+      "sha256": "790369cd0264e7f2f7d244d3017cc4652475cb60aac757c723af60e3710bb92d",
+      "sourcePngSha256": "1e3f204b6248b8fb27fc086361032f45dac10801694d4b38034af25884171a07"
     },
     {
       "file": "about.en.webp",
       "screen": "about",
+      "route": "about",
       "language": "en",
-      "theme": "dark",
-      "width": 1633,
-      "height": 1244,
-      "sourceFormat": "JPEG",
-      "bytes": 174388,
-      "sha256": "3e82dabcdf23aa84a9849a9c933339e4d045c05138f663bed6827c64b913c002"
+      "theme": "light",
+      "width": 2880,
+      "height": 1920,
+      "cssViewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "deviceScaleFactor": 2,
+      "sourceFormat": "PNG",
+      "lossless": true,
+      "pixelIdenticalToBrowserPng": true,
+      "bytes": 68478,
+      "sha256": "cabd717dee9a918ede960e6a7c3ed542b350a5aa9a0c1dfc3f08bec35ef76c07",
+      "sourcePngSha256": "981a84bc4fd53d40e6072bfc8ba42564ea26c4187a12bc85eaede64648c62edb"
     }
   ]
 }

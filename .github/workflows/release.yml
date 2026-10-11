@@ -37,12 +37,12 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: node scripts/release-check.mjs --require-signing
-      - name: Bind the existing remote tag to the workflow source
+      - name: Require an unpublished release and bind the existing source tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ github.ref_name }}
-        run: node scripts/release-tag.mjs
-      - run: node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs
+        run: node scripts/release-assets.mjs
+      - run: node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-assets.test.mjs
 
   build:
     needs: validate
@@ -115,13 +115,21 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: '. -> apps/desktop/src-tauri/target'
+          shared-key: strata-native-${{ matrix.target }}
       - run: pnpm install --frozen-lockfile
       - name: Build the fixture update verifier for this platform
         run: cargo build -p strata-update-verifier --locked --target ${{ matrix.target }}
       - name: Version and complete release guard tests
         env:
           UPDATE_VERIFIER_BIN: ${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/debug/strata-update-verifier${{ runner.os == 'Windows' && '.exe' || '' }}
-        run: node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-publish.test.mjs scripts/preview-package-smoke.test.mjs
+        run: node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-assets.test.mjs scripts/release-publish.test.mjs scripts/preview-package-smoke.test.mjs scripts/download-upgrade-fixture.test.mjs
+      - name: Verify the signed beta.2 installer for the first stable upgrade
+        if: runner.os == 'Windows' && needs.validate.outputs.version == '0.1.2'
+        id: upgrade-fixture
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPDATE_VERIFIER_BIN: ${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/debug/strata-update-verifier.exe
+        run: node scripts/download-upgrade-fixture.mjs
       - run: pnpm check
       - run: node scripts/prepare-sidecar.mjs --profile debug --target ${{ matrix.target }}
       - run: cargo fmt --all -- --check
@@ -133,14 +141,14 @@ jobs:
       - name: Native tests under Xvfb (Linux)
         if: runner.os == 'Linux'
         run: |
-          dbus-run-session -- xvfb-run -a bash scripts/release-linux-tests.sh cargo test --workspace --locked --target ${{ matrix.target }}
+          dbus-run-session -- xvfb-run -a bash scripts/release-linux-tests.sh cargo test --workspace --locked --target ${{ matrix.target }} -- --test-threads=1
       - run: cargo clippy --workspace --locked --all-targets --target ${{ matrix.target }} -- -D warnings
       - run: node scripts/prepare-sidecar.mjs --profile release --target ${{ matrix.target }}
-      - name: Recheck the source tag before uploading release assets
+      - name: Recheck the unpublished release and source before uploading assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ github.ref_name }}
-        run: node scripts/release-tag.mjs
+        run: node scripts/release-assets.mjs
       - name: Read localized changelog for this exact version
         id: release-notes
         run: node scripts/release-notes.mjs --version "${{ needs.validate.outputs.version }}"
@@ -170,9 +178,15 @@ jobs:
           uploadWorkflowArtifacts: true
           workflowArtifactNamePattern: 'release-[platform]-[arch]-[bundle]'
 
-      - name: Verify installed Windows preview and packaged background
+      - name: Verify installed Windows package and background IPC
         if: runner.os == 'Windows'
         run: node scripts/preview-package-smoke.mjs --bundle-dir "${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/release/bundle" --version "${{ needs.validate.outputs.version }}"
+      - name: Verify beta.2 to first stable upgrade and retained application data
+        if: runner.os == 'Windows' && needs.validate.outputs.version == '0.1.2'
+        env:
+          UPGRADE_FROM_INSTALLER: ${{ steps.upgrade-fixture.outputs.installer }}
+          UPGRADE_FROM_VERSION: ${{ steps.upgrade-fixture.outputs.version }}
+        run: node scripts/preview-package-smoke.mjs --bundle-dir "${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/release/bundle" --version "${{ needs.validate.outputs.version }}" --upgrade-from-installer "$env:UPGRADE_FROM_INSTALLER" --upgrade-from-version "$env:UPGRADE_FROM_VERSION"
       - name: Verify Linux AppImage and DEB startup under Xvfb
         if: runner.os == 'Linux'
         run: dbus-run-session -- xvfb-run -a bash scripts/release-linux-tests.sh node scripts/preview-package-smoke.mjs --bundle-dir "${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/release/bundle" --version "${{ needs.validate.outputs.version }}"
@@ -204,10 +218,10 @@ jobs:
         run: |
           cargo test -p strata-update-verifier --locked
           cargo build -p strata-update-verifier --release --locked
-          node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-publish.test.mjs
+          node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-assets.test.mjs scripts/release-publish.test.mjs
       - name: Verify installer bytes, built-in public key, signed version and both platforms
         run: node scripts/release-verify.mjs
-      - name: Publish SHA256 checksums for the preview installers
+      - name: Publish SHA256 checksums for the installers
         shell: bash
         run: |
           preview_checksums_dir="$RUNNER_TEMP/strata-release-checksums"
@@ -215,6 +229,7 @@ jobs:
           gh release download "$RELEASE_TAG" --pattern '*.exe' --pattern '*.AppImage' --pattern '*.deb' --dir "$preview_checksums_dir"
           cd "$preview_checksums_dir"
           sha256sum -- *.exe *.AppImage *.deb > SHA256SUMS
+          node "$GITHUB_WORKSPACE/scripts/release-assets.mjs" --require-draft
           gh release upload "$RELEASE_TAG" SHA256SUMS --clobber
       - name: Publish the verified draft and preserve stable version precedence
         run: node scripts/release-publish.mjs

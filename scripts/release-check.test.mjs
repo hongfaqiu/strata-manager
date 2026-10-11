@@ -103,6 +103,18 @@ test('only current installers and official aliases may enter the updater manifes
   assert.throws(() => validateRelease({ ...release, assets: [...release.assets, { ...release.assets[0] }] }, manifest, options), /Duplicate/);
 });
 
+test('a nonempty current-version DEB signature is mandatory with or without a manifest alias', () => {
+  for (const hasAlias of [false, true]) {
+    const { release, manifest, update } = releaseFixture();
+    if (hasAlias) manifest.platforms['linux-x86_64-deb'] = update(filenames.deb);
+    assert.doesNotThrow(() => validateRelease(release, manifest, options));
+    const missingSignature = { ...release, assets: release.assets.filter(asset => asset.name !== `${filenames.deb}.sig`) };
+    assert.throws(() => validateRelease(missingSignature, manifest, options), /DEB update signature is missing/);
+    const emptySignature = { ...release, assets: release.assets.map(asset => asset.name === `${filenames.deb}.sig` ? { ...asset, size: 0 } : asset) };
+    assert.throws(() => validateRelease(emptySignature, manifest, options), /nonempty sizes/);
+  }
+});
+
 test('wrong product, version or architecture cannot masquerade as the required installer', () => {
   for (const replacement of ['Other.App_0.1.0_x64-setup.exe', 'Strata.Manager_0.0.9_x64-setup.exe', 'Strata.Manager_0.1.0_arm64-setup.exe']) {
     const { release, manifest, update } = releaseFixture();
@@ -253,11 +265,13 @@ test('disk failure terminates its download and a stalled child cannot block time
 });
 
 test('real verifier checks every exposed installer and deduplicates official aliases', { skip: !process.env.UPDATE_VERIFIER_BIN }, async () => {
-  await cryptoReleaseFixture({}, async ({ run, downloads, paths }) => {
+  await cryptoReleaseFixture({}, async ({ run, downloads, paths, logs }) => {
     await run();
-    assert.equal(downloads.filter(name => name.endsWith('.exe')).length, 1);
-    assert.equal(downloads.filter(name => name.endsWith('.AppImage')).length, 1);
-    assert.equal(downloads.filter(name => name.endsWith('.deb')).length, 1);
+    for (const name of Object.values(filenames)) {
+      assert.equal(downloads.filter(value => value === name).length, 1);
+      assert.equal(downloads.filter(value => value === `${name}.sig`).length, 1);
+    }
+    assert.match(logs[0], /all three installers \(NSIS, AppImage, DEB\)/);
     for (const path of paths) await assert.rejects(stat(path), { code: 'ENOENT' });
   });
 });
@@ -271,11 +285,33 @@ test('wrong key, altered bytes or matching fake signature refuses publication an
   }
 });
 
+test('the real verifier rejects tampered bytes in each of the three installers independently', { skip: !process.env.UPDATE_VERIFIER_BIN }, async () => {
+  for (const name of Object.values(filenames)) {
+    await cryptoReleaseFixture({ tamperInstaller: name }, async ({ run, paths, logs }) => {
+      await assert.rejects(run());
+      assert.deepEqual(logs, []);
+      for (const path of paths) await assert.rejects(stat(path), { code: 'ENOENT' });
+    });
+  }
+});
+
 test('an uploaded DEB signature is verified even without a manifest alias', { skip: !process.env.UPDATE_VERIFIER_BIN }, async () => {
-  await cryptoReleaseFixture({ noDebAlias: true }, async ({ run, downloads }) => {
+  await cryptoReleaseFixture({ noDebAlias: true }, async ({ run, downloads, logs }) => {
     await run();
-    assert.equal(downloads.filter(name => name.endsWith('.deb')).length, 1);
-    assert.equal(downloads.filter(name => name.endsWith('.deb.sig')).length, 1);
+    for (const name of Object.values(filenames)) {
+      assert.equal(downloads.filter(value => value === name).length, 1);
+      assert.equal(downloads.filter(value => value === `${name}.sig`).length, 1);
+    }
+    assert.match(logs[0], /all three installers \(NSIS, AppImage, DEB\)/);
+  });
+});
+
+test('the real verification flow refuses a missing DEB signature and alias before installer downloads', { skip: !process.env.UPDATE_VERIFIER_BIN }, async () => {
+  await cryptoReleaseFixture({ noDebAlias: true, missingDebSignature: true }, async ({ run, downloads, paths, logs }) => {
+    await assert.rejects(run(), /DEB update signature is missing/);
+    assert.deepEqual(downloads, ['latest.json']);
+    assert.deepEqual(logs, []);
+    for (const path of paths) await assert.rejects(stat(path), { code: 'ENOENT' });
   });
 });
 
@@ -299,7 +335,8 @@ async function cryptoReleaseFixture(scenario, operation) {
   manifest.platforms['linux-x86_64-appimage'] = update(filenames.linux);
   manifest.platforms['linux-x86_64-deb'] = update(filenames.deb);
   if (scenario.noDebAlias) delete manifest.platforms['linux-x86_64-deb'];
-  const downloads = []; const paths = [];
+  if (scenario.missingDebSignature) release.assets = release.assets.filter(asset => asset.name !== `${filenames.deb}.sig`);
+  const downloads = []; const paths = []; const logs = [];
   try {
     const configDirectory = join(temporary.directory, 'apps/desktop/src-tauri');
     await mkdir(configDirectory, { recursive: true });
@@ -310,11 +347,11 @@ async function cryptoReleaseFixture(scenario, operation) {
     }, fetchTag: async path => {
       assert.equal(path, `/repos/${repository}/git/ref/tags/${tag}`);
       return { ref: `refs/tags/${tag}`, object: { type: 'commit', sha: scenario.tagMismatch ? '4'.repeat(40) : commitSha } };
-    }, logger: () => {}, fetchAsset: async (_repository, asset, destination) => {
+    }, logger: message => logs.push(message), fetchAsset: async (_repository, asset, destination) => {
       downloads.push(asset.name); paths.push(destination);
-      const bytes = asset.name === 'latest.json' ? JSON.stringify(manifest) : asset.name.endsWith('.sig') ? (scenario.mismatch || scenario.fakeDebSignature && asset.name.endsWith('.deb.sig') ? 'signature mismatch' : signature) : scenario.tamper || scenario.tamperDeb && asset.name.endsWith('.deb') ? 'tampered installer' : payload;
+      const bytes = asset.name === 'latest.json' ? JSON.stringify(manifest) : asset.name.endsWith('.sig') ? (scenario.mismatch || scenario.fakeDebSignature && asset.name.endsWith('.deb.sig') ? 'signature mismatch' : signature) : scenario.tamper || scenario.tamperDeb && asset.name.endsWith('.deb') || scenario.tamperInstaller === asset.name ? 'tampered installer' : payload;
       await writeFile(destination, bytes, { flag: 'wx' });
     } });
-    await operation({ run, downloads, paths });
+    await operation({ run, downloads, paths, logs });
   } finally { await temporary.cleanup(); }
 }

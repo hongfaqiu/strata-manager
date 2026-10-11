@@ -145,13 +145,14 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(after, before);
-        let state = state.lock().unwrap();
-        assert_eq!(state.cached, result);
-        assert!(state.methods.iter().all(|method| matches!(
-            method.as_str(),
-            "hello" | "runtime_update_info" | "store_get" | "store_set"
-        )));
-        drop(state);
+        {
+            let state = state.lock().unwrap();
+            assert_eq!(state.cached, result);
+            assert!(state.methods.iter().all(|method| matches!(
+                method.as_str(),
+                "hello" | "runtime_update_info" | "store_get" | "store_set"
+            )));
+        }
         stop.cancel();
         server.await.unwrap().unwrap();
     }
@@ -168,13 +169,14 @@ mod tests {
         let (stop, server) = legacy_server(temp.path(), state.clone()).await;
         let error = update_info(&client(temp.path()), false).await.unwrap_err();
         assert!(error.contains("service_busy"));
-        let state = state.lock().unwrap();
-        assert_eq!(state.cached, cached);
-        assert!(!state
-            .methods
-            .iter()
-            .any(|method| method == "store_get" || method == "store_set"));
-        drop(state);
+        {
+            let state = state.lock().unwrap();
+            assert_eq!(state.cached, cached);
+            assert!(!state
+                .methods
+                .iter()
+                .any(|method| method == "store_get" || method == "store_set"));
+        }
         stop.cancel();
         server.await.unwrap().unwrap();
     }

@@ -1,4 +1,107 @@
 /* Strata Manager · Modern Interactive Application Engine */
+// Release catalog contract is independent of DOM and network state.
+const strataReleaseCatalog = (() => {
+  const repo = 'hongfaqiu/strata-manager';
+  const base = `https://github.com/${repo}/releases`;
+  const keys = ['windows', 'appimage', 'deb', 'checksums'];
+
+  function version(tag) {
+    if (typeof tag !== 'string') return null;
+    const match = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/.exec(tag);
+    if (!match) return null;
+    const prerelease = match[4] ? match[4].split('.') : [];
+    if (prerelease.some(part => /^\d+$/.test(part) && part.length > 1 && part[0] === '0')) return null;
+    return { numbers: match.slice(1, 4).map(BigInt), prerelease };
+  }
+
+  function compare(left, right) {
+    for (let i = 0; i < 3; i += 1) {
+      if (left.numbers[i] !== right.numbers[i]) return left.numbers[i] > right.numbers[i] ? 1 : -1;
+    }
+    if (!left.prerelease.length || !right.prerelease.length) {
+      return left.prerelease.length === right.prerelease.length ? 0 : left.prerelease.length ? -1 : 1;
+    }
+    for (let i = 0; i < Math.max(left.prerelease.length, right.prerelease.length); i += 1) {
+      const a = left.prerelease[i];
+      const b = right.prerelease[i];
+      if (a === undefined || b === undefined) return a === undefined ? -1 : 1;
+      if (a === b) continue;
+      const numericA = /^\d+$/.test(a);
+      const numericB = /^\d+$/.test(b);
+      if (numericA && numericB) return BigInt(a) > BigInt(b) ? 1 : -1;
+      if (numericA !== numericB) return numericA ? -1 : 1;
+      return a > b ? 1 : -1;
+    }
+    return 0;
+  }
+
+  function validRelease(release) {
+    const parsed = version(release?.tag_name);
+    if (!parsed || release.draft !== false || typeof release.prerelease !== 'boolean') return null;
+    if (release.prerelease !== Boolean(parsed.prerelease.length)) return null;
+    if (typeof release.published_at !== 'string' || !Number.isFinite(Date.parse(release.published_at))) return null;
+    if (release.html_url !== `${base}/tag/${release.tag_name}`) return null;
+    return parsed;
+  }
+
+  function select(releases, allowPreview = true) {
+    if (!Array.isArray(releases)) return null;
+    const valid = releases.map(release => ({ release, parsed: validRelease(release) })).filter(item => item.parsed);
+    const stable = valid.filter(item => !item.release.prerelease);
+    const candidates = stable.length ? stable : allowPreview ? valid : [];
+    candidates.sort((a, b) => compare(b.parsed, a.parsed) || b.release.published_at.localeCompare(a.release.published_at));
+    return candidates[0]?.release || null;
+  }
+
+  function assets(release) {
+    if (!validRelease(release)) return {};
+    const tag = release.tag_name;
+    const clean = tag.slice(1);
+    const names = {
+      windows: `Strata.Manager_${clean}_x64-setup.exe`,
+      appimage: `Strata.Manager_${clean}_amd64.AppImage`,
+      deb: `Strata.Manager_${clean}_amd64.deb`,
+      checksums: 'SHA256SUMS',
+    };
+    const result = { notes: release.html_url };
+    for (const key of keys) {
+      const matches = (Array.isArray(release.assets) ? release.assets : []).filter(asset =>
+        asset.name === names[key] && asset.state === 'uploaded' && Number.isSafeInteger(asset.size) && asset.size > 0 &&
+        asset.browser_download_url === `${base}/download/${tag}/${names[key]}`);
+      if (matches.length === 1) result[key] = matches[0].browser_download_url;
+    }
+    return result;
+  }
+
+  function selectResponses(latest, list) {
+    const candidates = [
+      ...(latest?.status === 200 && Array.isArray(latest.releases) ? latest.releases : []),
+      ...(list?.status === 200 && Array.isArray(list.releases) ? list.releases : []),
+    ];
+    // An unavailable stable endpoint is not proof that no stable release exists.
+    return select(candidates, latest?.status === 404 && list?.status === 200);
+  }
+
+  function applyDownloads(elements, urls) {
+    for (const key of keys) {
+      const element = elements[key];
+      if (!element) continue;
+      if (urls[key]) {
+        element.setAttribute('href', urls[key]);
+        element.removeAttribute('aria-disabled');
+        element.removeAttribute('tabindex');
+      } else {
+        element.removeAttribute('href');
+        element.setAttribute('aria-disabled', 'true');
+        element.setAttribute('tabindex', '-1');
+      }
+    }
+  }
+
+  return Object.freeze({ repo, keys, version, compare, select, selectResponses, assets, applyDownloads });
+})();
+
+// Website interactions.
 (() => {
   'use strict';
 
@@ -30,14 +133,14 @@
       address: 'strata://manager/runtime',
       zh: {
         title: '全局 Strata 安装与更新。',
-        description: '检测本地环境与官方最新发布，查阅更新日志并一键执行 ZIP 平滑升级。',
-        alt: 'Strata 管理：已安装运行环境、上游版本、ZIP 更新与版本日志',
+        description: '检测本机环境与上游发布，查看日志，安装匹配的 Windows x64 ZIP 更新；Linux 保留发布信息查看。',
+        alt: 'Strata 管理：已安装运行环境、上游版本、Windows x64 ZIP 更新与版本日志',
         badge: 'STRATA 运行环境',
       },
       en: {
         title: 'Global Strata installation and updates.',
-        description: 'Detect local and upstream runtimes, review release notes, and install official updates seamlessly.',
-        alt: 'Strata management: installed runtime, upstream versions, ZIP updates, and release notes',
+        description: 'Detect runtimes, review notes and install matching Windows x64 ZIP updates; Linux retains release information.',
+        alt: 'Strata management: installed runtime, upstream versions, Windows x64 ZIP updates, and release notes',
         badge: 'STRATA RUNTIME',
       },
     },
@@ -299,6 +402,7 @@
         el.textContent = activeReleaseTag;
       });
     }
+    renderReleaseStatus();
 
     attributeTranslations.forEach(item => {
       const val = item[currentLang];
@@ -481,85 +585,66 @@
     }
   } catch (_) {}
 
-  // 集中维护 Releases 逻辑：动态拉取最新 Release，不写死版本号
-  const GITHUB_REPO = 'hongfaqiu/strata-manager';
-  const DEFAULT_RELEASE_TAG = 'v0.1.0-beta.1';
-  let activeReleaseTag = DEFAULT_RELEASE_TAG;
+  // Enable downloads only after validating published assets from this repository.
+  let activeReleaseTag = 'v0.1.3';
+  let releaseState = { kind: 'loading' };
 
-  function buildAssetUrls(tag) {
-    const cleanVersion = tag.replace(/^v/, '');
-    const base = `https://github.com/${GITHUB_REPO}/releases/download/${tag}`;
-    return {
-      windows: `${base}/Strata.Manager_${cleanVersion}_x64-setup.exe`,
-      appimage: `${base}/Strata.Manager_${cleanVersion}_amd64.AppImage`,
-      deb: `${base}/Strata.Manager_${cleanVersion}_amd64.deb`,
-      checksums: `${base}/SHA256SUMS`,
-      notes: `https://github.com/${GITHUB_REPO}/releases/tag/${tag}`,
-    };
+  function renderReleaseStatus() {
+    const status = document.getElementById('download-status');
+    if (!status) return;
+    const english = currentLang === 'en';
+    if (releaseState.kind === 'loading') {
+      status.textContent = english ? 'Checking published packages…' : '正在检查已发布安装包…';
+    } else if (releaseState.kind === 'unavailable') {
+      activeReleaseTag = english ? 'Unavailable' : '暂无可用发布';
+      document.querySelectorAll('.release-version').forEach(el => { el.textContent = activeReleaseTag; });
+      status.textContent = english ? 'Published packages could not be verified. Open GitHub Releases to check availability, or try again later.' : '暂时无法核验已发布安装包。请打开 GitHub 发布页查看，或稍后重试。';
+    } else {
+      const channel = releaseState.preview
+        ? (english ? 'No stable release is published; showing a preview for manual installation.' : '暂无稳定版发布，以下为手工安装的预览版。')
+        : (english ? 'Latest published stable release.' : '最新已发布稳定版。');
+      const labels = { windows: 'Windows', appimage: 'AppImage', deb: 'DEB', checksums: 'SHA256SUMS' };
+      const missing = releaseState.missing.map(key => labels[key]).join(' / ');
+      status.textContent = `${channel}${missing ? (english ? ` Unavailable assets: ${missing}. Those downloads are disabled.` : ` 缺少 ${missing} 资产，对应下载已禁用。`) : ''}`;
+    }
   }
 
-  function applyRelease(tag, urls) {
-    activeReleaseTag = tag;
+  function applyRelease(release) {
+    const urls = strataReleaseCatalog.assets(release);
+    activeReleaseTag = release?.tag_name || (currentLang === 'en' ? 'Unavailable' : '暂无可用发布');
+    releaseState = release ? { kind: 'ready', preview: release.prerelease, missing: strataReleaseCatalog.keys.filter(key => !urls[key]) } : { kind: 'unavailable' };
     document.querySelectorAll('.release-version').forEach(el => {
-      el.textContent = tag;
+      el.textContent = activeReleaseTag;
     });
-
-    const winBtn = document.querySelector('[data-download="windows"]');
-    if (winBtn && urls.windows) winBtn.href = urls.windows;
-
-    const appImageBtn = document.querySelector('[data-download="appimage"]');
-    if (appImageBtn && urls.appimage) appImageBtn.href = urls.appimage;
-
-    const debBtn = document.querySelector('[data-download="deb"]');
-    if (debBtn && urls.deb) debBtn.href = urls.deb;
-
-    const checksumsBtn = document.querySelector('[data-download="checksums"]');
-    if (checksumsBtn && urls.checksums) checksumsBtn.href = urls.checksums;
-
+    const elements = Object.fromEntries(strataReleaseCatalog.keys.map(key => [key, document.querySelector(`[data-download="${key}"]`)]));
+    strataReleaseCatalog.applyDownloads(elements, urls);
     const notesBtn = document.getElementById('release-notes-link');
-    if (notesBtn && urls.notes) notesBtn.href = urls.notes;
+    if (notesBtn) notesBtn.href = urls.notes || `https://github.com/${strataReleaseCatalog.repo}/releases`;
+    renderReleaseStatus();
   }
 
   async function fetchLatestRelease() {
+    async function metadata(url, single) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 12000);
+      try {
+        const response = await fetch(url, { signal: controller.signal });
+        const value = response.ok ? await response.json() : [];
+        return { status: response.status, releases: response.ok && single ? [value] : value };
+      } finally { clearTimeout(timeout); }
+    }
     try {
-      const response = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=1`);
-      if (!response.ok) return;
-      const releases = await response.json();
-      if (!Array.isArray(releases) || releases.length === 0) return;
-      const release = releases[0];
-      const tag = release.tag_name;
-      if (!tag) return;
-
-      const urls = {
-        notes: release.html_url || `https://github.com/${GITHUB_REPO}/releases/tag/${tag}`,
-      };
-
-      if (Array.isArray(release.assets)) {
-        for (const asset of release.assets) {
-          const name = asset.name || '';
-          if (name.endsWith('-setup.exe') || (name.endsWith('.exe') && name.includes('setup'))) {
-            urls.windows = asset.browser_download_url;
-          } else if (name.endsWith('.AppImage')) {
-            urls.appimage = asset.browser_download_url;
-          } else if (name.endsWith('.deb')) {
-            urls.deb = asset.browser_download_url;
-          } else if (name === 'SHA256SUMS') {
-            urls.checksums = asset.browser_download_url;
-          }
-        }
-      }
-
-      const fallbackUrls = buildAssetUrls(tag);
-      urls.windows = urls.windows || fallbackUrls.windows;
-      urls.appimage = urls.appimage || fallbackUrls.appimage;
-      urls.deb = urls.deb || fallbackUrls.deb;
-      urls.checksums = urls.checksums || fallbackUrls.checksums;
-
-      applyRelease(tag, urls);
-    } catch (_) {}
+      const prefix = `https://api.github.com/repos/${strataReleaseCatalog.repo}/releases`;
+      const results = await Promise.allSettled([
+        metadata(`${prefix}/latest`, true),
+        metadata(`${prefix}?per_page=100`, false),
+      ]);
+      const latest = results[0].status === 'fulfilled' ? results[0].value : null;
+      const list = results[1].status === 'fulfilled' ? results[1].value : null;
+      applyRelease(strataReleaseCatalog.selectResponses(latest, list));
+    } catch (_) { applyRelease(null); }
   }
 
   setLanguage(initialLanguage);
-  applyRelease(DEFAULT_RELEASE_TAG, buildAssetUrls(DEFAULT_RELEASE_TAG));
   fetchLatestRelease();
 })();

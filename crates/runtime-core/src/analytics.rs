@@ -1131,7 +1131,8 @@ mod tests {
             // WAL lets the observer commit while the consumer keeps its snapshot.
             let mut observer = Connection::open(&path).unwrap();
             let trim = observer.transaction().unwrap();
-            trim.execute("DELETE FROM events WHERE seq <= 2", []).unwrap();
+            trim.execute("DELETE FROM events WHERE seq <= 2", [])
+                .unwrap();
             trim.execute("UPDATE meta SET value='2' WHERE key='dropped_through'", [])
                 .unwrap();
             trim.commit().unwrap();
@@ -1143,9 +1144,32 @@ mod tests {
         assert_eq!(http["succeeded"], 1);
         assert_eq!(http["inputTokens"], 10);
         assert_eq!(http["outputTokens"], 4);
-        assert_eq!(database.query_row("SELECT COUNT(*) FROM analytics_gaps", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
-        assert_eq!(database.query_row("SELECT seq FROM analytics_cursors WHERE source_id='fixture'", [], |row| row.get::<_, i64>(0)).unwrap(), 2);
-        assert_eq!(source.query_row("SELECT value FROM meta WHERE key='ack'", [], |row| row.get::<_, String>(0)).unwrap(), "2");
+        assert_eq!(
+            database
+                .query_row("SELECT COUNT(*) FROM analytics_gaps", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            database
+                .query_row(
+                    "SELECT seq FROM analytics_cursors WHERE source_id='fixture'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            source
+                .query_row("SELECT value FROM meta WHERE key='ack'", [], |row| row
+                    .get::<_, String>(
+                    0
+                ))
+                .unwrap(),
+            "2"
+        );
         assert_eq!(consume(&mut database, &path).unwrap(), 0);
         assert_eq!(summary(&database, &range(at)).unwrap()["http"], http);
     }

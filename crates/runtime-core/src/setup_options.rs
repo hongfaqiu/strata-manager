@@ -1,6 +1,9 @@
 //! Validated, task-scoped options for the official installer. No shell interpolation.
 use serde::{Deserialize, Serialize};
-use std::{collections::{BTreeMap, HashSet}, process::Command};
+use std::{
+    collections::{BTreeMap, HashSet},
+    process::Command,
+};
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -74,7 +77,9 @@ impl SetupOptions {
             backend: Some(backend.into()),
             gpus: Some(gpus),
             hf_endpoint: if source == "mirror" {
-                Some(validate_hf_endpoint(self.hf_endpoint.as_deref().unwrap_or(""))?)
+                Some(validate_hf_endpoint(
+                    self.hf_endpoint.as_deref().unwrap_or(""),
+                )?)
             } else {
                 None
             },
@@ -98,7 +103,12 @@ impl SetupOptions {
         let gpus = options.gpus.as_deref().unwrap_or("");
         if !gpus.is_empty() {
             args.extend([
-                if gpus == "all" || gpus.contains(',') { "--gpus" } else { "--gpu" }.into(),
+                if gpus == "all" || gpus.contains(',') {
+                    "--gpus"
+                } else {
+                    "--gpu"
+                }
+                .into(),
                 gpus.into(),
             ]);
         }
@@ -117,14 +127,27 @@ impl SetupOptions {
         if let Some(endpoint) = options.hf_endpoint {
             env.insert("HF_ENDPOINT".into(), Some(endpoint));
         }
-        env.insert("STRATA_SOURCE".into(), Some(if options.source.as_deref() == Some("modelscope") { "modelscope" } else { "huggingface" }.into()));
+        env.insert(
+            "STRATA_SOURCE".into(),
+            Some(
+                if options.source.as_deref() == Some("modelscope") {
+                    "modelscope"
+                } else {
+                    "huggingface"
+                }
+                .into(),
+            ),
+        );
         Ok(env)
     }
 
     pub fn apply_environment(&self, command: &mut Command) -> Result<(), String> {
         for (key, value) in self.environment()? {
-            if let Some(value) = value { command.env(key, value); }
-            else { command.env_remove(key); }
+            if let Some(value) = value {
+                command.env(key, value);
+            } else {
+                command.env_remove(key);
+            }
         }
         Ok(())
     }
@@ -136,10 +159,27 @@ mod tests {
 
     #[test]
     fn setup_flags_preserve_gpu_order_and_reject_duplicates_before_launch() {
-        let options = SetupOptions { source: Some("modelscope".into()), backend: Some("cuda".into()), gpus: Some("2, 0".into()), ..Default::default() };
+        let options = SetupOptions {
+            source: Some("modelscope".into()),
+            backend: Some("cuda".into()),
+            gpus: Some("2, 0".into()),
+            ..Default::default()
+        };
         let mut args = vec!["setup.py".into(), "--no-start".into()];
         options.append_args(&mut args).unwrap();
-        assert_eq!(args, ["setup.py", "--no-start", "--source", "modelscope", "--backend", "cuda", "--gpus", "2,0"]);
+        assert_eq!(
+            args,
+            [
+                "setup.py",
+                "--no-start",
+                "--source",
+                "modelscope",
+                "--backend",
+                "cuda",
+                "--gpus",
+                "2,0"
+            ]
+        );
         for invalid in ["0,0", "-1", "256", "0 --build", "0,", "0\n"] {
             assert!(normalize_gpus(invalid).is_err(), "{invalid}");
         }
@@ -148,22 +188,48 @@ mod tests {
     #[test]
     fn explicit_source_only_changes_the_child_environment() {
         let mut command = Command::new("python");
-        let options = SetupOptions { source: Some("mirror".into()), hf_endpoint: Some("https://hf-mirror.com/".into()), ..Default::default() };
+        let options = SetupOptions {
+            source: Some("mirror".into()),
+            hf_endpoint: Some("https://hf-mirror.com/".into()),
+            ..Default::default()
+        };
         options.apply_environment(&mut command).unwrap();
-        let entries: std::collections::HashMap<_, _> = command.get_envs().map(|(k,v)| (k.to_string_lossy().into_owned(), v.map(|value| value.to_string_lossy().into_owned()))).collect();
+        let entries: std::collections::HashMap<_, _> = command
+            .get_envs()
+            .map(|(k, v)| {
+                (
+                    k.to_string_lossy().into_owned(),
+                    v.map(|value| value.to_string_lossy().into_owned()),
+                )
+            })
+            .collect();
         assert_eq!(entries["HF_ENDPOINT"], Some("https://hf-mirror.com".into()));
         assert_eq!(entries["STRATA_SOURCE"], Some("huggingface".into()));
         assert_eq!(entries["MODELSCOPE_ENDPOINT"], None);
         let mut official = Command::new("python");
-        SetupOptions::default().apply_environment(&mut official).unwrap();
-        assert!(official.get_envs().any(|(key, value)| key == "HF_ENDPOINT" && value.is_none()));
+        SetupOptions::default()
+            .apply_environment(&mut official)
+            .unwrap();
+        assert!(official
+            .get_envs()
+            .any(|(key, value)| key == "HF_ENDPOINT" && value.is_none()));
     }
 
     #[test]
     fn mirror_address_does_not_accept_credentials_queries_or_command_text() {
-        for invalid in ["http://mirror.example", "https://u:p@mirror.example", "https://mirror.example?token=x", "https://mirror.example/#secret", "https://mirror.example\\x", "https://mirror.example\n"] {
+        for invalid in [
+            "http://mirror.example",
+            "https://u:p@mirror.example",
+            "https://mirror.example?token=x",
+            "https://mirror.example/#secret",
+            "https://mirror.example\\x",
+            "https://mirror.example\n",
+        ] {
             assert!(validate_hf_endpoint(invalid).is_err(), "{invalid}");
         }
-        assert_eq!(validate_hf_endpoint("https://mirror.example/base/").unwrap(), "https://mirror.example/base");
+        assert_eq!(
+            validate_hf_endpoint("https://mirror.example/base/").unwrap(),
+            "https://mirror.example/base"
+        );
     }
 }

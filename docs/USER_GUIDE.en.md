@@ -4,13 +4,13 @@
 
 [Download and try](DOWNLOAD.en.md) · [Troubleshooting](TROUBLESHOOTING.en.md) · [Support scope](DOWNLOAD.en.md#support-scope)
 
-Strata Manager is an open-source desktop workspace for the Strata runtime and local model services. Runtime installation and ZIP updates, model configurations, and service startup, shutdown and recovery are its core; chat, monitoring, API usage statistics and tuning support that workflow. It is an independent community project. Inference capabilities, models, image input, reasoning, MCP tools and API protocols come from the installed Strata runtime and chosen model.
+Strata Manager is an open-source desktop workspace for the Strata runtime and local model services. Runtime installation and matching Windows x64 ZIP engine updates, model configurations, and service startup, shutdown and recovery are its core; chat, monitoring, API usage statistics and tuning support that workflow. It is an independent community project. Inference capabilities, models, image input, reasoning, MCP tools and API protocols come from the installed Strata runtime and chosen model.
 
-This guide describes the current source. The published v0.1.0-beta.1 installer has its own [release notes](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0-beta.1). Inspect the runtime in Strata first, then choose a configuration in **Models → My models**, select **Use**, wait for **Model ready**, and open Chat or copy the local API address. Manager manages supported installations on this computer; it does not manage remote nodes.
+This guide describes the 0.1.3 source. The [release page](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.3) establishes package availability and contents; an unfrozen candidate still needs final CI and release acceptance. Inspect the runtime in Strata first, then choose a configuration in **Models → My models**, select **Use**, wait for **Model ready**, and open Chat or copy the local API address. Manager manages supported installations on this computer; it does not manage remote nodes.
 
 ## Prepare or reuse a model
 
-**Already used an earlier Manager version?** Valid model profiles and conversations are restored automatically. Review My models before starting a new preparation; existing weights do not need to be downloaded again.
+**Already used an earlier Manager version?** Valid model profiles and conversations are restored automatically, without automatically starting model services. Review My models before starting a new preparation; existing weights do not need to be downloaded again.
 
 **Already have Strata elsewhere on this computer?** Inspect its detected runtime and version in Strata; an existing runtime does not need reinstalling. Missing-model diagnostics are separate from whether Strata exists. My models automatically lists discovered models without requiring import or use first. Add a search directory if detection misses yours.
 
@@ -27,7 +27,7 @@ Then open **Models → Download models**, selecting the available quantization, 
 
 Model cards show the actual data destination, free space on each destination disk and estimated additional bytes after counting reusable weights or resumable files. The background checks again before preparation and refuses to start downloads when space is insufficient or unknown. These are estimates from the reviewed installer, not proof of driver, memory or complete dependency readiness. Importing an existing model does not require downloading or reserving room for another full copy of its weights.
 
-Tasks show actual log output and downloaded bytes when available. Cancel a task if necessary, then retry after correcting its error. A completed, verified preparation appears in My models without replacing your current selection. Select **Use** when you are ready to switch.
+Open the separate **Tasks & logs** sidebar menu for preparation, download and update tasks, actual log output and downloaded bytes when available. Use the task's supported cancel or retry action after correcting an error. A completed, verified preparation appears in My models without replacing your current selection. Select **Use** when you are ready to switch.
 
 ## Start chatting
 
@@ -65,7 +65,7 @@ Keep the client timeout long enough for model loading and lengthy prompts. Check
 
 ## Window, background and startup
 
-An independent background process manages imported or prepared services. Reopening the desktop app reconnects to the background for the same user.
+An independent background process manages imported or prepared services. Reopening the desktop app reconnects to the background for the same user. Opening the app or signing in starts only the lightweight background, without enabling model services from a saved selection. Enable a model manually from Overview's **Recently enabled** entry or select a configuration and **Use** in My models. A stopped service shows **Not started**, which is not a service failure. Parameter comparisons live in Tuning; task diagnostics have their own **Tasks & logs** menu.
 
 **Minimize to tray when closing the window** is enabled by default and keeps a running API available. Disable it to show an exit confirmation and stop managed services on close. The dialog offers Don't ask again; Settings can re-enable the prompt. Left-click the tray to open the interface, or right-click for service status and shortcuts. **Stop services and quit** ends managed services.
 
@@ -73,13 +73,17 @@ An independent background process manages imported or prepared services. Reopeni
 
 Settings provides:
 
-- **Launch on login:** start the background without first opening Chat.
-- **Prepare at startup:** choose early preparation instead of the default lightweight, on-demand policy.
-- **Service recovery:** enable up to three recovery attempts after the selected, managed service exits. Repeated failures surface a repair state rather than an endless restart loop. This does not promise automatic recovery from every API failure or stalled process.
+- **Start the background service at sign-in:** start only the local background; enable model services manually.
+- **Keep the running model ready:** keep the model loaded after manually enabling its service. When off, configure idle memory release while retaining the API and loading the model on the next use. This does not enable a model when opening the app or signing in.
+- **Recover the service automatically:** retry an enabled managed service up to three times after a crash. Deliberately stopped services remain stopped; repeated failures surface diagnostics. This does not promise recovery from every API failure or stalled process.
+
+Cold background startup, legacy registration handoff and app upgrades preserve stopped services. An app or background upgrade attempts to restore a service and its previous model-loading state only when it verified that the managed service was actually running before the switch. A saved selection or registration is not a request to start it. Follow diagnostics if recovery fails; restoring a UI selection does not establish model or API recovery. Strata updating, existing-model load recovery and a short API inference have been tested on one Windows machine. Complete app updates across versions and other environments still require separate acceptance; see the [verification record](VERIFICATION.md#特定-windows-机器的-strata-0142-实机更新) for scope.
 
 Appearance follows the system by default. Language and theme are in Settings, beside the sidebar collapse control at the lower left. Strata management is its own navigation page.
 
 See [support scope](DOWNLOAD.en.md#support-scope) for current platform and usage limits. Linux containment requires the environment described above and covers descendants that stay in the managed process group; it does not establish cleanup of every MCP tool that creates its own session.
+
+Login-startup status validates the registration, background file and full hash, data directory and enabled flag. Damaged or foreign entries show diagnostics rather than being claimed. Follow the reason to restore the app background files or resolve conflicts, then configure startup again. A valid status does not establish a real sign-out/sign-in test; operating-system policies may still prevent login startup.
 
 ## Read background health
 
@@ -124,7 +128,9 @@ CSV export opens the system save dialog and exports metadata matching the curren
 
 Usage analytics records metadata without prompts, responses, reasoning, attachments, tool arguments or API keys. Chat history and attachments are stored separately on your computer; metadata-only collection does not mean the app stores no conversation content.
 
-The request viewer's **request-body capture** is a separate diagnostic feature. It is disabled upstream by default; enable `api_monitor` in the model's runtime configuration and restart if you need it. An imported configuration may already have it enabled. API usage collection does not require body capture.
+**Request-body capture** is separate from metadata collection. Open advanced diagnostics, choose 5, 15 or 30 minutes, and enable temporary capture on an idle managed runtime that supports it and passes identity checks. It keeps up to 100 requests' inputs, reasoning and responses in RAM. Disabling capture or expiry erases captured bodies while the service keeps running; it does not alter `api_monitor`. Unsupported runtimes, unknown identity or active requests prevent automatic enablement.
+
+**Manage an existing `api_monitor` setting separately.** An imported configuration may already enable the upstream viewer. The app marks it as user-configured and does not claim or disable it. For persistent configuration, set `api_monitor: true` in runtime configuration and restart as prompted; set it to `false` and restart to disable it. This route has no app-managed temporary expiry; lease cleanup applies only to temporary capture enabled by the app.
 
 Runtime and model downloads, update checks, and configured MCP tools can make network requests. Local inference does not make every enabled integration offline. Keep API keys and diagnostic exports private, and review exports or logs before sharing them.
 
@@ -144,11 +150,21 @@ Applying a result saves a recovery record, restarts the owned service and checks
 
 Controlled tests validate the comparison and recovery workflow. Real speed improvements need a report from the actual model, hardware and workload. Screenshot metrics and demonstration timing are not GPU benchmarks.
 
+## New in 0.1.3
+
+Chat supports text, JSON and JSON Schema output, sampling controls and reusable long-document prefixes. Common actions are visible directly; the question mark beside a heading opens help. Runtime configuration is organized by category, with advanced editors retaining access to the full configuration.
+
+Model preparation exposes supported download sources and GPU selection, local GGUF inspection, and runtime-supported Swift/IQ3_S quantization. Availability depends on the installed runtime and selected model; unavailable actions show the reason.
+
+Service tools expose slots, session save/restore, prefill progress and supported VRAM adjustment. MCP shows servers, tools and model-supported tool calls. Existing-runtime management handoff and expert tuning candidates have dedicated controls. Session files remain local and should be handled as data containing user input.
+
+Windows test builds were exercised with JSON/Schema, long-document caching, session save/restore, concurrent slots and management handoff. The tested low-RAM resident mode rejects dynamic VRAM adjustment; the app explains that upstream rejection. Full long-running tuning, new model downloads and restoration across Windows sign-in still need separate acceptance. Those test-build GPU results do not establish repeated acceptance of the final release package.
+
 ## Application updates
 
 Automatic checks in Settings are enabled by default, on launch and every 12 hours. An available update displays that Release's original notes and requires confirmation before downloading and installing. Disable automatic checks to check manually. Failures preserve the current app and can be retried; installation checks that the background is idle. Downloads show progress, and the updater verifies official Tauri signatures with the embedded public key.
 
-Preview v0.1.0-beta.1 is available for manual installation. Download the [Windows installer](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_x64-setup.exe), [AppImage](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_amd64.AppImage) or [DEB](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_amd64.deb) and compare [SHA256SUMS](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/SHA256SUMS). Previews do not replace the stable `latest` update channel. Settings checks the stable update source; finding no beta update does not establish that the latest preview is installed.
+Use the v0.1.3 release entry for the [Windows installer](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.3/Strata.Manager_0.1.3_x64-setup.exe), [AppImage](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.3/Strata.Manager_0.1.3_amd64.AppImage) or [DEB](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.3/Strata.Manager_0.1.3_amd64.deb) and compare [SHA256SUMS](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.3/SHA256SUMS). Install only assets actually listed on the release page. Stable releases use `latest`; previews remain manual downloads and do not replace the stable channel. Finding no beta update does not establish that the latest preview is installed.
 
 Application, Strata runtime and model weights are separate. Updating Manager does not normally require another model-weight download. Read the version's release notes for restart and recovery behavior.
 
@@ -162,7 +178,9 @@ Strata is a global runtime managed on its own **Strata** page. View installed an
 
 Automatic checks share the app's default-enabled setting and still require confirmation. Preparation preserves the current service; switching follows idle and process-identity checks and briefly interrupts the local API. The updated service is checked, and failure or cancellation after switching attempts to restore backups and previous registrations. Recovery failures retain diagnostics for repair before retrying.
 
-This workflow uses upstream release information and matching ZIP assets. ZIP engine updates currently target matching official Windows x64 packages; missing platform assets preserve the existing installation. External startup hooks, unknown processes or incompatible dependencies are rejected before stopping services. Real GPU and complete machine updates still need acceptance; source, extraction and recovery tests do not establish driver and model compatibility.
+This workflow uses upstream release information and matching ZIP assets. ZIP engine updates currently target matching official Windows x64 packages; missing platform assets preserve the existing installation. Linux retains release information and notes without offering Windows ZIP updates; Linux source-build upgrades are not implemented. External startup hooks, unknown processes or incompatible dependencies are rejected before stopping services.
+
+An existing Strata installation was updated to 0.1.42 on one Windows machine: all 24 original configuration files were unchanged, the existing model was loaded again with its 131072 context setting preserved, and a short API request returned `OK`. This was not a full 128K-context test and does not establish compatibility for every GPU/model, Linux or the complete UI flow. Updating the Tauri app itself across versions requires separate acceptance. See the [verification record](VERIFICATION.md#特定-windows-机器的-strata-0142-实机更新) for details.
 
 ## Common questions
 
@@ -189,18 +207,3 @@ This workflow uses upstream release information and matching ZIP assets. ZIP eng
 The README images show the actual App rendered with isolated in-memory RPC example data. Model status, metrics and chat content are examples; their source is disclosed outside the images in the README and website. The cover combines those screens. Neither the screenshots nor the cover demonstrate inference speed or real API usage.
 
 This independent community application builds on [Niko1221/Strata](https://github.com/Niko1221/Strata) and its official interface. See [MIT](../LICENSE) and [third-party notices](../THIRD_PARTY_NOTICES.md); Outfit uses SIL OFL 1.1, and separately downloaded models retain their own licenses.
-
-## Newly integrated upstream features
-
-These entries describe the current source; installed packages require a rebuild.
-
-- **Models → Download models**: Swift 1.5 IQ3_S, task-scoped official/HF mirror/ModelScope sources, GPU selection and CUDA/HIP/SYCL choices. The upstream installer still determines hardware support; disk preflight and cancellation remain in place.
-- **GGUF inspection**: run the registered runtime's header-only inspection tool on a local file/directory, `hf:owner/repo`, `ms:owner/repo` or HTTPS source. Results use the task log; no model download or inference start is performed.
-- **Model configuration → Runtime operations**: adjust or reset free-VRAM reservation for an owned, idle elastic runtime. Show actual free memory/cache results and distinguish a successful response from meeting the target.
-- **Engine session files**: explicitly check the interface, then save/restore slot 0 using a safe filename. Experimental; real Windows engine compatibility is unverified. Upstream save-directory, batching, split-device and model/version constraints still apply. Restoring cache does not replace chat history. Errors and partial publication are retained without automatic retries.
-- **Chat → Sampling → Advanced request options**: JSON/JSON Schema, Min P, stops, repetition/presence/frequency penalties, penalty window, logit bias and a message-ID-bound document prefix. Fresh capability evidence is read before sending. JSON cannot be combined with MCP tools and uses server validation, rather than grammar-constrained decoding. Pinned prefixes require engine 0.1.40.2+ and verified `--prompt-cache >= 3` from the current owned native engine command. Saving configuration without restarting cannot enable this capability; a question must remain after the document boundary.
-- **Official MCP management**: a read-only initialization/tools-list probe of a pinned official script. Exporting client configuration requires explicit persistent installation-level handoff. Manager will not automatically start/recover that installation while it is externally managed. Before resuming Manager control, stop external services, disconnect Strata MCP and wait for setup scripts to exit. Handoff is mutually exclusive with local configuration/model file operations. No key or client configuration file is written.
-- **Monitoring**: individual slot telemetry and recent-request Prefill throughput computed from fresh input tokens and actual prompt time. Missing telemetry stays unknown.
-- **Tuning**: independent `adapt-every`, `adapt-swaps` and `adapt-decay` restart candidates, with at most four restart candidates in total. Full A/B/A workloads, quality/resource checks and original-configuration restoration remain required. Unpublished expert values are labelled verified startup requests, not effective telemetry.
-
-Verification uses isolated CPU, HTTP and browser fixtures. It does not establish real GPU performance gains, Windows session-file compatibility or installed-package acceptance.

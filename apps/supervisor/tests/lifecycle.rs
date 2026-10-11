@@ -2,34 +2,108 @@
 use serde_json::{json, Value};
 use std::{
     fs,
+    io::{Read, Seek, SeekFrom},
+    ops::{Deref, DerefMut},
     path::Path,
     process::{Child, Command, Stdio},
     time::Duration,
 };
 use strata_local_ipc::call;
 
-fn launch(data: &Path) -> Child {
+struct LoggedChild {
+    child: Child,
+    logs: tempfile::TempDir,
+}
+impl Deref for LoggedChild {
+    type Target = Child;
+    fn deref(&self) -> &Child {
+        &self.child
+    }
+}
+impl DerefMut for LoggedChild {
+    fn deref_mut(&mut self) -> &mut Child {
+        &mut self.child
+    }
+}
+impl Drop for LoggedChild {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+impl LoggedChild {
+    fn diagnostics(&self, last_ipc_error: &str) -> String {
+        format!(
+            "pid={}; last IPC error={}; stdout tail:\n{}\nstderr tail:\n{}",
+            self.id(),
+            last_ipc_error.chars().take(512).collect::<String>(),
+            log_tail(&self.logs.path().join("stdout.log")),
+            log_tail(&self.logs.path().join("stderr.log"))
+        )
+    }
+}
+fn log_tail(path: &Path) -> String {
+    const LIMIT: u64 = 4096;
+    let read = || -> std::io::Result<Vec<u8>> {
+        let mut file = fs::File::open(path)?;
+        let length = file.metadata()?.len().min(LIMIT);
+        file.seek(SeekFrom::End(-(length as i64)))?;
+        let mut bytes = Vec::with_capacity(length as usize);
+        file.take(LIMIT).read_to_end(&mut bytes)?;
+        Ok(bytes)
+    };
+    match read() {
+        Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+        Err(error) => format!("log unavailable: {error}"),
+    }
+}
+fn launch(data: &Path) -> LoggedChild {
     launch_mode(data, false)
 }
-fn launch_mode(data: &Path, defer_restore: bool) -> Child {
+fn launch_mode(data: &Path, defer_restore: bool) -> LoggedChild {
+    // These files belong only to the enclosing lifecycle TempDir. File-backed
+    // output cannot fill a pipe and block the child; failures read at most 4 KiB
+    // from each stream, and the guard reaps the child before removing its logs.
+    let logs = tempfile::Builder::new()
+        .prefix("supervisor-logs-")
+        .tempdir_in(data.parent().unwrap())
+        .unwrap();
+    let stdout = fs::File::create(logs.path().join("stdout.log")).unwrap();
+    let stderr = fs::File::create(logs.path().join("stderr.log")).unwrap();
     let mut command = Command::new(env!("CARGO_BIN_EXE_strata-supervisor"));
     command
         .arg("--data-dir")
         .arg(data)
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stdout(Stdio::from(stdout))
+        .stderr(Stdio::from(stderr));
     if defer_restore {
         command.arg("--defer-restore");
     }
     strata_runtime_core::processes::hidden(&mut command);
-    command.spawn().unwrap()
+    LoggedChild {
+        child: command.spawn().unwrap(),
+        logs,
+    }
 }
 async fn wait_loaded(data: &Path, profile: &Value) {
     for _ in 0..200 {
-        if let Ok(health) = call(data, "strata_request", json!({"profile":profile,"path":"/health","method":"GET"})).await {
+        if let Ok(health) = call(
+            data,
+            "strata_request",
+            json!({"profile":profile,"path":"/health","method":"GET"}),
+        )
+        .await
+        {
             if health["loaded"] == true
-                && call(data, "store_get", json!({"key":"supervisorUpgradeRecoveryLoad"})).await.unwrap().is_null()
+                && call(
+                    data,
+                    "store_get",
+                    json!({"key":"supervisorUpgradeRecoveryLoad"}),
+                )
+                .await
+                .unwrap()
+                .is_null()
             {
                 return;
             }
@@ -62,90 +136,217 @@ path=directory/('status-'+service_id+'.json');temporary=path.with_suffix('.tmp')
 ThreadingHTTPServer((args.host,args.port),Handler).serve_forever()
 "#,
     )).unwrap();
-    let mut daemon = DaemonGuard { child: Some(launch(&data)) };
-    ready(&data).await;
-    let candidates = call(&data, "discover_local", json!({"directories":[runtime]})).await.unwrap();
-    let candidate = candidates.as_array().unwrap().iter().find(|candidate| {
-        dunce::canonicalize(candidate["configPath"].as_str().unwrap()).unwrap()
-            == dunce::canonicalize(runtime.join("strata-fixture.json")).unwrap()
-    }).unwrap();
-    let profile = call(&data, "import_local", json!({"candidate":candidate})).await.unwrap();
+    let mut daemon = DaemonGuard {
+        child: Some(launch(&data)),
+    };
+    ready(&data, daemon.child.as_mut().unwrap()).await;
+    let candidates = call(&data, "discover_local", json!({"directories":[runtime]}))
+        .await
+        .unwrap();
+    let candidate = candidates
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|candidate| {
+            dunce::canonicalize(candidate["configPath"].as_str().unwrap()).unwrap()
+                == dunce::canonicalize(runtime.join("strata-fixture.json")).unwrap()
+        })
+        .unwrap();
+    let profile = call(&data, "import_local", json!({"candidate":candidate}))
+        .await
+        .unwrap();
     let id = profile["id"].as_str().unwrap();
     for (key, value) in [
         ("activeLocalInstallation", json!(id)),
         ("localServiceDesired", json!(true)),
-        ("backgroundPolicy", json!({"mode":"alwaysReady","autoRecover":true,"idleUnloadMinutes":15})),
+        (
+            "backgroundPolicy",
+            json!({"mode":"alwaysReady","autoRecover":true,"idleUnloadMinutes":15}),
+        ),
     ] {
-        call(&data, "store_set", json!({"key":key,"value":value})).await.unwrap();
+        call(&data, "store_set", json!({"key":key,"value":value}))
+            .await
+            .unwrap();
     }
     call(&data, "shutdown_supervisor", json!({})).await.unwrap();
     wait_exit(daemon.child.as_mut().unwrap()).await;
     daemon.child = Some(launch(&data));
-    ready(&data).await;
+    ready(&data, daemon.child.as_mut().unwrap()).await;
     tokio::time::sleep(Duration::from_millis(2400)).await;
-    assert_eq!(ready(&data).await["activeServices"], 0, "saved history must not start a service, even under alwaysReady");
-    assert!(std::net::TcpStream::connect_timeout(&url_origin(&profile), Duration::from_millis(100)).is_err());
-    assert!(!data.join("observer-v1").exists(), "cold startup installed a model observer");
-    call(&data, "set_background_policy", json!({"mode":"alwaysReady","autoRecover":true,"idleUnloadMinutes":15})).await.unwrap();
-    assert_eq!(ready(&data).await["activeServices"], 0, "changing preload policy must not enable a stopped model");
+    assert_eq!(
+        ready(&data, daemon.child.as_mut().unwrap()).await["activeServices"],
+        0,
+        "saved history must not start a service, even under alwaysReady"
+    );
+    assert!(std::net::TcpStream::connect_timeout(
+        &url_origin(&profile),
+        Duration::from_millis(100)
+    )
+    .is_err());
+    assert!(
+        !data.join("observer-v1").exists(),
+        "cold startup installed a model observer"
+    );
+    call(
+        &data,
+        "set_background_policy",
+        json!({"mode":"alwaysReady","autoRecover":true,"idleUnloadMinutes":15}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        ready(&data, daemon.child.as_mut().unwrap()).await["activeServices"],
+        0,
+        "changing preload policy must not enable a stopped model"
+    );
 
-    call(&data, "shutdown_supervisor", json!({"forUpdate":true})).await.unwrap();
+    call(&data, "shutdown_supervisor", json!({"forUpdate":true}))
+        .await
+        .unwrap();
     wait_exit(daemon.child.as_mut().unwrap()).await;
     daemon.child = Some(launch_mode(&data, true));
-    ready(&data).await;
-    assert_eq!(call(&data, "store_get", json!({"key":"supervisorUpgradeRecoveryLoad"})).await.unwrap()["restore"], false);
+    ready(&data, daemon.child.as_mut().unwrap()).await;
+    assert_eq!(
+        call(
+            &data,
+            "store_get",
+            json!({"key":"supervisorUpgradeRecoveryLoad"})
+        )
+        .await
+        .unwrap()["restore"],
+        false
+    );
     call(&data, "resume_supervisor", json!({})).await.unwrap();
     tokio::time::sleep(Duration::from_millis(2400)).await;
-    assert_eq!(ready(&data).await["activeServices"], 0, "upgrading a stopped selection must not enable it");
-    assert!(std::net::TcpStream::connect_timeout(&url_origin(&profile), Duration::from_millis(100)).is_err());
+    assert_eq!(
+        ready(&data, daemon.child.as_mut().unwrap()).await["activeServices"],
+        0,
+        "upgrading a stopped selection must not enable it"
+    );
+    assert!(std::net::TcpStream::connect_timeout(
+        &url_origin(&profile),
+        Duration::from_millis(100)
+    )
+    .is_err());
     assert!(!data.join("observer-v1").exists());
 
-    call(&data, "ensure_local_service", json!({"profileId":id})).await.unwrap();
+    call(&data, "ensure_local_service", json!({"profileId":id}))
+        .await
+        .unwrap();
     wait_loaded(&data, &profile).await;
-    call(&data, "set_background_policy", json!({"mode":"lazy","autoRecover":true,"idleUnloadMinutes":15})).await.unwrap();
-    call(&data, "shutdown_supervisor", json!({"forUpdate":true})).await.unwrap();
+    call(
+        &data,
+        "set_background_policy",
+        json!({"mode":"lazy","autoRecover":true,"idleUnloadMinutes":15}),
+    )
+    .await
+    .unwrap();
+    call(&data, "shutdown_supervisor", json!({"forUpdate":true}))
+        .await
+        .unwrap();
     wait_exit(daemon.child.as_mut().unwrap()).await;
     daemon.child = Some(launch_mode(&data, true));
-    assert_eq!(ready(&data).await["recoveryDeferred"], true);
+    assert_eq!(
+        ready(&data, daemon.child.as_mut().unwrap()).await["recoveryDeferred"],
+        true
+    );
     tokio::time::sleep(Duration::from_millis(2400)).await;
-    assert_eq!(ready(&data).await["activeServices"], 0, "registry handoff must still defer service restoration");
+    assert_eq!(
+        ready(&data, daemon.child.as_mut().unwrap()).await["activeServices"],
+        0,
+        "registry handoff must still defer service restoration"
+    );
     call(&data, "resume_supervisor", json!({})).await.unwrap();
     wait_loaded(&data, &profile).await;
-    assert_eq!(call(&data, "store_get", json!({"key":"supervisorUpgradeRecoveryLoad"})).await.unwrap(), Value::Null);
+    assert_eq!(
+        call(
+            &data,
+            "store_get",
+            json!({"key":"supervisorUpgradeRecoveryLoad"})
+        )
+        .await
+        .unwrap(),
+        Value::Null
+    );
 
     // Rollback launches the previous package normally, without --defer-restore.
-    call(&data, "shutdown_supervisor", json!({"forUpdate":true})).await.unwrap();
+    call(&data, "shutdown_supervisor", json!({"forUpdate":true}))
+        .await
+        .unwrap();
     wait_exit(daemon.child.as_mut().unwrap()).await;
     daemon.child = Some(launch(&data));
-    ready(&data).await;
+    ready(&data, daemon.child.as_mut().unwrap()).await;
     wait_loaded(&data, &profile).await;
-    assert_eq!(ready(&data).await["activeServices"], 1);
+    assert_eq!(
+        ready(&data, daemon.child.as_mut().unwrap()).await["activeServices"],
+        1
+    );
     // A legacy snapshot without actual running evidence must stay stopped.
-    call(&data, "set_background_policy", json!({"mode":"alwaysReady","autoRecover":true,"idleUnloadMinutes":15})).await.unwrap();
-    call(&data, "shutdown_supervisor", json!({"forUpdate":true})).await.unwrap();
+    call(
+        &data,
+        "set_background_policy",
+        json!({"mode":"alwaysReady","autoRecover":true,"idleUnloadMinutes":15}),
+    )
+    .await
+    .unwrap();
+    call(&data, "shutdown_supervisor", json!({"forUpdate":true}))
+        .await
+        .unwrap();
     wait_exit(daemon.child.as_mut().unwrap()).await;
     daemon.child = Some(launch_mode(&data, true));
-    ready(&data).await;
-    call(&data, "store_set", json!({"key":"supervisorUpgradeRecoveryLoad","value":null})).await.unwrap();
+    ready(&data, daemon.child.as_mut().unwrap()).await;
+    call(
+        &data,
+        "store_set",
+        json!({"key":"supervisorUpgradeRecoveryLoad","value":null}),
+    )
+    .await
+    .unwrap();
     call(&data, "resume_supervisor", json!({})).await.unwrap();
     tokio::time::sleep(Duration::from_millis(2400)).await;
-    assert_eq!(ready(&data).await["activeServices"], 0, "a legacy snapshot without running evidence must not enable its saved selection");
-    assert!(std::net::TcpStream::connect_timeout(&url_origin(&profile), Duration::from_millis(100)).is_err());
-    call(&data, "ensure_local_service", json!({"profileId":id})).await.unwrap();
+    assert_eq!(
+        ready(&data, daemon.child.as_mut().unwrap()).await["activeServices"],
+        0,
+        "a legacy snapshot without running evidence must not enable its saved selection"
+    );
+    assert!(std::net::TcpStream::connect_timeout(
+        &url_origin(&profile),
+        Duration::from_millis(100)
+    )
+    .is_err());
+    call(&data, "ensure_local_service", json!({"profileId":id}))
+        .await
+        .unwrap();
     wait_loaded(&data, &profile).await;
     call(&data, "shutdown_supervisor", json!({})).await.unwrap();
     wait_exit(daemon.child.as_mut().unwrap()).await;
 }
-async fn ready(data: &Path) -> Value {
+async fn ready(data: &Path, child: &mut LoggedChild) -> Value {
+    let mut last_ipc_error = String::from("no IPC attempt completed");
     for _ in 0..100 {
-        if let Ok(status) = call(data, "supervisor_status", json!({})).await {
-            return status;
+        match call(data, "supervisor_status", json!({})).await {
+            Ok(status) => return status,
+            Err(error) => last_ipc_error = error.to_string(),
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => panic!(
+                "isolated test supervisor exited before becoming ready ({status}); {}",
+                child.diagnostics(&last_ipc_error)
+            ),
+            Ok(None) => {}
+            Err(error) => panic!(
+                "isolated test supervisor exit check failed ({error}); {}",
+                child.diagnostics(&last_ipc_error)
+            ),
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    panic!("isolated test supervisor failed to start");
+    panic!(
+        "isolated test supervisor failed to start after 100 IPC attempts; {}",
+        child.diagnostics(&last_ipc_error)
+    );
 }
-async fn wait_exit(child: &mut Child) {
+async fn wait_exit(child: &mut LoggedChild) {
     for _ in 0..100 {
         if child.try_wait().unwrap().is_some() {
             return;
@@ -153,7 +354,10 @@ async fn wait_exit(child: &mut Child) {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     let _ = child.kill();
-    panic!("isolated supervisor did not stop");
+    panic!(
+        "isolated supervisor did not stop; {}",
+        child.diagnostics("shutdown wait")
+    );
 }
 fn python() -> String {
     #[cfg(windows)]
@@ -312,15 +516,7 @@ ThreadingHTTPServer((args.host,args.port),Handler).serve_forever()
 }
 
 struct DaemonGuard {
-    child: Option<Child>,
-}
-impl Drop for DaemonGuard {
-    fn drop(&mut self) {
-        if let Some(child) = &mut self.child {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-    }
+    child: Option<LoggedChild>,
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -336,7 +532,7 @@ async fn real_background_process_survives_client_disconnect_and_reconnects_with_
     let mut guard = DaemonGuard {
         child: Some(launch(&data)),
     };
-    let first = ready(&data).await;
+    let first = ready(&data, guard.child.as_mut().unwrap()).await;
     assert_eq!(first["protocolVersion"], 1);
     let owner = first["pid"].as_u64().unwrap();
     call(
@@ -349,11 +545,17 @@ async fn real_background_process_survives_client_disconnect_and_reconnects_with_
     let mut duplicate = launch(&data);
     wait_exit(&mut duplicate).await;
     assert!(duplicate.try_wait().unwrap().unwrap().success());
-    assert_eq!(ready(&data).await["pid"].as_u64(), Some(owner));
+    assert_eq!(
+        ready(&data, guard.child.as_mut().unwrap()).await["pid"].as_u64(),
+        Some(owner)
+    );
     let mut other = DaemonGuard {
         child: Some(launch(&separate)),
     };
-    assert_ne!(ready(&separate).await["pid"].as_u64(), Some(owner));
+    assert_ne!(
+        ready(&separate, other.child.as_mut().unwrap()).await["pid"].as_u64(),
+        Some(owner)
+    );
     assert!(
         call(&separate, "store_get", json!({"key":"lifecycle-test"}))
             .await
@@ -400,7 +602,10 @@ async fn real_background_process_survives_client_disconnect_and_reconnects_with_
     let right = right.unwrap();
     assert_eq!(left["pid"], right["pid"]);
     assert_eq!(left["owned"], true);
-    assert_eq!(ready(&data).await["activeServices"], 1);
+    assert_eq!(
+        ready(&data, guard.child.as_mut().unwrap()).await["activeServices"],
+        1
+    );
     let health = call(
         &data,
         "strata_request",
@@ -431,7 +636,10 @@ async fn real_background_process_survives_client_disconnect_and_reconnects_with_
         json!({"mode":"lazy","autoRecover":true,"idleUnloadMinutes":15})
     );
     call(&data, "prepare_app_update", json!({})).await.unwrap();
-    assert_eq!(ready(&data).await["pid"].as_u64(), Some(owner));
+    assert_eq!(
+        ready(&data, guard.child.as_mut().unwrap()).await["pid"].as_u64(),
+        Some(owner)
+    );
     assert!(data.join("backups").read_dir().unwrap().next().is_some());
     assert!(std::net::TcpStream::connect_timeout(
         &url_origin(&profile),
@@ -457,7 +665,10 @@ async fn real_background_process_survives_client_disconnect_and_reconnects_with_
         restored.is_some(),
         "selected fixture was not automatically recovered"
     );
-    assert_eq!(ready(&data).await["activeServices"], 1);
+    assert_eq!(
+        ready(&data, guard.child.as_mut().unwrap()).await["activeServices"],
+        1
+    );
     call(&data, "stop_service", json!({"profileId":id}))
         .await
         .unwrap();
@@ -484,7 +695,7 @@ async fn real_background_process_survives_client_disconnect_and_reconnects_with_
         .is_err());
     let mut repair = false;
     for _ in 0..200 {
-        let status = ready(&data).await;
+        let status = ready(&data, guard.child.as_mut().unwrap()).await;
         if status["recovery"]["repairRequired"] == true {
             assert_eq!(status["recovery"]["attempts"], 3);
             repair = true;
@@ -494,19 +705,28 @@ async fn real_background_process_survives_client_disconnect_and_reconnects_with_
     }
     assert!(repair, "three failed retries must require repair");
     tokio::time::sleep(Duration::from_millis(2400)).await;
-    assert_eq!(ready(&data).await["recovery"]["attempts"], 3);
+    assert_eq!(
+        ready(&data, guard.child.as_mut().unwrap()).await["recovery"]["attempts"],
+        3
+    );
     fs::write(managed, managed_bytes).unwrap();
     call(&data, "ensure_local_service", json!({"profileId":id}))
         .await
         .unwrap();
-    assert_eq!(ready(&data).await["recovery"]["repairRequired"], false);
+    assert_eq!(
+        ready(&data, guard.child.as_mut().unwrap()).await["recovery"]["repairRequired"],
+        false
+    );
 
     call(&data, "shutdown_supervisor", json!({})).await.unwrap();
     wait_exit(guard.child.as_mut().unwrap()).await;
     let origin = url_origin(&profile);
     assert!(std::net::TcpStream::connect_timeout(&origin, Duration::from_millis(200)).is_err());
     guard.child = Some(launch(&data));
-    assert_ne!(ready(&data).await["pid"].as_u64(), Some(owner));
+    assert_ne!(
+        ready(&data, guard.child.as_mut().unwrap()).await["pid"].as_u64(),
+        Some(owner)
+    );
     assert_eq!(
         call(&data, "store_get", json!({"key":"lifecycle-test"}))
             .await
@@ -520,7 +740,7 @@ async fn real_background_process_survives_client_disconnect_and_reconnects_with_
         .unwrap();
     // Simulate a supervisor crash: its platform ownership mechanism must release
     // only this fixture's process tree, so a stale model is never duplicated.
-    let crashed = ready(&data).await;
+    let crashed = ready(&data, guard.child.as_mut().unwrap()).await;
     let marker = data.join("analytics").join(format!("{id}.maintenance"));
     fs::write(&marker,serde_json::to_vec(&json!({"mode":"tuning","token":"isolated-stale-owner-token-00000000000000","supervisorPid":crashed["pid"],"supervisorStartedAt":crashed["startedAt"]})).unwrap()).unwrap();
     guard.child.as_mut().unwrap().kill().unwrap();
@@ -538,7 +758,7 @@ async fn real_background_process_survives_client_disconnect_and_reconnects_with_
         "fixture model escaped supervisor ownership after simulated crash"
     );
     guard.child = Some(launch(&data));
-    ready(&data).await;
+    ready(&data, guard.child.as_mut().unwrap()).await;
     call(&data, "ensure_local_service", json!({"profileId":id}))
         .await
         .unwrap();
@@ -615,7 +835,7 @@ async fn switching_two_owned_models_drains_requests_and_failure_restores_origina
     let mut daemon = DaemonGuard {
         child: Some(launch(&data)),
     };
-    ready(&data).await;
+    ready(&data, daemon.child.as_mut().unwrap()).await;
     let mut profiles = Vec::new();
     for root in [&left, &right] {
         let candidates = call(&data, "discover_local", json!({"directories":[root]}))
@@ -702,7 +922,10 @@ async fn switching_two_owned_models_drains_requests_and_failure_restores_origina
         .unwrap()["loaded"],
         true
     );
-    assert_eq!(ready(&data).await["activeServices"], 1);
+    assert_eq!(
+        ready(&data, daemon.child.as_mut().unwrap()).await["activeServices"],
+        1
+    );
     fs::remove_file(right.join("fail-load")).unwrap();
     call(&data, "switch_local_service", json!({"profileId":right_id}))
         .await
@@ -713,7 +936,10 @@ async fn switching_two_owned_models_drains_requests_and_failure_restores_origina
             .unwrap(),
         right_id
     );
-    assert_eq!(ready(&data).await["activeServices"], 1);
+    assert_eq!(
+        ready(&data, daemon.child.as_mut().unwrap()).await["activeServices"],
+        1
+    );
     assert_eq!(
         call(&data, "service_status", json!({"profileId":left_id}))
             .await
@@ -723,7 +949,10 @@ async fn switching_two_owned_models_drains_requests_and_failure_restores_origina
     call(&data, "switch_local_service", json!({"profileId":left_id}))
         .await
         .unwrap();
-    assert_eq!(ready(&data).await["activeServices"], 1);
+    assert_eq!(
+        ready(&data, daemon.child.as_mut().unwrap()).await["activeServices"],
+        1
+    );
     call(&data, "shutdown_supervisor", json!({})).await.unwrap();
     wait_exit(daemon.child.as_mut().unwrap()).await;
 }

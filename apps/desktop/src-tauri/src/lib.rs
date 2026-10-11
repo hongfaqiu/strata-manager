@@ -1,10 +1,10 @@
-mod configuration_files;
 mod configuration_details;
+mod configuration_files;
 mod http;
 mod model_files;
 mod runtime_detection;
-mod runtime_updates;
 mod runtime_update_queue;
+mod runtime_updates;
 mod startup;
 mod supervisor_client;
 mod vision_files;
@@ -62,12 +62,21 @@ async fn switch_local_service(
 async fn record_last_activation(ipc: &SupervisorClient, profile_id: &str) -> Result<(), String> {
     static LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     let _guard = LOCK.lock().await;
-    let previous = ipc.request("store_get", json!({"key":"localConfigurationLastActivatedAt"}))
-        .await.map_err(|error| error.to_string())?;
+    let previous = ipc
+        .request(
+            "store_get",
+            json!({"key":"localConfigurationLastActivatedAt"}),
+        )
+        .await
+        .map_err(|error| error.to_string())?;
     let mut timestamps = previous.as_object().cloned().unwrap_or_default();
     timestamps.insert(profile_id.into(), json!(strata_runtime_core::types::now()));
-    ipc.request("store_set", json!({"key":"localConfigurationLastActivatedAt","value":timestamps}))
-        .await.map_err(|error| error.to_string())?;
+    ipc.request(
+        "store_set",
+        json!({"key":"localConfigurationLastActivatedAt","value":timestamps}),
+    )
+    .await
+    .map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -578,27 +587,66 @@ async fn run_setup(
 
 #[tauri::command]
 async fn inspect_gguf(state: State<'_, ClientState>, request: Value) -> Result<Value, String> {
-    state.ipc.request("inspect_gguf", json!({"request":request})).await.map_err(|e|e.to_string())
+    state
+        .ipc
+        .request("inspect_gguf", json!({"request":request}))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn probe_official_mcp(state: State<'_, ClientState>, profile_id: String) -> Result<Value, String> {
-    state.ipc.request("probe_official_mcp", json!({"profileId":profile_id})).await.map_err(|e|e.to_string())
+async fn probe_official_mcp(
+    state: State<'_, ClientState>,
+    profile_id: String,
+) -> Result<Value, String> {
+    state
+        .ipc
+        .request("probe_official_mcp", json!({"profileId":profile_id}))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn external_management_status(state: State<'_, ClientState>, profile_id: String) -> Result<Value, String> {
-    state.ipc.request("external_management_status", json!({"profileId":profile_id})).await.map_err(|e|e.to_string())
+async fn external_management_status(
+    state: State<'_, ClientState>,
+    profile_id: String,
+) -> Result<Value, String> {
+    state
+        .ipc
+        .request(
+            "external_management_status",
+            json!({"profileId":profile_id}),
+        )
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn chat_runtime_evidence(state: State<'_, ClientState>, profile_id: String) -> Result<Value, String> {
-    state.ipc.request("chat_runtime_evidence", json!({"profileId":profile_id})).await.map_err(|e|e.to_string())
+async fn chat_runtime_evidence(
+    state: State<'_, ClientState>,
+    profile_id: String,
+) -> Result<Value, String> {
+    state
+        .ipc
+        .request("chat_runtime_evidence", json!({"profileId":profile_id}))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn set_external_management(state: State<'_, ClientState>, profile_id: String, external: bool) -> Result<Value, String> {
-    state.ipc.request("set_external_management", json!({"profileId":profile_id,"external":external})).await.map_err(|e|e.to_string())
+async fn set_external_management(
+    state: State<'_, ClientState>,
+    profile_id: String,
+    external: bool,
+) -> Result<Value, String> {
+    state
+        .ipc
+        .request(
+            "set_external_management",
+            json!({"profileId":profile_id,"external":external}),
+        )
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -632,7 +680,13 @@ async fn update_runtime_zip(
     asset_name: Option<String>,
     stop_current_service: Option<bool>,
 ) -> Result<Value, String> {
-    runtime_update_queue::start(&state.ipc, install_dir, asset_name, stop_current_service.unwrap_or(false)).await
+    runtime_update_queue::start(
+        &state.ipc,
+        install_dir,
+        asset_name,
+        stop_current_service.unwrap_or(false),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -691,8 +745,15 @@ async fn read_config(
 }
 
 #[tauri::command]
-async fn read_config_snapshot(state: State<'_, ClientState>, profile: ServiceProfile) -> Result<Value, String> {
-    state.ipc.request("read_config_snapshot_v1", json!({"profile":profile})).await.map_err(|e| json!({"code":e.code,"message":e.message,"retriable":e.retriable}).to_string())
+async fn read_config_snapshot(
+    state: State<'_, ClientState>,
+    profile: ServiceProfile,
+) -> Result<Value, String> {
+    state
+        .ipc
+        .request("read_config_snapshot_v1", json!({"profile":profile}))
+        .await
+        .map_err(|e| json!({"code":e.code,"message":e.message,"retriable":e.retriable}).to_string())
 }
 
 #[tauri::command]
@@ -701,63 +762,110 @@ fn validate_vision_files(profile: ServiceProfile, config: Value) -> Result<(), S
 }
 
 #[tauri::command]
-async fn copy_configuration(state: State<'_, ClientState>, profile: ServiceProfile, filename: String, config: Value) -> Result<ServiceProfile, String> {
+async fn copy_configuration(
+    state: State<'_, ClientState>,
+    profile: ServiceProfile,
+    filename: String,
+    config: Value,
+) -> Result<ServiceProfile, String> {
     let _guard = configuration_files::OPERATIONS.lock().await;
     let _management = management_file_lock(&state.ipc)?;
-    state.ipc.request("assert_profile_management", json!({"profile":profile})).await.map_err(|e|e.to_string())?;
+    state
+        .ipc
+        .request("assert_profile_management", json!({"profile":profile}))
+        .await
+        .map_err(|e| e.to_string())?;
     tokio::task::spawn_blocking(move || {
         let _management = _management;
         configuration_files::copy(&profile, &filename, config)
     })
-        .await.map_err(|error| error.to_string())?
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 // Keep external-management handoff out of the gap between IPC validation and
 // local filesystem writes, including operations from another desktop process.
-fn management_file_lock(ipc: &SupervisorClient) -> Result<strata_local_ipc::SingleInstance, String> {
+fn management_file_lock(
+    ipc: &SupervisorClient,
+) -> Result<strata_local_ipc::SingleInstance, String> {
     strata_local_ipc::SingleInstance::acquire_scoped(&ipc.data_dir, "managed-file-operation")
         .map_err(|_| "管理交接或文件操作正在进行，请完成后重试 / Management handoff or file operation is in progress; try again when it finishes".into())
 }
 
-async fn assert_configuration_stopped(ipc: &SupervisorClient, profiles: &[ServiceProfile]) -> Result<(), String> {
+async fn assert_configuration_stopped(
+    ipc: &SupervisorClient,
+    profiles: &[ServiceProfile],
+) -> Result<(), String> {
     for profile in profiles {
-        ipc.request("assert_profile_management", json!({"profile":profile})).await.map_err(|e|e.to_string())?;
-        let status = ipc.request("service_status", json!({"profileId":profile.id,"profile":profile}))
-            .await.map_err(|error| error.to_string())?;
+        ipc.request("assert_profile_management", json!({"profile":profile}))
+            .await
+            .map_err(|e| e.to_string())?;
+        let status = ipc
+            .request(
+                "service_status",
+                json!({"profileId":profile.id,"profile":profile}),
+            )
+            .await
+            .map_err(|error| error.to_string())?;
         model_files::assert_stopped_status(&status)?;
     }
     Ok(())
 }
 
 #[tauri::command]
-async fn delete_configuration(state: State<'_, ClientState>, profile: ServiceProfile) -> Result<Value, String> {
+async fn delete_configuration(
+    state: State<'_, ClientState>,
+    profile: ServiceProfile,
+) -> Result<Value, String> {
     let _guard = configuration_files::OPERATIONS.lock().await;
     let _management = management_file_lock(&state.ipc)?;
     let path = configuration_files::configuration_path(&profile)?;
     let key = configuration_files::path_key(&path);
-    let registered: Vec<ServiceProfile> = serde_json::from_value(state.ipc.request("local_installations", json!({}))
-        .await.map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
-    if registered.iter().any(|item| item.id == profile.id && configuration_files::path_key(std::path::Path::new(&item.config_path)) != key) {
+    let registered: Vec<ServiceProfile> = serde_json::from_value(
+        state
+            .ipc
+            .request("local_installations", json!({}))
+            .await
+            .map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| error.to_string())?;
+    if registered.iter().any(|item| {
+        item.id == profile.id
+            && configuration_files::path_key(std::path::Path::new(&item.config_path)) != key
+    }) {
         return Err("登记配置路径已变化，请刷新后重试 / Registered configuration path changed; refresh and try again".into());
     }
-    let matching: Vec<ServiceProfile> = registered.into_iter()
-        .filter(|item| configuration_files::path_key(std::path::Path::new(&item.config_path)) == key).collect();
+    let matching: Vec<ServiceProfile> = registered
+        .into_iter()
+        .filter(|item| {
+            configuration_files::path_key(std::path::Path::new(&item.config_path)) == key
+        })
+        .collect();
     if matching.len() > 1 {
         return Err("多个登记共用此配置文件，无法原子移除，请先整理重复登记 / Multiple registrations share this configuration; consolidate them before deleting".into());
     }
     let mut inspected = matching.clone();
-    if !inspected.iter().any(|item| item.id == profile.id) { inspected.push(profile.clone()); }
+    if !inspected.iter().any(|item| item.id == profile.id) {
+        inspected.push(profile.clone());
+    }
     assert_configuration_stopped(&state.ipc, &inspected).await?;
     let archived = configuration_files::archive(&profile, &state.ipc.data_dir)?;
     let removal = async {
         // Recheck after the file operation so a concurrent start cannot authorize deletion.
         assert_configuration_stopped(&state.ipc, &inspected).await?;
         for selected in &matching {
-            state.ipc.request("remove_local_installation", json!({"profileId":selected.id}))
-                .await.map_err(|error| error.to_string())?;
+            state
+                .ipc
+                .request(
+                    "remove_local_installation",
+                    json!({"profileId":selected.id}),
+                )
+                .await
+                .map_err(|error| error.to_string())?;
         }
         Ok::<(), String>(())
-    }.await;
+    }
+    .await;
     if let Err(error) = removal {
         return match archived.rollback() {
             Ok(()) => Err(format!("删除未完成，配置文件已恢复 / Deletion incomplete; configuration file restored: {error}")),
@@ -767,45 +875,81 @@ async fn delete_configuration(state: State<'_, ClientState>, profile: ServicePro
     Ok(json!({"archivedPath":archived.archived.to_string_lossy()}))
 }
 
-async fn model_deletion_context(ipc: &SupervisorClient, profiles: Vec<ServiceProfile>) -> Result<(Vec<model_files::Configuration>, Vec<model_files::Configuration>), String> {
-    if profiles.is_empty() || profiles.len() > 256 { return Err("请选择一组模型配置 / Select one model configuration group".into()); }
-    let registered: Vec<ServiceProfile> = serde_json::from_value(ipc.request("local_installations", json!({}))
-        .await.map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
+async fn model_deletion_context(
+    ipc: &SupervisorClient,
+    profiles: Vec<ServiceProfile>,
+) -> Result<
+    (
+        Vec<model_files::Configuration>,
+        Vec<model_files::Configuration>,
+    ),
+    String,
+> {
+    if profiles.is_empty() || profiles.len() > 256 {
+        return Err("请选择一组模型配置 / Select one model configuration group".into());
+    }
+    let registered: Vec<ServiceProfile> = serde_json::from_value(
+        ipc.request("local_installations", json!({}))
+            .await
+            .map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| error.to_string())?;
     let mut selected = Vec::new();
     for incoming in profiles {
         let profile = if let Some(saved) = registered.iter().find(|item| item.id == incoming.id) {
-            if configuration_files::path_key(std::path::Path::new(&saved.config_path)) != configuration_files::path_key(std::path::Path::new(&incoming.config_path)) {
+            if configuration_files::path_key(std::path::Path::new(&saved.config_path))
+                != configuration_files::path_key(std::path::Path::new(&incoming.config_path))
+            {
                 return Err("登记配置路径已变化，请刷新模型列表 / Registered configuration path changed; refresh the model list".into());
             }
             saved.clone()
-        } else { incoming };
+        } else {
+            incoming
+        };
         configuration_files::configuration_path(&profile)?;
-        let config = ipc.request("read_config", json!({"profile":profile})).await.map_err(|error| error.to_string())?;
+        let config = ipc
+            .request("read_config", json!({"profile":profile}))
+            .await
+            .map_err(|error| error.to_string())?;
         selected.push(model_files::Configuration { profile, config });
     }
     let mut all = Vec::new();
     for profile in registered {
         configuration_files::configuration_path(&profile).map_err(|error| format!("无法核验登记配置引用，请先修复或移除该配置 / Cannot verify registered configuration references; repair or remove it first: {}: {error}", profile.name))?;
-        let config = ipc.request("read_config", json!({"profile":profile})).await.map_err(|error| error.to_string())?;
+        let config = ipc
+            .request("read_config", json!({"profile":profile}))
+            .await
+            .map_err(|error| error.to_string())?;
         all.push(model_files::Configuration { profile, config });
     }
     Ok((selected, all))
 }
 
 #[tauri::command]
-async fn plan_model_deletion(state: State<'_, ClientState>, profiles: Vec<ServiceProfile>) -> Result<model_files::ModelDeletionPlan, String> {
+async fn plan_model_deletion(
+    state: State<'_, ClientState>,
+    profiles: Vec<ServiceProfile>,
+) -> Result<model_files::ModelDeletionPlan, String> {
     let context = model_deletion_context(&state.ipc, profiles).await;
-    let prepared = match context.and_then(|(selected, registered)| model_files::prepare(&selected, &registered)) {
+    let prepared = match context
+        .and_then(|(selected, registered)| model_files::prepare(&selected, &registered))
+    {
         Ok(prepared) => prepared,
         Err(reason) => return Ok(model_files::ModelDeletionPlan::blocked(reason)),
     };
     let mut plan = prepared.plan;
-    if let Err(reason) = assert_configuration_stopped(&state.ipc, &prepared.profiles).await { plan.blocked_reason = Some(reason); }
+    if let Err(reason) = assert_configuration_stopped(&state.ipc, &prepared.profiles).await {
+        plan.blocked_reason = Some(reason);
+    }
     Ok(plan)
 }
 
 #[tauri::command]
-async fn delete_model_files(state: State<'_, ClientState>, profiles: Vec<ServiceProfile>, expected_files: Vec<model_files::ModelDeletionFile>) -> Result<model_files::ModelDeletionSummary, String> {
+async fn delete_model_files(
+    state: State<'_, ClientState>,
+    profiles: Vec<ServiceProfile>,
+    expected_files: Vec<model_files::ModelDeletionFile>,
+) -> Result<model_files::ModelDeletionSummary, String> {
     let _guard = configuration_files::OPERATIONS.lock().await;
     let _management = management_file_lock(&state.ipc)?;
     let (selected, registered) = model_deletion_context(&state.ipc, profiles.clone()).await?;
@@ -830,7 +974,10 @@ async fn write_config(
     let _guard = configuration_files::OPERATIONS.lock().await;
     state
         .ipc
-        .request("write_config_cas_v1", json!({"profile":profile,"config":config,"expectedRevision":expected_revision}))
+        .request(
+            "write_config_cas_v1",
+            json!({"profile":profile,"config":config,"expectedRevision":expected_revision}),
+        )
         .await
         .map_err(|e| json!({"code":e.code,"message":e.message,"retriable":e.retriable}).to_string())
 }
@@ -881,14 +1028,25 @@ async fn discover_local(
     directories: Option<Vec<String>>,
 ) -> Result<Value, String> {
     let mut candidates = runtime_detection::local_models(&state.ipc, directories).await?;
-    let records = candidates.as_array_mut().ok_or("模型检测结果格式无效 / Invalid model discovery result")?;
+    let records = candidates
+        .as_array_mut()
+        .ok_or("模型检测结果格式无效 / Invalid model discovery result")?;
     for candidate in records {
         let needs_config = candidate.get("config").is_none_or(Value::is_null);
         let needs_modified = candidate.get("configModifiedAt").is_none_or(Value::is_null);
-        if !needs_config && !needs_modified { continue; }
-        let Some(config_path) = candidate["configPath"].as_str().map(str::to_owned) else { continue; };
-        let Some(install_dir) = candidate["installDir"].as_str().map(str::to_owned) else { continue; };
-        let port = candidate["detectedPort"].as_u64().filter(|port| (1..=65535).contains(port)).unwrap_or(18081);
+        if !needs_config && !needs_modified {
+            continue;
+        }
+        let Some(config_path) = candidate["configPath"].as_str().map(str::to_owned) else {
+            continue;
+        };
+        let Some(install_dir) = candidate["installDir"].as_str().map(str::to_owned) else {
+            continue;
+        };
+        let port = candidate["detectedPort"]
+            .as_u64()
+            .filter(|port| (1..=65535).contains(port))
+            .unwrap_or(18081);
         let profile = ServiceProfile {
             // A discovery identifier may also name an imported managed copy.
             // Use a read-only identity so read_config reads this actual JSON path.
@@ -896,34 +1054,72 @@ async fn discover_local(
             name: candidate["name"].as_str().unwrap_or_default().to_owned(),
             base_url: format!("http://127.0.0.1:{port}"),
             install_dir,
-            python_path: candidate["pythonPath"].as_str().unwrap_or_default().to_owned(),
+            python_path: candidate["pythonPath"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned(),
             config_path,
             managed: false,
         };
-        let Ok(path) = configuration_files::configuration_path(&profile) else { continue; };
+        let Ok(path) = configuration_files::configuration_path(&profile) else {
+            continue;
+        };
         if needs_modified {
-            if let Some(modified) = std::fs::metadata(&path).ok().and_then(|metadata| metadata.modified().ok())
-                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok()).and_then(|time| u64::try_from(time.as_millis()).ok()) {
+            if let Some(modified) = std::fs::metadata(&path)
+                .ok()
+                .and_then(|metadata| metadata.modified().ok())
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .and_then(|time| u64::try_from(time.as_millis()).ok())
+            {
                 candidate["configModifiedAt"] = json!(modified);
             }
         }
         if needs_config {
-            if let Ok(mut config) = state.ipc.request("read_config", json!({"profile":profile})).await {
+            if let Ok(mut config) = state
+                .ipc
+                .request("read_config", json!({"profile":profile}))
+                .await
+            {
                 // Match discovery's display-only credential redaction.
                 fn redact(value: &mut Value) {
                     match value {
-                        Value::Object(object) => for (key, value) in object {
-                            let key = key.to_ascii_lowercase();
-                            if matches!(key.as_str(), "api_key" | "apikey" | "token" | "password" | "secret" | "authorization" | "credential" | "credentials")
-                                || key.ends_with("_key") || key.ends_with("_token") || key.ends_with("_secret") || key.contains("password") || key.contains("secret") {
-                                *value = Value::String("[已隐藏]".into());
-                            } else { redact(value); }
-                        },
-                        Value::Array(values) => for value in values { redact(value); },
+                        Value::Object(object) => {
+                            for (key, value) in object {
+                                let key = key.to_ascii_lowercase();
+                                if matches!(
+                                    key.as_str(),
+                                    "api_key"
+                                        | "apikey"
+                                        | "token"
+                                        | "password"
+                                        | "secret"
+                                        | "authorization"
+                                        | "credential"
+                                        | "credentials"
+                                ) || key.ends_with("_key")
+                                    || key.ends_with("_token")
+                                    || key.ends_with("_secret")
+                                    || key.contains("password")
+                                    || key.contains("secret")
+                                {
+                                    *value = Value::String("[已隐藏]".into());
+                                } else {
+                                    redact(value);
+                                }
+                            }
+                        }
+                        Value::Array(values) => {
+                            for value in values {
+                                redact(value);
+                            }
+                        }
                         _ => {}
                     }
                 }
-                if config.is_object() { redact(&mut config); candidate["config"] = config; }
+                if config.is_object() {
+                    redact(&mut config);
+                    candidate["config"] = config;
+                }
             }
         }
     }
@@ -983,17 +1179,35 @@ async fn local_installations(state: State<'_, ClientState>) -> Result<Value, Str
 
 #[tauri::command]
 async fn local_installation_details(state: State<'_, ClientState>) -> Result<Value, String> {
-    let mut details = match state.ipc.request("local_installation_details", json!({})).await {
+    let mut details = match state
+        .ipc
+        .request("local_installation_details", json!({}))
+        .await
+    {
         Ok(details) => details,
-        Err(error) if error.code == "unknown_method" || error.message.contains("unknown_method") => {
+        Err(error)
+            if error.code == "unknown_method" || error.message.contains("unknown_method") =>
+        {
             configuration_details::legacy_details(&state.ipc).await?
         }
         Err(error) => return Err(error.to_string()),
     };
-    let activated = state.ipc.request("store_get", json!({"key":"localConfigurationLastActivatedAt"}))
-        .await.map_err(|error| error.to_string())?;
-    for detail in details.as_array_mut().ok_or("配置详情格式无效 / Invalid configuration details")? {
-        let timestamp = detail["profileId"].as_str().and_then(|id| activated.get(id)).and_then(Value::as_u64);
+    let activated = state
+        .ipc
+        .request(
+            "store_get",
+            json!({"key":"localConfigurationLastActivatedAt"}),
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+    for detail in details
+        .as_array_mut()
+        .ok_or("配置详情格式无效 / Invalid configuration details")?
+    {
+        let timestamp = detail["profileId"]
+            .as_str()
+            .and_then(|id| activated.get(id))
+            .and_then(Value::as_u64);
         detail["lastActivatedAt"] = json!(timestamp);
     }
     Ok(details)

@@ -15,7 +15,10 @@ use uuid::Uuid;
 pub type Logs = Arc<Mutex<LogStore>>;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum LogKind { Task, Service }
+enum LogKind {
+    Task,
+    Service,
+}
 
 struct LogBucket {
     kind: LogKind,
@@ -38,34 +41,77 @@ pub struct LogStore {
 }
 
 impl Default for LogStore {
-    fn default() -> Self { Self::with_limits(512, 16_000, 16 * 1024 * 1024) }
+    fn default() -> Self {
+        Self::with_limits(512, 16_000, 16 * 1024 * 1024)
+    }
 }
 
 impl LogStore {
     fn with_limits(max_buckets: usize, max_entries: usize, max_bytes: usize) -> Self {
-        Self { buckets: HashMap::new(), sequence: 0, entries: 0, bytes: 0, max_buckets, max_entries, max_bytes }
+        Self {
+            buckets: HashMap::new(),
+            sequence: 0,
+            entries: 0,
+            bytes: 0,
+            max_buckets,
+            max_entries,
+            max_bytes,
+        }
     }
-    pub fn get(&self, id: &str) -> Option<&VecDeque<LogEntry>> { self.buckets.get(id).map(|bucket| &bucket.entries) }
-    pub fn values(&self) -> impl Iterator<Item = &VecDeque<LogEntry>> { self.buckets.values().map(|bucket| &bucket.entries) }
+    pub fn get(&self, id: &str) -> Option<&VecDeque<LogEntry>> {
+        self.buckets.get(id).map(|bucket| &bucket.entries)
+    }
+    pub fn values(&self) -> impl Iterator<Item = &VecDeque<LogEntry>> {
+        self.buckets.values().map(|bucket| &bucket.entries)
+    }
     fn register(&mut self, id: &str, kind: LogKind) -> Result<(), String> {
-        if id.is_empty() || id.len() > 512 { return Err("日志来源 ID 长度无效".into()); }
-        if self.buckets.contains_key(id) { return Ok(()); }
+        if id.is_empty() || id.len() > 512 {
+            return Err("日志来源 ID 长度无效".into());
+        }
+        if self.buckets.contains_key(id) {
+            return Ok(());
+        }
         if self.buckets.len() >= self.max_buckets {
-            let oldest = self.buckets.iter().filter(|(_, bucket)| bucket.kind == LogKind::Service && !bucket.active)
-                .min_by_key(|(_, bucket)| bucket.registered).map(|(id, _)| id.clone());
-            if let Some(oldest) = oldest { self.retire(&oldest); }
-            else { return Err("日志来源数量达到上限，请等待现有任务完成".into()); }
+            let oldest = self
+                .buckets
+                .iter()
+                .filter(|(_, bucket)| bucket.kind == LogKind::Service && !bucket.active)
+                .min_by_key(|(_, bucket)| bucket.registered)
+                .map(|(id, _)| id.clone());
+            if let Some(oldest) = oldest {
+                self.retire(&oldest);
+            } else {
+                return Err("日志来源数量达到上限，请等待现有任务完成".into());
+            }
         }
         self.sequence += 1;
-        self.buckets.insert(id.into(), LogBucket { kind, entries: VecDeque::new(), sequence: VecDeque::new(), registered: self.sequence, active: false });
+        self.buckets.insert(
+            id.into(),
+            LogBucket {
+                kind,
+                entries: VecDeque::new(),
+                sequence: VecDeque::new(),
+                registered: self.sequence,
+                active: false,
+            },
+        );
         Ok(())
     }
-    fn size(entry: &LogEntry) -> usize { std::mem::size_of::<LogEntry>() + entry.level.capacity() + entry.message.capacity() }
+    fn size(entry: &LogEntry) -> usize {
+        std::mem::size_of::<LogEntry>() + entry.level.capacity() + entry.message.capacity()
+    }
     fn pop_front(&mut self, id: &str) {
         if let Some(bucket) = self.buckets.get_mut(id) {
             if let Some(entry) = bucket.entries.pop_front() {
-                bucket.sequence.pop_front(); self.entries -= 1; self.bytes -= Self::size(&entry);
-                if bucket.entries.capacity() > 256 && bucket.entries.len() < bucket.entries.capacity() / 4 { bucket.entries.shrink_to_fit(); bucket.sequence.shrink_to_fit(); }
+                bucket.sequence.pop_front();
+                self.entries -= 1;
+                self.bytes -= Self::size(&entry);
+                if bucket.entries.capacity() > 256
+                    && bucket.entries.len() < bucket.entries.capacity() / 4
+                {
+                    bucket.entries.shrink_to_fit();
+                    bucket.sequence.shrink_to_fit();
+                }
             }
         }
     }
@@ -76,53 +122,101 @@ impl LogStore {
         }
     }
     fn service_active(&mut self, id: &str, active: bool) {
-        if let Some(bucket) = self.buckets.get_mut(id) { if bucket.kind == LogKind::Service { bucket.active = active; } }
+        if let Some(bucket) = self.buckets.get_mut(id) {
+            if bucket.kind == LogKind::Service {
+                bucket.active = active;
+            }
+        }
     }
     fn append(&mut self, id: &str, entry: LogEntry) {
-        let Some(bucket) = self.buckets.get_mut(id) else { return; };
-        self.sequence += 1; self.entries += 1; self.bytes += Self::size(&entry);
-        bucket.entries.push_back(entry); bucket.sequence.push_back(self.sequence);
-        while self.get(id).is_some_and(|entries| entries.len() > 2000) { self.pop_front(id); }
+        let Some(bucket) = self.buckets.get_mut(id) else {
+            return;
+        };
+        self.sequence += 1;
+        self.entries += 1;
+        self.bytes += Self::size(&entry);
+        bucket.entries.push_back(entry);
+        bucket.sequence.push_back(self.sequence);
+        while self.get(id).is_some_and(|entries| entries.len() > 2000) {
+            self.pop_front(id);
+        }
         while self.entries > self.max_entries || self.bytes > self.max_bytes {
-            let oldest = self.buckets.iter().filter_map(|(id, bucket)| bucket.sequence.front().map(|sequence| (id.clone(), *sequence)))
-                .min_by_key(|(_, sequence)| *sequence).map(|(id, _)| id);
-            if let Some(oldest) = oldest { self.pop_front(&oldest); } else { break; }
+            let oldest = self
+                .buckets
+                .iter()
+                .filter_map(|(id, bucket)| {
+                    bucket
+                        .sequence
+                        .front()
+                        .map(|sequence| (id.clone(), *sequence))
+                })
+                .min_by_key(|(_, sequence)| *sequence)
+                .map(|(id, _)| id);
+            if let Some(oldest) = oldest {
+                self.pop_front(&oldest);
+            } else {
+                break;
+            }
         }
     }
 }
 
 impl std::ops::Index<&str> for LogStore {
     type Output = VecDeque<LogEntry>;
-    fn index(&self, id: &str) -> &Self::Output { &self.buckets[id].entries }
+    fn index(&self, id: &str) -> &Self::Output {
+        &self.buckets[id].entries
+    }
 }
 
 pub fn register_service_logs(logs: &Logs, id: &str) -> Result<(), String> {
-    logs.lock().map_err(|error| error.to_string())?.register(id, LogKind::Service)
+    logs.lock()
+        .map_err(|error| error.to_string())?
+        .register(id, LogKind::Service)
 }
 
 pub fn register_task_logs(logs: &Logs, id: &str) -> Result<(), String> {
-    logs.lock().map_err(|error| error.to_string())?.register(id, LogKind::Task)
+    logs.lock()
+        .map_err(|error| error.to_string())?
+        .register(id, LogKind::Task)
 }
 
 /// Called with the tasks lock held; no log operation acquires that lock back.
-pub fn admit_task_logs(tasks: &mut HashMap<String, TaskRecord>, logs: &Logs, id: &str) -> Result<(), String> {
+pub fn admit_task_logs(
+    tasks: &mut HashMap<String, TaskRecord>,
+    logs: &Logs,
+    id: &str,
+) -> Result<(), String> {
     let mut entries = logs.lock().map_err(|error| error.to_string())?;
     while tasks.len() >= 100 {
-        let oldest = tasks.values().filter(|task| task.status.state != "running")
-            .min_by_key(|task| task.status.started_at).map(|task| task.status.id.clone())
+        let oldest = tasks
+            .values()
+            .filter(|task| task.status.state != "running")
+            .min_by_key(|task| task.status.started_at)
+            .map(|task| task.status.id.clone())
             .ok_or("已有 100 个活动任务，请等待任务完成后再创建")?;
-        tasks.remove(&oldest); entries.retire(&oldest);
+        tasks.remove(&oldest);
+        entries.retire(&oldest);
     }
     entries.register(id, LogKind::Task)
 }
 
-pub fn abandon_unstarted_task(database: &Arc<Mutex<rusqlite::Connection>>, tasks: &mut HashMap<String, TaskRecord>, logs: &Logs, id: &str, error: &str) {
+pub fn abandon_unstarted_task(
+    database: &Arc<Mutex<rusqlite::Connection>>,
+    tasks: &mut HashMap<String, TaskRecord>,
+    logs: &Logs,
+    id: &str,
+    error: &str,
+) {
     if let Some(record) = tasks.get_mut(id) {
-        record.status.state = "failed".into(); record.status.finished_at = Some(now()); record.status.message = error.into();
+        record.status.state = "failed".into();
+        record.status.finished_at = Some(now());
+        record.status.message = error.into();
         let _ = persist_task(database, record);
     }
     tasks.remove(id);
-    if let Ok(mut store) = logs.lock() { store.retire(id); }
+    if let Ok(mut store) = logs.lock() {
+        store.retire(id);
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -400,10 +494,18 @@ pub(crate) mod linux_guardian {
         /// The peer is the pinned member of this original group. A closed peer
         /// never authorizes looking up a possibly recycled saved PGID.
         pub(super) fn alive(&self) -> io::Result<bool> {
-            let mut descriptor = libc::pollfd { fd:self.0.as_raw_fd(),events:libc::POLLIN,revents:0 };
-            let result = unsafe { libc::poll(&mut descriptor,1,0) };
-            if result < 0 { return Err(io::Error::last_os_error()); }
-            if descriptor.revents & libc::POLLNVAL != 0 { return Err(io::Error::from_raw_os_error(libc::EBADF)); }
+            let mut descriptor = libc::pollfd {
+                fd: self.0.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            let result = unsafe { libc::poll(&mut descriptor, 1, 0) };
+            if result < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            if descriptor.revents & libc::POLLNVAL != 0 {
+                return Err(io::Error::from_raw_os_error(libc::EBADF));
+            }
             Ok(descriptor.revents & (libc::POLLHUP | libc::POLLERR) == 0)
         }
         pub(super) fn stop(&self) -> io::Result<()> {
@@ -512,11 +614,14 @@ pub fn hidden(command: &mut Command) {
 pub fn log(logs: &Logs, id: &str, level: &str, message: impl Into<String>) {
     if let Ok(mut all) = logs.lock() {
         let message: String = message.into().chars().take(8192).collect();
-        all.append(id, LogEntry {
-            timestamp: now(),
-            level: level.into(),
-            message,
-        });
+        all.append(
+            id,
+            LogEntry {
+                timestamp: now(),
+                level: level.into(),
+                message,
+            },
+        );
     }
 }
 
@@ -551,30 +656,75 @@ fn capture<R: Read + Send + 'static>(
 impl OwnedProcess {
     /// Read the whole held process tree without stopping it. A root exit alone
     /// does not establish that an MCP process or another descendant has exited.
-    pub fn tree_running(&mut self) -> Result<bool,String> {
+    pub fn tree_running(&mut self) -> Result<bool, String> {
         #[cfg(windows)]
         {
-            use windows_sys::Win32::System::JobObjects::{QueryInformationJobObject,JobObjectBasicAccountingInformation,JOBOBJECT_BASIC_ACCOUNTING_INFORMATION};
-            let mut accounting: JOBOBJECT_BASIC_ACCOUNTING_INFORMATION = unsafe { std::mem::zeroed() };
-            if unsafe { QueryInformationJobObject(self.job,JobObjectBasicAccountingInformation,&mut accounting as *mut _ as *mut _,std::mem::size_of_val(&accounting) as u32,std::ptr::null_mut()) } == 0 {
-                return Err(format!("受管进程树状态无法核验: {}",std::io::Error::last_os_error()));
+            use windows_sys::Win32::System::JobObjects::{
+                JobObjectBasicAccountingInformation, QueryInformationJobObject,
+                JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
+            };
+            let mut accounting: JOBOBJECT_BASIC_ACCOUNTING_INFORMATION =
+                unsafe { std::mem::zeroed() };
+            if unsafe {
+                QueryInformationJobObject(
+                    self.job,
+                    JobObjectBasicAccountingInformation,
+                    &mut accounting as *mut _ as *mut _,
+                    std::mem::size_of_val(&accounting) as u32,
+                    std::ptr::null_mut(),
+                )
+            } == 0
+            {
+                return Err(format!(
+                    "受管进程树状态无法核验: {}",
+                    std::io::Error::last_os_error()
+                ));
             }
             Ok(accounting.ActiveProcesses > 0)
         }
-        #[cfg(target_os="linux")]
+        #[cfg(target_os = "linux")]
         {
-            if self.tree_stopped { return Ok(false); }
-            if !self.guardian.alive().map_err(|e|format!("受管进程组守护状态无法核验: {e}"))? { return Err("原进程组守护已退出，不能把保存的 PGID 当作原进程树；请完成后台清理后重试".into()); }
-            let mut system=sysinfo::System::new();system.refresh_processes(sysinfo::ProcessesToUpdate::All,true);
-            let found=system.processes().keys().any(|pid| self.owns_pid(pid.as_u32()).unwrap_or(false));
-            if !self.guardian.alive().map_err(|e|format!("受管进程组守护状态无法核验: {e}"))? { return Err("读取期间原进程组守护已退出，进程树状态未知".into()); }
-            if !found { return Err("受管进程组成员清单无法核验".into()); }
+            if self.tree_stopped {
+                return Ok(false);
+            }
+            if !self
+                .guardian
+                .alive()
+                .map_err(|e| format!("受管进程组守护状态无法核验: {e}"))?
+            {
+                return Err(
+                    "原进程组守护已退出，不能把保存的 PGID 当作原进程树；请完成后台清理后重试"
+                        .into(),
+                );
+            }
+            let mut system = sysinfo::System::new();
+            system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+            let found = system
+                .processes()
+                .keys()
+                .any(|pid| self.owns_pid(pid.as_u32()).unwrap_or(false));
+            if !self
+                .guardian
+                .alive()
+                .map_err(|e| format!("受管进程组守护状态无法核验: {e}"))?
+            {
+                return Err("读取期间原进程组守护已退出，进程树状态未知".into());
+            }
+            if !found {
+                return Err("受管进程组成员清单无法核验".into());
+            }
             Ok(true)
         }
-        #[cfg(all(unix,not(target_os="linux")))]
+        #[cfg(all(unix, not(target_os = "linux")))]
         {
-            if !self.refresh()?.running { return Err("根进程已退出且此平台没有可核验的进程组守护，进程树状态未知".into()); }
-            if self.owns_pid(self.child.id())? { Ok(true) } else { Err("受管进程组身份已改变".into()) }
+            if !self.refresh()?.running {
+                return Err("根进程已退出且此平台没有可核验的进程组守护，进程树状态未知".into());
+            }
+            if self.owns_pid(self.child.id())? {
+                Ok(true)
+            } else {
+                Err("受管进程组身份已改变".into())
+            }
         }
     }
     pub fn owns_pid(&self, pid: u32) -> Result<bool, String> {
@@ -608,10 +758,20 @@ impl OwnedProcess {
     }
     pub fn spawn(command: Command, logs: Logs, id: &str) -> Result<Self, String> {
         register_service_logs(&logs, id)?;
-        logs.lock().map_err(|e| e.to_string())?.service_active(id, true);
+        logs.lock()
+            .map_err(|e| e.to_string())?
+            .service_active(id, true);
         match Self::spawn_registered(command, logs.clone(), id) {
-            Ok(mut process) => { process.service_logs = Some((logs, id.into())); Ok(process) }
-            Err(error) => { if let Ok(mut store) = logs.lock() { store.service_active(id, false); } Err(error) }
+            Ok(mut process) => {
+                process.service_logs = Some((logs, id.into()));
+                Ok(process)
+            }
+            Err(error) => {
+                if let Ok(mut store) = logs.lock() {
+                    store.service_active(id, false);
+                }
+                Err(error)
+            }
         }
     }
     pub fn spawn_registered(mut command: Command, logs: Logs, id: &str) -> Result<Self, String> {
@@ -756,7 +916,7 @@ impl OwnedProcess {
         Ok(self.status.clone())
     }
     pub fn stop(&mut self) -> Result<(), String> {
-        #[cfg(target_os="linux")]
+        #[cfg(target_os = "linux")]
         let pinned_tree = self.guardian.alive().unwrap_or(false);
         // Handles, not a PID search or port search: never terminate an external service.
         #[cfg(windows)]
@@ -796,13 +956,23 @@ impl OwnedProcess {
         };
         self.status.running = false;
         self.status.exit_code = result.code();
-        #[cfg(windows)] { self.tree_stopped = true; }
-        #[cfg(target_os="linux")] { self.tree_stopped = pinned_tree; }
+        #[cfg(windows)]
+        {
+            self.tree_stopped = true;
+        }
+        #[cfg(target_os = "linux")]
+        {
+            self.tree_stopped = pinned_tree;
+        }
         self.release_log_pin();
         Ok(())
     }
     fn release_log_pin(&self) {
-        if let Some((logs, id)) = &self.service_logs { if let Ok(mut store) = logs.lock() { store.service_active(id, false); } }
+        if let Some((logs, id)) = &self.service_logs {
+            if let Ok(mut store) = logs.lock() {
+                store.service_active(id, false);
+            }
+        }
     }
 }
 impl Drop for OwnedProcess {
@@ -1278,7 +1448,9 @@ fn launch_task_with_handoff(
         };
         if let Err(error) = persisted {
             records.remove(&id);
-            if let Ok(mut entries) = logs.lock() { entries.retire(&id); }
+            if let Ok(mut entries) = logs.lock() {
+                entries.retire(&id);
+            }
             return Err(error);
         }
     }
@@ -1298,8 +1470,11 @@ fn launch_task_with_handoff(
                     .current_dir(step.cwd)
                     .env("PYTHONUNBUFFERED", "1");
                 for (key, value) in step.env {
-                    if let Some(value) = value { cmd.env(key, value); }
-                    else { cmd.env_remove(key); }
+                    if let Some(value) = value {
+                        cmd.env(key, value);
+                    } else {
+                        cmd.env_remove(key);
+                    }
                 }
                 let mut records = tasks.lock().map_err(|e| e.to_string())?;
                 let record = records.get_mut(&id).ok_or("任务不存在")?;
@@ -1535,25 +1710,65 @@ mod tests {
     use super::*;
     #[test]
     fn tree_running_reads_the_held_tree_after_root_exit_without_stopping_descendants() {
-        let mut locate=Command::new(if cfg!(windows){"py"}else{"python3"});locate.args(["-I","-S","-c","import sys;print(sys.executable)"]);hidden(&mut locate);let output=locate.output().expect("CPU tree fixture requires Python");assert!(output.status.success());let python=String::from_utf8(output.stdout).unwrap().trim().to_owned();
-        let directory=tempfile::tempdir().unwrap();let marker=directory.path().join("child.pid");
+        let mut locate = Command::new(if cfg!(windows) { "py" } else { "python3" });
+        locate.args(["-I", "-S", "-c", "import sys;print(sys.executable)"]);
+        hidden(&mut locate);
+        let output = locate.output().expect("CPU tree fixture requires Python");
+        assert!(output.status.success());
+        let python = String::from_utf8(output.stdout).unwrap().trim().to_owned();
+        let directory = tempfile::tempdir().unwrap();
+        let marker = directory.path().join("child.pid");
         let script="import subprocess,sys;from pathlib import Path;child=subprocess.Popen([sys.executable,'-I','-S','-c','import time;time.sleep(15)']);Path(sys.argv[1]).write_text(str(child.pid))";
-        let mut command=Command::new(python);command.args(["-I","-S","-c",script]).arg(&marker);let mut process=OwnedProcess::spawn(command,Default::default(),"tree-read-fixture").unwrap();
-        let deadline=std::time::Instant::now()+Duration::from_secs(5);while !marker.exists(){assert!(std::time::Instant::now()<deadline);std::thread::sleep(Duration::from_millis(10));}
-        assert!(process.child.wait().unwrap().success());assert!(!process.refresh().unwrap().running);
-        #[cfg(windows)] {
-            let pid=std::fs::read_to_string(&marker).unwrap().parse::<u32>().unwrap();assert!(process.owns_pid(pid).unwrap());
-            assert!(process.tree_running().unwrap(),"the root exit must not hide a live Job descendant");assert!(process.owns_pid(pid).unwrap(),"read-only accounting must not terminate the descendant");
+        let mut command = Command::new(python);
+        command.args(["-I", "-S", "-c", script]).arg(&marker);
+        let mut process =
+            OwnedProcess::spawn(command, Default::default(), "tree-read-fixture").unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !marker.exists() {
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(10));
         }
-        #[cfg(unix)] { assert!(!matches!(process.tree_running(),Ok(false)),"an unpinned/reaped root PGID must not establish that its original tree is absent"); }
+        assert!(process.child.wait().unwrap().success());
+        assert!(!process.refresh().unwrap().running);
+        #[cfg(windows)]
+        {
+            let pid = std::fs::read_to_string(&marker)
+                .unwrap()
+                .parse::<u32>()
+                .unwrap();
+            assert!(process.owns_pid(pid).unwrap());
+            assert!(
+                process.tree_running().unwrap(),
+                "the root exit must not hide a live Job descendant"
+            );
+            assert!(
+                process.owns_pid(pid).unwrap(),
+                "read-only accounting must not terminate the descendant"
+            );
+        }
+        #[cfg(unix)]
+        {
+            assert!(
+                !matches!(process.tree_running(), Ok(false)),
+                "an unpinned/reaped root PGID must not establish that its original tree is absent"
+            );
+        }
         process.stop().unwrap();
-        #[cfg(windows)] {
+        #[cfg(windows)]
+        {
             // TerminateJobObject can return before the Job accounting publishes
             // the final exit. Keep querying the held Job rather than its old PID.
-            let deadline=std::time::Instant::now()+Duration::from_secs(3);
-            while process.tree_running().unwrap() { assert!(std::time::Instant::now()<deadline,"stopped Job retained a live fixture");std::thread::sleep(Duration::from_millis(10)); }
+            let deadline = std::time::Instant::now() + Duration::from_secs(3);
+            while process.tree_running().unwrap() {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "stopped Job retained a live fixture"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
         }
-        #[cfg(target_os="linux")] assert!(!matches!(process.tree_running(),Ok(true)));
+        #[cfg(target_os = "linux")]
+        assert!(!matches!(process.tree_running(), Ok(true)));
     }
     #[cfg(target_os = "linux")]
     const LINUX_TREE: &str = r#"
@@ -1664,12 +1879,8 @@ sys.exit(7)
         let mut external = Command::new("sleep").arg("120").spawn().unwrap();
         let mut command = Command::new(std::env::current_exe().unwrap());
         command.args(["--exact", "processes::tests::linux_hard_killed_owner_stops_owned_grandchild_and_keeps_external_process", "--nocapture"]).env(ACTOR, temp.path());
-        let mut actor = OwnedProcess::spawn(
-            command,
-            Default::default(),
-            "linux-owner-actor",
-        )
-        .unwrap();
+        let mut actor =
+            OwnedProcess::spawn(command, Default::default(), "linux-owner-actor").unwrap();
         let report = temp.path().join("report.json");
         let deadline = std::time::Instant::now() + Duration::from_secs(10);
         while !report.exists() {
@@ -1732,12 +1943,7 @@ sys.exit(7)
             let mut owned = std::thread::spawn(|| {
                 let mut command = Command::new("sleep");
                 command.arg("120");
-                OwnedProcess::spawn(
-                    command,
-                    Default::default(),
-                    "linux-thread-fixture",
-                )
-                .unwrap()
+                OwnedProcess::spawn(command, Default::default(), "linux-thread-fixture").unwrap()
             })
             .join()
             .unwrap();
@@ -1753,12 +1959,8 @@ sys.exit(7)
         }
         let mut quick = Command::new("sh");
         quick.args(["-c", "printf 'fixture log\\n'; exit 0"]);
-        let mut owned = OwnedProcess::spawn(
-            quick,
-            Default::default(),
-            "linux-quick-fixture",
-        )
-        .unwrap();
+        let mut owned =
+            OwnedProcess::spawn(quick, Default::default(), "linux-quick-fixture").unwrap();
         assert!(owned.child.wait().unwrap().success());
         owned.stop().unwrap();
         assert!(OwnedProcess::spawn(
@@ -2232,8 +2434,23 @@ sys.exit(7)
                 log(&logs, &id, "stdout", "你".repeat(100));
                 let store = logs.lock().unwrap();
                 assert!(store.buckets.len() <= 4 && store.entries <= 6 && store.bytes <= 800);
-                assert_eq!(store.entries, store.buckets.values().map(|bucket| bucket.entries.len()).sum::<usize>());
-                assert_eq!(store.bytes, store.buckets.values().flat_map(|bucket| &bucket.entries).map(LogStore::size).sum::<usize>());
+                assert_eq!(
+                    store.entries,
+                    store
+                        .buckets
+                        .values()
+                        .map(|bucket| bucket.entries.len())
+                        .sum::<usize>()
+                );
+                assert_eq!(
+                    store.bytes,
+                    store
+                        .buckets
+                        .values()
+                        .flat_map(|bucket| &bucket.entries)
+                        .map(LogStore::size)
+                        .sum::<usize>()
+                );
             }
         }
         logs.lock().unwrap().retire("task");
@@ -2241,37 +2458,70 @@ sys.exit(7)
         assert!(logs.lock().unwrap().get("task").is_none());
         register_service_logs(&logs, "probe").unwrap();
         let pending = Arc::new(AtomicUsize::new(0));
-        capture(std::io::Cursor::new(b"probe output\n"), logs.clone(), "probe".into(), "stdout", pending.clone());
+        capture(
+            std::io::Cursor::new(b"probe output\n"),
+            logs.clone(),
+            "probe".into(),
+            "stdout",
+            pending.clone(),
+        );
         let deadline = std::time::Instant::now() + Duration::from_secs(2);
-        while pending.load(Ordering::Acquire) != 0 && std::time::Instant::now() < deadline { std::thread::yield_now(); }
+        while pending.load(Ordering::Acquire) != 0 && std::time::Instant::now() < deadline {
+            std::thread::yield_now();
+        }
         assert_eq!(pending.load(Ordering::Acquire), 0);
-        assert_eq!(logs.lock().unwrap()["probe"].back().unwrap().message, "probe output");
+        assert_eq!(
+            logs.lock().unwrap()["probe"].back().unwrap().message,
+            "probe output"
+        );
     }
     #[test]
     fn log_budget_retired_capture_cannot_recreate_its_task_bucket() {
-        struct GatedRead { ready: Option<std::sync::mpsc::Sender<()>>, release: std::sync::mpsc::Receiver<()>, data: std::io::Cursor<Vec<u8>> }
+        struct GatedRead {
+            ready: Option<std::sync::mpsc::Sender<()>>,
+            release: std::sync::mpsc::Receiver<()>,
+            data: std::io::Cursor<Vec<u8>>,
+        }
         impl Read for GatedRead {
             fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
                 if let Some(ready) = self.ready.take() {
-                    ready.send(()).unwrap(); self.release.recv_timeout(Duration::from_secs(2)).unwrap();
+                    ready.send(()).unwrap();
+                    self.release.recv_timeout(Duration::from_secs(2)).unwrap();
                 }
                 self.data.read(buffer)
             }
         }
-        let logs: Logs = Default::default(); register_task_logs(&logs, "retired").unwrap();
-        let (ready_tx, ready_rx) = std::sync::mpsc::channel(); let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let logs: Logs = Default::default();
+        register_task_logs(&logs, "retired").unwrap();
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
         let pending = Arc::new(AtomicUsize::new(0));
-        capture(GatedRead { ready: Some(ready_tx), release: release_rx, data: std::io::Cursor::new(b"late stdout\n".to_vec()) }, logs.clone(), "retired".into(), "stdout", pending.clone());
+        capture(
+            GatedRead {
+                ready: Some(ready_tx),
+                release: release_rx,
+                data: std::io::Cursor::new(b"late stdout\n".to_vec()),
+            },
+            logs.clone(),
+            "retired".into(),
+            "stdout",
+            pending.clone(),
+        );
         ready_rx.recv_timeout(Duration::from_secs(2)).unwrap();
-        logs.lock().unwrap().retire("retired"); release_tx.send(()).unwrap();
+        logs.lock().unwrap().retire("retired");
+        release_tx.send(()).unwrap();
         let deadline = std::time::Instant::now() + Duration::from_secs(2);
-        while pending.load(Ordering::Acquire) != 0 && std::time::Instant::now() < deadline { std::thread::yield_now(); }
-        assert_eq!(pending.load(Ordering::Acquire), 0); assert!(logs.lock().unwrap().get("retired").is_none());
+        while pending.load(Ordering::Acquire) != 0 && std::time::Instant::now() < deadline {
+            std::thread::yield_now();
+        }
+        assert_eq!(pending.load(Ordering::Acquire), 0);
+        assert!(logs.lock().unwrap().get("retired").is_none());
     }
     #[test]
     fn log_budget_preserves_active_sources_and_abandoned_tasks_are_not_restored_running() {
         let mut store = LogStore::with_limits(2, 20, 2000);
-        store.register("active", LogKind::Service).unwrap(); store.service_active("active", true);
+        store.register("active", LogKind::Service).unwrap();
+        store.service_active("active", true);
         store.register("inactive", LogKind::Service).unwrap();
         store.register("next", LogKind::Service).unwrap();
         assert!(store.get("active").is_some() && store.get("inactive").is_none());
@@ -2279,31 +2529,115 @@ sys.exit(7)
         assert!(store.register("capacity", LogKind::Service).is_err());
         assert_eq!(store.buckets.len(), 2);
         let database = Arc::new(Mutex::new(rusqlite::Connection::open_in_memory().unwrap()));
-        database.lock().unwrap().execute_batch("CREATE TABLE tasks(id TEXT PRIMARY KEY,status TEXT NOT NULL,profile_id TEXT);").unwrap();
-        let logs: Logs = Default::default(); let mut tasks = HashMap::new(); register_task_logs(&logs, "abandoned").unwrap();
-        tasks.insert("abandoned".into(), TaskRecord { status: TaskStatus { id: "abandoned".into(), kind: "install".into(), state: "running".into(), message: "fixture".into(), started_at: 0, finished_at: None }, profile_id: None, runtime_path: None, cancelled: false, process: None });
+        database
+            .lock()
+            .unwrap()
+            .execute_batch(
+                "CREATE TABLE tasks(id TEXT PRIMARY KEY,status TEXT NOT NULL,profile_id TEXT);",
+            )
+            .unwrap();
+        let logs: Logs = Default::default();
+        let mut tasks = HashMap::new();
+        register_task_logs(&logs, "abandoned").unwrap();
+        tasks.insert(
+            "abandoned".into(),
+            TaskRecord {
+                status: TaskStatus {
+                    id: "abandoned".into(),
+                    kind: "install".into(),
+                    state: "running".into(),
+                    message: "fixture".into(),
+                    started_at: 0,
+                    finished_at: None,
+                },
+                profile_id: None,
+                runtime_path: None,
+                cancelled: false,
+                process: None,
+            },
+        );
         persist_task(&database, &tasks["abandoned"]).unwrap();
-        abandon_unstarted_task(&database, &mut tasks, &logs, "abandoned", "synthetic status write failure");
+        abandon_unstarted_task(
+            &database,
+            &mut tasks,
+            &logs,
+            "abandoned",
+            "synthetic status write failure",
+        );
         assert!(tasks.is_empty() && logs.lock().unwrap().get("abandoned").is_none());
-        assert_eq!(restore_tasks(&database).unwrap()["abandoned"].status.state, "failed");
+        assert_eq!(
+            restore_tasks(&database).unwrap()["abandoned"].status.state,
+            "failed"
+        );
     }
     #[test]
     fn log_budget_task_admission_retires_finished_logs_and_preserves_running_and_saved_logs() {
-        let logs: Logs = Default::default(); let mut tasks = HashMap::new();
+        let logs: Logs = Default::default();
+        let mut tasks = HashMap::new();
         let database = Arc::new(Mutex::new(rusqlite::Connection::open_in_memory().unwrap()));
-        database.lock().unwrap().execute_batch("CREATE TABLE tasks(id TEXT PRIMARY KEY,status TEXT NOT NULL,profile_id TEXT);").unwrap();
+        database
+            .lock()
+            .unwrap()
+            .execute_batch(
+                "CREATE TABLE tasks(id TEXT PRIMARY KEY,status TEXT NOT NULL,profile_id TEXT);",
+            )
+            .unwrap();
         for index in 0..100 {
-            let id = format!("task-{index}"); register_task_logs(&logs, &id).unwrap(); log(&logs, &id, "info", "saved diagnostic");
-            tasks.insert(id.clone(), TaskRecord { status: TaskStatus { id, kind: "setup".into(), state: if index == 0 { "running" } else { "succeeded" }.into(), message: "fixture".into(), started_at: index, finished_at: None }, profile_id: None, runtime_path: None, cancelled: false, process: None });
+            let id = format!("task-{index}");
+            register_task_logs(&logs, &id).unwrap();
+            log(&logs, &id, "info", "saved diagnostic");
+            tasks.insert(
+                id.clone(),
+                TaskRecord {
+                    status: TaskStatus {
+                        id,
+                        kind: "setup".into(),
+                        state: if index == 0 { "running" } else { "succeeded" }.into(),
+                        message: "fixture".into(),
+                        started_at: index,
+                        finished_at: None,
+                    },
+                    profile_id: None,
+                    runtime_path: None,
+                    cancelled: false,
+                    process: None,
+                },
+            );
         }
-        persist_task(&database, &tasks["task-1"]).unwrap(); persist_task_logs(&database, &logs, "task-1").unwrap();
-        register_service_logs(&logs, "service").unwrap(); log(&logs, "service", "info", "running service");
+        persist_task(&database, &tasks["task-1"]).unwrap();
+        persist_task_logs(&database, &logs, "task-1").unwrap();
+        register_service_logs(&logs, "service").unwrap();
+        log(&logs, "service", "info", "running service");
         admit_task_logs(&mut tasks, &logs, "new-task").unwrap();
         assert!(tasks.contains_key("task-0") && !tasks.contains_key("task-1"));
-        let store = logs.lock().unwrap(); assert!(store.get("task-0").is_some() && store.get("task-1").is_none()); assert_eq!(store["service"].back().unwrap().message, "running service"); drop(store);
-        assert_eq!(saved_task_logs(&database, "task-1").unwrap()[0].message, "saved diagnostic");
-        for task in tasks.values_mut() { task.status.state = "running".into(); }
-        tasks.insert("new-task".into(), TaskRecord { status: TaskStatus { id: "new-task".into(), kind: "setup".into(), state: "running".into(), message: "fixture".into(), started_at: 101, finished_at: None }, profile_id: None, runtime_path: None, cancelled: false, process: None });
+        let store = logs.lock().unwrap();
+        assert!(store.get("task-0").is_some() && store.get("task-1").is_none());
+        assert_eq!(store["service"].back().unwrap().message, "running service");
+        drop(store);
+        assert_eq!(
+            saved_task_logs(&database, "task-1").unwrap()[0].message,
+            "saved diagnostic"
+        );
+        for task in tasks.values_mut() {
+            task.status.state = "running".into();
+        }
+        tasks.insert(
+            "new-task".into(),
+            TaskRecord {
+                status: TaskStatus {
+                    id: "new-task".into(),
+                    kind: "setup".into(),
+                    state: "running".into(),
+                    message: "fixture".into(),
+                    started_at: 101,
+                    finished_at: None,
+                },
+                profile_id: None,
+                runtime_path: None,
+                cancelled: false,
+                process: None,
+            },
+        );
         assert!(admit_task_logs(&mut tasks, &logs, "over-capacity").is_err());
         assert!(logs.lock().unwrap().get("over-capacity").is_none());
     }
@@ -2448,7 +2782,15 @@ sys.exit(7)
                 env: BTreeMap::from([(KEY.into(), None)]),
             },
         ];
-        let task = launch_task(tasks.clone(), logs, database(), "environment-fixture", None, steps).unwrap();
+        let task = launch_task(
+            tasks.clone(),
+            logs,
+            database(),
+            "environment-fixture",
+            None,
+            steps,
+        )
+        .unwrap();
         assert_eq!(wait_task(&tasks, &task.id).state, "completed");
         assert_eq!(std::env::var_os(KEY), before);
     }

@@ -67,6 +67,9 @@ struct Journal {
 }
 fn persist(state: &RuntimeState, j: &Journal) -> Result<(), String> {
     let db = state.database.lock().map_err(|e| e.to_string())?;
+    persist_locked(&db, j)
+}
+fn persist_locked(db: &rusqlite::Connection, j: &Journal) -> Result<(), String> {
     db.execute_batch(SCHEMA).map_err(|e| e.to_string())?;
     db.execute("INSERT INTO runtime_zip_updates VALUES(?1,?2,?3) ON CONFLICT(task_id) DO UPDATE SET journal=excluded.journal,updated_at=excluded.updated_at",params![j.task_id,serde_json::to_string(j).map_err(|e|e.to_string())?,j.updated_at as i64]).map_err(|e|e.to_string())?;
     Ok(())
@@ -162,7 +165,14 @@ pub fn start_release_request(
     if !root.join("setup.py").is_file() || !root.join("serve/server.py").is_file() {
         return Err("此目录没有完整Strata服务源码，请选择已检测到的运行环境".into());
     }
-    start(state, root, asset_name, false, request_id, stop_current_service)
+    start(
+        state,
+        root,
+        asset_name,
+        false,
+        request_id,
+        stop_current_service,
+    )
 }
 pub fn start_install_release(state: Arc<RuntimeState>) -> Result<TaskStatus, String> {
     let root = installation::owned_directory(state.data_dir(), &["runtimes"])?
@@ -202,10 +212,19 @@ fn start(
     if let Some(existing) = state.tasks.lock().map_err(|e| e.to_string())?.get(&task_id) {
         let db = state.database.lock().map_err(|e| e.to_string())?;
         db.execute_batch(SCHEMA).map_err(|e| e.to_string())?;
-        let saved: String = db.query_row("SELECT journal FROM runtime_zip_updates WHERE task_id=?1", [&task_id], |row| row.get(0))
+        let saved: String = db
+            .query_row(
+                "SELECT journal FROM runtime_zip_updates WHERE task_id=?1",
+                [&task_id],
+                |row| row.get(0),
+            )
             .map_err(|_| "更新请求标识已被另一项任务使用")?;
         let saved: Journal = serde_json::from_str(&saved).map_err(|e| e.to_string())?;
-        if saved.install_dir != root || saved.new_install != new_install || saved.requested_asset_name != asset_name || saved.requested_stop_current_service != stop_current_service {
+        if saved.install_dir != root
+            || saved.new_install != new_install
+            || saved.requested_asset_name != asset_name
+            || saved.requested_stop_current_service != stop_current_service
+        {
             return Err("相同更新请求标识的目录或 ZIP 参数不一致，未重复执行".into());
         }
         return Ok(existing.status.clone());
@@ -219,7 +238,9 @@ fn start(
         }
         drop(processes);
         if crate::discovery::has_running_installation(&root)? {
-            return Err("此 Strata 仍有服务运行，请确认停止受管服务后再更新；外部服务不会自动停止".into());
+            return Err(
+                "此 Strata 仍有服务运行，请确认停止受管服务后再更新；外部服务不会自动停止".into(),
+            );
         }
     }
     if state.shutting_down.load(Ordering::Acquire)
@@ -284,7 +305,13 @@ fn start(
         &state.database,
         tasks.get(&status.id).ok_or("安装任务不存在")?,
     ) {
-        processes::abandon_unstarted_task(&state.database, &mut tasks, &state.logs, &status.id, &error);
+        processes::abandon_unstarted_task(
+            &state.database,
+            &mut tasks,
+            &state.logs,
+            &status.id,
+            &error,
+        );
         return Err(error);
     }
     if new_install {
@@ -293,7 +320,13 @@ fn start(
             "automaticRuntimeInstallation".into(),
             json!({"taskId":status.id}),
         ) {
-            processes::abandon_unstarted_task(&state.database, &mut tasks, &state.logs, &status.id, &error);
+            processes::abandon_unstarted_task(
+                &state.database,
+                &mut tasks,
+                &state.logs,
+                &status.id,
+                &error,
+            );
             return Err(error);
         }
     }
@@ -760,19 +793,113 @@ fn profiles(state: &RuntimeState, root: &Path) -> Result<Vec<ServiceProfile>, St
 /// port does not make each saved configuration a separate running instance.
 /// Authorize only the real, running processes owned by this update and verify
 /// every native listener, including other listeners sharing that port.
+struct OwnedUpdateProfile {
+    profile: ServiceProfile,
+    child_id: u32,
+    started_at: Option<u64>,
+    #[cfg(windows)]
+    child_handle: usize,
+    #[cfg(windows)]
+    creation_time: u64,
+    #[cfg(windows)]
+    image: PathBuf,
+}
+
+fn same_profile(left: &ServiceProfile, right: &ServiceProfile) -> Result<bool, String> {
+    Ok(serde_json::to_value(left).map_err(|e| e.to_string())?
+        == serde_json::to_value(right).map_err(|e| e.to_string())?)
+}
+
+fn registered_update_profiles(db: &rusqlite::Connection) -> Result<Vec<ServiceProfile>, String> {
+    let mut query = db
+        .prepare("SELECT profile FROM local_installations ORDER BY imported_at,id")
+        .map_err(|e| e.to_string())?;
+    let records = query
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| e.to_string())?;
+    records
+        .map(|record| {
+            serde_json::from_str(&record.map_err(|e| e.to_string())?).map_err(|e| e.to_string())
+        })
+        .collect()
+}
+
+fn verify_owned_update_profile(
+    actual: &ServiceProfile,
+    registered: &ServiceProfile,
+    root: &Path,
+) -> Result<(), String> {
+    if !actual.managed
+        || !registered.managed
+        || actual.id != registered.id
+        || actual.base_url != registered.base_url
+        || actual.python_path != registered.python_path
+        || dunce::canonicalize(&actual.install_dir).map_err(|e| e.to_string())? != root
+        || dunce::canonicalize(&registered.install_dir).map_err(|e| e.to_string())? != root
+        || storage::config_path(actual)? != storage::config_path(registered)?
+    {
+        return Err("运行进程身份或安装根与更新登记不一致，未停止服务".into());
+    }
+    Ok(())
+}
+
 fn owned_update_profiles(
     state: &RuntimeState,
+    root: &Path,
     associated: &[ServiceProfile],
-) -> Result<Vec<ServiceProfile>, String> {
+) -> Result<Vec<OwnedUpdateProfile>, String> {
+    let registered = state.registered_profiles()?;
     let mut processes = state.processes.lock().map_err(|e| e.to_string())?;
+    collect_owned_update_profiles(&mut processes, root, associated, &registered)
+}
+
+fn collect_owned_update_profiles(
+    processes: &mut std::collections::HashMap<String, processes::OwnedProcess>,
+    root: &Path,
+    associated: &[ServiceProfile],
+    registered: &[ServiceProfile],
+) -> Result<Vec<OwnedUpdateProfile>, String> {
+    let root = dunce::canonicalize(root).map_err(|e| e.to_string())?;
     let mut owned = Vec::new();
+    let mut ids = HashSet::new();
     for profile in associated {
-        if processes.get_mut(&profile.id)
-            .map(|process| process.refresh())
-            .transpose()?
-            .is_some_and(|status| status.owned && status.running)
-        {
-            owned.push(profile.clone());
+        let current = registered
+            .iter()
+            .find(|current| current.id == profile.id)
+            .ok_or("更新准备期间安装登记已移除，未停止服务")?;
+        if !same_profile(current, profile)? {
+            return Err("更新准备期间安装登记发生变化，未停止服务".into());
+        }
+        if let Some(process) = processes.get_mut(&profile.id) {
+            let status = process.refresh()?;
+            if status.running {
+                if !status.owned || status.pid != Some(process.child.id()) {
+                    return Err("无法核验更新进程的自有身份，未停止服务".into());
+                }
+                let actual = process
+                    .profile
+                    .as_ref()
+                    .ok_or("更新进程缺少实际启动身份，未停止服务")?;
+                verify_owned_update_profile(actual, current, &root)?;
+                if ids.insert(profile.id.clone()) {
+                    #[cfg(windows)]
+                    use std::os::windows::io::AsRawHandle;
+                    #[cfg(windows)]
+                    let (creation_time, image) =
+                        crate::external::identity(process.child.as_raw_handle())?;
+                    owned.push(OwnedUpdateProfile {
+                        profile: current.clone(),
+                        child_id: process.child.id(),
+                        started_at: status.started_at,
+                        #[cfg(windows)]
+                        child_handle: process.child.as_raw_handle() as usize,
+                        #[cfg(windows)]
+                        creation_time,
+                        #[cfg(windows)]
+                        image,
+                    });
+                }
+            }
         }
     }
     #[cfg(windows)]
@@ -780,29 +907,114 @@ fn owned_update_profiles(
         let mut ports = HashSet::new();
         for profile in associated {
             let port = crate::external::local_port(profile)?;
-            if !ports.insert(port) { continue; }
+            if !ports.insert(port) {
+                continue;
+            }
             for pid in crate::external::listener_ids(profile)? {
                 let mut is_owned = false;
                 for owner in &owned {
-                    let process = processes.get(&owner.id).ok_or("受管服务清单已变化，未停止服务")?;
+                    let process = processes
+                        .get(&owner.profile.id)
+                        .ok_or("受管服务清单已变化，未停止服务")?;
                     if process.owns_pid(pid)? {
                         is_owned = true;
                         break;
                     }
                 }
                 if !is_owned {
-                    return Err("此运行环境由外部程序使用；更新不会停止外部服务，请先自行停止它".into());
+                    return Err(
+                        "此运行环境由外部程序使用；更新不会停止外部服务，请先自行停止它".into(),
+                    );
                 }
             }
         }
     }
     #[cfg(not(windows))]
     for profile in associated {
-        if !owned.iter().any(|owner| owner.id == profile.id) && crate::external::port_accepting(profile)? {
+        if !owned.iter().any(|owner| owner.profile.id == profile.id)
+            && crate::external::port_accepting(profile)?
+        {
             return Err("此运行环境由外部程序使用；更新不会停止外部服务，请先自行停止它".into());
         }
     }
     Ok(owned)
+}
+
+/// An outer error guarantees that no stop was attempted. A stop error is returned
+/// separately so only a transaction that really crossed that boundary rolls back.
+fn stop_drained_owned_profiles(
+    state: &RuntimeState,
+    root: &Path,
+    associated: &[ServiceProfile],
+    expected: &[OwnedUpdateProfile],
+    journal: Option<&mut Journal>,
+) -> Result<Option<String>, String> {
+    let _operation = state
+        .runtime_operations
+        .try_lock()
+        .map_err(|_| "后台操作正在进行，未停止服务")?;
+    // Keep cancellation and registry writers outside the final validation/stop
+    // boundary. try_lock on processes prevents a DB -> process lock wait cycle.
+    let tasks = state
+        .tasks
+        .try_lock()
+        .map_err(|_| "任务状态正在变化，未停止服务")?;
+    if state.shutting_down.load(Ordering::Acquire)
+        || journal
+            .as_ref()
+            .is_some_and(|j| tasks.get(&j.task_id).is_none_or(|task| task.cancelled))
+    {
+        return Err("运行时更新已取消，未停止服务".into());
+    }
+    let db = state.database.lock().map_err(|e| e.to_string())?;
+    let registered = registered_update_profiles(&db)?;
+    let mut processes = state
+        .processes
+        .try_lock()
+        .map_err(|_| "服务进程清单正在变化，未停止服务")?;
+    // This repeats the native IPv4/IPv6 listener scan after every async drain.
+    let current = collect_owned_update_profiles(&mut processes, root, associated, &registered)?;
+    if current.len() != expected.len() {
+        return Err("排空期间受管服务清单发生变化，未停止服务".into());
+    }
+    for (current, expected) in current.iter().zip(expected) {
+        if !same_profile(&current.profile, &expected.profile)?
+            || current.child_id != expected.child_id
+            || current.started_at != expected.started_at
+        {
+            return Err("排空期间实际受管进程发生变化，未停止服务".into());
+        }
+        #[cfg(windows)]
+        if current.child_handle != expected.child_handle
+            || current.creation_time != expected.creation_time
+            || current.image != expected.image
+        {
+            return Err("排空期间实际受管进程句柄发生变化，未停止服务".into());
+        }
+    }
+    if state.shutting_down.load(Ordering::Acquire) {
+        return Err("后台正在退出，未停止服务".into());
+    }
+    // Validation refusals retain a preparation phase. A crash can only recover
+    // replacing after all checks passed and durable intent preceded the stop.
+    if let Some(journal) = journal {
+        let previous = journal.phase.clone();
+        journal.phase = "replacing".into();
+        journal.updated_at = now();
+        if let Err(error) = persist_locked(&db, journal) {
+            journal.phase = previous;
+            return Err(error);
+        }
+    }
+    for owner in current {
+        let Some(process) = processes.get_mut(&owner.profile.id) else {
+            return Ok(Some("受管服务清单已变化，停止未完成".into()));
+        };
+        if let Err(error) = process.stop() {
+            return Ok(Some(error));
+        }
+    }
+    Ok(None)
 }
 
 fn engine_directories(
@@ -1316,8 +1528,9 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
         .map_err(|_| "正在切换模型")?;
     let _selection_flag = SelectionFlag(state.clone());
     let mut guards = Vec::new();
-    let owned = owned_update_profiles(&state, &associated)?;
-    for profile in &owned {
+    let owned = owned_update_profiles(&state, &j.install_dir, &associated)?;
+    for owner in &owned {
+        let profile = &owner.profile;
         if !j.requested_stop_current_service {
             return Err("检测到更新准备期间启动的模型服务；尚未确认停止，原服务保持运行".into());
         }
@@ -1344,16 +1557,13 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
         guards.push(gate);
     }
     cancelled(&state, &j.task_id)?;
-    // Durable intent and backups precede the first controlled stop or replacement.
-    progress(
-        &state,
-        j,
-        "replacing",
-        "请求已结束，正在停止受管服务并替换程序文件；失败自动恢复备份",
-    )?;
+    // Refusals occur outside rollback, with no replacing intent and no stop.
+    let install_dir = j.install_dir.clone();
+    let stop_error =
+        stop_drained_owned_profiles(&state, &install_dir, &associated, &owned, Some(j))?;
     let result = async {
-        for running in &j.running {
-            super::owned_stop(&state, &running.profile.id).await?;
+        if let Some(error) = stop_error {
+            return Err(error);
         }
         if crate::discovery::has_running_installation(&j.install_dir)? {
             return Err("检测到其它程序仍在运行此目录，未替换文件".into());
@@ -1577,22 +1787,50 @@ mod tests {
     #[ignore = "Child-only isolated TCP listener fixture; started by ownership regression tests"]
     fn zip_update_listener_fixture() {
         use std::net::TcpListener;
-        let port: u16 = std::env::var("STRATA_ZIP_LISTENER_FIXTURE_PORT").expect("fixture port").parse().unwrap();
+        let port: u16 = std::env::var("STRATA_ZIP_LISTENER_FIXTURE_PORT")
+            .expect("fixture port")
+            .parse()
+            .unwrap();
         let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).unwrap();
-        for stream in listener.incoming() {
-            if let Ok(mut stream) = stream {
-                let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}");
-            }
+        for mut stream in listener.incoming().flatten() {
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let _ = stream.read(&mut [0; 4096]);
+            let body = br#"{"service":"strata","status":"ok","loaded":false,"activity":{"in_flight":0},"live":{"state":"idle","queued":0,"running":0,"waiting":0,"outside_slots":0}}"#;
+            let _ = write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            let _ = stream.write_all(body);
         }
     }
 
     #[cfg(windows)]
     fn zip_listener_profile(state: &RuntimeState, id: &str, port: u16) -> ServiceProfile {
         ServiceProfile {
-            id: id.into(), name: id.into(), base_url: format!("http://127.0.0.1:{port}"),
-            install_dir: state.data_dir().to_string_lossy().into(), python_path: String::new(),
-            config_path: state.data_dir().join(format!("{id}.json")).to_string_lossy().into(), managed: true,
+            id: id.into(),
+            name: id.into(),
+            base_url: format!("http://127.0.0.1:{port}"),
+            install_dir: state.data_dir().to_string_lossy().into(),
+            python_path: String::new(),
+            config_path: state
+                .data_dir()
+                .join(format!("{id}.json"))
+                .to_string_lossy()
+                .into(),
+            managed: true,
         }
+    }
+
+    #[cfg(windows)]
+    fn register_zip_profile(state: &RuntimeState, profile: &ServiceProfile) {
+        let serialized = serde_json::to_string(profile).unwrap();
+        state.database.lock().unwrap().execute(
+            "INSERT INTO local_installations(id,profile,original_profile,imported_at) VALUES(?1,?2,?2,0) ON CONFLICT(id) DO UPDATE SET profile=excluded.profile",
+            params![profile.id, serialized],
+        ).unwrap();
     }
 
     #[cfg(windows)]
@@ -1602,21 +1840,58 @@ mod tests {
         let port = reservation.local_addr().unwrap().port();
         drop(reservation);
         let profile = zip_listener_profile(state, id, port);
+        fs::write(&profile.config_path, b"{}").unwrap();
+        register_zip_profile(state, &profile);
+        spawn_zip_listener(state, &profile);
+        profile
+    }
+
+    #[cfg(windows)]
+    fn spawn_zip_listener(state: &RuntimeState, profile: &ServiceProfile) {
         let mut command = Command::new(std::env::current_exe().unwrap());
-        command.args(["--ignored", "--exact", "runtime_upgrade::release_zip::tests::zip_update_listener_fixture", "--nocapture"])
-            .env("STRATA_ZIP_LISTENER_FIXTURE_PORT", port.to_string());
-        let mut process = processes::OwnedProcess::spawn(command, state.logs.clone(), id).unwrap();
+        command
+            .args([
+                "--ignored",
+                "--exact",
+                "runtime_upgrade::release_zip::tests::zip_update_listener_fixture",
+                "--nocapture",
+            ])
+            .env(
+                "STRATA_ZIP_LISTENER_FIXTURE_PORT",
+                crate::external::local_port(profile).unwrap().to_string(),
+            );
+        let mut process =
+            processes::OwnedProcess::spawn(command, state.logs.clone(), &profile.id).unwrap();
         process.profile = Some(profile.clone());
         let pid = process.child.id();
-        state.processes.lock().unwrap().insert(id.into(), process);
+        state
+            .processes
+            .lock()
+            .unwrap()
+            .insert(profile.id.clone(), process);
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
-            if crate::external::listener_ids(&profile).unwrap().contains(&pid) { break; }
-            assert!(state.processes.lock().unwrap().get_mut(id).unwrap().refresh().unwrap().running, "fixture exited before listening");
+            if crate::external::listener_ids(profile)
+                .unwrap()
+                .contains(&pid)
+            {
+                break;
+            }
+            assert!(
+                state
+                    .processes
+                    .lock()
+                    .unwrap()
+                    .get_mut(&profile.id)
+                    .unwrap()
+                    .refresh()
+                    .unwrap()
+                    .running,
+                "fixture exited before listening"
+            );
             assert!(Instant::now() < deadline, "fixture listener timed out");
             std::thread::sleep(Duration::from_millis(10));
         }
-        profile
     }
 
     #[cfg(windows)]
@@ -1627,10 +1902,37 @@ mod tests {
         let owner = owned_zip_listener(&state, "owned-current");
         let mut alias = owner.clone();
         alias.id = "old-saved-configuration".into();
-        alias.base_url = format!("http://localhost:{}/", crate::external::local_port(&owner).unwrap());
-        let owned = owned_update_profiles(&state, &[alias, owner.clone()]).unwrap();
-        assert_eq!(owned.iter().map(|profile| profile.id.as_str()).collect::<Vec<_>>(), vec![owner.id.as_str()]);
-        assert!(state.processes.lock().unwrap().get_mut(&owner.id).unwrap().refresh().unwrap().running);
+        alias.config_path = state
+            .data_dir()
+            .join("old-saved.json")
+            .to_string_lossy()
+            .into();
+        fs::write(&alias.config_path, b"{}").unwrap();
+        alias.base_url = format!(
+            "http://localhost:{}/",
+            crate::external::local_port(&owner).unwrap()
+        );
+        register_zip_profile(&state, &alias);
+        let owned =
+            owned_update_profiles(&state, state.data_dir(), &[alias, owner.clone()]).unwrap();
+        assert_eq!(
+            owned
+                .iter()
+                .map(|owner| owner.profile.id.as_str())
+                .collect::<Vec<_>>(),
+            vec![owner.id.as_str()]
+        );
+        assert!(
+            state
+                .processes
+                .lock()
+                .unwrap()
+                .get_mut(&owner.id)
+                .unwrap()
+                .refresh()
+                .unwrap()
+                .running
+        );
     }
 
     #[cfg(windows)]
@@ -1644,9 +1946,27 @@ mod tests {
         let external = TcpListener::bind((Ipv6Addr::LOCALHOST, port)).unwrap();
         let mut alias = owner.clone();
         alias.id = "old-saved-configuration".into();
-        assert!(crate::external::listener_ids(&alias).unwrap().contains(&std::process::id()));
-        assert!(owned_update_profiles(&state, &[alias, owner.clone()]).err().unwrap().contains("外部程序"));
-        assert!(state.processes.lock().unwrap().get_mut(&owner.id).unwrap().refresh().unwrap().running);
+        register_zip_profile(&state, &alias);
+        assert!(crate::external::listener_ids(&alias)
+            .unwrap()
+            .contains(&std::process::id()));
+        assert!(
+            owned_update_profiles(&state, state.data_dir(), &[alias, owner.clone()])
+                .err()
+                .unwrap()
+                .contains("外部程序")
+        );
+        assert!(
+            state
+                .processes
+                .lock()
+                .unwrap()
+                .get_mut(&owner.id)
+                .unwrap()
+                .refresh()
+                .unwrap()
+                .running
+        );
         assert_eq!(external.local_addr().unwrap().port(), port);
     }
 
@@ -1659,9 +1979,492 @@ mod tests {
         let second = owned_zip_listener(&state, "owned-second");
         let mut alias = first.clone();
         alias.id = "old-saved-configuration".into();
-        let owned = owned_update_profiles(&state, &[alias, first.clone(), second.clone()]).unwrap();
-        assert_eq!(owned.iter().map(|profile| profile.id.as_str()).collect::<Vec<_>>(), vec![first.id.as_str(), second.id.as_str()]);
-        assert!(state.processes.lock().unwrap().values_mut().all(|process| process.refresh().unwrap().running));
+        register_zip_profile(&state, &alias);
+        let owned = owned_update_profiles(
+            &state,
+            state.data_dir(),
+            &[alias, first.clone(), second.clone()],
+        )
+        .unwrap();
+        assert_eq!(
+            owned
+                .iter()
+                .map(|owner| owner.profile.id.as_str())
+                .collect::<Vec<_>>(),
+            vec![first.id.as_str(), second.id.as_str()]
+        );
+        assert!(state
+            .processes
+            .lock()
+            .unwrap()
+            .values_mut()
+            .all(|process| process.refresh().unwrap().running));
+    }
+
+    #[cfg(windows)]
+    fn zip_waiting_journal(state: &RuntimeState, profile: &ServiceProfile) -> Journal {
+        let journal = Journal {
+            task_id: "isolated-stop-boundary".into(),
+            install_dir: state.data_dir().into(),
+            phase: "waitingIdle".into(),
+            new_install: false,
+            asset_name: None,
+            requested_asset_name: None,
+            requested_stop_current_service: true,
+            version: None,
+            revision: None,
+            changes: vec![],
+            running: vec![Restart {
+                profile: profile.clone(),
+                loaded: false,
+            }],
+            migrations: vec![],
+            error: None,
+            updated_at: now(),
+        };
+        persist(state, &journal).unwrap();
+        let task = processes::TaskRecord {
+            status: TaskStatus {
+                id: journal.task_id.clone(),
+                kind: "update".into(),
+                state: "running".into(),
+                message: "isolated fixture".into(),
+                started_at: now(),
+                finished_at: None,
+            },
+            profile_id: None,
+            runtime_path: Some(journal.install_dir.clone()),
+            cancelled: false,
+            process: None,
+        };
+        processes::persist_task(&state.database, &task).unwrap();
+        state
+            .tasks
+            .lock()
+            .unwrap()
+            .insert(journal.task_id.clone(), task);
+        journal
+    }
+
+    #[cfg(windows)]
+    fn assert_zip_owner_running(state: &RuntimeState, profile: &ServiceProfile) {
+        let mut processes = state.processes.lock().unwrap();
+        let process = processes.get_mut(&profile.id).unwrap();
+        assert!(process.refresh().unwrap().running);
+        assert!(process.owns_pid(process.child.id()).unwrap());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn zip_same_id_registry_drift_refuses_stop_and_reopen_never_rolls_back() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = RuntimeState::open(temp.path().join("app")).unwrap();
+        let owner = owned_zip_listener(&state, "owned-current");
+        let associated = vec![owner.clone()];
+        let expected = owned_update_profiles(&state, state.data_dir(), &associated).unwrap();
+        let original = state.data_dir().join("program.py");
+        fs::write(&original, b"original program").unwrap();
+        let mut journal = zip_waiting_journal(&state, &owner);
+        let mut changed = owner.clone();
+        changed.config_path = state
+            .data_dir()
+            .join("changed.json")
+            .to_string_lossy()
+            .into();
+        fs::write(&changed.config_path, b"{} ").unwrap();
+        register_zip_profile(&state, &changed);
+        let error = stop_drained_owned_profiles(
+            &state,
+            state.data_dir(),
+            &associated,
+            &expected,
+            Some(&mut journal),
+        )
+        .unwrap_err();
+        assert!(error.contains("登记发生变化"));
+        assert_eq!(journal.phase, "waitingIdle");
+        assert_zip_owner_running(&state, &owner);
+        assert_eq!(fs::read(&original).unwrap(), b"original program");
+        let reopened = RuntimeState::open(state.data_dir().into()).unwrap();
+        let phase: String = reopened
+            .database
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT json_extract(journal,'$.phase') FROM runtime_zip_updates WHERE task_id=?1",
+                [&journal.task_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(phase, "cancelled");
+        assert_eq!(fs::read(&original).unwrap(), b"original program");
+        assert_eq!(
+            reopened.registered_profile(&owner.id).unwrap().config_path,
+            changed.config_path
+        );
+        assert_zip_owner_running(&state, &owner);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn zip_actual_owner_requires_managed_matching_config_python_endpoint_and_identity() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = RuntimeState::open(temp.path().join("app")).unwrap();
+        let owner = owned_zip_listener(&state, "owned-current");
+        let associated = vec![owner.clone()];
+        let mut invalid = vec![];
+        let mut profile = owner.clone();
+        profile.managed = false;
+        invalid.push(Some(profile));
+        let mut profile = owner.clone();
+        profile.id = "different-id".into();
+        invalid.push(Some(profile));
+        let mut profile = owner.clone();
+        profile.python_path = "different-python".into();
+        invalid.push(Some(profile));
+        let mut profile = owner.clone();
+        profile.base_url = "http://127.0.0.1:1".into();
+        invalid.push(Some(profile));
+        let mut profile = owner.clone();
+        profile.config_path = state
+            .data_dir()
+            .join("different.json")
+            .to_string_lossy()
+            .into();
+        invalid.push(Some(profile));
+        invalid.push(None);
+        for actual in invalid {
+            state
+                .processes
+                .lock()
+                .unwrap()
+                .get_mut(&owner.id)
+                .unwrap()
+                .profile = actual;
+            assert!(owned_update_profiles(&state, state.data_dir(), &associated).is_err());
+            assert_zip_owner_running(&state, &owner);
+            assert_eq!(fs::read(&owner.config_path).unwrap(), b"{}");
+        }
+        state
+            .processes
+            .lock()
+            .unwrap()
+            .get_mut(&owner.id)
+            .unwrap()
+            .profile = Some(owner.clone());
+        for unknown_pid in [false, true] {
+            {
+                let mut processes = state.processes.lock().unwrap();
+                let process = processes.get_mut(&owner.id).unwrap();
+                process.status.owned = unknown_pid;
+                process.status.pid = if unknown_pid {
+                    None
+                } else {
+                    Some(process.child.id())
+                };
+            }
+            assert!(owned_update_profiles(&state, state.data_dir(), &associated).is_err());
+            assert_zip_owner_running(&state, &owner);
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn zip_replaced_owned_child_with_unchanged_registration_refuses_final_stop() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = RuntimeState::open(temp.path().join("app")).unwrap();
+        let owner = owned_zip_listener(&state, "owned-current");
+        let associated = vec![owner.clone()];
+        let expected = owned_update_profiles(&state, state.data_dir(), &associated).unwrap();
+        let mut journal = zip_waiting_journal(&state, &owner);
+        state
+            .processes
+            .lock()
+            .unwrap()
+            .get_mut(&owner.id)
+            .unwrap()
+            .stop()
+            .unwrap();
+        spawn_zip_listener(&state, &owner);
+        assert!(stop_drained_owned_profiles(
+            &state,
+            state.data_dir(),
+            &associated,
+            &expected,
+            Some(&mut journal)
+        )
+        .unwrap_err()
+        .contains("实际受管进程"));
+        assert_eq!(journal.phase, "waitingIdle");
+        assert_zip_owner_running(&state, &owner);
+        assert_eq!(fs::read(&owner.config_path).unwrap(), b"{}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn zip_native_generation_and_image_mismatch_refuse_stop_without_pid_or_handle_change() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = RuntimeState::open(temp.path().join("app")).unwrap();
+        let owner = owned_zip_listener(&state, "owned-current");
+        let associated = vec![owner.clone()];
+        let mut journal = zip_waiting_journal(&state, &owner);
+        for different_image in [false, true] {
+            let mut expected =
+                owned_update_profiles(&state, state.data_dir(), &associated).unwrap();
+            assert_ne!(expected[0].creation_time, 0);
+            assert!(expected[0].image.is_absolute());
+            if different_image {
+                expected[0].image = temp.path().join("another-generation.exe");
+            } else {
+                expected[0].creation_time ^= 1;
+            }
+            assert!(stop_drained_owned_profiles(
+                &state,
+                state.data_dir(),
+                &associated,
+                &expected,
+                Some(&mut journal)
+            )
+            .unwrap_err()
+            .contains("句柄"));
+            assert_eq!(journal.phase, "waitingIdle");
+            assert_zip_owner_running(&state, &owner);
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn zip_foreign_root_engine_consumer_never_authorizes_its_owned_job() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = RuntimeState::open(temp.path().join("app")).unwrap();
+        let mut owner = owned_zip_listener(&state, "foreign-root");
+        let foreign = temp.path().join("another-installation");
+        fs::create_dir(&foreign).unwrap();
+        owner.install_dir = foreign.to_string_lossy().into();
+        register_zip_profile(&state, &owner);
+        state
+            .processes
+            .lock()
+            .unwrap()
+            .get_mut(&owner.id)
+            .unwrap()
+            .profile = Some(owner.clone());
+        fs::write(
+            &owner.config_path,
+            serde_json::to_vec(
+                &json!({"exe":state.data_dir().join("strata.exe"),"cwd":state.data_dir()}),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let associated = profiles(&state, &dunce::canonicalize(state.data_dir()).unwrap()).unwrap();
+        assert!(associated.iter().any(|profile| profile.id == owner.id));
+        assert!(owned_update_profiles(&state, state.data_dir(), &associated)
+            .err()
+            .unwrap()
+            .contains("安装根"));
+        assert_zip_owner_running(&state, &owner);
+        assert!(foreign.is_dir());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn zip_changed_actual_identity_and_queued_operation_refuse_final_stop() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = RuntimeState::open(temp.path().join("app")).unwrap();
+        let owner = owned_zip_listener(&state, "owned-current");
+        let associated = vec![owner.clone()];
+        let expected = owned_update_profiles(&state, state.data_dir(), &associated).unwrap();
+        let mut journal = zip_waiting_journal(&state, &owner);
+        {
+            let _operation = state.runtime_operations.lock().unwrap();
+            assert!(stop_drained_owned_profiles(
+                &state,
+                state.data_dir(),
+                &associated,
+                &expected,
+                Some(&mut journal)
+            )
+            .is_err());
+        }
+        assert_zip_owner_running(&state, &owner);
+        assert_eq!(journal.phase, "waitingIdle");
+        state
+            .processes
+            .lock()
+            .unwrap()
+            .get_mut(&owner.id)
+            .unwrap()
+            .profile = None;
+        assert!(stop_drained_owned_profiles(
+            &state,
+            state.data_dir(),
+            &associated,
+            &expected,
+            Some(&mut journal)
+        )
+        .unwrap_err()
+        .contains("实际启动身份"));
+        assert_eq!(journal.phase, "waitingIdle");
+        assert_zip_owner_running(&state, &owner);
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn zip_foreign_listener_during_real_drain_refuses_stop_and_reopen_preserves_both() {
+        use std::net::{Ipv6Addr, TcpListener};
+        let temp = tempfile::tempdir().unwrap();
+        let state = RuntimeState::open(temp.path().join("app")).unwrap();
+        let owner = owned_zip_listener(&state, "owned-current");
+        let associated = vec![owner.clone()];
+        let expected = owned_update_profiles(&state, state.data_dir(), &associated).unwrap();
+        let directory = state.data_dir().join("analytics");
+        fs::create_dir_all(&directory).unwrap();
+        let activity = rusqlite::Connection::open(directory.join("journal.sqlite3")).unwrap();
+        activity.execute_batch("CREATE TABLE active_requests(request_id TEXT PRIMARY KEY,service_id TEXT NOT NULL,session_id TEXT NOT NULL,started_ms INTEGER NOT NULL);").unwrap();
+        activity
+            .execute(
+                "INSERT INTO active_requests VALUES('pending',?1,'isolated',0)",
+                [&owner.id],
+            )
+            .unwrap();
+        let pid = state
+            .processes
+            .lock()
+            .unwrap()
+            .get(&owner.id)
+            .unwrap()
+            .child
+            .id();
+        fs::write(directory.join(format!("status-{}.json", owner.id)), serde_json::to_vec(&json!({"serviceId":owner.id,"pid":pid,"updatedAtMs":crate::now(),"supported":true,"observerActive":true,"journalWriteFailed":false,"error":null})).unwrap()).unwrap();
+        let _gate = maintenance::begin(&state, &owner.id, None, "drain").unwrap();
+        let drain_state = state.clone();
+        let drain_profile = owner.clone();
+        let mut drain =
+            tokio::spawn(async move { maintenance::wait_idle(&drain_state, &drain_profile).await });
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), &mut drain)
+                .await
+                .is_err(),
+            "active request must keep drain pending"
+        );
+        let external = TcpListener::bind((
+            Ipv6Addr::LOCALHOST,
+            crate::external::local_port(&owner).unwrap(),
+        ))
+        .unwrap();
+        activity
+            .execute("DELETE FROM active_requests WHERE request_id='pending'", [])
+            .unwrap();
+        match tokio::time::timeout(Duration::from_secs(5), &mut drain).await {
+            Ok(result) => result.unwrap().unwrap(),
+            Err(error) => {
+                drain.abort();
+                let _ = drain.await;
+                panic!("isolated drain did not complete: {error}");
+            }
+        }
+        let mut journal = zip_waiting_journal(&state, &owner);
+        assert!(stop_drained_owned_profiles(
+            &state,
+            state.data_dir(),
+            &associated,
+            &expected,
+            Some(&mut journal)
+        )
+        .unwrap_err()
+        .contains("外部程序"));
+        assert_eq!(journal.phase, "waitingIdle");
+        assert_zip_owner_running(&state, &owner);
+        let reopened = RuntimeState::open(state.data_dir().into()).unwrap();
+        let phase: String = reopened
+            .database
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT json_extract(journal,'$.phase') FROM runtime_zip_updates WHERE task_id=?1",
+                [&journal.task_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(phase, "cancelled");
+        assert_zip_owner_running(&state, &owner);
+        assert!(crate::external::listener_ids(&owner)
+            .unwrap()
+            .contains(&std::process::id()));
+        assert_eq!(
+            external.local_addr().unwrap().port(),
+            crate::external::local_port(&owner).unwrap()
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn zip_verified_stop_persists_intent_and_preserves_unrelated_owned_job() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = RuntimeState::open(temp.path().join("app")).unwrap();
+        let owner = owned_zip_listener(&state, "owned-current");
+        let unrelated = owned_zip_listener(&state, "unrelated-owned");
+        let associated = vec![owner.clone()];
+        let expected = owned_update_profiles(&state, state.data_dir(), &associated).unwrap();
+        let mut journal = zip_waiting_journal(&state, &owner);
+        state
+            .tasks
+            .lock()
+            .unwrap()
+            .get_mut(&journal.task_id)
+            .unwrap()
+            .cancelled = true;
+        assert!(stop_drained_owned_profiles(
+            &state,
+            state.data_dir(),
+            &associated,
+            &expected,
+            Some(&mut journal)
+        )
+        .is_err());
+        assert_eq!(journal.phase, "waitingIdle");
+        assert_zip_owner_running(&state, &owner);
+        state
+            .tasks
+            .lock()
+            .unwrap()
+            .get_mut(&journal.task_id)
+            .unwrap()
+            .cancelled = false;
+        assert!(stop_drained_owned_profiles(
+            &state,
+            state.data_dir(),
+            &associated,
+            &expected,
+            Some(&mut journal)
+        )
+        .unwrap()
+        .is_none());
+        assert_eq!(journal.phase, "replacing");
+        assert!(
+            !state
+                .processes
+                .lock()
+                .unwrap()
+                .get_mut(&owner.id)
+                .unwrap()
+                .refresh()
+                .unwrap()
+                .running
+        );
+        assert_zip_owner_running(&state, &unrelated);
+        let phase: String = state
+            .database
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT json_extract(journal,'$.phase') FROM runtime_zip_updates WHERE task_id=?1",
+                [&journal.task_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(phase, "replacing");
     }
 
     #[test]
@@ -1674,20 +2477,116 @@ mod tests {
         fs::write(root.join("serve/server.py"), "# not executed").unwrap();
         let root = dunce::canonicalize(root).unwrap();
         let id = uuid::Uuid::new_v4().to_string();
-        let status = TaskStatus { id: id.clone(), kind: "update".into(), state: "running".into(), message: "existing isolated task".into(), started_at: now(), finished_at: None };
-        let journal = Journal { task_id: id.clone(), install_dir: root.clone(), phase: "checking".into(), new_install: false, asset_name: None, requested_asset_name: None, requested_stop_current_service: false, version: None, revision: None, changes: vec![], running: vec![], migrations: vec![], error: None, updated_at: now() };
+        let status = TaskStatus {
+            id: id.clone(),
+            kind: "update".into(),
+            state: "running".into(),
+            message: "existing isolated task".into(),
+            started_at: now(),
+            finished_at: None,
+        };
+        let journal = Journal {
+            task_id: id.clone(),
+            install_dir: root.clone(),
+            phase: "checking".into(),
+            new_install: false,
+            asset_name: None,
+            requested_asset_name: None,
+            requested_stop_current_service: false,
+            version: None,
+            revision: None,
+            changes: vec![],
+            running: vec![],
+            migrations: vec![],
+            error: None,
+            updated_at: now(),
+        };
         persist(&state, &journal).unwrap();
-        state.tasks.lock().unwrap().insert(id.clone(), processes::TaskRecord { status: status.clone(), profile_id: None, runtime_path: Some(root.clone()), cancelled: false, process: None });
+        state.tasks.lock().unwrap().insert(
+            id.clone(),
+            processes::TaskRecord {
+                status: status.clone(),
+                profile_id: None,
+                runtime_path: Some(root.clone()),
+                cancelled: false,
+                process: None,
+            },
+        );
         state.runtime_upgrading.store(true, Ordering::Release);
-        let cached = start_release_request(state.clone(), root.to_string_lossy().into(), None, Some(id.clone()), false).unwrap();
-        assert_eq!(cached.id, status.id);
-        assert_eq!(cached.message, status.message);
-        assert!(start_release_request(state.clone(), root.to_string_lossy().into(), Some("strata-windows-x64-cuda12.zip".into()), Some(id.clone()), false).err().unwrap().contains("不一致"));
-        assert!(start_release_request(state.clone(), root.to_string_lossy().into(), None, Some(id), true).err().unwrap().contains("不一致"));
+        if cfg!(all(windows, target_arch = "x86_64")) {
+            let cached = start_release_request(
+                state.clone(),
+                root.to_string_lossy().into(),
+                None,
+                Some(id.clone()),
+                false,
+            )
+            .unwrap();
+            assert_eq!(cached.id, status.id);
+            assert_eq!(cached.message, status.message);
+            assert!(start_release_request(
+                state.clone(),
+                root.to_string_lossy().into(),
+                Some("strata-windows-x64-cuda12.zip".into()),
+                Some(id.clone()),
+                false
+            )
+            .err()
+            .unwrap()
+            .contains("不一致"));
+            assert!(start_release_request(
+                state.clone(),
+                root.to_string_lossy().into(),
+                None,
+                Some(id.clone()),
+                true
+            )
+            .err()
+            .unwrap()
+            .contains("不一致"));
+        } else {
+            // A stored Windows request never bypasses the local platform guard.
+            for (asset, confirmed) in [
+                (None, false),
+                (Some("strata-windows-x64-cuda12.zip".into()), false),
+                (None, true),
+            ] {
+                let error = start_release_request(
+                    state.clone(),
+                    root.to_string_lossy().into(),
+                    asset,
+                    Some(id.clone()),
+                    confirmed,
+                )
+                .err()
+                .expect("unsupported platforms must refuse even a cached ZIP request");
+                assert_eq!(
+                    error,
+                    "官方引擎ZIP自动安装目前支持Windows x64；可使用源码安装方式"
+                );
+            }
+        }
+        let unchanged: String = state
+            .database
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT journal FROM runtime_zip_updates WHERE task_id=?1",
+                [&id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(unchanged, serde_json::to_string(&journal).unwrap());
+        assert_eq!(fs::read(root.join("setup.py")).unwrap(), b"# not executed");
+        assert_eq!(
+            fs::read(root.join("serve/server.py")).unwrap(),
+            b"# not executed"
+        );
         assert_eq!(state.tasks.lock().unwrap().len(), 1);
         assert!(state.processes.lock().unwrap().is_empty());
         assert!(!state.data_dir().join("zip-updates").exists());
     }
+
     use std::io::Cursor;
     fn archive(entries: &[(&str, &str)]) -> Vec<u8> {
         let mut zip = zip::ZipWriter::new(Cursor::new(vec![]));
@@ -1850,15 +2749,20 @@ mod tests {
         )
         .unwrap();
         let mut info=super::super::release_update_info(&json!({"tag_name":"v0.1.42","assets":[{"name":"strata-windows-x64.zip","size":12,"browser_download_url":"https://github.com/Niko1221/Strata/releases/download/v0.1.42/strata-windows-x64.zip","digest":format!("sha256:{}","a".repeat(64))},{"name":"strata-windows-x64-cuda12.zip","size":12,"browser_download_url":"https://github.com/Niko1221/Strata/releases/download/v0.1.42/strata-windows-x64-cuda12.zip","digest":format!("sha256:{}","b".repeat(64))}]})).unwrap();
-        assert!(info.installable);
-        assert_eq!(
-            choose_asset(&info, temp.path(), None).unwrap().variant,
-            "cuda12"
-        );
+        assert_eq!(info.installable, cfg!(all(windows, target_arch = "x86_64")));
+        assert_eq!(info.latest_version.as_deref(), Some("0.1.42"));
+        assert_eq!(info.assets.len(), 2);
+        // Metadata discovery and safe CUDA selection remain available on Linux;
+        // selecting a Windows asset does not authorize installing it there.
+        let selected = choose_asset(&info, temp.path(), None).unwrap();
+        assert_eq!(selected.variant, "cuda12");
+        assert_eq!(selected.name, "strata-windows-x64-cuda12.zip");
+        assert_eq!(selected.sha256, "b".repeat(64));
         assert!(choose_asset(&info, temp.path(), Some("strata-windows-x64.zip")).is_err());
         info.assets.clear();
         assert!(choose_asset(&info, temp.path(), None).is_err());
     }
+
     #[test]
     fn cuda13_build_without_backend_never_selects_or_accepts_cuda12() {
         let temp = tempfile::tempdir().unwrap();

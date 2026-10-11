@@ -1,35 +1,35 @@
 pub mod analytics;
+pub mod chat_runtime;
 pub mod discovery;
 pub mod disk;
 pub mod external;
+pub mod external_management;
 pub mod health_watch;
 pub mod http;
 mod idle_model;
 pub mod installation;
 pub mod legacy;
 pub mod maintenance;
+pub mod mcp_probe;
 pub mod mcp_stdio;
+pub mod model_inspect;
 pub mod observer;
 pub mod policy;
-pub mod request_capture;
-mod registry_handoff;
 pub mod processes;
-pub mod setup_options;
-pub mod model_inspect;
-pub mod mcp_probe;
-pub mod external_management;
-pub mod chat_runtime;
+mod registry_handoff;
+pub mod request_capture;
 pub mod runtime_upgrade;
 pub mod setup_handoff;
+pub mod setup_options;
 pub mod storage;
 pub mod store;
 pub mod tuning;
 pub mod types;
 
 #[cfg(test)]
-mod window_close_tests;
-#[cfg(test)]
 mod tuning_contract_tests;
+#[cfg(test)]
+mod window_close_tests;
 
 use processes::{Logs, OwnedProcess, Step, Tasks};
 use rusqlite::Connection;
@@ -107,7 +107,9 @@ impl RuntimeState {
         let database = Arc::new(Mutex::new(database));
         let tasks = processes::restore_tasks(&database)?;
         let logs: Logs = Default::default();
-        for id in tasks.keys() { processes::register_task_logs(&logs, id)?; }
+        for id in tasks.keys() {
+            processes::register_task_logs(&logs, id)?;
+        }
         let executable_path = std::env::current_exe().map_err(|e| e.to_string())?;
         let executable_hash = format!(
             "{:x}",
@@ -286,7 +288,9 @@ impl RuntimeState {
         }
         let selected = store_get(&self, "activeLocalInstallation".into())?;
         if let Some(profile_id) = selected.as_str() {
-            if external_management::is_external(&self, profile_id)? { return Ok(()); }
+            if external_management::is_external(&self, profile_id)? {
+                return Ok(());
+            }
             // A saved selection is not a request to start it when the app opens.
             // Only an explicit upgrade may resume a service it interrupted.
             let preload = match self.selection_recovery_load(profile_id)? {
@@ -310,7 +314,9 @@ impl RuntimeState {
         let Some(id) = selected.as_str() else {
             return Ok(());
         };
-        if external_management::is_external(&self, id)? { return Ok(()); }
+        if external_management::is_external(&self, id)? {
+            return Ok(());
+        }
         if store_get(&self, "localServiceDesired".into())?.as_bool() == Some(false) {
             self.health_snapshots
                 .lock()
@@ -499,7 +505,8 @@ impl RuntimeState {
                 .await
                 .map_err(|e| e.to_string())?;
             Ok(())
-        }.await;
+        }
+        .await;
         if result.is_err() {
             self.shutting_down.store(false, Ordering::Release);
         }
@@ -558,15 +565,19 @@ impl RuntimeState {
                     "/health".into(),
                     "GET".into(),
                     None,
-                ).await?;
-                let loaded = health["loaded"].as_bool().ok_or("无法确认升级前模型是否已加载")?;
+                )
+                .await?;
+                let loaded = health["loaded"]
+                    .as_bool()
+                    .ok_or("无法确认升级前模型是否已加载")?;
                 restore = json!({"profileId":profile.id,"loaded":loaded});
             }
             let (status, unloaded) = http::control_json(
                 http::request_builder(&self.client, &profile, "/unload", "POST", Some(json!({})))?
                     .header("X-Strata-Manager-Maintenance-Token", gate.token()),
                 Duration::from_secs(90),
-            ).await?;
+            )
+            .await?;
             if !status.is_success() {
                 return Err("维护时卸载模型失败，保留现有后台".into());
             }
@@ -635,8 +646,7 @@ impl RuntimeState {
     }
 
     pub async fn dispatch(self: Arc<Self>, method: &str, params: Value) -> Result<Value, String> {
-        if self.recovery_is_deferred()
-            && !registry_handoff::allowed_while_deferred(method, &params)
+        if self.recovery_is_deferred() && !registry_handoff::allowed_while_deferred(method, &params)
         {
             return Err("后台正在交接已有模型登记，完成前已暂停服务操作".into());
         }
@@ -671,9 +681,13 @@ impl RuntimeState {
         let config_target = || -> Result<ServiceProfile, String> {
             let incoming: ServiceProfile = arg(&params, "profile")?;
             let selected = self.authoritative_profile(incoming.clone())?;
-            let original = dunce::canonicalize(storage::config_path(&incoming)?).map_err(|e| e.to_string())?;
-            let current = dunce::canonicalize(storage::config_path(&selected)?).map_err(|e| e.to_string())?;
-            if original != current { return Err("PROFILE_CONFIG_CHANGED: 配置目标已改变；草稿已保留，请重新选择配置。 / The selected configuration file changed; your draft is retained.".into()); }
+            let original =
+                dunce::canonicalize(storage::config_path(&incoming)?).map_err(|e| e.to_string())?;
+            let current =
+                dunce::canonicalize(storage::config_path(&selected)?).map_err(|e| e.to_string())?;
+            if original != current {
+                return Err("PROFILE_CONFIG_CHANGED: 配置目标已改变；草稿已保留，请重新选择配置。 / The selected configuration file changed; your draft is retained.".into());
+            }
             Ok(selected)
         };
         if matches!(
@@ -741,7 +755,7 @@ impl RuntimeState {
                     | "install_runtime"
                     | "update_runtime"
                     | "write_config"
-                | "write_config_cas_v1"
+                    | "write_config_cas_v1"
                     | "set_api_key"
                     | "import_local"
                     | "resolve_setup_handoff"
@@ -818,15 +832,8 @@ impl RuntimeState {
                 if method == "tuning_start_full_v1" && request.full.use_case.is_none() {
                     return Err("完整场景实测必须指定 useCase".into());
                 }
-                value(
-                tuning::start(
-                    self.clone(),
-                    arg(&params, "profileId")?,
-                    request,
-                )
-                .await,
-                )
-            },
+                value(tuning::start(self.clone(), arg(&params, "profileId")?, request).await)
+            }
             "tuning_status" => value(tuning::status(&self, arg(&params, "profileId")?)),
             "tuning_cancel" => value(tuning::cancel(&self, arg(&params, "jobId")?)),
             "tuning_apply" => value(
@@ -850,8 +857,13 @@ impl RuntimeState {
                 {
                     let selected = store_get(&self, "activeLocalInstallation".into())?;
                     if let Some(id) = selected.as_str() {
-                        let running = self.processes.lock().map_err(|e| e.to_string())?
-                            .get_mut(id).map(|process| process.refresh()).transpose()?
+                        let running = self
+                            .processes
+                            .lock()
+                            .map_err(|e| e.to_string())?
+                            .get_mut(id)
+                            .map(|process| process.refresh())
+                            .transpose()?
                             .is_some_and(|process| process.running);
                         if running {
                             self.clone().ensure_runtime(id.into(), true).await?;
@@ -920,16 +932,26 @@ impl RuntimeState {
                 arg(&params, "quant")?,
                 arg(&params, "context")?,
                 arg(&params, "images")?,
-                params.get("options").filter(|v| !v.is_null()).cloned()
+                params
+                    .get("options")
+                    .filter(|v| !v.is_null())
+                    .cloned()
                     .map(serde_json::from_value::<setup_options::SetupOptions>)
-                    .transpose().map_err(|e| format!("准备选项无效: {e}"))?.unwrap_or_default(),
+                    .transpose()
+                    .map_err(|e| format!("准备选项无效: {e}"))?
+                    .unwrap_or_default(),
             )),
             "inspect_gguf" => value(model_inspect::start(self.clone(), arg(&params, "request")?)),
             "probe_official_mcp" => {
                 let registered = self.registered_profile(&arg::<String>(&params, "profileId")?)?;
-                value(tokio::task::spawn_blocking(move || mcp_probe::probe_registered_profile(&registered))
-                    .await.map_err(|e| e.to_string())?)
-            },
+                value(
+                    tokio::task::spawn_blocking(move || {
+                        mcp_probe::probe_registered_profile(&registered)
+                    })
+                    .await
+                    .map_err(|e| e.to_string())?,
+                )
+            }
             "assert_profile_management" => {
                 // Desktop file operations use the supplied path after this RPC.
                 // Bind that path to registration and validate both roots before
@@ -939,18 +961,37 @@ impl RuntimeState {
                 external_management::assert_profile_manager_owned(&self, &incoming)?;
                 external_management::assert_profile_manager_owned(&self, &selected)?;
                 Ok(json!({"managed":true}))
-            },
-            "chat_runtime_evidence" => value(chat_runtime::evidence(&self, &arg::<String>(&params, "profileId")?)),
-            "external_management_status" => value(external_management::status(&self, &arg::<String>(&params, "profileId")?)),
-            "set_external_management" => value(external_management::set(&self, &arg::<String>(&params, "profileId")?, arg(&params, "external")?)),
+            }
+            "chat_runtime_evidence" => value(chat_runtime::evidence(
+                &self,
+                &arg::<String>(&params, "profileId")?,
+            )),
+            "external_management_status" => value(external_management::status(
+                &self,
+                &arg::<String>(&params, "profileId")?,
+            )),
+            "set_external_management" => value(external_management::set(
+                &self,
+                &arg::<String>(&params, "profileId")?,
+                arg(&params, "external")?,
+            )),
             "install_runtime" => value(install_runtime(&self, arg(&params, "directory")?)),
             "update_runtime" => value(runtime_upgrade::start(self.clone(), profile()?.id)),
             "update_runtime_zip" => value(runtime_upgrade::start_release_request(
                 self.clone(),
                 arg(&params, "installDir")?,
-                params.get("assetName").and_then(Value::as_str).map(str::to_owned),
-                params.get("requestId").and_then(Value::as_str).map(str::to_owned),
-                params.get("stopCurrentService").and_then(Value::as_bool).unwrap_or(false),
+                params
+                    .get("assetName")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+                params
+                    .get("requestId")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+                params
+                    .get("stopCurrentService")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
             )),
             "runtime_upgrade_status" => {
                 value(runtime_upgrade::status(&self, arg(&params, "profileId")?))
@@ -974,14 +1015,22 @@ impl RuntimeState {
                 runtime_upgrade::assert_available(&self)?;
                 tuning::assert_available(&self)?;
                 external_management::assert_profile_manager_owned(&self, &profile()?)?;
-                if self.selection_changing.load(Ordering::Acquire) || self.shutting_down.load(Ordering::Acquire) {
+                if self.selection_changing.load(Ordering::Acquire)
+                    || self.shutting_down.load(Ordering::Acquire)
+                {
                     return Err("后台正在切换模型或退出，请稍后保存".into());
                 }
                 if method == "write_config_cas_v1" {
                     let selected = config_target()?;
-                    value(storage::write_cas(&selected, &arg(&params, "config")?, &arg::<String>(&params, "expectedRevision")?))
-                } else { value(write_config(profile()?, arg(&params, "config")?)) }
-            },
+                    value(storage::write_cas(
+                        &selected,
+                        &arg(&params, "config")?,
+                        &arg::<String>(&params, "expectedRevision")?,
+                    ))
+                } else {
+                    value(write_config(profile()?, arg(&params, "config")?))
+                }
+            }
             "write_markdown_export" => value(write_markdown_export(
                 arg(&params, "path")?,
                 arg(&params, "content")?,
@@ -1335,7 +1384,8 @@ impl RuntimeState {
                 http::request_builder(&self.client, &previous, "/unload", "POST", Some(json!({})))?
                     .header("X-Strata-Manager-Maintenance-Token", gate.token()),
                 Duration::from_secs(90),
-            ).await?;
+            )
+            .await?;
             if !status.is_success()
                 || !matches!(unloaded["status"].as_str(), Some("unloaded" | "not loaded"))
             {
@@ -2442,7 +2492,16 @@ fn run_setup_with_options(
     images: bool,
     options: crate::setup_options::SetupOptions,
 ) -> Result<TaskStatus, String> {
-    run_setup_with_preflight_options(state, profile, model, quant, context, images, disk::plan, Some(options))
+    run_setup_with_preflight_options(
+        state,
+        profile,
+        model,
+        quant,
+        context,
+        images,
+        disk::plan,
+        Some(options),
+    )
 }
 
 #[cfg(test)]
@@ -2455,7 +2514,9 @@ fn run_setup_with_preflight(
     images: bool,
     preflight: impl FnOnce(&ServiceProfile, &str, &str, bool) -> Result<disk::Plan, String>,
 ) -> Result<TaskStatus, String> {
-    run_setup_with_preflight_options(state, profile, model, quant, context, images, preflight, None)
+    run_setup_with_preflight_options(
+        state, profile, model, quant, context, images, preflight, None,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2544,7 +2605,11 @@ fn run_setup_with_preflight_options(
         program: setup_python,
         args,
         cwd: root,
-        env: options.as_ref().map(|options| options.environment()).transpose()?.unwrap_or_default(),
+        env: options
+            .as_ref()
+            .map(|options| options.environment())
+            .transpose()?
+            .unwrap_or_default(),
     };
     steps.push(step);
     processes::launch_setup_task(state.clone(), intent, steps)

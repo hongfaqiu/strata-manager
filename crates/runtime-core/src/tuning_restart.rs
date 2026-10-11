@@ -282,7 +282,10 @@ fn baseline(config: &Value) -> Result<RestartParameters, String> {
         adapt_every: integer("--adapt-every")?,
         adapt_swaps: integer("--adapt-swaps")?,
         adapt_decay: option_value(config, "--adapt-decay")?
-            .map(|s| s.parse::<f64>().map_err(|_| "--adapt-decay 原值无效".to_string()))
+            .map(|s| {
+                s.parse::<f64>()
+                    .map_err(|_| "--adapt-decay 原值无效".to_string())
+            })
             .transpose()?,
     })
 }
@@ -297,7 +300,8 @@ fn validate_restart(config: &Value, p: &RestartParameters) -> Result<(), String>
             .is_some_and(|v| !(256..=8192).contains(&v))
         || p.adapt_every.is_some_and(|v| !(1..=4096).contains(&v))
         || p.adapt_swaps.is_some_and(|v| v > 4096)
-        || p.adapt_decay.is_some_and(|v| !v.is_finite() || !(0.0..=1.0).contains(&v))
+        || p.adapt_decay
+            .is_some_and(|v| !v.is_finite() || !(0.0..=1.0).contains(&v))
     {
         return Err(
             "重启参数超出受控范围：workers1–32、prefill512/1024/2048/4096/8192/16384/32768、reserve256–8192MiB、adapt-every1–4096、adapt-swaps0–4096、adapt-decay0–1"
@@ -822,26 +826,50 @@ pub(super) async fn verify_flags(
     let mut unknown = false;
     for (key, value) in expected {
         if let Some(want) = value {
-            let actual = metrics["engine"][key].as_f64().filter(|n| n.is_finite())
+            let actual = metrics["engine"][key]
+                .as_f64()
+                .filter(|n| n.is_finite())
                 .map(|_| metrics["engine"][key].clone())
-                .or_else(|| (key == "adapt_async").then(|| metrics["engine"][key].as_bool())
-                    .flatten().map(|v| json!(u64::from(v))));
-            let equal = actual.as_ref().is_some_and(|v| (v.as_f64().unwrap() - want.as_f64().unwrap()).abs() <= 1e-9);
+                .or_else(|| {
+                    (key == "adapt_async")
+                        .then(|| metrics["engine"][key].as_bool())
+                        .flatten()
+                        .map(|v| json!(u64::from(v)))
+                });
+            let equal = actual
+                .as_ref()
+                .is_some_and(|v| (v.as_f64().unwrap() - want.as_f64().unwrap()).abs() <= 1e-9);
             if let Some(ref actual) = actual {
                 let n = actual.as_f64().unwrap();
-                if (key == "prefill" && (n <= 0.0 || n > want.as_f64().unwrap())) || (key != "prefill" && !equal) {
+                if (key == "prefill" && (n <= 0.0 || n > want.as_f64().unwrap()))
+                    || (key != "prefill" && !equal)
+                {
                     return Err(format!("重启后 {key} 实际参数不符"));
                 }
-                if !equal { unknown = true; }
+                if !equal {
+                    unknown = true;
+                }
             } else {
                 if key == "pool_workers" || key == "adapt_async" {
                     return Err(format!("此引擎没有公开 {key} 的有效状态；requested参数不证明已生效，候选不推荐并恢复原配置"));
                 }
                 unknown = true;
             }
-            let status = if equal { "effective" } else if key == "prefill" { "upperBound" }
-                else if key.starts_with("adapt_") { "startupRequest" } else { "reservationRequest" };
-            verification.parameters.push(VerifiedParameter { name: key.into(), requested: want, observed: actual, status: status.into() });
+            let status = if equal {
+                "effective"
+            } else if key == "prefill" {
+                "upperBound"
+            } else if key.starts_with("adapt_") {
+                "startupRequest"
+            } else {
+                "reservationRequest"
+            };
+            verification.parameters.push(VerifiedParameter {
+                name: key.into(),
+                requested: want,
+                observed: actual,
+                status: status.into(),
+            });
         }
     }
     if !unknown {

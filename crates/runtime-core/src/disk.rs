@@ -680,7 +680,9 @@ mod tests {
         let (tag, names, download, arena) = model_spec("swift", "IQ3_S").unwrap();
         assert_eq!(tag, "swift-IQ3_S");
         assert_eq!(names.len(), 2);
-        assert!(names.iter().all(|name| name.starts_with("Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-")));
+        assert!(names
+            .iter()
+            .all(|name| name.starts_with("Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-")));
         assert_eq!(download, 83_600_000_000);
         assert_eq!(arena, 50.3);
     }

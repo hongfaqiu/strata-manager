@@ -5,18 +5,51 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+## [0.1.3]
+
 ### 中文
 
-- 接入 Swift IQ3_S、下载源/GPU/后端选择与 GGUF 检查；加入运行中弹性显存控制、实验性引擎会话存档、固定文档前缀和 JSON/高级采样请求。
-- 新增官方 MCP 自检与持久管理交接、逐 slot 监控和 Prefill 列，以及专家适应策略完整场景调优候选。
+- 聊天加入 JSON / JSON Schema、长文复用和高级生成参数，发送前按当前引擎核验支持情况。
+- 新增模型文件检查、下载来源与显卡选择；支持 Swift IQ3_S 格式。
+- 新增会话保存/恢复、逐槽位监控、输入处理速度，以及按引擎能力提供的显存调整。
+- 接入官方 MCP 连接检查和安装目录管理交接，加入专家适应策略调优候选。
+- 移除逐项“详情”和重复小字，常用操作直接显示；启动设置改为分类选择，帮助集中到标题入口。
+- 修复 Windows 路径映射造成的开机启动误判，保留外来启动项与文件校验保护。
+- Windows 中文聊天、JSON、长文缓存、会话存取、双并发和管理交接已实机验证；低 RAM 常驻模式不支持在线显存调整。完整长时间调优、新模型下载及跨登录自启动未包含在本轮实测中。
 
+### English
+
+- Add JSON / JSON Schema responses, document reuse and advanced generation controls with fresh engine capability checks before sending.
+- Add model-file inspection and download-source/GPU choices, including the Swift IQ3_S format.
+- Add engine session save/restore, per-slot monitoring, input-processing rates and capability-gated VRAM resizing.
+- Integrate official MCP connection checks, installation management handoff and adaptive expert tuning candidates.
+- Remove repeated disclosure rows and explanatory text, show common controls directly and group startup settings by category.
+- Correct Windows startup checks for mapped paths while retaining foreign-registration and staged-file protections.
+- Windows chat, structured output, document caching, session storage, parallel requests and handoff were tested on real hardware. Online VRAM resizing is unsupported in resident low-RAM mode; full tuning, new model downloads and Windows login-cycle startup were not tested in this pass.
+
+## [0.1.2]
+
+### 中文
+
+- 在 CI 与签名发布中串行运行完整的 Linux 原生测试，避免多个隔离后台同时冷启动；补充启动失败的子进程与 IPC 诊断，保留原有断言、时间限制和发布门禁。
+- 调优报告成功完成后保留其完成时间，避免后台成功回调再次改写已完成的报告。
+- 现有 Windows 运行环境更新时保留配置，并恢复更新前正在运行的服务。
+- 改善 Windows 本机检测，避免已退出的临时 Python 进程干扰扫描；更新前再次核验实际服务、安装目录和监听归属。
+- 受支持运行时增加 5/15/30 分钟临时请求正文诊断，仅在 RAM 保留，关闭或到期清空；用户已有 `api_monitor` 配置单独管理。
+- 核验登录自启动注册项的后台程序、完整哈希及数据目录，损坏或同名外部项显示可行动诊断，不自动认领。
+- 保存窗口位置、尺寸和最大化状态，恢复时按显示器工作区与 DPI 夹紧，并处理最大化跨屏移动。
+- 明确官方引擎 ZIP 更新只支持匹配的 Windows x64 包；Linux 保留版本和发布日志查看。
+- 官网优先展示已公开稳定版，仅在没有稳定版时明确回退预览版；缺失或来源不符的安装资产不启用下载。
 - 修复安装重新检测、API 使用统计和请求诊断的自动刷新闪烁。
 - API 使用统计作为常用入口，请求正文查看移至可选的高级诊断。
 - 精简 API 统计和总览的说明文字，统计口径与采集信息默认折叠。
 - 合并总览的当前服务与服务控制卡片，启停操作放在右侧，并区分按钮颜色。
 - 总览快捷入口统一布局并区分颜色，移除重复的受管与进程归属信息；精简模型页入口和工具栏。
 - 移除模型使用向导与重复说明，将监控入口上移，底部状态栏改为动态 Token 速度与请求负载。
-- 重载工作台时根据真实进程恢复当前服务；检查失败或存在运行中服务时禁止自动重复启动。
+- 总览未启用模型时提供“最近启用”或选择模型入口，停止状态显示“未启动”；移除卡片内的参数对比和运行环境卡片的重复模型入口。
+- “任务与日志”成为独立菜单，集中查看准备、下载、更新任务与日志；参数比较继续在调优页进行。
+- 重新打开应用连接已有后台，不因保存过模型选择而启动服务。冷启动和旧档案交接保留停止状态；应用升级只恢复升级前实际运行且通过核验的受管服务及其模型加载状态。
+- 登录自启动只启动后台，模型服务手动启用；“运行期间保持模型就绪”仅在启用服务后保持加载，不在打开应用或登录时自动启用模型。
 - 应用和 Strata 更新先展示当前语言的版本日志，经用户确认后执行。
 - 区分图像支持与后台检查状态，提供图像服务快捷配置和文件检查。
 - 按实际主模型归并本机模型，在配置下拉列表展示运行状态、参数和真实时间记录。
@@ -26,16 +59,25 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### English
 
-- Integrate Swift IQ3_S, source/GPU/backend selection and GGUF inspection; add elastic VRAM controls, experimental engine session files, pinned document prefixes and JSON/advanced request sampling.
-- Add official MCP probes and persistent management handoff, individual slot telemetry, recent-request Prefill rates and adaptive expert-tier tuning candidates.
-
+- Run the complete Linux native tests serially in CI and signed releases to avoid simultaneous isolated background cold starts, and retain child-process and IPC startup diagnostics without weakening assertions, deadlines or release gates.
+- Preserve a successfully completed tuning report's completion time instead of rewriting it in the background success callback.
+- Preserve configurations and restore the previously running service when updating an existing Windows runtime.
+- Improve Windows local detection so exited temporary Python processes do not disrupt scans, and recheck the actual service, installation directory and listener ownership before an update.
+- Add 5/15/30-minute temporary request-body diagnostics on supported runtimes, retaining bodies only in RAM and clearing them on disable or expiry; existing user `api_monitor` settings remain separately managed.
+- Validate login-startup registration against the background binary, full hash and data directory, with actionable diagnostics for damaged or foreign entries instead of claiming them.
+- Save window position, size and maximized state, clamp restoration to monitor work areas and DPI, and track maximized moves between displays.
+- Limit official engine ZIP updates to matching Windows x64 packages; retain Linux version and release-note browsing.
+- Prefer published stable releases on the website, explicitly fall back to previews only when no stable exists, and disable missing or foreign download assets.
 - Fix flickering during installation detection, API usage refresh and request diagnostics.
 - Keep API usage in the main navigation and move request body inspection into optional diagnostics.
 - Simplify overview and API usage text; collapse statistical definitions and collection details by default.
 - Merge the overview service and control cards, placing service actions on the right with distinct colors.
 - Align and color the overview shortcuts, remove redundant managed-service and ownership labels, and simplify model navigation and its toolbar.
 - Remove the model guide and redundant text, move monitoring above tuning, and show live token throughput and request load in the status bar.
-- Restore the selected service from process evidence on reload, preventing duplicate automatic startup when checks fail or a service is already running.
+- Offer a recently enabled model or model selection when Overview has no enabled service, show stopped services as Not started, and remove parameter comparisons and duplicate model links from the cards.
+- Give Tasks & logs its own menu for preparation, download and update tasks and logs; keep parameter comparisons in Tuning.
+- Reconnect to an existing background when reopening the app without starting services from a saved selection. Cold startup and legacy handoff preserve stopped services; app upgrades restore only verified services that were actually running before the upgrade, with their previous model-loading state.
+- Start only the background at sign-in and enable model services manually. Keep the running model ready applies after enabling a service; it does not enable models when opening the app or signing in.
 - Show localized release notes and require confirmation before app or Strata updates.
 - Clarify image support and background checks, and add vision setup with file validation.
 - Group local entries by main-model assets, with configuration details, running state and recorded timestamps in the selector.
@@ -43,61 +85,41 @@ Maintain both languages for each version. Move unreleased changes into the actua
 - Show the current model's complete configuration list from a floating entry, reveal actions on hover and support JSON deletion; protect unsaved edits and distinguish next-request changes from settings that require a restart.
 - Preview model files and disk usage before deletion, protecting running models and files referenced by other configurations.
 
-## [0.1.3-test.4]
+## [0.1.1] - Unpublished
 
 ### 中文
 
-- 移除常态界面逐行的“详情”和“说明”；常用操作直接显示，帮助集中到标题图标。
-- 启动参数改为分类选择，默认显示对话常用项；下载和调优保留必要高级入口，避免嵌套展开。
-- 修复 Windows 路径映射导致本应用后台开机启动被错误拒绝的问题，保留文件校验及异地启动项保护。
-- 保留错误、操作影响和配置草稿保护；Windows 本地测试包，不发布至自动更新渠道。
+- 源码 `33190cf6294ae11787f40b0f5fd6dc29e072cee3` 的 [main CI 38100739579](https://github.com/hongfaqiu/strata-manager/actions/runs/38100739579)两平台通过；[签名 Release 38102509861](https://github.com/hongfaqiu/strata-manager/actions/runs/38102509861)的 Windows 构建与安装门禁成功，但 Linux 的三个隔离后台生命周期测试均在首次 IPC 就绪检查约 5.2 秒后失败，publish 跳过，此版本未公开。
+- 保留不可移动的 `v0.1.1` 标签与失败记录。旧夹具未记录子进程退出状态或 stderr，实际启动失败原因尚未确定；debug 后台在发布 IPC 前计算自身完整哈希，并发启动的资源竞争仅为待验证假设。修复使用新候选 0.1.2。
 
 ### English
 
-- Show common controls directly and consolidate help in section headings.
-- Group startup settings by category and reduce nested disclosures in downloads and tuning.
-- Correct startup identity checks for mapped Windows paths while retaining staged-file and foreign-registration checks.
-- Keep errors, operation impacts and unsaved-draft protection visible; local Windows test build.
+- Both platforms passed [main CI 38100739579](https://github.com/hongfaqiu/strata-manager/actions/runs/38100739579) for source `33190cf6294ae11787f40b0f5fd6dc29e072cee3`. Windows build and installation gates passed in [signed Release 38102509861](https://github.com/hongfaqiu/strata-manager/actions/runs/38102509861), but all three isolated Linux background lifecycle tests failed at their initial IPC readiness check after about 5.2 seconds. Publish was skipped; this version was not published.
+- Keep the immutable `v0.1.1` tag and failure records. The previous fixture did not record child exit status or stderr, so the actual startup failure remains unknown. Concurrent resource contention while debug backgrounds hash their complete executables before publishing IPC is an unverified hypothesis. Continue fixes in candidate 0.1.2.
 
-## [0.1.3-test.3]
+## [0.1.0] - Unpublished
 
 ### 中文
 
-- 将当前低内存模式不支持在线显存调整的原因改成中文提示，原始错误按需展开。
-- 为折叠说明增加明显的展开标记；将监控中的 Prefill / Decode 改为输入处理 / 生成。
-- 包含 test.2 的简化交互与所有新增功能；Windows 本地实测包，不发布至自动更新渠道。
+- 此候选未公开发布。保留原版本标签和失败记录；首次稳定版使用 0.1.1。
 
 ### English
 
-- Explain online VRAM resizing limits in resident low-RAM mode, with raw errors available on demand.
-- Make expandable help easier to recognize; use input processing / generation labels in monitoring.
-- Include test.2 interaction changes and all added features; local Windows test build, not published to the updater channel.
+- This candidate was not published. Its tag and failed workflow records are retained; the first stable release uses 0.1.1.
 
-## [0.1.3-test.2]
+## [0.1.0-beta.2] - 2026-10-10 (UTC)
 
 ### 中文
 
-- 简化聊天、模型设置、监控、MCP 与调优交互；技术参数、原始日志和详细说明改为按需展开。
-- 保持重要状态、错误与操作影响可见；明确区分模型格式支持和官方尚未验证。
-- Windows 本地人工测试包，不发布至自动更新渠道。
+- 发布 Windows x64 NSIS、Linux x64 AppImage 和 DEB，以及三份 Tauri 更新签名、latest.json 和 SHA256SUMS，共八项公开资产。
+- [签名发布流水线](https://github.com/hongfaqiu/strata-manager/actions/runs/38080808731)的 Windows、Linux 与发布任务均成功，对应源码 `0db2fea5128144fe2fe00cca992bd5139c831508`。发布门禁核验资产、更新元数据和真实签名，预览版不覆盖稳定更新通道。
+- [beta.2 发布页](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0-beta.2)记录此版本；该历史结果不证明后续 0.1.0 候选已通过，也不代表真实 GPU、登录自启动或客户端跨版本更新已验收。
 
 ### English
 
-- Simplify chat, model setup, monitoring, MCP and tuning; show technical parameters, raw logs and help on demand.
-- Keep important state, errors and operation impact visible; distinguish recognized formats from untested model recipes.
-- Local Windows manual test build, not published to the updater channel.
-
-## [0.1.3-test.1]
-
-### 中文
-
-- Windows 本地测试包：包含下载源/GPU 选择、Swift IQ3_S、GGUF 检查、弹性显存、实验性会话存档、长文固定前缀、JSON/高级采样、MCP 管理交接、逐槽监控、Prefill 和专家适应策略调优。
-- 本包用于人工安装测试，未发布至自动更新渠道；GPU 和会话存档的实机验证继续由测试者确认。
-
-### English
-
-- Local Windows test build with source/GPU selection, Swift IQ3_S, GGUF inspection, elastic VRAM, experimental session files, document prefixes, JSON/advanced sampling, MCP handoff, slot telemetry, Prefill and adaptive expert tuning.
-- Intended for manual installation testing; not published to the updater channel. GPU and session-file compatibility still require real-device validation.
+- Publish Windows x64 NSIS, Linux x64 AppImage and DEB, three Tauri update signatures, latest.json and SHA256SUMS: eight public assets.
+- Windows, Linux and publish jobs all passed in the [signed release workflow](https://github.com/hongfaqiu/strata-manager/actions/runs/38080808731), for source `0db2fea5128144fe2fe00cca992bd5139c831508`. Release guards validate assets, updater metadata and actual signatures; this preview does not replace the stable update channel.
+- The [beta.2 release page](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0-beta.2) records that version. Its historical result does not establish a passing 0.1.0 candidate, real GPU use, login startup or client cross-version updater acceptance.
 
 ## [0.1.0-beta.1] - 2026-10-11
 

@@ -34,7 +34,7 @@ Importing an existing model does not require another full weights download. Disk
 | MCP has no tools or fails | Check server connectivity, available tools and runtime support. Inspect the tool's own error and network configuration. |
 | Repeated background-health failures | Read diagnostics, await a fresh check or decide whether to retry/stop. Health checks do not promise to forcibly repair a stalled process. |
 | GPU memory remains used after closing | Closing to the tray is enabled by default. Release model memory preserves files; Stop services and quit ends managed services. Disable closing to the tray to confirm exit on close. |
-| Request viewer is unavailable | Enable `api_monitor` in model configuration and restart only when needed. Usage statistics do not require body capture. |
+| Request viewer is unavailable | Choose 5/15/30-minute temporary capture in advanced diagnostics on a supported, verified and idle managed service. Manage an existing `api_monitor` configuration separately. Usage statistics do not require bodies. |
 
 ## Usage, tuning and updates
 
@@ -47,7 +47,7 @@ Importing an existing model does not require another full weights download. Disk
 | A restart candidate is rejected | Review support, resource and startup-state diagnostics. VRAM reserve can only increase a known value; unknown effective support is not accepted. |
 | Applying tuning or update recovery fails | Preserve task diagnostics, correct configuration, environment or loading errors, then retry. Do not assume the original service recovered. |
 | App update check/download fails | Check network and published releases, keep the current app and retry. Release notes require confirmation before automatic installation. |
-| Strata update is unavailable | Inspect official releases, matching ZIPs, dependencies and config diagnostics in Strata. Missing platform packages preserve the current installation. |
+| Strata update is unavailable | Inspect official releases, matching Windows x64 ZIPs, dependencies and config diagnostics in Strata. Linux provides release information only. Missing platform packages preserve the current installation. |
 | ZIP download, extraction or replacement fails | Retain logs and resolve checksum, path, permission or process-identity errors. If recovery fails, repair using diagnostics before retrying; do not assume the service recovered. |
 
 Recovery is bounded and applies after the selected managed service exits. It does not guarantee repair of every API failure, failed update or hardware fault. See the [user guide](USER_GUIDE.en.md) for scope.

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1600, initial-scale=1">
+  <title>Strata Manager — product hero</title>
+  <link rel="icon" href="../../assets/icon.svg" type="image/svg+xml">
+  <style>
+    @font-face { font-family: Outfit; src: url('../../apps/desktop/src/fonts/outfit-latin-wght.woff2') format('woff2'); font-weight: 100 900; font-display: block; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 1600px; height: 900px; overflow: hidden; }
+    body { font-family: Outfit, sans-serif; color: #17352e; background: #f8fcf9; }
+    .hero { position: relative; width: 1600px; height: 900px; isolation: isolate; background: url('hero-background.webp') center / cover no-repeat; }
+    .hero::before { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg, rgba(250,253,250,.45), rgba(250,253,250,.08) 55%, transparent); }
+    .brand { position: absolute; top: 68px; left: 76px; display: flex; align-items: center; gap: 15px; }
+    .brand svg { width: 52px; height: 52px; border-radius: 13px; box-shadow: 0 6px 14px #17352e10; }
+    .brand-name { font-size: 30px; font-weight: 620; letter-spacing: -1.2px; }
+    .brand-name span { font-weight: 380; }
+    .platforms { position: absolute; top: 88px; right: 77px; font-size: 16px; font-weight: 450; color: #57776b; letter-spacing: .4px; }
+    .copy { position: absolute; left: 76px; top: 241px; width: 425px; }
+    .eyebrow { display: inline-flex; align-items: center; gap: 9px; margin: 0 0 24px; color: #27866a; font-size: 14px; font-weight: 540; letter-spacing: 2px; }
+    .eyebrow::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #15b88a; }
+    h1 { margin: 0; font-size: 72px; line-height: 1.06; font-weight: 620; letter-spacing: -3px; }
+    h1 span { color: #148666; }
+    .intro { margin: 29px 0 0; font-size: 23px; line-height: 1.5; font-weight: 380; color: #567166; letter-spacing: -.3px; }
+    .features { display: flex; flex-wrap: wrap; gap: 10px; max-width: 410px; margin-top: 36px; }
+    .feature { padding: 10px 14px; border: 1px solid #d7e9df; border-radius: 9px; background: #ffffffb3; color: #315b4e; font-size: 16px; font-weight: 440; }
+    .product { position: absolute; left: 542px; top: 177px; width: 1008px; margin: 0; }
+    .window { overflow: hidden; border-radius: 15px; border: 1px solid #dce9e1; background: #fff; box-shadow: 0 28px 70px -20px #1b685128, 0 6px 16px #27644e0c, 0 0 0 7px #ffffff65; }
+    .window img { display: block; width: 100%; height: auto; }
+    .footer { position: absolute; bottom: 68px; left: 76px; display: flex; align-items: center; gap: 12px; font-size: 15px; font-weight: 380; color: #6b8277; }
+    .footer .dot { width: 3px; height: 3px; border-radius: 50%; background: #8aa494; }
+  </style>
+</head>
+<body>
+  <main class="hero" aria-label="Strata Manager product overview">
+    <div class="brand"><svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="Strata Manager icon"><rect width="1024" height="1024" rx="240" fill="#101c21"/><path d="M200 620 512 464 824 620 512 776Z" fill="#287e71"/><path d="M200 498 512 342 824 498 512 654Z" fill="#49b99e"/><path d="M200 376 512 220 824 376 512 532Z" fill="#a6edc9"/></svg><div class="brand-name">Strata <span>Manager</span></div></div>
+    <div class="platforms">Windows · Linux</div>
+    <section class="copy">
+      <p class="eyebrow">YOUR LOCAL STRATA WORKSPACE</p>
+      <h1>Strata,<br><span>made simple.</span></h1>
+      <p class="intro">Models, chat, API insights<br>and tuning — all in one place.</p>
+      <div class="features"><span class="feature">Runtime &amp; models</span><span class="feature">API insights</span><span class="feature">Workload tuning</span></div>
+    </section>
+    <figure class="product"><div class="window"><img src="../screenshots/overview.en.webp" alt="The real light-theme Strata Manager overview, with isolated example data"></div></figure>
+    <div class="footer"><span>Open source</span><span class="dot"></span><span>Built on Strata</span><span class="dot"></span><span>Powered by Tauri</span></div>
+  </main>
+</body>
+</html>

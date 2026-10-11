@@ -1,10 +1,10 @@
 <div align="center">
 
-<a href="https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.webp"><img src="docs/screenshots/product-cover.webp" alt="Strata Manager — Strata runtime, model configurations and local services" width="1200" /></a>
+<a href="https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.webp"><img src="docs/screenshots/product-cover.webp" alt="Strata Manager — a light product overview of your local Strata desktop workspace" width="1200" /></a>
 
 <h1>Strata Manager</h1>
-<p><strong>Your desktop workspace for Strata and local model services.</strong></p>
-<p>Install and update Strata, choose model configurations, and manage your local API.</p>
+<p><strong>A simpler way to run Strata on your computer.</strong></p>
+<p>Your models, local API, chat and tuning — together in one desktop workspace.</p>
 
 <p>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license" /></a>
@@ -18,11 +18,13 @@
 
 </div>
 
-**Preview v0.1.0-beta.1 is available.** Download below or read the [release notes](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0-beta.1) and [installation guide](https://hongfaqiu.github.io/strata-manager/docs/download.en.html).
+**v0.1.3 release entry.** Use the links below or read the [release notes](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.3) and [installation guide](https://hongfaqiu.github.io/strata-manager/docs/download.en.html).
 
-Strata Manager is an open-source desktop workspace for the [Strata](https://github.com/Niko1221/Strata) runtime and local model services. Its core is runtime installation and updates, model configurations, and service startup, shutdown and recovery. Chat, monitoring, API usage statistics and parameter tuning support that workflow. Existing model weights stay in place, and an independent background process manages running services.
+Strata Manager brings your local [Strata](https://github.com/Niko1221/Strata) setup into one open-source desktop app. Detect an existing installation and models, install or update Strata, choose a model configuration, and keep track of your local API. Chat, hardware monitoring, API usage statistics and parameter tuning are built into the same workspace. Existing model weights stay in place.
 
-The features and screenshots below describe the current source tree. The published **v0.1.0-beta.1** preview has its own [release notes](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0-beta.1); newer source changes are not automatically included in that installer.
+Choose **Use** to enable a model; the independent background process handles its service lifecycle. Opening the app or signing in starts only the lightweight background, so a saved model selection does not unexpectedly occupy GPU memory. Everything Manager manages runs on this computer.
+
+The features and screenshots describe the 0.1.3 source. Package availability and the exact published version are shown on the [release page](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.3). Release checks run for each revision; this documentation does not establish that an unpublished candidate has passed them.
 
 ## What is Strata?
 
@@ -32,11 +34,12 @@ Strata Manager is an independent community project built on Strata. It manages S
 
 ## Features
 
-- **Manage Strata centrally.** Detect an existing runtime or prepare one from the Strata page. View installed and upstream versions, official release notes, and ZIP download, extraction and update progress. Runtime management is separate from individual models.
+- **More runtime tools, fewer distractions.** Choose JSON or JSON Schema replies, reuse document prefixes, inspect GGUF and supported model sources, manage sessions and slots, and inspect MCP tools. Common controls are visible directly; contextual help and categorized configuration keep everyday screens concise. Availability follows the installed runtime.
+- **Manage Strata centrally.** Detect an existing runtime or prepare one from the Strata page. View installed and upstream versions and official release notes. Matching official Windows x64 engine ZIPs support download, extraction and update progress; Linux ZIP engine updates are unavailable. Runtime management is separate from individual models.
 - **Review updates before installing.** Automatic checks are enabled by default, on launch and every 12 hours. Available updates show release notes and require confirmation before installation. App updates, Strata updates and model weights are managed separately.
 - **See the models you already have.** My models automatically lists discovered local models. Configurations that use the same model are grouped; switch configurations, inspect modification dates, and identify the current and last-used configuration without downloading weights again.
 - **Edit the full runtime configuration.** Open a model's configuration inside Models. Use graphical controls with suggestions and custom values, or edit JSON; saves validate the configuration and retain a backup.
-- **Control the local API.** Start, stop, restart or release model memory, with startup stages and logs. The active model and configuration remain visible while you browse other configurations. Releasing memory preserves model files.
+- **Keep the local API under control.** After you enable a model, the background handles startup and loading, with up to three recovery attempts after an unexpected service exit. Start, stop, restart or release model memory from the app, with startup stages and logs. The active model and configuration remain visible while you browse alternatives; releasing memory preserves model files.
 - **Observe and test.** Monitor service and hardware activity; retain API usage after reopening the app and chart requests, tokens, latency, cache reuse, prefill and decode speeds. Missing measurements remain unknown.
 - **Chat in the same workspace.** Keep conversations, streaming replies and attachments together. Reasoning, image input and MCP tool events require model and runtime support.
 - **Tune with complete tasks.** Compare everyday chat, coding and Agent, or long-document workloads. Test PCIe/MTP request parameters and supported CPU, swapping, prefill and VRAM-reserve restart candidates, review quality and resource checks, then apply or restore. This is a bounded comparison, not a search of every configuration or a speed guarantee.
@@ -45,18 +48,18 @@ The merged window header follows the app's theme. Appearance follows the system 
 
 ## Download
 
-Download preview **v0.1.0-beta.1** for your system and install it manually. The [download guide](https://hongfaqiu.github.io/strata-manager/docs/download.en.html) provides installation steps and support scope.
+Use the **v0.1.3** release entry for your system. Install only packages actually listed on that page. The [download guide](https://hongfaqiu.github.io/strata-manager/docs/download.en.html) provides installation steps and support scope.
 
 | Platform | Package | Installation |
 | --- | --- | --- |
-| Windows x64 | [NSIS installer](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_x64-setup.exe) | Requires WebView2; [installation guide](https://hongfaqiu.github.io/strata-manager/docs/download.en.html#install-on-windows). |
-| Linux x64 | [AppImage](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_amd64.AppImage) / [DEB](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/Strata.Manager_0.1.0-beta.1_amd64.deb) | Built in Ubuntu 22.04 CI; [installation and support scope](https://hongfaqiu.github.io/strata-manager/docs/download.en.html#install-on-linux). |
+| Windows x64 | [NSIS installer](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.3/Strata.Manager_0.1.3_x64-setup.exe) | Requires WebView2; [installation guide](https://hongfaqiu.github.io/strata-manager/docs/download.en.html#install-on-windows). |
+| Linux x64 | [AppImage](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.3/Strata.Manager_0.1.3_amd64.AppImage) / [DEB](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.3/Strata.Manager_0.1.3_amd64.deb) | Built in Ubuntu 22.04 CI; [installation and support scope](https://hongfaqiu.github.io/strata-manager/docs/download.en.html#install-on-linux). |
 
-[SHA256 checksums](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0-beta.1/SHA256SUMS) · [Release notes](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0-beta.1)
+[SHA256 checksums](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.3/SHA256SUMS) · [Release notes](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.3)
 
-Windows package checks cover silent installation, desktop startup, private background IPC, shutdown and uninstall. Linux checks cover AppImage and extracted DEB startup, private IPC and shutdown in Ubuntu 22.04 with Xvfb. System-level DEB installation, real GPU use, login startup and cross-version updates remain unverified.
+CI gates cover Windows silent installation, desktop startup, private background IPC, shutdown and uninstall, and Linux AppImage/extracted DEB startup, private IPC and shutdown in Ubuntu 22.04 with Xvfb. The [verification record](https://github.com/hongfaqiu/strata-manager/blob/main/docs/VERIFICATION.md) ties completed runs to specific revisions. System-level DEB installation, real GPU use and login startup still require separate acceptance. A cross-version NSIS installer check does not establish end-to-end Tauri updater installation.
 
-Previews use manual installation and do not replace the stable `latest` update channel. Tauri update signatures are separate from Windows Authenticode publisher signing. macOS and ARM are currently outside the release targets.
+Stable releases use the `latest` update channel; previews remain manual downloads and do not replace it. Tauri update signatures are separate from Windows Authenticode publisher signing. macOS and ARM are currently outside the release targets.
 
 The desktop package contains the app and background process. The Strata runtime and model weights are prepared separately. Hardware, drivers and free disk space depend on the model; check [Strata's documentation](https://github.com/Niko1221/Strata) before preparing one.
 
@@ -70,9 +73,9 @@ Only supported installations on **this computer** are managed. See the [user gui
 
 ## Screenshots
 
-These screenshots render the current app components with isolated example data. Model status, chat content, usage and tuning values are examples, not live inference results or benchmarks. The cover shows the Strata management screen. Click an image to view its full-resolution version.
+All screenshots use the light theme and render the current app components with isolated example data. Model status, chat content, usage and tuning values are examples, not live inference results or benchmarks. The hero combines a product layout with the app's interface to introduce the local Strata workflow. Click an image to view its full-resolution version.
 
-**Strata — runtime versions, ZIP updates and official release notes**
+**Strata — runtime versions, Windows x64 ZIP updates and official release notes**
 
 [![Strata — installed runtime and update management](docs/screenshots/runtime.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/runtime.en.webp)
 
@@ -125,7 +128,9 @@ The [user guide](docs/USER_GUIDE.en.md) explains API counters, local storage and
 
 **Does releasing model memory delete the model?** No. It releases RAM and VRAM while retaining model files and the API process. Removing a saved configuration also preserves the original model files.
 
-**Are API usage and the request viewer the same?** No. Usage stores local metadata and charts. The optional request viewer captures request details only when enabled in Strata configuration; it does not need to be enabled for usage statistics.
+**Are API usage and the request viewer the same?** No. Usage stores local metadata and charts. On a supported, verified managed runtime, open advanced diagnostics and enable temporary request-body capture for 5, 15 or 30 minutes. It keeps up to 100 requests in RAM and erases captured bodies when disabled or expired; it does not change `api_monitor`. A viewer already enabled by your own `api_monitor` configuration stays under your control. Usage statistics require neither form of body capture.
+
+**Does local inference mean every integration is offline?** Chats and usage records are stored locally. Downloads and updates use the network; configured MCP tools may contact external services. Review the tools you enable and remove private content before sharing diagnostics.
 
 <details>
 <summary>Build from source</summary>

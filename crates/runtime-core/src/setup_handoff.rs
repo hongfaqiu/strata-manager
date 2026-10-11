@@ -1017,8 +1017,19 @@ sys.exit(spec.get('exit',0))
         let mut fixture = fixture();
         spec(&fixture, vec![("strata-iq2_xs.json", config(8192))], 0.0, 0);
         let first = launch(&fixture);
-        wait(&fixture.state, &first.id);
-        let profile = fixture.state.registered_profiles().unwrap().pop().unwrap();
+        let first_status = wait(&fixture.state, &first.id);
+        let first_handoff = handoff(&fixture.state, &first.id);
+        let profile = fixture
+            .state
+            .registered_profiles()
+            .unwrap()
+            .pop()
+            .unwrap_or_else(|| {
+                panic!(
+                    "first preparation did not register: task state={}, message={}; handoff={first_handoff:?}",
+                    first_status.state, first_status.message,
+                )
+            });
         let saved = fs::read(&profile.config_path).unwrap();
         fixture.state.remove_local_installation(profile.id).unwrap();
         fixture.intent.context = 16384;
