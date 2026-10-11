@@ -147,7 +147,7 @@ export function documentSeo({ title, description, page, lang, alternates }) {
   <script type="application/ld+json">${JSON.stringify(structured).replaceAll('<', '\\u003c')}</script>`;
 }
 
-export function renderHomepage(source, language) {
+export function renderHomepage(source, language, googleVerificationToken) {
   if (language !== 'zh' && language !== 'en') throw new Error(`Unknown website language: ${language}`);
   const root = parseWebsiteHtml(source);
   const nodes = elements(root);
@@ -155,6 +155,11 @@ export function renderHomepage(source, language) {
   const head = nodes.find((node) => node.tag === 'head');
   const title = nodes.find((node) => node.tag === 'title');
   if (!html || !head || !title) throw new Error('Website requires html, head and title');
+  if (googleVerificationToken) {
+    if (!/^[A-Za-z0-9_-]+$/.test(googleVerificationToken)) throw new Error('Invalid Google site verification token.');
+    head.children = head.children.filter((node) => !(node.tag === 'meta' && node.attributes.get('name') === 'google-site-verification'));
+    head.children.push(element('meta', { name: 'google-site-verification', content: googleVerificationToken }));
+  }
   html.attributes.set('lang', languageCode(language));
   for (const node of nodes) {
     if (node.attributes.has('data-en')) {
@@ -250,8 +255,18 @@ ${pages.map((entry) => {
 
 export async function renderWebsiteSeo(output, documents) {
   const source = await readFile(join(output, 'index.html'), 'utf8');
-  await writeFile(join(output, 'index.html'), renderHomepage(source, 'zh'));
+  const verificationConfig = await readFile(join(output, 'google-site-verification.json'), 'utf8').catch((error) => {
+    if (error.code !== 'ENOENT') throw error;
+    return null;
+  });
+  let googleVerificationToken;
+  if (verificationConfig !== null) {
+    const verification = JSON.parse(verificationConfig);
+    if (verification.urlPrefix !== site || typeof verification.verificationToken !== 'string' || !verification.verificationToken) throw new Error('Google site verification configuration does not match this website.');
+    googleVerificationToken = verification.verificationToken;
+  }
+  await writeFile(join(output, 'index.html'), renderHomepage(source, 'zh', googleVerificationToken));
   await mkdir(join(output, 'en'), { recursive: true });
-  await writeFile(join(output, 'en', 'index.html'), renderHomepage(source, 'en'));
+  await writeFile(join(output, 'en', 'index.html'), renderHomepage(source, 'en', googleVerificationToken));
   await writeFile(join(output, 'sitemap.xml'), renderSitemap(documents));
 }
