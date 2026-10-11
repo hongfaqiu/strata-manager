@@ -33,8 +33,8 @@
     "note": "Real app screenshots use isolated documentation data. Model and request metrics are examples, not inference results or benchmarks. product-cover.webp is the English compatibility alias.",
     "width": 3600,
     "height": 2000,
-    "bytes": 286938,
-    "sha256": "d1e87fd90e25fe1701c661f4de19c9b355b16526fe8dc577cf028632f8e62fea"
+    "bytes": 286628,
+    "sha256": "c861318edb94c2de9bcb477709e59d67bd13f1f369837110460653b00227043d"
   },
   "screens": [
     {
@@ -444,16 +444,16 @@
       "language": "zh",
       "width": 3600,
       "height": 2000,
-      "bytes": 275674,
-      "sha256": "b4acde12dec8cc92adaecaa9b3594a29100241068911959b2d4c52b649b0da41"
+      "bytes": 278138,
+      "sha256": "8bd6293f0641059ae7ec62b6fe9a329b0afa3edfa33d39706e53d3ccf2fceb72"
     },
     {
       "file": "product-cover.en.webp",
       "language": "en",
       "width": 3600,
       "height": 2000,
-      "bytes": 286938,
-      "sha256": "d1e87fd90e25fe1701c661f4de19c9b355b16526fe8dc577cf028632f8e62fea"
+      "bytes": 286628,
+      "sha256": "c861318edb94c2de9bcb477709e59d67bd13f1f369837110460653b00227043d"
     }
   ]
 }

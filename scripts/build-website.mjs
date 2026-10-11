@@ -3,6 +3,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { documents, renderWebsiteDocs, verifyStaticWebsite } from './render-website-docs.mjs';
 import { renderWebsiteSeo } from './website-seo.mjs';
+import { publishWebsiteReleaseSnapshot } from './website-release-snapshot.mjs';
 
 // Publish static assets and pre-rendered docs, without a browser-side runtime.
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -27,5 +28,7 @@ for (const filename of screenshots.filter((name) => name.endsWith('.webp'))) {
 await writeFile(join(output, '.nojekyll'), '');
 const documentCount = await renderWebsiteDocs(output);
 await renderWebsiteSeo(output, documents);
+const releaseSnapshot = await publishWebsiteReleaseSnapshot(output);
 const checked = await verifyStaticWebsite(output);
 console.log(`Static website ready: ${output} (${documentCount} documents; ${checked.localTargets} local links/assets verified)`);
+console.log(releaseSnapshot ? `Verified public release snapshot: ${releaseSnapshot.release.tag_name} (${releaseSnapshot.release.assets.length} download assets)` : 'Local build: release snapshot skipped (no GITHUB_TOKEN or explicit input).');

@@ -129,8 +129,8 @@ function renderDocument(entry, markdown) {
     : renderMarkdownContent(markdown, entry.source, entry.page);
   const title = content.headings.find((heading) => heading.depth === 1)?.text || entry.label;
   const description = en
-    ? `${title}: Strata Manager documentation for setting up Strata, managing local models, services, and monitoring.`
-    : `${title}：Strata Manager 文档，帮助安装使用 Strata，管理本地模型、服务与监控。`;
+    ? `${title}: Strata Manager guides for Niko1221/Strata local LLM inference, model management, services and monitoring.`
+    : `${title}：Strata Manager 文档，帮助安装使用 Niko1221/Strata 本地大模型推理引擎，管理模型、服务与监控。`;
   const home = `../${homePage(entry.lang)}`;
   const navItems = [
     ['index', '文档中心', 'Documentation'],

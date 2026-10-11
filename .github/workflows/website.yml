@@ -10,6 +10,9 @@ on:
       - 'scripts/render-website-docs.test.mjs'
       - 'scripts/website-seo.mjs'
       - 'scripts/website-seo.test.mjs'
+      - 'scripts/website-release-snapshot.mjs'
+      - 'scripts/website-release-snapshot.test.mjs'
+      - 'scripts/website-releases.test.mjs'
       - 'docs/**/*.md'
       - 'docs/screenshots/**'
       - 'README*'
@@ -23,6 +26,11 @@ on:
       - 'assets/icon.svg'
       - '.github/workflows/website.yml'
   workflow_dispatch:
+  release:
+    types: [published, edited]
+  workflow_run:
+    workflows: ['Release desktop']
+    types: [completed]
 
 permissions:
   contents: read
@@ -33,12 +41,15 @@ concurrency:
 
 jobs:
   build:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pages: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ (github.event_name == 'release' || github.event_name == 'workflow_run') && 'main' || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -50,9 +61,11 @@ jobs:
       - name: Install locked static rendering dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - uses: actions/configure-pages@v5
-      - name: Check documentation rendering and bilingual SEO
-        run: node --test scripts/render-website-docs.test.mjs scripts/website-seo.test.mjs
+      - name: Check documentation, bilingual SEO and release metadata
+        run: node --test scripts/render-website-docs.test.mjs scripts/website-seo.test.mjs scripts/website-releases.test.mjs scripts/website-release-snapshot.test.mjs
       - name: Package the static website
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/build-website.mjs
       - uses: actions/upload-pages-artifact@v4
         with:

@@ -5,7 +5,7 @@
 <h1>Strata Manager</h1>
 
 <p><strong>让 Strata 更容易安装、配置和使用。</strong><br>
-本地模型与服务管理、硬件与 API 用量监控、聊天和调优，在一个工作台完成。</p>
+面向 Strata 本地大模型推理引擎，集中管理模型与服务，查看硬件与 API 用量。</p>
 
 <p>
 <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/License-MIT-118577"></a>
@@ -27,7 +27,7 @@
 
 </div>
 
-**Strata Manager 是面向 [Strata](https://github.com/Niko1221/Strata) 的开源桌面管理工具，旨在降低 Strata 的使用门槛。** 通过图形界面准备运行环境、发现本地模型、编辑配置和控制模型服务，集中查看硬件占用、推理性能与 API 使用统计，并提供聊天和参数调优功能。已有模型权重保持原位。
+**Strata Manager 是面向 [Niko1221/Strata 本地大模型推理引擎](https://github.com/Niko1221/Strata) 的开源桌面管理工具，旨在降低 Strata 的使用门槛。** 通过图形界面准备运行环境、发现本地模型、编辑配置和控制模型服务，集中查看硬件占用、推理性能与 API 使用统计，并提供聊天和参数调优功能。已有模型权重保持原位。
 
 - **更容易上手。** 检测已有 Strata 环境，按引导完成安装准备，通过图形控件编辑运行参数。
 - **集中管理模型与服务。** 发现本机权重、切换运行配置，统一启动、停止或释放模型内存。
@@ -39,7 +39,7 @@
 
 ## 什么是 Strata？
 
-[Strata](https://github.com/Niko1221/Strata) 是开源的本地推理项目，协调 GPU 显存、RAM 和 CPU 资源运行它支持的模型，并提供浏览器界面与本机 API。
+[Niko1221/Strata](https://github.com/Niko1221/Strata) 是开源的本地大模型（LLM）推理引擎，协调 GPU 显存、RAM 和 CPU 资源运行它支持的模型，并提供浏览器界面与本机 API。
 
 Strata Manager 是独立社区项目，并非 Strata 官方应用，负责管理这台电脑上的 Strata；具体推理能力、支持的模型、图像输入与 API 协议由已安装的 Strata 运行时和模型提供。
 

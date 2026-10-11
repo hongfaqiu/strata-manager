@@ -1,6 +1,6 @@
 # Bilingual product hero
 
-Updated on 2026-10-12 with the built-in ImageGen tool. Only the abstract background is generated. The logo, exact bilingual copy, and real App component screenshots are composed deterministically by [render-product-hero.mjs](../../scripts/render-product-hero.mjs).
+Updated on 2026-10-12 with the built-in ImageGen tool. Only the abstract background is generated. The logo, exact bilingual copy, and real App component screenshots are composed deterministically by [render-product-hero.mjs](../../scripts/render-product-hero.mjs). The product manages the local large language model engine [Niko1221/Strata](https://github.com/Niko1221/Strata); the final copy explicitly identifies its LLM purpose to distinguish it from other products named Strata.
 
 The screenshots are documentation examples from the current 0.1.3 application; their models, hardware, status, and API values are demonstration data, not benchmarks. No model-specific capability or measured performance is claimed by the hero. See [the screenshot manifest](../screenshots/manifest.json) for the UI source.
 
@@ -33,9 +33,9 @@ Constraints: no words, no letters, no numbers, no logo, no charts, no icons, no 
 | Element | Chinese | English |
 | --- | --- | --- |
 | Brand | Strata Manager | Strata Manager |
-| Eyebrow | STRATA 的桌面管理工具 | A DESKTOP WORKSPACE FOR STRATA |
+| Eyebrow | STRATA 本地大模型管理工具 | A DESKTOP WORKSPACE FOR STRATA LLM |
 | Title | 让 Strata 更容易上手 | Make Strata easier to use |
-| Subtitle | 本地模型的管理与监控，一个工作台完成。 | Manage and monitor local models in one workspace. |
+| Subtitle | 本地大模型的管理与监控，一个工作台完成。 | Manage and monitor local LLMs in one workspace. |
 | Focus 1 | 安装与配置 | Setup & configuration |
 | Focus 2 | 模型与服务管理 | Models & services |
 | Focus 3 | 资源与 API 用量监控 | Resources & API usage |

@@ -4,7 +4,7 @@
 
 <h1>Strata Manager</h1>
 <p><strong>Make Strata easier to set up and use.</strong></p>
-<p>Manage local models and services, monitor hardware and API usage, and chat and tune — in one desktop workspace.</p>
+<p>A desktop workspace for the Strata local LLM inference engine: model management, service control and monitoring.</p>
 
 <p>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license" /></a>
@@ -20,7 +20,7 @@
 
 **v0.1.3 release entry.** Use the links below or read the [release notes](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.3) and [installation guide](https://hongfaqiu.github.io/strata-manager/docs/download.en.html).
 
-**Strata Manager is an open-source desktop management app that lowers the barrier to using [Strata](https://github.com/Niko1221/Strata).** Prepare the runtime, discover local models, edit configurations and control model services through a graphical workspace. Monitor hardware, inference performance and API usage, then use built-in chat and parameter tuning as needed. Existing model weights stay in place.
+**Strata Manager is an open-source desktop app that makes [Niko1221/Strata, the local LLM inference engine](https://github.com/Niko1221/Strata), easier to set up and use.** Prepare the runtime, discover local models, edit configurations and control model services through a graphical workspace. Monitor hardware, inference performance and API usage, then use built-in chat and parameter tuning as needed. Existing model weights stay in place.
 
 - **Get started more easily.** Detect an existing Strata setup, follow installation guidance and edit runtime settings with graphical controls.
 - **Manage models and services together.** Discover local weights, switch configurations and start, stop or release model memory from one place.
@@ -32,7 +32,7 @@ The features and screenshots describe the 0.1.3 source. Package availability and
 
 ## What is Strata?
 
-[Strata](https://github.com/Niko1221/Strata) is an open-source local inference project. It coordinates GPU memory, RAM and CPU resources to run the models it supports, and provides a browser interface and a local API.
+[Niko1221/Strata](https://github.com/Niko1221/Strata) is an open-source local large language model (LLM) inference engine. It coordinates GPU memory, RAM and CPU resources to run the models it supports, and provides a browser interface and a local API.
 
 Strata Manager is an independent community project built on Strata. It manages Strata on this computer; inference capabilities, supported models, image input and API protocols come from the installed Strata runtime and chosen model.
 

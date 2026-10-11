@@ -107,8 +107,8 @@ const strataReleaseCatalog = (() => {
 
   // 网页多语言标题与多屏数据结构
   const pageTitles = {
-    zh: 'Strata Manager · 降低 Strata 使用门槛的本地模型管理工具',
-    en: 'Strata Manager · Easier Strata Setup & Local Model Management',
+    zh: 'Strata Manager · Strata 大模型管理与监控',
+    en: 'Strata Manager · Local LLM Management & Monitoring for Strata',
   };
   const siteRoot = new URL('.', document.querySelector('script[src$="app.js"]').src);
   const pageLanguage = document.documentElement.lang === 'en' ? 'en' : 'zh';
@@ -124,166 +124,51 @@ const strataReleaseCatalog = (() => {
   }
 
   const screens = {
-    overview: {
-      index: '01',
-      address: 'strata://manager/overview',
-      zh: {
-        title: '当前模型与服务，直接掌握。',
-        description: '掌控当前活跃模型与服务状态，支持一键启停或释放内存，实时查看资源占用与近期请求。',
-        alt: '总览：当前模型与配置、服务控制、资源和用量',
-        badge: 'OVERVIEW 总览',
+    "models": {
+      "index": "01",
+      "zh": {
+        "title": "管理模型与服务。",
+        "description": "发现已有模型、切换配置，统一启停服务。",
+        "alt": "Strata 模型管理：本地模型、运行配置与服务控制",
+        "badge": "模型管理"
       },
-      en: {
-        title: 'Your active model and service, at a glance.',
-        description: 'View active model and service status, toggle services, release memory, and monitor live resource usage.',
-        alt: 'Overview: active model and configuration, service controls, resources, and usage',
-        badge: 'OVERVIEW',
-      },
+      "en": {
+        "title": "Manage models and services.",
+        "description": "Discover local models, switch configurations and control services.",
+        "alt": "Strata model management: local models, configurations and service controls",
+        "badge": "MODELS"
+      }
     },
-    runtime: {
-      index: '02',
-      address: 'strata://manager/runtime',
-      zh: {
-        title: '全局 Strata 安装与更新。',
-        description: '检测本机环境与上游发布，查看日志，安装匹配的 Windows x64 ZIP 更新；Linux 保留发布信息查看。',
-        alt: 'Strata 管理：已安装运行环境、上游版本、Windows x64 ZIP 更新与版本日志',
-        badge: 'STRATA 运行环境',
+    "monitor": {
+      "index": "02",
+      "zh": {
+        "title": "查看资源占用。",
+        "description": "了解 GPU、显存、CPU 和模型的运行状态。",
+        "alt": "Strata 硬件监控：GPU、显存、CPU 与服务状态",
+        "badge": "硬件监控"
       },
-      en: {
-        title: 'Global Strata installation and updates.',
-        description: 'Detect runtimes, review notes and install matching Windows x64 ZIP updates; Linux retains release information.',
-        alt: 'Strata management: installed runtime, upstream versions, Windows x64 ZIP updates, and release notes',
-        badge: 'STRATA RUNTIME',
-      },
+      "en": {
+        "title": "Monitor resource usage.",
+        "description": "See GPU, memory, CPU and service activity.",
+        "alt": "Strata hardware monitoring: GPU, memory, CPU and service activity",
+        "badge": "MONITOR"
+      }
     },
-    chat: {
-      index: '03',
-      address: 'strata://manager/chat',
-      zh: {
-        title: '对话与上下文，触手可及。',
-        description: '多轮会话管理与流式生成，支持图文附件、深度思考过程与 MCP 工具扩展。',
-        alt: '聊天：多会话历史、流式回答、思考与附件',
-        badge: 'CHAT 智能会话',
+    "usage": {
+      "index": "03",
+      "zh": {
+        "title": "了解 API 用量。",
+        "description": "查看请求、tokens、延迟与生成速度趋势。",
+        "alt": "Strata API 用量统计：请求、tokens、延迟与生成速度",
+        "badge": "API 用量"
       },
-      en: {
-        title: 'Conversations & context, together.',
-        description: 'Manage multi-turn chats with streaming responses, attachments, reasoning traces, and MCP tools.',
-        alt: 'Chat: conversation history, streaming answers, reasoning, and attachments',
-        badge: 'CHAT',
-      },
-    },
-    models: {
-      index: '04',
-      address: 'strata://manager/models',
-      zh: {
-        title: '已有模型直接展示，运行配置随时切换。',
-        description: '自动识别本地模型，合并同权重配置，清晰标记活跃状态并提供启动进度追踪。',
-        alt: '模型：当前模型卡片、已有模型列表与多运行配置选择',
-        badge: 'MODELS 模型资产',
-      },
-      en: {
-        title: 'Discover models. Switch run configurations.',
-        description: 'Discover local models, group shared-weight configurations, and track model load progress.',
-        alt: 'Models: active model card, discovered assets, and multiple run configurations',
-        badge: 'MODELS',
-      },
-    },
-    config: {
-      index: '05',
-      address: 'strata://manager/models/config',
-      zh: {
-        title: '在模型内编辑完整运行配置。',
-        description: '支持图形化表单与高级 JSON 双模编辑，保存配置副本并支持平滑热重启。',
-        alt: '运行配置：模型内二级页面、图形化参数和完整 JSON 编辑',
-        badge: 'CONFIG 运行配置',
-      },
-      en: {
-        title: 'Edit the complete run configuration within Models.',
-        description: 'Edit configurations via GUI forms or full JSON, save variants, and apply changes with smooth restarts.',
-        alt: 'Run configuration: model subpage, graphical controls, and full JSON editing',
-        badge: 'RUN CONFIGURATION',
-      },
-    },
-    monitor: {
-      index: '06',
-      address: 'strata://manager/monitor',
-      zh: {
-        title: '查看硬件占用与请求状态。',
-        description: '实时监测 GPU 负载、显存分配、CPU 占用、生成速度及当前请求队列。',
-        alt: '性能监控：GPU 显存、计算负载与请求状态',
-        badge: 'MONITOR 性能监控',
-      },
-      en: {
-        title: 'Inspect hardware and request activity.',
-        description: 'Monitor real-time GPU load, VRAM, CPU usage, generation speed, and request queues.',
-        alt: 'Monitor: VRAM allocation, compute utilization, and request status',
-        badge: 'MONITOR',
-      },
-    },
-    usage: {
-      index: '07',
-      address: 'strata://manager/usage',
-      zh: {
-        title: '让日常使用与消耗，清晰有据。',
-        description: '用量数据持久化本地留存，多维图表分析 Token 吞吐、生成速度与上下文缓存命中率。',
-        alt: 'API 用量：持久化使用记录与请求、tokens、缓存、prefill、生成速度图表',
-        badge: 'API USAGE 用量洞察',
-      },
-      en: {
-        title: 'Understand everyday API activity.',
-        description: 'Persistent local metrics with visual analytics for requests, tokens, throughput, and cache efficiency.',
-        alt: 'API usage: persistent history and charts for requests, tokens, cache, prefill, and decode speed',
-        badge: 'API USAGE',
-      },
-    },
-    tuning: {
-      index: '08',
-      address: 'strata://manager/tuning',
-      zh: {
-        title: '比较结果，再决定是否应用。',
-        description: '按典型场景实测基准测试，量化评估候选参数的延迟与显存收益，安全验证后再应用。',
-        alt: '参数调优：完整场景、请求与重启参数、基线和候选比较',
-        badge: 'TUNING 参数调优',
-      },
-      en: {
-        title: 'Measure before applying.',
-        description: 'Benchmark candidate parameters against baselines across real tasks before applying optimizations.',
-        alt: 'Tuning: full scenarios, request and restart parameters, baseline and candidate comparison',
-        badge: 'TUNING',
-      },
-    },
-    settings: {
-      index: '09',
-      address: 'strata://manager/settings',
-      zh: {
-        title: '按使用习惯，设置你的工作台。',
-        description: '个性化定制工作台，包括深浅色主题、系统托盘、后台守护行为与自动更新偏好。',
-        alt: '设置：语言、主题、托盘、后台策略、自启动与更新检查',
-        badge: 'SETTINGS 系统设置',
-      },
-      en: {
-        title: 'Make the workspace fit your routine.',
-        description: 'Customize your workspace: themes, system tray, background policy, and update preferences.',
-        alt: 'Settings: language, theme, tray, background policy, startup, and update checks',
-        badge: 'SETTINGS',
-      },
-    },
-    about: {
-      index: '10',
-      address: 'strata://manager/settings/about',
-      zh: {
-        title: '版本、产品定位与社区信息。',
-        description: '查阅桌面端版本信息与更新日志，了解开源项目架构与社区动态。',
-        alt: '关于：产品定位、应用版本、版本说明、社区与开源许可',
-        badge: 'ABOUT 关于',
-      },
-      en: {
-        title: 'Version, product scope, and community.',
-        description: 'View desktop version, release notes, source links, and open-source project info.',
-        alt: 'About: product scope, application version, release notes, community, and licenses',
-        badge: 'ABOUT',
-      },
-    },
+      "en": {
+        "title": "Understand API usage.",
+        "description": "Track requests, tokens, latency and generation speed.",
+        "alt": "Strata API usage: requests, tokens, latency and generation speed",
+        "badge": "API USAGE"
+      }
+    }
   };
 
   // 提取需要国际化翻译的 DOM 元素
@@ -336,7 +221,7 @@ const strataReleaseCatalog = (() => {
   const themeColorMeta = document.getElementById('theme-color');
   const THEME_KEY = 'strata-manager-site-theme';
 
-  let activeScreenKey = 'overview';
+  let activeScreenKey = wsTabs.find(tab => tab.classList.contains('active'))?.dataset.screen || 'models';
   let currentLang = 'zh';
 
   function currentTheme() {
@@ -374,11 +259,12 @@ const strataReleaseCatalog = (() => {
     // 平滑淡入淡出图片
     if (screenImage) {
       screenImage.style.opacity = '0.5';
-      screenImage.src = imagePath;
-      screenImage.alt = copy.alt;
       screenImage.onload = () => {
         screenImage.style.opacity = '1';
       };
+      screenImage.src = imagePath;
+      screenImage.alt = copy.alt;
+      if (screenImage.complete && screenImage.naturalWidth > 0) screenImage.style.opacity = '1';
     }
 
     if (screenLink) {
@@ -482,7 +368,7 @@ const strataReleaseCatalog = (() => {
   // 全屏灯箱 (Lightbox) 交互控制
   function openLightbox(screenKey) {
     const requestedKey = screenKey || activeScreenKey;
-    const key = screens[requestedKey] ? requestedKey : 'overview';
+    const key = screens[requestedKey] ? requestedKey : 'models';
     const item = screens[key];
     const copy = item[currentLang];
 
@@ -518,39 +404,6 @@ const strataReleaseCatalog = (() => {
     }
   });
 
-  // 一键复制代码功能
-  function setupCopyButton(btnId, codeSnippetId, originalLabel, copiedLabel) {
-    const btn = document.getElementById(btnId);
-    const codeEl = document.getElementById(codeSnippetId);
-    if (!btn || !codeEl) return;
-
-    btn.addEventListener('click', async () => {
-      const textToCopy = codeEl.textContent.trim();
-      try {
-        await navigator.clipboard.writeText(textToCopy);
-      } catch (_) {
-        const textarea = document.createElement('textarea');
-        textarea.value = textToCopy;
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
-      }
-
-      btn.classList.add('copied');
-      const textSpan = btn.querySelector('.copy-text');
-      if (textSpan) textSpan.textContent = currentLang === 'en' ? 'Copied!' : '已复制!';
-
-      setTimeout(() => {
-        btn.classList.remove('copied');
-        if (textSpan) textSpan.textContent = currentLang === 'en' ? originalLabel.en : originalLabel.zh;
-      }, 2000);
-    });
-  }
-
-  setupCopyButton('copy-curl-btn', 'curl-code-snippet', { zh: '复制命令', en: 'Copy' }, { zh: '已复制!', en: 'Copied!' });
-  setupCopyButton('copy-build-btn', 'build-code-snippet', { zh: '复制代码', en: 'Copy snippet' }, { zh: '已复制!', en: 'Copied!' });
-
   // 移动端汉堡菜单控制
   if (mobileMenuBtn && primaryNav) {
     mobileMenuBtn.addEventListener('click', () => {
@@ -584,7 +437,7 @@ const strataReleaseCatalog = (() => {
   const initialLanguage = pageLanguage;
 
   // Enable downloads only after validating published assets from this repository.
-  let activeReleaseTag = 'v0.1.3';
+  let activeReleaseTag = null;
   let releaseState = { kind: 'loading' };
 
   function renderReleaseStatus() {
@@ -600,17 +453,19 @@ const strataReleaseCatalog = (() => {
     } else {
       const channel = releaseState.preview
         ? (english ? 'No stable release is published; showing a preview for manual installation.' : '暂无稳定版发布，以下为手工安装的预览版。')
-        : (english ? 'Latest published stable release.' : '最新已发布稳定版。');
+        : releaseState.snapshot
+          ? (english ? 'Published stable release.' : '已发布稳定版。')
+          : (english ? 'Latest published stable release.' : '最新已发布稳定版。');
       const labels = { windows: 'Windows', appimage: 'AppImage', deb: 'DEB', checksums: 'SHA256SUMS' };
       const missing = releaseState.missing.map(key => labels[key]).join(' / ');
       status.textContent = `${channel}${missing ? (english ? ` Unavailable assets: ${missing}. Those downloads are disabled.` : ` 缺少 ${missing} 资产，对应下载已禁用。`) : ''}`;
     }
   }
 
-  function applyRelease(release) {
+  function applyRelease(release, source = 'live') {
     const urls = strataReleaseCatalog.assets(release);
     activeReleaseTag = release?.tag_name || (currentLang === 'en' ? 'Unavailable' : '暂无可用发布');
-    releaseState = release ? { kind: 'ready', preview: release.prerelease, missing: strataReleaseCatalog.keys.filter(key => !urls[key]) } : { kind: 'unavailable' };
+    releaseState = release ? { kind: 'ready', preview: release.prerelease, snapshot: source === 'snapshot', missing: strataReleaseCatalog.keys.filter(key => !urls[key]) } : { kind: 'unavailable' };
     document.querySelectorAll('.release-version').forEach(el => {
       el.textContent = activeReleaseTag;
     });
@@ -631,6 +486,22 @@ const strataReleaseCatalog = (() => {
         return { status: response.status, releases: response.ok && single ? [value] : value };
       } finally { clearTimeout(timeout); }
     }
+    // A public catalog checked during deployment keeps downloads working when
+    // GitHub rate-limits anonymous visitors. Asset URLs still use the same validator.
+    const snapshotPromise = (async () => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 12000);
+      try {
+        const response = await fetch(new URL('release-catalog.json', siteRoot), { signal: controller.signal });
+        if (!response.ok) return null;
+        const snapshot = await response.json();
+        if (snapshot?.schemaVersion !== 1 || !Number.isFinite(Date.parse(snapshot.generatedAt))) return null;
+        const release = strataReleaseCatalog.select([snapshot.release]);
+        if (release) applyRelease(release, 'snapshot');
+        return release;
+      } catch (_) { return null; }
+      finally { clearTimeout(timeout); }
+    })();
     try {
       const prefix = `https://api.github.com/repos/${strataReleaseCatalog.repo}/releases`;
       const results = await Promise.allSettled([
@@ -639,8 +510,13 @@ const strataReleaseCatalog = (() => {
       ]);
       const latest = results[0].status === 'fulfilled' ? results[0].value : null;
       const list = results[1].status === 'fulfilled' ? results[1].value : null;
-      applyRelease(strataReleaseCatalog.selectResponses(latest, list));
-    } catch (_) { applyRelease(null); }
+      const snapshot = await snapshotPromise;
+      const live = strataReleaseCatalog.selectResponses(latest, list);
+      if (live) applyRelease(live);
+      else if (!snapshot) applyRelease(null);
+    } catch (_) {
+      if (!await snapshotPromise) applyRelease(null);
+    }
   }
 
   setLanguage(initialLanguage);

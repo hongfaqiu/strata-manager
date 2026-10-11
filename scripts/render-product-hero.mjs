@@ -35,16 +35,16 @@ const logo = (await readFile(join(root, 'assets/icon.svg'), 'utf8')).replace(/<s
 const font = (await readFile(join(root, 'apps/desktop/src/fonts/outfit-latin-wght.woff2'))).toString('base64');
 const variants = {
   zh: {
-    locale: 'zh-CN', eyebrow: 'STRATA 的桌面管理工具',
+    locale: 'zh-CN', eyebrow: 'STRATA 本地大模型管理工具',
     first: '让 Strata', second: '更容易上手',
-    intro: '本地模型的管理与监控，<br>一个工作台完成。',
+    intro: '本地大模型的管理与监控，<br>一个工作台完成。',
     features: ['安装与配置', '模型与服务管理', '资源与 API 用量监控'],
     example: '界面示例 · 展示数据',
   },
   en: {
-    locale: 'en', eyebrow: 'A DESKTOP WORKSPACE FOR STRATA',
+    locale: 'en', eyebrow: 'A DESKTOP WORKSPACE FOR STRATA LLM',
     first: 'Make Strata', second: 'easier to use',
-    intro: 'Manage and monitor local models<br>in one workspace.',
+    intro: 'Manage and monitor local LLMs<br>in one workspace.',
     features: ['Setup & configuration', 'Models & services', 'Resources & API usage'],
     example: 'Example interface · Demonstration data',
   },
