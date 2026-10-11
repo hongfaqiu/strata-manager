@@ -2,13 +2,11 @@
 
 use serde_json::Value;
 use std::{
-    collections::HashMap,
     fs,
     net::{SocketAddr, TcpStream},
     os::fd::{AsRawFd, FromRawFd, OwnedFd},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
-    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 use strata_runtime_core::processes::OwnedProcess;
@@ -94,12 +92,7 @@ fn owner(root: &Path, mode: &str) -> OwnedProcess {
         .arg(env!("CARGO_BIN_EXE_strata-supervisor"))
         .arg(manifest.join("resources"))
         .arg(upstream());
-    OwnedProcess::spawn(
-        command,
-        Arc::new(Mutex::new(HashMap::new())),
-        "mcp-owner-fixture",
-    )
-    .unwrap()
+    OwnedProcess::spawn(command, Default::default(), "mcp-owner-fixture").unwrap()
 }
 
 #[test]

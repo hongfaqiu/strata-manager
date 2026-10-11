@@ -222,7 +222,9 @@ fn probe_source(
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x08000004);
     }
-    let mut child = command.spawn().map_err(|_| "无法启动官方 MCP 脚本")?;
+    let child = command.spawn().map_err(|_| "无法启动官方 MCP 脚本")?;
+    #[cfg(windows)]
+    let mut child = child;
     #[cfg(windows)]
     let job = own_windows_child(&mut child)?;
     let mut process = ProbeProcess {

@@ -298,4 +298,8 @@ Linux MCP stdio 新增同步 wrapper，在 Tokio/数据库初始化之前接收�
 
 完整测试后最小修正了 Clippy 类型别名、显式 lifetime、冗余引用以及 Supervisor 重复条件分支。修正后的完整 workspace/all-targets Clippy `-D warnings` 与 fmt 通过；发现/安装/存储/后台生命周期定向回归 **39 passed / 0 failed / 5 ignored**。未把两次数量累加成一次全套测试，也未重复真实 GPU 测试。跨平台正式安装包验收仍由最终提交的 Actions 完成。
 
+首轮跨平台 CI 的 Ubuntu 原生步骤在 Linux-only MCP 测试的旧 `HashMap` 日志初始化处编译失败，原生测试未执行。夹具改为 `LogStore` 默认初始化，并使 MCP 探针仅在 Windows 使用可变子进程绑定；修正后的 fmt 与 Windows 完整 all-targets Clippy 通过，Linux 结果以新一轮 CI 为准。
+
+官网部署工作流 `38152552942` 对应 `1fbcc4bad0ca71cae738c2a55e5dc2581ea6b166`。公开 20 张页面 WebP 与该提交的截图 manifest 逐字节哈希一致；中英首页/下载/指南在 1440px、375px 的 12 组检查，以及 40 次图片切换通过。英文启动的一次旧语言图片取消请求单独复核正常。此时公开 stable latest 仍为 0.1.2，0.1.3 下载资产仍需正式发布后补验。
+
 本轮由三个子 Agent 分别处理原生验证、发布/前端回归和范围/截图审查，均继承主 Agent 当前配置；工具未返回可独立确认的实际模型或推理档位。主 Agent 完成合并、版本/文档整理与最终发布验收。
