@@ -22,9 +22,7 @@
 
 </div>
 
-**Strata Manager is an open-source desktop management app for [Niko1221/Strata](https://github.com/Niko1221/Strata), a local large language model inference engine.** It brings runtime setup, model configurations, service controls, chat, monitoring and tuning into one workspace. Existing supported model weights stay in place.
-
-> **Release status:** the current public stable package is **v0.1.2**. Features and screenshots below describe the **0.1.3 source, which remains unreleased**. Check the selected release notes for package capabilities; development changes are not automatically included in the stable installer.
+**Strata Manager is an open-source desktop management app for [Niko1221/Strata](https://github.com/Niko1221/Strata), a local large language model inference engine.** It brings runtime setup, model configurations, service controls, chat, monitoring, tuning and benchmarking into one workspace. Existing supported model weights stay in place.
 
 [![Strata Manager overview — current service, hardware and API activity](docs/screenshots/overview.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/overview.en.webp)
 
@@ -37,36 +35,29 @@
 | Component | Responsibility |
 | --- | --- |
 | **Strata runtime** | Load models, execute inference and provide the API. Supported models, image input and protocols depend on the installed engine and chosen model. |
-| **Strata Manager** | Prepare and inspect the runtime, manage local models and configurations, control services, and present chat, monitoring and tuning tools. |
+| **Strata Manager** | Prepare and inspect the runtime, manage local models and configurations, control services, and present chat, monitoring, tuning and benchmarking tools. |
 | **Your applications** | Connect to the running local API to use the model. |
 
 Manager is an independent community project. It manages supported Strata installations on **this computer**; the runtime and model weights are installed separately.
 
 ## A workflow from setup to daily use
 
-The table describes the current **0.1.3 source**. Engine-dependent tools appear according to the installed runtime's capabilities.
+Engine-dependent tools appear according to the installed runtime's capabilities.
 
 | Workflow | What you can do |
 | --- | --- |
-| **1 · Prepare Strata** | Detect an existing installation; inspect local/upstream versions and official release notes. Matching official Windows x64 ZIPs support download and update progress. Linux retains version and release-note browsing. |
+| **1 · Prepare Strata** | Detect existing installations and Windows installation paths; inspect local/upstream versions and official release notes. Matching official Windows x64 ZIPs support download and update progress, reusing verified update metadata. Linux supports environment scans, version and release-note browsing, skipping unrelated or permission-restricted Python processes. |
 | **2 · Organize models** | Discover local weights, group configurations by model, choose download sources and GPUs, and inspect model files, GGUF metadata and disk usage. Supported formats include Swift IQ3_S. |
 | **3 · Configure and run** | Edit graphical controls or JSON with validation and backups. Start, stop, restart or release model memory; follow startup stages, tasks and logs. Opening Manager or signing in starts only the lightweight background, preserving stopped services. |
 | **4 · Chat and integrate** | Use conversations, streaming replies and attachments. Choose JSON / JSON Schema output, reuse document prefixes and adjust advanced generation settings. Inspect MCP tools and check connections; image input and tools depend on runtime/model support. |
 | **5 · Inspect sessions and load** | Save and restore engine sessions; inspect individual slots, request load, input-processing and generation rates, hardware activity and capability-gated VRAM adjustments. |
-| **6 · Understand usage and tune** | Retain local API metadata and chart requests, tokens, latency and cache reuse. Compare complete chat, coding/Agent or document tasks before applying or restoring supported tuning candidates; no fixed performance gain is promised. |
-| **7 · Review updates** | Manage app and Strata updates separately from model weights. Read localized release notes and confirm installation. Use Chinese/English, system/light/dark appearance and tray controls. |
+| **6 · Understand usage and tune** | Retain local API metadata, support Strata 0.1.43 API usage statistics, and chart requests, tokens, latency and cache reuse. Compare complete chat, coding/Agent or document tasks before applying or restoring supported tuning candidates; no fixed performance gain is promised. |
+| **7 · Benchmark** | Set repeated runs, warmup and prompt/output lengths in the Benchmark workspace; test cache reuse with repeated inputs. Record time to first token (TTFT), request duration, P50/P95, token counts and engine rates separately. Cancel tests, review report history, export JSON and coordinate with other inference operations. |
+| **8 · Review updates** | Manage app and Strata updates separately from model weights. Read localized release notes and confirm installation. Use Chinese/English, system/light/dark appearance and tray controls. |
 
 API usage statistics work without capturing request bodies. Optional temporary body diagnostics are separate; see the [user guide](docs/USER_GUIDE.en.md) for behavior and privacy.
 
-## In development · Unreleased
-
-These additions are in development and validation and are **not included in publicly available installers**:
-
-- **Benchmark workspace:** repeated runs, warmup, prompt/output lengths and repeated-input cache tests; separate time to first token, request duration, P50/P95, token counts and engine rates. Includes cancellation, report history, JSON export and coordination with other inference operations.
-- **Runtime compatibility and maintenance:** API usage support for the reviewed Strata 0.1.43 source, improved Windows installation-path detection and update-metadata reuse, and a fix for Linux scans interrupted by unrelated Python processes.
-- **Validation boundary:** Benchmark has passed isolated tests and stopped-service checks in the real desktop app. Throughput and sustained stability with a loaded GPU model still require validation.
-
-See [CHANGELOG.md](CHANGELOG.md) or the [website changelog](https://hongfaqiu.github.io/strata-manager/docs/changelog.en.html) for version-specific changes and verification scope.
+See [CHANGELOG.md](CHANGELOG.md) or the [website changelog](https://hongfaqiu.github.io/strata-manager/docs/changelog.en.html) for version-specific changes.
 
 ## Download and get started
 
@@ -144,7 +135,7 @@ pnpm install --frozen-lockfile
 pnpm desktop
 ```
 
-Local builds are separate from public installers. Maintainers can refer to [development](docs/DEVELOPMENT.md), [release](docs/RELEASING.md) and [verification](docs/VERIFICATION.md) records.
+Maintainers can refer to [development](docs/DEVELOPMENT.md), [release](docs/RELEASING.md) and [verification](docs/VERIFICATION.md) records.
 
 </details>
 
