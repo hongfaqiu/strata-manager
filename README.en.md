@@ -1,7 +1,11 @@
 # Strata Manager
 
-[Read the English product overview](README.md) · [简体中文](README.zh-CN.md)
+**[English product overview](README.md)** · **[简体中文](README.zh-CN.md)**
 
-Strata Manager is an open-source desktop app that makes [Niko1221/Strata, the local LLM inference engine](https://github.com/Niko1221/Strata), easier to set up and use. Prepare the runtime, manage local models and configurations, control services, and monitor hardware, inference performance and API usage in one workspace, with built-in chat and tuning. Choose **Use** to enable a model; an independent background process then manages its service lifecycle. Existing model weights stay in place.
+Strata Manager is an open-source desktop workspace for [Strata](https://github.com/Niko1221/Strata) local inference: runtime setup, model and service management, chat, monitoring and tuning.
 
-The English product overview, light-theme screenshots and product hero are maintained in [README.md](README.md). Published capabilities and packages are listed in the [v0.1.3 release entry](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.3). This file keeps older links working.
+[Website](https://hongfaqiu.github.io/strata-manager/en/) · [Documentation](https://hongfaqiu.github.io/strata-manager/docs/index.en.html) · [Latest stable release](https://github.com/hongfaqiu/strata-manager/releases/latest) · [Changelog](CHANGELOG.md)
+
+The full English README and real interface screenshots are maintained in [README.md](README.md). They describe the **unreleased 0.1.3 source**; the current public stable installer is **v0.1.2**. Check the selected release notes for package capabilities, or use the [website download section](https://hongfaqiu.github.io/strata-manager/en/#get-started). Development updates also appear in the [website changelog](https://hongfaqiu.github.io/strata-manager/docs/changelog.en.html).
+
+This compatibility entry keeps existing English README links working.

@@ -1,27 +1,27 @@
 # Download and try
 
-[Documentation](README.en.md) · [User guide](USER_GUIDE.en.md) · [简体中文](DOWNLOAD.md)
+[Documentation](README.en.md) · [User guide](USER_GUIDE.en.md) · [Changelog](../CHANGELOG.md) · [Website changelog](https://hongfaqiu.github.io/strata-manager/docs/changelog.en.html) · [简体中文](DOWNLOAD.md)
 
 Strata Manager is a desktop workspace for the Strata runtime and local model services. The desktop package contains the app and its independent background process. The Strata runtime and model weights are prepared separately.
 
-## v0.1.3 release entry
+## Download a published stable release
 
-Use the **v0.1.3** release entry below. Install only packages actually listed on the release page. Read the [release notes](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.3) or [try source](#try-source).
+Choose a package from the [latest stable release](https://github.com/hongfaqiu/strata-manager/releases/latest) or the [website download section](https://hongfaqiu.github.io/strata-manager/en/#get-started). The current public stable version is **v0.1.2**; **0.1.3 has no published installer**. Install only files listed for the selected release and check its notes for included capabilities. You can also [try source](#try-source).
 
-The README, website screenshots and user guide describe the 0.1.3 source. Published packages and notes on GitHub establish what is available. This document describes CI gate coverage, not a passing result for an unfrozen candidate. Source instructions follow below.
+The README, website screenshots and user guide describe the 0.1.3 source. New source changes are not included in the v0.1.2 package; the [changelog](../CHANGELOG.md) separates published releases from unreleased development changes. This document describes CI gate coverage, not a passing result for an unpublished candidate.
 
 | Platform | Package | Scope |
 | --- | --- | --- |
-| Windows x64 | [NSIS installer](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.3/Strata.Manager_0.1.3_x64-setup.exe) | Requires WebView2; installation steps below. |
-| Linux x64 | [AppImage](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.3/Strata.Manager_0.1.3_amd64.AppImage) / [DEB](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.3/Strata.Manager_0.1.3_amd64.deb) | Built in Ubuntu 22.04 CI; system installation and GPU scope below. |
+| Windows x64 | [NSIS installer (.exe)](https://github.com/hongfaqiu/strata-manager/releases/latest) | Requires WebView2; installation steps below. |
+| Linux x64 | [AppImage / DEB](https://hongfaqiu.github.io/strata-manager/en/#get-started) | Built in Ubuntu 22.04 CI; system installation and GPU scope below. |
 
-[Download SHA256SUMS](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.3/SHA256SUMS) and compare your file's SHA256 with its matching filename before installing. Update signature files are for updater verification; use the `.exe`, `.AppImage` or `.deb` above for initial installation.
+Download `SHA256SUMS` for the same version from the [selected stable release](https://github.com/hongfaqiu/strata-manager/releases/latest) and compare your file's SHA256 with its matching filename before installing. Update signature files are for updater verification; use the `.exe`, `.AppImage` or `.deb` for initial installation.
 
 Models, image input and API protocols depend on your Strata runtime. Check hardware, drivers, RAM, VRAM and disk requirements before preparing weights. Supported existing weights do not need downloading again.
 
 ## Install on Windows
 
-1. Download the Windows x64 NSIS installer `Strata.Manager_0.1.3_x64-setup.exe` above.
+1. Download the Windows x64 NSIS installer from the [latest stable release](https://github.com/hongfaqiu/strata-manager/releases/latest) or the [website download section](https://hongfaqiu.github.io/strata-manager/en/#get-started). Its filename ends in `_x64-setup.exe`.
 2. Confirm the version and source, then run the installer and follow its wizard. Windows requires WebView2; follow installer or system instructions if it is missing.
 3. Open Strata Manager from the Start menu or the installer completion screen.
 4. Follow the package release notes. The app first checks or prepares the runtime in Strata, then follows the [user guide](USER_GUIDE.en.md#prepare-or-reuse-a-model) to choose or prepare a model. Installing the desktop app does not automatically download weights.
@@ -33,14 +33,14 @@ The project currently has no Windows Authenticode publisher certificate. Windows
 
 ### AppImage
 
-1. Download `Strata.Manager_0.1.3_amd64.AppImage` above.
-2. Allow execution in its file properties or run `chmod +x ./Strata.Manager_0.1.3_amd64.AppImage` in your download directory.
+1. Download the Linux x64 `.AppImage` file from the [latest stable release](https://github.com/hongfaqiu/strata-manager/releases/latest) or the [website download section](https://hongfaqiu.github.io/strata-manager/en/#get-started).
+2. Allow execution in its file properties, or use `chmod +x` followed by the actual downloaded filename in your download directory.
 3. Run the AppImage. Follow your distribution's instructions if FUSE or system dependencies are missing.
 4. Follow the package release notes. On first use, check Strata before selecting a local model; see the [user guide](USER_GUIDE.en.md#prepare-or-reuse-a-model).
 
 ### DEB
 
-Download `Strata.Manager_0.1.3_amd64.deb` above and open it in the Ubuntu/Debian system package installer. Follow system instructions for installation and dependencies, then launch it from the application menu. Ubuntu 22.04 is the CI build environment; the DEB check covers launching its extracted contents. System-level installation, uninstall, login startup and real GPU workflows remain unverified.
+Download the Linux x64 `.deb` file from the [latest stable release](https://github.com/hongfaqiu/strata-manager/releases/latest) or the [website download section](https://hongfaqiu.github.io/strata-manager/en/#get-started), then open it in the Ubuntu/Debian system package installer. Follow system instructions for installation and dependencies, then launch it from the application menu. Ubuntu 22.04 is the CI build environment; the DEB check covers launching its extracted contents. System-level installation, uninstall, login startup and real GPU workflows remain unverified.
 
 ## Try source
 
@@ -69,6 +69,6 @@ pnpm desktop starts the complete desktop app and background process. pnpm dev ru
 
 [GitHub Releases](https://github.com/hongfaqiu/strata-manager/releases) lists versioned packages and release notes. Previews, stable releases, CI artifacts and local builds are separate sources; check the version and support scope first.
 
-v0.1.3 is the stable release entry. Only published stable versions that pass release gates enter `latest`; GitHub shows current availability. Previews do not replace the stable channel, and finding no beta update does not establish that the latest preview is installed.
+Only published stable versions that pass release gates enter `latest`; download links point to the [latest stable release](https://github.com/hongfaqiu/strata-manager/releases/latest). The 0.1.3 source remains unreleased; see [CHANGELOG.md](../CHANGELOG.md) or the [website changelog](https://hongfaqiu.github.io/strata-manager/docs/changelog.en.html) for development progress and changes. Previews do not replace the stable channel, and finding no beta update does not establish that the latest preview is installed.
 
 Current source manages app updates, the Strata runtime and model weights separately. Automatic checks are enabled by default; release notes are shown and installation requires confirmation. On Windows x64, Strata selects matching ZIPs from upstream release information, downloads and extracts them, then backs up and replaces program files while retaining models. The [user guide](USER_GUIDE.en.md) explains behavior.

@@ -28,4 +28,10 @@ SOFTWARE.
 
 官方前端使用的 Outfit 字体采用 SIL Open Font License 1.1。字体文件随前端源码保存，完整许可位于 `apps/desktop/public/licenses/outfit-OFL.txt`，不会在运行时请求在线字体服务。Strata MIT 许可也包含在安装包的前端资源中。
 
+## 官网动效 / Website animation
+
+官网使用本地固定版本 GSAP 3.13.0 与 ScrollTrigger，文件位于 `website/vendor/`。原始版权与许可头保留在对应文件中，来源记录见 [website/vendor/README.md](website/vendor/README.md)，许可见 [GSAP Standard License](https://gsap.com/standard-license/)。
+
+The website serves GSAP 3.13.0 and ScrollTrigger locally. Original copyright and license headers are preserved; sources are recorded in `website/vendor/README.md` under the linked GSAP Standard License.
+
 其他 npm/Cargo 依赖的许可由相应包自身提供；此文件记录本项目直接复用的上游界面资源。

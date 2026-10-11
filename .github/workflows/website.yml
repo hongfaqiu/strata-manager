@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'website/**'
+      - 'CHANGELOG.md'
       - 'scripts/build-website.mjs'
       - 'scripts/render-website-docs.mjs'
       - 'scripts/render-website-docs.test.mjs'

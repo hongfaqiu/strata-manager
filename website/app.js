@@ -124,6 +124,21 @@ const strataReleaseCatalog = (() => {
   }
 
   const screens = {
+    "overview": {
+      "index": "00",
+      "zh": {
+        "title": "查看服务总览。",
+        "description": "集中查看模型状态、API 用量与运行指标。",
+        "alt": "Strata Manager 总览：模型状态、服务控制、API 用量与运行指标",
+        "badge": "总览"
+      },
+      "en": {
+        "title": "View the service overview.",
+        "description": "See model status, API usage and runtime metrics in one place.",
+        "alt": "Strata Manager overview: model status, service controls, API usage and runtime metrics",
+        "badge": "OVERVIEW"
+      }
+    },
     "models": {
       "index": "01",
       "zh": {
@@ -241,7 +256,7 @@ const strataReleaseCatalog = (() => {
   function applyTheme(theme, persist = false) {
     const next = theme === 'light' ? 'light' : 'dark';
     document.documentElement.dataset.theme = next;
-    if (themeColorMeta) themeColorMeta.content = next === 'light' ? '#f5f9f6' : '#06130e';
+    if (themeColorMeta) themeColorMeta.content = next === 'light' ? '#f5f4ef' : '#101c18';
     if (persist) {
       try { localStorage.setItem(THEME_KEY, next); } catch (_) {}
     }
@@ -323,7 +338,7 @@ const strataReleaseCatalog = (() => {
     }
 
     renderScreen(activeScreenKey);
-    if (heroImage) heroImage.src = new URL(`assets/screenshots/product-cover.${currentLang}.webp`, siteRoot).href;
+    if (heroImage) heroImage.src = new URL(`assets/screenshots/overview.${currentLang}.webp`, siteRoot).href;
     if (lightboxModal.classList.contains('active')) openLightbox(lightboxModal.dataset.screen);
     updateThemeButton();
 
@@ -366,6 +381,8 @@ const strataReleaseCatalog = (() => {
   }
 
   // 全屏灯箱 (Lightbox) 交互控制
+  let lightboxOpener = null;
+  const backgroundSections = [document.querySelector('.site-header'), document.querySelector('main'), document.querySelector('.site-footer')];
   function openLightbox(screenKey) {
     const requestedKey = screenKey || activeScreenKey;
     const key = screens[requestedKey] ? requestedKey : 'models';
@@ -377,16 +394,21 @@ const strataReleaseCatalog = (() => {
     lightboxBadge.textContent = item.index + ' / ' + key.toUpperCase();
     lightboxTitle.textContent = copy.title;
 
+    if (!lightboxModal.classList.contains('active')) lightboxOpener = document.activeElement;
     lightboxModal.classList.add('active');
     lightboxModal.dataset.screen = key;
     lightboxModal.setAttribute('aria-hidden', 'false');
     document.body.style.overflow = 'hidden';
+    backgroundSections.forEach(section => { if (section) section.inert = true; });
+    lightboxCloseBtn?.focus();
   }
 
   function closeLightbox() {
     lightboxModal.classList.remove('active');
     lightboxModal.setAttribute('aria-hidden', 'true');
     document.body.style.overflow = '';
+    backgroundSections.forEach(section => { if (section) section.inert = false; });
+    lightboxOpener?.focus({ preventScroll: true });
   }
 
   document.querySelectorAll('.open-lightbox-btn').forEach(btn => {
@@ -401,6 +423,10 @@ const strataReleaseCatalog = (() => {
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && lightboxModal.classList.contains('active')) {
       closeLightbox();
+    }
+    if (e.key === 'Tab' && lightboxModal.classList.contains('active')) {
+      e.preventDefault();
+      lightboxCloseBtn?.focus();
     }
   });
 
@@ -519,6 +545,25 @@ const strataReleaseCatalog = (() => {
     }
   }
 
+  function animatePage() {
+    if (!window.gsap || !window.ScrollTrigger) return;
+    const { gsap, ScrollTrigger } = window;
+    gsap.registerPlugin(ScrollTrigger);
+    // No scroll interception or pinned stages; the page remains a normal document.
+    gsap.matchMedia().add('(prefers-reduced-motion: no-preference)', () => {
+      gsap.from('.hero-title-block, .hero-content', { y: 22, opacity: 0, duration: .7, stagger: .1, ease: 'power3.out' });
+      gsap.fromTo('.hero-cover', { scale: .86, y: 36 }, {
+        scale: 1, y: 0, ease: 'none',
+        scrollTrigger: { trigger: '.hero-cover', start: 'top 92%', end: 'top 100px', scrub: true, invalidateOnRefresh: true },
+      });
+      gsap.from('.feature-card', { y: 26, opacity: 0, duration: .55, stagger: .08, ease: 'power3.out', scrollTrigger: { trigger: '.feature-grid', start: 'top 90%', once: true } });
+      gsap.from('.workspace-display-frame', { clipPath: 'inset(0 0 14% 0)', duration: .8, ease: 'power3.out', scrollTrigger: { trigger: '.workspace-display-frame', start: 'top 90%', once: true } });
+      gsap.from('.download-card', { x: -18, opacity: 0, duration: .5, stagger: .1, ease: 'power3.out', scrollTrigger: { trigger: '.download-cards-grid', start: 'top 90%', once: true } });
+    });
+    window.addEventListener('load', () => ScrollTrigger.refresh(), { once: true });
+  }
+
   setLanguage(initialLanguage);
+  animatePage();
   fetchLatestRelease();
 })();

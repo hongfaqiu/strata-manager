@@ -5,7 +5,29 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
-## [0.1.3]
+### 中文
+
+以下改动正在开发与验收，尚未包含在公开安装包中。
+
+- 新增 Benchmark 测试工作区，支持提示词长度、重复轮次、输出长度、预热和重复输入缓存测试，可停止测试、查看历史报告并导出 JSON。
+- 分别记录首 Token 延迟、请求总耗时、P50/P95、输入与输出 Token、输入处理与生成速度以及缓存命中；测试期间协调聊天、调优、服务启停和更新操作。
+- 增加已审阅 Strata 0.1.43 的 API 使用统计兼容，改善 Windows 安装路径识别和更新元数据复用，保留引擎校验、配置保护与回滚检查。
+- 修复 Linux 本机环境扫描被无关或权限受限的 Python 进程打断的问题，保留运行环境身份核验。
+- 更新官网首页，补充 Strata 与 Manager 职责图示，并从本日志生成中英文更新日志页面。
+- Benchmark 已完成隔离测试与真实桌面停机状态检查，真实 GPU 模型加载后的吞吐和持续稳定性仍待验收。
+
+### English
+
+These changes are in development and validation and are not included in publicly available installers.
+
+- Add a Benchmark workspace with prompt lengths, repeated runs, output limits, warmup and repeated-input cache tests, plus cancellation, report history and JSON export.
+- Record time to first token, request duration, P50/P95, input/output tokens, input-processing and generation rates, and cache hits separately; coordinate chat, tuning, service controls and updates while a test runs.
+- Add API usage compatibility for the reviewed Strata 0.1.43 source and improve Windows installation-path detection and update-metadata reuse, retaining engine validation, configuration protection and rollback checks.
+- Fix Linux local-environment scans being interrupted by unrelated or permission-restricted Python processes, retaining runtime identity checks.
+- Redesign the website with a Strata/Manager responsibility diagram and generate bilingual website changelog pages from this file.
+- Benchmark has passed isolated tests and stopped-service checks in the real desktop app; throughput and sustained stability with a loaded GPU model still require validation.
+
+## [0.1.3] - Unreleased
 
 ### 中文
 
@@ -27,7 +49,7 @@ Maintain both languages for each version. Move unreleased changes into the actua
 - Correct Windows startup checks for mapped paths while retaining foreign-registration and staged-file protections.
 - Windows chat, structured output, document caching, session storage, parallel requests and handoff were tested on real hardware. Online VRAM resizing is unsupported in resident low-RAM mode; full tuning, new model downloads and Windows login-cycle startup were not tested in this pass.
 
-## [0.1.2]
+## [0.1.2] - 2026-10-11
 
 ### 中文
 
@@ -101,11 +123,11 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
-- 此候选未公开发布。保留原版本标签和失败记录；首次稳定版使用 0.1.1。
+- 此候选未公开发布。保留原版本标签和失败记录；公开版本与安装包请查看后续发布记录。
 
 ### English
 
-- This candidate was not published. Its tag and failed workflow records are retained; the first stable release uses 0.1.1.
+- This candidate was not published. Its tag and failed workflow records are retained; see subsequent releases for public versions and installers.
 
 ## [0.1.0-beta.2] - 2026-10-10 (UTC)
 

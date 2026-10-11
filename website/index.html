@@ -3,18 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#06130e" id="theme-color">
+  <meta name="theme-color" content="#f5f4ef" id="theme-color">
   <meta name="color-scheme" content="dark light">
   <script>
     (() => {
-      let theme = 'dark';
+      let theme = 'light';
       try {
         const saved = localStorage.getItem('strata-manager-site-theme');
         if (saved === 'light' || saved === 'dark') theme = saved;
-        else if (window.matchMedia('(prefers-color-scheme: light)').matches) theme = 'light';
+        else if (window.matchMedia('(prefers-color-scheme: dark)').matches) theme = 'dark';
       } catch (_) {}
       document.documentElement.dataset.theme = theme;
-      document.getElementById('theme-color').content = theme === 'light' ? '#f5f9f6' : '#06130e';
+      document.getElementById('theme-color').content = theme === 'light' ? '#f5f4ef' : '#101c18';
     })();
   </script>
   <meta name="description" content="Niko1221/Strata 本地大模型推理引擎的开源桌面管理工具，简化安装配置、模型与服务管理，监控资源和 API 用量。支持 Windows / Linux x64。" data-content-en="Open-source desktop management for Niko1221/Strata local LLM inference: easier setup, model and service management, hardware monitoring and API usage. Windows / Linux x64.">
@@ -37,6 +37,8 @@
   <link rel="alternate" hreflang="x-default" href="https://hongfaqiu.github.io/strata-manager/">
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="style.css">
+  <script src="vendor/gsap.min.js" defer></script>
+  <script src="vendor/ScrollTrigger.min.js" defer></script>
   <script src="app.js" defer></script>
   <title>Strata Manager · Strata 大模型管理与监控</title>
   <script type="application/ld+json">
@@ -74,9 +76,12 @@
         <span>Strata <span class="brand-subtitle">Manager</span></span>
       </a>
       <nav class="primary-nav" id="primary-nav" aria-label="主导航" data-label-en="Main navigation">
+        <a href="#about-strata" data-en="About Strata">了解 Strata</a>
         <a href="#features" data-en="Features">核心功能</a>
         <a href="#workspace" data-en="Interface">界面</a>
         <a href="#get-started" data-en="Download">下载</a>
+        <a href="docs/changelog.html" data-href-en="docs/changelog.en.html" data-en="Changelog">更新日志</a>
+        <a class="nav-source" href="https://github.com/hongfaqiu/strata-manager">GitHub <span aria-hidden="true">↗</span></a>
       </nav>
       <div class="header-actions">
         <button class="action-btn theme-switch" id="theme-switch" type="button" aria-label="切换到亮色模式" data-label-en="Switch to light mode" title="切换到亮色模式" data-title-en="Switch to light mode">
@@ -95,79 +100,112 @@
   <main id="main">
     <section class="hero-section" aria-labelledby="hero-title">
       <div class="container hero-container">
+        <div class="hero-title-block">
+          <p class="hero-category" data-en="Strata Manager · Open-source desktop management">Strata Manager · 开源桌面管理工具</p>
+          <h1 id="hero-title" class="hero-heading"><span data-en="Local inference.">本地大模型的</span><span data-en="Managed clearly.">管理与监控。</span></h1>
+        </div>
         <div class="hero-content">
-          <p class="eyebrow" data-en="Desktop management for the Strata local LLM inference engine">Strata 本地大模型推理引擎的桌面管理工具</p>
-          <h1 id="hero-title" class="hero-heading"><span data-en="Make Strata">让 Strata</span> <span data-en="easier to use.">更容易上手。</span></h1>
-          <p class="hero-lead" data-en="Set up Strata, manage local models and services, and monitor resources and API usage.">安装与配置 Strata，管理本地模型和服务，查看资源占用与 API 用量。</p>
+          <p class="hero-lead" data-en="Strata is an open-source local LLM inference engine that combines CPU and GPU resources. Strata Manager adds a desktop interface for installation, model configuration, service control and monitoring.">Strata 是一款开源的本地大模型推理引擎，利用 CPU 与 GPU 协同运行模型。Strata Manager 提供配套桌面界面，集中完成环境安装、模型配置、服务启停与运行监控。</p>
           <div class="hero-cta-group">
-            <a class="btn btn-primary" href="#get-started"><svg class="icon" aria-hidden="true"><use href="#icon-download"/></svg><span data-en="Download">下载体验</span></a>
+            <a class="btn btn-primary" href="#get-started"><svg class="icon" aria-hidden="true"><use href="#icon-download"/></svg><span data-en="Get Strata Manager">下载 Strata Manager</span></a>
             <a class="btn btn-secondary" href="docs/user-guide.html" data-href-en="docs/user-guide.en.html" data-en="User guide">使用指南</a>
           </div>
-          <p class="hero-platforms">Windows / Linux x64 · MIT</p>
+          <p class="hero-platforms"><span class="platform-dot" aria-hidden="true"></span><span data-en="Open source · Windows / Linux x64">开源免费 · Windows / Linux x64</span></p>
         </div>
-        <a class="hero-cover" id="hero-preview-link" href="assets/screenshots/product-cover.zh.webp" data-href-en="assets/screenshots/product-cover.en.webp" aria-label="查看完整产品介绍图" data-label-en="View the full product overview">
-          <img id="hero-preview-img" src="assets/screenshots/product-cover.zh.webp" data-src-en="assets/screenshots/product-cover.en.webp" width="3600" height="2000" alt="Strata Manager 的模型管理界面与 API 用量图表" data-alt-en="Strata Manager model management interface and API usage charts" fetchpriority="high">
+        <a class="hero-cover open-lightbox-btn" id="hero-preview-link" href="assets/screenshots/overview.zh.webp" data-href-en="assets/screenshots/overview.en.webp" data-target="overview" aria-label="放大查看总览界面" data-label-en="Enlarge the overview interface">
+          <img id="hero-preview-img" src="assets/screenshots/overview.zh.webp" data-src-en="assets/screenshots/overview.en.webp" width="2880" height="1920" alt="Strata Manager 总览：模型状态、服务控制、API 用量与运行指标" data-alt-en="Strata Manager overview: model status, service controls, API usage and runtime metrics" fetchpriority="high">
+          <span class="hero-preview-caption"><span data-en="Overview · Service status and runtime metrics">服务总览 · 模型状态与运行指标</span><span class="preview-expand"><span data-en="Enlarge interface">放大查看</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></span></span>
         </a>
       </div>
     </section>
 
+    <section class="strata-section" id="about-strata" aria-labelledby="strata-title">
+      <div class="container strata-layout">
+        <div class="strata-explanation">
+          <h2 class="section-title" id="strata-title"><span data-en="Strata and Manager">Strata 与 Manager</span><span data-en="How they work together.">如何协作</span></h2>
+          <dl class="product-roles">
+            <div><dt data-en="Strata · Inference engine">Strata · 推理引擎</dt><dd data-en="Loads supported model weights, runs inference across CPU and GPU resources, and serves a local API for chat apps and developer tools.">加载受支持的模型权重，协调 CPU 与 GPU 执行推理，并通过本地 API 为聊天应用与开发工具提供服务。</dd></div>
+            <div><dt data-en="Strata Manager · Desktop management">Strata Manager · 桌面管理工具</dt><dd data-en="Manages the Strata environment, model configurations and service lifecycle, with hardware monitoring and API usage statistics.">管理 Strata 环境、模型配置和服务生命周期，提供硬件资源监控与 API 用量统计。</dd></div>
+          </dl>
+          <a class="text-link strata-source" href="https://github.com/Niko1221/Strata" data-en="Explore the Strata project ↗">了解 Strata 项目 ↗</a>
+        </div>
+        <figure class="architecture" aria-labelledby="architecture-caption">
+          <div class="architecture-flow" id="strata-diagram">
+            <div class="diagram-node diagram-manager"><span class="diagram-role" data-en="MANAGEMENT">管理层</span><strong>Strata Manager</strong><span class="diagram-detail" data-en="Install · Configure · Control · Monitor">安装 · 配置 · 启停 · 监控</span></div>
+            <div class="diagram-control" aria-hidden="true"><svg viewBox="0 0 24 48" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v42M7 8l5-5 5 5M7 40l5 5 5-5"/></svg></div>
+            <div class="diagram-node diagram-model"><svg class="diagram-symbol" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m16 4 12 6-12 6-12-6 12-6Zm-12 12 12 6 12-6M4 22l12 6 12-6"/></svg><strong data-en="Supported model weights">受支持的模型权重</strong><span class="diagram-detail" data-en="Compatible GGUF files">兼容的 GGUF 文件</span></div>
+            <span class="diagram-arrow diagram-load" aria-hidden="true"><span data-en="Load">加载</span><svg viewBox="0 0 40 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 10h35m-6-6 6 6-6 6"/></svg></span>
+            <div class="diagram-node diagram-engine"><span class="diagram-role" data-en="INFERENCE">推理层</span><strong>Strata</strong><span class="diagram-detail" data-en="CPU / GPU inference">CPU / GPU 协同推理</span><span class="diagram-api" data-en="Local API service">本地 API 服务</span></div>
+            <span class="diagram-arrow diagram-serve" aria-hidden="true"><span>API</span><svg viewBox="0 0 40 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 10h35m-6-6 6 6-6 6"/></svg></span>
+            <div class="diagram-node diagram-client"><svg class="diagram-symbol" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="5" width="26" height="18" rx="3"/><path d="M11 28h10m-5-5v5m-6-17 4 3-4 3m7 0h5"/></svg><strong data-en="Chat &amp; developer tools">聊天与开发工具</strong><span class="diagram-detail" data-en="OpenAI-compatible API">OpenAI 兼容 API</span></div>
+          </div>
+          <figcaption id="architecture-caption" data-en="Strata executes inference. Strata Manager manages and monitors the service.">Strata 执行模型推理，Strata Manager 管理与监控服务。</figcaption>
+          <p class="compatibility-note"><span data-en="Model compatibility and hardware requirements: ">模型兼容性与硬件要求：</span><a href="https://github.com/Niko1221/Strata/blob/main/docs/INSTALL.md" data-en="Strata documentation ↗">Strata 官方文档 ↗</a></p>
+        </figure>
+      </div>
+    </section>
+
     <section class="features-section" id="features" aria-label="核心功能" data-label-en="Core features">
-      <div class="container feature-grid">
+      <div class="container">
+        <div class="feature-intro"><h2 data-en="Manage the complete workflow.">覆盖本地推理的<br>日常管理流程。</h2><p data-en="From environment setup to service observability.">从环境准备，到服务运行与观测。</p></div>
+        <div class="feature-grid">
         <article class="feature-card">
           <span class="feature-number" aria-hidden="true">01</span>
-          <h2 data-en="Setup &amp; configuration">安装与配置</h2>
-          <p data-en="Prepare Strata and edit run configurations in one place.">准备 Strata 环境，在图形界面中管理运行配置。</p>
+          <h3 data-en="Environment &amp; configuration">环境安装与配置</h3>
+          <p data-en="Prepare the Strata runtime, manage dependencies and edit model run configurations in a desktop interface.">准备 Strata 运行环境、管理依赖，在桌面界面中编辑模型运行配置。</p>
         </article>
         <article class="feature-card">
           <span class="feature-number" aria-hidden="true">02</span>
-          <h2 data-en="Models &amp; services">模型与服务管理</h2>
-          <p data-en="Discover local models, switch configurations and control services.">发现已有模型、切换配置，统一启停服务。</p>
+          <h3 data-en="Models &amp; service lifecycle">模型与服务管理</h3>
+          <p data-en="Discover local models, switch run configurations, control services and verify model responses through chat.">发现本地模型、切换运行配置、控制服务启停，并通过聊天验证模型响应。</p>
         </article>
         <article class="feature-card">
           <span class="feature-number" aria-hidden="true">03</span>
-          <h2 data-en="Resources &amp; API usage">资源与 API 监控</h2>
-          <p data-en="See hardware activity, request trends and generation speed.">查看硬件占用、请求趋势和模型生成速度。</p>
+          <h3 data-en="Resources &amp; API monitoring">资源与 API 监控</h3>
+          <p data-en="Monitor GPU, VRAM and RAM usage, and review API requests, token consumption, latency and generation speed.">监控 GPU、显存与系统内存占用，查看 API 请求、Token 用量、延迟与生成速度。</p>
         </article>
+        </div>
       </div>
     </section>
 
     <section class="workspace-section section-padding" id="workspace" aria-labelledby="workspace-title">
       <div class="container">
         <div class="section-header">
-          <div><p class="eyebrow" data-en="THE WORKSPACE">工作台</p><h2 class="section-title" id="workspace-title" data-en="Everything at a glance.">运行情况，一目了然。</h2></div>
+          <div><h2 class="section-title" id="workspace-title" data-en="Interface overview">管理与监控界面</h2><p class="section-lead" data-en="Explore model configurations, hardware telemetry and API usage.">查看模型配置、硬件指标与 API 用量。</p></div>
           <div class="workspace-tab-nav" role="tablist" aria-label="界面预览" data-label-en="Interface previews">
-            <button class="ws-tab active" id="tab-models" role="tab" aria-selected="true" aria-controls="screen-panel" type="button" data-screen="models" data-en="Models">模型</button>
-            <button class="ws-tab" id="tab-monitor" role="tab" aria-selected="false" aria-controls="screen-panel" tabindex="-1" type="button" data-screen="monitor" data-en="Monitor">资源监控</button>
+            <button class="ws-tab" id="tab-models" role="tab" aria-selected="false" aria-controls="screen-panel" tabindex="-1" type="button" data-screen="models" data-en="Models">模型</button>
+            <button class="ws-tab active" id="tab-monitor" role="tab" aria-selected="true" aria-controls="screen-panel" type="button" data-screen="monitor" data-en="Monitor">资源监控</button>
             <button class="ws-tab" id="tab-usage" role="tab" aria-selected="false" aria-controls="screen-panel" tabindex="-1" type="button" data-screen="usage" data-en="API usage">API 用量</button>
           </div>
         </div>
-        <div class="workspace-display-frame" id="screen-panel" role="tabpanel" aria-labelledby="tab-models">
-          <a class="screen-lightbox-trigger open-lightbox-btn" id="screen-link" href="assets/screenshots/models.zh.webp" data-href-en="assets/screenshots/models.en.webp" data-target="models" aria-label="放大查看界面" data-label-en="Enlarge the interface">
-            <img class="display-screenshot" id="screen-image" src="assets/screenshots/models.zh.webp" data-src-en="assets/screenshots/models.en.webp" width="2880" height="1920" alt="Strata 模型管理：本地模型、运行配置与服务控制" data-alt-en="Strata model management: local models, configurations and service controls" loading="lazy" decoding="async">
+        <div class="workspace-display-frame" id="screen-panel" role="tabpanel" aria-labelledby="tab-monitor">
+          <a class="screen-lightbox-trigger open-lightbox-btn" id="screen-link" href="assets/screenshots/monitor.zh.webp" data-href-en="assets/screenshots/monitor.en.webp" data-target="monitor" aria-label="放大查看界面" data-label-en="Enlarge the interface">
+            <img class="display-screenshot" id="screen-image" src="assets/screenshots/monitor.zh.webp" data-src-en="assets/screenshots/monitor.en.webp" width="2880" height="1920" alt="Strata 硬件监控：GPU、显存、CPU 与服务状态" data-alt-en="Strata hardware monitoring: GPU, memory, CPU and service activity" loading="lazy" decoding="async">
             <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
           </a>
           <div class="display-detail-bar">
-            <div><span class="detail-num" id="screen-index">01</span><h3 id="screen-title" data-en="Manage models and services.">管理模型与服务。</h3></div>
+            <div><span class="detail-num" id="screen-index">02</span><h3 id="screen-title" data-en="Monitor resource usage.">查看资源占用。</h3></div>
+            <p id="screen-description" data-en="See GPU, memory, CPU and service activity.">了解 GPU、显存、CPU 和模型的运行状态。</p>
           </div>
         </div>
-        <p class="image-note" data-en="Example interface · Demo data">界面示例 · 展示数据</p>
+        <p class="image-note" data-en="Interface preview · Illustration data">界面预览 · 展示数据</p>
       </div>
     </section>
 
     <section class="download-section section-padding" id="get-started" aria-labelledby="get-started-title">
       <div class="container">
         <div class="section-header">
-          <div><p class="eyebrow" data-en="GET STARTED">开始使用</p><h2 class="section-title" id="get-started-title" data-en="Bring it to your desktop.">从你的桌面开始。</h2></div>
+          <div><h2 class="section-title" id="get-started-title" data-en="Download Strata Manager">下载 Strata Manager</h2><p class="section-lead" data-en="Desktop installers for Windows and Linux x64.">适用于 Windows 与 Linux x64 的桌面安装包。</p></div>
           <a class="text-link" href="docs/download.html" data-href-en="docs/download.en.html" data-en="Installation help ↗">安装帮助 ↗</a>
         </div>
         <div class="download-cards-grid">
           <article class="download-card">
-            <div class="download-card-heading"><h3>Windows x64</h3><span class="release-version" data-en="Latest release">最新发布</span></div>
+            <div class="download-card-heading"><span class="platform-icon windows-icon" aria-hidden="true"><span></span><span></span><span></span><span></span></span><h3>Windows <small>x64</small></h3><span class="release-version" data-en="Latest release">最新发布</span></div>
             <p data-en="NSIS installer">NSIS 安装包</p>
             <a class="btn btn-primary" data-download="windows" aria-disabled="true" tabindex="-1"><svg class="icon" aria-hidden="true"><use href="#icon-download"/></svg><span data-en="Download Windows">下载 Windows 版</span></a>
           </article>
           <article class="download-card">
-            <div class="download-card-heading"><h3>Linux x64</h3><span class="release-version" data-en="Latest release">最新发布</span></div>
+            <div class="download-card-heading"><svg class="platform-icon" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m9 8-6 8 6 8m14-16 6 8-6 8m-5-21-4 26"/></svg><h3>Linux <small>x64</small></h3><span class="release-version" data-en="Latest release">最新发布</span></div>
             <p>AppImage / DEB · amd64</p>
             <div class="download-actions">
               <a class="btn btn-primary" data-download="appimage" aria-disabled="true" tabindex="-1"><svg class="icon" aria-hidden="true"><use href="#icon-download"/></svg><span data-en="Download AppImage">下载 AppImage</span></a>
@@ -175,7 +213,7 @@
             </div>
           </article>
         </div>
-        <div class="download-meta"><a id="release-notes-link" href="https://github.com/hongfaqiu/strata-manager/releases" data-en="Release notes">版本说明</a><span aria-hidden="true">·</span><a data-download="checksums" aria-disabled="true" tabindex="-1" data-en="SHA256 checksums">SHA256 校验文件</a></div>
+        <div class="download-meta"><a href="docs/changelog.html" data-href-en="docs/changelog.en.html" data-en="Changelog">更新日志</a><span aria-hidden="true">·</span><a id="release-notes-link" href="https://github.com/hongfaqiu/strata-manager/releases" data-en="Release notes">版本说明</a><span aria-hidden="true">·</span><a data-download="checksums" aria-disabled="true" tabindex="-1" data-en="SHA256 checksums">SHA256 校验文件</a></div>
         <p class="download-status" id="download-status" role="status" aria-live="polite" data-en="Checking published packages…">正在检查已发布安装包…</p>
       </div>
     </section>
@@ -188,6 +226,7 @@
         <span class="footer-credit">© 2026 Strata Manager</span>
         <nav class="footer-links" aria-label="相关链接" data-label-en="Related links">
           <a href="docs/user-guide.html" data-href-en="docs/user-guide.en.html" data-en="User guide">使用指南</a>
+          <a href="docs/changelog.html" data-href-en="docs/changelog.en.html" data-en="Changelog">更新日志</a>
           <a href="https://github.com/hongfaqiu/strata-manager">GitHub</a>
           <a href="sitemap.xml" data-en="Sitemap">站点地图</a>
         </nav>
