@@ -18,11 +18,11 @@
 
 </div>
 
-**v0.1.1 release entry.** Use the links below or read the [release notes](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.1) and [installation guide](https://hongfaqiu.github.io/strata-manager/docs/download.en.html).
+**v0.1.2 release entry.** Use the links below or read the [release notes](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.2) and [installation guide](https://hongfaqiu.github.io/strata-manager/docs/download.en.html).
 
 Strata Manager is an open-source desktop workspace for the [Strata](https://github.com/Niko1221/Strata) runtime and local model services. Its core is runtime installation and updates, model configurations, and service startup, shutdown and recovery. Chat, monitoring, API usage statistics and parameter tuning support that workflow. Existing model weights stay in place, and an independent background process manages running services.
 
-The features and screenshots describe the 0.1.1 source. Package availability and the exact published version are shown on the [release page](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.1). Release checks run for each revision; this documentation does not establish that an unpublished candidate has passed them.
+The features and screenshots describe the 0.1.2 source. Package availability and the exact published version are shown on the [release page](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.2). Release checks run for each revision; this documentation does not establish that an unpublished candidate has passed them.
 
 ## What is Strata?
 
@@ -45,14 +45,14 @@ The merged window header follows the app's theme. Appearance follows the system 
 
 ## Download
 
-Use the **v0.1.1** release entry for your system. Install only packages actually listed on that page. The [download guide](https://hongfaqiu.github.io/strata-manager/docs/download.en.html) provides installation steps and support scope.
+Use the **v0.1.2** release entry for your system. Install only packages actually listed on that page. The [download guide](https://hongfaqiu.github.io/strata-manager/docs/download.en.html) provides installation steps and support scope.
 
 | Platform | Package | Installation |
 | --- | --- | --- |
-| Windows x64 | [NSIS installer](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.1/Strata.Manager_0.1.1_x64-setup.exe) | Requires WebView2; [installation guide](https://hongfaqiu.github.io/strata-manager/docs/download.en.html#install-on-windows). |
-| Linux x64 | [AppImage](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.1/Strata.Manager_0.1.1_amd64.AppImage) / [DEB](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.1/Strata.Manager_0.1.1_amd64.deb) | Built in Ubuntu 22.04 CI; [installation and support scope](https://hongfaqiu.github.io/strata-manager/docs/download.en.html#install-on-linux). |
+| Windows x64 | [NSIS installer](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.2/Strata.Manager_0.1.2_x64-setup.exe) | Requires WebView2; [installation guide](https://hongfaqiu.github.io/strata-manager/docs/download.en.html#install-on-windows). |
+| Linux x64 | [AppImage](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.2/Strata.Manager_0.1.2_amd64.AppImage) / [DEB](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.2/Strata.Manager_0.1.2_amd64.deb) | Built in Ubuntu 22.04 CI; [installation and support scope](https://hongfaqiu.github.io/strata-manager/docs/download.en.html#install-on-linux). |
 
-[SHA256 checksums](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.1/SHA256SUMS) · [Release notes](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.1)
+[SHA256 checksums](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.2/SHA256SUMS) · [Release notes](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.2)
 
 CI gates cover Windows silent installation, desktop startup, private background IPC, shutdown and uninstall, and Linux AppImage/extracted DEB startup, private IPC and shutdown in Ubuntu 22.04 with Xvfb. The [verification record](https://github.com/hongfaqiu/strata-manager/blob/main/docs/VERIFICATION.md) ties completed runs to specific revisions. System-level DEB installation, real GPU use and login startup still require separate acceptance. A cross-version NSIS installer check does not establish end-to-end Tauri updater installation.
 

@@ -74,9 +74,9 @@ CI 产物以 `ci-<platform>-<arch>-<bundle>` 名称上传为 Actions artifacts�
 
 每次变更维护根目录 [CHANGELOG.md](../CHANGELOG.md) 的 `Unreleased` 中英文条目。发布前将本次内容归入 `## [实际版本]`，保留 `### 中文` 与 `### English` 两个非空段落。流水线通过 `scripts/release-notes.mjs` 读取与版本严格对应的日志，并将其写入 Release 和 updater 元数据；缺少对应版本或语言时拒绝构建发布。桌面更新弹窗按当前界面语言展示该版本日志，用户选择“确认更新”后才下载、验签和安装。
 
-1. 等待同仓库的编辑会话完成，冻结同一候选快照。在同一变更中同步根 `package.json`、`apps/desktop/package.json`、`packages/core/package.json`、Tauri config、Cargo workspace 和任何显式 Cargo package version。`node scripts/release-check.mjs --tag v0.1.1` 检查版本；tag 必须与应用版本严格一致。0.1.1 的中英文日志须位于唯一的 `## [0.1.1]`；README 三个入口、中英文下载/用户文档和官网应同步正式版入口，不复用 beta 的通过结论。
+1. 等待同仓库的编辑会话完成，冻结同一候选快照。在同一变更中同步根 `package.json`、`apps/desktop/package.json`、`packages/core/package.json`、Tauri config、Cargo workspace 和任何显式 Cargo package version。`node scripts/release-check.mjs --tag v0.1.2` 检查版本；tag 必须与应用版本严格一致。0.1.2 的中英文日志须位于唯一的 `## [0.1.2]`；README 三个入口、中英文下载/用户文档和官网应同步正式版入口，不复用 beta 的通过结论。
 2. 完成 [VERIFICATION](VERIFICATION.md) 的最终检查和发布验收，更新中英文 README、用户指南、`docs/screenshots/` 的 WebP 封面及页面图与实际 revision；检查内容没有 API 密钥、个人会话、用户名或私有模型路径。截图使用示例数据时，在图片所在文档及官网的图外说明数据来源；图内使用正常模型名和界面内容，不能写成真实服务或性能证据。保留历史原型证据，同时单列本轮未通过/未运行项。
-3. 推送已审核的代码，再创建并推送 `v<version>` tag，例如 `v0.1.1` 或 `v0.2.0-beta.1`。版本 tag 触发 `.github/workflows/release.yml`；手动重跑必须选中同一个 tag，选择分支不会发布。
+3. 推送已审核的代码，再创建并推送 `v<version>` tag，例如 `v0.1.2` 或 `v0.2.0-beta.1`。版本 tag 触发 `.github/workflows/release.yml`；手动重跑必须选中同一个 tag，选择分支不会发布。
 4. 流水线先校验 tag、版本和签名配置，再通过 Windows/Linux 全部检查。`release-tag.mjs` 从 GitHub 精确 tag ref 解析真实 commit，包括有界解析 annotated tag，并与 workflow SHA 比较；上传前和公开前再次检查。官方 Tauri action 构建签名安装包、上传签名和 workflow artifacts，并合并生成 `latest.json` 到**草稿 Release**。正式矩阵顺序执行，避免两个 action 同时读写 updater manifest 时丢失平台条目。
 5. 两个平台均成功后，`scripts/release-verify.mjs` 核对完整的 NSIS/AppImage/DEB、支持的平台及官方别名、每个 updater URL、签名文件与 `latest.json` 的一致性、实际 tag commit 和构建 SHA。下载实际更新包，再通过 `strata-update-verifier` 使用应用内置公钥验证载荷、可信注释和签名中的版本；错误公钥、篡改或缺失签名均拒绝发布。通过后才自动公开；任何失败都保留草稿。
 6. 发布阶段使用仓库级队列锁，并在锁内完整检查已公开稳定版本。只有 SemVer 严格更高的稳定版本成为 latest；旧版本或等价版本仍可公开下载，但不替换更新通道。带 SemVer prerelease 的版本始终不覆盖稳定自动更新通道。公开状态和 latest 选择在同一次 PATCH 中提交；发布前再次核对真实 tag commit。
@@ -91,19 +91,25 @@ GitHub 对相对默认分支修改工作流的 `target_commitish` 要求额外�
 
 官网通过本仓库 GitHub Release 元数据优先选择最高稳定 SemVer；只有稳定版端点确认无发布时，才明确展示预览版手工安装入口。下载 URL 必须来自该版本实际返回的本仓库资产，缺少或无法核验的资产移除 `href` 并显示说明，不按文件名拼接备用下载地址。发布前运行 `node --test scripts/website-releases.test.mjs scripts/render-website-docs.test.mjs scripts/release-notes.test.mjs` 和 `node scripts/build-website.mjs`；这组网站/文档合同与实际安装包和 Tauri 更新验收分别记录。
 
-历史上 v0.1.0-beta.2 的[签名发布流水线](https://github.com/hongfaqiu/strata-manager/actions/runs/38080808731)已全绿并公开八项资产，源码为 `0db2fea5128144fe2fe00cca992bd5139c831508`；后续 main `ac16c4ce537b7e42e976c04791c3bad907f2c7ea` 的[两平台 CI](https://github.com/hongfaqiu/strata-manager/actions/runs/38088221840)已通过。它们不替代新 0.1.1 候选的门禁结果。
+历史上 v0.1.0-beta.2 的[签名发布流水线](https://github.com/hongfaqiu/strata-manager/actions/runs/38080808731)已全绿并公开八项资产，源码为 `0db2fea5128144fe2fe00cca992bd5139c831508`；后续 main `ac16c4ce537b7e42e976c04791c3bad907f2c7ea` 的[两平台 CI](https://github.com/hongfaqiu/strata-manager/actions/runs/38088221840)已通过。它们不替代新 0.1.2 候选的门禁结果。
 
 发布说明应分别列出 Windows 与 Linux 实际验证范围。Linux 工作流通过可以证明编译/夹具/打包，但不能证明该平台的实机 Job/进程树、注销登录、GPU 推理或模型容量；目前这些 Linux 验收仍待完成。缺 Python 的自动安装分支、长时间后台统计、完整 Agent/视觉/长上下文调优也应保留各自的验收边界。
 
-0.1.0 的 main CI（`ecb21a492fbe8acd285ec8ef33c58cbf4867607d`）通过，但签名 Release 的 Windows 原生测试在初次执行和一次定向重跑中分别未产生可靠调优推荐，publish 均跳过。`v0.1.0` 标签保持不变，草稿未公开。0.1.1 修复测试前置条件：保留真实 A/B/A 报告，在独立、显式标记的合成计时事务夹具中经原有评估器和公开应用门禁验证恢复逻辑；不放宽生产推荐阈值。首次 0.1.1 CI 随后发现成功完成报告被外层回调重复写入时间的竞态，修复成功终结逻辑并保留 exact 不变断言；该版本尚未打标签，需新源码全量通过后再发布。首次稳定版的 Windows 跨版本门禁仍使用不可变 beta.2 安装包，升级到 0.1.1。
+0.1.0 的 main CI（`ecb21a492fbe8acd285ec8ef33c58cbf4867607d`）通过，但签名 Release 的 Windows 原生测试在初次执行和一次定向重跑中分别未产生可靠调优推荐，publish 均跳过。`v0.1.0` 标签保持不变，草稿未公开。0.1.1 修复测试前置条件：保留真实 A/B/A 报告，在独立、显式标记的合成计时事务夹具中经原有评估器和公开应用门禁验证恢复逻辑；不放宽生产推荐阈值。首次 0.1.1 CI 随后发现成功完成报告被外层回调重复写入时间的竞态，修复成功终结逻辑并保留 exact 不变断言。
+
+修复后的源码 `33190cf6294ae11787f40b0f5fd6dc29e072cee3` 在 [main CI 38100739579](https://github.com/hongfaqiu/strata-manager/actions/runs/38100739579)两平台通过；创建 `v0.1.1` 后，[签名 Release 38102509861](https://github.com/hongfaqiu/strata-manager/actions/runs/38102509861)的 Windows 构建、安装及 beta.2 升级门禁成功，Linux 三项隔离后台生命周期测试在首次 IPC 就绪检查约 5.2 秒后失败，publish 跳过。`v0.1.1` 标签保持不变，未公开该版本，不移动旧 tag 或以旧成功记录替代新候选验收。
+
+现有失败日志未保留后台子进程退出状态或 stderr，实际启动失败原因未知。Linux 测试直接启动 Cargo 的 debug supervisor；该后台发布 IPC 前读取完整自身二进制计算 SHA256。多个后台并发冷启动的 CPU、内存或 I/O 竞争是待验证假设，不能据此断言 Secret Service 或共享缓存损坏。Release 已命中 main CI 的依赖缓存，且在测试前重新编译 debug supervisor；没有选择旧 release 二进制的证据。
+
+0.1.2 在两份 workflow 中串行运行完整 Linux 原生测试，并补充隔离后台启动诊断。原有测试、就绪期限、Clippy、安装升级、签名和发布门禁保持；共享 Rust 依赖缓存与串行 Release 矩阵继续使用。候选仍须完成同源码两平台 CI 和签名发布；首次稳定版的 Windows 跨版本门禁使用不可变 beta.2 安装包，升级到 0.1.2，不能替代客户端 Tauri updater 端到端验收。
 
 ## 验证发布结果
 
 ```sh
 gh run list --workflow release.yml
 gh run view <run-id> --log-failed
-gh release view v0.1.1 --json isDraft,isPrerelease,tagName,assets,url
-gh release download v0.1.1 --pattern latest.json --dir <temporary-directory>
+gh release view v0.1.2 --json isDraft,isPrerelease,tagName,assets,url
+gh release download v0.1.2 --pattern latest.json --dir <temporary-directory>
 ```
 
 确认 Release 已公开，三种安装包均有非零大小，Windows/Linux 的签名与 `latest.json` 条目匹配，URL 指向属于当前 Release 的资产。官方 action 可使用 GitHub release-asset API URL；验证脚本同样接受该格式并校验资产 ID。检查 Actions artifacts 可以辅助定位构建差异；真正面向用户的安装入口是公开 Release。

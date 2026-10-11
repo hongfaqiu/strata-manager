@@ -5,10 +5,11 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
-## [0.1.1]
+## [0.1.2]
 
 ### 中文
 
+- 在 CI 与签名发布中串行运行完整的 Linux 原生测试，避免多个隔离后台同时冷启动；补充启动失败的子进程与 IPC 诊断，保留原有断言、时间限制和发布门禁。
 - 调优报告成功完成后保留其完成时间，避免后台成功回调再次改写已完成的报告。
 - 现有 Windows 运行环境更新时保留配置，并恢复更新前正在运行的服务。
 - 改善 Windows 本机检测，避免已退出的临时 Python 进程干扰扫描；更新前再次核验实际服务、安装目录和监听归属。
@@ -36,6 +37,7 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### English
 
+- Run the complete Linux native tests serially in CI and signed releases to avoid simultaneous isolated background cold starts, and retain child-process and IPC startup diagnostics without weakening assertions, deadlines or release gates.
 - Preserve a successfully completed tuning report's completion time instead of rewriting it in the background success callback.
 - Preserve configurations and restore the previously running service when updating an existing Windows runtime.
 - Improve Windows local detection so exited temporary Python processes do not disrupt scans, and recheck the actual service, installation directory and listener ownership before an update.
@@ -60,6 +62,18 @@ Maintain both languages for each version. Move unreleased changes into the actua
 - Share configuration files between graphical and JSON editors, with save, copy and recoverable deletion.
 - Show the current model's complete configuration list from a floating entry, reveal actions on hover and support JSON deletion; protect unsaved edits and distinguish next-request changes from settings that require a restart.
 - Preview model files and disk usage before deletion, protecting running models and files referenced by other configurations.
+
+## [0.1.1] - Unpublished
+
+### 中文
+
+- 源码 `33190cf6294ae11787f40b0f5fd6dc29e072cee3` 的 [main CI 38100739579](https://github.com/hongfaqiu/strata-manager/actions/runs/38100739579)两平台通过；[签名 Release 38102509861](https://github.com/hongfaqiu/strata-manager/actions/runs/38102509861)的 Windows 构建与安装门禁成功，但 Linux 的三个隔离后台生命周期测试均在首次 IPC 就绪检查约 5.2 秒后失败，publish 跳过，此版本未公开。
+- 保留不可移动的 `v0.1.1` 标签与失败记录。旧夹具未记录子进程退出状态或 stderr，实际启动失败原因尚未确定；debug 后台在发布 IPC 前计算自身完整哈希，并发启动的资源竞争仅为待验证假设。修复使用新候选 0.1.2。
+
+### English
+
+- Both platforms passed [main CI 38100739579](https://github.com/hongfaqiu/strata-manager/actions/runs/38100739579) for source `33190cf6294ae11787f40b0f5fd6dc29e072cee3`. Windows build and installation gates passed in [signed Release 38102509861](https://github.com/hongfaqiu/strata-manager/actions/runs/38102509861), but all three isolated Linux background lifecycle tests failed at their initial IPC readiness check after about 5.2 seconds. Publish was skipped; this version was not published.
+- Keep the immutable `v0.1.1` tag and failure records. The previous fixture did not record child exit status or stderr, so the actual startup failure remains unknown. Concurrent resource contention while debug backgrounds hash their complete executables before publishing IPC is an unverified hypothesis. Continue fixes in candidate 0.1.2.
 
 ## [0.1.0] - Unpublished
 

@@ -124,7 +124,7 @@ jobs:
           UPDATE_VERIFIER_BIN: ${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/debug/strata-update-verifier${{ runner.os == 'Windows' && '.exe' || '' }}
         run: node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-assets.test.mjs scripts/release-publish.test.mjs scripts/preview-package-smoke.test.mjs scripts/download-upgrade-fixture.test.mjs
       - name: Verify the signed beta.2 installer for the first stable upgrade
-        if: runner.os == 'Windows' && needs.validate.outputs.version == '0.1.1'
+        if: runner.os == 'Windows' && needs.validate.outputs.version == '0.1.2'
         id: upgrade-fixture
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -141,7 +141,7 @@ jobs:
       - name: Native tests under Xvfb (Linux)
         if: runner.os == 'Linux'
         run: |
-          dbus-run-session -- xvfb-run -a bash scripts/release-linux-tests.sh cargo test --workspace --locked --target ${{ matrix.target }}
+          dbus-run-session -- xvfb-run -a bash scripts/release-linux-tests.sh cargo test --workspace --locked --target ${{ matrix.target }} -- --test-threads=1
       - run: cargo clippy --workspace --locked --all-targets --target ${{ matrix.target }} -- -D warnings
       - run: node scripts/prepare-sidecar.mjs --profile release --target ${{ matrix.target }}
       - name: Recheck the unpublished release and source before uploading assets
@@ -182,7 +182,7 @@ jobs:
         if: runner.os == 'Windows'
         run: node scripts/preview-package-smoke.mjs --bundle-dir "${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/release/bundle" --version "${{ needs.validate.outputs.version }}"
       - name: Verify beta.2 to first stable upgrade and retained application data
-        if: runner.os == 'Windows' && needs.validate.outputs.version == '0.1.1'
+        if: runner.os == 'Windows' && needs.validate.outputs.version == '0.1.2'
         env:
           UPGRADE_FROM_INSTALLER: ${{ steps.upgrade-fixture.outputs.installer }}
           UPGRADE_FROM_VERSION: ${{ steps.upgrade-fixture.outputs.version }}

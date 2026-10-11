@@ -6,7 +6,7 @@
 
 Strata Manager 是开源的 Strata 运行环境与本地模型服务管理桌面工作台，核心是 Strata 安装与匹配的 Windows x64 ZIP 引擎更新、模型运行配置，以及服务启动、停止和恢复；聊天、监控、API 使用统计与调优是配套工具。它是独立社区项目，推理能力、模型、图像输入、思考、MCP 工具与 API 协议由已安装的 Strata 和模型提供。
 
-本指南描述 0.1.1 源码；安装包是否已发布及内容以[发布页](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.1)为准，未冻结候选尚需最终 CI 和发布验收。先在 Strata 页面检查运行环境，再从“模型 → 我的模型”选择配置并点击“使用”，等待“模型可用”后聊天或连接本机 API。应用管理这台电脑上的受支持安装，已有权重保持原位；不管理远程节点。
+本指南描述 0.1.2 源码；安装包是否已发布及内容以[发布页](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.2)为准，未冻结候选尚需最终 CI 和发布验收。先在 Strata 页面检查运行环境，再从“模型 → 我的模型”选择配置并点击“使用”，等待“模型可用”后聊天或连接本机 API。应用管理这台电脑上的受支持安装，已有权重保持原位；不管理远程节点。
 
 ## 第一次使用
 
@@ -141,7 +141,7 @@ HTTP 请求、模型推理轮次和工具调用分别计数。一次 MCP 请求�
 
 设置中的自动检查默认开启，在打开应用及每 12 小时检查新版本。发现更新后直接展示该版本的 Release 日志原文，由你确认下载和安装。也可以关闭自动检查，手动检查更新。失败时保留当前版本并提供重试；安装前检查后台是否空闲。正式应用更新使用内置公钥验证 Tauri 签名，下载有进度显示；应用、Strata 运行环境和模型权重分别管理，更新应用无需重新下载模型。
 
-v0.1.1 发布入口提供 [Windows 安装包](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.1/Strata.Manager_0.1.1_x64-setup.exe)、[AppImage](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.1/Strata.Manager_0.1.1_amd64.AppImage) 或 [DEB](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.1/Strata.Manager_0.1.1_amd64.deb)，并核对 [SHA256SUMS](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.1/SHA256SUMS)。实际安装包以发布页为准。稳定版使用 `latest` 更新通道，预览版只手工下载且不替换该通道；未检测到 beta 不代表当前预览版已经最新。
+v0.1.2 发布入口提供 [Windows 安装包](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.2/Strata.Manager_0.1.2_x64-setup.exe)、[AppImage](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.2/Strata.Manager_0.1.2_amd64.AppImage) 或 [DEB](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.2/Strata.Manager_0.1.2_amd64.deb)，并核对 [SHA256SUMS](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.2/SHA256SUMS)。实际安装包以发布页为准。稳定版使用 `latest` 更新通道，预览版只手工下载且不替换该通道；未检测到 beta 不代表当前预览版已经最新。
 
 版本、安装包和当前支持范围见[下载与体验](DOWNLOAD.md)。Tauri 更新签名与 Windows 发布者代码签名不同，本项目目前没有 Windows Authenticode 发布者证书；请按下载说明处理系统的安装提示。
 
