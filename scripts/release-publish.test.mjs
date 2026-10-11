@@ -111,11 +111,16 @@ test('an unexpected PATCH response is reported without retrying or mutating a ta
 
 test('the workflow queues every publication without replacing pending tags and retains all gates', async () => {
   const workflow = await readFile(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
-  const publication = workflow.slice(workflow.indexOf('\n  publish:'));
-  assert.match(publication, /needs: \[validate, build\]/);
-  assert.match(publication, /concurrency:\s*\n\s*group: release-publish-\$\{\{ github\.repository \}\}\s*\n\s*queue: max\s*\n\s*cancel-in-progress: false/);
-  assert.ok(publication.indexOf('node scripts/release-verify.mjs') < publication.indexOf('node scripts/release-publish.mjs'));
-  assert.doesNotMatch(publication, /gh release edit|--latest/);
-  assert.match(workflow, /releaseCommitish: \$\{\{ github\.event\.repository\.default_branch \}\}/);
-  assert.match(workflow, /max-parallel: 1/);
+  const reusable = await readFile(new URL('../.github/workflows/release-from-ci.yml', import.meta.url), 'utf8');
+  const helper = await readFile(new URL('./release-from-ci.mjs', import.meta.url), 'utf8');
+  assert.match(workflow, /uses: \.\/\.github\/workflows\/release-from-ci\.yml/);
+  const publication = reusable.slice(reusable.indexOf('\n  promote:'));
+  assert.match(publication, /needs: resolve/);
+  assert.match(publication, /concurrency:\s*\n\s*group: .*format\('release-publish-\{0\}', github\.repository\).*\n\s*queue: max\s*\n\s*cancel-in-progress: false/);
+  assert.ok(publication.indexOf('node scripts/release-from-ci.mjs prepare') < publication.indexOf('node scripts/release-from-ci.mjs sign'));
+  assert.ok(publication.indexOf('node scripts/release-from-ci.mjs sign') < publication.indexOf('node scripts/release-from-ci.mjs publish'));
+  assert.ok(helper.indexOf("c.modules['release-verify'].verifyRelease") < helper.indexOf("c.modules['release-publish'].publishRelease"));
+  assert.doesNotMatch(publication + helper, /gh release edit|--latest/);
+  assert.match(helper, /default_branch/);
+  assert.doesNotMatch(publication, /matrix:|tauri-apps\/tauri-action/);
 });

@@ -1,207 +1,372 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import {
-  PLAN, validateCiEvidence, validateInstallerEntries, validateLiveWriters,
-  validateLatestManifest, validateReleaseInventory,
+  CI_PROTOCOL, REPOSITORY, COMMON_GATES, PLATFORM_GATES, SHARD_GATES, createPlan, assetNames,
+  validateSourceProtocol, validateCiEvidence, validateInstallerEntries, validateLiveWriters,
+  validateLatestManifest, validateReleaseInventory, validateReleaseMetadata, creationBranch,
+  requireSourceRelease, validatePreparedRecord, readPrepared,
+  findReusableCi, inventory, WRITER_JOBS, validateWriterProtocol,
 } from './release-from-ci.mjs';
 
 const clone = value => structuredClone(value);
-const successfulStep = name => ({ name, status: 'completed', conclusion: 'success' });
-
-function ciFixture() {
-  const run = {
-    id: PLAN.runId, name: 'Build and test', path: PLAN.workflowPath,
-    event: 'workflow_dispatch', status: 'completed', conclusion: 'success',
-    head_sha: PLAN.sourceSha, run_attempt: 1,
-    repository: { full_name: PLAN.repository },
-    head_repository: { full_name: PLAN.repository },
-  };
+const hash = value => createHash('sha256').update(value).digest('hex');
+const makePlan = (version = '0.2.0') => createPlan({
+  tag: 'v' + version, version, sourceSha: 'a'.repeat(40), productName: 'Strata Manager',
+});
+const plan = makePlan();
+function ciFixture(p = plan, runId = 123) {
+  const run = { id: runId, path: p.workflowPath, event: 'workflow_dispatch', status: 'completed',
+    conclusion: 'success', head_sha: p.sourceSha, run_attempt: 2, created_at: '2026-01-01T00:00:00Z',
+    repository: { full_name: p.repository }, head_repository: { full_name: p.repository } };
+  const job = (name, gates, id) => ({ id, run_id: runId, run_attempt: 2, name, status: 'completed',
+    conclusion: 'success', started_at: '2026-01-01T00:00:00Z', completed_at: '2026-01-01T00:10:00Z',
+    steps: gates.map(name => ({ name, status: 'completed', conclusion: 'success' })) });
   const jobs = [
-    {
-      name: 'desktop (windows-latest, x86_64-pc-windows-msvc, nsis)',
-      status: 'completed', conclusion: 'success',
-      steps: [
-        'Native tests (Windows)', 'Rust checks', 'Build test installers',
-        'Verify installed Windows package and background IPC',
-      ].map(successfulStep),
-    },
-    {
-      name: 'desktop (ubuntu-22.04, x86_64-unknown-linux-gnu, appimage,deb)',
-      status: 'completed', conclusion: 'success',
-      steps: [
-        'Native tests under Xvfb (Linux)', 'Rust checks', 'Build test installers',
-        'Linux Secret Service wrapper contracts',
-        'Build the pinned private Linux test keyring',
-        'Linux Secret Service fresh-connection regression',
-        'Verify Linux AppImage and DEB startup under Xvfb',
-      ].map(successfulStep),
-    },
+    job('desktop (windows-latest, x86_64-pc-windows-msvc, nsis)', [...COMMON_GATES, ...PLATFORM_GATES.windows], 10),
+    job('desktop (ubuntu-22.04, x86_64-unknown-linux-gnu, appimage,deb)', [...COMMON_GATES, ...PLATFORM_GATES.linux], 11),
+    ...[0, 1, 2].map(i => job('Linux native shard (' + i + '/3)', SHARD_GATES, 20 + i)),
   ];
-  const artifacts = PLAN.artifacts.map(artifact => ({
-    id: artifact.id, name: artifact.name, digest: `sha256:${artifact.sha256}`,
-    expired: false, size_in_bytes: 4096,
-    workflow_run: { id: PLAN.runId, head_sha: PLAN.sourceSha },
-  }));
+  if (p.version === '0.1.2') jobs[0].steps.push(...[
+    'Verify the signed beta.2 installer for the first stable upgrade',
+    'Verify beta.2 to first stable upgrade and retained application data',
+  ].map(name => ({ name, status: 'completed', conclusion: 'success' })));
+  const artifacts = p.artifacts.map((a, i) => ({ id: 100 + i, name: a.name,
+    size_in_bytes: 10, digest: 'sha256:' + String(i + 1).repeat(64), expired: false,
+    created_at: '2026-01-01T00:05:00Z', expires_at: '2099-01-01T00:00:00Z',
+    workflow_run: { id: runId, head_sha: p.sourceSha } }));
   return { run, jobs, artifacts };
 }
+const boundPlan = p => { const f = ciFixture(p); return validateCiEvidence(f.run, f.jobs, f.artifacts, p); };
 
-test('the promotion plan is bound to the tested source and three artifact identities', () => {
-  assert.equal(PLAN.repository, 'hongfaqiu/strata-manager');
-  assert.equal(PLAN.sourceSha, 'ec0797dc06fc833cb5ebf433ecfb71b4c113767c');
-  assert.equal(PLAN.tag, 'v0.1.3');
-  assert.equal(PLAN.version, '0.1.3');
-  assert.equal(PLAN.runId, 38159155279);
-  assert.deepEqual(PLAN.artifacts.map(item => [item.id, item.sha256]), [
-    [11709972517, '3150b9795da86427a49e0407141bf0b28ef71d212dc6ea155460bcea561bbc2e'],
-    [11710157903, '85dd7aa50f8bd6a4029f6fb8f1186cd880f17213741c350d72129bfd11c300e7'],
-    [11710068043, 'd9f90edcadf588bf57edad7f6fc6df19af56b66896f40185f5f94a5c57203d52'],
-  ]);
+test('plan derives current version, product, architecture and prerelease without fixed run or hashes', () => {
+  for (const version of ['0.1.3', '0.2.0', '1.4.3-rc.1', '1.4.3+build.2']) {
+    const p = makePlan(version);
+    assert.equal(p.tag, 'v' + version);
+    assert.equal(p.prerelease, version.includes('-rc.'));
+    assert.equal(p.artifacts[0].installer, 'Strata.Manager_' + version + '_x64-setup.exe');
+    assert.equal(p.artifacts[1].id, undefined);
+  }
 });
-
-test('complete same-source CI with all native, package and smoke gates is accepted', () => {
-  const { run, jobs, artifacts } = ciFixture();
-  assert.equal(validateCiEvidence(run, jobs, artifacts), true);
+test('unsafe source, version, tag and product inputs are rejected', () => {
+  for (const override of [
+    { version: '01.2.0' }, { tag: 'v0.1.3' }, { sourceSha: 'abc' },
+    { repository: 'fork/repo' }, { runId: -1 }, { productName: '../bad' },
+    { productName: 'Strata:Manager' }, { productName: 'bad..name' },
+  ]) assert.throws(() => createPlan({ ...plan, ...override }));
 });
-
-const invalidCiCases = [
-  ['another source commit', fixture => { fixture.run.head_sha = 'a'.repeat(40); }],
-  ['another run', fixture => { fixture.run.id += 1; }],
-  ['a pull-request run', fixture => { fixture.run.event = 'pull_request'; }],
-  ['another workflow', fixture => { fixture.run.path = '.github/workflows/release.yml'; }],
-  ['a fork source', fixture => { fixture.run.head_repository.full_name = 'someone/strata-manager'; }],
-  ['a partial whole run', fixture => { fixture.run.status = 'in_progress'; fixture.run.conclusion = null; }],
-  ['a failed whole run', fixture => { fixture.run.conclusion = 'failure'; }],
-  ['a missing platform job', fixture => { fixture.jobs.pop(); }],
-  ['a queued platform job', fixture => { fixture.jobs[1].status = 'queued'; }],
-  ['failed native tests', fixture => { fixture.jobs[0].steps[0].conclusion = 'failure'; }],
-  ['skipped clippy', fixture => { fixture.jobs[1].steps[1].conclusion = 'skipped'; }],
-  ['a missing package smoke', fixture => { fixture.jobs[1].steps.pop(); }],
-  ['a wrong artifact ID', fixture => { fixture.artifacts[0].id += 1; }],
-  ['a wrong ZIP digest', fixture => { fixture.artifacts[1].digest = `sha256:${'f'.repeat(64)}`; }],
-  ['an expired artifact', fixture => { fixture.artifacts[2].expired = true; }],
-  ['an artifact from another run', fixture => { fixture.artifacts[0].workflow_run.id += 1; }],
-  ['a missing artifact', fixture => { fixture.artifacts.pop(); }],
-  ['a duplicate artifact', fixture => { fixture.artifacts.push(clone(fixture.artifacts[0])); }],
-];
-for (const [label, mutate] of invalidCiCases) {
-  test(`CI refuses ${label}`, () => {
-    const fixture = ciFixture();
-    mutate(fixture);
-    assert.throws(() => validateCiEvidence(fixture.run, fixture.jobs, fixture.artifacts));
+test('source protocol explicitly rejects old fixed release and missing CI marker', () => {
+  const helper = "export const CI_PROTOCOL = '" + CI_PROTOCOL + "';";
+  const ci = 'name: Reusable release CI protocol\nrun: node scripts/release-from-ci.mjs protocol';
+  assert.equal(validateSourceProtocol(helper, ci), true);
+  assert.throws(() => validateSourceProtocol('export const PLAN = {}', ci), /protocol/);
+  assert.throws(() => validateSourceProtocol(helper, 'node scripts/release-check.mjs'), /protocol/);
+});
+test('normal preflight silently binds actual tag and refuses public/moved tags before resolving or downloading CI', async () => {
+  const calls = [];
+  await requireSourceRelease(plan, {
+    requireTag: async (...args) => { calls.push(['tag', ...args]); },
+    requireWritable: async options => {
+      calls.push(['writable', options.repository, options.tag, options.expectedSha, options.requireDraft]);
+      assert.equal(options.logger('must stay silent'), undefined);
+    },
   });
-}
-
-function entryFixture(artifact = PLAN.artifacts[0]) {
-  return { name: artifact.installer, size: artifact.installerSize, compressedSize: 2048,
-    mode: 0o100644, isDirectory: false, encrypted: false };
-}
-
-test('ZIP selection accepts each fixed installer without executing its contents', () => {
-  for (const artifact of PLAN.artifacts) {
-    const selected = validateInstallerEntries([entryFixture(artifact)], artifact);
-    assert.equal(selected.name, artifact.installer);
-  }
+  assert.deepEqual(calls, [['tag', REPOSITORY, plan.tag, plan.sourceSha],
+    ['writable', REPOSITORY, plan.tag, plan.sourceSha, false]]);
+  await assert.rejects(requireSourceRelease(plan, {
+    requireTag: async () => { throw new Error('moved tag'); },
+    requireWritable: async () => assert.fail('tag failure must stop preflight'),
+  }), /moved tag/);
+  await assert.rejects(requireSourceRelease(plan, {
+    requireTag: async () => {}, requireWritable: async () => { throw new Error('public release'); },
+  }), /public release/);
 });
-
-const invalidZipCases = [
-  ['parent traversal', entry => { entry.name = `../${entry.name}`; }],
-  ['absolute paths', entry => { entry.name = `/${entry.name}`; }],
-  ['Windows traversal separators', entry => { entry.name = `..\\${entry.name}`; }],
-  ['symbolic links', entry => { entry.mode = 0o120777; }],
-  ['directories', entry => { entry.isDirectory = true; }],
-  ['encrypted data', entry => { entry.encrypted = true; }],
-  ['empty payloads', entry => { entry.size = 0; }],
-  ['unbounded payload sizes', entry => { entry.size = Number.MAX_SAFE_INTEGER; }],
-  ['a stale installer version', entry => { entry.name = entry.name.replace('0.1.3', '0.1.2'); }],
-];
-for (const [label, mutate] of invalidZipCases) {
-  test(`ZIP refuses ${label}`, () => {
-    const entry = entryFixture();
-    mutate(entry);
-    assert.throws(() => validateInstallerEntries([entry], PLAN.artifacts[0]));
+test('validation-only source rehearsal never consults a historical tag or release', async () => {
+  await requireSourceRelease(plan, { validateOnly: true,
+    requireTag: async () => assert.fail('no tag binding in rehearsal'),
+    requireWritable: async () => assert.fail('no release write guard in rehearsal'),
   });
-}
-test('ZIP refuses duplicate installers and unrelated executable files', () => {
-  const entry = entryFixture();
-  assert.throws(() => validateInstallerEntries([entry, clone(entry)], PLAN.artifacts[0]));
-  assert.throws(() => validateInstallerEntries([entry, { ...entry, name: 'extra.exe' }], PLAN.artifacts[0]));
 });
-
-function completedFormalRun() {
-  return { id: PLAN.formalRunId, path: '.github/workflows/release.yml',
-    head_branch: PLAN.tag, head_sha: PLAN.sourceSha, status: 'completed', conclusion: 'cancelled' };
-}
-test('writer checks accept a finished old release and exclude only their own run', () => {
-  const ownRunId = 9999;
-  const own = { id: ownRunId, path: '.github/workflows/release-from-ci.yml', status: 'in_progress' };
-  assert.equal(validateLiveWriters([completedFormalRun(), own], ownRunId), true);
+test('new draft uses the verified repository default branch only as its creation hint', () => {
+  assert.equal(creationBranch({ full_name: REPOSITORY, default_branch: 'main' }), 'main');
+  assert.equal(creationBranch({ full_name: REPOSITORY, default_branch: 'release/next' }), 'release/next');
+  assert.throws(() => creationBranch({ full_name: 'fork/repo', default_branch: 'main' }));
+  assert.throws(() => creationBranch({ full_name: REPOSITORY, default_branch: '' }));
+  assert.throws(() => creationBranch({ full_name: REPOSITORY, default_branch: 'main\n' }));
 });
-test('writer checks reject queued original and independent concurrent writers', () => {
-  assert.throws(() => validateLiveWriters([{ ...completedFormalRun(), status: 'queued' }], 9999));
-  assert.throws(() => validateLiveWriters([completedFormalRun(), {
-    id: 10000, path: '.github/workflows/release.yml', head_branch: PLAN.tag,
-    head_sha: PLAN.sourceSha, status: 'in_progress',
-  }], 9999));
-  assert.throws(() => validateLiveWriters([completedFormalRun(), {
-    id: 10000, path: '.github/workflows/release-from-ci.yml', status: 'queued',
-  }], 9999));
-});
-
-function releaseFixture() {
-  let nextId = 1;
-  const assets = [];
-  const updates = {};
-  for (const artifact of PLAN.artifacts) {
-    const signatureText = Buffer.from(`public-signature-fixture-${artifact.kind}`).toString('base64');
-    assets.push({ id: nextId++, name: artifact.installer, size: 4096 });
-    assets.push({ id: nextId++, name: `${artifact.installer}.sig`, size: 128, signatureText });
-    updates[artifact.kind] = { signature: signatureText,
-      url: `https://github.com/${PLAN.repository}/releases/download/${PLAN.tag}/${encodeURIComponent(artifact.installer)}` };
-  }
-  assets.push({ id: nextId++, name: 'latest.json', size: 1024 });
-  assets.push({ id: nextId++, name: 'SHA256SUMS', size: 512 });
-  const manifest = { version: PLAN.version, notes: 'Release test fixture',
-    pub_date: '2026-10-12T00:00:00Z', platforms: {
-      'windows-x86_64': clone(updates.windows),
-      'windows-x86_64-nsis': clone(updates.windows),
-      'linux-x86_64': clone(updates.appimage),
-      'linux-x86_64-appimage': clone(updates.appimage),
-      'linux-x86_64-deb': clone(updates.deb),
-    } };
-  return { manifest, release: { id: 123, tag_name: PLAN.tag, draft: true, prerelease: false, assets } };
-}
-
-test('exact eight-asset draft and all five canonical updater entries are accepted', () => {
-  const { manifest, release } = releaseFixture();
-  assert.equal(validateLatestManifest(manifest, release.assets), true);
-  assert.equal(validateReleaseInventory(release), true);
-});
-test('updater refuses changed versions, external URLs, missing DEB and signature substitution', () => {
-  for (const mutate of [
-    manifest => { manifest.version = '0.1.4'; },
-    manifest => { manifest.platforms['windows-x86_64'].url = 'https://example.org/package.exe'; },
-    manifest => { delete manifest.platforms['linux-x86_64-deb']; },
-    manifest => { manifest.platforms['linux-x86_64-appimage'].signature = 'different-public-signature'; },
-    manifest => { manifest.platforms['linux-x86_64-deb'].url = manifest.platforms['linux-x86_64'].url; },
-  ]) {
-    const { manifest, release } = releaseFixture();
-    mutate(manifest);
-    assert.throws(() => validateLatestManifest(manifest, release.assets));
+test('complete trusted push or dispatch binds dynamically discovered IDs, digest and current attempt', () => {
+  for (const event of ['push', 'workflow_dispatch']) {
+    const f = ciFixture(); f.run.event = event;
+    const p = validateCiEvidence(f.run, f.jobs, f.artifacts, plan);
+    assert.equal(p.runId, 123); assert.equal(p.runAttempt, 2);
+    assert.deepEqual(p.artifacts.map(a => a.id), [100, 101, 102]);
+    assert.equal(p.artifacts[0].sha256, '1'.repeat(64));
   }
 });
-test('release inventory refuses public releases, prereleases and every eight-asset deviation', () => {
-  for (const mutate of [
-    release => { release.draft = false; },
-    release => { release.prerelease = true; },
-    release => { release.tag_name = 'v0.1.2'; },
-    release => { release.assets.pop(); },
-    release => { release.assets.push({ id: 100, name: 'README.md', size: 1 }); },
-    release => { release.assets[1].name = release.assets[0].name; },
-    release => { release.assets[0].size = 0; },
-    release => { release.assets[0].id = 0; },
-  ]) {
-    const { release } = releaseFixture();
-    mutate(release);
-    assert.throws(() => validateReleaseInventory(release));
+const invalidCi = [
+  ['wrong source', f => { f.run.head_sha = 'b'.repeat(40); }],
+  ['fork', f => { f.run.head_repository.full_name = 'fork/repo'; }],
+  ['pull request', f => { f.run.event = 'pull_request'; }],
+  ['wrong workflow', f => { f.run.path = '.github/workflows/release.yml'; }],
+  ['pending whole CI', f => { f.run.status = 'in_progress'; }],
+  ['failed whole CI', f => { f.run.conclusion = 'failure'; }],
+  ['missing desktop', f => { f.jobs.shift(); }],
+  ['duplicate desktop', f => { f.jobs.push(clone(f.jobs[0])); }],
+  ['missing shard', f => { f.jobs.pop(); }],
+  ['skipped shard', f => { f.jobs[3].conclusion = 'skipped'; }],
+  ['old job attempt', f => { f.jobs[0].run_attempt = 1; }],
+  ['wrong job run', f => { f.jobs[0].run_id = 124; }],
+  ['missing fixture guard', f => { f.jobs[0].steps = f.jobs[0].steps.filter(s => s.name !== COMMON_GATES[1]); }],
+  ['skipped clippy', f => { f.jobs[1].steps.find(s => s.name === 'Rust checks').conclusion = 'skipped'; }],
+  ['failed smoke', f => { f.jobs[0].steps.at(-1).conclusion = 'failure'; }],
+  ['missing provider test', f => { f.jobs[1].steps = f.jobs[1].steps.filter(s => s.name !== PLATFORM_GATES.linux[2]); }],
+  ['missing artifact', f => { f.artifacts.pop(); }],
+  ['duplicate artifact', f => { f.artifacts.push(clone(f.artifacts[0])); }],
+  ['duplicate ID', f => { f.artifacts[1].id = f.artifacts[0].id; }],
+  ['wrong artifact run', f => { f.artifacts[0].workflow_run.id = 124; }],
+  ['wrong artifact source', f => { f.artifacts[0].workflow_run.head_sha = 'c'.repeat(40); }],
+  ['absent hard digest', f => { f.artifacts[0].digest = null; }],
+  ['expired flag', f => { f.artifacts[0].expired = true; }],
+  ['expired timestamp', f => { f.artifacts[0].expires_at = '2000-01-01T00:00:00Z'; }],
+  ['old attempt artifact', f => { f.artifacts[0].created_at = '2025-12-31T23:00:00Z'; }],
+  ['future artifact', f => { f.artifacts[0].created_at = '2026-01-01T00:11:00Z'; }],
+  ['unbounded ZIP', f => { f.artifacts[0].size_in_bytes = 1024 ** 3; }],
+];
+for (const [label, change] of invalidCi) test('CI refuses ' + label, () => {
+  const f = ciFixture(); change(f);
+  assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, plan));
+});
+test('every required shared and platform gate fails closed independently', () => {
+  for (const [position, gates] of [[0, [...COMMON_GATES, ...PLATFORM_GATES.windows]], [1, [...COMMON_GATES, ...PLATFORM_GATES.linux]]]) {
+    for (const name of gates) {
+      const f = ciFixture(); f.jobs[position].steps.find(s => s.name === name).conclusion = 'skipped';
+      assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, plan), new RegExp(name.replace(/[()[\]]/g, '\\$&')));
+    }
   }
+});
+test('first stable 0.1.2 still requires both real upgrade gates', () => {
+  const p = makePlan('0.1.2'); const f = ciFixture(p);
+  assert.equal(validateCiEvidence(f.run, f.jobs, f.artifacts, p).version, '0.1.2');
+  f.jobs[0].steps.pop(); assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, p));
+});
+test('each native shard requires every real test, private keyring and coverage upload step', () => {
+  for (let index = 2; index < 5; index++) for (const name of SHARD_GATES) {
+    const f = ciFixture();
+    f.jobs[index].steps.find(s => s.name === name).conclusion = 'skipped';
+    assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, plan), /shard gate/);
+  }
+});
+function zipEntry(a = plan.artifacts[0]) {
+  return { name: a.installer,
+    size: 10, compressedSize: 8, mode: 0o100644, isDirectory: false, encrypted: false };
+}
+test('ZIP accepts precisely one current product/version/arch regular installer with product spaces', () => {
+  for (const a of plan.artifacts) {
+    const e = { ...zipEntry(a), name: a.installer.replace('Strata.Manager', 'Strata Manager') };
+    assert.equal(validateInstallerEntries([e], a), e);
+  }
+});
+for (const [label, change] of [
+  ['parent path', e => { e.name = '../' + e.name; }],
+  ['absolute path', e => { e.name = '/' + e.name; }],
+  ['Windows traversal', e => { e.name = '..\\' + e.name; }],
+  ['symlink', e => { e.mode = 0o120777; }],
+  ['directory', e => { e.isDirectory = true; }],
+  ['encrypted', e => { e.encrypted = true; }],
+  ['empty', e => { e.size = 0; }],
+  ['oversize', e => { e.size = 1024 ** 3; }],
+  ['wrong version', e => { e.name = e.name.replace('0.2.0', '0.1.3'); }],
+  ['wrong arch', e => { e.name = e.name.replace('x64', 'arm64'); }],
+  ['wrong product', e => { e.name = e.name.replace('Strata', 'Other'); }],
+]) test('ZIP refuses ' + label, () => {
+  const e = { ...zipEntry(), name: plan.artifacts[0].installer }; change(e);
+  assert.throws(() => validateInstallerEntries([e], plan.artifacts[0]));
+});
+test('ZIP refuses extras and duplicate installers', () => {
+  const e = { ...zipEntry(), name: plan.artifacts[0].installer };
+  assert.throws(() => validateInstallerEntries([e, e], plan.artifacts[0]));
+  assert.throws(() => validateInstallerEntries([e, { ...e, name: 'unrelated.exe' }], plan.artifacts[0]));
+});
+test('writer checks exclude own run and completed releases but fail closed for unknown current jobs', () => {
+  const old = { id: 1, path: '.github/workflows/release.yml', head_branch: plan.tag, status: 'completed' };
+  const own = { id: 2, path: '.github/workflows/release-from-ci.yml', status: 'in_progress' };
+  assert.equal(validateLiveWriters([old, own], plan, 2), true);
+  assert.throws(() => validateLiveWriters([{ ...old, status: 'queued' }], plan, 2));
+  assert.throws(() => validateLiveWriters([{ ...own, id: 4 }], plan, 2));
+});
+function writerRun({ caller = false, tag = plan.tag, state = 'queued', role = 'publisher' } = {}) {
+  const id = 5;
+  return { id, run_attempt: 2, path: '.github/workflows/' + (caller ? 'release.yml' : 'release-from-ci.yml'),
+    head_branch: tag, status: 'in_progress', writerJobs: [{
+      id: 50, run_id: id, run_attempt: 2, name: (caller ? 'release / ' : '') + WRITER_JOBS[role], status: state,
+    }] };
+}
+test('same/different tag publisher queues and caller prefixes permit the actual global lock owner', () => {
+  for (const caller of [false, true]) for (const tag of [plan.tag, 'v0.1.3']) {
+    for (const state of ['queued', 'waiting', 'pending', 'requested', 'completed']) {
+      assert.equal(validateLiveWriters([writerRun({ caller, tag, state })], plan, 2), true);
+    }
+  }
+});
+test('resolvers awaiting CI and read-only validations do not write release assets', () => {
+  for (const caller of [false, true]) for (const role of ['resolver', 'validation']) {
+    assert.equal(validateLiveWriters([writerRun({ caller, role, state: 'in_progress' })], plan, 2), true);
+  }
+});
+test('an actual in-progress publisher or old active build blocks writes regardless of run-level queue status', () => {
+  for (const caller of [false, true]) {
+    const run = writerRun({ caller, state: 'in_progress' });
+    assert.throws(() => validateLiveWriters([run], plan, 2), /active release writer/);
+    run.status = 'waiting';
+    assert.throws(() => validateLiveWriters([run], plan, 2), /active release writer/);
+    run.writerJobs[0].name = 'build';
+    assert.throws(() => validateLiveWriters([run], plan, 2), /Unknown active release job/);
+  }
+});
+test('empty whole-run queues need the pinned new lock protocol, never a guessed run status', () => {
+  const run = { ...writerRun(), status: 'queued', writerJobs: [] };
+  assert.throws(() => validateLiveWriters([run], plan, 2), /unidentifiable/);
+  assert.equal(validateLiveWriters([{ ...run, writerProtocolVerified: true }], plan, 2), true);
+  assert.throws(() => validateLiveWriters([{ ...run, status: 'in_progress', writerProtocolVerified: true }], plan, 2), /unidentifiable/);
+  const workflow = 'name: ' + WRITER_JOBS.resolver + '\n' + WRITER_JOBS.publisher + '\n' + WRITER_JOBS.validation
+    + "\nformat('release-publish-{0}', github.repository)";
+  assert.equal(validateWriterProtocol(workflow), true);
+  assert.equal(validateWriterProtocol(workflow.replace('release-publish-{0}', 'legacy-tag-only')), false);
+  assert.equal(validateWriterProtocol('jobs:\n build:'), false);
+});
+test('malformed attempt, unknown/duplicate jobs or invalid job states fail closed', () => {
+  for (const change of [
+    r => { r.run_attempt = null; }, r => { r.writerJobs[0].run_id++; },
+    r => { r.writerJobs[0].run_attempt--; }, r => { r.writerJobs[0].name = 'old publish'; },
+    r => { r.writerJobs[0].status = 'unknown'; }, r => { r.writerJobs.push(clone(r.writerJobs[0])); },
+  ]) { const run = writerRun(); change(run); assert.throws(() => validateLiveWriters([run], plan, 2)); }
+});
+function releaseFixture(p = plan) {
+  let id = 1;
+  const assets = p.artifacts.flatMap(a => [{ id: id++, name: a.installer, size: 10 },
+    { id: id++, name: a.installer + '.sig', size: 10, signatureText: 'fixture-' + a.kind }]);
+  assets.push({ id: id++, name: 'latest.json', size: 10 }, { id: id++, name: 'SHA256SUMS', size: 10 });
+  const entry = i => ({ signature: 'fixture-' + p.artifacts[i].kind, url: 'https://github.com/' + REPOSITORY + '/releases/download/' + encodeURIComponent(p.tag) + '/' + encodeURIComponent(p.artifacts[i].installer) });
+  return { release: { id: 4, tag_name: p.tag, draft: true, prerelease: p.prerelease, assets },
+    manifest: { version: p.version, platforms: {
+      'windows-x86_64': entry(0), 'windows-x86_64-nsis': entry(0), 'linux-x86_64': entry(1),
+      'linux-x86_64-appimage': entry(1), 'linux-x86_64-deb': entry(2),
+    } } };
+}
+test('exact stable/prerelease draft and five updater aliases are version-specific', () => {
+  for (const p of [plan, makePlan('1.0.0-rc.1'), makePlan('1.0.0+build.3')]) {
+    const f = releaseFixture(p);
+    assert.equal(validateReleaseInventory(f.release, p), true);
+    assert.equal(validateLatestManifest(f.manifest, f.release.assets, p), true);
+  }
+});
+test('an actual new empty draft can start from zero; public releases cannot be overwritten', () => {
+  const f = releaseFixture(); f.release.assets = [];
+  assert.equal(validateReleaseInventory(f.release, plan, { allowPartial: true }), true);
+  assert.throws(() => validateReleaseInventory(f.release, plan));
+  f.release.draft = false;
+  assert.throws(() => validateReleaseInventory(f.release, plan, { allowPartial: true }));
+});
+test('refreshed draft source notes and name cannot drift before publication', () => {
+  const release = { name: plan.productName + ' ' + plan.tag, body: 'Current source notes' };
+  assert.equal(validateReleaseMetadata(release, plan, release.body), true);
+  assert.throws(() => validateReleaseMetadata({ ...release, body: 'Legacy notes' }, plan, release.body));
+  assert.throws(() => validateReleaseMetadata({ ...release, name: 'Legacy release' }, plan, release.body));
+});
+test('release refuses wrong version/prerelease, extra, duplicate, empty, and reused asset IDs', () => {
+  for (const change of [
+    r => { r.tag_name = 'v0.1.3'; }, r => { r.prerelease = true; }, r => { r.assets.pop(); },
+    r => { r.assets.push({ id: 99, name: 'extra', size: 1 }); }, r => { r.assets[1].name = r.assets[0].name; },
+    r => { r.assets[1].id = r.assets[0].id; }, r => { r.assets[0].size = 0; },
+  ]) { const f = releaseFixture(); change(f.release); assert.throws(() => validateReleaseInventory(f.release, plan)); }
+});
+test('updater refuses substituted signature, URL, version and missing canonical platform', () => {
+  for (const change of [
+    m => { m.version = '0.1.3'; }, m => { m.platforms['linux-x86_64-deb'].url = 'https://example.com'; },
+    m => { m.platforms['windows-x86_64'].signature = 'other'; }, m => { delete m.platforms['linux-x86_64']; },
+  ]) { const f = releaseFixture(); change(f.manifest); assert.throws(() => validateLatestManifest(f.manifest, f.release.assets, plan)); }
+});
+function fakeApi(fixtures, runs) {
+  return async path => {
+    if (path.includes('/workflows/ci.yml/runs')) return { workflow_runs: runs ?? fixtures.map(f => f.run) };
+    const f = fixtures.find(f => path.includes('/runs/' + f.run.id));
+    assert.ok(f, 'unexpected endpoint: ' + path);
+    if (path.includes('/jobs?')) return { jobs: f.jobs };
+    if (path.includes('/artifacts?')) return { artifacts: f.artifacts };
+    return f.run;
+  };
+}
+test('resolver reuses a successful CI, reports same-source pending and refuses explicit wrong/failed CI', async () => {
+  const f = ciFixture();
+  assert.equal((await findReusableCi(plan, { fetchJson: fakeApi([f]) })).plan.runId, 123);
+  f.run.status = 'in_progress'; f.run.conclusion = null;
+  assert.deepEqual(await findReusableCi(plan, { fetchJson: fakeApi([f]) }), { status: 'pending', runId: 123 });
+  assert.deepEqual(await findReusableCi(plan, { runId: 123, fetchJson: fakeApi([f]) }), { status: 'pending', runId: 123 });
+  f.run.status = 'completed'; f.run.conclusion = 'failure';
+  assert.deepEqual(await findReusableCi(plan, { fetchJson: fakeApi([f]) }), { status: 'missing' });
+  await assert.rejects(findReusableCi(plan, { runId: 123, fetchJson: fakeApi([f]) }));
+  f.run.head_sha = 'b'.repeat(40);
+  await assert.rejects(findReusableCi(plan, { runId: 123, fetchJson: fakeApi([f]) }));
+});
+test('resolver can reuse an older complete same-source CI instead of an incomplete new attempt', async () => {
+  const good = ciFixture(plan, 123), bad = ciFixture(plan, 124);
+  bad.run.created_at = '2026-01-02T00:00:00Z'; bad.jobs.pop();
+  const result = await findReusableCi(plan, { fetchJson: fakeApi([bad, good]) });
+  assert.equal(result.runId, 123);
+});
+test('bounded inventory refuses incomplete and malformed pagination', async () => {
+  await assert.rejects(inventory('/inventory', 'items', async () => ({ items: Array(100).fill({}) })), /incomplete/);
+  await assert.rejects(inventory('/inventory', 'items', async () => ({ items: {} })));
+});
+test('prepared evidence binds run, attempt, artifact hash, installer hash and validation mode', () => {
+  const p = boundPlan(plan);
+  const meta = { protocol: CI_PROTOCOL, validateOnly: false, plan: p, installers: p.artifacts.map(a => ({
+    name: a.installer, artifactId: a.id, zipSha256: a.sha256, size: 10, sha256: 'a'.repeat(64),
+  })) };
+  assert.equal(validatePreparedRecord(meta, p), true);
+  for (const change of [
+    m => { m.plan.runId++; }, m => { m.plan.runAttempt--; },
+    m => { m.installers[0].artifactId++; }, m => { m.installers[0].zipSha256 = 'b'.repeat(64); },
+    m => { m.installers[0].sha256 = null; }, m => { m.validateOnly = true; },
+  ]) { const m = clone(meta); change(m); assert.throws(() => validatePreparedRecord(m, p)); }
+  meta.validateOnly = true;
+  assert.equal(validatePreparedRecord(meta, p, { allowValidateOnly: true }), true);
+});
+test('real full-byte prepared reader catches installer and ZIP tampering and prohibits signing rehearsal bytes', async () => {
+  const temp = await mkdtemp(join(tmpdir(), 'strata-promotion-test-'));
+  try {
+    const p = boundPlan(plan); const installer = Buffer.from('installer fixture');
+    for (const a of p.artifacts) {
+      execFileSync(process.platform === 'win32' ? 'python' : 'python3', ['-c',
+        "import zipfile,sys; z=zipfile.ZipFile(sys.argv[1],'w'); z.writestr(sys.argv[2],b'installer fixture'); z.close()",
+        join(temp, a.id + '.zip'), a.installer]);
+      const zip = await readFile(join(temp, a.id + '.zip'));
+      a.zipSize = zip.length; a.sha256 = hash(zip);
+    }
+    const meta = { protocol: CI_PROTOCOL, validateOnly: true, plan: p, installers: [] };
+    for (const a of p.artifacts) {
+      await writeFile(join(temp, a.installer), installer);
+      meta.installers.push({ name: a.installer, artifactId: a.id, zipSha256: a.sha256, size: installer.length, sha256: hash(installer) });
+    }
+    await writeFile(join(temp, 'prepared.json'), JSON.stringify(meta));
+    await readPrepared({ temp, plan: p, validateOnly: true });
+    await assert.rejects(readPrepared({ temp, plan: p, validateOnly: false }), /validate-only/);
+    await writeFile(join(temp, p.artifacts[0].installer), Buffer.from('Installer fixture'));
+    await assert.rejects(readPrepared({ temp, plan: p, validateOnly: true }), /bytes changed/);
+    const altered = clone(meta); altered.installers[0].sha256 = hash(Buffer.from('Installer fixture'));
+    await writeFile(join(temp, 'prepared.json'), JSON.stringify(altered));
+    await assert.rejects(readPrepared({ temp, plan: p, validateOnly: true }), /CI ZIP bytes/);
+    await writeFile(join(temp, 'prepared.json'), JSON.stringify(meta));
+    await writeFile(join(temp, p.artifacts[0].installer), installer);
+    await writeFile(join(temp, p.artifacts[0].id + '.zip'), Buffer.from('zip fixture'));
+    await assert.rejects(readPrepared({ temp, plan: p, validateOnly: true }), /bytes changed/);
+  } finally { await rm(temp, { recursive: true, force: true }); }
+});
+test('the inventory is always three installers, three signatures and two metadata files', () => {
+  assert.equal(assetNames(plan).length, 8);
+  assert.equal(new Set(assetNames(plan)).size, 8);
 });

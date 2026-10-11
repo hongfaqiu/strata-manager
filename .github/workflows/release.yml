@@ -4,240 +4,30 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing immutable v<version> tag (defaults to the selected tag)
+        type: string
+        default: ''
+      ci_run_id:
+        description: Optional complete CI run for the exact tagged commit
+        type: string
+        default: ''
 
 permissions:
-  contents: read
+  actions: write
+  contents: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.release_tag || github.ref }}
+  queue: max
   cancel-in-progress: false
 
 jobs:
-  validate:
-    runs-on: ubuntu-22.04
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-      prerelease: ${{ steps.version.outputs.prerelease }}
-    steps:
-      - name: Require an existing version tag for publishing
-        shell: bash
-        run: |
-          if [[ "$GITHUB_REF" != refs/tags/v* ]]; then
-            echo '::error::Select an existing v<version> tag when running Release desktop manually. Publishing from a branch is not supported.'
-            exit 1
-          fi
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-      - name: Check exact tag, package versions, updater key and required signing key
-        id: version
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: node scripts/release-check.mjs --require-signing
-      - name: Require an unpublished release and bind the existing source tag
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: node scripts/release-assets.mjs
-      - run: node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-assets.test.mjs
-
-  build:
-    needs: validate
-    permissions:
-      contents: write
-    strategy:
-      fail-fast: false
-      # The official action merges latest.json with a read/delete/write cycle.
-      # Serial uploads keep one platform from overwriting the other's entry.
-      max-parallel: 1
-      matrix:
-        include:
-          - runner: windows-latest
-            target: x86_64-pc-windows-msvc
-            bundles: nsis
-          - runner: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            bundles: appimage,deb
-    runs-on: ${{ matrix.runner }}
-    env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/apps/desktop/src-tauri/target
-      CARGO_TERM_COLOR: always
-    steps:
-      - uses: actions/checkout@v4
-      - name: Select Node before installing pnpm 11
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: pnpm
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-      - name: Preserve the verified upstream source bytes
-        # The observer verifies server.py by SHA256 on every platform.
-        run: git config --global core.autocrlf false
-      - name: Check out the verified upstream API fixture
-        uses: actions/checkout@v4
-        with:
-          repository: Niko1221/Strata
-          ref: fb58e0dbc8399662c0e47c76578c6e878b14f6cf
-          path: .reference/strata
-          persist-credentials: false
-      - name: Install MockEngine test dependencies only
-        # These exact pins come from the verified upstream requirements.txt.
-        # MockEngine needs Jinja2/MarkupSafe; GPU, build and model packages are unused.
-        run: python -m pip install jinja2==3.1.6 markupsafe==3.0.3
-      - name: Verify the API metadata observer without model weights
-        env:
-          STRATA_TEST_ROOT: ${{ github.workspace }}/.reference/strata
-        run: |
-          python -c "import hashlib, os, pathlib, sys; sys.path.insert(0, 'apps/supervisor/resources'); import strata_observer; source = pathlib.Path(os.environ['STRATA_TEST_ROOT']) / 'serve/server.py'; digest = hashlib.sha256(source.read_bytes()).hexdigest(); sys.exit(0 if digest in strata_observer.SUPPORTED_HASHES else 'The pinned upstream source hash is unsupported; refusing to skip API tests.')"
-          python apps/supervisor/tests/test_strata_observer.py
-          python apps/supervisor/tests/test_strata_mcp_guard.py
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-          targets: ${{ matrix.target }}
-      - name: Linux dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev libgtk-3-dev libssl-dev librsvg2-dev libxdo-dev libdbus-1-dev pkg-config patchelf xdg-utils xvfb dbus-x11 gnome-keyring libglib2.0-bin libsecret-tools python3-venv python3-dbus build-essential curl gettext libgcr-3-dev libgcrypt20-dev libtasn1-6-dev libp11-kit-dev libcap-ng-dev
-      - name: Linux Secret Service wrapper contracts
-        if: runner.os == 'Linux'
-        run: python scripts/tests/release-linux-tests-contract.py
-      - name: Build the pinned private Linux test keyring
-        if: runner.os == 'Linux'
-        run: |
-          daemon_path=$(bash scripts/build-linux-test-keyring.sh)
-          printf 'STRATA_TEST_KEYRING_DAEMON=%s\n' "$daemon_path" >> "$GITHUB_ENV"
-      - name: Linux Secret Service fresh-connection regression
-        if: runner.os == 'Linux'
-        run: timeout --kill-after=5s 120s dbus-run-session -- xvfb-run -a bash scripts/release-linux-tests.sh /usr/bin/python3 scripts/tests/linux-secret-service-stress.py --deadline-seconds 100
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: '. -> apps/desktop/src-tauri/target'
-          shared-key: strata-native-${{ matrix.target }}
-      - run: pnpm install --frozen-lockfile
-      - name: Build the fixture update verifier for this platform
-        run: cargo build -p strata-update-verifier --locked --target ${{ matrix.target }}
-      - name: Version and complete release guard tests
-        env:
-          UPDATE_VERIFIER_BIN: ${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/debug/strata-update-verifier${{ runner.os == 'Windows' && '.exe' || '' }}
-        run: node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-assets.test.mjs scripts/release-publish.test.mjs scripts/preview-package-smoke.test.mjs scripts/download-upgrade-fixture.test.mjs
-      - name: Verify the signed beta.2 installer for the first stable upgrade
-        if: runner.os == 'Windows' && needs.validate.outputs.version == '0.1.2'
-        id: upgrade-fixture
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          UPDATE_VERIFIER_BIN: ${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/debug/strata-update-verifier.exe
-        run: node scripts/download-upgrade-fixture.mjs
-      - run: pnpm check
-      - run: node scripts/prepare-sidecar.mjs --profile debug --target ${{ matrix.target }}
-      - run: cargo fmt --all -- --check
-      - name: Native tests (Windows)
-        if: runner.os == 'Windows'
-        # Process identity fixtures share host WMI/NetTCPConnection providers.
-        # Serialize their cold starts; preserve every timeout and identity check.
-        run: cargo test --workspace --locked --target ${{ matrix.target }} -- --test-threads=1
-      - name: Native tests under Xvfb (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          dbus-run-session -- xvfb-run -a bash scripts/release-linux-tests.sh cargo test --workspace --locked --target ${{ matrix.target }} -- --test-threads=1
-      - run: cargo clippy --workspace --locked --all-targets --target ${{ matrix.target }} -- -D warnings
-      - run: node scripts/prepare-sidecar.mjs --profile release --target ${{ matrix.target }}
-      - name: Recheck the unpublished release and source before uploading assets
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: node scripts/release-assets.mjs
-      - name: Read localized changelog for this exact version
-        id: release-notes
-        run: node scripts/release-notes.mjs --version "${{ needs.validate.outputs.version }}"
-      - name: Build signed installers and populate draft release
-        uses: tauri-apps/tauri-action@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          projectPath: apps/desktop
-          tauriScript: pnpm tauri
-          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
-          tagName: ${{ github.ref_name }}
-          # The existing tag is bound to github.sha above. This creation hint
-          # avoids a Workflows:write requirement for an older tag's workflow.
-          releaseCommitish: ${{ github.event.repository.default_branch }}
-          releaseName: Strata Manager ${{ github.ref_name }}
-          releaseBody: ${{ steps.release-notes.outputs.body }}
-          releaseDraft: true
-          prerelease: ${{ needs.validate.outputs.prerelease }}
-          generateReleaseNotes: false
-          retryAttempts: 3
-          uploadUpdaterJson: true
-          updaterJsonPreferNsis: true
-          uploadUpdaterSignatures: true
-          uploadWorkflowArtifacts: true
-          workflowArtifactNamePattern: 'release-[platform]-[arch]-[bundle]'
-
-      - name: Verify installed Windows package and background IPC
-        if: runner.os == 'Windows'
-        run: node scripts/preview-package-smoke.mjs --bundle-dir "${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/release/bundle" --version "${{ needs.validate.outputs.version }}"
-      - name: Verify beta.2 to first stable upgrade and retained application data
-        if: runner.os == 'Windows' && needs.validate.outputs.version == '0.1.2'
-        env:
-          UPGRADE_FROM_INSTALLER: ${{ steps.upgrade-fixture.outputs.installer }}
-          UPGRADE_FROM_VERSION: ${{ steps.upgrade-fixture.outputs.version }}
-        run: node scripts/preview-package-smoke.mjs --bundle-dir "${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/release/bundle" --version "${{ needs.validate.outputs.version }}" --upgrade-from-installer "$env:UPGRADE_FROM_INSTALLER" --upgrade-from-version "$env:UPGRADE_FROM_VERSION"
-      - name: Verify Linux AppImage and DEB startup under Xvfb
-        if: runner.os == 'Linux'
-        run: dbus-run-session -- xvfb-run -a bash scripts/release-linux-tests.sh node scripts/preview-package-smoke.mjs --bundle-dir "${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/release/bundle" --version "${{ needs.validate.outputs.version }}"
-
-  publish:
-    needs: [validate, build]
-    runs-on: ubuntu-22.04
-    # Different tags may finish building in any order. Keep every pending
-    # publication and compare stable versions inside this repository-wide lock.
-    concurrency:
-      group: release-publish-${{ github.repository }}
-      queue: max
-      cancel-in-progress: false
-    permissions:
-      contents: write
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # Checksum generation changes cwd to RUNNER_TEMP; keep gh bound to this repo.
-      GH_REPO: ${{ github.repository }}
-      RELEASE_TAG: ${{ github.ref_name }}
-      UPDATE_VERIFIER_BIN: ${{ github.workspace }}/target/release/strata-update-verifier
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Test and build the Tauri-compatible release verifier
-        run: |
-          cargo test -p strata-update-verifier --locked
-          cargo build -p strata-update-verifier --release --locked
-          node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-assets.test.mjs scripts/release-publish.test.mjs
-      - name: Verify installer bytes, built-in public key, signed version and both platforms
-        run: node scripts/release-verify.mjs
-      - name: Publish SHA256 checksums for the installers
-        shell: bash
-        run: |
-          preview_checksums_dir="$RUNNER_TEMP/strata-release-checksums"
-          mkdir "$preview_checksums_dir"
-          gh release download "$RELEASE_TAG" --pattern '*.exe' --pattern '*.AppImage' --pattern '*.deb' --dir "$preview_checksums_dir"
-          cd "$preview_checksums_dir"
-          sha256sum -- *.exe *.AppImage *.deb > SHA256SUMS
-          node "$GITHUB_WORKSPACE/scripts/release-assets.mjs" --require-draft
-          gh release upload "$RELEASE_TAG" SHA256SUMS --clobber
-      - name: Publish the verified draft and preserve stable version precedence
-        run: node scripts/release-publish.mjs
+  release:
+    uses: ./.github/workflows/release-from-ci.yml
+    with:
+      release_tag: ${{ inputs.release_tag || github.ref_name }}
+      expected_source_sha: ${{ github.event_name == 'push' && github.sha || '' }}
+      ci_run_id: ${{ inputs.ci_run_id || '' }}
+    secrets: inherit

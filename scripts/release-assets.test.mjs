@@ -111,18 +111,26 @@ test('the CLI rejects unsupported arguments without a metadata request', () => {
   }
 });
 
-test('workflows reject public tags before builds and recheck the draft immediately before checksum replacement', async () => {
+test('reusable promotion rejects public tags early and rechecks the unique draft around upload and verification', async () => {
   const workflow = await readFile(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
-  const validation = workflow.slice(workflow.indexOf('\n  validate:'), workflow.indexOf('\n  build:'));
-  const build = workflow.slice(workflow.indexOf('\n  build:'), workflow.indexOf('\n  publish:'));
-  const publication = workflow.slice(workflow.indexOf('\n  publish:'));
-  assert.match(validation, /run: node scripts\/release-assets\.mjs/);
-  assert.match(build, /run: node scripts\/release-assets\.mjs/);
-  assert.ok(build.indexOf('node scripts/release-assets.mjs') < build.indexOf('uses: tauri-apps/tauri-action@'));
-  assert.match(publication, /node "\$GITHUB_WORKSPACE\/scripts\/release-assets\.mjs" --require-draft\s*\n\s*gh release upload "\$RELEASE_TAG" SHA256SUMS --clobber/);
-  assert.ok(publication.indexOf('node scripts/release-verify.mjs') < publication.indexOf('node "$GITHUB_WORKSPACE/scripts/release-assets.mjs" --require-draft'));
+  const reusable = await readFile(new URL('../.github/workflows/release-from-ci.yml', import.meta.url), 'utf8');
+  const helper = await readFile(new URL('./release-from-ci.mjs', import.meta.url), 'utf8');
+  assert.match(workflow, /uses: \.\/\.github\/workflows\/release-from-ci\.yml/);
+  const context = helper.slice(helper.indexOf('async function context('), helper.indexOf('async function bindCi('));
+  assert.match(context, /requireReleaseTagCommit/);
+  assert.match(context, /requireReleaseAssetsWritable/);
+  assert.match(context, /await requireSourceRelease\(plan/);
+  assert.match(helper, /requireDraft: false/);
+  const publication = helper.slice(helper.indexOf('export async function publish('));
+  const upload = publication.indexOf("command('gh', ['release', 'upload'");
+  const verify = publication.indexOf("c.modules['release-verify'].verifyRelease");
+  assert.ok(upload > publication.indexOf('await guard(true)'));
+  assert.ok(publication.indexOf('await guard(true)', upload) > upload);
+  assert.ok(verify > upload);
+  assert.ok(publication.indexOf('await guard(true)', verify) > verify);
+  assert.ok(publication.indexOf("c.modules['release-publish'].publishRelease") > verify);
   const ci = await readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
-  for (const source of [ci, workflow]) {
+  for (const source of [ci, reusable]) {
     const releaseTests = source.split(/\r?\n/).filter(line => line.includes('node --test scripts/release-check.test.mjs'));
     assert.ok(releaseTests.length > 0);
     for (const line of releaseTests) assert.ok(line.includes('scripts/release-assets.test.mjs'));

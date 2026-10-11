@@ -1,102 +1,215 @@
 name: Release verified CI installers
 
 on:
+  workflow_call:
+    inputs:
+      release_tag:
+        required: true
+        type: string
+      ci_run_id:
+        type: string
+        default: ''
+      expected_source_sha:
+        type: string
+        default: ''
+      validate_only:
+        type: boolean
+        default: false
+      source_ref:
+        type: string
+        default: ''
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing v<version> tag, or the checked source version for validation
+        required: true
+        type: string
+      ci_run_id:
+        description: Optional CI run id; validation requires a completed same-source run
+        type: string
+        default: ''
+      expected_source_sha:
+        description: Optional full commit SHA to bind the source checkout
+        type: string
+        default: ''
+      validate_only:
+        description: Validate and download CI bytes without signing or changing a release
+        type: boolean
+        default: false
+      source_ref:
+        description: Validation only; source ref defaults to this workflow commit
+        type: string
+        default: ''
 
 permissions:
-  actions: read
-  contents: write
-
-concurrency:
-  group: release-publish-${{ github.repository }}
-  queue: max
-  cancel-in-progress: false
+  actions: write
+  contents: read
 
 jobs:
-  release:
+  resolve:
+    name: Resolve same-source CI
     runs-on: ubuntu-22.04
-    timeout-minutes: 25
+    timeout-minutes: 90
+    outputs:
+      source_sha: ${{ steps.source.outputs.sha }}
+      ci_run_id: ${{ steps.ci.outputs.ci_run_id }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      GH_REPO: hongfaqiu/strata-manager
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      CI_RUN_ID: ${{ inputs.ci_run_id }}
       SOURCE_ROOT: ${{ github.workspace }}/release-source
-      CARGO_TARGET_DIR: ${{ github.workspace }}/release-source/target
-      UPDATE_VERIFIER_BIN: ${{ github.workspace }}/release-source/target/release/strata-update-verifier
     steps:
-      - name: Require this repository and the main infrastructure branch
+      - name: Require the canonical repository and a source version tag
         shell: bash
         run: |
-          if [[ "$GITHUB_REPOSITORY" != hongfaqiu/strata-manager || "$GITHUB_REF" != refs/heads/main ]]; then
-            echo '::error::This fixed release workflow must run from hongfaqiu/strata-manager main.'
-            exit 2
-          fi
-          printf 'RELEASE_TEMP=%s/strata-release-from-ci-v013\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
-      - name: Check out the infrastructure for this workflow run
+          [[ "$GITHUB_REPOSITORY" == hongfaqiu/strata-manager ]]
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]
+      - name: Check out the release controller for this workflow commit
         uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Check out the exact application source independently
+      - name: Check out the immutable application source independently
         uses: actions/checkout@v4
         with:
-          ref: ec0797dc06fc833cb5ebf433ecfb71b4c113767c
+          ref: ${{ inputs.validate_only && (inputs.source_ref || github.sha) || inputs.release_tag }}
           path: release-source
           fetch-depth: 0
           persist-credentials: false
-      - name: Refuse moved source or version tag
-        shell: bash
-        run: |
-          expected=ec0797dc06fc833cb5ebf433ecfb71b4c113767c
-          [[ "$(git -C release-source rev-parse HEAD)" == "$expected" ]]
-          [[ "$(git -C release-source rev-parse 'refs/tags/v0.1.3^{commit}')" == "$expected" ]]
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - uses: pnpm/action-setup@v4
+      - name: Bind the controller to the checked source commit
+        id: source
+        shell: bash
+        env:
+          REQUESTED_SOURCE_SHA: ${{ inputs.expected_source_sha }}
+        run: |
+          source_sha=$(git -C release-source rev-parse HEAD)
+          [[ -z "$REQUESTED_SOURCE_SHA" || "$source_sha" == "$REQUESTED_SOURCE_SHA" ]]
+          printf 'sha=%s\n' "$source_sha" >> "$GITHUB_OUTPUT"
+          printf 'EXPECTED_SOURCE_SHA=%s\n' "$source_sha" >> "$GITHUB_ENV"
+      - name: Reuse a successful CI or wait for one complete same-source CI
+        id: ci
+        shell: bash
+        env:
+          VALIDATE_ONLY: ${{ inputs.validate_only }}
+        run: |
+          flags=()
+          if [[ "$VALIDATE_ONLY" == true ]]; then flags+=(--validate-only); fi
+          deadline=$((SECONDS + 4800))
+          dispatched=false
+          while (( SECONDS < deadline )); do
+            result=$(node scripts/release-from-ci.mjs resolve "${flags[@]}")
+            printf '%s\n' "$result"
+            status=$(printf '%s' "$result" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>process.stdout.write(JSON.parse(s).ci_status))')
+            run_id=$(printf '%s' "$result" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>process.stdout.write(String(JSON.parse(s).ci_run_id || "")))')
+            if [[ "$status" == success ]]; then break; fi
+            if [[ "$status" == pending ]]; then
+              export CI_RUN_ID="$run_id"
+            elif [[ "$status" == missing && "$dispatched" == false && "$VALIDATE_ONLY" != true && -z "$CI_RUN_ID" ]]; then
+              # Dispatch by immutable tag; resolve checks its exact SHA again.
+              gh workflow run ci.yml --repo "$GH_REPO" --ref "$RELEASE_TAG"
+              dispatched=true
+            elif [[ "$status" != missing || "$VALIDATE_ONLY" == true || -n "$CI_RUN_ID" ]]; then
+              echo '::error::No eligible complete CI exists for this source.'
+              exit 1
+            fi
+            sleep 30
+          done
+          [[ "$status" == success ]] || { echo '::error::Complete CI did not finish before the deadline.'; exit 1; }
+
+  promote:
+    name: ${{ inputs.validate_only && 'Validate CI installers (read only)' || 'Publish verified CI installers' }}
+    needs: resolve
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    concurrency:
+      group: ${{ inputs.validate_only && format('release-validation-{0}', github.run_id) || format('release-publish-{0}', github.repository) }}
+      queue: max
+      cancel-in-progress: false
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      CI_RUN_ID: ${{ needs.resolve.outputs.ci_run_id }}
+      EXPECTED_SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
+      SOURCE_ROOT: ${{ github.workspace }}/release-source
+      CARGO_TARGET_DIR: ${{ github.workspace }}/release-source/target
+      UPDATE_VERIFIER_BIN: ${{ github.workspace }}/release-source/target/release/strata-update-verifier
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@v4
         with:
-          version: 11.21.0
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.source_sha }}
+          path: release-source
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Keep promotion files in the runner's private temporary directory
+        shell: bash
+        run: printf 'RELEASE_TEMP=%s/strata-release-from-ci\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Check the generic promotion refusal contracts
+        run: node --test scripts/release-from-ci.test.mjs
+      - name: Validate complete CI, source, attempt and original artifact bytes
+        shell: bash
+        env:
+          VALIDATE_ONLY: ${{ inputs.validate_only }}
+        run: |
+          flags=()
+          if [[ "$VALIDATE_ONLY" == true ]]; then flags+=(--validate-only); fi
+          node scripts/release-from-ci.mjs prepare "${flags[@]}"
+      - uses: pnpm/action-setup@v4
+        if: ${{ !inputs.validate_only }}
+        with:
           run_install: false
       - uses: actions/setup-node@v4
+        if: ${{ !inputs.validate_only }}
         with:
           node-version: '24'
           cache: pnpm
           cache-dependency-path: release-source/pnpm-lock.yaml
-      - name: Install only the fixed tag's locked dependencies
+      - name: Install the checked source's locked signing tool
+        if: ${{ !inputs.validate_only }}
         working-directory: release-source
         run: pnpm install --frozen-lockfile
       - uses: dtolnay/rust-toolchain@stable
-      - name: Test and build the exact tag's public signature verifier
+        if: ${{ !inputs.validate_only }}
+      - name: Test and build the exact source's public signature verifier
+        if: ${{ !inputs.validate_only }}
         working-directory: release-source
         run: |
           cargo test -p strata-update-verifier --locked
           cargo build -p strata-update-verifier --release --locked
           node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-assets.test.mjs scripts/release-publish.test.mjs
-      - name: Check the fixed promotion plan and its refusal tests
-        shell: bash
-        run: |
-          node --input-type=module <<'JS'
-          import assert from 'node:assert/strict';
-          import { PLAN } from './scripts/release-from-ci.mjs';
-          assert.equal(PLAN.repository, 'hongfaqiu/strata-manager');
-          assert.equal(PLAN.tag, 'v0.1.3');
-          assert.equal(PLAN.version, '0.1.3');
-          assert.equal(PLAN.sourceSha, 'ec0797dc06fc833cb5ebf433ecfb71b4c113767c');
-          assert.equal(PLAN.runId, 38159155279);
-          assert.equal(PLAN.formalRunId, 38161099807);
-          assert.equal(PLAN.workflowPath, '.github/workflows/ci.yml');
-          assert.deepEqual(PLAN.artifacts.map(({ name, id, sha256 }) => ({ name, id, sha256 })), [
-            { name: 'ci-windows-x64-nsis', id: 11709972517, sha256: '3150b9795da86427a49e0407141bf0b28ef71d212dc6ea155460bcea561bbc2e' },
-            { name: 'ci-linux-amd64-appimage', id: 11710157903, sha256: '85dd7aa50f8bd6a4029f6fb8f1186cd880f17213741c350d72129bfd11c300e7' },
-            { name: 'ci-linux-amd64-deb', id: 11710068043, sha256: 'd9f90edcadf588bf57edad7f6fc6df19af56b66896f40185f5f94a5c57203d52' }
-          ]);
-          JS
-          node --test scripts/release-from-ci.test.mjs
-      - name: Validate full CI, original writers and exact artifact bytes
-        run: node scripts/release-from-ci.mjs prepare
-      - name: Sign the three original installers with the version bound
+      - name: Sign the three CI-tested installers with the source version bound
+        if: ${{ !inputs.validate_only }}
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: node scripts/release-from-ci.mjs sign
-      - name: Verify all eight assets and publish the exact source tag
+      - name: Verify all eight uploaded assets and publish the exact source tag
+        if: ${{ !inputs.validate_only }}
         run: node scripts/release-from-ci.mjs publish
+      - name: Preserve the CI promotion byte proof
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-ci-byte-proof-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/strata-release-from-ci/proof.json
+          if-no-files-found: error
