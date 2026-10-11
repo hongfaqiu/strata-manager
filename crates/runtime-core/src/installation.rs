@@ -300,10 +300,10 @@ static INSTALLER_PACKAGE_FAMILY: std::sync::OnceLock<Result<Option<String>, Stri
     std::sync::OnceLock::new();
 
 #[cfg(windows)]
-fn installer_package_family_once<'a>(
-    cache: &'a std::sync::OnceLock<Result<Option<String>, String>>,
+fn installer_package_family_once(
+    cache: &std::sync::OnceLock<Result<Option<String>, String>>,
     capture: impl FnOnce() -> Result<Option<String>, String>,
-) -> Result<Option<&'a str>, String> {
+) -> Result<Option<&str>, String> {
     cache
         .get_or_init(capture)
         .as_ref()

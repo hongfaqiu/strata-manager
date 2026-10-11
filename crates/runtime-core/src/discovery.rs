@@ -865,7 +865,10 @@ fn config_paths(root: &Path) -> Vec<PathBuf> {
 mod windows_census;
 
 #[cfg(windows)]
-fn windows_python_inventory(read_cwd: bool) -> Result<Vec<(Vec<String>, Option<PathBuf>)>, String> {
+type WindowsPythonInventory = Vec<(Vec<String>, Option<PathBuf>)>;
+
+#[cfg(windows)]
+fn windows_python_inventory(read_cwd: bool) -> Result<WindowsPythonInventory, String> {
     use std::time::{Duration, Instant};
     use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
     use windows_sys::Win32::{

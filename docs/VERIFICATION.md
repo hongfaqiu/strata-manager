@@ -294,4 +294,8 @@ Linux MCP stdio 新增同步 wrapper，在 Tokio/数据库初始化之前接收�
 
 最终前端 `pnpm check` 的类型检查、核心 127 项、桌面 55 项、HTTP/日志 8 项及生产构建通过；发布/签名/升级脚本 90 项与网站/文档脚本 15 项全部通过，0 skipped。版本和双语日志与 `v0.1.3` 一致。20 张中英文页面图重新从当前源码捕获，版本与内容摘要记录在截图 manifest；品牌封面仍保留早期 0.1.2 合成图并单列来源。
 
+合并候选的 Windows 串行原生全套通过：IPC 6、desktop 67 passed / 3 ignored、runtime-core 316 passed / 9 ignored、Supervisor lifecycle 3、更新验签 7，合计 **399 passed / 0 failed / 12 ignored**。固定上游源码为 `fb58e0dbc8399662c0e47c76578c6e878b14f6cf`，未使用模型权重或默认数据。Observer 的 28 项测试中 26 passed / 2 skipped，两项仅适用于另一官方 0.1.42 源码 hash；MCP guard 4 passed / 0 skipped。本机 MarkupSafe 为既有 3.0.2，CI 使用固定 3.0.3，未修改全局依赖。
+
+完整测试后最小修正了 Clippy 类型别名、显式 lifetime、冗余引用以及 Supervisor 重复条件分支。修正后的完整 workspace/all-targets Clippy `-D warnings` 与 fmt 通过；发现/安装/存储/后台生命周期定向回归 **39 passed / 0 failed / 5 ignored**。未把两次数量累加成一次全套测试，也未重复真实 GPU 测试。跨平台正式安装包验收仍由最终提交的 Actions 完成。
+
 本轮由三个子 Agent 分别处理原生验证、发布/前端回归和范围/截图审查，均继承主 Agent 当前配置；工具未返回可独立确认的实际模型或推理档位。主 Agent 完成合并、版本/文档整理与最终发布验收。

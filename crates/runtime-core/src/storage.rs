@@ -232,8 +232,8 @@ fn write_locked(path: &Path, config: &Value) -> Result<ConfigWriteResult, String
         .map_err(|e| e.to_string())?;
     temp.write_all(&bytes).map_err(|e| e.to_string())?;
     temp.as_file().sync_all().map_err(|e| e.to_string())?;
-    backup(&path)?;
-    temp.persist(&path)
+    backup(path)?;
+    temp.persist(path)
         .map_err(|e| format!("配置原子替换失败（原文件保留）: {e}"))?;
     Ok(ConfigWriteResult {
         revision: revision(&bytes),

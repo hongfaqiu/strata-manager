@@ -122,13 +122,6 @@ async fn run() -> Result<(), RpcError> {
                     state.clone().prepare_window_close().await
                 } else if request
                     .params
-                    .get("forClose")
-                    .and_then(serde_json::Value::as_bool)
-                    == Some(true)
-                {
-                    state.clone().prepare_window_close().await
-                } else if request
-                    .params
                     .get("forUpdate")
                     .and_then(serde_json::Value::as_bool)
                     == Some(true)
