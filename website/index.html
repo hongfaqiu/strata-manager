@@ -17,11 +17,11 @@
       document.getElementById('theme-color').content = theme === 'light' ? '#f5f4ef' : '#101c18';
     })();
   </script>
-  <meta name="description" content="Niko1221/Strata 本地大模型推理引擎的开源桌面管理工具，简化安装配置、模型与服务管理，监控资源和 API 用量。支持 Windows / Linux x64。" data-content-en="Open-source desktop management for Niko1221/Strata local LLM inference: easier setup, model and service management, hardware monitoring and API usage. Windows / Linux x64.">
+  <meta name="description" content="Niko1221/Strata 本地大模型推理的开源桌面工作台，集中管理环境、模型与服务，提供聊天、监控、调优与 Benchmark 基准测试。支持 Windows / Linux x64。" data-content-en="Open-source desktop workspace for Niko1221/Strata local LLM inference: runtime, models, services, chat, monitoring, tuning and Benchmark performance tests. Windows / Linux x64.">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Strata Manager">
   <meta property="og:title" content="Strata Manager · Strata 大模型管理与监控" data-content-en="Strata Manager · Local LLM Management &amp; Monitoring for Strata">
-  <meta property="og:description" content="面向 Niko1221/Strata 本地大模型推理引擎，简化安装配置、模型与服务管理，监控资源和 API 用量。" data-content-en="Easier setup, model management and monitoring for Niko1221/Strata local LLM inference.">
+  <meta property="og:description" content="面向 Strata 本地推理，集中完成环境准备、模型与服务管理、聊天、监控、参数调优和 Benchmark 基准测试。" data-content-en="Runtime setup, models, services, chat, monitoring, tuning and Benchmark performance tests for local inference with Strata.">
   <meta property="og:url" content="https://hongfaqiu.github.io/strata-manager/">
   <meta property="og:locale" content="zh_CN" id="og-locale">
   <meta property="og:locale:alternate" content="en_US" id="og-locale-alternate">
@@ -29,7 +29,7 @@
   <meta property="og:image:alt" content="Strata Manager：Strata 本地大模型管理与监控" data-content-en="Strata Manager: local LLM management and monitoring for Strata">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Strata Manager · Strata 大模型管理与监控" data-content-en="Strata Manager · Local LLM Management &amp; Monitoring for Strata">
-  <meta name="twitter:description" content="面向 Niko1221/Strata 本地大模型推理引擎，简化安装配置、模型与服务管理，监控资源和 API 用量。" data-content-en="Easier setup, model management and monitoring for Niko1221/Strata local LLM inference.">
+  <meta name="twitter:description" content="面向 Strata 本地推理，集中完成环境准备、模型与服务管理、聊天、监控、参数调优和 Benchmark 基准测试。" data-content-en="Runtime setup, models, services, chat, monitoring, tuning and Benchmark performance tests for local inference with Strata.">
   <meta name="twitter:image" content="https://hongfaqiu.github.io/strata-manager/assets/screenshots/product-cover.zh.webp" data-content-en="https://hongfaqiu.github.io/strata-manager/assets/screenshots/product-cover.en.webp">
   <link rel="canonical" href="https://hongfaqiu.github.io/strata-manager/">
   <link rel="alternate" hreflang="zh-CN" href="https://hongfaqiu.github.io/strata-manager/">
@@ -49,7 +49,7 @@
     "url": "https://hongfaqiu.github.io/strata-manager/",
     "applicationCategory": "UtilitiesApplication",
     "operatingSystem": "Windows x64, Linux x64",
-    "description": "Niko1221/Strata 本地大模型推理引擎的开源桌面管理工具，简化安装配置、模型与服务管理，监控资源和 API 用量。支持 Windows / Linux x64。",
+    "description": "Niko1221/Strata 本地大模型推理的开源桌面工作台，集中管理环境、模型与服务，提供聊天、监控、调优与 Benchmark 基准测试。支持 Windows / Linux x64。",
     "isBasedOn": "https://github.com/Niko1221/Strata",
     "license": "https://github.com/hongfaqiu/strata-manager/blob/main/LICENSE",
     "isAccessibleForFree": true,
@@ -79,6 +79,7 @@
         <a href="#about-strata" data-en="About Strata">了解 Strata</a>
         <a href="#features" data-en="Features">核心功能</a>
         <a href="#workspace" data-en="Interface">界面</a>
+        <a href="docs/index.html" data-href-en="docs/index.en.html" data-en="Docs">文档中心</a>
         <a href="#get-started" data-en="Download">下载</a>
         <a href="docs/changelog.html" data-href-en="docs/changelog.en.html" data-en="Changelog">更新日志</a>
         <a class="nav-source" href="https://github.com/hongfaqiu/strata-manager">GitHub <span aria-hidden="true">↗</span></a>
@@ -105,7 +106,7 @@
           <h1 id="hero-title" class="hero-heading"><span data-en="Local inference.">本地大模型的</span><span data-en="Managed clearly.">管理与监控。</span></h1>
         </div>
         <div class="hero-content">
-          <p class="hero-lead" data-en="Strata is an open-source local LLM inference engine that combines CPU and GPU resources. Strata Manager adds a desktop interface for installation, model configuration, service control and monitoring.">Strata 是一款开源的本地大模型推理引擎，利用 CPU 与 GPU 协同运行模型。Strata Manager 提供配套桌面界面，集中完成环境安装、模型配置、服务启停与运行监控。</p>
+          <p class="hero-lead" data-en="Strata is an open-source local LLM inference engine that combines CPU and GPU resources. Strata Manager brings setup, models, services, chat, monitoring and performance evaluation into one desktop workspace.">Strata 是一款开源的本地大模型推理引擎，利用 CPU 与 GPU 协同运行模型。Strata Manager 将环境准备、模型与服务管理、聊天、监控和性能评估集中到同一桌面工作台。</p>
           <div class="hero-cta-group">
             <a class="btn btn-primary" href="#get-started"><svg class="icon" aria-hidden="true"><use href="#icon-download"/></svg><span data-en="Get Strata Manager">下载 Strata Manager</span></a>
             <a class="btn btn-secondary" href="docs/user-guide.html" data-href-en="docs/user-guide.en.html" data-en="User guide">使用指南</a>
@@ -125,7 +126,7 @@
           <h2 class="section-title" id="strata-title"><span data-en="Strata and Manager">Strata 与 Manager</span><span data-en="How they work together.">如何协作</span></h2>
           <dl class="product-roles">
             <div><dt data-en="Strata · Inference engine">Strata · 推理引擎</dt><dd data-en="Loads supported model weights, runs inference across CPU and GPU resources, and serves a local API for chat apps and developer tools.">加载受支持的模型权重，协调 CPU 与 GPU 执行推理，并通过本地 API 为聊天应用与开发工具提供服务。</dd></div>
-            <div><dt data-en="Strata Manager · Desktop management">Strata Manager · 桌面管理工具</dt><dd data-en="Manages the Strata environment, model configurations and service lifecycle, with hardware monitoring and API usage statistics.">管理 Strata 环境、模型配置和服务生命周期，提供硬件资源监控与 API 用量统计。</dd></div>
+            <div><dt data-en="Strata Manager · Desktop management">Strata Manager · 桌面管理工具</dt><dd data-en="Manages the runtime, model configurations and service lifecycle, with chat, hardware monitoring, API usage, tuning and benchmarks.">管理运行环境、模型配置和服务生命周期，提供聊天、硬件监控、API 用量统计、参数调优与基准测试。</dd></div>
           </dl>
           <a class="text-link strata-source" href="https://github.com/Niko1221/Strata" data-en="Explore the Strata project ↗">了解 Strata 项目 ↗</a>
         </div>
@@ -147,22 +148,38 @@
 
     <section class="features-section" id="features" aria-label="核心功能" data-label-en="Core features">
       <div class="container">
-        <div class="feature-intro"><h2 data-en="Manage the complete workflow.">覆盖本地推理的<br>日常管理流程。</h2><p data-en="From environment setup to service observability.">从环境准备，到服务运行与观测。</p></div>
+        <div class="feature-intro"><h2 data-en="Manage the complete workflow.">覆盖本地推理的<br>日常管理流程。</h2><p data-en="Prepare, run, observe and evaluate.">准备环境，运行模型，观测与评估。</p></div>
         <div class="feature-grid">
         <article class="feature-card">
           <span class="feature-number" aria-hidden="true">01</span>
           <h3 data-en="Environment &amp; configuration">环境安装与配置</h3>
-          <p data-en="Prepare the Strata runtime, manage dependencies and edit model run configurations in a desktop interface.">准备 Strata 运行环境、管理依赖，在桌面界面中编辑模型运行配置。</p>
+          <p data-en="Detect existing installations, manage runtime updates and edit configurations with graphical controls or JSON, with validation and backups.">检测已有安装、管理运行时更新，通过图形控件或 JSON 编辑运行配置，完成校验并保留备份。</p>
         </article>
         <article class="feature-card">
           <span class="feature-number" aria-hidden="true">02</span>
           <h3 data-en="Models &amp; service lifecycle">模型与服务管理</h3>
-          <p data-en="Discover local models, switch run configurations, control services and verify model responses through chat.">发现本地模型、切换运行配置、控制服务启停，并通过聊天验证模型响应。</p>
+          <p data-en="Discover local weights, group run configurations and control service startup, shutdown and memory release. Save and restore engine sessions and inspect individual slots.">发现本机权重，按模型管理配置，控制服务启停与内存释放；保存和恢复引擎会话，查看各槽位的请求负载。</p>
         </article>
         <article class="feature-card">
           <span class="feature-number" aria-hidden="true">03</span>
+          <h3 data-en="Chat &amp; application integration">聊天与应用接入</h3>
+          <p data-en="Use streaming conversations and attachments, JSON / JSON Schema output and document-prefix reuse. Connect local API clients and inspect supported MCP tools.">使用多会话、流式回复与附件，设置 JSON / JSON Schema 输出并复用长文前缀；连接本机 API 客户端，检查受支持的 MCP 工具。</p>
+        </article>
+        <article class="feature-card">
+          <span class="feature-number" aria-hidden="true">04</span>
           <h3 data-en="Resources &amp; API monitoring">资源与 API 监控</h3>
-          <p data-en="Monitor GPU, VRAM and RAM usage, and review API requests, token consumption, latency and generation speed.">监控 GPU、显存与系统内存占用，查看 API 请求、Token 用量、延迟与生成速度。</p>
+          <p data-en="Monitor GPU, VRAM, RAM and service activity. Review API requests, token usage, latency and cache trends, with API usage compatibility for Strata 0.1.43.">监控 GPU、显存、系统内存与服务状态，查看 API 请求、Token 用量、延迟和缓存趋势，兼容 Strata 0.1.43 使用统计。</p>
+        </article>
+        <article class="feature-card">
+          <span class="feature-number" aria-hidden="true">05</span>
+          <h3 data-en="Workload-based tuning">面向任务的参数调优</h3>
+          <p data-en="Compare supported parameter candidates for chat, coding / Agent and long-document tasks. Review response quality, speed and resources before applying or restoring settings.">按聊天、编程 / Agent 和长文任务比较受支持的参数候选，结合响应质量、速度与资源占用选择配置，支持应用或恢复。</p>
+        </article>
+        <article class="feature-card" id="benchmark">
+          <span class="feature-number" aria-hidden="true">06</span>
+          <h3 data-en="Benchmark &amp; performance reports">Benchmark 基准测试</h3>
+          <p data-en="Run scenario suites or concurrent stress tests with configurable warmup, repetition and input/output lengths. Compare TTFT, P50/P95, generation rates, cache reuse and resource trends; keep history and export JSON or CSV.">选择场景套件或并发压力模式，设置预热、重复轮次与输入输出长度；对比 TTFT、P50/P95、生成速度、缓存复用和资源趋势，支持历史记录与 JSON / CSV 导出。</p>
+          <a class="feature-link" href="#screen-benchmark" data-en="Explore the Benchmark workspace ↘">查看 Benchmark 工作区 ↘</a>
         </article>
         </div>
       </div>
@@ -189,6 +206,60 @@
           </div>
         </div>
         <p class="image-note" data-en="Interface preview · Illustration data">界面预览 · 展示数据</p>
+      </div>
+    </section>
+
+    <section class="gallery-section section-padding" id="gallery" aria-labelledby="gallery-title">
+      <div class="container">
+        <div class="section-header">
+          <div><h2 class="section-title" id="gallery-title" data-en="Explore more workspaces">探索更多工作区</h2><p class="section-lead" data-en="From runtime setup to performance evaluation, see what each workspace does.">从运行环境到性能评估，了解每个工作区可以完成什么。</p></div>
+          <a class="text-link" href="docs/user-guide.html" data-href-en="docs/user-guide.en.html" data-en="Read the user guide ↗">阅读使用指南 ↗</a>
+        </div>
+        <div class="gallery-grid">
+          <figure class="gallery-item" id="screen-benchmark">
+            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/benchmark.zh.webp" data-href-en="assets/screenshots/benchmark.en.webp" data-target="benchmark" aria-label="放大查看 Benchmark 工作区" data-label-en="Enlarge the Benchmark workspace">
+              <img src="assets/screenshots/benchmark.zh.webp" data-src-en="assets/screenshots/benchmark.en.webp" width="2880" height="1920" loading="lazy" decoding="async" alt="Benchmark 工作区：测试计划、场景选择与并发压力参数" data-alt-en="Benchmark workspace: test plans, scenario selection and concurrent stress settings">
+              <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
+            </a>
+            <figcaption><span class="gallery-category" data-en="PERFORMANCE EVALUATION">性能评估</span><h3 data-en="Benchmark · Measure and compare">Benchmark · 基准测试</h3><p data-en="Run scenario suites and concurrent stress tests. Compare latency, throughput and resource trends, then export JSON or CSV reports.">运行场景套件与并发压力测试，对比延迟、吞吐和资源趋势，导出 JSON 或 CSV 报告。</p></figcaption>
+          </figure>
+          <figure class="gallery-item" id="screen-runtime">
+            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/runtime.zh.webp" data-href-en="assets/screenshots/runtime.en.webp" data-target="runtime" aria-label="放大查看 Strata 运行环境" data-label-en="Enlarge Strata runtime management">
+              <img src="assets/screenshots/runtime.zh.webp" data-src-en="assets/screenshots/runtime.en.webp" width="2880" height="1920" loading="lazy" decoding="async" alt="Strata 运行环境：安装检测、版本与更新管理" data-alt-en="Strata runtime: installation detection, versions and updates">
+              <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
+            </a>
+            <figcaption><span class="gallery-category" data-en="RUNTIME MANAGEMENT">运行环境</span><h3 data-en="Strata · Prepare the runtime">Strata · 环境管理</h3><p data-en="Inspect the local installation and upstream versions, read release notes and follow supported runtime updates.">检查本机安装与上游版本，阅读更新日志，跟踪受支持的运行时更新。</p></figcaption>
+          </figure>
+          <figure class="gallery-item" id="screen-config">
+            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/config.zh.webp" data-href-en="assets/screenshots/config.en.webp" data-target="config" aria-label="放大查看运行配置" data-label-en="Enlarge runtime configuration">
+              <img src="assets/screenshots/config.zh.webp" data-src-en="assets/screenshots/config.en.webp" width="2880" height="1920" loading="lazy" decoding="async" alt="运行配置：图形化参数、JSON 编辑与配置校验" data-alt-en="Runtime configuration: graphical settings, JSON editing and validation">
+              <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
+            </a>
+            <figcaption><span class="gallery-category" data-en="MODEL CONFIGURATION">模型配置</span><h3 data-en="Configuration · Edit and validate">运行配置 · 编辑与校验</h3><p data-en="Adjust model and hardware parameters with graphical controls or JSON, with validation and configuration backups.">通过图形控件或 JSON 调整模型与硬件参数，校验配置并保留备份。</p></figcaption>
+          </figure>
+          <figure class="gallery-item" id="screen-chat">
+            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/chat.zh.webp" data-href-en="assets/screenshots/chat.en.webp" data-target="chat" aria-label="放大查看聊天工作区" data-label-en="Enlarge the chat workspace">
+              <img src="assets/screenshots/chat.zh.webp" data-src-en="assets/screenshots/chat.en.webp" width="2880" height="1920" loading="lazy" decoding="async" alt="聊天工作区：多会话、流式回复与附件" data-alt-en="Chat workspace: conversations, streaming replies and attachments">
+              <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
+            </a>
+            <figcaption><span class="gallery-category" data-en="CHAT &amp; INTEGRATION">聊天与接入</span><h3 data-en="Chat · Work with your model">聊天 · 与本机模型协作</h3><p data-en="Organize conversations, attach files and read streaming replies, with structured-output settings and supported tools.">管理会话、添加附件并阅读流式回复，使用结构化输出设置与受支持的工具。</p></figcaption>
+          </figure>
+          <figure class="gallery-item" id="screen-tuning">
+            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/tuning.zh.webp" data-href-en="assets/screenshots/tuning.en.webp" data-target="tuning" aria-label="放大查看参数调优" data-label-en="Enlarge parameter tuning">
+              <img src="assets/screenshots/tuning.zh.webp" data-src-en="assets/screenshots/tuning.en.webp" width="2880" height="1920" loading="lazy" decoding="async" alt="参数调优：用途场景、参数候选与对比结果" data-alt-en="Parameter tuning: workload scenarios, candidates and comparison results">
+              <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
+            </a>
+            <figcaption><span class="gallery-category" data-en="PARAMETER TUNING">参数调优</span><h3 data-en="Tuning · Compare configurations">调优 · 比较参数配置</h3><p data-en="Choose a workload, compare supported candidates and review quality, speed and resource use before applying a configuration.">选择用途场景，比较受支持的候选，结合质量、速度与资源占用应用配置。</p></figcaption>
+          </figure>
+          <figure class="gallery-item" id="screen-settings">
+            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/settings.zh.webp" data-href-en="assets/screenshots/settings.en.webp" data-target="settings" aria-label="放大查看应用设置" data-label-en="Enlarge application settings">
+              <img src="assets/screenshots/settings.zh.webp" data-src-en="assets/screenshots/settings.en.webp" width="2880" height="1920" loading="lazy" decoding="async" alt="应用设置：语言、外观、后台与更新选项" data-alt-en="Application settings: language, appearance, background and update options">
+              <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
+            </a>
+            <figcaption><span class="gallery-category" data-en="APPLICATION PREFERENCES">应用偏好</span><h3 data-en="Settings · Make it your workspace">设置 · 调整工作台偏好</h3><p data-en="Choose Chinese or English, system/light/dark appearance, tray behavior and update preferences.">选择中英文、跟随系统或亮暗外观，设置托盘行为与更新偏好。</p></figcaption>
+          </figure>
+        </div>
+        <p class="image-note" data-en="Interface previews · Example data · Select an image to view it in full">界面预览 · 演示数据 · 点击图片查看完整界面</p>
       </div>
     </section>
 

@@ -169,6 +169,36 @@ const strataReleaseCatalog = (() => {
         "badge": "MONITOR"
       }
     },
+    "benchmark": {
+      "index": "04",
+      "zh": { "title": "Benchmark · 基准测试", "description": "场景套件、并发压力与性能报告。", "alt": "Benchmark 工作区：测试计划、场景选择与并发压力参数", "badge": "基准测试" },
+      "en": { "title": "Benchmark · Measure and compare", "description": "Scenario suites, concurrent stress tests and performance reports.", "alt": "Benchmark workspace: test plans, scenario selection and concurrent stress settings", "badge": "BENCHMARK" }
+    },
+    "runtime": {
+      "index": "05",
+      "zh": { "title": "Strata · 环境管理", "description": "安装检测、版本与运行时更新。", "alt": "Strata 运行环境：安装检测、版本与更新管理", "badge": "运行环境" },
+      "en": { "title": "Strata · Prepare the runtime", "description": "Installation detection, versions and runtime updates.", "alt": "Strata runtime: installation detection, versions and updates", "badge": "RUNTIME" }
+    },
+    "config": {
+      "index": "06",
+      "zh": { "title": "运行配置 · 编辑与校验", "description": "图形控件、JSON 与配置备份。", "alt": "运行配置：图形化参数、JSON 编辑与配置校验", "badge": "模型配置" },
+      "en": { "title": "Configuration · Edit and validate", "description": "Graphical controls, JSON and configuration backups.", "alt": "Runtime configuration: graphical settings, JSON editing and validation", "badge": "CONFIGURATION" }
+    },
+    "chat": {
+      "index": "07",
+      "zh": { "title": "聊天 · 与本机模型协作", "description": "会话、流式回复、附件与工具。", "alt": "聊天工作区：多会话、流式回复与附件", "badge": "聊天" },
+      "en": { "title": "Chat · Work with your model", "description": "Conversations, streaming, attachments and tools.", "alt": "Chat workspace: conversations, streaming replies and attachments", "badge": "CHAT" }
+    },
+    "tuning": {
+      "index": "08",
+      "zh": { "title": "调优 · 比较参数配置", "description": "按任务比较质量、速度与资源占用。", "alt": "参数调优：用途场景、参数候选与对比结果", "badge": "参数调优" },
+      "en": { "title": "Tuning · Compare configurations", "description": "Compare quality, speed and resource use for a workload.", "alt": "Parameter tuning: workload scenarios, candidates and comparison results", "badge": "TUNING" }
+    },
+    "settings": {
+      "index": "09",
+      "zh": { "title": "设置 · 调整工作台偏好", "description": "语言、外观、托盘与更新偏好。", "alt": "应用设置：语言、外观、后台与更新选项", "badge": "应用偏好" },
+      "en": { "title": "Settings · Make it your workspace", "description": "Language, appearance, tray and update preferences.", "alt": "Application settings: language, appearance, background and update options", "badge": "SETTINGS" }
+    },
     "usage": {
       "index": "03",
       "zh": {
@@ -558,6 +588,7 @@ const strataReleaseCatalog = (() => {
       });
       gsap.from('.feature-card', { y: 26, opacity: 0, duration: .55, stagger: .08, ease: 'power3.out', scrollTrigger: { trigger: '.feature-grid', start: 'top 90%', once: true } });
       gsap.from('.workspace-display-frame', { clipPath: 'inset(0 0 14% 0)', duration: .8, ease: 'power3.out', scrollTrigger: { trigger: '.workspace-display-frame', start: 'top 90%', once: true } });
+      gsap.utils.toArray('.gallery-item').forEach(item => gsap.from(item, { y: 18, opacity: 0, duration: .5, ease: 'power3.out', scrollTrigger: { trigger: item, start: 'top 92%', once: true } }));
       gsap.from('.download-card', { x: -18, opacity: 0, duration: .5, stagger: .1, ease: 'power3.out', scrollTrigger: { trigger: '.download-cards-grid', start: 'top 90%', once: true } });
     });
     window.addEventListener('load', () => ScrollTrigger.refresh(), { once: true });

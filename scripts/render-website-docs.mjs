@@ -179,7 +179,7 @@ function renderDocument(entry, markdown) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
-  <meta name="theme-color" content="#06130e" id="theme-color">
+  <meta name="theme-color" content="#f5f4ef" id="theme-color">
   <title>${escape(title)} · Strata Manager</title>
   <meta name="description" content="${escape(description)}">
   ${documentSeo({ title: `${title} · Strata Manager`, description, page: entry.page, lang: entry.lang, alternates: documents.filter((item) => item.key === entry.key) })}
@@ -190,7 +190,7 @@ function renderDocument(entry, markdown) {
 <body>
   <a class="skip-link" href="#content">${chrome.skip}</a>
   <header class="doc-header">
-    <a class="doc-brand" href="${home}"><img src="../assets/icon.svg" width="32" height="32" alt=""><span>Strata Manager</span></a>
+    <a class="doc-brand" href="${home}"><img src="../assets/icon.svg" width="32" height="32" alt=""><span>Strata <span class="brand-subtitle">Manager</span></span></a>
     <nav class="header-actions" aria-label="${escape(en ? 'Page controls' : '页面操作')}">
       <a class="header-action" href="${home}">${chrome.home}</a>
       ${langLink}
