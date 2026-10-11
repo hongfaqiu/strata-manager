@@ -327,6 +327,28 @@ mod tests {
         )
         .await
         .is_err());
+        #[cfg(windows)]
         assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+            // The Unix client creates its private IPC directory before a
+            // missing socket fails. It must create no backend or model state.
+            let entries: Vec<_> = std::fs::read_dir(directory.path())
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .collect();
+            assert_eq!(entries, [std::ffi::OsString::from(".ipc")]);
+            let ipc = directory.path().join(".ipc");
+            let metadata = std::fs::symlink_metadata(&ipc).unwrap();
+            assert!(metadata.is_dir() && !metadata.file_type().is_symlink());
+            assert_eq!(metadata.permissions().mode() & 0o7777, 0o700);
+            assert_eq!(
+                metadata.uid().to_string(),
+                strata_local_ipc::current_identity().unwrap()
+            );
+            assert_eq!(std::fs::read_dir(ipc).unwrap().count(), 0);
+        }
     }
 }
