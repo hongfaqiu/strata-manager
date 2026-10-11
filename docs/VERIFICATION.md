@@ -32,13 +32,19 @@
 
 后续源码 `3fc9adffdad8f59e0550557ce54535139c017b6b` 的 [CI 38177234879](https://github.com/hongfaqiu/strata-manager/actions/runs/38177234879)通过 Linux Clippy，但 Linux 原生分片发现浮条只读测试的平台断言错误：Unix IPC 客户端会创建空的私有 `.ipc` 目录，Windows 则保持空根目录。测试修复保留 Windows 空目录要求；Unix 严格核对根目录仅含 `.ipc`、真实非符号链接目录、当前用户所有、权限 `0700` 且目录为空，不允许套接字、锁文件或数据库。生产行为未修改，本地四项浮条合同、格式和严格 Clippy 通过；修复后的 Unix 分支仍由最终完整 CI 验证。
 
-应用源码 `a2f8f78aa71914178a306a6458518ec4a0be8e01` 的 [最终 CI 38177753892](https://github.com/hongfaqiu/strata-manager/actions/runs/38177753892)在同一次 attempt 1 完成全部 **8/8 job 成功**，包含六个完整原生分片及 Windows/Linux 安装包门禁。Linux 日志实际确认修复后的浮条只读断言和调用白名单通过，Windows 安装、后台 IPC 与升级检查也通过。`v0.1.4` 标签固定指向该应用源码。
+应用源码 `a2f8f78aa71914178a306a6458518ec4a0be8e01` 的 [最终 CI 38177753892](https://github.com/hongfaqiu/strata-manager/actions/runs/38177753892)在同一次 attempt 1 完成全部 **8/8 job 成功**，包含六个完整原生分片及 Windows/Linux 安装包门禁。Linux 日志实际确认修复后的浮条只读断言和调用白名单通过；Windows 安装、GUI、后台 IPC、正常退出与卸载通过。升级工具合同测试通过，但实际 beta.2 升级步骤仅对 0.1.2 执行，本轮 0.1.4 按版本条件跳过，不能记录为实际跨版本升级验收。`v0.1.4` 标签固定指向该应用源码。
 
 首轮 [Release 38178757394](https://github.com/hongfaqiu/strata-manager/actions/runs/38178757394)成功复用同源 CI 并完成三个安装包签名，但创建 draft 的 `gh api --input -` 命令失败，未留下该版本的 Release 或资产。发布控制器的统一子进程包装器将标准输入设为 `ignore`；真实 Node 子进程实测确认传入 JSON 收到零字节，而 `pipe` 可完整传递。修复只让显式请求体走 `pipe`，无输入仍关闭 stdin，并补充真实子进程合同；原始 GitHub stderr 已被旧包装器丢弃，因此不推断具体 HTTP 错误。恢复发布使用新 main 控制器及显式应用标签、源码 SHA 和 CI id，保留应用标签与所有签名、资产和发布门禁，不重建或移动已验证的应用源码。
 
 修复控制器的本地发行与 CI 门禁合同 **232 passed / 0 failed / 0 skipped**，证据为 `.local/release-0.1.4/controller-release-guards.log`。新增四项真实子进程合同覆盖 POST/PATCH Unicode JSON 字节完整传递、无输入立即 EOF，以及失败不泄漏请求体或敏感 stderr；这不替代重新执行的发布任务和公开资产核验。
 
 新控制器的 [发布任务 38179212470](https://github.com/hongfaqiu/strata-manager/actions/runs/38179212470)实际创建了空 draft `409952505`，但 GitHub 的说明刷新响应将缺省标签改为 `untagged`，被精确草稿校验拒绝，未上传或公开资产。控制器随后让 POST/PATCH 共用完整草稿元数据，显式保留应用标签、`draft=true` 与稳定/预发布状态；真实子进程合同同时检查稳定版和预发布版完整请求体。该空草稿仅在核对 id、来源日志、应用更新日志、零资产及前后不变的应用源码标签后恢复为 `v0.1.4`，保留所有后续上传与公开验证门禁。
+
+最终发布控制器 `ed8c93b7d688472b3283e221a7bc26ef78203d70` 的 [CI 38179609349 attempt 2](https://github.com/hongfaqiu/strata-manager/actions/runs/38179609349/attempts/2)完成 **8/8 job 成功**。attempt 1 的 Windows 安装包验收在 PowerShell 查询上达到原有 15 秒期限；重跑完整 CI 后，实际 GUI/协议与版本、sidecar 字节身份、空私有存储、正常退出及安装/卸载全部通过，未修改产品或放宽期限。真实旧版本升级步骤仍按上述版本条件跳过。
+
+[发布任务 38179620747](https://github.com/hongfaqiu/strata-manager/actions/runs/38179620747)使用该控制器，复用应用源码 `a2f8f78` 的完整 CI 安装包，正式公开 [v0.1.4](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.4)（Release id `409952505`，公开时间 `2026-10-11T22:16:17Z`）。八个资产实际公网下载的大小、SHA256 和 GitHub digest 一致；三个安装包签名及 signed version `0.1.4`、`SHA256SUMS`、`latest.json` 精确链接、稳定 latest 和 tag→commit 核验通过。发布产物中的字节证明与原 CI attempt 1 的三个安装包及公开资产一致。证据为 `.local/release-0.1.4/evidence-2026-10-11T22-16-52.006Z-0c62749f/verification.json` 与 `byte-proof-verification.json`，应用标签和资产未被重建或替换。
+
+[官网部署 38179827062](https://github.com/hongfaqiu/strata-manager/actions/runs/38179827062)完成后，公开十份双语页面的 HTTP 及内容检查通过并记录字节与哈希；全部 39 张截图/封面与源码的字节及哈希一致，下载元数据对应上述稳定 v0.1.4。中文/英文 × 1440/375 × 首页/指南/系统说明/更新日志共 **16 个公开浏览器场景通过**，无页面异常、站内 HTTP 错误或横向溢出。证据为 `.local/release-0.1.4/public-website-verification.json` 与 `output/playwright/release-014-public/browser-results.json`；这些结果仍不替代真实 GPU Benchmark、完整调优、长时压测、Linux 系统级 DEB 安装或客户端跨版本在线自动更新。
 
 ## 0.1.2 发版准备与 0.1.1 未公开记录
 
