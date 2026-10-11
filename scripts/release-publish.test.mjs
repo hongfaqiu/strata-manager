@@ -111,7 +111,7 @@ test('an unexpected PATCH response is reported without retrying or mutating a ta
 
 test('the workflow queues every publication without replacing pending tags and retains all gates', async () => {
   const workflow = await readFile(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
-  const reusable = await readFile(new URL('../.github/workflows/release-from-ci.yml', import.meta.url), 'utf8');
+  const reusable = (await readFile(new URL('../.github/workflows/release-from-ci.yml', import.meta.url), 'utf8')).replaceAll('\r\n', '\n');
   const helper = await readFile(new URL('./release-from-ci.mjs', import.meta.url), 'utf8');
   assert.match(workflow, /uses: \.\/\.github\/workflows\/release-from-ci\.yml/);
   const publication = reusable.slice(reusable.indexOf('\n  promote:'));
