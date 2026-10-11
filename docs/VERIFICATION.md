@@ -303,3 +303,11 @@ Linux MCP stdio 新增同步 wrapper，在 Tokio/数据库初始化之前接收�
 官网部署工作流 `38152552942` 对应 `1fbcc4bad0ca71cae738c2a55e5dc2581ea6b166`。公开 20 张页面 WebP 与该提交的截图 manifest 逐字节哈希一致；中英首页/下载/指南在 1440px、375px 的 12 组检查，以及 40 次图片切换通过。英文启动的一次旧语言图片取消请求单独复核正常。此时公开 stable latest 仍为 0.1.2，0.1.3 下载资产仍需正式发布后补验。
 
 本轮由三个子 Agent 分别处理原生验证、发布/前端回归和范围/截图审查，均继承主 Agent 当前配置；工具未返回可独立确认的实际模型或推理档位。主 Agent 完成合并、版本/文档整理与最终发布验收。
+
+## 2026-10-12 跨平台发布回归修正
+
+提交 `acb24bf` 的 CI `38153257135` 两平台均未整体通过：Windows 核心 315 passed / 1 failed / 9 ignored，PID 标记夹具创建文件后尚未写完就被读取；Linux 核心 264 passed / 2 failed / 4 ignored，全局管理扫描先读取无关进程的可执行文件身份，遇到权限拒绝。后续 Clippy 和安装包 smoke 未执行，不能以这轮结果证明发行包通过。
+
+Windows 夹具改为写完同目录临时文件后原子发布标记，全部断言与等待期限保留，相关测试连续 5 次通过。Linux 先用与原管理判定相同的真实 `setup.py` / `strata_mcp.py` 脚本或模块入口筛选；完整参数明确无关的进程不读取可执行文件身份，受限或身份不明的真实候选仍拒绝恢复管理。WSL 实测确认无关的 root 所有系统自动更新 Python 服务触发了原错误，并加入相应负对照。空参数只允许内核线程或死亡状态跳过，无法确认的存活进程继续拒绝。
+
+独立工作目录使用与 CI 相同的 Rust 1.99.0，在 Ubuntu 24.04 实际运行发现回归 21 passed / 1 ignored、外部管理 5 passed / 0 ignored；原生核心、Supervisor、IPC 和更新验签的 all-targets Clippy `-D warnings` 通过。Windows 发现回归 22 passed / 2 ignored、监听交接回归 1 passed；ignored 是既有显式实机只读验收，不计通过。此处为定向 CPU 回归，不替代最终源码的完整 Windows / Linux CI、正式签名及安装包启动验收；未操作真实模型或默认应用数据。

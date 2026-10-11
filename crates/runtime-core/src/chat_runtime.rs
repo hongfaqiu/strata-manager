@@ -289,7 +289,8 @@ mod tests {
                     ],
                 )
                 .unwrap();
-            let script="import subprocess,sys,time;from pathlib import Path;child=subprocess.Popen([sys.executable,'-I','-S','-c','import time;time.sleep(15)']+(['--prompt-cache=4'] if sys.argv[2]=='1' else []));Path(sys.argv[1]).write_text(str(child.pid));time.sleep(15)";
+            // Publish a complete PID before the parent can observe the marker.
+            let script="import subprocess,sys,time;from pathlib import Path;child=subprocess.Popen([sys.executable,'-I','-S','-c','import time;time.sleep(15)']+(['--prompt-cache=4'] if sys.argv[2]=='1' else []));marker=Path(sys.argv[1]);temporary=marker.with_suffix('.tmp');temporary.write_text(str(child.pid));temporary.replace(marker);time.sleep(15)";
             let mut command = Command::new(&python);
             command
                 .args(["-I", "-S", "-c", script])

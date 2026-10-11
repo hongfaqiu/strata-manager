@@ -1122,12 +1122,19 @@ fn python_entry_script(args: &[String]) -> Option<&str> {
     None
 }
 
+fn python_management_script(args: &[String]) -> Option<&str> {
+    let script = python_entry_script(args)?;
+    let name = Path::new(script).file_name()?.to_str()?;
+    (name.eq_ignore_ascii_case("setup.py") || name.eq_ignore_ascii_case("strata_mcp.py"))
+        .then_some(script)
+}
+
 fn management_script_matches(
     root: &Path,
     args: &[String],
     cwd: Option<&Path>,
 ) -> Result<bool, String> {
-    let Some(script) = python_entry_script(args) else {
+    let Some(script) = python_management_script(args) else {
         return Ok(false);
     };
     let path = Path::new(script);
@@ -1135,9 +1142,6 @@ fn management_script_matches(
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or_default();
-    if !name.eq_ignore_ascii_case("setup.py") && !name.eq_ignore_ascii_case("strata_mcp.py") {
-        return Ok(false);
-    }
     let path = if path.is_absolute() {
         path.to_path_buf()
     } else {
@@ -1162,8 +1166,96 @@ fn management_script_matches(
     )
 }
 
+#[cfg(any(not(windows), test))]
+fn unix_python_name(name: &str) -> bool {
+    let name = Path::new(name)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    name == "python" || name == "python3" || name == "pythonw" || name.starts_with("python3.")
+}
+
+#[cfg(any(not(windows), test))]
+fn checked_unix_management_command(
+    bytes: &[u8],
+    executable: impl FnOnce() -> std::io::Result<Option<PathBuf>>,
+) -> Result<Option<Vec<String>>, String> {
+    if bytes.is_empty() || bytes.len() > 128 * 1024 || bytes.last() != Some(&0) {
+        return Err("Python 管理参数不完整或超过核验上限".into());
+    }
+    // Preserve empty option values and use the real Python entry position.
+    // Incidental setup.py text in -c, another script's arguments or a module's
+    // options must not make an unrelated process a management candidate.
+    let args = bytes[..bytes.len() - 1]
+        .split(|b| *b == 0)
+        .map(|value| {
+            String::from_utf8(value.to_vec()).map_err(|_| "Python 管理参数包含无效文本".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if args.len() > 256 {
+        return Err("Python 管理参数超过核验上限".into());
+    }
+    // A Python daemon's unrelated entry, -c or other module is not a management
+    // candidate, even when its real executable cannot be read across users.
+    // Share the exact entry classification with management_script_matches;
+    // argv0/comm renaming never excludes an actual setup/MCP script entry.
+    if python_management_script(&args).is_none() {
+        return Ok(None);
+    }
+    let Some(exe) = executable().map_err(|error| {
+        format!(
+            "进程文件身份无法核验，禁止恢复本应用管理: {:?}",
+            error.kind()
+        )
+    })?
+    else {
+        // The caller only returns None after confirming this /proc PID vanished.
+        return Ok(None);
+    };
+    if !unix_python_name(&exe.to_string_lossy()) {
+        return Ok(None);
+    }
+    Ok(Some(args))
+}
+
+#[cfg(any(not(windows), test))]
+fn unix_empty_command_is_inactive(bytes: &[u8], expected_pid: u32) -> Result<bool, String> {
+    let invalid = "空参数进程的内核状态不可核验，禁止恢复本应用管理";
+    if bytes.len() > 4096 {
+        return Err(invalid.into());
+    }
+    let open = bytes.iter().position(|byte| *byte == b'(').ok_or(invalid)?;
+    let close = bytes
+        .iter()
+        .rposition(|byte| *byte == b')')
+        .ok_or(invalid)?;
+    if close <= open {
+        return Err(invalid.into());
+    }
+    let pid = std::str::from_utf8(&bytes[..open])
+        .ok()
+        .and_then(|pid| pid.trim().parse::<u32>().ok())
+        .ok_or(invalid)?;
+    let fields = std::str::from_utf8(&bytes[close + 1..])
+        .map_err(|_| invalid)?
+        .split_ascii_whitespace()
+        .collect::<Vec<_>>();
+    if pid != expected_pid || fields.len() < 20 {
+        return Err(invalid.into());
+    }
+    let flags = fields[6].parse::<u64>().map_err(|_| invalid)?;
+    fields[19].parse::<u64>().map_err(|_| invalid)?;
+    // PF_KTHREAD comes from the kernel's stat flags, not a changeable name.
+    // Zombies/dead tasks also cannot be executing a live management script.
+    Ok(flags & 0x0020_0000 != 0 || matches!(fields[0], "Z" | "X" | "x"))
+}
+
 #[cfg(not(windows))]
-fn unix_management_inventory() -> Result<Vec<(Vec<String>, Option<PathBuf>)>, String> {
+type UnixPythonInventory = Vec<(Vec<String>, Option<PathBuf>)>;
+
+#[cfg(not(windows))]
+fn unix_management_inventory() -> Result<UnixPythonInventory, String> {
     use std::io::Read;
     let mut commands = Vec::new();
     let mut entries = 0;
@@ -1171,51 +1263,60 @@ fn unix_management_inventory() -> Result<Vec<(Vec<String>, Option<PathBuf>)>, St
         fs::read_dir("/proc").map_err(|_| "此平台无法核验完整管理进程清单，禁止恢复本应用管理")?;
     for entry in processes {
         let entry = entry.map_err(|_| "管理进程清单不完整")?;
-        if entry.file_name().to_string_lossy().parse::<u32>().is_err() {
+        let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
             continue;
-        }
+        };
         entries += 1;
         if entries > 4096 {
             return Err("管理进程清单超过核验上限".into());
         }
-        let exe = match fs::read_link(entry.path().join("exe")) {
-            Ok(exe) => exe,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(_) => return Err("进程文件身份无法核验，禁止恢复本应用管理".into()),
+        let process = entry.path();
+        let vanished = || matches!(fs::metadata(&process), Err(error) if error.kind() == std::io::ErrorKind::NotFound);
+        let read = |name: &str, limit: u64| -> std::io::Result<Vec<u8>> {
+            let mut bytes = Vec::new();
+            fs::File::open(process.join(name))?
+                .take(limit + 1)
+                .read_to_end(&mut bytes)?;
+            Ok(bytes)
         };
-        let name = exe
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or_default()
-            .to_ascii_lowercase();
-        if !(name == "python"
-            || name == "python3"
-            || name == "pythonw"
-            || name.starts_with("python3."))
-        {
-            continue;
+        // cmdline is normally readable across users even when ptrace
+        // restrictions hide exe/cwd. Only positively classified non-candidates
+        // avoid exe; an unreadable or malformed command still blocks resuming.
+        let bytes = match read("cmdline", 128 * 1024) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound && vanished() => continue,
+            Err(error) => {
+                return Err(format!(
+                    "管理进程参数无法读取（PID {pid}，{:?}），禁止恢复本应用管理",
+                    error.kind()
+                ));
+            }
+        };
+        if bytes.is_empty() {
+            let stat = match read("stat", 4096) {
+                Ok(stat) => stat,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound && vanished() => {
+                    continue
+                }
+                Err(_) => return Err(format!("空参数进程状态无法读取（PID {pid}）")),
+            };
+            if unix_empty_command_is_inactive(&stat, pid)? {
+                continue;
+            }
+            return Err(format!(
+                "存活进程参数不完整（PID {pid}），禁止恢复本应用管理"
+            ));
         }
-        let mut bytes = Vec::new();
-        fs::File::open(entry.path().join("cmdline"))
-            .map_err(|_| "Python 管理进程清单发生变化")?
-            .take(128 * 1024 + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|_| "Python 管理参数无法读取")?;
-        if bytes.is_empty() || bytes.len() > 128 * 1024 || bytes.last() != Some(&0) {
-            return Err("Python 管理参数不完整或超过核验上限".into());
-        }
-        // Remove only /proc's final terminator; empty argv values still consume
-        // their real option position (for example Python -W '' setup.py).
-        let args = bytes[..bytes.len() - 1]
-            .split(|b| *b == 0)
-            .map(|value| {
-                String::from_utf8(value.to_vec())
-                    .map_err(|_| "Python 管理参数包含无效文本".to_string())
+        let args =
+            checked_unix_management_command(&bytes, || match fs::read_link(process.join("exe")) {
+                Ok(exe) => Ok(Some(exe)),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound && vanished() => {
+                    Ok(None)
+                }
+                Err(error) => Err(error),
             })
-            .collect::<Result<Vec<_>, _>>()?;
-        if args.len() > 256 {
-            return Err("Python 管理参数超过核验上限".into());
-        }
+            .map_err(|error| format!("{error}（PID {pid}）"))?;
+        let Some(args) = args else { continue };
         commands.push((args, fs::read_link(entry.path().join("cwd")).ok()));
         if commands.len() > 64 {
             return Err("Python 管理进程超过核验上限".into());
@@ -1578,6 +1679,141 @@ fn prepare_import_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn management_cmdline(values: &[&str]) -> Vec<u8> {
+        values
+            .iter()
+            .flat_map(|value| value.bytes().chain([0]))
+            .collect()
+    }
+
+    #[test]
+    fn unix_management_inventory_prefilters_only_complete_unrelated_commands() {
+        for values in [
+            vec![
+                "/usr/bin/gnome-keyring-daemon",
+                "--foreground",
+                "--components=secrets",
+            ],
+            vec!["worker", "-c", "print('setup.py')", "setup.py"],
+            vec!["worker", "-cprint('strata_mcp.py')", "setup.py"],
+            vec!["worker", "unrelated.py", "tools/strata_mcp.py"],
+            vec!["worker", "-m", "other.module", "setup.py"],
+            vec!["/usr/bin/python3", "/usr/share/unrelated.py", "setup.py"],
+            vec!["/usr/bin/python3", "-c", "print('setup.py')", "setup.py"],
+            vec![
+                "/usr/bin/python3",
+                "-m",
+                "other.module",
+                "tools/strata_mcp.py",
+            ],
+            vec![
+                "/usr/bin/python3",
+                "/usr/share/unattended-upgrades/unattended-upgrade-shutdown",
+                "--wait-for-signal",
+            ],
+        ] {
+            assert!(
+                checked_unix_management_command(&management_cmdline(&values), || panic!(
+                    "an unrelated command must not read a restricted exe"
+                ),)
+                .unwrap()
+                .is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn unix_management_inventory_verifies_python_and_renamed_real_entries() {
+        for values in [
+            vec!["/usr/bin/python3.13", "-I", "-u", "setup.py"],
+            vec!["/usr/bin/python3", "-W", "", "setup.py"],
+            vec!["renamed-argv0", "tools/strata_mcp.py"],
+            vec!["renamed-argv0", "-m", "setup"],
+            vec!["renamed-argv0", "-mtools.strata_mcp"],
+        ] {
+            let args = checked_unix_management_command(&management_cmdline(&values), || {
+                Ok(Some(PathBuf::from("/usr/bin/python3.13")))
+            })
+            .unwrap()
+            .unwrap();
+            assert_eq!(args, values);
+        }
+        assert!(
+            checked_unix_management_command(&management_cmdline(&["python3", "setup.py"]), || {
+                Ok(Some(PathBuf::from("/usr/bin/sh")))
+            },)
+            .unwrap()
+            .is_none(),
+            "an argv/name claim cannot replace the actual executable identity"
+        );
+    }
+
+    #[test]
+    fn unix_management_inventory_restricted_candidates_fail_closed() {
+        for values in [
+            vec!["/usr/bin/python3", "setup.py"],
+            vec!["renamed-argv0", "setup.py"],
+            vec!["renamed-argv0", "-m", "tools.strata_mcp"],
+        ] {
+            for kind in [
+                std::io::ErrorKind::PermissionDenied,
+                std::io::ErrorKind::NotFound,
+            ] {
+                let error = checked_unix_management_command(&management_cmdline(&values), || {
+                    Err(std::io::Error::from(kind))
+                })
+                .unwrap_err();
+                assert!(error.contains("进程文件身份无法核验"));
+            }
+        }
+        assert!(
+            checked_unix_management_command(&management_cmdline(&["python3", "setup.py"]), || Ok(
+                None
+            ),)
+            .unwrap()
+            .is_none(),
+            "only a separately confirmed vanished PID may return None"
+        );
+    }
+
+    #[test]
+    fn unix_management_inventory_incomplete_arguments_never_become_non_candidates() {
+        let malformed = [
+            Vec::new(),
+            b"worker\0unrelated.py".to_vec(),
+            b"python3\0setup.py\0\xff\0".to_vec(),
+            vec![0; 128 * 1024 + 1],
+            management_cmdline(&vec!["arg"; 257]),
+        ];
+        for bytes in malformed {
+            assert!(checked_unix_management_command(&bytes, || {
+                panic!("invalid arguments must not reach executable verification")
+            })
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn unix_management_inventory_empty_command_requires_kernel_or_dead_state() {
+        let stat = |state: &str, flags: u64| {
+            let mut fields = vec!["0".to_owned(); 20];
+            fields[0] = state.into();
+            fields[6] = flags.to_string();
+            fields[19] = "12345".into();
+            format!("42 (renamed ) worker) {}\n", fields.join(" ")).into_bytes()
+        };
+        assert!(unix_empty_command_is_inactive(&stat("S", 0x0020_0000), 42).unwrap());
+        for state in ["Z", "X", "x"] {
+            assert!(unix_empty_command_is_inactive(&stat(state, 0), 42).unwrap());
+        }
+        for state in ["S", "R", "D", "T"] {
+            assert!(!unix_empty_command_is_inactive(&stat(state, 0), 42).unwrap());
+        }
+        assert!(unix_empty_command_is_inactive(&stat("S", 0x0020_0000), 43).is_err());
+        assert!(unix_empty_command_is_inactive(b"42 (python3) S 0 0", 42).is_err());
+        assert!(unix_empty_command_is_inactive(&vec![0; 4097], 42).is_err());
+    }
+
     #[test]
     fn management_entry_matches_exact_canonical_scripts_not_incidental_text() {
         let directory = tempfile::tempdir().unwrap();
