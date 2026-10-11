@@ -1,11 +1,11 @@
 <div align="center">
 
-<a href="https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.webp"><img src="docs/screenshots/product-cover.webp" alt="Strata Manager：Strata 运行环境、模型配置与本机服务" width="100%"></a>
+<a href="https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.webp"><img src="docs/screenshots/product-cover.webp" alt="Strata Manager：亮色产品图与本机 Strata 桌面工作台" width="100%"></a>
 
 <h1>Strata Manager</h1>
 
-<p><strong>Strata 运行环境与本地模型服务管理桌面工作台。</strong><br>
-安装和更新 Strata，选择模型运行配置，管理本机 API。</p>
+<p><strong>让本机 Strata 更易用的桌面工作台。</strong><br>
+模型、本机 API、聊天与调优，在一个应用中完成。</p>
 
 <p>
 <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/License-MIT-118577"></a>
@@ -27,7 +27,9 @@
 
 </div>
 
-Strata Manager 是开源的 [Strata](https://github.com/Niko1221/Strata) 运行环境与本地模型服务管理桌面工作台。核心是运行环境安装和更新、模型运行配置，以及服务启动、停止与恢复；聊天、监控、API 使用统计和参数调优为这些流程提供配套工具。已有权重保持原位，已启动的服务由独立后台管理。
+Strata Manager 将这台电脑上的 [Strata](https://github.com/Niko1221/Strata) 集中到一个开源桌面应用中。检测已有环境与模型、安装和更新 Strata、选择运行配置、查看本机 API 状态，无需在多个窗口间切换。聊天、硬件监控、API 使用统计和参数调优也在同一工作台中完成，已有模型权重保持原位。
+
+选好模型后点击 **“使用”**，独立后台会管理服务的启动、加载与运行。打开应用或登录时只启动轻量后台，不会因保存过模型选择就占用显存。应用只管理这台电脑上的 Strata。
 
 下方功能与截图描述 0.1.2 源码。安装包是否已公开及对应版本，以[发布页](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.2)为准。发布检查按 revision 独立执行，本文不将未发布候选视为已经通过验收。
 
@@ -45,7 +47,7 @@ Strata Manager 是独立社区项目，并非 Strata 官方应用，负责管理
 - **先看更新，再确认安装。** 默认在打开应用及每 12 小时自动检查；发现更新后展示日志，由你确认安装。应用、Strata 与模型权重分别管理。
 - **直接看到已有模型。** “我的模型”自动展示发现的本机模型，同一模型下汇总运行配置；支持切换配置、查看修改日期、标记当前与上次使用的配置，原权重无需重复下载。
 - **完整编辑运行配置。** 从模型内打开二级配置页，通过带建议值和自定义输入的图形化控件或 JSON 编辑配置；保存前校验并保留备份。
-- **控制本机服务。** 启动、停止、重启或释放模型内存，查看启动阶段与日志；浏览其它配置时，当前活跃模型和配置仍清楚可见。释放内存保留模型文件。
+- **让后台维护本机服务。** 启用模型后，后台负责启动、加载，并在服务异常退出时最多尝试 3 次恢复。可在界面中启动、停止、重启或释放模型内存，查看启动阶段与日志；浏览其它配置时，当前活跃模型和配置仍清楚可见。释放内存保留模型文件。
 - **查看运行与用量。** 监控服务和硬件，使用统计在重新打开应用后保留，并通过图表显示请求、tokens、延迟、缓存率、prefill 和解码速度；缺失测量保持未知。
 - **在同一工作台聊天。** 多会话、流式回答与附件集中展示；思考过程、图像输入和 MCP 工具事件依赖运行时与模型支持。
 - **用完整任务调优。** 按日常聊天、编程与 Agent、长文分析测量，比较 PCIe/MTP 请求参数及受支持的 CPU、异步换入、prefill 和显存预留重启候选，通过质量与资源检查后再应用或恢复；不是所有配置的自动搜索，也不保证固定提速。
@@ -93,7 +95,7 @@ pnpm desktop
 
 ## 看看它的样子
 
-截图由当前应用组件使用隔离的示例数据渲染。模型状态、聊天、用量与调优数值均为示例，不代表真实推理结果或性能测量；封面展示 Strata 管理页。点击图片可查看高清原图。
+所有截图均使用亮色主题，由当前应用组件配合隔离的示例数据渲染。模型状态、聊天、用量与调优数值均为示例，不代表真实推理结果或性能测量。Hero 将产品介绍与应用界面结合，展示本机 Strata 的使用流程。点击图片可查看高清原图。
 
 ### Strata，全局管理运行环境
 
@@ -164,4 +166,4 @@ pnpm desktop
 
 本仓库采用 [MIT](LICENSE)。复用代码与界面保留上游版权声明，Outfit 字体使用 SIL OFL 1.1；详见[第三方声明](THIRD_PARTY_NOTICES.md)。
 
-<p align="center"><sub><a href="https://hongfaqiu.github.io/strata-manager/?lang=zh">Strata Manager 官网</a> · Strata 运行环境与本地模型服务管理桌面工作台。</sub></p>
+<p align="center"><sub><a href="https://hongfaqiu.github.io/strata-manager/?lang=zh">Strata Manager 官网</a> · 让本机 Strata 更易用的桌面工作台。</sub></p>

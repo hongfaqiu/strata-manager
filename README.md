@@ -1,10 +1,10 @@
 <div align="center">
 
-<a href="https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.webp"><img src="docs/screenshots/product-cover.webp" alt="Strata Manager — Strata runtime, model configurations and local services" width="1200" /></a>
+<a href="https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.webp"><img src="docs/screenshots/product-cover.webp" alt="Strata Manager — a light product overview of your local Strata desktop workspace" width="1200" /></a>
 
 <h1>Strata Manager</h1>
-<p><strong>Your desktop workspace for Strata and local model services.</strong></p>
-<p>Install and update Strata, choose model configurations, and manage your local API.</p>
+<p><strong>A simpler way to run Strata on your computer.</strong></p>
+<p>Your models, local API, chat and tuning — together in one desktop workspace.</p>
 
 <p>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license" /></a>
@@ -20,7 +20,9 @@
 
 **v0.1.2 release entry.** Use the links below or read the [release notes](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.2) and [installation guide](https://hongfaqiu.github.io/strata-manager/docs/download.en.html).
 
-Strata Manager is an open-source desktop workspace for the [Strata](https://github.com/Niko1221/Strata) runtime and local model services. Its core is runtime installation and updates, model configurations, and service startup, shutdown and recovery. Chat, monitoring, API usage statistics and parameter tuning support that workflow. Existing model weights stay in place, and an independent background process manages running services.
+Strata Manager brings your local [Strata](https://github.com/Niko1221/Strata) setup into one open-source desktop app. Detect an existing installation and models, install or update Strata, choose a model configuration, and keep track of your local API. Chat, hardware monitoring, API usage statistics and parameter tuning are built into the same workspace. Existing model weights stay in place.
+
+Choose **Use** to enable a model; the independent background process handles its service lifecycle. Opening the app or signing in starts only the lightweight background, so a saved model selection does not unexpectedly occupy GPU memory. Everything Manager manages runs on this computer.
 
 The features and screenshots describe the 0.1.2 source. Package availability and the exact published version are shown on the [release page](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.2). Release checks run for each revision; this documentation does not establish that an unpublished candidate has passed them.
 
@@ -36,7 +38,7 @@ Strata Manager is an independent community project built on Strata. It manages S
 - **Review updates before installing.** Automatic checks are enabled by default, on launch and every 12 hours. Available updates show release notes and require confirmation before installation. App updates, Strata updates and model weights are managed separately.
 - **See the models you already have.** My models automatically lists discovered local models. Configurations that use the same model are grouped; switch configurations, inspect modification dates, and identify the current and last-used configuration without downloading weights again.
 - **Edit the full runtime configuration.** Open a model's configuration inside Models. Use graphical controls with suggestions and custom values, or edit JSON; saves validate the configuration and retain a backup.
-- **Control the local API.** Start, stop, restart or release model memory, with startup stages and logs. The active model and configuration remain visible while you browse other configurations. Releasing memory preserves model files.
+- **Keep the local API under control.** After you enable a model, the background handles startup and loading, with up to three recovery attempts after an unexpected service exit. Start, stop, restart or release model memory from the app, with startup stages and logs. The active model and configuration remain visible while you browse alternatives; releasing memory preserves model files.
 - **Observe and test.** Monitor service and hardware activity; retain API usage after reopening the app and chart requests, tokens, latency, cache reuse, prefill and decode speeds. Missing measurements remain unknown.
 - **Chat in the same workspace.** Keep conversations, streaming replies and attachments together. Reasoning, image input and MCP tool events require model and runtime support.
 - **Tune with complete tasks.** Compare everyday chat, coding and Agent, or long-document workloads. Test PCIe/MTP request parameters and supported CPU, swapping, prefill and VRAM-reserve restart candidates, review quality and resource checks, then apply or restore. This is a bounded comparison, not a search of every configuration or a speed guarantee.
@@ -70,7 +72,7 @@ Only supported installations on **this computer** are managed. See the [user gui
 
 ## Screenshots
 
-These screenshots render the current app components with isolated example data. Model status, chat content, usage and tuning values are examples, not live inference results or benchmarks. The cover shows the Strata management screen. Click an image to view its full-resolution version.
+All screenshots use the light theme and render the current app components with isolated example data. Model status, chat content, usage and tuning values are examples, not live inference results or benchmarks. The hero combines a product layout with the app's interface to introduce the local Strata workflow. Click an image to view its full-resolution version.
 
 **Strata — runtime versions, Windows x64 ZIP updates and official release notes**
 
