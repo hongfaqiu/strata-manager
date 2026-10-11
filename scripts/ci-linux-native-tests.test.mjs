@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import {
   IGNORED_POLICY, parseListing, parseCargoArtifacts, attachInventory, makePlan,
-  validatePlan, selectionArgs, parseResults, validateCoverage, validateIgnoredPolicy, validateShardEvidence, parseOptions, workspaceDocTargets,
+  validatePlan, selectionArgs, selectionBatches, argvBytes, MAX_FILTER_NAMES, MAX_ARGV_BYTES, mergeBinaryReports,
+  parseResults, parseDocResults, validateCoverage, validateIgnoredPolicy, validateShardEvidence, parseOptions, workspaceDocTargets,
 } from './ci-linux-native-tests.mjs';
 
 const clone = value => structuredClone(value);
@@ -25,10 +26,13 @@ function fixtureReports(plan) {
   return plan.groups.map(g => ({index: g.index, success: true, inventoryHash: plan.inventoryHash,
     binaries: g.binaries.map(b => {
       const full = plan.binaries.find(expected => expected.id === b.id);
-      const cases = b.names.map(name => ({name, status: full.cases.find(c => c.name === name).ignored ? 'ignored' : 'ok'}));
-      return {id: b.id, cases, passed: cases.filter(c => c.status === 'ok').length,
-        ignored: cases.filter(c => c.status === 'ignored').length};
+      return mergeBinaryReports(full, b.names, selectionBatches(full, b.names).map(names => reportFor(full, names)));
     })}));
+}
+function reportFor(binary, names) {
+  const ignored = names.filter(name => binary.cases.find(c => c.name === name).ignored).length;
+  const lines = names.map(name => `test ${name} ... ${binary.cases.find(c => c.name === name).ignored ? 'ignored, explicit fixture' : 'ok'}`).join('\n');
+  return parseResults(`running ${names.length} tests\n${lines}\ntest result: ok. ${names.length - ignored} passed; 0 failed; ${ignored} ignored; 0 measured; ${binary.cases.length - names.length} filtered out; finished in 0.10s\n`, binary, names);
 }
 function fixtureDocs(plan) {
   return {success: true, sourceSha: plan.binding.sourceSha, inventoryHash: plan.inventoryHash,
@@ -82,6 +86,28 @@ test('workspace doctests include mixed desktop crate types and every Cargo libra
   const ambiguous = clone(metadata); delete ambiguous.packages[0].targets[0].doctest; assert.throws(() => workspaceDocTargets(ambiguous));
 });
 
+test('workspace doctest headers and full summaries survive xvfb merged streams without weakening counts', () => {
+  const targets = ['strata_local_ipc', 'strata_manager_lib', 'strata_runtime_core', 'strata_update_verifier'];
+  const header = target => `   Doc-tests ${target}\n`;
+  const result = 'running 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n';
+  const merged = targets.map(target => header(target) + result).join('\n');
+  const split = {stdout: result.repeat(4), stderr: targets.map(header).join('')};
+  const expected = parseDocResults(split, targets);
+  assert.deepEqual(parseDocResults({stdout: merged, stderr: 'Secret Service daemon exit status: 0\n'}, targets), expected);
+  assert.equal(expected.targets.length, 4); assert.equal(expected.summaries.length, 4);
+  for (const invalid of [
+    merged.replace(header(targets[0]), ''),
+    merged.replace(header(targets[0]), header(targets[1])),
+    merged.replace(header(targets[0]), header('unknown_crate')),
+    merged + header(targets[0]) + result,
+    merged.replace('0 failed;', '1 failed;'),
+    merged.replace('0 filtered out;', '1 filtered out;'),
+    merged.replace('running 0 tests', 'running 1 test'),
+    merged.replace('test result: ok.', 'test result: FAILED.'),
+    merged.replace('finished in 0.00s', 'finished in broken'),
+  ]) assert.throws(() => parseDocResults({stdout: invalid, stderr: ''}, targets));
+});
+
 test('module scheduling is deterministic and preserves every test and empty executable once', () => {
   const plan = fixturePlan();
   assert.equal(validatePlan(plan), true);
@@ -94,11 +120,52 @@ test('module scheduling is deterministic and preserves every test and empty exec
   const altered = clone(plan); altered.binding.sourceSha = 'c'.repeat(40); assert.throws(() => validatePlan(altered));
 });
 
-test('selection skips exact whole names without dropping a longer substring sibling', () => {
+test('selection uses exact positive OR filters without dropping a longer substring sibling', () => {
   const binary = {id: 'fixture', cases: [c('m::a'), c('m::ab'), c('other::ignored', true)]};
-  assert.deepEqual(selectionArgs(binary, ['m::ab']), ['--exact', '--test-threads=1', '--color', 'never', '--format', 'pretty', '--skip', 'm::a', '--skip', 'other::ignored']);
+  assert.deepEqual(selectionArgs(binary, ['m::ab']), ['--exact', '--test-threads=1', '--color', 'never', '--format', 'pretty', 'm::ab']);
+  assert.deepEqual(selectionArgs(binary, ['m::a', 'm::ab', 'other::ignored']), ['--exact', '--test-threads=1', '--color', 'never', '--format', 'pretty']);
   assert.throws(() => selectionArgs(binary, ['missing']));
   assert.throws(() => selectionArgs(binary, ['m::a', 'm::a']));
+  assert.throws(() => selectionArgs(binary, []));
+});
+
+test('positive filters are batched below both name and UTF-8 argv limits without omissions', () => {
+  const binary = {id: 'bounded', executable: '/fixture/libtest', cases: Array.from({length: 300}, (_, index) => c(`m::case_${String(index).padStart(3, '0')}`, index === 259))};
+  const selected = binary.cases.slice(0, 260).map(c => c.name);
+  const batches = selectionBatches(binary, selected);
+  assert.deepEqual(batches.map(b => b.length), [128, 128, 4]);
+  assert.deepEqual(batches.flat(), selected);
+  assert.throws(() => selectionArgs(binary, selected));
+  for (const batch of batches) {
+    assert.ok(batch.length <= MAX_FILTER_NAMES);
+    assert.ok(argvBytes(binary, [...selectionArgs(binary, batch), '--list']) < MAX_ARGV_BYTES);
+  }
+  const reports = batches.map(names => reportFor(binary, names));
+  const merged = mergeBinaryReports(binary, selected, reports);
+  assert.equal(merged.passed, 259); assert.equal(merged.ignored, 1); assert.equal(merged.filtered, 40);
+  assert.throws(() => mergeBinaryReports(binary, selected, reports.slice(1)));
+  assert.throws(() => mergeBinaryReports(binary, selected, [reports[0], reports[0], reports[2]]));
+  const filtered = clone(reports); filtered[0].filtered++; assert.throws(() => mergeBinaryReports(binary, selected, filtered));
+  const ignored = clone(reports); ignored[2].cases.at(-1).status = 'ok'; assert.throws(() => mergeBinaryReports(binary, selected, ignored));
+  const utf8 = {id: 'utf8', cases: [...Array.from({length: 100}, (_, index) => c(`unicode::${'界'.repeat(400)}_${String(index).padStart(3, '0')}`)), c('outside')]};
+  const byteBatches = selectionBatches(utf8, utf8.cases.slice(0, 100).map(c => c.name));
+  assert.ok(byteBatches.length > 1);
+  for (const batch of byteBatches) assert.ok(argvBytes(utf8, [...selectionArgs(utf8, batch), '--list']) < MAX_ARGV_BYTES);
+  const oversized = {id: 'oversized', cases: [c('界'.repeat(40000)), c('outside')]};
+  assert.throws(() => selectionBatches(oversized, [oversized.cases[0].name]));
+  const full = selectionBatches(binary, binary.cases.map(c => c.name));
+  assert.equal(full.length, 1); assert.equal(selectionArgs(binary, full[0]).length, 6);
+});
+
+test('a truly empty executable runs once while empty partial selections are rejected', () => {
+  const empty = {id: 'empty', cases: []};
+  assert.deepEqual(selectionBatches(empty, []), [[]]);
+  const result = reportFor(empty, []);
+  assert.equal(mergeBinaryReports(empty, [], [result]).passed, 0);
+  assert.throws(() => mergeBinaryReports(empty, [], []));
+  assert.throws(() => mergeBinaryReports(empty, [], [result, result]));
+  assert.throws(() => selectionBatches({id: 'nonempty', cases: [c('a')]}, []));
+  assert.throws(() => selectionBatches({id: 'nonempty', cases: [c('a')]}, ['a', 'a']));
 });
 
 test('actual output must match selected names, default ignored status and all summary counters', () => {
@@ -163,18 +230,30 @@ test('CLI uses zero-based independent shards and refuses invalid or unbounded se
   for (const args of [['--shard', '3/3'], ['--shard', '1/2'], ['--groups', '8'], ['--ignored', 'true'], ['--target', 'x86_64-pc-windows-msvc'], ['--shard', '0/3', '--aggregate', 'proof']]) assert.throws(() => parseOptions(args));
 });
 
-test('real stable libtest confirms exact skip semantics, ignored parsing and substring coverage', async () => {
+test('real stable libtest confirms exact OR filters, bounded batches and substring coverage', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'strata-libtest-contract-'));
   try {
     const source = join(directory, 'fixture.rs'); const executable = join(directory, process.platform === 'win32' ? 'fixture.exe' : 'fixture');
-    await writeFile(source, '#[test] fn a() {}\n#[test] fn ab() {}\n#[test] #[ignore = "explicit fixture"] fn ignored_fixture() { panic!("must stay ignored") }\n');
+    const batchNames = Array.from({length: 130}, (_, index) => `batch_${String(index).padStart(3, '0')}`);
+    await writeFile(source, '#[test] fn a() {}\n#[test] fn ab() {}\n#[test] fn b() {}\n#[test] #[ignore = "explicit fixture"] fn ignored_fixture() { panic!("must stay ignored") }\n' + batchNames.map(name => `#[test] fn ${name}() { assert!(std::env::args().count() <= 256); }`).join('\n'));
     execFileSync('rustc', ['--test', source, '-o', executable], {encoding: 'utf8', timeout: 60000});
     const all = parseListing(execFileSync(executable, ['--list'], {encoding: 'utf8', timeout: 30000}));
     const ignored = parseListing(execFileSync(executable, ['--list', '--ignored'], {encoding: 'utf8', timeout: 30000}));
     const binary = attachInventory({id: 'real-libtest'}, all, ignored);
-    const args = selectionArgs(binary, ['ab', 'ignored_fixture']);
-    assert.deepEqual(parseListing(execFileSync(executable, [...args, '--list'], {encoding: 'utf8', timeout: 30000})).map(c => c.name), ['ab', 'ignored_fixture']);
-    const result = parseResults(execFileSync(executable, args, {encoding: 'utf8', timeout: 30000}), binary, ['ab', 'ignored_fixture']);
-    assert.equal(result.passed, 1); assert.equal(result.ignored, 1); assert.equal(result.filtered, 1);
+    const names = ['ab', 'b', 'ignored_fixture']; const args = selectionArgs(binary, names);
+    assert.deepEqual(parseListing(execFileSync(executable, [...args, '--list'], {encoding: 'utf8', timeout: 30000})).map(c => c.name), names);
+    const result = parseResults(execFileSync(executable, args, {encoding: 'utf8', timeout: 30000}), binary, names);
+    assert.equal(result.passed, 2); assert.equal(result.ignored, 1); assert.equal(result.filtered, binary.cases.length - names.length);
+    assert.deepEqual(parseListing(execFileSync(executable, [...selectionArgs(binary, ['a']), '--list'], {encoding: 'utf8', timeout: 30000})).map(c => c.name), ['a']);
+    const selected = [...batchNames, 'ignored_fixture'];
+    const batches = selectionBatches(binary, selected);
+    assert.deepEqual(batches.map(b => b.length), [128, 3]);
+    const reports = batches.map(batch => {
+      const args = selectionArgs(binary, batch);
+      assert.deepEqual(parseListing(execFileSync(executable, [...args, '--list'], {encoding: 'utf8', timeout: 30000})).map(c => c.name), batch);
+      return parseResults(execFileSync(executable, args, {encoding: 'utf8', timeout: 30000}), binary, batch);
+    });
+    const merged = mergeBinaryReports(binary, selected, reports);
+    assert.equal(merged.passed, 130); assert.equal(merged.ignored, 1); assert.equal(merged.filtered, 3);
   } finally { await rm(directory, {recursive: true, force: true}); }
 });

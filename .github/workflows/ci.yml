@@ -199,6 +199,24 @@ jobs:
         # Process identity fixtures share host WMI/NetTCPConnection providers.
         # Serialize their cold starts; preserve every timeout and identity check.
         run: cargo test --workspace --locked --target ${{ matrix.target }} -- --test-threads=1
+      - name: Rust checks
+        run: cargo clippy --workspace --locked --all-targets --target ${{ matrix.target }} -- -D warnings
+      - name: Prepare packaged background binary
+        run: node scripts/prepare-sidecar.mjs --profile release --target ${{ matrix.target }}
+      - name: Build test installers
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/desktop
+          tauriScript: pnpm tauri
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --config '{"bundle":{"createUpdaterArtifacts":false}}'
+          uploadWorkflowArtifacts: true
+          workflowArtifactNamePattern: 'ci-[platform]-[arch]-[bundle]'
+          uploadUpdaterJson: false
+
+      # Linux compiles in parallel with native runners; complete coverage still
+      # gates package smoke acceptance and reuse of the whole successful CI.
       - name: Wait for the three independent Linux native runners
         if: runner.os == 'Linux'
         uses: actions/github-script@v7
@@ -235,21 +253,6 @@ jobs:
       - name: Native tests under Xvfb (Linux)
         if: runner.os == 'Linux'
         run: node scripts/ci-linux-native-tests.mjs --aggregate "$RUNNER_TEMP/linux-native-coverage" --output "$RUNNER_TEMP/linux-native-coverage.json"
-      - name: Rust checks
-        run: cargo clippy --workspace --locked --all-targets --target ${{ matrix.target }} -- -D warnings
-      - name: Prepare packaged background binary
-        run: node scripts/prepare-sidecar.mjs --profile release --target ${{ matrix.target }}
-      - name: Build test installers
-        uses: tauri-apps/tauri-action@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          projectPath: apps/desktop
-          tauriScript: pnpm tauri
-          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --config '{"bundle":{"createUpdaterArtifacts":false}}'
-          uploadWorkflowArtifacts: true
-          workflowArtifactNamePattern: 'ci-[platform]-[arch]-[bundle]'
-          uploadUpdaterJson: false
 
       - name: Verify installed Windows package and background IPC
         if: runner.os == 'Windows'

@@ -66,7 +66,7 @@ pnpm --filter @strata-manager/desktop tauri signer generate -w $strataSigningKey
 
 检查范围为版本一致性和发布门禁测试、TypeScript、核心与 HTTP 协议夹具测试、前端生产构建、Rust 格式、workspace 单元/集成测试、Clippy，以及两平台桌面安装包构建。Linux 原生测试使用三个独立 Ubuntu runner；每个 runner 仍串行运行分配到的测试，并使用固定私有 Secret Service、DBus 和 Xvfb。Windows 保留完整串行原生验收。
 
-`scripts/ci-linux-native-tests.mjs` 从 Cargo 的全部 workspace 测试可执行文件枚举测试，再按完整模块确定分片。实际执行的名字和计数必须与计划一致；原有五项需要实机或外部准备的 Linux ignored 测试逐项登记，新增或减少必须显式审核。分片 0 额外执行完整 workspace 文档测试。Linux 打包 job 必须等三个分片全部成功，并汇总绑定相同源码、锁文件、工具链、profile 和当前 run attempt 的覆盖证明；遗漏、重复、旧 attempt 或失败均阻断。随后仍运行 Clippy、构建和两种实际包启动检查。
+`scripts/ci-linux-native-tests.mjs` 从 Cargo 的全部 workspace 测试可执行文件枚举测试，再按完整模块确定分片。实际执行的名字和计数必须与计划一致；原有五项需要实机或外部准备的 Linux ignored 测试逐项登记，新增或减少必须显式审核。分片 0 额外执行完整 workspace 文档测试。Linux 打包 job 必须等三个分片全部成功，并汇总绑定相同源码、锁文件、工具链、profile 和当前 run attempt 的覆盖证明；遗漏、重复、旧 attempt 或失败均阻断。Linux desktop 同时执行 Clippy 和安装包构建，随后汇总完整原生覆盖证明，再执行两种实际包启动检查。产物只在整个 CI 和包验收成功后允许复用。
 
 Rust dev/test 使用 `debug=0` 和 `incremental=0`，保留 debug assertions、溢出检查及原测试超时；release 的 thin LTO 和 codegen 配置保持原值。缓存仅保留依赖与当前 target；关闭 Cargo 工具二进制、workspace crate 和全 registry crate 缓存。只有本仓库 main 的 push/手动构建保存缓存；PR、tag、功能分支与三个 Linux 分片只恢复。每个 target 只有 desktop job 保存一次，避免分片重复压缩。首次切换 profile 会产生新缓存键，应分别记录冷缓存与后续命中时的耗时。
 
@@ -82,7 +82,7 @@ CI 产物以 `ci-<platform>-<arch>-<bundle>` 名称上传为 Actions artifacts�
 
 官网的中英文更新日志直接从同一份 `CHANGELOG.md` 生成，入口位于首页导航、下载区与文档中心。修改此文件并推送到 `main` 会触发 GitHub Pages 构建；无需维护第二份官网日志。开发与待验收的改动保留在 `Unreleased`，有版本号但尚无公开安装包的候选必须注明 `Unreleased` 或 `Unpublished`，不要仅按源码版本宣称安装包已发布。
 
-1. 等待同仓库的编辑会话完成，冻结同一候选快照。在同一变更中同步根 `package.json`、`apps/desktop/package.json`、`packages/core/package.json`、Tauri config、Cargo workspace 和任何显式 Cargo package version。`node scripts/release-check.mjs --tag v0.1.3` 检查版本；tag 必须与应用版本严格一致。0.1.3 的中英文日志须位于唯一的 `## [0.1.3]`；README 三个入口、中英文下载/用户文档和官网应同步正式版入口，不复用 beta 的通过结论。
+1. 等待同仓库的编辑会话完成，冻结同一候选快照。在同一变更中同步根 `package.json`、`apps/desktop/package.json`、`packages/core/package.json`、Tauri config、Cargo workspace 和任何显式 Cargo package version。运行 `node scripts/release-check.mjs --tag v<version>`，将 `<version>` 替换为候选的实际版本；tag 必须与应用版本严格一致。该版本的中英文日志须位于唯一的 `## [<version>]`；README 三个入口、中英文下载/用户文档和官网应同步相应发布入口，不复用上一版本的通过结论。
 2. 完成 [VERIFICATION](VERIFICATION.md) 的最终检查和发布验收，更新中英文 README、用户指南、`docs/screenshots/` 的 WebP 封面及页面图与实际 revision；检查内容没有 API 密钥、个人会话、用户名或私有模型路径。截图使用示例数据时，在图片所在文档及官网的图外说明数据来源；图内使用正常模型名和界面内容，不能写成真实服务或性能证据。保留历史原型证据，同时单列本轮未通过/未运行项。
 3. 推送已审核的代码，等待完整 CI 后，创建并推送 `v<version>` tag，例如 `v0.2.0-beta.1`。版本 tag 触发 `.github/workflows/release.yml`，它调用同一提交的 `release-from-ci.yml`。也可手动运行 `Release desktop` 并填写 `release_tag`；可选 `ci_run_id` 指定已验收 run。旧 tag 缺少 `strata-release-ci/v1` 协议时明确拒绝，不改写 tag。
 4. 控制器优先选择同仓库、同源码 SHA、同 CI workflow 的完整成功 run；已有运行则等待它完成，没有可用 run 才按不可变 tag 补跑一次 CI。复用要求两个 desktop job、三个 Linux 分片、原版本/观察器/原生/格式/Clippy/安装启动门禁全部通过，并检查当前 run attempt。版本 0.1.2 仍额外要求原 beta.2 升级门禁。PR 合并 SHA、其他源码、失败、取消、过期或不完整产物均不可复用。

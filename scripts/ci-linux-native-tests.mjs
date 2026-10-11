@@ -113,6 +113,25 @@ export function workspaceDocTargets(metadata) {
   return targets.sort(compare);
 }
 
+export function parseDocResults(run, targets) {
+  // xvfb-run redirects the wrapped command's stderr to stdout. Cargo's
+  // Doc-tests headers therefore may arrive in either captured stream.
+  const text = `${run.stdout}\n${run.stderr}`.replaceAll('\r\n', '\n');
+  const observed = [...text.matchAll(/^[ \t]*Doc-tests (\S+)[ \t]*$/gm)].map(match => match[1]).sort(compare);
+  const lines = [...text.matchAll(/^test result: (.*)$/gm)].map(match => match[1]);
+  const summaries = lines.map(line => {
+    const match = /^ok\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out; finished in ([\d.]+)s$/.exec(line);
+    if (!match) fail('Unexpected or failed workspace doc-test summary.');
+    return match.slice(1).map(Number);
+  });
+  const running = [...text.matchAll(/^running (\d+) tests?$/gm)].map(match => Number(match[1]));
+  if (!same(observed, sorted(targets)) || summaries.length !== targets.length || running.length !== targets.length
+      || summaries.some((s, index) => s.slice(0, 5).some(n => !Number.isSafeInteger(n) || n < 0)
+        || s[1] || s[3] || s[4] || !Number.isFinite(s[5]) || s[5] < 0 || running[index] !== s[0] + s[2])) fail('Workspace doc-test summaries are incomplete or failed.');
+  return {targets: observed, summaries, passed: summaries.reduce((sum, s) => sum + s[0], 0),
+    ignored: summaries.reduce((sum, s) => sum + s[2], 0)};
+}
+
 export function makePlan(binaries, count, binding) {
   if (!Number.isSafeInteger(count) || count < 1 || count > 4 || !binaries.length
       || new Set(binaries.map(b => b.id)).size !== binaries.length) fail('Invalid bounded group plan.');
@@ -181,11 +200,41 @@ export function validatePlan(plan) {
   return true;
 }
 
+export const MAX_FILTER_NAMES = 128;
+export const MAX_ARGV_BYTES = 100 * 1024;
+const libtestFlags = ['--exact', '--test-threads=1', '--color', 'never', '--format', 'pretty'];
+function validateSelection(binary, names) {
+  if (!Array.isArray(binary.cases) || !Array.isArray(names) || new Set(names).size !== names.length
+      || names.some(name => typeof name !== 'string' || name.startsWith('-') || name.includes('\0') || !binary.cases.some(c => c.name === name))
+      || !names.length && binary.cases.length) fail('Unknown, duplicate or empty partial test selection.');
+}
+export function argvBytes(binary, args) {
+  // Include argv[0] and each terminating NUL, as /proc/PID/cmdline does.
+  return [binary.executable ?? 'libtest', ...args].reduce((sum, arg) => sum + Buffer.byteLength(arg, 'utf8') + 1, 0);
+}
 export function selectionArgs(binary, names) {
-  if (new Set(names).size !== names.length || names.some(name => !binary.cases.some(c => c.name === name))) fail('Unknown selected test.');
-  const selected = new Set(names);
-  return ['--exact', '--test-threads=1', '--color', 'never', '--format', 'pretty',
-    ...binary.cases.filter(c => !selected.has(c.name)).flatMap(c => ['--skip', c.name])];
+  validateSelection(binary, names);
+  const full = names.length === binary.cases.length;
+  // Exact positive filters are ORed by stable libtest. Full/zero-case suites
+  // need no filters, and do not put their entire inventory in process argv.
+  const args = [...libtestFlags, ...(full ? [] : names)];
+  if (!full && names.length > MAX_FILTER_NAMES || argvBytes(binary, [...args, '--list']) >= MAX_ARGV_BYTES) fail('Use bounded batches for this exact test selection.');
+  return args;
+}
+export function selectionBatches(binary, names) {
+  validateSelection(binary, names);
+  if (names.length === binary.cases.length) { selectionArgs(binary, names); return [sorted(names)]; }
+  const batches = []; let current = [];
+  for (const name of sorted(names)) {
+    const candidate = [...current, name];
+    if (candidate.length > MAX_FILTER_NAMES || argvBytes(binary, [...libtestFlags, ...candidate, '--list']) >= MAX_ARGV_BYTES) {
+      if (!current.length) fail('One exact filter exceeds the safe process argv budget.');
+      batches.push(current); current = [name];
+      if (argvBytes(binary, [...libtestFlags, name, '--list']) >= MAX_ARGV_BYTES) fail('One exact filter exceeds the safe process argv budget.');
+    } else current = candidate;
+  }
+  if (current.length) batches.push(current);
+  return batches;
 }
 
 export function parseResults(text, binary, names) {
@@ -208,6 +257,28 @@ export function parseResults(text, binary, names) {
   return {id: binary.id, passed, ignored, filtered, libtestSeconds: seconds, cases};
 }
 
+export function mergeBinaryReports(binary, names, reports) {
+  const expected = selectionBatches(binary, names);
+  if (!Array.isArray(reports) || reports.length !== expected.length) fail('All bounded libtest batches are required.');
+  const cases = []; let libtestSeconds = 0;
+  for (const [index, report] of reports.entries()) {
+    if (report.id !== binary.id || !Array.isArray(report.cases) || !same(sorted(report.cases.map(c => c.name)), expected[index])
+        || report.passed !== report.cases.filter(c => c.status === 'ok').length
+        || report.ignored !== report.cases.filter(c => c.status === 'ignored').length
+        || report.filtered !== binary.cases.length - expected[index].length
+        || !Number.isFinite(report.libtestSeconds) || report.libtestSeconds < 0) fail('Batch names or summary counters differ from their exact selection.');
+    for (const c of report.cases) {
+      const original = binary.cases.find(test => test.name === c.name);
+      if (!original || c.status !== (original.ignored ? 'ignored' : 'ok')) fail('A batch changed default ignored status or failed a test.');
+    }
+    cases.push(...report.cases); libtestSeconds += report.libtestSeconds;
+  }
+  if (new Set(cases.map(c => c.name)).size !== cases.length || !same(sorted(cases.map(c => c.name)), sorted(names))) fail('Merged batches omit or duplicate selected tests.');
+  return {id: binary.id, passed: cases.filter(c => c.status === 'ok').length,
+    ignored: cases.filter(c => c.status === 'ignored').length, filtered: binary.cases.length - names.length,
+    libtestSeconds, cases: cases.sort((a, b) => compare(a.name, b.name)), batches: reports};
+}
+
 export function validateCoverage(plan, reports, docs) {
   validatePlan(plan);
   if (reports.length !== plan.groups.length || !docs || docs.success !== true) fail('All native groups and complete workspace doc tests are required.');
@@ -225,6 +296,8 @@ export function validateCoverage(plan, reports, docs) {
     for (const binary of report.binaries) {
       const expected = group.binaries.find(b => b.id === binary.id);
       const full = plan.binaries.find(b => b.id === binary.id);
+      const merged = mergeBinaryReports(full, expected.names, binary.batches);
+      if (!same(binary.cases, merged.cases) || ['passed', 'ignored', 'filtered', 'libtestSeconds'].some(field => binary[field] !== merged[field])) fail('Merged binary evidence differs from its verified batches.');
       if (!same(sorted(binary.cases.map(c => c.name)), expected.names) || new Set(binary.cases.map(c => c.name)).size !== binary.cases.length) fail('Observed coverage omitted or repeated tests.');
       for (const c of binary.cases) {
         const original = full.cases.find(test => test.name === c.name);
@@ -301,13 +374,18 @@ async function worker(planFile, index, directory) {
   const group = plan.groups[index]; if (!group) fail('Unknown native group.');
   const started = Date.now(); const binaries = [];
   for (const selection of group.binaries) {
-    const binary = plan.binaries.find(b => b.id === selection.id); const args = selectionArgs(binary, selection.names);
+    const binary = plan.binaries.find(b => b.id === selection.id);
     const options = {cwd: binary.cwd, env: testEnvironment(binary)};
-    const listed = parseListing((await run(binary.executable, [...args, '--list'], options)).stdout);
-    if (!same(listed.map(c => c.name), selection.names)) fail('Exact libtest selection differs from the planned group.');
-    console.log(`Native group ${index + 1}: ${binary.id} (${selection.names.length} default cases)`);
-    const result = await run(binary.executable, args, {...options, mirror: true});
-    binaries.push(parseResults(result.stdout, binary, selection.names));
+    const batches = selectionBatches(binary, selection.names); const reports = [];
+    for (const [batchIndex, names] of batches.entries()) {
+      const args = selectionArgs(binary, names);
+      const listed = parseListing((await run(binary.executable, [...args, '--list'], options)).stdout);
+      if (!same(listed.map(c => c.name), names)) fail('Exact libtest selection differs from the planned batch.');
+      console.log(`Native group ${index + 1}: ${binary.id}, batch ${batchIndex + 1}/${batches.length} (${names.length} default cases)`);
+      const result = await run(binary.executable, args, {...options, mirror: true});
+      reports.push(parseResults(result.stdout, binary, names));
+    }
+    binaries.push(mergeBinaryReports(binary, selection.names, reports));
   }
   await jsonFile(resolve(directory, `group-${index}.json`), {index, inventoryHash: plan.inventoryHash, success: true,
     elapsedSeconds: (Date.now() - started) / 1000, owner: process.env.STRATA_TEST_KEYRING_OWNER, binaries});
@@ -394,11 +472,7 @@ export async function main(args = process.argv.slice(2)) {
   if (!options.shard || options.shard.index === 0) {
     const docRun = await run('dbus-run-session', ['--', 'xvfb-run', '-a', 'bash', resolve(root, 'scripts/release-linux-tests.sh'),
       'cargo', ...cargo, '--doc', '--', '--test-threads=1', '--color', 'never'], {mirror: true, ownedGroup: true, env: {...process.env, CARGO_TERM_COLOR: 'never'}});
-    const summaries = [...docRun.stdout.matchAll(/^test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out; finished in ([\d.]+)s$/gm)].map(match => match.slice(1).map(Number));
-    const observed = [...docRun.stderr.matchAll(/^\s*Doc-tests (\S+)$/gm)].map(match => match[1]).sort(compare);
-    if (summaries.length !== docTargets.length || !same(observed, docTargets) || summaries.some(s => s[1] || s[3] || s[4])) fail('Workspace doc-test summaries are incomplete or failed.');
-    docs = {success: true, sourceSha, inventoryHash: plan.inventoryHash, targets: docTargets, summaries,
-      passed: summaries.reduce((sum, s) => sum + s[0], 0), ignored: summaries.reduce((sum, s) => sum + s[2], 0)};
+    docs = {success: true, sourceSha, inventoryHash: plan.inventoryHash, ...parseDocResults(docRun, docTargets)};
   }
   const summary = options.shard ? null : validateCoverage(plan, reports, docs);
   await mkdir(dirname(options.output), {recursive: true});
