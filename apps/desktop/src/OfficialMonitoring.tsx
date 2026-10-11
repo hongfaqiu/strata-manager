@@ -1,6 +1,7 @@
 import { Fragment, type ReactNode } from 'react';
-import { asObject, normalizeMetrics, type JsonObject } from '@strata-manager/core';
+import { asObject, normalizeMetrics, requestPrefillTokS, type JsonObject } from '@strata-manager/core';
 import sprite from './official/sprite.svg';
+import { SlotMonitor } from './SlotMonitor';
 
 export interface OfficialMonitoringProps {
   raw: JsonObject;
@@ -9,6 +10,8 @@ export interface OfficialMonitoringProps {
   onShowAll: () => void;
   onRequest?: (request: JsonObject) => void;
   error?: string;
+  sampledAt?: number;
+  stale?: boolean;
 }
 const number = (value: unknown): number | null => typeof value === 'number' && Number.isFinite(value) ? value : null;
 const objects = (value: unknown): JsonObject[] => Array.isArray(value) ? value.map(asObject) : [];
@@ -51,7 +54,7 @@ function SparkPaths({ values, max }: { values: unknown; max?: number | null }) {
 }
 
 /** Mirrors serve/web/index.html monitor DOM and app.js renderMonitor/renderConvCache/renderMcp. */
-export function MonitoringPage({ raw, language, showAll, onShowAll, onRequest, error }: OfficialMonitoringProps) {
+export function MonitoringPage({ raw, language, showAll, onShowAll, onRequest, error, sampledAt, stale = false }: OfficialMonitoringProps) {
   const t = (cn: string, en: string) => language === 'zh-CN' ? cn : en;
   const fmt = (value: unknown, digits = 0) => { const n = number(value); return n === null ? '–' : n.toLocaleString(language, { maximumFractionDigits: digits, minimumFractionDigits: digits }); };
   const gb = (value: unknown, digits = 1) => { const n = number(value); return n === null ? '–' : fmt(n / 1073741824, digits); };
@@ -61,14 +64,15 @@ export function MonitoringPage({ raw, language, showAll, onShowAll, onRequest, e
   const requests = objects(raw.requests), last = requests[0], cache = asObject(raw.conversation_cache), totals = asObject(raw.totals);
   const mcp = asObject(raw.mcp), servers = objects(mcp.servers), gpus = objects(hw.gpus), multi = gpus.length > 1;
   const metrics = normalizeMetrics(raw);
-  const state = error ? 'error' : typeof live.state === 'string' ? live.state : 'unknown';
-  const queued = number(live.queued);
+  const outdated = stale || !!error;
+  const state = outdated ? 'unknown' : typeof live.state === 'string' ? live.state : 'unknown';
+  const queued = outdated ? null : number(live.queued);
   const activeBadge = queued !== null && queued > 0 ? 'queued' : state;
   const ratio = (a: unknown, b: unknown) => { const x = number(a), y = number(b); return x !== null && y !== null && y > 0 ? Math.max(0, Math.min(100, x / y * 100)) : null; };
   let stateLabel = state === 'unknown' ? '–' : t('等待请求', 'Waiting for a request'), stateDetail = '', statePercent: number | null = null;
-  if (error) { stateLabel = t('错误', 'Error'); stateDetail = error; }
+  if (outdated) { stateLabel = t('实时状态未核验', 'Live state unverified'); stateDetail = error ?? t('数据已过期或服务离线', 'Data is stale or the service is offline'); }
   else if (state === 'reading') {
-    stateLabel = t('读取提示词', 'Reading prompt');
+    stateLabel = t('处理输入', 'Processing input');
     statePercent = ratio(live.prompt_read, live.prompt_total);
     stateDetail = statePercent !== null ? `${fmt(live.prompt_read)} / ${fmt(live.prompt_total)} tokens · ${fmt(statePercent)}%` : `${fmt(live.prompt_tokens)} tokens`;
   } else if (state === 'generating') {
@@ -82,8 +86,8 @@ export function MonitoringPage({ raw, language, showAll, onShowAll, onRequest, e
   const generation = number(hw.gpu_pcie_gen_max) ?? number(hw.gpu_pcie_gen);
   const diskRead = number(hw.disk_read_mb), diskBig = diskRead !== null && diskRead >= 1000;
   const values: Record<string, { value: unknown; unit: string; sub: string }> = {
-    speed: { value: metrics.decodeTokS === null ? null : fmt(metrics.decodeTokS, 1), unit: 't/s', sub: state === 'generating' ? t('当前 Decode', 'Decode now') : last ? t('最近请求 Decode', 'Decode last request') : 'Decode' },
-    prefill: { value: metrics.prefillTokS === null ? null : fmt(metrics.prefillTokS), unit: 't/s', sub: state === 'reading' ? t('当前 Prefill', 'Prefill now') : state === 'generating' ? t('本次请求 Prefill', 'Prefill this request') : last ? t('最近请求 Prefill', 'Prefill last request') : 'Prefill' },
+    speed: { value: metrics.decodeTokS === null ? null : fmt(metrics.decodeTokS, 1), unit: 't/s', sub: state === 'generating' ? t('当前生成', 'Generating now') : last ? t('最近生成', 'Last generation') : t('生成速度', 'Generation speed') },
+    prefill: { value: metrics.prefillTokS === null ? null : fmt(metrics.prefillTokS), unit: 't/s', sub: state === 'reading' ? t('当前输入处理', 'Processing input now') : state === 'generating' ? t('本次输入处理', 'Input processing this request') : last ? t('最近输入处理', 'Last input processing') : t('输入处理', 'Input processing') },
     gpu: { value: number(hw.gpu_util) === null ? null : fmt(hw.gpu_util), unit: '%', sub: multi ? per(gpu => number(gpu.util) === null ? '–' : `${fmt(gpu.util)}%`) : typeof st.gpu_name === 'string' ? st.gpu_name : st.gpu_note ? t('不可用', 'not available') : '' },
     vram: { value: number(hw.gpu_mem_used) === null ? null : gb(hw.gpu_mem_used), unit: number(hw.gpu_mem_total) !== null && Number(hw.gpu_mem_total) > 0 ? `/ ${gb(hw.gpu_mem_total, 0)} GB` : 'GB', sub: multi ? per(gpu => number(gpu.mem_used) === null ? '–' : `${gb(gpu.mem_used)} GB`) : number(eng.expert_slots) !== null && Number(eng.expert_slots) > 0 ? `${fmt(eng.expert_slots)} ${t('个专家已缓存', 'experts cached')}` : st.gpu_note ? t('Windows AMD 当前不可用', 'not available on Windows AMD yet') : '' },
     temp: { value: number(hw.gpu_temp) === null ? null : fmt(hw.gpu_temp), unit: '°C', sub: multi ? per(gpu => number(gpu.temp) === null ? '–' : `${fmt(gpu.temp)}°`) : '' },
@@ -126,13 +130,14 @@ export function MonitoringPage({ raw, language, showAll, onShowAll, onRequest, e
   return <section className="view view--monitor" id="view-monitor" role="tabpanel" aria-labelledby="workspace-page-title">
     <div className="monitor">
       <div className="st-card state-card">
-        <div className="state-card__head"><span className="card-title">{t('模型状态', 'Model state')}</span><span className="badges" id="state-badges">{[
+        <p className={outdated ? "notice warning" : "subtle"} role="status">{sampledAt ? `${t("上次成功采样", "Last successful sample")}: ${new Date(sampledAt).toLocaleString(language)}` : t("尚无成功采样时间", "No successful sample time available")}{outdated && ` · ${t("下方数值为上次采样，不能代表当前实时状态。", "Values below are from the last sample and do not represent the current live state.")}`}</p><div className="state-card__head"><span className="card-title">{t('模型状态', 'Model state')}</span><span className="badges" id="state-badges">{[
           ['idle', '', t('空闲', 'Idle')], ['reading', 'st-badge--reading', t('读取中', 'Reading')], ['generating', 'st-badge--generating', t('生成中', 'Generating')], ['queued', 'st-badge--queued', t('排队中', 'Queued')], ['error', 'st-badge--error', t('错误', 'Error')],
         ].map(([badgeState, cls, title]) => <span key={badgeState} className={`st-badge ${cls} ${badgeState === activeBadge || badgeState === state ? 'on' : ''}`} data-s={badgeState}>{title}</span>)}</span></div>
         <div className="state-card__row"><span id="state-label">{stateLabel}</span><span className="muted" id="state-detail">{stateDetail}</span></div>
         {progress('state-bar', statePercent, 'state-progress', state === 'reading' ? 'info' : undefined)}
       </div>
 
+      <SlotMonitor raw={raw} language={language}/>
       <div className="metrics" id="metrics">{metricDefinitions.map(definition => {
         const max = 'max' in definition ? definition.max : definition.key === 'vram' ? number(hw.gpu_mem_total) : definition.key === 'power' ? number(hw.gpu_power_limit) : undefined;
         return <div className="st-card metric-card" key={definition.key}><div className="st-metric"><span className="st-metric__label"><svg className="st-icon st-icon--sm" aria-hidden="true"><use href={`${sprite}#i-${definition.icon}`} /></svg>{t(definition.cn, definition.en)}</span>
@@ -149,10 +154,10 @@ export function MonitoringPage({ raw, language, showAll, onShowAll, onRequest, e
           <div className="bar-row"><span>{t('GPU 温度', 'GPU temperature')}</span><span className="muted" id="temp-text">{number(hw.gpu_temp) === null ? '–' : `${fmt(hw.gpu_temp)} °C`}</span></div>{progress('temp-bar', tempPercent, undefined, 'warn')}
         </div>
         <div className="st-card req-card"><div className="req-head"><span className="card-title">{t('近期请求', 'Recent requests')}</span><button className="st-btn st-btn--secondary" id="req-all" hidden={kept === null || kept <= 12} onClick={onShowAll}>{showAll ? t('收起', 'Show fewer') : `${t('显示全部', 'Show all')} (${fmt(kept)})`}</button></div>
-          <div className={`table-wrap${showAll ? ' all' : ''}`} id="req-wrap"><table className="st-table"><thead><tr><th>{t('时间', 'Time')}</th><th>{t('状态', 'Status')}</th><th className="num">{t('提示词', 'Prompt')}</th><th className="num">{t('复用', 'Reused')}</th><th className="num">{t('输出', 'Output')}</th><th className="num">Tok/s</th><th className="num" title={t('生成回答时，查找的专家中已在显存内的份额。GPU 经 PCIe 读取的专家不计入此值；它们占全部路由专家的份额另列为 +N% PCIe。', 'While writing the answer: the share of the experts looked up that were already in VRAM. Experts the GPU read over PCIe (--pcie-frac) are not counted in it; their share of all routed experts is shown after it (+N% PCIe)')}>{t('显存命中率', 'VRAM hit rate')}</th><th className="num">{t('耗时', 'Duration')}</th></tr></thead><tbody id="req-body">{requests.length === 0 ? <tr><td colSpan={8} className="muted">{Array.isArray(raw.requests) ? t('尚无请求', 'No requests yet') : '–'}</td></tr> : requests.slice(0, showAll ? requests.length : 12).map((request, index) => {
+          <div className={`table-wrap${showAll ? ' all' : ''}`} id="req-wrap"><table className="st-table"><thead><tr><th>{t('时间', 'Time')}</th><th>{t('状态', 'Status')}</th><th className="num">{t('提示词', 'Prompt')}</th><th className="num">{t('复用', 'Reused')}</th><th className="num">{t('输出', 'Output')}</th><th className="num" title={t('每秒处理的新输入词元，不含已复用内容；按引擎处理输入的耗时计算。', 'New input tokens processed per second, excluding reused content; measured with engine input processing time.')}>{t('输入处理 t/s', 'Input t/s')}</th><th className="num">{t('生成 t/s', 'Generation t/s')}</th><th className="num" title={t('生成回答时，查找的专家中已在显存内的份额。GPU 经 PCIe 读取的专家不计入此值；它们占全部路由专家的份额另列为 +N% PCIe。', 'While writing the answer: the share of the experts looked up that were already in VRAM. Experts the GPU read over PCIe (--pcie-frac) are not counted in it; their share of all routed experts is shown after it (+N% PCIe)')}>{t('显存命中率', 'VRAM hit rate')}</th><th className="num">{t('耗时', 'Duration')}</th></tr></thead><tbody id="req-body">{requests.length === 0 ? <tr><td colSpan={9} className="muted">{Array.isArray(raw.requests) ? t('尚无请求', 'No requests yet') : '–'}</td></tr> : requests.slice(0, showAll ? requests.length : 12).map((request, index) => {
             const finish = typeof request.finish === 'string' ? request.finish : '', [cls, title] = finishStates[finish] ?? ['', finish || '–'];
             const time = number(request.time), hit = number(request.hit_rate), pcie = number(request.pcie_share);
-            return <tr key={`${time}-${index}`} onDoubleClick={onRequest ? () => onRequest(request) : undefined}><td>{time === null ? '–' : new Date(time * 1000).toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</td><td><span className={`st-badge ${cls}`}>{title}</span>{typeof request.projection === 'boolean' && <> <span className={`st-badge${request.projection ? ' st-badge--reading' : ''}`} title={`${t('实验速度投影', 'experimental speed projection')} ${request.projection ? t('开启', 'on') : t('关闭', 'off')}`}>{request.projection ? 'ESP' : 'stock'}</span></>}</td><td className="num">{fmt(request.prompt_tokens)}</td><td className="num">{fmt(request.reused)}</td><td className="num">{fmt(request.output_tokens)}</td><td className="num">{fmt(request.decode_tok_s, 1)}</td><td className="num">{hit === null ? '–' : `${(hit * 100).toFixed(1)}%`}{pcie !== null && pcie > 0 && <> <span className="muted" title={t('GPU 经 PCIe 读取或由其它 GPU 计算的路由专家', 'routed experts the GPU read over PCIe (--pcie-frac) or another GPU computed')}>+{(pcie * 100).toFixed(1)}% PCIe</span></>}</td><td className="num">{number(request.duration_s) === null ? '–' : `${fmt(request.duration_s, 1)} s`}</td></tr>;
+            return <tr key={`${time}-${index}`} onDoubleClick={onRequest ? () => onRequest(request) : undefined}><td>{time === null ? '–' : new Date(time * 1000).toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</td><td><span className={`st-badge ${cls}`}>{title}</span>{typeof request.projection === 'boolean' && <> <span className={`st-badge${request.projection ? ' st-badge--reading' : ''}`} title={`${t('实验速度投影', 'experimental speed projection')} ${request.projection ? t('开启', 'on') : t('关闭', 'off')}`}>{request.projection ? 'ESP' : 'stock'}</span></>}</td><td className="num">{fmt(request.prompt_tokens)}</td><td className="num">{fmt(request.reused)}</td><td className="num">{fmt(request.output_tokens)}</td><td className="num">{fmt(requestPrefillTokS(request))}</td><td className="num">{fmt(request.decode_tok_s, 1)}</td><td className="num">{hit === null ? '–' : `${(hit * 100).toFixed(1)}%`}{pcie !== null && pcie > 0 && <> <span className="muted" title={t('GPU 经 PCIe 读取或由其它 GPU 计算的路由专家', 'routed experts the GPU read over PCIe (--pcie-frac) or another GPU computed')}>+{(pcie * 100).toFixed(1)}% PCIe</span></>}</td><td className="num">{number(request.duration_s) === null ? '–' : `${fmt(request.duration_s, 1)} s`}</td></tr>;
           })}</tbody></table></div><p className="muted req-totals" id="req-totals">{totalText}</p>
         </div>
       </div>

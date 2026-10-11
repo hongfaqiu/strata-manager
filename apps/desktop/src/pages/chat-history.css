@@ -31,3 +31,6 @@
 .official-surface .chat-workspace--narrow .chat-history{position:absolute;inset:0 auto 0 0;width:min(280px,calc(100% - 36px));z-index:5;box-shadow:var(--st-sh-pop)}
 .official-surface .chat-history-scrim{position:absolute;inset:0;z-index:4;border:0;border-radius:0;background:rgba(0,0,0,.18);cursor:default}
 .official-surface .chat-history-scrim:hover:not(:disabled){background:rgba(0,0,0,.18)}
+
+/* Preserve native hidden semantics despite shared button display rules. */
+.st-composer__bar > button[hidden] { display: none; }

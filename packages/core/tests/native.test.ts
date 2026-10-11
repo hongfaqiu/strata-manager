@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { request, streamChat, serviceStatus, restartService, takeOverService, discoverLocal, importLocal, ensureLocalService, supervisorStatus, listSetupHandoffs, resolveSetupHandoff } from '../src';
+import { request, streamChat, serviceStatus, restartService, takeOverService, discoverLocal, importLocal, ensureLocalService, supervisorStatus, listSetupHandoffs, resolveSetupHandoff, setBackgroundPolicy, tuningStart, readConfigSnapshot, writeConfig } from '../src';
 import type { ChatDelta, ServiceProfile, StreamEvent } from '../src';
 
 const native = vi.hoisted(() => ({ invoke: vi.fn() }));
@@ -14,6 +14,41 @@ afterEach(async () => {
 });
 
 describe('native bridge protocol', () => {
+  it('preserves original config revision, conflict code, and never retries unsafe saves', async () => {
+    native.invoke.mockResolvedValueOnce({ config: { port: 8080 }, revision: 'original-revision' });
+    expect(await readConfigSnapshot(profile)).toEqual({ config: { port: 8080 }, revision: 'original-revision' });
+    native.invoke.mockRejectedValueOnce(JSON.stringify({ code: 'CONFIG_REVISION_CONFLICT', message: 'Draft retained', retriable: false }));
+    await expect(writeConfig(profile, { port: 8081 }, 'original-revision')).rejects.toMatchObject({ code: 'CONFIG_REVISION_CONFLICT', message: 'Draft retained' });
+    expect(native.invoke.mock.calls).toEqual([['read_config_snapshot', { profile }], ['write_config', { profile, config: { port: 8081 }, expectedRevision: 'original-revision' }]]);
+  });
+  it('rejects full scenarios on old or malformed capabilities before any tuning mutation', async () => {
+    for (const capabilities of [undefined, null, {}, { fullScenarioTuning: false }, { fullScenarioTuning: '1' }, { fullScenarioTuning: 0 }]) {
+      native.invoke.mockReset(); native.invoke.mockResolvedValue({ protocolVersion: 1, version: '99.0.0', capabilities });
+      await expect(tuningStart('model', { useCase: 'chat' })).rejects.toMatchObject({ code: 'SUPERVISOR_CAPABILITY_REQUIRED' });
+      expect(native.invoke.mock.calls).toEqual([['supervisor_status', undefined]]);
+    }
+  });
+  it('preserves full inputs and never retries a rejected mutation as diagnostic', async () => {
+    const request = { useCase: 'agent' as const, contextLimit: 8192, includeVision: true, restartCandidates: [{ poolWorkers: 4 }], rounds: 2, maxTokens: 1024 };
+    native.invoke.mockResolvedValueOnce({ capabilities: { fullScenarioTuning: 1 } }).mockRejectedValueOnce('unknown_method: tuning_start_full_v1');
+    await expect(tuningStart('model', request)).rejects.toThrow('unknown_method');
+    expect(native.invoke.mock.calls).toEqual([['supervisor_status', undefined], ['tuning_start', { profileId: 'model', request }]]);
+  });
+  it('keeps the explicitly selected short diagnostic available without full capability', async () => {
+    native.invoke.mockResolvedValue({ id: 'diagnostic' });
+    const request = { scenes: ['chat' as const], rounds: 2, maxTokens: 512 };
+    await tuningStart('model', request);
+    expect(native.invoke.mock.calls).toEqual([['tuning_start', { profileId: 'model', request }]]);
+  });
+  it('preserves disabled and custom idle release periods when saving background policy', async () => {
+    native.invoke.mockResolvedValue({ mode: 'lazy', autoRecover: false, idleUnloadMinutes: 0 });
+    await setBackgroundPolicy('lazy', false, 0);
+    expect(native.invoke).toHaveBeenLastCalledWith('set_background_policy', { mode: 'lazy', autoRecover: false, idleUnloadMinutes: 0 });
+    await setBackgroundPolicy('alwaysReady', true, 37);
+    expect(native.invoke).toHaveBeenLastCalledWith('set_background_policy', { mode: 'alwaysReady', autoRecover: true, idleUnloadMinutes: 37 });
+    await setBackgroundPolicy('lazy', true);
+    expect(native.invoke).toHaveBeenLastCalledWith('set_background_policy', { mode: 'lazy', autoRecover: true, idleUnloadMinutes: 15 });
+  });
   it('reads durable setup registration and resolves only the explicit task configuration', async () => {
     native.invoke.mockResolvedValue([]);
     await listSetupHandoffs();

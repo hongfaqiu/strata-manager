@@ -1055,6 +1055,7 @@ server.serve_forever()
             policy::BackgroundPolicy {
                 mode: "alwaysReady".into(),
                 auto_recover: true,
+                ..policy::BackgroundPolicy::default()
             },
         )
         .unwrap();
@@ -1254,6 +1255,7 @@ server.serve_forever()
             policy::BackgroundPolicy {
                 mode: "alwaysReady".into(),
                 auto_recover: true,
+                ..policy::BackgroundPolicy::default()
             },
         )
         .unwrap();
@@ -1399,6 +1401,7 @@ server.serve_forever()
             policy::BackgroundPolicy {
                 mode: "alwaysReady".into(),
                 auto_recover: false,
+                ..policy::BackgroundPolicy::default()
             },
         )
         .unwrap();

@@ -6,6 +6,7 @@ STRATA_TEST_ROOT may override that project-relative checkout path.
 The upstream checkout is read-only throughout these tests.
 """
 from __future__ import annotations
+import ast
 import hashlib
 import importlib.util
 import json
@@ -32,13 +33,16 @@ from serve import server
 from serve.frontend import ChatTemplate
 from serve.mcp import McpHub
 
+SOURCE_HASH = hashlib.sha256((ROOT / "serve/server.py").read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+OFFICIAL_0142_HASH = "ce9266730b632e919ff93809ea6f9ecd6f91f12da19597a2d95a7edb29700dfa"
+
 
 class ObserverHttp(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.temp = tempfile.TemporaryDirectory(prefix="strata-observer-http-")
         cls.journal = observer.Journal(cls.temp.name, "fixture")
-        digest = hashlib.sha256((ROOT / "serve/server.py").read_bytes()).hexdigest()
+        digest = SOURCE_HASH
         if digest not in observer.SUPPORTED_HASHES:
             raise unittest.SkipTest("the checkout isn't a verified observer runtime")
         observer.instrument_globals(vars(server), journal=cls.journal, source_hash=digest)
@@ -113,9 +117,44 @@ class ObserverHttp(unittest.TestCase):
         self.assertEqual({r["requestId"] for r in runs}, {r["requestId"] for r in ends})
         # MockEngine has no engine timings; fabricated decode speed is forbidden.
         self.assertTrue(all(r["decodeTokS"] is None for r in runs))
+        self.assertTrue(all(r["prefillTokS"] is None and r["prefillS"] is None for r in runs))
         saved = json.dumps(self.events())
         for private in ("PRIVATE_PROMPT_123","PRIVATE_UA_123","fixture reply","Authorization","messages"):
             self.assertNotIn(private, saved)
+
+    def test_real_http_preserves_engine_prefill_cache_and_decode_timings(self):
+        class Timed(server.MockEngine):
+            def generate(self, ids, max_new, sampling, cancel, embeddings=None):
+                try:
+                    yield from super().generate(ids, max_new, sampling, cancel, embeddings)
+                finally:
+                    # Deterministic native-engine DONE metadata; no GPU or
+                    # wall-clock-derived speed is used in this HTTP fixture.
+                    self.last = {"reused": 16, "prompt_read": len(ids)-16,
+                                 "prompt_ms": 250.0, "decode_ms": 500.0,
+                                 "generated": 20, "hits": 60, "lookups": 100}
+        tokenizer = server.ByteTokenizer()
+        self.start(engine=Timed(tokenizer, "</think>\n\nfixture reply"))
+        self.assertFalse(self.svc.api_monitor)
+        status, text = self.post("/v1/chat/completions", {"messages": [{"role": "user", "content": "hello"}], "max_tokens": 64})
+        self.assertEqual(status, 200, text)
+        timings = json.loads(text)["timings"]
+        run = self.events("run_end")[0]
+        self.assertEqual(run["cacheReadTokens"], 16)
+        self.assertEqual(run["prefillTokens"], timings["prompt_n"])
+        self.assertEqual(run["prefillS"], 0.25)
+        self.assertEqual(run["decodeS"], 0.5)
+        self.assertEqual(run["prefillTokS"], timings["prompt_per_second"])
+        self.assertEqual(run["decodeTokS"], 40.0)
+        self.assertEqual(run["expertCacheHits"], 60)
+        self.assertEqual(run["expertCacheLookups"], 100)
+        # Metadata collection works while the independent body viewer is off.
+        with self.assertRaises(urllib.error.HTTPError) as disabled:
+            urllib.request.urlopen(self.base + "/api/requests", timeout=5)
+        self.assertEqual(disabled.exception.code, 404)
+        self.svc.api_monitor = True
+        with urllib.request.urlopen(self.base + "/api/requests", timeout=5) as enabled:
+            self.assertEqual(json.loads(enabled.read())["persistent"], False)
 
     def test_early_auth_forbidden_json_errors_count_without_runs(self):
         self.start()
@@ -132,6 +171,62 @@ class ObserverHttp(unittest.TestCase):
         self.assertFalse(self.events("run_end"))
         self.assertTrue(all(e["clientId"] is None for e in ends))
         self.assertNotIn("PRIVATE",json.dumps(self.events()))
+
+    @unittest.skipUnless(SOURCE_HASH == OFFICIAL_0142_HASH, "requires official Strata 0.1.42")
+    def test_0142_sampling_and_bias_validation_preserve_failed_request_accounting(self):
+        self.start()
+        cases = [("/v1/chat/completions", {"logit_bias": {"1": "PRIVATE_INVALID_BIAS"}}),
+                 ("/v1/chat/completions", {"temperature": "PRIVATE_INVALID_NUMBER"}),
+                 ("/v1/responses", {"temperature": "PRIVATE_INVALID_NUMBER"}),
+                 ("/v1/messages", {"temperature": "PRIVATE_INVALID_NUMBER"})]
+        for path, invalid in cases:
+            status, text = self.post(path, {"messages": [{"role": "user", "content": "hello"}],
+                                           "input": "hello", "max_tokens": 64, "stream": True, **invalid})
+            self.assertEqual(status, 400, text)
+        ends = self.events("request_end")
+        self.assertEqual(len(ends), len(cases))
+        self.assertTrue(all(e["outcome"] == "failed" and e["httpStatus"] == 400 for e in ends))
+        self.assertFalse(self.events("run_end"))
+        self.assertNotIn("PRIVATE", json.dumps(self.events()))
+        self.assertEqual(self.journal.db.execute("SELECT COUNT(*) FROM active_requests").fetchone()[0], 0)
+
+    @unittest.skipUnless(SOURCE_HASH == OFFICIAL_0142_HASH, "requires official Strata 0.1.42")
+    def test_0142_keep_awake_released_after_success_and_observed_generator_close(self):
+        class Awake:
+            def __init__(self):
+                self.acquired = self.released = 0
+            def acquire(self):
+                self.acquired += 1
+            def release(self):
+                self.released += 1
+        self.start("</think>\n\n" + "reply " * 30)
+        awake = self.svc.keep_awake = Awake()
+        status, text = self.post("/v1/chat/completions", {
+            "messages": [{"role": "user", "content": "hello"}], "max_tokens": 64})
+        self.assertEqual(status, 200, text)
+        self.events("request_end")
+        self.assertEqual((awake.acquired, awake.released), (1, 1))
+        # Close the actual upstream generator while it holds its inference turn.
+        # This exercises observer.run -> official run -> official _run -> engine,
+        # including the newly introduced keep-awake finally and FIFO cleanup.
+        previous = getattr(observer._local, "request", None)
+        observer._local.request = {"requestId": "isolated-generator-close", "cancelled": False,
+                                   "errorKind": None, "modelId": None, "clock": time.perf_counter()}
+        generator = self.svc.run([1], False, None, 128, {}, threading.Event())
+        try:
+            kind, _ = next(generator)
+            self.assertEqual(kind, "event")
+            self.assertEqual((awake.acquired, awake.released), (2, 1))
+        finally:
+            generator.close()
+            observer._local.request = previous
+        self.assertEqual((awake.acquired, awake.released), (2, 2))
+        closed = [r for r in self.events("run_end") if r["requestId"] == "isolated-generator-close"]
+        self.assertEqual(len(closed), 1)
+        self.assertEqual(closed[0]["finish"], "disconnect")
+        self.assertIsNone(getattr(observer._local, "run", None))
+        self.assertTrue(self.svc.fifo.acquire(blocking=False))
+        self.svc.fifo.release()
 
     def test_stream_engine_error_is_failure_despite_http_200(self):
         class Faulty(server.MockEngine):
@@ -279,8 +374,249 @@ class ObserverHttp(unittest.TestCase):
         finally:
             gate.unlink(missing_ok=True)
 
+    def activity(self):
+        return self.journal.db.execute("SELECT session_id,revision,last_activity_ms "
+                                       "FROM service_activity WHERE service_id='fixture'").fetchone()
+
+    def wait_released_activity(self, minimum_revision):
+        deadline=time.monotonic()+3
+        while True:
+            row=self.activity()
+            active=self.journal.db.execute("SELECT COUNT(*) FROM active_requests "
+                                           "WHERE service_id='fixture'").fetchone()[0]
+            if active == 0 and row[1] >= minimum_revision:
+                return row
+            self.assertLess(time.monotonic(),deadline)
+            time.sleep(0.005)
+
+    def test_completed_load_records_activity_after_the_admission_row_is_gone(self):
+        self.start()
+        before=self.activity()
+        self.assertEqual(self.post("/load?PRIVATE_QUERY_123",{})[0],200)
+        after=self.wait_released_activity(before[1]+2)
+        self.assertEqual(after[0],self.journal.session_id)
+        self.assertEqual(after[1],before[1]+2)
+        self.assertGreaterEqual(after[2],before[2])
+        self.assertEqual(len(self.events("request_start")),0)
+        saved=self.journal.db.execute("SELECT * FROM service_activity").fetchall()
+        self.assertNotIn("PRIVATE_QUERY_123",json.dumps(saved))
+
+    def test_health_and_metrics_polling_and_unknown_posts_do_not_extend_idle(self):
+        self.start()
+        before=self.activity()
+        for _ in range(3):
+            for path in ("/health","/metrics","/settings"):
+                with urllib.request.urlopen(self.base+path,timeout=5) as response:
+                    self.assertEqual(response.status,200)
+        self.assertEqual(self.post("/unknown-control?PRIVATE_QUERY_123",{})[0],404)
+        time.sleep(0.03)
+        self.assertEqual(self.activity(),before)
+        self.assertEqual(self.journal.db.execute("SELECT COUNT(*) FROM active_requests "
+                                               "WHERE service_id='fixture'").fetchone()[0],0)
+
+    def test_inflight_revision_and_completed_revision_are_distinct_and_gate_rejection_is_not_activity(self):
+        self.start("</think>\n\n"+"xy"*80,delay=0.002)
+        before=self.activity()
+        box={}
+        thread=threading.Thread(target=lambda:box.update(result=self.post("/v1/chat/completions",{
+            "messages":[{"role":"user","content":"hi"}],"max_tokens":100})))
+        thread.start()
+        gate=Path(self.temp.name)/"fixture.maintenance"
+        try:
+            deadline=time.monotonic()+3
+            while not self.journal.db.execute("SELECT COUNT(*) FROM active_requests "
+                                             "WHERE service_id='fixture'").fetchone()[0]:
+                self.assertLess(time.monotonic(),deadline);time.sleep(0.005)
+            self.assertEqual(self.activity()[1],before[1]+1)
+            db=sqlite3.connect(self.journal.path)
+            db.execute("BEGIN IMMEDIATE")
+            gate.write_text(json.dumps({"mode":"drain","token":"isolated-"+"x"*32}))
+            db.commit();db.close()
+            self.assertEqual(self.post("/load",{})[0],503)
+            self.assertEqual(self.activity()[1],before[1]+1)
+            thread.join(timeout=5)
+            self.assertFalse(thread.is_alive())
+            self.assertEqual(box["result"][0],200)
+            self.assertEqual(self.wait_released_activity(before[1]+2)[1],before[1]+2)
+        finally:
+            thread.join(timeout=5)
+            gate.unlink(missing_ok=True)
+
+
+    def capture_lease(self, duration_ms=60000, **changes):
+        lease={"protocolVersion":1,"serviceId":self.journal.service_id,"sessionId":self.journal.session_id,
+               "pid":os.getpid(),"sourceHash":SOURCE_HASH,"token":observer.uuid.uuid4().hex,
+               "createdAtMs":int(time.time()*1000),"expiresAtMs":int(time.time()*1000)+duration_ms}
+        lease.update(changes)
+        with self.journal.lock:
+            self.journal.db.execute("INSERT INTO request_capture_leases VALUES(?,?) ON CONFLICT(service_id) DO UPDATE SET payload=excluded.payload",
+                                    (self.journal.service_id,json.dumps(lease)))
+            self.journal.db.commit()
+        return self.svc._manager_capture.refresh(force=True)
+
+    def capture_off(self):
+        with self.journal.lock:
+            self.journal.db.execute("DELETE FROM request_capture_leases WHERE service_id=?",(self.journal.service_id,))
+            self.journal.db.commit()
+        self.svc._manager_capture.refresh(force=True)
+
+    def test_temporary_capture_all_official_protocols_and_default_metadata(self):
+        self.start()
+        self.capture_off()
+        self.assertFalse(self.svc.api_monitor)
+        self.assertTrue(self.capture_lease())
+        paths=[("/v1/chat/completions",{"messages":[{"role":"user","content":"TEMP_BODY_SECRET"}]}),
+               ("/v1/responses",{"input":"TEMP_BODY_SECRET"}),
+               ("/v1/messages",{"messages":[{"role":"user","content":"TEMP_BODY_SECRET"}]})]
+        for path,body in paths:
+            for stream in (False,True):
+                status,text=self.post(path,{**body,"max_tokens":64,"stream":stream})
+                self.assertEqual(status,200,text)
+        with urllib.request.urlopen(self.base+"/api/requests") as response:
+            listing=json.load(response)
+        self.assertEqual(len(listing["requests"]),6)
+        self.assertFalse(listing["persistent"])
+        for record in listing["requests"]:
+            with urllib.request.urlopen(self.base+"/api/requests?id="+record["id"]) as response:
+                detail=json.load(response)
+            self.assertIn("TEMP_BODY_SECRET",detail["input"])
+            self.assertIn("fixture reply",detail["output"])
+            self.assertEqual(detail["state"],"completed")
+            self.assertNotIn("_manager_capture_token",detail)
+        self.assertNotIn("TEMP_BODY_SECRET",json.dumps(self.events()))
+        self.assertFalse(self.svc.api_monitor)
+        self.capture_off()
+        self.assertEqual(len(self.svc.api_requests),0)
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            urllib.request.urlopen(self.base+"/api/requests")
+        self.assertEqual(error.exception.code,404)
+        self.assertEqual(self.post('/v1/chat/completions',{'messages':[{'role':'user','content':'after off'}],'max_tokens':64})[0],200)
+        self.assertEqual(len(self.svc.api_requests),0)
+
+    def test_capture_expiry_and_disable_during_stream_do_not_interrupt_api(self):
+        for expire in (True,False):
+            self.start(script='</think>\n\n'+'stream body '*15,delay=.008)
+            self.capture_off()
+            self.assertTrue(self.capture_lease())
+            result=[]
+            worker=threading.Thread(target=lambda:result.append(self.post('/v1/chat/completions',
+                {'messages':[{'role':'user','content':'LONG_STREAM_SECRET'}],'max_tokens':200,'stream':True})))
+            worker.start()
+            deadline=time.monotonic()+5
+            while not self.svc.api_requests and time.monotonic()<deadline:time.sleep(.01)
+            record=self.svc.api_requests[0]
+            if expire:
+                # Monotonic expiry works even if the wall clock has not reached the DB expiry.
+                self.svc._manager_capture.deadline=time.monotonic()-.01
+                self.svc._manager_capture.refresh(force=True)
+            else:self.capture_off()
+            self.assertNotIn('LONG_STREAM_SECRET',json.dumps(record))
+            self.assertEqual(len(self.svc.api_requests),0)
+            worker.join(10)
+            self.assertFalse(worker.is_alive())
+            self.assertEqual(result[0][0],200,result)
+            self.assertIn('data:',result[0][1])
+            for body in ('input','output','reasoning','response','error'):self.assertNotIn(body,record)
+            self.assertFalse(self.svc.api_monitor)
+            self.assertFalse(self.svc._manager_capture.refresh(force=True))
+            self.assertEqual(self.post('/v1/chat/completions',{'messages':[{'role':'user','content':'must remain off'}],'max_tokens':64})[0],200)
+            self.assertEqual(len(self.svc.api_requests),0)
+            self.capture_off()
+
+    def test_capture_identity_invalid_database_and_time_fail_closed(self):
+        self.start()
+        for changes in ({'pid':os.getpid()+1},{'sessionId':'0'*32},{'sourceHash':'0'*64},{'protocolVersion':2},{'expiresAtMs':1}):
+            self.assertFalse(self.capture_lease(**changes))
+            self.assertFalse(self.svc.api_monitor)
+        self.assertTrue(self.capture_lease())
+        self.assertEqual(self.post('/v1/chat/completions',{'messages':[{'role':'user','content':'ERASE_DB_SECRET'}],'max_tokens':64})[0],200)
+        self.svc._manager_capture.last_wall=int(time.time()*1000)+10000
+        self.assertFalse(self.svc._manager_capture.refresh(force=True))
+        self.assertEqual(len(self.svc.api_requests),0)
+        self.capture_off()
+        self.assertTrue(self.capture_lease())
+        with self.journal.lock:
+            self.journal.db.execute('ALTER TABLE request_capture_leases RENAME TO lease_temporarily_unavailable')
+            self.journal.db.commit()
+        try:
+            self.assertFalse(self.svc._manager_capture.refresh(force=True))
+            self.assertEqual(self.post('/v1/chat/completions',{'messages':[{'role':'user','content':'still works'}],'max_tokens':64})[0],200)
+            self.assertEqual(len(self.svc.api_requests),0)
+        finally:
+            with self.journal.lock:
+                self.journal.db.execute('ALTER TABLE lease_temporarily_unavailable RENAME TO request_capture_leases')
+                self.journal.db.commit()
+            self.capture_off()
+
+    def test_manual_capture_is_not_claimed_or_closed_and_bodies_are_bounded(self):
+        self.start()
+        self.capture_off()
+        self.svc.api_monitor=True
+        self.assertFalse(self.capture_lease())
+        self.assertEqual(self.post('/v1/chat/completions',{'messages':[{'role':'user','content':'MANUAL_SECRET'}],'max_tokens':64})[0],200)
+        self.capture_off()
+        self.assertTrue(self.svc.api_monitor)
+        self.assertIn('MANUAL_SECRET',self.svc.api_requests[0]['input'])
+        self.svc.api_monitor=False
+        self.svc.api_requests.clear()
+        self.assertTrue(self.capture_lease())
+        status,_=self.post('/v1/chat/completions',{'messages':[{'role':'user','content':'x'*300000}],'max_tokens':64})
+        self.assertEqual(status,400)
+        record=self.svc.api_requests[-1]
+        self.assertEqual(len(record['input']),262144)
+        self.assertTrue(record['input_truncated'])
+        self.capture_off()
+
 
 class JournalAndLoader(unittest.TestCase):
+    def test_verified_official_source_has_observer_contract(self):
+        if SOURCE_HASH not in observer.SUPPORTED_HASHES:
+            self.skipTest("the checkout isn't a verified observer runtime")
+        module = ast.parse((ROOT / "serve/server.py").read_text(encoding="utf-8"))
+        service = next(n for n in module.body if isinstance(n, ast.ClassDef) and n.name == "Service")
+        methods = {n.name: n for n in service.body if isinstance(n, ast.FunctionDef)}
+        signatures = {"run": "self, ids, thinking, tools, max_new, sampling, cancel, force=None",
+                      "_note": "self, n, evs, st=None, rate=None", "begin_request": "self, path, req"}
+        for name, arguments in signatures.items():
+            self.assertEqual(ast.unparse(methods[name].args), arguments, name)
+        handler_factory = next(n for n in module.body if isinstance(n, ast.FunctionDef) and n.name == "make_handler")
+        handler = next(n for n in handler_factory.body if isinstance(n, ast.ClassDef))
+        handler_methods = {n.name: n for n in handler.body if isinstance(n, ast.FunctionDef)}
+        for name, arguments in {"do_POST": "self", "send_response": "self, code, message=None",
+                                "_note": "self, **values", "_json": "self, code, obj",
+                                "_capture": "self, items, api"}.items():
+            self.assertEqual(ast.unparse(handler_methods[name].args), arguments, name)
+        if SOURCE_HASH == OFFICIAL_0142_HASH:
+            self.assertEqual(ast.unparse(methods["_run"].args), signatures["run"])
+            calls = [n for n in ast.walk(methods["run"]) if isinstance(n, ast.Call)]
+            self.assertTrue(any(isinstance(n.func, ast.Attribute) and n.func.attr == "_run" for n in calls))
+        # The observer gathers engine-cache values before the original service
+        # releases this request's turn; the done dict still supplies its timings.
+        run_body = methods.get("_run", methods["run"])
+        self.assertTrue(any(isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                            and n.func.id == "request_stats" for n in ast.walk(run_body)))
+        self.assertTrue(any(isinstance(n, ast.Dict) and {"finish", "completion_tokens", "timings"}
+                            <= {k.value for k in n.keys if isinstance(k, ast.Constant)} for n in ast.walk(run_body)))
+
+    def test_activity_session_replacement_resets_revision_and_old_release_cannot_touch_it(self):
+        with tempfile.TemporaryDirectory() as temp:
+            old=observer.Journal(temp,"activity-session")
+            self.assertTrue(old.admit("old-inflight"))
+            fresh=observer.Journal(temp,"activity-session")
+            try:
+                self.assertNotEqual(old.session_id,fresh.session_id)
+                self.assertEqual(fresh.db.execute("SELECT COUNT(*) FROM service_activity").fetchone()[0],1)
+                row=fresh.db.execute("SELECT session_id,revision FROM service_activity").fetchone()
+                self.assertEqual(row,(fresh.session_id,0))
+                self.assertEqual(fresh.db.execute("SELECT COUNT(*) FROM active_requests").fetchone()[0],0)
+                old.release("old-inflight")
+                self.assertEqual(fresh.db.execute("SELECT session_id,revision FROM service_activity").fetchone(),row)
+                self.assertTrue(fresh.admit("fresh-inflight"))
+                fresh.release("fresh-inflight")
+                self.assertEqual(fresh.db.execute("SELECT revision FROM service_activity").fetchone()[0],2)
+            finally:
+                old.close();fresh.close()
+
     def test_anthropic_cache_usage_is_not_double_counted(self):
         ctx={"route":"anthropic","inputTokens":None,"cacheReadTokens":None,"cacheCreationTokens":None}
         observer._usage(ctx,{"input_tokens":100,"output_tokens":0})

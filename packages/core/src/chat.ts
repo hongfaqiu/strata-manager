@@ -13,6 +13,139 @@ export interface ChatOptions {
   experimentalSpeedProjection?: boolean;
   /** Set only after /health reports images:true. */
   images?: boolean;
+  /** Request-local options. They never become /settings defaults. */
+  advanced?: AdvancedChatOptions;
+  /** Identify the document by message ID, never by matching its text. */
+  fixedPrefix?: { messageId: string; chars?: number };
+  /** Inject fresh service evidence when sending; do not trust persisted evidence. */
+  capabilities?: ChatCapabilities;
+}
+export interface AdvancedChatOptions {
+  responseFormat?: 'text' | 'json_object' | 'json_schema';
+  schemaName?: string;
+  schemaText?: string;
+  minP?: number;
+  stop?: string[];
+  repetitionPenalty?: number;
+  presencePenalty?: number;
+  frequencyPenalty?: number;
+  penaltyLastN?: number;
+  logitBiasText?: string;
+}
+export interface ChatCapabilities {
+  structuredFormats: ('json_object' | 'json_schema')[];
+  sampling: boolean;
+  stops: boolean;
+  prefix: boolean;
+  logitBias: boolean;
+  vocabularySize?: number;
+  prefixReason: string;
+}
+/** Fresh native process evidence from the Supervisor, never persisted UI options. */
+export interface ChatRuntimeEvidence { verified: boolean; promptCache?: number; pid?: number; startedAt?: number }
+const record = (value: unknown): JsonObject => value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {};
+function versionAtLeast(value: unknown, minimum: number[]): boolean {
+  const match = typeof value === 'string' && /(?:^|\D)(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?/.exec(value);
+  if (!match) return false;
+  for (let i = 0; i < minimum.length; i++) { const part = Number(match[i + 1] ?? 0); if (part !== minimum[i]) return part > minimum[i]!; }
+  return true;
+}
+/** Only metadata reads; never test a feature by generating or changing the model. */
+export function parseChatCapabilities(status: unknown, metrics?: unknown, _config?: unknown, runtimeEvidence?: ChatRuntimeEvidence): ChatCapabilities {
+  const s = record(status), engine = record(record(metrics).engine);
+  const formats = record(s.structured_output).formats;
+  const official = s.service === 'strata' && Array.isArray(s.dialects) && s.dialects.includes('/v1/chat/completions');
+  const cache = runtimeEvidence?.promptCache;
+  const prefixVersion = versionAtLeast(engine.version ?? s.engine, [0, 1, 40, 2]);
+  // Saved config and /config are read from disk, not the resident engine's
+  // startup state. Only native argv evidence can establish the live depth.
+  const verified = runtimeEvidence?.verified === true && Number.isSafeInteger(runtimeEvidence.pid) && (runtimeEvidence.pid ?? 0) > 0 && Number.isFinite(runtimeEvidence.startedAt) && (runtimeEvidence.startedAt ?? 0) > 0;
+  const prefix = official && prefixVersion && verified && cache !== undefined && Number.isSafeInteger(cache) && cache >= 3;
+  const serving = record(s.concurrency).serving;
+  const parallel = record(record(metrics).live).parallel ?? serving;
+  const vocabularySize = typeof engine.vocab === 'number' ? engine.vocab : typeof engine.vocab_size === 'number' ? engine.vocab_size : undefined;
+  return { structuredFormats: official && Array.isArray(formats) ? formats.filter((f): f is 'json_object' | 'json_schema' => f === 'json_object' || f === 'json_schema') : [],
+    sampling: official, stops: official, prefix,
+    logitBias: official && engine.logit_bias === 1 && typeof parallel === 'number' && parallel <= 1,
+    ...(vocabularySize !== undefined && Number.isSafeInteger(vocabularySize) && vocabularySize > 0 ? { vocabularySize } : {}),
+    prefixReason: !official ? '服务尚未确认官方 Chat Completions 能力' : !prefixVersion ? '固定前缀需要引擎 0.1.40.2 或更新版本' : !verified ? '尚未核验当前引擎的实际启动参数；保存配置不能证明已生效' : !prefix ? '当前引擎实际 --prompt-cache 需为 3 或更大' : '',
+  };
+}
+function invalid(message: string): never { throw new StrataError('INVALID_CHAT_OPTIONS', message); }
+function supported(ok: boolean | undefined, feature: string): void { if (!ok) throw new StrataError('CHAT_FEATURE_UNSUPPORTED', `当前服务未确认支持 ${feature}，请刷新服务能力或移除此设置`); }
+/** JSON syntax and upstream root/reference rules; full metaschema/output validation is the server's job. */
+export function parseChatSchema(text: string): JsonObject {
+  let value: unknown;
+  try { value = JSON.parse(text); } catch { return invalid('JSON Schema 不是有效 JSON'); }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return invalid('JSON Schema 必须为对象');
+  const root = value as JsonObject;
+  const resolve = (ref: string): unknown => {
+    let target: unknown = root;
+    for (const part of ref.slice(1).split('/').slice(1)) { const key = part.replace(/~1/g, '/').replace(/~0/g, '~'); if (!target || typeof target !== 'object' || Array.isArray(target)) return undefined; target = (target as JsonObject)[key]; }
+    return target;
+  };
+  const onlyObjects = (node: unknown, refs: string[] = []): boolean => {
+    const n = record(node); if (n.type === 'object') return true;
+    if (typeof n.$ref === 'string' && n.$ref.startsWith('#') && !refs.includes(n.$ref) && onlyObjects(resolve(n.$ref), [...refs, n.$ref])) return true;
+    for (const key of ['anyOf', 'oneOf']) if (Array.isArray(n[key]) && n[key].length && n[key].every(branch => onlyObjects(branch, refs))) return true;
+    return Array.isArray(n.allOf) && n.allOf.some(branch => onlyObjects(branch, refs));
+  };
+  const walk = (node: unknown, depth = 0): void => {
+    if (depth > 100) invalid('JSON Schema 嵌套过深');
+    if (Array.isArray(node)) { node.forEach(child => walk(child, depth + 1)); return; }
+    if (typeof node === 'number' && !Number.isFinite(node)) invalid('JSON Schema 数值必须有限');
+    if (!node || typeof node !== 'object') return;
+    for (const [key, child] of Object.entries(node)) {
+      if ((key === '$ref' || key === '$dynamicRef') && (typeof child !== 'string' || !child.startsWith('#'))) invalid('JSON Schema 只允许本地 # 引用');
+      if (key === '$ref' && resolve(child as string) === undefined) invalid('JSON Schema 本地引用不存在');
+      walk(child, depth + 1);
+    }
+  };
+  walk(root); if (!onlyObjects(root)) invalid('JSON Schema 根类型必须只接受对象');
+  return root;
+}
+export function parseChatLogitBias(text: string, vocabularySize?: number): JsonObject {
+  let value: unknown; try { value = JSON.parse(text); } catch { return invalid('logit_bias 不是有效 JSON'); }
+  if (!Array.isArray(value) && (!value || typeof value !== 'object')) return invalid('logit_bias 需为对象或 [token_id, bias] 列表');
+  const pairs = Array.isArray(value), entries: unknown[] = Array.isArray(value) ? value : Object.entries(value as JsonObject);
+  const out: JsonObject = {};
+  for (const entry of entries) {
+    if (!Array.isArray(entry) || entry.length !== 2) invalid('logit_bias 每项需包含 token ID 与偏置');
+    const [id, raw] = entry;
+    if ((typeof id !== 'number' && typeof id !== 'string') || !/^\d+$/.test(String(id))) invalid('logit_bias token ID 需为非负整数');
+    const token = Number(id);
+    if (!Number.isSafeInteger(token) || token > 2147483647 || (vocabularySize !== undefined && token >= vocabularySize)) invalid('logit_bias token ID 超出词表范围');
+    if (Object.hasOwn(out, String(token))) invalid('logit_bias 包含重复 token ID');
+    const bias = pairs && raw === false ? -100 : raw;
+    if (typeof bias !== 'number' || !Number.isFinite(bias) || bias < -100 || bias > 100) invalid('logit_bias 偏置需在 -100 到 100');
+    out[String(token)] = bias;
+  }
+  if (vocabularySize !== undefined && Object.values(out).filter(v => v === -100).length === vocabularySize) invalid('logit_bias 不能禁止整个词表');
+  return out;
+}
+/** Validate before applying settings, and again immediately before sending. */
+export function buildAdvancedChatFields(options: ChatOptions): JsonObject {
+  const a = options.advanced ?? {}, caps = options.capabilities, out: JsonObject = {};
+  const number = (value: unknown, key: string, min: number, max = Infinity, strict = false): void => {
+    if (value === undefined) return;
+    if (typeof value !== 'number' || !Number.isFinite(value) || (strict ? value <= min : value < min) || value > max) invalid(`${key} 数值范围无效`);
+    supported(caps?.sampling, key); out[key] = value;
+  };
+  number(a.minP, 'min_p', 0, 1); number(a.repetitionPenalty, 'repetition_penalty', 0, Infinity, true);
+  number(a.presencePenalty, 'presence_penalty', 0); number(a.frequencyPenalty, 'frequency_penalty', 0);
+  if (a.penaltyLastN !== undefined) { if (!Number.isSafeInteger(a.penaltyLastN) || a.penaltyLastN < 0) invalid('penalty_last_n 需为非负整数'); supported(caps?.sampling, 'penalty_last_n'); out.penalty_last_n = a.penaltyLastN; }
+  if (a.stop !== undefined) { if (!Array.isArray(a.stop) || a.stop.length > 4 || a.stop.some(s => typeof s !== 'string' || !s.length)) invalid('stop 需为最多 4 个非空字符串'); if (a.stop.length) { supported(caps?.stops, 'stop'); out.stop = a.stop; } }
+  if (a.logitBiasText?.trim()) { const bias = parseChatLogitBias(a.logitBiasText, caps?.vocabularySize); if (Object.keys(bias).length) { supported(caps?.logitBias, 'logit_bias（需支持的引擎且关闭连续批处理）'); out.logit_bias = bias; } }
+  const format = a.responseFormat ?? 'text';
+  if (!['text', 'json_object', 'json_schema'].includes(format)) invalid('输出格式无效');
+  if (format !== 'text') {
+    supported(caps?.structuredFormats.includes(format), format);
+    if (options.mcp) invalid('JSON 输出与 MCP 工具互斥，请先关闭 MCP');
+    if (format === 'json_schema') { if (!a.schemaName?.trim() || a.schemaName.length > 64 || !/^[\w-]+$/.test(a.schemaName)) invalid('Schema 名称需为 1–64 个英文字母、数字、下划线或连字符'); out.response_format = { type: format, json_schema: { name: a.schemaName, strict: true, schema: parseChatSchema(a.schemaText ?? '') } }; }
+    else out.response_format = { type: format };
+  }
+  if (options.fixedPrefix) { supported(caps?.prefix, '固定前缀'); if (!options.fixedPrefix.messageId || (options.fixedPrefix.chars !== undefined && (!Number.isSafeInteger(options.fixedPrefix.chars) || options.fixedPrefix.chars < 1))) invalid('固定前缀需有效消息和正整数字符边界'); }
+  return out;
 }
 export interface StreamToolEvent extends ToolEvent {
   id?: string; server?: string; tool?: string; arguments?: unknown; result?: string;
@@ -89,9 +222,23 @@ export function buildSharedDefaults(options: ChatOptions): JsonObject {
 export function buildChatRequest(messages: ChatMessage[], options: ChatOptions): JsonObject {
   if (!options.model.trim()) throw new StrataError('MODEL_REQUIRED', '请先探测服务并选择模型');
   const sampling = buildSharedDefaults(options);
+  const advanced = buildAdvancedChatFields(options);
   const api: JsonObject[] = options.systemPrompt.trim() ? [{ role: 'system', content: options.systemPrompt }] : [];
-  for (const message of messages) api.push(...(message.role === 'assistant' ? assistantMessages(message) : [userMessage(message, options)]));
-  return { model: options.model, messages: api, stream: true, ...sampling, ...(options.mcp ? { strata_mcp: true } : {}) };
+  let prefixIndex = -1;
+  for (const message of messages) { if (message.id === options.fixedPrefix?.messageId) { if (prefixIndex !== -1) invalid('固定前缀消息 ID 重复'); prefixIndex = api.length; if (message.role !== 'user') invalid('固定前缀必须选择用户文档消息'); } api.push(...(message.role === 'assistant' ? assistantMessages(message) : [userMessage(message, options)])); }
+  if (options.fixedPrefix) {
+    if (prefixIndex < 0) invalid('固定前缀消息不在当前会话，请重新选择');
+    if (messages.some(m => m.attachments?.some(a => a.type === 'image'))) invalid('固定前缀不支持包含图片的请求');
+    const chars = options.fixedPrefix.chars, text = api[prefixIndex]?.content;
+    if (typeof text !== 'string' || !text.length) invalid('固定前缀需非空文本');
+    const length = Array.from(text).length;
+    if (chars !== undefined && (chars > length || (prefixIndex === api.length - 1 && chars >= length))) invalid('固定前缀字符边界需在文档内，并给问题保留内容');
+    if (chars === undefined && prefixIndex === api.length - 1) invalid('固定文档之后需要一条提问；或设置文档内的字符边界');
+    // prepare_format prepends a system message only when the first one is not system.
+    const offset = advanced.response_format && api[0]?.role !== 'system' ? 1 : 0;
+    advanced.strata_prefix = chars === undefined ? { messages: prefixIndex + 1 + offset } : { message: prefixIndex + offset, chars };
+  }
+  return { model: options.model, messages: api, stream: true, ...sampling, ...advanced, ...(options.mcp ? { strata_mcp: true } : {}) };
 }
 
 /** Streaming SSE framer: CR/LF, multiline data and UTF-8 boundaries all survive arbitrary chunks. */

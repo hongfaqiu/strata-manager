@@ -1,0 +1,26 @@
+.official-setup-summary-state{display:inline-block;margin-left:8px;font-size:12px;font-weight:400;color:var(--st-ink-muted)}
+.setup-tuning-panel-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.setup-tuning-panel-heading h3{display:flex;align-items:center;gap:8px;margin:0;font-size:15px;font-weight:600}
+.startup-tuning .setup-tuning-panel-heading .card-title{margin:0}
+.setup-tuning-toolbar{display:flex;justify-content:flex-end;margin-top:8px}
+button.setup-tuning-help-button{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:30px;height:30px;min-height:30px;padding:0;border:0;background:transparent;color:var(--st-ink-muted);box-shadow:none}
+button.setup-tuning-help-button:hover{color:var(--st-accent,#00a77f);background:var(--st-hover,var(--st-surface))}
+.setup-tuning-help-content{padding:12px 20px;font-size:14px;line-height:1.7}
+.setup-tuning-help-content p{margin:10px 0}
+.model-inspect-fields{grid-template-columns:minmax(0,1fr) minmax(150px,.3fr)}
+.model-inspect-source button{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.model-inspect-result .model-inspect-verdict{font-size:13px;line-height:1.6}
+.model-inspect-output{max-height:65vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.6}
+.startup-tuning-category{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;margin:12px 0 16px}
+.startup-tuning-category>label:first-child{display:grid;gap:8px;min-width:220px}
+.startup-tuning-active-group>h3{font-size:14px;font-weight:600;margin:16px 0 0}
+.startup-tuning .startup-file-actions{align-items:center}
+.startup-tuning .startup-file-actions>code{margin-right:auto;overflow-wrap:anywhere;color:var(--st-ink-muted);font-size:12px}
+.startup-tuning-parameter-names{display:flex;align-items:center;gap:8px;margin:12px 0;color:var(--st-ink-muted);font-size:13px}
+.startup-tuning-parameter-names input{margin:0;width:16px;height:16px;accent-color:var(--st-accent,#00a77f)}
+.tuning-expert-options{grid-column:1/-1;min-width:0;border-top:1px solid var(--st-line);padding-top:12px}
+.tuning-expert-options>h4{font-size:13px;font-weight:600;line-height:28px;margin:0}
+.tuning-expert-options>h4>span{margin-left:8px;color:var(--st-ink-muted);font-size:12px;font-weight:400}
+.tuning-expert-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:12px}
+.runtime-slot-monitor .runtime-slot-detail-toggle{font-size:13px;min-height:30px}
+@media(max-width:760px){.tuning-expert-fields{grid-template-columns:1fr}.model-inspect-fields{grid-template-columns:1fr}}

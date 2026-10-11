@@ -1,10 +1,10 @@
 <div align="center">
 
-<a href="https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.webp"><img src="docs/screenshots/product-cover.webp" alt="Strata Manager — overview, chat and local model management" width="1200" /></a>
+<a href="https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.webp"><img src="docs/screenshots/product-cover.webp" alt="Strata Manager — Strata runtime, model configurations and local services" width="1200" /></a>
 
 <h1>Strata Manager</h1>
-<p><strong>Local models. One workspace.</strong></p>
-<p>Manage local models, conversations, background services and your local API in one desktop app.</p>
+<p><strong>Your desktop workspace for Strata and local model services.</strong></p>
+<p>Install and update Strata, choose model configurations, and manage your local API.</p>
 
 <p>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license" /></a>
@@ -20,24 +20,28 @@
 
 **Preview v0.1.0-beta.1 is available.** Download below or read the [release notes](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0-beta.1) and [installation guide](https://hongfaqiu.github.io/strata-manager/docs/download.en.html).
 
-Strata Manager is an open-source desktop app for local model management. Import and prepare models, manage configurations, start and load services, chat, monitor activity, and connect to your local API in one workspace. Existing weights stay in place, and an independent background process manages running services. The app uses the [Strata](https://github.com/Niko1221/Strata) runtime; available models, image input and API protocols depend on your installed runtime and chosen model.
+Strata Manager is an open-source desktop workspace for the [Strata](https://github.com/Niko1221/Strata) runtime and local model services. Its core is runtime installation and updates, model configurations, and service startup, shutdown and recovery. Chat, monitoring, API usage statistics and parameter tuning support that workflow. Existing model weights stay in place, and an independent background process manages running services.
+
+The features and screenshots below describe the current source tree. The published **v0.1.0-beta.1** preview has its own [release notes](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0-beta.1); newer source changes are not automatically included in that installer.
 
 ## What is Strata?
 
 [Strata](https://github.com/Niko1221/Strata) is an open-source local inference project. It coordinates GPU memory, RAM and CPU resources to run the models it supports, and provides a browser interface and a local API.
 
-Strata Manager is an independent community desktop management app built on Strata. It handles model import and preparation, configurations, background services and the desktop workspace. Inference capabilities come from the Strata runtime and chosen model.
+Strata Manager is an independent community project built on Strata. It manages Strata on this computer; inference capabilities, supported models, image input and API protocols come from the installed Strata runtime and chosen model.
 
 ## Features
 
-- **Keep existing models.** Detect and import supported local Strata installations without downloading their weights again.
-- **Skip the setup chores.** Prepare the official runtime and a private Python environment through the app, without finding Git or entering Python paths.
-- **Keep your API available.** An independent background process manages startup and reconnects when you reopen the desktop window.
-- **Chat in one place.** Keep conversation history, streaming replies and text attachments together. Reasoning, image input and MCP tool events require model and runtime support.
-- **Understand your usage.** Follow request volume, tokens, latency, cache reuse, errors and activity over time, with unknown values clearly identified.
-- **Tune with measurements.** Compare supported PCIe budget and MTP speculation parameters against the baseline, review drift and output consistency, then apply a candidate or restore the original settings. This is a bounded comparison, not a search of every configuration or a speed guarantee.
+- **Manage Strata centrally.** Detect an existing runtime or prepare one from the Strata page. View installed and upstream versions, official release notes, and ZIP download, extraction and update progress. Runtime management is separate from individual models.
+- **Review updates before installing.** Automatic checks are enabled by default, on launch and every 12 hours. Available updates show release notes and require confirmation before installation. App updates, Strata updates and model weights are managed separately.
+- **See the models you already have.** My models automatically lists discovered local models. Configurations that use the same model are grouped; switch configurations, inspect modification dates, and identify the current and last-used configuration without downloading weights again.
+- **Edit the full runtime configuration.** Open a model's configuration inside Models. Use graphical controls with suggestions and custom values, or edit JSON; saves validate the configuration and retain a backup.
+- **Control the local API.** Start, stop, restart or release model memory, with startup stages and logs. The active model and configuration remain visible while you browse other configurations. Releasing memory preserves model files.
+- **Observe and test.** Monitor service and hardware activity; retain API usage after reopening the app and chart requests, tokens, latency, cache reuse, prefill and decode speeds. Missing measurements remain unknown.
+- **Chat in the same workspace.** Keep conversations, streaming replies and attachments together. Reasoning, image input and MCP tool events require model and runtime support.
+- **Tune with complete tasks.** Compare everyday chat, coding and Agent, or long-document workloads. Test PCIe/MTP request parameters and supported CPU, swapping, prefill and VRAM-reserve restart candidates, review quality and resource checks, then apply or restore. This is a bounded comparison, not a search of every configuration or a speed guarantee.
 
-Chinese and English, light and dark themes, a collapsible sidebar, tray actions, startup settings and update controls make the workspace fit daily use. The interface follows Strata's visual style.
+The merged window header follows the app's theme. Appearance follows the system by default; language and theme live in Settings beside the sidebar collapse control. Closing to the tray is enabled by default. Disable it to stop managed services and exit when closing, with a confirmation that can be suppressed. Tray actions show service state and provide shortcuts.
 
 ## Download
 
@@ -54,56 +58,74 @@ Windows package checks cover silent installation, desktop startup, private backg
 
 Previews use manual installation and do not replace the stable `latest` update channel. Tauri update signatures are separate from Windows Authenticode publisher signing. macOS and ARM are currently outside the release targets.
 
-The desktop package contains the app and background process. Model weights and the Strata runtime are prepared or imported separately. Hardware, drivers and free disk space depend on the model; check [Strata's documentation](https://github.com/Niko1221/Strata) before preparing one.
+The desktop package contains the app and background process. The Strata runtime and model weights are prepared separately. Hardware, drivers and free disk space depend on the model; check [Strata's documentation](https://github.com/Niko1221/Strata) before preparing one.
 
 ## Get started
 
-1. **Have a model already? Open My models.** Valid models and conversations from earlier Manager versions are restored automatically. Import a supported local Strata installation, selecting its folder only if detection misses it. Weights from that installation stay in place and do not need another download.
-2. **Need a new model? Follow preparation.** Let the app prepare the runtime, then choose the model, size, context and image support. Follow the task log; cancel or retry when needed. Only download new weights when you choose to add them. Verified results appear in My models without replacing your current selection.
-3. **Choose Use, wait for Model ready, then chat.** Service startup is handled by the app. To connect another application, copy the local API address and use its matching API path. Closing the window keeps an already running service available; use the tray's Stop services and quit action to stop it.
+1. **Prepare Strata first.** Open Strata to inspect the detected runtime and version. An existing runtime does not need reinstalling. If none is found, use the installation guide before choosing or downloading a model.
+2. **Choose a model and configuration.** My models shows discovered models directly. Select a configuration or add a search directory if yours is missing. Use Download models to prepare new weights, or select Runtime settings to open the configuration page with graphical controls and JSON.
+3. **Choose Use and follow startup.** The model joins the managed list and shows environment checks, startup and loading progress. Wait for Model ready, then chat or copy the local API address into another application. The current model and configuration are marked in My models.
 
-Only installations prepared or imported on **this computer** are managed. See the [user guide](docs/USER_GUIDE.en.md) for preparation requirements, background behavior, API connections and troubleshooting.
+Only supported installations on **this computer** are managed. See the [user guide](docs/USER_GUIDE.en.md) for preparation requirements, background behavior, API connections and troubleshooting.
 
 ## Screenshots
 
-These are actual App screens rendered with isolated in-memory RPC example data. Model status, chat content and metrics are examples disclosed here outside the images, not live inference results or benchmarks. The cover combines these screens and is not performance evidence. Screenshots use 2× pixel density and lossless WebP; click any image to open its full-resolution version.
+These screenshots render the current app components with isolated example data. Model status, chat content, usage and tuning values are examples, not live inference results or benchmarks. The cover shows the Strata management screen. Click an image to view its full-resolution version.
 
-**Your workspace at a glance**
+**Strata — runtime versions, ZIP updates and official release notes**
 
-[![Overview — model readiness, next steps and local activity](docs/screenshots/overview.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/overview.zh.webp)
+[![Strata — installed runtime and update management](docs/screenshots/runtime.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/runtime.en.webp)
 
-**Conversations, attachments and tools**
+**My models — all discovered models, grouped configurations and active service**
 
-[![Chat — conversations and streaming replies](docs/screenshots/chat.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/chat.zh.webp)
+[![My models — discovered models and runtime configurations](docs/screenshots/models.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/models.en.webp)
+
+**Runtime configuration — graphical controls and JSON inside Models**
+
+[![Runtime configuration — graphical and JSON editing](docs/screenshots/config.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/config.en.webp)
 
 <details>
-<summary>Explore models, API usage, tuning, monitoring and settings</summary>
+<summary>Explore overview, monitoring, usage, tuning, chat, settings and About</summary>
 
-**Models — reuse what you have, prepare what you need**
+**Overview — current service and quick controls**
 
-[![Models — local installations and preparation](docs/screenshots/models.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/models.zh.webp)
+[![Overview — current service and local activity](docs/screenshots/overview.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/overview.en.webp)
+
+**Monitor — service and hardware activity**
+
+[![Monitor — service state and performance](docs/screenshots/monitor.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/monitor.en.webp)
 
 **API usage — see how your local service is used**
 
-[![API usage — request trends, tokens and latency](docs/screenshots/usage.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/usage.zh.webp)
+[![API usage — request, cache and throughput charts](docs/screenshots/usage.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/usage.en.webp)
 
 **Tuning — compare before choosing**
 
-[![Tuning — baseline and candidate comparison](docs/screenshots/tuning.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/tuning.zh.webp)
+[![Tuning — baseline and candidate comparison](docs/screenshots/tuning.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/tuning.en.webp)
 
-**Monitor — inspect service and hardware activity**
+**Chat — conversations, attachments and tools**
 
-[![Monitor — service state and performance](docs/screenshots/monitor.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/monitor.zh.webp)
+[![Chat — conversations and streaming replies](docs/screenshots/chat.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/chat.en.webp)
 
 **Settings — make the workspace yours**
 
-[![Settings — language, theme, background and updates](docs/screenshots/settings.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/settings.zh.webp)
+[![Settings — language, theme, background and updates](docs/screenshots/settings.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/settings.en.webp)
+
+**About — app identity, versions and project links**
+
+[![About — project information and credits](docs/screenshots/about.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/about.en.webp)
 
 </details>
 
 ## Learn more
 
 The [user guide](docs/USER_GUIDE.en.md) explains API counters, local storage and privacy, tuning limits, startup and updates, and common problems. See the [download guide](https://hongfaqiu.github.io/strata-manager/docs/download.en.html) for versions and current support scope.
+
+**Will closing the window stop the API?** Closing to the tray is enabled by default and keeps a running service available. Turn it off to stop managed services and exit on close; the confirmation offers a Don't ask again option. The tray also provides Stop services and quit.
+
+**Does releasing model memory delete the model?** No. It releases RAM and VRAM while retaining model files and the API process. Removing a saved configuration also preserves the original model files.
+
+**Are API usage and the request viewer the same?** No. Usage stores local metadata and charts. The optional request viewer captures request details only when enabled in Strata configuration; it does not need to be enabled for usage statistics.
 
 <details>
 <summary>Build from source</summary>

@@ -119,7 +119,7 @@ fn validate_server_arguments(profile: &ServiceProfile, argv: &[String]) -> Resul
     let mut options = std::collections::HashMap::new();
     while index < argv.len() {
         let name = argv[index].as_str();
-        if matches!(name, "--api-monitor" | "--no-open-browser") {
+        if matches!(name, "--api-monitor" | "--no-open-browser" | "--lazy") {
             index += 1;
             continue;
         }
@@ -1197,6 +1197,11 @@ time.sleep(90)
                 "18339".into(),
             ];
             assert!(validate_arguments(&profile, &image, &argv).is_ok());
+            let mut lazy = argv.clone();
+            lazy.push("--lazy".into());
+            assert!(validate_arguments(&profile, &image, &lazy).is_ok());
+            lazy.push("true".into());
+            assert!(validate_arguments(&profile, &image, &lazy).is_err());
             let parsed=arguments(&format!("\"{}\" -u -m serve.server --engine strata --config \"{}\" --host 127.0.0.1 --port 18339",image.display(),config.display())).unwrap();
             assert_eq!(parsed, argv);
             for (index, value) in [

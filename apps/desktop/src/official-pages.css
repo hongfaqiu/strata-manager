@@ -28,6 +28,11 @@ html,body,#root{height:100%;min-height:0}body{overflow:hidden}.official-app{heig
 .manager-nav .manager-service{display:flex;padding:0 4px}
 .manager-nav .manager-service .st-label{display:block}
 .manager-nav-bottom{margin-top:auto;display:flex;flex-direction:column;gap:12px;padding-top:16px}
+.manager-nav-bottom-row{display:flex;align-items:center;gap:6px;border-top:1px solid var(--st-line);padding-top:8px}
+.manager-nav .manager-nav-bottom-row>.manager-settings-button{width:40px;min-width:40px;padding:10px;justify-content:center;flex:none}
+.manager-nav .manager-nav-bottom .manager-nav-bottom-row>.nav-collapse{flex:1;width:auto;border-top:0;padding-top:10px;margin-top:0}
+.manager-nav.is-collapsed .manager-nav-bottom-row{gap:2px}
+.manager-nav.is-collapsed .manager-nav-bottom-row>.manager-nav-item{width:24px;min-width:0;min-height:38px;padding:3px;flex:1}
 .manager-footer-actions{display:flex;flex-direction:column;gap:3px}
 .manager-nav-footer{padding:0 4px}
 .manager-nav-footer .st-pill{max-width:100%;overflow:hidden;white-space:nowrap}
@@ -229,3 +234,21 @@ html,body,#root{height:100%;min-height:0}body{overflow:hidden}.official-app{heig
   .api-usage-tile>strong{font-size:21px}
   .api-usage-coverage-facts{gap:16px}
 }
+
+/* Request diagnostics are nested in the desktop workspace, not a full viewport. */
+.api-monitor-page .request-viewer-toolbar{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.api-monitor-page .request-capture-notice{padding:16px 20px;margin-top:16px}
+.api-monitor-page .request-capture-notice>p{margin:0 0 12px;overflow-wrap:anywhere}
+.api-monitor-page .filters{min-width:0;max-width:100%;flex-wrap:wrap}
+.api-monitor-page .filters :is(input,.official-dropdown){min-width:0;max-width:100%}
+.api-monitor-page .facts{grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.api-monitor-page :is(.card,.fact,.detail-title){min-width:0;overflow-wrap:anywhere}
+@container workspace (max-width:700px){.api-monitor-page .facts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.settings-help-content{font-size:14px;line-height:1.8;color:var(--st-ink-soft)}
+.settings-help-content p{margin:0 0 14px;overflow-wrap:anywhere}
+.settings-help-content pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}
+.official-surface :is(.tuning-advanced,.tuning-diagnostic-details)>summary{display:list-item;list-style:disclosure-closed inside;cursor:pointer;min-height:28px;line-height:28px;border-radius:5px}
+.official-surface :is(.tuning-advanced,.tuning-diagnostic-details)[open]>summary{list-style-type:disclosure-open}
+.official-surface :is(.tuning-advanced,.tuning-diagnostic-details)>summary::marker{content:normal}
+.official-surface :is(.tuning-advanced,.tuning-diagnostic-details)>summary:hover{background:var(--st-surface-2)}

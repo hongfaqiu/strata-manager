@@ -6,6 +6,8 @@ real HTTP admission, owned process restart, and config rollback without a GPU.
 import argparse
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 import threading
 import time
@@ -30,6 +32,17 @@ def flag(name, default):
 
 pcie = flag("--pcie-frac", 0.5)
 spec = flag("--spec-min-p", 0.5)
+workers = int(flag("--pool-workers", 4))
+adapt_async = int(flag("--adapt-async", 0))
+prefill = int(flag("--prefill", 2048))
+reserve = int(flag("--vram-reserve-mib", 700))
+adapt_every = int(flag("--adapt-every", 4))
+adapt_swaps = int(flag("--adapt-swaps", 96))
+adapt_decay = flag("--adapt-decay", 0.7)
+# Optional owned child supplies real process argv for unpublished-telemetry tests.
+if Path(config["cwd"]).joinpath("adaptive-argv-fixture").exists():
+    child_env = {key: value for key, value in os.environ.items() if key not in ("STRATA_MANAGER_SERVICE_ID", "STRATA_MANAGER_ANALYTICS_DIR")}
+    subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)", *flags], env=child_env)
 directory = Path(os.environ["STRATA_MANAGER_ANALYTICS_DIR"])
 profile_id = os.environ["STRATA_MANAGER_SERVICE_ID"]
 journal = Journal(directory, profile_id)
@@ -69,8 +82,25 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/v1/status":
             self.respond({"service": "strata", "activity": {"in_flight": active}})
         elif self.path == "/metrics":
-            self.respond({"engine": {"model": "tuning-fixture", "version": "fixture-only", "max_context": 4096,
-                                     "pcie_frac": pcie, "spec_min_p": spec},
+            engine = {"model": "tuning-fixture", "version": "fixture-only", "max_context": 65536,
+                                     "pcie_frac": pcie, "spec_min_p": spec, "pool_workers": workers,
+                                     "adapt_async": adapt_async, "prefill": prefill, "vram_reserve_mib": reserve,
+                                     "adapt_every": adapt_every, "adapt_swaps": adapt_swaps, "adapt_decay": adapt_decay}
+            if Path(config["cwd"]).joinpath("unknown-effective-async").exists():
+                engine.pop("adapt_async")
+            if Path(config["cwd"]).joinpath("unknown-effective-adaptive").exists():
+                for key in ("adapt_every", "adapt_swaps", "adapt_decay"):
+                    engine.pop(key)
+            hardware = {"ram_total":64 * 2**30, "ram_used":32 * 2**30,
+                        "gpu_mem_total":16 * 2**30, "gpu_mem_used":8 * 2**30}
+            if Path(config["cwd"]).joinpath("unknown-resources").exists():
+                hardware.pop("ram_used")
+                hardware.pop("gpu_mem_used")
+            if Path(config["cwd"]).joinpath("resource-pressure").exists():
+                hardware["ram_used"] = hardware["ram_total"] - 128 * 2**20
+                hardware["gpu_mem_used"] = hardware["gpu_mem_total"] - 128 * 2**20
+            self.respond({"engine": engine,
+                          "hardware":hardware,
                           "hardware_static": {"cpu": "fixture"},
                           "live": {"state": "generating" if active else "idle", "queued": 0,
                                    "running": active, "waiting": 0, "outside_slots": 0}})
@@ -87,7 +117,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.respond({"error": {"code": "strata_manager_maintenance"}}, 503)
                 return
             if self.path in ("/load", "/v1/load"):
-                if abs(pcie - 0.35) < 0.001 and Path(config["cwd"]).joinpath("reject-applied").exists():
+                if (abs(pcie - 0.35) < 0.001 and Path(config["cwd"]).joinpath("reject-applied").exists()) or (workers == 3 and Path(config["cwd"]).joinpath("reject-restart").exists()):
                     self.respond({"error": {"code": "fixture_load_failure"}}, 500)
                 else:
                     loaded = True
@@ -114,6 +144,24 @@ class Handler(BaseHTTPRequestHandler):
                 tokens = 24
                 if request["max_tokens"] == 32:
                     answer, tokens = "READY", 1
+                elif request["max_tokens"] == 1024:
+                    if workers == 2 and Path(config["cwd"]).joinpath("oom-candidate").exists():
+                        os._exit(137)  # Simulated OOM of this test-owned process.
+                    content = request["messages"][-1]["content"]
+                    if "编号、负责人、数量" in content:
+                        answer = json.dumps({"编号":"N7", "负责人":"Mira", "数量":5}, ensure_ascii=False)
+                    elif "original ticket and owner" in content:
+                        answer = json.dumps({"ticket":"N7", "owner":"Mira", "count":5})
+                    elif "owner Theo" in content:
+                        answer = json.dumps({"ticket":"Z9", "owner":"Theo", "count":8})
+                    elif "values must contain all integers" in content:
+                        answer = json.dumps({"values":list(range(1,129)), "total":8256})
+                    else:
+                        answer = json.dumps({"ticket":"N7", "owner":"Mira", "count":3})
+                    time.sleep(.004 if workers == 2 or abs(requested_pcie - .35) < .001 else .035)
+                    if Path(config["cwd"]).joinpath("slow-full").exists():
+                        Path(config["cwd"]).joinpath("full-in-flight").write_text(str(workers))
+                        time.sleep(1)
                 time.sleep(0.012)
                 if Path(config["cwd"]).joinpath("crash-request").exists():
                     os._exit(27)  # Only the test-owned Python process exits.

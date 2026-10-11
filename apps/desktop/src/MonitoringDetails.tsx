@@ -2,6 +2,7 @@ import type { JsonObject } from '@strata-manager/core';
 import type { ReactNode } from 'react';
 import { asObject } from '@strata-manager/core';
 import { Badge, Chart, Panel } from './components';
+import { SlotMonitor } from './SlotMonitor';
 
 export interface MonitoringDetailsProps { raw: JsonObject; language: 'zh-CN' | 'en'; requests?: ReactNode }
 type Fact = [string, string];
@@ -64,6 +65,7 @@ export function MonitoringDetails({ raw, language, requests }: MonitoringDetails
       </Panel>;
 
   return <>
+    <SlotMonitor raw={raw} language={language}/>
     <div className="monitor-row">
       <Panel title={label('上下文与提示词', 'Context and prompt')} className="ctx-card">
         {progress(label('上下文占用', 'Context usage'), used, context)}
@@ -119,8 +121,8 @@ export function MonitoringDetails({ raw, language, requests }: MonitoringDetails
           [label('统计开始', 'Since'), date(totals.since)], [label('请求数', 'Requests'), fmt(totals.requests, 0)],
           [label('实际读取提示词 tokens', 'Prompt tokens read'), fmt(read, 0)], [label('复用 tokens', 'Reused tokens'), fmt(reused, 0)],
           [label('输出 tokens', 'Output tokens'), fmt(outputTokens, 0)],
-          [label('累计 prefill 吞吐', 'Total prefill throughput'), totalPrefillSpeed === null ? '—' : `${fmt(totalPrefillSpeed)} tok/s`],
-          [label('累计 decode 吞吐', 'Total decode throughput'), totalDecodeSpeed === null ? '—' : `${fmt(totalDecodeSpeed)} tok/s`],
+          [label('累计输入处理速度', 'Overall input processing speed'), totalPrefillSpeed === null ? '—' : `${fmt(totalPrefillSpeed)} tok/s`],
+          [label('累计生成速度', 'Overall generation speed'), totalDecodeSpeed === null ? '—' : `${fmt(totalDecodeSpeed)} tok/s`],
         ])}
       </Panel>
     </div>

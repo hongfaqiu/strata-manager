@@ -1,0 +1,21 @@
+.chat-advanced-options { border-top: 1px solid var(--st-line-soft); padding-top: var(--st-s-4, 16px); }
+.chat-advanced-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.chat-advanced-heading h3 { margin: 0; font-weight: 600; font-size: var(--st-fs-sm); }
+.chat-advanced-help { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; min-height: 28px; color: var(--st-ink-muted); cursor: help; border-radius: 5px; }
+.chat-advanced-help:hover { color: var(--st-accent-text); background: var(--st-surface-2); }
+.chat-advanced-help:focus-visible { outline: 2px solid var(--st-accent); outline-offset: 3px; }
+.chat-advanced-body { display: flex; flex-direction: column; gap: var(--st-s-3, 12px); margin-top: var(--st-s-3, 12px); }
+.chat-advanced-body p { margin: 0; line-height: 1.6; }
+.chat-advanced-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--st-s-3, 12px); }
+.chat-advanced-code { font-family: var(--st-font-mono); resize: vertical; min-height: 70px; }
+.chat-advanced-body textarea { width: 100%; height: auto; box-sizing: border-box; resize: vertical; }
+.chat-advanced-body #chat-schema-text { min-height: 12rem; }
+.chat-advanced-error { color: var(--st-danger, #d55656); overflow-wrap: anywhere; font-size: var(--st-fs-sm); }
+.chat-advanced-active { margin-left: 10px; color: var(--st-ink-muted); font-weight: 400; }
+.chat-advanced-status { font-size: var(--st-fs-sm); color: var(--st-ink-muted); }
+.chat-advanced-sampling-toggle { align-self: flex-start; padding: 4px 0; min-height: 32px; border: 0; background: none; color: var(--st-accent-text); font-size: var(--st-fs-sm); cursor: pointer; }
+.chat-advanced-sampling-toggle:hover { text-decoration: underline; }
+.chat-advanced-sampling-toggle:focus-visible { outline: 2px solid var(--st-accent); outline-offset: 3px; }
+.chat-advanced-sampling:not([hidden]) { display: flex; flex-direction: column; gap: var(--st-s-3, 12px); }
+.chat-advanced-sampling[hidden] { display: none; }
+@media (max-width: 480px) { .chat-advanced-grid { grid-template-columns: minmax(0, 1fr); } }

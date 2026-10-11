@@ -2,23 +2,23 @@
 
 [Documentation](README.en.md) · [User guide](USER_GUIDE.en.md) · [Download and try](DOWNLOAD.en.md) · [简体中文](TROUBLESHOOTING.md)
 
-Identify the stage first: preparation, API startup, model loading, chat, usage collection, tuning or updates. A running API is not proof that the model has loaded, and an empty chart is not proof that no requests occurred.
+This page describes the current source; published betas have their own release notes. Identify the stage first: Strata installation/update, model preparation, API startup, model loading, chat, usage collection or tuning. A running API is not proof that the model has loaded, and an empty chart is not proof that no requests occurred.
 
 ## Check these first
 
 1. **Overview:** check the selected model, readiness and background health.
-2. **Tasks, Tuning and Settings:** use Tasks for preparation and runtime-update status/errors, Tuning for measurement reports/errors, and Settings for application updates. Let the operation finish before retrying, and avoid concurrent maintenance.
-3. **Model details and runtime configuration:** confirm the service address, installation directory and managed configuration. Use identity diagnostics for import problems; an occupied port alone does not establish ownership.
+2. **Strata, Tasks, Tuning and Settings:** use Strata for runtime versions, update packages and logs, Tasks for preparation/update errors, Tuning for measurement reports, and Settings for application updates. Let the operation finish before retrying, and avoid concurrent maintenance.
+3. **My models and Runtime configuration:** confirm the current model/configuration marker, service address and installation directory, then open graphical/JSON configuration inside Models. Use identity diagnostics for takeover problems; an occupied port alone does not establish ownership.
 
 ## Preparation and import
 
 | Symptom | Next step |
 | --- | --- |
-| Installation not detected | Select its Strata folder and follow diagnostics for source, Python, configuration, weights and tokenizer files. |
-| Weights exist, but preparation is suggested | Check My models and import the existing installation first. Bare weights may lack a runnable Strata configuration. |
+| Installation not detected | Add its search directory in My models, inspect the runtime in Strata, and follow source, Python, config, weight and tokenizer diagnostics. |
+| Weights exist, but preparation is suggested | My models directly lists discovered models. Add a missing directory and check configurations; bare weights may lack a runnable config. Runtime and weight failures are separate. |
 | Disk preflight is insufficient, unknown or failed | Check the actual destination disk/path, free space and refresh. A new preparation cannot proceed before preflight is ready. |
 | Downloads or dependencies fail | Read the failed download/dependency log, check network, proxy and directory access, then retry after correcting the cause. |
-| Multiple configurations found | Select a configuration matching the real weights. An unverified file is not a completed model. |
+| Multiple configurations found | Switch configurations within the model card and check paths, modification dates and current/last-used markers. Viewing a configuration does not switch the running service. |
 | Running installation cannot be taken over | Let active work finish and read identity diagnostics. Unknown or busy processes are not forcibly stopped. |
 | Linux dependencies or containment are unavailable | Follow diagnostics for Python, venv, kernel and system restrictions. Manager does not run sudo or bypass these restrictions. |
 
@@ -33,7 +33,8 @@ Importing an existing model does not require another full weights download. Disk
 | Images cannot be attached or understood | Confirm the service reports image support. Model and vision-environment capabilities require separate verification. |
 | MCP has no tools or fails | Check server connectivity, available tools and runtime support. Inspect the tool's own error and network configuration. |
 | Repeated background-health failures | Read diagnostics, await a fresh check or decide whether to retry/stop. Health checks do not promise to forcibly repair a stalled process. |
-| GPU memory remains used after closing | A background service may keep its model loaded. Use Stop services and quit to end managed services. |
+| GPU memory remains used after closing | Closing to the tray is enabled by default. Release model memory preserves files; Stop services and quit ends managed services. Disable closing to the tray to confirm exit on close. |
+| Request viewer is unavailable | Enable `api_monitor` in model configuration and restart only when needed. Usage statistics do not require body capture. |
 
 ## Usage, tuning and updates
 
@@ -42,10 +43,12 @@ Importing an existing model does not require another full weights download. Disk
 | No usage data | Check service ownership, observer collection and the chosen time range. |
 | Unknown values or coverage gaps | Check compatibility and coverage. Missing observations and time before collection cannot become complete history. |
 | CSV exceeds 5,000 rows | Narrow the time range or filters. Cancelling the save dialog writes no file. |
-| Tuning is busy or finds no benefit | Finish Chat and external requests. Keep existing settings when gains are not repeatable. |
+| Tuning is busy or finds no benefit | Finish Chat and external requests, then review full-use-case quality, resources and baseline drift. Keep existing settings when gains are not repeatable. |
+| A restart candidate is rejected | Review support, resource and startup-state diagnostics. VRAM reserve can only increase a known value; unknown effective support is not accepted. |
 | Applying tuning or update recovery fails | Preserve task diagnostics, correct configuration, environment or loading errors, then retry. Do not assume the original service recovered. |
-| App update check/download fails | Check network and published releases, keep the current app and retry. A downloaded update still needs explicit installation. |
-| Strata update is unavailable | Check the fixed candidate, platform engine package and configuration diagnostics. Complete candidate downloads and GPU updates still need actual acceptance. |
+| App update check/download fails | Check network and published releases, keep the current app and retry. Release notes require confirmation before automatic installation. |
+| Strata update is unavailable | Inspect official releases, matching ZIPs, dependencies and config diagnostics in Strata. Missing platform packages preserve the current installation. |
+| ZIP download, extraction or replacement fails | Retain logs and resolve checksum, path, permission or process-identity errors. If recovery fails, repair using diagnostics before retrying; do not assume the service recovered. |
 
 Recovery is bounded and applies after the selected managed service exits. It does not guarantee repair of every API failure, failed update or hardware fault. See the [user guide](USER_GUIDE.en.md) for scope.
 

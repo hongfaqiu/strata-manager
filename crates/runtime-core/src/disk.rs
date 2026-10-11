@@ -113,7 +113,7 @@ fn model_spec(family: &str, quant: &str) -> Result<(String, Vec<String>, u64, f6
         ("qwen", "Q2_0") => (66_400_000_000, 34.0),
         ("qwen" | "swift", "IQ2_XS") => (68_000_000_000, 35.5),
         ("qwen" | "swift", "IQ3_XXS") => (75_800_000_000, 42.9),
-        ("qwen", "IQ3_S") => (83_600_000_000, 50.3),
+        ("qwen" | "swift", "IQ3_S") => (83_600_000_000, 50.3),
         ("coder", "IQ1_M") => (58_400_000_000, 23.4),
         ("unsloth", "UD-IQ4_XS") => (93_700_000_000, 59.5),
         ("unsloth", "UD-Q4_K_XL") => (111_300_000_000, 77.0),
@@ -673,6 +673,16 @@ mod tests {
         assert_eq!(p.data_directory, other);
         assert_eq!(p.gguf_directory, Some(tag));
         assert_eq!(p.report.model_download_bytes_estimate, Some(0));
+    }
+
+    #[test]
+    fn swift_iq3_s_uses_the_official_family_paths_and_resource_estimate() {
+        let (tag, names, download, arena) = model_spec("swift", "IQ3_S").unwrap();
+        assert_eq!(tag, "swift-IQ3_S");
+        assert_eq!(names.len(), 2);
+        assert!(names.iter().all(|name| name.starts_with("Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-")));
+        assert_eq!(download, 83_600_000_000);
+        assert_eq!(arena, 50.3);
     }
 
     #[test]

@@ -1,5 +1,5 @@
-//! Reviewed runtime upgrades are prepared beside, never inside, an imported install.
-//! The SQLite journal precedes registry changes so a crash restores the old identity.
+//! Release ZIP updates preserve user data and journal every replaced runtime file.
+//! The legacy reviewed source installer remains available as a fallback.
 use crate::{http, installation, maintenance, processes, storage, types::*, RuntimeState};
 use futures_util::StreamExt;
 use rusqlite::{params, OptionalExtension};
@@ -17,8 +17,265 @@ use std::{
 };
 
 pub const VERSION: &str = "0.1.41";
+mod release_zip;
+pub use release_zip::{start_install_release, start_release, start_release_request};
 const SERVER_SHA256: &str = "017efa1f4e76d72396738555d13eb1f9898d1c1c12730cf046d9b267b29987e5";
 const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS runtime_upgrades(task_id TEXT PRIMARY KEY,profile_id TEXT NOT NULL,journal TEXT NOT NULL,updated_at INTEGER NOT NULL);";
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeReleaseAsset {
+    pub name: String,
+    pub url: String,
+    pub size: u64,
+    pub sha256: String,
+    pub variant: String,
+}
+
+/// Official release metadata and SHA256-published engine ZIPs. Checking never
+/// runs upstream scripts or changes an installation.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeUpdateInfo {
+    pub checked_at: u64,
+    pub supported_version: String,
+    pub supported_revision: String,
+    pub latest_version: Option<String>,
+    pub release_name: Option<String>,
+    pub release_url: Option<String>,
+    pub notes: Option<String>,
+    pub published_at: Option<String>,
+    #[serde(default)]
+    pub assets: Vec<RuntimeReleaseAsset>,
+    #[serde(default)]
+    pub source_revision: Option<String>,
+    #[serde(default)]
+    pub source_archive_url: Option<String>,
+    pub update_available: bool,
+    pub installable: bool,
+    pub error: Option<String>,
+}
+
+const UPDATE_INFO_KEY: &str = "strataUpstreamUpdateInfo";
+const UPDATE_CHECK_INTERVAL: u64 = 12 * 60 * 60 * 1000;
+
+fn zip_installable(assets: &[RuntimeReleaseAsset], os: &str, arch: &str) -> bool {
+    os == "windows" && arch == "x86_64" && !assets.is_empty()
+}
+
+fn constrain_installable(mut info: RuntimeUpdateInfo) -> RuntimeUpdateInfo {
+    // Cached metadata may have been collected on another platform. Release
+    // discovery remains available everywhere; installability is local.
+    info.installable &= zip_installable(
+        &info.assets,
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+    );
+    info
+}
+
+fn release_update_info(release: &Value) -> Result<RuntimeUpdateInfo, String> {
+    let version = release["tag_name"]
+        .as_str()
+        .filter(|value| !value.is_empty() && value.len() <= 80)
+        .ok_or("上游发布信息缺少版本号")?
+        .trim_start_matches('v')
+        .to_string();
+    if version.split('.').any(|part| part.parse::<u32>().is_err()) {
+        return Err("上游版本号格式无法识别；未改变本机运行环境".into());
+    }
+    let release_url = release["html_url"].as_str().and_then(|value| {
+        value
+            .starts_with("https://github.com/Niko1221/Strata/releases/")
+            .then(|| value.to_owned())
+    });
+    let tag = release["tag_name"].as_str().ok_or("上游版本标记缺失")?;
+    let assets = release["assets"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|item| {
+            let name = item["name"].as_str()?;
+            let variant = match name {
+                "strata-windows-x64.zip" => "cuda13",
+                "strata-windows-x64-cuda12.zip" => "cuda12",
+                "strata-windows-x64-hip.zip" => "hip",
+                _ => return None,
+            };
+            let url = item["browser_download_url"].as_str()?;
+            if url != format!("https://github.com/Niko1221/Strata/releases/download/{tag}/{name}") {
+                return None;
+            }
+            let size = item["size"]
+                .as_u64()
+                .filter(|size| *size > 0 && *size <= 1024 * 1024 * 1024)?;
+            let digest = item["digest"].as_str()?.strip_prefix("sha256:")?;
+            if digest.len() != 64 || !digest.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return None;
+            }
+            Some(RuntimeReleaseAsset {
+                name: name.into(),
+                url: url.into(),
+                size,
+                sha256: digest.to_ascii_lowercase(),
+                variant: variant.into(),
+            })
+        })
+        .collect::<Vec<_>>();
+    let newer = newer_than_supported(&version);
+    Ok(RuntimeUpdateInfo {
+        checked_at: now(),
+        supported_version: VERSION.into(),
+        supported_revision: installation::SOURCE_REVISION.into(),
+        latest_version: Some(version),
+        release_name: release["name"]
+            .as_str()
+            .map(|value| value.chars().take(500).collect()),
+        release_url,
+        notes: release["body"]
+            .as_str()
+            .map(|value| value.chars().take(100_000).collect()),
+        published_at: release["published_at"].as_str().map(str::to_owned),
+        installable: zip_installable(&assets, std::env::consts::OS, std::env::consts::ARCH),
+        assets,
+        source_revision: None,
+        source_archive_url: None,
+        update_available: newer,
+        error: None,
+    })
+}
+
+pub async fn update_info(state: &RuntimeState, force: bool) -> Result<RuntimeUpdateInfo, String> {
+    let cached = crate::store_get(state, UPDATE_INFO_KEY.into())?;
+    let info = update_info_with_cache(cached, force).await?;
+    crate::store_set(
+        state,
+        UPDATE_INFO_KEY.into(),
+        serde_json::to_value(&info).map_err(|error| error.to_string())?,
+    )?;
+    Ok(info)
+}
+
+/// Check official metadata without opening runtime state or executing recovery.
+/// Desktop compatibility code can keep an older, active supervisor in place and
+/// persist only this result through that supervisor's existing store RPCs.
+pub async fn update_info_with_cache(
+    cached: Value,
+    force: bool,
+) -> Result<RuntimeUpdateInfo, String> {
+    if let Ok(info) = serde_json::from_value::<RuntimeUpdateInfo>(cached.clone()) {
+        let interval = if info.error.is_some() {
+            10 * 60 * 1000
+        } else {
+            UPDATE_CHECK_INTERVAL
+        };
+        if !force
+            && info.supported_version == VERSION
+            && info.supported_revision == installation::SOURCE_REVISION
+            && info.source_revision.is_some()
+            && now().saturating_sub(info.checked_at) < interval
+        {
+            return Ok(constrain_installable(info));
+        }
+    }
+    let response = async {
+        let client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(8))
+            .timeout(Duration::from_secs(20))
+            .redirect(reqwest::redirect::Policy::none())
+            .user_agent("Strata-Manager-runtime-updates")
+            .build()
+            .map_err(|error| error.to_string())?;
+        let release: Value = client
+            .get("https://api.github.com/repos/Niko1221/Strata/releases/latest")
+            .header("Accept", "application/vnd.github+json")
+            .send()
+            .await
+            .map_err(|error| format!("无法连接上游更新接口：{error}"))?
+            .error_for_status()
+            .map_err(|error| format!("上游更新接口暂不可用：{error}"))?
+            .json()
+            .await
+            .map_err(|error| format!("无法读取上游发布信息：{error}"))?;
+        let mut info = release_update_info(&release)?;
+        let tag = release["tag_name"].as_str().ok_or("发布标记缺失")?;
+        let mut reference: Value = client
+            .get(format!(
+                "https://api.github.com/repos/Niko1221/Strata/git/ref/tags/{tag}"
+            ))
+            .header("Accept", "application/vnd.github+json")
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())?;
+        if reference["object"]["type"] == "tag" {
+            let sha = reference["object"]["sha"]
+                .as_str()
+                .filter(|s| valid_revision(s))
+                .ok_or("源码标记SHA无效")?;
+            reference = client
+                .get(format!(
+                    "https://api.github.com/repos/Niko1221/Strata/git/tags/{sha}"
+                ))
+                .send()
+                .await
+                .map_err(|e| e.to_string())?
+                .error_for_status()
+                .map_err(|e| e.to_string())?
+                .json()
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        let revision = reference["object"]["sha"]
+            .as_str()
+            .filter(|s| valid_revision(s))
+            .ok_or("无法核验同版本源码提交")?;
+        if reference["object"]["type"] != "commit" {
+            return Err("发布标记未指向源码提交".into());
+        }
+        info.source_revision = Some(revision.into());
+        info.source_archive_url = Some(format!(
+            "https://codeload.github.com/Niko1221/Strata/zip/{revision}"
+        ));
+        Ok(info)
+    }
+    .await;
+    let info = constrain_installable(match response {
+        Ok(info) => info,
+        Err(error) => {
+            let mut info =
+                serde_json::from_value::<RuntimeUpdateInfo>(cached).unwrap_or(RuntimeUpdateInfo {
+                    checked_at: now(),
+                    supported_version: VERSION.into(),
+                    supported_revision: installation::SOURCE_REVISION.into(),
+                    latest_version: None,
+                    release_name: None,
+                    release_url: None,
+                    notes: None,
+                    published_at: None,
+                    assets: Vec::new(),
+                    source_revision: None,
+                    source_archive_url: None,
+                    update_available: false,
+                    installable: false,
+                    error: None,
+                });
+            info.checked_at = now();
+            info.error = Some(error);
+            info.installable = false;
+            info
+        }
+    });
+    Ok(info)
+}
+
+fn valid_revision(value: &str) -> bool {
+    value.len() == 40 && value.bytes().all(|b| b.is_ascii_hexdigit())
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -199,6 +456,7 @@ pub fn start(state: Arc<RuntimeState>, profile_id: String) -> Result<TaskStatus,
     }
     crate::tuning::assert_available(&state)?;
     let profile = state.registered_profile(&profile_id)?;
+    crate::external_management::assert_profile_manager_owned(&state, &profile)?;
     if status(&state, profile_id.clone())?.is_some_and(|job| job.phase == "rollbackFailed") {
         return Err("上次运行时更新尚未安全恢复；请查看任务诊断、修复原因后重新打开应用重试恢复，未启动新更新".into());
     }
@@ -245,6 +503,7 @@ pub fn start(state: Arc<RuntimeState>, profile_id: String) -> Result<TaskStatus,
         updated_at: now(),
     };
     persist(&state, &journal)?;
+    processes::admit_task_logs(&mut tasks, &state.logs, &id)?;
     tasks.insert(
         id.clone(),
         processes::TaskRecord {
@@ -259,6 +518,7 @@ pub fn start(state: Arc<RuntimeState>, profile_id: String) -> Result<TaskStatus,
         processes::persist_task(&state.database, tasks.get(&id).ok_or("更新任务不存在")?)
     {
         tasks.remove(&id);
+        if let Ok(mut logs) = state.logs.lock() { logs.retire(&id); }
         return Err(format!("更新任务保存失败，原服务未改变：{error}"));
     }
     drop(tasks);
@@ -1471,6 +1731,7 @@ async fn short_probe(
 
 /// No process is started here. Called after the supervisor's exclusive ownership lock.
 pub fn recover(state: &RuntimeState) -> Result<(), String> {
+    release_zip::recover(state)?;
     let rows = {
         let db = state.database.lock().map_err(|e| e.to_string())?;
         db.execute_batch(SCHEMA).map_err(|e| e.to_string())?;
@@ -1608,6 +1869,95 @@ pub(crate) fn clear_recovery_load(state: &RuntimeState, id: &str) -> Result<(), 
 mod tests {
     use super::*;
     use std::io::Cursor;
+
+    fn windows_release_fixture() -> Value {
+        json!({
+            "tag_name":"v0.1.42", "body":"Official release notes",
+            "assets":[{"name":"strata-windows-x64.zip","size":1024,
+                "browser_download_url":"https://github.com/Niko1221/Strata/releases/download/v0.1.42/strata-windows-x64.zip",
+                "digest":format!("sha256:{}","a".repeat(64))}]
+        })
+    }
+
+    #[test]
+    fn windows_zip_capability_is_local_and_does_not_hide_release_metadata() {
+        let info = release_update_info(&windows_release_fixture()).unwrap();
+        assert!(zip_installable(&info.assets, "windows", "x86_64"));
+        for (os, arch) in [("linux", "x86_64"), ("macos", "x86_64"), ("windows", "aarch64")] {
+            assert!(!zip_installable(&info.assets, os, arch));
+        }
+        assert!(!zip_installable(&[], "windows", "x86_64"));
+        assert_eq!(info.assets.len(), 1);
+        assert_eq!(info.notes.as_deref(), Some("Official release notes"));
+        assert_eq!(info.installable, cfg!(all(target_os = "windows", target_arch = "x86_64")));
+        let mut refused = info;
+        refused.installable = false;
+        assert!(!constrain_installable(refused).installable);
+    }
+
+    #[tokio::test]
+    async fn cached_platform_capability_is_revalidated_without_network_or_version_loss() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = RuntimeState::open(temp.path().to_path_buf()).unwrap();
+        let mut info = release_update_info(&windows_release_fixture()).unwrap();
+        // Portable data or an older manager may have cached a Windows proposal.
+        info.installable = true;
+        info.source_revision = Some("61b3fb5dd3f1e8ec09cf7e4e05208bc6d3c46406".into());
+        crate::store_set(&state, UPDATE_INFO_KEY.into(), serde_json::to_value(&info).unwrap()).unwrap();
+        drop(state);
+        let reopened = RuntimeState::open(temp.path().to_path_buf()).unwrap();
+        let current = update_info(&reopened, false).await.unwrap();
+        assert_eq!(current.checked_at, info.checked_at);
+        assert_eq!(current.source_revision, info.source_revision);
+        assert_eq!(current.latest_version, info.latest_version);
+        assert_eq!(current.notes, info.notes);
+        assert_eq!(current.assets.len(), 1);
+        assert_eq!(current.installable, cfg!(all(target_os = "windows", target_arch = "x86_64")));
+    }
+
+    #[test]
+    fn upstream_release_does_not_advertise_unreviewed_installation() {
+        let info = release_update_info(&json!({
+            "tag_name":"v0.1.42", "name":"Strata v0.1.42",
+            "html_url":"https://github.com/Niko1221/Strata/releases/tag/v0.1.42",
+            "body":"Faster decode and bug fixes", "published_at":"2026-10-10T16:10:01Z"
+        }))
+        .unwrap();
+        assert_eq!(info.latest_version.as_deref(), Some("0.1.42"));
+        assert_eq!(info.supported_version, VERSION);
+        assert!(info.update_available);
+        assert!(!info.installable);
+        assert_eq!(info.notes.as_deref(), Some("Faster decode and bug fixes"));
+        assert!(release_update_info(&json!({"tag_name":"unexpected"})).is_err());
+        let foreign = release_update_info(
+            &json!({"tag_name":"v0.1.41","html_url":"https://example.org/UPDATE.bat"}),
+        )
+        .unwrap();
+        assert!(foreign.release_url.is_none());
+    }
+
+    #[tokio::test]
+    async fn upstream_metadata_and_release_notes_survive_reopening_without_a_network_check() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = RuntimeState::open(temp.path().to_path_buf()).unwrap();
+        let mut info =
+            release_update_info(&json!({"tag_name":"v0.1.42","body":"Persisted release notes"}))
+                .unwrap();
+        info.source_revision = Some("61b3fb5dd3f1e8ec09cf7e4e05208bc6d3c46406".into());
+        crate::store_set(
+            &state,
+            UPDATE_INFO_KEY.into(),
+            serde_json::to_value(&info).unwrap(),
+        )
+        .unwrap();
+        drop(state);
+        let reopened = RuntimeState::open(temp.path().to_path_buf()).unwrap();
+        let result = update_info(&reopened, false).await.unwrap();
+        assert_eq!(result.checked_at, info.checked_at);
+        assert_eq!(result.notes.as_deref(), Some("Persisted release notes"));
+        assert_eq!(result.latest_version.as_deref(), Some("0.1.42"));
+        assert!(!result.installable);
+    }
 
     fn python() -> String {
         let mut command = Command::new(if cfg!(windows) { "py" } else { "python3" });
@@ -2618,6 +2968,19 @@ mod tests {
     #[cfg(windows)]
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn hard_crash_during_candidate_verification_restores_old_service_on_reconnect() {
+        use windows_sys::Win32::{
+            Foundation::{
+                CloseHandle, GetLastError, ERROR_INVALID_PARAMETER, ERROR_NO_MORE_FILES,
+                INVALID_HANDLE_VALUE, WAIT_OBJECT_0,
+            },
+            System::{
+                Diagnostics::ToolHelp::{
+                    CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+                    TH32CS_SNAPPROCESS,
+                },
+                Threading::{OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE},
+            },
+        };
         const ACTOR: &str = "STRATA_RUNTIME_UPGRADE_CRASH_ROOT";
         if let Some(root) = std::env::var_os(ACTOR) {
             let mut f = fixture();
@@ -2657,6 +3020,65 @@ mod tests {
         let report: Value =
             serde_json::from_slice(&fs::read(temp.path().join("crash-report.json")).unwrap())
                 .unwrap();
+        // Job teardown can close the socket before Python disappears from the
+        // native process snapshot. That terminating process may have no readable
+        // argv yet and correctly blocks production discovery. Wait for only the
+        // actor's reported fixture PID to disappear before testing reconnect;
+        // unreadable or unrelated Python processes are never retried or ignored.
+        let candidate_pid = u32::try_from(report["candidatePid"].as_u64().unwrap()).unwrap();
+        let process = unsafe { OpenProcess(PROCESS_SYNCHRONIZE, 0, candidate_pid) };
+        if process.is_null() {
+            let error = unsafe { GetLastError() };
+            assert_eq!(
+                error, ERROR_INVALID_PARAMETER,
+                "Cannot inspect crashed actor's fixture PID {candidate_pid}: {error}"
+            );
+        } else {
+            let exit_state = unsafe { WaitForSingleObject(process, 10_000) };
+            unsafe {
+                CloseHandle(process);
+            }
+            assert_eq!(
+                exit_state, WAIT_OBJECT_0,
+                "Job did not exit fixture PID {candidate_pid}"
+            );
+        }
+        // A signaled process object may remain openable after exit. Check the
+        // same native snapshot used by discovery rather than PID object lifetime.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+            assert_ne!(
+                snapshot, INVALID_HANDLE_VALUE,
+                "Cannot read fixture process snapshot"
+            );
+            let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
+            entry.dwSize = std::mem::size_of_val(&entry) as u32;
+            let mut next = unsafe { Process32FirstW(snapshot, &mut entry) };
+            while next != 0 && entry.th32ProcessID != candidate_pid {
+                next = unsafe { Process32NextW(snapshot, &mut entry) };
+            }
+            let error = if next == 0 {
+                Some(unsafe { GetLastError() })
+            } else {
+                None
+            };
+            unsafe {
+                CloseHandle(snapshot);
+            }
+            if let Some(error) = error {
+                assert_eq!(
+                    error, ERROR_NO_MORE_FILES,
+                    "Incomplete fixture process snapshot: {error}"
+                );
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "Job did not remove crashed actor's fixture PID {candidate_pid}"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
         let old: ServiceProfile = serde_json::from_value(report["old"].clone()).unwrap();
         let deadline = Instant::now() + Duration::from_secs(3);
         while crate::external::port_accepting(&old).unwrap() {

@@ -17,6 +17,8 @@ use std::{
 const MAX_DIRECTORIES: usize = 32;
 const MAX_CONFIGS: usize = 256;
 const MAX_CONFIG_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_RUNTIME_CHILDREN: usize = 64;
+const MAX_RUNTIME_ENTRIES: usize = 128;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -28,6 +30,12 @@ pub struct LocalCandidate {
     pub config_path: String,
     pub model_path: String,
     pub model_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_group_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config_modified_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detected_port: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -51,6 +59,23 @@ pub struct PreparedImport {
     pub original_profile: ServiceProfile,
     pub original_config_path: String,
     pub detected_running: bool,
+}
+
+/// Runtime detection is separate from model/config readiness: a missing model
+/// in an old JSON file never means that the Strata installation is absent.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DetectedRuntime {
+    pub install_dir: String,
+    pub python_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_revision: Option<String>,
+    pub readiness: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    pub profile: ServiceProfile,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -130,6 +155,81 @@ fn candidate_id(root: &Path, config: &Path) -> String {
         (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
     });
     format!("local-{hash:016x}")
+}
+
+fn model_group_key(model: &Path, assets: &[PathBuf]) -> String {
+    let mut paths: Vec<_> = assets
+        .iter()
+        .map(|path| path_key(&dunce::canonicalize(path).unwrap_or_else(|_| path.clone())))
+        .collect();
+    if paths.is_empty() {
+        paths.push(path_key(
+            &dunce::canonicalize(model).unwrap_or_else(|_| model.to_owned()),
+        ));
+    }
+    paths.sort();
+    paths.dedup();
+    let hash = paths
+        .join("\0")
+        .bytes()
+        .fold(0xcbf29ce484222325u64, |hash, byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
+        });
+    format!("model-{hash:016x}")
+}
+
+fn config_modified_at(config: &Path) -> Option<u64> {
+    fs::metadata(config)
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_millis()
+        .try_into()
+        .ok()
+}
+
+// Display settings without copying credentials into the discovery/UI payload.
+pub fn display_config(config: &Value) -> Value {
+    fn redact(value: &mut Value) {
+        match value {
+            Value::Object(object) => {
+                for (key, value) in object {
+                    let key = key.to_ascii_lowercase();
+                    if matches!(
+                        key.as_str(),
+                        "api_key"
+                            | "apikey"
+                            | "token"
+                            | "password"
+                            | "secret"
+                            | "authorization"
+                            | "credential"
+                            | "credentials"
+                    ) || key.ends_with("_key")
+                        || key.ends_with("_token")
+                        || key.ends_with("_secret")
+                        || key.contains("password")
+                        || key.contains("secret")
+                    {
+                        *value = Value::String("[已隐藏]".into());
+                    } else {
+                        redact(value);
+                    }
+                }
+            }
+            Value::Array(values) => {
+                for value in values {
+                    redact(value);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut config = config.clone();
+    redact(&mut config);
+    config
 }
 
 fn resolve(root: &Path, path: &str) -> PathBuf {
@@ -370,6 +470,13 @@ fn inspect_config(
             }
         }
     }
+    // A vision companion does not turn one set of language-model weights into
+    // several models. Context/parallel/cache variants share this identity.
+    let model_assets: Vec<_> = ["--native", "--model", "-m", "--ple-gguf"]
+        .into_iter()
+        .filter_map(|flag| option_value(args, flag).ok().flatten())
+        .map(|path| resolve(&cwd, path))
+        .collect();
     let model_bytes = if asset_paths.is_empty() {
         model_size(&model_path)
     } else {
@@ -418,6 +525,9 @@ fn inspect_config(
         config_path: profile.config_path.clone(),
         model_path: model_path.to_string_lossy().into(),
         model_bytes,
+        model_group_key: Some(model_group_key(&model_path, &model_assets)),
+        config_modified_at: config_modified_at(&config),
+        config: Some(display_config(&value)),
         detected_port: Some(detected_port),
         running: Some(false),
         reason: if fatal_reasons.is_empty() {
@@ -482,20 +592,36 @@ fn model_size(path: &Path) -> Option<u64> {
     walk(path, 4, &mut 0)
 }
 
-fn common_directories() -> Vec<PathBuf> {
+fn conventional_directories(
+    home: Option<&Path>,
+    local: Option<&Path>,
+    roaming: Option<&Path>,
+) -> Vec<PathBuf> {
     let mut roots = Vec::new();
-    if let Some(home) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")) {
+    if let Some(home) = home {
         for suffix in ["Strata", "AI/Strata", "Documents/Strata"] {
-            roots.push(PathBuf::from(&home).join(suffix));
+            roots.push(home.join(suffix));
         }
     }
-    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+    if let Some(local) = local {
         for suffix in [
             "Strata",
             "Strata Manager/runtimes",
             "com.strata.manager/runtimes",
+            "io.strata.manager/runtimes",
         ] {
-            roots.push(PathBuf::from(&local).join(suffix));
+            roots.push(local.join(suffix));
+        }
+    }
+    // Tauri's app_data_dir uses Roaming on Windows. Keep legacy locations
+    // discoverable while using the application's actual bundle identifier.
+    if let Some(roaming) = roaming {
+        for suffix in [
+            "io.strata.manager/runtimes",
+            "Strata Manager/runtimes",
+            "com.strata.manager/runtimes",
+        ] {
+            roots.push(roaming.join(suffix));
         }
     }
     #[cfg(windows)]
@@ -504,6 +630,205 @@ fn common_directories() -> Vec<PathBuf> {
         roots.extend([PathBuf::from("C:/AI/Strata"), PathBuf::from("D:/AI/Strata")]);
     }
     roots
+}
+
+fn common_directories() -> Vec<PathBuf> {
+    let home = std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .map(PathBuf::from);
+    let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
+    let roaming = std::env::var_os("APPDATA").map(PathBuf::from);
+    expand_runtime_directories(conventional_directories(
+        home.as_deref(),
+        local.as_deref(),
+        roaming.as_deref(),
+    ))
+}
+
+fn is_runtime_root(root: &Path) -> bool {
+    root.join("setup.py").is_file() && root.join("serve/server.py").is_file()
+}
+
+/// Manager installations live inside runtimes/release-* or runtimes/strata-*.
+/// Look only one level below a recognized runtime container, with hard bounds;
+/// this never walks drives, model directories, or arbitrary user directories.
+fn expand_runtime_directories(mut roots: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut children = Vec::new();
+    for parent in &roots {
+        if parent.file_name().and_then(|name| name.to_str()) != Some("runtimes")
+            || canonical_local(parent).is_err()
+            || parent.is_symlink()
+        {
+            continue;
+        }
+        let Ok(entries) = fs::read_dir(parent) else {
+            continue;
+        };
+        for entry in entries.take(MAX_RUNTIME_ENTRIES).flatten() {
+            let path = entry.path();
+            if !path.is_symlink() && path.is_dir() && is_runtime_root(&path) {
+                children.push(path);
+            }
+            if children.len() >= MAX_RUNTIME_CHILDREN {
+                break;
+            }
+        }
+        if children.len() >= MAX_RUNTIME_CHILDREN {
+            break;
+        }
+    }
+    children.sort();
+    children.dedup();
+    roots.extend(children);
+    roots
+}
+
+fn source_revision(root: &Path) -> Option<String> {
+    for marker in [
+        ".strata-manager-release.json",
+        ".strata-manager-runtime.json",
+    ] {
+        if let Some(revision) = read_json(&root.join(marker))
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("revision")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            })
+            .filter(|revision| {
+                revision.len() == 40 && revision.bytes().all(|value| value.is_ascii_hexdigit())
+            })
+        {
+            return Some(revision);
+        }
+    }
+    let head = fs::read_to_string(root.join(".git/HEAD")).ok()?;
+    let revision = if let Some(reference) = head.trim().strip_prefix("ref: ") {
+        if !reference.starts_with("refs/") || reference.contains("..") {
+            return None;
+        }
+        fs::read_to_string(root.join(".git").join(reference)).ok()?
+    } else {
+        head
+    };
+    let revision = revision.trim();
+    (revision.len() == 40 && revision.bytes().all(|value| value.is_ascii_hexdigit()))
+        .then(|| revision.to_owned())
+}
+
+fn runtime_root(profile: &ServiceProfile) -> PathBuf {
+    let root = PathBuf::from(&profile.install_dir);
+    let Ok(config) = read_json(Path::new(&profile.config_path)) else {
+        return root;
+    };
+    let Some(exe) = config.get("exe").and_then(Value::as_str) else {
+        return root;
+    };
+    let Ok(cwd) = canonical_local(&config_cwd(&root, &config)) else {
+        return root;
+    };
+    if cwd.join("setup.py").is_file()
+        && cwd.join("serve/server.py").is_file()
+        && canonical_local(&resolve(&cwd, exe))
+            .is_ok_and(|engine| engine.is_file() && engine.starts_with(&cwd))
+    {
+        return cwd;
+    }
+    root
+}
+
+pub fn discover_runtimes(profiles: &[ServiceProfile]) -> Vec<DetectedRuntime> {
+    inspect_runtime_directories(profiles, common_directories())
+}
+
+/// Include the supervisor's actual state directory, which can be overridden
+/// for development and need not match any conventional Tauri app-data path.
+pub fn discover_runtimes_for_state(
+    profiles: &[ServiceProfile],
+    data_dir: &Path,
+) -> Vec<DetectedRuntime> {
+    let mut roots = expand_runtime_directories(vec![data_dir.join("runtimes")]);
+    roots.extend(common_directories());
+    inspect_runtime_directories(profiles, roots)
+}
+
+fn inspect_runtime_directories(
+    profiles: &[ServiceProfile],
+    directories: Vec<PathBuf>,
+) -> Vec<DetectedRuntime> {
+    let hints = process_hints().unwrap_or_default();
+    let mut roots: Vec<_> = profiles
+        .iter()
+        .filter(|profile| profile.managed)
+        .map(runtime_root)
+        .collect();
+    roots.extend(hints.iter().filter_map(hint_root));
+    roots.extend(directories);
+    let mut seen = HashSet::new();
+    let mut cache = PythonCache::default();
+    let mut runtimes = Vec::new();
+    for root in roots.into_iter().take(128) {
+        let Ok(root) = canonical_local(&root) else {
+            continue;
+        };
+        if !seen.insert(path_key(&root))
+            || !root.join("setup.py").is_file()
+            || !root.join("serve/server.py").is_file()
+        {
+            continue;
+        }
+        let registered = profiles
+            .iter()
+            .find(|profile| canonical_local(&runtime_root(profile)).is_ok_and(|path| path == root));
+        let python = find_python(
+            &root,
+            registered.map(|profile| profile.python_path.as_str()),
+            None,
+            &mut cache,
+        );
+        let mut reasons = Vec::new();
+        if python.is_none() {
+            reasons.push("需要准备 Python 3.10+ 环境".to_owned());
+        }
+        if let Some(python) = &python {
+            let missing = missing_python_modules(&root, python, &mut cache);
+            if !missing.is_empty() {
+                reasons.push(format!("Python 依赖缺失：{}", missing.join(", ")));
+            }
+        }
+        let python_path = python
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let mut profile = registered.cloned().unwrap_or_else(|| ServiceProfile {
+            id: candidate_id(&root, &root.join("setup.py")).replace("local-", "runtime-detected-"),
+            name: "Strata".into(),
+            base_url: "http://127.0.0.1:18081".into(),
+            install_dir: root.to_string_lossy().into(),
+            python_path: python_path.clone(),
+            config_path: String::new(),
+            managed: true,
+        });
+        // Model preparation uses the interpreter we just verified, even when a
+        // saved configuration refers to an interpreter that was later moved.
+        profile.install_dir = root.to_string_lossy().into();
+        profile.python_path = python_path.clone();
+        runtimes.push(DetectedRuntime {
+            install_dir: root.to_string_lossy().into(),
+            python_path,
+            runtime_version: runtime_version(&root, None),
+            source_revision: source_revision(&root),
+            readiness: if reasons.is_empty() {
+                "ready"
+            } else {
+                "repair"
+            }
+            .into(),
+            reason: (!reasons.is_empty()).then(|| reasons.join("；")),
+            profile,
+        });
+    }
+    runtimes
 }
 
 fn config_paths(root: &Path) -> Vec<PathBuf> {
@@ -537,7 +862,7 @@ fn config_paths(root: &Path) -> Vec<PathBuf> {
 /// Enumerate the complete native snapshot before reading only Python argv.
 /// Discovery hints never authorize adoption; external identity checks still do.
 #[cfg(windows)]
-fn windows_process_args() -> Result<Vec<Vec<String>>, String> {
+fn windows_python_inventory(read_cwd: bool) -> Result<Vec<(Vec<String>, Option<PathBuf>)>, String> {
     use std::time::{Duration, Instant};
     use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
     use windows_sys::Win32::{
@@ -596,10 +921,12 @@ fn windows_process_args() -> Result<Vec<Vec<String>>, String> {
         return Ok(Vec::new());
     }
     let mut system = System::new();
+    let mut refresh = ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always);
+    if read_cwd { refresh = refresh.with_cwd(UpdateKind::Always); }
     system.refresh_processes_specifics(
         ProcessesToUpdate::Some(&pids),
         true,
-        ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always),
+        refresh,
     );
     if started.elapsed() >= Duration::from_secs(3) {
         return Err("读取本机 Python 参数超过时间预算，已停止自动操作".into());
@@ -618,12 +945,18 @@ fn windows_process_args() -> Result<Vec<Vec<String>>, String> {
         if !name.eq_ignore_ascii_case("python.exe") && !name.eq_ignore_ascii_case("pythonw.exe") {
             return Err("Python 进程身份发生变化，请重新检测；未自动启动".into());
         }
-        commands.push(checked_windows_args(process.cmd())?);
+        commands.push((checked_windows_args(process.cmd())?,process.cwd().map(Path::to_path_buf)));
     }
     if started.elapsed() >= Duration::from_secs(3) {
         return Err("读取本机 Python 参数超过时间预算，已停止自动操作".into());
     }
     Ok(commands)
+}
+
+#[cfg(windows)]
+fn windows_process_args() -> Result<Vec<Vec<String>>, String> {
+    // Existing server discovery keeps exactly its previous argument-only scan.
+    Ok(windows_python_inventory(false)?.into_iter().map(|(args,_)|args).collect())
 }
 
 #[cfg(windows)]
@@ -725,6 +1058,35 @@ fn hint_root(hint: &ProcessHint) -> Option<PathBuf> {
         .find(|root| root.join("setup.py").is_file() && root.join("serve/server.py").is_file())
 }
 
+fn prioritized_config_paths(
+    root: &Path,
+    profiles: &[ServiceProfile],
+    hints: &[ProcessHint],
+) -> Vec<PathBuf> {
+    // The live command line can refer to an application-owned copy outside the
+    // runtime directory. Keep that exact config ahead of the bounded file scan.
+    let mut paths: Vec<_> = hints
+        .iter()
+        .filter(|hint| {
+            hint_root(hint)
+                .and_then(|path| canonical_local(&path).ok())
+                .as_deref()
+                == Some(root)
+        })
+        .map(|hint| hint.config.clone())
+        .collect();
+    paths.extend(
+        profiles
+            .iter()
+            .filter(|profile| {
+                canonical_local(Path::new(&profile.install_dir)).is_ok_and(|path| path == root)
+            })
+            .map(|profile| PathBuf::from(&profile.config_path)),
+    );
+    paths.extend(config_paths(root));
+    paths
+}
+
 /// Whether *any* identified Strata Python server references this installation.
 /// This is deliberately conservative and does not authorize stopping that process.
 pub fn has_running_installation(installation: &Path) -> Result<bool, String> {
@@ -734,6 +1096,71 @@ pub fn has_running_installation(installation: &Path) -> Result<bool, String> {
             .and_then(|path| canonical_local(&path).ok())
             .is_some_and(|path| path_key(&path) == path_key(&root))
     }))
+}
+
+/// The Python entry script, rather than an incidental argument or `-c` text.
+fn python_entry_script(args: &[String]) -> Option<&str> {
+    let mut index=1;
+    while let Some(arg)=args.get(index) {
+        if arg.starts_with("-c") { return None; }
+        if arg=="-m" || arg.starts_with("-m") {
+            let module=if arg=="-m" { args.get(index+1)?.as_str() } else { &arg[2..] };
+            return match module { "tools.strata_mcp"=>Some("tools/strata_mcp.py"),"setup"=>Some("setup.py"),_=>None };
+        }
+        if arg=="--" { return args.get(index+1).map(String::as_str); }
+        if ["-W","-X","--check-hash-based-pycs"].contains(&arg.as_str()) { index+=2;continue; }
+        if arg.starts_with('-') { index+=1;continue; }
+        return Some(arg);
+    }
+    None
+}
+
+fn management_script_matches(root:&Path,args:&[String],cwd:Option<&Path>) -> Result<bool,String> {
+    let Some(script)=python_entry_script(args) else { return Ok(false); };
+    let path=Path::new(script);
+    let name=path.file_name().and_then(|name|name.to_str()).unwrap_or_default();
+    if !name.eq_ignore_ascii_case("setup.py") && !name.eq_ignore_ascii_case("strata_mcp.py") { return Ok(false); }
+    let path=if path.is_absolute() { path.to_path_buf() } else { cwd.ok_or("管理脚本使用相对路径但工作目录不可核验，禁止恢复本应用管理")?.join(path) };
+    let actual=dunce::canonicalize(&path).map_err(|_|"存活管理脚本的文件身份不可核验，禁止恢复本应用管理")?;
+    let expected=root.join(if name.eq_ignore_ascii_case("setup.py") { "setup.py" } else { "tools/strata_mcp.py" });
+    if path_key(&actual)==path_key(&expected) { return Ok(true); }
+    // An unrelated root's management script must not require this root to have
+    // the same optional script. Canonical aliases still identify the same file.
+    Ok(dunce::canonicalize(expected).is_ok_and(|expected|path_key(&actual)==path_key(&expected)))
+}
+
+#[cfg(not(windows))]
+fn unix_management_inventory() -> Result<Vec<(Vec<String>,Option<PathBuf>)>,String> {
+    use std::io::Read;
+    let mut commands=Vec::new();let mut entries=0;
+    let processes=fs::read_dir("/proc").map_err(|_|"此平台无法核验完整管理进程清单，禁止恢复本应用管理")?;
+    for entry in processes {
+        let entry=entry.map_err(|_|"管理进程清单不完整")?;
+        if entry.file_name().to_string_lossy().parse::<u32>().is_err() { continue; }
+        entries+=1;if entries>4096 { return Err("管理进程清单超过核验上限".into()); }
+        let exe=match fs::read_link(entry.path().join("exe")) { Ok(exe)=>exe,Err(error) if error.kind()==std::io::ErrorKind::NotFound=>continue,Err(_)=>return Err("进程文件身份无法核验，禁止恢复本应用管理".into()) };
+        let name=exe.file_name().and_then(|name|name.to_str()).unwrap_or_default().to_ascii_lowercase();
+        if !(name=="python" || name=="python3" || name=="pythonw" || name.starts_with("python3.")) { continue; }
+        let mut bytes=Vec::new();fs::File::open(entry.path().join("cmdline")).map_err(|_|"Python 管理进程清单发生变化")?.take(128*1024+1).read_to_end(&mut bytes).map_err(|_|"Python 管理参数无法读取")?;
+        if bytes.is_empty() || bytes.len()>128*1024 || bytes.last()!=Some(&0) { return Err("Python 管理参数不完整或超过核验上限".into()); }
+        // Remove only /proc's final terminator; empty argv values still consume
+        // their real option position (for example Python -W '' setup.py).
+        let args=bytes[..bytes.len()-1].split(|b|*b==0).map(|value|String::from_utf8(value.to_vec()).map_err(|_|"Python 管理参数包含无效文本".to_string())).collect::<Result<Vec<_>,_>>()?;
+        if args.len()>256 { return Err("Python 管理参数超过核验上限".into()); }
+        commands.push((args,fs::read_link(entry.path().join("cwd")).ok()));
+        if commands.len()>64 { return Err("Python 管理进程超过核验上限".into()); }
+    }
+    Ok(commands)
+}
+
+/// Official stdio MCP and setup can survive without a serving TCP listener.
+/// This read-only scan complements server discovery; it never adopts/stops them.
+pub fn has_running_management(installation:&Path) -> Result<bool,String> {
+    let root=canonical_local(installation)?;
+    #[cfg(windows)] let commands=windows_python_inventory(true)?;
+    #[cfg(not(windows))] let commands=unix_management_inventory()?;
+    for (args,cwd) in commands { if management_script_matches(&root,&args,cwd.as_deref())? { return Ok(true); } }
+    Ok(false)
 }
 
 /// Discover only explicit/registered roots, conventional roots, and observed
@@ -751,18 +1178,18 @@ pub fn discover_local(
         }
     }
     let hints = process_hints()?;
-    let mut roots: Vec<(PathBuf, &str)> = profiles
+    let mut roots: Vec<(PathBuf, &str)> = hints
         .iter()
-        .filter(|profile| external::local_port(profile).is_ok())
-        .map(|profile| (PathBuf::from(&profile.install_dir), "registered"))
+        .filter_map(hint_root)
+        .map(|root| (root, "running-process"))
         .collect();
-    roots.extend(directories.iter().cloned().map(|root| (root, "directory")));
     roots.extend(
-        hints
+        profiles
             .iter()
-            .filter_map(hint_root)
-            .map(|root| (root, "running-process")),
+            .filter(|profile| external::local_port(profile).is_ok())
+            .map(|profile| (PathBuf::from(&profile.install_dir), "registered")),
     );
+    roots.extend(directories.iter().cloned().map(|root| (root, "directory")));
     roots.extend(
         common_directories()
             .into_iter()
@@ -778,26 +1205,7 @@ pub fn discover_local(
         if !root.join("setup.py").is_file() || !root.join("serve/server.py").is_file() {
             continue;
         }
-        let mut paths = config_paths(&root);
-        paths.extend(
-            profiles
-                .iter()
-                .filter(|profile| {
-                    canonical_local(Path::new(&profile.install_dir)).is_ok_and(|path| path == root)
-                })
-                .map(|profile| PathBuf::from(&profile.config_path)),
-        );
-        paths.extend(
-            hints
-                .iter()
-                .filter(|hint| {
-                    hint_root(hint)
-                        .and_then(|path| canonical_local(&path).ok())
-                        .as_ref()
-                        == Some(&root)
-                })
-                .map(|hint| hint.config.clone()),
-        );
+        let paths = prioritized_config_paths(&root, profiles, &hints);
         for path in paths.into_iter().take(MAX_CONFIGS) {
             if path.is_symlink() {
                 continue;
@@ -934,6 +1342,9 @@ pub(crate) fn prepare_legacy_import(
         config_path: profile.config_path.clone(),
         model_path: String::new(),
         model_bytes: None,
+        model_group_key: None,
+        config_modified_at: None,
+        config: None,
         detected_port: None,
         running: None,
         reason: None,
@@ -1090,6 +1501,172 @@ fn prepare_import_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn management_entry_matches_exact_canonical_scripts_not_incidental_text() {
+        let directory=tempfile::tempdir().unwrap();let root=directory.path().join("root 中文");let other=directory.path().join("other");
+        for path in [&root,&other] { fs::create_dir_all(path.join("tools")).unwrap();fs::write(path.join("setup.py"),b"# fixture").unwrap();fs::write(path.join("tools/strata_mcp.py"),b"# fixture").unwrap(); }
+        let root=canonical_local(&root).unwrap();
+        let args=|values:&[&str]|values.iter().map(|s|(*s).to_owned()).collect::<Vec<_>>();
+        for values in [args(&["python","-I","-u","setup.py"]),args(&["python","-W","","setup.py"]),args(&["python","tools/strata_mcp.py","--root","ignored"]),args(&["python","-m","tools.strata_mcp"])] { assert!(management_script_matches(&root,&values,Some(&root)).unwrap());assert!(!management_script_matches(&root,&values,Some(&other)).unwrap()); }
+        let absolute=root.join("tools/../tools/strata_mcp.py").to_string_lossy().into_owned();assert!(management_script_matches(&root,&args(&["python",&absolute]),None).unwrap());
+        for values in [args(&["python","-c","print('setup.py')","setup.py"]),args(&["python","-cprint('x')","setup.py"]),args(&["python","unrelated.py","tools/strata_mcp.py"]),args(&["python","-m","other.module","setup.py"])] { assert!(!management_script_matches(&root,&values,Some(&root)).unwrap()); }
+        assert!(management_script_matches(&root,&args(&["python","setup.py"]),None).is_err());
+        fs::remove_file(root.join("tools/strata_mcp.py")).unwrap();
+        assert!(!management_script_matches(&root,&args(&["python","tools/strata_mcp.py"]),Some(&other)).unwrap(),"another installation's MCP must not require this root's optional script");
+    }
+
+    #[test]
+    fn management_inventory_detects_live_stdio_and_relative_setup_only_in_their_root() {
+        use std::{process::Command,time::{Duration,Instant}};
+        let python=test_python().expect("isolated management fixture requires Python");let directory=tempfile::tempdir().unwrap();
+        let root=directory.path().join("runtime 中文 空格");let other=directory.path().join("other");
+        for path in [&root,&other] { fs::create_dir_all(path.join("tools")).unwrap();fs::write(path.join("setup.py"),b"# fixture").unwrap();fs::write(path.join("tools/strata_mcp.py"),b"# fixture").unwrap(); }
+        let root=canonical_local(&root).unwrap();
+        for script in ["tools/strata_mcp.py","setup.py"] {
+            let marker=root.join("ready");let body=format!("import time\nfrom pathlib import Path\nPath({}).write_text('CPU fixture')\ntime.sleep(15)\n",serde_json::to_string(&marker.to_string_lossy()).unwrap());fs::write(root.join(script),body).unwrap();
+            let mut command=Command::new(python.trim());command.args(["-I","-S",script]).current_dir(&root);
+            let mut process=crate::processes::OwnedProcess::spawn(command,Default::default(),"management-inventory-fixture").unwrap();
+            let deadline=Instant::now()+Duration::from_secs(5);while !marker.exists(){assert!(Instant::now()<deadline,"fixture not ready");std::thread::sleep(Duration::from_millis(10));}
+            assert!(has_running_management(&root.join("tools/..")).unwrap());assert!(!has_running_management(&other).unwrap(),"another root must remain separate");
+            assert!(process.refresh().unwrap().running,"read-only inventory must retain the fixture");process.stop().unwrap();fs::remove_file(marker).unwrap();
+        }
+    }
+
+    #[test]
+    fn manager_runtime_locations_cover_actual_identifier_and_zip_children() {
+        let temp = tempfile::tempdir().unwrap();
+        let local = temp.path().join("Local");
+        let roaming = temp.path().join("Roaming");
+        let official_zip = roaming.join("io.strata.manager/runtimes/release-fixture");
+        let source = local.join("io.strata.manager/runtimes/strata-fixture");
+        for root in [&official_zip, &source] {
+            fs::create_dir_all(root.join("serve")).unwrap();
+            fs::create_dir_all(root.join("engine")).unwrap();
+            fs::write(root.join("setup.py"), "# never executed").unwrap();
+            fs::write(root.join("serve/server.py"), "# never executed").unwrap();
+            fs::write(root.join("engine/strata.exe"), "# never executed").unwrap();
+            fs::write(root.join("engine/BUILD.json"), r#"{"version":"0.1.42"}"#)
+                .unwrap();
+        }
+        let incomplete = roaming.join("io.strata.manager/runtimes/incomplete");
+        fs::create_dir_all(&incomplete).unwrap();
+        fs::write(incomplete.join("setup.py"), "# partial extraction").unwrap();
+        let nested = roaming.join("io.strata.manager/runtimes/parent/nested");
+        fs::create_dir_all(nested.join("serve")).unwrap();
+        fs::write(nested.join("setup.py"), "# no recursive walk").unwrap();
+        fs::write(nested.join("serve/server.py"), "# no recursive walk").unwrap();
+        let directories = expand_runtime_directories(conventional_directories(
+            None,
+            Some(&local),
+            Some(&roaming),
+        ));
+        assert!(directories.contains(&official_zip));
+        assert!(directories.contains(&source));
+        assert!(!directories.contains(&incomplete));
+        assert!(!directories.contains(&nested));
+        assert_eq!(
+            runtime_version(&official_zip, None).as_deref(),
+            Some("0.1.42")
+        );
+    }
+
+    #[test]
+    fn manager_runtime_child_scan_is_bounded() {
+        let temp = tempfile::tempdir().unwrap();
+        let parent = temp.path().join("runtimes");
+        for index in 0..MAX_RUNTIME_CHILDREN + 1 {
+            let root = parent.join(format!("release-{index:03}"));
+            fs::create_dir_all(root.join("serve")).unwrap();
+            fs::write(root.join("setup.py"), "# never executed").unwrap();
+            fs::write(root.join("serve/server.py"), "# never executed").unwrap();
+        }
+        assert_eq!(
+            expand_runtime_directories(vec![parent]).len(),
+            MAX_RUNTIME_CHILDREN + 1
+        );
+    }
+
+    #[test]
+    fn unregistered_runtime_in_custom_state_is_discovered_without_model_config() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("runtimes/release-fixture");
+        fs::create_dir_all(root.join("serve")).unwrap();
+        fs::create_dir_all(root.join("engine")).unwrap();
+        fs::write(root.join("setup.py"), "# never executed").unwrap();
+        fs::write(root.join("serve/server.py"), "# never executed").unwrap();
+        fs::write(root.join("engine/BUILD.json"), r#"{"version":"0.1.42"}"#).unwrap();
+        let expected = canonical_local(&root).unwrap();
+        let runtimes = discover_runtimes_for_state(&[], temp.path());
+        let runtime = runtimes
+            .iter()
+            .find(|runtime| Path::new(&runtime.install_dir) == expected)
+            .expect("detect a ZIP runtime before a model profile is created");
+        assert_eq!(runtime.runtime_version.as_deref(), Some("0.1.42"));
+        assert!(runtime.profile.config_path.is_empty());
+        assert!(runtime.profile.managed);
+        assert!(matches!(runtime.readiness.as_str(), "ready" | "repair"));
+        assert!(!root.join("config.json").exists());
+    }
+
+    #[test]
+    fn imported_service_copy_discovers_its_global_runtime_once() {
+        let temp = tempfile::tempdir().unwrap();
+        let global = temp.path().join("Strata");
+        let private = temp.path().join("imports/service");
+        fs::create_dir_all(global.join("serve")).unwrap();
+        fs::create_dir_all(global.join("engine")).unwrap();
+        fs::create_dir_all(&private).unwrap();
+        fs::write(global.join("setup.py"), "# fixture").unwrap();
+        fs::write(global.join("serve/server.py"), "# fixture").unwrap();
+        fs::write(global.join("engine/strata.exe"), "fixture").unwrap();
+        let config_path = private.join("config.json");
+        fs::write(
+            &config_path,
+            serde_json::to_vec(&serde_json::json!({"cwd":global,"exe":"engine/strata.exe"}))
+                .unwrap(),
+        )
+        .unwrap();
+        let profile = ServiceProfile {
+            id: "fixture".into(),
+            name: "fixture".into(),
+            base_url: "http://127.0.0.1:18081".into(),
+            install_dir: private.to_string_lossy().into(),
+            python_path: String::new(),
+            config_path: config_path.to_string_lossy().into(),
+            managed: true,
+        };
+        assert_eq!(runtime_root(&profile), canonical_local(&global).unwrap());
+        fs::write(
+            &config_path,
+            serde_json::to_vec(&serde_json::json!({"cwd":global,"exe":config_path})).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(runtime_root(&profile), private);
+    }
+
+    #[test]
+    fn zip_release_revision_takes_precedence_over_previous_installation_marker() {
+        let root = tempfile::tempdir().unwrap();
+        let old_revision = "a".repeat(40);
+        let new_revision = "b".repeat(40);
+        fs::write(
+            root.path().join(".strata-manager-runtime.json"),
+            serde_json::to_vec(&serde_json::json!({"revision": old_revision})).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            root.path().join(".strata-manager-release.json"),
+            serde_json::to_vec(&serde_json::json!({"revision": new_revision})).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(source_revision(root.path()), Some(new_revision));
+        fs::write(
+            root.path().join(".strata-manager-release.json"),
+            "{\"revision\":\"invalid\"}",
+        )
+        .unwrap();
+        assert_eq!(source_revision(root.path()), Some(old_revision));
+    }
 
     #[cfg(windows)]
     #[test]
@@ -1195,6 +1772,69 @@ mod tests {
         assert_eq!(inspected.candidate.availability.as_deref(), Some("repair"));
         assert!(inspected.candidate.reason.unwrap().contains("--ple-gguf"));
         assert_eq!(inspected.candidate.model_bytes, None);
+    }
+
+    #[test]
+    fn configuration_variants_share_weight_identity_and_report_modified_settings() {
+        let (_temp, profile) = fixture();
+        let first = inspect(&profile).candidate;
+        assert!(first.config_modified_at.is_some());
+        assert_eq!(
+            first.config.as_ref().unwrap()["sampling"]["temperature"],
+            0.6
+        );
+        let mut config = read_json(Path::new(&profile.config_path)).unwrap();
+        config["args"].as_array_mut().unwrap().extend([
+            Value::from("--max-context"),
+            Value::from("524288"),
+            Value::from("--kv"),
+            Value::from("int8"),
+        ]);
+        config["parallel"] = Value::from(2);
+        config["api_key"] = Value::from("fixture-secret-do-not-expose");
+        config["env"] = serde_json::json!({"OPENAI_API_KEY":"private", "NORMAL_SETTING":"safe"});
+        fs::write(&profile.config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+        let second = inspect(&profile).candidate;
+        assert_eq!(first.model_group_key, second.model_group_key);
+        let display = second.config.as_ref().unwrap();
+        assert_eq!(display["api_key"], "[已隐藏]");
+        assert_eq!(display["env"]["OPENAI_API_KEY"], "[已隐藏]");
+        assert_eq!(display["env"]["NORMAL_SETTING"], "safe");
+        assert!(!serde_json::to_string(display)
+            .unwrap()
+            .contains("fixture-secret-do-not-expose"));
+        config["args"][1] = Value::from("part-2.gguf");
+        fs::write(&profile.config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+        assert_ne!(
+            first.model_group_key,
+            inspect(&profile).candidate.model_group_key
+        );
+    }
+
+    #[test]
+    fn runtime_remains_installed_when_old_model_configuration_needs_repair() {
+        let (_temp, profile) = fixture();
+        fs::remove_file(Path::new(&profile.install_dir).join("part-1.gguf")).unwrap();
+        assert_eq!(
+            inspect(&profile).candidate.availability.as_deref(),
+            Some("repair")
+        );
+        // Windows TEMP can use an 8.3 alias (ADMINI~1); discovery reports the
+        // canonical installation path rather than the spelling in the profile.
+        let expected_root = canonical_local(Path::new(&profile.install_dir)).unwrap();
+        let runtimes = discover_runtimes(std::slice::from_ref(&profile));
+        let runtime = runtimes
+            .iter()
+            .find(|runtime| Path::new(&runtime.install_dir) == expected_root)
+            .unwrap();
+        assert_eq!(runtime.readiness, "ready");
+        assert_eq!(runtime.profile.id, profile.id);
+        assert!(!runtime.python_path.is_empty());
+        // Even an unusable old config does not hide the detected runtime.
+        fs::write(&profile.config_path, b"{invalid json").unwrap();
+        assert!(discover_runtimes(std::slice::from_ref(&profile))
+            .iter()
+            .any(|runtime| Path::new(&runtime.install_dir) == expected_root));
     }
 
     #[test]
@@ -1325,6 +1965,95 @@ mod tests {
         let mut relative = args;
         relative[5] = "strata.json".into();
         assert!(hint_from_args(&relative).is_none());
+    }
+
+    #[test]
+    fn observed_config_outside_runtime_precedes_full_directory_scan() {
+        let (temp, profile) = fixture();
+        let root = canonical_local(Path::new(&profile.install_dir)).unwrap();
+        fs::create_dir(root.join("configs")).unwrap();
+        for index in 0..MAX_CONFIGS {
+            fs::write(root.join(format!("strata-variant-{index:03}.json")), b"{}").unwrap();
+            fs::write(root.join("configs").join(format!("strata-variant-{index:03}.json")), b"{}").unwrap();
+        }
+        let observed = temp.path().join("managed-config.json");
+        fs::write(&observed, fs::read(&profile.config_path).unwrap()).unwrap();
+        let hint = ProcessHint {
+            config: observed.clone(),
+            python: PathBuf::from(&profile.python_path),
+            port: Some(18099),
+        };
+        assert_eq!(
+            canonical_local(&hint_root(&hint).unwrap()).unwrap(),
+            root
+        );
+        assert_eq!(config_paths(&root).len(), MAX_CONFIGS);
+        let paths = prioritized_config_paths(&root, &[profile], &[hint]);
+        assert_eq!(paths.first(), Some(&observed));
+        assert!(paths.into_iter().take(MAX_CONFIGS).any(|path| path == observed));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "explicit live running-service read-only verification"]
+    fn live_running_service_reports_exact_config_without_changing_process_or_files() {
+        let required = |name| {
+            std::env::var(name).unwrap_or_else(|_| panic!("set {name} for explicit verification"))
+        };
+        let root = canonical_local(Path::new(&required("STRATA_DISCOVERY_READONLY_ROOT"))).unwrap();
+        let config = canonical_local(Path::new(&required("STRATA_DISCOVERY_READONLY_CONFIG"))).unwrap();
+        let port: u16 = required("STRATA_DISCOVERY_READONLY_PORT").parse().unwrap();
+        let expected_pid: u32 = required("STRATA_DISCOVERY_READONLY_PID").parse().unwrap();
+        let value = read_json(&config).unwrap();
+        let profile = ServiceProfile {
+            id: "read-only-running-verification".into(),
+            name: "Read-only verification".into(),
+            base_url: format!("http://127.0.0.1:{port}"),
+            install_dir: root.to_string_lossy().into(),
+            python_path: root.join(".venv/Scripts/python.exe").to_string_lossy().into(),
+            config_path: config.to_string_lossy().into(),
+            managed: false,
+        };
+        let before = external::detect(&profile).unwrap().expect("expected a verified live process");
+        assert_eq!(before.pid, expected_pid);
+        let mut files = config_paths(&root);
+        files.push(config.clone());
+        let snapshots: Vec<_> = files.into_iter().map(|path| {
+            let bytes = fs::read(&path).unwrap();
+            (path, bytes)
+        }).collect();
+        let candidates = discover_local(&[], &[]).unwrap();
+        let running: Vec<_> = candidates.iter().filter(|candidate| candidate.running == Some(true)).collect();
+        let observed = running.iter().find(|candidate| {
+            canonical_local(Path::new(&candidate.config_path)).as_ref().is_ok_and(|path| path == &config)
+        }).expect("exact runtime command-line configuration must be detected");
+        assert_eq!(observed.pid, Some(expected_pid));
+        assert_eq!(observed.detected_port, Some(port));
+        assert_eq!(observed.config.as_ref().unwrap()["model_name"], value["model_name"]);
+        assert!(candidates.iter().filter(|candidate| {
+            canonical_local(Path::new(&candidate.install_dir)).as_ref().is_ok_and(|path| path == &root)
+                && canonical_local(Path::new(&candidate.config_path)).as_ref().is_ok_and(|path| path != &config)
+        }).all(|candidate| candidate.running != Some(true)));
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let health: Value = runtime.block_on(async {
+            reqwest::Client::new().get(format!("{}/health", profile.base_url)).send().await.unwrap()
+                .error_for_status().unwrap().json().await.unwrap()
+        });
+        assert_eq!(health["service"], "strata");
+        assert_eq!(health["status"], "ok");
+        assert_eq!(health["loaded"], true);
+        assert_eq!(health["model"], value["model_name"]);
+        let after = external::detect(&profile).unwrap().unwrap();
+        assert_eq!((after.pid, after.created), (before.pid, before.created));
+        before.revalidate(&profile).unwrap();
+        for (path, bytes) in snapshots {
+            assert_eq!(fs::read(path).unwrap(), bytes);
+        }
+        println!("{}", serde_json::json!({
+            "installDir": observed.install_dir, "configPath": observed.config_path,
+            "pid": observed.pid, "port": observed.detected_port, "running": observed.running,
+            "model": health["model"], "loaded": health["loaded"], "unchanged": true,
+        }));
     }
 
     #[test]

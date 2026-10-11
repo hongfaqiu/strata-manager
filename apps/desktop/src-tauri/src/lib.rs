@@ -1,6 +1,13 @@
+mod configuration_files;
+mod configuration_details;
 mod http;
+mod model_files;
+mod runtime_detection;
+mod runtime_updates;
+mod runtime_update_queue;
 mod startup;
 mod supervisor_client;
+mod vision_files;
 mod window_layout;
 
 #[tauri::command]
@@ -17,11 +24,7 @@ async fn prepare_local_runtime(
 async fn local_runtime_installation(
     state: tauri::State<'_, ClientState>,
 ) -> Result<serde_json::Value, String> {
-    state
-        .ipc
-        .request("local_runtime_installation", serde_json::json!({}))
-        .await
-        .map_err(|e| e.to_string())
+    runtime_detection::installation_status(&state.ipc).await
 }
 
 #[tauri::command]
@@ -40,14 +43,32 @@ async fn switch_local_service(
     state: tauri::State<'_, ClientState>,
     profile_id: String,
 ) -> Result<serde_json::Value, String> {
-    state
+    let status = state
         .ipc
         .request(
             "switch_local_service",
             serde_json::json!({"profileId":profile_id}),
         )
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    if status["running"].as_bool() == Some(true) {
+        if let Err(error) = record_last_activation(&state.ipc, &profile_id).await {
+            eprintln!("Activated configuration timestamp could not be saved: {error}");
+        }
+    }
+    Ok(status)
+}
+
+async fn record_last_activation(ipc: &SupervisorClient, profile_id: &str) -> Result<(), String> {
+    static LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _guard = LOCK.lock().await;
+    let previous = ipc.request("store_get", json!({"key":"localConfigurationLastActivatedAt"}))
+        .await.map_err(|error| error.to_string())?;
+    let mut timestamps = previous.as_object().cloned().unwrap_or_default();
+    timestamps.insert(profile_id.into(), json!(strata_runtime_core::types::now()));
+    ipc.request("store_set", json!({"key":"localConfigurationLastActivatedAt","value":timestamps}))
+        .await.map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 use serde_json::{json, Value};
@@ -63,8 +84,8 @@ use strata_runtime_core::{discovery::LocalCandidate, types::ServiceProfile};
 use supervisor_client::SupervisorClient;
 use tauri::{
     menu::{Menu, MenuItem},
-    tray::TrayIconBuilder,
-    Manager, State,
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Emitter, Manager, State,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -73,9 +94,186 @@ pub struct ClientState {
     client: reqwest::Client,
     streams: Mutex<HashMap<String, CancellationToken>>,
     close_to_tray: AtomicBool,
+    skip_exit_confirmation: AtomicBool,
+    tray_english: AtomicBool,
+    quitting: AtomicBool,
+    tray_profile: Mutex<Option<String>>,
+    tray_status: MenuItem<tauri::Wry>,
+    tray_start: MenuItem<tauri::Wry>,
+    tray_stop: MenuItem<tauri::Wry>,
     tray_show: MenuItem<tauri::Wry>,
     tray_quit: MenuItem<tauri::Wry>,
     tray_stop_quit: MenuItem<tauri::Wry>,
+}
+
+fn show_interface(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+fn quit_with_services(app: &tauri::AppHandle) {
+    let state = app.state::<ClientState>();
+    if state.quitting.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    let handle = app.clone();
+    let ipc = state.ipc.clone();
+    tauri::async_runtime::spawn(async move {
+        match ipc
+            .request("shutdown_supervisor", json!({"forClose":true}))
+            .await
+        {
+            Ok(_) => {
+                handle.state::<ClientState>().cleanup_ui();
+                handle.exit(0);
+            }
+            Err(error) => {
+                handle
+                    .state::<ClientState>()
+                    .quitting
+                    .store(false, Ordering::Release);
+                let _ = handle.emit("tray-action-error", error.to_string());
+                show_interface(&handle);
+            }
+        }
+    });
+}
+
+async fn refresh_tray(app: &tauri::AppHandle) -> Result<(), String> {
+    let state = app.state::<ClientState>();
+    if state.quitting.load(Ordering::Acquire) {
+        return Ok(());
+    }
+    let english = state.tray_english.load(Ordering::Relaxed);
+    let profiles: Vec<ServiceProfile> = serde_json::from_value(
+        state
+            .ipc
+            .request("local_installations", json!({}))
+            .await
+            .map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| error.to_string())?;
+    let active = state
+        .ipc
+        .request("store_get", json!({"key":"activeLocalInstallation"}))
+        .await
+        .map_err(|error| error.to_string())?;
+    let selected = profiles
+        .iter()
+        .find(|profile| Some(profile.id.as_str()) == active.as_str())
+        .or_else(|| profiles.first());
+    *state
+        .tray_profile
+        .lock()
+        .map_err(|error| error.to_string())? = selected.map(|profile| profile.id.clone());
+    let (message, can_start, can_stop) = match selected {
+        Some(profile) => {
+            let process = state
+                .ipc
+                .request(
+                    "service_status",
+                    json!({"profileId":profile.id,"profile":profile}),
+                )
+                .await
+                .map_err(|error| error.to_string())?;
+            let running = process["running"].as_bool() == Some(true);
+            let owned = process["owned"].as_bool() == Some(true);
+            let status = if running {
+                let supervisor = state
+                    .ipc
+                    .request("supervisor_status", json!({}))
+                    .await
+                    .map_err(|error| error.to_string())?;
+                let health = &supervisor["health"][&profile.id];
+                if health["loaded"].as_bool() == Some(true) {
+                    if english {
+                        "Model ready"
+                    } else {
+                        "模型已就绪"
+                    }
+                } else if health["phase"].as_str() == Some("checking") {
+                    if english {
+                        "Preparing model"
+                    } else {
+                        "正在准备模型"
+                    }
+                } else {
+                    if english {
+                        "API running"
+                    } else {
+                        "API 运行中"
+                    }
+                }
+            } else {
+                if english {
+                    "Stopped"
+                } else {
+                    "已停止"
+                }
+            };
+            (
+                format!("{status} · {}", profile.name),
+                !running,
+                running && owned,
+            )
+        }
+        None => (
+            (if english {
+                "No model selected"
+            } else {
+                "尚未选择模型"
+            })
+            .to_string(),
+            false,
+            false,
+        ),
+    };
+    state
+        .tray_status
+        .set_text(&message)
+        .map_err(|error| error.to_string())?;
+    state
+        .tray_start
+        .set_enabled(can_start)
+        .map_err(|error| error.to_string())?;
+    state
+        .tray_stop
+        .set_enabled(can_stop)
+        .map_err(|error| error.to_string())?;
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        let _ = tray.set_tooltip(Some(format!("Strata Manager · {message}")));
+    }
+    Ok(())
+}
+
+fn tray_service_action(app: &tauri::AppHandle, start: bool) {
+    let state = app.state::<ClientState>();
+    let selected = state
+        .tray_profile
+        .lock()
+        .ok()
+        .and_then(|profile| profile.clone());
+    let Some(profile_id) = selected else {
+        show_interface(app);
+        return;
+    };
+    let handle = app.clone();
+    let ipc = state.ipc.clone();
+    tauri::async_runtime::spawn(async move {
+        let method = if start {
+            "ensure_local_service"
+        } else {
+            "stop_service"
+        };
+        if let Err(error) = ipc.request(method, json!({"profileId":profile_id})).await {
+            let _ = handle.emit("tray-action-error", error.to_string());
+            show_interface(&handle);
+        }
+        let _ = refresh_tray(&handle).await;
+    });
 }
 impl ClientState {
     fn cleanup_ui(&self) {
@@ -89,13 +287,18 @@ impl ClientState {
 }
 
 #[tauri::command]
-fn get_startup_status() -> Result<Value, String> {
-    startup::status()
+fn get_startup_status(state: State<'_, ClientState>) -> Result<Value, String> {
+    startup::status(&state.ipc.data_dir)
 }
 
 #[tauri::command]
 fn set_startup_enabled(state: State<'_, ClientState>, enabled: bool) -> Result<Value, String> {
-    let executable = state.ipc.staged_executable().map_err(|e| e.to_string())?;
+    let executable = if enabled {
+        state.ipc.staged_executable().map_err(|e| e.to_string())?
+    } else {
+        // Removing an owned entry must still work when its staged file is broken.
+        std::path::PathBuf::new()
+    };
     startup::set(enabled, &executable, &state.ipc.data_dir)
 }
 
@@ -113,12 +316,13 @@ async fn set_background_policy(
     state: State<'_, ClientState>,
     mode: String,
     auto_recover: bool,
+    idle_unload_minutes: Option<u16>,
 ) -> Result<Value, String> {
     state
         .ipc
         .request(
             "set_background_policy",
-            json!({"mode":mode,"autoRecover":auto_recover}),
+            json!({"mode":mode,"autoRecover":auto_recover,"idleUnloadMinutes":idle_unload_minutes.unwrap_or(15)}),
         )
         .await
         .map_err(|e| e.to_string())
@@ -155,7 +359,7 @@ async fn tuning_start(
             json!({"profileId":profile_id,"request":request}),
         )
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| json!({"code":e.code,"message":e.message,"retriable":e.retriable}).to_string())
 }
 #[tauri::command]
 async fn tuning_status(state: State<'_, ClientState>, profile_id: String) -> Result<Value, String> {
@@ -329,11 +533,7 @@ async fn read_logs(
     profile: ServiceProfile,
     limit: usize,
 ) -> Result<Value, String> {
-    state
-        .ipc
-        .request("read_logs", json!({"profile":profile,"limit":limit}))
-        .await
-        .map_err(|e| e.to_string())
+    runtime_update_queue::read_logs(&state.ipc, profile, limit).await
 }
 
 #[tauri::command]
@@ -371,8 +571,34 @@ async fn run_setup(
     quant: String,
     context: u32,
     images: bool,
+    options: Option<Value>,
 ) -> Result<Value, String> {
-    state.ipc.request("run_setup",json!({"profile":profile,"model":model,"quant":quant,"context":context,"images":images})).await.map_err(|e|e.to_string())
+    state.ipc.request("run_setup",json!({"profile":profile,"model":model,"quant":quant,"context":context,"images":images,"options":options})).await.map_err(|e|e.to_string())
+}
+
+#[tauri::command]
+async fn inspect_gguf(state: State<'_, ClientState>, request: Value) -> Result<Value, String> {
+    state.ipc.request("inspect_gguf", json!({"request":request})).await.map_err(|e|e.to_string())
+}
+
+#[tauri::command]
+async fn probe_official_mcp(state: State<'_, ClientState>, profile_id: String) -> Result<Value, String> {
+    state.ipc.request("probe_official_mcp", json!({"profileId":profile_id})).await.map_err(|e|e.to_string())
+}
+
+#[tauri::command]
+async fn external_management_status(state: State<'_, ClientState>, profile_id: String) -> Result<Value, String> {
+    state.ipc.request("external_management_status", json!({"profileId":profile_id})).await.map_err(|e|e.to_string())
+}
+
+#[tauri::command]
+async fn chat_runtime_evidence(state: State<'_, ClientState>, profile_id: String) -> Result<Value, String> {
+    state.ipc.request("chat_runtime_evidence", json!({"profileId":profile_id})).await.map_err(|e|e.to_string())
+}
+
+#[tauri::command]
+async fn set_external_management(state: State<'_, ClientState>, profile_id: String, external: bool) -> Result<Value, String> {
+    state.ipc.request("set_external_management", json!({"profileId":profile_id,"external":external})).await.map_err(|e|e.to_string())
 }
 
 #[tauri::command]
@@ -400,12 +626,26 @@ async fn update_runtime(
 }
 
 #[tauri::command]
+async fn update_runtime_zip(
+    state: State<'_, ClientState>,
+    install_dir: String,
+    asset_name: Option<String>,
+    stop_current_service: Option<bool>,
+) -> Result<Value, String> {
+    runtime_update_queue::start(&state.ipc, install_dir, asset_name, stop_current_service.unwrap_or(false)).await
+}
+
+#[tauri::command]
+async fn runtime_update_info(
+    state: State<'_, ClientState>,
+    force: Option<bool>,
+) -> Result<Value, String> {
+    runtime_updates::update_info(&state.ipc, force.unwrap_or(false)).await
+}
+
+#[tauri::command]
 async fn list_tasks(state: State<'_, ClientState>) -> Result<Value, String> {
-    state
-        .ipc
-        .request("list_tasks", json!({}))
-        .await
-        .map_err(|e| e.to_string())
+    runtime_update_queue::list_tasks(&state.ipc).await
 }
 
 #[tauri::command]
@@ -435,11 +675,7 @@ async fn resolve_setup_handoff(
 
 #[tauri::command]
 async fn cancel_task(state: State<'_, ClientState>, task_id: String) -> Result<Value, String> {
-    state
-        .ipc
-        .request("cancel_task", json!({"taskId":task_id}))
-        .await
-        .map_err(|e| e.to_string())
+    runtime_update_queue::cancel_task(&state.ipc, task_id).await
 }
 
 #[tauri::command]
@@ -455,16 +691,148 @@ async fn read_config(
 }
 
 #[tauri::command]
+async fn read_config_snapshot(state: State<'_, ClientState>, profile: ServiceProfile) -> Result<Value, String> {
+    state.ipc.request("read_config_snapshot_v1", json!({"profile":profile})).await.map_err(|e| json!({"code":e.code,"message":e.message,"retriable":e.retriable}).to_string())
+}
+
+#[tauri::command]
+fn validate_vision_files(profile: ServiceProfile, config: Value) -> Result<(), String> {
+    vision_files::check(&profile, &config)
+}
+
+#[tauri::command]
+async fn copy_configuration(state: State<'_, ClientState>, profile: ServiceProfile, filename: String, config: Value) -> Result<ServiceProfile, String> {
+    let _guard = configuration_files::OPERATIONS.lock().await;
+    let _management = management_file_lock(&state.ipc)?;
+    state.ipc.request("assert_profile_management", json!({"profile":profile})).await.map_err(|e|e.to_string())?;
+    tokio::task::spawn_blocking(move || {
+        let _management = _management;
+        configuration_files::copy(&profile, &filename, config)
+    })
+        .await.map_err(|error| error.to_string())?
+}
+
+// Keep external-management handoff out of the gap between IPC validation and
+// local filesystem writes, including operations from another desktop process.
+fn management_file_lock(ipc: &SupervisorClient) -> Result<strata_local_ipc::SingleInstance, String> {
+    strata_local_ipc::SingleInstance::acquire_scoped(&ipc.data_dir, "managed-file-operation")
+        .map_err(|_| "管理交接或文件操作正在进行，请完成后重试 / Management handoff or file operation is in progress; try again when it finishes".into())
+}
+
+async fn assert_configuration_stopped(ipc: &SupervisorClient, profiles: &[ServiceProfile]) -> Result<(), String> {
+    for profile in profiles {
+        ipc.request("assert_profile_management", json!({"profile":profile})).await.map_err(|e|e.to_string())?;
+        let status = ipc.request("service_status", json!({"profileId":profile.id,"profile":profile}))
+            .await.map_err(|error| error.to_string())?;
+        model_files::assert_stopped_status(&status)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn delete_configuration(state: State<'_, ClientState>, profile: ServiceProfile) -> Result<Value, String> {
+    let _guard = configuration_files::OPERATIONS.lock().await;
+    let _management = management_file_lock(&state.ipc)?;
+    let path = configuration_files::configuration_path(&profile)?;
+    let key = configuration_files::path_key(&path);
+    let registered: Vec<ServiceProfile> = serde_json::from_value(state.ipc.request("local_installations", json!({}))
+        .await.map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
+    if registered.iter().any(|item| item.id == profile.id && configuration_files::path_key(std::path::Path::new(&item.config_path)) != key) {
+        return Err("登记配置路径已变化，请刷新后重试 / Registered configuration path changed; refresh and try again".into());
+    }
+    let matching: Vec<ServiceProfile> = registered.into_iter()
+        .filter(|item| configuration_files::path_key(std::path::Path::new(&item.config_path)) == key).collect();
+    if matching.len() > 1 {
+        return Err("多个登记共用此配置文件，无法原子移除，请先整理重复登记 / Multiple registrations share this configuration; consolidate them before deleting".into());
+    }
+    let mut inspected = matching.clone();
+    if !inspected.iter().any(|item| item.id == profile.id) { inspected.push(profile.clone()); }
+    assert_configuration_stopped(&state.ipc, &inspected).await?;
+    let archived = configuration_files::archive(&profile, &state.ipc.data_dir)?;
+    let removal = async {
+        // Recheck after the file operation so a concurrent start cannot authorize deletion.
+        assert_configuration_stopped(&state.ipc, &inspected).await?;
+        for selected in &matching {
+            state.ipc.request("remove_local_installation", json!({"profileId":selected.id}))
+                .await.map_err(|error| error.to_string())?;
+        }
+        Ok::<(), String>(())
+    }.await;
+    if let Err(error) = removal {
+        return match archived.rollback() {
+            Ok(()) => Err(format!("删除未完成，配置文件已恢复 / Deletion incomplete; configuration file restored: {error}")),
+            Err(rollback) => Err(format!("删除未完成 / Deletion incomplete: {error}; {rollback}")),
+        };
+    }
+    Ok(json!({"archivedPath":archived.archived.to_string_lossy()}))
+}
+
+async fn model_deletion_context(ipc: &SupervisorClient, profiles: Vec<ServiceProfile>) -> Result<(Vec<model_files::Configuration>, Vec<model_files::Configuration>), String> {
+    if profiles.is_empty() || profiles.len() > 256 { return Err("请选择一组模型配置 / Select one model configuration group".into()); }
+    let registered: Vec<ServiceProfile> = serde_json::from_value(ipc.request("local_installations", json!({}))
+        .await.map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
+    let mut selected = Vec::new();
+    for incoming in profiles {
+        let profile = if let Some(saved) = registered.iter().find(|item| item.id == incoming.id) {
+            if configuration_files::path_key(std::path::Path::new(&saved.config_path)) != configuration_files::path_key(std::path::Path::new(&incoming.config_path)) {
+                return Err("登记配置路径已变化，请刷新模型列表 / Registered configuration path changed; refresh the model list".into());
+            }
+            saved.clone()
+        } else { incoming };
+        configuration_files::configuration_path(&profile)?;
+        let config = ipc.request("read_config", json!({"profile":profile})).await.map_err(|error| error.to_string())?;
+        selected.push(model_files::Configuration { profile, config });
+    }
+    let mut all = Vec::new();
+    for profile in registered {
+        configuration_files::configuration_path(&profile).map_err(|error| format!("无法核验登记配置引用，请先修复或移除该配置 / Cannot verify registered configuration references; repair or remove it first: {}: {error}", profile.name))?;
+        let config = ipc.request("read_config", json!({"profile":profile})).await.map_err(|error| error.to_string())?;
+        all.push(model_files::Configuration { profile, config });
+    }
+    Ok((selected, all))
+}
+
+#[tauri::command]
+async fn plan_model_deletion(state: State<'_, ClientState>, profiles: Vec<ServiceProfile>) -> Result<model_files::ModelDeletionPlan, String> {
+    let context = model_deletion_context(&state.ipc, profiles).await;
+    let prepared = match context.and_then(|(selected, registered)| model_files::prepare(&selected, &registered)) {
+        Ok(prepared) => prepared,
+        Err(reason) => return Ok(model_files::ModelDeletionPlan::blocked(reason)),
+    };
+    let mut plan = prepared.plan;
+    if let Err(reason) = assert_configuration_stopped(&state.ipc, &prepared.profiles).await { plan.blocked_reason = Some(reason); }
+    Ok(plan)
+}
+
+#[tauri::command]
+async fn delete_model_files(state: State<'_, ClientState>, profiles: Vec<ServiceProfile>, expected_files: Vec<model_files::ModelDeletionFile>) -> Result<model_files::ModelDeletionSummary, String> {
+    let _guard = configuration_files::OPERATIONS.lock().await;
+    let _management = management_file_lock(&state.ipc)?;
+    let (selected, registered) = model_deletion_context(&state.ipc, profiles.clone()).await?;
+    let inspected = model_files::prepare(&selected, &registered)?;
+    model_files::verify_expected(&inspected.plan.files, &expected_files)?;
+    assert_configuration_stopped(&state.ipc, &inspected.profiles).await?;
+    // Re-read the configuration references after the process checks as well.
+    let (selected, registered) = model_deletion_context(&state.ipc, profiles).await?;
+    let current = model_files::prepare(&selected, &registered)?;
+    model_files::verify_expected(&current.plan.files, &expected_files)?;
+    assert_configuration_stopped(&state.ipc, &current.profiles).await?;
+    model_files::remove(&current.plan, &expected_files)
+}
+
+#[tauri::command]
 async fn write_config(
     state: State<'_, ClientState>,
     profile: ServiceProfile,
     config: Value,
+    expected_revision: String,
 ) -> Result<Value, String> {
+    let _guard = configuration_files::OPERATIONS.lock().await;
     state
         .ipc
-        .request("write_config", json!({"profile":profile,"config":config}))
+        .request("write_config_cas_v1", json!({"profile":profile,"config":config,"expectedRevision":expected_revision}))
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| json!({"code":e.code,"message":e.message,"retriable":e.retriable}).to_string())
 }
 
 #[tauri::command]
@@ -512,11 +880,54 @@ async fn discover_local(
     state: State<'_, ClientState>,
     directories: Option<Vec<String>>,
 ) -> Result<Value, String> {
-    state
-        .ipc
-        .request("discover_local", json!({"directories":directories}))
-        .await
-        .map_err(|e| e.to_string())
+    let mut candidates = runtime_detection::local_models(&state.ipc, directories).await?;
+    let records = candidates.as_array_mut().ok_or("模型检测结果格式无效 / Invalid model discovery result")?;
+    for candidate in records {
+        let needs_config = candidate.get("config").is_none_or(Value::is_null);
+        let needs_modified = candidate.get("configModifiedAt").is_none_or(Value::is_null);
+        if !needs_config && !needs_modified { continue; }
+        let Some(config_path) = candidate["configPath"].as_str().map(str::to_owned) else { continue; };
+        let Some(install_dir) = candidate["installDir"].as_str().map(str::to_owned) else { continue; };
+        let port = candidate["detectedPort"].as_u64().filter(|port| (1..=65535).contains(port)).unwrap_or(18081);
+        let profile = ServiceProfile {
+            // A discovery identifier may also name an imported managed copy.
+            // Use a read-only identity so read_config reads this actual JSON path.
+            id: format!("discovery-read-{}", uuid::Uuid::new_v4()),
+            name: candidate["name"].as_str().unwrap_or_default().to_owned(),
+            base_url: format!("http://127.0.0.1:{port}"),
+            install_dir,
+            python_path: candidate["pythonPath"].as_str().unwrap_or_default().to_owned(),
+            config_path,
+            managed: false,
+        };
+        let Ok(path) = configuration_files::configuration_path(&profile) else { continue; };
+        if needs_modified {
+            if let Some(modified) = std::fs::metadata(&path).ok().and_then(|metadata| metadata.modified().ok())
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok()).and_then(|time| u64::try_from(time.as_millis()).ok()) {
+                candidate["configModifiedAt"] = json!(modified);
+            }
+        }
+        if needs_config {
+            if let Ok(mut config) = state.ipc.request("read_config", json!({"profile":profile})).await {
+                // Match discovery's display-only credential redaction.
+                fn redact(value: &mut Value) {
+                    match value {
+                        Value::Object(object) => for (key, value) in object {
+                            let key = key.to_ascii_lowercase();
+                            if matches!(key.as_str(), "api_key" | "apikey" | "token" | "password" | "secret" | "authorization" | "credential" | "credentials")
+                                || key.ends_with("_key") || key.ends_with("_token") || key.ends_with("_secret") || key.contains("password") || key.contains("secret") {
+                                *value = Value::String("[已隐藏]".into());
+                            } else { redact(value); }
+                        },
+                        Value::Array(values) => for value in values { redact(value); },
+                        _ => {}
+                    }
+                }
+                if config.is_object() { redact(&mut config); candidate["config"] = config; }
+            }
+        }
+    }
+    Ok(candidates)
 }
 
 #[tauri::command]
@@ -571,13 +982,80 @@ async fn local_installations(state: State<'_, ClientState>) -> Result<Value, Str
 }
 
 #[tauri::command]
+async fn local_installation_details(state: State<'_, ClientState>) -> Result<Value, String> {
+    let mut details = match state.ipc.request("local_installation_details", json!({})).await {
+        Ok(details) => details,
+        Err(error) if error.code == "unknown_method" || error.message.contains("unknown_method") => {
+            configuration_details::legacy_details(&state.ipc).await?
+        }
+        Err(error) => return Err(error.to_string()),
+    };
+    let activated = state.ipc.request("store_get", json!({"key":"localConfigurationLastActivatedAt"}))
+        .await.map_err(|error| error.to_string())?;
+    for detail in details.as_array_mut().ok_or("配置详情格式无效 / Invalid configuration details")? {
+        let timestamp = detail["profileId"].as_str().and_then(|id| activated.get(id)).and_then(Value::as_u64);
+        detail["lastActivatedAt"] = json!(timestamp);
+    }
+    Ok(details)
+}
+
+#[tauri::command]
+async fn confirm_window_close(
+    app: tauri::AppHandle,
+    state: State<'_, ClientState>,
+) -> Result<(), String> {
+    if state.quitting.swap(true, Ordering::AcqRel) {
+        return Err("正在停止服务，请稍候".into());
+    }
+    match state
+        .ipc
+        .request("shutdown_supervisor", json!({"forClose":true}))
+        .await
+    {
+        Ok(_) => {
+            state.cleanup_ui();
+            app.exit(0);
+            Ok(())
+        }
+        Err(error) => {
+            state.quitting.store(false, Ordering::Release);
+            Err(error.to_string())
+        }
+    }
+}
+
+#[tauri::command]
 fn apply_settings(state: State<'_, ClientState>, settings: Value) -> Result<(), String> {
     let close = settings
         .get("closeToTray")
         .and_then(Value::as_bool)
         .ok_or("closeToTray 必须是布尔值")?;
     state.close_to_tray.store(close, Ordering::Relaxed);
+    state.skip_exit_confirmation.store(
+        settings
+            .get("skipExitConfirmation")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        Ordering::Relaxed,
+    );
     let english = settings.get("language").and_then(Value::as_str) == Some("en");
+    state.tray_english.store(english, Ordering::Relaxed);
+    state
+        .tray_start
+        .set_text(if english {
+            "Start model service"
+        } else {
+            "启动模型服务"
+        })
+        .map_err(|error| error.to_string())?;
+    state
+        .tray_stop
+        .set_text(if english {
+            "Stop model service"
+        } else {
+            "停止模型服务"
+        })
+        .map_err(|error| error.to_string())?;
     state
         .tray_show
         .set_text(if english {
@@ -645,6 +1123,32 @@ async fn analytics_query(
         .await
         .map_err(|e| e.to_string())
 }
+#[tauri::command]
+async fn request_capture_status(
+    state: State<'_, ClientState>,
+    profile_id: String,
+) -> Result<Value, String> {
+    state
+        .ipc
+        .request("request_capture_status", json!({"profileId":profile_id}))
+        .await
+        .map_err(|e| e.to_string())
+}
+#[tauri::command]
+async fn request_capture_set(
+    state: State<'_, ClientState>,
+    profile_id: String,
+    minutes: u16,
+) -> Result<Value, String> {
+    state
+        .ipc
+        .request(
+            "request_capture_set",
+            json!({"profileId":profile_id,"minutes":minutes}),
+        )
+        .await
+        .map_err(|e| e.to_string())
+}
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -707,6 +1211,39 @@ pub fn run() {
                 true,
                 None::<&str>,
             )?;
+            let service_state = MenuItem::with_id(
+                app,
+                "service-state",
+                if english {
+                    "Reading service status…"
+                } else {
+                    "正在读取服务状态…"
+                },
+                false,
+                None::<&str>,
+            )?;
+            let start = MenuItem::with_id(
+                app,
+                "service-start",
+                if english {
+                    "Start model service"
+                } else {
+                    "启动模型服务"
+                },
+                false,
+                None::<&str>,
+            )?;
+            let stop = MenuItem::with_id(
+                app,
+                "service-stop",
+                if english {
+                    "Stop model service"
+                } else {
+                    "停止模型服务"
+                },
+                false,
+                None::<&str>,
+            )?;
             app.manage(ClientState {
                 ipc,
                 client: reqwest::Client::builder()
@@ -715,42 +1252,88 @@ pub fn run() {
                     .build()?,
                 streams: Mutex::new(HashMap::new()),
                 close_to_tray: AtomicBool::new(close),
+                skip_exit_confirmation: AtomicBool::new(
+                    saved_settings
+                        .get("skipExitConfirmation")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
+                ),
+                tray_english: AtomicBool::new(english),
+                quitting: AtomicBool::new(false),
+                tray_profile: Mutex::new(None),
+                tray_status: service_state.clone(),
+                tray_start: start.clone(),
+                tray_stop: stop.clone(),
                 tray_show: show.clone(),
                 tray_quit: quit.clone(),
                 tray_stop_quit: stop_quit.clone(),
             });
-            let menu = Menu::with_items(app, &[&show, &quit, &stop_quit])?;
-            TrayIconBuilder::new()
+            let menu = Menu::with_items(
+                app,
+                &[&service_state, &show, &start, &stop, &quit, &stop_quit],
+            )?;
+            TrayIconBuilder::with_id("main-tray")
                 .icon(app.default_window_icon().ok_or("应用图标缺失")?.clone())
                 .tooltip("Strata Manager")
                 .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_tray_icon_event(|tray, event| {
+                    if matches!(
+                        event,
+                        TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        }
+                    ) {
+                        show_interface(tray.app_handle());
+                    }
+                    if matches!(
+                        event,
+                        TrayIconEvent::Click {
+                            button: MouseButton::Right,
+                            ..
+                        }
+                    ) {
+                        let handle = tray.app_handle().clone();
+                        tauri::async_runtime::spawn(async move {
+                            let _ = refresh_tray(&handle).await;
+                        });
+                    }
+                })
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "show" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
+                        show_interface(app);
                     }
+                    "service-start" => tray_service_action(app, true),
+                    "service-stop" => tray_service_action(app, false),
                     "quit" => {
                         app.state::<ClientState>().cleanup_ui();
                         app.exit(0);
                     }
                     "stop-quit" => {
-                        let handle = app.clone();
-                        let ipc = app.state::<ClientState>().ipc.clone();
-                        tauri::async_runtime::spawn(async move {
-                            if ipc.request("shutdown_supervisor", json!({})).await.is_ok() {
-                                handle.state::<ClientState>().cleanup_ui();
-                                handle.exit(0);
-                            } else if let Some(window) = handle.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
-                        });
+                        quit_with_services(app);
                     }
                     _ => {}
                 })
                 .build(app)?;
+            let handle = app.handle().clone();
+            let update_handle = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    let ipc = update_handle.state::<ClientState>().ipc.clone();
+                    if let Err(error) = runtime_update_queue::tick(&ipc).await {
+                        eprintln!("ZIP update reconciliation: {error}");
+                    }
+                    tokio::time::sleep(Duration::from_secs(10)).await;
+                }
+            });
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    let _ = refresh_tray(&handle).await;
+                    tokio::time::sleep(Duration::from_secs(3)).await;
+                }
+            });
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -760,8 +1343,11 @@ pub fn run() {
                     api.prevent_close();
                     let _ = window.hide();
                 } else {
-                    state.cleanup_ui();
-                    window.app_handle().exit(0);
+                    api.prevent_close();
+                    // Even when the service-exit prompt is skipped, the renderer
+                    // must first protect unsaved configuration drafts.
+                    let _ = window.emit("window-exit-requested", ());
+                    let _ = window.set_focus();
                 }
             }
         })
@@ -794,13 +1380,26 @@ pub fn run() {
             environment_info,
             setup_disk_preflight,
             run_setup,
+            inspect_gguf,
+            probe_official_mcp,
+            external_management_status,
+            chat_runtime_evidence,
+            set_external_management,
             install_runtime,
             update_runtime,
+            update_runtime_zip,
+            runtime_update_info,
             list_tasks,
             list_setup_handoffs,
             resolve_setup_handoff,
             cancel_task,
             read_config,
+            read_config_snapshot,
+            validate_vision_files,
+            copy_configuration,
+            delete_configuration,
+            plan_model_deletion,
+            delete_model_files,
             write_config,
             write_markdown_export,
             list_local_models,
@@ -811,12 +1410,16 @@ pub fn run() {
             supervisor_status,
             shutdown_supervisor,
             local_installations,
+            local_installation_details,
             local_installation_migration,
             http::strata_stream,
             http::cancel_stream,
             apply_settings,
+            confirm_window_close,
             rename_local_installation,
             analytics_query,
+            request_capture_status,
+            request_capture_set,
             remove_local_installation
         ])
         .build(tauri::generate_context!())

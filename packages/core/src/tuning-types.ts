@@ -1,10 +1,26 @@
-/** Only request-level PCIe and MTP parameters are measured automatically. */
 export type TuningScene = 'chat' | 'code' | 'chinese';
+export type TuningUseCase = 'chat' | 'agent' | 'longDocument';
+export type TuningWorkloadKind = 'coldInput' | 'hotPrefix' | 'sessionSwitch' | 'sustainedGeneration' | 'fullAgent' | 'longRetrieval' | 'vision';
+export interface TuningRestartParameters {
+  poolWorkers?: number;
+  adaptAsync?: boolean;
+  prefill?: number;
+  vramReserveMib?: number;
+  adaptEvery?: number;
+  adaptSwaps?: number;
+  adaptDecay?: number;
+}
 export interface TuningStartRequest {
-  scenes: TuningScene[];
+  /** Omit useCase for the historical short request diagnostic. */
+  useCase?: TuningUseCase;
+  contextLimit?: number;
+  includeVision?: boolean;
+  /** At most four independent restart candidates; omitted means none. */
+  restartCandidates?: TuningRestartParameters[];
+  scenes?: TuningScene[];
   /** 2-4 interleaved A/B/A rounds; default 2. */
   rounds?: number;
-  /** 128-1024 output tokens; default 512. A truncated response cannot pass quality. */
+  /** Diagnostic: 128-1024, default 512. Full scenario: 1024. Truncation cannot pass. */
   maxTokens?: number;
   /** Optional expert candidates; omitted means a bounded neighboring search. */
   candidates?: { pcieFrac: number; specMinP: number }[];
@@ -38,13 +54,138 @@ export interface TuningEvaluation {
   drift: number | null;
   pairs: number;
   accepted: boolean;
-  reason: 'reproducibleGain' | 'noReliableGain' | 'qualityMismatch' | 'incomplete' | 'missingMetrics';
+  reason: 'reproducibleGain' | 'noReliableGain' | 'qualityMismatch' | 'incomplete' | 'missingMetrics'
+    | 'fullScenarioGain' | 'noReliableFullScenarioGain' | 'incompleteWorkloads' | 'semanticQualityFailed'
+    | 'missingWorkloadTimings' | 'stableSemanticGain' | 'noReliableGainBeyondDrift'
+    | 'resourceUnknown' | 'insufficientResourceHeadroom';
 }
-export interface TuningCandidate extends TuningParameters { id: string; evaluation?: TuningEvaluation }
+export interface TuningResourceAssessment {
+  status: 'checked' | 'unknown' | 'insufficientHeadroom';
+  dataScope: 'systemAndPrimaryGpu';
+  sampleCount: number;
+  ramPeakBytes: number | null;
+  gpuPeakBytes: number | null;
+  ramTotalBytes: number | null;
+  gpuTotalBytes: number | null;
+  minimumRamHeadroomBytes: number;
+  minimumGpuHeadroomBytes: number;
+  note: string;
+}
+export interface TuningCandidate extends TuningParameters {
+  id: string;
+  kind?: 'request' | 'restart';
+  restart?: TuningRestartParameters;
+  resourceAssessment?: TuningResourceAssessment;
+  startupVerification?: {
+    parameters: {
+      name: string;
+      requested: number;
+      observed: number | null;
+      status: 'effective' | 'upperBound' | 'reservationRequest' | 'startupRequest';
+    }[];
+    checkedAt: number;
+    note: string;
+  };
+  evaluation?: TuningEvaluation;
+  dimensions?: Partial<Record<TuningWorkloadKind, TuningEvaluation>>;
+}
+export interface TuningResourcePeak {
+  scope: 'workload';
+  dataScope: 'systemAndPrimaryGpu';
+  sampleCount: number;
+  ramUsedBytes: number | null;
+  gpuMemoryUsedBytes: number | null;
+  telemetryAvailable: boolean;
+}
+/** Per-turn timing/usage metadata. Never contains a prompt, answer or tool body. */
+export interface TuningWorkloadTurn {
+  wallMs: number;
+  firstTokenMs: number | null;
+  firstVisibleMs: number | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cachedTokens: number | null;
+  promptMs: number | null;
+  decodeMs: number | null;
+  decodeTokS: number | null;
+  finish: string | null;
+  complete: boolean;
+}
+export interface TuningWorkloadResult {
+  benchmarkVersion: string;
+  workloadId: string;
+  useCase: TuningUseCase;
+  kind: TuningWorkloadKind;
+  qualityPassed: boolean;
+  complete: boolean;
+  wallMs: number;
+  firstTokenMs: number | null;
+  firstVisibleMs: number | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cachedTokens: number | null;
+  actualContextTokens: number | null;
+  requestCount: number;
+  tokenCountRequests: number;
+  finish: string | null;
+  qualityReason: string | null;
+  fullAgentWallMs: number | null;
+  coldModelVerified: boolean;
+  targetInputTokens: number | null;
+  resourcePeak: TuningResourcePeak;
+  turns: TuningWorkloadTurn[];
+  limits: {
+    maxGenerationRequests: number;
+    deadlineSeconds: number;
+    resourcesAreSampled: boolean;
+    modelColdDoesNotProveOsCacheCold: boolean;
+  };
+}
+export interface TuningWorkloadMeasurement {
+  id: string;
+  candidateId: string;
+  round: number;
+  position: TuningMeasurement['position'];
+  workloadId: string;
+  kind: TuningWorkloadKind;
+  freshlyLoaded: boolean;
+  result: TuningWorkloadResult;
+}
+export interface TuningProgress {
+  phase: 'waitingForIdle' | 'loading' | 'baselineBefore' | 'candidate' | 'baselineAfter' | 'restoringBaseline' | 'finished';
+  candidateId?: string;
+  workloadKind?: TuningWorkloadKind;
+  round?: number;
+  completedWorkloads: number;
+  totalWorkloads: number;
+}
+export interface TuningRecovery {
+  state: 'notNeeded' | 'pending' | 'restoring' | 'restored' | 'failed';
+  configurationRestored: boolean;
+  serviceVerified: boolean;
+  error?: string;
+}
 export interface TuningJob {
   id: string;
   profileId: string;
   state: 'checking' | 'running' | 'canceling' | 'completed' | 'canceled' | 'failed' | 'interrupted' | 'applying' | 'applied' | 'rollingBack' | 'restored';
+  /** Absent in reports created before scenario tuning. */
+  reportVersion?: number;
+  scope?: 'fullScenario' | 'requestDiagnostic';
+  useCase?: TuningUseCase;
+  contextLimit?: number;
+  includeVision?: boolean;
+  restartBaseline?: TuningRestartParameters;
+  workloadMeasurements?: TuningWorkloadMeasurement[];
+  progress?: TuningProgress;
+  recovery?: TuningRecovery;
+  limits?: {
+    maxDurationSeconds: number;
+    generationRequestLimit: number;
+    /** Output budget only; excludes reasoning, input and token-count calibration. */
+    outputTokenUpperBound: number;
+    recoveryDeadlineSeconds: number;
+  };
   scenes: TuningScene[];
   rounds: number;
   maxTokens: number;

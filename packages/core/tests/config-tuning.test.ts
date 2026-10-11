@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyStartupTuning, startupTuningOf } from '../src/config-tuning';
+import { applyStartupField, applyStartupTuning, parseStartupConfiguration, replaceStartupArgument, STARTUP_ENGINE_FLAGS, STARTUP_TUNING_FIELDS, startupArgsOf, startupArgumentRows, startupFieldValue, startupTuningOf, validateStartupConfiguration } from '../src/config-tuning';
 
 const config = { exe: 'engine.exe', args: ['--native', '模型.gguf', '--max-context', '524288', '--kv', 'int8', '--rope-scale', '2'], threads: 8, sampling: { temperature: .6 }, vision: { gpu: true }, mcp: [{ name: 'calculator' }], api_key: 'preserved' };
 describe('startup configuration tuning', () => {
@@ -35,5 +35,89 @@ describe('startup configuration tuning', () => {
     expect(startupTuningOf(flags).threads).toBe('8');
     expect(applyStartupTuning(flags, { context: '', kv: '', threads: '4' })).toEqual({ args: ['--native', 'weights.gguf', '--threads', '4'] });
     expect(applyStartupTuning(flags, { context: '', kv: '', threads: '' })).toEqual({ args: ['--native', 'weights.gguf'] });
+  });
+});
+
+const field = (key: string) => STARTUP_TUNING_FIELDS.find(item => item.key === key)!;
+const complete = {
+  args: ['--native', 'D:\\AI Models\\weights.gguf', '--max-context', '65536', '--custom-next', 'alpha beta', '--control-vector-layer-range', '4', '44', '--custom-next', '-3', '--stats'],
+  vision: { threads: 3, gpu: false, custom: [null, false, 1.25] },
+  sampling: { temperature: .6, top_p: .95 },
+  mcp: [{ name: 'calculator', args: ['--mode', 'stdio'], enabled: false }],
+  env: { CUSTOM: 'keep' }, custom: { list: [12, null, 'keep'], empty: null }, api_key: 'keep-secret',
+};
+describe('complete graphical and JSON startup configuration', () => {
+  it('keeps unknown/repeated arguments, exact paths and two-operand options in original order', () => {
+    const rows = startupArgumentRows(complete);
+    expect(rows.flatMap(row => row.tokens)).toEqual(complete.args);
+    expect(rows.find(row => row.tokens[0] === '--control-vector-layer-range')).toMatchObject({ known: true, arity: 2, tokens: ['--control-vector-layer-range', '4', '44'] });
+    expect(rows.filter(row => row.tokens[0] === '--custom-next').map(row => row.tokens)).toEqual([['--custom-next', 'alpha beta'], ['--custom-next', '-3']]);
+  });
+  it('updates just one curated parameter without rebuilding the complete argv or nested configuration', () => {
+    const updated = applyStartupField(complete, field('--max-context'), '98304');
+    expect(updated).toEqual({ ...complete, args: complete.args.map((value, index) => index === 3 ? '98304' : value) });
+    expect(updated).not.toBe(complete);
+    expect(complete.args[3]).toBe('65536');
+  });
+  it('saves a graphical → full JSON → graphical round trip without losing native JSON types', () => {
+    const graph = applyStartupField(complete, field('--pool-workers'), '0');
+    const json = parseStartupConfiguration(JSON.stringify(graph));
+    (json.custom as { list: unknown[]; empty: null }).list = [12, null, 'keep', false];
+    const saved = applyStartupField(json, field('vision.threads'), '4');
+    validateStartupConfiguration(saved);
+    expect(startupFieldValue(saved, field('--pool-workers'))).toBe('0');
+    expect(saved.vision).toEqual({ ...complete.vision, threads: 4 });
+    expect(saved.custom).toEqual({ list: [12, null, 'keep', false], empty: null });
+    expect(saved.mcp).toEqual(complete.mcp);
+    expect(saved.api_key).toBe('keep-secret');
+    expect(startupArgsOf(saved).slice(0, complete.args.length)).toEqual(complete.args);
+  });
+  it('preserves a false config value and removes only an explicitly cleared override', () => {
+    const falseConfig = applyStartupField(complete, field('api_monitor'), 'false');
+    expect(falseConfig.api_monitor).toBe(false);
+    expect(startupFieldValue(falseConfig, field('api_monitor'))).toBe('false');
+    expect(applyStartupField(falseConfig, field('api_monitor'), '')).toEqual(complete);
+    const noVisionThreads = applyStartupField(complete, field('vision.threads'), '');
+    expect(noVisionThreads.vision).toEqual({ gpu: false, custom: [null, false, 1.25] });
+  });
+  it('edits/removes a selected repeated or unknown argument without changing the other occurrences', () => {
+    const rows = startupArgumentRows(complete);
+    const repeated = rows.filter(row => row.tokens[0] === '--custom-next')[1]!;
+    const edited = replaceStartupArgument(complete, repeated, ['--custom-next', '-9']);
+    expect(edited.args).toEqual(complete.args.map((value, index) => index === repeated.offset + 1 ? '-9' : value));
+    const range = startupArgumentRows(edited).find(row => row.tokens[0] === '--control-vector-layer-range')!;
+    expect(replaceStartupArgument(edited, range, []).args).toEqual([...complete.args.slice(0, 6), '--custom-next', '-9', '--stats']);
+  });
+  it('allows a custom/new enum without silently normalizing it to a catalog choice', () => {
+    const next = applyStartupField(complete, field('--kv'), 'future-format');
+    expect(next.args).toEqual([...complete.args, '--kv', 'future-format']);
+    expect(applyStartupField(next, field('--kv'), '').args).toEqual(complete.args);
+  });
+  it('rejects duplicate curated edits while allowing an explicit full argument list edit', () => {
+    const duplicated = { args: ['--pool-workers', '3', '--pool-workers', '5'] };
+    expect(() => applyStartupField(duplicated, field('--pool-workers'), '4')).toThrow('重复');
+    const edited = replaceStartupArgument(duplicated, startupArgumentRows(duplicated)[1]!, []);
+    expect(applyStartupField(edited, field('--pool-workers'), '4').args).toEqual(['--pool-workers', '4']);
+  });
+  it('rejects missing known operands and malformed args without rejecting new custom switches', () => {
+    for (const args of [['--batch'], ['--native', '--stats'], ['--control-vector-layer-range', '4'], ['--control-vector-layer-range', '4', '--stats'], ['--pool-workers', '']]) {
+      expect(() => validateStartupConfiguration({ args })).toThrow();
+    }
+    expect(() => validateStartupConfiguration({ args: ['--future-switch', '--future-pair', 'value'] })).not.toThrow();
+    for (const raw of ['[]', 'null', '{"args":[1]}', '{"args":"--stats"}']) expect(() => parseStartupConfiguration(raw)).toThrow();
+  });
+  it('checks verified numeric ranges and keeps main CPU threads distinct from vision threads', () => {
+    expect(applyStartupField({}, field('--pool-workers'), '0')).toEqual({ args: ['--pool-workers', '0'] });
+    expect(applyStartupField({ threads: 8 }, field('vision.threads'), '4')).toEqual({ threads: 8, vision: { threads: 4 } });
+    for (const [key, value] of [['--pool-workers', '-1'], ['vision.threads', '0'], ['--resident-budget-gib', '0'], ['sampling.top_p', '0'], ['sampling.top_k', '65'], ['parallel', '1.5']]) expect(() => applyStartupField(complete, field(key!), value!)).toThrow();
+    expect(STARTUP_ENGINE_FLAGS['--threads']).toBeUndefined();
+    expect(STARTUP_ENGINE_FLAGS['--control-vector-layer-range']).toBe(2);
+    for (const spec of STARTUP_TUNING_FIELDS.filter(item => item.target === 'arg')) expect(STARTUP_ENGINE_FLAGS[spec.key]).toBe(spec.kind === 'boolean' ? 0 : 1);
+  });
+  it('can repair a missing known operand without swallowing the next unrelated flag', () => {
+    const broken = { args: ['--max-context', '--kv', 'int8', '--stats'] };
+    const repaired = applyStartupField(broken, field('--max-context'), '8192');
+    expect(repaired.args).toEqual(['--max-context', '8192', '--kv', 'int8', '--stats']);
+    expect(() => validateStartupConfiguration(repaired)).not.toThrow();
   });
 });

@@ -1,0 +1,230 @@
+{
+  "capturedOn": "2026-10-11",
+  "appVersion": "0.1.0-beta.1",
+  "build": "current working tree",
+  "source": "Real App components with isolated in-memory RPC documentation examples",
+  "scope": "No real inference, installation, update or performance measurement",
+  "cover": "runtime.zh.webp",
+  "screens": [
+    {
+      "file": "overview.zh.webp",
+      "screen": "overview",
+      "language": "zh",
+      "theme": "light",
+      "width": 1633,
+      "height": 1244,
+      "sourceFormat": "JPEG",
+      "bytes": 159844,
+      "sha256": "a024d33ad7b55d514c8963b0ee53709a71e1d0cd93b89ab1db6febbdea4273e9"
+    },
+    {
+      "file": "runtime.zh.webp",
+      "screen": "runtime",
+      "language": "zh",
+      "theme": "light",
+      "width": 1633,
+      "height": 1244,
+      "sourceFormat": "JPEG",
+      "bytes": 120040,
+      "sha256": "dc1f5748f995f66362bc868191e625bcf41b376c0710a79fabb03751442654fe"
+    },
+    {
+      "file": "models.zh.webp",
+      "screen": "models",
+      "language": "zh",
+      "theme": "light",
+      "width": 1633,
+      "height": 1244,
+      "sourceFormat": "JPEG",
+      "bytes": 227326,
+      "sha256": "b72940dce3878749ede0ff9169811f00ef1c8f2024843e4812e98e8a90e89c1b"
+    },
+    {
+      "file": "config.zh.webp",
+      "screen": "config",
+      "language": "zh",
+      "theme": "light",
+      "width": 1633,
+      "height": 1244,
+      "sourceFormat": "JPEG",
+      "bytes": 169868,
+      "sha256": "69014b02166b5d4d9f40f90181ff8f12ab3129edcb376cfbc144098c0dd2c233"
+    },
+    {
+      "file": "chat.zh.webp",
+      "screen": "chat",
+      "language": "zh",
+      "theme": "light",
+      "width": 1633,
+      "height": 1244,
+      "sourceFormat": "JPEG",
+      "bytes": 181626,
+      "sha256": "f01359aed951042c322403caa258a88b90ebcb922ba9b9e27f9af5de015f968a"
+    },
+    {
+      "file": "usage.zh.webp",
+      "screen": "usage",
+      "language": "zh",
+      "theme": "light",
+      "width": 1633,
+      "height": 1244,
+      "sourceFormat": "JPEG",
+      "bytes": 249906,
+      "sha256": "6f46bde94ee0e8d0be669c2f8fc73a2b1b101e968864b0e06f7ff11badd709cf"
+    },
+    {
+      "file": "tuning.zh.webp",
+      "screen": "tuning",
+      "language": "zh",
+      "theme": "light",
+      "width": 1633,
+      "height": 1244,
+      "sourceFormat": "JPEG",
+      "bytes": 140674,
+      "sha256": "14b9af708d1ecec38b18964797a5e8c5b1760474417485db31346b6b83893f97"
+    },
+    {
+      "file": "monitor.zh.webp",
+      "screen": "monitor",
+      "language": "zh",
+      "theme": "light",
+      "width": 1633,
+      "height": 1244,
+      "sourceFormat": "JPEG",
+      "bytes": 215462,
+      "sha256": "1ce5f3fbb150511e59d7b3bbcf5c8d1ce7dfb3b21cc8a0816665798b89666f10"
+    },
+    {
+      "file": "settings.zh.webp",
+      "screen": "settings",
+      "language": "zh",
+      "theme": "light",
+      "width": 1633,
+      "height": 1244,
+      "sourceFormat": "JPEG",
+      "bytes": 143796,
+      "sha256": "7615533c606a6b8ae1687672ffd733cd43b1d868346c3503d628f457e9f15d19"
+    },
+    {
+      "file": "about.zh.webp",
+      "screen": "about",
+      "language": "zh",
+      "theme": "light",
+      "width": 1633,
+      "height": 1244,
+      "sourceFormat": "JPEG",
+      "bytes": 143206,
+      "sha256": "c2657d16ea011690dc685d7e9efc10d6c92fa406bdf46ab1100a4e08723ac137"
+    },
+    {
+      "file": "overview.en.webp",
+      "screen": "overview",
+      "language": "en",
+      "theme": "dark",
+      "width": 1633,
+      "height": 1244,
+      "sourceFormat": "JPEG",
+      "bytes": 185650,
+      "sha256": "2ea90dfec112071b8c8021e9a78dd8c63cffefb8a7bebf8279dac3709bd5b124"
+    },
+    {
+      "file": "runtime.en.webp",
+      "screen": "runtime",
+      "language": "en",
+      "theme": "dark",
+      "width": 1633,
+      "height": 1244,
+      "sourceFormat": "JPEG",
+      "bytes": 200912,
+      "sha256": "384670044e892cc5ef3bbc046a4e1d9d0208ad6610dc554690ab265c4037eb8f"
+    },
+    {
+      "file": "models.en.webp",
+      "screen": "models",
+      "language": "en",
+      "theme": "dark",
+      "width": 1633,
+      "height": 1244,
+      "sourceFormat": "JPEG",
+      "bytes": 268886,
+      "sha256": "5388dccec2aef331fea648f1eaca8998d857747f72a6f973b4ec541660dd6b33"
+    },
+    {
+      "file": "config.en.webp",
+      "screen": "config",
+      "language": "en",
+      "theme": "dark",
+      "width": 1633,
+      "height": 1244,
+      "sourceFormat": "JPEG",
+      "bytes": 246878,
+      "sha256": "7de43a4b4e0dd83bb8698aee377ace0f8fad35fdbd42200281675dcc58a50578"
+    },
+    {
+      "file": "chat.en.webp",
+      "screen": "chat",
+      "language": "en",
+      "theme": "dark",
+      "width": 1633,
+      "height": 1244,
+      "sourceFormat": "JPEG",
+      "bytes": 221670,
+      "sha256": "45c654104e093f315310837b3e65965005fa1e0a9e8c9673b7931fd3445d7c6c"
+    },
+    {
+      "file": "usage.en.webp",
+      "screen": "usage",
+      "language": "en",
+      "theme": "dark",
+      "width": 1633,
+      "height": 1244,
+      "sourceFormat": "JPEG",
+      "bytes": 271412,
+      "sha256": "bf80596ce79a4241fa1c6d5ba0981362fb45afbf46c25798d2ecd72b9c48167a"
+    },
+    {
+      "file": "tuning.en.webp",
+      "screen": "tuning",
+      "language": "en",
+      "theme": "dark",
+      "width": 1633,
+      "height": 1244,
+      "sourceFormat": "JPEG",
+      "bytes": 173892,
+      "sha256": "bb5dbde6e455f5f85bd72f280958117988f9779ad897233629659d2d16a00d66"
+    },
+    {
+      "file": "monitor.en.webp",
+      "screen": "monitor",
+      "language": "en",
+      "theme": "dark",
+      "width": 1633,
+      "height": 1244,
+      "sourceFormat": "JPEG",
+      "bytes": 240178,
+      "sha256": "bcf6d4cde30e3e5e13f3dc4a2d03789ea70f2570644bd8f5754056bea6cd23f5"
+    },
+    {
+      "file": "settings.en.webp",
+      "screen": "settings",
+      "language": "en",
+      "theme": "dark",
+      "width": 1633,
+      "height": 1244,
+      "sourceFormat": "JPEG",
+      "bytes": 187552,
+      "sha256": "e584e1aa1190d3593957eb18919cdab51e5d35f1a14c6797de1fc29654b229e1"
+    },
+    {
+      "file": "about.en.webp",
+      "screen": "about",
+      "language": "en",
+      "theme": "dark",
+      "width": 1633,
+      "height": 1244,
+      "sourceFormat": "JPEG",
+      "bytes": 174388,
+      "sha256": "3e82dabcdf23aa84a9849a9c933339e4d045c05138f663bed6827c64b913c002"
+    }
+  ]
+}

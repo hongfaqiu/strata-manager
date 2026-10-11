@@ -46,6 +46,12 @@ Core 的 analytics 测试覆盖事务重放/重启去重、未知值与成功率
 
 ## 本轮实测调优实现
 
+完整场景实现另见 [中文调优指南](TUNING.md) / [English tuning guide](TUNING.en.md)：新增按日常聊天、编程 Agent、长文分析选择的有限任务、独立重启候选、A/B/A、启动参数核验、资源门槛和原配置恢复 journal。普通生成耗时与包含计数校准的任务总耗时分别记录，Agent 保留含工具处理的总耗时；完整推荐按实测漂移复验，不套固定百分比。未知资源／有效状态不当作通过；旧报告和短诊断不可新应用，历史已应用报告仍能恢复。
+
+workload 的 **13 项隔离真实 HTTP 合同通过（0 ignored，6.91 秒）**，覆盖工具 SSE ID/index 与多轮参数、实际 Token 计数后的长文冷／热／会话、截断及语义拒绝、条件视觉、自身流取消、资源单位及归属、报告不含正文。实际 App + 内存 RPC 的初轮中英 × 600/1440 浏览器 **48/48 用例通过**，文档／页面溢出和错误为零；资源推荐门槛最后接线仍在定向复测。后端重启、故障和 journal 的最终定向及 workspace 结果在完成后追加。这里没有启动真实大模型、GPU 或默认本机服务，不据此声称完整 P3／生产安装验收通过。
+
+以下保留较早的短请求实现证据，不能替代新版完整任务验收：
+
 `cargo test -p strata-runtime-core tuning::tests -- --nocapture --test-threads=1` **10 passed**；对应 Core Clippy 通过。包含实际回环 SSE 分块/UTF-8/no-DONE 拒绝、受管 HTTP 夹具 A/B/A、候选采用后参数写入及重启/load/probe、恢复原配置、较慢候选不推荐、加载失败回滚、只取消自身流、维护 gate 清理、服务退出时收尾、不碰未知 PID，以及配置 CLI/SHA256 恢复。
 
 `request-aba-v1` 对有限请求级候选执行基线 A → 候选 B → 恢复 A；distinctPrompt 使用新 nonce，repeatedPrefix 立即重复同一提示，记录实际缓存。推荐要求完整且一致的确定性输出，收益超过该轮 A 漂移。输出 hash 一致只证明一致性，不证明语义质量；这些探针不测试冷加载、会话恢复、完整 Agent、视觉或长上下文。
@@ -101,7 +107,7 @@ Tauri 窗口启动尺寸按显示器工作区和缩放计算，常见分辨率�
 - Windows 干净环境：无 Git、无 Python 的自动准备完整安装；已有安装检测/导入及自动就绪；新模型 setup、失败重试与取消。
 - 最新 Tauri 界面的自动引导、官方功能、中英布局、窗口/托盘行为和真实截图。
 - 真实 GPU：新架构聊天/附件/MCP、背景持续统计、重连/切换/恢复和调优完整闭环；不能只引用旧原型证明本轮通过。
-- 按已接受方案完成完整场景调优：编程 Agent 和长文分析、worker/异步换入/prefill/reserve 分阶段重启候选、工具参数及续答/视觉/长文检索质量检查、冷输入/热前缀/切换会话/持续生成/完整 Agent 总耗时分别评分。当前短 Chat/Code/Chinese 和请求级 PCIe/MTP 比较是已实现子集；它们的通过不代表计划第 3、4、6 项或 P3 已整体完成。
+- 按已接受方案验收完整场景调优：编程 Agent 和长文分析、worker/异步换入/prefill/reserve 分阶段重启候选、工具参数及续答/视觉/长文检索质量检查、冷输入/热前缀/切换会话/持续生成/完整 Agent 总耗时分别评分。新版实现与隔离合同见上方；真实 GPU、目标上下文持续稳定性及最终安装包中的完整闭环尚未验收，不能据此称 P3 已整体通过。
 - 注销并重新登录后的后台自启动；正式签名更新下载、验签、安装、后台接续与失败恢复。
 - Linux 实机 IPC、进程树、崩溃、自动准备、安装/卸载、自启动及 GPU；缺项继续在 Release 标明。
 - 发布隐私检查、来源/许可证、版本一致、全部 Release 资产与 `latest.json` 对应关系。
@@ -211,3 +217,17 @@ Linux 新 guardian 在真实 owner 预先持有 pidfd，跟随新进程组并监
 Linux MCP stdio 新增同步 wrapper，在 Tokio/数据库初始化之前接收真实 Strata 父进程的 pidfd 和独立 ACK 管道。内核 fdinfo 必须匹配当前父进程；guardian 附着新工具组，ACK 前关闭继承管道，工具 stdin/stdout 原样保留，TERM 优雅退出时间沿用官方行为。固定上游 MCP 源码 hash 的独立适配由应用自有 bootstrap 导入，不修改用户仓库，不回退到无守护启动。未知版本或不支持 pidfd 时该 stdio 工具明确不可用；HTTP MCP 保持原逻辑。Python 拒绝/导入/固定 hash 检查 **4 passed / 0 skipped**，Windows bootstrap 幂等检查 **1 passed**。独立只读复核未发现阻断项，工具未提供可确认的子 Agent 实际模型或推理档位。
 
 新增 4 项 Linux 集成测试覆盖官方多字节 stdio、自然退出、TERM grace、忽略 TERM 的硬退出、真实 Strata owner SIGKILL、TCP 孙进程结束、外部进程保留、错误/foreign pidfd 拒绝。它们须由后续 Linux CI 实际运行；本机 Windows 检查不替代这些证据。普通继承进程组的 MCP 后代属于设计范围；自行再调用 setsid/setpgid 脱组的任意第三方工具需要额外 cgroup 机制，尚未实现，不能宣称任意工具全部子树均已受控。
+
+
+## 官方能力接入（2026-10-11）
+
+本轮接入 Swift 1.5 IQ3_S、下载源与 GPU/backend 选择、GGUF 检查、运行中显存调整、固定文档前缀、实验性引擎会话文件、JSON/Schema 与高级采样、官方 MCP 客户端配置和持久管理交接、逐 slot 状态、Prefill，以及专家适应策略 A/B/A 候选。入口和能力条件见 [用户指南](USER_GUIDE.md#新增的官方能力接入)。
+
+- `pnpm check`：类型检查、生产前端构建通过；core 126、desktop 55、scripts 8，共 189 项自动化测试通过。构建保留已有的大 chunk 与 Tauri API 静态/动态导入提示。
+- `apps/desktop/tests/optimization/verify-official-features.mjs`：11/11 浏览器场景通过。真实 App 验证下载源/GPU 传参、运行配置面板、JSON/Unicode 前缀、运行缓存浅于已保存配置时拒绝前缀、能力读取中立即取消且不迟发推理。`verify.mjs` 原回归 21/21 通过，原断言未改；总计 32 个场景。结果和截图在 `output/playwright/official-features/` 与 `output/optimization-verification/browser-results.json`。
+- 新增运行时操作 scoped：HTTP 9/9、core runtime operations 9/9、开发代理 2/2；安装/检查 scoped 与环境隔离 8 项通过。官方 MCP probe 2/2、原持久归属合同 4/4、实际启动参数证据 3/3、进程树 1/1、管理脚本识别 2/2 通过。另以 Node 隔离 HTTP 验证 JSON/Schema SSE、验证失败传播及非 SSE 响应拒绝，4/4 通过。
+- 最终原生 workspace：371 项通过、0 失败、12 项按设计 ignored（实机与专用子进程夹具）；其中 runtime-core 290、Tauri 65、IPC 6、后台生命周期 3、更新验签 7 项通过。日志为 `output/optimization-verification/native-workspace-final.log`，运行前已构建最新 debug Supervisor；执行时使用单线程，避免不同 Python fixture 的进程创建/退出扰动完整进程清单。最终 `cargo check --workspace --all-targets` 与 `git diff --check` 均通过。
+
+归属边界使用真实 Windows Job 子树、同安装的 MCP/setup 进程、监听端口与持久 SQLite 记录。交接与 Tauri 本地文件操作共用跨进程锁；本机 IO 的 RPC 核验同时绑定传入及登记配置路径与管理归属。固定前缀读取当前受管原生引擎 argv，不用尚未应用的保存配置作为缓存深度证据。未公布的专家策略只标明已核验启动请求，不声称有效值遥测。
+
+测试使用临时数据目录、内存 UI IPC 和 CPU/HTTP 子进程；`STRATA_TEST_ROOT=D:/AI/Strata` 只提供只读官方代码给 CPU fixture，未运行真实模型或更改用户数据库/服务。真实 GPU 性能、Windows 引擎会话文件兼容性、Linux 实机和重新发布的安装包未验收。会话存档保持实验性标记。

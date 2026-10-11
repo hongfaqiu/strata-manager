@@ -1,0 +1,16 @@
+.mcp-integration-panel { display: flex; flex-direction: column; gap: var(--st-s-3, 12px); }
+.mcp-integration-panel p { margin: 0; line-height: 1.6; }
+.mcp-integration-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.mcp-integration-actions { display: flex; align-items: center; gap: var(--st-s-3, 12px); flex-wrap: wrap; }
+.mcp-integration-tools { display: flex; gap: 6px; flex-wrap: wrap; }
+.mcp-integration-tools .chip { font-family: var(--st-font-mono); font-size: var(--st-fs-xs); }
+.mcp-integration-panel .mcp-integration-code { box-sizing: border-box; width: 100%; height: auto; min-height: 12rem; resize: vertical; font-family: var(--st-font-mono); }
+.mcp-integration-error { color: var(--st-danger, #d55656); font-size: var(--st-fs-sm); overflow-wrap: anywhere; }
+.mcp-integration-status { font-size: var(--st-fs-sm); color: var(--st-ink-muted); }
+.mcp-integration-ownership { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; border-top: 1px solid var(--st-line-soft); }
+.mcp-integration-help-content { display: flex; flex-direction: column; gap: 14px; font-size: var(--st-fs-sm); line-height: 1.7; }
+.mcp-integration-help-content p, .mcp-integration-help-content h3, .mcp-integration-help-content pre { margin: 0; }
+.mcp-integration-help-content h3 { font-size: var(--st-fs-sm); }
+.mcp-integration-help-content pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: inherit; }
+.mcp-integration-diagnostic { margin-left: 10px; padding: 2px 0; border: 0; background: none; color: var(--st-accent-text); font-size: inherit; cursor: pointer; }
+.mcp-integration-diagnostic:hover { text-decoration: underline; }

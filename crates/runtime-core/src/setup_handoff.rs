@@ -531,6 +531,9 @@ fn find_and_register(
         config_path: path.to_string_lossy().into(),
         model_path: String::new(),
         model_bytes: None,
+        model_group_key: None,
+        config_modified_at: None,
+        config: None,
         detected_port: None,
         running: None,
         reason: None,
@@ -711,6 +714,7 @@ sys.exit(spec.get('exit',0))
             program: fixture.intent.profile.python_path.clone(),
             args: vec!["-u".into(), "setup.py".into()],
             cwd: fixture.intent.profile.install_dir.clone().into(),
+            env: Default::default(),
         };
         crate::processes::launch_setup_task(
             fixture.state.clone(),
@@ -828,6 +832,7 @@ sys.exit(spec.get('exit',0))
             program: fixture.intent.profile.python_path.clone(),
             args: vec!["-u".into(), "setup.py".into()],
             cwd: fixture.intent.profile.install_dir.clone().into(),
+            env: Default::default(),
         };
         assert!(crate::processes::launch_setup_task(
             fixture.state.clone(),

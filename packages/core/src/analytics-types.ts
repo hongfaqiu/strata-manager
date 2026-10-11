@@ -21,11 +21,14 @@ export interface ApiHttpTotals {
 export interface ApiInferenceTotals {
   runs: number; inputTokens: number | null; outputTokens: number | null; cacheReadTokens: number | null;
   toolCalls: number; inputTokenSamples: number; decodeSpeedSamples: number;
+  prefillTokens: number | null; prefillS: number | null; decodeS: number | null;
+  prefillSpeedSamples: number; cacheHitRate: number | null; cacheRateSamples: number;
+  expertCacheHitRate: number | null; expertCacheSamples: number;
 }
 export interface ApiUsageGroup { route: ApiRoute; clientId: string | null; requests: number; succeeded: number }
 export interface ApiUsageSummary {
   startMs: number; endMs: number; http: ApiHttpTotals; inference: ApiInferenceTotals;
-  groups: ApiUsageGroup[]; ttftS: ApiDistribution; durationS: ApiDistribution; decodeTokS: ApiDistribution;
+  groups: ApiUsageGroup[]; ttftS: ApiDistribution; durationS: ApiDistribution; decodeTokS: ApiDistribution; prefillTokS: ApiDistribution;
   retentionDays: number; successRateDefinition: string; tokenDefinition: string;
 }
 export interface ApiUsageRequest {
@@ -33,6 +36,9 @@ export interface ApiUsageRequest {
   route: ApiRoute; clientId: string | null; outcome: ApiOutcome; httpStatus: number | null;
   stream: boolean | null; inputTokens: number | null; outputTokens: number | null;
   cacheReadTokens: number | null; firstTokenS: number | null; durationS: number | null;
+  /** Mean of measured engine runs; cache ratio is token-weighted over known runs. */
+  prefillTokS: number | null; decodeTokS: number | null; cacheHitRate: number | null;
+  expertCacheHitRate: number | null;
   errorKind: string | null; mcpToolCalls: number; inferenceRuns: number;
   /** Older observer records have no verified model identity. */
   modelId: string | null;
@@ -47,8 +53,13 @@ export interface ApiCsvExport {
   path: string; rows: number; rowLimit: number; snapshotRowId: number;
 }
 export interface ApiTrendBucket {
-  startMs: number; requests: number; succeeded: number; failed: number; cancelled: number;
+  startMs: number; requests: number; succeeded: number; failed: number; cancelled: number; interrupted: number; pending: number;
   inputTokens: number | null; outputTokens: number | null;
+  inputTokenSamples: number; outputTokenSamples: number;
+  /** Mean over known HTTP timings or engine-run speeds, never wall-time-derived. */
+  firstTokenS: number | null; firstTokenSamples: number; durationS: number | null; durationSamples: number;
+  prefillTokS: number | null; prefillSamples: number; decodeTokS: number | null; decodeSamples: number;
+  cacheHitRate: number | null; cacheRateSamples: number; expertCacheHitRate: number | null; expertCacheSamples: number;
 }
 export interface ApiUsageTrends { bucketMs: number; buckets: ApiTrendBucket[] }
 export interface ApiObserverSession {
@@ -67,6 +78,7 @@ export interface ApiObserverStatus {
 export interface ApiAnalyticsCoverage {
   sessions: ApiObserverSession[]; gaps: ApiCollectionGap[]; observerStatuses: ApiObserverStatus[];
   journalPresent: boolean; metadataOnly: boolean; dataAvailableFromMs: number | null;
+  journalSyncFailed?: boolean;
   collectionScope: string[]; historyRetentionDays: number; journalRetentionDays: number; journalMaxEvents: number;
 }
 export type ApiAnalyticsData = ApiUsageSummary | ApiUsageRequest[] | ApiUsageTrends | ApiRequestPage | ApiRequestOptions | ApiCsvExport;

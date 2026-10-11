@@ -17,6 +17,9 @@ export interface LocalCandidate {
   configPath: string;
   modelPath: string;
   modelBytes: number | null;
+  configModifiedAt?: number;
+  config?: JsonObject;
+  modelGroupKey?: string;
   detectedPort?: number;
   running?: boolean;
   reason?: string;
@@ -27,6 +30,8 @@ export interface LocalCandidate {
 }
 
 export interface SupervisorStatus {
+  /** Missing on older supervisors; never infer this from protocol or package version. */
+  capabilities?: { fullScenarioTuning?: number };
   running: boolean;
   pid?: number;
   protocolVersion: number;
@@ -79,20 +84,41 @@ export interface AppSettings {
   language: 'zh-CN' | 'en';
   theme: 'dark' | 'light' | 'system';
   closeToTray: boolean;
+  skipExitConfirmation?: boolean;
   pollInterval: number;
   autoCheckUpdates?: boolean;
 }
+
+export interface LocalInstallationDetails {
+  profileId: string;
+  /** Successful explicit service activation, in Unix milliseconds; older history is unavailable. */
+  lastActivatedAt?: number | null;
+  originalConfigPath?: string | null;
+  configModifiedAt?: number | null;
+  config?: JsonObject | null;
+}
+
+export interface ModelDeletionFile { path: string; sizeBytes: number; modifiedAt: number }
+export interface ModelDeletionPlan { files: ModelDeletionFile[]; totalBytes: number; blockedReason?: string | null }
+export interface ModelDeletionSummary { removedFiles: ModelDeletionFile[]; removedBytes: number }
 
 export interface StartupStatus {
   enabled: boolean;
   supported: boolean;
   backgroundOnly: boolean;
+  configured?: boolean;
+  healthy?: boolean;
+  registeredVersion?: string;
+  reasonCode?: string;
+  executableHash?: string;
   reason?: string;
 }
 
 export interface BackgroundPolicy {
   mode: 'lazy' | 'alwaysReady';
   autoRecover: boolean;
+  /** Older supervisors omit this field; current supervisors default to 15. */
+  idleUnloadMinutes?: number;
 }
 
 export interface Attachment {

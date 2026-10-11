@@ -1,13 +1,14 @@
 {
   "name": "@strata-manager/desktop",
-  "version": "0.1.0-beta.1",
+  "version": "0.1.3-test.4",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "test": "node --test src/appUpdateController.test.mjs",
+    "test": "node --test src/appUpdateController.test.mjs src/updateReleaseNotes.test.mjs src/pages/ModelDeletionDialog.test.mjs src/pages/ModelConfigurationDropdown.test.mjs src/pages/RuntimeUpdateDialog.test.mjs src/pages/overviewStartup.test.mjs",
+    "test:browser": "node tests/optimization/verify.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

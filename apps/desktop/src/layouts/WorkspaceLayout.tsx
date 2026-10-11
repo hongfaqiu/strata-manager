@@ -9,6 +9,6 @@ export function WorkspaceStatusBar({status,activity,actions}:{status?:ReactNode;
   const {t}=useTranslation();
   return <footer className="workspace-statusbar"><span className="workspace-statusbar-state">{status??t('desktopLocalWorkspace')}</span>{activity&&<span className="workspace-statusbar-activity" role="status" aria-live="polite">{activity}</span>}{actions&&<div className="workspace-statusbar-actions">{actions}</div>}</footer>;
 }
-export function WorkspaceLayout({variant='official',header,children,statusBar}:{variant?:'official'|'api';header:ReactNode;children:ReactNode;statusBar?:ReactNode}) {
+export function WorkspaceLayout({variant='official',header,children,statusBar}:{variant?:'official'|'api';header?:ReactNode;children:ReactNode;statusBar?:ReactNode}) {
   return <div className={variant==='api'?'manager-workspace api-monitor-page':'manager-workspace official-app official-surface'}>{header}<main className={variant==='api'?undefined:'official-main'}>{children}</main>{statusBar??<WorkspaceStatusBar/>}</div>;
 }

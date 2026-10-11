@@ -9,6 +9,9 @@ use std::{
 use strata_local_ipc::call;
 
 fn launch(data: &Path) -> Child {
+    launch_mode(data, false)
+}
+fn launch_mode(data: &Path, defer_restore: bool) -> Child {
     let mut command = Command::new(env!("CARGO_BIN_EXE_strata-supervisor"));
     command
         .arg("--data-dir")
@@ -16,8 +19,122 @@ fn launch(data: &Path) -> Child {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
+    if defer_restore {
+        command.arg("--defer-restore");
+    }
     strata_runtime_core::processes::hidden(&mut command);
     command.spawn().unwrap()
+}
+async fn wait_loaded(data: &Path, profile: &Value) {
+    for _ in 0..200 {
+        if let Ok(health) = call(data, "strata_request", json!({"profile":profile,"path":"/health","method":"GET"})).await {
+            if health["loaded"] == true
+                && call(data, "store_get", json!({"key":"supervisorUpgradeRecoveryLoad"})).await.unwrap().is_null()
+            {
+                return;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!("explicit upgrade did not restore the isolated loaded model");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cold_start_keeps_history_stopped_and_explicit_upgrade_restores_loaded_service() {
+    let temp = tempfile::tempdir().unwrap();
+    let data = temp.path().join("data");
+    let runtime = temp.path().join("runtime");
+    fixture(&runtime);
+    // This isolated server implements the observer admission metadata required
+    // by the real upgrade drain; no actual model or user service is involved.
+    let server = runtime.join("serve/server.py");
+    let source = fs::read_to_string(&server).unwrap();
+    fs::write(&server, source.replace(
+        "ThreadingHTTPServer((args.host,args.port),Handler).serve_forever()",
+        r#"
+import os,pathlib,sqlite3,time
+directory=pathlib.Path(os.environ['STRATA_MANAGER_ANALYTICS_DIR']);directory.mkdir(parents=True,exist_ok=True)
+service_id=os.environ['STRATA_MANAGER_SERVICE_ID']
+db=sqlite3.connect(directory/'journal.sqlite3')
+db.execute('CREATE TABLE IF NOT EXISTS active_requests(request_id TEXT PRIMARY KEY,service_id TEXT NOT NULL)');db.commit();db.close()
+status={'schemaVersion':1,'serviceId':service_id,'pid':os.getpid(),'updatedAtMs':int(time.time()*1000),'supported':True,'observerActive':True,'journalWriteFailed':False,'error':None}
+path=directory/('status-'+service_id+'.json');temporary=path.with_suffix('.tmp');temporary.write_text(json.dumps(status));temporary.replace(path)
+ThreadingHTTPServer((args.host,args.port),Handler).serve_forever()
+"#,
+    )).unwrap();
+    let mut daemon = DaemonGuard { child: Some(launch(&data)) };
+    ready(&data).await;
+    let candidates = call(&data, "discover_local", json!({"directories":[runtime]})).await.unwrap();
+    let candidate = candidates.as_array().unwrap().iter().find(|candidate| {
+        dunce::canonicalize(candidate["configPath"].as_str().unwrap()).unwrap()
+            == dunce::canonicalize(runtime.join("strata-fixture.json")).unwrap()
+    }).unwrap();
+    let profile = call(&data, "import_local", json!({"candidate":candidate})).await.unwrap();
+    let id = profile["id"].as_str().unwrap();
+    for (key, value) in [
+        ("activeLocalInstallation", json!(id)),
+        ("localServiceDesired", json!(true)),
+        ("backgroundPolicy", json!({"mode":"alwaysReady","autoRecover":true,"idleUnloadMinutes":15})),
+    ] {
+        call(&data, "store_set", json!({"key":key,"value":value})).await.unwrap();
+    }
+    call(&data, "shutdown_supervisor", json!({})).await.unwrap();
+    wait_exit(daemon.child.as_mut().unwrap()).await;
+    daemon.child = Some(launch(&data));
+    ready(&data).await;
+    tokio::time::sleep(Duration::from_millis(2400)).await;
+    assert_eq!(ready(&data).await["activeServices"], 0, "saved history must not start a service, even under alwaysReady");
+    assert!(std::net::TcpStream::connect_timeout(&url_origin(&profile), Duration::from_millis(100)).is_err());
+    assert!(!data.join("observer-v1").exists(), "cold startup installed a model observer");
+    call(&data, "set_background_policy", json!({"mode":"alwaysReady","autoRecover":true,"idleUnloadMinutes":15})).await.unwrap();
+    assert_eq!(ready(&data).await["activeServices"], 0, "changing preload policy must not enable a stopped model");
+
+    call(&data, "shutdown_supervisor", json!({"forUpdate":true})).await.unwrap();
+    wait_exit(daemon.child.as_mut().unwrap()).await;
+    daemon.child = Some(launch_mode(&data, true));
+    ready(&data).await;
+    assert_eq!(call(&data, "store_get", json!({"key":"supervisorUpgradeRecoveryLoad"})).await.unwrap()["restore"], false);
+    call(&data, "resume_supervisor", json!({})).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(2400)).await;
+    assert_eq!(ready(&data).await["activeServices"], 0, "upgrading a stopped selection must not enable it");
+    assert!(std::net::TcpStream::connect_timeout(&url_origin(&profile), Duration::from_millis(100)).is_err());
+    assert!(!data.join("observer-v1").exists());
+
+    call(&data, "ensure_local_service", json!({"profileId":id})).await.unwrap();
+    wait_loaded(&data, &profile).await;
+    call(&data, "set_background_policy", json!({"mode":"lazy","autoRecover":true,"idleUnloadMinutes":15})).await.unwrap();
+    call(&data, "shutdown_supervisor", json!({"forUpdate":true})).await.unwrap();
+    wait_exit(daemon.child.as_mut().unwrap()).await;
+    daemon.child = Some(launch_mode(&data, true));
+    assert_eq!(ready(&data).await["recoveryDeferred"], true);
+    tokio::time::sleep(Duration::from_millis(2400)).await;
+    assert_eq!(ready(&data).await["activeServices"], 0, "registry handoff must still defer service restoration");
+    call(&data, "resume_supervisor", json!({})).await.unwrap();
+    wait_loaded(&data, &profile).await;
+    assert_eq!(call(&data, "store_get", json!({"key":"supervisorUpgradeRecoveryLoad"})).await.unwrap(), Value::Null);
+
+    // Rollback launches the previous package normally, without --defer-restore.
+    call(&data, "shutdown_supervisor", json!({"forUpdate":true})).await.unwrap();
+    wait_exit(daemon.child.as_mut().unwrap()).await;
+    daemon.child = Some(launch(&data));
+    ready(&data).await;
+    wait_loaded(&data, &profile).await;
+    assert_eq!(ready(&data).await["activeServices"], 1);
+    // A legacy snapshot without actual running evidence must stay stopped.
+    call(&data, "set_background_policy", json!({"mode":"alwaysReady","autoRecover":true,"idleUnloadMinutes":15})).await.unwrap();
+    call(&data, "shutdown_supervisor", json!({"forUpdate":true})).await.unwrap();
+    wait_exit(daemon.child.as_mut().unwrap()).await;
+    daemon.child = Some(launch_mode(&data, true));
+    ready(&data).await;
+    call(&data, "store_set", json!({"key":"supervisorUpgradeRecoveryLoad","value":null})).await.unwrap();
+    call(&data, "resume_supervisor", json!({})).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(2400)).await;
+    assert_eq!(ready(&data).await["activeServices"], 0, "a legacy snapshot without running evidence must not enable its saved selection");
+    assert!(std::net::TcpStream::connect_timeout(&url_origin(&profile), Duration::from_millis(100)).is_err());
+    call(&data, "ensure_local_service", json!({"profileId":id})).await.unwrap();
+    wait_loaded(&data, &profile).await;
+    call(&data, "shutdown_supervisor", json!({})).await.unwrap();
+    wait_exit(daemon.child.as_mut().unwrap()).await;
 }
 async fn ready(data: &Path) -> Value {
     for _ in 0..100 {
@@ -311,7 +428,7 @@ async fn real_background_process_survives_client_disconnect_and_reconnects_with_
         call(&data, "get_background_policy", json!({}))
             .await
             .unwrap(),
-        json!({"mode":"lazy","autoRecover":true})
+        json!({"mode":"lazy","autoRecover":true,"idleUnloadMinutes":15})
     );
     call(&data, "prepare_app_update", json!({})).await.unwrap();
     assert_eq!(ready(&data).await["pid"].as_u64(), Some(owner));

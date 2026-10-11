@@ -36,3 +36,63 @@
 .install-runtime-details dd{margin:0;color:var(--st-ink-soft);overflow-wrap:anywhere;user-select:text}
 @container workspace (max-width:640px){.install-runtime-steps{gap:10px 16px}.install-runtime-steps li{font-size:11px}.install-runtime-log-line{grid-template-columns:60px minmax(0,1fr);gap:7px}.install-runtime-log-level{display:none}.install-runtime-details dl>div{grid-template-columns:100px minmax(0,1fr)}}
 @media(prefers-reduced-motion:reduce){.install-runtime .spin{animation:none}}
+.install-runtime-choice{margin-top:18px;display:grid;gap:8px;font-size:12px}
+.install-runtime-choice>label{color:var(--st-ink-muted)}
+.install-runtime-choice>select{width:100%;max-width:700px;border:1px solid var(--st-line);border-radius:6px;background:var(--st-surface);color:var(--st-ink);padding:9px 12px}
+.runtime-management{margin-top:22px}
+.runtime-management>.subtle,.runtime-management>.notice,.runtime-management>.actions,.runtime-management>details,.runtime-management>.runtime-version-grid,.runtime-management>.runtime-installed-list,.runtime-management>.runtime-update-progress{margin:14px 18px}
+.runtime-version-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.runtime-version-grid>div{display:flex;flex-direction:column;gap:8px;border:1px solid var(--st-line-soft);border-radius:7px;padding:12px}
+.runtime-version-grid span{color:var(--st-ink-muted);font-size:11px}
+.runtime-version-grid strong{font-size:14px;font-weight:600;line-height:1.6;overflow-wrap:anywhere}
+.runtime-release-link{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--st-accent-text);padding:7px 0}
+.runtime-installed-list{display:flex;flex-direction:column;gap:9px}
+.runtime-installed-item{display:flex;justify-content:space-between;gap:16px;align-items:center;padding:12px;border:1px solid var(--st-line-soft);border-radius:6px}
+.runtime-installed-item>div{display:flex;gap:7px;flex-wrap:wrap;min-width:0;font-size:12px}
+.runtime-installed-item strong{font-weight:600}
+.runtime-installed-item code,.runtime-installed-item small{width:100%;overflow-wrap:anywhere;color:var(--st-ink-muted);font-size:11px;line-height:1.6;user-select:text}
+.runtime-ready{color:var(--st-accent-text)}
+.runtime-repair{color:var(--st-warn-text)}
+.runtime-update-progress{display:flex;gap:10px;border:1px solid var(--st-line);padding:13px;border-radius:7px;font-size:12px;line-height:1.7}
+.runtime-update-progress>svg{flex:none;color:var(--st-accent-text);margin-top:3px}
+.runtime-update-progress pre{max-height:150px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-size:11px;color:var(--st-ink-muted);margin:8px 0 0}
+.runtime-release-notes{font-size:12px;line-height:1.8;max-height:420px;overflow:auto;user-select:text}
+.runtime-release-notes summary{cursor:pointer;font-weight:600;color:var(--st-ink-soft)}
+.runtime-release-notes h2{font-size:15px;margin:16px 0 8px}
+.runtime-release-notes h3{font-size:13px;margin:13px 0 6px}
+.runtime-release-notes p,.runtime-release-notes ul,.runtime-release-notes ol{margin:10px 0}
+.runtime-release-notes ul,.runtime-release-notes ol{padding-left:20px}
+.runtime-release-notes a{color:var(--st-accent-text)}
+.runtime-release-notes table{display:block;width:100%;overflow:auto;border-collapse:collapse;font-size:11px}
+.runtime-release-notes th,.runtime-release-notes td{border:1px solid var(--st-line);padding:6px 8px;text-align:left}
+@container workspace (max-width:640px){.runtime-version-grid{grid-template-columns:1fr}.runtime-installed-item{align-items:flex-start;flex-direction:column}.runtime-management>.runtime-version-grid,.runtime-management>.runtime-installed-list,.runtime-management>details{margin-left:12px;margin-right:12px}}
+.runtime-installed-summary{padding:16px 18px;margin-bottom:18px}
+.runtime-installed-summary>.panel-header{margin-bottom:12px}
+.runtime-summary-selection{display:flex;align-items:center;gap:18px;min-width:0}
+.runtime-summary-status{display:inline-flex;align-items:center;gap:5px;flex:none;font-size:12px;font-weight:600;white-space:nowrap}
+.runtime-summary-selection>div{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
+.runtime-selection-label{font-size:12px;color:var(--st-ink-muted);flex:none}
+.runtime-summary-selection .official-dropdown{flex:1;max-width:650px;min-width:0}
+.runtime-summary-selection .official-dropdown-trigger{height:36px;min-height:36px;font-size:12px;padding:0 11px;border-width:1px;border-radius:8px}
+.runtime-summary-facts{display:flex;align-items:baseline;gap:20px 30px;flex-wrap:wrap;margin:13px 0;font-size:12px;line-height:1.6}
+.runtime-summary-facts>div{display:flex;align-items:baseline;gap:10px;min-width:0}
+.runtime-summary-facts>div:first-child{flex:1;min-width:220px}
+.runtime-summary-facts dt{flex:none;color:var(--st-ink-muted)}
+.runtime-summary-facts dd{margin:0;min-width:0;overflow-wrap:anywhere;color:var(--st-ink-soft)}
+.runtime-summary-facts code{font-size:11px;user-select:text}
+.runtime-summary-actions{gap:7px}
+.runtime-summary-actions>button{height:34px;min-height:34px;font-size:12px;padding:0 12px;border-width:1px;border-radius:8px;box-shadow:none}
+.runtime-summary-task{display:flex;align-items:flex-start;gap:7px;color:var(--st-ink-soft);font-size:12px;line-height:1.6;padding:9px 0}
+.runtime-summary-task>svg{flex:none;margin-top:2px;color:var(--st-accent-text)}
+.runtime-repair-details{font-size:12px;line-height:1.7;padding:9px 11px;margin:12px 0;background:var(--st-warn-tint);color:var(--st-warn-text);border-radius:7px}
+.runtime-repair-details small{display:block;font-size:11px;margin-top:4px}
+.runtime-installed-summary>.install-runtime-error{margin:12px 0 0}
+.runtime-detecting{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--st-ink-muted);padding:20px 0}
+.has-runtime>.runtime-management{margin-top:0}
+.runtime-update-limit{border-left:2px solid var(--st-line);padding-left:10px}
+.runtime-package-selection{display:flex;align-items:center;gap:12px;margin:14px 18px;font-size:12px;color:var(--st-ink-muted)}
+.runtime-package-selection>.official-dropdown{flex:1;min-width:0;max-width:680px}
+.runtime-release-body{max-height:440px;overflow:auto;padding-right:12px;overscroll-behavior:contain}
+.runtime-update-result{margin:14px 18px;font-size:12px}
+.runtime-installed-summary>.panel-header>button{min-height:32px;font-size:12px;box-shadow:none}
+@container workspace (max-width:640px){.runtime-summary-selection{align-items:flex-start;flex-direction:column;gap:9px}.runtime-summary-selection>div{width:100%;flex-direction:column;align-items:flex-start;gap:6px}.runtime-summary-selection .official-dropdown{width:100%;max-width:100%}.runtime-summary-facts{gap:8px}.runtime-summary-facts>div{width:100%}}

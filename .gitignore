@@ -14,3 +14,22 @@ output/
 apps/desktop/src-tauri/gen/
 apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/binaries/*
+
+# Local model weights, persisted application state and signing credentials.
+*.gguf
+*.safetensors
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3-shm
+*.sqlite3-wal
+*.key
+*.pem
+*.p12
+*.pfx
+user-data/
+logs/

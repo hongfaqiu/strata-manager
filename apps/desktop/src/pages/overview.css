@@ -1,0 +1,47 @@
+.overview-page .overview-service{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:18px 24px;margin-bottom:0;min-width:0;padding:22px}
+.overview-service-main{display:flex;align-items:flex-start;gap:14px;min-width:0}
+.overview-service .hero-icon{width:48px;height:48px;flex:none;border-radius:var(--st-r-md)}
+.overview-service .hero-copy{min-width:0}
+.overview-service-title,.overview-service-model,.overview-service-endpoint{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;min-width:0}
+.overview-service-title h2{font-size:21px;line-height:1.35;margin:0;overflow-wrap:anywhere}
+.overview-service-title .badge{flex:none}
+.overview-service-model{margin-top:10px}
+.overview-service-model>span{font-size:12px;color:var(--st-ink-muted)}
+.overview-service-model>strong{font-size:13px;font-weight:500;overflow-wrap:anywhere;min-width:0}
+.overview-setup-hint{margin:10px 0 0;font-size:13px;line-height:1.7;color:var(--st-ink-muted);overflow-wrap:anywhere}
+.overview-service-endpoint time{font-size:12px;color:var(--st-ink-muted)}
+.overview-service-endpoint{margin-top:10px;gap:8px 12px}
+.overview-service-endpoint code{font-size:12px;overflow-wrap:anywhere;min-width:0}
+.overview-service-endpoint button{min-height:32px;padding:5px 9px;font-size:12px;flex:none;border-color:transparent;background:var(--st-surface-2);color:var(--st-ink-muted)}
+.overview-service-endpoint button:hover:not(:disabled){color:var(--st-ink);border-color:var(--st-line)}
+.overview-page .overview-service .hero-controls{flex-basis:auto;max-width:340px;min-width:0;padding:0;border:0;justify-self:end}
+.overview-page .hero-controls>.service-actions{border:0;margin:0;padding:0;justify-content:flex-end;gap:8px}
+.overview-page .hero-controls button{min-height:36px;max-width:100%;height:auto;padding:7px 12px;font-size:13px;white-space:normal;overflow-wrap:anywhere;color:var(--st-ink-soft);background:var(--st-surface-2);border-color:var(--st-line)}
+.overview-page .hero-controls button.primary{background:var(--st-accent-tint);color:var(--st-accent-text);border-color:color-mix(in srgb,var(--st-accent) 30%,transparent);font-weight:700}
+.overview-page .hero-controls button.danger{background:var(--st-danger-tint);color:var(--st-danger-text);border-color:color-mix(in srgb,var(--st-danger) 30%,transparent)}
+.overview-page .hero-controls button.model-action-restart{background:var(--st-warn-tint);color:var(--st-warn-text);border-color:color-mix(in srgb,var(--st-warn) 30%,transparent)}
+.overview-page .hero-controls button:hover:not(:disabled){background:var(--st-surface);border-color:var(--st-ink-muted)}
+.overview-page .hero-controls button.primary:hover:not(:disabled){border-color:var(--st-accent)}
+.overview-page .hero-controls button.danger:hover:not(:disabled){border-color:var(--st-danger)}
+.overview-page .hero-controls button.model-action-restart:hover:not(:disabled){border-color:var(--st-warn)}
+.overview-service-facts{grid-column:1/-1;display:flex;align-items:center;flex-wrap:wrap;gap:12px 24px;min-width:0}
+.overview-service-facts>div{display:flex;align-items:center;gap:8px;min-width:0;font-size:12px}
+.overview-service-facts>div>span:first-child{color:var(--st-ink-muted)}
+.overview-service-facts strong{font-weight:500;overflow-wrap:anywhere}
+.overview-service-facts .overview-image-action{min-height:28px;padding:3px 8px;font-size:12px;color:var(--st-accent-text);background:var(--st-accent-tint)}
+.overview-service-footer{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) 36px;align-items:start;gap:12px;border-top:1px solid var(--st-line);padding-top:16px;min-width:0}
+.overview-page .overview-service-footer .overview-shortcuts{display:flex;align-items:center;flex-wrap:wrap;gap:var(--st-s-2);margin:0;padding:0;border:0;min-width:0}
+.overview-page .overview-shortcuts .overview-shortcut{display:flex;align-items:center;justify-content:center;gap:7px;width:auto;height:36px;min-height:36px;padding:0 var(--st-s-3);font-size:var(--st-fs-sm);font-weight:500;line-height:1.4;white-space:nowrap}
+.overview-shortcut>svg{flex:none}
+.overview-page .overview-shortcuts .overview-shortcut-chat{font-weight:700}
+.overview-page .overview-shortcuts :is(.overview-shortcut-monitor,.overview-shortcut-config){color:var(--st-info-text);background:var(--st-info-tint);border-color:color-mix(in srgb,var(--st-info) 25%,transparent)}
+.overview-page .overview-shortcuts :is(.overview-shortcut-monitor,.overview-shortcut-config):hover:not(:disabled){border-color:var(--st-info);background:color-mix(in srgb,var(--st-info) 20%,var(--st-surface))}
+.overview-page .overview-service-footer .overview-refresh{display:flex;align-items:center;justify-content:center;width:36px;height:36px;min-height:36px;padding:0;background:transparent;color:var(--st-ink-muted);border:1px solid var(--st-line);border-radius:var(--st-r-md);box-shadow:none}
+.overview-page .overview-service-footer .overview-refresh:hover:not(:disabled){color:var(--st-accent-text);background:var(--st-accent-tint);border-color:var(--st-accent)}
+.overview-page .overview-panel-link{gap:6px;border:0;border-radius:var(--st-r-sm);padding:6px 9px;background:var(--st-surface-2);color:var(--st-info-text);font-size:12px;line-height:1.4;font-weight:500;white-space:normal;text-align:left}
+.overview-page .overview-panel-link:hover:not(:disabled){background:var(--st-info-tint);color:var(--st-info-text)}
+.overview-page :is(.overview-shortcut,.overview-refresh,.overview-panel-link):focus-visible{outline:2px solid var(--st-focus);outline-offset:3px}
+.overview-service>.notice{grid-column:1/-1;margin:0;overflow-wrap:anywhere}
+.overview-page>.panel{margin-bottom:0}
+@container workspace (max-width:760px){.overview-page .overview-service{grid-template-columns:minmax(0,1fr);gap:16px;padding:18px}.overview-page .overview-service .hero-controls{width:100%;max-width:none}.overview-service-title h2{font-size:19px}.overview-service-facts{gap:10px 16px}}
+@container workspace (max-width:420px){.overview-service .hero-icon{display:none}.overview-page .hero-controls>.service-actions{gap:6px}.overview-page .hero-controls button{flex:1 1 auto;padding:7px 9px}.overview-service-facts>div{flex-wrap:wrap}.overview-service-footer{gap:8px}.overview-page .overview-shortcuts .overview-shortcut{flex:1 1 auto}}

@@ -1,0 +1,14 @@
+.configuration-deletion-dialog{display:flex;flex-direction:column;gap:14px;min-width:0;font-size:13px;line-height:1.7}
+.configuration-deletion-dialog p{margin:0;overflow-wrap:anywhere}
+.configuration-deletion-name{font-size:16px;overflow-wrap:anywhere}
+.configuration-deletion-path{margin:0;min-width:0}
+.configuration-deletion-path dt{color:var(--st-ink-muted);font-size:12px}
+.configuration-deletion-path dd{margin:5px 0 0;min-width:0}
+.configuration-deletion-path code{display:block;max-height:140px;overflow:auto;overflow-wrap:anywhere;white-space:pre-wrap;border:1px solid var(--st-line);border-radius:8px;padding:10px 12px;font-size:12px;user-select:text}
+.configuration-deletion-completed{display:flex;flex-direction:column;gap:10px}
+.configuration-deletion-completed>p,.configuration-deletion-refreshing{display:flex;align-items:center;gap:8px}
+.configuration-deletion-completed>p>svg,.configuration-deletion-refreshing>svg{flex-shrink:0}
+.configuration-deletion-error{min-width:0}
+.configuration-deletion-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-top:4px}
+.configuration-deletion-refreshing{color:var(--st-ink-muted);font-size:12px}
+@media(max-width:520px){.configuration-deletion-actions>button{flex:1}.configuration-deletion-refreshing{width:100%;justify-content:center}}

@@ -60,7 +60,7 @@ pnpm --filter @strata-manager/desktop tauri signer generate -w $strataSigningKey
 
 ## 日常 CI
 
-`.github/workflows/ci.yml` 在主分支、`codex/**` 分支、Pull Request 和手动触发时运行 Windows/Linux 矩阵。使用 Node 24、`package.json` 固定的 pnpm 和 Rust stable；pnpm 11.21.0 要求 Node >=22.13。
+`.github/workflows/ci.yml` 在主分支 push、Pull Request 和手动触发时运行 Windows/Linux 矩阵。功能分支通过 PR 自动打包；尚未创建 PR 时，可选择该分支手动运行。PR 使用合并结果进行验收，避免同一功能分支 push 与 PR 重复构建；手动运行使用独立并发组，不取消自动验收。使用 Node 24、`package.json` 固定的 pnpm 和 Rust stable；pnpm 11.21.0 要求 Node >=22.13。
 
 检查范围为版本一致性和发布门禁测试、TypeScript、核心与 HTTP 协议夹具测试、前端生产构建、Rust 格式、workspace 单元/集成测试、Clippy，以及两平台桌面安装包构建。Linux 安装 GTK/WebKitGTK、托盘、AppImage 依赖，在 Xvfb 下运行 native 测试。
 
@@ -72,12 +72,16 @@ CI 产物以 `ci-<platform>-<arch>-<bundle>` 名称上传为 Actions artifacts�
 
 ## 发布一个版本
 
+每次变更维护根目录 [CHANGELOG.md](../CHANGELOG.md) 的 `Unreleased` 中英文条目。发布前将本次内容归入 `## [实际版本]`，保留 `### 中文` 与 `### English` 两个非空段落。流水线通过 `scripts/release-notes.mjs` 读取与版本严格对应的日志，并将其写入 Release 和 updater 元数据；缺少对应版本或语言时拒绝构建发布。桌面更新弹窗按当前界面语言展示该版本日志，用户选择“确认更新”后才下载、验签和安装。
+
 1. 在同一变更中同步根 `package.json`、`apps/desktop/package.json`、`packages/core/package.json`、Tauri config、Cargo workspace 和任何显式 Cargo package version。`node scripts/release-check.mjs --tag v0.1.0` 检查版本；tag 必须与应用版本严格一致。
 2. 完成 [VERIFICATION](VERIFICATION.md) 的最终检查和发布验收，更新中英文 README、用户指南、`docs/screenshots/` 的 WebP 封面及页面图与实际 revision；检查内容没有 API 密钥、个人会话、用户名或私有模型路径。截图使用示例数据时，在图片所在文档及官网的图外说明数据来源；图内使用正常模型名和界面内容，不能写成真实服务或性能证据。保留历史原型证据，同时单列本轮未通过/未运行项。
 3. 推送已审核的代码，再创建并推送 `v<version>` tag，例如 `v0.1.0` 或 `v0.2.0-beta.1`。版本 tag 触发 `.github/workflows/release.yml`；手动重跑必须选中同一个 tag，选择分支不会发布。
 4. 流水线先校验 tag、版本和签名配置，再通过 Windows/Linux 全部检查。`release-tag.mjs` 从 GitHub 精确 tag ref 解析真实 commit，包括有界解析 annotated tag，并与 workflow SHA 比较；上传前和公开前再次检查。官方 Tauri action 构建签名安装包、上传签名和 workflow artifacts，并合并生成 `latest.json` 到**草稿 Release**。正式矩阵顺序执行，避免两个 action 同时读写 updater manifest 时丢失平台条目。
 5. 两个平台均成功后，`scripts/release-verify.mjs` 核对完整的 NSIS/AppImage/DEB、支持的平台及官方别名、每个 updater URL、签名文件与 `latest.json` 的一致性、实际 tag commit 和构建 SHA。下载实际更新包，再通过 `strata-update-verifier` 使用应用内置公钥验证载荷、可信注释和签名中的版本；错误公钥、篡改或缺失签名均拒绝发布。通过后才自动公开；任何失败都保留草稿。
-6. 稳定版本成为 latest；带 SemVer prerelease 的版本标记为 prerelease，且不覆盖稳定自动更新通道。
+6. 发布阶段使用仓库级队列锁，并在锁内完整检查已公开稳定版本。只有 SemVer 严格更高的稳定版本成为 latest；旧版本或等价版本仍可公开下载，但不替换更新通道。带 SemVer prerelease 的版本始终不覆盖稳定自动更新通道。公开状态和 latest 选择在同一次 PATCH 中提交；发布前再次核对真实 tag commit。
+
+发布队列采用 GitHub 的 `queue: max`，最多保留 100 个 pending 发布，避免默认队列只保留一个等待任务而取消其它版本。超出队列上限会被 GitHub 取消；超过版本列表分页上限则拒绝发布。人工发布或没有采用此锁的旧工作流仍可能竞争，不能视作已获得服务器级版本比较 CAS。[GitHub 并发队列文档](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)。
 
 GitHub 对相对默认分支修改工作流的 `target_commitish` 要求额外的 Workflows 写权限，内置 `GITHUB_TOKEN` 无法授予该权限。对于已经存在且核验了真实 commit 的 tag，工作流将默认分支用作 Release 创建提示，避免该权限要求；该提示不会重写现有 tag，也不用于判断产物来源。当前 tag 的真实提交始终由独立 ref 检查绑定。[GitHub Release 权限规则](https://docs.github.com/en/rest/releases/releases#create-a-release)。
 
