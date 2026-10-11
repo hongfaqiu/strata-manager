@@ -1,8 +1,32 @@
 # 开发与验收记录
 
-更新日期：2026-10-11。上游参考 revision：`fb58e0dbc8399662c0e47c76578c6e878b14f6cf`。
+更新日期：2026-10-12。上游参考 revision：`fb58e0dbc8399662c0e47c76578c6e878b14f6cf`。
 
 本文件区分本轮独立后台实现与此前原型验证。自动检测/导入、运行时准备、元数据统计、调优、自启动与更新已经进入实现和测试阶段，不再只是方案；实现存在、夹具通过、真实 GPU 运行、最终安装包和跨版本更新是不同验收层级。下面记录阶段证据，最终提交后仍需统一检查及真实发布验收。
+
+## 0.1.4 提交前验证与发行门禁
+
+以下记录 2026-10-12 在 0.1.4 提交前完成的本地分项检查，整合基底为 `f579311205364c503fa1560fb594d8082ba773a3`。日志与浏览器 JSON 保存在工作目录，不随安装包发布；各项不能累加为一次完整原生测试。历史版本、CI 优化分支及此前实机验证继续保留在后文。提交后的 CI 和发行证据以源码 SHA 及公开资产核验为准。
+
+| 检查 | 实际结果 | 证据 |
+| --- | --- | --- |
+| 前端与核心检查 | `pnpm check` 的类型检查、生产构建通过；核心 196、桌面 95、HTTP/日志 8，合计 **299 项通过、0 失败** | `.local/release-0.1.4/final-check.log`；独立较早的构建记录另见 `final-build.log`，不重复计数 |
+| 发布与 CI 门禁合同 | **227 passed / 0 failed / 0 skipped**；覆盖缓存政策、源码/产物身份、run attempt、Linux 测试分片覆盖、签名及安装/升级门禁逻辑 | `.local/release-0.1.4/final-release-guards.log`；早期 `final-guards.log` 单列，不与本次数量相加 |
+| 网站与文档合同 | **27 passed / 0 failed / 0 skipped**；覆盖文档渲染、双语首页/SEO、版本选择、发布快照及缺失链接/资产拒绝 | `.local/release-0.1.4/final-website-tests.log` |
+| 公共设置浏览器流程 | **12/12 passed**；覆盖公共入口、无模型编辑、继承/旧专用值、参数抽屉模型隔离与晚到保存、MCP/结构化输出、重载及导航草稿保护 | `.local/release-0.1.4/final-common-settings.log`、`output/playwright/common-settings/browser-results.json` |
+| 引擎下载浏览器流程 | **26 个流程通过、0 浏览器错误**；覆盖来源、自动匹配包、包信息、来源测试、确认/取消和窄屏展示 | `.local/release-0.1.4/final-runtime-download.log`、`output/playwright/runtime-update-download/results.json` |
+| 状态故障与恢复浏览器流程 | **7/7 passed，0 原生变更操作**；覆盖同 PID 健康恢复后等待新指标、正常后台刷新保留显示、指标失败隐藏旧值，以及中英文运行/停止缓存下的进程查询失败 | `output/playwright/service-status-faults/results.json`；临时故障注入按独立 query 触发，保存 query 时间戳与 DOM 证据 |
+| Rust Clippy | 0.1.4 runtime-core、desktop 与 Supervisor 检查完成，无 Clippy 错误 | `.local/release-0.1.4/final-clippy.log` |
+| Rust 格式 | `cargo fmt --all --check` 通过 | `.local/release-0.1.4/final-fmt.log` |
+| 正式文档截图与产品封面 | **36/36** 中英文截图通过；无页面/控制台错误、外部请求、禁止原生操作或页面横向溢出；WebP 与 PNG 逐像素一致。两个产品封面及英文别名哈希通过，关键新增界面完成目视检查 | `output/playwright/release-0.1.4/capture-2026-10-11T21-20-51-409Z/capture-checks.json`、`output/playwright/product-hero/validation.json`、`docs/screenshots/manifest.json` |
+| 完整静态官网构建 | **15 篇文档、682 个本地链接/资源**验证通过 | `.local/release-0.1.4/final-website-build.log`；此项不替代部署后的公开检查 |
+| 官网本地浏览器 | 中文/英文 × 1440/375 共 **4/4** 通过；20 次新截图解码和放大、键盘焦点/关闭、双语系统说明导航正常，无横向溢出或浏览器错误。下载列表仅使用合成 0.1.4 元数据核对链接 | `output/playwright/release-0.1.4/website-local-2026-10-11T21-24-24-054Z/results.json`；前后构建摘要一致，服务器与浏览器已关闭 |
+
+公共设置、下载、状态故障与独立浮条的浏览器证据使用真实 React 组件和隔离合成 Tauri RPC；保存/重载使用浏览器夹具持久化，服务、指标、密钥和窗口命令仍为模拟数据。独立浮条另有 `output/playwright/service-status-trends/floating-results.json`，其 scope 明确未认证原生置顶行为。以上证明对应界面状态和调用合同，不能据此标记系统凭据写入、真实引擎下载/升级、Windows 浮条拖动/置顶/关闭、真实桌面后台生命周期或模型 API 请求已经通过。发布脚本的合同检查也不等于 GitHub Runner 已实际完成本次包安装与升级。
+
+真实桌面与真实请求必须另行绑定实际安装版本/二进制、进程归属和请求结果。后文 `output/windows-real-test` 的 0.1.3-test.2/test.4、特定 Windows Strata 引擎更新和真实短请求继续属于其各自版本与环境，不作为最终 0.1.4 包的同源码验收；真实 GPU Benchmark、完整调优、长时间压力、Linux 系统级 DEB 安装及 Tauri 客户端跨版本在线更新仍需各自的实测证据。
+
+**提交后的发行门禁：** 必须取得最终源码同 SHA、同 attempt 的完整 Windows/Linux **8 个 CI job 成功**，再复用已核验产物签名发布。发行后核对 tag→commit、稳定 latest、8 个资产及下载字节/大小/SHA256/GitHub digest、三个安装包签名和 signed version、`SHA256SUMS` 与 `latest.json` 精确链接；官网须等待部署完成，再检查下载版本、双语文档、全部截图的公开字节/哈希及浏览器展示。本节是提交前证据，不预先宣称这些发布后步骤通过；实际结果见 [Actions](https://github.com/hongfaqiu/strata-manager/actions) 与 [v0.1.4 Release](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.4)。
 
 ## 0.1.2 发版准备与 0.1.1 未公开记录
 

@@ -226,6 +226,12 @@ async fn complete_agent_preserves_tool_ids_and_arguments_across_real_http_turns(
                 tool_sse("read_fixture", "call-read", json!({"file":"merge.py"}))
             }
             1 => {
+                let schema = &request.body["tools"][0]["function"];
+                let description = schema["description"].as_str().unwrap();
+                assert!(description.contains("not a diff"));
+                assert!(description.contains("no type annotations"));
+                assert!(description.contains("exactly two top-level tests"));
+                assert_eq!(schema["parameters"]["additionalProperties"], false);
                 let result: Value =
                     serde_json::from_str(messages.last().unwrap()["content"].as_str().unwrap())
                         .unwrap();
@@ -260,6 +266,9 @@ async fn complete_agent_preserves_tool_ids_and_arguments_across_real_http_turns(
     let report = run(&fixture, &options(UseCase::Agent), WorkloadKind::FullAgent).await;
     assert_eq!(stage.load(Ordering::SeqCst), 4);
     assert_eq!(report["qualityPassed"], true);
+    assert_eq!(report["benchmarkVersion"], "complete-workloads-v2");
+    assert!(report["qualityDetail"].is_null());
+    assert!(report["qualityDiagnostic"].is_null());
     assert_eq!(report["complete"], true);
     assert_eq!(report["requestCount"], 4);
     assert_eq!(report["turns"].as_array().unwrap().len(), 4);
@@ -280,6 +289,136 @@ async fn complete_agent_preserves_tool_ids_and_arguments_across_real_http_turns(
     assert_eq!(report["resourcePeak"]["dataScope"], "systemAndPrimaryGpu");
     assert_eq!(report["resourcePeak"]["ramUsedBytes"], 123456789);
     assert_eq!(report["resourcePeak"]["gpuMemoryUsedBytes"], 98765432);
+}
+
+#[tokio::test]
+async fn full_agent_accepts_one_windows_python_block_and_still_completes_all_tool_turns() {
+    let stage = Arc::new(AtomicUsize::new(0));
+    let observer = stage.clone();
+    let patch = format!("```python\r\n{}```", CORRECT_SOURCE.replace('\n', "\r\n"));
+    let fixture = Fixture::serve(move |request| {
+        if request.path == "/metrics" {
+            return metrics();
+        }
+        let index = observer.fetch_add(1, Ordering::SeqCst);
+        Response::sse(match index {
+            0 => tool_sse("read_fixture", "read", json!({"file":"merge.py"})),
+            1 => tool_sse(
+                "patch_fixture",
+                "patch",
+                json!({"file":"merge.py","source":patch}),
+            ),
+            2 => {
+                let messages = request.body["messages"].as_array().unwrap();
+                let previous: Value =
+                    serde_json::from_str(messages.last().unwrap()["content"].as_str().unwrap())
+                        .unwrap();
+                assert_eq!(previous["patched"], true);
+                tool_sse("test_fixture", "test", json!({"file":"merge.py"}))
+            }
+            3 => text_sse(
+                "{\"status\":\"fixed\",\"file\":\"merge.py\",\"tests\":\"passed\"}",
+                0,
+            ),
+            _ => panic!("unbounded agent"),
+        })
+    });
+    let report = run(&fixture, &options(UseCase::Agent), WorkloadKind::FullAgent).await;
+    assert_eq!(report["qualityPassed"], true);
+    assert_eq!(report["complete"], true);
+    assert_eq!(stage.load(Ordering::SeqCst), 4);
+    assert!(report["qualityReason"].is_null());
+    assert!(report["qualityDiagnostic"].is_null());
+    assert!(!report.to_string().contains("def merge_sorted"));
+}
+
+#[tokio::test]
+async fn patch_failures_report_static_categories_without_leaking_or_continuing() {
+    let quadratic = BROKEN_SOURCE.replace("    return []", "    out = []\n    while len(a) and len(b):\n        if a[0] <= b[0]:\n            out.append(a[0]); a = a[1:]\n        else:\n            out.append(b[0]); b = b[1:]\n    return out + a + b");
+    for (source, code) in [
+        (
+            format!("```python\n{CORRECT_SOURCE}```\n```python\nimport os\n```"),
+            "outputFormat",
+        ),
+        (
+            CORRECT_SOURCE.replace(
+                "def merge_sorted(a, b):",
+                "def merge_sorted(a: list, b: list):",
+            ),
+            "unsupportedSyntax",
+        ),
+        (BROKEN_SOURCE.to_string(), "incorrectMerge"),
+        (
+            BROKEN_SOURCE.replace("    return []", "    a.extend(b)\n    return a"),
+            "inputMutation",
+        ),
+        (quadratic, "nonLinearWork"),
+        (
+            CORRECT_SOURCE.replace("assert merge_sorted([], [1]) == [1]\n", ""),
+            "fixtureContract",
+        ),
+    ] {
+        let stage = Arc::new(AtomicUsize::new(0));
+        let observer = stage.clone();
+        let fixture = Fixture::serve(move |request| {
+            if request.path == "/metrics" {
+                return metrics();
+            }
+            let index = observer.fetch_add(1, Ordering::SeqCst);
+            Response::sse(match index {
+                0 => tool_sse("read_fixture", "read", json!({"file":"merge.py"})),
+                1 => tool_sse(
+                    "patch_fixture",
+                    "patch",
+                    json!({"file":"merge.py","source":source}),
+                ),
+                _ => panic!("invalid patch must fail before another tool turn"),
+            })
+        });
+        let report = run(&fixture, &options(UseCase::Agent), WorkloadKind::FullAgent).await;
+        assert_eq!(report["qualityPassed"], false);
+        assert_eq!(report["complete"], false);
+        assert_eq!(report["qualityReason"], "qualityAgentPatchFailed");
+        assert_eq!(report["qualityDiagnostic"]["stage"], "patch_fixture");
+        assert_eq!(report["qualityDiagnostic"]["code"], code);
+        assert_eq!(
+            report["qualityDetail"],
+            report["qualityDiagnostic"]["detail"]
+        );
+        assert!(!report["qualityDetail"].as_str().unwrap().is_ascii());
+        assert_eq!(report["requestCount"], 2);
+        assert_eq!(stage.load(Ordering::SeqCst), 2);
+        for forbidden in [
+            "def merge_sorted",
+            "import os",
+            "a.extend(b)",
+            "out.append",
+            "\"source\":",
+            "\"arguments\":",
+        ] {
+            assert!(!report.to_string().contains(forbidden), "{forbidden}");
+        }
+    }
+}
+
+/// Explicit offline validation only: never connects to a model or prints source.
+#[test]
+#[ignore = "requires an explicitly supplied STRATA_TUNING_AGENT_SOURCE_FILE fixture"]
+fn check_explicit_agent_patch_fixture() {
+    let path = std::env::var_os("STRATA_TUNING_AGENT_SOURCE_FILE")
+        .expect("set STRATA_TUNING_AGENT_SOURCE_FILE to the saved patch source");
+    let file = std::fs::File::open(path).expect("cannot open the explicit patch fixture");
+    assert!(
+        file.metadata().unwrap().len() <= 16 * 1024,
+        "source exceeds the fixture size limit"
+    );
+    let mut source = String::new();
+    file.take(16 * 1024 + 1)
+        .read_to_string(&mut source)
+        .expect("fixture must be UTF-8");
+    if let Err(error) = super::super::quality::validate_merge_sorted(&source) {
+        panic!("{}: {}", error.code(), error.reason());
+    }
 }
 
 #[tokio::test]

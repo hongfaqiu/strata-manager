@@ -6,9 +6,9 @@ Strata Manager 是 Strata 运行环境与本地模型服务管理桌面工作台
 
 ## 公开稳定版下载
 
-通过[最新稳定发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)或[官网下载区](https://hongfaqiu.github.io/strata-manager/#get-started)选择对应系统的安装包。当前公开稳定版为 **v0.1.2**，**0.1.3 尚未公开发行安装包**。仅安装所选发布页实际提供的文件，包含的功能以该版本说明为准；也可以[从源码体验](#从源码体验)。
+通过[最新稳定发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)或[官网下载区](https://hongfaqiu.github.io/strata-manager/#get-started)选择对应系统的安装包。公开稳定版的具体版本以发布页和官网下载区为准。仅安装所选发布页实际提供的文件，包含的功能以该版本说明为准；也可以[从源码体验](#从源码体验)。
 
-README、官网截图与使用指南描述 0.1.3 源码；源码新增功能尚未包含在 v0.1.2 安装包中。[更新日志](../CHANGELOG.md)区分已发布版本与未发布开发更新。本文描述 CI 门禁覆盖范围，不代表未发布候选已经完成发布验收。
+README、官网截图与使用指南描述当前源码功能；安装包包含的功能以所选版本的更新日志为准。[更新日志](../CHANGELOG.md)区分已发布版本与未发布开发更新。本文描述 CI 门禁覆盖范围，实际发布结果以对应版本的工作流和资产核验为准。
 
 | 平台 | 安装形式 | 说明 |
 | --- | --- | --- |
@@ -69,6 +69,6 @@ pnpm desktop 启动完整桌面应用和后台。pnpm dev 只运行前端，不�
 
 [GitHub Releases](https://github.com/hongfaqiu/strata-manager/releases)列出各版本的安装包和发布说明。预览版、稳定版、CI 测试包和自行构建的安装包是不同来源，请先核对版本及支持范围。
 
-公开且通过发布门禁的稳定版本才进入 `latest` 通道，下载入口始终指向[最新稳定发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)。0.1.3 仍属于未发布源码，发布进度和功能变化见[更新日志](../CHANGELOG.md)或[官网更新日志](https://hongfaqiu.github.io/strata-manager/docs/changelog.html)。预览版不覆盖稳定通道，未检测到 beta 也不代表当前预览版已经最新。
+公开且通过发布门禁的稳定版本才进入 `latest` 通道，下载入口始终指向[最新稳定发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)。发布记录和功能变化见[更新日志](../CHANGELOG.md)或[官网更新日志](https://hongfaqiu.github.io/strata-manager/docs/changelog.html)。预览版不覆盖稳定通道，未检测到 beta 也不代表当前预览版已经最新。
 
 当前源码分别管理应用更新、Strata 运行环境和模型权重。默认自动检查，展示日志并确认后安装；Windows x64 的 Strata 页面从上游发布信息选择匹配 ZIP，下载、解包、备份并替换程序文件，保留已有模型。详细行为见[使用指南](USER_GUIDE.md)。

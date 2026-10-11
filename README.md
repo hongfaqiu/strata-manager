@@ -8,6 +8,7 @@
 <p>
 <a href="https://hongfaqiu.github.io/strata-manager/en/"><strong>Website</strong></a> ·
 <a href="https://hongfaqiu.github.io/strata-manager/docs/index.en.html"><strong>Documentation</strong></a> ·
+<a href="docs/SYSTEM.en.md">System explanation</a> ·
 <a href="https://github.com/hongfaqiu/strata-manager/releases/latest"><strong>Latest stable release</strong></a> ·
 <a href="CHANGELOG.md">Changelog</a> ·
 <a href="README.zh-CN.md">简体中文</a>
@@ -46,18 +47,18 @@ Engine-dependent tools appear according to the installed runtime's capabilities.
 
 | Workflow | What you can do |
 | --- | --- |
-| **1 · Prepare Strata** | Detect existing installations and Windows installation paths; inspect local/upstream versions and official release notes. Matching official Windows x64 ZIPs support download and update progress, reusing verified update metadata. Linux supports environment scans, version and release-note browsing, skipping unrelated or permission-restricted Python processes. |
+| **1 · Prepare Strata** | Detect installations and inspect local/upstream versions and release notes. Windows x64 engine ZIPs default to official GitHub, offer GH Proxy/GHProxy, custom HTTPS or local ZIP sources, and match the current CUDA12, CUDA13 or HIP engine across sources. Interrupted downloads retain partial data and attempt HTTP Range resume; complete packages are checked against official size and SHA256. Linux supports environment scans, versions and release notes. |
 | **2 · Organize models** | Discover local weights, group configurations by model, choose download sources and GPUs, and inspect model files, GGUF metadata and disk usage. Supported formats include Swift IQ3_S. |
 | **3 · Configure and run** | Edit graphical controls or JSON with validation and backups. Start, stop, restart or release model memory; follow startup stages, tasks and logs. Opening Manager or signing in starts only the lightweight background, preserving stopped services. |
-| **4 · Chat and integrate** | Use conversations, streaming replies and attachments. Choose JSON / JSON Schema output, reuse document prefixes and adjust advanced generation settings. Inspect MCP tools and check connections; image input and tools depend on runtime/model support. |
-| **5 · Inspect sessions and load** | Save and restore engine sessions; inspect individual slots, request load, input-processing and generation rates, hardware activity and capability-gated VRAM adjustments. |
+| **4 · Chat and integrate** | Use streaming conversations, attachments and structured output. New models inherit shared generation parameters and MCP defaults; existing custom values remain separate until inheritance is enabled. Changes apply to the next chat request. Configure connection targets, the application's access key, API examples and MCP in API and external assistants; selecting a target does not start or switch a model. |
+| **5 · Inspect sessions and load** | Save and restore engine sessions; inspect slots, load, hardware and supported VRAM adjustments. The status panel separates recent generation and input-processing trends, preserving sample gaps. An independent desktop monitor is closed by default; open, move, resize or pin it when needed. It observes an existing background without starting or restoring services. |
 | **6 · Understand usage and tune** | Retain local API metadata, support Strata 0.1.43 API usage statistics, and chart requests, tokens, latency and cache reuse. Compare complete chat, coding/Agent or document tasks before applying or restoring supported tuning candidates; no fixed performance gain is promised. |
 | **7 · Benchmark** | Set repeated runs, warmup and prompt/output lengths in the Benchmark workspace; test cache reuse with repeated inputs. Record time to first token (TTFT), request duration, P50/P95, token counts and engine rates separately. Cancel tests, review report history, export JSON and coordinate with other inference operations. |
-| **8 · Review updates** | Manage app and Strata updates separately from model weights. Read localized release notes and confirm installation. Use Chinese/English, system/light/dark appearance and tray controls. |
+| **8 · Review updates** | Manage app and Strata updates separately from model weights. The dedicated app update page provides bundled bilingual notes offline, stable update checks and installation confirmation with Tauri signature verification. Use Chinese/English, system/light/dark appearance and tray controls. |
 
 API usage statistics work without capturing request bodies. Optional temporary body diagnostics are separate; see the [user guide](docs/USER_GUIDE.en.md) for behavior and privacy.
 
-See [CHANGELOG.md](CHANGELOG.md) or the [website changelog](https://hongfaqiu.github.io/strata-manager/docs/changelog.en.html) for version-specific changes.
+See the [0.1.4 system explanation](docs/SYSTEM.en.md) for component relationships and persistence, and [CHANGELOG.md](CHANGELOG.md) or the [website changelog](https://hongfaqiu.github.io/strata-manager/docs/changelog.en.html) for version-specific changes.
 
 ## Download and get started
 
@@ -83,7 +84,7 @@ All images below are real app components rendered with isolated documentation da
 | [![Models — local weights and grouped configurations](docs/screenshots/models.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/models.en.webp) | [![Monitor — service, hardware and request activity](docs/screenshots/monitor.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/monitor.en.webp) |
 
 <details>
-<summary><strong>More interfaces: Strata, configuration, usage, chat, tuning and settings</strong></summary>
+<summary><strong>More interfaces: runtime, chat, shared settings, connections, updates and monitoring</strong></summary>
 
 **Strata — runtime versions and updates**
 
@@ -110,6 +111,26 @@ All images below are real app components rendered with isolated documentation da
 [![Language, appearance and background settings](docs/screenshots/settings.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/settings.en.webp)
 
 [![Project information and credits](docs/screenshots/about.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/about.en.webp)
+
+**Shared chat defaults — per-model inheritance**
+
+[![Shared generation parameters and per-model inheritance](docs/screenshots/common-chat-settings.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/common-chat-settings.en.webp)
+
+**Connections — API and external assistants**
+
+[![Connection targets, application access keys, API examples and MCP](docs/screenshots/connections.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/connections.en.webp)
+
+**Application updates — bilingual notes and installation confirmation**
+
+[![Dedicated application update page](docs/screenshots/app-updates.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/app-updates.en.webp)
+
+**Service status — recent generation and input-processing trends**
+
+[![Service status panel and recent trends](docs/screenshots/service-status.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/service-status.en.webp)
+
+**Independent desktop monitor — closed by default**
+
+[![Floating desktop monitor with current model and service telemetry](docs/screenshots/floating-monitor.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/floating-monitor.en.webp)
 
 </details>
 

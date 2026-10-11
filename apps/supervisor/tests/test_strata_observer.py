@@ -35,6 +35,8 @@ from serve.mcp import McpHub
 
 SOURCE_HASH = hashlib.sha256((ROOT / "serve/server.py").read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 OFFICIAL_0142_HASH = "ce9266730b632e919ff93809ea6f9ecd6f91f12da19597a2d95a7edb29700dfa"
+OFFICIAL_0143_HASH = "55ee9d1160f0da457cabe6f9dfea9884296b6d70fd3d14abd4ed42e6f79dd72b"
+KEEP_AWAKE_SOURCE_HASHES = {OFFICIAL_0142_HASH, OFFICIAL_0143_HASH}
 
 
 class ObserverHttp(unittest.TestCase):
@@ -172,8 +174,8 @@ class ObserverHttp(unittest.TestCase):
         self.assertTrue(all(e["clientId"] is None for e in ends))
         self.assertNotIn("PRIVATE",json.dumps(self.events()))
 
-    @unittest.skipUnless(SOURCE_HASH == OFFICIAL_0142_HASH, "requires official Strata 0.1.42")
-    def test_0142_sampling_and_bias_validation_preserve_failed_request_accounting(self):
+    @unittest.skipUnless(SOURCE_HASH in KEEP_AWAKE_SOURCE_HASHES, "requires reviewed Strata 0.1.42 or 0.1.43")
+    def test_sampling_and_bias_validation_preserve_failed_request_accounting(self):
         self.start()
         cases = [("/v1/chat/completions", {"logit_bias": {"1": "PRIVATE_INVALID_BIAS"}}),
                  ("/v1/chat/completions", {"temperature": "PRIVATE_INVALID_NUMBER"}),
@@ -190,8 +192,8 @@ class ObserverHttp(unittest.TestCase):
         self.assertNotIn("PRIVATE", json.dumps(self.events()))
         self.assertEqual(self.journal.db.execute("SELECT COUNT(*) FROM active_requests").fetchone()[0], 0)
 
-    @unittest.skipUnless(SOURCE_HASH == OFFICIAL_0142_HASH, "requires official Strata 0.1.42")
-    def test_0142_keep_awake_released_after_success_and_observed_generator_close(self):
+    @unittest.skipUnless(SOURCE_HASH in KEEP_AWAKE_SOURCE_HASHES, "requires reviewed Strata 0.1.42 or 0.1.43")
+    def test_keep_awake_released_after_success_and_observed_generator_close(self):
         class Awake:
             def __init__(self):
                 self.acquired = self.released = 0
@@ -227,6 +229,93 @@ class ObserverHttp(unittest.TestCase):
         self.assertIsNone(getattr(observer._local, "run", None))
         self.assertTrue(self.svc.fifo.acquire(blocking=False))
         self.svc.fifo.release()
+
+    @unittest.skipUnless(SOURCE_HASH == OFFICIAL_0143_HASH, "requires official Strata 0.1.43")
+    def test_0143_nonfinite_retry_and_failure_keep_one_request_and_release_admission(self):
+        class NonFinite(server.MockEngine):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.plan, self.calls, self.flushed = [], [], False
+            def generate(self, ids, max_new, sampling, cancel, embeddings=None):
+                self.calls.append(list(ids))
+                cut = self.plan.pop(0) if self.plan else None
+                reused = 0 if self.flushed else len(ids) - 1
+                self.last = {"prompt_tokens": len(ids), "reused": reused,
+                             "prompt_read": len(ids) - reused, "prompt_ms": 250.0,
+                             "decode_ms": 500.0, "generated": cut or 20,
+                             "hits": 999 if cut == 0 else 3, "lookups": 1000 if cut == 0 else 4,
+                             "finish": "nonfinite" if cut is not None else "stop"}
+                self.flushed = False
+                for index, token in enumerate(super().generate(ids, max_new, sampling, cancel, embeddings)):
+                    if cut is not None and index >= cut:
+                        break
+                    yield token
+                if cut is not None:
+                    self.flushed = True
+                    raise server.EngineNonFinite("fixture non-finite output")
+        tok = server.ByteTokenizer()
+        engine = NonFinite(tok, "</think>\n\nfixture reply", max_context=32768)
+        self.start(engine=engine)
+        count = 0
+        for path in ("/v1/chat/completions", "/v1/responses", "/v1/messages"):
+            for stream in (False, True):
+                for plan, finish in (([0], "stop"), ([0, 0], "error"), ([12], "length")):
+                    with self.subTest(path=path, stream=stream, finish=finish):
+                        before_activity = self.activity()[1]
+                        before_calls = len(engine.calls)
+                        engine.plan = list(plan)
+                        status, text = self.post(path, {
+                            "messages": [{"role": "user", "content": "PRIVATE_NONFINITE_PROMPT"}],
+                            "input": "PRIVATE_NONFINITE_PROMPT", "stream": stream,
+                            "max_tokens": 64, "max_output_tokens": 64})
+                        self.assertEqual(status, 503 if finish == "error" and not stream else 200, text)
+                        count += 1
+                        ends, runs = self.events("request_end"), self.events("run_end")
+                        self.assertEqual((len(ends), len(runs)), (count, count))
+                        self.assertEqual(ends[-1]["requestId"], runs[-1]["requestId"])
+                        self.assertEqual(ends[-1]["outcome"], "failed" if finish == "error" else "succeeded")
+                        self.assertEqual(runs[-1]["finish"], finish)
+                        self.assertEqual(len(engine.calls) - before_calls, 1 if finish == "length" else 2)
+                        if finish == "error":
+                            # Anthropic streaming retains its upstream api_error
+                            # shape; all other paths use server_error here.
+                            self.assertIn("api_error" if path == "/v1/messages" and stream else "server_error", text)
+                            self.assertIsNone(ends[-1]["firstTokenS"])
+                        elif finish == "stop":
+                            # The discarded non-finite pass must not inflate
+                            # cache/native counters for the successful retry.
+                            self.assertEqual(runs[-1]["cacheReadTokens"], 0)
+                            self.assertEqual(runs[-1]["expertCacheHits"], 3)
+                            self.assertEqual(runs[-1]["expertCacheLookups"], 4)
+                        else:
+                            self.assertEqual(runs[-1]["outputTokens"], 12)
+                        self.assertEqual(self.wait_released_activity(before_activity + 2)[1], before_activity + 2)
+                        self.assertTrue(self.svc.fifo.acquire(blocking=False))
+                        self.svc.fifo.release()
+        self.assertNotIn("PRIVATE_NONFINITE_PROMPT", json.dumps(self.events()))
+
+    @unittest.skipUnless(SOURCE_HASH == OFFICIAL_0143_HASH, "requires official Strata 0.1.43")
+    def test_0143_slot_prompt_read_preserves_native_timings_and_input_total(self):
+        class TimedSlot(server.MockEngine):
+            def generate(self, ids, max_new, sampling, cancel, embeddings=None):
+                try:
+                    yield from super().generate(ids, max_new, sampling, cancel, embeddings)
+                finally:
+                    self.last = {"reused": 8, "prompt_read": len(ids) - 24,
+                                 "prompt_ms": 250.0, "decode_ms": 500.0,
+                                 "generated": 20, "hits": 3, "lookups": 4}
+        tok = server.ByteTokenizer()
+        self.start(engine=TimedSlot(tok, "</think>\n\nfixture reply", max_context=32768))
+        status, text = self.post("/v1/chat/completions", {
+            "messages": [{"role": "user", "content": "hello"}], "max_tokens": 64})
+        self.assertEqual(status, 200, text)
+        result, run = json.loads(text), self.events("run_end")[0]
+        self.assertEqual(result["timings"]["cache_n"], 24)
+        self.assertEqual(run["cacheReadTokens"], 24)
+        self.assertEqual(run["prefillTokens"], result["timings"]["prompt_n"])
+        self.assertEqual(run["inputTokens"], run["prefillTokens"] + run["cacheReadTokens"])
+        self.assertEqual(run["inputTokens"], result["usage"]["prompt_tokens"])
+        self.assertEqual((run["prefillS"], run["decodeS"], run["decodeTokS"]), (0.25, 0.5, 40.0))
 
     def test_stream_engine_error_is_failure_despite_http_200(self):
         class Faulty(server.MockEngine):
@@ -586,7 +675,7 @@ class JournalAndLoader(unittest.TestCase):
                                 "_note": "self, **values", "_json": "self, code, obj",
                                 "_capture": "self, items, api"}.items():
             self.assertEqual(ast.unparse(handler_methods[name].args), arguments, name)
-        if SOURCE_HASH == OFFICIAL_0142_HASH:
+        if SOURCE_HASH in KEEP_AWAKE_SOURCE_HASHES:
             self.assertEqual(ast.unparse(methods["_run"].args), signatures["run"])
             calls = [n for n in ast.walk(methods["run"]) if isinstance(n, ast.Call)]
             self.assertTrue(any(isinstance(n.func, ast.Attribute) and n.func.attr == "_run" for n in calls))

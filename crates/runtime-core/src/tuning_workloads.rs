@@ -12,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::Parameters;
 
-pub const VERSION: &str = "complete-workloads-v1";
+pub const VERSION: &str = "complete-workloads-v2";
 const MAX_STREAM_BYTES: usize = 2 * 1024 * 1024;
 const MAX_TEXT_BYTES: usize = 256 * 1024;
 const MAX_TOOL_BYTES: usize = 24 * 1024;
@@ -21,6 +21,7 @@ const MAX_DOCUMENT_BYTES: usize = 1024 * 1024;
 #[cfg(test)]
 const CORRECT_SOURCE: &str = "def merge_sorted(a, b):\n    \"\"\"Merge sorted integer lists without modifying inputs.\"\"\"\n    out = []\n    i = j = 0\n    while i < len(a) and j < len(b):\n        if a[i] <= b[j]:\n            out.append(a[i]); i += 1\n        else:\n            out.append(b[j]); j += 1\n    return out + a[i:] + b[j:]\nassert merge_sorted([1], [1]) == [1, 1]\nassert merge_sorted([], [1]) == [1]\n";
 const BROKEN_SOURCE: &str = "def merge_sorted(a, b):\n    \"\"\"Merge sorted lists without changing their inputs.\"\"\"\n    return []\nassert merge_sorted([], []) == []\nassert merge_sorted([], []) == []\n";
+const AGENT_FINAL_INSTRUCTION: &str = "The test_fixture tool has now reported passed=true for all 46 cases. The coding task is finished. Your next and final assistant response must be exactly {\"status\":\"fixed\",\"file\":\"merge.py\",\"tests\":\"passed\"}. Return only this JSON object, with no Markdown, explanation, code, extra fields or further tool calls.";
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -166,6 +167,7 @@ struct ToolCall {
 #[derive(Clone, Copy)]
 enum Dialect {
     OpenAi,
+    OpenAiJson,
     Anthropic,
 }
 
@@ -180,7 +182,31 @@ struct Execution<'a> {
     request_count: usize,
     count_requests: usize,
     actual_context_tokens: Option<u64>,
+    quality_diagnostic: Option<QualityDiagnostic>,
     nonce: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct QualityDiagnostic {
+    stage: &'static str,
+    code: &'static str,
+    detail: &'static str,
+}
+
+fn validate_agent_source(
+    execution: &mut Execution<'_>,
+    source: &str,
+    stage: &'static str,
+) -> Result<(), String> {
+    super::quality::validate_merge_sorted(source).map_err(|error| {
+        execution.quality_diagnostic = Some(QualityDiagnostic {
+            stage,
+            code: error.code(),
+            detail: error.reason(),
+        });
+        "qualityAgentPatchFailed".into()
+    })
 }
 
 fn finite(value: &Value) -> Option<f64> {
@@ -213,7 +239,7 @@ fn apply_event(
     }
     let elapsed = || start.elapsed().as_secs_f64() * 1000.0;
     match dialect {
-        Dialect::OpenAi => {
+        Dialect::OpenAi | Dialect::OpenAiJson => {
             if let Some(choice) = event
                 .get("choices")
                 .and_then(Value::as_array)
@@ -409,6 +435,15 @@ impl Execution<'_> {
         dialect: Dialect,
     ) -> Result<Collected, String> {
         let mut body = json!({"messages":messages,"stream":true,"max_tokens":self.options.max_output_tokens,"temperature":0,"top_p":1,"top_k":1,"seed":1,"enable_thinking":false,"reasoning_effort":"none","reasoning_budget_tokens":0,"strata_tune":{"pcie_frac":self.parameters.pcie_frac,"spec_min_p":self.parameters.spec_min_p}});
+        if matches!(dialect, Dialect::OpenAiJson) {
+            if tools.is_some() {
+                return Err("workloadStructuredOutputWithTools".into());
+            }
+            // Strata 0.1.43 supports json_object without optional jsonschema.
+            // Only the tool-free final Agent round uses its format contract;
+            // require_answer still checks the complete exact semantic object.
+            body["response_format"] = json!({"type":"json_object"});
+        }
         if matches!(dialect, Dialect::Anthropic) {
             body["model"] = json!("strata");
             body["thinking"] = json!({"type":"disabled"});
@@ -419,7 +454,7 @@ impl Execution<'_> {
             body["tool_choice"] = json!("auto");
         }
         let path = match dialect {
-            Dialect::OpenAi => "/v1/chat/completions",
+            Dialect::OpenAi | Dialect::OpenAiJson => "/v1/chat/completions",
             Dialect::Anthropic => "/v1/messages",
         };
         let start = Instant::now();
@@ -543,7 +578,7 @@ async fn sustained(execution: &mut Execution<'_>) -> Result<(), String> {
 fn tool_schema(name: &str, stage: usize) -> Value {
     let (description, properties, required) = match stage {
         0 => ("Read the immutable in-memory merge.py fixture; no filesystem access.", json!({"file":{"type":"string","enum":["merge.py"]}}), json!(["file"])),
-        1 => ("Replace only the in-memory fixture with a complete merge_sorted(a,b) function, a docstring, no imports, and exactly two assert tests. It must merge in linear time, preserve inputs, support duplicates and empty lists.", json!({"file":{"type":"string","enum":["merge.py"]},"source":{"type":"string","maxLength":16384}}), json!(["file","source"])),
+        1 => ("Replace the complete in-memory merge.py source, not a diff. source must contain only def merge_sorted(a, b): with no type annotations, a short first docstring, the function body, then exactly two top-level tests of the form assert merge_sorted([integers], [integers]) == [integers]. Use the finite Python subset: integers, lists, local assignments, comparisons, and/or, if/else, while or for, len(), indexing, slices, list append()/extend(), +, +=, and return. No imports, other functions or calls, comprehensions, break/continue, or extra top-level statements. Return plain Python without markdown or explanation. Merge in linear time, preserve inputs, and handle duplicates and empty lists.", json!({"file":{"type":"string","enum":["merge.py"]},"source":{"type":"string","maxLength":16384}}), json!(["file","source"])),
         _ => ("Check the in-memory fixture with a bounded interpreter and deterministic cases; never run a shell or Python process.", json!({"file":{"type":"string","enum":["merge.py"]}}), json!(["file"])),
     };
     json!([{"type":"function","function":{"name":name,"description":description,"parameters":{"type":"object","properties":properties,"required":required,"additionalProperties":false}}}])
@@ -599,13 +634,12 @@ async fn full_agent(execution: &mut Execution<'_>) -> Result<(), String> {
                 }
                 // Validation is the existing finite interpreter, not execution
                 // of generated Python. Reject imports/eval/IO before storage.
-                super::quality::validate_merge_sorted(patch)
-                    .map_err(|_| "qualityAgentPatchFailed")?;
+                validate_agent_source(execution, patch, "patch_fixture")?;
                 source = patch.into();
                 json!({"file":"merge.py","patched":true})
             }
             _ => {
-                passed = super::quality::validate_merge_sorted(&source).is_ok();
+                passed = validate_agent_source(execution, &source, "test_fixture").is_ok();
                 json!({"file":"merge.py","passed":passed,"interpreter":"bounded","cases":46})
             }
         };
@@ -615,8 +649,12 @@ async fn full_agent(execution: &mut Execution<'_>) -> Result<(), String> {
     if !passed {
         return Err("qualityAgentTestsFailed".into());
     }
+    let system = messages[0]["content"]
+        .as_str()
+        .ok_or("qualityAgentFinalContract")?;
+    messages[0]["content"] = json!(format!("{system}\n{AGENT_FINAL_INSTRUCTION}"));
     let final_response = execution
-        .request(Value::Array(messages), None, Dialect::OpenAi)
+        .request(Value::Array(messages), None, Dialect::OpenAiJson)
         .await?;
     require_answer(
         &final_response,
@@ -955,6 +993,7 @@ pub async fn run_workload(
         request_count: 0,
         count_requests: 0,
         actual_context_tokens: None,
+        quality_diagnostic: None,
         nonce: uuid::Uuid::new_v4().to_string(),
     };
     let start = Instant::now();
@@ -982,6 +1021,8 @@ pub async fn run_workload(
     Ok(json!({
         "benchmarkVersion":VERSION,"workloadId":spec.id,"useCase":spec.use_case,"kind":spec.kind,
         "qualityPassed":passed,"complete":complete,"qualityReason":result.err(),"wallMs":wall_ms,
+        "qualityDetail":execution.quality_diagnostic.as_ref().map(|diagnostic|diagnostic.detail),
+        "qualityDiagnostic":execution.quality_diagnostic,
         "fullAgentWallMs":if spec.kind==WorkloadKind::FullAgent {Some(wall_ms)}else{None},
         "coldModelVerified":freshly_loaded && matches!(spec.kind,WorkloadKind::ColdInput|WorkloadKind::SessionSwitch|WorkloadKind::LongRetrieval),
         "firstTokenMs":execution.turns.first().and_then(|turn|turn.first_token_ms),
@@ -1000,3 +1041,75 @@ pub async fn run_workload(
 #[cfg(test)]
 #[path = "tuning_workloads_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod final_agent_contract_tests {
+    use super::*;
+
+    #[test]
+    fn final_confirmation_requires_the_entire_exact_object() {
+        let expected = json!({"status":"fixed","file":"merge.py","tests":"passed"});
+        let response = |text: &str| {
+            let mut collected = Collected::default();
+            collected.turn.finish = Some("stop".into());
+            collected.text = text.into();
+            collected
+        };
+        assert!(require_answer(&response(&expected.to_string()), &expected).is_ok());
+        for text in [
+            "All 46 tests passed.",
+            "All 46 tests passed. {\"status\":\"fixed\",\"file\":\"merge.py\",\"tests\":\"passed\"}",
+            "```json\n{\"status\":\"fixed\",\"file\":\"merge.py\",\"tests\":\"passed\"}\n```",
+            "{\"status\":\"fixed\",\"file\":\"merge.py\",\"tests\":\"passed\"}{}",
+            "{\"status\":\"fixed\",\"file\":\"merge.py\",\"tests\":\"failed\"}",
+            "{\"status\":\"fixed\",\"file\":\"merge.py\",\"tests\":\"passed\",\"note\":\"ok\"}",
+        ] {
+            assert!(require_answer(&response(text), &expected).is_err());
+        }
+        let mut unexpected_tool = response(&expected.to_string());
+        unexpected_tool.tools.insert(0, ToolCall::default());
+        assert!(require_answer(&unexpected_tool, &expected).is_err());
+    }
+
+    #[tokio::test]
+    async fn final_json_format_cannot_be_combined_with_another_tool_request() {
+        let temporary = tempfile::tempdir().unwrap();
+        let state = RuntimeState::open(temporary.path().into()).unwrap();
+        let profile: ServiceProfile = serde_json::from_value(json!({"id":"final-json-fixture","name":"fixture","baseUrl":"http://127.0.0.1:1","installDir":"fixture","pythonPath":"fixture","configPath":"fixture","managed":true})).unwrap();
+        let options = WorkloadOptions {
+            use_case: UseCase::Agent,
+            context_limit: 8192,
+            include_vision: false,
+            max_output_tokens: 1024,
+        };
+        let cancel = CancellationToken::new();
+        let mut execution = Execution {
+            state: &state,
+            profile: &profile,
+            parameters: Parameters {
+                pcie_frac: 0.5,
+                spec_min_p: 0.5,
+            },
+            maintenance_token: "fixture",
+            options: &options,
+            cancel: &cancel,
+            turns: vec![],
+            request_count: 0,
+            count_requests: 0,
+            actual_context_tokens: None,
+            quality_diagnostic: None,
+            nonce: "fixture".into(),
+        };
+        let error = execution
+            .request(
+                json!([]),
+                Some(tool_schema("test_fixture", 2)),
+                Dialect::OpenAiJson,
+            )
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(error, "workloadStructuredOutputWithTools");
+        assert_eq!(execution.request_count, 0);
+    }
+}

@@ -93,14 +93,16 @@ try {
     await page.waitForURL('**/#models'); assert.equal(await page.evaluate(() => history.length), length);
     await page.goForward(); await page.waitForURL('**/#config');
   });
-  await run('API key alone protects navigation and exit has only one modal', '#config', async page => {
-    await page.locator('#api-key').fill('fixture-unsaved-key');
+  await run('model startup draft protects navigation and exit has only one modal', '#config', async page => {
+    const editor = await editJson(page), draft = await editor.inputValue();
     await page.getByRole('button', { name: '返回我的模型', exact: true }).click();
     await decision(page).getByRole('button', { name: '取消', exact: true }).click();
+    assert.equal(await editor.inputValue(), draft);
     await page.evaluate(() => window.__fixture.emit());
     await page.getByRole('dialog').getByRole('button', { name: '停止服务并退出', exact: true }).click();
     await decision(page).waitFor(); assert.equal(await page.getByRole('dialog').count(), 1);
     await page.keyboard.press('Escape');
+    assert.equal(await editor.inputValue(), draft);
     assert.equal(await page.evaluate(() => document.getElementById('root').inert), false);
     assert.equal(await page.evaluate(() => window.__fixture.calls.filter(call => call.command === 'confirm_window_close').length), 0);
   });
@@ -133,8 +135,8 @@ try {
     await page.getByRole('alert').filter({ hasText: 'Forbidden fixture lifecycle: restart_service' }).waitFor();
     assert.equal(await page.getByRole('dialog').count(), 0);
   });
-  await run('copying a configuration protects its API key draft before changing identity', '#config', async page => {
-    await page.locator('#api-key').fill('fixture-copy-draft-key');
+  await run('copying a configuration protects its startup draft before changing identity', '#config', async page => {
+    const editor = await editJson(page), draft = await editor.inputValue();
     const copy = async () => {
       await page.getByRole('button', { name: '复制为新配置', exact: true }).click();
       await page.getByRole('dialog', { name: '复制为新配置' }).getByRole('button', { name: '创建副本', exact: true }).click();
@@ -142,11 +144,17 @@ try {
     };
     await copy();
     await decision(page).getByRole('button', { name: '取消', exact: true }).click();
-    assert.equal(await page.locator('#api-key').inputValue(), 'fixture-copy-draft-key');
+    assert.equal(await editor.inputValue(), draft);
+    assert.equal(await page.evaluate(() => window.__fixture.configs.a.args.includes('8')), false, 'The original configuration is unchanged while its startup draft remains unsaved');
     assert.equal(await page.evaluate(() => window.__fixture.calls.filter(call => call.command.startsWith('read_config')).at(-1).args.profile.id), 'a');
     await copy(); await decision(page).getByRole('button', { name: '放弃改动', exact: true }).click();
     await page.waitForFunction(() => window.__fixture.calls.some(call => call.command.startsWith('read_config') && call.args.profile.id.startsWith('copy-')));
-    assert.equal(await page.locator('#api-key').inputValue(), '');
+    await page.getByRole('radio', { name: '完整 JSON', exact: true }).click();
+    await rawEditor(page).waitFor();
+    const copied = await page.evaluate(() => window.__fixture.calls.filter(call => call.command.startsWith('read_config')).at(-1).args.profile.id);
+    assert.deepEqual(JSON.parse(await rawEditor(page).inputValue()), await page.evaluate(id => window.__fixture.configs[id], copied), 'Selecting the copy loads its saved startup configuration');
+    assert.equal(await page.getByRole('button', { name: '保存完整配置', exact: true }).isDisabled(), true, 'The copied startup settings are a saved baseline, not an unsaved draft');
+    assert.equal(await page.evaluate(() => window.__fixture.configs.a.args.includes('8')), false);
   });
   await run('successful write followed by failed reload preserves saved content', '#config', async page => {
     const editor = await editJson(page);
@@ -257,8 +265,10 @@ try {
   });
   await run('tuning help preserves model state and keeps one advanced control group', '#tuning', async page => {
     const help = page.getByRole('button', { name: '调优测试帮助', exact: true }); await help.waitFor();
-    assert.equal(await page.locator('.tuning-page details').count(), 1);
-    await page.getByText('测试时模型会暂停处理其他请求，结束后恢复原配置。', { exact: true }).waitFor();
+    assert.equal(await page.locator('.tuning-page details.tuning-setup-disclosure').count(), 1);
+    assert.equal(await page.locator('.tuning-page details.tuning-advanced').count(), 1);
+    assert.equal(await page.locator('.tuning-advanced details').count(), 0);
+    await page.getByText('测试占用当前模型，完成后恢复原配置。', { exact: true }).waitFor();
     await page.screenshot({ path: resolve(output, 'tuning-simplified.png') });
     const before = await page.evaluate(() => window.__fixture.calls.length);
     await help.focus(); await page.keyboard.press('Enter');

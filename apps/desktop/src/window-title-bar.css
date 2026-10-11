@@ -6,15 +6,29 @@
 .window-title-bar.official-surface{flex-direction:row;height:var(--window-title-bar-height);min-height:var(--window-title-bar-height);background:var(--st-surface,var(--surface))}
 .window-title-bar-drag{display:flex;align-items:center;flex:1;min-width:0;height:100%;cursor:default;touch-action:none}
 .window-title-bar-brand{display:flex;align-items:center;gap:8px;flex:0 0 var(--window-nav-width);width:var(--window-nav-width);height:100%;padding:0 18px;overflow:hidden;white-space:nowrap;border-right:1px solid var(--st-line,var(--border));transition:width 240ms cubic-bezier(.22,1,.36,1),flex-basis 240ms cubic-bezier(.22,1,.36,1),padding 240ms cubic-bezier(.22,1,.36,1),gap 240ms cubic-bezier(.22,1,.36,1)}
-.window-title-bar-mark{flex:none;color:var(--st-accent,var(--accent))}
+.app-logo{display:block;flex:none;object-fit:contain;border-radius:24%;user-select:none;-webkit-user-drag:none}
+.window-title-bar-mark{flex:none;width:32px;height:32px}
+.window-title-bar-brand-copy{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;min-width:0;gap:2px}
+.window-title-bar .window-title-bar-version{display:inline-flex;align-items:center;gap:6px;max-width:100%;min-height:18px;height:18px;padding:0 3px;margin-left:-3px;border:0;border-radius:4px;background:transparent;box-shadow:none;color:var(--st-ink-muted,var(--muted));font:500 10px/1.4 var(--st-font,inherit);letter-spacing:.015em;white-space:nowrap;cursor:pointer;transform:none}
+.window-title-bar .window-title-bar-version:hover:not(:disabled){background:var(--st-surface-2,var(--surface-hover));color:var(--st-ink,var(--text));transform:none}
+.window-title-bar .window-title-bar-version:focus-visible{outline:2px solid var(--st-focus,var(--accent));outline-offset:2px}
+.window-title-bar .window-title-bar-version:disabled{opacity:1;cursor:default}
+.window-title-bar-version-number{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.window-title-bar-update-badge{flex:none;display:inline-flex;align-items:center;border-radius:4px;padding:0 5px;font-size:9px;line-height:15px;color:var(--st-accent,var(--accent));background:color-mix(in srgb,var(--st-accent,var(--accent)) 13%,transparent)}
 .window-title-bar-brand-name{display:inline-flex;align-items:baseline;gap:4px;max-width:170px;opacity:1;overflow:hidden;transform:translateX(0);transition:max-width 240ms cubic-bezier(.22,1,.36,1),opacity 160ms ease,transform 240ms cubic-bezier(.22,1,.36,1)}
 .window-title-bar-brand-name strong{font:900 19px/1.3 var(--st-font,inherit);letter-spacing:-.045em;color:var(--st-ink,var(--text))}
 .window-title-bar-brand-name>span{font:500 13px/1.3 var(--st-font,inherit);letter-spacing:-.015em;color:var(--st-ink-muted,var(--muted))}
-.window-title-bar.is-collapsed .window-title-bar-brand{justify-content:center;padding:0;gap:0}
-.window-title-bar.is-collapsed .window-title-bar-brand-name{max-width:0;opacity:0;transform:translateX(-6px)}
+.window-title-bar.is-collapsed .window-title-bar-brand{flex-direction:column;justify-content:center;padding:0 4px;gap:2px}
+.window-title-bar.is-collapsed .window-title-bar-mark{width:26px;height:26px}
+.window-title-bar.is-collapsed .window-title-bar-brand-copy{align-items:center;max-width:100%;gap:0}
+.window-title-bar.is-collapsed .window-title-bar-brand-name{display:none}
+.window-title-bar.is-collapsed .window-title-bar-version{font-size:9px;margin:0;gap:3px;max-width:64px;padding:0 2px}
+.window-title-bar.is-collapsed .window-title-bar-update-badge{width:5px;height:5px;padding:0;border-radius:50%;background:var(--st-accent,var(--accent))}
+.window-title-bar.is-collapsed .window-title-bar-update-badge>span{display:none}
 .window-title-bar-content{display:flex;align-items:center;gap:18px;flex:1;min-width:0;height:100%;padding:0 16px 0 28px}
 .window-title-bar-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:20px;line-height:1.4;font-weight:700;letter-spacing:-.035em;color:var(--st-ink,var(--text));margin:0}
 .window-title-bar-status{display:flex;align-items:center;justify-content:flex-end;flex:none;margin-left:auto;min-width:0;max-width:48%;font-size:12px}
+.window-title-bar>.window-title-bar-status{margin-left:0;margin-right:16px;max-width:40%}
 .window-title-bar-status .st-pill{max-width:100%;overflow:hidden;white-space:nowrap;font-size:12px}
 .window-title-bar-status .st-pill>span:last-child{overflow:hidden;text-overflow:ellipsis}
 .window-title-bar .window-title-bar-status #pill-text{display:inline}

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Copy, Layers3, Minus, Square, X } from 'lucide-react';
+import { Copy, Minus, Square, X } from 'lucide-react';
 import type { Window as TauriWindow } from '@tauri-apps/api/window';
 import type { UnlistenFn } from '@tauri-apps/api/event';
+import { AppLogo } from './AppLogo';
 import './window-title-bar.css';
 
 export interface WindowTitleBarProps {
@@ -10,12 +11,15 @@ export interface WindowTitleBarProps {
   title?: string;
   status?: ReactNode;
   collapsed?: boolean;
+  version?: string;
+  updateVersion?: string;
+  onVersionClick?: () => void;
   onError?: (error: unknown) => void;
   onClose?: () => void;
 }
 
 /** close() emits the native CloseRequested event, including the background policy. */
-export function WindowTitleBar({ desktop, language, title, status, collapsed = false, onError, onClose }: WindowTitleBarProps) {
+export function WindowTitleBar({ desktop, language, title, status, collapsed = false, version, updateVersion, onVersionClick, onError, onClose }: WindowTitleBarProps) {
   const [maximized, setMaximized] = useState(false);
   const [focused, setFocused] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -27,6 +31,9 @@ export function WindowTitleBar({ desktop, language, title, status, collapsed = f
   const text = language === 'en'
     ? { window: 'Application window', minimize: 'Minimize', maximize: 'Maximize', restore: 'Restore window', close: 'Close window' }
     : { window: '应用窗口', minimize: '最小化', maximize: '最大化', restore: '还原窗口', close: '关闭窗口' };
+  const versionLabel = language === 'en'
+    ? `App version v${version}${updateVersion ? `, update v${updateVersion} available, review update` : ', view app updates'}`
+    : `应用版本 v${version}${updateVersion ? `，有新版本 v${updateVersion}，查看更新` : '，查看应用更新'}`;
 
   useEffect(() => {
     mounted.current = true;
@@ -88,9 +95,19 @@ export function WindowTitleBar({ desktop, language, title, status, collapsed = f
 
   return <header className={`window-title-bar official-surface${collapsed ? ' is-collapsed' : ''}`} aria-label={text.window} data-focused={focused} data-maximized={maximized} data-desktop={desktop}>
     <div className="window-title-bar-drag" data-tauri-drag-region={desktop ? 'deep' : undefined} onDoubleClick={() => { if (!desktop) setMaximized(value => !value); }}>
-      <div className="window-title-bar-brand" aria-label="Strata Manager"><Layers3 className="window-title-bar-mark" size={20} strokeWidth={2.2} aria-hidden="true"/><span className="window-title-bar-brand-name"><strong>Strata</strong><span>Manager</span></span></div>
-      <div className="window-title-bar-content">{title && <h1 className="window-title-bar-title" id="workspace-page-title">{title}</h1>}{status && <div className="window-title-bar-status">{status}</div>}</div>
+      <div className="window-title-bar-brand" aria-label="Strata Manager">
+        <AppLogo className="window-title-bar-mark"/>
+        <div className="window-title-bar-brand-copy">
+          <span className="window-title-bar-brand-name"><strong>Strata</strong><span>Manager</span></span>
+          {version && <button id="app-version-button" type="button" className="window-title-bar-version" data-tauri-drag-region="false" aria-label={versionLabel} aria-haspopup={updateVersion ? 'dialog' : undefined} title={versionLabel} disabled={!onVersionClick} onClick={onVersionClick} onDoubleClick={event => event.stopPropagation()}>
+            <span className="window-title-bar-version-number">v{version}</span>
+            {updateVersion && <span className="window-title-bar-update-badge" aria-hidden="true"><span>{language === 'en' ? 'Update' : '有更新'}</span></span>}
+          </button>}
+        </div>
+      </div>
+      <div className="window-title-bar-content">{title && <h1 className="window-title-bar-title" id="workspace-page-title">{title}</h1>}</div>
     </div>
+    {status && <div className="window-title-bar-status" data-tauri-drag-region="false">{status}</div>}
     <div className="window-title-bar-controls" role="group" aria-label={text.window} data-tauri-drag-region="false">
       <button type="button" className="window-title-bar-button" aria-label={text.minimize} title={text.minimize} disabled={busy} onClick={() => void action('minimize')}><Minus size={15} strokeWidth={1.5} aria-hidden="true"/></button>
       <button type="button" className="window-title-bar-button" aria-label={maximized ? text.restore : text.maximize} title={maximized ? text.restore : text.maximize} disabled={busy} onClick={() => void action('maximize')}>{maximized ? <Copy size={13} strokeWidth={1.4} aria-hidden="true"/> : <Square size={12} strokeWidth={1.4} aria-hidden="true"/>}</button>

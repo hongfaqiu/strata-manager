@@ -96,20 +96,62 @@ export function NumberField(props: Omit<InputHTMLAttributes<HTMLInputElement>, '
   return <input {...props} type="number" className={`official-number-field ${props.className ?? ''}`} />;
 }
 
+const dialogRootIsolation = new WeakMap<HTMLElement, { count: number; originalInert: boolean; originalAriaHidden: string | null; originalFocus: HTMLElement | null }>();
+const dialogPanels: HTMLElement[] = [];
+
+/** Nested dialogs share one root lock; only the last cleanup restores its original state. */
+function isolateDialogRoot(app: HTMLElement, previous: HTMLElement | null): () => HTMLElement | null {
+  let state = dialogRootIsolation.get(app);
+  if (!state) {
+    state = { count: 0, originalInert: app.inert, originalAriaHidden: app.getAttribute('aria-hidden'), originalFocus: previous };
+    dialogRootIsolation.set(app, state);
+  }
+  const acquired = state;
+  acquired.count++;
+  app.inert = true;
+  app.setAttribute('aria-hidden', 'true');
+  let released = false;
+  return () => {
+    if (released) return null;
+    released = true;
+    acquired.count--;
+    if (acquired.count !== 0) return null;
+    app.inert = acquired.originalInert;
+    if (acquired.originalAriaHidden === null) app.removeAttribute('aria-hidden');
+    else app.setAttribute('aria-hidden', acquired.originalAriaHidden);
+    dialogRootIsolation.delete(app);
+    return acquired.originalFocus;
+  };
+}
+
 export function OfficialDialog({ title, children, onClose, wide = false, drawer = false }: { title: string; children: ReactNode; onClose: () => void; wide?: boolean; drawer?: boolean }) {
   const { t } = useTranslation(); const uid = useId(); const panel = useRef<HTMLDivElement>(null); const close = useRef(onClose); close.current = onClose;
   useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null; const app = document.getElementById('root'); const wasInert = app?.inert; const hidden = app?.getAttribute('aria-hidden');
-    if (app) { app.inert = true; app.setAttribute('aria-hidden', 'true'); }
+    const previous = document.activeElement as HTMLElement | null; const app = document.getElementById('root');
+    const releaseRoot = app ? isolateDialogRoot(app, previous) : undefined;
+    const currentPanel = panel.current;
+    if (currentPanel) dialogPanels.push(currentPanel);
     const focusable = () => [...(panel.current?.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input:not(:disabled),textarea:not(:disabled),[tabindex]:not([tabindex="-1"])') ?? [])].filter(element => element.getClientRects().length && !element.closest('[aria-disabled="true"]'));
     const initial = panel.current?.querySelector<HTMLElement>('input:not(:disabled),textarea:not(:disabled),[autofocus]'); (initial ?? focusable()[0] ?? panel.current)?.focus();
     const keys = (event: KeyboardEvent) => {
+      if (!currentPanel || dialogPanels.at(-1) !== currentPanel) return;
       if (event.defaultPrevented) return;
       if (event.key === 'Escape') { event.preventDefault(); close.current(); }
       if (event.key === 'Tab') { const items = focusable(), first = items[0], last = items.at(-1); if (!first) { event.preventDefault(); panel.current?.focus(); } else if (event.shiftKey && (document.activeElement === first || !panel.current?.contains(document.activeElement))) { event.preventDefault(); last?.focus(); } else if (!event.shiftKey && (document.activeElement === last || !panel.current?.contains(document.activeElement))) { event.preventDefault(); first.focus(); } }
     };
     document.addEventListener('keydown', keys);
-    return () => { document.removeEventListener('keydown', keys); if (app) { app.inert = wasInert ?? false; if (hidden === null) app.removeAttribute('aria-hidden'); else if (hidden !== undefined) app.setAttribute('aria-hidden', hidden); } previous?.focus({ preventScroll: true }); };
+    return () => {
+      document.removeEventListener('keydown', keys);
+      const wasActive = !!currentPanel && dialogPanels.at(-1) === currentPanel;
+      const index = currentPanel ? dialogPanels.indexOf(currentPanel) : -1;
+      if (index !== -1) dialogPanels.splice(index, 1);
+      const originalFocus = releaseRoot?.();
+      if (wasActive) {
+        const activePanel = dialogPanels.at(-1);
+        const restoreFocus = [previous, originalFocus].find(element => element?.isConnected && !element.closest('[inert]') && (!activePanel || activePanel.contains(element)));
+        (restoreFocus ?? activePanel)?.focus({ preventScroll: true });
+      }
+    };
   }, []);
   if (drawer) return createPortal(<div className="official-surface"><aside ref={panel} id="drawer" className="st-drawer" data-open="true" role="dialog" aria-modal="true" aria-labelledby={`${uid}-title`} tabIndex={-1}><div className="st-drawer__head"><span className="card-title" id={`${uid}-title`}>{title}</span><button type="button" className="st-btn st-btn--icon" id="drawer-close" aria-label={t('close')} onClick={onClose}><OfficialIcon name="chevron" /></button></div><div className="st-drawer__body">{children}</div></aside><div className="scrim" id="scrim" onPointerDown={() => close.current()} /></div>, document.body);
   return createPortal(<div className="official-dialog-backdrop" onPointerDown={event => { if (event.target === event.currentTarget) close.current(); }}><div ref={panel} className={`dialog official-dialog-panel ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby={`${uid}-title`} tabIndex={-1}><header className="dialog-header"><h2 id={`${uid}-title`}>{title}</h2><button type="button" className="icon-button" aria-label={t('close')} onClick={onClose}><X size={20} /></button></header><div className="dialog-body">{children}</div></div></div>, document.body);

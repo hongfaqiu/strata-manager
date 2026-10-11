@@ -1,0 +1,52 @@
+.window-title-bar .service-status-trigger{cursor:pointer;min-height:32px;font:inherit;gap:7px;transform:none}
+.window-title-bar .service-status-trigger:hover{background:var(--st-surface-2,var(--surface-hover));transform:none}
+.window-title-bar-status .service-status-trigger #pill-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.window-title-bar .service-status-trigger:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.service-status-popover{position:fixed;z-index:1300;padding:18px;border:1px solid var(--st-line,var(--border));border-radius:14px;background:var(--st-surface,var(--surface));box-shadow:var(--shadow);color:var(--st-ink,var(--text));font:13px/1.45 var(--st-font,inherit);overflow:auto;overscroll-behavior:contain}
+.service-status-popover.official-surface{display:block;min-height:0;height:auto;overflow:auto}
+.service-status-popover>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+.service-status-heading{display:flex;flex-direction:column;gap:4px;min-width:0}
+.service-status-heading>span{color:var(--st-ink-muted,var(--muted));font-size:12px}
+.service-status-model{overflow-wrap:anywhere;font-size:15px;font-weight:650;line-height:1.4}
+.service-status-header-actions{display:flex;gap:4px;flex:none}
+.service-status-popover .icon-button{width:28px;height:28px;min-height:0;padding:5px;border:0;background:transparent;border-radius:7px;color:var(--st-ink-muted,var(--muted))}
+.service-status-popover .icon-button:hover:not(:disabled){background:var(--st-surface-2,var(--surface-hover));color:var(--st-ink,var(--text))}
+.service-status-summary{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:12px}
+.service-status-chip{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:5px;color:var(--st-ink-muted,var(--muted));background:var(--st-surface-2,var(--surface-hover));line-height:1.4}
+.service-status-chip:before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor;flex:none}
+.service-status-chip.is-online{color:var(--st-accent-text,var(--accent));background:var(--st-accent-tint,var(--surface-hover))}
+.service-status-model-state{font-weight:500}
+.service-status-owner{margin-left:auto;color:var(--st-ink-muted,var(--muted))}
+.service-status-endpoint{display:block;margin-top:8px;font-size:12px;color:var(--st-ink-muted,var(--muted));overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.service-status-monitor{display:flex;flex-direction:column;gap:12px;padding-top:16px;margin-top:14px;border-top:1px solid var(--st-line,var(--border))}
+.service-status-trends{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.service-status-trends>section{min-width:0;padding:10px 10px 7px;border-radius:8px;background:var(--st-surface-2,var(--surface-hover))}
+.service-status-trends header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px;font-size:11px;color:var(--st-ink-muted,var(--muted))}
+.service-status-trends header small{font-size:11px;flex:none;font-variant-numeric:tabular-nums}
+.service-status-sparkline{display:block;width:100%;height:48px;overflow:visible;color:var(--st-accent,var(--accent))}
+.service-status-trends>section+section .service-status-sparkline{color:var(--st-info,var(--accent))}
+.service-status-chart-baseline{fill:none;stroke:var(--st-line,var(--border));stroke-width:1;vector-effect:non-scaling-stroke}
+.service-status-chart-line{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.service-status-sparkline circle{fill:currentColor}
+.service-status-chart-empty{display:flex;align-items:center;justify-content:center;height:48px;font-size:11px;color:var(--st-ink-muted,var(--muted))}
+.service-status-monitor[data-paused="true"] .service-status-sparkline{opacity:.45}
+.service-status-resources{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.service-status-resource{min-width:0}
+.service-status-resource>div:first-child{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:7px;font-size:11px}
+.service-status-resource span{color:var(--st-ink-muted,var(--muted));flex:none}
+.service-status-resource strong{font-weight:500;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;text-align:right}
+.service-status-meter{height:4px;background:var(--st-line,var(--border));border-radius:3px;overflow:hidden}
+.service-status-meter>span{display:block;height:100%;border-radius:inherit;background:var(--st-accent,var(--accent));transition:width .25s ease}
+.service-status-meter[data-tone="warning"]>span{background:var(--st-warn,var(--warning))}
+.service-status-telemetry-meta{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--st-ink-muted,var(--muted));font-variant-numeric:tabular-nums}
+.service-status-empty{padding:22px 0 12px;color:var(--st-ink-muted,var(--muted));font-size:12px}
+.service-status-context{margin:12px 0;line-height:1.6;font-size:12px;color:var(--st-ink-muted,var(--muted))}
+.service-status-actions{border:0;min-width:0;padding:0;margin:14px 0}
+.service-status-actions .service-actions{display:flex;gap:7px;flex-wrap:wrap;margin:0}
+.service-status-actions button{min-height:32px;padding:6px 10px;font-size:12px}
+.service-status-actions:disabled button{opacity:.5;cursor:not-allowed}
+.service-status-popover>nav{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding-top:12px;border-top:1px solid var(--st-line,var(--border))}
+.service-status-popover>nav button{min-height:30px;font-size:12px;padding:6px 8px;gap:5px;border:0;background:transparent;color:var(--st-ink-soft,var(--text))}
+.service-status-popover>nav button:hover:not(:disabled){background:var(--st-surface-2,var(--surface-hover))}
+@media(max-width:380px){.service-status-popover{padding:14px}.service-status-trends{gap:8px}.service-status-trends>section{padding:8px}.service-status-resources{gap:10px}.service-status-popover>nav{gap:3px}.service-status-popover>nav button{padding:6px}}
+@media(prefers-reduced-motion:reduce){.service-status-meter>span{transition:none}}

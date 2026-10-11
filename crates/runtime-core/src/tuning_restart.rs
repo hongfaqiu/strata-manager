@@ -284,7 +284,9 @@ fn baseline(config: &Value) -> Result<RestartParameters, String> {
         adapt_decay: option_value(config, "--adapt-decay")?
             .map(|s| {
                 s.parse::<f64>()
-                    .map_err(|_| "--adapt-decay 原值无效".to_string())
+                    .ok()
+                    .filter(|number| number.is_finite() && (0.0..=1.0).contains(number))
+                    .ok_or_else(|| "--adapt-decay 原值无效".to_string())
             })
             .transpose()?,
     })
@@ -538,6 +540,27 @@ pub(super) fn bound_identity(
     }
     value
 }
+// Recovery returns exact journal-owned bytes to their original model; it does
+// not authorize recommending or applying an earlier benchmark's results.
+// Keep every physical/configuration identity field strict, including unknown
+// future fields, and ignore only the textual benchmark version on this path.
+fn recovery_identity_matches(current: &Value, recorded: &Value) -> bool {
+    let (Some(current), Some(recorded)) = (current.as_object(), recorded.as_object()) else {
+        return false;
+    };
+    let has_version = |identity: &serde_json::Map<String, Value>| {
+        identity
+            .get("benchmarkVersion")
+            .and_then(Value::as_str)
+            .is_some_and(|version| !version.is_empty())
+    };
+    has_version(current)
+        && has_version(recorded)
+        && current.len() == recorded.len()
+        && current
+            .iter()
+            .all(|(key, value)| key == "benchmarkVersion" || recorded.get(key) == Some(value))
+}
 fn journal_path(state: &RuntimeState, id: &str) -> Result<PathBuf, String> {
     let _ = report_path(state, id)?;
     Ok(report_dir(state).join(format!("{id}.stage")))
@@ -713,8 +736,10 @@ async fn restore_stage(
         .await?;
     verify_restarted(state, profile, token, job.baseline).await?;
     let config: Value = serde_json::from_slice(&original).map_err(|e| e.to_string())?;
-    if bound_identity(profile, &config, &read_metrics(state, profile).await?, &job) != job.identity
-    {
+    if !recovery_identity_matches(
+        &bound_identity(profile, &config, &read_metrics(state, profile).await?, &job),
+        &job.identity,
+    ) {
         return Err("恢复后原模型/引擎/硬件身份不一致".into());
     }
     if fs::read(&path).map_err(|e| e.to_string())? != original {
@@ -804,6 +829,36 @@ async fn switch_stage(
         Ok(())
     }=>result }
 }
+fn reported_flag_value(key: &str, value: &Value) -> Result<Option<Value>, String> {
+    if value.is_null() {
+        return Ok(None);
+    }
+    let number = if key == "adapt_async" && value.is_boolean() {
+        f64::from(u8::from(value.as_bool().unwrap()))
+    } else {
+        engine_number(value).ok_or_else(|| format!("引擎报告的 {key} 不是有限数字"))?
+    };
+    let valid = match key {
+        "adapt_decay" => (0.0..=1.0).contains(&number),
+        "adapt_async" => number == 0.0 || number == 1.0,
+        "pool_workers" | "prefill" => {
+            (1.0..=9_007_199_254_740_991.0).contains(&number) && number.fract() == 0.0
+        }
+        "vram_reserve_mib" | "adapt_every" | "adapt_swaps" => {
+            (0.0..=9_007_199_254_740_991.0).contains(&number) && number.fract() == 0.0
+        }
+        _ => false,
+    };
+    if !valid {
+        return Err(format!("引擎报告的 {key} 超出参数范围"));
+    }
+    Ok(Some(if key == "adapt_decay" {
+        json!(number)
+    } else {
+        json!(number as u64)
+    }))
+}
+
 pub(super) async fn verify_flags(
     state: &RuntimeState,
     profile: &ServiceProfile,
@@ -826,16 +881,7 @@ pub(super) async fn verify_flags(
     let mut unknown = false;
     for (key, value) in expected {
         if let Some(want) = value {
-            let actual = metrics["engine"][key]
-                .as_f64()
-                .filter(|n| n.is_finite())
-                .map(|_| metrics["engine"][key].clone())
-                .or_else(|| {
-                    (key == "adapt_async")
-                        .then(|| metrics["engine"][key].as_bool())
-                        .flatten()
-                        .map(|v| json!(u64::from(v)))
-                });
+            let actual = reported_flag_value(key, &metrics["engine"][key])?;
             let equal = actual
                 .as_ref()
                 .is_some_and(|v| (v.as_f64().unwrap() - want.as_f64().unwrap()).abs() <= 1e-9);
@@ -1188,12 +1234,18 @@ async fn run_full_bounded(
                             });
                         })?;
                         if !complete {
+                            let detail = result["qualityDetail"]
+                                .as_str()
+                                .filter(|detail| !detail.is_empty() && detail.len() <= 1024)
+                                .map(|detail| format!("；{detail}"))
+                                .unwrap_or_default();
                             return Err(format!(
-                                "{}未完成或未通过语义验收：{}",
+                                "{}未完成或未通过语义验收：{}{}",
                                 spec.id,
                                 result["qualityReason"]
                                     .as_str()
-                                    .unwrap_or("incompleteWorkload")
+                                    .unwrap_or("incompleteWorkload"),
+                                detail
                             ));
                         }
                         crate::maintenance::wait_idle(&state, &profile).await?;

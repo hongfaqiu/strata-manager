@@ -6,9 +6,9 @@ Strata Manager is a desktop workspace for the Strata runtime and local model ser
 
 ## Download a published stable release
 
-Choose a package from the [latest stable release](https://github.com/hongfaqiu/strata-manager/releases/latest) or the [website download section](https://hongfaqiu.github.io/strata-manager/en/#get-started). The current public stable version is **v0.1.2**; **0.1.3 has no published installer**. Install only files listed for the selected release and check its notes for included capabilities. You can also [try source](#try-source).
+Choose a package from the [latest stable release](https://github.com/hongfaqiu/strata-manager/releases/latest) or the [website download section](https://hongfaqiu.github.io/strata-manager/en/#get-started). The exact public stable version is shown there. Install only files listed for the selected release and check its notes for included capabilities. You can also [try source](#try-source).
 
-The README, website screenshots and user guide describe the 0.1.3 source. New source changes are not included in the v0.1.2 package; the [changelog](../CHANGELOG.md) separates published releases from unreleased development changes. This document describes CI gate coverage, not a passing result for an unpublished candidate.
+The README, website screenshots and user guide describe the current source. Installer features depend on the selected version. The [changelog](../CHANGELOG.md) distinguishes released versions from unreleased development. CI coverage is described below; completed publication is established by that version’s workflow and asset verification.
 
 | Platform | Package | Scope |
 | --- | --- | --- |
@@ -69,6 +69,6 @@ pnpm desktop starts the complete desktop app and background process. pnpm dev ru
 
 [GitHub Releases](https://github.com/hongfaqiu/strata-manager/releases) lists versioned packages and release notes. Previews, stable releases, CI artifacts and local builds are separate sources; check the version and support scope first.
 
-Only published stable versions that pass release gates enter `latest`; download links point to the [latest stable release](https://github.com/hongfaqiu/strata-manager/releases/latest). The 0.1.3 source remains unreleased; see [CHANGELOG.md](../CHANGELOG.md) or the [website changelog](https://hongfaqiu.github.io/strata-manager/docs/changelog.en.html) for development progress and changes. Previews do not replace the stable channel, and finding no beta update does not establish that the latest preview is installed.
+Only published stable versions that pass release gates enter `latest`; download links point to the [latest stable release](https://github.com/hongfaqiu/strata-manager/releases/latest). See [CHANGELOG.md](../CHANGELOG.md) or the [website changelog](https://hongfaqiu.github.io/strata-manager/docs/changelog.en.html) for release history and feature changes. Previews do not replace the stable channel, and finding no beta update does not establish that the latest preview is installed.
 
 Current source manages app updates, the Strata runtime and model weights separately. Automatic checks are enabled by default; release notes are shown and installation requires confirmation. On Windows x64, Strata selects matching ZIPs from upstream release information, downloads and extracts them, then backs up and replaces program files while retaining models. The [user guide](USER_GUIDE.en.md) explains behavior.

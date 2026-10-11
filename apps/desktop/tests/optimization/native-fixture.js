@@ -7,14 +7,14 @@ const calls = [];
 const callbacks = new Map(); let callbackId = 0;
 const listeners = new Map(); let listenerId = 0;
 window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener(_event, id) { const callback = listeners.get(id); if (callback !== undefined) callbacks.delete(callback); listeners.delete(id); } };
-window.__fixture = { calls, configs, store, profiles, capability: 0, failReads: false, metricFailure: false, remoteValue: 100, emit: () => {} };
+window.__fixture = { calls, configs, store, profiles, supervisor: {}, serviceStatuses: {}, capability: 0, failReads: false, metricFailure: false, remoteValue: 100, emit: () => {} };
 const featureTasks = [], featureLogs = new Map(), externalOwners = new Set();
 const officialApp = location.pathname.endsWith('/official-app.html');
 const officialFeatures = officialApp || location.pathname.endsWith('/official-features.html');
 const featureStatus = { service: 'strata', engine: '0.1.42', loaded: true, dialects: ['/v1/chat/completions'], structured_output: { formats: ['json_object', 'json_schema'] }, concurrency: { serving: 1 }, vram: { elastic: true } };
 const featureMetrics = { engine: { version: '0.1.42', max_context: 8192, logit_bias: 1, vocab_size: 100000 }, live: { parallel: 2, running: 1, waiting: 1, slots: [{ slot: 0, state: 'decoding', prompt_tokens: 1024, generated: 32, tok_s: 64, elapsed_s: 0.5 }, { slot: 1, state: 'idle', held_tokens: 512 }] } };
 Object.assign(window.__fixture, { featureStatus, featureMetrics, runtimeEvidence: { verified: true, promptCache: 4, pid: 99999, startedAt: Date.now() } });
-if (officialFeatures) { window.__fixture.capability = 1; configs.a.args.push('--prompt-cache', '4', '--vram-elastic'); configs.a.slot_save_path = 'fixture/sessions'; }
+if (officialFeatures) { window.__fixture.capability = 1; for (const profile of profiles) { profile.installDir = 'C:\\fixture\\Strata'; profile.pythonPath = 'C:\\fixture\\python.exe'; } configs.a.args.push('--prompt-cache', '4', '--vram-elastic'); configs.a.slot_save_path = 'fixture/sessions'; }
 if (officialApp) store.conversations[0].messages = [{ id: 'document', role: 'user', content: '长文😀内容供固定前缀测试。', createdAt: Date.now() }];
 window.__TAURI_INTERNALS__ = {
   metadata: { currentWindow: { label: 'main' }, currentWebview: { label: 'main' } }, convertFileSrc: path => path,
@@ -30,7 +30,7 @@ window.__TAURI_INTERNALS__ = {
     }
     if (command === 'local_installations') return profiles;
     if (command === 'local_installation_details') return profiles.map(profile => ({ profileId: profile.id, configModifiedAt: 1000, lastActivatedAt: profile.id === 'a' ? 2000 : 1000 }));
-    if (command === 'service_status') return { profileId: profile.id, running: profile.id === 'a', owned: profile.id === 'a', pid: profile.id === 'a' ? 99999 : null, phase: profile.id === 'a' ? 'ready' : 'stopped' };
+    if (command === 'service_status') return structuredClone(window.__fixture.serviceStatuses[profile.id] ?? { profileId: profile.id, running: profile.id === 'a', owned: profile.id === 'a', pid: profile.id === 'a' ? 99999 : null, phase: profile.id === 'a' ? 'ready' : 'stopped' });
     if (command === 'assert_profile_management') return;
     if (['switch_local_service', 'ensure_local_service', 'start_service', 'stop_service', 'restart_service', 'take_over_service'].includes(command)) throw Error(`Forbidden fixture lifecycle: ${command}`);
     if (command === 'strata_request') {
@@ -59,7 +59,7 @@ window.__TAURI_INTERNALS__ = {
       callback?.({ index: 1, message: { kind: 'done' } });
       callback?.({ index: 2, end: true }); return;
     }
-    if (command === 'supervisor_status') return { running: true, protocolVersion: 1, activeServices: 1, version: 'fixture-old', capabilities: window.__fixture.capability ? { fullScenarioTuning: window.__fixture.capability } : undefined, health: { a: { phase: 'healthy', apiHealthy: true, loaded: true, pid: 99999, checkedAt: Date.now(), lastHealthyAt: Date.now(), reason: '', failures: [], observerState: 'idle' } } };
+    if (command === 'supervisor_status') return structuredClone({ running: true, protocolVersion: 1, activeServices: 1, version: 'fixture-old', capabilities: window.__fixture.capability ? { fullScenarioTuning: window.__fixture.capability } : undefined, health: { a: { phase: 'healthy', apiHealthy: true, loaded: true, pid: 99999, checkedAt: Date.now(), lastHealthyAt: Date.now(), reason: '', failures: [], observerState: 'idle' } }, ...window.__fixture.supervisor });
     if (command === 'read_config') { if (window.__fixture.failReads) throw Error('Fixture read failed'); return structuredClone(configs[profile.id]); }
     if (command === 'read_config_snapshot') { if (window.__fixture.failReads) throw Error('Fixture read failed'); return { config: structuredClone(configs[profile.id]), revision: JSON.stringify(configs[profile.id]) }; }
     if (command === 'write_config') {
@@ -71,6 +71,7 @@ window.__TAURI_INTERNALS__ = {
     if (command === 'read_logs') return featureLogs.get(args.profile?.id) ?? [{ timestamp: Date.now(), level: 'INFO', message: `logs for ${profile.id}` }];
     if (command === 'external_management_status') return { profileId: args.profileId, external: externalOwners.has(args.profileId), scope: 'installation', canHandoff: officialFeatures, canResume: officialFeatures, installDir: 'C:\\fixture\\Strata' };
     if (officialFeatures && command === 'set_external_management') { if (args.external) externalOwners.add(args.profileId); else externalOwners.delete(args.profileId); return { profileId: args.profileId, external: !!args.external, scope: 'installation', canHandoff: true, canResume: true, installDir: 'C:\\fixture\\Strata' }; }
+    if (command === 'manager_mcp_connection') return { protocolVersion: '2025-06-18', serverName: 'strata-manager', profileId: args.profileId, command: 'C:\\fixture\\strata-supervisor.exe', args: ['--mcp-server', '--data-dir', 'C:\\fixture\\manager-data', '--profile-id', args.profileId], tools: [{ name: 'strata_status', readOnly: true }, { name: 'strata_start', readOnly: false }], installDir: 'C:\\fixture\\Strata' };
     if (command === 'probe_official_mcp') return { protocolVersion: '2024-11-05', serverName: 'strata', readOnlyProbe: true, tools: [{ name: 'strata_status', readOnly: true }, { name: 'strata_start', readOnly: false }], scriptPath: 'C:\\fixture\\Strata\\tools\\strata_mcp.py', pythonPath: 'C:\\fixture\\python.exe', installDir: 'C:\\fixture\\Strata' };
     if (command === 'inspect_gguf' || (officialFeatures && command === 'run_setup')) {
       const id = `fixture-task-${featureTasks.length}`;

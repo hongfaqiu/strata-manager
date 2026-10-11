@@ -23,6 +23,7 @@ pub(super) const VERSION: &str = "request-aba-code-v2";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum QualityError {
+    OutputFormat,
     Unsupported,
     Bounds,
     Timeout,
@@ -34,7 +35,8 @@ pub(super) enum QualityError {
 impl QualityError {
     pub(super) fn reason(self) -> &'static str {
         match self {
-            Self::Unsupported => "编程输出使用了质量检查不支持的语法",
+            Self::OutputFormat => "补丁 source 必须是完整 Python 源码或单个 Python 代码块，不能包含说明、多段代码或 diff",
+            Self::Unsupported => "编程输出包含无效或有限解释器不支持的语法；请使用无类型注解的指定函数、整数、列表和双指针循环",
             Self::Bounds => "编程输出超过质量检查的大小、嵌套或整数限制",
             Self::Timeout => "编程质量检查超过时间限制",
             Self::Incorrect => "merge_sorted 未通过固定正确性用例",
@@ -43,8 +45,48 @@ impl QualityError {
             Self::Contract => "编程输出缺少指定函数、短文档字符串或两个有效断言",
         }
     }
+
+    pub(super) fn code(self) -> &'static str {
+        match self {
+            Self::OutputFormat => "outputFormat",
+            Self::Unsupported => "unsupportedSyntax",
+            Self::Bounds => "boundsExceeded",
+            Self::Timeout => "validationTimeout",
+            Self::Incorrect => "incorrectMerge",
+            Self::InputMutation => "inputMutation",
+            Self::NonLinear => "nonLinearWork",
+            Self::Contract => "fixtureContract",
+        }
+    }
 }
 type Checked<T> = Result<T, QualityError>;
+
+// Strip only a complete, single supported fence. Never extract a promising
+// block from prose, multiple blocks or a diff; every source statement must
+// still pass the same finite parser and semantic checks.
+fn source_body(source: &str) -> Checked<&str> {
+    let source = source.trim();
+    if source.starts_with("diff --git ") || source.starts_with("--- ") || source.starts_with("@@ ")
+    {
+        return Err(QualityError::OutputFormat);
+    }
+    if !source.starts_with("```") {
+        return Ok(source);
+    }
+    let (opening, body) = source.split_once('\n').ok_or(QualityError::OutputFormat)?;
+    if !["```python", "```py", "```"].contains(&opening.trim_end_matches('\r')) {
+        return Err(QualityError::OutputFormat);
+    }
+    let body = body
+        .strip_suffix("```")
+        .and_then(|body| body.strip_suffix('\n'))
+        .ok_or(QualityError::OutputFormat)?;
+    let body = body.strip_suffix('\r').unwrap_or(body);
+    if body.lines().any(|line| line.trim().starts_with("```")) {
+        return Err(QualityError::OutputFormat);
+    }
+    Ok(body)
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Token {
@@ -65,16 +107,7 @@ fn lex(source: &str, deadline: Instant) -> Checked<Vec<Token>> {
     if source.contains('\0') {
         return Err(QualityError::Unsupported);
     }
-    let source = source.trim();
-    let source = if source.starts_with("```python\n") && source.ends_with("```") {
-        source
-            .strip_prefix("```python\n")
-            .unwrap()
-            .strip_suffix("```")
-            .unwrap()
-    } else {
-        source
-    };
+    let source = source_body(source)?;
     let bytes = source.as_bytes();
     let mut index = 0;
     let mut levels = vec![0usize];
@@ -1228,6 +1261,32 @@ assert merge_sorted([], [1]) == [1]
             validate_merge_sorted(&format!("```python\n{CORRECT}```")),
             Ok(())
         );
+    }
+    #[test]
+    fn complete_single_python_fences_support_windows_newlines_without_skipping_checks() {
+        for opening in ["```python", "```py", "```"] {
+            for newline in ["\n", "\r\n"] {
+                let body = CORRECT.replace('\n', newline);
+                let source = format!("{opening}{newline}{body}```");
+                assert_eq!(validate_merge_sorted(&source), Ok(()));
+                let broken = source.replace("result.append(a[i])", "result.append(0)");
+                assert_eq!(validate_merge_sorted(&broken), Err(QualityError::Incorrect));
+            }
+        }
+    }
+    #[test]
+    fn prose_multiple_fences_diff_and_unclosed_wrappers_are_not_extracted() {
+        for source in [
+            format!("Here is the fix:\n```python\n{CORRECT}```"),
+            format!("```python\n{CORRECT}```\nThis passes."),
+            format!("```python\n{CORRECT}```\n```python\nimport os\n```"),
+            format!("```python\n{CORRECT}"),
+            format!("```javascript\n{CORRECT}```"),
+            format!("--- a/merge.py\n+++ b/merge.py\n{CORRECT}"),
+            format!("@@ -1,1 +1,1 @@\n{CORRECT}"),
+        ] {
+            assert!(validate_merge_sorted(&source).is_err());
+        }
     }
     #[test]
     fn single_loop_short_circuit_and_one_line_branches_are_supported() {

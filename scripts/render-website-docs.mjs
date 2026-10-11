@@ -19,6 +19,8 @@ const repository = 'https://github.com/hongfaqiu/strata-manager/blob/main/';
 export const documents = [
   { source: 'docs/README.md', page: 'docs/index.html', lang: 'zh', key: 'index', label: '文档中心' },
   { source: 'docs/README.en.md', page: 'docs/index.en.html', lang: 'en', key: 'index', label: 'Documentation' },
+  { source: 'docs/SYSTEM.md', page: 'docs/system.html', lang: 'zh', key: 'system', label: '系统说明' },
+  { source: 'docs/SYSTEM.en.md', page: 'docs/system.en.html', lang: 'en', key: 'system', label: 'System explanation' },
   { source: 'docs/USER_GUIDE.md', page: 'docs/user-guide.html', lang: 'zh', key: 'guide', label: '使用指南' },
   { source: 'docs/USER_GUIDE.en.md', page: 'docs/user-guide.en.html', lang: 'en', key: 'guide', label: 'User guide' },
   { source: 'docs/DOWNLOAD.md', page: 'docs/download.html', lang: 'zh', key: 'download', label: '下载与体验' },

@@ -94,7 +94,7 @@ const server = createServer((request, response) => {
   response.end('<!doctype html><title>Strata Manager hero renderer</title>');
 });
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ headless: true, ...(process.env.STRATA_BROWSER_EXECUTABLE ? { executablePath: process.env.STRATA_BROWSER_EXECUTABLE } : {}) });
 const results = [];
 try {
   for (const lang of ['zh', 'en']) {

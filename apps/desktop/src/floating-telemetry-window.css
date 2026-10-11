@@ -1,0 +1,87 @@
+html[data-window="monitor"], html[data-window="monitor"] body, html[data-window="monitor"] #root {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+}
+
+.floating-telemetry-window.official-surface {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100vh;
+  border: 1px solid var(--st-line);
+  background: var(--st-surface);
+  color: var(--st-ink);
+  font: 400 12px/1.4 var(--st-font);
+}
+
+.floating-telemetry-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 0 36px;
+  min-width: 0;
+  padding: 3px 8px;
+}
+
+.floating-telemetry-drag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: stretch;
+  flex: none;
+  padding-right: 3px;
+  color: var(--st-ink-muted);
+  cursor: move;
+  user-select: none;
+}
+
+.floating-telemetry-header .floating-telemetry-profile {
+  display: block;
+  justify-content: flex-start;
+  text-align: left;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 26px;
+  height: 26px;
+  overflow: hidden;
+  padding: 2px 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--st-ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.floating-telemetry-time, .floating-telemetry-notice {
+  flex: none;
+  color: var(--st-ink-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.floating-telemetry-notice { color: var(--st-warn-text); }
+.floating-telemetry-actions { display: flex; flex: none; gap: 2px; }
+.floating-telemetry-actions button {
+  min-height: 26px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-color: transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--st-ink-muted);
+}
+.floating-telemetry-actions button[aria-pressed="true"] { color: var(--st-accent-text); }
+.floating-telemetry-actions button:last-child:hover { color: var(--st-danger-text); background: var(--st-danger-tint); }
+.floating-telemetry-window .service-telemetry-statusbar { padding-inline: 12px; }
+
+@media (max-width: 560px) {
+  .floating-telemetry-drag > span, .floating-telemetry-time { display: none; }
+  .floating-telemetry-header { gap: 7px; }
+}

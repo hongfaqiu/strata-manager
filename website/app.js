@@ -199,6 +199,31 @@ const strataReleaseCatalog = (() => {
       "zh": { "title": "设置 · 调整工作台偏好", "description": "语言、外观、托盘与更新偏好。", "alt": "应用设置：语言、外观、后台与更新选项", "badge": "应用偏好" },
       "en": { "title": "Settings · Make it your workspace", "description": "Language, appearance, tray and update preferences.", "alt": "Application settings: language, appearance, background and update options", "badge": "SETTINGS" }
     },
+    "common-chat-settings": {
+      "index": "10",
+      "zh": { "title": "公共设置 · 按需继承参数", "description": "新模型默认继承，已有专用参数保留；更改在下一次聊天请求生效。", "alt": "公共聊天默认值：生成参数、MCP 开关与按模型继承选项", "badge": "公共设置" },
+      "en": { "title": "Shared settings · Inherit when needed", "description": "New models inherit defaults; existing custom settings stay separate. Changes apply to the next chat request.", "alt": "Shared chat defaults: generation parameters, MCP and per-model inheritance", "badge": "SHARED SETTINGS" }
+    },
+    "connections": {
+      "index": "11",
+      "zh": { "title": "连接 · 集中配置 API 与 MCP", "description": "选择连接目标、保存应用访问密钥，复制 API 和外部助手配置。", "alt": "API 与外部助手：连接目标、应用访问密钥、API 示例与 MCP 接入", "badge": "API 与外部助手" },
+      "en": { "title": "Connections · API and MCP in one place", "description": "Choose a target, save the application's access key and copy API or assistant configurations.", "alt": "API and external assistants: connection targets, application access keys, API examples and MCP", "badge": "CONNECTIONS" }
+    },
+    "app-updates": {
+      "index": "12",
+      "zh": { "title": "应用更新 · 先阅读，再确认", "description": "查看随应用打包的双语日志，检查新版本并确认签名更新。", "alt": "应用更新：当前版本、双语更新日志、检查与安装确认", "badge": "应用更新" },
+      "en": { "title": "App updates · Read before confirming", "description": "Read bundled bilingual release notes, check for a new version and confirm signed updates.", "alt": "Application updates: current version, bilingual release notes, checks and installation confirmation", "badge": "APP UPDATES" }
+    },
+    "service-status": {
+      "index": "13",
+      "zh": { "title": "服务状态 · 查看近期趋势", "description": "区分生成与输入处理，保留采样间距和缺失点；空闲速度标明最近生成。", "alt": "服务状态快捷面板：当前状态、生成与输入处理的近期趋势", "badge": "服务状态" },
+      "en": { "title": "Service status · See recent trends", "description": "Separate generation from input processing, retain sample gaps and label idle rates as recent generation.", "alt": "Service status panel: current state and recent generation and input-processing trends", "badge": "SERVICE STATUS" }
+    },
+    "floating-monitor": {
+      "index": "14", "width": 1840, "height": 164,
+      "zh": { "title": "独立浮条 · 按需打开监控", "description": "默认关闭，只读观察已运行的后台；支持拖动、缩放与置顶。", "alt": "独立桌面监控浮条：当前模型、采样时刻与服务指标", "badge": "桌面监控浮条" },
+      "en": { "title": "Floating monitor · Open when needed", "description": "Closed by default; observes an existing background read-only, with move, resize and pin controls.", "alt": "Floating desktop monitor: current model, sample time and service metrics", "badge": "FLOATING MONITOR" }
+    },
     "usage": {
       "index": "03",
       "zh": {
@@ -309,6 +334,8 @@ const strataReleaseCatalog = (() => {
       };
       screenImage.src = imagePath;
       screenImage.alt = copy.alt;
+      screenImage.width = item.width || 2880;
+      screenImage.height = item.height || 1920;
       if (screenImage.complete && screenImage.naturalWidth > 0) screenImage.style.opacity = '1';
     }
 
@@ -421,6 +448,8 @@ const strataReleaseCatalog = (() => {
 
     lightboxImg.src = new URL(`assets/screenshots/${key}.${currentLang}.webp`, siteRoot).href;
     lightboxImg.alt = copy.alt;
+    lightboxImg.width = item.width || 2880;
+    lightboxImg.height = item.height || 1920;
     lightboxBadge.textContent = item.index + ' / ' + key.toUpperCase();
     lightboxTitle.textContent = copy.title;
 

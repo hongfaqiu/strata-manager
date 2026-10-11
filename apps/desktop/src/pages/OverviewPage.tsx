@@ -1,8 +1,9 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Activity, ArrowRight, Boxes, Copy, LoaderCircle, MessageSquare, Play, RefreshCw, Server, Settings2 } from 'lucide-react';
+import { Activity, ArrowRight, Boxes, Copy, LoaderCircle, MessageSquare, Play, Plug, RefreshCw, Server, Settings2 } from 'lucide-react';
 import { normalizeBaseUrl, type BackgroundHealthSnapshot, type JsonObject, type MetricSnapshot, type ProcessStatus, type ServiceProfile, type TaskStatus } from '@strata-manager/core';
 import { Badge, Metric, Panel } from '../components';
+import { ApiIntegrationDialog } from '../ApiIntegrationDialog';
 import './overview.css';
 
 interface OverviewPageProps {
@@ -38,6 +39,7 @@ const startupLabels = {
 } as const;
 export function OverviewPage({profile,health,backgroundHealth,metric,process,tasks,language,online,connecting,desktop,tasksLoading,healthError,metricsError,taskError,processError,controls,usage,stateLabel,onRefresh,onCreateProfile,onChat,onCopy,onNavigate,onImages,startupModel,hasRuntime=false,runtimeNeedsRepair=false,setupLoading=false,setupError,startupBusy=false,startupDisabled=false}:OverviewPageProps) {
   const {t}=useTranslation();const fmt=(v:unknown,d=1)=>num(v)===null?'–':num(v)!.toLocaleString(language,{maximumFractionDigits:d});
+  const [apiIntegrationOpen, setApiIntegrationOpen] = useState(false);
   const labels = overviewLabels[language];
   const startup = startupLabels[language];
   const setupPending = setupLoading;
@@ -74,7 +76,7 @@ export function OverviewPage({profile,health,backgroundHealth,metric,process,tas
           {startupBusy||setupPending?<LoaderCircle size={15} className="spin"/>:startupModel?<Play size={15}/>:<ArrowRight size={15}/>}{startupBusy?startup.starting:setupPending?t('loading'):setupError&&!startupModel?t('refresh'):startupModel?startup.start:!desktop||hasRuntime&&!runtimeNeedsRepair?startup.choose:runtimeNeedsRepair?startup.repair:startup.install}
         </button>
       </div></div>
-      <div className="overview-service-footer"><div className="overview-shortcuts" role="group" aria-label={t('quickActions')}><button type="button" className="overview-shortcut overview-shortcut-models" onClick={onCreateProfile}><Boxes size={15} aria-hidden="true"/>{labels.models}</button><button type="button" className="overview-shortcut" onClick={()=>onNavigate('environment')}><Server size={15} aria-hidden="true"/>Strata</button></div><button type="button" className="overview-refresh" onClick={onRefresh} aria-label={t('refresh')} title={t('refresh')}><RefreshCw size={15} aria-hidden="true"/></button></div>
+      <div className="overview-service-footer"><div className="overview-shortcuts" role="group" aria-label={t('quickActions')}><button type="button" className="overview-shortcut overview-shortcut-models" onClick={onCreateProfile}><Boxes size={15} aria-hidden="true"/>{labels.models}</button><button type="button" className="overview-shortcut overview-shortcut-api" disabled title={language==='zh-CN'?'启用模型后可接入 API':'Enable a model to connect to its API'}><Plug size={15} aria-hidden="true"/>{language==='zh-CN'?'接入 API':'Connect API'}</button><button type="button" className="overview-shortcut" onClick={()=>onNavigate('environment')}><Server size={15} aria-hidden="true"/>Strata</button></div><button type="button" className="overview-refresh" onClick={onRefresh} aria-label={t('refresh')} title={t('refresh')}><RefreshCw size={15} aria-hidden="true"/></button></div>
       {setupError&&<div className="notice error" role="alert">{setupError}</div>}
     </section>:<>
       <section className="service-hero overview-service" aria-label={t('service')}>
@@ -93,6 +95,7 @@ export function OverviewPage({profile,health,backgroundHealth,metric,process,tas
         <div className="overview-service-footer">
           <div className="overview-shortcuts" role="group" aria-label={t('quickActions')}>
             <button type="button" className="primary overview-shortcut overview-shortcut-chat" onClick={onChat}><MessageSquare size={15} aria-hidden="true"/><span>{t('openChat')}</span></button>
+            <button type="button" className="overview-shortcut overview-shortcut-api" onClick={()=>setApiIntegrationOpen(true)}><Plug size={15} aria-hidden="true"/><span>{language==='zh-CN'?'接入 API':'Connect API'}</span></button>
             <button type="button" className="overview-shortcut overview-shortcut-monitor" onClick={()=>onNavigate('monitoring')}><Activity size={15} aria-hidden="true"/><span>{t('openMonitor')}</span></button>
             <button type="button" className="overview-shortcut overview-shortcut-config" onClick={()=>onNavigate('config')}><Settings2 size={15} aria-hidden="true"/><span>{labels.configuration}</span></button>
             <button type="button" className="overview-shortcut overview-shortcut-models" onClick={()=>onNavigate('profiles')}><Boxes size={15} aria-hidden="true"/><span>{labels.models}</span></button>
@@ -104,6 +107,7 @@ export function OverviewPage({profile,health,backgroundHealth,metric,process,tas
         {currentBackgroundHealth&&backgroundPhase==='degraded'&&<div className="notice warning" role="status">{t('backgroundHealthPreserved')}</div>}
       </section>
     </>}
+      {apiIntegrationOpen && profile && <ApiIntegrationDialog key={`api-integration-${profile.id}`} profile={profile} model={typeof health.model==='string'?health.model:typeof engine.model==='string'?engine.model:undefined} online={online} loaded={health.loaded===true} keyRequired={online&&typeof health.api_key==='boolean'?health.api_key:undefined} language={language} onCopy={onCopy} onClose={()=>setApiIntegrationOpen(false)}/>}
       {usage}
       <div className="metrics-grid four"><Metric label={t('decode')} value={fmt(metric?.decodeTokS)} unit="tok/s"/><Metric label={t('gpuUtil')} value={fmt(metric?.gpuUtil)} unit="%"/><Metric label={t('activeRequests')} value={fmt(metric?.running,0)}/><Metric label={t('queued')} value={fmt(metric?.queued,0)}/></div>
       <div className="overview-grid"><Panel title={t('resourcesSummary')} action={jump('monitoring',t('openMonitor'))}>{metricsError&&<div className="notice error" role="alert">{metricsError}</div>}<div className="overview-context"><div><span>{t('contextUsage')}</span><strong>{fmt(contextUsed,0)} / {fmt(capacity,0)} tokens</strong></div><div className="st-progress" role="progressbar" aria-label={t('contextUsage')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={contextUsed!==null&&capacity!==null&&capacity>0?contextUsed/capacity*100:undefined}><div className="st-progress__bar" style={{width:contextUsed!==null&&capacity!==null&&capacity>0?`${Math.min(100,contextUsed/capacity*100)}%`:'0%'}}/></div></div>{resource(t('gpuMemory'),metric?.gpuMemoryUsed,metric?.gpuMemoryTotal)}{resource(t('ram'),metric?.ramUsed,metric?.ramTotal)}<div className="overview-resource-facts"><div><span>{t('cpuUtil')}</span><strong>{fmt(metric?.cpuUtil)} %</strong></div><div><span>{t('gpuTemperature')}</span><strong>{fmt(metric?.gpuTemperature)} °C</strong></div><div><span>{t('gpuPower')}</span><strong>{fmt(metric?.gpuPower)} W</strong></div><div><span>{t('prefill')}</span><strong>{fmt(metric?.prefillTokS)} tok/s</strong></div></div></Panel>

@@ -10,6 +10,8 @@ mod idle_model;
 pub mod installation;
 pub mod legacy;
 pub mod maintenance;
+pub mod manager_mcp;
+pub mod manager_mcp_stdio;
 pub mod mcp_probe;
 pub mod mcp_stdio;
 pub mod model_inspect;
@@ -241,6 +243,8 @@ impl RuntimeState {
         Ok(profile)
     }
     pub fn status(&self) -> Result<Value, String> {
+        let active_local_installation = store_get(self, "activeLocalInstallation".into())?;
+        let local_service_desired = store_get(self, "localServiceDesired".into())?;
         let mut processes = self.processes.lock().map_err(|e| e.to_string())?;
         let mut active_services = 0;
         for process in processes.values_mut() {
@@ -253,7 +257,9 @@ impl RuntimeState {
         )
         .map(|mut status| {
             status["recoveryDeferred"] = json!(self.recovery_is_deferred());
-                status["capabilities"] = json!({"fullScenarioTuning": 1});
+            status["activeLocalInstallation"] = active_local_installation;
+            status["localServiceDesired"] = local_service_desired;
+            status["capabilities"] = json!({"fullScenarioTuning": 1, "managerMcp": 1});
             status
         })
     }
@@ -780,6 +786,7 @@ impl RuntimeState {
                 | "install_runtime"
                 | "update_runtime"
                 | "update_runtime_zip"
+                | "update_runtime_zip_download_v1"
                 | "write_config"
                 | "write_config_cas_v1"
                 | "set_api_key"
@@ -827,6 +834,20 @@ impl RuntimeState {
                 )
                 .await,
             ),
+            "resolve_runtime_zip_asset_v1" => {
+                let install_dir: String = arg(&params, "installDir")?;
+                let requested = params.get("assetName").and_then(Value::as_str);
+                value(
+                    runtime_upgrade::resolve_release_download_asset(&self, &install_dir, requested)
+                        .await,
+                )
+            }
+            "test_runtime_zip_download_v1" => {
+                let asset_name: String = arg(&params, "assetName")?;
+                let download = serde_json::from_value(params.clone())
+                    .map_err(|error| format!("ZIP 来源测试参数无效：{error}"))?;
+                value(runtime_upgrade::test_release_download(&self, &asset_name, download).await)
+            }
             "tuning_start" | "tuning_start_full_v1" => {
                 let request: tuning::TuningStartRequest = arg(&params, "request")?;
                 if method == "tuning_start_full_v1" && request.full.use_case.is_none() {
@@ -942,6 +963,22 @@ impl RuntimeState {
                     .unwrap_or_default(),
             )),
             "inspect_gguf" => value(model_inspect::start(self.clone(), arg(&params, "request")?)),
+            "manager_mcp_connection" => value(manager_mcp::connection(
+                &self,
+                &arg::<String>(&params, "profileId")?,
+            )),
+            "manager_mcp_call" => {
+                Box::pin(manager_mcp::call(
+                    self.clone(),
+                    arg(&params, "profileId")?,
+                    arg(&params, "name")?,
+                    params
+                        .get("arguments")
+                        .cloned()
+                        .unwrap_or_else(|| json!({})),
+                ))
+                .await
+            }
             "probe_official_mcp" => {
                 let registered = self.registered_profile(&arg::<String>(&params, "profileId")?)?;
                 value(
@@ -977,22 +1014,26 @@ impl RuntimeState {
             )),
             "install_runtime" => value(install_runtime(&self, arg(&params, "directory")?)),
             "update_runtime" => value(runtime_upgrade::start(self.clone(), profile()?.id)),
-            "update_runtime_zip" => value(runtime_upgrade::start_release_request(
-                self.clone(),
-                arg(&params, "installDir")?,
-                params
-                    .get("assetName")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned),
-                params
-                    .get("requestId")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned),
-                params
-                    .get("stopCurrentService")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false),
-            )),
+            "update_runtime_zip" | "update_runtime_zip_download_v1" => {
+                value(runtime_upgrade::start_release_request_with_download(
+                    self.clone(),
+                    arg(&params, "installDir")?,
+                    params
+                        .get("assetName")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned),
+                    params
+                        .get("requestId")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned),
+                    params
+                        .get("stopCurrentService")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
+                    serde_json::from_value(params.clone())
+                        .map_err(|error| format!("ZIP 下载参数无效：{error}"))?,
+                ))
+            }
             "runtime_upgrade_status" => {
                 value(runtime_upgrade::status(&self, arg(&params, "profileId")?))
             }
@@ -1820,6 +1861,8 @@ async fn tuning_service_operation(
         let _test_phase =
             tuning_service_operation_tests::pause_after_preparation(&operation.job_id);
         operation.validate(&state)?;
+        #[cfg(windows)]
+        let mut retired_listeners = Vec::new();
         if restart {
             let mut processes = state.processes.lock().map_err(|e| e.to_string())?;
             operation.validate_processes(&state, &mut processes)?;
@@ -1834,7 +1877,44 @@ async fn tuning_service_operation(
             // Handles remain the authority even when the root has died. This
             // also releases descendants of this owned tree, never a PID guess.
             operation.validate_identity(&state)?;
+            #[cfg(windows)]
+            for listener in external::listener_ids(&operation.profile)? {
+                if process.owns_pid(listener)? {
+                    retired_listeners.push(listener);
+                }
+            }
             process.stop()?;
+        }
+        #[cfg(windows)]
+        if restart && !retired_listeners.is_empty() {
+            // Windows can briefly retain a LISTEN row/socket after the held
+            // Job has no active members. Wait only for listeners proven to
+            // belong to that Job before termination. A new owner is left to
+            // the normal external-port guard; never terminate a searched PID.
+            let deadline = std::time::Instant::now() + Duration::from_secs(10);
+            loop {
+                operation.validate(&state)?;
+                let listeners = external::listener_ids(&operation.profile)?;
+                if listeners.iter().any(|pid| !retired_listeners.contains(pid)) {
+                    return Err(format!(
+                        "端口 {} 出现新的外部监听进程，未启动或终止任何外部服务",
+                        plan.port
+                    ));
+                }
+                if listeners.is_empty()
+                    && std::net::TcpStream::connect_timeout(
+                        &plan.address,
+                        Duration::from_millis(100),
+                    )
+                    .is_err()
+                {
+                    break;
+                }
+                if std::time::Instant::now() >= deadline {
+                    return Err("原受管监听端口仍在释放，未启动替代服务；请稍后重试恢复".into());
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
         }
         operation.validate(&state)?;
         start_prepared_service_checked(

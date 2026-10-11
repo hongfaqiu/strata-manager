@@ -652,16 +652,28 @@ fn bounded_candidates(baseline: Parameters, requested: Option<Vec<Parameters>>) 
     }
     out
 }
+fn engine_number(value: &Value) -> Option<f64> {
+    // Strata's INFO parser converts integer values to JSON numbers, but retains
+    // floating-point values such as pcie_frac=0.55 as strings. Accept only finite
+    // JSON numeric syntax; never substitute configuration or observed PCIe usage.
+    let number = match value {
+        Value::Number(number) => number.as_f64(),
+        Value::String(text) if text.len() <= 64 => serde_json::from_str::<f64>(text.trim()).ok(),
+        _ => None,
+    }?;
+    number.is_finite().then_some(number)
+}
+
 fn baseline_parameters(metrics: &Value) -> Result<Parameters, String> {
     let engine = &metrics["engine"];
     let baseline = Parameters {
         pcie_frac: engine
             .get("pcie_frac")
-            .and_then(Value::as_f64)
+            .and_then(engine_number)
             .ok_or("引擎没有报告 PCIe 参数，不能可靠调优")?,
         spec_min_p: engine
             .get("spec_min_p")
-            .and_then(Value::as_f64)
+            .and_then(engine_number)
             .ok_or("引擎没有报告 MTP 参数，不能可靠调优")?,
     };
     validate_parameters(baseline)?;
@@ -1753,6 +1765,104 @@ mod status_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn baseline_accepts_official_info_strings_and_json_numbers() {
+        let actual_0143 =
+            json!({"engine":{"version":"0.1.43","pcie_frac":"0.55","spec_min_p":"0.50"}});
+        let baseline = baseline_parameters(&actual_0143).unwrap();
+        assert_eq!(
+            baseline,
+            Parameters {
+                pcie_frac: 0.55,
+                spec_min_p: 0.5
+            }
+        );
+        assert_eq!(
+            baseline_parameters(&json!({"engine":{"pcie_frac":0.55,"spec_min_p":0.5}})).unwrap(),
+            baseline
+        );
+        assert_eq!(
+            baseline_parameters(&json!({"engine":{"pcie_frac":" 5.5e-1 ","spec_min_p":"5.0e-1"}}))
+                .unwrap(),
+            baseline
+        );
+        for edge in [0, 1] {
+            let number =
+                baseline_parameters(&json!({"engine":{"pcie_frac":edge,"spec_min_p":edge}}))
+                    .unwrap();
+            let text = baseline_parameters(
+                &json!({"engine":{"pcie_frac":edge.to_string(),"spec_min_p":edge.to_string()}}),
+            )
+            .unwrap();
+            assert_eq!(number, text);
+        }
+    }
+
+    #[test]
+    fn baseline_rejects_malformed_or_nonfinite_engine_values() {
+        let mut invalid = vec![json!(null), json!(true), json!([]), json!({})];
+        for text in [
+            "",
+            "NaN",
+            "inf",
+            "Infinity",
+            "-Infinity",
+            "1e9999",
+            "+0.5",
+            ".5",
+            "01",
+            "0,55",
+            "0.55junk",
+            "0x1",
+            "\"0.55\"",
+        ] {
+            invalid.push(json!(text));
+        }
+        invalid.push(json!("0".repeat(65)));
+        for key in ["pcie_frac", "spec_min_p"] {
+            for value in &invalid {
+                let mut metrics = json!({"engine":{"pcie_frac":0.55,"spec_min_p":0.5}});
+                metrics["engine"][key] = value.clone();
+                assert!(
+                    baseline_parameters(&metrics).is_err(),
+                    "accepted {key}={value}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn baseline_requires_both_parameters_in_the_engine_domain() {
+        for key in ["pcie_frac", "spec_min_p"] {
+            for number in [-0.000001, 1.000001] {
+                for value in [json!(number), json!(number.to_string())] {
+                    let mut metrics = json!({"engine":{"pcie_frac":0.55,"spec_min_p":0.5}});
+                    metrics["engine"][key] = value;
+                    assert_eq!(
+                        baseline_parameters(&metrics).unwrap_err(),
+                        "PCIe 与 MTP 参数须为 0–1 有限数字"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn baseline_never_substitutes_config_defaults_or_observed_pcie_share() {
+        assert_eq!(
+            baseline_parameters(&json!({
+                "engine":{"spec_min_p":"0.50"}, "requests":[{"pcie_share":0.005}],
+                "args":["--pcie-frac","0.55"]
+            }))
+            .unwrap_err(),
+            "引擎没有报告 PCIe 参数，不能可靠调优"
+        );
+        assert_eq!(
+            baseline_parameters(&json!({"engine":{"pcie_frac":"0.55"}})).unwrap_err(),
+            "引擎没有报告 MTP 参数，不能可靠调优"
+        );
+    }
+
     #[test]
     fn sha256_matches_external_known_vectors() {
         assert_eq!(

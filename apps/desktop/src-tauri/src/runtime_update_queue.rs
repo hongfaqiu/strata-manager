@@ -9,6 +9,7 @@ use std::{
     time::Duration,
 };
 use strata_local_ipc::SingleInstance;
+use strata_runtime_core::runtime_upgrade::RuntimeZipDownloadOptions;
 use strata_runtime_core::types::{now, LogEntry, ServiceProfile, TaskStatus};
 
 const KEY: &str = "nativeRuntimeZipUpdates";
@@ -27,6 +28,8 @@ struct Record {
     task: TaskStatus,
     install_dir: String,
     asset_name: Option<String>,
+    #[serde(default)]
+    download: RuntimeZipDownloadOptions,
     stop_confirmed: bool,
     phase: String,
     backend_task_id: Option<String>,
@@ -329,7 +332,14 @@ async fn health(ipc: &SupervisorClient, profile: &ServiceProfile) -> Result<Valu
 fn backend_params(record: &Record) -> Value {
     // The legacy bridge already stopped the specifically approved services.
     // A newly appearing service must never be stopped by the subsequent ZIP task.
-    json!({"installDir": record.install_dir, "assetName": record.asset_name, "requestId": record.task.id, "stopCurrentService": false})
+    json!({"installDir": record.install_dir, "assetName": record.asset_name, "requestId": record.task.id, "stopCurrentService": false, "localArchivePath": record.download.local_archive_path, "downloadUrl": record.download.download_url})
+}
+fn backend_method(download: &RuntimeZipDownloadOptions) -> &'static str {
+    if download.is_custom() {
+        "update_runtime_zip_download_v1"
+    } else {
+        "update_runtime_zip"
+    }
 }
 
 pub async fn start(
@@ -337,16 +347,19 @@ pub async fn start(
     install_dir: String,
     asset_name: Option<String>,
     stop_current_service: bool,
+    download: RuntimeZipDownloadOptions,
 ) -> Result<Value, String> {
-    start_with_probe(
+    start_with_download_probe(
         ipc,
         install_dir,
         asset_name,
         stop_current_service,
+        download,
         approved_processes,
     )
     .await
 }
+#[cfg(test)]
 async fn start_with_probe(
     ipc: &SupervisorClient,
     install_dir: String,
@@ -354,6 +367,25 @@ async fn start_with_probe(
     stop_current_service: bool,
     probe: Probe,
 ) -> Result<Value, String> {
+    start_with_download_probe(
+        ipc,
+        install_dir,
+        asset_name,
+        stop_current_service,
+        RuntimeZipDownloadOptions::default(),
+        probe,
+    )
+    .await
+}
+async fn start_with_download_probe(
+    ipc: &SupervisorClient,
+    install_dir: String,
+    asset_name: Option<String>,
+    stop_current_service: bool,
+    download: RuntimeZipDownloadOptions,
+    probe: Probe,
+) -> Result<Value, String> {
+    let download = download.validate(asset_name.as_deref())?;
     let _serial = SERIAL.lock().await;
     let _process = guard(ipc).await?;
     let runtime = root(&install_dir)?;
@@ -371,11 +403,12 @@ async fn start_with_probe(
     if let Some(existing) = values.iter().find(|record| {
         record.task.state == "running" && record.install_dir == runtime.to_string_lossy()
     }) {
-        if existing.asset_name != asset_name {
-            return Err("此运行环境已有不同 ZIP 的更新任务".into());
+        if existing.asset_name != asset_name || existing.download != download {
+            return Err("此运行环境已有不同 ZIP 或下载来源的更新任务".into());
         }
         return serde_json::to_value(&existing.task).map_err(|error| error.to_string());
     }
+    download.validate_local_file()?;
     let (active, owned) = inventory(ipc, &runtime).await?;
     if active > 0 && !stop_current_service {
         return Err("当前模型服务正在运行，请确认停止服务后再更新".into());
@@ -384,8 +417,8 @@ async fn start_with_probe(
         return Err("此 Strata 仍有无法确认归属的外部服务；本次更新不会自动停止它".into());
     }
     let request_id = uuid::Uuid::new_v4().to_string();
-    let params = json!({"installDir": runtime, "assetName": asset_name, "requestId": request_id, "stopCurrentService": stop_current_service});
-    match strata_local_ipc::call(&ipc.data_dir, "update_runtime_zip", params).await {
+    let params = json!({"installDir": runtime, "assetName": asset_name, "requestId": request_id, "stopCurrentService": stop_current_service, "localArchivePath": download.local_archive_path, "downloadUrl": download.download_url});
+    match strata_local_ipc::call(&ipc.data_dir, backend_method(&download), params).await {
         Ok(task) => return Ok(task),
         Err(error) if error.code == "unknown_method" => {}
         Err(error) => return Err(error.to_string()),
@@ -407,6 +440,7 @@ async fn start_with_probe(
         task: task.clone(),
         install_dir: runtime.to_string_lossy().into(),
         asset_name,
+        download,
         stop_confirmed: stop_current_service,
         phase: "stopping".into(),
         backend_task_id: None,
@@ -488,7 +522,10 @@ async fn submit_legacy(
     );
     save(ipc, values).await?;
     let task = match ipc
-        .request("update_runtime_zip", backend_params(&values[index]))
+        .request(
+            backend_method(&values[index].download),
+            backend_params(&values[index]),
+        )
         .await
     {
         Ok(task) => task,
@@ -919,8 +956,8 @@ mod tests {
                         "restore_local_registry" => { assert!(!state.running); let restored: ServiceProfile = serde_json::from_value(request.params["profiles"][0].clone()).unwrap(); assert_eq!(restored.id, state.profile.id); assert_eq!(restored.config_path, state.profile.config_path); state.lost_registry = false; for key in ["activeLocalInstallation", "activeProfile", "localServiceDesired"] { state.store.insert(key.into(), request.params[key].clone()); } Ok(Value::Null) },
                         "service_status" => Ok(json!({"running": state.running, "owned": state.running, "pid": 456})),
                         "strata_request" => { assert_eq!(request.params["method"], "GET"); assert_eq!(request.params["path"], "/health"); Ok(json!({"service": "strata", "status": "ok", "loaded": state.loaded})) },
-                        "update_runtime_zip" if state.legacy => Err(RpcError::new("unknown_method", "isolated legacy method")),
-                        "update_runtime_zip" => {
+                        "update_runtime_zip" | "update_runtime_zip_download_v1" if state.legacy => Err(RpcError::new("unknown_method", "isolated legacy method")),
+                        "update_runtime_zip" | "update_runtime_zip_download_v1" => {
                             assert!(!state.running, "ZIP submission must follow the approved service stop");
                             assert_eq!(request.params["stopCurrentService"], false);
                             let id = request.params["requestId"].as_str().unwrap().to_owned();
@@ -960,6 +997,232 @@ mod tests {
     fn safe_probe(_: &Path, _: &[ServiceProfile]) -> Result<bool, String> {
         Ok(true)
     }
+
+    #[tokio::test]
+    async fn custom_download_sources_survive_legacy_handoff_and_resubmission() {
+        for local in [true, false] {
+            let temp = tempfile::tempdir().unwrap();
+            let runtime = temp.path().join("runtime");
+            let archive = temp.path().join("strata-windows-x64.zip");
+            std::fs::write(&archive, b"isolated ZIP metadata fixture; never unpacked").unwrap();
+            let download = RuntimeZipDownloadOptions {
+                local_archive_path: local.then(|| archive.to_string_lossy().into_owned()),
+                download_url: (!local)
+                    .then(|| "https://mirror.example/strata-windows-x64.zip".into()),
+            };
+            let (client, state, stop, server) = fixture(temp.path(), &runtime, false).await;
+            let task = start_with_download_probe(
+                &client,
+                runtime.to_string_lossy().into(),
+                Some("strata-windows-x64.zip".into()),
+                true,
+                download.clone(),
+                safe_probe,
+            )
+            .await
+            .unwrap();
+            let mut saved = records(&client).await.unwrap();
+            assert_eq!(saved[0].download, download);
+            if local {
+                let other = temp.path().join("other.zip");
+                std::fs::write(&other, b"another isolated source").unwrap();
+                let error = start_with_download_probe(
+                    &client,
+                    runtime.to_string_lossy().into(),
+                    Some("strata-windows-x64.zip".into()),
+                    true,
+                    RuntimeZipDownloadOptions {
+                        local_archive_path: Some(other.to_string_lossy().into()),
+                        download_url: None,
+                    },
+                    safe_probe,
+                )
+                .await
+                .unwrap_err();
+                assert!(error.contains("下载来源"), "{error}");
+            }
+            assert_eq!(
+                backend_method(&saved[0].download),
+                "update_runtime_zip_download_v1"
+            );
+            // Reopening after persisting submission intent but before backend
+            // acceptance must retain both the original request ID and source.
+            saved[0].phase = "submitting".into();
+            saved[0].backend_task_id = None;
+            save(&client, &saved).await.unwrap();
+            state.lock().unwrap().tasks.clear();
+            tick_with_probe(&client, safe_probe).await.unwrap();
+            {
+                let state = state.lock().unwrap();
+                assert_eq!(
+                    count(&state, "update_runtime_zip"),
+                    0,
+                    "custom source cannot fall back to an old RPC"
+                );
+                assert_eq!(count(&state, "update_runtime_zip_download_v1"), 3);
+                assert_eq!(count(&state, "stop_service"), 1);
+                for (_, params) in state
+                    .calls
+                    .iter()
+                    .filter(|(name, _)| name == "update_runtime_zip_download_v1")
+                {
+                    assert_eq!(
+                        params["localArchivePath"],
+                        json!(download.local_archive_path)
+                    );
+                    assert_eq!(params["downloadUrl"], json!(download.download_url));
+                    assert_eq!(params["requestId"], task["id"]);
+                }
+                assert_eq!(state.store["localServiceDesired"], false);
+                assert_eq!(count(&state, "ensure_local_service"), 0);
+            }
+            state.lock().unwrap().tasks[0].state = "completed".into();
+            tick_with_probe(&client, safe_probe).await.unwrap();
+            assert_eq!(list_tasks(&client).await.unwrap()[0]["state"], "completed");
+            assert!(state.lock().unwrap().running);
+            stop.cancel();
+            server.await.unwrap().unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn running_update_deduplicates_only_the_same_download_source() {
+        let temp = tempfile::tempdir().unwrap();
+        let runtime = temp.path().join("runtime");
+        let (client, state, stop, server) = fixture(temp.path(), &runtime, false).await;
+        let download = RuntimeZipDownloadOptions {
+            local_archive_path: None,
+            download_url: Some("https://mirror.example/strata-windows-x64.zip".into()),
+        };
+        let first = start_with_download_probe(
+            &client,
+            runtime.to_string_lossy().into(),
+            Some("strata-windows-x64.zip".into()),
+            true,
+            download.clone(),
+            safe_probe,
+        )
+        .await
+        .unwrap();
+        let repeated = start_with_download_probe(
+            &client,
+            runtime.to_string_lossy().into(),
+            Some("strata-windows-x64.zip".into()),
+            true,
+            download,
+            safe_probe,
+        )
+        .await
+        .unwrap();
+        assert_eq!(first["id"], repeated["id"]);
+        let second_archive = temp.path().join("other.zip");
+        std::fs::write(&second_archive, b"isolated local file").unwrap();
+        for changed in [
+            RuntimeZipDownloadOptions {
+                local_archive_path: None,
+                download_url: Some("https://another.example/strata-windows-x64.zip".into()),
+            },
+            RuntimeZipDownloadOptions {
+                local_archive_path: Some(second_archive.to_string_lossy().into()),
+                download_url: None,
+            },
+            RuntimeZipDownloadOptions::default(),
+        ] {
+            let error = start_with_download_probe(
+                &client,
+                runtime.to_string_lossy().into(),
+                Some("strata-windows-x64.zip".into()),
+                true,
+                changed,
+                safe_probe,
+            )
+            .await
+            .unwrap_err();
+            assert!(error.contains("下载来源"), "{error}");
+        }
+        {
+            let state = state.lock().unwrap();
+            assert_eq!(count(&state, "update_runtime_zip_download_v1"), 2);
+            assert_eq!(count(&state, "update_runtime_zip"), 0);
+            assert_eq!(count(&state, "stop_service"), 1);
+        }
+        stop.cancel();
+        server.await.unwrap().unwrap();
+    }
+    #[tokio::test]
+    async fn accepted_local_update_remains_idempotent_after_source_is_removed() {
+        let temp = tempfile::tempdir().unwrap();
+        let runtime = temp.path().join("runtime");
+        let archive = temp.path().join("strata-windows-x64.zip");
+        std::fs::write(&archive, b"isolated accepted ZIP").unwrap();
+        let download = RuntimeZipDownloadOptions {
+            local_archive_path: Some(archive.to_string_lossy().into()),
+            download_url: None,
+        };
+        let (client, state, stop, server) = fixture(temp.path(), &runtime, false).await;
+        let accepted = start_with_download_probe(
+            &client,
+            runtime.to_string_lossy().into(),
+            Some("strata-windows-x64.zip".into()),
+            true,
+            download.clone(),
+            safe_probe,
+        )
+        .await
+        .unwrap();
+        std::fs::remove_file(&archive).unwrap();
+        let repeated = start_with_download_probe(
+            &client,
+            runtime.to_string_lossy().into(),
+            Some("strata-windows-x64.zip".into()),
+            true,
+            download,
+            safe_probe,
+        )
+        .await
+        .unwrap();
+        assert_eq!(accepted["id"], repeated["id"]);
+        {
+            let state = state.lock().unwrap();
+            assert_eq!(count(&state, "update_runtime_zip_download_v1"), 2);
+            assert_eq!(count(&state, "stop_service"), 1);
+        }
+        stop.cancel();
+        server.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn missing_local_zip_for_new_request_does_not_stop_or_submit() {
+        let temp = tempfile::tempdir().unwrap();
+        let runtime = temp.path().join("runtime");
+        let (client, state, stop, server) = fixture(temp.path(), &runtime, false).await;
+        let download = RuntimeZipDownloadOptions {
+            local_archive_path: Some(temp.path().join("missing.zip").to_string_lossy().into()),
+            download_url: None,
+        };
+        assert!(start_with_download_probe(
+            &client,
+            runtime.to_string_lossy().into(),
+            Some("strata-windows-x64.zip".into()),
+            true,
+            download,
+            safe_probe
+        )
+        .await
+        .is_err());
+        {
+            let state = state.lock().unwrap();
+            assert!(state.running && state.loaded);
+            assert_eq!(count(&state, "update_runtime_zip_download_v1"), 0);
+            assert_eq!(count(&state, "update_runtime_zip"), 0);
+            assert_eq!(count(&state, "stop_service"), 0);
+            assert_eq!(state.store["localServiceDesired"], true);
+            assert!(!state.store.contains_key(KEY));
+        }
+        stop.cancel();
+        server.await.unwrap().unwrap();
+    }
+
     fn count(state: &Fixture, method: &str) -> usize {
         state
             .calls
@@ -1406,9 +1669,15 @@ mod tests {
         let before_health = health(&client, profile).await.unwrap();
         // Never pass confirmation in live acceptance. The guard must reject
         // before process probing, intent writes or the ZIP mutation RPC.
-        let error = start(&client, "D:/AI/Strata".into(), None, false)
-            .await
-            .unwrap_err();
+        let error = start(
+            &client,
+            "D:/AI/Strata".into(),
+            None,
+            false,
+            RuntimeZipDownloadOptions::default(),
+        )
+        .await
+        .unwrap_err();
         assert!(error.contains("确认停止"), "Unexpected refusal: {error}");
         let after = raw(&client, "hello", json!({})).await.unwrap();
         for key in ["pid", "executableHash", "activeServices"] {

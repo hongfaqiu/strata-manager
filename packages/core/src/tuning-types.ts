@@ -129,6 +129,9 @@ export interface TuningWorkloadResult {
   tokenCountRequests: number;
   finish: string | null;
   qualityReason: string | null;
+  /** Static diagnostic only; never contains model-generated source/output. */
+  qualityDetail?: string | null;
+  qualityDiagnostic?: { stage: string; code: string; detail: string } | null;
   fullAgentWallMs: number | null;
   coldModelVerified: boolean;
   targetInputTokens: number | null;

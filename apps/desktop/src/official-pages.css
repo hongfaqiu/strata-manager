@@ -28,11 +28,6 @@ html,body,#root{height:100%;min-height:0}body{overflow:hidden}.official-app{heig
 .manager-nav .manager-service{display:flex;padding:0 4px}
 .manager-nav .manager-service .st-label{display:block}
 .manager-nav-bottom{margin-top:auto;display:flex;flex-direction:column;gap:12px;padding-top:16px}
-.manager-nav-bottom-row{display:flex;align-items:center;gap:6px;border-top:1px solid var(--st-line);padding-top:8px}
-.manager-nav .manager-nav-bottom-row>.manager-settings-button{width:40px;min-width:40px;padding:10px;justify-content:center;flex:none}
-.manager-nav .manager-nav-bottom .manager-nav-bottom-row>.nav-collapse{flex:1;width:auto;border-top:0;padding-top:10px;margin-top:0}
-.manager-nav.is-collapsed .manager-nav-bottom-row{gap:2px}
-.manager-nav.is-collapsed .manager-nav-bottom-row>.manager-nav-item{width:24px;min-width:0;min-height:38px;padding:3px;flex:1}
 .manager-footer-actions{display:flex;flex-direction:column;gap:3px}
 .manager-nav-footer{padding:0 4px}
 .manager-nav-footer .st-pill{max-width:100%;overflow:hidden;white-space:nowrap}
@@ -94,7 +89,7 @@ html,body,#root{height:100%;min-height:0}body{overflow:hidden}.official-app{heig
 .manager-nav .manager-nav-item>span{display:inline-block;max-width:170px;overflow:hidden;white-space:nowrap;opacity:1;transform:translateX(0);transition:max-width 240ms cubic-bezier(.22,1,.36,1),opacity 160ms ease,transform 240ms cubic-bezier(.22,1,.36,1)}
 .manager-nav.is-collapsed .manager-nav-item>span{display:inline-block;max-width:0;opacity:0;transform:translateX(-6px)}
 .manager-nav .manager-nav-label{transition:opacity 160ms ease,transform 240ms cubic-bezier(.22,1,.36,1);opacity:1;transform:translateX(0)}
-.manager-nav.is-collapsed .manager-nav-label{opacity:0;transform:translateX(-6px)}
+.manager-nav.is-collapsed .manager-nav-label{opacity:1;transform:none}
 .manager-nav .manager-nav-bottom .nav-collapse{width:100%;height:40px;min-height:40px;border-top:1px solid var(--st-line);border-radius:0;padding-top:14px;padding-bottom:8px;color:var(--st-ink-muted)}
 @media(max-width:1100px){.manager-shell{--manager-nav-width:216px}}
 @media(max-width:740px){.manager-shell{--manager-nav-width:200px;--manager-nav-collapsed-width:64px}.manager-nav .manager-brand strong,.manager-nav .manager-brand .manager-brand-name{font-size:17px}.manager-brand-name em{font-size:12px}}

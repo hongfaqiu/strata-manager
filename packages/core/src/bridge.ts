@@ -3,6 +3,7 @@ import { normalizeError, StrataError } from './errors';
 import { decodeChatChunk, SSEParser, type ChatDelta, type StreamToolEvent } from './chat';
 import type { OfficialSetupOptions, ModelInspectRequest } from './official-setup';
 import type { ChatRuntimeEvidence } from './chat';
+import type { RuntimeReleaseAsset, RuntimeZipDownloadOptions, RuntimeZipDownloadCheckResult } from './runtime-types';
 
 export interface LocalModel { name: string; configPath: string; modelPath: string; sizeBytes: number | null }
 
@@ -210,7 +211,21 @@ export const updateRuntime = (profile: ServiceProfile): Promise<TaskStatus> => n
 export const runtimeUpdateInfo = (force = false): Promise<import('./runtime-types').RuntimeUpdateInfo> => native('runtime_update_info', { force });
 /** Install the official matching Release ZIP and tag source, preserving models and configuration. */
 /** Service interruption is authorized only by the explicit update confirmation dialog. */
-export const updateRuntimeZip = (installDir: string, assetName?: string, stopCurrentService = false): Promise<TaskStatus> => native('update_runtime_zip', { installDir, ...(assetName ? { assetName } : {}), stopCurrentService });
+export const updateRuntimeZip = (installDir: string, assetName?: string, stopCurrentService = false, download: RuntimeZipDownloadOptions = {}): Promise<TaskStatus> => native('update_runtime_zip', {
+  installDir, ...(assetName ? { assetName } : {}), stopCurrentService,
+  ...(download.localArchivePath?.trim() ? { localArchivePath: download.localArchivePath.trim() } : {}),
+  ...(download.downloadUrl?.trim() ? { downloadUrl: download.downloadUrl.trim() } : {}),
+});
+/** Read-only ZIP integrity or bounded network/Range check; never creates an update task. */
+export const testRuntimeZipDownload = (assetName: string, download: RuntimeZipDownloadOptions = {}): Promise<RuntimeZipDownloadCheckResult> => native('test_runtime_zip_download', {
+  assetName,
+  ...(download.localArchivePath?.trim() ? { localArchivePath: download.localArchivePath.trim() } : {}),
+  ...(download.downloadUrl?.trim() ? { downloadUrl: download.downloadUrl.trim() } : {}),
+});
+/** Read-only package selection using the installed engine's CUDA/HIP metadata. */
+export const resolveRuntimeZipAsset = (installDir: string, assetName?: string): Promise<RuntimeReleaseAsset> => native('resolve_runtime_zip_asset', {
+  installDir, ...(assetName ? { assetName } : {}),
+});
 export const listTasks = (): Promise<TaskStatus[]> => native('list_tasks');
 export const listSetupHandoffs = (): Promise<SetupHandoff[]> => native('list_setup_handoffs');
 export const resolveSetupHandoff = (taskId: string, configPath?: string): Promise<SetupHandoff> => native('resolve_setup_handoff', { taskId, ...(configPath ? { configPath } : {}) });

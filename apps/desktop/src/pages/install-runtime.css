@@ -56,7 +56,7 @@
 .runtime-update-progress{display:flex;gap:10px;border:1px solid var(--st-line);padding:13px;border-radius:7px;font-size:12px;line-height:1.7}
 .runtime-update-progress>svg{flex:none;color:var(--st-accent-text);margin-top:3px}
 .runtime-update-progress pre{max-height:150px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-size:11px;color:var(--st-ink-muted);margin:8px 0 0}
-.runtime-release-notes{font-size:12px;line-height:1.8;max-height:420px;overflow:auto;user-select:text}
+.runtime-release-notes{font-size:12px;line-height:1.8;user-select:text}
 .runtime-release-notes summary{cursor:pointer;font-weight:600;color:var(--st-ink-soft)}
 .runtime-release-notes h2{font-size:15px;margin:16px 0 8px}
 .runtime-release-notes h3{font-size:13px;margin:13px 0 6px}
@@ -92,7 +92,7 @@
 .runtime-update-limit{border-left:2px solid var(--st-line);padding-left:10px}
 .runtime-package-selection{display:flex;align-items:center;gap:12px;margin:14px 18px;font-size:12px;color:var(--st-ink-muted)}
 .runtime-package-selection>.official-dropdown{flex:1;min-width:0;max-width:680px}
-.runtime-release-body{max-height:440px;overflow:auto;padding-right:12px;overscroll-behavior:contain}
+.runtime-release-body{padding-right:12px}
 .runtime-update-result{margin:14px 18px;font-size:12px}
 .runtime-installed-summary>.panel-header>button{min-height:32px;font-size:12px;box-shadow:none}
 @container workspace (max-width:640px){.runtime-summary-selection{align-items:flex-start;flex-direction:column;gap:9px}.runtime-summary-selection>div{width:100%;flex-direction:column;align-items:flex-start;gap:6px}.runtime-summary-selection .official-dropdown{width:100%;max-width:100%}.runtime-summary-facts{gap:8px}.runtime-summary-facts>div{width:100%}}

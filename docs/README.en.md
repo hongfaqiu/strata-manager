@@ -8,12 +8,15 @@ Strata Manager is a desktop workspace for local inference with Strata. It brings
 
 | What you want to do | Read |
 | --- | --- |
+| Understand the desktop, background, inference engine and persistence | [System explanation](SYSTEM.en.md) |
+| Manage shared chat parameters and connection tools | [Shared settings](USER_GUIDE.en.md#shared-settings-and-model-configuration) |
 | Download packages or try source | [Download and try](DOWNLOAD.en.md) |
 | Read feature changes and fixes | [Changelog](../CHANGELOG.md) |
 | Inspect or install Strata, then choose or prepare a model | [First use](USER_GUIDE.en.md#prepare-or-reuse-a-model) |
 | Read Strata versions and release notes, then install a matching Windows x64 ZIP update | [Strata management](USER_GUIDE.en.md#update-the-strata-runtime) |
 | Switch configurations and edit graphical controls or JSON inside Models | [Runtime configuration](USER_GUIDE.en.md#runtime-configuration) |
 | Connect a local API client | [API connections](USER_GUIDE.en.md#connect-a-local-api-client) |
+| See recent status trends or open the independent desktop monitor | [Service status and monitoring](USER_GUIDE.en.md#read-background-health) |
 | Read request history, statistics and CSV exports | [API usage](USER_GUIDE.en.md#read-api-usage) |
 | Run scenario suites or concurrent stress tests, compare performance and export reports | [Benchmark](USER_GUIDE.en.md#benchmark) |
 | Understand background services, health, tuning and updates | [Complete user guide](USER_GUIDE.en.md) |
@@ -22,6 +25,9 @@ Strata Manager is a desktop workspace for local inference with Strata. It brings
 ## Supported scope
 
 - Manage Strata centrally on this computer and list discovered supported models and configurations directly. Existing weights stay in place; releasing memory does not delete them.
+- New models can inherit shared chat defaults; existing models keep saved custom parameters. Configure connection targets, application access keys, API examples and MCP together in API and external assistants.
+- Windows engine ZIPs default to official downloads, support saved mirrors and resume interrupted transfers, and match the current CUDA12, CUDA13 or HIP engine across sources. Complete files still undergo official size and SHA256 checks.
+- The status panel shows recent generation and input-processing trends with gaps. The independent desktop monitor is closed by default and observes an existing background read-only, without starting the background or models.
 - Updates are checked automatically by default, with release notes and confirmation before installation. Closing to the tray is enabled by default; disabling it stops managed services when exiting.
 - Image input, reasoning, MCP tools and API protocols depend on the runtime, model and tool configuration.
 - Tuning compares request parameters and supported restart candidates in complete use-case workloads, with quality and resource checks; it does not promise a fixed speedup.

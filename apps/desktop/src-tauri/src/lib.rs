@@ -1,6 +1,8 @@
 mod configuration_details;
 mod configuration_files;
+mod floating_monitor;
 mod http;
+mod invoke_policy;
 mod model_files;
 mod runtime_detection;
 mod runtime_update_queue;
@@ -595,6 +597,18 @@ async fn inspect_gguf(state: State<'_, ClientState>, request: Value) -> Result<V
 }
 
 #[tauri::command]
+async fn manager_mcp_connection(
+    state: State<'_, ClientState>,
+    profile_id: String,
+) -> Result<Value, String> {
+    state
+        .ipc
+        .request("manager_mcp_connection", json!({"profileId":profile_id}))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn probe_official_mcp(
     state: State<'_, ClientState>,
     profile_id: String,
@@ -679,12 +693,18 @@ async fn update_runtime_zip(
     install_dir: String,
     asset_name: Option<String>,
     stop_current_service: Option<bool>,
+    local_archive_path: Option<String>,
+    download_url: Option<String>,
 ) -> Result<Value, String> {
     runtime_update_queue::start(
         &state.ipc,
         install_dir,
         asset_name,
         stop_current_service.unwrap_or(false),
+        strata_runtime_core::runtime_upgrade::RuntimeZipDownloadOptions {
+            local_archive_path,
+            download_url,
+        },
     )
     .await
 }
@@ -695,6 +715,48 @@ async fn runtime_update_info(
     force: Option<bool>,
 ) -> Result<Value, String> {
     runtime_updates::update_info(&state.ipc, force.unwrap_or(false)).await
+}
+
+#[tauri::command]
+async fn test_runtime_zip_download(
+    state: State<'_, ClientState>,
+    asset_name: String,
+    local_archive_path: Option<String>,
+    download_url: Option<String>,
+) -> Result<Value, String> {
+    // A read-only probe must not call ensure_connected, which can initiate a
+    // supervisor package handoff. An older background service reports clearly.
+    match strata_local_ipc::call(
+        &state.ipc.data_dir,
+        "test_runtime_zip_download_v1",
+        json!({"assetName":asset_name, "localArchivePath":local_archive_path, "downloadUrl":download_url}),
+    ).await {
+        Ok(result) => Ok(result),
+        Err(error) if error.code == "unknown_method" =>
+            Err("当前管理器后台版本不支持下载来源测试，请更新管理器后台后重试".into()),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+#[tauri::command]
+async fn resolve_runtime_zip_asset(
+    state: State<'_, ClientState>,
+    install_dir: String,
+    asset_name: Option<String>,
+) -> Result<Value, String> {
+    match strata_local_ipc::call(
+        &state.ipc.data_dir,
+        "resolve_runtime_zip_asset_v1",
+        json!({"installDir":install_dir, "assetName":asset_name}),
+    )
+    .await
+    {
+        Ok(result) => Ok(result),
+        Err(error) if error.code == "unknown_method" => {
+            Err("当前后台不支持自动匹配更新包，请更新管理器后台或手动选择包".into())
+        }
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 #[tauri::command]
@@ -1551,6 +1613,11 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if window.label() != "main" {
+                // Closing the optional monitor must never hide it to the tray
+                // or enter the main window's service-exit confirmation flow.
+                return;
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let state = window.state::<ClientState>();
                 if state.close_to_tray.load(Ordering::Relaxed) {
@@ -1565,7 +1632,10 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(invoke_policy::with_window_policy(tauri::generate_handler![
+            floating_monitor::open_monitor_window,
+            floating_monitor::monitor_snapshot,
+            floating_monitor::show_main_from_monitor,
             get_startup_status,
             set_startup_enabled,
             get_background_policy,
@@ -1595,6 +1665,7 @@ pub fn run() {
             setup_disk_preflight,
             run_setup,
             inspect_gguf,
+            manager_mcp_connection,
             probe_official_mcp,
             external_management_status,
             chat_runtime_evidence,
@@ -1603,6 +1674,8 @@ pub fn run() {
             update_runtime,
             update_runtime_zip,
             runtime_update_info,
+            test_runtime_zip_download,
+            resolve_runtime_zip_asset,
             list_tasks,
             list_setup_handoffs,
             resolve_setup_handoff,
@@ -1635,7 +1708,7 @@ pub fn run() {
             request_capture_status,
             request_capture_set,
             remove_local_installation
-        ])
+        ]))
         .build(tauri::generate_context!())
         .expect("Strata Manager initialization failed");
     app.run(|handle, event| {

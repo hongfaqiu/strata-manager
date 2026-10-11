@@ -5,6 +5,15 @@ use strata_runtime_core::RuntimeState;
 use tokio_util::sync::CancellationToken;
 
 fn main() {
+    if let Some(result) = strata_runtime_core::manager_mcp_stdio::run_if_requested() {
+        match result {
+            Ok(code) => std::process::exit(code),
+            Err(error) => {
+                eprintln!("Strata Manager MCP: {error}");
+                std::process::exit(1);
+            }
+        }
+    }
     let _ = strata_runtime_core::installation::initialize_installer_package_identity();
     if let Some(result) = strata_runtime_core::mcp_stdio::run_if_requested() {
         match result {

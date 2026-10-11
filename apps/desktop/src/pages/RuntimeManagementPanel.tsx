@@ -5,9 +5,9 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import * as core from '@strata-manager/core';
 import { Panel } from '../components';
-import { Dropdown } from '../OfficialControls';
 import { releaseNotes } from '../updateReleaseNotes';
 import { RuntimeUpdateDialog } from './RuntimeUpdateDialog';
+import { RuntimeDownloadSettings } from './RuntimeDownloadSettings';
 import './install-runtime.css';
 
 interface Props {
@@ -15,6 +15,7 @@ interface Props {
   selectedRuntimeDir?: string; showInstallations?: boolean;
   installationStatus?: core.RuntimeInstallationStatus;
   autoCheck?: boolean;
+  operationDisabled?: boolean;
 }
 const labels = {
   'zh-CN': {
@@ -42,23 +43,22 @@ function needsUpdate(current: string | undefined, latest: string | undefined) {
   return false;
 }
 
-export function RuntimeManagementPanel({ language, desktop, onInstall, selectedRuntimeDir, showInstallations = true, installationStatus, autoCheck = true }: Props) {
+export function RuntimeManagementPanel({ language, desktop, onInstall, selectedRuntimeDir, showInstallations = true, installationStatus, autoCheck = true, operationDisabled = false }: Props) {
   const text = labels[language]; const query = useQueryClient();
   const [checking, setChecking] = useState(false), [starting, setStarting] = useState(''), [actionError, setActionError] = useState('');
-  const [chosenAsset, setChosenAsset] = useState(''), [taskLogs, setTaskLogs] = useState<core.LogEntry[]>([]);
+  const [taskLogs, setTaskLogs] = useState<core.LogEntry[]>([]);
   const [taskId, setTaskId] = useState(''); const observedTask = useRef('');
-  const [pending,setPending] = useState<{ runtime: core.DetectedRuntime; release: core.RuntimeUpdateInfo; assetName: string } | null>(null);
+  const [pending,setPending] = useState<{ runtime: core.DetectedRuntime; release: core.RuntimeUpdateInfo } | null>(null);
   const startingRef = useRef(false);
   const installation = useQuery({ queryKey: ['runtime-installation'], queryFn: core.localRuntimeInstallation, enabled: desktop && !installationStatus, refetchInterval: 10000 });
   const tasks = useQuery({ queryKey: ['tasks'], queryFn: core.listTasks, enabled: desktop, refetchInterval: 2000 });
   const update = useQuery({ queryKey: ['runtime-update-info'], queryFn: () => core.runtimeUpdateInfo(), enabled: desktop && autoCheck, staleTime: 12 * 60 * 60 * 1000, refetchInterval: autoCheck ? 12 * 60 * 60 * 1000 : false, refetchOnWindowFocus: autoCheck });
+  const downloadPreferences = useQuery({ queryKey: ['runtime-download-preferences'], queryFn: core.getRuntimeDownloadPreferences, enabled: desktop, staleTime: Infinity, retry: false });
   const activeTask = tasks.data?.find(task => task.state === 'running' && task.kind === 'update');
   const lastTask = tasks.data?.find(task => task.id === taskId);
   const status = installationStatus ?? installation.data, result = status?.result;
   const allRuntimes: core.DetectedRuntime[] = status?.detectedRuntimes ?? (result ? [{ installDir: result.installDir, pythonPath: result.pythonPath, sourceRevision: result.sourceRevision, readiness: 'ready', profile: result.profile }] : []);
   const runtimes = selectedRuntimeDir ? allRuntimes.filter(runtime => runtime.installDir === selectedRuntimeDir) : allRuntimes;
-  const assets = update.data?.assets ?? [];
-  const assetName = assets.some(asset => asset.name === chosenAsset) ? chosenAsset : '';
   const updateTargets = runtimes.filter(runtime => needsUpdate(runtime.runtimeVersion, update.data?.latestVersion));
   const installed = allRuntimes.length > 0;
   const notes = releaseNotes(update.data?.notes);
@@ -85,8 +85,8 @@ export function RuntimeManagementPanel({ language, desktop, onInstall, selectedR
     catch (error) { setActionError(core.normalizeError(error).message); }
     finally { setChecking(false); }
   };
-  const installUpdate = async () => {
-    if (!pending || startingRef.current || activeTask || tasks.data?.some(task => task.state === 'running')) return;
+  const installUpdate = async (download: core.RuntimeZipDownloadOptions = {}, selectedAssetName?: string) => {
+    if (operationDisabled || !pending || !downloadPreferences.isSuccess || startingRef.current || activeTask || tasks.data?.some(task => task.state === 'running')) return;
     const latest = update.data;
     if (!latest?.installable || update.isFetching) return;
     if (latest.checkedAt !== pending.release.checkedAt || latest.latestVersion !== pending.release.latestVersion) {
@@ -98,7 +98,7 @@ export function RuntimeManagementPanel({ language, desktop, onInstall, selectedR
     try {
       const freshTasks = await core.listTasks();
       if (freshTasks.some(task => task.state === 'running')) throw new Error(language === 'zh-CN' ? '有任务正在进行，请完成后再确认更新。' : 'A task is in progress. Confirm the update again when it finishes.');
-      const task = await core.updateRuntimeZip(runtime.installDir, pending.assetName || undefined, true);
+      const task = await core.updateRuntimeZip(runtime.installDir, selectedAssetName, true, download);
       setTaskId(task.id); observedTask.current = task.id;
       await query.invalidateQueries({ queryKey: ['tasks'] }); setPending(null);
     }
@@ -110,21 +110,22 @@ export function RuntimeManagementPanel({ language, desktop, onInstall, selectedR
     try { await core.cancelTask(activeTask.id); await query.invalidateQueries({ queryKey: ['tasks'] }); }
     catch (error) { setActionError(core.normalizeError(error).message); }
   };
-  const updateButton = (runtime: core.DetectedRuntime) => <button type="button" className="primary" key={runtime.installDir} disabled={!desktop || !update.data?.installable || !!starting || !!activeTask} onClick={() => { if (update.data) { setActionError(''); setPending({ runtime, release: update.data, assetName }); } }}><ArrowUpCircle size={15}/>{starting === runtime.installDir ? text.updating : `${text.update} ${update.data?.latestVersion ?? ''}`}</button>;
+  const savedDownload = pending && downloadPreferences.data ? core.resolveRuntimeDownloadPreferences(downloadPreferences.data, pending.release) : undefined;
+  const updateButton = (runtime: core.DetectedRuntime) => <button type="button" className="primary" key={runtime.installDir} disabled={operationDisabled || !desktop || !downloadPreferences.isSuccess || !update.data?.installable || !!starting || !!activeTask} onClick={() => { if (update.data && downloadPreferences.isSuccess) { setActionError(''); setPending({ runtime, release: update.data }); } }}><ArrowUpCircle size={15}/>{starting === runtime.installDir ? text.updating : `${text.update} ${update.data?.latestVersion ?? ''}`}</button>;
   return <Panel title={text.title} className="runtime-management">
     <div className="runtime-version-grid">
       <div><span>{text.current}</span><strong>{runtimes.map(runtime => runtime.runtimeVersion).filter(Boolean).filter((version, index, all) => all.indexOf(version) === index).join(' / ') || (installed ? text.ready : text.noRuntime)}</strong></div>
       <div><span>{text.latest}</span><strong>{update.data?.latestVersion ?? (update.isLoading ? text.checking : text.unknown)}</strong>{installed && update.data?.latestVersion && !updateTargets.length && <small className="runtime-ready">{text.latestInstalled}</small>}</div>
     </div>
-    {installed && updateTargets.length > 0 && assets.length > 0 && <div className="runtime-package-selection"><span>{text.package}</span><Dropdown ariaLabel={text.package} value={assetName} disabled={!!starting || !!activeTask} onValueChange={setChosenAsset} options={[{value:'',label:text.automaticPackage}, ...assets.map(asset => ({ value: asset.name, label: `${asset.variant.toUpperCase()} · ${asset.name} · ${(asset.size / 1024 / 1024).toFixed(1)} MB` }))]}/></div>}
     {(installation.error || update.error || update.data?.error) && <p className="notice error" role="alert">{core.normalizeError(installation.error ?? update.error ?? update.data?.error).message}</p>}
-    <div className="actions"><button type="button" disabled={!desktop || checking || update.isFetching} onClick={() => void check()}>{checking || update.isFetching ? <LoaderCircle size={15} className="spin"/> : <RefreshCw size={15}/>} {text.check}</button>{!installed && onInstall && <button type="button" className="primary" onClick={onInstall}><Download size={15}/>{text.install}</button>}{!showInstallations && updateTargets.map(updateButton)}{update.data?.releaseUrl && <a className="runtime-release-link" href={update.data.releaseUrl} target="_blank" rel="noreferrer"><ExternalLink size={14}/>{text.upstream}</a>}{installed && updateTargets.length > 0 && !update.isLoading && !update.data?.installable && !update.data?.error && <span className="subtle">{text.noPackage}</span>}</div>
+    <div className="actions">{!installed && onInstall && <button type="button" className="primary" onClick={onInstall}><Download size={15}/>{text.install}</button>}{!showInstallations && updateTargets.map(updateButton)}<button type="button" disabled={!desktop || checking || update.isFetching} onClick={() => void check()}>{checking || update.isFetching ? <LoaderCircle size={15} className="spin"/> : <RefreshCw size={15}/>} {text.check}</button>{update.data?.releaseUrl && <a className="runtime-release-link" href={update.data.releaseUrl} target="_blank" rel="noreferrer"><ExternalLink size={14}/>{text.upstream}</a>}{installed && updateTargets.length > 0 && !update.isLoading && !update.data?.installable && !update.data?.error && <span className="subtle">{text.noPackage}</span>}</div>
     {showInstallations && !!runtimes.length && <div className="runtime-installed-list">{runtimes.map(runtime => <div className="runtime-installed-item" key={runtime.installDir}><div><strong>{runtime.runtimeVersion ? `Strata ${runtime.runtimeVersion}` : 'Strata'}</strong><span className={runtime.readiness === 'ready' ? 'runtime-ready' : 'runtime-repair'}>{runtime.readiness === 'ready' ? text.ready : text.repair}</span><code>{runtime.installDir}</code></div>{needsUpdate(runtime.runtimeVersion, update.data?.latestVersion) && updateButton(runtime)}</div>)}</div>}
     {activeTask && <div className="runtime-update-progress" role="status"><LoaderCircle className="spin" size={16}/><div><strong>{activeTask.message || text.updating}</strong>{taskLogs.length > 0 && <details><summary>{text.logs}</summary><pre>{taskLogs.map(entry => entry.message).join('\n')}</pre></details>}<button type="button" onClick={() => void cancel()}><Square size={13}/>{text.cancel}</button></div></div>}
     {lastTask?.state === 'completed' && <p className="runtime-update-result runtime-ready" role="status">{text.completed}</p>}
     {lastTask?.state === 'failed' && <p className="notice error" role="alert">{text.failed}: {lastTask.message}</p>}
     {actionError && <p className="notice error" role="alert">{actionError}</p>}
-    {notes && update.data && <details className="runtime-release-notes" open><summary>{text.notes} · {update.data.releaseName ?? update.data.latestVersion}</summary>{update.data.publishedAt && <p className="subtle">{text.published} {new Date(update.data.publishedAt).toLocaleDateString(language)}</p>}<div className="runtime-release-body" tabIndex={0} role="region" aria-label={text.notes}><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml components={{ a: ({ node: _node, children, ...props }) => <a {...props} target="_blank" rel="noreferrer">{children}</a> }}>{notes}</ReactMarkdown></div></details>}
-    {pending && <RuntimeUpdateDialog language={language} runtime={pending.runtime} release={pending.release} busy={!!starting} canConfirm={desktop && !!tasks.data && !tasks.data.some(task => task.state === 'running') && !update.isFetching && !!update.data?.installable} error={actionError} onConfirm={() => { void installUpdate(); }} onDismiss={() => { if (!startingRef.current) { setPending(null); setActionError(''); } }}/>}
+    <RuntimeDownloadSettings language={language} desktop={desktop} runtime={runtimes[0]} release={update.data} releaseLoading={update.isLoading || update.isFetching}/>
+    {notes && update.data && <details className="runtime-release-notes"><summary>{text.notes} · {update.data.releaseName ?? update.data.latestVersion}</summary>{update.data.publishedAt && <p className="subtle">{text.published} {new Date(update.data.publishedAt).toLocaleDateString(language)}</p>}<div className="runtime-release-body" tabIndex={0} role="region" aria-label={text.notes}><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml components={{ a: ({ node: _node, children, ...props }) => <a {...props} target="_blank" rel="noreferrer">{children}</a> }}>{notes}</ReactMarkdown></div></details>}
+    {pending && <RuntimeUpdateDialog language={language} runtime={pending.runtime} release={pending.release} assetName={savedDownload?.assetName} initialDownload={savedDownload?.download} initialPreferences={downloadPreferences.data} busy={!!starting} canConfirm={!operationDisabled && desktop && downloadPreferences.isSuccess && !!tasks.data && !tasks.data.some(task => task.state === 'running') && !update.isFetching && !!update.data?.installable} error={actionError} onConfirm={(download, selectedAssetName) => { void installUpdate(download, selectedAssetName); }} onDismiss={() => { if (!startingRef.current) { setPending(null); setActionError(''); } }}/>}
   </Panel>;
 }

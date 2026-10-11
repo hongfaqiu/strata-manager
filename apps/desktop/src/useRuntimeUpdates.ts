@@ -45,6 +45,7 @@ export function useRuntimeUpdates(desktop: boolean, ready: boolean, enabled: boo
   const [starting,setStarting] = useState(false), [actionError,setActionError] = useState('');
   const attempted = useRef(new Set<string>());
   const dismissed = useRef(new Set<string>());
+  const downloadPreferences = useQuery({ queryKey: ['runtime-download-preferences'], queryFn: core.getRuntimeDownloadPreferences, enabled: desktop && ready, staleTime: Infinity, retry: false });
   const installation = useQuery({ queryKey: ['runtime-installation'], queryFn: core.localRuntimeInstallation, enabled: desktop && ready && enabled, refetchInterval: enabled ? 5 * 60 * 1000 : false, refetchOnWindowFocus: false });
   const release = useQuery({ queryKey: ['runtime-update-info'], queryFn: () => core.runtimeUpdateInfo(), enabled: desktop && ready && enabled, staleTime: 12 * 60 * 60 * 1000, refetchInterval: enabled ? 12 * 60 * 60 * 1000 : false, refetchOnWindowFocus: enabled });
   useEffect(() => {
@@ -80,18 +81,18 @@ export function useRuntimeUpdates(desktop: boolean, ready: boolean, enabled: boo
       void query.invalidateQueries({ queryKey: ['process'] });
     }
     if (!enabled && !running.current && !automaticTask.current) releaseGate();
-    if (!enabled || !idle || pending || running.current || automaticTask.current || tasks.some(item => item.state === 'running') || !release.data?.installable) return;
+    if (!enabled || !idle || !downloadPreferences.isSuccess || pending || running.current || automaticTask.current || tasks.some(item => item.state === 'running') || !release.data?.installable) return;
     if (dismissed.current.has(`${release.data.latestVersion}:${release.data.checkedAt}`)) return;
     const runtime = installation.data?.detectedRuntimes?.find(item => item.readiness === 'ready' && newer(item.runtimeVersion, release.data?.latestVersion) && !attempted.current.has(`${item.installDir}:${release.data?.latestVersion}:${release.data?.checkedAt}`));
     if (!runtime) return;
     const proposed = { runtime, release: release.data };
     attempted.current.add(updateKey(proposed));
     setActionError(''); setPending(proposed);
-  }, [desktop, ready, enabled, idle, hydrated, tasks, release.data, installation.data, query, wake, pending]);
+  }, [desktop, ready, enabled, idle, hydrated, tasks, release.data, installation.data, downloadPreferences.isSuccess, query, wake, pending]);
 
-  const confirm = async () => {
+  const confirm = async (download: core.RuntimeZipDownloadOptions = {}, assetName?: string) => {
     if (!pending || running.current || automaticTask.current || awaitingCreatedTask.current) return;
-    if (!desktop || !ready || !enabled || !idle || !tasks || tasks.some(item => item.state === 'running')) {
+    if (!desktop || !ready || !enabled || !idle || !downloadPreferences.isSuccess || !tasks || tasks.some(item => item.state === 'running')) {
       setActionError(language === 'zh-CN' ? '当前正在处理请求或任务，请空闲后再确认。' : 'Requests or tasks are in progress. Confirm again when they finish.'); return;
     }
     const latest = release.data;
@@ -109,7 +110,7 @@ export function useRuntimeUpdates(desktop: boolean, ready: boolean, enabled: boo
     running.current = true; setStarting(true); setActionError('');
     let created = false;
     try {
-      const result = await core.updateRuntimeZip(current.installDir, undefined, true);
+      const result = await core.updateRuntimeZip(current.installDir, assetName, true, download);
       created = true;
       automaticTask.current = result.id;
       awaitingCreatedTask.current = true;
@@ -135,9 +136,11 @@ export function useRuntimeUpdates(desktop: boolean, ready: boolean, enabled: boo
       setWake(value => value + 1);
     }
   };
+  const savedDownload = pending && downloadPreferences.data ? core.resolveRuntimeDownloadPreferences(downloadPreferences.data, pending.release) : undefined;
   return { dialog: pending && desktop && ready && enabled ? createElement(RuntimeUpdateDialog, {
     language, runtime: pending.runtime, release: pending.release, busy: starting,
-    canConfirm: idle && !automaticTask.current && !awaitingCreatedTask.current && !!tasks && !tasks.some(item => item.state === 'running') && !release.isFetching && !!release.data?.installable,
-    error: actionError, onConfirm: () => { void confirm(); }, onDismiss: () => { if (!running.current) { dismissed.current.add(`${pending.release.latestVersion}:${pending.release.checkedAt}`); setPending(null); setActionError(''); } },
+    assetName: savedDownload?.assetName, initialDownload: savedDownload?.download, initialPreferences: downloadPreferences.data,
+    canConfirm: idle && downloadPreferences.isSuccess && !automaticTask.current && !awaitingCreatedTask.current && !!tasks && !tasks.some(item => item.state === 'running') && !release.isFetching && !!release.data?.installable,
+    error: actionError || (downloadPreferences.error ? core.normalizeError(downloadPreferences.error).message : undefined), onConfirm: (download, assetName) => { void confirm(download, assetName); }, onDismiss: () => { if (!running.current) { dismissed.current.add(`${pending.release.latestVersion}:${pending.release.checkedAt}`); setPending(null); setActionError(''); } },
   }) : null };
 }

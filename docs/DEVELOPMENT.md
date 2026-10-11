@@ -24,6 +24,7 @@ pnpm bundle        # Build a local installer; updater artifacts require signing
 
 | 路径 / Path | 职责 / Role |
 | --- | --- |
+| `docs/SYSTEM.md` / `SYSTEM.en.md` | Component relationships, persistence and operating boundaries |
 | `apps/desktop` | React interface and Tauri shell |
 | `apps/supervisor` | Independent background process |
 | `crates/runtime-core` | Local runtime, preparation, analytics and tuning |

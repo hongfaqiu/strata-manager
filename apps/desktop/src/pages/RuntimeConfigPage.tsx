@@ -1,14 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, CircleHelp, RotateCcw, SlidersHorizontal } from 'lucide-react';
+import { ArrowRight, RotateCcw } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import * as core from '@strata-manager/core';
 import type { JsonObject, ServiceProfile } from '@strata-manager/core';
 import { Dropdown, NumberField } from '../OfficialControls';
-import { Dialog } from '../components';
 import { StartupTuningPanel } from './StartupTuningPanel';
-import { RuntimeOperationsPanel } from '../RuntimeOperationsPanel';
-import { McpIntegrationPanel } from '../McpIntegrationPanel';
 import './runtime-config.css';
 import { useDraftGuard, type SaveDraft } from '../useDraftGuard';
 
@@ -56,15 +53,9 @@ export interface RuntimeConfigPageProps {
   online: boolean;
   language: 'zh-CN' | 'en';
   desktop?: boolean;
-  owned?: boolean;
-  operationDisabled?: boolean;
-  managedServiceActive?: boolean;
-  canHandoff?: boolean;
-  onKeySaved?: () => void;
   onError: (error: unknown) => void;
   onMessage?: (message: string) => void;
-  /** Request sampling changes apply to the next chat request without restarting the service. */
-  onSampling?: () => void;
+  onSharedSettings?: () => void;
   /** Navigate to service management; restarting remains an explicit user action. */
   onServices?: () => void;
   onImages?: () => void;
@@ -76,24 +67,18 @@ export interface RuntimeConfigPageProps {
   onRestart?: () => Promise<unknown>;
 }
 
-/** A new service gets an independent editing session, including its key and unsaved changes. */
+/** Each configuration gets an independent editing session and draft. */
 export function RuntimeConfigPage(props: RuntimeConfigPageProps) {
   const identity = props.profile ? `${props.profile.id}:${props.profile.baseUrl}:${props.profile.configPath}` : 'none';
   return <RuntimeConfigSession key={identity} {...props} />;
 }
 
-function RuntimeConfigSession({ profile, online, language, desktop = core.isDesktop(), owned = false, operationDisabled = false, managedServiceActive = true, canHandoff = false, onKeySaved, onError, onMessage, onSampling, onServices, onImages, onCopied, onDeleted, onDirtyChange, onSaveDraftReady, onRestart }: RuntimeConfigPageProps) {
+function RuntimeConfigSession({ profile, online, language, desktop = core.isDesktop(), onError, onMessage, onSharedSettings, onServices, onImages, onCopied, onDeleted, onDirtyChange, onSaveDraftReady, onRestart }: RuntimeConfigPageProps) {
   const { t } = useTranslation();
   const zh = language === 'zh-CN';
   const localFile = desktop && !!profile?.configPath;
   const active = useRef(true);
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
-  const [key, setKey] = useState('');
-  const [samplingHelp, setSamplingHelp] = useState(false);
-  const [keyDirty, setKeyDirty] = useState(false);
-  const [keySaving, setKeySaving] = useState(false);
-  const [keyMessage, setKeyMessage] = useState('');
-  const [keyError, setKeyError] = useState('');
   const [values, setValues] = useState<Record<string, string>>({});
   const [startupDirty, setStartupDirty] = useState(false);
   const startupSave = useRef<SaveDraft | undefined>(undefined);
@@ -109,7 +94,6 @@ function RuntimeConfigSession({ profile, online, language, desktop = core.isDesk
     refetchOnWindowFocus: false,
     retry: false,
   });
-  const credential = useQuery({ queryKey: ['runtime-config-key', profile?.id], queryFn: () => core.hasApiKey(profile!.id), enabled: !!profile, retry: false });
   const keys = useMemo(() => Array.isArray(config.data?.keys) ? config.data.keys.map(core.asObject) : [], [config.data]);
   const originalValues = useMemo(() => valuesOf(keys), [keys]);
   const acceptedValues = useRef<Record<string, string>>({});
@@ -120,7 +104,7 @@ function RuntimeConfigSession({ profile, online, language, desktop = core.isDesk
   const dirtyCallback = useRef(onDirtyChange);
   dirtyCallback.current = onDirtyChange;
   remoteDirtyRef.current = remoteDirty;
-  useEffect(() => { onDirtyChange?.(startupDirty || remoteDirty || keyDirty); }, [startupDirty, remoteDirty, keyDirty, onDirtyChange]);
+  useEffect(() => { onDirtyChange?.(startupDirty || remoteDirty); }, [startupDirty, remoteDirty, onDirtyChange]);
   useEffect(() => () => dirtyCallback.current?.(false), []);
   const groups = useMemo(() => {
     const grouped = configGroups.map(group => ({ title: zh ? group.zh : group.en, fields: group.keys.flatMap(name => keys.filter(key => key.key === name)) }));
@@ -135,23 +119,6 @@ function RuntimeConfigSession({ profile, online, language, desktop = core.isDesk
     if (!active.current) return;
     setError(core.normalizeError(error).message);
     onError(error);
-  };
-  const saveKey = async (remove = false): Promise<boolean> => {
-    if (!profile || keySaving) return false;
-    if (!remove && !keyDirty) return true;
-    setKeySaving(true); setKeyError(''); setKeyMessage('');
-    try {
-      const next = remove ? '' : key.trim();
-      await core.setApiKey(profile.id, next);
-      if (!active.current) return false;
-      setKey(''); setKeyDirty(false);
-      const text = next ? (zh ? 'API Key 已保存。' : 'API key saved.') : (zh ? 'API Key 已移除。' : 'API key removed.');
-      setKeyMessage(text); onMessage?.(text); onKeySaved?.();
-      await credential.refetch();
-      if (active.current && online) await config.refetch();
-      return true;
-    } catch (error) { fail(error, setKeyError); return false; }
-    finally { if (active.current) setKeySaving(false); }
   };
   const saveConfig = async (): Promise<boolean> => {
     if (!remoteDirty) return true;
@@ -190,7 +157,7 @@ function RuntimeConfigSession({ profile, online, language, desktop = core.isDesk
   const saveDraft: SaveDraft = async () => {
     if (startupDirty && !(await startupSave.current?.())) return false;
     if (remoteDirty && !(await saveConfig())) return false;
-    return !keyDirty || await saveKey();
+    return true;
   };
   useEffect(() => { onSaveDraftReady?.(saveDraft); return () => onSaveDraftReady?.(undefined); });
   const reloadGuard = useDraftGuard(remoteDirty, saveConfig, language);
@@ -206,16 +173,13 @@ function RuntimeConfigSession({ profile, online, language, desktop = core.isDesk
   };
   const locked = saving || config.isFetching || !online || config.isError;
   return <section className="view view--runtime-config" id="view-config" aria-labelledby="workspace-page-title"><div className="runtime-config">
-    <section className="st-card runtime-config-sampling" aria-labelledby="runtime-config-sampling-title">
-      <div className="runtime-config-section-heading"><h2 id="runtime-config-sampling-title">{zh ? '聊天采样' : 'Chat sampling'}</h2><span className="runtime-config-apply-badge">{zh ? '下次请求生效' : 'Applies to the next request'}</span><button className="st-btn st-btn--icon" type="button" aria-label={zh ? '聊天采样帮助' : 'Chat sampling help'} title={zh ? '聊天采样帮助' : 'Chat sampling help'} onClick={() => setSamplingHelp(true)}><CircleHelp size={16}/></button></div>
-      <div className="runtime-config-sampling-entry">{onSampling ? <button className="st-btn st-btn--primary" type="button" onClick={onSampling} disabled={!profile}><SlidersHorizontal size={15}/>{zh ? '调整聊天采样' : 'Adjust chat sampling'}</button> : <span className="runtime-config-sampling-unavailable">{zh ? '在聊天中选择此服务后，可调整它的采样参数。' : 'Select this service in Chat to adjust its sampling settings.'}</span>}</div>
-    </section>
+    {onSharedSettings && <div className="runtime-config-section-actions"><button className="st-btn st-btn--secondary" type="button" onClick={onSharedSettings}>{zh ? '公共聊天、连接与运行工具' : 'Shared chat, connections and runtime tools'}<ArrowRight size={15}/></button></div>}
     <section className="runtime-config-startup" aria-labelledby="runtime-config-startup-title">
       <div className="runtime-config-startup-intro"><div className="runtime-config-section-heading"><h2 id="runtime-config-startup-title">{zh ? '模型启动配置' : 'Model startup configuration'}</h2><span className="runtime-config-apply-badge runtime-config-apply-badge--restart">{zh ? '保存后重启生效' : 'Restart after saving'}</span></div><p>{localFile ? (zh ? '图形界面与 JSON 编辑同一份完整配置。保存会备份原文件；当前服务在重启前继续使用已有配置。' : 'Graphical controls and JSON edit the same complete configuration. Saving backs up the previous file; the running service keeps its existing configuration until restarted.') : (zh ? '服务提供的运行配置字段只写入配置文件，重启后生效。完整本地 JSON 可在桌面应用中编辑。' : 'The run configuration fields exposed by this service are saved to its configuration file and applied after a restart. Edit the complete local JSON in the desktop app.')}</p><div className="runtime-config-section-actions">{onImages && <button className="st-btn st-btn--secondary" type="button" onClick={onImages}>{zh ? '快捷配置图像支持' : 'Set up image support'}</button>}{onServices && <button className="st-btn st-btn--secondary" type="button" onClick={onServices}><ArrowRight size={15}/>{zh ? '返回我的模型' : 'Return to My models'}</button>}</div></div>
     <StartupTuningPanel profile={profile} desktop={desktop} language={language} onError={onError} onMessage={onMessage} onRestart={onRestart} onCopied={onCopied} onDeleted={onDeleted} onDirtyChange={setStartupDirty} onSaveDraftReady={registerStartupSave}/>
     {!localFile && <div className="st-card cfg-card" id="cfg-card"><div className="req-head"><span className="card-title">{zh ? '服务配置文件字段' : 'Service configuration file fields'}</span><span className="muted small" id="cfg-file">{online ? String(config.data?.file ?? '') : ''}</span></div>
       <p className="runtime-config-restart-note">{zh ? '保存后重启模型生效。“默认”会清除该项的自定义值。' : 'Restart the model after saving. “Default” clears that field’s custom value.'}</p>
-      {!profile ? <p className="muted">{zh ? '选择服务后可读取运行配置。' : 'Select a service to read its run configuration.'}</p> : !online ? <p className="muted" role="status">{zh ? '服务离线。连接成功后会自动读取运行配置；API Key 可在下方保存。' : 'Service is offline. Run configuration loads when connected; the API key can still be saved below.'}</p> : <>
+      {!profile ? <p className="muted">{zh ? '选择服务后可读取运行配置。' : 'Select a service to read its run configuration.'}</p> : !online ? <p className="muted" role="status">{zh ? '服务离线。连接成功后会自动读取运行配置；API Key 可在公共设置中保存。' : 'Service is offline. Run configuration loads when connected; save the API key in shared settings.'}</p> : <>
         <div className="runtime-config-refresh"><button className="st-btn st-btn--secondary" type="button" disabled={saving || config.isFetching} onClick={() => void reloadConfig()}>{config.isFetching ? (zh ? '读取中…' : 'Loading…') : (zh ? '重新读取' : 'Reload')}</button><span className="muted small">{zh ? '重新读取会舍弃未保存的改动。' : 'Reloading discards unsaved changes.'}</span></div>
         {config.error && <p className="runtime-config-error" role="alert">{core.normalizeError(config.error).message}</p>}
         {!!keys.length && <><form className="cfg-form runtime-config-form" id="cfg-form" noValidate onSubmit={event => { event.preventDefault(); void saveConfig(); }}>{groups.map(group => <fieldset className="runtime-config-group" key={group.title}><legend>{group.title}</legend>{group.fields.map(k => {
@@ -234,20 +198,6 @@ function RuntimeConfigSession({ profile, online, language, desktop = core.isDesk
       </>}
     </div>}
     </section>
-    <div className="st-card runtime-config-connection"><span className="card-title">{zh ? '服务连接与 API Key' : 'Service connection and API key'}</span>
-      {profile ? <><p><strong>{profile.name}</strong><code className="runtime-config-address">{core.normalizeBaseUrl(profile.baseUrl)}</code></p>
-        <form onSubmit={event => { event.preventDefault(); void saveKey(); }}>
-          <div className="st-field"><label className="st-label" htmlFor="api-key">{t('apiKey')}<output>{t('apiKeyOnly')}</output></label>
-            <input className="st-input" id="api-key" type="password" autoComplete="new-password" placeholder={credential.data ? (zh ? '已保存；输入以替换' : 'Saved; enter to replace') : t('notNeeded')} disabled={keySaving} value={key} onChange={event => { setKey(event.target.value); setKeyDirty(true); setKeyMessage(''); }} />
-          </div><p className="muted small">{desktop ? (zh ? '保存在系统凭据库，不会回显。' : 'Stored in the system credential vault and never displayed.') : (zh ? '密钥仅在当前会话保留，关闭后清除。' : 'Keys are kept only for the current session.')}</p>
-          <div className="cfg-actions"><button className="st-btn st-btn--primary" type="submit" disabled={keySaving || !keyDirty}>{keySaving ? (zh ? '保存中…' : 'Saving…') : t('save')}</button>
-            <button className="st-btn st-btn--secondary" type="button" disabled={keySaving || !credential.data} onClick={() => void saveKey(true)}>{zh ? '移除密钥' : 'Remove key'}</button><span className="muted small" role="status">{keyMessage}</span></div>
-        </form>{(keyError || credential.error) && <p className="runtime-config-error" role="alert">{keyError || core.normalizeError(credential.error).message}</p>}
-      </> : <p className="muted">{zh ? '先创建或选择一个服务配置。' : 'Create or select a service profile first.'}</p>}
-    </div>
-    <RuntimeOperationsPanel profile={profile} online={online} owned={owned} language={language} disabled={operationDisabled} onError={onError} onMessage={onMessage}/>
-    {desktop && <McpIntegrationPanel profile={profile} managedServiceActive={managedServiceActive} canHandoff={canHandoff}/>}
-    {samplingHelp && <Dialog title={zh ? '聊天采样说明' : 'Chat sampling'} onClose={() => setSamplingHelp(false)}><div className="runtime-config-help-content"><p>{zh ? '聊天采样无需重启，应用后用于下一次提问。正在生成的回答保持原参数。' : 'Chat sampling needs no restart and applies to your next request. A response in progress keeps its original settings.'}</p><p>{zh ? '聊天设置中可将采样共享给其他客户端。共享值只补全新请求未指定的参数；使用配置文件启动的服务会保存共享值。请求参数优先于共享值，共享值优先于模型配置中的默认值。下方配置文件里的采样默认值仍需保存并重启。' : 'Chat settings can share sampling with other clients. Shared values fill parameters omitted by new requests; services started with a configuration file persist them. Request parameters take priority over shared values, which take priority over model defaults. Sampling defaults in the configuration below still require saving and restarting.'}</p></div></Dialog>}
     {reloadGuard.dialog}
   </div></section>;
 }

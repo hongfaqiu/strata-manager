@@ -958,6 +958,19 @@ impl OwnedProcess {
         self.status.exit_code = result.code();
         #[cfg(windows)]
         {
+            // TerminateJobObject requests termination of every member, but
+            // waiting for the root does not wait for its descendants. Keep the
+            // held Job as authority until its final member exits, before any
+            // caller probes/reuses a listener owned by that tree.
+            let deadline = std::time::Instant::now() + Duration::from_secs(10);
+            while self.tree_running()? {
+                if std::time::Instant::now() >= deadline {
+                    return Err(
+                        "受管根进程已退出，但进程树仍在结束；未启动替代服务，请稍后重试恢复".into(),
+                    );
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
             self.tree_stopped = true;
         }
         #[cfg(target_os = "linux")]
@@ -1018,7 +1031,7 @@ fn init_task_storage(connection: &rusqlite::Connection) -> Result<(), String> {
     connection.execute_batch("CREATE TABLE IF NOT EXISTS task_runtime(id TEXT PRIMARY KEY,path TEXT); CREATE TABLE IF NOT EXISTS task_logs(id TEXT PRIMARY KEY,entries TEXT NOT NULL); CREATE TABLE IF NOT EXISTS install_claims(path TEXT PRIMARY KEY,token TEXT NOT NULL);").map_err(|e|e.to_string())
 }
 
-fn redact_log(message: &str) -> String {
+pub(crate) fn redact_log(message: &str) -> String {
     let lower = message.to_ascii_lowercase();
     if [
         "api_key",
@@ -1756,16 +1769,10 @@ mod tests {
         process.stop().unwrap();
         #[cfg(windows)]
         {
-            // TerminateJobObject can return before the Job accounting publishes
-            // the final exit. Keep querying the held Job rather than its old PID.
-            let deadline = std::time::Instant::now() + Duration::from_secs(3);
-            while process.tree_running().unwrap() {
-                assert!(
-                    std::time::Instant::now() < deadline,
-                    "stopped Job retained a live fixture"
-                );
-                std::thread::sleep(Duration::from_millis(10));
-            }
+            assert!(
+                !process.tree_running().unwrap(),
+                "stop must wait for the final Job member rather than only its root"
+            );
         }
         #[cfg(target_os = "linux")]
         assert!(!matches!(process.tree_running(), Ok(true)));

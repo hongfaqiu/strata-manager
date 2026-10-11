@@ -1,0 +1,146 @@
+.management-content--benchmark[hidden], .benchmark-plan-settings[hidden] { display: none !important; }
+.benchmark-page { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.benchmark-page :is(.panel,.field,.official-dropdown) { min-width: 0; }
+.benchmark-page .page-header { margin: 0; gap: 12px; align-items: center; }
+.benchmark-page .page-header .actions { gap: 6px; }
+.benchmark-page .panel { padding: 14px 16px; margin: 0; }
+.benchmark-page .panel-header { margin-bottom: 12px; gap: 12px; }
+.benchmark-page .panel-header h2 { font-size: 14px; }
+.benchmark-service { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.benchmark-service strong { font-size: 12px; font-weight: 500; max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.benchmark-service .badge { font-size: 11px; height: 22px; padding: 0 8px; }
+.benchmark-plan-body,.benchmark-plan-settings { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.benchmark-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+.benchmark-toolbar .official-segmented { width: fit-content; max-width: 100%; }
+.benchmark-run-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 12px; }
+.benchmark-run-actions>button { min-height: 38px; padding: 7px 18px; }
+.benchmark-run-actions [role=status] { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--st-ink-muted); font-variant-numeric: tabular-nums; }
+.benchmark-stop { color: var(--st-danger-text); border-color: var(--st-danger-text); }
+.benchmark-running-plan { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; color: var(--st-ink-muted); }
+.benchmark-running-plan>span { min-width: 0; overflow-wrap: anywhere; }
+.benchmark-running-plan>button { flex: none; }
+.benchmark-presets { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.benchmark-presets>span { margin-right: 3px; font-size: 12px; color: var(--st-ink-muted); }
+.benchmark-presets>button { min-height: 30px; padding: 4px 10px; font-size: 12px; }
+.benchmark-settings { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); align-items: start; gap: 10px 14px; }
+.benchmark-key-settings { grid-template-columns: repeat(4,minmax(0,1fr)); }
+.benchmark-settings .field { margin: 0; gap: 6px; }
+.benchmark-settings .field>span { font-size: 12px; }
+.benchmark-settings :is(input,.official-dropdown-trigger) { height: 36px; min-height: 36px; padding-top: 6px; padding-bottom: 6px; }
+.benchmark-scenario-group { display: flex; flex-direction: column; gap: 7px; }
+.benchmark-scenario-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; }
+.benchmark-scenario-heading>span { color: var(--st-ink-muted); font-size: 11px; }
+.benchmark-scenarios { display: flex; flex-wrap: wrap; gap: 7px; }
+.benchmark-scenario { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--st-line); border-radius: var(--st-r-md,10px); padding: 8px 10px; cursor: pointer; background: var(--st-surface); min-width: 0; font-size: 12px; line-height: 1.25; }
+.benchmark-scenario.is-selected { border-color: var(--st-accent); background: var(--st-accent-tint); }
+.benchmark-scenario:focus-within { outline: 2px solid var(--st-focus); outline-offset: 2px; }
+.benchmark-scenario:has(input:disabled) { cursor: default; }
+.benchmark-scenario>input { flex: none; width: 14px; height: 14px; min-height: 0; padding: 0; margin: 0; appearance: auto; accent-color: var(--st-accent); }
+.benchmark-scenario>span { min-width: 0; overflow-wrap: anywhere; }
+.benchmark-advanced { border-top: 1px solid var(--st-line); padding-top: 9px; }
+.benchmark-advanced>summary { cursor: pointer; font-size: 12px; color: var(--st-ink-muted); }
+.benchmark-advanced>.benchmark-settings { margin-top: 12px; }
+.benchmark-option-toggles { display: flex; flex-wrap: wrap; gap: 10px 24px; margin-top: 12px; }
+.benchmark-option-toggles>label { display: flex; align-items: center; gap: 9px; font-size: 12px; min-width: 0; }
+.benchmark-option-toggles .st-toggle { flex: none; }
+.benchmark-mode-hint { margin: 8px 0 0; font-size: 11px; line-height: 1.6; }
+.benchmark-page textarea { width: 100%; resize: vertical; min-height: 74px; }
+.benchmark-budget { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; padding: 8px 10px; border-radius: var(--st-r-md,10px); background: var(--st-surface-2); font-size: 12px; overflow-wrap: anywhere; }
+.benchmark-budget small,.benchmark-not-ready { color: var(--st-ink-muted); font-size: 11px; }
+.benchmark-page .notice { margin: 0; font-size: 12px; }
+.benchmark-stage { font-size: 12px; color: var(--st-ink-muted); }
+.benchmark-progress { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 8px; }
+.benchmark-page .metric { min-width: 0; padding: 12px; box-shadow: none; background: var(--st-surface-2); }
+.benchmark-page .metric-label { font-size: 12px; margin-bottom: 8px; overflow-wrap: anywhere; }
+.benchmark-page .metric-value { font-size: 27px; }
+.benchmark-page .metric-value small { font-size: 12px; }
+.benchmark-live-budget { display: flex; align-items: center; gap: 10px; margin-top: 12px; color: var(--st-ink-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.benchmark-live-budget progress { appearance: none; border: 0; border-radius: 99px; height: 5px; min-width: 0; flex: 1; overflow: hidden; background: var(--st-surface-2); }
+.benchmark-live-budget progress::-webkit-progress-bar { background: var(--st-surface-2); }
+.benchmark-live-budget progress::-webkit-progress-value { background: var(--st-accent); border-radius: 99px; }
+.benchmark-live-budget progress::-moz-progress-bar { background: var(--st-accent); }
+.benchmark-live-budget>span { flex: none; }
+.benchmark-live-latest,.benchmark-resource-latest,.benchmark-result-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 7px 18px; font-size: 12px; color: var(--st-ink-muted); }
+.benchmark-live-latest { margin-top: 12px; }
+.benchmark-live-latest strong,.benchmark-result-facts strong { color: var(--st-ink); font-weight: 600; }
+.benchmark-result-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; font-size: 12px; color: var(--st-ink-muted); }
+.benchmark-result-meta>strong { color: var(--st-ink); font-size: 12px; overflow-wrap: anywhere; }
+.benchmark-summary { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px; }
+.benchmark-summary>div>small { display: block; color: var(--st-ink-muted); font-size: 10px; line-height: 1.6; margin-top: 7px; }
+.benchmark-result-facts { margin: 12px 0; font-size: 11px; gap: 6px 16px; }
+.benchmark-section { min-width: 0; border-top: 1px solid var(--st-line); }
+.benchmark-section>summary { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; font-weight: 500; min-height: 36px; list-style: none; }
+.benchmark-section>summary::-webkit-details-marker { display: none; }
+.benchmark-section>summary::before { content: '›'; display: inline-block; flex: none; font-size: 17px; line-height: 1; width: 9px; text-align: center; color: var(--st-ink-muted); }
+.benchmark-section[open]>summary::before { transform: rotate(90deg); }
+.benchmark-section[open]>summary { margin-bottom: 10px; }
+.benchmark-section-count { margin-left: auto; font-size: 11px; color: var(--st-ink-muted); font-weight: 400; text-align: right; overflow-wrap: anywhere; }
+.benchmark-page table { min-width: 860px; }
+.benchmark-page .table-wrap { min-width: 0; max-width: 100%; overflow-x: auto; }
+.benchmark-comparison { margin: 12px 0; }
+.benchmark-comparison h3 { margin: 0 0 8px; font-size: 12px; }
+.benchmark-comparison table { min-width: 920px; }
+.benchmark-sample-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 10px; }
+.benchmark-sample-toolbar .official-dropdown { width: 180px; max-width: 100%; }
+.benchmark-sample-toolbar small { font-size: 11px; color: var(--st-ink-muted); }
+.benchmark-samples-table td>small { display: block; font-size: 11px; color: var(--st-ink-muted); margin-top: 3px; }
+.benchmark-sample-error { max-width: 200px; white-space: normal; color: var(--st-danger-text) !important; overflow-wrap: anywhere; }
+.benchmark-output { margin-top: 12px; }
+.benchmark-output>summary { cursor: pointer; font-size: 12px; }
+.benchmark-output>div { margin-top: 12px; }
+.benchmark-page :is(.benchmark-output,.benchmark-conditions) pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; font-size: 11px; }
+.benchmark-conditions p { font-size: 12px; margin: 8px 0; overflow-wrap: anywhere; }
+.benchmark-error-list { font-size: 12px; line-height: 1.7; padding-left: 20px; margin: 0 0 12px; }
+.benchmark-empty { padding: 4px 0; font-size: 12px; color: var(--st-ink-muted); }
+.benchmark-results .panel-header .official-dropdown { width: 330px; max-width: 100%; flex: 0 1 330px; }
+.benchmark-resources { padding: 0 16px; background: var(--st-surface); border: 1px solid var(--st-line); border-radius: var(--st-r-lg); }
+.benchmark-resources>summary { min-height: 42px; }
+.benchmark-resource-latest { margin: 0 0 12px; }
+.benchmark-charts { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; }
+.benchmark-charts .chart { min-width: 0; margin: 0; }
+.benchmark-charts svg { display: block; width: 100%; height: 90px; }
+.benchmark-charts .chart-title { gap: 6px; font-size: 12px; }
+.benchmark-charts .chart-empty { min-height: 90px; height: auto; font-size: 12px; }
+.benchmark-metric-note { margin: 12px 0; font-size: 11px; line-height: 1.6; }
+.benchmark-help { font-size: 12px; line-height: 1.7; }
+.benchmark-help>p { margin-bottom: 14px; color: var(--st-ink-soft); }
+.benchmark-help dl { margin: 0 0 16px; display: grid; gap: 9px; }
+.benchmark-help dl>div { display: grid; grid-template-columns: 115px minmax(0,1fr); gap: 12px; }
+.benchmark-help dt { font-weight: 600; }
+.benchmark-help dd { margin: 0; color: var(--st-ink-muted); }
+@media(max-width:1000px) {
+  .benchmark-service strong { max-width: 220px; }
+  .benchmark-progress { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .benchmark-settings,.benchmark-charts { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .benchmark-key-settings { grid-template-columns: repeat(4,minmax(0,1fr)); }
+}
+@media(max-width:760px) {
+  .benchmark-page { gap: 10px; }
+  .benchmark-page .page-header { align-items: flex-start; }
+  .benchmark-page .page-header .actions { gap: 5px; }
+  .benchmark-page .page-header .actions>button { min-height: 31px; padding: 5px 8px; font-size: 11px; }
+  .benchmark-page .panel { padding: 12px; }
+  .benchmark-page .panel-header { flex-wrap: wrap; gap: 8px; }
+  .benchmark-service { gap: 6px; }
+  .benchmark-service strong { max-width: 200px; }
+  .benchmark-plan-body,.benchmark-plan-settings { gap: 10px; }
+  .benchmark-toolbar { gap: 8px; align-items: center; flex-wrap: wrap; }
+  .benchmark-toolbar .official-segmented { flex: 1; width: auto; }
+  .benchmark-toolbar .official-segmented>button { flex: 1; min-width: 0; padding-left: 8px; padding-right: 8px; }
+  .benchmark-run-actions { gap: 8px; }
+  .benchmark-run-actions>button { min-height: 36px; padding: 6px 12px; }
+  .benchmark-settings,.benchmark-key-settings,.benchmark-summary { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .benchmark-settings { gap: 10px; }
+  .benchmark-settings .field>span { font-size: 11px; }
+  .benchmark-scenarios { gap: 6px; }
+  .benchmark-scenario { padding: 7px 9px; font-size: 11px; }
+  .benchmark-page .metric { padding: 10px; }
+  .benchmark-page .metric-value { font-size: 24px; }
+  .benchmark-progress .metric-label { font-size: 11px; }
+  .benchmark-option-toggles>label { align-items: flex-start; }
+  .benchmark-results .panel-header .official-dropdown { flex-basis: 100%; width: 100%; }
+  .benchmark-charts { grid-template-columns: minmax(0,1fr); }
+  .benchmark-resources { padding-left: 12px; padding-right: 12px; }
+  .benchmark-resources .benchmark-section-count { font-size: 10px; }
+  .benchmark-help dl>div { grid-template-columns: minmax(0,1fr); gap: 2px; }
+}

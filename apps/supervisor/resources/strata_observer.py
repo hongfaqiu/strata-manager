@@ -40,6 +40,10 @@ SUPPORTED_HASHES = {
     # tests: public run now delegates to _run under a keep-awake finally block;
     # event/done, request_stats and handler instrumentation boundaries are intact.
     "ce9266730b632e919ff93809ea6f9ecd6f91f12da19597a2d95a7edb29700dfa",
+    # Niko1221/Strata 7695859 (0.1.43), canonical LF. Reviewed non-finite
+    # retry/error and native slot-timing changes; real MockEngine HTTP tests
+    # preserve single-request accounting, timings and admission release.
+    "55ee9d1160f0da457cabe6f9dfea9884296b6d70fd3d14abd4ed42e6f79dd72b",
 }
 ROUTES = {"/v1/chat/completions": "chat", "/v1/responses": "responses",
           "/v1/messages": "anthropic", "/v1/messages/count_tokens": "token_count"}

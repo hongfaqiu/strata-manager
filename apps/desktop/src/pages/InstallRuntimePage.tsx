@@ -54,6 +54,7 @@ export interface InstallRuntimePageProps {
   language: 'zh-CN' | 'en';
   desktop: boolean;
   autoCheck?: boolean;
+  operationDisabled?: boolean;
 }
 
 function detectedRuntimes(status: RuntimeInstallationStatus): core.DetectedRuntime[] {
@@ -139,6 +140,7 @@ export function InstallRuntimePage(props: InstallRuntimePageProps) {
   }, [props.desktop, refresh]);
 
   const start = async (repair = false) => {
+    if (props.operationDisabled) return;
     const current = snapshot.current;
     if (!mounted.current || !callbacks.current.desktop || operation.current || !loaded || statusError || current.task?.state === 'running' || (!repair && detectedRuntimes(current.installation).length > 0)) return;
     operation.current = true;
@@ -208,18 +210,18 @@ export function InstallRuntimePage(props: InstallRuntimePageProps) {
           <dl className="runtime-summary-facts"><div><dt>{text.directory}</dt><dd><code>{detected.installDir}</code></dd></div><div><dt>{text.version}</dt><dd>{detected.runtimeVersion ?? text.notPrepared}</dd></div></dl>
           {detected.readiness === 'repair' && <div className="runtime-repair-details" role="status"><p>{detected.reason ?? text.repairFallback}</p><small>{text.repairHint}</small></div>}
           {running && <p className="runtime-summary-task" role="status"><LoaderCircle size={15} className="spin"/><span>{task.message}</span></p>}
-          <div className="actions runtime-summary-actions">{detected.readiness === 'repair' && !running && <button type="button" disabled={!loaded || busy || !!statusError} onClick={() => void start(true)}><Download size={15}/>{action === 'start' ? text.starting : text.prepareRuntime}</button>}{running && <button type="button" disabled={busy || canceling} onClick={() => void cancel()}><Square size={13}/>{canceling ? text.canceling : text.cancel}</button>}<button type="button" aria-expanded={detailsOpen} aria-controls="install-runtime-details" onClick={() => setDetailsOpen(value => !value)}><FileText size={15}/>{text.details}</button>{running && logButton}</div>
+          <div className="actions runtime-summary-actions">{detected.readiness === 'repair' && !running && <button type="button" disabled={props.operationDisabled || !loaded || busy || !!statusError} onClick={() => void start(true)}><Download size={15}/>{action === 'start' ? text.starting : text.prepareRuntime}</button>}{running && <button type="button" disabled={busy || canceling} onClick={() => void cancel()}><Square size={13}/>{canceling ? text.canceling : text.cancel}</button>}<button type="button" aria-expanded={detailsOpen} aria-controls="install-runtime-details" onClick={() => setDetailsOpen(value => !value)}><FileText size={15}/>{text.details}</button>{running && logButton}</div>
           {detailsOpen && <dl id="install-runtime-details" className="runtime-summary-facts"><div><dt>{text.revision}</dt><dd><code>{detected.sourceRevision ?? '—'}</code></dd></div><div><dt>{text.python}</dt><dd><code>{detected.pythonPath || '—'}</code></dd></div></dl>}
           {errorBlock}
         </Panel>
-        <RuntimeManagementPanel autoCheck={props.autoCheck} language={props.language} desktop={props.desktop} installationStatus={installation} selectedRuntimeDir={detected.installDir} showInstallations={false}/>
+        <RuntimeManagementPanel operationDisabled={props.operationDisabled} autoCheck={props.autoCheck} language={props.language} desktop={props.desktop} installationStatus={installation} selectedRuntimeDir={detected.installDir} showInstallations={false}/>
       </> : initial ? <div className="runtime-detecting" role="status"><LoaderCircle size={18} className="spin"/>{text.checking}</div> : loaded && !statusError ? <>
         <ol className="install-runtime-steps" aria-label={text.title}><li className="is-current"><span>1</span>{text.installStep}</li><li><span>2</span>{text.modelStep}</li><li><span>3</span>{text.serviceStep}</li></ol>
         <Panel title={text.installStep} className="install-runtime-card">
           <div className="install-runtime-state" role="status" aria-live="polite">{running || action === 'start' ? <LoaderCircle size={23} className="spin"/> : task?.state === 'failed' ? <CircleAlert size={23}/> : <Download size={23}/>}<div><h3>{action === 'start' ? text.starting : title}</h3><p>{running ? text.runningHint : task?.state === 'failed' || task?.state === 'cancelled' ? text.retryHint : text.noEstimate}</p></div></div>
           {task?.message && <p className="install-runtime-message">{task.message}</p>}
           {installation.taskId && !task && <p className="install-runtime-message">{text.unknownTask}</p>}
-          <div className="actions install-runtime-actions">{running ? <button type="button" disabled={busy || canceling} onClick={() => void cancel()}><Square size={14}/>{canceling ? text.canceling : text.cancel}</button> : <button type="button" className="primary" disabled={!loaded || busy} onClick={() => void start()}><Download size={15}/>{task || installation.taskId ? text.retry : text.start}</button>}{logButton}</div>{errorBlock}
+          <div className="actions install-runtime-actions">{running ? <button type="button" disabled={busy || canceling} onClick={() => void cancel()}><Square size={14}/>{canceling ? text.canceling : text.cancel}</button> : <button type="button" className="primary" disabled={props.operationDisabled || !loaded || busy} onClick={() => void start()}><Download size={15}/>{task || installation.taskId ? text.retry : text.start}</button>}{logButton}</div>{errorBlock}
         </Panel>
       </> : null}
       {logsOpen && installation.taskId && <Panel title={text.logs} className="install-runtime-log-panel">{logError && <p className="install-runtime-log-error" role="alert">{text.logsUnavailable}: {logError}</p>}<div id="install-runtime-logs" className="install-runtime-logs" role="log" aria-label={text.logs} aria-live="off">{logs.length ? logs.map((entry, index) => <div className="install-runtime-log-line" key={`${entry.timestamp}-${index}`}><time dateTime={new Date(entry.timestamp).toISOString()}>{new Date(entry.timestamp).toLocaleTimeString(props.language)}</time><span className={`install-runtime-log-level ${entry.level}`}>{entry.level}</span><span>{entry.message}</span></div>) : <p>{text.emptyLogs}</p>}</div></Panel>}

@@ -153,6 +153,8 @@ export interface StreamToolEvent extends ToolEvent {
 }
 export interface ChatDelta {
   content?: string; reasoning?: string; tool?: StreamToolEvent; usage?: JsonObject; done?: boolean; error?: string;
+  /** Engine timings carried by this response; never a global last-request snapshot. */
+  timings?: JsonObject; finishReason?: string;
 }
 
 function fileText(file: Attachment): string {
@@ -285,6 +287,7 @@ export function decodeChatChunk(data: string): ChatDelta[] {
   if (chunk.error) throw new StrataError('STREAM_ERROR', typeof asObject(chunk.error).message === 'string' ? String(asObject(chunk.error).message) : String(chunk.error));
   const output: ChatDelta[] = [];
   if (chunk.usage) output.push({ usage: asObject(chunk.usage) });
+  if (chunk.timings) output.push({ timings: asObject(chunk.timings) });
   if (chunk.strata_mcp) {
     const t = asObject(chunk.strata_mcp), event = t.event;
     output.push({ tool: {
@@ -295,6 +298,7 @@ export function decodeChatChunk(data: string): ChatDelta[] {
     } });
   }
   const choice = asObject(Array.isArray(chunk.choices) ? chunk.choices[0] : undefined), delta = asObject(choice.delta);
+  if (typeof choice.finish_reason === 'string') output.push({ finishReason: choice.finish_reason });
   const content = typeof delta.content === 'string' ? delta.content : undefined;
   const reasoning = typeof delta.reasoning_content === 'string' ? delta.reasoning_content : undefined;
   if (content !== undefined || reasoning !== undefined) output.push({ content, reasoning });

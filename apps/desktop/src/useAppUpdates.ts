@@ -24,7 +24,6 @@ export function useAppUpdates(desktop: boolean, enabled: boolean, ready: boolean
   const controller = controllerRef.current;
   const [state, setState] = useState<AppUpdateState>(controller.state);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const presentedVersion = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     controller.attach(setState);
@@ -43,14 +42,10 @@ export function useAppUpdates(desktop: boolean, enabled: boolean, ready: boolean
   }, [controller, desktop, ready, enabled]);
 
   useEffect(() => {
-    if (state.phase === 'available' && state.version && presentedVersion.current !== state.version) {
-      presentedVersion.current = state.version;
-      setDialogOpen(true);
-    }
-    if (state.phase === 'installed') setDialogOpen(false);
+    if (!state.version || state.phase === 'current' || state.phase === 'installed') setDialogOpen(false);
   }, [state.phase, state.version]);
 
-  const openDialog = async () => { if (controller.state.version) setDialogOpen(true); };
+  const openDialog = async () => { if (controller.state.version && controller.state.phase !== 'current' && controller.state.phase !== 'installed') setDialogOpen(true); };
   const check = async () => { await controller.check(); if (controller.state.version && controller.state.phase !== 'installed') setDialogOpen(true); };
   const confirm = async (version: string) => { await controller.confirm(version); };
   return { state, dialogOpen, check, download: openDialog, install: openDialog, openDialog, confirm, dismiss: () => setDialogOpen(false) };

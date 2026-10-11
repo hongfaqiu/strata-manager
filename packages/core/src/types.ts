@@ -31,12 +31,15 @@ export interface LocalCandidate {
 
 export interface SupervisorStatus {
   /** Missing on older supervisors; never infer this from protocol or package version. */
-  capabilities?: { fullScenarioTuning?: number };
+  capabilities?: { fullScenarioTuning?: number; managerMcp?: number };
   running: boolean;
   pid?: number;
   protocolVersion: number;
   startedAt?: number;
   activeServices: number;
+  /** Supervisor selection may change through an external MCP client. Missing on older versions. */
+  activeLocalInstallation?: string | null;
+  localServiceDesired?: boolean | null;
   dataDir?: string;
   version?: string;
   expectedVersion?: string;

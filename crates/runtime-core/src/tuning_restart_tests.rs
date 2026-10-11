@@ -1,6 +1,78 @@
 use super::*;
 use crate::tuning::tests::{await_job, live_fixture};
 
+#[test]
+fn engine_flag_verification_normalizes_numeric_info_strings() {
+    for (key, value) in [
+        ("pool_workers", 4.0),
+        ("prefill", 8192.0),
+        ("vram_reserve_mib", 3072.0),
+        ("adapt_every", 1.0),
+        ("adapt_swaps", 80.0),
+        ("adapt_decay", 0.97),
+        ("adapt_async", 1.0),
+    ] {
+        let numeric = reported_flag_value(key, &json!(value)).unwrap();
+        let text = reported_flag_value(key, &json!(value.to_string())).unwrap();
+        assert_eq!(text, numeric, "{key}");
+        assert_eq!(text.unwrap().as_f64(), Some(value));
+    }
+    assert_eq!(
+        reported_flag_value("adapt_async", &json!(true)).unwrap(),
+        Some(json!(1))
+    );
+    assert_eq!(
+        reported_flag_value("adapt_async", &json!(false)).unwrap(),
+        Some(json!(0))
+    );
+    for key in ["pool_workers", "adapt_async", "adapt_decay"] {
+        assert_eq!(reported_flag_value(key, &Value::Null).unwrap(), None);
+    }
+}
+
+#[test]
+fn engine_flag_verification_rejects_invalid_reported_values() {
+    for (key, value) in [
+        ("adapt_decay", json!("NaN")),
+        ("adapt_decay", json!("1e9999")),
+        ("adapt_decay", json!("1.01")),
+        ("adapt_decay", json!(-0.01)),
+        ("adapt_async", json!("0.5")),
+        ("adapt_async", json!(2)),
+        ("pool_workers", json!(0)),
+        ("pool_workers", json!("4.5")),
+        ("prefill", json!("-1")),
+        ("prefill", json!(0)),
+        ("adapt_every", json!(-1)),
+        ("adapt_swaps", json!(true)),
+        ("vram_reserve_mib", json!("3072MiB")),
+        ("adapt_every", json!({})),
+        ("pool_workers", json!("9007199254740993")),
+    ] {
+        assert!(
+            reported_flag_value(key, &value).is_err(),
+            "accepted {key}={value}"
+        );
+    }
+    for value in ["NaN", "Infinity", "-0.1", "1.1", "0.97junk"] {
+        assert!(baseline(&json!({"args":["--adapt-decay",value]})).is_err());
+    }
+    assert_eq!(
+        baseline(&json!({"args":["--adapt-decay","0.97"]}))
+            .unwrap()
+            .adapt_decay,
+        Some(0.97)
+    );
+    for value in [".95", "+0.95"] {
+        assert_eq!(
+            baseline(&json!({"args":["--adapt-decay",value]}))
+                .unwrap()
+                .adapt_decay,
+            Some(0.95)
+        );
+    }
+}
+
 fn full_request(restart: Option<RestartParameters>) -> TuningStartRequest {
     TuningStartRequest {
         scenes: vec![Scene::Chat],
@@ -360,9 +432,11 @@ fn assert_transaction_fixture_rejects_bad_evidence(measured: &TuningJob) {
         }
         assert!(synthetic_transaction_report(&bad_resource).is_err());
     }
-    let mut old_version = measured.clone();
-    old_version.identity["benchmarkVersion"] = json!("invalid-fixture-version");
-    assert!(synthetic_transaction_report(&old_version).is_err());
+    for version in ["invalid-fixture-version", "complete-workloads-v1"] {
+        let mut old_version = measured.clone();
+        old_version.identity["benchmarkVersion"] = json!(version);
+        assert!(synthetic_transaction_report(&old_version).is_err());
+    }
     if measured.candidates[0].kind == CandidateKind::Restart {
         let mut unverified_restart = measured.clone();
         unverified_restart.candidates[0].startup_verification = None;
@@ -968,6 +1042,125 @@ async fn startup_recovers_running_temporary_stage_and_verifies_original_service(
     assert_original(&profile, &original);
     assert_eq!(health(&reopened, &profile).await["loaded"], true);
     assert!(load_journal(&reopened, &id).unwrap().unwrap().restored);
+    crate::stop_service(&reopened, profile.id.clone())
+        .await
+        .unwrap();
+}
+#[test]
+fn recovery_ignores_only_present_textual_benchmark_versions() {
+    let current = json!({
+        "benchmarkVersion":workloads::VERSION,"model":"fixture-model","engineVersion":"fixture-engine",
+        "engineFile":{"sha256":"engine-hash","bytes":123},
+        "runtimeSource":{"sha256":"source-hash"},"modelFile":{"bytes":456,"modifiedMs":789},
+        "hardware":{"gpu_name":"fixture-gpu"},"ramTotal":64,"gpuMemoryTotal":16,
+        "maxContext":8192,"useCase":"chat","contextLimit":8192,"includeVision":false,
+        "futureIdentityField":{"same":"required"}
+    });
+    let mut recorded = current.clone();
+    recorded["benchmarkVersion"] = json!("complete-workloads-v1");
+    assert_ne!(current, recorded);
+    assert!(recovery_identity_matches(&current, &recorded));
+    assert_eq!(recorded["benchmarkVersion"], "complete-workloads-v1");
+    for key in current
+        .as_object()
+        .unwrap()
+        .keys()
+        .filter(|key| key.as_str() != "benchmarkVersion")
+    {
+        let mut changed = recorded.clone();
+        changed[key] = json!({"changed":"must reject"});
+        assert!(!recovery_identity_matches(&current, &changed), "{key}");
+        let mut missing = recorded.clone();
+        missing.as_object_mut().unwrap().remove(key);
+        assert!(!recovery_identity_matches(&current, &missing), "{key}");
+    }
+    let mut extra = recorded.clone();
+    extra["unrecordedField"] = json!(true);
+    assert!(!recovery_identity_matches(&current, &extra));
+    for invalid in [Value::Null, json!(1), json!(""), json!({})] {
+        let mut malformed = recorded.clone();
+        malformed["benchmarkVersion"] = invalid;
+        assert!(!recovery_identity_matches(&current, &malformed));
+        assert!(!recovery_identity_matches(&malformed, &recorded));
+    }
+    let mut no_version = recorded.clone();
+    no_version
+        .as_object_mut()
+        .unwrap()
+        .remove("benchmarkVersion");
+    assert!(!recovery_identity_matches(&current, &no_version));
+    assert!(!recovery_identity_matches(&Value::Null, &Value::Null));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn startup_restores_v1_journal_without_authorizing_v1_application() {
+    let (_temp, state, profile, original, id) = interrupted_stage().await;
+    let mut job = read_job(&state, &id).unwrap();
+    job.identity["benchmarkVersion"] = json!("complete-workloads-v1");
+    let historical_identity = job.identity.clone();
+    persist(&state, &job).unwrap();
+    registry().lock().unwrap().remove(state.data_dir());
+    let reopened = RuntimeState::open(state.data_dir().to_owned()).unwrap();
+    let done = await_job(&reopened, &profile).await;
+    assert_eq!(done.state, Phase::Interrupted, "{:?}", done.error);
+    assert_eq!(done.full.recovery.state, RecoveryState::Restored);
+    assert!(done.full.recovery.configuration_restored && done.full.recovery.service_verified);
+    assert_original(&profile, &original);
+    assert_eq!(health(&reopened, &profile).await["loaded"], true);
+    assert!(load_journal(&reopened, &id).unwrap().unwrap().restored);
+    assert_eq!(done.identity, historical_identity);
+    let current_identity = bound_identity(
+        &profile,
+        &serde_json::from_slice(&original).unwrap(),
+        &read_metrics(&reopened, &profile).await.unwrap(),
+        &done,
+    );
+    assert_eq!(current_identity["benchmarkVersion"], workloads::VERSION);
+    assert_ne!(current_identity, done.identity);
+    assert!(recovery_identity_matches(&current_identity, &done.identity));
+    let mut application_probe = done.clone();
+    application_probe.full.progress.completed_workloads =
+        application_probe.full.progress.total_workloads;
+    assert!(
+        validate_application(&application_probe, &application_probe.candidates[0])
+            .unwrap_err()
+            .contains("版本")
+    );
+    application_probe.identity["benchmarkVersion"] = json!(workloads::VERSION);
+    assert!(
+        !validate_application(&application_probe, &application_probe.candidates[0])
+            .unwrap_err()
+            .contains("版本")
+    );
+    assert!(done.recommended_candidate_id.is_none());
+    crate::stop_service(&reopened, profile.id.clone())
+        .await
+        .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn old_version_recovery_still_rejects_changed_engine_identity() {
+    let (_temp, state, profile, original, id) = interrupted_stage().await;
+    let mut job = read_job(&state, &id).unwrap();
+    job.identity["benchmarkVersion"] = json!("complete-workloads-v1");
+    job.identity["engineVersion"] = json!("different-engine");
+    persist(&state, &job).unwrap();
+    registry().lock().unwrap().remove(state.data_dir());
+    let reopened = RuntimeState::open(state.data_dir().to_owned()).unwrap();
+    let done = await_job(&reopened, &profile).await;
+    assert_eq!(done.state, Phase::Failed);
+    assert_eq!(done.full.recovery.state, RecoveryState::Failed);
+    assert!(done.full.recovery.configuration_restored);
+    assert!(!done.full.recovery.service_verified);
+    assert!(done
+        .full
+        .recovery
+        .error
+        .as_ref()
+        .unwrap()
+        .contains("身份不一致"));
+    assert!(!load_journal(&reopened, &id).unwrap().unwrap().restored);
+    assert_original(&profile, &original);
     crate::stop_service(&reopened, profile.id.clone())
         .await
         .unwrap();

@@ -18,7 +18,11 @@ use std::{
 
 pub const VERSION: &str = "0.1.41";
 mod release_zip;
-pub use release_zip::{start_install_release, start_release, start_release_request};
+pub use release_zip::{
+    resolve_release_download_asset, start_install_release, start_release, start_release_request,
+    start_release_request_with_download, test_release_download, RuntimeZipDownloadCheckResult,
+    RuntimeZipDownloadOptions,
+};
 const SERVER_SHA256: &str = "017efa1f4e76d72396738555d13eb1f9898d1c1c12730cf046d9b267b29987e5";
 const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS runtime_upgrades(task_id TEXT PRIMARY KEY,profile_id TEXT NOT NULL,journal TEXT NOT NULL,updated_at INTEGER NOT NULL);";
 
@@ -58,6 +62,7 @@ pub struct RuntimeUpdateInfo {
 
 const UPDATE_INFO_KEY: &str = "strataUpstreamUpdateInfo";
 const UPDATE_CHECK_INTERVAL: u64 = 12 * 60 * 60 * 1000;
+const INSTALLATION_METADATA_MAX_AGE: u64 = 10 * 60 * 1000;
 
 fn zip_installable(assets: &[RuntimeReleaseAsset], os: &str, arch: &str) -> bool {
     os == "windows" && arch == "x86_64" && !assets.is_empty()
@@ -150,6 +155,70 @@ pub async fn update_info(state: &RuntimeState, force: bool) -> Result<RuntimeUpd
         serde_json::to_value(&info).map_err(|error| error.to_string())?,
     )?;
     Ok(info)
+}
+
+/// Reuse the release the user just checked, without spending another GitHub
+/// request during installation. The display cache's longer interval is not
+/// sufficient here; only recent, successful, normalized metadata is accepted.
+async fn update_info_for_installation(state: &RuntimeState) -> Result<RuntimeUpdateInfo, String> {
+    let cached = crate::store_get(state, UPDATE_INFO_KEY.into())?;
+    if let Some(info) = cached_installation_metadata(cached, now()) {
+        return Ok(info);
+    }
+    update_info(state, true).await
+}
+
+fn cached_installation_metadata(cached: Value, checked_now: u64) -> Option<RuntimeUpdateInfo> {
+    let info = constrain_installable(serde_json::from_value::<RuntimeUpdateInfo>(cached).ok()?);
+    if info.error.is_some()
+        || !info.installable
+        || info.supported_version != VERSION
+        || info.supported_revision != installation::SOURCE_REVISION
+        || checked_now
+            .checked_sub(info.checked_at)
+            .is_none_or(|age| age > INSTALLATION_METADATA_MAX_AGE)
+    {
+        return None;
+    }
+    let version = info.latest_version.as_deref()?;
+    if version.is_empty()
+        || version.len() > 80
+        || version.split('.').any(|part| part.parse::<u32>().is_err())
+    {
+        return None;
+    }
+    let revision = info
+        .source_revision
+        .as_deref()
+        .filter(|r| valid_revision(r))?;
+    if info.source_archive_url.as_deref()
+        != Some(format!("https://codeload.github.com/Niko1221/Strata/zip/{revision}").as_str())
+        || !info.assets.iter().all(|asset| {
+            let variant = match asset.name.as_str() {
+                "strata-windows-x64.zip" => "cuda13",
+                "strata-windows-x64-cuda12.zip" => "cuda12",
+                "strata-windows-x64-hip.zip" => "hip",
+                _ => return false,
+            };
+            asset.variant == variant
+                && (1..=1024 * 1024 * 1024).contains(&asset.size)
+                && asset.sha256.len() == 64
+                && asset.sha256.bytes().all(|b| b.is_ascii_hexdigit())
+                && asset.sha256 == asset.sha256.to_ascii_lowercase()
+                && [format!("v{version}"), version.to_owned()]
+                    .into_iter()
+                    .any(|tag| {
+                        asset.url
+                            == format!(
+                                "https://github.com/Niko1221/Strata/releases/download/{tag}/{}",
+                                asset.name
+                            )
+                    })
+        })
+    {
+        return None;
+    }
+    Some(info)
 }
 
 /// Check official metadata without opening runtime state or executing recovery.
@@ -1875,6 +1944,106 @@ mod tests {
                 "browser_download_url":"https://github.com/Niko1221/Strata/releases/download/v0.1.42/strata-windows-x64.zip",
                 "digest":format!("sha256:{}","a".repeat(64))}]
         })
+    }
+
+    fn installation_metadata_fixture(checked_at: u64) -> RuntimeUpdateInfo {
+        let mut info = release_update_info(&windows_release_fixture()).unwrap();
+        let revision = "61b3fb5dd3f1e8ec09cf7e4e05208bc6d3c46406";
+        info.checked_at = checked_at;
+        info.source_revision = Some(revision.into());
+        info.source_archive_url = Some(format!(
+            "https://codeload.github.com/Niko1221/Strata/zip/{revision}"
+        ));
+        info
+    }
+
+    #[cfg(all(windows, target_arch = "x86_64"))]
+    #[test]
+    fn installation_metadata_reuse_obeys_exact_age_and_clock_boundaries() {
+        let checked_now = 2 * INSTALLATION_METADATA_MAX_AGE;
+        for age in [
+            0,
+            INSTALLATION_METADATA_MAX_AGE - 1,
+            INSTALLATION_METADATA_MAX_AGE,
+        ] {
+            let info = installation_metadata_fixture(checked_now - age);
+            let cached = serde_json::to_value(&info).unwrap();
+            assert!(cached_installation_metadata(cached, checked_now).is_some());
+        }
+        for checked_at in [
+            checked_now - INSTALLATION_METADATA_MAX_AGE - 1,
+            checked_now + 1,
+            u64::MAX,
+        ] {
+            let cached = serde_json::to_value(installation_metadata_fixture(checked_at)).unwrap();
+            assert!(cached_installation_metadata(cached, checked_now).is_none());
+        }
+    }
+
+    #[test]
+    fn installation_metadata_rejects_errors_capability_and_review_mismatch() {
+        let checked_now = 2 * INSTALLATION_METADATA_MAX_AGE;
+        let valid = serde_json::to_value(installation_metadata_fixture(checked_now)).unwrap();
+        for (pointer, replacement) in [
+            ("/error", json!("GitHub 403")),
+            ("/installable", json!(false)),
+            ("/supportedVersion", json!("other manager release")),
+            ("/supportedRevision", json!("a".repeat(40))),
+            ("/assets", json!([])),
+            ("/sourceRevision", Value::Null),
+        ] {
+            let mut cached = valid.clone();
+            *cached.pointer_mut(pointer).unwrap() = replacement;
+            assert!(
+                cached_installation_metadata(cached, checked_now).is_none(),
+                "accepted invalid cached field {pointer}"
+            );
+        }
+        assert!(cached_installation_metadata(Value::Null, checked_now).is_none());
+    }
+
+    #[test]
+    fn installation_metadata_revalidates_official_source_and_asset_normalization() {
+        let checked_now = 2 * INSTALLATION_METADATA_MAX_AGE;
+        let valid = serde_json::to_value(installation_metadata_fixture(checked_now)).unwrap();
+        for (pointer, replacement) in [
+            ("/latestVersion", json!("0.1.42-preview")),
+            ("/sourceRevision", json!("invalid")),
+            ("/sourceArchiveUrl", json!("https://example.org/source.zip")),
+            ("/assets/0/name", json!("unreviewed.zip")),
+            ("/assets/0/variant", json!("cuda12")),
+            ("/assets/0/url", json!("https://example.org/strata-windows-x64.zip")),
+            ("/assets/0/url", json!("https://github.com/Niko1221/Strata/releases/download/v0.1.41/strata-windows-x64.zip")),
+            ("/assets/0/sha256", json!("not a digest")),
+            ("/assets/0/sha256", json!("A".repeat(64))),
+            ("/assets/0/size", json!(0)),
+            ("/assets/0/size", json!(1024u64 * 1024 * 1024 + 1)),
+        ] {
+            let mut cached = valid.clone();
+            *cached.pointer_mut(pointer).unwrap() = replacement;
+            assert!(
+                cached_installation_metadata(cached, checked_now).is_none(),
+                "accepted non-normalized cached field {pointer}"
+            );
+        }
+    }
+
+    #[cfg(all(windows, target_arch = "x86_64"))]
+    #[tokio::test]
+    async fn installation_metadata_reads_successful_database_cache_without_refreshing() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = RuntimeState::open(temp.path().to_path_buf()).unwrap();
+        let info = installation_metadata_fixture(now());
+        let expected = serde_json::to_value(&info).unwrap();
+        crate::store_set(&state, UPDATE_INFO_KEY.into(), expected.clone()).unwrap();
+        let current = update_info_for_installation(&state).await.unwrap();
+        // A network refresh would replace this synthetic official digest and
+        // fixture release; the installation lookup must retain the whole result.
+        assert_eq!(serde_json::to_value(current).unwrap(), expected);
+        assert_eq!(
+            crate::store_get(&state, UPDATE_INFO_KEY.into()).unwrap(),
+            expected
+        );
     }
 
     #[test]

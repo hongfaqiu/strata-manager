@@ -8,6 +8,7 @@
 <p>
 <a href="https://hongfaqiu.github.io/strata-manager/"><strong>官网</strong></a> ·
 <a href="https://hongfaqiu.github.io/strata-manager/docs/index.html"><strong>文档中心</strong></a> ·
+<a href="docs/SYSTEM.md">系统说明</a> ·
 <a href="https://github.com/hongfaqiu/strata-manager/releases/latest"><strong>最新稳定版</strong></a> ·
 <a href="CHANGELOG.md">更新日志</a> ·
 <a href="README.md">English</a>
@@ -46,18 +47,18 @@ Manager 是独立社区项目，管理的是**这台电脑**上受支持的 Stra
 
 | 工作流程 | 可以完成的操作 |
 | --- | --- |
-| **1 · 准备 Strata** | 检测已有安装与 Windows 安装路径，查看本机与上游版本、官方更新日志；匹配的官方 Windows x64 ZIP 支持下载与更新进度，复用已核验的更新元数据。Linux 支持环境扫描、版本和日志查看，跳过无关或权限受限的 Python 进程。 |
+| **1 · 准备 Strata** | 检测已有安装，查看本机与上游版本、官方更新日志。Windows x64 引擎 ZIP 默认使用官方 GitHub，支持 GH Proxy/GHProxy、自定义 HTTPS 或本地 ZIP，各来源按当前 CUDA12、CUDA13 或 HIP 引擎匹配；中断后保留部分文件并尝试 HTTP Range 续传，完整包仍按官方大小与 SHA256 校验。Linux 支持环境扫描、版本和日志查看。 |
 | **2 · 整理模型** | 发现本机权重，按模型归并运行配置，选择下载来源与显卡，检查模型文件、GGUF 元数据和磁盘占用；支持 Swift IQ3_S 格式。 |
 | **3 · 配置与运行** | 通过图形控件或 JSON 编辑配置，校验并保留备份；启动、停止、重启或释放模型内存，查看启动阶段、任务和日志。打开应用或登录时仅启动轻量后台，保留服务停止状态。 |
-| **4 · 聊天与接入** | 多会话、流式回复和附件；选择 JSON / JSON Schema 输出，复用长文前缀，调整高级生成参数；检查 MCP 工具和连接。图像与工具能力取决于运行时和模型。 |
-| **5 · 查看会话与负载** | 保存和恢复引擎会话，逐槽位查看请求负载、输入处理与生成速度、硬件占用，以及按引擎能力提供的显存调整。 |
+| **4 · 聊天与接入** | 使用流式会话、附件与结构化输出。新模型默认继承公共生成参数与 MCP 开关，旧模型的专用值保持独立，主动开启继承后才跟随；更改在下一次聊天请求生效。在“API 与外部助手”集中配置连接目标、应用访问密钥、API 示例与 MCP，选择目标不会启动或切换模型。 |
+| **5 · 查看会话与负载** | 保存和恢复引擎会话，查看槽位、负载、硬件及受支持的显存调整。状态面板区分近期生成与输入处理趋势，保留采样缺失点。独立桌面监控浮条默认关闭，可按需打开、拖动、缩放或置顶；只读观察已运行后台，不会启动或恢复服务。 |
 | **6 · 分析用量与调优** | 保留本机 API 元数据，兼容 Strata 0.1.43 的 API 使用统计，查看请求、tokens、延迟和缓存复用趋势；按聊天、编程/Agent 或长文任务比较受支持的调优候选，再决定应用或恢复，不保证固定提速。 |
 | **7 · 基准测试** | 在 Benchmark 工作区设置重复轮次、预热、输入与输出长度，测试重复输入的缓存复用；分别记录首 Token 延迟（TTFT）、请求总耗时、P50/P95、Token 数与引擎速度，支持停止、历史报告和 JSON 导出，并协调其它推理操作。 |
-| **8 · 审阅更新** | 分别管理应用、Strata 更新和模型权重；查看当前语言的版本日志，确认后安装；支持中英文、跟随系统/亮色/暗色外观和托盘控制。 |
+| **8 · 审阅更新** | 分别管理应用、Strata 更新和模型权重；独立应用更新页提供随包双语日志的离线阅读、稳定更新检查和安装确认，使用 Tauri 签名校验；支持中英文、跟随系统/亮色/暗色外观和托盘控制。 |
 
 API 使用统计无需捕获请求正文。可选的临时正文诊断是独立功能，行为与隐私说明见[使用指南](docs/USER_GUIDE.md)。
 
-各版本变更见 [CHANGELOG.md](CHANGELOG.md) 或[官网更新日志](https://hongfaqiu.github.io/strata-manager/docs/changelog.html)。
+组件关系和数据保存见 [0.1.4 系统说明](docs/SYSTEM.md)，各版本变更见 [CHANGELOG.md](CHANGELOG.md) 或[官网更新日志](https://hongfaqiu.github.io/strata-manager/docs/changelog.html)。
 
 ## 下载与开始使用
 
@@ -83,7 +84,7 @@ API 使用统计无需捕获请求正文。可选的临时正文诊断是独立�
 | [![我的模型：本机权重与配置分组](docs/screenshots/models.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/models.zh.webp) | [![性能监控：服务、硬件与请求状态](docs/screenshots/monitor.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/monitor.zh.webp) |
 
 <details>
-<summary><strong>更多界面：Strata、配置、用量、聊天、调优与设置</strong></summary>
+<summary><strong>更多界面：运行环境、聊天、公共设置、连接、更新与监控</strong></summary>
 
 **Strata · 运行环境版本与更新**
 
@@ -110,6 +111,26 @@ API 使用统计无需捕获请求正文。可选的临时正文诊断是独立�
 [![语言、外观与后台设置](docs/screenshots/settings.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/settings.zh.webp)
 
 [![项目资料与致谢](docs/screenshots/about.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/about.zh.webp)
+
+**公共聊天默认值 · 按模型选择继承**
+
+[![公共生成参数与按模型继承选项](docs/screenshots/common-chat-settings.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/common-chat-settings.zh.webp)
+
+**连接 · API 与外部助手**
+
+[![连接目标、应用访问密钥、API 示例与 MCP](docs/screenshots/connections.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/connections.zh.webp)
+
+**应用更新 · 双语日志与安装确认**
+
+[![独立应用更新页](docs/screenshots/app-updates.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/app-updates.zh.webp)
+
+**服务状态 · 近期生成与输入处理趋势**
+
+[![服务状态快捷面板与近期趋势](docs/screenshots/service-status.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/service-status.zh.webp)
+
+**独立桌面监控浮条 · 默认关闭**
+
+[![当前模型与服务指标的独立桌面监控浮条](docs/screenshots/floating-monitor.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/floating-monitor.zh.webp)
 
 </details>
 

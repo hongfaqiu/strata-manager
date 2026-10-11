@@ -7,29 +7,57 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
-以下改动正在开发与验收，尚未包含在公开安装包中。
-
-- 发布流程复用同一源码、完整 CI 验收通过的 Windows 与 Linux 安装包，保留签名和发布前验签；Windows 和 Linux 原生测试分别在三个独立 runner 分片，安装包编译与测试并行，完整覆盖证明阻断遗漏和重复，并缩小 Rust 依赖缓存。
-- 新增 Benchmark 测试工作区，支持七类场景套件、固定并发和逐级升压；可设置提示词长度、重复轮次、输出长度、预热和重复输入缓存测试，停止测试、查看历史报告并导出 JSON / CSV。
-- 分别记录首 Token 延迟、请求总耗时、P50/P95、输入与输出 Token、输入处理与生成速度以及缓存命中；测试期间协调聊天、调优、服务启停和更新操作。
-- 增加已审阅 Strata 0.1.43 的 API 使用统计兼容，改善 Windows 安装路径识别和更新元数据复用，保留引擎校验、配置保护与回滚检查。
-- 修复 Linux 本机环境扫描被无关或权限受限的 Python 进程打断的问题，保留运行环境身份核验。
-- 更新官网首页，补充 Strata 与 Manager 职责图示、Benchmark 等六类功能和六组工作区截图说明；统一文档中心样式，补充 Benchmark 使用指南，并从本日志生成中英文更新日志页面。
-- Benchmark 已完成隔离测试与真实桌面停机状态检查，真实 GPU 模型加载后的吞吐和持续稳定性仍待验收。
+暂无未发布变更。
 
 ### English
 
-These changes are in development and validation and are not included in publicly available installers.
+No unreleased changes.
 
-- Reuse Windows and Linux installers from complete, successful same-source CI runs, retaining signing and verification before publication. Run native Windows and Linux tests across three independent runners per platform, overlap installer builds with tests, reject omitted or repeated tests through complete coverage proofs, and reduce Rust dependency caches.
-- Add a Benchmark workspace with seven scenario suites, fixed concurrency and ramp-up stress tests, configurable prompt lengths, repeated runs, output limits, warmup and repeated-input cache tests, plus cancellation, report history and JSON / CSV export.
+## [0.1.4] - 2026-10-12
+
+### 中文
+
+- 新增 Benchmark 工作区，提供七类场景套件、固定并发和逐级升压；支持提示词与输出长度、预热、重复输入缓存、停止测试、历史报告和 JSON / CSV 导出。
+- 公共设置集中管理八项聊天默认值、API 与外部助手以及显存/会话工具；新模型默认继承，旧模型保留专用值，可按模型切换继承，公共修改从下一次请求生效。修复仅编辑高级参数时覆盖原专用值的问题。
+- 分别记录首 Token 延迟、请求耗时、P50/P95、输入/输出 Token、输入处理与生成速度和缓存命中，并协调聊天、调优、服务启停与更新操作。
+- 收紧调优和 Benchmark 页面，将常用参数与开始按钮放在首屏；右上角服务状态显示速度/GPU 趋势、显存/内存占用和上下文进度，并保留服务控制与工作区跳转，移除最近调优卡片。底部状态栏集中显示速度、运行与排队请求、CPU/GPU 负载、温度和功耗；空闲速度标明“最近生成”，采集失败不显示旧实时指标，进程变化后重新核验并采样。
+- 新增可手动打开的桌面监控浮条，支持拖动、调整大小、置顶和返回主窗口，关闭浮条不影响主应用；只读采样不启动或恢复后台与模型服务。
+- 监控浮条只允许读取监控和显示主窗口，拒绝其他应用命令；状态查询失败时不再用旧进程数据授权操作，断联恢复后等待新的成功指标采样，正常后台刷新保留有效数据显示。
+- 停止服务后立即应用已核验的停止结果，切换为“未启动”及启动按钮；后台路径核验导致升级暂缓时继续兼容的状态查询，显式停止不触发后台升级或重启。
+- 菜单按“日常使用、模型与服务、应用”分组排序，将设置放在菜单最后；应用更新卡片自适应可用宽度，日志在窄窗口中正常换行。
+- 修复调优 Agent 工具契约、最终 JSON 格式、旧任务恢复和 Windows 端口释放竞态；更新与恢复等待原受管进程释放端口，继续拒绝外部监听占用。
+- 修复 Windows 安装包路径及应用父进程核验，改善更新元数据复用；兼容已审阅 Strata 0.1.43 的 API 使用统计，保留引擎核验、配置保护与回滚检查。
+- Strata 下载默认使用官方 GitHub，新增 GH Proxy、GHProxy、自定义 HTTPS 模板/固定地址和本地 ZIP；各来源按当前 CUDA12/CUDA13/HIP 引擎自动匹配官方包。保存来源后可测试可用性与续传，已是最新版本时仍可测试且不停止服务。网络测试最多读取 64 KiB，安装继续完整长度与 SHA256 校验；中断后保留断点，网络故障最多三次尝试，连续 60 秒无响应才重试。
+- 外部助手默认通过独立后台管理当前档案，提供可复制的 MCP 配置、连接检查和受控工具；独立接管仍为可选模式，断开助手后服务继续运行，停止后保持未启动。通过本应用后台模式生成的 Codex MCP 配置使用 600 秒调用超时，以容纳模型冷加载。
+- 左上角统一软件 Logo 与当前版本，点击进入独立应用更新页；发现新版本时显示标签，更新页支持离线查看当前版本的中英文日志。
+- 总览服务卡片新增“接入 API”，提供代码调用、Cherry Studio、OpenCode 和 Claude Code 指引，按当前服务地址及模型名生成可复制配置。
+- 调整启动和下载设置的布局，并修复 Linux 本机扫描被无关或权限受限的 Python 进程打断的问题。
+- 重截 0.1.4 双语工作区、公共设置、连接、更新与监控截图，同步产品封面、官网功能说明和文档中心；新增系统说明并更新接口约定，官网更新日志从本文件生成。
+- 发布优先复用同一源码提交的完整 CI 安装包；Windows 与 Linux 各三个独立原生测试 runner 和安装包编译并行，要求同一 attempt 全部八个 job 成功并汇总核验完整覆盖。缩小 Rust 依赖缓存，保留原测试超时、安装启动、版本签名、实际资产验签与校验和门禁。
+- Windows 实机完成 MCP 启停、断开后继续运行、停止不自动恢复、模型恢复和推理检查；配置文件哈希保持一致。Benchmark、调优和下载流程完成隔离浏览器检查，Benchmark 和调优界面另经安装后桌面交互验收。真实 GPU Benchmark 测量、完整调优、GPU 长时压测、Linux 系统 DEB 安装及客户端跨版本自动更新仍需独立验收。
+
+### English
+
+- Add a Benchmark workspace with seven scenario suites, fixed concurrency and ramp-up stress tests, configurable prompt/output lengths, warmup, repeated-input cache tests, cancellation, report history and JSON / CSV export.
+- Centralize eight common chat defaults, API/external-assistant connections and VRAM/session tools in Settings. New models inherit by default; existing models retain their own values, with per-model inheritance controls and changes taking effect on the next request. Preserve previous model-specific values when only advanced options are edited.
 - Record time to first token, request duration, P50/P95, input/output tokens, input-processing and generation rates, and cache hits separately; coordinate chat, tuning, service controls and updates while a test runs.
-- Add API usage compatibility for the reviewed Strata 0.1.43 source and improve Windows installation-path detection and update-metadata reuse, retaining engine validation, configuration protection and rollback checks.
-- Fix Linux local-environment scans being interrupted by unrelated or permission-restricted Python processes, retaining runtime identity checks.
-- Redesign the website with a Strata/Manager responsibility diagram, six feature areas including Benchmark and six workspace screenshot introductions. Align documentation styling, add a Benchmark user guide and generate bilingual website changelog pages from this file.
-- Benchmark has passed isolated tests and stopped-service checks in the real desktop app; throughput and sustained stability with a loaded GPU model still require validation.
+- Compact Tuning and Benchmark so common parameters and start actions fit on the first screen. Show speed/GPU trends, VRAM/RAM usage and context progress in the service-status panel, retaining service controls and workspace links and removing recent tuning. Show throughput, running/queued requests, CPU/GPU load, temperature and power in the bottom status bar. Label idle throughput as the last generation, hide stale live values during collection failures, and recheck health and metrics after a process changes.
+- Add an optional floating desktop monitor with drag, resize, keep-on-top and return-to-main controls. Closing it preserves the main application; read-only sampling never starts or restores the background or model service.
+- Restrict the monitor window to sampling and showing the main window, rejecting other application commands. Failed status checks no longer authorize operations with cached process data; reconnections wait for fresh metrics while normal background refresh retains valid readings.
+- Apply verified stop results immediately and replace stop controls with a not-started state and start actions. Continue compatible status queries when background path checks defer an upgrade; explicit stop never upgrades or restarts the background.
+- Group navigation by Daily use, Models & services and Application, placing Settings last. Let the App updates card fill the available width and wrap release notes in narrow windows.
+- Fix tuning Agent tool contracts, final JSON output, interrupted-task recovery and Windows port-release races. Updates and recovery wait for the original managed processes to release their ports while continuing to reject external listeners.
+- Fix Windows package-path and application-parent identity checks and improve update-metadata reuse. Add API usage compatibility for the reviewed Strata 0.1.43 source, retaining engine validation, configuration protection and rollback checks.
+- Keep official GitHub as the default runtime source and add GH Proxy, GHProxy, custom HTTPS templates/fixed URLs and local ZIPs. All sources match the official package to the current CUDA12/CUDA13/HIP engine. Saved sources can be tested for availability and resumption even when current, without stopping services. Network tests read at most 64 KiB; installation still validates full length and SHA256. Interrupted downloads retain partial data, with up to three attempts and retries after 60 seconds without a response.
+- Let external assistants manage the current profile through the independent background by default, with copyable MCP configuration, connection checks and controlled tools. Independent handoff remains optional; disconnecting preserves running services and stopped services stay stopped. Codex MCP configurations generated for this background-managed mode use a 600-second call timeout for cold model loading.
+- Use the application logo and current version in the top-left corner, linking to a dedicated App updates page. Mark available updates and provide offline bilingual notes for the installed version.
+- Add an API integration entry to the Overview service card with code, Cherry Studio, OpenCode and Claude Code guides and copyable configuration based on the current service address and model name.
+- Refine startup/download settings and fix Linux local scans being interrupted by unrelated or permission-restricted Python processes.
+- Recapture bilingual 0.1.4 workspaces, common settings, connections, updates and monitors; refresh product covers, website features and documentation. Add system explanations, update interface contracts and generate website release notes from this file.
+- Reuse installers only from complete CI for the exact source commit. Three independent native runners on each of Windows and Linux run alongside installer builds; all eight jobs from one attempt must succeed with complete aggregate coverage. Reduce Rust dependency caches while retaining original test deadlines, installation/startup, signed-version, actual-asset signature and checksum gates.
+- Windows hardware checks covered MCP start/stop, continued operation after disconnect, stopped-service preservation, model restoration and inference; configuration hashes remained unchanged. Benchmark, tuning and download flows passed isolated browser checks, with additional installed-desktop interaction checks for the Benchmark and Tuning interfaces. Real GPU Benchmark measurements, full tuning, sustained GPU stress, Linux system-level DEB installation and client cross-version automatic updates still require separate validation.
 
-## [0.1.3] - Unreleased
+## [0.1.3] - 2026-10-12
 
 ### 中文
 

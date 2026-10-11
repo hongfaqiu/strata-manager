@@ -6,7 +6,7 @@
 
 Strata Manager is an open-source desktop workspace for the Strata runtime and local model services. Runtime installation and matching Windows x64 ZIP engine updates, model configurations, and service startup, shutdown and recovery are its core; chat, monitoring, API usage statistics and tuning support that workflow. It is an independent community project. Inference capabilities, models, image input, reasoning, MCP tools and API protocols come from the installed Strata runtime and chosen model.
 
-This guide describes the 0.1.3 source. The [release page](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.3) establishes package availability and contents; an unfrozen candidate still needs final CI and release acceptance. Inspect the runtime in Strata first, then choose a configuration in **Models → My models**, select **Use**, wait for **Model ready**, and open Chat or copy the local API address. Manager manages supported installations on this computer; it does not manage remote nodes.
+This guide describes the 0.1.4 source. The [release page](https://github.com/hongfaqiu/strata-manager/releases/latest) and the selected version's changelog establish package availability and contents. Inspect the runtime in Strata first, then choose a configuration in **Models → My models**, select **Use**, wait for **Model ready**, and open Chat or copy the local API address. Manager manages supported installations on this computer; it does not manage remote nodes.
 
 ## Prepare or reuse a model
 
@@ -51,6 +51,8 @@ Saves validate JSON and write atomically with a backup. Discovered configuration
 
 ## Connect a local API client
 
+The Overview service card's API integration entry provides code, Cherry Studio, OpenCode and Claude Code guides, with copyable configuration generated from the current service address and model name.
+
 Copy the address shown by Manager rather than assuming a fixed port. Select the API supported by your client and runtime:
 
 | Client protocol | Typical API path |
@@ -79,7 +81,7 @@ Settings provides:
 
 Cold background startup, legacy registration handoff and app upgrades preserve stopped services. An app or background upgrade attempts to restore a service and its previous model-loading state only when it verified that the managed service was actually running before the switch. A saved selection or registration is not a request to start it. Follow diagnostics if recovery fails; restoring a UI selection does not establish model or API recovery. Strata updating, existing-model load recovery and a short API inference have been tested on one Windows machine. Complete app updates across versions and other environments still require separate acceptance; see the [verification record](VERIFICATION.md#特定-windows-机器的-strata-0142-实机更新) for scope.
 
-Appearance follows the system by default. Language and theme are in Settings, beside the sidebar collapse control at the lower left. Strata management is its own navigation page.
+Appearance follows the system by default. Language and theme are in Settings, the last entry in the sidebar's Application group. Strata management is its own navigation page.
 
 See [support scope](DOWNLOAD.en.md#support-scope) for current platform and usage limits. Linux containment requires the environment described above and covers descendants that stay in the managed process group; it does not establish cleanup of every MCP tool that creates its own session.
 
@@ -88,6 +90,10 @@ Login-startup status validates the registration, background file and full hash, 
 ## Read background health
 
 Overview shows a **Background health check** for the current running service owned by Manager. A live process, a healthy API and a loaded model are separate states.
+
+Open the top-right service status for recent throughput/GPU trends, VRAM/RAM usage, context progress and available service controls. The bottom bar shows throughput, running/queued requests, CPU/GPU, temperature and power. Idle throughput is labelled as the last generation. Failed sampling retains history while pausing live values; reconnection waits for fresh metrics. Trends remain in the current window only, with at most 3 minutes and 60 points.
+
+Choose **Open floating monitor** in the bottom bar for a separate draggable, resizable desktop window with keep-on-top and return-to-main controls. It is closed by default; closing it preserves the main app. A stopped background or model stays stopped: sampling never launches, upgrades or restores services. See the [system explanation](SYSTEM.en.md) for component relationships and persistence.
 
 | Status | What to do |
 | --- | --- |
@@ -167,6 +173,14 @@ Follow progress or cancel a running test. The workspace coordinates with chat, t
 
 <sub>Interface preview using example data to illustrate test settings.</sub>
 
+## Shared settings and model configuration
+
+Shared settings centralizes background policy, appearance and common chat defaults: reasoning effort, temperature, Top P, Top K, output limit, seed, system prompt and chat MCP. Changes apply to the next request. New models inherit these defaults; existing per-model chat settings are preserved. Enable Current model uses common chat defaults to opt in. Adjusting sampling in the chat drawer gives that model its own settings. Model IDs, structured output and fixed prefixes remain model specific. Common defaults apply only to chat in this app; sharing sampling with other clients is a separate setting on the selected service.
+
+API and external assistants provides API setup instructions, service access keys and MCP configuration. Selecting a connection target never starts or switches a model; credentials remain separate in the system vault. VRAM and sessions provides tools for the current model, keeping controls visible and disabled while its service is stopped.
+
+Model configuration retains model paths, context, KV, startup VRAM, vision and the full JSON. Applying startup changes still requires an explicit restart. Shared settings never rewrites existing model configuration files in bulk.
+
 ## Structured output and session tools
 
 Chat supports text, JSON and JSON Schema output, sampling controls and reusable long-document prefixes. Common actions are visible directly; the question mark beside a heading opens help. Runtime configuration is organized by category, with advanced editors retaining access to the full configuration.
@@ -179,7 +193,7 @@ Dynamic VRAM adjustment depends on runtime support. If the engine rejects adjust
 
 ## Application updates
 
-Automatic checks in Settings are enabled by default, on launch and every 12 hours. An available update displays that Release's original notes and requires confirmation before downloading and installing. Disable automatic checks to check manually. Failures preserve the current app and can be retried; installation checks that the background is idle. Downloads show progress, and the updater verifies official Tauri signatures with the embedded public key.
+Automatic checks are enabled by default, on launch and every 12 hours. An available update adds a badge to the top-left version entry. Click that entry to open the dedicated App updates page, review release notes and confirm downloading and installation. The installed version's bilingual notes are bundled for offline viewing. Disable automatic checks to check manually. Failures preserve the current app and can be retried; installation checks that the background is idle. Downloads show progress, and the updater verifies official Tauri signatures with the embedded public key.
 
 Choose a Windows installer, AppImage or DEB from the [latest stable release](https://github.com/hongfaqiu/strata-manager/releases/latest) or the [website download section](https://hongfaqiu.github.io/strata-manager/en/#get-started), then check that release's `SHA256SUMS`. Stable releases use `latest`; previews remain manual downloads and do not replace the stable channel.
 
@@ -193,9 +207,13 @@ Tauri update signatures are separate from Windows Authenticode publisher signing
 
 Strata is a global runtime managed on its own **Strata** page. View installed and upstream versions, official release links and notes. The update package matches the current engine type by default; you can also select an available package. After confirmation, the task downloads the official engine ZIP and same-version source, verifies and extracts them into a preparation directory, then backs up and replaces program files while retaining weights, configurations and conversations.
 
-The confirmation dialog shows the official engine ZIP's complete download URL, size and SHA256, with copy actions for the URL and checksum. Choose automatic downloading, a downloaded local ZIP, or a complete HTTPS mirror URL for the engine ZIP (not the mirror homepage). Local files and mirrors require an explicit matching official package; the version, Windows x64 platform and CUDA/HIP variant must match. Every source is verified against the official release manifest's SHA256, without accepting a user-provided checksum. Files that do not match are rejected.
+Packages automatically match the current CUDA12, CUDA13 or HIP engine across all download sources. If the engine cannot be identified, select a package manually. Expand **Package details** to view and copy the official URL, size and SHA256. Every source is verified against the official manifest; mismatches are rejected.
 
-Choosing or canceling a file only changes the dialog selection. The final confirmation creates the update task and authorizes any required service stop. A local ZIP skips only the engine download; same-version source and official release information still require network access. Changing the target release or runtime clears the file and mirror selections.
+Choosing or canceling a file only changes the dialog selection. The final confirmation creates the update task and authorizes any required service stop. A local ZIP skips only the engine download; same-version source and official release information still require network access. Local ZIPs and fixed mirror URLs are bound to the selected version and must be selected again when it changes; built-in proxies and custom templates can follow new releases.
+
+The Strata page's **Download settings and test** section is collapsed by default and remains available when the runtime is up to date. Switch between official GitHub, GH Proxy, GHProxy, custom HTTPS and a local ZIP; saved choices prefill update confirmations. Built-in proxies follow the current official release and matched package, with official downloading always available. Third-party speed and availability depend on the network. Local ZIPs and fixed URLs are bound to one release; custom templates support `{url}`, `{version}` and `{asset}`.
+
+**Test download source** creates no update task and stops no service. Local checks read the complete file and verify its size and SHA256. Network checks read a sample of at most 64 KiB and report HTTP Range support; a successful sample check does not verify the complete file, which is still checked during installation. An unsupported background version returns an explicit upgrade message without automatically handing off the background service or stopping a model for the test.
 
 Interrupted or canceled engine downloads retain their received bytes. Confirming the update again attempts to resume them. Network errors, HTTP 408/429 and server errors receive at most three automatic attempts, with the reason and downloaded byte count in the task log. A server that ignores byte ranges triggers a complete download instead. Downloads no longer have a five-minute whole-file deadline; sixty seconds without a network response triggers a retry. A SHA256 mismatch deletes the partial file, while complete verified caches can be reused.
 

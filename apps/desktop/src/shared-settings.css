@@ -1,0 +1,13 @@
+.shared-settings-stack{display:grid;gap:20px;max-width:1200px;width:100%;min-width:0}
+.shared-settings-target{display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin:0 0 20px;padding:16px 20px;border:1px solid var(--st-line);border-radius:var(--st-r-md);background:var(--st-surface)}
+.shared-settings-target>div{min-width:0;flex:1}
+.shared-settings-target .field{margin:0;min-width:240px;max-width:440px;flex:1}
+.shared-settings-target p{margin:6px 0 0;color:var(--st-ink-muted);font-size:12px;line-height:1.6}
+.shared-service-address{display:block;font-size:12px;overflow-wrap:anywhere;margin-top:8px;color:var(--st-ink-muted)}
+.service-connection-panel .field{max-width:520px}
+.shared-settings-stack>.official-surface{min-width:0;width:100%}
+.shared-settings-stack .runtime-operations,.shared-settings-stack .mcp-integration-panel{margin:0}
+.shared-settings-shortcuts{display:flex;gap:10px;flex-wrap:wrap}
+.common-chat-drawer-scope{padding-bottom:16px;margin-bottom:16px;border-bottom:1px solid var(--st-line)}
+.common-chat-drawer-scope p{line-height:1.6}
+@media(max-width:740px){.shared-settings-target{align-items:stretch;flex-direction:column}.shared-settings-target .field{min-width:0;max-width:none}}

@@ -3,8 +3,18 @@
 .runtime-update-details{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:0}
 .runtime-update-details>div{min-width:0}.runtime-update-details dt{color:var(--st-ink-muted);font-size:12px}.runtime-update-details dd{margin:4px 0 0;font-weight:600;overflow-wrap:anywhere}
 .runtime-update-directory{display:block;font-size:11px;color:var(--st-ink-muted);overflow-wrap:anywhere;user-select:text}
-.runtime-update-dialog>h3{margin:0;font-size:14px}
-.runtime-update-notes{max-height:min(340px,42vh);overflow:auto;border:1px solid var(--st-line);border-radius:8px;padding:12px 16px;overscroll-behavior:contain;user-select:text;overflow-wrap:anywhere}
+.runtime-update-download{min-width:0;margin:0;border:1px solid var(--st-line);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:10px}
+.runtime-update-download legend{padding:0 5px;font-weight:600}.runtime-update-download:disabled{opacity:.7}
+.runtime-update-source-options,.runtime-update-asset-selector,.runtime-update-mirror{display:flex;flex-direction:column;gap:5px;min-width:0}
+.runtime-update-mirror .st-input{width:100%;min-width:0}
+.runtime-update-download-hint{margin:0;color:var(--st-ink-muted);font-size:12px;line-height:1.6}
+.runtime-update-dialog details>summary{cursor:pointer;color:var(--st-ink-muted);font-size:12px}.runtime-update-dialog details>summary::before{content:'›';display:inline-block;font-size:18px;line-height:1;margin-right:6px;transform-origin:center}.runtime-update-dialog details[open]>summary::before{transform:rotate(90deg)}.runtime-update-help-body{display:flex;flex-direction:column;gap:8px;padding-top:8px;color:var(--st-ink-muted);font-size:12px}.runtime-update-help-body p{margin:0}
+.runtime-update-assets{display:flex;flex-direction:column;gap:10px;max-height:190px;overflow:auto;overscroll-behavior:contain}
+.runtime-update-asset{min-width:0;border-top:1px solid var(--st-line);padding-top:8px;display:flex;flex-direction:column;gap:5px}.runtime-update-asset>strong{overflow-wrap:anywhere}.runtime-update-asset>span{font-size:12px;color:var(--st-ink-muted)}
+.runtime-update-download-value{display:flex;align-items:flex-start;gap:8px;min-width:0}.runtime-update-download-value a,.runtime-update-download-value code{flex:1;min-width:0;overflow-wrap:anywhere;user-select:text;font-size:11px}.runtime-update-download-value a{color:var(--st-accent-text)}.runtime-update-download-value button{flex-shrink:0;font-size:11px;padding:3px 6px}
+.runtime-update-local-file{display:flex;align-items:center;gap:10px;min-width:0}.runtime-update-local-file code{min-width:0;overflow-wrap:anywhere;user-select:text;font-size:11px}.runtime-update-validation{color:var(--st-danger);font-size:12px}
+.runtime-update-notes{border:1px solid var(--st-line);border-radius:8px;padding:12px 16px;user-select:text;overflow-wrap:anywhere}
+.runtime-update-release-details[open]>.runtime-update-notes{margin-top:8px}
 .runtime-update-notes>:first-child{margin-top:0}.runtime-update-notes>:last-child{margin-bottom:0}
 .runtime-update-notes h1,.runtime-update-notes h2,.runtime-update-notes h3{font-size:15px;margin:14px 0 8px}.runtime-update-notes p,.runtime-update-notes ul,.runtime-update-notes ol{margin:9px 0}.runtime-update-notes ul,.runtime-update-notes ol{padding-left:22px}
 .runtime-update-notes a{color:var(--st-accent-text)}.runtime-update-notes pre,.runtime-update-notes table{max-width:100%;overflow:auto}.runtime-update-notes pre{white-space:pre-wrap}.runtime-update-notes table{display:block;border-collapse:collapse;font-size:12px}.runtime-update-notes th,.runtime-update-notes td{border:1px solid var(--st-line);padding:6px 8px}
@@ -12,4 +22,4 @@
 .runtime-update-dialog .runtime-update-service-warning{display:flex;flex-direction:column;align-items:stretch;gap:8px}
 .runtime-update-service-warning p{margin:0}
 .runtime-update-dialog-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-top:4px}
-@media(max-width:520px){.runtime-update-details{grid-template-columns:minmax(0,1fr)}.runtime-update-dialog-actions>button{flex:1}}
+@media(max-width:520px){.runtime-update-details{grid-template-columns:minmax(0,1fr)}.runtime-update-dialog-actions>button{flex:1}.runtime-update-download-value,.runtime-update-local-file{flex-wrap:wrap}.runtime-update-download-value a,.runtime-update-download-value code{flex-basis:100%}}

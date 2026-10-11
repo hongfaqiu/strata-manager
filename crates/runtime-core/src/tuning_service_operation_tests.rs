@@ -434,3 +434,71 @@ async fn admitted_start_and_dead_owned_restart_use_only_the_selected_tree() {
     fixture.assert_config();
     fixture.assert_unrelated(&other, port, pid);
 }
+
+#[cfg(windows)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn restart_waits_for_exited_roots_owned_listener_and_preserves_foreign_listener() {
+    let fixture = Fixture::new();
+    let (other, port, pid) = fixture.unrelated_listener(false).await;
+    let mut command = Command::new(&fixture.profile.python_path);
+    command.current_dir(&fixture.profile.install_dir).args([
+        "-I",
+        "-S",
+        "-c",
+        "import subprocess,sys;subprocess.Popen([sys.executable,'-u','-m','serve.server','--config',sys.argv[1],'--host','127.0.0.1','--port',sys.argv[2]])",
+        &fixture.profile.config_path,
+        &fixture.port.to_string(),
+    ]);
+    command
+        .env(
+            "PYTHONPATH",
+            observer::install_bootstrap(&fixture.state.data_dir).unwrap(),
+        )
+        .env(
+            "STRATA_MANAGER_ANALYTICS_DIR",
+            fixture.state.data_dir.join("analytics"),
+        )
+        .env("STRATA_MANAGER_SERVICE_ID", &fixture.profile.id);
+    let mut root =
+        OwnedProcess::spawn(command, fixture.state.logs.clone(), &fixture.profile.id).unwrap();
+    root.profile = Some(fixture.profile.clone());
+    wait_port(fixture.port).await;
+    assert!(root.child.wait().unwrap().success());
+    assert!(!root.refresh().unwrap().running);
+    assert!(root.tree_running().unwrap());
+    let listeners = external::listener_ids(&fixture.profile).unwrap();
+    assert!(!listeners.is_empty());
+    assert!(listeners
+        .iter()
+        .all(|listener| root.owns_pid(*listener).unwrap()));
+    fixture
+        .state
+        .processes
+        .lock()
+        .unwrap()
+        .insert(fixture.profile.id.clone(), root);
+
+    let cancel = CancellationToken::new();
+    let replacement = restart_service_for_tuning(
+        fixture.state.clone(),
+        fixture.profile.clone(),
+        &fixture.job.id,
+        &cancel,
+    )
+    .await
+    .unwrap_or_else(|error| {
+        let tree_running = fixture.state.processes.lock().unwrap()
+            .get_mut(&fixture.profile.id).unwrap().tree_running();
+        panic!("an owned descendant listener must finish before the port is checked for external use: {error}; native listeners: {:?}; old tree running: {:?}", external::listener_ids(&fixture.profile), tree_running);
+    });
+    wait_port(fixture.port).await;
+    assert!(replacement.running && replacement.owned);
+    let processes = fixture.state.processes.lock().unwrap();
+    assert!(external::listener_ids(&fixture.profile)
+        .unwrap()
+        .iter()
+        .all(|listener| processes[&fixture.profile.id].owns_pid(*listener).unwrap()));
+    drop(processes);
+    fixture.assert_config();
+    fixture.assert_unrelated(&other, port, pid);
+}

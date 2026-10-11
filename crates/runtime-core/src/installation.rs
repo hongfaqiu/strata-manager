@@ -5,7 +5,7 @@ use crate::{
     types::{now, ServiceProfile, TaskStatus},
     RuntimeState,
 };
-use futures_util::StreamExt;
+mod download;
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -290,6 +290,158 @@ fn select_installer_root(
     }
 }
 
+/// An exited launcher cannot supply its package identity. In that case only a
+/// database path returned by the OS file handle may identify the effective
+/// AppData mapping, and Windows must also confirm that package for this user.
+/// A directory spelling by itself never authorizes an installer root.
+#[cfg(windows)]
+fn registered_installer_package_root(
+    data_root: &Path,
+    database: &Path,
+    roaming: &Path,
+    local: &Path,
+    registered: impl FnOnce(&str) -> Result<bool, String>,
+) -> Result<PathBuf, String> {
+    let invalid_mapping = || "实际数据库不符合系统应用包映射，已拒绝安装写入".to_owned();
+    let relative = data_root
+        .strip_prefix(roaming)
+        .ok()
+        .filter(|relative| !relative.as_os_str().is_empty())
+        .ok_or_else(invalid_mapping)?;
+    if database.file_name().and_then(|name| name.to_str()) != Some("strata-manager.sqlite3") {
+        return Err(invalid_mapping());
+    }
+    let database_root = database.parent().ok_or_else(invalid_mapping)?;
+    let package_relative = database_root
+        .strip_prefix(local.join("Packages"))
+        .map_err(|_| invalid_mapping())?;
+    let family = package_relative
+        .components()
+        .next()
+        .and_then(|component| match component {
+            std::path::Component::Normal(name) => name.to_str(),
+            _ => None,
+        })
+        .filter(|family| {
+            !family.is_empty()
+                && family
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+        })
+        .ok_or_else(invalid_mapping)?;
+    let mapped = local
+        .join("Packages")
+        .join(family)
+        .join("LocalCache")
+        .join("Roaming")
+        .join(relative);
+    if mapped != database_root {
+        return Err(invalid_mapping());
+    }
+    if !registered(family)? {
+        return Err("实际数据库所在应用包未在当前用户注册，已拒绝安装写入".into());
+    }
+    Ok(mapped)
+}
+
+/// Resolve the existing database using a read-only file handle. Inherited MSIX
+/// virtualization can redirect a file while leaving its parent directory at
+/// the original spelling; the handle reports the file actually opened.
+fn installer_database_path(database: &Path) -> Result<PathBuf, String> {
+    #[cfg(windows)]
+    {
+        use std::{os::windows::ffi::OsStringExt, os::windows::io::AsRawHandle, ptr};
+        use windows_sys::Win32::Foundation::HANDLE;
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn GetFinalPathNameByHandleW(
+                file: HANDLE,
+                path: *mut u16,
+                length: u32,
+                flags: u32,
+            ) -> u32;
+        }
+        let file = File::open(database).map_err(|e| format!("无法只读核验安装数据库: {e}"))?;
+        if !file.metadata().map_err(|e| e.to_string())?.is_file() {
+            return Err("安装数据库不是普通文件，已拒绝安装写入".into());
+        }
+        let handle = file.as_raw_handle() as HANDLE;
+        let length = unsafe { GetFinalPathNameByHandleW(handle, ptr::null_mut(), 0, 0) };
+        if !(2..=32768).contains(&length) {
+            return Err(format!(
+                "无法核验安装数据库实际路径: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+        let mut buffer = vec![0u16; length as usize];
+        let written = unsafe { GetFinalPathNameByHandleW(handle, buffer.as_mut_ptr(), length, 0) };
+        if written == 0 || written >= length {
+            return Err(format!(
+                "无法核验安装数据库实际路径: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+        let path = PathBuf::from(std::ffi::OsString::from_wide(&buffer[..written as usize]));
+        Ok(dunce::simplified(&path).to_path_buf())
+    }
+    #[cfg(not(windows))]
+    {
+        dunce::canonicalize(database).map_err(|e| e.to_string())
+    }
+}
+
+#[cfg(windows)]
+fn installer_package_registered(family: &str) -> Result<bool, String> {
+    use std::ptr;
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetPackagesByPackageFamily(
+            family: *const u16,
+            count: *mut u32,
+            names: *mut *mut u16,
+            buffer_length: *mut u32,
+            buffer: *mut u16,
+        ) -> u32;
+    }
+    let family: Vec<u16> = family.encode_utf16().chain(Some(0)).collect();
+    let mut count = 0;
+    let mut length = 0;
+    let result = unsafe {
+        GetPackagesByPackageFamily(
+            family.as_ptr(),
+            &mut count,
+            ptr::null_mut(),
+            &mut length,
+            ptr::null_mut(),
+        )
+    };
+    if result == 0 && count == 0 {
+        return Ok(false);
+    }
+    if result != 122 || !(1..=1024).contains(&count) || !(2..=1_048_576).contains(&length) {
+        return Err(format!(
+            "无法核验数据库应用包注册信息（Windows 错误 {result}），已拒绝安装写入"
+        ));
+    }
+    let mut names = vec![ptr::null_mut(); count as usize];
+    let mut buffer = vec![0u16; length as usize];
+    let result = unsafe {
+        GetPackagesByPackageFamily(
+            family.as_ptr(),
+            &mut count,
+            names.as_mut_ptr(),
+            &mut length,
+            buffer.as_mut_ptr(),
+        )
+    };
+    if result != 0 || count as usize > names.len() || length as usize > buffer.len() {
+        return Err(format!(
+            "无法核验数据库应用包注册信息（Windows 错误 {result}），已拒绝安装写入"
+        ));
+    }
+    Ok(count > 0)
+}
+
 #[cfg(windows)]
 fn valid_installer_parent_time(parent: u64, child: u64) -> bool {
     parent <= child
@@ -313,7 +465,8 @@ fn installer_package_family_once(
 
 /// Capture the OS-confirmed package context while the launching process is
 /// still alive. Call before publishing the supervisor's IPC listener; failure
-/// does not affect a normal data root, and never authorizes a redirected root.
+/// grants no package identity. Redirected roots then require independent OS
+/// evidence from the database handle, exact mapping and package registration.
 pub fn initialize_installer_package_identity() -> Result<(), String> {
     #[cfg(windows)]
     installer_package_family_once(&INSTALLER_PACKAGE_FAMILY, capture_installer_package_family)?;
@@ -452,7 +605,10 @@ fn capture_installer_package_family() -> Result<Option<String>, String> {
 }
 
 #[cfg(windows)]
-fn current_package_roaming_root(data_root: &Path) -> Result<Option<PathBuf>, String> {
+fn current_package_roaming_root(
+    data_root: &Path,
+    database: &Path,
+) -> Result<Option<PathBuf>, String> {
     use std::{ffi::c_void, os::windows::ffi::OsStringExt, ptr};
     use windows_sys::Win32::UI::Shell::{
         FOLDERID_LocalAppData, FOLDERID_RoamingAppData, SHGetKnownFolderPath,
@@ -490,11 +646,6 @@ fn current_package_roaming_root(data_root: &Path) -> Result<Option<PathBuf>, Str
         unsafe { CoTaskMemFree(value.cast()) };
         path.ok_or_else(|| "系统应用数据目录无效，已拒绝安装写入".into())
     }
-    let Some(family) =
-        installer_package_family_once(&INSTALLER_PACKAGE_FAMILY, capture_installer_package_family)?
-    else {
-        return Ok(None);
-    };
     let roaming = known_folder(&FOLDERID_RoamingAppData)?;
     reject_installer_path_links(&roaming)?;
     let roaming = dunce::canonicalize(roaming).map_err(|e| e.to_string())?;
@@ -504,7 +655,35 @@ fn current_package_roaming_root(data_root: &Path) -> Result<Option<PathBuf>, Str
     if relative.as_os_str().is_empty() {
         return Ok(None);
     }
-    let mapped = known_folder(&FOLDERID_LocalAppData)?
+    let local = known_folder(&FOLDERID_LocalAppData)?;
+    reject_installer_path_links(&local)?;
+    let local = dunce::canonicalize(local).map_err(|e| e.to_string())?;
+    let captured =
+        installer_package_family_once(&INSTALLER_PACKAGE_FAMILY, capture_installer_package_family);
+    let family = match captured {
+        Ok(Some(family)) => family,
+        // No trusted ancestor survives a short-lived shell launcher. The
+        // database handle, exact mapping, registration and link checks provide
+        // independent OS evidence without promoting a directory name to an
+        // application identity or weakening normal root validation.
+        Ok(None) | Err(_) => {
+            return registered_installer_package_root(
+                data_root,
+                database,
+                &roaming,
+                &local,
+                installer_package_registered,
+            )
+            .map(Some)
+            .map_err(|mapping_error| match captured {
+                Err(parent_error) => {
+                    format!("{mapping_error}（启动应用包核验失败: {parent_error}）")
+                }
+                _ => mapping_error,
+            });
+        }
+    };
+    let mapped = local
         .join("Packages")
         .join(family)
         .join("LocalCache")
@@ -521,17 +700,24 @@ fn installer_data_root(data: &Path) -> Result<PathBuf, String> {
     let root = dunce::canonicalize(data).map_err(|e| e.to_string())?;
     let database = data.join("strata-manager.sqlite3");
     reject_installer_link(&database)?;
-    let database = dunce::canonicalize(database).map_err(|e| e.to_string())?;
+    let database = installer_database_path(&database)?;
     reject_installer_path_links(&database)?;
     let database_root = database.parent().ok_or("安装数据库没有父目录")?;
     if database_root == root {
         return Ok(root);
     }
     #[cfg(windows)]
-    let package_root = current_package_roaming_root(&root)?;
+    let package_root = current_package_roaming_root(&root, &database)?;
     #[cfg(not(windows))]
     let package_root: Option<PathBuf> = None;
     select_installer_root(&root, database_root, package_root.as_deref())
+}
+
+/// Resolve the existing database's verified physical data root without writing.
+/// Keep the caller's logical data-directory identity for IPC; inherited MSIX
+/// virtualization can redirect files while leaving directory paths unchanged.
+pub fn verified_data_root(data: &Path) -> Result<PathBuf, String> {
+    installer_data_root(data)
 }
 
 /// Installer caches use the database's verified physical directory, never UI
@@ -718,68 +904,18 @@ async fn download_with_client(
     limit: u64,
     client: &reqwest::Client,
 ) -> Result<PathBuf, String> {
-    let directory = owned_directory(state.data_dir(), &["downloads"])?;
-    let mut cache = directory.join(format!("{expected}.download"));
-    if cache.exists() {
-        if file_hash(&cache)? == expected {
-            progress(state, id, "已复用经过 SHA256 校验的下载缓存")?;
-            return Ok(cache);
-        }
-        progress(state, id, "已有下载缓存校验不符，保留原文件并重新下载")?;
-        cache = directory.join(format!("{expected}-{}.download", uuid::Uuid::new_v4()));
-    }
-    progress(state, id, format!("正在从官方 HTTPS 来源下载: {url}"))?;
-    let response = client
-        .get(url)
-        .timeout(Duration::from_secs(300))
-        .send()
-        .await
-        .map_err(|e| format!("官方下载失败，可重试: {e}"))?;
-    if !response.status().is_success() {
-        return Err(format!(
-            "官方下载返回 HTTP {}，请检查网络后重试",
-            response.status()
-        ));
-    }
-    if response
-        .content_length()
-        .is_some_and(|length| length > limit)
-    {
-        return Err("下载超过预期体积，拒绝安装".into());
-    }
-    let mut output = tempfile::NamedTempFile::new_in(&directory).map_err(|e| e.to_string())?;
-    let mut hash = Sha256::new();
-    let mut received = 0u64;
-    let mut last_log = Instant::now();
-    let mut stream = response.bytes_stream();
-    loop {
-        cancelled(state, id)?;
-        tokio::select! {
-            next = stream.next() => {
-                let Some(bytes) = next else { break; };
-                let bytes = bytes.map_err(|e| format!("下载中断，可重试: {e}"))?;
-                received = received.checked_add(bytes.len() as u64).ok_or("下载大小无效")?;
-                if received > limit { return Err("下载超过安全体积上限，已拒绝安装".into()); }
-                hash.update(&bytes);
-                output.write_all(&bytes).map_err(|e| format!("磁盘写入失败: {e}"))?;
-                if last_log.elapsed() >= Duration::from_secs(1) {
-                    progress(state,id,format!("已收到 {received} 字节；下载结束后核验 SHA256"))?;
-                    last_log = Instant::now();
-                }
-            }
-            _ = tokio::time::sleep(Duration::from_millis(100)) => {}
-        }
-    }
-    if format!("{:x}", hash.finalize()) != expected {
-        return Err("官方下载内容的 SHA256 不符，已拒绝解包或执行".into());
-    }
-    cancelled(state, id)?;
-    output.as_file().sync_all().map_err(|e| e.to_string())?;
-    output
-        .persist_noclobber(&cache)
-        .map_err(|e| e.to_string())?;
-    progress(state, id, format!("SHA256 校验通过，共 {received} 字节"))?;
-    Ok(cache)
+    download::download_with_client(state, id, url, expected, limit, client).await
+}
+
+pub(crate) async fn download_using_client(
+    state: &RuntimeState,
+    id: &str,
+    url: &str,
+    expected: &str,
+    limit: u64,
+    client: &reqwest::Client,
+) -> Result<PathBuf, String> {
+    download_with_client(state, id, url, expected, limit, client).await
 }
 
 fn safe_entry(name: &str, prefix: &str) -> Result<Option<PathBuf>, String> {
@@ -1380,6 +1516,79 @@ mod tests {
         }
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn installer_exited_launcher_uses_only_registered_exact_database_mapping() {
+        let roaming = Path::new("C:/Users/fixture/AppData/Roaming");
+        let local = Path::new("C:/Users/fixture/AppData/Local");
+        let data = roaming.join("io.strata.manager");
+        let mapped = local.join("Packages/registered-family/LocalCache/Roaming/io.strata.manager");
+        let database = mapped.join("strata-manager.sqlite3");
+        let queries = std::cell::Cell::new(0);
+        assert_eq!(
+            registered_installer_package_root(&data, &database, roaming, local, |family| {
+                queries.set(queries.get() + 1);
+                assert_eq!(family, "registered-family");
+                Ok(true)
+            })
+            .unwrap(),
+            mapped
+        );
+        assert_eq!(queries.get(), 1);
+        assert!(
+            registered_installer_package_root(&data, &database, roaming, local, |_| Ok(false))
+                .unwrap_err()
+                .contains("未在当前用户注册")
+        );
+        assert_eq!(
+            registered_installer_package_root(&data, &database, roaming, local, |_| {
+                Err("Windows registration unavailable".into())
+            })
+            .unwrap_err(),
+            "Windows registration unavailable"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn installer_exited_launcher_rejects_forged_package_and_relative_paths() {
+        let roaming = Path::new("C:/Users/fixture/AppData/Roaming");
+        let local = Path::new("C:/Users/fixture/AppData/Local");
+        let data = roaming.join("io.strata.manager");
+        let queries = std::cell::Cell::new(0);
+        for database in [
+            local.join("Packages/registered-family/Roaming/io.strata.manager/strata-manager.sqlite3"),
+            local.join("Packages/registered-family/LocalCache/Local/io.strata.manager/strata-manager.sqlite3"),
+            local.join("Packages/registered-family/LocalCache/Roaming/another-app/strata-manager.sqlite3"),
+            local.join("Packages/registered-family/LocalCache/Roaming/io.strata.manager/nested/strata-manager.sqlite3"),
+            local.join("Packages/registered-family/LocalCache/Roaming/io.strata.manager/another.sqlite3"),
+            PathBuf::from("C:/Users/other/AppData/Local/Packages/registered-family/LocalCache/Roaming/io.strata.manager/strata-manager.sqlite3"),
+        ] {
+            assert!(registered_installer_package_root(
+                &data, &database, roaming, local, |_| {
+                    queries.set(queries.get() + 1);
+                    Ok(true)
+                }
+            )
+            .is_err());
+        }
+        // An OS-registered name still cannot authorize an unrelated spelling.
+        assert_eq!(queries.get(), 0);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn installer_database_handle_resolves_existing_file_and_rejects_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = RuntimeState::open(temp.path().join("normal-data")).unwrap();
+        let database = state.data_dir().join("strata-manager.sqlite3");
+        assert_eq!(
+            installer_database_path(&database).unwrap(),
+            dunce::canonicalize(database).unwrap()
+        );
+        assert!(installer_database_path(state.data_dir()).is_err());
+    }
+
     #[test]
     fn installer_owned_directory_uses_physical_database_root_and_rejects_invalid_parts() {
         let temp = tempfile::tempdir().unwrap();
@@ -1392,6 +1601,27 @@ mod tests {
         for part in ["..", "escape/nested", "escape\\nested", "C:escape", ""] {
             assert!(owned_directory(state.data_dir(), &[part]).is_err());
         }
+    }
+
+    #[test]
+    fn verified_data_root_is_read_only_and_requires_an_existing_database() {
+        let temp = tempfile::tempdir().unwrap();
+        let data = temp.path().join("data");
+        fs::create_dir(&data).unwrap();
+        let database = data.join("strata-manager.sqlite3");
+        assert!(verified_data_root(&data).is_err());
+        assert!(!database.exists());
+        assert_eq!(fs::read_dir(&data).unwrap().count(), 0);
+
+        let original = b"existing database content must stay unchanged";
+        fs::write(&database, original).unwrap();
+        assert_eq!(
+            verified_data_root(&data).unwrap(),
+            dunce::canonicalize(&data).unwrap()
+        );
+        assert_eq!(fs::read(&database).unwrap(), original);
+        assert_eq!(fs::read_dir(&data).unwrap().count(), 1);
+        assert!(!data.join("supervisor").exists());
     }
 
     #[cfg(any(unix, windows))]
@@ -1470,11 +1700,28 @@ mod tests {
             std::env::var_os("STRATA_INSTALLER_READONLY_DATA_DIR")
                 .expect("provide the existing data directory"),
         );
+        if std::env::var_os("STRATA_INSTALLER_READONLY_PARENT_EXIT").is_some() {
+            // Launch this ignored test directly as a detached child of a
+            // short-lived shell, then let that shell exit before the OS probe.
+            std::thread::sleep(Duration::from_secs(2));
+            let identity = installer_package_family_once(
+                &INSTALLER_PACKAGE_FAMILY,
+                capture_installer_package_family,
+            );
+            eprintln!("orphaned launcher identity={identity:?}");
+            assert!(
+                matches!(identity, Err(_) | Ok(None)),
+                "the launcher must have exited before supplying a package identity"
+            );
+        }
         eprintln!(
             "data={:?}; database={:?}; package mapping={:?}",
             dunce::canonicalize(&data),
             dunce::canonicalize(data.join("strata-manager.sqlite3")),
-            current_package_roaming_root(&dunce::canonicalize(&data).unwrap())
+            current_package_roaming_root(
+                &dunce::canonicalize(&data).unwrap(),
+                &installer_database_path(&data.join("strata-manager.sqlite3")).unwrap(),
+            )
         );
         let root = installer_data_root(&data).unwrap();
         let database = dunce::canonicalize(data.join("strata-manager.sqlite3")).unwrap();
@@ -1588,7 +1835,15 @@ mod tests {
         assert!(download_task.await.unwrap().unwrap_err().contains("取消"));
         worker.join().unwrap();
         let directory = state.data_dir().join("downloads");
-        assert_eq!(fs::read_dir(directory).unwrap().count(), 0);
+        assert!(fs::read_dir(&directory).unwrap().all(|entry| entry
+            .unwrap()
+            .path()
+            .extension()
+            .is_none_or(|ext| ext != "download")));
+        assert_eq!(
+            fs::read(directory.join(format!("{}.part", "0".repeat(64)))).unwrap(),
+            b"partial"
+        );
     }
     #[test]
     fn archive_paths_reject_traversal_ads_windows_aliases_and_foreign_roots() {

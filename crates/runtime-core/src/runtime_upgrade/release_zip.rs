@@ -24,6 +24,13 @@ const RELEASE_MARKER: &str = ".strata-manager-release.json";
 const OBSERVER_SOURCE: &str =
     include_str!("../../../../apps/supervisor/resources/strata_observer.py");
 
+mod download_check;
+mod download_source;
+pub use download_check::{
+    resolve_release_download_asset, test_release_download, RuntimeZipDownloadCheckResult,
+};
+pub use download_source::RuntimeZipDownloadOptions;
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Change {
@@ -56,6 +63,8 @@ struct Journal {
     requested_asset_name: Option<String>,
     #[serde(default)]
     requested_stop_current_service: bool,
+    #[serde(default)]
+    download: RuntimeZipDownloadOptions,
     version: Option<String>,
     revision: Option<String>,
     changes: Vec<Change>,
@@ -161,6 +170,24 @@ pub fn start_release_request(
     request_id: Option<String>,
     stop_current_service: bool,
 ) -> Result<TaskStatus, String> {
+    start_release_request_with_download(
+        state,
+        install_dir,
+        asset_name,
+        request_id,
+        stop_current_service,
+        RuntimeZipDownloadOptions::default(),
+    )
+}
+
+pub fn start_release_request_with_download(
+    state: Arc<RuntimeState>,
+    install_dir: String,
+    asset_name: Option<String>,
+    request_id: Option<String>,
+    stop_current_service: bool,
+    download: RuntimeZipDownloadOptions,
+) -> Result<TaskStatus, String> {
     let root = dunce::canonicalize(&install_dir).map_err(|_| "Strata安装目录不存在，未启动更新")?;
     if !root.join("setup.py").is_file() || !root.join("serve/server.py").is_file() {
         return Err("此目录没有完整Strata服务源码，请选择已检测到的运行环境".into());
@@ -172,13 +199,22 @@ pub fn start_release_request(
         false,
         request_id,
         stop_current_service,
+        download,
     )
 }
 pub fn start_install_release(state: Arc<RuntimeState>) -> Result<TaskStatus, String> {
     let root = installation::owned_directory(state.data_dir(), &["runtimes"])?
         .join(format!("release-{}", uuid::Uuid::new_v4()));
     fs::create_dir(&root).map_err(|e| e.to_string())?;
-    start(state, root, None, true, None, false)
+    start(
+        state,
+        root,
+        None,
+        true,
+        None,
+        false,
+        RuntimeZipDownloadOptions::default(),
+    )
 }
 fn start(
     state: Arc<RuntimeState>,
@@ -187,7 +223,9 @@ fn start(
     new_install: bool,
     request_id: Option<String>,
     stop_current_service: bool,
+    download: RuntimeZipDownloadOptions,
 ) -> Result<TaskStatus, String> {
+    let download = download.validate(asset_name.as_deref())?;
     let task_id = request_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     uuid::Uuid::parse_str(&task_id).map_err(|_| "更新请求标识必须为 UUID")?;
     if !cfg!(all(windows, target_arch = "x86_64")) {
@@ -224,11 +262,13 @@ fn start(
             || saved.new_install != new_install
             || saved.requested_asset_name != asset_name
             || saved.requested_stop_current_service != stop_current_service
+            || saved.download != download
         {
             return Err("相同更新请求标识的目录或 ZIP 参数不一致，未重复执行".into());
         }
         return Ok(existing.status.clone());
     }
+    download.validate_local_file()?;
     if !new_install && !stop_current_service {
         let mut processes = state.processes.lock().map_err(|e| e.to_string())?;
         for process in processes.values_mut() {
@@ -280,6 +320,7 @@ fn start(
         new_install,
         requested_asset_name: asset_name.clone(),
         requested_stop_current_service: stop_current_service,
+        download,
         asset_name,
         version: None,
         revision: None,
@@ -380,30 +421,9 @@ fn start(
 }
 
 fn variant(root: &Path) -> Option<&'static str> {
-    for relative in ["engine/BUILD.json", "engine-cuda12/BUILD.json"] {
-        if let Ok(bytes) = fs::read(root.join(relative)) {
-            if let Ok(build) = serde_json::from_slice::<Value>(&bytes) {
-                if build["backend"]
-                    .as_str()
-                    .is_some_and(|s| s.eq_ignore_ascii_case("hip"))
-                {
-                    return Some("hip");
-                }
-                if relative.contains("cuda12")
-                    || build["cuda"].as_str().is_some_and(|s| s.starts_with("12"))
-                    || build["cuda"].as_u64() == Some(12)
-                {
-                    return Some("cuda12");
-                }
-                if build["cuda"].as_str().is_some_and(|s| s.starts_with("13"))
-                    || build["cuda"].as_u64() == Some(13)
-                {
-                    return Some("cuda13");
-                }
-            }
-        }
-    }
-    None
+    ["engine", "engine-cuda12"]
+        .iter()
+        .find_map(|directory| directory_variant(&root.join(directory)))
 }
 
 fn directory_variant(directory: &Path) -> Option<&'static str> {
@@ -415,17 +435,26 @@ fn directory_variant(directory: &Path) -> Option<&'static str> {
     {
         return Some("hip");
     }
-    if build["cuda"].as_str().is_some_and(|s| s.starts_with("12"))
-        || build["cuda"].as_u64() == Some(12)
+    if build["backend"]
+        .as_str()
+        .is_some_and(|backend| !backend.eq_ignore_ascii_case("cuda"))
     {
-        return Some("cuda12");
+        return None;
     }
-    if build["cuda"].as_str().is_some_and(|s| s.starts_with("13"))
-        || build["cuda"].as_u64() == Some(13)
-    {
-        Some("cuda13")
-    } else {
-        None
+    let major = build["cuda"].as_u64().or_else(|| {
+        let value = build["cuda"].as_str()?;
+        if !value
+            .split('.')
+            .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
+        {
+            return None;
+        }
+        value.split('.').next()?.parse().ok()
+    });
+    match major {
+        Some(12) => Some("cuda12"),
+        Some(13) => Some("cuda13"),
+        _ => None,
     }
 }
 fn choose_asset(
@@ -1322,7 +1351,7 @@ async fn check_python(
 }
 async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, String> {
     cancelled(&state, &j.task_id)?;
-    let info = super::update_info(&state, true).await?;
+    let info = super::update_info_for_installation(&state).await?;
     if info.error.is_some() || !info.installable {
         return Err(info
             .error
@@ -1379,8 +1408,7 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
         ),
     )?;
     let engine =
-        installation::download_release(&state, &j.task_id, &asset.url, &asset.sha256, asset.size)
-            .await?;
+        download_source::engine_archive(&state, &j.task_id, &asset, &j.download, &work).await?;
     if fs::metadata(&engine).map_err(|e| e.to_string())?.len() != asset.size {
         return Err("官方ZIP精确长度与Release清单不符".into());
     }
@@ -2011,6 +2039,7 @@ mod tests {
             asset_name: None,
             requested_asset_name: None,
             requested_stop_current_service: true,
+            download: RuntimeZipDownloadOptions::default(),
             version: None,
             revision: None,
             changes: vec![],
@@ -2493,6 +2522,7 @@ mod tests {
             asset_name: None,
             requested_asset_name: None,
             requested_stop_current_service: false,
+            download: RuntimeZipDownloadOptions::default(),
             version: None,
             revision: None,
             changes: vec![],
@@ -2597,6 +2627,87 @@ mod tests {
         }
         zip.finish().unwrap().into_inner()
     }
+    #[cfg(all(windows, target_arch = "x86_64"))]
+    #[test]
+    fn custom_zip_request_remains_idempotent_after_original_archive_moves() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = RuntimeState::open(temp.path().join("data")).unwrap();
+        let root = temp.path().join("runtime");
+        fs::create_dir_all(root.join("serve")).unwrap();
+        fs::write(root.join("setup.py"), "# not executed").unwrap();
+        fs::write(root.join("serve/server.py"), "# not executed").unwrap();
+        let root = dunce::canonicalize(root).unwrap();
+        let archive = temp.path().join("engine.zip");
+        fs::write(&archive, "local bytes").unwrap();
+        let options = RuntimeZipDownloadOptions {
+            local_archive_path: Some(archive.to_string_lossy().into()),
+            download_url: None,
+        };
+        let name = "strata-windows-x64.zip";
+        let id = uuid::Uuid::new_v4().to_string();
+        let status = TaskStatus {
+            id: id.clone(),
+            kind: "update".into(),
+            state: "running".into(),
+            message: "accepted local ZIP".into(),
+            started_at: now(),
+            finished_at: None,
+        };
+        let journal: Journal = serde_json::from_value(json!({
+            "taskId": id, "installDir": root, "phase": "checking", "newInstall": false,
+            "assetName": name, "requestedAssetName": name, "requestedStopCurrentService": false,
+            "download": options, "changes": [], "running": [], "error": null, "updatedAt": now()
+        }))
+        .unwrap();
+        persist(&state, &journal).unwrap();
+        state.tasks.lock().unwrap().insert(
+            id.clone(),
+            processes::TaskRecord {
+                status: status.clone(),
+                profile_id: None,
+                runtime_path: Some(root.clone()),
+                cancelled: false,
+                process: None,
+            },
+        );
+        fs::remove_file(&archive).unwrap();
+        let repeated = start_release_request_with_download(
+            state.clone(),
+            root.to_string_lossy().into(),
+            Some(name.into()),
+            Some(id.clone()),
+            false,
+            options,
+        )
+        .unwrap();
+        assert_eq!(repeated.id, status.id);
+        assert_eq!(repeated.message, status.message);
+        let different = RuntimeZipDownloadOptions {
+            local_archive_path: None,
+            download_url: Some("https://mirror.example/engine.zip".into()),
+        };
+        assert!(start_release_request_with_download(
+            state.clone(),
+            root.to_string_lossy().into(),
+            Some(name.into()),
+            Some(id),
+            false,
+            different
+        )
+        .err()
+        .unwrap()
+        .contains("不一致"));
+        assert_eq!(state.tasks.lock().unwrap().len(), 1);
+        assert!(state.processes.lock().unwrap().is_empty());
+        assert!(!state.data_dir().join("zip-updates").exists());
+        let mut old = serde_json::to_value(&journal).unwrap();
+        old.as_object_mut().unwrap().remove("download");
+        assert_eq!(
+            serde_json::from_value::<Journal>(old).unwrap().download,
+            RuntimeZipDownloadOptions::default()
+        );
+    }
+
     fn write_zip(root: &Path, name: &str, entries: &[(&str, &str)]) -> PathBuf {
         let path = root.join(name);
         fs::write(&path, archive(entries)).unwrap();
@@ -2975,6 +3086,7 @@ mod tests {
             asset_name: None,
             requested_asset_name: None,
             requested_stop_current_service: false,
+            download: RuntimeZipDownloadOptions::default(),
             version: Some("0.1.42".into()),
             revision: None,
             changes: vec![],
@@ -3027,6 +3139,7 @@ mod tests {
             asset_name: None,
             requested_asset_name: None,
             requested_stop_current_service: false,
+            download: RuntimeZipDownloadOptions::default(),
             version: Some("0.1.42".into()),
             revision: None,
             changes,
@@ -3076,6 +3189,7 @@ mod tests {
             asset_name: None,
             requested_asset_name: None,
             requested_stop_current_service: false,
+            download: RuntimeZipDownloadOptions::default(),
             version: Some("0.1.42".into()),
             revision: None,
             changes,
