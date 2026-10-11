@@ -197,10 +197,45 @@ test('only the explicit reviewed Linux ignored names are permitted', () => {
   const binaries = Object.entries(IGNORED_POLICY).map(([key]) => {
     const separator = key.indexOf(':'); return {package: key.slice(0, separator), cases: [c(key.slice(separator + 1), true)]};
   });
+  assert.equal(Object.keys(IGNORED_POLICY).length, 7);
   assert.equal(validateIgnoredPolicy(binaries), true);
   assert.throws(() => validateIgnoredPolicy(binaries.slice(1)));
   assert.throws(() => validateIgnoredPolicy([...binaries, {package: 'strata-runtime-core', cases: [c('new::hidden', true)]}]));
   assert.throws(() => validateIgnoredPolicy([...binaries, clone(binaries[0])]));
+});
+
+test('external acceptance fixtures require exact reviewed names on both platforms and cannot hide offline contracts', () => {
+  const externalNames = [
+    'runtime_upgrade::release_zip::download_check::tests::live_official_download_source_probe_readonly',
+    'tuning::workloads::tests::check_explicit_agent_patch_fixture',
+  ];
+  const offlineNames = [
+    'runtime_upgrade::release_zip::download_check::tests::network_download_check_validates_range_and_never_claims_full_sha',
+    'tuning::workloads::tests::patch_failures_report_static_categories_without_leaking_or_continuing',
+  ];
+  for (const target of ['x86_64-unknown-linux-gnu', 'x86_64-pc-windows-msvc']) {
+    const policy = targetPolicy(target).ignoredPolicy;
+    const binaries = Object.keys(policy).map(key => {
+      const separator = key.indexOf(':');
+      return {package: key.slice(0, separator), cases: [c(key.slice(separator + 1), true)]};
+    });
+    for (const name of externalNames) {
+      const key = `strata-runtime-core:${name}`;
+      assert.equal(Object.hasOwn(policy, key), true);
+      assert.match(policy[key], /^Explicit /);
+      const without = binaries.filter(binary => !(binary.package === 'strata-runtime-core' && binary.cases[0].name === name));
+      assert.throws(() => validateIgnoredPolicy(without, target));
+      for (const substitute of [name + '_unreviewed', name.replace('::tests::', '::other_tests::')]) {
+        assert.throws(() => validateIgnoredPolicy([...without, {package: 'strata-runtime-core', cases: [c(substitute, true)]}], target));
+      }
+      assert.throws(() => validateIgnoredPolicy([...binaries, {package: 'strata-runtime-core', cases: [c(name, true)]}], target));
+    }
+    for (const name of offlineNames) {
+      assert.equal(Object.hasOwn(policy, `strata-runtime-core:${name}`), false);
+      assert.equal(validateIgnoredPolicy([...binaries, {package: 'strata-runtime-core', cases: [c(name)]}], target), true);
+      assert.throws(() => validateIgnoredPolicy([...binaries, {package: 'strata-runtime-core', cases: [c(name, true)]}], target));
+    }
+  }
 });
 
 test('independent runner evidence cannot mix profiles, toolchains, sources, ignored policies or doc owners', () => {
@@ -255,13 +290,13 @@ test('Windows exact selections bound both UTF-8 argv and the quoted UTF-16 Creat
   assert.throws(() => selectionBatches({...binary, platform: 'linux'}, selected));
 });
 
-test('Windows inventory has exactly the twelve reviewed ignored names and cannot substitute Linux policy', () => {
+test('Windows inventory has exactly the fourteen reviewed ignored names and cannot substitute Linux policy', () => {
   const binaries = Object.keys(WINDOWS_IGNORED_POLICY).map((key, index) => {
     const separator = key.indexOf(':'); return {id: `windows-${index}`, package: key.slice(0, separator), packagePath: '.',
       cases: [c(key.slice(separator + 1), true)]};
   });
   const target = 'x86_64-pc-windows-msvc';
-  assert.equal(Object.keys(WINDOWS_IGNORED_POLICY).length, 12);
+  assert.equal(Object.keys(WINDOWS_IGNORED_POLICY).length, 14);
   assert.equal(validateIgnoredPolicy(binaries, target), true);
   assert.throws(() => validateIgnoredPolicy(binaries));
   assert.throws(() => validateIgnoredPolicy(binaries.slice(1), target));
@@ -270,7 +305,7 @@ test('Windows inventory has exactly the twelve reviewed ignored names and cannot
   const plan = makePlan([...binaries, {id: 'active', package: 'fixture', packagePath: '.', cases: [c('a'), c('b'), c('c')]}], 3, binding);
   const reports = fixtureReports(plan); const docs = fixtureDocs(plan);
   const shards = reports.map((report, index) => ({schema: 1, binding: plan.binding, plan, shard: index, reports: [report], docs: index === 0 ? docs : null}));
-  assert.equal(validateShardEvidence(shards).summary.ignored, 12);
+  assert.equal(validateShardEvidence(shards).summary.ignored, 14);
   for (const mutate of [
     s => { s[1].binding.platform = 'linux'; },
     s => { s[1].binding.target = 'x86_64-unknown-linux-gnu'; },

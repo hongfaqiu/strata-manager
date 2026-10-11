@@ -359,7 +359,7 @@ pub async fn start(
     )
     .await
 }
-#[cfg(test)]
+#[cfg(all(test, windows))]
 async fn start_with_probe(
     ipc: &SupervisorClient,
     install_dir: String,

@@ -11,7 +11,7 @@
 | 检查 | 实际结果 | 证据 |
 | --- | --- | --- |
 | 前端与核心检查 | `pnpm check` 的类型检查、生产构建通过；核心 196、桌面 95、HTTP/日志 8，合计 **299 项通过、0 失败** | `.local/release-0.1.4/final-check.log`；独立较早的构建记录另见 `final-build.log`，不重复计数 |
-| 发布与 CI 门禁合同 | **227 passed / 0 failed / 0 skipped**；覆盖缓存政策、源码/产物身份、run attempt、Linux 测试分片覆盖、签名及安装/升级门禁逻辑 | `.local/release-0.1.4/final-release-guards.log`；早期 `final-guards.log` 单列，不与本次数量相加 |
+| 发布与 CI 门禁合同 | **228 passed / 0 failed / 0 skipped**；覆盖缓存政策、源码/产物身份、run attempt、两平台测试分片覆盖、精确外部验收名单、签名及安装/升级门禁逻辑 | `.local/release-0.1.4/final-release-guards.log`；早期 `final-guards.log` 单列，不与本次数量相加 |
 | 网站与文档合同 | **27 passed / 0 failed / 0 skipped**；覆盖文档渲染、双语首页/SEO、版本选择、发布快照及缺失链接/资产拒绝 | `.local/release-0.1.4/final-website-tests.log` |
 | 公共设置浏览器流程 | **12/12 passed**；覆盖公共入口、无模型编辑、继承/旧专用值、参数抽屉模型隔离与晚到保存、MCP/结构化输出、重载及导航草稿保护 | `.local/release-0.1.4/final-common-settings.log`、`output/playwright/common-settings/browser-results.json` |
 | 引擎下载浏览器流程 | **26 个流程通过、0 浏览器错误**；覆盖来源、自动匹配包、包信息、来源测试、确认/取消和窄屏展示 | `.local/release-0.1.4/final-runtime-download.log`、`output/playwright/runtime-update-download/results.json` |
@@ -27,6 +27,8 @@
 真实桌面与真实请求必须另行绑定实际安装版本/二进制、进程归属和请求结果。后文 `output/windows-real-test` 的 0.1.3-test.2/test.4、特定 Windows Strata 引擎更新和真实短请求继续属于其各自版本与环境，不作为最终 0.1.4 包的同源码验收；真实 GPU Benchmark、完整调优、长时间压力、Linux 系统级 DEB 安装及 Tauri 客户端跨版本在线更新仍需各自的实测证据。
 
 **提交后的发行门禁：** 必须取得最终源码同 SHA、同 attempt 的完整 Windows/Linux **8 个 CI job 成功**，再复用已核验产物签名发布。发行后核对 tag→commit、稳定 latest、8 个资产及下载字节/大小/SHA256/GitHub digest、三个安装包签名和 signed version、`SHA256SUMS` 与 `latest.json` 精确链接；官网须等待部署完成，再检查下载版本、双语文档、全部截图的公开字节/哈希及浏览器展示。本节是提交前证据，不预先宣称这些发布后步骤通过；实际结果见 [Actions](https://github.com/hongfaqiu/strata-manager/actions) 与 [v0.1.4 Release](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.4)。
+
+0.1.4 首轮提交 `81e0ec35c266951c0d0badf6fe2c3ae8ce42b9ac` 的 [CI 38176396349](https://github.com/hongfaqiu/strata-manager/actions/runs/38176396349)未通过：Linux 严格 Clippy 发现 Windows 测试辅助函数的平台条件缺失，两平台精确 ignored 政策也未登记两个新增的显式外部验收夹具。修复将辅助函数限制为 Windows 测试，并按精确名称登记外网来源只读检查和显式 Agent 源文件静态检查；旧名单和默认离线测试保持，未知名称仍拒绝。修复后的本地严格 Clippy、格式及 228 项发行合同通过，最终完整 CI 仍须绑定修复后的源码重新执行。
 
 ## 0.1.2 发版准备与 0.1.1 未公开记录
 
