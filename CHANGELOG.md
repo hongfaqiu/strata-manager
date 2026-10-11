@@ -9,7 +9,7 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 以下改动正在开发与验收，尚未包含在公开安装包中。
 
-- 发布流程复用同一源码、完整 CI 验收通过的 Windows 与 Linux 安装包，保留签名和发布前验签；Linux 原生测试在三个独立 runner 分片，安装包编译与测试并行，并缩小 Rust 依赖缓存。
+- 发布流程复用同一源码、完整 CI 验收通过的 Windows 与 Linux 安装包，保留签名和发布前验签；Windows 和 Linux 原生测试分别在三个独立 runner 分片，安装包编译与测试并行，完整覆盖证明阻断遗漏和重复，并缩小 Rust 依赖缓存。
 - 新增 Benchmark 测试工作区，支持七类场景套件、固定并发和逐级升压；可设置提示词长度、重复轮次、输出长度、预热和重复输入缓存测试，停止测试、查看历史报告并导出 JSON / CSV。
 - 分别记录首 Token 延迟、请求总耗时、P50/P95、输入与输出 Token、输入处理与生成速度以及缓存命中；测试期间协调聊天、调优、服务启停和更新操作。
 - 增加已审阅 Strata 0.1.43 的 API 使用统计兼容，改善 Windows 安装路径识别和更新元数据复用，保留引擎校验、配置保护与回滚检查。
@@ -21,7 +21,7 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 These changes are in development and validation and are not included in publicly available installers.
 
-- Reuse Windows and Linux installers from complete, successful same-source CI runs, retaining signing and verification before publication. Run native Linux tests across three independent runners, overlap installer builds with tests, and reduce Rust dependency caches.
+- Reuse Windows and Linux installers from complete, successful same-source CI runs, retaining signing and verification before publication. Run native Windows and Linux tests across three independent runners per platform, overlap installer builds with tests, reject omitted or repeated tests through complete coverage proofs, and reduce Rust dependency caches.
 - Add a Benchmark workspace with seven scenario suites, fixed concurrency and ramp-up stress tests, configurable prompt lengths, repeated runs, output limits, warmup and repeated-input cache tests, plus cancellation, report history and JSON / CSV export.
 - Record time to first token, request duration, P50/P95, input/output tokens, input-processing and generation rates, and cache hits separately; coordinate chat, tuning, service controls and updates while a test runs.
 - Add API usage compatibility for the reviewed Strata 0.1.43 source and improve Windows installation-path detection and update-metadata reuse, retaining engine validation, configuration protection and rollback checks.

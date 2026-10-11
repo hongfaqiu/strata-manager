@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import {
-  CI_PROTOCOL, REPOSITORY, COMMON_GATES, PLATFORM_GATES, SHARD_GATES, createPlan, assetNames,
+  CI_PROTOCOL, REPOSITORY, COMMON_GATES, PLATFORM_GATES, SHARD_GATES, WINDOWS_SHARD_GATES, createPlan, assetNames,
   validateSourceProtocol, validateCiEvidence, validateInstallerEntries, validateLiveWriters,
   validateLatestManifest, validateReleaseInventory, validateReleaseMetadata, creationBranch,
   requireSourceRelease, validatePreparedRecord, readPrepared,
@@ -23,13 +23,14 @@ function ciFixture(p = plan, runId = 123) {
   const run = { id: runId, path: p.workflowPath, event: 'workflow_dispatch', status: 'completed',
     conclusion: 'success', head_sha: p.sourceSha, run_attempt: 2, created_at: '2026-01-01T00:00:00Z',
     repository: { full_name: p.repository }, head_repository: { full_name: p.repository } };
-  const job = (name, gates, id) => ({ id, run_id: runId, run_attempt: 2, name, status: 'completed',
+  const job = (name, gates, id) => ({ id, run_id: runId, run_attempt: 2, head_sha: p.sourceSha, name, status: 'completed',
     conclusion: 'success', started_at: '2026-01-01T00:00:00Z', completed_at: '2026-01-01T00:10:00Z',
     steps: gates.map(name => ({ name, status: 'completed', conclusion: 'success' })) });
   const jobs = [
     job('desktop (windows-latest, x86_64-pc-windows-msvc, nsis)', [...COMMON_GATES, ...PLATFORM_GATES.windows], 10),
     job('desktop (ubuntu-22.04, x86_64-unknown-linux-gnu, appimage,deb)', [...COMMON_GATES, ...PLATFORM_GATES.linux], 11),
     ...[0, 1, 2].map(i => job('Linux native shard (' + i + '/3)', SHARD_GATES, 20 + i)),
+    ...[0, 1, 2].map(i => job('Windows native shard (' + i + '/3)', WINDOWS_SHARD_GATES, 30 + i)),
   ];
   if (p.version === '0.1.2') jobs[0].steps.push(...[
     'Verify the signed beta.2 installer for the first stable upgrade',
@@ -63,6 +64,8 @@ test('source protocol explicitly rejects old fixed release and missing CI marker
   const helper = "export const CI_PROTOCOL = '" + CI_PROTOCOL + "';";
   const ci = 'name: Reusable release CI protocol\nrun: node scripts/release-from-ci.mjs protocol';
   assert.equal(validateSourceProtocol(helper, ci), true);
+  assert.equal(CI_PROTOCOL, 'strata-release-ci/v2');
+  assert.throws(() => validateSourceProtocol("export const CI_PROTOCOL = 'strata-release-ci/v1';", ci), /protocol/);
   assert.throws(() => validateSourceProtocol('export const PLAN = {}', ci), /protocol/);
   assert.throws(() => validateSourceProtocol(helper, 'node scripts/release-check.mjs'), /protocol/);
 });
@@ -114,6 +117,7 @@ const invalidCi = [
   ['wrong workflow', f => { f.run.path = '.github/workflows/release.yml'; }],
   ['pending whole CI', f => { f.run.status = 'in_progress'; }],
   ['failed whole CI', f => { f.run.conclusion = 'failure'; }],
+  ['extra unknown job', f => { f.jobs.push({ ...f.jobs[0], id: 99, name: 'Unidentified validation' }); }],
   ['missing desktop', f => { f.jobs.shift(); }],
   ['duplicate desktop', f => { f.jobs.push(clone(f.jobs[0])); }],
   ['missing shard', f => { f.jobs.pop(); }],
@@ -158,6 +162,49 @@ test('each native shard requires every real test, private keyring and coverage u
     const f = ciFixture();
     f.jobs[index].steps.find(s => s.name === name).conclusion = 'skipped';
     assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, plan), /shard gate/);
+  }
+});
+test('v1 plans cannot accept v2 native evidence or reuse the old five-job CI', () => {
+  const f = ciFixture(); const oldPlan = { ...plan, protocol: 'strata-release-ci/v1' };
+  assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, oldPlan), /protocol/);
+  assert.throws(() => validateCiEvidence(f.run, f.jobs.slice(0, 5), f.artifacts, plan), /six native shards/);
+});
+for (const shard of [0, 1, 2]) {
+  const position = 5 + shard;
+  for (const [label, mutate] of [
+    ['missing', (f, index) => { f.jobs.splice(index, 1); }],
+    ['duplicate', (f, index) => { f.jobs.push(clone(f.jobs[index])); }],
+    ['unknown replacement', (f, index) => { f.jobs[index].name = 'Unidentified Windows shard'; }],
+    ['failed', (f, index) => { f.jobs[index].conclusion = 'failure'; }],
+    ['cancelled', (f, index) => { f.jobs[index].conclusion = 'cancelled'; }],
+    ['skipped', (f, index) => { f.jobs[index].conclusion = 'skipped'; }],
+    ['queued', (f, index) => { f.jobs[index].status = 'queued'; f.jobs[index].conclusion = null; }],
+    ['old attempt', (f, index) => { f.jobs[index].run_attempt--; }],
+    ['wrong run', (f, index) => { f.jobs[index].run_id++; }],
+    ['wrong source', (f, index) => { f.jobs[index].head_sha = 'b'.repeat(40); }],
+  ]) test(`CI refuses Windows native shard ${shard} ${label} even with complete early installer artifacts`, () => {
+    const f = ciFixture(); mutate(f, position);
+    assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, plan));
+  });
+  test(`Windows native shard ${shard} requires build, assigned test execution and coverage upload`, () => {
+    for (const name of WINDOWS_SHARD_GATES) for (const state of ['missing', 'duplicate', 'skipped', 'failure']) {
+      const f = ciFixture(); const steps = f.jobs[position].steps;
+      const index = steps.findIndex(step => step.name === name);
+      if (state === 'missing') steps.splice(index, 1);
+      else if (state === 'duplicate') steps.push(clone(steps[index]));
+      else steps[index].conclusion = state;
+      assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, plan), /shard gate/);
+    }
+  });
+}
+test('Windows wait, current-attempt download and aggregate cannot be skipped after installers exist', () => {
+  for (const name of PLATFORM_GATES.windows.slice(0, 3)) for (const state of ['missing', 'duplicate', 'skipped', 'failure']) {
+    const f = ciFixture(); const steps = f.jobs[0].steps;
+    const index = steps.findIndex(step => step.name === name);
+    if (state === 'missing') steps.splice(index, 1);
+    else if (state === 'duplicate') steps.push(clone(steps[index]));
+    else steps[index].conclusion = state;
+    assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, plan), /CI gate/);
   }
 });
 function zipEntry(a = plan.artifacts[0]) {

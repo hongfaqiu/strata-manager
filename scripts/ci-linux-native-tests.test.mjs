@@ -5,14 +5,15 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import {
-  IGNORED_POLICY, parseListing, parseCargoArtifacts, attachInventory, makePlan,
-  validatePlan, selectionArgs, selectionBatches, argvBytes, MAX_FILTER_NAMES, MAX_ARGV_BYTES, mergeBinaryReports,
+  IGNORED_POLICY, WINDOWS_IGNORED_POLICY, targetPolicy, parseListing, parseCargoArtifacts, attachInventory, makePlan,
+  validatePlan, selectionArgs, selectionBatches, argvBytes, windowsCommandUnits,
+  MAX_FILTER_NAMES, MAX_ARGV_BYTES, MAX_WINDOWS_ARGV_BYTES, MAX_WINDOWS_COMMAND_UNITS, mergeBinaryReports,
   parseResults, parseDocResults, validateCoverage, validateIgnoredPolicy, validateShardEvidence, parseOptions, workspaceDocTargets,
 } from './ci-linux-native-tests.mjs';
 
 const clone = value => structuredClone(value);
 const c = (name, ignored = false) => ({name, kind: 'test', ignored});
-const fixtureBinding = {sourceSha: 'a'.repeat(40), lockSha256: 'b'.repeat(64), target: 'x86_64-unknown-linux-gnu',
+const fixtureBinding = {sourceSha: 'a'.repeat(40), lockSha256: 'b'.repeat(64), target: 'x86_64-unknown-linux-gnu', platform: 'linux',
   groups: 3, rustc: 'rustc fixture', docTargets: ['fixture_lib'], workflow: {repository: 'hongfaqiu/strata-manager', runId: '123', attempt: '1'},
   profile: {devDebug: '0', testDebug: '0', incremental: '0'}};
 function fixturePlan() {
@@ -227,7 +228,66 @@ test('independent runner evidence cannot mix profiles, toolchains, sources, igno
 test('CLI uses zero-based independent shards and refuses invalid or unbounded selection', () => {
   assert.deepEqual(parseOptions(['--shard', '0/3']).shard, {index: 0, count: 3});
   assert.deepEqual(parseOptions(['--groups', '4', '--shard', '3/4']).shard, {index: 3, count: 4});
-  for (const args of [['--shard', '3/3'], ['--shard', '1/2'], ['--groups', '8'], ['--ignored', 'true'], ['--target', 'x86_64-pc-windows-msvc'], ['--shard', '0/3', '--aggregate', 'proof']]) assert.throws(() => parseOptions(args));
+  assert.equal(parseOptions(['--target', 'x86_64-pc-windows-msvc', '--shard', '1/3']).target, 'x86_64-pc-windows-msvc');
+  for (const args of [['--shard', '3/3'], ['--shard', '1/2'], ['--groups', '8'], ['--ignored', 'true'], ['--target', 'aarch64-pc-windows-msvc'], ['--target', 'x86_64-apple-darwin'], ['--shard', '0/3', '--aggregate', 'proof']]) assert.throws(() => parseOptions(args));
+});
+
+test('Windows exact selections bound both UTF-8 argv and the quoted UTF-16 CreateProcess command line', () => {
+  const binary = {id: 'windows', executable: 'C:\\private runner\\fixture.exe', platform: 'win32', target: 'x86_64-pc-windows-msvc',
+    cases: [...Array.from({length: 100}, (_, index) => c(`unicode::${'界'.repeat(150)}_${String(index).padStart(3, '0')}`)), c('outside')]};
+  const selected = binary.cases.slice(0, 100).map(c => c.name);
+  const batches = selectionBatches(binary, selected);
+  assert.ok(batches.length > 1); assert.deepEqual(batches.flat(), selected);
+  for (const names of batches) {
+    const args = [...selectionArgs(binary, names), '--list'];
+    assert.ok(argvBytes(binary, args) < MAX_WINDOWS_ARGV_BYTES);
+    assert.ok(windowsCommandUnits(binary, args) < MAX_WINDOWS_COMMAND_UNITS);
+  }
+  assert.equal(windowsCommandUnits({executable: 'C:\\test fixture\\file.exe'}, ['a"b', 'path with space\\']),
+    '"C:\\test fixture\\file.exe" "a\\"b" "path with space\\\\"'.length + 1);
+  const escaped = {id: 'escaped', platform: 'win32', target: binary.target,
+    cases: [c(('\\"').repeat(8000)), c('outside')]};
+  // Escaping can exceed the UTF-16 budget despite an otherwise safe raw argv.
+  assert.ok(argvBytes(escaped, [escaped.cases[0].name]) < MAX_WINDOWS_ARGV_BYTES);
+  assert.throws(() => selectionBatches(escaped, [escaped.cases[0].name]));
+  const largeExecutable = {...binary, executable: 'C:/'+ 'a'.repeat(25000) + '.exe'};
+  assert.throws(() => selectionArgs(largeExecutable, binary.cases.map(c => c.name)));
+  assert.throws(() => selectionBatches({...binary, platform: 'linux'}, selected));
+});
+
+test('Windows inventory has exactly the twelve reviewed ignored names and cannot substitute Linux policy', () => {
+  const binaries = Object.keys(WINDOWS_IGNORED_POLICY).map((key, index) => {
+    const separator = key.indexOf(':'); return {id: `windows-${index}`, package: key.slice(0, separator), packagePath: '.',
+      cases: [c(key.slice(separator + 1), true)]};
+  });
+  const target = 'x86_64-pc-windows-msvc';
+  assert.equal(Object.keys(WINDOWS_IGNORED_POLICY).length, 12);
+  assert.equal(validateIgnoredPolicy(binaries, target), true);
+  assert.throws(() => validateIgnoredPolicy(binaries));
+  assert.throws(() => validateIgnoredPolicy(binaries.slice(1), target));
+  assert.throws(() => validateIgnoredPolicy([...binaries, {package: 'strata-runtime-core', cases: [c('unreviewed::hidden', true)]}], target));
+  const binding = {...fixtureBinding, target, platform: 'win32', ignoredPolicy: WINDOWS_IGNORED_POLICY};
+  const plan = makePlan([...binaries, {id: 'active', package: 'fixture', packagePath: '.', cases: [c('a'), c('b'), c('c')]}], 3, binding);
+  const reports = fixtureReports(plan); const docs = fixtureDocs(plan);
+  const shards = reports.map((report, index) => ({schema: 1, binding: plan.binding, plan, shard: index, reports: [report], docs: index === 0 ? docs : null}));
+  assert.equal(validateShardEvidence(shards).summary.ignored, 12);
+  for (const mutate of [
+    s => { s[1].binding.platform = 'linux'; },
+    s => { s[1].binding.target = 'x86_64-unknown-linux-gnu'; },
+    s => { s[1].binding.ignoredPolicy = clone(IGNORED_POLICY); },
+    s => { s[1].plan.binaries[0].target = 'x86_64-unknown-linux-gnu'; },
+    s => { s[1].plan.binaries[0].platform = 'linux'; },
+    s => { s[1].binding.lockSha256 = 'c'.repeat(64); },
+    s => { s[1].binding.sourceSha = 'd'.repeat(40); },
+    s => { s[1].binding.workflow.attempt = '2'; },
+    s => { s[1].binding.profile.testDebug = '2'; },
+    s => { s[0].docs = null; },
+    s => { s[1].docs = clone(s[0].docs); },
+    s => { s[0].reports[0].binaries.pop(); },
+    s => { s[1].shard = 0; },
+  ]) { const invalid = shards.map(value => clone(value)); mutate(invalid); assert.throws(() => validateShardEvidence(invalid)); }
+  assert.throws(() => makePlan(binaries, 3, {...binding, platform: 'linux'}));
+  assert.equal(targetPolicy(target).platform, 'win32');
 });
 
 test('real stable libtest confirms exact OR filters, bounded batches and substring coverage', async () => {
@@ -239,7 +299,8 @@ test('real stable libtest confirms exact OR filters, bounded batches and substri
     execFileSync('rustc', ['--test', source, '-o', executable], {encoding: 'utf8', timeout: 60000});
     const all = parseListing(execFileSync(executable, ['--list'], {encoding: 'utf8', timeout: 30000}));
     const ignored = parseListing(execFileSync(executable, ['--list', '--ignored'], {encoding: 'utf8', timeout: 30000}));
-    const binary = attachInventory({id: 'real-libtest'}, all, ignored);
+    const binary = attachInventory({id: 'real-libtest', executable, platform: process.platform,
+      target: process.platform === 'win32' ? 'x86_64-pc-windows-msvc' : 'x86_64-unknown-linux-gnu'}, all, ignored);
     const names = ['ab', 'b', 'ignored_fixture']; const args = selectionArgs(binary, names);
     assert.deepEqual(parseListing(execFileSync(executable, [...args, '--list'], {encoding: 'utf8', timeout: 30000})).map(c => c.name), names);
     const result = parseResults(execFileSync(executable, args, {encoding: 'utf8', timeout: 30000}), binary, names);

@@ -81,9 +81,9 @@ function validateSave(value, restoreOnlyAllowed) {
   }
 }
 
-function validateWorkflow(source, {restoreOnlyJobs = [], forbidRustCache = false} = {}) {
+function validateWorkflow(source, {restoreOnlyJobs = [], forbidRustCache = false, requiredCacheJobs} = {}) {
   const lines = source.replaceAll('\r\n', '\n').split('\n');
-  const global = mapping(lines, 'env', 0); let caches = 0;
+  const global = mapping(lines, 'env', 0); let caches = 0; const cacheJobs = [];
   const jobs = lines.flatMap((line, index) => /^ {2}[A-Za-z0-9_-]+:$/.test(line) && index > lines.indexOf('jobs:') ? [index] : []);
   for (let i = 0; i < jobs.length; i++) {
     const jobName = lines[jobs[i]].trim().slice(0, -1);
@@ -92,6 +92,7 @@ function validateWorkflow(source, {restoreOnlyJobs = [], forbidRustCache = false
     for (let j = 0; j < job.length; j++) {
       if (!/^ {8}uses: Swatinem\/rust-cache@|^ {6}- uses: Swatinem\/rust-cache@/.test(job[j])) continue;
       caches++;
+      cacheJobs.push(jobName);
       const next = job.findIndex((line, index) => index > j && /^ {6}- /.test(line));
       const step = job.slice(j, next < 0 ? job.length : next);
       const inputs = mapping(step, 'with', 8);
@@ -110,6 +111,7 @@ function validateWorkflow(source, {restoreOnlyJobs = [], forbidRustCache = false
   }
   if (forbidRustCache) assert.equal(caches, 0, 'Signing-only releases must not cache SOURCE_ROOT, secrets or prepared assets.');
   else assert.ok(caches > 0, 'The workflow must retain its native dependency cache.');
+  if (requiredCacheJobs) assert.deepEqual(cacheJobs.toSorted(), requiredCacheJobs.toSorted(), 'Each required CI job definition must have exactly one native cache; only the desktop job may save.');
   assert.ok(!/CARGO_PROFILE_(?:DEV|TEST)_(?:DEBUG_ASSERTIONS|OVERFLOW_CHECKS):\s*['"]?(?:false|0)\b/.test(source), 'Debug assertions and overflow checks must remain enabled.');
   assert.ok(!/CARGO_PROFILE_RELEASE_[A-Z_]+:/.test(source), 'CI must retain the checked production release profile.');
   assert.ok(!/RUSTFLAGS:.*(?:lto|codegen-units|debug-assertions|overflow-checks|opt-level)/.test(source), 'Flags must not bypass the checked profiles.');
@@ -136,12 +138,12 @@ const fixture = `jobs:
 
 test('cache-policy validator accepts trusted dependency caches and restore-only native shards', () => {
   validateWorkflow(fixture);
-  validateWorkflow(fixture.replace('  desktop:', '  native-linux:').replace(trusted, 'false'), {restoreOnlyJobs: ['native-linux']});
+  for (const platform of ['linux', 'windows']) validateWorkflow(fixture.replace('  desktop:', `  native-${platform}:`).replace(trusted, 'false'), {restoreOnlyJobs: [`native-${platform}`]});
   validateWorkflow('jobs:\n  sign:\n    steps:\n      - run: node scripts/release-from-ci.mjs sign\n', {forbidRustCache: true});
 });
 
 test('cache-policy validator rejects a native shard writer and a signing cache', () => {
-  assert.throws(() => validateWorkflow(fixture.replace('  desktop:', '  native-linux:'), {restoreOnlyJobs: ['native-linux']}));
+  for (const platform of ['linux', 'windows']) assert.throws(() => validateWorkflow(fixture.replace('  desktop:', `  native-${platform}:`), {restoreOnlyJobs: [`native-${platform}`]}));
   assert.throws(() => validateWorkflow(fixture, {forbidRustCache: true}));
 });
 
@@ -167,7 +169,20 @@ for (const [name, mutate] of [
 ]) test(`cache-policy validator rejects ${name}`, () => assert.throws(() => validateWorkflow(mutate(fixture))));
 
 test('CI workflow preserves the native cache policy', async () => {
-  validateWorkflow(await readFile(resolve(root, '.github/workflows/ci.yml'), 'utf8'), {restoreOnlyJobs: ['native-linux']});
+  validateWorkflow(await readFile(resolve(root, '.github/workflows/ci.yml'), 'utf8'), {
+    restoreOnlyJobs: ['native-linux', 'native-windows'], requiredCacheJobs: ['desktop', 'native-linux', 'native-windows'],
+  });
+});
+test('cache job inventory refuses missing, duplicate and additional cache writers', () => {
+  const options = {requiredCacheJobs: ['desktop', 'native-linux', 'native-windows'], restoreOnlyJobs: ['native-linux', 'native-windows']};
+  const job = fixture.slice(fixture.indexOf('  desktop:'));
+  const linux = job.replace('  desktop:', '  native-linux:').replace(trusted, 'false');
+  const windows = job.replace('  desktop:', '  native-windows:').replace(trusted, 'false');
+  const complete = 'jobs:\n' + job + linux + windows;
+  validateWorkflow(complete, options);
+  for (const source of ['jobs:\n' + job + linux, complete + windows, complete + job.replace('  desktop:', '  untrusted-extra:')]) {
+    assert.throws(() => validateWorkflow(source, options), /exactly one native cache/);
+  }
 });
 
 test('tag release workflow does not cache signing inputs or source outputs', async () => {

@@ -1,4 +1,4 @@
-/** Run every default Cargo test, with serial libtest groups and private Linux fixtures. */
+/** Run every default Cargo test with serial libtest groups on independent native runners. */
 import { spawn } from 'node:child_process';
 import { readFile, writeFile, mkdir, mkdtemp, lstat, realpath, access, readdir } from 'node:fs/promises';
 import { constants, createReadStream } from 'node:fs';
@@ -28,13 +28,34 @@ export const IGNORED_POLICY = Object.freeze({
   'strata-runtime-core:runtime_upgrade::release_zip::tests::official_source_zip_fixture_from_environment': 'Separately downloaded official source ZIP fixture.',
 });
 
-export function validateIgnoredPolicy(binaries) {
+export const WINDOWS_IGNORED_POLICY = Object.freeze({
+  ...IGNORED_POLICY,
+  'strata-manager:runtime_update_queue::tests::live_running_model_refuses_unconfirmed_update_without_changing_service_or_intent': 'Explicit live refusal check without stop confirmation or update mutation.',
+  'strata-manager:runtime_updates::tests::live_legacy_update_metadata_and_runtime_detection_keep_service_identity': 'Explicit live legacy metadata verification; writes only the release-info cache.',
+  'strata-runtime-core:discovery::tests::live_running_service_reports_exact_config_without_changing_process_or_files': 'Explicit live running-service read-only verification.',
+  'strata-runtime-core:installation::tests::installer_owned_directory_rejects_linked_database': 'Requires Windows symbolic-link privilege; link policy is covered without elevation.',
+  'strata-runtime-core:installation::tests::installer_owned_root_live_readonly_verifies_existing_msix_mapping': 'Explicit read-only verification of the current packaged process data path.',
+  'strata-runtime-core:runtime_upgrade::release_zip::tests::zip_update_listener_fixture': 'Child-only TCP listener started explicitly by ownership regression tests.',
+  'strata-runtime-core:runtime_upgrade::tests::real_fixed_engine_download_redirect_hash_and_extraction_without_execution': 'Separately downloaded official source/engine and private Python dependencies; no engine or GPU execution.',
+});
+export function targetPolicy(target) {
+  if (target === 'x86_64-pc-windows-msvc') return {target, platform: 'win32', ignoredPolicy: WINDOWS_IGNORED_POLICY, maxArgvBytes: 24 * 1024};
+  if (/^[a-z0-9_-]+-unknown-linux-gnu$/.test(target ?? '')) return {target, platform: 'linux', ignoredPolicy: IGNORED_POLICY, maxArgvBytes: 100 * 1024};
+  fail('Only reviewed Linux GNU and Windows MSVC native targets are allowed.');
+}
+function validateTargetBinding(binding) {
+  const policy = targetPolicy(binding?.target);
+  if (binding.platform !== policy.platform) fail('Native platform differs from the reviewed target.');
+  return policy;
+}
+export function validateIgnoredPolicy(binaries, target = 'x86_64-unknown-linux-gnu') {
+  const policy = targetPolicy(target);
   const ignored = binaries.flatMap(b => b.cases.filter(c => c.ignored).map(c => `${b.package}:${c.name}`));
-  if (!same(sorted(ignored), sorted(Object.keys(IGNORED_POLICY)))) fail('The reviewed Linux default ignored policy changed.');
+  if (!same(sorted(ignored), sorted(Object.keys(policy.ignoredPolicy)))) fail(`The reviewed ${policy.platform} default ignored policy changed.`);
   return true;
 }
 
-const inventoryForHash = binaries => binaries.map(({id, package: packageName, packagePath, cases}) => ({id, package: packageName, packagePath, cases}));
+const inventoryForHash = binaries => binaries.map(({id, package: packageName, packagePath, platform, target, cases}) => ({id, package: packageName, packagePath, platform, target, cases}));
 const planHash = plan => hash(JSON.stringify({binding: plan.binding, inventory: inventoryForHash(plan.binaries), groups: plan.groups}));
 const knownSeconds = Object.freeze({
   // Sequential completion deltas in successful Linux CI 38159155279; scheduling hints only.
@@ -46,6 +67,18 @@ const knownSeconds = Object.freeze({
   'tuning::status_tests': 29, 'external_management::tests': 29,
   'registry_handoff::tests': 29, 'tuning_service_operation_tests': 25,
   'installation::tests': 25,
+});
+const windowsKnownSeconds = Object.freeze({
+  // Sequential completion deltas in successful Windows CI 38169497754.
+  // Hints affect scheduling only; no test deadline or assertion changes.
+  'tuning::restart::tests': 268, 'runtime_upgrade::tests': 58,
+  'idle_model::tests': 37, 'tuning::workloads::tests': 23,
+  'tuning::tests': 21, 'setup_handoff::tests': 21,
+  'runtime_upgrade::release_zip::tests': 20, 'legacy::tests': 17,
+  'analytics::tests': 14, 'request_capture::tests': 12,
+  'supervisor_client::tests': 12, 'health_watch::tests': 12,
+  'tuning_service_operation_tests': 10, 'startup::tests': 10,
+  'tuning::status_tests': 7, 'native_probe_tests': 7,
 });
 
 export function parseListing(text) {
@@ -63,7 +96,8 @@ export function parseListing(text) {
   return cases.sort((a, b) => compare(a.name, b.name));
 }
 
-export function parseCargoArtifacts(text, metadata, workspace) {
+export function parseCargoArtifacts(text, metadata, workspace, target = 'x86_64-unknown-linux-gnu') {
+  const policy = targetPolicy(target);
   if (!Array.isArray(metadata?.packages) || !Array.isArray(metadata.workspace_members)) fail('Cargo workspace metadata is required.');
   const members = new Set(metadata.workspace_members);
   const packages = new Map(metadata.packages.map(p => [p.id, p]));
@@ -83,7 +117,7 @@ export function parseCargoArtifacts(text, metadata, workspace) {
     const id = `${packagePath || '.'}:${message.target.kind.join(',')}:${message.target.name}`;
     if (ids.has(id) || paths.has(message.executable)) fail('Duplicate Cargo test executable.');
     ids.add(id); paths.add(message.executable);
-    binaries.push({id, package: p.name, packagePath, executable: message.executable, cwd});
+    binaries.push({id, package: p.name, packagePath, platform: policy.platform, target, executable: message.executable, cwd});
   }
   if (finished !== 1 || !binaries.length || [...members].some(id => !packages.has(id))) fail('Incomplete successful Cargo workspace test build.');
   return binaries.sort((a, b) => compare(a.id, b.id));
@@ -133,6 +167,10 @@ export function parseDocResults(run, targets) {
 }
 
 export function makePlan(binaries, count, binding) {
+  const policy = targetPolicy(binding?.target);
+  binding = {...binding, platform: binding.platform ?? policy.platform};
+  validateTargetBinding(binding);
+  binaries = binaries.map(b => ({...b, target: b.target ?? binding.target, platform: b.platform ?? binding.platform}));
   if (!Number.isSafeInteger(count) || count < 1 || count > 4 || !binaries.length
       || new Set(binaries.map(b => b.id)).size !== binaries.length) fail('Invalid bounded group plan.');
   const groups = Array.from({length: count}, (_, index) => ({index, estimatedSeconds: 0, binaries: []}));
@@ -150,7 +188,7 @@ export function makePlan(binaries, count, binding) {
     for (const [module, names] of entries) {
       const active = names.filter(name => !binary.cases.find(c => c.name === name).ignored).length;
       modules.push({binaryId: binary.id, module, names: sorted(names),
-        weight: active ? knownSeconds[module] ?? active * 4 : 0});
+        weight: active ? (policy.platform === 'win32' ? windowsKnownSeconds[module] ?? (module === '(root)' ? active * 22 : active * 2) : knownSeconds[module] ?? active * 4) : 0});
     }
   }
   modules.sort((a, b) => b.weight - a.weight || compare(`${a.binaryId}:${a.module}`, `${b.binaryId}:${b.module}`));
@@ -174,7 +212,9 @@ export function makePlan(binaries, count, binding) {
 export function validatePlan(plan) {
   if (plan?.schema !== 1 || !Array.isArray(plan.binaries) || !Array.isArray(plan.groups)
       || !plan.binaries.length || !plan.groups.length || plan.groups.length > 4) fail('Invalid coverage plan.');
-  if (plan.inventoryHash !== planHash(plan) || new Set(plan.binaries.map(b => b.id)).size !== plan.binaries.length) fail('The source/inventory/group binding changed.');
+  validateTargetBinding(plan.binding);
+  if (plan.inventoryHash !== planHash(plan) || new Set(plan.binaries.map(b => b.id)).size !== plan.binaries.length
+      || plan.binaries.some(b => b.target !== plan.binding.target || b.platform !== plan.binding.platform)) fail('The source/platform/inventory/group binding changed.');
   const expected = new Set(); const actual = new Set(); const emptyExpected = new Set(); const emptyActual = new Set();
   for (const b of plan.binaries) {
     if (!b.cases.length) emptyExpected.add(b.id);
@@ -202,6 +242,8 @@ export function validatePlan(plan) {
 
 export const MAX_FILTER_NAMES = 128;
 export const MAX_ARGV_BYTES = 100 * 1024;
+export const MAX_WINDOWS_ARGV_BYTES = 24 * 1024;
+export const MAX_WINDOWS_COMMAND_UNITS = 30000;
 const libtestFlags = ['--exact', '--test-threads=1', '--color', 'never', '--format', 'pretty'];
 function validateSelection(binary, names) {
   if (!Array.isArray(binary.cases) || !Array.isArray(names) || new Set(names).size !== names.length
@@ -212,13 +254,28 @@ export function argvBytes(binary, args) {
   // Include argv[0] and each terminating NUL, as /proc/PID/cmdline does.
   return [binary.executable ?? 'libtest', ...args].reduce((sum, arg) => sum + Buffer.byteLength(arg, 'utf8') + 1, 0);
 }
+function quoteWindowsArg(arg) {
+  if (arg && !/[\s"]/u.test(arg)) return arg;
+  // CreateProcess receives one UTF-16 command line. Account for the MSVC
+  // escaping of backslashes before quotes and the final enclosing quote.
+  return '"' + arg.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1') + '"';
+}
+export function windowsCommandUnits(binary, args) {
+  return [binary.executable ?? 'libtest', ...args].map(quoteWindowsArg).join(' ').length + 1;
+}
+function argvWithinBudget(binary, args) {
+  const policy = targetPolicy(binary.target ?? 'x86_64-unknown-linux-gnu');
+  if (binary.platform !== undefined && binary.platform !== policy.platform) fail('Binary platform differs from its target.');
+  return argvBytes(binary, args) < policy.maxArgvBytes
+    && (policy.platform !== 'win32' || windowsCommandUnits(binary, args) < MAX_WINDOWS_COMMAND_UNITS);
+}
 export function selectionArgs(binary, names) {
   validateSelection(binary, names);
   const full = names.length === binary.cases.length;
   // Exact positive filters are ORed by stable libtest. Full/zero-case suites
   // need no filters, and do not put their entire inventory in process argv.
   const args = [...libtestFlags, ...(full ? [] : names)];
-  if (!full && names.length > MAX_FILTER_NAMES || argvBytes(binary, [...args, '--list']) >= MAX_ARGV_BYTES) fail('Use bounded batches for this exact test selection.');
+  if (!full && names.length > MAX_FILTER_NAMES || !argvWithinBudget(binary, [...args, '--list'])) fail('Use bounded batches for this exact test selection.');
   return args;
 }
 export function selectionBatches(binary, names) {
@@ -227,10 +284,10 @@ export function selectionBatches(binary, names) {
   const batches = []; let current = [];
   for (const name of sorted(names)) {
     const candidate = [...current, name];
-    if (candidate.length > MAX_FILTER_NAMES || argvBytes(binary, [...libtestFlags, ...candidate, '--list']) >= MAX_ARGV_BYTES) {
+    if (candidate.length > MAX_FILTER_NAMES || !argvWithinBudget(binary, [...libtestFlags, ...candidate, '--list'])) {
       if (!current.length) fail('One exact filter exceeds the safe process argv budget.');
       batches.push(current); current = [name];
-      if (argvBytes(binary, [...libtestFlags, name, '--list']) >= MAX_ARGV_BYTES) fail('One exact filter exceeds the safe process argv budget.');
+      if (!argvWithinBudget(binary, [...libtestFlags, name, '--list'])) fail('One exact filter exceeds the safe process argv budget.');
     } else current = candidate;
   }
   if (current.length) batches.push(current);
@@ -319,13 +376,14 @@ export function validateCoverage(plan, reports, docs) {
 export function validateShardEvidence(shards) {
   if (!Array.isArray(shards) || !shards.length || shards.length > 4) fail('A bounded complete shard set is required.');
   const first = shards[0];
+  const policy = validateTargetBinding(first.binding);
   if (!first.binding || first.binding.groups !== shards.length || !/^[a-f0-9]{40}$/.test(first.binding.sourceSha ?? '')
       || !/^[a-f0-9]{64}$/.test(first.binding.lockSha256 ?? '') || typeof first.binding.rustc !== 'string' || !first.binding.rustc.trim()
-      || !same(first.binding.ignoredPolicy, IGNORED_POLICY) || first.binding.profile?.devDebug !== '0'
+      || !same(first.binding.ignoredPolicy, policy.ignoredPolicy) || first.binding.profile?.devDebug !== '0'
       || first.binding.profile?.testDebug !== '0' || first.binding.profile?.incremental !== '0') fail('The reviewed source/toolchain/profile/ignored binding is required.');
   for (const s of shards) {
     if (s.schema !== 1 || !same(s.binding, first.binding) || s.plan?.inventoryHash !== first.plan?.inventoryHash) fail('Shard source/inventory bindings differ.');
-    validatePlan(s.plan); validateIgnoredPolicy(s.plan.binaries);
+    validatePlan(s.plan); validateIgnoredPolicy(s.plan.binaries, s.binding.target);
     if (!same(s.binding, s.plan.binding) || s.plan.groups.length !== s.binding.groups || !Number.isSafeInteger(s.shard) || s.shard < 0 || s.shard >= s.plan.groups.length
         || !Array.isArray(s.reports) || s.reports.length !== 1 || s.reports[0].index !== s.shard || s.docs !== null && s.shard !== 0) fail('Shard envelope/source/doc ownership binding differs.');
   }
@@ -336,9 +394,19 @@ export function validateShardEvidence(shards) {
 }
 
 async function run(command, args, {cwd = root, env = process.env, mirror = false, timeoutMs = 1800000, ownedGroup = false} = {}) {
-  const child = spawn(command, args, {cwd, env, detached: ownedGroup, stdio: ['ignore', 'pipe', 'pipe']});
+  const child = spawn(command, args, {cwd, env, detached: ownedGroup && process.platform !== 'win32', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe']});
   let stdout = ''; let stderr = ''; let expired = false; let overflow = false; let hardKill;
-  const signal = value => { try { if (ownedGroup && child.pid) process.kill(-child.pid, value); else child.kill(value); } catch {} };
+  const signal = value => {
+    try {
+      if (ownedGroup && child.pid && process.platform === 'win32') {
+        // Kill only this owned PID tree on cancellation/deadline. A plain
+        // child.kill() would leave Python/mock supervisor descendants alive.
+        const killer = spawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], {windowsHide: true, stdio: 'ignore'});
+        killer.once('error', () => { try { child.kill(value); } catch {} });
+      } else if (ownedGroup && child.pid) process.kill(-child.pid, value);
+      else child.kill(value);
+    } catch {}
+  };
   const terminate = () => { signal('SIGTERM'); hardKill ??= setTimeout(() => signal('SIGKILL'), 10000); };
   const interrupt = () => { expired = true; terminate(); };
   process.once('SIGINT', interrupt); process.once('SIGTERM', interrupt);
@@ -364,18 +432,24 @@ async function daemonIdentity() {
   return {path: file, sha256: await fileHash(file)};
 }
 function testEnvironment(binary) {
-  return {...process.env, CARGO_MANIFEST_DIR: binary.cwd, CARGO_PKG_NAME: binary.package,
-    LD_LIBRARY_PATH: [dirname(binary.executable), resolve(dirname(binary.executable), '..'), process.env.LD_LIBRARY_PATH].filter(Boolean).join(delimiter)};
+  const env = {...process.env, CARGO_MANIFEST_DIR: binary.cwd, CARGO_PKG_NAME: binary.package};
+  if (binary.platform === 'win32') env.PATH = [dirname(binary.executable), resolve(dirname(binary.executable), '..'), process.env.PATH].filter(Boolean).join(delimiter);
+  else env.LD_LIBRARY_PATH = [dirname(binary.executable), resolve(dirname(binary.executable), '..'), process.env.LD_LIBRARY_PATH].filter(Boolean).join(delimiter);
+  return env;
 }
 
 async function worker(planFile, index, directory) {
-  if (!/^:\d+\.\d+$/.test(process.env.STRATA_TEST_KEYRING_OWNER ?? '') || !/^[1-9]\d*$/.test(process.env.STRATA_TEST_KEYRING_PID ?? '') || !process.env.DBUS_SESSION_BUS_ADDRESS) fail('Group execution requires the wrapper-owned private Secret Service.');
   const plan = await readJson(planFile); validatePlan(plan);
+  if (plan.binding.platform !== process.platform) fail('Native execution OS differs from its bound target.');
+  if (plan.binding.platform === 'linux') {
+    if (!/^:\d+\.\d+$/.test(process.env.STRATA_TEST_KEYRING_OWNER ?? '') || !/^[1-9]\d*$/.test(process.env.STRATA_TEST_KEYRING_PID ?? '') || !process.env.DBUS_SESSION_BUS_ADDRESS) fail('Group execution requires the wrapper-owned private Secret Service.');
+  } else if (!isAbsolute(process.env.STRATA_TEST_PRIVATE_TEMP ?? '')
+      || process.env.TEMP !== process.env.STRATA_TEST_PRIVATE_TEMP || process.env.TMP !== process.env.STRATA_TEST_PRIVATE_TEMP) fail('Windows group execution requires a runner-private temporary directory.');
   const group = plan.groups[index]; if (!group) fail('Unknown native group.');
   const started = Date.now(); const binaries = [];
   for (const selection of group.binaries) {
     const binary = plan.binaries.find(b => b.id === selection.id);
-    const options = {cwd: binary.cwd, env: testEnvironment(binary)};
+    const options = {cwd: binary.cwd, env: testEnvironment(binary), ownedGroup: plan.binding.platform === 'win32'};
     const batches = selectionBatches(binary, selection.names); const reports = [];
     for (const [batchIndex, names] of batches.entries()) {
       const args = selectionArgs(binary, names);
@@ -388,7 +462,7 @@ async function worker(planFile, index, directory) {
     binaries.push(mergeBinaryReports(binary, selection.names, reports));
   }
   await jsonFile(resolve(directory, `group-${index}.json`), {index, inventoryHash: plan.inventoryHash, success: true,
-    elapsedSeconds: (Date.now() - started) / 1000, owner: process.env.STRATA_TEST_KEYRING_OWNER, binaries});
+    elapsedSeconds: (Date.now() - started) / 1000, owner: plan.binding.platform === 'linux' ? process.env.STRATA_TEST_KEYRING_OWNER : 'windows-private-runner', binaries});
 }
 
 export function parseOptions(args) {
@@ -399,7 +473,7 @@ export function parseOptions(args) {
     if (flag === '--aggregate') options.aggregate.push(resolve(value));
     else if (flag === '--groups') { if (!/^[1-4]$/.test(value)) fail('Native groups must be 1-4.'); options.groups = Number(value); }
     else if (flag === '--output') options.output = resolve(value);
-    else if (flag === '--target') { if (!/^[a-z0-9_-]+-unknown-linux-gnu$/.test(value)) fail('Only Linux GNU native targets are allowed.'); options.target = value; }
+    else if (flag === '--target') { targetPolicy(value); options.target = value; }
     else { const match = /^([0-3])\/([1-4])$/.exec(value); if (!match || Number(match[1]) >= Number(match[2])) fail('Invalid bounded zero-based shard.'); options.shard = {index: Number(match[1]), count: Number(match[2])}; }
   }
   if (options.shard && options.shard.count !== options.groups) fail('Shard count must equal the complete group plan.');
@@ -430,48 +504,62 @@ export async function main(args = process.argv.slice(2)) {
     await jsonFile(options.output, {schema: 1, ...evidence});
     console.log(JSON.stringify(evidence.summary)); return;
   }
-  if (process.platform !== 'linux') fail('Native fixture execution requires Linux; parser tests are portable.');
+  const policy = targetPolicy(options.target);
+  if (process.platform !== policy.platform) fail('Native fixture execution OS must match the reviewed target; evidence validation is portable.');
   const sourceSha = (await run('git', ['rev-parse', 'HEAD'])).stdout.trim();
   if (!/^[a-f0-9]{40}$/.test(sourceSha) || process.env.GITHUB_ACTIONS === 'true' && sourceSha !== process.env.GITHUB_SHA) fail('The native test source must match this workflow commit.');
-  const daemon = await daemonIdentity();
+  const daemon = policy.platform === 'linux' ? await daemonIdentity() : null;
   const metadata = JSON.parse((await run('cargo', ['metadata', '--locked', '--no-deps', '--format-version', '1'])).stdout);
   const cargo = ['test', '--workspace', '--locked', '--target', options.target];
   const build = await run('cargo', [...cargo, '--no-run', '--message-format=json']);
-  const binaries = parseCargoArtifacts(build.stdout, metadata, root);
+  const binaries = parseCargoArtifacts(build.stdout, metadata, root, options.target);
   for (let i = 0; i < binaries.length; i++) {
     const b = binaries[i]; const environment = testEnvironment(b);
     const all = parseListing((await run(b.executable, ['--list', '--color', 'never'], {cwd: b.cwd, env: environment})).stdout);
     const ignored = parseListing((await run(b.executable, ['--list', '--ignored', '--color', 'never'], {cwd: b.cwd, env: environment})).stdout);
     binaries[i] = attachInventory(b, all, ignored);
   }
-  validateIgnoredPolicy(binaries);
+  validateIgnoredPolicy(binaries, options.target);
   const docTargets = workspaceDocTargets(metadata);
-  const binding = {sourceSha, lockSha256: await fileHash(resolve(root, 'Cargo.lock')), target: options.target, groups: options.groups,
+  const binding = {sourceSha, lockSha256: await fileHash(resolve(root, 'Cargo.lock')), target: options.target, platform: policy.platform, groups: options.groups,
     rustc: (await run('rustc', ['-Vv'])).stdout.trim(), docTargets, workflow: workflowBinding(),
     profile: {devDebug: process.env.CARGO_PROFILE_DEV_DEBUG ?? 'default', testDebug: process.env.CARGO_PROFILE_TEST_DEBUG ?? 'default', incremental: process.env.CARGO_INCREMENTAL ?? 'default'},
-    ignoredPolicy: IGNORED_POLICY};
+    ignoredPolicy: policy.ignoredPolicy};
   if (process.env.GITHUB_ACTIONS === 'true' && Object.values(binding.profile).some(value => value !== '0')) fail('CI native fixtures require the reviewed debug=0, incremental=0 profile.');
   const plan = makePlan(binaries, options.groups, binding);
   const directory = await mkdtemp(resolve(process.env.RUNNER_TEMP || tmpdir(), 'strata-native-'));
   const planFile = resolve(directory, 'plan.json'); await jsonFile(planFile, plan);
   const selected = options.shard ? [options.shard.index] : plan.groups.map(g => g.index);
   const reports = [];
-  // CI uses one group per independent runner. Local full execution remains serial,
-  // because DBus isolation cannot isolate the host /proc process inventory.
+  // CI uses one group per independent runner. Local full execution stays serial:
+  // temp/DBus isolation cannot isolate the host process or port inventory.
   for (const index of selected) {
-    if (!same(await daemonIdentity(), daemon)) fail('The pinned daemon changed between groups.');
+    if (daemon && !same(await daemonIdentity(), daemon)) fail('The pinned daemon changed between groups.');
     const privateDir = resolve(directory, `isolation-${index}`);
     await mkdir(privateDir, {mode: 0o700}); await mkdir(resolve(privateDir, 'config'), {mode: 0o700});
-    const env = {...process.env, TMPDIR: privateDir, XDG_CONFIG_HOME: resolve(privateDir, 'config')};
-    await run('dbus-run-session', ['--', 'xvfb-run', '-a', 'bash', resolve(root, 'scripts/release-linux-tests.sh'),
-      process.execPath, script, '--internal-group', planFile, String(index), directory], {env, mirror: true, ownedGroup: true});
+    if (policy.platform === 'linux') {
+      const env = {...process.env, TMPDIR: privateDir, XDG_CONFIG_HOME: resolve(privateDir, 'config')};
+      await run('dbus-run-session', ['--', 'xvfb-run', '-a', 'bash', resolve(root, 'scripts/release-linux-tests.sh'),
+        process.execPath, script, '--internal-group', planFile, String(index), directory], {env, mirror: true, ownedGroup: true});
+    } else {
+      const env = {...process.env, TEMP: privateDir, TMP: privateDir, STRATA_TEST_PRIVATE_TEMP: privateDir};
+      await run(process.execPath, [script, '--internal-group', planFile, String(index), directory], {env, mirror: true, ownedGroup: true});
+    }
     reports.push(await readJson(resolve(directory, `group-${index}.json`)));
   }
-  if (!same(await daemonIdentity(), daemon)) fail('The pinned daemon changed during native tests.');
+  if (daemon && !same(await daemonIdentity(), daemon)) fail('The pinned daemon changed during native tests.');
   let docs = null;
   if (!options.shard || options.shard.index === 0) {
-    const docRun = await run('dbus-run-session', ['--', 'xvfb-run', '-a', 'bash', resolve(root, 'scripts/release-linux-tests.sh'),
-      'cargo', ...cargo, '--doc', '--', '--test-threads=1', '--color', 'never'], {mirror: true, ownedGroup: true, env: {...process.env, CARGO_TERM_COLOR: 'never'}});
+    const docArgs = [...cargo, '--doc', '--', '--test-threads=1', '--color', 'never'];
+    let docRun;
+    if (policy.platform === 'linux') {
+      docRun = await run('dbus-run-session', ['--', 'xvfb-run', '-a', 'bash', resolve(root, 'scripts/release-linux-tests.sh'),
+        'cargo', ...docArgs], {mirror: true, ownedGroup: true, env: {...process.env, CARGO_TERM_COLOR: 'never'}});
+    } else {
+      const privateDir = resolve(directory, 'doc-isolation'); await mkdir(privateDir, {mode: 0o700});
+      docRun = await run('cargo', docArgs, {mirror: true, ownedGroup: true,
+        env: {...process.env, CARGO_TERM_COLOR: 'never', TEMP: privateDir, TMP: privateDir}});
+    }
     docs = {success: true, sourceSha, inventoryHash: plan.inventoryHash, ...parseDocResults(docRun, docTargets)};
   }
   const summary = options.shard ? null : validateCoverage(plan, reports, docs);

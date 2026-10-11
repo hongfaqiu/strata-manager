@@ -7,7 +7,7 @@ import { resolve as pathResolve, dirname, isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { pipeline } from 'node:stream/promises';
 
-export const CI_PROTOCOL = 'strata-release-ci/v1';
+export const CI_PROTOCOL = 'strata-release-ci/v2';
 export const REPOSITORY = 'hongfaqiu/strata-manager';
 const workflowPath = '.github/workflows/ci.yml';
 const maxBytes = 512 * 1024 * 1024;
@@ -25,7 +25,9 @@ export const COMMON_GATES = Object.freeze([
   'Prepare packaged background binary', 'Build test installers',
 ]);
 export const PLATFORM_GATES = Object.freeze({
-  windows: Object.freeze(['Native tests (Windows)', 'Verify installed Windows package and background IPC']),
+  windows: Object.freeze(['Wait for the three independent Windows native runners',
+    "Download this attempt's Windows native coverage proofs", 'Native tests (Windows)',
+    'Verify installed Windows package and background IPC']),
   linux: Object.freeze(['Linux Secret Service wrapper contracts', 'Build the pinned private Linux test keyring',
     'Linux Secret Service fresh-connection regression', 'Native tests under Xvfb (Linux)',
     'Verify Linux AppImage and DEB startup under Xvfb']),
@@ -33,6 +35,11 @@ export const PLATFORM_GATES = Object.freeze({
 export const SHARD_GATES = Object.freeze([
   'Linux Secret Service wrapper contracts', 'Build the pinned private Linux test keyring',
   'Prepare independent background binary', 'Run every assigned native test with the private Linux keyring',
+  'Upload the complete native coverage proof',
+]);
+export const WINDOWS_SHARD_GATES = Object.freeze([
+  'Prepare independent background binary',
+  'Run every assigned native test on the independent Windows runner',
   'Upload the complete native coverage proof',
 ]);
 const jobsByPlatform = {
@@ -67,18 +74,23 @@ function successfulJob(jobs, name, run) {
   const matches = jobs.filter(j => j.name === name); const job = matches[0];
   if (matches.length !== 1 || !positive(job.id) || job.run_id !== run.id
       || job.run_attempt !== undefined && job.run_attempt !== run.run_attempt
+      || job.head_sha !== undefined && job.head_sha !== run.head_sha
       || job.status !== 'completed' || job.conclusion !== 'success'
       || date(job.completed_at) < date(job.started_at)) fail('Required CI job failed or missing: ' + name);
   return job;
 }
 export function validateCiEvidence(run, jobs, artifacts, plan, { nowMs = Date.now() } = {}) {
+  if (plan?.protocol !== CI_PROTOCOL) fail('The current complete native CI protocol is required.');
   validateRun(run, plan);
   if (!Array.isArray(jobs) || !Array.isArray(artifacts)) fail('Complete jobs and artifact inventories are required.');
-  for (let shard = 0; shard < 3; shard++) {
-    const job = successfulJob(jobs, 'Linux native shard (' + shard + '/3)', run);
-    for (const name of SHARD_GATES) {
-      const steps = job.steps?.filter(s => s.name === name) ?? [];
-      if (steps.length !== 1 || steps[0].status !== 'completed' || steps[0].conclusion !== 'success') fail('Required native shard gate failed or missing: ' + name);
+  if (jobs.length !== 8) fail('Exactly the two desktop jobs and six native shards are required.');
+  for (const [platform, gates] of [['Linux', SHARD_GATES], ['Windows', WINDOWS_SHARD_GATES]]) {
+    for (let shard = 0; shard < 3; shard++) {
+      const job = successfulJob(jobs, platform + ' native shard (' + shard + '/3)', run);
+      for (const name of gates) {
+        const steps = job.steps?.filter(s => s.name === name) ?? [];
+        if (steps.length !== 1 || steps[0].status !== 'completed' || steps[0].conclusion !== 'success') fail('Required native shard gate failed or missing: ' + name);
+      }
     }
   }
   const platformJobs = {};
