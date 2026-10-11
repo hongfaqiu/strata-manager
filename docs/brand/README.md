@@ -1,18 +1,19 @@
 # Product hero
 
-The README hero uses a light mint product layout with the real Strata Manager interface. It introduces the local desktop workspace: runtimes and models, chat, API insights, and workload tuning.
+The bilingual README and website hero introduces Strata Manager's core value: easier Strata setup, local model and service management, and resource and API usage monitoring.
 
-- Editable layout: [product-cover.html](product-cover.html).
-- Export: [product-cover.webp](../screenshots/product-cover.webp), 3200 × 1800 pixels, rendered at 1600 × 900 CSS pixels with a device pixel ratio of 2.
-- UI: [overview.en.webp](../screenshots/overview.en.webp), captured from published v0.1.2 source `2fac51edd7147526442ddbb109a6a28d7b276ef7`. It uses the actual App components with isolated documentation data. Values shown are examples, not benchmarks.
+- Editable composition: [render-product-hero.mjs](../../scripts/render-product-hero.mjs). The old `product-cover.html` and `capture.js` are historical sources and do not produce the current hero.
+- Chinese: [product-cover.zh.webp](../screenshots/product-cover.zh.webp). English: [product-cover.en.webp](../screenshots/product-cover.en.webp). Compatibility [product-cover.webp](../screenshots/product-cover.webp) is identical to English.
+- Dimensions: 3600 × 2000 pixels, rendered from a 1800 × 1000 layout at device pixel ratio 2.
+- UI: existing 0.1.3 model and API usage screenshots in each language, captured from actual App components with isolated documentation data. The model screen and request trend card retain their original pixels. Values are examples, not inference results or benchmarks.
 - Icon: the unchanged paths and colors from [assets/icon.svg](../../assets/icon.svg), embedded as vector markup. Typography uses the application's bundled Outfit font; its [OFL license](../../apps/desktop/src/fonts/OFL.txt) applies.
-- Background: [hero-background.webp](hero-background.webp), generated on 2026-10-11 using the built-in ImageGen tool with [this exact prompt](hero-background.prompt.txt). Only the abstract background was generated. The logo, text and interface are composed deterministically in HTML/CSS.
-- Final export: browser PNG → lossless WebP, with pixel equality verified. No JPEG intermediate is used. The [screenshot manifest](../screenshots/manifest.json) records the dimensions, size, source image and SHA-256.
+- Background: [hero-background.webp](hero-background.webp), generated using the built-in ImageGen tool with [this exact prompt and bilingual copy](hero-prompts.md). Only the abstract background was generated. The logo, text and interface are composed deterministically in HTML/CSS.
+- Final export: browser PNG → WebP. The [screenshot manifest](../screenshots/manifest.json) records dimensions, size, source images and SHA-256 separately from page screenshots.
 
-To render again, serve the repository root over HTTP on `127.0.0.1:1439`, open the layout with Playwright CLI, and pass the function in [capture.js](capture.js) to its `run-code` command. The function waits for fonts and images, checks for missing assets and overflow, then writes `output/playwright/product-cover.png`. Convert that PNG to lossless WebP without resizing and refresh the manifest after any source changes.
+To render again, make `sharp` and `playwright` available locally, or set `CODEX_WORKSPACE_NODE_MODULES` to the bundled dependency directory, then run `node scripts/render-product-hero.mjs`. The script checks fonts, image loading and overflow, saves both languages and the compatibility alias, and writes local evidence to `output/playwright/product-hero/`. Refresh the manifest when an export changes.
 
 The GitHub About description used with this visual refresh is:
 
-> Local-first Strata desktop app: detect existing models, manage runtimes and background services, chat, monitor API usage and tune inference. Built with Tauri for Windows & Linux. Supports Qwen3.8 Flash Next.
+> Strata Manager makes Strata easier to set up and use. Open-source desktop app for local model and configuration management, service control, hardware and performance monitoring, API usage statistics, chat and tuning. Windows / Linux x64.
 
-这是 README 产品图的可编辑来源与导出记录。背景为生成素材，产品标识、文字与应用界面通过代码精确排版；界面数据仅用于文档展示。中英文页面截图保持亮色主题，使用无损 WebP。封面与实际界面截图分别记录来源。
+中英文产品图突出“降低 Strata 使用门槛”和“集中管理与监控本地模型”。只有抽象背景由 ImageGen 生成，产品标识、文字与真实界面通过代码精确排版；界面数据仅作示例。封面与原始页面截图分别记录来源。

@@ -8,6 +8,8 @@ on:
       - 'scripts/build-website.mjs'
       - 'scripts/render-website-docs.mjs'
       - 'scripts/render-website-docs.test.mjs'
+      - 'scripts/website-seo.mjs'
+      - 'scripts/website-seo.test.mjs'
       - 'docs/**/*.md'
       - 'docs/screenshots/**'
       - 'README*'
@@ -48,8 +50,8 @@ jobs:
       - name: Install locked static rendering dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - uses: actions/configure-pages@v5
-      - name: Check documentation rendering
-        run: node --test scripts/render-website-docs.test.mjs
+      - name: Check documentation rendering and bilingual SEO
+        run: node --test scripts/render-website-docs.test.mjs scripts/website-seo.test.mjs
       - name: Package the static website
         run: node scripts/build-website.mjs
       - uses: actions/upload-pages-artifact@v4

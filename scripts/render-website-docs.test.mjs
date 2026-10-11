@@ -34,9 +34,9 @@ test('Document, license, screenshot and source links use their published destina
   assert.equal(rewrite('../LICENSE'), 'license.html');
   assert.equal(rewrite('../apps/desktop/public/licenses/outfit-OFL.txt'), 'outfit-license.html');
   assert.equal(rewrite('screenshots/chat.zh.webp'), '../assets/screenshots/chat.zh.webp');
-  assert.equal(rewrite('../README.en.md'), '../index.html?lang=en');
-  assert.equal(rewrite('../README.md'), '../index.html?lang=en');
-  assert.equal(rewrite('../README.zh-CN.md'), '../index.html?lang=zh');
+  assert.equal(rewrite('../README.en.md'), '../en/');
+  assert.equal(rewrite('../README.md'), '../en/');
+  assert.equal(rewrite('../README.zh-CN.md'), '../');
   assert.equal(rewrite('../README.zh-CN.md#什么是-strata'), 'https://github.com/hongfaqiu/strata-manager/blob/main/README.zh-CN.md#什么是-strata');
   assert.equal(rewrite('../packages/core/src/tuning-types.ts'), 'https://github.com/hongfaqiu/strata-manager/blob/main/packages/core/src/tuning-types.ts');
   assert.equal(rewrite('https://github.com/hongfaqiu/strata-manager/blob/main/docs/VERIFICATION.md'), 'https://github.com/hongfaqiu/strata-manager/blob/main/docs/VERIFICATION.md');

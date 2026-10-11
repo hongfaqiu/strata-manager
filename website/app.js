@@ -107,9 +107,21 @@ const strataReleaseCatalog = (() => {
 
   // 网页多语言标题与多屏数据结构
   const pageTitles = {
-    zh: 'Strata Manager · Strata 与本地模型服务管理',
-    en: 'Strata Manager · Strata Runtimes & Local Model Services',
+    zh: 'Strata Manager · 降低 Strata 使用门槛的本地模型管理工具',
+    en: 'Strata Manager · Easier Strata Setup & Local Model Management',
   };
+  const siteRoot = new URL('.', document.querySelector('script[src$="app.js"]').src);
+  const pageLanguage = document.documentElement.lang === 'en' ? 'en' : 'zh';
+  const requestedLanguage = new URLSearchParams(window.location.search).get('lang');
+  // Keep old shared language URLs working while each language has crawlable HTML.
+  if ((requestedLanguage === 'en' || requestedLanguage === 'zh') && requestedLanguage !== pageLanguage) {
+    const destination = new URL(requestedLanguage === 'en' ? 'en/' : './', siteRoot);
+    destination.search = window.location.search;
+    destination.searchParams.delete('lang');
+    destination.hash = window.location.hash;
+    window.location.replace(destination.href);
+    return;
+  }
 
   const screens = {
     overview: {
@@ -277,7 +289,7 @@ const strataReleaseCatalog = (() => {
   // 提取需要国际化翻译的 DOM 元素
   const translatable = Array.from(document.querySelectorAll('[data-en]')).map(element => ({
     element,
-    zh: element.textContent,
+    zh: element.getAttribute('data-zh') ?? element.textContent,
     en: element.dataset.en,
   }));
 
@@ -287,11 +299,12 @@ const strataReleaseCatalog = (() => {
     ['data-label-en', 'aria-label'],
     ['data-content-en', 'content'],
     ['data-href-en', 'href'],
+    ['data-src-en', 'src'],
   ].flatMap(([dataAttribute, attribute]) =>
     Array.from(document.querySelectorAll(`[${dataAttribute}]`)).map(element => ({
       element,
       attribute,
-      zh: element.getAttribute(attribute),
+      zh: element.getAttribute(dataAttribute.replace(/-en$/, '-zh')) ?? element.getAttribute(attribute),
       en: element.getAttribute(dataAttribute),
     }))
   );
@@ -356,7 +369,7 @@ const strataReleaseCatalog = (() => {
     activeScreenKey = key;
     const item = screens[key];
     const copy = item[currentLang];
-    const imagePath = `assets/screenshots/${key}.${currentLang}.webp`;
+    const imagePath = new URL(`assets/screenshots/${key}.${currentLang}.webp`, siteRoot).href;
 
     // 平滑淡入淡出图片
     if (screenImage) {
@@ -388,7 +401,7 @@ const strataReleaseCatalog = (() => {
   }
 
   // 设置语言环境
-  function setLanguage(nextLang, persist = false) {
+  function setLanguage(nextLang) {
     currentLang = nextLang === 'en' ? 'en' : 'zh';
     document.documentElement.lang = currentLang === 'en' ? 'en' : 'zh-CN';
     document.title = pageTitles[currentLang];
@@ -424,20 +437,10 @@ const strataReleaseCatalog = (() => {
     }
 
     renderScreen(activeScreenKey);
-    if (heroImage) heroImage.src = `assets/screenshots/runtime.${currentLang}.webp`;
+    if (heroImage) heroImage.src = new URL(`assets/screenshots/product-cover.${currentLang}.webp`, siteRoot).href;
     if (lightboxModal.classList.contains('active')) openLightbox(lightboxModal.dataset.screen);
     updateThemeButton();
 
-    if (persist) {
-      try {
-        localStorage.setItem('strata-manager-site-language', currentLang);
-      } catch (_) {}
-      try {
-        const url = new URL(window.location.href);
-        url.searchParams.set('lang', currentLang);
-        window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
-      } catch (_) {}
-    }
   }
 
   // 绑定工作台 Tab 事件（支持键盘方向键无障碍切换）
@@ -468,7 +471,11 @@ const strataReleaseCatalog = (() => {
   // 语言切换按钮
   if (languageButton) {
     languageButton.addEventListener('click', () => {
-      setLanguage(currentLang === 'zh' ? 'en' : 'zh', true);
+      const destination = new URL(currentLang === 'zh' ? 'en/' : './', siteRoot);
+      destination.search = window.location.search;
+      destination.searchParams.delete('lang');
+      destination.hash = window.location.hash;
+      languageButton.href = destination.href;
     });
   }
 
@@ -479,7 +486,7 @@ const strataReleaseCatalog = (() => {
     const item = screens[key];
     const copy = item[currentLang];
 
-    lightboxImg.src = `assets/screenshots/${key}.${currentLang}.webp`;
+    lightboxImg.src = new URL(`assets/screenshots/${key}.${currentLang}.webp`, siteRoot).href;
     lightboxImg.alt = copy.alt;
     lightboxBadge.textContent = item.index + ' / ' + key.toUpperCase();
     lightboxTitle.textContent = copy.title;
@@ -574,16 +581,7 @@ const strataReleaseCatalog = (() => {
   } catch (_) {}
 
   // 初始化语言
-  let initialLanguage = 'zh';
-  try {
-    const requested = new URLSearchParams(window.location.search).get('lang');
-    if (requested === 'en' || requested === 'zh') {
-      initialLanguage = requested;
-    } else {
-      const remembered = localStorage.getItem('strata-manager-site-language');
-      if (remembered === 'en' || remembered === 'zh') initialLanguage = remembered;
-    }
-  } catch (_) {}
+  const initialLanguage = pageLanguage;
 
   // Enable downloads only after validating published assets from this repository.
   let activeReleaseTag = 'v0.1.3';

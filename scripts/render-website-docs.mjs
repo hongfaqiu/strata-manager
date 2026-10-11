@@ -2,6 +2,7 @@ import { mkdir, readFile, readdir, writeFile, access } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, join, posix, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { documentSeo, homePage, site } from './website-seo.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const requireDesktop = createRequire(join(root, 'apps', 'desktop', 'package.json'));
@@ -12,7 +13,6 @@ const [{ default: React }, { renderToStaticMarkup }, { default: Markdown, defaul
   import(pathToFileURL(requireDesktop.resolve('remark-gfm')).href),
 ]);
 const h = React.createElement;
-const site = 'https://hongfaqiu.github.io/strata-manager/';
 const repository = 'https://github.com/hongfaqiu/strata-manager/blob/main/';
 
 export const documents = [
@@ -93,7 +93,7 @@ export function rewriteDocumentUrl(value, source, outputPage) {
     // The landing page and repository README have different section names.
     // Preserve README-specific anchors at their original source.
     if (parts[3]) return repository + encodePath(target) + suffix;
-    return `${relativePage(outputPage, 'index.html')}?lang=${lang}`;
+    return relativePage(outputPage, homePage(lang) || './') + '/';
   }
   if (target.startsWith('docs/screenshots/')) {
     return relativePage(outputPage, target.replace('docs/screenshots/', 'assets/screenshots/')) + suffix;
@@ -128,6 +128,10 @@ function renderDocument(entry, markdown) {
     ? { html: `<h1 id="${escape(entry.key)}">${escape(entry.label)}</h1><pre class="license-text">${escape(markdown)}</pre>`, headings: [] }
     : renderMarkdownContent(markdown, entry.source, entry.page);
   const title = content.headings.find((heading) => heading.depth === 1)?.text || entry.label;
+  const description = en
+    ? `${title}: Strata Manager documentation for setting up Strata, managing local models, services, and monitoring.`
+    : `${title}：Strata Manager 文档，帮助安装使用 Strata，管理本地模型、服务与监控。`;
+  const home = `../${homePage(entry.lang)}`;
   const navItems = [
     ['index', '文档中心', 'Documentation'],
     ['guide', '使用指南', 'User guide'],
@@ -152,9 +156,8 @@ function renderDocument(entry, markdown) {
   <meta name="color-scheme" content="dark light">
   <meta name="theme-color" content="#06130e" id="theme-color">
   <title>${escape(title)} · Strata Manager</title>
-  <meta name="description" content="${escape(en ? 'Strata Manager documentation for local model management.' : 'Strata Manager 本地模型管理文档。')}">
-  <link rel="canonical" href="${site + entry.page}">
-  ${alternate ? `<link rel="alternate" hreflang="${alternate.lang === 'zh' ? 'zh-CN' : 'en'}" href="${site + alternate.page}">` : ''}
+  <meta name="description" content="${escape(description)}">
+  ${documentSeo({ title: `${title} · Strata Manager`, description, page: entry.page, lang: entry.lang, alternates: documents.filter((item) => item.key === entry.key) })}
   <link rel="icon" href="../assets/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="../docs.css">
   <script src="../docs.js"></script>
@@ -162,9 +165,9 @@ function renderDocument(entry, markdown) {
 <body>
   <a class="skip-link" href="#content">${chrome.skip}</a>
   <header class="doc-header">
-    <a class="doc-brand" href="../index.html?lang=${entry.lang}"><img src="../assets/icon.svg" width="32" height="32" alt=""><span>Strata Manager</span></a>
+    <a class="doc-brand" href="${home}"><img src="../assets/icon.svg" width="32" height="32" alt=""><span>Strata Manager</span></a>
     <nav class="header-actions" aria-label="${escape(en ? 'Page controls' : '页面操作')}">
-      <a class="header-action" href="../index.html?lang=${entry.lang}">${chrome.home}</a>
+      <a class="header-action" href="${home}">${chrome.home}</a>
       ${langLink}
       <button class="header-action" id="doc-theme" type="button" aria-label="${chrome.theme}">${en ? 'Theme' : '主题'}</button>
     </nav>
@@ -191,16 +194,6 @@ export async function renderWebsiteDocs(output) {
   const sources = await Promise.all(documents.map(async (entry) => ({ entry, text: await readFile(join(root, entry.source), 'utf8') })));
   await mkdir(join(output, 'docs'), { recursive: true });
   for (const { entry, text } of sources) await writeFile(join(output, entry.page), renderDocument(entry, text));
-  const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
-  <url><loc>${site}</loc><xhtml:link rel="alternate" hreflang="zh-CN" href="${site}?lang=zh"/><xhtml:link rel="alternate" hreflang="en" href="${site}?lang=en"/></url>
-${documents.map((entry) => {
-    const pair = documents.filter((item) => item.key === entry.key);
-    return `  <url><loc>${site + entry.page}</loc>${pair.length > 1 ? pair.map((item) => `<xhtml:link rel="alternate" hreflang="${item.lang === 'zh' ? 'zh-CN' : 'en'}" href="${site + item.page}"/>`).join('') : ''}</url>`;
-  }).join('\n')}
-</urlset>
-`;
-  await writeFile(join(output, 'sitemap.xml'), sitemap);
   return sources.length;
 }
 
@@ -219,10 +212,14 @@ export async function verifyStaticWebsite(output) {
   for (const [file, html] of pages) {
     for (const match of html.matchAll(/(?:href|src)="([^"]*)"/g)) {
       const url = match[1].replaceAll('&amp;', '&');
-      if (!url || /^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(url)) continue;
-      const [pathAndQuery, hash] = url.split('#');
-      const pathname = decodeURIComponent(pathAndQuery.split('?')[0]);
-      let target = pathname ? resolve(dirname(file), pathname) : file;
+      if (!url || /^(?:mailto|tel|data|javascript):/i.test(url)) continue;
+      const currentPage = posix.relative(output.replaceAll('\\', '/'), file.replaceAll('\\', '/'));
+      const resolvedUrl = new URL(url, new URL(currentPage, site));
+      const siteUrl = new URL(site);
+      if (resolvedUrl.origin !== siteUrl.origin || !resolvedUrl.pathname.startsWith(siteUrl.pathname)) continue;
+      const pathname = decodeURIComponent(resolvedUrl.pathname.slice(siteUrl.pathname.length));
+      const hash = resolvedUrl.hash.slice(1);
+      let target = resolve(output, pathname || 'index.html');
       if (pathname.endsWith('/')) target = join(target, 'index.html');
       if (target !== output && !target.startsWith(output + sep)) throw new Error(`Website link escapes output: ${url} in ${file}`);
       await access(target).catch(() => { throw new Error(`Missing website target: ${url} in ${file}`); });

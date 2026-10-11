@@ -1,10 +1,10 @@
 <div align="center">
 
-<a href="https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.webp"><img src="docs/screenshots/product-cover.webp" alt="Strata Manager — a light product overview of your local Strata desktop workspace" width="1200" /></a>
+<a href="https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.en.webp"><img src="docs/screenshots/product-cover.en.webp" alt="Strata Manager — easier Strata setup, local model management and monitoring" width="1200" /></a>
 
 <h1>Strata Manager</h1>
-<p><strong>A simpler way to run Strata on your computer.</strong></p>
-<p>Your models, local API, chat and tuning — together in one desktop workspace.</p>
+<p><strong>Make Strata easier to set up and use.</strong></p>
+<p>Manage local models and services, monitor hardware and API usage, and chat and tune — in one desktop workspace.</p>
 
 <p>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license" /></a>
@@ -14,13 +14,17 @@
 <a href="https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml"><img src="https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml/badge.svg" alt="Current build and test status" /></a>
 </p>
 
-<p><a href="https://hongfaqiu.github.io/strata-manager/?lang=en">Website</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="#download">Download</a> · <a href="#get-started">Get started</a> · <a href="#features">Features</a> · <a href="#screenshots">Screenshots</a> · <a href="https://hongfaqiu.github.io/strata-manager/docs/user-guide.en.html">User guide</a> · <a href="https://hongfaqiu.github.io/strata-manager/docs/index.en.html">Documentation</a></p>
+<p><a href="https://hongfaqiu.github.io/strata-manager/en/">Website</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="#download">Download</a> · <a href="#get-started">Get started</a> · <a href="#features">Features</a> · <a href="#screenshots">Screenshots</a> · <a href="https://hongfaqiu.github.io/strata-manager/docs/user-guide.en.html">User guide</a> · <a href="https://hongfaqiu.github.io/strata-manager/docs/index.en.html">Documentation</a></p>
 
 </div>
 
 **v0.1.3 release entry.** Use the links below or read the [release notes](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.3) and [installation guide](https://hongfaqiu.github.io/strata-manager/docs/download.en.html).
 
-Strata Manager brings your local [Strata](https://github.com/Niko1221/Strata) setup into one open-source desktop app. Detect an existing installation and models, install or update Strata, choose a model configuration, and keep track of your local API. Chat, hardware monitoring, API usage statistics and parameter tuning are built into the same workspace. Existing model weights stay in place.
+**Strata Manager is an open-source desktop management app that lowers the barrier to using [Strata](https://github.com/Niko1221/Strata).** Prepare the runtime, discover local models, edit configurations and control model services through a graphical workspace. Monitor hardware, inference performance and API usage, then use built-in chat and parameter tuning as needed. Existing model weights stay in place.
+
+- **Get started more easily.** Detect an existing Strata setup, follow installation guidance and edit runtime settings with graphical controls.
+- **Manage models and services together.** Discover local weights, switch configurations and start, stop or release model memory from one place.
+- **See how your local inference is running.** Track hardware activity, requests, tokens, latency, cache reuse and generation speed.
 
 Choose **Use** to enable a model; the independent background process handles its service lifecycle. Opening the app or signing in starts only the lightweight background, so a saved model selection does not unexpectedly occupy GPU memory. Everything Manager manages runs on this computer.
 
@@ -34,15 +38,15 @@ Strata Manager is an independent community project built on Strata. It manages S
 
 ## Features
 
-- **More runtime tools, fewer distractions.** Choose JSON or JSON Schema replies, reuse document prefixes, inspect GGUF and supported model sources, manage sessions and slots, and inspect MCP tools. Common controls are visible directly; contextual help and categorized configuration keep everyday screens concise. Availability follows the installed runtime.
 - **Manage Strata centrally.** Detect an existing runtime or prepare one from the Strata page. View installed and upstream versions and official release notes. Matching official Windows x64 engine ZIPs support download, extraction and update progress; Linux ZIP engine updates are unavailable. Runtime management is separate from individual models.
-- **Review updates before installing.** Automatic checks are enabled by default, on launch and every 12 hours. Available updates show release notes and require confirmation before installation. App updates, Strata updates and model weights are managed separately.
 - **See the models you already have.** My models automatically lists discovered local models. Configurations that use the same model are grouped; switch configurations, inspect modification dates, and identify the current and last-used configuration without downloading weights again.
 - **Edit the full runtime configuration.** Open a model's configuration inside Models. Use graphical controls with suggestions and custom values, or edit JSON; saves validate the configuration and retain a backup.
 - **Keep the local API under control.** After you enable a model, the background handles startup and loading, with up to three recovery attempts after an unexpected service exit. Start, stop, restart or release model memory from the app, with startup stages and logs. The active model and configuration remain visible while you browse alternatives; releasing memory preserves model files.
 - **Observe and test.** Monitor service and hardware activity; retain API usage after reopening the app and chart requests, tokens, latency, cache reuse, prefill and decode speeds. Missing measurements remain unknown.
 - **Chat in the same workspace.** Keep conversations, streaming replies and attachments together. Reasoning, image input and MCP tool events require model and runtime support.
 - **Tune with complete tasks.** Compare everyday chat, coding and Agent, or long-document workloads. Test PCIe/MTP request parameters and supported CPU, swapping, prefill and VRAM-reserve restart candidates, review quality and resource checks, then apply or restore. This is a bounded comparison, not a search of every configuration or a speed guarantee.
+- **Review updates before installing.** Automatic checks are enabled by default, on launch and every 12 hours. Available updates show release notes and require confirmation before installation. App updates, Strata updates and model weights are managed separately.
+- **Explore advanced runtime tools.** Choose JSON or JSON Schema replies, reuse document prefixes, inspect GGUF and supported model sources, manage sessions and slots, and inspect MCP tools. Availability follows the installed runtime.
 
 The merged window header follows the app's theme. Appearance follows the system by default; language and theme live in Settings beside the sidebar collapse control. Closing to the tray is enabled by default. Disable it to stop managed services and exit when closing, with a confirmation that can be suppressed. Tray actions show service state and provide shortcuts.
 
