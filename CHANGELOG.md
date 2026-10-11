@@ -5,7 +5,7 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
-## [0.1.0]
+## [0.1.1]
 
 ### 中文
 
@@ -58,6 +58,16 @@ Maintain both languages for each version. Move unreleased changes into the actua
 - Share configuration files between graphical and JSON editors, with save, copy and recoverable deletion.
 - Show the current model's complete configuration list from a floating entry, reveal actions on hover and support JSON deletion; protect unsaved edits and distinguish next-request changes from settings that require a restart.
 - Preview model files and disk usage before deletion, protecting running models and files referenced by other configurations.
+
+## [0.1.0] - Unpublished
+
+### 中文
+
+- 此候选未公开发布。保留原版本标签和失败记录；首次稳定版使用 0.1.1。
+
+### English
+
+- This candidate was not published. Its tag and failed workflow records are retained; the first stable release uses 0.1.1.
 
 ## [0.1.0-beta.2] - 2026-10-10 (UTC)
 

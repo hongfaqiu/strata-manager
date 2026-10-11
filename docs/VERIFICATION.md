@@ -4,7 +4,18 @@
 
 本文件区分本轮独立后台实现与此前原型验证。自动检测/导入、运行时准备、元数据统计、调优、自启动与更新已经进入实现和测试阶段，不再只是方案；实现存在、夹具通过、真实 GPU 运行、最终安装包和跨版本更新是不同验收层级。下面记录阶段证据，最终提交后仍需统一检查及真实发布验收。
 
-## 公开发布证据与 0.1.0 候选
+## 0.1.1 发版准备与前次失败记录
+
+- **0.1.0 最终源码的两平台 CI 已通过。** `ecb21a492fbe8acd285ec8ef33c58cbf4867607d` 的 [CI 38094958613](https://github.com/hongfaqiu/strata-manager/actions/runs/38094958613)成功：Windows 原生 354 项通过、0 失败、11 项显式 ignored；Linux 288 项通过、0 失败、4 项显式 ignored。实际 NSIS 新装/GUI/私有 IPC/关闭/卸载及 beta.2→0.1.0 离线原位升级与私有 KV 保留通过；Linux AppImage、解包 DEB 的 GUI/IPC/关闭检查通过。
+- **v0.1.0 未公开。** [签名 Release 38096197942](https://github.com/hongfaqiu/strata-manager/actions/runs/38096197942)首次 Windows 测试在失败恢复夹具的推荐前置条件失败；诊断显示实际墙钟噪声下生产评估器正确拒绝不可靠收益。仅执行了一次定向重跑，第二次在重启 worker 夹具的推荐前置条件失败，未记录足以断定噪声来源的详细评估数据。两次均为 274 项通过、1 项失败、8 项显式 ignored，publish 跳过。原标签指向上述源码并保持不变；包含 Linux 产物的草稿不作为公开发行。
+- **同次 Linux 签名打包通过。** 原生 288 项通过；AppImage 和解包 DEB 的实际 GUI/私有 IPC、包版本、后台载荷哈希、正常关闭与后台退出检查通过。它不能替代缺失的 Windows 成功结果。
+- **新的首次稳定版候选为 0.1.1。** 真实私有 HTTP A/B/A 测量及原报告保留并验证统计决策；应用/恢复合同使用另一个 UUID、显式标记且引用实测来源的合成计时报告，由原有统计评估器和公开 apply 门禁判定。生产代码、收益阈值、资源/质量/身份检查、时间限制及发版门禁保持。该候选仍需同源码两平台 CI、签名 Release 和公开资产验签，之前成功记录不代替这些结果。
+
+### 0.1.1 本地定向验证
+
+三项真实 HTTP 与公开事务合同在 0.1.1 下均通过：完整请求 A/B/A 与采用/恢复、采用失败与恢复失败、worker 重启参数及恢复。每项同时校验实测报告原字节不变及合成夹具拒绝不完整、质量失败、缺计时、未知/高压资源、旧基准身份；重启项额外拒绝缺失启动核验。没有新增跳过或放宽超时。workspace Clippy `-D warnings`、格式/diff 检查通过；实际 Rust 验签器执行的 82 项发布合同全部通过、0 skipped；18 项版本日志/官网/文档合同通过，网站构建验证 401 项本地链接与资源。以上为本地定向结果，完整 CI 和公开发布仍须记录其实际运行结果。
+
+## 历史公开发布证据与 0.1.0 候选
 
 - **v0.1.0-beta.2 已公开发布。** 对应源码 `0db2fea5128144fe2fe00cca992bd5139c831508`；[签名发布流水线](https://github.com/hongfaqiu/strata-manager/actions/runs/38080808731)的 Windows、Linux、publish 均成功。[发布页](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0-beta.2)的公开时间为 `2026-10-10T20:25:24Z`，共有八项资产：NSIS、AppImage、DEB、三份 Tauri 签名、`latest.json`、`SHA256SUMS`。发布门禁已执行真实更新包验签及资产/元数据检查；beta.2 不替换稳定 `latest` 通道。
 - **后续 main CI 已通过。** 源码 `ac16c4ce537b7e42e976c04791c3bad907f2c7ea` 的 [Windows/Linux CI](https://github.com/hongfaqiu/strata-manager/actions/runs/38088221840)均成功，包含隔离的原生私有凭据库、安装包 GUI、私有后台 IPC，以及 Windows 新装/关闭/卸载门禁。Linux 包在 Ubuntu 22.04 Xvfb/DBus 下启动 AppImage 和解包 DEB；这不等于系统 DEB 安装、真实登录或 GPU 模型验收。

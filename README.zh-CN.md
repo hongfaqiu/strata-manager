@@ -29,7 +29,7 @@
 
 Strata Manager 是开源的 [Strata](https://github.com/Niko1221/Strata) 运行环境与本地模型服务管理桌面工作台。核心是运行环境安装和更新、模型运行配置，以及服务启动、停止与恢复；聊天、监控、API 使用统计和参数调优为这些流程提供配套工具。已有权重保持原位，已启动的服务由独立后台管理。
 
-下方功能与截图描述 0.1.0 源码。安装包是否已公开及对应版本，以[发布页](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0)为准。发布检查按 revision 独立执行，本文不将未发布候选视为已经通过验收。
+下方功能与截图描述 0.1.1 源码。安装包是否已公开及对应版本，以[发布页](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.1)为准。发布检查按 revision 独立执行，本文不将未发布候选视为已经通过验收。
 
 ## 什么是 Strata？
 
@@ -37,7 +37,7 @@ Strata Manager 是开源的 [Strata](https://github.com/Niko1221/Strata) 运行�
 
 Strata Manager 是独立社区项目，并非 Strata 官方应用，负责管理这台电脑上的 Strata；具体推理能力、支持的模型、图像输入与 API 协议由已安装的 Strata 运行时和模型提供。
 
-> **v0.1.0 发布入口。** 下载前检查发布页实际提供的安装包，版本说明见[发布页](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0)，安装步骤见[下载说明](https://hongfaqiu.github.io/strata-manager/docs/download.html)。
+> **v0.1.1 发布入口。** 下载前检查发布页实际提供的安装包，版本说明见[发布页](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.1)，安装步骤见[下载说明](https://hongfaqiu.github.io/strata-manager/docs/download.html)。
 
 ## 为什么使用 Strata Manager
 
@@ -62,14 +62,14 @@ Strata Manager 是独立社区项目，并非 Strata 官方应用，负责管理
 
 ## 下载与体验
 
-通过 **v0.1.0** 发布入口选择对应系统的安装包，仅安装发布页实际提供的文件；完整步骤见[下载与体验说明](https://hongfaqiu.github.io/strata-manager/docs/download.html)。
+通过 **v0.1.1** 发布入口选择对应系统的安装包，仅安装发布页实际提供的文件；完整步骤见[下载与体验说明](https://hongfaqiu.github.io/strata-manager/docs/download.html)。
 
 | 平台 | 安装形式 | 当前体验方式 |
 | --- | --- | --- |
-| Windows x64 | [NSIS 安装包](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0/Strata.Manager_0.1.0_x64-setup.exe) | 需要 WebView2；[安装说明](https://hongfaqiu.github.io/strata-manager/docs/download.html#windows-安装)。 |
-| Linux x64 | [AppImage](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0/Strata.Manager_0.1.0_amd64.AppImage) / [DEB](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0/Strata.Manager_0.1.0_amd64.deb) | Ubuntu 22.04 CI 环境构建；[安装与支持范围](https://hongfaqiu.github.io/strata-manager/docs/download.html#linux-安装)。 |
+| Windows x64 | [NSIS 安装包](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.1/Strata.Manager_0.1.1_x64-setup.exe) | 需要 WebView2；[安装说明](https://hongfaqiu.github.io/strata-manager/docs/download.html#windows-安装)。 |
+| Linux x64 | [AppImage](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.1/Strata.Manager_0.1.1_amd64.AppImage) / [DEB](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.1/Strata.Manager_0.1.1_amd64.deb) | Ubuntu 22.04 CI 环境构建；[安装与支持范围](https://hongfaqiu.github.io/strata-manager/docs/download.html#linux-安装)。 |
 
-[SHA256 校验文件](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0/SHA256SUMS) · [版本说明](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0)
+[SHA256 校验文件](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.1/SHA256SUMS) · [版本说明](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.1)
 
 CI 门禁覆盖 Windows 静默安装、桌面启动、私有后台 IPC、关闭和卸载，以及 Ubuntu 22.04 Xvfb 下的 Linux AppImage/解包 DEB 启动、私有 IPC 和关闭。已完成流水线对应的 revision 见[验证记录](https://github.com/hongfaqiu/strata-manager/blob/main/docs/VERIFICATION.md)。系统 DEB 安装、真实 GPU 与登录自启动仍需独立验收；跨版本 NSIS 安装器检查不能代替 Tauri 自动更新下载、验签与安装的端到端验收。
 

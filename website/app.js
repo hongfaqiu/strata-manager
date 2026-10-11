@@ -586,7 +586,7 @@ const strataReleaseCatalog = (() => {
   } catch (_) {}
 
   // Enable downloads only after validating published assets from this repository.
-  let activeReleaseTag = 'v0.1.0';
+  let activeReleaseTag = 'v0.1.1';
   let releaseState = { kind: 'loading' };
 
   function renderReleaseStatus() {

@@ -4,7 +4,7 @@
 
 Strata Manager is a desktop workspace for the Strata runtime and local model services. Runtime installation and matching Windows x64 ZIP engine updates, model configurations and service lifecycle are its core; chat, monitoring, API usage statistics and tuning support that workflow. It is an independent community project. Inference capabilities and protocols depend on the installed Strata runtime and chosen model.
 
-This documentation describes the 0.1.0 source. The [release page](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.0) establishes package availability and contents; an unfrozen candidate is not a passing CI result.
+This documentation describes the 0.1.1 source. The [release page](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.1) establishes package availability and contents; an unfrozen candidate is not a passing CI result.
 
 ## Start here
 
@@ -27,7 +27,7 @@ This documentation describes the 0.1.0 source. The [release page](https://github
 - Tuning compares request parameters and supported restart candidates in complete use-case workloads, with quality and resource checks; it does not promise a fixed speedup.
 - Current targets are Windows/Linux x64. Release packages, GPU use, real Linux systems and cross-version updates are verified separately. Screenshots and controlled fixtures do not establish real-model acceptance.
 
-v0.1.0 release entry: [Windows installer](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0/Strata.Manager_0.1.0_x64-setup.exe) · [AppImage](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0/Strata.Manager_0.1.0_amd64.AppImage) · [DEB](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0/Strata.Manager_0.1.0_amd64.deb) · [SHA256 checksums](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.0/SHA256SUMS). [Download instructions](DOWNLOAD.en.md) explain installation and current support scope. Stable releases use `latest`; previews remain manual downloads and do not replace that channel.
+v0.1.1 release entry: [Windows installer](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.1/Strata.Manager_0.1.1_x64-setup.exe) · [AppImage](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.1/Strata.Manager_0.1.1_amd64.AppImage) · [DEB](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.1/Strata.Manager_0.1.1_amd64.deb) · [SHA256 checksums](https://github.com/hongfaqiu/strata-manager/releases/download/v0.1.1/SHA256SUMS). [Download instructions](DOWNLOAD.en.md) explain installation and current support scope. Stable releases use `latest`; previews remain manual downloads and do not replace that channel.
 
 ## License and credits
 

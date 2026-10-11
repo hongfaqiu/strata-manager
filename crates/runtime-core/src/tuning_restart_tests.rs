@@ -52,11 +52,10 @@ async fn stable_request_fixture() -> (
     let source = fs::read_to_string(&source_path).unwrap();
     let delay = "time.sleep(.004 if workers == 2 or abs(requested_pcie - .35) < .001 else .035)";
     assert_eq!(source.matches(delay).count(), 1);
-    // These two contracts require a usable recommendation before testing apply
-    // and rollback. Only their private CPU fixture gets a clear wall-time signal;
-    // the shared failure/no-gain fixtures and all production gates stay intact.
-    // The candidate also remains live long enough for actual HTTP resource
-    // sampling. These synthetic delays and resources are not model benchmarks.
+    // Only these private fixtures use slower responses to allow actual HTTP
+    // resource sampling. Their real wall times remain in the measured report;
+    // transaction prerequisites use a separate, explicitly synthetic report.
+    // Shared failure/no-gain fixtures and production gates remain unchanged.
     fs::write(
         &source_path,
         source.replace(
@@ -116,9 +115,11 @@ fn request_report_diagnostics(job: &TuningJob) -> String {
             "workload":measurement.workload_id,"kind":measurement.kind,
             "complete":measurement.result["complete"],"qualityPassed":measurement.result["qualityPassed"],
             "qualityReason":measurement.result["qualityReason"],
+            "timingSource":measurement.result["timingSource"],
+            "sourceMeasuredJobId":measurement.result["sourceMeasuredJobId"],
             "resources":measurement.result["resourcePeak"],"wallMs":walls})
     }).collect::<Vec<_>>();
-    json!({"state":job.state,"error":job.error,"ramTotal":job.identity["ramTotal"],
+    json!({"jobId":job.id,"notes":job.notes,"state":job.state,"error":job.error,"ramTotal":job.identity["ramTotal"],
         "gpuMemoryTotal":job.identity["gpuMemoryTotal"],"candidates":candidates,
         "measurements":measurements})
     .to_string()
@@ -154,6 +155,219 @@ fn assert_request_fixture_evidence(job: &TuningJob) {
             }),
         "{diagnostic}"
     );
+}
+
+fn evaluated_fixture_candidate(job: &TuningJob) -> Result<Candidate, String> {
+    if job.candidates.len() != 1 {
+        return Err("transaction fixture requires exactly one candidate".into());
+    }
+    let mut candidate = job.candidates[0].clone();
+    let specs = workloads::plan(&options(&job.full, job.max_tokens)?)?;
+    let mut dimensions = HashMap::new();
+    for spec in &specs {
+        let evaluation = evaluate_workload(
+            &job.full.workload_measurements,
+            &candidate.id,
+            &spec.id,
+            job.rounds,
+        );
+        let key = serde_json::to_value(spec.kind)
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_owned();
+        if dimensions
+            .get(&key)
+            .is_none_or(|old| worse_dimension(&evaluation, old))
+        {
+            dimensions.insert(key, evaluation);
+        }
+    }
+    let resource = assess_resources(job, &candidate.id);
+    let accepted = !dimensions.is_empty()
+        && dimensions.values().all(|evaluation| evaluation.accepted)
+        && resource.status == ResourceStatus::Checked;
+    candidate.evaluation = Some(Evaluation {
+        gain: median(
+            &dimensions
+                .values()
+                .filter_map(|evaluation| evaluation.gain)
+                .collect::<Vec<_>>(),
+        ),
+        drift: dimensions
+            .values()
+            .filter_map(|evaluation| evaluation.drift)
+            .max_by(f64::total_cmp),
+        pairs: specs.len() * job.rounds,
+        accepted,
+        reason: match resource.status {
+            ResourceStatus::Unknown => "resourceUnknown",
+            ResourceStatus::InsufficientHeadroom => "insufficientResourceHeadroom",
+            ResourceStatus::Checked if accepted => "fullScenarioGain",
+            ResourceStatus::Checked => "noReliableFullScenarioGain",
+        }
+        .into(),
+    });
+    candidate.dimensions = dimensions;
+    candidate.resource_assessment = Some(resource);
+    Ok(candidate)
+}
+
+fn assert_measured_recommendation_matches_evaluator(job: &TuningJob) {
+    let candidate = evaluated_fixture_candidate(job).unwrap();
+    let diagnostic = request_report_diagnostics(job);
+    assert_eq!(
+        serde_json::to_value(&job.candidates[0].evaluation).unwrap(),
+        serde_json::to_value(&candidate.evaluation).unwrap(),
+        "{diagnostic}"
+    );
+    assert_eq!(
+        serde_json::to_value(&job.candidates[0].dimensions).unwrap(),
+        serde_json::to_value(&candidate.dimensions).unwrap(),
+        "{diagnostic}"
+    );
+    assert_eq!(
+        job.recommended_candidate_id.as_deref(),
+        candidate
+            .evaluation
+            .as_ref()
+            .filter(|evaluation| evaluation.accepted)
+            .map(|_| candidate.id.as_str()),
+        "{diagnostic}"
+    );
+}
+
+fn synthetic_transaction_report(measured: &TuningJob) -> Result<TuningJob, String> {
+    if measured.state != Phase::Completed
+        || measured.completed_requests != measured.total_requests
+        || measured.total_requests == 0
+        || measured.full.progress.completed_workloads != measured.full.progress.total_workloads
+        || measured.full.workload_measurements.len() != measured.full.progress.completed_workloads
+        || measured.full.workload_measurements.is_empty()
+    {
+        return Err("transaction fixture requires complete real HTTP coverage".into());
+    }
+    if measured
+        .full
+        .workload_measurements
+        .iter()
+        .any(|measurement| {
+            measurement.result["complete"] != true || measurement.result["qualityPassed"] != true
+        })
+    {
+        return Err("transaction fixture cannot replace failed real semantic evidence".into());
+    }
+    let actual_candidate = evaluated_fixture_candidate(measured)?;
+    if actual_candidate
+        .resource_assessment
+        .as_ref()
+        .is_none_or(|resource| resource.status != ResourceStatus::Checked)
+    {
+        return Err("transaction fixture requires actual safe HTTP resource samples".into());
+    }
+    // The original report, including its actual recommendation or rejection,
+    // stays immutable. This separate report is ONLY an input to transaction
+    // integration tests: synthetic timing, actual HTTP quality/resources,
+    // original configuration/engine identity and observed restart parameters.
+    // No benchmark or production telemetry is replaced with invented timings.
+    let mut fixture = measured.clone();
+    fixture.id = uuid::Uuid::new_v4().to_string();
+    fixture.notes.push(format!(
+        "TEST ONLY: synthetic transaction timing inputs; real HTTP evidence in source report {}",
+        measured.id
+    ));
+    for measurement in &mut fixture.full.workload_measurements {
+        let wall = if measurement.position == Position::Candidate {
+            50.
+        } else {
+            100.
+        };
+        let turns = measurement.result["turns"]
+            .as_array_mut()
+            .filter(|turns| !turns.is_empty())
+            .ok_or("transaction fixture requires actual HTTP turn records")?;
+        for turn in turns.iter_mut() {
+            if turn["wallMs"]
+                .as_f64()
+                .is_none_or(|value| !value.is_finite() || value <= 0.)
+            {
+                return Err("transaction fixture cannot replace missing real turn timings".into());
+            }
+            turn["wallMs"] = json!(wall);
+            turn["wallMsSource"] = json!("TEST_ONLY_SYNTHETIC_TRANSACTION_INPUT");
+        }
+        let total_wall = wall * turns.len() as f64;
+        measurement.result["wallMs"] = json!(total_wall);
+        measurement.result["timingSource"] = json!("TEST_ONLY_SYNTHETIC_TRANSACTION_INPUT");
+        measurement.result["sourceMeasuredJobId"] = json!(measured.id);
+    }
+    let candidate = evaluated_fixture_candidate(&fixture)?;
+    validate_application(&fixture, &candidate)?;
+    fixture.recommended_candidate_id = candidate
+        .evaluation
+        .as_ref()
+        .filter(|evaluation| evaluation.accepted)
+        .map(|_| candidate.id.clone());
+    if fixture.recommended_candidate_id.is_none() {
+        return Err("synthetic transaction inputs did not pass production evaluation".into());
+    }
+    fixture.candidates = vec![candidate];
+    Ok(fixture)
+}
+
+fn persist_transaction_fixture(state: &RuntimeState, measured: &TuningJob) -> TuningJob {
+    let fixture = synthetic_transaction_report(measured).unwrap();
+    assert_ne!(fixture.id, measured.id);
+    assert_eq!(fixture.identity, measured.identity);
+    assert_eq!(fixture.config_fingerprint, measured.config_fingerprint);
+    persist(state, &fixture).unwrap();
+    fixture
+}
+
+fn assert_measured_report_unchanged(state: &RuntimeState, measured: &TuningJob, bytes: &[u8]) {
+    assert_eq!(
+        fs::read(report_path(state, &measured.id).unwrap()).unwrap(),
+        bytes
+    );
+    assert_eq!(
+        serde_json::to_value(read_job(state, &measured.id).unwrap()).unwrap(),
+        serde_json::to_value(measured).unwrap()
+    );
+}
+
+fn assert_transaction_fixture_rejects_bad_evidence(measured: &TuningJob) {
+    let mut incomplete = measured.clone();
+    incomplete.full.progress.completed_workloads -= 1;
+    assert!(synthetic_transaction_report(&incomplete).is_err());
+    let mut bad_quality = measured.clone();
+    bad_quality.full.workload_measurements[0].result["qualityPassed"] = json!(false);
+    assert!(synthetic_transaction_report(&bad_quality).is_err());
+    let mut no_timing = measured.clone();
+    no_timing.full.workload_measurements[0].result["turns"][0]["wallMs"] = Value::Null;
+    assert!(synthetic_transaction_report(&no_timing).is_err());
+    for pressure in [false, true] {
+        let mut bad_resource = measured.clone();
+        let sample = bad_resource
+            .full
+            .workload_measurements
+            .iter_mut()
+            .find(|measurement| measurement.position == Position::Candidate)
+            .unwrap();
+        if pressure {
+            sample.result["resourcePeak"]["gpuMemoryUsedBytes"] = json!((16u64 << 30) - 1);
+        } else {
+            sample.result["resourcePeak"]["sampleCount"] = json!(0);
+        }
+        assert!(synthetic_transaction_report(&bad_resource).is_err());
+    }
+    let mut old_version = measured.clone();
+    old_version.identity["benchmarkVersion"] = json!("invalid-fixture-version");
+    assert!(synthetic_transaction_report(&old_version).is_err());
+    if measured.candidates[0].kind == CandidateKind::Restart {
+        let mut unverified_restart = measured.clone();
+        unverified_restart.candidates[0].startup_verification = None;
+        assert!(synthetic_transaction_report(&unverified_restart).is_err());
+    }
 }
 
 #[test]
@@ -229,7 +443,8 @@ async fn full_request_aba_has_semantic_coverage_and_public_apply_restore() {
         .await
         .unwrap();
     assert_eq!(started.total_requests, 48);
-    let done = await_job(&state, &profile).await;
+    let measured = await_job(&state, &profile).await;
+    let done = &measured;
     assert_eq!(done.state, Phase::Completed, "{:?}", done.error);
     assert_eq!(done.full.progress.completed_workloads, 24);
     assert_eq!(done.full.workload_measurements.len(), 24);
@@ -246,7 +461,11 @@ async fn full_request_aba_has_semantic_coverage_and_public_apply_restore() {
         .iter()
         .filter(|m| m.kind == WorkloadKind::ColdInput)
         .all(|m| m.freshly_loaded && m.result["coldModelVerified"] == true));
-    assert_request_fixture_evidence(&done);
+    assert_request_fixture_evidence(done);
+    assert_measured_recommendation_matches_evaluator(&measured);
+    assert_transaction_fixture_rejects_bad_evidence(&measured);
+    let measured_bytes = fs::read(report_path(&state, &measured.id).unwrap()).unwrap();
+    let done = persist_transaction_fixture(&state, &measured);
     assert_eq!(
         done.recommended_candidate_id.as_deref(),
         Some("candidate-1"),
@@ -279,6 +498,7 @@ async fn full_request_aba_has_semantic_coverage_and_public_apply_restore() {
         restored.full.recovery.configuration_restored && restored.full.recovery.service_verified
     );
     assert_original(&profile, &original);
+    assert_measured_report_unchanged(&state, &measured, &measured_bytes);
     crate::stop_service(&state, profile.id.clone())
         .await
         .unwrap();
@@ -309,10 +529,15 @@ async fn failed_apply_and_failed_rollback_publish_only_this_transactions_verifie
         start(state.clone(), profile.id.clone(), full_request(None))
             .await
             .unwrap();
-        let done = await_job(&state, &profile).await;
+        let measured = await_job(&state, &profile).await;
+        let done = &measured;
         assert_eq!(done.state, Phase::Completed, "{:?}", done.error);
         assert!(done.full.recovery.configuration_restored && done.full.recovery.service_verified);
-        assert_request_fixture_evidence(&done);
+        assert_request_fixture_evidence(done);
+        assert_measured_recommendation_matches_evaluator(&measured);
+        assert_transaction_fixture_rejects_bad_evidence(&measured);
+        let measured_bytes = fs::read(report_path(&state, &measured.id).unwrap()).unwrap();
+        let done = persist_transaction_fixture(&state, &measured);
         assert_eq!(
             done.recommended_candidate_id.as_deref(),
             Some("candidate-1"),
@@ -358,6 +583,7 @@ async fn failed_apply_and_failed_rollback_publish_only_this_transactions_verifie
             fs::read(Path::new(&profile.install_dir).join("source-config.json")).unwrap(),
             original
         );
+        assert_measured_report_unchanged(&state, &measured, &measured_bytes);
         crate::stop_service(&state, profile.id.clone())
             .await
             .unwrap();
@@ -366,7 +592,7 @@ async fn failed_apply_and_failed_rollback_publish_only_this_transactions_verifie
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn restart_workers_aba_verifies_actual_flags_and_restores_baseline() {
-    let (_temp, state, profile, original) = live_fixture().await;
+    let (_temp, state, profile, original) = stable_request_fixture().await;
     let before = require_owned(&state, &profile).await.unwrap();
     start(
         state.clone(),
@@ -375,7 +601,8 @@ async fn restart_workers_aba_verifies_actual_flags_and_restores_baseline() {
     )
     .await
     .unwrap();
-    let done = await_job(&state, &profile).await;
+    let measured = await_job(&state, &profile).await;
+    let done = &measured;
     assert_eq!(done.state, Phase::Completed, "{:?}", done.error);
     assert_ne!(require_owned(&state, &profile).await.unwrap(), before);
     assert_eq!(
@@ -383,7 +610,9 @@ async fn restart_workers_aba_verifies_actual_flags_and_restores_baseline() {
         4
     );
     assert_original(&profile, &original);
-    assert_eq!(done.recommended_candidate_id.as_deref(), Some("restart-1"));
+    assert_request_fixture_evidence(&measured);
+    assert_measured_recommendation_matches_evaluator(&measured);
+    assert_transaction_fixture_rejects_bad_evidence(&measured);
     assert_eq!(
         done.candidates[0]
             .startup_verification
@@ -392,6 +621,14 @@ async fn restart_workers_aba_verifies_actual_flags_and_restores_baseline() {
             .parameters[0]
             .observed,
         Some(2)
+    );
+    let measured_bytes = fs::read(report_path(&state, &measured.id).unwrap()).unwrap();
+    let done = persist_transaction_fixture(&state, &measured);
+    assert_eq!(
+        done.recommended_candidate_id.as_deref(),
+        Some("restart-1"),
+        "{}",
+        request_report_diagnostics(&done)
     );
     let applied = apply(state.clone(), done.id.clone(), "restart-1".into())
         .await
@@ -410,6 +647,7 @@ async fn restart_workers_aba_verifies_actual_flags_and_restores_baseline() {
         read_metrics(&state, &profile).await.unwrap()["engine"]["pool_workers"],
         4
     );
+    assert_measured_report_unchanged(&state, &measured, &measured_bytes);
     crate::stop_service(&state, profile.id.clone())
         .await
         .unwrap();

@@ -115,6 +115,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: '. -> apps/desktop/src-tauri/target'
+          shared-key: strata-native-${{ matrix.target }}
       - run: pnpm install --frozen-lockfile
       - name: Build the fixture update verifier for this platform
         run: cargo build -p strata-update-verifier --locked --target ${{ matrix.target }}
@@ -123,7 +124,7 @@ jobs:
           UPDATE_VERIFIER_BIN: ${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/debug/strata-update-verifier${{ runner.os == 'Windows' && '.exe' || '' }}
         run: node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-assets.test.mjs scripts/release-publish.test.mjs scripts/preview-package-smoke.test.mjs scripts/download-upgrade-fixture.test.mjs
       - name: Verify the signed beta.2 installer for the first stable upgrade
-        if: runner.os == 'Windows' && needs.validate.outputs.version == '0.1.0'
+        if: runner.os == 'Windows' && needs.validate.outputs.version == '0.1.1'
         id: upgrade-fixture
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -181,7 +182,7 @@ jobs:
         if: runner.os == 'Windows'
         run: node scripts/preview-package-smoke.mjs --bundle-dir "${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/release/bundle" --version "${{ needs.validate.outputs.version }}"
       - name: Verify beta.2 to first stable upgrade and retained application data
-        if: runner.os == 'Windows' && needs.validate.outputs.version == '0.1.0'
+        if: runner.os == 'Windows' && needs.validate.outputs.version == '0.1.1'
         env:
           UPGRADE_FROM_INSTALLER: ${{ steps.upgrade-fixture.outputs.installer }}
           UPGRADE_FROM_VERSION: ${{ steps.upgrade-fixture.outputs.version }}
