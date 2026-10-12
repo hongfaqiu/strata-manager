@@ -96,6 +96,11 @@ export function NumberField(props: Omit<InputHTMLAttributes<HTMLInputElement>, '
   return <input {...props} type="number" className={`official-number-field ${props.className ?? ''}`} />;
 }
 
+/** Native label and keyboard behavior with the shared checkbox appearance. */
+export function Checkbox(props: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'>) {
+  return <input {...props} type="checkbox" className={`st-checkbox official-checkbox ${props.className ?? ''}`} />;
+}
+
 const dialogRootIsolation = new WeakMap<HTMLElement, { count: number; originalInert: boolean; originalAriaHidden: string | null; originalFocus: HTMLElement | null }>();
 const dialogPanels: HTMLElement[] = [];
 

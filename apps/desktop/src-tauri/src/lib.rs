@@ -4,6 +4,7 @@ mod floating_monitor;
 mod http;
 mod invoke_policy;
 mod model_files;
+mod monitor_tray;
 mod runtime_detection;
 mod runtime_update_queue;
 mod runtime_updates;
@@ -1301,7 +1302,11 @@ async fn confirm_window_close(
 }
 
 #[tauri::command]
-fn apply_settings(state: State<'_, ClientState>, settings: Value) -> Result<(), String> {
+fn apply_settings(
+    app: tauri::AppHandle,
+    state: State<'_, ClientState>,
+    settings: Value,
+) -> Result<(), String> {
     let close = settings
         .get("closeToTray")
         .and_then(Value::as_bool)
@@ -1315,6 +1320,7 @@ fn apply_settings(state: State<'_, ClientState>, settings: Value) -> Result<(), 
         Ordering::Relaxed,
     );
     let english = settings.get("language").and_then(Value::as_str) == Some("en");
+    monitor_tray::apply(&app, &settings)?;
     state.tray_english.store(english, Ordering::Relaxed);
     state
         .tray_start
@@ -1356,6 +1362,13 @@ fn apply_settings(state: State<'_, ClientState>, settings: Value) -> Result<(), 
             "退出并停止本机服务"
         })
         .map_err(|e| e.to_string())?;
+    if let Some(monitor) = app.get_webview_window(floating_monitor::LABEL) {
+        if let Err(error) = monitor.emit("monitor-preferences-changed", &settings) {
+            // A concurrent strip close must not turn successfully applied
+            // settings into a failed save in the main window.
+            eprintln!("Monitor preference notification could not be delivered: {error}");
+        }
+    }
     Ok(())
 }
 
@@ -1544,6 +1557,8 @@ pub fn run() {
                 tray_quit: quit.clone(),
                 tray_stop_quit: stop_quit.clone(),
             });
+            app.manage(monitor_tray::MonitorTrayState::default());
+            monitor_tray::apply(app.handle(), &saved_settings)?;
             let menu = Menu::with_items(
                 app,
                 &[&service_state, &show, &start, &stop, &quit, &stop_quit],
@@ -1634,6 +1649,7 @@ pub fn run() {
         })
         .invoke_handler(invoke_policy::with_window_policy(tauri::generate_handler![
             floating_monitor::open_monitor_window,
+            monitor_tray::minimize_monitor_to_tray,
             floating_monitor::monitor_snapshot,
             floating_monitor::show_main_from_monitor,
             get_startup_status,

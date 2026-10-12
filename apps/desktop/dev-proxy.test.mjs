@@ -18,6 +18,8 @@ test('only slot 0 save/restore POST queries are allowed', () => {
   assert.equal(isStrataProxyRoute('/api/requests?id=req-123'), true);
   assert.equal(isStrataProxyRoute('/metrics?format=prometheus'), false);
   assert.equal(isStrataProxyRoute('/health?url=https://evil'), false);
+  assert.equal(isStrataProxyRoute('/v1/messages/count_tokens', 'POST'), true);
+  assert.equal(isStrataProxyRoute('/v1/messages/count_tokens?url=https://evil', 'POST'), false);
 });
 
 test('fixture proxy preserves the exact action and JSON body without forwarding an Origin', async () => {

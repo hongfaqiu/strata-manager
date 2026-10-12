@@ -1,6 +1,5 @@
 import { Download, LoaderCircle } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { ReleaseNotesMarkdown } from './ReleaseNotesMarkdown';
 import { Dialog } from './components';
 import { lifecycleEn, lifecycleZh } from './LifecycleStrings';
 import type { AppUpdateState } from './appUpdateController';
@@ -30,7 +29,7 @@ export function AppUpdateDialog({ language, state, idle = true, onConfirm, onClo
     <div className="app-update-dialog">
       <h3>{text.releaseNotesTitle}</h3>
       <div className="app-update-release-notes" tabIndex={0} aria-label={text.releaseNotesTitle}>
-        {notes ? <ReactMarkdown skipHtml remarkPlugins={[remarkGfm]} components={{ a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer"/> }}>{notes}</ReactMarkdown> : <p>{text.releaseNotesMissing.replace('{{version}}', version)}</p>}
+        {notes ? <ReleaseNotesMarkdown>{notes}</ReleaseNotesMarkdown> : <p>{text.releaseNotesMissing.replace('{{version}}', version)}</p>}
       </div>
       <p className="app-update-confirm-hint">{text.updateConfirmationHint}</p>
       {!idle && !busy && <p className="notice" role="status">{text.updateWaitForIdle}</p>}

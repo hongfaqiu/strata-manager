@@ -1,4 +1,21 @@
 .management-content--benchmark[hidden], .benchmark-plan-settings[hidden] { display: none !important; }
+.benchmark-workspace { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.benchmark-workspace > .official-segmented { align-self: flex-start; }
+.benchmark-workspace > [hidden] { display: none !important; }
+.context-benchmark-intro { margin: 0; color: var(--st-ink-muted); font-size: 12px; line-height: 1.6; }
+.context-benchmark-plan-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 18px; font-size: 11px; color: var(--st-ink-muted); }
+.context-benchmark-plan-footer > label { display: flex; align-items: center; gap: 9px; font-size: 12px; color: var(--st-ink); }
+.context-benchmark-live { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 24px; font-size: 12px; }
+.context-benchmark-live > strong { font-size: 22px; font-variant-numeric: tabular-nums; }
+.context-benchmark-method { color: var(--st-ink-soft); font-size: 12px; line-height: 1.7; margin: 0 0 14px; }
+.context-benchmark-page .context-benchmark-table { min-width: 1020px; width: 100%; font-variant-numeric: tabular-nums; }
+.context-benchmark-table :is(th,td) { text-align: right; vertical-align: top; padding: 12px 10px; }
+.context-benchmark-table :is(th,td):first-child { text-align: left; max-width: 160px; white-space: normal; overflow-wrap: anywhere; }
+.context-benchmark-table :is(th,td):last-child { text-align: left; }
+.context-benchmark-table :is(th,td) > small, .context-benchmark-page td > small { display: block; color: var(--st-ink-muted); font-size: 10px; line-height: 1.5; font-weight: 400; margin-top: 4px; }
+.context-benchmark-table .context-benchmark-empty { text-align: center !important; padding: 28px 12px; font-size: 12px; color: var(--st-ink-muted); }
+.context-benchmark-failed { color: var(--st-danger-text); }
+.context-benchmark-skipped { margin: 8px 0 14px; padding-left: 18px; color: var(--st-ink-muted); font-size: 11px; line-height: 1.8; }
 .benchmark-page { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .benchmark-page :is(.panel,.field,.official-dropdown) { min-width: 0; }
 .benchmark-page .page-header { margin: 0; gap: 12px; align-items: center; }
@@ -35,7 +52,7 @@
 .benchmark-scenario.is-selected { border-color: var(--st-accent); background: var(--st-accent-tint); }
 .benchmark-scenario:focus-within { outline: 2px solid var(--st-focus); outline-offset: 2px; }
 .benchmark-scenario:has(input:disabled) { cursor: default; }
-.benchmark-scenario>input { flex: none; width: 14px; height: 14px; min-height: 0; padding: 0; margin: 0; appearance: auto; accent-color: var(--st-accent); }
+.benchmark-scenario>input { flex: none; }
 .benchmark-scenario>span { min-width: 0; overflow-wrap: anywhere; }
 .benchmark-advanced { border-top: 1px solid var(--st-line); padding-top: 9px; }
 .benchmark-advanced>summary { cursor: pointer; font-size: 12px; color: var(--st-ink-muted); }
@@ -108,11 +125,58 @@
 .benchmark-help dl>div { display: grid; grid-template-columns: 115px minmax(0,1fr); gap: 12px; }
 .benchmark-help dt { font-weight: 600; }
 .benchmark-help dd { margin: 0; color: var(--st-ink-muted); }
+.context-benchmark-page { gap: 18px; font-size: 14px; }
+.context-benchmark-page .panel { padding: 20px; }
+.context-benchmark-page .panel-header h2 { font-size: 16px; }
+.context-benchmark-page .benchmark-plan-body { gap: 18px; }
+.context-benchmark-page .benchmark-service strong { font-size: 14px; }
+.context-benchmark-page .benchmark-service .badge { height: 26px; font-size: 13px; }
+.context-benchmark-capacity { margin: 0; font-size: 14px; color: var(--st-ink-soft); }
+.context-benchmark-capacity strong { margin-left: 8px; color: var(--st-ink); font-size: 24px; font-variant-numeric: tabular-nums; }
+.context-benchmark-page .benchmark-scenario-heading,
+.context-benchmark-page .benchmark-scenario-heading > span,
+.context-benchmark-page .context-benchmark-plan-footer,
+.context-benchmark-page .context-benchmark-plan-footer > label,
+.context-benchmark-page .benchmark-settings .field > span,
+.context-benchmark-page .benchmark-run-actions [role=status],
+.context-benchmark-page .benchmark-result-meta,
+.context-benchmark-page .benchmark-result-meta > strong,
+.context-benchmark-page .benchmark-not-ready,
+.context-benchmark-page .notice { font-size: 13px; }
+.context-benchmark-page .benchmark-scenario { padding: 10px 14px; font-size: 14px; }
+.context-benchmark-page .benchmark-scenario:has(input:disabled):not(.is-selected) { color: var(--st-ink-muted); background: var(--st-surface-2); opacity: .65; }
+.context-benchmark-page .benchmark-scenario > input { width: 16px; height: 16px; }
+.context-benchmark-page .benchmark-settings :is(input,.official-dropdown-trigger) { height: 40px; font-size: 14px; }
+.context-benchmark-page .context-benchmark-live { font-size: 14px; }
+.context-benchmark-page .context-benchmark-table :is(th,td) { padding: 13px 10px; font-size: 13px; }
+.context-benchmark-page .context-benchmark-table :is(th,td) > small { font-size: 12px; }
+.context-benchmark-page .context-benchmark-table .context-benchmark-empty { font-size: 14px; padding: 30px 12px; }
+.context-benchmark-page .context-benchmark-skipped { font-size: 13px; }
+.context-benchmark-page .benchmark-help { font-size: 14px; }
+.context-benchmark-charts { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 14px; margin: 4px 0 22px; }
+.context-benchmark-chart { min-width: 0; padding: 18px 16px 6px; border: 1px solid var(--st-line); border-radius: var(--st-r-lg); background: var(--st-surface); box-shadow: var(--st-sh-card); }
+.context-benchmark-chart h3 { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 18px; font-size: 15px; font-weight: 600; }
+.context-benchmark-chart h3 > span { font-size: 13px; color: var(--st-ink-muted); font-weight: 400; }
+.context-benchmark-plot { width: 100%; min-width: 0; color: var(--st-accent); }
+.context-benchmark-chart--prefill .context-benchmark-plot { color: color-mix(in srgb, var(--st-accent) 65%, black); }
+.context-benchmark-chart--wall .context-benchmark-plot { color: var(--st-info); }
+.context-benchmark-plot svg { display: block; max-width: 100%; width: 100%; height: auto; overflow: visible; font-family: var(--st-font); font-variant-numeric: tabular-nums; }
+.context-benchmark-grid { stroke: var(--st-line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.context-benchmark-axis { fill: var(--st-ink-muted); font-size: 12px; }
+.context-benchmark-tier { font-size: 13px; }
+.context-benchmark-value { fill: var(--st-ink); font-size: 13px; font-weight: 500; }
+.context-benchmark-results-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.context-benchmark-results-heading h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.context-benchmark-results-heading > span { color: var(--st-ink-muted); font-size: 13px; }
+@media(max-width:1200px) {
+  .context-benchmark-charts { grid-template-columns: minmax(0,1fr); }
+}
 @media(max-width:1000px) {
   .benchmark-service strong { max-width: 220px; }
   .benchmark-progress { grid-template-columns: repeat(3,minmax(0,1fr)); }
   .benchmark-settings,.benchmark-charts { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .benchmark-key-settings { grid-template-columns: repeat(4,minmax(0,1fr)); }
+  .context-benchmark-charts { grid-template-columns: minmax(0,1fr); }
 }
 @media(max-width:760px) {
   .benchmark-page { gap: 10px; }
@@ -143,4 +207,8 @@
   .benchmark-resources { padding-left: 12px; padding-right: 12px; }
   .benchmark-resources .benchmark-section-count { font-size: 10px; }
   .benchmark-help dl>div { grid-template-columns: minmax(0,1fr); gap: 2px; }
+  .context-benchmark-page .panel { padding: 16px; }
+  .context-benchmark-page .page-header .actions > button { font-size: 13px; min-height: 36px; }
+  .context-benchmark-page .benchmark-settings .field > span { font-size: 13px; }
+  .context-benchmark-page .benchmark-scenario { font-size: 14px; padding: 9px 12px; }
 }

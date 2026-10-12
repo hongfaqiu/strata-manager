@@ -1,5 +1,15 @@
 # 界面截图 / Screenshots
 
+## 未发布界面补图 / Unreleased interface additions
+
+2026-10-12 新增的开发中界面采用独立批次：11 个视图各含中文和英文，共 22 张，保存在 `changelog/unreleased/`。包含串行上下文 Benchmark、演示结果图表与图片导出、串行场景测试、紧凑监控浮条与托盘设置、总览接入 API，以及公共聊天、连接、下载、服务状态和应用更新页面。结果报告使用演示数据，非性能实测。更新日志的 Unreleased 部分引用这批图；公开 0.1.4 的日志使用下面原发布批次的图片。此批次不会替换或改写原 0.1.4 的截图与来源记录。
+
+新图同样加载真实 React 入口与原有样式，仅替换隔离 RPC 数据；不启动真实模型、测速、安装或更新，不修改真实用户配置。18 张普通图为 2880 × 1920；中文与英文结果报告分别为 2880 × 2720、2880 × 2800，以完整呈现图表和表格；两张浮条图为 440 × 80，对应默认 220 × 40 逻辑像素。无损 WebP 与 PNG 逐像素一致；捕获前后核对 HEAD、源码及辅助文件摘要，并检查错误、外部请求、原生变更调用和页面溢出。原生右键菜单、系统窗口操作和实际推理性能不由这些浏览器截图证明。文件清单、尺寸、哈希及检查证据见[独立批次记录](changelog/unreleased/manifest.json)。
+
+The development additions captured on 2026-10-12 form a separate batch of 22 images: 11 views in Chinese and English, under `changelog/unreleased/`. They cover serial context benchmarks, demonstration report charts/image export, serial scenario tests, the compact floating monitor and tray settings, Overview API integration, common chat settings, connections, downloads, service status and app updates. Report values are demonstration data rather than performance measurements. Unreleased notes use this batch; public 0.1.4 notes use the original release images below. The original 0.1.4 images and provenance remain intact.
+
+The new batch loads the real React entry and original styles with isolated RPC data. It never starts real models, speed tests, installations or updates, and never changes real user configuration. The 18 standard images are 2880 × 1920. Chinese and English reports are 2880 × 2720 and 2880 × 2800 to show the complete charts and table; the two monitor images are 440 × 80, representing the default 220 × 40 logical-pixel window. Lossless WebP conversion is checked pixel by pixel against PNG. The capture compares HEAD, source and helper digests before/after and checks errors, external requests, native mutations and overflow. These browser images do not establish native context-menu/window acceptance or measured inference performance. File details and checks are recorded in the [separate manifest](changelog/unreleased/manifest.json).
+
 ## 中文
 
 0.1.4 的页面截图采用统一批次：18 个视图各含中文和英文浅色图，共 36 张。视图包括总览、Strata、模型、运行配置、聊天、API 使用统计、调优、监控、设置、关于、Benchmark、公共聊天默认值、API 与外部助手、显存与会话、应用更新、服务状态、下载设置与测试，以及独立桌面监控浮条。它们取代旧版 20 图和单独追加 Benchmark 的分批记录；本轮不再使用独立的 `benchmarkCapture` 来源说明。

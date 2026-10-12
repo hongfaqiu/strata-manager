@@ -7,11 +7,121 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
-暂无未发布变更。
+- 新增上下文档位 Benchmark，按核验的模型容量生成可选档位：预置 8K–1M 档位，并补充模型的实际上下文上限。逐档串行测试，预留输出与模板余量，跳过超出服务容量的档位。报告记录实际输入／输出 Token、输入处理与生成速度、首 Token 延迟、总耗时和资源采样，支持历史记录及 JSON／CSV 导出；分词不可用时标明估算。
+- Benchmark 移到独立菜单，分为“上下文档位”和“场景测试”。场景测试固定一次发送一个请求，保留七种场景、预热、输入模式、实时进度与分场景结果。
+- 按已加载服务或本机配置核验上下文上限，统一主题色勾选框与开始按钮；结果图表沿用监控页面风格，支持复制结果图片和导出 PNG。
+- 监控浮条改为紧凑的小字堆叠布局，仅显示监控数据；主窗口与工作区跳转、复制 API 地址、刷新／暂停采样、置顶、收起与关闭等操作集中到原生右键菜单。设置中可调整默认置顶、采样时间显示和系统托盘监控，自动保存并恢复默认。
+- 新增独立系统托盘监控，显示状态与速度，点击图标恢复浮条。右键菜单提供快速测速入口，由主窗口串行执行短回复和连续生成两个场景；模型未就绪或应用忙碌时不执行测试。只读采样仍不启动服务，测速会发送推理请求。
+- 更新日志加入功能截图，桌面日志支持离线显示随应用打包的图片；官网递归发布截图资源，并支持点击查看原图。
+
+#### 新界面截图
+
+以下为开发中界面的隔离演示截图，尚未包含在公开安装包中。图中数值仅用于界面展示，非性能实测；原生右键菜单与真实窗口操作需独立验收。点击图片可查看原图。
+
+##### 串行上下文档位 Benchmark
+
+[![串行上下文档位 Benchmark](docs/screenshots/changelog/unreleased/benchmark.zh.webp)](docs/screenshots/changelog/unreleased/benchmark.zh.webp)
+
+##### Benchmark 结果图表与图片导出
+
+[![Benchmark 结果图表与图片导出](docs/screenshots/changelog/unreleased/benchmark-report.zh.webp)](docs/screenshots/changelog/unreleased/benchmark-report.zh.webp)
+
+此报告为隔离演示数据，用于展示图表、复制与导出入口，非真实性能测量。
+
+##### 串行场景测试
+
+[![串行场景测试](docs/screenshots/changelog/unreleased/scenario-benchmark.zh.webp)](docs/screenshots/changelog/unreleased/scenario-benchmark.zh.webp)
+
+##### 紧凑监控浮条
+
+[![紧凑监控浮条](docs/screenshots/changelog/unreleased/floating-monitor.zh.webp)](docs/screenshots/changelog/unreleased/floating-monitor.zh.webp)
+
+##### 监控浮条配置
+
+[![监控浮条配置](docs/screenshots/changelog/unreleased/floating-monitor-settings.zh.webp)](docs/screenshots/changelog/unreleased/floating-monitor-settings.zh.webp)
+
+##### 总览接入 API 指引
+
+[![总览接入 API 指引](docs/screenshots/changelog/unreleased/overview-api-guide.zh.webp)](docs/screenshots/changelog/unreleased/overview-api-guide.zh.webp)
+
+##### 公共聊天默认值
+
+[![公共聊天默认值](docs/screenshots/changelog/unreleased/common-chat-settings.zh.webp)](docs/screenshots/changelog/unreleased/common-chat-settings.zh.webp)
+
+##### API 与外部助手
+
+[![API 与外部助手](docs/screenshots/changelog/unreleased/connections.zh.webp)](docs/screenshots/changelog/unreleased/connections.zh.webp)
+
+##### 下载来源与网络测试
+
+[![下载来源与网络测试](docs/screenshots/changelog/unreleased/runtime-download.zh.webp)](docs/screenshots/changelog/unreleased/runtime-download.zh.webp)
+
+##### 服务状态与实时指标
+
+[![服务状态与实时指标](docs/screenshots/changelog/unreleased/service-status.zh.webp)](docs/screenshots/changelog/unreleased/service-status.zh.webp)
+
+##### 应用版本与图文更新日志
+
+[![应用版本与图文更新日志](docs/screenshots/changelog/unreleased/app-updates.zh.webp)](docs/screenshots/changelog/unreleased/app-updates.zh.webp)
 
 ### English
 
-No unreleased changes.
+- Add serial context-tier benchmarks with selectable tiers based on verified model capacity: presets from 8K to 1M plus the model's exact context limit. Reserve output/template headroom and skip tiers beyond service capacity. Reports include actual input/output tokens, prefill/decode rates, TTFT, wall time and resource samples, with history and JSON/CSV export; mark estimates when tokenization is unavailable.
+- Move Benchmark to its own navigation entry with Context tiers and Scenario suite tabs. Scenario tests send one request at a time and retain seven scenarios, warmup, input modes, live progress and per-scenario results.
+- Verify context limits against the loaded service or local configuration, unify themed checkboxes/start buttons, and match report charts to the monitoring workspace. Support copying report images and exporting PNG files.
+- Compact the floating monitor into small stacked metrics. Move window/workspace navigation, API address copying, sampling refresh/pause, pinning, hiding and closing to the native context menu. Settings cover default pinning, sample-time visibility and system-tray monitoring, with automatic saving and restoring defaults.
+- Add independent system-tray monitoring for status and speed; clicking its icon restores the monitor. Context menus provide a quick speed test. The main window runs short-response and decode scenarios serially, requiring a ready, idle model. Read-only sampling never starts services; the speed test sends inference requests.
+- Add feature screenshots to the changelog, offline display of bundled images in desktop release notes, and recursive screenshot publication with links to the original images on the website.
+
+#### New interface screenshots
+
+These isolated demonstration screenshots show development changes not yet included in public installers. Displayed values illustrate the interface, rather than measured performance. Native context menus and real window operations require separate acceptance checks. Click an image to open the original.
+
+##### Serial context-tier Benchmark
+
+[![Serial context-tier Benchmark](docs/screenshots/changelog/unreleased/benchmark.en.webp)](docs/screenshots/changelog/unreleased/benchmark.en.webp)
+
+##### Benchmark report charts and image export
+
+[![Benchmark report charts and image export](docs/screenshots/changelog/unreleased/benchmark-report.en.webp)](docs/screenshots/changelog/unreleased/benchmark-report.en.webp)
+
+This report uses isolated demonstration data to show the charts, copy and export controls. It is not a real performance measurement.
+
+##### Serial scenario tests
+
+[![Serial scenario tests](docs/screenshots/changelog/unreleased/scenario-benchmark.en.webp)](docs/screenshots/changelog/unreleased/scenario-benchmark.en.webp)
+
+##### Compact floating monitor
+
+[![Compact floating monitor](docs/screenshots/changelog/unreleased/floating-monitor.en.webp)](docs/screenshots/changelog/unreleased/floating-monitor.en.webp)
+
+##### Floating-monitor settings
+
+[![Floating-monitor settings](docs/screenshots/changelog/unreleased/floating-monitor-settings.en.webp)](docs/screenshots/changelog/unreleased/floating-monitor-settings.en.webp)
+
+##### API integration from Overview
+
+[![API integration from Overview](docs/screenshots/changelog/unreleased/overview-api-guide.en.webp)](docs/screenshots/changelog/unreleased/overview-api-guide.en.webp)
+
+##### Common chat defaults
+
+[![Common chat defaults](docs/screenshots/changelog/unreleased/common-chat-settings.en.webp)](docs/screenshots/changelog/unreleased/common-chat-settings.en.webp)
+
+##### API and external assistants
+
+[![API and external assistants](docs/screenshots/changelog/unreleased/connections.en.webp)](docs/screenshots/changelog/unreleased/connections.en.webp)
+
+##### Download sources and network test
+
+[![Download sources and network test](docs/screenshots/changelog/unreleased/runtime-download.en.webp)](docs/screenshots/changelog/unreleased/runtime-download.en.webp)
+
+##### Service status and live metrics
+
+[![Service status and live metrics](docs/screenshots/changelog/unreleased/service-status.en.webp)](docs/screenshots/changelog/unreleased/service-status.en.webp)
+
+##### App version and illustrated release notes
+
+[![App version and illustrated release notes](docs/screenshots/changelog/unreleased/app-updates.en.webp)](docs/screenshots/changelog/unreleased/app-updates.en.webp)
 
 ## [0.1.4] - 2026-10-12
 
@@ -36,6 +146,44 @@ No unreleased changes.
 - 发布优先复用同一源码提交的完整 CI 安装包；Windows 与 Linux 各三个独立原生测试 runner 和安装包编译并行，要求同一 attempt 全部八个 job 成功并汇总核验完整覆盖。缩小 Rust 依赖缓存，保留原测试超时、安装启动、版本签名、实际资产验签与校验和门禁。
 - Windows 实机完成 MCP 启停、断开后继续运行、停止不自动恢复、模型恢复和推理检查；配置文件哈希保持一致。Benchmark、调优和下载流程完成隔离浏览器检查，Benchmark 和调优界面另经安装后桌面交互验收。真实 GPU Benchmark 测量、完整调优、GPU 长时压测、Linux 系统 DEB 安装及客户端跨版本自动更新仍需独立验收。
 
+
+#### 功能截图
+
+以下为 0.1.4 发布时的界面截图，使用隔离演示数据；图中数值仅用于展示界面。点击图片可查看原图。
+
+##### Benchmark 场景与压力测试
+
+[![Benchmark 场景与压力测试](docs/screenshots/benchmark.zh.webp)](docs/screenshots/benchmark.zh.webp)
+
+##### 公共聊天默认值
+
+[![公共聊天默认值](docs/screenshots/common-chat-settings.zh.webp)](docs/screenshots/common-chat-settings.zh.webp)
+
+##### API 与外部助手
+
+[![API 与外部助手](docs/screenshots/connections.zh.webp)](docs/screenshots/connections.zh.webp)
+
+##### 显存与会话工具
+
+[![显存与会话工具](docs/screenshots/runtime-tools.zh.webp)](docs/screenshots/runtime-tools.zh.webp)
+
+##### Strata 下载来源与网络测试
+
+[![Strata 下载来源与网络测试](docs/screenshots/runtime-download-settings.zh.webp)](docs/screenshots/runtime-download-settings.zh.webp)
+
+##### 服务状态与实时监控
+
+[![服务状态与实时监控](docs/screenshots/service-status.zh.webp)](docs/screenshots/service-status.zh.webp)
+
+##### 桌面监控浮条
+
+[![桌面监控浮条](docs/screenshots/floating-monitor.zh.webp)](docs/screenshots/floating-monitor.zh.webp)
+
+##### 版本与应用更新
+
+[![版本与应用更新](docs/screenshots/app-updates.zh.webp)](docs/screenshots/app-updates.zh.webp)
+
+
 ### English
 
 - Add a Benchmark workspace with seven scenario suites, fixed concurrency and ramp-up stress tests, configurable prompt/output lengths, warmup, repeated-input cache tests, cancellation, report history and JSON / CSV export.
@@ -56,6 +204,44 @@ No unreleased changes.
 - Recapture bilingual 0.1.4 workspaces, common settings, connections, updates and monitors; refresh product covers, website features and documentation. Add system explanations, update interface contracts and generate website release notes from this file.
 - Reuse installers only from complete CI for the exact source commit. Three independent native runners on each of Windows and Linux run alongside installer builds; all eight jobs from one attempt must succeed with complete aggregate coverage. Reduce Rust dependency caches while retaining original test deadlines, installation/startup, signed-version, actual-asset signature and checksum gates.
 - Windows hardware checks covered MCP start/stop, continued operation after disconnect, stopped-service preservation, model restoration and inference; configuration hashes remained unchanged. Benchmark, tuning and download flows passed isolated browser checks, with additional installed-desktop interaction checks for the Benchmark and Tuning interfaces. Real GPU Benchmark measurements, full tuning, sustained GPU stress, Linux system-level DEB installation and client cross-version automatic updates still require separate validation.
+
+
+#### Feature screenshots
+
+These screenshots show the interface at the 0.1.4 release, using isolated demonstration data. Displayed values illustrate the interface. Click an image to open the original.
+
+##### Benchmark scenarios and stress tests
+
+[![Benchmark scenarios and stress tests](docs/screenshots/benchmark.en.webp)](docs/screenshots/benchmark.en.webp)
+
+##### Common chat defaults
+
+[![Common chat defaults](docs/screenshots/common-chat-settings.en.webp)](docs/screenshots/common-chat-settings.en.webp)
+
+##### API and external assistants
+
+[![API and external assistants](docs/screenshots/connections.en.webp)](docs/screenshots/connections.en.webp)
+
+##### VRAM and session tools
+
+[![VRAM and session tools](docs/screenshots/runtime-tools.en.webp)](docs/screenshots/runtime-tools.en.webp)
+
+##### Strata download sources and network test
+
+[![Strata download sources and network test](docs/screenshots/runtime-download-settings.en.webp)](docs/screenshots/runtime-download-settings.en.webp)
+
+##### Service status and live monitoring
+
+[![Service status and live monitoring](docs/screenshots/service-status.en.webp)](docs/screenshots/service-status.en.webp)
+
+##### Floating desktop monitor
+
+[![Floating desktop monitor](docs/screenshots/floating-monitor.en.webp)](docs/screenshots/floating-monitor.en.webp)
+
+##### Version and app updates
+
+[![Version and app updates](docs/screenshots/app-updates.en.webp)](docs/screenshots/app-updates.en.webp)
+
 
 ## [0.1.3] - 2026-10-12
 

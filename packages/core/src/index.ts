@@ -21,3 +21,5 @@ export * from './mcp-integration';
 export * from './benchmark';
 export * from './benchmark-suite-types';
 export * from './benchmark-suite';
+export * from './context-benchmark-types';
+export * from './context-benchmark';

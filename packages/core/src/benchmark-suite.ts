@@ -18,7 +18,7 @@ export const BENCHMARK_SCENARIOS: { id: BenchmarkScenarioId; nameZh: string; nam
 export const DEFAULT_BENCHMARK_SUITE_OPTIONS: BenchmarkSuiteOptions = {
   kind: 'suite', scenarios: ['short', 'code', 'long', 'decode', 'cache', 'conversation'], prompt: BENCHMARK_PROMPTS.mixed,
   rounds: 2, maxTokens: 256, inputChars: 8192, conversationTurns: 3, warmup: false, mode: 'unique', timeoutMs: 120_000,
-  concurrency: 4, stressPattern: 'ramp', stressLimit: 'duration', requestLimit: 300, durationMs: 300_000,
+  concurrency: 1, stressPattern: 'steady', stressLimit: 'duration', requestLimit: 300, durationMs: 300_000,
   stageDurationMs: 60_000, requestDelayMs: 0, stopOnError: false,
 };
 const count = (v: unknown): number | null => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 ? v : null;

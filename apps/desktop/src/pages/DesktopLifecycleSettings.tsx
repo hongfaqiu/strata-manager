@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { CircleHelp, Download, LoaderCircle, RefreshCw, RotateCw } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { ReleaseNotesMarkdown } from '../ReleaseNotesMarkdown';
 import * as core from '@strata-manager/core';
 import desktopPackage from '../../package.json';
 import bundledChangelog from '../../../../CHANGELOG.md?raw';
@@ -61,7 +60,7 @@ export function DesktopLifecycleSettings({ section = 'all', currentVersion = des
   const idlePeriods = [0, 5, 15, 30, 60];
   if (idleSupported && !idlePeriods.includes(idleMinutes)) idlePeriods.push(idleMinutes);
   const idleHint = policy.data && !idleSupported ? t('idleModelReleaseUpdate') : policy.data?.mode === 'alwaysReady' ? (zh ? '先关闭“保持模型就绪”' : 'Turn off “Keep model ready” first') : '';
-  const notesBody = (notes: string | null, missing: string, label: string) => <div className="settings-release-body" role="region" tabIndex={0} aria-label={label}>{notes ? <ReactMarkdown skipHtml remarkPlugins={[remarkGfm]} components={{ a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer"/> }}>{notes}</ReactMarkdown> : <p className="subtle">{missing}</p>}</div>;
+  const notesBody = (notes: string | null, missing: string, label: string) => <div className="settings-release-body" role="region" tabIndex={0} aria-label={label}>{notes ? <ReleaseNotesMarkdown>{notes}</ReleaseNotesMarkdown> : <p className="subtle">{missing}</p>}</div>;
 
   return <>
     {background && <Panel title={t('backgroundSettings')} action={helpAction('background', zh ? '本机后台帮助' : 'Background service help')}>

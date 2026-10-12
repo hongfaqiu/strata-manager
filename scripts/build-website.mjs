@@ -1,9 +1,10 @@
-import { cp, mkdir, readdir, rm, lstat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, rm, lstat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { documents, renderWebsiteDocs, verifyStaticWebsite } from './render-website-docs.mjs';
 import { renderWebsiteSeo } from './website-seo.mjs';
 import { publishWebsiteReleaseSnapshot } from './website-release-snapshot.mjs';
+import { copyWebsiteScreenshots } from './website-screenshots.mjs';
 
 // Publish static assets and pre-rendered docs, without a browser-side runtime.
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -21,10 +22,7 @@ await mkdir(output, { recursive: true });
 await cp(source, output, { recursive: true });
 await mkdir(join(output, 'assets', 'screenshots'), { recursive: true });
 await cp(join(root, 'assets', 'icon.svg'), join(output, 'assets', 'icon.svg'));
-const screenshots = await readdir(join(root, 'docs', 'screenshots'));
-for (const filename of screenshots.filter((name) => name.endsWith('.webp'))) {
-  await cp(join(root, 'docs', 'screenshots', filename), join(output, 'assets', 'screenshots', filename));
-}
+await copyWebsiteScreenshots(join(root, 'docs', 'screenshots'), join(output, 'assets', 'screenshots'));
 await writeFile(join(output, '.nojekyll'), '');
 const documentCount = await renderWebsiteDocs(output);
 await renderWebsiteSeo(output, documents);

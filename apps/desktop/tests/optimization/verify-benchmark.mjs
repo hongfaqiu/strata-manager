@@ -24,19 +24,29 @@ await mkdir(output, { recursive: true });
 const results = [];
 const selectedCase = process.env.STRATA_BENCHMARK_CASE;
 let browser;
-const area = page => page.locator('.benchmark-page');
+const area = page => page.locator('.benchmark-page:visible');
+async function scenario(page) {
+  await page.getByRole('radio', { name: /^(场景测试|Scenario suite)$/, exact: true }).click();
+  await area(page).getByRole('heading', { name: /^(场景测试|Scenario tests)$/ }).waitFor();
+}
 async function navigate(page, hash) {
   const labels = { models: '模型', chat: '聊天', tuning: '参数调优', environment: 'Strata', monitoring: '监控' };
   if (hash === 'benchmark') {
+    await page.locator('.manager-nav').getByRole('button', { name: 'Benchmark 测试', exact: true }).click();
+  } else if (hash === 'usage') {
     await page.locator('.manager-nav').getByRole('button', { name: '监控', exact: true }).click();
-    await page.locator('.workspace-subnav').getByRole('button', { name: 'Benchmark 测试', exact: true }).click();
-  } else if (hash === 'usage') await page.locator('.workspace-subnav').getByRole('button', { name: 'API 使用统计', exact: true }).click();
+    await page.locator('.workspace-subnav').getByRole('button', { name: 'API 使用统计', exact: true }).click();
+  }
   else await page.locator('.manager-nav').getByRole('button', { name: labels[hash], exact: true }).click();
   await page.waitForFunction(value => location.hash === `#${value}`, hash);
 }
 async function streams(page) { return page.evaluate(() => window.__fixture.benchmark.streams); }
 async function reports(page) { return page.evaluate(() => window.__fixture.store.benchmarkReportsV1 ?? []); }
+async function contextReports(page) { return page.evaluate(() => window.__fixture.store.contextBenchmarkReportsV1 ?? []); }
+async function tierState(page) { return area(page).getByRole('checkbox').evaluateAll(inputs => inputs.map(input => ({ label: input.closest('label').innerText.trim(), checked: input.checked, disabled: input.disabled }))); }
+async function waitForTierSelection(page, count) { await page.waitForFunction(expected => [...document.querySelectorAll('.context-benchmark-page input[type="checkbox"]')].filter(input => input.checked).length === expected, count); }
 async function finish(page) { await page.waitForFunction(() => !!window.__fixture.store.benchmarkReportsV1?.length, undefined, { timeout: 60000 }); await area(page).getByRole('button', { name: /^(开始测试|Start benchmark)$/ }).waitFor(); }
+async function finishContext(page) { await page.waitForFunction(() => !!window.__fixture.store.contextBenchmarkReportsV1?.length, undefined, { timeout: 60000 }); await area(page).getByRole('button', { name: /^(开始测试|Start benchmark)$/ }).waitFor(); }
 async function chooseScenarios(page, ids) {
   const names = { short: /^(短问答|Short answer)$/, code: /^(代码审查|Code review)$/, long: /^(长输入|Long input)$/, decode: /^(持续生成|Sustained generation)$/, cache: /^(重复输入缓存|Repeated input cache)$/, conversation: /^(多轮对话|Conversation)$/, custom: /^(自定义|Custom)$/ };
   for (const [id, name] of Object.entries(names)) await area(page).getByRole('checkbox', { name, exact: true }).setChecked(ids.includes(id));
@@ -74,17 +84,6 @@ async function configure(page, { rounds = 2, timeout = 5, warmup = false, repeat
   if (repeat) await dropdown(page, /^(输入模式|Input mode)$/, /^(重复输入 · 测试缓存|Repeated input · cache test)$/);
   if (stopOnError) await area(page).getByRole('switch', { name: /^(发生错误后停止|Stop on error)$/ }).click();
 }
-async function stress(page, { concurrency = 4, budget = 12, duration = 30, pattern = 'steady', scenarios = ['short'], timeout = 30, stage = 5 } = {}) {
-  await area(page).getByRole('radio', { name: /^(压力测试|Stress test)$/, exact: true }).click();
-  await chooseScenarios(page, scenarios);
-  await area(page).getByRole('spinbutton', { name: /^(最大并发|Maximum concurrency)$/ }).fill(String(concurrency));
-  await area(page).getByRole('spinbutton', { name: /^(请求预算|Request budget)$/ }).fill(String(budget));
-  await area(page).getByRole('spinbutton', { name: /^(持续时间（秒）|Duration \(seconds\))$/ }).fill(String(duration));
-  await dropdown(page, /^(压力模式|Load pattern)$/, pattern === 'steady' ? /^(固定并发|Fixed concurrency)$/ : /^(逐级升压|Gradual ramp)$/);
-  await advanced(page);
-  await area(page).getByRole('spinbutton', { name: /^(每轮超时（秒）|Timeout per request \(seconds\))$/ }).fill(String(timeout));
-  if (pattern === 'ramp') await area(page).getByRole('spinbutton', { name: /^(每级持续时间（秒）|Duration per stage \(seconds\))$/ }).fill(String(stage));
-}
 async function start(page) { await area(page).getByRole('button', { name: /^(开始测试|Start benchmark)$/ }).click(); }
 async function run(name, action, search = '', viewport = { width: 1440, height: 1050 }) {
   if (selectedCase && selectedCase !== name) return;
@@ -95,7 +94,8 @@ async function run(name, action, search = '', viewport = { width: 1440, height: 
   page.setDefaultTimeout(10000); page.on('pageerror', error => errors.push(String(error)));
   try {
     await page.goto(`${origin}/benchmark-app.html${search}#benchmark`);
-    await area(page).getByRole('heading', { name: /^(Benchmark 性能测试|Benchmark)$/ }).waitFor();
+    await area(page).getByRole('heading', { name: /^(上下文档位实测|Context tier benchmark)$/ }).waitFor();
+    if (!name.startsWith('context-')) await scenario(page);
     await action(page);
     assert.deepEqual(errors, []);
     const forbidden = await page.evaluate(() => window.__fixture.calls.filter(call => /^(switch_local_service|ensure_local_service|start_service|stop_service|restart_service|take_over_service|tuning_start|update_runtime_zip|prepare_local_runtime)$/.test(call.command)));
@@ -110,9 +110,143 @@ async function run(name, action, search = '', viewport = { width: 1440, height: 
 }
 try {
   browser = await chromium.launch({ headless: true, executablePath: process.env.STRATA_BROWSER_EXECUTABLE || undefined });
+  await run('context-default-tiers-serial-resources-history-export', async page => {
+    const navigation = page.locator('.manager-nav').getByRole('button', { name: 'Benchmark 测试', exact: true });
+    assert.equal(await navigation.getAttribute('aria-current'), 'page');
+    assert.equal(await page.locator('.workspace-subnav').count(), 0);
+    assert.equal(await page.getByRole('radio', { name: '上下文档位', exact: true }).getAttribute('aria-checked'), 'true');
+    assert.equal(await page.getByRole('radio', { name: /压力测试|Stress test/ }).count(), 0);
+    assert.equal(await page.getByRole('spinbutton', { name: /并发|Concurrency/ }).count(), 0);
+    assert.equal(await area(page).getByRole('spinbutton', { name: '最大输出 token', exact: true }).inputValue(), '512');
+    await waitForTierSelection(page, 2);
+    const tiers = await tierState(page);
+    assert.deepEqual(tiers.filter(tier => tier.checked).map(tier => tier.label), ['8K', '32K']);
+    assert.ok(tiers.filter(tier => !tier.checked).every(tier => tier.disabled), 'Every tier above model capacity is unavailable');
+    await area(page).getByRole('textbox', { name: '测试配置名称', exact: true }).fill('Synthetic 32K');
+    await start(page); await finishContext(page);
+    const [report] = await contextReports(page), calls = await streams(page);
+    assert.equal(report.schemaVersion, 3); assert.equal(report.state, 'completed');
+    assert.equal(await area(page).locator('.notice.error').count(), 0, 'A successful run does not display an error notice');
+    assert.equal(report.options.configurationLabel, 'Synthetic 32K');
+    assert.deepEqual(report.samples.map(sample => sample.targetTokens), [8192, 32768]);
+    assert.deepEqual(report.skippedTiers, []);
+    assert.equal(calls.length, 2); assert.equal(await page.evaluate(() => window.__fixture.benchmark.peak), 1);
+    for (const sample of report.samples) {
+      assert.equal(sample.tokenCountMethod, 'count_tokens'); assert.equal(sample.promptTokens, sample.countedPromptTokens);
+      assert.ok(sample.promptTokens <= sample.targetTokens - 576 && sample.promptTokens >= (sample.targetTokens - 576) * 0.99);
+      assert.equal(sample.completionTokens, 512); assert.equal(sample.cachedTokens, 0);
+      assert.equal(sample.prefillTokS, 1250); assert.equal(sample.decodeTokS, 80);
+      assert.equal(sample.peakGpuMemory, 4 * 1024 ** 3); assert.equal(sample.minGpuMemoryFree, 4 * 1024 ** 3); assert.equal(sample.peakRam, 8 * 1024 ** 3);
+      assert.ok(sample.resourceSamples >= 2); assert.ok(sample.ttftMs >= 0 && sample.ttftMs < sample.wallMs);
+    }
+    for (const call of calls) { assert.equal(call.body.temperature, 0); assert.equal(call.body.reasoning_effort, 'none'); assert.equal(call.body.max_tokens, 512); }
+    assert.equal(new Set(calls.map(call => call.body.messages[0].content.split('\n')[0])).size, 2, 'Each tier uses a distinct prefix');
+    assert.equal(await area(page).locator('.context-benchmark-table tbody tr').count(), 2);
+    const firstRow = area(page).locator('.context-benchmark-table tbody tr').first();
+    assert.match(await firstRow.innerText(), /Synthetic 32K/); assert.match(await firstRow.innerText(), /4,096/);
+    assert.equal(await area(page).locator('.context-benchmark-chart').count(), 3);
+    assert.equal(await area(page).locator('.context-benchmark-chart--prefill .context-benchmark-point').count(), 2);
+    assert.match(await area(page).locator('.context-benchmark-chart--prefill').textContent(), /1,250/);
+    assert.match(await area(page).locator('.context-benchmark-chart--decode').textContent(), /80/);
+    assert.equal(await area(page).locator('details').count(), 0);
+    let event = page.waitForEvent('download'); await area(page).getByRole('button', { name: '导出 JSON', exact: true }).click();
+    let download = await event, exported = JSON.parse(await readFile(await download.path(), 'utf8'));
+    assert.match(download.suggestedFilename(), /^strata-context-benchmark-.+\.json$/); assert.deepEqual(exported.samples, report.samples);
+    event = page.waitForEvent('download'); await area(page).getByRole('button', { name: '导出 CSV', exact: true }).click();
+    download = await event; const csv = await readFile(await download.path(), 'utf8');
+    assert.match(csv, /peak_gpu_memory_mib,min_gpu_free_mib,peak_ram_gib/); assert.equal(csv.trim().split('\r\n').length, 3);
+    await page.reload(); await area(page).getByRole('heading', { name: '上下文档位实测', exact: true }).waitFor();
+    await area(page).locator('.context-benchmark-table tbody tr').nth(1).waitFor();
+    assert.equal((await contextReports(page))[0].id, report.id);
+  }, '', { width: 1366, height: 768 });
+  await run('context-unknown-capacity-never-infer', async page => {
+    await area(page).getByRole('alert').waitFor();
+    assert.equal(await area(page).getByRole('button', { name: '开始测试', exact: true }).isDisabled(), true);
+    const tiers = await tierState(page);
+    assert.ok(tiers.every(tier => tier.disabled && !tier.checked));
+    assert.equal((await streams(page)).length, 0); assert.equal(await page.evaluate(() => window.__fixture.contextBenchmark.counts.length), 0);
+  }, '?maxContext=0');
+  await run('context-1m-default-all-tiers', async page => {
+    await waitForTierSelection(page, 9);
+    const tiers = await tierState(page);
+    assert.deepEqual(tiers.map(tier => tier.label), ['8K', '32K', '64K', '128K', '256K', '384K', '512K', '768K', '1M']);
+    assert.ok(tiers.every(tier => tier.checked && !tier.disabled));
+    assert.match(await area(page).locator('.context-benchmark-capacity').innerText(), /1M/);
+    assert.equal((await streams(page)).length, 0);
+  }, '?maxContext=1048576');
+  await run('context-nonstandard-max-and-capacity-reset', async page => {
+    await waitForTierSelection(page, 9);
+    const initial = await tierState(page);
+    assert.equal(initial.find(tier => tier.label === '1,000,000').checked, true);
+    assert.equal(initial.find(tier => tier.label === '1M').disabled, true);
+    await area(page).getByRole('checkbox', { name: '8K', exact: true }).uncheck();
+    await page.evaluate(() => { window.__fixture.contextBenchmark.maxContext = 16384; window.dispatchEvent(new Event('visibilitychange')); window.dispatchEvent(new Event('focus')); });
+    await waitForTierSelection(page, 2);
+    const changed = await tierState(page);
+    assert.deepEqual(changed.filter(tier => tier.checked).map(tier => tier.label), ['8K', '16K']);
+    assert.equal(changed.find(tier => tier.label === '32K').disabled, true);
+    assert.equal((await streams(page)).length, 0);
+  }, '?maxContext=1000000');
+  await run('context-profile-switch-resets-default-tiers', async page => {
+    await waitForTierSelection(page, 2);
+    await area(page).getByRole('checkbox', { name: '8K', exact: true }).uncheck();
+    await page.evaluate(() => { window.__fixture.contextBenchmark.runningProfiles.push('b'); });
+    await navigate(page, 'models');
+    await page.locator('.service-manager-card[data-profile-id="b"]').getByRole('button', { name: '使用此配置', exact: true }).click();
+    await navigate(page, 'benchmark'); await waitForTierSelection(page, 3);
+    const tiers = await tierState(page);
+    assert.deepEqual(tiers.filter(tier => tier.checked).map(tier => tier.label), ['8K', '32K', '64K']);
+    assert.match(await area(page).locator('.benchmark-service').innerText(), /Fixture B/);
+    assert.equal((await streams(page)).length, 0);
+  });
+  await run('context-output-budget-removes-too-small-selection', async page => {
+    await waitForTierSelection(page, 1);
+    assert.deepEqual((await tierState(page)).filter(tier => tier.checked).map(tier => tier.label), ['2K']);
+    await area(page).getByRole('spinbutton', { name: '最大输出 token', exact: true }).fill('2048');
+    await waitForTierSelection(page, 0);
+    assert.ok((await tierState(page)).every(tier => !tier.checked && tier.disabled));
+    assert.equal(await area(page).getByRole('button', { name: '开始测试', exact: true }).isDisabled(), true);
+    assert.equal((await streams(page)).length, 0);
+  }, '?maxContext=2048');
+  await run('context-estimated-input-clearly-marked', async page => {
+    await page.evaluate(() => { window.__fixture.contextBenchmark.countUnavailable = true; });
+    await start(page); await finishContext(page);
+    const [report] = await contextReports(page);
+    assert.equal(report.samples.length, 2); assert.ok(report.samples.every(sample => sample.tokenCountMethod === 'estimated' && sample.countedPromptTokens === null));
+    assert.equal(await area(page).locator('details').count(), 0);
+    await area(page).getByRole('button', { name: '测试说明', exact: true }).click();
+    const guide = page.getByRole('dialog', { name: '上下文 Benchmark 说明', exact: true });
+    await guide.waitFor(); assert.match(await guide.innerText(), /缓存/);
+    assert.match(await guide.innerText(), /输入未能精确校准|不代表实际达到目标档位/);
+    await page.keyboard.press('Escape'); await guide.waitFor({ state: 'hidden' });
+  });
+  await run('context-navigation-keeps-runner-and-stop', async page => {
+    await page.evaluate(() => { window.__fixture.benchmark.mode = 'hold'; });
+    await start(page); await page.waitForFunction(() => window.__fixture.benchmark.active === 1);
+    assert.equal(await page.getByRole('radio', { name: '场景测试', exact: true }).isDisabled(), true);
+    assert.equal(await area(page).getByRole('checkbox').first().isDisabled(), true);
+    await navigate(page, 'usage'); assert.equal(await area(page).count(), 0);
+    assert.equal(await page.locator('.context-benchmark-page').count(), 1, 'The context runner stays mounted');
+    assert.equal(await page.locator('.workspace-subnav').getByRole('button', { name: 'Benchmark 测试', exact: true }).count(), 0);
+    await navigate(page, 'chat'); assert.equal(await page.locator('#send-btn').isDisabled(), true);
+    await navigate(page, 'benchmark'); await area(page).getByRole('button', { name: '停止测试', exact: true }).click();
+    await finishContext(page);
+    const [report] = await contextReports(page), state = await page.evaluate(() => window.__fixture.benchmark);
+    assert.equal(report.state, 'cancelled'); assert.equal(report.samples.length, 1); assert.equal(report.samples[0].state, 'cancelled');
+    assert.equal(state.cancelled.length, 1); assert.equal(state.active, 0); assert.equal(state.streams.length, 1);
+    assert.equal(await page.getByRole('radio', { name: '场景测试', exact: true }).isEnabled(), true);
+  });
+  for (const language of ['zh-CN', 'en']) await run(`context-narrow-layout-${language}`, async page => {
+    await page.getByRole('button', { name: /^(收起侧栏|Collapse sidebar)$/ }).click();
+    await start(page); await finishContext(page);
+    const widths = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth, body: document.body.scrollWidth }));
+    assert.ok(widths.document <= widths.viewport + 1 && widths.body <= widths.viewport + 1, JSON.stringify(widths));
+    assert.equal(await area(page).locator('.context-benchmark-table tbody tr').count(), 2);
+    assert.equal(await area(page).getByRole('button', { name: language === 'en' ? 'Export JSON' : '导出 JSON', exact: true }).isEnabled(), true);
+  }, `?language=${language}`, { width: 480, height: 1000 });
   await run('serial-sse-metrics-history-export', async page => {
-    const checkboxStyle = await area(page).getByRole('checkbox', { name: '短问答', exact: true }).evaluate(element => ({ checked: element.checked, padding: getComputedStyle(element).padding, appearance: getComputedStyle(element).appearance }));
-    assert.deepEqual(checkboxStyle, { checked: true, padding: '0px', appearance: 'auto' });
+    const checkboxStyle = await area(page).getByRole('checkbox', { name: '短问答', exact: true }).evaluate(element => ({ checked: element.checked, padding: getComputedStyle(element).padding, appearance: getComputedStyle(element).appearance, whiteCheck: getComputedStyle(element).backgroundImage.includes('fff') }));
+    assert.deepEqual(checkboxStyle, { checked: true, padding: '0px', appearance: 'none', whiteCheck: true });
     await configure(page, { warmup: true }); await start(page); await finish(page);
     const [report] = await reports(page), calls = await streams(page);
     assert.equal(report.state, 'completed'); assert.equal(report.samples.length, 3); assert.equal(calls.length, 3);
@@ -134,7 +268,7 @@ try {
     assert.match(download.suggestedFilename(), /^strata-benchmark-.+\.json$/);
     assert.equal(exported.id, report.id); assert.equal(exported.summary.completed, 2);
     assert.equal(exported.summary.prefillTokS, 1250); assert.equal(exported.summary.decodeTokS, 80); assert.equal(exported.summary.cacheHitRate, 0.4);
-    await page.reload(); await area(page).getByRole('heading', { name: /^(Benchmark 性能测试|Benchmark)$/ }).waitFor();
+    await page.reload(); await scenario(page);
     await section(page, /^(请求样本|Request samples)/); await area(page).locator('.benchmark-samples-table tbody tr').first().waitFor();
     assert.equal((await reports(page))[0].id, report.id); assert.equal(await area(page).locator('.benchmark-samples-table tbody tr').count(), 3);
   });
@@ -146,11 +280,16 @@ try {
     assert.equal(report.options.mode, 'repeat');
   });
   await run('navigation-keeps-run-and-operation-interlocks', async page => {
+    const benchmarkNavigation = page.locator('.manager-nav').getByRole('button', { name: 'Benchmark 测试', exact: true });
+    assert.equal(await benchmarkNavigation.getAttribute('aria-current'), 'page', 'Benchmark has its own active sidebar item');
+    assert.equal(await page.locator('.workspace-subnav').count(), 0, 'Benchmark is a standalone workspace');
     await configure(page); await page.evaluate(() => { window.__fixture.benchmark.mode = 'hold'; }); await start(page);
     await page.waitForFunction(() => window.__fixture.benchmark.streams.length === 1);
     await navigate(page, 'usage');
     await area(page).waitFor({ state: 'hidden' });
-    assert.equal(await area(page).isVisible(), false, 'Hidden benchmark stays mounted without rendering on another page');
+    assert.equal(await area(page).count(), 0, 'Hidden benchmark does not render on another page');
+    assert.equal(await page.locator('.benchmark-page:not(.context-benchmark-page)').count(), 1, 'The active scenario runner remains mounted after navigation');
+    assert.equal(await page.locator('.workspace-subnav').getByRole('button', { name: 'Benchmark 测试', exact: true }).count(), 0, 'Monitoring does not contain Benchmark');
     await navigate(page, 'models');
     const inactiveModel = page.locator('.service-manager-card[data-profile-id="b"]');
     await inactiveModel.getByRole('button', { name: '使用此配置', exact: true }).waitFor();
@@ -164,6 +303,7 @@ try {
     await page.getByRole('button', { name: '更新至 0.1.2', exact: true }).waitFor();
     assert.equal(await page.getByRole('button', { name: '更新至 0.1.2', exact: true }).isDisabled(), true);
     await navigate(page, 'benchmark'); await area(page).getByRole('button', { name: '停止测试' }).waitFor();
+    assert.equal(await benchmarkNavigation.getAttribute('aria-current'), 'page');
     assert.equal((await streams(page)).length, 1); assert.equal((await reports(page)).length, 0);
     await area(page).getByRole('button', { name: '停止测试' }).click(); await finish(page);
     const [report] = await reports(page); assert.equal(report.state, 'cancelled'); assert.equal(report.samples.length, 1);
@@ -219,76 +359,67 @@ try {
     await section(page, /^(请求样本|Request samples)/);
     await dropdown(page, '筛选场景', '多轮对话');
     assert.equal(await area(page).locator('.benchmark-samples-table tbody tr').count(), 7);
-    assert.match(await area(page).locator('.benchmark-summary-primary').innerText(), /P99/);
-    const comparisons = await section(page, /^(场景与并发对比|Scenario and concurrency comparison)$/);
-    assert.equal(await comparisons.locator('.benchmark-comparison').count(), 2);
+    const statistics = await section(page, /^(性能统计|Performance statistics)$/);
+    assert.match(await statistics.innerText(), /P99/);
+    const comparisons = await section(page, /^(分场景对比|Scenario comparison)$/);
+    assert.equal(await comparisons.locator('.benchmark-comparison').count(), 1);
   });
-  await run('fixed-concurrency-mixed-errors-budget-json-csv', async page => {
-    await stress(page); await page.evaluate(() => { window.__fixture.benchmark.errorEvery = 3; });
+  await run('serial-mixed-errors-json-csv', async page => {
+    await configure(page, { rounds: 12, scenarios: ['short'] });
+    await page.evaluate(() => { window.__fixture.benchmark.errorEvery = 3; });
     await start(page); await finish(page);
     const [report] = await reports(page), state = await page.evaluate(() => window.__fixture.benchmark);
-    assert.equal(report.options.kind, 'stress'); assert.equal(report.stopReason, 'requestLimit');
+    assert.equal(report.options.kind, 'suite'); assert.equal(report.options.concurrency, 1);
     assert.equal(report.samples.length, 12); assert.equal(state.streams.length, 12);
-    assert.equal(state.peak, 4); assert.equal(state.active, 0);
+    assert.equal(state.peak, 1); assert.equal(state.active, 0);
     assert.equal(report.samples.filter(sample => sample.state === 'failed').length, 4);
     let event = page.waitForEvent('download'); await area(page).getByRole('button', { name: '导出 JSON', exact: true }).click();
     let download = await event, exported = JSON.parse(await readFile(await download.path(), 'utf8'));
     assert.equal(exported.summary.completed, 8); assert.equal(exported.summary.failed, 4);
-    assert.equal(exported.summary.aggregateOutputTokS, null, 'Missing output usage remains unknown');
-    assert.equal(exported.summary.decodeTokS, 80); assert.ok(exported.summary.requestsPerSecond > 0);
+    assert.equal(exported.summary.decodeTokS, 80);
     event = page.waitForEvent('download'); await area(page).getByRole('button', { name: '导出 CSV', exact: true }).click();
     download = await event; const csv = await readFile(await download.path(), 'utf8');
     assert.equal(csv.trim().split('\r\n').length, 13); assert.match(csv, /error_code,http_status/); assert.match(csv, /"HTTP_ERROR","503"/);
   });
-  await run('maximum-32-clients', async page => {
-    await stress(page, { concurrency: 32, budget: 32 });
-    await page.evaluate(() => { window.__fixture.benchmark.delayMs = 150; });
+  await run('serial-resource-telemetry-and-bounded-sample-table', async page => {
+    await configure(page, { rounds: 20, scenarios: ['short', 'code', 'long', 'decode', 'cache', 'conversation'] });
+    await page.evaluate(() => { window.__fixture.benchmark.delayMs = 10; });
     await start(page); await finish(page);
     const [report] = await reports(page), state = await page.evaluate(() => window.__fixture.benchmark);
-    assert.equal(state.peak, 32); assert.equal(state.active, 0); assert.equal(state.streams.length, 32);
-    assert.equal(report.samples.filter(sample => sample.state === 'completed').length, 32);
-  });
-  await run('ramp-duration-resources-and-bounded-sample-table', async page => {
-    await stress(page, { pattern: 'ramp', duration: 16, budget: 5000 });
-    await start(page); await finish(page);
-    const [report] = await reports(page), state = await page.evaluate(() => window.__fixture.benchmark);
-    assert.equal(report.state, 'completed'); assert.equal(report.stopReason, 'duration');
-    assert.deepEqual(report.stages.map(stage => stage.concurrency), [1, 2, 4]);
-    for (let index = 1; index < report.stages.length; index++) assert.ok(report.stages[index].startedAt >= report.stages[index - 1].finishedAt);
-    assert.ok(state.peak <= 4); assert.equal(state.active, 0);
-    assert.ok(report.telemetry.length >= 3); assert.ok(report.telemetry.some(point => point.gpuMemoryUsed === 4 * 1024 ** 3));
+    assert.equal(report.state, 'completed'); assert.equal(report.stopReason, 'completed');
+    assert.equal(state.peak, 1); assert.equal(state.active, 0);
+    assert.ok(report.telemetry.length >= 2); assert.ok(report.telemetry.some(point => point.gpuMemoryUsed === 4 * 1024 ** 3));
     await section(page, /^(请求样本|Request samples)/);
-    await section(page, /^(资源与排队趋势|Resources and queue trends)/);
+    await section(page, /^(资源趋势|Resource trends)/);
     assert.ok(report.samples.length > 100); assert.equal(await area(page).locator('.benchmark-samples-table tbody tr').count(), 100);
     assert.match(await area(page).locator('.benchmark-resource-latest').innerText(), /4 GiB/);
   });
-  await run('cancel-all-stress-workers', async page => {
-    await stress(page); await page.evaluate(() => { window.__fixture.benchmark.mode = 'hold'; });
-    await start(page); await page.waitForFunction(() => window.__fixture.benchmark.active === 4);
+  await run('cancel-serial-runner', async page => {
+    await configure(page); await page.evaluate(() => { window.__fixture.benchmark.mode = 'hold'; });
+    await start(page); await page.waitForFunction(() => window.__fixture.benchmark.active === 1);
     assert.equal(await area(page).locator('.benchmark-plan-settings').isVisible(), false);
     await area(page).getByRole('heading', { name: '实时测试进度', exact: true }).waitFor();
-    await page.screenshot({ path: resolve(output, 'cancel-all-stress-workers-running.png'), fullPage: true });
     await area(page).getByRole('button', { name: '查看设置', exact: true }).click();
     assert.equal(await area(page).getByRole('checkbox').first().isDisabled(), true);
     await area(page).getByRole('button', { name: '收起设置', exact: true }).click();
     await area(page).getByRole('button', { name: '停止测试', exact: true }).click(); await finish(page);
     const [report] = await reports(page), state = await page.evaluate(() => window.__fixture.benchmark);
-    assert.equal(report.state, 'cancelled'); assert.equal(report.samples.length, 4);
+    assert.equal(report.state, 'cancelled'); assert.equal(report.samples.length, 1);
     assert.ok(report.samples.every(sample => sample.state === 'cancelled'));
-    assert.equal(state.cancelled.length, 4); assert.equal(state.active, 0);
+    assert.equal(state.cancelled.length, 1); assert.equal(state.active, 0);
   });
-  await run('model-change-stops-all-workers', async page => {
-    await stress(page); await page.evaluate(() => { window.__fixture.benchmark.mode = 'hold'; });
-    await start(page); await page.waitForFunction(() => window.__fixture.benchmark.active === 4);
+  await run('model-change-stops-serial-runner', async page => {
+    await configure(page); await page.evaluate(() => { window.__fixture.benchmark.mode = 'hold'; });
+    await start(page); await page.waitForFunction(() => window.__fixture.benchmark.active === 1);
     await page.evaluate(() => { window.__fixture.benchmark.model = 'Fixture B'; }); await finish(page);
     const [report] = await reports(page), state = await page.evaluate(() => window.__fixture.benchmark);
     assert.equal(report.state, 'failed'); assert.equal(report.stopReason, 'modelChanged');
-    assert.equal(state.active, 0); assert.equal(state.cancelled.length, 4);
+    assert.equal(state.active, 0); assert.equal(state.cancelled.length, 1);
   });
   await run('legacy-history-remains-readable-and-exportable', async page => {
     const old = { id: 'legacy-report', profileId: 'a', profileName: 'Fixture A', baseUrl: 'http://127.0.0.1:18081', model: 'Fixture A', startedAt: 1700000000000, finishedAt: 1700000000100, state: 'completed', options: { prompt: 'old', rounds: 1, maxTokens: 256, warmup: false, mode: 'repeat', timeoutMs: 5000 }, samples: [{ index: 1, warmup: false, model: 'Fixture A', startedAt: 1700000000000, state: 'completed', wallMs: 100, ttftMs: 20, promptTokens: 100, completionTokens: 10, cachedTokens: 40, prefillTokS: 1250, decodeTokS: 80, output: 'legacy output' }] };
     await page.evaluate(value => localStorage.setItem('benchmark-fixture-reports', JSON.stringify([value])), old);
-    await page.reload(); await area(page).getByText('旧版串行报告', { exact: false }).waitFor();
+    await page.reload(); await scenario(page); await area(page).getByText('旧版串行报告', { exact: false }).waitFor();
     await section(page, /^(请求样本|Request samples)/);
     assert.equal(await area(page).locator('.benchmark-samples-table tbody tr').count(), 1);
     const event = page.waitForEvent('download'); await area(page).getByRole('button', { name: '导出 JSON', exact: true }).click();
@@ -299,15 +430,10 @@ try {
     await assertFirstScreen(page);
     assert.equal(await area(page).getByRole('checkbox').evaluateAll(elements => elements.filter(element => element.checked).length), 6);
     await page.screenshot({ path: resolve(output, `compact-default-suite-${viewport.width}.png`), fullPage: false });
-    await area(page).getByRole('radio', { name: '压力测试', exact: true }).click();
-    await assertFirstScreen(page);
-    assert.equal(await area(page).getByRole('button', { name: '轻量试跑', exact: true }).isVisible(), true);
-    assert.match(await area(page).locator('.benchmark-budget').innerText(), /300 个请求或 300 秒/);
-    await page.screenshot({ path: resolve(output, `compact-default-stress-${viewport.width}.png`), fullPage: false });
     await area(page).getByRole('button', { name: '测试说明', exact: true }).click();
-    const guide = page.getByRole('dialog', { name: 'Benchmark 测试说明', exact: true });
+    const guide = page.getByRole('dialog', { name: '场景测试说明', exact: true });
     await guide.waitFor(); assert.equal(await guide.locator('dt').count(), 7);
-    assert.match(await guide.innerText(), /单路引擎|排队/);
+    assert.match(await guide.innerText(), /一次只发送一个请求/);
     await page.keyboard.press('Escape'); await guide.waitFor({ state: 'hidden' });
     assert.equal((await streams(page)).length, 0);
   }, '', viewport);
@@ -326,7 +452,7 @@ try {
     assert.equal(await area(page).getByRole('button', { name: language === 'en' ? 'Export JSON' : '导出 JSON' }).isEnabled(), true);
     await section(page, /^(性能统计|Performance statistics)$/);
     await section(page, /^(请求样本|Request samples)/);
-    await section(page, /^(资源与排队趋势|Resources and queue trends)/);
+    await section(page, /^(资源趋势|Resource trends)/);
     const expandedWidths = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth, body: document.body.scrollWidth }));
     assert.ok(expandedWidths.document <= expandedWidths.viewport + 1 && expandedWidths.body <= expandedWidths.viewport + 1, JSON.stringify(expandedWidths));
     await page.screenshot({ path: resolve(output, `narrow-layout-${language}-expanded.png`), fullPage: true });

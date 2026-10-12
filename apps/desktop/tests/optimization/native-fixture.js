@@ -3,11 +3,30 @@ const profiles = ['a', 'b'].map(id => ({ id, name: `Fixture ${id.toUpperCase()}`
 const configs = Object.fromEntries(profiles.map(profile => [profile.id, { exe: 'fixture/python.exe', cwd: profile.installDir, args: ['--model', `fixture/${profile.id}.gguf`, '--pool-workers', '4'], model_name: profile.name }]));
 const message = { id: 'partial', role: 'assistant', content: '已收到的部分回答', error: 'STREAM_INCOMPLETE', createdAt: Date.now() };
 const store = { settings: { language: 'zh-CN', theme: 'light', pollInterval: 60000, autoCheckUpdates: false, closeToTray: false, skipExitConfirmation: false }, activeProfile: 'a', onboardingOpen: false, conversations: [{ id: 'conversation', profileId: 'a', title: 'Partial answer fixture', messages: [message], createdAt: Date.now(), updatedAt: Date.now() }], activeConversationIds: { a: 'conversation' } };
+// Only the floating-settings replay persists its synthetic preferences on reload.
+const floatingSettingsParams = new URLSearchParams(location.search);
+const floatingSettingsKey = floatingSettingsParams.has('floating-settings') ? `strata-floating-settings-fixture-${floatingSettingsParams.get('case') || 'default'}-${floatingSettingsParams.get('replay') || 'default'}` : null;
+if (floatingSettingsKey) { try { Object.assign(store.settings, JSON.parse(sessionStorage.getItem(floatingSettingsKey) || '{}')); } catch {} }
 const calls = [];
 const callbacks = new Map(); let callbackId = 0;
+const channelIndexes = new Map();
 const listeners = new Map(); let listenerId = 0;
-window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener(_event, id) { const callback = listeners.get(id); if (callback !== undefined) callbacks.delete(callback); listeners.delete(id); } };
+window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener(_event, id) { const listener = listeners.get(id); if (listener !== undefined) callbacks.delete(listener.handler); listeners.delete(id); } };
 window.__fixture = { calls, configs, store, profiles, supervisor: {}, serviceStatuses: {}, capability: 0, failReads: false, metricFailure: false, remoteValue: 100, emit: () => {} };
+window.__fixture.emitEvent = (event, payload) => {
+  let delivered = 0;
+  for (const [id, listener] of [...listeners]) if (listener.event === event) { callbacks.get(listener.handler)?.({ event, id, payload: structuredClone(payload) }); delivered++; }
+  return delivered;
+};
+window.__fixture.hasListener = event => [...listeners.values()].some(listener => listener.event === event);
+window.__fixture.deliverChannel = (channel, message) => {
+  const id = typeof channel === 'string' ? Number(channel.replace('__CHANNEL__:', '')) : channel?.id;
+  const callback = callbacks.get(id);
+  if (!callback) throw Error(`Missing synthetic Tauri channel: ${id}`);
+  const index = channelIndexes.get(id) || 0;
+  channelIndexes.set(id, index + 1);
+  callback({ index, message });
+};
 const featureTasks = [], featureLogs = new Map(), externalOwners = new Set();
 const officialApp = location.pathname.endsWith('/official-app.html');
 const officialFeatures = officialApp || location.pathname.endsWith('/official-features.html');
@@ -26,7 +45,9 @@ window.__TAURI_INTERNALS__ = {
     if (command === 'store_set') {
       if (window.__fixture.holdStore) await new Promise(resolve => { window.__fixture.releaseStore = () => { window.__fixture.holdStore = false; resolve(); }; });
       if (window.__fixture.failStoreWrites) { window.__fixture.storeFailures = (window.__fixture.storeFailures ?? 0) + 1; throw Error('Fixture disk write failed'); }
-      store[args.key] = structuredClone(args.value); return;
+      store[args.key] = structuredClone(args.value);
+      if (floatingSettingsKey && args.key === 'settings') sessionStorage.setItem(floatingSettingsKey, JSON.stringify(store.settings));
+      return;
     }
     if (command === 'local_installations') return profiles;
     if (command === 'local_installation_details') return profiles.map(profile => ({ profileId: profile.id, configModifiedAt: 1000, lastActivatedAt: profile.id === 'a' ? 2000 : 1000 }));
@@ -91,7 +112,9 @@ window.__TAURI_INTERNALS__ = {
     if (['discover_local', 'list_setup_handoffs', 'list_local_models'].includes(command)) return [];
     if (command === 'get_background_policy') return { mode: 'alwaysReady', autoRecover: false };
     if (command === 'get_startup_status') return { enabled: false, supported: true };
-    if (command === 'plugin:event|listen') { const id = ++listenerId; listeners.set(id, args.handler); if (args.event === 'window-exit-requested') window.__fixture.emit = () => callbacks.get(args.handler)?.({ event: args.event, id, payload: null }); return id; }
+    if (command === 'plugin:event|listen') { const id = ++listenerId; listeners.set(id, { event: args.event, handler: args.handler, target: args.target }); if (args.event === 'window-exit-requested') window.__fixture.emit = () => window.__fixture.emitEvent(args.event, null); return id; }
+    if (command === 'plugin:event|emit' || command === 'plugin:event|emit_to') { window.__fixture.emitEvent(args.event, args.payload); return; }
+    if (command === 'apply_settings') { store.settings = structuredClone(args.settings); window.__fixture.emitEvent('monitor-preferences-changed', store.settings); return; }
     if (command === 'confirm_window_close') return;
     if (command.startsWith('plugin:') || ['apply_settings', 'local_runtime_installation'].includes(command)) return null;
     throw Error(`Unmocked fixture command: ${command}`);

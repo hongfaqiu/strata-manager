@@ -1,6 +1,6 @@
 # System overview: Strata Manager 0.1.4
 
-This document explains the components, persistence and operating boundaries of 0.1.4. See [verification records](VERIFICATION.md); release results must be tied to same-source CI and the [published release](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.4).
+This document explains the components, persistence and operating boundaries of 0.1.4. The final “In development (Unreleased)” section separately describes changes not yet included in that version's installers. See [verification records](VERIFICATION.md); release results must be tied to same-source CI and the [published release](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.4).
 
 ## Three components
 
@@ -54,7 +54,7 @@ The update journal records replacement plans, original-program backups and origi
 
 ## Status trends and validation boundaries
 
-The separate desktop monitor is closed by default. Open it manually, drag/resize, pin it above other windows or return to the main window. Closing it preserves the main app. It reads only an existing background and health/metrics; a closed background is never launched, upgraded or restored by sampling. Its application command boundary permits only monitoring and showing the main window.
+The separate desktop monitor in 0.1.4 is closed by default. Open it manually, drag/resize, pin it above other windows or return to the main window. Closing it preserves the main app. It reads only an existing background and health/metrics; a closed background is never launched, upgraded or restored by sampling. That version's application command boundary permits only monitoring and showing the main window. Additional actions in development are described below.
 
 Failed status queries stop old process data from authorizing operations. After reconnection, only metrics successfully sampled after the failure are displayed. Normal background polling retains the last successful sample.
 
@@ -66,9 +66,32 @@ Existing records cover Windows MCP start/stop, continued operation after disconn
 
 Release builds, website screenshots/links and public installer signatures/checksums are verified separately against the final commit. Real GPU Benchmark measurements, full tuning, sustained GPU stress, system-level Linux DEB installation and client cross-version automatic updates require separate validation. Older and single-machine results do not establish compatibility with all hardware.
 
+## In development (Unreleased)
+
+The following features describe current development code and are not included in the public 0.1.4 installers. Screenshots use isolated demonstration data; values in the report image are not hardware measurements. See the [Unreleased changelog](../CHANGELOG.md) for the full illustrated overview.
+
+### Benchmark workspace
+
+The sidebar has a dedicated Benchmark entry with “Context tiers” and “Scenario suite” tabs. Context tests send requests serially from the smallest selected tier to the largest. Presets run from 8K to 1M, with the model's actual context limit added as a tier. By default, all tiers within the verified limit that leave room for output and template overhead are selected; presets above the limit are unavailable. A running service uses the loaded model's `/health` value. When stopped, the local configuration is read only for planning; reading the limit does not start the service.
+
+To run a test, first ensure the model is ready and no inference or management task is active. Select tiers, rounds per tier, output allowance and timeout, then start the finite plan. Each tier's total budget includes output and template headroom, so a target tier is not the actual input token count. When token counting is unavailable, the input size used during preparation is marked estimated. Actual input, output and cache counts come from service `usage`; prefill and decode speeds come from `timings`. Reports also record first-token latency and full request duration. GPU memory and RAM are sampled once per second across the GPUs and host, and missing values remain unknown.
+
+Results show line charts for prefill speed, decode speed and request duration, averaging successful requests within each tier while keeping individual measurements in the table. Copy a result image, export PNG, or export JSON/CSV with test conditions. Copying an image requires image clipboard support in the current environment; PNG export is available when copying fails. Warmup, caching and other programs still affect results; a chart alone does not establish cold-start or cache-free performance.
+
+“Scenario suite” retains seven scenarios and sends one request at a time. Legacy concurrent stress reports remain available for viewing and export; they do not provide a new stress-run mode. The two tabs cannot be switched during a run. Stopping a test or switching models cancels further work.
+
+Interface examples: [context tiers](screenshots/changelog/unreleased/benchmark.en.webp), [result report (demonstration data)](screenshots/changelog/unreleased/benchmark-report.en.webp), and [scenario tests](screenshots/changelog/unreleased/scenario-benchmark.en.webp).
+
+### Floating monitor and system tray
+
+The monitor uses a compact layout that shows metrics only. Drag anywhere and use the native context menu (or Shift+F10) for actions. The menu provides actions for returning to the main window, changing workspaces, copying the API address, refreshing or pausing sampling, pinning the monitor and opening its settings. Shared settings includes a “Floating monitor” panel for the default pin state, sample-time display and system tray monitoring; changes save automatically. When enabled, the tray updates status and speed independently, and clicking its icon restores the monitor. The monitor can also move to the tray through its context menu. See the [monitor settings example](screenshots/changelog/unreleased/floating-monitor-settings.en.webp).
+
+“Quick speed test” from the monitor or tray runs in the main window. It sends the short-request and decode scenarios serially only when the model is ready and inference and management tasks are idle. This action sends actual inference requests. Routine monitoring still reads only an existing backend and does not start or restore stopped services. Native context menus, tray behavior, pinning and the system clipboard require separate desktop validation; screenshots do not replace those checks.
+
 ## Source evidence
 
 - Architecture, registration and persistence: `apps/desktop/src-tauri/src/lib.rs`, `apps/supervisor/src/main.rs`, `crates/runtime-core/src/{lib,store,http,storage,analytics}.rs`.
 - Shared settings and coordination: `App.tsx`, `CommonChatSettingsPanel.tsx`, `ChatSettings.tsx`, `ServiceConnectionPanel.tsx`, `packages/core/src/shared-chat-settings.ts`.
 - Updates and complete-file verification: `appUpdateController.ts`, `supervisor_client.rs`, `runtime_upgrade/release_zip.rs` and `release_zip/{download_check,download_source}.rs`.
 - Sampling and validation scope: `ServiceStatusPopover.tsx`, `serviceStatusTelemetry.ts`, `CHANGELOG.md`, `docs/VERIFICATION.md`. Historical test counts are not reported as final-source pass counts.
+- Features in development: `BenchmarkPage.tsx`, `ContextBenchmarkPage.tsx`, `ContextBenchmarkCharts.tsx`, `ScenarioBenchmarkPage.tsx`, `useBenchmarkContext.ts`, `packages/core/src/context-benchmark.ts`, `FloatingMonitorSettings.tsx`, `floatingMonitor.ts`, `apps/desktop/src-tauri/src/monitor_tray.rs`.

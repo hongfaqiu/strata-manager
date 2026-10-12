@@ -2,7 +2,7 @@ use crate::ClientState;
 use serde_json::{json, Value};
 use std::{future::Future, path::Path, time::Duration};
 use strata_runtime_core::types::ServiceProfile;
-use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 pub const LABEL: &str = "service-monitor";
 
@@ -14,43 +14,87 @@ fn require_label(actual: &str, expected: &str) -> Result<(), String> {
     }
 }
 
+fn require_destination(destination: &str) -> Result<(), String> {
+    if matches!(
+        destination,
+        "overview" | "chat" | "monitoring" | "usage" | "tasks" | "settings" | "quickBenchmark"
+    ) {
+        Ok(())
+    } else {
+        Err("浮条不支持此导航目标".into())
+    }
+}
+
+fn initial_always_on_top(settings: Option<&Value>) -> bool {
+    settings
+        .and_then(|settings| settings["floatingMonitor"]["alwaysOnTop"].as_bool())
+        .unwrap_or(true)
+}
+
+fn initial_width(settings: Option<&Value>) -> f64 {
+    if settings.is_some_and(|value| value["floatingMonitor"]["showSampleTime"] == true) {
+        268.0
+    } else {
+        220.0
+    }
+}
+
 #[tauri::command]
 pub async fn open_monitor_window(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
     require_label(window.label(), "main")?;
+    open_window(&app).await
+}
+
+pub(crate) async fn open_window(app: &AppHandle) -> Result<(), String> {
+    let state = app.state::<ClientState>();
     static OPEN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     let _guard = OPEN.lock().await;
     if let Some(existing) = app.get_webview_window(LABEL) {
+        existing
+            .emit("monitor-restored", ())
+            .map_err(|e| e.to_string())?;
         existing.show().map_err(|e| e.to_string())?;
         existing.unminimize().map_err(|e| e.to_string())?;
         return existing.set_focus().map_err(|e| e.to_string());
     }
+    // Read only an existing backend. Opening the strip must never recover or
+    // start a stopped supervisor merely to read a window preference.
+    let settings = read_existing(
+        &state.ipc.data_dir,
+        &state.client,
+        "store_get",
+        json!({"key":"settings"}),
+    )
+    .await
+    .ok();
+    let width = initial_width(settings.as_ref());
     let monitor = WebviewWindowBuilder::new(
-        &app,
+        app,
         LABEL,
         WebviewUrl::App("index.html?window=monitor".into()),
     )
     .title("Strata Manager · Monitor")
-    .inner_size(920.0, 82.0)
-    .min_inner_size(420.0, 82.0)
+    .inner_size(width, 40.0)
+    .min_inner_size(220.0, 40.0)
+    .max_inner_size(268.0, 40.0)
     .decorations(false)
-    .resizable(true)
+    .resizable(false)
     .skip_taskbar(true)
-    .always_on_top(true)
+    .always_on_top(initial_always_on_top(settings.as_ref()))
     .visible(false)
     .build()
     .map_err(|e| e.to_string())?;
     // Keep the initial strip inside the current monitor's work area. Subsequent
-    // opens reuse its user-selected position, dimensions and pin preference.
-    if let Some(screen) = window.current_monitor().map_err(|e| e.to_string())? {
+    // opens reuse its user-selected position and pin preference.
+    if let Some(screen) = app
+        .get_webview_window("main")
+        .and_then(|window| window.current_monitor().ok().flatten())
+    {
         let area = screen.work_area();
         let scale = screen.scale_factor();
-        let width = (f64::from(area.size.width) / scale - 32.0).clamp(420.0, 920.0);
-        monitor
-            .set_size(tauri::LogicalSize::new(width, 82.0))
-            .map_err(|e| e.to_string())?;
         let x =
             area.position.x + (f64::from(area.size.width) - (width + 16.0) * scale).max(0.0) as i32;
-        let y = area.position.y + (f64::from(area.size.height) - 98.0 * scale).max(0.0) as i32;
+        let y = area.position.y + (f64::from(area.size.height) - 56.0 * scale).max(0.0) as i32;
         monitor
             .set_position(tauri::PhysicalPosition::new(x, y))
             .map_err(|e| e.to_string())?;
@@ -60,15 +104,30 @@ pub async fn open_monitor_window(app: AppHandle, window: WebviewWindow) -> Resul
 }
 
 #[tauri::command]
-pub fn show_main_from_monitor(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
+pub fn show_main_from_monitor(
+    app: AppHandle,
+    window: WebviewWindow,
+    destination: Option<String>,
+) -> Result<(), String> {
     require_label(window.label(), LABEL)?;
+    show_main(&app, destination)
+}
+
+pub(crate) fn show_main(app: &AppHandle, destination: Option<String>) -> Result<(), String> {
+    if let Some(destination) = destination.as_deref() {
+        require_destination(destination)?;
+    }
     let main = app.get_webview_window("main").ok_or("主窗口不可用")?;
+    if let Some(destination) = destination {
+        app.emit_to("main", "monitor-navigate", destination)
+            .map_err(|e| e.to_string())?;
+    }
     main.show().map_err(|e| e.to_string())?;
     main.unminimize().map_err(|e| e.to_string())?;
     main.set_focus().map_err(|e| e.to_string())
 }
 
-async fn read_existing(
+pub(crate) async fn read_existing(
     directory: &Path,
     client: &reqwest::Client,
     method: &'static str,
@@ -110,7 +169,7 @@ async fn read_existing(
     .map_err(|e| e.to_string())
 }
 
-async fn collect_snapshot<F, Fut>(mut rpc: F) -> Result<Value, String>
+pub(crate) async fn collect_snapshot<F, Fut>(mut rpc: F) -> Result<Value, String>
 where
     F: FnMut(&'static str, Value) -> Fut,
     Fut: Future<Output = Result<Value, String>>,
@@ -134,7 +193,8 @@ where
     let mut snapshot = json!({
         "settings": {
             "language":settings["language"], "theme":settings["theme"],
-            "pollInterval":settings["pollInterval"]
+            "pollInterval":settings["pollInterval"],
+            "floatingMonitor":settings["floatingMonitor"]
         },
         "phase":"none", "sampledAt":strata_runtime_core::types::now()
     });
@@ -238,7 +298,7 @@ mod tests {
             records.lock().unwrap().push((method.into(), params.clone()));
             async move {
                 match method {
-                    "store_get" => Ok(json!({"language":"en","theme":"dark","pollInterval":2000})),
+                    "store_get" => Ok(json!({"language":"en","theme":"dark","pollInterval":2000,"floatingMonitor":{"alwaysOnTop":false,"quickActions":["chat","settings"],"futureOption":"keep"}})),
                     "local_installations" => Ok(json!([{"id":"selected","name":"Model A","baseUrl":"http://127.0.0.1:18081","managed":true}])),
                     "supervisor_status" => Ok(json!({"activeLocalInstallation":"selected"})),
                     "service_status" => Ok(json!({"running":running})),
@@ -251,6 +311,73 @@ mod tests {
         }).await.unwrap();
         let calls = calls.lock().unwrap().clone();
         (result, calls)
+    }
+
+    #[test]
+    fn compact_width_ignores_legacy_buttons_and_tracks_optional_time() {
+        assert_eq!(initial_width(None), 220.0);
+        assert_eq!(
+            initial_width(Some(
+                &json!({"floatingMonitor":{"actions":["chat", "pin"]}})
+            )),
+            220.0
+        );
+        assert_eq!(
+            initial_width(Some(&json!({"floatingMonitor":{"showSampleTime":true}}))),
+            268.0
+        );
+    }
+
+    #[test]
+    fn monitor_navigation_only_accepts_known_destinations() {
+        for destination in [
+            "overview",
+            "chat",
+            "monitoring",
+            "usage",
+            "tasks",
+            "settings",
+            "quickBenchmark",
+        ] {
+            assert!(require_destination(destination).is_ok());
+        }
+        for destination in [
+            "",
+            "start_service",
+            "shutdown",
+            "https://example.com",
+            "Settings",
+        ] {
+            assert!(require_destination(destination).is_err());
+        }
+    }
+
+    #[test]
+    fn initial_pin_preference_defaults_safely_and_honors_false() {
+        assert!(initial_always_on_top(None));
+        for settings in [
+            Value::Null,
+            json!({}),
+            json!({"floatingMonitor":null}),
+            json!({"floatingMonitor":{"alwaysOnTop":"false"}}),
+        ] {
+            assert!(initial_always_on_top(Some(&settings)));
+        }
+        assert!(initial_always_on_top(Some(
+            &json!({"floatingMonitor":{"alwaysOnTop":true}})
+        )));
+        assert!(!initial_always_on_top(Some(
+            &json!({"floatingMonitor":{"alwaysOnTop":false}})
+        )));
+    }
+
+    #[tokio::test]
+    async fn snapshot_keeps_monitor_preferences_for_renderer_normalization() {
+        let (snapshot, _) = fixture(Some(false), true, true).await;
+        assert_eq!(
+            snapshot["settings"]["floatingMonitor"],
+            json!({"alwaysOnTop":false,"quickActions":["chat","settings"],"futureOption":"keep"})
+        );
     }
 
     #[tokio::test]

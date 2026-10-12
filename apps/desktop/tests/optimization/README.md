@@ -85,12 +85,32 @@ state with an error. Run it with the same CLI `run-code --filename` command.
 `verify-floating-monitor.cli.js` mounts the exact production `main.tsx` entry
 with `?window=monitor` through `floating-monitor-app.html`. It verifies the
 main status-bar entry, generation/idle/unloaded/stopped states, metrics failure
-with retained API health, failed/stale snapshots, a narrow English/dark window,
-and dedicated pin/close/show-main commands. It permits only in-memory native
-snapshots and window controls, and rejects service lifecycle calls. Results are
-returned as JSON; two screenshots go to `output/playwright/service-status-trends/`.
-The browser replay verifies UI and command wiring; native topmost behavior
-requires a separate Tauri window run.
+with retained API health, failed/stale snapshots, a 220×40 English/dark window,
+the removal of model names, no inline buttons, unclipped speed/GPU/CPU
+metrics, legacy shortcut preferences ignored, automatic logical window
+width changes for sample time, sample-time
+preferences, pause/resume without retained live metrics during a delayed fresh
+snapshot, immediate preference updates during pause, and
+dedicated pin/close/show-main commands. It checks the absence of dedicated drag
+regions, real pointer gestures over metrics and blank space, a four-pixel
+drag threshold, and ordinary left-click/right-click behavior. Tray menu actions
+use an in-memory command;
+the tray setting and native preference events are saved and replayed after reload.
+Native context menus use the installed
+Tauri Menu/Channel implementation with synthetic item registration, right-click
+and Shift+F10 popup, and
+callback delivery. Clipboard writes remain in memory. The replay covers all
+menu entries and navigation destinations, the settings panel's three display
+options, automatic saving and reload, and main-window navigation
+events. Quick speed tests cover menu rejection for busy/stopped/unloaded models
+and an idle model's two serial short/decode requests, 256-token output budget,
+no warmup, and saved report. These inference responses are synthetic.
+It permits only in-memory native snapshots, window controls and explicitly
+requested synthetic speed streams, and rejects service lifecycle calls and
+external requests. Results are returned as JSON; screenshots go to
+`output/playwright/service-status-trends/`. The browser replay verifies UI and
+command wiring; actual native topmost/context-menu behavior requires a separate
+Tauri window run.
 
 The existing quick-action regression runner is
 `node apps/desktop/tests/optimization/verify-service-status.mjs`, with the same

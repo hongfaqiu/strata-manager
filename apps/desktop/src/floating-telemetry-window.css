@@ -8,55 +8,42 @@ html[data-window="monitor"], html[data-window="monitor"] body, html[data-window=
 
 .floating-telemetry-window.official-surface {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
   min-width: 0;
   height: 100vh;
   border: 1px solid var(--st-line);
   background: var(--st-surface);
   color: var(--st-ink);
-  font: 400 12px/1.4 var(--st-font);
+  font: 400 11px/1.4 var(--st-font);
+  user-select: none;
+  touch-action: none;
+  cursor: grab;
 }
+.floating-telemetry-window:active { cursor: grabbing; }
 
 .floating-telemetry-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex: 1 0 36px;
-  min-width: 0;
-  padding: 3px 8px;
-}
-
-.floating-telemetry-drag {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  align-self: stretch;
+  gap: 3px;
+  order: 2;
   flex: none;
-  padding-right: 3px;
-  color: var(--st-ink-muted);
-  cursor: move;
-  user-select: none;
+  min-width: 0;
+  padding: 0 5px 0 2px;
 }
 
-.floating-telemetry-header .floating-telemetry-profile {
-  display: block;
-  justify-content: flex-start;
-  text-align: left;
-  flex: 1 1 auto;
+.floating-telemetry-message {
+  flex: 0 1 auto;
   min-width: 0;
-  min-height: 26px;
-  height: 26px;
+  max-width: 76px;
   overflow: hidden;
-  padding: 2px 0;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--st-ink-soft);
-  font-size: 12px;
-  font-weight: 600;
+  color: var(--st-ink-muted);
+  font-size: 10px;
   white-space: nowrap;
   text-overflow: ellipsis;
+  text-align: right;
 }
+.floating-telemetry-message:empty { display: none; }
 
 .floating-telemetry-time, .floating-telemetry-notice {
   flex: none;
@@ -66,22 +53,38 @@ html[data-window="monitor"], html[data-window="monitor"] body, html[data-window=
 }
 
 .floating-telemetry-notice { color: var(--st-warn-text); }
-.floating-telemetry-actions { display: flex; flex: none; gap: 2px; }
-.floating-telemetry-actions button {
-  min-height: 26px;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border-color: transparent;
-  border-radius: 5px;
+.floating-telemetry-header:has(.floating-telemetry-message:empty) { display: none; }
+.floating-telemetry-window .service-telemetry-statusbar {
+  order: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  padding: 0 6px;
+  gap: 7px;
+  border: 0;
   background: transparent;
-  color: var(--st-ink-muted);
+  font-size: 10px;
 }
-.floating-telemetry-actions button[aria-pressed="true"] { color: var(--st-accent-text); }
-.floating-telemetry-actions button:last-child:hover { color: var(--st-danger-text); background: var(--st-danger-tint); }
-.floating-telemetry-window .service-telemetry-statusbar { padding-inline: 12px; }
-
-@media (max-width: 560px) {
-  .floating-telemetry-drag > span, .floating-telemetry-time { display: none; }
-  .floating-telemetry-header { gap: 7px; }
+.floating-telemetry-window .service-telemetry-values { gap: 9px; justify-content: space-between; }
+.floating-telemetry-window .service-telemetry-value {
+  display: grid;
+  grid-template-rows: 12px 15px;
+  align-items: center;
+  justify-items: start;
+  gap: 0 2px;
+  font-size: 9px;
+  line-height: 1;
 }
+.floating-telemetry-window .service-telemetry-value strong { font-size: 11px; line-height: 15px; }
+.floating-telemetry-window .service-telemetry-speed { grid-template-columns: auto auto; }
+.floating-telemetry-window .service-telemetry-speed > :first-child { grid-column: 1 / -1; }
+.floating-telemetry-window .service-telemetry-speed > :last-child { align-self: end; padding-bottom: 2px; font-size: 8px; }
+.floating-telemetry-window .service-telemetry-speed strong { min-width: 0; }
+.floating-telemetry-window .service-telemetry-values > :nth-child(2),
+.floating-telemetry-window .service-telemetry-values > :nth-child(3):not([data-busy="true"]),
+.floating-telemetry-window .service-telemetry-temperature,
+.floating-telemetry-window .service-telemetry-power { display: none; }
+.floating-telemetry-window .service-telemetry-state { gap: 4px; max-width: 64px; font-size: 9px; line-height: 12px; white-space: normal; }
+.floating-telemetry-window .service-telemetry-dot { width: 5px; height: 5px; }
+.floating-telemetry-paused-hint { display: none; }

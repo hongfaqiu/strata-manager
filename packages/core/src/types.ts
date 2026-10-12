@@ -83,6 +83,15 @@ export interface SetupHandoff {
   choices?: { configPath: string; name: string }[];
 }
 
+export type FloatingMonitorAction = 'main' | 'chat' | 'monitoring' | 'usage' | 'tasks' | 'quickBenchmark' | 'copyApiUrl' | 'refresh' | 'pause' | 'pin';
+
+export interface FloatingMonitorPreferences {
+  actions: FloatingMonitorAction[];
+  alwaysOnTop: boolean;
+  showSampleTime: boolean;
+  showInTray: boolean;
+}
+
 export interface AppSettings {
   language: 'zh-CN' | 'en';
   theme: 'dark' | 'light' | 'system';
@@ -90,6 +99,7 @@ export interface AppSettings {
   skipExitConfirmation?: boolean;
   pollInterval: number;
   autoCheckUpdates?: boolean;
+  floatingMonitor?: FloatingMonitorPreferences;
 }
 
 export interface LocalInstallationDetails {
