@@ -1176,7 +1176,98 @@ async fn startup_refuses_unowned_config_hash_after_interruption() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn candidate_oom_restores_exact_baseline_and_marks_measurement_failed() {
+    candidate_oom_recovers(false).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn candidate_oom_http_disconnect_before_owned_exit_restores_exact_baseline() {
+    candidate_oom_recovers(true).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn recovery_drain_never_bypasses_a_missing_changed_or_unowned_record() {
     let (_temp, state, profile, original) = live_fixture().await;
+    let expected = recovery_owned_status(&state, &profile, None).unwrap();
+    assert!(expected.running && expected.owned);
+
+    let mut changed = expected.clone();
+    changed.started_at = expected.started_at.map(|time| time + 1);
+    assert!(drain_owned_for_recovery(&state, &profile, &changed)
+        .await
+        .is_err());
+    {
+        let mut processes = state.processes.lock().unwrap();
+        let process = processes.get_mut(&profile.id).unwrap();
+        process.status.owned = false;
+    }
+    assert!(drain_owned_for_recovery(&state, &profile, &expected)
+        .await
+        .is_err());
+    let record = {
+        let mut processes = state.processes.lock().unwrap();
+        processes.get_mut(&profile.id).unwrap().status.owned = true;
+        processes.remove(&profile.id).unwrap()
+    };
+    assert!(drain_owned_for_recovery(&state, &profile, &expected)
+        .await
+        .is_err());
+    state
+        .processes
+        .lock()
+        .unwrap()
+        .insert(profile.id.clone(), record);
+    assert_original(&profile, &original);
+    assert!(
+        recovery_owned_status(&state, &profile, Some(&expected))
+            .unwrap()
+            .running
+    );
+    assert_eq!(health(&state, &profile).await["loaded"], true);
+    crate::stop_service(&state, profile.id.clone())
+        .await
+        .unwrap();
+}
+
+async fn candidate_oom_recovers(disconnect_before_exit: bool) {
+    let (_temp, state, profile, original) = live_fixture().await;
+    let runtime = Path::new(&profile.install_dir);
+    if disconnect_before_exit {
+        // Only the copied candidate fixture closes HTTP before its process
+        // handle signals exit. This makes the OOM/recovery race deterministic.
+        let server_path = runtime.join("serve/server.py");
+        let source = fs::read_to_string(&server_path).unwrap();
+        let crash = "os._exit(137)  # Simulated OOM of this test-owned process.";
+        assert_eq!(source.matches(crash).count(), 1);
+        let source = source.replace(
+            crash,
+            r#"
+Path(config["cwd"]).joinpath("oom-disconnected").write_text(str(os.getpid()))
+                        self.server.socket.close()
+                        self.connection.shutdown(2)
+                        self.connection.close()
+                        time.sleep(1)
+                        os._exit(137)  # Only this held test process exits.
+"#
+            .trim(),
+        );
+        let get_health = "        if self.path == \"/health\":";
+        assert_eq!(source.matches(get_health).count(), 1);
+        fs::write(
+            server_path,
+            source.replace(
+                get_health,
+                r#"
+        if workers == 2 and Path(config["cwd"]).joinpath("oom-disconnected").exists():
+            self.connection.shutdown(2)
+            self.connection.close()
+            return
+        if self.path == "/health":
+"#
+                .trim_matches('\n'),
+            ),
+        )
+        .unwrap();
+    }
     fs::write(
         Path::new(&profile.install_dir).join("oom-candidate"),
         b"isolated",
@@ -1189,7 +1280,23 @@ async fn candidate_oom_restores_exact_baseline_and_marks_measurement_failed() {
     )
     .await
     .unwrap();
-    let done = await_job(&state, &profile).await;
+    let done = if disconnect_before_exit {
+        // The old implementation's 30-second API gate must reach its actual
+        // terminal failure, so this regression can prove why it failed.
+        tokio::time::timeout(Duration::from_secs(40), async {
+            loop {
+                let job = status(&state, profile.id.clone()).unwrap().unwrap();
+                if !job.state.active() {
+                    break job;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("private OOM fixture recovery must terminate")
+    } else {
+        await_job(&state, &profile).await
+    };
     assert_eq!(done.state, Phase::Failed, "{:?}", done.error);
     assert_eq!(
         done.full.recovery.state,
@@ -1199,6 +1306,16 @@ async fn candidate_oom_restores_exact_baseline_and_marks_measurement_failed() {
     );
     assert!(done.full.recovery.configuration_restored && done.full.recovery.service_verified);
     assert_original(&profile, &original);
+    if disconnect_before_exit {
+        let crashed_pid: u32 = fs::read_to_string(runtime.join("oom-disconnected"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_ne!(
+            state.processes.lock().unwrap()[&profile.id].status.pid,
+            Some(crashed_pid)
+        );
+    }
     assert_eq!(health(&state, &profile).await["loaded"], true);
     crate::stop_service(&state, profile.id.clone())
         .await

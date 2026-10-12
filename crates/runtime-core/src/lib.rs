@@ -2029,6 +2029,7 @@ struct StartupPlan {
     python: String,
     host: String,
     port: u16,
+    #[cfg(windows)]
     address: std::net::SocketAddr,
     listen_address: std::net::SocketAddr,
     lazy_cli: bool,
@@ -2100,6 +2101,7 @@ fn prepare_startup(
         python,
         host: endpoint.host,
         port: endpoint.port,
+        #[cfg(windows)]
         address: endpoint.address,
         listen_address: endpoint.listen_address,
         lazy_cli,

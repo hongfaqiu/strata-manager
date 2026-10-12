@@ -21,6 +21,7 @@ Maintain both languages for each version. Move unreleased changes into the actua
 - 新增 NVIDIA GPU 功耗上限和显卡编号设置，启动时校验驱动支持范围并应用。停止受管服务后恢复原值；其他程序已修改功耗上限时保留其修改。留空沿用显卡原有设置。
 - 精简网络与功耗卡片，把详细说明移到问号帮助，只保留字段、API 地址预览与生效提示。
 - 修复多个页面 Tab 和分段切换区域过宽的问题，按钮与容器按内容占宽，窄窗口下保留全部选项及键盘切换。
+- 修复调优候选服务崩溃时的恢复竞态，确认原受管进程退出后恢复配置与服务，避免继续等待已关闭的 API。
 
 ### English
 
@@ -28,6 +29,7 @@ Maintain both languages for each version. Move unreleased changes into the actua
 - Add NVIDIA GPU power-limit and GPU-index settings, validated against the driver before startup. Stopping a managed service restores the previous limit while preserving later changes from other programs. Empty limits keep the existing GPU setting.
 - Simplify network and power cards, moving details into help dialogs and keeping fields, an API address preview and an apply reminder visible.
 - Fix oversized tabs and segmented controls across multiple pages. Size buttons and containers to their content while keeping all options and keyboard navigation available in narrow windows.
+- Fix a recovery race when a tuning candidate crashes: verify that the owned process exited before restoring the original configuration and service instead of waiting for its closed API.
 
 ## [0.1.5] - 2026-10-12
 

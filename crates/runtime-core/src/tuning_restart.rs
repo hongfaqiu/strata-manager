@@ -672,6 +672,60 @@ fn original(state: &RuntimeState, job: &TuningJob) -> Result<Vec<u8>, String> {
     }
     Ok(bytes)
 }
+fn recovery_owned_status(
+    state: &RuntimeState,
+    profile: &ServiceProfile,
+    expected: Option<&crate::types::ProcessStatus>,
+) -> Result<crate::types::ProcessStatus, String> {
+    let mut processes = state.processes.lock().map_err(|e| e.to_string())?;
+    let process = processes
+        .get_mut(&profile.id)
+        .ok_or("恢复期间受管进程记录已不存在，未跳过排空")?;
+    let status = process.refresh()?;
+    if !status.owned
+        || status.pid.is_none()
+        || serde_json::to_value(&process.profile).map_err(|e| e.to_string())?
+            != serde_json::to_value(Some(profile)).map_err(|e| e.to_string())?
+        || expected.is_some_and(|expected| {
+            status.pid != expected.pid || status.started_at != expected.started_at
+        })
+    {
+        return Err("恢复期间受管进程身份或归属改变，未跳过排空".into());
+    }
+    Ok(status)
+}
+
+async fn drain_owned_for_recovery(
+    state: &RuntimeState,
+    profile: &ServiceProfile,
+    expected: &crate::types::ProcessStatus,
+) -> Result<(), String> {
+    let drain = async {
+        // Keep the existing health and observer-backed idle requirements for a
+        // live service. Only exit of this same held owned root can bypass them.
+        wait_restarted_api(state, profile).await?;
+        crate::maintenance::wait_idle(state, profile).await
+    };
+    tokio::pin!(drain);
+    loop {
+        if !recovery_owned_status(state, profile, Some(expected))?.running {
+            return Ok(());
+        }
+        tokio::select! {
+            result = &mut drain => {
+                // The root can exit between the last status check and a failed
+                // HTTP/observer operation. Recheck its held record before error.
+                return if !recovery_owned_status(state, profile, Some(expected))?.running {
+                    Ok(())
+                } else {
+                    result
+                };
+            }
+            _ = tokio::time::sleep(Duration::from_millis(50)) => {}
+        }
+    }
+}
+
 async fn restore_stage(
     state: &Arc<RuntimeState>,
     profile: &ServiceProfile,
@@ -709,19 +763,11 @@ async fn restore_stage(
         job.full.recovery.service_verified = false;
     })?;
     // Drain only the current owned process. A dead owned process has no in-flight work.
-    let alive = state
-        .processes
-        .lock()
-        .map_err(|e| e.to_string())?
-        .get_mut(&profile.id)
-        .map(|p| p.refresh())
-        .transpose()?
-        .is_some_and(|s| s.running && s.owned);
-    if alive {
+    let owned = recovery_owned_status(state, profile, None)?;
+    if owned.running {
         // A canceled candidate may have just spawned a new API root. Until its
         // GET health is ready the observer file can still name the exited root.
-        wait_restarted_api(state, profile).await?;
-        crate::maintenance::wait_idle(state, profile).await?;
+        drain_owned_for_recovery(state, profile, &owned).await?;
     }
     if fs::read(&path).map_err(|e| e.to_string())? != current {
         return Err("恢复排空期间配置被编辑，未覆盖".into());

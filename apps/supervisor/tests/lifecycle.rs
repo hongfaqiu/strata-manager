@@ -359,6 +359,42 @@ async fn wait_exit(child: &mut LoggedChild) {
         child.diagnostics("shutdown wait")
     );
 }
+const APP_UPDATE_BUSY: &str = "后台有启动、加载或维护任务，完成后再更新应用";
+async fn prepare_app_update_when_idle(data: &Path, child: &LoggedChild) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let mut last_error = String::from("waiting for task completion");
+    loop {
+        let tasks = call(data, "list_tasks", json!({})).await.unwrap();
+        let terminal = tasks.as_array().unwrap().iter().all(|task| {
+            matches!(
+                task["state"].as_str(),
+                Some("completed" | "failed" | "cancelled")
+            ) && !task["finishedAt"].is_null()
+        });
+        if terminal {
+            // Task/health status is not a worker-idle barrier: the periodic
+            // lazy-policy worker also holds the startup/maintenance locks.
+            match call(data, "prepare_app_update", json!({})).await {
+                Ok(_) => return,
+                Err(error)
+                    if error.code == "runtime_operation" && error.message == APP_UPDATE_BUSY =>
+                {
+                    last_error = error.to_string();
+                }
+                Err(error) => panic!(
+                    "unexpected update preparation failure; {}",
+                    child.diagnostics(&error.to_string())
+                ),
+            }
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "update preparation never became idle; tasks={tasks}; {}",
+            child.diagnostics(&last_error)
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
 fn python() -> String {
     #[cfg(windows)]
     let programs = ["py"];
@@ -480,7 +516,7 @@ fn fixture(directory: &Path) {
     .unwrap();
     fs::write(directory.join("serve/server.py"), r#"
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
-import argparse,json
+import argparse,json,pathlib,time
 from fixture_identity import identity
 p=argparse.ArgumentParser();p.add_argument('--port',type=int);p.add_argument('--host');args,_=p.parse_known_args()
 loaded=False
@@ -495,7 +531,12 @@ class Handler(BaseHTTPRequestHandler):
  def do_POST(self):
   global loaded
   self.rfile.read(int(self.headers.get('Content-Length',0)))
-  if self.path in ('/load','/v1/load'):loaded=True;out={'status':'loaded'}
+  if self.path in ('/load','/v1/load'):
+   gate=pathlib.Path('hold-load')
+   if gate.exists():
+    pathlib.Path('load-entered').touch();deadline=time.monotonic()+60
+    while gate.exists() and time.monotonic()<deadline:time.sleep(.01)
+   loaded=True;out={'status':'loaded'}
   elif self.path in ('/unload','/v1/unload'):loaded=False;out={'status':'unloaded'}
   else:out={}
   self.respond(out)
@@ -594,10 +635,57 @@ async fn real_background_process_survives_client_disconnect_and_reconnects_with_
         original
     );
     let id = profile["id"].as_str().unwrap().to_owned();
-    let (left, right) = tokio::join!(
-        call(&data, "ensure_local_service", json!({"profileId":id})),
-        call(&data, "ensure_local_service", json!({"profileId":id}))
+    fs::write(runtime.join("hold-load"), b"isolated startup gate").unwrap();
+    let ensure_data = data.clone();
+    let ensure_id = id.clone();
+    let startup = tokio::spawn(async move {
+        tokio::join!(
+            call(
+                &ensure_data,
+                "ensure_local_service",
+                json!({"profileId":ensure_id})
+            ),
+            call(
+                &ensure_data,
+                "ensure_local_service",
+                json!({"profileId":ensure_id})
+            )
+        )
+    });
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
+    while !runtime.join("load-entered").exists() {
+        assert!(
+            std::time::Instant::now() < deadline && !startup.is_finished(),
+            "isolated fixture never entered the held load; {}",
+            guard
+                .child
+                .as_ref()
+                .unwrap()
+                .diagnostics("waiting for load gate")
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    // A real startup worker can be busy even with no asynchronous setup tasks.
+    // Preserve the updater's fail-closed contract before waiting for readiness.
+    assert_eq!(
+        call(&data, "list_tasks", json!({})).await.unwrap(),
+        json!([])
     );
+    let blocked = call(&data, "prepare_app_update", json!({}))
+        .await
+        .unwrap_err();
+    assert_eq!(blocked.code, "runtime_operation");
+    assert_eq!(blocked.message, APP_UPDATE_BUSY);
+    assert!(
+        !startup.is_finished(),
+        "update preparation must not finish the load"
+    );
+    assert!(
+        !data.join("backups").exists(),
+        "busy preparation must not create an update snapshot"
+    );
+    fs::remove_file(runtime.join("hold-load")).unwrap();
+    let (left, right) = startup.await.unwrap();
     let left = left.unwrap();
     let right = right.unwrap();
     assert_eq!(left["pid"], right["pid"]);
@@ -635,7 +723,7 @@ async fn real_background_process_survives_client_disconnect_and_reconnects_with_
             .unwrap(),
         json!({"mode":"lazy","autoRecover":true,"idleUnloadMinutes":15})
     );
-    call(&data, "prepare_app_update", json!({})).await.unwrap();
+    prepare_app_update_when_idle(&data, guard.child.as_ref().unwrap()).await;
     assert_eq!(
         ready(&data, guard.child.as_mut().unwrap()).await["pid"].as_u64(),
         Some(owner)
