@@ -7,6 +7,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener};
 pub(crate) struct ListenEndpoint {
     pub host: String,
     pub port: u16,
+    #[cfg(any(windows, test))]
     pub address: SocketAddr,
     pub listen_address: SocketAddr,
     pub base_url: String,
@@ -257,6 +258,7 @@ pub(crate) fn endpoint(
     Ok(ListenEndpoint {
         host: ip.to_string(),
         port,
+        #[cfg(any(windows, test))]
         address,
         listen_address: SocketAddr::new(ip, port),
         base_url: format!("http://{address}"),
