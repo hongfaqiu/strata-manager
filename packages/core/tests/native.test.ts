@@ -59,11 +59,19 @@ describe('native bridge protocol', () => {
     expect(native.invoke).toHaveBeenLastCalledWith('resolve_setup_handoff', { taskId: 'setup-task', configPath: '/tmp/strata/strata-qwen-iq3_s.json' });
   });
   it('rejects remote services before sending either HTTP or stream commands', async () => {
-    for (const baseUrl of ['http://192.168.1.10:8080', 'https://models.example.com', 'http://127.0.0.1.example.com', 'https://127.0.0.1:8080']) {
+    for (const baseUrl of ['http://203.0.113.10:8080', 'https://models.example.com', 'http://127.0.0.1.example.com', 'https://127.0.0.1:8080']) {
       await expect(request({ ...profile, baseUrl }, '/health')).rejects.toMatchObject({ code: 'LOCAL_SERVICE_ONLY' });
       await expect(streamChat({ ...profile, baseUrl }, {}, () => {})).rejects.toMatchObject({ code: 'LOCAL_SERVICE_ONLY' });
     }
     expect(native.invoke).not.toHaveBeenCalled();
+  });
+  it('passes a local interface literal to the native ownership check', async () => {
+    native.invoke.mockResolvedValue({ status: 'ok' });
+    const local = { ...profile, baseUrl: 'http://192.168.1.10:18099' };
+    await request(local, '/health');
+    expect(native.invoke).toHaveBeenLastCalledWith('strata_request', { profile: local, path: '/health', method: 'GET' });
+    native.invoke.mockRejectedValue('监听地址不是本机网络接口');
+    await expect(request(local, '/health')).rejects.toThrow('监听地址不是本机网络接口');
   });
   it('passes real local discovery and supervisor workflow arguments', async () => {
     const candidate = { id: 'candidate', name: 'local', installDir: 'D:\\AI\\Strata', pythonPath: 'python', configPath: 'config.json', modelPath: 'model.gguf', modelBytes: null };

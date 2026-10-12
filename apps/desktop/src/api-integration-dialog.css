@@ -9,7 +9,7 @@
 .api-integration-dialog .notice{margin:0}
 .api-integration-hint{margin:0;font-size:13px;line-height:1.7;color:var(--st-ink-muted,var(--muted))}
 .api-integration-dialog>.official-segmented{flex-wrap:wrap}
-.api-integration-dialog>.official-segmented>button{flex:1 1 auto;font-size:13px}
+.api-integration-dialog>.official-segmented>button{font-size:13px}
 .api-integration-method{display:flex;flex-direction:column;gap:16px;min-width:0}
 .api-integration-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;font-size:13px}
 .api-integration-toolbar .official-dropdown{min-width:164px;max-width:55%}
@@ -23,4 +23,4 @@
 .api-integration-docs{display:inline-flex;align-items:center;gap:6px;align-self:flex-start;font-size:12px;color:var(--st-info-text,var(--accent))}
 .overview-page .overview-shortcuts .overview-shortcut-api{color:var(--st-accent-text);background:var(--st-accent-tint);border-color:color-mix(in srgb,var(--st-accent) 25%,transparent)}
 .overview-page .overview-shortcuts .overview-shortcut-api:hover:not(:disabled){border-color:var(--st-accent)}
-@media(max-width:580px){.api-integration-value{grid-template-columns:minmax(0,1fr) 32px;gap:8px;padding:12px}.api-integration-value>span{grid-column:1/-1}.api-integration-toolbar{gap:12px}.api-integration-code>pre{padding:12px}.api-integration-value small{display:inline;margin-left:8px}.api-integration-dialog>.official-segmented>button{flex-basis:40%}}
+@media(max-width:580px){.api-integration-value{grid-template-columns:minmax(0,1fr) 32px;gap:8px;padding:12px}.api-integration-value>span{grid-column:1/-1}.api-integration-toolbar{gap:12px}.api-integration-code>pre{padding:12px}.api-integration-value small{display:inline;margin-left:8px}}

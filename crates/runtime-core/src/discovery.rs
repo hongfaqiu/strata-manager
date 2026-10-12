@@ -3,7 +3,7 @@
 //! A candidate is a presentation record, never a permission to execute its paths.
 //! Import re-reads every path and config. The user's repository and model assets
 //! remain in place; only the application's config and shared-settings are copied.
-use crate::{external, storage, types::ServiceProfile};
+use crate::{external, network, storage, types::ServiceProfile};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
@@ -92,6 +92,7 @@ struct ProcessHint {
     config: PathBuf,
     python: PathBuf,
     port: Option<u16>,
+    host: Option<String>,
 }
 
 struct InspectedConfig {
@@ -505,7 +506,7 @@ fn inspect_config(
         })
         .to_owned();
     let id = candidate_id(&root, &config);
-    let profile = ServiceProfile {
+    let mut profile = ServiceProfile {
         id: id.clone(),
         name: name.clone(),
         base_url: format!("http://127.0.0.1:{detected_port}"),
@@ -517,6 +518,15 @@ fn inspect_config(
         config_path: config.to_string_lossy().into(),
         managed: true,
     };
+    let observed_host = hint
+        .and_then(|hint| hint.host.as_deref())
+        .or_else(|| value.get("host").and_then(Value::as_str))
+        .unwrap_or("127.0.0.1");
+    profile.base_url = network::endpoint(
+        &serde_json::json!({"host":observed_host,"port":detected_port}),
+        &profile,
+    )?
+    .base_url;
     let mut candidate = LocalCandidate {
         id,
         name,
@@ -995,10 +1005,16 @@ fn hint_from_args(args: &[String]) -> Option<ProcessHint> {
         .iter()
         .position(|arg| arg == "--port")
         .and_then(|index| options.get(index + 1)?.parse::<u16>().ok());
+    let host = options
+        .iter()
+        .position(|arg| arg == "--host")
+        .and_then(|index| options.get(index + 1))
+        .cloned();
     Some(ProcessHint {
         config,
         python,
         port,
+        host,
     })
 }
 
@@ -1602,21 +1618,17 @@ fn prepare_import_inner(
         }
         let imported = read_json(Path::new(&profile.config_path))?;
         storage::validate(&imported)?;
-        let port = imported
-            .get("port")
-            .and_then(Value::as_u64)
-            .and_then(|v| u16::try_from(v).ok())
-            .ok_or("已有导入缺少本机端口")?;
-        if imported.get("host").and_then(Value::as_str) != Some("127.0.0.1") {
-            return Err("已有导入不是本机 loopback 服务".into());
-        }
-        profile.base_url = format!("http://127.0.0.1:{port}");
+        profile.base_url = network::endpoint(&imported, &profile)?.base_url;
     } else {
         let port = import_port(port, &inspected)?;
-        profile.base_url = format!("http://127.0.0.1:{port}");
         let mut value = inspected.value;
         let object = value.as_object_mut().ok_or("配置必须为对象")?;
-        object.insert("host".into(), Value::String("127.0.0.1".into()));
+        object.entry("host").or_insert_with(|| {
+            Value::String(
+                hint.and_then(|hint| hint.host.clone())
+                    .unwrap_or_else(|| "127.0.0.1".into()),
+            )
+        });
         object.insert("port".into(), Value::from(port));
         object.insert(
             "cwd".into(),
@@ -1634,6 +1646,7 @@ fn prepare_import_inner(
             Value::String(destination.join("engine.log").to_string_lossy().into()),
         );
         storage::validate(&value)?;
+        profile.base_url = network::endpoint(&value, &profile)?.base_url;
         let temporary = tempfile::Builder::new()
             .prefix(".import-")
             .tempdir_in(&imports)
@@ -2215,6 +2228,9 @@ mod tests {
     #[test]
     fn import_revalidates_and_preserves_source_and_shared_settings_and_is_idempotent() {
         let (temp, profile) = fixture();
+        let mut lan_source = read_json(Path::new(&profile.config_path)).unwrap();
+        lan_source["host"] = Value::from("0.0.0.0");
+        storage::write(&profile, &lan_source).unwrap();
         let source = fs::read(&profile.config_path).unwrap();
         let shared =
             Path::new(&profile.config_path).with_file_name("strata-fixture.shared-settings.json");
@@ -2229,6 +2245,11 @@ mod tests {
         candidate.python_path = "forged-python".into();
         let imported = prepare_import(&candidate, &state, None).unwrap();
         assert_eq!(imported.profile.name, "fixture-model");
+        assert_eq!(
+            read_json(Path::new(&imported.profile.config_path)).unwrap()["host"],
+            "0.0.0.0"
+        );
+        assert!(imported.profile.base_url.starts_with("http://127.0.0.1:"));
         assert!(imported.profile.id.starts_with("local-"));
         assert!(Path::new(&imported.profile.config_path)
             .starts_with(dunce::canonicalize(&state).unwrap()));
@@ -2243,9 +2264,11 @@ mod tests {
         );
         let mut updated = read_json(Path::new(&imported.profile.config_path)).unwrap();
         updated["sampling"]["temperature"] = Value::from(0.25);
+        updated["port"] = Value::from(23123);
         storage::write(&imported.profile, &updated).unwrap();
         let again = prepare_import(&candidate, &state, None).unwrap();
         assert_eq!(again.profile.id, imported.profile.id);
+        assert_eq!(again.profile.base_url, "http://127.0.0.1:23123");
         assert_eq!(
             read_json(Path::new(&again.profile.config_path)).unwrap()["sampling"]["temperature"],
             0.25
@@ -2362,6 +2385,7 @@ mod tests {
             config: observed.clone(),
             python: PathBuf::from(&profile.python_path),
             port: Some(18099),
+            host: None,
         };
         assert_eq!(canonical_local(&hint_root(&hint).unwrap()).unwrap(), root);
         assert_eq!(config_paths(&root).len(), MAX_CONFIGS);

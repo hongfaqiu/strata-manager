@@ -6,6 +6,7 @@ import { CircleHelp, Copy, Plus, Search, Trash2 } from 'lucide-react';
 import { Dialog } from '../components';
 import { Dropdown, Segmented } from '../OfficialControls';
 import { ConfigurationNode } from './StartupConfigurationNode';
+import { StartupNetworkPowerSettings } from './StartupNetworkPowerSettings';
 import './startup-tuning.css';
 import './setup-tuning-interactions.css';
 import { useDraftGuard, type SaveDraft } from '../useDraftGuard';
@@ -28,7 +29,7 @@ const groups: [SettingsCategory, string, string][] = [
   ['prefill', '输入处理', 'Input processing'], ['speculation', '生成加速', 'Generation acceleration'],
   ['ple', 'PLE 表读取', 'PLE table I/O'], ['model', '模型文件与专家配置', 'Model files and expert profiles'],
   ['server', 'API 服务与加载策略', 'API service and loading'], ['vision', '视觉编码', 'Vision encoder'],
-  ['sampling', '默认采样', 'Default sampling'], ['network', '网络、路径与 GPU 配置', 'Network, paths and GPU config'],
+  ['sampling', '默认采样', 'Default sampling'], ['paths', '路径与 GPU 分配', 'Paths and GPU allocation'],
 ];
 
 export function StartupTuningPanel({ profile, desktop, language, onError, onMessage, onRestart, onCopied, onDeleted, onDirtyChange, onSaveDraftReady }: Props) {
@@ -141,7 +142,7 @@ export function StartupTuningPanel({ profile, desktop, language, onError, onMess
         setMessage(zh ? '配置已保存，正在重启服务…' : 'Configuration saved; restarting…'); await target.onRestart();
       }
       const text = action.restart ? (zh ? '完整配置已保存并备份，服务已按新参数重启。' : 'Full configuration saved with a backup; service restarted with the new settings.') : (zh ? '完整配置已保存，原文件已备份。重启服务后生效。' : 'Full configuration saved and the previous file backed up. Restart to apply it.');
-      setMessage(text); onMessage?.(text);
+      setMessage(text); await onMessage?.(text);
       return true;
     } catch (failure) { setConfirm(null); const text = `${persisted ? (zh ? '配置已保存，但后续操作失败：' : 'Configuration saved, but the next step failed: ') : ''}${core.normalizeError(failure).message}`; setError(text); onError(failure); return false; }
     finally { setSaving(false); }
@@ -192,6 +193,7 @@ export function StartupTuningPanel({ profile, desktop, language, onError, onMess
       {config.isPending && <p className="muted">{zh ? '读取配置中…' : 'Reading configuration…'}</p>}
       {draft && <><div className="startup-tuning-navigation"><Segmented value={view} onValueChange={selectView} ariaLabel={zh ? '配置编辑方式' : 'Configuration editor'} options={[{ value: 'graph', label: zh ? '图形界面' : 'Graphical', disabled }, { value: 'json', label: zh ? '完整 JSON' : 'Full JSON', disabled }]}/>{view === 'graph' && <label className="startup-tuning-search"><Search size={15}/><input className="st-input" aria-label={zh ? '搜索启动参数' : 'Search startup parameters'} placeholder={zh ? '搜索名称或参数标志' : 'Search names or flags'} value={search} onChange={event => setSearch(event.target.value)}/></label>}</div>
         {view === 'json' ? <div className="startup-tuning-json-editor"><label className="st-label" htmlFor="startup-full-config-json">{zh ? '完整本地 JSON 配置' : 'Full local JSON configuration'}</label><textarea className="startup-tuning-json st-input" id="startup-full-config-json" spellCheck={false} value={raw} disabled={disabled} onChange={event => { setRaw(event.target.value); setError(''); setMessage(''); }}/></div> : <>
+          <StartupNetworkPowerSettings zh={zh} disabled={disabled} fallbackBaseUrl={profile.baseUrl} showParameterNames={showParameterNames} fieldValue={fieldValue} onFieldChange={(field, value) => { setFieldEdits(previous => ({ ...previous, [field.key]: value })); setMessage(''); setError(''); }}/>
           <div className="startup-tuning-category"><label><span className="st-label">{zh ? '设置分类' : 'Settings category'}</span><Dropdown ariaLabel={zh ? '设置分类' : 'Settings category'} value={selectedGroup} disabled={disabled || !!needle} options={groups.map(([value, labelZh, labelEn]) => ({ value, label: zh ? labelZh : labelEn }))} onValueChange={value => setSelectedGroup(value as SettingsCategory)}/></label><label className="startup-tuning-parameter-names"><input type="checkbox" checked={showParameterNames} onChange={event => setShowParameterNames(event.target.checked)}/>{zh ? '显示技术参数名称' : 'Show technical parameter names'}</label></div>
           <div className="startup-tuning-groups">{groups.filter(([group]) => needle || group === selectedGroup).map(([group, labelZh, labelEn]) => {
             const groupFields = core.STARTUP_TUNING_FIELDS.filter(field => field.group === (group === 'context-extension' ? 'context' : group) && (field.group !== 'context' || basicContextFields.has(field.key) !== (group === 'context-extension')) && (!needle || `${field.key} ${field.zh} ${field.en}`.toLowerCase().includes(needle)));

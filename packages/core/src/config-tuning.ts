@@ -1,5 +1,6 @@
 import type { JsonObject } from './types';
 import { STARTUP_ENGINE_FLAGS } from './startup-engine-flags';
+import { startupServiceEndpoint } from './config-profile';
 export { STARTUP_ENGINE_FLAGS } from './startup-engine-flags';
 
 export interface StartupTuning { context: string; kv: string; threads: string }
@@ -49,7 +50,7 @@ export function applyStartupTuning(config: JsonObject, tuning: StartupTuning): J
   return next;
 }
 
-export type StartupFieldGroup = 'context' | 'memory' | 'cache' | 'cpu' | 'prefill' | 'speculation' | 'ple' | 'model' | 'server' | 'vision' | 'sampling' | 'network';
+export type StartupFieldGroup = 'context' | 'memory' | 'cache' | 'cpu' | 'prefill' | 'speculation' | 'ple' | 'model' | 'server' | 'vision' | 'sampling' | 'network' | 'power' | 'paths';
 export interface StartupFieldSpec {
   key: string; target: 'arg' | 'config'; group: StartupFieldGroup;
   zh: string; en: string; kind: 'text' | 'integer' | 'number' | 'boolean';
@@ -59,7 +60,8 @@ type FieldTuple = [key: string, zh: string, en: string, kind: StartupFieldSpec['
 const fields = (group: StartupFieldGroup, target: StartupFieldSpec['target'], values: FieldTuple[]): StartupFieldSpec[] =>
   values.map(([key, zh, en, kind, choices, min, max, minExclusive]) => ({ key, zh, en, kind, choices, min, max, minExclusive, group, target }));
 
-/** Values/flags verified in Strata generate.cpp, serve/server.py and serve/runconfig.py.
+/** Engine values/flags verified in Strata generate.cpp, serve/server.py and serve/runconfig.py.
+ * manager_gpu_power_limit_* are manager-owned settings applied before the service starts.
  * Enumerations are suggestions, not a closed schema: newer versions/custom values remain editable.
  * --pool-workers is the main engine CPU control; top-level threads is not used by this engine.
  */
@@ -181,8 +183,14 @@ export const STARTUP_TUNING_FIELDS: readonly StartupFieldSpec[] = [
     ['sampling.min_p', '默认 Min P', 'Default min P', 'number', undefined, 0, 1],
   ]),
   ...fields('network', 'config', [
-    ['host', '监听地址', 'Listen address', 'text', ['127.0.0.1', '0.0.0.0']],
-    ['port', '配置端口', 'Configured port', 'integer', undefined, 1, 65535],
+    ['host', '监听地址', 'Listen address', 'text', ['127.0.0.1', 'localhost', '0.0.0.0', '::']],
+    ['port', 'API 端口', 'API port', 'integer', undefined, 1, 65535],
+  ]),
+  ...fields('power', 'config', [
+    ['manager_gpu_power_limit_watts', 'GPU 功耗上限（W）', 'GPU power limit (W)', 'number', undefined, 0, undefined, true],
+    ['manager_gpu_power_limit_device', '功耗设置 GPU 编号', 'Power-limit GPU index', 'integer', undefined, 0, 4294967295],
+  ]),
+  ...fields('paths', 'config', [
     ['gpu', '服务 GPU 编号', 'Service GPU indices', 'text'],
     ['layer_split', '服务 GPU 层分配', 'Service GPU layer split', 'text', ['auto']],
     ['exe', '主引擎路径', 'Main engine path', 'text'],
@@ -204,6 +212,7 @@ export function startupFieldValue(config: JsonObject, field: StartupFieldSpec): 
 }
 
 export function applyStartupField(config: JsonObject, field: StartupFieldSpec, text: string): JsonObject {
+  if (field.group === 'power' && !text.trim()) text = '';
   const next = structuredClone(config);
   let value: unknown = text;
   if (text !== '') {
@@ -268,6 +277,14 @@ export function parseStartupConfiguration(raw: string): JsonObject {
   return config as JsonObject;
 }
 export function validateStartupConfiguration(config: JsonObject): void {
+  startupServiceEndpoint(config);
+  for (const field of STARTUP_TUNING_FIELDS.filter(item => item.group === 'power')) {
+    const value = config[field.key];
+    if (value === undefined) continue;
+    if (value === null) continue;
+    if (typeof value !== 'number') throw new Error(`${field.key}: 必须为数值 / must be a number`);
+    applyStartupField(config, field, String(value));
+  }
   const args = startupArgsOf(config);
   if (args.some(value => !value.length)) throw new Error('args 包含空参数，请填写或移除 / remove or fill empty arguments');
   for (const row of startupArgumentRows(config)) if (row.known && row.tokens.length - 1 < row.arity) throw new Error(`${row.tokens[0]} 缺少参数值，需要 ${row.arity} 个 / missing operand(s), expected ${row.arity}`);

@@ -286,7 +286,13 @@ export function App() {
   const handoffs = useQuery({ queryKey: ['setupHandoffs'], queryFn: core.listSetupHandoffs, enabled: desktop && ready, refetchInterval: settings.pollInterval, refetchIntervalInBackground: true });
   const registeredSetupTasks = handoffs.data?.filter(item => item.status === 'registered').map(item => item.taskId).sort().join(',') ?? '';
   const finishedRuntimeUpdates = tasks.data?.filter(task => task.kind.includes('update') && task.state !== 'running').map(task => `${task.id}:${task.state}`).sort().join(',') ?? '';
-  const preparedProfiles = useQuery({ queryKey: ['setupRegistrations', registeredSetupTasks, finishedRuntimeUpdates], queryFn: core.localInstallations, enabled: desktop && ready && !!(registeredSetupTasks || finishedRuntimeUpdates), refetchOnWindowFocus: false });
+  const preparedProfiles = useQuery({ queryKey: ['setupRegistrations', registeredSetupTasks, finishedRuntimeUpdates], queryFn: core.localInstallations, enabled: desktop && ready, refetchOnWindowFocus: false });
+  const refreshLocalProfiles = async () => {
+    if (!desktop) return profiles;
+    const refreshed = await preparedProfiles.refetch({ throwOnError: true });
+    if (refreshed.data) setProfiles(refreshed.data);
+    return refreshed.data ?? [];
+  };
   useEffect(() => {
     if (!ready || !preparedProfiles.data) return;
     let disposed = false;
@@ -475,7 +481,7 @@ export function App() {
       go(destination);
       setLocalProgress({ phase: 'starting' });
       await core.switchLocalService(imported.id);
-      setProfiles(old => old.some(item => item.id === imported.id) ? old.map(item => item.id === imported.id ? imported : item) : [...old, imported]);
+      await refreshLocalProfiles();
       setActiveId(imported.id);
       setLastUsedId(activeId || imported.id); storeWriter.stage('lastUsedLocalInstallation', activeId || imported.id); void storeWriter.flush('lastUsedLocalInstallation').catch(reportStoreError);
       setPreparationRuntime(null);
@@ -493,6 +499,7 @@ export function App() {
     const existing = await core.serviceStatus(selected.id, selected);
     if (existing.owned && existing.running) {
       setActiveId(selected.id);
+      await refreshLocalProfiles();
       await query.invalidateQueries();
       return;
     }
@@ -502,6 +509,7 @@ export function App() {
     setLocalProgress({ phase: 'starting' });
     try {
       await core.switchLocalService(selected.id);
+      await refreshLocalProfiles();
       setActiveId(selected.id);
       if(selected.id !== activeId){setLastUsedId(activeId || selected.id); storeWriter.stage('lastUsedLocalInstallation', activeId || selected.id); void storeWriter.flush('lastUsedLocalInstallation').catch(reportStoreError);}
       await query.invalidateQueries();
@@ -687,6 +695,7 @@ export function App() {
     // The stop response is verified native state. Apply it before refreshing other queries,
     // and discard in-flight status replies that could repaint the old running process.
     query.setQueriesData<core.ProcessStatus>({ queryKey: ['process', profileId] }, status);
+    await refreshLocalProfiles();
     return status;
   };
   const serviceActions = <div className="actions service-actions">
@@ -735,7 +744,7 @@ export function App() {
     onCopy={content=>void copy(content)} onImages={desktop&&profile?.configPath&&!busy&&!inferenceBusy&&!localProgress?()=>setModal({kind:'vision',profile}):undefined}
     stateLabel={serviceState} onRefresh={()=>void query.invalidateQueries()} onCreateProfile={()=>go('models')} onChat={()=>conversation?go('chat'):addConversation()} onNavigate={go}/>;
 
-  const operateService = async (action: () => Promise<unknown>) => { await action(); await query.invalidateQueries(); notify(t('success')); };
+  const operateService = async (action: () => Promise<unknown>) => { await action(); await refreshLocalProfiles(); await query.invalidateQueries(); notify(t('success')); };
   const servicePage = async (p: ServiceProfile, next: Page) => {
     if (p.id !== activeId) await activateLocal(p);
     if (next === 'tasks') setSelectedTaskId('');
@@ -832,6 +841,7 @@ export function App() {
     try {
       await core.restartService(selected);
       await core.switchLocalService(selected.id);
+      await refreshLocalProfiles();
       await query.invalidateQueries();
     } finally {
       setBusy('');
@@ -848,11 +858,25 @@ export function App() {
     if(activeId===deleted.id)setActiveId('');
     setDiscoveredConfigProfile(undefined);setConfigProfileId('');go('models');
   };
+  const configurationSaved = async (message: string) => {
+    try {
+      // The registry keeps the live endpoint until restart, and updates an idle
+      // profile immediately. Read it instead of deriving a URL from the draft.
+      await refreshLocalProfiles();
+      await Promise.all([
+        query.invalidateQueries({ queryKey: ['discovered-local-models'] }),
+        query.invalidateQueries({ queryKey: ['localInstallationDetails'] }),
+      ]);
+      notify(message);
+    } catch (error) {
+      notify(`${message} ${settings.language === 'zh-CN' ? '刷新服务地址失败：' : 'Could not refresh the service address: '}${errorText(error)}`, true);
+    }
+  };
   const allConfigurationGroups=core.groupLocalModels(profiles,discoveredCandidates.data,installationDetails.data);
   const selectedConfigurationGroup=allConfigurationGroups.find(group=>group.configurations.some(entry=>entry.profile?.id===configProfile?.id||!!configProfile?.configPath&&core.configurationPathKey(entry.configPath)===core.configurationPathKey(configProfile.configPath)));
   const renderRuntimeConfig = () => <>
     {desktop && <ConfigurationList groups={selectedConfigurationGroup?[selectedConfigurationGroup]:[]} selectedPath={configProfile?.configPath} activeId={activeId} running={processStatus?.owned===true&&processStatus?.running===true} lastUsedId={lastUsedId} disabled={processUnverified||!!busy||inferenceBusy||!!localProgress} dirty={configurationDirty} loading={discoveredCandidates.isFetching} error={discoveredCandidates.error?errorText(discoveredCandidates.error):undefined} language={settings.language} onRefresh={()=>{void discoveredCandidates.refetch();void installationDetails.refetch();}} onDelete={entry=>{const candidate=entry.candidate;const selected=entry.profile??(candidate?{id:`configuration-${candidate.id}`,name:candidate.name,baseUrl:`http://127.0.0.1:${candidate.detectedPort??8080}`,installDir:candidate.installDir,pythonPath:candidate.pythonPath,configPath:candidate.configPath,managed:false}:undefined);if(selected)setModal({kind:'deleteConfiguration',profile:selected});}} onOpen={entry=>{if(entry.profile)openModelConfig(entry.profile);else if(entry.candidate)openDiscoveredConfig(entry.candidate);}} onUse={(entry,restart)=>navigationGuard.requestAsync(async()=>{if(entry.profile){openModelConfig(entry.profile,true);if(restart)await restartSelectedService(entry.profile);else await activateLocal(entry.profile);}else if(entry.candidate){navigate('models');await prepareImported(entry.candidate);}})}/>}
-    <RuntimeConfigPage profile={configProfile} online={configOnline} language={settings.language} desktop={desktop} onSharedSettings={()=>go('settings')} onServices={()=>go('models')} onImages={desktop&&configProfile?.configPath&&!busy&&!inferenceBusy&&!localProgress?()=>setModal({kind:'vision',profile:configProfile}):undefined} onDirtyChange={setConfigurationDirty} onSaveDraftReady={registerConfigurationSave} onCopied={configurationCopied} onDeleted={configurationDeleted} onRestart={desktop && configProfile?.id===activeId && processStatus?.owned===true && processStatus?.running===true && !busy && !inferenceBusy && !localProgress ? ()=>restartSelectedService(configProfile) : undefined} onError={error=>notify(errorText(error),true)} onMessage={message=>{void query.invalidateQueries({queryKey:['discovered-local-models']});void query.invalidateQueries({queryKey:['localInstallationDetails']});notify(message);}}/></>;
+    <RuntimeConfigPage profile={configProfile} online={configOnline} language={settings.language} desktop={desktop} onSharedSettings={()=>go('settings')} onServices={()=>go('models')} onImages={desktop&&configProfile?.configPath&&!busy&&!inferenceBusy&&!localProgress?()=>setModal({kind:'vision',profile:configProfile}):undefined} onDirtyChange={setConfigurationDirty} onSaveDraftReady={registerConfigurationSave} onCopied={configurationCopied} onDeleted={configurationDeleted} onRestart={desktop && configProfile?.id===activeId && processStatus?.owned===true && processStatus?.running===true && !busy && !inferenceBusy && !localProgress ? ()=>restartSelectedService(configProfile) : undefined} onError={error=>notify(errorText(error),true)} onMessage={configurationSaved}/></>;
   const renderTuningPage = () => <><div className="tuning-config-entry"><div><strong>{settings.language==='zh-CN'?'调整模型设置':'Model settings'}</strong><p>{settings.language==='zh-CN'?'保存后重启生效':'Restart to apply changes'}</p></div><button disabled={!profile} onClick={()=>openModelConfig(profile)}><Settings2 size={15}/>{t('config')}</button></div><TuningPage key={profile?.id} profileId={profile?.id} language={settings.language} desktop={desktop} owned={processStatus?.owned === true && processStatus?.running === true} streaming={inferenceBusy} onChanged={() => void query.invalidateQueries()}/></>;
   const pages: Record<Page, () => ReactNode> = { benchmark: () => null, about: renderAboutPage, overview: renderOverviewPage, tuning: renderTuningPage, config: renderRuntimeConfig, profiles: ProfilesPage, models: ProfilesPage, catalog: ModelsPage, chat: renderChatPage, monitoring: renderMonitoringPage, usage: () => <ApiUsagePage language={settings.language} profileId={profile?.id} desktop={desktop} onQuery={core.analyticsQuery} onOpenDiagnostics={()=>go('requests')}/>, requests: RequestsPage, tasks: TasksPage, environment: EnvironmentPage, settings: SettingsPage, connections: renderConnectionsPage, 'runtime-tools': renderRuntimeToolsPage, updates: UpdatesPage };
 

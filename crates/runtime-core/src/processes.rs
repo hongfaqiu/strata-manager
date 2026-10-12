@@ -585,6 +585,7 @@ pub struct OwnedProcess {
     pub child: Child,
     pub status: ProcessStatus,
     pub profile: Option<ServiceProfile>,
+    pub(crate) gpu_power_lease: Option<crate::gpu_power::GpuPowerLease>,
     pub readers_pending: Arc<AtomicUsize>,
     tree_stopped: bool,
     // Only service/probe spawns pin buckets. Task Drop never acquires Logs.
@@ -898,6 +899,7 @@ impl OwnedProcess {
             child,
             status,
             profile: None,
+            gpu_power_lease: None,
             readers_pending,
             tree_stopped: false,
             service_logs: None,
@@ -912,8 +914,45 @@ impl OwnedProcess {
             self.status.running = false;
             self.status.exit_code = exit.code();
             self.release_log_pin();
+            // A crashed root may leave owned descendants alive. End that tree
+            // before releasing the board-wide power limit.
+            if self.gpu_power_lease.is_some() && !self.tree_stopped {
+                let lease = self.gpu_power_lease.take();
+                let stopped = self.stop();
+                self.gpu_power_lease = lease;
+                stopped?;
+            }
+            self.restore_gpu_power()?;
         }
         Ok(self.status.clone())
+    }
+    fn restore_gpu_power(&mut self) -> Result<(), String> {
+        if let Some(lease) = &mut self.gpu_power_lease {
+            if let Err(error) = lease.restore() {
+                // A different tool changed the setting; the lease relinquished
+                // ownership and preserved that value. Stopping still succeeded.
+                let retained_external_setting = !lease.is_active();
+                if let Some((logs, id)) = &self.service_logs {
+                    log(
+                        logs,
+                        id,
+                        if retained_external_setting {
+                            "warn"
+                        } else {
+                            "error"
+                        },
+                        &error,
+                    );
+                }
+                if retained_external_setting {
+                    self.gpu_power_lease = None;
+                    return Ok(());
+                }
+                return Err(error);
+            }
+            self.gpu_power_lease = None;
+        }
+        Ok(())
     }
     pub fn stop(&mut self) -> Result<(), String> {
         #[cfg(target_os = "linux")]
@@ -978,6 +1017,7 @@ impl OwnedProcess {
             self.tree_stopped = pinned_tree;
         }
         self.release_log_pin();
+        self.restore_gpu_power()?;
         Ok(())
     }
     fn release_log_pin(&self) {
@@ -990,6 +1030,9 @@ impl OwnedProcess {
 }
 impl Drop for OwnedProcess {
     fn drop(&mut self) {
+        if self.gpu_power_lease.is_some() && !self.tree_stopped {
+            let _ = self.stop();
+        }
         #[cfg(windows)]
         unsafe {
             windows_sys::Win32::Foundation::CloseHandle(self.job);
@@ -1000,6 +1043,7 @@ impl Drop for OwnedProcess {
                 let _ = self.stop();
             }
         }
+        let _ = self.restore_gpu_power();
         self.release_log_pin();
     }
 }

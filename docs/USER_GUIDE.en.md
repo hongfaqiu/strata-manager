@@ -105,6 +105,14 @@ Choose **Open floating monitor** in the bottom bar for a separate draggable, res
 
 Health checks defer while verified work or maintenance is active. Repeated failures while idle are reported; the check itself does not stop or restart a process. The service-recovery setting is a separate policy for a managed service that exits, with bounded attempts as described above.
 
+### Custom ports, LAN access and GPU power limits
+
+In a model's Runtime configuration → More startup settings → Network access and power, set an API port from 1 to 65535. Bind to `127.0.0.1` for local use or `0.0.0.0` for LAN access; other devices use `http://this-computer-LAN-IP:port/v1`. A specific local interface IP is also supported. Saved changes apply on the next start or restart; the running service keeps its existing address until then. Clients use the same API key saved in shared settings. Check the system firewall if the port is unreachable.
+
+On Linux, expanding a running service from a specific IP to a wildcard on the same port requires stopping it first or choosing another port. A failed preflight preserves the current service.
+
+Set the GPU power limit in watts and select a GPU index (default 0). An explicit value is applied through NVIDIA `nvidia-smi`; startup checks the driver's supported range and permissions and reports failures. Leave it empty to use the driver's existing limit. Normal service shutdown or a failed start restores the previous limit, unless another program has changed it. Restoration cannot be guaranteed after a power failure or a forced backend termination; check the GPU's current limit afterward.
+
 ## Read API usage
 
 Open **Monitor → API usage** for today, the last 24 hours or the last 7 days. Monitoring appears before usage and shows current service and hardware activity; usage charts show historical requests, tokens, cache reuse, latency, prefill and decode speeds. Today uses your local timezone. Metadata is retained in local SQLite for **90 days**, collection continues when the usage page is closed, and records remain after exiting and reopening the app.

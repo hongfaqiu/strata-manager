@@ -121,6 +121,8 @@ pub fn read(profile: &ServiceProfile) -> Result<Value, String> {
 }
 pub fn validate(config: &Value) -> Result<(), String> {
     let object = config.as_object().ok_or("配置必须是 JSON 对象")?;
+    crate::network::validate_config(config)?;
+    crate::gpu_power::requested(config)?;
     for key in [
         "exe",
         "cwd",

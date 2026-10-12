@@ -685,6 +685,10 @@ async fn require_owned(state: &Arc<RuntimeState>, profile: &ServiceProfile) -> R
     if !status.running || !status.owned {
         return Err("只能调优本应用拥有的运行中模型，请先完成导入和准备".into());
     }
+    let config = storage::read(profile)?;
+    if crate::network::endpoint(&config, profile)?.base_url != profile.base_url {
+        return Err("网络地址设置尚未重启生效，请先重启模型服务后再运行调优".into());
+    }
     status.pid.ok_or_else(|| "服务进程标识不可用".into())
 }
 fn assert_managed_config(

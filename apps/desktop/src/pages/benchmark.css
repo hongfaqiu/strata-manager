@@ -189,8 +189,8 @@
   .benchmark-service strong { max-width: 200px; }
   .benchmark-plan-body,.benchmark-plan-settings { gap: 10px; }
   .benchmark-toolbar { gap: 8px; align-items: center; flex-wrap: wrap; }
-  .benchmark-toolbar .official-segmented { flex: 1; width: auto; }
-  .benchmark-toolbar .official-segmented>button { flex: 1; min-width: 0; padding-left: 8px; padding-right: 8px; }
+  .benchmark-toolbar .official-segmented { flex: 0 1 auto; width: fit-content; }
+  .benchmark-toolbar .official-segmented>button { min-width: 0; padding-left: 8px; padding-right: 8px; }
   .benchmark-run-actions { gap: 8px; }
   .benchmark-run-actions>button { min-height: 36px; padding: 6px 12px; }
   .benchmark-settings,.benchmark-key-settings,.benchmark-summary { grid-template-columns: repeat(2,minmax(0,1fr)); }

@@ -13,6 +13,22 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 - No changes yet.
 
+## [0.1.6] - 2026-10-12
+
+### 中文
+
+- 运行配置支持自定义 API 端口与监听地址，可开放局域网访问或绑定本机指定 IP。运行中保存保留现有连接，重启后更新地址；新端口被占用时保留原服务，停止状态下保存不会启动服务。
+- 新增 NVIDIA GPU 功耗上限和显卡编号设置，启动时校验驱动支持范围并应用。停止受管服务后恢复原值；其他程序已修改功耗上限时保留其修改。留空沿用显卡原有设置。
+- 精简网络与功耗卡片，把详细说明移到问号帮助，只保留字段、API 地址预览与生效提示。
+- 修复多个页面 Tab 和分段切换区域过宽的问题，按钮与容器按内容占宽，窄窗口下保留全部选项及键盘切换。
+
+### English
+
+- Configure API ports and listen addresses, including LAN access and binding to a specific local IP. Saving a running configuration retains its live connection until restart; a conflicting new port leaves the old service running. Saving a stopped configuration never starts it.
+- Add NVIDIA GPU power-limit and GPU-index settings, validated against the driver before startup. Stopping a managed service restores the previous limit while preserving later changes from other programs. Empty limits keep the existing GPU setting.
+- Simplify network and power cards, moving details into help dialogs and keeping fields, an API address preview and an apply reminder visible.
+- Fix oversized tabs and segmented controls across multiple pages. Size buttons and containers to their content while keeping all options and keyboard navigation available in narrow windows.
+
 ## [0.1.5] - 2026-10-12
 
 ### 中文

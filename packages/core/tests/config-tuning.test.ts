@@ -121,3 +121,29 @@ describe('complete graphical and JSON startup configuration', () => {
     expect(() => validateStartupConfiguration(repaired)).not.toThrow();
   });
 });
+
+describe('network and GPU power startup settings', () => {
+  it('updates network and power settings without dropping secrets, unknown fields or engine arguments', () => {
+    let edited = applyStartupField(complete, field('host'), '0.0.0.0');
+    edited = applyStartupField(edited, field('port'), '18082');
+    edited = applyStartupField(edited, field('manager_gpu_power_limit_watts'), '220.5');
+    edited = applyStartupField(edited, field('manager_gpu_power_limit_device'), '1');
+    expect(edited).toEqual({ ...complete, host: '0.0.0.0', port: 18082, manager_gpu_power_limit_watts: 220.5, manager_gpu_power_limit_device: 1 });
+    expect(complete).not.toHaveProperty('port');
+    expect(() => validateStartupConfiguration(parseStartupConfiguration(JSON.stringify(edited)))).not.toThrow();
+    expect(applyStartupField(edited, field('manager_gpu_power_limit_watts'), '  ')).toEqual({ ...complete, host: '0.0.0.0', port: 18082, manager_gpu_power_limit_device: 1 });
+  });
+  it('validates the same networking boundaries in JSON and graphical saves', () => {
+    for (const port of [0, 65536, 1.5, '8080', null, NaN]) expect(() => validateStartupConfiguration({ ...complete, port })).toThrow('port');
+    for (const host of ['localhost/path', 'localhost?key=value', 'user@localhost', 'http://localhost', null]) expect(() => validateStartupConfiguration({ ...complete, host })).toThrow('host');
+    for (const host of ['localhost', '127.0.0.1', '0.0.0.0', '::', '[::1]', '192.168.1.20']) expect(() => validateStartupConfiguration({ ...complete, host, port: 18082 })).not.toThrow();
+  });
+  it('accepts positive fractional watts and u32 device indices while rejecting invalid values', () => {
+    expect(() => validateStartupConfiguration({ ...complete, manager_gpu_power_limit_watts: null })).not.toThrow();
+    expect(() => validateStartupConfiguration({ ...complete, manager_gpu_power_limit_device: null })).not.toThrow();
+    expect(() => validateStartupConfiguration({ ...complete, manager_gpu_power_limit_watts: 150.5, manager_gpu_power_limit_device: 4294967295 })).not.toThrow();
+    for (const watts of [0, -1, Infinity, NaN, '220', true]) expect(() => validateStartupConfiguration({ ...complete, manager_gpu_power_limit_watts: watts })).toThrow('manager_gpu_power_limit_watts');
+    for (const device of [-1, .5, 4294967296, Infinity, '0']) expect(() => validateStartupConfiguration({ ...complete, manager_gpu_power_limit_device: device })).toThrow('manager_gpu_power_limit_device');
+    expect(applyStartupField({ manager_gpu_power_limit_device: 2 }, field('manager_gpu_power_limit_device'), '')).toEqual({});
+  });
+});

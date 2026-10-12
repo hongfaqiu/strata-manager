@@ -5,13 +5,7 @@ use std::path::{Path, PathBuf};
 
 pub fn local_port(profile: &ServiceProfile) -> Result<u16, String> {
     let url = crate::http::endpoint(profile, "/health")?;
-    if url.scheme() != "http"
-        || !matches!(url.host(), Some(url::Host::Ipv4(ip)) if ip.is_loopback())
-            && !matches!(url.host(), Some(url::Host::Ipv6(ip)) if ip.is_loopback())
-            && url.host_str() != Some("localhost")
-    {
-        return Err("外部进程识别/接管仅支持本机 loopback HTTP 服务".into());
-    }
+    crate::network::management_host(&url)?;
     url.port_or_known_default()
         .ok_or_else(|| "服务端口无效".into())
 }
@@ -167,12 +161,11 @@ fn validate_server_arguments(profile: &ServiceProfile, argv: &[String]) -> Resul
         .copied()
         .or_else(|| config_json.get("host").and_then(Value::as_str))
         .unwrap_or("127.0.0.1");
-    if host != "localhost"
-        && !host
-            .parse::<std::net::IpAddr>()
-            .is_ok_and(|ip| ip.is_loopback())
-    {
-        return Err("实例监听地址不是 loopback，拒绝接管".into());
+    let observed =
+        crate::network::endpoint(&serde_json::json!({"host":host,"port":port}), profile)?;
+    let requested = crate::network::endpoint(&serde_json::json!({}), profile)?;
+    if observed.address != requested.address {
+        return Err("实例监听地址与所选本机服务不一致，拒绝接管".into());
     }
     Ok(())
 }
@@ -1207,7 +1200,7 @@ time.sleep(90)
             for (index, value) in [
                 (3, "not_strata.server"),
                 (7, "relative.json"),
-                (9, "0.0.0.0"),
+                (9, "192.0.2.1"),
                 (11, "18340"),
             ] {
                 let mut wrong = argv.clone();

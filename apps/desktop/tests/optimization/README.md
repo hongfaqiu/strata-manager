@@ -148,3 +148,35 @@ GGUF inspection, SamplingDrawer-to-send requests, and configuration resource/MCP
 panels. Pinned prefixes require separate live-process startup evidence; a saved
 cache depth of 4 with a running depth of 2 rejects sending. Canceling while
 metadata reads are pending completes immediately and cannot send a late stream.
+
+The network/power controls can be replayed with an isolated fixture server:
+
+```powershell
+node apps/desktop/tests/optimization/serve-app-updates.mjs
+npx --yes --package @playwright/cli playwright-cli -s=network-power open <printed-origin>/tuning-compact-app.html#config
+npx --yes --package @playwright/cli playwright-cli -s=network-power run-code --filename apps/desktop/tests/optimization/verify-network-power.cli.js
+npx --yes --package @playwright/cli playwright-cli -s=network-power run-code --filename apps/desktop/tests/optimization/verify-network-endpoint-refresh.cli.js
+```
+
+This replay checks Chinese/English controls at 900×760, invalid ports, wildcard
+API address previews, complete JSON preservation, watt values and clearing a cap.
+Saves are synthetic; it never starts a real service or changes GPU settings.
+The endpoint replay also mocks lifecycle responses to verify that a running save
+keeps the old address, restart applies the new one, and a stopped save refreshes
+the address without starting the service.
+Screenshots go to `output/playwright/network-power/`. Native listener tests use
+an owned Python HTTP fixture, including a local NIC when available; GPU tests
+use a fake NVIDIA command runner for application, rollback and restoration.
+
+The tab layout replay covers the shared segmented controls and workspace navigation:
+
+```powershell
+node apps/desktop/tests/optimization/serve-tab-layout.mjs
+npx --yes --package @playwright/cli playwright-cli -s=tab-layout open <printed-origin>/benchmark-app.html
+npx --yes --package @playwright/cli playwright-cli -s=tab-layout run-code --filename apps/desktop/tests/optimization/verify-tab-layout.cli.js
+```
+
+It checks eight pages in Chinese and English at 1200, 900 and 700 pixels,
+content-sized rails, option visibility, selection and keyboard navigation.
+Native IO is synthetic; services and GPU settings are not changed.
+Screenshots go to `output/playwright/tab-layout/`.

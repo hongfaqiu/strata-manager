@@ -4,6 +4,7 @@ pub mod discovery;
 pub mod disk;
 pub mod external;
 pub mod external_management;
+mod gpu_power;
 pub mod health_watch;
 pub mod http;
 mod idle_model;
@@ -15,6 +16,7 @@ pub mod manager_mcp_stdio;
 pub mod mcp_probe;
 pub mod mcp_stdio;
 pub mod model_inspect;
+pub mod network;
 pub mod observer;
 pub mod policy;
 pub mod processes;
@@ -28,6 +30,8 @@ pub mod store;
 pub mod tuning;
 pub mod types;
 
+#[cfg(test)]
+mod network_runtime_tests;
 #[cfg(test)]
 mod tuning_contract_tests;
 #[cfg(test)]
@@ -63,10 +67,12 @@ struct RecoveryStatus {
 pub struct RuntimeState {
     database: Arc<Mutex<Connection>>,
     processes: Mutex<HashMap<String, OwnedProcess>>,
+    owned_listeners: Mutex<HashMap<String, std::net::SocketAddr>>,
     runtime_operations: Mutex<()>,
     logs: Logs,
     tasks: Tasks,
     pub client: reqwest::Client,
+    download_client: reqwest::Client,
     environment_cache: Mutex<Option<(u64, EnvironmentInfo)>>,
     data_dir: PathBuf,
     started_at: u64,
@@ -120,10 +126,17 @@ impl RuntimeState {
         let state = Arc::new(Self {
             database,
             processes: Mutex::new(HashMap::new()),
+            owned_listeners: Mutex::new(HashMap::new()),
             runtime_operations: Mutex::new(()),
             logs,
             tasks: Arc::new(Mutex::new(tasks)),
             client: reqwest::Client::builder()
+                .no_proxy()
+                .connect_timeout(Duration::from_secs(10))
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .map_err(|e| e.to_string())?,
+            download_client: reqwest::Client::builder()
                 .connect_timeout(Duration::from_secs(10))
                 .redirect(reqwest::redirect::Policy::none())
                 .build()
@@ -192,6 +205,50 @@ impl RuntimeState {
             .find(|p| p.id == id)
             .ok_or_else(|| "本机安装尚未导入，请先完成检测与导入".into())
     }
+    fn save_registered_endpoint(&self, profile: &ServiceProfile) -> Result<(), String> {
+        // Only an existing installation is updated. Legacy profiles are imported
+        // through the normal migration boundary, never registered by a save.
+        self.database
+            .lock()
+            .map_err(|e| e.to_string())?
+            .execute(
+                "UPDATE local_installations SET profile=?1 WHERE id=?2",
+                rusqlite::params![
+                    serde_json::to_string(profile).map_err(|e| e.to_string())?,
+                    profile.id
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    fn forget_owned_listener(&self, profile_id: &str) -> Result<(), String> {
+        self.owned_listeners
+            .lock()
+            .map_err(|e| e.to_string())?
+            .remove(profile_id);
+        Ok(())
+    }
+    fn config_endpoint_after_save(
+        &self,
+        profile: &ServiceProfile,
+        config: &Value,
+    ) -> Result<(), String> {
+        let mut processes = self.processes.lock().map_err(|e| e.to_string())?;
+        if processes
+            .get_mut(&profile.id)
+            .map(|process| process.refresh())
+            .transpose()?
+            .is_some_and(|status| status.running)
+        {
+            // Keep every health, load/unload and stop request on the owned old
+            // endpoint until an explicit restart actually launches the new one.
+            return Ok(());
+        }
+        self.forget_owned_listener(&profile.id)?;
+        let mut updated = profile.clone();
+        updated.base_url = network::endpoint(config, profile)?.base_url;
+        self.save_registered_endpoint(&updated)
+    }
     fn original_profiles(&self) -> Result<Vec<ServiceProfile>, String> {
         let database = self.database.lock().map_err(|e| e.to_string())?;
         let mut statement = database
@@ -237,6 +294,9 @@ impl RuntimeState {
             return Err("运行进程与本机安装登记不一致，未发送修改请求".into());
         }
         let status = process.refresh()?;
+        if !status.running {
+            self.forget_owned_listener(id)?;
+        }
         if !status.running || !status.owned || self.shutting_down.load(Ordering::Acquire) {
             return Err("本机服务未在本后台运行，请先完成模型准备".into());
         }
@@ -247,9 +307,11 @@ impl RuntimeState {
         let local_service_desired = store_get(self, "localServiceDesired".into())?;
         let mut processes = self.processes.lock().map_err(|e| e.to_string())?;
         let mut active_services = 0;
-        for process in processes.values_mut() {
+        for (id, process) in processes.iter_mut() {
             if process.refresh()?.running {
                 active_services += 1;
+            } else {
+                self.forget_owned_listener(id)?;
             }
         }
         Ok(
@@ -1063,13 +1125,22 @@ impl RuntimeState {
                 }
                 if method == "write_config_cas_v1" {
                     let selected = config_target()?;
-                    value(storage::write_cas(
+                    let config: Value = arg(&params, "config")?;
+                    network::endpoint(&config, &selected)?;
+                    let result = storage::write_cas(
                         &selected,
-                        &arg(&params, "config")?,
+                        &config,
                         &arg::<String>(&params, "expectedRevision")?,
-                    ))
+                    )?;
+                    self.config_endpoint_after_save(&selected, &config)?;
+                    value(Ok(result))
                 } else {
-                    value(write_config(profile()?, arg(&params, "config")?))
+                    let selected = profile()?;
+                    let config: Value = arg(&params, "config")?;
+                    network::endpoint(&config, &selected)?;
+                    write_config(selected.clone(), config.clone())?;
+                    self.config_endpoint_after_save(&selected, &config)?;
+                    value(Ok(()))
                 }
             }
             "write_markdown_export" => value(write_markdown_export(
@@ -1397,7 +1468,7 @@ impl RuntimeState {
         // Configuration/Python checks occur while the old model remains available.
         let preflight = self.clone();
         let inspect = target.clone();
-        tokio::task::spawn_blocking(move || {
+        let target_plan = tokio::task::spawn_blocking(move || {
             prepare_startup(&inspect, &Mutex::new(HashMap::new()), &preflight.tasks)
         })
         .await
@@ -1405,8 +1476,11 @@ impl RuntimeState {
         if let Some(previous) = &old {
             inspect_idle_http(&self, previous).await?;
         }
-        if old.is_some() && external::port_accepting(&target)? {
+        if old.is_some() && external::port_accepting(&target_plan.profile)? {
             return Err("目标模型端口已被其它进程占用，保留当前模型".into());
+        }
+        if old.is_some() {
+            network::assert_bind_available(target_plan.listen_address)?;
         }
         self.selection_changing.store(true, Ordering::Release);
         struct SelectionFlag<'a>(&'a AtomicBool);
@@ -1587,6 +1661,7 @@ impl RuntimeState {
         })
         .await
         .map_err(|e| e.to_string())??;
+        let profile = self.registered_profile(&profile_id)?;
         processes::log(
             &self.logs,
             &profile.id,
@@ -1724,6 +1799,9 @@ impl RuntimeState {
                 let _ = process.stop();
             }
             processes.clear();
+            if let Ok(mut listeners) = self.owned_listeners.lock() {
+                listeners.clear();
+            }
         }
     }
 }
@@ -1857,6 +1935,9 @@ async fn tuning_service_operation(
         operation.validate(&state)?;
         let secret = http::key(&operation.profile.id)?;
         let plan = prepare_startup(&operation.profile, &state.processes, &state.tasks)?;
+        if plan.profile.base_url != operation.profile.base_url {
+            return Err("网络地址设置尚未重启生效，请先重启模型服务后再运行调优".into());
+        }
         #[cfg(test)]
         let _test_phase =
             tuning_service_operation_tests::pause_after_preparation(&operation.job_id);
@@ -1877,13 +1958,26 @@ async fn tuning_service_operation(
             // Handles remain the authority even when the root has died. This
             // also releases descendants of this owned tree, never a PID guess.
             operation.validate_identity(&state)?;
+            if process.refresh()?.running {
+                let old_endpoint = network::endpoint(&json!({}), &operation.profile)?;
+                let owned_listener = state
+                    .owned_listeners
+                    .lock()
+                    .map_err(|e| e.to_string())?
+                    .get(&operation.profile.id)
+                    .copied()
+                    .unwrap_or(old_endpoint.listen_address);
+                network::assert_replacement_bind_available(plan.listen_address, owned_listener)?;
+            }
             #[cfg(windows)]
             for listener in external::listener_ids(&operation.profile)? {
-                if process.owns_pid(listener)? {
-                    retired_listeners.push(listener);
+                if !process.owns_pid(listener)? {
+                    return Err("调优重启目标端口有外部监听进程，原受管服务仍保留".into());
                 }
+                retired_listeners.push(listener);
             }
             process.stop()?;
+            state.forget_owned_listener(&operation.profile.id)?;
         }
         #[cfg(windows)]
         if restart && !retired_listeners.is_empty() {
@@ -1936,7 +2030,10 @@ struct StartupPlan {
     host: String,
     port: u16,
     address: std::net::SocketAddr,
+    listen_address: std::net::SocketAddr,
     lazy_cli: bool,
+    config_value: Value,
+    profile: ServiceProfile,
 }
 
 fn prepare_startup(
@@ -1945,31 +2042,12 @@ fn prepare_startup(
     tasks: &Tasks,
 ) -> Result<StartupPlan, String> {
     let root = processes::runtime_dir(profile)?;
-    let url = http::endpoint(profile, "/health")?;
-    let host = match url.host() {
-        Some(url::Host::Ipv4(ip)) if ip.is_loopback() => ip.to_string(),
-        Some(url::Host::Ipv6(ip)) if ip.is_loopback() => ip.to_string(),
-        Some(url::Host::Domain("localhost")) => "127.0.0.1".into(),
-        _ => return Err("受管服务必须使用 loopback 地址；远程地址仅支持连接".into()),
-    };
-    if url.scheme() != "http" {
-        return Err("本地 Strata 受管服务使用 HTTP".into());
-    }
-    let port = url.port_or_known_default().ok_or("服务端口无效")?;
-    let address: std::net::SocketAddr = format!(
-        "{}:{}",
-        if host.contains(':') {
-            format!("[{host}]")
-        } else {
-            host.clone()
-        },
-        port
-    )
-    .parse()
-    .map_err(|e| format!("地址无效: {e}"))?;
-    let config = storage::read(profile)?;
-    storage::validate(&config)?;
-    if config.get("exe").is_none() || config.get("args").is_none() {
+    let config_value = storage::read(profile)?;
+    storage::validate(&config_value)?;
+    let endpoint = network::endpoint(&config_value, profile)?;
+    let mut effective_profile = profile.clone();
+    effective_profile.base_url = endpoint.base_url;
+    if config_value.get("exe").is_none() || config_value.get("args").is_none() {
         return Err("Strata 模型配置需要 exe 和 args 字段".into());
     }
     let config = storage::config_path(profile)?;
@@ -2020,10 +2098,13 @@ fn prepare_startup(
         root,
         config,
         python,
-        host,
-        port,
-        address,
+        host: endpoint.host,
+        port: endpoint.port,
+        address: endpoint.address,
+        listen_address: endpoint.listen_address,
         lazy_cli,
+        config_value,
+        profile: effective_profile,
     })
 }
 
@@ -2062,13 +2143,18 @@ fn start_prepared_service_checked(
         if status.running {
             return Ok(status);
         }
+        state.forget_owned_listener(&profile.id)?;
     }
-    if std::net::TcpStream::connect_timeout(&plan.address, Duration::from_millis(400)).is_ok() {
+    if external::port_accepting(&plan.profile)? {
         return Err(format!(
             "端口 {} 已被外部进程占用，未启动或终止任何外部服务",
             plan.port
         ));
     }
+    // In particular, a foreign LAN-only listener need not answer loopback.
+    // Reject its conflict before touching GPU limits or spawning a child.
+    network::assert_bind_available(plan.listen_address)?;
+    let profile = plan.profile.clone();
     maintenance::clear_abandoned(state, &profile)?;
     let mut command = Command::new(plan.python);
     command
@@ -2100,7 +2186,19 @@ fn start_prepared_service_checked(
     if let Some(operation) = operation {
         operation.validate_processes(state, &mut processes)?;
     }
-    let mut process = OwnedProcess::spawn(command, state.logs.clone(), &profile.id)?;
+    let mut gpu_power_lease = gpu_power::GpuPowerLease::apply(&plan.config_value)?;
+    let mut process = match OwnedProcess::spawn(command, state.logs.clone(), &profile.id) {
+        Ok(process) => process,
+        Err(error) => {
+            if let Some(lease) = &mut gpu_power_lease {
+                lease
+                    .restore()
+                    .map_err(|cleanup| format!("{error}；{cleanup}"))?;
+            }
+            return Err(error);
+        }
+    };
+    process.gpu_power_lease = gpu_power_lease;
     process.profile = Some(profile.clone());
     if let Some(operation) = operation {
         if let Err(error) = operation.validate_processes(state, &mut processes) {
@@ -2113,6 +2211,19 @@ fn start_prepared_service_checked(
         }
     }
     let status = process.status.clone();
+    if let Err(error) = state.save_registered_endpoint(&profile) {
+        process.stop()?;
+        return Err(format!("服务地址登记失败，本次进程已停止：{error}"));
+    }
+    match state.owned_listeners.lock() {
+        Ok(mut listeners) => {
+            listeners.insert(profile.id.clone(), plan.listen_address);
+        }
+        Err(error) => {
+            process.stop()?;
+            return Err(format!("监听地址记录失败，本次进程已停止：{error}"));
+        }
+    }
     processes.insert(profile.id.clone(), process);
     processes::log(
         &state.logs,
@@ -2132,11 +2243,49 @@ async fn stop_service(state: &RuntimeState, profile_id: String) -> Result<Proces
         match processes.get_mut(&profile_id) {
             Some(process) => {
                 if !process.refresh()?.running {
+                    state.forget_owned_listener(&profile_id)?;
                     return Ok(process.status.clone());
+                }
+                #[cfg(windows)]
+                if let Some(profile) = &process.profile {
+                    let listeners = match external::listener_ids(profile) {
+                        Ok(listeners) => listeners,
+                        Err(error) => {
+                            processes::log(
+                                &state.logs,
+                                &profile_id,
+                                "info",
+                                format!(
+                                    "端口所有权核验失败：{error}；跳过 HTTP 卸载并仅停止受管进程树"
+                                ),
+                            );
+                            process.stop()?;
+                            state.forget_owned_listener(&profile_id)?;
+                            return Ok(process.status.clone());
+                        }
+                    };
+                    let mut owned_listener = !listeners.is_empty();
+                    for listener in listeners {
+                        owned_listener &= process.owns_pid(listener)?;
+                    }
+                    if !owned_listener {
+                        processes::log(
+                            &state.logs,
+                            &profile_id,
+                            "info",
+                            "旧端口未确认属于受管进程，跳过 HTTP 卸载并只停止本应用拥有的进程树",
+                        );
+                        process.stop()?;
+                        state.forget_owned_listener(&profile_id)?;
+                        return Ok(process.status.clone());
+                    }
                 }
                 process.profile.clone()
             }
-            None => return Ok(ProcessStatus::default()),
+            None => {
+                state.forget_owned_listener(&profile_id)?;
+                return Ok(ProcessStatus::default());
+            }
         }
     };
     if let Some(profile) = profile {
@@ -2170,9 +2319,11 @@ async fn stop_service(state: &RuntimeState, profile_id: String) -> Result<Proces
     }
     let mut processes = state.processes.lock().map_err(|e| e.to_string())?;
     let Some(process) = processes.get_mut(&profile_id) else {
+        state.forget_owned_listener(&profile_id)?;
         return Ok(ProcessStatus::default());
     };
     process.stop()?;
+    state.forget_owned_listener(&profile_id)?;
     processes::log(&state.logs, &profile_id, "info", "受管服务进程树已停止");
     Ok(process.status.clone())
 }
@@ -2226,6 +2377,9 @@ async fn service_status(
         let mut processes = state.processes.lock().map_err(|e| e.to_string())?;
         if let Some(process) = processes.get_mut(&profile_id) {
             let mut status = process.refresh()?;
+            if !status.running {
+                state.forget_owned_listener(&profile_id)?;
+            }
             if status.running || profile.is_none() {
                 status.reason = preparation_error;
                 return Ok(status);
@@ -2298,7 +2452,12 @@ async fn restart_service(
         runtime_upgrade::assert_available(&state)?;
         external_management::assert_profile_manager_owned(&state, &profile)?;
         let secret = http::key(&profile.id)?;
-        let plan = prepare_owned_restart(&profile, &state.processes, &state.tasks)?;
+        let plan = prepare_owned_restart(
+            &profile,
+            &state.processes,
+            &state.tasks,
+            &state.owned_listeners,
+        )?;
         start_prepared_service(&state, profile, plan, secret)
     })
     .await
@@ -2309,9 +2468,66 @@ fn prepare_owned_restart(
     profile: &ServiceProfile,
     processes: &Mutex<HashMap<String, OwnedProcess>>,
     tasks: &Tasks,
+    owned_listeners: &Mutex<HashMap<String, std::net::SocketAddr>>,
 ) -> Result<StartupPlan, String> {
     let plan = prepare_startup(profile, processes, tasks)?;
+    #[cfg(windows)]
+    let mut retired_listeners = Vec::new();
+    {
+        let mut records = processes.lock().map_err(|e| e.to_string())?;
+        if let Some(process) = records.get_mut(&profile.id) {
+            if !process.refresh()?.running {
+                owned_listeners
+                    .lock()
+                    .map_err(|e| e.to_string())?
+                    .remove(&profile.id);
+            } else {
+                let old = process
+                    .profile
+                    .as_ref()
+                    .ok_or("重启目标不是已登记的受管服务")?;
+                let old_endpoint = network::endpoint(&json!({}), old)?;
+                let owned_listener = owned_listeners
+                    .lock()
+                    .map_err(|e| e.to_string())?
+                    .get(&profile.id)
+                    .copied();
+                network::assert_replacement_bind_available(
+                    plan.listen_address,
+                    owned_listener.unwrap_or(old_endpoint.listen_address),
+                )?;
+                #[cfg(windows)]
+                for listener in external::listener_ids(&plan.profile)? {
+                    if !process.owns_pid(listener)? {
+                        return Err("重启目标端口有外部监听进程，原受管服务仍保留".into());
+                    }
+                    retired_listeners.push(listener);
+                }
+            }
+        }
+    }
     processes::stop_owned_for_restart(processes, &profile.id)?;
+    owned_listeners
+        .lock()
+        .map_err(|e| e.to_string())?
+        .remove(&profile.id);
+    #[cfg(windows)]
+    if !retired_listeners.is_empty() {
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            let listeners = external::listener_ids(&plan.profile)?;
+            if listeners.iter().any(|pid| !retired_listeners.contains(pid)) {
+                return Err("目标端口出现新的外部监听进程，未启动替代服务".into());
+            }
+            if listeners.is_empty() {
+                break;
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err("原受管端口仍在释放，请稍后重试重启".into());
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
     Ok(plan)
 }
 
@@ -3016,6 +3232,7 @@ mod native_probe_tests {
         let logs: Logs = Default::default();
         let processes = Mutex::new(HashMap::new());
         let tasks: Tasks = Arc::new(Mutex::new(HashMap::new()));
+        let owned_listeners = Mutex::new(HashMap::new());
         let spawn = |profile: &ServiceProfile| {
             let mut command = Command::new("powershell.exe");
             command.args([
@@ -3044,7 +3261,7 @@ mod native_probe_tests {
                     .running
             )
         };
-        assert!(prepare_owned_restart(&profile, &processes, &tasks).is_err());
+        assert!(prepare_owned_restart(&profile, &processes, &tasks, &owned_listeners).is_err());
         alive();
         fs::write(&path, b"{\"exe\":\"strata.exe\",\"args\":[]}").unwrap();
         profile.python_path = temp
@@ -3052,12 +3269,12 @@ mod native_probe_tests {
             .join("missing-python.exe")
             .to_string_lossy()
             .into();
-        assert!(prepare_owned_restart(&profile, &processes, &tasks).is_err());
+        assert!(prepare_owned_restart(&profile, &processes, &tasks, &owned_listeners).is_err());
         alive();
         let invalid_python = temp.path().join("invalid-python.exe");
         fs::write(&invalid_python, b"not an executable").unwrap();
         profile.python_path = invalid_python.to_string_lossy().into();
-        assert!(prepare_owned_restart(&profile, &processes, &tasks).is_err());
+        assert!(prepare_owned_restart(&profile, &processes, &tasks, &owned_listeners).is_err());
         alive();
         profile.python_path = python;
         tasks.lock().unwrap().insert(
@@ -3077,7 +3294,7 @@ mod native_probe_tests {
                 process: None,
             },
         );
-        assert!(prepare_owned_restart(&profile, &processes, &tasks).is_err());
+        assert!(prepare_owned_restart(&profile, &processes, &tasks, &owned_listeners).is_err());
         alive();
         tasks.lock().unwrap().clear();
         let mut other = profile.clone();
@@ -3086,7 +3303,7 @@ mod native_probe_tests {
             .lock()
             .unwrap()
             .insert(other.id.clone(), spawn(&other));
-        assert!(prepare_owned_restart(&profile, &processes, &tasks).is_err());
+        assert!(prepare_owned_restart(&profile, &processes, &tasks, &owned_listeners).is_err());
         alive();
         processes
             .lock()
@@ -3095,7 +3312,7 @@ mod native_probe_tests {
             .unwrap()
             .stop()
             .unwrap();
-        assert!(prepare_owned_restart(&profile, &processes, &tasks).is_ok());
+        assert!(prepare_owned_restart(&profile, &processes, &tasks, &owned_listeners).is_ok());
         assert!(
             !processes
                 .lock()

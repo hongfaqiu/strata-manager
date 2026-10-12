@@ -82,7 +82,13 @@ export function normalizeBaseUrl(baseUrl: string): string {
   try { base = new URL(baseUrl.trim()); } catch { throw new StrataError('INVALID_BASE_URL', '服务地址无效'); }
   if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password || base.search || base.hash) throw new StrataError('INVALID_BASE_URL', '服务地址需为无内嵌凭据的 HTTP(S) URL');
   if (!['/', '/v1', '/v1/'].includes(base.pathname)) throw new StrataError('INVALID_BASE_URL', '服务地址需为根地址或 /v1 API 地址');
-  if (base.protocol !== 'http:' || !['localhost', '127.0.0.1', '[::1]'].includes(base.hostname)) throw new StrataError('LOCAL_SERVICE_ONLY', 'Strata Manager 仅管理本机回环地址的 Strata 服务');
+  const octets = base.hostname.split('.').map(Number);
+  const localIPv4 = octets.length === 4 && octets.every(n => Number.isInteger(n) && n >= 0 && n <= 255)
+    && (octets[0] === 127 || octets[0] === 10 || (octets[0] === 172 && octets[1]! >= 16 && octets[1]! <= 31) || (octets[0] === 192 && octets[1] === 168) || (octets[0] === 169 && octets[1] === 254));
+  const localIPv6 = /^\[(?:f[cd][0-9a-f]{0,2}|fe[89ab][0-9a-f]):/i.test(base.hostname);
+  // Native IO verifies that non-loopback literals belong to this computer.
+  // The browser preview's proxy remains limited to loopback below.
+  if (base.protocol !== 'http:' || !(localIPv4 || localIPv6 || ['localhost', '[::1]'].includes(base.hostname))) throw new StrataError('LOCAL_SERVICE_ONLY', 'Strata Manager 仅管理本机 Strata 服务');
   return base.origin;
 }
 

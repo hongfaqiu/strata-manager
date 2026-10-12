@@ -86,11 +86,9 @@ pub fn endpoint(profile: &ServiceProfile, path: &str) -> Result<url::Url, String
     {
         return Err("服务地址必须为无凭据的 HTTP(S) 地址".into());
     }
-    match url.host() {
-        Some(url::Host::Ipv4(ip)) if ip.is_loopback() => {}
-        Some(url::Host::Ipv6(ip)) if ip.is_loopback() => {}
-        Some(url::Host::Domain("localhost")) => {}
-        _ => return Err("只允许连接本机 loopback Strata 服务".into()),
+    crate::network::management_host(&url)?;
+    if url.port_or_known_default() == Some(0) {
+        return Err("服务端口必须为 1–65535".into());
     }
     // Profile baseUrl is an origin (the UI accepts /v1 as a convenience).
     if !matches!(url.path(), "" | "/" | "/v1" | "/v1/") {

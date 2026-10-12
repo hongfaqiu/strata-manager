@@ -858,7 +858,7 @@ pub(crate) async fn download(
     expected: &str,
     limit: u64,
 ) -> Result<PathBuf, String> {
-    download_with_client(state, id, url, expected, limit, &state.client).await
+    download_with_client(state, id, url, expected, limit, &state.download_client).await
 }
 
 /// Release assets redirect to GitHub's asset origin. Every destination stays HTTPS
