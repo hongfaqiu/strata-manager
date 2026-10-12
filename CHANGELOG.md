@@ -7,62 +7,73 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+- 暂无。
+
+### English
+
+- No changes yet.
+
+## [0.1.5] - 2026-10-12
+
+### 中文
+
 - 新增上下文档位 Benchmark，按核验的模型容量生成可选档位：预置 8K–1M 档位，并补充模型的实际上下文上限。逐档串行测试，预留输出与模板余量，跳过超出服务容量的档位。报告记录实际输入／输出 Token、输入处理与生成速度、首 Token 延迟、总耗时和资源采样，支持历史记录及 JSON／CSV 导出；分词不可用时标明估算。
 - Benchmark 移到独立菜单，分为“上下文档位”和“场景测试”。场景测试固定一次发送一个请求，保留七种场景、预热、输入模式、实时进度与分场景结果。
 - 按已加载服务或本机配置核验上下文上限，统一主题色勾选框与开始按钮；结果图表沿用监控页面风格，支持复制结果图片和导出 PNG。
 - 监控浮条改为紧凑的小字堆叠布局，仅显示监控数据；主窗口与工作区跳转、复制 API 地址、刷新／暂停采样、置顶、收起与关闭等操作集中到原生右键菜单。设置中可调整默认置顶、采样时间显示和系统托盘监控，自动保存并恢复默认。
 - 新增独立系统托盘监控，显示状态与速度，点击图标恢复浮条。右键菜单提供快速测速入口，由主窗口串行执行短回复和连续生成两个场景；模型未就绪或应用忙碌时不执行测试。只读采样仍不启动服务，测速会发送推理请求。
 - 更新日志加入功能截图，桌面日志支持离线显示随应用打包的图片；官网递归发布截图资源，并支持点击查看原图。
+- 介绍页与官网默认宣传图改用完整总览及展开的服务状态弹层；截图保持原比例，放大预览适配屏幕，操作按钮移至图外，避免裁剪或遮挡。
 
 #### 新界面截图
 
-以下为开发中界面的隔离演示截图，尚未包含在公开安装包中。图中数值仅用于界面展示，非性能实测；原生右键菜单与真实窗口操作需独立验收。点击图片可查看原图。
+以下为 0.1.5 界面的隔离演示截图。图中数值仅用于界面展示，非性能实测；原生右键菜单与真实窗口操作需独立验收。点击图片可查看原图。
 
 ##### 串行上下文档位 Benchmark
 
-[![串行上下文档位 Benchmark](docs/screenshots/changelog/unreleased/benchmark.zh.webp)](docs/screenshots/changelog/unreleased/benchmark.zh.webp)
+[![串行上下文档位 Benchmark](docs/screenshots/changelog/0.1.5/benchmark.zh.webp)](docs/screenshots/changelog/0.1.5/benchmark.zh.webp)
 
 ##### Benchmark 结果图表与图片导出
 
-[![Benchmark 结果图表与图片导出](docs/screenshots/changelog/unreleased/benchmark-report.zh.webp)](docs/screenshots/changelog/unreleased/benchmark-report.zh.webp)
+[![Benchmark 结果图表与图片导出](docs/screenshots/changelog/0.1.5/benchmark-report.zh.webp)](docs/screenshots/changelog/0.1.5/benchmark-report.zh.webp)
 
 此报告为隔离演示数据，用于展示图表、复制与导出入口，非真实性能测量。
 
 ##### 串行场景测试
 
-[![串行场景测试](docs/screenshots/changelog/unreleased/scenario-benchmark.zh.webp)](docs/screenshots/changelog/unreleased/scenario-benchmark.zh.webp)
+[![串行场景测试](docs/screenshots/changelog/0.1.5/scenario-benchmark.zh.webp)](docs/screenshots/changelog/0.1.5/scenario-benchmark.zh.webp)
 
 ##### 紧凑监控浮条
 
-[![紧凑监控浮条](docs/screenshots/changelog/unreleased/floating-monitor.zh.webp)](docs/screenshots/changelog/unreleased/floating-monitor.zh.webp)
+[![紧凑监控浮条](docs/screenshots/changelog/0.1.5/floating-monitor.zh.webp)](docs/screenshots/changelog/0.1.5/floating-monitor.zh.webp)
 
 ##### 监控浮条配置
 
-[![监控浮条配置](docs/screenshots/changelog/unreleased/floating-monitor-settings.zh.webp)](docs/screenshots/changelog/unreleased/floating-monitor-settings.zh.webp)
+[![监控浮条配置](docs/screenshots/changelog/0.1.5/floating-monitor-settings.zh.webp)](docs/screenshots/changelog/0.1.5/floating-monitor-settings.zh.webp)
 
 ##### 总览接入 API 指引
 
-[![总览接入 API 指引](docs/screenshots/changelog/unreleased/overview-api-guide.zh.webp)](docs/screenshots/changelog/unreleased/overview-api-guide.zh.webp)
+[![总览接入 API 指引](docs/screenshots/changelog/0.1.5/overview-api-guide.zh.webp)](docs/screenshots/changelog/0.1.5/overview-api-guide.zh.webp)
 
 ##### 公共聊天默认值
 
-[![公共聊天默认值](docs/screenshots/changelog/unreleased/common-chat-settings.zh.webp)](docs/screenshots/changelog/unreleased/common-chat-settings.zh.webp)
+[![公共聊天默认值](docs/screenshots/changelog/0.1.5/common-chat-settings.zh.webp)](docs/screenshots/changelog/0.1.5/common-chat-settings.zh.webp)
 
 ##### API 与外部助手
 
-[![API 与外部助手](docs/screenshots/changelog/unreleased/connections.zh.webp)](docs/screenshots/changelog/unreleased/connections.zh.webp)
+[![API 与外部助手](docs/screenshots/changelog/0.1.5/connections.zh.webp)](docs/screenshots/changelog/0.1.5/connections.zh.webp)
 
 ##### 下载来源与网络测试
 
-[![下载来源与网络测试](docs/screenshots/changelog/unreleased/runtime-download.zh.webp)](docs/screenshots/changelog/unreleased/runtime-download.zh.webp)
+[![下载来源与网络测试](docs/screenshots/changelog/0.1.5/runtime-download.zh.webp)](docs/screenshots/changelog/0.1.5/runtime-download.zh.webp)
 
 ##### 服务状态与实时指标
 
-[![服务状态与实时指标](docs/screenshots/changelog/unreleased/service-status.zh.webp)](docs/screenshots/changelog/unreleased/service-status.zh.webp)
+[![服务状态与实时指标](docs/screenshots/changelog/0.1.5/service-status.zh.webp)](docs/screenshots/changelog/0.1.5/service-status.zh.webp)
 
 ##### 应用版本与图文更新日志
 
-[![应用版本与图文更新日志](docs/screenshots/changelog/unreleased/app-updates.zh.webp)](docs/screenshots/changelog/unreleased/app-updates.zh.webp)
+[![应用版本与图文更新日志](docs/screenshots/changelog/0.1.5/app-updates.zh.webp)](docs/screenshots/changelog/0.1.5/app-updates.zh.webp)
 
 ### English
 
@@ -72,56 +83,57 @@ Maintain both languages for each version. Move unreleased changes into the actua
 - Compact the floating monitor into small stacked metrics. Move window/workspace navigation, API address copying, sampling refresh/pause, pinning, hiding and closing to the native context menu. Settings cover default pinning, sample-time visibility and system-tray monitoring, with automatic saving and restoring defaults.
 - Add independent system-tray monitoring for status and speed; clicking its icon restores the monitor. Context menus provide a quick speed test. The main window runs short-response and decode scenarios serially, requiring a ready, idle model. Read-only sampling never starts services; the speed test sends inference requests.
 - Add feature screenshots to the changelog, offline display of bundled images in desktop release notes, and recursive screenshot publication with links to the original images on the website.
+- Use the complete Overview with its service-status popover open as the default introduction and website preview. Preserve image proportions, fit enlarged previews within the viewport, and place controls outside images to avoid cropping or obstruction.
 
 #### New interface screenshots
 
-These isolated demonstration screenshots show development changes not yet included in public installers. Displayed values illustrate the interface, rather than measured performance. Native context menus and real window operations require separate acceptance checks. Click an image to open the original.
+These isolated demonstration screenshots show the 0.1.5 interface. Displayed values illustrate the interface, rather than measured performance. Native context menus and real window operations require separate acceptance checks. Click an image to open the original.
 
 ##### Serial context-tier Benchmark
 
-[![Serial context-tier Benchmark](docs/screenshots/changelog/unreleased/benchmark.en.webp)](docs/screenshots/changelog/unreleased/benchmark.en.webp)
+[![Serial context-tier Benchmark](docs/screenshots/changelog/0.1.5/benchmark.en.webp)](docs/screenshots/changelog/0.1.5/benchmark.en.webp)
 
 ##### Benchmark report charts and image export
 
-[![Benchmark report charts and image export](docs/screenshots/changelog/unreleased/benchmark-report.en.webp)](docs/screenshots/changelog/unreleased/benchmark-report.en.webp)
+[![Benchmark report charts and image export](docs/screenshots/changelog/0.1.5/benchmark-report.en.webp)](docs/screenshots/changelog/0.1.5/benchmark-report.en.webp)
 
 This report uses isolated demonstration data to show the charts, copy and export controls. It is not a real performance measurement.
 
 ##### Serial scenario tests
 
-[![Serial scenario tests](docs/screenshots/changelog/unreleased/scenario-benchmark.en.webp)](docs/screenshots/changelog/unreleased/scenario-benchmark.en.webp)
+[![Serial scenario tests](docs/screenshots/changelog/0.1.5/scenario-benchmark.en.webp)](docs/screenshots/changelog/0.1.5/scenario-benchmark.en.webp)
 
 ##### Compact floating monitor
 
-[![Compact floating monitor](docs/screenshots/changelog/unreleased/floating-monitor.en.webp)](docs/screenshots/changelog/unreleased/floating-monitor.en.webp)
+[![Compact floating monitor](docs/screenshots/changelog/0.1.5/floating-monitor.en.webp)](docs/screenshots/changelog/0.1.5/floating-monitor.en.webp)
 
 ##### Floating-monitor settings
 
-[![Floating-monitor settings](docs/screenshots/changelog/unreleased/floating-monitor-settings.en.webp)](docs/screenshots/changelog/unreleased/floating-monitor-settings.en.webp)
+[![Floating-monitor settings](docs/screenshots/changelog/0.1.5/floating-monitor-settings.en.webp)](docs/screenshots/changelog/0.1.5/floating-monitor-settings.en.webp)
 
 ##### API integration from Overview
 
-[![API integration from Overview](docs/screenshots/changelog/unreleased/overview-api-guide.en.webp)](docs/screenshots/changelog/unreleased/overview-api-guide.en.webp)
+[![API integration from Overview](docs/screenshots/changelog/0.1.5/overview-api-guide.en.webp)](docs/screenshots/changelog/0.1.5/overview-api-guide.en.webp)
 
 ##### Common chat defaults
 
-[![Common chat defaults](docs/screenshots/changelog/unreleased/common-chat-settings.en.webp)](docs/screenshots/changelog/unreleased/common-chat-settings.en.webp)
+[![Common chat defaults](docs/screenshots/changelog/0.1.5/common-chat-settings.en.webp)](docs/screenshots/changelog/0.1.5/common-chat-settings.en.webp)
 
 ##### API and external assistants
 
-[![API and external assistants](docs/screenshots/changelog/unreleased/connections.en.webp)](docs/screenshots/changelog/unreleased/connections.en.webp)
+[![API and external assistants](docs/screenshots/changelog/0.1.5/connections.en.webp)](docs/screenshots/changelog/0.1.5/connections.en.webp)
 
 ##### Download sources and network test
 
-[![Download sources and network test](docs/screenshots/changelog/unreleased/runtime-download.en.webp)](docs/screenshots/changelog/unreleased/runtime-download.en.webp)
+[![Download sources and network test](docs/screenshots/changelog/0.1.5/runtime-download.en.webp)](docs/screenshots/changelog/0.1.5/runtime-download.en.webp)
 
 ##### Service status and live metrics
 
-[![Service status and live metrics](docs/screenshots/changelog/unreleased/service-status.en.webp)](docs/screenshots/changelog/unreleased/service-status.en.webp)
+[![Service status and live metrics](docs/screenshots/changelog/0.1.5/service-status.en.webp)](docs/screenshots/changelog/0.1.5/service-status.en.webp)
 
 ##### App version and illustrated release notes
 
-[![App version and illustrated release notes](docs/screenshots/changelog/unreleased/app-updates.en.webp)](docs/screenshots/changelog/unreleased/app-updates.en.webp)
+[![App version and illustrated release notes](docs/screenshots/changelog/0.1.5/app-updates.en.webp)](docs/screenshots/changelog/0.1.5/app-updates.en.webp)
 
 ## [0.1.4] - 2026-10-12
 

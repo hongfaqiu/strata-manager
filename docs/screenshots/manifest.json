@@ -2072,6 +2072,62 @@
     }
   ],
   "coverProvenance": {
+    "appVersion": "0.1.5",
+    "type": "Complete Overview screenshot with service-status popover open",
+    "capturedAt": "2026-10-12T11:05:46.939Z",
+    "completedAt": "2026-10-12T11:05:53.209Z",
+    "sourceBaseCommit": "6c7130bf460f8912f9512a672d1992223cc902db",
+    "sourceTreeSha256": "dfe2a06dc23b225d09a8afa9b532da1f55d29c54bd73b6528e522265d7a1c00f",
+    "helperTreeSha256": "1bd7b02a5aeeb613cec4886a25a472c8fbbd2db5650497017b4060dece9767a3",
+    "sourceUnchangedDuringCapture": true,
+    "width": 2880,
+    "height": 1920,
+    "lossless": true,
+    "pixelIdenticalToBrowserPng": true,
+    "scope": "Overview promotion screenshots, isolated synthetic in-memory RPC, model and hardware values. No actual inference, service, credentials, installer, updater or operating-system change.",
+    "note": "The complete viewport is preserved without cropping or composition. Values are isolated demonstration data. product-cover.webp is byte-identical to the English screenshot.",
+    "evidence": [
+      {
+        "file": "output/playwright/release-0.1.5/capture/source-before.json",
+        "sha256": "65fab59c9862a59309f64c83fa327e58966b3138336515c69d5a033b8dc30c30"
+      },
+      {
+        "file": "output/playwright/release-0.1.5/capture/source-after.json",
+        "sha256": "9c9ea8da5f71b20a5c992c87fe61ba1add936a590719b38b1b93544ee9684928"
+      },
+      {
+        "file": "output/playwright/release-0.1.5/capture/promotion-result.json",
+        "sha256": "bb3806933c2878454303be9db6be76313698c1abc04f20b5b6f96ea3da46aff4"
+      }
+    ],
+    "variants": [
+      {
+        "lang": "zh",
+        "file": "product-cover.zh.webp",
+        "width": 2880,
+        "height": 1920,
+        "bytes": 144630,
+        "sha256": "849d0255708b0e7f04b9c03106ec96f589bbb56be584ae677c685239552a6722",
+        "sourcePngSha256": "9f1d5a26d5fea5e7488752b7b41515c4f13d039a2c47fdda9a5633ba81b4dbf2",
+        "rgbaSha256": "ee9a5fd528de53e09d4eb7458bfa47b3abb589b375cf3b0cc24570185a07479c",
+        "lossless": true,
+        "pixelIdenticalToBrowserPng": true
+      },
+      {
+        "lang": "en",
+        "file": "product-cover.en.webp",
+        "width": 2880,
+        "height": 1920,
+        "bytes": 139942,
+        "sha256": "c4707a0e5e7ae216589b14b6167ba47dec9190982dc52d86947d42ee7a8c33b5",
+        "sourcePngSha256": "70fa7efe6f8864fc524a54e92e26b4814b0ed8405889ee8cd4964a050ccccf63",
+        "rgbaSha256": "dc35b55bb04d0bf6cd4db4d762656198b1b984a30f34542adcdeb997a2d67a57",
+        "lossless": true,
+        "pixelIdenticalToBrowserPng": true
+      }
+    ]
+  },
+  "historicalCoverProvenance": {
     "kind": "Bilingual product hero: existing generated abstract background, deterministic text and current real interface screenshots",
     "createdOn": "2026-10-12",
     "appVersion": "0.1.4",

@@ -26,7 +26,7 @@
   <meta property="og:locale" content="zh_CN" id="og-locale">
   <meta property="og:locale:alternate" content="en_US" id="og-locale-alternate">
   <meta property="og:image" content="https://hongfaqiu.github.io/strata-manager/assets/screenshots/product-cover.zh.webp" data-content-en="https://hongfaqiu.github.io/strata-manager/assets/screenshots/product-cover.en.webp">
-  <meta property="og:image:alt" content="Strata Manager：Strata 本地大模型管理与监控" data-content-en="Strata Manager: local LLM management and monitoring for Strata">
+  <meta property="og:image:alt" content="Strata Manager 完整总览与展开的服务状态弹层" data-content-en="Strata Manager complete Overview with the service-status popover open">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Strata Manager · Strata 大模型管理与监控" data-content-en="Strata Manager · Local LLM Management &amp; Monitoring for Strata">
   <meta name="twitter:description" content="集中准备 Strata 环境、管理模型与服务、共享聊天参数、配置 API/MCP 接入，并查看监控、调优和 Benchmark 报告。" data-content-en="Prepare Strata, manage models and services, share chat defaults, configure API/MCP connections and review monitoring, tuning and Benchmark reports.">
@@ -113,9 +113,9 @@
           </div>
           <p class="hero-platforms"><span class="platform-dot" aria-hidden="true"></span><span data-en="Open source · Windows / Linux x64">开源免费 · Windows / Linux x64</span></p>
         </div>
-        <a class="hero-cover open-lightbox-btn" id="hero-preview-link" href="assets/screenshots/overview.zh.webp" data-href-en="assets/screenshots/overview.en.webp" data-target="overview" aria-label="放大查看总览界面" data-label-en="Enlarge the overview interface">
-          <img id="hero-preview-img" src="assets/screenshots/overview.zh.webp" data-src-en="assets/screenshots/overview.en.webp" width="2880" height="1920" alt="Strata Manager 总览：模型状态、服务控制、API 用量与运行指标" data-alt-en="Strata Manager overview: model status, service controls, API usage and runtime metrics" fetchpriority="high">
-          <span class="hero-preview-caption"><span data-en="Overview · Service status and runtime metrics">服务总览 · 模型状态与运行指标</span><span class="preview-expand"><span data-en="Enlarge interface">放大查看</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></span></span>
+        <a class="hero-cover open-lightbox-btn" id="hero-preview-link" href="assets/screenshots/product-cover.zh.webp" data-href-en="assets/screenshots/product-cover.en.webp" data-target="overview" aria-label="放大查看总览与服务状态弹层" data-label-en="Enlarge Overview and its service-status popover">
+          <img id="hero-preview-img" src="assets/screenshots/product-cover.zh.webp" data-src-en="assets/screenshots/product-cover.en.webp" width="2880" height="1920" alt="Strata Manager 完整总览与展开的服务状态弹层" data-alt-en="Strata Manager complete Overview with the service-status popover open" fetchpriority="high">
+          <span class="hero-preview-caption"><span data-en="0.1.5 interface preview · Overview and service status">0.1.5 界面预览 · 总览与服务状态</span><span class="preview-expand"><span data-en="Enlarge interface">放大查看</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></span></span>
         </a>
       </div>
     </section>
@@ -178,7 +178,7 @@
         <article class="feature-card" id="benchmark">
           <span class="feature-number" aria-hidden="true">06</span>
           <h3 data-en="Benchmark &amp; performance reports">Benchmark 基准测试</h3>
-          <p data-en="Run scenario suites or concurrent stress tests with configurable warmup, repetition and input/output lengths. Compare TTFT, P50/P95, generation rates, cache reuse and resource trends; keep history and export JSON or CSV.">选择场景套件或并发压力模式，设置预热、重复轮次与输入输出长度；对比 TTFT、P50/P95、生成速度、缓存复用和资源趋势，支持历史记录与 JSON / CSV 导出。</p>
+          <p data-en="Run context tiers within the model's verified limit, or use seven serial scenarios. Compare prefill, decode, latency and resource trends; copy result images and export PNG, JSON or CSV.">在模型核验上限内按上下文档位测试，或串行运行七类场景；对比预填充、解码、延迟和资源趋势，支持复制结果图片与 PNG、JSON / CSV 导出。</p>
           <a class="feature-link" href="#screen-benchmark" data-en="Explore the Benchmark workspace ↘">查看 Benchmark 工作区 ↘</a>
         </article>
         </div>
@@ -217,18 +217,18 @@
         </div>
         <div class="gallery-grid">
           <figure class="gallery-item" id="screen-benchmark">
-            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/benchmark.zh.webp" data-href-en="assets/screenshots/benchmark.en.webp" data-target="benchmark" aria-label="放大查看 Benchmark 工作区" data-label-en="Enlarge the Benchmark workspace">
-              <img src="assets/screenshots/benchmark.zh.webp" data-src-en="assets/screenshots/benchmark.en.webp" width="2880" height="1920" loading="lazy" decoding="async" alt="Benchmark 工作区：测试计划、场景选择与并发压力参数" data-alt-en="Benchmark workspace: test plans, scenario selection and concurrent stress settings">
+            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/changelog/0.1.5/benchmark.zh.webp" data-href-en="assets/screenshots/changelog/0.1.5/benchmark.en.webp" data-target="benchmark" aria-label="放大查看 Benchmark 工作区" data-label-en="Enlarge the Benchmark workspace">
+              <img src="assets/screenshots/changelog/0.1.5/benchmark.zh.webp" data-src-en="assets/screenshots/changelog/0.1.5/benchmark.en.webp" width="2880" height="1920" loading="lazy" decoding="async" alt="Benchmark 上下文档位：模型上限、串行测试计划与输出预算" data-alt-en="Benchmark context tiers: model limit, serial test plan and output allowance">
               <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
             </a>
-            <figcaption><span class="gallery-category" data-en="PERFORMANCE EVALUATION">性能评估</span><h3 data-en="Benchmark · Measure and compare">Benchmark · 基准测试</h3><p data-en="Run scenario suites and concurrent stress tests. Compare latency, throughput and resource trends, then export JSON or CSV reports.">运行场景套件与并发压力测试，对比延迟、吞吐和资源趋势，导出 JSON 或 CSV 报告。</p></figcaption>
+            <figcaption><span class="gallery-category" data-en="PERFORMANCE EVALUATION">性能评估</span><h3 data-en="Benchmark · Context tiers">Benchmark · 上下文档位</h3><p data-en="Test tiers serially within the model's verified context limit, including its actual maximum. Compare prefill, decode, request duration and resource use; report images use demonstration data.">在模型核验上限内按档位串行测试，并覆盖实际最大上下文。对比预填充、解码、请求耗时与资源占用；报告配图使用演示数据。</p><p class="gallery-related"><a class="text-link open-lightbox-btn" href="assets/screenshots/changelog/0.1.5/scenario-benchmark.zh.webp" data-href-en="assets/screenshots/changelog/0.1.5/scenario-benchmark.en.webp" data-target="scenario-benchmark" data-en="Scenario suite ↗">场景测试 ↗</a><a class="text-link open-lightbox-btn" href="assets/screenshots/changelog/0.1.5/benchmark-report.zh.webp" data-href-en="assets/screenshots/changelog/0.1.5/benchmark-report.en.webp" data-target="benchmark-report" data-en="Result report ↗">结果报告 ↗</a></p></figcaption>
           </figure>
           <figure class="gallery-item" id="screen-runtime">
-            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/runtime.zh.webp" data-href-en="assets/screenshots/runtime.en.webp" data-target="runtime" aria-label="放大查看 Strata 运行环境" data-label-en="Enlarge Strata runtime management">
-              <img src="assets/screenshots/runtime.zh.webp" data-src-en="assets/screenshots/runtime.en.webp" width="2880" height="1920" loading="lazy" decoding="async" alt="Strata 运行环境：安装检测、版本与更新管理" data-alt-en="Strata runtime: installation detection, versions and updates">
+            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/changelog/0.1.5/runtime-download.zh.webp" data-href-en="assets/screenshots/changelog/0.1.5/runtime-download.en.webp" data-target="runtime" aria-label="放大查看 Strata 下载来源与校验" data-label-en="Enlarge Strata download sources and verification">
+              <img src="assets/screenshots/changelog/0.1.5/runtime-download.zh.webp" data-src-en="assets/screenshots/changelog/0.1.5/runtime-download.en.webp" width="2880" height="1920" loading="lazy" decoding="async" alt="Strata 运行环境下载：来源选择、本地 ZIP 与校验结果" data-alt-en="Strata runtime downloads: source selection, local ZIP and verification results">
               <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
             </a>
-            <figcaption><span class="gallery-category" data-en="RUNTIME MANAGEMENT">运行环境</span><h3 data-en="Strata · Prepare the runtime">Strata · 环境管理</h3><p data-en="Inspect the local installation and upstream versions, read release notes and follow supported runtime updates.">检查本机安装与上游版本，阅读更新日志，跟踪受支持的运行时更新。</p></figcaption>
+            <figcaption><span class="gallery-category" data-en="RUNTIME MANAGEMENT">运行环境</span><h3 data-en="Strata · Download sources and verification">Strata · 下载来源与校验</h3><p data-en="Choose the official source, an HTTPS mirror or a local ZIP. Installation verifies the complete package against the official size and SHA256 before replacing runtime files.">选择官方来源、HTTPS 镜像或本地 ZIP；安装前按官方长度与 SHA256 核验完整包，再替换运行时文件。</p></figcaption>
           </figure>
           <figure class="gallery-item" id="screen-config">
             <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/config.zh.webp" data-href-en="assets/screenshots/config.en.webp" data-target="config" aria-label="放大查看运行配置" data-label-en="Enlarge runtime configuration">
@@ -259,38 +259,38 @@
             <figcaption><span class="gallery-category" data-en="APPLICATION PREFERENCES">应用偏好</span><h3 data-en="Settings · Make it your workspace">设置 · 调整工作台偏好</h3><p data-en="Choose Chinese or English, system/light/dark appearance, tray behavior and update preferences.">选择中英文、跟随系统或亮暗外观，设置托盘行为与更新偏好。</p></figcaption>
           </figure>
           <figure class="gallery-item" id="screen-common-chat-settings">
-            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/common-chat-settings.zh.webp" data-href-en="assets/screenshots/common-chat-settings.en.webp" data-target="common-chat-settings" aria-label="放大查看公共聊天默认值" data-label-en="Enlarge shared settings">
-              <img src="assets/screenshots/common-chat-settings.zh.webp" data-src-en="assets/screenshots/common-chat-settings.en.webp" width="2880" height="1920" loading="lazy" decoding="async" alt="公共聊天默认值与按模型继承选项" data-alt-en="Shared chat defaults and per-model inheritance">
+            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/changelog/0.1.5/common-chat-settings.zh.webp" data-href-en="assets/screenshots/changelog/0.1.5/common-chat-settings.en.webp" data-target="common-chat-settings" aria-label="放大查看公共聊天默认值" data-label-en="Enlarge shared settings">
+              <img src="assets/screenshots/changelog/0.1.5/common-chat-settings.zh.webp" data-src-en="assets/screenshots/changelog/0.1.5/common-chat-settings.en.webp" width="2880" height="1920" loading="lazy" decoding="async" alt="公共聊天默认值与按模型继承选项" data-alt-en="Shared chat defaults and per-model inheritance">
               <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
             </a>
             <figcaption><span class="gallery-category" data-en="SHARED CHAT DEFAULTS">公共聊天默认值</span><h3 data-en="Shared settings · Inherit when needed">公共设置 · 按需继承参数</h3><p data-en="New models inherit shared generation parameters and MCP settings. Existing custom values stay separate until inheritance is enabled; changes apply to the next chat request.">新模型默认继承公共生成参数与 MCP 开关；旧模型的专用值保持独立，主动开启继承后才跟随，更改在下一次聊天请求生效。</p></figcaption>
           </figure>
           <figure class="gallery-item" id="screen-connections">
-            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/connections.zh.webp" data-href-en="assets/screenshots/connections.en.webp" data-target="connections" aria-label="放大查看API 与外部助手" data-label-en="Enlarge connections">
-              <img src="assets/screenshots/connections.zh.webp" data-src-en="assets/screenshots/connections.en.webp" width="2880" height="1920" loading="lazy" decoding="async" alt="API 与外部助手的连接目标、访问密钥和 MCP 配置" data-alt-en="API and external assistant connection targets, access keys and MCP configuration">
+            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/changelog/0.1.5/connections.zh.webp" data-href-en="assets/screenshots/changelog/0.1.5/connections.en.webp" data-target="connections" aria-label="放大查看API 与外部助手" data-label-en="Enlarge connections">
+              <img src="assets/screenshots/changelog/0.1.5/connections.zh.webp" data-src-en="assets/screenshots/changelog/0.1.5/connections.en.webp" width="2880" height="1920" loading="lazy" decoding="async" alt="API 与外部助手的连接目标、访问密钥和 MCP 配置" data-alt-en="API and external assistant connection targets, access keys and MCP configuration">
               <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
             </a>
-            <figcaption><span class="gallery-category" data-en="API &amp; EXTERNAL ASSISTANTS">API 与外部助手</span><h3 data-en="Connections · Configure clients together">连接 · 集中配置客户端</h3><p data-en="Choose a connection target, save the application's access key and copy API or MCP configurations. Selecting a target does not start or switch a model.">选择连接目标、保存应用访问服务的密钥，复制 API 或 MCP 接入配置；选择目标不会启动或切换模型。</p></figcaption>
+            <figcaption><span class="gallery-category" data-en="API &amp; EXTERNAL ASSISTANTS">API 与外部助手</span><h3 data-en="Connections · Configure clients together">连接 · 集中配置客户端</h3><p data-en="Choose a connection target, save the application's access key and copy API or MCP configurations. Selecting a target does not start or switch a model.">选择连接目标、保存应用访问服务的密钥，复制 API 或 MCP 接入配置；选择目标不会启动或切换模型。</p><p class="gallery-related"><a class="text-link open-lightbox-btn" href="assets/screenshots/changelog/0.1.5/overview-api-guide.zh.webp" data-href-en="assets/screenshots/changelog/0.1.5/overview-api-guide.en.webp" data-target="overview-api-guide" data-en="API connection help ↗">API 接入帮助 ↗</a></p></figcaption>
           </figure>
           <figure class="gallery-item" id="screen-app-updates">
-            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/app-updates.zh.webp" data-href-en="assets/screenshots/app-updates.en.webp" data-target="app-updates" aria-label="放大查看应用更新" data-label-en="Enlarge updates">
-              <img src="assets/screenshots/app-updates.zh.webp" data-src-en="assets/screenshots/app-updates.en.webp" width="2880" height="1920" loading="lazy" decoding="async" alt="应用更新页的当前版本、双语日志和安装确认" data-alt-en="Application updates with the current version, bilingual notes and installation confirmation">
+            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/changelog/0.1.5/app-updates.zh.webp" data-href-en="assets/screenshots/changelog/0.1.5/app-updates.en.webp" data-target="app-updates" aria-label="放大查看应用更新" data-label-en="Enlarge updates">
+              <img src="assets/screenshots/changelog/0.1.5/app-updates.zh.webp" data-src-en="assets/screenshots/changelog/0.1.5/app-updates.en.webp" width="2880" height="1920" loading="lazy" decoding="async" alt="应用更新页的当前版本、双语日志和安装确认" data-alt-en="Application updates with the current version, bilingual notes and installation confirmation">
               <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
             </a>
             <figcaption><span class="gallery-category" data-en="APPLICATION UPDATES">应用更新</span><h3 data-en="Updates · Read before confirming">应用更新 · 先阅读，再确认</h3><p data-en="Read the current version's bundled bilingual notes offline, check stable updates and confirm installation. App updates verify Tauri signatures and remain separate from engine and model downloads.">离线阅读当前版本随包提供的双语日志，检查稳定更新并确认安装；应用更新核验 Tauri 签名，与引擎和模型下载分开管理。</p></figcaption>
           </figure>
           <figure class="gallery-item" id="screen-service-status">
-            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/service-status.zh.webp" data-href-en="assets/screenshots/service-status.en.webp" data-target="service-status" aria-label="放大查看近期服务采样" data-label-en="Enlarge status">
-              <img src="assets/screenshots/service-status.zh.webp" data-src-en="assets/screenshots/service-status.en.webp" width="2880" height="1920" loading="lazy" decoding="async" alt="服务状态快捷面板与生成、输入处理近期趋势" data-alt-en="Service status panel with recent generation and input-processing trends">
+            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/changelog/0.1.5/service-status.zh.webp" data-href-en="assets/screenshots/changelog/0.1.5/service-status.en.webp" data-target="service-status" aria-label="放大查看近期服务采样" data-label-en="Enlarge status">
+              <img src="assets/screenshots/changelog/0.1.5/service-status.zh.webp" data-src-en="assets/screenshots/changelog/0.1.5/service-status.en.webp" width="2880" height="1920" loading="lazy" decoding="async" alt="服务状态快捷面板与生成、输入处理近期趋势" data-alt-en="Service status panel with recent generation and input-processing trends">
               <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
             </a>
             <figcaption><span class="gallery-category" data-en="RECENT SERVICE TELEMETRY">近期服务采样</span><h3 data-en="Status · Follow recent activity">服务状态 · 查看近期活动</h3><p data-en="Keep up to 60 recent samples with their spacing and gaps. Generation and input processing stay separate; idle speed is labelled recent generation, and stopped or disconnected services hide live metrics.">保留最多 60 个近期采样及其间距和缺失点，分别展示生成与输入处理；空闲速度标明“最近生成”，停止或断联时隐藏实时指标。</p></figcaption>
           </figure>
           <figure class="gallery-item" id="screen-floating-monitor" style="grid-column:1 / -1">
-            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/floating-monitor.zh.webp" data-href-en="assets/screenshots/floating-monitor.en.webp" data-target="floating-monitor" aria-label="放大查看按需打开的桌面监控" data-label-en="Enlarge floating monitor">
-              <img src="assets/screenshots/floating-monitor.zh.webp" data-src-en="assets/screenshots/floating-monitor.en.webp" width="1840" height="164" style="aspect-ratio:auto" loading="lazy" decoding="async" alt="独立桌面监控浮条：当前模型、采样时刻与服务指标" data-alt-en="Floating desktop monitor: current model, sample time and service metrics">
+            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/changelog/0.1.5/floating-monitor.zh.webp" data-href-en="assets/screenshots/changelog/0.1.5/floating-monitor.en.webp" data-target="floating-monitor" aria-label="放大查看按需打开的桌面监控" data-label-en="Enlarge floating monitor">
+              <img src="assets/screenshots/changelog/0.1.5/floating-monitor.zh.webp" data-src-en="assets/screenshots/changelog/0.1.5/floating-monitor.en.webp" width="440" height="80" loading="lazy" decoding="async" alt="紧凑桌面监控浮条：服务状态与生成、输入处理指标" data-alt-en="Compact floating monitor: service status, generation and input-processing metrics">
             </a>
-            <figcaption><span class="gallery-category" data-en="OPTIONAL DESKTOP MONITOR">按需打开的桌面监控</span><h3 data-en="Floating monitor · Keep status in view">独立浮条 · 随手查看状态</h3><p data-en="Closed by default. Open, move, resize or pin it when needed; it reads an existing background and never starts or restores the background or models. Closing it leaves the main app running.">默认关闭，可按需打开、拖动、缩放或置顶；只读查询已运行的后台，不会启动或恢复后台与模型。关闭浮条不影响主应用。</p></figcaption>
+            <figcaption><span class="gallery-category" data-en="OPTIONAL DESKTOP MONITOR">按需打开的桌面监控</span><h3 data-en="Floating monitor · Compact metrics">独立浮条 · 紧凑监控</h3><p data-en="Closed by default. Drag the metrics-only strip anywhere and use the native context menu for actions or system tray monitoring. Sampling is read-only; Quick speed test runs serial inference in the main window only when the model is ready and idle.">默认关闭，纯指标浮条可按住任意位置拖动，通过原生右键菜单操作或开启系统托盘监控。日常采样只读；“快速测速”仅在模型就绪且空闲时交给主窗口串行推理。</p><p class="gallery-related"><a class="text-link open-lightbox-btn" href="assets/screenshots/changelog/0.1.5/floating-monitor-settings.zh.webp" data-href-en="assets/screenshots/changelog/0.1.5/floating-monitor-settings.en.webp" data-target="floating-monitor-settings" data-en="Floating monitor settings ↗">监控浮动条设置 ↗</a></p></figcaption>
           </figure>
         </div>
         <p class="image-note" data-en="Interface previews · Example data · Select an image to view it in full">界面预览 · 演示数据 · 点击图片查看完整界面</p>

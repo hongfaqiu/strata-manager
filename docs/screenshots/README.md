@@ -2,13 +2,16 @@
 
 ## 未发布界面补图 / Unreleased interface additions
 
-2026-10-12 新增的开发中界面采用独立批次：11 个视图各含中文和英文，共 22 张，保存在 `changelog/unreleased/`。包含串行上下文 Benchmark、演示结果图表与图片导出、串行场景测试、紧凑监控浮条与托盘设置、总览接入 API，以及公共聊天、连接、下载、服务状态和应用更新页面。结果报告使用演示数据，非性能实测。更新日志的 Unreleased 部分引用这批图；公开 0.1.4 的日志使用下面原发布批次的图片。此批次不会替换或改写原 0.1.4 的截图与来源记录。
+0.1.5 界面于 2026-10-12 采用独立发布批次：11 个视图各含中文和英文，共 22 张，保存在 `changelog/0.1.5/`。包含串行上下文 Benchmark、演示结果图表与图片导出、串行场景测试、紧凑监控浮条与托盘设置、总览接入 API，以及公共聊天、连接、下载、服务状态和应用更新页面。结果报告使用演示数据，非性能实测。更新日志的 0.1.5 部分引用这批图；公开 0.1.4 的日志使用下面原发布批次的图片。此批次不会替换或改写原 0.1.4 的截图与来源记录。
 
-新图同样加载真实 React 入口与原有样式，仅替换隔离 RPC 数据；不启动真实模型、测速、安装或更新，不修改真实用户配置。18 张普通图为 2880 × 1920；中文与英文结果报告分别为 2880 × 2720、2880 × 2800，以完整呈现图表和表格；两张浮条图为 440 × 80，对应默认 220 × 40 逻辑像素。无损 WebP 与 PNG 逐像素一致；捕获前后核对 HEAD、源码及辅助文件摘要，并检查错误、外部请求、原生变更调用和页面溢出。原生右键菜单、系统窗口操作和实际推理性能不由这些浏览器截图证明。文件清单、尺寸、哈希及检查证据见[独立批次记录](changelog/unreleased/manifest.json)。
+新图同样加载真实 React 入口与原有样式，仅替换隔离 RPC 数据；不启动真实模型、测速、安装或更新，不修改真实用户配置。18 张普通图为 2880 × 1920；中文与英文结果报告分别为 2880 × 2720、2880 × 2800，以完整呈现图表和表格；两张浮条图为 440 × 80，对应默认 220 × 40 逻辑像素。无损 WebP 与 PNG 逐像素一致；捕获前后核对 HEAD、源码及辅助文件摘要，并检查错误、外部请求、原生变更调用和页面溢出。原生右键菜单、系统窗口操作和实际推理性能不由这些浏览器截图证明。文件清单、尺寸、哈希及检查证据见[独立批次记录](changelog/0.1.5/manifest.json)。
 
-The development additions captured on 2026-10-12 form a separate batch of 22 images: 11 views in Chinese and English, under `changelog/unreleased/`. They cover serial context benchmarks, demonstration report charts/image export, serial scenario tests, the compact floating monitor and tray settings, Overview API integration, common chat settings, connections, downloads, service status and app updates. Report values are demonstration data rather than performance measurements. Unreleased notes use this batch; public 0.1.4 notes use the original release images below. The original 0.1.4 images and provenance remain intact.
+The 0.1.5 interface captured on 2026-10-12 forms a separate release batch of 22 images: 11 views in Chinese and English, under `changelog/0.1.5/`. They cover serial context benchmarks, demonstration report charts/image export, serial scenario tests, the compact floating monitor and tray settings, Overview API integration, common chat settings, connections, downloads, service status and app updates. Report values are demonstration data rather than performance measurements. The 0.1.5 notes use this batch; public 0.1.4 notes use the original release images below. The original 0.1.4 images and provenance remain intact.
 
-The new batch loads the real React entry and original styles with isolated RPC data. It never starts real models, speed tests, installations or updates, and never changes real user configuration. The 18 standard images are 2880 × 1920. Chinese and English reports are 2880 × 2720 and 2880 × 2800 to show the complete charts and table; the two monitor images are 440 × 80, representing the default 220 × 40 logical-pixel window. Lossless WebP conversion is checked pixel by pixel against PNG. The capture compares HEAD, source and helper digests before/after and checks errors, external requests, native mutations and overflow. These browser images do not establish native context-menu/window acceptance or measured inference performance. File details and checks are recorded in the [separate manifest](changelog/unreleased/manifest.json).
+The new batch loads the real React entry and original styles with isolated RPC data. It never starts real models, speed tests, installations or updates, and never changes real user configuration. The 18 standard images are 2880 × 1920. Chinese and English reports are 2880 × 2720 and 2880 × 2800 to show the complete charts and table; the two monitor images are 440 × 80, representing the default 220 × 40 logical-pixel window. Lossless WebP conversion is checked pixel by pixel against PNG. The capture compares HEAD, source and helper digests before/after and checks errors, external requests, native mutations and overflow. These browser images do not establish native context-menu/window acceptance or measured inference performance. File details and checks are recorded in the [separate manifest](changelog/0.1.5/manifest.json).
+
+此前开发批次保留在 `changelog/unreleased/` 供历史溯源，不再作为当前发布截图。
+The earlier development batch remains under `changelog/unreleased/` for historical provenance, separate from current release images.
 
 ## 中文
 
@@ -22,7 +25,7 @@ The new batch loads the real React entry and original styles with isolated RPC d
 
 [manifest.json](manifest.json) 记录最终采用的统一批次、尺寸、文件大小、PNG/WebP SHA-256、逐像素检查、源码与 helper 摘要及捕获检查结果。捕获时 HEAD 是源码基线，不是最终 Release SHA；当时工作区内容由文件摘要标识，发布提交与同源码 CI 另行核验。重跑后的最终批次记录应替换此前批次，不能把旧批次哈希与新图混用。
 
-`product-cover.zh.webp` 与 `product-cover.en.webp` 使用本版 `models` 和 `usage` 页面制作中英文产品封面；`product-cover.webp` 是英文兼容别名。封面不计入 36 张页面图。仅抽象背景来自 ImageGen，文字、标识和界面通过代码排版；来源见[品牌说明](../brand/README.md)。本轮已重渲染并目视检查两个封面，其尺寸、新哈希、页面来源和英文别名一致性单独登记于 manifest 的 `coverProvenance`。
+`product-cover.zh.webp` 与 `product-cover.en.webp` 现采用完整总览及展开的服务状态弹层；`product-cover.webp` 是英文兼容别名。两图为0.1.5 真实界面的隔离示例，均为 2880 × 1920，保持完整窗口与原始比例，未进行裁剪、拼接或重画。封面不计入 36 张原发布页面图，来源、像素核验和哈希单独登记于 manifest 的 `coverProvenance`。此前使用模型页、API 统计及抽象背景的合成封面记录保留在 `historicalCoverProvenance`；见[品牌说明](../brand/README.md)。
 
 此目录记录浏览器文档截图及其合成数据来源。真实模型推理、完整 GPU Benchmark、调优收益、安装器、跨版本更新，以及系统窗口和硬件行为均需各自的实机验收；已执行的检查与限制见[验证记录](../VERIFICATION.md)和[系统说明](../SYSTEM.md)。
 
@@ -38,6 +41,6 @@ The capture workflow compares the capture HEAD, application source-tree digest a
 
 [manifest.json](manifest.json) records the final selected unified batch, dimensions, sizes, PNG/WebP SHA-256 values, pixel checks, source/helper digests and capture results. The capture-time HEAD is a source baseline, not the final release SHA. File digests identify working-tree content; the release commit and same-source CI are verified separately. The final rerun supersedes earlier batches, and earlier hashes must not be mixed with new images.
 
-`product-cover.zh.webp` and `product-cover.en.webp` compose the product heroes from this version's `models` and `usage` pages. `product-cover.webp` is the English compatibility alias. These covers are separate from the 36 page images. Only the abstract background comes from ImageGen; text, branding and interfaces are composed with code. See the [brand source](../brand/README.md). Both covers were rerendered and visually inspected; their dimensions, new hashes, source images and alias equality are recorded separately under `coverProvenance` in the manifest.
+`product-cover.zh.webp` and `product-cover.en.webp` now show the complete Overview with its service-status popover open. `product-cover.webp` is the English compatibility alias. These 2880 × 1920 isolated 0.1.5 interface examples preserve the complete window and original proportions without cropping, composition or redrawing. They are separate from the 36 original release page images; `coverProvenance` records their origin, pixel checks and hashes. The former compositions using Models, API usage and an abstract background remain documented under `historicalCoverProvenance`. See the [brand source](../brand/README.md).
 
 This directory documents browser screenshots and their synthetic data sources. Real inference, complete GPU Benchmark runs, tuning gains, installers, cross-version updates, native-window behavior and hardware compatibility require their own acceptance checks. Performed checks and limits are described in the [verification record](../VERIFICATION.md) and [system explanation](../SYSTEM.en.md).

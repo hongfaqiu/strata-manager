@@ -30,7 +30,7 @@ test('selects matching language while retaining nested Markdown', () => {
 
 const screenshotAssets = {
   'docs/screenshots/benchmark.zh.webp': '/assets/benchmark.zh-abc.webp',
-  'docs/screenshots/changelog/unreleased/scenario-benchmark.en.webp': '/assets/scenario-benchmark.en-def.webp',
+  'docs/screenshots/changelog/0.1.5/scenario-benchmark.en.webp': '/assets/scenario-benchmark.en-def.webp',
 };
 const resolveAsset = createReleaseNotesAssetResolver(screenshotAssets);
 const transformUrl = url => resolveAsset(defaultUrlTransform(url));
@@ -39,7 +39,7 @@ test('resolves exact current and candidate release screenshots to offline assets
   assert.equal(transformUrl('docs/screenshots/benchmark.zh.webp'), screenshotAssets['docs/screenshots/benchmark.zh.webp']);
   assert.equal(transformUrl('./docs/screenshots/benchmark.zh.webp'), screenshotAssets['docs/screenshots/benchmark.zh.webp']);
   assert.equal(transformUrl('/docs/screenshots/benchmark.zh.webp?raw=true#preview'), screenshotAssets['docs/screenshots/benchmark.zh.webp']);
-  assert.equal(transformUrl('docs/screenshots/changelog/unreleased/scenario-benchmark.en.webp'), screenshotAssets['docs/screenshots/changelog/unreleased/scenario-benchmark.en.webp']);
+  assert.equal(transformUrl('docs/screenshots/changelog/0.1.5/scenario-benchmark.en.webp'), screenshotAssets['docs/screenshots/changelog/0.1.5/scenario-benchmark.en.webp']);
   // Markdown image links and image sources use the same closed resource mapping.
   assert.equal(transformUrl('docs/screenshots/benchmark.zh.webp#full-size'), transformUrl('docs/screenshots/benchmark.zh.webp'));
 });
@@ -47,7 +47,10 @@ test('resolves exact current and candidate release screenshots to offline assets
 test('blocks missing and unsafe local screenshot aliases instead of requesting broken paths', () => {
   for (const url of [
     'docs/screenshots/unknown.zh.webp',
-    'docs/screenshots/changelog/unreleased/missing.en.webp',
+    'docs/screenshots/changelog/0.1.6/scenario-benchmark.en.webp',
+    'docs/screenshots/changelog/unreleased/scenario-benchmark.en.webp',
+    'docs/screenshots/changelog/0.1.5/../scenario-benchmark.en.webp',
+    'docs/screenshots/changelog/0.1.5/missing.en.webp',
     '../docs/screenshots/benchmark.zh.webp',
     'docs/screenshots/../benchmark.zh.webp',
     'docs/screenshots/%2e%2e/benchmark.zh.webp',

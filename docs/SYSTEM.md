@@ -1,6 +1,6 @@
-# 系统说明：Strata Manager 0.1.4
+# 系统说明：Strata Manager 0.1.5
 
-本文说明 0.1.4 的组件关系、数据保存和操作边界；文末“开发中（Unreleased）”单独说明尚未包含在该版本安装包中的变化。验收层级见[验收记录](VERIFICATION.md)，发行结果以同源码的 CI 与[实际发布](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.4)为准。
+本文说明 0.1.5 的组件关系、数据保存和操作边界。验收层级见[验收记录](VERIFICATION.md)，发行结果以同源码的 CI 与[实际发布](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.5)为准。配图使用隔离的界面演示数据，报告图中的数值不代表硬件实测结果；完整图文见[更新日志](../CHANGELOG.md)。
 
 ## 三个组成部分
 
@@ -39,9 +39,17 @@ SQLite 会话与附件不等于加密保险库。配置写入有版本冲突检�
 
 ## Benchmark 与调优
 
-Benchmark 可运行七类场景、固定并发及逐级升压，记录首 Token 延迟、请求耗时、P50/P95、Token、缓存和资源采样，保存报告并导出 JSON/CSV。预热和重复提示词会改变缓存条件；新提示词不等于重启引擎或清空缓存。缺失测量保留未知，不补成零，也不把缓存命中当作完整任务提速。
+侧栏提供独立的 Benchmark 入口，内含“上下文档位”和“场景测试”。上下文测试按档位从小到大串行发送请求：预置档位从 8K 到 1M，并补充当前模型的实际上下文上限。默认选中核验上限内且能容纳输出与模板余量的档位，超出上限的预置项不可选。服务运行时以已加载模型的 `/health` 为准；停止时只读本机配置供计划参考，不会为读取上限而启动服务。
+
+使用时，先确认模型已就绪且没有其他推理或管理任务，再选择档位、每档轮数、输出上限和超时，开始有限轮次的测试。每档总预算包含输出预留和模板余量，目标档位不等于实际输入 token 数；分词计数不可用时，准备阶段的输入量标为估算。实际输入、输出和缓存用量取自服务 `usage`，预填充与解码速度取自 `timings`，同时记录首 token 延迟和完整请求耗时。显存与 RAM 为每秒采样的整卡／整机读数，缺失值保持未知。
+
+结果包含预填充速度、解码速度和请求耗时三张折线图，按成功请求计算各档均值，表格保留逐次测量。可复制结果图片、导出 PNG，以及导出含测试条件的 JSON/CSV；复制图片依赖当前环境的图片剪贴板能力，失败时可改用 PNG。预热、缓存与其他程序仍会影响结果，图表本身不能证明冷启动或无缓存性能。
+
+“场景测试”保留七类场景并固定单请求串行执行；旧版并发压力测试报告仍可查看和导出，不作为新建压力测试入口。两种测试在运行期间不能切换；停止测试或切换模型会取消后续工作。
 
 桌面把聊天和 Benchmark 视为推理忙碌，协调调优、服务切换、运行任务与更新操作。Benchmark 切换模型或取消时终止后续工作；调优由独立后台执行，具备配置应用与恢复核验。桌面互斥不保证其他 API 客户端不会同时发送请求；可复现测量仍需记录模型、服务身份、缓存、并发、资源余量和外部负载。
+
+界面示例：[上下文档位](screenshots/changelog/0.1.5/benchmark.zh.webp)、[结果报告（演示数据）](screenshots/changelog/0.1.5/benchmark-report.zh.webp)、[场景测试](screenshots/changelog/0.1.5/scenario-benchmark.zh.webp)。
 
 ## 应用更新与引擎下载
 
@@ -53,7 +61,11 @@ Benchmark 可运行七类场景、固定并发及逐级升压，记录首 Token 
 
 ## 状态趋势与验收边界
 
-0.1.4 的独立桌面监控浮条默认关闭，可手动打开、拖动、缩放、置顶或返回主窗口；关闭浮条不影响主应用。浮条直接只读查询已运行的后台，仅采集健康状态和指标，后台关闭时不启动、升级或恢复后台和模型。该版本的原生命令入口只允许浮条读取监控和显示主窗口，其他应用命令被拒绝；开发中的操作扩展见下文。
+独立桌面监控浮条默认关闭，采用紧凑的纯指标布局；按住任意位置拖动，通过原生右键菜单（或 Shift+F10）执行操作。菜单提供返回主窗口、切换工作区、复制 API 地址、刷新或暂停采样、置顶和打开设置等操作。公共设置中的“监控浮动条”可调整默认置顶、采样时间显示与系统托盘监控，修改自动保存。启用托盘监控后，托盘独立更新状态与速度，点击图标可恢复浮条；浮条也可从右键菜单收起到托盘。关闭浮条不影响主应用。具体外观见[浮条设置示例](screenshots/changelog/0.1.5/floating-monitor-settings.zh.webp)。
+
+“快速测速”由浮条或托盘交给主窗口执行：仅在模型已就绪、推理与管理任务空闲时，串行运行短请求和解码两个场景。此操作会发送实际推理请求；日常监控采样仍只读已有后台，不会启动或恢复已停止的服务。右键菜单、托盘、置顶和系统剪贴板的实际桌面行为需单独验收，界面截图不替代这些验收。
+
+历史边界：0.1.4 浮条的原生命令入口只允许读取监控和显示主窗口。0.1.5 增加的菜单、托盘与快速测速操作不属于 0.1.4 安装包。
 
 状态查询失败时，界面停止使用旧进程数据授权操作；断联恢复后，指标需来自错误发生后的成功采样才恢复显示。正常后台轮询保留上次成功采样。
 
@@ -63,32 +75,10 @@ Benchmark 可运行七类场景、固定并发及逐级升压，记录首 Token 
 
 发行构建、官网截图与链接、公开安装包签名和校验和按最终提交分别核验。真实 GPU Benchmark 测量、完整调优、GPU 长时压测、Linux 系统级 DEB 安装及客户端跨版本自动更新仍需独立验收；旧版或单台机器结果不代表全部硬件兼容性。
 
-## 开发中（Unreleased）
-
-以下功能对应当前开发代码，尚未包含在公开的 0.1.4 安装包中。配图使用隔离的界面演示数据；报告图中的数值不代表硬件实测结果。完整图文见[未发布更新日志](../CHANGELOG.md)。
-
-### Benchmark 工作区
-
-侧栏提供独立的 Benchmark 入口，内含“上下文档位”和“场景测试”。上下文测试按档位从小到大串行发送请求：预置档位从 8K 到 1M，并补充当前模型的实际上下文上限。默认选中核验上限内且能容纳输出与模板余量的档位，超出上限的预置项不可选。服务运行时以已加载模型的 `/health` 为准；停止时只读本机配置供计划参考，不会为读取上限而启动服务。
-
-使用时，先确认模型已就绪且没有其他推理或管理任务，再选择档位、每档轮数、输出上限和超时，开始有限轮次的测试。每档总预算包含输出预留和模板余量，目标档位不等于实际输入 token 数；分词计数不可用时，准备阶段的输入量标为估算。实际输入、输出和缓存用量取自服务 `usage`，预填充与解码速度取自 `timings`，同时记录首 token 延迟和完整请求耗时。显存与 RAM 为每秒采样的整卡／整机读数，缺失值保持未知。
-
-结果包含预填充速度、解码速度和请求耗时三张折线图，按成功请求计算各档均值，表格保留逐次测量。可复制结果图片、导出 PNG，以及导出含测试条件的 JSON/CSV；复制图片依赖当前环境的图片剪贴板能力，失败时可改用 PNG。预热、缓存与其他程序仍会影响结果，图表本身不能证明冷启动或无缓存性能。
-
-“场景测试”保留七类场景并固定单请求串行执行；旧版并发压力测试报告仍可查看和导出，不作为新建压力测试入口。两种测试在运行期间不能切换；停止测试或切换模型会取消后续工作。
-
-界面示例：[上下文档位](screenshots/changelog/unreleased/benchmark.zh.webp)、[结果报告（演示数据）](screenshots/changelog/unreleased/benchmark-report.zh.webp)、[场景测试](screenshots/changelog/unreleased/scenario-benchmark.zh.webp)。
-
-### 监控浮动条与系统托盘
-
-浮条采用紧凑的指标布局，仅显示监控数据；按住任意位置拖动，通过原生右键菜单（或 Shift+F10）执行操作。菜单提供返回主窗口、切换工作区、复制 API 地址、刷新或暂停采样、置顶和打开设置等操作。公共设置中的“监控浮动条”可调整默认置顶、采样时间显示与系统托盘监控，修改自动保存。启用托盘监控后，托盘独立更新状态与速度，点击图标可恢复浮条；浮条也可从右键菜单收起到托盘。具体外观见[浮条设置示例](screenshots/changelog/unreleased/floating-monitor-settings.zh.webp)。
-
-“快速测速”由浮条或托盘交给主窗口执行：仅在模型已就绪、推理与管理任务空闲时，串行运行短请求和解码两个场景。此操作会发送实际推理请求；日常监控采样仍只读已有后台，不会启动或恢复已停止的服务。右键菜单、托盘、置顶和系统剪贴板的实际桌面行为需单独验收，界面截图不替代这些验收。
-
 ## 编写依据
 
 - 架构、登记与持久化：`apps/desktop/src-tauri/src/lib.rs`、`apps/supervisor/src/main.rs`、`crates/runtime-core/src/{lib,store,http,storage,analytics}.rs`。
 - 公共设置与互斥：`App.tsx`、`CommonChatSettingsPanel.tsx`、`ChatSettings.tsx`、`ServiceConnectionPanel.tsx`、`packages/core/src/shared-chat-settings.ts`。
 - 更新与完整校验：`appUpdateController.ts`、`supervisor_client.rs`、`runtime_upgrade/release_zip.rs` 及 `release_zip/{download_check,download_source}.rs`。
 - 采样与证据范围：`ServiceStatusPopover.tsx`、`serviceStatusTelemetry.ts`、`FloatingTelemetryWindow.tsx`、`CHANGELOG.md`、`docs/VERIFICATION.md`。历史检查数量不作为最终源码通过数量引用。
-- 开发中功能：`BenchmarkPage.tsx`、`ContextBenchmarkPage.tsx`、`ContextBenchmarkCharts.tsx`、`ScenarioBenchmarkPage.tsx`、`useBenchmarkContext.ts`、`packages/core/src/context-benchmark.ts`、`FloatingMonitorSettings.tsx`、`floatingMonitor.ts`、`apps/desktop/src-tauri/src/monitor_tray.rs`。
+- 0.1.5 功能：`BenchmarkPage.tsx`、`ContextBenchmarkPage.tsx`、`ContextBenchmarkCharts.tsx`、`ScenarioBenchmarkPage.tsx`、`useBenchmarkContext.ts`、`packages/core/src/context-benchmark.ts`、`FloatingMonitorSettings.tsx`、`floatingMonitor.ts`、`apps/desktop/src-tauri/src/monitor_tray.rs`。

@@ -452,10 +452,11 @@ export async function publish() {
     const entries = signed.signatures.filter(s => s.name === a.installer + '.sig');
     if (entries.length !== 1 || entries[0].sha256 !== await digest(pathResolve(c.temp, a.installer + '.sig'))) fail('Signed bytes changed.');
   }
-  const body = c.modules['release-notes'].releaseNotes(await readFile(pathResolve(c.root, 'CHANGELOG.md'), 'utf8'), p.version);
+  const notes = c.modules['release-notes'].releaseNotes(await readFile(pathResolve(c.root, 'CHANGELOG.md'), 'utf8'), p.version);
+  const body = c.modules['release-notes'].githubReleaseNotes(notes, p.sourceSha);
   const signatures = await Promise.all(p.artifacts.map(async a => (await readFile(pathResolve(c.temp, a.installer + '.sig'), 'utf8')).replace(/[\r\n]+$/, '')));
   const entry = i => ({ signature: signatures[i], url: 'https://github.com/' + p.repository + '/releases/download/' + encodeURIComponent(p.tag) + '/' + encodeURIComponent(p.artifacts[i].installer) });
-  const manifest = { version: p.version, notes: body, pub_date: new Date().toISOString(), platforms: {
+  const manifest = { version: p.version, notes, pub_date: new Date().toISOString(), platforms: {
     'windows-x86_64': entry(0), 'windows-x86_64-nsis': entry(0), 'linux-x86_64': entry(1),
     'linux-x86_64-appimage': entry(1), 'linux-x86_64-deb': entry(2),
   } };

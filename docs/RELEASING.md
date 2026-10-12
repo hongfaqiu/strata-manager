@@ -2,7 +2,9 @@
 
 公开仓库：[hongfaqiu/strata-manager](https://github.com/hongfaqiu/strata-manager)。正式更新源为该仓库 Release 中的 `latest.json`；签名私钥不得进入 Git、前端资源、构建工件或截图。
 
-## 当前发布准备状态
+当前版本内容见 [更新日志](../CHANGELOG.md)。普通 main CI 只构建和测试；推送新的不可变 `v<version>` 标签后，Release 工作流才会等待并复用该源码的完整 CI 安装包，验签并公开发布。CI 通过本身不会创建 Release。
+
+## 历史发布与流程准备记录
 
 [v0.1.3](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.3) 已公开。其安装包来自源码 `ec0797dc06fc833cb5ebf433ecfb71b4c113767c` 的[完整 CI](https://github.com/hongfaqiu/strata-manager/actions/runs/38159155279)，经[签名与发布验收](https://github.com/hongfaqiu/strata-manager/actions/runs/38163066611)公开八项资产。后续版本使用下文的通用产物复用流程；这些历史结果不替代新源码的完整验收。
 

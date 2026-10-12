@@ -126,16 +126,17 @@ const strataReleaseCatalog = (() => {
   const screens = {
     "overview": {
       "index": "00",
+      "image": "product-cover",
       "zh": {
-        "title": "查看服务总览。",
-        "description": "集中查看模型状态、API 用量与运行指标。",
-        "alt": "Strata Manager 总览：模型状态、服务控制、API 用量与运行指标",
+        "title": "总览与服务状态。",
+        "description": "查看总览及展开的服务状态面板；截图使用演示数据。",
+        "alt": "Strata Manager 总览与已展开的服务状态弹层，包含模型、API 用量和运行指标的演示数据",
         "badge": "总览"
       },
       "en": {
-        "title": "View the service overview.",
-        "description": "See model status, API usage and runtime metrics in one place.",
-        "alt": "Strata Manager overview: model status, service controls, API usage and runtime metrics",
+        "title": "Overview and service status.",
+        "description": "View the overview with its service status panel open; the screenshot uses demonstration data.",
+        "alt": "Strata Manager overview with the service status popover open, showing demonstration model, API usage and runtime metrics",
         "badge": "OVERVIEW"
       }
     },
@@ -171,13 +172,25 @@ const strataReleaseCatalog = (() => {
     },
     "benchmark": {
       "index": "04",
-      "zh": { "title": "Benchmark · 基准测试", "description": "场景套件、并发压力与性能报告。", "alt": "Benchmark 工作区：测试计划、场景选择与并发压力参数", "badge": "基准测试" },
-      "en": { "title": "Benchmark · Measure and compare", "description": "Scenario suites, concurrent stress tests and performance reports.", "alt": "Benchmark workspace: test plans, scenario selection and concurrent stress settings", "badge": "BENCHMARK" }
+      "image": "changelog/0.1.5/benchmark",
+      "zh": { "title": "Benchmark · 上下文档位", "description": "在核验的上下文上限内，按档位串行测试并查看性能报告。", "alt": "Benchmark 上下文档位：模型上限、串行测试计划与输出预算", "badge": "基准测试" },
+      "en": { "title": "Benchmark · Context tiers", "description": "Test tiers serially within the verified context limit and review performance reports.", "alt": "Benchmark context tiers: model limit, serial test plan and output allowance", "badge": "BENCHMARK" }
+    },
+    "scenario-benchmark": {
+      "index": "04", "image": "changelog/0.1.5/scenario-benchmark",
+      "zh": { "title": "Benchmark · 场景测试", "description": "七类场景固定串行执行，保留历史报告与导出。", "alt": "Benchmark 场景测试：场景选择、预热与重复次数", "badge": "场景测试" },
+      "en": { "title": "Benchmark · Scenario suite", "description": "Run seven scenarios serially and keep report history and exports.", "alt": "Benchmark scenario suite: scenario selection, warmup and repetitions", "badge": "SCENARIO SUITE" }
+    },
+    "benchmark-report": {
+      "index": "04", "image": "changelog/0.1.5/benchmark-report",
+      "zh": { "title": "Benchmark · 结果报告", "description": "比较预填充、解码和请求耗时，复制图片或导出报告。", "alt": "Benchmark 结果报告：性能曲线与逐次结果，数值为演示数据而非实测", "badge": "测试报告", "height": 2720 },
+      "en": { "title": "Benchmark · Results", "description": "Compare prefill, decode and request duration, then copy an image or export reports.", "alt": "Benchmark results: performance charts and individual samples with demonstration data, not measurements", "badge": "RESULTS", "height": 2800 }
     },
     "runtime": {
       "index": "05",
-      "zh": { "title": "Strata · 环境管理", "description": "安装检测、版本与运行时更新。", "alt": "Strata 运行环境：安装检测、版本与更新管理", "badge": "运行环境" },
-      "en": { "title": "Strata · Prepare the runtime", "description": "Installation detection, versions and runtime updates.", "alt": "Strata runtime: installation detection, versions and updates", "badge": "RUNTIME" }
+      "image": "changelog/0.1.5/runtime-download",
+      "zh": { "title": "Strata · 下载来源与校验", "description": "选择官方来源、HTTPS 镜像或本地 ZIP，安装前核验完整包。", "alt": "Strata 运行环境下载：来源选择、本地 ZIP 与校验结果", "badge": "运行环境" },
+      "en": { "title": "Strata · Download sources and verification", "description": "Choose the official source, an HTTPS mirror or a local ZIP and verify the complete package before installation.", "alt": "Strata runtime downloads: source selection, local ZIP and verification results", "badge": "RUNTIME" }
     },
     "config": {
       "index": "06",
@@ -201,28 +214,42 @@ const strataReleaseCatalog = (() => {
     },
     "common-chat-settings": {
       "index": "10",
+      "image": "changelog/0.1.5/common-chat-settings",
       "zh": { "title": "公共设置 · 按需继承参数", "description": "新模型默认继承，已有专用参数保留；更改在下一次聊天请求生效。", "alt": "公共聊天默认值：生成参数、MCP 开关与按模型继承选项", "badge": "公共设置" },
       "en": { "title": "Shared settings · Inherit when needed", "description": "New models inherit defaults; existing custom settings stay separate. Changes apply to the next chat request.", "alt": "Shared chat defaults: generation parameters, MCP and per-model inheritance", "badge": "SHARED SETTINGS" }
     },
     "connections": {
       "index": "11",
+      "image": "changelog/0.1.5/connections",
       "zh": { "title": "连接 · 集中配置 API 与 MCP", "description": "选择连接目标、保存应用访问密钥，复制 API 和外部助手配置。", "alt": "API 与外部助手：连接目标、应用访问密钥、API 示例与 MCP 接入", "badge": "API 与外部助手" },
       "en": { "title": "Connections · API and MCP in one place", "description": "Choose a target, save the application's access key and copy API or assistant configurations.", "alt": "API and external assistants: connection targets, application access keys, API examples and MCP", "badge": "CONNECTIONS" }
     },
     "app-updates": {
       "index": "12",
+      "image": "changelog/0.1.5/app-updates",
       "zh": { "title": "应用更新 · 先阅读，再确认", "description": "查看随应用打包的双语日志，检查新版本并确认签名更新。", "alt": "应用更新：当前版本、双语更新日志、检查与安装确认", "badge": "应用更新" },
       "en": { "title": "App updates · Read before confirming", "description": "Read bundled bilingual release notes, check for a new version and confirm signed updates.", "alt": "Application updates: current version, bilingual release notes, checks and installation confirmation", "badge": "APP UPDATES" }
     },
     "service-status": {
       "index": "13",
+      "image": "changelog/0.1.5/service-status",
       "zh": { "title": "服务状态 · 查看近期趋势", "description": "区分生成与输入处理，保留采样间距和缺失点；空闲速度标明最近生成。", "alt": "服务状态快捷面板：当前状态、生成与输入处理的近期趋势", "badge": "服务状态" },
       "en": { "title": "Service status · See recent trends", "description": "Separate generation from input processing, retain sample gaps and label idle rates as recent generation.", "alt": "Service status panel: current state and recent generation and input-processing trends", "badge": "SERVICE STATUS" }
     },
     "floating-monitor": {
-      "index": "14", "width": 1840, "height": 164,
-      "zh": { "title": "独立浮条 · 按需打开监控", "description": "默认关闭，只读观察已运行的后台；支持拖动、缩放与置顶。", "alt": "独立桌面监控浮条：当前模型、采样时刻与服务指标", "badge": "桌面监控浮条" },
-      "en": { "title": "Floating monitor · Open when needed", "description": "Closed by default; observes an existing background read-only, with move, resize and pin controls.", "alt": "Floating desktop monitor: current model, sample time and service metrics", "badge": "FLOATING MONITOR" }
+      "index": "14", "width": 440, "height": 80, "image": "changelog/0.1.5/floating-monitor",
+      "zh": { "title": "独立浮条 · 紧凑监控", "description": "纯指标浮条支持任意位置拖动，操作集中在原生右键菜单与系统托盘。", "alt": "紧凑桌面监控浮条：服务状态与生成、输入处理指标", "badge": "桌面监控浮条" },
+      "en": { "title": "Floating monitor · Compact metrics", "description": "Drag the metrics-only strip anywhere and use its native context menu or system tray for actions.", "alt": "Compact floating monitor: service status, generation and input-processing metrics", "badge": "FLOATING MONITOR" }
+    },
+    "floating-monitor-settings": {
+      "index": "14", "image": "changelog/0.1.5/floating-monitor-settings",
+      "zh": { "title": "浮条设置 · 显示与托盘", "description": "设置默认置顶、采样时间与系统托盘监控。", "alt": "监控浮动条设置：置顶、采样时间和系统托盘监控", "badge": "浮条设置" },
+      "en": { "title": "Monitor settings · Display and tray", "description": "Set the default pin state, sample-time display and system tray monitoring.", "alt": "Floating monitor settings: pin state, sample time and system tray monitoring", "badge": "MONITOR SETTINGS" }
+    },
+    "overview-api-guide": {
+      "index": "11", "image": "changelog/0.1.5/overview-api-guide",
+      "zh": { "title": "API 接入 · 示例与帮助", "description": "从总览查看连接地址与 API 接入示例。", "alt": "总览页的 API 接入帮助和客户端请求示例", "badge": "API 接入" },
+      "en": { "title": "API connections · Examples and help", "description": "Open connection details and API examples from the overview.", "alt": "API connection help and client request examples from the overview", "badge": "API GUIDE" }
     },
     "usage": {
       "index": "03",
@@ -282,6 +309,8 @@ const strataReleaseCatalog = (() => {
   const lightboxTitle = document.getElementById('lightbox-title');
   const lightboxCloseBtn = document.getElementById('lightbox-close-btn');
   const lightboxBackdrop = document.getElementById('lightbox-backdrop');
+  const lightboxDialog = lightboxModal?.querySelector('.lightbox-dialog');
+  const lightboxBar = lightboxModal?.querySelector('.lightbox-bar');
 
   // 移动端菜单
   const mobileMenuBtn = document.getElementById('mobile-menu-btn');
@@ -324,7 +353,7 @@ const strataReleaseCatalog = (() => {
     activeScreenKey = key;
     const item = screens[key];
     const copy = item[currentLang];
-    const imagePath = new URL(`assets/screenshots/${key}.${currentLang}.webp`, siteRoot).href;
+    const imagePath = new URL(`assets/screenshots/${item.image || key}.${currentLang}.webp`, siteRoot).href;
 
     // 平滑淡入淡出图片
     if (screenImage) {
@@ -335,7 +364,7 @@ const strataReleaseCatalog = (() => {
       screenImage.src = imagePath;
       screenImage.alt = copy.alt;
       screenImage.width = item.width || 2880;
-      screenImage.height = item.height || 1920;
+      screenImage.height = copy.height || item.height || 1920;
       if (screenImage.complete && screenImage.naturalWidth > 0) screenImage.style.opacity = '1';
     }
 
@@ -395,7 +424,7 @@ const strataReleaseCatalog = (() => {
     }
 
     renderScreen(activeScreenKey);
-    if (heroImage) heroImage.src = new URL(`assets/screenshots/overview.${currentLang}.webp`, siteRoot).href;
+    if (heroImage) heroImage.src = new URL(`assets/screenshots/product-cover.${currentLang}.webp`, siteRoot).href;
     if (lightboxModal.classList.contains('active')) openLightbox(lightboxModal.dataset.screen);
     updateThemeButton();
 
@@ -440,16 +469,33 @@ const strataReleaseCatalog = (() => {
   // 全屏灯箱 (Lightbox) 交互控制
   let lightboxOpener = null;
   const backgroundSections = [document.querySelector('.site-header'), document.querySelector('main'), document.querySelector('.site-footer')];
+  function fitLightboxImage() {
+    if (!lightboxModal?.classList.contains('active') || !lightboxDialog || !lightboxBar) return;
+    const modalStyle = getComputedStyle(lightboxModal);
+    const dialogStyle = getComputedStyle(lightboxDialog);
+    const availableHeight = lightboxModal.clientHeight
+      - parseFloat(modalStyle.paddingTop) - parseFloat(modalStyle.paddingBottom)
+      - parseFloat(dialogStyle.borderTopWidth) - parseFloat(dialogStyle.borderBottomWidth)
+      - lightboxBar.getBoundingClientRect().height;
+    lightboxDialog.style.setProperty('--lightbox-image-height', `${Math.max(1, availableHeight)}px`);
+  }
+  if (lightboxModal && lightboxBar && typeof ResizeObserver !== 'undefined') {
+    const lightboxResizeObserver = new ResizeObserver(fitLightboxImage);
+    lightboxResizeObserver.observe(lightboxModal);
+    lightboxResizeObserver.observe(lightboxBar);
+  }
+  window.addEventListener('resize', fitLightboxImage);
+
   function openLightbox(screenKey) {
     const requestedKey = screenKey || activeScreenKey;
     const key = screens[requestedKey] ? requestedKey : 'models';
     const item = screens[key];
     const copy = item[currentLang];
 
-    lightboxImg.src = new URL(`assets/screenshots/${key}.${currentLang}.webp`, siteRoot).href;
+    lightboxImg.src = new URL(`assets/screenshots/${item.image || key}.${currentLang}.webp`, siteRoot).href;
     lightboxImg.alt = copy.alt;
     lightboxImg.width = item.width || 2880;
-    lightboxImg.height = item.height || 1920;
+    lightboxImg.height = copy.height || item.height || 1920;
     lightboxBadge.textContent = item.index + ' / ' + key.toUpperCase();
     lightboxTitle.textContent = copy.title;
 
@@ -457,6 +503,7 @@ const strataReleaseCatalog = (() => {
     lightboxModal.classList.add('active');
     lightboxModal.dataset.screen = key;
     lightboxModal.setAttribute('aria-hidden', 'false');
+    fitLightboxImage();
     document.body.style.overflow = 'hidden';
     backgroundSections.forEach(section => { if (section) section.inert = true; });
     lightboxCloseBtn?.focus();
@@ -472,6 +519,7 @@ const strataReleaseCatalog = (() => {
 
   document.querySelectorAll('.open-lightbox-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
       e.preventDefault();
       openLightbox(btn.dataset.target || activeScreenKey);
     });
@@ -616,7 +664,7 @@ const strataReleaseCatalog = (() => {
         scrollTrigger: { trigger: '.hero-cover', start: 'top 92%', end: 'top 100px', scrub: true, invalidateOnRefresh: true },
       });
       gsap.from('.feature-card', { y: 26, opacity: 0, duration: .55, stagger: .08, ease: 'power3.out', scrollTrigger: { trigger: '.feature-grid', start: 'top 90%', once: true } });
-      gsap.from('.workspace-display-frame', { clipPath: 'inset(0 0 14% 0)', duration: .8, ease: 'power3.out', scrollTrigger: { trigger: '.workspace-display-frame', start: 'top 90%', once: true } });
+      gsap.from('.workspace-display-frame', { y: 18, opacity: 0, duration: .8, ease: 'power3.out', scrollTrigger: { trigger: '.workspace-display-frame', start: 'top 90%', once: true } });
       gsap.utils.toArray('.gallery-item').forEach(item => gsap.from(item, { y: 18, opacity: 0, duration: .5, ease: 'power3.out', scrollTrigger: { trigger: item, start: 'top 92%', once: true } }));
       gsap.from('.download-card', { x: -18, opacity: 0, duration: .5, stagger: .1, ease: 'power3.out', scrollTrigger: { trigger: '.download-cards-grid', start: 'top 90%', once: true } });
     });

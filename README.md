@@ -25,9 +25,9 @@
 
 **Strata Manager is an open-source desktop management app for [Niko1221/Strata](https://github.com/Niko1221/Strata), a local large language model inference engine.** It brings runtime setup, model configurations, service controls, chat, monitoring, tuning and benchmarking into one workspace. Existing supported model weights stay in place.
 
-[![Strata Manager overview — current service, hardware and API activity](docs/screenshots/overview.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/overview.en.webp)
+[![Strata Manager overview with the service-status popover open](docs/screenshots/product-cover.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.en.webp)
 
-<sub>Overview of the current app. Screenshots use real application components with isolated example data; displayed values are not inference results or benchmarks.</sub>
+<sub>0.1.5 interface preview: the complete Overview with its service-status popover open. Screenshots use real application components with isolated example data; displayed values are not inference results or benchmarks. Click to view the original.</sub>
 
 ## What is Strata, and what does Manager do?
 
@@ -51,14 +51,14 @@ Engine-dependent tools appear according to the installed runtime's capabilities.
 | **2 · Organize models** | Discover local weights, group configurations by model, choose download sources and GPUs, and inspect model files, GGUF metadata and disk usage. Supported formats include Swift IQ3_S. |
 | **3 · Configure and run** | Edit graphical controls or JSON with validation and backups. Start, stop, restart or release model memory; follow startup stages, tasks and logs. Opening Manager or signing in starts only the lightweight background, preserving stopped services. |
 | **4 · Chat and integrate** | Use streaming conversations, attachments and structured output. New models inherit shared generation parameters and MCP defaults; existing custom values remain separate until inheritance is enabled. Changes apply to the next chat request. Configure connection targets, the application's access key, API examples and MCP in API and external assistants; selecting a target does not start or switch a model. |
-| **5 · Inspect sessions and load** | Save and restore engine sessions; inspect slots, load, hardware and supported VRAM adjustments. The status panel separates recent generation and input-processing trends, preserving sample gaps. An independent desktop monitor is closed by default; open, move, resize or pin it when needed. It observes an existing background without starting or restoring services. |
+| **5 · Inspect sessions and load** | Save and restore engine sessions; inspect slots, load, hardware and supported VRAM adjustments. The status panel separates recent generation and input-processing trends, preserving sample gaps. The compact metrics-only monitor is closed by default; its context menu provides navigation, pinning and sampling controls, with optional system-tray monitoring. Read-only observation never starts or restores services; quick speed tests send inference requests. |
 | **6 · Understand usage and tune** | Retain local API metadata, support Strata 0.1.43 API usage statistics, and chart requests, tokens, latency and cache reuse. Compare complete chat, coding/Agent or document tasks before applying or restoring supported tuning candidates; no fixed performance gain is promised. |
-| **7 · Benchmark** | Set repeated runs, warmup and prompt/output lengths in the Benchmark workspace; test cache reuse with repeated inputs. Record time to first token (TTFT), request duration, P50/P95, token counts and engine rates separately. Cancel tests, review report history, export JSON and coordinate with other inference operations. |
+| **7 · Benchmark** | Run verified context tiers or seven scenario tests serially. Record token counts, prefill/decode rates, TTFT, duration and resource samples; review history, export JSON/CSV, copy report images or export PNG. Coordinate tests with other inference operations. |
 | **8 · Review updates** | Manage app and Strata updates separately from model weights. The dedicated app update page provides bundled bilingual notes offline, stable update checks and installation confirmation with Tauri signature verification. Use Chinese/English, system/light/dark appearance and tray controls. |
 
 API usage statistics work without capturing request bodies. Optional temporary body diagnostics are separate; see the [user guide](docs/USER_GUIDE.en.md) for behavior and privacy.
 
-See the [0.1.4 system explanation](docs/SYSTEM.en.md) for component relationships and persistence, and [CHANGELOG.md](CHANGELOG.md) or the [website changelog](https://hongfaqiu.github.io/strata-manager/docs/changelog.en.html) for version-specific changes.
+See the [0.1.5 system explanation](docs/SYSTEM.en.md) for component relationships and persistence, and [CHANGELOG.md](CHANGELOG.md) or the [website changelog](https://hongfaqiu.github.io/strata-manager/docs/changelog.en.html) for version-specific changes.
 
 ## Download and get started
 
@@ -114,23 +114,23 @@ All images below are real app components rendered with isolated documentation da
 
 **Shared chat defaults — per-model inheritance**
 
-[![Shared generation parameters and per-model inheritance](docs/screenshots/common-chat-settings.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/common-chat-settings.en.webp)
+[![Shared generation parameters and per-model inheritance](docs/screenshots/changelog/0.1.5/common-chat-settings.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/changelog/0.1.5/common-chat-settings.en.webp)
 
 **Connections — API and external assistants**
 
-[![Connection targets, application access keys, API examples and MCP](docs/screenshots/connections.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/connections.en.webp)
+[![Connection targets, application access keys, API examples and MCP](docs/screenshots/changelog/0.1.5/connections.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/changelog/0.1.5/connections.en.webp)
 
 **Application updates — bilingual notes and installation confirmation**
 
-[![Dedicated application update page](docs/screenshots/app-updates.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/app-updates.en.webp)
+[![Dedicated application update page](docs/screenshots/changelog/0.1.5/app-updates.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/changelog/0.1.5/app-updates.en.webp)
 
 **Service status — recent generation and input-processing trends**
 
-[![Service status panel and recent trends](docs/screenshots/service-status.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/service-status.en.webp)
+[![Service status panel and recent trends](docs/screenshots/changelog/0.1.5/service-status.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/changelog/0.1.5/service-status.en.webp)
 
 **Independent desktop monitor — closed by default**
 
-[![Floating desktop monitor with current model and service telemetry](docs/screenshots/floating-monitor.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/floating-monitor.en.webp)
+[![Compact floating monitor with service telemetry](docs/screenshots/changelog/0.1.5/floating-monitor.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/changelog/0.1.5/floating-monitor.en.webp)
 
 </details>
 
