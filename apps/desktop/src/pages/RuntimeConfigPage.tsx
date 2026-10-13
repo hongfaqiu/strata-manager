@@ -6,6 +6,7 @@ import * as core from '@strata-manager/core';
 import type { JsonObject, ServiceProfile } from '@strata-manager/core';
 import { Dropdown, NumberField } from '../OfficialControls';
 import { StartupTuningPanel } from './StartupTuningPanel';
+import { ResourceAssessmentPanel } from './ResourceAssessmentPanel';
 import './runtime-config.css';
 import { useDraftGuard, type SaveDraft } from '../useDraftGuard';
 
@@ -81,6 +82,8 @@ function RuntimeConfigSession({ profile, online, language, desktop = core.isDesk
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   const [values, setValues] = useState<Record<string, string>>({});
   const [startupDirty, setStartupDirty] = useState(false);
+  const [resourceDraft, setResourceDraft] = useState<JsonObject>();
+  const resourceRequest = useMemo(() => profile && resourceDraft ? core.resourceRequestFromConfiguration(resourceDraft, profile.id) : null, [resourceDraft, profile]);
   const startupSave = useRef<SaveDraft | undefined>(undefined);
   const registerStartupSave = useCallback((save: SaveDraft | undefined) => { startupSave.current = save; }, []);
   const remoteDirtyRef = useRef(false);
@@ -176,7 +179,8 @@ function RuntimeConfigSession({ profile, online, language, desktop = core.isDesk
     {onSharedSettings && <div className="runtime-config-section-actions"><button className="st-btn st-btn--secondary" type="button" onClick={onSharedSettings}>{zh ? '公共聊天、连接与运行工具' : 'Shared chat, connections and runtime tools'}<ArrowRight size={15}/></button></div>}
     <section className="runtime-config-startup" aria-labelledby="runtime-config-startup-title">
       <div className="runtime-config-startup-intro"><div className="runtime-config-section-heading"><h2 id="runtime-config-startup-title">{zh ? '模型启动配置' : 'Model startup configuration'}</h2><span className="runtime-config-apply-badge runtime-config-apply-badge--restart">{zh ? '保存后重启生效' : 'Restart after saving'}</span></div><p>{localFile ? (zh ? '图形界面与 JSON 编辑同一份完整配置。保存会备份原文件；当前服务在重启前继续使用已有配置。' : 'Graphical controls and JSON edit the same complete configuration. Saving backs up the previous file; the running service keeps its existing configuration until restarted.') : (zh ? '服务提供的运行配置字段只写入配置文件，重启后生效。完整本地 JSON 可在桌面应用中编辑。' : 'The run configuration fields exposed by this service are saved to its configuration file and applied after a restart. Edit the complete local JSON in the desktop app.')}</p><div className="runtime-config-section-actions">{onImages && <button className="st-btn st-btn--secondary" type="button" onClick={onImages}>{zh ? '快捷配置图像支持' : 'Set up image support'}</button>}{onServices && <button className="st-btn st-btn--secondary" type="button" onClick={onServices}><ArrowRight size={15}/>{zh ? '返回我的模型' : 'Return to My models'}</button>}</div></div>
-    <StartupTuningPanel profile={profile} desktop={desktop} language={language} onError={onError} onMessage={onMessage} onRestart={onRestart} onCopied={onCopied} onDeleted={onDeleted} onDirtyChange={setStartupDirty} onSaveDraftReady={registerStartupSave}/>
+    <ResourceAssessmentPanel request={resourceRequest} language={language} desktop={desktop} unavailableReason={!profile ? (zh ? '选择本机模型后可读取资源建议。' : 'Select a local model to read resource guidance.') : !resourceDraft ? (zh ? '配置尚未读取或当前草稿不完整，容量保持未知。' : 'The configuration is not loaded or the draft is incomplete; capacity remains unknown.') : undefined}/>
+    <StartupTuningPanel profile={profile} desktop={desktop} language={language} onError={onError} onMessage={onMessage} onRestart={onRestart} onCopied={onCopied} onDeleted={onDeleted} onDirtyChange={setStartupDirty} onSaveDraftReady={registerStartupSave} onDraftConfigChange={setResourceDraft}/>
     {!localFile && <div className="st-card cfg-card" id="cfg-card"><div className="req-head"><span className="card-title">{zh ? '服务配置文件字段' : 'Service configuration file fields'}</span><span className="muted small" id="cfg-file">{online ? String(config.data?.file ?? '') : ''}</span></div>
       <p className="runtime-config-restart-note">{zh ? '保存后重启模型生效。“默认”会清除该项的自定义值。' : 'Restart the model after saving. “Default” clears that field’s custom value.'}</p>
       {!profile ? <p className="muted">{zh ? '选择服务后可读取运行配置。' : 'Select a service to read its run configuration.'}</p> : !online ? <p className="muted" role="status">{zh ? '服务离线。连接成功后会自动读取运行配置；API Key 可在公共设置中保存。' : 'Service is offline. Run configuration loads when connected; save the API key in shared settings.'}</p> : <>
@@ -186,11 +190,11 @@ function RuntimeConfigSession({ profile, online, language, desktop = core.isDesk
           const name = String(k.key), help = zh ? configHelpZh[name] ?? String(k.help ?? name) : String(k.help ?? name), field = `cfg-${keys.indexOf(k)}`;
           const label = fieldLabels[name]?.[zh ? 0 : 1] ?? name, rule = numberRules[name];
           const update = (value: string) => { setValues(old => ({ ...old, [name]: value })); setMessage(''); setSaveError(''); };
-          return <div className="runtime-config-field" key={name} data-config-key={name}><div className="runtime-config-field-label"><label htmlFor={field} title={`${name}: ${help}`}><strong>{label}</strong></label><span className="runtime-config-hidden-help" id={`${field}-help`}>{help}</span></div><div className="runtime-config-control">
+          return <div className="runtime-config-field" key={name} data-config-key={name}><div className="runtime-config-field-label"><label htmlFor={field} data-tooltip={`${name}: ${help}`}><strong>{label}</strong></label><span className="runtime-config-hidden-help" id={`${field}-help`}>{help}</span></div><div className="runtime-config-control">
             {k.kind === 'bool' || k.kind === 'enum' ? <Dropdown id={field} ariaLabel={label} disabled={locked} value={values[name] ?? ''} options={[{ value: '', label: t('configDefault') }, ...(k.kind === 'bool' ? [{ value: 'true', label: t('enabledOn') }, { value: 'false', label: t('enabledOff') }] : Array.isArray(k.choices) ? k.choices.map(choice => ({ value: String(choice), label: String(choice) })) : [])]} onValueChange={update} />
               : k.kind === 'number' ? <NumberField className="st-input" id={field} aria-label={label} aria-describedby={`${field}-help`} disabled={locked} step={rule?.whole ? 1 : 'any'} min={rule?.min ?? 0} max={rule?.max} value={values[name] ?? ''} placeholder={t('configDefault')} onChange={event => update(event.target.value)} />
                 : <input className="st-input" id={field} aria-label={label} aria-describedby={`${field}-help`} disabled={locked} autoComplete="off" value={values[name] ?? ''} placeholder={t('configDefault')} onChange={event => update(event.target.value)} />}
-            <button type="button" className="runtime-config-reset" disabled={locked || !values[name]} aria-label={`${zh ? '恢复默认' : 'Reset to default'}: ${label}`} title={zh ? '清除自定义值，保存后采用默认值' : 'Clear the custom value; defaults apply after saving'} onClick={() => update('')}><RotateCcw size={14}/>{zh ? '默认' : 'Default'}</button>
+            <button type="button" className="runtime-config-reset" disabled={locked || !values[name]} aria-label={`${zh ? '恢复默认' : 'Reset to default'}: ${label}`} data-tooltip={zh ? '清除自定义值，保存后采用默认值' : 'Clear the custom value; defaults apply after saving'} onClick={() => update('')}><RotateCcw size={14}/>{zh ? '默认' : 'Default'}</button>
           </div></div>;
         })}</fieldset>)}</form><div className="cfg-actions"><button className="st-btn st-btn--primary" id="cfg-save" type="button" disabled={locked} onClick={() => void saveConfig()}>{saving ? (zh ? '保存中…' : 'Saving…') : (zh ? '保存配置（重启后生效）' : 'Save configuration (restart to apply)')}</button><span className="muted small" id="cfg-msg" role="status">{message}</span>{message && onServices && <button className="st-btn st-btn--secondary" type="button" onClick={onServices}>{zh ? '前往服务管理重启' : 'Restart in Service management'}<ArrowRight size={14}/></button>}</div></>}
         {!config.isPending && !config.error && !keys.length && <p className="muted">{zh ? '此服务未提供可编辑的运行配置字段。' : 'This service provides no editable run configuration fields.'}</p>}
