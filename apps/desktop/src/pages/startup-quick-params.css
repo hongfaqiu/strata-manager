@@ -1,0 +1,4 @@
+.startup-quick-params{margin:0 0 1rem;padding:.9rem 1rem;border:1px solid color-mix(in srgb,var(--border) 88%,transparent);border-radius:14px;background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 7%,var(--panel)),var(--panel))}
+.startup-quick-params-heading{display:grid;gap:.3rem;margin-bottom:.75rem}
+.startup-quick-params-heading p{margin:0;font-size:.84rem;opacity:.78;line-height:1.45}
+.startup-quick-params-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem 1rem}

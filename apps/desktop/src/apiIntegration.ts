@@ -11,6 +11,8 @@ export const apiIntegrationDocs = {
   cherry: 'https://cherryai.com/docs/en/pre-basic/settings/providers/',
   opencode: 'https://opencode.ai/docs/providers/#custom-provider',
   claude: 'https://code.claude.com/docs/en/env-vars',
+  cursor: 'https://docs.cursor.com/guides/using-models',
+  codex: 'https://github.com/openai/codex',
 } as const;
 
 export const powerShellLiteral = (value: string) => `'${value.replaceAll("'", "''")}'`;
@@ -97,4 +99,39 @@ export function claudeCodeLaunch(connection: ApiConnection, shell: ApiShell): st
   };
   const lines = Object.entries(values).map(([key, value]) => shell === 'powershell' ? `$env:${key} = ${powerShellLiteral(value)}` : `export ${key}=${bashLiteral(value)}`);
   return [...lines, 'claude'].join('\n');
+}
+
+export function cursorEnvConfig(connection: ApiConnection, shell: ApiShell): string {
+  const root = serviceRoot(connection);
+  const values: Record<string, string> = {
+    OPENAI_BASE_URL: `${root}/v1`,
+    OPENAI_API_KEY: keyPlaceholder(connection),
+    OPENAI_MODEL: connection.model,
+  };
+  return Object.entries(values)
+    .map(([key, value]) => shell === 'powershell' ? `$env:${key} = ${powerShellLiteral(value)}` : `export ${key}=${bashLiteral(value)}`)
+    .concat(['cursor .'])
+    .join('\n');
+}
+
+export function codexConfigToml(connection: ApiConnection): string {
+  const root = serviceRoot(connection);
+  return [
+    '# ~/.codex/config.toml — merge carefully; keep existing sections',
+    'model_provider = "strata"',
+    `model = ${json(connection.model)}`,
+    '',
+    '[model_providers.strata]',
+    'name = "Strata (local)"',
+    `base_url = ${json(`${root}/v1`)}`,
+    'env_key = "STRATA_API_KEY"',
+    'wire_api = "chat"',
+  ].join('\n');
+}
+
+export function codexLaunch(connection: ApiConnection, shell: ApiShell): string {
+  serviceRoot(connection);
+  return shell === 'powershell'
+    ? `$env:STRATA_API_KEY = ${powerShellLiteral(keyPlaceholder(connection))}\ncodex`
+    : `export STRATA_API_KEY=${bashLiteral(keyPlaceholder(connection))}\ncodex`;
 }
