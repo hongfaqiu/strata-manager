@@ -16,6 +16,7 @@ interface Props {
   installationStatus?: core.RuntimeInstallationStatus;
   autoCheck?: boolean;
   operationDisabled?: boolean;
+  onUpdateStarted?: () => void;
 }
 const labels = {
   'zh-CN': {
@@ -43,7 +44,7 @@ function needsUpdate(current: string | undefined, latest: string | undefined) {
   return false;
 }
 
-export function RuntimeManagementPanel({ language, desktop, onInstall, selectedRuntimeDir, showInstallations = true, installationStatus, autoCheck = true, operationDisabled = false }: Props) {
+export function RuntimeManagementPanel({ language, desktop, onInstall, selectedRuntimeDir, showInstallations = true, installationStatus, autoCheck = true, operationDisabled = false, onUpdateStarted }: Props) {
   const text = labels[language]; const query = useQueryClient();
   const [checking, setChecking] = useState(false), [starting, setStarting] = useState(''), [actionError, setActionError] = useState('');
   const [taskLogs, setTaskLogs] = useState<core.LogEntry[]>([]);
@@ -101,6 +102,7 @@ export function RuntimeManagementPanel({ language, desktop, onInstall, selectedR
       const task = await core.updateRuntimeZip(runtime.installDir, selectedAssetName, true, download);
       setTaskId(task.id); observedTask.current = task.id;
       await query.invalidateQueries({ queryKey: ['tasks'] }); setPending(null);
+      onUpdateStarted?.();
     }
     catch (error) { setActionError(core.normalizeError(error).message); }
     finally { startingRef.current = false; setStarting(''); }
@@ -125,7 +127,7 @@ export function RuntimeManagementPanel({ language, desktop, onInstall, selectedR
     {lastTask?.state === 'failed' && <p className="notice error" role="alert">{text.failed}: {lastTask.message}</p>}
     {actionError && <p className="notice error" role="alert">{actionError}</p>}
     <RuntimeDownloadSettings language={language} desktop={desktop} runtime={runtimes[0]} release={update.data} releaseLoading={update.isLoading || update.isFetching}/>
-    {notes && update.data && <details className="runtime-release-notes"><summary>{text.notes} · {update.data.releaseName ?? update.data.latestVersion}</summary>{update.data.publishedAt && <p className="subtle">{text.published} {new Date(update.data.publishedAt).toLocaleDateString(language)}</p>}<div className="runtime-release-body" tabIndex={0} role="region" aria-label={text.notes}><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml components={{ a: ({ node: _node, children, ...props }) => <a {...props} target="_blank" rel="noreferrer">{children}</a> }}>{notes}</ReactMarkdown></div></details>}
+    {notes && update.data && <details className="runtime-release-notes"><summary>{text.notes} · {update.data.releaseName ?? update.data.latestVersion}</summary>{update.data.publishedAt && <p className="subtle">{text.published} {new Date(update.data.publishedAt).toLocaleDateString(language)}</p>}<div className="runtime-release-body" tabIndex={0} role="region" aria-label={text.notes}><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml components={{ a: ({ node: _node, title, children, ...props }) => <a {...props} data-tooltip={title} target="_blank" rel="noreferrer">{children}</a>, img: ({ node: _node, title, ...props }) => <img {...props} data-tooltip={title}/> }}>{notes}</ReactMarkdown></div></details>}
     {pending && <RuntimeUpdateDialog language={language} runtime={pending.runtime} release={pending.release} assetName={savedDownload?.assetName} initialDownload={savedDownload?.download} initialPreferences={downloadPreferences.data} busy={!!starting} canConfirm={!operationDisabled && desktop && downloadPreferences.isSuccess && !!tasks.data && !tasks.data.some(task => task.state === 'running') && !update.isFetching && !!update.data?.installable} error={actionError} onConfirm={(download, selectedAssetName) => { void installUpdate(download, selectedAssetName); }} onDismiss={() => { if (!startingRef.current) { setPending(null); setActionError(''); } }}/>}
   </Panel>;
 }

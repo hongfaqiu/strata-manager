@@ -71,8 +71,8 @@ export function Dropdown({ value, options, onValueChange, ariaLabel, disabled = 
   </div>;
 }
 
-export function Toggle({ checked, onCheckedChange, ariaLabel, disabled = false, title, id }: { checked: boolean; onCheckedChange: (checked: boolean) => void; ariaLabel: string; disabled?: boolean; title?: string; id?:string }) {
-  return <button id={id} className="st-toggle official-toggle" type="button" role="switch" aria-label={ariaLabel} aria-checked={checked} disabled={disabled} title={title} onClick={() => onCheckedChange(!checked)} />;
+export function Toggle({ checked, onCheckedChange, ariaLabel, disabled = false, tooltip, id }: { checked: boolean; onCheckedChange: (checked: boolean) => void; ariaLabel: string; disabled?: boolean; tooltip?: string; id?:string }) {
+  return <button id={id} className="st-toggle official-toggle" type="button" role="switch" aria-label={ariaLabel} aria-checked={checked} disabled={disabled} data-tooltip={tooltip} onClick={() => onCheckedChange(!checked)} />;
 }
 
 export function Segmented({ value, options, onValueChange, ariaLabel, id }: { value: string; options: DropdownOption[]; onValueChange: (value: string) => void; ariaLabel: string; id?:string }) {
@@ -158,6 +158,6 @@ export function OfficialDialog({ title, children, onClose, wide = false, drawer 
       }
     };
   }, []);
-  if (drawer) return createPortal(<div className="official-surface"><aside ref={panel} id="drawer" className="st-drawer" data-open="true" role="dialog" aria-modal="true" aria-labelledby={`${uid}-title`} tabIndex={-1}><div className="st-drawer__head"><span className="card-title" id={`${uid}-title`}>{title}</span><button type="button" className="st-btn st-btn--icon" id="drawer-close" aria-label={t('close')} onClick={onClose}><OfficialIcon name="chevron" /></button></div><div className="st-drawer__body">{children}</div></aside><div className="scrim" id="scrim" onPointerDown={() => close.current()} /></div>, document.body);
-  return createPortal(<div className="official-dialog-backdrop" onPointerDown={event => { if (event.target === event.currentTarget) close.current(); }}><div ref={panel} className={`dialog official-dialog-panel ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby={`${uid}-title`} tabIndex={-1}><header className="dialog-header"><h2 id={`${uid}-title`}>{title}</h2><button type="button" className="icon-button" aria-label={t('close')} onClick={onClose}><X size={20} /></button></header><div className="dialog-body">{children}</div></div></div>, document.body);
+  if (drawer) return createPortal(<div className="official-surface"><aside ref={panel} id="drawer" className="st-drawer" data-open="true" role="dialog" aria-modal="true" aria-labelledby={`${uid}-title`} tabIndex={-1}><div className="st-drawer__head"><span className="card-title" id={`${uid}-title`}>{title}</span><button type="button" className="st-btn st-btn--icon" id="drawer-close" aria-label={t('close')} data-tooltip={t('close')} onClick={onClose}><OfficialIcon name="chevron" /></button></div><div className="st-drawer__body">{children}</div></aside><div className="scrim" id="scrim" onPointerDown={() => close.current()} /></div>, document.body);
+  return createPortal(<div className="official-dialog-backdrop" onPointerDown={event => { if (event.target === event.currentTarget) close.current(); }}><div ref={panel} className={`dialog official-dialog-panel ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby={`${uid}-title`} tabIndex={-1}><header className="dialog-header"><h2 id={`${uid}-title`}>{title}</h2><button type="button" className="icon-button" aria-label={t('close')} data-tooltip={t('close')} onClick={onClose}><X size={20} /></button></header><div className="dialog-body">{children}</div></div></div>, document.body);
 }

@@ -119,7 +119,7 @@ export function RuntimeUpdateDialog({ language, runtime, release, assetName, ini
       {checkingServices && !services.error && <p role="status">{zh ? '正在检查当前服务…' : 'Checking running services…'}</p>}
       {services.error && <p className="notice error" role="alert">{core.normalizeError(services.error).message}</p>}
       <details className="runtime-update-release-details"><summary>{zh ? '更新日志' : 'Release notes'}</summary><div className="runtime-update-notes" role="region" aria-label={zh ? '更新日志' : 'Release notes'} tabIndex={0}>
-        {notes ? <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml components={{ a: ({ node: _node, children, ...props }) => <a {...props} target="_blank" rel="noreferrer">{children}</a> }}>{notes}</ReactMarkdown> : <p>{zh ? '此 Release 暂无更新日志。' : 'This release has no release notes.'}</p>}
+        {notes ? <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml components={{ a: ({ node: _node, title, children, ...props }) => <a {...props} data-tooltip={title} target="_blank" rel="noreferrer">{children}</a>, img: ({ node: _node, title, ...props }) => <img {...props} data-tooltip={title}/> }}>{notes}</ReactMarkdown> : <p>{zh ? '此 Release 暂无更新日志。' : 'This release has no release notes.'}</p>}
       </div></details>
       {!canConfirm && !busy && <p className="runtime-update-waiting" role="status">{zh ? '当前正在处理请求或任务，空闲后可确认更新。' : 'Requests or tasks are in progress. You can confirm the update when they finish.'}</p>}
       {error && <p className="notice error" role="alert">{error}</p>}

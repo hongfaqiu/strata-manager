@@ -1,0 +1,35 @@
+.api-usage-chart-v2{display:flex;flex-direction:column;gap:7px;min-width:0}
+.api-usage-chart-v2 .api-metric-chart-meta{display:flex;justify-content:space-between;flex-wrap:wrap;align-items:center;font-size:10px;min-height:15px;gap:6px;color:var(--st-ink-muted);font-variant-numeric:tabular-nums}
+.api-usage-chart-v2 .api-metric-chart-meta>span:last-child{text-align:right}
+.api-usage-chart-v2 .api-metric-chart-interaction{position:relative;border-radius:4px;touch-action:pan-y;outline-offset:3px;min-width:0}
+.api-usage-chart-v2 .api-metric-chart-interaction:focus-visible{outline:2px solid var(--st-focus)}
+.api-metric-chart.api-usage-chart-v2 svg{width:100%;height:auto;min-height:0;display:block;overflow:visible}
+.api-usage-chart-v2 .api-metric-grid line{stroke:var(--st-line-soft,var(--st-line));stroke-width:1;stroke-dasharray:none}
+.api-usage-chart-v2 .api-metric-grid text,.api-usage-chart-v2 .api-metric-time-tick{fill:var(--st-ink-muted);font-family:inherit;font-size:10px}
+.api-usage-chart-v2 .api-metric-grid-vertical{stroke:var(--st-line-soft,var(--st-line));stroke-width:1;opacity:.55}
+.api-usage-chart-v2 .api-metric-line{fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.api-metric-area{fill:currentColor;fill-opacity:.1;stroke:none}
+.api-usage-chart-v2 circle,.api-usage-chart-v2 rect{fill:currentColor}
+.api-usage-chart-v2 .api-metric-selected-point{stroke:var(--st-surface);stroke-width:1.5;vector-effect:non-scaling-stroke}
+.api-usage-chart-v2 .api-metric-cursor{stroke:var(--st-ink-muted);stroke-width:1;stroke-dasharray:3 3;opacity:.65;vector-effect:non-scaling-stroke}
+.api-usage-chart-v2 .api-metric-empty-overlay{position:absolute;left:10%;right:0;top:10px;bottom:32px;display:flex;align-items:center;justify-content:center;padding:12px;color:var(--st-ink-muted);font-size:11px;text-align:center;pointer-events:none}
+.api-usage-chart-v2 .api-metric-legend{display:flex;align-items:flex-start;gap:5px 14px;flex-wrap:wrap;min-height:22px}
+.api-usage-chart-v2 .api-metric-legend>button{appearance:none;display:grid;grid-template-columns:12px minmax(0,1fr) auto;align-items:center;gap:5px;min-width:0;height:auto;min-height:24px;max-width:100%;padding:2px 0;border:0;border-radius:3px;background:transparent;box-shadow:none;color:var(--st-ink);font-family:inherit;font-size:10px;font-weight:400;line-height:1.4;cursor:pointer}
+.api-usage-chart-v2 .api-metric-legend>button:hover{background:var(--st-surface-2);border:0;box-shadow:none}
+.api-usage-chart-v2 .api-metric-legend>button:focus-visible{outline:2px solid var(--st-focus);outline-offset:2px}
+.api-usage-chart-v2 .api-metric-legend>button.is-hidden{opacity:.45}
+.api-usage-chart-v2 .api-metric-legend>button.is-hidden>span:nth-child(2){text-decoration:line-through}
+.api-usage-chart-v2 .api-metric-key{width:11px;height:3px;border-radius:1px;background:currentColor}
+.api-usage-chart-v2 .api-metric-legend strong{grid-column:auto;color:var(--st-ink);font-size:10px;font-weight:500;white-space:nowrap;font-variant-numeric:tabular-nums}
+.api-usage-chart-v2 .api-metric-total{font-size:10px;color:var(--st-ink-muted);line-height:1.4}
+.api-chart-color-accent{color:var(--st-accent)}
+.api-chart-color-blue{color:light-dark(#367fc3,#75b8f3)}
+.api-chart-color-gold{color:light-dark(#b48120,#e1b55e)}
+.api-chart-color-danger{color:var(--danger)}
+.api-chart-color-violet{color:light-dark(#9470bf,#bea0e6)}
+.api-chart-color-muted{color:var(--st-ink-muted)}
+.api-usage-sparkline{display:block;width:100%;height:42px;overflow:visible;pointer-events:none}
+.api-usage-sparkline .api-metric-area{fill-opacity:.12}
+.api-usage-sparkline .api-metric-line{fill:none;stroke:currentColor;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.api-usage-sparkline circle{fill:currentColor}
+@media(max-width:500px){.api-usage-chart-v2 .api-metric-chart-meta{align-items:flex-start;flex-direction:column;gap:2px}.api-usage-chart-v2 .api-metric-chart-meta>span:last-child{text-align:left}.api-usage-chart-v2 .api-metric-legend{gap:4px 12px}}

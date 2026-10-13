@@ -48,9 +48,9 @@ const resolveAsset = createReleaseNotesAssetResolver(Object.fromEntries(
 ));
 const urlTransform = (url: string) => resolveAsset(defaultUrlTransform(url));
 const components: Components = {
-  a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer"/>,
-  img: ({ node: _node, src, ...props }) => src
-    ? <img {...props} src={src} loading="lazy" decoding="async"/>
+  a: ({ node: _node, title, ...props }) => <a {...props} data-tooltip={title} target="_blank" rel="noreferrer"/>,
+  img: ({ node: _node, src, title, ...props }) => src
+    ? <img {...props} data-tooltip={title} src={src} loading="lazy" decoding="async"/>
     : <span>{props.alt}</span>,
 };
 const remarkPlugins = [remarkGfm];

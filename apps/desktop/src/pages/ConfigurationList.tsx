@@ -26,7 +26,7 @@ const date = (value: number | null | undefined, language: Props['language']) => 
 const name = (entry: LocalModelConfiguration) => entry.configPath.split(/[\\/]/).at(-1) || entry.profile?.name || entry.candidate?.name || '—';
 
 /** Opening a file only changes the editor. Loading a configuration always requires an explicit confirmation. */
-export function ConfigurationList({ groups, selectedPath, activeId, running, lastUsedId, disabled, loading, error, dirty, language, onOpen, onDelete, onUse, onRefresh }: Props) {
+export function ConfigurationList({ groups, selectedPath, activeId, running, lastUsedId, disabled, loading, error, language, onOpen, onDelete, onUse, onRefresh }: Props) {
   const zh = language === 'zh-CN';
   const [pending, setPending] = useState<LocalModelConfiguration>();
   const [working, setWorking] = useState(false);
@@ -63,11 +63,11 @@ export function ConfigurationList({ groups, selectedPath, activeId, running, las
           const modification = date(entry.modifiedAt, language), activation = date(entry.lastActivatedAt, language);
           const active = current(entry), viewed = selected(entry);
           return <div className={`configuration-list-row${viewed ? ' selected' : ''}`} key={entry.key}>
-            <button type="button" className="configuration-list-open" aria-pressed={viewed} disabled={disabled || working} onClick={() => { if (viewed) return; onOpen(entry); }} title={entry.configPath}>
+            <button type="button" className="configuration-list-open" aria-pressed={viewed} disabled={disabled || working} onClick={() => { if (viewed) return; onOpen(entry); }} data-tooltip={entry.configPath}>
               <FileText size={17}/><span><strong>{name(entry)}{active && <em>{zh ? '当前运行' : 'Running'}</em>}{!active && entry.profile?.id === lastUsedId && <em className="previous">{zh ? '上次使用' : 'Last used'}</em>}</strong>
               <span className="configuration-list-times">{modification && <time>{zh ? '修改' : 'Modified'} · {modification}</time>}<time>{zh ? '上次启用' : 'Last activated'} · {activation ?? (zh ? '未记录' : 'Not recorded')}</time></span></span>
             </button>
-            <div className="configuration-list-actions"><button aria-label={`${active ? (zh ? '重启模型服务并应用配置' : 'Restart model service and apply configuration') : (zh ? '使用此配置' : 'Use configuration')} ${name(entry)}`} title={active ? (zh ? '重启模型服务并应用配置' : 'Restart model service and apply configuration') : (zh ? '使用此配置' : 'Use configuration')} disabled={disabled || working || entry.candidate?.availability === 'repair'} onClick={() => { setFailure(''); setPending(entry); }}><Play size={14}/></button><button className="danger" title={zh ? '删除配置文件' : 'Delete configuration file'} aria-label={`${zh ? '删除配置文件' : 'Delete configuration file'} ${name(entry)}`} disabled={disabled || working} onClick={() => onDelete(entry)}><Trash2 size={14}/></button></div>
+            <div className="configuration-list-actions"><button aria-label={`${active ? (zh ? '重启模型服务并应用配置' : 'Restart model service and apply configuration') : (zh ? '使用此配置' : 'Use configuration')} ${name(entry)}`} data-tooltip={active ? (zh ? '重启模型服务并应用配置' : 'Restart model service and apply configuration') : (zh ? '使用此配置' : 'Use configuration')} disabled={disabled || working || entry.candidate?.availability === 'repair'} onClick={() => { setFailure(''); setPending(entry); }}><Play size={14}/></button><button className="danger" data-tooltip={zh ? '删除配置文件' : 'Delete configuration file'} aria-label={`${zh ? '删除配置文件' : 'Delete configuration file'} ${name(entry)}`} disabled={disabled || working} onClick={() => onDelete(entry)}><Trash2 size={14}/></button></div>
           </div>;
         })}
       </section>)}

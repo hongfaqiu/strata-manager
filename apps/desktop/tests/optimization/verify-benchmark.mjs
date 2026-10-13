@@ -71,6 +71,32 @@ async function assertFirstScreen(page) {
   assert.equal(await area(page).locator('.benchmark-advanced').evaluate(element => element.open), false);
   assert.equal(await area(page).locator('.benchmark-scenario small').count(), 0, 'Scene explanations are on demand');
 }
+async function assertContextResultActions(page, hasHistory = true) {
+  assert.equal(await area(page).locator('.page-header').getByRole('button').count(), 0, 'The context page title has no actions');
+  for (const name of [/^(导出 PNG|Export PNG)$/, /^(导出 JSON|Export JSON)$/, /^(导出 CSV|Export CSV)$/, /^(测试说明|Test guide)$/]) {
+    assert.equal(await area(page).getByRole('button', { name, exact: true }).count(), 0, 'Removed context actions do not appear');
+  }
+  const header = area(page).locator('.benchmark-results > .panel-header');
+  const copy = header.getByRole('button', { name: /^(复制图片|Copy image)$/, exact: true });
+  const history = header.getByRole('combobox', { name: /^(上下文测试历史|Context benchmark history)$/, exact: true });
+  assert.equal(await copy.count(), 1, 'Copy belongs to the result panel');
+  assert.equal(await history.count(), Number(hasHistory));
+  const copyBounds = await copy.boundingBox(), headerBounds = await header.boundingBox();
+  assert.ok(copyBounds && headerBounds, 'Result actions are visible');
+  if (hasHistory) {
+    assert.ok(await header.evaluate(element => {
+      const button = element.querySelector('button'), combobox = element.querySelector('[role="combobox"]');
+      return !!button && !!combobox && !!(button.compareDocumentPosition(combobox) & Node.DOCUMENT_POSITION_FOLLOWING);
+    }), 'Copy precedes the result history dropdown');
+    if (page.viewportSize().width >= 700) {
+      const historyBounds = await history.boundingBox();
+      assert.ok(historyBounds && copyBounds.x + copyBounds.width <= historyBounds.x + 1, 'Copy appears to the left of history');
+    }
+  } else {
+    assert.equal(await copy.isDisabled(), true, 'Copy waits for a completed report');
+    assert.ok(Math.abs(copyBounds.x + copyBounds.width - headerBounds.x - headerBounds.width) <= 1, 'Copy stays at the right edge without history');
+  }
+}
 async function dropdown(page, label, option) {
   await area(page).getByRole('combobox', { name: label, exact: true }).click();
   await page.getByRole('option', { name: option, exact: true }).click();
@@ -110,13 +136,14 @@ async function run(name, action, search = '', viewport = { width: 1440, height: 
 }
 try {
   browser = await chromium.launch({ headless: true, executablePath: process.env.STRATA_BROWSER_EXECUTABLE || undefined });
-  await run('context-default-tiers-serial-resources-history-export', async page => {
+  await run('context-default-tiers-serial-resources-history-actions', async page => {
     const navigation = page.locator('.manager-nav').getByRole('button', { name: 'Benchmark 测试', exact: true });
     assert.equal(await navigation.getAttribute('aria-current'), 'page');
     assert.equal(await page.locator('.workspace-subnav').count(), 0);
     assert.equal(await page.getByRole('radio', { name: '上下文档位', exact: true }).getAttribute('aria-checked'), 'true');
     assert.equal(await page.getByRole('radio', { name: /压力测试|Stress test/ }).count(), 0);
     assert.equal(await page.getByRole('spinbutton', { name: /并发|Concurrency/ }).count(), 0);
+    await assertContextResultActions(page, false);
     assert.equal(await area(page).getByRole('spinbutton', { name: '最大输出 token', exact: true }).inputValue(), '512');
     await waitForTierSelection(page, 2);
     const tiers = await tierState(page);
@@ -148,16 +175,13 @@ try {
     assert.equal(await area(page).locator('.context-benchmark-chart--prefill .context-benchmark-point').count(), 2);
     assert.match(await area(page).locator('.context-benchmark-chart--prefill').textContent(), /1,250/);
     assert.match(await area(page).locator('.context-benchmark-chart--decode').textContent(), /80/);
-    assert.equal(await area(page).locator('details').count(), 0);
-    let event = page.waitForEvent('download'); await area(page).getByRole('button', { name: '导出 JSON', exact: true }).click();
-    let download = await event, exported = JSON.parse(await readFile(await download.path(), 'utf8'));
-    assert.match(download.suggestedFilename(), /^strata-context-benchmark-.+\.json$/); assert.deepEqual(exported.samples, report.samples);
-    event = page.waitForEvent('download'); await area(page).getByRole('button', { name: '导出 CSV', exact: true }).click();
-    download = await event; const csv = await readFile(await download.path(), 'utf8');
-    assert.match(csv, /peak_gpu_memory_mib,min_gpu_free_mib,peak_ram_gib/); assert.equal(csv.trim().split('\r\n').length, 3);
+    assert.equal(await area(page).locator('details:not(.benchmark-result-meta)').count(), 0);
+    await assertContextResultActions(page);
+    assert.equal(await area(page).getByRole('button', { name: '复制图片', exact: true }).isEnabled(), true);
     await page.reload(); await area(page).getByRole('heading', { name: '上下文档位实测', exact: true }).waitFor();
     await area(page).locator('.context-benchmark-table tbody tr').nth(1).waitFor();
     assert.equal((await contextReports(page))[0].id, report.id);
+    await assertContextResultActions(page);
   }, '', { width: 1366, height: 768 });
   await run('context-unknown-capacity-never-infer', async page => {
     await area(page).getByRole('alert').waitFor();
@@ -170,13 +194,13 @@ try {
     await waitForTierSelection(page, 9);
     const tiers = await tierState(page);
     assert.deepEqual(tiers.map(tier => tier.label), ['8K', '32K', '64K', '128K', '256K', '384K', '512K', '768K', '1M']);
-    assert.ok(tiers.every(tier => tier.checked && !tier.disabled));
+    assert.ok(tiers.every(tier => tier.checked && !tier.disabled), JSON.stringify(tiers));
     assert.match(await area(page).locator('.context-benchmark-capacity').innerText(), /1M/);
     assert.equal((await streams(page)).length, 0);
   }, '?maxContext=1048576');
   await run('context-nonstandard-max-and-capacity-reset', async page => {
     await waitForTierSelection(page, 9);
-    const initial = await tierState(page);
+    await waitForTierSelection(page, 9); const initial = await tierState(page);
     assert.equal(initial.find(tier => tier.label === '1,000,000').checked, true);
     assert.equal(initial.find(tier => tier.label === '1M').disabled, true);
     await area(page).getByRole('checkbox', { name: '8K', exact: true }).uncheck();
@@ -201,7 +225,7 @@ try {
   });
   await run('context-output-budget-removes-too-small-selection', async page => {
     await waitForTierSelection(page, 1);
-    assert.deepEqual((await tierState(page)).filter(tier => tier.checked).map(tier => tier.label), ['2K']);
+    await waitForTierSelection(page, 1); assert.deepEqual((await tierState(page)).filter(tier => tier.checked).map(tier => tier.label), ['2K']);
     await area(page).getByRole('spinbutton', { name: '最大输出 token', exact: true }).fill('2048');
     await waitForTierSelection(page, 0);
     assert.ok((await tierState(page)).every(tier => !tier.checked && tier.disabled));
@@ -213,12 +237,8 @@ try {
     await start(page); await finishContext(page);
     const [report] = await contextReports(page);
     assert.equal(report.samples.length, 2); assert.ok(report.samples.every(sample => sample.tokenCountMethod === 'estimated' && sample.countedPromptTokens === null));
-    assert.equal(await area(page).locator('details').count(), 0);
-    await area(page).getByRole('button', { name: '测试说明', exact: true }).click();
-    const guide = page.getByRole('dialog', { name: '上下文 Benchmark 说明', exact: true });
-    await guide.waitFor(); assert.match(await guide.innerText(), /缓存/);
-    assert.match(await guide.innerText(), /输入未能精确校准|不代表实际达到目标档位/);
-    await page.keyboard.press('Escape'); await guide.waitFor({ state: 'hidden' });
+    assert.equal(await area(page).locator('details:not(.benchmark-result-meta)').count(), 0);
+    await assertContextResultActions(page);
   });
   await run('context-navigation-keeps-runner-and-stop', async page => {
     await page.evaluate(() => { window.__fixture.benchmark.mode = 'hold'; });
@@ -242,7 +262,8 @@ try {
     const widths = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth, body: document.body.scrollWidth }));
     assert.ok(widths.document <= widths.viewport + 1 && widths.body <= widths.viewport + 1, JSON.stringify(widths));
     assert.equal(await area(page).locator('.context-benchmark-table tbody tr').count(), 2);
-    assert.equal(await area(page).getByRole('button', { name: language === 'en' ? 'Export JSON' : '导出 JSON', exact: true }).isEnabled(), true);
+    await assertContextResultActions(page);
+    assert.equal(await area(page).getByRole('button', { name: language === 'en' ? 'Copy image' : '复制图片', exact: true }).isEnabled(), true);
   }, `?language=${language}`, { width: 480, height: 1000 });
   await run('serial-sse-metrics-history-export', async page => {
     const checkboxStyle = await area(page).getByRole('checkbox', { name: '短问答', exact: true }).evaluate(element => ({ checked: element.checked, padding: getComputedStyle(element).padding, appearance: getComputedStyle(element).appearance, whiteCheck: getComputedStyle(element).backgroundImage.includes('fff') }));
@@ -344,7 +365,7 @@ try {
     await area(page).getByRole('spinbutton', { name: '长输入字符数', exact: true }).fill('4096');
     await start(page); await finish(page);
     const [report] = await reports(page), calls = await streams(page);
-    assert.equal(report.schemaVersion, 2); assert.equal(report.state, 'completed');
+    assert.equal(report.schemaVersion, 3); assert.equal(report.state, 'completed');
     assert.equal(report.samples.length, 22); assert.equal(calls.length, 22);
     assert.equal(report.samples.filter(sample => sample.warmup).length, 6);
     assert.deepEqual([...new Set(report.samples.map(sample => sample.scenario))], ['short', 'code', 'long', 'decode', 'cache', 'conversation']);

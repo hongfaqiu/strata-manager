@@ -1,0 +1,8 @@
+.daily-capabilities{margin:16px 0;padding:14px;border:1px solid var(--st-line);border-radius:12px;background:var(--st-surface)}
+.daily-capabilities summary,.chat-execution summary{cursor:pointer;font-weight:600}.daily-capabilities p,.daily-capabilities small{color:var(--st-ink-muted)}
+.daily-capabilities dl{display:grid;gap:8px}.daily-capabilities dl>div{display:grid;grid-template-columns:minmax(100px,1fr) 2fr;gap:12px}.daily-capabilities dd{margin:0}.daily-capabilities small{display:block;overflow-wrap:anywhere}
+.chat-execution{display:flex;align-items:center;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--st-ink-muted);padding:8px 0}.chat-execution details{flex-basis:100%}.chat-execution code{overflow-wrap:anywhere}.chat-service-observation{font-size:12px;color:var(--st-ink-muted);padding:0 16px 8px}
+.benchmark-history-comparison select{max-width:100%}.benchmark-history-comparison pre{max-height:240px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
+.benchmark-page .benchmark-history-comparison .st-table{min-width:0;width:100%}
+.benchmark-history-disclosure,.benchmark-export-options{padding:12px 16px;border:1px solid var(--st-line);border-radius:12px;color:var(--st-ink-muted)}.benchmark-history-disclosure>summary,.benchmark-export-options>summary{cursor:pointer}.benchmark-history-disclosure[open]>.benchmark-history-comparison{margin-top:12px}
+@media(max-width:1100px){.shared-settings-target>div{flex-basis:100%;min-width:0}.shared-settings-target .field{max-width:none}.daily-capabilities dl>div{grid-template-columns:1fr}}

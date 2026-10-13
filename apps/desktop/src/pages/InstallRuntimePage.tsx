@@ -55,6 +55,7 @@ export interface InstallRuntimePageProps {
   desktop: boolean;
   autoCheck?: boolean;
   operationDisabled?: boolean;
+  onUpdateStarted?: () => void;
 }
 
 function detectedRuntimes(status: RuntimeInstallationStatus): core.DetectedRuntime[] {
@@ -214,7 +215,7 @@ export function InstallRuntimePage(props: InstallRuntimePageProps) {
           {detailsOpen && <dl id="install-runtime-details" className="runtime-summary-facts"><div><dt>{text.revision}</dt><dd><code>{detected.sourceRevision ?? '—'}</code></dd></div><div><dt>{text.python}</dt><dd><code>{detected.pythonPath || '—'}</code></dd></div></dl>}
           {errorBlock}
         </Panel>
-        <RuntimeManagementPanel operationDisabled={props.operationDisabled} autoCheck={props.autoCheck} language={props.language} desktop={props.desktop} installationStatus={installation} selectedRuntimeDir={detected.installDir} showInstallations={false}/>
+        <RuntimeManagementPanel operationDisabled={props.operationDisabled} autoCheck={props.autoCheck} language={props.language} desktop={props.desktop} installationStatus={installation} selectedRuntimeDir={detected.installDir} showInstallations={false} onUpdateStarted={props.onUpdateStarted}/>
       </> : initial ? <div className="runtime-detecting" role="status"><LoaderCircle size={18} className="spin"/>{text.checking}</div> : loaded && !statusError ? <>
         <ol className="install-runtime-steps" aria-label={text.title}><li className="is-current"><span>1</span>{text.installStep}</li><li><span>2</span>{text.modelStep}</li><li><span>3</span>{text.serviceStep}</li></ol>
         <Panel title={text.installStep} className="install-runtime-card">

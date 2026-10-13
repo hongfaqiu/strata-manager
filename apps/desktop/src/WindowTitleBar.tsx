@@ -99,7 +99,7 @@ export function WindowTitleBar({ desktop, language, title, status, collapsed = f
         <AppLogo className="window-title-bar-mark"/>
         <div className="window-title-bar-brand-copy">
           <span className="window-title-bar-brand-name"><strong>Strata</strong><span>Manager</span></span>
-          {version && <button id="app-version-button" type="button" className="window-title-bar-version" data-tauri-drag-region="false" aria-label={versionLabel} aria-haspopup={updateVersion ? 'dialog' : undefined} title={versionLabel} disabled={!onVersionClick} onClick={onVersionClick} onDoubleClick={event => event.stopPropagation()}>
+          {version && <button id="app-version-button" type="button" className="window-title-bar-version" data-tauri-drag-region="false" aria-label={versionLabel} aria-haspopup={updateVersion ? 'dialog' : undefined} data-tooltip={versionLabel} disabled={!onVersionClick} onClick={onVersionClick} onDoubleClick={event => event.stopPropagation()}>
             <span className="window-title-bar-version-number">v{version}</span>
             {updateVersion && <span className="window-title-bar-update-badge" aria-hidden="true"><span>{language === 'en' ? 'Update' : '有更新'}</span></span>}
           </button>}
@@ -109,9 +109,9 @@ export function WindowTitleBar({ desktop, language, title, status, collapsed = f
     </div>
     {status && <div className="window-title-bar-status" data-tauri-drag-region="false">{status}</div>}
     <div className="window-title-bar-controls" role="group" aria-label={text.window} data-tauri-drag-region="false">
-      <button type="button" className="window-title-bar-button" aria-label={text.minimize} title={text.minimize} disabled={busy} onClick={() => void action('minimize')}><Minus size={15} strokeWidth={1.5} aria-hidden="true"/></button>
-      <button type="button" className="window-title-bar-button" aria-label={maximized ? text.restore : text.maximize} title={maximized ? text.restore : text.maximize} disabled={busy} onClick={() => void action('maximize')}>{maximized ? <Copy size={13} strokeWidth={1.4} aria-hidden="true"/> : <Square size={12} strokeWidth={1.4} aria-hidden="true"/>}</button>
-      <button type="button" className="window-title-bar-button window-title-bar-close" aria-label={text.close} title={text.close} disabled={busy} onClick={() => void action('close')}><X size={16} strokeWidth={1.5} aria-hidden="true"/></button>
+      <button type="button" className="window-title-bar-button" aria-label={text.minimize} data-tooltip={text.minimize} disabled={busy} onClick={() => void action('minimize')}><Minus size={15} strokeWidth={1.5} aria-hidden="true"/></button>
+      <button type="button" className="window-title-bar-button" aria-label={maximized ? text.restore : text.maximize} data-tooltip={maximized ? text.restore : text.maximize} disabled={busy} onClick={() => void action('maximize')}>{maximized ? <Copy size={13} strokeWidth={1.4} aria-hidden="true"/> : <Square size={12} strokeWidth={1.4} aria-hidden="true"/>}</button>
+      <button type="button" className="window-title-bar-button window-title-bar-close" aria-label={text.close} data-tooltip={text.close} disabled={busy} onClick={() => void action('close')}><X size={16} strokeWidth={1.5} aria-hidden="true"/></button>
     </div>
   </header>;
 }

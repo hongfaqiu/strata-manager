@@ -8,6 +8,7 @@ export interface RunningServicesPanelProps {
   candidates: core.LocalCandidate[];
   language: 'zh-CN' | 'en';
   loading?: boolean;
+  pending?: boolean;
   error?: unknown;
   onRefresh: () => void;
   onCopy?: (text: string) => void;
@@ -57,7 +58,7 @@ function modifiedDate(timestamp: number | undefined): Date | undefined {
 }
 
 /** Observes existing services only; no registration or lifecycle actions. */
-export function RunningServicesPanel({ candidates, language, loading = false, error, onRefresh, onCopy }: RunningServicesPanelProps) {
+export function RunningServicesPanel({ candidates, language, loading = false, pending = false, error, onRefresh, onCopy }: RunningServicesPanelProps) {
   const text = words[language];
   const running = [...new Map(candidates.filter(candidate =>
     candidate.running === true && Number.isSafeInteger(candidate.pid) && candidate.pid! > 0 && candidate.pid! <= 0xffffffff
@@ -78,7 +79,7 @@ export function RunningServicesPanel({ candidates, language, loading = false, er
   const scanError = error ? core.normalizeError(error).message : '';
   if (scanError) return <p className="running-service-scan-error" role="alert"><CircleAlert size={15}/>{scanError}</p>;
   if (!running.length) {
-    return loading ? <p className="running-service-detecting" role="status"><LoaderCircle size={15} className="spin"/>{text.detecting}</p> : null;
+    return pending ? <p className="running-service-detecting" role="status"><LoaderCircle size={15} className="spin"/>{text.detecting}</p> : null;
   }
   return <Panel title={text.title} className="running-services-panel" action={<button type="button" disabled={loading} aria-busy={loading} onClick={refresh}><RefreshCw size={15} className={loading ? 'spin' : undefined}/>{text.refresh}</button>}>
     <div className="running-services-list">{running.map((candidate, index) => {
@@ -95,7 +96,7 @@ export function RunningServicesPanel({ candidates, language, loading = false, er
         <dl className="running-service-facts">
           <div><dt>{text.model}</dt><dd>{health ? health.loaded ? model ?? text.unknownModel : text.unloaded : text.unknown}</dd></div>
           <div className="running-service-configuration"><dt>{text.configuration}</dt><dd><code>{candidate.configPath}</code></dd></div>
-          <div><dt>{text.api}</dt><dd><code>{`${core.normalizeBaseUrl(profile.baseUrl)}/v1`}</code>{onCopy && <button type="button" className="running-service-copy" aria-label={text.copyApi} title={text.copyApi} onClick={() => onCopy(`${core.normalizeBaseUrl(profile.baseUrl)}/v1`)}><Copy size={14}/></button>}</dd></div>
+          <div><dt>{text.api}</dt><dd><code>{`${core.normalizeBaseUrl(profile.baseUrl)}/v1`}</code>{onCopy && <button type="button" className="running-service-copy" aria-label={text.copyApi} data-tooltip={text.copyApi} onClick={() => onCopy(`${core.normalizeBaseUrl(profile.baseUrl)}/v1`)}><Copy size={14}/></button>}</dd></div>
           <div><dt>PID</dt><dd>{candidate.pid}</dd></div>
           <div><dt>{text.runtime}</dt><dd><code>{candidate.installDir}</code></dd></div>
           <div><dt>{text.version}</dt><dd>{candidate.runtimeVersion ?? text.unavailable}</dd></div>

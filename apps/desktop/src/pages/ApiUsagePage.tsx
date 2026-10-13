@@ -1,38 +1,46 @@
 import { useEffect, useRef, useState } from 'react';
 import { Activity, AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Download, LoaderCircle, RefreshCw } from 'lucide-react';
-import type { ApiAnalyticsClient, ApiAnalyticsCoverage, ApiAnalyticsQuery, ApiCsvExport, ApiOutcome, ApiRequestOptions, ApiRequestPage, ApiRoute, ApiTrendBucket, ApiUsageSummary, ApiUsageTrends } from '@strata-manager/core';
+import type { ApiAnalyticsClient, ApiAnalyticsCoverage, ApiAnalyticsQuery, ApiCsvExport, ApiOutcome, ApiRequestOptions, ApiRequestPage, ApiRoute, ApiTrendBucket, ApiUsageSummary, ApiUsageTrends, JsonObject } from '@strata-manager/core';
 import { Empty, Panel } from '../components';
-import { Dropdown, Segmented, type DropdownOption } from '../OfficialControls';
+import { Dropdown, type DropdownOption } from '../OfficialControls';
 import { apiUsageStrings } from './ApiUsageStrings';
+import { UsageChart, UsageSparkline, bucketMetric, type ChartColor } from './ApiUsageCharts';
+import { ApiUsageLive } from './ApiUsageLive';
 import './api-usage.css';
 
 export interface ApiUsagePageProps {
   language: 'zh-CN' | 'en'; profileId?: string; desktop: boolean; onQuery: ApiAnalyticsClient;
   onOpenDiagnostics?: () => void;
+  profileName?: string;
+  live?: { raw?: JsonObject; sampledAt?: number; stale?: boolean; stopped?: boolean };
 }
-type Period = 'today' | 'day' | 'week' | 'history';
+type Period = 'hour' | 'today' | 'day' | 'threeDays' | 'week' | 'history';
+const periodBuckets: Record<Period, number> = { hour: 60_000, today: 900_000, day: 900_000, threeDays: 3_600_000, week: 10_800_000, history: 86_400_000 };
 interface Snapshot { summary: ApiUsageSummary; trends: ApiUsageTrends; coverage: ApiAnalyticsCoverage; fetchedAtMs: number }
 const isObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
 function periodRange(period: Period) {
   const endMs = Date.now() + 1;
   const midnight = new Date(endMs); midnight.setHours(0, 0, 0, 0);
-  return { startMs: period === 'today' ? midnight.getTime() : endMs - (period === 'history' ? 90 : period === 'week' ? 7 : 1) * 86_400_000, endMs };
+  return { startMs: period === 'today' ? midnight.getTime() : endMs - (period === 'hour' ? 3_600_000 : (period === 'history' ? 90 : period === 'week' ? 7 : period === 'threeDays' ? 3 : 1) * 86_400_000), endMs };
 }
 
-export function ApiUsagePage({ language, profileId, desktop, onQuery, onOpenDiagnostics }: ApiUsagePageProps) {
+export function ApiUsagePage({ language, profileId, profileName, desktop, onQuery, onOpenDiagnostics, live }: ApiUsagePageProps) {
   const text = apiUsageStrings[language];
   const [period, setPeriod] = useState<Period>('today');
   const [refresh, setRefresh] = useState(0);
+  const [refreshSeconds, setRefreshSeconds] = useState(5);
+  const [inspectedAt, setInspectedAt] = useState<number | null>(null);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [loading, setLoading] = useState(desktop);
   const [error, setError] = useState('');
   const client = useRef(onQuery); client.current = onQuery;
   const previousScope = useRef('');
+  const pollingLoad = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
     let stopped = false, busy = false;
     const scope = `${desktop}:${profileId ?? ''}:${period}`;
-    if (scope !== previousScope.current) setSnapshot(null);
+    if (scope !== previousScope.current) { setSnapshot(null); setInspectedAt(null); }
     previousScope.current = scope;
     setError(''); setLoading(desktop);
     if (!desktop) return;
@@ -44,7 +52,7 @@ export function ApiUsagePage({ language, profileId, desktop, onQuery, onOpenDiag
       try {
         const [summary, trends] = await Promise.all([
           client.current({ ...common, action: 'summary' }),
-          client.current({ ...common, action: 'trends', bucketMs: period === 'week' || period === 'history' ? 86_400_000 : 3_600_000 }),
+          client.current({ ...common, action: 'trends', bucketMs: periodBuckets[period] }),
         ]);
         if (stopped) return;
         if (!isObject(summary.data) || !isObject(summary.data.http) || !isObject(summary.data.inference) || !isObject(trends.data) || !Array.isArray(trends.data.buckets)) throw new Error(language === 'zh-CN' ? '后台统计格式不匹配，请更新应用后台。' : 'The statistics format does not match. Update the app background process.');
@@ -54,10 +62,16 @@ export function ApiUsagePage({ language, profileId, desktop, onQuery, onOpenDiag
         if (!stopped) setError(failure instanceof Error ? failure.message : String(failure));
       } finally { busy = false; if (!stopped && foreground) setLoading(false); }
     };
+    pollingLoad.current = () => load();
     void load(true);
-    const timer = window.setInterval(() => { if (!document.hidden) void load(); }, 2000);
-    return () => { stopped = true; window.clearInterval(timer); };
+    return () => { stopped = true; pollingLoad.current = null; };
   }, [desktop, profileId, period, refresh, language]);
+
+  useEffect(() => {
+    if (!desktop || refreshSeconds === 0) return;
+    const timer = window.setInterval(() => { if (!document.hidden) void pollingLoad.current?.(); }, refreshSeconds * 1000);
+    return () => window.clearInterval(timer);
+  }, [desktop, refreshSeconds]);
 
   const number = (value: number | null | undefined, digits = 0) => typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString(language, { maximumFractionDigits: digits }) : '—';
   const seconds = (value: number | null | undefined) => value == null ? '—' : `${number(value, 2)} ${text.seconds}`;
@@ -72,9 +86,17 @@ export function ApiUsagePage({ language, profileId, desktop, onQuery, onOpenDiag
   const collecting = observerStatuses.some(value => value.observerActive && value.heartbeatFresh);
   const measured = collecting || !!coverage?.sessions.some(session => session.supported) || (s?.http.requests ?? 0) > 0;
   const count = (value: number | null | undefined) => measured ? number(value) : '—';
+  const compact = (value: number | null | undefined, digits = 2) => typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString(language, { notation: 'compact', maximumFractionDigits: digits }) : '—';
   const coverageLabel = unsupported ? text.unsupported : incomplete ? text.incomplete : collecting ? text.collecting : text.inactive;
   const gapReason = (reason: string) => ({ journal_retention: text.gapRetention, missing_sequence: text.gapSequence, invalid_metadata: text.gapInvalid })[reason] ?? text.unknown;
-  const tile = (label: string, value: string, detail?: string) => <div className="api-usage-tile"><span>{label}</span><strong>{value}</strong>{detail && <small>{detail}</small>}</div>;
+  const tile = (label: string, value: string, detail?: string, values?: (number | null)[], color: ChartColor = 'accent') => <div className={`api-usage-tile api-usage-kpi-${color}`}><span>{label}</span><strong data-tooltip={value}>{value}</strong>{detail && <small>{detail}</small>}{values && <UsageSparkline values={values} color={color}/>}</div>;
+  const buckets = snapshot?.trends.buckets ?? [];
+  const cumulative = (key: keyof ApiTrendBucket) => {
+    let total = 0;
+    return buckets.map(bucket => { const value = bucketMetric(bucket, key); if (value === null) return null; total += value; return total; });
+  };
+  const chartScope = snapshot && s ? { range: { startMs: s.startMs, endMs: s.endMs }, inspectedAt, onInspect: setInspectedAt } : {};
+  const meanSpeed = s?.decodeTokS.mean ?? (() => { const samples = buckets.reduce((total, bucket) => total + (bucket.decodeTokS == null ? 0 : bucket.decodeSamples), 0); return samples ? buckets.reduce((total, bucket) => total + (bucket.decodeTokS ?? 0) * bucket.decodeSamples, 0) / samples : null; })();
   const distributions = s ? [{ title: text.ttft, distribution: s.ttftS, format: seconds }, { title: text.duration, distribution: s.durationS, format: seconds }, { title: text.prefill, distribution: s.prefillTokS ?? { samples: 0, p50: null, p95: null }, format: speed }, { title: text.speed, distribution: s.decodeTokS, format: speed }] : [];
   const sampleMetrics: { label: string; total: number; key: keyof ApiTrendBucket }[] = s ? [
     { label: text.input, total: s.http.inputTokenSamples, key: 'inputTokenSamples' },
@@ -88,38 +110,42 @@ export function ApiUsagePage({ language, profileId, desktop, onQuery, onOpenDiag
   ] : [];
 
   return <div className="api-usage-page">
-    <div className="api-usage-toolbar"><p>{text.intro}</p><div className="api-usage-toolbar-actions"><Segmented ariaLabel={text.period} value={period} options={[{ value: 'today', label: text.today }, { value: 'day', label: text.day }, { value: 'week', label: text.week }, { value: 'history', label: text.history }]} onValueChange={value => setPeriod(value as Period)}/><button type="button" disabled={!desktop || loading} onClick={() => setRefresh(value => value + 1)} aria-label={text.refresh}>{loading ? <LoaderCircle size={15} className="spin"/> : <RefreshCw size={15}/>}{text.refresh}</button></div></div>
+    <div className="api-usage-toolbar"><div className="api-usage-heading"><Activity size={18}/><strong>{text.dashboard}</strong><span>{profileName ?? (profileId ? profileId : text.allServices)}</span></div><div className="api-usage-toolbar-actions"><Dropdown ariaLabel={text.period} value={period} options={(['hour', 'today', 'day', 'threeDays', 'week', 'history'] as const).map(value => ({ value, label: text[value] }))} onValueChange={value => setPeriod(value as Period)}/><Dropdown ariaLabel={text.autoRefresh} value={String(refreshSeconds)} options={[5, 15, 30, 0].map(value => ({ value: String(value), label: value ? text.refreshEvery.replace('{{seconds}}', String(value)) : text.paused }))} onValueChange={value => setRefreshSeconds(Number(value))}/><button type="button" disabled={!desktop || loading} onClick={() => setRefresh(value => value + 1)} aria-label={text.refresh}>{loading ? <LoaderCircle size={15} className="spin"/> : <RefreshCw size={15}/>}{text.refresh}</button></div></div>
     {!desktop ? <Empty title={text.title} hint={text.nativeRequired}/> : <>
       {error && <div className="notice error" role="alert">{snapshot && <p>{text.stale}</p>}{error}</div>}
       {!snapshot && loading && <div className="api-usage-loading" role="status"><LoaderCircle size={19} className="spin"/>{text.loading}</div>}
       {snapshot && s && <>
-        <div className="api-usage-range"><span>{text.range}: {date(s.startMs)} — {date(s.endMs)}</span><span>{text.lastUpdate}: {date(snapshot.fetchedAtMs, true)}</span>{coverage && !unsupported && !incomplete && <span>{collecting ? text.collectingShort : text.inactiveShort}</span>}</div>
+        <div className="api-usage-range"><span>{date(s.startMs)} — {date(s.endMs)}</span><div><span>{text.lastUpdate}: {date(snapshot.fetchedAtMs, true)}</span>{coverage && !unsupported && !incomplete && <span className={`api-usage-collection ${collecting ? 'active' : ''}`}>{collecting ? text.collectingShort : text.inactiveShort}</span>}{refreshSeconds === 0 && <span>{text.paused}</span>}</div></div>
         {(unsupported || incomplete) ? <p className="notice" role="status"><AlertTriangle size={16}/> {coverageLabel}</p> : !measured && <p className="notice" role="status">{text.noDataHint}</p>}
         <div className="api-usage-totals">
-          {tile(text.requests, count(s.http.requests), `${text.pending} ${count(s.http.pending)} · ${text.runs} ${count(s.inference.runs)}`)}
-          {tile(text.successRate, s.http.successRate == null ? '—' : `${number(s.http.successRate * 100, 1)}%`, `${text.failed} ${number(s.http.failed)} · ${text.cancelled} ${number(s.http.cancelled)} · ${text.interrupted} ${number(s.http.interrupted)}`)}
-          {tile(text.input, number(s.http.inputTokens))}
-          {tile(text.output, number(s.http.outputTokens))}
+          {tile(text.requests, measured ? compact(s.http.requests) : '—', `${text.pending} ${count(s.http.pending)}`, cumulative('requests'))}
+          {tile(text.prefixCache, percentage(s.inference.cacheHitRate), `${text.expertCache} ${percentage(s.inference.expertCacheHitRate)}`, buckets.map(bucket => bucket.cacheHitRate))}
+          {tile(text.output, compact(s.http.outputTokens), `${text.input} ${compact(s.http.inputTokens)}`, cumulative('outputTokens'), 'blue')}
+          <div className="api-usage-tile api-usage-input-split"><span>{text.inferenceInput}</span><div><div><small>{text.recomputed}</small><strong data-tooltip={number(s.inference.prefillTokens)}>{compact(s.inference.prefillTokens, 1)}</strong></div><div><small>{text.reused}</small><strong data-tooltip={number(s.inference.cacheReadTokens)}>{compact(s.inference.cacheReadTokens, 1)}</strong></div></div><small>{text.runs} {count(s.inference.runs)}</small></div>
+          <div className="api-usage-tile api-usage-speed-summary"><span>{text.speedDistribution}</span><div>{[{ label: text.mean, value: meanSpeed, color: 'accent' }, { label: text.p50, value: s.decodeTokS.p50, color: 'gold' }, { label: text.p20, value: s.decodeTokS.p20, color: 'blue' }].map(item => <div key={item.label} className={`api-usage-kpi-${item.color}`}><small>{item.label}</small><strong>{number(item.value, 2)}<em>tok/s</em></strong></div>)}</div><small>{text.speedSamples.replace('{{count}}', number(s.decodeTokS.samples))}</small><UsageSparkline values={buckets.map(bucket => bucket.decodeTokS)}/></div>
         </div>
+        <div className="api-usage-reliability" aria-label={text.reliability}><strong>{text.successRate} <span>{percentage(s.http.successRate)}</span></strong><span>{text.succeeded} <b>{count(s.http.succeeded)}</b></span><span className={s.http.failed ? 'has-failures' : ''}>{text.failed} <b>{count(s.http.failed)}</b></span><span>{text.cancelled} <b>{count(s.http.cancelled)}</b></span><span className={s.http.interrupted ? 'has-failures' : ''}>{text.interrupted} <b>{count(s.http.interrupted)}</b></span><span>{text.runs} <b>{count(s.inference.runs)}</b></span></div>
         <div className="api-usage-charts" key={period}>
-          <Panel title={text.trend} className="api-usage-panel"><UsageChart trends={snapshot.trends} language={language} title={text.trend} mode="stack" series={[{key:'succeeded',label:text.succeeded,color:'accent'},{key:'failed',label:text.failed,color:'danger'},{key:'cancelled',label:text.cancelled,color:'gold'},{key:'interrupted',label:text.interrupted,color:'violet'},{key:'pending',label:text.pending,color:'muted'}]}/></Panel>
-          <Panel title={text.tokenTrend} className="api-usage-panel"><UsageChart trends={snapshot.trends} language={language} title={text.tokenTrend} series={[{key:'inputTokens',label:text.input,color:'blue',samples:'inputTokenSamples'},{key:'outputTokens',label:text.output,color:'accent',samples:'outputTokenSamples'}]}/></Panel>
-          <Panel title={text.cacheTrend} className="api-usage-panel"><UsageChart trends={snapshot.trends} language={language} title={text.cacheTrend} percentage series={[{key:'cacheHitRate',label:text.cacheRate,color:'accent',samples:'cacheRateSamples'},{key:'expertCacheHitRate',label:text.expertCache,color:'blue',samples:'expertCacheSamples'}]}/></Panel>
-          <Panel title={text.latencyTrend} className="api-usage-panel"><UsageChart trends={snapshot.trends} language={language} title={text.latencyTrend} unit={text.seconds} series={[{key:'firstTokenS',label:text.ttft,color:'blue',samples:'firstTokenSamples'},{key:'durationS',label:text.duration,color:'gold',samples:'durationSamples'}]}/></Panel>
-          <Panel title={text.prefillTrend} className="api-usage-panel"><UsageChart trends={snapshot.trends} language={language} title={text.prefillTrend} unit="tok/s" series={[{key:'prefillTokS',label:text.prefill,color:'blue',samples:'prefillSamples'}]}/></Panel>
-          <Panel title={text.decodeTrend} className="api-usage-panel"><UsageChart trends={snapshot.trends} language={language} title={text.decodeTrend} unit="tok/s" series={[{key:'decodeTokS',label:text.speed,color:'accent',samples:'decodeSamples'}]}/></Panel>
+          <Panel title={`${text.requestRate} (${text.perMinute})`} className="api-usage-panel"><UsageChart {...chartScope} trends={snapshot.trends} language={language} title={text.requestRate} unit={text.perMinute} mode="stack" series={[{key:'succeeded',label:text.succeeded,color:'accent',scale:60000/snapshot.trends.bucketMs},{key:'failed',label:text.failed,color:'danger',scale:60000/snapshot.trends.bucketMs},{key:'cancelled',label:text.cancelled,color:'gold',scale:60000/snapshot.trends.bucketMs},{key:'interrupted',label:text.interrupted,color:'violet',scale:60000/snapshot.trends.bucketMs},{key:'pending',label:text.pending,color:'muted',scale:60000/snapshot.trends.bucketMs}]}/></Panel>
+          <Panel title={text.decodeTrend} className="api-usage-panel"><UsageChart {...chartScope} trends={snapshot.trends} language={language} title={text.decodeTrend} unit="tok/s" series={[{key:'decodeTokS',label:text.speed,color:'accent',samples:'decodeSamples'}]}/></Panel>
+          <Panel title={text.latencyTrend} className="api-usage-panel"><UsageChart {...chartScope} trends={snapshot.trends} language={language} title={text.latencyTrend} unit={text.seconds} series={[{key:'firstTokenS',label:text.ttft,color:'blue',samples:'firstTokenSamples'},{key:'durationS',label:text.duration,color:'gold',samples:'durationSamples'}]}/></Panel>
+          <Panel title={text.tokenTrend} className="api-usage-panel"><UsageChart {...chartScope} trends={snapshot.trends} language={language} title={text.tokenTrend} series={[{key:'inputTokens',label:text.input,color:'blue',samples:'inputTokenSamples'},{key:'outputTokens',label:text.output,color:'accent',samples:'outputTokenSamples'}]}/></Panel>
+          <Panel title={text.cacheTrend} className="api-usage-panel"><UsageChart {...chartScope} trends={snapshot.trends} language={language} title={text.cacheTrend} percentage series={[{key:'cacheHitRate',label:text.cacheRate,color:'accent',samples:'cacheRateSamples'},{key:'expertCacheHitRate',label:text.expertCache,color:'blue',samples:'expertCacheSamples'}]}/></Panel>
+          <Panel title={text.prefillTrend} className="api-usage-panel"><UsageChart {...chartScope} trends={snapshot.trends} language={language} title={text.prefillTrend} unit="tok/s" series={[{key:'prefillTokS',label:text.prefill,color:'blue',samples:'prefillSamples'}]}/></Panel>
         </div>
           <Panel title={text.latency} className="api-usage-panel api-usage-latency-summary"><div className="api-usage-latencies">
             {distributions.map(item => <div key={item.title}><span>{item.title}</span><dl><div><dt>{text.p50}</dt><dd>{item.format(item.distribution.p50)}</dd></div><div><dt>{text.p95}</dt><dd>{item.format(item.distribution.p95)}</dd></div></dl></div>)}
           </div></Panel>
-        <div className="api-usage-workload">
-          {tile(text.expertCache, percentage(s.inference.expertCacheHitRate))}{tile(text.cacheRate, percentage(s.inference.cacheHitRate))}{tile(text.cached, count(s.inference.cacheReadTokens))}{tile(text.runs, count(s.inference.runs))}{tile(text.tools, count(s.inference.toolCalls))}{tile(text.mcp, count(s.http.mcpToolCalls))}
+        {live && <ApiUsageLive {...live} language={language} serviceId={profileId}/>}
+        <details className="api-usage-explanation api-usage-sources"><summary>{text.sourceDetails}</summary><div className="api-usage-workload">
+          {tile(text.tools, count(s.inference.toolCalls))}{tile(text.mcp, count(s.http.mcpToolCalls))}{tile(text.mcpFailures, count(s.http.mcpToolFailures))}
         </div>
         <Panel title={text.sources} className="api-usage-panel"><div className="api-usage-table-scroll"><table><thead><tr><th>{text.route}</th><th>{text.client}</th><th>{text.requestsCount}</th><th>{text.succeeded}</th></tr></thead><tbody>{s.groups.map(group => <tr key={JSON.stringify([group.route, group.clientId])}><td>{route(group.route)}</td><td>{group.clientId == null ? text.unknownClient : group.clientId}</td><td>{number(group.requests)}</td><td>{number(group.succeeded)}</td></tr>)}</tbody></table></div>{!s.groups.length && <p className="api-usage-table-empty">{text.noRequests}</p>}</Panel>
-        <RequestHistory key={`${profileId ?? ''}:${period}`} language={language} profileId={profileId} period={period} onQuery={onQuery}/>
+        </details>
+        <details className="api-usage-explanation api-usage-history"><summary>{text.requestDetails}</summary><RequestHistory key={`${profileId ?? ''}:${period}`} language={language} profileId={profileId} period={period} onQuery={onQuery}/></details>
         <details className="api-usage-explanation"><summary>{text.statisticsNotes}</summary>
           <Panel title={text.definitions} className="api-usage-panel">
-            {[text.persistence, text.successHint, text.usageHint, text.resultTrendHint, text.tokenTrendHint, text.cacheTrendHint, text.averageTrendHint, text.engineTrendHint, text.distributionHint, text.workHint, text.missingValue, text.sourceHint, text.tokenCountHint, `${text.historyFilterHint} ${text.customTimeHint}`, text.snapshotHint, text.exportHint, `${text.chartInteraction} ${text.chartMissingHint}`].map(note => <p className="api-usage-footnote" key={note}>{note}</p>)}
+            {[text.persistence, text.successHint, text.usageHint, text.rateNotes, text.inputSplitNotes, text.distributionNotes, text.resultTrendHint, text.tokenTrendHint, text.cacheTrendHint, text.averageTrendHint, text.engineTrendHint, text.distributionHint, text.workHint, text.missingValue, text.sourceHint, text.tokenCountHint, `${text.historyFilterHint} ${text.customTimeHint}`, text.snapshotHint, text.exportHint, `${text.chartInteraction} ${text.chartMissingHint}`].map(note => <p className="api-usage-footnote" key={note}>{note}</p>)}
             <p className="api-usage-footnote">{text.mcpFailures}: {count(s.http.mcpToolFailures)}</p>
           </Panel>
           <Panel title={text.sampleTotals} className="api-usage-panel"><p className="api-usage-footnote">{text.sampleUnitHint}</p><div className="api-usage-table-scroll"><table><thead><tr><th>{text.metric}</th><th>{text.samples}</th></tr></thead><tbody>{sampleMetrics.map(metric => <tr key={metric.key}><td>{metric.label}</td><td>{number(metric.total)}</td></tr>)}</tbody></table></div></Panel>
@@ -240,8 +266,8 @@ function RequestHistory({ language, profileId, period, onQuery }: { language: 'z
       <MetadataFilter label={text.model} allLabel={text.allModels} unknownLabel={text.unknownModel} unknown={labels?.unknownModel ?? false} labels={labels?.models ?? []} value={draft.model} onChange={value => update('model', value)} disabled={exporting}/>
       <label><span>{text.result}</span><Dropdown ariaLabel={text.result} value={draft.outcome} onValueChange={value => update('outcome', value as ApiOutcome | '')} disabled={exporting} options={[{ value: '', label: text.allOutcomes }, ...(['pending', 'succeeded', 'failed', 'cancelled', 'interrupted'] as const).map(value => ({ value, label: outcome(value) }))]}/></label>
       <label><span>{text.sort}</span><Dropdown ariaLabel={text.sort} value={draft.sort} onValueChange={value => update('sort', value as 'newest' | 'oldest')} disabled={exporting} options={[{ value: 'newest', label: text.newest }, { value: 'oldest', label: text.oldest }]}/></label>
-      <label><span>{text.filterFrom}</span><input aria-label={text.filterFrom} type="text" placeholder="YYYY-MM-DD HH:mm" title={text.timeFormat} value={draft.from} disabled={exporting} onChange={event => update('from', event.target.value)}/></label>
-      <label><span>{text.filterTo}</span><input aria-label={text.filterTo} type="text" placeholder="YYYY-MM-DD HH:mm" title={text.timeFormat} value={draft.to} disabled={exporting} onChange={event => update('to', event.target.value)}/></label>
+      <label><span>{text.filterFrom}</span><input aria-label={text.filterFrom} type="text" placeholder="YYYY-MM-DD HH:mm" data-tooltip={text.timeFormat} value={draft.from} disabled={exporting} onChange={event => update('from', event.target.value)}/></label>
+      <label><span>{text.filterTo}</span><input aria-label={text.filterTo} type="text" placeholder="YYYY-MM-DD HH:mm" data-tooltip={text.timeFormat} value={draft.to} disabled={exporting} onChange={event => update('to', event.target.value)}/></label>
       <div className="api-request-filter-actions"><button type="submit" className="primary" disabled={loading || exporting}>{text.applyFilters}</button><button type="button" onClick={reset} disabled={loading || exporting}>{text.resetFilters}</button></div>
     </form>
     {labels?.truncated && <p className="api-usage-footnote">{text.optionsLimited}</p>}
@@ -250,81 +276,9 @@ function RequestHistory({ language, profileId, period, onQuery }: { language: 'z
     <p className="api-usage-footnote api-request-range">{text.range}: {time(selection.startMs!)} — {time(selection.endMs!)}</p>
     {loading && <div className="api-request-loading" role="status"><LoaderCircle size={16} className="spin"/>{text.historyLoading}</div>}
     {!loading && page && <>
-      <div className="api-usage-table-scroll" tabIndex={0} aria-label={text.requestHistory}><table className="api-usage-recent"><thead><tr><th>{text.time}</th><th>{text.model}</th><th>{text.client}</th><th>{text.route}</th><th>{text.result}</th><th>{text.http}</th><th>{text.stream}</th><th>{text.input} / {text.output}</th><th>{text.ttft}</th><th>{text.duration}</th><th>{text.cacheRate}</th><th>{text.expertCache}</th><th>{text.prefill}</th><th>{text.speed}</th><th>{text.runs}</th></tr></thead><tbody>{page.items.map(request => <tr key={request.requestId} title={`${text.requestId}: ${request.requestId}`}><td>{time(request.startedAtMs)}</td><td>{request.modelId ?? text.unknownModel}</td><td>{request.clientId ?? text.unknownClient}</td><td>{route(request.route)}</td><td><span className={`api-usage-outcome ${request.outcome}`}>{outcome(request.outcome)}</span></td><td>{number(request.httpStatus)}</td><td>{request.stream == null ? '—' : request.stream ? text.yes : text.no}</td><td>{number(request.inputTokens)} / {number(request.outputTokens)}</td><td>{seconds(request.firstTokenS)}</td><td>{seconds(request.durationS)}</td><td>{request.cacheHitRate == null ? '—' : `${number(request.cacheHitRate * 100, 1)}%`}</td><td>{request.expertCacheHitRate == null ? '—' : `${number(request.expertCacheHitRate * 100, 1)}%`}</td><td>{request.prefillTokS == null ? '—' : `${number(request.prefillTokS, 1)} tok/s`}</td><td>{request.decodeTokS == null ? '—' : `${number(request.decodeTokS, 1)} tok/s`}</td><td>{number(request.inferenceRuns)}</td></tr>)}</tbody></table></div>
+      <div className="api-usage-table-scroll" tabIndex={0} aria-label={text.requestHistory}><table className="api-usage-recent"><thead><tr><th>{text.time}</th><th>{text.model}</th><th>{text.client}</th><th>{text.route}</th><th>{text.result}</th><th>{text.http}</th><th>{text.stream}</th><th>{text.input} / {text.output}</th><th>{text.ttft}</th><th>{text.duration}</th><th>{text.cacheRate}</th><th>{text.expertCache}</th><th>{text.prefill}</th><th>{text.speed}</th><th>{text.runs}</th></tr></thead><tbody>{page.items.map(request => <tr key={request.requestId} data-tooltip={`${text.requestId}: ${request.requestId}`}><td>{time(request.startedAtMs)}</td><td>{request.modelId ?? text.unknownModel}</td><td>{request.clientId ?? text.unknownClient}</td><td>{route(request.route)}</td><td><span className={`api-usage-outcome ${request.outcome}`}>{outcome(request.outcome)}</span></td><td>{number(request.httpStatus)}</td><td>{request.stream == null ? '—' : request.stream ? text.yes : text.no}</td><td>{number(request.inputTokens)} / {number(request.outputTokens)}</td><td>{seconds(request.firstTokenS)}</td><td>{seconds(request.durationS)}</td><td>{request.cacheHitRate == null ? '—' : `${number(request.cacheHitRate * 100, 1)}%`}</td><td>{request.expertCacheHitRate == null ? '—' : `${number(request.expertCacheHitRate * 100, 1)}%`}</td><td>{request.prefillTokS == null ? '—' : `${number(request.prefillTokS, 1)} tok/s`}</td><td>{request.decodeTokS == null ? '—' : `${number(request.decodeTokS, 1)} tok/s`}</td><td>{number(request.inferenceRuns)}</td></tr>)}</tbody></table></div>
       {!page.items.length && <div className="api-usage-table-empty"><p>{text.historyEmpty}</p><small>{text.noRequestsHint}</small></div>}
     </>}
     <div className="api-request-pagination"><span role="status">{text.page.replace('{{page}}', (pageIndex + 1).toLocaleString(language)).replace('{{count}}', (page?.items.length ?? 0).toLocaleString(language))}</span><div><button type="button" disabled={loading || exporting || !pageIndex} onClick={() => setPageIndex(previous => previous - 1)}><ChevronLeft size={15}/>{text.previousPage}</button><button type="button" disabled={loading || exporting || !page?.nextCursor} onClick={next}>{text.nextPage}<ChevronRight size={15}/></button><button type="button" disabled={loading || exporting || !page?.items.length} onClick={() => void exportCsv()}>{exporting ? <LoaderCircle size={14} className="spin"/> : <Download size={14}/>} {exporting ? text.exporting : text.exportCsv}</button></div></div>
   </Panel>;
-}
-
-type ChartColor = 'accent' | 'blue' | 'gold' | 'danger' | 'violet' | 'muted';
-interface ChartSeries { key: keyof ApiTrendBucket; label: string; color: ChartColor; samples?: keyof ApiTrendBucket }
-const knownMetric = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
-const bucketMetric = (bucket: ApiTrendBucket, key: keyof ApiTrendBucket) => { const value = bucket[key]; return knownMetric(value) ? value : null; };
-
-function UsageChart({ trends, language, title, series, mode = 'line', percentage = false, unit = '' }: {
-  trends: ApiUsageTrends; language: 'zh-CN' | 'en'; title: string; series: ChartSeries[];
-  mode?: 'line' | 'stack'; percentage?: boolean; unit?: string;
-}) {
-  const text = apiUsageStrings[language];
-  const [inspected, setInspected] = useState<number | null>(null);
-  const buckets = trends.buckets;
-  const daily = trends.bucketMs >= 86_400_000;
-  const time = (value: number) => new Date(value).toLocaleString(language, daily ? { month: '2-digit', day: '2-digit' } : { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-  const format = (value: unknown) => !knownMetric(value) ? '—' : percentage ? `${(value * 100).toLocaleString(language, { maximumFractionDigits: 1 })}%` : `${value.toLocaleString(language, { maximumFractionDigits: unit ? 1 : 0 })}${unit ? ` ${unit}` : ''}`;
-  const sum = (bucket: ApiTrendBucket) => series.reduce((total, item) => total + (bucketMetric(bucket, item.key) ?? 0), 0);
-  const hasData = mode === 'stack' ? buckets.some(bucket => sum(bucket) > 0) : buckets.some(bucket => series.some(item => knownMetric(bucket[item.key])));
-  const fallback = buckets.reduce((last, bucket, index) => (mode === 'stack' ? sum(bucket) > 0 : series.some(item => knownMetric(bucket[item.key]))) ? index : last, -1);
-  const selectedIndex = inspected === null ? fallback : Math.min(buckets.length - 1, inspected);
-  const selected = buckets[selectedIndex];
-  const rawMax = mode === 'stack' ? Math.max(1, ...buckets.map(sum)) : Math.max(1, ...buckets.flatMap(bucket => series.map(item => bucketMetric(bucket, item.key) ?? 0)));
-  const magnitude = 10 ** Math.floor(Math.log10(rawMax));
-  const maximum = percentage ? 1 : Math.ceil(rawMax / magnitude) * magnitude;
-  const left = 48, top = 14, width = 536, height = 154, bottom = top + height;
-  const x = (index: number) => left + (index + 0.5) / Math.max(1, buckets.length) * width;
-  const y = (value: number) => bottom - Math.min(maximum, value) / maximum * height;
-  const axis = (value: number) => percentage ? `${Math.round(value * 100)}%` : value.toLocaleString(language, { notation: 'compact', maximumFractionDigits: 1 });
-  const path = (key: keyof ApiTrendBucket) => {
-    let drawing = false, result = '';
-    buckets.forEach((bucket, index) => {
-      const value = bucket[key];
-      if (!knownMetric(value)) { drawing = false; return; }
-      result += `${drawing ? 'L' : 'M'}${x(index).toFixed(2)},${y(value).toFixed(2)} `;
-      drawing = true;
-    });
-    return result;
-  };
-  const inspect = (clientX: number, element: HTMLElement) => {
-    const bounds = element.getBoundingClientRect();
-    const position = ((clientX - bounds.left) / bounds.width * 600 - left) / width;
-    setInspected(Math.max(0, Math.min(buckets.length - 1, Math.floor(position * buckets.length))));
-  };
-  const description = selected ? `${title}; ${time(selected.startMs)}; ${series.map(item => `${item.label}: ${format(selected[item.key])}${item.samples ? ` (${text.samples}: ${bucketMetric(selected, item.samples)?.toLocaleString(language) ?? '—'})` : ''}`).join('; ')}` : `${title}; ${text.chartNoSamples}`;
-
-  return <div className="api-metric-chart">
-    <div className="api-metric-chart-meta"><span>{daily ? text.chartDaily : text.chartHourly}</span><span>{selected ? `${text.chartBucket}: ${time(selected.startMs)}` : text.chartNoSamples}</span></div>
-    {hasData ? <div className="api-metric-chart-interaction" tabIndex={0} role="group" aria-label={description} onPointerMove={event => inspect(event.clientX, event.currentTarget)} onClick={event => inspect(event.clientX, event.currentTarget)} onKeyDown={event => {
-      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-      event.preventDefault();
-      const current = selectedIndex < 0 ? 0 : selectedIndex;
-      setInspected(event.key === 'Home' ? 0 : event.key === 'End' ? buckets.length - 1 : Math.max(0, Math.min(buckets.length - 1, current + (event.key === 'ArrowLeft' ? -1 : 1))));
-    }}>
-      <svg viewBox="0 0 600 194" role="img" aria-label={description}>
-        {[0, 0.25, 0.5, 0.75, 1].map(fraction => <g key={fraction} className="api-metric-grid"><line x1={left} x2={left + width} y1={y(maximum * fraction)} y2={y(maximum * fraction)}/><text x={left - 8} y={y(maximum * fraction) + 4} textAnchor="end">{axis(maximum * fraction)}</text></g>)}
-        {mode === 'stack' ? buckets.map((bucket, index) => {
-          let offset = 0;
-          const barWidth = Math.max(1, width / buckets.length * 0.62);
-          return <g key={bucket.startMs}>{series.map(item => {
-            const value = bucketMetric(bucket, item.key) ?? 0;
-            const start = offset; offset += value;
-            return value > 0 ? <rect key={item.key} className={`api-chart-color-${item.color}`} x={x(index) - barWidth / 2} y={y(offset)} width={barWidth} height={Math.max(0, y(start) - y(offset))}/> : null;
-          })}</g>;
-        }) : series.map(item => <g key={item.key} className={`api-chart-color-${item.color}`}><path className="api-metric-line" d={path(item.key)}/>{buckets.map((bucket, index) => { const value = bucketMetric(bucket, item.key); return value === null ? null : <circle key={bucket.startMs} cx={x(index)} cy={y(value)} r={index === selectedIndex ? 4 : 2.3}/>; })}</g>)}
-        {selected && <line className="api-metric-cursor" x1={x(selectedIndex)} x2={x(selectedIndex)} y1={top} y2={bottom}/>}
-      </svg>
-    </div> : <div className="api-usage-chart-empty">{mode === 'stack' ? text.noRequests : text.chartNoSamples}</div>}
-    <div className="api-usage-trend-axis"><span>{buckets[0] ? time(buckets[0].startMs) : '—'}</span><span>{buckets.at(-1) ? time(buckets.at(-1)!.startMs) : '—'}</span></div>
-    <div className="api-metric-legend">{series.map(item => <div key={item.key}><span className={`api-metric-key api-chart-color-${item.color}`}/><span>{item.label}</span><strong>{selected ? format(selected[item.key]) : '—'}</strong></div>)}</div>
-    {mode === 'stack' && <div className="api-metric-total">{text.chartTotal}: {buckets.reduce((total, bucket) => total + bucket.requests, 0).toLocaleString(language)}</div>}
-  </div>;
 }

@@ -31,7 +31,7 @@ function OptionContent({ option, language, modifiedLabel }: { option: ModelConfi
   const lastActivated = language === 'zh-CN' ? '上次启用' : 'Last activated';
   const pathTitle = option.sourcePath && option.sourcePath !== option.filePath ? `${option.filePath}\n${language === 'zh-CN' ? '来源' : 'Source'}: ${option.sourcePath}` : option.filePath;
   return <span className="model-configuration-copy">
-    <span className="model-configuration-name"><strong title={pathTitle}>{option.name}</strong>{option.stateLabel && <em className={`model-configuration-state ${option.state ?? ''}`}>{option.stateLabel}</em>}</span>
+    <span className="model-configuration-name"><strong data-tooltip={pathTitle}>{option.name}</strong>{option.stateLabel && <em className={`model-configuration-state ${option.state ?? ''}`}>{option.stateLabel}</em>}</span>
     {option.summary && <span className="model-configuration-summary">{option.summary}</span>}
     <span className="model-configuration-times">{hasDate && <time dateTime={new Date(option.modifiedAt!).toISOString()}>{modifiedLabel} · {new Date(option.modifiedAt!).toLocaleString(language)}</time>}{hasActivation ? <time dateTime={new Date(option.lastActivatedAt!).toISOString()}>{lastActivated} · {new Date(option.lastActivatedAt!).toLocaleString(language)}</time> : <span>{lastActivated} · {language === 'zh-CN' ? '未记录' : 'Not recorded'}</span>}</span>
   </span>;
@@ -101,7 +101,7 @@ export function ModelConfigurationDropdown({ value, options, language, ariaLabel
         <button type="button" className={`model-configuration-option${index === active ? ' is-active' : ''}`} role="option" aria-selected={option.value === value} id={`${id}-option-${index}`} tabIndex={-1} data-index={index} onMouseDown={event => event.preventDefault()} onClick={() => choose(index)}>
           <OptionContent option={option} language={language} modifiedLabel={modifiedLabel}/><span className="model-configuration-selected">{option.value === value && <Check size={16}/>}</span>
         </button>
-        {onDelete && <button type="button" className="model-configuration-delete" aria-label={`${language === 'zh-CN' ? '删除配置文件' : 'Delete configuration file'} ${option.name}`} title={language === 'zh-CN' ? '删除配置文件' : 'Delete configuration file'} data-delete-index={index} tabIndex={index === active ? 0 : -1} disabled={disabled} onPointerDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); remove(index); }} onKeyDown={event => { if (event.key === 'Tab') { if (event.shiftKey) { event.preventDefault(); trigger.current?.focus(); } else close(true); } }}><Trash2 size={15}/></button>}
+        {onDelete && <button type="button" className="model-configuration-delete" aria-label={`${language === 'zh-CN' ? '删除配置文件' : 'Delete configuration file'} ${option.name}`} data-tooltip={language === 'zh-CN' ? '删除配置文件' : 'Delete configuration file'} data-delete-index={index} tabIndex={index === active ? 0 : -1} disabled={disabled} onPointerDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); remove(index); }} onKeyDown={event => { if (event.key === 'Tab') { if (event.shiftKey) { event.preventDefault(); trigger.current?.focus(); } else close(true); } }}><Trash2 size={15}/></button>}
       </div>)}
     </div>, document.body)}
   </div>;

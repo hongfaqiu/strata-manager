@@ -50,8 +50,8 @@ export function DesktopLifecycleSettings({ section = 'all', currentVersion = des
     catch (error) { onError(error); }
     finally { setSaving(false); }
   };
-  const row = (title: string, hint: string, checked: boolean, disabled: boolean, change: (checked: boolean) => void, attention = false) => <div className="setting-toggle"><span><strong title={hint}>{title}</strong>{attention && <small role="status">{hint}</small>}</span><Toggle ariaLabel={title} checked={checked} disabled={disabled || saving} onCheckedChange={change}/></div>;
-  const helpAction = (section: 'background' | 'updates', title: string) => <button type="button" className="st-btn st-btn--icon" aria-label={title} title={title} onClick={() => setHelp(section)}><CircleHelp size={16}/></button>;
+  const row = (title: string, hint: string, checked: boolean, disabled: boolean, change: (checked: boolean) => void, attention = false) => <div className="setting-toggle"><span><strong data-tooltip={hint}>{title}</strong>{attention && <small role="status">{hint}</small>}</span><Toggle ariaLabel={title} checked={checked} disabled={disabled || saving} onCheckedChange={change}/></div>;
+  const helpAction = (section: 'background' | 'updates', title: string) => <button type="button" className="st-btn st-btn--icon" aria-label={title} data-tooltip={title} onClick={() => setHelp(section)}><CircleHelp size={16}/></button>;
   const phaseKey = { checking: 'checkingUpdates', current: 'noAppUpdates', available: 'updateAvailable', downloading: 'downloadingAppUpdate', downloaded: 'downloadedAppUpdate', installing: 'installingAppUpdate', installed: 'restartForUpdate' };
   const downloading = update.phase === 'downloading' || update.phase === 'installing';
   const formatBytes = (value: number) => `${(value / 1024 ** 2).toFixed(1)} MiB`;
@@ -70,7 +70,7 @@ export function DesktopLifecycleSettings({ section = 'all', currentVersion = des
       {row(t('prepareAtStartup'), t('prepareAtStartupHint'), policy.data?.mode === 'alwaysReady', !desktop || !policy.data, enabled => void mutate(() => core.setBackgroundPolicy(enabled ? 'alwaysReady' : 'lazy', policy.data!.autoRecover, idleMinutes)))}
       {row(t('recoverService'), t('recoverServiceHint'), policy.data?.autoRecover === true, !desktop || !policy.data, enabled => void mutate(() => core.setBackgroundPolicy(policy.data!.mode, enabled, idleMinutes)))}
       <div className="setting-toggle">
-        <span style={{ minWidth: 0 }}><strong title={t('idleModelReleaseHint')}>{t('idleModelRelease')}</strong>{idleHint && <small role="status">{idleHint}</small>}</span>
+        <span style={{ minWidth: 0 }}><strong data-tooltip={t('idleModelReleaseHint')}>{t('idleModelRelease')}</strong>{idleHint && <small role="status">{idleHint}</small>}</span>
         <div style={{ width: 180, maxWidth: '50%', flexShrink: 0 }}><Dropdown ariaLabel={t('idleModelRelease')} value={String(idleMinutes)} options={idlePeriods.map(value => ({ value: String(value), label: value === 0 ? t('idleModelReleaseOff') : t('idleModelReleaseMinutes', { count: value }) }))} disabled={!desktop || !idleSupported || policy.data?.mode !== 'lazy' || saving} onValueChange={value => { if (Number(value) !== idleMinutes) void mutate(() => core.setBackgroundPolicy(policy.data!.mode, policy.data!.autoRecover, Number(value))); }}/></div>
       </div>
       {backend.data?.updatePending && <div className="notice" role="status">{t('backendUpdatePending')}: {backend.data.updateReason}</div>}

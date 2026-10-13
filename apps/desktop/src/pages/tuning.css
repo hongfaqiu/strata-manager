@@ -6,8 +6,7 @@
 .tuning-heading h2{display:flex;align-items:center;gap:8px;font-size:18px}
 .tuning-main-fields{display:grid;grid-template-columns:minmax(170px,1.3fr) minmax(240px,1.8fr) minmax(90px,.65fr) minmax(150px,1fr);gap:14px;align-items:end}
 .tuning-field{display:flex;flex-direction:column;gap:7px;min-width:0;font-size:12px;color:var(--st-ink-soft)}
-.tuning-mode .seg{grid-template-columns:repeat(2,minmax(0,1fr))}
-.tuning-mode .seg button{white-space:normal;line-height:1.35;height:auto;min-height:32px;padding:5px 8px}
+.tuning-mode .official-segmented>button{white-space:normal;line-height:1.35;height:auto;min-height:32px;padding:5px 8px}
 .tuning-setup-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px}
 .tuning-impact{font-size:12px;line-height:1.6;color:var(--st-ink-muted);margin:0}
 .tuning-page .actions{flex-wrap:wrap;flex-shrink:0}

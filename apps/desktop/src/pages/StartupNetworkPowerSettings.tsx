@@ -35,7 +35,7 @@ export function StartupNetworkPowerSettings({ zh, disabled, fallbackBaseUrl, sho
   const label = (item: StartupFieldSpec) => zh ? item.zh : item.en;
   const heading = (kind: 'network' | 'power', title: string) => <div className="startup-service-heading">
     <h3>{title}</h3>
-    <button type="button" className="setup-tuning-help-button" aria-label={zh ? `${title}帮助` : `${title} help`} aria-haspopup="dialog" aria-expanded={help === kind} title={zh ? '帮助' : 'Help'} onClick={() => setHelp(kind)}><CircleHelp size={16}/></button>
+    <button type="button" className="setup-tuning-help-button" aria-label={zh ? `${title}帮助` : `${title} help`} aria-haspopup="dialog" aria-expanded={help === kind} data-tooltip={zh ? '帮助' : 'Help'} onClick={() => setHelp(kind)}><CircleHelp size={16}/></button>
   </div>;
   const numberInput = (item: StartupFieldSpec, placeholder: string) => <label className="st-field">
     <span className="st-label">{label(item)}</span>

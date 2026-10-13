@@ -5,6 +5,7 @@ import type { BenchmarkReport, BenchmarkSample, BenchmarkScenarioId, BenchmarkSu
 import { Badge, Chart, Dialog, Empty, Field, Header, Metric, Panel } from '../components';
 import { Checkbox, Dropdown, NumberField, Toggle } from '../OfficialControls';
 import './benchmark.css';
+import { BenchmarkComparisonPanel } from './BenchmarkComparisonPanel';
 
 type SavedReport = BenchmarkReport | BenchmarkSuiteReport;
 type Sample = BenchmarkSample | BenchmarkSuiteReport['samples'][number];
@@ -15,7 +16,7 @@ const scenarioIds: BenchmarkScenarioId[] = ['short', 'code', 'long', 'decode', '
 const isObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 const nullableNumber = (value: unknown) => value === null || finite(value);
-const isSuite = (report: SavedReport): report is BenchmarkSuiteReport => 'schemaVersion' in report && report.schemaVersion === 2;
+const isSuite = (report: SavedReport): report is BenchmarkSuiteReport => 'schemaVersion' in report && (report.schemaVersion === 2 || report.schemaVersion === 3);
 const isSuiteSample = (sample: Sample): sample is BenchmarkSuiteReport['samples'][number] => 'scenario' in sample;
 
 /** Preserve old serial reports; reject incomplete and unknown persisted schemas. */
@@ -28,7 +29,7 @@ function storedReport(value: unknown): SavedReport | null {
     && ['promptTokens', 'completionTokens', 'cachedTokens', 'prefillTokS', 'decodeTokS'].every(key => nullableNumber(sample[key]))
     && typeof sample.output === 'string' && (sample.error === undefined || typeof sample.error === 'string');
   if (!value.samples.every(sampleValid) || !finite(value.options.rounds) || !finite(value.options.maxTokens) || !finite(value.options.timeoutMs)) return null;
-  if (value.schemaVersion === 2) {
+  if (value.schemaVersion === 2 || value.schemaVersion === 3) {
     if (!['suite', 'stress'].includes(String(value.options.kind)) || !finite(value.elapsedMs) || !finite(value.measurementElapsedMs)
       || !Array.isArray(value.options.scenarios) || !value.options.scenarios.every(id => scenarioIds.includes(id as BenchmarkScenarioId))
       || !['completed', 'requestLimit', 'duration', 'cancelled', 'error', 'modelChanged'].includes(String(value.stopReason))
@@ -78,6 +79,8 @@ export function ScenarioBenchmarkPage({ profile, online, disabled, language, onR
   const zh = language === 'zh-CN', text = (cn: string, en: string) => zh ? cn : en;
   const [options, setOptions] = useState<BenchmarkSuiteOptions>(() => ({ ...core.DEFAULT_BENCHMARK_SUITE_OPTIONS, kind: 'suite', concurrency: 1, scenarios: [...core.DEFAULT_BENCHMARK_SUITE_OPTIONS.scenarios] }));
   const [history, setHistory] = useState<SavedReport[]>([]), [selected, setSelected] = useState<SavedReport>();
+  const [baseline, setBaseline] = useState<SavedReport>();
+  const [includeContent, setIncludeContent] = useState(false);
   const [samples, setSamples] = useState<Sample[]>([]), [telemetry, setTelemetry] = useState<BenchmarkTelemetry[]>([]);
   const [progress, setProgress] = useState<BenchmarkSuiteProgress>(), [filter, setFilter] = useState('all');
   const [running, setRunning] = useState(false), [loaded, setLoaded] = useState(false);
@@ -86,6 +89,8 @@ export function ScenarioBenchmarkPage({ profile, online, disabled, language, onR
   const controller = useRef<AbortController | null>(null), mounted = useRef(false);
   const lastQuickRunRequest = useRef(0);
   const historyRef = useRef(history); historyRef.current = history;
+  useEffect(() => { let active=true; void core.loadStore<unknown>('benchmarkUpgradeBaseline',null).then(value=>{if(active){const report=storedReport(value);if(report)setBaseline(report);}}).catch(()=>{});return()=>{active=false;}; }, []);
+  const saveBaseline=(report:SavedReport)=>{void core.saveStore('benchmarkUpgradeBaseline',report).then(()=>setBaseline(report)).catch(err=>setError(core.normalizeError(err).message));};
   useEffect(() => {
     let active = true;
     mounted.current = true;
@@ -162,7 +167,8 @@ export function ScenarioBenchmarkPage({ profile, online, disabled, language, onR
   const fields = (key: NumericOption, label: string, min: number, max: number, step = 1, divisor = 1, hint?: string) => <Field label={label} hint={hint}><NumberField aria-label={label} min={min} max={max} step={step} value={options[key] / divisor} disabled={running} onChange={event => update(key, Math.round(Number(event.target.value) * divisor))}/></Field>;
   const exportReport = (format: 'json' | 'csv') => {
     if (!selected) return;
-    saveDownload(`strata-benchmark-${selected.id}.${format}`, format === 'json' ? JSON.stringify({ ...selected, summary }, null, 2) : reportCsv(selected), format === 'json' ? 'application/json;charset=utf-8' : 'text/csv;charset=utf-8');
+    const exported=core.exportBenchmarkReport(selected,includeContent);
+    saveDownload(`strata-benchmark-${selected.id}.${format}`, format === 'json' ? JSON.stringify({ ...exported, summary }, null, 2) : reportCsv(exported), format === 'json' ? 'application/json;charset=utf-8' : 'text/csv;charset=utf-8');
   };
   const compareHeaders = [text('成功 / 失败', 'Completed / failed'), 'TTFT (s)', text('总耗时 (s)', 'Wall time (s)'), 'Prefill (tok/s)', 'Decode (tok/s)', text('缓存命中', 'Cache hit')];
   const compareCells = (value: NonNullable<typeof suiteSummary>) => <><td>{value.completed} / {value.failed}</td><td>{seconds(value.ttftMs.mean)}</td><td>{seconds(value.wallMs.mean)}</td><td>{number(value.prefillTokS)}</td><td>{number(value.decodeTokS)}</td><td>{percent(value.cacheHitRate)}{value.cacheHitRate !== null && '%'}</td></>;
@@ -181,7 +187,7 @@ export function ScenarioBenchmarkPage({ profile, online, disabled, language, onR
       <button type="button" onClick={() => setHelpOpen(true)}><CircleHelp size={15}/>{text('测试说明', 'Test guide')}</button>
     </Header>
     {!profile ? <Empty title={text('请先选择模型', 'Select a model first')}/> : <>
-      <Panel className="benchmark-plan" title={text('测试计划', 'Test plan')} action={<div className="benchmark-service" title={profile.baseUrl}><strong>{profile.name}</strong><Badge tone={online ? 'success' : ''}>{online ? text('模型已就绪', 'Model ready') : text('未启动或模型未就绪', 'Service stopped or model not ready')}</Badge></div>}>
+      <Panel className="benchmark-plan" title={text('测试计划', 'Test plan')} action={<div className="benchmark-service" data-tooltip={profile.baseUrl}><strong>{profile.name}</strong><Badge tone={online ? 'success' : ''}>{online ? text('模型已就绪', 'Model ready') : text('未启动或模型未就绪', 'Service stopped or model not ready')}</Badge></div>}>
         <div className="benchmark-plan-body">
           <div className="benchmark-toolbar">
             <p className="subtle benchmark-mode-hint">{text('按场景逐个发送单请求，观察首 token 延迟、输入处理和输出速度。','Run one request at a time to measure first-token latency, prefill and decode speed.')}</p>
@@ -199,7 +205,7 @@ export function ScenarioBenchmarkPage({ profile, online, disabled, language, onR
             </div>
             <div className="benchmark-scenario-group">
               <div className="benchmark-scenario-heading"><strong>{text('测试场景','Scenarios')}</strong><span>{options.scenarios.length} / 7 {text('已选','selected')}</span></div>
-              <div className="benchmark-scenarios">{core.BENCHMARK_SCENARIOS.map(scenario => <label key={scenario.id} title={zh ? scenario.descriptionZh : scenario.descriptionEn} className={`benchmark-scenario ${options.scenarios.includes(scenario.id) ? 'is-selected' : ''}`}><Checkbox aria-label={scenarioName(scenario.id)} checked={options.scenarios.includes(scenario.id)} disabled={running} onChange={() => toggleScenario(scenario.id)}/><span>{scenarioName(scenario.id)}</span></label>)}</div>
+              <div className="benchmark-scenarios">{core.BENCHMARK_SCENARIOS.map(scenario => <label key={scenario.id} data-tooltip={zh ? scenario.descriptionZh : scenario.descriptionEn} className={`benchmark-scenario ${options.scenarios.includes(scenario.id) ? 'is-selected' : ''}`}><Checkbox aria-label={scenarioName(scenario.id)} checked={options.scenarios.includes(scenario.id)} disabled={running} onChange={() => toggleScenario(scenario.id)}/><span>{scenarioName(scenario.id)}</span></label>)}</div>
             </div>
             {options.scenarios.includes('custom') && <Field label={text('测试提示词','Custom prompt')} hint={`${options.prompt.length.toLocaleString(language)} ${text('字符','characters')}`}><textarea aria-label={text('测试提示词','Custom prompt')} rows={3} value={options.prompt} disabled={running} onChange={event => update('prompt', event.target.value)}/></Field>}
             <details className="benchmark-advanced"><summary>{text('高级测试选项','Advanced test options')}</summary><div className="benchmark-settings">
@@ -221,6 +227,8 @@ export function ScenarioBenchmarkPage({ profile, online, disabled, language, onR
       <div className="benchmark-live-budget"><progress max={Math.max(1,budget ?? 1)} value={Math.min(settled,budget ?? 1)} aria-label={text('计划进度','Plan progress')}/><span>{settled} / {number(budget,0)}</span></div>
       <div className="benchmark-live-latest"><span>{text('最近 TTFT','Latest TTFT')} <strong>{seconds(latestSample?.ttftMs)} s</strong></span><span>{text('最近 Decode','Latest decode')} <strong>{number(latestSample?.decodeTokS)} tok/s</strong></span><span>{text('实际输入 / 输出','Actual input / output')} <strong>{number(latestSample?.promptTokens,0)} / {number(latestSample?.completionTokens,0)} token</strong></span><span>GPU <strong>{number(latestTelemetry?.gpuUtil)} %</strong></span></div>
     </Panel>}
+    <details className="benchmark-history-disclosure"><summary>{text("历史与升级对照", "History and upgrade comparison")}</summary><BenchmarkComparisonPanel reports={history} current={selected} baseline={baseline} language={language} disabled={running || disabled} replayDisabled={!online} onBaseline={saveBaseline} onReplay={report => { if (report.profileId !== profile?.id) { setError(text("请先选择基线对应的模型。", "Select the baseline model first.")); return; } if (isSuite(report)) void start({ ...report.options, kind: "suite", concurrency: 1 }); }}/></details>
+    <details className="benchmark-export-options"><summary>{text("导出内容", "Export content")}</summary><label><input type="checkbox" checked={includeContent} onChange={event => setIncludeContent(event.target.checked)}/>{text("导出时包含测试文本与输出", "Include test text and output in exports")}</label></details>
     {(!running || selected || resultSamples.length > 0) && <Panel className="benchmark-results" title={text('测试结果','Results')} action={history.length > 0 && <Dropdown ariaLabel={text('历史测试','Benchmark history')} value={selected?.id ?? ''} disabled={running} placeholder={text('历史测试','Benchmark history')} options={history.map(report => ({ value:report.id,label:`${new Date(report.startedAt).toLocaleString(language)} · ${report.model} · ${isSuite(report) ? report.options.kind === 'stress' ? text('旧版压力测试','Legacy stress') : text('场景测试','Suite') : text('串行测试','Serial')}` }))} onValueChange={value => { setSelected(history.find(report => report.id === value)); setFilter('all'); }}/> }>
       {selected && <div className="benchmark-result-meta"><strong>{selected.model}</strong><Badge tone={selected.state === 'failed' ? 'error' : ''}>{states[selected.state]}</Badge><span>{isSuite(selected) ? stopReasons[selected.stopReason] : text('旧版串行报告','Legacy serial report')} · {summary?.completed} {text('个请求完成','completed')}</span></div>}
       {selected && isSuite(selected) && selected.options.kind === 'stress' && <p className="notice">{text('此报告来自旧版压力测试，仅供查看和导出；并发条件可在测试条件中查看。','This legacy stress report is available for viewing and export. Its concurrency settings are listed under test conditions.')}</p>}
@@ -244,7 +252,7 @@ export function ScenarioBenchmarkPage({ profile, online, disabled, language, onR
       {suiteSummary && suiteSummary.errors.length > 0 && <details className="benchmark-section"><summary>{text('错误分类','Error breakdown')}<span className="benchmark-section-count">{suiteSummary.failed}</span></summary><ul className="benchmark-error-list">{suiteSummary.errors.map((entry,index) => <li key={index}>{entry.code}{entry.status != null && ` · HTTP ${entry.status}`} · {entry.count}</li>)}</ul></details>}
       {resultSamples.length > 0 ? <details className="benchmark-section benchmark-sample-section"><summary>{text('请求样本','Request samples')}<span className="benchmark-section-count">{resultSamples.length}</span></summary>
         <div className="benchmark-sample-toolbar"><Dropdown ariaLabel={text('筛选场景','Filter scenario')} value={filter} onValueChange={setFilter} options={[{value:'all',label:text('全部场景','All scenarios')},...scenarioIds.map(id => ({value:id,label:scenarioName(id)}))]}/><small>{text(`显示最后 ${visibleSamples.length} 条；全部 ${resultSamples.length} 条可导出。`, `Showing the latest ${visibleSamples.length}; all ${resultSamples.length} are available in exports.`)}</small></div>
-        <div className="table-wrap"><table className="benchmark-samples-table"><thead><tr>{[text('轮次 / 场景','Round / scenario'),text('对话轮次','Conversation turn'),text('状态','Status'),'TTFT (s)',text('总耗时 (s)','Wall time (s)'),text('实际输入 / 输出 token','Actual input / output tokens'),text('缓存 token','Cached tokens'),'Prefill (tok/s)','Decode (tok/s)'].map(label => <th key={label}>{label}</th>)}</tr></thead><tbody>{visibleSamples.map((sample,index) => <tr key={`${sample.startedAt}-${sample.index}-${index}`}><td>{sample.warmup ? text('预热','Warmup') : sample.index}{isSuiteSample(sample) && <small>{scenarioName(sample.scenario)}</small>}</td><td>{isSuiteSample(sample) ? sample.turn : '—'}</td><td><span title={sample.error}>{states[sample.state]}</span>{sample.error && <small className="benchmark-sample-error">{sample.error}</small>}</td><td>{seconds(sample.ttftMs)}</td><td>{seconds(sample.wallMs)}</td><td>{number(sample.promptTokens,0)} / {number(sample.completionTokens,0)}</td><td>{number(sample.cachedTokens,0)}</td><td>{number(sample.prefillTokS)}</td><td>{number(sample.decodeTokS)}</td></tr>)}</tbody></table></div>
+        <div className="table-wrap"><table className="benchmark-samples-table"><thead><tr>{[text('轮次 / 场景','Round / scenario'),text('对话轮次','Conversation turn'),text('状态','Status'),'TTFT (s)',text('总耗时 (s)','Wall time (s)'),text('实际输入 / 输出 token','Actual input / output tokens'),text('缓存 token','Cached tokens'),'Prefill (tok/s)','Decode (tok/s)'].map(label => <th key={label}>{label}</th>)}</tr></thead><tbody>{visibleSamples.map((sample,index) => <tr key={`${sample.startedAt}-${sample.index}-${index}`}><td>{sample.warmup ? text('预热','Warmup') : sample.index}{isSuiteSample(sample) && <small>{scenarioName(sample.scenario)}</small>}</td><td>{isSuiteSample(sample) ? sample.turn : '—'}</td><td><span data-tooltip={sample.error}>{states[sample.state]}</span>{sample.error && <small className="benchmark-sample-error">{sample.error}</small>}</td><td>{seconds(sample.ttftMs)}</td><td>{seconds(sample.wallMs)}</td><td>{number(sample.promptTokens,0)} / {number(sample.completionTokens,0)}</td><td>{number(sample.cachedTokens,0)}</td><td>{number(sample.prefillTokS)}</td><td>{number(sample.decodeTokS)}</td></tr>)}</tbody></table></div>
         {visibleSamples.some(sample => sample.output) && <details className="benchmark-output"><summary>{text('查看最近输出片段','View recent output excerpts')}</summary>{visibleSamples.filter(sample => sample.output).slice(-10).map((sample,index) => <div key={index}><strong>{sample.warmup ? text('预热','Warmup') : `${text('请求','Request')} ${sample.index}`}{isSuiteSample(sample) && ` · ${scenarioName(sample.scenario)}`}{sample.finishReason && ` · ${sample.finishReason}`}</strong><pre>{sample.output}</pre></div>)}</details>}
       </details> : !running && <p className="benchmark-empty">{text('完成测试后，在这里查看结果。','Results will appear here after a run.')}</p>}
       {selected && <details className="benchmark-section"><summary><Timer size={14}/>{text('测试条件','Test conditions')}</summary><div className="benchmark-conditions"><p>{selected.profileName} · {selected.baseUrl}</p><p>{text('开始','Started')} {new Date(selected.startedAt).toLocaleString(language)} · {text('结束','Finished')} {new Date(selected.finishedAt).toLocaleString(language)}</p><pre>{JSON.stringify({ options:selected.options,engine:selected.engine,hardware:selected.hardware },null,2)}</pre><p className="subtle">{text('历史最多保留最近 20 组，总容量 16 MiB；始终保留最新整组报告。','History retains up to 20 recent runs within 16 MiB, always preserving the latest complete report.')}</p></div></details>}

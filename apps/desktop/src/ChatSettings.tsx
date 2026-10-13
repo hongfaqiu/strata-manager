@@ -12,9 +12,9 @@ export type ChatPreferences={showReasoning:boolean};
 export const defaultChatPreferences:ChatPreferences={showReasoning:true};
 export const officialSamplingDefaults:ChatOptions={model:'',reasoningEffort:'high',temperature:0.6,topP:0.95,topK:20,seed:null,maxTokens:0,systemPrompt:'',mcp:true,experimentalSpeedProjection:true};
 const obj=(value:unknown):JsonObject=>value&&typeof value==='object'&&!Array.isArray(value)?value as JsonObject:{};
-export function SamplingDrawer({profile,options,preferences,models=[],hasProjection,online,mcpInfo,messages,statusInfo,metricsInfo,configInfo,runtimeEvidence,inheritsCommon,onCommonSettings,onApply,onClose,onError,onMessage}: {
+export function SamplingDrawer({profile,options,preferences,models=[],hasProjection,online,mcpInfo,messages,configInfo,identityToken,inheritsCommon,onCommonSettings,onApply,onClose,onError}: {
   profile?:ServiceProfile;options:ChatOptions;preferences:ChatPreferences;models?:string[];hasProjection:boolean;online:boolean;mcpInfo?:JsonObject;
-  messages?:ChatMessage[];statusInfo?:JsonObject;metricsInfo?:JsonObject;configInfo?:JsonObject;runtimeEvidence?:ChatRuntimeEvidence;
+  messages?:ChatMessage[];statusInfo?:JsonObject;metricsInfo?:JsonObject;configInfo?:JsonObject;runtimeEvidence?:ChatRuntimeEvidence;identityToken?:string;
   inheritsCommon?:boolean;onCommonSettings?:()=>void;
   onApply:(options:ChatOptions,preferences:ChatPreferences)=>void;onClose:()=>void;onError:(error:unknown)=>void;onMessage:(message:string)=>void;
 }) {
@@ -22,14 +22,11 @@ export function SamplingDrawer({profile,options,preferences,models=[],hasProject
   const mounted=useRef(true),savingRef=useRef(false);
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   const shared=useQuery({queryKey:['shared-sampling',profile?.id,profile?.baseUrl],queryFn:()=>core.request(profile!,'/settings'),enabled:!!profile&&online});
-  const status=useQuery({queryKey:['chat-capabilities',profile?.id,profile?.baseUrl],queryFn:()=>core.request(profile!,'/v1/status'),enabled:!!profile&&online&&!statusInfo});
-  const metrics=useQuery({queryKey:['chat-capabilities-metrics',profile?.id,profile?.baseUrl],queryFn:()=>core.request(profile!,'/metrics'),enabled:!!profile&&online&&!metricsInfo});
-  const runtime=useQuery({queryKey:['chat-runtime-evidence',profile?.id,profile?.baseUrl,profile?.configPath],queryFn:()=>core.getChatRuntimeEvidence(profile!.id),enabled:core.isDesktop()&&!!profile&&online&&!runtimeEvidence,retry:false,refetchOnWindowFocus:false});
-  const capabilities=core.parseChatCapabilities(online?(statusInfo??status.data):undefined,online?(metricsInfo??metrics.data):undefined,configInfo,online?(runtimeEvidence??runtime.data):undefined);
-  if(!capabilities.prefix&&runtime.error)capabilities.prefixReason='无法核验当前引擎的实际启动参数；固定前缀暂不可用';
+  const evidence=useQuery({queryKey:['chat-capability-snapshot',profile?.id,profile?.baseUrl,profile?.configPath,identityToken,online],queryFn:()=>core.readServiceCapabilities(profile!,{configuredPromptCache:core.configuredPromptCache(configInfo)}),enabled:!!profile&&online,retry:false,refetchInterval:5000,refetchOnWindowFocus:true});
+  const capabilities=online&&evidence.data&&!evidence.isError?core.chatCapabilitiesFromService(evidence.data):core.parseChatCapabilities(undefined);
   useEffect(()=>{if(shared.data)setShare(shared.data.shared===true);},[shared.data]);
   const update=<K extends keyof ChatOptions>(key:K,value:ChatOptions[K])=>setDraft(old=>({...old,[key]:value}));
-  const apply=async(close=true):Promise<boolean>=>{if(savingRef.current)return false;savingRef.current=true;setSaving(true);try{const value={...draft,capabilities,experimentalSpeedProjection:hasProjection?draft.experimentalSpeedProjection!==false:undefined};const defaults=core.buildSharedDefaults(value);core.buildAdvancedChatFields(value);if(profile&&online&&(share||shared.data?.shared===true))await core.request(profile,'/settings','POST',{defaults:share?defaults:null});if(!mounted.current)return false;onApply({...value,capabilities:undefined},ui);if(close)onClose();return true;}catch(error){if(mounted.current)onError(error);return false;}finally{savingRef.current=false;if(mounted.current)setSaving(false);}};
+  const apply=async(close=true):Promise<boolean>=>{if(savingRef.current)return false;savingRef.current=true;setSaving(true);try{const fresh=profile&&online?core.chatCapabilitiesFromService(await core.readServiceCapabilities(profile,{configuredPromptCache:core.configuredPromptCache(configInfo)})):core.parseChatCapabilities(undefined);const value={...draft,capabilities:fresh,experimentalSpeedProjection:hasProjection?draft.experimentalSpeedProjection!==false:undefined};const defaults=core.buildSharedDefaults(value);core.buildAdvancedChatFields(value);if(profile&&online&&(share||shared.data?.shared===true))await core.request(profile,'/settings','POST',{defaults:share?defaults:null});if(!mounted.current)return false;onApply({...value,capabilities:undefined},ui);if(close)onClose();return true;}catch(error){if(mounted.current)onError(error);return false;}finally{savingRef.current=false;if(mounted.current)setSaving(false);}};
   const commonNavigation=useDraftGuard(JSON.stringify(draft)!==JSON.stringify({...officialSamplingDefaults,...options})||JSON.stringify(ui)!==JSON.stringify(preferences)||share!==(shared.data?.shared===true),()=>apply(false), 'zh-CN'===document.documentElement.lang?'zh-CN':'en');
   const servers=Array.isArray(mcpInfo?.servers)?mcpInfo.servers.map(obj):[];
   const thinkingOutput=draft.reasoningEffort==='off'?'samplingImmediate':draft.reasoningEffort==='low'?'samplingShort':draft.reasoningEffort==='medium'?'samplingMedium':'samplingThorough';

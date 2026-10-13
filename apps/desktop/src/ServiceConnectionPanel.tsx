@@ -4,6 +4,7 @@ import * as core from '@strata-manager/core';
 import type { ServiceProfile } from '@strata-manager/core';
 import { Panel } from './components';
 import type { SaveDraft } from './useDraftGuard';
+import { ServiceSharingPanel } from './ServiceSharingPanel';
 
 interface Props {
   profile?: ServiceProfile;
@@ -23,11 +24,12 @@ export function ServiceConnectionPanel(props: Props) {
 function ConnectionSession({ profile, language, desktop, onError, onSaved, onDirtyChange, onSaveDraftReady }: Props) {
   const zh = language === 'zh-CN';
   const [key, setKey] = useState(''), [dirty, setDirty] = useState(false);
+  const [sharingDirty, setSharingDirty] = useState(false);
   const [saving, setSaving] = useState(false), [message, setMessage] = useState(''), [error, setError] = useState('');
   const mounted = useRef(true), savingRef = useRef(false), dirtyCallback = useRef(onDirtyChange);
   dirtyCallback.current = onDirtyChange;
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; dirtyCallback.current(false); }; }, []);
-  useEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
+  useEffect(() => { onDirtyChange(dirty || sharingDirty); }, [dirty, sharingDirty, onDirtyChange]);
   const credential = useQuery({ queryKey: ['runtime-config-key', profile?.id], queryFn: () => core.hasApiKey(profile!.id), enabled: !!profile, retry: false });
   const save = async (remove = false): Promise<boolean> => {
     if (!profile || savingRef.current) return false;
@@ -43,7 +45,10 @@ function ConnectionSession({ profile, language, desktop, onError, onSaved, onDir
     } catch (cause) { if (mounted.current) { setError(core.normalizeError(cause).message); onError(cause); } return false; }
     finally { savingRef.current = false; if (mounted.current) setSaving(false); }
   };
-  useEffect(() => { onSaveDraftReady(() => save()); return () => onSaveDraftReady(undefined); });
+  useEffect(() => { onSaveDraftReady(() => {
+    if (sharingDirty) { setError(zh ? '请先预览并保存局域网设置，或取消该草稿，再切换服务。' : 'Review and save LAN changes, or discard the draft, before switching services.'); return Promise.resolve(false); }
+    return save();
+  }); return () => onSaveDraftReady(undefined); });
   let address = '';
   try { address = profile ? core.normalizeBaseUrl(profile.baseUrl) : ''; } catch { /* Keep the credential editor usable for a stale service address. */ }
   return <Panel title={zh ? '服务连接与 API Key' : 'Service connection and API key'} className="service-connection-panel">
@@ -54,6 +59,7 @@ function ConnectionSession({ profile, language, desktop, onError, onSaved, onDir
         <p className="subtle">{desktop ? (zh ? '密钥不会回显。' : 'Saved keys are never displayed.') : (zh ? '浏览器预览中的密钥仅在当前会话保留。' : 'Browser preview keys last only for the current session.')}</p>
         <div className="actions"><button className="primary" type="submit" disabled={saving || !dirty}>{saving ? (zh ? '保存中…' : 'Saving…') : (zh ? '保存密钥' : 'Save key')}</button><button type="button" disabled={saving || !credential.data} onClick={() => void save(true)}>{zh ? '移除密钥' : 'Remove key'}</button><span role="status">{message}</span></div>
       </form>{(error || credential.error) && <p className="notice error" role="alert">{error || core.normalizeError(credential.error).message}</p>}
+      <ServiceSharingPanel profile={profile} language={language} desktop={desktop} onSaved={onSaved} onDirtyChange={setSharingDirty}/>
     </> : <p className="subtle">{zh ? '添加模型后，可在这里统一管理连接信息。' : 'Add a model to manage its connection details here.'}</p>}
   </Panel>;
 }

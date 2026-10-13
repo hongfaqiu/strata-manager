@@ -42,16 +42,16 @@ export function ServiceTelemetryStatusBar({ language, hasProfile, online, connec
   const floatingLabel = text('打开监控浮条', 'Open floating monitor');
 
   return <footer className="workspace-statusbar service-telemetry-statusbar" aria-label={text('服务监控', 'Service telemetry')} data-state={state}>
-    <span className="workspace-statusbar-state service-telemetry-state" title={status}><span className="service-telemetry-dot" aria-hidden="true"/>{status}</span>
+    <span className="workspace-statusbar-state service-telemetry-state" data-tooltip={status}><span className="service-telemetry-dot" aria-hidden="true"/>{status}</span>
     {showMetrics && <div className="service-telemetry-values" aria-label={text('服务监控指标', 'Service telemetry values')} tabIndex={0}>
       <span className="service-telemetry-value service-telemetry-speed"><span>{speedLabel}</span><strong>{number(speed, '', 1)}</strong><span>tok/s</span></span>
       <span className="service-telemetry-value"><span>{text('运行', 'Running')}</span><strong>{number(metric.running)}</strong></span>
       <span className="service-telemetry-value" data-busy={validNumber(metric.queued) && metric.queued > 0}><span>{text('排队', 'Queued')}</span><strong>{number(metric.queued)}</strong></span>
       <span className="service-telemetry-value service-telemetry-gpu"><span>GPU</span><strong>{percent(metric.gpuUtil)}</strong></span>
       <span className="service-telemetry-value service-telemetry-cpu"><span>CPU</span><strong>{percent(metric.cpuUtil)}</strong></span>
-      <span className="service-telemetry-value service-telemetry-temperature" title={text('GPU 温度', 'GPU temperature')}><span>{text('温度', 'Temp')}</span><strong>{number(metric.gpuTemperature, '°C')}</strong></span>
-      <span className="service-telemetry-value service-telemetry-power" title={text('GPU 功耗', 'GPU power')}><span>{text('功耗', 'Power')}</span><strong>{number(metric.gpuPower, ' W')}</strong></span>
+      <span className="service-telemetry-value service-telemetry-temperature" data-tooltip={text('GPU 温度', 'GPU temperature')}><span>{text('温度', 'Temp')}</span><strong>{number(metric.gpuTemperature, '°C')}</strong></span>
+      <span className="service-telemetry-value service-telemetry-power" data-tooltip={text('GPU 功耗', 'GPU power')}><span>{text('功耗', 'Power')}</span><strong>{number(metric.gpuPower, ' W')}</strong></span>
     </div>}
-    {desktop && onOpenFloating && <button type="button" className="service-telemetry-floating" onClick={onOpenFloating} aria-label={floatingLabel} title={floatingLabel}><PictureInPicture2 size={14}/></button>}
+    {desktop && onOpenFloating && <button type="button" className="service-telemetry-floating" onClick={onOpenFloating} aria-label={floatingLabel} data-tooltip={floatingLabel}><PictureInPicture2 size={14}/></button>}
   </footer>;
 }

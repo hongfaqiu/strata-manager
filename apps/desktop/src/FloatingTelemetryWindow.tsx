@@ -189,7 +189,7 @@ export function FloatingTelemetryWindow() {
     onKeyDown={event => { if (event.key === 'ContextMenu' || event.shiftKey && event.key === 'F10') { event.preventDefault(); void openMenu(); } }}>
     <header className="floating-telemetry-header">
       <div className="floating-telemetry-message">
-        {error ? <span className="floating-telemetry-notice" title={error} role="status">{text('状态待核验', 'Unverified')}</span> : feedback ? <span title={feedback} role="status">{feedback}</span> : preferences.showSampleTime && data?.sampledAt ? <time className="floating-telemetry-time" title={text('最近采样', 'Last sample')} dateTime={new Date(data.sampledAt).toISOString()}>{new Date(data.sampledAt).toLocaleTimeString(language, { hour12: false })}</time> : null}
+        {error ? <span className="floating-telemetry-notice" data-tooltip={error} role="status">{text('状态待核验', 'Unverified')}</span> : feedback ? <span data-tooltip={feedback} role="status">{feedback}</span> : preferences.showSampleTime && data?.sampledAt ? <time className="floating-telemetry-time" data-tooltip={text('最近采样', 'Last sample')} dateTime={new Date(data.sampledAt).toISOString()}>{new Date(data.sampledAt).toLocaleTimeString(language, { hour12: false })}</time> : null}
       </div>
     </header>
     {paused || waitingForSample ? <footer className="workspace-statusbar service-telemetry-statusbar" data-state={paused ? 'paused' : 'waiting'} role="status"><span>{paused ? text('采样已暂停', 'Sampling paused') : text('等待新采样', 'Waiting for a fresh sample')}</span>{paused && <span className="floating-telemetry-paused-hint">{text('恢复采样后更新指标', 'Resume sampling to update metrics')}</span>}</footer>

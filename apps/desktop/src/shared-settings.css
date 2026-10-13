@@ -1,6 +1,6 @@
 .shared-settings-stack{display:grid;gap:20px;max-width:1200px;width:100%;min-width:0}
 .shared-settings-target{display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin:0 0 20px;padding:16px 20px;border:1px solid var(--st-line);border-radius:var(--st-r-md);background:var(--st-surface)}
-.shared-settings-target>div{min-width:0;flex:1}
+.shared-settings-target>div{min-width:220px;flex:1}
 .shared-settings-target .field{margin:0;min-width:240px;max-width:440px;flex:1}
 .shared-settings-target p{margin:6px 0 0;color:var(--st-ink-muted);font-size:12px;line-height:1.6}
 .shared-service-address{display:block;font-size:12px;overflow-wrap:anywhere;margin-top:8px;color:var(--st-ink-muted)}

@@ -30,6 +30,8 @@
 .window-title-bar-status{display:flex;align-items:center;justify-content:flex-end;flex:none;margin-left:auto;min-width:0;max-width:48%;font-size:12px}
 .window-title-bar>.window-title-bar-status{margin-left:0;margin-right:16px;max-width:40%}
 .window-title-bar-status .st-pill{max-width:100%;overflow:hidden;white-space:nowrap;font-size:12px}
+.window-title-bar .st-pill[data-state="loading"] .st-pill__dot{background:var(--st-accent,var(--accent));box-shadow:0 0 0 4px color-mix(in srgb,var(--st-accent,var(--accent)) 18%,transparent);animation:window-title-status-pulse 1.2s ease-in-out infinite}
+@keyframes window-title-status-pulse{50%{opacity:.35}}
 .window-title-bar-status .st-pill>span:last-child{overflow:hidden;text-overflow:ellipsis}
 .window-title-bar .window-title-bar-status #pill-text{display:inline}
 .window-title-bar[data-focused=false] .window-title-bar-title,.window-title-bar[data-focused=false] .window-title-bar-brand{opacity:.65}
@@ -44,6 +46,6 @@
 @media(max-width:1100px){.window-title-bar{--window-nav-width:216px}.window-title-bar.is-collapsed{--window-nav-width:var(--window-nav-collapsed-width)}.window-title-bar-content{padding-left:18px}.window-title-bar-title{font-size:19px}}
 @media(max-width:740px){.window-title-bar{--window-nav-width:200px;--window-nav-collapsed-width:64px}.window-title-bar.is-collapsed{--window-nav-width:var(--window-nav-collapsed-width)}.window-title-bar-brand{padding:0 14px;gap:7px}.window-title-bar-brand-name strong{font-size:17px}.window-title-bar-brand-name>span{font-size:12px}.window-title-bar-content{padding-left:12px;padding-right:10px;gap:10px}.window-title-bar-title{font-size:17px}.window-title-bar-status{max-width:45%}.window-title-bar-status .st-pill{font-size:11px;padding:0 9px}.window-title-bar .window-title-bar-button{width:40px}}
 @media(max-width:520px){.window-title-bar-brand{padding:0 10px;gap:5px}.window-title-bar-brand-name strong{font-size:16px}.window-title-bar-brand-name>span{font-size:11px}.window-title-bar-status{max-width:44%}.window-title-bar-status .st-pill{gap:5px;padding:0 7px}.window-title-bar .window-title-bar-button{width:34px}}
-@media(prefers-reduced-motion:reduce){.window-title-bar .window-title-bar-button,.window-title-bar-brand,.window-title-bar-brand-name{transition:none}}
+@media(prefers-reduced-motion:reduce){.window-title-bar .window-title-bar-button,.window-title-bar-brand,.window-title-bar-brand-name{transition:none}.window-title-bar .st-pill[data-state="loading"] .st-pill__dot{animation:none}}
 .exit-remember { display: flex; align-items: center; gap: 8px; margin: 18px 0; font-size: 13px; }
 .exit-remember input { width: 16px; height: 16px; accent-color: var(--accent); }

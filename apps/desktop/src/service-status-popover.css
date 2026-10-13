@@ -40,6 +40,12 @@
 .service-status-meter[data-tone="warning"]>span{background:var(--st-warn,var(--warning))}
 .service-status-telemetry-meta{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--st-ink-muted,var(--muted));font-variant-numeric:tabular-nums}
 .service-status-empty{padding:22px 0 12px;color:var(--st-ink-muted,var(--muted));font-size:12px}
+.service-status-startup{display:flex;align-items:flex-start;gap:10px;margin-top:14px;padding:12px;border-radius:8px;background:var(--st-surface-2,var(--surface-hover))}
+.service-status-startup>svg{flex:none;margin-top:2px;color:var(--st-accent,var(--accent))}
+.service-status-startup>div{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}
+.service-status-startup strong{font-size:13px;font-weight:650}
+.service-status-startup span{font-size:12px;color:var(--st-ink-muted,var(--muted));overflow-wrap:anywhere}
+.service-status-startup button{flex:none;min-height:28px;padding:4px 8px;font-size:12px}
 .service-status-context{margin:12px 0;line-height:1.6;font-size:12px;color:var(--st-ink-muted,var(--muted))}
 .service-status-actions{border:0;min-width:0;padding:0;margin:14px 0}
 .service-status-actions .service-actions{display:flex;gap:7px;flex-wrap:wrap;margin:0}

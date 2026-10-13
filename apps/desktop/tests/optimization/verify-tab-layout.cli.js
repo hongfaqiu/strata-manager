@@ -40,7 +40,7 @@ async page => {
           const rect = button.getBoundingClientRect();
           return { text: button.textContent.trim(), left: rect.left, right: rect.right, top: rect.top, width: rect.width, grow: getComputedStyle(button).flexGrow, overflow: button.scrollWidth > button.clientWidth + 1 };
         });
-        return { label: group.getAttribute('aria-label'), left: box.left, right: box.right, width: box.width, rows: new Set(buttons.map(button => Math.round(button.top))).size, padding: parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth), gap: parseFloat(style.columnGap), buttons };
+        return { label: group.getAttribute('aria-label'), display: style.display, left: box.left, right: box.right, width: box.width, rows: new Set(buttons.map(button => Math.round(button.top))).size, padding: parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth), gap: parseFloat(style.columnGap), buttons };
       });
       const nav = document.querySelector('.workspace-subnav');
       const navBox = nav?.getBoundingClientRect();
@@ -48,6 +48,7 @@ async page => {
     });
     assert(result.documentWidth <= result.viewport + 1, `${label}: document overflows ${result.documentWidth}/${result.viewport}`);
     for (const group of result.groups) {
+      assert(group.display === 'flex', `${label}: ${group.label} still uses the legacy grid`);
       assert(group.left >= -1 && group.right <= result.viewport + 1, `${label}: ${group.label} leaves viewport`);
       for (const button of group.buttons) {
         assert(button.grow === '0', `${label}: ${button.text} still stretches`);
@@ -69,7 +70,7 @@ async page => {
       await page.locator(selector).waitFor();
       await page.waitForFunction(() => !!window.__fixture && !!window.__i18n);
       const groups = page.locator('.official-segmented:visible');
-      if (['settings', 'usage', 'config', 'tuning', 'benchmark'].includes(route)) {
+      if (['settings', 'config', 'tuning', 'benchmark'].includes(route) || await groups.count()) {
         await groups.first().waitFor();
         await keyboard(groups.first());
       }

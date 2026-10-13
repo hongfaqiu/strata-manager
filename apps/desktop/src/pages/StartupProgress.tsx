@@ -39,6 +39,10 @@ const formatDuration = (milliseconds: number) => {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 };
 
+export function startupPhaseLabel(language: 'zh-CN' | 'en', phase: StartupProgressState['phase']) {
+  return words[language][phase];
+}
+
 /** No estimated percentage: engine output and readiness are the source of truth. */
 export function StartupProgress({ language, progress, modelName, apiUrl }: StartupProgressProps) {
   const text = words[language];

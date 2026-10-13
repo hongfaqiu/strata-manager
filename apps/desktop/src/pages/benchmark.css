@@ -165,6 +165,12 @@
 .context-benchmark-axis { fill: var(--st-ink-muted); font-size: 12px; }
 .context-benchmark-tier { font-size: 13px; }
 .context-benchmark-value { fill: var(--st-ink); font-size: 13px; font-weight: 500; }
+.benchmark-image-preview { display: flex; flex-direction: column; gap: 16px; }
+.benchmark-image-preview-canvas { max-height: max(180px, calc(100vh - 260px)); overflow: auto; border: 1px solid var(--st-line); border-radius: var(--st-r-md); background: var(--st-bg); }
+.benchmark-image-preview-canvas img { display: block; width: 100%; height: auto; }
+.benchmark-image-preview-canvas > p { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 180px; padding: 20px; color: var(--st-ink-muted); }
+.benchmark-image-preview .notice { margin: 0; }
+.benchmark-image-preview-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
 .context-benchmark-results-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .context-benchmark-results-heading h3 { margin: 0; font-size: 15px; font-weight: 600; }
 .context-benchmark-results-heading > span { color: var(--st-ink-muted); font-size: 13px; }

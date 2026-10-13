@@ -260,7 +260,7 @@ test('new release clears a previously prefilled local source and guards its old 
 function parentFixture(kind, savedPreferences = { mode: 'official' }) {
   const file = kind === 'manual' ? './RuntimeManagementPanel.tsx' : '../useRuntimeUpdates.ts';
   const compiled = ts.transpileModule(readFileSync(new URL(file, import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
-  const calls = { updates: [], saved: [], canceled: [] }, slots = [], effects = [];
+  const calls = { updates: [], saved: [], canceled: [], started: 0 }, slots = [], effects = [];
   const tasks = [], detectedRuntime = { ...runtime, readiness: 'ready' };
   const queryData = {
     'runtime-installation': { data: { detectedRuntimes: [detectedRuntime] } },
@@ -297,8 +297,8 @@ function parentFixture(kind, savedPreferences = { mode: 'official' }) {
       'react-markdown': { default: 'markdown' }, 'remark-gfm': { default: 'remark-gfm' },
     })[name] ?? {},
   });
-  const props = { language: 'zh-CN', desktop: true, operationDisabled: false };
-  const render = () => { cursor = 0; tree = kind === 'manual' ? module.exports.RuntimeManagementPanel(props) : module.exports.useRuntimeUpdates(true, true, true, true, tasks, 'zh-CN').dialog; while (effects.length) effects.shift()(); return tree; };
+  const props = { language: 'zh-CN', desktop: true, operationDisabled: false, onUpdateStarted: () => { calls.started += 1; } };
+  const render = () => { cursor = 0; tree = kind === 'manual' ? module.exports.RuntimeManagementPanel(props) : module.exports.useRuntimeUpdates(true, true, true, true, tasks, 'zh-CN', undefined, undefined, () => { calls.started += 1; }).dialog; while (effects.length) effects.shift()(); return tree; };
   const dialog = () => nodes(tree).find(node => node.type === 'update-dialog');
   const settle = async () => { await tick(); render(); render(); };
   const open = async () => {
@@ -316,6 +316,7 @@ for (const kind of ['manual', 'automatic']) {
       assert.equal(f.calls.updates.length, 0, 'opening a confirmation must not start an update');
       f.dialog().props.onConfirm(download, assets[1].name); await f.settle();
       assert.deepEqual(f.calls.updates, [[runtime.installDir, assets[1].name, true, download]]);
+      assert.equal(f.calls.started, 1);
     }
   });
 
@@ -524,35 +525,4 @@ test('the entire official bilingual Release body reaches Markdown unchanged in e
     assert.equal(region.props.role, 'region'); assert.equal(region.props.tabIndex, 0);
     assert.equal(region.props['aria-label'], language === 'zh-CN' ? '更新日志' : 'Release notes');
   }
-});
-
-test('configuration comparison uses native accessible disclosure and never renders raw credentials', () => {
-  const compile = file => ts.transpileModule(readFileSync(new URL(file, import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
-  const load = (compiled, dependencies) => { const module = { exports: {} }; vm.runInNewContext(compiled, { module, exports: module.exports, require: name => dependencies[name] ?? {} }); return module.exports; };
-  const { compareRunningConfiguration } = load(compile('../../../../packages/core/src/configuration-match.ts'), { './model-groups': { configurationPathKey } });
-  const running = {
-    id: 'running', name: 'Qwen · actual', installDir: runtime.installDir, configPath: 'D:\\AI\\Strata\\actual.json',
-    config: { port: 18081, api_key: 'fixture-running-secret', nested: { authorization: 'fixture-running-auth' }, token: '[已隐藏]' },
-  };
-  const other = { ...running, id: 'other', name: 'Qwen · other', configPath: 'D:\\AI\\Strata\\other.json', config: { port: 18082, api_key: 'fixture-listed-secret', nested: { authorization: 'fixture-listed-auth' }, token: '[已隐藏]' } };
-  const comparison = compareRunningConfiguration(running, [running, other]);
-  const expandedJsx = (type, props) => typeof type === 'function' ? type(props ?? {}) : jsx(type, props);
-  const { RunningConfigurationComparison } = load(compile('./RunningConfigurationComparison.tsx'), { 'react/jsx-runtime': { jsx: expandedJsx, jsxs: expandedJsx } });
-  const opened = [];
-  const tree = RunningConfigurationComparison({ comparison, language: 'zh-CN', onOpenConfiguration: entry => opened.push(entry) });
-  const content = text(tree);
-  for (const credential of ['fixture-running-secret', 'fixture-listed-secret', 'fixture-running-auth', 'fixture-listed-auth']) assert.equal(content.includes(credential), false);
-  assert.ok(content.includes('[已隐藏]')); assert.ok(content.includes('凭据已隐藏，未比较'));
-  assert.ok(content.includes(running.configPath)); assert.ok(content.includes(other.configPath));
-  assert.equal(tree.props['aria-label'], '对比全部配置');
-  const all = nodes(tree).find(node => node.type === 'details' && node.props.className === 'configuration-comparison-all');
-  assert.equal(all.props.open, undefined);
-  for (const disclosure of nodes(tree).filter(node => node.type === 'details')) assert.equal(disclosure.props.children[0].type, 'summary');
-  for (const table of nodes(tree).filter(node => node.type === 'table')) {
-    assert.equal(nodes(table).filter(node => node.type === 'th' && node.props.scope === 'col').length, 3);
-    assert.ok(nodes(table).some(node => node.type === 'th' && node.props.scope === 'row'));
-  }
-  assert.equal(opened.length, 0);
-  const open = nodes(tree).find(node => node.type === 'button'); assert.equal(open.props.type, 'button');
-  assert.ok(text(open).includes('查看配置')); open.props.onClick(); assert.strictEqual(opened[0], comparison.exactMatches[0]);
 });

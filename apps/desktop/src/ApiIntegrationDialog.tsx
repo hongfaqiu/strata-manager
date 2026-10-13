@@ -5,6 +5,7 @@ import { Dialog } from './components';
 import { Dropdown, Segmented } from './OfficialControls';
 import { apiCodeExample, apiIntegrationDocs, claudeCodeLaunch, openCodeConfig, openCodeLaunch, type ApiCodeExample, type ApiConnection, type ApiShell } from './apiIntegration';
 import './api-integration-dialog.css';
+import { ApiVerificationPanel } from './ApiVerificationPanel';
 
 interface Props {
   profile: ServiceProfile;
@@ -30,7 +31,7 @@ export function ApiIntegrationDialog({ profile, model, online, loaded, keyRequir
   const connection: ApiConnection = { rootUrl, model: actualModel, keyRequired };
   const configured = !!rootUrl && !!actualModel;
   const code = (title: string, content: string) => <section className="api-integration-code"><header><strong>{title}</strong><button type="button" disabled={!configured} onClick={() => onCopy(content)}><Copy size={14}/>{zh ? '复制' : 'Copy'}</button></header><pre tabIndex={0} aria-label={title}>{content}</pre></section>;
-  const copyValue = (label: string, value: string, hint?: string) => <div className="api-integration-value"><span>{label}{hint && <small>{hint}</small>}</span><code>{value || '—'}</code><button type="button" className="st-btn st-btn--icon" disabled={!value} title={zh ? `复制${label}` : `Copy ${label}`} aria-label={zh ? `复制${label}` : `Copy ${label}`} onClick={() => onCopy(value)}><Copy size={14}/></button></div>;
+  const copyValue = (label: string, value: string, hint?: string) => <div className="api-integration-value"><span>{label}{hint && <small>{hint}</small>}</span><code>{value || '—'}</code><button type="button" className="st-btn st-btn--icon" disabled={!value} data-tooltip={zh ? `复制${label}` : `Copy ${label}`} aria-label={zh ? `复制${label}` : `Copy ${label}`} onClick={() => onCopy(value)}><Copy size={14}/></button></div>;
   const shellPicker = <Dropdown ariaLabel={zh ? '终端类型' : 'Shell'} value={shell} onValueChange={value => setShell(value as ApiShell)} compact options={[{value:'powershell',label:'PowerShell'},{value:'bash',label:'Bash / zsh'}]}/>;
   const officialLink = (url: string) => <a className="api-integration-docs" href={url} target="_blank" rel="noreferrer">{zh ? '官方配置说明' : 'Official setup guide'}<ExternalLink size={13}/></a>;
 
@@ -42,6 +43,7 @@ export function ApiIntegrationDialog({ profile, model, online, loaded, keyRequir
     {!rootUrl ? <p className="notice error" role="alert">{zh ? '当前服务地址无效，请先检查服务配置。' : 'The service address is invalid. Check the service configuration first.'}</p> : !online ? <p className="notice warning" role="status">{zh ? '当前服务未连接，请确认服务已启动且地址可访问。可先查看接入方式。' : 'The service is disconnected. Check that it is running and its address is reachable; you can review setup steps now.'}</p> : !loaded ? <p className="notice warning" role="status">{zh ? '模型尚未就绪，请等待加载完成后调用。' : 'The model is not ready yet. Wait for it to finish loading before sending requests.'}</p> : null}
     {!actualModel && <p className="api-integration-hint" role="status">{zh ? '启用模型后将自动填入实际模型名并开放示例复制。' : 'Enable a model to fill in its actual ID and copy the examples.'}</p>}
     <p className="api-integration-hint">{keyRequired === false ? (zh ? '当前服务无需密钥；客户端要求时可填写 strata-local。' : 'This service requires no key. Use strata-local if the client requires one.') : keyRequired === true ? (zh ? '请将 YOUR_STRATA_API_KEY 替换为当前服务密钥。' : 'Replace YOUR_STRATA_API_KEY with your current service key.') : (zh ? '服务鉴权状态尚未核验；有密钥时填写当前服务密钥，无密钥可填 strata-local。' : 'Authentication has not been checked. Use your service key if required, or strata-local otherwise.')}</p>
+    <ApiVerificationPanel profile={profile} model={model} ready={online && loaded} language={language}/>
     <Segmented ariaLabel={zh ? '接入方式' : 'Connection method'} value={method} onValueChange={value => setMethod(value as Method)} options={[{value:'cherry',label:'Cherry Studio'},{value:'code',label:zh?'代码调用':'Code'},{value:'opencode',label:'OpenCode'},{value:'claude',label:'Claude Code'}]}/>
     <div className="api-integration-method">
       {method === 'cherry' && <>

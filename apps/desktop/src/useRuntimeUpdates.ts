@@ -17,10 +17,11 @@ interface PendingUpdate { runtime: core.DetectedRuntime; release: core.RuntimeUp
 const updateKey = ({ runtime, release }: PendingUpdate) => `${runtime.installDir}:${release.latestVersion}:${release.checkedAt}`;
 
 /** Automatic checks propose updates; only a confirmed dialog starts a ZIP task. */
-export function useRuntimeUpdates(desktop: boolean, ready: boolean, enabled: boolean, idle: boolean, tasks: core.TaskStatus[] | undefined, language: 'zh-CN' | 'en', onError?: (error: unknown) => void, gate?: AutomaticUpdateGate) {
+export function useRuntimeUpdates(desktop: boolean, ready: boolean, enabled: boolean, idle: boolean, tasks: core.TaskStatus[] | undefined, language: 'zh-CN' | 'en', onError?: (error: unknown) => void, gate?: AutomaticUpdateGate, onStarted?: () => void) {
   const query = useQueryClient();
   const enabledRef = useRef(enabled); enabledRef.current = enabled;
   const errorHandler = useRef(onError); errorHandler.current = onError;
+  const started = useRef(onStarted); started.current = onStarted;
   const gateRef = useRef(gate); gateRef.current = gate;
   const heldGate = useRef<AutomaticUpdateGate | null>(null);
   const acquireGate = () => {
@@ -124,6 +125,7 @@ export function useRuntimeUpdates(desktop: boolean, ready: boolean, enabled: boo
         await query.invalidateQueries({ queryKey: ['tasks'] });
       }
       setPending(null);
+      if (enabledRef.current && generation === policy.current.generation) started.current?.();
     } catch (error) {
       if (!created) releaseGate();
       setActionError(core.normalizeError(error).message);

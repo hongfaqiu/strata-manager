@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CircleHelp, Copy, Download, ImageDown, LoaderCircle, Play, Square } from 'lucide-react';
+import { Copy, LoaderCircle, Play, Square } from 'lucide-react';
 import * as core from '@strata-manager/core';
 import type { ContextBenchmarkOptions, ContextBenchmarkProgress, ContextBenchmarkReport, ContextBenchmarkSample, ServiceProfile } from '@strata-manager/core';
-import { Badge, Dialog, Empty, Field, Header, Panel } from '../components';
+import { Badge, Empty, Field, Header, Panel } from '../components';
 import { Checkbox, Dropdown, NumberField, Toggle } from '../OfficialControls';
 import { ContextBenchmarkCharts, contextTierLabel } from './ContextBenchmarkCharts';
 import { useBenchmarkContext } from './useBenchmarkContext';
 import { createContextBenchmarkImage } from './contextBenchmarkImage';
+import { BenchmarkImagePreviewDialog, type BenchmarkImagePreview } from './BenchmarkImagePreviewDialog';
 
 const STORE_KEY = 'contextBenchmarkReportsV1';
 const isObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -22,30 +23,14 @@ function storedReport(value: unknown): value is ContextBenchmarkReport {
     && ['completed', 'failed', 'cancelled'].includes(String(sample.state)) && finite(sample.wallMs)
     && ['promptTokens', 'completionTokens', 'cachedTokens', 'prefillTokS', 'decodeTokS', 'peakGpuMemory', 'minGpuMemoryFree', 'peakRam', 'ttftMs'].every(key => optionalNumber(sample[key]))
     && ['count_tokens', 'estimated'].includes(String(sample.tokenCountMethod)) && typeof sample.output === 'string'
-    && ['error', 'finishReason', 'calibrationReason'].every(key => sample[key] === undefined || typeof sample[key] === 'string'))
+    && ['error', 'finishReason', 'calibrationReason'].every(key => sample[key] === undefined || typeof sample[key] === 'string')
+    && (sample.firstVisibleMs === undefined || optionalNumber(sample.firstVisibleMs)))
     && value.skippedTiers.every(tier => isObject(tier) && finite(tier.targetTokens) && typeof tier.reason === 'string');
 }
 function retain(reports: ContextBenchmarkReport[]) {
   const encoder = new TextEncoder(); let bytes = 0;
   return reports.slice(0, 20).filter((report, index) => { bytes += encoder.encode(JSON.stringify(report)).byteLength; return index === 0 || bytes <= 16 * 1024 * 1024; });
 }
-function download(name: string, body: string, type: string) {
-  downloadBlob(name, new Blob([body], { type }));
-}
-function downloadBlob(name: string, blob: Blob) {
-  const url = URL.createObjectURL(blob), link = document.createElement('a');
-  link.href = url; link.download = name; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-function csv(report: ContextBenchmarkReport) {
-  const cell = (value: unknown) => { let text = value == null ? '' : String(value); if (typeof value === 'string' && /^[=+\-@]/.test(text)) text = `\t${text}`; return `"${text.replaceAll('"', '""')}"`; };
-  const columns = ['configuration', 'tier_tokens', 'round', 'state', 'actual_input_tokens', 'actual_output_tokens', 'prefill_tok_s', 'decode_tok_s', 'peak_gpu_memory_mib', 'min_gpu_free_mib', 'peak_ram_gib', 'wall_s', 'ttft_s', 'cached_tokens', 'token_count_method', 'counted_input_tokens', 'error'];
-  const rows = report.samples.map(sample => [report.options.configurationLabel || report.profileName, sample.targetTokens, sample.round, sample.state,
-    sample.promptTokens, sample.completionTokens, sample.prefillTokS, sample.decodeTokS, sample.peakGpuMemory === null ? null : sample.peakGpuMemory / 2 ** 20,
-    sample.minGpuMemoryFree === null ? null : sample.minGpuMemoryFree / 2 ** 20, sample.peakRam === null ? null : sample.peakRam / 2 ** 30,
-    sample.wallMs / 1000, sample.ttftMs === null ? null : sample.ttftMs / 1000, sample.cachedTokens, sample.tokenCountMethod, sample.countedPromptTokens, sample.error].map(cell).join(','));
-  return `\uFEFF${[columns.join(','), ...rows].join('\r\n')}`;
-}
-
 export function ContextBenchmarkPage({ profile, online, disabled, language, onRunningChange }: {
   profile?: ServiceProfile; online: boolean; disabled: boolean; language: 'zh-CN' | 'en'; onRunningChange: (running: boolean) => void;
 }) {
@@ -53,10 +38,13 @@ export function ContextBenchmarkPage({ profile, online, disabled, language, onRu
   const { maxContext, loading: contextLoading, error: contextError } = useBenchmarkContext(profile, online);
   const [options, setOptions] = useState<ContextBenchmarkOptions>(() => ({ ...core.DEFAULT_CONTEXT_BENCHMARK_OPTIONS, tiers: [] }));
   const [history, setHistory] = useState<ContextBenchmarkReport[]>([]), [selected, setSelected] = useState<ContextBenchmarkReport>();
+  const [comparisonId, setComparisonId] = useState('');
   const [samples, setSamples] = useState<ContextBenchmarkSample[]>([]), [progress, setProgress] = useState<ContextBenchmarkProgress>();
-  const [running, setRunning] = useState(false), [stopping, setStopping] = useState(false), [loaded, setLoaded] = useState(false), [helpOpen, setHelpOpen] = useState(false), [error, setError] = useState('');
+  const [running, setRunning] = useState(false), [stopping, setStopping] = useState(false), [loaded, setLoaded] = useState(false), [error, setError] = useState('');
   const [startedAt, setStartedAt] = useState(0), [elapsedMs, setElapsedMs] = useState(0);
-  const [imageBusy, setImageBusy] = useState(false), [imageMessage, setImageMessage] = useState<{ text: string; error?: boolean }>();
+  const [imagePreview, setImagePreview] = useState<BenchmarkImagePreview>();
+  const imageRequest = useRef(0);
+  const imageBusy = !!imagePreview;
   const charts = useRef<HTMLDivElement>(null);
   const controller = useRef<AbortController | null>(null), mounted = useRef(false), historyRef = useRef(history); historyRef.current = history;
   const contextKey = `${profile?.id ?? ''}:${profile?.baseUrl ?? ''}:${maxContext ?? ''}`;
@@ -77,6 +65,7 @@ export function ContextBenchmarkPage({ profile, online, disabled, language, onRu
     return () => { mounted.current = false; controller.current?.abort(); onRunningChange(false); };
   }, [onRunningChange]);
   useEffect(() => { controller.current?.abort(); }, [profile?.id, profile?.baseUrl]);
+  useEffect(() => { const url = imagePreview?.url; return () => { if (url) URL.revokeObjectURL(url); }; }, [imagePreview?.url]);
   useEffect(() => {
     if (!running) return;
     const timer = setInterval(() => setElapsedMs(Date.now() - startedAt), 500);
@@ -103,31 +92,26 @@ export function ContextBenchmarkPage({ profile, online, disabled, language, onRu
   const tierName = contextTierLabel;
   const states = { completed: text('完成', 'Completed'), failed: text('失败', 'Failed'), cancelled: text('已停止', 'Stopped') };
   const resultSamples = running ? samples : selected?.samples ?? [];
+  const selectedIdentity = selected ? core.contextBenchmarkComparisonAdapter(selected, selected.samples[0]?.targetTokens ?? 0).identity : undefined;
+  const comparisonReport = !running && selected && comparisonId !== selected.id ? history.find(report => report.id === comparisonId) : undefined;
+  const comparisonRows = useMemo(() => selected && comparisonReport ? core.compareContextBenchmarkReports(selected, comparisonReport) : [], [selected, comparisonReport]);
+  const conditionName = (key: string) => ({ model: text('模型名称', 'Model name'), options: text('输入、缓存与测试协议', 'Input, cache and test protocol'), hardware: text('硬件条件', 'Hardware'), identity: text('运行时/模型身份', 'Runtime/model identity'), process: text('服务与引擎进程证明', 'Service and engine process evidence'), runtime: text('引擎身份', 'Runtime identity'), runtimeContent: text('运行时内容摘要', 'Runtime content digest'), modelContent: text('模型文件内容', 'Model file content'), modelIdentity: text('模型文件身份', 'Model identity'), effectiveConfiguration: text('生效配置', 'Effective configuration'), testInput: text('测试文本', 'Test text'), inputConditions: text('实际输入量与缓存复用', 'Actual input and cache reuse'), cacheConditions: text('实际缓存计数', 'Actual cache counters'), incomplete: text('完整成功测量', 'Complete successful measurement') }[key] ?? key);
   const configuration = selected?.options.configurationLabel || selected?.profileName || options.configurationLabel || profile?.name;
-  const exportReport = (format: 'json' | 'csv') => { if (selected) download(`strata-context-benchmark-${selected.id}.${format}`, format === 'json' ? JSON.stringify(selected, null, 2) : csv(selected), format === 'json' ? 'application/json;charset=utf-8' : 'text/csv;charset=utf-8'); };
-  const exportImage = async (copy: boolean) => {
+  const closeImagePreview = () => { imageRequest.current++; setImagePreview(undefined); };
+  const previewImage = async () => {
     if (!selected?.samples.length || !charts.current || running || imageBusy) return;
-    setImageBusy(true); setImageMessage(undefined);
+    const request = ++imageRequest.current, name = `strata-context-benchmark-${selected.id}.png`, intent = 'copy' as const;
+    setImagePreview({ name, intent });
     try {
-      if (copy && (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined')) throw new Error(text('当前环境不支持复制图片，请使用导出 PNG。', 'Image clipboard is unavailable. Export a PNG instead.'));
-      const png = createContextBenchmarkImage(selected, charts.current, language);
-      if (copy) await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
-      else downloadBlob(`strata-context-benchmark-${selected.id}.png`, await png);
-      setImageMessage({ text: copy ? text('结果图片已复制。', 'Result image copied.') : text('结果图片已导出。', 'Result image exported.') });
-    } catch (err) { setImageMessage({ text: copy ? text('复制图片失败，请使用导出 PNG。', 'Could not copy the image. Export a PNG instead.') : core.normalizeError(err).message, error: true }); }
-    finally { setImageBusy(false); }
+      const blob = await createContextBenchmarkImage(selected, charts.current, language);
+      if (mounted.current && request === imageRequest.current) setImagePreview({ name, intent, blob, url: URL.createObjectURL(blob) });
+    } catch (err) { if (mounted.current && request === imageRequest.current) setImagePreview({ name, intent, error: core.normalizeError(err).message }); }
   };
   const tableHeaders = [text('测试配置', 'Configuration'), text('档位', 'Tier'), text('实际输入', 'Actual input'), text('实际输出', 'Actual output'), text('预填充', 'Prefill'), text('解码', 'Decode'), text('整卡显存峰值', 'Peak GPU memory'), text('最低空闲显存', 'Min. free GPU memory'), text('RAM 峰值', 'Peak RAM'), text('总耗时', 'Wall time'), text('状态', 'Status')];
   const units = ['', '', 'token', 'token', 'tok/s', 'tok/s', 'MiB', 'MiB', 'GiB', 's', ''];
   return <div className={`benchmark-page context-benchmark-page${running ? ' is-running' : ''}`}>
-    <Header title={text('上下文档位实测', 'Context tier benchmark')} hint={text('逐档测试，单请求串行执行', 'One request at a time, tier by tier')}>
-      <button type="button" disabled={!selected?.samples.length || running || imageBusy} onClick={() => void exportImage(true)}><Copy size={15}/>{text('复制图片', 'Copy image')}</button>
-      <button type="button" disabled={!selected?.samples.length || running || imageBusy} onClick={() => void exportImage(false)}><ImageDown size={15}/>{text('导出 PNG', 'Export PNG')}</button>
-      <button type="button" disabled={!selected || running} onClick={() => exportReport('json')}><Download size={15}/>{text('导出 JSON', 'Export JSON')}</button>
-      <button type="button" disabled={!selected || running} onClick={() => exportReport('csv')}><Download size={15}/>{text('导出 CSV', 'Export CSV')}</button>
-      <button type="button" onClick={() => setHelpOpen(true)}><CircleHelp size={15}/>{text('测试说明', 'Test guide')}</button>
-    </Header>
-    {!profile ? <Empty title={text('请先选择模型', 'Select a model first')}/> : <Panel className="benchmark-plan" title={text('测试计划', 'Test plan')} action={<div className="benchmark-service"><strong title={profile.baseUrl}>{profile.name}</strong><Badge tone={online ? 'success' : ''}>{online ? text('模型已就绪', 'Model ready') : text('未启动或模型未就绪', 'Service stopped or model not ready')}</Badge></div>}>
+    <Header title={text('上下文档位实测', 'Context tier benchmark')} hint={text('逐档测试，单请求串行执行', 'One request at a time, tier by tier')}/>
+    {!profile ? <Empty title={text('请先选择模型', 'Select a model first')}/> : <Panel className="benchmark-plan" title={text('测试计划', 'Test plan')} action={<div className="benchmark-service"><strong data-tooltip={profile.baseUrl}>{profile.name}</strong><Badge tone={online ? 'success' : ''}>{online ? text('模型已就绪', 'Model ready') : text('未启动或模型未就绪', 'Service stopped or model not ready')}</Badge></div>}>
       <div className="benchmark-plan-body">
         <div className="benchmark-toolbar"><p className="context-benchmark-capacity">{contextLoading ? text('正在读取模型上下文…', 'Reading model context…') : maxContext ? <>{text('当前模型上限', 'Model context limit')} <strong>{tierName(maxContext)}</strong></> : text('尚未取得模型上下文上限', 'Model context limit unavailable')}</p><div className="benchmark-run-actions">
           {running ? <><span role="status"><LoaderCircle size={15} className="spin"/>{number(Math.max(elapsedMs, progress?.elapsedMs ?? 0) / 1000)} s</span><button type="button" className="benchmark-stop" disabled={stopping} onClick={() => { setStopping(true); controller.current?.abort(); }}><Square size={14}/>{stopping ? text('正在停止', 'Stopping') : text('停止测试', 'Stop benchmark')}</button></> : <button type="button" className="st-btn st-btn--primary" disabled={!online || disabled || !loaded || !!validation || contextLoading || !maxContext || options.tiers.some(tier => tier > maxContext || tier <= options.maxTokens + core.CONTEXT_BENCHMARK_HEADROOM)} onClick={() => void start()}><Play size={15}/>{text('开始测试', 'Start benchmark')}</button>}
@@ -149,9 +133,12 @@ export function ContextBenchmarkPage({ profile, online, disabled, language, onRu
     </Panel>}
     {error && <p className="notice error" role="alert">{error}</p>}
     {running && <Panel className="benchmark-live" title={text('实时测试进度', 'Live progress')}><div className="context-benchmark-live"><strong>{progress?.currentTier ? tierName(progress.currentTier) : text('正在核验服务与输入', 'Checking service and input')}</strong><span>{text('完成', 'Completed')} {progress?.completed ?? 0} / {progress?.total ?? options.tiers.length * options.rounds}</span><span>{text('失败', 'Failed')} {progress?.failed ?? 0}</span><span>{text('已停止', 'Cancelled')} {progress?.cancelled ?? 0}</span></div><div className="benchmark-live-budget"><progress aria-label={text('档位测试进度', 'Tier benchmark progress')} max={Math.max(1, progress?.total ?? options.tiers.length * options.rounds)} value={(progress?.completed ?? 0) + (progress?.failed ?? 0) + (progress?.cancelled ?? 0)}/></div></Panel>}
-    <Panel className="benchmark-results" title={text('各上下文档位实测', 'Results by context tier')} action={history.length > 0 && <Dropdown ariaLabel={text('上下文测试历史', 'Context benchmark history')} value={selected?.id ?? ''} disabled={running} placeholder={text('上下文测试历史', 'Context benchmark history')} options={history.map(report => ({ value: report.id, label: `${new Date(report.startedAt).toLocaleString(language)} · ${report.options.configurationLabel || report.profileName}` }))} onValueChange={id => setSelected(history.find(report => report.id === id))}/> }>
+    <Panel className="benchmark-results" title={text('各上下文档位实测', 'Results by context tier')} action={<div className="actions context-benchmark-result-actions">
+      <button type="button" disabled={!selected?.samples.length || running || imageBusy} onClick={() => void previewImage()}><Copy size={15}/>{text('复制图片', 'Copy image')}</button>
+      {history.length > 0 && <Dropdown ariaLabel={text('上下文测试历史', 'Context benchmark history')} value={selected?.id ?? ''} disabled={running} placeholder={text('上下文测试历史', 'Context benchmark history')} options={history.map(report => ({ value: report.id, label: `${new Date(report.startedAt).toLocaleString(language)} · ${report.options.configurationLabel || report.profileName}` }))} onValueChange={id => setSelected(history.find(report => report.id === id))}/>}
+    </div>}>
       {selected && <div className="benchmark-result-meta"><strong>{selected.model}</strong><Badge tone={selected.state === 'failed' ? 'error' : ''}>{selected.samples.length ? states[selected.state] : text('未执行', 'No requests run')}</Badge><span>{new Date(selected.startedAt).toLocaleString(language)}{selected.maxContext != null && ` · ${text('模型上下文', 'Model context')} ${number(selected.maxContext, 0)} token`}</span></div>}
-      {imageMessage && <p className={`notice${imageMessage.error ? ' error' : ''}`} role="status">{imageMessage.text}</p>}
+      {selected && <details className="benchmark-result-meta"><summary>{text('测量身份与生效条件', 'Measurement identity and effective conditions')}</summary>{selectedIdentity ? <p>{text('引擎', 'Runtime')}: {selectedIdentity.runtime.strength} · <code>{selectedIdentity.runtime.fingerprint?.slice(0, 16) ?? '—'}</code> · {text('模型', 'Model')}: {selectedIdentity.model.strength} · {selectedIdentity.effectiveVerified ? text('生效配置已核验', 'Effective configuration verified') : text('生效配置未核验', 'Effective configuration unverified')}</p> : <p>{text('此历史记录未保存测量身份，可以查看测量值，无法据此判断升级提速。', 'This older report has no recorded measurement identity. Values remain available; upgrade speed conclusions are unavailable.')}</p>}</details>}
       <div ref={charts}><ContextBenchmarkCharts samples={resultSamples} language={language}/></div>
       <div className="context-benchmark-results-heading"><h3>{text('逐次测量', 'Measurements')}</h3><span>{text('图表：成功请求的档位均值', 'Charts: mean of successful requests per tier')}</span></div>
       <div className="table-wrap"><table className="context-benchmark-table"><thead><tr>{tableHeaders.map((label, index) => <th key={label}>{label}{units[index] && <small>{units[index]}</small>}</th>)}</tr></thead><tbody>
@@ -161,11 +148,17 @@ export function ContextBenchmarkPage({ profile, online, disabled, language, onRu
       {!!selected?.skippedTiers.length && <ul className="context-benchmark-skipped">{selected.skippedTiers.map(tier => <li key={tier.targetTokens}>{tierName(tier.targetTokens)} · {text('已跳过', 'Skipped')} · {tier.reason}</li>)}</ul>}
       {selected && selected.stopReason !== 'completed' && <p className={`notice${selected.state === 'failed' ? ' error' : ''}`} role="status">{selected.stopReason === 'cancelled' ? text('测试已停止，已完成的结果已保留。', 'Benchmark stopped; completed results were retained.') : selected.stopReason === 'modelChanged' ? text('模型已切换，测试已停止。', 'The model changed; the benchmark was stopped.') : text('测试因请求错误结束，详情见测量结果。', 'The benchmark ended after a request error. See measurements for details.')}</p>}
     </Panel>
-    {helpOpen && <Dialog title={text('上下文 Benchmark 说明', 'Context benchmark guide')} onClose={() => setHelpOpen(false)}><div className="benchmark-help">
-      <p>{text('按上下文档位从小到大串行执行，默认选中当前模型上限以内的全部档位，支持到 1M。每档会预留输出 token 和模板余量。', 'Tiers run serially from smallest to largest, with all tiers up to the model limit selected by default, supporting up to 1M. Each tier reserves output and template space.')}</p>
-      <p>{text('使用合成文本，temperature=0、reasoning_effort=none，无图片输入。实际输入和输出以服务 usage 为准，速度取 timings；总耗时包含完整请求。输入未能精确校准时，不代表实际达到目标档位。', 'Uses synthetic text, temperature=0, reasoning_effort=none, and no images. Token counts use service usage, speeds use timings, and duration covers the full request. Estimated inputs do not establish that the target tier was reached.')}</p>
-      <p>{text('图表显示成功请求的档位均值，表格保留每次测量。显存和 RAM 每秒采样，均为整卡／整机读数；缺失指标显示 —。预热、缓存和其他程序会影响结果。', 'Charts show per-tier means of successful requests; the table keeps every measurement. GPU memory and RAM are sampled each second across the whole system. Missing metrics appear as —. Warmup, caching, and other programs affect comparisons.')}</p>
-      <p>{text('完整条件、输入校准、缓存与生成输出保存在 JSON 中。历史最多保存 20 组、16 MiB。', 'Full conditions, input calibration, cache information, and generated output are included in JSON. History retains up to 20 reports within 16 MiB.')}</p>
-    </div></Dialog>}
+    {!running && selected && history.length > 1 && <Panel title={text('上下文历史对照', 'Context history comparison')} action={<Dropdown ariaLabel={text('对照上下文测试记录', 'Compare context benchmark report')} value={comparisonId} placeholder={text('选择另一份历史记录', 'Select another report')} options={history.filter(report => report.id !== selected.id).map(report => ({ value: report.id, label: `${new Date(report.startedAt).toLocaleString(language)} · ${report.options.configurationLabel || report.profileName}` }))} onValueChange={setComparisonId}/> }>
+      {!comparisonReport ? <p className="subtle">{text('以上方当前记录为 A，选择另一份记录为 B。旧记录仍可对照测量值；身份或条件未核验时不显示提速结论。', 'The current report is A. Select report B. Older measurements remain available; unverified identities or conditions do not establish a speed improvement.')}</p> : <>
+        <p className="subtle">A: {selected.options.configurationLabel || selected.profileName} · {new Date(selected.startedAt).toLocaleString(language)}<br/>B: {comparisonReport.options.configurationLabel || comparisonReport.profileName} · {new Date(comparisonReport.startedAt).toLocaleString(language)}</p>
+        <div className="table-wrap"><table className="context-benchmark-table"><thead><tr>{[text('档位', 'Tier'), text('记录', 'Report'), 'TTFT (s)', text('首正文 (s)', 'First answer text (s)'), text('请求耗时 (s)', 'Request time (s)'), text('预填充 (tok/s)', 'Prefill (tok/s)'), text('解码 (tok/s)', 'Decode (tok/s)'), text('RAM 峰值 (GiB)', 'RAM peak (GiB)'), text('显存峰值 (GiB)', 'VRAM peak (GiB)'), text('条件核验', 'Conditions')].map(label => <th key={label}>{label}</th>)}</tr></thead><tbody>
+          {comparisonRows.flatMap(row => ([['A', row.left, row.leftSamples], ['B', row.right, row.rightSamples]] as const).map(([label, metrics, count], index) => <tr key={`${row.tier}-${label}`}>
+            {index === 0 && <td rowSpan={2}>{tierName(row.tier)}</td>}<td>{label}<small>{count} {text('次成功', 'successful')}</small></td><td>{number(metrics.ttftMs == null ? null : metrics.ttftMs / 1000)}</td><td>{number(metrics.firstVisibleMs == null ? null : metrics.firstVisibleMs / 1000)}</td><td>{number(metrics.wallMs == null ? null : metrics.wallMs / 1000)}</td><td>{number(metrics.prefillTokS)}</td><td>{number(metrics.decodeTokS)}</td><td>{number(metrics.ramPeak == null ? null : metrics.ramPeak / 2 ** 30)}</td><td>{number(metrics.vramPeak == null ? null : metrics.vramPeak / 2 ** 30)}</td>
+            {index === 0 && <td rowSpan={2}>{row.comparison.comparable ? text('条件匹配', 'Conditions match') : text('仅并列展示测量值', 'Measurements shown side by side')} {!!row.comparison.differences.length && <small>{text('差异', 'Differences')}: {row.comparison.differences.map(conditionName).join(' · ')}</small>}{!!row.comparison.unknowns.length && <small>{text('未核验', 'Unverified')}: {row.comparison.unknowns.map(conditionName).join(' · ')}</small>}</td>}
+          </tr>))}
+        </tbody></table></div><p className="subtle">{text('时间与速度为成功请求均值；RAM/显存为对应档位整机采样峰值。不同输入量、缓存命中或生效配置不合并为性能结论。', 'Time and rates are means of successful requests. RAM/VRAM are sampled system peaks for each tier. Different input counts, cache reuse or effective settings do not establish a performance conclusion.')}</p>
+      </>}
+    </Panel>}
+    {imagePreview && <BenchmarkImagePreviewDialog image={imagePreview} language={language} onClose={closeImagePreview}/>}
   </div>;
 }

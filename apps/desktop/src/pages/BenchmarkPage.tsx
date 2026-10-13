@@ -3,6 +3,7 @@ import type { ServiceProfile } from '@strata-manager/core';
 import { Segmented } from '../OfficialControls';
 import { ContextBenchmarkPage } from './ContextBenchmarkPage';
 import { ScenarioBenchmarkPage } from './ScenarioBenchmarkPage';
+import { ServiceCapabilityPanel } from '../ServiceCapabilityPanel';
 import './benchmark.css';
 
 export function BenchmarkPage(props: {
@@ -20,6 +21,7 @@ export function BenchmarkPage(props: {
   const runningChanged = useCallback((value: boolean) => { setRunning(value); onRunningChange(value); }, [onRunningChange]);
   const zh = props.language === 'zh-CN';
   return <div className="benchmark-workspace">
+    <ServiceCapabilityPanel profile={props.profile} online={props.online} language={props.language}/>
     <Segmented ariaLabel={zh ? 'Benchmark 类型' : 'Benchmark type'} value={mode} onValueChange={setMode} options={[
       { value: 'context', label: zh ? '上下文档位' : 'Context tiers', disabled: running },
       { value: 'scenario', label: zh ? '场景测试' : 'Scenario suite', disabled: running },

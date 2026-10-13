@@ -20,6 +20,8 @@ interface Props {
   onDeleted?: (profile: ServiceProfile) => void | Promise<void>;
   onDirtyChange?: (dirty: boolean) => void;
   onSaveDraftReady?: (save: SaveDraft | undefined) => void;
+  /** Read-only consumers receive the current valid graph/JSON draft, never the saved baseline after an invalid edit. */
+  onDraftConfigChange?: (config: JsonObject | undefined) => void;
 }
 type SettingsCategory = StartupFieldGroup | 'context-extension';
 const basicContextFields = new Set(['--max-context', '--kv', '--kv-grow']);
@@ -32,7 +34,7 @@ const groups: [SettingsCategory, string, string][] = [
   ['sampling', '默认采样', 'Default sampling'], ['paths', '路径与 GPU 分配', 'Paths and GPU allocation'],
 ];
 
-export function StartupTuningPanel({ profile, desktop, language, onError, onMessage, onRestart, onCopied, onDeleted, onDirtyChange, onSaveDraftReady }: Props) {
+export function StartupTuningPanel({ profile, desktop, language, onError, onMessage, onRestart, onCopied, onDeleted, onDirtyChange, onSaveDraftReady, onDraftConfigChange }: Props) {
   const zh = language === 'zh-CN'; const client = useQueryClient();
   const [draftConfig, setDraftConfig] = useState<JsonObject>();
   const [fieldEdits, setFieldEdits] = useState<Record<string, string>>({});
@@ -71,6 +73,11 @@ export function StartupTuningPanel({ profile, desktop, language, onError, onMess
   })();
   dirtyRef.current = changed;
   useEffect(() => { onDirtyChange?.(changed); return () => onDirtyChange?.(false); }, [changed, onDirtyChange]);
+  const resourceDraftJson = (() => {
+    try { return JSON.stringify(view === 'json' ? core.parseStartupConfiguration(raw) : materialize()); }
+    catch { return ''; }
+  })();
+  useEffect(() => { onDraftConfigChange?.(resourceDraftJson ? JSON.parse(resourceDraftJson) as JsonObject : undefined); }, [resourceDraftJson, onDraftConfigChange]);
   const disabled = saving || config.isFetching || !draft;
   const mutate = (operation: (data: JsonObject) => JsonObject, ignoreTreeIssues = false) => {
     try { const next = operation(materialize(!ignoreTreeIssues)); setDraftConfig(next); setFieldEdits({}); setError(''); setMessage(''); }
@@ -186,9 +193,9 @@ export function StartupTuningPanel({ profile, desktop, language, onError, onMess
   });
   const newArity = core.STARTUP_ENGINE_FLAGS[newFlag] ?? customArity;
   const title = zh ? '更多启动设置' : 'More startup settings';
-  return <div className="st-card startup-tuning" aria-label={title}><div className="setup-tuning-panel-heading"><span className="card-title">{title}</span><button type="button" className="setup-tuning-help-button" aria-label={zh ? '启动设置帮助' : 'Startup settings help'} title={zh ? '帮助' : 'Help'} onClick={() => setHelpOpen(true)}><CircleHelp size={16}/></button></div>
+  return <div className="st-card startup-tuning" aria-label={title}><div className="setup-tuning-panel-heading"><span className="card-title">{title}</span><button type="button" className="setup-tuning-help-button" aria-label={zh ? '启动设置帮助' : 'Startup settings help'} data-tooltip={zh ? '帮助' : 'Help'} onClick={() => setHelpOpen(true)}><CircleHelp size={16}/></button></div>
     {!desktop ? <p className="muted">{zh ? '请在桌面应用中编辑本地配置。' : 'Use the desktop app to edit local configuration.'}</p> : !profile?.configPath ? <p className="muted">{zh ? '请先导入一个模型配置。' : 'Import a model configuration first.'}</p> : <>
-      <div className="startup-file-actions"><code title={profile.configPath}>{profile.configPath.split(/[\\/]/).at(-1)}</code><button type="button" disabled={disabled || !config.data} onClick={prepareCopy}><Copy size={14}/>{zh?'复制为新配置':'Copy to new configuration'}</button><button type="button" className="danger" disabled={disabled || !config.data} onClick={()=>{setError('');setFileAction({kind:'delete',profile});}}><Trash2 size={14}/>{zh?'删除此配置':'Delete configuration'}</button></div>
+      <div className="startup-file-actions"><code data-tooltip={profile.configPath}>{profile.configPath.split(/[\\/]/).at(-1)}</code><button type="button" disabled={disabled || !config.data} onClick={prepareCopy}><Copy size={14}/>{zh?'复制为新配置':'Copy to new configuration'}</button><button type="button" className="danger" disabled={disabled || !config.data} onClick={()=>{setError('');setFileAction({kind:'delete',profile});}}><Trash2 size={14}/>{zh?'删除此配置':'Delete configuration'}</button></div>
       {(error || config.error || argumentError) && <p role="alert" className="runtime-config-error">{error || (config.error ? core.normalizeError(config.error).message : argumentError)}</p>}
       {config.isPending && <p className="muted">{zh ? '读取配置中…' : 'Reading configuration…'}</p>}
       {draft && <><div className="startup-tuning-navigation"><Segmented value={view} onValueChange={selectView} ariaLabel={zh ? '配置编辑方式' : 'Configuration editor'} options={[{ value: 'graph', label: zh ? '图形界面' : 'Graphical', disabled }, { value: 'json', label: zh ? '完整 JSON' : 'Full JSON', disabled }]}/>{view === 'graph' && <label className="startup-tuning-search"><Search size={15}/><input className="st-input" aria-label={zh ? '搜索启动参数' : 'Search startup parameters'} placeholder={zh ? '搜索名称或参数标志' : 'Search names or flags'} value={search} onChange={event => setSearch(event.target.value)}/></label>}</div>
