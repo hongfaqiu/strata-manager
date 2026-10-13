@@ -13,3 +13,5 @@ This compatibility entry keeps existing English README links working.
 The [0.1.7 release](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.7) includes the [daily experience features](docs/DAILY_EXPERIENCE.md). Screenshots use real components captured before the version bump, with a 0.1.6 UI marker and isolated example data. Their scope and the remaining [verification limits](docs/VERIFICATION.md) are documented in the full README.
 
 The separate [unreleased UI preview](docs/screenshots/ui-refinements/model-download.en.webp) shows rounded tabs and selection controls without an outer halo. It is not a screenshot of the 0.1.7 installer.
+
+The [unreleased monitor preview](docs/screenshots/monitor-customization/floating.en.webp) adds readable two-row telemetry, separate prefill/generation colors, live graphs and [customization](docs/screenshots/monitor-customization/settings.en.webp). Windows taskbar presentation is experimental; actual Explorer compatibility remains pending. These features are not included in the 0.1.7 installer.

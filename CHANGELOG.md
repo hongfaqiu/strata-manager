@@ -7,6 +7,14 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+- 桌面监控默认使用清晰双行，支持 12–24px 字号、三种布局、从 11 项指标中选择 1–8 项并排序，以及标签、单位、采样时间和折线开关。读取蓝色、生成绿色；空闲历史速度不会续画为实时曲线。
+- 新增实验性 Windows 任务栏宽条与桌面浮条切换、原生自定义菜单。独立宿主仅在确认空闲区域后挂载，空间不足或进程失效时回退；本轮通过编译和纯函数测试，真实 Explorer、自动隐藏及多屏兼容仍待实机验收。
+- 修复浮条放大时越出工作区、关闭任务栏后隐藏窗口继续采样，以及连续偏好事件覆盖刚修改指标的问题。
+
+![未发布：双行浮条与双色趋势](docs/screenshots/monitor-customization/floating.zh.webp)
+
+[查看自定义面板](docs/screenshots/monitor-customization/settings.zh.webp)。以上为隔离 Vite 示例数据，并非真实任务栏嵌入截图；[截图范围](https://github.com/hongfaqiu/strata-manager/blob/main/docs/screenshots/monitor-customization/README.md)。
+
 - 恢复模型、设置等工作区 Tab 的圆角分段样式，统一 API 用量时间切换器的圆角；窄窗口可滚动并保留键盘切换。
 - 保留绿色主题下的白色选择环线与标记，移除单选、复选控件最外层光晕。
 
@@ -15,6 +23,14 @@ Maintain both languages for each version. Move unreleased changes into the actua
 ![未发布：圆角 Tab 与无外层光晕的选择控件](docs/screenshots/ui-refinements/model-download.zh.webp)
 
 ### English
+
+- Desktop monitoring defaults to two clear rows, with 12–24px text, three layouts, 1–8 ordered metrics selected from eleven, and controls for labels, units, sample time and graphs. Prefill is blue and generation green; historical idle rates never become fresh graph samples.
+- Add an experimental Windows taskbar strip and switching back to the floating monitor, with a native customization menu. The isolated host attaches only in verified vacant space and falls back on failure. Compilation and pure-function tests passed; real Explorer, auto-hide and multi-monitor acceptance remain pending.
+- Fix off-screen growth, hidden sampling after taskbar closure, and consecutive preference events overwriting recent metric changes.
+
+![Unreleased: two-row monitor with separate throughput colors](docs/screenshots/monitor-customization/floating.en.webp)
+
+[View customization settings](docs/screenshots/monitor-customization/settings.en.webp). These are isolated Vite examples, not actual taskbar attachment screenshots. [Capture scope](https://github.com/hongfaqiu/strata-manager/blob/main/docs/screenshots/monitor-customization/README.md).
 
 - Restore rounded segmented workspace tabs and align API-usage time selectors with the shared rounded style. Narrow windows retain scrolling and keyboard navigation.
 - Keep the green theme with white selection borders and marks, while removing the outer halo from radio buttons and checkboxes.

@@ -8,6 +8,10 @@
 
 生产版首次使用自动发现已有安装，或选择用途与模型后一键准备，再进入聊天/API接入。Python路径、端口与managed选择由后台维护。既有安装导入先只读识别，身份和空闲核验后迁移；原文件与模型保留。
 
+## 桌面监控专项（未发布）
+
+已实现清晰双行、字号和指标自定义、双色实时折线、Windows 独立原生任务栏宿主与形态切换。源代码与隔离浏览器验证已完成；任务栏真实挂载、Explorer 重启、自动隐藏、DPI 与多屏仍是发行前独立门槛。详见[实施约定](superpowers/plans/2026-10-13-monitor-presentations.md)及[截图范围](screenshots/monitor-customization/README.md)。
+
 ## 新实施顺序
 
 1. P0：Rust workspace、Supervisor与用户限定IPC、实体/旧数据迁移、自动检测/导入/启动加载。

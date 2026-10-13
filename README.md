@@ -74,6 +74,8 @@ The bilingual screenshots show real components captured before the version bump,
 
 The [unreleased development preview](docs/screenshots/ui-refinements/model-download.en.webp) restores rounded workspace tabs and removes the selection controls' outer halo. These refinements are separate from the 0.1.7 installer; see the [changelog](CHANGELOG.md#unreleased).
 
+The [unreleased monitor preview](docs/screenshots/monitor-customization/floating.en.webp) adds readable two-row telemetry, separate prefill/generation colors, live graphs and [customization](docs/screenshots/monitor-customization/settings.en.webp). Windows taskbar presentation is experimental; actual Explorer compatibility remains pending. These features are not included in the 0.1.7 installer.
+
 ### Stable installers
 
 Choose a package from the [latest stable release](https://github.com/hongfaqiu/strata-manager/releases/latest) or the [website download section](https://hongfaqiu.github.io/strata-manager/en/#get-started). Install only files listed for the selected release and verify them against that release's `SHA256SUMS`.

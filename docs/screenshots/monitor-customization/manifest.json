@@ -1,0 +1,38 @@
+{
+  "sourceCommit": "74ef98d0523382c4439bf167154b7a17f5c945a1",
+  "scope": "Production React components in an isolated Vite fixture. Synthetic sample data; no actual Explorer/taskbar attachment or inference. Settings images crop the entire monitor settings card. Floating screenshots use effective 588x160 browser viewport; native default requests 588x152 logical pixels.",
+  "images": [
+    {
+      "path": "floating.zh.webp",
+      "size": [
+        588,
+        160
+      ],
+      "sha256": "d8ace812f557db7bf951cb682d5cf78b7eb6a7aa8a1f362143d5380f49570315"
+    },
+    {
+      "path": "floating.en.webp",
+      "size": [
+        588,
+        160
+      ],
+      "sha256": "82db1dc86a36adcb242bb8d2e8a7a2a0d84ae85899b21dfa526c1d43ef6a9fa7"
+    },
+    {
+      "path": "settings.zh.webp",
+      "size": [
+        1154,
+        1240
+      ],
+      "sha256": "515ffee89ac77aa10a756800573f518cb697e661e203c8d3143ad1c4266395f0"
+    },
+    {
+      "path": "settings.en.webp",
+      "size": [
+        1154,
+        1240
+      ],
+      "sha256": "1bd45bb7f3545693ee9892015a33aea671f0dacb68100bcbdea085277ae389b9"
+    }
+  ]
+}

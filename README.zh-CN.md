@@ -74,6 +74,8 @@ API 使用统计无需捕获请求正文。可选的临时正文诊断是独立�
 
 [未发布开发版预览](docs/screenshots/ui-refinements/model-download.zh.webp)已恢复圆角工作区 Tab，并移除选择控件的外层光晕。这些改进尚未包含在 0.1.7 安装包中，见[更新日志](CHANGELOG.md#unreleased)。
 
+[未发布监控预览](docs/screenshots/monitor-customization/floating.zh.webp)提供清晰双行、读取与生成分色、实时折线及[自定义面板](docs/screenshots/monitor-customization/settings.zh.webp)。Windows 常驻任务栏为实验适配，真实 Explorer 兼容仍待实机验收；尚未包含在 0.1.7 安装包中。
+
 ### 稳定安装包
 
 从[最新稳定发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)或[官网下载区](https://hongfaqiu.github.io/strata-manager/#get-started)选择安装包。仅安装所选版本实际提供的文件，并用同一发布页的 `SHA256SUMS` 核对。

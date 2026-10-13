@@ -439,3 +439,17 @@ Windows 夹具改为写完同目录临时文件后原子发布标记，全部断
 独立核查将该崩溃链对应到 GNOME keyring 的首次客户端注册竞态及协商失败后空结果被当作成功返回；官方 [MR !112](https://gitlab.gnome.org/GNOME/gnome-keyring/-/merge_requests/112) 的固定 head 为 `8fcdeffe67ae8c1600eae9637816acbf73f66b81`，核查时仍未合并。CI 使用固定官方 40.0 源码、校验和及窄范围回移补丁，构建到私有目录；不替换用户系统 daemon，不修改生产凭据客户端，不跳过或吞掉凭据错误。保留真实 Secret Service 读写删除、原 owner/PID 检查、断言和全部原生测试，并增加直接首次 OpenSession 的新连接压力门禁。Linux 发行程序仍使用用户的系统凭据服务；该 CI 环境修复不能证明所有未修复系统 daemon 均无此上游问题。
 
 回移补丁 SHA256 为 `e0e33127048532ed6b6a39a319a1fcd7ee51f6765ec018157dd0efde964e54bd`，仅比固定上游 diff 多保留既有 `error != NULL` 防御条件。WSL Ubuntu 24.04 实际构建成功，确认 `G_DISABLE_ASSERT` 未定义；私有 daemon 的真实存取删除通过。上述两项原失败 Rust 用例分别通过（10.36 秒、28.39 秒），0 ignored。直接首次 OpenSession 压力覆盖单线程 1000 次及 16 线程各 200 次，全部 **4200** 个独立连接、会话关闭和连接关闭通过；原 unique owner、PID 和进程启动时间保持一致，daemon 正常退出。原有 wrapper 的 8 项故障/隔离合同全部通过，0 skipped；合同使用 PATH stub，真实压力及 Rust 用例使用实际 daemon，两类证据单列。后续完整 CI 和公开发行验收仍须绑定最终提交。
+
+
+## 2026-10-13 监控自定义与任务栏专项（未发布）
+
+源码提交 `74ef98d0523382c4439bf167154b7a17f5c945a1`；本节不替代真实 Windows 任务栏验收。
+
+- Core：27 文件 / 352 测试通过，包含新增 34 项偏好、预设和尺寸边界测试；Core typecheck 通过。
+- Desktop：112 项单元测试通过（新增历史实时/空闲/去重/身份重置测试）；typecheck 与生产构建通过。既有打包 chunk 提示仍存在。
+- Native：`cargo test -p strata-manager monitor --lib` 44 项通过；`cargo clippy -p strata-manager --all-targets -- -D warnings`、`cargo fmt --all -- --check` 通过。`cargo build -p strata-manager --bin strata-manager` 通过，未执行生成的程序。
+- Codex 内置浏览器 + Vite 隔离夹具：中英、明暗、720px 窄窗口无页面横向溢出；默认双行、16px 数值、读取蓝色/生成绿色、动态折线显示；6→8 项上限、24px 字号、按钮/Alt+方向键排序、预设恢复通过；刷新保留字号和折线设置；模拟模式成功与失败回退通过。
+- 回归：连续“指标修改→模式改变”事件保留 CPU 选择；模拟任务栏关闭后 10 秒以上仅保留首次 snapshot，隐藏浮窗不恢复采样。停止与过期场景所有数值显示缺测，监控窗口调用记录无模型启动、加载或推理操作；浏览器错误日志为空。
+- 截图：[范围与文件](screenshots/monitor-customization/README.md)。原图在 `output/playwright/monitor-customization/`。现有 Playwright 回放脚本已更新并通过语法检查，本轮没有运行该脚本，以上浏览器结论来自直接交互验收。
+- 未覆盖：真实任务栏挂载、右键菜单、拖动/复制、自动隐藏、Explorer 重启、多屏/DPI、Linux 构建与真实硬件。新宿主只在用户显式切换时启动；普通托盘图标不是任务栏宽条。任务栏形态仍为实验功能，不进入已发布的 0.1.7。
+- 并行完成 Core/设置、窗口几何、原生宿主与独立复核；工具未提供可核实的子 Agent 模型或推理档位，记录为未知。
