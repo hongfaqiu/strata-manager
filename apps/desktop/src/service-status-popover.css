@@ -56,3 +56,34 @@
 .service-status-popover>nav button:hover:not(:disabled){background:var(--st-surface-2,var(--surface-hover))}
 @media(max-width:380px){.service-status-popover{padding:14px}.service-status-trends{gap:8px}.service-status-trends>section{padding:8px}.service-status-resources{gap:10px}.service-status-popover>nav{gap:3px}.service-status-popover>nav button{padding:6px}}
 @media(prefers-reduced-motion:reduce){.service-status-meter>span{transition:none}}
+
+/* Status pill live animations keyed off data-state */
+.service-status-trigger .st-pill__dot,.window-title-bar .service-status-trigger .st-pill__dot{position:relative}
+.service-status-trigger[data-state="disconnected"] .st-pill__dot,
+.service-status-trigger[data-state="offline"] .st-pill__dot{animation:st-pill-breathe-muted 2.8s ease-in-out infinite}
+.service-status-trigger[data-state="loading"] .st-pill__dot,
+.service-status-trigger[data-state="unloading"] .st-pill__dot,
+.service-status-trigger[data-state="connecting"] .st-pill__dot{animation:st-pill-pulse-strong 1.05s ease-in-out infinite}
+.service-status-trigger[data-state="loading"] .st-pill__dot::after,
+.service-status-trigger[data-state="unloading"] .st-pill__dot::after,
+.service-status-trigger[data-state="connecting"] .st-pill__dot::after{content:"";position:absolute;inset:-5px;border-radius:50%;border:1.5px solid color-mix(in srgb,var(--st-accent,var(--accent)) 55%,transparent);border-top-color:transparent;animation:st-pill-spin-ring .9s linear infinite}
+.service-status-trigger[data-state="generating"] .st-pill__dot{animation:st-pill-pulse-glow .85s ease-in-out infinite;box-shadow:0 0 0 5px color-mix(in srgb,var(--st-accent,var(--accent)) 22%,transparent),0 0 12px color-mix(in srgb,var(--st-accent,var(--accent)) 35%,transparent)}
+.service-status-trigger[data-state="reading"] .st-pill__dot{animation:st-pill-pulse-medium 1.15s ease-in-out infinite}
+.service-status-trigger[data-state="queued"] .st-pill__dot{animation:st-pill-blink-soft 1.4s steps(2,end) infinite;box-shadow:0 0 0 4px color-mix(in srgb,var(--st-warn,var(--warning)) 18%,transparent)}
+.service-status-trigger[data-state="idle"] .st-pill__dot,
+.service-status-trigger[data-state="online"] .st-pill__dot,
+.service-status-trigger[data-state="unloaded"] .st-pill__dot{animation:st-pill-breathe-calm 3.2s ease-in-out infinite;box-shadow:0 0 0 4px color-mix(in srgb,var(--st-accent,var(--accent)) 14%,transparent)}
+.service-status-trigger[data-state="unknown"] .st-pill__dot{animation:none;opacity:.65}
+.service-status-trigger #pill-text{transition:color .22s ease,opacity .22s ease}
+@keyframes st-pill-breathe-muted{0%,100%{opacity:.4;transform:scale(.9)}50%{opacity:.85;transform:scale(1)}}
+@keyframes st-pill-breathe-calm{0%,100%{opacity:.75;transform:scale(.96)}50%{opacity:1;transform:scale(1)}}
+@keyframes st-pill-pulse-strong{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.82)}}
+@keyframes st-pill-pulse-medium{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.88)}}
+@keyframes st-pill-pulse-glow{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.55;transform:scale(1.12)}}
+@keyframes st-pill-blink-soft{0%,100%{opacity:1}50%{opacity:.3}}
+@keyframes st-pill-spin-ring{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){
+  .service-status-trigger .st-pill__dot{animation:none!important}
+  .service-status-trigger .st-pill__dot::after{animation:none!important;display:none}
+}
+

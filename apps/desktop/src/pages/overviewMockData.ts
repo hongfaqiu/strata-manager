@@ -1,0 +1,285 @@
+/**
+ * TEMPORARY DEV-only Overview mock.
+ * Enable with ?mockData=1 | #mockData=1 | localStorage mockData=1
+ * Optional state: ?mockData=generating (default idle)
+ * Keep separate from ?artDemo=1 (hero art cycle).
+ */
+import type {
+  ApiAnalyticsCoverage,
+  ApiUsageSummary,
+  BackgroundHealthSnapshot,
+  JsonObject,
+  MetricSnapshot,
+  ProcessStatus,
+  ServiceProfile,
+  TaskStatus,
+} from '@strata-manager/core';
+
+export type OverviewMockState = 'idle' | 'generating';
+
+export function overviewMockEnabled(): boolean {
+  if (typeof import.meta !== 'undefined' && import.meta.env?.DEV !== true) return false;
+  if (typeof window === 'undefined') return false;
+  try {
+    const q = new URLSearchParams(window.location.search).get('mockData');
+    if (q === '1' || q === 'idle' || q === 'generating') return true;
+    if (/(?:^|[?#&])mockData(?:=1|=idle|=generating)?(?:&|$)/.test(window.location.hash)) return true;
+    const stored = window.localStorage.getItem('mockData');
+    if (stored === '1' || stored === 'idle' || stored === 'generating') return true;
+  } catch { /* ignore */ }
+  return false;
+}
+
+export function overviewMockState(): OverviewMockState {
+  if (typeof window === 'undefined') return 'idle';
+  try {
+    const q = new URLSearchParams(window.location.search).get('mockData');
+    if (q === 'generating') return 'generating';
+    if (/(?:^|[?#&])mockData=generating(?:&|$)/.test(window.location.hash)) return 'generating';
+    if (window.localStorage.getItem('mockData') === 'generating') return 'generating';
+  } catch { /* ignore */ }
+  return 'idle';
+}
+
+const nowSec = () => Math.floor(Date.now() / 1000);
+
+function sampleRequests(state: OverviewMockState): JsonObject[] {
+  const t = nowSec();
+  const rows: JsonObject[] = [];
+  for (let i = 0; i < 8; i++) {
+    rows.push({
+      id: `req-mock-${i}`,
+      time: t - i * 97 - 12,
+      prompt_tokens: 420 + i * 180,
+      output_tokens: 96 + i * 37,
+      decode_tok_s: 38 + (i % 5) * 4.6 + (i % 3),
+      prompt_ms: 180 + i * 40,
+      reused: i % 2 === 0 ? 64 : 0,
+      hit_rate: 0.42 + (i % 4) * 0.08,
+      finish: i === 1 ? 'length' : 'stop',
+    });
+  }
+  if (state === 'generating') {
+    // live request is current; recent list still shows completed ones
+  }
+  return rows;
+}
+
+export function buildOverviewMock(state: OverviewMockState = overviewMockState()) {
+  const profile: ServiceProfile = {
+    id: 'mock-profile-dev',
+    name: 'Qwen3-32B · 本机',
+    baseUrl: 'http://127.0.0.1:8080',
+    installDir: '/home/dev/strata',
+    pythonPath: '/home/dev/strata/.venv/bin/python',
+    configPath: '/home/dev/strata/configs/qwen3-32b.yaml',
+    managed: true,
+  };
+
+  const health: JsonObject = {
+    loaded: true,
+    model: 'Qwen3-32B-Instruct-Q4_K_M',
+    images: true,
+    api_key: false,
+    max_context: 131072,
+  };
+
+  const process: ProcessStatus = {
+    running: true,
+    owned: true,
+    pid: 42817,
+    startedAt: Date.now() - 3_600_000,
+    creationTime: new Date(Date.now() - 3_600_000).toISOString(),
+  };
+
+  const requests = sampleRequests(state);
+  const last = requests[0] ?? {
+    prompt_tokens: 1800,
+    output_tokens: 240,
+    decode_tok_s: 42.5,
+  };
+  const live: JsonObject = state === 'generating'
+    ? {
+        state: 'generating',
+        queued: 1,
+        running: 1,
+        tok_s: 46.8,
+        prompt_tokens: 2048,
+        generated: 312,
+        prefill_tok_s_mean: 820,
+      }
+    : {
+        state: 'idle',
+        queued: 0,
+        running: 0,
+        prompt_tokens: last.prompt_tokens,
+        generated: last.output_tokens,
+        prefill_tok_s_mean: 910,
+      };
+
+  const gb = (n: number) => n * 1024 ** 3;
+  const metric: MetricSnapshot = {
+    state,
+    model: String(health.model),
+    decodeTokS: state === 'generating' ? 46.8 : Number(last.decode_tok_s),
+    prefillTokS: state === 'generating' ? 820 : 910,
+    gpuUtil: state === 'generating' ? 91.2 : 18.4,
+    gpuMemoryUsed: gb(18.6),
+    gpuMemoryTotal: gb(24),
+    gpuTemperature: state === 'generating' ? 72 : 54,
+    gpuPower: state === 'generating' ? 248 : 96,
+    cpuUtil: state === 'generating' ? 34.2 : 8.1,
+    ramUsed: gb(42.3),
+    ramTotal: gb(64),
+    queued: Number(live.queued),
+    running: Number(live.running),
+    cacheHitRate: 0.58,
+    requests,
+    history: {},
+    raw: {
+      live,
+      engine: { model: health.model, max_context: 131072 },
+      hardware: {
+        cpu: state === 'generating' ? 34.2 : 8.1,
+        ram_used: gb(42.3),
+        ram_total: gb(64),
+        gpu_util: state === 'generating' ? 91.2 : 18.4,
+        gpu_mem_used: gb(18.6),
+        gpu_mem_total: gb(24),
+        gpu_temp: state === 'generating' ? 72 : 54,
+        gpu_power: state === 'generating' ? 248 : 96,
+        gpus: [{ util: state === 'generating' ? 91.2 : 18.4, mem_used: gb(18.6), mem_total: gb(24), temp: state === 'generating' ? 72 : 54, power: state === 'generating' ? 248 : 96 }],
+      },
+      requests,
+    },
+  };
+
+  const tasks: TaskStatus[] = [
+    {
+      id: 'mock-task-1',
+      kind: 'setup',
+      state: 'running',
+      message: '正在准备量化配置…',
+      startedAt: Date.now() - 95_000,
+    },
+    {
+      id: 'mock-task-2',
+      kind: 'update',
+      state: 'completed',
+      message: '运行时已更新到最新版本',
+      startedAt: Date.now() - 3_600_000,
+      finishedAt: Date.now() - 3_400_000,
+    },
+  ];
+
+  const backgroundHealth: BackgroundHealthSnapshot = {
+    profileId: profile.id,
+    phase: 'healthy',
+    apiHealthy: true,
+    loaded: true,
+    observerState: state === 'generating' ? 'busy' : 'idle',
+    activeRequests: state === 'generating' ? 1 : 0,
+    pid: process.pid ?? null,
+    reason: 'ok',
+    checkedAt: Date.now() - 8_000,
+    lastHealthyAt: Date.now() - 8_000,
+    probeAttempted: true,
+    consecutiveFailures: 0,
+    failures: [],
+  };
+
+  const endMs = Date.now() + 1;
+  const dayStart = new Date(endMs);
+  dayStart.setHours(0, 0, 0, 0);
+  const usageSummary: ApiUsageSummary = {
+    startMs: dayStart.getTime(),
+    endMs,
+    http: {
+      requests: 128,
+      succeeded: 121,
+      failed: 4,
+      cancelled: 2,
+      interrupted: 1,
+      pending: 0,
+      inputTokens: 482_300,
+      outputTokens: 96_840,
+      cacheReadTokens: 42_100,
+      cacheCreationTokens: 8_200,
+      inputTokenSamples: 120,
+      outputTokenSamples: 120,
+      mcpToolCalls: 14,
+      mcpToolFailures: 1,
+      firstRequestAtMs: dayStart.getTime() + 3_600_000,
+      lastFinishedAtMs: Date.now() - 40_000,
+      successRate: 121 / 128,
+    },
+    inference: {
+      runs: 118,
+      inputTokens: 470_000,
+      outputTokens: 94_000,
+      cacheReadTokens: 40_000,
+      toolCalls: 12,
+      inputTokenSamples: 110,
+      decodeSpeedSamples: 110,
+      prefillTokens: 420_000,
+      prefillS: 510,
+      decodeS: 2_100,
+      prefillSpeedSamples: 110,
+      cacheHitRate: 0.56,
+      cacheRateSamples: 100,
+      expertCacheHitRate: null,
+      expertCacheSamples: 0,
+    },
+    groups: [{ route: 'chat', clientId: 'strata-manager', requests: 98, succeeded: 94 }],
+    ttftS: { samples: 100, p50: 0.42, p95: 1.1, mean: 0.51 },
+    durationS: { samples: 100, p50: 4.2, p95: 18.6, mean: 5.8 },
+    decodeTokS: { samples: 100, p50: 44.2, p95: 58.1, mean: 45.6 },
+    prefillTokS: { samples: 100, p50: 880, p95: 1200, mean: 910 },
+    retentionDays: 14,
+    successRateDefinition: 'succeeded / requests',
+    tokenDefinition: 'provider reported',
+  };
+
+  const usageCoverage: ApiAnalyticsCoverage = {
+    sessions: [],
+    gaps: [],
+    observerStatuses: [{
+      serviceId: profile.id,
+      sessionId: 'mock-session',
+      pid: process.pid ?? null,
+      updatedAtMs: Date.now() - 5_000,
+      supported: true,
+      journalWriteFailed: false,
+      observerActive: true,
+      heartbeatFresh: true,
+      error: null,
+    }],
+    journalPresent: true,
+    metadataOnly: true,
+    dataAvailableFromMs: dayStart.getTime(),
+    collectionScope: ['http'],
+    historyRetentionDays: 14,
+    journalRetentionDays: 7,
+    journalMaxEvents: 100_000,
+  };
+
+  return {
+    profile,
+    health,
+    metric,
+    process,
+    tasks,
+    backgroundHealth,
+    online: true,
+    connecting: false,
+    desktop: true,
+    tasksLoading: false,
+    usageSummary,
+    usageCoverage,
+    pillState: state,
+    pillLabel: state === 'generating' ? '生成中 · 46.8 tok/s' : '空闲',
+    pillLabelEn: state === 'generating' ? 'Generating · 46.8 tok/s' : 'Idle',
+  };
+}
+
+export type OverviewMockBundle = ReturnType<typeof buildOverviewMock>;
