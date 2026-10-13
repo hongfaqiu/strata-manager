@@ -266,6 +266,7 @@ export async function findReusableCi(plan, { runId = plan.runId, fetchJson = jso
   const runs = await inventory(base + '/actions/workflows/ci.yml/runs?head_sha=' + plan.sourceSha, 'workflow_runs', fetchJson);
   const candidates = runs.filter(r => r.head_sha === plan.sourceSha).sort((a, b) => date(b.created_at) - date(a.created_at));
   let pending;
+  let lastEvidenceError;
   for (const run of candidates) {
     try { validateRun(run, plan, false); } catch { continue; }
     if (run.status !== 'completed') { pending ??= run.id; continue; }
@@ -274,9 +275,14 @@ export async function findReusableCi(plan, { runId = plan.runId, fetchJson = jso
     const jobs = await inventory(base + '/actions/runs/' + run.id + '/attempts/' + run.run_attempt + '/jobs', 'jobs', fetchJson);
     const artifacts = await inventory(base + '/actions/runs/' + run.id + '/artifacts', 'artifacts', fetchJson);
     try { return { status: 'success', runId: run.id, plan: validateCiEvidence(run, jobs, artifacts, plan) }; }
-    catch { /* an older complete same-source candidate may still qualify */ }
+    catch (error) {
+      // Keep searching older same-source successes; surface why reuse was refused if none qualify.
+      lastEvidenceError = error instanceof Error ? error.message : String(error);
+    }
   }
-  return pending ? { status: 'pending', runId: pending } : { status: 'missing' };
+  if (pending) return { status: 'pending', runId: pending };
+  if (lastEvidenceError) fail('Same-source CI exists but is not reusable: ' + lastEvidenceError);
+  return { status: 'missing' };
 }
 async function digest(file) {
   const h = createHash('sha256');

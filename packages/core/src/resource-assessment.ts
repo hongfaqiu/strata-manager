@@ -1,7 +1,7 @@
 import { StrataError } from './errors';
 import type { JsonObject } from './types';
 
-/** Model-specific estimates reviewed against Strata v0.1.43.1, never a general GGUF capacity formula. */
+/** Model-specific estimates reviewed against Strata v0.1.44, never a general GGUF capacity formula. */
 export const RESOURCE_ASSESSMENT_REVISION = 'a0116b2782a5b82622358c04a06496485d12b2d6';
 export interface ResourceAssessmentRequest {
   installationId: string;

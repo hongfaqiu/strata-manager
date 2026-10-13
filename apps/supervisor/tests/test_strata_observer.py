@@ -37,8 +37,11 @@ SOURCE_HASH = hashlib.sha256((ROOT / "serve/server.py").read_bytes().replace(b"\
 OFFICIAL_0142_HASH = "ce9266730b632e919ff93809ea6f9ecd6f91f12da19597a2d95a7edb29700dfa"
 OFFICIAL_0143_HASH = "55ee9d1160f0da457cabe6f9dfea9884296b6d70fd3d14abd4ed42e6f79dd72b"
 OFFICIAL_01431_HASH = "6046f030abca250fd09f9a4fc95f5bb764d8420754acce049db2e4db77335bad"
-KEEP_AWAKE_SOURCE_HASHES = {OFFICIAL_0142_HASH, OFFICIAL_0143_HASH, OFFICIAL_01431_HASH}
-NONFINITE_SOURCE_HASHES = {OFFICIAL_0143_HASH, OFFICIAL_01431_HASH}
+OFFICIAL_0144_HASH = "2aa0d2060766799be2ea7045dc13ca5bab2cec39ad5c29bc8a54d816ed246e7c"
+KEEP_AWAKE_SOURCE_HASHES = {OFFICIAL_0142_HASH, OFFICIAL_0143_HASH, OFFICIAL_01431_HASH, OFFICIAL_0144_HASH}
+NONFINITE_SOURCE_HASHES = {OFFICIAL_0143_HASH, OFFICIAL_01431_HASH, OFFICIAL_0144_HASH}
+HEADER_JSON_SOURCE_HASHES = {OFFICIAL_01431_HASH, OFFICIAL_0144_HASH}
+RETRYABLE_503_SOURCE_HASHES = {OFFICIAL_01431_HASH, OFFICIAL_0144_HASH}
 
 
 class BlockingLazyEngine(server.MockEngine):
@@ -347,7 +350,7 @@ class ObserverHttp(unittest.TestCase):
         self.assertEqual(run["inputTokens"], result["usage"]["prompt_tokens"])
         self.assertEqual((run["prefillS"], run["decodeS"], run["decodeTokS"]), (0.25, 0.5, 40.0))
 
-    @unittest.skipUnless(SOURCE_HASH == OFFICIAL_01431_HASH, "requires official Strata 0.1.43.1")
+    @unittest.skipUnless(SOURCE_HASH in RETRYABLE_503_SOURCE_HASHES, "requires official Strata 0.1.43.1 or 0.1.44")
     def test_01431_before_load_refusal_preserves_retry_after_and_capture(self):
         self.start()
         self.svc.loaded = lambda: False
@@ -384,7 +387,7 @@ class ObserverHttp(unittest.TestCase):
         self.assertTrue(self.svc.fifo.acquire(blocking=False))
         self.svc.fifo.release()
 
-    @unittest.skipUnless(SOURCE_HASH == OFFICIAL_01431_HASH, "requires official Strata 0.1.43.1")
+    @unittest.skipUnless(SOURCE_HASH in RETRYABLE_503_SOURCE_HASHES, "requires official Strata 0.1.43.1 or 0.1.44")
     def test_01431_retryable_engine_refusal_preserves_503_and_run_cleanup(self):
         class Busy(server.MockEngine):
             def generate(self, *args, **kwargs):
@@ -414,7 +417,7 @@ class ObserverHttp(unittest.TestCase):
         self.svc.fifo.release()
         self.capture_off()
 
-    @unittest.skipUnless(SOURCE_HASH == OFFICIAL_01431_HASH, "requires official Strata 0.1.43.1")
+    @unittest.skipUnless(SOURCE_HASH in RETRYABLE_503_SOURCE_HASHES, "requires official Strata 0.1.43.1 or 0.1.44")
     def test_01431_disconnect_during_prepare_is_cancelled_without_inference(self):
         self.start()
         for index, path in enumerate(("/v1/chat/completions", "/v1/responses", "/v1/messages")):
@@ -972,7 +975,7 @@ class JournalAndLoader(unittest.TestCase):
         handler_factory = next(n for n in module.body if isinstance(n, ast.FunctionDef) and n.name == "make_handler")
         handler = next(n for n in handler_factory.body if isinstance(n, ast.ClassDef))
         handler_methods = {n.name: n for n in handler.body if isinstance(n, ast.FunctionDef)}
-        json_arguments = "self, code, obj, headers=None" if SOURCE_HASH == OFFICIAL_01431_HASH else "self, code, obj"
+        json_arguments = "self, code, obj, headers=None" if SOURCE_HASH in HEADER_JSON_SOURCE_HASHES else "self, code, obj"
         for name, arguments in {"do_POST": "self", "send_response": "self, code, message=None",
                                 "_note": "self, **values", "_json": json_arguments,
                                 "_capture": "self, items, api"}.items():

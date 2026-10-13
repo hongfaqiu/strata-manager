@@ -50,6 +50,11 @@ SUPPORTED_HASHES = {
     # retryable 503s with/without temporary capture, preparation disconnects,
     # non-finite retry accounting, native timings and admission/FIFO release.
     "6046f030abca250fd09f9a4fc95f5bb764d8420754acce049db2e4db77335bad",
+    # Niko1221/Strata ed4773eb7c8f1f1531ba2bc70e0e1987de2661af (0.1.44),
+    # canonical LF. Same observer contracts as 0.1.43.1 for _json headers,
+    # retryable 503s, preparation disconnects, timings and admission/FIFO;
+    # release notes keep default-model answers byte-identical to 0.1.43.1.
+    "2aa0d2060766799be2ea7045dc13ca5bab2cec39ad5c29bc8a54d816ed246e7c",
 }
 ROUTES = {"/v1/chat/completions": "chat", "/v1/responses": "responses",
           "/v1/messages": "anthropic", "/v1/messages/count_tokens": "token_count"}

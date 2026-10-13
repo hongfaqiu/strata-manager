@@ -57,7 +57,7 @@ export function ResourceAssessmentPanel({ request, language, desktop = core.isDe
       <div><dt>{t('单槽 / 批处理槽显存分项', 'Per-slot / batch-slot VRAM')}</dt><dd>{size(result.slots.perSlotVramBytes)} / {size(result.slots.totalVramBytes)}</dd></div>
     </dl>
     <p>{core.resourceAssessmentMessage('estimate_scope', zh)}</p><p>{t('硬件采样', 'Hardware sampled')}: {new Date(result.sampledAt).toLocaleTimeString(language)} · {t('处理器指令', 'CPU ISA')}: {result.hardware.cpuIsa}{result.hardware.wsl ? ' · WSL' : ''}</p>
-    <a href={`https://github.com/Niko1221/Strata/blob/${result.sourceRevision}/setup.py`} target="_blank" rel="noreferrer">{t('Strata 0.1.43.1 安装器规则', 'Strata 0.1.43.1 setup rules')}</a>
+    <a href={`https://github.com/Niko1221/Strata/blob/${result.sourceRevision}/setup.py`} target="_blank" rel="noreferrer">{t('Strata 0.1.44 安装器规则', 'Strata 0.1.44 setup rules')}</a>
   </>;
   const assessmentContent = result && !pending && <>
         <p className="resource-assessment-caption">{t('按当前选择的上下文与并发数估算；建议不会自动修改你的配置。', 'Estimates use the selected context and concurrency. Recommendations never change your configuration automatically.')}</p>

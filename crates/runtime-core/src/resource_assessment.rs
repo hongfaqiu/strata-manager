@@ -1,11 +1,11 @@
-//! Read-only, finite resource guidance from the reviewed Strata v0.1.43.1 setup rules.
+//! Read-only, finite resource guidance from the reviewed Strata v0.1.44 setup rules.
 //! No inference, engine startup, download, calibration or configuration write is performed.
 use crate::RuntimeState;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
 
-pub const SOURCE_REVISION: &str = "a0116b2782a5b82622358c04a06496485d12b2d6";
+pub const SOURCE_REVISION: &str = "ed4773eb7c8f1f1531ba2bc70e0e1987de2661af";
 const GIB: f64 = 1_073_741_824.0;
 const GB: f64 = 1_000_000_000.0;
 
