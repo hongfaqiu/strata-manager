@@ -1,7 +1,7 @@
 // All native state is synthetic; no supervisor, model, vault or host configuration is touched.
 (() => {
   const original=window.__TAURI_INTERNALS__.invoke,f=window.__fixture,params=new URLSearchParams(location.search);
-  f.currentVersion='0.1.6';f.sharing={profileId:'a',configRevision:'a'.repeat(64),host:'127.0.0.1',port:19001,hasServerKey:true,keyCount:2,running:!f.stopped,owned:!f.stopped,restartRequired:false,liveHost:'127.0.0.1',livePort:19001,lanAddresses:['192.0.2.10'],managementUrl:'http://127.0.0.1:19001'};
+  f.currentVersion=params.get('version')||'0.1.7';f.sharing={profileId:'a',configRevision:'a'.repeat(64),host:'127.0.0.1',port:19001,hasServerKey:true,keyCount:2,running:!f.stopped,owned:!f.stopped,restartRequired:false,liveHost:'127.0.0.1',livePort:19001,lanAddresses:['192.0.2.10'],managementUrl:'http://127.0.0.1:19001'};
   f.dailyAttempts=0;
   // Explicit download-design fixtures stay in-memory; persistence is scoped to this tab's case.
   const downloadCase=params.has('download'),downloadTasks=[];
