@@ -5,24 +5,7 @@
 .mcp-integration-modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .mcp-integration-mode { display: flex; align-items: flex-start; gap: 9px; padding: 12px; border: 1px solid var(--st-line-soft); border-radius: var(--st-radius-md, 8px); cursor: pointer; }
 .mcp-integration-mode.is-selected { border-color: var(--st-accent-text); }
-.mcp-integration-panel .mcp-integration-mode input[type="radio"],
-.official-surface .mcp-integration-panel .mcp-integration-mode input[type="radio"] {
-  appearance: auto;
-  width: 16px;
-  height: 16px;
-  min-width: 16px;
-  max-width: 16px;
-  min-height: 16px;
-  max-height: 16px;
-  padding: 0;
-  margin: 3px 0 0;
-  flex: 0 0 16px;
-  border: 0;
-  border-radius: 0;
-  background: none;
-  box-shadow: none;
-  accent-color: var(--st-accent-text);
-}
+.mcp-integration-mode > .official-radio { margin-top: 2px; }
 .mcp-integration-mode > span { display: flex; flex: 1 1 0; flex-direction: column; gap: 5px; min-width: 0; }
 .mcp-integration-mode strong { font-size: var(--st-fs-sm); font-weight: 600; }
 .mcp-integration-mode span span { font-size: var(--st-fs-sm); color: var(--st-ink-muted); line-height: 1.6; }

@@ -101,6 +101,11 @@ export function Checkbox(props: Omit<InputHTMLAttributes<HTMLInputElement>, 'typ
   return <input {...props} type="checkbox" className={`st-checkbox official-checkbox ${props.className ?? ''}`} />;
 }
 
+/** Native groups, labels and arrow-key navigation share the same selection ring. */
+export function Radio(props: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'>) {
+  return <input {...props} type="radio" className={`st-radio official-radio ${props.className ?? ''}`} />;
+}
+
 const dialogRootIsolation = new WeakMap<HTMLElement, { count: number; originalInert: boolean; originalAriaHidden: string | null; originalFocus: HTMLElement | null }>();
 const dialogPanels: HTMLElement[] = [];
 

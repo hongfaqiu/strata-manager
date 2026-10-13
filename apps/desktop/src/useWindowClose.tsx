@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { AppSettings } from '@strata-manager/core';
 import * as core from '@strata-manager/core';
 import { Dialog } from './components';
+import { Checkbox } from './OfficialControls';
 
 export function useWindowClose({ desktop, ready, settings, onSettings, onError, beforeExit, saveSettings, flushStores }: { desktop: boolean; ready: boolean; settings: AppSettings; onSettings: (settings: AppSettings) => void; onError: (error: unknown) => void; beforeExit?: (action: () => void) => void; saveSettings?: (settings: AppSettings) => Promise<void>; flushStores?: () => Promise<void> }) {
   const [open, setOpen] = useState(false), [remember, setRemember] = useState(false), [exiting, setExiting] = useState(false);
@@ -45,5 +46,5 @@ export function useWindowClose({ desktop, ready, settings, onSettings, onError, 
     if (settingsRef.current.skipExitConfirmation) confirm(); else setOpen(true);
   };
   const cancel = () => { if (!exitingRef.current) setOpen(false); };
-  return { requestClose, dialog: open ? <Dialog title={text.title} onClose={cancel}><p>{text.hint}</p><label className="exit-remember"><input type="checkbox" checked={remember} disabled={!ready || exiting} onChange={event => setRemember(event.target.checked)}/>{text.remember}</label><div className="dialog-footer"><button type="button" disabled={exiting} onClick={cancel}>{text.cancel}</button><button type="button" className="danger-solid" disabled={exiting} onClick={() => void confirm()}>{exiting ? text.exiting : text.exit}</button></div></Dialog> : null };
+  return { requestClose, dialog: open ? <Dialog title={text.title} onClose={cancel}><p>{text.hint}</p><label className="exit-remember"><Checkbox checked={remember} disabled={!ready || exiting} onChange={event => setRemember(event.target.checked)}/>{text.remember}</label><div className="dialog-footer"><button type="button" disabled={exiting} onClick={cancel}>{text.cancel}</button><button type="button" className="danger-solid" disabled={exiting} onClick={() => void confirm()}>{exiting ? text.exiting : text.exit}</button></div></Dialog> : null };
 }

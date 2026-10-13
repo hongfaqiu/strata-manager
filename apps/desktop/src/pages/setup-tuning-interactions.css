@@ -17,7 +17,7 @@ button.setup-tuning-help-button:hover{color:var(--st-accent,#00a77f);background:
 .startup-tuning .startup-file-actions{align-items:center}
 .startup-tuning .startup-file-actions>code{margin-right:auto;overflow-wrap:anywhere;color:var(--st-ink-muted);font-size:12px}
 .startup-tuning-parameter-names{display:flex;align-items:center;gap:8px;margin:12px 0;color:var(--st-ink-muted);font-size:13px}
-.startup-tuning-parameter-names input{margin:0;width:16px;height:16px;accent-color:var(--st-accent,#00a77f)}
+
 .tuning-expert-options{grid-column:1/-1;min-width:0;border-top:1px solid var(--st-line);padding-top:12px}
 .tuning-expert-options>h4{font-size:13px;font-weight:600;line-height:28px;margin:0}
 .tuning-expert-options>h4>span{margin-left:8px;color:var(--st-ink-muted);font-size:12px;font-weight:400}

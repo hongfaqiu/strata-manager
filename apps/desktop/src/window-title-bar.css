@@ -48,4 +48,3 @@
 @media(max-width:520px){.window-title-bar-brand{padding:0 10px;gap:5px}.window-title-bar-brand-name strong{font-size:16px}.window-title-bar-brand-name>span{font-size:11px}.window-title-bar-status{max-width:44%}.window-title-bar-status .st-pill{gap:5px;padding:0 7px}.window-title-bar .window-title-bar-button{width:34px}}
 @media(prefers-reduced-motion:reduce){.window-title-bar .window-title-bar-button,.window-title-bar-brand,.window-title-bar-brand-name{transition:none}.window-title-bar .st-pill[data-state="loading"] .st-pill__dot{animation:none}}
 .exit-remember { display: flex; align-items: center; gap: 8px; margin: 18px 0; font-size: 13px; }
-.exit-remember input { width: 16px; height: 16px; accent-color: var(--accent); }

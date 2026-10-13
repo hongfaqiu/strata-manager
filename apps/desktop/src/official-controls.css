@@ -16,21 +16,36 @@ body:has(.desktop-app-frame) .official-dialog-backdrop { top: 64px; }
 body:has(.desktop-app-frame) .official-dialog-panel { max-height: calc(100vh - 112px); max-height: calc(100dvh - 112px); }
 body:has(.desktop-app-frame) .official-dialog-panel.drawer { height: calc(100dvh - 64px); max-height: calc(100dvh - 64px); }
 @media(max-width:700px) { body:has(.desktop-app-frame) .official-dialog-panel:not(.drawer) { max-height: calc(100dvh - 96px); } }
-input.st-checkbox.official-checkbox {
+input.st-checkbox.official-checkbox, input.st-radio.official-radio {
   appearance: none; -webkit-appearance: none; box-sizing: border-box; flex: none;
-  width: 16px; height: 16px; min-height: 0; margin: 0; padding: 0;
-  border: 1.5px solid var(--st-ink-muted); border-radius: 4px;
+  position: relative; display: inline-block; vertical-align: middle;
+  width: 18px; height: 18px; min-height: 0; margin: 0; padding: 0;
+  border: 2px solid var(--st-choice-ring); border-radius: 5px;
   background-color: var(--st-surface); background-position: center; background-repeat: no-repeat;
-  background-size: 13px 13px; box-shadow: none; cursor: pointer;
+  background-size: 13px 13px; box-shadow: 0 0 0 1px var(--st-choice-border); cursor: pointer; opacity: 1;
+  transition: border-color var(--st-dur), background-color var(--st-dur), box-shadow var(--st-dur);
+}
+input.st-radio.official-radio { border-radius: 50%; }
+input.st-checkbox.official-checkbox:checked, input.st-checkbox.official-checkbox:indeterminate, input.st-radio.official-radio:checked {
+  border-color: var(--st-choice-ring); background-color: var(--st-choice-fill);
+  box-shadow: 0 0 0 1px var(--st-choice-edge), 0 0 0 3px var(--st-choice-glow);
 }
 input.st-checkbox.official-checkbox:checked {
-  border-color: var(--st-button-primary-bg); background-color: var(--st-button-primary-bg);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m3 8 3.2 3.2L13 4.5' fill='none' stroke='%23fff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
-input.st-checkbox.official-checkbox:hover:not(:disabled) { border-color: var(--st-button-primary-hover); }
-input.st-checkbox.official-checkbox:checked:hover:not(:disabled) { background-color: var(--st-button-primary-hover); }
-input.st-checkbox.official-checkbox:focus-visible { outline: 2px solid var(--st-focus); outline-offset: 3px; }
-input.st-checkbox.official-checkbox:disabled { opacity: .5; cursor: not-allowed; }
+input.st-radio.official-radio:checked::after { content: ''; position: absolute; inset: 4px; border-radius: 50%; background: var(--st-choice-ring); }
+input.st-checkbox.official-checkbox:indeterminate { background-image: none; }
+input.st-checkbox.official-checkbox:indeterminate::after { content: ''; position: absolute; width: 8px; height: 2px; top: 6px; left: 3px; border-radius: 1px; background: var(--st-choice-ring); }
+input.st-checkbox.official-checkbox:hover:not(:disabled), input.st-radio.official-radio:hover:not(:disabled) { box-shadow: 0 0 0 1px var(--st-choice-edge), 0 0 0 3px var(--st-choice-glow); }
+input.st-checkbox.official-checkbox:checked:hover:not(:disabled), input.st-checkbox.official-checkbox:indeterminate:hover:not(:disabled), input.st-radio.official-radio:checked:hover:not(:disabled) { border-color: var(--st-choice-ring); background-color: var(--st-choice-fill-hover); }
+input.st-checkbox.official-checkbox:focus-visible, input.st-radio.official-radio:focus-visible { outline: 2px solid var(--st-focus); outline-offset: 5px; }
+input.st-checkbox.official-checkbox:disabled, input.st-radio.official-radio:disabled { opacity: .45; cursor: not-allowed; }
 @media (forced-colors: active) {
-  input.st-checkbox.official-checkbox { appearance: auto; -webkit-appearance: auto; background-image: none; }
+  input.st-checkbox.official-checkbox, input.st-radio.official-radio { appearance: auto !important; -webkit-appearance: auto !important; background: none !important; border: 0 !important; box-shadow: none !important; forced-color-adjust: auto; }
+  input.st-checkbox.official-checkbox::after, input.st-radio.official-radio::after { display: none; }
+  input.official-slider:focus-visible { outline: 2px solid Highlight; outline-offset: 3px; }
+  button.st-toggle.official-toggle { border: 1px solid ButtonText; background: Canvas; }
+  button.st-toggle.official-toggle::after { background: ButtonText; box-shadow: none; }
+  button.st-toggle.official-toggle[aria-checked=true] { background: Highlight; }
+  button.st-toggle.official-toggle[aria-checked=true]::after { background: HighlightText; }
 }

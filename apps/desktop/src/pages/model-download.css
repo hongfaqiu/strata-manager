@@ -39,7 +39,6 @@
 .model-download-variant{min-height:40px;font-size:14px;border:1px solid var(--st-line);border-top:0;cursor:pointer;background:var(--st-surface);font-variant-numeric:tabular-nums}
 .model-download-variant:last-child{border-radius:0 0 10px 10px}.model-download-variant:hover{background:var(--st-surface-2)}
 .model-download-variant>span:first-child{display:flex;align-items:center;gap:10px;min-width:0;flex-wrap:wrap}.model-download-variant>span:first-child>span{overflow-wrap:anywhere}
-.model-download-variant input[type=radio]{appearance:auto!important;-webkit-appearance:auto!important;position:static!important;opacity:1!important;display:block;width:17px!important;height:17px!important;min-height:0!important;margin:0;padding:0;accent-color:var(--st-accent);flex:none;box-shadow:none!important}
 .model-download-variant:focus-within{outline:2px solid var(--st-focus);outline-offset:-2px}.model-download-variant small{font-size:11px;padding:3px 6px;border-radius:5px;background:var(--st-accent-tint);color:var(--st-accent-text);white-space:nowrap}
 .model-download-variant-warning{font-size:13px;color:var(--st-warn-text);line-height:1.6}
 .model-download-preset{border:1px solid var(--st-line);border-radius:12px;margin:14px 0;min-width:0}
