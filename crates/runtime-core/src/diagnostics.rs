@@ -645,6 +645,101 @@ mod tests {
             .contains("plain-value-with-no-prefix"));
     }
 
+    fn select_fixture_python(
+        explicit: Option<&std::path::Path>,
+        location: Option<&std::path::Path>,
+        windows: bool,
+        mut probe: impl FnMut(&str) -> Option<String>,
+    ) -> Option<String> {
+        // Match the capture fixture's setup-python selection without requiring
+        // its third-party MockEngine dependencies for this stdlib-only server.
+        // Explicit selections must fail rather than silently use another Python.
+        if let Some(interpreter) = explicit {
+            return interpreter
+                .is_absolute()
+                .then(|| interpreter.to_str())
+                .flatten()
+                .and_then(probe);
+        }
+        if let Some(directory) = location {
+            if !directory.is_absolute() || !directory.is_dir() {
+                return None;
+            }
+            return directory
+                .join(if windows { "python.exe" } else { "bin/python" })
+                .to_str()
+                .and_then(probe);
+        }
+        let candidates = if windows {
+            ["python", "py"]
+        } else {
+            ["python3", "python"]
+        };
+        candidates.into_iter().find_map(&mut probe)
+    }
+
+    #[test]
+    fn fixture_python_uses_explicit_interpreter_without_path_launcher() {
+        let directory = tempfile::tempdir().unwrap();
+        let interpreter = directory.path().join("python.exe");
+        let selected = select_fixture_python(Some(&interpreter), None, true, |program| {
+            (std::path::Path::new(program) == interpreter)
+                .then(|| interpreter.to_string_lossy().into_owned())
+        });
+        assert_eq!(selected.as_deref(), interpreter.to_str());
+    }
+
+    #[test]
+    fn fixture_python_honors_ci_location_and_rejects_broken_explicit_selection() {
+        let directory = tempfile::tempdir().unwrap();
+        for windows in [false, true] {
+            let expected = directory
+                .path()
+                .join(if windows { "python.exe" } else { "bin/python" });
+            let mut calls = Vec::new();
+            let selected =
+                select_fixture_python(None, Some(directory.path()), windows, |program| {
+                    calls.push(program.to_owned());
+                    Some(program.to_owned())
+                });
+            assert_eq!(selected.as_deref(), expected.to_str());
+            assert_eq!(calls, [expected.to_string_lossy()]);
+        }
+        let interpreter = directory.path().join("missing-python.exe");
+        let mut calls = Vec::new();
+        assert!(select_fixture_python(
+            Some(&interpreter),
+            Some(directory.path()),
+            true,
+            |program| {
+                calls.push(program.to_owned());
+                None
+            }
+        )
+        .is_none());
+        assert_eq!(calls, [interpreter.to_string_lossy()]);
+        assert!(select_fixture_python(
+            Some(std::path::Path::new("relative-python")),
+            None,
+            true,
+            |_| { panic!("relative explicit paths must not run") }
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn fixture_python_falls_back_when_default_interpreter_is_unavailable() {
+        for (windows, expected) in [(true, ["python", "py"]), (false, ["python3", "python"])] {
+            let mut calls = Vec::new();
+            let selected = select_fixture_python(None, None, windows, |program| {
+                calls.push(program.to_owned());
+                (program == expected[1]).then(|| "selected-interpreter".into())
+            });
+            assert_eq!(selected.as_deref(), Some("selected-interpreter"));
+            assert_eq!(calls, expected);
+        }
+    }
+
     fn fixture() -> (
         tempfile::TempDir,
         std::sync::Arc<crate::RuntimeState>,
@@ -674,9 +769,13 @@ ThreadingHTTPServer((a.host,a.port),Handler).serve_forever()
         )
         .unwrap();
         fs::write(root.join("status.txt"), b"401").unwrap();
-        let python = output(
-            if cfg!(windows) { "py" } else { "python3" },
-            &["-c", "import sys;print(sys.executable)"],
+        let explicit = std::env::var_os("STRATA_MANAGER_TEST_PYTHON").map(std::path::PathBuf::from);
+        let location = std::env::var_os("pythonLocation").map(std::path::PathBuf::from);
+        let python = select_fixture_python(
+            explicit.as_deref(),
+            location.as_deref(),
+            cfg!(windows),
+            |program| output(program, &["-c", "import sys;print(sys.executable)"]),
         )
         .expect("isolated fixture needs Python 3");
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
