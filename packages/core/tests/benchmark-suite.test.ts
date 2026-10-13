@@ -47,6 +47,14 @@ afterEach(() => { vi.useRealTimers(); });
 async function settle<T>(promise: Promise<T>, advance = 35_000): Promise<T> { await vi.advanceTimersByTimeAsync(advance); return promise; }
 
 describe('suite validation and scenarios', () => {
+  it('waits for visible answer text while retaining whitespace token timing', async () => {
+    bridge.streamChat.mockImplementation((_profile, _body, delta: (delta: ChatDelta) => void) => new Promise<void>(resolve => {
+      setTimeout(() => delta({ content: ' \n' }), 10);
+      setTimeout(() => { delta({ content: 'answer' }); delta({ done: true }); resolve(); }, 30);
+    }));
+    const report = await settle(runBenchmarkSuite(profile, options(), () => {}));
+    expect(report.samples[0]).toMatchObject({ ttftMs: 10, firstVisibleMs: 30 });
+  });
   it('validates all safety bounds, distinct scenarios and the theoretical request estimate', () => {
     expect(BENCHMARK_SCENARIOS.map(s => s.id)).toEqual(['short', 'code', 'long', 'decode', 'cache', 'conversation', 'custom']);
     expect(estimateBenchmarkSuiteRequests(options({ scenarios: ['short', 'code', 'conversation'], rounds: 2, conversationTurns: 4, warmup: true }))).toBe(12);

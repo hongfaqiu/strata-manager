@@ -30,6 +30,7 @@ export interface LocalCandidate {
 }
 
 export interface SupervisorStatus {
+  startupFailures?: import('./startup-diagnostics').StartupFailureDiagnostic[];
   /** Missing on older supervisors; never infer this from protocol or package version. */
   capabilities?: { fullScenarioTuning?: number; managerMcp?: number };
   running: boolean;
@@ -143,6 +144,7 @@ export interface Attachment {
 }
 
 export interface ChatMessage {
+  execution?: import('./chat-execution').ChatExecution;
   id: string;
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -188,6 +190,7 @@ export interface ProcessStatus {
 export interface LogEntry { timestamp: number; level: string; message: string }
 
 export interface TaskStatus {
+  diagnostic?: import('./startup-diagnostics').StartupFailureDiagnostic;
   id: string;
   kind: string;
   state: 'running' | 'completed' | 'failed' | 'cancelled';

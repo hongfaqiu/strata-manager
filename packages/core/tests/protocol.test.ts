@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { buildAdvancedChatFields, buildChatRequest, buildSharedDefaults, decodeChatChunk, hasApiKey, MODEL_CATALOG, normalizeBaseUrl, normalizeError, normalizeMetrics, parseChatCapabilities, parseChatLogitBias, parseChatSchema, request, setApiKey, SSEParser, startService, StrataError, streamChat } from '../src';
+import { buildChatRequest, buildSharedDefaults, decodeChatChunk, hasApiKey, MODEL_CATALOG, normalizeBaseUrl, normalizeError, normalizeMetrics, parseChatCapabilities, parseChatLogitBias, parseChatSchema, request, setApiKey, SSEParser, startService, StrataError, streamChat } from '../src';
 import { officialMcpClientConfiguration } from '../src/mcp-integration';
 import type { ChatDelta, ChatMessage, ChatOptions, ServiceProfile } from '../src';
 
@@ -43,7 +43,8 @@ describe('SSE protocol', () => {
 
 describe('chat request semantics', () => {
   const status = { service: 'strata', dialects: ['/v1/chat/completions'], engine: '0.1.42', structured_output: { formats: ['json_object', 'json_schema'] }, concurrency: { serving: 1 } };
-  const capabilities = parseChatCapabilities(status, { engine: { version: '0.1.42', logit_bias: 1, vocab_size: 100 }, live: { parallel: 0 } }, { args: ['--prompt-cache', '8'] }, { verified: true, promptCache: 8, pid: 101, startedAt: 1 });
+  // Upstream omits live.parallel when batching is off; status.concurrency reports the single serving slot.
+  const capabilities = parseChatCapabilities(status, { engine: { version: '0.1.42', logit_bias: 1, vocab_size: 100 }, live: {} }, { args: ['--prompt-cache', '8'] }, { verified: true, promptCache: 8, pid: 101, startedAt: 1 });
   it('detects structured formats and requires real prefix/bias engine evidence', () => {
     expect(parseChatCapabilities(undefined)).toMatchObject({ structuredFormats: [], prefix: false, logitBias: false, sampling: false });
     expect(parseChatCapabilities(status)).toMatchObject({ structuredFormats: ['json_object', 'json_schema'], prefix: false, logitBias: false });

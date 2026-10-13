@@ -1,5 +1,7 @@
-import { isDesktop, normalizeBaseUrl, request, serviceStatus, streamChat } from './bridge';
-import { acquireBenchmarkEndpoint } from './benchmark';
+import { isDesktop, normalizeBaseUrl, request, serviceStatus, streamChat, benchmarkIdentity } from './bridge';
+import { acquireBenchmarkEndpoint, type BenchmarkReport } from './benchmark';
+import { compareBenchmarkReports, benchmarkComparisonMetrics, validBenchmarkIdentity, type BenchmarkComparison } from './benchmark-comparison';
+import type { BenchmarkTelemetry } from './benchmark-suite-types';
 import { asObject, normalizeError, StrataError } from './errors';
 import { normalizeMetrics } from './metrics';
 import type { JsonObject, ServiceProfile } from './types';
@@ -177,6 +179,7 @@ async function infer(profile: ServiceProfile, options: ContextBenchmarkOptions, 
       if (!active) return;
       if (delta.done) done = true;
       if (sample.ttftMs === null && (delta.content?.length || delta.reasoning?.length)) sample.ttftMs = Math.max(0, clock() - began);
+      if (sample.firstVisibleMs == null && delta.content?.trim().length) sample.firstVisibleMs = Math.max(0, clock() - began);
       if (delta.content) sample.output = (sample.output + delta.content).slice(0, 2000);
       if (delta.usage) {
         const prompt = count(delta.usage.prompt_tokens), completion = count(delta.usage.completion_tokens), cached = count(asObject(delta.usage.prompt_tokens_details).cached_tokens);
@@ -229,7 +232,9 @@ export async function runContextBenchmark(profile: ServiceProfile, input: Contex
     const raw: JsonObject = await bounded(request(profile, '/metrics'), Math.min(options.timeoutMs, 5000), controller.signal).catch(error => { if (controller.signal.aborted) throw error; return {}; });
     if (isBusy(raw)) throw new StrataError('BENCHMARK_SERVICE_BUSY', '服务仍有推理或排队请求，请空闲后再测试');
     const plan = planContextBenchmarkTiers(options.tiers, maxContext, options.maxTokens);
-    const report: ContextBenchmarkReport = { schemaVersion: 3, id: crypto.randomUUID(), profileId: profile.id, profileName: profile.name, baseUrl, model, maxContext,
+    const identity = isDesktop() ? await bounded(benchmarkIdentity(profile), Math.min(options.timeoutMs, 5000), controller.signal)
+      .catch(error => { if (controller.signal.aborted) throw error; return undefined; }) : undefined;
+    const report: ContextBenchmarkReport = { schemaVersion: 3, ...(identity ? { identity } : {}), id: crypto.randomUUID(), profileId: profile.id, profileName: profile.name, baseUrl, model, maxContext,
       startedAt: Date.now(), finishedAt: 0, elapsedMs: 0, options, samples: [], skippedTiers: plan.skipped, state: 'completed', stopReason: 'completed', resourceScope: 'system', resourceIntervalMs: 1000,
       ...(Object.keys(asObject(raw.hardware)).length ? { hardware: asObject(raw.hardware) } : {}), ...(Object.keys(asObject(raw.engine)).length ? { engine: asObject(raw.engine) } : {}) };
     const total = plan.supported.length * options.rounds;
@@ -240,7 +245,7 @@ export async function runContextBenchmark(profile: ServiceProfile, input: Contex
     outer: for (const tier of plan.supported) for (let round = 1; round <= options.rounds; round++) {
       if (controller.signal.aborted) { report.state = 'cancelled'; report.stopReason = 'cancelled'; break outer; }
       const sample: ContextBenchmarkSample = { index: report.samples.length + 1, round, targetTokens: tier, targetPromptTokens: tier - options.maxTokens - CONTEXT_BENCHMARK_HEADROOM,
-        model, state: 'completed', startedAt: Date.now(), ttftMs: null, wallMs: 0, inputChars: 0, tokenCountMethod: 'estimated', countedPromptTokens: null, estimatedPromptTokens: null,
+        model, state: 'completed', startedAt: Date.now(), ttftMs: null, firstVisibleMs: null, wallMs: 0, inputChars: 0, tokenCountMethod: 'estimated', countedPromptTokens: null, estimatedPromptTokens: null,
         promptTokens: null, completionTokens: null, cachedTokens: null, prefillTokS: null, decodeTokS: null, peakGpuMemory: null, minGpuMemoryFree: null, peakRam: null, resourceSamples: 0, output: '' };
       emit(tier, 1);
       try {
@@ -270,4 +275,41 @@ export async function runContextBenchmark(profile: ServiceProfile, input: Contex
     // the shared endpoint gate until actual generation transports finish.
     if (transports.size) void Promise.allSettled([...transports]).then(release); else release();
   }
+}
+
+/** Convert one context tier to the shared comparison contract; do not duplicate its eligibility rules. */
+export function contextBenchmarkComparisonAdapter(report: ContextBenchmarkReport, tier: number): BenchmarkReport & { telemetry: BenchmarkTelemetry[] } {
+  const samples = report.samples.filter(sample => sample.targetTokens === tier);
+  const identity = report.identity;
+  const validIdentity = validBenchmarkIdentity(identity);
+  return { id: report.id, profileId: report.profileId, profileName: report.profileName, baseUrl: report.baseUrl, model: report.model,
+    startedAt: report.startedAt, finishedAt: report.finishedAt, state: samples.length ? report.state : 'failed',
+    ...(validIdentity ? { identity } : {}), ...(report.hardware ? { hardware: report.hardware } : {}), ...(report.engine ? { engine: report.engine } : {}),
+    options: { prompt: JSON.stringify({ protocol: 'context-tier-v1', targetTokens: tier, maxContext: report.maxContext,
+      resourceScope: report.resourceScope, resourceIntervalMs: report.resourceIntervalMs, sampling,
+      input: samples.map(sample => ({ targetPromptTokens: sample.targetPromptTokens, tokenCountMethod: sample.tokenCountMethod,
+        promptTokens: sample.promptTokens, cachedTokens: sample.cachedTokens })) }),
+      rounds: report.options.rounds, maxTokens: report.options.maxTokens, timeoutMs: report.options.timeoutMs, warmup: false, mode: 'unique' },
+    samples: samples.map(sample => ({ ...sample, warmup: false, firstVisibleMs: sample.firstVisibleMs ?? null })),
+    telemetry: samples.map(sample => ({ at: sample.startedAt, elapsedMs: Math.max(0, sample.startedAt - report.startedAt), active: 1,
+      queued: null, running: null, cpuUtil: null, gpuUtil: null, gpuTemperature: null, ramUsed: sample.peakRam, gpuMemoryUsed: sample.peakGpuMemory })),
+  };
+}
+
+export interface ContextBenchmarkComparisonRow {
+  tier: number;
+  comparison: BenchmarkComparison;
+  left: ReturnType<typeof benchmarkComparisonMetrics>;
+  right: ReturnType<typeof benchmarkComparisonMetrics>;
+  leftSamples: number;
+  rightSamples: number;
+}
+
+export function compareContextBenchmarkReports(left: ContextBenchmarkReport, right: ContextBenchmarkReport): ContextBenchmarkComparisonRow[] {
+  const tiers = [...new Set([...left.samples.map(sample => sample.targetTokens), ...right.samples.map(sample => sample.targetTokens)])].sort((a, b) => a - b);
+  return tiers.map(tier => {
+    const a = contextBenchmarkComparisonAdapter(left, tier), b = contextBenchmarkComparisonAdapter(right, tier);
+    return { tier, comparison: compareBenchmarkReports(a, b), left: benchmarkComparisonMetrics(a), right: benchmarkComparisonMetrics(b),
+      leftSamples: a.samples.filter(sample => sample.state === 'completed').length, rightSamples: b.samples.filter(sample => sample.state === 'completed').length };
+  });
 }

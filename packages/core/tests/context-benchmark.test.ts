@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CONTEXT_BENCHMARK_HEADROOM, CONTEXT_BENCHMARK_TIERS, DEFAULT_CONTEXT_BENCHMARK_OPTIONS, getContextBenchmarkTiers, planContextBenchmarkTiers, runContextBenchmark, validateContextBenchmarkOptions } from '../src/context-benchmark';
+import { CONTEXT_BENCHMARK_HEADROOM, CONTEXT_BENCHMARK_TIERS, DEFAULT_CONTEXT_BENCHMARK_OPTIONS, getContextBenchmarkTiers, planContextBenchmarkTiers, runContextBenchmark, validateContextBenchmarkOptions, compareContextBenchmarkReports } from '../src/context-benchmark';
 import { acquireBenchmarkEndpoint } from '../src/benchmark';
 import { StrataError } from '../src/errors';
 import type { ChatDelta } from '../src/chat';
 import type { ContextBenchmarkOptions, ContextBenchmarkProgress } from '../src/context-benchmark-types';
 import type { JsonObject, ServiceProfile } from '../src/types';
 
-const bridge = vi.hoisted(() => ({ request: vi.fn(), streamChat: vi.fn(), isDesktop: vi.fn(), serviceStatus: vi.fn() }));
+const bridge = vi.hoisted(() => ({ request: vi.fn(), streamChat: vi.fn(), isDesktop: vi.fn(), serviceStatus: vi.fn(), benchmarkIdentity: vi.fn() }));
 vi.mock('../src/bridge', () => ({ ...bridge, normalizeBaseUrl: (url: string) => new URL(url).origin }));
 const profile: ServiceProfile = { id: 'context-fixture', name: 'Context fixture', baseUrl: 'http://127.0.0.1:8992', installDir: '', configPath: '', pythonPath: '', managed: false };
 const health = { service: 'strata', status: 'ok', loaded: true, model: 'fixture-model', max_context: 262144 };
@@ -269,5 +269,49 @@ describe('lifecycle, stopping and shared endpoint gate', () => {
     failures = new Set([1]);
     const report = await settle(runContextBenchmark(profile, options({ rounds: 2, stopOnError: false }), () => {}));
     expect(report.samples.map(s => s.state)).toEqual(['failed', 'completed']); expect(report.state).toBe('failed'); expect(calls).toHaveLength(2);
+  });
+  it('captures read-only identity before generation and keeps older reports viewable without conclusions', async () => {
+    bridge.isDesktop.mockReturnValue(true); bridge.serviceStatus.mockResolvedValue({ running: true });
+    const identity = { schemaVersion: 1, capturedAt: 1, process: { pid: 42, startedAt: 1, running: true },
+      runtime: { strength: 'sha256', fingerprint: 'runtime-a' }, model: { strength: 'sha256', fingerprint: 'model-a' },
+      savedConfigurationHash: 'saved', effectiveStartupHash: 'effective', effectiveVerified: true };
+    bridge.benchmarkIdentity.mockImplementation(async () => { expect(calls).toHaveLength(0); return identity; });
+    const first = await settle(runContextBenchmark(profile, options()));
+    expect(first.identity).toEqual(identity); expect(first.samples[0]?.firstVisibleMs).toBe(100);
+    const old = { ...first, id: 'older', identity: undefined, samples: first.samples.map(({ firstVisibleMs: _first, ...sample }) => sample) };
+    const [row] = compareContextBenchmarkReports(first, old);
+    expect(row!.comparison.comparable).toBe(false); expect(row!.comparison.unknowns).toContain('identity');
+    expect(row!.right.firstVisibleMs).toBeNull(); expect(row!.right.ttftMs).toBe(100);
+    expect(row!.right.ramPeak).toBe(200); expect(row!.right.vramPeak).toBe(100);
+  });
+  it('adapts each tier to the shared condition rules and detects cache/input changes', async () => {
+    const first = await settle(runContextBenchmark(profile, options({ tiers: [8192, 32768] })));
+    const changed = { ...first, id: 'changed', samples: first.samples.map(sample => ({ ...sample, cachedTokens: 100, wallMs: sample.wallMs / 2 })) };
+    const rows = compareContextBenchmarkReports(first, changed);
+    expect(rows.map(row => row.tier)).toEqual([8192, 32768]);
+    expect(rows.every(row => row.comparison.differences.includes('options') && !row.comparison.comparable)).toBe(true);
+    expect(rows[0]!.right.wallMs).toBe(50);
+  });
+  it('keeps identity unavailable when the optional RPC is unsupported', async () => {
+    bridge.isDesktop.mockReturnValue(true); bridge.serviceStatus.mockResolvedValue({ running: true });
+    bridge.benchmarkIdentity.mockRejectedValue(new Error('unknown method'));
+    const report = await settle(runContextBenchmark(profile, options()));
+    expect(report.state).toBe('completed'); expect(report.identity).toBeUndefined(); expect(calls).toHaveLength(1);
+  });
+  it('separates first reasoning token from first non-empty answer text', async () => {
+    bridge.streamChat.mockImplementation((_profile, body: JsonObject, delta: (value: ChatDelta) => void) => new Promise<void>(resolve => {
+      setTimeout(() => delta({ reasoning: 'thinking' }), 25);
+      setTimeout(() => delta({ content: '   ' }), 40);
+      setTimeout(() => delta({ content: 'answer' }), 90);
+      setTimeout(() => { delta({ usage: { prompt_tokens: tokenCount(body), completion_tokens: 32 } }); delta({ done: true }); resolve(); }, 100);
+    }));
+    const report = await settle(runContextBenchmark(profile, options()));
+    expect(report.samples[0]).toMatchObject({ ttftMs: 25, firstVisibleMs: 90, wallMs: 100 });
+  });
+  it('ignores malformed optional identities while keeping historical measurements available', async () => {
+    const report = await settle(runContextBenchmark(profile, options()));
+    const malformed = { ...report, identity: { schemaVersion: 1, runtime: { strength: 'sha256', fingerprint: 42 } } as never };
+    const [row] = compareContextBenchmarkReports(report, malformed);
+    expect(row!.comparison.unknowns).toContain('identity'); expect(row!.right.ttftMs).toBe(100);
   });
 });

@@ -292,7 +292,8 @@ export function validateStartupConfiguration(config: JsonObject): void {
   const capacity = integer(context, '--max-context', 2147483647);
   if (resident && (!Number.isSafeInteger(Number(resident)) || Number(resident) < 0)) throw new Error('--kv-resident 必须为非负整数 / must be a nonnegative integer');
   if (resident && Number(resident) > (capacity ?? 4096)) throw new Error('上下文不能小于 --kv-resident，请同时调整两个参数 / context is below resident KV; adjust both options');
-  for (const key of ['exe', 'cwd', 'tokenizer', 'model_name', 'log', 'host', 'api_key']) if (config[key] !== undefined && typeof config[key] !== 'string') throw new Error(`${key}: 必须为字符串 / must be a string`);
+  for (const key of ['exe', 'cwd', 'tokenizer', 'model_name', 'log', 'host']) if (config[key] !== undefined && typeof config[key] !== 'string') throw new Error(`${key}: 必须为字符串 / must be a string`);
+  if (config.api_key !== undefined && typeof config.api_key !== 'string' && !(Array.isArray(config.api_key) && config.api_key.every(key => typeof key === 'string' && !!key.trim()))) throw new Error('api_key: 必须为字符串或非空密钥的数组 / must be a string or an array of nonempty keys');
   for (const key of ['sampling', 'env', 'vision']) if (config[key] !== undefined && config[key] !== null && (!config[key] || typeof config[key] !== 'object' || Array.isArray(config[key]))) throw new Error(`${key}: 必须为对象或 null / must be an object or null`);
   for (const key of ['api_monitor', 'open_browser', 'lazy_load', 'fit_max_tokens']) if (config[key] !== undefined && typeof config[key] !== 'boolean') throw new Error(`${key}: 必须为布尔值 / must be a boolean`);
 }

@@ -11,6 +11,8 @@ export interface ContextBenchmarkOptions {
 }
 
 export interface ContextBenchmarkSample {
+  /** First non-empty answer text; missing in older schema-3 history. */
+  firstVisibleMs?: number | null;
   index: number;
   round: number;
   targetTokens: number;
@@ -60,6 +62,8 @@ export interface ContextBenchmarkProgress {
 }
 
 export interface ContextBenchmarkReport {
+  /** Optional read-only provenance; older schema-3 reports remain valid. */
+  identity?: import('./benchmark-comparison').BenchmarkIdentity;
   schemaVersion: 3;
   id: string;
   profileId: string;

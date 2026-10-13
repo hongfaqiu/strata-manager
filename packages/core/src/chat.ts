@@ -1,5 +1,6 @@
 import type { Attachment, ChatMessage, JsonObject, ToolEvent } from './types';
 import { asObject, StrataError } from './errors';
+import { configuredPromptCache, describeServiceCapability, parseServiceCapabilities, serviceCapability, type ServiceCapabilities, type ServiceCapability, type ServiceCapabilityId } from './service-capabilities';
 
 export interface ChatOptions {
   model: string;
@@ -33,6 +34,8 @@ export interface AdvancedChatOptions {
   logitBiasText?: string;
 }
 export interface ChatCapabilities {
+  /** Additive four-state evidence; legacy manually constructed capabilities remain readable. */
+  states?: Partial<Record<ServiceCapabilityId, ServiceCapability>>;
   structuredFormats: ('json_object' | 'json_schema')[];
   sampling: boolean;
   stops: boolean;
@@ -44,35 +47,25 @@ export interface ChatCapabilities {
 /** Fresh native process evidence from the Supervisor, never persisted UI options. */
 export interface ChatRuntimeEvidence { verified: boolean; promptCache?: number; pid?: number; startedAt?: number }
 const record = (value: unknown): JsonObject => value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {};
-function versionAtLeast(value: unknown, minimum: number[]): boolean {
-  const match = typeof value === 'string' && /(?:^|\D)(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?/.exec(value);
-  if (!match) return false;
-  for (let i = 0; i < minimum.length; i++) { const part = Number(match[i + 1] ?? 0); if (part !== minimum[i]) return part > minimum[i]!; }
-  return true;
-}
 /** Only metadata reads; never test a feature by generating or changing the model. */
-export function parseChatCapabilities(status: unknown, metrics?: unknown, _config?: unknown, runtimeEvidence?: ChatRuntimeEvidence): ChatCapabilities {
-  const s = record(status), engine = record(record(metrics).engine);
-  const formats = record(s.structured_output).formats;
-  const official = s.service === 'strata' && Array.isArray(s.dialects) && s.dialects.includes('/v1/chat/completions');
-  const cache = runtimeEvidence?.promptCache;
-  const prefixVersion = versionAtLeast(engine.version ?? s.engine, [0, 1, 40, 2]);
-  // Saved config and /config are read from disk, not the resident engine's
-  // startup state. Only native argv evidence can establish the live depth.
-  const verified = runtimeEvidence?.verified === true && Number.isSafeInteger(runtimeEvidence.pid) && (runtimeEvidence.pid ?? 0) > 0 && Number.isFinite(runtimeEvidence.startedAt) && (runtimeEvidence.startedAt ?? 0) > 0;
-  const prefix = official && prefixVersion && verified && cache !== undefined && Number.isSafeInteger(cache) && cache >= 3;
-  const serving = record(s.concurrency).serving;
-  const parallel = record(record(metrics).live).parallel ?? serving;
-  const vocabularySize = typeof engine.vocab === 'number' ? engine.vocab : typeof engine.vocab_size === 'number' ? engine.vocab_size : undefined;
-  return { structuredFormats: official && Array.isArray(formats) ? formats.filter((f): f is 'json_object' | 'json_schema' => f === 'json_object' || f === 'json_schema') : [],
-    sampling: official, stops: official, prefix,
-    logitBias: official && engine.logit_bias === 1 && typeof parallel === 'number' && parallel <= 1,
-    ...(vocabularySize !== undefined && Number.isSafeInteger(vocabularySize) && vocabularySize > 0 ? { vocabularySize } : {}),
-    prefixReason: !official ? '服务尚未确认官方 Chat Completions 能力' : !prefixVersion ? '固定前缀需要引擎 0.1.40.2 或更新版本' : !verified ? '尚未核验当前引擎的实际启动参数；保存配置不能证明已生效' : !prefix ? '当前引擎实际 --prompt-cache 需为 3 或更大' : '',
+export function parseChatCapabilities(status: unknown, metrics?: unknown, config?: unknown, runtimeEvidence?: ChatRuntimeEvidence): ChatCapabilities {
+  return chatCapabilitiesFromService(parseServiceCapabilities({ profileId: '', status, metrics, runtime: runtimeEvidence, configuredPromptCache: configuredPromptCache(config) }));
+}
+export function chatCapabilitiesFromService(evidence: ServiceCapabilities): ChatCapabilities {
+  const available = (id: ServiceCapabilityId) => serviceCapability(evidence, id).state === 'available';
+  return { states: Object.fromEntries(evidence.items.map(item => [item.id, item])),
+    structuredFormats: [ ...(available('jsonObject') ? ['json_object' as const] : []), ...(available('jsonSchema') ? ['json_schema' as const] : []) ],
+    sampling: available('sampling'), stops: available('stops'), prefix: available('prefix'), logitBias: available('logitBias'),
+    ...(evidence.vocabularySize ? { vocabularySize: evidence.vocabularySize } : {}),
+    prefixReason: available('prefix') ? '' : describeServiceCapability(serviceCapability(evidence, 'prefix')),
   };
 }
 function invalid(message: string): never { throw new StrataError('INVALID_CHAT_OPTIONS', message); }
-function supported(ok: boolean | undefined, feature: string): void { if (!ok) throw new StrataError('CHAT_FEATURE_UNSUPPORTED', `当前服务未确认支持 ${feature}，请刷新服务能力或移除此设置`); }
+function supported(ok: boolean | undefined, feature: string, evidence?: ServiceCapability): void {
+  if (ok && (!evidence || evidence.state === 'available')) return;
+  const code = evidence?.state === 'restartRequired' ? 'CHAT_FEATURE_RESTART_REQUIRED' : !evidence || evidence.state === 'unknown' ? 'CHAT_FEATURE_UNVERIFIED' : 'CHAT_FEATURE_UNSUPPORTED';
+  throw new StrataError(code, `${feature}：${evidence ? describeServiceCapability(evidence) : '当前服务未确认支持此设置，请刷新服务能力或移除此设置'}`);
+}
 /** JSON syntax and upstream root/reference rules; full metaschema/output validation is the server's job. */
 export function parseChatSchema(text: string): JsonObject {
   let value: unknown;
@@ -129,22 +122,22 @@ export function buildAdvancedChatFields(options: ChatOptions): JsonObject {
   const number = (value: unknown, key: string, min: number, max = Infinity, strict = false): void => {
     if (value === undefined) return;
     if (typeof value !== 'number' || !Number.isFinite(value) || (strict ? value <= min : value < min) || value > max) invalid(`${key} 数值范围无效`);
-    supported(caps?.sampling, key); out[key] = value;
+    supported(caps?.sampling, key, caps?.states?.sampling); out[key] = value;
   };
   number(a.minP, 'min_p', 0, 1); number(a.repetitionPenalty, 'repetition_penalty', 0, Infinity, true);
   number(a.presencePenalty, 'presence_penalty', 0); number(a.frequencyPenalty, 'frequency_penalty', 0);
-  if (a.penaltyLastN !== undefined) { if (!Number.isSafeInteger(a.penaltyLastN) || a.penaltyLastN < 0) invalid('penalty_last_n 需为非负整数'); supported(caps?.sampling, 'penalty_last_n'); out.penalty_last_n = a.penaltyLastN; }
-  if (a.stop !== undefined) { if (!Array.isArray(a.stop) || a.stop.length > 4 || a.stop.some(s => typeof s !== 'string' || !s.length)) invalid('stop 需为最多 4 个非空字符串'); if (a.stop.length) { supported(caps?.stops, 'stop'); out.stop = a.stop; } }
-  if (a.logitBiasText?.trim()) { const bias = parseChatLogitBias(a.logitBiasText, caps?.vocabularySize); if (Object.keys(bias).length) { supported(caps?.logitBias, 'logit_bias（需支持的引擎且关闭连续批处理）'); out.logit_bias = bias; } }
+  if (a.penaltyLastN !== undefined) { if (!Number.isSafeInteger(a.penaltyLastN) || a.penaltyLastN < 0) invalid('penalty_last_n 需为非负整数'); supported(caps?.sampling, 'penalty_last_n', caps?.states?.sampling); out.penalty_last_n = a.penaltyLastN; }
+  if (a.stop !== undefined) { if (!Array.isArray(a.stop) || a.stop.length > 4 || a.stop.some(s => typeof s !== 'string' || !s.length)) invalid('stop 需为最多 4 个非空字符串'); if (a.stop.length) { supported(caps?.stops, 'stop', caps?.states?.stops); out.stop = a.stop; } }
+  if (a.logitBiasText?.trim()) { const bias = parseChatLogitBias(a.logitBiasText, caps?.vocabularySize); if (Object.keys(bias).length) { supported(caps?.logitBias, 'logit_bias（需支持的引擎且关闭连续批处理）', caps?.states?.logitBias); out.logit_bias = bias; } }
   const format = a.responseFormat ?? 'text';
   if (!['text', 'json_object', 'json_schema'].includes(format)) invalid('输出格式无效');
   if (format !== 'text') {
-    supported(caps?.structuredFormats.includes(format), format);
+    supported(caps?.structuredFormats.includes(format), format, caps?.states?.[format === 'json_schema' ? 'jsonSchema' : 'jsonObject']);
     if (options.mcp) invalid('JSON 输出与 MCP 工具互斥，请先关闭 MCP');
     if (format === 'json_schema') { if (!a.schemaName?.trim() || a.schemaName.length > 64 || !/^[\w-]+$/.test(a.schemaName)) invalid('Schema 名称需为 1–64 个英文字母、数字、下划线或连字符'); out.response_format = { type: format, json_schema: { name: a.schemaName, strict: true, schema: parseChatSchema(a.schemaText ?? '') } }; }
     else out.response_format = { type: format };
   }
-  if (options.fixedPrefix) { supported(caps?.prefix, '固定前缀'); if (!options.fixedPrefix.messageId || (options.fixedPrefix.chars !== undefined && (!Number.isSafeInteger(options.fixedPrefix.chars) || options.fixedPrefix.chars < 1))) invalid('固定前缀需有效消息和正整数字符边界'); }
+  if (options.fixedPrefix) { supported(caps?.prefix, '固定前缀', caps?.states?.prefix); if (!options.fixedPrefix.messageId || (options.fixedPrefix.chars !== undefined && (!Number.isSafeInteger(options.fixedPrefix.chars) || options.fixedPrefix.chars < 1))) invalid('固定前缀需有效消息和正整数字符边界'); }
   return out;
 }
 export interface StreamToolEvent extends ToolEvent {
@@ -152,6 +145,8 @@ export interface StreamToolEvent extends ToolEvent {
   round?: number; at?: number; ok?: boolean; skipped?: boolean; raw?: JsonObject;
 }
 export interface ChatDelta {
+  /** Response IDs are not interchangeable with an observer's request ID. */
+  responseId?: string; serviceRequestId?: string;
   content?: string; reasoning?: string; tool?: StreamToolEvent; usage?: JsonObject; done?: boolean; error?: string;
   /** Engine timings carried by this response; never a global last-request snapshot. */
   timings?: JsonObject; finishReason?: string;
@@ -286,6 +281,7 @@ export function decodeChatChunk(data: string): ChatDelta[] {
   const chunk = asObject(value);
   if (chunk.error) throw new StrataError('STREAM_ERROR', typeof asObject(chunk.error).message === 'string' ? String(asObject(chunk.error).message) : String(chunk.error));
   const output: ChatDelta[] = [];
+  if (typeof chunk.id === 'string' || typeof chunk.request_id === 'string') output.push({ ...(typeof chunk.id === 'string' ? { responseId: chunk.id } : {}), ...(typeof chunk.request_id === 'string' ? { serviceRequestId: chunk.request_id } : {}) });
   if (chunk.usage) output.push({ usage: asObject(chunk.usage) });
   if (chunk.timings) output.push({ timings: asObject(chunk.timings) });
   if (chunk.strata_mcp) {

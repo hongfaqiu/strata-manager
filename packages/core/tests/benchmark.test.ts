@@ -42,6 +42,14 @@ describe('benchmark stream protocol', () => {
 });
 
 describe('read-only serial benchmark', () => {
+  it('waits for visible answer text while retaining whitespace token timing', async () => {
+    bridge.streamChat.mockImplementation(async (_profile, _body, delta: (delta: ChatDelta) => void) => {
+      monotonic += 10; delta({ content: ' \n' });
+      monotonic += 20; delta({ content: 'answer' }); delta({ done: true });
+    });
+    const report = await runBenchmark(profile, { ...options, rounds: 1 }, () => {});
+    expect(report.samples[0]).toMatchObject({ ttftMs: 10, firstVisibleMs: 30 });
+  });
   it('measures reasoning first token, serial rounds, optional excluded warmup and same-request speed', async () => {
     const seen: BenchmarkSample[] = [];
     const report = await runBenchmark(profile, { ...options, warmup: true }, sample => seen.push(sample));

@@ -1,4 +1,4 @@
-import { isDesktop, normalizeBaseUrl, request, serviceStatus, streamChat } from './bridge';
+import { isDesktop, normalizeBaseUrl, request, serviceStatus, streamChat, benchmarkIdentity } from './bridge';
 import { acquireBenchmarkEndpoint, BENCHMARK_PROMPTS } from './benchmark';
 import { asObject, normalizeError, StrataError } from './errors';
 import { normalizeMetrics } from './metrics';
@@ -119,6 +119,7 @@ async function infer(profile: ServiceProfile, messages: JsonObject[], options: B
       if (delta.done) done = true;
       if (sample.ttftMs === null && (delta.content?.length || delta.reasoning?.length)) sample.ttftMs = Math.max(0, clock() - began);
       if (delta.content) content += delta.content;
+      if (delta.content?.trim() && sample.firstVisibleMs == null) sample.firstVisibleMs = Math.max(0, clock() - began);
       if (delta.reasoning) reasoning += delta.reasoning;
       if (delta.usage) {
         sample.promptTokens = count(delta.usage.prompt_tokens); sample.completionTokens = count(delta.usage.completion_tokens);
@@ -226,7 +227,8 @@ export async function runBenchmarkSuite(profile: ServiceProfile, input: Benchmar
     const raw: JsonObject = await bounded(request(profile, '/metrics'), Math.min(options.timeoutMs, 5000), controller.signal).catch(error => { if (controller.signal.aborted) throw error; return {}; });
     if (isBusy(raw)) throw new StrataError('BENCHMARK_SERVICE_BUSY', '服务仍有推理或排队请求，请空闲后再测试');
     began = clock();
-    report = { schemaVersion: 2, id: crypto.randomUUID(), profileId: profile.id, profileName: profile.name, baseUrl, model,
+    const identity = isDesktop() ? await bounded(benchmarkIdentity(profile), Math.min(options.timeoutMs, 5000), controller.signal).catch(error => { if (controller.signal.aborted) throw error; return undefined; }) : undefined;
+    report = { schemaVersion: 3, ...(identity ? { identity } : {}), id: crypto.randomUUID(), profileId: profile.id, profileName: profile.name, baseUrl, model,
       startedAt: Date.now(), finishedAt: 0, elapsedMs: 0, measurementElapsedMs: 0, options, samples: [], stages: [], telemetry: [], state: 'completed', stopReason: 'completed',
       ...(Object.keys(asObject(raw.hardware)).length ? { hardware: asObject(raw.hardware) } : {}), ...(Object.keys(asObject(raw.engine)).length ? { engine: asObject(raw.engine) } : {}) };
     interval = setInterval(() => { if (!monitorPromise) monitorPromise = monitor().finally(() => { monitorPromise = undefined; }); }, 2000);

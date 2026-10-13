@@ -10,7 +10,11 @@ export interface ApiAnalyticsQuery {
   /** Native save dialog target. CSV is generated only from backend metadata. */
   path?: string;
 }
-export interface ApiDistribution { samples: number; p50: number | null; p95: number | null }
+export interface ApiDistribution {
+  samples: number; p50: number | null; p95: number | null;
+  /** Optional for compatibility with older analytics backends. */
+  mean?: number | null; p20?: number | null;
+}
 export interface ApiHttpTotals {
   requests: number; succeeded: number; failed: number; cancelled: number; interrupted: number; pending: number;
   inputTokens: number | null; outputTokens: number | null; cacheReadTokens: number | null;

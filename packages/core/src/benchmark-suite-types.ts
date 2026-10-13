@@ -67,7 +67,8 @@ export interface BenchmarkSuiteProgress {
   telemetry?: BenchmarkTelemetry;
 }
 export interface BenchmarkSuiteReport {
-  schemaVersion: 2;
+  schemaVersion: 2 | 3;
+  identity?: import('./benchmark-comparison').BenchmarkIdentity;
   id: string;
   profileId: string;
   profileName: string;

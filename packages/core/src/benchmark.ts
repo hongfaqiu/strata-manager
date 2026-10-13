@@ -13,6 +13,7 @@ export interface BenchmarkOptions {
 }
 
 export interface BenchmarkSample {
+  firstVisibleMs?: number | null;
   index: number;
   warmup: boolean;
   state: 'completed' | 'failed' | 'cancelled';
@@ -31,6 +32,7 @@ export interface BenchmarkSample {
 }
 
 export interface BenchmarkReport {
+  identity?: import('./benchmark-comparison').BenchmarkIdentity;
   id: string;
   profileId: string;
   profileName: string;
@@ -157,6 +159,7 @@ async function runSample(profile: ServiceProfile, options: BenchmarkOptions, id:
       if (delta.done) done = true;
       if (sample.ttftMs === null && ((delta.content?.length ?? 0) > 0 || (delta.reasoning?.length ?? 0) > 0)) sample.ttftMs = Math.max(0, now() - began);
       if (delta.content) sample.output = (sample.output + delta.content).slice(0, 4000);
+      if (delta.content?.trim() && sample.firstVisibleMs == null) sample.firstVisibleMs = Math.max(0, now() - began);
       if (delta.reasoning) reasoning = (reasoning + delta.reasoning).slice(0, 4000);
       if (delta.usage) {
         sample.promptTokens = count(delta.usage.prompt_tokens);

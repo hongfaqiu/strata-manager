@@ -3,6 +3,9 @@ import { normalizeError, StrataError } from './errors';
 import { decodeChatChunk, SSEParser, type ChatDelta, type StreamToolEvent } from './chat';
 import type { OfficialSetupOptions, ModelInspectRequest } from './official-setup';
 import type { ChatRuntimeEvidence } from './chat';
+import { validateResourceAssessmentRequest, resourceRequestFromConfiguration, type ResourceAssessmentRequest, type SetupResourceAssessment } from './resource-assessment';
+import type { ServiceSharingStatus, SetServiceAuthRequest, ServiceAuthResult } from './service-sharing';
+import type { BenchmarkIdentity } from './benchmark-comparison';
 import type { RuntimeReleaseAsset, RuntimeZipDownloadOptions, RuntimeZipDownloadCheckResult } from './runtime-types';
 
 export interface LocalModel { name: string; configPath: string; modelPath: string; sizeBytes: number | null }
@@ -252,8 +255,19 @@ export const planModelDeletion = (profiles: ServiceProfile[]): Promise<import('.
 export const deleteModelFiles = (profiles: ServiceProfile[], expectedFiles: import('./types').ModelDeletionFile[]): Promise<import('./types').ModelDeletionSummary> => native('delete_model_files', { profiles, expectedFiles });
 export const listLocalModels = (profile: ServiceProfile): Promise<LocalModel[]> => native('list_local_models', { profile });
 export const exportDiagnostics = (profile: ServiceProfile): Promise<string> => native('export_diagnostics', { profile });
+export const assessSetupResources = (request: ResourceAssessmentRequest): Promise<SetupResourceAssessment> => native('assess_setup_resources', { request: validateResourceAssessmentRequest(request) });
+export const serviceSharingStatus = (profile: ServiceProfile): Promise<ServiceSharingStatus> => native('service_sharing_status', { profile });
+export const setServiceAuth = (profile: ServiceProfile, request: SetServiceAuthRequest): Promise<ServiceAuthResult> => native('set_service_auth', { profile, request });
+export const benchmarkIdentity = async (profile: ServiceProfile): Promise<BenchmarkIdentity> => {
+  const value = await native<BenchmarkIdentity & { resourceConfiguration?: JsonObject }>('benchmark_identity', { profile });
+  const { resourceConfiguration, ...identity } = value;
+  const recipe = resourceRequestFromConfiguration(resourceConfiguration,profile.id);
+  return { ...identity, ...(recipe ? { resourceRequest: recipe } : {}) };
+};
 export const applySettings = (settings: AppSettings): Promise<void> => native('apply_settings', { settings });
 export const saveMarkdown = (path: string, content: string): Promise<string> => native('write_markdown_export', { path, content });
+/** Save an already-previewed PNG to the path selected in the native Save As dialog. */
+export const savePng = (path: string, bytes: number[]): Promise<string> => native('write_png_export', { path, bytes });
 export const discoverLocal = (directories?: string[]): Promise<LocalCandidate[]> => native('discover_local', { ...(directories ? { directories } : {}) });
 export const importLocal = (candidate: LocalCandidate): Promise<ServiceProfile> => native('import_local', { candidate });
 export const ensureLocalService = (profileId: string): Promise<ProcessStatus> => native('ensure_local_service', { profileId });
