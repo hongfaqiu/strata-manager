@@ -7,13 +7,27 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+- 恢复模型、设置等工作区 Tab 的圆角分段样式，统一 API 用量时间切换器的圆角；窄窗口可滚动并保留键盘切换。
+- 保留绿色主题下的白色选择环线与标记，移除单选、复选控件最外层光晕。
+
+以下为开发版界面，源码 `0497b6c77fafededcebab671c0b31f6240d4e394`，使用隔离示例数据，尚未包含在 0.1.7 安装包中。见[截图记录](https://github.com/hongfaqiu/strata-manager/blob/main/docs/screenshots/ui-refinements/README.md)。
+
+![未发布：圆角 Tab 与无外层光晕的选择控件](docs/screenshots/ui-refinements/model-download.zh.webp)
+
 ### English
+
+- Restore rounded segmented workspace tabs and align API-usage time selectors with the shared rounded style. Narrow windows retain scrolling and keyboard navigation.
+- Keep the green theme with white selection borders and marks, while removing the outer halo from radio buttons and checkboxes.
+
+This development preview was captured from source `0497b6c77fafededcebab671c0b31f6240d4e394` with isolated example data. These refinements are not included in the 0.1.7 installer. See the [capture record](https://github.com/hongfaqiu/strata-manager/blob/main/docs/screenshots/ui-refinements/README.md).
+
+![Unreleased: rounded tabs and selection controls without an outer halo](docs/screenshots/ui-refinements/model-download.en.webp)
 
 ## [0.1.7] - 2026-10-13
 
 ### 中文
 
-- 模型下载分为目录与详情，在详情内集中选择显卡和运行选项，按当前选择显示资源评估与未知项；建议保留手动设置，评估不构成容量保证。
+- 模型下载分为目录与详情，下载来源、目录和显卡默认值集中在公共下载配置中，模型详情保留量化与启动预设，按当前选择显示资源评估与未知项；建议保留手动设置，评估不构成容量保证。
 - 启动失败保留阶段、耗时、原因与脱敏证据；聊天区分等待、思考、工具及正文阶段，分别记录 TTFT、首正文和总耗时，并区分本地操作与服务实际返回的请求／响应 ID。
 - 服务能力统一显示可用、不支持、未核验及需要重启；聊天、API 与 Benchmark 使用相同证据规则，保存配置不代替当前服务证据。
 - API 接入新增显式的文本、工具结构与图片验证，每次限制 256 token／60 秒；工具验证不执行 MCP。局域网配置先预览再保存，保留多密钥与备份，重启独立执行。
@@ -34,7 +48,7 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### English
 
-- Split model downloads into a catalog and details, with GPU/run options and resource assessment for the current selection. Suggestions preserve manual settings, unknown values remain explicit, and assessment does not guarantee capacity.
+- Split model downloads into a catalog and details. Shared download settings hold the source, location and GPU defaults; model details retain quantization and startup presets, with resource assessment for the current selection. Suggestions preserve manual settings, unknown values remain explicit, and assessment does not guarantee capacity.
 - Retain startup failure stages, timing, reasons and sanitized evidence. Chat separates waiting, reasoning, tools and answer generation, records TTFT, first-answer timing and total duration, and distinguishes local operations from actual service request/response IDs.
 - Use shared evidence rules for available, unsupported, unverified and restart-required capabilities across chat, API and Benchmark. Saved configuration does not establish current service support.
 - Add explicit text, tool-structure and image API checks, bounded to 256 tokens and 60 seconds. Tool checks never execute MCP. LAN settings use preview and save, preserve multiple keys and backups, and keep restarting separate.

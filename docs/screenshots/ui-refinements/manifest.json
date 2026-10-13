@@ -1,0 +1,31 @@
+{
+  "capturedOn": "2026-10-13",
+  "status": "unreleased-development-preview",
+  "sourceCommit": "0497b6c77fafededcebab671c0b31f6240d4e394",
+  "appVersionMarker": "0.1.7-dev",
+  "sourceUnchangedDuringCapture": true,
+  "capture": "Codex in-app browser; actual daily-experience-app components and synthetic native IO",
+  "scope": "No real downloads, inference, credentials or lifecycle operations. These refinements are not in the v0.1.7 installer.",
+  "captures": [
+    {
+      "file": "docs/screenshots/ui-refinements/model-download.zh.webp",
+      "language": "zh",
+      "width": 1440,
+      "height": 1200,
+      "bytes": 251534,
+      "sha256": "ac63f3165e9280a62e42fc6ad4b4d52a3b75fac60f2ac9b504ade1d29922db28",
+      "pngSha256": "cef27e7557a27961290f93a076c654e2a17a7e6a934ade725af2c34177014bfe",
+      "pixelsUnchanged": true
+    },
+    {
+      "file": "docs/screenshots/ui-refinements/model-download.en.webp",
+      "language": "en",
+      "width": 1440,
+      "height": 1200,
+      "bytes": 278644,
+      "sha256": "2b5e6d65dca232495815dd52ded82398fadf2d4cafa4a6c69af2c980f0884160",
+      "pngSha256": "6b47277f372ae856c5d5d046c0e651d3a7ab816cd5fda7798111a7687adee6c1",
+      "pixelsUnchanged": true
+    }
+  ]
+}

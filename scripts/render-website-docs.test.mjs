@@ -5,6 +5,13 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { documents, headingSlug, renderChangelog, renderMarkdownContent, rewriteDocumentUrl, verifyStaticWebsite } from './render-website-docs.mjs';
 
+test('Screenshot evidence documents stay on GitHub while published images use website assets', () => {
+  const rewrite = url => rewriteDocumentUrl(url, 'CHANGELOG.md', 'docs/changelog.en.html');
+  assert.equal(rewrite('docs/screenshots/ui-refinements/README.md'), 'https://github.com/hongfaqiu/strata-manager/blob/main/docs/screenshots/ui-refinements/README.md');
+  assert.equal(rewrite('docs/screenshots/ui-refinements/manifest.json'), 'https://github.com/hongfaqiu/strata-manager/blob/main/docs/screenshots/ui-refinements/manifest.json');
+  assert.equal(rewrite('docs/screenshots/ui-refinements/model-download.en.webp'), '../assets/screenshots/ui-refinements/model-download.en.webp');
+});
+
 test('Markdown publishes GFM tables, task lists and fenced code as complete HTML', () => {
   const { html } = renderMarkdownContent('# Guide\n\n| Model | State |\n| --- | --- |\n| Local | Ready |\n\n- [x] Import\n\n```sh\npnpm desktop\n```', 'docs/USER_GUIDE.md', 'docs/user-guide.html');
   assert.match(html, /class="table-scroll"[^>]*><table>/);

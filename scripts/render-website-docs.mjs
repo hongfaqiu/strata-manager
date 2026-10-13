@@ -102,7 +102,7 @@ export function rewriteDocumentUrl(value, source, outputPage) {
     if (parts[3]) return repository + encodePath(target) + suffix;
     return relativePage(outputPage, homePage(lang) || './') + '/';
   }
-  if (target.startsWith('docs/screenshots/')) {
+  if (target.startsWith('docs/screenshots/') && target.endsWith('.webp')) {
     return relativePage(outputPage, target.replace('docs/screenshots/', 'assets/screenshots/')) + suffix;
   }
   if (target === 'assets/icon.svg') return relativePage(outputPage, target) + suffix;
