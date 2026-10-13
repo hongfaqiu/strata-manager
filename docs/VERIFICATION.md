@@ -4,6 +4,7 @@
 
 - 候选包含 Windows 运行中服务连接与托管保护、系统语言和十种随包资源、监控浮条布局与显示控制、自动载入进度、设置工作区及总览图形更新。此记录写于公开发布前；最终安装包以对应版本的完整 CI、签名发布和公开资源核验为准。
 - Core **434/434**、Desktop **135/135**、脚本 **23/23**；TypeScript 与前端生产构建通过。Rust 格式及 workspace/all-targets Clippy 通过。发布门禁 **258/258**；原生分片与缓存策略回归 **43/43**。
+- 第一轮候选 CI `f9fa71a3e9f7c8de26ab46f354311525a2636880` 在 Windows/Linux 的 Rust 检查被 Rust 1.99 新增的排序写法检查阻断。将内部任务栏布局的降序比较改为等价的 `sort_unstable_by_key(Reverse(...))`，保留所有门禁和排序规则；新源码必须重新完成十个 CI job，不能复用失败候选的产物。这一原生写法调整不改变已捕获的 React 界面或示例数据。
 - 本地 Windows 原生检查合计 **642 个唯一测试通过、15 项明确忽略**。首次完整运行的五项 request-capture 失败源于缺少 CI 固定上游 fixture；补齐 `fb58e0dbc8399662c0e47c76578c6e878b14f6cf` 并核验原始源码字节后，该模块 **9/9** 通过。剩余 supervisor/update-verifier **11/11** 与四个 workspace 文档测试目标分别完成。此合并结果不是一次完整运行全绿，也不是 CI 或安装包验收；本地汇总保存在 `output/release-v0.1.8/native-verification-aggregate.json`。
 - Windows ignored 清单由原十四项增加为十五项，仅登记新增的“用户显式指定真实运行服务的只读所有者验收”。Linux 七项、全部已有测试、严格清单比对、超时与分片规则保持不变。实际 Windows libtest 枚举 **657 项**，与本轮清单完全一致。
 - 固定 Strata 0.1.43.1 MockEngine HTTP observer **36/36**、自动服务连接浏览器 **3/3**、系统语言浏览器 **18/18** 通过；均使用隔离数据或临时目录，未通过这些用例启动真实模型。

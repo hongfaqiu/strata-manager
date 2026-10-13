@@ -6,7 +6,7 @@ Strata Manager is an open-source desktop workspace for [Strata](https://github.c
 
 [Website](https://hongfaqiu.github.io/strata-manager/en/) · [Documentation](https://hongfaqiu.github.io/strata-manager/docs/index.en.html) · [Latest stable release](https://github.com/hongfaqiu/strata-manager/releases/latest) · [Changelog](CHANGELOG.md)
 
-The full English README and real interface screenshots are maintained in [README.md](README.md). Download the app from the [website download section](https://hongfaqiu.github.io/strata-manager/en/#get-started) and follow changes in the [website changelog](https://hongfaqiu.github.io/strata-manager/docs/changelog.en.html).
+The full English README and real interface screenshots are maintained in [README.md](README.md). Its homepage cover shows the complete Overview with the top-right service status closed. Download the app from the [website download section](https://hongfaqiu.github.io/strata-manager/en/#get-started) and follow changes in the [website changelog](https://hongfaqiu.github.io/strata-manager/docs/changelog.en.html).
 
 This compatibility entry keeps existing English README links working.
 

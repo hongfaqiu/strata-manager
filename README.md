@@ -25,9 +25,9 @@
 
 **Strata Manager is an open-source desktop management app for [Niko1221/Strata](https://github.com/Niko1221/Strata), a local large language model inference engine.** It brings runtime setup, model configurations, service controls, chat, monitoring, tuning and benchmarking into one workspace. Existing supported model weights stay in place.
 
-[![Strata Manager overview with the service-status popover open](docs/screenshots/product-cover.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.en.webp)
+[![Strata Manager complete Overview with the top-right service status closed](docs/screenshots/product-cover.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.en.webp)
 
-<sub>0.1.8 release candidate interface, refreshed on October 14, 2026. Publication is pending. Screenshots use the actual application and components with isolated example data; displayed values are not inference results or benchmarks. Click to view the original.</sub>
+<sub>0.1.8 release candidate interface, refreshed on October 14, 2026. The homepage cover shows the complete Overview with the top-right service status closed. Publication is pending. Screenshots use the actual application and components with isolated example data; displayed values are not inference results or benchmarks. Click to view the original.</sub>
 
 ## What is Strata, and what does Manager do?
 

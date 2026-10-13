@@ -60,7 +60,7 @@ pub(crate) fn vacant_rect(
         .collect();
     // Prefer the space nearest the notification area. Sort by RIGHT edge:
     // sorting by left edges could miss a wider, nested obstacle behind one.
-    spans.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+    spans.sort_unstable_by_key(|span| std::cmp::Reverse(span.1));
     let start = i64::from(bar.left) + gap;
     let mut end = i64::from(bar.right) - gap;
     for (left, right) in spans {

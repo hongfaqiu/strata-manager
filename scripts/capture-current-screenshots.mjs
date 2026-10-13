@@ -97,7 +97,8 @@ const images=JSON.parse(conversion.stdout);
 for(let i=0;i<captures.length;i++){Object.assign(captures[i],{width:images[i].width,height:images[i].height,sha256:images[i].sha256,pixelEquality:true});await copyFile(images[i].webp,join(destination,captures[i].file));}
 const covers=[];
 if(!selected){
-  for(const language of ['zh','en']){const source=`service-status.${language}.webp`,file=`product-cover.${language}.webp`;await copyFile(join(destination,source),join(destination,file));const record=captures.find(item=>item.file===source);covers.push({file,source,width:record.width,height:record.height,sha256:record.sha256,pixelEquality:true});}
+  // Homepage covers keep the normal Overview state; the top-right popover stays closed.
+  for(const language of ['zh','en']){const source=`overview.${language}.webp`,file=`product-cover.${language}.webp`;await copyFile(join(destination,source),join(destination,file));const record=captures.find(item=>item.file===source);covers.push({file,source,width:record.width,height:record.height,sha256:record.sha256,pixelEquality:true});}
   await copyFile(join(destination,'product-cover.en.webp'),join(destination,'product-cover.webp'));covers.push({...covers[1],file:'product-cover.webp'});
 }
 const helpers=await Promise.all(['scripts/capture-current-screenshots.mjs',...scripts,'apps/desktop/tests/optimization/floating-monitor-native-fixture.js'].map(async file=>({file,sha256:hash(await readFile(join(root,file)))})));

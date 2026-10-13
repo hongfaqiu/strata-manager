@@ -128,17 +128,17 @@ const strataReleaseCatalog = (() => {
   const screens = {
     "overview": {
       "index": "00",
-      "image": "product-cover",
+      "image": "overview",
       "zh": {
-        "title": "总览与服务状态。",
-        "description": "查看总览及展开的服务状态面板；截图使用演示数据。",
-        "alt": "Strata Manager 总览与已展开的服务状态弹层，包含模型、API 用量和运行指标的演示数据",
+        "title": "完整总览。",
+        "description": "查看模型、API 用量与资源状态；截图使用隔离示例数据。",
+        "alt": "Strata Manager 完整总览，包含模型、API 用量与资源状态的隔离示例数据",
         "badge": "总览"
       },
       "en": {
-        "title": "Overview and service status.",
-        "description": "View the overview with its service status panel open; the screenshot uses demonstration data.",
-        "alt": "Strata Manager overview with the service status popover open, showing demonstration model, API usage and runtime metrics",
+        "title": "Complete Overview.",
+        "description": "View models, API usage and resource status; the screenshot uses isolated example data.",
+        "alt": "Strata Manager complete Overview with isolated example models, API usage and resource status",
         "badge": "OVERVIEW"
       }
     },

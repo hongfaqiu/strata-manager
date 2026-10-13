@@ -11,9 +11,9 @@ This directory's root contains the current README and website gallery: **46 page
 | 根目录 / Root | 总览、运行环境、模型与配置、聊天、用量、调优、监控、设置、关于、Benchmark、公共聊天、连接、会话工具、更新、服务状态、下载设置、浮条，以及运行中服务、语言选择、浮条设置、场景测试和结果报告 / Overview, runtime, models and configuration, chat, usage, tuning, monitoring, settings, About, Benchmark, common chat, connections, session tools, updates, service status, download settings, floating monitor, running services, language selection, monitor settings, scenario tests and reports | [manifest.json](manifest.json) |
 | `daily-experience/` | 当前重拍的 16 张日常工作流程图：模型下载列表与详情、API 验证、服务能力、启动诊断、聊天计时、历史条件比较、API 用量 / 16 refreshed workflow images covering model downloads, API verification, capabilities, startup diagnostics, chat timing, history comparison and API usage | [独立 manifest / Separate manifest](daily-experience/manifest.json) |
 
-封面 `product-cover.zh.webp` 与 `product-cover.en.webp` 使用对应语言的 `service-status` 完整截图：总览及展开的服务状态弹层，保持原始比例，不裁剪、拼接或重画。`product-cover.webp` 是英文兼容别名；封面与页面图分别记入 manifest。
+封面 `product-cover.zh.webp` 与 `product-cover.en.webp` 直接使用对应语言的 `overview` 完整截图：正常总览，右上角服务状态保持收起，保留原始比例，不裁剪、拼接或重画。以后重拍首页封面沿用这一状态；`service-status` 独立功能图可展开弹层。`product-cover.webp` 是英文兼容别名；封面与页面图分别记入 manifest。
 
-The bilingual covers, `product-cover.zh.webp` and `product-cover.en.webp`, use the complete corresponding `service-status` screenshots: Overview with its service-status popover open, preserving the original proportions without cropping, composition or redrawing. `product-cover.webp` is the English compatibility alias. The manifest records covers separately from page images.
+The bilingual covers, `product-cover.zh.webp` and `product-cover.en.webp`, directly use the complete corresponding `overview` screenshots: normal Overview with the top-right service status closed, preserving the original proportions without cropping, composition or redrawing. Future homepage-cover captures keep this state; the separate `service-status` feature images may show the popover open. `product-cover.webp` is the English compatibility alias. The manifest records covers separately from page images.
 
 ## 采集与重跑 / Capture and reproduction
 

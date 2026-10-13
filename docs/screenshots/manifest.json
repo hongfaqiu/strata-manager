@@ -2211,26 +2211,26 @@
   "covers": [
     {
       "file": "product-cover.zh.webp",
-      "source": "service-status.zh.webp",
+      "source": "overview.zh.webp",
       "width": 2880,
       "height": 1920,
-      "sha256": "a84a4bc20252c7bea7da8c14cea4864955881b06f9203c48b8d40166e27f5382",
+      "sha256": "4468810c994cfcdff9ca56536ac092b68f237a28d5fdafb719fe4c284a2d1ae9",
       "pixelEquality": true
     },
     {
       "file": "product-cover.en.webp",
-      "source": "service-status.en.webp",
+      "source": "overview.en.webp",
       "width": 2880,
       "height": 1920,
-      "sha256": "d349f6eef78a6736e3c05759b9ede647dd7909e8f9b6a75ceba28095b91058bc",
+      "sha256": "9b387725ff6e5bef68360aab798db46e42efbcdbc3a3a926b568e5374d4b6a24",
       "pixelEquality": true
     },
     {
       "file": "product-cover.webp",
-      "source": "service-status.en.webp",
+      "source": "overview.en.webp",
       "width": 2880,
       "height": 1920,
-      "sha256": "d349f6eef78a6736e3c05759b9ede647dd7909e8f9b6a75ceba28095b91058bc",
+      "sha256": "9b387725ff6e5bef68360aab798db46e42efbcdbc3a3a926b568e5374d4b6a24",
       "pixelEquality": true
     }
   ],
@@ -2268,5 +2268,15 @@
       "sha256": "af1689c08407136859f62b0e01d3c5bdaed8ec45e01e44e64d6bc447dcf94b68"
     }
   ],
-  "helperTreeSha256": "9ed29502028a24988cd2d5f3dc3c01d8aa6cafaae69cfc3188aa2abccbb09876"
+  "helperTreeSha256": "9ed29502028a24988cd2d5f3dc3c01d8aa6cafaae69cfc3188aa2abccbb09876",
+  "coverSelection": {
+    "updatedAt": "2026-10-13T20:13:11.457Z",
+    "scope": "Normal Overview with top-right popover closed, as explicitly requested by the user."
+  },
+  "captureFollowup": {
+    "reason": "Native sort syntax updated for Rust 1.99; no React renderer or fixture-data changes.",
+    "files": [
+      "apps/desktop/src-tauri/src/taskbar_layout.rs"
+    ]
+  }
 }
