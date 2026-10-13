@@ -42,6 +42,17 @@ export const WINDOWS_SHARD_GATES = Object.freeze([
   'Run every assigned native test on the independent Windows runner',
   'Upload the complete native coverage proof',
 ]);
+export const OBSERVER_GATES = Object.freeze([
+  'Preserve the verified upstream source bytes',
+  'Check out the reviewed Strata 0.1.43.1 API fixture',
+  'Install MockEngine test dependencies only',
+  'Verify the reviewed source and observer compatibility',
+  'Verify all Strata 0.1.43.1 observer HTTP contracts without skips',
+]);
+export const OBSERVER_JOBS = Object.freeze([
+  'Strata 0.1.43.1 observer (windows-latest)',
+  'Strata 0.1.43.1 observer (ubuntu-22.04)',
+]);
 const jobsByPlatform = {
   windows: 'desktop (windows-latest, x86_64-pc-windows-msvc, nsis)',
   linux: 'desktop (ubuntu-22.04, x86_64-unknown-linux-gnu, appimage,deb)',
@@ -83,7 +94,15 @@ export function validateCiEvidence(run, jobs, artifacts, plan, { nowMs = Date.no
   if (plan?.protocol !== CI_PROTOCOL) fail('The current complete native CI protocol is required.');
   validateRun(run, plan);
   if (!Array.isArray(jobs) || !Array.isArray(artifacts)) fail('Complete jobs and artifact inventories are required.');
-  if (jobs.length !== 8) fail('Exactly the two desktop jobs and six native shards are required.');
+  if (jobs.length !== 10) fail('Exactly the two desktop jobs, six native shards and two observer compatibility jobs are required.');
+  for (const name of OBSERVER_JOBS) {
+    const job = successfulJob(jobs, name, run);
+    if (job.run_attempt !== run.run_attempt) fail('Required observer job lacks current-attempt evidence: ' + name);
+    for (const gate of OBSERVER_GATES) {
+      const steps = job.steps?.filter(step => step.name === gate) ?? [];
+      if (steps.length !== 1 || steps[0].status !== 'completed' || steps[0].conclusion !== 'success') fail('Required observer gate failed or missing: ' + gate);
+    }
+  }
   for (const [platform, gates] of [['Linux', SHARD_GATES], ['Windows', WINDOWS_SHARD_GATES]]) {
     for (let shard = 0; shard < 3; shard++) {
       const job = successfulJob(jobs, platform + ' native shard (' + shard + '/3)', run);

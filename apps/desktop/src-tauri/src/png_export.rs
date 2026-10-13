@@ -99,7 +99,12 @@ fn validate(bytes: &[u8]) -> Result<(), String> {
                 header = true;
             }
             b"PLTE" => {
-                if palette || image_bytes > 0 || length == 0 || length > 768 || !length.is_multiple_of(3) {
+                if palette
+                    || image_bytes > 0
+                    || length == 0
+                    || length > 768
+                    || !length.is_multiple_of(3)
+                {
                     return Err("PNG 调色板无效 / PNG palette is invalid".into());
                 }
                 palette = true;

@@ -7,6 +7,12 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+### English
+
+## [0.1.7] - 2026-10-13 (Unreleased)
+
+### 中文
+
 - 模型下载分为目录与详情，在详情内集中选择显卡和运行选项，按当前选择显示资源评估与未知项；建议保留手动设置，评估不构成容量保证。
 - 启动失败保留阶段、耗时、原因与脱敏证据；聊天区分等待、思考、工具及正文阶段，分别记录 TTFT、首正文和总耗时，并区分本地操作与服务实际返回的请求／响应 ID。
 - 服务能力统一显示可用、不支持、未核验及需要重启；聊天、API 与 Benchmark 使用相同证据规则，保存配置不代替当前服务证据。
@@ -14,9 +20,11 @@ Maintain both languages for each version. Move unreleased changes into the actua
 - Benchmark 报告保留模型／引擎／启动配置身份与首正文时间，兼容历史记录；历史和升级前基线展示条件差异，未知条件或弱身份不产生直接提速结论。默认导出省略测试正文与错误响应。
 - API 使用统计加入实时负载、趋势图和均值／分位数；帮助提示统一支持键盘、禁用控件和弹窗。开发 EXE 嵌入前端并使用独立默认数据目录。
 - 单选与复选控件统一使用白色亮环、对比描边和键盘焦点，保留原生单选／多选语义；下载、MCP、导出与启动参数使用共享组件。
-- 本轮尚未发行。截图为隔离示例，完整原生窗口、真实 GPU／长时和跨设备 LAN 仍待验收，见 [验收记录](docs/VERIFICATION.md)。
+- 截图为隔离示例，完整原生窗口、真实 GPU／长时和跨设备 LAN 仍待验收，见 [验收记录](docs/VERIFICATION.md)。
 
-#### 未发行界面预览
+#### 界面示例
+
+以下截图来自版本号更新前的实际组件，捕获源码为 `e4b8fa651eb0c021b6f8979b5f8affd847a8dbb2`，界面标记为 0.1.6。示例数据不代表真实推理或 0.1.7 安装包验收；出处见 [截图说明与捕获记录](docs/screenshots/README.md)。
 
 [![模型下载详情与资源评估](docs/screenshots/daily-experience/model-download-detail.zh.webp)](docs/screenshots/daily-experience/model-download-detail.zh.webp)
 
@@ -33,9 +41,11 @@ Maintain both languages for each version. Move unreleased changes into the actua
 - Retain model/engine/startup identity and first-answer timing in compatible benchmark reports. Historical and pre-upgrade baseline comparisons show condition differences; unknown conditions or weak identity do not produce direct speedup claims. Exports omit test bodies and error responses by default.
 - Add live API load, trends, means and percentiles. Unified hints support keyboard focus, disabled controls and dialogs. Development executables embed the frontend and use a separate default data directory.
 - Unify radio buttons and checkboxes with white selection rings, contrast borders and keyboard focus while retaining native selection semantics. Downloads, MCP, exports and startup options use shared controls.
-- Unreleased. Screenshots contain isolated examples; complete native window flows, real GPU/prolonged stability and cross-device LAN acceptance remain outstanding. See the [verification record](docs/VERIFICATION.md).
+- Screenshots contain isolated examples; complete native window flows, real GPU/prolonged stability and cross-device LAN acceptance remain outstanding. See the [verification record](docs/VERIFICATION.md).
 
-#### Unreleased interface previews
+#### Interface examples
+
+These screenshots show the actual components before the version bump, captured from source `e4b8fa651eb0c021b6f8979b5f8affd847a8dbb2` with a 0.1.6 UI marker. Demonstration data does not establish real inference or 0.1.7 installer acceptance. See the [screenshot scope and capture records](docs/screenshots/README.md).
 
 [![Model download details and resource assessment](docs/screenshots/daily-experience/model-download-detail.en.webp)](docs/screenshots/daily-experience/model-download-detail.en.webp)
 

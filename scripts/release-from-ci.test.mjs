@@ -19,6 +19,20 @@ const makePlan = (version = '0.2.0') => createPlan({
   tag: 'v' + version, version, sourceSha: 'a'.repeat(40), productName: 'Strata Manager',
 });
 const plan = makePlan();
+// Independent expectations from the reviewed observer-compatibility matrix in ci.yml.
+const observerJobs = ['Strata 0.1.43.1 observer (windows-latest)', 'Strata 0.1.43.1 observer (ubuntu-22.04)'];
+const observerGates = [
+  'Preserve the verified upstream source bytes', 'Check out the reviewed Strata 0.1.43.1 API fixture',
+  'Install MockEngine test dependencies only', 'Verify the reviewed source and observer compatibility',
+  'Verify all Strata 0.1.43.1 observer HTTP contracts without skips',
+];
+test('observer compatibility expectations match the two-platform reviewed workflow and its named gates', async () => {
+  const workflow = (await readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')).replaceAll('\r\n', '\n');
+  const observer = workflow.slice(workflow.indexOf('\n  observer-compatibility:')).split('\n  native-windows:')[0];
+  assert.ok(observer.includes('name: Strata 0.1.43.1 observer (${{ matrix.runner }})'));
+  assert.match(observer, /runner: \[windows-latest,\s*ubuntu-22\.04\]/);
+  for (const gate of observerGates) assert.ok(observer.includes('- name: ' + gate), gate);
+});
 for (const method of ['POST', 'PATCH']) {
   test(`real ${method} subprocess receives the complete Unicode JSON request through stdin`, () => {
     const endpoint = '/repos/hongfaqiu/strata-manager/releases' + (method === 'PATCH' ? '/123' : '');
@@ -72,6 +86,7 @@ function ciFixture(p = plan, runId = 123) {
     job('desktop (ubuntu-22.04, x86_64-unknown-linux-gnu, appimage,deb)', [...COMMON_GATES, ...PLATFORM_GATES.linux], 11),
     ...[0, 1, 2].map(i => job('Linux native shard (' + i + '/3)', SHARD_GATES, 20 + i)),
     ...[0, 1, 2].map(i => job('Windows native shard (' + i + '/3)', WINDOWS_SHARD_GATES, 30 + i)),
+    ...observerJobs.map((name, i) => job(name, observerGates, 40 + i)),
   ];
   if (p.version === '0.1.2') jobs[0].steps.push(...[
     'Verify the signed beta.2 installer for the first stable upgrade',
@@ -161,7 +176,7 @@ const invalidCi = [
   ['extra unknown job', f => { f.jobs.push({ ...f.jobs[0], id: 99, name: 'Unidentified validation' }); }],
   ['missing desktop', f => { f.jobs.shift(); }],
   ['duplicate desktop', f => { f.jobs.push(clone(f.jobs[0])); }],
-  ['missing shard', f => { f.jobs.pop(); }],
+  ['missing shard', f => { f.jobs.splice(4, 1); }],
   ['skipped shard', f => { f.jobs[3].conclusion = 'skipped'; }],
   ['old job attempt', f => { f.jobs[0].run_attempt = 1; }],
   ['wrong job run', f => { f.jobs[0].run_id = 124; }],
@@ -248,6 +263,39 @@ test('Windows wait, current-attempt download and aggregate cannot be skipped aft
     assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, plan), /CI gate/);
   }
 });
+test('old eight-job CI without observer compatibility evidence is never reusable', () => {
+  const f = ciFixture();
+  assert.throws(() => validateCiEvidence(f.run, f.jobs.slice(0, 8), f.artifacts, plan), /observer/);
+});
+for (const name of observerJobs) {
+  for (const [label, mutate] of [
+    ['missing', (f, index) => { f.jobs.splice(index, 1); }],
+    ['duplicate', (f, index) => { f.jobs.push(clone(f.jobs[index])); }],
+    ['unknown replacement', (f, index) => { f.jobs[index].name = 'Unreviewed observer'; }],
+    ['failed', (f, index) => { f.jobs[index].conclusion = 'failure'; }],
+    ['cancelled', (f, index) => { f.jobs[index].conclusion = 'cancelled'; }],
+    ['skipped', (f, index) => { f.jobs[index].conclusion = 'skipped'; }],
+    ['queued', (f, index) => { f.jobs[index].status = 'queued'; f.jobs[index].conclusion = null; }],
+    ['old attempt', (f, index) => { f.jobs[index].run_attempt--; }],
+    ['missing attempt', (f, index) => { delete f.jobs[index].run_attempt; }],
+    ['wrong run', (f, index) => { f.jobs[index].run_id++; }],
+    ['wrong source', (f, index) => { f.jobs[index].head_sha = 'b'.repeat(40); }],
+  ]) test(`observer compatibility gate refuses ${name} ${label}`, () => {
+    const f = ciFixture(); mutate(f, f.jobs.findIndex(job => job.name === name));
+    assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, plan));
+  });
+  test(`observer compatibility ${name} requires every reviewed-source and HTTP-contract step`, () => {
+    for (const gate of observerGates) for (const state of ['missing', 'duplicate', 'skipped', 'failure', 'cancelled', 'queued']) {
+      const f = ciFixture(), steps = f.jobs.find(job => job.name === name).steps;
+      const index = steps.findIndex(step => step.name === gate);
+      if (state === 'missing') steps.splice(index, 1);
+      else if (state === 'duplicate') steps.push(clone(steps[index]));
+      else if (state === 'queued') { steps[index].status = 'queued'; steps[index].conclusion = null; }
+      else steps[index].conclusion = state;
+      assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, plan), /observer gate/);
+    }
+  });
+}
 function zipEntry(a = plan.artifacts[0]) {
   return { name: a.installer,
     size: 10, compressedSize: 8, mode: 0o100644, isDirectory: false, encrypted: false };
