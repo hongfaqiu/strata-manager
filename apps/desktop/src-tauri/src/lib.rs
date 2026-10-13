@@ -13,6 +13,7 @@ mod runtime_updates;
 mod service_sharing;
 mod startup;
 mod supervisor_client;
+mod taskbar_monitor;
 mod vision_files;
 mod window_layout;
 
@@ -1333,6 +1334,7 @@ fn apply_settings(
     );
     let english = settings.get("language").and_then(Value::as_str) == Some("en");
     monitor_tray::apply(&app, &settings)?;
+    taskbar_monitor::apply_preferences(&app, &settings)?;
     state.tray_english.store(english, Ordering::Relaxed);
     state
         .tray_start
@@ -1451,6 +1453,9 @@ async fn request_capture_set(
         .map_err(|e| e.to_string())
 }
 pub fn run() {
+    if taskbar_monitor::maybe_run_host() {
+        return;
+    }
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
@@ -1570,6 +1575,7 @@ pub fn run() {
                 tray_stop_quit: stop_quit.clone(),
             });
             app.manage(monitor_tray::MonitorTrayState::default());
+            app.manage(taskbar_monitor::TaskbarMonitorState::default());
             monitor_tray::apply(app.handle(), &saved_settings)?;
             let menu = Menu::with_items(
                 app,
@@ -1661,6 +1667,9 @@ pub fn run() {
         })
         .invoke_handler(invoke_policy::with_window_policy(tauri::generate_handler![
             floating_monitor::open_monitor_window,
+            floating_monitor::resize_monitor_window,
+            taskbar_monitor::set_monitor_mode,
+            taskbar_monitor::monitor_mode_status,
             monitor_tray::minimize_monitor_to_tray,
             floating_monitor::monitor_snapshot,
             floating_monitor::show_main_from_monitor,
@@ -1746,6 +1755,7 @@ pub fn run() {
         .expect("Strata Manager initialization failed");
     app.run(|handle, event| {
         if matches!(event, tauri::RunEvent::Exit) {
+            taskbar_monitor::shutdown(handle);
             handle.state::<ClientState>().cleanup_ui();
         }
     });

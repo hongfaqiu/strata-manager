@@ -1,0 +1,20 @@
+.floating-monitor-content { --monitor-generation: #168a57; --monitor-prefill: #2179c5; box-sizing: border-box; width: 100%; padding: 9px; color: var(--st-ink); background: var(--st-surface); font-family: var(--st-font); font-variant-numeric: tabular-nums; }
+[data-theme="dark"] .floating-monitor-content { --monitor-generation: #68e7a5; --monitor-prefill: #75bdff; }
+.floating-monitor-content-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; height: calc(var(--monitor-font) * 1.2 + 10px); padding-bottom: 6px; font-size: var(--monitor-label-font); color: var(--st-ink-muted); }
+.floating-monitor-content-header > span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.floating-monitor-state { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.floating-monitor-state i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.floating-monitor-grid { display: grid; grid-template-columns: repeat(var(--monitor-columns), minmax(0, 1fr)); gap: 8px; }
+.floating-monitor-cell { min-width: 0; color: var(--st-ink); padding: 2px 3px; }
+.floating-monitor-cell[data-metric="generation"] { color: var(--monitor-generation); }
+.floating-monitor-cell[data-metric="prefill"] { color: var(--monitor-prefill); }
+.floating-monitor-reading { display: flex; align-items: baseline; gap: 5px; min-height: calc(var(--monitor-font) * 1.4); white-space: nowrap; }
+.floating-monitor-label { font-size: var(--monitor-label-font); flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
+.floating-monitor-reading strong { font-size: var(--monitor-font); font-weight: 650; line-height: 1.4; }
+.floating-monitor-reading small { font-size: var(--monitor-label-font); opacity: .82; }
+.floating-monitor-graph { display: block; width: 100%; height: 20px; overflow: visible; }
+.floating-monitor-graph path { stroke: currentColor; stroke-width: 1.5; vector-effect: non-scaling-stroke; fill: none; }
+.floating-monitor-graph circle { fill: currentColor; }
+.floating-monitor-graph .floating-monitor-baseline { opacity: .14; stroke-width: 1; }
+.floating-monitor-content[data-layout="panel"] .floating-monitor-reading { flex-wrap: wrap; gap: 0 5px; }
+.floating-monitor-content[data-layout="panel"] .floating-monitor-label { flex-basis: 100%; line-height: calc(var(--monitor-label-font) + 6px); }

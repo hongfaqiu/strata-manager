@@ -85,12 +85,33 @@ export interface SetupHandoff {
 }
 
 export type FloatingMonitorAction = 'main' | 'chat' | 'monitoring' | 'usage' | 'tasks' | 'quickBenchmark' | 'copyApiUrl' | 'refresh' | 'pause' | 'pin';
+export type FloatingMonitorMetric = 'generation' | 'prefill' | 'gpu' | 'vram' | 'cpu' | 'ram' | 'temperature' | 'power' | 'running' | 'queued' | 'cache';
+export type FloatingMonitorLayout = 'compact' | 'twoRow' | 'panel';
+export type FloatingMonitorMode = 'floating' | 'taskbar';
 
 export interface FloatingMonitorPreferences {
   actions: FloatingMonitorAction[];
   alwaysOnTop: boolean;
   showSampleTime: boolean;
   showInTray: boolean;
+  /** Optional on persisted settings from older desktop versions. */
+  fontSize?: number;
+  layout?: FloatingMonitorLayout;
+  metrics?: FloatingMonitorMetric[];
+  showGraphs?: boolean;
+  showLabels?: boolean;
+  showUnits?: boolean;
+  mode?: FloatingMonitorMode;
+}
+
+export interface ResolvedFloatingMonitorPreferences extends FloatingMonitorPreferences {
+  fontSize: number;
+  layout: FloatingMonitorLayout;
+  metrics: FloatingMonitorMetric[];
+  showGraphs: boolean;
+  showLabels: boolean;
+  showUnits: boolean;
+  mode: FloatingMonitorMode;
 }
 
 export interface AppSettings {

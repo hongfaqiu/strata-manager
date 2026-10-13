@@ -1,8 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
 import { isDesktop, type AppSettings, type JsonObject, type ProcessStatus, type ServiceProfile } from '@strata-manager/core';
-import type { FloatingMonitorAction, FloatingMonitorPreferences } from '@strata-manager/core';
+import type { FloatingMonitorAction, FloatingMonitorPreferences, FloatingMonitorMode } from '@strata-manager/core';
 
 export type { FloatingMonitorAction, FloatingMonitorPreferences } from '@strata-manager/core';
+export { normalizeFloatingMonitorPreferences } from '@strata-manager/core';
 export type MonitorDestination = 'overview' | 'chat' | 'monitoring' | 'usage' | 'tasks' | 'settings' | 'quickBenchmark';
 
 export const FLOATING_MONITOR_ACTIONS: { id: FloatingMonitorAction; label: Record<'zh-CN' | 'en', string> }[] = [
@@ -17,15 +18,6 @@ export const FLOATING_MONITOR_ACTIONS: { id: FloatingMonitorAction; label: Recor
   { id: 'pause', label: { 'zh-CN': '暂停采样', en: 'Pause sampling' } },
   { id: 'pin', label: { 'zh-CN': '置顶浮条', en: 'Keep monitor on top' } },
 ];
-
-export function normalizeFloatingMonitorPreferences(value?: unknown): FloatingMonitorPreferences {
-  const source = value && typeof value === 'object' ? value as Partial<FloatingMonitorPreferences> : {};
-  const validActions = new Set(FLOATING_MONITOR_ACTIONS.map(action => action.id));
-  const actions = Array.isArray(source.actions)
-    ? [...new Set(source.actions.filter((action): action is FloatingMonitorAction => validActions.has(action)))].slice(0, 6)
-    : [];
-  return { actions, alwaysOnTop: source.alwaysOnTop !== false, showSampleTime: source.showSampleTime === true, showInTray: source.showInTray === true };
-}
 
 export interface FloatingMonitorSnapshot {
   settings?: Pick<AppSettings, 'language' | 'theme' | 'pollInterval' | 'floatingMonitor'>;
@@ -48,3 +40,7 @@ export async function openFloatingMonitor(): Promise<void> {
 export const readFloatingMonitor = (): Promise<FloatingMonitorSnapshot> => invoke('monitor_snapshot');
 export const showMainFromMonitor = (destination?: MonitorDestination): Promise<void> => invoke('show_main_from_monitor', { destination });
 export const minimizeMonitorToTray = (): Promise<void> => invoke('minimize_monitor_to_tray');
+export interface MonitorModeStatus { mode: FloatingMonitorMode; supported: boolean; active: boolean; message?: string }
+export const setMonitorMode = (mode: FloatingMonitorMode, preferences: FloatingMonitorPreferences, language: 'zh-CN' | 'en' = 'zh-CN'): Promise<MonitorModeStatus> => invoke('set_monitor_mode', { mode, preferences: { ...preferences, language } });
+export const readMonitorModeStatus = (): Promise<MonitorModeStatus> => invoke('monitor_mode_status');
+export const resizeMonitorWindow = (width: number, height: number): Promise<{ width: number; height: number }> => invoke('resize_monitor_window', { width, height });

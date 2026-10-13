@@ -29,7 +29,7 @@ fn report(app: &AppHandle, result: Result<(), String>) {
 fn restore(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        let result = floating_monitor::open_window(&app).await;
+        let result = crate::taskbar_monitor::open_floating(&app).await;
         report(&app, result);
     });
 }

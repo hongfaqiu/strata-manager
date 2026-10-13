@@ -26,7 +26,12 @@ pub(crate) fn app_command_allowed(window: &str, webview: &str, command: &str) ->
         ("service-monitor", "service-monitor") => {
             matches!(
                 command,
-                "monitor_snapshot" | "show_main_from_monitor" | "minimize_monitor_to_tray"
+                "monitor_snapshot"
+                    | "show_main_from_monitor"
+                    | "minimize_monitor_to_tray"
+                    | "resize_monitor_window"
+                    | "set_monitor_mode"
+                    | "monitor_mode_status"
             )
         }
         _ => false,
@@ -64,14 +69,19 @@ mod tests {
     }
 
     #[test]
-    fn monitor_can_call_only_three_registered_application_commands() {
+    fn monitor_can_call_only_allowlisted_registered_application_commands() {
         let commands = registered_commands();
         let mut allowed = Vec::new();
         for command in commands {
             assert!(app_command_allowed("main", "main", command));
             let expected = matches!(
                 command,
-                "monitor_snapshot" | "show_main_from_monitor" | "minimize_monitor_to_tray"
+                "monitor_snapshot"
+                    | "show_main_from_monitor"
+                    | "minimize_monitor_to_tray"
+                    | "resize_monitor_window"
+                    | "set_monitor_mode"
+                    | "monitor_mode_status"
             );
             assert_eq!(
                 app_command_allowed("service-monitor", "service-monitor", command),
@@ -87,7 +97,10 @@ mod tests {
             allowed,
             [
                 "minimize_monitor_to_tray",
+                "monitor_mode_status",
                 "monitor_snapshot",
+                "resize_monitor_window",
+                "set_monitor_mode",
                 "show_main_from_monitor"
             ]
         );

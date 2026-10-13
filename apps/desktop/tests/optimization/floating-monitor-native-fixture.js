@@ -2,14 +2,18 @@
 (() => {
   const params = new URLSearchParams(location.search), fixture = window.__fixture;
   const originalInvoke = window.__TAURI_INTERNALS__.invoke;
-  fixture.store.settings = { ...fixture.store.settings, language: params.get('language') || 'zh-CN', theme: params.get('theme') || 'light', pollInterval: 1000, floatingMonitor: { actions: [], alwaysOnTop: true, showSampleTime: false, showInTray: false } };
-  const control = { state: params.get('state') || 'generating', phase: params.has('stopped') ? 'stopped' : params.has('unavailable') ? 'unavailable' : 'online', loaded: !params.has('unloaded'), queued: params.has('queued') ? 2 : 0, stale: false, fail: false, holdSnapshot: false, heldSnapshots: 0, reads: 0, pinned: true, closed: false, shownMain: 0, destinations: [], opened: 0, menus: [], popups: [] };
+  fixture.store.settings = { ...fixture.store.settings, language: params.get('language') || 'zh-CN', theme: params.get('theme') || 'light', pollInterval: 1000, floatingMonitor: { actions: [], alwaysOnTop: true, showSampleTime: false, showInTray: false, layout: params.get('layout') || 'twoRow', fontSize: Number(params.get('fontSize') || 16), showGraphs: !params.has('noGraphs'), ...(params.has('floating-settings') ? fixture.store.settings.floatingMonitor : {}) } };
+  const control = { state: params.get('state') || 'generating', phase: params.has('stopped') ? 'stopped' : params.has('unavailable') ? 'unavailable' : 'online', loaded: !params.has('unloaded'), queued: params.has('queued') ? 2 : 0, stale: params.has('stale'), fail: params.has('failed'), holdSnapshot: false, heldSnapshots: 0, reads: 0, pinned: true, closed: false, shownMain: 0, destinations: [], opened: 0, menus: [], popups: [] };
   fixture.monitor = control;
+  if (params.has('dock-close')) {
+    setTimeout(() => fixture.emitEvent('monitor-mode-status', { mode: 'taskbar', active: true, supported: true }), 600);
+    setTimeout(() => fixture.emitEvent('monitor-mode-status', { mode: 'floating', active: false, supported: true }), 1200);
+  }
   const pendingSnapshots = [];
   control.releaseSnapshot = () => { control.holdSnapshot = false; for (const release of pendingSnapshots.splice(0)) release(); };
-  window.__TAURI_INTERNALS__.metadata.currentWindow.label = 'service-monitor';
-  window.__TAURI_INTERNALS__.metadata.currentWebview.label = 'service-monitor';
-  const record = (command, args) => fixture.calls.push({ command, args: structuredClone(args) });
+  if (params.get('window') === 'monitor') window.__TAURI_INTERNALS__.metadata.currentWindow.label = 'service-monitor';
+  if (params.get('window') === 'monitor') window.__TAURI_INTERNALS__.metadata.currentWebview.label = 'service-monitor';
+  const record = (command, args) => { fixture.calls.push({ command, args: structuredClone(args) }); document.documentElement.dataset.monitorEvidence = JSON.stringify({ calls: fixture.calls.reduce((counts, call) => ({ ...counts, [call.command]: (counts[call.command] || 0) + 1 }), {}), mode: control.mode || 'floating', size: control.size }); };
   let menuId = 8000;
   const menus = new Map();
   fixture.copied = [];
@@ -27,6 +31,14 @@
     fixture.emitEvent('monitor-preferences-changed', fixture.store.settings);
   };
   window.__TAURI_INTERNALS__.invoke = async (command, args = {}) => {
+    if (command === 'resize_monitor_window') { control.size = { width: args.width, height: args.height }; record(command, args); return control.size; }
+    if (command === 'monitor_mode_status') { record(command, args); return { mode: control.mode || 'floating', supported: true, active: control.mode === 'taskbar', message: '浏览器夹具：未连接实际任务栏' }; }
+    if (command === 'set_monitor_mode') {
+      control.mode = params.has('taskbarFail') ? 'floating' : args.mode; record(command, args);
+      const status = { mode: control.mode, supported: true, active: control.mode === 'taskbar', message: params.has('taskbarFail') ? '任务栏空间不足，已保留桌面浮条（模拟）' : '浏览器夹具：仅验证模式交互' };
+      if (params.has('rapidPatch')) fixture.emitEvent('monitor-preferences-patch', { metrics: ['cpu'] });
+      fixture.emitEvent('monitor-mode-status', status); return status;
+    }
     if (command === 'monitor_snapshot') {
       record(command, args); control.reads++;
       if (control.fail) throw Error('Fixture snapshot failure');
@@ -37,7 +49,7 @@
         process: { profileId: 'a', running: control.phase !== 'stopped', owned: true, pid: control.phase === 'stopped' ? null : 99999, phase: control.phase === 'stopped' ? 'stopped' : 'ready' },
         phase: control.phase,
         health: { service: 'strata', status: 'ok', loaded: control.loaded },
-        metrics: control.phase === 'unavailable' ? undefined : { engine: { model: 'Fixture A' }, live: { state: control.state, tok_s: 60, prefill_tok_s_mean: 1200, running: control.state === 'idle' ? 0 : 1, queued: control.queued }, hardware: { gpu_util: 35, cpu: 12, gpu_temp: 50, gpu_power: 140 }, requests: control.state === 'idle' ? [{ decode_tok_s: 33 }] : [] },
+        metrics: control.phase === 'unavailable' ? undefined : { engine: { model: 'Fixture A' }, live: { state: control.state, tok_s: 60 + Math.sin(control.reads * .8) * 12, prefill_tok_s_mean: 1200 + Math.sin(control.reads * .5) * 180, running: control.state === 'idle' ? 0 : 1, queued: control.queued }, hardware: { gpu_util: 35 + Math.sin(control.reads * .5) * 10, cpu: 12, gpu_temp: 50, gpu_power: 140, gpu_mem_used: 12.4 * 1073741824, gpu_mem_total: 32 * 1073741824, ram_used: 24.2 * 1073741824, ram_total: 64 * 1073741824 }, requests: control.state === 'idle' ? [{ decode_tok_s: 33 }] : [] },
         error: control.phase === 'unavailable' ? 'Fixture metrics unavailable' : undefined,
         sampledAt: Date.now() - (control.stale ? 60000 : 0),
       };

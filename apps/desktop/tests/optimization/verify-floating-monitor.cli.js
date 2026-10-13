@@ -5,12 +5,20 @@ async page => {
   page.on('pageerror', error => errors.push(String(error)));
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
   const assert = (value, message) => { if (!value) throw Error(message); };
-  const bar = () => page.locator('.service-telemetry-statusbar');
-  const speed = () => bar().locator('.service-telemetry-speed strong');
+  const bar = () => page.locator('.floating-monitor-content');
+  const speed = () => bar().locator('[data-metric="generation"] strong');
+  const sampleTime = () => bar().locator('.floating-monitor-content-header > span:last-child');
+  const hiddenMeasurements = async () => (await bar().locator('.floating-monitor-reading strong').allTextContents()).every(value => value === '—');
+  const waitForRate = () => page.waitForFunction(() => {
+    const value = Number(document.querySelector('[data-metric="generation"] strong')?.textContent);
+    return value >= 48 && value <= 72;
+  });
+  const currentRate = async () => Number(await speed().innerText());
   async function preferences(value) {
     await page.waitForFunction(() => window.__fixture.hasListener('monitor-preferences-changed'));
     await page.evaluate(value => window.__fixture.emitPreferences(value), value);
-    await page.setViewportSize({ width: 220 + (value.showSampleTime ? 48 : 0), height: 40 });
+    await page.waitForFunction(() => window.__fixture.monitor.size?.width === 588 && window.__fixture.monitor.size?.height === 152);
+    await page.setViewportSize({ width: 588, height: 152 });
   }
   async function openMenu(rightClick = false) {
     const before = await page.evaluate(() => window.__fixture.monitor.popups.length);
@@ -20,24 +28,25 @@ async page => {
     return page.evaluate(() => ({ menu: window.__fixture.monitor.menus.at(-1), popup: window.__fixture.monitor.popups.at(-1) }));
   }
   async function chooseMenu(id) { await page.evaluate(id => window.__fixture.selectMenu(id), id); }
-  async function assertCompactMetrics() {
+  async function assertDefaultMetrics() {
     const evidence = await page.evaluate(() => {
       const root = document.querySelector('.floating-telemetry-window').getBoundingClientRect();
-      const values = document.querySelector('.service-telemetry-values');
-      const nodes = [...document.querySelectorAll('.service-telemetry-speed, .service-telemetry-gpu, .service-telemetry-cpu')];
+      const values = document.querySelector('.floating-monitor-grid');
+      const nodes = [...document.querySelectorAll('.floating-monitor-cell')];
       return { width: innerWidth, height: innerHeight, valuesFit: values.scrollWidth <= values.clientWidth,
         metrics: nodes.map(node => { const rect = node.getBoundingClientRect(); const value = node.querySelector('strong').getBoundingClientRect(); return { visible: getComputedStyle(node).display !== 'none' && rect.width > 0 && rect.height > 0, inside: value.left >= root.left && value.right <= root.right && value.top >= root.top && value.bottom <= root.bottom, contentFits: node.scrollWidth <= node.clientWidth && node.scrollHeight <= node.clientHeight }; }) };
     });
-    assert(evidence.width === 220 && evidence.height === 40, 'Default monitor must fit its 220×40 native size');
-    assert(evidence.valuesFit && evidence.metrics.length === 3 && evidence.metrics.every(metric => metric.visible && metric.inside && metric.contentFits), 'Speed, GPU and CPU must all be visible without clipping or horizontal scrolling');
+    assert(evidence.width === 588 && evidence.height === 152, 'Default two-row monitor must fit its 588×152 native size');
+    assert(evidence.valuesFit && evidence.metrics.length === 6 && evidence.metrics.every(metric => metric.visible && metric.inside && metric.contentFits), 'All six default metrics must be visible without clipping or horizontal scrolling');
     const requested = await page.evaluate(() => window.__fixture.monitor.size);
-    assert(requested?.width === 220 && requested?.height === 40, 'Renderer must request the matching fixed logical window size');
+    assert(requested?.width === 588 && requested?.height === 152, 'Renderer must request the matching fixed logical window size');
   }
-  async function run(name, query, action, viewport = { width: 220, height: 40 }, main = false) {
+  async function run(name, query, action, viewport = { width: 588, height: 152 }, main = false) {
     const errorStart = errors.length;
     try {
       await page.setViewportSize(viewport);
-      await page.goto(`${origin}/${main ? 'service-status-trends-app.html' : 'floating-monitor-app.html'}?${main ? '' : 'window=monitor&'}${query}&case=${name}&replay=${replay}#overview`);
+      const entry = main ? query.includes('floating-settings') ? 'monitor-settings-app.html' : 'service-status-trends-app.html' : 'floating-monitor-app.html';
+      await page.goto(`${origin}/${entry}?${main ? '' : 'window=monitor&'}${query}&case=${name}&replay=${replay}#overview`);
       if (main) await page.locator('.boot').waitFor({ state: 'hidden' });
       else {
         await page.locator('.floating-telemetry-window').waitFor();
@@ -55,14 +64,15 @@ async page => {
     }
   }
   await run('floating-generation-and-window-actions', '', async () => {
-    await speed().waitFor();
-    assert(await speed().innerText() === '60.0', 'Generation should show the current real snapshot rate');
-    assert(await bar().locator('.service-telemetry-gpu strong').innerText() === '35%', 'Floating hardware must match snapshot');
+    await waitForRate();
+    assert(await currentRate() >= 48 && await currentRate() <= 72, 'Generation should show the current synthetic snapshot rate');
+    const gpu = Number(await bar().locator('[data-metric="gpu"] strong').innerText());
+    assert(gpu >= 25 && gpu <= 45, 'Floating hardware must match the dynamic snapshot range');
     assert(await page.locator('.floating-telemetry-drag, [data-tauri-drag-region]').count() === 0, 'Floating monitor must have no dedicated drag region');
-    assert(await page.locator('.floating-telemetry-time').count() === 0, 'Compact monitor should hide the sample time by default');
+    assert(await sampleTime().innerText() === '', 'Monitor should hide the sample time by default');
     assert(await page.getByRole('button', { name: 'Fixture A', exact: true }).count() === 0 && !(await page.locator('.floating-telemetry-window').innerText()).includes('Fixture A'), 'Floating header must not display a model name');
     assert(await page.locator('.floating-telemetry-window button').count() === 0, 'Monitor must display no shortcut, tray, menu or close buttons');
-    await assertCompactMetrics();
+    await assertDefaultMetrics();
     await page.screenshot({ path: 'output/playwright/service-status-trends/floating-light.png' });
     const pinStart = await page.evaluate(() => window.__fixture.calls.filter(call => call.command === 'plugin:window|set_always_on_top').length);
     await openMenu(true); await chooseMenu('pin');
@@ -82,7 +92,7 @@ async page => {
   await run('floating-right-click-native-menu-and-navigation', 'state=idle', async () => {
     await speed().waitFor();
     const { menu, popup } = await openMenu(true);
-    const expected = ['main', 'chat', 'monitoring', 'usage', 'tasks', 'copyApiUrl', 'quickBenchmark', 'refresh', 'pause', 'pin', 'tray', 'settings', 'close'];
+    const expected = ['main', 'chat', 'monitoring', 'usage', 'tasks', 'copyApiUrl', 'quickBenchmark', 'refresh', 'pause', 'pin', 'taskbar', 'tray', 'settings', 'close'];
     assert(expected.every(id => menu.items.some(item => item.id === id)) && menu.items.filter(item => item.id).length === expected.length, 'Right-click menu must include all shortcuts plus settings and close');
     assert(menu.items.some(item => item.item === 'Separator'), 'Native context menu should separate its groups');
     assert(popup.window === null || popup.window === 'service-monitor', 'Native menu must target the current floating window');
@@ -148,11 +158,11 @@ async page => {
         return before;
       });
       await page.waitForFunction(before => window.__fixture.monitor.heldSnapshots > before, before, { timeout: 750 });
-      assert(await bar().locator('.service-telemetry-values').count() === 0, 'Restoring the monitor must hide cached metrics until its fresh response arrives');
-      assert(await bar().getAttribute('data-state') === 'waiting' && (await bar().innerText()).includes('等待新采样'), 'Restored monitor must explain its pending fresh sample');
+      assert(await hiddenMeasurements(), 'Restoring the monitor must hide cached metrics until its fresh response arrives');
+      assert((await bar().innerText()).includes('等待新采样'), 'Restored monitor must explain its pending fresh sample');
       await page.evaluate(() => window.__fixture.monitor.releaseSnapshot());
-      await speed().waitFor();
-      assert(await speed().innerText() === '60.0', 'Restored floating window must display the newly received sample');
+      await waitForRate();
+      assert(await currentRate() >= 48 && await currentRate() <= 72, 'Restored floating window must display the newly received sample');
     }
     await restoreWithDelayedSample();
     // Dock again while the preceding snapshot is still fresh: restoration must
@@ -173,84 +183,84 @@ async page => {
   await run('floating-pause-and-immediate-preference-events', '', async () => {
     await speed().waitFor(); await openMenu(); await chooseMenu('pause');
     await page.waitForFunction(() => document.querySelector('.floating-telemetry-window')?.textContent.includes('暂停'));
-    assert(await bar().locator('.service-telemetry-values').count() === 0, 'Paused monitor must hide live measurements');
+    assert(await hiddenMeasurements(), 'Paused monitor must hide live measurements');
     const pausedReads = await page.evaluate(() => window.__fixture.monitor.reads);
     await page.waitForTimeout(1250);
     assert(await page.evaluate(() => window.__fixture.monitor.reads) === pausedReads, 'Pause must stop automatic snapshot polling');
     await preferences({ actions: ['usage', 'copyApiUrl'], alwaysOnTop: false, showSampleTime: false });
     assert(await page.locator('.floating-telemetry-window button').count() === 0, 'Legacy shortcut preferences must not restore buttons while paused');
-    assert(await page.locator('.floating-telemetry-time').count() === 0, 'Preference events must remove the sample time while paused');
+    assert(await sampleTime().innerText() === '', 'Preference events must remove the sample time while paused');
     await page.waitForFunction(() => window.__fixture.monitor.pinned === false);
     const { menu } = await openMenu();
     assert(menu.items.find(item => item.id === 'pause')?.text.includes('恢复'), 'Paused native menu must offer resume sampling');
     await page.evaluate(() => { window.__fixture.monitor.holdSnapshot = true; });
     await chooseMenu('pause');
     await page.waitForFunction(() => window.__fixture.monitor.heldSnapshots > 0);
-    assert(await bar().locator('.service-telemetry-values').count() === 0, 'Resume must hide the previous sample until a new snapshot response arrives');
+    assert(await hiddenMeasurements(), 'Resume must hide the previous sample until a new snapshot response arrives');
     assert((await page.locator('.floating-telemetry-window').innerText()).includes('等待新采样'), 'Resume must explain why fresh metrics are pending');
     await page.evaluate(() => window.__fixture.monitor.releaseSnapshot());
-    await speed().waitFor();
+    await waitForRate();
     await page.waitForFunction(before => window.__fixture.monitor.reads > before, pausedReads);
-    assert(await speed().innerText() === '60.0', 'Resume must fetch and display a new real sample');
+    assert(await currentRate() >= 48 && await currentRate() <= 72, 'Resume must fetch and display a new real sample');
     return { pausedReads, resumedReads: await page.evaluate(() => window.__fixture.monitor.reads), oldMetricsHiddenDuringResume: true };
   });
   await run('floating-legacy-shortcuts-ignored-and-sample-time-size', '', async () => {
     await speed().waitFor();
     await preferences({ actions: ['copyApiUrl', 'pause', 'usage', 'refresh', 'chat', 'pin'], alwaysOnTop: true, showSampleTime: false });
-    await assertCompactMetrics();
+    await assertDefaultMetrics();
     assert(await page.locator('.floating-telemetry-window button').count() === 0, 'Legacy six-shortcut settings must not render any buttons');
-    assert(await page.locator('.floating-telemetry-time').count() === 0, 'Disabled sample time should not render');
+    assert(await sampleTime().innerText() === '', 'Disabled sample time should not render');
     await preferences({ actions: ['copyApiUrl', 'pause', 'usage', 'refresh', 'chat', 'pin'], alwaysOnTop: true, showSampleTime: true });
-    await page.waitForFunction(() => window.__fixture.monitor.size?.width === 268 && window.__fixture.monitor.size?.height === 40);
-    await page.locator('.floating-telemetry-time').waitFor();
+    await page.waitForFunction(() => /\d{1,2}:\d{2}:\d{2}/.test(document.querySelector('.floating-monitor-content-header > span:last-child')?.textContent || ''));
+    assert((await page.evaluate(() => window.__fixture.monitor.size)).width === 588, 'Sample time must fit the default header without changing metric layout');
     await openMenu(); await chooseMenu('copyApiUrl');
     await page.waitForFunction(() => window.__fixture.copied.length === 1);
     await preferences({ actions: [], alwaysOnTop: true, showSampleTime: false });
-    await page.waitForFunction(() => window.__fixture.monitor.size?.width === 220);
-    assert(await speed().innerText() === '60.0', 'Changing display settings must retain live measurements');
+    await page.waitForFunction(() => window.__fixture.monitor.size?.width === 588);
+    assert(await currentRate() >= 48 && await currentRate() <= 72, 'Changing display settings must retain live measurements');
     const { menu } = await openMenu(true); assert(menu.items.some(item => item.id === 'settings'), 'Button-free strip must expose configuration through right-click');
-    return { legacyShortcutsIgnored: true, defaultWidth: 220, timeWidth: 268 };
+    return { legacyShortcutsIgnored: true, defaultWidth: 588, timeWidth: 588 };
   });
   await run('floating-idle-keeps-rate-historical', 'state=idle', async () => {
-    await speed().waitFor(); assert(await speed().innerText() === '33.0', 'Idle should show the recent request rate');
+    await speed().waitFor(); assert(await currentRate() === 33, 'Idle should show the recent request rate');
     assert((await bar().innerText()).includes('最近生成'), 'Idle rate must retain its historical label'); return {};
   });
   await run('floating-unloaded-does-not-show-cached-speed', 'unloaded', async () => {
-    await speed().waitFor(); assert(await speed().innerText() === '–', 'Unloaded snapshot must not show the retained generation rate');
-    assert(await bar().getAttribute('data-state') === 'unloaded', 'Unloaded state must stay explicit'); return {};
+    await speed().waitFor(); assert(await speed().innerText() === '—', 'Unloaded snapshot must not show the retained generation rate');
+    assert((await bar().innerText()).includes('未加载'), 'Unloaded state must stay explicit'); return {};
   });
   await run('floating-stopped-is-read-only', 'stopped', async () => {
-    await page.waitForFunction(() => document.querySelector('.service-telemetry-statusbar')?.dataset.state === 'stopped');
-    assert(await bar().locator('.service-telemetry-values').count() === 0, 'Stopped service must not display stale measurements');
+    await page.waitForFunction(() => document.querySelector('.floating-monitor-state')?.textContent.includes('未启动'));
+    assert(await hiddenMeasurements(), 'Stopped service must not display stale measurements');
     assert((await bar().innerText()).includes('未启动'), 'Stopped service must say not started');
     await page.waitForFunction(() => window.__fixture.monitor.reads >= 2); return { snapshots: await page.evaluate(() => window.__fixture.monitor.reads) };
   });
   await run('floating-metric-failure-keeps-api-connection', 'unavailable', async () => {
-    await page.waitForFunction(() => document.querySelector('.service-telemetry-statusbar')?.dataset.state === 'unavailable');
+    await page.waitForFunction(() => document.querySelector('.floating-monitor-content-header')?.textContent.includes('监控不可用'));
     assert((await bar().innerText()).includes('监控不可用'), 'Metrics failure with retained health must not imply an offline API');
-    assert(await bar().locator('.service-telemetry-values').count() === 0, 'Unavailable metrics must not show old live values'); return {};
+    assert(await hiddenMeasurements(), 'Unavailable metrics must not show old live values'); return {};
   });
   await run('floating-failure-and-stale-hide-old-metrics', '', async () => {
     await speed().waitFor(); await page.evaluate(() => { window.__fixture.monitor.fail = true; });
-    await page.waitForFunction(() => document.querySelector('.floating-telemetry-notice')?.getAttribute('title') === '后台不可用');
-    assert(await bar().locator('.service-telemetry-values').count() === 0, 'A failed snapshot must not keep old live values');
+    await page.waitForFunction(() => document.querySelector('.floating-monitor-content-header > span:last-child')?.getAttribute('title') === '后台不可用');
+    assert(await hiddenMeasurements(), 'A failed snapshot must not keep old live values');
     await page.evaluate(() => { window.__fixture.monitor.fail = false; });
-    await speed().waitFor(); assert(await speed().innerText() === '60.0', 'Recovery should show a new valid sample');
+    await waitForRate(); assert(await currentRate() >= 48 && await currentRate() <= 72, 'Recovery should show a new valid sample');
     await page.evaluate(() => { window.__fixture.monitor.stale = true; });
-    await page.waitForFunction(() => document.querySelector('.floating-telemetry-notice')?.getAttribute('title') === '等待新采样');
-    assert(await bar().locator('.service-telemetry-values').count() === 0, 'A stale snapshot must not keep old live values'); return {};
+    await page.waitForFunction(() => document.querySelector('.floating-monitor-content-header > span:last-child')?.getAttribute('title') === '等待新采样');
+    assert(await hiddenMeasurements(), 'A stale snapshot must not keep old live values'); return {};
   });
   await run('floating-narrow-dark-english', 'language=en&theme=dark', async () => {
     await speed().waitFor();
     assert(await page.locator('html').getAttribute('data-theme') === 'dark' && await page.locator('html').getAttribute('lang') === 'en', 'Monitor must apply stored language/theme');
     const { menu } = await openMenu(true);
     assert(menu.items.find(item => item.id === 'tray')?.text === 'Move to system tray', 'English monitor menu must remain available');
-    await assertCompactMetrics();
+    await assertDefaultMetrics();
     const dimensions = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, scrollWidth: document.documentElement.scrollWidth, scrollHeight: document.documentElement.scrollHeight, rect: (() => { const rect = document.querySelector('.floating-telemetry-window').getBoundingClientRect(); return { width: rect.width, height: rect.height }; })() }));
     assert(dimensions.scrollWidth <= dimensions.width && dimensions.scrollHeight <= dimensions.height && dimensions.rect.width <= dimensions.width && dimensions.rect.height <= dimensions.height, 'Floating content must fit a narrow native-sized window');
     assert(await page.locator('.floating-telemetry-window button').count() === 0, 'English monitor must also have no inline buttons');
     await page.screenshot({ path: 'output/playwright/service-status-trends/floating-narrow-dark.png' }); return dimensions;
-  }, { width: 220, height: 40 });
+  }, { width: 588, height: 152 });
   await run('main-window-opens-floating-monitor', '', async () => {
     await page.getByRole('button', { name: '打开监控浮条', exact: true }).waitFor();
     await page.getByRole('button', { name: '打开监控浮条', exact: true }).click();
@@ -269,26 +279,34 @@ async page => {
     await page.waitForFunction(() => window.__fixture.hasListener('monitor-navigate'));
     await page.evaluate(() => window.__fixture.emitEvent('monitor-navigate', 'settings'));
     const panel = page.locator('#settings-floating-monitor'); await panel.waitFor();
-    assert(await panel.getByRole('switch').count() === 3, 'Settings must expose only pin, sample time and tray display options');
-    await panel.getByRole('switch', { name: '监控浮动条默认置顶', exact: true }).click();
-    await panel.getByRole('switch', { name: '监控浮动条显示采样时间', exact: true }).click();
+    assert(await panel.getByRole('switch').count() === 5, 'Settings must expose graph, label, unit, sample-time and topmost options');
+    assert(await panel.getByRole('checkbox').count() === 11, 'Settings must offer all eleven supported metrics');
+    await panel.getByRole('switch', { name: '浮条置顶', exact: true }).click();
+    await panel.getByRole('switch', { name: '采样时间', exact: true }).click();
+    await panel.locator('summary').filter({ hasText: '更多设置' }).click();
     await panel.getByRole('switch', { name: '在系统托盘显示监控', exact: true }).click();
-    const expected = { actions: [], alwaysOnTop: false, showSampleTime: true, showInTray: true };
+    const expected = {
+      actions: [], alwaysOnTop: false, showSampleTime: true, showInTray: true,
+      fontSize: 16, layout: 'twoRow', metrics: ['generation', 'prefill', 'gpu', 'vram', 'cpu', 'ram'],
+      showGraphs: true, showLabels: true, showUnits: true, mode: 'floating',
+    };
     await page.waitForFunction(expected => JSON.stringify(window.__fixture.store.settings.floatingMonitor) === JSON.stringify(expected), expected);
     await page.waitForFunction(() => window.__fixture.calls.some(call => call.command === 'store_set' && call.args.key === 'settings' && call.args.value.floatingMonitor?.showSampleTime === true && call.args.value.floatingMonitor?.showInTray === true));
     const persisted = await page.evaluate(() => window.__fixture.store.settings.floatingMonitor);
     await page.reload(); await page.locator('.boot').waitFor({ state: 'hidden' }); await panel.waitFor();
     assert(JSON.stringify(await page.evaluate(() => window.__fixture.store.settings.floatingMonitor)) === JSON.stringify(expected), 'Display settings must survive a real page reload');
-    assert(await panel.getByRole('switch', { name: '监控浮动条显示采样时间', exact: true }).getAttribute('aria-checked') === 'true', 'Reloaded settings must reflect the sample-time option');
+    assert(await panel.getByRole('switch', { name: '采样时间', exact: true }).getAttribute('aria-checked') === 'true', 'Reloaded settings must reflect the sample-time option');
+    await panel.locator('summary').filter({ hasText: '更多设置' }).click();
     assert(await panel.getByRole('switch', { name: '在系统托盘显示监控', exact: true }).getAttribute('aria-checked') === 'true', 'Reloaded settings must reflect tray monitoring');
     await panel.getByRole('button', { name: '打开浮动条', exact: true }).click();
-    await page.waitForFunction(() => window.__fixture.openedMonitors === 1);
+    await page.waitForFunction(() => window.__fixture.calls.some(call => call.command === 'set_monitor_mode' && call.args.mode === 'floating'));
     await page.screenshot({ path: 'output/playwright/service-status-trends/floating-settings.png', fullPage: true });
     return { persisted, reopened: 1 };
   }, { width: 1440, height: 1000 }, true);
   await run('main-window-tray-preference-events-save-reload', 'floating-settings&state=idle', async () => {
     await page.waitForFunction(() => window.__fixture.hasListener('monitor-tray-preference') && window.__fixture.hasListener('monitor-navigate'));
     await page.evaluate(() => window.__fixture.emitEvent('monitor-navigate', 'settings'));
+    await page.locator('#settings-floating-monitor summary').filter({ hasText: '更多设置' }).click();
     const toggle = page.locator('#settings-floating-monitor').getByRole('switch', { name: '在系统托盘显示监控', exact: true });
     await toggle.waitFor();
     for (const enabled of [true, false, true]) {
@@ -296,10 +314,62 @@ async page => {
       await page.waitForFunction(enabled => window.__fixture.store.settings.floatingMonitor?.showInTray === enabled && window.__fixture.calls.some(call => call.command === 'store_set' && call.args.key === 'settings' && call.args.value.floatingMonitor?.showInTray === enabled), enabled);
       assert(await toggle.getAttribute('aria-checked') === String(enabled), 'Native tray preference event must synchronize the settings control');
     }
-    await page.reload(); await page.locator('.boot').waitFor({ state: 'hidden' }); await toggle.waitFor();
+    await page.reload(); await page.locator('.boot').waitFor({ state: 'hidden' });
+    await page.locator('#settings-floating-monitor summary').filter({ hasText: '更多设置' }).click();
+    await toggle.waitFor();
     assert(await toggle.getAttribute('aria-checked') === 'true', 'Native tray preference must persist through a page reload');
     return { events: [true, false, true], persisted: true };
   }, { width: 1440, height: 1000 }, true);
+  await run('main-window-monitor-customization-and-keyboard-order', 'floating-settings&state=idle', async () => {
+    await page.waitForFunction(() => window.__fixture.hasListener('monitor-navigate'));
+    await page.evaluate(() => window.__fixture.emitEvent('monitor-navigate', 'settings'));
+    const panel = page.locator('#settings-floating-monitor');
+    await panel.getByRole('button', { name: '详细面板 更多指标', exact: true }).click();
+    await page.waitForFunction(() => window.__fixture.store.settings.floatingMonitor?.metrics?.length === 8);
+    assert(await panel.getByRole('checkbox', { name: '排队', exact: true }).isDisabled(), 'Eight metrics must disable adding a ninth metric');
+    const slider = panel.getByRole('slider', { name: '监控字号', exact: true });
+    await slider.focus(); await slider.press('End');
+    await page.waitForFunction(() => window.__fixture.store.settings.floatingMonitor?.fontSize === 24);
+    await panel.getByRole('button', { name: '上移GPU', exact: true }).click();
+    await page.waitForFunction(() => window.__fixture.store.settings.floatingMonitor?.metrics?.[1] === 'gpu');
+    await panel.getByRole('checkbox', { name: 'GPU', exact: true }).focus();
+    await panel.getByRole('checkbox', { name: 'GPU', exact: true }).press('Alt+ArrowDown');
+    await page.waitForFunction(() => window.__fixture.store.settings.floatingMonitor?.metrics?.[2] === 'gpu');
+    await panel.getByRole('checkbox', { name: '读取', exact: true }).uncheck();
+    await panel.getByRole('checkbox', { name: '最近缓存', exact: true }).check();
+    await panel.getByRole('switch', { name: '实时折线', exact: true }).click();
+    await page.waitForFunction(() => window.__fixture.store.settings.floatingMonitor?.showGraphs === false && window.__fixture.store.settings.floatingMonitor?.metrics?.at(-1) === 'cache');
+    const persisted = await page.evaluate(() => window.__fixture.store.settings.floatingMonitor);
+    assert(persisted.layout === 'panel' && persisted.fontSize === 24 && persisted.metrics.length === 8, 'Preset, font and metric ordering must be persisted together');
+    assert((await panel.locator('.floating-monitor-settings-preview').innerText()).includes('示例数据'), 'Settings preview must explicitly identify synthetic data');
+    await page.reload(); await page.locator('.boot').waitFor({ state: 'hidden' }); await panel.waitFor();
+    assert(JSON.stringify(await page.evaluate(() => window.__fixture.store.settings.floatingMonitor)) === JSON.stringify(persisted), 'Customized preferences must survive reload');
+    await panel.getByRole('button', { name: '恢复显示默认', exact: true }).click();
+    await page.waitForFunction(() => window.__fixture.store.settings.floatingMonitor?.layout === 'twoRow' && window.__fixture.store.settings.floatingMonitor?.fontSize === 16);
+    return { keyboardOrder: true, maximumMetrics: 8, persisted };
+  }, { width: 1200, height: 1000 }, true);
+  for (const fail of [false, true]) {
+    await run(`main-window-monitor-mode-${fail ? 'rollback' : 'switch'}`, `floating-settings&state=idle${fail ? '&taskbarFail' : ''}`, async () => {
+      await page.waitForFunction(() => window.__fixture.hasListener('monitor-navigate'));
+      await page.evaluate(() => window.__fixture.emitEvent('monitor-navigate', 'settings'));
+      const panel = page.locator('#settings-floating-monitor');
+      await panel.getByRole('radio', { name: '常驻任务栏（实验）', exact: true }).click();
+      await page.waitForFunction(() => window.__fixture.calls.some(call => call.command === 'set_monitor_mode' && call.args.mode === 'taskbar'));
+      if (fail) {
+        await panel.getByRole('alert').filter({ hasText: '任务栏空间不足' }).waitFor();
+        assert(await panel.getByRole('radio', { name: '桌面浮条', exact: true }).getAttribute('aria-checked') === 'true', 'Failed taskbar activation must preserve floating mode');
+        assert(await page.evaluate(() => window.__fixture.store.settings.floatingMonitor?.mode) !== 'taskbar', 'Failed taskbar activation must not save taskbar mode');
+      } else {
+        await page.waitForFunction(() => window.__fixture.store.settings.floatingMonitor?.mode === 'taskbar');
+        assert(await panel.getByRole('radio', { name: '常驻任务栏（实验）', exact: true }).getAttribute('aria-checked') === 'true', 'Successful native activation must select taskbar mode');
+        await panel.getByRole('button', { name: '恢复显示默认', exact: true }).click();
+        assert(await page.evaluate(() => window.__fixture.store.settings.floatingMonitor?.mode) === 'taskbar', 'Resetting appearance must preserve the active mode');
+        await panel.getByRole('radio', { name: '桌面浮条', exact: true }).click();
+        await page.waitForFunction(() => window.__fixture.store.settings.floatingMonitor?.mode === 'floating');
+      }
+      return { rollback: fail, mode: await page.evaluate(() => window.__fixture.store.settings.floatingMonitor?.mode ?? 'floating') };
+    }, { width: 1200, height: 1000 }, true);
+  }
   await run('main-window-floating-quick-speed-two-serial-requests', 'state=idle', async () => {
     await page.evaluate(() => { localStorage.removeItem('benchmark-fixture-reports'); window.__fixture.store.benchmarkReportsV1 = []; });
     await page.waitForFunction(() => window.__fixture.hasListener('monitor-navigate'));
@@ -314,5 +384,20 @@ async page => {
     await page.screenshot({ path: 'output/playwright/service-status-trends/floating-quick-speed.png', fullPage: true });
     return { requests: evidence.streams.length, peak: evidence.peak, scenarios: evidence.report.options.scenarios, samples: evidence.report.samples.length };
   }, { width: 1440, height: 1000 }, true);
+  await run('floating-closed-taskbar-keeps-hidden-sampling-paused', 'dock-close', async () => {
+    await page.waitForTimeout(2200);
+    const reads = await page.evaluate(() => window.__fixture.monitor.reads);
+    await page.waitForTimeout(2200);
+    assert(await page.evaluate(() => window.__fixture.monitor.reads) === reads, 'Closing a taskbar host must not resume the still-hidden floating sampler');
+    return { snapshotsAfterClose: reads };
+  });
+  await run('main-window-consecutive-monitor-events-merge', 'floating-settings&rapidPatch', async () => {
+    await page.waitForFunction(() => window.__fixture.hasListener('monitor-navigate'));
+    await page.evaluate(() => window.__fixture.emitEvent('monitor-navigate', 'settings'));
+    await page.getByRole('radio', { name: '常驻任务栏（实验）', exact: true }).click();
+    await page.waitForFunction(() => window.__fixture.store.settings.floatingMonitor?.mode === 'taskbar');
+    assert(JSON.stringify(await page.evaluate(() => window.__fixture.store.settings.floatingMonitor.metrics)) === '["cpu"]', 'A mode event must retain the immediately preceding metric patch');
+    return { metrics: ['cpu'], mode: 'taskbar' };
+  }, { width: 1200, height: 1000 }, true);
   return { scope: 'Exact production React entry in Chromium with synthetic native snapshots, event listeners, native Menu/Channel callbacks, clipboard and window commands. Quick speed inference is synthetic; native topmost/context-menu behavior is not certified by this browser replay.', results, passed: results.every(result => result.passed) };
 }
