@@ -130,7 +130,9 @@ fn hardware(state: &RuntimeState) -> Result<HardwareSnapshot, String> {
             "--format=csv,noheader,nounits",
         ],
     );
-    let mut gpus = text.as_deref().map(parse_nvidia).unwrap_or_default();
+    let gpus = text.as_deref().map(parse_nvidia).unwrap_or_default();
+    #[cfg(windows)]
+    let mut gpus = gpus;
     #[cfg(windows)]
     if gpus.is_empty() {
         if let Some(names) = crate::output(
