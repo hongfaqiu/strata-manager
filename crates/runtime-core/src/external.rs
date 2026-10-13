@@ -736,7 +736,11 @@ mod platform {
                             pid,
                         );
                         if handle.is_null() {
-                            return Err("实例子进程身份/权限不可确认，未停止任何进程".into());
+                            return Err(format!(
+                                "实例子进程身份/权限不可确认，未停止任何进程（PID {pid}，父 PID {parent}，根 PID {}）：{}",
+                                self.pid,
+                                std::io::Error::last_os_error()
+                            ));
                         }
                         let (created, image) = match identity(handle) {
                             Ok(value) => value,
