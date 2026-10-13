@@ -6,10 +6,11 @@
   "scripts": {
     "dev": "pnpm --filter @strata-manager/desktop dev",
     "desktop": "pnpm --filter @strata-manager/desktop tauri dev",
+    "desktop:debug": "node scripts/build-desktop-debug.mjs",
     "build": "pnpm --filter @strata-manager/desktop build",
     "bundle": "pnpm --filter @strata-manager/desktop tauri build",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm --filter @strata-manager/core test && pnpm --filter @strata-manager/desktop test && node --test scripts/contract-server.test.mjs scripts/release-notes.test.mjs",
+    "test": "pnpm --filter @strata-manager/core test && pnpm --filter @strata-manager/desktop test && node --test scripts/contract-server.test.mjs scripts/release-notes.test.mjs scripts/build-desktop-debug.test.mjs",
     "check": "pnpm typecheck && pnpm test && pnpm build",
     "native:check": "cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml",
     "native:test": "cargo test --workspace --target-dir apps/desktop/src-tauri/target",

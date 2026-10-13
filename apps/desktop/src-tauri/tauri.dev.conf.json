@@ -1,0 +1,11 @@
+{
+  "identifier": "io.strata.manager.dev",
+  "productName": "Strata Manager Dev",
+  "build": {
+    "beforeBuildCommand": "pnpm -w build"
+  },
+  "bundle": {
+    "active": false,
+    "createUpdaterArtifacts": false
+  }
+}
