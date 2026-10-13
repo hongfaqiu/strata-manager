@@ -7,11 +7,23 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
-暂无条目。
+- 观察器兼容上游 Strata **0.1.44**（保留既有已审阅哈希；CI / 发版复用门禁同步）。
+- 模型下载设置：多卡图形选择器，以及仅生成命令的官方 `--calibrate` 入口（不执行真实校准）。
+- API 接入向导增加 **Cursor** 与 **Codex** 示例。
+- 启动设置增加常用并发 / batch / 空闲卸载 / 弹性显存快捷表单。
+- 总览空状态与右上角状态艺术动画、浏览器假数据预览（`?mockData=1`）。
+- 同源 CI 复用失败时输出具体证据原因，避免静默 `missing`。
+- 资源评估安装器规则锚点跟随至 Strata 0.1.44。
 
 ### English
 
-No entries yet.
+- Observer compatibility for upstream Strata **0.1.44** (keeps prior reviewed hashes; CI / release-reuse gates updated).
+- Model download settings: graphical multi-GPU selector and a copy-only official `--calibrate` entry (does not run real calibration).
+- API connection wizard examples for **Cursor** and **Codex**.
+- Startup settings quick form for concurrency / batch / idle unload / elastic VRAM.
+- Overview empty-state polish, status-driven art animations, and browser mock data (`?mockData=1`).
+- Same-source CI reuse reports evidence failures instead of a silent `missing`.
+- Resource-assessment setup-rule anchor follows Strata 0.1.44.
 
 ## [0.1.8] - 2026-10-14
 
