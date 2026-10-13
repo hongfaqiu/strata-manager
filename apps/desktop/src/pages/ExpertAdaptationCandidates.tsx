@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { Dropdown, Toggle } from '../OfficialControls';
 import type { TuningRestartParameters } from '@strata-manager/core';
 import './setup-tuning-interactions.css';
@@ -5,7 +6,7 @@ import './setup-tuning-interactions.css';
 export function ExpertAdaptationCandidates({ value, onChange, language, disabled }: {
   value: TuningRestartParameters;
   onChange: (value: TuningRestartParameters) => void;
-  language: 'zh-CN' | 'en';
+  language: AppLanguage;
   disabled: boolean;
 }) {
   const zh = language === 'zh-CN';

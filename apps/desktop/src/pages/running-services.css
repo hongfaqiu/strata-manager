@@ -22,6 +22,12 @@
 .running-service-health-error p{display:flex;align-items:flex-start;gap:7px;min-width:0;font-size:12px;line-height:1.6;overflow-wrap:anywhere}
 .running-service-health-error p>svg{margin-top:2px}
 .running-service-health-error>button{flex:none;min-height:29px;font-size:11px}
+.running-service-management{margin-top:18px}
+.running-service-actions{display:flex;gap:10px;flex-wrap:wrap}
+.running-service-actions>button{min-height:36px;font-size:12px}
+.running-service-management-hint{margin:9px 0 0;font-size:11px;line-height:1.7;color:var(--st-ink-muted)}
+.running-service-action-error{display:flex;align-items:flex-start;gap:7px;margin:10px 0 0;font-size:12px;line-height:1.7;overflow-wrap:anywhere;color:var(--st-danger-text)}
+.running-service-action-error>svg{flex:none;margin-top:3px}
 .running-service-config{margin-top:16px;padding-top:14px;border-top:1px solid var(--st-line)}
 .running-service-config summary{cursor:pointer;font-size:12px;line-height:1.6;color:var(--st-ink-soft)}
 .running-service-config pre{max-height:320px;margin:12px 0 0;padding:12px;overflow:auto;border-radius:var(--st-r-sm);background:var(--st-surface-2);color:var(--st-ink-soft);font-size:11px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}

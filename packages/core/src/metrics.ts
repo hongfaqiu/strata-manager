@@ -11,6 +11,14 @@ export interface MetricSnapshot {
 }
 const number = (value: unknown): number | null => typeof value === 'number' && Number.isFinite(value) ? value : null;
 
+/** Loading keeps health.loaded false until READY; it must not hide the in-flight transition. */
+export function modelTelemetry(metric: MetricSnapshot | undefined, loaded?: boolean): MetricSnapshot | undefined {
+  if (!metric) return undefined;
+  const transitioning = metric.state === 'loading' || metric.state === 'unloading';
+  if (!transitioning && loaded !== false) return metric;
+  return { ...metric, state: transitioning ? metric.state : 'unloaded', decodeTokS: null, prefillTokS: null, cacheHitRate: null };
+}
+
 /** Memory values retain upstream bytes; throughput is tokens/sec. Never infer online from missing fields. */
 export function normalizeMetrics(value: unknown): MetricSnapshot {
   const raw = asObject(value), live = asObject(raw.live), hw = asObject(raw.hardware), engine = asObject(raw.engine);

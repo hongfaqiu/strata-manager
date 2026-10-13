@@ -1,10 +1,11 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useId, useState } from 'react';
 import { ChevronDown, Cpu, Gauge, MemoryStick } from 'lucide-react';
 import { asObject, normalizeMetrics, runtimeSlots, type JsonObject } from '@strata-manager/core';
 import './api-usage-live.css';
 
 export interface ApiUsageLiveProps {
-  language: 'zh-CN' | 'en';
+  language: AppLanguage;
   raw?: JsonObject;
   sampledAt?: number;
   stale?: boolean;

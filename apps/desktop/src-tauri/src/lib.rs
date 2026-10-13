@@ -7,12 +7,14 @@ mod invoke_policy;
 mod model_files;
 mod monitor_tray;
 mod png_export;
+mod running_service_connection;
 mod runtime_detection;
 mod runtime_update_queue;
 mod runtime_updates;
 mod service_sharing;
 mod startup;
 mod supervisor_client;
+mod system_locale;
 mod taskbar_monitor;
 mod vision_files;
 mod window_layout;
@@ -32,6 +34,43 @@ async fn local_runtime_installation(
     state: tauri::State<'_, ClientState>,
 ) -> Result<serde_json::Value, String> {
     runtime_detection::installation_status(&state.ipc).await
+}
+
+#[tauri::command]
+async fn connect_running_service(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, ClientState>,
+    candidate: LocalCandidate,
+) -> Result<Value, String> {
+    let owner = running_service_connection::owner(&candidate).await.map_err(|message| {
+        let code = if message.starts_with("RUNNING_OWNER_NOT_FOUND") { "RUNNING_OWNER_NOT_FOUND" } else { "RUNNING_OWNER_UNVERIFIED" };
+        json!({"code":code,"message":message.trim_start_matches("RUNNING_OWNER_NOT_FOUND:").trim()}).to_string()
+    })?;
+    if dunce::canonicalize(&state.ipc.data_dir).ok() == dunce::canonicalize(&owner.data_dir).ok() {
+        return Ok(json!({"profileId":owner.profile_id,"restarting":false}));
+    }
+    let current = state
+        .ipc
+        .request("hello", json!({}))
+        .await
+        .map_err(|e| e.to_string())?;
+    if current["activeServices"].as_u64() != Some(0)
+        || !state.streams.lock().map_err(|e| e.to_string())?.is_empty()
+    {
+        return Err("当前后台仍有受管服务或请求，请先完成当前操作再连接另一后台".into());
+    }
+    if std::env::var_os("STRATA_MANAGER_DATA_DIR").is_some() {
+        return Err("当前窗口使用显式指定的数据目录，请从正常窗口连接运行中的管理后台".into());
+    }
+    let default = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    running_service_connection::remember_owner(&default, &owner)?;
+    state.cleanup_ui();
+    let profile_id = owner.profile_id;
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        app.restart();
+    });
+    Ok(json!({"profileId":profile_id,"restarting":true}))
 }
 
 #[tauri::command]
@@ -1315,7 +1354,7 @@ async fn confirm_window_close(
 }
 
 #[tauri::command]
-fn apply_settings(
+async fn apply_settings(
     app: tauri::AppHandle,
     state: State<'_, ClientState>,
     settings: Value,
@@ -1332,9 +1371,11 @@ fn apply_settings(
             .unwrap_or(false),
         Ordering::Relaxed,
     );
-    let english = settings.get("language").and_then(Value::as_str) == Some("en");
+    let english =
+        system_locale::uses_english_fallback(settings.get("language").and_then(Value::as_str));
     monitor_tray::apply(&app, &settings)?;
     taskbar_monitor::apply_preferences(&app, &settings)?;
+    floating_monitor::apply_preferences(&app, &settings).await?;
     state.tray_english.store(english, Ordering::Relaxed);
     state
         .tray_start
@@ -1475,11 +1516,16 @@ pub fn run() {
                 return Err("后台数据目录必须是绝对路径".into());
             }
             std::fs::create_dir_all(&data_dir)?;
+            let data_dir = tauri::async_runtime::block_on(
+                running_service_connection::active_data_directory(&data_dir),
+            );
             let ipc = Arc::new(SupervisorClient::new(data_dir, app.path().resource_dir()?));
             let saved_settings =
                 tauri::async_runtime::block_on(ipc.request("store_get", json!({"key":"settings"})))
                     .unwrap_or(Value::Null);
-            let english = saved_settings.get("language").and_then(Value::as_str) == Some("en");
+            let english = system_locale::uses_english_fallback(
+                saved_settings.get("language").and_then(Value::as_str),
+            );
             let close = saved_settings
                 .get("closeToTray")
                 .and_then(Value::as_bool)
@@ -1646,6 +1692,11 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if window.label() == floating_monitor::LABEL
+                && matches!(event, tauri::WindowEvent::Destroyed)
+            {
+                taskbar_monitor::notify_visibility(window.app_handle());
+            }
             if window.label() != "main" {
                 // Closing the optional monitor must never hide it to the tray
                 // or enter the main window's service-exit confirmation flow.
@@ -1669,6 +1720,7 @@ pub fn run() {
             floating_monitor::open_monitor_window,
             floating_monitor::resize_monitor_window,
             taskbar_monitor::set_monitor_mode,
+            taskbar_monitor::set_monitor_visibility,
             taskbar_monitor::monitor_mode_status,
             monitor_tray::minimize_monitor_to_tray,
             floating_monitor::monitor_snapshot,
@@ -1687,6 +1739,7 @@ pub fn run() {
             switch_local_service,
             prepare_local_runtime,
             local_runtime_installation,
+            connect_running_service,
             store_get,
             store_set,
             set_api_key,
@@ -1744,6 +1797,7 @@ pub fn run() {
             http::strata_stream,
             http::cancel_stream,
             apply_settings,
+            system_locale::get_system_language,
             confirm_window_close,
             rename_local_installation,
             analytics_query,

@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useRef, useState } from 'react';
 import { FolderOpen } from 'lucide-react';
 import * as core from '@strata-manager/core';
@@ -12,7 +13,7 @@ export interface ModelDownloadSettingsDialogProps {
   runtimes: ServiceProfile[];
   modelDirectory?: string;
   effectiveRuntime?: ServiceProfile;
-  language: 'zh-CN' | 'en';
+  language: AppLanguage;
   desktop: boolean;
   onChooseDirectory: () => Promise<string | null>;
   onSave: (value: core.ModelDownloadDefaults) => Promise<void>;

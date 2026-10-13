@@ -586,6 +586,9 @@ pub struct OwnedProcess {
     pub status: ProcessStatus,
     pub profile: Option<ServiceProfile>,
     pub(crate) gpu_power_lease: Option<crate::gpu_power::GpuPowerLease>,
+    // Shared by every Manager data directory for this canonical installation.
+    // Keep it until the owned API/engine tree is confirmed stopped.
+    pub(crate) runtime_lease: Option<strata_local_ipc::SingleInstance>,
     pub readers_pending: Arc<AtomicUsize>,
     tree_stopped: bool,
     // Only service/probe spawns pin buckets. Task Drop never acquires Logs.
@@ -658,6 +661,9 @@ impl OwnedProcess {
     /// Read the whole held process tree without stopping it. A root exit alone
     /// does not establish that an MCP process or another descendant has exited.
     pub fn tree_running(&mut self) -> Result<bool, String> {
+        if self.tree_stopped {
+            return Ok(false);
+        }
         #[cfg(windows)]
         {
             use windows_sys::Win32::System::JobObjects::{
@@ -900,6 +906,7 @@ impl OwnedProcess {
             status,
             profile: None,
             gpu_power_lease: None,
+            runtime_lease: None,
             readers_pending,
             tree_stopped: false,
             service_logs: None,
@@ -916,7 +923,9 @@ impl OwnedProcess {
             self.release_log_pin();
             // A crashed root may leave owned descendants alive. End that tree
             // before releasing the board-wide power limit.
-            if self.gpu_power_lease.is_some() && !self.tree_stopped {
+            if (self.gpu_power_lease.is_some() || self.runtime_lease.is_some())
+                && !self.tree_stopped
+            {
                 let lease = self.gpu_power_lease.take();
                 let stopped = self.stop();
                 self.gpu_power_lease = lease;
@@ -954,6 +963,38 @@ impl OwnedProcess {
         }
         Ok(())
     }
+
+    #[cfg(unix)]
+    fn confirm_runtime_tree_stopped(&mut self) -> Result<(), String> {
+        // Termination uses the held guardian/owned group above. This census is
+        // read-only, so a recycled PGID can only delay releasing the lease;
+        // it never authorizes sending another signal to a searched process.
+        let group = self.child.id() as i32;
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let mut system = sysinfo::System::new();
+            system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+            if system
+                .process(sysinfo::Pid::from_u32(std::process::id()))
+                .is_none()
+            {
+                return Err("无法核验受管进程组成员，运行环境托管锁继续保留".into());
+            }
+            let live = system.processes().iter().any(|(pid, process)| {
+                process.status() != sysinfo::ProcessStatus::Zombie
+                    && unsafe { libc::getpgid(pid.as_u32() as i32) } == group
+            });
+            if !live {
+                self.tree_stopped = true;
+                return Ok(());
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err("受管进程组仍在结束，运行环境托管锁继续保留".into());
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
     pub fn stop(&mut self) -> Result<(), String> {
         #[cfg(target_os = "linux")]
         let pinned_tree = self.guardian.alive().unwrap_or(false);
@@ -1016,8 +1057,15 @@ impl OwnedProcess {
         {
             self.tree_stopped = pinned_tree;
         }
+        #[cfg(unix)]
+        if self.runtime_lease.is_some() {
+            self.confirm_runtime_tree_stopped()?;
+        }
         self.release_log_pin();
         self.restore_gpu_power()?;
+        if self.tree_stopped {
+            self.runtime_lease = None;
+        }
         Ok(())
     }
     fn release_log_pin(&self) {
@@ -1030,7 +1078,7 @@ impl OwnedProcess {
 }
 impl Drop for OwnedProcess {
     fn drop(&mut self) {
-        if self.gpu_power_lease.is_some() && !self.tree_stopped {
+        if (self.gpu_power_lease.is_some() || self.runtime_lease.is_some()) && !self.tree_stopped {
             let _ = self.stop();
         }
         #[cfg(windows)]
@@ -1044,6 +1092,22 @@ impl Drop for OwnedProcess {
             }
         }
         let _ = self.restore_gpu_power();
+        if !self.tree_stopped {
+            if let Some(lease) = self.runtime_lease.take() {
+                // Cleanup failure must not authorize a second model while an
+                // unconfirmed descendant may remain. The kernel releases this
+                // retained handle/file when the owning supervisor exits.
+                std::mem::forget(lease);
+                if let Some((logs, id)) = &self.service_logs {
+                    log(
+                        logs,
+                        id,
+                        "error",
+                        "受管进程树未确认结束，运行环境托管锁保留至后台退出",
+                    );
+                }
+            }
+        }
         self.release_log_pin();
     }
 }
@@ -1742,6 +1806,31 @@ pub fn runtime_dir(profile: &ServiceProfile) -> Result<PathBuf, String> {
         return Err("不是可识别的 Strata 安装目录（需要 setup.py 和 serve/server.py）".into());
     }
     Ok(path)
+}
+
+pub(crate) fn acquire_runtime_lease(
+    root: &Path,
+) -> Result<strata_local_ipc::SingleInstance, String> {
+    let canonical = dunce::canonicalize(root).map_err(|error| {
+        crate::diagnostics::io_error(&error, "无法核验运行环境托管目录", "prepare")
+    })?;
+    strata_local_ipc::SingleInstance::acquire_scoped(&canonical, "managed-model-runtime").map_err(
+        |error| {
+            if error.code == "already_running" {
+                crate::diagnostics::error(
+                    "STARTUP_RUNTIME_ALREADY_MANAGED",
+                    "该 Strata 运行环境已由另一后台托管，请连接已有后台；未停止现有服务",
+                    "prepare",
+                )
+            } else {
+                crate::diagnostics::error(
+                    "STARTUP_RUNTIME_LOCK_UNAVAILABLE",
+                    format!("无法取得运行环境托管锁：{error}"),
+                    "prepare",
+                )
+            }
+        },
+    )
 }
 
 pub fn python(profile: &ServiceProfile) -> Result<String, String> {

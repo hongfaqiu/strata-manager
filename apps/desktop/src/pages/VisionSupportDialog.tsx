@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useRef, useState } from 'react';
 import { Check, FolderOpen, LoaderCircle, RefreshCw } from 'lucide-react';
 import * as core from '@strata-manager/core';
@@ -8,7 +9,7 @@ import { configureVisionSupport, visionDraftOf, type VisionSupportDraft } from '
 import './vision-support-dialog.css';
 
 export interface VisionSupportDialogProps {
-  profile: ServiceProfile; language: 'zh-CN' | 'en'; onClose: () => void;
+  profile: ServiceProfile; language: AppLanguage; onClose: () => void;
   onSaved?: () => Promise<void> | void; onRestart?: () => Promise<void>;
 }
 

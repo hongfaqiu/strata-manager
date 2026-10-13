@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { CircleHelp, RefreshCw } from 'lucide-react';
@@ -10,7 +11,7 @@ export interface RuntimeOperationsPanelProps {
   profile?: ServiceProfile;
   online: boolean;
   owned: boolean;
-  language: 'zh-CN' | 'en';
+  language: AppLanguage;
   disabled?: boolean;
   onError?: (error: unknown) => void;
   onMessage?: (message: string) => void;

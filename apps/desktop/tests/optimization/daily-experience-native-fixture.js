@@ -58,3 +58,21 @@
     return original(command,args);
   };
 })();
+
+// Presentation controls are simulated independently of model/service lifecycle.
+(() => {
+  const f = window.__fixture, previous = window.__TAURI_INTERNALS__.invoke;
+  let state = { mode: 'floating', visible: false, active: false, supported: true, message: '浏览器预览：模拟监控显示状态' };
+  window.__TAURI_INTERNALS__.invoke = async (command, args = {}) => {
+    if (command === 'monitor_mode_status') return { ...state };
+    if (['set_monitor_visibility', 'set_monitor_mode', 'open_monitor_window'].includes(command)) {
+      const visible = command === 'set_monitor_visibility' ? args.visible : true;
+      const mode = command === 'open_monitor_window' ? 'floating' : args.mode;
+      state = { ...state, mode, visible, active: visible && mode === 'taskbar' };
+      f.calls.push({ command, args: structuredClone(args) });
+      f.emitEvent('monitor-mode-status', { ...state });
+      return { ...state };
+    }
+    return previous(command, args);
+  };
+})();

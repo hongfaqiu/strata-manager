@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -21,7 +22,7 @@ const seconds=(value:unknown,locale:string)=>num(value)===null?'—':`${num(valu
 const textValue=(value:unknown):string=>typeof value==='string'?value:value==null?'':JSON.stringify(value,null,2);
 const stateKey=(value:unknown):TextKey=>({completed:'completed',error:'error',disconnected:'disconnectedState',cancelled:'cancelled',loading:'loadingState',reading:'readingState',generating:'generatingState',queued:'queuedState',pending:'pendingState',preparing:'preparingState'} as Record<string,TextKey>)[String(value)]??'unknown';
 export function RequestViewer({profile,online,language,pollInterval,noProfile,errorText,onError,onMessage,initialSelected,embedded=false,onEnableViewer,onOpenUsage}: {
-  profile?:ServiceProfile;online:boolean;language:'zh-CN'|'en';pollInterval:number;controls?:ReactNode;noProfile:ReactNode;initialSelected?:string;embedded?:boolean;
+  profile?:ServiceProfile;online:boolean;language:AppLanguage;pollInterval:number;controls?:ReactNode;noProfile:ReactNode;initialSelected?:string;embedded?:boolean;
   errorText:(error:unknown)=>string;onError:(error:unknown)=>void;onMessage:(value:string)=>void;
   onEnableViewer?:(minutes:0|5|15|30)=>Promise<core.RequestCaptureStatus>;onOpenUsage?:()=>void;
 }) {

@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { Children, isValidElement, memo, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
@@ -20,7 +21,7 @@ function ToolCall({tool,language,stateLabel}:{tool:ToolEvent;language:string;sta
   const cls=state==='writing'?'st-badge--reading':state==='running'?'st-badge--generating':state==='error'?'st-badge--error':state==='skipped'?'st-badge--queued':'';
   return <details className="st-collapse tool-call" data-state={state} onToggle={event=>setOpen(event.currentTarget.open)}><summary><OfficialIcon name="tool" size={16}/><span className="tool-call__name" data-tooltip={tool.name}>{tool.tool??tool.name??t('toolCall')}</span>{tool.server&&<span className="muted small">{tool.server}</span>}<span className="tool-call__preview muted">{preview.slice(0,200)}</span><span className={`st-badge ${cls}`}>{stateLabel(state)}</span>{typeof raw.ms==='number'&&state!=='skipped'&&<span className="muted small">{(raw.ms/1000).toLocaleString(language,{maximumFractionDigits:1})} s</span>}<OfficialIcon name="chevron" size={16} className="st-chev"/></summary><div className="st-collapse__body">{open&&<><div className="tool-call__label">{t('toolArguments')}</div><pre className="tool-call__pre">{args||t('toolWriting')}</pre>{tool.result!=null&&<><div className="tool-call__label">{t(tool.ok===false?'error':'toolResult')}{typeof raw.chars==='number'&&` · ${t('toolCharacters',{count:raw.chars})}`}{raw.truncated===true&&`, ${t('toolTruncated')}`}</div><pre className="tool-call__pre">{tool.result}</pre></>}</>}</div></details>;
 }
-export const ChatMessageView = memo(function ChatMessageView({message,language,showReasoning,streaming,stateLabel,onCopy}:{message:ChatMessage;language:'zh-CN'|'en';showReasoning:boolean;streaming:boolean;stateLabel:(state:string)=>string;onCopy:(value:string)=>void|Promise<boolean|void>}) {
+export const ChatMessageView = memo(function ChatMessageView({message,language,showReasoning,streaming,stateLabel,onCopy}:{message:ChatMessage;language:AppLanguage;showReasoning:boolean;streaming:boolean;stateLabel:(state:string)=>string;onCopy:(value:string)=>void|Promise<boolean|void>}) {
   const {t}=useTranslation(); const reasoning=useRef<HTMLDetailsElement>(null); const touched=useRef(false); const thinkingNow=streaming&&!message.content;
   useEffect(()=>{if(reasoning.current&&!touched.current)reasoning.current.open=thinkingNow&&showReasoning;},[thinkingNow,showReasoning]);
   const fmt=(value:number,digits=1)=>value.toLocaleString(language,{maximumFractionDigits:digits});

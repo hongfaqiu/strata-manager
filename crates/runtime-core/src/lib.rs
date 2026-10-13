@@ -1723,7 +1723,21 @@ impl RuntimeState {
                     .map_err(|e| e.to_string())?;
                 serde_json::from_str(&text).map_err(|e| e.to_string())?
             };
-            let plan = prepare_startup(&startup_profile, &state.processes, &state.tasks)?;
+            let mut plan = prepare_startup(&startup_profile, &state.processes, &state.tasks)?;
+            // Acquire before inspecting/unloading any observed external tree:
+            // another Manager may own this installation under another dataDir.
+            plan.claim_runtime()?;
+            // Engine upgrades can change the registered runtime while retaining
+            // its original installation as the migration source. Reserve that
+            // source independently before touching its observed process.
+            let original_root = dunce::canonicalize(&original.install_dir).map_err(|error| {
+                diagnostics::io_error(&error, "无法核验原运行环境托管目录", "prepare")
+            })?;
+            let _original_runtime_lease = if original_root != plan.root {
+                Some(processes::acquire_runtime_lease(&original_root)?)
+            } else {
+                None
+            };
             let secret = http::key(&startup_profile.id)?;
             if let Some(instance) = external::detect(&original)? {
                 // Import is the single migration boundary. A running original
@@ -2184,6 +2198,16 @@ struct StartupPlan {
     lazy_cli: bool,
     config_value: Value,
     profile: ServiceProfile,
+    runtime_lease: Option<strata_local_ipc::SingleInstance>,
+}
+
+impl StartupPlan {
+    fn claim_runtime(&mut self) -> Result<(), String> {
+        if self.runtime_lease.is_none() {
+            self.runtime_lease = Some(processes::acquire_runtime_lease(&self.root)?);
+        }
+        Ok(())
+    }
 }
 
 fn prepare_startup(
@@ -2293,6 +2317,7 @@ fn prepare_startup(
         lazy_cli,
         config_value,
         profile: effective_profile,
+        runtime_lease: None,
     })
 }
 
@@ -2317,7 +2342,7 @@ fn start_prepared_service(
 fn start_prepared_service_checked(
     state: &RuntimeState,
     profile: ServiceProfile,
-    plan: StartupPlan,
+    mut plan: StartupPlan,
     _secret: Option<String>,
     operation: Option<&TuningServiceOperation>,
 ) -> Result<ProcessStatus, String> {
@@ -2333,6 +2358,9 @@ fn start_prepared_service_checked(
         }
         state.forget_owned_listener(&profile.id)?;
     }
+    // Legacy/direct starts pass unclaimed plans. Migration paths pass the
+    // already-held lease, which must survive until the spawned tree takes it.
+    plan.claim_runtime()?;
     if external::port_accepting(&plan.profile)? {
         return Err(diagnostics::error(
             "STARTUP_PORT_IN_USE",
@@ -2391,6 +2419,7 @@ fn start_prepared_service_checked(
         }
     };
     process.gpu_power_lease = gpu_power_lease;
+    process.runtime_lease = plan.runtime_lease.take();
     process.profile = Some(profile.clone());
     if let Some(operation) = operation {
         if let Err(error) = operation.validate_processes(state, &mut processes) {
@@ -2732,7 +2761,8 @@ async fn take_over_service(
         runtime_upgrade::assert_available(&state)?;
         external_management::assert_profile_manager_owned(&state, &profile)?;
         assert_stopped(&state, &profile)?;
-        let plan = prepare_startup(&profile, &state.processes, &state.tasks)?;
+        let mut plan = prepare_startup(&profile, &state.processes, &state.tasks)?;
+        plan.claim_runtime()?;
         let secret = http::key(&profile.id)?;
         let instance = external::detect(&profile)?.ok_or("没有可接管的本机Strata实例")?;
         tokio::runtime::Handle::current().block_on(inspect_idle_http(&state, &profile))?;
@@ -3217,6 +3247,321 @@ mod tuning_service_operation_tests;
 #[cfg(test)]
 mod native_probe_tests {
     use super::*;
+
+    struct RuntimeLeaseCleanup(Vec<Arc<RuntimeState>>);
+    impl Drop for RuntimeLeaseCleanup {
+        fn drop(&mut self) {
+            for state in &self.0 {
+                state.cleanup();
+            }
+        }
+    }
+
+    fn runtime_lease_fixture(root: &Path) -> String {
+        fs::create_dir_all(root.join("serve")).unwrap();
+        fs::write(root.join("setup.py"), b"").unwrap();
+        fs::write(
+            root.join("serve/server.py"),
+            br#"
+import argparse, json, subprocess, sys, time
+from pathlib import Path
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+p=argparse.ArgumentParser();p.add_argument('--host');p.add_argument('--port',type=int);p.add_argument('--config')
+a,_=p.parse_known_args();config=json.loads(Path(a.config).read_text())
+if config.get('exit_root_marker'):
+ child=subprocess.Popen([sys.executable,'-I','-S','-c','import time;time.sleep(60)'])
+ Path(config['exit_root_marker']).write_text(str(child.pid));sys.exit(0)
+class Handler(BaseHTTPRequestHandler):
+ def do_GET(self):
+  if config.get('request_marker'):Path(config['request_marker']).write_text(self.path)
+  self.send_response(200);self.end_headers();self.wfile.write(json.dumps({'service':'strata','status':'ok','loaded':True}).encode())
+ def do_POST(self):
+  if config.get('request_marker'):Path(config['request_marker']).write_text(self.path)
+  self.send_response(200);self.end_headers();self.wfile.write(b'{"status":"unloaded"}')
+ def log_message(self,*args):pass
+ThreadingHTTPServer((a.host,a.port),Handler).serve_forever()
+"#,
+        )
+        .unwrap();
+        if let Some(selected) = std::env::var_os("STRATA_MANAGER_TEST_PYTHON") {
+            return selected.to_string_lossy().into();
+        }
+        output(
+            if cfg!(windows) { "py" } else { "python3" },
+            &["-c", "import sys;print(sys.executable)"],
+        )
+        .expect("runtime lease fixture requires Python")
+    }
+
+    fn runtime_lease_profile(root: &Path, python: &str, config: &Path) -> ServiceProfile {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let profile = ServiceProfile {
+            id: format!("runtime-lease-{}", uuid::Uuid::new_v4()),
+            name: "CPU runtime lease fixture".into(),
+            install_dir: root.to_string_lossy().into(),
+            config_path: config.to_string_lossy().into(),
+            python_path: python.into(),
+            base_url: format!("http://127.0.0.1:{port}"),
+            managed: true,
+        };
+        fs::write(
+            config,
+            serde_json::to_vec(&json!({"exe":"fixture","args":[],"port":port})).unwrap(),
+        )
+        .unwrap();
+        profile
+    }
+
+    #[test]
+    fn runtime_lease_blocks_two_data_stores_until_owned_tree_stops() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("runtime");
+        let python = runtime_lease_fixture(&root);
+        let first = RuntimeState::open(temp.path().join("data-first")).unwrap();
+        let second = RuntimeState::open(temp.path().join("data-second")).unwrap();
+        let _cleanup = RuntimeLeaseCleanup(vec![first.clone(), second.clone()]);
+        let first_profile = runtime_lease_profile(&root, &python, &root.join("first.json"));
+        let mut second_profile = runtime_lease_profile(&root, &python, &root.join("second.json"));
+        second_profile.install_dir = root.join(".").to_string_lossy().into();
+        register_gui_fixture(&first, &first_profile);
+        register_gui_fixture(&second, &second_profile);
+        let first_plan = prepare_startup(&first_profile, &first.processes, &first.tasks).unwrap();
+        let second_plan =
+            prepare_startup(&second_profile, &second.processes, &second.tasks).unwrap();
+        // Read-only preparation must not reserve a running-model lease.
+        assert!(
+            strata_local_ipc::SingleInstance::acquire_scoped(&root, "managed-model-runtime")
+                .is_ok()
+        );
+        start_prepared_service(&first, first_profile.clone(), first_plan, None).unwrap();
+        let blocked = start_prepared_service(&second, second_profile.clone(), second_plan, None)
+            .expect_err("different data stores must not start models in the same runtime");
+        let value: Value = serde_json::from_str(&blocked).unwrap();
+        assert_eq!(value["code"], "STARTUP_RUNTIME_ALREADY_MANAGED");
+        assert!(second.processes.lock().unwrap().is_empty());
+        {
+            let mut processes = first.processes.lock().unwrap();
+            let owned = processes.get_mut(&first_profile.id).unwrap();
+            assert!(owned.refresh().unwrap().running);
+            owned.stop().unwrap();
+            assert!(!owned.tree_running().unwrap());
+        }
+        let second_plan =
+            prepare_startup(&second_profile, &second.processes, &second.tasks).unwrap();
+        assert!(
+            start_prepared_service(&second, second_profile.clone(), second_plan, None)
+                .unwrap()
+                .running
+        );
+        let removed = second
+            .processes
+            .lock()
+            .unwrap()
+            .remove(&second_profile.id)
+            .unwrap();
+        drop(removed);
+        assert!(
+            strata_local_ipc::SingleInstance::acquire_scoped(&root, "managed-model-runtime")
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn runtime_lease_allows_different_installations_and_releases_after_root_tree_exit() {
+        let temp = tempfile::tempdir().unwrap();
+        let first_root = temp.path().join("runtime-first");
+        let second_root = temp.path().join("runtime-second");
+        let python = runtime_lease_fixture(&first_root);
+        runtime_lease_fixture(&second_root);
+        let first = RuntimeState::open(temp.path().join("data-first")).unwrap();
+        let second = RuntimeState::open(temp.path().join("data-second")).unwrap();
+        let _cleanup = RuntimeLeaseCleanup(vec![first.clone(), second.clone()]);
+        let first_profile =
+            runtime_lease_profile(&first_root, &python, &first_root.join("config.json"));
+        let second_profile =
+            runtime_lease_profile(&second_root, &python, &second_root.join("config.json"));
+        let marker = first_root.join("child.pid");
+        let mut config = storage::read(&first_profile).unwrap();
+        config["exit_root_marker"] = json!(marker);
+        fs::write(
+            &first_profile.config_path,
+            serde_json::to_vec(&config).unwrap(),
+        )
+        .unwrap();
+        for (state, profile) in [(&first, &first_profile), (&second, &second_profile)] {
+            register_gui_fixture(state, profile);
+            let plan = prepare_startup(profile, &state.processes, &state.tasks).unwrap();
+            assert!(
+                start_prepared_service(state, profile.clone(), plan, None)
+                    .unwrap()
+                    .running
+            );
+        }
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !marker.exists() {
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let mut processes = first.processes.lock().unwrap();
+        let owned = processes.get_mut(&first_profile.id).unwrap();
+        assert!(owned.child.wait().unwrap().success());
+        assert!(strata_local_ipc::SingleInstance::acquire_scoped(
+            &first_root,
+            "managed-model-runtime"
+        )
+        .is_err());
+        assert!(!owned.refresh().unwrap().running);
+        assert!(!owned.tree_running().unwrap());
+        assert!(strata_local_ipc::SingleInstance::acquire_scoped(
+            &first_root,
+            "managed-model-runtime"
+        )
+        .is_ok());
+        assert!(
+            second
+                .processes
+                .lock()
+                .unwrap()
+                .get_mut(&second_profile.id)
+                .unwrap()
+                .refresh()
+                .unwrap()
+                .running
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_lease_blocks_migration_and_takeover_before_foreign_http_or_stop() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("runtime");
+        let python = runtime_lease_fixture(&root);
+        let owner = RuntimeState::open(temp.path().join("owner")).unwrap();
+        let competitor = RuntimeState::open(temp.path().join("competitor")).unwrap();
+        let _cleanup = RuntimeLeaseCleanup(vec![owner.clone(), competitor.clone()]);
+        let profile = runtime_lease_profile(&root, &python, &root.join("config.json"));
+        let request_marker = root.join("foreign-request.txt");
+        let mut config = storage::read(&profile).unwrap();
+        config["request_marker"] = json!(request_marker);
+        fs::write(&profile.config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+        register_gui_fixture(&owner, &profile);
+        register_gui_fixture(&competitor, &profile);
+        let plan = prepare_startup(&profile, &owner.processes, &owner.tasks).unwrap();
+        start_prepared_service(&owner, profile.clone(), plan, None).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !external::port_accepting(&profile).unwrap() {
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let startup = competitor
+            .clone()
+            .ensure_runtime(profile.id.clone(), true)
+            .await
+            .unwrap_err();
+        let diagnostic: Value = serde_json::from_str(&startup).unwrap();
+        assert_eq!(diagnostic["code"], "STARTUP_RUNTIME_ALREADY_MANAGED");
+        assert_eq!(
+            diagnostic["details"]["startupDiagnostic"]["category"],
+            "config"
+        );
+        assert_eq!(
+            diagnostic["details"]["startupDiagnostic"]["confidence"],
+            "confirmed"
+        );
+        let takeover = take_over_service(competitor.clone(), profile.clone())
+            .await
+            .unwrap_err();
+        assert_eq!(
+            serde_json::from_str::<Value>(&takeover).unwrap()["code"],
+            "STARTUP_RUNTIME_ALREADY_MANAGED"
+        );
+        assert!(
+            !request_marker.exists(),
+            "a competing backend must not probe or unload the owner"
+        );
+        assert!(competitor.processes.lock().unwrap().is_empty());
+        assert!(
+            owner
+                .processes
+                .lock()
+                .unwrap()
+                .get_mut(&profile.id)
+                .unwrap()
+                .refresh()
+                .unwrap()
+                .running
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_lease_blocks_original_environment_migration_after_installation_upgrade() {
+        let temp = tempfile::tempdir().unwrap();
+        let original_root = temp.path().join("original-runtime");
+        let upgraded_root = temp.path().join("upgraded-runtime");
+        let python = runtime_lease_fixture(&original_root);
+        runtime_lease_fixture(&upgraded_root);
+        let owner = RuntimeState::open(temp.path().join("original-owner")).unwrap();
+        let competitor = RuntimeState::open(temp.path().join("upgrade-owner")).unwrap();
+        let _cleanup = RuntimeLeaseCleanup(vec![owner.clone(), competitor.clone()]);
+        let source =
+            runtime_lease_profile(&original_root, &python, &original_root.join("config.json"));
+        let target =
+            runtime_lease_profile(&upgraded_root, &python, &upgraded_root.join("config.json"));
+        let request_marker = original_root.join("foreign-request.txt");
+        let mut config = storage::read(&source).unwrap();
+        config["request_marker"] = json!(request_marker);
+        fs::write(&source.config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+        register_gui_fixture(&owner, &source);
+        register_gui_fixture(&competitor, &target);
+        let mut original = source.clone();
+        original.id = target.id.clone();
+        competitor
+            .database
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE local_installations SET original_profile=?1 WHERE id=?2",
+                rusqlite::params![serde_json::to_string(&original).unwrap(), target.id],
+            )
+            .unwrap();
+        let plan = prepare_startup(&source, &owner.processes, &owner.tasks).unwrap();
+        start_prepared_service(&owner, source.clone(), plan, None).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !external::port_accepting(&source).unwrap() {
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let blocked = competitor
+            .clone()
+            .ensure_runtime(target.id.clone(), true)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            serde_json::from_str::<Value>(&blocked).unwrap()["code"],
+            "STARTUP_RUNTIME_ALREADY_MANAGED"
+        );
+        assert!(
+            !request_marker.exists(),
+            "upgraded installations must respect the original runtime owner's lease"
+        );
+        assert!(
+            owner
+                .processes
+                .lock()
+                .unwrap()
+                .get_mut(&source.id)
+                .unwrap()
+                .refresh()
+                .unwrap()
+                .running
+        );
+        assert!(strata_local_ipc::SingleInstance::acquire_scoped(
+            &upgraded_root,
+            "managed-model-runtime"
+        )
+        .is_ok());
+    }
+
     #[tokio::test]
     async fn preparation_failures_survive_reopen_and_successful_results_clear_the_retry_diagnostic()
     {

@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowRight, Check, CircleAlert, Download, FolderOpen, LoaderCircle, RefreshCw, Search } from 'lucide-react';
@@ -8,7 +9,7 @@ import './local-setup.css';
 export type LocalSetupProgress = StartupProgressState;
 
 export interface LocalSetupPageProps {
-  language: 'zh-CN' | 'en';
+  language: AppLanguage;
   desktop: boolean;
   progress?: LocalSetupProgress;
   currentCandidateId?: string;
@@ -33,7 +34,7 @@ const configOption = (candidate: LocalCandidate, flag: string) => {
   const value = index >= 0 ? args[index + 1] : undefined;
   return typeof value === 'string' && !value.startsWith('-') ? value : undefined;
 };
-const configSummary = (candidate: LocalCandidate, language: 'zh-CN' | 'en') => {
+const configSummary = (candidate: LocalCandidate, language: AppLanguage) => {
   const context = configOption(candidate, '--max-context');
   const parallel = candidate.config?.parallel;
   const kv = configOption(candidate, '--kv');
@@ -50,7 +51,7 @@ const localWords = {
 /** Import readiness comes only from onImport finishing its real backend workflow. */
 export function LocalSetupPage(props: LocalSetupPageProps) {
   const { t } = useTranslation();
-  const text = localWords[props.language];
+  const text = localWords[(props.language === 'zh-CN' ? 'zh-CN' : 'en')];
   const [candidates, setCandidates] = useState<LocalCandidate[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [discovering, setDiscovering] = useState(props.desktop);

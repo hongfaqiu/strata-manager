@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowUpCircle, Download, ExternalLink, LoaderCircle, RefreshCw, Square } from 'lucide-react';
@@ -11,7 +12,7 @@ import { RuntimeDownloadSettings } from './RuntimeDownloadSettings';
 import './install-runtime.css';
 
 interface Props {
-  language: 'zh-CN' | 'en'; desktop: boolean; onInstall?: () => void;
+  language: AppLanguage; desktop: boolean; onInstall?: () => void;
   selectedRuntimeDir?: string; showInstallations?: boolean;
   installationStatus?: core.RuntimeInstallationStatus;
   autoCheck?: boolean;
@@ -45,7 +46,7 @@ function needsUpdate(current: string | undefined, latest: string | undefined) {
 }
 
 export function RuntimeManagementPanel({ language, desktop, onInstall, selectedRuntimeDir, showInstallations = true, installationStatus, autoCheck = true, operationDisabled = false, onUpdateStarted }: Props) {
-  const text = labels[language]; const query = useQueryClient();
+  const text = labels[(language === 'zh-CN' ? 'zh-CN' : 'en')]; const query = useQueryClient();
   const [checking, setChecking] = useState(false), [starting, setStarting] = useState(''), [actionError, setActionError] = useState('');
   const [taskLogs, setTaskLogs] = useState<core.LogEntry[]>([]);
   const [taskId, setTaskId] = useState(''); const observedTask = useRef('');

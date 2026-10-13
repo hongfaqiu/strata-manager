@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, Trash2 } from 'lucide-react';
@@ -17,7 +18,7 @@ export interface ModelConfigurationOption {
 interface Props {
   value: string;
   options: ModelConfigurationOption[];
-  language: 'zh-CN' | 'en';
+  language: AppLanguage;
   ariaLabel: string;
   modifiedLabel: string;
   disabled?: boolean;
@@ -25,15 +26,15 @@ interface Props {
   onDelete?: (value: string) => void;
 }
 
-function OptionContent({ option, language, modifiedLabel }: { option: ModelConfigurationOption; language: Props['language']; modifiedLabel: string }) {
+function OptionContent({ option, language, modifiedLabel, compact = false }: { option: ModelConfigurationOption; language: Props['language']; modifiedLabel: string; compact?: boolean }) {
   const hasDate = typeof option.modifiedAt === 'number' && Number.isFinite(option.modifiedAt) && option.modifiedAt > 0;
   const hasActivation = typeof option.lastActivatedAt === 'number' && Number.isFinite(option.lastActivatedAt) && option.lastActivatedAt > 0;
   const lastActivated = language === 'zh-CN' ? '上次启用' : 'Last activated';
   const pathTitle = option.sourcePath && option.sourcePath !== option.filePath ? `${option.filePath}\n${language === 'zh-CN' ? '来源' : 'Source'}: ${option.sourcePath}` : option.filePath;
   return <span className="model-configuration-copy">
     <span className="model-configuration-name"><strong data-tooltip={pathTitle}>{option.name}</strong>{option.stateLabel && <em className={`model-configuration-state ${option.state ?? ''}`}>{option.stateLabel}</em>}</span>
-    {option.summary && <span className="model-configuration-summary">{option.summary}</span>}
-    <span className="model-configuration-times">{hasDate && <time dateTime={new Date(option.modifiedAt!).toISOString()}>{modifiedLabel} · {new Date(option.modifiedAt!).toLocaleString(language)}</time>}{hasActivation ? <time dateTime={new Date(option.lastActivatedAt!).toISOString()}>{lastActivated} · {new Date(option.lastActivatedAt!).toLocaleString(language)}</time> : <span>{lastActivated} · {language === 'zh-CN' ? '未记录' : 'Not recorded'}</span>}</span>
+    {option.summary && <span className="model-configuration-summary">{option.summary.split(' · ').map(stat => <span className="model-configuration-stat" key={stat}>{stat}</span>)}</span>}
+    {!compact && <span className="model-configuration-times">{hasDate && <time dateTime={new Date(option.modifiedAt!).toISOString()}>{modifiedLabel} · {new Date(option.modifiedAt!).toLocaleString(language)}</time>}{hasActivation && <time dateTime={new Date(option.lastActivatedAt!).toISOString()}>{lastActivated} · {new Date(option.lastActivatedAt!).toLocaleString(language)}</time>}</span>}
   </span>;
 }
 
@@ -63,7 +64,7 @@ export function ModelConfigurationDropdown({ value, options, language, ariaLabel
       const rect = root.current?.getBoundingClientRect(); if (!rect) return;
       const below = window.innerHeight - rect.bottom - 12, above = rect.top - 12;
       const upside = below < 180 && above > below;
-      const width = Math.min(Math.max(rect.width, 420), window.innerWidth - 24);
+      const width = Math.min(Math.max(rect.width, 420), 680, window.innerWidth - 24);
       setPosition({ position: 'fixed', width, left: Math.max(12, Math.min(rect.left, window.innerWidth - width - 12)), ...(upside ? { bottom: window.innerHeight - rect.top + 6 } : { top: rect.bottom + 6 }), maxHeight: Math.max(40, Math.min(440, upside ? above : below)) });
     };
     const outside = (event: PointerEvent) => { const target = event.target as Node; if (!root.current?.contains(target) && !menu.current?.contains(target)) close(); };
@@ -93,8 +94,8 @@ export function ModelConfigurationDropdown({ value, options, language, ariaLabel
     }
   };
   return <div className="model-configuration-dropdown" ref={root}>
-    <button className="model-configuration-trigger" type="button" role="combobox" aria-label={ariaLabel} aria-haspopup="listbox" aria-expanded={open} aria-controls={menuId} aria-activedescendant={open ? `${id}-option-${active}` : undefined} disabled={disabled || !options.length} ref={trigger} onKeyDown={keyboard} onClick={() => open ? close() : show()}>
-      {selected && <OptionContent option={selected} language={language} modifiedLabel={modifiedLabel}/>}<ChevronDown size={17}/>
+    <button className="model-configuration-trigger" type="button" role="combobox" aria-label={ariaLabel} aria-haspopup="listbox" aria-expanded={open} aria-controls={menuId} aria-activedescendant={open ? `${id}-option-${active}` : undefined} data-tooltip={language === 'zh-CN' ? '选择配置后，点击启用才会切换模型' : 'Choose a configuration, then enable it to switch models'} disabled={disabled || !options.length} ref={trigger} onKeyDown={keyboard} onClick={() => open ? close() : show()}>
+      {selected && <OptionContent option={selected} language={language} modifiedLabel={modifiedLabel} compact/>}<ChevronDown size={17}/>
     </button>
     {open && createPortal(<div className="official-surface model-configuration-menu" role="listbox" id={menuId} aria-label={ariaLabel} style={position} ref={menu}>
       {options.map((option, index) => <div className={`model-configuration-row${onDelete ? ' has-delete' : ''}`} key={option.value} onPointerMove={() => setActive(index)}>

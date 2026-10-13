@@ -27,7 +27,7 @@
 
 [![Strata Manager overview with the service-status popover open](docs/screenshots/product-cover.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.en.webp)
 
-<sub>0.1.5 interface preview: the complete Overview with its service-status popover open. Screenshots use real application components with isolated example data; displayed values are not inference results or benchmarks. Click to view the original.</sub>
+<sub>0.1.8 release candidate interface, refreshed on October 14, 2026. Publication is pending. Screenshots use the actual application and components with isolated example data; displayed values are not inference results or benchmarks. Click to view the original.</sub>
 
 ## What is Strata, and what does Manager do?
 
@@ -43,38 +43,49 @@ Manager is an independent community project. It manages supported Strata install
 
 ## A workflow from setup to daily use
 
-Engine-dependent tools appear according to the installed runtime's capabilities.
+This overview covers the current source; stable installers include the features listed in their release notes. Engine-dependent tools appear according to the installed runtime's capabilities.
 
 | Workflow | What you can do |
 | --- | --- |
 | **1 · Prepare Strata** | Detect installations and inspect local/upstream versions and release notes. Windows x64 engine ZIPs default to official GitHub, offer GH Proxy/GHProxy, custom HTTPS or local ZIP sources, and match the current CUDA12, CUDA13 or HIP engine across sources. Interrupted downloads retain partial data and attempt HTTP Range resume; complete packages are checked against official size and SHA256. Linux supports environment scans, versions and release notes. |
 | **2 · Organize models** | Discover local weights, group configurations by model, choose download sources and GPUs, and inspect model files, GGUF metadata and disk usage. Supported formats include Swift IQ3_S. |
-| **3 · Configure and run** | Edit graphical controls or JSON with validation and backups. Start, stop, restart or release model memory; follow startup stages, tasks and logs. Opening Manager or signing in starts only the lightweight background, preserving stopped services. |
+| **3 · Configure and run** | Edit graphical controls or JSON with validation and backups. Start, stop, restart or release model memory; follow startup stages, tasks and logs. On Windows, inspect detected running services, their loaded state, API address and configuration; reconnect to their existing Manager backend or take ownership. Opening Manager or signing in starts only the lightweight background, preserving stopped services. |
 | **4 · Chat and integrate** | Use streaming conversations, attachments and structured output. New models inherit shared generation parameters and MCP defaults; existing custom values remain separate until inheritance is enabled. Changes apply to the next chat request. Configure connection targets, the application's access key, API examples and MCP in API and external assistants; selecting a target does not start or switch a model. |
-| **5 · Inspect sessions and load** | Save and restore engine sessions; inspect slots, load, hardware and supported VRAM adjustments. The status panel separates recent generation and input-processing trends, preserving sample gaps. The compact metrics-only monitor is closed by default; its context menu provides navigation, pinning and sampling controls, with optional system-tray monitoring. Read-only observation never starts or restores services; quick speed tests send inference requests. |
+| **5 · Inspect sessions and load** | Save and restore engine sessions; inspect slots, load, hardware and supported VRAM adjustments. The status panel separates recent generation and input-processing trends, preserving sample gaps, and shows automatic model reload progress after idle memory release. The desktop monitor is closed by default, with three layouts, ordered metrics and text/color controls; its context menu provides navigation, pinning and sampling, with optional system-tray monitoring. Read-only observation never starts or restores services; quick speed tests send inference requests. |
 | **6 · Understand usage and tune** | Retain local API metadata, support Strata 0.1.43 API usage statistics, and chart requests, tokens, latency and cache reuse. Compare complete chat, coding/Agent or document tasks before applying or restoring supported tuning candidates; no fixed performance gain is promised. |
 | **7 · Benchmark** | Run verified context tiers or seven scenario tests serially. Record token counts, prefill/decode rates, TTFT, duration and resource samples; review history, export JSON/CSV, copy report images or export PNG. Coordinate tests with other inference operations. |
-| **8 · Review updates** | Manage app and Strata updates separately from model weights. The dedicated app update page provides bundled bilingual notes offline, stable update checks and installation confirmation with Tauri signature verification. Use Chinese/English, system/light/dark appearance and tray controls. |
+| **8 · Review updates and preferences** | Manage app and Strata updates separately from model weights. The dedicated app update page provides bundled bilingual notes offline, stable update checks and installation confirmation with Tauri signature verification. Follow the system language or choose one of ten bundled interface languages; use system/light/dark appearance and tray controls. Some advanced tools and original service logs use English. |
 
 API usage statistics work without capturing request bodies. Optional temporary body diagnostics are separate; see the [user guide](docs/USER_GUIDE.en.md) for behavior and privacy.
 
-See the [0.1.5 system explanation](docs/SYSTEM.en.md) for component relationships and persistence, and [CHANGELOG.md](CHANGELOG.md) or the [website changelog](https://hongfaqiu.github.io/strata-manager/docs/changelog.en.html) for version-specific changes.
+See the [system explanation](docs/SYSTEM.en.md) for component relationships and persistence, and [CHANGELOG.md](CHANGELOG.md) or the [website changelog](https://hongfaqiu.github.io/strata-manager/docs/changelog.en.html) for version-specific changes.
+
+## 0.1.8 release candidate
+
+Version **0.1.8 is a release candidate, pending publication**. It brings the following changes; package availability is established by the [release page](https://github.com/hongfaqiu/strata-manager/releases/latest), and installer acceptance is recorded separately from interface screenshots.
+
+- **Running services on Windows.** Inspect the actual loaded state, current model, running configuration, PID, engine version and OpenAI API Base URL. Connect to an existing Manager backend first; taking ownership of a plain external service can reload the model. Automatic connection requires an empty backend and a single unambiguous running service. Automatic takeover additionally requires a healthy, loaded, idle model; multiple candidates remain available for manual selection.
+- **System language and bundled language packs.** First launch offers language confirmation. Choose English, Simplified/Traditional Chinese, Japanese, Korean, German, French, Spanish, Portuguese or Russian, or follow the system language. Packs are included in the app; an existing explicit choice is preserved. Some advanced tools and original logs remain in English.
+- **A configurable desktop monitor.** Show or hide it with a switch. Two rows are the default; compact and panel layouts are also available, with 8–36px text and 1–8 ordered metrics from eleven. Labels default on; status text and edge snapping default off. Control units, sample time and graphs, customize each metric's color or restore its theme default, and drag the strip. Stable column widths reduce empty space; prefill is blue and generation green, and idle history is never plotted as a new live sample. Short settings labels use tooltips for details. The taskbar-mode switch is removed, and older preferences migrate to floating mode.
+- **Clearer loading and controls.** A request that reloads an idle-released model shows loading progress and elapsed time in the status bar. Rounded workspace tabs and simplified selection controls are shared across the interface.
+
+| Detected running services | System language and language packs |
+| --- | --- |
+| [![Detected running services with connection and management actions](docs/screenshots/running-services.en.webp)](docs/screenshots/running-services.en.webp) | [![System language and bundled interface language options](docs/screenshots/language-settings.en.webp)](docs/screenshots/language-settings.en.webp) |
+
+Screenshots were refreshed from the 0.1.8 candidate interface on October 14, 2026; see the [capture record](docs/screenshots/README.md). Native window behavior, real GPU capacity, prolonged stability and cross-device LAN access have separate [verification records](docs/VERIFICATION.md).
 
 ## Download and get started
 
-### Daily experience in 0.1.7
+### Daily workflows introduced in 0.1.7
 
 The [0.1.7 release](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.7) adds a model download list and details, unified GPU/run options, resource assessment for the current selection, startup diagnostics, four capability states, chat request timing, explicit API verification and historical benchmark condition comparisons. Saved settings do not prove live engine support; missing evidence remains unverified, and settings that require a restart are identified separately. Verification never starts an unready model automatically.
 
-The bilingual screenshots show real components captured before the version bump, with a 0.1.6 UI marker and isolated example data. They illustrate the 0.1.7 features and do not establish installer or inference acceptance. See the [daily experience notes](docs/DAILY_EXPERIENCE.md) and [verification record](docs/VERIFICATION.md). Real GPU capacity, prolonged stability, cross-device LAN access and the complete native window flow still require separate acceptance.
+These workflows continue in 0.1.8. See the [daily experience notes](docs/DAILY_EXPERIENCE.md) and [verification record](docs/VERIFICATION.md). The images below were recaptured from current components with isolated example data; they do not establish acceptance of the 0.1.8 candidate installer or measured inference performance.
 
 | Model downloads and resource selection | API verification and capabilities |
 | --- | --- |
-| [![0.1.7: model download details and resource assessment](docs/screenshots/daily-experience/model-download-detail.en.webp)](docs/screenshots/daily-experience/model-download-detail.en.webp) | [![0.1.7: API verification](docs/screenshots/daily-experience/api-verification.en.webp)](docs/screenshots/daily-experience/api-verification.en.webp) |
-
-The [unreleased development preview](docs/screenshots/ui-refinements/model-download.en.webp) restores rounded workspace tabs and removes the selection controls' outer halo. These refinements are separate from the 0.1.7 installer; see the [changelog](CHANGELOG.md#unreleased).
-
-The [unreleased monitor preview](docs/screenshots/monitor-customization/floating.en.webp) adds readable two-row telemetry, separate prefill/generation colors, live graphs and [customization](docs/screenshots/monitor-customization/settings.en.webp). Windows taskbar presentation is experimental; actual Explorer compatibility remains pending. These features are not included in the 0.1.7 installer.
+| [![Model download details and resource assessment in the current interface](docs/screenshots/daily-experience/model-download-detail.en.webp)](docs/screenshots/daily-experience/model-download-detail.en.webp) | [![API verification in the current interface](docs/screenshots/daily-experience/api-verification.en.webp)](docs/screenshots/daily-experience/api-verification.en.webp) |
 
 ### Stable installers
 
@@ -93,14 +104,14 @@ The desktop installer contains Manager and its background process. Hardware and 
 
 ## Explore the workspace
 
-All images below are real app components rendered with isolated documentation data, in the light theme. Click an image for full resolution.
+All images below show the current application and components with isolated documentation data, in the light theme. Click an image for full resolution.
 
 | Models and configurations | Hardware and inference monitoring |
 | --- | --- |
 | [![Models — local weights and grouped configurations](docs/screenshots/models.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/models.en.webp) | [![Monitor — service, hardware and request activity](docs/screenshots/monitor.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/monitor.en.webp) |
 
 <details>
-<summary><strong>More interfaces: runtime, chat, shared settings, connections, updates and monitoring</strong></summary>
+<summary><strong>More interfaces: runtime, chat, shared settings, connections, updates, benchmarking and monitoring</strong></summary>
 
 **Strata — runtime versions and updates**
 
@@ -122,6 +133,12 @@ All images below are real app components rendered with isolated documentation da
 
 [![Tuning workspace](docs/screenshots/tuning.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/tuning.en.webp)
 
+**Benchmark — context tiers and historical conditions**
+
+[![Context benchmark workspace](docs/screenshots/benchmark.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/benchmark.en.webp)
+
+[![Historical benchmark condition comparison](docs/screenshots/daily-experience/history-comparison.en.webp)](docs/screenshots/daily-experience/history-comparison.en.webp)
+
 **Settings and About**
 
 [![Language, appearance and background settings](docs/screenshots/settings.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/settings.en.webp)
@@ -130,23 +147,25 @@ All images below are real app components rendered with isolated documentation da
 
 **Shared chat defaults — per-model inheritance**
 
-[![Shared generation parameters and per-model inheritance](docs/screenshots/changelog/0.1.5/common-chat-settings.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/changelog/0.1.5/common-chat-settings.en.webp)
+[![Shared generation parameters and per-model inheritance](docs/screenshots/common-chat-settings.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/common-chat-settings.en.webp)
 
 **Connections — API and external assistants**
 
-[![Connection targets, application access keys, API examples and MCP](docs/screenshots/changelog/0.1.5/connections.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/changelog/0.1.5/connections.en.webp)
+[![Connection targets, application access keys, API examples and MCP](docs/screenshots/connections.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/connections.en.webp)
 
 **Application updates — bilingual notes and installation confirmation**
 
-[![Dedicated application update page](docs/screenshots/changelog/0.1.5/app-updates.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/changelog/0.1.5/app-updates.en.webp)
+[![Dedicated application update page](docs/screenshots/app-updates.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/app-updates.en.webp)
 
 **Service status — recent generation and input-processing trends**
 
-[![Service status panel and recent trends](docs/screenshots/changelog/0.1.5/service-status.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/changelog/0.1.5/service-status.en.webp)
+[![Service status panel and recent trends](docs/screenshots/service-status.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/service-status.en.webp)
 
 **Independent desktop monitor — closed by default**
 
-[![Compact floating monitor with service telemetry](docs/screenshots/changelog/0.1.5/floating-monitor.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/changelog/0.1.5/floating-monitor.en.webp)
+[![Floating monitor with the current two-row telemetry layout](docs/screenshots/floating-monitor.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/floating-monitor.en.webp)
+
+[![Floating monitor visibility, layouts, metrics and appearance settings](docs/screenshots/floating-monitor-settings.en.webp)](docs/screenshots/floating-monitor-settings.en.webp)
 
 </details>
 

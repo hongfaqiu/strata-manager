@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useRef, useState } from 'react';
 import { Activity, AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Download, LoaderCircle, RefreshCw } from 'lucide-react';
 import type { ApiAnalyticsClient, ApiAnalyticsCoverage, ApiAnalyticsQuery, ApiCsvExport, ApiOutcome, ApiRequestOptions, ApiRequestPage, ApiRoute, ApiTrendBucket, ApiUsageSummary, ApiUsageTrends, JsonObject } from '@strata-manager/core';
@@ -9,7 +10,7 @@ import { ApiUsageLive } from './ApiUsageLive';
 import './api-usage.css';
 
 export interface ApiUsagePageProps {
-  language: 'zh-CN' | 'en'; profileId?: string; desktop: boolean; onQuery: ApiAnalyticsClient;
+  language: AppLanguage; profileId?: string; desktop: boolean; onQuery: ApiAnalyticsClient;
   onOpenDiagnostics?: () => void;
   profileName?: string;
   live?: { raw?: JsonObject; sampledAt?: number; stale?: boolean; stopped?: boolean };
@@ -25,7 +26,7 @@ function periodRange(period: Period) {
 }
 
 export function ApiUsagePage({ language, profileId, profileName, desktop, onQuery, onOpenDiagnostics, live }: ApiUsagePageProps) {
-  const text = apiUsageStrings[language];
+  const text = apiUsageStrings[(language === 'zh-CN' ? 'zh-CN' : 'en')];
   const [period, setPeriod] = useState<Period>('today');
   const [refresh, setRefresh] = useState(0);
   const [refreshSeconds, setRefreshSeconds] = useState(5);
@@ -186,8 +187,8 @@ function MetadataFilter({ label, allLabel, unknownLabel, unknown, labels, value,
 }
 
 /** Freeze the collection boundary and time range independently of live polling. */
-function RequestHistory({ language, profileId, period, onQuery }: { language: 'zh-CN' | 'en'; profileId?: string; period: Period; onQuery: ApiAnalyticsClient }) {
-  const text = apiUsageStrings[language];
+function RequestHistory({ language, profileId, period, onQuery }: { language: AppLanguage; profileId?: string; period: Period; onQuery: ApiAnalyticsClient }) {
+  const text = apiUsageStrings[(language === 'zh-CN' ? 'zh-CN' : 'en')];
   const [draft, setDraft] = useState<RequestFilters>(initialFilters);
   const [applied, setApplied] = useState<RequestFilters>(initialFilters);
   const [selection, setSelection] = useState<ApiAnalyticsQuery>(() => ({ ...periodRange(period), serviceId: profileId, sort: 'newest' }));

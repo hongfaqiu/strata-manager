@@ -7,7 +7,7 @@ use serde::Serialize;
 use serde_json::json;
 use serde_json::Value;
 #[cfg(any(windows, test))]
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 #[cfg(any(windows, test))]
 use std::io::{BufRead, Write};
 use std::sync::Mutex;
@@ -48,6 +48,10 @@ pub(crate) struct Preferences {
     pub show_labels: bool,
     pub show_units: bool,
     #[serde(default)]
+    pub show_status: bool,
+    #[serde(default)]
+    pub metric_colors: BTreeMap<String, String>,
+    #[serde(default)]
     pub english: bool,
 }
 
@@ -65,9 +69,26 @@ impl Preferences {
         if metrics.is_empty() {
             metrics = METRICS[..6].iter().map(|x| (*x).into()).collect();
         }
+        // Inspect only the fixed metric allowlist. Colors are exact six-digit
+        // hex strings; whitespace, CSS functions and unknown keys are ignored.
+        let metric_colors = METRICS
+            .iter()
+            .filter_map(|metric| {
+                let color = value["metricColors"][*metric].as_str()?;
+                (color.len() == 7
+                    && color.starts_with('#')
+                    && color.as_bytes()[1..].iter().all(u8::is_ascii_hexdigit))
+                .then(|| ((*metric).to_owned(), color.to_ascii_lowercase()))
+            })
+            .collect();
         Self {
             metrics,
-            font_size: value["fontSize"].as_u64().unwrap_or(16).clamp(12, 24) as u32,
+            font_size: value["fontSize"]
+                .as_f64()
+                .filter(|size| size.is_finite())
+                .unwrap_or(16.0)
+                .round()
+                .clamp(8.0, 36.0) as u32,
             layout: value["layout"]
                 .as_str()
                 .filter(|x| matches!(*x, "compact" | "twoRow" | "panel"))
@@ -76,15 +97,30 @@ impl Preferences {
             show_graphs: value["showGraphs"] != false,
             show_labels: value["showLabels"] != false,
             show_units: value["showUnits"] != false,
-            english: value["language"] == "en" || value["english"] == true,
+            show_status: value["showStatus"] == true,
+            metric_colors,
+            english: value["language"]
+                .as_str()
+                .map(|language| crate::system_locale::uses_english_fallback(Some(language)))
+                .unwrap_or_else(|| value["english"].as_bool().unwrap_or(true)),
         }
     }
+
+    fn from_settings(settings: &Value) -> Self {
+        let mut preferences = Self::normalize(&settings["floatingMonitor"]);
+        preferences.english =
+            crate::system_locale::uses_english_fallback(settings["language"].as_str());
+        preferences
+    }
+
     pub fn valid(&self) -> bool {
         let value = serde_json::to_value(self).unwrap_or(Value::Null);
         let normalized = Self::normalize(&value);
-        (12..=24).contains(&self.font_size)
+        (8..=36).contains(&self.font_size)
             && self.metrics == normalized.metrics
             && self.layout == normalized.layout
+            && self.metric_colors.len() <= METRICS.len()
+            && self.metric_colors == normalized.metric_colors
     }
 }
 
@@ -135,14 +171,28 @@ fn gpu_number(hw: &Value, aggregate: &str, card: &str, mode: &str) -> Option<f64
 }
 #[cfg(any(windows, test))]
 pub(crate) fn sample(snapshot: &Value) -> Sample {
-    let online = snapshot["phase"] == "online" && snapshot["health"]["loaded"] == true;
     let live = &snapshot["metrics"]["live"];
     let hw = &snapshot["metrics"]["hardware"];
     let last = &snapshot["metrics"]["requests"][0];
-    let english = snapshot["settings"]["language"] == "en";
+    let english =
+        crate::system_locale::uses_english_fallback(snapshot["settings"]["language"].as_str());
     let t = |cn, en| if english { en } else { cn };
     let mut values = [None; 11];
-    let state = if online {
+    let transition = if snapshot["phase"] == "online" {
+        match live["state"].as_str() {
+            Some("loading") => Some(t("正在载入模型", "Loading model")),
+            Some("unloading") => Some(t("正在释放模型", "Releasing model")),
+            _ => None,
+        }
+    } else {
+        None
+    };
+    let online = snapshot["phase"] == "online"
+        && snapshot["health"]["loaded"] == true
+        && transition.is_none();
+    let state = if let Some(label) = transition {
+        label
+    } else if online {
         match live["state"].as_str() {
             Some("generating") => t("生成中", "Generating"),
             Some("reading" | "prefill") => t("读取中", "Reading"),
@@ -291,10 +341,43 @@ pub(crate) enum ParentFrame {
 }
 
 #[cfg(any(windows, test))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum TaskbarPlacement {
+    NotificationLeft,
+    LeftSide,
+    RightSide,
+}
+
+#[cfg(any(windows, test))]
+fn placement_message(placement: Option<TaskbarPlacement>, english: bool) -> String {
+    match (placement, english) {
+        (Some(TaskbarPlacement::NotificationLeft), false) => "已显示在主屏任务栏通知区左侧",
+        (Some(TaskbarPlacement::LeftSide), false) => "已显示在主屏任务栏左侧空位",
+        (Some(TaskbarPlacement::RightSide), false) => "已显示在主屏任务栏右侧空位",
+        (None, false) => "已显示在主屏任务栏",
+        (Some(TaskbarPlacement::NotificationLeft), true) => {
+            "Shown to the left of the notification area on the primary taskbar"
+        }
+        (Some(TaskbarPlacement::LeftSide), true) => {
+            "Shown in a free space on the left side of the primary taskbar"
+        }
+        (Some(TaskbarPlacement::RightSide), true) => {
+            "Shown in a free space on the right side of the primary taskbar"
+        }
+        (None, true) => "Shown on the primary taskbar",
+    }
+    .into()
+}
+
+#[cfg(any(windows, test))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) enum HostFrame {
-    Ready {},
+    Ready {
+        #[serde(default)]
+        placement: Option<TaskbarPlacement>,
+    },
     Failed {
         message: String,
     },
@@ -358,6 +441,7 @@ pub(crate) struct ModeStatus {
     mode: &'static str,
     supported: bool,
     active: bool,
+    visible: bool,
     message: String,
 }
 impl Default for ModeStatus {
@@ -366,6 +450,7 @@ impl Default for ModeStatus {
             mode: "floating",
             supported: cfg!(windows),
             active: false,
+            visible: false,
             message: if cfg!(windows) {
                 "任务栏宽条为实验性适配，挂载时验证可用空间"
             } else {
@@ -409,7 +494,38 @@ fn require_window(window: &WebviewWindow) -> Result<(), String> {
     }
 }
 
-fn publish(app: &AppHandle, status: &ModeStatus) {
+fn require_mode(mode: &str) -> Result<(), String> {
+    if matches!(mode, "floating" | "taskbar") {
+        Ok(())
+    } else {
+        Err("未知监控呈现模式".into())
+    }
+}
+
+fn with_visibility(mut status: ModeStatus, floating_visible: bool) -> ModeStatus {
+    status.visible = status.active || floating_visible;
+    status
+}
+
+fn floating_visible(app: &AppHandle) -> bool {
+    app.get_webview_window(crate::floating_monitor::LABEL)
+        .is_some_and(|window| window.is_visible().unwrap_or(false))
+}
+
+fn current_status(app: &AppHandle) -> Result<ModeStatus, String> {
+    let stored = {
+        let state = app
+            .try_state::<TaskbarMonitorState>()
+            .ok_or("监控状态尚未初始化")?;
+        let inner = state.inner.lock().map_err(|e| e.to_string())?;
+        inner.status.clone()
+    };
+    // Never hold inner while querying the UI thread: Destroyed callbacks can
+    // simultaneously notify visibility and must be able to acquire that mutex.
+    Ok(with_visibility(stored, floating_visible(app)))
+}
+
+fn emit_status(app: &AppHandle, status: &ModeStatus) {
     let _ = app.emit_to("main", "monitor-mode-status", status);
     let _ = app.emit_to(
         crate::floating_monitor::LABEL,
@@ -418,12 +534,22 @@ fn publish(app: &AppHandle, status: &ModeStatus) {
     );
 }
 
+fn publish(app: &AppHandle, status: &ModeStatus) {
+    emit_status(app, &with_visibility(status.clone(), floating_visible(app)));
+}
+
+/// Window destruction/tray hiding only updates presentation state. It must
+/// never recreate the strip or resume sampling in an existing hidden webview.
+pub(crate) fn notify_visibility(app: &AppHandle) {
+    if let Ok(status) = current_status(app) {
+        emit_status(app, &status);
+    }
+}
+
 #[tauri::command]
 pub(crate) fn monitor_mode_status(app: AppHandle, window: WebviewWindow) -> Result<Value, String> {
     require_window(&window)?;
-    let state = app.state::<TaskbarMonitorState>();
-    let inner = state.inner.lock().map_err(|e| e.to_string())?;
-    serde_json::to_value(&inner.status).map_err(|e| e.to_string())
+    serde_json::to_value(current_status(&app)?).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -434,24 +560,47 @@ pub(crate) async fn set_monitor_mode(
     preferences: Value,
 ) -> Result<Value, String> {
     require_window(&window)?;
-    if !matches!(mode.as_str(), "floating" | "taskbar") {
-        return Err("未知监控呈现模式".into());
-    }
+    require_mode(&mode)?;
     let state = app.state::<TaskbarMonitorState>();
-    if mode == "floating" {
-        open_floating(&app).await?;
+    let _switch = state.switching.lock().await;
+    set_mode_locked(&app, &mode, preferences).await?;
+    serde_json::to_value(current_status(&app)?).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) async fn set_monitor_visibility(
+    app: AppHandle,
+    window: WebviewWindow,
+    visible: bool,
+    mode: String,
+    preferences: Value,
+) -> Result<Value, String> {
+    require_window(&window)?;
+    require_mode(&mode)?;
+    let state = app.state::<TaskbarMonitorState>();
+    let _switch = state.switching.lock().await;
+    if visible {
+        set_mode_locked(&app, &mode, preferences).await?;
     } else {
-        let _switch = state.switching.lock().await;
+        close_monitor_locked(&app)?;
+    }
+    serde_json::to_value(current_status(&app)?).map_err(|e| e.to_string())
+}
+
+async fn set_mode_locked(app: &AppHandle, mode: &str, preferences: Value) -> Result<(), String> {
+    if mode == "floating" {
+        open_floating_locked(app).await
+    } else {
         #[cfg(windows)]
-        start(&app, Preferences::normalize(&preferences)).await?;
+        start(app, Preferences::normalize(&preferences)).await?;
         #[cfg(not(windows))]
         {
             let _ = preferences;
-            crate::floating_monitor::open_window(&app).await?;
+            crate::floating_monitor::open_window(app).await?;
         }
+        notify_visibility(app);
+        Ok(())
     }
-    let inner = state.inner.lock().map_err(|e| e.to_string())?;
-    serde_json::to_value(&inner.status).map_err(|e| e.to_string())
 }
 
 /// All user-facing restore entries share the presentation switch lock. The
@@ -468,23 +617,47 @@ async fn open_floating_locked(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-fn stop(app: &AppHandle, message: String) {
+fn stopped_status(app: &AppHandle, message: String) -> Result<ModeStatus, String> {
     let state = app.state::<TaskbarMonitorState>();
-    let status = {
-        let Ok(mut inner) = state.inner.lock() else {
-            return;
-        };
-        #[cfg(windows)]
-        if let Some(session) = inner.session.take() {
-            session.stop();
-        }
-        inner.status = ModeStatus {
-            message,
-            ..ModeStatus::default()
-        };
-        inner.status.clone()
+    let mut inner = state.inner.lock().map_err(|e| e.to_string())?;
+    #[cfg(windows)]
+    let session = inner.session.take();
+    inner.status = ModeStatus {
+        message,
+        ..ModeStatus::default()
     };
-    publish(app, &status);
+    let status = inner.status.clone();
+    drop(inner);
+    #[cfg(windows)]
+    if let Some(session) = session {
+        session.stop();
+    }
+    Ok(status)
+}
+
+fn stop(app: &AppHandle, message: String) {
+    if let Ok(status) = stopped_status(app, message) {
+        publish(app, &status);
+    }
+}
+
+fn close_monitor_locked(app: &AppHandle) -> Result<(), String> {
+    // Closing is not a switch to floating: preserve the user's saved mode and
+    // never invoke open_window here. Destroy the webview to stop its poll loop.
+    stopped_status(app, "监控显示已关闭".into())?;
+    let result = if let Some(window) = app.get_webview_window(crate::floating_monitor::LABEL) {
+        // If native destruction fails after hiding, the explicit suspension
+        // still prevents the hidden renderer from restarting its polling loop.
+        let _ = window.emit("monitor-suspended", ());
+        window
+            .hide()
+            .and_then(|()| window.destroy())
+            .map_err(|error| error.to_string())
+    } else {
+        Ok(())
+    };
+    notify_visibility(app);
+    result
 }
 
 pub(crate) fn shutdown(app: &AppHandle) {
@@ -503,8 +676,8 @@ pub(crate) fn apply_preferences(app: &AppHandle, settings: &Value) -> Result<(),
             .session
             .clone();
         if let Some(session) = session.filter(|s| !s.cancellation.is_cancelled()) {
-            let mut preferences = Preferences::normalize(&settings["floatingMonitor"]);
-            preferences.english = settings["language"] == "en";
+            let preferences = Preferences::from_settings(settings);
+
             session
                 .input
                 .try_send(ParentFrame::Configure { preferences })
@@ -563,6 +736,7 @@ async fn start(app: &AppHandle, preferences: Preferences) -> Result<(), String> 
         sync::{mpsc, Arc},
         time::Duration,
     };
+    let english = preferences.english;
     let state = app.state::<TaskbarMonitorState>();
     let existing = state
         .inner
@@ -639,7 +813,8 @@ async fn start(app: &AppHandle, preferences: Preferences) -> Result<(), String> 
         })
         .map_err(|e| e.to_string())?;
     state.inner.lock().map_err(|e| e.to_string())?.session = Some(session.clone());
-    let (ready, ready_rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+    let (ready, ready_rx) =
+        tokio::sync::oneshot::channel::<Result<Option<TaskbarPlacement>, String>>();
     let event_session = session.clone();
     let event_app = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -647,9 +822,35 @@ async fn start(app: &AppHandle, preferences: Preferences) -> Result<(), String> 
         loop {
             let event = tokio::select! { _ = event_session.cancellation.cancelled() => break, item = events_rx.recv() => item.unwrap_or_else(|| Err("任务栏辅助进程已断开".into())) };
             match event {
-                Ok(HostFrame::Ready {}) => {
+                Ok(HostFrame::Ready { placement }) => {
                     if let Some(tx) = ready.take() {
-                        let _ = tx.send(Ok(()));
+                        let _ = tx.send(Ok(placement));
+                    } else {
+                        // Rebuilt/repositioned hosts report their actual location.
+                        // Serialize with close/switch, but never hide or open a
+                        // window again after the initial readiness handshake.
+                        let state = event_app.state::<TaskbarMonitorState>();
+                        let _switch = state.switching.lock().await;
+                        let status = {
+                            let mut inner = match state.inner.lock() {
+                                Ok(inner) => inner,
+                                Err(_) => continue,
+                            };
+                            if inner.status.active
+                                && inner
+                                    .session
+                                    .as_ref()
+                                    .is_some_and(|session| session.id == event_session.id)
+                            {
+                                inner.status.message = placement_message(placement, english);
+                                Some(inner.status.clone())
+                            } else {
+                                None
+                            }
+                        };
+                        if let Some(status) = status {
+                            publish(&event_app, &status);
+                        }
                     }
                 }
                 Ok(HostFrame::Preferences {
@@ -678,12 +879,9 @@ async fn start(app: &AppHandle, preferences: Preferences) -> Result<(), String> 
                     let state = event_app.state::<TaskbarMonitorState>();
                     let _switch = state.switching.lock().await;
                     if current(&event_app, &event_session) {
-                        stop(&event_app, "任务栏监控已关闭".into());
-                        let _ = event_app.emit_to(
-                            "main",
-                            "monitor-preferences-patch",
-                            json!({"mode":"floating"}),
-                        );
+                        if let Err(error) = close_monitor_locked(&event_app) {
+                            let _ = event_app.emit_to("main", "tray-action-error", error);
+                        }
                     }
                     break;
                 }
@@ -700,7 +898,7 @@ async fn start(app: &AppHandle, preferences: Preferences) -> Result<(), String> 
         }
     });
     match tokio::time::timeout(Duration::from_secs(10), ready_rx).await {
-        Ok(Ok(Ok(())))
+        Ok(Ok(Ok(placement)))
             if !session.cancellation.is_cancelled()
                 && session
                     .child
@@ -718,7 +916,8 @@ async fn start(app: &AppHandle, preferences: Preferences) -> Result<(), String> 
                 mode: "taskbar",
                 supported: true,
                 active: true,
-                message: "原生任务栏宽条已启用（实验性适配）".into(),
+                visible: true,
+                message: placement_message(placement, english),
             };
             state.inner.lock().map_err(|e| e.to_string())?.status = status.clone();
             publish(app, &status);
@@ -811,6 +1010,51 @@ async fn recover(app: &AppHandle, session: &Session, message: String, show: bool
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn new_language_packs_use_english_native_text_and_keep_host_preferences() {
+        for language in ["zh-TW", "ja", "ko", "de", "fr", "es", "pt", "ru"] {
+            assert!(
+                Preferences::normalize(&json!({"language":language})).english,
+                "{language}"
+            );
+            let stopped = sample(&json!({"phase":"stopped","settings":{"language":language}}));
+            assert_eq!(stopped.state, "Stopped", "{language}");
+        }
+        assert!(!Preferences::normalize(&json!({"language":"zh-CN"})).english);
+        assert!(!Preferences::normalize(&json!({"english":false})).english);
+        assert!(Preferences::normalize(&Value::Null).english);
+    }
+    #[test]
+    fn visible_status_requires_an_actual_surface_without_changing_taskbar_active() {
+        let unopened = with_visibility(ModeStatus::default(), false);
+        assert!(!unopened.visible);
+        assert!(!unopened.active);
+        let floating = with_visibility(ModeStatus::default(), true);
+        assert!(floating.visible);
+        assert!(!floating.active);
+        let taskbar = ModeStatus {
+            mode: "taskbar",
+            active: true,
+            ..ModeStatus::default()
+        };
+        let taskbar = with_visibility(taskbar, false);
+        assert!(taskbar.visible && taskbar.active);
+        // A previously visible stored snapshot cannot keep a hidden strip on.
+        let hidden = with_visibility(floating, false);
+        assert!(!hidden.visible);
+        assert!(!hidden.active);
+        assert_eq!(serde_json::to_value(hidden).unwrap()["visible"], false);
+    }
+
+    #[test]
+    fn visibility_and_mode_commands_share_the_same_mode_allowlist() {
+        assert!(require_mode("floating").is_ok());
+        assert!(require_mode("taskbar").is_ok());
+        for mode in ["", "tray", "startModel", "stopService"] {
+            assert!(require_mode(mode).is_err());
+        }
+    }
     #[test]
     fn protocol_has_bounds_and_rejects_unapproved_actions() {
         assert!(read_frame::<_, HostFrame>(&mut &b"{\"type\":\"startModel\"}\n"[..]).is_err());
@@ -833,11 +1077,100 @@ mod tests {
         assert_eq!(sample.sampled_at, 1000);
         assert_eq!(sample.identity.profile.as_deref(), Some("profile-a"));
     }
+
+    #[test]
+    fn ready_accepts_legacy_missing_placement_and_rejects_unknown_locations() {
+        let legacy = read_frame::<_, HostFrame>(&mut &b"{\"type\":\"ready\"}\n"[..]).unwrap();
+        assert!(matches!(legacy, Some(HostFrame::Ready { placement: None })));
+        for placement in [
+            json!("nearClock"),
+            json!("notification-left"),
+            json!("NotificationLeft"),
+            json!(3),
+            json!({}),
+        ] {
+            let mut encoded = Vec::new();
+            write_frame(&mut encoded, &json!({"type":"ready","placement":placement})).unwrap();
+            assert!(read_frame::<_, HostFrame>(&mut encoded.as_slice()).is_err());
+        }
+        assert_eq!(placement_message(None, false), "已显示在主屏任务栏");
+        assert_eq!(
+            placement_message(None, true),
+            "Shown on the primary taskbar"
+        );
+    }
+
+    #[test]
+    fn ready_placement_roundtrips_and_selects_the_matching_localized_message() {
+        for (placement, wire_name, chinese, english) in [
+            (
+                TaskbarPlacement::NotificationLeft,
+                "notificationLeft",
+                "已显示在主屏任务栏通知区左侧",
+                "Shown to the left of the notification area on the primary taskbar",
+            ),
+            (
+                TaskbarPlacement::LeftSide,
+                "leftSide",
+                "已显示在主屏任务栏左侧空位",
+                "Shown in a free space on the left side of the primary taskbar",
+            ),
+            (
+                TaskbarPlacement::RightSide,
+                "rightSide",
+                "已显示在主屏任务栏右侧空位",
+                "Shown in a free space on the right side of the primary taskbar",
+            ),
+        ] {
+            let frame = HostFrame::Ready {
+                placement: Some(placement),
+            };
+            assert_eq!(
+                serde_json::to_value(&frame).unwrap()["placement"],
+                wire_name
+            );
+            let mut encoded = Vec::new();
+            write_frame(&mut encoded, &frame).unwrap();
+            let Some(HostFrame::Ready { placement: decoded }) =
+                read_frame(&mut encoded.as_slice()).unwrap()
+            else {
+                panic!("wrong ready frame");
+            };
+            assert_eq!(decoded, Some(placement));
+            assert_eq!(placement_message(decoded, false), chinese);
+            assert_eq!(placement_message(decoded, true), english);
+        }
+    }
     #[test]
     fn stopped_or_unloaded_never_reuses_numeric_values() {
         for phase in ["stopped", "unavailable", "none", "online"] {
             let value = json!({"phase":phase,"health":{"loaded":false},"metrics":{"live":{"state":"generating","tok_s":90},"hardware":{"cpu":99}}});
             assert_eq!(sample(&value).values, [None; 11]);
+        }
+    }
+    #[test]
+    fn model_transitions_override_loaded_flag_and_clear_old_values() {
+        for (state, chinese, english) in [
+            ("loading", "正在载入模型", "Loading model"),
+            ("unloading", "正在释放模型", "Releasing model"),
+        ] {
+            for loaded in [false, true] {
+                let snapshot = json!({"phase":"online","health":{"loaded":loaded},"metrics":{"live":{"state":state,"tok_s":90,"prefill_tok_s_mean":2200},"requests":[{"decode_tok_s":80,"hit_rate":0.5}],"hardware":{"cpu":99}}});
+                for (language, label) in [("zh-CN", chinese), ("en", english)] {
+                    let mut localized = snapshot.clone();
+                    localized["settings"] = json!({"language":language});
+                    let current = sample(&localized);
+                    assert_eq!(current.state, label);
+                    assert_eq!(current.values, [None; 11]);
+                }
+                for phase in ["stopped", "unavailable", "none"] {
+                    let mut stale = snapshot.clone();
+                    stale["phase"] = json!(phase);
+                    let current = sample(&stale);
+                    assert_ne!(current.state, chinese);
+                    assert_eq!(current.values, [None; 11]);
+                }
+            }
         }
     }
     #[test]
@@ -869,9 +1202,159 @@ mod tests {
             &json!({"metrics":["generation","bad","generation","prefill"],"fontSize":200,"layout":"unknown"}),
         );
         assert_eq!(prefs.metrics, vec!["generation", "prefill"]);
-        assert_eq!(prefs.font_size, 24);
+        assert_eq!(prefs.font_size, 36);
         assert!(prefs.valid());
         assert_eq!(Preferences::normalize(&Value::Null).metrics.len(), 6);
+        let without_labels = Preferences::normalize(
+            &json!({"metrics":["generation","prefill"],"showLabels":false,"showStatus":false}),
+        );
+        assert!(!without_labels.show_labels);
+        assert!(!without_labels.show_status);
+        assert_eq!(without_labels.metrics, vec!["generation", "prefill"]);
+        assert!(without_labels.valid());
+    }
+
+    #[test]
+    fn metric_colors_normalize_only_exact_six_digit_hex_for_known_metrics() {
+        let preferences = Preferences::normalize(&json!({"metricColors":{
+            "generation":"#Aa00Ff", "prefill":"#123456", "gpu":"#fff",
+            "vram":"#gg0000", "cpu":"red", "ram":"#123456 ",
+            "temperature":" #123456", "power":"url(javascript:alert(1))",
+            "running":"var(--color)", "queued":"#123456;display:none", "cache":123,
+            "unknown":"#abcdef", "__proto__":"#abcdef", "constructor":"#abcdef"
+        }}));
+        assert_eq!(
+            preferences.metric_colors,
+            BTreeMap::from([
+                ("generation".into(), "#aa00ff".into()),
+                ("prefill".into(), "#123456".into()),
+            ])
+        );
+        assert!(preferences.valid());
+        for invalid in [
+            "",
+            "123456",
+            "#12345",
+            "#1234567",
+            "#123456\n",
+            "\t#123456",
+            "#１２３４５６",
+        ] {
+            assert!(
+                Preferences::normalize(&json!({"metricColors":{"generation":invalid}}))
+                    .metric_colors
+                    .is_empty()
+            );
+        }
+        for invalid in [Value::Null, json!([]), json!("#123456")] {
+            assert!(Preferences::normalize(&json!({"metricColors":invalid}))
+                .metric_colors
+                .is_empty());
+        }
+    }
+
+    #[test]
+    fn metric_color_protocol_validation_requires_canonical_bounded_entries() {
+        let mut preferences = Preferences::normalize(&Value::Null);
+        for metric in METRICS {
+            preferences
+                .metric_colors
+                .insert(metric.into(), "#123abc".into());
+        }
+        assert_eq!(preferences.metric_colors.len(), 11);
+        assert!(preferences.valid());
+        preferences
+            .metric_colors
+            .insert("unknown".into(), "#123abc".into());
+        assert!(!preferences.valid());
+        preferences.metric_colors.remove("unknown");
+        for invalid in ["#ABCDEF", "#123abc ", "red", "#123abc;color:red"] {
+            preferences
+                .metric_colors
+                .insert("generation".into(), invalid.into());
+            assert!(!preferences.valid());
+        }
+    }
+
+    #[test]
+    fn configure_accepts_legacy_missing_colors_and_roundtrips_settings_colors() {
+        let settings = json!({"language":"en","floatingMonitor":{"showStatus":true,"metricColors":{"generation":"#1FE3A2","prefill":"#64ABFF"}}});
+        // This is the same normalization path used by apply_preferences before
+        // it sends Configure to the existing helper; no host starts in this test.
+        let preferences = Preferences::from_settings(&settings);
+        let mut encoded = Vec::new();
+        write_frame(
+            &mut encoded,
+            &ParentFrame::Configure {
+                preferences: preferences.clone(),
+            },
+        )
+        .unwrap();
+        let Some(ParentFrame::Configure {
+            preferences: decoded,
+        }) = read_frame(&mut encoded.as_slice()).unwrap()
+        else {
+            panic!("wrong configure frame");
+        };
+        assert_eq!(decoded.metric_colors, preferences.metric_colors);
+        assert_eq!(decoded.metric_colors["generation"], "#1fe3a2");
+        assert_eq!(decoded.metric_colors["prefill"], "#64abff");
+        assert!(decoded.english && decoded.show_status && decoded.valid());
+        let mut legacy = serde_json::to_value(ParentFrame::Configure { preferences }).unwrap();
+        legacy["preferences"]
+            .as_object_mut()
+            .unwrap()
+            .remove("metricColors");
+        legacy["preferences"]
+            .as_object_mut()
+            .unwrap()
+            .remove("showStatus");
+        let mut encoded = Vec::new();
+        write_frame(&mut encoded, &legacy).unwrap();
+        let Some(ParentFrame::Configure {
+            preferences: decoded,
+        }) = read_frame(&mut encoded.as_slice()).unwrap()
+        else {
+            panic!("wrong legacy configure frame");
+        };
+        assert!(decoded.metric_colors.is_empty());
+        assert!(!decoded.show_status);
+        assert!(decoded.valid());
+    }
+
+    #[test]
+    fn show_status_is_opt_in_and_ignores_non_boolean_values() {
+        assert!(!Preferences::normalize(&Value::Null).show_status);
+        for value in [Value::Null, json!(false), json!("true"), json!(1)] {
+            assert!(!Preferences::normalize(&json!({"showStatus":value})).show_status);
+        }
+        assert!(Preferences::normalize(&json!({"showStatus":true})).show_status);
+    }
+
+    #[test]
+    fn font_size_rounds_and_accepts_the_full_eight_to_thirty_six_range() {
+        for (input, expected) in [
+            (0.0, 8),
+            (8.0, 8),
+            (8.5, 9),
+            (16.49, 16),
+            (16.5, 17),
+            (35.7, 36),
+            (36.0, 36),
+            (100.0, 36),
+        ] {
+            let preferences = Preferences::normalize(&json!({"fontSize":input}));
+            assert_eq!(preferences.font_size, expected);
+            assert!(preferences.valid());
+        }
+        assert_eq!(
+            Preferences::normalize(&json!({"fontSize":"12"})).font_size,
+            16
+        );
+        assert_eq!(
+            Preferences::normalize(&json!({"fontSize":null})).font_size,
+            16
+        );
     }
 
     fn fixture_sample(sampled_at: u64) -> Sample {

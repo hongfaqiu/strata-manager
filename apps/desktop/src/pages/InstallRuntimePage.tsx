@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, CircleAlert, Download, FileText, LoaderCircle, RefreshCw, Square } from 'lucide-react';
 import * as core from '@strata-manager/core';
@@ -51,7 +52,7 @@ const words = {
 } as const;
 
 export interface InstallRuntimePageProps {
-  language: 'zh-CN' | 'en';
+  language: AppLanguage;
   desktop: boolean;
   autoCheck?: boolean;
   operationDisabled?: boolean;
@@ -66,7 +67,7 @@ function detectedRuntimes(status: RuntimeInstallationStatus): core.DetectedRunti
 
 /** The install RPC starts a persisted background task. Rendering never starts an installation. */
 export function InstallRuntimePage(props: InstallRuntimePageProps) {
-  const text = words[props.language];
+  const text = words[(props.language === 'zh-CN' ? 'zh-CN' : 'en')];
   const [installation, setInstallation] = useState<RuntimeInstallationStatus>({});
   const [task, setTask] = useState<TaskStatus>();
   const [logs, setLogs] = useState<LogEntry[]>([]);

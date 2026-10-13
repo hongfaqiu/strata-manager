@@ -1,12 +1,14 @@
-import { useId, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Check, ChevronDown, LoaderCircle, Monitor, PanelBottom, RotateCcw, SquareArrowOutUpRight } from 'lucide-react';
+import type { AppLanguage } from '@strata-manager/core';
+import { useEffect, useId, useRef, useState } from 'react';
+import { ArrowDown, ArrowUp, Check, ChevronDown, LoaderCircle, RotateCcw } from 'lucide-react';
+
 import {
-  FLOATING_MONITOR_DEFAULTS, FLOATING_MONITOR_METRICS, FLOATING_MONITOR_PRESETS,
+  FLOATING_MONITOR_DEFAULTS, FLOATING_MONITOR_METRICS, FLOATING_MONITOR_PALETTES, FLOATING_MONITOR_PRESETS,
   floatingMonitorDimensions, normalizeFloatingMonitorPreferences, normalizeMetrics,
-  type FloatingMonitorLayout, type FloatingMonitorMetric, type FloatingMonitorMode, type FloatingMonitorPreferences,
+  type FloatingMonitorLayout, type FloatingMonitorMetric, type FloatingMonitorPreferences,
 } from '@strata-manager/core';
 import { Panel } from '../components';
-import { Checkbox, Segmented, Slider, Toggle } from '../OfficialControls';
+import { Checkbox, Slider, Toggle } from '../OfficialControls';
 import { FloatingMonitorContent } from '../FloatingMonitorContent';
 import type { MonitorPoint } from '../floatingMonitorHistory';
 import './floating-monitor-settings.css';
@@ -14,11 +16,11 @@ import './floating-monitor-settings.css';
 interface Props {
   preferences: FloatingMonitorPreferences;
   desktop: boolean;
-  language: 'zh-CN' | 'en';
+  language: AppLanguage;
   onChange: (next: FloatingMonitorPreferences) => void;
   onOpen: () => void;
-  onModeChange?: (mode: FloatingMonitorMode) => Promise<void>;
-  modeStatus?: { mode: string; supported: boolean; active: boolean; message?: string };
+  onVisibilityChange?: (visible: boolean) => Promise<void>;
+  modeStatus?: { mode: string; supported: boolean; active: boolean; visible?: boolean; message?: string };
 }
 
 const exampleMetric = normalizeMetrics({
@@ -37,31 +39,59 @@ const exampleHistory: MonitorPoint[] = [0.66, 0.78, 0.73, 0.87, 0.93, 0.84, 1.04
   },
 }));
 
-export function FloatingMonitorSettings({ preferences, desktop, language, onChange, onOpen, onModeChange, modeStatus }: Props) {
+export function FloatingMonitorSettings({ preferences, desktop, language, onChange, onOpen, onVisibilityChange, modeStatus }: Props) {
   const zh = language === 'zh-CN';
   const id = useId();
   const value = normalizeFloatingMonitorPreferences(preferences);
-  const dimensions = floatingMonitorDimensions(value);
-  const [changingMode, setChangingMode] = useState<FloatingMonitorMode | null>(null);
-  const [modeError, setModeError] = useState('');
+  const dimensions = floatingMonitorDimensions(value, language);
+  const [changingVisibility, setChangingVisibility] = useState(false);
+  const [visibilityError, setVisibilityError] = useState('');
+  const [colorDrafts, setColorDrafts] = useState<Partial<Record<FloatingMonitorMetric, string>>>({});
+  const [paletteTheme, setPaletteTheme] = useState<'light' | 'dark'>(() => typeof document !== 'undefined' && document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light');
   const [announcement, setAnnouncement] = useState('');
-  const modeChangePending = useRef(false);
-  const activeMode = modeStatus?.active && (modeStatus.mode === 'floating' || modeStatus.mode === 'taskbar') ? modeStatus.mode : value.mode;
-  const update = (patch: Partial<FloatingMonitorPreferences>) => onChange(normalizeFloatingMonitorPreferences({ ...value, ...patch }));
+  const visibilityChangePending = useRef(false);
+  const visible = modeStatus?.visible ?? modeStatus?.active ?? false;
+  const update = (patch: Partial<FloatingMonitorPreferences>) => onChange({ ...preferences, ...normalizeFloatingMonitorPreferences({ ...value, ...patch }) });
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const updateTheme = () => setPaletteTheme(root.dataset.theme === 'dark' ? 'dark' : 'light');
+    const observer = new MutationObserver(updateTheme);
+    observer.observe(root, { attributes: true, attributeFilter: ['data-theme'] });
+    updateTheme();
+    return () => observer.disconnect();
+  }, []);
+
+  const setMetricColor = (metric: FloatingMonitorMetric, color?: string) => {
+    setColorDrafts(previous => { const next = { ...previous }; delete next[metric]; return next; });
+    const normalized = color?.toLowerCase();
+    if (normalized === value.metricColors[metric]) return;
+    const metricColors = { ...value.metricColors };
+    if (normalized) metricColors[metric] = normalized;
+    else delete metricColors[metric];
+    update({ metricColors });
+  };
+
+  const editMetricColor = (metric: FloatingMonitorMetric, color: string) => {
+    if (!color || /^#[0-9a-fA-F]{6}$/.test(color)) setMetricColor(metric, color || undefined);
+    else setColorDrafts(previous => ({ ...previous, [metric]: color }));
+  };
 
   const applyPreset = (layout: FloatingMonitorLayout) => {
     const preset = FLOATING_MONITOR_PRESETS[layout];
-    update({ layout, fontSize: preset.fontSize, metrics: [...preset.metrics], showGraphs: preset.showGraphs, showLabels: preset.showLabels, showUnits: preset.showUnits });
+    update({ layout, fontSize: preset.fontSize, metrics: [...preset.metrics], showGraphs: preset.showGraphs, showLabels: preset.showLabels, showUnits: preset.showUnits, showStatus: preset.showStatus });
   };
 
-  const changeMode = async (mode: FloatingMonitorMode) => {
-    if (!desktop || !onModeChange || modeChangePending.current || mode === activeMode) return;
-    modeChangePending.current = true;
-    setChangingMode(mode);
-    setModeError('');
-    try { await onModeChange(mode); }
-    catch (error) { setModeError(error instanceof Error ? error.message : String(error)); }
-    finally { modeChangePending.current = false; setChangingMode(null); }
+  const changeVisibility = async (next: boolean) => {
+    if (!desktop || visibilityChangePending.current || next === visible || (!next && !onVisibilityChange)) return;
+    visibilityChangePending.current = true;
+    setChangingVisibility(true);
+    setVisibilityError('');
+    try {
+      if (onVisibilityChange) await onVisibilityChange(next);
+      else if (next) await onOpen();
+    } catch (error) { setVisibilityError(error instanceof Error ? error.message : String(error)); }
+    finally { visibilityChangePending.current = false; setChangingVisibility(false); }
   };
 
   const toggleMetric = (metric: FloatingMonitorMetric, selected: boolean) => {
@@ -77,7 +107,7 @@ export function FloatingMonitorSettings({ preferences, desktop, language, onChan
     metrics.splice(index, 1);
     metrics.splice(target, 0, metric);
     update({ metrics });
-    const label = FLOATING_MONITOR_METRICS.find(item => item.id === metric)?.label[language] ?? metric;
+    const label = FLOATING_MONITOR_METRICS.find(item => item.id === metric)?.label[(language === 'zh-CN' ? 'zh-CN' : 'en')] ?? metric;
     setAnnouncement(zh ? `${label}已移至第 ${target + 1} 位` : `${label} moved to position ${target + 1}`);
   };
 
@@ -85,47 +115,38 @@ export function FloatingMonitorSettings({ preferences, desktop, language, onChan
     ...value.metrics.map(metric => FLOATING_MONITOR_METRICS.find(item => item.id === metric)!),
     ...FLOATING_MONITOR_METRICS.filter(metric => !value.metrics.includes(metric.id)),
   ];
-  const modeDescription = modeStatus?.message || (activeMode === 'taskbar'
-    ? modeStatus?.active ? (zh ? '监控正在任务栏中显示。' : 'The monitor is visible in the taskbar.') : (zh ? '任务栏监控未启动。' : 'The taskbar monitor is not running.')
-    : (zh ? '按住浮条任意位置拖动，右键或 Shift+F10 打开操作菜单。' : 'Drag anywhere on the strip. Right-click or press Shift+F10 for actions.'));
   const displayOptions = [
-    { key: 'showGraphs' as const, title: zh ? '实时折线' : 'Live graphs', hint: zh ? '读取蓝色，生成绿色。' : 'Blue for prefill, green for generation.' },
-    { key: 'showLabels' as const, title: zh ? '指标标签' : 'Metric labels', hint: zh ? '读取与生成名称始终显示。' : 'Prefill and generation names remain visible.' },
+    { key: 'showGraphs' as const, title: zh ? '实时折线' : 'Live graphs', hint: zh ? '每项指标使用对应颜色绘制趋势。' : 'Each trend uses its metric color.' },
+    { key: 'showLabels' as const, title: zh ? '指标标签' : 'Metric labels', hint: zh ? '关闭后隐藏全部指标名称，减少高度。' : 'Hide all metric names to reduce the height.' },
     { key: 'showUnits' as const, title: zh ? '数值单位' : 'Value units', hint: zh ? '显示 tok/s、GiB 等单位。' : 'Show units such as tok/s and GiB.' },
     { key: 'showSampleTime' as const, title: zh ? '采样时间' : 'Sample time', hint: zh ? '显示最近一次采样时间。' : 'Show the most recent sample time.' },
+    { key: 'showStatus' as const, title: zh ? '显示状态文字' : 'Show status text', hint: zh ? '在指标上方显示运行状态，默认关闭。' : 'Show the runtime status above metrics. Off by default.' },
+    { key: 'snapToEdge' as const, title: zh ? '贴边吸附' : 'Snap to screen edges', hint: zh ? '拖动桌面浮条靠近屏幕边缘时自动贴边。' : 'Snap the floating strip when dragged near a screen edge.' },
     { key: 'alwaysOnTop' as const, title: zh ? '浮条置顶' : 'Keep strip on top', hint: zh ? '桌面浮条保持在其他窗口上方。' : 'Keep the floating strip above other windows.' },
   ];
 
-  return <div id="settings-floating-monitor"><Panel className="floating-monitor-settings" title={zh ? '桌面监控' : 'Desktop monitor'} action={
-    <button type="button" disabled={!desktop || changingMode !== null} onClick={onOpen}>
-      <SquareArrowOutUpRight size={14} aria-hidden="true"/>
-      {activeMode === 'taskbar' ? (zh ? '打开任务栏监控' : 'Open taskbar monitor') : (zh ? '打开浮动条' : 'Open floating monitor')}
-    </button>
+  return <div id="settings-floating-monitor"><Panel className="floating-monitor-settings" title={zh ? '监控浮条' : 'Monitor strip'} action={
+    <div className="floating-monitor-settings-visibility">
+      <span>{zh ? '显示监控' : 'Show monitor'}</span>
+      {changingVisibility && <LoaderCircle size={13} className="spin" aria-hidden="true"/>}
+      <Toggle ariaLabel={zh ? '显示监控' : 'Show monitor'} checked={visible} disabled={!desktop || changingVisibility || (visible && !onVisibilityChange)} onCheckedChange={next => void changeVisibility(next)}/>
+    </div>
   }>
     {!desktop && <p className="floating-monitor-settings-hint" role="status">{zh ? '请在桌面应用中使用监控。' : 'Use monitoring in the desktop app.'}</p>}
-
-    <div className="floating-monitor-settings-mode">
-      <Segmented value={activeMode} ariaLabel={zh ? '监控显示方式' : 'Monitor display mode'} onValueChange={mode => void changeMode(mode as FloatingMonitorMode)} options={[
-        { value: 'floating', label: zh ? '桌面浮条' : 'Floating strip', icon: <Monitor size={15} aria-hidden="true"/>, disabled: !desktop || !onModeChange || changingMode !== null },
-        { value: 'taskbar', label: zh ? '常驻任务栏（实验）' : 'Taskbar (experimental)', icon: <PanelBottom size={15} aria-hidden="true"/>, disabled: !desktop || !onModeChange || changingMode !== null || modeStatus?.supported === false },
-      ]}/>
-      <p className="floating-monitor-settings-hint" role="status" aria-live="polite">
-        {changingMode ? <><LoaderCircle size={13} className="spin" aria-hidden="true"/>{zh ? '正在切换显示方式…' : 'Switching display mode…'}</> : modeDescription}
-      </p>
-      {modeStatus?.supported === false && <p className="floating-monitor-settings-hint">{zh ? '当前系统不支持常驻任务栏，可使用桌面浮条。' : 'Taskbar mode is unavailable on this system. Use the floating strip.'}</p>}
-      {modeError && <p className="floating-monitor-settings-error" role="alert">{zh ? '切换失败：' : 'Could not switch: '}{modeError}</p>}
-    </div>
+    {changingVisibility && <p className="floating-monitor-settings-hint" role="status">{zh ? '正在更新监控显示状态…' : 'Updating monitor visibility…'}</p>}
+    {visibilityError && <p className="floating-monitor-settings-error" role="alert">{zh ? '显示状态更新失败：' : 'Could not update visibility: '}{visibilityError}</p>}
 
     <section className="floating-monitor-settings-preview" aria-label={zh ? '桌面监控示例预览' : 'Example floating monitor preview'}>
       <div className="floating-monitor-settings-preview-heading">
-        <span>{zh ? '桌面外观预览' : 'Floating appearance preview'}<small>{zh ? '示例数据' : 'Example data'}</small></span>
+        <span>{zh ? '预览' : 'Preview'}<small>{zh ? '示例数据' : 'Example data'}</small></span>
         <span>{dimensions.width} × {dimensions.height} px</span>
       </div>
       <div className="floating-monitor-settings-preview-scroll" tabIndex={0} aria-label={zh ? '预览，可横向滚动' : 'Preview, scroll horizontally'}>
         <div className="floating-monitor-settings-preview-content" style={{ width: dimensions.width }}>
-          <FloatingMonitorContent preferences={value} language={language} metric={exampleMetric} history={exampleHistory} status={zh ? '示例数据' : 'Example data'}/>
+          <FloatingMonitorContent preferences={value} language={language} metric={exampleMetric} history={exampleHistory} status={zh ? '示例数据' : 'Example data'} onReorder={desktop ? metrics => update({ metrics }) : undefined}/>
         </div>
       </div>
+      <p className="floating-monitor-settings-preview-hint">{zh ? '拖拽指标排序 · Alt + 方向键' : 'Drag to reorder · Alt + arrow keys'}</p>
     </section>
 
     <div className="floating-monitor-settings-appearance">
@@ -143,21 +164,31 @@ export function FloatingMonitorSettings({ preferences, desktop, language, onChan
       </section>
       <section className="floating-monitor-settings-font" aria-labelledby={`${id}-font`}>
         <h3 id={`${id}-font`}>{zh ? '字号' : 'Font size'}<output htmlFor={`${id}-font-slider`}>{value.fontSize} px</output></h3>
-        <Slider id={`${id}-font-slider`} ariaLabel={zh ? '监控字号' : 'Monitor font size'} min={12} max={24} step={1} value={value.fontSize} disabled={!desktop} onValueChange={fontSize => update({ fontSize })}/>
-        <div className="floating-monitor-settings-font-range"><span>12 px</span><span>24 px</span></div>
+        <Slider id={`${id}-font-slider`} ariaLabel={zh ? '监控字号' : 'Monitor font size'} min={8} max={36} step={1} value={value.fontSize} disabled={!desktop} onValueChange={fontSize => update({ fontSize })}/>
+        <div className="floating-monitor-settings-font-range"><span>8 px</span><span>36 px</span></div>
       </section>
     </div>
 
     <section className="floating-monitor-settings-metrics" aria-labelledby={`${id}-metrics`}>
       <h3 id={`${id}-metrics`}>{zh ? '显示指标' : 'Visible metrics'}<span>{value.metrics.length} / 8</span></h3>
-      <p id={`${id}-sort-hint`} className="floating-monitor-settings-hint">{zh ? '选择 1–8 项。使用箭头按钮或 Alt + ↑ / ↓ 调整顺序。' : 'Choose 1–8 metrics. Use the arrow buttons or Alt + ↑ / ↓ to reorder.'}</p>
+      <span id={`${id}-sort-hint`} className="floating-monitor-settings-announcement">{zh ? '选择 1–8 项。使用箭头按钮或 Alt + ↑ / ↓ 调整顺序。' : 'Choose 1–8 metrics. Use the arrow buttons or Alt + ↑ / ↓ to reorder.'}</span>
+      <div className="floating-monitor-settings-palette-heading">
+        <span>{zh ? '选择 1–8 项 · 默认配色跟随主题' : 'Choose 1–8 metrics · Default colors follow theme'}</span>
+        <button type="button" disabled={!desktop || (!Object.keys(value.metricColors).length && !Object.keys(colorDrafts).length)} onClick={() => { setColorDrafts({}); update({ metricColors: {} }); }}><RotateCcw size={12} aria-hidden="true"/>{zh ? '恢复全部配色' : 'Reset all colors'}</button>
+      </div>
       <div className="floating-monitor-settings-metric-list">
         {displayedMetrics.map(metric => {
           const index = value.metrics.indexOf(metric.id);
           const selected = index >= 0;
           const atLimit = !selected && value.metrics.length >= 8;
-          const label = metric.label[language];
+          const label = metric.label[(language === 'zh-CN' ? 'zh-CN' : 'en')];
+          const customColor = value.metricColors[metric.id];
+          const automaticColor = FLOATING_MONITOR_PALETTES[paletteTheme][metric.id];
+          const draft = colorDrafts[metric.id];
+          const invalidColor = draft !== undefined && draft !== '' && !/^#[0-9a-fA-F]{6}$/.test(draft);
+
           return <div key={metric.id} className={`floating-monitor-settings-metric${selected ? ' selected' : ''}`} onKeyDown={event => {
+            if (event.target instanceof HTMLInputElement && event.target.type !== 'checkbox') return;
             if (selected && event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
               event.preventDefault();
               moveMetric(metric.id, event.key === 'ArrowUp' ? -1 : 1);
@@ -172,6 +203,12 @@ export function FloatingMonitorSettings({ preferences, desktop, language, onChan
               <button type="button" disabled={!desktop || index === 0} aria-label={zh ? `上移${label}` : `Move ${label} up`} title={zh ? '上移（Alt + ↑）' : 'Move up (Alt + ↑)'} onClick={() => moveMetric(metric.id, -1)}><ArrowUp size={13} aria-hidden="true"/></button>
               <button type="button" disabled={!desktop || index === value.metrics.length - 1} aria-label={zh ? `下移${label}` : `Move ${label} down`} title={zh ? '下移（Alt + ↓）' : 'Move down (Alt + ↓)'} onClick={() => moveMetric(metric.id, 1)}><ArrowDown size={13} aria-hidden="true"/></button>
             </div>}
+            <div className="floating-monitor-settings-color-controls">
+              <input type="color" aria-label={zh ? `${label}颜色` : `${label} color`} value={customColor ?? automaticColor} disabled={!desktop} onChange={event => setMetricColor(metric.id, event.target.value)}/>
+              <input type="text" className="floating-monitor-settings-color-hex" aria-label={zh ? `${label}颜色值（十六进制）` : `${label} hexadecimal color`} aria-invalid={invalidColor || undefined} aria-describedby={invalidColor ? `${id}-${metric.id}-color-hint` : undefined} value={draft ?? customColor ?? ''} placeholder={automaticColor} spellCheck={false} autoComplete="off" maxLength={32} disabled={!desktop} onChange={event => editMetricColor(metric.id, event.target.value)}/>
+              <button type="button" aria-label={zh ? `恢复${label}自动配色` : `Reset ${label} to automatic color`} title={zh ? '恢复自动配色' : 'Restore automatic color'} disabled={!desktop || (!customColor && draft === undefined)} onClick={() => setMetricColor(metric.id)}><RotateCcw size={12} aria-hidden="true"/></button>
+              {invalidColor && <small id={`${id}-${metric.id}-color-hint`} className="invalid">{zh ? '格式：#RRGGBB' : 'Format: #RRGGBB'}</small>}
+            </div>
           </div>;
         })}
       </div>
@@ -180,16 +217,16 @@ export function FloatingMonitorSettings({ preferences, desktop, language, onChan
 
     <div className="floating-monitor-settings-display-options">
       {displayOptions.map(option => <div key={option.key} className="setting-toggle floating-monitor-settings-option">
-        <span><strong>{option.title}</strong><small>{option.hint}</small></span>
-        <Toggle ariaLabel={option.title} checked={value[option.key]} disabled={!desktop} onCheckedChange={checked => update({ [option.key]: checked })}/>
+        <span><strong>{option.title}</strong></span>
+        <Toggle ariaLabel={option.title} tooltip={option.hint} checked={value[option.key]} disabled={!desktop} onCheckedChange={checked => update({ [option.key]: checked })}/>
       </div>)}
     </div>
 
     <details className="floating-monitor-settings-more">
       <summary>{zh ? '更多设置' : 'More settings'}<ChevronDown size={14} aria-hidden="true"/></summary>
       <div className="setting-toggle floating-monitor-settings-option">
-        <span><strong>{zh ? '普通托盘图标' : 'Standard tray icon'}</strong><small>{zh ? '在系统通知区域显示状态和速度，点击图标打开监控。' : 'Show status and speed in the system notification area. Click its icon to open the monitor.'}</small></span>
-        <Toggle ariaLabel={zh ? '在系统托盘显示监控' : 'Show monitor in the system tray'} checked={value.showInTray} disabled={!desktop} onCheckedChange={showInTray => update({ showInTray })}/>
+        <span><strong>{zh ? '普通托盘图标' : 'Standard tray icon'}</strong></span>
+        <Toggle ariaLabel={zh ? '在系统托盘显示监控' : 'Show monitor in the system tray'} tooltip={zh ? '点击托盘图标打开监控；右键或 Shift+F10 查看菜单。' : 'Click the tray icon to open the monitor. Right-click or Shift+F10 opens its menu.'} checked={value.showInTray} disabled={!desktop} onCheckedChange={showInTray => update({ showInTray })}/>
       </div>
     </details>
 
@@ -197,7 +234,7 @@ export function FloatingMonitorSettings({ preferences, desktop, language, onChan
       <span><Check size={13} aria-hidden="true"/>{zh ? '设置自动保存' : 'Settings save automatically'}</span>
       <button type="button" disabled={!desktop} onClick={() => update({
         layout: FLOATING_MONITOR_DEFAULTS.layout, fontSize: FLOATING_MONITOR_DEFAULTS.fontSize, metrics: [...FLOATING_MONITOR_DEFAULTS.metrics],
-        showGraphs: true, showLabels: true, showUnits: true, showSampleTime: false, alwaysOnTop: true,
+        showGraphs: true, showLabels: true, showUnits: true, showStatus: false, snapToEdge: false, showSampleTime: false, alwaysOnTop: true,
       })}><RotateCcw size={14} aria-hidden="true"/>{zh ? '恢复显示默认' : 'Reset appearance'}</button>
     </div>
   </Panel></div>;

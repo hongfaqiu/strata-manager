@@ -1,10 +1,11 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { AlertTriangle, FileText } from 'lucide-react';
 import { primaryStartupDiagnosticAction, type StartupDiagnosticAction, type StartupFailureDiagnostic } from '../../../../packages/core/src/startup-diagnostics';
 import './startup-diagnostic.css';
 
 export interface StartupDiagnosticCardProps {
   profileName?: string;
-  language: 'zh-CN' | 'en';
+  language: AppLanguage;
   diagnostic: StartupFailureDiagnostic;
   onAction?: (action: StartupDiagnosticAction, diagnostic: StartupFailureDiagnostic) => void;
   disabled?: boolean;

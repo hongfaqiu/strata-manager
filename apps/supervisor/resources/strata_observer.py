@@ -1,7 +1,8 @@
 """Strata Manager's optional metadata observer (Python standard library).
 
 Loaded from an application-owned sitecustomize directory. Original Strata files,
-HTTP payloads and original configuration are never changed. Durable journals
+generation payloads and original configuration are never changed. Live metrics
+include the observed load state; durable journals
 contain metadata only. An explicit application lease can temporarily retain the
 official bounded body records in RAM, with automatic erase; manually enabled
 upstream monitoring remains entirely under the user's control.
@@ -466,6 +467,54 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
         return
     namespace["_strata_manager_instrumented"] = True
     original_run, original_note, original_begin = service.run, service._note, service.begin_request
+
+    original_load = getattr(service, "ensure_loaded", None)
+    original_metrics = getattr(service, "metrics", None)
+    if callable(original_load) and callable(original_metrics):
+        # ensure_loaded runs under the upstream FIFO. Observe the actual load,
+        # rather than requests waiting for it or an idle, unloaded engine. Keep
+        # this metadata independent of optional request-body capture and of the
+        # durable analytics journal, whose failures must not hide a live load.
+        loading_lock = threading.RLock()
+        loading = weakref.WeakKeyDictionary()
+
+        @functools.wraps(original_load)
+        def observed_load(self, *args, **kwargs):
+            token = None
+            try:
+                vision_down = getattr(self, "_vision_down", None)
+                if self.loaded() is not True or (callable(vision_down) and vision_down()):
+                    candidate = object()
+                    with loading_lock:
+                        loading.setdefault(self, {})[candidate] = time.monotonic()
+                        token = candidate
+            except Exception:
+                pass  # Observability must not alter upstream load/error behavior.
+            try:
+                return original_load(self, *args, **kwargs)
+            finally:
+                if token is not None:
+                    with loading_lock:
+                        active = loading.get(self)
+                        if active is not None:
+                            active.pop(token, None)
+                            if not active:
+                                loading.pop(self, None)
+
+        @functools.wraps(original_metrics)
+        def observed_metrics(self, *args, **kwargs):
+            result = original_metrics(self, *args, **kwargs)
+            with loading_lock:
+                active = loading.get(self)
+                if active and isinstance(result, dict) and isinstance(result.get("live"), dict):
+                    # The engine has no load percentage. Expose elapsed time
+                    # only, and leave the original upstream response untouched.
+                    elapsed = round(max(0, time.monotonic() - min(active.values())), 1)
+                    result = {**result, "live": {**result["live"], "state": "loading",
+                              "phase": "loading model", "load_elapsed_s": elapsed}}
+            return result
+
+        service.ensure_loaded, service.metrics = observed_load, observed_metrics
 
     original_stats = namespace.get("request_stats")
     if callable(original_stats):

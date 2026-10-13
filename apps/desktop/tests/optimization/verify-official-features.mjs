@@ -186,7 +186,7 @@ try {
     await page.setViewportSize({width:1280,height:900});
     await page.getByRole('combobox',{name:'设置分类',exact:true}).waitFor();await page.locator('.startup-tuning').screenshot({path:resolve(output,'startup-settings-category.png')});
     assert.equal(await page.locator('.mcp-integration-panel, .runtime-operations').count(),0,'Model configuration keeps its model-specific editor; shared tools have their own workspace');
-    await page.getByRole('button',{name:'公共聊天、连接与运行工具',exact:true}).click();await page.waitForURL(url=>url.hash==='#settings');
+    await page.getByRole('button',{name:'打开设置',exact:true}).click();await page.waitForURL(url=>url.hash==='#settings');
     await page.locator('.workspace-subnav').getByRole('button',{name:'API 与外部助手',exact:true}).click();await page.waitForURL(url=>url.hash==='#connections');await page.locator('.mcp-integration-mode').first().waitFor();
     const modeGeometry=await page.locator('.mcp-integration-mode').evaluateAll(labels=>labels.map(label=>{
       const radio=label.querySelector('input[type="radio"]').getBoundingClientRect();

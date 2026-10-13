@@ -28,7 +28,8 @@ export function normalizeError(error: unknown, status: number | null = null): St
     const nativeHTTP = /^HTTP\s+(\d{3})(?:\s+[^:\n]+)?:\s*([\s\S]*)$/.exec(text);
     if (nativeHTTP) { transportStatus = Number(nativeHTTP[1]); text = nativeHTTP[2] ?? ''; }
     parsed = text;
-    try { parsed = JSON.parse(text); } catch { /* Native errors may be plain strings. */ }
+    const supervisor = /^runtime_operation:\s*(\{[\s\S]*\})$/.exec(text);
+    try { parsed = JSON.parse(supervisor?.[1] ?? text); } catch { /* Native errors may be plain strings. */ }
   }
   const outer = asObject(parsed);
   const inner = asObject(outer.error);

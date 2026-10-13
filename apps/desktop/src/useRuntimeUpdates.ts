@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { createElement, useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as core from '@strata-manager/core';
@@ -17,7 +18,7 @@ interface PendingUpdate { runtime: core.DetectedRuntime; release: core.RuntimeUp
 const updateKey = ({ runtime, release }: PendingUpdate) => `${runtime.installDir}:${release.latestVersion}:${release.checkedAt}`;
 
 /** Automatic checks propose updates; only a confirmed dialog starts a ZIP task. */
-export function useRuntimeUpdates(desktop: boolean, ready: boolean, enabled: boolean, idle: boolean, tasks: core.TaskStatus[] | undefined, language: 'zh-CN' | 'en', onError?: (error: unknown) => void, gate?: AutomaticUpdateGate, onStarted?: () => void) {
+export function useRuntimeUpdates(desktop: boolean, ready: boolean, enabled: boolean, idle: boolean, tasks: core.TaskStatus[] | undefined, language: AppLanguage, onError?: (error: unknown) => void, gate?: AutomaticUpdateGate, onStarted?: () => void) {
   const query = useQueryClient();
   const enabledRef = useRef(enabled); enabledRef.current = enabled;
   const errorHandler = useRef(onError); errorHandler.current = onError;

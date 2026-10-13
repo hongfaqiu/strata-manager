@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useRef, useState } from 'react';
 import { Archive, LoaderCircle, RefreshCw, Trash2 } from 'lucide-react';
 import * as core from '@strata-manager/core';
@@ -7,7 +8,7 @@ import './configuration-deletion-dialog.css';
 
 export interface ConfigurationDeletionDialogProps {
   profile: ServiceProfile;
-  language: 'zh-CN' | 'en';
+  language: AppLanguage;
   onClose: () => void;
   onDeleted: (profile: ServiceProfile) => void | Promise<unknown>;
 }
@@ -34,7 +35,7 @@ export function ConfigurationDeletionDialog(props: ConfigurationDeletionDialogPr
 }
 
 function ConfigurationDeletionSession({ profile, language, onClose, onDeleted }: ConfigurationDeletionDialogProps) {
-  const w = words[language];
+  const w = words[(language === 'zh-CN' ? 'zh-CN' : 'en')];
   const target = useRef({ ...profile }).current;
   const mounted = useRef(true);
   const pending = useRef(false);

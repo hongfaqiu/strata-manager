@@ -1,10 +1,11 @@
+import type { AppLanguage } from "@strata-manager/core";
 /** Show the candidate release's original Markdown regardless of interface language. */
 export function releaseNotes(notes: string | undefined): string | null {
   return notes?.trim() || null;
 }
 
 /** Prefer the requested section when the publisher supplies localized Markdown. */
-export function localizedReleaseNotes(notes: string | undefined, language: 'zh-CN' | 'en'): string | null {
+export function localizedReleaseNotes(notes: string | undefined, language: AppLanguage): string | null {
   if (!notes?.trim()) return null;
   const sections = [...notes.matchAll(/^#{1,6}[ \t]+(中文|简体中文|Chinese|zh-CN|English|英文|en)[ \t]*\r?$/gmi)];
   const isChinese = (label: string) => /^(?:中文|简体中文|Chinese|zh-CN)$/i.test(label);

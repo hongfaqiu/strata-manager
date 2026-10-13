@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as core from '@strata-manager/core';
@@ -6,7 +7,7 @@ import { Dialog } from './components';
 import { Dropdown, Segmented } from './OfficialControls';
 import './service-access.css';
 
-interface Props { profile: ServiceProfile; language: 'zh-CN' | 'en'; desktop: boolean; onSaved: () => void; onDirtyChange: (dirty: boolean) => void }
+interface Props { profile: ServiceProfile; language: AppLanguage; desktop: boolean; onSaved: () => void; onDirtyChange: (dirty: boolean) => void }
 
 /** Configuration editing and explicit restart are deliberately separate actions. */
 export function ServiceSharingPanel({ profile, language, desktop, onSaved, onDirtyChange }: Props) {

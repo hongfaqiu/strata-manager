@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useRef, useState } from 'react';
 import { CircleHelp, FileSearch, FolderOpen, LoaderCircle, Square } from 'lucide-react';
 import { listTasks, readTaskLogs, cancelTask, validateModelInspectRequest, type LogEntry, type ModelInspectRequest, type TaskStatus } from '@strata-manager/core';
@@ -6,7 +7,7 @@ import './official-setup.css';
 import './setup-tuning-interactions.css';
 
 export interface ModelInspectPanelProps {
-  language: 'zh-CN' | 'en';
+  language: AppLanguage;
   desktop: boolean;
   installationId?: string;
   disabled?: boolean;

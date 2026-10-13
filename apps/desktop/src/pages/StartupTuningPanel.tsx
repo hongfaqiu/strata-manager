@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as core from '@strata-manager/core';
@@ -12,7 +13,7 @@ import './setup-tuning-interactions.css';
 import { useDraftGuard, type SaveDraft } from '../useDraftGuard';
 
 interface Props {
-  profile?: ServiceProfile; desktop: boolean; language: 'zh-CN' | 'en';
+  profile?: ServiceProfile; desktop: boolean; language: AppLanguage;
   onError: (error: unknown) => void; onMessage?: (message: string) => void;
   /** Only supplied when this exact configuration can be restarted. */
   onRestart?: () => Promise<unknown>;

@@ -7,37 +7,37 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
-- 桌面监控默认使用清晰双行，支持 12–24px 字号、三种布局、从 11 项指标中选择 1–8 项并排序，以及标签、单位、采样时间和折线开关。读取蓝色、生成绿色；空闲历史速度不会续画为实时曲线。
-- 新增实验性 Windows 任务栏宽条与桌面浮条切换、原生自定义菜单。独立宿主仅在确认空闲区域后挂载，空间不足或进程失效时回退；本轮通过编译和纯函数测试，真实 Explorer、自动隐藏及多屏兼容仍待实机验收。
-- 修复浮条放大时越出工作区、关闭任务栏后隐藏窗口继续采样，以及连续偏好事件覆盖刚修改指标的问题。
-
-![未发布：双行浮条与双色趋势](docs/screenshots/monitor-customization/floating.zh.webp)
-
-[查看自定义面板](docs/screenshots/monitor-customization/settings.zh.webp)。以上为隔离 Vite 示例数据，并非真实任务栏嵌入截图；[截图范围](https://github.com/hongfaqiu/strata-manager/blob/main/docs/screenshots/monitor-customization/README.md)。
-
-- 恢复模型、设置等工作区 Tab 的圆角分段样式，统一 API 用量时间切换器的圆角；窄窗口可滚动并保留键盘切换。
-- 保留绿色主题下的白色选择环线与标记，移除单选、复选控件最外层光晕。
-
-以下为开发版界面，源码 `0497b6c77fafededcebab671c0b31f6240d4e394`，使用隔离示例数据，尚未包含在 0.1.7 安装包中。见[截图记录](https://github.com/hongfaqiu/strata-manager/blob/main/docs/screenshots/ui-refinements/README.md)。
-
-![未发布：圆角 Tab 与无外层光晕的选择控件](docs/screenshots/ui-refinements/model-download.zh.webp)
+暂无条目。
 
 ### English
 
-- Desktop monitoring defaults to two clear rows, with 12–24px text, three layouts, 1–8 ordered metrics selected from eleven, and controls for labels, units, sample time and graphs. Prefill is blue and generation green; historical idle rates never become fresh graph samples.
-- Add an experimental Windows taskbar strip and switching back to the floating monitor, with a native customization menu. The isolated host attaches only in verified vacant space and falls back on failure. Compilation and pure-function tests passed; real Explorer, auto-hide and multi-monitor acceptance remain pending.
-- Fix off-screen growth, hidden sampling after taskbar closure, and consecutive preference events overwriting recent metric changes.
+No entries yet.
 
-![Unreleased: two-row monitor with separate throughput colors](docs/screenshots/monitor-customization/floating.en.webp)
+## [0.1.8] - 2026-10-14
 
-[View customization settings](docs/screenshots/monitor-customization/settings.en.webp). These are isolated Vite examples, not actual taskbar attachment screenshots. [Capture scope](https://github.com/hongfaqiu/strata-manager/blob/main/docs/screenshots/monitor-customization/README.md).
+### 中文
 
-- Restore rounded segmented workspace tabs and align API-usage time selectors with the shared rounded style. Narrow windows retain scrolling and keyboard navigation.
-- Keep the green theme with white selection borders and marks, while removing the outer halo from radio buttons and checkboxes.
+- Windows 检测运行中服务，显示实际模型加载状态、当前模型、配置、PID、引擎版本与 OpenAI API Base URL；优先连接已有 Manager 后台，仅在确认没有后台所有者时允许托管普通外部实例。空闲后台遇到唯一明确的运行候选时自动连接；自动托管还要求模型健康、已加载且空闲，多候选保留手动选择。停止的模型不因发现或监控而启动。Linux 的外部进程身份核验与接管不在此版本支持范围。
+- 同一运行环境使用跨进程托管锁，阻止另一后台重复启动或接管；升级副本也核验原运行目录的所有者，确认进程树停止后才释放托管锁，冲突时保留现有服务并返回可读诊断。
+- 界面跟随 Windows 系统语言，首次启动可确认选择，并提供简体中文、繁体中文、英文、日文、韩文、德文、法文、西班牙文、葡萄牙文与俄文十种随包语言资源。手动选择优先，未支持语言回退英文；部分高级工具和原始服务日志仍显示英文。Windows 安装器提供对应语言选择。
+- 桌面监控默认关闭，以开关控制显示；默认清晰双行，可选三种布局、8–36px 字号，从十一项指标中选择一至八项并排序。支持逐项默认色、自定义颜色与恢复，标签、单位、采样时间和折线可独立切换；标签默认开启，状态文字和贴边吸附默认关闭。
+- 浮条按指标分配稳定列宽，指标间距缩至 2px；隐藏标签时移除标签行。修复贴边后拖动无法拉离、放大越出工作区、隐藏窗口继续采样，以及连续偏好事件覆盖刚修改指标的问题。浮条仅显示数据，操作集中在原生右键／托盘菜单；移除任务栏模式入口，旧偏好迁回桌面浮条，任务栏宿主仅为内部实验。
+- 空闲释放模型内存后的再次请求显示实际自动载入阶段与已用时间；成功和异常退出清除载入标记，读取／生成开始前不沿用历史吞吐。信号来自随包 observer 对已核验上游接口的包装，不修改上游源码。
+- 设置拆为公共设置、桌面监控、聊天默认、API 与外部助手、显存与会话、应用更新、关于等工作区；恢复圆角分段 Tab，保留白色选择环线并移除外层光晕，窄窗口支持滚动与键盘切换。
+- 总览加入装饰性本地算力插图、资源环形图和请求／生成趋势；图表来自已有采样与统计，缺失值保留未知，空闲状态的历史吞吐标为最近生成，不当作实时速度。
+- 同步 README、官网与使用说明，重新采集六十二张中英文实际界面／组件截图，并更新三份封面文件。配图使用隔离示例数据，非真实性能测量；历史版本日志保留原图。真实 GPU 自动载入、长时稳定性、用户设备升级与完整原生窗口交互仍需独立验收。
 
-This development preview was captured from source `0497b6c77fafededcebab671c0b31f6240d4e394` with isolated example data. These refinements are not included in the 0.1.7 installer. See the [capture record](https://github.com/hongfaqiu/strata-manager/blob/main/docs/screenshots/ui-refinements/README.md).
+### English
 
-![Unreleased: rounded tabs and selection controls without an outer halo](docs/screenshots/ui-refinements/model-download.en.webp)
+- On Windows, detect running services and show their confirmed loaded state, current model, configuration, PID, engine version and OpenAI API Base URL. Reconnect to an existing Manager backend first; ownership of a plain external instance is allowed only after confirming no backend owner. An idle backend automatically connects to one unambiguous running candidate. Automatic takeover additionally requires a healthy, loaded, idle model; multiple candidates remain available for manual selection. Discovery and monitoring never start a stopped model. External-process identity verification and takeover on Linux are outside this release's support scope.
+- Use an inter-process runtime lease to prevent a second backend from starting or taking ownership of the same installation. Upgraded copies also verify the original runtime owner. Release the lease only after the process tree is confirmed stopped; conflicts preserve the existing service and return a readable diagnostic.
+- Follow the Windows system language, confirm language at first launch, and bundle ten language resources: Simplified Chinese, Traditional Chinese, English, Japanese, Korean, German, French, Spanish, Portuguese and Russian. Manual choices take precedence and unsupported languages fall back to English. Some advanced tools and original service logs remain in English. The Windows installer offers corresponding language choices.
+- Desktop monitoring defaults off and uses a visibility switch. The default two-row view supports three layouts, 8–36px text and one to eight ordered metrics from eleven. Each metric has a default color, hexadecimal override and reset. Labels, units, sample time and graphs are independent; labels default on, while status text and edge snapping default off.
+- Assign stable metric widths with 2px spacing and remove the label row when labels are hidden. Fix edge dragging, off-screen growth, hidden sampling and consecutive preference events overwriting changes. The strip displays data, with actions in native context/tray menus. Remove the taskbar-mode entry and migrate older preferences to desktop monitoring; the native taskbar host remains an internal experiment.
+- Show the actual automatic-loading phase and elapsed time when a request reloads an idle-released model. Clear loading markers on success and failure, and suppress historical throughput until prefill or generation begins. The bundled observer wraps verified upstream interfaces without changing upstream source.
+- Split settings into shared settings, desktop monitoring, chat defaults, API and assistants, VRAM and sessions, application updates and About. Restore rounded workspace tabs and retain white selection borders without an outer halo. Narrow windows keep scrolling and keyboard navigation.
+- Add decorative local-compute artwork, resource rings and request/generation trends to Overview. Charts use existing telemetry and statistics, missing values remain unknown, and idle historical throughput is labelled as the last generation rather than a live rate.
+- Refresh the README, website and guides, recapture sixty-two bilingual interface/component screenshots and update three cover files. Isolated examples are not performance measurements; historical release illustrations retain their original bytes. Real GPU reloads, prolonged stability, upgrades on user devices and complete native-window interactions still require separate acceptance.
 
 ## [0.1.7] - 2026-10-13
 
@@ -56,11 +56,11 @@ This development preview was captured from source `0497b6c77fafededcebab671c0b31
 
 以下截图来自版本号更新前的实际组件，捕获源码为 `e4b8fa651eb0c021b6f8979b5f8affd847a8dbb2`，界面标记为 0.1.6。示例数据不代表真实推理或 0.1.7 安装包验收；出处见 [截图说明与捕获记录](https://github.com/hongfaqiu/strata-manager/blob/v0.1.7/docs/screenshots/README.md)。
 
-[![模型下载详情与资源评估](docs/screenshots/daily-experience/model-download-detail.zh.webp)](docs/screenshots/daily-experience/model-download-detail.zh.webp)
+[![模型下载详情与资源评估](docs/screenshots/changelog/0.1.7/model-download-detail.zh.webp)](docs/screenshots/changelog/0.1.7/model-download-detail.zh.webp)
 
-[![API 在线验证](docs/screenshots/daily-experience/api-verification.zh.webp)](docs/screenshots/daily-experience/api-verification.zh.webp)
+[![API 在线验证](docs/screenshots/changelog/0.1.7/api-verification.zh.webp)](docs/screenshots/changelog/0.1.7/api-verification.zh.webp)
 
-[![历史 Benchmark 条件对照](docs/screenshots/daily-experience/history-comparison.zh.webp)](docs/screenshots/daily-experience/history-comparison.zh.webp)
+[![历史 Benchmark 条件对照](docs/screenshots/changelog/0.1.7/history-comparison.zh.webp)](docs/screenshots/changelog/0.1.7/history-comparison.zh.webp)
 
 ### English
 
@@ -77,11 +77,11 @@ This development preview was captured from source `0497b6c77fafededcebab671c0b31
 
 These screenshots show the actual components before the version bump, captured from source `e4b8fa651eb0c021b6f8979b5f8affd847a8dbb2` with a 0.1.6 UI marker. Demonstration data does not establish real inference or 0.1.7 installer acceptance. See the [screenshot scope and capture records](https://github.com/hongfaqiu/strata-manager/blob/v0.1.7/docs/screenshots/README.md).
 
-[![Model download details and resource assessment](docs/screenshots/daily-experience/model-download-detail.en.webp)](docs/screenshots/daily-experience/model-download-detail.en.webp)
+[![Model download details and resource assessment](docs/screenshots/changelog/0.1.7/model-download-detail.en.webp)](docs/screenshots/changelog/0.1.7/model-download-detail.en.webp)
 
-[![API verification](docs/screenshots/daily-experience/api-verification.en.webp)](docs/screenshots/daily-experience/api-verification.en.webp)
+[![API verification](docs/screenshots/changelog/0.1.7/api-verification.en.webp)](docs/screenshots/changelog/0.1.7/api-verification.en.webp)
 
-[![Historical benchmark condition comparison](docs/screenshots/daily-experience/history-comparison.en.webp)](docs/screenshots/daily-experience/history-comparison.en.webp)
+[![Historical benchmark condition comparison](docs/screenshots/changelog/0.1.7/history-comparison.en.webp)](docs/screenshots/changelog/0.1.7/history-comparison.en.webp)
 
 ## [0.1.6] - 2026-10-12
 
@@ -253,35 +253,35 @@ This report uses isolated demonstration data to show the charts, copy and export
 
 ##### Benchmark 场景与压力测试
 
-[![Benchmark 场景与压力测试](docs/screenshots/benchmark.zh.webp)](docs/screenshots/benchmark.zh.webp)
+[![Benchmark 场景与压力测试](docs/screenshots/changelog/0.1.4/benchmark.zh.webp)](docs/screenshots/changelog/0.1.4/benchmark.zh.webp)
 
 ##### 公共聊天默认值
 
-[![公共聊天默认值](docs/screenshots/common-chat-settings.zh.webp)](docs/screenshots/common-chat-settings.zh.webp)
+[![公共聊天默认值](docs/screenshots/changelog/0.1.4/common-chat-settings.zh.webp)](docs/screenshots/changelog/0.1.4/common-chat-settings.zh.webp)
 
 ##### API 与外部助手
 
-[![API 与外部助手](docs/screenshots/connections.zh.webp)](docs/screenshots/connections.zh.webp)
+[![API 与外部助手](docs/screenshots/changelog/0.1.4/connections.zh.webp)](docs/screenshots/changelog/0.1.4/connections.zh.webp)
 
 ##### 显存与会话工具
 
-[![显存与会话工具](docs/screenshots/runtime-tools.zh.webp)](docs/screenshots/runtime-tools.zh.webp)
+[![显存与会话工具](docs/screenshots/changelog/0.1.4/runtime-tools.zh.webp)](docs/screenshots/changelog/0.1.4/runtime-tools.zh.webp)
 
 ##### Strata 下载来源与网络测试
 
-[![Strata 下载来源与网络测试](docs/screenshots/runtime-download-settings.zh.webp)](docs/screenshots/runtime-download-settings.zh.webp)
+[![Strata 下载来源与网络测试](docs/screenshots/changelog/0.1.4/runtime-download-settings.zh.webp)](docs/screenshots/changelog/0.1.4/runtime-download-settings.zh.webp)
 
 ##### 服务状态与实时监控
 
-[![服务状态与实时监控](docs/screenshots/service-status.zh.webp)](docs/screenshots/service-status.zh.webp)
+[![服务状态与实时监控](docs/screenshots/changelog/0.1.4/service-status.zh.webp)](docs/screenshots/changelog/0.1.4/service-status.zh.webp)
 
 ##### 桌面监控浮条
 
-[![桌面监控浮条](docs/screenshots/floating-monitor.zh.webp)](docs/screenshots/floating-monitor.zh.webp)
+[![桌面监控浮条](docs/screenshots/changelog/0.1.4/floating-monitor.zh.webp)](docs/screenshots/changelog/0.1.4/floating-monitor.zh.webp)
 
 ##### 版本与应用更新
 
-[![版本与应用更新](docs/screenshots/app-updates.zh.webp)](docs/screenshots/app-updates.zh.webp)
+[![版本与应用更新](docs/screenshots/changelog/0.1.4/app-updates.zh.webp)](docs/screenshots/changelog/0.1.4/app-updates.zh.webp)
 
 
 ### English
@@ -312,35 +312,35 @@ These screenshots show the interface at the 0.1.4 release, using isolated demons
 
 ##### Benchmark scenarios and stress tests
 
-[![Benchmark scenarios and stress tests](docs/screenshots/benchmark.en.webp)](docs/screenshots/benchmark.en.webp)
+[![Benchmark scenarios and stress tests](docs/screenshots/changelog/0.1.4/benchmark.en.webp)](docs/screenshots/changelog/0.1.4/benchmark.en.webp)
 
 ##### Common chat defaults
 
-[![Common chat defaults](docs/screenshots/common-chat-settings.en.webp)](docs/screenshots/common-chat-settings.en.webp)
+[![Common chat defaults](docs/screenshots/changelog/0.1.4/common-chat-settings.en.webp)](docs/screenshots/changelog/0.1.4/common-chat-settings.en.webp)
 
 ##### API and external assistants
 
-[![API and external assistants](docs/screenshots/connections.en.webp)](docs/screenshots/connections.en.webp)
+[![API and external assistants](docs/screenshots/changelog/0.1.4/connections.en.webp)](docs/screenshots/changelog/0.1.4/connections.en.webp)
 
 ##### VRAM and session tools
 
-[![VRAM and session tools](docs/screenshots/runtime-tools.en.webp)](docs/screenshots/runtime-tools.en.webp)
+[![VRAM and session tools](docs/screenshots/changelog/0.1.4/runtime-tools.en.webp)](docs/screenshots/changelog/0.1.4/runtime-tools.en.webp)
 
 ##### Strata download sources and network test
 
-[![Strata download sources and network test](docs/screenshots/runtime-download-settings.en.webp)](docs/screenshots/runtime-download-settings.en.webp)
+[![Strata download sources and network test](docs/screenshots/changelog/0.1.4/runtime-download-settings.en.webp)](docs/screenshots/changelog/0.1.4/runtime-download-settings.en.webp)
 
 ##### Service status and live monitoring
 
-[![Service status and live monitoring](docs/screenshots/service-status.en.webp)](docs/screenshots/service-status.en.webp)
+[![Service status and live monitoring](docs/screenshots/changelog/0.1.4/service-status.en.webp)](docs/screenshots/changelog/0.1.4/service-status.en.webp)
 
 ##### Floating desktop monitor
 
-[![Floating desktop monitor](docs/screenshots/floating-monitor.en.webp)](docs/screenshots/floating-monitor.en.webp)
+[![Floating desktop monitor](docs/screenshots/changelog/0.1.4/floating-monitor.en.webp)](docs/screenshots/changelog/0.1.4/floating-monitor.en.webp)
 
 ##### Version and app updates
 
-[![Version and app updates](docs/screenshots/app-updates.en.webp)](docs/screenshots/app-updates.en.webp)
+[![Version and app updates](docs/screenshots/changelog/0.1.4/app-updates.en.webp)](docs/screenshots/changelog/0.1.4/app-updates.en.webp)
 
 
 ## [0.1.3] - 2026-10-12

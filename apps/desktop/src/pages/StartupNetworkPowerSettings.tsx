@@ -69,7 +69,7 @@ export function StartupNetworkPowerSettings({ zh, disabled, fallbackBaseUrl, sho
       {help === 'network' ? <>
         <p>{zh ? '留空沿用当前主机与端口。127.0.0.1 / localhost 仅供本机使用；0.0.0.0 开放 IPv4 局域网访问，:: 开放 IPv6 网络访问，也可输入本机指定 IP。' : 'Empty fields keep the current host and port. 127.0.0.1 / localhost allow local access only; 0.0.0.0 allows IPv4 LAN access and :: allows IPv6 network access. You can also enter a specific local IP.'}</p>
         <p>{zh ? '其他设备需用这台电脑的局域网 IP 替换地址中的占位符，并允许防火墙对此端口的入站连接。' : 'Other devices use this computer’s LAN IP in place of the address placeholder. Allow inbound connections on this port in the firewall.'}</p>
-        <p>{zh ? '启用 API Key 时，客户端需携带相同密钥。密钥在公共设置的「服务连接与 API Key」中管理。' : 'When an API key is enabled, clients must send the same key. Manage it under “Service connection and API key” in shared settings.'}</p>
+        <p>{zh ? '启用 API Key 时，客户端需携带相同密钥。密钥在设置的“API 与外部助手”中管理。' : 'When an API key is enabled, clients must send the same key. Manage it under Settings > API and assistants.'}</p>
         {endpoint && <p>{zh ? '应用连接地址：' : 'Manager connection: '}<code>{endpoint.baseUrl}/v1</code></p>}
       </> : <>
         <p>{zh ? '留空保留显卡原有设置。启动模型时，将功耗上限应用到指定 NVIDIA 显卡；GPU 编号默认 0。' : 'Leave the limit empty to keep the existing GPU setting. The selected NVIDIA GPU receives the power limit when the model starts; the default GPU index is 0.'}</p>

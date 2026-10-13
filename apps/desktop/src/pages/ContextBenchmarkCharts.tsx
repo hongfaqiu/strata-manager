@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { ContextBenchmarkSample } from '@strata-manager/core';
 
@@ -7,7 +8,7 @@ export const contextTierLabel = (tokens: number) => tokens >= 1024 * 1024 && tok
 type ChartRow = { tier: number; prefill: number | null; decode: number | null; wall: number | null };
 type ChartMetric = { key: 'prefill' | 'decode' | 'wall'; title: string; unit: string };
 
-function ContextMetricChart({ rows, metric, language }: { rows: ChartRow[]; metric: ChartMetric; language: 'zh-CN' | 'en' }) {
+function ContextMetricChart({ rows, metric, language }: { rows: ChartRow[]; metric: ChartMetric; language: AppLanguage }) {
   const chart = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(360);
   const titleId = useId();
@@ -74,7 +75,7 @@ function ContextMetricChart({ rows, metric, language }: { rows: ChartRow[]; metr
   </section>;
 }
 
-export function ContextBenchmarkCharts({ samples, language }: { samples: ContextBenchmarkSample[]; language: 'zh-CN' | 'en' }) {
+export function ContextBenchmarkCharts({ samples, language }: { samples: ContextBenchmarkSample[]; language: AppLanguage }) {
   const zh = language === 'zh-CN';
   const rows = useMemo(() => {
     const tiers = [...new Set(samples.map(sample => sample.targetTokens))].sort((a, b) => a - b);

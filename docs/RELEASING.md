@@ -68,7 +68,7 @@ pnpm --filter @strata-manager/desktop tauri signer generate -w $strataSigningKey
 
 检查范围为版本一致性和发布门禁测试、TypeScript、核心与 HTTP 协议夹具测试、前端生产构建、Rust 格式、workspace 单元/集成测试、Clippy，以及两平台桌面安装包构建。Windows 和 Linux 原生测试各使用三个独立 runner；每个 runner 仍以 `--test-threads=1` 串行运行分配到的测试，保留原有测试超时。Windows 的进程、端口和凭据夹具由独立虚拟机隔离；Linux 使用固定私有 Secret Service、DBus 和 Xvfb。
 
-`scripts/ci-linux-native-tests.mjs` 支持两个原生平台，从 Cargo 的全部 workspace 测试可执行文件枚举测试，再按完整模块确定分片。实际执行的名字和计数必须与计划一致；原有 Linux 五项、Windows 十二项需要实机或外部准备的 ignored 测试逐项登记，新增或减少必须显式审核。两平台各自的分片 0 额外执行完整 workspace 文档测试。每个平台的打包 job 必须等本平台三个分片全部成功，并汇总绑定相同源码、锁文件、工具链、平台、profile 和当前 run attempt 的覆盖证明；遗漏、重复、跨平台、旧 attempt 或失败均阻断。两个 desktop job 同时执行 Clippy 和安装包构建，随后汇总完整原生覆盖证明，再执行实际包安装或启动检查。Windows 正向测试筛选还限制命令行长度，避免分片参数触及 Windows 进程参数上限。产物只在整个十 job CI 和包验收成功后允许复用：两个 desktop job、六个原生分片，以及 Windows/Linux 两个 Strata 0.1.43.1 observer compatibility job。
+`scripts/ci-linux-native-tests.mjs` 支持两个原生平台，从 Cargo 的全部 workspace 测试可执行文件枚举测试，再按完整模块确定分片。实际执行的名字和计数必须与计划一致；当前 Linux 七项、Windows 十五项需要实机或外部准备的 ignored 测试逐项登记，新增或减少必须显式审核。0.1.8 仅增加了 Windows 指定真实服务的只读所有者验收项；它要求用户显式提供实际目标，CI 不默认执行，原有十四项和 Linux 七项保持不变。两平台各自的分片 0 额外执行完整 workspace 文档测试。每个平台的打包 job 必须等本平台三个分片全部成功，并汇总绑定相同源码、锁文件、工具链、平台、profile 和当前 run attempt 的覆盖证明；遗漏、重复、跨平台、旧 attempt 或失败均阻断。两个 desktop job 同时执行 Clippy 和安装包构建，随后汇总完整原生覆盖证明，再执行实际包安装或启动检查。Windows 正向测试筛选还限制命令行长度，避免分片参数触及 Windows 进程参数上限。产物只在整个十 job CI 和包验收成功后允许复用：两个 desktop job、六个原生分片，以及 Windows/Linux 两个 Strata 0.1.43.1 observer compatibility job。
 
 两个 observer job 必须属于同一源码、run 与当前 attempt，并且完整成功。发布门禁逐项要求保留上游源码字节、检出已审核的 API fixture、安装 MockEngine 测试依赖、验证源码 canonical hash 与 observer 兼容性，以及执行全部 HTTP 合同测试且没有跳过。job 或任一关键步骤缺失、重复、失败、取消、跳过或尚未完成均阻断；旧八 job 证据不能替代新增兼容性验收。此检查不下载模型权重，也不代表真实 GPU 推理通过。
 

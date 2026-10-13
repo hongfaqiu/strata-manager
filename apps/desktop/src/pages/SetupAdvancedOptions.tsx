@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useState } from 'react';
 import { CircleHelp } from 'lucide-react';
 import { normalizeOfficialSetupOptions, type OfficialSetupOptions } from '@strata-manager/core';
@@ -7,7 +8,7 @@ import './official-setup.css';
 import './setup-tuning-interactions.css';
 
 export function SetupAdvancedOptions({ language, value, onChange, onValidityChange, disabled = false, embedded = false }: {
-  language: 'zh-CN' | 'en'; value: OfficialSetupOptions;
+  language: AppLanguage; value: OfficialSetupOptions;
   onChange: (value: OfficialSetupOptions) => void;
   onValidityChange?: (valid: boolean) => void;
   disabled?: boolean;

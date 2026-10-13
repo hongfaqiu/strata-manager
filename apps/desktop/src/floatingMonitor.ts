@@ -6,7 +6,7 @@ export type { FloatingMonitorAction, FloatingMonitorPreferences } from '@strata-
 export { normalizeFloatingMonitorPreferences } from '@strata-manager/core';
 export type MonitorDestination = 'overview' | 'chat' | 'monitoring' | 'usage' | 'tasks' | 'settings' | 'quickBenchmark';
 
-export const FLOATING_MONITOR_ACTIONS: { id: FloatingMonitorAction; label: Record<'zh-CN' | 'en', string> }[] = [
+export const FLOATING_MONITOR_ACTIONS: { id: FloatingMonitorAction; label: { 'zh-CN': string; en: string } }[] = [
   { id: 'main', label: { 'zh-CN': '显示主窗口', en: 'Show main window' } },
   { id: 'chat', label: { 'zh-CN': '打开聊天', en: 'Open chat' } },
   { id: 'monitoring', label: { 'zh-CN': '打开性能监控', en: 'Open performance monitor' } },
@@ -40,7 +40,10 @@ export async function openFloatingMonitor(): Promise<void> {
 export const readFloatingMonitor = (): Promise<FloatingMonitorSnapshot> => invoke('monitor_snapshot');
 export const showMainFromMonitor = (destination?: MonitorDestination): Promise<void> => invoke('show_main_from_monitor', { destination });
 export const minimizeMonitorToTray = (): Promise<void> => invoke('minimize_monitor_to_tray');
-export interface MonitorModeStatus { mode: FloatingMonitorMode; supported: boolean; active: boolean; message?: string }
-export const setMonitorMode = (mode: FloatingMonitorMode, preferences: FloatingMonitorPreferences, language: 'zh-CN' | 'en' = 'zh-CN'): Promise<MonitorModeStatus> => invoke('set_monitor_mode', { mode, preferences: { ...preferences, language } });
+export interface MonitorModeStatus { mode: FloatingMonitorMode; supported: boolean; active: boolean; visible?: boolean; message?: string }
+export const setMonitorMode = (mode: FloatingMonitorMode, preferences: FloatingMonitorPreferences, language: AppLanguage = 'zh-CN'): Promise<MonitorModeStatus> => invoke('set_monitor_mode', { mode, preferences: { ...preferences, language } });
+
 export const readMonitorModeStatus = (): Promise<MonitorModeStatus> => invoke('monitor_mode_status');
+export const setMonitorVisibility = (visible: boolean, mode: FloatingMonitorMode, preferences: FloatingMonitorPreferences, language: AppLanguage = 'zh-CN'): Promise<MonitorModeStatus> => invoke('set_monitor_visibility', { visible, mode, preferences: { ...preferences, language } });
 export const resizeMonitorWindow = (width: number, height: number): Promise<{ width: number; height: number }> => invoke('resize_monitor_window', { width, height });
+import type { AppLanguage } from '@strata-manager/core';

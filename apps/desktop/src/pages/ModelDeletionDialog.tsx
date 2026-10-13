@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { LoaderCircle, RefreshCw, Trash2 } from 'lucide-react';
 import * as core from '@strata-manager/core';
@@ -10,7 +11,7 @@ type DeletionResult = Awaited<ReturnType<typeof core.deleteModelFiles>>;
 export interface ModelDeletionDialogProps {
   modelName: string;
   profiles: ServiceProfile[];
-  language: 'zh-CN' | 'en';
+  language: AppLanguage;
   disabled?: boolean;
   onClose: () => void;
   onDeleted: () => void | Promise<unknown>;
@@ -39,7 +40,7 @@ const words = {
   },
 } as const;
 
-const fileSize = (bytes: number, language: 'zh-CN' | 'en') => {
+const fileSize = (bytes: number, language: AppLanguage) => {
   const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
   const power = bytes > 0 ? Math.min(4, Math.floor(Math.log(bytes) / Math.log(1024))) : 0;
   return `${(bytes / 1024 ** power).toLocaleString(language, { maximumFractionDigits: power ? 2 : 0 })} ${units[power]}`;
@@ -47,7 +48,7 @@ const fileSize = (bytes: number, language: 'zh-CN' | 'en') => {
 
 /** A preview never deletes files. The explicit confirmation submits that exact file snapshot. */
 export function ModelDeletionDialog({ modelName, profiles, language, disabled = false, onClose, onDeleted }: ModelDeletionDialogProps) {
-  const w = words[language];
+  const w = words[(language === 'zh-CN' ? 'zh-CN' : 'en')];
   const uid = useId();
   const mounted = useRef(true);
   const epoch = useRef(0);

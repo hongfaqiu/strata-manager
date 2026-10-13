@@ -4,9 +4,13 @@ use std::{future::Future, path::Path, time::Duration};
 use strata_runtime_core::types::ServiceProfile;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
+#[cfg(windows)]
+#[path = "floating_monitor_drag.rs"]
+mod drag;
+
 pub const LABEL: &str = "service-monitor";
-const MIN_WIDTH: f64 = 220.0;
-const MIN_HEIGHT: f64 = 40.0;
+const MIN_WIDTH: f64 = 96.0;
+const MIN_HEIGHT: f64 = 24.0;
 const MAX_WIDTH: f64 = 1120.0;
 const MAX_HEIGHT: f64 = 640.0;
 
@@ -35,6 +39,69 @@ fn initial_always_on_top(settings: Option<&Value>) -> bool {
         .unwrap_or(true)
 }
 
+#[cfg(any(windows, test))]
+fn initial_snap_to_edge(settings: Option<&Value>) -> bool {
+    settings
+        .and_then(|settings| settings["floatingMonitor"]["snapToEdge"].as_bool())
+        .unwrap_or(false)
+}
+
+/// Live settings only affect an already existing monitor; never create a
+/// window or contact/recover the supervisor merely to apply this preference.
+pub async fn apply_preferences(app: &AppHandle, settings: &Value) -> Result<(), String> {
+    #[cfg(windows)]
+    if let Some(window) = app.get_webview_window(LABEL) {
+        drag::install(&window, Some(initial_snap_to_edge(Some(settings)))).await?;
+    }
+    #[cfg(not(windows))]
+    let _ = (app, settings);
+    Ok(())
+}
+
+fn metric_cell_width(
+    metric: &str,
+    font: f64,
+    label_font: f64,
+    labels: bool,
+    units: bool,
+    compact: bool,
+    english: bool,
+) -> f64 {
+    let (budget, chinese, english_label, unit) = match metric {
+        "generation" => (6.0, "生成", "Gen", "t/s"),
+        "prefill" => (6.0, "读取", "Read", "t/s"),
+        "gpu" => (3.0, "GPU", "GPU", "%"),
+        "vram" => (5.0, "显存", "VRAM", "GiB"),
+        "cpu" => (3.0, "CPU", "CPU", "%"),
+        "ram" => (5.0, "内存", "RAM", "GiB"),
+        "temperature" => (3.0, "温度", "Temp", "°C"),
+        "power" => (4.0, "功耗", "Power", "W"),
+        "running" => (4.0, "运行", "Run", ""),
+        "queued" => (4.0, "排队", "Queue", ""),
+        "cache" => (3.0, "缓存", "Cache", "%"),
+        _ => (4.0, "", "", ""),
+    };
+    let text_width = |text: &str| {
+        text.chars()
+            .map(|character| if character.is_ascii() { 0.5 } else { 1.0 })
+            .sum::<f64>()
+            * label_font
+    };
+    // Stable type budgets match core: changing telemetry never resizes a cell.
+    let value_width = budget * 0.58 * font
+        + if units && !unit.is_empty() {
+            text_width(unit) + if compact { 2.0 } else { 3.0 }
+        } else {
+            0.0
+        };
+    let label_width = if labels {
+        text_width(if english { english_label } else { chinese })
+    } else {
+        0.0
+    };
+    (value_width.max(label_width) + 4.0).ceil()
+}
+
 fn initial_size(settings: Option<&Value>) -> (f64, f64) {
     let preferences = settings.and_then(|settings| settings.get("floatingMonitor"));
     let font = preferences
@@ -42,7 +109,7 @@ fn initial_size(settings: Option<&Value>) -> (f64, f64) {
         .filter(|font| font.is_finite())
         .unwrap_or(16.0)
         .round()
-        .clamp(12.0, 24.0);
+        .clamp(8.0, 36.0);
     let layout = preferences
         .and_then(|value| value["layout"].as_str())
         .filter(|layout| matches!(*layout, "compact" | "twoRow" | "panel"))
@@ -75,39 +142,62 @@ fn initial_size(settings: Option<&Value>) -> (f64, f64) {
             }
         }
     }
-    let count = if metrics.is_empty() { 6 } else { metrics.len() };
+    if metrics.is_empty() {
+        metrics.extend(["generation", "prefill", "gpu", "vram", "cpu", "ram"]);
+    }
+    let count = metrics.len();
     let graphs = preferences
         .and_then(|value| value["showGraphs"].as_bool())
         .unwrap_or(true);
     let labels = preferences
         .and_then(|value| value["showLabels"].as_bool())
         .unwrap_or(true);
-    let (columns, rows, cell_width) = match layout {
-        "compact" => (
-            count.min(4),
-            count.div_ceil(4),
-            (font * 5.5 + if labels { 60.0 } else { 12.0 }).ceil(),
-        ),
-        "panel" => (2, count.div_ceil(2), (font * 7.0 + 32.0).ceil()),
-        _ => (
-            count.div_ceil(2),
-            count.min(2),
-            (font * 7.5 + if labels { 64.0 } else { 20.0 }).ceil(),
-        ),
+    let units = preferences
+        .and_then(|value| value["showUnits"].as_bool())
+        .unwrap_or(true);
+    let english = settings.is_some_and(|settings| settings["language"] == "en");
+    let header = preferences
+        .is_some_and(|value| value["showStatus"] == true || value["showSampleTime"] == true);
+    let (columns, rows) = match layout {
+        "compact" => (count.min(4), count.div_ceil(4)),
+        "panel" => (2, count.div_ceil(2)),
+        _ => (count.div_ceil(2), count.min(2)),
     };
-    let label_font = (font * 0.7).round().max(10.0);
+    let label_font = (font * 0.7).round().max(8.0);
+    let mut column_widths = vec![0.0_f64; columns];
+    for (index, metric) in metrics.iter().enumerate() {
+        let column = index % columns;
+        column_widths[column] = column_widths[column].max(metric_cell_width(
+            metric,
+            font,
+            label_font,
+            labels,
+            units,
+            layout == "compact",
+            english,
+        ));
+    }
     let cell_height = (font * 1.4).ceil()
-        + if graphs { 20.0 } else { 0.0 }
-        + if layout == "panel" && labels {
-            label_font + 6.0
+        + if labels { label_font + 2.0 } else { 0.0 }
+        + if graphs {
+            if layout == "compact" {
+                16.0
+            } else {
+                18.0
+            }
         } else {
-            4.0
+            0.0
         };
-    let header_height = (font * 1.2).ceil() + 10.0;
+    let header_height = if header {
+        (font * 0.85).ceil() + 4.0
+    } else {
+        0.0
+    };
+    let padding = if layout == "compact" { 4.0 } else { 5.0 };
     (
-        (columns as f64 * cell_width + (columns - 1) as f64 * 8.0 + 20.0)
+        (column_widths.iter().sum::<f64>() + (columns - 1) as f64 * 2.0 + padding * 2.0)
             .clamp(MIN_WIDTH, MAX_WIDTH),
-        (rows as f64 * cell_height + (rows - 1) as f64 * 8.0 + header_height + 20.0)
+        (rows as f64 * cell_height + (rows - 1) as f64 * 2.0 + header_height + padding * 2.0)
             .clamp(MIN_HEIGHT, MAX_HEIGHT),
     )
 }
@@ -150,7 +240,7 @@ fn validate_size(width: f64, height: f64) -> Result<(), String> {
     {
         Ok(())
     } else {
-        Err("监控窗口尺寸必须为有限数值，宽度 220–1120、高度 40–640".into())
+        Err("监控窗口尺寸必须为有限数值，宽度 96–1120、高度 24–640".into())
     }
 }
 
@@ -206,6 +296,103 @@ fn fit_window(
         width: width as u32,
         height: height as u32,
     })
+}
+
+/// Drag rectangles and work areas are physical desktop pixels. Only the snap
+/// distance is logical, so crossing onto a negative-coordinate or scaled screen
+/// does not change the work-area containment rule.
+#[cfg(any(windows, test))]
+fn snap_drag_rect(
+    area: &MonitorArea,
+    proposed: WindowRect,
+    snap_to_edge: bool,
+) -> Option<WindowRect> {
+    if area.width == 0
+        || area.height == 0
+        || proposed.width == 0
+        || proposed.height == 0
+        || !area.scale.is_finite()
+        || !(0.25..=8.0).contains(&area.scale)
+        || i64::from(area.x) + i64::from(area.width) > i64::from(i32::MAX)
+        || i64::from(area.y) + i64::from(area.height) > i64::from(i32::MAX)
+    {
+        return None;
+    }
+    let width = proposed.width.min(area.width);
+    let height = proposed.height.min(area.height);
+    let threshold = if snap_to_edge {
+        (14.0 * area.scale).round() as i64
+    } else {
+        0
+    };
+    let axis = |position: i32, origin: i32, extent: u32, size: u32| {
+        let start = i64::from(origin);
+        let end = start + i64::from(extent) - i64::from(size);
+        let position = i64::from(position).clamp(start, end);
+        let start_gap = position - start;
+        let end_gap = end - position;
+        if start_gap <= threshold && start_gap <= end_gap {
+            start as i32
+        } else if end_gap <= threshold {
+            end as i32
+        } else {
+            position as i32
+        }
+    };
+    Some(WindowRect {
+        x: axis(proposed.x, area.x, area.width, width),
+        y: axis(proposed.y, area.y, area.height, height),
+        width,
+        height,
+    })
+}
+
+#[cfg(any(windows, test))]
+#[derive(Clone, Copy)]
+struct DragOrigin {
+    cursor: (i32, i32),
+    rect: WindowRect,
+}
+
+#[cfg(any(windows, test))]
+#[derive(Default)]
+struct DragState {
+    snap_to_edge: bool,
+    origin: Option<DragOrigin>,
+}
+
+#[cfg(any(windows, test))]
+impl DragState {
+    fn begin(&mut self, cursor: (i32, i32), rect: WindowRect) {
+        self.origin = Some(DragOrigin { cursor, rect });
+    }
+
+    fn finish(&mut self) {
+        self.origin = None;
+    }
+
+    fn rebase(&mut self, cursor: (i32, i32), rect: WindowRect) {
+        if self.origin.is_some() {
+            self.begin(cursor, rect);
+        }
+    }
+
+    fn candidate(&self, cursor: (i32, i32), proposed: WindowRect) -> WindowRect {
+        let Some(origin) = self.origin else {
+            return proposed;
+        };
+        let shifted = |position: i32, from: i32, to: i32| {
+            (i64::from(position) + i64::from(to) - i64::from(from))
+                .clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
+        };
+        // Width/height can change with DPI or an explicit preference update.
+        // Position never feeds back from a previously clamped/snapped RECT.
+        WindowRect {
+            x: shifted(origin.rect.x, origin.cursor.0, cursor.0),
+            y: shifted(origin.rect.y, origin.cursor.1, cursor.1),
+            ..proposed
+        }
+    }
 }
 
 fn current_rect(window: &WebviewWindow) -> Result<WindowRect, String> {
@@ -294,6 +481,8 @@ pub(crate) async fn open_window(app: &AppHandle) -> Result<(), String> {
     static OPEN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     let _guard = OPEN.lock().await;
     if let Some(existing) = app.get_webview_window(LABEL) {
+        #[cfg(windows)]
+        drag::install(&existing, None).await?;
         existing.unminimize().map_err(|e| e.to_string())?;
         let area = current_area(app, &existing)?;
         let current = current_rect(&existing)?;
@@ -343,6 +532,12 @@ pub(crate) async fn open_window(app: &AppHandle) -> Result<(), String> {
     .visible(false)
     .build()
     .map_err(|e| e.to_string())?;
+    #[cfg(windows)]
+    if let Err(error) = drag::install(&monitor, Some(initial_snap_to_edge(settings.as_ref()))).await
+    {
+        let _ = monitor.destroy();
+        return Err(error);
+    }
     // Place on the main window's current screen; later restores retain the
     // user's position and pin preference while fitting the current work area.
     let area = if let Some(screen) = app
@@ -571,17 +766,16 @@ mod tests {
 
     #[test]
     fn initial_size_uses_clear_two_row_default_and_ignores_legacy_buttons() {
-        assert_eq!(initial_size(None), (588.0, 152.0));
+        assert_eq!(initial_size(None), (244.0, 120.0));
         for settings in [
             Value::Null,
             json!({}),
             json!({"floatingMonitor":null}),
             json!({"floatingMonitor":{"actions":["chat", "pin"]}}),
-            json!({"floatingMonitor":{"showSampleTime":true}}),
             json!({"floatingMonitor":{"layout":"unknown","fontSize":"24","metrics":["unknown"],"showGraphs":"false","showLabels":null}}),
             json!({"floatingMonitor":{"metrics":[]}}),
         ] {
-            assert_eq!(initial_size(Some(&settings)), (588.0, 152.0));
+            assert_eq!(initial_size(Some(&settings)), (244.0, 120.0));
         }
     }
 
@@ -591,21 +785,21 @@ mod tests {
             initial_size(Some(
                 &json!({"floatingMonitor":{"metrics":["cpu","cpu",null,"unknown"]}})
             )),
-            (220.0, 97.0)
+            (96.0, 64.0)
         );
         assert_eq!(
             initial_size(Some(
                 &json!({"floatingMonitor":{"showGraphs":false,"showLabels":false}})
             )),
-            (456.0, 112.0)
+            (244.0, 58.0)
         );
         assert_eq!(
             initial_size(Some(&json!({"floatingMonitor":{"fontSize":1}}))),
-            (498.0, 135.0)
+            (151.0, 92.0)
         );
         assert_eq!(
             initial_size(Some(&json!({"floatingMonitor":{"fontSize":17.5}}))),
-            (633.0, 160.0)
+            (273.0, 130.0)
         );
         let metrics = json!([
             "generation",
@@ -621,14 +815,136 @@ mod tests {
             "cache"
         ]);
         for (layout, expected) in [
-            ("compact", (812.0, 183.0)),
-            ("twoRow", (1020.0, 183.0)),
-            ("panel", (428.0, 391.0)),
+            ("compact", (607.0, 198.0)),
+            ("twoRow", (613.0, 204.0)),
+            ("panel", (352.0, 400.0)),
         ] {
             let settings =
                 json!({"floatingMonitor":{"layout":layout,"fontSize":900,"metrics":metrics}});
             assert_eq!(initial_size(Some(&settings)), expected);
         }
+    }
+
+    #[test]
+    fn compact_preset_fits_small_stacked_readings_without_changing_other_layouts() {
+        assert_eq!(
+            initial_size(Some(&json!({"floatingMonitor":{
+                "layout":"compact", "fontSize":14,
+                "metrics":["generation","gpu","vram"], "showGraphs":false
+            }}))),
+            (180.0, 40.0)
+        );
+        assert_eq!(
+            initial_size(Some(&json!({"floatingMonitor":{
+                "layout":"compact", "fontSize":14,
+                "metrics":["gpu"], "showGraphs":false
+            }}))),
+            (96.0, 40.0)
+        );
+        assert_eq!(initial_size(None), (244.0, 120.0));
+        assert_eq!(
+            initial_size(Some(&json!({"floatingMonitor":{
+                "layout":"compact", "fontSize":14, "metrics":["generation","gpu","vram"],
+                "showGraphs":false, "showLabels":false
+            }}))),
+            (180.0, 28.0)
+        );
+        for header in ["showStatus", "showSampleTime"] {
+            assert_eq!(
+                initial_size(Some(&json!({"floatingMonitor":{(header):true}}))),
+                (244.0, 138.0)
+            );
+        }
+    }
+
+    #[test]
+    fn initial_width_uses_short_localized_labels_and_optional_units() {
+        let preferences = json!({"layout":"compact", "fontSize":8,
+            "metrics":["cache","power","queued","gpu"], "showUnits":false, "showGraphs":false});
+        assert_eq!(
+            initial_size(Some(
+                &json!({"language":"zh-CN", "floatingMonitor":preferences})
+            )),
+            (98.0, 30.0)
+        );
+        assert_eq!(
+            initial_size(Some(
+                &json!({"language":"en", "floatingMonitor":preferences})
+            )),
+            (104.0, 30.0)
+        );
+        assert_eq!(
+            initial_size(Some(
+                &json!({"language":"invalid", "floatingMonitor":preferences})
+            )),
+            (98.0, 30.0)
+        );
+        for language in ["zh-CN", "en"] {
+            assert_eq!(
+                initial_size(Some(&json!({"language":language}))),
+                (244.0, 120.0)
+            );
+            assert_eq!(
+                initial_size(Some(
+                    &json!({"language":language, "floatingMonitor":{"showUnits":false}})
+                )),
+                (185.0, 120.0)
+            );
+            assert_eq!(
+                initial_size(Some(&json!({"language":language, "floatingMonitor":{
+                    "layout":"panel", "fontSize":18,
+                    "metrics":["generation","prefill","gpu","vram","cpu","ram","temperature","power"]
+                }}))),
+                (192.0, 252.0)
+            );
+        }
+    }
+
+    #[test]
+    fn initial_width_takes_the_largest_metric_in_each_row_major_column() {
+        assert_eq!(
+            initial_size(Some(&json!({"floatingMonitor":{
+                "metrics":["generation","gpu","vram","prefill","cpu","ram"]
+            }}))),
+            (205.0, 120.0)
+        );
+        assert_eq!(
+            initial_size(Some(&json!({"floatingMonitor":{
+                "layout":"compact", "fontSize":14, "metrics":["generation","gpu","vram"],
+                "showGraphs":false, "showUnits":false
+            }}))),
+            (139.0, 40.0)
+        );
+    }
+
+    #[test]
+    fn font_range_eight_to_thirty_six_fits_safe_sizes_and_smaller_text_reduces_height() {
+        for language in ["zh-CN", "en"] {
+            for layout in ["compact", "twoRow", "panel"] {
+                let dimensions = |font| {
+                    initial_size(Some(&json!({"language":language, "floatingMonitor":{
+                        "layout":layout, "fontSize":font, "showStatus":true,
+                        "metrics":["generation","prefill","gpu","vram","cpu","ram","temperature","power"]
+                    }})))
+                };
+                let small = dimensions(8);
+                let normal = dimensions(16);
+                let large = dimensions(36);
+                assert!(small.1 < normal.1 && normal.1 < large.1);
+                for size in [small, normal, large] {
+                    assert!(validate_size(size.0, size.1).is_ok());
+                }
+                assert_eq!(dimensions(-1), small);
+                assert_eq!(dimensions(100), large);
+            }
+        }
+        assert_eq!(
+            initial_size(Some(&json!({"floatingMonitor":{
+                "layout":"compact", "fontSize":8, "metrics":["gpu"],
+                "showGraphs":false, "showLabels":false
+            }}))),
+            (96.0, 24.0)
+        );
     }
 
     fn area(x: i32, y: i32, width: u32, height: u32, scale: f64) -> MonitorArea {
@@ -718,19 +1034,206 @@ mod tests {
     }
 
     #[test]
+    fn dragging_clamps_and_snaps_all_work_area_edges_without_hiding_any_pixels() {
+        let screen = area(0, 40, 1920, 1000, 1.0);
+        for (proposed, expected) in [
+            (rect(14, 54, 233, 60), rect(0, 40, 233, 60)),
+            (rect(15, 55, 233, 60), rect(15, 55, 233, 60)),
+            (rect(1673, 966, 233, 60), rect(1687, 980, 233, 60)),
+            (rect(1672, 965, 233, 60), rect(1672, 965, 233, 60)),
+            (rect(-900, 1500, 233, 60), rect(0, 980, 233, 60)),
+        ] {
+            assert_eq!(snap_drag_rect(&screen, proposed, true), Some(expected));
+            assert_eq!(snap_drag_rect(&screen, expected, true), Some(expected));
+        }
+    }
+
+    #[test]
+    fn dragging_uses_physical_dpi_threshold_and_negative_monitor_coordinates() {
+        let screen = area(-1920, -1080, 1920, 1040, 1.5);
+        assert_eq!(
+            snap_drag_rect(&screen, rect(-1899, -1059, 350, 90), true),
+            Some(rect(-1920, -1080, 350, 90))
+        );
+        assert_eq!(
+            snap_drag_rect(&screen, rect(-1898, -1058, 350, 90), true),
+            Some(rect(-1898, -1058, 350, 90))
+        );
+        assert_eq!(
+            snap_drag_rect(&screen, rect(-371, -151, 350, 90), true),
+            Some(rect(-350, -130, 350, 90))
+        );
+    }
+
+    #[test]
+    fn dragging_can_move_to_another_work_area_and_fit_a_smaller_monitor() {
+        let left = area(-1920, 0, 1920, 1040, 1.0);
+        let right = area(0, 40, 1280, 680, 1.25);
+        let proposed = rect(-80, 120, 588, 152);
+        assert_eq!(
+            snap_drag_rect(&left, proposed, true),
+            Some(rect(-588, 120, 588, 152))
+        );
+        assert_eq!(
+            snap_drag_rect(&right, proposed, true),
+            Some(rect(0, 120, 588, 152))
+        );
+        assert_eq!(
+            snap_drag_rect(
+                &area(200, -500, 180, 30, 2.0),
+                rect(-10, -20, 588, 152),
+                true
+            ),
+            Some(rect(200, -500, 180, 30))
+        );
+    }
+
+    #[test]
+    fn dragging_rejects_invalid_rectangles_without_panicking() {
+        for screen in [
+            area(0, 0, 0, 800, 1.0),
+            area(0, 0, 1200, 800, f64::NAN),
+            area(i32::MAX, 0, 1200, 800, 1.0),
+        ] {
+            assert_eq!(snap_drag_rect(&screen, rect(0, 0, 233, 60), true), None);
+        }
+        assert_eq!(
+            snap_drag_rect(&area(0, 0, 1200, 800, 1.0), rect(0, 0, 0, 60), true),
+            None
+        );
+    }
+
+    #[test]
+    fn snap_preference_defaults_off_and_off_keeps_work_area_clamping() {
+        assert!(!initial_snap_to_edge(None));
+        for settings in [
+            json!({}),
+            json!({"floatingMonitor":{"snapToEdge":"true"}}),
+            json!({"floatingMonitor":{"snapToEdge":false}}),
+        ] {
+            assert!(!initial_snap_to_edge(Some(&settings)));
+        }
+        assert!(initial_snap_to_edge(Some(
+            &json!({"floatingMonitor":{"snapToEdge":true}})
+        )));
+        let screen = area(0, 0, 1920, 1040, 1.0);
+        assert_eq!(
+            snap_drag_rect(&screen, rect(8, 8, 225, 40), false),
+            Some(rect(8, 8, 225, 40))
+        );
+        assert_eq!(
+            snap_drag_rect(&screen, rect(-8, 1010, 225, 40), false),
+            Some(rect(0, 1000, 225, 40))
+        );
+    }
+
+    #[test]
+    fn accumulated_cursor_motion_escapes_snap_feedback_and_can_drag_again() {
+        let screen = area(0, 0, 1920, 1040, 1.0);
+        let mut state = DragState {
+            snap_to_edge: true,
+            ..Default::default()
+        };
+        let mut actual = rect(0, 100, 225, 40);
+        state.begin((100, 120), actual);
+        for total_delta in 1..=40 {
+            // Reproduce Windows proposing the last snapped RECT + only 1px.
+            // Feeding this position back used to keep the window at x=0 forever.
+            let proposed = rect(actual.x + 1, actual.y, actual.width, actual.height);
+            let candidate = state.candidate((100 + total_delta, 120), proposed);
+            actual = snap_drag_rect(&screen, candidate, state.snap_to_edge).unwrap();
+            assert_eq!(actual.x, if total_delta <= 14 { 0 } else { total_delta });
+        }
+        state.finish();
+        assert!(state.origin.is_none());
+        state.begin((700, 120), actual);
+        assert_eq!(state.candidate((710, 120), actual).x, 50);
+        state.finish();
+        // A subsequent move from a snapped edge gets a new origin as well.
+        state.begin((900, 120), rect(0, 100, 225, 40));
+        assert_eq!(
+            snap_drag_rect(&screen, state.candidate((916, 120), actual), true)
+                .unwrap()
+                .x,
+            16
+        );
+    }
+
+    #[test]
+    fn accumulated_cursor_motion_can_pull_away_from_every_snapped_corner() {
+        let screen = area(-1920, -1080, 1920, 1040, 1.5);
+        for (x, y, dx, dy) in [
+            (-1920, -1080, 1, 1),
+            (-225, -1080, -1, 1),
+            (-1920, -80, 1, -1),
+            (-225, -80, -1, -1),
+        ] {
+            let mut state = DragState {
+                snap_to_edge: true,
+                ..Default::default()
+            };
+            let mut actual = rect(x, y, 225, 40);
+            let cursor = (x + 100, y + 20);
+            state.begin(cursor, actual);
+            for travel in 1..=40 {
+                let proposed = rect(actual.x + dx, actual.y + dy, 225, 40);
+                let candidate =
+                    state.candidate((cursor.0 + dx * travel, cursor.1 + dy * travel), proposed);
+                actual = snap_drag_rect(&screen, candidate, state.snap_to_edge).unwrap();
+                let moved = if travel <= 21 { 0 } else { travel };
+                assert_eq!(actual, rect(x + dx * moved, y + dy * moved, 225, 40));
+            }
+        }
+    }
+
+    #[test]
+    fn live_snap_toggle_and_dpi_rebase_do_not_reuse_an_old_drag_origin() {
+        let screen = area(0, 0, 1920, 1040, 1.0);
+        let mut state = DragState {
+            snap_to_edge: true,
+            ..Default::default()
+        };
+        let original = rect(0, 100, 225, 40);
+        state.begin((100, 120), original);
+        let candidate = state.candidate((105, 120), original);
+        assert_eq!(
+            snap_drag_rect(&screen, candidate, state.snap_to_edge)
+                .unwrap()
+                .x,
+            0
+        );
+        state.snap_to_edge = false;
+        assert_eq!(
+            snap_drag_rect(&screen, candidate, state.snap_to_edge)
+                .unwrap()
+                .x,
+            5
+        );
+        state.rebase((-1000, 200), rect(-1200, 160, 338, 60));
+        let scaled = state.candidate((-980, 206), rect(-1200, 160, 338, 60));
+        assert_eq!(scaled, rect(-1180, 166, 338, 60));
+        state.finish();
+        state.rebase((10, 10), original);
+        assert!(state.origin.is_none());
+        assert_eq!(state.candidate((500, 500), original), original);
+    }
+
+    #[test]
     fn resize_bounds_reject_nonfinite_and_unsafe_dimensions() {
         for (width, height) in [
             (f64::NAN, 40.0),
             (220.0, f64::INFINITY),
             (f64::NEG_INFINITY, 40.0),
-            (219.0, 40.0),
+            (95.0, 40.0),
             (1121.0, 40.0),
-            (220.0, 39.0),
+            (220.0, 23.0),
             (220.0, 641.0),
         ] {
             assert!(validate_size(width, height).is_err());
         }
         assert!(validate_size(220.0, 40.0).is_ok());
+        assert!(validate_size(160.0, 40.0).is_ok());
+        assert!(validate_size(96.0, 24.0).is_ok());
         assert!(validate_size(1120.0, 640.0).is_ok());
         for screen in [
             area(0, 0, 0, 1080, 1.0),

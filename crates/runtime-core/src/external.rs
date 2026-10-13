@@ -138,7 +138,11 @@ fn validate_server_arguments(profile: &ServiceProfile, argv: &[String]) -> Resul
             .ok_or("实例缺少明确的 --config 绝对路径")?,
     );
     if !config.is_absolute() || !same_path(config, Path::new(&profile.config_path)) {
-        return Err("实例配置路径与所选档案不一致".into());
+        return Err(crate::diagnostics::error(
+            "STARTUP_EXTERNAL_CONFIG_MISMATCH",
+            "实例配置路径与所选档案不一致；已有 Strata 实例使用其他配置，请在正在运行该实例的 Manager 窗口切换模型",
+            "prepare",
+        ));
     }
     let config_json = crate::storage::read(profile)?;
     let port = options
@@ -603,6 +607,15 @@ mod platform {
         Ok(Some(candidate))
     }
     impl VerifiedExternal {
+        /// A listener may be the child of the standard Windows venv launcher.
+        /// Only a launcher whose full identity was verified by `detect` counts.
+        pub fn belongs_to_owned_process(&self, owned_pid: u32) -> bool {
+            self.pid == owned_pid
+                || self
+                    .launcher
+                    .as_ref()
+                    .is_some_and(|launcher| launcher.pid == owned_pid)
+        }
         pub fn revalidate(&self, profile: &ServiceProfile) -> Result<(), String> {
             self.revalidate_with_launcher(profile, self.launcher.as_deref())?;
             if listening_ids(local_port(profile)?)? != vec![self.pid] {
@@ -1161,6 +1174,44 @@ time.sleep(90)
             assert!(unrelated.0.try_wait().unwrap().is_none());
         }
         #[test]
+        fn external_configuration_mismatch_keeps_strict_identity_and_reports_prepare_conflict() {
+            let temp = tempfile::tempdir().unwrap();
+            let image = std::env::current_exe().unwrap();
+            let selected = temp.path().join("selected.json");
+            let running = temp.path().join("running.json");
+            for config in [&selected, &running] {
+                std::fs::write(config, b"{\"port\":18339}").unwrap();
+            }
+            let profile = ServiceProfile {
+                id: "configuration-mismatch-fixture".into(),
+                name: "".into(),
+                base_url: "http://127.0.0.1:18339".into(),
+                install_dir: temp.path().to_string_lossy().into(),
+                config_path: selected.to_string_lossy().into(),
+                python_path: image.to_string_lossy().into(),
+                managed: true,
+            };
+            let mut argv = vec![
+                image.to_string_lossy().into_owned(),
+                "-m".into(),
+                "serve.server".into(),
+                "--config".into(),
+                selected.to_string_lossy().into_owned(),
+                "--port".into(),
+                "18339".into(),
+            ];
+            assert!(validate_arguments(&profile, &image, &argv).is_ok());
+            argv[4] = running.to_string_lossy().into_owned();
+            let raw = validate_arguments(&profile, &image, &argv).unwrap_err();
+            let error: Value = serde_json::from_str(&raw)
+                .expect("configuration conflict must be a structured startup diagnostic");
+            assert_eq!(error["code"], "STARTUP_EXTERNAL_CONFIG_MISMATCH");
+            assert_eq!(error["details"]["startupPhase"], "prepare");
+            let message = error["message"].as_str().unwrap();
+            assert!(message.contains("其他配置"), "{message}");
+            assert!(message.contains("Manager 窗口"), "{message}");
+        }
+        #[test]
         fn full_python_arguments_reject_wrong_config_port_module_and_extra_flags() {
             let temp = tempfile::tempdir().unwrap();
             let image = std::env::current_exe().unwrap();
@@ -1318,6 +1369,9 @@ while time.monotonic()<deadline:
             assert_ne!(child_pid, launcher.0.id());
             assert!(same_path(&candidate.image, Path::new(&python)));
             assert_eq!(candidate.launcher.as_ref().unwrap().pid, launcher.0.id());
+            assert!(candidate.belongs_to_owned_process(launcher.0.id()));
+            assert!(candidate.belongs_to_owned_process(child_pid));
+            assert!(!candidate.belongs_to_owned_process(std::process::id()));
             assert!(port_accepting(&profile).unwrap());
             let mut unknown = profile.clone();
             unknown.config_path = temp.path().join("unknown.json").to_string_lossy().into();
@@ -1501,6 +1555,9 @@ pub fn detect(profile: &ServiceProfile) -> Result<Option<VerifiedExternal>, Stri
 }
 #[cfg(not(windows))]
 impl VerifiedExternal {
+    pub fn belongs_to_owned_process(&self, owned_pid: u32) -> bool {
+        self.pid == owned_pid
+    }
     pub fn revalidate(&self, _profile: &ServiceProfile) -> Result<(), String> {
         Err("不支持此平台接管".into())
     }

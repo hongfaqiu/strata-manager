@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { Copy, FlaskConical, FolderOpen, LoaderCircle, Save } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -5,7 +6,7 @@ import * as core from '@strata-manager/core';
 import { Dropdown } from '../OfficialControls';
 import './runtime-download-settings.css';
 
-interface Props { language: 'zh-CN' | 'en'; desktop: boolean; release?: core.RuntimeUpdateInfo; releaseLoading?: boolean; runtime?: core.DetectedRuntime }
+interface Props { language: AppLanguage; desktop: boolean; release?: core.RuntimeUpdateInfo; releaseLoading?: boolean; runtime?: core.DetectedRuntime }
 const preferencesKey = ['runtime-download-preferences'];
 const hasTemplate = (value?: string) => /\{(?:url|version|asset)\}/.test(value ?? '');
 

@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { Fragment, type ReactNode } from 'react';
 import { asObject, normalizeMetrics, requestPrefillTokS, type JsonObject } from '@strata-manager/core';
 import sprite from './official/sprite.svg';
@@ -5,7 +6,7 @@ import { SlotMonitor } from './SlotMonitor';
 
 export interface OfficialMonitoringProps {
   raw: JsonObject;
-  language: 'zh-CN' | 'en';
+  language: AppLanguage;
   showAll: boolean;
   onShowAll: () => void;
   onRequest?: (request: JsonObject) => void;
@@ -77,7 +78,7 @@ export function MonitoringPage({ raw, language, showAll, onShowAll, onRequest, e
     stateDetail = statePercent !== null ? `${fmt(live.prompt_read)} / ${fmt(live.prompt_total)} tokens · ${fmt(statePercent)}%` : `${fmt(live.prompt_tokens)} tokens`;
   } else if (state === 'generating') {
     const phase = typeof live.phase === 'string' && live.phase ? live.phase : null;
-    stateLabel = phase ? (language === 'en' ? phase[0]!.toUpperCase() + phase.slice(1) : ({ reasoning: '思考', content: '生成回答' }[phase] ?? phase)) : t('生成中', 'Generating');
+    stateLabel = phase ? (language !== 'zh-CN' ? phase[0]!.toUpperCase() + phase.slice(1) : ({ reasoning: '思考', content: '生成回答' }[phase] ?? phase)) : t('生成中', 'Generating');
     statePercent = ratio(live.generated, live.max_tokens);
     stateDetail = `${fmt(live.generated)} tokens · ${fmt(live.tok_s, 1)} tok/s`;
   } else if (last) stateDetail = `${t('最近：', 'last: ')}${fmt(last.output_tokens)} tokens${number(last.decode_tok_s) !== null ? ` ${t('速度', 'at')} ${fmt(last.decode_tok_s, 1)} tok/s` : ''}`;

@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useRef, useState } from 'react';
 import type { ApiTrendBucket, ApiUsageTrends } from '@strata-manager/core';
 import { apiUsageStrings } from './ApiUsageStrings';
@@ -14,7 +15,7 @@ export interface ChartSeries {
 }
 export interface UsageChartProps {
   trends: ApiUsageTrends;
-  language: 'zh-CN' | 'en';
+  language: AppLanguage;
   title: string;
   series: ChartSeries[];
   mode?: 'line' | 'stack';
@@ -49,7 +50,7 @@ const linePath = (points: ChartPoint[]) => points.map((point, index) => `${index
 const areaPath = (points: ChartPoint[], bottom: number) => !points.length ? '' : `${linePath(points)} L${points.at(-1)!.x.toFixed(2)},${bottom} L${points[0]!.x.toFixed(2)},${bottom} Z`;
 
 export function UsageChart({ trends, language, title, series, mode = 'line', percentage = false, unit = '', range, inspectedAt, onInspect }: UsageChartProps) {
-  const text = apiUsageStrings[language];
+  const text = apiUsageStrings[(language === 'zh-CN' ? 'zh-CN' : 'en')];
   const [localInspection, setLocalInspection] = useState<number | null>(null);
   const [hidden, setHidden] = useState<Set<keyof ApiTrendBucket>>(() => new Set());
   const [chartWidth, setChartWidth] = useState(600);

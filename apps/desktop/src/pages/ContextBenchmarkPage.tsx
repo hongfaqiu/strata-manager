@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Copy, LoaderCircle, Play, Square } from 'lucide-react';
 import * as core from '@strata-manager/core';
@@ -32,7 +33,7 @@ function retain(reports: ContextBenchmarkReport[]) {
   return reports.slice(0, 20).filter((report, index) => { bytes += encoder.encode(JSON.stringify(report)).byteLength; return index === 0 || bytes <= 16 * 1024 * 1024; });
 }
 export function ContextBenchmarkPage({ profile, online, disabled, language, onRunningChange }: {
-  profile?: ServiceProfile; online: boolean; disabled: boolean; language: 'zh-CN' | 'en'; onRunningChange: (running: boolean) => void;
+  profile?: ServiceProfile; online: boolean; disabled: boolean; language: AppLanguage; onRunningChange: (running: boolean) => void;
 }) {
   const zh = language === 'zh-CN', text = (cn: string, en: string) => zh ? cn : en;
   const { maxContext, loading: contextLoading, error: contextError } = useBenchmarkContext(profile, online);

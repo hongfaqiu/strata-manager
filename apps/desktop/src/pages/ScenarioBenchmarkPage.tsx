@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CircleHelp, Download, LoaderCircle, Play, Square, Timer } from 'lucide-react';
 import * as core from '@strata-manager/core';
@@ -74,7 +75,7 @@ function reportCsv(report: SavedReport): string {
 }
 
 export function ScenarioBenchmarkPage({ profile, online, disabled, language, onRunningChange, quickRunRequest = 0 }: {
-  profile?: ServiceProfile; online: boolean; disabled: boolean; language: 'zh-CN' | 'en'; onRunningChange: (running: boolean) => void; quickRunRequest?: number;
+  profile?: ServiceProfile; online: boolean; disabled: boolean; language: AppLanguage; onRunningChange: (running: boolean) => void; quickRunRequest?: number;
 }) {
   const zh = language === 'zh-CN', text = (cn: string, en: string) => zh ? cn : en;
   const [options, setOptions] = useState<BenchmarkSuiteOptions>(() => ({ ...core.DEFAULT_BENCHMARK_SUITE_OPTIONS, kind: 'suite', concurrency: 1, scenarios: [...core.DEFAULT_BENCHMARK_SUITE_OPTIONS.scenarios] }));

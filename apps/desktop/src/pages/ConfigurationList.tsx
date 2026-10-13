@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useRef, useState } from 'react';
 import { FileText, Play, RefreshCw, Trash2 } from 'lucide-react';
 import type { LocalModelConfiguration, LocalModelGroup } from '@strata-manager/core';
@@ -15,7 +16,7 @@ interface Props {
   loading: boolean;
   error?: string;
   dirty: boolean;
-  language: 'zh-CN' | 'en';
+  language: AppLanguage;
   onOpen: (entry: LocalModelConfiguration) => void;
   onDelete: (entry: LocalModelConfiguration) => void;
   onUse: (entry: LocalModelConfiguration, restart: boolean) => Promise<unknown>;

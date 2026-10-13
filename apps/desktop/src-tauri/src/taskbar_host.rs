@@ -3,7 +3,8 @@
 //! discovered taskbar. Explorer windows are never moved, resized or reparented.
 use super::{
     layout::{graph_points, vacant_rect, Rect},
-    read_frame, write_frame, HostFrame, ParentFrame, Preferences, Sample, SampleHistory, METRICS,
+    read_frame, write_frame, HostFrame, ParentFrame, Preferences, Sample, SampleHistory,
+    TaskbarPlacement, METRICS,
 };
 use std::{
     collections::VecDeque,
@@ -65,6 +66,100 @@ struct Identity {
     started: u64,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ShellState {
+    identity: Identity,
+    bar: Rect,
+    dpi: u32,
+}
+
+fn rect_text(rect: Rect) -> String {
+    format!(
+        "({},{},{},{})",
+        rect.left, rect.top, rect.right, rect.bottom
+    )
+}
+
+fn shell_difference(expected: ShellState, actual: ShellState) -> Option<String> {
+    let mut differences = Vec::new();
+    if expected.identity != actual.identity {
+        differences.push(format!(
+            "identity expected=({},{},{}) actual=({},{},{})",
+            expected.identity.hwnd,
+            expected.identity.pid,
+            expected.identity.started,
+            actual.identity.hwnd,
+            actual.identity.pid,
+            actual.identity.started,
+        ));
+    }
+    if expected.bar != actual.bar {
+        differences.push(format!(
+            "bar expected={} actual={}",
+            rect_text(expected.bar),
+            rect_text(actual.bar)
+        ));
+    }
+    if expected.dpi != actual.dpi {
+        differences.push(format!(
+            "dpi expected={} actual={}",
+            expected.dpi, actual.dpi
+        ));
+    }
+    if differences.is_empty() {
+        None
+    } else {
+        Some(differences.join("; "))
+    }
+}
+
+/// GetWindowRect/ScreenToClient coordinates depend on the calling thread's DPI
+/// awareness. Keep the shell context for the complete measurement/create/check
+/// transaction, including every error path; never compare across contexts.
+struct ThreadDpiContext {
+    previous: DPI_AWARENESS_CONTEXT,
+    target: DPI_AWARENESS_CONTEXT,
+}
+
+impl ThreadDpiContext {
+    unsafe fn for_window(hwnd: HWND) -> Result<Self, String> {
+        let target = GetWindowDpiAwarenessContext(hwnd);
+        if target.0.is_null() {
+            return Err("无法读取任务栏 DPI 上下文".into());
+        }
+        let previous = SetThreadDpiAwarenessContext(target);
+        if previous.0.is_null() {
+            return Err("无法匹配任务栏 DPI 上下文".into());
+        }
+        let guard = Self { previous, target };
+        guard.verify_current()?;
+        Ok(guard)
+    }
+
+    unsafe fn verify_current(&self) -> Result<(), String> {
+        let current = GetThreadDpiAwarenessContext();
+        if AreDpiAwarenessContextsEqual(self.target, current).as_bool() {
+            return Ok(());
+        }
+        Err(format!(
+            "DPI 上下文已改变：expected={:#x}/awareness={} actual={:#x}/awareness={}",
+            self.target.0 as usize,
+            GetAwarenessFromDpiAwarenessContext(self.target).0,
+            current.0 as usize,
+            GetAwarenessFromDpiAwarenessContext(current).0,
+        ))
+    }
+}
+
+impl Drop for ThreadDpiContext {
+    fn drop(&mut self) {
+        // The guard is thread-local: its raw context handles are not Send.
+        unsafe {
+            SetThreadDpiAwarenessContext(self.previous);
+        }
+    }
+}
+
 unsafe fn identity(hwnd: HWND) -> Result<Identity, String> {
     if !IsWindow(Some(hwnd)).as_bool() {
         return Err("任务栏窗口已失效".into());
@@ -94,8 +189,17 @@ unsafe fn shell() -> Result<HWND, String> {
 }
 unsafe fn bounds(hwnd: HWND) -> Result<Rect, String> {
     let mut r = RECT::default();
-    GetWindowRect(hwnd, &mut r).map_err(|_| "无法读取任务栏位置")?;
+    GetWindowRect(hwnd, &mut r)
+        .map_err(|error| format!("无法读取窗口位置 hwnd={:#x}: {error}", hwnd.0 as usize))?;
     Ok(convert(r))
+}
+
+unsafe fn shell_state(hwnd: HWND) -> Result<ShellState, String> {
+    Ok(ShellState {
+        identity: identity(hwnd)?,
+        bar: bounds(hwnd)?,
+        dpi: GetDpiForWindow(hwnd).max(96),
+    })
 }
 fn convert(r: RECT) -> Rect {
     Rect {
@@ -116,23 +220,15 @@ struct Inspection {
     identity: Identity,
     bar: Rect,
     occupied: Vec<Rect>,
+    tray_left: i32,
     dpi: u32,
 }
 
 unsafe fn inspect() -> Result<Inspection, String> {
     let hwnd = shell()?;
     let before = identity(hwnd)?;
-    let context = GetWindowDpiAwarenessContext(hwnd);
-    if context.0.is_null() {
-        return Err("无法验证任务栏 DPI 上下文".into());
-    }
-    let old = SetThreadDpiAwarenessContext(context);
-    if old.0.is_null() {
-        return Err("无法匹配任务栏 DPI 上下文".into());
-    }
-    let result = inspect_with_context(hwnd, before);
-    SetThreadDpiAwarenessContext(old);
-    result
+    let _dpi = ThreadDpiContext::for_window(hwnd)?;
+    inspect_with_context(hwnd, before)
 }
 
 unsafe fn inspect_with_context(hwnd: HWND, before: Identity) -> Result<Inspection, String> {
@@ -188,6 +284,7 @@ unsafe fn inspect_with_context(hwnd: HWND, before: Identity) -> Result<Inspectio
         identity: before,
         bar,
         occupied,
+        tray_left: tray_rect.left,
         dpi: GetDpiForWindow(hwnd).max(96),
     })
 }
@@ -344,19 +441,84 @@ unsafe extern "system" fn window_proc(
     DefWindowProcW(hwnd, message, wparam, lparam)
 }
 
+fn column_widths(preferences: &Preferences, dpi: u32) -> Vec<i32> {
+    let rows = if preferences.layout == "compact" {
+        1
+    } else {
+        2
+    };
+    let mut columns = vec![0; preferences.metrics.len().div_ceil(rows).max(1)];
+    let font = f64::from(preferences.font_size);
+    let scale = f64::from(dpi) / 96.0;
+    for (position, metric) in preferences.metrics.iter().enumerate() {
+        let Some(index) = METRICS.iter().position(|id| id == metric) else {
+            continue;
+        };
+        let digits = match index {
+            0 | 1 => 6.,
+            2 | 4 | 6 | 10 => 3.,
+            3 | 5 => 5.,
+            _ => 4.,
+        };
+        let measure = |text: &str| {
+            text.chars()
+                .map(|c| if c.is_ascii() { 0.6 } else { 1. })
+                .sum::<f64>()
+                * font
+        };
+        let label = if preferences.show_labels {
+            measure(if preferences.english {
+                LABELS_EN[index]
+            } else {
+                LABELS[index]
+            })
+        } else {
+            0.
+        };
+        let unit = if preferences.show_units {
+            measure(UNITS[index])
+        } else {
+            0.
+        };
+        let graph = if preferences.show_graphs { 26. } else { 0. };
+        let width = ((label + digits * font * 0.58 + unit + graph + 8.) * scale).ceil() as i32;
+        let column = position / rows;
+        columns[column] = columns[column].max(width);
+    }
+    columns
+}
+
 fn dimensions(preferences: &Preferences, dpi: u32) -> (i32, i32, usize) {
     let rows = if preferences.layout == "compact" {
         1
     } else {
         2
     };
-    let columns = preferences.metrics.len().div_ceil(rows).max(1);
-    let scale = dpi as f64 / 96.0;
-    let cell = (preferences.font_size as f64 * if preferences.show_labels { 7.8 } else { 5.0 })
-        + if preferences.show_graphs { 26.0 } else { 6.0 };
-    let width = (cell * columns as f64 * scale).ceil() as i32 + 8;
+    let scale = f64::from(dpi) / 96.0;
+    let width = column_widths(preferences, dpi).iter().sum::<i32>() + 8;
     let height = ((preferences.font_size + 4) as f64 * rows as f64 * scale).ceil() as i32 + 4;
     (width, height, rows)
+}
+
+fn metric_text(index: usize, number: f64) -> String {
+    if number >= 1e12 {
+        return format!("{number:.0e}");
+    }
+    if number >= 999.95 {
+        let (scale, suffix) = if number >= 999_950_000. {
+            (1e9, "G")
+        } else if number >= 999_950. {
+            (1e6, "M")
+        } else {
+            (1e3, "k")
+        };
+        return format!("{:.1}{suffix}", number / scale);
+    }
+    if matches!(index, 0 | 1 | 3 | 5) {
+        format!("{number:.1}")
+    } else {
+        format!("{number:.0}")
+    }
 }
 
 unsafe fn paint(hwnd: HWND, render: &Render) -> bool {
@@ -407,16 +569,17 @@ unsafe fn paint(hwnd: HWND, render: &Render) -> bool {
     let old_font = SelectObject(buffer, font.into());
     SetBkMode(buffer, TRANSPARENT);
     let (_, _, rows) = dimensions(&render.preferences, render.dpi);
-    let columns = render.preferences.metrics.len().div_ceil(rows).max(1);
-    let cell_width = (rect.right - 8) / columns as i32;
+    let column_widths = column_widths(&render.preferences, render.dpi);
     let cell_height = (rect.bottom - 4) / rows as i32;
     for (position, metric) in render.preferences.metrics.iter().enumerate() {
         let Some(index) = METRICS.iter().position(|x| *x == metric) else {
             continue;
         };
-        let x = 4 + (position / rows) as i32 * cell_width;
+        let column = position / rows;
+        let cell_width = column_widths[column];
+        let x = 4 + column_widths[..column].iter().sum::<i32>();
         let y = 2 + (position % rows) as i32 * cell_height;
-        let color = color(index);
+        let color = color(index, &render.preferences);
         let graph_width = if render.preferences.show_graphs {
             (26.0 * render.dpi as f64 / 96.0) as i32
         } else {
@@ -453,9 +616,7 @@ unsafe fn paint(hwnd: HWND, render: &Render) -> bool {
                 ""
             };
         let value = match render.timeline.current.values[index] {
-            Some(n) if n >= 10000.0 => format!("{:.1}k", n / 1000.0),
-            Some(n) if matches!(index, 0 | 1 | 3 | 5) => format!("{n:.1}"),
-            Some(n) => format!("{n:.0}"),
+            Some(n) => metric_text(index, n),
             None => "—".into(),
         };
         let text = format!("{label}{value}{unit}");
@@ -475,7 +636,8 @@ unsafe fn paint(hwnd: HWND, render: &Render) -> bool {
     }
     // When no telemetry is available, replace the first column's placeholder
     // with the actual stopped/unavailable state; never retain previous digits.
-    if render.timeline.current.values.iter().all(Option::is_none) {
+    if render.preferences.show_status && render.timeline.current.values.iter().all(Option::is_none)
+    {
         let mut area = RECT {
             left: 4,
             top: 2,
@@ -486,7 +648,10 @@ unsafe fn paint(hwnd: HWND, render: &Render) -> bool {
         FillRect(buffer, &area, brush);
         let _ = DeleteObject(brush.into());
         SetTextColor(buffer, COLORREF(0x00c7b8a8));
-        let mut text: Vec<u16> = render.timeline.current.state.encode_utf16().collect();
+        // The first paint may precede the first snapshot. An empty Rust slice
+        // has a dangling non-null pointer; do not pass that as a Win32 string.
+        let state = initial_status_text(&render.timeline.current.state, render.preferences.english);
+        let mut text: Vec<u16> = state.encode_utf16().collect();
         DrawTextW(
             buffer,
             &mut text,
@@ -515,12 +680,33 @@ unsafe fn paint(hwnd: HWND, render: &Render) -> bool {
     success
 }
 
-fn color(index: usize) -> COLORREF {
-    match index {
-        0 => COLORREF(0x0099d322),
-        1 => COLORREF(0x00f8bd38),
-        _ => COLORREF(0x00e2e8f0),
+fn initial_status_text(state: &str, english: bool) -> &str {
+    if state.trim().is_empty() {
+        if english {
+            "Waiting for sample"
+        } else {
+            "等待采样"
+        }
+    } else {
+        state
     }
+}
+
+fn color(index: usize, preferences: &Preferences) -> COLORREF {
+    const DEFAULTS: [&str; 11] = [
+        "#68e7a5", "#75bdff", "#ffbb75", "#5edbe8", "#c49af7", "#a3b3ff", "#ff959e", "#efd16a",
+        "#61d8b9", "#f7ae72", "#b5a2fa",
+    ];
+    let text = preferences
+        .metric_colors
+        .get(METRICS[index])
+        .map(String::as_str)
+        .unwrap_or(DEFAULTS[index]);
+    let rgb = text
+        .strip_prefix('#')
+        .and_then(|hex| u32::from_str_radix(hex, 16).ok())
+        .unwrap_or(0xe2e8f0);
+    COLORREF(((rgb & 0xff0000) >> 16) | (rgb & 0x00ff00) | ((rgb & 0xff) << 16))
 }
 unsafe fn graph(
     dc: HDC,
@@ -655,83 +841,232 @@ struct Attachment {
     dpi: u32,
 }
 
+fn placement(area: Rect, bar: Rect, tray_left: i32, dpi: u32) -> TaskbarPlacement {
+    let gap = i64::from(tray_left) - i64::from(area.right);
+    if (0..=i64::from(dpi) / 6).contains(&gap) {
+        TaskbarPlacement::NotificationLeft
+    } else if i64::from(area.left) + i64::from(area.right)
+        < i64::from(bar.left) + i64::from(bar.right)
+    {
+        TaskbarPlacement::LeftSide
+    } else {
+        TaskbarPlacement::RightSide
+    }
+}
+
+#[derive(Debug)]
+struct VisibilityProbe {
+    own: usize,
+    total: usize,
+    visible_style: bool,
+    blockers: Vec<Rect>,
+    details: Vec<serde_json::Value>,
+}
+
+impl VisibilityProbe {
+    fn confirmed(&self) -> bool {
+        self.visible_style && self.total > 0 && self.own == self.total
+    }
+}
+
+// Physical hit testing checks the displayed surface, not just WS_VISIBLE or a
+// successful BitBlt. Record classes/rectangles only; never collect window titles.
+unsafe fn inspect_visibility(
+    hwnd: HWND,
+    area: Rect,
+    widths: &[i32],
+    rows: usize,
+) -> VisibilityProbe {
+    let mut points = Vec::new();
+    for x in [1, 2, 3] {
+        for y in [1, 2, 3] {
+            points.push(POINT {
+                x: area.left + area.width() * x / 4,
+                y: area.top + area.height() * y / 4,
+            });
+        }
+    }
+    let mut left = area.left + 4;
+    for width in widths {
+        for row in 0..rows {
+            points.push(POINT {
+                x: left + width / 2,
+                y: area.top
+                    + 2
+                    + ((2 * row + 1) as i64 * i64::from(area.height() - 4) / (2 * rows) as i64)
+                        as i32,
+            });
+        }
+        left += width;
+    }
+    let mut result = VisibilityProbe {
+        own: 0,
+        total: points.len(),
+        visible_style: IsWindowVisible(hwnd).as_bool(),
+        blockers: Vec::new(),
+        details: Vec::new(),
+    };
+    for point in points {
+        let hit = WindowFromPhysicalPoint(point);
+        let own = hit == hwnd || IsChild(hwnd, hit).as_bool();
+        let mut class = [0u16; 256];
+        let length = GetClassNameW(hit, &mut class).max(0) as usize;
+        let blocking = if own { None } else { bounds(hit).ok() };
+        if own {
+            result.own += 1;
+        }
+        if let Some(rect) = blocking.filter(|rect| rect.width() > 0 && rect.height() > 0) {
+            if !result.blockers.contains(&rect) {
+                result.blockers.push(rect);
+            }
+        }
+        result.details.push(serde_json::json!({"x":point.x,"y":point.y,"own":own,"hwnd":hit.0 as usize,"class":String::from_utf16_lossy(&class[..length]),"rect":blocking.map(rect_text)}));
+    }
+    if std::env::var_os("STRATA_MANAGER_TASKBAR_DIAGNOSTICS").is_some() {
+        eprintln!(
+            "{}",
+            serde_json::json!({"taskbarVisibility":{"hwnd":hwnd.0 as usize,"rect":rect_text(area),"visibleStyle":result.visible_style,"confirmed":result.confirmed(),"awareness":GetAwarenessFromDpiAwarenessContext(GetThreadDpiAwarenessContext()).0,"hits":result.details}})
+        );
+    }
+    result
+}
+
 unsafe fn attach(
     inspection: &Inspection,
     preferences: &Preferences,
     context: &Context,
     instance: windows::Win32::Foundation::HINSTANCE,
 ) -> Result<Attachment, String> {
-    let (width, height, _) = dimensions(preferences, inspection.dpi);
-    let area = vacant_rect(
-        inspection.bar,
-        &inspection.occupied,
-        width,
-        height,
-        (inspection.dpi / 12) as i32,
-    )
-    .ok_or("任务栏没有足够且可确认的空闲空间，请减少指标或字号")?;
-    let parent = HWND(inspection.identity.hwnd as *mut _);
-    if identity(parent)? != inspection.identity
-        || bounds(parent)? != inspection.bar
-        || GetDpiForWindow(parent).max(96) != inspection.dpi
-    {
-        return Err("Explorer 或任务栏布局已改变，取消本次挂载".into());
-    }
-    let old = SetThreadDpiAwarenessContext(GetWindowDpiAwarenessContext(parent));
-    if old.0.is_null() {
-        return Err("无法匹配 Explorer DPI 上下文".into());
-    }
-    let mut position = POINT {
-        x: area.left,
-        y: area.top,
+    let (width, height, rows) = dimensions(preferences, inspection.dpi);
+    let available = Rect {
+        right: inspection.tray_left.min(inspection.bar.right),
+        ..inspection.bar
     };
-    let mapped = ScreenToClient(parent, &mut position).as_bool();
-    let child = if mapped {
-        CreateWindowExW(
-            WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
-            CLASS,
-            w!("Strata 任务栏监控"),
-            WS_CHILD | WS_CLIPSIBLINGS,
-            position.x,
-            position.y,
+    let mut occupied = inspection.occupied.clone();
+    for _ in 0..8 {
+        let area = vacant_rect(
+            available,
+            &occupied,
             width,
             height,
-            Some(parent),
-            None,
-            Some(instance),
-            Some(context as *const _ as *const _),
+            (inspection.dpi / 12) as i32,
         )
-        .map_err(|e| format!("原生子窗口创建失败：{e}"))
-    } else {
-        Err("任务栏坐标转换失败".into())
-    };
-    SetThreadDpiAwarenessContext(old);
-    let child = child?;
-    if identity(parent)? != inspection.identity
-        || bounds(parent)? != inspection.bar
-        || bounds(child)? != area
-    {
-        let _ = DestroyWindow(child);
-        return Err("任务栏在挂载期间发生变化".into());
+        .ok_or("任务栏没有足够且可确认的空闲空间，请减少指标或字号")?;
+        let parent = HWND(inspection.identity.hwnd as *mut _);
+        // Switch BEFORE the first bounds comparison and restore only after the
+        // final child bounds verification, not immediately after CreateWindowExW.
+        let dpi_context = ThreadDpiContext::for_window(parent)?;
+        let expected = ShellState {
+            identity: inspection.identity,
+            bar: inspection.bar,
+            dpi: inspection.dpi,
+        };
+        let actual = shell_state(parent).map_err(|error| format!("挂载前测量失败：{error}"))?;
+        if let Some(difference) = shell_difference(expected, actual) {
+            return Err(format!(
+                "Explorer 或任务栏布局已改变，取消本次挂载 [pre-create: {difference}]"
+            ));
+        }
+        let mut position = POINT {
+            x: area.left,
+            y: area.top,
+        };
+        let mapped = ScreenToClient(parent, &mut position).as_bool();
+        let child = if mapped {
+            CreateWindowExW(
+                WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+                CLASS,
+                w!("Strata 任务栏监控"),
+                WS_CHILD | WS_CLIPSIBLINGS,
+                position.x,
+                position.y,
+                width,
+                height,
+                Some(parent),
+                None,
+                Some(instance),
+                Some(context as *const _ as *const _),
+            )
+            .map_err(|e| format!("原生子窗口创建失败：{e}"))
+        } else {
+            Err("任务栏坐标转换失败".into())
+        };
+        let child = child?;
+        let validation = (|| {
+            dpi_context.verify_current()?;
+            let actual = shell_state(parent).map_err(|error| format!("挂载后测量失败：{error}"))?;
+            if let Some(difference) = shell_difference(expected, actual) {
+                return Err(format!(
+                    "任务栏在挂载期间发生变化 [post-create: {difference}]"
+                ));
+            }
+            let child_rect = bounds(child)?;
+            if child_rect != area {
+                return Err(format!(
+                    "原生子窗口矩形不匹配 [post-create: child expected={} actual={}; dpi={}]",
+                    rect_text(area),
+                    rect_text(child_rect),
+                    actual.dpi
+                ));
+            }
+            Ok(())
+        })();
+        if let Err(error) = validation {
+            let _ = DestroyWindow(child);
+            return Err(error);
+        }
+        if let Ok(mut render) = context.render.lock() {
+            render.dpi = inspection.dpi;
+            render.painted = false;
+        }
+        // CreateWindowEx places a WS_CHILD at the bottom of its sibling Z-order.
+        // Raise only our child, never Explorer or a screen-level topmost overlay.
+        if let Err(error) = SetWindowPos(
+            child,
+            Some(HWND_TOP),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW,
+        ) {
+            let _ = DestroyWindow(child);
+            return Err(format!("任务栏子窗口显示失败：{error}"));
+        }
+        let _ = InvalidateRect(Some(child), None, false);
+        let _ = UpdateWindow(child);
+        if !context.render.lock().is_ok_and(|r| r.painted) {
+            let _ = DestroyWindow(child);
+            return Err("任务栏首帧绘制失败".into());
+        }
+        let visibility = inspect_visibility(
+            child,
+            area,
+            &column_widths(preferences, inspection.dpi),
+            rows,
+        );
+        if !visibility.confirmed() {
+            let _ = DestroyWindow(child);
+            let previous_count = occupied.len();
+            for blocker in visibility.blockers {
+                if available.overlaps(blocker) && !occupied.contains(&blocker) {
+                    occupied.push(blocker);
+                }
+            }
+            if occupied.len() == previous_count {
+                return Err("无法确认任务栏数值条可见，保留桌面浮条".into());
+            }
+            continue;
+        }
+        return Ok(Attachment {
+            hwnd: child,
+            shell: inspection.identity,
+            bar: inspection.bar,
+            area,
+            dpi: inspection.dpi,
+        });
     }
-    if let Ok(mut render) = context.render.lock() {
-        render.dpi = inspection.dpi;
-        render.painted = false;
-    }
-    let _ = ShowWindow(child, SW_SHOWNOACTIVATE);
-    let _ = InvalidateRect(Some(child), None, false);
-    let _ = UpdateWindow(child);
-    if !context.render.lock().is_ok_and(|r| r.painted) {
-        let _ = DestroyWindow(child);
-        return Err("任务栏首帧绘制失败".into());
-    }
-    Ok(Attachment {
-        hwnd: child,
-        shell: inspection.identity,
-        bar: inspection.bar,
-        area,
-        dpi: inspection.dpi,
-    })
+    Err("任务栏空位持续被其它窗口遮挡，保留桌面浮条".into())
 }
 
 pub(super) fn run() {
@@ -797,10 +1132,7 @@ unsafe fn run_inner() -> Result<(), String> {
         _ => return Err("未收到有效的任务栏宿主初始化协议".into()),
     };
     let parent = shell()?;
-    let previous_dpi = SetThreadDpiAwarenessContext(GetWindowDpiAwarenessContext(parent));
-    if previous_dpi.0.is_null() {
-        return Err("任务栏 DPI 上下文不可用".into());
-    }
+    let controller_dpi = ThreadDpiContext::for_window(parent)?;
     let instance = GetModuleHandleW(None).map_err(|e| e.to_string())?.into();
     let class = WNDCLASSW {
         lpfnWndProc: Some(window_proc),
@@ -840,7 +1172,7 @@ unsafe fn run_inner() -> Result<(), String> {
         Some(&*context as *const _ as *const _),
     )
     .map_err(|e| e.to_string())?;
-    SetThreadDpiAwarenessContext(previous_dpi);
+    drop(controller_dpi);
     if SetTimer(Some(controller), 1, 250, None) == 0 {
         let _ = DestroyWindow(controller);
         return Err("无法启动任务栏有效性检查".into());
@@ -1016,6 +1348,20 @@ unsafe fn run_inner() -> Result<(), String> {
                             && a.dpi == inspection.dpi
                             && !inspection.occupied.iter().any(|r| r.overlaps(a.area))
                     });
+                    if reusable && std::env::var_os("STRATA_MANAGER_TASKBAR_DIAGNOSTICS").is_some()
+                    {
+                        if let Some(current) = &attachment {
+                            let _dpi =
+                                ThreadDpiContext::for_window(HWND(current.shell.hwnd as *mut _))?;
+                            let (_, _, rows) = dimensions(&preferences, current.dpi);
+                            inspect_visibility(
+                                current.hwnd,
+                                current.area,
+                                &column_widths(&preferences, current.dpi),
+                                rows,
+                            );
+                        }
+                    }
                     if !reusable {
                         if let Some(old) = attachment.take() {
                             let _ = DestroyWindow(old.hwnd);
@@ -1025,8 +1371,18 @@ unsafe fn run_inner() -> Result<(), String> {
                             Err(error) => break 'main Err(error),
                         }
                     }
-                    if !ready {
-                        if !output(&HostFrame::Ready {}) {
+                    if !ready || !reusable {
+                        let location = attachment.as_ref().map(|current| {
+                            placement(
+                                current.area,
+                                inspection.bar,
+                                inspection.tray_left,
+                                inspection.dpi,
+                            )
+                        });
+                        if !output(&HostFrame::Ready {
+                            placement: location,
+                        }) {
                             break 'main Ok(());
                         }
                         ready = true;
@@ -1065,6 +1421,83 @@ unsafe fn run_inner() -> Result<(), String> {
 mod tests {
     use super::*;
     #[test]
+    fn paint_success_and_visible_style_do_not_accept_occluded_surfaces() {
+        let mut probe = VisibilityProbe {
+            own: 3,
+            total: 5,
+            visible_style: true,
+            blockers: vec![],
+            details: vec![],
+        };
+        assert!(!probe.confirmed());
+        probe.own = 5;
+        assert!(probe.confirmed());
+        probe.visible_style = false;
+        assert!(!probe.confirmed());
+        probe.visible_style = true;
+        probe.own = 0;
+        probe.total = 0;
+        assert!(!probe.confirmed());
+    }
+    #[test]
+    fn native_metrics_have_distinct_colors_and_custom_rgb_maps_to_colorref() {
+        let mut prefs = Preferences::normalize(&serde_json::Value::Null);
+        let values: std::collections::HashSet<_> = (0..METRICS.len())
+            .map(|index| color(index, &prefs).0)
+            .collect();
+        assert_eq!(values.len(), METRICS.len());
+        prefs.metric_colors.insert("gpu".into(), "#123456".into());
+        assert_eq!(color(2, &prefs).0, 0x563412);
+    }
+    #[test]
+    fn first_frame_without_a_snapshot_has_a_nonempty_native_string() {
+        assert_eq!(initial_status_text("", false), "等待采样");
+        assert_eq!(initial_status_text("  ", true), "Waiting for sample");
+        assert_eq!(initial_status_text("未启动", false), "未启动");
+    }
+    #[test]
+    fn attachment_diagnostics_identify_each_changed_component() {
+        let expected = ShellState {
+            identity: Identity {
+                hwnd: 123,
+                pid: 90,
+                started: 1000,
+            },
+            bar: Rect {
+                left: 0,
+                top: 1392,
+                right: 2560,
+                bottom: 1440,
+            },
+            dpi: 144,
+        };
+        assert!(shell_difference(expected, expected).is_none());
+        let actual = ShellState {
+            bar: Rect {
+                left: 0,
+                top: 928,
+                right: 1707,
+                bottom: 960,
+            },
+            ..expected
+        };
+        let geometry = shell_difference(expected, actual).unwrap();
+        assert!(geometry.contains("bar expected=(0,1392,2560,1440) actual=(0,928,1707,960)"));
+        assert!(!geometry.contains("identity") && !geometry.contains("dpi"));
+        let actual = ShellState {
+            identity: Identity {
+                pid: 91,
+                ..expected.identity
+            },
+            dpi: 192,
+            ..expected
+        };
+        let process = shell_difference(expected, actual).unwrap();
+        assert!(process.contains("identity expected=(123,90,1000) actual=(123,91,1000)"));
+        assert!(process.contains("dpi expected=144 actual=192"));
+        assert!(!process.contains("bar"));
+    }
+    #[test]
     fn shell_identity_detects_reused_handle_or_pid() {
         let before = Identity {
             hwnd: 123,
@@ -1097,6 +1530,22 @@ mod tests {
         assert!(width > 200);
         let (large_width, large_height, _) = dimensions(&preferences, 144);
         assert!(large_width > width && large_height > height);
+    }
+
+    #[test]
+    fn requested_large_font_is_preserved_and_rejected_when_bar_is_too_short() {
+        let preferences =
+            Preferences::normalize(&serde_json::json!({"fontSize":36,"layout":"twoRow"}));
+        let (width, height, _) = dimensions(&preferences, 96);
+        assert_eq!(preferences.font_size, 36);
+        assert!(height > 48);
+        let bar = Rect {
+            left: 0,
+            top: 0,
+            right: 3840,
+            bottom: 48,
+        };
+        assert!(vacant_rect(bar, &[], width, height, 8).is_none());
     }
     #[test]
     fn modal_menu_input_coalesces_without_losing_latest_sample_or_preferences() {

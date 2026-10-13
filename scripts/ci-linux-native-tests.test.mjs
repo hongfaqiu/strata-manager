@@ -290,13 +290,16 @@ test('Windows exact selections bound both UTF-8 argv and the quoted UTF-16 Creat
   assert.throws(() => selectionBatches({...binary, platform: 'linux'}, selected));
 });
 
-test('Windows inventory has exactly the fourteen reviewed ignored names and cannot substitute Linux policy', () => {
+test('Windows inventory has exactly the fifteen reviewed ignored names and cannot substitute Linux policy', () => {
   const binaries = Object.keys(WINDOWS_IGNORED_POLICY).map((key, index) => {
     const separator = key.indexOf(':'); return {id: `windows-${index}`, package: key.slice(0, separator), packagePath: '.',
       cases: [c(key.slice(separator + 1), true)]};
   });
   const target = 'x86_64-pc-windows-msvc';
-  assert.equal(Object.keys(WINDOWS_IGNORED_POLICY).length, 14);
+  assert.equal(Object.keys(WINDOWS_IGNORED_POLICY).length, 15);
+  assert.equal(WINDOWS_IGNORED_POLICY['strata-manager:running_service_connection::tests::explicit_read_only_running_owner'],
+    'Explicit read-only acceptance of the explicitly identified live service.');
+  assert.equal(IGNORED_POLICY['strata-manager:running_service_connection::tests::explicit_read_only_running_owner'], undefined);
   assert.equal(validateIgnoredPolicy(binaries, target), true);
   assert.throws(() => validateIgnoredPolicy(binaries));
   assert.throws(() => validateIgnoredPolicy(binaries.slice(1), target));
@@ -305,7 +308,7 @@ test('Windows inventory has exactly the fourteen reviewed ignored names and cann
   const plan = makePlan([...binaries, {id: 'active', package: 'fixture', packagePath: '.', cases: [c('a'), c('b'), c('c')]}], 3, binding);
   const reports = fixtureReports(plan); const docs = fixtureDocs(plan);
   const shards = reports.map((report, index) => ({schema: 1, binding: plan.binding, plan, shard: index, reports: [report], docs: index === 0 ? docs : null}));
-  assert.equal(validateShardEvidence(shards).summary.ignored, 14);
+  assert.equal(validateShardEvidence(shards).summary.ignored, 15);
   for (const mutate of [
     s => { s[1].binding.platform = 'linux'; },
     s => { s[1].binding.target = 'x86_64-unknown-linux-gnu'; },

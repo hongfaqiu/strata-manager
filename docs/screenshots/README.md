@@ -1,46 +1,42 @@
 # 界面截图 / Screenshots
 
-## 未发布界面补图 / Unreleased interface additions
+## 当前批次 / Current batch · 2026-10-14
 
-0.1.5 界面于 2026-10-12 采用独立发布批次：11 个视图各含中文和英文，共 22 张，保存在 `changelog/0.1.5/`。包含串行上下文 Benchmark、演示结果图表与图片导出、串行场景测试、紧凑监控浮条与托盘设置、总览接入 API，以及公共聊天、连接、下载、服务状态和应用更新页面。结果报告使用演示数据，非性能实测。更新日志的 0.1.5 部分引用这批图；公开 0.1.4 的日志使用下面原发布批次的图片。此批次不会替换或改写原 0.1.4 的截图与来源记录。
+本目录根部用于 README 与官网的当前图库：23 个视图各含中文和英文，共 **46 张页面图**，另有 **3 个封面文件**，合计 **49 个 WebP**。图片来自 **0.1.8 发布候选**源码，界面版本显示 0.1.8，包含服务发现、语言和监控改进。该版本尚待公开发布；图片不代表新安装包验收。
 
-新图同样加载真实 React 入口与原有样式，仅替换隔离 RPC 数据；不启动真实模型、测速、安装或更新，不修改真实用户配置。18 张普通图为 2880 × 1920；中文与英文结果报告分别为 2880 × 2720、2880 × 2800，以完整呈现图表和表格；两张浮条图为 440 × 80，对应默认 220 × 40 逻辑像素。无损 WebP 与 PNG 逐像素一致；捕获前后核对 HEAD、源码及辅助文件摘要，并检查错误、外部请求、原生变更调用和页面溢出。原生右键菜单、系统窗口操作和实际推理性能不由这些浏览器截图证明。文件清单、尺寸、哈希及检查证据见[独立批次记录](changelog/0.1.5/manifest.json)。
+This directory's root contains the current README and website gallery: **46 page images** covering 23 views in Chinese and English, plus **3 cover files**, for **49 WebP files**. They show the **0.1.8 release candidate** source and UI version, including service discovery, language and monitoring improvements. Publication is pending; these images do not establish acceptance of a new installer.
 
-The 0.1.5 interface captured on 2026-10-12 forms a separate release batch of 22 images: 11 views in Chinese and English, under `changelog/0.1.5/`. They cover serial context benchmarks, demonstration report charts/image export, serial scenario tests, the compact floating monitor and tray settings, Overview API integration, common chat settings, connections, downloads, service status and app updates. Report values are demonstration data rather than performance measurements. The 0.1.5 notes use this batch; public 0.1.4 notes use the original release images below. The original 0.1.4 images and provenance remain intact.
+| 批次 / Batch | 内容 / Contents | 来源记录 / Capture record |
+| --- | --- | --- |
+| 根目录 / Root | 总览、运行环境、模型与配置、聊天、用量、调优、监控、设置、关于、Benchmark、公共聊天、连接、会话工具、更新、服务状态、下载设置、浮条，以及运行中服务、语言选择、浮条设置、场景测试和结果报告 / Overview, runtime, models and configuration, chat, usage, tuning, monitoring, settings, About, Benchmark, common chat, connections, session tools, updates, service status, download settings, floating monitor, running services, language selection, monitor settings, scenario tests and reports | [manifest.json](manifest.json) |
+| `daily-experience/` | 当前重拍的 16 张日常工作流程图：模型下载列表与详情、API 验证、服务能力、启动诊断、聊天计时、历史条件比较、API 用量 / 16 refreshed workflow images covering model downloads, API verification, capabilities, startup diagnostics, chat timing, history comparison and API usage | [独立 manifest / Separate manifest](daily-experience/manifest.json) |
 
-The new batch loads the real React entry and original styles with isolated RPC data. It never starts real models, speed tests, installations or updates, and never changes real user configuration. The 18 standard images are 2880 × 1920. Chinese and English reports are 2880 × 2720 and 2880 × 2800 to show the complete charts and table; the two monitor images are 440 × 80, representing the default 220 × 40 logical-pixel window. Lossless WebP conversion is checked pixel by pixel against PNG. The capture compares HEAD, source and helper digests before/after and checks errors, external requests, native mutations and overflow. These browser images do not establish native context-menu/window acceptance or measured inference performance. File details and checks are recorded in the [separate manifest](changelog/0.1.5/manifest.json).
+封面 `product-cover.zh.webp` 与 `product-cover.en.webp` 使用对应语言的 `service-status` 完整截图：总览及展开的服务状态弹层，保持原始比例，不裁剪、拼接或重画。`product-cover.webp` 是英文兼容别名；封面与页面图分别记入 manifest。
 
-此前开发批次保留在 `changelog/unreleased/` 供历史溯源，不再作为当前发布截图。
-The earlier development batch remains under `changelog/unreleased/` for historical provenance, separate from current release images.
+The bilingual covers, `product-cover.zh.webp` and `product-cover.en.webp`, use the complete corresponding `service-status` screenshots: Overview with its service-status popover open, preserving the original proportions without cropping, composition or redrawing. `product-cover.webp` is the English compatibility alias. The manifest records covers separately from page images.
 
-## 中文
+## 采集与重跑 / Capture and reproduction
 
-0.1.4 的页面截图采用统一批次：18 个视图各含中文和英文浅色图，共 36 张。视图包括总览、Strata、模型、运行配置、聊天、API 使用统计、调优、监控、设置、关于、Benchmark、公共聊天默认值、API 与外部助手、显存与会话、应用更新、服务状态、下载设置与测试，以及独立桌面监控浮条。它们取代旧版 20 图和单独追加 Benchmark 的分批记录；本轮不再使用独立的 `benchmarkCapture` 来源说明。
+截图加载实际 `apps/desktop/src/main.tsx`、App／浮条组件及原有样式，只替换隔离的示例 IO 数据。模型、会话、版本、硬件、任务和统计值是文档示例；这些浏览器截图不证明真实推理性能或原生窗口操作。
 
-截图由真实 `apps/desktop/src/main.tsx` 入口加载当前 App 或浮条组件，使用应用原有 CSS、字体、图标和路由；只将 RPC 响应替换为隔离合成数据。模型、配置、会话、硬件、版本、任务和统计数值均为文档示例。没有启动真实模型、执行安装或更新、改变系统自启动，也没有操作真实系统窗口；浮条图不证明原生拖动、缩放、置顶或窗口生命周期已通过实机验收。图中数值不能作为推理结果、GPU 性能或调优收益证据。
+Captures load the actual `apps/desktop/src/main.tsx`, App/monitor components and original styles with isolated example IO data. Models, conversations, versions, hardware, tasks and statistics are documentation examples. These browser screenshots do not establish measured inference performance or native-window behavior.
 
-普通页面使用 1440 × 960 CSS 像素视口和 DPR 2，输出 2880 × 1920 图像；浮条使用 920 × 82 CSS 像素视口和 DPR 2，输出 1840 × 164 图像。PNG 转为无损 WebP 后逐像素比较，要求尺寸和像素一致。浮条保留自己的宽高比例，不按普通页面裁切。
+普通页面使用 1440 × 960 CSS 像素视口和 DPR 2；结果报告使用更高视口呈现图表，浮条按实际组件计算尺寸保留自身比例。各图的最终尺寸以 manifest 为准。无损 WebP 解码后与原始 PNG 尺寸、像素一致；记录包含源码前后摘要核对、采集辅助文件摘要、PNG/WebP SHA-256，以及逐图检查。页面／控制台错误和外网请求均为零。
 
-统一捕获流程在批次开始和结束时核对捕获 HEAD、应用源码树摘要与 fixture/helper 摘要。浏览器页面错误、控制台错误、外部网络请求、被禁止的原生变更调用和文档横向溢出均须为零；浮条另检查其固定视口内没有垂直溢出。内层正常滚动区域不等于文档横向溢出。示例监控间隔使用界面支持的 30000 毫秒，使设置下拉框显示实际选项。
+Standard pages use a 1440 × 960 CSS-pixel viewport and DPR 2. Reports use a taller viewport, and floating-monitor images retain the size computed by the actual component. The manifest records final dimensions, source digests compared before/after capture, helper digests, PNG/WebP SHA-256 values and per-image checks. Lossless WebP decoding matches the original PNG's dimensions and pixels; page/console errors and external requests are zero.
 
-[manifest.json](manifest.json) 记录最终采用的统一批次、尺寸、文件大小、PNG/WebP SHA-256、逐像素检查、源码与 helper 摘要及捕获检查结果。捕获时 HEAD 是源码基线，不是最终 Release SHA；当时工作区内容由文件摘要标识，发布提交与同源码 CI 另行核验。重跑后的最终批次记录应替换此前批次，不能把旧批次哈希与新图混用。
+根目录图库可用下列脚本重跑；数据与场景定义位于 [scripts/screenshot-fixtures/](../../scripts/screenshot-fixtures/)，中间 PNG、WebP 和检查结果写入 `output/playwright/docs-refresh-20261014/`。脚本使用本机 Chrome；可通过 `STRATA_BROWSER_EXECUTABLE`、`STRATA_PYTHON_EXECUTABLE` 指定浏览器与含 Pillow 的 Python，通过 `CODEX_WORKSPACE_NODE_MODULES` 指定补充依赖目录。
 
-`product-cover.zh.webp` 与 `product-cover.en.webp` 现采用完整总览及展开的服务状态弹层；`product-cover.webp` 是英文兼容别名。两图为0.1.5 真实界面的隔离示例，均为 2880 × 1920，保持完整窗口与原始比例，未进行裁剪、拼接或重画。封面不计入 36 张原发布页面图，来源、像素核验和哈希单独登记于 manifest 的 `coverProvenance`。此前使用模型页、API 统计及抽象背景的合成封面记录保留在 `historicalCoverProvenance`；见[品牌说明](../brand/README.md)。
+Reproduce the root gallery with the following script. Data and scene definitions live in [scripts/screenshot-fixtures/](../../scripts/screenshot-fixtures/); intermediate PNG/WebP files and checks are written to `output/playwright/docs-refresh-20261014/`. The script uses local Chrome. `STRATA_BROWSER_EXECUTABLE`, `STRATA_PYTHON_EXECUTABLE` and `CODEX_WORKSPACE_NODE_MODULES` can override the browser, a Python runtime with Pillow, and supplementary dependencies.
 
-此目录记录浏览器文档截图及其合成数据来源。真实模型推理、完整 GPU Benchmark、调优收益、安装器、跨版本更新，以及系统窗口和硬件行为均需各自的实机验收；已执行的检查与限制见[验证记录](../VERIFICATION.md)和[系统说明](../SYSTEM.md)。
+```sh
+node scripts/capture-current-screenshots.mjs
+```
 
-## English
+## 历史批次 / Historical batches
 
-The 0.1.4 page screenshots use one unified batch: 18 views in Chinese and English, all in the light theme, for 36 images. They cover Overview, Strata, Models, Runtime configuration, Chat, API usage, Tuning, Monitoring, Settings, About, Benchmark, Common chat defaults, API and external assistants, VRAM and sessions, App updates, Service status, Download settings and test, and the floating desktop monitor. This replaces the old 20-image batch and separately appended Benchmark capture; this batch has no separate `benchmarkCapture` provenance record.
+0.1.4 时期的根目录曾使用 18 个双语视图、共 36 张页面图，已被上述当前批次替换；替换前的根目录图片与 manifest 备份在本机 `output/playwright/docs-refresh-20261014/backup/`。版本日志中的历史配图保持各自来源：`changelog/0.1.4/` 保存该版本日志引用的 16 张原图，`changelog/0.1.7/` 保存 6 张原图，均与迁移前 Git HEAD 的文件字节一致。两版日志的图片引用已指向历史目录，正文未改，当前图库重拍不会改变其来源说明。`changelog/0.1.5/` 保留 2026-10-12 的 22 张独立发布图，`changelog/unreleased/` 保留更早的开发批次。
 
-The real `apps/desktop/src/main.tsx` entry loads the current App or monitor components with the application's original CSS, fonts, icons and routing. Only RPC responses are replaced with isolated synthetic data. Models, configurations, conversations, hardware, versions, tasks and statistics are documentation examples. No real model, installation, update, operating-system startup setting or native system-window operation is exercised. The monitor image does not establish hardware acceptance of native dragging, resizing, pinning or window lifecycle behavior. Displayed values are not inference results, GPU measurements or evidence of tuning gains.
+The former root gallery contained 36 page images covering 18 bilingual views from the 0.1.4 period; the current batch replaces it. The previous root images and manifest are backed up locally under `output/playwright/docs-refresh-20261014/backup/`. Historical changelog images retain their own provenance: `changelog/0.1.4/` holds the 16 original images referenced by those release notes, and `changelog/0.1.7/` holds six originals. Both archives match the files from Git HEAD before migration byte for byte. Their changelog image references now point to these archives without changing the prose, so refreshing the current gallery preserves the historical source descriptions. `changelog/0.1.5/` keeps the 22-image release batch captured on 2026-10-12; `changelog/unreleased/` keeps an earlier development batch.
 
-Standard pages use a 1440 × 960 CSS-pixel viewport and DPR 2, producing 2880 × 1920 images. The monitor uses a 920 × 82 CSS-pixel viewport and DPR 2, producing 1840 × 164 images. PNG-to-WebP conversion is lossless and checked for identical dimensions and pixels. The monitor retains its own aspect ratio rather than being cropped as a full-page screenshot.
-
-The capture workflow compares the capture HEAD, application source-tree digest and fixture/helper digest before and after the batch. Page errors, console errors, external requests, forbidden native mutation calls and horizontal document overflow must all be zero; the monitor also checks for vertical overflow within its fixed viewport. Normal scrolling inside a component is not horizontal document overflow. The example polling interval is the supported 30000 ms option, so the settings dropdown displays a valid choice.
-
-[manifest.json](manifest.json) records the final selected unified batch, dimensions, sizes, PNG/WebP SHA-256 values, pixel checks, source/helper digests and capture results. The capture-time HEAD is a source baseline, not the final release SHA. File digests identify working-tree content; the release commit and same-source CI are verified separately. The final rerun supersedes earlier batches, and earlier hashes must not be mixed with new images.
-
-`product-cover.zh.webp` and `product-cover.en.webp` now show the complete Overview with its service-status popover open. `product-cover.webp` is the English compatibility alias. These 2880 × 1920 isolated 0.1.5 interface examples preserve the complete window and original proportions without cropping, composition or redrawing. They are separate from the 36 original release page images; `coverProvenance` records their origin, pixel checks and hashes. The former compositions using Models, API usage and an abstract background remain documented under `historicalCoverProvenance`. See the [brand source](../brand/README.md).
-
-This directory documents browser screenshots and their synthetic data sources. Real inference, complete GPU Benchmark runs, tuning gains, installers, cross-version updates, native-window behavior and hardware compatibility require their own acceptance checks. Performed checks and limits are described in the [verification record](../VERIFICATION.md) and [system explanation](../SYSTEM.en.md).
+历史截图记录：[0.1.4](changelog/0.1.4/manifest.json)、[0.1.5](changelog/0.1.5/manifest.json)、[0.1.7](changelog/0.1.7/manifest.json)、[更早开发批次 / Earlier development batch](changelog/unreleased/manifest.json)、[控件调整 / Control refinements](ui-refinements/README.md)、[监控自定义 / Monitor customization](monitor-customization/README.md)、[监控密度 / Monitor density](monitor-density/README.md)。已执行的验收范围见[验证记录 / Verification](../VERIFICATION.md)。

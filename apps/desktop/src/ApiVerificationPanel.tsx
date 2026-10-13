@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import * as core from '@strata-manager/core';
@@ -24,7 +25,7 @@ const explanations: Record<string, [string, string]> = {
   CANCELLED: ['验证已取消。', 'Verification cancelled.'],
 };
 
-export function ApiVerificationPanel({ profile, model, ready, language, identityToken }: { profile: ServiceProfile; model?: string; ready: boolean; language: 'zh-CN' | 'en'; identityToken?: string }) {
+export function ApiVerificationPanel({ profile, model, ready, language, identityToken }: { profile: ServiceProfile; model?: string; ready: boolean; language: AppLanguage; identityToken?: string }) {
   const zh = language === 'zh-CN';
   const [kind, setKind] = useState<ApiVerificationKind>('text');
   const [steps, setSteps] = useState<ApiVerificationStep[]>([]), [report, setReport] = useState<ApiVerificationReport>();

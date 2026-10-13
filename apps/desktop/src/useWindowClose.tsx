@@ -11,7 +11,7 @@ export function useWindowClose({ desktop, ready, settings, onSettings, onError, 
   const handlerRef = useRef(onError); handlerRef.current = onError;
   const exitingRef = useRef(false);
   const exitRequest = useRef<() => void>(() => {});
-  const text = settings.language === 'en'
+  const text = settings.language !== 'zh-CN'
     ? { title: 'Exit Strata Manager?', hint: 'This stops local model services and background tasks managed by this app.', remember: 'Do not ask again', cancel: 'Cancel', exit: 'Stop services and exit', exiting: 'Saving and exiting…' }
     : { title: '退出 Strata Manager？', hint: '退出将停止本软件管理的本机模型服务和后台任务。', remember: '不再提示', cancel: '取消', exit: '停止服务并退出', exiting: '正在保存并退出…' };
   useEffect(() => {

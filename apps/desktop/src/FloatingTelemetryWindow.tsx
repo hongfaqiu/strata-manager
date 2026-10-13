@@ -1,14 +1,15 @@
+import { isAppLanguage } from '@strata-manager/core';
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Menu, type MenuOptions } from '@tauri-apps/api/menu';
 import { LogicalPosition } from '@tauri-apps/api/dpi';
 import { listen } from '@tauri-apps/api/event';
-import { floatingMonitorDimensions, isDesktop, normalizeMetrics } from '@strata-manager/core';
+import { floatingMonitorDimensions, isDesktop, modelTelemetry, normalizeMetrics } from '@strata-manager/core';
 import i18n from './i18n';
 import { FloatingMonitorContent } from './FloatingMonitorContent';
 import { appendMonitorHistory, type MonitorHistory } from './floatingMonitorHistory';
-import { FLOATING_MONITOR_ACTIONS, minimizeMonitorToTray, normalizeFloatingMonitorPreferences, readFloatingMonitor, resizeMonitorWindow, setMonitorMode, showMainFromMonitor, type MonitorModeStatus, type FloatingMonitorAction, type FloatingMonitorSnapshot } from './floatingMonitor';
+import { FLOATING_MONITOR_ACTIONS, minimizeMonitorToTray, normalizeFloatingMonitorPreferences, readFloatingMonitor, resizeMonitorWindow, showMainFromMonitor, type MonitorModeStatus, type FloatingMonitorAction, type FloatingMonitorSnapshot } from './floatingMonitor';
 import './floating-telemetry-window.css';
 
 export function FloatingTelemetryWindow() {
@@ -40,9 +41,9 @@ export function FloatingTelemetryWindow() {
   const refreshSnapshot = useRef(snapshot.refetch); refreshSnapshot.current = snapshot.refetch;
   const samplingPaused = useRef(paused); samplingPaused.current = paused;
   const preferences = normalizeFloatingMonitorPreferences(settings?.floatingMonitor);
-  const dimensions = floatingMonitorDimensions(preferences);
+  const dimensions = floatingMonitorDimensions(preferences, settings?.language === 'en' ? 'en' : 'zh-CN');
   const [history, setHistory] = useState<MonitorHistory>({ identity: '', points: [] });
-  const language = settings?.language === 'en' ? 'en' : 'zh-CN';
+  const language = isAppLanguage(settings?.language) ? settings.language : 'en';
   const theme = ['dark', 'light', 'system'].includes(settings?.theme ?? '') ? settings!.theme : 'system';
   const text = (zh: string, en: string) => language === 'zh-CN' ? zh : en;
 
@@ -69,6 +70,14 @@ export function FloatingTelemetryWindow() {
     let disposed = false;
     void getCurrentWindow().isAlwaysOnTop().then(value => { if (!disposed) setPinned(value); }).catch(() => {});
     return () => { disposed = true; };
+  }, [desktop]);
+  useEffect(() => {
+    if (!desktop) return;
+    let disposed = false, unlisten: (() => void) | undefined;
+    void listen('monitor-suspended', () => { if (!disposed) setDocked(true); })
+      .then(stop => { if (disposed) stop(); else unlisten = stop; })
+      .catch(error => { if (!disposed) setActionError(String(error)); });
+    return () => { disposed = true; unlisten?.(); };
   }, [desktop]);
   useEffect(() => {
     if (!desktop) return;
@@ -121,7 +130,7 @@ export function FloatingTelemetryWindow() {
   const valid = !!data && !snapshot.isError && !stale && !waitingForSample;
   const online = valid && data.phase === 'online';
   const metric = online && data.metrics ? normalizeMetrics(data.metrics) : undefined;
-  const displayMetric = metric && data?.health?.loaded === false ? { ...metric, state: 'unloaded', decodeTokS: null, prefillTokS: null } : metric;
+  const displayMetric = modelTelemetry(metric, typeof data?.health?.loaded === 'boolean' ? data.health.loaded : undefined);
   const historyIdentity = [data?.profile?.id, data?.process?.pid, data?.process?.startedAt, data?.process?.creationTime, metric?.model].join('|');
   const fresh = valid && !paused && !waitingForSample;
   useEffect(() => {
@@ -132,19 +141,18 @@ export function FloatingTelemetryWindow() {
   const stateLabel = (state: string) => {
     const labels: Record<string, string> = {
       idle: text('空闲', 'Idle'), generating: text('生成中', 'Generating'), reading: text('读取中', 'Reading'),
-      prefill: text('读取中', 'Reading'), loading: text('加载中', 'Loading'), unloaded: text('未加载', 'Not loaded'),
+      prefill: text('读取中', 'Reading'), loading: text('正在载入模型', 'Loading model'), unloaded: text('未加载', 'Not loaded'),
       unloading: text('释放中', 'Unloading'), running: text('运行中', 'Running'),
     };
     return labels[state] ?? text('状态未知', 'Unknown state');
   };
-  type Action = FloatingMonitorAction | 'settings' | 'taskbar' | 'tray' | 'close';
+  type Action = FloatingMonitorAction | 'settings' | 'tray' | 'close';
   const label = (operation: Action) => operation === 'pin' && pinned ? text('取消置顶', 'Unpin monitor')
     : operation === 'pause' && paused ? text('恢复采样', 'Resume sampling')
     : operation === 'settings' ? text('自定义浮条', 'Customize monitor')
-    : operation === 'taskbar' ? text('切换为常驻任务栏', 'Switch to taskbar monitor')
     : operation === 'tray' ? text('收起到系统托盘', 'Move to system tray')
     : operation === 'close' ? text('关闭浮条', 'Close monitor')
-    : FLOATING_MONITOR_ACTIONS.find(item => item.id === operation)!.label[language];
+    : FLOATING_MONITOR_ACTIONS.find(item => item.id === operation)!.label[(language === 'zh-CN' ? 'zh-CN' : 'en')];
   const disabled = (operation: Action) => !desktop || busy || operation === 'copyApiUrl' && !data?.profile?.baseUrl
     || operation === 'quickBenchmark' && (!online || data?.health?.loaded !== true || !displayMetric || ['generating', 'reading', 'prefill', 'loading', 'unloading'].includes(displayMetric.state) || (displayMetric.running ?? 0) > 0 || (displayMetric.queued ?? 0) > 0);
   const action = async (operation: Action) => {
@@ -154,11 +162,6 @@ export function FloatingTelemetryWindow() {
       if (operation === 'pin') { await getCurrentWindow().setAlwaysOnTop(!pinned); setPinned(value => !value); }
       else if (operation === 'close') await getCurrentWindow().close();
       else if (operation === 'tray') { await minimizeMonitorToTray(); setDocked(true); }
-      else if (operation === 'taskbar') {
-        const result = await setMonitorMode('taskbar', preferences, language);
-        if (result.mode !== 'taskbar' || !result.active) throw new Error(result.message || text('任务栏空间不可用', 'Taskbar space unavailable'));
-        setDocked(true);
-      }
       else if (operation === 'pause') { if (paused) { setResumeAfter(snapshot.dataUpdatedAt); void snapshot.refetch(); } setPaused(value => !value); }
       else if (operation === 'refresh') {
         const result = await snapshot.refetch();
@@ -183,7 +186,7 @@ export function FloatingTelemetryWindow() {
         ...(['pause', 'pin'].includes(item.id) ? { checked: item.id === 'pause' ? paused : pinned } : {}),
         action: () => { void actionRef.current(item.id); },
       }));
-      items.push({ item: 'Separator' }, { id: 'taskbar', text: label('taskbar'), action: () => { void actionRef.current('taskbar'); } }, { id: 'tray', text: label('tray'), action: () => { void actionRef.current('tray'); } }, { id: 'settings', text: label('settings'), action: () => { void actionRef.current('settings'); } }, { id: 'close', text: label('close'), action: () => { void actionRef.current('close'); } });
+      items.push({ item: 'Separator' }, { id: 'tray', text: label('tray'), action: () => { void actionRef.current('tray'); } }, { id: 'settings', text: label('settings'), action: () => { void actionRef.current('settings'); } }, { id: 'close', text: label('close'), action: () => { void actionRef.current('close'); } });
       const next = await Menu.new({ items });
       if (!mounted.current) { await next.close(); return; }
       menu.current = next;

@@ -1,8 +1,9 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useState } from 'react';
 import type { ChatExecution } from '@strata-manager/core';
 import './daily-experience.css';
 
-export function ChatExecutionStatus({ execution, streaming, language }: { execution: ChatExecution; streaming: boolean; language: 'zh-CN' | 'en' }) {
+export function ChatExecutionStatus({ execution, streaming, language }: { execution: ChatExecution; streaming: boolean; language: AppLanguage }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => { if (!streaming) return; const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, [streaming]);
   const zh = language === 'zh-CN';

@@ -21,6 +21,22 @@
   background: var(--st-ink-muted);
 }
 
+.service-telemetry-load-time {
+  flex: none;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.service-telemetry-statusbar[data-state="loading"] .service-telemetry-state,
+.service-telemetry-statusbar[data-state="unloading"] .service-telemetry-state {
+  max-width: none;
+  color: var(--st-warn);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .service-telemetry-state .spin { animation: none; }
+}
+
 .service-telemetry-statusbar[data-state="generating"] .service-telemetry-dot,
 .service-telemetry-statusbar[data-state="idle"] .service-telemetry-dot,
 .service-telemetry-statusbar[data-state="running"] .service-telemetry-dot {

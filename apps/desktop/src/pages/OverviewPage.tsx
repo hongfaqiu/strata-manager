@@ -1,13 +1,15 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Activity, ArrowRight, Boxes, Copy, LoaderCircle, MessageSquare, Play, Plug, RefreshCw, Server, Settings2 } from 'lucide-react';
 import { normalizeBaseUrl, type BackgroundHealthSnapshot, type JsonObject, type MetricSnapshot, type ProcessStatus, type ServiceProfile, type TaskStatus } from '@strata-manager/core';
-import { Badge, Metric, Panel } from '../components';
+import { Badge, Panel } from '../components';
 import { ApiIntegrationDialog } from '../ApiIntegrationDialog';
 import './overview.css';
+import { OverviewComputeIllustration, OverviewMetricCards, OverviewResourceMeter } from './OverviewVisuals';
 
 interface OverviewPageProps {
-  profile?:ServiceProfile;health:JsonObject;backgroundHealth?:BackgroundHealthSnapshot;metric?:MetricSnapshot;process?:ProcessStatus;tasks:TaskStatus[];language:'zh-CN'|'en';
+  profile?:ServiceProfile;health:JsonObject;backgroundHealth?:BackgroundHealthSnapshot;metric?:MetricSnapshot;process?:ProcessStatus;tasks:TaskStatus[];language:AppLanguage;
   online:boolean;connecting:boolean;desktop:boolean;tasksLoading:boolean;healthError?:string;metricsError?:string;taskError?:string;processError?:string;
   controls:ReactNode;usage?:ReactNode;stateLabel:(state:string)=>string;onRefresh:()=>void;onCreateProfile:()=>void;onChat:()=>void;onCopy:(content:string)=>void;
   onNavigate:(page:'monitoring'|'config'|'tasks'|'requests'|'profiles'|'environment')=>void;
@@ -40,15 +42,13 @@ const startupLabels = {
 export function OverviewPage({profile,health,backgroundHealth,metric,process,tasks,language,online,connecting,desktop,tasksLoading,healthError,metricsError,taskError,processError,controls,usage,stateLabel,onRefresh,onCreateProfile,onChat,onCopy,onNavigate,onImages,startupModel,hasRuntime=false,runtimeNeedsRepair=false,setupLoading=false,setupError,startupBusy=false,startupDisabled=false}:OverviewPageProps) {
   const {t}=useTranslation();const fmt=(v:unknown,d=1)=>num(v)===null?'–':num(v)!.toLocaleString(language,{maximumFractionDigits:d});
   const [apiIntegrationOpen, setApiIntegrationOpen] = useState(false);
-  const labels = overviewLabels[language];
-  const startup = startupLabels[language];
+  const labels = overviewLabels[(language === 'zh-CN' ? 'zh-CN' : 'en')];
+  const startup = startupLabels[(language === 'zh-CN' ? 'zh-CN' : 'en')];
   const setupPending = setupLoading;
-  const bytes=(v:unknown)=>num(v)===null?'–':`${fmt(num(v)!/1024**3)} GB`;
   const engine=obj(metric?.raw.engine),live=obj(metric?.raw.live),last=metric?.requests[0];
   const capacity=num(engine.max_context)??num(health.max_context);
   const prompt=num(live.state==='idle'?last?.prompt_tokens:live.prompt_tokens),generated=num(live.state==='idle'?last?.output_tokens:live.generated);
   const contextUsed=prompt!==null&&generated!==null?prompt+generated:null;
-  const resource=(label:string,used:number|null|undefined,total:number|null|undefined)=>{const percent=num(used)!==null&&num(total)!==null&&total!>0?Math.min(100,Math.max(0,used!/total!*100)):null;return <div className="overview-resource"><div><span>{label}</span><strong>{bytes(used)} / {bytes(total)}</strong></div><div className="st-progress" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent??undefined}><div className="st-progress__bar" style={{width:`${percent??0}%`}}/></div></div>;};
   let endpoint='–';if(profile){try{endpoint=`${normalizeBaseUrl(profile.baseUrl)}/v1`;}catch{endpoint=profile.baseUrl;}}
   const running=tasks.filter(task=>task.state==='running');
   const modelState=online&&typeof health.loaded==='boolean'?t(health.loaded?'loaded':'notLoaded'):connecting?t('loading'):'–';
@@ -71,6 +71,7 @@ export function OverviewPage({profile,health,backgroundHealth,metric,process,tas
         <p className="overview-setup-hint">{!desktop?t('noProfileHint'):setupPending?startup.checkingHint:startupModel?startupModel.lastActivatedAt?startup.recentHint:startup.modelHint:runtimeNeedsRepair?startup.repairHint:hasRuntime?startup.chooseHint:startup.installHint}</p>
         {startupModel&&<><div className="overview-service-model"><span>{t('model')}</span><strong>{startupModel.name}</strong><Badge>{startupModel.lastActivatedAt?startup.recent:startup.available}</Badge></div><div className="overview-service-endpoint"><code data-tooltip={startupModel.configPath}>{startupModel.configPath.split(/[\\/]/).pop()}</code>{startupModel.lastActivatedAt&&<time dateTime={new Date(startupModel.lastActivatedAt).toISOString()}>{new Date(startupModel.lastActivatedAt).toLocaleString(language)}</time>}</div></>}
       </div></div>
+      <OverviewComputeIllustration />
       <div className="hero-controls"><div className="service-actions">
         <button type="button" className="primary" disabled={startupDisabled||startupBusy||setupPending} aria-busy={startupBusy||setupPending} onClick={setupError&&!startupModel?onRefresh:startupModel?startupModel.onStart:!desktop||hasRuntime&&!runtimeNeedsRepair?onCreateProfile:()=>onNavigate('environment')}>
           {startupBusy||setupPending?<LoaderCircle size={15} className="spin"/>:startupModel?<Play size={15}/>:<ArrowRight size={15}/>}{startupBusy?startup.starting:setupPending?t('loading'):setupError&&!startupModel?t('refresh'):startupModel?startup.start:!desktop||hasRuntime&&!runtimeNeedsRepair?startup.choose:runtimeNeedsRepair?startup.repair:startup.install}
@@ -85,6 +86,7 @@ export function OverviewPage({profile,health,backgroundHealth,metric,process,tas
           <div className="overview-service-model"><span>{t('model')}</span><strong>{String(health.model??engine.model??'–')}</strong><Badge>{modelState}</Badge></div>
           <div className="overview-service-endpoint"><code>{endpoint}</code><button type="button" onClick={()=>onCopy(endpoint)}><Copy size={14}/>{language==='zh-CN'?'复制 API 地址':'Copy API address'}</button></div>
         </div></div>
+        <OverviewComputeIllustration />
         <div className="hero-controls">{controls}</div>
         <div className="overview-service-facts">
           <div><span>{t('status')}</span><strong>{metric?stateLabel(metric.state):'–'}</strong></div>
@@ -109,8 +111,8 @@ export function OverviewPage({profile,health,backgroundHealth,metric,process,tas
     </>}
       {apiIntegrationOpen && profile && <ApiIntegrationDialog key={`api-integration-${profile.id}`} profile={profile} model={typeof health.model==='string'?health.model:typeof engine.model==='string'?engine.model:undefined} online={online} loaded={health.loaded===true} keyRequired={online&&typeof health.api_key==='boolean'?health.api_key:undefined} language={language} onCopy={onCopy} onClose={()=>setApiIntegrationOpen(false)}/>}
       {usage}
-      <div className="metrics-grid four"><Metric label={t('decode')} value={fmt(metric?.decodeTokS)} unit="tok/s"/><Metric label={t('gpuUtil')} value={fmt(metric?.gpuUtil)} unit="%"/><Metric label={t('activeRequests')} value={fmt(metric?.running,0)}/><Metric label={t('queued')} value={fmt(metric?.queued,0)}/></div>
-      <div className="overview-grid"><Panel title={t('resourcesSummary')} action={jump('monitoring',t('openMonitor'))}>{metricsError&&<div className="notice error" role="alert">{metricsError}</div>}<div className="overview-context"><div><span>{t('contextUsage')}</span><strong>{fmt(contextUsed,0)} / {fmt(capacity,0)} tokens</strong></div><div className="st-progress" role="progressbar" aria-label={t('contextUsage')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={contextUsed!==null&&capacity!==null&&capacity>0?contextUsed/capacity*100:undefined}><div className="st-progress__bar" style={{width:contextUsed!==null&&capacity!==null&&capacity>0?`${Math.min(100,contextUsed/capacity*100)}%`:'0%'}}/></div></div>{resource(t('gpuMemory'),metric?.gpuMemoryUsed,metric?.gpuMemoryTotal)}{resource(t('ram'),metric?.ramUsed,metric?.ramTotal)}<div className="overview-resource-facts"><div><span>{t('cpuUtil')}</span><strong>{fmt(metric?.cpuUtil)} %</strong></div><div><span>{t('gpuTemperature')}</span><strong>{fmt(metric?.gpuTemperature)} °C</strong></div><div><span>{t('gpuPower')}</span><strong>{fmt(metric?.gpuPower)} W</strong></div><div><span>{t('prefill')}</span><strong>{fmt(metric?.prefillTokS)} tok/s</strong></div></div></Panel>
+      <OverviewMetricCards metric={metric} language={language}/>
+      <div className="overview-grid"><Panel title={t('resourcesSummary')} action={jump('monitoring',t('openMonitor'))}>{metricsError&&<div className="notice error" role="alert">{metricsError}</div>}<div className="overview-resource-meters"><OverviewResourceMeter label={t('contextUsage')} used={contextUsed} total={capacity} units="tokens" language={language}/><OverviewResourceMeter label={t('gpuMemory')} used={metric?.gpuMemoryUsed} total={metric?.gpuMemoryTotal} tone="blue" language={language}/><OverviewResourceMeter label={t('ram')} used={metric?.ramUsed} total={metric?.ramTotal} language={language}/></div><div className="overview-resource-facts"><div><span>{t('cpuUtil')}</span><strong>{fmt(metric?.cpuUtil)} %</strong></div><div><span>{t('gpuTemperature')}</span><strong>{fmt(metric?.gpuTemperature)} °C</strong></div><div><span>{t('gpuPower')}</span><strong>{fmt(metric?.gpuPower)} W</strong></div><div><span>{t('prefill')}</span><strong>{fmt(metric?.prefillTokS)} tok/s</strong></div></div></Panel>
       <Panel title={t('runningTasks')} action={jump('tasks',t('viewAllTasks'))}>{taskError&&<div className="notice error" role="alert">{taskError}</div>}{running.length?<div className="overview-task-list">{running.map(task=><button key={task.id} onClick={()=>onNavigate('tasks')}><div><strong>{t(task.kind.includes('setup')?'setupTask':task.kind.includes('install')?'installTask':task.kind.includes('update')?'updateTask':'task')}</strong><time>{new Date(task.startedAt).toLocaleTimeString(language)}</time></div><span>{task.message||stateLabel(task.state)}</span></button>)}</div>:<p className="subtle">{t(!desktop?'nativeRequired':tasksLoading?'loading':taskError?'unavailable':'noRunningTasks')}</p>}</Panel></div>
       <Panel title={t('requestsRecent')} action={jump('requests',t('requests'))}>{metric?.requests.length?<div className="table-wrap"><table className="st-table overview-requests"><thead><tr><th>{t('timestamp')}</th><th>{t('promptTokens')}</th><th>{t('outputTokens')}</th><th>{t('decode')}</th><th>{t('finishReason')}</th></tr></thead><tbody>{metric.requests.slice(0,6).map((request,index)=><tr key={String(request.id??index)}><td>{num(request.time)!==null?new Date(num(request.time)!*1000).toLocaleTimeString(language):'–'}</td><td>{fmt(request.prompt_tokens,0)}</td><td>{fmt(request.output_tokens,0)}</td><td>{fmt(request.decode_tok_s)} tok/s</td><td>{request.finish===undefined?'–':t(({stop:'stoppedFinish',length:'lengthFinish',cancelled:'cancelledFinish',tool_calls:'toolCallsFinish'} as Record<string,string>)[String(request.finish)]??'unknown')}</td></tr>)}</tbody></table></div>:<p className="subtle">{t(!metric?'noMetrics':'overviewRequestsEmpty')}</p>}</Panel>
   </div>;

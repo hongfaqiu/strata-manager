@@ -1,3 +1,4 @@
+import type { AppLanguage } from "./languages";
 import { asObject } from './errors';
 import type { ChatRuntimeEvidence } from './chat';
 import { benchmarkIdentity, getChatRuntimeEvidence, isDesktop, readConfig, request, serviceStatus } from './bridge';
@@ -49,7 +50,7 @@ export function configuredPromptCache(config: unknown): number | undefined {
 export function serviceCapability(capabilities: ServiceCapabilities, id: ServiceCapabilityId): ServiceCapability {
   return capabilities.items.find(item => item.id === id) ?? { id, state: 'unknown', reason: 'notReported', source: '' };
 }
-export function describeServiceCapability(item: ServiceCapability, language: 'zh-CN' | 'en' = 'zh-CN'): string {
+export function describeServiceCapability(item: ServiceCapability, language: AppLanguage = 'zh-CN'): string {
   const reasons: Record<string, [string, string]> = {
     confirmed: ['服务已报告可用', 'Reported available by the service'],
     notSupported: ['服务明确报告不支持', 'Reported unsupported by the service'],

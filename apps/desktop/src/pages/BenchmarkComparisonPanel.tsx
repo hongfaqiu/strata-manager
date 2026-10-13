@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useState } from 'react';
 import * as core from '@strata-manager/core';
 import type { ComparableBenchmarkReport } from '@strata-manager/core';
@@ -7,7 +8,7 @@ import '../daily-experience.css';
 
 export function BenchmarkComparisonPanel({ reports, current, baseline, language, disabled, replayDisabled, onBaseline, onReplay }: {
   reports: ComparableBenchmarkReport[]; current?: ComparableBenchmarkReport; baseline?: ComparableBenchmarkReport;
-  language: 'zh-CN'|'en'; disabled: boolean; replayDisabled?: boolean; onBaseline: (report: ComparableBenchmarkReport)=>void; onReplay: (report: ComparableBenchmarkReport)=>void;
+  language: AppLanguage; disabled: boolean; replayDisabled?: boolean; onBaseline: (report: ComparableBenchmarkReport)=>void; onReplay: (report: ComparableBenchmarkReport)=>void;
 }) {
   const [leftId,setLeftId] = useState(''), [rightId,setRightId] = useState('');
   const zh=language==='zh-CN', t=(cn:string,en:string)=>zh?cn:en;

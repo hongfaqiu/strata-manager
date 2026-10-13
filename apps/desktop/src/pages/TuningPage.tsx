@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Activity, Check, CircleHelp, Download, FlaskConical, LoaderCircle, Play, RotateCcw, Square } from 'lucide-react';
@@ -96,7 +97,7 @@ const activeStates = new Set<TuningJob['state']>(['checking', 'running', 'cancel
 const cancelableStates = new Set<TuningJob['state']>(['checking', 'running', 'canceling']);
 const workloadKinds: TuningWorkloadKind[] = ['coldInput', 'hotPrefix', 'sessionSwitch', 'sustainedGeneration', 'fullAgent', 'longRetrieval', 'vision'];
 
-export function TuningPage({ profileId, language, desktop, owned, streaming, onChanged }: { profileId?: string; language: 'zh-CN' | 'en'; desktop: boolean; owned: boolean; streaming: boolean; onChanged: () => void }) {
+export function TuningPage({ profileId, language, desktop, owned, streaming, onChanged }: { profileId?: string; language: AppLanguage; desktop: boolean; owned: boolean; streaming: boolean; onChanged: () => void }) {
   const text = language === 'zh-CN' ? zh : en;
   const query = useQueryClient();
   const [useCase, setUseCase] = useState<TuningUseCase>('chat');

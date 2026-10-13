@@ -1,10 +1,11 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Dialog } from './components';
 
 export type SaveDraft = () => Promise<boolean>;
 
 /** Run an action only after edits are saved or explicitly discarded. */
-export function useDraftGuard(dirty: boolean, saveDraft: SaveDraft, language: 'zh-CN' | 'en') {
+export function useDraftGuard(dirty: boolean, saveDraft: SaveDraft, language: AppLanguage) {
   const latest = useRef({ dirty, saveDraft }); latest.current = { dirty, saveDraft };
   const [pending, setPending] = useState<(() => void) | null>(null);
   const [saving, setSaving] = useState(false);

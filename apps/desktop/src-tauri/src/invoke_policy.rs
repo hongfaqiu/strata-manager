@@ -31,6 +31,7 @@ pub(crate) fn app_command_allowed(window: &str, webview: &str, command: &str) ->
                     | "minimize_monitor_to_tray"
                     | "resize_monitor_window"
                     | "set_monitor_mode"
+                    | "set_monitor_visibility"
                     | "monitor_mode_status"
             )
         }
@@ -81,6 +82,7 @@ mod tests {
                     | "minimize_monitor_to_tray"
                     | "resize_monitor_window"
                     | "set_monitor_mode"
+                    | "set_monitor_visibility"
                     | "monitor_mode_status"
             );
             assert_eq!(
@@ -101,6 +103,7 @@ mod tests {
                 "monitor_snapshot",
                 "resize_monitor_window",
                 "set_monitor_mode",
+                "set_monitor_visibility",
                 "show_main_from_monitor"
             ]
         );

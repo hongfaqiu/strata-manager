@@ -1,8 +1,8 @@
 # Strata Manager user guide
 
-## Daily experience in 0.1.7
+## Daily experience and the 0.1.8 release candidate
 
-This section covers the daily experience features in 0.1.7. Check the selected version's changelog for what its installer contains.
+This guide covers the current 0.1.8 release candidate and daily features introduced in 0.1.7. Publication of 0.1.8 is pending. Check the [release page](https://github.com/hongfaqiu/strata-manager/releases/latest) and the selected version's changelog for available packages and their contents.
 
 - **Model downloads:** select a model in the list, then choose GPUs, context, KV and slots in its details. Assessment follows the current selection and preserves manual values. Unknown modes do not establish capacity; RAM, KV and per-GPU estimates are not an additive total.
 - **Startup failures:** inspect stages, duration, reasons and sanitized evidence in Overview or Tasks, then open the relevant settings or logs. Read-only checks preserve stopped services; resource keywords in logs indicate suspected causes only.
@@ -10,9 +10,11 @@ This section covers the daily experience features in 0.1.7. Check the selected v
 - **API checks and LAN:** explicitly test text, tool structure or image input in API and external assistants. Each check is bounded to 256 tokens and 60 seconds, never executes MCP and requires a ready model. Preview sharing settings before saving; multiple keys and backups are preserved, while restarting is separate. Server keys and application client credentials are managed independently.
 - **Historical benchmarks:** save a pre-upgrade baseline, update the runtime manually, then rerun the original task serially. Saving a baseline starts no model and performs no update. Missing conditions, weak model/runtime identity or different cache state prevent direct speedup claims. JSON/CSV exports omit test prompts, answers and server error bodies by default; include them only explicitly.
 
-See the [daily experience notes](DAILY_EXPERIENCE.md) and [verification record](VERIFICATION.md). Screenshots show real components captured before the version bump (0.1.6 UI marker) with isolated example data; they do not establish installer or inference acceptance. Browser examples are separate from real GPU, prolonged stability and cross-device LAN acceptance.
+The 0.1.8 candidate adds running-service inspection, reconnection to existing Manager backends and automatic connection when conditions permit on Windows. Interface language can follow the system or use ten bundled language packs. The desktop monitor has a visibility switch, three layouts, text sizing and ordered metrics with individual colors.
 
-Version 0.1.7 adds resource guidance, startup diagnostics, request evidence, API verification, LAN sharing and report comparison. See [Daily experience increment](DAILY_EXPERIENCE.md). Choose an installer from the [0.1.7 release](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.7); functionality and support remain tied to the selected release version.
+See the [daily experience notes](DAILY_EXPERIENCE.md). Images were recaptured from the actual 0.1.8 candidate App/components on October 14, 2026, with isolated example data; their sources are recorded in the [screenshot record](screenshots/README.md) and [separate daily-experience manifest](screenshots/daily-experience/manifest.json). They do not establish acceptance of a new installer or measured inference. Actual scope is recorded in [verification](VERIFICATION.md).
+
+Version 0.1.7 introduced resource guidance, startup diagnostics, request evidence, API verification, LAN sharing and report comparison. See [Daily experience increment](DAILY_EXPERIENCE.md). Choose an installer from the [latest stable release](https://github.com/hongfaqiu/strata-manager/releases/latest); functionality and support remain tied to the selected release version.
 
 [Website](https://hongfaqiu.github.io/strata-manager/?lang=en) · [Product overview](../README.md) · [Documentation](README.en.md) · [简体中文](USER_GUIDE.md)
 
@@ -20,7 +22,7 @@ Version 0.1.7 adds resource guidance, startup diagnostics, request evidence, API
 
 Strata Manager is an open-source desktop workspace for the Strata runtime and local model services. Runtime installation and matching Windows x64 ZIP engine updates, model configurations, and service startup, shutdown and recovery are its core; chat, monitoring, API usage statistics and tuning support that workflow. It is an independent community project. Inference capabilities, models, image input, reasoning, MCP tools and API protocols come from the installed Strata runtime and chosen model.
 
-This guide covers the daily experience features in 0.1.7. The [release page](https://github.com/hongfaqiu/strata-manager/releases/latest) and the selected version's changelog establish package availability and contents. Inspect the runtime in Strata first, then choose a configuration in **Models → My models**, select **Use**, wait for **Model ready**, and open Chat or copy the local API address. Manager manages supported installations on this computer; it does not manage remote nodes.
+This guide describes the current 0.1.8 release candidate. The [release page](https://github.com/hongfaqiu/strata-manager/releases/latest) and the selected version's changelog establish package availability and contents. Inspect the runtime in Strata first, then choose a configuration in **Models → My models**, select **Use**, wait for **Model ready**, and open Chat or copy the local API address. Manager manages supported installations on this computer; it does not manage remote nodes.
 
 ## Prepare or reuse a model
 
@@ -30,7 +32,7 @@ This guide covers the daily experience features in 0.1.7. The [release page](htt
 
 Configurations using the same model are grouped, with modification dates and current/last-used markers. The active model and configuration remain visible while you browse alternatives. Choose a configuration and select Use: Manager registers a managed configuration and shows environment checks, startup and model loading. Weights stay in place, the original configuration is retained, and the managed service uses a copy.
 
-A running installation owned by another program must pass identity and activity checks before takeover. Unknown or busy processes are not forcibly stopped. Read the displayed reason if an installation needs repair or cannot be imported.
+On Windows, a running installation owned by another program must pass identity and activity checks before takeover. Unknown or busy processes are not forcibly stopped. Read the displayed reason if an installation needs repair or cannot be imported.
 
 **Starting fresh?** Complete the installation guide in Strata before choosing or downloading a model. Manager downloads and verifies official source and prepares a private environment in its own data directory. The normal path does not require Git or a manually entered Python path. When Strata has already been detected, the repeated installation guide is hidden.
 
@@ -107,7 +109,7 @@ Overview shows a **Background health check** for the current running service own
 
 Open the top-right service status for recent throughput/GPU trends, VRAM/RAM usage, context progress and available service controls. The bottom bar shows throughput, running/queued requests, CPU/GPU, temperature and power. Idle throughput is labelled as the last generation. Failed sampling retains history while pausing live values; reconnection waits for fresh metrics. Trends remain in the current window only, with at most 3 minutes and 60 points.
 
-Choose **Open floating monitor** in the bottom bar for a separate draggable, resizable desktop window with keep-on-top and return-to-main controls. It is closed by default; closing it preserves the main app. A stopped background or model stays stopped: sampling never launches, upgrades or restores services. See the [system explanation](SYSTEM.en.md) for component relationships and persistence.
+Choose **Open floating monitor** in the bottom bar or enable **Show monitor** in Desktop monitor settings. The separate strip is closed by default and shows metrics only; layout and text size determine its dimensions. Drag anywhere, or use right-click/Shift+F10 for navigation, pinning and sampling. Two rows are the default, with compact and panel alternatives, 8–36px text, and 1–8 ordered metrics from eleven with individual colors. Labels default on; status text and edge snapping default off. Closing the strip preserves the main app. A stopped background or model stays stopped: sampling never launches, upgrades or restores services. See the [system explanation](SYSTEM.en.md) for component relationships and persistence.
 
 | Status | What to do |
 | --- | --- |
@@ -180,22 +182,26 @@ Controlled tests validate the comparison and recovery workflow. Real speed impro
 
 ## Benchmark
 
-Start the model manually, open the Benchmark workspace and select the current configuration. Context tiers and scenario tests send one request at a time. Historical concurrent reports remain readable; this increment does not provide a new concurrent stress entry point.
+Start the model manually, open the Benchmark workspace and select the current configuration. The workspace defaults to **Context tiers**, with **Scenario suite** in the other tab. Both modes send one request at a time. Historical concurrent reports remain readable; this increment does not provide a new concurrent stress entry point.
 
 | Mode | How to use it |
 | --- | --- |
-| **Scenario suite** | Select Short answer, Code review, Long input, Sustained generation, Repeated input cache, Conversation or Custom. Set warmup, repeated runs and input/output lengths, then compare results by scenario. |
 | **Context tiers** | Choose tiers within verified capacity, retaining template and output margins. Run each tier serially; unavailable tokenization is explicitly marked as an estimate. |
+| **Scenario suite** | Select Short answer, Code review, Long input, Sustained generation, Repeated input cache, Conversation or Custom. Set warmup, repeated runs and input/output lengths, then compare results by scenario. |
 
 Reports separate time to first token (TTFT), first-answer timing, request duration, P50/P95, token counts, input-processing and generation rates, cache reuse and resources. Missing metrics remain unknown. Incomplete conditions or model/runtime identity based only on file metadata prevent direct speedup claims.
 
 Follow progress or cancel a running test. The workspace coordinates with chat, tuning and other inference operations. Historical reports stay on this computer and can be exported as JSON or CSV. Compare runs using the same model, configuration, scenarios and hardware conditions.
 
-![Historical benchmark test plan preview](screenshots/benchmark.en.webp)
+![Context tier benchmark and test plan](screenshots/benchmark.en.webp)
 
-<sub>The image above is an isolated preview from an earlier version. The 0.1.7 historical comparison below was captured from real components before the version bump (0.1.6 UI marker) with isolated example data; it does not establish GPU or installer acceptance.</sub>
+![Serial scenario tests and test plan](screenshots/scenario-benchmark.en.webp)
 
-![0.1.7: historical benchmark condition comparison](screenshots/daily-experience/history-comparison.en.webp)
+![Context tier report and resource trends](screenshots/benchmark-report.en.webp)
+
+<sub>These workspaces, reports and the historical condition comparison below were recaptured from actual 0.1.8 candidate components on October 14, 2026. Isolated example data does not establish GPU measurements or acceptance of a new installer.</sub>
+
+![Historical benchmark condition comparison](screenshots/daily-experience/history-comparison.en.webp)
 
 ## Shared settings and model configuration
 
@@ -211,7 +217,7 @@ Chat supports text, JSON and JSON Schema output, sampling controls and reusable 
 
 Model preparation exposes supported download sources and GPU selection, local GGUF inspection, and runtime-supported Swift/IQ3_S quantization. Availability depends on the installed runtime and selected model; unavailable actions show the reason.
 
-Service tools expose slots, session save/restore, prefill progress and supported VRAM adjustment. MCP shows servers, tools and model-supported tool calls. Existing-runtime management handoff and expert tuning candidates have dedicated controls. Session files remain local and should be handled as data containing user input.
+Service tools expose slots, session save/restore, prefill progress and supported VRAM adjustment. MCP shows servers, tools and model-supported tool calls. Existing-runtime management handoff on Windows and expert tuning candidates have dedicated controls. Session files remain local and should be handled as data containing user input.
 
 Dynamic VRAM adjustment depends on runtime support. If the engine rejects adjustment in low-RAM resident mode, the app explains the reason.
 

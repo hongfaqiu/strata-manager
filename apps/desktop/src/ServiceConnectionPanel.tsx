@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import * as core from '@strata-manager/core';
@@ -8,7 +9,7 @@ import { ServiceSharingPanel } from './ServiceSharingPanel';
 
 interface Props {
   profile?: ServiceProfile;
-  language: 'zh-CN' | 'en';
+  language: AppLanguage;
   desktop: boolean;
   onError: (error: unknown) => void;
   onSaved: () => void;

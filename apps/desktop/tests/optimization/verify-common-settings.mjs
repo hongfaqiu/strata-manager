@@ -151,8 +151,32 @@ async function run(name, route, scenario, action) {
 try {
   browser = await chromium.launch({ headless: true, executablePath: process.env.STRATA_BROWSER_EXECUTABLE || undefined });
   await run('common-entry-and-model-config-separation', 'settings', {}, async page => {
-    await commonPanel(page);
     const nav = page.locator('.workspace-subnav');
+    const selectedSettingsRoute = async (route, tab) => {
+      await page.waitForURL(url => url.hash === `#${route}`);
+      await page.locator(`.management-content--${route}`).waitFor();
+      assert.equal(await nav.getByRole('button', { name: tab, exact: true }).getAttribute('aria-current'), 'page');
+      const sidebarSettings = page.locator('#manager-navigation').getByRole('button', { name: '设置', exact: true });
+      assert.equal(await sidebarSettings.getAttribute('aria-current'), 'page');
+      assert.equal(await sidebarSettings.evaluate(element => element.classList.contains('active')), true);
+    };
+    await selectedSettingsRoute('settings', '公共设置');
+    assert.equal(await page.locator('#settings-floating-monitor, .common-chat-settings-panel').count(), 0);
+    assert.equal(await page.getByRole('combobox', { name: '监控刷新间隔', exact: true }).count(), 0);
+    await nav.getByRole('button', { name: '桌面监控', exact: true }).click();
+    await selectedSettingsRoute('monitor-settings', '桌面监控');
+    await page.locator('#settings-floating-monitor').waitFor();
+    assert.equal(await page.getByRole('combobox', { name: '监控刷新间隔', exact: true }).count(), 1);
+    assert.equal(await page.locator('.common-chat-settings-panel').count(), 0);
+    await nav.getByRole('button', { name: '聊天默认', exact: true }).click();
+    await selectedSettingsRoute('chat-defaults', '聊天默认'); await commonPanel(page);
+    assert.equal(await page.locator('#settings-floating-monitor').count(), 0);
+    assert.equal(await page.getByRole('combobox', { name: '监控刷新间隔', exact: true }).count(), 0);
+    await page.goBack(); await selectedSettingsRoute('monitor-settings', '桌面监控');
+    await page.reload(); await selectedSettingsRoute('monitor-settings', '桌面监控');
+    await page.locator('#settings-floating-monitor').waitFor();
+    await page.goForward(); await selectedSettingsRoute('chat-defaults', '聊天默认');
+    await page.reload(); await selectedSettingsRoute('chat-defaults', '聊天默认'); await commonPanel(page);
     await nav.getByRole('button', { name: 'API 与外部助手', exact: true }).click();
     await page.waitForURL(url => url.hash === '#connections');
     await page.locator('.service-connection-panel').waitFor();
@@ -164,9 +188,9 @@ try {
     await page.locator('#view-config').waitFor();
     assert.equal(await page.locator('.mcp-integration-panel, .service-connection-panel, .runtime-operations').count(), 0);
     assert.equal(await page.getByRole('textbox', { name: 'API Key', exact: true }).count(), 0);
-    await navigate(page, 'settings'); await commonPanel(page);
+    await navigate(page, 'chat-defaults'); await commonPanel(page);
   });
-  await run('common-defaults-editable-with-no-model', 'settings', { emptyModels: true }, async page => {
+  await run('common-defaults-editable-with-no-model', 'chat-defaults', { emptyModels: true }, async page => {
     await commonPanel(page);
     assert.equal(await page.getByRole('switch', { name: '当前模型使用公共聊天默认值', exact: true }).isDisabled(), true);
     const temperature = page.getByRole('spinbutton', { name: '公共默认温度', exact: true });
@@ -178,7 +202,7 @@ try {
     assert.equal(await page.evaluate(() => window.__fixture.profiles.length), 0);
     assert.equal(await page.evaluate(() => window.__fixture.calls.filter(call => call.command === 'manager_mcp_connection').length), 0);
   });
-  await run('two-models-inherit-and-send-common-defaults', 'settings', { storeSeed: { commonChatDefaults: sharedSeed } }, async page => {
+  await run('two-models-inherit-and-send-common-defaults', 'chat-defaults', { storeSeed: { commonChatDefaults: sharedSeed } }, async page => {
     await commonPanel(page);
     await page.getByRole('spinbutton', { name: '公共默认温度', exact: true }).fill('0.8');
     await commonValue(page, 'temperature', 0.8);
@@ -186,14 +210,14 @@ try {
     assert.equal(await page.getByRole('switch', { name: '当前模型使用公共聊天默认值', exact: true }).getAttribute('aria-checked'), 'true');
     const a = await sendChat(page, 'a', 0.8, 96);
     assert.ok(a.messages.some(message => message.role === 'system' && message.content === sharedSeed.systemPrompt));
-    await navigate(page, 'settings'); await commonPanel(page);
+    await navigate(page, 'chat-defaults'); await commonPanel(page);
     await useFixtureModel(page, 'b');
     assert.equal(await page.getByRole('spinbutton', { name: '公共默认温度', exact: true }).inputValue(), '0.8');
     assert.equal(await page.getByRole('switch', { name: '当前模型使用公共聊天默认值', exact: true }).getAttribute('aria-checked'), 'true');
     await sendChat(page, 'b', 0.8, 96);
     assert.deepEqual(await page.evaluate(() => window.__fixture.store.commonChatDefaults), { ...sharedSeed, temperature: 0.8 });
   });
-  await run('legacy-model-overrides-remain-independent', 'settings', { storeSeed: { commonChatDefaults: sharedSeed, chatOptionsByProfile: { a: legacyA } } }, async page => {
+  await run('legacy-model-overrides-remain-independent', 'chat-defaults', { storeSeed: { commonChatDefaults: sharedSeed, chatOptionsByProfile: { a: legacyA } } }, async page => {
     await commonPanel(page);
     assert.equal(await page.getByRole('switch', { name: '当前模型使用公共聊天默认值', exact: true }).getAttribute('aria-checked'), 'false');
     await page.getByRole('spinbutton', { name: '公共默认温度', exact: true }).fill('0.95'); await commonValue(page, 'temperature', 0.95);
@@ -201,23 +225,23 @@ try {
     const sent = await sendChat(page, 'a', legacyA.temperature, legacyA.maxTokens);
     assert.equal(sent.top_p, legacyA.topP); assert.equal(sent.top_k, legacyA.topK); assert.equal(sent.seed, legacyA.seed);
     assert.ok(sent.messages.some(message => message.role === 'system' && message.content === legacyA.systemPrompt));
-    await navigate(page, 'settings'); await commonPanel(page); await useFixtureModel(page, 'b');
+    await navigate(page, 'chat-defaults'); await commonPanel(page); await useFixtureModel(page, 'b');
     assert.equal(await page.getByRole('switch', { name: '当前模型使用公共聊天默认值', exact: true }).getAttribute('aria-checked'), 'true');
     await sendChat(page, 'b', 0.95, sharedSeed.maxTokens);
     assert.deepEqual(await page.evaluate(() => window.__fixture.store.chatOptionsByProfile.a), legacyA);
   });
-  await run('explicit-inheritance-and-model-specific-sampling', 'settings', { storeSeed: { commonChatDefaults: sharedSeed, chatOptionsByProfile: { a: legacyA } } }, async page => {
+  await run('explicit-inheritance-and-model-specific-sampling', 'chat-defaults', { storeSeed: { commonChatDefaults: sharedSeed, chatOptionsByProfile: { a: legacyA } } }, async page => {
     await commonPanel(page);
     await page.getByRole('switch', { name: '当前模型使用公共聊天默认值', exact: true }).click();
     await page.waitForFunction(() => window.__fixture.store.chatDefaultsInheritance.a === true);
     assert.deepEqual(await page.evaluate(() => window.__fixture.store.chatOptionsByProfile.a), legacyA);
     await sendChat(page, 'a', sharedSeed.temperature, sharedSeed.maxTokens);
-    await navigate(page, 'settings'); await commonPanel(page);
+    await navigate(page, 'chat-defaults'); await commonPanel(page);
     await page.getByRole('switch', { name: '当前模型使用公共聊天默认值', exact: true }).click();
     await page.waitForFunction(() => window.__fixture.store.chatDefaultsInheritance.a === false);
     assert.deepEqual(await page.evaluate(() => window.__fixture.store.chatOptionsByProfile.a), legacyA, 'Disabling inheritance must restore the existing dedicated values');
     await sendChat(page, 'a', legacyA.temperature, legacyA.maxTokens);
-    await navigate(page, 'settings'); await commonPanel(page);
+    await navigate(page, 'chat-defaults'); await commonPanel(page);
     await page.getByRole('switch', { name: '当前模型使用公共聊天默认值', exact: true }).click();
     await page.waitForFunction(() => window.__fixture.store.chatDefaultsInheritance.a === true);
     await sendChat(page, 'a', sharedSeed.temperature, sharedSeed.maxTokens);
@@ -226,7 +250,7 @@ try {
     await page.locator('#s-apply').click(); await page.getByRole('dialog').waitFor({ state: 'hidden' });
     await page.waitForFunction(() => window.__fixture.store.chatDefaultsInheritance.a === false);
     await sendChat(page, 'a', 1.5, sharedSeed.maxTokens);
-    await navigate(page, 'settings'); await commonPanel(page);
+    await navigate(page, 'chat-defaults'); await commonPanel(page);
     assert.equal(await page.getByRole('spinbutton', { name: '公共默认温度', exact: true }).inputValue(), String(sharedSeed.temperature));
     assert.equal(await page.getByRole('switch', { name: '当前模型使用公共聊天默认值', exact: true }).getAttribute('aria-checked'), 'false');
     await page.getByRole('switch', { name: '当前模型使用公共聊天默认值', exact: true }).click();
@@ -248,7 +272,7 @@ try {
     assert.deepEqual(await page.evaluate(() => window.__fixture.store.commonChatDefaults), sharedSeed);
     await useFixtureModel(page, 'a'); await sendChat(page, 'a', legacyA.temperature, legacyA.maxTokens);
   });
-  await run('advanced-only-edit-preserves-dedicated-defaults-during-inheritance', 'settings', { storeSeed: { commonChatDefaults: sharedSeed, chatOptionsByProfile: { a: legacyA } } }, async page => {
+  await run('advanced-only-edit-preserves-dedicated-defaults-during-inheritance', 'chat-defaults', { storeSeed: { commonChatDefaults: sharedSeed, chatOptionsByProfile: { a: legacyA } } }, async page => {
     await commonPanel(page);
     await page.getByRole('switch', { name: '当前模型使用公共聊天默认值', exact: true }).click();
     await page.waitForFunction(() => window.__fixture.store.chatDefaultsInheritance.a === true);
@@ -268,7 +292,7 @@ try {
     const inherited = await sendChat(page, 'a', sharedSeed.temperature, sharedSeed.maxTokens);
     assert.equal(inherited.min_p, 0.17);
     assert.ok(inherited.messages.some(message => message.role === 'system' && message.content === sharedSeed.systemPrompt));
-    await navigate(page, 'settings'); await commonPanel(page);
+    await navigate(page, 'chat-defaults'); await commonPanel(page);
     assert.equal(await page.getByRole('switch', { name: '当前模型使用公共聊天默认值', exact: true }).getAttribute('aria-checked'), 'true');
     await page.getByRole('switch', { name: '当前模型使用公共聊天默认值', exact: true }).click();
     await page.waitForFunction(() => window.__fixture.store.chatDefaultsInheritance.a === false);
@@ -319,7 +343,7 @@ try {
     await decision.waitFor(); await decision.getByRole('button', { name: '取消', exact: true }).click();
     assert.equal(await page.locator('#s-temp').inputValue(), '1.5');
     await commonEntry.click(); await decision.getByRole('button', { name: '保存并继续', exact: true }).click();
-    await page.waitForURL(url => url.hash === '#settings'); await commonPanel(page);
+    await page.waitForURL(url => url.hash === '#chat-defaults'); await commonPanel(page);
     await page.waitForFunction(() => document.querySelectorAll('[role="dialog"]').length === 0 && document.getElementById('root').inert === false);
     await page.waitForFunction(() => window.__fixture.store.chatDefaultsInheritance.a === false);
     assert.equal(await page.evaluate(() => window.__fixture.store.chatOptionsByProfile.a.temperature), 1.5);
@@ -331,7 +355,7 @@ try {
     await page.waitForFunction(() => document.querySelectorAll('[role="dialog"]').length === 0 && document.getElementById('root').inert === false);
     assert.equal(await page.evaluate(() => window.__fixture.store.chatOptionsByProfile.a.temperature), 1.5, 'Discarding a drawer draft must keep the saved model override');
   });
-  await run('structured-output-survives-common-mcp-inheritance', 'settings', { storeSeed: { commonChatDefaults: sharedSeed, chatOptionsByProfile: { a: { ...legacyA, advanced: { responseFormat: 'json_object' } } }, chatDefaultsInheritance: { a: true } } }, async page => {
+  await run('structured-output-survives-common-mcp-inheritance', 'chat-defaults', { storeSeed: { commonChatDefaults: sharedSeed, chatOptionsByProfile: { a: { ...legacyA, advanced: { responseFormat: 'json_object' } } }, chatDefaultsInheritance: { a: true } } }, async page => {
     await commonPanel(page);
     assert.equal(await page.getByRole('switch', { name: '公共默认启用 MCP 工具', exact: true }).getAttribute('aria-checked'), 'true');
     const sent = await sendChat(page, 'a', sharedSeed.temperature, sharedSeed.maxTokens);
@@ -339,7 +363,7 @@ try {
     assert.equal(sent.strata_mcp, undefined, 'Structured output must keep its model-specific restriction while inheriting common defaults');
     assert.equal(await page.evaluate(() => window.__fixture.store.commonChatDefaults.mcp), true);
   });
-  await run('saved-common-defaults-and-inheritance-survive-reload', 'settings', { storeSeed: { commonChatDefaults: sharedSeed } }, async page => {
+  await run('saved-common-defaults-and-inheritance-survive-reload', 'chat-defaults', { storeSeed: { commonChatDefaults: sharedSeed } }, async page => {
     await commonPanel(page);
     await page.getByRole('spinbutton', { name: '公共默认温度', exact: true }).fill('1.2');
     await page.getByRole('spinbutton', { name: '公共默认随机种子', exact: true }).fill('31');
@@ -367,13 +391,13 @@ try {
     assert.match(await snippet.inputValue(), /"b"/);
     assert.equal(await page.evaluate(() => window.__fixture.store.activeProfile), 'a', 'Changing the connection target must not switch the active model');
     await credential.fill('fixture-only-draft-key');
-    const sharedSettings = page.locator('.workspace-subnav').getByRole('button', { name: '公共设置', exact: true });
-    await sharedSettings.click();
+    const chatDefaults = page.locator('.workspace-subnav').getByRole('button', { name: '聊天默认', exact: true });
+    await chatDefaults.click();
     const decision = page.getByRole('dialog', { name: '有未保存的改动', exact: true });
     await decision.waitFor(); await decision.getByRole('button', { name: '取消', exact: true }).click();
     assert.equal(await credential.inputValue(), 'fixture-only-draft-key'); assert.match(page.url(), /#connections$/);
-    await sharedSettings.click(); await decision.getByRole('button', { name: '保存并继续', exact: true }).click();
-    await page.waitForURL(url => url.hash === '#settings'); await commonPanel(page);
+    await chatDefaults.click(); await decision.getByRole('button', { name: '保存并继续', exact: true }).click();
+    await page.waitForURL(url => url.hash === '#chat-defaults'); await commonPanel(page);
     assert.deepEqual(await page.evaluate(() => window.__fixture.calls.filter(call => call.command === 'set_api_key').map(call => call.args)), [{ profileId: 'b', apiKey: 'fixture-only-draft-key' }]);
     await page.locator('.workspace-subnav').getByRole('button', { name: 'API 与外部助手', exact: true }).click();
     await page.waitForURL(url => url.hash === '#connections');

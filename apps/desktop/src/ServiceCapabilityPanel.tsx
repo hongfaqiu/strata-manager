@@ -1,10 +1,11 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import * as core from '@strata-manager/core';
 import type { ServiceProfile } from '@strata-manager/core';
 import './daily-experience.css';
 
-export function ServiceCapabilityPanel({ profile, online, language, identityToken, configuredPromptCache }: { profile?: ServiceProfile; online: boolean; language: 'zh-CN' | 'en'; identityToken?: string; configuredPromptCache?: number }) {
+export function ServiceCapabilityPanel({ profile, online, language, identityToken, configuredPromptCache }: { profile?: ServiceProfile; online: boolean; language: AppLanguage; identityToken?: string; configuredPromptCache?: number }) {
   const zh = language === 'zh-CN';
   const [invalidatedAt, setInvalidatedAt] = useState<number>();
   const query = useQuery({ queryKey: ['service-capability-evidence', profile?.id, profile?.baseUrl, profile?.configPath, identityToken, online, configuredPromptCache], enabled: false, retry: false, queryFn: async () => {

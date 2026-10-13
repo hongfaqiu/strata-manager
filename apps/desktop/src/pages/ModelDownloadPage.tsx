@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, ArrowUpRight, ChevronRight, Download, FolderOpen, HardDrive, RefreshCw, Search, Settings2, X } from 'lucide-react';
@@ -11,7 +12,7 @@ import { ResourceAssessmentPanel } from './ResourceAssessmentPanel';
 import './model-download.css';
 
 export interface ModelDownloadPageProps {
-  language: 'zh-CN' | 'en';
+  language: AppLanguage;
   desktop: boolean;
   fallbackRuntime?: ServiceProfile;
   runtimeOverride?: ServiceProfile | null;

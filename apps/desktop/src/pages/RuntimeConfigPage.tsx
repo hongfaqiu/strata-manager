@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, RotateCcw } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
@@ -52,7 +53,7 @@ const numberRules: Record<string, { min: number; max?: number; whole?: boolean; 
 export interface RuntimeConfigPageProps {
   profile?: ServiceProfile;
   online: boolean;
-  language: 'zh-CN' | 'en';
+  language: AppLanguage;
   desktop?: boolean;
   onError: (error: unknown) => void;
   onMessage?: (message: string) => void;
@@ -176,14 +177,14 @@ function RuntimeConfigSession({ profile, online, language, desktop = core.isDesk
   };
   const locked = saving || config.isFetching || !online || config.isError;
   return <section className="view view--runtime-config" id="view-config" aria-labelledby="workspace-page-title"><div className="runtime-config">
-    {onSharedSettings && <div className="runtime-config-section-actions"><button className="st-btn st-btn--secondary" type="button" onClick={onSharedSettings}>{zh ? '公共聊天、连接与运行工具' : 'Shared chat, connections and runtime tools'}<ArrowRight size={15}/></button></div>}
+    {onSharedSettings && <div className="runtime-config-section-actions"><button className="st-btn st-btn--secondary" type="button" onClick={onSharedSettings}>{zh ? '打开设置' : 'Open settings'}<ArrowRight size={15}/></button></div>}
     <section className="runtime-config-startup" aria-labelledby="runtime-config-startup-title">
       <div className="runtime-config-startup-intro"><div className="runtime-config-section-heading"><h2 id="runtime-config-startup-title">{zh ? '模型启动配置' : 'Model startup configuration'}</h2><span className="runtime-config-apply-badge runtime-config-apply-badge--restart">{zh ? '保存后重启生效' : 'Restart after saving'}</span></div><p>{localFile ? (zh ? '图形界面与 JSON 编辑同一份完整配置。保存会备份原文件；当前服务在重启前继续使用已有配置。' : 'Graphical controls and JSON edit the same complete configuration. Saving backs up the previous file; the running service keeps its existing configuration until restarted.') : (zh ? '服务提供的运行配置字段只写入配置文件，重启后生效。完整本地 JSON 可在桌面应用中编辑。' : 'The run configuration fields exposed by this service are saved to its configuration file and applied after a restart. Edit the complete local JSON in the desktop app.')}</p><div className="runtime-config-section-actions">{onImages && <button className="st-btn st-btn--secondary" type="button" onClick={onImages}>{zh ? '快捷配置图像支持' : 'Set up image support'}</button>}{onServices && <button className="st-btn st-btn--secondary" type="button" onClick={onServices}><ArrowRight size={15}/>{zh ? '返回我的模型' : 'Return to My models'}</button>}</div></div>
     <ResourceAssessmentPanel request={resourceRequest} language={language} desktop={desktop} unavailableReason={!profile ? (zh ? '选择本机模型后可读取资源建议。' : 'Select a local model to read resource guidance.') : !resourceDraft ? (zh ? '配置尚未读取或当前草稿不完整，容量保持未知。' : 'The configuration is not loaded or the draft is incomplete; capacity remains unknown.') : undefined}/>
     <StartupTuningPanel profile={profile} desktop={desktop} language={language} onError={onError} onMessage={onMessage} onRestart={onRestart} onCopied={onCopied} onDeleted={onDeleted} onDirtyChange={setStartupDirty} onSaveDraftReady={registerStartupSave} onDraftConfigChange={setResourceDraft}/>
     {!localFile && <div className="st-card cfg-card" id="cfg-card"><div className="req-head"><span className="card-title">{zh ? '服务配置文件字段' : 'Service configuration file fields'}</span><span className="muted small" id="cfg-file">{online ? String(config.data?.file ?? '') : ''}</span></div>
       <p className="runtime-config-restart-note">{zh ? '保存后重启模型生效。“默认”会清除该项的自定义值。' : 'Restart the model after saving. “Default” clears that field’s custom value.'}</p>
-      {!profile ? <p className="muted">{zh ? '选择服务后可读取运行配置。' : 'Select a service to read its run configuration.'}</p> : !online ? <p className="muted" role="status">{zh ? '服务离线。连接成功后会自动读取运行配置；API Key 可在公共设置中保存。' : 'Service is offline. Run configuration loads when connected; save the API key in shared settings.'}</p> : <>
+      {!profile ? <p className="muted">{zh ? '选择服务后可读取运行配置。' : 'Select a service to read its run configuration.'}</p> : !online ? <p className="muted" role="status">{zh ? '服务离线。连接成功后会自动读取运行配置；API Key 可在设置的“API 与外部助手”中保存。' : 'Service is offline. Run configuration loads when connected; save the API key in Settings > API and assistants.'}</p> : <>
         <div className="runtime-config-refresh"><button className="st-btn st-btn--secondary" type="button" disabled={saving || config.isFetching} onClick={() => void reloadConfig()}>{config.isFetching ? (zh ? '读取中…' : 'Loading…') : (zh ? '重新读取' : 'Reload')}</button><span className="muted small">{zh ? '重新读取会舍弃未保存的改动。' : 'Reloading discards unsaved changes.'}</span></div>
         {config.error && <p className="runtime-config-error" role="alert">{core.normalizeError(config.error).message}</p>}
         {!!keys.length && <><form className="cfg-form runtime-config-form" id="cfg-form" noValidate onSubmit={event => { event.preventDefault(); void saveConfig(); }}>{groups.map(group => <fieldset className="runtime-config-group" key={group.title}><legend>{group.title}</legend>{group.fields.map(k => {

@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import type { CommonChatDefaults } from '@strata-manager/core';
 import { Field, Panel } from './components';
 import { Dropdown, NumberField, Toggle } from './OfficialControls';
@@ -6,7 +7,7 @@ import './common-chat-settings-panel.css';
 export interface CommonChatSettingsPanelProps {
   value: CommonChatDefaults;
   onChange: (value: CommonChatDefaults) => void;
-  language: 'zh-CN' | 'en';
+  language: AppLanguage;
   disabled?: boolean;
   profileName?: string;
   inheritsCommon: boolean;

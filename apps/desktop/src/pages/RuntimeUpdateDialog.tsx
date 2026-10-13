@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { ArrowUpCircle, Copy, FolderOpen, LoaderCircle } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
@@ -11,7 +12,7 @@ import { releaseNotes } from '../updateReleaseNotes';
 import './runtime-update-dialog.css';
 
 export interface RuntimeUpdateDialogProps {
-  language: 'zh-CN' | 'en'; runtime: DetectedRuntime; release: RuntimeUpdateInfo;
+  language: AppLanguage; runtime: DetectedRuntime; release: RuntimeUpdateInfo;
   assetName?: string;
   initialDownload?: RuntimeZipDownloadOptions;
   initialPreferences?: RuntimeDownloadPreferences;

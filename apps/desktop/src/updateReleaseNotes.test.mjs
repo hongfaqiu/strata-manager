@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { localizedReleaseNotes, releaseNotes } from './updateReleaseNotes.ts';
 import { defaultUrlTransform } from 'react-markdown';
 import { createReleaseNotesAssetResolver } from './releaseNotesAssets.ts';
@@ -47,15 +47,42 @@ test('resolves exact current and candidate release screenshots to offline assets
   // Markdown image links and image sources use the same closed resource mapping.
   assert.equal(transformUrl('docs/screenshots/benchmark.zh.webp#full-size'), transformUrl('docs/screenshots/benchmark.zh.webp'));
 });
-test('all six daily-experience screenshots referenced by the release are registered as offline image and link assets', () => {
-  const changelog = readFileSync(new URL('../../../CHANGELOG.md', import.meta.url), 'utf8');
-  const markdownComponent = readFileSync(new URL('./ReleaseNotesMarkdown.tsx', import.meta.url), 'utf8');
-  const paths = [...new Set([...changelog.matchAll(/\]\((docs\/screenshots\/daily-experience\/[^)]+\.webp)\)/g)].map(match => match[1]))];
-  assert.equal(paths.length, 6);
+const markdownComponent = readFileSync(new URL('./ReleaseNotesMarkdown.tsx', import.meta.url), 'utf8');
+const bundledScreenshotPaths = [...markdownComponent.matchAll(/'\.\.\/\.\.\/\.\.\/(docs\/screenshots\/[^']+\.webp)'/g)].map(match => match[1]);
+const bundledScreenshotAssets = Object.fromEntries(bundledScreenshotPaths.map(path => [path, `/assets/${path.replaceAll('/', '-')}-fixture.webp`]));
+const resolveBundledAsset = createReleaseNotesAssetResolver(bundledScreenshotAssets);
+const transformBundledUrl = url => resolveBundledAsset(defaultUrlTransform(url));
+
+test('all six legacy daily-experience screenshots remain registered as offline image and link assets', () => {
+  const paths = Object.keys(screenshotAssets).filter(path => path.startsWith('docs/screenshots/daily-experience/'));
+  assert.equal(paths.length, 6, 'The three bilingual legacy screenshot pairs remain compatible');
   for (const path of paths) {
     assert.equal(transformUrl(path), screenshotAssets[path], path);
     assert.equal(transformUrl(`./${path}#full-size`), screenshotAssets[path], path);
     assert.ok(markdownComponent.includes(`'../../../${path}'`), `Missing bundled asset: ${path}`);
+    assert.ok(statSync(new URL(`../../../${path}`, import.meta.url)).isFile(), `Missing screenshot file: ${path}`);
+  }
+});
+
+test('actual changelog historical screenshot references resolve offline to registered existing files', () => {
+  const changelog = readFileSync(new URL('../../../CHANGELOG.md', import.meta.url), 'utf8');
+  const paths = [...new Set([...changelog.matchAll(/\]\((docs\/screenshots\/[^)]+\.webp)\)/g)].map(match => match[1]))];
+  assert.equal(paths.filter(path => path.startsWith('docs/screenshots/changelog/0.1.4/')).length, 16);
+  assert.equal(paths.filter(path => path.startsWith('docs/screenshots/changelog/0.1.7/')).length, 6);
+  for (const path of paths) {
+    assert.ok(bundledScreenshotAssets[path], `Missing bundled changelog screenshot: ${path}`);
+    assert.equal(transformBundledUrl(path), bundledScreenshotAssets[path], path);
+    assert.equal(transformBundledUrl(`./${path}#full-size`), bundledScreenshotAssets[path], path);
+    assert.ok(statSync(new URL(`../../../${path}`, import.meta.url)).isFile(), `Missing screenshot file: ${path}`);
+  }
+});
+
+test('current running-service, language and floating-monitor screenshots are registered for bilingual release notes', () => {
+  for (const view of ['running-services', 'language-settings', 'floating-monitor']) for (const language of ['zh', 'en']) {
+    const path = `docs/screenshots/${view}.${language}.webp`;
+    assert.ok(bundledScreenshotAssets[path], `Missing bundled asset: ${path}`);
+    assert.equal(transformBundledUrl(path), bundledScreenshotAssets[path], path);
+    assert.ok(statSync(new URL(`../../../${path}`, import.meta.url)).isFile(), `Missing screenshot file: ${path}`);
   }
 });
 
@@ -66,6 +93,9 @@ test('blocks missing and unsafe local screenshot aliases instead of requesting b
     'docs/screenshots/changelog/unreleased/scenario-benchmark.en.webp',
     'docs/screenshots/changelog/0.1.5/../scenario-benchmark.en.webp',
     'docs/screenshots/changelog/0.1.5/missing.en.webp',
+    'docs/screenshots/changelog/0.1.4/../benchmark.zh.webp',
+    'docs/screenshots/changelog/0.1.7/%61pi-verification.zh.webp',
+    'docs/screenshots/changelog/0.1.7/api-verification.zh.webp/extra',
     '../docs/screenshots/benchmark.zh.webp',
     'docs/screenshots/../benchmark.zh.webp',
     'docs/screenshots/%2e%2e/benchmark.zh.webp',
@@ -80,6 +110,19 @@ test('blocks missing and unsafe local screenshot aliases instead of requesting b
     'docs/screenshots/daily-experience/%61pi-verification.zh.webp',
     'docs/screenshots/daily-experience/api-verification.zh.webp/extra',
   ]) assert.equal(transformUrl(url), '', url);
+});
+
+test('the production screenshot table retains closed-path filtering for archived and current assets', () => {
+  for (const url of [
+    'docs/screenshots/changelog/0.1.7/missing.en.webp',
+    'docs/screenshots/changelog/0.1.7/../api-verification.zh.webp',
+    'docs/screenshots/changelog/0.1.7/%61pi-verification.zh.webp',
+    'docs/screenshots/changelog/unreleased/api-verification.zh.webp',
+    'docs/screenshots/daily-experience/model-download-list.zh.webp',
+    'docs/screenshots/%72unning-services.zh.webp',
+    'docs/screenshots/running-services.zh.webp/extra',
+    '../docs/screenshots/language-settings.en.webp',
+  ]) assert.equal(transformBundledUrl(url), '', url);
 });
 
 test('keeps default URL filtering and ordinary external images and links', () => {

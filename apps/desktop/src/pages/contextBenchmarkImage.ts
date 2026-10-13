@@ -1,6 +1,7 @@
+import type { AppLanguage } from "@strata-manager/core";
 import type { ContextBenchmarkReport, ContextBenchmarkSample } from '@strata-manager/core';
 
-type Language = 'zh-CN' | 'en';
+type Language = AppLanguage;
 type ChartSnapshot = { title: string; unit: string; svg: string; width: number; height: number };
 type Column = { title: string; unit: string; weight: number; value: (sample: ContextBenchmarkSample) => string };
 const FONT = '"Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", Arial, sans-serif';

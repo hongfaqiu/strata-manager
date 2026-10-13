@@ -37,12 +37,12 @@
       control.reads[id] = (control.reads[id] || 0) + 1;
       if (control.holdMetrics) await new Promise(resolve => { control.heldReads++; control.releaseMetrics = () => { control.holdMetrics = false; resolve(); }; });
       if (control.failMetrics) throw Error('Isolated telemetry collection failure');
-      const state = control.unloaded ? 'unloaded' : control.state;
+      const state = ['loading', 'unloading'].includes(control.state) ? control.state : control.unloaded ? 'unloaded' : control.state;
       if (control.missing) return { engine: { model: `Fixture ${id.toUpperCase()}` }, live: { state } };
       const offset = id === 'a' ? 0 : 200, value = 10 + control.sequence * 5 + offset;
       return {
         engine: { version: 'fixture', model: `Fixture ${id.toUpperCase()}`, max_context: 8192 },
-        live: { state, tok_s: value, prefill_tok_s_mean: value * 20, prompt_read: 512, prompt_total: 1024, prompt_tokens: 1024, generated: 8, running: state === 'idle' || state === 'unloaded' ? 0 : 1, queued: state === 'idle' ? 0 : 2 },
+        live: { state, ...(state === 'loading' ? { load_elapsed_s: 12 + control.sequence } : {}), tok_s: value, prefill_tok_s_mean: value * 20, prompt_read: 512, prompt_total: 1024, prompt_tokens: 1024, generated: 8, running: state === 'idle' || state === 'unloaded' ? 0 : 1, queued: state === 'idle' ? 0 : 2 },
         hardware: { gpu_util: 30 + control.sequence, gpu_mem_used: 8 * 1024 ** 3, gpu_mem_total: 32 * 1024 ** 3, gpu_temp: 48, gpu_power: 145, ram_used: 16 * 1024 ** 3, ram_total: 64 * 1024 ** 3, cpu: 12 },
         requests: state === 'idle' ? [{ decode_tok_s: value, prompt_tokens: 1024, reused: 512, prompt_ms: 400, hit_rate: 0.5 }] : [],
       };

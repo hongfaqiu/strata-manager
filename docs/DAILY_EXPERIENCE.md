@@ -2,9 +2,9 @@
 
 0.1.7 包含以下日常体验功能。资源规则固定来自 Strata v0.1.43.1 的 `a0116b2782a5b82622358c04a06496485d12b2d6`；安装的运行时仍独立核验。源码、夹具、WSL 测试与真实 GPU / 最终安装包验收分开记录。
 
-截图采集于版本号更新前的真实组件（界面标记 0.1.6），使用隔离示例数据，不代表安装包或推理验收；[出处与捕获记录](screenshots/README.md)保持原记录。
+本文配图于 2026-10-14 从当前开发版的实际 App／组件重新采集，共 16 张中英文亮色图，使用隔离示例数据，不代表 0.1.7 稳定安装包或推理验收；源码摘要、尺寸、像素核验与捕获检查见[日常体验独立 manifest](screenshots/daily-experience/manifest.json)，当前与历史批次说明见[截图记录](screenshots/README.md)。
 
-Screenshots show real components captured before the version bump (0.1.6 UI marker) with isolated example data. They do not establish installer or inference acceptance; the [original capture records](screenshots/README.md) remain intact.
+These 16 Chinese/English light-theme images were recaptured from the current development App/components on October 14, 2026, with isolated example data. They do not establish 0.1.7 stable-installer or inference acceptance. Source digests, dimensions, pixel checks and capture results are recorded in the [separate daily-experience manifest](screenshots/daily-experience/manifest.json); see the [screenshot record](screenshots/README.md) for current and historical batches.
 
 ## 功能与使用入口
 

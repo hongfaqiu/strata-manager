@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { Download, LoaderCircle } from 'lucide-react';
 import { ReleaseNotesMarkdown } from './ReleaseNotesMarkdown';
 import { Dialog } from './components';
@@ -7,7 +8,7 @@ import { localizedReleaseNotes, releaseNotes } from './updateReleaseNotes';
 import './app-update-dialog.css';
 
 export interface AppUpdateDialogProps {
-  language: 'zh-CN' | 'en';
+  language: AppLanguage;
   state: AppUpdateState;
   idle?: boolean;
   onConfirm: (version: string) => Promise<void> | void;
@@ -16,7 +17,7 @@ export interface AppUpdateDialogProps {
 
 /** Release metadata stays attached to the candidate the user is approving. */
 export function AppUpdateDialog({ language, state, idle = true, onConfirm, onClose }: AppUpdateDialogProps) {
-  const text = language === 'en' ? lifecycleEn : lifecycleZh;
+  const text = language !== 'zh-CN' ? lifecycleEn : lifecycleZh;
   if (!state.version || state.phase === 'current' || state.phase === 'installed') return null;
   const version = state.version;
   const notes = localizedReleaseNotes(state.notes, language) ?? releaseNotes(state.notes);

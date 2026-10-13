@@ -32,6 +32,7 @@ export const IGNORED_POLICY = Object.freeze({
 
 export const WINDOWS_IGNORED_POLICY = Object.freeze({
   ...IGNORED_POLICY,
+  'strata-manager:running_service_connection::tests::explicit_read_only_running_owner': 'Explicit read-only acceptance of the explicitly identified live service.',
   'strata-manager:runtime_update_queue::tests::live_running_model_refuses_unconfirmed_update_without_changing_service_or_intent': 'Explicit live refusal check without stop confirmation or update mutation.',
   'strata-manager:runtime_updates::tests::live_legacy_update_metadata_and_runtime_detection_keep_service_identity': 'Explicit live legacy metadata verification; writes only the release-info cache.',
   'strata-runtime-core:discovery::tests::live_running_service_reports_exact_config_without_changing_process_or_files': 'Explicit live running-service read-only verification.',

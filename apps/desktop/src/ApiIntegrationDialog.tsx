@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useState } from 'react';
 import { Copy, ExternalLink } from 'lucide-react';
 import { normalizeBaseUrl, type ServiceProfile } from '@strata-manager/core';
@@ -13,7 +14,7 @@ interface Props {
   online: boolean;
   loaded: boolean;
   keyRequired?: boolean;
-  language: 'zh-CN' | 'en';
+  language: AppLanguage;
   onCopy: (content: string) => void;
   onClose: () => void;
 }

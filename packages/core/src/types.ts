@@ -1,3 +1,5 @@
+import type { AppLanguage, LanguagePreference } from './languages';
+
 export interface ServiceProfile {
   id: string;
   name: string;
@@ -101,6 +103,10 @@ export interface FloatingMonitorPreferences {
   showGraphs?: boolean;
   showLabels?: boolean;
   showUnits?: boolean;
+  showStatus?: boolean;
+  snapToEdge?: boolean;
+  /** Missing entries follow the light/dark default palette. */
+  metricColors?: Partial<Record<FloatingMonitorMetric, string>>;
   mode?: FloatingMonitorMode;
 }
 
@@ -111,11 +117,15 @@ export interface ResolvedFloatingMonitorPreferences extends FloatingMonitorPrefe
   showGraphs: boolean;
   showLabels: boolean;
   showUnits: boolean;
+  showStatus: boolean;
+  snapToEdge: boolean;
+  metricColors: Partial<Record<FloatingMonitorMetric, string>>;
   mode: FloatingMonitorMode;
 }
 
 export interface AppSettings {
-  language: 'zh-CN' | 'en';
+  language: AppLanguage;
+  languagePreference?: LanguagePreference;
   theme: 'dark' | 'light' | 'system';
   closeToTray: boolean;
   skipExitConfirmation?: boolean;

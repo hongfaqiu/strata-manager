@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Activity, ChevronDown, LoaderCircle, RefreshCw, Settings2, Terminal, X } from 'lucide-react';
@@ -6,7 +7,7 @@ import { appendTelemetry, telemetryNumber, telemetryPoint, telemetrySparkline, t
 import './service-status-popover.css';
 
 interface Props {
-  language: 'zh-CN' | 'en';
+  language: AppLanguage;
   label: string;
   state: string;
   profile?: ServiceProfile;
@@ -95,9 +96,10 @@ export function ServiceStatusPopover({ language, label, state, profile, process,
   const recent = metric?.state === 'idle' ? metric.requests[0] : undefined;
   const contextUsed = recent ? telemetryNumber(recent.prompt_tokens) !== null && telemetryNumber(recent.output_tokens) !== null ? Number(recent.prompt_tokens) + Number(recent.output_tokens) : null : reading ? prompt : prompt === null ? null : prompt + (telemetryNumber(live.generated) ?? 0);
   const contextLabel = reading ? text('输入处理', 'Input progress') : recent ? text('最近请求上下文', 'Last request context') : text('上下文', 'Context');
-  const modelState = startup ? startup.label : !profile ? text('尚未选择', 'No model selected') : processUnverified ? text('状态待核验', 'State unverified') : connecting ? text('连接中', 'Connecting') : stopped ? text('未启动', 'Not started') : !online ? text('尚未核验', 'Unverified') : loaded === true ? text('已就绪', 'Ready') : loaded === false ? text('未加载', 'Not loaded') : text('未知', 'Unknown');
+  const modelTransition = liveMetrics && (metric.state === 'loading' || metric.state === 'unloading');
+  const modelState = startup ? startup.label : !profile ? text('尚未选择', 'No model selected') : processUnverified ? text('状态待核验', 'State unverified') : connecting ? text('连接中', 'Connecting') : stopped ? text('未启动', 'Not started') : !online ? text('尚未核验', 'Unverified') : modelTransition ? metric.state === 'loading' ? text('正在载入模型', 'Loading model') : text('正在释放模型', 'Unloading model') : loaded === true ? text('已就绪', 'Ready') : loaded === false ? text('未加载', 'Not loaded') : text('未知', 'Unknown');
   const startupFacts = [startup?.modelName, startup?.pid ? `PID ${startup.pid}` : undefined, startup?.apiUrl].filter(Boolean).join(' · ');
-  const unloadedHint = activity || (loaded === false && online ? text('API 在线，模型未占用推理内存。点击加载即可使用。', 'API is online. Load the model to use it.') : undefined);
+  const unloadedHint = modelTransition ? metric.state === 'loading' ? text('请等待模型载入完成，请求会自动继续。', 'Wait for the model to finish loading; the request will continue automatically.') : text('正在释放模型占用的内存。', 'Releasing model memory.') : activity || (loaded === false && online ? text('API 在线，模型内存已释放；再次请求时会自动载入。', 'API is online. Model memory is released; the next request loads it automatically.') : undefined);
   return <>
     <button ref={anchor} type="button" className="st-pill service-status-trigger" id="pill" data-state={state} aria-label={text('服务状态与快捷操作', 'Service status and quick actions')} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? uid : undefined} data-tauri-drag-region="false" onPointerDown={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()} onClick={() => setOpen(value => !value)}>
       <span className="st-pill__dot" aria-hidden="true"/><span id="pill-text" role="status" aria-live="polite">{label}</span><ChevronDown size={12} aria-hidden="true"/>

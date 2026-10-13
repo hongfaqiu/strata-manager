@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pencil, Search } from 'lucide-react';
@@ -7,7 +8,7 @@ import { OfficialIcon } from '../OfficialIcon';
 import './chat-history.css';
 
 export interface ChatPageProps {
-  conversation?:Conversation;profile?:ServiceProfile;online:boolean;supportsImages:boolean;modelName?:unknown;language:'zh-CN'|'en';
+  conversation?:Conversation;profile?:ServiceProfile;online:boolean;supportsImages:boolean;modelName?:unknown;language:AppLanguage;
   draft:string;onDraftChange:(value:string)=>void;attachments:Attachment[];streaming:boolean;showReasoning:boolean;
   onSend:()=>Promise<void>;onCancel:()=>void;onNewConversation:()=>void;onExport:(conversation:Conversation)=>void;onOpenSampling:()=>void;
   onAddFiles:(files:File[])=>Promise<void>;onRemoveAttachment:(id:string)=>void;stateLabel:(value:string)=>string;onCopy:(value:string)=>void|Promise<boolean|void>;

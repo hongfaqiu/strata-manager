@@ -14,6 +14,7 @@ const fixture = join(root, 'apps/desktop/tests/optimization');
 const output = join(root, 'output/playwright/daily-experience-capture');
 const destination = join(root, 'docs/screenshots/daily-experience');
 const requireDesktop = createRequire(join(root, 'apps/desktop/package.json'));
+const currentVersion = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).version;
 const arguments_ = new Set(process.argv.slice(2));
 for (const argument of arguments_) if (!['--prepare', '--capabilities-ready', '--probe-history-narrow'].includes(argument)) throw Error(`Unknown argument: ${argument}`);
 const probeHistory = arguments_.has('--probe-history-narrow');
@@ -80,6 +81,7 @@ const readiness = await ready();
 const before = await snapshot();
 const manifest = {
   schemaVersion: 1,
+  appVersion: currentVersion,
   releaseStatus: 'unreleased',
   capturedAt: new Date().toISOString(),
   status: 'running',
@@ -216,13 +218,13 @@ async function sceneCase(scene, language, theme, viewport, capture) {
   page.on('pageerror', error => record.pageErrors.push(String(error)));
   page.on('console', message => { if (message.type() === 'error') record.consoleErrors.push(message.text()); });
   try {
-    const params = new URLSearchParams({ version: '0.1.6', language: language === 'zh' ? 'zh-CN' : 'en', theme });
+    const params = new URLSearchParams({ version: currentVersion, language: language === 'zh' ? 'zh-CN' : 'en', theme });
     if (scene.stopped) params.set('stopped', '');
     if (scene.query) params.set(scene.query, '');
     await page.goto(scene.standalone ? `${origin}/api-usage-app.html` : `${origin}/daily-experience-app.html?${params}#${scene.hash}`, { waitUntil: 'networkidle' });
     if (!scene.standalone) {
       await page.locator('.desktop-app-frame').waitFor();
-      assert.ok(await page.evaluate(() => !!window.__fixture && window.__fixture.currentVersion === '0.1.6'));
+      assert.ok(await page.evaluate(version => !!window.__fixture && window.__fixture.currentVersion === version, currentVersion));
     }
     await scene.action(page, language === 'zh', theme);
     await page.evaluate(() => document.fonts.ready);
@@ -326,6 +328,9 @@ try {
   if (after) manifest.sourceProvenance.sourceUnchangedDuringCapture = after.head === before.head && after.sourceTreeSha256 === before.sourceTreeSha256 && after.helperTreeSha256 === before.helperTreeSha256;
   manifest.completedAt = new Date().toISOString();
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  if (manifest.status === 'passed' && !probeHistory) {
+    await writeFile(join(destination, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+  }
   await browser?.close();
   await server.close();
 }

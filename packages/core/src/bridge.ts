@@ -7,11 +7,18 @@ import { validateResourceAssessmentRequest, resourceRequestFromConfiguration, ty
 import type { ServiceSharingStatus, SetServiceAuthRequest, ServiceAuthResult } from './service-sharing';
 import type { BenchmarkIdentity } from './benchmark-comparison';
 import type { RuntimeReleaseAsset, RuntimeZipDownloadOptions, RuntimeZipDownloadCheckResult } from './runtime-types';
+import type { SystemLanguage } from './languages';
 
 export interface LocalModel { name: string; configPath: string; modelPath: string; sizeBytes: number | null }
 
 export function isDesktop(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+/** Read only: never starts a runtime or changes the system language. */
+export async function getSystemLanguage(): Promise<SystemLanguage> {
+  if (isDesktop()) return native<SystemLanguage>('get_system_language');
+  return { locales: typeof navigator === 'undefined' ? [] : [...navigator.languages] };
 }
 
 async function native<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -269,6 +276,7 @@ export const saveMarkdown = (path: string, content: string): Promise<string> => 
 /** Save an already-previewed PNG to the path selected in the native Save As dialog. */
 export const savePng = (path: string, bytes: number[]): Promise<string> => native('write_png_export', { path, bytes });
 export const discoverLocal = (directories?: string[]): Promise<LocalCandidate[]> => native('discover_local', { ...(directories ? { directories } : {}) });
+export const connectRunningService = (candidate: LocalCandidate): Promise<{ profileId: string; restarting: boolean }> => native('connect_running_service', { candidate });
 export const importLocal = (candidate: LocalCandidate): Promise<ServiceProfile> => native('import_local', { candidate });
 export const ensureLocalService = (profileId: string): Promise<ProcessStatus> => native('ensure_local_service', { profileId });
 export const switchLocalService = (profileId: string): Promise<ProcessStatus> => native('switch_local_service', { profileId });

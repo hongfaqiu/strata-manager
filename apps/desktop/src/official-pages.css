@@ -143,8 +143,9 @@ html,body,#root{height:100%;min-height:0}body{overflow:hidden}.official-app{heig
 .management-content :is(.info-list strong,.info-list code,.notice,.subtle,.setting-toggle>span){min-width:0;overflow-wrap:anywhere}
 .management-content .setting-toggle>span{flex:1}
 .management-content .setting-toggle>.st-toggle{flex:none}
-.management-content--settings>.main-content{max-width:none}
+.management-content--settings>.main-content,.management-content--monitor-settings>.main-content,.management-content--chat-defaults>.main-content{max-width:none}
 .management-content .settings-layout{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;width:100%;max-width:none;align-items:stretch}
+.management-content .settings-layout--single{grid-template-columns:minmax(0,1fr)}
 .management-content .settings-layout>.panel{width:100%;max-width:none;min-width:0;margin-bottom:0}
 .management-content .settings-layout>.panel:last-child{grid-column:1/-1}
 .management-content :is(.table-wrap,.api-usage-table-scroll){max-width:100%;min-width:0;overflow-x:auto}

@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ServiceProfile } from '@strata-manager/core';
 import { Segmented } from '../OfficialControls';
@@ -7,7 +8,7 @@ import { ServiceCapabilityPanel } from '../ServiceCapabilityPanel';
 import './benchmark.css';
 
 export function BenchmarkPage(props: {
-  profile?: ServiceProfile; online: boolean; disabled: boolean; language: 'zh-CN' | 'en'; onRunningChange: (running: boolean) => void; quickRunRequest?: number;
+  profile?: ServiceProfile; online: boolean; disabled: boolean; language: AppLanguage; onRunningChange: (running: boolean) => void; quickRunRequest?: number;
 }) {
   const [mode, setMode] = useState('context'), [running, setRunning] = useState(false);
   const { onRunningChange } = props;

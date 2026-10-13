@@ -92,8 +92,9 @@ async page => {
   await run('floating-right-click-native-menu-and-navigation', 'state=idle', async () => {
     await speed().waitFor();
     const { menu, popup } = await openMenu(true);
-    const expected = ['main', 'chat', 'monitoring', 'usage', 'tasks', 'copyApiUrl', 'quickBenchmark', 'refresh', 'pause', 'pin', 'taskbar', 'tray', 'settings', 'close'];
+    const expected = ['main', 'chat', 'monitoring', 'usage', 'tasks', 'copyApiUrl', 'quickBenchmark', 'refresh', 'pause', 'pin', 'tray', 'settings', 'close'];
     assert(expected.every(id => menu.items.some(item => item.id === id)) && menu.items.filter(item => item.id).length === expected.length, 'Right-click menu must include all shortcuts plus settings and close');
+    assert(!menu.items.some(item => item.id === 'taskbar'), 'Native context menu must not offer the removed taskbar mode');
     assert(menu.items.some(item => item.item === 'Separator'), 'Native context menu should separate its groups');
     assert(popup.window === null || popup.window === 'service-monitor', 'Native menu must target the current floating window');
     assert(menu.items.find(item => item.id === 'quickBenchmark').enabled !== false, 'Idle ready model should permit quick speed test');
@@ -270,7 +271,7 @@ async page => {
     await page.waitForFunction(() => window.__fixture.hasListener('monitor-navigate'));
     for (const destination of ['chat', 'monitoring', 'usage', 'tasks', 'settings']) {
       await page.evaluate(destination => window.__fixture.emitEvent('monitor-navigate', destination), destination);
-      await page.waitForURL(url => url.hash === `#${destination === 'monitoring' ? 'monitor' : destination}`);
+      await page.waitForURL(url => url.hash === `#${destination === 'monitoring' ? 'monitor' : destination === 'settings' ? 'monitor-settings' : destination}`);
       if (destination === 'settings') await page.locator('#settings-floating-monitor').waitFor();
     }
     return { destinations: ['chat', 'monitoring', 'usage', 'tasks', 'settings'], finalHash: await page.evaluate(() => location.hash) };
@@ -348,28 +349,37 @@ async page => {
     await page.waitForFunction(() => window.__fixture.store.settings.floatingMonitor?.layout === 'twoRow' && window.__fixture.store.settings.floatingMonitor?.fontSize === 16);
     return { keyboardOrder: true, maximumMetrics: 8, persisted };
   }, { width: 1200, height: 1000 }, true);
-  for (const fail of [false, true]) {
-    await run(`main-window-monitor-mode-${fail ? 'rollback' : 'switch'}`, `floating-settings&state=idle${fail ? '&taskbarFail' : ''}`, async () => {
-      await page.waitForFunction(() => window.__fixture.hasListener('monitor-navigate'));
-      await page.evaluate(() => window.__fixture.emitEvent('monitor-navigate', 'settings'));
-      const panel = page.locator('#settings-floating-monitor');
-      await panel.getByRole('radio', { name: '常驻任务栏（实验）', exact: true }).click();
-      await page.waitForFunction(() => window.__fixture.calls.some(call => call.command === 'set_monitor_mode' && call.args.mode === 'taskbar'));
-      if (fail) {
-        await panel.getByRole('alert').filter({ hasText: '任务栏空间不足' }).waitFor();
-        assert(await panel.getByRole('radio', { name: '桌面浮条', exact: true }).getAttribute('aria-checked') === 'true', 'Failed taskbar activation must preserve floating mode');
-        assert(await page.evaluate(() => window.__fixture.store.settings.floatingMonitor?.mode) !== 'taskbar', 'Failed taskbar activation must not save taskbar mode');
-      } else {
-        await page.waitForFunction(() => window.__fixture.store.settings.floatingMonitor?.mode === 'taskbar');
-        assert(await panel.getByRole('radio', { name: '常驻任务栏（实验）', exact: true }).getAttribute('aria-checked') === 'true', 'Successful native activation must select taskbar mode');
-        await panel.getByRole('button', { name: '恢复显示默认', exact: true }).click();
-        assert(await page.evaluate(() => window.__fixture.store.settings.floatingMonitor?.mode) === 'taskbar', 'Resetting appearance must preserve the active mode');
-        await panel.getByRole('radio', { name: '桌面浮条', exact: true }).click();
-        await page.waitForFunction(() => window.__fixture.store.settings.floatingMonitor?.mode === 'floating');
-      }
-      return { rollback: fail, mode: await page.evaluate(() => window.__fixture.store.settings.floatingMonitor?.mode ?? 'floating') };
-    }, { width: 1200, height: 1000 }, true);
-  }
+  await run('main-window-monitor-settings-without-taskbar-switch', 'floating-settings&state=idle', async () => {
+    await page.waitForFunction(() => window.__fixture.hasListener('monitor-navigate'));
+    await page.evaluate(() => window.__fixture.emitEvent('monitor-navigate', 'settings'));
+    const panel = page.locator('#settings-floating-monitor'); await panel.waitFor();
+    assert(await panel.getByRole('radio', { name: /常驻任务栏|桌面浮条/ }).count() === 0, 'Settings must not expose a monitor mode switch');
+    assert(!(await panel.innerText()).includes('常驻任务栏'), 'Settings must not advertise the removed taskbar mode');
+    await panel.getByRole('switch', { name: '显示监控', exact: true }).click();
+    await page.waitForFunction(() => window.__fixture.calls.some(call => call.command === 'set_monitor_visibility' && call.args.visible === true && call.args.mode === 'floating'));
+    const calls = await page.evaluate(() => window.__fixture.calls);
+    assert(!calls.some(call => ['set_monitor_mode', 'set_monitor_visibility'].includes(call.command) && call.args.mode === 'taskbar'), 'Showing the monitor must always request the floating mode');
+    return { taskbarSwitch: false, requestedMode: 'floating' };
+  }, { width: 1200, height: 1000 }, true);
+  await run('main-window-legacy-taskbar-preference-returns-to-floating', 'floating-settings&state=idle', async () => {
+    await page.evaluate(async () => {
+      const settings = structuredClone(window.__fixture.store.settings);
+      settings.floatingMonitor = { ...settings.floatingMonitor, mode: 'taskbar', metrics: ['cpu'], metricColors: { cpu: '#aabbcc' }, fontSize: 18 };
+      await window.__TAURI_INTERNALS__.invoke('store_set', { key: 'settings', value: settings });
+    });
+    await page.reload(); await page.locator('.boot').waitFor({ state: 'hidden' });
+    await page.waitForFunction(() => window.__fixture.store.settings.floatingMonitor?.mode === 'floating');
+    const preferences = await page.evaluate(() => window.__fixture.store.settings.floatingMonitor);
+    assert(JSON.stringify(preferences.metrics) === '["cpu"]' && preferences.metricColors.cpu === '#aabbcc' && preferences.fontSize === 18, 'Migrating an old taskbar preference must retain appearance and metric colors');
+    await page.waitForFunction(() => window.__fixture.hasListener('monitor-navigate'));
+    await page.evaluate(() => window.__fixture.emitEvent('monitor-navigate', 'settings'));
+    const panel = page.locator('#settings-floating-monitor'); await panel.waitFor();
+    assert(await panel.getByRole('radio', { name: /常驻任务栏|桌面浮条/ }).count() === 0, 'An old taskbar preference must not restore the removed switch');
+    await panel.getByRole('switch', { name: '显示监控', exact: true }).click();
+    await page.waitForFunction(() => window.__fixture.calls.some(call => call.command === 'set_monitor_visibility' && call.args.visible === true && call.args.mode === 'floating'));
+    assert(!await page.evaluate(() => window.__fixture.calls.some(call => ['set_monitor_mode', 'set_monitor_visibility'].includes(call.command) && call.args.mode === 'taskbar')), 'A legacy preference must not activate the taskbar host');
+    return { migratedMode: preferences.mode, preservedMetrics: preferences.metrics, preservedColor: preferences.metricColors.cpu };
+  }, { width: 1200, height: 1000 }, true);
   await run('main-window-floating-quick-speed-two-serial-requests', 'state=idle', async () => {
     await page.evaluate(() => { localStorage.removeItem('benchmark-fixture-reports'); window.__fixture.store.benchmarkReportsV1 = []; });
     await page.waitForFunction(() => window.__fixture.hasListener('monitor-navigate'));
@@ -391,13 +401,20 @@ async page => {
     assert(await page.evaluate(() => window.__fixture.monitor.reads) === reads, 'Closing a taskbar host must not resume the still-hidden floating sampler');
     return { snapshotsAfterClose: reads };
   });
-  await run('main-window-consecutive-monitor-events-merge', 'floating-settings&rapidPatch', async () => {
-    await page.waitForFunction(() => window.__fixture.hasListener('monitor-navigate'));
-    await page.evaluate(() => window.__fixture.emitEvent('monitor-navigate', 'settings'));
-    await page.getByRole('radio', { name: '常驻任务栏（实验）', exact: true }).click();
-    await page.waitForFunction(() => window.__fixture.store.settings.floatingMonitor?.mode === 'taskbar');
-    assert(JSON.stringify(await page.evaluate(() => window.__fixture.store.settings.floatingMonitor.metrics)) === '["cpu"]', 'A mode event must retain the immediately preceding metric patch');
-    return { metrics: ['cpu'], mode: 'taskbar' };
+  await run('main-window-consecutive-monitor-events-merge', 'floating-settings&state=idle', async () => {
+    await page.waitForFunction(() => window.__fixture.hasListener('monitor-preferences-patch') && window.__fixture.hasListener('monitor-tray-preference'));
+    await page.evaluate(() => {
+      window.__fixture.emitEvent('monitor-preferences-patch', { metrics: ['cpu'] });
+      window.__fixture.emitEvent('monitor-preferences-patch', { showGraphs: false });
+      window.__fixture.emitEvent('monitor-tray-preference', true);
+    });
+    await page.waitForFunction(() => {
+      const preferences = window.__fixture.store.settings.floatingMonitor;
+      return JSON.stringify(preferences?.metrics) === '["cpu"]' && preferences.showGraphs === false && preferences.showInTray === true;
+    });
+    const preferences = await page.evaluate(() => window.__fixture.store.settings.floatingMonitor);
+    assert(preferences.mode === 'floating', 'Consecutive appearance and tray events must keep floating mode');
+    return { metrics: preferences.metrics, showGraphs: preferences.showGraphs, showInTray: preferences.showInTray, mode: preferences.mode };
   }, { width: 1200, height: 1000 }, true);
   return { scope: 'Exact production React entry in Chromium with synthetic native snapshots, event listeners, native Menu/Channel callbacks, clipboard and window commands. Quick speed inference is synthetic; native topmost/context-menu behavior is not certified by this browser replay.', results, passed: results.every(result => result.passed) };
 }

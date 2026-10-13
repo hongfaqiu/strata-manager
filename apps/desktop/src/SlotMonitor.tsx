@@ -1,9 +1,10 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useState } from 'react';
 import { asObject, runtimeSlots, type JsonObject } from '@strata-manager/core';
 import './runtime-operations.css';
 import './pages/setup-tuning-interactions.css';
 
-export function SlotMonitor({ raw, language }: { raw: JsonObject; language: 'zh-CN' | 'en' }) {
+export function SlotMonitor({ raw, language }: { raw: JsonObject; language: AppLanguage }) {
   const zh = language === 'zh-CN', t = (cn: string, en: string) => zh ? cn : en;
   const [showDetails, setShowDetails] = useState(false);
   const live = asObject(raw.live), slots = runtimeSlots(raw);

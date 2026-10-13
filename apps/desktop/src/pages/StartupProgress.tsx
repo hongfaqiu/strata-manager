@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useRef, useState } from 'react';
 import { Check, Clock3, FileText, LoaderCircle } from 'lucide-react';
 import type { LogEntry } from '@strata-manager/core';
@@ -15,7 +16,7 @@ export interface StartupProgressState {
 }
 
 export interface StartupProgressProps {
-  language: 'zh-CN' | 'en';
+  language: AppLanguage;
   progress: StartupProgressState;
   modelName?: string;
   apiUrl?: string;
@@ -39,13 +40,13 @@ const formatDuration = (milliseconds: number) => {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 };
 
-export function startupPhaseLabel(language: 'zh-CN' | 'en', phase: StartupProgressState['phase']) {
-  return words[language][phase];
+export function startupPhaseLabel(language: AppLanguage, phase: StartupProgressState['phase']) {
+  return words[(language === 'zh-CN' ? 'zh-CN' : 'en')][phase];
 }
 
 /** No estimated percentage: engine output and readiness are the source of truth. */
 export function StartupProgress({ language, progress, modelName, apiUrl }: StartupProgressProps) {
-  const text = words[language];
+  const text = words[(language === 'zh-CN' ? 'zh-CN' : 'en')];
   const firstSeen = useRef(Date.now());
   const [now, setNow] = useState(Date.now());
   useEffect(() => {

@@ -47,7 +47,11 @@ async fn snapshot(app: &AppHandle) -> Result<Value, String> {
 }
 
 pub(crate) fn apply(app: &AppHandle, settings: &Value) -> Result<(), String> {
-    set_enabled(app, enabled(settings), settings["language"] == "en")
+    set_enabled(
+        app,
+        enabled(settings),
+        crate::system_locale::uses_english_fallback(settings["language"].as_str()),
+    )
 }
 
 fn set_enabled(app: &AppHandle, enable: bool, english: bool) -> Result<(), String> {
@@ -171,7 +175,7 @@ fn set_enabled(app: &AppHandle, enable: bool, english: bool) -> Result<(), Strin
             };
             let english = value["settings"]["language"]
                 .as_str()
-                .map(|language| language == "en")
+                .map(|language| crate::system_locale::uses_english_fallback(Some(language)))
                 .unwrap_or(english);
             let view = presentation(&value, english);
             // Use this generation's handle, never look up a replacement by ID.
@@ -215,6 +219,8 @@ pub(crate) fn minimize_monitor_to_tray(
         .load(std::sync::atomic::Ordering::Relaxed);
     set_enabled(&app, true, english)?;
     window.hide().map_err(|e| e.to_string())?;
+    let _ = window.emit("monitor-suspended", ());
+    crate::taskbar_monitor::notify_visibility(&app);
     app.emit_to("main", "monitor-tray-preference", true)
         .map_err(|e| e.to_string())
 }
@@ -232,10 +238,22 @@ fn numeric(value: &Value) -> Option<f64> {
 
 fn presentation(value: &Value, english: bool) -> Presentation {
     let t = |cn, en| if english { en } else { cn };
-    let online = value["phase"] == "online" && value["health"]["loaded"] == true;
     let live = &value["metrics"]["live"];
     let state = live["state"].as_str().unwrap_or("unknown");
-    let state_label = if !online {
+    let transition = if value["phase"] == "online" {
+        match state {
+            "loading" => Some(t("正在载入模型", "Loading model")),
+            "unloading" => Some(t("正在释放模型", "Releasing model")),
+            _ => None,
+        }
+    } else {
+        None
+    };
+    let online =
+        value["phase"] == "online" && value["health"]["loaded"] == true && transition.is_none();
+    let state_label = if let Some(label) = transition {
+        label
+    } else if !online {
         match value["phase"].as_str() {
             Some("none") => t("未选择服务", "No service selected"),
             Some("stopped") => t("未启动", "Stopped"),
@@ -371,6 +389,32 @@ mod tests {
             assert_eq!(view.digits, "-");
             assert!(!view.tooltip.contains("90"));
             assert!(!view.can_benchmark);
+        }
+    }
+    #[test]
+    fn model_transitions_override_loaded_flag_without_reusing_throughput() {
+        for (state, chinese, english) in [
+            ("loading", "正在载入模型", "Loading model"),
+            ("unloading", "正在释放模型", "Releasing model"),
+        ] {
+            for loaded in [false, true] {
+                let snapshot = json!({"phase":"online","health":{"loaded":loaded},"metrics":{"live":{"state":state,"tok_s":90,"prefill_tok_s_mean":2200},"requests":[{"decode_tok_s":80}]}});
+                for (is_english, label) in [(false, chinese), (true, english)] {
+                    let view = presentation(&snapshot, is_english);
+                    assert!(view.tooltip.contains(label));
+                    assert_eq!(view.digits, "-");
+                    assert!(!view.tooltip.contains("tok/s"));
+                    assert!(!view.can_benchmark);
+                }
+                for phase in ["stopped", "unavailable", "none"] {
+                    let mut stale = snapshot.clone();
+                    stale["phase"] = json!(phase);
+                    let view = presentation(&stale, false);
+                    assert!(!view.tooltip.contains(chinese));
+                    assert_eq!(view.digits, "-");
+                    assert!(!view.can_benchmark);
+                }
+            }
         }
     }
     #[test]

@@ -1,0 +1,90 @@
+{
+  "scope": "Original 0.1.4 changelog illustrations extracted unchanged from Git HEAD.",
+  "originalRecord": {
+    "capturedAt": "2026-10-11T21:20:51.411Z",
+    "sourceBaseCommit": "f579311205364c503fa1560fb594d8082ba773a3",
+    "sourceTreeSha256": "40e61aea32996aaacb9a17d8b1a161aaf84def85acb2159d96b4b0dd32678a23"
+  },
+  "files": [
+    {
+      "file": "benchmark.zh.webp",
+      "original": "docs/screenshots/benchmark.zh.webp",
+      "sha256": "ecd5db50f8b3771b780248f8409cc748fc7bdc0747b08147091c0ba45e3b9741"
+    },
+    {
+      "file": "benchmark.en.webp",
+      "original": "docs/screenshots/benchmark.en.webp",
+      "sha256": "c5cc2b1d71d3859f11aa93017f6d00863124a0720ed6ce581f58ab95feb928d3"
+    },
+    {
+      "file": "common-chat-settings.zh.webp",
+      "original": "docs/screenshots/common-chat-settings.zh.webp",
+      "sha256": "29b1add0800650397241bd9705b3a74e3ee79a777b66e37ac43658ed2ce38b2c"
+    },
+    {
+      "file": "common-chat-settings.en.webp",
+      "original": "docs/screenshots/common-chat-settings.en.webp",
+      "sha256": "930198cee086b29126db2ac764ce091c2a1687b9a0318537c6d26e14a944303f"
+    },
+    {
+      "file": "connections.zh.webp",
+      "original": "docs/screenshots/connections.zh.webp",
+      "sha256": "ed56e41ba98559e3b207dad8524ef3b4e3b894968c7fe14451cbf594bce8dced"
+    },
+    {
+      "file": "connections.en.webp",
+      "original": "docs/screenshots/connections.en.webp",
+      "sha256": "74e06f98adf12dcf955b9e5f1ca79d437d9450a0181deefc38bbb391695e8339"
+    },
+    {
+      "file": "runtime-tools.zh.webp",
+      "original": "docs/screenshots/runtime-tools.zh.webp",
+      "sha256": "45ddcd63bf5cdcb97e1304bd0b113afa43a83a908c3f827d68f66323e06f0beb"
+    },
+    {
+      "file": "runtime-tools.en.webp",
+      "original": "docs/screenshots/runtime-tools.en.webp",
+      "sha256": "cae73b5c5fb6d0b9d15492841b45dfc88ee1517c3ff87344eb76632c9aa4a4fb"
+    },
+    {
+      "file": "runtime-download-settings.zh.webp",
+      "original": "docs/screenshots/runtime-download-settings.zh.webp",
+      "sha256": "4418cdfa829b999279f6effeb19528fa2ca052f7c08b1593bb42ddd03bd23440"
+    },
+    {
+      "file": "runtime-download-settings.en.webp",
+      "original": "docs/screenshots/runtime-download-settings.en.webp",
+      "sha256": "17adf5019d7a07b19f2eb7a13f6116a3d9cd79f96625e6299bdb8ea991206ab9"
+    },
+    {
+      "file": "service-status.zh.webp",
+      "original": "docs/screenshots/service-status.zh.webp",
+      "sha256": "0ef7d3db5127df781e18d64bed9ff9626e8b4cff95f84122d73e09742036ef63"
+    },
+    {
+      "file": "service-status.en.webp",
+      "original": "docs/screenshots/service-status.en.webp",
+      "sha256": "2f5cb9c02ff148ac2fdb5605871d6043da21be8a026c787b94854a664d66a9eb"
+    },
+    {
+      "file": "floating-monitor.zh.webp",
+      "original": "docs/screenshots/floating-monitor.zh.webp",
+      "sha256": "02acbf579f8d479b5ff329b72bea68d9deef4ce5ab0a24994d0a77cdaacd1242"
+    },
+    {
+      "file": "floating-monitor.en.webp",
+      "original": "docs/screenshots/floating-monitor.en.webp",
+      "sha256": "2fe32108428602b756d453e0e5c7dd7aa8bbbdfec723b24a28a5f4b1681dcd19"
+    },
+    {
+      "file": "app-updates.zh.webp",
+      "original": "docs/screenshots/app-updates.zh.webp",
+      "sha256": "974696075008f991e0721b54d8e72a29787d4d5b7688ddeff868c21d5eb0ad62"
+    },
+    {
+      "file": "app-updates.en.webp",
+      "original": "docs/screenshots/app-updates.en.webp",
+      "sha256": "abaa936fdf59b687e722ec8b7514921f68561cd7043e02efff52fe03433db926"
+    }
+  ]
+}

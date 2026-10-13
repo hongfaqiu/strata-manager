@@ -27,7 +27,7 @@
 
 [![Strata Manager 总览与展开的服务状态弹层](docs/screenshots/product-cover.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.zh.webp)
 
-<sub>0.1.5 界面预览：完整总览与展开的服务状态弹层。截图由真实应用组件配合隔离示例数据渲染；显示数值不代表推理结果或性能测试。点击可查看原图。</sub>
+<sub>0.1.8 发布候选界面，2026 年 10 月 14 日重新采集，尚待公开发布。截图由实际应用与组件配合隔离示例数据渲染；显示数值不代表推理结果或性能测试。点击可查看原图。</sub>
 
 ## Strata 是什么，Manager 负责什么？
 
@@ -43,38 +43,49 @@ Manager 是独立社区项目，管理的是**这台电脑**上受支持的 Stra
 
 ## 从安装准备到日常使用
 
-依赖引擎的工具会按已安装运行时的能力提供。
+以下概览覆盖当前源码，稳定安装包的功能以对应发布说明为准。依赖引擎的工具会按已安装运行时的能力提供。
 
 | 工作流程 | 可以完成的操作 |
 | --- | --- |
 | **1 · 准备 Strata** | 检测已有安装，查看本机与上游版本、官方更新日志。Windows x64 引擎 ZIP 默认使用官方 GitHub，支持 GH Proxy/GHProxy、自定义 HTTPS 或本地 ZIP，各来源按当前 CUDA12、CUDA13 或 HIP 引擎匹配；中断后保留部分文件并尝试 HTTP Range 续传，完整包仍按官方大小与 SHA256 校验。Linux 支持环境扫描、版本和日志查看。 |
 | **2 · 整理模型** | 发现本机权重，按模型归并运行配置，选择下载来源与显卡，检查模型文件、GGUF 元数据和磁盘占用；支持 Swift IQ3_S 格式。 |
-| **3 · 配置与运行** | 通过图形控件或 JSON 编辑配置，校验并保留备份；启动、停止、重启或释放模型内存，查看启动阶段、任务和日志。打开应用或登录时仅启动轻量后台，保留服务停止状态。 |
+| **3 · 配置与运行** | 通过图形控件或 JSON 编辑配置，校验并保留备份；启动、停止、重启或释放模型内存，查看启动阶段、任务和日志。在 Windows 检查检测到的运行中服务、模型加载状态、API 地址与配置，连接已有管理后台或托管服务。打开应用或登录时仅启动轻量后台，保留服务停止状态。 |
 | **4 · 聊天与接入** | 使用流式会话、附件与结构化输出。新模型默认继承公共生成参数与 MCP 开关，旧模型的专用值保持独立，主动开启继承后才跟随；更改在下一次聊天请求生效。在“API 与外部助手”集中配置连接目标、应用访问密钥、API 示例与 MCP，选择目标不会启动或切换模型。 |
-| **5 · 查看会话与负载** | 保存和恢复引擎会话，查看槽位、负载、硬件及受支持的显存调整。状态面板区分近期生成与输入处理趋势，保留采样缺失点。紧凑桌面浮条默认关闭，仅展示监控指标，右键提供导航、置顶和采样等操作；可选系统托盘监控。只读观察不会启动或恢复服务，快速测速会发送推理请求。 |
+| **5 · 查看会话与负载** | 保存和恢复引擎会话，查看槽位、负载、硬件及受支持的显存调整。状态面板区分近期生成与输入处理趋势，保留采样缺失点，显示空闲释放后自动载入模型的进度。桌面浮条默认关闭，提供三种布局、指标排序与字号配色设置，右键提供导航、置顶和采样等操作；可选系统托盘监控。只读观察不会启动或恢复服务，快速测速会发送推理请求。 |
 | **6 · 分析用量与调优** | 保留本机 API 元数据，兼容 Strata 0.1.43 的 API 使用统计，查看请求、tokens、延迟和缓存复用趋势；按聊天、编程/Agent 或长文任务比较受支持的调优候选，再决定应用或恢复，不保证固定提速。 |
 | **7 · 基准测试** | 串行运行核验过的上下文档位或七类场景，分别记录 Token 数、输入处理与生成速度、首 Token 延迟和资源采样；支持历史报告、JSON/CSV 导出、复制图表和 PNG 导出，并协调其它推理操作。 |
-| **8 · 审阅更新** | 分别管理应用、Strata 更新和模型权重；独立应用更新页提供随包双语日志的离线阅读、稳定更新检查和安装确认，使用 Tauri 签名校验；支持中英文、跟随系统/亮色/暗色外观和托盘控制。 |
+| **8 · 更新与偏好** | 分别管理应用、Strata 更新和模型权重；独立应用更新页提供随包双语日志的离线阅读、稳定更新检查和安装确认，使用 Tauri 签名校验。界面语言可跟随系统或选择十种随包语言；支持跟随系统/亮色/暗色外观和托盘控制。部分高级工具和原始服务日志使用英文。 |
 
 API 使用统计无需捕获请求正文。可选的临时正文诊断是独立功能，行为与隐私说明见[使用指南](docs/USER_GUIDE.md)。
 
-组件关系和数据保存见 [0.1.5 系统说明](docs/SYSTEM.md)，各版本变更见 [CHANGELOG.md](CHANGELOG.md) 或[官网更新日志](https://hongfaqiu.github.io/strata-manager/docs/changelog.html)。
+组件关系和数据保存见[系统说明](docs/SYSTEM.md)，各版本变更见 [CHANGELOG.md](CHANGELOG.md) 或[官网更新日志](https://hongfaqiu.github.io/strata-manager/docs/changelog.html)。
+
+## 0.1.8 发布候选
+
+**0.1.8 目前为发布候选，尚待公开发布**，包含以下改进。安装包是否可用以[发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)为准；安装包验收与界面示例分开记录。
+
+- **Windows 运行中服务集中管理。** 查看实际加载状态、当前模型、运行配置、PID、引擎版本和 OpenAI API Base URL。已有 Manager 后台的服务优先连接；托管普通外部服务可能重新加载模型。自动连接只在当前后台没有活动服务且发现唯一明确的运行候选时尝试；自动托管还要求模型健康、已加载且空闲，多候选保留手动选择。
+- **跟随系统与随包语言资源。** 首次启动可确认语言，提供英语、简体／繁体中文、日语、韩语、德语、法语、西班牙语、葡萄牙语和俄语，也可跟随系统。语言包随应用提供，已有手动选择会保留；部分高级工具和原始日志仍使用英文。
+- **可自定义的桌面监控。** 用开关显示或隐藏，默认清晰双行，也可选择紧凑单行或详细面板；支持 8–36px 字号、从 11 项指标中选择 1–8 项并排序。标签默认开启，状态文字与贴边吸附默认关闭；可切换单位、采样时间、折线，并逐项配色或恢复主题默认色。浮条可拖动，按指标稳定列宽，减少空白；读取默认蓝色、生成默认绿色，空闲历史速度不续画为实时曲线。设置文案精简，开关详情通过提示查看。常驻任务栏切换已移除，旧偏好迁回浮动条。
+- **更清楚的载入与控件状态。** 空闲释放模型后，再次请求自动载入时，状态栏显示载入进度和实际耗时；工作区 Tab 恢复圆角分段样式，选择控件移除外层光晕。
+
+| 检测到的运行中服务 | 跟随系统与语言包 |
+| --- | --- |
+| [![运行中服务的状态、连接与托管操作](docs/screenshots/running-services.zh.webp)](docs/screenshots/running-services.zh.webp) | [![跟随系统及随包界面语言选项](docs/screenshots/language-settings.zh.webp)](docs/screenshots/language-settings.zh.webp) |
+
+配图于 2026 年 10 月 14 日从 0.1.8 候选界面重新采集，来源见[截图记录](docs/screenshots/README.md)。原生窗口、真实 GPU 容量、长时稳定性与跨设备局域网的验收范围见[验证记录](docs/VERIFICATION.md)。
 
 ## 下载与开始使用
 
-### 0.1.7 的日常体验
+### 0.1.7 引入的日常工作流程
 
 [0.1.7 发布版](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.7)增加模型下载列表与详情、统一显卡及运行选项、按选择变化的资源评估、启动失败诊断、服务能力四态、聊天请求计时、API 在线验证与历史 Benchmark 条件比较。保存设置不会证明当前引擎已生效；缺少证据显示“未核验”，需要重启的选项单独提示。模型未就绪时不会自动启动在线验证。
 
-新界面的中英文截图采集于版本号更新前的真实组件，界面标记为 0.1.6，使用隔离示例数据；用于展示 0.1.7 功能，不代表安装包或推理验收。详见[日常体验说明](docs/DAILY_EXPERIENCE.md)与[验收记录](docs/VERIFICATION.md)。真实 GPU 容量／长时稳定性、跨设备局域网和完整原生窗口操作仍需独立验收。
+这些工作流程在 0.1.8 中继续提供，详见[日常体验说明](docs/DAILY_EXPERIENCE.md)与[验收记录](docs/VERIFICATION.md)。下图已用当前组件和隔离示例数据重新采集，不代表 0.1.8 候选安装包或真实推理验收。
 
 | 模型下载与资源选择 | API 验证与能力 |
 | --- | --- |
-| [![0.1.7：模型下载详情与资源评估](docs/screenshots/daily-experience/model-download-detail.zh.webp)](docs/screenshots/daily-experience/model-download-detail.zh.webp) | [![0.1.7：API 在线验证](docs/screenshots/daily-experience/api-verification.zh.webp)](docs/screenshots/daily-experience/api-verification.zh.webp) |
-
-[未发布开发版预览](docs/screenshots/ui-refinements/model-download.zh.webp)已恢复圆角工作区 Tab，并移除选择控件的外层光晕。这些改进尚未包含在 0.1.7 安装包中，见[更新日志](CHANGELOG.md#unreleased)。
-
-[未发布监控预览](docs/screenshots/monitor-customization/floating.zh.webp)提供清晰双行、读取与生成分色、实时折线及[自定义面板](docs/screenshots/monitor-customization/settings.zh.webp)。Windows 常驻任务栏为实验适配，真实 Explorer 兼容仍待实机验收；尚未包含在 0.1.7 安装包中。
+| [![当前界面：模型下载详情与资源评估](docs/screenshots/daily-experience/model-download-detail.zh.webp)](docs/screenshots/daily-experience/model-download-detail.zh.webp) | [![当前界面：API 在线验证](docs/screenshots/daily-experience/api-verification.zh.webp)](docs/screenshots/daily-experience/api-verification.zh.webp) |
 
 ### 稳定安装包
 
@@ -93,14 +104,14 @@ API 使用统计无需捕获请求正文。可选的临时正文诊断是独立�
 
 ## 界面一览
 
-以下图片使用真实应用组件和隔离文档示例数据，均为亮色主题。点击图片可查看高清原图。
+以下图片使用当前应用与组件和隔离文档示例数据，均为亮色主题。点击图片可查看高清原图。
 
 | 模型与运行配置 | 硬件与推理监控 |
 | --- | --- |
 | [![我的模型：本机权重与配置分组](docs/screenshots/models.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/models.zh.webp) | [![性能监控：服务、硬件与请求状态](docs/screenshots/monitor.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/monitor.zh.webp) |
 
 <details>
-<summary><strong>更多界面：运行环境、聊天、公共设置、连接、更新与监控</strong></summary>
+<summary><strong>更多界面：运行环境、聊天、公共设置、连接、更新、基准测试与监控</strong></summary>
 
 **Strata · 运行环境版本与更新**
 
@@ -122,6 +133,12 @@ API 使用统计无需捕获请求正文。可选的临时正文诊断是独立�
 
 [![参数调优工作区](docs/screenshots/tuning.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/tuning.zh.webp)
 
+**基准测试 · 上下文档位与历史条件**
+
+[![上下文基准测试工作区](docs/screenshots/benchmark.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/benchmark.zh.webp)
+
+[![历史 Benchmark 条件比较](docs/screenshots/daily-experience/history-comparison.zh.webp)](docs/screenshots/daily-experience/history-comparison.zh.webp)
+
 **设置与关于**
 
 [![语言、外观与后台设置](docs/screenshots/settings.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/settings.zh.webp)
@@ -130,23 +147,25 @@ API 使用统计无需捕获请求正文。可选的临时正文诊断是独立�
 
 **公共聊天默认值 · 按模型选择继承**
 
-[![公共生成参数与按模型继承选项](docs/screenshots/changelog/0.1.5/common-chat-settings.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/changelog/0.1.5/common-chat-settings.zh.webp)
+[![公共生成参数与按模型继承选项](docs/screenshots/common-chat-settings.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/common-chat-settings.zh.webp)
 
 **连接 · API 与外部助手**
 
-[![连接目标、应用访问密钥、API 示例与 MCP](docs/screenshots/changelog/0.1.5/connections.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/changelog/0.1.5/connections.zh.webp)
+[![连接目标、应用访问密钥、API 示例与 MCP](docs/screenshots/connections.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/connections.zh.webp)
 
 **应用更新 · 双语日志与安装确认**
 
-[![独立应用更新页](docs/screenshots/changelog/0.1.5/app-updates.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/changelog/0.1.5/app-updates.zh.webp)
+[![独立应用更新页](docs/screenshots/app-updates.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/app-updates.zh.webp)
 
 **服务状态 · 近期生成与输入处理趋势**
 
-[![服务状态快捷面板与近期趋势](docs/screenshots/changelog/0.1.5/service-status.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/changelog/0.1.5/service-status.zh.webp)
+[![服务状态快捷面板与近期趋势](docs/screenshots/service-status.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/service-status.zh.webp)
 
 **独立桌面监控浮条 · 默认关闭**
 
-[![仅显示实时指标的紧凑桌面监控浮条](docs/screenshots/changelog/0.1.5/floating-monitor.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/changelog/0.1.5/floating-monitor.zh.webp)
+[![当前清晰双行布局的桌面监控浮条](docs/screenshots/floating-monitor.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/floating-monitor.zh.webp)
+
+[![桌面监控开关、布局、指标与外观设置](docs/screenshots/floating-monitor-settings.zh.webp)](docs/screenshots/floating-monitor-settings.zh.webp)
 
 </details>
 

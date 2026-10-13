@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useRef, useState } from 'react';
 import { Copy, ImageDown, LoaderCircle } from 'lucide-react';
 import * as core from '@strata-manager/core';
@@ -6,7 +7,7 @@ import { saveBenchmarkPng } from './benchmarkImageSave';
 
 export type BenchmarkImagePreview = { name: string; intent: 'copy' | 'save'; blob?: Blob; url?: string; error?: string };
 
-export function BenchmarkImagePreviewDialog({ image, language, onClose }: { image: BenchmarkImagePreview; language: 'zh-CN' | 'en'; onClose: () => void }) {
+export function BenchmarkImagePreviewDialog({ image, language, onClose }: { image: BenchmarkImagePreview; language: AppLanguage; onClose: () => void }) {
   const text = (cn: string, en: string) => language === 'zh-CN' ? cn : en;
   const [ready, setReady] = useState(false), [busy, setBusy] = useState<'copy' | 'save'>(), [message, setMessage] = useState<{ text: string; error?: boolean }>();
   const active = useRef(true), working = useRef(false);

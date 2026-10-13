@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { Fragment } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as core from '@strata-manager/core';
@@ -9,7 +10,7 @@ import { version } from '../package.json';
 
 const object = (value: unknown): JsonObject => value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {};
 export function AboutPage({ raw, health, profile, language, desktop = core.isDesktop(), onCopy, onOpenSettings, onOpenConfig }: {
-  raw: JsonObject; health: JsonObject; profile?: ServiceProfile; online?: boolean; language:'zh-CN'|'en'; desktop?:boolean;
+  raw: JsonObject; health: JsonObject; profile?: ServiceProfile; online?: boolean; language:AppLanguage; desktop?:boolean;
   onCopy:(value:string)=>void|Promise<boolean|void>; onError?:(error:unknown)=>void;
   onOpenSettings:()=>void; onOpenConfig:()=>void;
 }) {

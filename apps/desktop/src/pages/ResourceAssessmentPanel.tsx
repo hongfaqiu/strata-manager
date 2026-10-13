@@ -1,3 +1,4 @@
+import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { CircleHelp, RefreshCw } from 'lucide-react';
@@ -8,7 +9,7 @@ import './resource-assessment.css';
 
 export interface ResourceAssessmentPanelProps {
   request?: ResourceAssessmentRequest | null;
-  language: 'zh-CN' | 'en';
+  language: AppLanguage;
   desktop?: boolean;
   compact?: boolean;
   disk?: SetupDiskPreflight;

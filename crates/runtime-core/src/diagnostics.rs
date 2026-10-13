@@ -254,7 +254,10 @@ pub fn build(
     let (mut category, mut confidence) = match code.as_str() {
         "STARTUP_PORT_IN_USE" => (StartupCategory::Port, StartupConfidence::Confirmed),
         "STARTUP_FILE_MISSING" => (StartupCategory::Files, StartupConfidence::Confirmed),
-        "STARTUP_CONFIG_INVALID" | "STARTUP_CONFIG_INCOMPATIBLE" => {
+        "STARTUP_CONFIG_INVALID"
+        | "STARTUP_CONFIG_INCOMPATIBLE"
+        | "STARTUP_EXTERNAL_CONFIG_MISMATCH"
+        | "STARTUP_RUNTIME_ALREADY_MANAGED" => {
             (StartupCategory::Config, StartupConfidence::Confirmed)
         }
         "STARTUP_AUTH_REQUIRED" | "STARTUP_FORBIDDEN" | "UNAUTHORIZED" | "FORBIDDEN" => {
@@ -341,6 +344,14 @@ pub fn build(
         StartupCategory::Resource => StartupAction::OpenResources,
         StartupCategory::Port => StartupAction::OpenNetwork,
         StartupCategory::Files => StartupAction::OpenFiles,
+        StartupCategory::Config
+            if matches!(
+                code.as_str(),
+                "STARTUP_EXTERNAL_CONFIG_MISMATCH" | "STARTUP_RUNTIME_ALREADY_MANAGED"
+            ) =>
+        {
+            StartupAction::CheckStatus
+        }
         StartupCategory::Config => StartupAction::OpenConfig,
         StartupCategory::Auth => StartupAction::OpenCredentials,
         StartupCategory::Timeout if process.is_some_and(|status| status.running) => {
@@ -377,6 +388,62 @@ pub fn encode(diagnostic: &StartupFailureDiagnostic) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn runtime_lease_conflict_is_confirmed_and_points_to_existing_backend() {
+        let raw = error(
+            "STARTUP_RUNTIME_ALREADY_MANAGED",
+            "该 Strata 运行环境已由另一后台托管，请连接已有后台；未停止现有服务",
+            "prepare",
+        );
+        let diagnostic = build("selected", 10, 20, &raw, &[], None);
+        assert_eq!(diagnostic.code, "STARTUP_RUNTIME_ALREADY_MANAGED");
+        assert_eq!(diagnostic.phase, "prepare");
+        assert_eq!(diagnostic.category, StartupCategory::Config);
+        assert_eq!(diagnostic.confidence, StartupConfidence::Confirmed);
+        assert_eq!(
+            diagnostic.actions,
+            [
+                StartupAction::CheckStatus,
+                StartupAction::ViewLogs,
+                StartupAction::ExportDiagnostics,
+            ]
+        );
+    }
+    #[test]
+    fn external_configuration_mismatch_is_confirmed_and_guides_to_running_status() {
+        let raw = error(
+            "STARTUP_EXTERNAL_CONFIG_MISMATCH",
+            "已有 Strata 实例使用其他配置；请在正在运行该实例的 Manager 窗口切换模型",
+            "prepare",
+        );
+        let diagnostic = build("selected", 10, 20, &raw, &[], None);
+        assert_eq!(diagnostic.code, "STARTUP_EXTERNAL_CONFIG_MISMATCH");
+        assert_eq!(diagnostic.phase, "prepare");
+        assert_eq!(diagnostic.category, StartupCategory::Config);
+        assert_eq!(diagnostic.confidence, StartupConfidence::Confirmed);
+        assert_eq!(
+            diagnostic.actions,
+            [
+                StartupAction::CheckStatus,
+                StartupAction::ViewLogs,
+                StartupAction::ExportDiagnostics,
+            ]
+        );
+        let encoded: Value = serde_json::from_str(&encode(&diagnostic)).unwrap();
+        assert_eq!(encoded["code"], "STARTUP_EXTERNAL_CONFIG_MISMATCH");
+        assert_eq!(
+            encoded["details"]["startupDiagnostic"]["category"],
+            "config"
+        );
+        assert_eq!(
+            encoded["details"]["startupDiagnostic"]["confidence"],
+            "confirmed"
+        );
+        assert_eq!(
+            encoded["details"]["startupDiagnostic"]["actions"],
+            json!(["checkStatus", "viewLogs", "exportDiagnostics"])
+        );
+    }
     #[test]
     fn loading_phase_accepts_nonobject_details_without_panicking_or_echoing_them() {
         for details in [

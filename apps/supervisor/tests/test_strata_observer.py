@@ -41,6 +41,31 @@ KEEP_AWAKE_SOURCE_HASHES = {OFFICIAL_0142_HASH, OFFICIAL_0143_HASH, OFFICIAL_014
 NONFINITE_SOURCE_HASHES = {OFFICIAL_0143_HASH, OFFICIAL_01431_HASH}
 
 
+class BlockingLazyEngine(server.MockEngine):
+    """A real upstream MockEngine with a controllable, CPU-only reload."""
+    def __init__(self, tokenizer, failure=None):
+        super().__init__(tokenizer, "</think>\n\nfixture reply", max_context=32768)
+        self.unloaded = False
+        self.load_entered, self.load_release = threading.Event(), threading.Event()
+        self.restarts = 0
+        self.failure = failure
+
+    def alive(self):
+        return not self.unloaded
+
+    def unload(self):
+        self.unloaded = True
+
+    def restart(self):
+        self.restarts += 1
+        self.load_entered.set()
+        if not self.load_release.wait(5):
+            raise RuntimeError("fixture load was not released")
+        if self.failure is not None:
+            raise self.failure
+        self.unloaded = False
+
+
 class ObserverHttp(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -519,6 +544,97 @@ class ObserverHttp(unittest.TestCase):
         self.assertIsNone(self.events("request_start")[0]["modelId"])
         self.assertEqual(self.events("request_end")[0]["modelId"], "lazy-loaded-model")
 
+    def test_lazy_reload_is_visible_without_capture_and_clears_after_ready(self):
+        tok = server.ByteTokenizer()
+        self.start(engine=BlockingLazyEngine(tok))
+        self.assertFalse(self.svc.api_monitor)
+        self.assertEqual(self.svc.metrics()["live"]["state"], "idle")
+        self.assertEqual(self.svc.unload(), "unloaded")
+
+        def metrics():
+            with urllib.request.urlopen(self.base + "/metrics", timeout=5) as response:
+                return json.load(response)["live"]
+
+        before = metrics()
+        self.assertEqual(before["state"], "unloaded")
+        self.assertNotIn("load_elapsed_s", before)
+        body = {"messages": [{"role": "user", "content": "hello"}], "max_tokens": 64}
+        results, failures = [], []
+
+        def request():
+            try:
+                results.append(self.post("/v1/chat/completions", body))
+            except BaseException as error:
+                failures.append(error)
+
+        threads = [threading.Thread(target=request) for _ in range(2)]
+        try:
+            threads[0].start()
+            self.assertTrue(self.engine.load_entered.wait(3))
+            first = metrics()
+            self.assertEqual(first["state"], "loading")
+            self.assertEqual(first["phase"], "loading model")
+            self.assertGreaterEqual(first["load_elapsed_s"], 0)
+            self.assertIsNone(first["tok_s"])
+            threads[1].start()
+            deadline = time.monotonic() + 3
+            while self.journal.db.execute("SELECT COUNT(*) FROM active_requests WHERE service_id='fixture'").fetchone()[0] < 2:
+                self.assertLess(time.monotonic(), deadline)
+                time.sleep(0.005)
+            second = metrics()
+            self.assertEqual(second["state"], "loading")
+            self.assertGreaterEqual(second["load_elapsed_s"], first["load_elapsed_s"])
+        finally:
+            self.engine.load_release.set()
+            for thread in threads:
+                if thread.ident is not None:
+                    thread.join(timeout=5)
+        self.assertFalse(failures, failures)
+        self.assertTrue(all(not thread.is_alive() for thread in threads))
+        self.assertEqual([status for status, _ in results], [200, 200])
+        self.assertEqual(self.engine.restarts, 1)
+        after = metrics()
+        self.assertEqual(after["state"], "idle")
+        self.assertNotIn("load_elapsed_s", after)
+        self.svc.ensure_loaded()  # A loaded-model no-op cannot create load state.
+        self.assertEqual(self.svc.metrics()["live"]["state"], "idle")
+        self.assertEqual(self.engine.restarts, 1)
+        self.assertEqual(self.svc.unload(), "unloaded")
+        unloaded = metrics()
+        self.assertEqual(unloaded["state"], "unloaded")
+        self.assertNotIn("load_elapsed_s", unloaded)
+        self.assertEqual(len(self.events("request_end")), 2)
+        self.assertTrue(all(event["outcome"] == "succeeded" for event in self.events("request_end")))
+        self.assertEqual(self.journal.db.execute("SELECT COUNT(*) FROM active_requests WHERE service_id='fixture'").fetchone()[0], 0)
+
+    def test_reload_failure_clears_loading_and_preserves_request_error(self):
+        tok = server.ByteTokenizer()
+        failure = server.GpuBusy("fixture GPU refusal")
+        self.start(engine=BlockingLazyEngine(tok, failure))
+        self.assertEqual(self.svc.unload(), "unloaded")
+        results = []
+        thread = threading.Thread(target=lambda: results.append(self.post("/v1/chat/completions", {
+            "messages": [{"role": "user", "content": "hello"}], "max_tokens": 64})))
+        try:
+            thread.start()
+            self.assertTrue(self.engine.load_entered.wait(3))
+            with urllib.request.urlopen(self.base + "/metrics", timeout=5) as response:
+                live = json.load(response)["live"]
+            self.assertEqual(live["state"], "loading")
+            self.assertIn("load_elapsed_s", live)
+        finally:
+            self.engine.load_release.set()
+            thread.join(timeout=5)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(results[0][0], 503)
+        self.assertIn("fixture GPU refusal", results[0][1])
+        after = self.svc.metrics()["live"]
+        self.assertEqual(after["state"], "unloaded")
+        self.assertNotIn("load_elapsed_s", after)
+        self.assertEqual(self.events("request_end")[0]["outcome"], "failed")
+        self.assertFalse(self.events("run_end"))
+        self.assertEqual(self.journal.db.execute("SELECT COUNT(*) FROM active_requests WHERE service_id='fixture'").fetchone()[0], 0)
+
     def test_maintenance_drains_existing_request_and_blocks_new_admission(self):
         self.start("</think>\n\n"+"xy"*80, delay=0.002)
         box={}
@@ -760,6 +876,88 @@ class ObserverHttp(unittest.TestCase):
 
 
 class JournalAndLoader(unittest.TestCase):
+    def test_concurrent_load_observation_preserves_errors_and_original_metrics(self):
+        failure = RuntimeError("original load failure")
+        entered = [threading.Event(), threading.Event()]
+        release = [threading.Event(), threading.Event()]
+
+        class Fixture:
+            def __init__(self):
+                self.ready = False
+                self.report = {"live": {"state": "unloaded", "queued": 2}, "untouched": object()}
+
+            def loaded(self):
+                return self.ready
+
+            def ensure_loaded(self, slot, fail=False):
+                if self.ready:
+                    return "already loaded"
+                entered[slot].set()
+                if not release[slot].wait(5):
+                    raise RuntimeError("fixture load was not released")
+                if fail:
+                    raise failure
+                return slot
+
+            def metrics(self, all_requests=False):
+                return self.report
+
+            def run(self, *args, **kwargs):
+                yield None
+
+            def _note(self, *args, **kwargs):
+                pass
+
+            def begin_request(self, path, req):
+                pass
+
+        with tempfile.TemporaryDirectory() as temp:
+            journal = observer.Journal(temp, "concurrent-load")
+            observer.instrument_globals({"Service": Fixture, "make_handler": lambda value: value},
+                                        journal=journal, source_hash="fixture", allow_fixture=True)
+            journal.close()  # The load signal has no durable analytics dependency.
+            svc, other = Fixture(), Fixture()
+            outcomes, errors = [], []
+
+            def invoke(slot, fail=False):
+                try:
+                    outcomes.append(svc.ensure_loaded(slot, fail=fail))
+                except BaseException as error:
+                    errors.append(error)
+
+            threads = [threading.Thread(target=invoke, args=(0, True)),
+                       threading.Thread(target=invoke, args=(1,))]
+            try:
+                for index, thread in enumerate(threads):
+                    thread.start()
+                    self.assertTrue(entered[index].wait(3))
+                live = svc.metrics(all_requests=True)
+                self.assertEqual(live["live"]["state"], "loading")
+                self.assertIn("load_elapsed_s", live["live"])
+                self.assertIsNot(live, svc.report)
+                self.assertIsNot(live["live"], svc.report["live"])
+                self.assertIs(live["untouched"], svc.report["untouched"])
+                self.assertEqual(svc.report["live"], {"state": "unloaded", "queued": 2})
+                self.assertIs(other.metrics(), other.report)
+                release[0].set()
+                threads[0].join(timeout=5)
+                self.assertFalse(threads[0].is_alive())
+                self.assertEqual(errors, [failure])
+                self.assertEqual(svc.metrics()["live"]["state"], "loading")
+            finally:
+                for event in release:
+                    event.set()
+                for thread in threads:
+                    if thread.ident is not None:
+                        thread.join(timeout=5)
+            self.assertTrue(all(not thread.is_alive() for thread in threads))
+            self.assertEqual(outcomes, [1])
+            self.assertIs(svc.metrics(), svc.report)
+            self.assertNotIn("load_elapsed_s", svc.metrics()["live"])
+            svc.ready = True
+            self.assertEqual(svc.ensure_loaded(0), "already loaded")
+            self.assertIs(svc.metrics(), svc.report)
+
     def test_verified_official_source_has_observer_contract(self):
         if SOURCE_HASH not in observer.SUPPORTED_HASHES:
             self.skipTest("the checkout isn't a verified observer runtime")
@@ -767,6 +965,7 @@ class JournalAndLoader(unittest.TestCase):
         service = next(n for n in module.body if isinstance(n, ast.ClassDef) and n.name == "Service")
         methods = {n.name: n for n in service.body if isinstance(n, ast.FunctionDef)}
         signatures = {"run": "self, ids, thinking, tools, max_new, sampling, cancel, force=None",
+                      "ensure_loaded": "self", "metrics": "self, all_requests=False",
                       "_note": "self, n, evs, st=None, rate=None", "begin_request": "self, path, req"}
         for name, arguments in signatures.items():
             self.assertEqual(ast.unparse(methods[name].args), arguments, name)

@@ -1,6 +1,6 @@
 {
   "name": "strata-manager",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": true,
   "packageManager": "pnpm@11.21.0",
   "scripts": {
@@ -10,7 +10,7 @@
     "build": "pnpm --filter @strata-manager/desktop build",
     "bundle": "pnpm --filter @strata-manager/desktop tauri build",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm --filter @strata-manager/core test && pnpm --filter @strata-manager/desktop test && node --test scripts/contract-server.test.mjs scripts/release-notes.test.mjs scripts/build-desktop-debug.test.mjs",
+    "test": "pnpm --filter @strata-manager/core test && pnpm --filter @strata-manager/desktop test && node --test scripts/contract-server.test.mjs scripts/release-notes.test.mjs scripts/build-desktop-debug.test.mjs scripts/installer-languages.test.mjs",
     "check": "pnpm typecheck && pnpm test && pnpm build",
     "native:check": "cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml",
     "native:test": "cargo test --workspace --target-dir apps/desktop/src-tauri/target",
