@@ -18,7 +18,7 @@ Strata Manager is a desktop workspace for local inference with Strata. It brings
 | Connect a local API client | [API connections](USER_GUIDE.en.md#connect-a-local-api-client) |
 | See recent status trends or open the independent desktop monitor | [Service status and monitoring](USER_GUIDE.en.md#read-background-health) |
 | Read request history, statistics and CSV exports | [API usage](USER_GUIDE.en.md#read-api-usage) |
-| Run scenario suites or concurrent stress tests, compare performance and export reports | [Benchmark](USER_GUIDE.en.md#benchmark) |
+| Run context tiers or scenarios serially, compare conditions and export reports | [Benchmark](USER_GUIDE.en.md#benchmark) |
 | Understand background services, health, tuning and updates | [Complete user guide](USER_GUIDE.en.md) |
 | Resolve preparation, connection or update problems | [Troubleshooting and feedback](TROUBLESHOOTING.en.md) |
 

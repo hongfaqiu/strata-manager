@@ -1,12 +1,26 @@
 # Strata Manager user guide
 
+## Daily experience in the current source (unreleased)
+
+This section covers development features. Check the selected version's changelog for what its installer contains.
+
+- **Model downloads:** select a model in the list, then choose GPUs, context, KV and slots in its details. Assessment follows the current selection and preserves manual values. Unknown modes do not establish capacity; RAM, KV and per-GPU estimates are not an additive total.
+- **Startup failures:** inspect stages, duration, reasons and sanitized evidence in Overview or Tasks, then open the relevant settings or logs. Read-only checks preserve stopped services; resource keywords in logs indicate suspected causes only.
+- **Capabilities and chat:** support is available, unsupported, unverified or restart-required. Saved cache settings and live arguments are distinct. Stops, model switches or engine identity changes require a new check. Chat separates waiting, reasoning, tools and answer generation; TTFT, first-answer and total timing come from the request, and service IDs appear only when returned.
+- **API checks and LAN:** explicitly test text, tool structure or image input in API and external assistants. Each check is bounded to 256 tokens and 60 seconds, never executes MCP and requires a ready model. Preview sharing settings before saving; multiple keys and backups are preserved, while restarting is separate. Server keys and application client credentials are managed independently.
+- **Historical benchmarks:** save a pre-upgrade baseline, update the runtime manually, then rerun the original task serially. Saving a baseline starts no model and performs no update. Missing conditions, weak model/runtime identity or different cache state prevent direct speedup claims. JSON/CSV exports omit test prompts, answers and server error bodies by default; include them only explicitly.
+
+See the [daily experience notes](DAILY_EXPERIENCE.md) and [verification record](VERIFICATION.md). Browser examples are separate from real GPU, prolonged stability and cross-device LAN acceptance.
+
+The current workspace adds resource guidance, startup diagnostics, request evidence, API verification, LAN sharing and report comparison. See [Daily experience increment](DAILY_EXPERIENCE.md). This increment has not been released as an installer; installed functionality remains tied to its release version.
+
 [Website](https://hongfaqiu.github.io/strata-manager/?lang=en) · [Product overview](../README.md) · [Documentation](README.en.md) · [简体中文](USER_GUIDE.md)
 
 [Download and try](DOWNLOAD.en.md) · [Troubleshooting](TROUBLESHOOTING.en.md) · [Support scope](DOWNLOAD.en.md#support-scope)
 
 Strata Manager is an open-source desktop workspace for the Strata runtime and local model services. Runtime installation and matching Windows x64 ZIP engine updates, model configurations, and service startup, shutdown and recovery are its core; chat, monitoring, API usage statistics and tuning support that workflow. It is an independent community project. Inference capabilities, models, image input, reasoning, MCP tools and API protocols come from the installed Strata runtime and chosen model.
 
-This guide describes the 0.1.4 source. The [release page](https://github.com/hongfaqiu/strata-manager/releases/latest) and the selected version's changelog establish package availability and contents. Inspect the runtime in Strata first, then choose a configuration in **Models → My models**, select **Use**, wait for **Model ready**, and open Chat or copy the local API address. Manager manages supported installations on this computer; it does not manage remote nodes.
+This guide follows the current source; development features are marked unreleased above. The [release page](https://github.com/hongfaqiu/strata-manager/releases/latest) and the selected version's changelog establish package availability and contents. Inspect the runtime in Strata first, then choose a configuration in **Models → My models**, select **Use**, wait for **Model ready**, and open Chat or copy the local API address. Manager manages supported installations on this computer; it does not manage remote nodes.
 
 ## Prepare or reuse a model
 
@@ -166,20 +180,22 @@ Controlled tests validate the comparison and recovery workflow. Real speed impro
 
 ## Benchmark
 
-Start the model you want to test, open the Benchmark workspace and select the current configuration. Use a scenario suite to compare workloads, or stress mode to observe latency, throughput and resource use under concurrent requests.
+Start the model manually, open the Benchmark workspace and select the current configuration. Context tiers and scenario tests send one request at a time. Historical concurrent reports remain readable; this increment does not provide a new concurrent stress entry point.
 
 | Mode | How to use it |
 | --- | --- |
 | **Scenario suite** | Select Short answer, Code review, Long input, Sustained generation, Repeated input cache, Conversation or Custom. Set warmup, repeated runs and input/output lengths, then compare results by scenario. |
-| **Concurrent stress** | Choose fixed concurrency or ramp-up mode, with 1–32 concurrent clients, a request budget and a duration. When either the budget or duration limit is reached, no new requests are started. Review load changes by stage. |
+| **Context tiers** | Choose tiers within verified capacity, retaining template and output margins. Run each tier serially; unavailable tokenization is explicitly marked as an estimate. |
 
-Reports separate time to first token (TTFT), request duration, P50/P95, token counts, input-processing and generation rates, cache reuse, and resource and queue trends. Scenarios and stress stages are summarized separately for comparison. Metrics not provided by the engine remain unavailable.
+Reports separate time to first token (TTFT), first-answer timing, request duration, P50/P95, token counts, input-processing and generation rates, cache reuse and resources. Missing metrics remain unknown. Incomplete conditions or model/runtime identity based only on file metadata prevent direct speedup claims.
 
 Follow progress or cancel a running test. The workspace coordinates with chat, tuning and other inference operations. Historical reports stay on this computer and can be exported as JSON or CSV. Compare runs using the same model, configuration, scenarios and hardware conditions.
 
-![Benchmark test plans, scenario selection and concurrent stress settings](screenshots/benchmark.en.webp)
+![Historical benchmark test plan preview](screenshots/benchmark.en.webp)
 
-<sub>Interface preview using example data to illustrate test settings.</sub>
+<sub>Isolated preview from an earlier version. The unreleased historical comparison below is also example data, not a GPU measurement.</sub>
+
+![Unreleased: historical benchmark condition comparison](screenshots/daily-experience/history-comparison.en.webp)
 
 ## Shared settings and model configuration
 

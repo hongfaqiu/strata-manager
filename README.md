@@ -62,6 +62,18 @@ See the [0.1.5 system explanation](docs/SYSTEM.en.md) for component relationship
 
 ## Download and get started
 
+### Daily experience in development (unreleased)
+
+The current source adds a model download list and details, unified GPU/run options, resource assessment for the current selection, startup diagnostics, four capability states, chat request timing, explicit API verification and historical benchmark condition comparisons. Saved settings do not prove live engine support; missing evidence remains unverified, and settings that require a restart are identified separately. Verification never starts an unready model automatically.
+
+The bilingual previews use real components with isolated example data and are not included in stable installers. See the [daily experience notes](docs/DAILY_EXPERIENCE.md) and [verification record](docs/VERIFICATION.md). Real GPU capacity, prolonged stability, cross-device LAN access and the complete native window flow still require separate acceptance.
+
+| Model downloads and resource selection | API verification and capabilities |
+| --- | --- |
+| [![Unreleased: model download details and resource assessment](docs/screenshots/daily-experience/model-download-detail.en.webp)](docs/screenshots/daily-experience/model-download-detail.en.webp) | [![Unreleased: API verification](docs/screenshots/daily-experience/api-verification.en.webp)](docs/screenshots/daily-experience/api-verification.en.webp) |
+
+### Stable installers
+
 Choose a package from the [latest stable release](https://github.com/hongfaqiu/strata-manager/releases/latest) or the [website download section](https://hongfaqiu.github.io/strata-manager/en/#get-started). Install only files listed for the selected release and verify them against that release's `SHA256SUMS`.
 
 | Platform | Package | Setup |

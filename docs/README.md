@@ -18,7 +18,7 @@ Strata Manager 是面向 Strata 本地推理的桌面工作台，集中管理运
 | 接入本机 API | [API 接入](USER_GUIDE.md#接入本机-api) |
 | 查看近期状态趋势，按需打开独立监控浮条 | [服务状态与监控](USER_GUIDE.md#阅读后台健康状态) |
 | 查看请求历史、统计和 CSV 导出 | [API 用量](USER_GUIDE.md#阅读-api-用量) |
-| 运行场景套件或并发压力测试，对比性能并导出报告 | [Benchmark 基准测试](USER_GUIDE.md#benchmark-基准测试) |
+| 串行运行上下文档位或场景套件，对照条件并导出报告 | [Benchmark 基准测试](USER_GUIDE.md#benchmark-基准测试) |
 | 理解后台、健康状态、调优和更新 | [完整使用指南](USER_GUIDE.md) |
 | 处理准备失败、连接异常或更新问题 | [故障排查与反馈](TROUBLESHOOTING.md) |
 

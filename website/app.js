@@ -251,6 +251,21 @@ const strataReleaseCatalog = (() => {
       "zh": { "title": "API 接入 · 示例与帮助", "description": "从总览查看连接地址与 API 接入示例。", "alt": "总览页的 API 接入帮助和客户端请求示例", "badge": "API 接入" },
       "en": { "title": "API connections · Examples and help", "description": "Open connection details and API examples from the overview.", "alt": "API connection help and client request examples from the overview", "badge": "API GUIDE" }
     },
+    "model-download-detail": {
+      "index": "DEV", "image": "daily-experience/model-download-detail", "height": 2400,
+      "zh": { "title": "未发行 · 模型下载详情", "description": "统一显卡与运行选项，查看当前选择的资源估算和未知项。", "alt": "未发行模型下载详情与资源选择，隔离示例数据", "badge": "未发行" },
+      "en": { "title": "Unreleased · Model download details", "description": "Unified GPU and run options with resource estimates and explicit unknowns.", "alt": "Unreleased model download details and resource selection, isolated example data", "badge": "UNRELEASED" }
+    },
+    "api-verification": {
+      "index": "DEV", "image": "daily-experience/api-verification",
+      "zh": { "title": "未发行 · API 在线验证", "description": "显式发送一次限时限量的文本、工具结构或图片测试。", "alt": "未发行 API 在线验证，隔离示例数据", "badge": "未发行" },
+      "en": { "title": "Unreleased · API verification", "description": "Explicit bounded checks for text, tool structure or image input.", "alt": "Unreleased API verification, isolated example data", "badge": "UNRELEASED" }
+    },
+    "history-comparison": {
+      "index": "DEV", "image": "daily-experience/history-comparison",
+      "zh": { "title": "未发行 · 历史条件对照", "description": "查看历史数据与未知条件，不据弱身份宣称直接提速。", "alt": "未发行历史 Benchmark 条件比较，隔离示例数据", "badge": "未发行" },
+      "en": { "title": "Unreleased · Historical conditions", "description": "Inspect historical values and unknown conditions without direct speedup claims from weak identity.", "alt": "Unreleased historical benchmark conditions, isolated example data", "badge": "UNRELEASED" }
+    },
     "usage": {
       "index": "03",
       "zh": {

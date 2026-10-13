@@ -62,6 +62,18 @@ API 使用统计无需捕获请求正文。可选的临时正文诊断是独立�
 
 ## 下载与开始使用
 
+### 开发中的日常体验（未发行）
+
+当前源码增加模型下载列表与详情、统一显卡及运行选项、按选择变化的资源评估、启动失败诊断、服务能力四态、聊天请求计时、API 在线验证与历史 Benchmark 条件比较。保存设置不会证明当前引擎已生效；缺少证据显示“未核验”，需要重启的选项单独提示。模型未就绪时不会自动启动在线验证。
+
+新界面的中英文截图使用真实组件和隔离示例数据，尚未包含在稳定安装包中。详见[日常体验说明](docs/DAILY_EXPERIENCE.md)与[验收记录](docs/VERIFICATION.md)。真实 GPU 容量／长时稳定性、跨设备局域网和完整原生窗口操作仍需独立验收。
+
+| 模型下载与资源选择 | API 验证与能力 |
+| --- | --- |
+| [![未发行：模型下载详情与资源评估](docs/screenshots/daily-experience/model-download-detail.zh.webp)](docs/screenshots/daily-experience/model-download-detail.zh.webp) | [![未发行：API 在线验证](docs/screenshots/daily-experience/api-verification.zh.webp)](docs/screenshots/daily-experience/api-verification.zh.webp) |
+
+### 稳定安装包
+
 从[最新稳定发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)或[官网下载区](https://hongfaqiu.github.io/strata-manager/#get-started)选择安装包。仅安装所选版本实际提供的文件，并用同一发布页的 `SHA256SUMS` 核对。
 
 | 平台 | 安装形式 | 准备事项 |

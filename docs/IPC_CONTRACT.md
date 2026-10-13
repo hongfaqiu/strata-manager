@@ -1,5 +1,11 @@
 # 开发接口约定
 
+## 2026-10-13 日常体验增量（源码，待发行）
+
+新增 `assess_setup_resources({request})`、`service_sharing_status({profile})`、`benchmark_identity({profile})` 和具名变更 `set_service_auth({profile,request})`，Core 对应 `assessSetupResources`、`serviceSharingStatus`、`benchmarkIdentity`、`setServiceAuth`。类型与范围见 [增量接口](DAILY_EXPERIENCE.md#interfaces-and-compatibility)。共享保存复用归属/空闲/CAS及备份，不重启、不回显密钥；客户端凭据不再注入服务端环境。
+
+`SupervisorStatus.startupFailures`、`ChatMessage.execution` 和报告身份可选，旧后台/旧历史保留未知。场景报告 schema 3 保留 schema 2 读取；上下文 schema 3 新增可选身份与首正文时间。诊断导出保留分类元数据，不带错误正文或日志片段。
+
 0.1.4 工作区更新草稿，核对日期为 2026-10-12；正式文档和活动代码未修改。本契约说明当前实现，不代替最终源码、安装包或实机验收。基础类型在 `packages/core/src/types.ts`；聊天、调优、运行时、安装及统计类型分别位于同目录对应模块，UI 从 `@strata-manager/core` 导入。
 
 ## 三层调用关系

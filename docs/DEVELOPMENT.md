@@ -11,12 +11,21 @@ Node.js 22.13+（CI 使用 24）、项目固定的 pnpm 11、Rust stable。Windo
 ```sh
 pnpm install --frozen-lockfile
 pnpm desktop       # 准备独立后台并启动 Tauri / Prepare the background and start Tauri
+pnpm desktop:debug # 生成可直接打开的开发版，自带前端 / Standalone dev app with embedded frontend
 pnpm check         # Types, core/HTTP tests, frontend build
 pnpm native:test   # Rust workspace tests
 pnpm bundle        # Build a local installer; updater artifacts require signing
 ```
 
 `pnpm dev` 仅运行前端；安装、进程管理和系统功能在桌面应用中执行。独立后台可用 `node scripts/prepare-sidecar.mjs --profile release` 构建。
+
+直接打开开发版请使用 `pnpm desktop:debug` 生成的 `output/dev-desktop/StrataManager-dev.exe`（Windows），保留同目录 `strata-supervisor.exe`。该版本嵌入前端，不需要 Vite，并以独立 `io.strata.manager.dev` 标识保存数据，与稳定版并存。热更新开发继续使用 `pnpm desktop`；直接 `cargo build` 未开启 `custom-protocol` 时仍依赖 `http://127.0.0.1:1427`，不是可独立打开的构建。
+
+For a directly launched dev build use `pnpm desktop:debug`, keeping the supervisor beside the app. It embeds frontend assets and uses a separate dev identity/data directory. Hot reload still uses `pnpm desktop`; a raw Cargo build without `custom-protocol` expects the local Vite server.
+
+开发脚本统一主应用与后台的 Rust target；设置 `CARGO_BUILD_TARGET` 时从 `target/<triple>/debug` 复制，未设置时复用本机 `target/debug`。`CARGO_TARGET_DIR` 支持绝对目录，相对目录按 `apps/desktop/src-tauri` 解析。启动时显式设置 `STRATA_MANAGER_DATA_DIR` 会覆盖默认数据隔离。配置的产品名为 `Strata Manager Dev`，应用内标题／托盘仍共用 `Strata Manager`。该命令不生成安装包或 updater 签名；嵌入构建成功与离线实窗验收分别记录。
+
+The script uses the same Rust target for app and supervisor. Explicit `CARGO_BUILD_TARGET` artifacts come from `target/<triple>/debug`; the default host reuses `target/debug`. Relative `CARGO_TARGET_DIR` paths resolve from `apps/desktop/src-tauri`. Setting `STRATA_MANAGER_DATA_DIR` at launch overrides default data isolation. The configured product name is `Strata Manager Dev`, while in-app/tray text still shares `Strata Manager`. This command requests no installer or updater signature; embedded build evidence is separate from offline window acceptance.
 
 `pnpm dev` runs the frontend only. Installation, process management and OS features require the desktop application. Build the independent background with `node scripts/prepare-sidecar.mjs --profile release`.
 

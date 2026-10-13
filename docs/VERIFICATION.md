@@ -1,5 +1,48 @@
 # 开发与验收记录
 
+## 2026-10-13 收尾复核（未发行）
+
+本轮仅使用隔离浏览器、测试夹具和构建，不启动真实模型，不操作已安装应用或原生窗口。下载页在原会话交接后单独整合；以下实测与历史记录分开。
+
+- 最终 `pnpm check`：Core **318**、Desktop **109**、脚本 **21**，合计 **448/448 passed**；类型检查和前端生产构建通过。包含白色亮环追加样式。日志为 `output/finishing/final-check.log`；保留现有 chunk size/Tauri 导入警告。
+- 日常流程浏览器 **7/7 passed**：资源选择、停止诊断、已保存但需重启的能力／PID变化失效、文本／工具／图片验证、共享保存、聊天请求证据及英文深色窄窗。日志为 `output/finishing/final-daily-browser.log`。
+- 下载工作区浏览器最终 **13 项通过**，其中搜索返回断言跨过 HMR 后已定向重跑；明暗／窄窗、公共配置保存取消重载、任务参数快照、磁盘不足和保存失败均有隔离记录。见 `output/playwright/model-download/results.json`。白色选择控件的方向键、Space、焦点和禁用状态另见 `output/playwright/selection-controls/`；forced-colors 仅静态检查。
+- `pnpm desktop:debug` 成功生成 `output/dev-desktop/StrataManager-dev.exe` 与同目录后台。默认 host 产物路径、独立 dev 标识和嵌入前端已核对，8 项构建路径合同测试包含在上述脚本测试中；跨目标实际编译、离线实窗和签名发行未验证。日志为 `output/finishing/final-debug-build.log`。
+- 最终文档截图 **16/16**、中英明暗 800px 窄窗 **32/32**、PNG/WebP 像素一致 **16/16**。下载图使用真实 1440×1200 视口，完整资源卡片与底部操作区间隔 16px；其它图为 1440×960。修复了英文历史报告选择框的内部裁切，并补控件边界断言。来源为隔离真实组件，API 使用统计图来自独立 ApiUsagePage 场景；详情存于 `docs/screenshots/manifest.json` 的 `dailyExperienceUnreleased`，最终源码摘要为 `6dc7793fa75b24f4e659d723a09ede5962f555cfd28f21344f30e3f562285640`。
+- 官网本地中英×1440/375×明暗 **8/8**、新图放大 **24/24** 通过，覆盖键盘开启／关闭、焦点返回、语言与主题保持和溢出检查。静态构建为 **15 篇文档、812 个本地链接／资源**，下载元数据使用真实公开 v0.1.6。此记录与部署后的公开内容核验分开。
+
+- Runtime 串行运行：**420 passed / 5 failed / 11 ignored**。5 项失败均缺少固定上游夹具，日志为 `output/finishing/native-runtime.log`；不能称为一次完整通过。
+- 补齐私有 Python 测试环境及固定 `fb58e0dbc8399662c0e47c76578c6e878b14f6cf` 内容后，request-capture **9/9 passed**，日志为 `output/finishing/native-capture.log`，不与前项合并计数。
+- 固定 Strata `a0116b2782a5b82622358c04a06496485d12b2d6`（0.1.43.1）源码，observer loopback HTTP **33/33 passed，无跳过**，使用 MockEngine，无模型权重／GPU；日志为 `output/finishing/observer-0.1.43.1.log`。
+- 诊断包装回归先复现非对象 `details` 导致 panic，修复后 **9/9 passed**；现在只保留非对象详情的类型标记，并保留原错误码、消息及状态。PNG 原生导出 **5/5 passed**，日志为 `output/finishing/png-native-tests.log`。
+- Windows Tauri / runtime-core `cargo check --locked` 和 Rust 格式检查通过，日志为 `output/finishing/native-check.log`、`native-fmt.log`。
+- 最终严格工作区 Clippy（`--locked --workspace --all-targets -- -D warnings`）通过，日志为 `output/finishing/native-clippy-after.log`；修正后四个原生模块定向 **23/23**、PNG **5/5** 通过。测试中的串行锁改为 async 锁，生产归属锁未改变。
+- 官网文档、双语 SEO、发行元数据及截图合同 **33 passed / 0 failed / 2 skipped**；2 项需要显式网络测试环境，本地未执行。日志为 `output/finishing/website-tests.log`。
+- 独立 Benchmark 浏览器 **29/29 passed**，覆盖停止状态、运行前复查、外部加载、取消、模型切换、旧历史和中英窄窗口。日志为 `output/finishing/benchmark-browser.log`，JSON 为 `output/playwright/benchmark-compact/browser-results.json`；SSE 与指标来自隔离夹具，不是 GPU 性能证据。
+
+能力状态、聊天首正文计时、历史可比性及开发构建路径的专项测试已补入默认 JS 检查。原生文件身份目前是 metadata，未核验内容摘要，因此真实历史可并列展示，但不能据此直接宣称提速。真实 GPU A/B、长时、跨设备 LAN、离线 Tauri 实窗及签名发行仍未验收。
+
+## 2026-10-13 日常体验增量（工作区，待发行）
+
+### 浏览器 Vite 验收
+
+按用户要求仅在应用内浏览器操作 Vite 隔离页面，未操作原生窗口、启动真实模型或写真实配置。检查资源风险随选择变化、未启动时禁用在线验证、能力与来源说明、API 分阶段结果、聊天 TTFT/首正文/请求标识、失败诊断以及历史条件对照。样例数据不代表真实 GPU 或 LAN 结果。
+
+本轮发现并修复两处布局问题：API 弹窗标题原位于 24.8px、被 64px 标题栏覆盖，修复后位于 88.8px；三列对照表继承 860px 最小宽度，修复后容器与 scrollWidth 同为 927px，无多余横向滚动。补齐隔离 benchmark_identity，以及 /load、/unload 等变更请求的拒绝/计数。证据位于 `output/playwright/browser-only-acceptance/`；Vite 标签页与服务保留供用户检查。
+
+开发版直接打开拒绝连接的原因是原始 Cargo debug 构建仍使用 `devUrl`。已新增 `pnpm desktop:debug`，通过 Tauri CLI 的 custom-protocol 构建嵌入前端，使用独立 dev 标识，输出 `output/dev-desktop/StrataManager-dev.exe` 及刚构建的独立后台。构建成功；关闭 Vite 后尝试实窗验收时用户再次以 Esc 停止 Computer Use，未宣称离线窗口已验收。本轮测试窗口已清理，保留构建和启动日志。
+
+实现范围见 [日常体验增量](DAILY_EXPERIENCE.md)。原有未提交修改保留，未操作已安装应用的更新或真实模型配置。
+
+- `pnpm typecheck`、生产前端构建通过；JS/Core 273、Desktop 104、脚本 13，共 390 项通过。资源面板测试已纳入默认 desktop test。
+- 新增日常流程浏览器 6/6 通过：停止诊断、资源选择、文本/工具/图片 API 验证、共享预览保存、聊天请求证据及英文深色窄窗口。
+- Benchmark 浏览器 29 场景：28 项整组通过，1M 初始状态用例定向复核通过；等待异步状态及 schema/新增控件断言已适配。不能把合成 SSE 当作真实 GPU 性能。
+- Windows 原生编译和调试应用/后台构建通过。Runtime 串行检查 420 项通过，5 项因缺上游夹具失败；配置固定 revision `fb58e0dbc8399662c0e47c76578c6e878b14f6cf` 后 request-capture 9/9 通过。并发假服务的进程清单竞争记录另保留，不放宽生产归属检查。
+- WSL Ubuntu 20.04 资源规则 6/6 通过；无桌面 Secret Service 环境的鉴权夹具需要隔离测试凭据提供器，结果须以最终定向日志为准。
+- 原生验收采用独立应用标识和数据目录以避开已安装实例，调试资源连接后用户以 Esc 停止 Computer Use。本轮隔离 UI/开发服务已清理；完整 Tauri 点击、真实 GPU 长时、跨设备 LAN 和统一发行未完成。
+
+证据：`output/daily-experience-js-tests.log`、`output/daily-experience-native-tests.log`、`output/daily-experience-capture-tests.log`、`output/daily-experience-benchmark-browser.log`、`output/playwright/daily-experience/results.json` 和 `output/daily-experience-native-ui/`。不同运行及补测不合并宣称一次完整原生全套通过。
+
 更新日期：2026-10-12。上游参考 revision：`fb58e0dbc8399662c0e47c76578c6e878b14f6cf`。
 
 本文件区分本轮独立后台实现与此前原型验证。自动检测/导入、运行时准备、元数据统计、调优、自启动与更新已经进入实现和测试阶段，不再只是方案；实现存在、夹具通过、真实 GPU 运行、最终安装包和跨版本更新是不同验收层级。下面记录阶段证据，最终提交后仍需统一检查及真实发布验收。
