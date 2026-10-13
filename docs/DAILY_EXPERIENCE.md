@@ -1,6 +1,10 @@
 # 日常体验增量 / Daily experience increment
 
-2026-10-13 工作区实现，尚未发行。资源规则固定来自 Strata v0.1.43.1 的 `a0116b2782a5b82622358c04a06496485d12b2d6`；安装的运行时仍独立核验。源码、夹具、WSL 测试与真实 GPU / 最终安装包验收分开记录。
+0.1.7 包含以下日常体验功能。资源规则固定来自 Strata v0.1.43.1 的 `a0116b2782a5b82622358c04a06496485d12b2d6`；安装的运行时仍独立核验。源码、夹具、WSL 测试与真实 GPU / 最终安装包验收分开记录。
+
+截图采集于版本号更新前的真实组件（界面标记 0.1.6），使用隔离示例数据，不代表安装包或推理验收；[出处与捕获记录](screenshots/README.md)保持原记录。
+
+Screenshots show real components captured before the version bump (0.1.6 UI marker) with isolated example data. They do not establish installer or inference acceptance; the [original capture records](screenshots/README.md) remain intact.
 
 ## 功能与使用入口
 

@@ -10,4 +10,4 @@ The full English README and real interface screenshots are maintained in [README
 
 This compatibility entry keeps existing English README links working.
 
-The current source also contains an [unreleased daily experience increment](docs/DAILY_EXPERIENCE.md). Its isolated previews and [verification limits](docs/VERIFICATION.md) are documented in the full README; it is separate from the stable installer.
+The [0.1.7 release](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.7) includes the [daily experience features](docs/DAILY_EXPERIENCE.md). Screenshots use real components captured before the version bump, with a 0.1.6 UI marker and isolated example data. Their scope and the remaining [verification limits](docs/VERIFICATION.md) are documented in the full README.

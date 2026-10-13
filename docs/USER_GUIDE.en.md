@@ -1,8 +1,8 @@
 # Strata Manager user guide
 
-## Daily experience in the current source (unreleased)
+## Daily experience in 0.1.7
 
-This section covers development features. Check the selected version's changelog for what its installer contains.
+This section covers the daily experience features in 0.1.7. Check the selected version's changelog for what its installer contains.
 
 - **Model downloads:** select a model in the list, then choose GPUs, context, KV and slots in its details. Assessment follows the current selection and preserves manual values. Unknown modes do not establish capacity; RAM, KV and per-GPU estimates are not an additive total.
 - **Startup failures:** inspect stages, duration, reasons and sanitized evidence in Overview or Tasks, then open the relevant settings or logs. Read-only checks preserve stopped services; resource keywords in logs indicate suspected causes only.
@@ -10,9 +10,9 @@ This section covers development features. Check the selected version's changelog
 - **API checks and LAN:** explicitly test text, tool structure or image input in API and external assistants. Each check is bounded to 256 tokens and 60 seconds, never executes MCP and requires a ready model. Preview sharing settings before saving; multiple keys and backups are preserved, while restarting is separate. Server keys and application client credentials are managed independently.
 - **Historical benchmarks:** save a pre-upgrade baseline, update the runtime manually, then rerun the original task serially. Saving a baseline starts no model and performs no update. Missing conditions, weak model/runtime identity or different cache state prevent direct speedup claims. JSON/CSV exports omit test prompts, answers and server error bodies by default; include them only explicitly.
 
-See the [daily experience notes](DAILY_EXPERIENCE.md) and [verification record](VERIFICATION.md). Browser examples are separate from real GPU, prolonged stability and cross-device LAN acceptance.
+See the [daily experience notes](DAILY_EXPERIENCE.md) and [verification record](VERIFICATION.md). Screenshots show real components captured before the version bump (0.1.6 UI marker) with isolated example data; they do not establish installer or inference acceptance. Browser examples are separate from real GPU, prolonged stability and cross-device LAN acceptance.
 
-The current workspace adds resource guidance, startup diagnostics, request evidence, API verification, LAN sharing and report comparison. See [Daily experience increment](DAILY_EXPERIENCE.md). This increment has not been released as an installer; installed functionality remains tied to its release version.
+Version 0.1.7 adds resource guidance, startup diagnostics, request evidence, API verification, LAN sharing and report comparison. See [Daily experience increment](DAILY_EXPERIENCE.md). Choose an installer from the [0.1.7 release](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.7); functionality and support remain tied to the selected release version.
 
 [Website](https://hongfaqiu.github.io/strata-manager/?lang=en) · [Product overview](../README.md) · [Documentation](README.en.md) · [简体中文](USER_GUIDE.md)
 
@@ -20,7 +20,7 @@ The current workspace adds resource guidance, startup diagnostics, request evide
 
 Strata Manager is an open-source desktop workspace for the Strata runtime and local model services. Runtime installation and matching Windows x64 ZIP engine updates, model configurations, and service startup, shutdown and recovery are its core; chat, monitoring, API usage statistics and tuning support that workflow. It is an independent community project. Inference capabilities, models, image input, reasoning, MCP tools and API protocols come from the installed Strata runtime and chosen model.
 
-This guide follows the current source; development features are marked unreleased above. The [release page](https://github.com/hongfaqiu/strata-manager/releases/latest) and the selected version's changelog establish package availability and contents. Inspect the runtime in Strata first, then choose a configuration in **Models → My models**, select **Use**, wait for **Model ready**, and open Chat or copy the local API address. Manager manages supported installations on this computer; it does not manage remote nodes.
+This guide covers the daily experience features in 0.1.7. The [release page](https://github.com/hongfaqiu/strata-manager/releases/latest) and the selected version's changelog establish package availability and contents. Inspect the runtime in Strata first, then choose a configuration in **Models → My models**, select **Use**, wait for **Model ready**, and open Chat or copy the local API address. Manager manages supported installations on this computer; it does not manage remote nodes.
 
 ## Prepare or reuse a model
 
@@ -193,9 +193,9 @@ Follow progress or cancel a running test. The workspace coordinates with chat, t
 
 ![Historical benchmark test plan preview](screenshots/benchmark.en.webp)
 
-<sub>Isolated preview from an earlier version. The unreleased historical comparison below is also example data, not a GPU measurement.</sub>
+<sub>The image above is an isolated preview from an earlier version. The 0.1.7 historical comparison below was captured from real components before the version bump (0.1.6 UI marker) with isolated example data; it does not establish GPU or installer acceptance.</sub>
 
-![Unreleased: historical benchmark condition comparison](screenshots/daily-experience/history-comparison.en.webp)
+![0.1.7: historical benchmark condition comparison](screenshots/daily-experience/history-comparison.en.webp)
 
 ## Shared settings and model configuration
 

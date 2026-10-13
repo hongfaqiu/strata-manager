@@ -252,19 +252,19 @@ const strataReleaseCatalog = (() => {
       "en": { "title": "API connections · Examples and help", "description": "Open connection details and API examples from the overview.", "alt": "API connection help and client request examples from the overview", "badge": "API GUIDE" }
     },
     "model-download-detail": {
-      "index": "DEV", "image": "daily-experience/model-download-detail", "height": 2400,
-      "zh": { "title": "未发行 · 模型下载详情", "description": "统一显卡与运行选项，查看当前选择的资源估算和未知项。", "alt": "未发行模型下载详情与资源选择，隔离示例数据", "badge": "未发行" },
-      "en": { "title": "Unreleased · Model download details", "description": "Unified GPU and run options with resource estimates and explicit unknowns.", "alt": "Unreleased model download details and resource selection, isolated example data", "badge": "UNRELEASED" }
+      "index": "0.1.7", "image": "daily-experience/model-download-detail", "height": 2400,
+      "zh": { "title": "0.1.7 · 模型下载详情", "description": "统一显卡与运行选项，查看当前选择的资源估算和未知项。", "alt": "0.1.7 模型下载详情与资源选择，版本号更新前的真实组件与隔离示例数据", "badge": "0.1.7" },
+      "en": { "title": "0.1.7 · Model download details", "description": "Unified GPU and run options with resource estimates and explicit unknowns.", "alt": "0.1.7 model download details and resource selection, real components captured before the version bump with isolated example data", "badge": "0.1.7" }
     },
     "api-verification": {
-      "index": "DEV", "image": "daily-experience/api-verification",
-      "zh": { "title": "未发行 · API 在线验证", "description": "显式发送一次限时限量的文本、工具结构或图片测试。", "alt": "未发行 API 在线验证，隔离示例数据", "badge": "未发行" },
-      "en": { "title": "Unreleased · API verification", "description": "Explicit bounded checks for text, tool structure or image input.", "alt": "Unreleased API verification, isolated example data", "badge": "UNRELEASED" }
+      "index": "0.1.7", "image": "daily-experience/api-verification",
+      "zh": { "title": "0.1.7 · API 在线验证", "description": "显式发送一次限时限量的文本、工具结构或图片测试。", "alt": "0.1.7 API 在线验证，版本号更新前的真实组件与隔离示例数据", "badge": "0.1.7" },
+      "en": { "title": "0.1.7 · API verification", "description": "Explicit bounded checks for text, tool structure or image input.", "alt": "0.1.7 API verification, real components captured before the version bump with isolated example data", "badge": "0.1.7" }
     },
     "history-comparison": {
-      "index": "DEV", "image": "daily-experience/history-comparison",
-      "zh": { "title": "未发行 · 历史条件对照", "description": "查看历史数据与未知条件，不据弱身份宣称直接提速。", "alt": "未发行历史 Benchmark 条件比较，隔离示例数据", "badge": "未发行" },
-      "en": { "title": "Unreleased · Historical conditions", "description": "Inspect historical values and unknown conditions without direct speedup claims from weak identity.", "alt": "Unreleased historical benchmark conditions, isolated example data", "badge": "UNRELEASED" }
+      "index": "0.1.7", "image": "daily-experience/history-comparison",
+      "zh": { "title": "0.1.7 · 历史条件对照", "description": "查看历史数据与未知条件，不据弱身份宣称直接提速。", "alt": "0.1.7 历史 Benchmark 条件比较，版本号更新前的真实组件与隔离示例数据", "badge": "0.1.7" },
+      "en": { "title": "0.1.7 · Historical conditions", "description": "Inspect historical values and unknown conditions without direct speedup claims from weak identity.", "alt": "0.1.7 historical benchmark conditions, real components captured before the version bump with isolated example data", "badge": "0.1.7" }
     },
     "usage": {
       "index": "03",

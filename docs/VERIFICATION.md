@@ -1,5 +1,21 @@
 # 开发与验收记录
 
+## 2026-10-13 v0.1.7 正式发布
+
+- [v0.1.7](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.7) 于 2026-10-13 13:06:22 UTC 公开，稳定更新通道已指向该版本。不可变 tag 源码为 `62192c11876d337e2637fe5141f9f57c06717adf`。
+- [完整 CI 38399951175](https://github.com/hongfaqiu/strata-manager/actions/runs/38399951175) 的 attempt 1 **10/10 jobs 成功**：两平台桌面构建、六个原生测试分片、两个 Strata 0.1.43.1 observer job，包含 Windows 安装／启动／IPC／卸载与 Linux AppImage／DEB 的 Xvfb 启动验收。
+- [发布工作流 38402053776](https://github.com/hongfaqiu/strata-manager/actions/runs/38402053776) 成功复用该 CI 的三个原始安装包，仅追加 Tauri updater 签名、`latest.json` 和 `SHA256SUMS`。发布前已下载草稿的全部实际资产并验证公钥、签名版本与原始字节。
+- 13:18:20 UTC 独立公开核验通过：8 项资产的大小与 GitHub digest 全部相符；三种安装包的 SHA256 与 CI 字节证明相同，内置公钥验证器再次验证更新签名及签名版本 0.1.7。公开 `releases/latest/download/latest.json` 与版本资产完全一致，五个平台／别名均指向本次安装包及对应签名。大文件通过公开地址分段下载后重组并核对完整 SHA256，没有绕过 TLS。
+- 本地证据为 `output/release-v0.1.7/public/verification.json`、`ci-evidence.json` 和 `ci-byte-proof/proof.json`；发行源码与后续官网文档状态更新分开记录。
+
+| 公开安装包 | 字节数 | SHA256 |
+| --- | ---: | --- |
+| Windows x64 NSIS | 12811429 | `3bf6d6e1bfef2062b39bfe9d42c94597d10e13f937fddb6ae943bfb4b59560a6` |
+| Linux x64 AppImage | 95730168 | `8a0f2e57d745cc744eac8370e2434608d96e9145765cd9eda73d04696b022c7f` |
+| Linux x64 DEB | 18146446 | `a0440cddea5d884f9dfcb8b2af19182f8598b3f23cf3c7e8e6d1c858e142e889` |
+
+本轮没有启动本机真实模型或操作已安装应用。真实 GPU 容量／长时稳定性、跨设备 LAN、完整原生窗口交互及用户设备上的跨版本升级仍待独立验收。回退时使用既有 v0.1.6 的完整签名发行包，先备份应用数据；不改写版本 tag 或覆盖既有资产。
+
 ## 2026-10-13 v0.1.7 发布准备（未发布）
 
 - 版本、Cargo 锁文件与中英文更新日志已同步为 0.1.7。`release-check --tag v0.1.7`、`cargo metadata --locked --no-deps`、Rust 格式检查通过。

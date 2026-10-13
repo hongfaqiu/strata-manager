@@ -62,15 +62,15 @@ See the [0.1.5 system explanation](docs/SYSTEM.en.md) for component relationship
 
 ## Download and get started
 
-### Daily experience in development (unreleased)
+### Daily experience in 0.1.7
 
-The current source adds a model download list and details, unified GPU/run options, resource assessment for the current selection, startup diagnostics, four capability states, chat request timing, explicit API verification and historical benchmark condition comparisons. Saved settings do not prove live engine support; missing evidence remains unverified, and settings that require a restart are identified separately. Verification never starts an unready model automatically.
+The [0.1.7 release](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.7) adds a model download list and details, unified GPU/run options, resource assessment for the current selection, startup diagnostics, four capability states, chat request timing, explicit API verification and historical benchmark condition comparisons. Saved settings do not prove live engine support; missing evidence remains unverified, and settings that require a restart are identified separately. Verification never starts an unready model automatically.
 
-The bilingual previews use real components with isolated example data and are not included in stable installers. See the [daily experience notes](docs/DAILY_EXPERIENCE.md) and [verification record](docs/VERIFICATION.md). Real GPU capacity, prolonged stability, cross-device LAN access and the complete native window flow still require separate acceptance.
+The bilingual screenshots show real components captured before the version bump, with a 0.1.6 UI marker and isolated example data. They illustrate the 0.1.7 features and do not establish installer or inference acceptance. See the [daily experience notes](docs/DAILY_EXPERIENCE.md) and [verification record](docs/VERIFICATION.md). Real GPU capacity, prolonged stability, cross-device LAN access and the complete native window flow still require separate acceptance.
 
 | Model downloads and resource selection | API verification and capabilities |
 | --- | --- |
-| [![Unreleased: model download details and resource assessment](docs/screenshots/daily-experience/model-download-detail.en.webp)](docs/screenshots/daily-experience/model-download-detail.en.webp) | [![Unreleased: API verification](docs/screenshots/daily-experience/api-verification.en.webp)](docs/screenshots/daily-experience/api-verification.en.webp) |
+| [![0.1.7: model download details and resource assessment](docs/screenshots/daily-experience/model-download-detail.en.webp)](docs/screenshots/daily-experience/model-download-detail.en.webp) | [![0.1.7: API verification](docs/screenshots/daily-experience/api-verification.en.webp)](docs/screenshots/daily-experience/api-verification.en.webp) |
 
 ### Stable installers
 

@@ -9,7 +9,7 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### English
 
-## [0.1.7] - 2026-10-13 (Unreleased)
+## [0.1.7] - 2026-10-13
 
 ### 中文
 
