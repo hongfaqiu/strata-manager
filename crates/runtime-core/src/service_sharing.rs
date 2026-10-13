@@ -64,8 +64,8 @@ fn key_count(config: &Value) -> usize {
 fn local_lan_addresses() -> Vec<String> {
     let networks = sysinfo::Networks::new_with_refreshed_list();
     let mut addresses: Vec<_> = networks
-        .iter()
-        .flat_map(|(_, network)| network.ip_networks())
+        .values()
+        .flat_map(|network| network.ip_networks())
         .map(|network| network.addr)
         .filter(|ip| match ip {
             IpAddr::V4(ip) => !ip.is_loopback() && (ip.is_private() || ip.is_link_local()),

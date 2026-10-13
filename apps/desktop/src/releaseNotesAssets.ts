@@ -1,7 +1,7 @@
 /** Map repository screenshot links to the exact assets bundled with this build. */
 export function createReleaseNotesAssetResolver(assets: Readonly<Record<string, string>>) {
   const bundled = new Map(Object.entries(assets).filter(([path, url]) =>
-    /^docs\/screenshots\/(?:[a-z0-9.-]+\.webp|changelog\/[0-9]+\.[0-9]+\.[0-9]+\/[a-z0-9.-]+\.webp)$/.test(path)
+    /^docs\/screenshots\/(?:[a-z0-9.-]+\.webp|changelog\/[0-9]+\.[0-9]+\.[0-9]+\/[a-z0-9.-]+\.webp|daily-experience\/(?:model-download-detail|api-verification|history-comparison)\.(?:zh|en)\.webp)$/.test(path)
     && /^\/(?:assets\/|@fs\/)/.test(url)
     && !/[\\\u0000-\u0020]/.test(url),
   ));

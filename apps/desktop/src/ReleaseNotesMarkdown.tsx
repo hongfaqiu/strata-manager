@@ -4,6 +4,12 @@ import { createReleaseNotesAssetResolver } from './releaseNotesAssets';
 
 // Import only the screenshots used by these release notes, including offline image links.
 const screenshotModules = import.meta.glob<string>([
+  '../../../docs/screenshots/daily-experience/model-download-detail.zh.webp',
+  '../../../docs/screenshots/daily-experience/model-download-detail.en.webp',
+  '../../../docs/screenshots/daily-experience/api-verification.zh.webp',
+  '../../../docs/screenshots/daily-experience/api-verification.en.webp',
+  '../../../docs/screenshots/daily-experience/history-comparison.zh.webp',
+  '../../../docs/screenshots/daily-experience/history-comparison.en.webp',
   '../../../docs/screenshots/benchmark.zh.webp',
   '../../../docs/screenshots/benchmark.en.webp',
   '../../../docs/screenshots/common-chat-settings.zh.webp',

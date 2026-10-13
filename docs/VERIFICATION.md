@@ -5,6 +5,8 @@
 - 版本、Cargo 锁文件与中英文更新日志已同步为 0.1.7。`release-check --tag v0.1.7`、`cargo metadata --locked --no-deps`、Rust 格式检查通过。
 - 候选的 `pnpm check` 通过：448 项测试、类型检查和前端生产构建成功；发布合同测试 **194/194 passed，无跳过**，包含实际公钥验证器的篡改／错误签名拒绝测试。日志在 `output/release-v0.1.7/`。
 - 上一源码 `51ab62f290ca8ebe53c2a537ab20bb9f0734e26b` 的 CI 两平台均因 PNG 导出分支格式检查失败，尚未产生可发布安装包；已按 rustfmt 修正。这是下方早前本地格式记录之后的补正，不把旧 CI 视为通过。
+- 首次候选 `d38be3794f11945c086215859c0f588d1b59773e` 在 CI Rust 1.99 的 Clippy 检出 LAN 地址枚举仅使用映射值；已等价改用 `values()`。本机工具链为 Rust 1.94，本地 Clippy 结论不替代 CI 新工具链检查。
+- 修正后共享配置回归 **5/5 passed**；补齐 v0.1.7 更新日志的六张离线截图与封闭路径注册，相关回归 **12/12 passed**，生产构建的六张图片均与源文件 SHA256 相同。最终 `pnpm check` 为 **449/449 passed**（Core 318、Desktop 110、脚本 21），类型检查和生产构建通过，日志为 `output/release-v0.1.7/check-final.log`。
 - 发布复用门禁纳入新增的 Windows/Linux Strata 0.1.43.1 observer jobs，必须同源码、同 run、同 attempt 的全部十个 job 及安装包验收通过。候选等待新的完整 CI、签名发布与公开下载核验。
 - 页面示例沿用下方已记录的版本号更新前截图，原始 capture HEAD 和 source hash 保持不变；截图不构成 0.1.7 安装包或 GPU 推理验收。
 

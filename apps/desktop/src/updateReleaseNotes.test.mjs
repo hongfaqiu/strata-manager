@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import { localizedReleaseNotes, releaseNotes } from './updateReleaseNotes.ts';
 import { defaultUrlTransform } from 'react-markdown';
 import { createReleaseNotesAssetResolver } from './releaseNotesAssets.ts';
@@ -31,6 +32,9 @@ test('selects matching language while retaining nested Markdown', () => {
 const screenshotAssets = {
   'docs/screenshots/benchmark.zh.webp': '/assets/benchmark.zh-abc.webp',
   'docs/screenshots/changelog/0.1.5/scenario-benchmark.en.webp': '/assets/scenario-benchmark.en-def.webp',
+  ...Object.fromEntries(['model-download-detail', 'api-verification', 'history-comparison'].flatMap(name => ['zh', 'en'].map(language => [
+    `docs/screenshots/daily-experience/${name}.${language}.webp`, `/assets/${name}.${language}-fixture.webp`,
+  ]))),
 };
 const resolveAsset = createReleaseNotesAssetResolver(screenshotAssets);
 const transformUrl = url => resolveAsset(defaultUrlTransform(url));
@@ -42,6 +46,17 @@ test('resolves exact current and candidate release screenshots to offline assets
   assert.equal(transformUrl('docs/screenshots/changelog/0.1.5/scenario-benchmark.en.webp'), screenshotAssets['docs/screenshots/changelog/0.1.5/scenario-benchmark.en.webp']);
   // Markdown image links and image sources use the same closed resource mapping.
   assert.equal(transformUrl('docs/screenshots/benchmark.zh.webp#full-size'), transformUrl('docs/screenshots/benchmark.zh.webp'));
+});
+test('all six daily-experience screenshots referenced by the release are registered as offline image and link assets', () => {
+  const changelog = readFileSync(new URL('../../../CHANGELOG.md', import.meta.url), 'utf8');
+  const markdownComponent = readFileSync(new URL('./ReleaseNotesMarkdown.tsx', import.meta.url), 'utf8');
+  const paths = [...new Set([...changelog.matchAll(/\]\((docs\/screenshots\/daily-experience\/[^)]+\.webp)\)/g)].map(match => match[1]))];
+  assert.equal(paths.length, 6);
+  for (const path of paths) {
+    assert.equal(transformUrl(path), screenshotAssets[path], path);
+    assert.equal(transformUrl(`./${path}#full-size`), screenshotAssets[path], path);
+    assert.ok(markdownComponent.includes(`'../../../${path}'`), `Missing bundled asset: ${path}`);
+  }
 });
 
 test('blocks missing and unsafe local screenshot aliases instead of requesting broken paths', () => {
@@ -60,6 +75,10 @@ test('blocks missing and unsafe local screenshot aliases instead of requesting b
     'docs\\screenshots\\benchmark.zh.webp',
     'docs/screenshots/benchmark.zh.webp\\extra',
     'other/docs/screenshots/benchmark.zh.webp',
+    'docs/screenshots/daily-experience/model-download-list.zh.webp',
+    'docs/screenshots/daily-experience/../api-verification.zh.webp',
+    'docs/screenshots/daily-experience/%61pi-verification.zh.webp',
+    'docs/screenshots/daily-experience/api-verification.zh.webp/extra',
   ]) assert.equal(transformUrl(url), '', url);
 });
 
@@ -80,8 +99,12 @@ test('only accepts local Vite asset URLs from the explicit screenshot table', ()
     'docs/screenshots/unsafe.zh.webp': '/assets/image.webp\n',
     'docs/screenshots/../traversal.zh.webp': '/assets/traversal.webp',
     'docs/screenshots/development.zh.webp': '/@fs/D:/workspace/docs/screenshots/development.zh.webp',
+    'docs/screenshots/daily-experience/model-download-list.zh.webp': '/assets/unreviewed.webp',
+    'docs/screenshots/daily-experience/api-verification.zh.webp': 'https://example.com/image.webp',
   });
   for (const name of ['remote', 'protocol-relative', 'other', 'unsafe']) assert.equal(resolve(`docs/screenshots/${name}.zh.webp`), '');
   assert.equal(resolve('docs/screenshots/../traversal.zh.webp'), '');
   assert.equal(resolve('docs/screenshots/development.zh.webp'), '/@fs/D:/workspace/docs/screenshots/development.zh.webp');
+  assert.equal(resolve('docs/screenshots/daily-experience/model-download-list.zh.webp'), '');
+  assert.equal(resolve('docs/screenshots/daily-experience/api-verification.zh.webp'), '');
 });
