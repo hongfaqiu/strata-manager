@@ -2,6 +2,7 @@
 //! cannot establish a running prompt-cache depth after an unapplied config edit.
 use crate::{storage, types::ServiceProfile, RuntimeState};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
 fn prompt_cache(args: &[String]) -> Result<Option<u64>, String> {
@@ -83,7 +84,8 @@ fn snapshot() -> sysinfo::System {
         true,
         sysinfo::ProcessRefreshKind::nothing()
             .with_cmd(sysinfo::UpdateKind::Always)
-            .with_exe(sysinfo::UpdateKind::Always),
+            .with_exe(sysinfo::UpdateKind::Always)
+            .with_cwd(sysinfo::UpdateKind::Always),
     );
     system
 }
@@ -99,7 +101,18 @@ fn command(process: &sysinfo::Process) -> Result<Vec<String>, String> {
         .collect()
 }
 
-fn verified_evidence(state: &RuntimeState, profile_id: &str) -> Result<Value, String> {
+/// Internal provenance retains paths only for bounded metadata reads. Never serialize this command to the UI.
+pub(crate) struct VerifiedStartup {
+    pub args: Vec<String>,
+    pub executable: PathBuf,
+    pub working_directory: Option<PathBuf>,
+    pub pid: u32,
+    pub started_at: u64,
+}
+pub(crate) fn verified_startup(
+    state: &RuntimeState,
+    profile_id: &str,
+) -> Result<VerifiedStartup, String> {
     let profile = state.owned_gui_profile(profile_id)?;
     let root = root_identity(state, &profile)?;
     // The file identifies the executable only. Its args are deliberately unused.
@@ -136,7 +149,6 @@ fn verified_evidence(state: &RuntimeState, profile_id: &str) -> Result<Value, St
         .into());
     }
     let (pid, started, args) = matches.pop().unwrap();
-    let depth = prompt_cache(&args)?.ok_or("实际引擎命令没有明确 --prompt-cache；默认深度未知")?;
     if started == 0 {
         return Err("原生引擎创建时间不可核验".into());
     }
@@ -150,7 +162,7 @@ fn verified_evidence(state: &RuntimeState, profile_id: &str) -> Result<Value, St
             .and_then(|path| dunce::canonicalize(path).ok())
             .as_ref()
             != Some(&exe)
-        || prompt_cache(&command(native)?)? != Some(depth)
+        || command(native)? != args
     {
         return Err("原生引擎身份或参数在读取期间已改变".into());
     }
@@ -167,8 +179,22 @@ fn verified_evidence(state: &RuntimeState, profile_id: &str) -> Result<Value, St
     {
         return Err("原生引擎已离开受管进程树".into());
     }
+    Ok(VerifiedStartup {
+        args,
+        executable: exe,
+        working_directory: native.cwd().map(Path::to_path_buf),
+        pid,
+        started_at: started.saturating_mul(1000),
+    })
+}
+fn verified_evidence(state: &RuntimeState, profile_id: &str) -> Result<Value, String> {
+    let startup = verified_startup(state, profile_id)?;
+    // Prefix support remains conservative: a generic verified argv never invents a cache default.
+    let depth =
+        prompt_cache(&startup.args)?.ok_or("实际引擎命令没有明确 --prompt-cache；默认深度未知")?;
     Ok(
-        json!({"verified":true,"promptCache":depth,"pid":pid,"startedAt":started.saturating_mul(1000)}),
+        json!({"verified":true,"promptCache":depth,"pid":startup.pid,"startedAt":startup.started_at,
+        "startupArgsHash":format!("{:x}",Sha256::digest(serde_json::to_vec(&startup.args).map_err(|e|e.to_string())?))}),
     )
 }
 
@@ -331,6 +357,9 @@ mod tests {
             } else {
                 assert!(value["promptCache"].is_null());
                 assert!(value["reason"].as_str().unwrap().contains("默认深度未知"));
+                let startup = verified_startup(&state, &profile.id).unwrap();
+                assert_eq!(startup.pid, pid);
+                assert!(prompt_cache(&startup.args).unwrap().is_none());
             }
         }
     }

@@ -123,19 +123,26 @@ pub fn validate(config: &Value) -> Result<(), String> {
     let object = config.as_object().ok_or("配置必须是 JSON 对象")?;
     crate::network::validate_config(config)?;
     crate::gpu_power::requested(config)?;
-    for key in [
-        "exe",
-        "cwd",
-        "tokenizer",
-        "model_name",
-        "log",
-        "host",
-        "api_key",
-    ] {
+    for key in ["exe", "cwd", "tokenizer", "model_name", "log", "host"] {
         if let Some(value) = object.get(key) {
             if !value.is_string() {
                 return Err(format!("{key} 必须是字符串"));
             }
+        }
+    }
+    if let Some(key) = object.get("api_key") {
+        let valid = key.is_string()
+            || key
+                .as_array()
+                .map(|keys| {
+                    !keys.is_empty()
+                        && keys
+                            .iter()
+                            .all(|key| key.as_str().map(|s| !s.trim().is_empty()).unwrap_or(false))
+                })
+                .unwrap_or(false);
+        if !valid {
+            return Err("api_key 必须为字符串或非空字符串数组".into());
         }
     }
     if let Some(args) = object.get("args") {

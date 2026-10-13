@@ -44,6 +44,11 @@ SUPPORTED_HASHES = {
     # retry/error and native slot-timing changes; real MockEngine HTTP tests
     # preserve single-request accounting, timings and admission release.
     "55ee9d1160f0da457cabe6f9dfea9884296b6d70fd3d14abd4ed42e6f79dd72b",
+    # Niko1221/Strata a0116b2782a5b82622358c04a06496485d12b2d6 (0.1.43.1),
+    # canonical LF. Real MockEngine HTTP tests verify optional _json headers,
+    # retryable 503s with/without temporary capture, preparation disconnects,
+    # non-finite retry accounting, native timings and admission/FIFO release.
+    "6046f030abca250fd09f9a4fc95f5bb764d8420754acce049db2e4db77335bad",
 }
 ROUTES = {"/v1/chat/completions": "chat", "/v1/responses": "responses",
           "/v1/messages": "anthropic", "/v1/messages/count_tokens": "token_count"}
@@ -716,7 +721,15 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
             return handler_note(self, **values)
 
         @functools.wraps(emit_json)
-        def observed_json(self, code, obj):
+        def observed_json(self, code, obj, headers=None):
+            # 0.1.43.1 adds optional headers for retryable 503s. Older reviewed
+            # handlers still take two arguments, so omit the new argument when
+            # the upstream caller does not supply any headers.
+            def emit():
+                if headers is None:
+                    return emit_json(self, code, obj)
+                return emit_json(self, code, obj, headers=headers)
+
             ctx = getattr(self, "_manager_context", None)
             if ctx and isinstance(obj, dict):
                 _usage(ctx, obj.get("usage"))
@@ -740,13 +753,13 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
                         self.record = None
                         detached = record
                 try:
-                    return emit_json(self, code, obj)
+                    return emit()
                 finally:
                     # Restore lifecycle bookkeeping for the upstream finally;
                     # all later capture writes still validate this exact lease.
                     if detached is not None:
                         self.record = detached
-            return emit_json(self, code, obj)
+            return emit()
 
         @functools.wraps(capture)
         def observed_capture(self, items, api):

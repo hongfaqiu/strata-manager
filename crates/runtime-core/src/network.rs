@@ -32,15 +32,20 @@ pub(crate) fn assert_bind_available(address: SocketAddr) -> Result<(), String> {
             managed: true,
         };
         if !crate::external::listener_ids(&probe)?.is_empty() {
-            return Err(format!(
-                "监听端口 {} 已被其它进程占用，未启动新服务",
-                address.port()
+            return Err(crate::diagnostics::error(
+                "STARTUP_PORT_IN_USE",
+                format!("监听端口 {} 已被其它进程占用，未启动新服务", address.port()),
+                "prepare",
             ));
         }
     }
-    bind_listener(address)
-        .map(|_| ())
-        .map_err(|error| format!("监听地址 {address} 无法绑定，未启动新服务：{error}"))
+    bind_listener(address).map(|_| ()).map_err(|error| {
+        crate::diagnostics::io_error(
+            &error,
+            &format!("监听地址 {address} 无法绑定，未启动新服务"),
+            "prepare",
+        )
+    })
 }
 
 #[cfg(not(unix))]

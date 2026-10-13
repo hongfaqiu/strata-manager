@@ -1,5 +1,7 @@
 pub mod analytics;
+pub mod benchmark_identity;
 pub mod chat_runtime;
+pub mod diagnostics;
 pub mod discovery;
 pub mod disk;
 pub mod external;
@@ -22,7 +24,9 @@ pub mod policy;
 pub mod processes;
 mod registry_handoff;
 pub mod request_capture;
+pub mod resource_assessment;
 pub mod runtime_upgrade;
+pub mod service_sharing;
 pub mod setup_handoff;
 pub mod setup_options;
 pub mod storage;
@@ -315,7 +319,7 @@ impl RuntimeState {
             }
         }
         Ok(
-            json!({"running":true,"pid":std::process::id(),"protocolVersion":1,"startedAt":self.started_at,"activeServices":active_services,"dataDir":self.data_dir,"version":env!("CARGO_PKG_VERSION"),"executablePath":self.executable_path,"executableHash":self.executable_hash,"recovery":*self.recovery.lock().map_err(|e|e.to_string())?,"health":*self.health_snapshots.lock().map_err(|e|e.to_string())?,"migration":legacy::report(self)?,"preparationFailures":store_get(self,"localPreparationFailures".into())?.as_object().map(|entries|entries.values().cloned().collect::<Vec<_>>()).unwrap_or_default()}),
+            json!({"running":true,"pid":std::process::id(),"protocolVersion":1,"startedAt":self.started_at,"activeServices":active_services,"dataDir":self.data_dir,"version":env!("CARGO_PKG_VERSION"),"executablePath":self.executable_path,"executableHash":self.executable_hash,"recovery":*self.recovery.lock().map_err(|e|e.to_string())?,"health":*self.health_snapshots.lock().map_err(|e|e.to_string())?,"migration":legacy::report(self)?,"preparationFailures":store_get(self,"localPreparationFailures".into())?.as_object().map(|entries|entries.values().cloned().collect::<Vec<_>>()).unwrap_or_default(),"startupFailures":store_get(self,"localStartupFailures".into())?.as_object().map(|entries|entries.values().cloned().collect::<Vec<_>>()).unwrap_or_default()}),
         )
         .map(|mut status| {
             status["recoveryDeferred"] = json!(self.recovery_is_deferred());
@@ -867,6 +871,22 @@ impl RuntimeState {
             tuning::assert_available(&self)?;
         }
         match method {
+            "assess_setup_resources" => {
+                resource_assessment::assess(&self, arg(&params, "request")?).await
+            }
+            "service_sharing_status" => value(service_sharing::status(
+                &self,
+                &arg::<ServiceProfile>(&params, "profile")?,
+            )),
+            "set_service_auth" => value(
+                service_sharing::set_auth(
+                    self.clone(),
+                    arg(&params, "profile")?,
+                    arg(&params, "request")?,
+                )
+                .await,
+            ),
+            "benchmark_identity" => value(benchmark_identity::capture(&self, &profile()?)),
             "restore_local_registry" => registry_handoff::restore(&self, params).await,
             "resume_supervisor" => registry_handoff::resume(&self).await,
             "request_capture_status" => value(request_capture::status(
@@ -1387,12 +1407,78 @@ impl RuntimeState {
         self: Arc<Self>,
         profile_id: String,
     ) -> Result<ProcessStatus, String> {
+        let attempt_started_at = now();
         let result = self
             .clone()
             .switch_local_service_inner(profile_id.clone())
             .await;
+        let result = self.record_startup_result(&profile_id, attempt_started_at, result)?;
         self.record_preparation_result(&profile_id, &result)?;
         result
+    }
+    fn record_startup_result(
+        &self,
+        profile_id: &str,
+        attempt_started_at: u64,
+        result: Result<ProcessStatus, String>,
+    ) -> Result<Result<ProcessStatus, String>, String> {
+        if profile_id.is_empty()
+            || profile_id.len() > 80
+            || !profile_id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+        {
+            return Ok(result);
+        }
+        let diagnostic = match &result {
+            Ok(_) => None,
+            Err(error) => {
+                let logs = self
+                    .logs
+                    .lock()
+                    .map_err(|e| e.to_string())?
+                    .get(profile_id)
+                    .map(|entries| entries.iter().cloned().collect::<Vec<_>>())
+                    .unwrap_or_default();
+                // A diagnostic reads the recorded status; it does not refresh, stop or recover a child.
+                let status = self
+                    .processes
+                    .lock()
+                    .map_err(|e| e.to_string())?
+                    .get(profile_id)
+                    .map(|process| process.status.clone());
+                Some(diagnostics::build(
+                    profile_id,
+                    attempt_started_at,
+                    now(),
+                    error,
+                    &logs,
+                    status.as_ref(),
+                ))
+            }
+        };
+        let mut database = self.database.lock().map_err(|e| e.to_string())?;
+        let mut failures = store::get(&database, "localStartupFailures")?
+            .as_object()
+            .cloned()
+            .unwrap_or_default();
+        if let Some(diagnostic) = &diagnostic {
+            failures.insert(
+                profile_id.into(),
+                serde_json::to_value(diagnostic).map_err(|e| e.to_string())?,
+            );
+        } else {
+            failures.remove(profile_id);
+        }
+        store::set(
+            &mut database,
+            "localStartupFailures",
+            Value::Object(failures),
+        )?;
+        Ok(match diagnostic {
+            Some(diagnostic) => Err(diagnostics::encode(&diagnostic)),
+            None => result,
+        })
     }
     fn record_preparation_result(
         &self,
@@ -1477,7 +1563,11 @@ impl RuntimeState {
             inspect_idle_http(&self, previous).await?;
         }
         if old.is_some() && external::port_accepting(&target_plan.profile)? {
-            return Err("目标模型端口已被其它进程占用，保留当前模型".into());
+            return Err(diagnostics::error(
+                "STARTUP_PORT_IN_USE",
+                "目标模型端口已被其它进程占用，保留当前模型",
+                "prepare",
+            ));
         }
         if old.is_some() {
             network::assert_bind_available(target_plan.listen_address)?;
@@ -1523,9 +1613,15 @@ impl RuntimeState {
                         .ensure_runtime(previous.id, true)
                         .await
                         .map_err(|rollback| {
-                            format!("切换失败: {error}; 原模型恢复失败: {rollback}")
+                            diagnostics::with_context(
+                                &error,
+                                &format!(
+                                    "切换失败；原模型恢复失败: {}",
+                                    diagnostics::message(&rollback)
+                                ),
+                            )
                         })?;
-                    Err(format!("切换失败，已恢复原模型: {error}"))
+                    Err(diagnostics::with_context(&error, "切换失败，已恢复原模型"))
                 }
             }
         } else {
@@ -1552,10 +1648,12 @@ impl RuntimeState {
         profile_id: String,
         load_model: bool,
     ) -> Result<ProcessStatus, String> {
+        let attempt_started_at = now();
         let result = self
             .clone()
             .ensure_runtime_inner(profile_id.clone(), load_model)
             .await;
+        let result = self.record_startup_result(&profile_id, attempt_started_at, result)?;
         self.record_preparation_result(&profile_id, &result)?;
         if result.as_ref().is_ok_and(|status| status.running) {
             self.clear_selection_recovery_load(&profile_id)?;
@@ -1566,6 +1664,15 @@ impl RuntimeState {
         self: Arc<Self>,
         profile_id: String,
         load_model: bool,
+    ) -> Result<ProcessStatus, String> {
+        self.ensure_runtime_inner_with_deadline(profile_id, load_model, Duration::from_secs(180))
+            .await
+    }
+    async fn ensure_runtime_inner_with_deadline(
+        self: Arc<Self>,
+        profile_id: String,
+        load_model: bool,
+        readiness_timeout: Duration,
     ) -> Result<ProcessStatus, String> {
         let lock = self
             .ensure_locks
@@ -1668,7 +1775,7 @@ impl RuntimeState {
             "info",
             "启动阶段：等待本机 API 响应",
         );
-        let deadline = std::time::Instant::now() + Duration::from_secs(180);
+        let deadline = std::time::Instant::now() + readiness_timeout;
         loop {
             let status = {
                 let mut processes = self.processes.lock().map_err(|e| e.to_string())?;
@@ -1678,9 +1785,13 @@ impl RuntimeState {
                     .refresh()?
             };
             if !status.running {
-                return Err(format!(
-                    "本机服务启动后退出，exit {:?}；请查看诊断日志",
-                    status.exit_code
+                return Err(diagnostics::error(
+                    "STARTUP_PROCESS_EXITED",
+                    format!(
+                        "本机服务启动后退出，exit {:?}；请查看诊断日志",
+                        status.exit_code
+                    ),
+                    "starting",
                 ));
             }
             // Startup probes must remain short: the normal request timeout is
@@ -1693,16 +1804,47 @@ impl RuntimeState {
                         .await
                         .map_err(|e| e.to_string())?;
                 if !response.status().is_success() {
+                    if matches!(response.status().as_u16(), 401 | 403) {
+                        return Err(diagnostics::error(
+                            if response.status().as_u16() == 401 {
+                                "STARTUP_AUTH_REQUIRED"
+                            } else {
+                                "STARTUP_FORBIDDEN"
+                            },
+                            format!(
+                                "本机 API 返回 HTTP {}；请检查连接凭据，启动进程仍保留",
+                                response.status().as_u16()
+                            ),
+                            "starting",
+                        ));
+                    }
                     return Err("API 尚未就绪".to_string());
                 }
                 response.json::<Value>().await.map_err(|e| e.to_string())
             }
             .await;
+            if let Err(error) = &health {
+                if serde_json::from_str::<Value>(error)
+                    .ok()
+                    .is_some_and(|value| {
+                        matches!(
+                            value["code"].as_str(),
+                            Some("STARTUP_AUTH_REQUIRED" | "STARTUP_FORBIDDEN")
+                        )
+                    })
+                {
+                    return Err(error.clone());
+                }
+            }
             if let Ok(health) = health {
                 if health.get("service").and_then(Value::as_str) != Some("strata")
                     || health.get("status").and_then(Value::as_str) != Some("ok")
                 {
-                    return Err("端口响应不是已核验的 Strata 服务".into());
+                    return Err(diagnostics::error(
+                        "STARTUP_WRONG_SERVICE",
+                        "端口响应不是已核验的 Strata 服务",
+                        "starting",
+                    ));
                 }
                 if load_model && health.get("loaded").and_then(Value::as_bool) != Some(true) {
                     processes::log(
@@ -1718,7 +1860,8 @@ impl RuntimeState {
                         "POST".into(),
                         Some(json!({})),
                     )
-                    .await?;
+                    .await
+                    .map_err(|error| diagnostics::during(&error, "loading"))?;
                     if !matches!(
                         result.get("status").and_then(Value::as_str),
                         Some("loaded" | "already loaded")
@@ -1732,7 +1875,8 @@ impl RuntimeState {
                         "GET".into(),
                         None,
                     )
-                    .await?;
+                    .await
+                    .map_err(|error| diagnostics::during(&error, "loading"))?;
                     if loaded.get("loaded").and_then(Value::as_bool) != Some(true) {
                         return Err("模型加载响应成功但健康状态未就绪".into());
                     }
@@ -1755,9 +1899,14 @@ impl RuntimeState {
                 return Ok(status);
             }
             if std::time::Instant::now() >= deadline {
-                return Err(
-                    "本机 API 180 秒内未就绪；启动进程仍保留，请查看启动日志和显存/内存状态".into(),
-                );
+                return Err(diagnostics::error(
+                    "STARTUP_API_TIMEOUT",
+                    format!(
+                        "本机 API {} 秒内未就绪；启动进程仍保留，请查看启动日志和显存/内存状态",
+                        readiness_timeout.as_secs()
+                    ),
+                    "starting",
+                ));
             }
             tokio::time::sleep(Duration::from_millis(300)).await;
         }
@@ -2042,14 +2191,39 @@ fn prepare_startup(
     processes: &Mutex<HashMap<String, OwnedProcess>>,
     tasks: &Tasks,
 ) -> Result<StartupPlan, String> {
-    let root = processes::runtime_dir(profile)?;
-    let config_value = storage::read(profile)?;
-    storage::validate(&config_value)?;
-    let endpoint = network::endpoint(&config_value, profile)?;
+    if profile.managed && Path::new(&profile.install_dir).is_absolute() {
+        fs::metadata(&profile.install_dir)
+            .map_err(|error| diagnostics::io_error(&error, "无法读取运行环境目录", "prepare"))?;
+        for relative in ["setup.py", "serve/server.py"] {
+            fs::File::open(Path::new(&profile.install_dir).join(relative)).map_err(|error| {
+                diagnostics::io_error(
+                    &error,
+                    &format!("无法读取运行环境文件 {relative}"),
+                    "prepare",
+                )
+            })?;
+        }
+    }
+    let root = processes::runtime_dir(profile)
+        .map_err(|error| diagnostics::error("STARTUP_CONFIG_INVALID", error, "prepare"))?;
+    if Path::new(&profile.config_path).is_absolute() {
+        fs::File::open(&profile.config_path)
+            .map_err(|error| diagnostics::io_error(&error, "无法读取模型配置文件", "prepare"))?;
+    }
+    let config_value = storage::read(profile)
+        .map_err(|error| diagnostics::error("STARTUP_CONFIG_INVALID", error, "prepare"))?;
+    storage::validate(&config_value)
+        .map_err(|error| diagnostics::error("STARTUP_CONFIG_INVALID", error, "prepare"))?;
+    let endpoint = network::endpoint(&config_value, profile)
+        .map_err(|error| diagnostics::error("STARTUP_CONFIG_INVALID", error, "prepare"))?;
     let mut effective_profile = profile.clone();
     effective_profile.base_url = endpoint.base_url;
     if config_value.get("exe").is_none() || config_value.get("args").is_none() {
-        return Err("Strata 模型配置需要 exe 和 args 字段".into());
+        return Err(diagnostics::error(
+            "STARTUP_CONFIG_INVALID",
+            "Strata 模型配置需要 exe 和 args 字段",
+            "prepare",
+        ));
     }
     let config = storage::config_path(profile)?;
     // This upstream version's /config refuses lazy_load on vision models while
@@ -2061,10 +2235,18 @@ fn prepare_startup(
         })
     });
     let python = processes::python(profile)?;
+    if !profile.python_path.trim().is_empty() && Path::new(&python).is_absolute() {
+        fs::metadata(&python)
+            .map_err(|error| diagnostics::io_error(&error, "无法读取所选 Python", "prepare"))?;
+    }
     if !profile.python_path.trim().is_empty()
         && (!Path::new(&python).is_absolute() || !Path::new(&python).is_file())
     {
-        return Err("所选 Python 必须是存在的可执行文件绝对路径".into());
+        return Err(diagnostics::error(
+            "STARTUP_CONFIG_INVALID",
+            "所选 Python 必须是存在的可执行文件绝对路径",
+            "prepare",
+        ));
     }
     if output(
         &python,
@@ -2073,7 +2255,11 @@ fn prepare_startup(
     .as_deref()
         != Some("3")
     {
-        return Err("所选 Python 无法运行 Python 3（权限不足、文件无效或探测超时）".into());
+        return Err(diagnostics::error(
+            "STARTUP_PYTHON_UNAVAILABLE",
+            "所选 Python 无法运行 Python 3（权限不足、文件无效或探测超时）",
+            "prepare",
+        ));
     }
     if tasks.lock().map_err(|e| e.to_string())?.values().any(|t| {
         (t.profile_id.as_deref() == Some(&profile.id) || t.runtime_path.as_ref() == Some(&root))
@@ -2132,7 +2318,7 @@ fn start_prepared_service_checked(
     state: &RuntimeState,
     profile: ServiceProfile,
     plan: StartupPlan,
-    secret: Option<String>,
+    _secret: Option<String>,
     operation: Option<&TuningServiceOperation>,
 ) -> Result<ProcessStatus, String> {
     external_management::assert_profile_manager_owned(state, &profile)?;
@@ -2148,9 +2334,13 @@ fn start_prepared_service_checked(
         state.forget_owned_listener(&profile.id)?;
     }
     if external::port_accepting(&plan.profile)? {
-        return Err(format!(
-            "端口 {} 已被外部进程占用，未启动或终止任何外部服务",
-            plan.port
+        return Err(diagnostics::error(
+            "STARTUP_PORT_IN_USE",
+            format!(
+                "端口 {} 已被外部进程占用，未启动或终止任何外部服务",
+                plan.port
+            ),
+            "starting",
         ));
     }
     // In particular, a foreign LAN-only listener need not answer loopback.
@@ -2169,9 +2359,9 @@ fn start_prepared_service_checked(
     if plan.lazy_cli {
         command.arg("--lazy");
     }
-    if let Some(secret) = secret {
-        command.env("STRATA_API_KEY", secret);
-    }
+    // Client vault credentials authorize Manager HTTP calls; they must never
+    // override this service's own api_key (including arrays) through inheritance.
+    command.env_remove("STRATA_API_KEY");
     let observer = observer::install_bootstrap(&state.data_dir)?;
     #[cfg(target_os = "linux")]
     command.env(
@@ -2988,7 +3178,17 @@ fn export_diagnostics_blocking(
         })
         .unwrap_or_default();
     drop(logs);
-    let mut report = json!({"generatedAt":now(),"environment":cached_environment(state),"profile":profile,"config":config,"process":process,"runtimeRevision":revision,"logSummary":log_summary,"logPolicy":"Raw log and request bodies omitted to prevent leaking MCP or API credentials"});
+    let diagnostic = store_get(state, "localStartupFailures".into())?
+        .get(&profile.id)
+        .cloned()
+        .map(|mut value| {
+            if let Some(object) = value.as_object_mut() {
+                object.remove("evidence");
+                object.remove("message");
+            }
+            value
+        });
+    let mut report = json!({"generatedAt":now(),"environment":cached_environment(state),"profile":profile,"config":config,"process":process,"runtimeRevision":revision,"startupDiagnostic":diagnostic,"logSummary":log_summary,"logPolicy":"Raw log and request bodies omitted to prevent leaking MCP or API credentials"});
     storage::redact(&mut report);
     let directory = state.data_dir.join("diagnostics");
     fs::create_dir_all(&directory).map_err(|e| e.to_string())?;

@@ -500,9 +500,20 @@ fn distribution(
             r.get::<_, f64>(0)
         }),
     )?;
-    let values = sql(rows.collect::<rusqlite::Result<Vec<_>>>())?;
+    let mut values = sql(rows.collect::<rusqlite::Result<Vec<_>>>())?;
+    // Use the same valid observations for counts, means and percentiles.
+    // Missing or invalid timings never become idle/zero-speed samples.
+    values.retain(|value| value.is_finite() && *value >= 0.0);
+    let mean = if values.is_empty() {
+        None
+    } else {
+        // Incremental averaging avoids overflowing a sum of finite values.
+        Some(values.iter().enumerate().fold(0.0, |mean, (index, value)| {
+            mean + (value - mean) / (index + 1) as f64
+        }))
+    };
     Ok(
-        json!({"samples":values.len(),"p50":percentile(values.clone(),0.5),"p95":percentile(values,0.95)}),
+        json!({"samples":values.len(),"mean":mean,"p20":percentile(values.clone(),0.2),"p50":percentile(values.clone(),0.5),"p95":percentile(values,0.95)}),
     )
 }
 
@@ -1493,6 +1504,55 @@ mod tests {
         assert_eq!(percentile(vec![], 0.95), None);
         assert_eq!(percentile(vec![1.0, 3.0, f64::NAN, -1.0], 0.5), Some(2.0));
         assert!((percentile(vec![1.0, 3.0], 0.95).unwrap() - 2.9).abs() < 1e-10);
+    }
+
+    #[test]
+    fn distributions_share_valid_samples_and_keep_empty_values_unknown() {
+        let database = Connection::open_in_memory().unwrap();
+        ensure_schema(&database).unwrap();
+        let range = Range {
+            start: 0,
+            end: 60_000,
+            service: "local".into(),
+        };
+        for (column, runs) in [("duration_s", false), ("decode_tok_s", true)] {
+            let empty = distribution(&database, column, &range, runs).unwrap();
+            assert_eq!(empty["samples"], 0);
+            for key in ["mean", "p20", "p50", "p95"] {
+                assert!(empty[key].is_null());
+            }
+        }
+        database.execute_batch(r#"INSERT INTO analytics_requests(request_id,service_id,session_id,started_ms,route,duration_s) VALUES
+            ('zero','local','session',1000,'chat',0),
+            ('ten','local','session',2000,'chat',10),
+            ('thirty','local','session',3000,'chat',30),
+            ('negative','local','session',4000,'chat',-1),
+            ('unknown','local','session',5000,'chat',NULL),
+            ('infinite','local','session',6000,'chat',NULL),
+            ('foreign','other','session',1000,'chat',999),
+            ('outside','local','session',60000,'chat',777);
+            INSERT INTO analytics_runs(run_id,request_id,service_id,session_id,started_ms,prompt_total,decode_tok_s,finish,tool_calls)
+            SELECT request_id,request_id,service_id,session_id,started_ms,0,duration_s,'stop',0 FROM analytics_requests;"#).unwrap();
+        database
+            .execute(
+                "UPDATE analytics_requests SET duration_s=?1 WHERE request_id='infinite'",
+                [f64::INFINITY],
+            )
+            .unwrap();
+        database
+            .execute(
+                "UPDATE analytics_runs SET decode_tok_s=?1 WHERE run_id='infinite'",
+                [f64::INFINITY],
+            )
+            .unwrap();
+        for (column, runs) in [("duration_s", false), ("decode_tok_s", true)] {
+            let result = distribution(&database, column, &range, runs).unwrap();
+            assert_eq!(result["samples"], 3);
+            assert!((result["mean"].as_f64().unwrap() - 40.0 / 3.0).abs() < 1e-10);
+            assert_eq!(result["p20"], 4.0);
+            assert_eq!(result["p50"], 10.0);
+            assert!((result["p95"].as_f64().unwrap() - 28.0).abs() < 1e-10);
+        }
     }
 
     fn add_request(

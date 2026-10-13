@@ -12,7 +12,7 @@ pub struct ServiceProfile {
     pub managed: bool,
 }
 
-#[derive(Clone, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProcessStatus {
     pub running: bool,

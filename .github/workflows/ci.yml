@@ -16,6 +16,61 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  observer-compatibility:
+    name: Strata 0.1.43.1 observer (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    env:
+      STRATA_TEST_ROOT: ${{ github.workspace }}/.reference/strata-0.1.43.1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Preserve the verified upstream source bytes
+        run: git config --global core.autocrlf false
+      - name: Check out the reviewed Strata 0.1.43.1 API fixture
+        uses: actions/checkout@v4
+        with:
+          repository: Niko1221/Strata
+          ref: a0116b2782a5b82622358c04a06496485d12b2d6
+          path: .reference/strata-0.1.43.1
+          persist-credentials: false
+      - name: Install MockEngine test dependencies only
+        run: python -m pip install jinja2==3.1.6 markupsafe==3.0.3
+      - name: Verify the reviewed source and observer compatibility
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+          import sys
+          sys.path.insert(0, 'apps/supervisor/resources')
+          import strata_observer
+          source = Path(os.environ['STRATA_TEST_ROOT']) / 'serve/server.py'
+          digest = hashlib.sha256(source.read_bytes().replace(b'\r\n', b'\n')).hexdigest()
+          expected = '6046f030abca250fd09f9a4fc95f5bb764d8420754acce049db2e4db77335bad'
+          if digest != expected or digest not in strata_observer.SUPPORTED_HASHES:
+              sys.exit('The reviewed Strata 0.1.43.1 source must exactly match its supported canonical hash.')
+          PY
+      - name: Verify all Strata 0.1.43.1 observer HTTP contracts without skips
+        shell: bash
+        run: |
+          python - <<'PY'
+          import sys
+          import unittest
+          suite = unittest.defaultTestLoader.discover('apps/supervisor/tests', pattern='test_strata_observer.py')
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          if result.skipped:
+              sys.exit('Every reviewed Strata 0.1.43.1 observer contract must execute; skipped tests are not compatibility evidence.')
+          sys.exit(0 if result.wasSuccessful() else 1)
+          PY
+
   native-windows:
     name: Windows native shard (${{ matrix.shard }}/3)
     strategy:

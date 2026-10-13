@@ -2997,6 +2997,22 @@ mod tests {
             String::from_utf8_lossy(&output.stderr)
         );
         verify_observer_source(&destination.join("serve/server.py")).unwrap();
+        // Windows line endings represent the same reviewed code. Any source
+        // change, including a comment, still needs an explicit compatibility review.
+        let server_bytes = fs::read_to_string(destination.join("serve/server.py")).unwrap();
+        let compatibility_fixture = temp.path().join("server-compatibility.py");
+        fs::write(
+            &compatibility_fixture,
+            server_bytes.replace("\r\n", "\n").replace('\n', "\r\n"),
+        )
+        .unwrap();
+        verify_observer_source(&compatibility_fixture).unwrap();
+        fs::write(
+            &compatibility_fixture,
+            format!("{server_bytes}\n# unreviewed source change\n"),
+        )
+        .unwrap();
+        assert!(verify_observer_source(&compatibility_fixture).is_err());
         println!(
             "Official source archive validated: {} runtime leaves, {} serve leaves, {} web assets; source SHA256={}; server canonical SHA256={}",
             runtime_count, serve_count, web_count,

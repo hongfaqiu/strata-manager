@@ -36,7 +36,9 @@ from serve.mcp import McpHub
 SOURCE_HASH = hashlib.sha256((ROOT / "serve/server.py").read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 OFFICIAL_0142_HASH = "ce9266730b632e919ff93809ea6f9ecd6f91f12da19597a2d95a7edb29700dfa"
 OFFICIAL_0143_HASH = "55ee9d1160f0da457cabe6f9dfea9884296b6d70fd3d14abd4ed42e6f79dd72b"
-KEEP_AWAKE_SOURCE_HASHES = {OFFICIAL_0142_HASH, OFFICIAL_0143_HASH}
+OFFICIAL_01431_HASH = "6046f030abca250fd09f9a4fc95f5bb764d8420754acce049db2e4db77335bad"
+KEEP_AWAKE_SOURCE_HASHES = {OFFICIAL_0142_HASH, OFFICIAL_0143_HASH, OFFICIAL_01431_HASH}
+NONFINITE_SOURCE_HASHES = {OFFICIAL_0143_HASH, OFFICIAL_01431_HASH}
 
 
 class ObserverHttp(unittest.TestCase):
@@ -79,13 +81,16 @@ class ObserverHttp(unittest.TestCase):
         self.base = "http://127.0.0.1:" + str(self.httpd.server_address[1])
 
     def post(self, path, payload, headers=None, raw=None):
+        return self.post_response(path, payload, headers, raw)[:2]
+
+    def post_response(self, path, payload, headers=None, raw=None):
         req = urllib.request.Request(self.base + path, data=raw if raw is not None else json.dumps(payload).encode(),
               headers={"Content-Type": "application/json", **(headers or {})})
         try:
             with urllib.request.urlopen(req, timeout=10) as response:
-                return response.status, response.read().decode()
+                return response.status, response.read().decode(), dict(response.headers)
         except urllib.error.HTTPError as error:
-            return error.code, error.read().decode()
+            return error.code, error.read().decode(), dict(error.headers)
 
     def events(self, kind=None):
         # Give the handler's finally block time to commit after HTTP body flush.
@@ -174,7 +179,7 @@ class ObserverHttp(unittest.TestCase):
         self.assertTrue(all(e["clientId"] is None for e in ends))
         self.assertNotIn("PRIVATE",json.dumps(self.events()))
 
-    @unittest.skipUnless(SOURCE_HASH in KEEP_AWAKE_SOURCE_HASHES, "requires reviewed Strata 0.1.42 or 0.1.43")
+    @unittest.skipUnless(SOURCE_HASH in KEEP_AWAKE_SOURCE_HASHES, "requires reviewed Strata 0.1.42 or newer")
     def test_sampling_and_bias_validation_preserve_failed_request_accounting(self):
         self.start()
         cases = [("/v1/chat/completions", {"logit_bias": {"1": "PRIVATE_INVALID_BIAS"}}),
@@ -192,7 +197,7 @@ class ObserverHttp(unittest.TestCase):
         self.assertNotIn("PRIVATE", json.dumps(self.events()))
         self.assertEqual(self.journal.db.execute("SELECT COUNT(*) FROM active_requests").fetchone()[0], 0)
 
-    @unittest.skipUnless(SOURCE_HASH in KEEP_AWAKE_SOURCE_HASHES, "requires reviewed Strata 0.1.42 or 0.1.43")
+    @unittest.skipUnless(SOURCE_HASH in KEEP_AWAKE_SOURCE_HASHES, "requires reviewed Strata 0.1.42 or newer")
     def test_keep_awake_released_after_success_and_observed_generator_close(self):
         class Awake:
             def __init__(self):
@@ -230,7 +235,7 @@ class ObserverHttp(unittest.TestCase):
         self.assertTrue(self.svc.fifo.acquire(blocking=False))
         self.svc.fifo.release()
 
-    @unittest.skipUnless(SOURCE_HASH == OFFICIAL_0143_HASH, "requires official Strata 0.1.43")
+    @unittest.skipUnless(SOURCE_HASH in NONFINITE_SOURCE_HASHES, "requires reviewed Strata 0.1.43 or newer")
     def test_0143_nonfinite_retry_and_failure_keep_one_request_and_release_admission(self):
         class NonFinite(server.MockEngine):
             def __init__(self, *args, **kwargs):
@@ -294,7 +299,7 @@ class ObserverHttp(unittest.TestCase):
                         self.svc.fifo.release()
         self.assertNotIn("PRIVATE_NONFINITE_PROMPT", json.dumps(self.events()))
 
-    @unittest.skipUnless(SOURCE_HASH == OFFICIAL_0143_HASH, "requires official Strata 0.1.43")
+    @unittest.skipUnless(SOURCE_HASH in NONFINITE_SOURCE_HASHES, "requires reviewed Strata 0.1.43 or newer")
     def test_0143_slot_prompt_read_preserves_native_timings_and_input_total(self):
         class TimedSlot(server.MockEngine):
             def generate(self, ids, max_new, sampling, cancel, embeddings=None):
@@ -316,6 +321,103 @@ class ObserverHttp(unittest.TestCase):
         self.assertEqual(run["inputTokens"], run["prefillTokens"] + run["cacheReadTokens"])
         self.assertEqual(run["inputTokens"], result["usage"]["prompt_tokens"])
         self.assertEqual((run["prefillS"], run["decodeS"], run["decodeTokS"]), (0.25, 0.5, 40.0))
+
+    @unittest.skipUnless(SOURCE_HASH == OFFICIAL_01431_HASH, "requires official Strata 0.1.43.1")
+    def test_01431_before_load_refusal_preserves_retry_after_and_capture(self):
+        self.start()
+        self.svc.loaded = lambda: False
+        self.svc.before_load = [sys.executable, "-I", "-S", "-c", "raise SystemExit(17)"]
+        self.svc.before_load_strict = True
+        paths = ("/load", "/v1/chat/completions", "/v1/messages", "/v1/responses")
+        for capture in (False, True):
+            if capture:
+                self.assertTrue(self.capture_lease())
+            for path in paths:
+                before_activity = self.activity()[1]
+                status, text, headers = self.post_response(path, {
+                    "messages": [{"role": "user", "content": "PRIVATE_BUSY_PROMPT"}],
+                    "input": "PRIVATE_BUSY_PROMPT", "max_tokens": 64,
+                })
+                self.assertEqual(status, 503, text)
+                self.assertEqual(json.loads(text)["error"]["type"], "server_error")
+                # The official Responses preparation handler does not attach
+                # Retry-After; preserve each route's upstream response exactly.
+                self.assertEqual(headers.get("Retry-After"), None if path == "/v1/responses" else "15")
+                self.assertEqual(self.wait_released_activity(before_activity + 2)[1], before_activity + 2)
+            if capture:
+                self.assertEqual(len(self.svc.api_requests), 3)
+                for record in self.svc.api_requests:
+                    self.assertEqual(record["http_status"], 503)
+                    self.assertEqual(json.loads(record["response"])["error"]["type"], "server_error")
+                self.capture_off()
+        ends = self.events("request_end")
+        self.assertEqual(len(ends), 6)
+        self.assertTrue(all(e["outcome"] == "failed" and e["httpStatus"] == 503 for e in ends))
+        self.assertFalse(self.events("run_end"))
+        self.assertNotIn("PRIVATE_BUSY_PROMPT", json.dumps(self.events()))
+        self.assertEqual(self.svc.status["queued"], 0)
+        self.assertTrue(self.svc.fifo.acquire(blocking=False))
+        self.svc.fifo.release()
+
+    @unittest.skipUnless(SOURCE_HASH == OFFICIAL_01431_HASH, "requires official Strata 0.1.43.1")
+    def test_01431_retryable_engine_refusal_preserves_503_and_run_cleanup(self):
+        class Busy(server.MockEngine):
+            def generate(self, *args, **kwargs):
+                raise server.GpuBusy("fixture batch slots refused", retry_after=5)
+                yield  # Keep the native-engine generator contract.
+
+        tok = server.ByteTokenizer()
+        self.start(engine=Busy(tok, "</think>\n\nfixture reply", max_context=32768))
+        self.assertTrue(self.capture_lease())
+        for path in ("/v1/chat/completions", "/v1/messages"):
+            before_activity = self.activity()[1]
+            status, text, headers = self.post_response(path, {
+                "messages": [{"role": "user", "content": "PRIVATE_SLOT_PROMPT"}], "max_tokens": 64,
+            })
+            self.assertEqual(status, 503, text)
+            self.assertEqual(headers.get("Retry-After"), "5")
+            self.assertEqual(json.loads(text)["error"]["type"], "server_error")
+            self.assertEqual(self.wait_released_activity(before_activity + 2)[1], before_activity + 2)
+        ends, runs = self.events("request_end"), self.events("run_end")
+        self.assertEqual((len(ends), len(runs)), (2, 2))
+        self.assertTrue(all(e["outcome"] == "failed" and e["httpStatus"] == 503 for e in ends))
+        self.assertTrue(all(r["finish"] == "error" for r in runs))
+        self.assertEqual({r["requestId"] for r in runs}, {e["requestId"] for e in ends})
+        self.assertNotIn("PRIVATE_SLOT_PROMPT", json.dumps(self.events()))
+        self.assertEqual(self.svc.status["queued"], 0)
+        self.assertTrue(self.svc.fifo.acquire(blocking=False))
+        self.svc.fifo.release()
+        self.capture_off()
+
+    @unittest.skipUnless(SOURCE_HASH == OFFICIAL_01431_HASH, "requires official Strata 0.1.43.1")
+    def test_01431_disconnect_during_prepare_is_cancelled_without_inference(self):
+        self.start()
+        for index, path in enumerate(("/v1/chat/completions", "/v1/responses", "/v1/messages")):
+            prepared = threading.Event()
+            def waiting_prepare(*args, cancel=None, **kwargs):
+                self.assertIsNotNone(cancel)
+                prepared.set()
+                self.assertTrue(cancel.wait(5), "client disconnect was not observed during preparation")
+                raise server.ClientGone()
+            self.svc.prepare = waiting_prepare
+            before_activity = self.activity()[1]
+            payload = json.dumps({"messages": [{"role": "user", "content": "PRIVATE_PREPARE_PROMPT"}],
+                                  "input": "PRIVATE_PREPARE_PROMPT", "stream": True, "max_tokens": 64}).encode()
+            with socket.create_connection(self.httpd.server_address, timeout=5) as sock:
+                sock.sendall(b"POST " + path.encode() + b" HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                             b"Content-Type: application/json\r\nContent-Length: " + str(len(payload)).encode()
+                             + b"\r\n\r\n" + payload)
+                self.assertTrue(prepared.wait(3), path)
+                sock.shutdown(socket.SHUT_RDWR)
+            self.assertEqual(self.wait_released_activity(before_activity + 2)[1], before_activity + 2)
+            ends = self.events("request_end")
+            self.assertEqual(len(ends), index + 1)
+            self.assertEqual(ends[-1]["outcome"], "cancelled")
+            self.assertIsNone(ends[-1]["httpStatus"])
+        self.assertFalse(self.events("run_end"))
+        self.assertNotIn("PRIVATE_PREPARE_PROMPT", json.dumps(self.events()))
+        self.assertTrue(self.svc.fifo.acquire(blocking=False))
+        self.svc.fifo.release()
 
     def test_stream_engine_error_is_failure_despite_http_200(self):
         class Faulty(server.MockEngine):
@@ -671,8 +773,9 @@ class JournalAndLoader(unittest.TestCase):
         handler_factory = next(n for n in module.body if isinstance(n, ast.FunctionDef) and n.name == "make_handler")
         handler = next(n for n in handler_factory.body if isinstance(n, ast.ClassDef))
         handler_methods = {n.name: n for n in handler.body if isinstance(n, ast.FunctionDef)}
+        json_arguments = "self, code, obj, headers=None" if SOURCE_HASH == OFFICIAL_01431_HASH else "self, code, obj"
         for name, arguments in {"do_POST": "self", "send_response": "self, code, message=None",
-                                "_note": "self, **values", "_json": "self, code, obj",
+                                "_note": "self, **values", "_json": json_arguments,
                                 "_capture": "self, items, api"}.items():
             self.assertEqual(ast.unparse(handler_methods[name].args), arguments, name)
         if SOURCE_HASH in KEEP_AWAKE_SOURCE_HASHES:

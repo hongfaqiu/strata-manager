@@ -1,13 +1,16 @@
 mod configuration_details;
 mod configuration_files;
+mod daily_experience;
 mod floating_monitor;
 mod http;
 mod invoke_policy;
 mod model_files;
 mod monitor_tray;
+mod png_export;
 mod runtime_detection;
 mod runtime_update_queue;
 mod runtime_updates;
+mod service_sharing;
 mod startup;
 mod supervisor_client;
 mod vision_files;
@@ -1062,6 +1065,15 @@ async fn write_markdown_export(
 }
 
 #[tauri::command]
+async fn write_png_export(path: String, bytes: Vec<u8>) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        png_export::save(std::path::Path::new(&path), &bytes)
+    })
+    .await
+    .map_err(|error| format!("PNG 保存任务失败 / PNG save task failed: {error}"))?
+}
+
+#[tauri::command]
 async fn list_local_models(
     state: State<'_, ClientState>,
     profile: ServiceProfile,
@@ -1678,6 +1690,10 @@ pub fn run() {
             service_status,
             read_logs,
             environment_info,
+            daily_experience::assess_setup_resources,
+            daily_experience::benchmark_identity,
+            service_sharing::service_sharing_status,
+            service_sharing::set_service_auth,
             setup_disk_preflight,
             run_setup,
             inspect_gguf,
@@ -1705,6 +1721,7 @@ pub fn run() {
             delete_model_files,
             write_config,
             write_markdown_export,
+            write_png_export,
             list_local_models,
             export_diagnostics,
             discover_local,
