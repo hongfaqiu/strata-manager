@@ -7,6 +7,12 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+### English
+
+## [0.1.9] - 2026-10-14
+
+### 中文
+
 - **上游升级兼容自动化**：观察器改为“已审查哈希快速通道 + 结构能力检测”，未审查的新版 Strata 结构兼容时自动完整统计（标注未审查），缺少可选能力时逐项降级，核心契约变化时关闭并改用公开 `/health` `/status` `/metrics` 监控；新增 0.1.44.1 已审查哈希。
 - 已审查清单统一到 `apps/supervisor/resources/observer_compat.json`，Python 运行时、Release ZIP 更新与测试共用；未审查源码不再阻止运行环境更新。
 - Linux MCP stdio 守护同样改为“已审查哈希 + 结构检测”，哈希统一来自 `observer_compat.json`；结构不兼容时给出明确拒绝原因（HTTP MCP 不受影响）。
