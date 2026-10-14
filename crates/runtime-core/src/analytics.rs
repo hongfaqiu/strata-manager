@@ -1006,7 +1006,7 @@ fn coverage(database: &Connection, data_dir: &Path, range: &Range) -> Result<Val
                     let fresh = updated
                         .map(|at| (0..=65_000).contains(&(now_ms() - at)))
                         .unwrap_or(false);
-                    statuses.push(json!({"serviceId":id,"sessionId":value.get("sessionId").and_then(Value::as_str).filter(|v|identity(v)),"pid":value.get("pid").and_then(Value::as_u64),"updatedAtMs":updated,"supported":value.get("supported").and_then(Value::as_bool).unwrap_or(false),"journalWriteFailed":value.get("journalWriteFailed").and_then(Value::as_bool).unwrap_or(false),"observerActive":fresh && value.get("observerActive").and_then(Value::as_bool).unwrap_or(false),"heartbeatFresh":fresh,"error":error}));
+                    statuses.push(json!({"serviceId":id,"sessionId":value.get("sessionId").and_then(Value::as_str).filter(|v|identity(v)),"pid":value.get("pid").and_then(Value::as_u64),"updatedAtMs":updated,"supported":value.get("supported").and_then(Value::as_bool).unwrap_or(false),"journalWriteFailed":value.get("journalWriteFailed").and_then(Value::as_bool).unwrap_or(false),"observerActive":fresh && value.get("observerActive").and_then(Value::as_bool).unwrap_or(false),"heartbeatFresh":fresh,"error":error,"observerMode":value.get("observerMode").and_then(Value::as_str).filter(|v|matches!(*v,"reviewed"|"structural"|"partial"|"disabled")),"capabilities":value.get("capabilities").and_then(Value::as_object).map(|c|c.iter().filter(|(k,_)|matches!(k.as_str(),"core"|"load_state"|"expert_stats"|"mcp")).map(|(k,v)|(k.clone(),Value::Bool(v.as_bool().unwrap_or(false)))).collect::<serde_json::Map<_,_>>())}));
                 }
             }
         }

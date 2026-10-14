@@ -78,6 +78,9 @@ export interface ApiObserverStatus {
   serviceId: string; sessionId: string | null; pid: number | null; updatedAtMs: number | null;
   supported: boolean; journalWriteFailed: boolean; observerActive: boolean; heartbeatFresh: boolean;
   error: 'unsupported_runtime' | 'journal_write_failed' | null;
+  /** reviewed = known hash; structural/partial = unreviewed source detected by structure; disabled = public endpoints only. */
+  observerMode?: 'reviewed' | 'structural' | 'partial' | 'disabled' | null;
+  capabilities?: Partial<Record<'core' | 'load_state' | 'expert_stats' | 'mcp', boolean>> | null;
 }
 export interface ApiAnalyticsCoverage {
   sessions: ApiObserverSession[]; gaps: ApiCollectionGap[]; observerStatuses: ApiObserverStatus[];

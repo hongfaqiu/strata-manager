@@ -38,10 +38,11 @@ OFFICIAL_0142_HASH = "ce9266730b632e919ff93809ea6f9ecd6f91f12da19597a2d95a7edb29
 OFFICIAL_0143_HASH = "55ee9d1160f0da457cabe6f9dfea9884296b6d70fd3d14abd4ed42e6f79dd72b"
 OFFICIAL_01431_HASH = "6046f030abca250fd09f9a4fc95f5bb764d8420754acce049db2e4db77335bad"
 OFFICIAL_0144_HASH = "2aa0d2060766799be2ea7045dc13ca5bab2cec39ad5c29bc8a54d816ed246e7c"
-KEEP_AWAKE_SOURCE_HASHES = {OFFICIAL_0142_HASH, OFFICIAL_0143_HASH, OFFICIAL_01431_HASH, OFFICIAL_0144_HASH}
-NONFINITE_SOURCE_HASHES = {OFFICIAL_0143_HASH, OFFICIAL_01431_HASH, OFFICIAL_0144_HASH}
-HEADER_JSON_SOURCE_HASHES = {OFFICIAL_01431_HASH, OFFICIAL_0144_HASH}
-RETRYABLE_503_SOURCE_HASHES = {OFFICIAL_01431_HASH, OFFICIAL_0144_HASH}
+OFFICIAL_01441_HASH = "6c45c639e28a873b854606719d9ce2bb2e0df666f105164e78e2735878b9aa8f"
+KEEP_AWAKE_SOURCE_HASHES = {OFFICIAL_0142_HASH, OFFICIAL_0143_HASH, OFFICIAL_01431_HASH, OFFICIAL_0144_HASH, OFFICIAL_01441_HASH}
+NONFINITE_SOURCE_HASHES = {OFFICIAL_0143_HASH, OFFICIAL_01431_HASH, OFFICIAL_0144_HASH, OFFICIAL_01441_HASH}
+HEADER_JSON_SOURCE_HASHES = {OFFICIAL_01431_HASH, OFFICIAL_0144_HASH, OFFICIAL_01441_HASH}
+RETRYABLE_503_SOURCE_HASHES = {OFFICIAL_01431_HASH, OFFICIAL_0144_HASH, OFFICIAL_01441_HASH}
 
 
 class BlockingLazyEngine(server.MockEngine):
@@ -606,8 +607,18 @@ class ObserverHttp(unittest.TestCase):
         unloaded = metrics()
         self.assertEqual(unloaded["state"], "unloaded")
         self.assertNotIn("load_elapsed_s", unloaded)
-        self.assertEqual(len(self.events("request_end")), 2)
-        self.assertTrue(all(event["outcome"] == "succeeded" for event in self.events("request_end")))
+        # Client threads can finish before the handler finally commits request_end
+        # and release(); wait for admission to drain (append happens before release).
+        deadline = time.monotonic() + 5
+        while self.journal.db.execute("SELECT COUNT(*) FROM active_requests WHERE service_id='fixture'").fetchone()[0]:
+            self.assertLess(time.monotonic(), deadline)
+            time.sleep(0.05)
+        ends = self.events("request_end")
+        while time.monotonic() < deadline and len(ends) < 2:
+            time.sleep(0.05)
+            ends = self.events("request_end")
+        self.assertEqual(len(ends), 2)
+        self.assertTrue(all(event["outcome"] == "succeeded" for event in ends))
         self.assertEqual(self.journal.db.execute("SELECT COUNT(*) FROM active_requests WHERE service_id='fixture'").fetchone()[0], 0)
 
     def test_reload_failure_clears_loading_and_preserves_request_error(self):

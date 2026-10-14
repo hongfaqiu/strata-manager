@@ -7,6 +7,11 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+- **上游升级兼容自动化**：观察器改为“已审查哈希快速通道 + 结构能力检测”，未审查的新版 Strata 结构兼容时自动完整统计（标注未审查），缺少可选能力时逐项降级，核心契约变化时关闭并改用公开 `/health` `/status` `/metrics` 监控；新增 0.1.44.1 已审查哈希。
+- 已审查清单统一到 `apps/supervisor/resources/observer_compat.json`，Python 运行时、Release ZIP 更新与测试共用；未审查源码不再阻止运行环境更新。
+- Linux MCP stdio 守护同样改为“已审查哈希 + 结构检测”，哈希统一来自 `observer_compat.json`；结构不兼容时给出明确拒绝原因（HTTP MCP 不受影响）。
+- 启动设置快捷表单读取已安装引擎的 `--help`，未列出的参数自动禁用并提示（已保存值不变）。
+- 运行环境页新增“用官方脚本更新 Strata”：调用安装目录内官方 `update.sh` / `UPDATE.bat` 并实时显示输出；有已修改的跟踪文件时拒绝执行，绝不强制。
 - 观察器兼容上游 Strata **0.1.44**（保留既有已审阅哈希；CI / 发版复用门禁同步）。
 - 模型下载设置：多卡图形选择器，以及仅生成命令的官方 `--calibrate` 入口（不执行真实校准）。
 - API 接入向导增加 **Cursor** 与 **Codex** 示例。
@@ -18,6 +23,11 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### English
 
+- **Upgrade compatibility automation**: the observer now uses reviewed hashes as a fast path plus structural capability detection. An unreviewed but compatible Strata is fully observed (labelled unreviewed), missing optional capabilities degrade individually, and a changed core contract disables it in favour of the public `/health` `/status` `/metrics` channel. Adds the reviewed 0.1.44.1 hash.
+- The reviewed list lives in `apps/supervisor/resources/observer_compat.json`, shared by the Python runtime, release ZIP updates and tests; an unreviewed source no longer blocks runtime updates.
+- The Linux MCP stdio guard uses the same reviewed-hash-or-structural rule from `observer_compat.json`, refusing incompatible sources with a clear reason (HTTP MCP unaffected).
+- The startup quick form reads the installed engine's `--help` and disables unlisted flags with a hint (saved values are kept).
+- The environment page adds "Update Strata with the official script": runs the installation's own `update.sh` / `UPDATE.bat` with streamed output, and refuses (never forces) when tracked files were changed.
 - Observer compatibility for upstream Strata **0.1.44** (keeps prior reviewed hashes; CI / release-reuse gates updated).
 - Model download settings: graphical multi-GPU selector and a copy-only official `--calibrate` entry (does not run real calibration).
 - API connection wizard examples for **Cursor** and **Codex**.

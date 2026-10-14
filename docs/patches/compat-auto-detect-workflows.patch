@@ -1,0 +1,190 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index d39cbbc..17bdf04 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -17,7 +17,7 @@ concurrency:
+ 
+ jobs:
+   observer-compatibility:
+-    name: Strata 0.1.43.1 observer (${{ matrix.runner }})
++    name: Strata observer (${{ matrix.runner }})
+     strategy:
+       fail-fast: false
+       matrix:
+@@ -25,7 +25,7 @@ jobs:
+     runs-on: ${{ matrix.runner }}
+     timeout-minutes: 10
+     env:
+-      STRATA_TEST_ROOT: ${{ github.workspace }}/.reference/strata-0.1.43.1
++      STRATA_TEST_ROOT: ${{ github.workspace }}/.reference/strata-ci
+     steps:
+       - uses: actions/checkout@v4
+       - uses: actions/setup-python@v5
+@@ -33,12 +33,12 @@ jobs:
+           python-version: '3.10'
+       - name: Preserve the verified upstream source bytes
+         run: git config --global core.autocrlf false
+-      - name: Check out the reviewed Strata 0.1.43.1 API fixture
++      - name: Check out the reviewed Strata API fixture (observer_compat.json ciFixture)
+         uses: actions/checkout@v4
+         with:
+           repository: Niko1221/Strata
+-          ref: a0116b2782a5b82622358c04a06496485d12b2d6
+-          path: .reference/strata-0.1.43.1
++          ref: 296b59d2f73c8f04a805df29c2fa97655adace78  # keep equal to observer_compat.json ciFixture.ref
++          path: .reference/strata-ci
+           persist-credentials: false
+       - name: Install MockEngine test dependencies only
+         run: python -m pip install jinja2==3.1.6 markupsafe==3.0.3
+@@ -54,11 +54,16 @@ jobs:
+           import strata_observer
+           source = Path(os.environ['STRATA_TEST_ROOT']) / 'serve/server.py'
+           digest = hashlib.sha256(source.read_bytes().replace(b'\r\n', b'\n')).hexdigest()
+-          expected = '6046f030abca250fd09f9a4fc95f5bb764d8420754acce049db2e4db77335bad'
+-          if digest != expected or digest not in strata_observer.SUPPORTED_HASHES:
+-              sys.exit('The reviewed Strata 0.1.43.1 source must exactly match its supported canonical hash.')
++          import json
++          compat = json.loads(Path('apps/supervisor/resources/observer_compat.json').read_text(encoding='utf-8'))
++          ref = compat['ciFixture']['ref']
++          entry = next(e for e in compat['reviewed'] if e['ref'] == ref)
++          if digest not in entry['serverPySha256'] or digest not in strata_observer.SUPPORTED_HASHES:
++              sys.exit('The CI fixture must match its reviewed canonical hash in observer_compat.json.')
++          if strata_observer.analyze_source(source.read_text(encoding='utf-8'))['mode'] != 'structural':
++              sys.exit('The reviewed CI fixture must also pass structural capability detection.')
+           PY
+-      - name: Verify all Strata 0.1.43.1 observer HTTP contracts without skips
++      - name: Verify all reviewed Strata observer HTTP contracts without skips
+         shell: bash
+         run: |
+           python - <<'PY'
+@@ -67,9 +72,16 @@ jobs:
+           suite = unittest.defaultTestLoader.discover('apps/supervisor/tests', pattern='test_strata_observer.py')
+           result = unittest.TextTestRunner(verbosity=2).run(suite)
+           if result.skipped:
+-              sys.exit('Every reviewed Strata 0.1.43.1 observer contract must execute; skipped tests are not compatibility evidence.')
++              sys.exit('Every reviewed Strata observer contract must execute; skipped tests are not compatibility evidence.')
+           sys.exit(0 if result.wasSuccessful() else 1)
+           PY
++      - name: Verify structural detection on every reviewed source and the public endpoint contract
++        shell: bash
++        env:
++          STRATA_REQUIRE_FIXTURES: '1'
++        run: |
++          python apps/supervisor/tests/test_observer_structure.py
++          python apps/supervisor/tests/test_public_endpoints.py
+ 
+   native-windows:
+     name: Windows native shard (${{ matrix.shard }}/3)
+diff --git a/.github/workflows/upstream-sentinel.yml b/.github/workflows/upstream-sentinel.yml
+new file mode 100644
+index 0000000..85af2ea
+--- /dev/null
++++ b/.github/workflows/upstream-sentinel.yml
+@@ -0,0 +1,57 @@
++name: Upstream Strata sentinel
++
++# Daily: check upstream main and the latest release against the observer contract.
++# A compatible new release opens a PR adding its reviewed hash; an incompatible
++# one opens an issue. Nothing is merged automatically.
++on:
++  schedule:
++    - cron: '17 3 * * *'
++  workflow_dispatch:
++
++permissions:
++  contents: write
++  pull-requests: write
++  issues: write
++
++jobs:
++  sentinel:
++    runs-on: ubuntu-22.04
++    timeout-minutes: 15
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-python@v5
++        with:
++          python-version: '3.10'
++      - run: python -m pip install jinja2==3.1.6 markupsafe==3.0.3
++      - name: Fetch the latest upstream release
++        id: latest
++        env:
++          GH_TOKEN: ${{ github.token }}
++        run: |
++          tag=$(gh api repos/Niko1221/Strata/releases/latest --jq .tag_name)
++          ref=$(gh api repos/Niko1221/Strata/commits/$tag --jq .sha)
++          echo "tag=$tag" >> "$GITHUB_OUTPUT"; echo "ref=$ref" >> "$GITHUB_OUTPUT"
++          git clone --depth 1 --branch "$tag" https://github.com/Niko1221/Strata .reference/strata-latest
++      - name: Structural and HTTP contracts against the latest release
++        id: check
++        env:
++          STRATA_TEST_ROOT: ${{ github.workspace }}/.reference/strata-latest
++          STRATA_CHECK_UPSTREAM_MAIN: '1'
++        run: |
++          python scripts/observer-sentinel.py "${{ steps.latest.outputs.tag }}" "${{ steps.latest.outputs.ref }}"
++      - name: Open a PR for a compatible unreviewed release
++        if: steps.check.outputs.result == 'added'
++        env:
++          GH_TOKEN: ${{ github.token }}
++        run: |
++          branch="sentinel/strata-${{ steps.latest.outputs.tag }}"
++          git config user.name github-actions; git config user.email github-actions@users.noreply.github.com
++          git checkout -b "$branch"; git commit -am "compat: review Strata ${{ steps.latest.outputs.tag }} observer source"
++          git push origin "$branch"
++          gh pr create --title "compat: Strata ${{ steps.latest.outputs.tag }} observer source" --body "Structural detection and the full MockEngine HTTP suite passed. Review the server.py diff before merging."
++      - name: Open an issue for an incompatible release
++        if: failure()
++        env:
++          GH_TOKEN: ${{ github.token }}
++        run: |
++          gh issue create --title "Strata ${{ steps.latest.outputs.tag }} breaks the observer contract" --body "See ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}. Analytics fall back to public endpoints until reviewed."
+diff --git a/scripts/release-from-ci.mjs b/scripts/release-from-ci.mjs
+index 88f5f5a..d891035 100644
+--- a/scripts/release-from-ci.mjs
++++ b/scripts/release-from-ci.mjs
+@@ -44,14 +44,15 @@ export const WINDOWS_SHARD_GATES = Object.freeze([
+ ]);
+ export const OBSERVER_GATES = Object.freeze([
+   'Preserve the verified upstream source bytes',
+-  'Check out the reviewed Strata 0.1.43.1 API fixture',
++  'Check out the reviewed Strata API fixture (observer_compat.json ciFixture)',
+   'Install MockEngine test dependencies only',
+   'Verify the reviewed source and observer compatibility',
+-  'Verify all Strata 0.1.43.1 observer HTTP contracts without skips',
++  'Verify all reviewed Strata observer HTTP contracts without skips',
++  'Verify structural detection on every reviewed source and the public endpoint contract',
+ ]);
+ export const OBSERVER_JOBS = Object.freeze([
+-  'Strata 0.1.43.1 observer (windows-latest)',
+-  'Strata 0.1.43.1 observer (ubuntu-22.04)',
++  'Strata observer (windows-latest)',
++  'Strata observer (ubuntu-22.04)',
+ ]);
+ const jobsByPlatform = {
+   windows: 'desktop (windows-latest, x86_64-pc-windows-msvc, nsis)',
+diff --git a/scripts/release-from-ci.test.mjs b/scripts/release-from-ci.test.mjs
+index 101cca5..04758d7 100644
+--- a/scripts/release-from-ci.test.mjs
++++ b/scripts/release-from-ci.test.mjs
+@@ -20,16 +20,17 @@ const makePlan = (version = '0.2.0') => createPlan({
+ });
+ const plan = makePlan();
+ // Independent expectations from the reviewed observer-compatibility matrix in ci.yml.
+-const observerJobs = ['Strata 0.1.43.1 observer (windows-latest)', 'Strata 0.1.43.1 observer (ubuntu-22.04)'];
++const observerJobs = ['Strata observer (windows-latest)', 'Strata observer (ubuntu-22.04)'];
+ const observerGates = [
+-  'Preserve the verified upstream source bytes', 'Check out the reviewed Strata 0.1.43.1 API fixture',
++  'Preserve the verified upstream source bytes', 'Check out the reviewed Strata API fixture (observer_compat.json ciFixture)',
+   'Install MockEngine test dependencies only', 'Verify the reviewed source and observer compatibility',
+-  'Verify all Strata 0.1.43.1 observer HTTP contracts without skips',
++  'Verify all reviewed Strata observer HTTP contracts without skips',
++  'Verify structural detection on every reviewed source and the public endpoint contract',
+ ];
+ test('observer compatibility expectations match the two-platform reviewed workflow and its named gates', async () => {
+   const workflow = (await readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')).replaceAll('\r\n', '\n');
+   const observer = workflow.slice(workflow.indexOf('\n  observer-compatibility:')).split('\n  native-windows:')[0];
+-  assert.ok(observer.includes('name: Strata 0.1.43.1 observer (${{ matrix.runner }})'));
++  assert.ok(observer.includes('name: Strata observer (${{ matrix.runner }})'));
+   assert.match(observer, /runner: \[windows-latest,\s*ubuntu-22\.04\]/);
+   for (const gate of observerGates) assert.ok(observer.includes('- name: ' + gate), gate);
+ });

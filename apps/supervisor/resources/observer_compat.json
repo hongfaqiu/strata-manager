@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "note": "Single source of truth for reviewed upstream Strata serve/server.py sources. Hashes are SHA-256 of the file with CRLF normalized to LF (legacy CRLF-byte hashes kept for 0.1.41). A reviewed hash is only a fast path: unknown sources are analysed structurally at import time (strata_observer.analyze_source) and observed or degraded per capability. mcpPySha256 lists reviewed serve/mcp.py sources for the Linux MCP stdio guard (strata_mcp_guard), which applies the same reviewed-or-structural rule.",
+  "reviewed": [
+    {
+      "version": "0.1.41",
+      "ref": "fb58e0dbc8399662c0e47c76578c6e878b14f6cf",
+      "serverPySha256": [
+        "017efa1f4e76d72396738555d13eb1f9898d1c1c12730cf046d9b267b29987e5",
+        "458612e929771181d4e5419dbff5bb6499b5e8fef29a5c42aa08824d4e1d9dbf"
+      ],
+      "review": "Baseline observer contracts.",
+      "mcpPySha256": [
+        "659c8e3c7db7d51c939870f843b2350f3efcf2ce8f1ff4b4372db4631e39b77f",
+        "e7440cf7d404f2a9d9ff44c7bb9768c3a6abf0f036bc222e17beaed65aabba06"
+      ]
+    },
+    {
+      "version": "0.1.42",
+      "ref": "61b3fb5dd3f1e8ec09cf7e4e05208bc6d3c46406",
+      "serverPySha256": [
+        "ce9266730b632e919ff93809ea6f9ecd6f91f12da19597a2d95a7edb29700dfa"
+      ],
+      "review": "Public run delegates to _run under a keep-awake finally block; event/done, request_stats and handler boundaries intact.",
+      "mcpPySha256": [
+        "659c8e3c7db7d51c939870f843b2350f3efcf2ce8f1ff4b4372db4631e39b77f"
+      ]
+    },
+    {
+      "version": "0.1.43",
+      "ref": "7695859aa13afb248bdb4d36f9b2e95707db079d",
+      "serverPySha256": [
+        "55ee9d1160f0da457cabe6f9dfea9884296b6d70fd3d14abd4ed42e6f79dd72b"
+      ],
+      "review": "Non-finite retry/error and native slot timings; single-request accounting and admission release preserved.",
+      "mcpPySha256": [
+        "659c8e3c7db7d51c939870f843b2350f3efcf2ce8f1ff4b4372db4631e39b77f"
+      ]
+    },
+    {
+      "version": "0.1.43.1",
+      "ref": "a0116b2782a5b82622358c04a06496485d12b2d6",
+      "serverPySha256": [
+        "6046f030abca250fd09f9a4fc95f5bb764d8420754acce049db2e4db77335bad"
+      ],
+      "review": "Optional _json headers, retryable 503s, preparation disconnects, native timings and FIFO release.",
+      "mcpPySha256": [
+        "659c8e3c7db7d51c939870f843b2350f3efcf2ce8f1ff4b4372db4631e39b77f"
+      ]
+    },
+    {
+      "version": "0.1.44",
+      "ref": "ed4773eb7c8f1f1531ba2bc70e0e1987de2661af",
+      "serverPySha256": [
+        "2aa0d2060766799be2ea7045dc13ca5bab2cec39ad5c29bc8a54d816ed246e7c"
+      ],
+      "review": "Same observer contracts as 0.1.43.1.",
+      "mcpPySha256": [
+        "659c8e3c7db7d51c939870f843b2350f3efcf2ce8f1ff4b4372db4631e39b77f"
+      ]
+    },
+    {
+      "version": "0.1.44.1",
+      "ref": "296b59d2f73c8f04a805df29c2fa97655adace78",
+      "serverPySha256": [
+        "6c45c639e28a873b854606719d9ce2bb2e0df666f105164e78e2735878b9aa8f"
+      ],
+      "review": "Engine crash classification and Responses reasoning_effort only; full MockEngine HTTP contract suite passes unchanged.",
+      "mcpPySha256": [
+        "659c8e3c7db7d51c939870f843b2350f3efcf2ce8f1ff4b4372db4631e39b77f"
+      ]
+    }
+  ],
+  "ciFixture": {
+    "version": "0.1.44.1",
+    "ref": "296b59d2f73c8f04a805df29c2fa97655adace78",
+    "fixturePath": ".reference/strata-0.1.44.1"
+  }
+}
