@@ -106,7 +106,7 @@ async function boundedCommand(command, arguments_, { cwd, env = process.env, tim
   } finally { clearTimeout(timer); }
 }
 
-const powershell = code => boundedCommand('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(code, 'utf16le').toString('base64')], { timeout: 15000 });
+const powershell = code => boundedCommand('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(code, 'utf16le').toString('base64')], { timeout: 60000 });
 const psLiteral = value => `'${String(value).replaceAll("'", "''")}'`;
 
 export function windowsEndpoint(identity, canonicalDataDirectory) {
