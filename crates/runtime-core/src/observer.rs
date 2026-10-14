@@ -5,6 +5,7 @@ use std::{
 };
 
 const OBSERVER: &str = include_str!("../../../apps/supervisor/resources/strata_observer.py");
+const COMPAT: &str = include_str!("../../../apps/supervisor/resources/observer_compat.json");
 const MCP_GUARD: &str = include_str!("../../../apps/supervisor/resources/strata_mcp_guard.py");
 const BOOTSTRAP: &str = "import strata_observer\nstrata_observer.install()\nimport strata_mcp_guard\nstrata_mcp_guard.install()\n";
 
@@ -13,6 +14,7 @@ pub fn install_bootstrap(data_dir: &Path) -> Result<PathBuf, String> {
     fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
     for (name, content) in [
         ("strata_observer.py", OBSERVER),
+        ("observer_compat.json", COMPAT),
         ("strata_mcp_guard.py", MCP_GUARD),
         ("sitecustomize.py", BOOTSTRAP),
     ] {
@@ -53,5 +55,10 @@ mod tests {
         assert!(fs::read_to_string(first.join("strata_observer.py"))
             .unwrap()
             .contains("SUPPORTED_HASHES"));
+        // The Python runtime reads its reviewed list from this sibling file.
+        let compat: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(first.join("observer_compat.json")).unwrap())
+                .unwrap();
+        assert!(compat["reviewed"].as_array().is_some_and(|v| !v.is_empty()));
     }
 }

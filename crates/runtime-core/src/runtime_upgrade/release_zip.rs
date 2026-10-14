@@ -21,8 +21,8 @@ const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS runtime_zip_updates(task_id TEX
 const MAX_SOURCE: u64 = 128 * 1024 * 1024;
 const MAX_EXPANDED: u64 = 3 * 1024 * 1024 * 1024;
 const RELEASE_MARKER: &str = ".strata-manager-release.json";
-const OBSERVER_SOURCE: &str =
-    include_str!("../../../../apps/supervisor/resources/strata_observer.py");
+const OBSERVER_COMPAT: &str =
+    include_str!("../../../../apps/supervisor/resources/observer_compat.json");
 
 mod download_check;
 mod download_source;
@@ -782,16 +782,25 @@ fn normalized_requirements(path: &Path) -> Result<Vec<String>, String> {
     rows.sort();
     Ok(rows)
 }
-fn verify_observer_source(server: &Path) -> Result<(), String> {
+/// Reviewed upstream `serve/server.py` hashes from the shared observer_compat.json.
+pub(crate) fn reviewed_observer_hashes() -> HashSet<String> {
+    serde_json::from_str::<Value>(OBSERVER_COMPAT)
+        .ok()
+        .and_then(|v| v.get("reviewed").cloned())
+        .and_then(|v| v.as_array().cloned())
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|e| e.get("serverPySha256").and_then(Value::as_array))
+        .flatten()
+        .filter_map(|h| h.as_str().map(str::to_owned))
+        .collect()
+}
+/// Whether the release source is a reviewed observer fast path. An unreviewed
+/// source no longer blocks the update: the observer analyses it structurally at
+/// import time and degrades or disables itself, leaving the API unchanged.
+fn verify_observer_source(server: &Path) -> Result<bool, String> {
     let hash = super::canonical_hash(server)?;
-    let supported = OBSERVER_SOURCE
-        .split_once("SUPPORTED_HASHES = {")
-        .and_then(|(_, rest)| rest.split_once('}').map(|(hashes, _)| hashes))
-        .ok_or("应用观察器兼容清单缺失")?;
-    if !supported.contains(&format!("\"{hash}\"")) && !supported.contains(&format!("'{hash}'")) {
-        return Err("此Release服务源码尚未通过本应用统计观察器兼容检查；请先更新Strata Manager再更新运行环境，当前服务未停止".into());
-    }
-    Ok(())
+    Ok(reviewed_observer_hashes().contains(&hash))
 }
 fn profiles(state: &RuntimeState, root: &Path) -> Result<Vec<ServiceProfile>, String> {
     Ok(state
@@ -1397,7 +1406,14 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
     let source_files = extract(&source, &work.join("source"), true, || {
         cancelled(&state, &j.task_id)
     })?;
-    verify_observer_source(&work.join("source/serve/server.py"))?;
+    if !verify_observer_source(&work.join("source/serve/server.py"))? {
+        progress(
+            &state,
+            j,
+            "extracting",
+            "此Release服务源码不在已审查清单中：统计观察器将在启动时按结构自动探测，必要时降级为公开接口监控",
+        )?;
+    }
     progress(
         &state,
         j,
@@ -2996,9 +3012,9 @@ mod tests {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        verify_observer_source(&destination.join("serve/server.py")).unwrap();
-        // Windows line endings represent the same reviewed code. Any source
-        // change, including a comment, still needs an explicit compatibility review.
+        assert!(verify_observer_source(&destination.join("serve/server.py")).unwrap());
+        // Windows line endings represent the same reviewed code. Any other source
+        // change leaves the reviewed fast path (structural detection then applies).
         let server_bytes = fs::read_to_string(destination.join("serve/server.py")).unwrap();
         let compatibility_fixture = temp.path().join("server-compatibility.py");
         fs::write(
@@ -3006,19 +3022,27 @@ mod tests {
             server_bytes.replace("\r\n", "\n").replace('\n', "\r\n"),
         )
         .unwrap();
-        verify_observer_source(&compatibility_fixture).unwrap();
+        assert!(verify_observer_source(&compatibility_fixture).unwrap());
         fs::write(
             &compatibility_fixture,
             format!("{server_bytes}\n# unreviewed source change\n"),
         )
         .unwrap();
-        assert!(verify_observer_source(&compatibility_fixture).is_err());
+        assert!(!verify_observer_source(&compatibility_fixture).unwrap());
         println!(
             "Official source archive validated: {} runtime leaves, {} serve leaves, {} web assets; source SHA256={}; server canonical SHA256={}",
             runtime_count, serve_count, web_count,
             installation::file_hash(&archive).unwrap(),
             super::super::canonical_hash(&destination.join("serve/server.py")).unwrap()
         );
+    }
+    #[test]
+    fn reviewed_hashes_come_from_the_shared_compat_file() {
+        let hashes = reviewed_observer_hashes();
+        // 0.1.44.1, plus every earlier reviewed source.
+        assert!(hashes.contains("6c45c639e28a873b854606719d9ce2bb2e0df666f105164e78e2735878b9aa8f"));
+        assert!(hashes.contains("2aa0d2060766799be2ea7045dc13ca5bab2cec39ad5c29bc8a54d816ed246e7c"));
+        assert!(hashes.len() >= 7 && hashes.iter().all(|h| h.len() == 64));
     }
     #[test]
     fn python_probe_accepts_standard_library_http_server_without_web_frameworks() {
@@ -3043,7 +3067,7 @@ mod tests {
         );
         fs::write(&server, "def invalid syntax:").unwrap();
         assert!(!run().status.success());
-        assert!(verify_observer_source(&server).is_err());
+        assert!(!verify_observer_source(&server).unwrap());
     }
     #[test]
     fn cross_root_service_registry_migrates_with_configuration_and_python_preserved_and_recovers() {

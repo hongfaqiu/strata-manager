@@ -224,6 +224,12 @@ export const localRuntimeInstallation = (): Promise<import('./installation-types
 /** Task logs use the existing read-only log source contract; no engine configuration is read. */
 export const readTaskLogs = (taskId: string, limit = 200): Promise<LogEntry[]> => readLogs({ id: taskId, name: '', baseUrl: 'http://127.0.0.1:8000', installDir: '', pythonPath: '', configPath: '', managed: false }, limit);
 export const updateRuntime = (profile: ServiceProfile): Promise<TaskStatus> => native('update_runtime', { profile });
+export interface OfficialUpdatePlan { script: string; gitClone: boolean; dirtyFiles: string[] }
+/** Upstream update.sh / UPDATE.bat: plan first (dirty tracked files are refused, never forced), then a streamed task. */
+export const officialUpdatePlan = (profile: ServiceProfile): Promise<OfficialUpdatePlan> => native('official_update_plan', { profile });
+export const officialUpdate = (profile: ServiceProfile): Promise<TaskStatus> => native('official_update', { profile });
+export interface EngineHelp { flags: string[]; source: string }
+export const engineHelpFlags = (profile: ServiceProfile): Promise<EngineHelp> => native('engine_help_flags', { profile });
 export const runtimeUpdateInfo = (force = false): Promise<import('./runtime-types').RuntimeUpdateInfo> => native('runtime_update_info', { force });
 /** Install the official matching Release ZIP and tag source, preserving models and configuration. */
 /** Service interruption is authorized only by the explicit update confirmation dialog. */

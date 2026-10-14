@@ -1,0 +1,137 @@
+{
+  "health": {
+    "api_key": false,
+    "image_generation": false,
+    "images": false,
+    "loaded": true,
+    "max_context": 32768,
+    "model": "qwen3.8-flash-next",
+    "service": "strata",
+    "status": "ok"
+  },
+  "metrics": {
+    "conversation_cache": {
+      "budget_mib": null,
+      "bytes": 0,
+      "enabled": false,
+      "evictions": 0,
+      "last_at": null,
+      "last_event": null,
+      "last_prompt": null,
+      "last_reused": null,
+      "last_tokens": null,
+      "parked": 0,
+      "parks": 0,
+      "prompt_tokens": 0,
+      "requests": 0,
+      "requests_reused": 0,
+      "restores": 0,
+      "reused_tokens": 0,
+      "slots": null
+    },
+    "engine": {
+      "images": false,
+      "max_context": 32768,
+      "model": "qwen3.8-flash-next"
+    },
+    "hardware": {
+      "cpu": 0.0,
+      "disk_read_mb": null,
+      "disk_write_mb": null,
+      "prefill_tok_s_mean": 0.0,
+      "ram_total": 16779780096,
+      "ram_used": 9947623424,
+      "tok_s": 0.0,
+      "tok_s_mean": 0
+    },
+    "hardware_static": {
+      "cores": 8,
+      "cpu_name": "Intel(R) Xeon(R) Processor",
+      "gpu_count": 1,
+      "gpu_name": null,
+      "gpu_note": null,
+      "gpu_vram_total_mib": null,
+      "psutil": true,
+      "threads": 8
+    },
+    "history": {
+      "cpu": [
+        0.0
+      ],
+      "disk_read_mb": [
+        null
+      ],
+      "gpu_mem_used": [
+        null
+      ],
+      "gpu_pcie_rx_mb": [
+        null
+      ],
+      "gpu_power": [
+        null
+      ],
+      "gpu_temp": [
+        null
+      ],
+      "gpu_util": [
+        null
+      ],
+      "prefill_tok_s_mean": [
+        0.0
+      ],
+      "ram_used": [
+        9947623424
+      ],
+      "tok_s": [
+        0.0
+      ]
+    },
+    "live": {
+      "elapsed_s": null,
+      "generated": null,
+      "max_tokens": null,
+      "phase": null,
+      "prefill_tok_s_mean": null,
+      "prompt_read": null,
+      "prompt_tokens": null,
+      "prompt_total": null,
+      "queued": 0,
+      "state": "idle",
+      "tok_s": null,
+      "tok_s_mean": null,
+      "tok_s_window_s": null
+    },
+    "requests": [],
+    "requests_kept": 0,
+    "time": 1791965203.197795,
+    "totals": {
+      "decode_ms": 0.0,
+      "drafts_accepted": 0,
+      "drafts_offered": 0,
+      "output_tokens": 0,
+      "prompt_ms": 0.0,
+      "prompt_tokens": 0,
+      "requests": 0,
+      "reused": 0,
+      "since": 1791965203.1606781
+    }
+  },
+  "source": "upstream MockEngine at strata-0.1.44.1",
+  "statusBusy": {
+    "busy": true,
+    "elapsed_s": 0.0,
+    "generated": 0,
+    "max_tokens": 64,
+    "phase": "reading the prompt",
+    "prompt_tokens": 246,
+    "queued": 0,
+    "reasoning_recoveries": 0,
+    "tail": "",
+    "thinking_budget": null,
+    "tool": null
+  },
+  "statusIdle": {
+    "busy": false,
+    "queued": 0
+  }
+}

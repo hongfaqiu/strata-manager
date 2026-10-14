@@ -31,31 +31,75 @@ import weakref
 from urllib.parse import parse_qs, urlsplit
 
 SCHEMA_VERSION = 1
-SUPPORTED_HASHES = {
-    # Niko1221/Strata fb58e0dbc8399662c0e47c76578c6e878b14f6cf (0.1.41).
-    # Canonical LF and the same Windows autocrlf checkout are equivalent code.
-    "017efa1f4e76d72396738555d13eb1f9898d1c1c12730cf046d9b267b29987e5",
-    "458612e929771181d4e5419dbff5bb6499b5e8fef29a5c42aa08824d4e1d9dbf",
-    # Niko1221/Strata 61b3fb5dd3f1e8ec09cf7e4e05208bc6d3c46406 (0.1.42),
-    # canonical LF. Verified against the tagged server with real MockEngine HTTP
-    # tests: public run now delegates to _run under a keep-awake finally block;
-    # event/done, request_stats and handler instrumentation boundaries are intact.
-    "ce9266730b632e919ff93809ea6f9ecd6f91f12da19597a2d95a7edb29700dfa",
-    # Niko1221/Strata 7695859 (0.1.43), canonical LF. Reviewed non-finite
-    # retry/error and native slot-timing changes; real MockEngine HTTP tests
-    # preserve single-request accounting, timings and admission release.
-    "55ee9d1160f0da457cabe6f9dfea9884296b6d70fd3d14abd4ed42e6f79dd72b",
-    # Niko1221/Strata a0116b2782a5b82622358c04a06496485d12b2d6 (0.1.43.1),
-    # canonical LF. Real MockEngine HTTP tests verify optional _json headers,
-    # retryable 503s with/without temporary capture, preparation disconnects,
-    # non-finite retry accounting, native timings and admission/FIFO release.
-    "6046f030abca250fd09f9a4fc95f5bb764d8420754acce049db2e4db77335bad",
-    # Niko1221/Strata ed4773eb7c8f1f1531ba2bc70e0e1987de2661af (0.1.44),
-    # canonical LF. Same observer contracts as 0.1.43.1 for _json headers,
-    # retryable 503s, preparation disconnects, timings and admission/FIFO;
-    # release notes keep default-model answers byte-identical to 0.1.43.1.
-    "2aa0d2060766799be2ea7045dc13ca5bab2cec39ad5c29bc8a54d816ed246e7c",
-}
+COMPAT_FILE = Path(__file__).with_name("observer_compat.json")
+
+
+def _load_reviewed_hashes(path=COMPAT_FILE):
+    """Reviewed upstream server.py hashes from observer_compat.json (the single source of truth).
+
+    A missing or damaged file only removes the reviewed fast path; unknown sources
+    are still analysed structurally, so analytics never depends on this list alone."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        return frozenset(h for entry in data.get("reviewed", []) for h in entry.get("serverPySha256", [])
+                         if isinstance(h, str) and re.fullmatch(r"[0-9a-f]{64}", h))
+    except (OSError, ValueError, AttributeError, TypeError):
+        return frozenset()
+
+
+SUPPORTED_HASHES = _load_reviewed_hashes()
+
+# Structural contract the observer wraps. Each capability lists (owner, method, accepted signatures).
+_RUN_ARGS = "self, ids, thinking, tools, max_new, sampling, cancel, force=None"
+CORE_SERVICE = {"run": {_RUN_ARGS}, "_note": {"self, n, evs, st=None, rate=None"},
+                "begin_request": {"self, path, req"}}
+CORE_HANDLER = {"do_POST": {"self"}, "do_GET": {"self"}, "send_response": {"self, code, message=None"},
+                "_note": {"self, **values"}, "_json": {"self, code, obj", "self, code, obj, headers=None"},
+                "_capture": {"self, items, api"}}
+OPTIONAL = ("load_state", "expert_stats", "mcp")
+
+
+def _methods(node):
+    return {n.name: ast.unparse(n.args) for n in node.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+
+
+def analyze_source(source):
+    """Classify an upstream serve/server.py without importing or running it.
+
+    Returns {"mode": "structural"|"partial"|"disabled", "capabilities": {...}, "missing": [...]}.
+    core = request accounting (Service.run/_note/begin_request and the HTTP handler
+    methods with the exact signatures the wrappers forward). Optional capabilities
+    degrade one by one; a missing core disables the observer (public endpoints remain)."""
+    try:
+        module = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return {"mode": "disabled", "capabilities": {"core": False, **{k: False for k in OPTIONAL}}, "missing": ["parse"]}
+    top = {n.name: n for n in module.body if isinstance(n, (ast.ClassDef, ast.FunctionDef))}
+    missing = []
+    service = top.get("Service")
+    service_methods = _methods(service) if isinstance(service, ast.ClassDef) else {}
+    for name, accepted in CORE_SERVICE.items():
+        if service_methods.get(name) not in accepted:
+            missing.append("Service." + name)
+    factory = top.get("make_handler")
+    handler = next((n for n in factory.body if isinstance(n, ast.ClassDef)), None) if isinstance(factory, ast.FunctionDef) else None
+    handler_methods = _methods(handler) if handler is not None else {}
+    for name, accepted in CORE_HANDLER.items():
+        if handler_methods.get(name) not in accepted:
+            missing.append("Handler." + name)
+    routes_present = all(repr(route)[1:-1] in source for route in ROUTES)
+    if not routes_present:
+        missing.append("routes")
+    core = not missing
+    caps = {"core": core,
+            "load_state": "ensure_loaded" in service_methods and "metrics" in service_methods,
+            "expert_stats": isinstance(top.get("request_stats"), ast.FunctionDef),
+            "mcp": isinstance(top.get("run_with_mcp"), ast.FunctionDef)}
+    missing += [k for k in OPTIONAL if not caps[k]]
+    mode = "disabled" if not core else "structural" if all(caps[k] for k in OPTIONAL) else "partial"
+    return {"mode": mode, "capabilities": caps, "missing": missing}
+
+
 ROUTES = {"/v1/chat/completions": "chat", "/v1/responses": "responses",
           "/v1/messages": "anthropic", "/v1/messages/count_tokens": "token_count"}
 MODEL_CONTROL_ROUTES = {"/load", "/unload", "/settings", "/config",
@@ -209,7 +253,8 @@ class Journal:
                   "pid": os.getpid(), "updatedAtMs": int(time.time()*1000),
                   "supported": bool(supported), "sourceHash": source_hash,
                   "error": error, "journalWriteFailed": self.failed,
-                  "observerActive": bool(supported) and not self.failed and not self.closed}
+                  "observerActive": bool(supported) and not self.failed and not self.closed,
+                  "observerMode": getattr(self, "mode", None), "capabilities": getattr(self, "capabilities", None)}
         try:
             temp = self.status_path.with_suffix(".tmp")
             temp.write_text(json.dumps(record, separators=(",", ":")), encoding="utf-8")
@@ -448,7 +493,7 @@ class RequestCapture:
         return True
 
 
-def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=False):
+def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=False, analysis=None):
     """Executed immediately before the official module's main guard."""
     global _journal
     if namespace.get("_strata_manager_instrumented"):
@@ -459,23 +504,37 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
         journal = _journal
     if journal is None:
         return
-    supported = source_hash in SUPPORTED_HASHES or allow_fixture
-    supported &= service is not None and callable(make_handler) and all(
+    reviewed = source_hash in SUPPORTED_HASHES or allow_fixture
+    if reviewed:
+        mode, caps = "reviewed", {"core": True, **{k: True for k in OPTIONAL}}
+    else:
+        analysis = analysis if isinstance(analysis, dict) else {"mode": "disabled", "capabilities": {}}
+        mode = analysis.get("mode") if analysis.get("mode") in ("structural", "partial") else "disabled"
+        caps = {k: bool(analysis.get("capabilities", {}).get(k)) for k in ("core", *OPTIONAL)}
+    runtime_ok = service is not None and callable(make_handler) and all(
         callable(getattr(service, name, None)) for name in ("run", "_note", "begin_request"))
+    if not runtime_ok:
+        mode, caps = "disabled", {k: False for k in ("core", *OPTIONAL)}
+    supported = mode != "disabled"
+    journal.mode, journal.capabilities = mode, caps
     journal.status(supported, source_hash, None if supported else "unsupported_runtime")
     journal.append("session_start", {"sessionId": journal.session_id, "serviceId": journal.service_id,
                     "startedAtMs": int(time.time()*1000), "supported": bool(supported),
-                    "sourceHash": source_hash})
+                    "sourceHash": source_hash, "observerMode": mode})
     if not supported:
-        print("[strata-manager] this Strata version is not verified for analytics; API remains unchanged",
-              file=sys.stderr, flush=True)
+        print("[strata-manager] this Strata version does not match the observer contract; analytics are off, "
+              "public /health /status /metrics remain and the API is unchanged", file=sys.stderr, flush=True)
         return
+    if mode != "reviewed":
+        print("[strata-manager] unreviewed Strata source: analytics run in %s mode (%s)"
+              % (mode, ", ".join(k for k in OPTIONAL if not caps[k]) or "all capabilities present"),
+              file=sys.stderr, flush=True)
     namespace["_strata_manager_instrumented"] = True
     original_run, original_note, original_begin = service.run, service._note, service.begin_request
 
     original_load = getattr(service, "ensure_loaded", None)
     original_metrics = getattr(service, "metrics", None)
-    if callable(original_load) and callable(original_metrics):
+    if caps["load_state"] and callable(original_load) and callable(original_metrics):
         # ensure_loaded runs under the upstream FIFO. Observe the actual load,
         # rather than requests waiting for it or an idle, unloaded engine. Keep
         # this metadata independent of optional request-body capture and of the
@@ -522,7 +581,7 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
         service.ensure_loaded, service.metrics = observed_load, observed_metrics
 
     original_stats = namespace.get("request_stats")
-    if callable(original_stats):
+    if caps["expert_stats"] and callable(original_stats):
         @functools.wraps(original_stats)
         def observed_stats(segments):
             values = original_stats(segments)
@@ -648,7 +707,7 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
 
     service.run, service._note, service.begin_request = run, note, begin
     original_mcp = namespace.get("run_with_mcp")
-    if callable(original_mcp):
+    if caps["mcp"] and callable(original_mcp):
         @functools.wraps(original_mcp)
         def mcp(*args, **kwargs):
             generator = original_mcp(*args, **kwargs)
@@ -903,7 +962,9 @@ class _ObservedLoader(importlib.abc.Loader):
         filename = self.loader.get_filename(fullname)
         digest = hashlib.sha256(Path(filename).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
         tree = ast.parse(source, filename)
-        hook = ast.parse("__import__('strata_observer').instrument_globals(globals(), source_hash=" + repr(digest) + ")").body[0]
+        analysis = None if digest in SUPPORTED_HASHES else analyze_source(source)
+        hook = ast.parse("__import__('strata_observer').instrument_globals(globals(), source_hash="
+                         + repr(digest) + ", analysis=" + repr(analysis) + ")").body[0]
         # Inject before the guard, after Service/make_handler definitions, keeping
         # -m argv and upstream __name__/__file__/relative imports unchanged.
         index = next((i for i, node in enumerate(tree.body) if isinstance(node, ast.If)
