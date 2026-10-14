@@ -7,6 +7,7 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+- **官网改版**：落地页信息层级重做，去掉版本日期杂讯，精简功能与截图区，保留中英切换、GitHub Releases 下载与 SHA256SUMS；深浅色主题继续可用。
 - 观察器兼容上游 Strata **0.1.44**（保留既有已审阅哈希；CI / 发版复用门禁同步）。
 - 模型下载设置：多卡图形选择器，以及仅生成命令的官方 `--calibrate` 入口（不执行真实校准）。
 - API 接入向导增加 **Cursor** 与 **Codex** 示例。
@@ -18,6 +19,7 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### English
 
+- **Website redesign**: clearer landing hierarchy, less version-dated clutter, shorter features and gallery; keeps bilingual switch, GitHub Releases downloads and SHA256SUMS; dark/light themes still work.
 - Observer compatibility for upstream Strata **0.1.44** (keeps prior reviewed hashes; CI / release-reuse gates updated).
 - Model download settings: graphical multi-GPU selector and a copy-only official `--calibrate` entry (does not run real calibration).
 - API connection wizard examples for **Cursor** and **Codex**.
