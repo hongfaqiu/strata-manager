@@ -6,7 +6,7 @@ import { normalizeBaseUrl, type BackgroundHealthSnapshot, type JsonObject, type 
 import { Badge, Panel } from '../components';
 import { ApiIntegrationDialog } from '../ApiIntegrationDialog';
 import './overview.css';
-import { OverviewComputeIllustration, OverviewMetricCards, OverviewResourceMeter } from './OverviewVisuals';
+import { OverviewComputeIllustration, OverviewMetricCards, OverviewResourceMeter, type OverviewArtState } from './OverviewVisuals';
 
 interface OverviewPageProps {
   profile?:ServiceProfile;health:JsonObject;backgroundHealth?:BackgroundHealthSnapshot;metric?:MetricSnapshot;process?:ProcessStatus;tasks:TaskStatus[];language:AppLanguage;
@@ -19,9 +19,18 @@ interface OverviewPageProps {
 }
 const obj=(v:unknown):JsonObject=>v&&typeof v==='object'&&!Array.isArray(v)?v as JsonObject:{};
 const num=(v:unknown):number|null=>typeof v==='number'&&Number.isFinite(v)?v:null;
+const deriveArtState = (profile: ServiceProfile | undefined, online: boolean, connecting: boolean, metric: MetricSnapshot | undefined, setupPending = false): OverviewArtState => {
+  if (!profile) return setupPending ? 'connecting' : 'disconnected';
+  if (!online) return connecting ? 'connecting' : 'disconnected';
+  const live = obj(metric?.raw.live);
+  if (metric?.state === 'loading' || metric?.state === 'unloading' || metric?.state === 'unloaded') return metric.state;
+  if (Number(live.queued) > 0) return 'queued';
+  if (metric?.state === 'generating' || metric?.state === 'reading' || metric?.state === 'idle') return metric.state;
+  return online ? 'idle' : 'disconnected';
+};
 const overviewLabels = {
-  'zh-CN': { images: '图像支持', enabled: '已启用', disabled: '未启用', background: '后台检查', noCheck: '尚无检查记录', newProcess: '当前进程未检查', pending: '尚未完成检查', expired: '检查记录已过期', invalidTime: '检查时间待核验', deferred: '检查已延后', configuration: '运行配置', models: '模型管理' },
-  en: { images: 'Image support', enabled: 'Enabled', disabled: 'Not enabled', background: 'Background check', noCheck: 'No check recorded', newProcess: 'Current process not checked', pending: 'No completed check', expired: 'Check record expired', invalidTime: 'Check time unverified', deferred: 'Check deferred', configuration: 'Configuration', models: 'Manage models' },
+  'zh-CN': { images: '图像支持', enabled: '已启用', disabled: '未启用', background: '后台检查', noCheck: '尚无检查记录', newProcess: '当前进程未检查', pending: '尚未完成检查', expired: '检查记录已过期', invalidTime: '检查时间待核验', deferred: '检查已延后', configuration: '运行配置', models: '模型管理', waitingService: '等待配置服务', waitingHint: '启用模型后，这里会显示实时负载、资源与近期请求。' },
+  en: { images: 'Image support', enabled: 'Enabled', disabled: 'Not enabled', background: 'Background check', noCheck: 'No check recorded', newProcess: 'Current process not checked', pending: 'No completed check', expired: 'Check record expired', invalidTime: 'Check time unverified', deferred: 'Check deferred', configuration: 'Configuration', models: 'Manage models', waitingService: 'Waiting for a service', waitingHint: 'After you enable a model, live load, resources, and recent requests appear here.' },
 } as const;
 const startupLabels = {
   'zh-CN': {
@@ -63,21 +72,32 @@ export function OverviewPage({profile,health,backgroundHealth,metric,process,tas
     : !backgroundHealth ? labels.noCheck : !backgroundForProcess ? labels.newProcess
     : backgroundForProcess.checkedAt <= 0 ? labels.pending : backgroundAge! < 0 ? labels.invalidTime : labels.expired;
   const imageSupport = online && typeof health.images === 'boolean' ? health.images ? labels.enabled : labels.disabled : t('unknown');
+  const hasLiveMetrics = !!metric;
+  const hasRequests = (metric?.requests.length ?? 0) > 0;
+  const artState = deriveArtState(profile, online, connecting, metric, setupPending);
   const jump=(page:'monitoring'|'config'|'tasks'|'requests'|'profiles',label:string)=> <button type="button" className="text-button overview-panel-link" onClick={()=>onNavigate(page)}>{label}<ArrowRight size={14} aria-hidden="true"/></button>;
-  return <div className="overview-page">
+  const emptyPrimary = (
+    <button type="button" className="primary" disabled={startupDisabled||startupBusy||setupPending} aria-busy={startupBusy||setupPending} onClick={setupError&&!startupModel?onRefresh:startupModel?startupModel.onStart:!desktop||hasRuntime&&!runtimeNeedsRepair?onCreateProfile:()=>onNavigate('environment')}>
+      {startupBusy||setupPending?<LoaderCircle size={15} className="spin"/>:startupModel?<Play size={15}/>:<ArrowRight size={15}/>}{startupBusy?startup.starting:setupPending?t('loading'):setupError&&!startupModel?t('refresh'):startupModel?startup.start:!desktop||hasRuntime&&!runtimeNeedsRepair?startup.choose:runtimeNeedsRepair?startup.repair:startup.install}
+    </button>
+  );
+  return <div className={`overview-page${!profile ? ' overview-page--empty' : ''}${profile && !hasLiveMetrics ? ' overview-page--quiet' : ''}`}>
     {!profile?<section className="service-hero overview-service overview-service-empty" aria-label={t('service')}>
       <div className="overview-service-main"><div className="hero-icon"><Server size={28} strokeWidth={1.5}/></div><div className="hero-copy">
         <div className="overview-service-title"><h2>{!desktop?t('noProfile'):setupPending?startup.checkingTitle:startupModel?startup.title:hasRuntime?startup.chooseTitle:startup.installTitle}</h2><Badge tone={hasRuntime?'positive':'muted'}>{hasRuntime?startup.runtime:t('offline')}</Badge></div>
         <p className="overview-setup-hint">{!desktop?t('noProfileHint'):setupPending?startup.checkingHint:startupModel?startupModel.lastActivatedAt?startup.recentHint:startup.modelHint:runtimeNeedsRepair?startup.repairHint:hasRuntime?startup.chooseHint:startup.installHint}</p>
         {startupModel&&<><div className="overview-service-model"><span>{t('model')}</span><strong>{startupModel.name}</strong><Badge>{startupModel.lastActivatedAt?startup.recent:startup.available}</Badge></div><div className="overview-service-endpoint"><code data-tooltip={startupModel.configPath}>{startupModel.configPath.split(/[\\/]/).pop()}</code>{startupModel.lastActivatedAt&&<time dateTime={new Date(startupModel.lastActivatedAt).toISOString()}>{new Date(startupModel.lastActivatedAt).toLocaleString(language)}</time>}</div></>}
       </div></div>
-      <OverviewComputeIllustration />
-      <div className="hero-controls"><div className="service-actions">
-        <button type="button" className="primary" disabled={startupDisabled||startupBusy||setupPending} aria-busy={startupBusy||setupPending} onClick={setupError&&!startupModel?onRefresh:startupModel?startupModel.onStart:!desktop||hasRuntime&&!runtimeNeedsRepair?onCreateProfile:()=>onNavigate('environment')}>
-          {startupBusy||setupPending?<LoaderCircle size={15} className="spin"/>:startupModel?<Play size={15}/>:<ArrowRight size={15}/>}{startupBusy?startup.starting:setupPending?t('loading'):setupError&&!startupModel?t('refresh'):startupModel?startup.start:!desktop||hasRuntime&&!runtimeNeedsRepair?startup.choose:runtimeNeedsRepair?startup.repair:startup.install}
-        </button>
-      </div></div>
-      <div className="overview-service-footer"><div className="overview-shortcuts" role="group" aria-label={t('quickActions')}><button type="button" className="overview-shortcut overview-shortcut-models" onClick={onCreateProfile}><Boxes size={15} aria-hidden="true"/>{labels.models}</button><button type="button" className="overview-shortcut overview-shortcut-api" disabled data-tooltip={language==='zh-CN'?'启用模型后可接入 API':'Enable a model to connect to its API'}><Plug size={15} aria-hidden="true"/>{language==='zh-CN'?'接入 API':'Connect API'}</button><button type="button" className="overview-shortcut" onClick={()=>onNavigate('environment')}><Server size={15} aria-hidden="true"/>Strata</button></div><button type="button" className="overview-refresh" onClick={onRefresh} aria-label={t('refresh')} data-tooltip={t('refresh')}><RefreshCw size={15} aria-hidden="true"/></button></div>
+      <OverviewComputeIllustration status={artState} />
+      <div className="overview-service-cta" role="group" aria-label={t('quickActions')}>
+        <div className="overview-service-cta-primary">{emptyPrimary}</div>
+        <div className="overview-shortcuts overview-shortcuts-inline">
+          <button type="button" className="overview-shortcut overview-shortcut-models" onClick={onCreateProfile}><Boxes size={15} aria-hidden="true"/>{labels.models}</button>
+          <button type="button" className="overview-shortcut overview-shortcut-api" disabled data-tooltip={language==='zh-CN'?'启用模型后可接入 API':'Enable a model to connect to its API'}><Plug size={15} aria-hidden="true"/>{language==='zh-CN'?'接入 API':'Connect API'}</button>
+          <button type="button" className="overview-shortcut" onClick={()=>onNavigate('environment')}><Server size={15} aria-hidden="true"/>Strata</button>
+        </div>
+        <button type="button" className="overview-refresh" onClick={onRefresh} aria-label={t('refresh')} data-tooltip={t('refresh')}><RefreshCw size={15} aria-hidden="true"/></button>
+      </div>
       {setupError&&<div className="notice error" role="alert">{setupError}</div>}
     </section>:<>
       <section className="service-hero overview-service" aria-label={t('service')}>
@@ -86,7 +106,7 @@ export function OverviewPage({profile,health,backgroundHealth,metric,process,tas
           <div className="overview-service-model"><span>{t('model')}</span><strong>{String(health.model??engine.model??'–')}</strong><Badge>{modelState}</Badge></div>
           <div className="overview-service-endpoint"><code>{endpoint}</code><button type="button" onClick={()=>onCopy(endpoint)}><Copy size={14}/>{language==='zh-CN'?'复制 API 地址':'Copy API address'}</button></div>
         </div></div>
-        <OverviewComputeIllustration />
+        <OverviewComputeIllustration status={artState} />
         <div className="hero-controls">{controls}</div>
         <div className="overview-service-facts">
           <div><span>{t('status')}</span><strong>{metric?stateLabel(metric.state):'–'}</strong></div>
@@ -110,10 +130,46 @@ export function OverviewPage({profile,health,backgroundHealth,metric,process,tas
       </section>
     </>}
       {apiIntegrationOpen && profile && <ApiIntegrationDialog key={`api-integration-${profile.id}`} profile={profile} model={typeof health.model==='string'?health.model:typeof engine.model==='string'?engine.model:undefined} online={online} loaded={health.loaded===true} keyRequired={online&&typeof health.api_key==='boolean'?health.api_key:undefined} language={language} onCopy={onCopy} onClose={()=>setApiIntegrationOpen(false)}/>}
-      {usage}
-      <OverviewMetricCards metric={metric} language={language}/>
-      <div className="overview-grid"><Panel title={t('resourcesSummary')} action={jump('monitoring',t('openMonitor'))}>{metricsError&&<div className="notice error" role="alert">{metricsError}</div>}<div className="overview-resource-meters"><OverviewResourceMeter label={t('contextUsage')} used={contextUsed} total={capacity} units="tokens" language={language}/><OverviewResourceMeter label={t('gpuMemory')} used={metric?.gpuMemoryUsed} total={metric?.gpuMemoryTotal} tone="blue" language={language}/><OverviewResourceMeter label={t('ram')} used={metric?.ramUsed} total={metric?.ramTotal} language={language}/></div><div className="overview-resource-facts"><div><span>{t('cpuUtil')}</span><strong>{fmt(metric?.cpuUtil)} %</strong></div><div><span>{t('gpuTemperature')}</span><strong>{fmt(metric?.gpuTemperature)} °C</strong></div><div><span>{t('gpuPower')}</span><strong>{fmt(metric?.gpuPower)} W</strong></div><div><span>{t('prefill')}</span><strong>{fmt(metric?.prefillTokS)} tok/s</strong></div></div></Panel>
-      <Panel title={t('runningTasks')} action={jump('tasks',t('viewAllTasks'))}>{taskError&&<div className="notice error" role="alert">{taskError}</div>}{running.length?<div className="overview-task-list">{running.map(task=><button key={task.id} onClick={()=>onNavigate('tasks')}><div><strong>{t(task.kind.includes('setup')?'setupTask':task.kind.includes('install')?'installTask':task.kind.includes('update')?'updateTask':'task')}</strong><time>{new Date(task.startedAt).toLocaleTimeString(language)}</time></div><span>{task.message||stateLabel(task.state)}</span></button>)}</div>:<p className="subtle">{t(!desktop?'nativeRequired':tasksLoading?'loading':taskError?'unavailable':'noRunningTasks')}</p>}</Panel></div>
-      <Panel title={t('requestsRecent')} action={jump('requests',t('requests'))}>{metric?.requests.length?<div className="table-wrap"><table className="st-table overview-requests"><thead><tr><th>{t('timestamp')}</th><th>{t('promptTokens')}</th><th>{t('outputTokens')}</th><th>{t('decode')}</th><th>{t('finishReason')}</th></tr></thead><tbody>{metric.requests.slice(0,6).map((request,index)=><tr key={String(request.id??index)}><td>{num(request.time)!==null?new Date(num(request.time)!*1000).toLocaleTimeString(language):'–'}</td><td>{fmt(request.prompt_tokens,0)}</td><td>{fmt(request.output_tokens,0)}</td><td>{fmt(request.decode_tok_s)} tok/s</td><td>{request.finish===undefined?'–':t(({stop:'stoppedFinish',length:'lengthFinish',cancelled:'cancelledFinish',tool_calls:'toolCallsFinish'} as Record<string,string>)[String(request.finish)]??'unknown')}</td></tr>)}</tbody></table></div>:<p className="subtle">{t(!metric?'noMetrics':'overviewRequestsEmpty')}</p>}</Panel>
+      {!profile ? (
+        <div className="overview-waiting-strip" role="status">
+          <span className="overview-waiting-dot" aria-hidden="true"/>
+          <div>
+            <strong>{labels.waitingService}</strong>
+            <p>{labels.waitingHint}</p>
+          </div>
+        </div>
+      ) : (
+        <>
+          {usage}
+          <div className={`overview-dashboard-band${!hasLiveMetrics ? ' is-empty' : ''}`}>
+            <OverviewMetricCards metric={metric} language={language}/>
+          </div>
+          <div className="overview-grid">
+            <Panel title={t('resourcesSummary')} action={jump('monitoring',t('openMonitor'))}>
+              {metricsError&&<div className="notice error" role="alert">{metricsError}</div>}
+              <div className="overview-resource-meters">
+                <OverviewResourceMeter label={t('contextUsage')} used={contextUsed} total={capacity} units="tokens" language={language}/>
+                <OverviewResourceMeter label={t('gpuMemory')} used={metric?.gpuMemoryUsed} total={metric?.gpuMemoryTotal} tone="blue" language={language}/>
+                <OverviewResourceMeter label={t('ram')} used={metric?.ramUsed} total={metric?.ramTotal} language={language}/>
+              </div>
+              <div className="overview-resource-facts">
+                <div><span>{t('cpuUtil')}</span><strong>{fmt(metric?.cpuUtil)} %</strong></div>
+                <div><span>{t('gpuTemperature')}</span><strong>{fmt(metric?.gpuTemperature)} °C</strong></div>
+                <div><span>{t('gpuPower')}</span><strong>{fmt(metric?.gpuPower)} W</strong></div>
+                <div><span>{t('prefill')}</span><strong>{fmt(metric?.prefillTokS)} tok/s</strong></div>
+              </div>
+            </Panel>
+            <Panel title={t('runningTasks')} action={jump('tasks',t('viewAllTasks'))}>
+              {taskError&&<div className="notice error" role="alert">{taskError}</div>}
+              {running.length?<div className="overview-task-list">{running.map(task=><button key={task.id} onClick={()=>onNavigate('tasks')}><div><strong>{t(task.kind.includes('setup')?'setupTask':task.kind.includes('install')?'installTask':task.kind.includes('update')?'updateTask':'task')}</strong><time>{new Date(task.startedAt).toLocaleTimeString(language)}</time></div><span>{task.message||stateLabel(task.state)}</span></button>)}</div>:<p className="subtle">{t(!desktop?'nativeRequired':tasksLoading?'loading':taskError?'unavailable':'noRunningTasks')}</p>}
+            </Panel>
+          </div>
+          {(hasRequests || online) && (
+            <Panel title={t('requestsRecent')} action={jump('requests',t('requests'))} className={!hasRequests ? 'overview-panel-quiet' : undefined}>
+              {hasRequests?<div className="table-wrap"><table className="st-table overview-requests"><thead><tr><th>{t('timestamp')}</th><th>{t('promptTokens')}</th><th>{t('outputTokens')}</th><th>{t('decode')}</th><th>{t('finishReason')}</th></tr></thead><tbody>{metric!.requests.slice(0,6).map((request,index)=><tr key={String(request.id??index)}><td>{num(request.time)!==null?new Date(num(request.time)!*1000).toLocaleTimeString(language):'–'}</td><td>{fmt(request.prompt_tokens,0)}</td><td>{fmt(request.output_tokens,0)}</td><td>{fmt(request.decode_tok_s)} tok/s</td><td>{request.finish===undefined?'–':t(({stop:'stoppedFinish',length:'lengthFinish',cancelled:'cancelledFinish',tool_calls:'toolCallsFinish'} as Record<string,string>)[String(request.finish)]??'unknown')}</td></tr>)}</tbody></table></div>:<p className="subtle">{t(!metric?'noMetrics':'overviewRequestsEmpty')}</p>}
+            </Panel>
+          )}
+        </>
+      )}
   </div>;
 }

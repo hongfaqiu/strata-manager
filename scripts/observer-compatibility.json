@@ -1,0 +1,9 @@
+{
+  "reviewed": {
+    "version": "0.1.44",
+    "ref": "ed4773eb7c8f1f1531ba2bc70e0e1987de2661af",
+    "serverPySha256Lf": "2aa0d2060766799be2ea7045dc13ca5bab2cec39ad5c29bc8a54d816ed246e7c",
+    "fixturePath": ".reference/strata-0.1.44"
+  },
+  "note": "App SUPPORTED_HASHES already includes 0.1.44. Update .github/workflows/ci.yml observer job to this pin when a token with workflow scope is available; then rename OBSERVER_JOBS/GATES in scripts/release-from-ci.mjs to match."
+}

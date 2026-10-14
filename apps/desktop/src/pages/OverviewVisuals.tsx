@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Activity, Cpu, Layers3, Workflow } from 'lucide-react';
 import type { AppLanguage, MetricSnapshot } from '@strata-manager/core';
@@ -9,8 +10,58 @@ import './overview-visuals.css';
 const known = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 const clamp = (value: number) => Math.min(100, Math.max(0, value));
 
-export function OverviewComputeIllustration() {
-  return <div className="overview-compute-art" aria-hidden="true"><img src={computeRig} alt="" draggable={false} decoding="async" /></div>;
+export type OverviewArtState =
+  | 'disconnected'
+  | 'connecting'
+  | 'loading'
+  | 'unloading'
+  | 'unloaded'
+  | 'idle'
+  | 'generating'
+  | 'reading'
+  | 'queued'
+  | 'offline'
+  | 'unknown';
+
+/** TEMPORARY: ?artDemo=1 | #artDemo=1 | localStorage artDemo=1 — cycle hero art for screen recording */
+const ART_DEMO_CYCLE: OverviewArtState[] = [
+  'disconnected', 'connecting', 'loading', 'idle', 'generating', 'reading', 'queued', 'unloading', 'offline',
+];
+function artDemoEnabled(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    if (new URLSearchParams(window.location.search).get('artDemo') === '1') return true;
+    if (/(?:^|[?#&])artDemo=1(?:&|$)/.test(window.location.hash)) return true;
+    if (window.localStorage.getItem('artDemo') === '1') return true;
+  } catch { /* ignore */ }
+  return false;
+}
+
+export function OverviewComputeIllustration({ status = 'disconnected' }: { status?: OverviewArtState | string }) {
+  const demo = artDemoEnabled();
+  const [demoIndex, setDemoIndex] = useState(0);
+  useEffect(() => {
+    if (!demo) return;
+    const id = window.setInterval(() => setDemoIndex((i) => (i + 1) % ART_DEMO_CYCLE.length), 2000);
+    return () => window.clearInterval(id);
+  }, [demo]);
+  const state = demo ? ART_DEMO_CYCLE[demoIndex] : (status || 'disconnected');
+  return (
+    <div className="overview-compute-art" data-state={state} aria-hidden="true">
+      <div className="overview-compute-stage">
+        <span className="overview-compute-halo" />
+        <span className="overview-compute-orbit overview-compute-orbit-a" />
+        <span className="overview-compute-orbit overview-compute-orbit-b" />
+        <span className="overview-compute-scan" />
+        <span className="overview-compute-beam overview-compute-beam-a" />
+        <span className="overview-compute-beam overview-compute-beam-b" />
+        <span className="overview-compute-spark overview-compute-spark-a" />
+        <span className="overview-compute-spark overview-compute-spark-b" />
+        <span className="overview-compute-spark overview-compute-spark-c" />
+        <img src={computeRig} alt="" draggable={false} decoding="async" />
+      </div>
+    </div>
+  );
 }
 
 export function OverviewResourceMeter({ label, used, total, language, tone = 'green', units = 'bytes' }: { label: string; used: number | null | undefined; total: number | null | undefined; language: AppLanguage; tone?: 'green' | 'blue'; units?: 'bytes' | 'tokens' }) {
@@ -36,7 +87,8 @@ export function OverviewMetricCards({ metric, language }: { metric?: MetricSnaps
   const generationCandidate = metric?.state === 'generating' ? metric.decodeTokS : recent.at(-1)?.decode_tok_s;
   const generationSpeed = known(generationCandidate) && generationCandidate >= 0 ? generationCandidate : null;
   const gpu = known(metric?.gpuUtil) ? clamp(metric.gpuUtil) : null;
-  return <div className="overview-visual-metrics">
+  const empty = !metric;
+  return <div className={`overview-visual-metrics${empty ? ' is-empty' : ''}`} data-empty={empty ? 'true' : undefined}>
     <div className="overview-visual-metric overview-metric-speed">
       <div className="overview-visual-metric-label"><span className="overview-metric-symbol"><Activity size={17} /></span><span>{generationLabel}</span></div>
       <div className="overview-visual-metric-value">{format(generationSpeed)}<small>tok/s</small></div>

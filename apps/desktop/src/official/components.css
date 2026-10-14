@@ -19,6 +19,13 @@ a{color:var(--st-accent-text);text-decoration:none} a:hover{text-decoration:unde
 .st-pill[data-state="generating"] .st-pill__dot{background:var(--st-accent);box-shadow:0 0 0 4px var(--st-accent-tint)}
 .st-pill[data-state="reading"] .st-pill__dot{background:var(--st-info);box-shadow:0 0 0 4px var(--st-info-tint)}
 .st-pill[data-state="queued"] .st-pill__dot{background:var(--st-warn)}
+.st-pill[data-state="loading"] .st-pill__dot,.st-pill[data-state="unloading"] .st-pill__dot,.st-pill[data-state="connecting"] .st-pill__dot{background:var(--st-accent);box-shadow:0 0 0 4px var(--st-accent-tint)}
+.st-pill[data-state="idle"] .st-pill__dot,.st-pill[data-state="unloaded"] .st-pill__dot{background:var(--st-accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--st-accent) 16%,transparent)}
+.st-pill[data-state="disconnected"] .st-pill__dot{background:var(--st-ink-muted)}
+.st-pill[data-state="unknown"] .st-pill__dot{background:var(--st-ink-muted);opacity:.7}
+.st-pill{transition:color .22s ease,background .22s ease,border-color .22s ease}
+.st-pill__dot{position:relative;flex:none;transition:background .22s ease,box-shadow .22s ease,opacity .22s ease,transform .22s ease}
+
 
 /* tabs */
 .st-tabs{display:flex;gap:4px;padding:4px;background:var(--st-surface-2);border:1px solid var(--st-line);border-radius:var(--st-r-md)}

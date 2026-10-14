@@ -7,7 +7,7 @@
 - 第一轮候选 CI `f9fa71a3e9f7c8de26ab46f354311525a2636880` 在 Windows/Linux 的 Rust 检查被 Rust 1.99 新增的排序写法检查阻断。将内部任务栏布局的降序比较改为等价的 `sort_unstable_by_key(Reverse(...))`，保留所有门禁和排序规则；新源码必须重新完成十个 CI job，不能复用失败候选的产物。这一原生写法调整不改变已捕获的 React 界面或示例数据。
 - 本地 Windows 原生检查合计 **642 个唯一测试通过、15 项明确忽略**。首次完整运行的五项 request-capture 失败源于缺少 CI 固定上游 fixture；补齐 `fb58e0dbc8399662c0e47c76578c6e878b14f6cf` 并核验原始源码字节后，该模块 **9/9** 通过。剩余 supervisor/update-verifier **11/11** 与四个 workspace 文档测试目标分别完成。此合并结果不是一次完整运行全绿，也不是 CI 或安装包验收；本地汇总保存在 `output/release-v0.1.8/native-verification-aggregate.json`。
 - Windows ignored 清单由原十四项增加为十五项，仅登记新增的“用户显式指定真实运行服务的只读所有者验收”。Linux 七项、全部已有测试、严格清单比对、超时与分片规则保持不变。实际 Windows libtest 枚举 **657 项**，与本轮清单完全一致。
-- 固定 Strata 0.1.43.1 MockEngine HTTP observer **36/36**、自动服务连接浏览器 **3/3**、系统语言浏览器 **18/18** 通过；均使用隔离数据或临时目录，未通过这些用例启动真实模型。
+- 固定 Strata 0.1.44 MockEngine HTTP observer **36/36**、自动服务连接浏览器 **3/3**、系统语言浏览器 **18/18** 通过；均使用隔离数据或临时目录，未通过这些用例启动真实模型。
 - README、官网及指南改用当前组件的隔离示例配图。截图捕获核对前后源码摘要，无损 WebP 与 PNG 逐像素一致；历史 0.1.4 的十六张图与 0.1.7 的六张图按原字节归档。截图记录分别为 `docs/screenshots/manifest.json` 与 `daily-experience/manifest.json`。
 - 真实 GPU 自动载入、长时稳定性、用户设备上的跨版本安装、完整原生窗口／拖拽／菜单交互和完整安装器的人工语言选择仍待独立验收；Linux 外部运行服务身份核验与接管不在此版本支持范围。内部实验任务栏宿主未作为可用产品入口发布。
 
@@ -15,7 +15,7 @@
 
 - 应用自有 observer 包装已核验上游的 `Service.ensure_loaded` 与 `metrics`：实际载入期间提供 `live.state=loading`、`load_elapsed_s`，成功和异常退出均清除；不依赖可选请求正文采集，不修改上游文件或发起推理。
 - 主状态栏显示载入动画与实际已用秒数，载入状态优先于排队数和 `health.loaded=false`；浮条、托盘及内部实验任务栏呈现保留转换状态并抑制旧吞吐。
-- 官方 Strata 0.1.43.1 CPU HTTP 夹具 **36/36** 通过、无跳过，包括空闲卸载后的并发自动重新载入、READY 后清除和失败时保留原 503。Core 定向回归 **25/25**、监控历史回归 **9/9**、Rust 转换状态回归 **2/2** 通过；Core 类型检查和 Desktop 生产构建通过。
+- 官方 Strata 0.1.44 CPU HTTP 夹具 **36/36** 通过、无跳过，包括空闲卸载后的并发自动重新载入、READY 后清除和失败时保留原 503。Core 定向回归 **25/25**、监控历史回归 **9/9**、Rust 转换状态回归 **2/2** 通过；Core 类型检查和 Desktop 生产构建通过。
 - Playwright CLI 使用真实 App 与隔离原生 IO，中文 560px、英文 900px 和浮条三组全部通过；覆盖已卸载→载入→读取→生成，以及载入失败和采样失败，真实生命周期写操作为 0。截图位于 `output/playwright/model-reload/`，回放为 `apps/desktop/tests/optimization/verify-model-reload.cli.js`。
 - 仅为源码与隔离夹具验证，未更新已安装应用、未重启 supervisor 或真实模型；新增 observer 信号随更新后的服务进程下次启动生效。真实 GPU 自动载入与 Windows 原生窗口仍待安装版验收。
 
@@ -32,7 +32,7 @@
 ## 2026-10-13 v0.1.7 正式发布
 
 - [v0.1.7](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.7) 于 2026-10-13 13:06:22 UTC 公开，稳定更新通道已指向该版本。不可变 tag 源码为 `62192c11876d337e2637fe5141f9f57c06717adf`。
-- [完整 CI 38399951175](https://github.com/hongfaqiu/strata-manager/actions/runs/38399951175) 的 attempt 1 **10/10 jobs 成功**：两平台桌面构建、六个原生测试分片、两个 Strata 0.1.43.1 observer job，包含 Windows 安装／启动／IPC／卸载与 Linux AppImage／DEB 的 Xvfb 启动验收。
+- [完整 CI 38399951175](https://github.com/hongfaqiu/strata-manager/actions/runs/38399951175) 的 attempt 1 **10/10 jobs 成功**：两平台桌面构建、六个原生测试分片、两个 Strata 0.1.44 observer job，包含 Windows 安装／启动／IPC／卸载与 Linux AppImage／DEB 的 Xvfb 启动验收。
 - [发布工作流 38402053776](https://github.com/hongfaqiu/strata-manager/actions/runs/38402053776) 成功复用该 CI 的三个原始安装包，仅追加 Tauri updater 签名、`latest.json` 和 `SHA256SUMS`。发布前已下载草稿的全部实际资产并验证公钥、签名版本与原始字节。
 - 13:18:20 UTC 独立公开核验通过：8 项资产的大小与 GitHub digest 全部相符；三种安装包的 SHA256 与 CI 字节证明相同，内置公钥验证器再次验证更新签名及签名版本 0.1.7。公开 `releases/latest/download/latest.json` 与版本资产完全一致，五个平台／别名均指向本次安装包及对应签名。大文件通过公开地址分段下载后重组并核对完整 SHA256，没有绕过 TLS。
 - 本地证据为 `output/release-v0.1.7/public/verification.json`、`ci-evidence.json` 和 `ci-byte-proof/proof.json`；发行源码与后续官网文档状态更新分开记录。
@@ -53,7 +53,7 @@
 - 首次候选 `d38be3794f11945c086215859c0f588d1b59773e` 在 CI Rust 1.99 的 Clippy 检出 LAN 地址枚举仅使用映射值；已等价改用 `values()`。本机工具链为 Rust 1.94，本地 Clippy 结论不替代 CI 新工具链检查。
 - 修正后共享配置回归 **5/5 passed**；补齐 v0.1.7 更新日志的六张离线截图与封闭路径注册，相关回归 **12/12 passed**，生产构建的六张图片均与源文件 SHA256 相同。最终 `pnpm check` 为 **449/449 passed**（Core 318、Desktop 110、脚本 21），类型检查和生产构建通过，日志为 `output/release-v0.1.7/check-final.log`。
 - 后续候选 `d2c13387ddbe3281788d0dbc2aba9f0093c2bb02` 的 Windows Clippy 已通过；Linux 的资源评估发现可变 GPU 列表仅在 Windows fallback 中修改，已将可变声明限定到 Windows。仍须以最终同源码的完整两平台 CI 为发布依据。
-- 发布复用门禁纳入新增的 Windows/Linux Strata 0.1.43.1 observer jobs，必须同源码、同 run、同 attempt 的全部十个 job 及安装包验收通过。候选等待新的完整 CI、签名发布与公开下载核验。
+- 发布复用门禁纳入新增的 Windows/Linux Strata 0.1.44 observer jobs，必须同源码、同 run、同 attempt 的全部十个 job 及安装包验收通过。候选等待新的完整 CI、签名发布与公开下载核验。
 - 页面示例沿用下方已记录的版本号更新前截图，原始 capture HEAD 和 source hash 保持不变；截图不构成 0.1.7 安装包或 GPU 推理验收。
 
 ## 2026-10-13 收尾复核（发布前历史记录）
@@ -69,7 +69,7 @@
 
 - Runtime 串行运行：**420 passed / 5 failed / 11 ignored**。5 项失败均缺少固定上游夹具，日志为 `output/finishing/native-runtime.log`；不能称为一次完整通过。
 - 补齐私有 Python 测试环境及固定 `fb58e0dbc8399662c0e47c76578c6e878b14f6cf` 内容后，request-capture **9/9 passed**，日志为 `output/finishing/native-capture.log`，不与前项合并计数。
-- 固定 Strata `a0116b2782a5b82622358c04a06496485d12b2d6`（0.1.43.1）源码，observer loopback HTTP **33/33 passed，无跳过**，使用 MockEngine，无模型权重／GPU；日志为 `output/finishing/observer-0.1.43.1.log`。
+- 固定 Strata `ed4773eb7c8f1f1531ba2bc70e0e1987de2661af`（0.1.44）源码，observer loopback HTTP **33/33 passed，无跳过**，使用 MockEngine，无模型权重／GPU；日志为 `output/finishing/observer-0.1.44.log`。
 - 诊断包装回归先复现非对象 `details` 导致 panic，修复后 **9/9 passed**；现在只保留非对象详情的类型标记，并保留原错误码、消息及状态。PNG 原生导出 **5/5 passed**，日志为 `output/finishing/png-native-tests.log`。
 - Windows Tauri / runtime-core `cargo check --locked` 和 Rust 格式检查通过，日志为 `output/finishing/native-check.log`、`native-fmt.log`。
 - 最终严格工作区 Clippy（`--locked --workspace --all-targets -- -D warnings`）通过，日志为 `output/finishing/native-clippy-after.log`；修正后四个原生模块定向 **23/23**、PNG **5/5** 通过。测试中的串行锁改为 async 锁，生产归属锁未改变。

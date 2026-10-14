@@ -1,0 +1,11 @@
+.gpu-selector{display:grid;gap:.65rem}
+.gpu-selector-modes{display:flex;flex-wrap:wrap;gap:.45rem}
+.gpu-selector-mode{display:inline-flex;align-items:center;gap:.4rem;padding:.35rem .7rem;border:1px solid color-mix(in srgb,var(--border) 88%,transparent);border-radius:999px;background:color-mix(in srgb,var(--panel) 92%,transparent);cursor:pointer;font-size:.86rem}
+.gpu-selector-mode.is-selected{border-color:color-mix(in srgb,var(--accent) 55%,var(--border));background:color-mix(in srgb,var(--accent) 12%,var(--panel));box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 25%,transparent)}
+.gpu-selector-mode input{accent-color:var(--accent)}
+.gpu-selector-list{display:grid;gap:.45rem}
+.gpu-selector-card{display:flex;align-items:flex-start;gap:.65rem;padding:.7rem .85rem;border:1px solid color-mix(in srgb,var(--border) 90%,transparent);border-radius:12px;background:color-mix(in srgb,var(--panel) 96%,transparent);cursor:pointer}
+.gpu-selector-card.is-selected{border-color:color-mix(in srgb,var(--accent) 50%,var(--border));background:color-mix(in srgb,var(--accent) 10%,var(--panel))}
+.gpu-selector-card span{display:grid;gap:.15rem}
+.gpu-selector-card small{opacity:.72;line-height:1.35}
+.gpu-selector-note,.gpu-selector-empty{margin:0;font-size:.84rem;opacity:.78;line-height:1.45}
