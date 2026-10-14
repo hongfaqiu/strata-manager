@@ -12,3 +12,5 @@ matching `OBSERVER_JOBS/GATES` in `scripts/release-from-ci.mjs` and its test (th
 land together with `ci.yml`), and (4) adds `upstream-sentinel.yml`, a daily job that runs
 `scripts/observer-sentinel.py` against the latest upstream release and opens a PR
 (compatible) or an issue (incompatible). Nothing is merged automatically.
+
+Also add `python apps/supervisor/tests/test_mcp_guard_structure.py` next to the two structural test lines when applying (added after the patch was generated).
