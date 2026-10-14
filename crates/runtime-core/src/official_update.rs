@@ -176,7 +176,13 @@ mod tests {
         };
         let step = step_for(root, &plan, false);
         assert_eq!(step.program, "sh");
-        assert_eq!(step.args, vec!["/opt/strata/update.sh", "--yes"]);
+        assert_eq!(
+            step.args,
+            vec![
+                root.join("update.sh").to_string_lossy().into_owned(),
+                "--yes".into()
+            ]
+        );
         assert_eq!(step.cwd, root);
         let windows = step_for(
             root,
