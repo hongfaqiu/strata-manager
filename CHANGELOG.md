@@ -7,11 +7,11 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
-暂无条目。
+- 修复发版复用同源 CI 时，Actions 刚完成的任务短暂缺少 `steps` 会被误判为不可复用、进而重复调度 CI 或直接失败的问题；证据不足时给出明确错误，不再返回假的 `missing`。
 
 ### English
 
-No entries yet.
+- Fix release same-source CI reuse treating briefly empty Actions job `steps` as non-reusable evidence, which could re-dispatch CI or fail the release; surface real evidence failures instead of a false `missing` status.
 
 ## [0.1.8] - 2026-10-14
 
