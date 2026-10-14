@@ -607,8 +607,18 @@ class ObserverHttp(unittest.TestCase):
         unloaded = metrics()
         self.assertEqual(unloaded["state"], "unloaded")
         self.assertNotIn("load_elapsed_s", unloaded)
-        self.assertEqual(len(self.events("request_end")), 2)
-        self.assertTrue(all(event["outcome"] == "succeeded" for event in self.events("request_end")))
+        # Client threads can finish before the handler finally commits request_end
+        # and release(); wait for admission to drain (append happens before release).
+        deadline = time.monotonic() + 5
+        while self.journal.db.execute("SELECT COUNT(*) FROM active_requests WHERE service_id='fixture'").fetchone()[0]:
+            self.assertLess(time.monotonic(), deadline)
+            time.sleep(0.05)
+        ends = self.events("request_end")
+        while time.monotonic() < deadline and len(ends) < 2:
+            time.sleep(0.05)
+            ends = self.events("request_end")
+        self.assertEqual(len(ends), 2)
+        self.assertTrue(all(event["outcome"] == "succeeded" for event in ends))
         self.assertEqual(self.journal.db.execute("SELECT COUNT(*) FROM active_requests WHERE service_id='fixture'").fetchone()[0], 0)
 
     def test_reload_failure_clears_loading_and_preserves_request_error(self):
