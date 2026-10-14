@@ -14,6 +14,7 @@ Maintain both languages for each version. Move unreleased changes into the actua
 - 总览空状态与右上角状态艺术动画、浏览器假数据预览（`?mockData=1`）。
 - 同源 CI 复用失败时输出具体证据原因，避免静默 `missing`。
 - 资源评估安装器规则锚点跟随至 Strata 0.1.44。
+- 修复发版复用同源 CI 时，Actions 刚完成的任务短暂缺少 `steps` 会被误判为不可复用、进而重复调度 CI 或直接失败的问题；证据不足时给出明确错误，不再返回假的 `missing`。
 
 ### English
 
@@ -24,6 +25,7 @@ Maintain both languages for each version. Move unreleased changes into the actua
 - Overview empty-state polish, status-driven art animations, and browser mock data (`?mockData=1`).
 - Same-source CI reuse reports evidence failures instead of a silent `missing`.
 - Resource-assessment setup-rule anchor follows Strata 0.1.44.
+- Fix release same-source CI reuse treating briefly empty Actions job `steps` as non-reusable evidence, which could re-dispatch CI or fail the release; surface real evidence failures instead of a false `missing` status.
 
 ## [0.1.8] - 2026-10-14
 

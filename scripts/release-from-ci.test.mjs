@@ -10,7 +10,7 @@ import {
   validateSourceProtocol, validateCiEvidence, validateInstallerEntries, validateLiveWriters,
   validateLatestManifest, validateReleaseInventory, validateReleaseMetadata, draftMetadataPayload, creationBranch,
   requireSourceRelease, validatePreparedRecord, readPrepared,
-  findReusableCi, inventory, WRITER_JOBS, validateWriterProtocol, command,
+  findReusableCi, hasIncompleteStepInventory, inventory, WRITER_JOBS, validateWriterProtocol, command,
 } from './release-from-ci.mjs';
 
 const clone = value => structuredClone(value);
@@ -461,6 +461,19 @@ test('resolver can reuse an older complete same-source CI instead of an incomple
   bad.run.created_at = '2026-01-02T00:00:00Z'; bad.jobs.pop();
   const result = await findReusableCi(plan, { fetchJson: fakeApi([bad, good]) });
   assert.equal(result.runId, 123);
+});
+test('resolver waits when successful CI job steps are briefly empty instead of failing the release', async () => {
+  const f = ciFixture();
+  for (const job of f.jobs) job.steps = [];
+  assert.equal(hasIncompleteStepInventory(f.jobs), true);
+  assert.deepEqual(await findReusableCi(plan, { fetchJson: fakeApi([f]) }), { status: 'pending', runId: 123 });
+  assert.deepEqual(await findReusableCi(plan, { runId: 123, fetchJson: fakeApi([f]) }), { status: 'pending', runId: 123 });
+});
+test('resolver surfaces non-reusable successful CI instead of a false missing status', async () => {
+  const f = ciFixture();
+  f.jobs.pop();
+  await assert.rejects(findReusableCi(plan, { fetchJson: fakeApi([f]) }), /not reusable/);
+  await assert.rejects(findReusableCi(plan, { runId: 123, fetchJson: fakeApi([f]) }), /not reusable/);
 });
 test('bounded inventory refuses incomplete and malformed pagination', async () => {
   await assert.rejects(inventory('/inventory', 'items', async () => ({ items: Array(100).fill({}) })), /incomplete/);

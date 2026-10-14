@@ -250,10 +250,28 @@ export async function inventory(path, key, fetchJson = json) {
   }
   fail('Inventory pagination was incomplete.');
 }
+/** Freshly completed runs can briefly omit job.steps in the Actions API. */
+export function hasIncompleteStepInventory(jobs) {
+  return !Array.isArray(jobs) || jobs.length === 0
+    || jobs.some(job => job?.status === 'completed' && job?.conclusion === 'success'
+      && (!Array.isArray(job.steps) || job.steps.length === 0));
+}
 async function evidence(run, plan, fetchJson) {
   const jobs = await inventory(base + '/actions/runs/' + run.id + '/attempts/' + run.run_attempt + '/jobs', 'jobs', fetchJson);
   const artifacts = await inventory(base + '/actions/runs/' + run.id + '/artifacts', 'artifacts', fetchJson);
+  if (hasIncompleteStepInventory(jobs)) {
+    const error = new Error('CI job step inventory is incomplete');
+    error.code = 'incomplete_steps';
+    throw error;
+  }
   return validateCiEvidence(run, jobs, artifacts, plan);
+}
+function evidenceErrorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+function isIncompleteEvidence(error) {
+  return error?.code === 'incomplete_steps'
+    || evidenceErrorMessage(error) === 'CI job step inventory is incomplete';
 }
 export async function findReusableCi(plan, { runId = plan.runId, fetchJson = json } = {}) {
   if (runId !== undefined) {
@@ -261,7 +279,14 @@ export async function findReusableCi(plan, { runId = plan.runId, fetchJson = jso
     const run = await fetchJson(base + '/actions/runs/' + runId);
     validateRun(run, { ...plan, runId }, false);
     if (run.status !== 'completed') return { status: 'pending', runId };
-    return { status: 'success', runId, plan: await evidence(run, { ...plan, runId }, fetchJson) };
+    try {
+      return { status: 'success', runId, plan: await evidence(run, { ...plan, runId }, fetchJson) };
+    } catch (error) {
+      // Prefer waiting over failing the release when Actions has not settled step metadata yet.
+      if (run.conclusion === 'success' && isIncompleteEvidence(error)) return { status: 'pending', runId };
+      if (run.conclusion === 'success') fail('Same-source CI exists but is not reusable: ' + evidenceErrorMessage(error));
+      throw error;
+    }
   }
   const runs = await inventory(base + '/actions/workflows/ci.yml/runs?head_sha=' + plan.sourceSha, 'workflow_runs', fetchJson);
   const candidates = runs.filter(r => r.head_sha === plan.sourceSha).sort((a, b) => date(b.created_at) - date(a.created_at));
@@ -274,10 +299,11 @@ export async function findReusableCi(plan, { runId = plan.runId, fetchJson = jso
     // Network/incomplete inventory failures are fatal, never an excuse to dispatch duplicates.
     const jobs = await inventory(base + '/actions/runs/' + run.id + '/attempts/' + run.run_attempt + '/jobs', 'jobs', fetchJson);
     const artifacts = await inventory(base + '/actions/runs/' + run.id + '/artifacts', 'artifacts', fetchJson);
+    if (hasIncompleteStepInventory(jobs)) { pending ??= run.id; continue; }
     try { return { status: 'success', runId: run.id, plan: validateCiEvidence(run, jobs, artifacts, plan) }; }
     catch (error) {
       // Keep searching older same-source successes; surface why reuse was refused if none qualify.
-      lastEvidenceError = error instanceof Error ? error.message : String(error);
+      lastEvidenceError = evidenceErrorMessage(error);
     }
   }
   if (pending) return { status: 'pending', runId: pending };
