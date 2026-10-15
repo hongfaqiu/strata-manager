@@ -288,7 +288,10 @@ pub(crate) fn known_engine_dir_names() -> &'static [&'static str] {
 fn engine_build_json_candidates(root: &Path, exe: Option<&Path>) -> Vec<PathBuf> {
     let mut paths: Vec<PathBuf> = Vec::new();
     let mut push = |path: PathBuf| {
-        if !paths.iter().any(|existing| path_key(existing) == path_key(&path)) {
+        if !paths
+            .iter()
+            .any(|existing| path_key(existing) == path_key(&path))
+        {
             paths.push(path);
         }
     };
@@ -315,13 +318,15 @@ fn engine_build_json_candidates(root: &Path, exe: Option<&Path>) -> Vec<PathBuf>
 }
 
 fn runtime_version(root: &Path, exe: Option<&Path>) -> Option<String> {
-    engine_build_json_candidates(root, exe).into_iter().find_map(|path| {
-        read_json(&path)
-            .ok()?
-            .get("version")?
-            .as_str()
-            .map(str::to_owned)
-    })
+    engine_build_json_candidates(root, exe)
+        .into_iter()
+        .find_map(|path| {
+            read_json(&path)
+                .ok()?
+                .get("version")?
+                .as_str()
+                .map(str::to_owned)
+        })
 }
 
 /// Resolve the engine binary from a run-config `exe` field.
@@ -370,7 +375,11 @@ fn first_config_engine(root: &Path) -> Option<PathBuf> {
         let Ok(value) = read_json(&config) else {
             continue;
         };
-        let Some(exe) = value.get("exe").and_then(Value::as_str).filter(|v| !v.is_empty()) else {
+        let Some(exe) = value
+            .get("exe")
+            .and_then(Value::as_str)
+            .filter(|v| !v.is_empty())
+        else {
             continue;
         };
         let cwd = config_cwd(root, &value);
@@ -3107,7 +3116,12 @@ mod tests {
             .iter()
             .find(|c| c.name == "cuda12-model")
             .unwrap_or_else(|| panic!("expected cuda12-model, got {candidates:?}"));
-        assert_eq!(hit.availability.as_deref(), Some("ready"), "reason={:?}", hit.reason);
+        assert_eq!(
+            hit.availability.as_deref(),
+            Some("ready"),
+            "reason={:?}",
+            hit.reason
+        );
         assert_eq!(hit.runtime_version.as_deref(), Some("0.1.44.1"));
         assert!(hit.reason.is_none(), "{:?}", hit.reason);
     }
@@ -3149,10 +3163,14 @@ mod tests {
             .iter()
             .find(|c| c.name == "official-cuda12")
             .unwrap_or_else(|| panic!("expected official-cuda12, got {candidates:?}"));
-        assert_eq!(hit.availability.as_deref(), Some("ready"), "reason={:?}", hit.reason);
+        assert_eq!(
+            hit.availability.as_deref(),
+            Some("ready"),
+            "reason={:?}",
+            hit.reason
+        );
         assert_eq!(hit.runtime_version.as_deref(), Some("0.1.44.1"));
     }
-
 
     #[test]
     fn config_exe_falls_back_to_engine_cuda12_when_classic_engine_missing() {
@@ -3191,7 +3209,12 @@ mod tests {
             .iter()
             .find(|c| c.name == "legacy-exe-path")
             .unwrap_or_else(|| panic!("expected legacy-exe-path, got {candidates:?}"));
-        assert_eq!(hit.availability.as_deref(), Some("ready"), "reason={:?}", hit.reason);
+        assert_eq!(
+            hit.availability.as_deref(),
+            Some("ready"),
+            "reason={:?}",
+            hit.reason
+        );
         assert_eq!(hit.runtime_version.as_deref(), Some("0.1.44.1"));
     }
 
@@ -3209,10 +3232,7 @@ mod tests {
         )
         .unwrap();
         assert!(!root.join("engine").exists());
-        assert_eq!(
-            runtime_version(&root, None).as_deref(),
-            Some("cuda12-only")
-        );
+        assert_eq!(runtime_version(&root, None).as_deref(), Some("cuda12-only"));
     }
 
     #[test]
