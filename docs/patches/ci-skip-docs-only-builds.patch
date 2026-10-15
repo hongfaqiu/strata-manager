@@ -1,0 +1,84 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index d39cbbc..a4ea7c9 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -16,8 +16,52 @@ concurrency:
+   cancel-in-progress: true
+ 
+ jobs:
++  changes:
++    name: Detect app code changes
++    runs-on: ubuntu-latest
++    outputs:
++      code: ${{ steps.set.outputs.code }}
++    steps:
++      - uses: actions/checkout@v4
++        with:
++          # Push events need history so dorny/paths-filter can diff against the previous SHA.
++          fetch-depth: 0
++      - uses: dorny/paths-filter@v3
++        id: filter
++        if: github.event_name != 'workflow_dispatch'
++        with:
++          filters: |
++            code:
++              - 'apps/**'
++              - 'crates/**'
++              - 'packages/**'
++              - 'scripts/**'
++              - '!scripts/build-website.mjs'
++              - '!scripts/website-*.mjs'
++              - '!scripts/render-website-docs.mjs'
++              - '!scripts/render-website-docs.test.mjs'
++              - 'assets/**'
++              - 'Cargo.toml'
++              - 'Cargo.lock'
++              - 'package.json'
++              - 'pnpm-lock.yaml'
++              - 'pnpm-workspace.yaml'
++              - 'tsconfig.base.json'
++              - '.github/workflows/ci.yml'
++              - '.github/workflows/release.yml'
++              - '.github/workflows/release-from-ci.yml'
++      - id: set
++        run: |
++          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
++            echo "code=true" >> "$GITHUB_OUTPUT"
++          else
++            echo "code=${{ steps.filter.outputs.code }}" >> "$GITHUB_OUTPUT"
++          fi
++
+   observer-compatibility:
+     name: Strata 0.1.43.1 observer (${{ matrix.runner }})
++    needs: changes
++    if: needs.changes.outputs.code == 'true'
+     strategy:
+       fail-fast: false
+       matrix:
+@@ -73,6 +117,8 @@ jobs:
+ 
+   native-windows:
+     name: Windows native shard (${{ matrix.shard }}/3)
++    needs: changes
++    if: needs.changes.outputs.code == 'true'
+     strategy:
+       fail-fast: false
+       matrix:
+@@ -134,6 +180,8 @@ jobs:
+ 
+   native-linux:
+     name: Linux native shard (${{ matrix.shard }}/3)
++    needs: changes
++    if: needs.changes.outputs.code == 'true'
+     strategy:
+       fail-fast: false
+       matrix:
+@@ -205,6 +253,8 @@ jobs:
+           if-no-files-found: error
+ 
+   desktop:
++    needs: changes
++    if: needs.changes.outputs.code == 'true'
+     strategy:
+       fail-fast: false
+       matrix:
