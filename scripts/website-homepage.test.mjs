@@ -6,25 +6,25 @@ import test from 'node:test';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-test('Homepage restores pre-0.1.7 section rhythm with selective gallery expand', async () => {
+test('Homepage uses restrained hero, quiet features, and a visible multi-shot gallery', async () => {
   const html = await readFile(join(root, 'website/index.html'), 'utf8');
-  for (const id of ['about-strata', 'features', 'workspace', 'gallery', 'get-started']) {
-    assert.match(html, new RegExp(`id="${id}"`));
-  }
-  assert.match(html, /class="feature-grid"/);
-  assert.match(html, /class="workspace-tab-nav"/);
-  assert.match(html, /class="reveal-list"/);
-  assert.ok([...html.matchAll(/class="reveal-trigger"/g)].length >= 6);
-  assert.match(html, /id="screen-benchmark-trigger"/);
-  assert.match(html, /id="screen-benchmark-panel"[^>]*\bhidden\b|\bhidden\b[^>]*id="screen-benchmark-panel"/);
-  assert.doesNotMatch(html, /发布候选|Current stable|0\.1\.5 界面|稳定版界面/);
+  assert.match(html, /class="hero-section"/);
+  assert.match(html, /id="features"/);
+  assert.match(html, /id="gallery"/);
+  assert.match(html, /id="get-started"/);
+  assert.match(html, /feature-grid-quiet/);
+  assert.match(html, /gallery-grid-dense/);
+  assert.doesNotMatch(html, /reveal-trigger|reveal-panel|id="about-strata"|id="workspace"/);
+  assert.ok([...html.matchAll(/class="gallery-item"/g)].length >= 12, 'expected many visible gallery shots');
+  assert.match(html, /daily-experience\/model-download-detail/);
+  assert.match(html, /daily-experience\/api-verification/);
+  assert.doesNotMatch(html, /发布候选|Current stable|稳定版界面|0\.1\.5 界面/);
 });
 
-test('Homepage script keeps workspace tabs and single-open gallery reveals', async () => {
+test('Homepage script keeps lightbox screens for gallery targets without accordion wiring', async () => {
   const js = await readFile(join(root, 'website/app.js'), 'utf8');
-  assert.match(js, /wsTabs/);
-  assert.match(js, /renderScreen/);
-  assert.match(js, /revealTriggers/);
-  assert.match(js, /closeOtherReveals/);
+  assert.doesNotMatch(js, /revealTriggers|closeOtherReveals/);
+  assert.match(js, /model-download-detail/);
+  assert.match(js, /openLightbox|lightbox-modal/);
   assert.match(js, /Latest release\.|最新发布版本/);
 });

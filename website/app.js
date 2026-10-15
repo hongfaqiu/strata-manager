@@ -124,6 +124,27 @@ const strataReleaseCatalog = (() => {
   }
 
   const screens = {
+    "model-download-detail": {
+      "index": "20", "image": "daily-experience/model-download-detail", "height": 2400,
+      "zh": { "title": "模型与资源评估", "description": "下载详情与资源选择。", "alt": "模型与资源评估", "badge": "下载" },
+      "en": { "title": "Models & assessment", "description": "Download details and resource selection.", "alt": "Models & assessment", "badge": "DOWNLOAD" }
+    },
+    "api-verification": {
+      "index": "21", "image": "daily-experience/api-verification",
+      "zh": { "title": "API 在线验证", "description": "显式限时限量核验。", "alt": "API 在线验证", "badge": "核验" },
+      "en": { "title": "API verification", "description": "Explicit bounded verification.", "alt": "API verification", "badge": "VERIFY" }
+    },
+    "history-comparison": {
+      "index": "22", "image": "daily-experience/history-comparison",
+      "zh": { "title": "历史条件对照", "description": "比较历史测试条件。", "alt": "历史条件对照", "badge": "对照" },
+      "en": { "title": "History conditions", "description": "Compare historical test conditions.", "alt": "History conditions", "badge": "COMPARE" }
+    },
+    "running-services": {
+      "index": "15",
+      "zh": { "title": "运行中服务", "description": "Windows 上发现与连接已有实例。", "alt": "运行中服务", "badge": "服务" },
+      "en": { "title": "Running services", "description": "Discover and reconnect instances on Windows.", "alt": "Running services", "badge": "SERVICES" }
+    },
+
     "overview": {
       "index": "00",
       "image": "product-cover",
@@ -426,7 +447,6 @@ const strataReleaseCatalog = (() => {
     renderScreen(activeScreenKey);
     if (heroImage) heroImage.src = screenshotUrl('product-cover');
     if (lightboxModal.classList.contains('active')) openLightbox(lightboxModal.dataset.screen);
-    refreshOpenRevealMedia();
     updateThemeButton();
 
   }
@@ -457,44 +477,6 @@ const strataReleaseCatalog = (() => {
   });
 
 
-  const revealTriggers = Array.from(document.querySelectorAll('.reveal-trigger'));
-  const revealHintCopy = {
-    zh: { collapsed: '查看截图', expanded: '收起截图' },
-    en: { collapsed: 'Show screenshot', expanded: 'Hide screenshot' },
-  };
-  function updateRevealHint(trigger, expanded) {
-    const hint = trigger.querySelector('.reveal-hint');
-    if (!hint) return;
-    const copy = revealHintCopy[currentLang] || revealHintCopy.zh;
-    hint.textContent = expanded ? copy.expanded : copy.collapsed;
-  }
-  function setRevealExpanded(trigger, expanded) {
-    const panelId = trigger.getAttribute('aria-controls');
-    const panel = panelId ? document.getElementById(panelId) : null;
-    trigger.setAttribute('aria-expanded', String(expanded));
-    trigger.closest('.reveal-item')?.classList.toggle('is-open', expanded);
-    if (panel) panel.hidden = !expanded;
-    updateRevealHint(trigger, expanded);
-  }
-  function closeOtherReveals(activeTrigger) {
-    revealTriggers.forEach((trigger) => {
-      if (trigger !== activeTrigger) setRevealExpanded(trigger, false);
-    });
-  }
-  function refreshOpenRevealMedia() {
-    revealTriggers.forEach((trigger) => {
-      updateRevealHint(trigger, trigger.getAttribute('aria-expanded') === 'true');
-    });
-  }
-  revealTriggers.forEach((trigger) => {
-    setRevealExpanded(trigger, false);
-    trigger.addEventListener('click', () => {
-      const open = trigger.getAttribute('aria-expanded') === 'true';
-      if (open) { setRevealExpanded(trigger, false); return; }
-      closeOtherReveals(trigger);
-      setRevealExpanded(trigger, true);
-    });
-  });
 
   // 语言切换按钮
   if (languageButton) {
