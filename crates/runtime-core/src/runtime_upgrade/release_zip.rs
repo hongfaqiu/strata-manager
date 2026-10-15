@@ -421,9 +421,27 @@ fn start(
 }
 
 fn variant(root: &Path) -> Option<&'static str> {
-    ["engine", "engine-cuda12"]
-        .iter()
-        .find_map(|directory| directory_variant(&root.join(directory)))
+    for directory in crate::discovery::known_engine_dir_names() {
+        if let Some(value) = directory_variant(&root.join(directory)) {
+            return Some(value);
+        }
+    }
+    if let Ok(entries) = fs::read_dir(root) {
+        for entry in entries.take(32).flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if !name.to_ascii_lowercase().starts_with("engine") {
+                continue;
+            }
+            let path = entry.path();
+            if path.is_dir() && !path.is_symlink() {
+                if let Some(value) = directory_variant(&path) {
+                    return Some(value);
+                }
+            }
+        }
+    }
+    None
 }
 
 fn directory_variant(directory: &Path) -> Option<&'static str> {
@@ -488,8 +506,28 @@ fn version_parts(version: &str) -> Option<Vec<u32>> {
 
 fn prevent_downgrade(root: &Path, version: &str) -> Result<(), String> {
     let release = version_parts(version).ok_or("Release版本无效")?;
-    for name in ["engine/BUILD.json", "engine-cuda12/BUILD.json"] {
-        if let Ok(bytes) = fs::read(root.join(name)) {
+    let mut checked = Vec::new();
+    for name in crate::discovery::known_engine_dir_names() {
+        checked.push(root.join(name).join("BUILD.json"));
+    }
+    if let Ok(entries) = fs::read_dir(root) {
+        for entry in entries.take(32).flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if !name.to_ascii_lowercase().starts_with("engine") {
+                continue;
+            }
+            let path = entry.path();
+            if path.is_dir() && !path.is_symlink() {
+                let build = path.join("BUILD.json");
+                if !checked.iter().any(|existing| existing == &build) {
+                    checked.push(build);
+                }
+            }
+        }
+    }
+    for path in checked {
+        if let Ok(bytes) = fs::read(&path) {
             if let Ok(build) = serde_json::from_slice::<Value>(&bytes) {
                 if build["version"]
                     .as_str()
@@ -1060,11 +1098,16 @@ fn engine_directories(
     asset: &RuntimeReleaseAsset,
     profiles: &[ServiceProfile],
 ) -> Result<Vec<PathBuf>, String> {
-    let mut directories = vec![PathBuf::from(if asset.variant == "cuda12" {
-        "engine-cuda12"
+    let default_name = if asset.variant == "cuda12" {
+        if root.join("engine_cuda12").is_dir() && !root.join("engine-cuda12").is_dir() {
+            "engine_cuda12"
+        } else {
+            "engine-cuda12"
+        }
     } else {
         "engine"
-    })];
+    };
+    let mut directories = vec![PathBuf::from(default_name)];
     for profile in profiles {
         let config = storage::read(profile)?;
         if let Some(exe) = config["exe"].as_str() {
@@ -2866,6 +2909,22 @@ mod tests {
             "user edit"
         );
     }
+    #[test]
+    fn variant_recognizes_self_extracted_engine_cuda12_underscore() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir(temp.path().join("engine_cuda12")).unwrap();
+        fs::write(
+            temp.path().join("engine_cuda12/BUILD.json"),
+            r#"{"version":"0.1.44.1","backend":"cuda","cuda":"12.9"}"#,
+        )
+        .unwrap();
+        assert!(!temp.path().join("engine").exists());
+        assert!(!temp.path().join("engine-cuda12").exists());
+        assert_eq!(variant(temp.path()), Some("cuda12"));
+        prevent_downgrade(temp.path(), "0.1.44").unwrap_err();
+        prevent_downgrade(temp.path(), "0.1.45").unwrap();
+    }
+
     #[test]
     fn newest_asset_selection_preserves_cuda12_and_rejects_backend_switch() {
         let temp = tempfile::tempdir().unwrap();

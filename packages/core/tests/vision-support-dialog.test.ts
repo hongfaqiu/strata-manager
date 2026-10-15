@@ -6,6 +6,9 @@ describe('quick vision configuration', () => {
   it('defaults to CPU without guessing a projector and reads model argv safely', () => {
     expect(visionDraftOf({ args: ['--model', 'D:\\Models\\main.gguf'] }, 'D:\\Strata\\')).toEqual({ ...draft, model: 'D:\\Models\\main.gguf', mmproj: '' });
     expect(visionDraftOf({ args: ['--native', '/models/main.gguf'] }, '/strata')).toMatchObject({ exe: '/strata/engine/strata-vision.exe', model: '/models/main.gguf', mmproj: '' });
+    expect(visionDraftOf({ exe: '/strata/engine_cuda12/strata.exe', args: ['--native', '/models/main.gguf'] }, '/strata')).toMatchObject({ exe: '/strata/engine_cuda12/strata-vision.exe', model: '/models/main.gguf', mmproj: '' });
+    expect(visionDraftOf({ exe: 'D:\\Strata\\engine-cuda12\\strata.exe', args: ['--model', 'D:\\Models\\main.gguf'] }, 'D:\\Strata\\')).toMatchObject({ exe: 'D:\\Strata\\engine-cuda12\\strata-vision.exe', model: 'D:\\Models\\main.gguf' });
+
     expect(visionDraftOf({ args: ['--model', '--vision'] }, 'D:\\Strata').model).toBe('');
     expect(visionDraftOf({ args: ['--model', 'a.gguf', '--model', 'b.gguf'] }, 'D:\\Strata').model).toBe('');
   });
