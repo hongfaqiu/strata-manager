@@ -27,7 +27,7 @@
 
 [![Strata Manager 完整总览，右上角服务状态收起](docs/screenshots/product-cover.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.zh.webp)
 
-<sub>0.1.10 发布候选界面，2026 年 10 月 14 日重新采集，尚待公开发布。首页封面为完整总览，右上角服务状态保持收起。截图由实际应用与组件配合隔离示例数据渲染；显示数值不代表推理结果或性能测试。点击可查看原图。</sub>
+<sub>v0.1.10 界面，2026 年 10 月 14 日重新采集。首页封面为完整总览，右上角服务状态保持收起。截图由实际应用与组件配合隔离示例数据渲染；显示数值不代表推理结果或性能测试。点击可查看原图。</sub>
 
 ## Strata 是什么，Manager 负责什么？
 
@@ -60,9 +60,9 @@ API 使用统计无需捕获请求正文。可选的临时正文诊断是独立�
 
 组件关系和数据保存见[系统说明](docs/SYSTEM.md)，各版本变更见 [CHANGELOG.md](CHANGELOG.md) 或[官网更新日志](https://hongfaqiu.github.io/strata-manager/docs/changelog.html)。
 
-## 0.1.10 发布候选
+## v0.1.10 更新
 
-**0.1.10 目前为发布候选，尚待公开发布**，包含以下改进。安装包是否可用以[发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)为准；安装包验收与界面示例分开记录。
+**v0.1.10** 为当前稳定版，包含以下改进。安装包见[最新发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)；安装包验收与界面示例分开记录。
 
 - **多卡选择与校准入口。** 模型下载设置支持勾选显卡编号；官方 `--calibrate` 仅生成终端命令，不在应用内执行。API 接入向导增加 Cursor / Codex；启动设置提供 batch / parallel 等常用项快捷表单。观察器兼容 Strata 0.1.44.1，并对更新的上游版本做结构检测（契约变化时自动降级为公开接口监控），多数上游新版无需等本应用适配；运行环境页可直接调用官方 `update.sh` / `UPDATE.bat`。
 - **Windows 运行中服务集中管理。** 查看实际加载状态、当前模型、运行配置、PID、引擎版本和 OpenAI API Base URL。已有 Manager 后台的服务优先连接；托管普通外部服务可能重新加载模型。自动连接只在当前后台没有活动服务且发现唯一明确的运行候选时尝试；自动托管还要求模型健康、已加载且空闲，多候选保留手动选择。
@@ -74,7 +74,7 @@ API 使用统计无需捕获请求正文。可选的临时正文诊断是独立�
 | --- | --- |
 | [![运行中服务的状态、连接与托管操作](docs/screenshots/running-services.zh.webp)](docs/screenshots/running-services.zh.webp) | [![跟随系统及随包界面语言选项](docs/screenshots/language-settings.zh.webp)](docs/screenshots/language-settings.zh.webp) |
 
-配图仍为 2026 年 10 月 14 日图库，覆盖 0.1.10 候选源码，来源见[截图记录](docs/screenshots/README.md)。原生窗口、真实 GPU 容量、长时稳定性与跨设备局域网的验收范围见[验证记录](docs/VERIFICATION.md)。
+配图仍为 2026 年 10 月 14 日图库，对应当前 v0.1.10 界面，来源见[截图记录](docs/screenshots/README.md)。原生窗口、真实 GPU 容量、长时稳定性与跨设备局域网的验收范围见[验证记录](docs/VERIFICATION.md)。
 
 ## 下载与开始使用
 
@@ -82,7 +82,7 @@ API 使用统计无需捕获请求正文。可选的临时正文诊断是独立�
 
 [0.1.7 发布版](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.7)增加模型下载列表与详情、统一显卡及运行选项、按选择变化的资源评估、启动失败诊断、服务能力四态、聊天请求计时、API 在线验证与历史 Benchmark 条件比较。保存设置不会证明当前引擎已生效；缺少证据显示“未核验”，需要重启的选项单独提示。模型未就绪时不会自动启动在线验证。
 
-这些工作流程在 0.1.10 中继续提供，详见[日常体验说明](docs/DAILY_EXPERIENCE.md)与[验收记录](docs/VERIFICATION.md)。下图已用当前组件和隔离示例数据重新采集，不代表 0.1.10 候选安装包或真实推理验收。
+这些工作流程在当前版本中继续提供，详见[日常体验说明](docs/DAILY_EXPERIENCE.md)与[验收记录](docs/VERIFICATION.md)。下图已用当前组件和隔离示例数据重新采集，不代表真实推理验收。
 
 | 模型下载与资源选择 | API 验证与能力 |
 | --- | --- |

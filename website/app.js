@@ -240,23 +240,23 @@ const strataReleaseCatalog = (() => {
     },
     "floating-monitor": {
       "index": "14", "width": 488, "height": 240, "image": "floating-monitor",
-      "zh": { "title": "0.1.8 候选 · 桌面监控浮条", "description": "默认双行，支持指标排序、独立配色与实时折线；操作集中在原生右键菜单与系统托盘。", "alt": "0.1.8 候选默认双行监控浮条：生成、读取、GPU 与 CPU 指标及折线，使用隔离示例数据", "badge": "0.1.8 候选（待发布）" },
-      "en": { "title": "0.1.8 release candidate · Floating monitor", "description": "Two rows by default, with metric order, individual colors and live graphs. Use the native context menu or system tray for actions.", "alt": "0.1.8 release candidate two-row floating monitor: generation, input processing, GPU and CPU metrics with graphs and isolated example data", "badge": "0.1.8 RELEASE CANDIDATE" }
+      "zh": { "title": "桌面监控浮条", "description": "默认双行，支持指标排序、独立配色与实时折线；操作集中在原生右键菜单与系统托盘。", "alt": "默认双行监控浮条：生成、读取、GPU 与 CPU 指标及折线，使用隔离示例数据", "badge": "桌面监控" },
+      "en": { "title": "Floating monitor", "description": "Two rows by default, with metric order, individual colors and live graphs. Use the native context menu or system tray for actions.", "alt": "Two-row floating monitor: generation, input processing, GPU and CPU metrics with graphs and isolated example data", "badge": "DESKTOP MONITOR" }
     },
     "floating-monitor-settings": {
       "index": "14", "image": "floating-monitor-settings",
-      "zh": { "title": "0.1.8 候选 · 自定义桌面监控", "description": "三种布局、8–36px 字号、指标选择与排序，逐项配色并控制标签、单位、采样时间与实时折线。", "alt": "0.1.8 候选浮条设置：布局、字号、指标排序、独立配色与折线", "badge": "0.1.8 候选（待发布）" },
-      "en": { "title": "0.1.8 release candidate · Customize desktop monitoring", "description": "Three layouts, 8–36px text, metric selection and order, individual colors, labels, units, sample time and live graphs.", "alt": "0.1.8 release candidate floating monitor settings: layouts, text size, metric order, colors and graphs", "badge": "0.1.8 RELEASE CANDIDATE" }
+      "zh": { "title": "自定义桌面监控", "description": "三种布局、8–36px 字号、指标选择与排序，逐项配色并控制标签、单位、采样时间与实时折线。", "alt": "浮条设置：布局、字号、指标排序、独立配色与折线", "badge": "桌面监控" },
+      "en": { "title": "Customize desktop monitoring", "description": "Three layouts, 8–36px text, metric selection and order, individual colors, labels, units, sample time and live graphs.", "alt": "Floating monitor settings: layouts, text size, metric order, colors and graphs", "badge": "DESKTOP MONITOR" }
     },
     "running-services": {
       "index": "15",
-      "zh": { "title": "0.1.8 候选 · Windows 运行中服务", "description": "在 Windows 上核验模型状态、API 地址、PID 与配置，再连接原管理后台或托管外部服务。", "alt": "0.1.8 候选 Windows 运行中服务面板：模型健康、API 地址、PID、运行配置与连接和托管操作", "badge": "0.1.8 候选（待发布）" },
-      "en": { "title": "0.1.8 release candidate · Windows running services", "description": "On Windows, inspect model health, API URLs, PID and configuration, then reconnect the existing manager or take over an external service.", "alt": "0.1.8 release candidate Windows running services: model health, API URL, PID, configuration, connection and management actions", "badge": "0.1.8 RELEASE CANDIDATE" }
+      "zh": { "title": "Windows 运行中服务", "description": "在 Windows 上核验模型状态、API 地址、PID 与配置，再连接原管理后台或托管外部服务。", "alt": "Windows 运行中服务面板：模型健康、API 地址、PID、运行配置与连接和托管操作", "badge": "运行中服务" },
+      "en": { "title": "Windows running services", "description": "On Windows, inspect model health, API URLs, PID and configuration, then reconnect the existing manager or take over an external service.", "alt": "Windows running services: model health, API URL, PID, configuration, connection and management actions", "badge": "RUNNING SERVICES" }
     },
     "language-settings": {
       "index": "16",
-      "zh": { "title": "0.1.8 候选 · 系统语言与语言包", "description": "首次启动确认，可跟随系统或手动选择十种内置语言；未翻译内容回退英文。", "alt": "0.1.8 候选语言设置：跟随系统与十种内置语言包", "badge": "0.1.8 候选（待发布）" },
-      "en": { "title": "0.1.8 release candidate · System language and language packs", "description": "Confirm on first launch, follow the system or choose among ten bundled languages. Untranslated text falls back to English.", "alt": "0.1.8 release candidate language settings: follow the system and ten bundled language packs", "badge": "0.1.8 RELEASE CANDIDATE" }
+      "zh": { "title": "系统语言与语言包", "description": "首次启动确认，可跟随系统或手动选择十种内置语言；未翻译内容回退英文。", "alt": "语言设置：跟随系统与十种内置语言包", "badge": "语言设置" },
+      "en": { "title": "System language and language packs", "description": "Confirm on first launch, follow the system or choose among ten bundled languages. Untranslated text falls back to English.", "alt": "Language settings: follow the system and ten bundled language packs", "badge": "LANGUAGE" }
     },
     "overview-api-guide": {
       "index": "11", "image": "connections",
@@ -265,18 +265,18 @@ const strataReleaseCatalog = (() => {
     },
     "model-download-detail": {
       "index": "0.1.7", "image": "daily-experience/model-download-detail", "height": 2400,
-      "zh": { "title": "模型下载详情 · 当前源码预览", "description": "统一显卡与运行选项，查看当前选择的资源估算和未知项。", "alt": "2026-10-14 当前源码的模型下载详情与资源选择，使用隔离示例数据", "badge": "0.1.7 功能" },
-      "en": { "title": "Model download details · Current source preview", "description": "Unified GPU and run options with resource estimates and explicit unknowns.", "alt": "Model download details and resource selection captured from current source on October 14, 2026, with isolated example data", "badge": "0.1.7 FEATURE" }
+      "zh": { "title": "模型下载详情", "description": "统一显卡与运行选项，查看当前选择的资源估算和未知项。", "alt": "模型下载详情与资源选择，使用隔离示例数据", "badge": "日常功能" },
+      "en": { "title": "Model download details", "description": "Unified GPU and run options with resource estimates and explicit unknowns.", "alt": "Model download details and resource selection with isolated example data", "badge": "DAILY FEATURE" }
     },
     "api-verification": {
       "index": "0.1.7", "image": "daily-experience/api-verification",
-      "zh": { "title": "API 在线验证 · 当前源码预览", "description": "显式发送一次限时限量的文本、工具结构或图片测试。", "alt": "2026-10-14 当前源码的 API 在线验证，使用隔离示例数据", "badge": "0.1.7 功能" },
-      "en": { "title": "API verification · Current source preview", "description": "Explicit bounded checks for text, tool structure or image input.", "alt": "API verification captured from current source on October 14, 2026, with isolated example data", "badge": "0.1.7 FEATURE" }
+      "zh": { "title": "API 在线验证", "description": "显式发送一次限时限量的文本、工具结构或图片测试。", "alt": "API 在线验证，使用隔离示例数据", "badge": "日常功能" },
+      "en": { "title": "API verification", "description": "Explicit bounded checks for text, tool structure or image input.", "alt": "API verification with isolated example data", "badge": "DAILY FEATURE" }
     },
     "history-comparison": {
       "index": "0.1.7", "image": "daily-experience/history-comparison",
-      "zh": { "title": "历史条件对照 · 当前源码预览", "description": "查看历史数据与未知条件，不据弱身份宣称直接提速。", "alt": "2026-10-14 当前源码的历史 Benchmark 条件比较，使用隔离示例数据", "badge": "0.1.7 功能" },
-      "en": { "title": "Historical conditions · Current source preview", "description": "Inspect historical values and unknown conditions without direct speedup claims from weak identity.", "alt": "Historical benchmark conditions captured from current source on October 14, 2026, with isolated example data", "badge": "0.1.7 FEATURE" }
+      "zh": { "title": "历史条件对照", "description": "查看历史数据与未知条件，不据弱身份宣称直接提速。", "alt": "历史 Benchmark 条件比较，使用隔离示例数据", "badge": "日常功能" },
+      "en": { "title": "Historical conditions", "description": "Inspect historical values and unknown conditions without direct speedup claims from weak identity.", "alt": "Historical benchmark conditions with isolated example data", "badge": "DAILY FEATURE" }
     },
     "usage": {
       "index": "03",
@@ -612,7 +612,7 @@ const strataReleaseCatalog = (() => {
       status.textContent = english ? 'Published packages could not be verified. Open GitHub Releases to check availability, or try again later.' : '暂时无法核验已发布安装包。请打开 GitHub 发布页查看，或稍后重试。';
     } else {
       const channel = releaseState.preview
-        ? (english ? 'No stable release is published; showing a preview for manual installation.' : '暂无稳定版发布，以下为手工安装的预览版。')
+        ? (english ? 'No published release is available yet; packages below are for manual installation only.' : '暂无已发布安装包；以下仅供手工安装。')
         : releaseState.snapshot
           ? (english ? 'Published stable release.' : '已发布稳定版。')
           : (english ? 'Latest published stable release.' : '最新已发布稳定版。');

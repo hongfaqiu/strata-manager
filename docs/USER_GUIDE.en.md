@@ -1,8 +1,8 @@
 # Strata Manager user guide
 
-## Daily experience and the 0.1.8 release candidate
+## Current features
 
-This guide covers the current 0.1.8 release candidate and daily features introduced in 0.1.7. Publication of 0.1.8 is pending. Check the [release page](https://github.com/hongfaqiu/strata-manager/releases/latest) and the selected version's changelog for available packages and their contents.
+This guide covers the current stable release (v0.1.10), including daily features introduced since 0.1.7. Check the [latest release page](https://github.com/hongfaqiu/strata-manager/releases/latest) and the selected version's changelog for available packages and their contents.
 
 - **Model downloads:** select a model in the list, then choose GPUs, context, KV and slots in its details. Assessment follows the current selection and preserves manual values. Unknown modes do not establish capacity; RAM, KV and per-GPU estimates are not an additive total.
 - **Startup failures:** inspect stages, duration, reasons and sanitized evidence in Overview or Tasks, then open the relevant settings or logs. Read-only checks preserve stopped services; resource keywords in logs indicate suspected causes only.
@@ -10,11 +10,11 @@ This guide covers the current 0.1.8 release candidate and daily features introdu
 - **API checks and LAN:** explicitly test text, tool structure or image input in API and external assistants. Each check is bounded to 256 tokens and 60 seconds, never executes MCP and requires a ready model. Preview sharing settings before saving; multiple keys and backups are preserved, while restarting is separate. Server keys and application client credentials are managed independently.
 - **Historical benchmarks:** save a pre-upgrade baseline, update the runtime manually, then rerun the original task serially. Saving a baseline starts no model and performs no update. Missing conditions, weak model/runtime identity or different cache state prevent direct speedup claims. JSON/CSV exports omit test prompts, answers and server error bodies by default; include them only explicitly.
 
-The 0.1.8 candidate adds running-service inspection, reconnection to existing Manager backends and automatic connection when conditions permit on Windows. Interface language can follow the system or use ten bundled language packs. The desktop monitor has a visibility switch, three layouts, text sizing and ordered metrics with individual colors.
+The current release includes running-service inspection, reconnection to existing Manager backends and automatic connection when conditions permit on Windows. Interface language can follow the system or use ten bundled language packs. The desktop monitor has a visibility switch, three layouts, text sizing and ordered metrics with individual colors.
 
-See the [daily experience notes](DAILY_EXPERIENCE.md). Images were recaptured from the actual 0.1.8 candidate App/components on October 14, 2026, with isolated example data; their sources are recorded in the [screenshot record](screenshots/README.md) and [separate daily-experience manifest](screenshots/daily-experience/manifest.json). They do not establish acceptance of a new installer or measured inference. Actual scope is recorded in [verification](VERIFICATION.md).
+See the [daily experience notes](DAILY_EXPERIENCE.md). Images were recaptured from the actual current App/components on October 14, 2026, with isolated example data; their sources are recorded in the [screenshot record](screenshots/README.md) and [separate daily-experience manifest](screenshots/daily-experience/manifest.json). They do not establish measured inference. Actual scope is recorded in [verification](VERIFICATION.md).
 
-Version 0.1.7 introduced resource guidance, startup diagnostics, request evidence, API verification, LAN sharing and report comparison. See [Daily experience increment](DAILY_EXPERIENCE.md). Choose an installer from the [latest stable release](https://github.com/hongfaqiu/strata-manager/releases/latest); functionality and support remain tied to the selected release version.
+Resource guidance, startup diagnostics, request evidence, API verification, LAN sharing and report comparison are documented in [Daily experience increment](DAILY_EXPERIENCE.md). Choose an installer from the [latest release](https://github.com/hongfaqiu/strata-manager/releases/latest); functionality and support remain tied to the selected release version.
 
 [Website](https://hongfaqiu.github.io/strata-manager/?lang=en) · [Product overview](../README.md) · [Documentation](README.en.md) · [简体中文](USER_GUIDE.md)
 
@@ -22,7 +22,7 @@ Version 0.1.7 introduced resource guidance, startup diagnostics, request evidenc
 
 Strata Manager is an open-source desktop workspace for the Strata runtime and local model services. Runtime installation and matching Windows x64 ZIP engine updates, model configurations, and service startup, shutdown and recovery are its core; chat, monitoring, API usage statistics and tuning support that workflow. It is an independent community project. Inference capabilities, models, image input, reasoning, MCP tools and API protocols come from the installed Strata runtime and chosen model.
 
-This guide describes the current 0.1.8 release candidate. The [release page](https://github.com/hongfaqiu/strata-manager/releases/latest) and the selected version's changelog establish package availability and contents. Inspect the runtime in Strata first, then choose a configuration in **Models → My models**, select **Use**, wait for **Model ready**, and open Chat or copy the local API address. Manager manages supported installations on this computer; it does not manage remote nodes.
+This guide describes the current stable release (v0.1.10). The [latest release page](https://github.com/hongfaqiu/strata-manager/releases/latest) and the selected version's changelog establish package availability and contents. Inspect the runtime in Strata first, then choose a configuration in **Models → My models**, select **Use**, wait for **Model ready**, and open Chat or copy the local API address. Manager manages supported installations on this computer; it does not manage remote nodes.
 
 ## Prepare or reuse a model
 
@@ -199,7 +199,7 @@ Follow progress or cancel a running test. The workspace coordinates with chat, t
 
 ![Context tier report and resource trends](screenshots/benchmark-report.en.webp)
 
-<sub>These workspaces, reports and the historical condition comparison below were recaptured from actual 0.1.8 candidate components on October 14, 2026. Isolated example data does not establish GPU measurements or acceptance of a new installer.</sub>
+<sub>These workspaces, reports and the historical condition comparison below were recaptured from actual current components on October 14, 2026. Isolated example data does not establish GPU measurements.</sub>
 
 ![Historical benchmark condition comparison](screenshots/daily-experience/history-comparison.en.webp)
 
@@ -225,7 +225,7 @@ Dynamic VRAM adjustment depends on runtime support. If the engine rejects adjust
 
 Automatic checks are enabled by default, on launch and every 12 hours. An available update adds a badge to the top-left version entry. Click that entry to open the dedicated App updates page, review release notes and confirm downloading and installation. The installed version's bilingual notes are bundled for offline viewing. Disable automatic checks to check manually. Failures preserve the current app and can be retried; installation checks that the background is idle. Downloads show progress, and the updater verifies official Tauri signatures with the embedded public key.
 
-Choose a Windows installer, AppImage or DEB from the [latest stable release](https://github.com/hongfaqiu/strata-manager/releases/latest) or the [website download section](https://hongfaqiu.github.io/strata-manager/en/#get-started), then check that release's `SHA256SUMS`. Stable releases use `latest`; previews remain manual downloads and do not replace the stable channel.
+Choose a Windows installer, AppImage or DEB from the [latest release](https://github.com/hongfaqiu/strata-manager/releases/latest) or the [website download section](https://hongfaqiu.github.io/strata-manager/en/#get-started), then check that release's `SHA256SUMS`. App updates use the `latest` channel.
 
 Application, Strata runtime and model weights are separate. Updating Manager does not normally require another model-weight download. Read the version's release notes for restart and recovery behavior.
 
