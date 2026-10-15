@@ -172,23 +172,23 @@ const strataReleaseCatalog = (() => {
     },
     "benchmark": {
       "index": "04",
-      "image": "changelog/0.1.5/benchmark",
+      "image": "benchmark",
       "zh": { "title": "Benchmark · 上下文档位", "description": "在核验的上下文上限内，按档位串行测试并查看性能报告。", "alt": "Benchmark 上下文档位：模型上限、串行测试计划与输出预算", "badge": "基准测试" },
       "en": { "title": "Benchmark · Context tiers", "description": "Test tiers serially within the verified context limit and review performance reports.", "alt": "Benchmark context tiers: model limit, serial test plan and output allowance", "badge": "BENCHMARK" }
     },
     "scenario-benchmark": {
-      "index": "04", "image": "changelog/0.1.5/scenario-benchmark",
+      "index": "04", "image": "scenario-benchmark",
       "zh": { "title": "Benchmark · 场景测试", "description": "七类场景固定串行执行，保留历史报告与导出。", "alt": "Benchmark 场景测试：场景选择、预热与重复次数", "badge": "场景测试" },
       "en": { "title": "Benchmark · Scenario suite", "description": "Run seven scenarios serially and keep report history and exports.", "alt": "Benchmark scenario suite: scenario selection, warmup and repetitions", "badge": "SCENARIO SUITE" }
     },
     "benchmark-report": {
-      "index": "04", "image": "changelog/0.1.5/benchmark-report",
+      "index": "04", "image": "benchmark-report",
       "zh": { "title": "Benchmark · 结果报告", "description": "比较预填充、解码和请求耗时，复制图片或导出报告。", "alt": "Benchmark 结果报告：性能曲线与逐次结果，数值为演示数据而非实测", "badge": "测试报告", "height": 2720 },
       "en": { "title": "Benchmark · Results", "description": "Compare prefill, decode and request duration, then copy an image or export reports.", "alt": "Benchmark results: performance charts and individual samples with demonstration data, not measurements", "badge": "RESULTS", "height": 2800 }
     },
     "runtime": {
       "index": "05",
-      "image": "changelog/0.1.5/runtime-download",
+      "image": "runtime-download-settings",
       "zh": { "title": "Strata · 下载来源与校验", "description": "选择官方来源、HTTPS 镜像或本地 ZIP，安装前核验完整包。", "alt": "Strata 运行环境下载：来源选择、本地 ZIP 与校验结果", "badge": "运行环境" },
       "en": { "title": "Strata · Download sources and verification", "description": "Choose the official source, an HTTPS mirror or a local ZIP and verify the complete package before installation.", "alt": "Strata runtime downloads: source selection, local ZIP and verification results", "badge": "RUNTIME" }
     },
@@ -214,35 +214,35 @@ const strataReleaseCatalog = (() => {
     },
     "common-chat-settings": {
       "index": "10",
-      "image": "changelog/0.1.5/common-chat-settings",
+      "image": "common-chat-settings",
       "zh": { "title": "公共设置 · 按需继承参数", "description": "新模型默认继承，已有专用参数保留；更改在下一次聊天请求生效。", "alt": "公共聊天默认值：生成参数、MCP 开关与按模型继承选项", "badge": "公共设置" },
       "en": { "title": "Shared settings · Inherit when needed", "description": "New models inherit defaults; existing custom settings stay separate. Changes apply to the next chat request.", "alt": "Shared chat defaults: generation parameters, MCP and per-model inheritance", "badge": "SHARED SETTINGS" }
     },
     "connections": {
       "index": "11",
-      "image": "changelog/0.1.5/connections",
+      "image": "connections",
       "zh": { "title": "连接 · 集中配置 API 与 MCP", "description": "选择连接目标、保存应用访问密钥，复制 API 和外部助手配置。", "alt": "API 与外部助手：连接目标、应用访问密钥、API 示例与 MCP 接入", "badge": "API 与外部助手" },
       "en": { "title": "Connections · API and MCP in one place", "description": "Choose a target, save the application's access key and copy API or assistant configurations.", "alt": "API and external assistants: connection targets, application access keys, API examples and MCP", "badge": "CONNECTIONS" }
     },
     "app-updates": {
       "index": "12",
-      "image": "changelog/0.1.5/app-updates",
+      "image": "app-updates",
       "zh": { "title": "应用更新 · 先阅读，再确认", "description": "查看随应用打包的双语日志，检查新版本并确认签名更新。", "alt": "应用更新：当前版本、双语更新日志、检查与安装确认", "badge": "应用更新" },
       "en": { "title": "App updates · Read before confirming", "description": "Read bundled bilingual release notes, check for a new version and confirm signed updates.", "alt": "Application updates: current version, bilingual release notes, checks and installation confirmation", "badge": "APP UPDATES" }
     },
     "service-status": {
       "index": "13",
-      "image": "changelog/0.1.5/service-status",
+      "image": "service-status",
       "zh": { "title": "服务状态 · 查看近期趋势", "description": "区分生成与输入处理，保留采样间距和缺失点；空闲速度标明最近生成。", "alt": "服务状态快捷面板：当前状态、生成与输入处理的近期趋势", "badge": "服务状态" },
       "en": { "title": "Service status · See recent trends", "description": "Separate generation from input processing, retain sample gaps and label idle rates as recent generation.", "alt": "Service status panel: current state and recent generation and input-processing trends", "badge": "SERVICE STATUS" }
     },
     "floating-monitor": {
-      "index": "14", "width": 440, "height": 80, "image": "changelog/0.1.5/floating-monitor",
+      "index": "14", "width": 440, "height": 80, "image": "floating-monitor",
       "zh": { "title": "独立浮条 · 紧凑监控", "description": "纯指标浮条支持任意位置拖动，操作集中在原生右键菜单与系统托盘。", "alt": "紧凑桌面监控浮条：服务状态与生成、输入处理指标", "badge": "桌面监控浮条" },
       "en": { "title": "Floating monitor · Compact metrics", "description": "Drag the metrics-only strip anywhere and use its native context menu or system tray for actions.", "alt": "Compact floating monitor: service status, generation and input-processing metrics", "badge": "FLOATING MONITOR" }
     },
     "floating-monitor-settings": {
-      "index": "14", "image": "changelog/0.1.5/floating-monitor-settings",
+      "index": "14", "image": "floating-monitor-settings",
       "zh": { "title": "浮条设置 · 显示与托盘", "description": "设置默认置顶、采样时间与系统托盘监控。", "alt": "监控浮动条设置：置顶、采样时间和系统托盘监控", "badge": "浮条设置" },
       "en": { "title": "Monitor settings · Display and tray", "description": "Set the default pin state, sample-time display and system tray monitoring.", "alt": "Floating monitor settings: pin state, sample time and system tray monitoring", "badge": "MONITOR SETTINGS" }
     },
@@ -250,6 +250,42 @@ const strataReleaseCatalog = (() => {
       "index": "11", "image": "changelog/0.1.5/overview-api-guide",
       "zh": { "title": "API 接入 · 示例与帮助", "description": "从总览查看连接地址与 API 接入示例。", "alt": "总览页的 API 接入帮助和客户端请求示例", "badge": "API 接入" },
       "en": { "title": "API connections · Examples and help", "description": "Open connection details and API examples from the overview.", "alt": "API connection help and client request examples from the overview", "badge": "API GUIDE" }
+    },
+
+    "model-download-list": {
+      "index": "12", "image": "daily-experience/model-download-list",
+      "zh": { "title": "模型 · 下载列表", "description": "先在列表选择模型，再进入详情配置。", "alt": "模型下载列表，隔离示例数据", "badge": "模型下载" },
+      "en": { "title": "Models · Download list", "description": "Pick a model in the list, then open details.", "alt": "Model download list, isolated example data", "badge": "MODELS" }
+    },
+    "startup-diagnostic": {
+      "index": "12", "image": "daily-experience/startup-diagnostic",
+      "zh": { "title": "启动 · 失败诊断", "description": "查看阶段、耗时、原因和脱敏证据。", "alt": "启动失败诊断，隔离示例数据", "badge": "启动诊断" },
+      "en": { "title": "Startup · Diagnostics", "description": "See phase, duration, reason and redacted evidence.", "alt": "Startup failure diagnostics, isolated example data", "badge": "DIAGNOSTICS" }
+    },
+    "service-capabilities": {
+      "index": "12", "image": "daily-experience/service-capabilities",
+      "zh": { "title": "能力 · 可用与未核验", "description": "区分可用、不支持、未核验和需要重启。", "alt": "服务能力四态，隔离示例数据", "badge": "服务能力" },
+      "en": { "title": "Capabilities · Ready and unchecked", "description": "Available, unsupported, unchecked or needs restart.", "alt": "Service capability states, isolated example data", "badge": "CAPABILITIES" }
+    },
+    "chat-execution": {
+      "index": "12", "image": "daily-experience/chat-execution",
+      "zh": { "title": "聊天 · 请求计时", "description": "等待、思考、工具和正文分开计时。", "alt": "聊天请求计时，隔离示例数据", "badge": "聊天计时" },
+      "en": { "title": "Chat · Request timing", "description": "Waiting, thinking, tools and body stay separate.", "alt": "Chat request timing, isolated example data", "badge": "TIMING" }
+    },
+    "api-usage": {
+      "index": "12", "image": "daily-experience/api-usage",
+      "zh": { "title": "用量 · 请求与 tokens", "description": "请求、tokens、延迟和缓存复用趋势。", "alt": "API 用量趋势，隔离示例数据", "badge": "API 用量" },
+      "en": { "title": "Usage · Requests and tokens", "description": "Requests, tokens, latency and cache reuse.", "alt": "API usage trends, isolated example data", "badge": "USAGE" }
+    },
+    "running-services": {
+      "index": "15", "image": "running-services",
+      "zh": { "title": "服务 · 运行中实例", "description": "查看加载状态、模型、配置和 API 地址。", "alt": "运行中服务状态与连接", "badge": "运行中服务" },
+      "en": { "title": "Services · Running instances", "description": "See loaded state, model, config and API URL.", "alt": "Running services status and connection", "badge": "RUNNING" }
+    },
+    "language-settings": {
+      "index": "16", "image": "language-settings",
+      "zh": { "title": "语言 · 跟随系统或随包资源", "description": "十种随包语言，也可跟随系统。", "alt": "界面语言与系统跟随", "badge": "语言" },
+      "en": { "title": "Language · System or bundled packs", "description": "Ten bundled languages, or follow the system.", "alt": "Interface language and system follow", "badge": "LANGUAGE" }
     },
     "model-download-detail": {
       "index": "12", "image": "daily-experience/model-download-detail", "height": 2400,
