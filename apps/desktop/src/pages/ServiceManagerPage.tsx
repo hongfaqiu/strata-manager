@@ -39,6 +39,8 @@ export interface ServiceManagerPageProps {
   onSelect: Action;
   onAdd: () => void;
   onImport: () => void;
+  /** Directories the user added for discovery; used for empty-state guidance. */
+  addedDirectories?: string[];
   onEdit: Action;
   /** Called after this page's delete confirmation. Remove the profile, never the installation. */
   onDelete: Action;
@@ -63,6 +65,7 @@ const words = {
     model: '模型', modelHelp: '后台会检查运行环境、启动 Strata 并载入选定模型。准备完成后即可聊天和使用本机 API。',
     currentHelp: '同一时间运行一个模型。选择其他模型会先结束当前模型，再载入新的模型，聊天记录会保留。',
     noServices: '尚未发现本机模型', noServicesHelp: '应用会自动扫描已有 Strata 目录，也可以添加其它目录。首次使用请从侧栏“Strata”安装运行环境，再下载模型。',
+    noServicesDataHelp: '已添加的目录里没有找到可启动的模型配置。若这是官方数据目录（Strata-data / --data-dir），请改为添加含 setup.py 与 serve/server.py 的安装目录；也可在「下载模型 → 已有模型」用「导入配置」选择 strata-*.json。',
     checking: '检查中', online: '接口可用', offline: '尚未就绪', ready: '已就绪', unknown: '未提供', loaded: '已加载', unloaded: '未加载',
     owned: '后台已接管', external: '等待后台接管', connectionOnly: '等待导入', readyToStart: '尚未启用', localModel: '本机模型', api: '本机 API 地址',
     process: '进程', stopped: '未启动', running: '运行中', modelState: '模型状态', health: '服务状态',
@@ -95,6 +98,7 @@ const words = {
     model: 'Model', modelHelp: 'The background checks the runtime, starts Strata and loads your selection. Once ready, you can chat and use the local API.',
     currentHelp: 'One model runs at a time. Choosing another model ends the current model before loading the new one. Chat history is retained.',
     noServices: 'No local models found', noServicesHelp: 'Existing Strata directories are scanned automatically. You can also add another directory. For a first installation, open Strata in the sidebar to install the runtime, then download a model.',
+    noServicesDataHelp: 'No runnable model configuration was found in the directories you added. If this is an official data folder (Strata-data / --data-dir), add the install directory that contains setup.py and serve/server.py instead, or use Import configuration under Download models → Existing models and pick a strata-*.json file.',
     checking: 'Checking', online: 'API available', offline: 'Not ready', ready: 'Ready', unknown: 'Not reported', loaded: 'Loaded', unloaded: 'Not loaded',
     owned: 'Managed by the background', external: 'Awaiting ownership', connectionOnly: 'Awaiting import', readyToStart: 'Not enabled', localModel: 'Local model', api: 'Local API address',
     process: 'Process', stopped: 'Not started', running: 'Running', modelState: 'Model state', health: 'Service status',
@@ -348,7 +352,7 @@ export function ServiceManagerPage(props: ServiceManagerPageProps) {
     </div></div>
     {refreshing && <p className="service-manager-scanning" role="status"><LoaderCircle size={15} className="spin" />{w.scan}</p>}
     {(props.discoveryError || errors.discovery) && <p className="service-manager-error" role="alert">{w.scanFailed}: {errors.discovery || core.normalizeError(props.discoveryError).message}</p>}
-    {!groups.length && !props.discoveryLoading && <div className="service-manager-empty st-card"><Empty title={w.noServices} hint={w.noServicesHelp}><div className="service-manager-toolbar"><button className="primary" onClick={props.onAdd} disabled={!desktop || streaming || pageBusy}><FolderOpen size={16} />{w.add}</button></div></Empty></div>}
+    {!groups.length && !props.discoveryLoading && <div className="service-manager-empty st-card"><Empty title={w.noServices} hint={(props.addedDirectories?.length ?? 0) > 0 ? w.noServicesDataHelp : w.noServicesHelp}><div className="service-manager-toolbar"><button className="primary" onClick={props.onAdd} disabled={!desktop || streaming || pageBusy}><FolderOpen size={16} />{w.add}</button></div></Empty></div>}
     <div className="service-manager-list">{modelGroups.map(renderGroup)}</div>
     {!!repairGroups.length && <details className="service-manager-repair-configurations">
       <summary>{w.repairConfigurations} · {repairConfigurationCount} {w.configurations}</summary>
