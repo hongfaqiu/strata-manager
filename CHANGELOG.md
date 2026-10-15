@@ -7,7 +7,11 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+- **修复 #9**：添加官方模型数据目录（`Strata-data` / `--data-dir`）时不再静默跳过；会通过官方 `settings.json`、同级安装目录，以及目录内的 `strata-*.json` 解析到安装根并列出模型。若仍找不到可启动配置，空状态会提示改为添加安装目录或使用「导入配置」。
+
 ### English
+
+- **Fix #9**: adding an official model data directory (`Strata-data` / `--data-dir`) is no longer silently skipped. Discovery resolves the install root via official `settings.json`, sibling installs, and `strata-*.json` under the folder. If nothing runnable is found, the empty state explains adding the install directory or using Import configuration.
 
 ## [0.1.9] - 2026-10-14
 

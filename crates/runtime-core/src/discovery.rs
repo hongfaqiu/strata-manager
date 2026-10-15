@@ -659,6 +659,270 @@ fn is_runtime_root(root: &Path) -> bool {
     root.join("setup.py").is_file() && root.join("serve/server.py").is_file()
 }
 
+fn is_named_data_directory(root: &Path) -> bool {
+    root.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            let lower = name.to_ascii_lowercase();
+            lower == "strata-data" || lower == "strata_data" || lower.ends_with("-strata-data")
+        })
+}
+
+fn looks_like_weight_layout(root: &Path) -> bool {
+    root.join("models").is_dir() || root.join("packs").is_dir() || root.join("mtp").is_dir()
+}
+
+/// Official `strata-*.json` run configs (excluding Chat shared-settings companions).
+fn strata_model_configs_in(folder: &Path) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    for directory in [
+        folder.to_owned(),
+        folder.join("configs"),
+        folder.join("config"),
+    ] {
+        let Ok(entries) = fs::read_dir(&directory) else {
+            continue;
+        };
+        for entry in entries.take(MAX_CONFIGS).flatten() {
+            let path = entry.path();
+            let name = path.file_name().unwrap_or_default().to_string_lossy();
+            if name.starts_with("strata-")
+                && name.ends_with(".json")
+                && !name.ends_with(".shared-settings.json")
+                && path.is_file()
+                && !path.is_symlink()
+            {
+                paths.push(path);
+            }
+            if paths.len() >= MAX_CONFIGS {
+                break;
+            }
+        }
+        if paths.len() >= MAX_CONFIGS {
+            break;
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
+fn official_settings_paths() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    if let Some(appdata) = std::env::var_os("APPDATA") {
+        paths.push(PathBuf::from(appdata).join("Strata").join("settings.json"));
+    }
+    if let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME") {
+        paths.push(PathBuf::from(xdg).join("strata").join("settings.json"));
+    } else if let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))
+    {
+        paths.push(
+            PathBuf::from(home)
+                .join(".config")
+                .join("strata")
+                .join("settings.json"),
+        );
+    }
+    paths
+}
+
+fn settings_claim_data_directory(data_dir: &Path) -> bool {
+    let data_key = path_key(data_dir);
+    official_settings_paths().into_iter().any(|settings_path| {
+        let Ok(value) = read_json(&settings_path) else {
+            return false;
+        };
+        value
+            .get("data_dir")
+            .and_then(Value::as_str)
+            .and_then(|recorded| canonical_local(Path::new(recorded)).ok())
+            .is_some_and(|recorded| path_key(&recorded) == data_key)
+    })
+}
+
+fn should_expand_as_data_directory(root: &Path) -> bool {
+    looks_like_weight_layout(root)
+        || is_named_data_directory(root)
+        || settings_claim_data_directory(root)
+        || !strata_model_configs_in(root).is_empty()
+}
+
+fn installs_from_official_settings(data_dir: &Path) -> Vec<PathBuf> {
+    let data_key = path_key(data_dir);
+    let mut installs = Vec::new();
+    let mut seen = HashSet::new();
+    for settings_path in official_settings_paths() {
+        let Ok(value) = read_json(&settings_path) else {
+            continue;
+        };
+        let Some(recorded) = value
+            .get("data_dir")
+            .and_then(Value::as_str)
+            .and_then(|path| canonical_local(Path::new(path)).ok())
+        else {
+            continue;
+        };
+        if path_key(&recorded) != data_key {
+            continue;
+        }
+        let Some(list) = value.get("installs").and_then(Value::as_array) else {
+            continue;
+        };
+        for item in list.iter().take(20) {
+            let Some(path) = item.as_str() else {
+                continue;
+            };
+            let Ok(root) = canonical_local(Path::new(path)) else {
+                continue;
+            };
+            if is_runtime_root(&root) && seen.insert(path_key(&root)) {
+                installs.push(root);
+            }
+        }
+    }
+    installs
+}
+
+fn nearby_install_roots(data_dir: &Path) -> Vec<PathBuf> {
+    let mut installs = Vec::new();
+    let mut seen = HashSet::new();
+    let Some(parent) = data_dir.parent() else {
+        return installs;
+    };
+    let mut candidates = Vec::new();
+    for name in ["Strata", "strata", "Strata-main", "strata-main"] {
+        candidates.push(parent.join(name));
+    }
+    // Official default is `<parent>/Strata-data` next to `<parent>/Strata`.
+    if is_named_data_directory(data_dir) || looks_like_weight_layout(data_dir) {
+        if let Ok(entries) = fs::read_dir(parent) {
+            for entry in entries.take(MAX_DIRECTORIES).flatten() {
+                let path = entry.path();
+                if path.is_dir() && !path.is_symlink() {
+                    candidates.push(path);
+                }
+            }
+        }
+    }
+    for path in candidates {
+        if installs.len() >= MAX_DIRECTORIES {
+            break;
+        }
+        let Ok(root) = canonical_local(&path) else {
+            continue;
+        };
+        if is_runtime_root(&root) && seen.insert(path_key(&root)) {
+            installs.push(root);
+        }
+    }
+    installs
+}
+
+/// Resolve the Strata install root from a run-config's cwd / exe / ancestors.
+fn install_root_from_config_file(config: &Path) -> Option<PathBuf> {
+    let value = read_json(config).ok()?;
+    let exe = value
+        .get("exe")
+        .and_then(Value::as_str)
+        .filter(|v| !v.is_empty())?;
+    if !value.get("args").map(Value::is_array).unwrap_or(false) {
+        return None;
+    }
+    let config_dir = config.parent()?;
+    if let Some(cwd) = value.get("cwd").and_then(Value::as_str) {
+        let cwd = resolve(config_dir, cwd);
+        if let Ok(cwd) = canonical_local(&cwd) {
+            if is_runtime_root(&cwd) {
+                return Some(cwd);
+            }
+        }
+    }
+    let exe_path = resolve(
+        value
+            .get("cwd")
+            .and_then(Value::as_str)
+            .map(Path::new)
+            .unwrap_or(config_dir),
+        exe,
+    );
+    for ancestor in exe_path.ancestors().take(6) {
+        if is_runtime_root(ancestor) {
+            return canonical_local(ancestor).ok();
+        }
+    }
+    for ancestor in config.ancestors().take(6) {
+        if is_runtime_root(ancestor) {
+            return canonical_local(ancestor).ok();
+        }
+    }
+    None
+}
+
+fn config_outside_install(config: &Path, install: &Path) -> bool {
+    match (canonical_local(config), canonical_local(install)) {
+        (Ok(config), Ok(install)) => config.strip_prefix(&install).is_err(),
+        _ => true,
+    }
+}
+
+struct ExpandedUserDirectory {
+    install_roots: Vec<PathBuf>,
+    /// Run configs that live outside the install root (for example under a data dir).
+    external_configs: Vec<(PathBuf, PathBuf)>,
+    source: &'static str,
+}
+
+/// Expand a user-added path: install roots stay as-is; official data directories
+/// resolve to linked installs via settings.json, siblings, and strata-*.json.
+fn expand_user_directory(directory: &Path) -> ExpandedUserDirectory {
+    let empty = ExpandedUserDirectory {
+        install_roots: Vec::new(),
+        external_configs: Vec::new(),
+        source: "directory",
+    };
+    let Ok(root) = canonical_local(directory) else {
+        return empty;
+    };
+    if is_runtime_root(&root) {
+        return ExpandedUserDirectory {
+            install_roots: vec![root],
+            external_configs: Vec::new(),
+            source: "directory",
+        };
+    }
+    if !should_expand_as_data_directory(&root) {
+        return empty;
+    }
+    let mut install_roots = Vec::new();
+    let mut seen = HashSet::new();
+    let mut push_install = |path: PathBuf| {
+        if seen.insert(path_key(&path)) {
+            install_roots.push(path);
+        }
+    };
+    for install in installs_from_official_settings(&root) {
+        push_install(install);
+    }
+    for install in nearby_install_roots(&root) {
+        push_install(install);
+    }
+    let mut external_configs = Vec::new();
+    for config in strata_model_configs_in(&root) {
+        let Some(install) = install_root_from_config_file(&config) else {
+            continue;
+        };
+        push_install(install.clone());
+        if config_outside_install(&config, &install) {
+            external_configs.push((install, config));
+        }
+    }
+    ExpandedUserDirectory {
+        install_roots,
+        external_configs,
+        source: "data-directory",
+    }
+}
+
 /// Manager installations live inside runtimes/release-* or runtimes/strata-*.
 /// Look only one level below a recognized runtime container, with hard bounds;
 /// this never walks drives, model directories, or arbitrary user directories.
@@ -1383,12 +1647,28 @@ pub fn discover_local(
             .filter(|profile| external::local_port(profile).is_ok())
             .map(|profile| (PathBuf::from(&profile.install_dir), "registered")),
     );
-    roots.extend(directories.iter().cloned().map(|root| (root, "directory")));
+    let mut external_configs: Vec<(PathBuf, PathBuf, &'static str)> = Vec::new();
+    for directory in directories {
+        let expanded = expand_user_directory(directory);
+        for root in expanded.install_roots {
+            roots.push((root, expanded.source));
+        }
+        for (install, config) in expanded.external_configs {
+            external_configs.push((install, config, expanded.source));
+        }
+    }
     roots.extend(
         common_directories()
             .into_iter()
             .map(|root| (root, "common")),
     );
+    let mut extras_by_install: HashMap<String, Vec<(PathBuf, &'static str)>> = HashMap::new();
+    for (install, config, source) in external_configs {
+        extras_by_install
+            .entry(path_key(&install))
+            .or_default()
+            .push((config, source));
+    }
     let mut seen = HashSet::new();
     let mut cache = PythonCache::default();
     let mut candidates = Vec::new();
@@ -1399,7 +1679,14 @@ pub fn discover_local(
         if !root.join("setup.py").is_file() || !root.join("serve/server.py").is_file() {
             continue;
         }
-        let paths = prioritized_config_paths(&root, profiles, &hints);
+        let mut paths = prioritized_config_paths(&root, profiles, &hints);
+        if let Some(extras) = extras_by_install.remove(&path_key(&root)) {
+            for (config, _) in extras.into_iter().rev() {
+                if !paths.iter().any(|path| path_key(path) == path_key(&config)) {
+                    paths.insert(0, config);
+                }
+            }
+        }
         for path in paths.into_iter().take(MAX_CONFIGS) {
             if path.is_symlink() {
                 continue;
@@ -2522,5 +2809,198 @@ mod tests {
             assert_eq!(fs::read(path).unwrap(), bytes);
         }
         println!("{}", serde_json::to_string_pretty(&selected).unwrap());
+    }
+
+    struct EnvRestore {
+        key: &'static str,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl EnvRestore {
+        fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
+            let previous = std::env::var_os(key);
+            // SAFETY: discovery tests run single-threaded in this crate's unit suite.
+            unsafe { std::env::set_var(key, value) };
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvRestore {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => unsafe { std::env::set_var(self.key, value) },
+                None => unsafe { std::env::remove_var(self.key) },
+            }
+        }
+    }
+
+    fn write_install_root(root: &Path) {
+        fs::create_dir_all(root.join("serve")).unwrap();
+        fs::create_dir_all(root.join("engine")).unwrap();
+        fs::create_dir_all(root.join("tokenizer")).unwrap();
+        fs::write(root.join("setup.py"), b"# fixture").unwrap();
+        fs::write(root.join("serve/server.py"), b"# fixture").unwrap();
+        fs::write(root.join("engine/strata.exe"), b"fixture").unwrap();
+        fs::write(
+            root.join("engine/BUILD.json"),
+            br#"{"version":"fixture-data-dir"}"#,
+        )
+        .unwrap();
+        fs::write(root.join("tokenizer/vocab.json"), b"{}").unwrap();
+        fs::write(root.join("tokenizer/merges.txt"), b"").unwrap();
+        fs::write(root.join("tokenizer/token_type.json"), b"[]").unwrap();
+    }
+
+    fn write_model_config(install: &Path, config: &Path, model_rel: &str) {
+        if let Some(parent) = config.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        let model = install.join(model_rel);
+        if let Some(parent) = model.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(&model, b"0123456789").unwrap();
+        write_json_new(
+            config,
+            &serde_json::json!({
+                "exe": install.join("engine/strata.exe"),
+                "cwd": install,
+                "args": ["--native", model],
+                "tokenizer": install.join("tokenizer"),
+                "model_name": "ud-q4-k-xl",
+                "port": 18088
+            }),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn data_directory_from_official_settings_discovers_install_configs() {
+        let temp = tempfile::tempdir().unwrap();
+        let install = temp.path().join("Strata");
+        let data = temp.path().join("strata-data");
+        write_install_root(&install);
+        fs::create_dir_all(data.join("models/UD-Q4_K_XL")).unwrap();
+        fs::write(data.join("models/UD-Q4_K_XL/weights.gguf"), b"0123456789").unwrap();
+        write_model_config(
+            &install,
+            &install.join("strata-ud-q4_k_xl.json"),
+            "models/placeholder.gguf",
+        );
+        let config_home = temp.path().join("config-home");
+        fs::create_dir_all(config_home.join("strata")).unwrap();
+        fs::create_dir_all(config_home.join("Strata")).unwrap();
+        let settings = serde_json::json!({
+            "data_dir": &data,
+            "installs": [&install]
+        });
+        fs::write(
+            config_home.join("strata/settings.json"),
+            serde_json::to_vec_pretty(&settings).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            config_home.join("Strata/settings.json"),
+            serde_json::to_vec_pretty(&settings).unwrap(),
+        )
+        .unwrap();
+        let _xdg = EnvRestore::set("XDG_CONFIG_HOME", &config_home);
+        let _appdata = EnvRestore::set("APPDATA", &config_home);
+        let candidates = discover_local(std::slice::from_ref(&data), &[]).unwrap();
+        assert!(
+            candidates.iter().any(|candidate| {
+                candidate.source.as_deref() == Some("data-directory")
+                    && canonical_local(Path::new(&candidate.config_path))
+                        .ok()
+                        .as_ref()
+                        == Some(&canonical_local(&install.join("strata-ud-q4_k_xl.json")).unwrap())
+            }),
+            "expected install config via settings-linked data dir, got {candidates:?}"
+        );
+    }
+
+    #[test]
+    fn data_directory_sibling_install_is_discovered() {
+        let temp = tempfile::tempdir().unwrap();
+        let parent = temp.path().join("AI");
+        let install = parent.join("Strata");
+        let data = parent.join("Strata-data");
+        write_install_root(&install);
+        fs::create_dir_all(data.join("models")).unwrap();
+        write_model_config(&install, &install.join("strata-sibling.json"), "part.gguf");
+        let candidates = discover_local(std::slice::from_ref(&data), &[]).unwrap();
+        assert!(
+            candidates.iter().any(|candidate| {
+                candidate.name == "ud-q4-k-xl"
+                    && candidate.source.as_deref() == Some("data-directory")
+            }),
+            "expected sibling install discovery, got {candidates:?}"
+        );
+    }
+
+    #[test]
+    fn data_directory_with_run_configs_resolves_install_from_cwd() {
+        let temp = tempfile::tempdir().unwrap();
+        let install = temp.path().join("opt/strata");
+        let data = temp.path().join("strata-data");
+        write_install_root(&install);
+        fs::create_dir_all(data.join("models")).unwrap();
+        write_model_config(
+            &install,
+            &data.join("strata-from-data.json"),
+            "models/weights.gguf",
+        );
+        // Point the native weight into the data directory the user added.
+        let mut value = read_json(&data.join("strata-from-data.json")).unwrap();
+        value["args"] = serde_json::json!([
+            "--native",
+            data.join("models/weights.gguf").to_string_lossy(),
+        ]);
+        fs::write(data.join("models/weights.gguf"), b"0123456789").unwrap();
+        fs::write(
+            data.join("strata-from-data.json"),
+            serde_json::to_vec_pretty(&value).unwrap(),
+        )
+        .unwrap();
+        let candidates = discover_local(std::slice::from_ref(&data), &[]).unwrap();
+        assert!(
+            candidates.iter().any(|candidate| {
+                canonical_local(Path::new(&candidate.config_path))
+                    .ok()
+                    .as_ref()
+                    == Some(&canonical_local(&data.join("strata-from-data.json")).unwrap())
+                    && canonical_local(Path::new(&candidate.install_dir))
+                        .ok()
+                        .as_ref()
+                        == Some(&canonical_local(&install).unwrap())
+            }),
+            "expected config living in the data dir, got {candidates:?}"
+        );
+    }
+
+    #[test]
+    fn unrelated_directory_without_data_markers_is_not_expanded_to_siblings() {
+        let temp = tempfile::tempdir().unwrap();
+        let parent = temp.path().join("workspace");
+        let install = parent.join("Strata");
+        let other = parent.join("notes");
+        write_install_root(&install);
+        write_model_config(&install, &install.join("strata-hidden.json"), "part.gguf");
+        fs::create_dir_all(&other).unwrap();
+        fs::write(other.join("readme.txt"), b"not strata").unwrap();
+        let candidates = discover_local(std::slice::from_ref(&other), &[]).unwrap();
+        assert!(
+            candidates
+                .iter()
+                .filter(|candidate| {
+                    canonical_local(Path::new(&candidate.install_dir))
+                        .ok()
+                        .as_ref()
+                        == Some(&canonical_local(&install).unwrap())
+                })
+                .count()
+                == 0,
+            "random folders must not pull in sibling installs: {candidates:?}"
+        );
     }
 }
