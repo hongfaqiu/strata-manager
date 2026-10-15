@@ -279,18 +279,107 @@ fn first_model(args: &[Value]) -> Result<Option<&str>, String> {
     Ok(None)
 }
 
+/// Official and common self-extracted engine folder names.
+/// Prefer the run-config `exe` path for validity; these names are only fallbacks.
+pub(crate) fn known_engine_dir_names() -> &'static [&'static str] {
+    &["engine", "engine-cuda12", "engine_cuda12"]
+}
+
+fn engine_build_json_candidates(root: &Path, exe: Option<&Path>) -> Vec<PathBuf> {
+    let mut paths: Vec<PathBuf> = Vec::new();
+    let mut push = |path: PathBuf| {
+        if !paths.iter().any(|existing| path_key(existing) == path_key(&path)) {
+            paths.push(path);
+        }
+    };
+    if let Some(parent) = exe.and_then(Path::parent) {
+        push(parent.join("BUILD.json"));
+    }
+    for name in known_engine_dir_names() {
+        push(root.join(name).join("BUILD.json"));
+    }
+    if let Ok(entries) = fs::read_dir(root) {
+        for entry in entries.take(MAX_DIRECTORIES).flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if !name.to_ascii_lowercase().starts_with("engine") {
+                continue;
+            }
+            let path = entry.path();
+            if path.is_dir() && !path.is_symlink() {
+                push(path.join("BUILD.json"));
+            }
+        }
+    }
+    paths
+}
+
 fn runtime_version(root: &Path, exe: Option<&Path>) -> Option<String> {
-    let paths = [
-        exe.and_then(Path::parent).map(|p| p.join("BUILD.json")),
-        Some(root.join("engine/BUILD.json")),
-    ];
-    paths.into_iter().flatten().find_map(|path| {
+    engine_build_json_candidates(root, exe).into_iter().find_map(|path| {
         read_json(&path)
             .ok()?
             .get("version")?
             .as_str()
             .map(str::to_owned)
     })
+}
+
+/// Resolve the engine binary from a run-config `exe` field.
+/// If that exact path is missing, try the same file name under known engine folders
+/// (for example `engine_cuda12/` when the config still says `engine/`).
+fn resolve_engine(cwd: &Path, exe: &str) -> PathBuf {
+    let primary = resolve(cwd, exe);
+    if primary.is_file() {
+        return primary;
+    }
+    let path = Path::new(exe);
+    let Some(file_name) = path.file_name() else {
+        return primary;
+    };
+    for name in known_engine_dir_names() {
+        let candidate = cwd.join(name).join(file_name);
+        if candidate.is_file() {
+            return candidate;
+        }
+    }
+    if let Ok(entries) = fs::read_dir(cwd) {
+        for entry in entries.take(MAX_DIRECTORIES).flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if !name.to_ascii_lowercase().starts_with("engine") {
+                continue;
+            }
+            let dir = entry.path();
+            if !dir.is_dir() || dir.is_symlink() {
+                continue;
+            }
+            let candidate = dir.join(file_name);
+            if candidate.is_file() {
+                return candidate;
+            }
+        }
+    }
+    primary
+}
+
+fn first_config_engine(root: &Path) -> Option<PathBuf> {
+    for config in config_paths(root)
+        .into_iter()
+        .chain(strata_model_configs_in(root))
+    {
+        let Ok(value) = read_json(&config) else {
+            continue;
+        };
+        let Some(exe) = value.get("exe").and_then(Value::as_str).filter(|v| !v.is_empty()) else {
+            continue;
+        };
+        let cwd = config_cwd(root, &value);
+        let engine = resolve_engine(&cwd, exe);
+        if engine.is_file() {
+            return Some(engine);
+        }
+    }
+    None
 }
 
 fn python_probe(path: &Path, cache: &mut PythonCache) -> bool {
@@ -402,7 +491,7 @@ fn inspect_config(
         .ok_or("配置没有引擎 args")?;
     let model = first_model(args)?.ok_or("配置没有可识别的本机模型路径")?;
     let cwd = config_cwd(&root, &value);
-    let engine = resolve(&cwd, exe);
+    let engine = resolve_engine(&cwd, exe);
     let model_path = resolve(&cwd, model);
     let python = find_python(&root, preferred_python, hint, cache);
     let mut fatal_reasons = Vec::new();
@@ -1004,7 +1093,7 @@ fn runtime_root(profile: &ServiceProfile) -> PathBuf {
     };
     if cwd.join("setup.py").is_file()
         && cwd.join("serve/server.py").is_file()
-        && canonical_local(&resolve(&cwd, exe))
+        && canonical_local(&resolve_engine(&cwd, exe))
             .is_ok_and(|engine| engine.is_file() && engine.starts_with(&cwd))
     {
         return cwd;
@@ -1087,10 +1176,11 @@ fn inspect_runtime_directories(
         // saved configuration refers to an interpreter that was later moved.
         profile.install_dir = root.to_string_lossy().into();
         profile.python_path = python_path.clone();
+        let engine_hint = first_config_engine(&root);
         runtimes.push(DetectedRuntime {
             install_dir: root.to_string_lossy().into(),
             python_path,
-            runtime_version: runtime_version(&root, None),
+            runtime_version: runtime_version(&root, engine_hint.as_deref()),
             source_revision: source_revision(&root),
             readiness: if reasons.is_empty() {
                 "ready"
@@ -2975,6 +3065,153 @@ mod tests {
                         == Some(&canonical_local(&install).unwrap())
             }),
             "expected config living in the data dir, got {candidates:?}"
+        );
+    }
+
+    #[test]
+    fn config_exe_under_engine_cuda12_is_ready() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("Strata");
+        fs::create_dir_all(root.join("serve")).unwrap();
+        fs::create_dir_all(root.join("engine_cuda12")).unwrap();
+        fs::create_dir_all(root.join("tokenizer")).unwrap();
+        fs::write(root.join("setup.py"), b"# fixture").unwrap();
+        fs::write(root.join("serve/server.py"), b"# fixture").unwrap();
+        fs::write(root.join("engine_cuda12/strata.exe"), b"fixture").unwrap();
+        fs::write(
+            root.join("engine_cuda12/BUILD.json"),
+            br#"{"version":"0.1.44.1","backend":"cuda","cuda":"12.9"}"#,
+        )
+        .unwrap();
+        fs::write(root.join("tokenizer/vocab.json"), b"{}").unwrap();
+        fs::write(root.join("tokenizer/merges.txt"), b"").unwrap();
+        fs::write(root.join("tokenizer/token_type.json"), b"[]").unwrap();
+        fs::write(root.join("model.gguf"), b"0123456789").unwrap();
+        let config = root.join("strata-cuda12.json");
+        write_json_new(
+            &config,
+            &serde_json::json!({
+                "exe": "engine_cuda12/strata.exe",
+                "cwd": root,
+                "args": ["--native", root.join("model.gguf")],
+                "tokenizer": root.join("tokenizer"),
+                "model_name": "cuda12-model",
+                "port": 18091
+            }),
+        )
+        .unwrap();
+        // No classic engine/ directory at all.
+        assert!(!root.join("engine").exists());
+        let candidates = discover_local(std::slice::from_ref(&root), &[]).unwrap();
+        let hit = candidates
+            .iter()
+            .find(|c| c.name == "cuda12-model")
+            .unwrap_or_else(|| panic!("expected cuda12-model, got {candidates:?}"));
+        assert_eq!(hit.availability.as_deref(), Some("ready"), "reason={:?}", hit.reason);
+        assert_eq!(hit.runtime_version.as_deref(), Some("0.1.44.1"));
+        assert!(hit.reason.is_none(), "{:?}", hit.reason);
+    }
+
+    #[test]
+    fn config_exe_under_official_engine_cuda12_hyphen_is_ready() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("Strata");
+        fs::create_dir_all(root.join("serve")).unwrap();
+        fs::create_dir_all(root.join("engine-cuda12")).unwrap();
+        fs::create_dir_all(root.join("tokenizer")).unwrap();
+        fs::write(root.join("setup.py"), b"# fixture").unwrap();
+        fs::write(root.join("serve/server.py"), b"# fixture").unwrap();
+        fs::write(root.join("engine-cuda12/strata.exe"), b"fixture").unwrap();
+        fs::write(
+            root.join("engine-cuda12/BUILD.json"),
+            br#"{"version":"0.1.44.1","backend":"cuda","cuda":"12.9"}"#,
+        )
+        .unwrap();
+        fs::write(root.join("tokenizer/vocab.json"), b"{}").unwrap();
+        fs::write(root.join("tokenizer/merges.txt"), b"").unwrap();
+        fs::write(root.join("tokenizer/token_type.json"), b"[]").unwrap();
+        fs::write(root.join("model.gguf"), b"0123456789").unwrap();
+        write_json_new(
+            &root.join("strata-official-cuda12.json"),
+            &serde_json::json!({
+                "exe": "engine-cuda12/strata.exe",
+                "cwd": root,
+                "args": ["--native", root.join("model.gguf")],
+                "tokenizer": root.join("tokenizer"),
+                "model_name": "official-cuda12",
+                "port": 18092
+            }),
+        )
+        .unwrap();
+        assert!(!root.join("engine").exists());
+        let candidates = discover_local(std::slice::from_ref(&root), &[]).unwrap();
+        let hit = candidates
+            .iter()
+            .find(|c| c.name == "official-cuda12")
+            .unwrap_or_else(|| panic!("expected official-cuda12, got {candidates:?}"));
+        assert_eq!(hit.availability.as_deref(), Some("ready"), "reason={:?}", hit.reason);
+        assert_eq!(hit.runtime_version.as_deref(), Some("0.1.44.1"));
+    }
+
+
+    #[test]
+    fn config_exe_falls_back_to_engine_cuda12_when_classic_engine_missing() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("Strata");
+        fs::create_dir_all(root.join("serve")).unwrap();
+        fs::create_dir_all(root.join("engine_cuda12")).unwrap();
+        fs::create_dir_all(root.join("tokenizer")).unwrap();
+        fs::write(root.join("setup.py"), b"# fixture").unwrap();
+        fs::write(root.join("serve/server.py"), b"# fixture").unwrap();
+        fs::write(root.join("engine_cuda12/strata.exe"), b"fixture").unwrap();
+        fs::write(
+            root.join("engine_cuda12/BUILD.json"),
+            br#"{"version":"0.1.44.1","backend":"cuda","cuda":"12.9"}"#,
+        )
+        .unwrap();
+        fs::write(root.join("tokenizer/vocab.json"), b"{}").unwrap();
+        fs::write(root.join("tokenizer/merges.txt"), b"").unwrap();
+        fs::write(root.join("tokenizer/token_type.json"), b"[]").unwrap();
+        fs::write(root.join("model.gguf"), b"0123456789").unwrap();
+        write_json_new(
+            &root.join("strata-legacy-exe.json"),
+            &serde_json::json!({
+                "exe": "engine/strata.exe",
+                "cwd": root,
+                "args": ["--native", root.join("model.gguf")],
+                "tokenizer": root.join("tokenizer"),
+                "model_name": "legacy-exe-path",
+                "port": 18093
+            }),
+        )
+        .unwrap();
+        assert!(!root.join("engine").exists());
+        let candidates = discover_local(std::slice::from_ref(&root), &[]).unwrap();
+        let hit = candidates
+            .iter()
+            .find(|c| c.name == "legacy-exe-path")
+            .unwrap_or_else(|| panic!("expected legacy-exe-path, got {candidates:?}"));
+        assert_eq!(hit.availability.as_deref(), Some("ready"), "reason={:?}", hit.reason);
+        assert_eq!(hit.runtime_version.as_deref(), Some("0.1.44.1"));
+    }
+
+    #[test]
+    fn runtime_version_reads_build_json_under_engine_cuda12_without_classic_engine() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("Strata");
+        fs::create_dir_all(root.join("serve")).unwrap();
+        fs::create_dir_all(root.join("engine_cuda12")).unwrap();
+        fs::write(root.join("setup.py"), b"# fixture").unwrap();
+        fs::write(root.join("serve/server.py"), b"# fixture").unwrap();
+        fs::write(
+            root.join("engine_cuda12/BUILD.json"),
+            br#"{"version":"cuda12-only"}"#,
+        )
+        .unwrap();
+        assert!(!root.join("engine").exists());
+        assert_eq!(
+            runtime_version(&root, None).as_deref(),
+            Some("cuda12-only")
         );
     }
 

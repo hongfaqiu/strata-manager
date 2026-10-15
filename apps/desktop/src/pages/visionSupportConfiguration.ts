@@ -19,8 +19,18 @@ export function visionDraftOf(config: JsonObject, installDir: string): VisionSup
   };
   const separator = installDir.includes('\\') && !installDir.includes('/') ? '\\' : '/';
   const directory = installDir.replace(/[\\/]+$/, '');
+  // Prefer the same folder as run-config `exe` (engine_cuda12/, engine-cuda12/, …).
+  const mainExe = path(config.exe);
+  const engineDirFromExe = (() => {
+    if (!mainExe) return '';
+    const cut = Math.max(mainExe.lastIndexOf('/'), mainExe.lastIndexOf('\\'));
+    return cut > 0 ? mainExe.slice(0, cut).replace(/[\\/]+$/, '') : '';
+  })();
+  const defaultVisionExe = engineDirFromExe
+    ? `${engineDirFromExe}${separator}strata-vision.exe`
+    : (directory ? `${directory}${separator}engine${separator}strata-vision.exe` : '');
   return {
-    exe: path(vision.exe) || (directory ? `${directory}${separator}engine${separator}strata-vision.exe` : ''),
+    exe: path(vision.exe) || defaultVisionExe,
     model: path(vision.model) || modelArg('--model') || modelArg('--native'),
     mmproj: path(vision.mmproj), gpu: vision.gpu === true,
     threads: String(vision.threads ?? 8), maxTokens: String(vision.max_tokens ?? 1024),
