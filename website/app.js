@@ -131,14 +131,14 @@ const strataReleaseCatalog = (() => {
       "image": "overview",
       "zh": {
         "title": "完整总览。",
-        "description": "查看模型、API 用量与资源状态；截图使用隔离示例数据。",
-        "alt": "Strata Manager 完整总览，包含模型、API 用量与资源状态的隔离示例数据",
+        "description": "查看模型、API 用量与资源状态。",
+        "alt": "Strata Manager 完整总览，包含模型、API 用量与资源状态",
         "badge": "总览"
       },
       "en": {
         "title": "Complete Overview.",
-        "description": "View models, API usage and resource status; the screenshot uses isolated example data.",
-        "alt": "Strata Manager complete Overview with isolated example models, API usage and resource status",
+        "description": "View models, API usage and resource status.",
+        "alt": "Strata Manager complete Overview with models, API usage and resource status",
         "badge": "OVERVIEW"
       }
     },
@@ -240,7 +240,7 @@ const strataReleaseCatalog = (() => {
     },
     "floating-monitor": {
       "index": "14", "width": 488, "height": 240, "image": "floating-monitor",
-      "zh": { "title": "桌面监控浮条", "description": "默认双行，支持指标排序、独立配色与实时折线；操作集中在原生右键菜单与系统托盘。", "alt": "默认双行监控浮条：生成、读取、GPU 与 CPU 指标及折线，使用隔离示例数据", "badge": "桌面监控" },
+      "zh": { "title": "桌面监控浮条", "description": "默认双行，支持指标排序、独立配色与实时折线；操作集中在原生右键菜单与系统托盘。", "alt": "默认双行监控浮条：生成、读取、GPU 与 CPU 指标及折线", "badge": "桌面监控" },
       "en": { "title": "Floating monitor", "description": "Two rows by default, with metric order, individual colors and live graphs. Use the native context menu or system tray for actions.", "alt": "Two-row floating monitor: generation, input processing, GPU and CPU metrics with graphs and isolated example data", "badge": "DESKTOP MONITOR" }
     },
     "floating-monitor-settings": {
@@ -265,18 +265,18 @@ const strataReleaseCatalog = (() => {
     },
     "model-download-detail": {
       "index": "0.1.7", "image": "daily-experience/model-download-detail", "height": 2400,
-      "zh": { "title": "模型下载详情", "description": "统一显卡与运行选项，查看当前选择的资源估算和未知项。", "alt": "模型下载详情与资源选择，使用隔离示例数据", "badge": "日常功能" },
-      "en": { "title": "Model download details", "description": "Unified GPU and run options with resource estimates and explicit unknowns.", "alt": "Model download details and resource selection with isolated example data", "badge": "DAILY FEATURE" }
+      "zh": { "title": "模型下载详情", "description": "统一显卡与运行选项，查看当前选择的资源估算和未知项。", "alt": "模型下载详情与资源选择", "badge": "日常功能" },
+      "en": { "title": "Model download details", "description": "Unified GPU and run options with resource estimates and explicit unknowns.", "alt": "Model download details and resource selection", "badge": "DAILY FEATURE" }
     },
     "api-verification": {
       "index": "0.1.7", "image": "daily-experience/api-verification",
-      "zh": { "title": "API 在线验证", "description": "显式发送一次限时限量的文本、工具结构或图片测试。", "alt": "API 在线验证，使用隔离示例数据", "badge": "日常功能" },
-      "en": { "title": "API verification", "description": "Explicit bounded checks for text, tool structure or image input.", "alt": "API verification with isolated example data", "badge": "DAILY FEATURE" }
+      "zh": { "title": "API 在线验证", "description": "显式发送一次限时限量的文本、工具结构或图片测试。", "alt": "API 在线验证", "badge": "日常功能" },
+      "en": { "title": "API verification", "description": "Explicit bounded checks for text, tool structure or image input.", "alt": "API verification", "badge": "DAILY FEATURE" }
     },
     "history-comparison": {
       "index": "0.1.7", "image": "daily-experience/history-comparison",
-      "zh": { "title": "历史条件对照", "description": "查看历史数据与未知条件，不据弱身份宣称直接提速。", "alt": "历史 Benchmark 条件比较，使用隔离示例数据", "badge": "日常功能" },
-      "en": { "title": "Historical conditions", "description": "Inspect historical values and unknown conditions without direct speedup claims from weak identity.", "alt": "Historical benchmark conditions with isolated example data", "badge": "DAILY FEATURE" }
+      "zh": { "title": "历史条件对照", "description": "查看历史数据与未知条件，不据弱身份宣称直接提速。", "alt": "历史 Benchmark 条件比较", "badge": "日常功能" },
+      "en": { "title": "Historical conditions", "description": "Inspect historical values and unknown conditions without direct speedup claims from weak identity.", "alt": "Historical benchmark conditions", "badge": "DAILY FEATURE" }
     },
     "usage": {
       "index": "03",
@@ -614,8 +614,8 @@ const strataReleaseCatalog = (() => {
       const channel = releaseState.preview
         ? (english ? 'No published release is available yet; packages below are for manual installation only.' : '暂无已发布安装包；以下仅供手工安装。')
         : releaseState.snapshot
-          ? (english ? 'Published stable release.' : '已发布稳定版。')
-          : (english ? 'Latest published stable release.' : '最新已发布稳定版。');
+          ? (english ? 'Published release.' : '已发布版本。')
+          : (english ? 'Latest release.' : '最新发布版本。');
       const labels = { windows: 'Windows', appimage: 'AppImage', deb: 'DEB', checksums: 'SHA256SUMS' };
       const missing = releaseState.missing.map(key => labels[key]).join(' / ');
       status.textContent = `${channel}${missing ? (english ? ` Unavailable assets: ${missing}. Those downloads are disabled.` : ` 缺少 ${missing} 资产，对应下载已禁用。`) : ''}`;

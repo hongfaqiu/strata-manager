@@ -9,8 +9,7 @@
 <a href="https://hongfaqiu.github.io/strata-manager/"><strong>官网</strong></a> ·
 <a href="https://hongfaqiu.github.io/strata-manager/docs/index.html"><strong>文档中心</strong></a> ·
 <a href="docs/SYSTEM.md">系统说明</a> ·
-<a href="https://github.com/hongfaqiu/strata-manager/releases/latest"><strong>最新稳定版</strong></a> ·
-<a href="CHANGELOG.md">更新日志</a> ·
+<a href="https://github.com/hongfaqiu/strata-manager/releases/latest"><strong>下载</strong></a> ·
 <a href="README.md">English</a>
 </p>
 
@@ -27,8 +26,6 @@
 
 [![Strata Manager 完整总览，右上角服务状态收起](docs/screenshots/product-cover.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.zh.webp)
 
-<sub>v0.1.10 界面，2026 年 10 月 14 日重新采集。首页封面为完整总览，右上角服务状态保持收起。截图由实际应用与组件配合隔离示例数据渲染；显示数值不代表推理结果或性能测试。点击可查看原图。</sub>
-
 ## Strata 是什么，Manager 负责什么？
 
 [Strata](https://github.com/Niko1221/Strata) 是开源的本地大模型（LLM）推理引擎，协调 GPU 显存、RAM 和 CPU 资源运行它支持的模型，并提供浏览器界面与本机 API。
@@ -43,7 +40,7 @@ Manager 是独立社区项目，管理的是**这台电脑**上受支持的 Stra
 
 ## 从安装准备到日常使用
 
-以下概览覆盖当前源码，稳定安装包的功能以对应发布说明为准。依赖引擎的工具会按已安装运行时的能力提供。
+依赖引擎的工具会按已安装运行时的能力提供。
 
 | 工作流程 | 可以完成的操作 |
 | --- | --- |
@@ -58,39 +55,23 @@ Manager 是独立社区项目，管理的是**这台电脑**上受支持的 Stra
 
 API 使用统计无需捕获请求正文。可选的临时正文诊断是独立功能，行为与隐私说明见[使用指南](docs/USER_GUIDE.md)。
 
-组件关系和数据保存见[系统说明](docs/SYSTEM.md)，各版本变更见 [CHANGELOG.md](CHANGELOG.md) 或[官网更新日志](https://hongfaqiu.github.io/strata-manager/docs/changelog.html)。
-
-## v0.1.10 更新
-
-**v0.1.10** 为当前稳定版，包含以下改进。安装包见[最新发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)；安装包验收与界面示例分开记录。
-
-- **多卡选择与校准入口。** 模型下载设置支持勾选显卡编号；官方 `--calibrate` 仅生成终端命令，不在应用内执行。API 接入向导增加 Cursor / Codex；启动设置提供 batch / parallel 等常用项快捷表单。观察器兼容 Strata 0.1.44.1，并对更新的上游版本做结构检测（契约变化时自动降级为公开接口监控），多数上游新版无需等本应用适配；运行环境页可直接调用官方 `update.sh` / `UPDATE.bat`。
-- **Windows 运行中服务集中管理。** 查看实际加载状态、当前模型、运行配置、PID、引擎版本和 OpenAI API Base URL。已有 Manager 后台的服务优先连接；托管普通外部服务可能重新加载模型。自动连接只在当前后台没有活动服务且发现唯一明确的运行候选时尝试；自动托管还要求模型健康、已加载且空闲，多候选保留手动选择。
-- **跟随系统与随包语言资源。** 首次启动可确认语言，提供英语、简体／繁体中文、日语、韩语、德语、法语、西班牙语、葡萄牙语和俄语，也可跟随系统。语言包随应用提供，已有手动选择会保留；部分高级工具和原始日志仍使用英文。
-- **可自定义的桌面监控。** 用开关显示或隐藏，默认清晰双行，也可选择紧凑单行或详细面板；支持 8–36px 字号、从 11 项指标中选择 1–8 项并排序。标签默认开启，状态文字与贴边吸附默认关闭；可切换单位、采样时间、折线，并逐项配色或恢复主题默认色。浮条可拖动，按指标稳定列宽，减少空白；读取默认蓝色、生成默认绿色，空闲历史速度不续画为实时曲线。设置文案精简，开关详情通过提示查看。常驻任务栏切换已移除，旧偏好迁回浮动条。
-- **更清楚的载入与控件状态。** 空闲释放模型后，再次请求自动载入时，状态栏显示载入进度和实际耗时；工作区 Tab 恢复圆角分段样式，选择控件移除外层光晕。
-
-| 检测到的运行中服务 | 跟随系统与语言包 |
-| --- | --- |
-| [![运行中服务的状态、连接与托管操作](docs/screenshots/running-services.zh.webp)](docs/screenshots/running-services.zh.webp) | [![跟随系统及随包界面语言选项](docs/screenshots/language-settings.zh.webp)](docs/screenshots/language-settings.zh.webp) |
-
-配图仍为 2026 年 10 月 14 日图库，对应当前 v0.1.10 界面，来源见[截图记录](docs/screenshots/README.md)。原生窗口、真实 GPU 容量、长时稳定性与跨设备局域网的验收范围见[验证记录](docs/VERIFICATION.md)。
+组件关系和数据保存见[系统说明](docs/SYSTEM.md)。
 
 ## 下载与开始使用
 
-### 0.1.7 引入的日常工作流程
+### 日常工作流程
 
-[0.1.7 发布版](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.7)增加模型下载列表与详情、统一显卡及运行选项、按选择变化的资源评估、启动失败诊断、服务能力四态、聊天请求计时、API 在线验证与历史 Benchmark 条件比较。保存设置不会证明当前引擎已生效；缺少证据显示“未核验”，需要重启的选项单独提示。模型未就绪时不会自动启动在线验证。
+Strata Manager 提供模型下载列表与详情、统一显卡及运行选项、按选择变化的资源评估、启动失败诊断、服务能力四态、聊天请求计时、API 在线验证与历史 Benchmark 条件比较。保存设置不会证明当前引擎已生效；缺少证据显示“未核验”，需要重启的选项单独提示。模型未就绪时不会自动启动在线验证。
 
-这些工作流程在当前版本中继续提供，详见[日常体验说明](docs/DAILY_EXPERIENCE.md)与[验收记录](docs/VERIFICATION.md)。下图已用当前组件和隔离示例数据重新采集，不代表真实推理验收。
+详见[日常体验说明](docs/DAILY_EXPERIENCE.md)与[验收记录](docs/VERIFICATION.md)。
 
 | 模型下载与资源选择 | API 验证与能力 |
 | --- | --- |
 | [![当前界面：模型下载详情与资源评估](docs/screenshots/daily-experience/model-download-detail.zh.webp)](docs/screenshots/daily-experience/model-download-detail.zh.webp) | [![当前界面：API 在线验证](docs/screenshots/daily-experience/api-verification.zh.webp)](docs/screenshots/daily-experience/api-verification.zh.webp) |
 
-### 稳定安装包
+### 安装包
 
-从[最新稳定发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)或[官网下载区](https://hongfaqiu.github.io/strata-manager/#get-started)选择安装包。仅安装所选版本实际提供的文件，并用同一发布页的 `SHA256SUMS` 核对。
+从[最新发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)或[官网下载区](https://hongfaqiu.github.io/strata-manager/#get-started)选择安装包。仅安装所选版本实际提供的文件，并用同一发布页的 `SHA256SUMS` 核对。
 
 | 平台 | 安装形式 | 准备事项 |
 | --- | --- | --- |
@@ -104,8 +85,6 @@ API 使用统计无需捕获请求正文。可选的临时正文诊断是独立�
 桌面安装包包含 Manager 与独立后台。硬件和驱动要求取决于 Strata 与模型，macOS 和 ARM 尚不在发布目标中。安装步骤及包的支持范围见[下载说明](docs/DOWNLOAD.md)，日常操作见[使用指南](docs/USER_GUIDE.md)。
 
 ## 界面一览
-
-以下图片使用当前应用与组件和隔离文档示例数据，均为亮色主题。点击图片可查看高清原图。
 
 | 模型与运行配置 | 硬件与推理监控 |
 | --- | --- |

@@ -9,8 +9,7 @@
 <a href="https://hongfaqiu.github.io/strata-manager/en/"><strong>Website</strong></a> ·
 <a href="https://hongfaqiu.github.io/strata-manager/docs/index.en.html"><strong>Documentation</strong></a> ·
 <a href="docs/SYSTEM.en.md">System explanation</a> ·
-<a href="https://github.com/hongfaqiu/strata-manager/releases/latest"><strong>Latest stable release</strong></a> ·
-<a href="CHANGELOG.md">Changelog</a> ·
+<a href="https://github.com/hongfaqiu/strata-manager/releases/latest"><strong>Download</strong></a> ·
 <a href="README.zh-CN.md">简体中文</a>
 </p>
 
@@ -27,8 +26,6 @@
 
 [![Strata Manager complete Overview with the top-right service status closed](docs/screenshots/product-cover.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.en.webp)
 
-<sub>v0.1.10 interface, refreshed on October 14, 2026. The homepage cover shows the complete Overview with the top-right service status closed. Screenshots use the actual application and components with isolated example data; displayed values are not inference results or benchmarks. Click to view the original.</sub>
-
 ## What is Strata, and what does Manager do?
 
 [Strata](https://github.com/Niko1221/Strata) is an open-source local LLM inference engine. It coordinates GPU memory, RAM and CPU resources to run supported models, and provides a browser interface and a local API.
@@ -43,7 +40,7 @@ Manager is an independent community project. It manages supported Strata install
 
 ## A workflow from setup to daily use
 
-This overview covers the current source; stable installers include the features listed in their release notes. Engine-dependent tools appear according to the installed runtime's capabilities.
+Engine-dependent tools appear according to the installed runtime's capabilities.
 
 | Workflow | What you can do |
 | --- | --- |
@@ -58,39 +55,23 @@ This overview covers the current source; stable installers include the features 
 
 API usage statistics work without capturing request bodies. Optional temporary body diagnostics are separate; see the [user guide](docs/USER_GUIDE.en.md) for behavior and privacy.
 
-See the [system explanation](docs/SYSTEM.en.md) for component relationships and persistence, and [CHANGELOG.md](CHANGELOG.md) or the [website changelog](https://hongfaqiu.github.io/strata-manager/docs/changelog.en.html) for version-specific changes.
-
-## What's new in v0.1.10
-
-Version **v0.1.10** is the current stable release. It includes the following changes. Download packages from the [latest release page](https://github.com/hongfaqiu/strata-manager/releases/latest); installer acceptance is recorded separately from interface screenshots.
-
-- **Multi-GPU selection and calibrate entry.** Download settings can pick GPU indices graphically; the official `--calibrate` control only prepares a terminal command and never runs calibration inside the app. The API wizard adds Cursor / Codex examples, and startup settings expose quick batch / parallel controls. The observer supports Strata 0.1.44.1 and detects newer upstream versions structurally (degrading to public endpoints when the contract changes), so most upstream releases need no app update; the environment page can run the official `update.sh` / `UPDATE.bat`.
-- **Running services on Windows.** Inspect the actual loaded state, current model, running configuration, PID, engine version and OpenAI API Base URL. Connect to an existing Manager backend first; taking ownership of a plain external service can reload the model. Automatic connection requires an empty backend and a single unambiguous running service. Automatic takeover additionally requires a healthy, loaded, idle model; multiple candidates remain available for manual selection.
-- **System language and bundled language packs.** First launch offers language confirmation. Choose English, Simplified/Traditional Chinese, Japanese, Korean, German, French, Spanish, Portuguese or Russian, or follow the system language. Packs are included in the app; an existing explicit choice is preserved. Some advanced tools and original logs remain in English.
-- **A configurable desktop monitor.** Show or hide it with a switch. Two rows are the default; compact and panel layouts are also available, with 8–36px text and 1–8 ordered metrics from eleven. Labels default on; status text and edge snapping default off. Control units, sample time and graphs, customize each metric's color or restore its theme default, and drag the strip. Stable column widths reduce empty space; prefill is blue and generation green, and idle history is never plotted as a new live sample. Short settings labels use tooltips for details. The taskbar-mode switch is removed, and older preferences migrate to floating mode.
-- **Clearer loading and controls.** A request that reloads an idle-released model shows loading progress and elapsed time in the status bar. Rounded workspace tabs and simplified selection controls are shared across the interface.
-
-| Detected running services | System language and language packs |
-| --- | --- |
-| [![Detected running services with connection and management actions](docs/screenshots/running-services.en.webp)](docs/screenshots/running-services.en.webp) | [![System language and bundled interface language options](docs/screenshots/language-settings.en.webp)](docs/screenshots/language-settings.en.webp) |
-
-Screenshots remain from the 2026-10-14 gallery covering the current v0.1.10 interface; see the [capture record](docs/screenshots/README.md). Native window behavior, real GPU capacity, prolonged stability and cross-device LAN access have separate [verification records](docs/VERIFICATION.md).
+See the [system explanation](docs/SYSTEM.en.md) for component relationships and persistence.
 
 ## Download and get started
 
-### Daily workflows introduced in 0.1.7
+### Daily workflows
 
-The [0.1.7 release](https://github.com/hongfaqiu/strata-manager/releases/tag/v0.1.7) adds a model download list and details, unified GPU/run options, resource assessment for the current selection, startup diagnostics, four capability states, chat request timing, explicit API verification and historical benchmark condition comparisons. Saved settings do not prove live engine support; missing evidence remains unverified, and settings that require a restart are identified separately. Verification never starts an unready model automatically.
+Strata Manager provides a model download list and details, unified GPU/run options, resource assessment for the current selection, startup diagnostics, four capability states, chat request timing, explicit API verification and historical benchmark condition comparisons. Saved settings do not prove live engine support; missing evidence remains unverified, and settings that require a restart are identified separately. Verification never starts an unready model automatically.
 
-These workflows continue in the current release. See the [daily experience notes](docs/DAILY_EXPERIENCE.md) and [verification record](docs/VERIFICATION.md). The images below were recaptured from current components with isolated example data; they do not establish measured inference performance.
+See the [daily experience notes](docs/DAILY_EXPERIENCE.md) and [verification record](docs/VERIFICATION.md).
 
 | Model downloads and resource selection | API verification and capabilities |
 | --- | --- |
 | [![Model download details and resource assessment in the current interface](docs/screenshots/daily-experience/model-download-detail.en.webp)](docs/screenshots/daily-experience/model-download-detail.en.webp) | [![API verification in the current interface](docs/screenshots/daily-experience/api-verification.en.webp)](docs/screenshots/daily-experience/api-verification.en.webp) |
 
-### Stable installers
+### Installers
 
-Choose a package from the [latest stable release](https://github.com/hongfaqiu/strata-manager/releases/latest) or the [website download section](https://hongfaqiu.github.io/strata-manager/en/#get-started). Install only files listed for the selected release and verify them against that release's `SHA256SUMS`.
+Choose a package from the [latest release](https://github.com/hongfaqiu/strata-manager/releases/latest) or the [website download section](https://hongfaqiu.github.io/strata-manager/en/#get-started). Install only files listed for the selected release and verify them against that release's `SHA256SUMS`.
 
 | Platform | Package | Setup |
 | --- | --- | --- |
@@ -104,8 +85,6 @@ Choose a package from the [latest stable release](https://github.com/hongfaqiu/s
 The desktop installer contains Manager and its background process. Hardware and driver requirements depend on Strata and the model. macOS and ARM are outside the current release targets. Detailed steps and package limitations are in the [download guide](docs/DOWNLOAD.en.md); everyday use is covered in the [user guide](docs/USER_GUIDE.en.md).
 
 ## Explore the workspace
-
-All images below show the current application and components with isolated documentation data, in the light theme. Click an image for full resolution.
 
 | Models and configurations | Hardware and inference monitoring |
 | --- | --- |
