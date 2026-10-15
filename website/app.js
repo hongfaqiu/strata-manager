@@ -129,22 +129,8 @@ const strataReleaseCatalog = (() => {
     });
   }
 
-  // Demo readings drift a little, the way a sampled value does. ?static freezes them.
-  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const speed = document.getElementById('r-speed');
-  const gpu = document.getElementById('r-gpu');
-  const temp = document.getElementById('r-temp');
-  if (speed && gpu && temp && !reduced && !new URLSearchParams(window.location.search).has('static')) {
-    const around = (base, range) => base + (Math.random() * 2 - 1) * range;
-    window.setInterval(() => {
-      speed.textContent = around(30, 1.4).toFixed(1);
-      gpu.textContent = String(Math.round(around(35, 3)));
-      temp.textContent = String(Math.round(around(58, 1)));
-    }, 2000);
-  }
-
   // Asset links stay disabled until a published release validates (same rule
-  // as the deploy snapshot). The hero buttons scroll to the platform section
+  // as the deploy snapshot). The hero buttons scroll to the download table
   // until then, and afterwards point straight at the verified installer.
   const status = document.getElementById('download-status');
   const notes = document.getElementById('release-notes-link');

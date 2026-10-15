@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#0f1513">
+  <meta name="theme-color" content="#fbfbf9">
   <meta name="color-scheme" content="light">
   <meta name="description" content="Niko1221/Strata 的开源桌面管理工具。装引擎、管模型、起停服务、看显卡和 API 用量。Windows / Linux x64。" data-content-en="Open-source desktop manager for Niko1221/Strata. Install the engine, manage models, start and stop the service, watch the GPU and API usage. Windows / Linux x64.">
   <meta property="og:type" content="website">
@@ -47,171 +47,129 @@
 <body>
   <a class="skip-link" href="#main" data-en="Skip to content">跳到正文</a>
 
-  <section class="night" aria-labelledby="hero-title">
-    <div class="wrap">
-      <header class="bar">
-        <a class="mark" href="#" aria-label="Strata Manager 首页" data-label-en="Strata Manager home"><img src="assets/icon.svg" width="22" height="22" alt=""><span>Strata</span><span class="mark-sub">Manager</span></a>
-        <nav aria-label="主导航" data-label-en="Main navigation">
-          <a href="#qa" data-en="FAQ">问答</a>
-          <a href="#changes" data-en="Changelog">更新日志</a>
-          <a href="docs/index.html" data-href-en="docs/index.en.html" data-en="Docs">文档</a>
-          <a href="https://github.com/hongfaqiu/strata-manager">GitHub</a>
-          <a class="lang" id="language-switch" href="en/" aria-label="切换到 English" title="切换到 English"><span id="language-label" data-en="中文">EN</span></a>
-        </nav>
-      </header>
-
-      <p class="now"><i aria-hidden="true"></i><span data-en="Demo data · Qwen3.8-Flash-Next · RTX 4080 SUPER">演示数据 · Qwen3.8-Flash-Next · RTX 4080 SUPER</span></p>
-      <div class="read" role="group" aria-label="演示读数" data-label-en="Demo readings">
-        <div><b><span id="r-speed">30.0</span><small>tok/s</small></b><span class="read-label" data-en="Generation">生成速度</span></div>
-        <div><b><span id="r-gpu">35</span><small>%</small></b><span class="read-label" data-en="GPU load">GPU 负载</span></div>
-        <div><b>21.0<small>/ 32 GB</small></b><span class="read-label" data-en="VRAM">显存</span></div>
-        <div><b><span id="r-temp">58</span><small>°C</small></b><span class="read-label" data-en="GPU temp">GPU 温度</span></div>
-      </div>
-
-      <div class="claim">
-        <h1 id="hero-title"><span data-en="Once Strata is running,">Strata 跑起来之后，</span><span data-en="you need somewhere to see what it’s doing.">总得有个地方看它在干嘛。</span></h1>
-        <div>
-          <p class="lede" data-en="A desktop app for Niko1221/Strata: install the engine, set up models, start and stop the service, hand the API address to your editor, and keep an eye on the GPU while you’re at it. Open source, MIT.">给 Niko1221/Strata 用的桌面程序：装引擎、配模型、起停服务、把 API 地址交给你的编辑器，顺便盯着显卡。开源，MIT 许可。</p>
-          <div class="acts">
-            <a class="btn go" href="#get-started" data-download-mirror="windows"><span data-en="Download for Windows">下载 Windows 版</span><small>x64 · .exe</small></a>
-            <a class="btn" href="#get-started" data-download-mirror="appimage"><span data-en="Linux">Linux 版</span><small>AppImage</small></a>
-          </div>
-          <p class="release-line" id="download-status" role="status" aria-live="polite" data-en="Installers are on GitHub Releases, with SHA256SUMS.">安装包在 GitHub Releases 上，附 SHA256SUMS。</p>
-        </div>
-      </div>
-
-      <a class="peek" href="assets/screenshots/monitor.zh.webp" data-href-en="assets/screenshots/monitor.en.webp" aria-label="查看监控页大图" data-label-en="Open the Monitor page screenshot"><img src="assets/screenshots/monitor.zh.webp" data-src-en="assets/screenshots/monitor.en.webp" width="2880" height="1920" alt="监控页：速度、GPU 负载、显存和温度" data-alt-en="Monitor page: speed, GPU load, VRAM and temperature" fetchpriority="high"></a>
-    </div>
-  </section>
-  <p class="peek-note wrap" data-en="The numbers above are demo data from the Monitor page.">上面的数字是演示数据，截自监控页。</p>
+  <header class="top"><div class="wrap">
+    <a class="mark" href="#" aria-label="Strata Manager 首页" data-label-en="Strata Manager home"><img src="assets/icon.svg" width="22" height="22" alt="">Strata <span>Manager</span></a>
+    <nav aria-label="主导航" data-label-en="Main navigation">
+      <a href="#workflow" data-en="What it does">能做什么</a>
+      <a href="#get-started" data-en="Download">下载</a>
+      <a href="docs/index.html" data-href-en="docs/index.en.html" data-en="Docs">文档</a>
+      <a href="docs/changelog.html" data-href-en="docs/changelog.en.html" data-en="Changelog">更新日志</a>
+      <a href="https://github.com/hongfaqiu/strata-manager">GitHub</a>
+      <a class="lang" id="language-switch" href="en/" aria-label="切换到 English" title="切换到 English"><span id="language-label" data-en="中文">EN</span></a>
+    </nav>
+  </div></header>
 
   <main id="main">
-    <section class="qa" id="qa" aria-label="问答" data-label-en="FAQ">
-      <div class="wrap"><div class="col">
-        <ol class="toc">
-          <li><b>01</b><a href="#q1" data-en="What Strata is">Strata 是什么</a></li>
-          <li><b>02</b><a href="#q2" data-en="What it handles">它管哪些事</a></li>
-          <li><b>03</b><a href="#q3" data-en="Existing weights">已有的模型</a></li>
-          <li><b>04</b><a href="#q4" data-en="Does it keep chats">会不会存对话</a></li>
-          <li><b>05</b><a href="#q5" data-en="Editors and assistants">接编辑器</a></li>
-          <li><b>06</b><a href="#q6" data-en="“Not verified”">“未核验”</a></li>
-          <li><b>07</b><a href="#q7" data-en="Systems">系统支持</a></li>
-        </ol>
+    <section class="hero" aria-labelledby="hero-title"><div class="wrap grid">
+      <div class="meta label"><span>Strata Manager</span><span data-en="Open source · MIT">开源 · MIT</span><span>Windows · Linux x64</span></div>
+      <div class="hero-copy">
+        <h1 id="hero-title"><span data-en="A desktop manager">给 Strata 配一个</span><span data-en="for Strata.">桌面管理器。</span></h1>
+        <p class="lede" data-en="An open-source desktop app for Niko1221/Strata. Install the engine, sort out models, start and stop the service, and see what the local API and the GPU are up to. Models you already have stay where they are.">Niko1221/Strata 的开源桌面程序。装引擎、整理模型、起停服务，顺便看清本机 API 和显卡在干嘛。已经下好的模型不用挪。</p>
+        <div class="get">
+          <a class="btn primary" href="#get-started" data-download-mirror="windows"><span data-en="Download for Windows">下载 Windows 版</span><small>x64 · .exe</small></a>
+          <a class="btn" href="#get-started" data-download-mirror="appimage"><span data-en="Download for Linux">下载 Linux 版</span><small>x64 · AppImage</small></a>
+          <p class="status" id="download-status" role="status" aria-live="polite" data-en="Installers are on GitHub Releases, with SHA256SUMS.">安装包在 GitHub Releases 上，附 SHA256SUMS。</p>
+        </div>
+      </div>
+      <div class="roles">
+        <p class="label" data-en="Who does what">三方各管什么</p>
+        <table>
+          <tr><th><span data-en="Strata runtime">Strata 运行时</span><small>Niko1221/Strata</small></th><td data-en="Loads models, runs inference, serves the API. Which models work, and whether images do, depends on the engine and model you installed.">加载模型、做推理、提供 API。支持哪些模型、能不能传图，看你装的引擎和模型。</td></tr>
+          <tr class="me"><th>Strata Manager<small data-en="this project">本项目</small></th><td data-en="Installs the engine, manages models and configs, starts and stops the service, plus chat, monitoring, tuning and benchmarks. Doesn’t run inference itself.">装引擎、管模型和配置、起停服务，外加聊天、监控、调参和跑分。自己不做推理。</td></tr>
+          <tr><th><span data-en="Your apps">你的应用</span><small data-en="Cherry Studio, Cursor, Codex …">Cherry Studio、Cursor、Codex …</small></th><td data-en="Once the service is up, they talk to the local API.">服务起来以后，连本机 API 用模型。</td></tr>
+        </table>
+      </div>
+    </div></section>
 
-        <article class="q" id="q1">
-          <h2><span class="qn">01</span><span data-en="What is Strata, and where does Manager fit?">Strata 是什么？跟 Manager 什么关系？</span></h2>
-          <p><a href="https://github.com/Niko1221/Strata">Strata</a><span data-en=" is an open-source local inference engine maintained by Niko1221. It fits models across VRAM, RAM and CPU, and serves a browser UI plus a local API."> 是 Niko1221 维护的开源本地推理引擎，负责把模型分摊到显存、内存和 CPU 上跑起来，再提供一个浏览器界面和本机 API。</span></p>
-          <p><strong data-en="Manager doesn’t run inference, and it isn’t an official project.">Manager 不做推理，也不是官方项目。</strong><span data-en=" It’s a community-built shell around Strata: it installs it, edits configs, shows logs and numbers. The engine and the models are installed separately.">它是社区做的一层外壳：帮你装 Strata、改配置、看日志、看数字。引擎和模型都要另外装。</span></p>
-        </article>
+    <section class="sec" aria-labelledby="fig-title"><div class="wrap grid">
+      <div class="sec-head"><h2 id="fig-title" data-en="Figure 1 · Overview">图 1 · 总览</h2><p data-en="The first page you see after launch. Service state, API address and load fit on one screen.">打开应用第一眼看到的页面：服务状态、API 地址、负载都在这一屏。</p></div>
+      <figure class="fig">
+        <a class="shot" href="assets/screenshots/product-cover.zh.webp" data-href-en="assets/screenshots/product-cover.en.webp" aria-label="查看总览大图" data-label-en="Open the full Overview screenshot">
+          <img src="assets/screenshots/product-cover.zh.webp" data-src-en="assets/screenshots/product-cover.en.webp" width="2880" height="1920" alt="Strata Manager 总览页" data-alt-en="Strata Manager overview page" fetchpriority="high">
+          <span class="pin" style="left:19.6%;top:10.2%" aria-hidden="true">1</span>
+          <span class="pin" style="left:21.0%;top:22.6%" aria-hidden="true">2</span>
+          <span class="pin" style="left:18.2%;top:28.2%" aria-hidden="true">3</span>
+          <span class="pin" style="left:17.5%;top:50.4%" aria-hidden="true">4</span>
+          <span class="pin" style="left:17.5%;top:71.6%" aria-hidden="true">5</span>
+          <span class="pin" style="left:80.9%;top:3.2%" aria-hidden="true">6</span>
+        </a>
+        <figcaption><span class="mono">FIG. 1</span><span data-en="Real interface, Chinese locale. The numbers are demo data.">实际界面，中文。数字是演示数据。</span></figcaption>
+      </figure>
+      <ol class="legend">
+        <li><b>1</b><div><strong data-en="Service and model">服务与模型</strong><span data-en="Which model is loaded, and whether HTTP is up.">现在载入的是哪个模型，HTTP 通没通。</span></div></li>
+        <li><b>2</b><div><strong data-en="Local API address">本机 API 地址</strong><span data-en="Click to copy, paste into your editor or script.">点一下复制，贴进编辑器或脚本。</span></div></li>
+        <li><b>3</b><div><strong data-en="Service control">服务控制</strong><span data-en="Stop, restart, or free model memory without quitting.">停止、重启，或者不退出直接释放模型内存。</span></div></li>
+        <li><b>4</b><div><strong data-en="API usage today">今日 API 使用</strong><span data-en="Requests, success rate, tokens in and out.">请求数、成功率、输入输出 Token。</span></div></li>
+        <li><b>5</b><div><strong data-en="Live load">实时负载</strong><span data-en="Generation speed, GPU, running and queued requests.">生成速度、GPU、正在跑和排队的请求。</span></div></li>
+        <li><b>6</b><div><strong data-en="Status pill">状态胶囊</strong><span data-en="Queue and service state, visible on every page.">在哪个页面都能看到排队和服务状态。</span></div></li>
+      </ol>
+    </div></section>
 
-        <article class="q" id="q2">
-          <h2><span class="qn">02</span><span data-en="So what does it actually handle?">具体管哪些事？</span></h2>
-          <p data-en="Roughly in the order you’ll run into them. If your Strata build doesn’t support something, Manager won’t pretend it does.">大致按你会碰到的顺序排。你装的 Strata 不支持的功能，这里也不会硬给。</p>
-          <ol class="steps">
-            <li><b>01</b><strong data-en="Install">装引擎</strong><span data-en="Finds an existing install. Otherwise downloads the ZIP, resumes if the connection drops, checks SHA256.">先找已有的安装；没有就下 ZIP，断了能续，下完对一遍 SHA256。</span></li>
-            <li><b>02</b><strong data-en="Models">管模型</strong><span data-en="Finds weights on disk; shows GGUF info and how much space each one takes.">扫出硬盘上的权重，看 GGUF 信息和各占多少空间。</span></li>
-            <li><b>03</b><strong data-en="Run">起服务</strong><span data-en="Edit the config (a backup is kept), start, stop, restart, free VRAM, read logs.">改配置（会留备份），启动、停止、重启、释放显存，看日志。</span></li>
-            <li><b>04</b><strong data-en="Chat, connect">聊天、接入</strong><span data-en="A built-in chat window, plus API and MCP setup for other tools.">自带一个聊天窗口；给外部工具配 API 和 MCP。</span></li>
-            <li><b>05</b><strong data-en="Load">看负载</strong><span data-en="Slots, VRAM, temperature. A desktop float bar if you want one — off by default.">槽位、显存、温度。想常驻桌面就开浮条，默认关着。</span></li>
-            <li><b>06</b><strong data-en="Usage">看用量</strong><span data-en="Requests, tokens, latency, cache hits. Compare before and after you tune.">请求数、Token、延迟、缓存命中；调参前后能对比。</span></li>
-            <li><b>07</b><strong data-en="Benchmark">跑分</strong><span data-en="Context sizes or seven scenarios, one request at a time. Export to CSV or PNG.">按上下文长度或七种场景一个个跑，结果能导出 CSV 和 PNG。</span></li>
-            <li><b>08</b><strong data-en="Updates">更新</strong><span data-en="The app, Strata and models are updated separately. Nothing moves together.">应用、Strata、模型分开更新，互不牵连。</span></li>
-          </ol>
-        </article>
+    <section class="sec" id="workflow" aria-labelledby="workflow-title"><div class="wrap grid">
+      <div class="sec-head"><h2 id="workflow-title" data-en="From install to daily use">从装上到天天用</h2><p data-en="If your Strata build doesn’t support something, Manager won’t pretend it does.">你装的 Strata 不支持的功能，这里也不会硬给。</p></div>
+      <table class="ledger">
+        <thead><tr><th>No.</th><th data-en="Step">流程</th><th data-en="What you get">能做什么</th><th data-en="Platform">平台</th><th data-en="Screen">界面</th></tr></thead>
+        <tbody>
+          <tr><td class="no">01</td><td class="name" data-en="Install Strata">装引擎</td><td class="what" data-en="Finds an existing install and compares it with upstream. Otherwise downloads the engine ZIP from official GitHub, a proxy, your own HTTPS mirror or a local file; resumes if it drops, then checks the official size and SHA256.">先找已有的安装，顺便对比本机和上游版本。没有就下引擎 ZIP，来源可以是官方 GitHub、代理、自定义 HTTPS 或本地文件；断了能续，下完按官方大小和 SHA256 校验。</td><td class="plat"><span data-en="Windows: download, resume">Windows：下载、续传</span><br><span data-en="Linux: scan, logs">Linux：扫描、看日志</span></td><td class="thumb"><div class="crop"><img src="assets/screenshots/runtime.zh.webp" data-src-en="assets/screenshots/runtime.en.webp" width="2880" height="1920" alt="" loading="lazy" decoding="async"></div></td></tr>
+          <tr><td class="no">02</td><td class="name" data-en="Models">管模型</td><td class="what" data-en="Finds weights on disk and groups run configs per model. Pick a download source and GPU; see model files, GGUF metadata and disk usage.">扫出硬盘上的权重，同一个模型的运行配置归到一起。下载时选来源和显卡；模型文件、GGUF 元数据、占了多少盘都看得到。</td><td class="plat">Windows · Linux</td><td class="thumb"><div class="crop"><img src="assets/screenshots/models.zh.webp" data-src-en="assets/screenshots/models.en.webp" width="2880" height="1920" alt="" loading="lazy" decoding="async"></div></td></tr>
+          <tr><td class="no">03</td><td class="name" data-en="Run the service">起服务</td><td class="what" data-en="Use the form or edit JSON directly; it validates before saving and keeps a backup. Start, stop, restart, free memory, and see which startup step it’s stuck on and what the logs say.">用表单或者直接改 JSON，保存前会校验并留备份。启动、停止、重启、释放内存；启动卡在哪一步、日志说了什么都看得到。</td><td class="plat">Windows · Linux<br><span data-en="Take over a running service: Windows only">接管运行中的服务：仅 Windows</span></td><td class="thumb"><div class="crop"><img src="assets/screenshots/config.zh.webp" data-src-en="assets/screenshots/config.en.webp" width="2880" height="1920" alt="" loading="lazy" decoding="async"></div></td></tr>
+          <tr><td class="no">04</td><td class="name" data-en="Chat and connect">聊天、接入</td><td class="what" data-en="Built-in streaming chat with attachments and structured output. Addresses, keys, API examples and MCP for other tools live in “API & assistants”; picking a target won’t start or swap a model.">自带流式聊天，支持附件和结构化输出。外部工具的地址、密钥、API 示例和 MCP 都在「API 与外部助手」里配；选目标不会顺手启动或切换模型。</td><td class="plat">Windows · Linux</td><td class="thumb"><div class="crop"><img src="assets/screenshots/connections.zh.webp" data-src-en="assets/screenshots/connections.en.webp" width="2880" height="1920" alt="" loading="lazy" decoding="async"></div></td></tr>
+          <tr><td class="no">05</td><td class="name" data-en="Watch the load">看负载</td><td class="what" data-en="Save and restore engine sessions; watch slots, load and hardware. Looking doesn’t touch anything: opening the monitor won’t start the service. Desktop float bar and tray monitor are optional and off by default.">保存和恢复引擎会话，看槽位、负载和硬件。只看不碰：打开监控不会把服务拉起来。桌面浮条和托盘监控可选，默认关着。</td><td class="plat">Windows · Linux</td><td class="thumb"><div class="crop"><img src="assets/screenshots/monitor.zh.webp" data-src-en="assets/screenshots/monitor.en.webp" width="2880" height="1920" alt="" loading="lazy" decoding="async"></div></td></tr>
+          <tr><td class="no">06</td><td class="name" data-en="Usage and tuning">看用量、调参</td><td class="what" data-en="Records requests, tokens, latency and cache reuse on the local API — numbers only, no request bodies. Compare tuning candidates for chat, coding or long-form work, and apply only once you’re happy.">记录本机 API 的请求、Token、延迟和缓存复用，只记数字不记正文。按聊天、写代码、长文三类比较调参候选，看满意了再应用。</td><td class="plat">Windows · Linux</td><td class="thumb"><div class="crop"><img src="assets/screenshots/usage.zh.webp" data-src-en="assets/screenshots/usage.en.webp" width="2880" height="1920" alt="" loading="lazy" decoding="async"></div></td></tr>
+          <tr><td class="no">07</td><td class="name" data-en="Benchmark">跑分</td><td class="what" data-en="Runs context sizes or seven scenarios one at a time, recording tokens, prefill and decode speed, time to first token and resource use. History stays around; export JSON, CSV or PNG.">按上下文档位或七种场景一个个串行跑，记下 Token、输入处理和生成速度、首 Token 延迟、资源占用。历史能翻，能导出 JSON / CSV / PNG。</td><td class="plat">Windows · Linux</td><td class="thumb"><div class="crop"><img src="assets/screenshots/benchmark.zh.webp" data-src-en="assets/screenshots/benchmark.en.webp" width="2880" height="1920" alt="" loading="lazy" decoding="async"></div></td></tr>
+          <tr><td class="no">08</td><td class="name" data-en="Updates and settings">更新与设置</td><td class="what" data-en="The app, Strata and model weights update separately. Changelogs ship in both languages; installers are checked with Tauri signatures. Ten UI languages, light and dark.">应用、Strata、模型权重分开更新；更新日志随包带中英文，安装包用 Tauri 签名校验。十种界面语言，亮色暗色都有。</td><td class="plat">Windows · Linux</td><td class="thumb"><div class="crop"><img src="assets/screenshots/app-updates.zh.webp" data-src-en="assets/screenshots/app-updates.en.webp" width="2880" height="1920" alt="" loading="lazy" decoding="async"></div></td></tr>
+        </tbody>
+      </table>
+      <p class="foot-note"><span data-en="How the parts fit together and where data is stored: ">各部分怎么配合、数据存在哪儿，写在</span><a href="docs/system.html" data-href-en="docs/system.en.html" data-en="System explanation">系统说明</a><span data-en=".">里。</span></p>
+    </div></section>
 
-        <article class="q" id="q3">
-          <h2><span class="qn">03</span><span data-en="Do I need to re-download or move models I already have?">已经下好的模型，要重下或者挪地方吗？</span></h2>
-          <p><strong data-en="No.">不用。</strong><span data-en=" Weights stay where they are; Manager just reads them. Installing Manager doesn’t quietly download any models either — tens of gigabytes should be your call.">权重放哪儿还放哪儿，Manager 只是去读。装 Manager 本身也不会偷偷下模型——几十 GB 的东西，还是你自己决定。</span></p>
-        </article>
-      </div></div>
-      <figure class="wide wrap"><a href="assets/screenshots/models.zh.webp" data-href-en="assets/screenshots/models.en.webp"><img src="assets/screenshots/models.zh.webp" data-src-en="assets/screenshots/models.en.webp" width="2880" height="1920" loading="lazy" decoding="async" alt="模型页" data-alt-en="Models page"></a><figcaption data-en="Models page. One row per model found on this machine.">模型页。本机找到的权重，一个模型一行。</figcaption></figure>
+    <section class="sec" id="get-started" aria-labelledby="get-title"><div class="wrap grid">
+      <div class="sec-head"><h2 id="get-title" data-en="Download">下载</h2><p data-en="The package is the desktop app plus a background process. The Strata engine and models are installed separately.">安装包里是桌面程序加一个后台进程。Strata 引擎和模型要另外装。</p></div>
+      <table class="plat-table">
+        <thead><tr><th data-en="Platform">平台</th><th data-en="Package">安装包</th><th data-en="Before you install">装之前</th><th></th></tr></thead>
+        <tbody>
+          <tr><td>Windows x64</td><td class="fmt"><span data-en="NSIS installer">NSIS 安装包</span> · _x64-setup.exe</td><td data-en="Needs WebView2. There’s no code-signing certificate, so SmartScreen will probably complain; just make sure the file came from this project’s release page.">需要 WebView2。没有代码签名证书，SmartScreen 多半会拦一下，确认文件来自本项目发布页就行。</td><td class="act"><a data-download="windows" aria-disabled="true" tabindex="-1" data-en="Download .exe">下载 .exe</a></td></tr>
+          <tr><td>Linux x64</td><td class="fmt">AppImage · .deb</td><td data-en="Built on Ubuntu 22.04. Make the AppImage executable and run it, or open the .deb in your software installer.">在 Ubuntu 22.04 上构建。AppImage 加上执行权限就能跑，.deb 用系统的软件安装器打开。</td><td class="act"><a data-download="appimage" aria-disabled="true" tabindex="-1" data-en="AppImage">AppImage</a><a data-download="deb" aria-disabled="true" tabindex="-1">.deb</a></td></tr>
+        </tbody>
+      </table>
+      <p class="verify"><span><a data-download="checksums" aria-disabled="true" tabindex="-1">SHA256SUMS</a></span><span><a id="release-notes-link" href="https://github.com/hongfaqiu/strata-manager/releases" data-en="All releases">全部发布</a></span><span><a href="docs/download.html" data-href-en="docs/download.en.html" data-en="Install steps">安装步骤</a></span><span><span data-en="From source: ">从源码跑：</span><code>pnpm install --frozen-lockfile &amp;&amp; pnpm desktop</code></span></p>
+    </div></section>
 
-      <div class="wrap"><div class="col">
-        <article class="q" id="q4">
-          <h2><span class="qn">04</span><span data-en="Does usage tracking keep my conversations?">用量统计会存我的对话吗？</span></h2>
-          <p><strong data-en="No.">不存。</strong><span data-en=" It keeps numbers — requests, tokens, latency, cache hits — not request bodies. There’s a separate, temporary body diagnostic for debugging; you have to switch it on yourself, and the user guide explains what it records.">记的是请求数、Token、耗时、缓存命中这些数字，请求正文不记。排查问题时可以临时打开正文诊断，那是单独的开关，得你手动开，记了什么写在使用指南里。</span></p>
-        </article>
-      </div></div>
-      <figure class="wide wrap"><a href="assets/screenshots/usage.zh.webp" data-href-en="assets/screenshots/usage.en.webp"><img src="assets/screenshots/usage.zh.webp" data-src-en="assets/screenshots/usage.en.webp" width="2880" height="1920" loading="lazy" decoding="async" alt="API 用量页" data-alt-en="API usage page"></a><figcaption data-en="API usage page, one point every 15 minutes. Demo data.">API 用量页，15 分钟一个点。演示数据。</figcaption></figure>
-
-      <div class="wrap"><div class="col">
-        <article class="q" id="q5">
-          <h2><span class="qn">05</span><span data-en="How do I point Cursor, Codex or Cherry Studio at the local model?">怎么让 Cursor、Codex、Cherry Studio 用上本地模型？</span></h2>
-          <p><span data-en="Open “API & assistants” and copy the address (usually ">打开「API 与外部助手」，复制地址（一般是 </span><code>http://127.0.0.1:19001/v1</code><span data-en="), set a key if you want one, and follow the example for your tool. Picking a target doesn’t start or swap the model behind your back.">），要密钥就设一个，再照对应工具的示例填。选目标只是选目标，不会顺手把模型拉起来或换掉。</span></p>
-          <p><span data-en="Before that, hit “Verify the API”: it checks the service, lists models and sends one capped request. Bodies and keys aren’t kept. Beats staring at a 401 in your editor.">填之前可以先点一下「API 在线验证」：查服务身份、拉模型列表、发一条限量请求，正文和密钥都不留。总比在编辑器里对着 401 发呆强。</span></p>
-        </article>
-      </div></div>
-      <figure class="wide wrap"><a href="assets/screenshots/daily-experience/api-verification.zh.webp" data-href-en="assets/screenshots/daily-experience/api-verification.en.webp"><img src="assets/screenshots/daily-experience/api-verification.zh.webp" data-src-en="assets/screenshots/daily-experience/api-verification.en.webp" width="2880" height="1920" loading="lazy" decoding="async" alt="API 在线验证" data-alt-en="API verification"></a><figcaption data-en="API verification. Four checks, each timed on its own.">API 在线验证。四步检查，每步单独计时。</figcaption></figure>
-
-      <div class="wrap"><div class="col">
-        <article class="q" id="q6">
-          <h2><span class="qn">06</span><span data-en="I hit Save. Is the setting live now?">设置点了保存，就算生效了吗？</span></h2>
-          <p><strong data-en="Not necessarily.">不一定。</strong><span data-en=" Saving means it’s in the config file; whether the running engine picked it up is a separate question. When Manager can’t prove it, it says “not verified”, and options that need a restart are flagged as such. It won’t start a model just to check, either.">保存只说明写进了配置，正在跑的引擎认没认是另一回事。Manager 拿不到证据时就标「未核验」，要重启才生效的选项会单独提示。模型没就绪，它也不会为了验证去偷偷启动。</span></p>
-        </article>
-
-        <article class="q" id="q7">
-          <h2><span class="qn">07</span><span data-en="Which systems?">支持哪些系统？</span></h2>
-          <p><span data-en="Windows x64 and Linux x64. The package is the desktop app plus a background process. After downloading, check it against ">Windows x64 和 Linux x64。安装包里是桌面程序加一个后台进程。下完用同一发布页的 </span><code>SHA256SUMS</code><span data-en=" from the same release page."> 对一下。</span></p>
-          <div class="plat" id="get-started">
-            <div>
-              <strong>Windows</strong><em data-en="x64 · NSIS installer (.exe)">x64 · NSIS 安装包（.exe）</em>
-              <p data-en="Needs WebView2. There’s no code-signing certificate, so SmartScreen will probably complain; just make sure the file came from this project’s release page.">需要 WebView2。没有代码签名证书，SmartScreen 多半会拦一下，确认文件是从本项目发布页下的就行。</p>
-              <a data-download="windows" aria-disabled="true" tabindex="-1" data-en="Download .exe">下载 .exe</a>
-            </div>
-            <div>
-              <strong>Linux</strong><em>x64 · AppImage / .deb</em>
-              <p data-en="Built on Ubuntu 22.04. Taking over a Strata service that’s already running is Windows-only for now.">在 Ubuntu 22.04 上构建。接管已经在跑的 Strata 服务，目前只有 Windows 版做了。</p>
-              <a data-download="appimage" aria-disabled="true" tabindex="-1" data-en="Download AppImage">下载 AppImage</a><span class="sep" aria-hidden="true">·</span><a data-download="deb" aria-disabled="true" tabindex="-1">.deb</a>
-            </div>
-          </div>
-          <p class="fine"><a href="docs/download.html" data-href-en="docs/download.en.html" data-en="Install steps">安装步骤</a><span aria-hidden="true"> · </span><a id="release-notes-link" href="https://github.com/hongfaqiu/strata-manager/releases" data-en="All releases">全部发布</a><span aria-hidden="true"> · </span><a data-download="checksums" aria-disabled="true" tabindex="-1">SHA256SUMS</a></p>
-        </article>
-      </div></div>
-    </section>
-
-    <section class="changes" id="changes" aria-labelledby="changes-title">
-      <div class="wrap"><div class="col">
-        <h2 id="changes-title" data-en="Recent changes">最近改了什么</h2>
-        <p class="sub"><span data-en="Every version has a Chinese and English changelog; the app can show it offline too. ">每个版本都有中英文日志，应用里也能离线看。</span><a href="docs/changelog.html" data-href-en="docs/changelog.en.html" data-en="Full changelog →">完整更新日志 →</a></p>
-        <div class="rel"><div class="v">0.1.10<small>2026-10-15</small></div><ul>
-          <li data-en="Fixed #9: adding the official Strata-data folder is no longer silently skipped.">修了 #9：添加官方的 Strata-data 数据目录时，不会再被悄悄跳过。</li>
-          <li data-en="The engine path now comes from the exe in the run config, so folders like engine-cuda12/ are recognised.">引擎路径改为读运行配置里的 exe，engine-cuda12/ 这类目录也认得出来了。</li>
-        </ul></div>
-        <div class="rel"><div class="v">0.1.9<small>2026-10-14</small></div><ul>
-          <li data-en="Works with upstream Strata 0.1.44. Unreviewed new versions are checked by structure; whatever’s missing gets switched off.">适配上游 Strata 0.1.44。没审过的新版本按结构检测，缺什么功能就关什么。</li>
-          <li data-en="Can run Strata’s own update script; it refuses if you have local changes to tracked files.">可以直接调官方更新脚本升级 Strata；跟踪的文件有本地改动时会拒绝执行。</li>
-          <li data-en="The API wizard has Cursor and Codex examples now.">API 接入向导加了 Cursor 和 Codex 的示例。</li>
-        </ul></div>
-        <div class="rel"><div class="v">0.1.8<small>2026-10-14</small></div><ul>
-          <li data-en="On Windows, picks up a service that’s already running and shows its model, config, PID and API address.">Windows 上能认出已经在跑的服务，显示模型、配置、PID 和 API 地址。</li>
-          <li data-en="Ten UI languages. The desktop float bar has three layouts and you choose the metric order.">界面支持十种语言；桌面浮条有三种布局，指标顺序自己排。</li>
-        </ul></div>
-      </div></div>
-    </section>
-
-    <section class="docs" aria-labelledby="docs-title">
-      <div class="wrap"><div class="col">
-        <h2 id="docs-title" data-en="More reading">接着看</h2>
-        <dl>
-          <div><dt><a href="docs/index.html" data-href-en="docs/index.en.html" data-en="Documentation">文档中心</a></dt><dd data-en="Every document, in one list.">所有文档都在这儿。</dd></div>
-          <div><dt><a href="docs/user-guide.html" data-href-en="docs/user-guide.en.html" data-en="User guide">使用指南</a></dt><dd data-en="What to click on first launch, and how privacy is handled.">第一次打开该点哪，隐私怎么处理。</dd></div>
-          <div><dt><a href="docs/troubleshooting.html" data-href-en="docs/troubleshooting.en.html" data-en="Troubleshooting">故障排查</a></dt><dd data-en="Start here when it won’t launch or can’t find your models.">启动不了、找不到模型，先看这个。</dd></div>
-          <div><dt><a href="https://github.com/hongfaqiu/strata-manager">GitHub</a></dt><dd data-en="Source, issues, releases. Please attach logs to bug reports.">源码、Issue、发布页。报 bug 麻烦带上日志。</dd></div>
-        </dl>
-      </div></div>
-    </section>
+    <section class="sec" id="changes" aria-labelledby="changes-title"><div class="wrap grid">
+      <div class="sec-head"><h2 id="changes-title" data-en="Recent changes">最近改了什么</h2><p><a href="docs/changelog.html" data-href-en="docs/changelog.en.html" data-en="Full changelog →">完整更新日志 →</a></p></div>
+      <table class="changes">
+        <thead><tr><th data-en="Version">版本</th><th data-en="Date">日期</th><th data-en="Changes">改动</th></tr></thead>
+        <tbody>
+          <tr><td class="ver">0.1.10</td><td class="date">2026-10-15</td><td><ul>
+            <li data-en="Fixed #9: adding the official Strata-data folder is no longer silently skipped.">修了 #9：添加官方的 Strata-data 数据目录时，不会再被悄悄跳过。</li>
+            <li data-en="The engine path now comes from the exe in the run config, so folders like engine-cuda12/ are recognised.">引擎路径改为读运行配置里的 exe，engine-cuda12/ 这类目录也认得出来了。</li>
+          </ul></td></tr>
+          <tr><td class="ver">0.1.9</td><td class="date">2026-10-14</td><td><ul>
+            <li data-en="Works with upstream Strata 0.1.44. Unreviewed new versions are checked by structure; whatever’s missing gets switched off.">适配上游 Strata 0.1.44。没审过的新版本按结构检测，缺什么功能就关什么。</li>
+            <li data-en="Can run Strata’s own update script; it refuses if tracked files have local changes.">可以直接调官方更新脚本升级 Strata；跟踪的文件有本地改动时会拒绝执行。</li>
+            <li data-en="The API wizard has Cursor and Codex examples now.">API 接入向导加了 Cursor 和 Codex 的示例。</li>
+          </ul></td></tr>
+          <tr><td class="ver">0.1.8</td><td class="date">2026-10-14</td><td><ul>
+            <li data-en="On Windows, picks up a service that’s already running and shows its model, config, PID and API address.">Windows 上能认出已经在跑的服务，显示模型、配置、PID 和 API 地址。</li>
+            <li data-en="Ten UI languages. The desktop float bar has three layouts and you choose the metric order.">界面支持十种语言；桌面浮条有三种布局，指标顺序自己排。</li>
+          </ul></td></tr>
+        </tbody>
+      </table>
+    </div></section>
   </main>
 
-  <footer class="site-footer">
-    <div class="wrap">
-      <p><span data-en="Independent project, not affiliated with ">独立维护，不是 </span><a href="https://github.com/Niko1221/Strata">Niko1221/Strata</a><span data-en=". MIT license."> 官方项目。MIT 许可。</span></p>
-      <nav aria-label="相关链接" data-label-en="Related links">
-        <a href="docs/index.html" data-href-en="docs/index.en.html" data-en="Docs">文档</a>
-        <a href="docs/changelog.html" data-href-en="docs/changelog.en.html" data-en="Changelog">更新日志</a>
-        <a href="docs/license.html" data-en="License">许可</a>
-        <a href="https://github.com/hongfaqiu/strata-manager">GitHub</a>
-      </nav>
-    </div>
-  </footer>
+  <footer class="colo"><div class="wrap grid">
+    <p class="about"><strong>Strata Manager</strong><span data-en=" is a community project under the MIT license, not an official Niko1221/Strata release. It manages the Strata setup on this computer."> 是社区项目，MIT 许可，不是 Niko1221/Strata 官方出品。它管的是这台电脑上的 Strata 环境。</span></p>
+    <div><h3 data-en="Docs">文档</h3><ul>
+      <li><a href="docs/index.html" data-href-en="docs/index.en.html" data-en="Documentation">文档中心</a></li>
+      <li><a href="docs/user-guide.html" data-href-en="docs/user-guide.en.html" data-en="User guide">使用指南</a></li>
+      <li><a href="docs/troubleshooting.html" data-href-en="docs/troubleshooting.en.html" data-en="Troubleshooting">故障排查</a></li></ul></div>
+    <div><h3 data-en="Project">项目</h3><ul>
+      <li><a href="docs/changelog.html" data-href-en="docs/changelog.en.html" data-en="Changelog">更新日志</a></li>
+      <li><a href="https://github.com/hongfaqiu/strata-manager">GitHub</a></li>
+      <li><a href="docs/license.html" data-en="License">许可</a></li></ul></div>
+    <div><h3 data-en="Upstream">上游</h3><ul>
+      <li><a href="https://github.com/Niko1221/Strata">Niko1221/Strata</a></li></ul></div>
+  </div></footer>
 </body>
 </html>

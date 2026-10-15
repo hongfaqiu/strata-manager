@@ -8,16 +8,16 @@ import { renderHomepage } from './website-seo.mjs';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (path) => readFile(join(root, path), 'utf8');
 
-test('Homepage keeps the readout hero, single-column FAQ, changelog excerpt and docs index', async () => {
+test('Homepage keeps the spec-sheet layout: roles table, annotated overview, workflow ledger, downloads and changelog', async () => {
   const html = await read('website/index.html');
-  assert.match(html, /class="night"/);
-  assert.equal([...html.matchAll(/class="read-label"/g)].length, 4, 'four readings in the hero');
-  for (const id of ['qa', 'get-started', 'changes', 'main', 'download-status', 'release-notes-link', 'language-switch', 'language-label']) {
+  assert.match(html, /class="roles"/);
+  assert.equal([...html.matchAll(/class="pin"/g)].length, 6, 'six markers on the overview figure');
+  assert.equal([...html.matchAll(/<td class="no">/g)].length, 8, 'eight workflow rows');
+  for (const id of ['main', 'workflow', 'get-started', 'changes', 'download-status', 'release-notes-link', 'language-switch', 'language-label']) {
     assert.match(html, new RegExp(`id="${id}"`));
   }
-  for (let index = 1; index <= 7; index += 1) assert.match(html, new RegExp(`id="q${index}"`));
   for (const key of ['windows', 'appimage', 'deb', 'checksums']) assert.match(html, new RegExp(`data-download="${key}"`));
-  assert.match(html, /daily-experience\/api-verification/);
+  assert.match(html, /product-cover\.zh\.webp/);
   assert.match(html, /docs\/changelog\.html/);
   assert.match(html, /github\.com\/hongfaqiu\/strata-manager/);
   assert.doesNotMatch(html, /vendor\/|gsap/i);
@@ -32,10 +32,10 @@ test('English homepage translations stay plain text so the static renderer can e
   }
   const english = renderHomepage(html, 'en');
   assert.match(english, /<html lang="en">/);
-  assert.match(english, /you need somewhere to see what it’s doing\./);
-  assert.match(english, /src="\.\.\/assets\/screenshots\/monitor\.en\.webp"/);
+  assert.match(english, /A desktop manager/);
+  assert.match(english, /src="\.\.\/assets\/screenshots\/product-cover\.en\.webp"/);
   const visible = english.replace(/data-zh="[^"]*"/g, "").replace(/<script[\s\S]*?<\/script>/g, "");
-  assert.doesNotMatch(visible, /跑起来之后|总得有个地方/);
+  assert.doesNotMatch(visible, /给 Strata 配一个|桌面管理器。/);
 });
 
 test('Homepage script keeps release validation and only enables verified asset links', async () => {
