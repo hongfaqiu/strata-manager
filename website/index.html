@@ -65,6 +65,7 @@
     <symbol id="icon-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
     <symbol id="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5"/></symbol>
     <symbol id="icon-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/></symbol>
+    <symbol id="icon-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
     <symbol id="icon-expand" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></symbol>
   </svg>
   <a class="skip-link" href="#main" data-en="Skip to content">跳到主要内容</a>
@@ -121,39 +122,195 @@
     <section class="capabilities-section section-padding" id="capabilities" aria-labelledby="capabilities-title">
       <div class="container">
         <div class="section-header">
-          <div><h2 class="section-title" id="capabilities-title" data-en="What you can manage">你能管理什么</h2><p class="section-lead" data-en="Three focused areas of the desktop workspace.">桌面工作台的三个核心能力。</p></div>
+          <div><h2 class="section-title" id="capabilities-title" data-en="What you can manage">你能管理什么</h2><p class="section-lead" data-en="Scan the list, then open a topic for screenshots and details. Only one panel is open at a time.">先扫一眼标题，再展开查看截图与说明；同一时间只打开一个面板。</p></div>
         </div>
-        <div class="capabilities-grid">
-          <figure class="capability-card" id="capability-environment">
-            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/runtime.zh.webp?v=20261014" data-href-en="assets/screenshots/runtime.en.webp?v=20261014" data-target="runtime" aria-label="放大运行环境与模型" data-label-en="Enlarge environment and models">
-              <img src="assets/screenshots/runtime.zh.webp?v=20261014" data-src-en="assets/screenshots/runtime.en.webp?v=20261014" width="2880" height="1920" loading="lazy" decoding="async" alt="运行环境与模型管理" data-alt-en="Runtime and model management">
-              <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
-            </a>
-            <figcaption>
-              <h3 data-en="Environment &amp; models">环境与模型</h3>
-              <p data-en="Install and verify Strata, discover local weights, and keep run configurations ready.">安装并校验 Strata，发现本机权重，维护可用的运行配置。</p>
-            </figcaption>
-          </figure>
-          <figure class="capability-card" id="capability-services">
-            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/connections.zh.webp?v=20261014" data-href-en="assets/screenshots/connections.en.webp?v=20261014" data-target="connections" aria-label="放大服务与连接" data-label-en="Enlarge services and connections">
-              <img src="assets/screenshots/connections.zh.webp?v=20261014" data-src-en="assets/screenshots/connections.en.webp?v=20261014" width="2880" height="1920" loading="lazy" decoding="async" alt="服务与 API / MCP 连接" data-alt-en="Services and API / MCP connections">
-              <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
-            </a>
-            <figcaption>
-              <h3 data-en="Services &amp; connections">服务与连接</h3>
-              <p data-en="Start and stop services, then wire chat clients, API access and MCP in one place.">启停服务，并在同一处配置聊天客户端、API 访问与 MCP。</p>
-            </figcaption>
-          </figure>
-          <figure class="capability-card" id="capability-monitoring">
-            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/monitor.zh.webp?v=20261014" data-href-en="assets/screenshots/monitor.en.webp?v=20261014" data-target="monitor" aria-label="放大监控与评估" data-label-en="Enlarge monitoring and evaluation">
-              <img src="assets/screenshots/monitor.zh.webp?v=20261014" data-src-en="assets/screenshots/monitor.en.webp?v=20261014" width="2880" height="1920" loading="lazy" decoding="async" alt="资源监控与性能评估" data-alt-en="Resource monitoring and performance evaluation">
-              <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
-            </a>
-            <figcaption>
-              <h3 data-en="Monitoring &amp; evaluation">监控与评估</h3>
-              <p data-en="Watch GPU, memory and service activity, then compare performance when you need evidence.">查看 GPU、内存与服务活动，并在需要时对照性能表现。</p>
-            </figcaption>
-          </figure>
+        <div class="reveal-list" data-reveal-group="site">
+          <article class="reveal-item" id="capability-environment">
+            <h3 class="reveal-heading">
+              <button type="button" class="reveal-trigger" aria-expanded="false" aria-controls="capability-environment-panel" id="capability-environment-trigger">
+                <span class="reveal-copy">
+                  <span class="reveal-title" data-en="Environment &amp; models">环境与模型</span>
+                  <span class="reveal-summary" data-en="Install and verify Strata, discover local weights, and keep run configurations ready.">安装并校验 Strata，发现本机权重，维护可用的运行配置。</span>
+                </span>
+                <span class="reveal-meta">
+                  <span class="reveal-hint" data-en="Show details">展开详情</span>
+                  <svg class="icon reveal-chevron" aria-hidden="true"><use href="#icon-chevron"/></svg>
+                </span>
+              </button>
+            </h3>
+            <div class="reveal-panel" id="capability-environment-panel" role="region" aria-labelledby="capability-environment-trigger" hidden>
+              <div class="reveal-panel-grid">
+                <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/runtime.zh.webp?v=20261014" data-href-en="assets/screenshots/runtime.en.webp?v=20261014" data-target="runtime" aria-label="放大运行环境与模型管理" data-label-en="Enlarge Runtime and model management">
+                  <img src="assets/screenshots/runtime.zh.webp?v=20261014" data-src-en="assets/screenshots/runtime.en.webp?v=20261014" width="2880" height="1920" loading="lazy" decoding="async" alt="运行环境与模型管理" data-alt-en="Runtime and model management">
+                  <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
+                </a>
+                <ul class="reveal-bullets">
+                  <li data-en="Detect an existing install, choose official GitHub, HTTPS mirrors or a local ZIP, and verify size plus SHA256 before replacing files.">检测已有安装，选择官方 GitHub、HTTPS 镜像或本地 ZIP，安装前核验长度与 SHA256。</li>
+                  <li data-en="Discover local model weights, edit graphical or JSON run settings, and keep configuration backups.">发现本机模型权重，用图形控件或 JSON 编辑运行设置，并保留配置备份。</li>
+                  <li data-en="Pick GPU indices for downloads and expose common startup parameters such as batch and parallel.">下载时可勾选显卡编号，并快捷设置 batch、parallel 等常用启动参数。</li>
+                </ul>
+              </div>
+            </div>
+          </article>
+          <article class="reveal-item" id="capability-services">
+            <h3 class="reveal-heading">
+              <button type="button" class="reveal-trigger" aria-expanded="false" aria-controls="capability-services-panel" id="capability-services-trigger">
+                <span class="reveal-copy">
+                  <span class="reveal-title" data-en="Service lifecycle">服务生命周期</span>
+                  <span class="reveal-summary" data-en="Start and stop services, release memory, and on Windows discover and reconnect existing instances.">启停服务、释放内存，并在 Windows 上发现与连接已有实例。</span>
+                </span>
+                <span class="reveal-meta">
+                  <span class="reveal-hint" data-en="Show details">展开详情</span>
+                  <svg class="icon reveal-chevron" aria-hidden="true"><use href="#icon-chevron"/></svg>
+                </span>
+              </button>
+            </h3>
+            <div class="reveal-panel" id="capability-services-panel" role="region" aria-labelledby="capability-services-trigger" hidden>
+              <div class="reveal-panel-grid">
+                <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/running-services.zh.webp?v=20261014" data-href-en="assets/screenshots/running-services.en.webp?v=20261014" data-target="running-services" aria-label="放大Windows 运行中服务管理" data-label-en="Enlarge Windows running service management">
+                  <img src="assets/screenshots/running-services.zh.webp?v=20261014" data-src-en="assets/screenshots/running-services.en.webp?v=20261014" width="2880" height="1920" loading="lazy" decoding="async" alt="Windows 运行中服务管理" data-alt-en="Windows running service management">
+                  <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
+                </a>
+                <ul class="reveal-bullets">
+                  <li data-en="Control service startup, shutdown and memory release; save and restore engine sessions when needed.">控制服务启停与内存释放；需要时可保存和恢复引擎会话。</li>
+                  <li data-en="On Windows, inspect running services, reconnect an existing Manager backend, or take over a verified idle external service.">在 Windows 上查看运行中服务，连接已有 Manager 后台，或在核验空闲后托管外部服务。</li>
+                  <li data-en="After idle release, the status bar shows automatic reload progress and elapsed time on the next request.">空闲释放后再次请求时，状态栏显示自动载入进度与耗时。</li>
+                </ul>
+              </div>
+            </div>
+          </article>
+          <article class="reveal-item" id="capability-chat">
+            <h3 class="reveal-heading">
+              <button type="button" class="reveal-trigger" aria-expanded="false" aria-controls="capability-chat-panel" id="capability-chat-trigger">
+                <span class="reveal-copy">
+                  <span class="reveal-title" data-en="Chat &amp; shared settings">聊天与公共设置</span>
+                  <span class="reveal-summary" data-en="Local streaming chat and attachments, with shared generation defaults models can inherit.">本机流式聊天、附件，以及可按模型继承的公共生成参数。</span>
+                </span>
+                <span class="reveal-meta">
+                  <span class="reveal-hint" data-en="Show details">展开详情</span>
+                  <svg class="icon reveal-chevron" aria-hidden="true"><use href="#icon-chevron"/></svg>
+                </span>
+              </button>
+            </h3>
+            <div class="reveal-panel" id="capability-chat-panel" role="region" aria-labelledby="capability-chat-trigger" hidden>
+              <div class="reveal-panel-grid">
+                <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/chat.zh.webp?v=20261014" data-href-en="assets/screenshots/chat.en.webp?v=20261014" data-target="chat" aria-label="放大聊天工作区" data-label-en="Enlarge Chat workspace">
+                  <img src="assets/screenshots/chat.zh.webp?v=20261014" data-src-en="assets/screenshots/chat.en.webp?v=20261014" width="2880" height="1920" loading="lazy" decoding="async" alt="聊天工作区" data-alt-en="Chat workspace">
+                  <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
+                </a>
+                <ul class="reveal-bullets">
+                  <li data-en="Organize conversations, attach files and read streaming replies, with structured output and supported tools.">管理会话、添加附件并阅读流式回复，使用结构化输出与受支持的工具。</li>
+                  <li data-en="New models inherit shared generation parameters and MCP defaults; custom values stay separate, and changes apply on the next request.">新模型默认继承公共生成参数与 MCP 开关；专用值保持独立，更改在下一次请求生效。</li>
+                </ul>
+              </div>
+            </div>
+          </article>
+          <article class="reveal-item" id="capability-connections">
+            <h3 class="reveal-heading">
+              <button type="button" class="reveal-trigger" aria-expanded="false" aria-controls="capability-connections-panel" id="capability-connections-trigger">
+                <span class="reveal-copy">
+                  <span class="reveal-title" data-en="API &amp; assistants">API 与外部助手</span>
+                  <span class="reveal-summary" data-en="Configure connection targets, access keys, API examples and MCP in one place.">集中配置连接目标、访问密钥、API 示例与 MCP。</span>
+                </span>
+                <span class="reveal-meta">
+                  <span class="reveal-hint" data-en="Show details">展开详情</span>
+                  <svg class="icon reveal-chevron" aria-hidden="true"><use href="#icon-chevron"/></svg>
+                </span>
+              </button>
+            </h3>
+            <div class="reveal-panel" id="capability-connections-panel" role="region" aria-labelledby="capability-connections-trigger" hidden>
+              <div class="reveal-panel-grid">
+                <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/connections.zh.webp?v=20261014" data-href-en="assets/screenshots/connections.en.webp?v=20261014" data-target="connections" aria-label="放大API 与外部助手" data-label-en="Enlarge API and external assistants">
+                  <img src="assets/screenshots/connections.zh.webp?v=20261014" data-src-en="assets/screenshots/connections.en.webp?v=20261014" width="2880" height="1920" loading="lazy" decoding="async" alt="API 与外部助手" data-alt-en="API and external assistants">
+                  <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
+                </a>
+                <ul class="reveal-bullets">
+                  <li data-en="Choose a connection target, save the application access key and copy API or MCP client settings.">选择连接目标、保存应用访问密钥，复制 API 或 MCP 接入配置。</li>
+                  <li data-en="Agent wizard examples cover Cursor and Codex; selecting a target does not start or switch a model.">提供 Cursor / Codex 等接入向导；选择目标不会自动启动或切换模型。</li>
+                  <li data-en="Run explicit bounded text, tool-structure or image verification when you need a live check.">可显式做限时限量的文本、工具结构或图片在线验证。</li>
+                </ul>
+              </div>
+            </div>
+          </article>
+          <article class="reveal-item" id="capability-monitoring">
+            <h3 class="reveal-heading">
+              <button type="button" class="reveal-trigger" aria-expanded="false" aria-controls="capability-monitoring-panel" id="capability-monitoring-trigger">
+                <span class="reveal-copy">
+                  <span class="reveal-title" data-en="Resources &amp; desktop monitor">资源与桌面监控</span>
+                  <span class="reveal-summary" data-en="Follow GPU, memory, CPU and API usage; open an optional desktop floating monitor when needed.">查看 GPU、内存、CPU 与 API 用量；可选桌面浮条按需打开。</span>
+                </span>
+                <span class="reveal-meta">
+                  <span class="reveal-hint" data-en="Show details">展开详情</span>
+                  <svg class="icon reveal-chevron" aria-hidden="true"><use href="#icon-chevron"/></svg>
+                </span>
+              </button>
+            </h3>
+            <div class="reveal-panel" id="capability-monitoring-panel" role="region" aria-labelledby="capability-monitoring-trigger" hidden>
+              <div class="reveal-panel-grid">
+                <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/monitor.zh.webp?v=20261014" data-href-en="assets/screenshots/monitor.en.webp?v=20261014" data-target="monitor" aria-label="放大资源监控" data-label-en="Enlarge Resource monitoring">
+                  <img src="assets/screenshots/monitor.zh.webp?v=20261014" data-src-en="assets/screenshots/monitor.en.webp?v=20261014" width="2880" height="1920" loading="lazy" decoding="async" alt="资源监控" data-alt-en="Resource monitoring">
+                  <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
+                </a>
+                <ul class="reveal-bullets">
+                  <li data-en="Review hardware metrics, API usage and recent generation / input-processing trends, keeping gaps visible.">查看硬件指标、API 用量和近期生成 / 输入处理趋势，并保留缺失点。</li>
+                  <li data-en="The floating monitor stays off by default: choose layout, text size, metric order and colors without starting the backend or models.">独立桌面监控浮条默认关闭：可选布局、字号、指标排序与配色，不影响后台或模型启动。</li>
+                </ul>
+              </div>
+            </div>
+          </article>
+          <article class="reveal-item" id="capability-evaluation">
+            <h3 class="reveal-heading">
+              <button type="button" class="reveal-trigger" aria-expanded="false" aria-controls="capability-evaluation-panel" id="capability-evaluation-trigger">
+                <span class="reveal-copy">
+                  <span class="reveal-title" data-en="Tuning &amp; Benchmark">调优与 Benchmark</span>
+                  <span class="reveal-summary" data-en="Compare tuning candidates by workload, or run tier / scenario benchmarks within the verified limit.">按任务比较参数候选，或在核验上限内做档位 / 场景性能测试。</span>
+                </span>
+                <span class="reveal-meta">
+                  <span class="reveal-hint" data-en="Show details">展开详情</span>
+                  <svg class="icon reveal-chevron" aria-hidden="true"><use href="#icon-chevron"/></svg>
+                </span>
+              </button>
+            </h3>
+            <div class="reveal-panel" id="capability-evaluation-panel" role="region" aria-labelledby="capability-evaluation-trigger" hidden>
+              <div class="reveal-panel-grid">
+                <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/benchmark.zh.webp?v=20261014" data-href-en="assets/screenshots/benchmark.en.webp?v=20261014" data-target="benchmark" aria-label="放大Benchmark 与调优" data-label-en="Enlarge Benchmark and tuning">
+                  <img src="assets/screenshots/benchmark.zh.webp?v=20261014" data-src-en="assets/screenshots/benchmark.en.webp?v=20261014" width="2880" height="1920" loading="lazy" decoding="async" alt="Benchmark 与调优" data-alt-en="Benchmark and tuning">
+                  <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
+                </a>
+                <ul class="reveal-bullets">
+                  <li data-en="Compare supported parameter candidates for chat, coding / Agent and long-document workloads before applying a change.">按聊天、编程 / Agent 与长文任务比较受支持的参数候选，再决定是否应用。</li>
+                  <li data-en="Run context tiers or seven serial scenarios within the verified model limit and compare prefill, decode and resource use.">在模型核验上限内按上下文档位或七类场景串行测试，对比预填充、解码与资源占用。</li>
+                  <li data-en="Copy result images and export PNG, JSON or CSV; weak identity or unknown conditions never claim a direct speedup.">结果支持复制图片与 PNG、JSON / CSV 导出；弱身份或未知条件不宣称直接提速。</li>
+                </ul>
+              </div>
+            </div>
+          </article>
+          <article class="reveal-item" id="capability-preferences">
+            <h3 class="reveal-heading">
+              <button type="button" class="reveal-trigger" aria-expanded="false" aria-controls="capability-preferences-panel" id="capability-preferences-trigger">
+                <span class="reveal-copy">
+                  <span class="reveal-title" data-en="Preferences &amp; updates">偏好与更新</span>
+                  <span class="reveal-summary" data-en="Language, appearance and tray preferences, plus signed application updates.">语言、外观与托盘偏好，以及带签名校验的应用更新。</span>
+                </span>
+                <span class="reveal-meta">
+                  <span class="reveal-hint" data-en="Show details">展开详情</span>
+                  <svg class="icon reveal-chevron" aria-hidden="true"><use href="#icon-chevron"/></svg>
+                </span>
+              </button>
+            </h3>
+            <div class="reveal-panel" id="capability-preferences-panel" role="region" aria-labelledby="capability-preferences-trigger" hidden>
+              <div class="reveal-panel-grid">
+                <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/app-updates.zh.webp?v=20261014" data-href-en="assets/screenshots/app-updates.en.webp?v=20261014" data-target="app-updates" aria-label="放大应用更新与偏好" data-label-en="Enlarge App updates and preferences">
+                  <img src="assets/screenshots/app-updates.zh.webp?v=20261014" data-src-en="assets/screenshots/app-updates.en.webp?v=20261014" width="2880" height="1920" loading="lazy" decoding="async" alt="应用更新与偏好" data-alt-en="App updates and preferences">
+                  <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
+                </a>
+                <ul class="reveal-bullets">
+                  <li data-en="Follow the system or choose a bundled language pack, and set light/dark appearance and tray behavior.">可跟随系统或选择内置语言包，并设置亮暗外观与托盘行为。</li>
+                  <li data-en="A dedicated updates page offers bundled bilingual notes, stable update checks and Tauri-signed install confirmation.">独立更新页提供随包双语日志、稳定更新检查和 Tauri 签名安装确认。</li>
+                </ul>
+              </div>
+            </div>
+          </article>
         </div>
       </div>
     </section>
@@ -161,23 +318,89 @@
     <section class="workflow-section section-padding" id="workflow" aria-labelledby="workflow-title">
       <div class="container">
         <div class="section-header">
-          <div><h2 class="section-title" id="workflow-title" data-en="How it fits together">工作流程</h2><p class="section-lead" data-en="A short path from setup to observation.">从准备到观测的简短路径。</p></div>
+          <div><h2 class="section-title" id="workflow-title" data-en="How it fits together">工作流程</h2><p class="section-lead" data-en="Prepare, run, then observe. Expand a step for a supporting screenshot.">准备、运行、观测。展开任一步查看配图说明。</p></div>
         </div>
-        <ol class="workflow-steps">
-          <li>
-            <span class="workflow-step-num" aria-hidden="true">01</span>
-            <h3 data-en="Prepare">准备</h3>
-            <p data-en="Install the runtime, place model weights and validate configuration.">安装运行环境，放入模型权重，并校验配置。</p>
+        <ol class="reveal-list workflow-reveal" data-reveal-group="site">
+          <li class="reveal-item" id="workflow-prepare">
+            <h3 class="reveal-heading">
+              <button type="button" class="reveal-trigger" aria-expanded="false" aria-controls="workflow-prepare-panel" id="workflow-prepare-trigger">
+                <span class="reveal-copy">
+                  <span class="workflow-step-num" aria-hidden="true">01</span>
+                  <span class="reveal-title" data-en="Prepare">准备</span>
+                  <span class="reveal-summary" data-en="Install the runtime, place model weights and validate configuration.">安装运行环境，放入模型权重，并校验配置。</span>
+                </span>
+                <span class="reveal-meta">
+                  <span class="reveal-hint" data-en="Show details">展开详情</span>
+                  <svg class="icon reveal-chevron" aria-hidden="true"><use href="#icon-chevron"/></svg>
+                </span>
+              </button>
+            </h3>
+            <div class="reveal-panel" id="workflow-prepare-panel" role="region" aria-labelledby="workflow-prepare-trigger" hidden>
+              <div class="reveal-panel-grid">
+                <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/models.zh.webp?v=20261014" data-href-en="assets/screenshots/models.en.webp?v=20261014" data-target="models" aria-label="放大模型与配置准备" data-label-en="Enlarge Model and configuration setup">
+                  <img src="assets/screenshots/models.zh.webp?v=20261014" data-src-en="assets/screenshots/models.en.webp?v=20261014" width="2880" height="1920" loading="lazy" decoding="async" alt="模型与配置准备" data-alt-en="Model and configuration setup">
+                  <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
+                </a>
+                <ul class="reveal-bullets">
+                  <li data-en="Install Strata from an official, mirrored or local package with verification before files are replaced.">从官方、镜像或本地包安装 Strata，替换文件前完成核验。</li>
+                  <li data-en="Point Manager at local weights and keep a validated run configuration ready to start.">指向本机权重，并保留一份可启动的校验配置。</li>
+                </ul>
+              </div>
+            </div>
           </li>
-          <li>
-            <span class="workflow-step-num" aria-hidden="true">02</span>
-            <h3 data-en="Run">运行</h3>
-            <p data-en="Start the service, chat locally, and connect external assistants when needed.">启动服务，在本机聊天，并按需接入外部助手。</p>
+          <li class="reveal-item" id="workflow-run">
+            <h3 class="reveal-heading">
+              <button type="button" class="reveal-trigger" aria-expanded="false" aria-controls="workflow-run-panel" id="workflow-run-trigger">
+                <span class="reveal-copy">
+                  <span class="workflow-step-num" aria-hidden="true">02</span>
+                  <span class="reveal-title" data-en="Run">运行</span>
+                  <span class="reveal-summary" data-en="Start the service, chat locally, and connect external assistants when needed.">启动服务，在本机聊天，并按需接入外部助手。</span>
+                </span>
+                <span class="reveal-meta">
+                  <span class="reveal-hint" data-en="Show details">展开详情</span>
+                  <svg class="icon reveal-chevron" aria-hidden="true"><use href="#icon-chevron"/></svg>
+                </span>
+              </button>
+            </h3>
+            <div class="reveal-panel" id="workflow-run-panel" role="region" aria-labelledby="workflow-run-trigger" hidden>
+              <div class="reveal-panel-grid">
+                <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/common-chat-settings.zh.webp?v=20261014" data-href-en="assets/screenshots/common-chat-settings.en.webp?v=20261014" data-target="common-chat-settings" aria-label="放大公共设置与运行" data-label-en="Enlarge Shared settings and run">
+                  <img src="assets/screenshots/common-chat-settings.zh.webp?v=20261014" data-src-en="assets/screenshots/common-chat-settings.en.webp?v=20261014" width="2880" height="1920" loading="lazy" decoding="async" alt="公共设置与运行" data-alt-en="Shared settings and run">
+                  <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
+                </a>
+                <ul class="reveal-bullets">
+                  <li data-en="Start the selected configuration, use streaming chat with attachments, and inherit shared generation defaults when useful.">启动所选配置，使用带附件的流式聊天，并按需继承公共生成默认值。</li>
+                  <li data-en="Copy API or MCP client settings without leaving the desktop when an external assistant needs access.">外部助手需要接入时，在桌面内复制 API 或 MCP 客户端配置。</li>
+                </ul>
+              </div>
+            </div>
           </li>
-          <li>
-            <span class="workflow-step-num" aria-hidden="true">03</span>
-            <h3 data-en="Observe">观测</h3>
-            <p data-en="Follow resource use, API traffic and evaluation results without leaving the desktop.">在桌面内查看资源占用、API 用量与评估结果。</p>
+          <li class="reveal-item" id="workflow-observe">
+            <h3 class="reveal-heading">
+              <button type="button" class="reveal-trigger" aria-expanded="false" aria-controls="workflow-observe-panel" id="workflow-observe-trigger">
+                <span class="reveal-copy">
+                  <span class="workflow-step-num" aria-hidden="true">03</span>
+                  <span class="reveal-title" data-en="Observe">观测</span>
+                  <span class="reveal-summary" data-en="Follow resource use, API traffic and evaluation results without leaving the desktop.">在桌面内查看资源占用、API 用量与评估结果。</span>
+                </span>
+                <span class="reveal-meta">
+                  <span class="reveal-hint" data-en="Show details">展开详情</span>
+                  <svg class="icon reveal-chevron" aria-hidden="true"><use href="#icon-chevron"/></svg>
+                </span>
+              </button>
+            </h3>
+            <div class="reveal-panel" id="workflow-observe-panel" role="region" aria-labelledby="workflow-observe-trigger" hidden>
+              <div class="reveal-panel-grid">
+                <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/tuning.zh.webp?v=20261014" data-href-en="assets/screenshots/tuning.en.webp?v=20261014" data-target="tuning" aria-label="放大观测与调优" data-label-en="Enlarge Observation and tuning">
+                  <img src="assets/screenshots/tuning.zh.webp?v=20261014" data-src-en="assets/screenshots/tuning.en.webp?v=20261014" width="2880" height="1920" loading="lazy" decoding="async" alt="观测与调优" data-alt-en="Observation and tuning">
+                  <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
+                </a>
+                <ul class="reveal-bullets">
+                  <li data-en="Track GPU, memory, CPU and recent generation trends while the service stays under Manager control.">在服务由 Manager 管理时跟踪 GPU、内存、CPU 与近期生成趋势。</li>
+                  <li data-en="Use Benchmark or tuning when you need comparable evidence before changing configuration.">需要可比证据时再运行 Benchmark 或调优，再决定是否改配置。</li>
+                </ul>
+              </div>
+            </div>
           </li>
         </ol>
       </div>

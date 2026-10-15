@@ -126,48 +126,60 @@ const strataReleaseCatalog = (() => {
   const screenshotVersion = '20261014';
   const screenshotUrl = (name) => new URL(`assets/screenshots/${name}.${currentLang}.webp?v=${screenshotVersion}`, siteRoot).href;
   const screens = {
-    "overview": {
-      "index": "00",
-      "image": "overview",
-      "zh": {
-        "title": "完整总览。",
-        "description": "查看模型、API 用量与资源状态。",
-        "alt": "Strata Manager 完整总览，包含模型、API 用量与资源状态",
-        "badge": "总览"
-      },
-      "en": {
-        "title": "Complete Overview.",
-        "description": "View models, API usage and resource status.",
-        "alt": "Strata Manager complete Overview with models, API usage and resource status",
-        "badge": "OVERVIEW"
-      }
+    overview: {
+      index: '00', image: 'overview',
+      zh: { title: '完整总览。', description: '查看模型、API 用量与资源状态。', alt: 'Strata Manager 完整总览，包含模型、API 用量与资源状态', badge: '总览' },
+      en: { title: 'Complete Overview.', description: 'View models, API usage and resource status.', alt: 'Strata Manager complete Overview with models, API usage and resource status', badge: 'OVERVIEW' }
     },
-    "runtime": {
-      "index": "01",
-      "image": "runtime",
-      "zh": { "title": "环境与模型", "description": "安装并校验 Strata，发现本机权重，维护可用的运行配置。", "alt": "运行环境与模型管理", "badge": "环境与模型" },
-      "en": { "title": "Environment & models", "description": "Install and verify Strata, discover local weights, and keep run configurations ready.", "alt": "Runtime and model management", "badge": "ENVIRONMENT" }
+    runtime: {
+      index: '01', image: 'runtime',
+      zh: { title: '环境与模型', description: '安装并校验 Strata，发现本机权重，维护运行配置。', alt: '运行环境与模型管理', badge: '环境与模型' },
+      en: { title: 'Environment & models', description: 'Install and verify Strata, discover local weights, and keep run configurations ready.', alt: 'Runtime and model management', badge: 'ENVIRONMENT' }
     },
-    "connections": {
-      "index": "02",
-      "image": "connections",
-      "zh": { "title": "服务与连接", "description": "启停服务，并在同一处配置聊天客户端、API 访问与 MCP。", "alt": "服务与 API / MCP 连接", "badge": "服务与连接" },
-      "en": { "title": "Services & connections", "description": "Start and stop services, then wire chat clients, API access and MCP in one place.", "alt": "Services and API / MCP connections", "badge": "CONNECTIONS" }
+    'running-services': {
+      index: '02',
+      zh: { title: '服务生命周期', description: '启停服务，并在 Windows 上发现与连接已有实例。', alt: 'Windows 运行中服务管理', badge: '服务' },
+      en: { title: 'Service lifecycle', description: 'Start and stop services, and on Windows discover and reconnect existing instances.', alt: 'Windows running service management', badge: 'SERVICES' }
     },
-    "monitor": {
-      "index": "03",
-      "zh": {
-        "title": "监控与评估",
-        "description": "查看 GPU、内存与服务活动，并在需要时对照性能表现。",
-        "alt": "资源监控与性能评估",
-        "badge": "监控与评估"
-      },
-      "en": {
-        "title": "Monitoring & evaluation",
-        "description": "Watch GPU, memory and service activity, then compare performance when you need evidence.",
-        "alt": "Resource monitoring and performance evaluation",
-        "badge": "MONITORING"
-      }
+    chat: {
+      index: '03',
+      zh: { title: '聊天与公共设置', description: '本机流式聊天与可继承的公共生成参数。', alt: '聊天工作区', badge: '聊天' },
+      en: { title: 'Chat & shared settings', description: 'Local streaming chat with shared generation defaults.', alt: 'Chat workspace', badge: 'CHAT' }
+    },
+    connections: {
+      index: '04', image: 'connections',
+      zh: { title: 'API 与外部助手', description: '集中配置连接目标、访问密钥与 MCP。', alt: 'API 与外部助手', badge: '连接' },
+      en: { title: 'API & assistants', description: 'Configure connection targets, access keys and MCP in one place.', alt: 'API and external assistants', badge: 'CONNECTIONS' }
+    },
+    monitor: {
+      index: '05',
+      zh: { title: '资源与桌面监控', description: '查看 GPU、内存、CPU 与 API 用量。', alt: '资源监控', badge: '监控' },
+      en: { title: 'Resources & desktop monitor', description: 'Follow GPU, memory, CPU and API usage.', alt: 'Resource monitoring', badge: 'MONITOR' }
+    },
+    benchmark: {
+      index: '06', image: 'benchmark',
+      zh: { title: '调优与 Benchmark', description: '按任务比较参数或做档位 / 场景测试。', alt: 'Benchmark 与调优', badge: '评估' },
+      en: { title: 'Tuning & Benchmark', description: 'Compare tuning candidates or run tier / scenario tests.', alt: 'Benchmark and tuning', badge: 'EVALUATION' }
+    },
+    'app-updates': {
+      index: '07', image: 'app-updates',
+      zh: { title: '偏好与更新', description: '语言、外观与带签名校验的应用更新。', alt: '应用更新与偏好', badge: '更新' },
+      en: { title: 'Preferences & updates', description: 'Language, appearance and signed application updates.', alt: 'App updates and preferences', badge: 'UPDATES' }
+    },
+    models: {
+      index: '08',
+      zh: { title: '模型与配置', description: '发现本机权重并准备运行配置。', alt: '模型与配置准备', badge: '模型' },
+      en: { title: 'Models and configuration', description: 'Discover local weights and prepare a run configuration.', alt: 'Model and configuration setup', badge: 'MODELS' }
+    },
+    'common-chat-settings': {
+      index: '09', image: 'common-chat-settings',
+      zh: { title: '公共设置', description: '按需继承的公共生成参数。', alt: '公共设置与运行', badge: '公共设置' },
+      en: { title: 'Shared settings', description: 'Shared generation defaults models can inherit.', alt: 'Shared settings and run', badge: 'SHARED SETTINGS' }
+    },
+    tuning: {
+      index: '10',
+      zh: { title: '观测与调优', description: '对照资源占用与参数候选。', alt: '观测与调优', badge: '调优' },
+      en: { title: 'Observe and tune', description: 'Compare resource use and parameter candidates.', alt: 'Observation and tuning', badge: 'TUNING' }
     }
   };
 
@@ -219,6 +231,55 @@ const strataReleaseCatalog = (() => {
 
   let activeScreenKey = 'overview';
   let currentLang = 'zh';
+
+  const revealTriggers = Array.from(document.querySelectorAll('.reveal-trigger'));
+  const revealHintCopy = {
+    zh: { collapsed: '展开详情', expanded: '收起详情' },
+    en: { collapsed: 'Show details', expanded: 'Hide details' },
+  };
+
+  function updateRevealHint(trigger, expanded) {
+    const hint = trigger.querySelector('.reveal-hint');
+    if (!hint) return;
+    const copy = revealHintCopy[currentLang] || revealHintCopy.zh;
+    hint.textContent = expanded ? copy.expanded : copy.collapsed;
+  }
+
+  function setRevealExpanded(trigger, expanded) {
+    const panelId = trigger.getAttribute('aria-controls');
+    const panel = panelId ? document.getElementById(panelId) : null;
+    trigger.setAttribute('aria-expanded', String(expanded));
+    trigger.closest('.reveal-item')?.classList.toggle('is-open', expanded);
+    if (panel) panel.hidden = !expanded;
+    updateRevealHint(trigger, expanded);
+  }
+
+  function closeOtherReveals(activeTrigger) {
+    revealTriggers.forEach((trigger) => {
+      if (trigger !== activeTrigger) setRevealExpanded(trigger, false);
+    });
+  }
+
+  function refreshOpenRevealMedia() {
+    revealTriggers.forEach((trigger) => {
+      updateRevealHint(trigger, trigger.getAttribute('aria-expanded') === 'true');
+    });
+  }
+
+  revealTriggers.forEach((trigger) => {
+    setRevealExpanded(trigger, false);
+    trigger.addEventListener('click', () => {
+      const open = trigger.getAttribute('aria-expanded') === 'true';
+      if (open) {
+        setRevealExpanded(trigger, false);
+        return;
+      }
+      closeOtherReveals(trigger);
+      setRevealExpanded(trigger, true);
+    });
+  });
+
+
 
   function currentTheme() {
     return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
@@ -283,6 +344,7 @@ const strataReleaseCatalog = (() => {
 
     if (heroImage) heroImage.src = screenshotUrl('product-cover');
     if (lightboxModal.classList.contains('active')) openLightbox(lightboxModal.dataset.screen);
+    refreshOpenRevealMedia();
     updateThemeButton();
 
   }
