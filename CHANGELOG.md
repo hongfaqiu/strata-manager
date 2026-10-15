@@ -7,6 +7,12 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+### English
+
+## [0.1.10] - 2026-10-15
+
+### 中文
+
 - **修复 #9**：添加官方模型数据目录（`Strata-data` / `--data-dir`）时不再静默跳过；会通过官方 `settings.json`、同级安装目录，以及目录内的 `strata-*.json` 解析到安装根并列出模型。若仍找不到可启动配置，空状态会提示改为添加安装目录或使用「导入配置」。
 - **修复 #9（续）**：引擎有效性优先读 `strata-*.json` 的 `exe` 路径，不再只认 `engine/`；支持 `engine-cuda12/`、自行解压的 `engine_cuda12/` 等目录。配置仍写 `engine/` 但二进制只在 `engine_cuda12/` 时也会回退匹配；运行环境版本与更新检测、视觉引擎默认路径同样跟随配置中的引擎目录。
 
