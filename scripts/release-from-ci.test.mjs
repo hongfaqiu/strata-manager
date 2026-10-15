@@ -33,6 +33,23 @@ test('observer compatibility expectations match the two-platform reviewed workfl
   assert.match(observer, /runner: \[windows-latest,\s*ubuntu-22\.04\]/);
   for (const gate of observerGates) assert.ok(observer.includes('- name: ' + gate), gate);
 });
+test('the macOS desktop job stays behind the docs-only skip and publishes ad-hoc Apple Silicon artifacts', async () => {
+  const workflow = (await readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')).replaceAll('\r\n', '\n');
+  const changes = workflow.slice(workflow.indexOf('\n  changes:'), workflow.indexOf('\n  observer-compatibility:'));
+  assert.match(changes, /dorny\/paths-filter@v3/);
+  assert.doesNotMatch(changes, /website\/\*\*/);
+  assert.doesNotMatch(changes, /docs\/\*\*/);
+  const desktop = workflow.slice(workflow.indexOf('\n  desktop:'));
+  assert.match(desktop, /needs: changes\n {4}if: needs\.changes\.outputs\.code == 'true'/);
+  assert.match(desktop, /runner: macos-14\n {12}target: aarch64-apple-darwin\n {12}bundles: app,dmg/);
+  for (const step of ['Use ad-hoc macOS signing without an Apple certificate', 'Package the macOS app archive for the updater', 'Upload the macOS updater archive']) {
+    assert.ok(desktop.includes('- name: ' + step), step);
+  }
+  assert.match(desktop, /APPLE_SIGNING_IDENTITY=-/);
+  assert.match(desktop, /name: ci-darwin-aarch64-app-tarball/);
+  assert.match(desktop, /if: runner\.os == 'macOS'/);
+  assert.doesNotMatch(desktop, /x86_64-apple-darwin/);
+});
 for (const method of ['POST', 'PATCH']) {
   test(`real ${method} subprocess receives the complete Unicode JSON request through stdin`, () => {
     const endpoint = '/repos/hongfaqiu/strata-manager/releases' + (method === 'PATCH' ? '/123' : '');
@@ -84,6 +101,7 @@ function ciFixture(p = plan, runId = 123) {
   const jobs = [
     job('desktop (windows-latest, x86_64-pc-windows-msvc, nsis)', [...COMMON_GATES, ...PLATFORM_GATES.windows], 10),
     job('desktop (ubuntu-22.04, x86_64-unknown-linux-gnu, appimage,deb)', [...COMMON_GATES, ...PLATFORM_GATES.linux], 11),
+    job('desktop (macos-14, aarch64-apple-darwin, app,dmg)', [...COMMON_GATES, ...PLATFORM_GATES.macos], 12),
     ...[0, 1, 2].map(i => job('Linux native shard (' + i + '/3)', SHARD_GATES, 20 + i)),
     ...[0, 1, 2].map(i => job('Windows native shard (' + i + '/3)', WINDOWS_SHARD_GATES, 30 + i)),
     ...observerJobs.map((name, i) => job(name, observerGates, 40 + i)),
@@ -120,8 +138,8 @@ test('source protocol explicitly rejects old fixed release and missing CI marker
   const helper = "export const CI_PROTOCOL = '" + CI_PROTOCOL + "';";
   const ci = 'name: Reusable release CI protocol\nrun: node scripts/release-from-ci.mjs protocol';
   assert.equal(validateSourceProtocol(helper, ci), true);
-  assert.equal(CI_PROTOCOL, 'strata-release-ci/v2');
-  assert.throws(() => validateSourceProtocol("export const CI_PROTOCOL = 'strata-release-ci/v1';", ci), /protocol/);
+  assert.equal(CI_PROTOCOL, 'strata-release-ci/v3');
+  assert.throws(() => validateSourceProtocol("export const CI_PROTOCOL = 'strata-release-ci/v2';", ci), /protocol/);
   assert.throws(() => validateSourceProtocol('export const PLAN = {}', ci), /protocol/);
   assert.throws(() => validateSourceProtocol(helper, 'node scripts/release-check.mjs'), /protocol/);
 });
@@ -162,7 +180,7 @@ test('complete trusted push or dispatch binds dynamically discovered IDs, digest
     const f = ciFixture(); f.run.event = event;
     const p = validateCiEvidence(f.run, f.jobs, f.artifacts, plan);
     assert.equal(p.runId, 123); assert.equal(p.runAttempt, 2);
-    assert.deepEqual(p.artifacts.map(a => a.id), [100, 101, 102]);
+    assert.deepEqual(p.artifacts.map(a => a.id), [100, 101, 102, 103, 104]);
     assert.equal(p.artifacts[0].sha256, '1'.repeat(64));
   }
 });
@@ -201,7 +219,7 @@ for (const [label, change] of invalidCi) test('CI refuses ' + label, () => {
   assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, plan));
 });
 test('every required shared and platform gate fails closed independently', () => {
-  for (const [position, gates] of [[0, [...COMMON_GATES, ...PLATFORM_GATES.windows]], [1, [...COMMON_GATES, ...PLATFORM_GATES.linux]]]) {
+  for (const [position, gates] of [[0, [...COMMON_GATES, ...PLATFORM_GATES.windows]], [1, [...COMMON_GATES, ...PLATFORM_GATES.linux]], [2, [...COMMON_GATES, ...PLATFORM_GATES.macos]]]) {
     for (const name of gates) {
       const f = ciFixture(); f.jobs[position].steps.find(s => s.name === name).conclusion = 'skipped';
       assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, plan), new RegExp(name.replace(/[()[\]]/g, '\\$&')));
@@ -214,7 +232,7 @@ test('first stable 0.1.2 still requires both real upgrade gates', () => {
   f.jobs[0].steps.pop(); assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, p));
 });
 test('each native shard requires every real test, private keyring and coverage upload step', () => {
-  for (let index = 2; index < 5; index++) for (const name of SHARD_GATES) {
+  for (let index = 3; index < 6; index++) for (const name of SHARD_GATES) {
     const f = ciFixture();
     f.jobs[index].steps.find(s => s.name === name).conclusion = 'skipped';
     assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, plan), /shard gate/);
@@ -226,7 +244,7 @@ test('v1 plans cannot accept v2 native evidence or reuse the old five-job CI', (
   assert.throws(() => validateCiEvidence(f.run, f.jobs.slice(0, 5), f.artifacts, plan), /six native shards/);
 });
 for (const shard of [0, 1, 2]) {
-  const position = 5 + shard;
+  const position = 6 + shard;
   for (const [label, mutate] of [
     ['missing', (f, index) => { f.jobs.splice(index, 1); }],
     ['duplicate', (f, index) => { f.jobs.push(clone(f.jobs[index])); }],
@@ -265,7 +283,7 @@ test('Windows wait, current-attempt download and aggregate cannot be skipped aft
 });
 test('old eight-job CI without observer compatibility evidence is never reusable', () => {
   const f = ciFixture();
-  assert.throws(() => validateCiEvidence(f.run, f.jobs.slice(0, 8), f.artifacts, plan), /observer/);
+  assert.throws(() => validateCiEvidence(f.run, f.jobs.slice(0, 8), f.artifacts, plan), /desktop jobs/);
 });
 for (const name of observerJobs) {
   for (const [label, mutate] of [
@@ -390,10 +408,10 @@ function releaseFixture(p = plan) {
   return { release: { id: 4, tag_name: p.tag, draft: true, prerelease: p.prerelease, assets },
     manifest: { version: p.version, platforms: {
       'windows-x86_64': entry(0), 'windows-x86_64-nsis': entry(0), 'linux-x86_64': entry(1),
-      'linux-x86_64-appimage': entry(1), 'linux-x86_64-deb': entry(2),
+      'linux-x86_64-appimage': entry(1), 'linux-x86_64-deb': entry(2), 'darwin-aarch64': entry(3),
     } } };
 }
-test('exact stable/prerelease draft and five updater aliases are version-specific', () => {
+test('exact stable/prerelease draft and six updater entries are version-specific', () => {
   for (const p of [plan, makePlan('1.0.0-rc.1'), makePlan('1.0.0+build.3')]) {
     const f = releaseFixture(p);
     assert.equal(validateReleaseInventory(f.release, p), true);
@@ -523,7 +541,11 @@ test('real full-byte prepared reader catches installer and ZIP tampering and pro
     await assert.rejects(readPrepared({ temp, plan: p, validateOnly: true }), /bytes changed/);
   } finally { await rm(temp, { recursive: true, force: true }); }
 });
-test('the inventory is always three installers, three signatures and two metadata files', () => {
-  assert.equal(assetNames(plan).length, 8);
-  assert.equal(new Set(assetNames(plan)).size, 8);
+test('the inventory is always five installers, five signatures and two metadata files', () => {
+  assert.equal(assetNames(plan).length, 12);
+  assert.equal(new Set(assetNames(plan)).size, 12);
+  assert.equal(plan.artifacts[3].name, 'ci-darwin-aarch64-app-tarball');
+  assert.equal(plan.artifacts[3].installer, 'Strata.Manager_' + plan.version + '_aarch64.app.tar.gz');
+  assert.equal(plan.artifacts[4].name, 'ci-darwin-aarch64-dmg');
+  assert.equal(plan.artifacts[4].installer, 'Strata.Manager_' + plan.version + '_aarch64.dmg');
 });

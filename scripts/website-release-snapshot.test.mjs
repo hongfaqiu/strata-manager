@@ -37,6 +37,21 @@ test('authenticated snapshot requests the two exact repository endpoints and pub
   for (const asset of snapshot.release.assets) assert.deepEqual(Object.keys(asset), ['name', 'state', 'size', 'browser_download_url']);
   assert.doesNotMatch(JSON.stringify(snapshot), /test-credential|must-not-be-published|not-needed|Authorization|uploader|body|author/);
   assert.equal(Object.keys(catalog.assets(snapshot.release)).length, 5);
+  assert.equal(catalog.assets(snapshot.release).dmg, undefined);
+});
+
+test('an uploaded Apple Silicon DMG is kept in the public snapshot and a missing DMG is omitted', async () => {
+  const selected = release();
+  const name = 'Strata.Manager_0.1.2_aarch64.dmg';
+  const url = `${base}/download/v0.1.2/${name}`;
+  selected.assets.push({ name, state: 'uploaded', size: 100, browser_download_url: url, uploader: { login: 'not-needed' } });
+  const snapshot = await fetchReleaseSnapshot({ token: 'test-credential', catalog, generatedAt, fetchImpl: async (requestUrl) => jsonResponse(requestUrl.endsWith('/latest') ? selected : [selected]) });
+  assert.equal(snapshot.release.assets.length, 5);
+  assert.equal(snapshot.release.assets.some((asset) => asset.name === name && asset.browser_download_url === url), true);
+  assert.equal(catalog.assets(snapshot.release).dmg, url);
+  const without = createReleaseSnapshot(release(), catalog, generatedAt);
+  assert.equal(without.release.assets.length, 4);
+  assert.equal(catalog.assets(without.release).dmg, undefined);
 });
 
 test('rate limits, unexpected HTTP responses and network failures fail publication without logging secret response text', async () => {

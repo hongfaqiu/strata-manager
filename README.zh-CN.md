@@ -16,7 +16,7 @@
 <p>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-287e71" alt="MIT 许可" /></a>
 <img src="https://img.shields.io/badge/desktop-Tauri%202-24c8d8" alt="Tauri 2 桌面应用" />
-<img src="https://img.shields.io/badge/platforms-Windows%20%2F%20Linux%20x64-51606f" alt="Windows 和 Linux x64" />
+<img src="https://img.shields.io/badge/platforms-Windows%20%2F%20Linux%20x64%20%C2%B7%20macOS%20ARM-51606f" alt="Windows、Linux x64，macOS Apple Silicon 接入中" />
 <a href="https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml"><img src="https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml/badge.svg" alt="构建与测试状态" /></a>
 </p>
 
@@ -44,7 +44,7 @@ Manager 是独立社区项目，管理的是**这台电脑**上受支持的 Stra
 
 | 工作流程 | 可以完成的操作 |
 | --- | --- |
-| **1 · 准备 Strata** | 检测已有安装，查看本机与上游版本、官方更新日志。Windows x64 引擎 ZIP 默认使用官方 GitHub，支持 GH Proxy/GHProxy、自定义 HTTPS 或本地 ZIP，各来源按当前 CUDA12、CUDA13 或 HIP 引擎匹配；中断后保留部分文件并尝试 HTTP Range 续传，完整包仍按官方大小与 SHA256 校验。Linux 支持环境扫描、版本和日志查看。 |
+| **1 · 准备 Strata** | 检测已有安装，查看本机与上游版本、官方更新日志。Windows x64 引擎 ZIP 默认使用官方 GitHub，支持 GH Proxy/GHProxy、自定义 HTTPS 或本地 ZIP，各来源按当前 CUDA12、CUDA13 或 HIP 引擎匹配；中断后保留部分文件并尝试 HTTP Range 续传，完整包仍按官方大小与 SHA256 校验。Linux 支持环境扫描、版本和日志查看。macOS Apple Silicon 安装包正在接入，目前不会扫描进程，也不会安装 Strata 引擎。 |
 | **2 · 整理模型** | 发现本机权重，按模型归并运行配置，选择下载来源与显卡，检查模型文件、GGUF 元数据和磁盘占用；支持 Swift IQ3_S 格式。 |
 | **3 · 配置与运行** | 通过图形控件或 JSON 编辑配置，校验并保留备份；启动、停止、重启或释放模型内存，查看启动阶段、任务和日志。在 Windows 检查检测到的运行中服务、模型加载状态、API 地址与配置，连接已有管理后台或托管服务。打开应用或登录时仅启动轻量后台，保留服务停止状态。 |
 | **4 · 聊天与接入** | 使用流式会话、附件与结构化输出。新模型默认继承公共生成参数与 MCP 开关，旧模型的专用值保持独立，主动开启继承后才跟随；更改在下一次聊天请求生效。在“API 与外部助手”集中配置连接目标、应用访问密钥、API 示例与 MCP，选择目标不会启动或切换模型。 |
@@ -77,12 +77,13 @@ Strata Manager 提供模型下载列表与详情、统一显卡及运行选项�
 | --- | --- | --- |
 | **Windows x64** | NSIS 安装包（`.exe`） | 需要 WebView2；[Windows 安装说明](docs/DOWNLOAD.md#windows-安装)。 |
 | **Linux x64** | AppImage 或 DEB | Ubuntu 22.04 CI 环境构建；[Linux 安装与支持范围](docs/DOWNLOAD.md#linux-安装)。 |
+| **macOS Apple Silicon** | DMG | 接入中。当前已发布版本没有 Mac 安装包。后续发布在 CI 产出后列出 `Strata.Manager_<version>_aarch64.dmg`。临时签名，尚未公证。不提供 Intel 安装包。[macOS 说明](docs/DOWNLOAD.md#macos)。 |
 
 1. **准备运行环境。** 打开 Strata 页面检查已有安装，或按引导准备；已有受支持环境无需重装。
 2. **选择模型与配置。** “我的模型”列出发现的权重，按需添加搜索目录，选择运行配置或下载新权重。
 3. **点击“使用”。** 跟踪环境检查与加载，等待“模型可用”后开始聊天，或将本机 API 地址复制到其它应用。
 
-桌面安装包包含 Manager 与独立后台。硬件和驱动要求取决于 Strata 与模型，macOS 和 ARM 尚不在发布目标中。安装步骤及包的支持范围见[下载说明](docs/DOWNLOAD.md)，日常操作见[使用指南](docs/USER_GUIDE.md)。
+桌面安装包包含 Manager 与独立后台。硬件和驱动要求取决于 Strata 与模型。当前已发布版本安装在 Windows x64 与 Linux x64。macOS Apple Silicon 的 DMG 和更新归档已进入 CI，会随之后的版本标签进入发布；安装包为临时签名，尚未公证。不提供 Intel 安装包。Manager 尚未发现上游 Strata Metal 安装。这些 macOS 改动没有在 Mac 硬件上做运行验收。安装步骤及包的支持范围见[下载说明](docs/DOWNLOAD.md)，日常操作见[使用指南](docs/USER_GUIDE.md)。
 
 ## 界面一览
 

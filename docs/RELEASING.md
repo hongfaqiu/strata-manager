@@ -24,8 +24,9 @@
 | --- | --- | --- |
 | Windows x64 | `x86_64-pc-windows-msvc` | NSIS `*-setup.exe` 及 `.sig` |
 | Linux x64 | `x86_64-unknown-linux-gnu` | `.AppImage`、`.AppImage.sig` 和 `.deb` |
+| macOS Apple Silicon | `aarch64-apple-darwin` | DMG `*_aarch64.dmg`、更新器 `*_aarch64.app.tar.gz`，以及各自的 `.sig` |
 
-每个安装包包含桌面外壳及独立 `strata-supervisor` 后台。Python、Strata 运行时和模型权重使用应用内的独立安装/导入流程，模型不进入 GitHub 构建工件。平台安装包构建成功不等于对应 GPU 推理已验收；必须在发布说明中列出实际测试的平台、驱动和范围。
+每个安装包包含桌面外壳及独立 `strata-supervisor` 后台。Python、Strata 运行时和模型权重使用应用内的独立安装/导入流程，模型不进入 GitHub 构建工件。平台安装包构建成功不等于对应 GPU 推理已验收；必须在发布说明中列出实际测试的平台、驱动和范围。当前已发布稳定版仍是 Windows x64 与 Linux x64。`strata-release-ci/v3` 起，下一次打标签的发布才要求并签入 Mac 的两份安装包。macOS 使用临时签名，没有 Apple 公证；不构建 Intel 包。
 
 普通用户首次使用应进入自动检测/准备流程，不能以安装 Git、填写 Python 路径和手选安装目录作为默认操作步骤。旧版 Manager 有效档案和会话自动迁移，已有模型无需再准备；其它本机安装导入时保留原源码、配置与权重。新模型准备完成后自动核验登记，保留当前选择；用户选用后由后台启动/加载。首次模型请求按后台策略加载，或提前预载；登录自启动只启动后台。
 
@@ -64,19 +65,19 @@ pnpm --filter @strata-manager/desktop tauri signer generate -w $strataSigningKey
 
 ## 日常 CI
 
-`.github/workflows/ci.yml` 在主分支 push、Pull Request 和手动触发时运行 Windows/Linux 矩阵。功能分支通过 PR 自动打包；尚未创建 PR 时，可选择该分支手动运行。PR 使用合并结果进行验收，避免同一功能分支 push 与 PR 重复构建；手动运行使用独立并发组，不取消自动验收。使用 Node 24、`package.json` 固定的 pnpm 和 Rust stable；pnpm 11.21.0 要求 Node >=22.13。
+`.github/workflows/ci.yml` 在主分支 push、Pull Request 和手动触发时运行。桌面矩阵包含 Windows、Linux 与 macOS Apple Silicon（`macos-14`、`aarch64-apple-darwin`）。只改文档或官网、且不触碰代码路径过滤器的 PR 仍跳过 desktop、原生测试和 observer。功能分支通过 PR 自动打包；尚未创建 PR 时，可选择该分支手动运行。PR 使用合并结果进行验收，避免同一功能分支 push 与 PR 重复构建；手动运行使用独立并发组，不取消自动验收。使用 Node 24、`package.json` 固定的 pnpm 和 Rust stable；pnpm 11.21.0 要求 Node >=22.13。
 
-检查范围为版本一致性和发布门禁测试、TypeScript、核心与 HTTP 协议夹具测试、前端生产构建、Rust 格式、workspace 单元/集成测试、Clippy，以及两平台桌面安装包构建。Windows 和 Linux 原生测试各使用三个独立 runner；每个 runner 仍以 `--test-threads=1` 串行运行分配到的测试，保留原有测试超时。Windows 的进程、端口和凭据夹具由独立虚拟机隔离；Linux 使用固定私有 Secret Service、DBus 和 Xvfb。
+检查范围为版本一致性和发布门禁测试、TypeScript、核心与 HTTP 协议夹具测试、前端生产构建、Rust 格式、workspace 单元/集成测试、Clippy，以及 Windows、Linux 与 macOS Apple Silicon 桌面安装包构建。macOS job 执行格式、Clippy 和打包，不运行安装包启动检查。Windows 和 Linux 原生测试各使用三个独立 runner；每个 runner 仍以 `--test-threads=1` 串行运行分配到的测试，保留原有测试超时。Windows 的进程、端口和凭据夹具由独立虚拟机隔离；Linux 使用固定私有 Secret Service、DBus 和 Xvfb。
 
-`scripts/ci-linux-native-tests.mjs` 支持两个原生平台，从 Cargo 的全部 workspace 测试可执行文件枚举测试，再按完整模块确定分片。实际执行的名字和计数必须与计划一致；当前 Linux 七项、Windows 十五项需要实机或外部准备的 ignored 测试逐项登记，新增或减少必须显式审核。0.1.8 仅增加了 Windows 指定真实服务的只读所有者验收项；它要求用户显式提供实际目标，CI 不默认执行，原有十四项和 Linux 七项保持不变。两平台各自的分片 0 额外执行完整 workspace 文档测试。每个平台的打包 job 必须等本平台三个分片全部成功，并汇总绑定相同源码、锁文件、工具链、平台、profile 和当前 run attempt 的覆盖证明；遗漏、重复、跨平台、旧 attempt 或失败均阻断。两个 desktop job 同时执行 Clippy 和安装包构建，随后汇总完整原生覆盖证明，再执行实际包安装或启动检查。Windows 正向测试筛选还限制命令行长度，避免分片参数触及 Windows 进程参数上限。产物只在整个十 job CI 和包验收成功后允许复用：两个 desktop job、六个原生分片，以及 Windows/Linux 两个 Strata 0.1.44 observer compatibility job。
+`scripts/ci-linux-native-tests.mjs` 支持两个原生平台，从 Cargo 的全部 workspace 测试可执行文件枚举测试，再按完整模块确定分片。实际执行的名字和计数必须与计划一致；当前 Linux 七项、Windows 十五项需要实机或外部准备的 ignored 测试逐项登记，新增或减少必须显式审核。0.1.8 仅增加了 Windows 指定真实服务的只读所有者验收项；它要求用户显式提供实际目标，CI 不默认执行，原有十四项和 Linux 七项保持不变。两平台各自的分片 0 额外执行完整 workspace 文档测试。每个平台的打包 job 必须等本平台三个分片全部成功，并汇总绑定相同源码、锁文件、工具链、平台、profile 和当前 run attempt 的覆盖证明；遗漏、重复、跨平台、旧 attempt 或失败均阻断。三个 desktop job 同时执行 Clippy 和安装包构建。Windows 与 Linux 随后汇总本平台完整原生覆盖证明，再执行实际包安装或启动检查；macOS 使用临时签名上传 DMG 与 `.app.tar.gz`，不等待原生分片，也不做安装包启动检查。Windows 正向测试筛选还限制命令行长度，避免分片参数触及 Windows 进程参数上限。产物只在整个十一 job CI 成功后允许复用：三个 desktop job、六个原生分片，以及 Windows/Linux 两个 Strata 0.1.44 observer compatibility job。
 
 两个 observer job 必须属于同一源码、run 与当前 attempt，并且完整成功。发布门禁逐项要求保留上游源码字节、检出已审核的 API fixture、安装 MockEngine 测试依赖、验证源码 canonical hash 与 observer 兼容性，以及执行全部 HTTP 合同测试且没有跳过。job 或任一关键步骤缺失、重复、失败、取消、跳过或尚未完成均阻断；旧八 job 证据不能替代新增兼容性验收。此检查不下载模型权重，也不代表真实 GPU 推理通过。
 
 Rust dev/test 使用 `debug=0` 和 `incremental=0`，保留 debug assertions、溢出检查及原测试超时；release 的 thin LTO 和 codegen 配置保持原值。缓存仅保留依赖与当前 target；关闭 Cargo 工具二进制、workspace crate 和全 registry crate 缓存。只有本仓库 main 的 push/手动构建保存缓存；PR、tag、功能分支与六个原生测试分片只恢复。每个 target 只有 desktop job 保存一次，避免分片重复压缩。首次切换 profile 会产生新缓存键，应分别记录冷缓存与后续命中时的耗时。
 
-CI 产物以 `ci-<platform>-<arch>-<bundle>` 名称上传为 Actions artifacts。它们关闭 updater artifacts，不是正式签名发行版。拉取请求不接触更新私钥。
+CI 产物以 `ci-<platform>-<arch>-<bundle>` 名称上传为 Actions artifacts。macOS 的 DMG 使用该命名（`ci-darwin-aarch64-dmg`，平台字段是 `darwin`）。更新器需要的 `.app.tar.gz` 由后续步骤单独上传为 `ci-darwin-aarch64-app-tarball`，因为 tauri-action 不会把这份归档放进 workflow artifact。它们关闭 updater artifacts，不是正式签名发行版。拉取请求不接触更新私钥。macOS 在构建前把 `APPLE_SIGNING_IDENTITY=-` 写入环境，只做临时签名。
 
-普通 CI 对最终安装包执行实际启动检查，Release 复用这些已验收的原始字节：Windows 在临时目录静默安装 NSIS，启动桌面并核对独立后台的版本、IPC、打包二进制 SHA256 和空白私有数据目录，再停止并卸载；Linux 在 Xvfb/DBus 环境分别解包并启动 AppImage 与 DEB，检查同样的后台通信。检查限于一次性 GitHub runner，不在开发电脑上自动安装或接管模型。包启动成功不代表 GPU 推理、登录自启动或跨版本更新安装完成。
+普通 CI 对最终安装包执行实际启动检查，Release 复用这些已验收的原始字节：Windows 在临时目录静默安装 NSIS，启动桌面并核对独立后台的版本、IPC、打包二进制 SHA256 和空白私有数据目录，再停止并卸载；Linux 在 Xvfb/DBus 环境分别解包并启动 AppImage 与 DEB，检查同样的后台通信。macOS job 不运行这套启动检查。检查限于一次性 GitHub runner，不在开发电脑上自动安装或接管模型。包启动成功不代表 GPU 推理、登录自启动或跨版本更新安装完成。
 
 校验和发布会切换到 runner 临时目录，因此发布 job 显式设置 `GH_REPO`，让 `gh release download/upload/edit` 始终定位当前仓库。手动发版填写已存在的 `release_tag`，或选择该 tag；控制器可从 main 运行，但应用源码始终独立检出并绑定真实 tag commit。
 
@@ -88,16 +89,16 @@ CI 产物以 `ci-<platform>-<arch>-<bundle>` 名称上传为 Actions artifacts�
 
 1. 等待同仓库的编辑会话完成，冻结同一候选快照。在同一变更中同步根 `package.json`、`apps/desktop/package.json`、`packages/core/package.json`、Tauri config、Cargo workspace 和任何显式 Cargo package version。运行 `node scripts/release-check.mjs --tag v<version>`，将 `<version>` 替换为候选的实际版本；tag 必须与应用版本严格一致。该版本的中英文日志须位于唯一的 `## [<version>]`；README 三个入口、中英文下载/用户文档和官网应同步相应发布入口，不复用上一版本的通过结论。
 2. 完成 [VERIFICATION](VERIFICATION.md) 的最终检查和发布验收，更新中英文 README、用户指南、`docs/screenshots/` 的 WebP 封面及页面图与实际 revision；检查内容没有 API 密钥、个人会话、用户名或私有模型路径。截图使用示例数据时，在图片所在文档及官网的图外说明数据来源；图内使用正常模型名和界面内容，不能写成真实服务或性能证据。保留历史原型证据，同时单列本轮未通过/未运行项。
-3. 推送已审核的代码，等待完整 CI 后，创建并推送 `v<version>` tag，例如 `v0.2.0-beta.1`。版本 tag 触发 `.github/workflows/release.yml`，它调用同一提交的 `release-from-ci.yml`。也可手动运行 `Release desktop` 并填写 `release_tag`；可选 `ci_run_id` 指定已验收 run。旧 tag 缺少 `strata-release-ci/v2` 协议时明确拒绝，不改写 tag；v2 要求 Windows 分片证明，不接受仅有旧串行 Windows 门禁的 v1 CI。
-4. 控制器优先选择同仓库、同源码 SHA、同 CI workflow 的完整成功 run；已有运行则等待它完成，没有可用 run 才按不可变 tag 补跑一次 CI。复用要求两个 desktop job、三个 Windows 分片、三个 Linux 分片、两个 Strata 0.1.44 observer compatibility job，以及原版本/观察器/原生/格式/Clippy/安装启动门禁全部通过，并检查当前 run attempt。版本 0.1.2 仍额外要求原 beta.2 升级门禁。PR 合并 SHA、其他源码、失败、取消、过期或不完整产物均不可复用。
-5. 下载三种 CI artifact，冻结 ID 和 GitHub ZIP digest，安全解包并核对版本、产品名、架构及原始安装包 hash。签名前和上传前重验源码、tag、run 与原始字节；仅为原始安装包生成带应用版本的 Tauri updater 签名。单个发布 job 生成 `latest.json`、三份 `.sig` 与 `SHA256SUMS`，创建或续写草稿，无需再次编译应用或跨平台合并 manifest。`scripts/release-verify.mjs` 下载实际草稿资产，通过同源码的 `strata-update-verifier` 和内置公钥核验三份载荷、可信注释、版本、完整八项资产与 URL；全部成功才公开。
+3. 推送已审核的代码，等待完整 CI 后，创建并推送 `v<version>` tag，例如 `v0.2.0`。版本 tag 触发 `.github/workflows/release.yml`，它调用同一提交的 `release-from-ci.yml`。也可手动运行 `Release desktop` 并填写 `release_tag`；可选 `ci_run_id` 指定已验收 run。源码若仍导出 `strata-release-ci/v2` 或更早协议，明确拒绝，不改写 tag。v3 要求三个 desktop job，并且同一 attempt 中同时有 Mac 的 DMG 与 `.app.tar.gz`。
+4. 控制器优先选择同仓库、同源码 SHA、同 CI workflow 的完整成功 run；已有运行则等待它完成，没有可用 run 才按不可变 tag 补跑一次 CI。复用要求三个 desktop job（Windows、Linux、`desktop (macos-14, aarch64-apple-darwin, app,dmg)`）、三个 Windows 分片、三个 Linux 分片、两个 Strata 0.1.44 observer compatibility job，以及原版本/观察器/原生/格式/Clippy/安装启动门禁全部通过，并检查当前 run attempt。macOS 门禁是临时签名、打包更新归档和上传该归档，不是安装包启动检查。版本 0.1.2 仍额外要求原 beta.2 升级门禁。PR 合并 SHA、其他源码、失败、取消、过期或不完整产物均不可复用。
+5. 下载五种 CI artifact（NSIS、AppImage、DEB、`ci-darwin-aarch64-app-tarball`、`ci-darwin-aarch64-dmg`），冻结 ID 和 GitHub ZIP digest，安全解包并核对版本、产品名、架构及原始安装包 hash。签名前和上传前重验源码、tag、run 与原始字节；仅为原始安装包生成带应用版本的 Tauri updater 签名。签名使用既有 Tauri updater 私钥，不是 Apple Developer ID。单个发布 job 生成 `latest.json`、五份 `.sig` 与 `SHA256SUMS`，创建或续写草稿，无需再次编译应用或跨平台合并 manifest。`latest.json` 的 `darwin-aarch64` 指向 `.app.tar.gz`，不指向 DMG。`scripts/release-verify.mjs` 下载实际草稿资产，通过同源码的 `strata-update-verifier` 和内置公钥核验五份载荷、可信注释、版本、完整十二项资产与 URL；全部成功才公开。
 6. 发布阶段使用仓库级队列锁，并在锁内完整检查已公开稳定版本。只有 SemVer 严格更高的稳定版本成为 latest；旧版本或等价版本仍可公开下载，但不替换更新通道。带 SemVer prerelease 的版本始终不覆盖稳定自动更新通道。公开状态和 latest 选择在同一次 PATCH 中提交；发布前再次核对真实 tag commit。
 
 发布队列采用 GitHub 的 `queue: max`，最多保留 100 个 pending 发布，避免默认队列只保留一个等待任务而取消其它版本。超出队列上限会被 GitHub 取消；超过版本列表分页上限则拒绝发布。人工发布或没有采用此锁的旧工作流仍可能竞争，不能视作已获得服务器级版本比较 CAS。[GitHub 并发队列文档](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)。
 
-发布流程提供无写入演练：手动运行 `Release verified CI installers`，设置 `validate_only=true`、`release_tag=v<源码中的版本>`、`source_ref=<完整 SHA>`、`expected_source_sha=<同一 SHA>` 和 `ci_run_id=<完整成功 run>`。它检查并下载三种原始产物，上传不含密钥的字节证明，跳过签名和 Release 写入；无需创建新版本 tag。真实发布与演练都保留完整拒绝条件测试。
+发布流程提供无写入演练：手动运行 `Release verified CI installers`，设置 `validate_only=true`、`release_tag=v<源码中的版本>`、`source_ref=<完整 SHA>`、`expected_source_sha=<同一 SHA>` 和 `ci_run_id=<完整成功 run>`。它检查并下载五种原始产物，上传不含密钥的字节证明，跳过签名和 Release 写入；无需创建新版本 tag。真实发布与演练都保留完整拒绝条件测试。
 
-CI 失败后修改源码并运行新的完整 CI；如仅需重试外部环境故障，选择 **Re-run all jobs**。发布复用要求同一个 attempt 的全部十个 job 和产物，不能混用“只重跑失败 job”与上一 attempt 的通过证明。
+CI 失败后修改源码并运行新的完整 CI；如仅需重试外部环境故障，选择 **Re-run all jobs**。发布复用要求同一个 attempt 的全部十一个 job 和产物，不能混用“只重跑失败 job”与上一 attempt 的通过证明。
 
 GitHub 对相对默认分支修改工作流的 `target_commitish` 要求额外的 Workflows 写权限，内置 `GITHUB_TOKEN` 无法授予该权限。对于已经存在且核验了真实 commit 的 tag，工作流将默认分支用作 Release 创建提示，避免该权限要求；该提示不会重写现有 tag，也不用于判断产物来源。当前 tag 的真实提交始终由独立 ref 检查绑定。[GitHub Release 权限规则](https://docs.github.com/en/rest/releases/releases#create-a-release)。
 
@@ -119,6 +120,18 @@ GitHub 对相对默认分支修改工作流的 `target_commitish` 要求额外�
 
 0.1.2 在两份 workflow 中串行运行完整 Linux 原生测试，并补充隔离后台启动诊断。原有测试、就绪期限、Clippy、安装升级、签名和发布门禁保持；共享 Rust 依赖缓存与串行 Release 矩阵继续使用。候选仍须完成同源码两平台 CI 和签名发布；首次稳定版的 Windows 跨版本门禁使用不可变 beta.2 安装包，升级到 0.1.2，不能替代客户端 Tauri updater 端到端验收。
 
+## 切出带 Mac 安装包的发布
+
+当前已发布稳定版保持 Windows x64 与 Linux x64。要让 Mac 安装包进入公开 Release：
+
+1. 合并包含 `strata-release-ci/v3` 与 macOS desktop job 的源码。
+2. 等待该提交的 CI 全绿。macOS job 名称必须是 `desktop (macos-14, aarch64-apple-darwin, app,dmg)`，并上传 `ci-darwin-aarch64-dmg` 与 `ci-darwin-aarch64-app-tarball`。
+3. 按上文创建并推送与应用版本一致的 `v<version>` tag。Release 工作流用既有 Tauri updater 私钥为五个安装包签名，不使用 Apple Developer ID。
+4. 确认草稿里 `latest.json` 的 `darwin-aarch64` 指向 `Strata.Manager_<version>_aarch64.app.tar.gz`。DMG 是手工下载，文件名是 `Strata.Manager_<version>_aarch64.dmg`。
+5. 在发布说明中写明：临时签名、未公证、无 Intel 包、未在 Mac 硬件上做运行验收，以及 Manager 尚未发现上游 Strata Metal 安装。
+
+没有 Apple 证书时不要把公证或 Gatekeeper 通过写成已完成。Intel 目标保持不构建。
+
 ## 验证发布结果
 
 ```sh
@@ -128,6 +141,6 @@ gh release view v0.1.3 --json isDraft,isPrerelease,tagName,assets,url
 gh release download v0.1.3 --pattern latest.json --dir <temporary-directory>
 ```
 
-确认 Release 已公开，三种安装包均有非零大小，Windows/Linux 的签名与 `latest.json` 条目匹配，URL 指向属于当前 Release 的资产。官方 action 可使用 GitHub release-asset API URL；验证脚本同样接受该格式并校验资产 ID。检查 Actions artifacts 可以辅助定位构建差异；真正面向用户的安装入口是公开 Release。
+确认 Release 已公开，五种安装包均有非零大小，Windows、Linux 与 `darwin-aarch64` 的签名与 `latest.json` 条目匹配，URL 指向属于当前 Release 的资产。DMG 有自己的 `.sig`，但不写入 `darwin-aarch64`。官方 action 可使用 GitHub release-asset API URL；验证脚本同样接受该格式并校验资产 ID。检查 Actions artifacts 可以辅助定位构建差异；真正面向用户的安装入口是公开 Release。
 
 发布回退应保留原 tag 和产物证据。不要覆盖已发布的同版本安装包或修改签名；修复使用新版本号。当前稳定更新源不能安全地通过降低版本号回退客户端；需要应用/后台自己的版本回退能力并完成验证。

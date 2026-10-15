@@ -191,6 +191,35 @@ fn identity_with_paths(
     ))
 }
 
+fn recognized_executable(header: &[u8; 4]) -> bool {
+    #[cfg(windows)]
+    {
+        &header[..2] == b"MZ"
+    }
+    #[cfg(target_os = "linux")]
+    {
+        header == b"\x7fELF"
+    }
+    // Thin and universal Mach-O. macOS has no ELF/MZ supervisor.
+    #[cfg(target_os = "macos")]
+    {
+        matches!(
+            header,
+            b"\xcf\xfa\xed\xfe"
+                | b"\xfe\xed\xfa\xcf"
+                | b"\xce\xfa\xed\xfe"
+                | b"\xfe\xed\xfa\xce"
+                | b"\xca\xfe\xba\xbe"
+                | b"\xbe\xba\xfe\xca"
+        )
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+    {
+        let _ = header;
+        false
+    }
+}
+
 fn executable_hash(executable: &Path, expected: &str) -> Result<String, &'static str> {
     let before = fs::symlink_metadata(executable).map_err(|error| {
         if error.kind() == std::io::ErrorKind::NotFound {
@@ -217,9 +246,7 @@ fn executable_hash(executable: &Path, expected: &str) -> Result<String, &'static
     let mut header = [0u8; 4];
     file.read_exact(&mut header)
         .map_err(|_| "corrupt_executable")?;
-    if (cfg!(windows) && &header[..2] != b"MZ")
-        || (cfg!(target_os = "linux") && &header != b"\x7fELF")
-    {
+    if !recognized_executable(&header) {
         return Err("corrupt_executable");
     }
     let mut hash = Sha256::new();

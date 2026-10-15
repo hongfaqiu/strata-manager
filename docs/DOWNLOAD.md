@@ -14,8 +14,9 @@ README、官网截图与使用指南描述当前源码功能；安装包包含�
 | --- | --- | --- |
 | Windows x64 | [NSIS 安装包（.exe）](https://github.com/hongfaqiu/strata-manager/releases/latest) | 需要 WebView2；安装步骤见下方 |
 | Linux x64 | [AppImage / DEB](https://hongfaqiu.github.io/strata-manager/#get-started) | Ubuntu 22.04 CI 环境构建；系统安装与 GPU 支持范围见下方 |
+| macOS Apple Silicon | [DMG](https://hongfaqiu.github.io/strata-manager/#get-started) | 接入中。当前已发布版本没有该文件；后续发布包含 `*_aarch64.dmg` 时再下载。说明见下方 |
 
-从[所选稳定发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)下载同一版本的 `SHA256SUMS`，将下载文件的 SHA256 与其中同名文件的值核对后再安装。发布页的更新签名文件供更新器验签，初次安装使用 `.exe`、`.AppImage` 或 `.deb`。
+从[所选稳定发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)下载同一版本的 `SHA256SUMS`，将下载文件的 SHA256 与其中同名文件的值核对后再安装。发布页的更新签名文件供更新器验签，初次安装使用 `.exe`、`.AppImage`、`.deb`，或后续发布中实际列出的 `.dmg`。
 
 模型、图像和 API 协议以所选 Strata 运行时为准。检查硬件、驱动、RAM、VRAM 和磁盘要求后再准备模型；已有受支持权重无需重新下载。
 
@@ -42,6 +43,17 @@ README、官网截图与使用指南描述当前源码功能；安装包包含�
 
 从[最新稳定发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)或[官网下载区](https://hongfaqiu.github.io/strata-manager/#get-started)下载 Linux x64 的 `.deb` 文件，在 Ubuntu/Debian 的系统软件安装器中打开，按系统提示安装和处理依赖，再从应用菜单启动。Ubuntu 22.04 是 CI 构建环境；DEB 目前验证的是解包后启动，系统中的安装、卸载、登录自启动和真实 GPU 流程仍未验证。
 
+## macOS
+
+当前已发布的稳定版不包含 Mac 安装包。源码和 CI 已接入 Apple Silicon，下一次按发布协议打标签并公开后，安装包才会出现在发布页：
+
+- 手工安装文件为 `Strata.Manager_<version>_aarch64.dmg`。官网下载按钮只在该发布实际包含这个文件时启用。
+- 应用内更新使用 `Strata.Manager_<version>_aarch64.app.tar.gz`。`latest.json` 的 `darwin-aarch64` 指向这份归档，不指向 DMG。
+- CI 在 `macos-14` 上设置 `APPLE_SIGNING_IDENTITY=-` 做临时签名。没有 Apple 开发者证书，因此没有公证，也没有硬化运行时。Gatekeeper 可能拦截。确认文件来自本项目发布页之后，系统仍可能要求移除隔离或以右键打开。这里不把该提示写成已经在 Mac 上验收过的安装步骤。
+- 不提供 Intel（`x86_64-apple-darwin`）安装包。上游 Strata Metal 面向 Apple Silicon，第二套目标也不是一次低成本编译。
+- Manager 在 macOS 上不会扫描本机进程，也不会安装 Windows x64 引擎 ZIP。上游实验性 Metal 由 [Niko1221/Strata](https://github.com/Niko1221/Strata) 的 `./setup.sh` 从源码构建（见上游 `docs/MAC.md`，产物在 `build-metal/strata`）。本应用尚未把该路径接入安装发现。
+- 应用 `Info.plist` 的最低系统版本写成 15.0，与上游 Metal 说明一致。CI 只证明 `macos-14` runner 能编译并打出安装包，不证明在 Mac 硬件上能启动、发现引擎或完成推理。
+
 ## 从源码体验
 
 需要 Node.js 22.13+、项目固定的 pnpm 11 和 Rust stable。Windows 需要 MSVC C++ Build Tools、Windows SDK 与 WebView2；Linux 需要 [Tauri 系统依赖](https://v2.tauri.app/start/prerequisites/)。
@@ -57,13 +69,13 @@ pnpm desktop 启动完整桌面应用和后台。pnpm dev 只运行前端，不�
 
 ## 支持范围
 
-- 当前面向 Windows/Linux x64；模型、硬件、图像和 API 能力以 Strata 运行时与具体模型为准。
+- 当前已发布安装包面向 Windows/Linux x64。macOS（Apple Silicon）DMG 与更新归档正在接入，随之后的版本标签发布；不提供 Intel 包。模型、硬件、图像和 API 能力以 Strata 运行时与具体模型为准。
 - 当前源码实现全局 Strata 管理与匹配的 Windows x64 ZIP 引擎更新、已有模型自动展示、图形化/JSON 运行配置、服务控制、聊天、持久化元数据统计和完整用途场景调优。已发布包以对应版本说明为准；截图使用示例数据，不代表实机模型性能。
 - 稳定版通过 `latest` 更新通道提供更新；预览版仅手工下载和安装，不替换稳定通道。
 - Windows CI 门禁包含静默安装、桌面启动、私有后台 IPC、正常关闭和卸载；已通过的历史 revision 见 [VERIFICATION](VERIFICATION.md)。
 - Linux CI 门禁包含 Ubuntu 22.04 Xvfb 下 AppImage 与解包 DEB 启动、私有后台 IPC 和正常关闭；不承诺所有 Linux 发行版均兼容。
-- 真实 GPU 完整流程、Strata ZIP 实机更新、Linux 系统 DEB 安装/卸载、登录自启动、缺少 Python 的 Windows 自动安装、Tauri 自动更新的真实跨版本下载、验签、安装和服务恢复仍需独立验收。跨版本 NSIS 安装器检查不等同自动更新端到端验收。ZIP 引擎更新仅使用匹配的官方 Windows x64 发布包；Linux 保留发布信息查看，但不提供不可执行的 Windows ZIP 更新。
-- Windows 安装包目前没有 Authenticode 发布者证书。Tauri 更新包签名用于验证更新文件，不能替代 Windows 发布者签名。
+- 真实 GPU 完整流程、Strata ZIP 实机更新、Linux 系统 DEB 安装/卸载、登录自启动、缺少 Python 的 Windows 自动安装、Tauri 自动更新的真实跨版本下载、验签、安装和服务恢复仍需独立验收。跨版本 NSIS 安装器检查不等同自动更新端到端验收。ZIP 引擎更新仅使用匹配的官方 Windows x64 发布包；Linux 保留发布信息查看，但不提供不可执行的 Windows ZIP 更新。macOS 不扫描进程，也不安装该 ZIP，Strata Metal 安装发现尚未接入。
+- Windows 安装包目前没有 Authenticode 发布者证书。Tauri 更新包签名用于验证更新文件，不能替代 Windows 发布者签名。macOS 安装包同样只有 Tauri 更新签名和临时签名，没有 Apple 公证。
 
 ## 版本与更新
 

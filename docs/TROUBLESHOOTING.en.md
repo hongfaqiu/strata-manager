@@ -48,6 +48,7 @@ Importing an existing model does not require another full weights download. Disk
 | Applying tuning or update recovery fails | Preserve task diagnostics, correct configuration, environment or loading errors, then retry. Do not assume the original service recovered. |
 | App update check/download fails | Check network and published releases, keep the current app and retry. Release notes require confirmation before automatic installation. |
 | Strata update is unavailable | Inspect official releases, matching Windows x64 ZIPs, dependencies and config diagnostics in Strata. Linux provides release information only. Missing platform packages preserve the current installation. |
+| macOS does not find Strata | Apple Silicon packages are in progress. Manager does not scan local processes and does not install the Windows x64 engine ZIP. Upstream experimental Metal is prepared with Niko1221/Strata `./setup.sh`, as described in upstream docs/MAC.md. This app does not discover that layout yet. |
 | ZIP download, extraction or replacement fails | Retain logs and resolve checksum, path, permission or process-identity errors. If recovery fails, repair using diagnostics before retrying; do not assume the service recovered. |
 
 Recovery is bounded and applies after the selected managed service exits. It does not guarantee repair of every API failure, failed update or hardware fault. See the [user guide](USER_GUIDE.en.md) for scope.

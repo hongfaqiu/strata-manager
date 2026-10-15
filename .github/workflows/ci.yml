@@ -265,6 +265,12 @@ jobs:
           - runner: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             bundles: appimage,deb
+          # Apple Silicon only. macos-14 is arm64. Intel is omitted: upstream
+          # Strata Metal does not run on Intel Macs, and a second target is a
+          # full extra compile. Docs-only PRs still skip this job via changes.
+          - runner: macos-14
+            target: aarch64-apple-darwin
+            bundles: app,dmg
     runs-on: ${{ matrix.runner }}
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/apps/desktop/src-tauri/target
@@ -364,6 +370,9 @@ jobs:
         run: cargo clippy --workspace --locked --all-targets --target ${{ matrix.target }} -- -D warnings
       - name: Prepare packaged background binary
         run: node scripts/prepare-sidecar.mjs --profile release --target ${{ matrix.target }}
+      - name: Use ad-hoc macOS signing without an Apple certificate
+        if: runner.os == 'macOS'
+        run: echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
       - name: Build test installers
         uses: tauri-apps/tauri-action@v1
         env:
@@ -375,6 +384,26 @@ jobs:
           uploadWorkflowArtifacts: true
           workflowArtifactNamePattern: 'ci-[platform]-[arch]-[bundle]'
           uploadUpdaterJson: false
+      - name: Package the macOS app archive for the updater
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          app_dir="${CARGO_TARGET_DIR}/${{ matrix.target }}/release/bundle/macos"
+          version="${{ steps.package-version.outputs.version }}"
+          archive="${RUNNER_TEMP}/macos-updater/Strata Manager_${version}_aarch64.app.tar.gz"
+          test -d "${app_dir}/Strata Manager.app"
+          mkdir -p "$(dirname "$archive")"
+          tar -czf "$archive" -C "$app_dir" "Strata Manager.app"
+          test -f "$archive"
+          test ! -d "$archive"
+      - name: Upload the macOS updater archive
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-darwin-aarch64-app-tarball
+          path: ${{ runner.temp }}/macos-updater/Strata Manager_${{ steps.package-version.outputs.version }}_aarch64.app.tar.gz
+          if-no-files-found: error
+          compression-level: 0
 
       # Both platforms compile in parallel with native runners; complete coverage still
       # gates package smoke acceptance and reuse of the whole successful CI.
