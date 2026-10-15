@@ -1,8 +1,8 @@
 # Strata Manager 使用指南
 
-## 日常体验与 0.1.8 发布候选
+## 当前版本功能
 
-本指南覆盖当前 0.1.8 发布候选，以及 0.1.7 引入的日常功能。0.1.8 尚待公开发布，已公开安装包及其内容以[发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)和对应版本更新日志为准。
+本指南覆盖当前稳定版（v0.1.10）功能，含自 0.1.7 起引入的日常能力。安装包及其内容以[最新发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)和对应版本更新日志为准。
 
 - **模型下载**：先在列表选择模型，再进入详情统一选择显卡、上下文、KV 与槽位。资源评估随当前选择变化；保留手动值，未知模式不提供容量承诺。RAM、KV 与逐卡显存分项不能直接相加为总容量。
 - **启动失败**：在总览或任务查看失败阶段、耗时、原因及脱敏证据，打开对应配置或日志。只读检查保留停止状态；资源日志关键词仅为疑似原因。
@@ -10,11 +10,11 @@
 - **API 验证与局域网**：在“API 与外部助手”手动验证文本、工具结构或图片。每次最多 256 token／60 秒，工具不执行 MCP；模型未就绪时不能验证。共享设置先预览再保存，保留多密钥和备份，重启独立执行。服务端密钥与应用客户端凭据分别管理。
 - **历史 Benchmark**：保存升级前基线后手动更新运行时，再复用原任务串行重跑；保存基线不会启动模型或更新运行时。条件缺失、弱模型／引擎身份或缓存不同会阻止直接提速结论。默认 JSON／CSV 导出省略测试文本、回答和服务错误正文，可显式勾选包含内容。
 
-0.1.8 候选在 Windows 新增运行中服务状态、连接已有管理后台与符合条件时的自动连接；语言可跟随系统或选择十种随包资源；桌面监控改用显示开关，提供三种布局、字号与指标排序配色。
+当前版本在 Windows 提供运行中服务状态、连接已有管理后台与符合条件时的自动连接；语言可跟随系统或选择十种随包资源；桌面监控改用显示开关，提供三种布局、字号与指标排序配色。
 
-说明与截图见[日常体验增量](DAILY_EXPERIENCE.md)。配图于 2026-10-14 从 0.1.8 候选的实际 App／组件重新采集，使用隔离示例数据；[截图记录](screenshots/README.md)和[日常体验独立 manifest](screenshots/daily-experience/manifest.json)记录来源。图片不代表新安装包或推理验收，实际范围见[验收记录](VERIFICATION.md)。
+说明与截图见[日常体验增量](DAILY_EXPERIENCE.md)。配图于 2026-10-14 从当前版本的实际 App／组件重新采集，使用隔离示例数据；[截图记录](screenshots/README.md)和[日常体验独立 manifest](screenshots/daily-experience/manifest.json)记录来源。图片不代表推理验收，实际范围见[验收记录](VERIFICATION.md)。
 
-0.1.7 引入的资源建议、启动诊断、API 验证、局域网共享及历史对照见[日常体验增量](DAILY_EXPERIENCE.md)。安装包从[最新稳定发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)选择；功能与支持范围以所选发布版本为准。
+资源建议、启动诊断、API 验证、局域网共享及历史对照见[日常体验增量](DAILY_EXPERIENCE.md)。安装包从[最新发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)选择；功能与支持范围以所选发布版本为准。
 
 [官网](https://hongfaqiu.github.io/strata-manager/?lang=zh) · [返回产品介绍](../README.zh-CN.md) · [文档目录](README.md) · [English](USER_GUIDE.en.md)
 
@@ -22,7 +22,7 @@
 
 Strata Manager 是开源的 Strata 运行环境与本地模型服务管理桌面工作台，核心是 Strata 安装与匹配的 Windows x64 ZIP 引擎更新、模型运行配置，以及服务启动、停止和恢复；聊天、监控、API 使用统计与调优是配套工具。它是独立社区项目，推理能力、模型、图像输入、思考、MCP 工具与 API 协议由已安装的 Strata 和模型提供。
 
-本指南面向当前 0.1.8 发布候选；安装包是否已发布及所含功能以[发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)和所选版本的更新日志为准。先在 Strata 页面检查运行环境，再从“模型 → 我的模型”选择配置并点击“使用”，等待“模型可用”后聊天或连接本机 API。应用管理这台电脑上的受支持安装，已有权重保持原位；不管理远程节点。
+本指南面向当前稳定版（v0.1.10）；安装包及所含功能以[最新发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)和所选版本的更新日志为准。先在 Strata 页面检查运行环境，再从“模型 → 我的模型”选择配置并点击“使用”，等待“模型可用”后聊天或连接本机 API。应用管理这台电脑上的受支持安装，已有权重保持原位；不管理远程节点。
 
 ## 第一次使用
 
@@ -186,7 +186,7 @@ HTTP 请求、模型推理轮次和工具调用分别计数。一次 MCP 请求�
 
 ![上下文档位测试报告与资源趋势](screenshots/benchmark-report.zh.webp)
 
-<sub>这些工作区、报告及下方历史条件对照图均于 2026-10-14 从 0.1.8 候选的实际组件重新采集；隔离示例数据不代表 GPU 实测或新安装包验收。</sub>
+<sub>这些工作区、报告及下方历史条件对照图均于 2026-10-14 从当前版本的实际组件重新采集；隔离示例数据不代表 GPU 实测。</sub>
 
 ![历史 Benchmark 条件对照](screenshots/daily-experience/history-comparison.zh.webp)
 
@@ -216,7 +216,7 @@ HTTP 请求、模型推理轮次和工具调用分别计数。一次 MCP 请求�
 
 自动检查默认开启，在打开应用及每 12 小时检查新版本。发现更新后，左上角版本入口显示更新标签；点击版本入口可进入独立的应用更新页，查看更新日志并确认下载和安装。当前版本的中英文日志随应用打包，可离线查看。也可以关闭自动检查，手动检查更新。失败时保留当前版本并提供重试；安装前检查后台是否空闲。正式应用更新使用内置公钥验证 Tauri 签名，下载有进度显示；应用、Strata 运行环境和模型权重分别管理，更新应用无需重新下载模型。
 
-通过[最新稳定发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)或[官网下载区](https://hongfaqiu.github.io/strata-manager/#get-started)选择 Windows 安装包、AppImage 或 DEB，并核对同一发布页的 `SHA256SUMS`。稳定版使用 `latest` 更新通道，预览版只手工下载且不替换该通道。
+通过[最新发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)或[官网下载区](https://hongfaqiu.github.io/strata-manager/#get-started)选择 Windows 安装包、AppImage 或 DEB，并核对同一发布页的 `SHA256SUMS`。应用通过 `latest` 更新通道提供更新。
 
 版本、安装包和当前支持范围见[下载与体验](DOWNLOAD.md)。Tauri 更新签名与 Windows 发布者代码签名不同，本项目目前没有 Windows Authenticode 发布者证书；请按下载说明处理系统的安装提示。
 
