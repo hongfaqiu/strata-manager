@@ -3,28 +3,47 @@ import { readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { renderHomepage } from './website-seo.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const read = (path) => readFile(join(root, path), 'utf8');
 
-test('Homepage uses restrained hero, quiet features, and a visible multi-shot gallery', async () => {
-  const html = await readFile(join(root, 'website/index.html'), 'utf8');
-  assert.match(html, /class="hero-section"/);
-  assert.match(html, /id="features"/);
-  assert.match(html, /id="gallery"/);
-  assert.match(html, /id="get-started"/);
-  assert.match(html, /feature-grid-quiet/);
-  assert.match(html, /gallery-grid-dense/);
-  assert.doesNotMatch(html, /reveal-trigger|reveal-panel|id="about-strata"|id="workspace"/);
-  assert.ok([...html.matchAll(/class="gallery-item"/g)].length >= 12, 'expected many visible gallery shots');
-  assert.match(html, /daily-experience\/model-download-detail/);
+test('Homepage keeps the readout hero, single-column FAQ, changelog excerpt and docs index', async () => {
+  const html = await read('website/index.html');
+  assert.match(html, /class="night"/);
+  assert.equal([...html.matchAll(/class="read-label"/g)].length, 4, 'four readings in the hero');
+  for (const id of ['qa', 'get-started', 'changes', 'main', 'download-status', 'release-notes-link', 'language-switch', 'language-label']) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+  for (let index = 1; index <= 7; index += 1) assert.match(html, new RegExp(`id="q${index}"`));
+  for (const key of ['windows', 'appimage', 'deb', 'checksums']) assert.match(html, new RegExp(`data-download="${key}"`));
   assert.match(html, /daily-experience\/api-verification/);
-  assert.doesNotMatch(html, /发布候选|Current stable|稳定版界面|0\.1\.5 界面/);
+  assert.match(html, /docs\/changelog\.html/);
+  assert.match(html, /github\.com\/hongfaqiu\/strata-manager/);
+  assert.doesNotMatch(html, /vendor\/|gsap/i);
+  assert.doesNotMatch(html, /发布候选|候选版|稳定版|Release candidate|Current stable/i);
+  assert.doesNotMatch(html, /赋能|一站式|轻松|无缝/);
 });
 
-test('Homepage script keeps lightbox screens for gallery targets without accordion wiring', async () => {
-  const js = await readFile(join(root, 'website/app.js'), 'utf8');
-  assert.doesNotMatch(js, /revealTriggers|closeOtherReveals/);
-  assert.match(js, /model-download-detail/);
-  assert.match(js, /openLightbox|lightbox-modal/);
-  assert.match(js, /Latest release\.|最新发布版本/);
+test('English homepage translations stay plain text so the static renderer can escape them', async () => {
+  const html = await read('website/index.html');
+  for (const match of html.matchAll(/data-en="([^"]*)"/g)) {
+    assert.doesNotMatch(match[1], /<|&lt;/, `markup inside data-en: ${match[1]}`);
+  }
+  const english = renderHomepage(html, 'en');
+  assert.match(english, /<html lang="en">/);
+  assert.match(english, /you need somewhere to see what it’s doing\./);
+  assert.match(english, /src="\.\.\/assets\/screenshots\/monitor\.en\.webp"/);
+  const visible = english.replace(/data-zh="[^"]*"/g, "").replace(/<script[\s\S]*?<\/script>/g, "");
+  assert.doesNotMatch(visible, /跑起来之后|总得有个地方/);
+});
+
+test('Homepage script keeps release validation and only enables verified asset links', async () => {
+  const js = await read('website/app.js');
+  assert.match(js, /\/\/ Website interactions\./);
+  assert.match(js, /applyDownloads\(elements, urls\)/);
+  assert.match(js, /data-download-mirror/);
+  assert.match(js, /release-catalog\.json/);
+  assert.match(js, /Latest release|最新发布版本/);
+  assert.doesNotMatch(js, /gsap|ScrollTrigger/);
 });
