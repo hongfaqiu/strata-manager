@@ -131,11 +131,11 @@ function nativeGuard() {
 }
 
 const scenes = [
-  { id: 'model-download-list', hash: 'catalog', stopped: true, captureViewport: { width: 1440, height: 1200 }, sample: 'Download catalog and synthetic resource estimates', action: async (page, zh) => {
+  { id: 'model-download-list', hash: 'catalog', stopped: true, query: 'catalog-showcase', captureViewport: { width: 1440, height: 1200 }, sample: 'Download catalog and synthetic resource estimates', action: async (page, zh) => {
     await page.locator('.model-download-list, [data-testid="model-download-list"]').first().waitFor();
     await page.locator('.model-download-model').first().waitFor();
   } },
-  { id: 'model-download-detail', hash: 'catalog', stopped: true, captureViewport: { width: 1440, height: 1200 }, sample: 'Selected catalog model; synthetic resource assessment and disk capacity', action: async (page, zh) => {
+  { id: 'model-download-detail', hash: 'catalog', stopped: true, query: 'catalog-showcase', captureViewport: { width: 1440, height: 1200 }, sample: 'Selected catalog model; synthetic resource assessment and disk capacity', action: async (page, zh) => {
     await page.locator('.model-download-list, [data-testid="model-download-list"]').first().waitFor();
     await page.locator('.model-download-model').nth(1).click();
     await page.locator('.model-download-detail, [data-testid="model-download-detail"]').first().waitFor();
