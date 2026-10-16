@@ -317,6 +317,37 @@ export function parseResults(text, binary, names) {
   return {id: binary.id, passed, ignored, filtered, libtestSeconds: seconds, cases};
 }
 
+/** Names that libtest reported as FAILED in one batch; null when the output is not a plain test failure. */
+export function failedTestNames(text, binary, names) {
+  const failed = [];
+  for (const line of text.split(/\r?\n/)) {
+    const item = /^test (\S+)(?: - should panic)? \.\.\. FAILED$/.exec(line);
+    if (item) failed.push(item[1]);
+  }
+  const unique = sorted(new Set(failed));
+  if (!unique.length || unique.length !== failed.length || unique.some(name => !names.includes(name))
+      || unique.length > MAX_RETRIED_TESTS) return null;
+  validateSelection(binary, unique);
+  return unique;
+}
+export const MAX_RETRIED_TESTS = 5;
+/** Combine a failed batch with one exact rerun of only its failed tests. Every planned case still appears exactly once. */
+export function mergeRetriedBatch(binary, names, firstText, failed, retryReport) {
+  const first = [];
+  for (const line of firstText.split(/\r?\n/)) {
+    const item = /^test (\S+)(?: - should panic)? \.\.\. (ok|ignored(?:, .*)?)$/.exec(line);
+    if (item) first.push({name: item[1], status: item[2].startsWith('ignored') ? 'ignored' : 'ok', ...(item[2].startsWith('ignored, ') ? {reason: item[2].slice(9)} : {})});
+  }
+  const seconds = [...firstText.matchAll(/^test result: FAILED\. .* finished in ([\d.]+)s$/gm)].map(m => Number(m[1]));
+  if (seconds.length !== 1 || !same(sorted(retryReport.cases.map(c => c.name)), failed)) fail('Retried batch evidence is incomplete.');
+  const cases = [...first, ...retryReport.cases];
+  if (new Set(cases.map(c => c.name)).size !== cases.length || !same(sorted(cases.map(c => c.name)), sorted(names))) fail('A failed batch did not report every selected test before retry.');
+  for (const c of cases) if (c.status !== (binary.cases.find(t => t.name === c.name).ignored ? 'ignored' : 'ok')) fail('A retried batch changed default ignored status.');
+  return {id: binary.id, passed: cases.filter(c => c.status === 'ok').length, ignored: cases.filter(c => c.status === 'ignored').length,
+    filtered: binary.cases.length - names.length, libtestSeconds: seconds[0] + retryReport.libtestSeconds,
+    cases: cases.sort((a, b) => compare(a.name, b.name)), retried: failed};
+}
+
 export function mergeBinaryReports(binary, names, reports) {
   const expected = selectionBatches(binary, names);
   if (!Array.isArray(reports) || reports.length !== expected.length) fail('All bounded libtest batches are required.');
@@ -396,7 +427,7 @@ export function validateShardEvidence(shards) {
   return {plan: first.plan, binding: first.binding, reports, docs, summary: validateCoverage(first.plan, reports, docs)};
 }
 
-async function run(command, args, {cwd = root, env = process.env, mirror = false, timeoutMs = 1800000, ownedGroup = false} = {}) {
+async function run(command, args, {cwd = root, env = process.env, mirror = false, timeoutMs = 1800000, ownedGroup = false, allowExitFailure = false} = {}) {
   const child = spawn(command, args, {cwd, env, detached: ownedGroup && process.platform !== 'win32', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe']});
   let stdout = ''; let stderr = ''; let expired = false; let overflow = false; let hardKill;
   const signal = value => {
@@ -418,8 +449,9 @@ async function run(command, args, {cwd = root, env = process.env, mirror = false
   child.stderr.on('data', chunk => { stderr += chunk; if (mirror) process.stderr.write(chunk); if (stderr.length > 32 * 1024 * 1024) { overflow = true; terminate(); } });
   try {
     const code = await new Promise((ok, bad) => { child.once('error', bad); child.once('close', ok); });
+    if (allowExitFailure && !expired && !overflow && code !== 0) return {stdout, stderr, code};
     if (expired || overflow || code !== 0) { if (!mirror) process.stderr.write(stderr + stdout); fail(`${command} failed (${expired ? 'deadline/signal' : overflow ? 'output limit' : `exit ${code}`}).`); }
-    return {stdout, stderr};
+    return {stdout, stderr, code};
   } finally { clearTimeout(timer); clearTimeout(hardKill); process.removeListener('SIGINT', interrupt); process.removeListener('SIGTERM', interrupt); }
 }
 
@@ -449,7 +481,7 @@ async function worker(planFile, index, directory) {
   } else if (!isAbsolute(process.env.STRATA_TEST_PRIVATE_TEMP ?? '')
       || process.env.TEMP !== process.env.STRATA_TEST_PRIVATE_TEMP || process.env.TMP !== process.env.STRATA_TEST_PRIVATE_TEMP) fail('Windows group execution requires a runner-private temporary directory.');
   const group = plan.groups[index]; if (!group) fail('Unknown native group.');
-  const started = Date.now(); const binaries = [];
+  const started = Date.now(); const binaries = []; const retried = [];
   for (const selection of group.binaries) {
     const binary = plan.binaries.find(b => b.id === selection.id);
     const options = {cwd: binary.cwd, env: testEnvironment(binary), ownedGroup: plan.binding.platform === 'win32'};
@@ -459,13 +491,24 @@ async function worker(planFile, index, directory) {
       const listed = parseListing((await run(binary.executable, [...args, '--list'], options)).stdout);
       if (!same(listed.map(c => c.name), names)) fail('Exact libtest selection differs from the planned batch.');
       console.log(`Native group ${index + 1}: ${binary.id}, batch ${batchIndex + 1}/${batches.length} (${names.length} default cases)`);
-      const result = await run(binary.executable, args, {...options, mirror: true});
-      reports.push(parseResults(result.stdout, binary, names));
+      const result = await run(binary.executable, args, {...options, mirror: true, allowExitFailure: true});
+      if (result.code === 0) { reports.push(parseResults(result.stdout, binary, names)); continue; }
+      // One targeted retry of only the failed tests; anything else stays fatal.
+      const failed = failedTestNames(result.stdout, binary, names);
+      if (!failed) { process.stderr.write(result.stderr); fail(`${binary.executable} failed (exit ${result.code}).`); }
+      const notice = `Retrying ${failed.length} failed test(s) once in ${binary.id}: ${failed.join(', ')}`;
+      console.log(process.env.GITHUB_ACTIONS === 'true' ? `::warning title=Native test retry::${notice}` : notice);
+      const retry = await run(binary.executable, selectionArgs(binary, failed), {...options, mirror: true});
+      const retryReport = parseResults(retry.stdout, binary, failed);
+      retryReport.filtered = binary.cases.length - names.length;
+      const merged = mergeRetriedBatch(binary, names, result.stdout, failed, retryReport);
+      retried.push(...failed.map(name => `${binary.id}:${name}`));
+      reports.push(merged);
     }
     binaries.push(mergeBinaryReports(binary, selection.names, reports));
   }
   await jsonFile(resolve(directory, `group-${index}.json`), {index, inventoryHash: plan.inventoryHash, success: true,
-    elapsedSeconds: (Date.now() - started) / 1000, owner: plan.binding.platform === 'linux' ? process.env.STRATA_TEST_KEYRING_OWNER : 'windows-private-runner', binaries});
+    elapsedSeconds: (Date.now() - started) / 1000, retried, owner: plan.binding.platform === 'linux' ? process.env.STRATA_TEST_KEYRING_OWNER : 'windows-private-runner', binaries});
 }
 
 export function parseOptions(args) {

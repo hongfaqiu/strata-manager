@@ -7,7 +7,7 @@ import { resolve as pathResolve, dirname, isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { pipeline } from 'node:stream/promises';
 
-export const CI_PROTOCOL = 'strata-release-ci/v2';
+export const CI_PROTOCOL = 'strata-release-ci/v3';
 export const REPOSITORY = 'hongfaqiu/strata-manager';
 const workflowPath = '.github/workflows/ci.yml';
 const maxBytes = 512 * 1024 * 1024;
@@ -25,13 +25,18 @@ export const COMMON_GATES = Object.freeze([
   'Prepare packaged background binary', 'Build test installers',
 ]);
 export const PLATFORM_GATES = Object.freeze({
-  windows: Object.freeze(['Wait for the three independent Windows native runners',
-    "Download this attempt's Windows native coverage proofs", 'Native tests (Windows)',
-    'Verify installed Windows package and background IPC']),
+  windows: Object.freeze(['Verify installed Windows package and background IPC']),
   linux: Object.freeze(['Linux Secret Service wrapper contracts', 'Build the pinned private Linux test keyring',
-    'Linux Secret Service fresh-connection regression', 'Native tests under Xvfb (Linux)',
+    'Linux Secret Service fresh-connection regression',
     'Verify Linux AppImage and DEB startup under Xvfb']),
 });
+/** Separate job that aggregates all six shard proofs after both desktop jobs succeeded. */
+export const COVERAGE_JOB = 'Native coverage verification';
+export const COVERAGE_GATES = Object.freeze([
+  "Download this attempt's Windows native coverage proofs",
+  "Download this attempt's Linux native coverage proofs",
+  'Native tests (Windows)', 'Native tests (Linux)',
+]);
 export const SHARD_GATES = Object.freeze([
   'Linux Secret Service wrapper contracts', 'Build the pinned private Linux test keyring',
   'Prepare independent background binary', 'Run every assigned native test with the private Linux keyring',
@@ -100,7 +105,13 @@ export function validateCiEvidence(run, jobs, artifacts, plan, { nowMs = Date.no
   if (gateJobs.length > 1) fail('Duplicate CI job: ' + CHANGES_JOB);
   if (gateJobs.length) successfulJob(jobs, CHANGES_JOB, run);
   jobs = jobs.filter(j => j?.name !== CHANGES_JOB);
-  if (jobs.length !== 10) fail('Exactly the two desktop jobs, six native shards and two observer compatibility jobs are required.');
+  if (jobs.length !== 11) fail('Exactly the two desktop jobs, six native shards, two observer compatibility jobs and the coverage verification job are required.');
+  const coverage = successfulJob(jobs, COVERAGE_JOB, run);
+  if (coverage.run_attempt !== undefined && coverage.run_attempt !== run.run_attempt) fail('Coverage verification lacks current-attempt evidence.');
+  for (const gate of COVERAGE_GATES) {
+    const steps = coverage.steps?.filter(step => step.name === gate) ?? [];
+    if (steps.length !== 1 || steps[0].status !== 'completed' || steps[0].conclusion !== 'success') fail('Required coverage gate failed or missing: ' + gate);
+  }
   for (const name of OBSERVER_JOBS) {
     const job = successfulJob(jobs, name, run);
     if (job.run_attempt !== run.run_attempt) fail('Required observer job lacks current-attempt evidence: ' + name);
@@ -285,6 +296,9 @@ export async function findReusableCi(plan, { runId = plan.runId, fetchJson = jso
     const run = await fetchJson(base + '/actions/runs/' + runId);
     validateRun(run, { ...plan, runId }, false);
     if (run.status !== 'completed') return { status: 'pending', runId };
+    // A failed or cancelled attempt can still be re-run under the same run id;
+    // report it so the caller keeps waiting instead of failing the release.
+    if (run.conclusion !== 'success') return { status: 'failed', runId, conclusion: run.conclusion, attempt: run.run_attempt };
     try {
       return { status: 'success', runId, plan: await evidence(run, { ...plan, runId }, fetchJson) };
     } catch (error) {
@@ -297,11 +311,12 @@ export async function findReusableCi(plan, { runId = plan.runId, fetchJson = jso
   const runs = await inventory(base + '/actions/workflows/ci.yml/runs?head_sha=' + plan.sourceSha, 'workflow_runs', fetchJson);
   const candidates = runs.filter(r => r.head_sha === plan.sourceSha).sort((a, b) => date(b.created_at) - date(a.created_at));
   let pending;
+  let failed;
   let lastEvidenceError;
   for (const run of candidates) {
     try { validateRun(run, plan, false); } catch { continue; }
     if (run.status !== 'completed') { pending ??= run.id; continue; }
-    if (run.conclusion !== 'success') continue;
+    if (run.conclusion !== 'success') { failed ??= run.id; continue; }
     // Network/incomplete inventory failures are fatal, never an excuse to dispatch duplicates.
     const jobs = await inventory(base + '/actions/runs/' + run.id + '/attempts/' + run.run_attempt + '/jobs', 'jobs', fetchJson);
     const artifacts = await inventory(base + '/actions/runs/' + run.id + '/artifacts', 'artifacts', fetchJson);
@@ -314,6 +329,8 @@ export async function findReusableCi(plan, { runId = plan.runId, fetchJson = jso
   }
   if (pending) return { status: 'pending', runId: pending };
   if (lastEvidenceError) fail('Same-source CI exists but is not reusable: ' + lastEvidenceError);
+  // The newest same-source CI failed: wait for its re-run rather than dispatching a duplicate.
+  if (failed) return { status: 'failed', runId: failed };
   return { status: 'missing' };
 }
 async function digest(file) {

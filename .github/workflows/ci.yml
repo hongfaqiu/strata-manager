@@ -141,8 +141,12 @@ jobs:
           node-version: '24'
           cache: pnpm
       - uses: actions/setup-python@v5
+        id: python
         with:
           python-version: '3.10'
+      - name: Pin the fixture interpreter instead of probing the py launcher
+        shell: bash
+        run: printf 'STRATA_MANAGER_TEST_PYTHON=%s\n' '${{ steps.python.outputs.python-path }}' >> "$GITHUB_ENV"
       - name: Preserve the verified upstream source bytes
         run: git config --global core.autocrlf false
       - name: Check out the verified upstream API fixture
@@ -160,12 +164,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: '. -> apps/desktop/src-tauri/target'
-          shared-key: strata-native-x86_64-pc-windows-msvc
+          # Test-profile builds differ from desktop dev/release builds, so shards use
+          # their own key; only trusted main pushes save it (concurrent saves are no-ops).
+          shared-key: strata-native-test-x86_64-pc-windows-msvc
           cache-bin: false
           cache-workspace-crates: false
           cache-all-crates: false
-          # Only the desktop job saves the shared Windows dependency cache.
-          save-if: false
+          save-if: ${{ github.repository == 'hongfaqiu/strata-manager' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
       - run: pnpm install --frozen-lockfile
       - name: Prepare independent background binary
         run: node scripts/prepare-sidecar.mjs --profile debug --target x86_64-pc-windows-msvc
@@ -234,12 +239,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: '. -> apps/desktop/src-tauri/target'
-          shared-key: strata-native-x86_64-unknown-linux-gnu
+          # Test-profile builds differ from desktop dev/release builds, so shards use
+          # their own key; only trusted main pushes save it (concurrent saves are no-ops).
+          shared-key: strata-native-test-x86_64-unknown-linux-gnu
           cache-bin: false
           cache-workspace-crates: false
           cache-all-crates: false
-          # The desktop Linux job is the sole writer for this target.
-          save-if: false
+          save-if: ${{ github.repository == 'hongfaqiu/strata-manager' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
       - run: pnpm install --frozen-lockfile
       - name: Prepare independent background binary
         run: node scripts/prepare-sidecar.mjs --profile debug --target x86_64-unknown-linux-gnu
@@ -267,6 +273,10 @@ jobs:
             bundles: appimage,deb
     runs-on: ${{ matrix.runner }}
     env:
+      # Ordinary pull requests skip the release-mode installer build and its
+      # smoke tests. main, tags, manual runs, release/* PRs and PRs labelled
+      # full-ci still build exactly what a release would promote.
+      PACKAGE_INSTALLERS: ${{ github.event_name != 'pull_request' || startsWith(github.head_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'full-ci') }}
       CARGO_TARGET_DIR: ${{ github.workspace }}/apps/desktop/src-tauri/target
       CARGO_TERM_COLOR: always
       CARGO_PROFILE_DEV_DEBUG: '0'
@@ -363,8 +373,10 @@ jobs:
       - name: Rust checks
         run: cargo clippy --workspace --locked --all-targets --target ${{ matrix.target }} -- -D warnings
       - name: Prepare packaged background binary
+        if: env.PACKAGE_INSTALLERS == 'true'
         run: node scripts/prepare-sidecar.mjs --profile release --target ${{ matrix.target }}
       - name: Build test installers
+        if: env.PACKAGE_INSTALLERS == 'true'
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -376,91 +388,45 @@ jobs:
           workflowArtifactNamePattern: 'ci-[platform]-[arch]-[bundle]'
           uploadUpdaterJson: false
 
-      # Both platforms compile in parallel with native runners; complete coverage still
-      # gates package smoke acceptance and reuse of the whole successful CI.
-      - name: Wait for the three independent Windows native runners
-        if: runner.os == 'Windows'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const expected = [0, 1, 2].map(i => `Windows native shard (${i}/3)`);
-            const deadline = Date.now() + 45 * 60 * 1000;
-            while (Date.now() < deadline) {
-              const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRunAttempt, {
-                ...context.repo, run_id: context.runId, attempt_number: Number(process.env.GITHUB_RUN_ATTEMPT), per_page: 100,
-              });
-              const shards = expected.map(name => {
-                const matches = jobs.filter(job => job.name === name);
-                if (matches.length > 1) throw new Error(`Duplicate native job: ${name}`);
-                return matches[0];
-              });
-              for (const job of shards.filter(Boolean)) {
-                if (job.status === 'completed' && job.conclusion !== 'success') {
-                  throw new Error(`${job.name}: ${job.conclusion}; complete native coverage is required.`);
-                }
-              }
-              if (shards.every(job => job?.status === 'completed' && job.conclusion === 'success')) return;
-              core.info(shards.map((job, i) => `${expected[i]}: ${job?.status ?? 'queued'}`).join('; '));
-              await new Promise(resolve => setTimeout(resolve, 30000));
-            }
-            throw new Error('Timed out waiting for complete Windows native coverage.');
-      - name: Download this attempt's Windows native coverage proofs
-        if: runner.os == 'Windows'
-        uses: actions/download-artifact@v4
-        with:
-          pattern: ci-windows-native-shard-*-attempt-${{ github.run_attempt }}
-          merge-multiple: true
-          path: ${{ runner.temp }}/windows-native-coverage
-      - name: Native tests (Windows)
-        if: runner.os == 'Windows'
-        run: node scripts/ci-linux-native-tests.mjs --target x86_64-pc-windows-msvc --groups 3 --aggregate "${{ runner.temp }}/windows-native-coverage" --output "${{ runner.temp }}/windows-native-coverage.json"
-
-      - name: Wait for the three independent Linux native runners
-        if: runner.os == 'Linux'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const expected = [0, 1, 2].map(i => `Linux native shard (${i}/3)`);
-            const deadline = Date.now() + 45 * 60 * 1000;
-            while (Date.now() < deadline) {
-              const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRunAttempt, {
-                ...context.repo, run_id: context.runId, attempt_number: Number(process.env.GITHUB_RUN_ATTEMPT), per_page: 100,
-              });
-              const shards = expected.map(name => {
-                const matches = jobs.filter(job => job.name === name);
-                if (matches.length > 1) throw new Error(`Duplicate native job: ${name}`);
-                return matches[0];
-              });
-              for (const job of shards.filter(Boolean)) {
-                if (job.status === 'completed' && job.conclusion !== 'success') {
-                  throw new Error(`${job.name}: ${job.conclusion}; complete native coverage is required.`);
-                }
-              }
-              if (shards.every(job => job?.status === 'completed' && job.conclusion === 'success')) return;
-              core.info(shards.map((job, i) => `${expected[i]}: ${job?.status ?? 'queued'}`).join('; '));
-              await new Promise(resolve => setTimeout(resolve, 30000));
-            }
-            throw new Error('Timed out waiting for complete Linux native coverage.');
-      - name: Download this attempt's Linux native coverage proofs
-        if: runner.os == 'Linux'
-        uses: actions/download-artifact@v4
-        with:
-          pattern: ci-linux-native-shard-*-attempt-${{ github.run_attempt }}
-          merge-multiple: true
-          path: ${{ runner.temp }}/linux-native-coverage
-      - name: Native tests under Xvfb (Linux)
-        if: runner.os == 'Linux'
-        run: node scripts/ci-linux-native-tests.mjs --aggregate "$RUNNER_TEMP/linux-native-coverage" --output "$RUNNER_TEMP/linux-native-coverage.json"
-
       - name: Verify installed Windows package and background IPC
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && env.PACKAGE_INSTALLERS == 'true'
         run: node scripts/preview-package-smoke.mjs --bundle-dir "${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/release/bundle" --version "${{ steps.package-version.outputs.version }}"
       - name: Verify beta.2 to first stable upgrade and retained application data
-        if: runner.os == 'Windows' && steps.package-version.outputs.version == '0.1.2'
+        if: runner.os == 'Windows' && steps.package-version.outputs.version == '0.1.2' && env.PACKAGE_INSTALLERS == 'true'
         env:
           UPGRADE_FROM_INSTALLER: ${{ steps.upgrade-fixture.outputs.installer }}
           UPGRADE_FROM_VERSION: ${{ steps.upgrade-fixture.outputs.version }}
         run: node scripts/preview-package-smoke.mjs --bundle-dir "${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/release/bundle" --version "${{ steps.package-version.outputs.version }}" --upgrade-from-installer "$env:UPGRADE_FROM_INSTALLER" --upgrade-from-version "$env:UPGRADE_FROM_VERSION"
       - name: Verify Linux AppImage and DEB startup under Xvfb
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && env.PACKAGE_INSTALLERS == 'true'
         run: dbus-run-session -- xvfb-run -a bash scripts/release-linux-tests.sh node scripts/preview-package-smoke.mjs --bundle-dir "${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/release/bundle" --version "${{ steps.package-version.outputs.version }}"
+
+  native-coverage:
+    name: Native coverage verification
+    # Starts only after every shard and both desktop jobs succeeded, so no job
+    # polls the Actions API while holding a Windows runner.
+    needs: [changes, native-windows, native-linux, desktop]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Download this attempt's Windows native coverage proofs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ci-windows-native-shard-*-attempt-${{ github.run_attempt }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/windows-native-coverage
+      - name: Download this attempt's Linux native coverage proofs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ci-linux-native-shard-*-attempt-${{ github.run_attempt }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/linux-native-coverage
+      - name: Native tests (Windows)
+        run: node scripts/ci-linux-native-tests.mjs --target x86_64-pc-windows-msvc --groups 3 --aggregate "$RUNNER_TEMP/windows-native-coverage" --output "$RUNNER_TEMP/windows-native-coverage.json"
+      - name: Native tests (Linux)
+        run: node scripts/ci-linux-native-tests.mjs --aggregate "$RUNNER_TEMP/linux-native-coverage" --output "$RUNNER_TEMP/linux-native-coverage.json"
