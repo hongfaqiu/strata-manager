@@ -3294,11 +3294,22 @@ ThreadingHTTPServer((a.host,a.port),Handler).serve_forever()
         if let Some(selected) = std::env::var_os("STRATA_MANAGER_TEST_PYTHON") {
             return selected.to_string_lossy().into();
         }
-        output(
-            if cfg!(windows) { "py" } else { "python3" },
-            &["-c", "import sys;print(sys.executable)"],
-        )
-        .expect("runtime lease fixture requires Python")
+        test_python_executable().expect("runtime lease fixture requires Python")
+    }
+
+    /// Resolves the interpreter for test fixtures without the 3 s production
+    /// probe deadline: a cold `py` launcher on a loaded Windows runner can
+    /// exceed it.
+    fn test_python_executable() -> Option<String> {
+        if let Some(selected) = std::env::var_os("STRATA_MANAGER_TEST_PYTHON") {
+            return Some(selected.to_string_lossy().into());
+        }
+        let out = std::process::Command::new(if cfg!(windows) { "py" } else { "python3" })
+            .args(["-c", "import sys;print(sys.executable)"])
+            .output()
+            .ok()?;
+        let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        (out.status.success() && !text.is_empty()).then_some(text)
     }
 
     fn runtime_lease_profile(root: &Path, python: &str, config: &Path) -> ServiceProfile {
@@ -3774,7 +3785,7 @@ ThreadingHTTPServer((a.host,a.port),Handler).serve_forever()
         fs::write(temp.path().join("serve/server.py"), b"").unwrap();
         let path = temp.path().join("config.json");
         fs::write(&path, b"{}").unwrap();
-        let python = output("py", &["-c", "import sys; print(sys.executable)"]).unwrap();
+        let python = test_python_executable().unwrap();
         let mut profile = ServiceProfile {
             id: "restart-preflight".into(),
             name: "".into(),
