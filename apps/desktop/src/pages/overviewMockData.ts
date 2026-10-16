@@ -46,17 +46,21 @@ const nowSec = () => Math.floor(Date.now() / 1000);
 function sampleRequests(state: OverviewMockState): JsonObject[] {
   const t = nowSec();
   const rows: JsonObject[] = [];
-  for (let i = 0; i < 8; i++) {
+  // Deterministic but uneven, so charts look like real traffic.
+  const prompts = [3120, 860, 5480, 1240, 2210, 9800, 640, 1880, 4150, 1020, 7340, 2650, 1530, 520, 3890, 2280];
+  const outputs = [412, 96, 1280, 188, 540, 2048, 64, 322, 760, 140, 1630, 468, 236, 58, 905, 380];
+  const speeds = [44.8, 51.2, 39.6, 47.9, 45.1, 36.4, 52.7, 46.3, 41.8, 49.5, 38.2, 44.0, 47.1, 53.4, 40.7, 45.9];
+  for (let i = 0; i < 16; i++) {
     rows.push({
       id: `req-mock-${i}`,
-      time: t - i * 97 - 12,
-      prompt_tokens: 420 + i * 180,
-      output_tokens: 96 + i * 37,
-      decode_tok_s: 38 + (i % 5) * 4.6 + (i % 3),
-      prompt_ms: 180 + i * 40,
+      time: t - i * 71 - (i * 37) % 53 - 12,
+      prompt_tokens: prompts[i],
+      output_tokens: outputs[i],
+      decode_tok_s: speeds[i],
+      prompt_ms: 120 + prompts[i]! / 9,
       reused: i % 2 === 0 ? 64 : 0,
       hit_rate: 0.42 + (i % 4) * 0.08,
-      finish: i === 1 ? 'length' : 'stop',
+      finish: i === 5 ? 'length' : i === 9 ? 'cancelled' : i === 3 ? 'tool_calls' : 'stop',
     });
   }
   if (state === 'generating') {
@@ -64,6 +68,9 @@ function sampleRequests(state: OverviewMockState): JsonObject[] {
   }
   return rows;
 }
+
+const wave = (n: number, base: number, amp: number, seed: number) => Array.from({ length: n }, (_, i) =>
+  Math.max(0, +(base + amp * (Math.sin(i * 0.37 + seed) * 0.6 + Math.sin(i * 1.13 + seed * 2) * 0.3 + Math.sin(i * 2.9 + seed) * 0.1)).toFixed(1)));
 
 export function buildOverviewMock(state: OverviewMockState = overviewMockState()) {
   const profile: ServiceProfile = {
@@ -135,10 +142,12 @@ export function buildOverviewMock(state: OverviewMockState = overviewMockState()
     running: Number(live.running),
     cacheHitRate: 0.58,
     requests,
-    history: {},
+    history: { decode: wave(60, state === 'generating' ? 45 : 30, 9, 1), gpu: wave(60, state === 'generating' ? 82 : 30, 14, 2), prefill: wave(60, 880, 260, 3) },
     raw: {
       live,
       engine: { model: health.model, max_context: 131072 },
+      // Draft-only placement fields (not in the real API yet): layer split across devices.
+      placement: { layers_total: 64, layers_gpu: 46, layers_cpu: 18, weights_gpu: gb(14.2), kv_cache_gpu: gb(3.1), weights_cpu: gb(5.6) },
       hardware: {
         cpu: state === 'generating' ? 34.2 : 8.1,
         ram_used: gb(42.3),

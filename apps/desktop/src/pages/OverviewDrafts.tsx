@@ -12,12 +12,13 @@ import { ApiIntegrationDialog } from '../ApiIntegrationDialog';
 import type { OverviewPage } from './OverviewPage';
 import { buildOverviewMock, overviewMockEnabled } from './overviewMockData';
 import './overview-drafts.css';
+import { VisualDraft } from './OverviewDraftsVisual';
 
-export type OverviewDraftVariant = 'a' | 'b' | 'c';
+export type OverviewDraftVariant = 'a' | 'b' | 'c' | 'd' | 'e' | 'f';
 export function overviewDraftVariant(): OverviewDraftVariant | null {
   if (import.meta.env?.DEV !== true || typeof window === 'undefined') return null;
   const v = new URLSearchParams(window.location.search).get('overviewDraft');
-  return v === 'a' || v === 'b' || v === 'c' ? v : null;
+  return v && /^[a-f]$/.test(v) ? v as OverviewDraftVariant : null;
 }
 type Props = ComponentProps<typeof OverviewPage>;
 const obj = (v: unknown): JsonObject => v && typeof v === 'object' && !Array.isArray(v) ? v as JsonObject : {};
@@ -127,6 +128,7 @@ export function OverviewDraft(p: Props & { variant: OverviewDraftVariant }) {
   const resourceRows = <div className="ovd-res">{resources.map(r => <div key={r.k}><span>{r.k}</span><Bar pct={r.pct ?? null} /><strong>{r.v}</strong><em>{r.pct == null ? '–' : `${Math.round(r.pct)}%`}</em></div>)}</div>;
   const factList = <dl className="ovd-facts">{facts.map(x => <div key={x.k} data-tooltip={x.tip}><dt>{x.k}</dt><dd>{x.v}</dd></div>)}</dl>;
 
+  if (p.variant === 'd' || p.variant === 'e' || p.variant === 'f') return <VisualDraft variant={p.variant} x={{ L, zh, t, f, gb, pct, profile: profile!, model, modelState, statusText, stateText, endpoint, copyBtn, chatBtn, secondary, refresh, notices, dot, taskList, reqTable, factList, usageItems, readouts, resources, metric, controls: p.controls, link, usageOpen, recent, speed, speedLabel, finish, time, dialog, ctxUsed, capacity, online, kv, resourceRows, usage: u }} />;
   if (p.variant === 'a') return <div className="ovd ovd-a">
     <aside className="ovd-a-rail">
       <div className="ovd-a-id"><div className="ovd-a-badge">{dot}{statusText}</div><h2>{profile!.name}</h2><p className="ovd-a-model"><span>{t('model')}</span>{model}<em>{modelState}</em></p></div>

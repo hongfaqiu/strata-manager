@@ -24,7 +24,7 @@ try{for(const d of drafts)for(const s of shots){
   const [lang,mode]=s.split('-');const narrow=mode==='narrow';const theme=mode==='dark'?'dark':'light';const locale=lang==='en'?'en':'zh-CN';
   const ctx=await browser.newContext({viewport:{width:narrow?1100:1440,height:960},deviceScaleFactor:2,locale:lang==='en'?'en-US':'zh-CN',colorScheme:theme});
   const page=await ctx.newPage();const errs=[];page.on('pageerror',e=>errs.push(String(e)));
-  await page.goto(`${origin}/index.html?language=${locale}&view=overview&theme=${theme}${d==='base'?'':`&overviewDraft=${d}`}#overview`);
+  await page.goto(`${origin}/index.html?language=${locale}&view=overview&theme=${theme}${d==='base'?'':`&overviewDraft=${d}`}${'def'.includes(d)?'&mockData=generating':''}#overview`);
   await page.locator('#pill').waitFor({timeout:20000});await page.waitForFunction(()=>!document.querySelector('.boot'));
   await page.evaluate(()=>document.fonts.ready);await page.waitForTimeout(900);
   const ov=await page.evaluate(()=>{const o=[];document.querySelectorAll('.ovd *').forEach(el=>{if(el.scrollWidth>el.clientWidth+2&&getComputedStyle(el).overflowX!=='visible'&&!el.closest('svg'))o.push(el.className+'');});return {doc:document.documentElement.scrollWidth-innerWidth,o:o.slice(0,8)};});
