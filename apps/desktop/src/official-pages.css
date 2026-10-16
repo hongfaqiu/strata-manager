@@ -49,25 +49,25 @@ html,body,#root{height:100%;min-height:0}body{overflow:hidden}.official-app{heig
 .workspace-header-actions{display:flex;align-items:center;gap:8px;flex:none}
 .api-monitor-page>.workspace-header{position:sticky;top:0;z-index:3}
 .overview-page{display:flex;flex-direction:column;gap:18px}
-.overview-intro{display:flex;align-items:center;justify-content:space-between;gap:16px}
-.overview-intro p{margin:0;color:var(--st-ink-muted);font-size:14px}
-.overview-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
-.overview-grid .panel{margin:0;min-width:0}
+
+
+
+
 .overview-page .info-list code{max-width:65%;overflow-wrap:anywhere;font-size:12px}
-.overview-context,.overview-resource{display:flex;flex-direction:column;gap:8px;margin-bottom:18px}
-.overview-context>div:first-child,.overview-resource>div:first-child{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13px}
-.overview-context strong,.overview-resource strong{font-weight:500;font-variant-numeric:tabular-nums}
-.overview-resource-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
-.overview-resource-facts>div{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--st-ink-muted)}
-.overview-resource-facts strong{font-size:15px;font-weight:500;color:var(--st-ink)}
+
+
+
+
+
+
 .overview-shortcuts{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px;padding-top:16px;border-top:1px solid var(--st-line)}
-.overview-task-list{display:flex;flex-direction:column;gap:8px}
-.overview-task-list>button{display:flex;flex-direction:column;align-items:stretch;text-align:left;padding:12px 14px;gap:6px}
-.overview-task-list>button>div{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.overview-task-list time,.overview-task-list>button>span{font-size:12px;color:var(--st-ink-muted);overflow-wrap:anywhere}
-@container workspace (max-width:850px){.overview-grid{grid-template-columns:1fr}.overview-page .metrics-grid.four{grid-template-columns:repeat(2,minmax(0,1fr))}.manager-workspace>.workspace-header{padding:0 18px}.workspace-heading h1{font-size:17px}}
+
+
+
+
+@container workspace (max-width:850px){.overview-page .metrics-grid.four{grid-template-columns:repeat(2,minmax(0,1fr))}.manager-workspace>.workspace-header{padding:0 18px}.workspace-heading h1{font-size:17px}}
 @media(max-width:1100px){.manager-shell{grid-template-columns:216px minmax(0,1fr)}.manager-shell.nav-collapsed{grid-template-columns:72px minmax(0,1fr)}}
-@media(max-width:740px){.manager-shell{grid-template-columns:200px minmax(0,1fr)}.manager-shell.nav-collapsed{grid-template-columns:64px minmax(0,1fr)}.manager-nav{padding:16px 8px}.manager-nav .manager-brand{display:block;font-size:17px}.manager-nav .manager-brand span{font-size:12px}.manager-nav .manager-nav-item{justify-content:flex-start;padding:9px 10px;gap:8px}.manager-nav.is-collapsed .manager-nav-item{justify-content:center;gap:0}.manager-workspace>.workspace-header{padding:0 12px;gap:8px}.workspace-header .st-pill{max-width:48%;font-size:11px}.manager-nav.is-collapsed .manager-brand{font-size:20px}.overview-resource-facts{gap:12px}.overview-intro{align-items:flex-start}.overview-intro p{font-size:13px}.management-content>.main-content{padding:18px}}
+@media(max-width:740px){.manager-shell{grid-template-columns:200px minmax(0,1fr)}.manager-shell.nav-collapsed{grid-template-columns:64px minmax(0,1fr)}.manager-nav{padding:16px 8px}.manager-nav .manager-brand{display:block;font-size:17px}.manager-nav .manager-brand span{font-size:12px}.manager-nav .manager-nav-item{justify-content:flex-start;padding:9px 10px;gap:8px}.manager-nav.is-collapsed .manager-nav-item{justify-content:center;gap:0}.manager-workspace>.workspace-header{padding:0 12px;gap:8px}.workspace-header .st-pill{max-width:48%;font-size:11px}.manager-nav.is-collapsed .manager-brand{font-size:20px}.management-content>.main-content{padding:18px}}
 
 .manager-nav .manager-brand::before{content:none}.manager-nav .manager-nav-footer{display:flex}.manager-workspace #pill-text{display:inline}
 
@@ -135,8 +135,8 @@ html,body,#root{height:100%;min-height:0}body{overflow:hidden}.official-app{heig
 /* Size page content against the workspace, including when navigation is open. */
 .manager-shell,.manager-workspace>main,.management-content,.management-content>.main-content{min-width:0;max-width:100%}
 .workspace-heading,.workspace-header-status,.workspace-subnav,.workspace-statusbar{min-width:0}
-.management-content :is(.page-header,.panel-header,.overview-intro){flex-wrap:wrap}
-.management-content :is(.page-header,.panel-header,.overview-intro)>div{min-width:0}
+.management-content :is(.page-header,.panel-header){flex-wrap:wrap}
+.management-content :is(.page-header,.panel-header)>div{min-width:0}
 .management-content .page-header>.actions{flex-shrink:1;flex-wrap:wrap}
 .management-content .two-columns{grid-template-columns:repeat(2,minmax(0,1fr))}
 .management-content .api-usage-two-column{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr)}
@@ -149,7 +149,7 @@ html,body,#root{height:100%;min-height:0}body{overflow:hidden}.official-app{heig
 .management-content .settings-layout>.panel{width:100%;max-width:none;min-width:0;margin-bottom:0}
 .management-content .settings-layout>.panel:last-child{grid-column:1/-1}
 .management-content :is(.table-wrap,.api-usage-table-scroll){max-width:100%;min-width:0;overflow-x:auto}
-.management-content :is(.metric-value,.overview-resource-facts strong){white-space:normal;overflow-wrap:anywhere}
+.management-content :is(.metric-value){white-space:normal;overflow-wrap:anywhere}
 .management-content :is(.environment-grid,.profile-grid,.model-grid)>*{min-width:0}
 .official-surface :is(.view,.chat,.st-msg,.st-bubble,.st-code,.composer-wrap,.st-composer,.st-composer__bar){min-width:0;max-width:100%}
 .official-surface .chat{width:100%}
@@ -188,7 +188,7 @@ html,body,#root{height:100%;min-height:0}body{overflow:hidden}.official-app{heig
   .manager-workspace>.workspace-header{padding-inline:18px;gap:12px}
   .workspace-subnav{padding-inline:18px}
   .management-content>.main-content{padding:20px 18px 24px}
-  .management-content :is(.overview-intro,.page-header){gap:12px;align-items:flex-start}
+  .management-content :is(.page-header){gap:12px;align-items:flex-start}
   .management-content :is(.profile-grid,.model-grid){grid-template-columns:minmax(0,1fr)}
   .api-usage-toolbar-actions{width:100%}
   .api-usage-toolbar-actions .official-segmented{flex:0 1 auto;width:fit-content}

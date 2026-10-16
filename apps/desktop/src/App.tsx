@@ -37,7 +37,6 @@ import { ModelDownloadPage } from './pages/ModelDownloadPage';
 import { TuningPage } from './pages/TuningPage';
 import { ApiUsagePage } from './pages/ApiUsagePage';
 import { BenchmarkPage } from './pages/BenchmarkPage';
-import { OverviewUsage } from './pages/OverviewUsage';
 import { buildOverviewMock, overviewMockEnabled } from './pages/overviewMockData';
 import { OfficialUpdatePanel } from './pages/OfficialUpdatePanel';
 import { InstallRuntimePage } from './pages/InstallRuntimePage';
@@ -739,11 +738,11 @@ export function App() {
   const overviewSetupError = discoveredCandidates.error ?? overviewRuntime.error ?? installationDetails.error;
   const overviewMock = overviewMockEnabled() ? buildOverviewMock() : null;
   const overviewProfile = overviewMock?.profile ?? profile;
-  const overviewHealth = overviewMock?.health ?? healthData;
-  const overviewMetric = overviewMock?.metric ?? metric;
+  const overviewHealth = overviewMock ? (overviewMock.stopped ? {} : overviewMock.health) : healthData;
+  const overviewMetric = overviewMock ? (overviewMock.stopped ? undefined : overviewMock.metric) : metric;
   const overviewProcess = overviewMock?.process ?? processStatus;
   const overviewTasks = overviewMock?.tasks ?? (tasks.data ?? []);
-  const overviewOnline = overviewMock ? true : online;
+  const overviewOnline = overviewMock ? overviewMock.online : online;
   const overviewConnecting = overviewMock ? false : connecting;
   const overviewDesktop = overviewMock ? true : desktop;
   const overviewBackground = overviewMock?.backgroundHealth ?? (profile ? supervisor.data?.health?.[profile.id] : undefined);
@@ -752,12 +751,15 @@ export function App() {
     tasks={overviewTasks} tasksLoading={overviewMock?false:tasks.isPending} language={settings.language} online={overviewOnline} connecting={overviewConnecting} desktop={overviewDesktop}
     healthError={overviewMock?undefined:(serviceRunning&&health.error?errorText(health.error):undefined)} metricsError={overviewMock?undefined:(online&&metrics.error?errorText(metrics.error):undefined)} taskError={overviewMock?undefined:(tasks.error?errorText(tasks.error):undefined)}
     processError={overviewMock?undefined:(process.error?errorText(process.error):supervisor.data?.preparationFailures?.find(item=>item.profileId===profile?.id)?.lastError)}
-    controls={overviewMock ? <div className="actions service-actions" aria-hidden="true"/> : serviceActions}
-    usage={<OverviewUsage key={overviewProfile?.id??'unconfigured'} profile={overviewProfile} language={settings.language} desktop={overviewDesktop} onOpen={()=>go('usage')}/>}
+    controls={overviewMock ? <div className="actions service-actions" aria-hidden="true">{overviewMock.stopped ? <button type="button" className="primary" tabIndex={-1}>{t('start')}</button> : <><button type="button" className="danger" tabIndex={-1}>{t('stop')}</button><button type="button" tabIndex={-1}>{t('unload')}</button></>}</div> : serviceActions}
     startupModel={overviewModel&&overviewStartup?{name:overviewModel.name,configPath:overviewModel.configPath,lastActivatedAt:overviewStartup.lastActivatedAt,onStart:()=>void act('overviewStart',async()=>{if(overviewStartup.profile)await activateLocal(overviewStartup.profile);else if(overviewStartup.candidate)await prepareImported(overviewStartup.candidate,'overview');},'success')}:undefined}
     hasRuntime={hasOverviewRuntime} runtimeNeedsRepair={overviewNeedsRepair} setupLoading={desktop&&(discoveredCandidates.isPending||overviewRuntime.isPending||installationDetails.isPending)}
     setupError={overviewSetupError?errorText(overviewSetupError):undefined} startupBusy={busy==='overviewStart'||!!localProgress} startupDisabled={processUnverified||!!busy||inferenceBusy||!!tasks.data?.some(task=>task.state==='running'&&task.kind.includes('update'))}
-    onCopy={content=>void copy(content)} onImages={desktop&&profile?.configPath&&!busy&&!inferenceBusy&&!localProgress?()=>setModal({kind:'vision',profile}):undefined}
+    onCopy={content=>void copy(content)} onRestart={overviewMock?(overviewMock.stopped?undefined:()=>undefined):desktop&&profile?.managed&&processStatus?.running===true&&processStatus.owned===true?()=>void act('restart',()=>core.restartService(profile),'success'):undefined}
+    profiles={overviewMock?overviewMock.profiles.map(item=>({id:item.id,name:item.name})):profiles.map(item=>({id:item.id,name:item.name}))}
+    onSwitchProfile={overviewMock?()=>undefined:id=>{const next=profiles.find(item=>item.id===id);if(next)void act('switchProfile',()=>activateLocal(next),'success');}}
+    actionsDisabled={!!busy||!!localProgress||inferenceBusy||processUnverified}
+    onImages={desktop&&profile?.configPath&&!busy&&!inferenceBusy&&!localProgress?()=>setModal({kind:'vision',profile}):undefined}
     stateLabel={serviceState} onRefresh={()=>void query.invalidateQueries()} onCreateProfile={()=>go('models')} onChat={()=>conversation?go('chat'):addConversation()} onNavigate={go}/>;
 
   const operateService = async (action: () => Promise<unknown>) => { await action(); await refreshLocalProfiles(); await query.invalidateQueries(); notify(t('success')); };
@@ -989,9 +991,9 @@ export function App() {
   const statusActivity = localProgress ? undefined : benchmarkRunning ? (settings.language==='zh-CN'?'Benchmark 正在运行':'Benchmark is running') : streaming ? t('generatingState') : tuningActive ? selectedTuning.recovery?.state==='restoring' ? (settings.language==='zh-CN'?'正在恢复原配置与模型':'Restoring the original configuration and model') : (settings.language==='zh-CN'?'参数调优正在运行':'Parameter tuning is running') : undefined;
   const startupStatus = localProgress ? { label: startupPhaseLabel(settings.language, localProgress.phase), modelName: startupTarget?.name, pid: startupTarget?.id === profile?.id && processStatus?.running ? processStatus.pid : undefined, apiUrl: startupTarget?.baseUrl } : undefined;
   const statusProfile = overviewMock?.profile ?? profile;
-  const statusOnline = overviewMock ? true : online;
+  const statusOnline = overviewMock ? overviewMock.online : online;
   const statusConnecting = overviewMock ? false : connecting;
-  const statusMetric = overviewMock?.metric ?? metric;
+  const statusMetric = overviewMock ? (overviewMock.stopped ? undefined : overviewMock.metric) : metric;
   const statusProcess = overviewMock?.process ?? processStatus;
   const statusPillState = overviewMock?.pillState ?? (localProgress ? 'loading' : pillState);
   const statusPillText = overviewMock
