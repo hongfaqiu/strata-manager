@@ -127,7 +127,7 @@ export function OverviewDashboard(props: OverviewDashboardProps) {
       <div className="ovw-id">
         <span className={`ovw-state t-${stateTone}`}><i aria-hidden="true" />{stateWord}</span>
         <h2 title={model}>{model}</h2>
-        <span className="ovw-sub">{profile.name}{proc?.pid ? ` · PID ${proc.pid}` : ''}</span>
+        <span className="ovw-sub">{[profile.name !== model ? profile.name : '', proc?.pid ? `PID ${proc.pid}` : ''].filter(Boolean).join(' · ')}</span>
       </div>
       <div className="ovw-endpoint"><code>{endpoint}</code><button type="button" className="ovw-btn ovw-btn-ghost" onClick={copy}>{copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}<span>{copied ? t('ovCopied') : t('ovCopyApi')}</span></button></div>
       <div className="ovw-actions" role="group" aria-label={t('quickActions')}>

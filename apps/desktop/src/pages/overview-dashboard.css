@@ -118,3 +118,6 @@
   .ovw-map{grid-template-columns:minmax(0,1fr) 78px minmax(0,1fr)}.ovw-dev-key{display:none}
   .ovw-bus b,.ovw-bus small{font-size:9.5px;padding:0 2px}
 }
+/* Long model ids keep priority over the profile subtitle. */
+.ovw .ovw-id h2{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ovw .ovw-id .ovw-sub{flex:0 100 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
