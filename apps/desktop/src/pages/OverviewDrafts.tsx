@@ -15,11 +15,11 @@ import './overview-drafts.css';
 import { VisualDraft } from './OverviewDraftsVisual';
 import { PracticalDraft } from './OverviewDraftsPractical';
 
-export type OverviewDraftVariant = 'a' | 'b' | 'c' | 'd' | 'e' | 'f' | 'g' | 'h' | 'i';
+export type OverviewDraftVariant = 'a' | 'b' | 'c' | 'd' | 'e' | 'f' | 'g' | 'h' | 'i' | 'd2';
 export function overviewDraftVariant(): OverviewDraftVariant | null {
   if (import.meta.env?.DEV !== true || typeof window === 'undefined') return null;
   const v = new URLSearchParams(window.location.search).get('overviewDraft');
-  return v && /^[a-i]$/.test(v) ? v as OverviewDraftVariant : null;
+  return v && /^([a-i]|d2)$/.test(v) ? v as OverviewDraftVariant : null;
 }
 type Props = ComponentProps<typeof OverviewPage>;
 const obj = (v: unknown): JsonObject => v && typeof v === 'object' && !Array.isArray(v) ? v as JsonObject : {};
@@ -129,7 +129,7 @@ export function OverviewDraft(p: Props & { variant: OverviewDraftVariant }) {
   const resourceRows = <div className="ovd-res">{resources.map(r => <div key={r.k}><span>{r.k}</span><Bar pct={r.pct ?? null} /><strong>{r.v}</strong><em>{r.pct == null ? '–' : `${Math.round(r.pct)}%`}</em></div>)}</div>;
   const factList = <dl className="ovd-facts">{facts.map(x => <div key={x.k} data-tooltip={x.tip}><dt>{x.k}</dt><dd>{x.v}</dd></div>)}</dl>;
 
-  if (p.variant === 'g' || p.variant === 'h' || p.variant === 'i') return <PracticalDraft variant={p.variant} p={p} x={{ L, zh, t, f, gb, pct, profile: profile!, model, modelState, statusText, stateText, endpoint, link, usageOpen, recent, speed, finish, time, dialog, openApi: () => setApiOpen(true), ctxUsed, capacity, online, connecting, proc, health, metric, usage: u, usageError: usage.error, running, notices, factList, taskList, reqTable, bgFresh, bgLabel }} />;
+  if (p.variant === 'g' || p.variant === 'h' || p.variant === 'i' || p.variant === 'd2') return <PracticalDraft variant={p.variant} p={p} x={{ L, zh, t, f, gb, pct, profile: profile!, model, modelState, statusText, stateText, endpoint, link, usageOpen, recent, speed, finish, time, dialog, openApi: () => setApiOpen(true), ctxUsed, capacity, online, connecting, proc, health, metric, usage: u, usageError: usage.error, running, notices, factList, taskList, reqTable, bgFresh, bgLabel }} />;
   if (p.variant === 'd' || p.variant === 'e' || p.variant === 'f') return <VisualDraft variant={p.variant} x={{ L, zh, t, f, gb, pct, profile: profile!, model, modelState, statusText, stateText, endpoint, copyBtn, chatBtn, secondary, refresh, notices, dot, taskList, reqTable, factList, usageItems, readouts, resources, metric, controls: p.controls, link, usageOpen, recent, speed, speedLabel, finish, time, dialog, ctxUsed, capacity, online, kv, resourceRows, usage: u }} />;
   if (p.variant === 'a') return <div className="ovd ovd-a">
     <aside className="ovd-a-rail">

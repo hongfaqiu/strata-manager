@@ -146,7 +146,7 @@ export function buildOverviewMock(state: OverviewMockState = overviewMockState()
     history: { decode: wave(60, state === 'generating' ? 45 : 30, 9, 1), gpu: wave(60, state === 'generating' ? 82 : 30, 14, 2), prefill: wave(60, 880, 260, 3) },
     raw: {
       live,
-      engine: { model: health.model, max_context: 131072 },
+      engine: { model: health.model, max_context: 131072, expert_slots: 412, expert_cache_mib: 9420 },
       // Draft-only placement fields (not in the real API yet): layer split across devices.
       placement: { layers_total: 64, layers_gpu: 46, layers_cpu: 18, weights_gpu: gb(14.2), kv_cache_gpu: gb(3.1), weights_cpu: gb(5.6) },
       hardware: {
@@ -159,7 +159,11 @@ export function buildOverviewMock(state: OverviewMockState = overviewMockState()
         gpu_temp: state === 'generating' ? 72 : 54,
         gpu_power: state === 'generating' ? 248 : 96,
         gpus: [{ util: state === 'generating' ? 91.2 : 18.4, mem_used: gb(18.6), mem_total: gb(24), temp: state === 'generating' ? 72 : 54, power: state === 'generating' ? 248 : 96 }],
+        gpu_power_limit: 320, gpu_pcie_gen: 4, gpu_pcie_gen_max: 4, gpu_pcie_width: 16, gpu_pcie_rx_mb: state === 'generating' ? 1840 : 12,
       },
+      // Same field names /metrics already reports (see OfficialMonitoring).
+      hardware_static: { gpu_name: 'NVIDIA GeForce RTX 4090', cores: 16, threads: 32, psutil: true },
+      conversation_cache: { enabled: true, bytes: gb(6.4), budget_mib: 8192, parked: 3, slots: 4 },
       requests,
     },
   };

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Activity, AlertTriangle, Boxes, Check, ChevronDown, Copy, Download, MessageSquare, Play, Plug, RefreshCw, RotateCcw, Settings2, Square, Upload } from 'lucide-react';
 import './overview-drafts-practical.css';
+import { DraftD2 } from './OverviewDraftD2';
 
 const n = (v: unknown): number | null => typeof v === 'number' && Number.isFinite(v) ? v : null;
 const GiB = 1024 ** 3;
@@ -48,7 +49,11 @@ function Line({ values, height = 44, max = 100, label }: { values: (number | nul
   return <svg className="pm-line" viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" style={{ height }} role="img" aria-label={label}><line x1="0" x2={w} y1={height - 2 - 0.8 * (height - 4)} y2={height - 2 - 0.8 * (height - 4)} className="pm-line-th" vectorEffect="non-scaling-stroke" /><path d={d} vectorEffect="non-scaling-stroke" /></svg>;
 }
 
-export function PracticalDraft({ variant, p, x }: { variant: 'g' | 'h' | 'i'; p: any; x: any }) {
+export function PracticalDraft({ variant, p, x }: { variant: 'g' | 'h' | 'i' | 'd2'; p: any; x: any }) {
+  if (variant === 'd2') return <DraftD2 p={p} x={x} />;
+  return <PracticalInner variant={variant} p={p} x={x} />;
+}
+function PracticalInner({ variant, p, x }: { variant: 'g' | 'h' | 'i'; p: any; x: any }) {
   const { L, f, t, metric, proc, health } = x;
   const ops = p.draftOps ?? { profiles: [], onSelect: () => {} };
   const [switchOpen, setSwitchOpen] = useState(false);
