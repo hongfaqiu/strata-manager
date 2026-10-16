@@ -180,3 +180,7 @@ Maintainers can refer to [development](docs/DEVELOPMENT.md), [release](docs/RELE
 Built on [Niko1221/Strata](https://github.com/Niko1221/Strata). Thank you to the upstream author and contributors. Strata Manager is an independent community desktop application.
 
 Strata Manager uses [MIT](LICENSE); reused resources retain upstream attribution. The bundled Outfit font uses SIL OFL 1.1. See [third-party notices](THIRD_PARTY_NOTICES.md). Model weights retain their providers' licenses.
+
+## Friends
+
+- [LINUX DO](https://linux.do)

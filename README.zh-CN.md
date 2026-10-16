@@ -180,3 +180,7 @@ pnpm desktop
 感谢 [Niko1221/Strata](https://github.com/Niko1221/Strata) 的作者与贡献者。Strata Manager 是独立社区桌面应用。
 
 本仓库采用 [MIT](LICENSE)，复用资源保留上游声明，Outfit 字体使用 SIL OFL 1.1；详见[第三方声明](THIRD_PARTY_NOTICES.md)。模型权重保留提供方的许可。
+
+## 友情链接 / Friends
+
+- [LINUX DO](https://linux.do) — 新的理想型社区
