@@ -17,7 +17,14 @@
   }
   const at=Date.now()-1000;
   const diagnostic={profileId:'a',attemptStartedAt:at,failedAt:at+400,phase:'starting',category:'port',confidence:'confirmed',code:'STARTUP_PORT_IN_USE',message:'隔离夹具：端口被另一个进程占用。',evidence:[{source:'startupError',at:at+400,message:'Fixture AddrInUse'}],actions:['openNetwork','viewLogs','exportDiagnostics'],processRunning:false};
+  if(params.has('catalog-showcase'))for(const profile of f.profiles??[]){profile.installDir='D:/AI/Strata';profile.name='Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S';}
   window.__TAURI_INTERNALS__.invoke=async(command,args={})=>{
+    // Catalog showcase: a realistic machine, one local model and one live download, so the catalog's live fit and progress are visible.
+    if(params.has('catalog-showcase')){
+      if(command==='environment_info')return{os:'Windows',arch:'x86_64',cpuName:'AMD Ryzen 9 7950X',totalMemory:96*2**30,availableMemory:34*2**30,gpus:['NVIDIA GeForce RTX 4080 SUPER'],python:'3.11.9',git:'2.46.0',appVersion:f.currentVersion};
+      if(command==='list_local_models')return[{name:'Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S',configPath:'D:/AI/Strata/strata-swift-iq3_s.json',modelPath:'D:/AI/Strata/models/swift-iq3_s',sizeBytes:Math.round(83.6*2**30)}];
+      if(command==='list_tasks')return[...await original(command,args),{id:'download-showcase-1',kind:'setup',state:'running',message:'Swift 1.5 IQ3_XXS 31.2 / 75.8 GB',startedAt:Date.now()-20*60000}];
+    }
     if(command==='service_status'){const value=await original(command,args);return{...value,startedAt:value.startedAt??(value.running?1:undefined)};}
     if(downloadCase)queueMicrotask(publishDownloadEvidence);
     if(downloadCase&&command==='store_set'&&args.key==='modelDownloadDefaultsV1'){
