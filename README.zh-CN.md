@@ -45,8 +45,8 @@ Manager 是独立社区项目，管理的是**这台电脑**上受支持的 Stra
 | 工作流程 | 可以完成的操作 |
 | --- | --- |
 | **1 · 准备 Strata** | 检测已有安装，查看本机与上游版本、官方更新日志。Windows x64 引擎 ZIP 默认使用官方 GitHub，支持 GH Proxy/GHProxy、自定义 HTTPS 或本地 ZIP，各来源按当前 CUDA12、CUDA13 或 HIP 引擎匹配；中断后保留部分文件并尝试 HTTP Range 续传，完整包仍按官方大小与 SHA256 校验。Linux 支持环境扫描、版本和日志查看。 |
-| **2 · 整理模型** | 发现本机权重，按模型归并运行配置，选择下载来源与显卡，检查模型文件、GGUF 元数据和磁盘占用；支持 Swift IQ3_S 格式。 |
-| **3 · 配置与运行** | 通过图形控件或 JSON 编辑配置，校验并保留备份；启动、停止、重启或释放模型内存，查看启动阶段、任务和日志。在 Windows 检查检测到的运行中服务、模型加载状态、API 地址与配置，连接已有管理后台或托管服务。打开应用或登录时仅启动轻量后台，保留服务停止状态。 |
+| **2 · 整理模型** | 发现本机权重，按模型归并运行配置，选择下载来源与显卡，检查模型文件、GGUF 元数据和磁盘占用；支持 Swift IQ3_S 格式。下载模型列表实时原地更新下载进度、已在本机的模型，以及每个量化版本是否适合这台电脑的内存；我的模型同时显示本机显存与内存容量和每份配置所需内存。 |
+| **3 · 配置与运行** | 通过图形控件或 JSON 编辑配置，校验并保留备份；资源估算按目录参考值对照本机内存，无法计算时明确标为未实测；启动、停止、重启或释放模型内存，查看启动阶段、24 小时任务时间线和日志。在 Windows 检查检测到的运行中服务、模型加载状态、API 地址与配置，连接已有管理后台或托管服务。打开应用或登录时仅启动轻量后台，保留服务停止状态。 |
 | **4 · 聊天与接入** | 使用流式会话、附件与结构化输出。新模型默认继承公共生成参数与 MCP 开关，旧模型的专用值保持独立，主动开启继承后才跟随；更改在下一次聊天请求生效。在“API 与外部助手”集中配置连接目标、应用访问密钥、API 示例与 MCP，选择目标不会启动或切换模型。 |
 | **5 · 查看会话与负载** | 保存和恢复引擎会话，查看槽位、负载、硬件及受支持的显存调整。状态面板区分近期生成与输入处理趋势，保留采样缺失点，显示空闲释放后自动载入模型的进度。桌面浮条默认关闭，提供三种布局、指标排序与字号配色设置，右键提供导航、置顶和采样等操作；可选系统托盘监控。只读观察不会启动或恢复服务，快速测速会发送推理请求。 |
 | **6 · 分析用量与调优** | 保留本机 API 元数据，兼容 Strata 0.1.44 的 API 使用统计，查看请求、tokens、延迟和缓存复用趋势；按聊天、编程/Agent 或长文任务比较受支持的调优候选，再决定应用或恢复，不保证固定提速。 |
@@ -67,7 +67,7 @@ Strata Manager 提供模型下载列表与详情、统一显卡及运行选项�
 
 | 模型下载与资源选择 | API 验证与能力 |
 | --- | --- |
-| [![当前界面：模型下载详情与资源评估](docs/screenshots/daily-experience/model-download-detail.zh.webp)](docs/screenshots/daily-experience/model-download-detail.zh.webp) | [![当前界面：API 在线验证](docs/screenshots/daily-experience/api-verification.zh.webp)](docs/screenshots/daily-experience/api-verification.zh.webp) |
+| [![模型目录：实时下载进度、本机适配与资源评估](docs/screenshots/daily-experience/model-download-detail.zh.webp)](docs/screenshots/daily-experience/model-download-detail.zh.webp) | [![当前界面：API 在线验证](docs/screenshots/daily-experience/api-verification.zh.webp)](docs/screenshots/daily-experience/api-verification.zh.webp) |
 
 ### 安装包
 
@@ -88,18 +88,18 @@ Strata Manager 提供模型下载列表与详情、统一显卡及运行选项�
 
 | 模型与运行配置 | 硬件与推理监控 |
 | --- | --- |
-| [![我的模型：本机权重与配置分组](docs/screenshots/models.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/models.zh.webp) | [![性能监控：服务、硬件与请求状态](docs/screenshots/monitor.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/monitor.zh.webp) |
+| [![我的模型：本机容量、本机权重与每份配置所需内存](docs/screenshots/models.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/models.zh.webp) | [![性能监控：服务、硬件与请求状态](docs/screenshots/monitor.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/monitor.zh.webp) |
 
 <details>
 <summary><strong>更多界面：运行环境、聊天、公共设置、连接、更新、基准测试与监控</strong></summary>
 
 **Strata · 运行环境版本与更新**
 
-[![Strata 运行环境管理](docs/screenshots/runtime.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/runtime.zh.webp)
+[![Strata 运行环境、本机设备与更新](docs/screenshots/runtime.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/runtime.zh.webp)
 
 **运行配置 · 图形控件与 JSON**
 
-[![运行配置编辑器](docs/screenshots/config.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/config.zh.webp)
+[![运行配置：资源估算与编辑器](docs/screenshots/config.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/config.zh.webp)
 
 **API 用量 · 请求、Tokens 与缓存趋势**
 

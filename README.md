@@ -45,8 +45,8 @@ Engine-dependent tools appear according to the installed runtime's capabilities.
 | Workflow | What you can do |
 | --- | --- |
 | **1 · Prepare Strata** | Detect installations and inspect local/upstream versions and release notes. Windows x64 engine ZIPs default to official GitHub, offer GH Proxy/GHProxy, custom HTTPS or local ZIP sources, and match the current CUDA12, CUDA13 or HIP engine across sources. Interrupted downloads retain partial data and attempt HTTP Range resume; complete packages are checked against official size and SHA256. Linux supports environment scans, versions and release notes. |
-| **2 · Organize models** | Discover local weights, group configurations by model, choose download sources and GPUs, and inspect model files, GGUF metadata and disk usage. Supported formats include Swift IQ3_S. |
-| **3 · Configure and run** | Edit graphical controls or JSON with validation and backups. Start, stop, restart or release model memory; follow startup stages, tasks and logs. On Windows, inspect detected running services, their loaded state, API address and configuration; reconnect to their existing Manager backend or take ownership. Opening Manager or signing in starts only the lightweight background, preserving stopped services. |
+| **2 · Organize models** | Discover local weights, group configurations by model, choose download sources and GPUs, and inspect model files, GGUF metadata and disk usage. Supported formats include Swift IQ3_S. The download catalog updates in place with live download progress, models already on disk and whether each quantization fits this machine's memory; My models shows VRAM and memory capacity next to the memory each configuration needs. |
+| **3 · Configure and run** | Edit graphical controls or JSON with validation and backups. A resource estimate compares the configuration's catalog memory guidance with this machine and marks anything it cannot compute as not measured. Start, stop, restart or release model memory; follow startup stages, tasks on a 24-hour timeline and logs. On Windows, inspect detected running services, their loaded state, API address and configuration; reconnect to their existing Manager backend or take ownership. Opening Manager or signing in starts only the lightweight background, preserving stopped services. |
 | **4 · Chat and integrate** | Use streaming conversations, attachments and structured output. New models inherit shared generation parameters and MCP defaults; existing custom values remain separate until inheritance is enabled. Changes apply to the next chat request. Configure connection targets, the application's access key, API examples and MCP in API and external assistants; selecting a target does not start or switch a model. |
 | **5 · Inspect sessions and load** | Save and restore engine sessions; inspect slots, load, hardware and supported VRAM adjustments. The status panel separates recent generation and input-processing trends, preserving sample gaps, and shows automatic model reload progress after idle memory release. The desktop monitor is closed by default, with three layouts, ordered metrics and text/color controls; its context menu provides navigation, pinning and sampling, with optional system-tray monitoring. Read-only observation never starts or restores services; quick speed tests send inference requests. |
 | **6 · Understand usage and tune** | Retain local API metadata, support Strata 0.1.44 API usage statistics, and chart requests, tokens, latency and cache reuse. Compare complete chat, coding/Agent or document tasks before applying or restoring supported tuning candidates; no fixed performance gain is promised. |
@@ -67,7 +67,7 @@ See the [daily experience notes](docs/DAILY_EXPERIENCE.md) and [verification rec
 
 | Model downloads and resource selection | API verification and capabilities |
 | --- | --- |
-| [![Model download details and resource assessment in the current interface](docs/screenshots/daily-experience/model-download-detail.en.webp)](docs/screenshots/daily-experience/model-download-detail.en.webp) | [![API verification in the current interface](docs/screenshots/daily-experience/api-verification.en.webp)](docs/screenshots/daily-experience/api-verification.en.webp) |
+| [![Model catalog with live download progress, fit for this machine and resource assessment](docs/screenshots/daily-experience/model-download-detail.en.webp)](docs/screenshots/daily-experience/model-download-detail.en.webp) | [![API verification in the current interface](docs/screenshots/daily-experience/api-verification.en.webp)](docs/screenshots/daily-experience/api-verification.en.webp) |
 
 ### Installers
 
@@ -88,18 +88,18 @@ The desktop installer contains Manager and its background process. Hardware and 
 
 | Models and configurations | Hardware and inference monitoring |
 | --- | --- |
-| [![Models — local weights and grouped configurations](docs/screenshots/models.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/models.en.webp) | [![Monitor — service, hardware and request activity](docs/screenshots/monitor.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/monitor.en.webp) |
+| [![Models — machine capacity, local weights and the memory each configuration needs](docs/screenshots/models.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/models.en.webp) | [![Monitor — service, hardware and request activity](docs/screenshots/monitor.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/monitor.en.webp) |
 
 <details>
 <summary><strong>More interfaces: runtime, chat, shared settings, connections, updates, benchmarking and monitoring</strong></summary>
 
 **Strata — runtime versions and updates**
 
-[![Strata runtime management](docs/screenshots/runtime.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/runtime.en.webp)
+[![Strata runtime, this computer's devices and updates](docs/screenshots/runtime.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/runtime.en.webp)
 
 **Configuration — graphical controls and JSON**
 
-[![Runtime configuration editor](docs/screenshots/config.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/config.en.webp)
+[![Runtime configuration with resource estimate and editor](docs/screenshots/config.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/config.en.webp)
 
 **API usage — requests, tokens and cache trends**
 

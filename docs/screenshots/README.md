@@ -1,15 +1,15 @@
 # 界面截图 / Screenshots
 
-## 当前批次 / Current batch · 2026-10-14
+## 当前图库 / Current gallery
 
-本目录根部用于 README 与官网的当前图库：23 个视图各含中文和英文，共 **46 张页面图**，另有 **3 个封面文件**，合计 **49 个 WebP**。图片来自 **0.1.10 发布候选**源码；图库批次仍为 2026-10-14，界面版本标记可能仍显示 0.1.8，包含服务发现、语言和监控改进。该版本尚待公开发布；图片不代表新安装包验收。
+本目录根部是 README 与官网使用的界面图库：23 个视图各含中文和英文页面图，另有中英文封面与英文兼容封面，全部为 WebP；具体文件与尺寸以 manifest 为准。
 
-This directory's root contains the current README and website gallery: **46 page images** covering 23 views in Chinese and English, plus **3 cover files**, for **49 WebP files**. They show the **0.1.10 release candidate** source; the gallery batch remains 2026-10-14 and the UI version badge may still show 0.1.8, including service discovery, language and monitoring improvements. Publication is pending; these images do not establish acceptance of a new installer.
+This directory's root holds the interface gallery used by the README and website: 23 views, each with Chinese and English page images, plus Chinese and English covers and an English compatibility cover, all in WebP. The manifest lists every file and its dimensions.
 
 | 批次 / Batch | 内容 / Contents | 来源记录 / Capture record |
 | --- | --- | --- |
 | 根目录 / Root | 总览、运行环境、模型与配置、聊天、用量、调优、监控、设置、关于、Benchmark、公共聊天、连接、会话工具、更新、服务状态、下载设置、浮条，以及运行中服务、语言选择、浮条设置、场景测试和结果报告 / Overview, runtime, models and configuration, chat, usage, tuning, monitoring, settings, About, Benchmark, common chat, connections, session tools, updates, service status, download settings, floating monitor, running services, language selection, monitor settings, scenario tests and reports | [manifest.json](manifest.json) |
-| `daily-experience/` | 当前重拍的 16 张日常工作流程图：模型下载列表与详情、API 验证、服务能力、启动诊断、聊天计时、历史条件比较、API 用量 / 16 refreshed workflow images covering model downloads, API verification, capabilities, startup diagnostics, chat timing, history comparison and API usage | [独立 manifest / Separate manifest](daily-experience/manifest.json) |
+| `daily-experience/` | 16 张日常工作流程图：模型下载列表与详情、API 验证、服务能力、启动诊断、聊天计时、历史条件比较、API 用量 / 16 workflow images covering model downloads, API verification, capabilities, startup diagnostics, chat timing, history comparison and API usage | [独立 manifest / Separate manifest](daily-experience/manifest.json) |
 
 封面 `product-cover.zh.webp` 与 `product-cover.en.webp` 直接使用对应语言的 `overview` 完整截图：正常总览，右上角服务状态保持收起，保留原始比例，不裁剪、拼接或重画。以后重拍首页封面沿用这一状态；`service-status` 独立功能图可展开弹层。`product-cover.webp` 是英文兼容别名；封面与页面图分别记入 manifest。
 
