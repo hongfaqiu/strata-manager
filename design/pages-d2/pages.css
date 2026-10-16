@@ -1,0 +1,17 @@
+.cap{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:12px}
+.model{border-top:1px solid var(--hair)}.model .mhead{display:flex;align-items:center;gap:12px;padding:16px 18px 6px}
+.model.on{box-shadow:inset 3px 0 0 var(--accent)}.cfg{margin:0 0 6px;table-layout:fixed}.cfg td:first-child,.cfg th:first-child{padding-left:18px}.cfg td:last-child{padding-right:18px}
+.quant td:first-child,.quant th:first-child{padding-left:18px}.quant td:last-child{padding-right:18px}
+.cfgwrap{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:16px;align-items:start}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:10px}.grid4{display:grid;grid-template-columns:1.3fr 1.2fr .7fr .9fr;gap:14px}
+.envtop{display:flex;align-items:center;gap:12px}.devices{display:flex;align-items:stretch;gap:0}.dev{flex:1;display:grid;gap:6px;padding:14px;border:1px solid var(--line);border-radius:10px}
+.dev b{font-size:15px}.bus{width:36px;align-self:center;border-top:1.5px dashed #c9d0d6}.facts .kv{font-size:12.5px}
+.dotline{position:relative;height:2px;background:var(--track)}.dotline i{position:absolute;top:-4px;width:10px;height:10px;border-radius:50%;background:var(--accent);transform:translateX(-50%)}
+.taskwrap{display:grid;grid-template-columns:340px minmax(0,1fr);gap:16px;height:calc(100vh - 128px)}
+.task{display:flex;gap:10px;align-items:flex-start;padding:11px 18px;border-top:1px solid var(--hair)}.task .dot{margin-top:6px}.task.on{background:#f7f9f8;box-shadow:inset 3px 0 0 var(--bad)}
+.ell{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.logp{display:grid;grid-template-rows:auto auto 1fr}
+.bc{border-left:1px solid var(--hair);padding-left:14px}.bc:first-child{border-left:0;padding-left:0}
+.narrowp{max-width:860px}.sh{margin-bottom:6px}.srow{display:flex;align-items:center;gap:16px;padding:10px 0;border-top:1px solid var(--hair)}.sh+.srow{border-top:0}
+.conntop{display:flex;align-items:center;gap:16px}.ep{font:600 20px var(--mono);letter-spacing:-.02em}
+.notes ul{margin:10px 0 0;padding-left:18px;line-height:1.9;font-size:13.5px}
+.sec>.srow:first-child{border-top:0;padding-top:0}
