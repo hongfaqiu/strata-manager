@@ -24,7 +24,7 @@
 
 **Strata Manager 是面向 [Niko1221/Strata 本地大模型推理引擎](https://github.com/Niko1221/Strata) 的开源桌面管理工具。** 将运行环境准备、模型配置、服务控制、聊天、监控、调优与基准测试集中到同一工作台，降低 Strata 的使用门槛。已有受支持的模型权重保持原位。
 
-[![Strata Manager 完整总览，右上角服务状态收起](docs/screenshots/product-cover.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.zh.webp)
+[![Strata Manager 总览：服务操作栏、GPU 与系统内存占用图、生成速度和最近请求](docs/screenshots/product-cover.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.zh.webp)
 
 ## Strata 是什么，Manager 负责什么？
 

@@ -128,15 +128,15 @@ const strataReleaseCatalog = (() => {
       "index": "00",
       "image": "product-cover",
       "zh": {
-        "title": "总览与服务状态。",
-        "description": "查看总览及展开的服务状态面板；截图使用演示数据。",
-        "alt": "Strata Manager 总览与已展开的服务状态弹层，包含模型、API 用量和运行指标的演示数据",
+        "title": "总览 · 服务与硬件一屏可见。",
+        "description": "服务状态与启停、显存和内存占用、生成速度、最近请求与今日 API 集中在一页，异常时先看到提示。",
+        "alt": "Strata Manager 总览：服务操作栏、GPU 与系统内存占用图、生成速度、最近请求和今日 API",
         "badge": "总览"
       },
       "en": {
-        "title": "Overview and service status.",
-        "description": "View the overview with its service status panel open; the screenshot uses demonstration data.",
-        "alt": "Strata Manager overview with the service status popover open, showing demonstration model, API usage and runtime metrics",
+        "title": "Overview · Service and hardware at a glance.",
+        "description": "Service controls, VRAM and memory use, generation speed, recent requests and today's API usage on one page, with issues surfaced first.",
+        "alt": "Strata Manager overview: service controls, GPU and system memory map, generation speed, recent requests and today's API usage",
         "badge": "OVERVIEW"
       }
     },
@@ -247,7 +247,7 @@ const strataReleaseCatalog = (() => {
       "en": { "title": "Monitor settings · Display and tray", "description": "Set the default pin state, sample-time display and system tray monitoring.", "alt": "Floating monitor settings: pin state, sample time and system tray monitoring", "badge": "MONITOR SETTINGS" }
     },
     "overview-api-guide": {
-      "index": "11", "image": "changelog/0.1.5/overview-api-guide",
+      "index": "11", "image": "overview-api-guide",
       "zh": { "title": "API 接入 · 示例与帮助", "description": "从总览查看连接地址与 API 接入示例。", "alt": "总览页的 API 接入帮助和客户端请求示例", "badge": "API 接入" },
       "en": { "title": "API connections · Examples and help", "description": "Open connection details and API examples from the overview.", "alt": "API connection help and client request examples from the overview", "badge": "API GUIDE" }
     },

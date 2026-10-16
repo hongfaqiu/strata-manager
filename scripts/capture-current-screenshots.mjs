@@ -36,7 +36,7 @@ await writeFile(join(output,'monitor.html'),`<!doctype html><html><head><meta ch
 const server=await createServer({configFile:false,envFile:false,root:output,cacheDir:join(output,'.vite'),plugins:[react()],resolve:{alias:{react:join(root,'apps/desktop/node_modules/react'),'react-dom':join(root,'apps/desktop/node_modules/react-dom')}},server:{host:'127.0.0.1',port:0,hmr:false,fs:{allow:[root]}}});
 await server.listen();const origin=`http://127.0.0.1:${server.httpServer.address().port}`;
 const browser=await chromium.launch({headless:true,executablePath:process.env.STRATA_BROWSER_EXECUTABLE||'C:/Program Files/Google/Chrome/Application/chrome.exe',args:['--disable-background-networking','--disable-component-update','--disable-sync','--no-first-run']});
-const views=[['overview','overview'],['runtime','environment'],['models','models'],['config','config'],['chat','chat'],['usage','usage'],['tuning','tuning'],['monitor','monitor'],['settings','settings'],['about','about'],['benchmark','benchmark'],['common-chat-settings','chat-defaults'],['connections','connections'],['runtime-tools','runtime-tools'],['app-updates','updates'],['service-status','overview'],['runtime-download-settings','environment'],['floating-monitor',''],['running-services','overview'],['language-settings','settings'],['floating-monitor-settings','monitor-settings'],['scenario-benchmark','benchmark'],['benchmark-report','benchmark']];
+const views=[['overview','overview'],['runtime','environment'],['models','models'],['config','config'],['chat','chat'],['usage','usage'],['tuning','tuning'],['monitor','monitor'],['settings','settings'],['about','about'],['benchmark','benchmark'],['common-chat-settings','chat-defaults'],['connections','connections'],['runtime-tools','runtime-tools'],['app-updates','updates'],['service-status','overview'],['runtime-download-settings','environment'],['floating-monitor',''],['running-services','overview'],['overview-api-guide','overview'],['language-settings','settings'],['floating-monitor-settings','monitor-settings'],['scenario-benchmark','benchmark'],['benchmark-report','benchmark']];
 const selected=process.env.STRATA_CAPTURE_VIEWS?.split(',');
 const captures=[];
 async function scrollTo(page,selector){await page.locator(selector).first().evaluate(element=>element.scrollIntoView({block:'start'}));}
@@ -61,6 +61,7 @@ for(const [language,locale] of [['zh','zh-CN'],['en','en']])for(const [view,rout
       await page.goto(`${origin}/index.html?language=${locale}&version=${version}&view=${view}#${route}`);
       await page.locator('#pill').waitFor();await page.waitForFunction(()=>!document.querySelector('.boot'));
       if(view==='running-services')await scrollTo(page,'.running-services-panel');
+      if(view==='overview-api-guide'){await page.locator('.overview-shortcut-api').first().click();await page.locator('.api-integration-dialog').first().waitFor();await page.waitForTimeout(300);}
       if(view==='common-chat-settings')await page.locator('.common-chat-settings-panel').waitFor();
       if(view==='floating-monitor-settings')await page.locator('.floating-monitor-settings').waitFor();
       if(view==='language-settings'){
