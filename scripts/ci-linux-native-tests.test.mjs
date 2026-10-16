@@ -375,3 +375,9 @@ test('a failed batch retries only its failed tests once and keeps complete evide
   assert.equal(failedTestNames(many, binary, ['m::a', 'm::b']), null);
   assert.throws(() => mergeRetriedBatch(binary, names, first.replace('test m::a ... ok\n', ''), failed, retry));
 });
+
+test('Cargo.lock binding ignores CRLF conversion between Windows shards and the Linux aggregator', async () => {
+  const { normalizedLockHash } = await import('./ci-linux-native-tests.mjs');
+  assert.equal(normalizedLockHash('a\r\nb\r\n'), normalizedLockHash('a\nb\n'));
+  assert.notEqual(normalizedLockHash('a\nb\n'), normalizedLockHash('a\nc\n'));
+});

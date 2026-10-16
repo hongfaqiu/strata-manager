@@ -458,6 +458,10 @@ async function run(command, args, {cwd = root, env = process.env, mirror = false
 const jsonFile = async (file, data) => writeFile(file, JSON.stringify(data, null, 2) + '\n', {flag: 'wx', mode: 0o600});
 const readJson = async file => JSON.parse(await readFile(file, 'utf8'));
 async function fileHash(file) { const digest = createHash('sha256'); for await (const chunk of createReadStream(file)) digest.update(chunk); return digest.digest('hex'); }
+// Line-ending independent: Windows checkouts may convert Cargo.lock to CRLF,
+// while coverage is aggregated on Linux.
+export const normalizedLockHash = text => hash(text.replaceAll('\r\n', '\n'));
+const lockHash = async () => normalizedLockHash(await readFile(resolve(root, 'Cargo.lock'), 'utf8'));
 async function daemonIdentity() {
   const file = process.env.STRATA_TEST_KEYRING_DAEMON;
   if (!isAbsolute(file ?? '')) fail('The pinned private test keyring daemon must be explicit.');
@@ -544,7 +548,7 @@ export async function main(args = process.argv.slice(2)) {
     const evidence = validateShardEvidence(shards);
     const currentSha = (await run('git', ['rev-parse', 'HEAD'])).stdout.trim();
     if (first.binding.sourceSha !== currentSha || process.env.GITHUB_ACTIONS === 'true' && currentSha !== process.env.GITHUB_SHA
-        || first.binding.lockSha256 !== await fileHash(resolve(root, 'Cargo.lock'))
+        || first.binding.lockSha256 !== await lockHash()
         || !same(first.binding.workflow, workflowBinding()) || first.binding.target !== options.target || first.binding.groups !== options.groups) fail('Aggregate evidence differs from the checked source, workflow attempt or required test profile.');
     await mkdir(dirname(options.output), {recursive: true});
     await jsonFile(options.output, {schema: 1, ...evidence});
@@ -567,7 +571,7 @@ export async function main(args = process.argv.slice(2)) {
   }
   validateIgnoredPolicy(binaries, options.target);
   const docTargets = workspaceDocTargets(metadata);
-  const binding = {sourceSha, lockSha256: await fileHash(resolve(root, 'Cargo.lock')), target: options.target, platform: policy.platform, groups: options.groups,
+  const binding = {sourceSha, lockSha256: await lockHash(), target: options.target, platform: policy.platform, groups: options.groups,
     rustc: (await run('rustc', ['-Vv'])).stdout.trim(), docTargets, workflow: workflowBinding(),
     profile: {devDebug: process.env.CARGO_PROFILE_DEV_DEBUG ?? 'default', testDebug: process.env.CARGO_PROFILE_TEST_DEBUG ?? 'default', incremental: process.env.CARGO_INCREMENTAL ?? 'default'},
     ignoredPolicy: policy.ignoredPolicy};
