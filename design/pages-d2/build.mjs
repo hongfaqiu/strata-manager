@@ -18,21 +18,35 @@ ${navs.map(n => n.length === 1 ? `<div class="grp">${n[0]}</div>` : `<div class=
 <div class="content">${body}</div>
 <footer class="status">${status ? '<span><span class="dot"></span> 生成中</span><span>生成 <b>46.8</b> tok/s</span><span>运行 <b>1</b></span><span>排队 <b>1</b></span><span>GPU <b>91%</b></span><span>CPU <b>34%</b></span><span>温度 <b>72°C</b></span><span>功耗 <b>248 W</b></span>' : '<span><span class="dot off"></span> 服务未启动</span>'}</footer></div></div></body></html>`;
 const seg = (parts, mark) => `<div class="seg">${parts.map(([c, w]) => `<i class="${c}" style="width:${w}%"></i>`).join('')}${mark ? `<span class="mark" style="left:${mark}%"></span>` : ''}</div>`;
+
+/* ring gauge: parts = [[color, pct]], echoes the overview arcs */
+const ring = (parts, big, unit, label, size = 112, warn) => { const r = 44, c = 2 * Math.PI * r; let off = 0;
+  const arcs = parts.map(([col, p]) => { const a = `<circle r="${r}" cx="56" cy="56" fill="none" stroke="${col}" stroke-width="9" stroke-dasharray="${c * p / 100} ${c}" stroke-dashoffset="${-off}" transform="rotate(-90 56 56)"/>`; off += c * p / 100; return a; }).join('');
+  const w = warn ? `<line x1="56" y1="3" x2="56" y2="15" stroke="#6f6f6f" stroke-width="1.5" stroke-dasharray="2 2" transform="rotate(${warn * 3.6} 56 56)"/>` : '';
+  return `<figure class="ring" style="width:${size}px"><svg viewBox="0 0 112 112"><circle r="${r}" cx="56" cy="56" fill="none" stroke="rgba(34,30,31,.07)" stroke-width="9"/>${arcs}${w}<text x="56" y="56" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="20" font-weight="600" fill="#221e1f">${big}</text><text x="56" y="74" text-anchor="middle" font-size="10.5" fill="#6f6f6f" font-family="monospace">${unit}</text></svg><figcaption>${label}</figcaption></figure>`; };
+/* tick meter: n ticks, filled up to pct, ticks past warnAt tinted */
+const ticks = (pct, { n = 24, extra = 0, cls = '' } = {}) => `<span class="ticks ${cls}">${Array.from({ length: n }, (_, i) => { const p = (i + .5) / n * 100; return `<i class="${p < pct ? 'f' : p < pct + extra ? 'x' : ''}"></i>`; }).join('')}</span>`;
+/* dot axis: shared scale with a limit marker */
+const dotAxis = (v, max, limit, warn) => `<span class="daxis"><span class="dl" style="left:${limit / max * 100}%"></span><i class="${warn ? 'w' : ''}" style="left:${v / max * 100}%"></i></span>`;
+/* tiny hardware glyphs in the overview hardware-map spirit */
+const glyph = { cpu: '<svg viewBox="0 0 48 48" class="hw"><rect x="12" y="12" width="24" height="24" rx="3"/><rect x="18" y="18" width="12" height="12" rx="1.5" class="fillc"/><path d="M17 6v6M24 6v6M31 6v6M17 36v6M24 36v6M31 36v6M6 17h6M6 24h6M6 31h6M36 17h6M36 24h6M36 31h6"/></svg>',
+  ram: '<svg viewBox="0 0 48 48" class="hw"><rect x="4" y="15" width="40" height="16" rx="2"/><path d="M9 20h5v6H9zM17 20h5v6h-5zM25 20h5v6h-5zM33 20h5v6h-5z" class="fillc"/><path d="M8 31v4M14 31v4M20 31v4M28 31v4M34 31v4M40 31v4"/></svg>',
+  gpu: '<svg viewBox="0 0 48 48" class="hw"><rect x="4" y="13" width="40" height="20" rx="3"/><circle cx="17" cy="23" r="6"/><circle cx="31" cy="23" r="6"/><path d="M17 19v8M13 23h8M31 19v8M27 23h8"/><path d="M10 33v4h16v-4" /></svg>' };
 const pages = {};
 
 /* 1 · 我的模型 — machine capacity is the frame; each configuration shows where it lands on VRAM/RAM */
 pages.models = shell('models', '模型', `
 <div class="row" style="margin-bottom:14px"><div class="tabs" style="margin:0"><span class="on">我的模型</span><span>下载模型</span></div><span class="grow"></span><span class="muted small">2 个本机模型 · 3 份配置 · 目录 D:/AI/models</span><span class="btn">扫描</span><span class="btn">添加目录</span></div>
 <div class="panel">
- <div class="sec mfit"><div class="row"><span class="h3">本机容量</span><span class="muted small">RTX 4090 24 GB · 内存 96 GB · 磁盘可用 412 GB</span><span class="grow"></span><span class="muted small">虚线为当前占用</span></div>
-  <div class="cap"><div><div class="row small"><span class="muted">显存</span><span class="grow"></span><span class="num">21.4 / 24 GB</span></div>${seg([['a', 50], ['b', 39]], 85)}</div>
-  <div><div class="row small"><span class="muted">内存</span><span class="grow"></span><span class="num">66.4 / 96 GB</span></div>${seg([['g', 52], ['h', 17]], 65)}</div></div></div>
+ <div class="sec mfit"><div class="caprow">${ring([['#178a62', 50], ['#7cc2a5', 39]], '21.4', '/ 24 GB', '显存', 104, 85)}${ring([['#7b7f83', 52], ['#bdbdbd', 17]], '66.4', '/ 96 GB', '内存', 104, 65)}
+  <div class="capfacts"><div class="h3">本机容量</div><dl class="kv"><dt>显卡</dt><dd>RTX 4090 · 24 GB</dd><dt>内存</dt><dd class="num">96 GB · 空闲 29.6</dd><dt>磁盘 D:</dt><dd class="num">可用 412 GB</dd></dl></div>
+  <div class="capfacts"><div class="h3">已在本机</div><dl class="kv"><dt>模型</dt><dd class="num">2 个 · 142 GB</dd><dt>配置</dt><dd class="num">3 份</dd><dt>当前</dt><dd class="small">${CFG}</dd></dl></div></div></div>
  <div class="model on"><div class="mhead"><span class="chip"><span class="dot"></span>运行中</span><div class="grow"><div class="h2">${M}</div><div class="muted small">Swift 1.5 · IQ3_S · 83.6 GB · 2 个分片 · 图像支持</div></div><span class="btn pri">打开聊天</span><span class="btn dan">停止</span><span class="btn">重启</span></div>
-  <table class="table cfg"><colgroup><col><col style="width:80px"><col style="width:70px"><col style="width:60px"><col style="width:30%"><col style="width:130px"></colgroup><tr><th>配置</th><th>上下文</th><th>KV</th><th>线程</th><th style="width:30%">资源需求（内存 62 GB）</th><th></th></tr>
-  <tr class="on"><td><b>${CFG}</b> <span class="chip">当前使用</span></td><td class="num">128K</td><td class="num">int8</td><td class="num">16</td><td>${seg([['g', 64]], 0)}</td><td class="r"><span class="btn">运行配置</span></td></tr>
-  <tr><td>swift-iq3_s-long.json</td><td class="num">256K</td><td class="num">q4_0</td><td class="num">16</td><td>${seg([['g', 66], ['w', 8]], 0)}<div class="small" style="color:var(--warn);margin-top:4px">上下文翻倍，预计超出空闲内存</div></td><td class="r"><span class="btn">启用配置</span></td></tr></table></div>
+  <table class="table cfg"><colgroup><col><col style="width:80px"><col style="width:70px"><col style="width:60px"><col style="width:30%"><col style="width:130px"></colgroup><tr><th>配置</th><th>上下文</th><th>KV</th><th>线程</th><th style="width:30%">内存需求 / 96 GB</th><th></th></tr>
+  <tr class="on"><td><b>${CFG}</b> <span class="chip">当前使用</span></td><td class="num">128K</td><td class="num">int8</td><td class="num">16</td><td>${ticks(64)}<span class="num small tl">62 GB</span></td><td class="r"><span class="btn">运行配置</span></td></tr>
+  <tr><td>swift-iq3_s-long.json</td><td class="num">256K</td><td class="num">q4_0</td><td class="num">16</td><td>${ticks(66, { extra: 9, cls: 'warn' })}<span class="num small tl">71 GB</span><div class="small" style="color:var(--warn);margin-top:4px">上下文翻倍，预计超出空闲内存</div></td><td class="r"><span class="btn">启用配置</span></td></tr></table></div>
  <div class="model"><div class="mhead"><span class="chip off">未启动</span><div class="grow"><div class="h2" style="font-size:16px">Qwen3.8-Flash-Next Coder</div><div class="muted small">IQ1_M · 58.4 GB · 内存 32 GB</div></div><span class="btn pri">启用配置</span><span class="btn">运行配置</span></div>
-  <table class="table cfg"><colgroup><col><col style="width:80px"><col style="width:70px"><col style="width:60px"><col style="width:30%"><col style="width:130px"></colgroup><tr><td><b>coder-iq1_m.json</b></td><td class="num">128K</td><td class="num">int8</td><td class="num">16</td><td style="width:30%">${seg([['g', 33]], 0)}</td><td class="r muted small">2026/10/14 更新</td></tr></table></div>
+  <table class="table cfg"><colgroup><col><col style="width:80px"><col style="width:70px"><col style="width:60px"><col style="width:30%"><col style="width:130px"></colgroup><tr><td><b>coder-iq1_m.json</b></td><td class="num">128K</td><td class="num">int8</td><td class="num">16</td><td style="width:30%">${ticks(33)}<span class="num small tl">32 GB</span></td><td class="r muted small">2026/10/14 更新</td></tr></table></div>
 </div>`);
 
 /* 2 · 下载模型 — every quant drawn against this machine's RAM and disk, choice first, details after */
@@ -40,11 +54,11 @@ const quants = [['Swift 1.5', 'IQ2_XS', 68, 48], ['Swift 1.5', 'IQ3_XXS', 75.8, 
 pages.catalog = shell('models', '模型', `
 <div class="row" style="margin-bottom:14px"><div class="tabs" style="margin:0"><span>我的模型</span><span class="on">下载模型</span></div><span class="grow"></span><span class="muted small">官方来源 · 目录快照 2026-10-11</span><span class="btn">下载设置</span></div>
 <div class="panel">
- <div class="sec"><div class="row"><span class="h3">适合这台电脑</span><span class="muted small">按内存 96 GB、磁盘可用 412 GB（D:）判断</span><span class="grow"></span><span class="legend" style="margin:0"><span><i style="background:#7b7f83"></i>运行所需内存</span><span><i style="background:#7cc2a5"></i>下载体积</span></span></div></div>
- <table class="table quant"><tr><th>模型</th><th>量化</th><th style="width:30%">内存 / 96 GB</th><th style="width:22%">下载 / 412 GB</th><th>图像</th><th></th></tr>
+ <div class="sec"><div class="row"><span class="h3">适合这台电脑</span><span class="muted small">按内存 96 GB、磁盘可用 412 GB（D:）判断</span><span class="grow"></span><span class="legend" style="margin:0"><span>● 运行所需内存，虚线为本机 96 GB</span><span>▮ 下载体积占可用磁盘</span></span></div></div>
+ <table class="table quant"><tr><th>模型</th><th>量化</th><th style="width:30%">内存 <span class="num">0 — 96 GB</span></th><th style="width:22%">下载 / 412 GB</th><th>图像</th><th></th></tr>
  ${quants.map(([n, q, d, r, tag]) => `<tr${q === 'IQ3_S' && n.startsWith('Swift') ? ' class="on"' : ''}><td>${n}</td><td class="num">${q}${tag ? ` <span class="chip ${tag === '实验' ? 'warn' : 'off'}">${tag}</span>` : ''}</td>
- <td><div class="row">${seg([['g', r / 96 * 100]], 0).replace('class="seg"', 'class="seg grow"')}<span class="num small" style="width:48px;text-align:right">${r} GB</span></div></td>
- <td><div class="row">${seg([['b', d / 412 * 100]], 0).replace('class="seg"', 'class="seg grow"')}<span class="num small" style="width:56px;text-align:right">${d} GB</span></div></td><td class="small">支持</td>
+ <td><div class="row">${dotAxis(r, 112, 96 - 34 + 34, false).replace('daxis', 'daxis grow')}<span class="num small" style="width:48px;text-align:right">${r} GB</span></div></td>
+ <td><div class="row">${ticks(d / 412 * 100, { n: 20, cls: 'soft' })}<span class="num small" style="width:56px;text-align:right">${d} GB</span></div></td><td class="small">支持</td>
  <td class="r">${tag === '已下载' ? '<span class="muted small">已在本机</span>' : `<span class="btn${q === 'IQ3_XXS' ? ' pri' : ''}">下载</span>`}</td></tr>`).join('')}</table>
  <div class="attn ok" style="border-bottom:0"><span class="dot"></span>当前电脑可运行除 UD-Q4_K_XL 以外的全部量化；UD-Q4_K_XL 仅限 NVIDIA，图像未验证。</div>
 </div>`);
@@ -61,8 +75,8 @@ pages.config = shell('models', '模型', `
  <div class="sec muted small">保存会备份原文件；当前服务在重启前继续使用已有配置。</div>
 </div>
 <div class="panel effect"><div class="sec"><span class="h3">改动后的资源预估</span><div class="muted small">按引擎上次报告的占用推算，未经实测</div></div>
- <div class="sec"><div class="row small"><span class="muted">显存</span><span class="grow"></span><span class="num">21.4 → 22.9 / 24 GB</span></div>${seg([['a', 50], ['b', 39], ['w', 6]], 85)}<div class="legend"><span><i style="background:#178a62"></i>专家<b>12</b></span><span><i style="background:#7cc2a5"></i>模型与运行时<b>9.4</b></span><span><i style="background:var(--warn)"></i>新增 KV<b>1.5</b></span></div></div>
- <div class="sec"><div class="row small"><span class="muted">内存</span><span class="grow"></span><span class="num">66.4 → 70.1 / 96 GB</span></div>${seg([['g', 52], ['h', 17], ['w', 4]], 65)}</div>
+ <div class="sec effrings">${ring([['#178a62', 50], ['#7cc2a5', 39], ['#b9771c', 6]], '22.9', '/ 24 GB', '显存 +1.5', 128, 85)}${ring([['#7b7f83', 52], ['#bdbdbd', 17], ['#b9771c', 4]], '70.1', '/ 96 GB', '内存 +3.7', 128, 65)}</div>
+ <div class="sec legend" style="margin:0;padding-top:0;border-top:0;justify-content:center"><span><i style="background:#178a62"></i>专家</span><span><i style="background:#7cc2a5"></i>模型与运行时</span><span><i style="background:var(--warn)"></i>本次新增</span><span>虚线 85% 安全线</span></div>
  <div class="sec"><dl class="kv"><dt>上下文</dt><dd class="num">128K → 192K</dd><dt>功耗上限</dt><dd class="num">320 → 280 W</dd><dt>池工作线程</dt><dd class="num">4 → 6</dd></dl></div>
  <div class="attn" style="border-bottom:0"><span class="dot warn"></span>显存将超过 85%，长上下文请求可能失败</div></div></div>`);
 
@@ -72,9 +86,9 @@ pages.environment = shell('strata', 'Strata', `
  <div class="sec envtop"><span class="chip"><span class="dot"></span>已安装</span><div class="grow"><div class="h2">Strata 0.1.43</div><div class="muted small mono">D:/AI/Strata · revision a1b2c3d</div></div><span class="btn">技术信息</span><span class="btn">重新检测</span><span class="btn">切换运行环境 ▾</span></div>
  <div class="attn ok"><span class="dot"></span>已是官方支持的最新版本 0.1.43 · 2 分钟前检查</div>
  <div class="sec"><div class="row" style="margin-bottom:12px"><span class="h3">这台电脑</span><span class="grow"></span><span class="btn ghost">刷新</span></div>
-  <div class="devices"><div class="dev"><div class="muted small">处理器</div><b>Intel Core i9-13900K</b><div class="muted small">Windows · x86_64</div></div><span class="bus"></span>
-  <div class="dev"><div class="muted small">内存</div><b class="num">29.6 / 96 GB 可用</b>${seg([['g', 69]])}</div><span class="bus"></span>
-  <div class="dev"><div class="muted small">显卡</div><b>NVIDIA GeForce RTX 4090</b><div class="muted small">24 GB · CUDA 13 包</div></div></div></div>
+  <div class="devices"><div class="dev">${glyph.cpu}<div><div class="muted small">处理器</div><b>Intel Core i9-13900K</b><div class="muted small">Windows · x86_64</div></div></div><span class="bus"></span>
+  <div class="dev">${ring([['#7b7f83', 69]], '29.6', 'GB 可用', '', 76)}<div><div class="muted small">内存</div><b class="num">96 GB</b><div class="muted small">已用 66.4 GB</div></div></div><span class="bus"><em>PCIe 4.0 ×16</em></span>
+  <div class="dev">${glyph.gpu}<div><div class="muted small">显卡</div><b>NVIDIA GeForce RTX 4090</b><div class="muted small">24 GB · CUDA 13 包</div></div></div></div></div>
  <div class="sec"><div class="grid3 facts"><dl class="kv"><dt>Python</dt><dd class="num">3.10.11</dd><dt>Git</dt><dd class="num">2.46.0</dd></dl><dl class="kv"><dt>引擎版本</dt><dd class="num">0.1.43</dd><dt>应用版本</dt><dd class="num">0.1.10</dd></dl><dl class="kv"><dt>下载来源</dt><dd>官方</dd><dt>运行包</dt><dd class="mono small">strata-windows-x64.zip</dd></dl></div></div>
  <div class="sec"><div class="row"><span class="h3">安装新的运行环境</span><span class="muted small">选择新的空目录，从官方仓库安装，不会自动下载模型</span><span class="grow"></span><span class="btn">下载设置与测试</span><span class="btn">开始安装</span></div></div>
 </div>`);
@@ -97,6 +111,7 @@ const tasks = [['running', '模型准备', '正在准备量化配置…', '22:43
 const st = { running: ['', '进行中'], completed: ['off', '完成'], failed: ['bad', '失败'], cancelled: ['off', '已取消'] };
 pages.tasks = shell('tasks', '任务与日志', `
 <div class="taskwrap"><div class="panel"><div class="sec row"><span class="h3">任务</span><span class="grow"></span><span class="muted small">今天 5 · 失败 1</span></div>
+ <div class="tline"><span class="tl-axis"></span>${[[19.04, 'off'], [20.53, 'off'], [20.97, 'bad'], [21.18, 'off'], [22.72, '']].map(([h, c]) => `<i class="${c}" style="left:${(h - 18) / 6 * 100}%"></i>`).join('')}<span class="tl-l" style="left:0">18:00</span><span class="tl-l" style="left:50%">21:00</span><span class="tl-l" style="right:0">现在</span></div>
  ${tasks.map(([s, k, m, t], i) => `<div class="task${i === 2 ? ' on' : ''}"><span class="dot ${s === 'running' ? '' : s === 'failed' ? 'bad' : 'off'}"></span><div class="grow"><div class="row"><b>${k}</b><span class="grow"></span><span class="num small muted">${t}</span></div><div class="small muted ell">${m}</div></div></div>`).join('')}
  <div class="sec"><div class="h3" style="margin-bottom:6px">日志来源</div><div class="task"><span class="dot"></span><div class="grow"><b>当前服务日志</b><div class="small muted ell">${M}</div></div></div></div></div>
 <div class="panel logp"><div class="sec row"><span class="chip bad">失败</span><div class="grow"><div class="h3">启动服务 · ${CFG}</div><div class="muted small">20:58:04 开始 · 耗时 0.8 s · 失败阶段：启动 API</div></div><span class="btn">打开网络配置</span><span class="btn">导出诊断</span><span class="btn ghost">复制日志</span></div>
