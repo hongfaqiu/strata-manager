@@ -15,14 +15,14 @@ import type {
   TaskStatus,
 } from '@strata-manager/core';
 
-export type OverviewMockState = 'idle' | 'generating';
+export type OverviewMockState = 'idle' | 'generating' | 'stopped';
 
 export function overviewMockEnabled(): boolean {
   if (typeof import.meta !== 'undefined' && import.meta.env?.DEV !== true) return false;
   if (typeof window === 'undefined') return false;
   try {
     const q = new URLSearchParams(window.location.search).get('mockData');
-    if (q === '1' || q === 'idle' || q === 'generating') return true;
+    if (q === '1' || q === 'idle' || q === 'generating' || q === 'stopped') return true;
     if (/(?:^|[?#&])mockData(?:=1|=idle|=generating)?(?:&|$)/.test(window.location.hash)) return true;
     const stored = window.localStorage.getItem('mockData');
     if (stored === '1' || stored === 'idle' || stored === 'generating') return true;
@@ -35,6 +35,7 @@ export function overviewMockState(): OverviewMockState {
   try {
     const q = new URLSearchParams(window.location.search).get('mockData');
     if (q === 'generating') return 'generating';
+    if (q === 'stopped') return 'stopped';
     if (/(?:^|[?#&])mockData=generating(?:&|$)/.test(window.location.hash)) return 'generating';
     if (window.localStorage.getItem('mockData') === 'generating') return 'generating';
   } catch { /* ignore */ }
@@ -46,17 +47,21 @@ const nowSec = () => Math.floor(Date.now() / 1000);
 function sampleRequests(state: OverviewMockState): JsonObject[] {
   const t = nowSec();
   const rows: JsonObject[] = [];
-  for (let i = 0; i < 8; i++) {
+  // Deterministic but uneven, so charts look like real traffic.
+  const prompts = [3120, 860, 5480, 1240, 2210, 9800, 640, 1880, 4150, 1020, 7340, 2650, 1530, 520, 3890, 2280];
+  const outputs = [412, 96, 1280, 188, 540, 2048, 64, 322, 760, 140, 1630, 468, 236, 58, 905, 380];
+  const speeds = [44.8, 51.2, 39.6, 47.9, 45.1, 36.4, 52.7, 46.3, 41.8, 49.5, 38.2, 44.0, 47.1, 53.4, 40.7, 45.9];
+  for (let i = 0; i < 16; i++) {
     rows.push({
       id: `req-mock-${i}`,
-      time: t - i * 97 - 12,
-      prompt_tokens: 420 + i * 180,
-      output_tokens: 96 + i * 37,
-      decode_tok_s: 38 + (i % 5) * 4.6 + (i % 3),
-      prompt_ms: 180 + i * 40,
+      time: t - i * 71 - (i * 37) % 53 - 12,
+      prompt_tokens: prompts[i],
+      output_tokens: outputs[i],
+      decode_tok_s: speeds[i],
+      prompt_ms: 120 + prompts[i]! / 9,
       reused: i % 2 === 0 ? 64 : 0,
       hit_rate: 0.42 + (i % 4) * 0.08,
-      finish: i === 1 ? 'length' : 'stop',
+      finish: i === 5 ? 'length' : i === 9 ? 'cancelled' : i === 3 ? 'tool_calls' : 'stop',
     });
   }
   if (state === 'generating') {
@@ -85,7 +90,7 @@ export function buildOverviewMock(state: OverviewMockState = overviewMockState()
   };
 
   const process: ProcessStatus = {
-    running: true,
+    running: state !== 'stopped',
     owned: true,
     pid: 42817,
     startedAt: Date.now() - 3_600_000,
@@ -138,7 +143,7 @@ export function buildOverviewMock(state: OverviewMockState = overviewMockState()
     history: {},
     raw: {
       live,
-      engine: { model: health.model, max_context: 131072 },
+      engine: { model: health.model, max_context: 131072, expert_slots: 412, expert_cache_mib: 9420 },
       hardware: {
         cpu: state === 'generating' ? 34.2 : 8.1,
         ram_used: gb(42.3),
@@ -149,7 +154,11 @@ export function buildOverviewMock(state: OverviewMockState = overviewMockState()
         gpu_temp: state === 'generating' ? 72 : 54,
         gpu_power: state === 'generating' ? 248 : 96,
         gpus: [{ util: state === 'generating' ? 91.2 : 18.4, mem_used: gb(18.6), mem_total: gb(24), temp: state === 'generating' ? 72 : 54, power: state === 'generating' ? 248 : 96 }],
+        gpu_power_limit: 320, gpu_pcie_gen: 4, gpu_pcie_gen_max: 4, gpu_pcie_width: 16, gpu_pcie_rx_mb: state === 'generating' ? 1840 : 12,
       },
+      // Same field names /metrics already reports (see OfficialMonitoring).
+      hardware_static: { gpu_name: 'NVIDIA GeForce RTX 4090', cores: 16, threads: 32, psutil: true },
+      conversation_cache: { enabled: true, bytes: gb(6.4), budget_mib: 8192, parked: 3, slots: 4 },
       requests,
     },
   };
@@ -270,15 +279,21 @@ export function buildOverviewMock(state: OverviewMockState = overviewMockState()
     process,
     tasks,
     backgroundHealth,
-    online: true,
+    online: state !== 'stopped',
     connecting: false,
+    stopped: state === 'stopped',
+    profiles: [
+      { id: profile.id, name: profile.name, configPath: profile.configPath, managed: true },
+      { id: 'mock-profile-coder', name: 'Qwen3-Coder-30B-A3B', configPath: '/home/dev/strata/configs/qwen3-coder.yaml', managed: true },
+      { id: 'mock-profile-vl', name: 'Qwen2.5-VL-7B · 图像', configPath: '/home/dev/strata/configs/qwen-vl.yaml', managed: true },
+    ],
     desktop: true,
     tasksLoading: false,
     usageSummary,
     usageCoverage,
-    pillState: state,
-    pillLabel: state === 'generating' ? '生成中 · 46.8 tok/s' : '空闲',
-    pillLabelEn: state === 'generating' ? 'Generating · 46.8 tok/s' : 'Idle',
+    pillState: state === 'stopped' ? 'disconnected' : state,
+    pillLabel: state === 'generating' ? '生成中 · 46.8 tok/s' : state === 'stopped' ? '已停止' : '空闲',
+    pillLabelEn: state === 'generating' ? 'Generating · 46.8 tok/s' : state === 'stopped' ? 'Stopped' : 'Idle',
   };
 }
 
