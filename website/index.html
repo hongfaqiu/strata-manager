@@ -17,7 +17,7 @@
       document.getElementById('theme-color').content = theme === 'light' ? '#f5f4ef' : '#101c18';
     })();
   </script>
-  <meta name="description" content="Niko1221/Strata 本地推理的开源桌面工作台：环境与模型管理、公共聊天设置、API/MCP 接入、监控、调优和 Benchmark。支持 Windows / Linux x64。" data-content-en="Open-source desktop workspace for Niko1221/Strata: runtime and models, shared chat settings, API/MCP connections, monitoring, tuning and Benchmark. Windows / Linux x64.">
+  <meta name="description" content="Niko1221/Strata 本地推理的开源桌面工作台：环境与模型管理、公共聊天设置、API/MCP 接入、监控、调优和 Benchmark。已发布安装包支持 Windows / Linux x64；macOS（Apple Silicon）安装包接入中。" data-content-en="Open-source desktop workspace for Niko1221/Strata: runtime and models, shared chat settings, API/MCP connections, monitoring, tuning and Benchmark. Published installers support Windows / Linux x64; macOS (Apple Silicon) packages are in progress.">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Strata Manager">
   <meta property="og:title" content="Strata Manager · Strata 大模型管理与监控" data-content-en="Strata Manager · Local LLM Management &amp; Monitoring for Strata">
@@ -48,8 +48,8 @@
     "name": "Strata Manager",
     "url": "https://hongfaqiu.github.io/strata-manager/",
     "applicationCategory": "UtilitiesApplication",
-    "operatingSystem": "Windows x64, Linux x64",
-    "description": "Niko1221/Strata 本地推理的开源桌面工作台：环境与模型管理、公共聊天设置、API/MCP 接入、监控、调优和 Benchmark。支持 Windows / Linux x64。",
+    "operatingSystem": "Windows x64, Linux x64, macOS Apple Silicon",
+    "description": "Niko1221/Strata 本地推理的开源桌面工作台：环境与模型管理、公共聊天设置、API/MCP 接入、监控、调优和 Benchmark。已发布安装包支持 Windows / Linux x64；macOS（Apple Silicon）安装包接入中。",
     "isBasedOn": "https://github.com/Niko1221/Strata",
     "license": "https://github.com/hongfaqiu/strata-manager/blob/main/LICENSE",
     "isAccessibleForFree": true,
@@ -111,7 +111,7 @@
             <a class="btn btn-primary" href="#get-started"><svg class="icon" aria-hidden="true"><use href="#icon-download"/></svg><span data-en="Get Strata Manager">下载 Strata Manager</span></a>
             <a class="btn btn-secondary" href="docs/user-guide.html" data-href-en="docs/user-guide.en.html" data-en="User guide">使用指南</a>
           </div>
-          <p class="hero-platforms"><span class="platform-dot" aria-hidden="true"></span><span data-en="Open source · Windows / Linux x64">开源免费 · Windows / Linux x64</span></p>
+          <p class="hero-platforms"><span class="platform-dot" aria-hidden="true"></span><span data-en="Open source · Windows / Linux x64 · macOS Apple Silicon in progress">开源免费 · Windows / Linux x64 · macOS Apple Silicon 接入中</span></p>
         </div>
         <a class="hero-cover open-lightbox-btn" id="hero-preview-link" href="assets/screenshots/product-cover.zh.webp" data-href-en="assets/screenshots/product-cover.en.webp" data-target="overview" aria-label="放大查看总览与服务状态弹层" data-label-en="Enlarge Overview and its service-status popover">
           <img id="hero-preview-img" src="assets/screenshots/product-cover.zh.webp" data-src-en="assets/screenshots/product-cover.en.webp" width="2880" height="1920" alt="Strata Manager 完整总览与展开的服务状态弹层" data-alt-en="Strata Manager complete Overview with the service-status popover open" fetchpriority="high">
@@ -335,7 +335,7 @@
     <section class="download-section section-padding" id="get-started" aria-labelledby="get-started-title">
       <div class="container">
         <div class="section-header">
-          <div><h2 class="section-title" id="get-started-title" data-en="Download Strata Manager">下载 Strata Manager</h2><p class="section-lead" data-en="Desktop installers for Windows and Linux x64.">适用于 Windows 与 Linux x64 的桌面安装包。</p></div>
+          <div><h2 class="section-title" id="get-started-title" data-en="Download Strata Manager">下载 Strata Manager</h2><p class="section-lead" data-en="Published installers are for Windows and Linux x64. The macOS (Apple Silicon) DMG is in progress; its button enables only when a published release includes that file.">已发布安装包面向 Windows 与 Linux x64。macOS（Apple Silicon）DMG 接入中，发布页包含该文件时下载按钮才会启用。</p></div>
           <a class="text-link" href="docs/download.html" data-href-en="docs/download.en.html" data-en="Installation help ↗">安装帮助 ↗</a>
         </div>
         <div class="download-cards-grid">
@@ -351,6 +351,11 @@
               <a class="btn btn-primary" data-download="appimage" aria-disabled="true" tabindex="-1"><svg class="icon" aria-hidden="true"><use href="#icon-download"/></svg><span data-en="Download AppImage">下载 AppImage</span></a>
               <a class="btn btn-secondary" data-download="deb" aria-disabled="true" tabindex="-1">DEB</a>
             </div>
+          </article>
+          <article class="download-card">
+            <div class="download-card-heading"><svg class="platform-icon" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M16 7.5c.3-1.8 1.6-3.5 3.6-3.5-.2 2.1-1.5 3.6-3.6 3.5ZM8.5 13.2c0 7.2 2.8 12.3 7.5 12.3s7.5-5.1 7.5-12.3c0-2.6-1.7-4.4-3.7-4.4-1.2 0-2.1.7-3.3.7s-2.2-.7-3.4-.7c-1.9 0-4.6 1.8-4.6 4.4Z"/></svg><h3>macOS <small>Apple Silicon</small></h3><span class="release-version" data-en="Latest release">最新发布</span></div>
+            <p data-en="Apple Silicon DMG. The button enables when a published release includes the file. Ad-hoc signed and not notarized.">Apple Silicon DMG。发布页包含该文件时启用。临时签名，尚未公证。</p>
+            <a class="btn btn-primary" data-download="dmg" aria-disabled="true" tabindex="-1"><svg class="icon" aria-hidden="true"><use href="#icon-download"/></svg><span data-en="Download macOS">下载 macOS 版</span></a>
           </article>
         </div>
         <div class="download-meta"><a href="docs/changelog.html" data-href-en="docs/changelog.en.html" data-en="Changelog">更新日志</a><span aria-hidden="true">·</span><a id="release-notes-link" href="https://github.com/hongfaqiu/strata-manager/releases" data-en="Release notes">版本说明</a><span aria-hidden="true">·</span><a data-download="checksums" aria-disabled="true" tabindex="-1" data-en="SHA256 checksums">SHA256 校验文件</a></div>

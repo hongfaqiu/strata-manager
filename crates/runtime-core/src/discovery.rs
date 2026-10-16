@@ -1386,7 +1386,11 @@ fn process_hints() -> Result<Vec<ProcessHint>, String> {
     {
         windows_census::process_hints()
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        Err("macOS 尚未接入 Strata Metal 安装发现。不会扫描本机进程，也不会安装 Windows x64 引擎 ZIP。".into())
+    }
+    #[cfg(all(not(windows), not(target_os = "macos")))]
     {
         let entries =
             fs::read_dir("/proc").map_err(|_| "此平台无法读取本机进程，不能安全自动启动")?;
@@ -1633,7 +1637,12 @@ fn unix_empty_command_is_inactive(bytes: &[u8], expected_pid: u32) -> Result<boo
 #[cfg(not(windows))]
 type UnixPythonInventory = Vec<(Vec<String>, Option<PathBuf>)>;
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+fn unix_management_inventory() -> Result<UnixPythonInventory, String> {
+    Err("macOS 尚未核验 Strata 管理进程。不会读取 /proc，也不会恢复或接管未知安装。".into())
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
 fn unix_management_inventory() -> Result<UnixPythonInventory, String> {
     use std::io::Read;
     let mut commands = Vec::new();

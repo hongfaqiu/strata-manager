@@ -265,6 +265,13 @@ jobs:
           - runner: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             bundles: appimage,deb
+          # Apple Silicon only. This image is arm64; the previous macos-14 image
+          # retires around 2026-11-02. Intel is omitted: upstream Strata Metal
+          # does not run on Intel Macs, and a second target is a full extra
+          # compile. Docs-only PRs still skip this job via changes.
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            bundles: app,dmg
     runs-on: ${{ matrix.runner }}
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/apps/desktop/src-tauri/target
@@ -346,7 +353,10 @@ jobs:
       - name: Version and release guard tests
         env:
           UPDATE_VERIFIER_BIN: ${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/debug/strata-update-verifier${{ runner.os == 'Windows' && '.exe' || '' }}
-        run: node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-assets.test.mjs scripts/release-publish.test.mjs scripts/preview-package-smoke.test.mjs scripts/download-upgrade-fixture.test.mjs scripts/release-from-ci.test.mjs scripts/ci-linux-native-tests.test.mjs scripts/ci-cache-policy.test.mjs
+        # ci-linux-native-tests.test.mjs executes a host libtest binary and rejects
+        # any platform other than its Windows/Linux target. Skip it on darwin so
+        # the Apple Silicon job can reach packaging. Windows and Linux still run it.
+        run: node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-assets.test.mjs scripts/release-publish.test.mjs scripts/preview-package-smoke.test.mjs scripts/download-upgrade-fixture.test.mjs scripts/release-from-ci.test.mjs ${{ runner.os != 'macOS' && 'scripts/ci-linux-native-tests.test.mjs' || '' }} scripts/ci-cache-policy.test.mjs
       - name: Verify the signed beta.2 installer for the first stable upgrade
         if: runner.os == 'Windows' && steps.package-version.outputs.version == '0.1.2'
         id: upgrade-fixture
@@ -364,6 +374,9 @@ jobs:
         run: cargo clippy --workspace --locked --all-targets --target ${{ matrix.target }} -- -D warnings
       - name: Prepare packaged background binary
         run: node scripts/prepare-sidecar.mjs --profile release --target ${{ matrix.target }}
+      - name: Use ad-hoc macOS signing without an Apple certificate
+        if: runner.os == 'macOS'
+        run: echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
       - name: Build test installers
         uses: tauri-apps/tauri-action@v1
         env:
@@ -375,6 +388,26 @@ jobs:
           uploadWorkflowArtifacts: true
           workflowArtifactNamePattern: 'ci-[platform]-[arch]-[bundle]'
           uploadUpdaterJson: false
+      - name: Package the macOS app archive for the updater
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          app_dir="${CARGO_TARGET_DIR}/${{ matrix.target }}/release/bundle/macos"
+          version="${{ steps.package-version.outputs.version }}"
+          archive="${RUNNER_TEMP}/macos-updater/Strata Manager_${version}_aarch64.app.tar.gz"
+          test -d "${app_dir}/Strata Manager.app"
+          mkdir -p "$(dirname "$archive")"
+          tar -czf "$archive" -C "$app_dir" "Strata Manager.app"
+          test -f "$archive"
+          test ! -d "$archive"
+      - name: Upload the macOS updater archive
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-darwin-aarch64-app-tarball
+          path: ${{ runner.temp }}/macos-updater/Strata Manager_${{ steps.package-version.outputs.version }}_aarch64.app.tar.gz
+          if-no-files-found: error
+          compression-level: 0
 
       # Both platforms compile in parallel with native runners; complete coverage still
       # gates package smoke acceptance and reuse of the whole successful CI.

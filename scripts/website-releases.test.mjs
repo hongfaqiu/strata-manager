@@ -54,7 +54,32 @@ test('downloads use exact versioned assets actually returned by this repository'
   const value = catalog.assets(release('v0.1.0'));
   assert.equal(value.windows, `${base}/download/v0.1.0/Strata.Manager_0.1.0_x64-setup.exe`);
   assert.equal(value.checksums, `${base}/download/v0.1.0/SHA256SUMS`);
+  assert.equal(value.dmg, undefined);
   assert.equal(Object.keys(value).length, 5);
+});
+
+test('the optional macOS DMG is linked only when that exact published asset exists', () => {
+  assert.equal(catalog.optionalKeys.length, 1);
+  assert.equal(catalog.optionalKeys[0], 'dmg');
+  assert.equal(catalog.keys.includes('dmg'), false);
+  const complete = release('v0.1.0');
+  const name = 'Strata.Manager_0.1.0_aarch64.dmg';
+  const url = `${base}/download/v0.1.0/${name}`;
+  const value = catalog.assets({ ...complete, assets: [...complete.assets, { name, state: 'uploaded', size: 123, browser_download_url: url }] });
+  assert.equal(value.dmg, url);
+  assert.equal(Object.keys(value).length, 6);
+  const wrong = catalog.assets({ ...complete, assets: [...complete.assets, { name, state: 'uploaded', size: 123, browser_download_url: url.replace('aarch64.dmg', 'x86_64.dmg') }] });
+  assert.equal(wrong.dmg, undefined);
+  const elements = { dmg: {
+    attributes: new Map(),
+    setAttribute(name, attribute) { this.attributes.set(name, attribute); },
+    removeAttribute(name) { this.attributes.delete(name); },
+  } };
+  catalog.applyDownloads(elements, value);
+  assert.equal(elements.dmg.attributes.get('href'), url);
+  catalog.applyDownloads(elements, catalog.assets(complete));
+  assert.equal(elements.dmg.attributes.has('href'), false);
+  assert.equal(elements.dmg.attributes.get('aria-disabled'), 'true');
 });
 
 test('missing assets have no guessed URL and a partial release remains visibly incomplete', () => {
@@ -108,7 +133,7 @@ test('missing downloads remove stale hrefs and leave keyboard and accessibility 
 test('initial HTML disables every asset download until metadata is verified', () => {
   const html = readFileSync(new URL('../website/index.html', import.meta.url), 'utf8');
   const anchors = [...html.matchAll(/<a\b[^>]*data-download="([^"]+)"[^>]*>/g)];
-  assert.equal(anchors.length, 4);
+  assert.equal(anchors.length, 5);
   for (const [tag] of anchors) {
     assert.doesNotMatch(tag, /\bhref=/);
     assert.match(tag, /aria-disabled="true"/);

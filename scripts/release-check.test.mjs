@@ -11,14 +11,14 @@ import { downloadAssetToFile, findDraftRelease, ghJson, validateRelease, verifyR
 const repository = 'example/strata-manager';
 const version = '0.1.0';
 const tag = `v${version}`;
-const filenames = { windows: 'Strata.Manager_0.1.0_x64-setup.exe', linux: 'Strata.Manager_0.1.0_amd64.AppImage', deb: 'Strata.Manager_0.1.0_amd64.deb' };
+const filenames = { windows: 'Strata.Manager_0.1.0_x64-setup.exe', linux: 'Strata.Manager_0.1.0_amd64.AppImage', deb: 'Strata.Manager_0.1.0_amd64.deb', macosApp: 'Strata.Manager_0.1.0_aarch64.app.tar.gz', dmg: 'Strata.Manager_0.1.0_aarch64.dmg' };
 const commitSha = '1'.repeat(40);
 const options = { repository, tag, version, expectedSha: commitSha, tagCommitSha: commitSha };
 function releaseFixture(signature = 'x'.repeat(50)) {
-  const assets = [filenames.windows, `${filenames.windows}.sig`, filenames.linux, `${filenames.linux}.sig`, filenames.deb, `${filenames.deb}.sig`, 'latest.json'].map((name, id) => ({ name, id: id + 1, size: 100 }));
+  const assets = [filenames.windows, `${filenames.windows}.sig`, filenames.linux, `${filenames.linux}.sig`, filenames.deb, `${filenames.deb}.sig`, filenames.macosApp, `${filenames.macosApp}.sig`, filenames.dmg, `${filenames.dmg}.sig`, 'latest.json'].map((name, id) => ({ name, id: id + 1, size: 100 }));
   const release = { tag_name: tag, draft: true, target_commitish: 'main', assets };
   const update = name => ({ signature, url: `https://github.com/${repository}/releases/download/${tag}/${name}` });
-  const manifest = { version, platforms: { 'windows-x86_64': update(filenames.windows), 'linux-x86_64': update(filenames.linux) } };
+  const manifest = { version, platforms: { 'windows-x86_64': update(filenames.windows), 'linux-x86_64': update(filenames.linux), 'darwin-aarch64': update(filenames.macosApp) } };
   return { release, manifest, update };
 }
 
@@ -271,7 +271,7 @@ test('real verifier checks every exposed installer and deduplicates official ali
       assert.equal(downloads.filter(value => value === name).length, 1);
       assert.equal(downloads.filter(value => value === `${name}.sig`).length, 1);
     }
-    assert.match(logs[0], /all three installers \(NSIS, AppImage, DEB\)/);
+    assert.match(logs[0], /all five installers \(NSIS, AppImage, DEB, macOS app archive, DMG\)/);
     for (const path of paths) await assert.rejects(stat(path), { code: 'ENOENT' });
   });
 });
@@ -285,7 +285,7 @@ test('wrong key, altered bytes or matching fake signature refuses publication an
   }
 });
 
-test('the real verifier rejects tampered bytes in each of the three installers independently', { skip: !process.env.UPDATE_VERIFIER_BIN }, async () => {
+test('the real verifier rejects tampered bytes in each of the five installers independently', { skip: !process.env.UPDATE_VERIFIER_BIN }, async () => {
   for (const name of Object.values(filenames)) {
     await cryptoReleaseFixture({ tamperInstaller: name }, async ({ run, paths, logs }) => {
       await assert.rejects(run());
@@ -302,7 +302,7 @@ test('an uploaded DEB signature is verified even without a manifest alias', { sk
       assert.equal(downloads.filter(value => value === name).length, 1);
       assert.equal(downloads.filter(value => value === `${name}.sig`).length, 1);
     }
-    assert.match(logs[0], /all three installers \(NSIS, AppImage, DEB\)/);
+    assert.match(logs[0], /all five installers \(NSIS, AppImage, DEB, macOS app archive, DMG\)/);
   });
 });
 

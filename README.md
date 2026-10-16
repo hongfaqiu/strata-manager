@@ -16,7 +16,7 @@
 <p>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-287e71" alt="MIT license" /></a>
 <img src="https://img.shields.io/badge/desktop-Tauri%202-24c8d8" alt="Tauri 2 desktop" />
-<img src="https://img.shields.io/badge/platforms-Windows%20%2F%20Linux%20x64-51606f" alt="Windows and Linux x64" />
+<img src="https://img.shields.io/badge/platforms-Windows%20%2F%20Linux%20x64%20%C2%B7%20macOS%20ARM-51606f" alt="Windows and Linux x64; macOS Apple Silicon in progress" />
 <a href="https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml"><img src="https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml/badge.svg" alt="Build and test status" /></a>
 </p>
 
@@ -44,7 +44,7 @@ Engine-dependent tools appear according to the installed runtime's capabilities.
 
 | Workflow | What you can do |
 | --- | --- |
-| **1 · Prepare Strata** | Detect installations and inspect local/upstream versions and release notes. Windows x64 engine ZIPs default to official GitHub, offer GH Proxy/GHProxy, custom HTTPS or local ZIP sources, and match the current CUDA12, CUDA13 or HIP engine across sources. Interrupted downloads retain partial data and attempt HTTP Range resume; complete packages are checked against official size and SHA256. Linux supports environment scans, versions and release notes. |
+| **1 · Prepare Strata** | Detect installations and inspect local/upstream versions and release notes. Windows x64 engine ZIPs default to official GitHub, offer GH Proxy/GHProxy, custom HTTPS or local ZIP sources, and match the current CUDA12, CUDA13 or HIP engine across sources. Interrupted downloads retain partial data and attempt HTTP Range resume; complete packages are checked against official size and SHA256. Linux supports environment scans, versions and release notes. macOS Apple Silicon packages are in progress and do not scan processes or install a Strata engine yet. |
 | **2 · Organize models** | Discover local weights, group configurations by model, choose download sources and GPUs, and inspect model files, GGUF metadata and disk usage. Supported formats include Swift IQ3_S. |
 | **3 · Configure and run** | Edit graphical controls or JSON with validation and backups. Start, stop, restart or release model memory; follow startup stages, tasks and logs. On Windows, inspect detected running services, their loaded state, API address and configuration; reconnect to their existing Manager backend or take ownership. Opening Manager or signing in starts only the lightweight background, preserving stopped services. |
 | **4 · Chat and integrate** | Use streaming conversations, attachments and structured output. New models inherit shared generation parameters and MCP defaults; existing custom values remain separate until inheritance is enabled. Changes apply to the next chat request. Configure connection targets, the application's access key, API examples and MCP in API and external assistants; selecting a target does not start or switch a model. |
@@ -77,12 +77,13 @@ Choose a package from the [latest release](https://github.com/hongfaqiu/strata-m
 | --- | --- | --- |
 | **Windows x64** | NSIS installer (`.exe`) | Requires WebView2. [Windows installation](docs/DOWNLOAD.en.md#install-on-windows). |
 | **Linux x64** | AppImage or DEB | Built in Ubuntu 22.04 CI. [Linux installation and support scope](docs/DOWNLOAD.en.md#install-on-linux). |
+| **macOS Apple Silicon** | DMG | In progress. The current published release has no Mac installer. A later release lists `Strata.Manager_<version>_aarch64.dmg` after CI produces it. Ad-hoc signed, not notarized. Intel Macs are not a target. [macOS notes](docs/DOWNLOAD.en.md#macos). |
 
 1. **Prepare the runtime.** Open Strata to inspect an existing installation or follow the setup guide. An existing supported runtime does not need reinstalling.
 2. **Choose a model and configuration.** My models lists discovered weights. Add a search directory when needed, select a configuration, or download new weights.
 3. **Choose Use.** Follow environment checks and loading until Model ready, then chat or copy the local API address into another application.
 
-The desktop installer contains Manager and its background process. Hardware and driver requirements depend on Strata and the model. macOS and ARM are outside the current release targets. Detailed steps and package limitations are in the [download guide](docs/DOWNLOAD.en.md); everyday use is covered in the [user guide](docs/USER_GUIDE.en.md).
+The desktop installer contains Manager and its background process. Hardware and driver requirements depend on Strata and the model. The current published release installs on Windows x64 and Linux x64. macOS Apple Silicon DMG and updater archives are built in CI and become part of a later tagged release; they are ad-hoc signed and not notarized. Intel Macs are not packaged. Manager does not yet discover upstream Strata Metal installs. These macOS changes have not been runtime-verified on Mac hardware. Detailed steps and package limitations are in the [download guide](docs/DOWNLOAD.en.md); everyday use is covered in the [user guide](docs/USER_GUIDE.en.md).
 
 ## Explore the workspace
 
