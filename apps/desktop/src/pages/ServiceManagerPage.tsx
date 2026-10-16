@@ -1,4 +1,7 @@
 import type { AppLanguage } from "@strata-manager/core";
+import { ModelsLead, RequirementMeter, machineMemoryGB } from './D2PageStrips';
+import type { HardwareReading } from './D2Visuals';
+import type { EnvironmentInfo } from '@strata-manager/core';
 import { useEffect, useRef, useState } from 'react';
 import { useQueries } from '@tanstack/react-query';
 import { ChevronDown, FileText, FolderOpen, LoaderCircle, MessageSquare, Pencil, Play, RefreshCw, Server, Settings2, Square, Trash2 } from 'lucide-react';
@@ -17,6 +20,10 @@ type InspectedProcess = ProcessStatus & { external?: boolean; canTakeOver?: bool
 type ConfirmationAction = 'stop' | 'restart' | 'takeover' | 'unload' | 'delete';
 
 export interface ServiceManagerPageProps {
+  /** Live hardware from /metrics and static environment info, used by the D2 capacity lead and per-config requirement meter. */
+  hardware?: HardwareReading;
+  environment?: EnvironmentInfo;
+  hardwareOnline?: boolean;
   profiles: ServiceProfile[];
   activeId: string;
   lastUsedId?: string;
@@ -305,6 +312,7 @@ export function ServiceManagerPage(props: ServiceManagerPageProps) {
           const marker = item === currentEntry ? w.current : item === preparingEntry ? w.preparing : item === lastUsedEntry ? w.lastUsed : undefined;
           return { value: item.key, name: configurationLabel(item), summary: detail, modifiedAt: item.modifiedAt, lastActivatedAt: item.lastActivatedAt, filePath: item.profile?.configPath || item.configPath, sourcePath: item.profile ? props.details?.find(record => record.profileId === item.profile!.id)?.originalConfigPath ?? item.candidate?.configPath : item.candidate?.configPath, stateLabel: marker, state: item === currentEntry ? 'current' as const : item === preparingEntry ? 'preparing' as const : item === lastUsedEntry ? 'lastUsed' as const : undefined };
         })} /></div>
+        <RequirementMeter label={`${group.name} ${configurationLabel(entry)} ${JSON.stringify(config ?? '')} ${entry.profile?.configPath ?? entry.configPath ?? ''}`} machineGB={props.hardware ? machineMemoryGB(props.hardware, props.environment) : undefined}/>
         {currentEntry && currentEntry.key !== entry.key && <div className="service-manager-current-config"><span>{w.currentConfiguration}</span><strong>{configurationLabel(currentEntry)}</strong></div>}
         {profile && healthQuery?.isError && <div className="service-manager-hint"><span>{core.normalizeError(healthQuery.error).message}</span></div>}
         {profile && healthQuery?.isSuccess && (health.service !== 'strata' || health.status !== 'ok') && <p className="service-manager-error" role="alert">{w.invalidService}</p>}
@@ -346,6 +354,7 @@ export function ServiceManagerPage(props: ServiceManagerPageProps) {
       </section>;
   };
   return <div className="service-manager" data-testid="service-manager">
+    <ModelsLead hardware={props.hardware ?? {}} environment={props.environment} online={!!props.hardwareOnline} models={modelGroups.length} configurations={configurationCount} current={props.hardwareOnline ? props.profiles.find(item => item.id === props.activeId)?.name : undefined}/>
     <div className="service-manager-list-heading"><span>{modelGroups.length} {w.total} · {configurationCount} {w.configurations}</span><div className="service-manager-toolbar">
       <button className="primary" onClick={props.onAdd} disabled={!desktop || streaming || pageBusy} data-tooltip={!desktop ? w.desktopRequired : undefined}><FolderOpen size={16} />{w.add}</button>
       <button onClick={() => void scan()} disabled={refreshing || pageBusy}><RefreshCw size={14} className={refreshing ? 'spin' : ''} />{w.refresh}</button>

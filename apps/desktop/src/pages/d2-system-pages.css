@@ -1,0 +1,41 @@
+/* D2: settings rows, update hero, about identity. Uses app tokens only. */
+.management-content .settings-layout.d2-settings{grid-template-columns:minmax(0,1fr);max-width:820px;gap:0}
+.settings-layout.d2-settings>.panel{border-radius:0;margin:0;border-top-width:0;box-shadow:none}
+.settings-layout.d2-settings>.panel:first-child{border-top-width:1px;border-radius:16px 16px 0 0}
+.settings-layout.d2-settings>.panel:last-child{border-radius:0 0 16px 16px}
+.settings-layout.d2-settings .panel-header h2{font-size:14px}
+.settings-layout.d2-settings .field{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"label control" "hint control";align-items:center;column-gap:20px;padding:10px 0;border-bottom:1px solid var(--st-line,var(--border))}
+.settings-layout.d2-settings .field:last-child{border-bottom:0}
+.settings-layout.d2-settings .field>span{grid-area:label;font-size:13.5px;font-weight:500;color:var(--st-ink)}
+.settings-layout.d2-settings .field>small{grid-area:hint;font-size:12px;color:var(--st-ink-muted)}
+.settings-layout.d2-settings .field>:not(span):not(small){grid-area:control;justify-self:end;min-width:200px}
+.settings-layout.d2-settings .setting-toggle{padding:10px 0;border-bottom:1px solid var(--st-line,var(--border))}
+.settings-layout.d2-settings .setting-toggle:last-child{border-bottom:0}
+.settings-layout.d2-settings .setting-toggle>span{display:grid;gap:3px}
+.d2-setting-hint,.settings-layout.d2-settings .setting-toggle small{font-size:12px;font-weight:400;color:var(--st-ink-muted)}
+.d2-update-hero{display:flex!important;align-items:flex-end!important;justify-content:space-between}
+.d2-update-hero>div:first-child{display:grid;gap:4px}
+.d2-update-hero>div:first-child>strong{font-family:var(--mono,"JetBrains Mono","Cascadia Mono",ui-monospace,monospace);font-size:34px!important;letter-spacing:-.02em;line-height:1.1}
+.d2-update-status{display:grid;justify-items:end;gap:4px}.d2-update-status small{font-size:12px;color:var(--st-ink-muted)}
+.d2-update-badge{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--st-ink-muted)}
+.d2-update-badge i{width:7px;height:7px;border-radius:50%;background:currentColor}
+.d2-update-badge.is-current{color:#178a62}.d2-update-badge.is-available,.d2-update-badge.is-downloaded,.d2-update-badge.is-installed{color:var(--st-accent-text,#187f6b)}
+.d2-update-badge.is-error{color:var(--danger,#c43d4b)}
+.d2-changelog-link{margin-left:auto;align-self:center;font-size:13px;color:var(--st-ink-muted);text-decoration:none}.d2-changelog-link:hover{color:var(--st-ink)}
+.d2-about-hero{display:grid;gap:0;padding:0!important;overflow:hidden}
+.d2-about-hero>*{padding:16px 20px}
+.d2-about-hero>header{display:flex;align-items:center;gap:14px;border-bottom:1px solid var(--st-line)}
+.d2-about-hero h2{margin:0;font-size:17px}.d2-about-hero header p{margin:2px 0 0;font-size:12.5px;color:var(--st-ink-muted)}
+.d2-about-hero nav{margin-left:auto;display:flex;gap:16px;font-size:13px}.d2-about-hero nav a{color:var(--st-ink-muted);text-decoration:none}.d2-about-hero nav a:hover{color:var(--st-ink)}
+.d2-about-facts{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px 20px;margin:0}
+.d2-about-facts dt{font-size:13px;color:var(--st-ink-muted)}
+.d2-about-facts dd{margin:0;text-align:right;font-family:var(--mono,"JetBrains Mono",ui-monospace,monospace);font-size:13px;overflow-wrap:anywhere}
+.d2-about-notes{border-top:1px solid var(--st-line);display:grid;gap:4px}.d2-about-notes p{margin:0}
+.d2-about-licenses{border-top:1px solid var(--st-line);display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.d2-about-licenses>div{display:grid;gap:3px}.d2-about-licenses strong{font-size:13.5px}.d2-about-licenses span{font-size:12px;color:var(--st-ink-muted)}
+.d2-about-licenses details{flex:0 1 auto;max-width:100%}.d2-about-licenses details[open]{flex-basis:100%}
+.d2-about-licenses summary{cursor:pointer;font-size:13px;color:var(--st-ink-muted);text-align:right}
+@media (max-width:860px){.settings-layout.d2-settings .field{grid-template-columns:minmax(0,1fr);grid-template-areas:"label" "control" "hint";row-gap:6px}.settings-layout.d2-settings .field>:not(span):not(small){justify-self:stretch}.d2-about-hero nav{margin-left:0}.d2-about-hero>header{flex-wrap:wrap}}
+.settings-layout.d2-settings>.panel{min-height:0;height:auto;padding-top:16px;padding-bottom:12px}
+.settings-layout.d2-settings{align-items:start}
+.d2-about-notes p,.d2-about-notes p.muted{font-size:12.5px;line-height:1.6}

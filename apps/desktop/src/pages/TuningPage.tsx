@@ -1,4 +1,5 @@
 import type { AppLanguage } from "@strata-manager/core";
+import { GainDotPlot } from './D2PageStrips';
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Activity, Check, CircleHelp, Download, FlaskConical, LoaderCircle, Play, RotateCcw, Square } from 'lucide-react';
@@ -220,6 +221,7 @@ export function TuningPage({ profileId, language, desktop, owned, streaming, onC
           <div className="actions">{fullReport && job.state === 'completed' && recommendedCandidate?.evaluation?.accepted && <button className="primary" disabled={!canApply} onClick={() => void run(() => core.tuningApply(job.id, recommendedCandidate.id))}><Check size={14}/>{text.apply}</button>}{job.state === 'applied' && <button disabled={busy || streaming} onClick={() => void run(() => core.tuningRestore(job.id))}><RotateCcw size={15}/>{text.restore}</button>}</div>
         </div>
         {recommendedCandidate && <p className="tuning-recommended-parameters">{text.pcie}: {numeric(recommendedCandidate.pcieFrac)} · {text.mtp}: {numeric(recommendedCandidate.specMinP)}{recommendedCandidate.kind === 'restart' ? ` · ${restartDescription(recommendedCandidate.restart)}` : ''}</p>}
+        {!!job.candidates.length && <GainDotPlot label={fullReport ? text.wallGain : text.gain} points={job.candidates.map(candidate => ({ id: candidate.id, gain: candidate.evaluation?.gain, recommended: candidate.id === job.recommendedCandidateId, accepted: candidate.evaluation?.accepted }))}/>}
         {!fullReport && <p className="subtle">{text.diagnosticOnly}</p>}
         {fullReport && recommendedCandidate && recommendedResources?.status !== 'checked' && <p className="notice error" role="alert">{recommendedResources?.status === 'insufficientHeadroom' ? text.resourceLowBlocked : text.resourceUnknownBlocked}</p>}
         {fullReport && recommendedCandidate?.kind === 'restart' && !recommendedCandidate.startupVerification?.parameters.length && <p className="notice" role="status">{text.startupUnverified}</p>}

@@ -13,6 +13,7 @@ import { startupStatusHint } from '../startupStatusText';
 import { bundledAppRelease } from '../bundledAppRelease';
 import { localizedReleaseNotes, releaseNotes } from '../updateReleaseNotes';
 import './desktop-lifecycle-settings.css';
+import './d2-system-pages.css';
 
 interface Props {
   section?: 'all' | 'background' | 'updates';
@@ -68,7 +69,7 @@ export function DesktopLifecycleSettings({ section = 'all', currentVersion = des
       {startup.error || policy.error ? <div className="notice error" role="alert">{t('settingsUnavailable')}: {String(startup.error ?? policy.error)}</div> : null}
       {row(t('launchOnLogin'), startupStatusHint(startup.data, i18n.resolvedLanguage ?? i18n.language, t('launchOnLoginHint')), startup.data?.enabled === true, !desktop || !startup.data?.supported, enabled => void mutate(() => core.setStartupEnabled(enabled)), startup.data?.configured === true && startup.data?.healthy !== true)}
       {row(t('prepareAtStartup'), t('prepareAtStartupHint'), policy.data?.mode === 'alwaysReady', !desktop || !policy.data, enabled => void mutate(() => core.setBackgroundPolicy(enabled ? 'alwaysReady' : 'lazy', policy.data!.autoRecover, idleMinutes)))}
-      {row(t('recoverService'), t('recoverServiceHint'), policy.data?.autoRecover === true, !desktop || !policy.data, enabled => void mutate(() => core.setBackgroundPolicy(policy.data!.mode, enabled, idleMinutes)))}
+      {row(t('recoverService'), t('recoverServiceHint'), policy.data?.autoRecover === true, !desktop || !policy.data, enabled => void mutate(() => core.setBackgroundPolicy(policy.data!.mode, enabled, idleMinutes)), true)}
       <div className="setting-toggle">
         <span style={{ minWidth: 0 }}><strong data-tooltip={t('idleModelReleaseHint')}>{t('idleModelRelease')}</strong>{idleHint && <small role="status">{idleHint}</small>}</span>
         <div style={{ width: 180, maxWidth: '50%', flexShrink: 0 }}><Dropdown ariaLabel={t('idleModelRelease')} value={String(idleMinutes)} options={idlePeriods.map(value => ({ value: String(value), label: value === 0 ? t('idleModelReleaseOff') : t('idleModelReleaseMinutes', { count: value }) }))} disabled={!desktop || !idleSupported || policy.data?.mode !== 'lazy' || saving} onValueChange={value => { if (Number(value) !== idleMinutes) void mutate(() => core.setBackgroundPolicy(policy.data!.mode, policy.data!.autoRecover, Number(value))); }}/></div>
@@ -78,7 +79,7 @@ export function DesktopLifecycleSettings({ section = 'all', currentVersion = des
       {!!backend.data?.migration?.failed && <div className="notice error" role="alert"><p>{t('migrationNeedsAttention')}</p><ul>{backend.data.migration.entries.filter(entry => entry.status === 'failed').map((entry, index) => <li key={entry.id ?? index}>{entry.name ?? entry.id}: {entry.reason}</li>)}</ul></div>}
     </Panel>}
     {section !== 'background' && <div id="settings-app-updates"><Panel className="app-updates-settings" title={t('appUpdates')} action={helpAction('updates', zh ? '应用更新帮助' : 'App update help')}>
-      <div className="app-update-version"><span>{zh ? '当前版本' : 'Current version'}</span><strong>v{currentVersion.replace(/^v/, '')}</strong></div>
+      <div className="app-update-version d2-update-hero" data-phase={update.error ? 'error' : update.phase}><div><span>{zh ? '当前版本' : 'Current version'}</span><strong>v{currentVersion.replace(/^v/, '')}</strong></div><div className="d2-update-status"><span className={`d2-update-badge is-${update.error ? 'error' : update.phase}`}>{update.phase === 'checking' ? <LoaderCircle className="spin" size={12}/> : <i/>}{t(update.error ? 'd2UpdErr' : `d2Upd_${update.phase}`, { version: update.version ? `v${update.version.replace(/^v/, '')}` : '' })}</span>{!desktop && <small>{t('nativeRequired')}</small>}</div></div>
       {row(t('checkUpdatesAutomatically'), t('checkUpdatesAutomaticallyHint'), autoCheck, !desktop, onAutoCheck)}
       {update.phase in phaseKey && <p role="status" aria-live="polite">{t(phaseKey[update.phase as keyof typeof phaseKey], { version: update.version })}</p>}
       {update.error && <div className="notice error" role="alert">{t(update.errorStage === 'download' ? 'updateDownloadFailed' : update.errorStage === 'install' ? 'updateInstallFailed' : 'updateCheckFailed')}<button type="button" onClick={() => setHelp('error')}>{zh ? '查看原因' : 'View reason'}</button></div>}
@@ -88,6 +89,7 @@ export function DesktopLifecycleSettings({ section = 'all', currentVersion = des
         {update.version && !update.downloaded && update.phase !== 'current' && update.phase !== 'installed' && <button type="button" className="primary" disabled={!desktop || downloading || update.phase === 'checking'} onClick={() => void onDownload()}><Download size={15}/>{t('reviewAppUpdate')}</button>}
         {update.downloaded && <button type="button" className="primary" disabled={!desktop || downloading} onClick={() => void onInstall()}><Download size={15}/>{t('reviewDownloadedUpdate')}</button>}
         {update.phase === 'installed' && <button type="button" className="primary" disabled={streaming} onClick={() => void core.restartInterface().catch(onError)}><RotateCw size={15}/>{t('restartForUpdate')}</button>}
+        <a className="d2-changelog-link" href="https://github.com/hongfaqiu/strata-manager/releases" target="_blank" rel="noopener noreferrer">{t('d2Changelog')} →</a>
       </div>
       {hasCandidate && <section className="settings-release"><header><h3>{zh ? '可用更新日志' : 'Available update release notes'}</h3><span><code>v{update.version!.replace(/^v/, '')}</code><span className="badge positive">{zh ? '有更新' : 'Update available'}</span></span></header>{notesBody(availableNotes, zh ? '此版本尚未提供更新日志。' : 'Release notes are not provided for this version.', zh ? '可用更新日志' : 'Available update release notes')}</section>}
       <section className="settings-release"><header><h3>{zh ? '最近一次更新日志' : 'Latest installed release notes'}</h3><span><code>v{currentVersion.replace(/^v/, '')}</code>{currentRelease?.date && <time dateTime={currentRelease.date}>{currentRelease.date}</time>}</span></header>{notesBody(currentNotes, zh ? '当前版本的更新日志未包含在此安装包中。' : 'Release notes for the current version are not included in this package.', zh ? '最近一次更新日志' : 'Latest installed release notes')}</section>

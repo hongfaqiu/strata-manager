@@ -1,4 +1,5 @@
 import type { AppLanguage } from "@strata-manager/core";
+import { TierAxis } from './D2PageStrips';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Copy, LoaderCircle, Play, Square } from 'lucide-react';
 import * as core from '@strata-manager/core';
@@ -120,6 +121,7 @@ export function ContextBenchmarkPage({ profile, online, disabled, language, onRu
         <div className="benchmark-scenario-group"><div className="benchmark-scenario-heading"><strong>{text('上下文档位', 'Context tiers')}</strong><span>{text('超出上限不可选', 'Over-limit tiers unavailable')}</span></div><div className="benchmark-scenarios">
           {availableTiers.map(tier => <label key={tier} className={`benchmark-scenario${options.tiers.includes(tier) ? ' is-selected' : ''}`}><Checkbox checked={options.tiers.includes(tier)} disabled={running || contextLoading || !maxContext || tier > maxContext || tier <= options.maxTokens + core.CONTEXT_BENCHMARK_HEADROOM} onChange={() => update('tiers', options.tiers.includes(tier) ? options.tiers.filter(value => value !== tier) : [...options.tiers, tier].sort((a, b) => a - b))}/><span>{tierName(tier)}</span></label>)}
         </div></div>
+        <TierAxis tiers={availableTiers} selected={options.tiers} limit={maxContext || undefined} name={tierName}/>
         <div className="benchmark-settings benchmark-key-settings">
           <Field label={text('测试配置名称', 'Configuration label')}><input aria-label={text('测试配置名称', 'Configuration label')} placeholder={profile.name} maxLength={120} value={options.configurationLabel ?? ''} disabled={running} onChange={event => update('configurationLabel', event.target.value)}/></Field>
           <Field label={text('每档轮数', 'Rounds per tier')}><NumberField aria-label={text('每档轮数', 'Rounds per tier')} min={1} max={10} value={options.rounds} disabled={running} onChange={event => update('rounds', Number(event.target.value))}/></Field>
