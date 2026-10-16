@@ -49,10 +49,10 @@ The current published stable release does not include a Mac installer. Source an
 
 - The manual installer is `Strata.Manager_<version>_aarch64.dmg`. The website button enables only when that published release actually contains the file.
 - In-app updates use `Strata.Manager_<version>_aarch64.app.tar.gz`. The `darwin-aarch64` entry in `latest.json` points at that archive, not at the DMG.
-- CI on `macos-14` sets `APPLE_SIGNING_IDENTITY=-` for ad-hoc signing. There is no Apple Developer certificate, so there is no notarization and no hardened runtime. Gatekeeper may block the app. After confirming the file comes from this project's release page, macOS may still require removing quarantine or opening it from the context menu. That note is not an installation procedure verified on Mac hardware.
+- CI on `macos-15` sets `APPLE_SIGNING_IDENTITY=-` for ad-hoc signing. There is no Apple Developer certificate, so there is no notarization and no hardened runtime. Gatekeeper may block the app. After confirming the file comes from this project's release page, macOS may still require removing quarantine or opening it from the context menu. That note is not an installation procedure verified on Mac hardware.
 - Intel (`x86_64-apple-darwin`) packages are not built. Upstream Strata Metal targets Apple Silicon, and a second target is a full extra compile.
 - On macOS, Manager does not scan local processes and does not install the Windows x64 engine ZIP. Upstream experimental Metal is built by [Niko1221/Strata](https://github.com/Niko1221/Strata) `./setup.sh` (see upstream `docs/MAC.md`; the binary lands in `build-metal/strata`). This app does not discover that layout yet.
-- `Info.plist` sets the minimum system version to 15.0, matching the upstream Metal note. CI shows that a `macos-14` runner can compile and package the app. It does not show that the app launches, finds an engine, or runs inference on Mac hardware.
+- `Info.plist` sets the minimum system version to 15.0, matching the upstream Metal note. CI shows that a `macos-15` runner can compile and package the app. It does not show that the app launches, finds an engine, or runs inference on Mac hardware.
 
 ## Try source
 

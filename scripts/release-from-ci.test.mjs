@@ -41,7 +41,9 @@ test('the macOS desktop job stays behind the docs-only skip and publishes ad-hoc
   assert.doesNotMatch(changes, /docs\/\*\*/);
   const desktop = workflow.slice(workflow.indexOf('\n  desktop:'));
   assert.match(desktop, /needs: changes\n {4}if: needs\.changes\.outputs\.code == 'true'/);
-  assert.match(desktop, /runner: macos-14\n {12}target: aarch64-apple-darwin\n {12}bundles: app,dmg/);
+  assert.match(desktop, /runner: macos-15\n {12}target: aarch64-apple-darwin\n {12}bundles: app,dmg/);
+  assert.match(desktop, /runner\.os != 'macOS' && 'scripts\/ci-linux-native-tests\.test\.mjs'/);
+  assert.doesNotMatch(desktop, /runner: macos-14/);
   for (const step of ['Use ad-hoc macOS signing without an Apple certificate', 'Package the macOS app archive for the updater', 'Upload the macOS updater archive']) {
     assert.ok(desktop.includes('- name: ' + step), step);
   }
@@ -101,7 +103,7 @@ function ciFixture(p = plan, runId = 123) {
   const jobs = [
     job('desktop (windows-latest, x86_64-pc-windows-msvc, nsis)', [...COMMON_GATES, ...PLATFORM_GATES.windows], 10),
     job('desktop (ubuntu-22.04, x86_64-unknown-linux-gnu, appimage,deb)', [...COMMON_GATES, ...PLATFORM_GATES.linux], 11),
-    job('desktop (macos-14, aarch64-apple-darwin, app,dmg)', [...COMMON_GATES, ...PLATFORM_GATES.macos], 12),
+    job('desktop (macos-15, aarch64-apple-darwin, app,dmg)', [...COMMON_GATES, ...PLATFORM_GATES.macos], 12),
     ...[0, 1, 2].map(i => job('Linux native shard (' + i + '/3)', SHARD_GATES, 20 + i)),
     ...[0, 1, 2].map(i => job('Windows native shard (' + i + '/3)', WINDOWS_SHARD_GATES, 30 + i)),
     ...observerJobs.map((name, i) => job(name, observerGates, 40 + i)),

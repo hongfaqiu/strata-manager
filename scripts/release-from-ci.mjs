@@ -58,7 +58,7 @@ export const OBSERVER_JOBS = Object.freeze([
 const jobsByPlatform = {
   windows: 'desktop (windows-latest, x86_64-pc-windows-msvc, nsis)',
   linux: 'desktop (ubuntu-22.04, x86_64-unknown-linux-gnu, appimage,deb)',
-  macos: 'desktop (macos-14, aarch64-apple-darwin, app,dmg)',
+  macos: 'desktop (macos-15, aarch64-apple-darwin, app,dmg)',
 };
 
 export function createPlan({ repository = REPOSITORY, tag, version, sourceSha: commit, runId, productName }) {

@@ -7,12 +7,12 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
-- 将 macOS（Apple Silicon）列入兼容计划。CI 在 `macos-14` 上构建临时签名的 DMG，以及更新器用的 `.app.tar.gz`。当前已发布稳定版仍只有 Windows x64 与 Linux x64；下一次按 `strata-release-ci/v3` 打标签，才会把 Mac 安装包签入 Release。
+- 将 macOS（Apple Silicon）列入兼容计划。CI 在 `macos-15` 上构建临时签名的 DMG，以及更新器用的 `.app.tar.gz`。该 job 不运行只适用于 Windows/Linux 的原生测试合同。当前已发布稳定版仍只有 Windows x64 与 Linux x64；下一次按 `strata-release-ci/v3` 打标签，才会把 Mac 安装包签入 Release。
 - 没有 Apple 公证，也没有 Intel 安装包。macOS 上不会扫描进程，也不会安装 Windows 引擎 ZIP；Strata Metal 安装发现尚未接入。这些改动没有在真实 Mac 上做运行验收。
 
 ### English
 
-- macOS (Apple Silicon) is now part of the compatibility plan. CI on `macos-14` builds an ad-hoc-signed DMG and an updater `.app.tar.gz`. The current published stable release remains Windows x64 and Linux x64. The next tag that uses `strata-release-ci/v3` is what signs the Mac installers into a Release.
+- macOS (Apple Silicon) is now part of the compatibility plan. CI on `macos-15` builds an ad-hoc-signed DMG and an updater `.app.tar.gz`. That job does not run the Windows/Linux-only native test contract. The current published stable release remains Windows x64 and Linux x64. The next tag that uses `strata-release-ci/v3` is what signs the Mac installers into a Release.
 - There is no Apple notarization and no Intel package. On macOS, Manager does not scan processes or install the Windows engine ZIP, and Strata Metal discovery is not wired. These changes were not runtime-verified on Mac hardware.
 
 ## [0.1.10] - 2026-10-15

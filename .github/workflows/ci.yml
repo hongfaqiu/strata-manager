@@ -265,10 +265,11 @@ jobs:
           - runner: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             bundles: appimage,deb
-          # Apple Silicon only. macos-14 is arm64. Intel is omitted: upstream
-          # Strata Metal does not run on Intel Macs, and a second target is a
-          # full extra compile. Docs-only PRs still skip this job via changes.
-          - runner: macos-14
+          # Apple Silicon only. This image is arm64; the previous macos-14 image
+          # retires around 2026-11-02. Intel is omitted: upstream Strata Metal
+          # does not run on Intel Macs, and a second target is a full extra
+          # compile. Docs-only PRs still skip this job via changes.
+          - runner: macos-15
             target: aarch64-apple-darwin
             bundles: app,dmg
     runs-on: ${{ matrix.runner }}
@@ -352,7 +353,10 @@ jobs:
       - name: Version and release guard tests
         env:
           UPDATE_VERIFIER_BIN: ${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/debug/strata-update-verifier${{ runner.os == 'Windows' && '.exe' || '' }}
-        run: node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-assets.test.mjs scripts/release-publish.test.mjs scripts/preview-package-smoke.test.mjs scripts/download-upgrade-fixture.test.mjs scripts/release-from-ci.test.mjs scripts/ci-linux-native-tests.test.mjs scripts/ci-cache-policy.test.mjs
+        # ci-linux-native-tests.test.mjs executes a host libtest binary and rejects
+        # any platform other than its Windows/Linux target. Skip it on darwin so
+        # the Apple Silicon job can reach packaging. Windows and Linux still run it.
+        run: node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-assets.test.mjs scripts/release-publish.test.mjs scripts/preview-package-smoke.test.mjs scripts/download-upgrade-fixture.test.mjs scripts/release-from-ci.test.mjs ${{ runner.os != 'macOS' && 'scripts/ci-linux-native-tests.test.mjs' || '' }} scripts/ci-cache-policy.test.mjs
       - name: Verify the signed beta.2 installer for the first stable upgrade
         if: runner.os == 'Windows' && steps.package-version.outputs.version == '0.1.2'
         id: upgrade-fixture

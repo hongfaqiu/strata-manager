@@ -65,7 +65,7 @@ pnpm --filter @strata-manager/desktop tauri signer generate -w $strataSigningKey
 
 ## 日常 CI
 
-`.github/workflows/ci.yml` 在主分支 push、Pull Request 和手动触发时运行。桌面矩阵包含 Windows、Linux 与 macOS Apple Silicon（`macos-14`、`aarch64-apple-darwin`）。只改文档或官网、且不触碰代码路径过滤器的 PR 仍跳过 desktop、原生测试和 observer。功能分支通过 PR 自动打包；尚未创建 PR 时，可选择该分支手动运行。PR 使用合并结果进行验收，避免同一功能分支 push 与 PR 重复构建；手动运行使用独立并发组，不取消自动验收。使用 Node 24、`package.json` 固定的 pnpm 和 Rust stable；pnpm 11.21.0 要求 Node >=22.13。
+`.github/workflows/ci.yml` 在主分支 push、Pull Request 和手动触发时运行。桌面矩阵包含 Windows、Linux 与 macOS Apple Silicon（`macos-15`、`aarch64-apple-darwin`）。只改文档或官网、且不触碰代码路径过滤器的 PR 仍跳过 desktop、原生测试和 observer。功能分支通过 PR 自动打包；尚未创建 PR 时，可选择该分支手动运行。PR 使用合并结果进行验收，避免同一功能分支 push 与 PR 重复构建；手动运行使用独立并发组，不取消自动验收。使用 Node 24、`package.json` 固定的 pnpm 和 Rust stable；pnpm 11.21.0 要求 Node >=22.13。
 
 检查范围为版本一致性和发布门禁测试、TypeScript、核心与 HTTP 协议夹具测试、前端生产构建、Rust 格式、workspace 单元/集成测试、Clippy，以及 Windows、Linux 与 macOS Apple Silicon 桌面安装包构建。macOS job 执行格式、Clippy 和打包，不运行安装包启动检查。Windows 和 Linux 原生测试各使用三个独立 runner；每个 runner 仍以 `--test-threads=1` 串行运行分配到的测试，保留原有测试超时。Windows 的进程、端口和凭据夹具由独立虚拟机隔离；Linux 使用固定私有 Secret Service、DBus 和 Xvfb。
 
@@ -90,7 +90,7 @@ CI 产物以 `ci-<platform>-<arch>-<bundle>` 名称上传为 Actions artifacts�
 1. 等待同仓库的编辑会话完成，冻结同一候选快照。在同一变更中同步根 `package.json`、`apps/desktop/package.json`、`packages/core/package.json`、Tauri config、Cargo workspace 和任何显式 Cargo package version。运行 `node scripts/release-check.mjs --tag v<version>`，将 `<version>` 替换为候选的实际版本；tag 必须与应用版本严格一致。该版本的中英文日志须位于唯一的 `## [<version>]`；README 三个入口、中英文下载/用户文档和官网应同步相应发布入口，不复用上一版本的通过结论。
 2. 完成 [VERIFICATION](VERIFICATION.md) 的最终检查和发布验收，更新中英文 README、用户指南、`docs/screenshots/` 的 WebP 封面及页面图与实际 revision；检查内容没有 API 密钥、个人会话、用户名或私有模型路径。截图使用示例数据时，在图片所在文档及官网的图外说明数据来源；图内使用正常模型名和界面内容，不能写成真实服务或性能证据。保留历史原型证据，同时单列本轮未通过/未运行项。
 3. 推送已审核的代码，等待完整 CI 后，创建并推送 `v<version>` tag，例如 `v0.2.0`。版本 tag 触发 `.github/workflows/release.yml`，它调用同一提交的 `release-from-ci.yml`。也可手动运行 `Release desktop` 并填写 `release_tag`；可选 `ci_run_id` 指定已验收 run。源码若仍导出 `strata-release-ci/v2` 或更早协议，明确拒绝，不改写 tag。v3 要求三个 desktop job，并且同一 attempt 中同时有 Mac 的 DMG 与 `.app.tar.gz`。
-4. 控制器优先选择同仓库、同源码 SHA、同 CI workflow 的完整成功 run；已有运行则等待它完成，没有可用 run 才按不可变 tag 补跑一次 CI。复用要求三个 desktop job（Windows、Linux、`desktop (macos-14, aarch64-apple-darwin, app,dmg)`）、三个 Windows 分片、三个 Linux 分片、两个 Strata 0.1.44 observer compatibility job，以及原版本/观察器/原生/格式/Clippy/安装启动门禁全部通过，并检查当前 run attempt。macOS 门禁是临时签名、打包更新归档和上传该归档，不是安装包启动检查。版本 0.1.2 仍额外要求原 beta.2 升级门禁。PR 合并 SHA、其他源码、失败、取消、过期或不完整产物均不可复用。
+4. 控制器优先选择同仓库、同源码 SHA、同 CI workflow 的完整成功 run；已有运行则等待它完成，没有可用 run 才按不可变 tag 补跑一次 CI。复用要求三个 desktop job（Windows、Linux、`desktop (macos-15, aarch64-apple-darwin, app,dmg)`）、三个 Windows 分片、三个 Linux 分片、两个 Strata 0.1.44 observer compatibility job，以及原版本/观察器/原生/格式/Clippy/安装启动门禁全部通过，并检查当前 run attempt。macOS 门禁是临时签名、打包更新归档和上传该归档，不是安装包启动检查。版本 0.1.2 仍额外要求原 beta.2 升级门禁。PR 合并 SHA、其他源码、失败、取消、过期或不完整产物均不可复用。
 5. 下载五种 CI artifact（NSIS、AppImage、DEB、`ci-darwin-aarch64-app-tarball`、`ci-darwin-aarch64-dmg`），冻结 ID 和 GitHub ZIP digest，安全解包并核对版本、产品名、架构及原始安装包 hash。签名前和上传前重验源码、tag、run 与原始字节；仅为原始安装包生成带应用版本的 Tauri updater 签名。签名使用既有 Tauri updater 私钥，不是 Apple Developer ID。单个发布 job 生成 `latest.json`、五份 `.sig` 与 `SHA256SUMS`，创建或续写草稿，无需再次编译应用或跨平台合并 manifest。`latest.json` 的 `darwin-aarch64` 指向 `.app.tar.gz`，不指向 DMG。`scripts/release-verify.mjs` 下载实际草稿资产，通过同源码的 `strata-update-verifier` 和内置公钥核验五份载荷、可信注释、版本、完整十二项资产与 URL；全部成功才公开。
 6. 发布阶段使用仓库级队列锁，并在锁内完整检查已公开稳定版本。只有 SemVer 严格更高的稳定版本成为 latest；旧版本或等价版本仍可公开下载，但不替换更新通道。带 SemVer prerelease 的版本始终不覆盖稳定自动更新通道。公开状态和 latest 选择在同一次 PATCH 中提交；发布前再次核对真实 tag commit。
 
@@ -125,7 +125,7 @@ GitHub 对相对默认分支修改工作流的 `target_commitish` 要求额外�
 当前已发布稳定版保持 Windows x64 与 Linux x64。要让 Mac 安装包进入公开 Release：
 
 1. 合并包含 `strata-release-ci/v3` 与 macOS desktop job 的源码。
-2. 等待该提交的 CI 全绿。macOS job 名称必须是 `desktop (macos-14, aarch64-apple-darwin, app,dmg)`，并上传 `ci-darwin-aarch64-dmg` 与 `ci-darwin-aarch64-app-tarball`。
+2. 等待该提交的 CI 全绿。macOS job 名称必须是 `desktop (macos-15, aarch64-apple-darwin, app,dmg)`，并上传 `ci-darwin-aarch64-dmg` 与 `ci-darwin-aarch64-app-tarball`。
 3. 按上文创建并推送与应用版本一致的 `v<version>` tag。Release 工作流用既有 Tauri updater 私钥为五个安装包签名，不使用 Apple Developer ID。
 4. 确认草稿里 `latest.json` 的 `darwin-aarch64` 指向 `Strata.Manager_<version>_aarch64.app.tar.gz`。DMG 是手工下载，文件名是 `Strata.Manager_<version>_aarch64.dmg`。
 5. 在发布说明中写明：临时签名、未公证、无 Intel 包、未在 Mac 硬件上做运行验收，以及 Manager 尚未发现上游 Strata Metal 安装。

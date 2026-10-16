@@ -49,10 +49,10 @@ README、官网截图与使用指南描述当前源码功能；安装包包含�
 
 - 手工安装文件为 `Strata.Manager_<version>_aarch64.dmg`。官网下载按钮只在该发布实际包含这个文件时启用。
 - 应用内更新使用 `Strata.Manager_<version>_aarch64.app.tar.gz`。`latest.json` 的 `darwin-aarch64` 指向这份归档，不指向 DMG。
-- CI 在 `macos-14` 上设置 `APPLE_SIGNING_IDENTITY=-` 做临时签名。没有 Apple 开发者证书，因此没有公证，也没有硬化运行时。Gatekeeper 可能拦截。确认文件来自本项目发布页之后，系统仍可能要求移除隔离或以右键打开。这里不把该提示写成已经在 Mac 上验收过的安装步骤。
+- CI 在 `macos-15` 上设置 `APPLE_SIGNING_IDENTITY=-` 做临时签名。没有 Apple 开发者证书，因此没有公证，也没有硬化运行时。Gatekeeper 可能拦截。确认文件来自本项目发布页之后，系统仍可能要求移除隔离或以右键打开。这里不把该提示写成已经在 Mac 上验收过的安装步骤。
 - 不提供 Intel（`x86_64-apple-darwin`）安装包。上游 Strata Metal 面向 Apple Silicon，第二套目标也不是一次低成本编译。
 - Manager 在 macOS 上不会扫描本机进程，也不会安装 Windows x64 引擎 ZIP。上游实验性 Metal 由 [Niko1221/Strata](https://github.com/Niko1221/Strata) 的 `./setup.sh` 从源码构建（见上游 `docs/MAC.md`，产物在 `build-metal/strata`）。本应用尚未把该路径接入安装发现。
-- 应用 `Info.plist` 的最低系统版本写成 15.0，与上游 Metal 说明一致。CI 只证明 `macos-14` runner 能编译并打出安装包，不证明在 Mac 硬件上能启动、发现引擎或完成推理。
+- 应用 `Info.plist` 的最低系统版本写成 15.0，与上游 Metal 说明一致。CI 只证明 `macos-15` runner 能编译并打出安装包，不证明在 Mac 硬件上能启动、发现引擎或完成推理。
 
 ## 从源码体验
 
