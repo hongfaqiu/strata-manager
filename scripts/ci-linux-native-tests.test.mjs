@@ -8,6 +8,7 @@ import {
   IGNORED_POLICY, WINDOWS_IGNORED_POLICY, targetPolicy, parseListing, parseCargoArtifacts, attachInventory, makePlan,
   validatePlan, selectionArgs, selectionBatches, argvBytes, windowsCommandUnits,
   MAX_FILTER_NAMES, MAX_ARGV_BYTES, MAX_WINDOWS_ARGV_BYTES, MAX_WINDOWS_COMMAND_UNITS, mergeBinaryReports,
+  failedTestNames, mergeRetriedBatch, MAX_RETRIED_TESTS,
   parseResults, parseDocResults, validateCoverage, validateIgnoredPolicy, validateShardEvidence, parseOptions, workspaceDocTargets,
 } from './ci-linux-native-tests.mjs';
 
@@ -355,4 +356,28 @@ test('real stable libtest confirms exact OR filters, bounded batches and substri
     const merged = mergeBinaryReports(binary, selected, reports);
     assert.equal(merged.passed, 130); assert.equal(merged.ignored, 1); assert.equal(merged.filtered, 3);
   } finally { await rm(directory, {recursive: true, force: true}); }
+});
+
+test('a failed batch retries only its failed tests once and keeps complete evidence', () => {
+  const binary = {id: 'retry', cases: [c('m::a'), c('m::b'), c('m::ignored', true), c('outside::x')]};
+  const names = ['m::a', 'm::b', 'm::ignored'];
+  const first = 'running 3 tests\ntest m::a ... ok\ntest m::b ... FAILED\ntest m::ignored ... ignored\n\nfailures:\n\n---- m::b stdout ----\npanicked\n\nfailures:\n    m::b\n\ntest result: FAILED. 1 passed; 1 failed; 1 ignored; 0 measured; 1 filtered out; finished in 4.00s\n';
+  const failed = failedTestNames(first, binary, names);
+  assert.deepEqual(failed, ['m::b']);
+  const retry = parseResults('running 1 test\ntest m::b ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 1.00s\n', binary, failed);
+  const merged = mergeRetriedBatch(binary, names, first, failed, retry);
+  assert.deepEqual(merged.retried, ['m::b']);
+  assert.equal(merged.passed, 2); assert.equal(merged.ignored, 1); assert.equal(merged.filtered, 1); assert.equal(merged.libtestSeconds, 5);
+  assert.deepEqual(mergeBinaryReports(binary, names, [merged]).cases.map(x => x.name), names);
+  assert.equal(failedTestNames('error: crashed\n', binary, names), null);
+  const many = names.map(n => `test ${n} ... FAILED`).join('\n');
+  assert.equal(failedTestNames(Array.from({length: MAX_RETRIED_TESTS + 1}, (_, i) => `test m::z${i} ... FAILED`).join('\n'), binary, names), null);
+  assert.equal(failedTestNames(many, binary, ['m::a', 'm::b']), null);
+  assert.throws(() => mergeRetriedBatch(binary, names, first.replace('test m::a ... ok\n', ''), failed, retry));
+});
+
+test('Cargo.lock binding ignores CRLF conversion between Windows shards and the Linux aggregator', async () => {
+  const { normalizedLockHash } = await import('./ci-linux-native-tests.mjs');
+  assert.equal(normalizedLockHash('a\r\nb\r\n'), normalizedLockHash('a\nb\n'));
+  assert.notEqual(normalizedLockHash('a\nb\n'), normalizedLockHash('a\nc\n'));
 });

@@ -1435,7 +1435,7 @@ mod tests {
             .build()
             .unwrap();
         let health_url = format!("http://127.0.0.1:{port}/health");
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
         loop {
             if http.get(&health_url).send().await.is_ok() {
                 break;

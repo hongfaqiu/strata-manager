@@ -108,6 +108,11 @@ jobs:
             if [[ "$status" == success ]]; then break; fi
             if [[ "$status" == pending ]]; then
               export CI_RUN_ID="$run_id"
+            elif [[ "$status" == failed && "$VALIDATE_ONLY" != true ]]; then
+              # Keep waiting on the same run: re-running its failed jobs makes it
+              # pending again, and the release continues without a new dispatch.
+              export CI_RUN_ID="$run_id"
+              echo "::warning::Same-source CI run $run_id failed; waiting for it to be re-run (gh run rerun $run_id --failed)."
             elif [[ "$status" == missing && "$dispatched" == false && "$VALIDATE_ONLY" != true && -z "$CI_RUN_ID" ]]; then
               # Dispatch by immutable tag; resolve checks its exact SHA again.
               gh workflow run ci.yml --repo "$GH_REPO" --ref "$RELEASE_TAG"

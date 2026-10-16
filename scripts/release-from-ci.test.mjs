@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import {
-  CI_PROTOCOL, REPOSITORY, COMMON_GATES, PLATFORM_GATES, SHARD_GATES, WINDOWS_SHARD_GATES, createPlan, assetNames,
+  CI_PROTOCOL, REPOSITORY, COMMON_GATES, COVERAGE_JOB, COVERAGE_GATES, PLATFORM_GATES, SHARD_GATES, WINDOWS_SHARD_GATES, createPlan, assetNames,
   validateSourceProtocol, validateCiEvidence, validateInstallerEntries, validateLiveWriters,
   validateLatestManifest, validateReleaseInventory, validateReleaseMetadata, draftMetadataPayload, creationBranch,
   requireSourceRelease, validatePreparedRecord, readPrepared,
@@ -87,6 +87,7 @@ function ciFixture(p = plan, runId = 123) {
     ...[0, 1, 2].map(i => job('Linux native shard (' + i + '/3)', SHARD_GATES, 20 + i)),
     ...[0, 1, 2].map(i => job('Windows native shard (' + i + '/3)', WINDOWS_SHARD_GATES, 30 + i)),
     ...observerJobs.map((name, i) => job(name, observerGates, 40 + i)),
+    job(COVERAGE_JOB, COVERAGE_GATES, 50),
   ];
   if (p.version === '0.1.2') jobs[0].steps.push(...[
     'Verify the signed beta.2 installer for the first stable upgrade',
@@ -120,7 +121,7 @@ test('source protocol explicitly rejects old fixed release and missing CI marker
   const helper = "export const CI_PROTOCOL = '" + CI_PROTOCOL + "';";
   const ci = 'name: Reusable release CI protocol\nrun: node scripts/release-from-ci.mjs protocol';
   assert.equal(validateSourceProtocol(helper, ci), true);
-  assert.equal(CI_PROTOCOL, 'strata-release-ci/v2');
+  assert.equal(CI_PROTOCOL, 'strata-release-ci/v3');
   assert.throws(() => validateSourceProtocol("export const CI_PROTOCOL = 'strata-release-ci/v1';", ci), /protocol/);
   assert.throws(() => validateSourceProtocol('export const PLAN = {}', ci), /protocol/);
   assert.throws(() => validateSourceProtocol(helper, 'node scripts/release-check.mjs'), /protocol/);
@@ -253,14 +254,19 @@ for (const shard of [0, 1, 2]) {
     }
   });
 }
-test('Windows wait, current-attempt download and aggregate cannot be skipped after installers exist', () => {
-  for (const name of PLATFORM_GATES.windows.slice(0, 3)) for (const state of ['missing', 'duplicate', 'skipped', 'failure']) {
-    const f = ciFixture(); const steps = f.jobs[0].steps;
+test('separate coverage job: current-attempt downloads and both aggregates cannot be skipped', () => {
+  assert.equal(PLATFORM_GATES.windows.some(name => /Wait for/.test(name)), false);
+  for (const name of COVERAGE_GATES) for (const state of ['missing', 'duplicate', 'skipped', 'failure']) {
+    const f = ciFixture(); const steps = f.jobs.find(job => job.name === COVERAGE_JOB).steps;
     const index = steps.findIndex(step => step.name === name);
     if (state === 'missing') steps.splice(index, 1);
     else if (state === 'duplicate') steps.push(clone(steps[index]));
     else steps[index].conclusion = state;
-    assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, plan), /CI gate/);
+    assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, plan), /coverage gate/);
+  }
+  for (const mutate of [f => f.jobs.pop(), f => { f.jobs.at(-1).conclusion = 'failure'; }, f => { f.jobs.at(-1).name = 'Unreviewed coverage'; }]) {
+    const f = ciFixture(); mutate(f);
+    assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, plan));
   }
 });
 test('old eight-job CI without observer compatibility evidence is never reusable', () => {
@@ -451,8 +457,12 @@ test('resolver reuses a successful CI, reports same-source pending and refuses e
   assert.deepEqual(await findReusableCi(plan, { fetchJson: fakeApi([f]) }), { status: 'pending', runId: 123 });
   assert.deepEqual(await findReusableCi(plan, { runId: 123, fetchJson: fakeApi([f]) }), { status: 'pending', runId: 123 });
   f.run.status = 'completed'; f.run.conclusion = 'failure';
-  assert.deepEqual(await findReusableCi(plan, { fetchJson: fakeApi([f]) }), { status: 'missing' });
-  await assert.rejects(findReusableCi(plan, { runId: 123, fetchJson: fakeApi([f]) }));
+  // A failed same-source run is reported so the release waits for its re-run instead of failing or dispatching a duplicate.
+  assert.deepEqual(await findReusableCi(plan, { fetchJson: fakeApi([f]) }), { status: 'failed', runId: 123 });
+  assert.deepEqual(await findReusableCi(plan, { runId: 123, fetchJson: fakeApi([f]) }), { status: 'failed', runId: 123, conclusion: 'failure', attempt: 2 });
+  f.run.status = 'in_progress'; f.run.conclusion = null; f.run.run_attempt = 3;
+  assert.deepEqual(await findReusableCi(plan, { runId: 123, fetchJson: fakeApi([f]) }), { status: 'pending', runId: 123 });
+  f.run.status = 'completed'; f.run.conclusion = 'failure'; f.run.run_attempt = 2;
   f.run.head_sha = 'b'.repeat(40);
   await assert.rejects(findReusableCi(plan, { runId: 123, fetchJson: fakeApi([f]) }));
 });

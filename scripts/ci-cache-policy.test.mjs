@@ -81,7 +81,7 @@ function validateSave(value, restoreOnlyAllowed) {
   }
 }
 
-function validateWorkflow(source, {restoreOnlyJobs = [], forbidRustCache = false, requiredCacheJobs} = {}) {
+function validateWorkflow(source, {restoreOnlyJobs = [], testCacheJobs = [], forbidRustCache = false, requiredCacheJobs} = {}) {
   const lines = source.replaceAll('\r\n', '\n').split('\n');
   const global = mapping(lines, 'env', 0); let caches = 0; const cacheJobs = [];
   const jobs = lines.flatMap((line, index) => /^ {2}[A-Za-z0-9_-]+:$/.test(line) && index > lines.indexOf('jobs:') ? [index] : []);
@@ -103,6 +103,9 @@ function validateWorkflow(source, {restoreOnlyJobs = [], forbidRustCache = false
       assert.notEqual(inputs.get('add-rust-environment-hash-key'), 'false', 'Profile and Rust environment must remain part of the key.');
       assert.ok(/\$\{\{\s*matrix\.target\s*\}\}|x86_64-(?:pc-windows-msvc|unknown-linux-gnu)/.test(inputs.get('shared-key') ?? ''), 'Cache keys must distinguish Rust targets.');
       if (restoreOnlyJobs.includes(jobName)) assert.equal(inputs.get('save-if'), 'false', 'Native shards must not compete to save the shared cache.');
+      // Shards build the test profile, so they own a separate key and never overwrite the desktop dev/release cache.
+      const testKey = /^strata-native-test-/.test(inputs.get('shared-key') ?? '');
+      assert.equal(testKey, testCacheJobs.includes(jobName), 'Only native shards may use (and must use) the separate test-profile cache key.');
       validateSave(inputs.get('save-if'), restoreOnlyJobs.includes(jobName));
       assert.equal(env.get('CARGO_TARGET_DIR'), targetDir, 'Compile and cache target paths must agree.');
       for (const profile of ['DEV', 'TEST']) assert.equal(env.get(`CARGO_PROFILE_${profile}_DEBUG`), '0', 'Native debug info policy must be explicit.');
@@ -135,6 +138,14 @@ const fixture = `jobs:
           cache-all-crates: false
           save-if: ${trusted}
 `;
+
+test('native shards save only a separate trusted test-profile key', () => {
+  const shard = fixture.replace('  desktop:', '  native-linux:').replace('strata-native-${{', 'strata-native-test-${{');
+  validateWorkflow(shard, {testCacheJobs: ['native-linux']});
+  assert.throws(() => validateWorkflow(shard.replace(trusted, 'true'), {testCacheJobs: ['native-linux']}));
+  assert.throws(() => validateWorkflow(fixture.replace('  desktop:', '  native-linux:'), {testCacheJobs: ['native-linux']}), /test-profile cache key/);
+  assert.throws(() => validateWorkflow(shard.replace('  native-linux:', '  desktop:')), /test-profile cache key/);
+});
 
 test('cache-policy validator accepts trusted dependency caches and restore-only native shards', () => {
   validateWorkflow(fixture);
@@ -170,7 +181,7 @@ for (const [name, mutate] of [
 
 test('CI workflow preserves the native cache policy', async () => {
   validateWorkflow(await readFile(resolve(root, '.github/workflows/ci.yml'), 'utf8'), {
-    restoreOnlyJobs: ['native-linux', 'native-windows'], requiredCacheJobs: ['desktop', 'native-linux', 'native-windows'],
+    testCacheJobs: ['native-linux', 'native-windows'], requiredCacheJobs: ['desktop', 'native-linux', 'native-windows'],
   });
 });
 test('cache job inventory refuses missing, duplicate and additional cache writers', () => {
