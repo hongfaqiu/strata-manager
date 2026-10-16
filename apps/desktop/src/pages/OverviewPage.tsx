@@ -16,6 +16,8 @@ interface OverviewPageProps {
   onNavigate:(page:'monitoring'|'config'|'tasks'|'requests'|'profiles'|'environment')=>void;
   onImages?:()=>void;
   onUsage?:()=>void;
+  /** DEV draft-only: one-click service ops and profile switch for ?overviewDraft=g|h|i. */
+  draftOps?:{profiles:{id:string;name:string;active:boolean}[];onSelect:(id:string)=>void;disabled?:boolean;onStart?:()=>void;onStop?:()=>void;onRestart?:()=>void;onUnload?:()=>void;onLoad?:()=>void};
   startupModel?:{name:string;configPath:string;lastActivatedAt?:number;onStart:()=>void};
   hasRuntime?:boolean;runtimeNeedsRepair?:boolean;setupLoading?:boolean;setupError?:string;startupBusy?:boolean;startupDisabled?:boolean;
 }

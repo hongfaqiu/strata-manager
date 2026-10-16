@@ -739,11 +739,11 @@ export function App() {
   const overviewSetupError = discoveredCandidates.error ?? overviewRuntime.error ?? installationDetails.error;
   const overviewMock = overviewMockEnabled() ? buildOverviewMock() : null;
   const overviewProfile = overviewMock?.profile ?? profile;
-  const overviewHealth = overviewMock?.health ?? healthData;
-  const overviewMetric = overviewMock?.metric ?? metric;
+  const overviewHealth = overviewMock ? (overviewMock.stopped ? {} : overviewMock.health) : healthData;
+  const overviewMetric = overviewMock ? (overviewMock.stopped ? undefined : overviewMock.metric) : metric;
   const overviewProcess = overviewMock?.process ?? processStatus;
   const overviewTasks = overviewMock?.tasks ?? (tasks.data ?? []);
-  const overviewOnline = overviewMock ? true : online;
+  const overviewOnline = overviewMock ? overviewMock.online : online;
   const overviewConnecting = overviewMock ? false : connecting;
   const overviewDesktop = overviewMock ? true : desktop;
   const overviewBackground = overviewMock?.backgroundHealth ?? (profile ? supervisor.data?.health?.[profile.id] : undefined);
@@ -757,7 +757,14 @@ export function App() {
     startupModel={overviewModel&&overviewStartup?{name:overviewModel.name,configPath:overviewModel.configPath,lastActivatedAt:overviewStartup.lastActivatedAt,onStart:()=>void act('overviewStart',async()=>{if(overviewStartup.profile)await activateLocal(overviewStartup.profile);else if(overviewStartup.candidate)await prepareImported(overviewStartup.candidate,'overview');},'success')}:undefined}
     hasRuntime={hasOverviewRuntime} runtimeNeedsRepair={overviewNeedsRepair} setupLoading={desktop&&(discoveredCandidates.isPending||overviewRuntime.isPending||installationDetails.isPending)}
     setupError={overviewSetupError?errorText(overviewSetupError):undefined} startupBusy={busy==='overviewStart'||!!localProgress} startupDisabled={processUnverified||!!busy||inferenceBusy||!!tasks.data?.some(task=>task.state==='running'&&task.kind.includes('update'))}
-    onCopy={content=>void copy(content)} onUsage={()=>go('usage')} onImages={desktop&&profile?.configPath&&!busy&&!inferenceBusy&&!localProgress?()=>setModal({kind:'vision',profile}):undefined}
+    onCopy={content=>void copy(content)} draftOps={overviewMock ? { profiles: overviewMock.profiles.map(item=>({id:item.id,name:item.name,active:item.id===overviewMock.profile.id})), onSelect:()=>{}, ...(overviewMock.stopped ? { onStart:()=>{} } : { onStop:()=>{}, onRestart:()=>{}, onUnload:()=>{} }) } : {
+      profiles: profiles.map(item=>({id:item.id,name:item.name,active:item.id===activeId})), onSelect:(id:string)=>setActiveId(id), disabled: !!busy || !!localProgress || inferenceBusy,
+      onStart: profile?.managed && processStatus?.running !== true ? ()=>void act('start',()=>activateLocal(profile),'success') : undefined,
+      onStop: profile?.managed && processStatus?.running === true && processStatus.owned === true ? ()=>void act('stop',()=>stopManagedService(activeId),'success') : undefined,
+      onRestart: profile?.managed && processStatus?.running === true && processStatus.owned === true ? ()=>void act('restart',()=>core.restartService(profile),'success') : undefined,
+      onUnload: loaded && profile ? ()=>void act('unload',()=>core.request(profile,'/unload','POST',{}),'success') : undefined,
+      onLoad: online && healthData.loaded === false && profile ? ()=>void act('load',()=>core.request(profile,'/load','POST',{}),'success') : undefined }}
+    onUsage={()=>go('usage')} onImages={desktop&&profile?.configPath&&!busy&&!inferenceBusy&&!localProgress?()=>setModal({kind:'vision',profile}):undefined}
     stateLabel={serviceState} onRefresh={()=>void query.invalidateQueries()} onCreateProfile={()=>go('models')} onChat={()=>conversation?go('chat'):addConversation()} onNavigate={go}/>;
 
   const operateService = async (action: () => Promise<unknown>) => { await action(); await refreshLocalProfiles(); await query.invalidateQueries(); notify(t('success')); };

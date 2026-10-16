@@ -15,14 +15,14 @@ import type {
   TaskStatus,
 } from '@strata-manager/core';
 
-export type OverviewMockState = 'idle' | 'generating';
+export type OverviewMockState = 'idle' | 'generating' | 'stopped';
 
 export function overviewMockEnabled(): boolean {
   if (typeof import.meta !== 'undefined' && import.meta.env?.DEV !== true) return false;
   if (typeof window === 'undefined') return false;
   try {
     const q = new URLSearchParams(window.location.search).get('mockData');
-    if (q === '1' || q === 'idle' || q === 'generating') return true;
+    if (q === '1' || q === 'idle' || q === 'generating' || q === 'stopped') return true;
     if (/(?:^|[?#&])mockData(?:=1|=idle|=generating)?(?:&|$)/.test(window.location.hash)) return true;
     const stored = window.localStorage.getItem('mockData');
     if (stored === '1' || stored === 'idle' || stored === 'generating') return true;
@@ -35,6 +35,7 @@ export function overviewMockState(): OverviewMockState {
   try {
     const q = new URLSearchParams(window.location.search).get('mockData');
     if (q === 'generating') return 'generating';
+    if (q === 'stopped') return 'stopped';
     if (/(?:^|[?#&])mockData=generating(?:&|$)/.test(window.location.hash)) return 'generating';
     if (window.localStorage.getItem('mockData') === 'generating') return 'generating';
   } catch { /* ignore */ }
@@ -92,7 +93,7 @@ export function buildOverviewMock(state: OverviewMockState = overviewMockState()
   };
 
   const process: ProcessStatus = {
-    running: true,
+    running: state !== 'stopped',
     owned: true,
     pid: 42817,
     startedAt: Date.now() - 3_600_000,
@@ -279,8 +280,14 @@ export function buildOverviewMock(state: OverviewMockState = overviewMockState()
     process,
     tasks,
     backgroundHealth,
-    online: true,
+    online: state !== 'stopped',
     connecting: false,
+    stopped: state === 'stopped',
+    profiles: [
+      { id: profile.id, name: profile.name, configPath: profile.configPath, managed: true },
+      { id: 'mock-profile-coder', name: 'Qwen3-Coder-30B-A3B', configPath: '/home/dev/strata/configs/qwen3-coder.yaml', managed: true },
+      { id: 'mock-profile-vl', name: 'Qwen2.5-VL-7B · 图像', configPath: '/home/dev/strata/configs/qwen-vl.yaml', managed: true },
+    ],
     desktop: true,
     tasksLoading: false,
     usageSummary,
