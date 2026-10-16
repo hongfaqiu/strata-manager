@@ -527,3 +527,16 @@ test('the inventory is always three installers, three signatures and two metadat
   assert.equal(assetNames(plan).length, 8);
   assert.equal(new Set(assetNames(plan)).size, 8);
 });
+
+test('CI evidence accepts a successful change-detection gate job and rejects a failed or duplicated one', () => {
+  const gate = (f, conclusion = 'success') => ({ ...f.jobs[2], id: 9, name: 'Detect app code changes', conclusion, steps: [] });
+  const ok = ciFixture();
+  ok.jobs.push(gate(ok));
+  assert.doesNotThrow(() => validateCiEvidence(ok.run, ok.jobs, ok.artifacts, plan));
+  const failed = ciFixture();
+  failed.jobs.push(gate(failed, 'failure'));
+  assert.throws(() => validateCiEvidence(failed.run, failed.jobs, failed.artifacts, plan), /Detect app code changes/);
+  const dup = ciFixture();
+  dup.jobs.push(gate(dup), { ...gate(dup), id: 8 });
+  assert.throws(() => validateCiEvidence(dup.run, dup.jobs, dup.artifacts, plan), /Duplicate CI job/);
+});
