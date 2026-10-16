@@ -93,7 +93,7 @@ export function OverviewDashboard(props: OverviewDashboardProps) {
   const recent = [...(metric?.requests ?? [])].filter(r => num(r.time) !== null).sort((a, b) => (a.time as number) - (b.time as number)).slice(-16);
   const speeds = recent.map(r => num(r.decode_tok_s));
   const speed = generating ? metric?.decodeTokS ?? null : num(recent.at(-1)?.decode_tok_s);
-  const http = usage.summary?.http, p50 = num(usage.summary?.decodeTokS.p50), ttft = num(usage.summary?.ttftS.p50);
+  const http = usage.summary?.http, p50 = num(usage.summary?.decodeTokS?.p50), ttft = num(usage.summary?.ttftS?.p50);
   const failed = (num(http?.failed) ?? 0) + (num(http?.interrupted) ?? 0), rate = num(http?.successRate);
   const queued = num(metric?.queued) ?? 0, active = num(metric?.running) ?? 0;
   const truncated = recent.filter(r => r.finish === 'length').length;
