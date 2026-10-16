@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "appVersion": "0.1.11",
   "releaseStatus": "unreleased",
-  "capturedAt": "2026-10-16T16:48:08.867Z",
+  "capturedAt": "2026-10-16T16:51:36.854Z",
   "status": "passed",
   "source": "Real App components via daily-experience-app.html; API usage is a standalone real ApiUsagePage fixture.",
   "scope": "Synthetic in-memory native data, service capabilities, SSE answers, history, GPU/RAM and statistics. No real model, supervisor, credentials, installer, updater, benchmark or OS mutation.",
@@ -30,13 +30,13 @@
   },
   "capabilitiesApprovedByFinishingOwner": true,
   "sourceProvenance": {
-    "captureHEAD": "5992bdde761428b00248a5bf943c901195ac6141",
+    "captureHEAD": "9989fa30075b159963455d3d5699803470a719f4",
     "captureHEADIsFinalReleaseSHA": false,
     "hashScope": "All files under apps/desktop/src, packages/core/src, desktop native src/capabilities, plus the current CHANGELOG.md read by App, package/lock/config files; tracked and untracked files included. Helpers independently hashed. Paths and raw-file SHA256 values sorted and NUL-delimited.",
     "before": {
-      "head": "5992bdde761428b00248a5bf943c901195ac6141",
+      "head": "9989fa30075b159963455d3d5699803470a719f4",
       "sourceTreeSha256": "5ed07c6b97c92fb50a2eec93397a0c51a974b0dfee379bf6dd3ad4ff8cfb5aac",
-      "helperTreeSha256": "9c6d084b65e89af1d50526a25ac75262ca7247af647d7b4018ed6f4dfa4ad266",
+      "helperTreeSha256": "a70cb9bb172e0586af95267a5c2baae732e2651cfaf11b20f06a1148baf0a028",
       "sources": [
         {
           "file": "CHANGELOG.md",
@@ -1190,7 +1190,7 @@
         },
         {
           "file": "apps/desktop/tests/optimization/daily-experience-native-fixture.js",
-          "sha256": "24da9e911c7b98888df9efc587eeb49d9db2be7c0512eabdf811d4ae5f1e0cc4"
+          "sha256": "eaddeaef8aedf9ea32dacf52a71ec16989b9d6d056811c8ffb78e965d4f03f5b"
         },
         {
           "file": "apps/desktop/tests/optimization/entry.tsx",
@@ -1207,9 +1207,9 @@
       ]
     },
     "after": {
-      "head": "5992bdde761428b00248a5bf943c901195ac6141",
+      "head": "9989fa30075b159963455d3d5699803470a719f4",
       "sourceTreeSha256": "5ed07c6b97c92fb50a2eec93397a0c51a974b0dfee379bf6dd3ad4ff8cfb5aac",
-      "helperTreeSha256": "9c6d084b65e89af1d50526a25ac75262ca7247af647d7b4018ed6f4dfa4ad266",
+      "helperTreeSha256": "a70cb9bb172e0586af95267a5c2baae732e2651cfaf11b20f06a1148baf0a028",
       "sources": [
         {
           "file": "CHANGELOG.md",
@@ -2363,7 +2363,7 @@
         },
         {
           "file": "apps/desktop/tests/optimization/daily-experience-native-fixture.js",
-          "sha256": "24da9e911c7b98888df9efc587eeb49d9db2be7c0512eabdf811d4ae5f1e0cc4"
+          "sha256": "eaddeaef8aedf9ea32dacf52a71ec16989b9d6d056811c8ffb78e965d4f03f5b"
         },
         {
           "file": "apps/desktop/tests/optimization/entry.tsx",
@@ -2414,14 +2414,14 @@
       },
       "nativeCallCount": 243,
       "png": "output/playwright/daily-experience-capture/model-download-list.zh.png",
-      "pngSha256": "cafdecb8880709e52091525c370f92bf614b0a0d6b7a9d417c3cc5d66bc0f89b",
+      "pngSha256": "55b7897628eb43631c7ff5b43f399bfcfcb42c34005d03cbda7acaea24f4c9de",
       "conversion": {
         "width": 2880,
         "height": 2400,
         "pixelsEqual": true
       },
-      "webpSha256": "70cee9568398ba368082116f85f255d8afaf9b00530c2e7c50e336ab662b045c",
-      "bytes": 141162,
+      "webpSha256": "90c068997e9f9b12925759278724ec48d7237f8e17c67fafc37d68c6ceddcfcd",
+      "bytes": 143090,
       "file": "docs/screenshots/daily-experience/model-download-list.zh.webp"
     },
     {
@@ -2454,16 +2454,16 @@
         "theme": "light",
         "language": "en"
       },
-      "nativeCallCount": 275,
+      "nativeCallCount": 243,
       "png": "output/playwright/daily-experience-capture/model-download-list.en.png",
-      "pngSha256": "a661d480a90eeaf07d529cb30e53169a4ae6a37cfc4a30cca8bebb78d036f2c3",
+      "pngSha256": "9b6d18d056472e582806b83327ee7cd767112e798bf3218f660361bc61d3fe2c",
       "conversion": {
         "width": 2880,
         "height": 2400,
         "pixelsEqual": true
       },
-      "webpSha256": "6e8be9555cb8d66f9d2a52564d273f00e18841c440b829d7e06cccae0aa85292",
-      "bytes": 139088,
+      "webpSha256": "a658b4902a75e0e89032a288e4283384d2fa783e565d8395a188913a33f3a9ad",
+      "bytes": 140618,
       "file": "docs/screenshots/daily-experience/model-download-list.en.webp"
     },
     {
@@ -2498,14 +2498,14 @@
       },
       "nativeCallCount": 251,
       "png": "output/playwright/daily-experience-capture/model-download-detail.zh.png",
-      "pngSha256": "148110b3c1885e088a28fe112faeab6ac874c22d0597e59c596955505b68ebff",
+      "pngSha256": "df8ce9bed3dad8b55bb62d22e5c7f5b4ce1dff008d0b05fd4dcdbe5df009d001",
       "conversion": {
         "width": 2880,
         "height": 2400,
         "pixelsEqual": true
       },
-      "webpSha256": "a19247ac54a3f54db3ca9cf85919b92beee89daadb68474a6778ac91fcb4c386",
-      "bytes": 141164,
+      "webpSha256": "16a56a92564c3897c3ba42f0d80e7ce0384e8d8920de9920d6165b9b02d5291d",
+      "bytes": 142794,
       "file": "docs/screenshots/daily-experience/model-download-detail.zh.webp"
     },
     {
@@ -2528,7 +2528,7 @@
       "resourceVisibility": {
         "top": 744.734375,
         "bottom": 903.734375,
-        "footerTop": 919.734375,
+        "footerTop": 929.296875,
         "fullyAboveFooter": true
       },
       "pageLayout": {
@@ -2540,14 +2540,14 @@
       },
       "nativeCallCount": 283,
       "png": "output/playwright/daily-experience-capture/model-download-detail.en.png",
-      "pngSha256": "0efb64b863db423b64031b9b3f7c4aab4adacbf5e58abd4a3a043a650eaa681e",
+      "pngSha256": "098345b9afe9b0ab0955b8d009d8c5af147db94b88c80ed9a670ad0586da8ba7",
       "conversion": {
         "width": 2880,
         "height": 2400,
         "pixelsEqual": true
       },
-      "webpSha256": "25c5cfef320b74e0f4013fc7834df113b4eb0dfb31b43e2544148e256203dad0",
-      "bytes": 138966,
+      "webpSha256": "47934ab61df1d6ccebc634332d1e6db6b02729bfbf5e24d149d372d87c2bee78",
+      "bytes": 140034,
       "file": "docs/screenshots/daily-experience/model-download-detail.en.webp"
     },
     {
@@ -2648,14 +2648,14 @@
       },
       "nativeCallCount": 300,
       "png": "output/playwright/daily-experience-capture/service-capabilities.zh.png",
-      "pngSha256": "e9a44ad65243d1fa69f8d6809975fda1f149c9ccd0ac35797a969e2f436f4cc6",
+      "pngSha256": "c0704fe8c401e4596958ed5f6682a9a1cf0e17eaa77510a140c790f4c917d039",
       "conversion": {
         "width": 2880,
         "height": 1920,
         "pixelsEqual": true
       },
-      "webpSha256": "98a1ae86efd30110e3b3f388fb0d19db669bc2ed4d25ca0266880a7790a3d0f6",
-      "bytes": 82364,
+      "webpSha256": "083b02b617fb70109d35eba9925c85c8a296c565e6053589f5eec2f5b0e66556",
+      "bytes": 82196,
       "file": "docs/screenshots/daily-experience/service-capabilities.zh.webp"
     },
     {
@@ -2682,16 +2682,16 @@
         "theme": "light",
         "language": "en"
       },
-      "nativeCallCount": 332,
+      "nativeCallCount": 300,
       "png": "output/playwright/daily-experience-capture/service-capabilities.en.png",
-      "pngSha256": "0b93b8c338da925ab76fd2c12fc4797bb46f072b43e714b5d9df6e6bc0f92573",
+      "pngSha256": "4962263df68ed1bc2fbe54ffbf82720ad36b7ff50da3564c29cf1f423a1a0ce3",
       "conversion": {
         "width": 2880,
         "height": 1920,
         "pixelsEqual": true
       },
-      "webpSha256": "1aefb758f3d589e8be7dd5a7024454c0884989d46acb8453716b3ce7e4b53d81",
-      "bytes": 80576,
+      "webpSha256": "e48346e51f3b82e50c3037f535bdff1b723ceac9024eb122250a5b7489fae9b9",
+      "bytes": 80344,
       "file": "docs/screenshots/daily-experience/service-capabilities.en.webp"
     },
     {
@@ -2720,14 +2720,14 @@
       },
       "nativeCallCount": 262,
       "png": "output/playwright/daily-experience-capture/chat-execution.zh.png",
-      "pngSha256": "31b1eaa95bb9f959db58ba7973c224928de06330c7a7cb480db7803c258e66bf",
+      "pngSha256": "2a768b6c988af9f9fac9fb3edb9bd38cbf4d3ceaa2eea21f1a853fbf166b948d",
       "conversion": {
         "width": 2880,
         "height": 1920,
         "pixelsEqual": true
       },
-      "webpSha256": "aa496ede56f2bcc1188c3c35e17bdb6ea701c52e61aa39127a8406ddbc774d47",
-      "bytes": 74986,
+      "webpSha256": "ca3ba695a31b15b8aa366ed24f7b1dcb9ea8729e70407b113937a5b215a3947b",
+      "bytes": 74426,
       "file": "docs/screenshots/daily-experience/chat-execution.zh.webp"
     },
     {
@@ -2756,14 +2756,14 @@
       },
       "nativeCallCount": 262,
       "png": "output/playwright/daily-experience-capture/chat-execution.en.png",
-      "pngSha256": "f9700bb5e599d674ef093792da837364ef9def785a922e6a6626987a19d8593b",
+      "pngSha256": "2764865dbae0b895ac99385775cb7bc7e58a42367dbd7e78e64d1186245b3995",
       "conversion": {
         "width": 2880,
         "height": 1920,
         "pixelsEqual": true
       },
-      "webpSha256": "d3aaf2b789ec261eae08daf7bbd5b205534a419f0b095f0137676036bc8ccd20",
-      "bytes": 74352,
+      "webpSha256": "07919bbf5ec51b3cd6af0918d6623c93322795e96e7725d89c64c232f4a748d3",
+      "bytes": 73968,
       "file": "docs/screenshots/daily-experience/chat-execution.en.webp"
     },
     {
@@ -2810,14 +2810,14 @@
       },
       "nativeCallCount": 240,
       "png": "output/playwright/daily-experience-capture/history-comparison.zh.png",
-      "pngSha256": "d9730b550c4fc5179287e8cfe41d507b9d07a265bb059cf415de9953d6f791c4",
+      "pngSha256": "12e80b3951c2f2a8caabf892d9db28ea26c2586993b1041aa9b46fbbc168bee0",
       "conversion": {
         "width": 2880,
         "height": 1920,
         "pixelsEqual": true
       },
-      "webpSha256": "6db98783dbcc0dd08a3fa9d13781d6cae57e275dd7dfa959333026212bb996c7",
-      "bytes": 66650,
+      "webpSha256": "3d677d59d75be45a6f5780158dd6ad38652cfdabb29c1137ff6e8ee6ee04aa75",
+      "bytes": 66448,
       "file": "docs/screenshots/daily-experience/history-comparison.zh.webp"
     },
     {
@@ -2864,14 +2864,14 @@
       },
       "nativeCallCount": 240,
       "png": "output/playwright/daily-experience-capture/history-comparison.en.png",
-      "pngSha256": "8fc85e184e02cc11c18b36bc7437d19d2d243458806b4d1d7f36de47648e9e66",
+      "pngSha256": "b77f3077881db79b7fcb4b2d0a7fe4cabad6c92f83c0cef6c3be6b4f02699862",
       "conversion": {
         "width": 2880,
         "height": 1920,
         "pixelsEqual": true
       },
-      "webpSha256": "3d702eb267ee2f52acfe5410d8a6cc7e7e40be7a94927d69ef66dc274d2cb31f",
-      "bytes": 66780,
+      "webpSha256": "6dd43fd9282ab360867b886b98a8f56f4ad8c8578c90de9bde8d0efbf1081c0c",
+      "bytes": 66664,
       "file": "docs/screenshots/daily-experience/history-comparison.en.webp"
     },
     {
@@ -2898,16 +2898,16 @@
         "theme": "light",
         "language": "zh-CN"
       },
-      "nativeCallCount": 263,
+      "nativeCallCount": 231,
       "png": "output/playwright/daily-experience-capture/startup-diagnostic.zh.png",
-      "pngSha256": "417e0cf25e41c6620e11019bc15d78860b19c3c026aa4657e4110593071d3906",
+      "pngSha256": "77a4d09e61cddef76f420838f14387375e12550bcecff02653966576b1cdff1a",
       "conversion": {
         "width": 2880,
         "height": 1920,
         "pixelsEqual": true
       },
-      "webpSha256": "436a39589dba1ddc606cb07b6ae3d122cd355cfa7d572740562c8e47b1c5a3c6",
-      "bytes": 94914,
+      "webpSha256": "5434aa7b58adaa079e54ccf2db083366f1aa2e74dc8d14e9a09d4c4d4a05fbe2",
+      "bytes": 94534,
       "file": "docs/screenshots/daily-experience/startup-diagnostic.zh.webp"
     },
     {
@@ -2934,16 +2934,16 @@
         "theme": "light",
         "language": "en"
       },
-      "nativeCallCount": 263,
+      "nativeCallCount": 231,
       "png": "output/playwright/daily-experience-capture/startup-diagnostic.en.png",
-      "pngSha256": "9bbf29a36b703a235928b6480412f0de00f76bd9809906cd6744acafe8c803c0",
+      "pngSha256": "01ec8d04edc5597571ee599c4c376daed750cebf12fd32053e2feb299e93c45b",
       "conversion": {
         "width": 2880,
         "height": 1920,
         "pixelsEqual": true
       },
-      "webpSha256": "48034c34f102e05194b0d22c8d39cf6c625c54ba44033d638e1ae82e723b0d94",
-      "bytes": 93170,
+      "webpSha256": "cd72db09da4423c7a3a00c4943801e199be360cf0cb3e4131c4f7c7460512864",
+      "bytes": 92950,
       "file": "docs/screenshots/daily-experience/startup-diagnostic.en.webp"
     },
     {
@@ -2972,14 +2972,14 @@
       },
       "nativeCallCount": 0,
       "png": "output/playwright/daily-experience-capture/api-usage.zh.png",
-      "pngSha256": "3003a6f43bae853bf35ff4af2576012b63d95f440cb2bec5ad21feee43498606",
+      "pngSha256": "d3ba63a1c4effe13beeb2c27a4cc6021a7377e4322bd059b971a8e40ee220924",
       "conversion": {
         "width": 2880,
         "height": 1920,
         "pixelsEqual": true
       },
-      "webpSha256": "2defcb8264a2796d153abbd320b2ca32c00f68b55328117a2a5e62cf0b1a991b",
-      "bytes": 91084,
+      "webpSha256": "34a555f03ece49cc31637bcccfb9275bdb7ae3f745432d149c3ea8a5d4a63ed9",
+      "bytes": 90862,
       "file": "docs/screenshots/daily-experience/api-usage.zh.webp"
     },
     {
@@ -3008,14 +3008,14 @@
       },
       "nativeCallCount": 0,
       "png": "output/playwright/daily-experience-capture/api-usage.en.png",
-      "pngSha256": "5f3e2c252ebbacbcb3b17cb2f5d1ed0a6b81b08f7215940c41b6a7de181e6178",
+      "pngSha256": "34b29f99d1905796b6430a02a1ea285fcfaf6e69bca232a9c9d2952a3eff2672",
       "conversion": {
         "width": 2880,
         "height": 1920,
         "pixelsEqual": true
       },
-      "webpSha256": "2e3d3a86cbbed603fb5c7a71d2ed1c4aab9259e5fd45f0cb8e600980660bf3c9",
-      "bytes": 86602,
+      "webpSha256": "f6c8aef8d113c04da3b91828ed2fbaa556bb65fb3a4860a31cb79d1bb5f66c9b",
+      "bytes": 86728,
       "file": "docs/screenshots/daily-experience/api-usage.en.webp"
     }
   ],
@@ -3044,9 +3044,9 @@
         "theme": "light",
         "language": "zh-CN"
       },
-      "nativeCallCount": 243,
+      "nativeCallCount": 275,
       "png": "output/playwright/daily-experience-capture/qa/model-download-list.zh.light.800.png",
-      "pngSha256": "0557cc785bc67271aa995c4f652a927fd826c4e50e3b82647a91fa19c9929da4"
+      "pngSha256": "e7669f1f6bc62416e6ccc3756d9d1176765dccb2e281ab2f6f5266cd9b699aa5"
     },
     {
       "name": "model-download-list.zh.dark.800",
@@ -3072,9 +3072,9 @@
         "theme": "dark",
         "language": "zh-CN"
       },
-      "nativeCallCount": 275,
+      "nativeCallCount": 243,
       "png": "output/playwright/daily-experience-capture/qa/model-download-list.zh.dark.800.png",
-      "pngSha256": "89551e1c0ca6884408aa1a319a4df15e2e2cbe7214952b8e0122aa4b6eb71e0e"
+      "pngSha256": "ec9f2283182838ba83de3f0e5972598bc21cd1e989ea8271e0ea2d029df5bef9"
     },
     {
       "name": "model-download-list.en.light.800",
@@ -3102,7 +3102,7 @@
       },
       "nativeCallCount": 275,
       "png": "output/playwright/daily-experience-capture/qa/model-download-list.en.light.800.png",
-      "pngSha256": "307e3b21d5c5e53692b43ffa3e7b9305d6e5a8291527484d9d0debc500e01045"
+      "pngSha256": "96c1a1abdc23b0b3ecfa3293312ed2cd0eb3b56495d2f4032687d675c6391ed4"
     },
     {
       "name": "model-download-list.en.dark.800",
@@ -3130,7 +3130,7 @@
       },
       "nativeCallCount": 243,
       "png": "output/playwright/daily-experience-capture/qa/model-download-list.en.dark.800.png",
-      "pngSha256": "fb132d24586947a860bf5c2396928cbcb35152b5d3f9100a42d680e5d86ce6e5"
+      "pngSha256": "ab43c7c9bc8075ddddcc31b55a1f2c8129c3ee963607970fb89750ca299ff16b"
     },
     {
       "name": "model-download-detail.zh.light.800",
@@ -3158,7 +3158,7 @@
       },
       "nativeCallCount": 251,
       "png": "output/playwright/daily-experience-capture/qa/model-download-detail.zh.light.800.png",
-      "pngSha256": "25d8e997c2f75b73b523c999823112fe6ad9cb24189b2677b9cdfc823d89a6ba"
+      "pngSha256": "79a48c88ddb0090f1040b7b1432794198ffdd0ebce149dfc683322c07ccc8740"
     },
     {
       "name": "model-download-detail.zh.dark.800",
@@ -3184,9 +3184,9 @@
         "theme": "dark",
         "language": "zh-CN"
       },
-      "nativeCallCount": 251,
+      "nativeCallCount": 283,
       "png": "output/playwright/daily-experience-capture/qa/model-download-detail.zh.dark.800.png",
-      "pngSha256": "35b3f200ef5e6536543ff99edd452aaa32bdaf3e888b82e3cfa1ededa1aa6cb0"
+      "pngSha256": "e0a5d3d3e37c48c98f53e95cc6f0765f9702658fa9515293ee5cebfcdd75a98f"
     },
     {
       "name": "model-download-detail.en.light.800",
@@ -3212,9 +3212,9 @@
         "theme": "light",
         "language": "en"
       },
-      "nativeCallCount": 251,
+      "nativeCallCount": 283,
       "png": "output/playwright/daily-experience-capture/qa/model-download-detail.en.light.800.png",
-      "pngSha256": "353d267d5a1dd3da1e3b12c701315598daf74a8ea9cbcbfd429d986065246af8"
+      "pngSha256": "4aa2b59eb05ec20ffc0a1f1c0694792957c4f5e5c05fe4d763c11ef1b26c078f"
     },
     {
       "name": "model-download-detail.en.dark.800",
@@ -3242,7 +3242,7 @@
       },
       "nativeCallCount": 251,
       "png": "output/playwright/daily-experience-capture/qa/model-download-detail.en.dark.800.png",
-      "pngSha256": "95598bb79ad55a7d5e01fb57446cd75d1e20ea0a7368705e1b687b05102abe75"
+      "pngSha256": "28863fb1575ec516efef7ae2ac16303827acdbd3192c7debe4b89508d6405a53"
     },
     {
       "name": "api-verification.zh.light.800",
@@ -3354,7 +3354,7 @@
       },
       "nativeCallCount": 326,
       "png": "output/playwright/daily-experience-capture/qa/api-verification.en.dark.800.png",
-      "pngSha256": "c2abdf9db8edd749f32cf157e20d99d48fa85d785ec3e4ac57ae4bed1fa5c74f"
+      "pngSha256": "6e4bafaac8257f20d6b0ccbb18f3edbec5db124afeee4035317eade7073b0fea"
     },
     {
       "name": "service-capabilities.zh.light.800",
@@ -3382,7 +3382,7 @@
       },
       "nativeCallCount": 300,
       "png": "output/playwright/daily-experience-capture/qa/service-capabilities.zh.light.800.png",
-      "pngSha256": "38246faa60a019f6d18910dd4441bcbfcc2b1a7d289f7934354f63dc02c416db"
+      "pngSha256": "394946d40030cdc5d6a9b9a8f4db553cc2167e8a95e075d6fd25d3278530f02a"
     },
     {
       "name": "service-capabilities.zh.dark.800",
@@ -3410,7 +3410,7 @@
       },
       "nativeCallCount": 300,
       "png": "output/playwright/daily-experience-capture/qa/service-capabilities.zh.dark.800.png",
-      "pngSha256": "6d85333e753ef608ef3b026cf07712d698b430f5d73fe56c1580f5b788aac64b"
+      "pngSha256": "d131c4a5ea8125ed6f4190d9806c377376f6b4d0d20688eda2bc40626a3ee48d"
     },
     {
       "name": "service-capabilities.en.light.800",
@@ -3436,9 +3436,9 @@
         "theme": "light",
         "language": "en"
       },
-      "nativeCallCount": 332,
+      "nativeCallCount": 300,
       "png": "output/playwright/daily-experience-capture/qa/service-capabilities.en.light.800.png",
-      "pngSha256": "66e7352c8d7378a8c4b7d365a29c98715ffe7ca8e8710ccc6fc054c73026a669"
+      "pngSha256": "63d4beab8efa16cca4d1eabc117af9b46e838819e3268a7e4a2859f13a889787"
     },
     {
       "name": "service-capabilities.en.dark.800",
@@ -3466,7 +3466,7 @@
       },
       "nativeCallCount": 300,
       "png": "output/playwright/daily-experience-capture/qa/service-capabilities.en.dark.800.png",
-      "pngSha256": "39251104a882aaaea16c83e1aad006166668b926796540e95e10ef09c5607f05"
+      "pngSha256": "e66dc8dfae28f631d0c17465c1925023aaab4a63cdcf030dfb8c63347afb6d02"
     },
     {
       "name": "chat-execution.zh.light.800",
@@ -3494,7 +3494,7 @@
       },
       "nativeCallCount": 262,
       "png": "output/playwright/daily-experience-capture/qa/chat-execution.zh.light.800.png",
-      "pngSha256": "0070503d4f3e70d70e2e48e193a1a2e6328715960b172a98dae8581fffb90879"
+      "pngSha256": "2666df7d2144cb8c1ab827774f71eb33dbbe2ef72cc28b07853ec43f56408d8f"
     },
     {
       "name": "chat-execution.zh.dark.800",
@@ -3520,9 +3520,9 @@
         "theme": "dark",
         "language": "zh-CN"
       },
-      "nativeCallCount": 294,
+      "nativeCallCount": 262,
       "png": "output/playwright/daily-experience-capture/qa/chat-execution.zh.dark.800.png",
-      "pngSha256": "d4f0e1b24c7a60241e7c0465c4a8076b0cb5a6af03240ee1334596f6f4ebdaad"
+      "pngSha256": "9c970b1dc4aacec98a4c509a6375ab927168a09bfdba4149b21a04ab16adcad5"
     },
     {
       "name": "chat-execution.en.light.800",
@@ -3550,7 +3550,7 @@
       },
       "nativeCallCount": 262,
       "png": "output/playwright/daily-experience-capture/qa/chat-execution.en.light.800.png",
-      "pngSha256": "5528beb49387b8f31018c24afb2cff26d4ba787f63165577031e280623caa450"
+      "pngSha256": "a6cc103b79aba77f73836196924ec4fcf8de5f6934551cac56069ea28ed2ee22"
     },
     {
       "name": "chat-execution.en.dark.800",
@@ -3578,7 +3578,7 @@
       },
       "nativeCallCount": 262,
       "png": "output/playwright/daily-experience-capture/qa/chat-execution.en.dark.800.png",
-      "pngSha256": "9f1893e5ba087eb2280f6fc0e0863df91af35ebee940171b1b1c703e8b142457"
+      "pngSha256": "7226e18bc7126c42ecefa3133cfbcbaa48eeaaa37b9b5941f3018b6232dc8027"
     },
     {
       "name": "history-comparison.zh.light.800",
@@ -3624,7 +3624,7 @@
       },
       "nativeCallCount": 240,
       "png": "output/playwright/daily-experience-capture/qa/history-comparison.zh.light.800.png",
-      "pngSha256": "338a868853860bebb55824878d4b499a8a518205a71509c146b0c2d3751a9427"
+      "pngSha256": "6b8a3d38de4b745b86ad5615303fb2e06a0226b5ad0769807bb892636b1326c0"
     },
     {
       "name": "history-comparison.zh.dark.800",
@@ -3670,7 +3670,7 @@
       },
       "nativeCallCount": 240,
       "png": "output/playwright/daily-experience-capture/qa/history-comparison.zh.dark.800.png",
-      "pngSha256": "e99d3bc71c43eace1e3bb16b833bcfddd682c369e88e853a1d20a66e60f567fe"
+      "pngSha256": "4dd0e476f1073d9f2f4a2ffc98baea1ced52efb45f1b520ed474c5cf8f415229"
     },
     {
       "name": "history-comparison.en.light.800",
@@ -3716,7 +3716,7 @@
       },
       "nativeCallCount": 240,
       "png": "output/playwright/daily-experience-capture/qa/history-comparison.en.light.800.png",
-      "pngSha256": "68f9b43e495130b5e41696bc6707b5eb23b138085c81547ccae62e854cea3379"
+      "pngSha256": "0b5efe9b201aa114b54e08b79173bea5fa3f6bfebc04ba18972ba2a0035c30ce"
     },
     {
       "name": "history-comparison.en.dark.800",
@@ -3760,9 +3760,9 @@
         "theme": "dark",
         "language": "en"
       },
-      "nativeCallCount": 240,
+      "nativeCallCount": 272,
       "png": "output/playwright/daily-experience-capture/qa/history-comparison.en.dark.800.png",
-      "pngSha256": "7bf741f155e8e9061e565bafd94a83c3891cf416f28598ba3d2d0a693e177ba8"
+      "pngSha256": "a363f75aaf982cd90a48fd0d2c6b7b3e5a05194f65ab536e7368a31a2f33edda"
     },
     {
       "name": "startup-diagnostic.zh.light.800",
@@ -3788,9 +3788,9 @@
         "theme": "light",
         "language": "zh-CN"
       },
-      "nativeCallCount": 263,
+      "nativeCallCount": 231,
       "png": "output/playwright/daily-experience-capture/qa/startup-diagnostic.zh.light.800.png",
-      "pngSha256": "68d92a3d469fab9337e00af507a6c2f425684435a4364f7197c1ea8c806f501a"
+      "pngSha256": "a3f542306b967b5d15cc99d9b62df4d931304fb3859f98029f1ea23020aebd14"
     },
     {
       "name": "startup-diagnostic.zh.dark.800",
@@ -3818,7 +3818,7 @@
       },
       "nativeCallCount": 263,
       "png": "output/playwright/daily-experience-capture/qa/startup-diagnostic.zh.dark.800.png",
-      "pngSha256": "9760341974a701da171fde813ecb0ccf3b474d1a9b8fd316cf7a1679a85a1b5f"
+      "pngSha256": "436e6f8daa68fa35aa902d608ae0ba04ac7f8a198b09d9865398020f61b3edc1"
     },
     {
       "name": "startup-diagnostic.en.light.800",
@@ -3844,9 +3844,9 @@
         "theme": "light",
         "language": "en"
       },
-      "nativeCallCount": 231,
+      "nativeCallCount": 263,
       "png": "output/playwright/daily-experience-capture/qa/startup-diagnostic.en.light.800.png",
-      "pngSha256": "d92947dc0e04b9a630937d8ef61f8bf8d49a3654f04dda66efe06f590732a02a"
+      "pngSha256": "da6c36c7c6e22dcd6ba3d9464b34a3ef56402ff92400137184cad6f0f7980ab7"
     },
     {
       "name": "startup-diagnostic.en.dark.800",
@@ -3874,7 +3874,7 @@
       },
       "nativeCallCount": 231,
       "png": "output/playwright/daily-experience-capture/qa/startup-diagnostic.en.dark.800.png",
-      "pngSha256": "173a463bdf57f471235282c589fafbe82b4068c16927d1c73da7759033fe7bfa"
+      "pngSha256": "784187610b19c0992c4b3a399ea01a7c2ec9e67896c66e59b3414a8e2fe4db33"
     },
     {
       "name": "api-usage.zh.light.800",
@@ -3902,7 +3902,7 @@
       },
       "nativeCallCount": 0,
       "png": "output/playwright/daily-experience-capture/qa/api-usage.zh.light.800.png",
-      "pngSha256": "3f058e33d2b8fe0b295b0981b2915706856e6227eac99052377bf3b502ed6294"
+      "pngSha256": "220a42a0608ef273229fc775247188aa2dafe007dbe64d55b94e7d710791c0d7"
     },
     {
       "name": "api-usage.zh.dark.800",
@@ -3930,7 +3930,7 @@
       },
       "nativeCallCount": 0,
       "png": "output/playwright/daily-experience-capture/qa/api-usage.zh.dark.800.png",
-      "pngSha256": "0346ad41bd2fecc5cd3119703e1df05aa36a438a1c7c5e34b7cd643e07fa560d"
+      "pngSha256": "786142168893710590a500e45bd2e30b62d2d459745de74a8f49d8af83619af4"
     },
     {
       "name": "api-usage.en.light.800",
@@ -3958,7 +3958,7 @@
       },
       "nativeCallCount": 0,
       "png": "output/playwright/daily-experience-capture/qa/api-usage.en.light.800.png",
-      "pngSha256": "867679913f7208e3ff0a9a5866811411b31f2734335bff88d42f35152069c57b"
+      "pngSha256": "0faccc127c2369cb61ff70b9aa94c8340e1d0fa2a079f3ed6020072157870f67"
     },
     {
       "name": "api-usage.en.dark.800",
@@ -3986,7 +3986,7 @@
       },
       "nativeCallCount": 0,
       "png": "output/playwright/daily-experience-capture/qa/api-usage.en.dark.800.png",
-      "pngSha256": "a7433b9094c70925b5d031d3a1108fe5201adaab50019f97e0b4259e89fffddc"
+      "pngSha256": "4b7ce2da471c050353cd3ed160ea197d2ae82e6934c851ccee882ca417ed9690"
     }
   ],
   "browser": {
@@ -4010,5 +4010,5 @@
     "lossless": true,
     "pixelEquality": "RGBA byte equality after PNG/WebP decoding"
   },
-  "completedAt": "2026-10-16T16:51:20.604Z"
+  "completedAt": "2026-10-16T16:54:45.452Z"
 }
