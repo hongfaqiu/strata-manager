@@ -90,10 +90,16 @@ function successfulJob(jobs, name, run) {
       || date(job.completed_at) < date(job.started_at)) fail('Required CI job failed or missing: ' + name);
   return job;
 }
+const CHANGES_JOB = 'Detect app code changes';
 export function validateCiEvidence(run, jobs, artifacts, plan, { nowMs = Date.now() } = {}) {
   if (plan?.protocol !== CI_PROTOCOL) fail('The current complete native CI protocol is required.');
   validateRun(run, plan);
   if (!Array.isArray(jobs) || !Array.isArray(artifacts)) fail('Complete jobs and artifact inventories are required.');
+  // CI's 'Detect app code changes' gate decides whether app jobs run; it must succeed when present.
+  const gateJobs = jobs.filter(j => j?.name === CHANGES_JOB);
+  if (gateJobs.length > 1) fail('Duplicate CI job: ' + CHANGES_JOB);
+  if (gateJobs.length) successfulJob(jobs, CHANGES_JOB, run);
+  jobs = jobs.filter(j => j?.name !== CHANGES_JOB);
   if (jobs.length !== 10) fail('Exactly the two desktop jobs, six native shards and two observer compatibility jobs are required.');
   for (const name of OBSERVER_JOBS) {
     const job = successfulJob(jobs, name, run);
