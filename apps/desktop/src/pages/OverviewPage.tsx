@@ -6,6 +6,7 @@ import { normalizeBaseUrl, type BackgroundHealthSnapshot, type JsonObject, type 
 import { Badge, Panel } from '../components';
 import { ApiIntegrationDialog } from '../ApiIntegrationDialog';
 import './overview.css';
+import { OverviewDraft, overviewDraftVariant } from './OverviewDrafts';
 import { OverviewComputeIllustration, OverviewMetricCards, OverviewResourceMeter, type OverviewArtState } from './OverviewVisuals';
 
 interface OverviewPageProps {
@@ -14,6 +15,7 @@ interface OverviewPageProps {
   controls:ReactNode;usage?:ReactNode;stateLabel:(state:string)=>string;onRefresh:()=>void;onCreateProfile:()=>void;onChat:()=>void;onCopy:(content:string)=>void;
   onNavigate:(page:'monitoring'|'config'|'tasks'|'requests'|'profiles'|'environment')=>void;
   onImages?:()=>void;
+  onUsage?:()=>void;
   startupModel?:{name:string;configPath:string;lastActivatedAt?:number;onStart:()=>void};
   hasRuntime?:boolean;runtimeNeedsRepair?:boolean;setupLoading?:boolean;setupError?:string;startupBusy?:boolean;startupDisabled?:boolean;
 }
@@ -48,7 +50,9 @@ const startupLabels = {
     recent: 'Recently enabled', available: 'Available', runtime: 'Strata detected', start: 'Enable this model', starting: 'Enabling…', choose: 'Choose a model', install: 'Install Strata', repair: 'Complete Strata setup',
   },
 } as const;
-export function OverviewPage({profile,health,backgroundHealth,metric,process,tasks,language,online,connecting,desktop,tasksLoading,healthError,metricsError,taskError,processError,controls,usage,stateLabel,onRefresh,onCreateProfile,onChat,onCopy,onNavigate,onImages,startupModel,hasRuntime=false,runtimeNeedsRepair=false,setupLoading=false,setupError,startupBusy=false,startupDisabled=false}:OverviewPageProps) {
+/** DEV-only: ?overviewDraft=a|b|c renders a redesign draft; default view is unchanged. */
+export function OverviewPage(props:OverviewPageProps){const draft=overviewDraftVariant();return draft&&props.profile?<OverviewDraft variant={draft} {...props}/>:<OverviewPageCurrent {...props}/>;}
+function OverviewPageCurrent({profile,health,backgroundHealth,metric,process,tasks,language,online,connecting,desktop,tasksLoading,healthError,metricsError,taskError,processError,controls,usage,stateLabel,onRefresh,onCreateProfile,onChat,onCopy,onNavigate,onImages,startupModel,hasRuntime=false,runtimeNeedsRepair=false,setupLoading=false,setupError,startupBusy=false,startupDisabled=false}:OverviewPageProps) {
   const {t}=useTranslation();const fmt=(v:unknown,d=1)=>num(v)===null?'–':num(v)!.toLocaleString(language,{maximumFractionDigits:d});
   const [apiIntegrationOpen, setApiIntegrationOpen] = useState(false);
   const labels = overviewLabels[(language === 'zh-CN' ? 'zh-CN' : 'en')];

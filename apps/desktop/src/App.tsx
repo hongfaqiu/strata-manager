@@ -757,7 +757,7 @@ export function App() {
     startupModel={overviewModel&&overviewStartup?{name:overviewModel.name,configPath:overviewModel.configPath,lastActivatedAt:overviewStartup.lastActivatedAt,onStart:()=>void act('overviewStart',async()=>{if(overviewStartup.profile)await activateLocal(overviewStartup.profile);else if(overviewStartup.candidate)await prepareImported(overviewStartup.candidate,'overview');},'success')}:undefined}
     hasRuntime={hasOverviewRuntime} runtimeNeedsRepair={overviewNeedsRepair} setupLoading={desktop&&(discoveredCandidates.isPending||overviewRuntime.isPending||installationDetails.isPending)}
     setupError={overviewSetupError?errorText(overviewSetupError):undefined} startupBusy={busy==='overviewStart'||!!localProgress} startupDisabled={processUnverified||!!busy||inferenceBusy||!!tasks.data?.some(task=>task.state==='running'&&task.kind.includes('update'))}
-    onCopy={content=>void copy(content)} onImages={desktop&&profile?.configPath&&!busy&&!inferenceBusy&&!localProgress?()=>setModal({kind:'vision',profile}):undefined}
+    onCopy={content=>void copy(content)} onUsage={()=>go('usage')} onImages={desktop&&profile?.configPath&&!busy&&!inferenceBusy&&!localProgress?()=>setModal({kind:'vision',profile}):undefined}
     stateLabel={serviceState} onRefresh={()=>void query.invalidateQueries()} onCreateProfile={()=>go('models')} onChat={()=>conversation?go('chat'):addConversation()} onNavigate={go}/>;
 
   const operateService = async (action: () => Promise<unknown>) => { await action(); await refreshLocalProfiles(); await query.invalidateQueries(); notify(t('success')); };
