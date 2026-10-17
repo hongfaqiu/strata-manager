@@ -7,7 +7,11 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+- **接入 API 弹窗精简**：说明文字更短，验证细节（token 上限、限时、不执行 MCP、图片测试用图、不保存结果）收进帮助提示；验证结果改为逐步清单，带状态图标和耗时，失败原因显示在对应步骤下，整体结果为一行状态，能力信息显示为标签
+
 ### English
+
+- **Simpler Connect API dialog**: shorter copy, with verification details (token cap, time limit, no MCP execution, test image, nothing saved) moved into a help tooltip; results are now a step checklist with status icons and timings, failure reasons under the step, a one-line overall result and capability chips
 
 ## [0.1.11] - 2026-10-17
 
