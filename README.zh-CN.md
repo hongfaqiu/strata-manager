@@ -92,9 +92,9 @@ Strata Manager 提供模型下载列表与详情、统一的多显卡及运行�
 | --- | --- |
 | [![我的模型：本机容量、本机权重与每份配置所需内存](docs/screenshots/models.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/models.zh.webp) | [![性能监控：服务、硬件与请求状态](docs/screenshots/monitor.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/monitor.zh.webp) |
 
-| 开始使用引导 | 旧版本配置清理 |
-| --- | --- |
-| [![开始使用引导：检查环境、安装 Strata、按本机内存选模型、下载与第一次聊天](docs/screenshots/onboarding.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/onboarding.zh.webp) | [![旧版本配置清理：按 Strata 版本列出运行配置，移入可恢复的归档](docs/screenshots/config-cleanup.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/config-cleanup.zh.webp) |
+| 开始使用引导 | 旧版本配置清理 | Benchmark 排行榜 |
+| --- | --- | --- |
+| [![开始使用引导：检查环境、安装 Strata、按本机内存选模型、下载与第一次聊天](docs/screenshots/onboarding.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/onboarding.zh.webp) | [![旧版本配置清理：按 Strata 版本列出运行配置，移入可恢复的归档](docs/screenshots/config-cleanup.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/config-cleanup.zh.webp) | [![Benchmark 排行榜：同模型、同量化在不同硬件上的成绩、参数与调参建议](docs/screenshots/arena.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/arena.zh.webp) |
 
 <details>
 <summary><strong>更多界面：运行环境、聊天、公共设置、连接、更新、基准测试与监控</strong></summary>
@@ -119,11 +119,9 @@ Strata Manager 提供模型下载列表与详情、统一的多显卡及运行�
 
 [![参数调优工作区](docs/screenshots/tuning.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/tuning.zh.webp)
 
-**基准测试 · 上下文档位、排行榜与历史条件**
+**基准测试 · 上下文档位与历史条件**
 
 [![上下文基准测试工作区](docs/screenshots/benchmark.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/benchmark.zh.webp)
-
-[![Benchmark 排行榜：同模型、同量化在不同硬件上的成绩、参数与调参建议](docs/screenshots/arena.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/arena.zh.webp)
 
 [![历史 Benchmark 条件比较](docs/screenshots/daily-experience/history-comparison.zh.webp)](docs/screenshots/daily-experience/history-comparison.zh.webp)
 

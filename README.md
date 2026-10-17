@@ -92,9 +92,9 @@ The desktop installer contains Manager and its background process. Hardware and 
 | --- | --- |
 | [![Models — machine capacity, local weights and the memory each configuration needs](docs/screenshots/models.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/models.en.webp) | [![Monitor — service, hardware and request activity](docs/screenshots/monitor.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/monitor.en.webp) |
 
-| Getting started guide | Old-version configuration cleanup |
-| --- | --- |
-| [![Getting started guide: environment, Strata, model choice filtered by this computer's memory, download and first chat](docs/screenshots/onboarding.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/onboarding.en.webp) | [![Old-version configuration cleanup: run configurations grouped by Strata version, archived restorably](docs/screenshots/config-cleanup.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/config-cleanup.en.webp) |
+| Getting started guide | Old-version configuration cleanup | Benchmark leaderboard |
+| --- | --- | --- |
+| [![Getting started guide: environment, Strata, model choice filtered by this computer's memory, download and first chat](docs/screenshots/onboarding.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/onboarding.en.webp) | [![Old-version configuration cleanup: run configurations grouped by Strata version, archived restorably](docs/screenshots/config-cleanup.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/config-cleanup.en.webp) | [![Benchmark leaderboard: the same model and quantization compared across hardware, with parameters and recommendations](docs/screenshots/arena.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/arena.en.webp) |
 
 <details>
 <summary><strong>More interfaces: runtime, chat, shared settings, connections, updates, benchmarking and monitoring</strong></summary>
@@ -119,11 +119,9 @@ The desktop installer contains Manager and its background process. Hardware and 
 
 [![Tuning workspace](docs/screenshots/tuning.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/tuning.en.webp)
 
-**Benchmark — context tiers, leaderboard and historical conditions**
+**Benchmark — context tiers and historical conditions**
 
 [![Context benchmark workspace](docs/screenshots/benchmark.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/benchmark.en.webp)
-
-[![Benchmark leaderboard: the same model and quantization compared across hardware, with parameters and recommendations](docs/screenshots/arena.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/arena.en.webp)
 
 [![Historical benchmark condition comparison](docs/screenshots/daily-experience/history-comparison.en.webp)](docs/screenshots/daily-experience/history-comparison.en.webp)
 
