@@ -60,29 +60,44 @@ export function validateIgnoredPolicy(binaries, target = 'x86_64-unknown-linux-g
 
 const inventoryForHash = binaries => binaries.map(({id, package: packageName, packagePath, platform, target, cases}) => ({id, package: packageName, packagePath, platform, target, cases}));
 const planHash = plan => hash(JSON.stringify({binding: plan.binding, inventory: inventoryForHash(plan.binaries), groups: plan.groups}));
+// Scheduling hints only: no test deadline, selection or assertion depends on them.
+// Mean serial per-module seconds from the successful PR CI runs 38953779378 and
+// 39016411239 (timestamps between libtest result lines). Integration-test binaries
+// have only a root module, so their hints are bound to the binary as 'kind:name (root)'.
 const knownSeconds = Object.freeze({
-  // Sequential completion deltas in successful Linux CI 38159155279; scheduling hints only.
-  'tuning::restart::tests': 276, 'startup::tests': 187,
-  'runtime_upgrade::tests': 128, 'idle_model::tests': 103,
-  'tuning::workloads::tests': 102, 'setup_handoff::tests': 78,
-  'health_watch::tests': 54, 'tuning::tests': 43,
-  'request_capture::tests': 35, 'runtime_upgrade::release_zip::tests': 34,
-  'tuning::status_tests': 29, 'external_management::tests': 29,
-  'registry_handoff::tests': 29, 'tuning_service_operation_tests': 25,
-  'installation::tests': 25,
+  'tuning::restart::tests': 207, 'runtime_upgrade::tests': 53, 'test:lifecycle (root)': 52,
+  'idle_model::tests': 44, 'tuning::workloads::tests': 33, 'installation::download::tests': 31,
+  'startup::tests': 24, 'setup_handoff::tests': 21, 'health_watch::tests': 20,
+  'tuning::tests': 16, 'native_probe_tests': 13, 'request_capture::tests': 12,
+  'runtime_upgrade::release_zip::tests': 11, 'runtime_upgrade::release_zip::download_check::tests': 10,
+  'installation::tests': 9, 'test:manager_mcp (root)': 7, 'test:mcp_stdio (root)': 7,
+  'external_management::tests': 7, 'tuning::status_tests': 7, 'diagnostics::tests': 6,
+  'tuning_service_operation_tests': 6, 'registry_handoff::tests': 6, 'analytics::tests': 6,
+  'chat_runtime::tests': 5, 'window_close_tests': 5, 'tuning_contract_tests': 5,
+  'policy::tests': 4, 'service_sharing::tests': 3, 'disk::tests': 3,
+  'runtime_upgrade::release_zip::download_source::tests': 3, 'manager_mcp::tests': 3,
 });
 const windowsKnownSeconds = Object.freeze({
-  // Sequential completion deltas in successful Windows CI 38169497754.
-  // Hints affect scheduling only; no test deadline or assertion changes.
-  'tuning::restart::tests': 268, 'runtime_upgrade::tests': 58,
-  'idle_model::tests': 37, 'tuning::workloads::tests': 23,
-  'tuning::tests': 21, 'setup_handoff::tests': 21,
-  'runtime_upgrade::release_zip::tests': 20, 'legacy::tests': 17,
-  'analytics::tests': 14, 'request_capture::tests': 12,
-  'supervisor_client::tests': 12, 'health_watch::tests': 12,
-  'tuning_service_operation_tests': 10, 'startup::tests': 10,
-  'tuning::status_tests': 7, 'native_probe_tests': 7,
+  'tuning::restart::tests': 169, 'test:lifecycle (root)': 58, 'runtime_upgrade::tests': 37,
+  'idle_model::tests': 25, 'tuning::workloads::tests': 19, 'setup_handoff::tests': 16,
+  'startup::tests': 16, 'installation::download::tests': 15, 'runtime_upgrade::release_zip::tests': 14,
+  'network_runtime_tests': 14, 'native_probe_tests': 12, 'tuning::tests': 12,
+  'health_watch::tests': 11, 'request_capture::tests': 10, 'test:manager_mcp (root)': 10,
+  'supervisor_client::tests': 8, 'tuning_service_operation_tests': 7, 'runtime_update_queue::tests': 6,
+  'runtime_upgrade::release_zip::download_check::tests': 6, 'legacy::tests': 6, 'processes::tests': 6,
+  'diagnostics::tests': 5, 'installation::tests': 4, 'tuning::status_tests': 4,
+  'external_management::tests': 4, 'registry_handoff::tests': 4, 'discovery::tests': 3,
 });
+// Unmeasured modules: measured small modules average under 0.1 s per case, while
+// integration-test binaries start real processes, so their roots stay heavier.
+export function moduleWeight(binary, module, active, platform) {
+  if (!active) return 0;
+  const hints = platform === 'win32' ? windowsKnownSeconds : knownSeconds;
+  const kindName = binary.id.slice(binary.id.indexOf(':') + 1);
+  const hint = module === '(root)' ? hints[`${kindName} (root)`] : hints[module];
+  if (hint !== undefined) return hint;
+  return module === '(root)' && kindName.startsWith('test:') ? active * 10 : active * 0.5;
+}
 
 export function parseListing(text) {
   const cases = []; let summary;
@@ -191,7 +206,7 @@ export function makePlan(binaries, count, binding) {
     for (const [module, names] of entries) {
       const active = names.filter(name => !binary.cases.find(c => c.name === name).ignored).length;
       modules.push({binaryId: binary.id, module, names: sorted(names),
-        weight: active ? (policy.platform === 'win32' ? windowsKnownSeconds[module] ?? (module === '(root)' ? active * 22 : active * 2) : knownSeconds[module] ?? active * 4) : 0});
+        weight: moduleWeight(binary, module, active, policy.platform)});
     }
   }
   modules.sort((a, b) => b.weight - a.weight || compare(`${a.binaryId}:${a.module}`, `${b.binaryId}:${b.module}`));

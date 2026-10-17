@@ -210,3 +210,72 @@ test('release LTO and code generation remain unchanged', async () => {
   assert.match(profile ?? '', /^lto\s*=\s*"thin"\s*$/m);
   assert.match(profile ?? '', /^codegen-units\s*=\s*1\s*$/m);
 });
+
+// The private GNOME test keyring cache holds only a verified copy of the pinned
+// source build: pull requests restore it, and only the trusted main desktop job saves it.
+const keyringPath = '${{ runner.temp }}/strata-test-keyring-cache';
+const keyringKey = '${{ steps.keyring-cache.outputs.key }}';
+function actionCacheSteps(source) {
+  const lines = source.replaceAll('\r\n', '\n').split('\n');
+  const jobStarts = lines.flatMap((line, index) => /^ {2}[A-Za-z0-9_-]+:$/.test(line) && index > lines.indexOf('jobs:') ? [index] : []);
+  const steps = [];
+  for (let i = 0; i < jobStarts.length; i++) {
+    const job = lines.slice(jobStarts[i] + 1, jobStarts[i + 1] ?? lines.length);
+    const starts = job.flatMap((line, index) => /^ {6}- /.test(line) ? [index] : []);
+    for (let j = 0; j < starts.length; j++) {
+      const step = job.slice(starts[j], starts[j + 1] ?? job.length);
+      const uses = step.map(line => /^ {6}(?:- | {2})uses: (actions\/cache\S*)$/.exec(line)?.[1]).find(Boolean);
+      if (!uses) continue;
+      const field = name => step.map(line => new RegExp(`^ {6}(?:- | {2})${name}: (.*)$`).exec(line)?.[1]).find(value => value !== undefined);
+      steps.push({job: lines[jobStarts[i]].trim().slice(0, -1), uses, if: field('if'), with: mapping(step, 'with', 8)});
+    }
+  }
+  return steps;
+}
+function validateKeyringCache(source) {
+  const steps = actionCacheSteps(source);
+  assert.ok(steps.length > 0, 'The verified keyring cache steps are required.');
+  const trustedCondition = trusted.replace(/^\$\{\{\s*|\s*\}\}$/g, '');
+  let saves = 0;
+  for (const step of steps) {
+    assert.ok(['actions/cache/restore@v4', 'actions/cache/save@v4'].includes(step.uses), 'Use explicit restore/save actions, never an implicit post-job save.');
+    assert.deepEqual([...step.with.keys()].filter(key => key !== 'lookup-only').sort(), ['key', 'path'], 'Only the keyring path and its input-bound key may be cached.');
+    assert.equal(step.with.get('path'), keyringPath);
+    assert.equal(step.with.get('key'), keyringKey);
+    if (step.uses.startsWith('actions/cache/save')) {
+      saves++;
+      assert.equal(step.job, 'desktop', 'Only the desktop job may save the keyring cache.');
+      assert.equal(step.if, `runner.os == 'Linux' && ${trustedCondition} && steps.keyring-cache-lookup.outputs.cache-hit != 'true'`);
+    } else if (step.with.get('lookup-only') === 'true') {
+      assert.equal(step.if, `runner.os == 'Linux' && ${trustedCondition}`);
+    } else {
+      assert.ok(!step.with.has('lookup-only'));
+      assert.ok(["github.event_name == 'pull_request'", "runner.os == 'Linux' && github.event_name == 'pull_request'"].includes(step.if),
+        'Only pull requests may reuse the keyring cache; main and manual builds compile the pinned source.');
+    }
+  }
+  assert.equal(saves, 1, 'Exactly one trusted keyring cache writer is required.');
+  return steps;
+}
+
+test('CI keyring cache is restore-only for pull requests and saved only by the trusted desktop job', async () => {
+  const source = await readFile(resolve(root, '.github/workflows/ci.yml'), 'utf8');
+  const steps = validateKeyringCache(source);
+  assert.deepEqual(steps.map(s => `${s.job}:${s.uses}`), ['native-linux:actions/cache/restore@v4', 'desktop:actions/cache/restore@v4',
+    'desktop:actions/cache/restore@v4', 'desktop:actions/cache/save@v4']);
+  const pr = "if: github.event_name == 'pull_request'";
+  for (const [name, mutate] of [
+    ['an implicit cache action', text => text.replace('actions/cache/restore@v4', 'actions/cache@v4')],
+    ['a broader path', text => text.replace(keyringPath, '${{ runner.temp }}')],
+    ['an unbound key', text => text.replace(keyringKey, 'strata-test-keyring')],
+    ['main-branch restores', text => text.replace(pr, "if: always()")],
+    ['an untrusted save', text => text.replace(/(if: runner\.os == 'Linux' && )github\.repository == 'hongfaqiu\/strata-manager' && (.*cache-hit)/, '$1$2')],
+    ['extra cache inputs', text => text.replace('          lookup-only: true\n', '          lookup-only: true\n          enableCrossOsArchive: true\n')],
+  ]) assert.throws(() => validateKeyringCache(mutate(source)), name);
+});
+
+test('release workflows never use the keyring or any other actions/cache', async () => {
+  for (const file of ['release.yml', 'release-from-ci.yml']) {
+    assert.doesNotMatch(await readFile(resolve(root, '.github/workflows', file), 'utf8'), /actions\/cache/, file);
+  }
+});
