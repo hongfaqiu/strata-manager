@@ -3,7 +3,7 @@ import { acquireBenchmarkEndpoint, BENCHMARK_PROMPTS } from './benchmark';
 import { asObject, normalizeError, StrataError } from './errors';
 import { normalizeMetrics } from './metrics';
 import type { JsonObject, ServiceProfile } from './types';
-import type { BenchmarkScenarioId, BenchmarkSuiteOptions, BenchmarkSuiteProgress, BenchmarkSuiteReport, BenchmarkSuiteSample, BenchmarkSuiteSummary, BenchmarkSuiteDistribution, BenchmarkTelemetry } from './benchmark-suite-types';
+import type { BenchmarkScenarioId, BenchmarkSuiteLiveRequest, BenchmarkSuiteOptions, BenchmarkSuiteProgress, BenchmarkSuiteReport, BenchmarkSuiteSample, BenchmarkSuiteSummary, BenchmarkSuiteDistribution, BenchmarkTelemetry } from './benchmark-suite-types';
 
 export const BENCHMARK_SCENARIOS: { id: BenchmarkScenarioId; nameZh: string; nameEn: string; descriptionZh: string; descriptionEn: string }[] = [
   { id: 'short', nameZh: '短问答', nameEn: 'Short answer', descriptionZh: '短中文问题，测量首输出与完整请求延迟。', descriptionEn: 'A short Chinese question for first output and request latency.' },
@@ -97,7 +97,7 @@ function wait(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-async function infer(profile: ServiceProfile, messages: JsonObject[], options: BenchmarkSuiteOptions, sample: BenchmarkSuiteSample, signal: AbortSignal, track: (transport: Promise<void>) => void): Promise<{ content: string; reasoning: string }> {
+async function infer(profile: ServiceProfile, messages: JsonObject[], options: BenchmarkSuiteOptions, sample: BenchmarkSuiteSample, signal: AbortSignal, track: (transport: Promise<void>) => void, onStream?: (streamedChars: number) => void): Promise<{ content: string; reasoning: string }> {
   const controller = new AbortController(), began = clock();
   let content = '', reasoning = '', done = false, active = true, timedOut = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -121,6 +121,7 @@ async function infer(profile: ServiceProfile, messages: JsonObject[], options: B
       if (delta.content) content += delta.content;
       if (delta.content?.trim() && sample.firstVisibleMs == null) sample.firstVisibleMs = Math.max(0, clock() - began);
       if (delta.reasoning) reasoning += delta.reasoning;
+      if (delta.content || delta.reasoning) onStream?.(content.length + reasoning.length);
       if (delta.usage) {
         sample.promptTokens = count(delta.usage.prompt_tokens); sample.completionTokens = count(delta.usage.completion_tokens);
         sample.cachedTokens = count(asObject(delta.usage.prompt_tokens_details).cached_tokens);
@@ -170,13 +171,17 @@ export async function runBenchmarkSuite(profile: ServiceProfile, input: Benchmar
   const cancel = () => { if (report) stop('cancelled'); else controller.abort(); };
   signal?.addEventListener('abort', cancel, { once: true });
   let began = clock();
+  // The most recently started request still streaming; drives live progress without inventing metrics.
+  let inflight: { sample: BenchmarkSuiteSample; began: number; streamedChars: number } | undefined;
+  const live = (): BenchmarkSuiteLiveRequest | undefined => inflight && { index: inflight.sample.index, scenario: inflight.sample.scenario, turn: inflight.sample.turn,
+    warmup: inflight.sample.warmup, startedAt: inflight.sample.startedAt, elapsedMs: Math.max(0, clock() - inflight.began), ttftMs: inflight.sample.ttftMs, streamedChars: inflight.streamedChars };
   const emit = (sample?: BenchmarkSuiteSample, telemetry?: BenchmarkTelemetry) => {
     if (!report || disposed) return;
-    const measured = report.samples.filter(s => !s.warmup);
+    const measured = report.samples.filter(s => !s.warmup), current = live();
     onProgress({ stageIndex, totalStages: levels.length, concurrency, issued, active,
       completed: measured.filter(s => s.state === 'completed').length, failed: measured.filter(s => s.state === 'failed').length,
       cancelled: measured.filter(s => s.state === 'cancelled').length, elapsedMs: Math.max(0, clock() - began),
-      ...(sample ? { sample: { ...sample } } : {}), ...(telemetry ? { telemetry } : {}) });
+      ...(sample ? { sample: { ...sample } } : {}), ...(telemetry ? { telemetry } : {}), ...(current ? { current } : {}) });
   };
   const check = async () => {
     if (controller.signal.aborted) return;
@@ -210,8 +215,15 @@ export async function runBenchmarkSuite(profile: ServiceProfile, input: Benchmar
         scenario, stage: warmup ? 0 : stageIndex, concurrency: warmup ? 1 : concurrency, worker, conversationId, turn,
         inputChars: messages.reduce((n, msg) => n + String(msg.content ?? '').length + String(msg.reasoning_content ?? '').length, 0), maxTokens: options.maxTokens,
         state: 'completed', ttftMs: null, wallMs: 0, promptTokens: null, completionTokens: null, cachedTokens: null, prefillTokS: null, decodeTokS: null, output: '' };
-      active++; emit();
-      const full = await infer(profile, messages.map(msg => ({ ...msg })), options, sample, controller.signal, track);
+      const flight = { sample, began: clock(), streamedChars: 0 };
+      let lastLive = -Infinity;
+      inflight = flight; active++; emit();
+      const full = await infer(profile, messages.map(msg => ({ ...msg })), options, sample, controller.signal, track, chars => {
+        flight.streamedChars = chars;
+        // Throttle live updates to about four per second.
+        if (inflight === flight && clock() - lastLive >= 250) { lastLive = clock(); emit(); }
+      });
+      if (inflight === flight) inflight = undefined;
       active--; report!.samples.push(sample); emit(sample);
       // A timed-out transport may still be settling native cancellation. Stop dispatch
       // instead of allowing unresolved requests to accumulate beyond the client limit.

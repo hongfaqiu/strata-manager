@@ -2495,10 +2495,16 @@ mod tests {
         (temp, state, profile, original)
     }
     pub(super) async fn await_job(state: &RuntimeState, profile: &ServiceProfile) -> TuningJob {
-        for _ in 0..1500 {
+        // The runner publishes completion first and attaches the ended live log
+        // right after; wait for both so callers snapshot the final report.
+        let mut settled = 0;
+        for _ in 0..1750 {
             let job = status(state, profile.id.clone()).unwrap().unwrap();
             if !job.state.active() {
-                return job;
+                if !job.live_log.is_empty() || settled >= 250 {
+                    return job;
+                }
+                settled += 1;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
