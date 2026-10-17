@@ -1,3 +1,4 @@
+mod arena;
 mod configuration_details;
 mod configuration_files;
 mod daily_experience;
@@ -1555,6 +1556,7 @@ pub fn run() {
             let data_dir = tauri::async_runtime::block_on(
                 running_service_connection::active_data_directory(&data_dir),
             );
+            arena::start_background(data_dir.clone());
             let ipc = Arc::new(SupervisorClient::new(data_dir, app.path().resource_dir()?));
             let saved_settings =
                 tauri::async_runtime::block_on(ipc.request("store_get", json!({"key":"settings"})))
@@ -1753,6 +1755,13 @@ pub fn run() {
             }
         })
         .invoke_handler(invoke_policy::with_window_policy(tauri::generate_handler![
+            arena::arena_status,
+            arena::arena_consent,
+            arena::arena_set_auto_upload,
+            arena::arena_enqueue,
+            arena::arena_flush,
+            arena::arena_withdraw,
+            arena::arena_get,
             floating_monitor::open_monitor_window,
             floating_monitor::resize_monitor_window,
             taskbar_monitor::set_monitor_mode,

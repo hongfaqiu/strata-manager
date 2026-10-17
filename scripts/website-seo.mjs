@@ -238,9 +238,11 @@ export function renderHomepage(source, language, googleVerificationToken) {
   return serialize(root);
 }
 
+/** Standalone pages outside docs/ (rendered by render-website-leaderboard.mjs). */
+export const standalonePages = [{ page: 'leaderboard.html', lang: 'zh', key: 'leaderboard' }, { page: 'leaderboard.en.html', lang: 'en', key: 'leaderboard' }];
 export function renderSitemap(documents) {
   const homepages = [{ page: '', lang: 'zh', key: 'home' }, { page: 'en/', lang: 'en', key: 'home' }];
-  const pages = [...homepages, ...documents];
+  const pages = [...homepages, ...standalonePages, ...documents];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
 ${pages.map((entry) => {

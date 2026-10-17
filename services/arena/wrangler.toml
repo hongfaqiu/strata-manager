@@ -1,0 +1,17 @@
+name = "strata-arena"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+workers_dev = false
+
+routes = [{ pattern = "arena.cosfoc.com", custom_domain = true }]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "strata-arena"
+database_id = "ab1a795f-707f-488c-a1f7-c3866a43f78e"
+migrations_dir = "migrations"
+
+[triggers]
+crons = ["17 * * * *"]
+
+# Secrets (wrangler secret put): ARENA_APP_KEYS (comma-separated HMAC keys), IP_SALT, SEED_TOKEN

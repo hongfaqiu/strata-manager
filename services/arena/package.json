@@ -1,0 +1,11 @@
+{
+  "name": "@strata-manager/arena-service",
+  "private": true,
+  "type": "module",
+  "description": "Benchmark Arena API (Cloudflare Worker + D1)",
+  "scripts": {
+    "test": "node --test --no-warnings test/*.test.mjs",
+    "deploy": "wrangler deploy",
+    "migrate": "wrangler d1 migrations apply strata-arena --remote"
+  }
+}

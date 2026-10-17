@@ -57,7 +57,7 @@ test('Maintainer records stay at their source instead of becoming user documenta
     assert.ok(!documents.some((document) => document.source === `docs/${source}`));
     assert.equal(rewrite(`${source}#current-scope`), `https://github.com/hongfaqiu/strata-manager/blob/main/docs/${source}#current-scope`);
   }
-  assert.equal(documents.length, 15);
+  assert.equal(documents.length, 17);
 });
 
 test('Changelog pages keep version status and only the requested language from the shared source', () => {

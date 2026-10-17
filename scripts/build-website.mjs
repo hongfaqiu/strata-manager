@@ -5,6 +5,7 @@ import { documents, renderWebsiteDocs, verifyStaticWebsite } from './render-webs
 import { renderWebsiteSeo } from './website-seo.mjs';
 import { publishWebsiteReleaseSnapshot } from './website-release-snapshot.mjs';
 import { copyWebsiteScreenshots } from './website-screenshots.mjs';
+import { renderLeaderboardPages } from './render-website-leaderboard.mjs';
 
 // Publish static assets and pre-rendered docs, without a browser-side runtime.
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -25,8 +26,10 @@ await cp(join(root, 'assets', 'icon.svg'), join(output, 'assets', 'icon.svg'));
 await copyWebsiteScreenshots(join(root, 'docs', 'screenshots'), join(output, 'assets', 'screenshots'));
 await writeFile(join(output, '.nojekyll'), '');
 const documentCount = await renderWebsiteDocs(output);
+const leaderboard = await renderLeaderboardPages(output);
 await renderWebsiteSeo(output, documents);
 const releaseSnapshot = await publishWebsiteReleaseSnapshot(output);
 const checked = await verifyStaticWebsite(output);
 console.log(`Static website ready: ${output} (${documentCount} documents; ${checked.localTargets} local links/assets verified)`);
+console.log(`Leaderboard pages: ${leaderboard.pages}; snapshot from ${leaderboard.source}`);
 console.log(releaseSnapshot ? `Verified public release snapshot: ${releaseSnapshot.release.tag_name} (${releaseSnapshot.release.assets.length} download assets)` : 'Local build: release snapshot skipped (no GITHUB_TOKEN or explicit input).');
