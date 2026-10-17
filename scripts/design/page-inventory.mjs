@@ -7,7 +7,7 @@ export const pages = {
   '我的模型 (models/profiles)': { files: ['pages/ServiceManagerPage.tsx', 'pages/ConfigurationList.tsx'], app: slice('const ProfilesPage', 'const ModelsPage') },
   '下载模型 (catalog)': { files: ['pages/ModelDownloadPage.tsx', 'pages/ModelDownloadSettingsDialog.tsx', 'pages/ModelInspectPanel.tsx', 'pages/ResourceAssessmentPanel.tsx'], app: slice('const ModelsPage', 'const renderChatPage') },
   '运行配置 (config)': { files: ['pages/RuntimeConfigPage.tsx', 'pages/ConfigurationList.tsx'], app: slice('const renderRuntimeConfig', 'const renderTuningPage') },
-  'Strata 运行环境 (environment)': { files: ['pages/InstallRuntimePage.tsx', 'pages/OfficialUpdatePanel.tsx'], app: slice('const EnvironmentPage', 'const changeSettings') },
+  'Strata 运行环境 (environment)': { files: ['pages/InstallRuntimePage.tsx'], app: slice('const EnvironmentPage', 'const changeSettings') },
   '参数调优 (tuning)': { files: ['pages/TuningPage.tsx'], app: slice('const renderTuningPage', 'const pages:') },
   '任务与日志 (tasks)': { files: [], app: slice('const TasksPage', 'const EnvironmentPage') },
   'Benchmark': { files: ['pages/BenchmarkPage.tsx', 'pages/ContextBenchmarkPage.tsx', 'pages/ScenarioBenchmarkPage.tsx', 'pages/BenchmarkComparisonPanel.tsx'], app: '' },

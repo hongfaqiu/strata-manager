@@ -3,3 +3,4 @@
 .startup-quick-params-heading p{margin:0;font-size:.84rem;opacity:.78;line-height:1.45}
 .startup-quick-params-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem 1rem}
 .startup-quick-params-unlisted{display:block;margin-top:4px;color:var(--st-warn-text,#a15c00);font-size:12px}
+.startup-quick-params-help-error{margin:0 0 .75rem;font-size:12px;line-height:1.45;color:var(--st-warn-text,#a15c00)}

@@ -44,9 +44,6 @@
 .d2-req small{color:var(--st-ink-muted);font-size:11.5px}
 .d2-req.is-unknown span{color:var(--st-ink-muted)}
 .d2-req.is-over>span{color:#b9771c}
-.d2-estimate-text{display:grid;gap:4px;min-width:220px;flex:1}
-.d2-estimate-text p{margin:0;font-size:13px}.d2-estimate-text small{color:var(--st-ink-muted);font-size:11.5px}
-.d2-fit{font-weight:600}.d2-fit.is-fits{color:#178a62}.d2-fit.is-tight,.d2-fit.is-over{color:#b9771c}
 .d2-devices{display:flex;align-items:center;gap:18px;padding:16px 20px;margin-bottom:14px}
 .d2-devices>div{display:flex;align-items:center;gap:12px;flex:1;min-width:0}
 .d2-devices span{display:grid;min-width:0}

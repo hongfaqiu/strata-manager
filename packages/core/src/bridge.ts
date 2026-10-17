@@ -225,10 +225,6 @@ export const localRuntimeInstallation = (): Promise<import('./installation-types
 /** Task logs use the existing read-only log source contract; no engine configuration is read. */
 export const readTaskLogs = (taskId: string, limit = 200): Promise<LogEntry[]> => readLogs({ id: taskId, name: '', baseUrl: 'http://127.0.0.1:8000', installDir: '', pythonPath: '', configPath: '', managed: false }, limit);
 export const updateRuntime = (profile: ServiceProfile): Promise<TaskStatus> => native('update_runtime', { profile });
-export interface OfficialUpdatePlan { script: string; gitClone: boolean; dirtyFiles: string[] }
-/** Upstream update.sh / UPDATE.bat: plan first (dirty tracked files are refused, never forced), then a streamed task. */
-export const officialUpdatePlan = (profile: ServiceProfile): Promise<OfficialUpdatePlan> => native('official_update_plan', { profile });
-export const officialUpdate = (profile: ServiceProfile): Promise<TaskStatus> => native('official_update', { profile });
 export interface EngineHelp { flags: string[]; source: string }
 export const engineHelpFlags = (profile: ServiceProfile): Promise<EngineHelp> => native('engine_help_flags', { profile });
 export const runtimeUpdateInfo = (force = false): Promise<import('./runtime-types').RuntimeUpdateInfo> => native('runtime_update_info', { force });
@@ -263,6 +259,10 @@ export const writeConfig = (profile: ServiceProfile, config: JsonObject, expecte
 export const copyConfiguration = (profile: ServiceProfile, filename: string, config: JsonObject): Promise<ServiceProfile> => native('copy_configuration', { profile, filename, config });
 /** Archive the actual configuration JSON after confirming all matching services are stopped. */
 export const deleteConfiguration = (profile: ServiceProfile): Promise<{ archivedPath: string }> => native('delete_configuration', { profile });
+export interface ConfigCleanupItem { profile: ServiceProfile; configPath: string; installDir: string; runtimeVersion?: string; modelName?: string; identical: boolean; identicalTo?: string }
+export interface ConfigCleanupPlan { currentInstallDir: string; currentVersion?: string; items: ConfigCleanupItem[] }
+/** Read-only: older-version run configurations that could be archived. Deletion stays per file via deleteConfiguration. */
+export const planConfigCleanup = (currentInstallDir: string, directories?: string[]): Promise<ConfigCleanupPlan> => native('plan_config_cleanup', { currentInstallDir, directories });
 /** Inspect only the primary GGUF bundle; configuration files and companions are retained. */
 export const planModelDeletion = (profiles: ServiceProfile[]): Promise<import('./types').ModelDeletionPlan> => native('plan_model_deletion', { profiles });
 /** Permanently remove the confirmed primary files after repeating reference, process and stat checks. */

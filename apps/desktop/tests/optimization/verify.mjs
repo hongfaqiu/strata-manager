@@ -59,7 +59,7 @@ try {
   });
   await run('cancel navigation and reload preserve the JSON draft without reads', '#config', async page => {
     const editor = await editJson(page), value = await editor.inputValue();
-    await page.getByRole('button', { name: '返回我的模型', exact: true }).click();
+    await page.locator('.model-config-breadcrumb > button').click();
     await decision(page).getByRole('button', { name: '取消', exact: true }).click();
     assert.equal(await editor.inputValue(), value); assert.match(page.url(), /#config$/);
     const before = await page.evaluate(() => window.__fixture.calls.filter(call => call.command.startsWith('read_config')).length);
@@ -76,7 +76,7 @@ try {
   await run('clean Back and Forward preserve three accepted history entries', '#models', async page => {
     await page.getByRole('button', { name: '运行配置', exact: true }).first().click();
     await page.waitForURL('**/#config');
-    await page.getByRole('button', { name: '返回我的模型', exact: true }).click();
+    await page.locator('.model-config-breadcrumb > button').click();
     await page.waitForURL('**/#models');
     await page.goBack(); await page.waitForURL('**/#config'); await rawEditor(page).count();
     await page.goBack(); await page.waitForURL('**/#models');
@@ -95,7 +95,7 @@ try {
   });
   await run('model startup draft protects navigation and exit has only one modal', '#config', async page => {
     const editor = await editJson(page), draft = await editor.inputValue();
-    await page.getByRole('button', { name: '返回我的模型', exact: true }).click();
+    await page.locator('.model-config-breadcrumb > button').click();
     await decision(page).getByRole('button', { name: '取消', exact: true }).click();
     assert.equal(await editor.inputValue(), draft);
     await page.evaluate(() => window.__fixture.emit());
