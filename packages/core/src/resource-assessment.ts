@@ -47,6 +47,8 @@ export interface SetupResourceAssessment {
   kv: { streaming: boolean | null; streamingRamBytes: number | null };
   slots: { count: number; perSlotVramBytes: number | null; totalVramBytes: number | null };
   recommendations: { context: number | null; parallel: number | null };
+  /** Present past the trained 262,144 tokens: the yarn factor setup derives and KV + RoPE table bytes. */
+  contextExtension?: { trainedContext: number; scaling: string; scale: number; kvBytes: number; ropeBytes: number } | null;
   reasons: ResourceAssessmentReason[];
   unknowns: string[];
   sourceRevision: string;
@@ -103,6 +105,8 @@ export function resourceAssessmentMessage(code: string, zh: boolean): string {
     low_ram_mmap: ['低内存模式需要从文件读取部分专家，SSD 和系统文件缓存会明显影响速度。', 'Low-RAM mapped mode reads some experts from files. SSD and OS file-cache behavior can significantly affect speed.'],
     low_ram_shortfall: ['按官方规则，RAM 与单卡专家缓存仍不足，存在频繁磁盘读取或内存不足的风险。', 'RAM and the single-GPU expert cache remain below the official budget, risking frequent file reads or memory exhaustion.'],
     long_context_ram: ['这个上下文超出官方 RAM 建议，运行时可能分页或内存不足。', 'This context exceeds the official RAM recommendation and may page or run out of memory.'],
+    context_extension: ['超过训练长度 262K 属实验性功能，按官方规则使用 YaRN（倍数 = 上下文 ÷ 262,144）；KV 与 RoPE 表按比例增加占用。', 'Past the trained 262K is experimental: the official rule uses YaRN (scale = context ÷ 262,144), and KV plus RoPE tables grow with it.'],
+    expert_cache_auto: ['长上下文请保持专家缓存为 auto；显存剩余接近 0 MiB 时解码可能慢 7 倍。', 'Keep the expert cache on auto for long contexts; near 0 MiB of free VRAM, decoding can slow down 7×.'],
     above_native_context: ['超过原生 262K 上下文需扩展设置，首版无法完整预估。', 'Contexts above the native 262K window require scaling settings and cannot be fully estimated here.'],
     parallel_cost: ['并发槽占用专家缓存；减少排队等待也可能降低每个请求的速度。', 'Batch slots consume expert-cache VRAM. Less queueing can also lower per-request speed.'],
     parallel_above_recommendation: ['请求并发高于官方资源建议，更多槽位可能使每个请求变慢。', 'Requested concurrency exceeds the official recommendation and may slow each request.'],

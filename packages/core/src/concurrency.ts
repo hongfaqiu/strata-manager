@@ -1,4 +1,5 @@
 import type { JsonObject } from './types';
+import { TRAINED_CONTEXT } from './context-extension';
 
 /**
  * Several requests at once ("parallel" / --batch N), following upstream docs/BATCHING.md and setup.py
@@ -10,7 +11,6 @@ export const CONCURRENCY_USE_CASES: readonly ConcurrencyUseCase[] = ['single', '
 export const CONCURRENCY_ENGINE_MAX = 8;
 /** --batch-mtp doubles the rows of a window: at most 4 slots in one window on a layer split. */
 export const CONCURRENCY_BATCH_MTP_SPLIT_MAX = 4;
-export const TRAINED_CONTEXT = 262144;
 /** Opt-in, off by default upstream (BATCHING.md "One launch for all slots", "Reading a prompt beside pipelined groups"). */
 export const CONCURRENCY_EXPERIMENTAL_ENV = ['STRATA_BATCH_ATTN_ROWS', 'STRATA_BATCH_GDN_GROUPS', 'STRATA_PIPED_CONCURRENT'] as const;
 export type ConcurrencyExperimentalEnv = typeof CONCURRENCY_EXPERIMENTAL_ENV[number];
