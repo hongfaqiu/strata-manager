@@ -63,7 +63,8 @@ export function LiveStatus(props: LiveStatusProps) {
 const logLabel = (text: CalibrationText, key: string) => ({ sample: text.sample, stepWinner: text.stepWinner, coldReload: text.coldReload, restartCandidate: text.restartCandidate, restoreBaseline: text.restoreBaseline, workloadDone: text.workloadDone, prefillPipeSample: text.prefillPipeSample, warmup: text.warmupLog, finished: text.finished, failed: text.failed, canceled: text.canceled, waitingForIdle: text.waitingLog } as Record<string, string>)[key] ?? key;
 const stepName = (text: CalibrationText, key: unknown) => typeof key === 'string' && key in text ? text[key as keyof CalibrationText] : String(key ?? '');
 
-function describe(text: CalibrationText, language: AppLanguage, detail: Record<string, unknown>): string {
+function describe(text: CalibrationText, language: AppLanguage, raw: Record<string, unknown> | null): string {
+  const detail = raw ?? {};
   const parts: string[] = [];
   if (detail.step != null) parts.push(stepName(text, detail.step));
   if (detail.candidateId != null) parts.push(String(detail.candidateId));
@@ -79,12 +80,13 @@ function describe(text: CalibrationText, language: AppLanguage, detail: Record<s
 }
 
 /** Fixed-height log that follows new lines unless the reader scrolled up. */
-export function LiveLog({ text, language, lines }: { text: CalibrationText; language: AppLanguage; lines: TuningLiveSnapshot['log'] }) {
+export function LiveLog({ text, language, lines, saved = false }: { text: CalibrationText; language: AppLanguage; lines: TuningLiveSnapshot['log']; saved?: boolean }) {
   const box = useRef<HTMLOListElement>(null), pinned = useRef(true);
   useEffect(() => { const el = box.current; if (el && pinned.current) el.scrollTop = el.scrollHeight; }, [lines.length]);
   const time = (at: number) => new Date(at).toLocaleTimeString(language, { hour12: false });
   return <section className="tuning-log" aria-label={text.log}>
     <h3>{text.log}</h3>
+    {saved && <p className="tuning-muted" data-testid="tuning-log-saved">{text.logSaved}</p>}
     {lines.length ? <ol ref={box} data-testid="tuning-log" onScroll={event => { const el = event.currentTarget; pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24; }}>
       {lines.map((line, index) => <li key={`${line.at}-${index}`}><time>{time(line.at)}</time><strong>{logLabel(text, line.key)}</strong><span>{describe(text, language, line.detail)}</span></li>)}
     </ol> : <p className="tuning-muted">{text.logEmpty}</p>}

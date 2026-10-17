@@ -10,7 +10,7 @@ import { Dropdown, Segmented, Toggle } from '../OfficialControls';
 import './tuning.css';
 import { ExpertAdaptationCandidates } from './ExpertAdaptationCandidates';
 import { calibrationText } from './tuning/strings';
-import { LiveStatus } from './tuning/TuningLive';
+import { LiveLog, LiveStatus } from './tuning/TuningLive';
 import { QuickCalibrationView } from './tuning/QuickCalibration';
 
 const zh = {
@@ -117,6 +117,8 @@ export function TuningPage({ profileId, profile, language, desktop, owned, strea
   const [suggested, setSuggested] = useState<TuningRestartParameters[]>([]);
   const [notice, setNotice] = useState<ApplyNotice>(null);
   const [overwriteOpen, setOverwriteOpen] = useState(false);
+  /** Set when the config changed since calibration started; applying waits for confirmation. */
+  const [driftPending, setDriftPending] = useState<{ overwrite: boolean } | null>(null);
   const [useCase, setUseCase] = useState<TuningUseCase>('chat');
   const [helpOpen, setHelpOpen] = useState(false);
   const [contextLimit, setContextLimit] = useState(8192);
@@ -197,10 +199,11 @@ export function TuningPage({ profileId, profile, language, desktop, owned, strea
     const link = document.createElement('a'); link.href = url; link.download = `strata-calibration-${new Date(calibrationJob.startedAt).toISOString().slice(0, 10)}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   /** Default: a new config version next to the current one. Overwrite keeps a .bak copy. */
-  const applyCalibration = (overwrite: boolean) => run(async () => {
+  const applyCalibration = (overwrite: boolean, configChangeConfirmed = false) => run(async () => {
     if (!profile || !calibrationJob) return;
     setNotice(null);
     const snapshot = await core.readConfigSnapshot(profile);
+    if (!configChangeConfirmed && core.calibrationConfigChanged(calibrationJob, snapshot.revision)) { setDriftPending({ overwrite }); return; }
     const next = core.applyCalibrationSettings(snapshot.config, calibrationJob.settings, calibrationJob.backend);
     core.validateStartupConfiguration(next);
     if (overwrite) {
@@ -292,6 +295,7 @@ export function TuningPage({ profileId, profile, language, desktop, owned, strea
           cancelLabel={text.cancel} onCancel={cancelableStates.has(job.state) ? () => void run(() => core.tuningCancel(job.id)) : undefined} cancelDisabled={busy || job.state === 'canceling' || recovery?.state === 'restoring'}/>
         : <><div className="tuning-progress" role="status" aria-live="polite"><Activity size={16}/><strong>{text[job.state]}</strong><span>{job.progress ? `${job.progress.completedWorkloads} / ${job.progress.totalWorkloads} ${text.workloadProgress}` : `${job.completedRequests} / ${job.totalRequests} ${text.requests}`}</span></div>
           <p className="subtle">{text.elapsed}: {seconds(Math.max(0, (job.finishedAt ?? clock) - job.startedAt))}</p></>}
+        {active && liveSnapshot ? <LiveLog text={cal} language={language} lines={liveSnapshot.log}/> : !active && job.liveLog?.length ? <LiveLog text={cal} language={language} lines={job.liveLog} saved/> : null}
         {recovery && <div className={`tuning-recovery ${recovery.state === 'failed' ? 'is-failed' : ''}`} role={recovery.state === 'failed' ? 'alert' : 'status'}><strong>{text.recoveryTitle}: {recoveryLabels[recovery.state]}</strong>{recovery.state !== 'notNeeded' && <p>{recovery.configurationRestored ? text.configurationRestored : `${text.configurationRestored}: ${text.notVerified}`} · {recovery.serviceVerified ? text.serviceVerified : `${text.serviceVerified}: ${text.notVerified}`}</p>}{recovery.error && <p>{recovery.error}</p>}</div>}
         <section className="tuning-baseline"><h3>{text.baselineDetails}</h3>
         <div className="metrics-grid"><Metric label={`${text.baseline} · ${text.pcie}`} value={numeric(job.baseline.pcieFrac)}/><Metric label={`${text.baseline} · ${text.mtp}`} value={numeric(job.baseline.specMinP)}/></div>{fullReport && job.restartBaseline && <p className="subtle">{text.baseline}: {restartDescription(job.restartBaseline)}</p>}
@@ -334,6 +338,7 @@ export function TuningPage({ profileId, profile, language, desktop, owned, strea
       {!!job.measurements.length && <Panel title={text.diagnosticDetails} className="tuning-report tuning-diagnostic-details"><p className="subtle">{text.explanation}</p><div className="table-wrap"><table className="st-table"><thead><tr><th>{text.scene}</th><th>{text.role}</th><th>{text.cache}</th><th>{text.ttft}</th><th>{text.visible}</th><th>{text.speed}</th><th>{text.output}</th><th>{text.quality}</th></tr></thead><tbody>{job.measurements.map(measurement => <tr key={measurement.id}><td>{text[measurement.scene]} · {measurement.round + 1}</td><td>{text[measurement.position]}</td><td>{text[measurement.cacheMode]}</td><td>{measurement.firstTokenMs == null ? '—' : `${numeric(measurement.firstTokenMs / 1000)} s`}</td><td>{measurement.firstVisibleMs == null ? '—' : `${numeric(measurement.firstVisibleMs / 1000)} s`}</td><td>{numeric(measurement.decodeTokS)} tok/s</td><td>{numeric(measurement.outputTokens, 0)}</td><td data-tooltip={measurement.error}>{measurement.complete && measurement.qualityPassed ? text.ok : text.mismatch}</td></tr>)}</tbody></table></div></Panel>}
     </>}
     {overwriteOpen && <Dialog title={cal.overwriteConfirm} onClose={() => setOverwriteOpen(false)}><div className="tuning-help-content"><p>{cal.overwriteBody}</p>{profile && <p className="tuning-muted">{profile.configPath}</p>}<div className="actions"><button onClick={() => setOverwriteOpen(false)}>{cal.cancel}</button><button className="primary" data-testid="calibration-overwrite-confirm" disabled={!canApplyCalibration} onClick={() => { setOverwriteOpen(false); void applyCalibration(true); }}><Check size={14}/>{cal.confirmOverwrite}</button></div></div></Dialog>}
+    {driftPending && <Dialog title={cal.driftTitle} onClose={() => setDriftPending(null)}><div className="tuning-help-content" data-testid="calibration-drift"><p role="alert">{cal.driftBody}</p>{profile && <p className="tuning-muted">{profile.configPath}</p>}<div className="actions"><button onClick={() => setDriftPending(null)}>{cal.cancel}</button><button className="primary" data-testid="calibration-drift-confirm" disabled={!canApplyCalibration} onClick={() => { const pending = driftPending; setDriftPending(null); void applyCalibration(pending.overwrite, true); }}><Check size={14}/>{cal.driftConfirm}</button></div></div></Dialog>}
     {helpOpen && <Dialog title={language === 'zh-CN' ? '调优测试说明' : 'Tuning test details'} onClose={() => setHelpOpen(false)}><div className="tuning-help-content"><p>{text.intro}</p>{mode === 'quick' ? <><p>{cal.quickIntro}</p><p>{cal.quickRule}</p><p>{cal.verifyHint}</p></> : <><p>{diagnostic ? text.diagnosticHint : text.scenarioScope}</p><p>{diagnostic ? text.explanation : text.durationHint}</p></>}{mode === 'full' && <><h3>{text.contextLimit}</h3><p>{text.contextHint}</p><h3>{text.startupVerification}</h3><p>{text.startupHint}</p><h3>{text.result}</h3><p>{text.scopeExplanation}</p><p>{text.gainTimingHint}</p><h3>{text.resourceTitle}</h3><p>{text.resourceHint}</p><p>{text.resourceGateHint}</p></>}</div></Dialog>}
   </div>;
 }

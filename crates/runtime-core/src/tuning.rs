@@ -194,6 +194,9 @@ pub struct TuningJob {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     pub notes: Vec<String>,
+    /// Sanitized, size-capped copy of the live log, attached when the job ends.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub live_log: Vec<live::LiveLogLine>,
     #[serde(flatten)]
     pub full: FullReport,
 }
@@ -393,6 +396,23 @@ fn update(
     entry.job.updated_at = now();
     persist(state, &entry.job)?;
     Ok(entry.job.clone())
+}
+/// Stores the ended job's log in its report without touching `updated_at`, so
+/// the published completion stays the same report apart from the log.
+fn attach_live_log(state: &RuntimeState, id: &str, log: Vec<live::LiveLogLine>) {
+    if log.is_empty() {
+        return;
+    }
+    let Ok(mut registry) = registry().lock() else {
+        return;
+    };
+    if let Some(entry) = registry
+        .get_mut(state.data_dir())
+        .and_then(|jobs| jobs.get_mut(id))
+    {
+        entry.job.live_log = log;
+        let _ = persist(state, &entry.job);
+    }
 }
 fn register_active(
     state: &RuntimeState,
@@ -810,7 +830,7 @@ pub async fn start(
         .unwrap_or(candidates.len() * request.rounds * request.scenes.len() * 6);
     let token = CancellationToken::new();
     let job_identity = identity(&profile, &config, &metrics, &request.scenes);
-    let mut job=TuningJob{
+    let mut job=TuningJob{ live_log: vec![],
         id:uuid::Uuid::new_v4().to_string(),profile_id, state:Phase::Checking,scenes:request.scenes,rounds:request.rounds,max_tokens:request.max_tokens,
         started_at:now(),updated_at:now(),finished_at:None,completed_requests:0,total_requests,
         current_step:"waitingForIdle".into(),baseline,candidates,measurements:vec![],recommended_candidate_id:None,
@@ -841,7 +861,7 @@ pub async fn start(
             },
             json!({}),
         );
-        live::end(&id);
+        attach_live_log(&state, &id, live::end(&id));
         // Both successful request and full runs durably publish Completed and
         // their final timestamps before returning. Preserve that report once
         // consumers observe completion; only an error needs outer finalization.
@@ -2023,6 +2043,7 @@ mod tests {
     }
     fn admission_fixture_job(phase: Phase) -> TuningJob {
         TuningJob {
+            live_log: vec![],
             id: uuid::Uuid::new_v4().to_string(),
             profile_id: "isolated-admission".into(),
             state: phase,
@@ -2245,6 +2266,7 @@ mod tests {
             )
             .unwrap();
         let job = TuningJob {
+            live_log: vec![],
             id: uuid::Uuid::new_v4().to_string(),
             profile_id: profile.id.clone(),
             state: Phase::Applying,
@@ -2513,6 +2535,30 @@ mod tests {
             completed.recommended_candidate_id.as_deref(),
             Some("candidate-1")
         );
+        // The live log is kept in the report once the job ends: metadata only.
+        let mut logged = read_job(&state, &completed.id).unwrap();
+        for _ in 0..500 {
+            if !logged.live_log.is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            logged = read_job(&state, &completed.id).unwrap();
+        }
+        assert_eq!(
+            logged
+                .live_log
+                .iter()
+                .filter(|line| line.key == "sample")
+                .count(),
+            12
+        );
+        assert_eq!(logged.live_log.last().unwrap().key, "finished");
+        assert_eq!(
+            logged.updated_at, completed.updated_at,
+            "attaching the log keeps the report time"
+        );
+        let stored = serde_json::to_string(&logged).unwrap();
+        assert!(!stored.contains("refrigerator") && !stored.contains("\"prompt\":"));
         assert_eq!(fs::read(&profile.config_path).unwrap(), original);
         let source = Path::new(&profile.install_dir).join("source-config.json");
         assert_eq!(fs::read(&source).unwrap(), original);

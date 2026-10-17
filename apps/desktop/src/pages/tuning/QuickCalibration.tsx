@@ -84,7 +84,7 @@ export function QuickCalibrationView({ job, live, text, language, states, clock,
     })}</div>
 
     <div className="tuning-calibration-foot">
-      {live && <LiveLog text={text} language={language} lines={live.log}/>}
+      {live ? <LiveLog text={text} language={language} lines={live.log}/> : job.liveLog?.length ? <LiveLog text={text} language={language} lines={job.liveLog} saved/> : null}
       <section className="tuning-facts"><h3>{text.backend}</h3>
         <dl><div><dt>{text.backend}</dt><dd>{job.backend === 'unknown' ? text.unknownBackend : job.backend.toUpperCase()}</dd></div>
           <div><dt>{text.layerSplit}</dt><dd>{job.layerSplit ? text.yes : text.no}</dd></div>

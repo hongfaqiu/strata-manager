@@ -80,7 +80,13 @@
       ...(done && !nochange ? { gain: 0.0856, baseRate: 36.2, tunedRate: 39.3 } : {}),
       steps, completedRequests: completed, totalRequests: 105,
       restartSuggestions: [{ poolWorkers: 13 }, { poolWorkers: 10 }, { adaptEvery: 1, adaptSwaps: 80, adaptDecay: 0.97 }, { adaptEvery: 1, adaptSwaps: 160, adaptDecay: 0.97 }],
-      identity: { model: 'Isolated synthetic model' }, configFingerprint: 'fixture-only', notes: [],
+      identity: { model: 'Isolated synthetic model' }, configFingerprint: JSON.stringify(fixture.configs.a), notes: [],
+      ...(done ? { liveLog: [
+        { at: Date.now() - 400000, key: 'warmup', detail: {} },
+        { at: Date.now() - 300000, key: 'stepWinner', detail: { step: 'pcieFrac', chosen: chosenPcie } },
+        { at: Date.now() - 200000, key: 'stepWinner', detail: { step: 'specMinP', chosen: 0.5 } },
+        { at: Date.now() - 60000, key: 'finished', detail: nochange ? {} : { gain: 0.0856 } },
+      ] } : {}),
     };
   };
   calibration.makeLive = job => {
@@ -96,6 +102,8 @@
       request: { startedAt: at - 1900, deltas: 72, firstTokenMs: 210, tokS: 35.4 }, lastTokS: 35.0, log, updatedAt: at };
   };
   if (query.get('calibration')) { calibration.job = calibration.makeJob(query.get('calibration')); if (calibration.job.state === 'running') calibration.live = calibration.makeLive(calibration.job); }
+  // The config was edited elsewhere after calibration started: its revision no longer matches the job fingerprint.
+  if (query.get('configEdited')) fixture.configs.a.args.push('--stats');
   internal.invoke = async (command, args = {}) => {
     const record = () => fixture.calls.push({ command, args: structuredClone(args) });
     if (command === 'supervisor_status') {

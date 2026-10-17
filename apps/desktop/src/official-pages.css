@@ -252,3 +252,5 @@ html,body,#root{height:100%;min-height:0}body{overflow:hidden}.official-app{heig
 .workspace-subnav:not(.model-config-breadcrumb)>button:hover:not([aria-current=page]){background:transparent;color:var(--st-ink)}
 @media(max-width:1100px){.workspace-subnav:not(.model-config-breadcrumb){margin:12px 18px 0;max-width:calc(100% - 36px)}}
 @media(max-width:700px){.workspace-subnav:not(.model-config-breadcrumb){margin:10px 12px 0;max-width:calc(100% - 24px)}}
+
+.startup-tuning-fields .startup-field-hint{display:block;margin-top:4px;color:var(--st-ink-muted);font-size:12px;line-height:1.45;max-width:360px}

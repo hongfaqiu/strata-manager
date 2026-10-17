@@ -208,6 +208,8 @@ export interface TuningJob {
   appliedConfigFingerprint?: string;
   error?: string;
   notes: string[];
+  /** Sanitized, size-capped live log attached when the job ended (older reports have none). */
+  liveLog?: TuningLiveLogLine[];
 }
 
 /** Quick calibration (upstream tools/calibrate.py), a request-level sweep through the running engine. */
@@ -262,8 +264,12 @@ export interface CalibrationJob {
   configFingerprint: string;
   error?: string;
   notes: string[];
+  /** Sanitized, size-capped live log attached when the job ended (older reports have none). */
+  liveLog?: TuningLiveLogLine[];
 }
 /** In-memory live progress of a running tuning or calibration job. */
+/** One live log line: a message key plus metadata (parameter values, rates). Never prompt or answer text. */
+export interface TuningLiveLogLine { at: number; key: string; detail: Record<string, unknown> | null }
 export interface TuningLiveSnapshot {
   jobId: string;
   stepKey: string;
@@ -278,6 +284,6 @@ export interface TuningLiveSnapshot {
   etaMs: number | null;
   request: { startedAt: number; deltas: number; firstTokenMs: number | null; tokS: number | null } | null;
   lastTokS: number | null;
-  log: { at: number; key: string; detail: Record<string, unknown> }[];
+  log: TuningLiveLogLine[];
   updatedAt: number;
 }

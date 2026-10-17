@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyCalibrationSettings, calibratedConfigName, calibrationHasChange, calibrationProgress, restartCandidatesFromCalibration, sweepPoints, type CalibrationStep } from '../src';
+import { applyCalibrationSettings, calibratedConfigName, calibrationConfigChanged, calibrationHasChange, calibrationProgress, restartCandidatesFromCalibration, sweepPoints, type CalibrationStep } from '../src';
 
 const config = { exe: 'engine/strata.exe', args: ['--native', 'model.gguf', '--pcie-frac', '0.55', '--api-key-env', 'KEY', '--unknown', 'x'], port: 8080 };
 
@@ -46,5 +46,17 @@ describe('quick calibration helpers', () => {
     expect(calibrationHasChange({ state: 'completed', settings: {} })).toBe(false);
     expect(calibrationHasChange({ state: 'completed', settings: { '--pcie-frac': '0.35' } })).toBe(true);
     expect(calibrationHasChange({ state: 'running', settings: { '--pcie-frac': '0.35' } })).toBe(false);
+  });
+  it('flags a config edited since calibration started without blocking a missing fingerprint', () => {
+    const fp = 'a'.repeat(64);
+    expect(calibrationConfigChanged({ configFingerprint: fp }, fp)).toBe(false);
+    expect(calibrationConfigChanged({ configFingerprint: fp }, fp.toUpperCase())).toBe(false);
+    expect(calibrationConfigChanged({ configFingerprint: fp }, 'b'.repeat(64))).toBe(true);
+    expect(calibrationConfigChanged({ configFingerprint: '' }, 'b'.repeat(64))).toBe(false);
+    expect(calibrationConfigChanged(null, 'b'.repeat(64))).toBe(false);
+  });
+  it('writes --prefill-pipe as an integer within the upstream range', () => {
+    expect(applyCalibrationSettings({ args: [] }, { '--prefill-pipe': '1536' }, 'hip').args).toEqual(['--prefill-pipe', '1536']);
+    expect(() => applyCalibrationSettings({ args: [] }, { '--prefill-pipe': '262145' }, 'hip')).toThrow();
   });
 });

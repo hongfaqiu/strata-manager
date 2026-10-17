@@ -75,3 +75,12 @@ export function calibrationProgress(job: Pick<CalibrationJob, 'completedRequests
 export function calibrationHasChange(job: Pick<CalibrationJob, 'state' | 'settings'> | null | undefined): boolean {
   return job?.state === 'completed' && Object.keys(job.settings ?? {}).length > 0;
 }
+
+/**
+ * True when the config file changed since calibration started: the snapshot
+ * revision and the job's fingerprint are both SHA-256 of the file bytes.
+ * Applying is still allowed after an explicit confirmation.
+ */
+export function calibrationConfigChanged(job: Pick<CalibrationJob, 'configFingerprint'> | null | undefined, revision: string): boolean {
+  return !!job?.configFingerprint && !!revision && job.configFingerprint.toLowerCase() !== revision.toLowerCase();
+}

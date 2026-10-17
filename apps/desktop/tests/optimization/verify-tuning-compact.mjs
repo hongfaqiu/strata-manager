@@ -82,7 +82,7 @@ async function noOverflow(page) {
   const widths = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth, body: document.body.scrollWidth, tuning: document.querySelector('.tuning-page').getBoundingClientRect().width }));
   assert.ok(widths.document <= widths.viewport + 1 && widths.body <= widths.viewport + 1 && widths.tuning <= widths.viewport + 1, JSON.stringify(widths));
 }
-async function run(name, language, action, { job = '', calibration = '', viewport = { width: 1366, height: 768 }, configWrites = false } = {}) {
+async function run(name, language, action, { job = '', calibration = '', extra = '', viewport = { width: 1366, height: 768 }, configWrites = false } = {}) {
   if (selectedCase && selectedCase !== name) return;
   const context = await browser.newContext({ viewport, acceptDownloads: true }), blocked = [];
   await context.route('**/*', route => {
@@ -92,7 +92,7 @@ async function run(name, language, action, { job = '', calibration = '', viewpor
   const page = await context.newPage(), errors = [];
   page.setDefaultTimeout(10000); page.on('pageerror', error => errors.push(String(error)));
   try {
-    await page.goto(`${origin}/tuning-compact-app.html?language=${language}${job ? `&job=${job}` : ''}${calibration ? `&calibration=${calibration}` : ''}#tuning`);
+    await page.goto(`${origin}/tuning-compact-app.html?language=${language}${job ? `&job=${job}` : ''}${calibration ? `&calibration=${calibration}` : ''}${extra}#tuning`);
     await area(page).getByRole('heading', { name: labels(language).title, exact: true }).waitFor();
     if (calibration) await area(page).locator('[data-testid="tuning-calibration"]').waitFor();
     else if (job) await page.waitForFunction(() => !!document.querySelector('.tuning-live, [data-testid="calibration-start"]'));
@@ -258,6 +258,37 @@ try {
     assert.ok(write.expectedRevision, 'Overwrite uses the revision read just before writing');
     assert.equal(await page.evaluate(() => window.__fixture.calls.filter(call => call.command === 'copy_configuration').length), 0);
   }, { calibration: 'finished', configWrites: true });
+  await run('quick-config-drift-confirm', 'zh-CN', async (page, text) => {
+    const copies = () => page.evaluate(() => window.__fixture.calls.filter(call => call.command === 'copy_configuration').map(call => call.args));
+    const save = area(page).getByRole('button', { name: text.saveVersion, exact: true });
+    await save.click();
+    let dialog = page.getByRole('dialog', { name: '配置在校准后已被修改', exact: true }); await dialog.waitFor();
+    assert.match(await dialog.innerText(), /推荐值是在旧配置上测得的/);
+    assert.equal((await copies()).length, 0, 'Nothing is written before the change is confirmed');
+    await dialog.getByRole('button', { name: '取消', exact: true }).click();
+    assert.equal(await page.getByRole('dialog').count(), 0);
+    assert.equal((await copies()).length, 0, 'Cancel writes nothing');
+    await save.click();
+    dialog = page.getByRole('dialog', { name: '配置在校准后已被修改', exact: true }); await dialog.waitFor();
+    await dialog.getByRole('button', { name: '仍然应用', exact: true }).click();
+    await page.waitForFunction(() => window.__fixture.calls.some(call => call.command === 'copy_configuration'));
+    assert.deepEqual((await copies())[0].config.args, ['--model', 'fixture/a.gguf', '--pool-workers', '4', '--stats', '--pcie-frac', '0.35', '--spec-min-p', '0.50'], 'Applies onto the edited config, keeping the edit');
+    // Overwrite asks again: confirm overwrite, then confirm the changed config.
+    await area(page).getByRole('button', { name: text.overwrite, exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: text.confirmOverwrite, exact: true }).click();
+    dialog = page.getByRole('dialog', { name: '配置在校准后已被修改', exact: true }); await dialog.waitFor();
+    assert.equal(await page.evaluate(() => window.__fixture.calls.filter(call => call.command === 'write_config').length), 0);
+    await dialog.getByRole('button', { name: '仍然应用', exact: true }).click();
+    await page.waitForFunction(() => window.__fixture.calls.some(call => call.command === 'write_config'));
+  }, { calibration: 'finished', extra: '&configEdited=1', configWrites: true });
+  await run('quick-persisted-log', 'en', async page => {
+    const log = area(page).locator('[data-testid="tuning-log"]');
+    await area(page).getByTestId('tuning-log-saved').waitFor();
+    assert.match(await area(page).getByTestId('tuning-log-saved').innerText(), /never prompts or answers/);
+    assert.equal(await log.locator('li').count(), 4, 'The ended job shows the log stored in its report');
+    assert.match(await log.innerText(), /PCIe[\s\S]*0\.35/);
+    assert.equal(await page.evaluate(() => window.__fixture.calls.filter(call => call.command === 'tuning_live').length), 0, 'No live polling once the job ended');
+  }, { calibration: 'finished' });
   await run('quick-no-change', 'zh-CN', async (page, text) => {
     await area(page).getByText(text.noChange, { exact: true }).waitFor();
     assert.equal(await area(page).getByRole('button', { name: text.saveVersion, exact: true }).count(), 0);

@@ -1,10 +1,12 @@
 //! In-memory live progress for running tuning and calibration jobs.
 //!
-//! Nothing here is persisted: reports keep their own durable state at step
-//! boundaries. This registry only exists so the UI can show what is being
-//! measured right now (current step, parameters, streamed token rate, ETA and
-//! a short metadata log). It never stores prompt or response text.
-use serde::Serialize;
+//! The registry itself lives in memory: reports keep their own durable state
+//! at step boundaries. It exists so the UI can show what is being measured
+//! right now (current step, parameters, streamed token rate, ETA and a short
+//! metadata log). When a job ends, `end` hands back a size-capped, sanitized
+//! copy of the log that the job attaches to its report. It never stores prompt
+//! or response text.
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
     collections::{HashMap, VecDeque},
@@ -15,6 +17,26 @@ use std::{
 use crate::types::now;
 
 pub const MAX_LOG_LINES: usize = 200;
+/// Upper bound of the log copy stored in a report (serialized JSON bytes).
+pub const MAX_PERSISTED_LOG_BYTES: usize = 32 * 1024;
+const MAX_DETAIL_STRING: usize = 80;
+const MAX_DETAIL_DEPTH: usize = 3;
+/// Detail keys that could ever carry request or answer text. Dropped on persist.
+const TEXT_KEYS: &[&str] = &[
+    "prompt",
+    "prompts",
+    "text",
+    "content",
+    "messages",
+    "message",
+    "answer",
+    "response",
+    "output",
+    "input",
+    "reasoning",
+    "system",
+    "body",
+];
 
 tokio::task_local! {
     /// The job whose request is streaming on this task. Set with `scope`.
@@ -32,7 +54,7 @@ pub struct LiveRequest {
     pub tok_s: Option<f64>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct LiveLogLine {
     pub at: u64,
@@ -104,7 +126,7 @@ pub fn estimate_eta(unit_ms: &[f64], completed: usize, total: usize) -> Option<u
     }
     sorted.sort_by(f64::total_cmp);
     let middle = sorted.len() / 2;
-    let median = if sorted.len() % 2 == 0 {
+    let median = if sorted.len().is_multiple_of(2) {
         (sorted[middle - 1] + sorted[middle]) / 2.0
     } else {
         sorted[middle]
@@ -259,16 +281,128 @@ pub fn snapshot(job_id: &str) -> Option<LiveSnapshot> {
     Some(snapshot)
 }
 
-pub fn end(job_id: &str) {
-    if let Ok(mut registry) = registry().lock() {
-        registry.remove(job_id);
+/// Removes the job and returns the log copy to keep in its report.
+pub fn end(job_id: &str) -> Vec<LiveLogLine> {
+    let entry = registry()
+        .lock()
+        .ok()
+        .and_then(|mut registry| registry.remove(job_id));
+    entry.map_or_else(Vec::new, |entry| {
+        persistable(entry.log.into_iter().collect())
+    })
+}
+
+fn sanitize_detail(value: &Value, depth: usize) -> Option<Value> {
+    match value {
+        Value::Null | Value::Bool(_) | Value::Number(_) => Some(value.clone()),
+        // Short identifiers only (candidate ids, workload kinds, step keys).
+        Value::String(text) => (text.chars().count() <= MAX_DETAIL_STRING && !text.contains('\n'))
+            .then(|| value.clone()),
+        Value::Array(items) if depth < MAX_DETAIL_DEPTH => Some(Value::Array(
+            items
+                .iter()
+                .take(16)
+                .filter_map(|item| sanitize_detail(item, depth + 1))
+                .collect(),
+        )),
+        Value::Object(map) if depth < MAX_DETAIL_DEPTH => Some(Value::Object(
+            map.iter()
+                .filter(|(key, _)| !TEXT_KEYS.contains(&key.to_ascii_lowercase().as_str()))
+                .filter_map(|(key, item)| {
+                    sanitize_detail(item, depth + 1).map(|item| (key.clone(), item))
+                })
+                .collect(),
+        )),
+        _ => None,
     }
+}
+
+/// The report copy of a log: metadata only (no text-like keys, no long or
+/// multi-line strings), the newest `MAX_LOG_LINES` lines, and at most
+/// `MAX_PERSISTED_LOG_BYTES` of JSON, dropping the oldest lines first.
+pub fn persistable(lines: Vec<LiveLogLine>) -> Vec<LiveLogLine> {
+    let skip = lines.len().saturating_sub(MAX_LOG_LINES);
+    let mut kept: VecDeque<LiveLogLine> = lines
+        .into_iter()
+        .skip(skip)
+        .filter(|line| line.key.len() <= 64)
+        .map(|line| LiveLogLine {
+            detail: sanitize_detail(&line.detail, 0).unwrap_or(Value::Null),
+            ..line
+        })
+        .collect();
+    let size = |line: &LiveLogLine| serde_json::to_vec(line).map_or(usize::MAX, |b| b.len() + 1);
+    let mut total: usize = kept.iter().map(size).sum::<usize>() + 2;
+    while total > MAX_PERSISTED_LOG_BYTES {
+        match kept.pop_front() {
+            Some(line) => total = total.saturating_sub(size(&line)),
+            None => break,
+        }
+    }
+    kept.into_iter().collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn persisted_log_is_capped_and_never_keeps_text() {
+        let line = |i: usize, detail: Value| LiveLogLine {
+            at: i as u64,
+            key: "sample".into(),
+            detail,
+        };
+        let prompt = "Write a merge_sorted function in Python that merges two lists";
+        let lines = vec![
+            line(
+                0,
+                json!({"rate":36.2,"prompt":prompt,"nested":{"content":"secret answer","candidateId":"cpu-4"}}),
+            ),
+            line(
+                1,
+                json!({"note":"x".repeat(200),"multi":"a\nb","ok":"cold"}),
+            ),
+        ];
+        let kept = persistable(lines);
+        let text = serde_json::to_string(&kept).unwrap();
+        assert!(!text.contains("merge_sorted") && !text.contains("secret answer"));
+        assert!(!text.contains("xxxx") && !text.contains("a\\nb"));
+        assert_eq!(
+            kept[0].detail,
+            json!({"rate":36.2,"nested":{"candidateId":"cpu-4"}})
+        );
+        assert_eq!(kept[1].detail, json!({"ok":"cold"}));
+
+        let many: Vec<_> = (0..500)
+            .map(|i| {
+                line(
+                    i,
+                    json!({"candidateId":format!("candidate-{i:04}-{}", "y".repeat(60)),"rate":i}),
+                )
+            })
+            .collect();
+        let kept = persistable(many);
+        assert!(kept.len() <= MAX_LOG_LINES);
+        assert!(serde_json::to_vec(&kept).unwrap().len() <= MAX_PERSISTED_LOG_BYTES);
+        assert_eq!(kept.last().unwrap().at, 499, "the newest lines are kept");
+    }
+
+    #[test]
+    fn end_returns_the_log_and_forgets_the_job() {
+        let id = "live-end-job";
+        begin(id, 2);
+        log(id, "warmup", json!({}));
+        log(id, "sample", json!({"rate":12.5}));
+        let kept = end(id);
+        assert_eq!(
+            kept.iter().map(|l| l.key.as_str()).collect::<Vec<_>>(),
+            ["warmup", "sample"]
+        );
+        assert!(snapshot(id).is_none());
+        assert!(end(id).is_empty());
+    }
 
     #[test]
     fn eta_uses_median_of_finished_units_and_never_guesses() {

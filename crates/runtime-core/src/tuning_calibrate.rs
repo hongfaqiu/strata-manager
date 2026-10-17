@@ -142,6 +142,9 @@ pub struct CalibrationJob {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     pub notes: Vec<String>,
+    /// Sanitized, size-capped copy of the live log, attached when the job ends.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub live_log: Vec<live::LiveLogLine>,
 }
 
 // ---------------------------------------------------------------- pure logic
@@ -239,7 +242,7 @@ pub fn spec_values(current: f64) -> Vec<f64> {
 }
 
 pub fn sweep_order(values: &[f64], round: usize) -> Vec<f64> {
-    if round % 2 == 0 {
+    if round.is_multiple_of(2) {
         values.to_vec()
     } else {
         values.iter().rev().copied().collect()
@@ -655,7 +658,7 @@ pub async fn start(
         .and_then(engine_number)
         .map(|w| w as usize)
         .filter(|w| *w > 0);
-    let job = CalibrationJob {
+    let job = CalibrationJob { live_log: vec![],
         id: uuid::Uuid::new_v4().to_string(),
         profile_id: profile.id.clone(),
         kind: "quickCalibrate".into(),
@@ -725,7 +728,10 @@ pub async fn start(
                 }
             });
         }
-        live::end(&id);
+        let log = live::end(&id);
+        if !log.is_empty() {
+            let _ = cal_update(&state, &id, |job| job.live_log = log);
+        }
     });
     Ok(job)
 }
@@ -1252,14 +1258,8 @@ mod tests {
 
     #[test]
     fn confirmation_and_prompt_chunks_follow_upstream_rules() {
-        assert_eq!(
-            confirm_gain(&[100.0, 101.0, 99.0], &[110.0, 111.0, 109.0]).1,
-            true
-        );
-        assert_eq!(
-            confirm_gain(&[100.0, 101.0, 99.0], &[102.0, 103.0, 101.0]).1,
-            false
-        );
+        assert!(confirm_gain(&[100.0, 101.0, 99.0], &[110.0, 111.0, 109.0]).1);
+        assert!(!confirm_gain(&[100.0, 101.0, 99.0], &[102.0, 103.0, 101.0]).1);
         assert_eq!(confirm_gain(&[], &[1.0]), (None, false));
         assert!(pipe_confirmed(
             &[1000.0, 1000.0, 1000.0],
@@ -1459,7 +1459,33 @@ mod tests {
             original,
             "calibration never writes the config"
         );
+        // the live log is attached to the report when the job ends
+        for _ in 0..500 {
+            job = status(&state, profile.id.clone()).unwrap().unwrap();
+            if !job.live_log.is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
         assert!(live::snapshot(&started.id).is_none());
+        let keys: Vec<_> = job.live_log.iter().map(|line| line.key.as_str()).collect();
+        assert!(
+            keys.contains(&"warmup") && keys.last() == Some(&"finished"),
+            "{keys:?}"
+        );
+        let stored = fs::read_to_string(cal_path(&state, &job.id).unwrap()).unwrap();
+        assert!(stored.contains("\"liveLog\""));
+        for prompt_text in [
+            "refrigerator",
+            "merge_sorted",
+            "\"prompt\":",
+            "\"content\":",
+        ] {
+            assert!(
+                !stored.contains(prompt_text),
+                "report never stores {prompt_text}"
+            );
+        }
         // the report survives in the latest-report index
         let reread = status(&state, profile.id.clone()).unwrap().unwrap();
         assert_eq!(reread.id, job.id);
