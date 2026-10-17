@@ -733,30 +733,6 @@ async fn update_runtime(
 }
 
 #[tauri::command]
-async fn official_update_plan(
-    state: State<'_, ClientState>,
-    profile: ServiceProfile,
-) -> Result<Value, String> {
-    state
-        .ipc
-        .request("official_update_plan", json!({"profile":profile}))
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn official_update(
-    state: State<'_, ClientState>,
-    profile: ServiceProfile,
-) -> Result<Value, String> {
-    state
-        .ipc
-        .request("official_update", json!({"profile":profile}))
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
 async fn engine_help_flags(
     state: State<'_, ClientState>,
     profile: ServiceProfile,
@@ -1811,8 +1787,6 @@ pub fn run() {
             set_external_management,
             install_runtime,
             update_runtime,
-            official_update_plan,
-            official_update,
             engine_help_flags,
             update_runtime_zip,
             runtime_update_info,

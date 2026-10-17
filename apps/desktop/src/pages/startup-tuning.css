@@ -66,3 +66,15 @@
 @media(max-width:760px){.startup-service-fields{grid-template-columns:1fr}.startup-service-addresses{flex-wrap:wrap;gap:6px 10px}}
 @media(max-width:1150px){.startup-tuning-fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:760px){.startup-tuning-fields{grid-template-columns:1fr}.startup-tuning-group{padding:0 12px}.startup-tuning-search{flex:1}.startup-argument-row{grid-template-columns:20px minmax(0,1fr) 30px}.startup-argument-operands{grid-column:2;grid-row:2}.startup-argument-row>.startup-remove-value{grid-column:3;grid-row:1}.startup-config-node.is-object>.startup-config-children,.startup-config-node.is-array>.startup-config-children{padding-left:9px}.startup-add-value{flex-wrap:wrap}}
+
+/* Main editor: title row carries the file and its actions; the save bar stays in reach while scrolling. */
+.startup-tuning .setup-tuning-panel-heading{flex-wrap:wrap;margin-bottom:var(--st-s-2)}
+.startup-tuning .setup-tuning-panel-heading .card-title{font-size:var(--st-fs-md);font-weight:650;color:var(--st-ink)}
+.startup-tuning .setup-tuning-panel-heading .startup-file-actions{margin:0 0 0 auto;gap:2px;flex-wrap:wrap}
+.startup-tuning .setup-tuning-panel-heading .startup-file-actions>code{margin-right:var(--st-s-2)}
+.startup-tuning .setup-tuning-panel-heading .startup-file-actions button{background:transparent;border-color:transparent;color:var(--st-ink-soft);padding:0 10px}
+.startup-tuning .setup-tuning-panel-heading .startup-file-actions button:hover:not(:disabled){background:var(--st-surface-2);color:var(--st-ink)}
+.startup-tuning .setup-tuning-panel-heading .startup-file-actions button.danger{color:var(--st-danger-text,#b01a2e)}
+.startup-tuning .setup-tuning-panel-heading .startup-file-actions button.danger:hover:not(:disabled){background:var(--st-danger-tint,#fdecee);color:var(--st-danger-text,#b01a2e)}
+.official-surface .startup-tuning .startup-save-bar{position:sticky;bottom:0;z-index:5;margin:var(--st-s-5) calc(-1 * var(--st-s-5)) calc(-1 * var(--st-s-5));padding:var(--st-s-3) var(--st-s-5);background:var(--st-surface);border-top:1px solid var(--st-line);border-radius:0 0 var(--st-r-lg) var(--st-r-lg)}
+.official-surface .startup-tuning .startup-save-bar[data-dirty] [role=status]{color:var(--st-accent-text)}

@@ -35,7 +35,7 @@ test('Homepage keeps the v0.1.7 layout with current screenshots and feature copy
     assert.match(html, new RegExp(shot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
   assert.match(html, /Cursor|Codex/);
-  assert.match(html, /官方脚本更新 Strata|Update Strata with the official script|官方更新脚本|official update script/);
+  assert.doesNotMatch(html, /官方脚本更新 Strata|Update Strata with the official script|官方更新脚本|official update script/);
   assert.match(html, /product-cover\.zh\.webp/);
   assert.match(html, /github\.com\/hongfaqiu\/strata-manager/);
   assert.match(html, /vendor\/gsap\.min\.js/);
