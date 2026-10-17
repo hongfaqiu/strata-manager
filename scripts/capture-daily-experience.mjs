@@ -15,7 +15,11 @@ const output = join(root, 'output/playwright/daily-experience-capture');
 const destination = join(root, 'docs/screenshots/daily-experience');
 const requireDesktop = createRequire(join(root, 'apps/desktop/package.json'));
 const currentVersion = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).version;
-const arguments_ = new Set(process.argv.slice(2));
+const sceneArgument = process.argv.slice(2).find(argument => argument.startsWith('--scenes='));
+// --scenes=a,b re-captures only those scenes from the isolated preview fixtures and
+// merges them into the existing manifest; it does not need the model-download status file.
+const selectedScenes = sceneArgument ? sceneArgument.slice('--scenes='.length).split(',').filter(Boolean) : null;
+const arguments_ = new Set(process.argv.slice(2).filter(argument => argument !== sceneArgument));
 for (const argument of arguments_) if (!['--prepare', '--capabilities-ready', '--probe-history-narrow'].includes(argument)) throw Error(`Unknown argument: ${argument}`);
 const probeHistory = arguments_.has('--probe-history-narrow');
 const manifestPath = join(output, probeHistory ? 'probe-history-narrow.json' : 'manifest.json');
@@ -55,6 +59,7 @@ async function snapshot() {
 }
 
 async function ready() {
+  if (selectedScenes) return { task: `supplemental preview-fixture capture: ${selectedScenes.join(', ')}`, state: 'ready' };
   const state = JSON.parse(await readFile(join(root, '.local/model-download-redesign-status.json'), 'utf8'));
   assert.equal(state.state, 'ready', 'The model download owner must mark state=ready before capture.');
   assert.ok(arguments_.has('--capabilities-ready'), 'Capture needs --capabilities-ready after the finishing owner confirms capability wiring and fixture identity.');
@@ -85,7 +90,7 @@ const manifest = {
   releaseStatus: 'unreleased',
   capturedAt: new Date().toISOString(),
   status: 'running',
-  source: 'Real App components via daily-experience-app.html; API usage is a standalone real ApiUsagePage fixture.',
+  source: 'Real App components via daily-experience-app.html; API usage uses the dev-only ?mockData=1 statistics mock inside the whole App.',
   scope: 'Synthetic in-memory native data, service capabilities, SSE answers, history, GPU/RAM and statistics. No real model, supervisor, credentials, installer, updater, benchmark or OS mutation.',
   imageScope: '16 light-theme screenshots: the four model-download list/detail images use a real 1440x1200 viewport so the resource card fits above the footer; the other twelve use 1440x960. Separate 800px QA covers each scene in Chinese/English and light/dark. API usage retains the standalone fixture toolbar and is not a whole-App screenshot.',
   probeOnly: probeHistory,
@@ -186,14 +191,12 @@ const scenes = [
     assert.match(await panel.innerText(), zh ? /监听端口被占用/ : /Listen port in use/);
     await panel.locator('summary').click();
   } },
-  { id: 'api-usage', standalone: true, sample: 'Standalone real ApiUsagePage fixture; synthetic telemetry/statistics, not a whole App screenshot', action: async (page, zh, theme) => {
+  { id: 'api-usage', hash: 'usage', params: { mockData: '1' }, sample: 'Whole App with the dev-only API usage mock (?mockData=1); synthetic statistics and telemetry', action: async page => {
     await page.locator('.api-usage-page').waitFor();
-    if (!zh) await page.getByRole('button', { name: '中 / EN', exact: true }).click();
-    if (await page.evaluate(() => document.documentElement.dataset.theme) !== theme) {
-      await page.getByRole('button', { name: '切换主题', exact: true }).click();
-    }
-    await page.locator('.api-usage-tile').first().waitFor();
-    await page.waitForFunction(() => (window.__apiFixture?.calls.filter(call => call.action === 'summary').length ?? 0) > 0);
+    await page.locator('.api-usage-trend-card').waitFor();
+    await page.locator('.api-usage-sources-table').waitFor();
+    await page.mouse.move(2, 2);
+    await page.waitForTimeout(800);
   } },
 ];
 
@@ -221,6 +224,7 @@ async function sceneCase(scene, language, theme, viewport, capture) {
     const params = new URLSearchParams({ version: currentVersion, language: language === 'zh' ? 'zh-CN' : 'en', theme });
     if (scene.stopped) params.set('stopped', '');
     if (scene.query) params.set(scene.query, '');
+    for (const [key, value] of Object.entries(scene.params ?? {})) params.set(key, value);
     await page.goto(scene.standalone ? `${origin}/api-usage-app.html` : `${origin}/daily-experience-app.html?${params}#${scene.hash}`, { waitUntil: 'networkidle' });
     if (!scene.standalone) {
       await page.locator('.desktop-app-frame').waitFor();
@@ -288,8 +292,10 @@ try {
   if (probeHistory) {
     await sceneCase(scenes.find(scene => scene.id === 'history-comparison'), 'en', 'dark', { width: 800, height: 850 }, false);
   } else {
-    for (const scene of scenes) for (const language of ['zh', 'en']) await sceneCase(scene, language, 'light', scene.captureViewport ?? { width: 1440, height: 960 }, true);
-    for (const scene of scenes) for (const language of ['zh', 'en']) for (const theme of ['light', 'dark']) await sceneCase(scene, language, theme, { width: 800, height: 850 }, false);
+    const active = selectedScenes ? scenes.filter(scene => selectedScenes.includes(scene.id)) : scenes;
+    assert.equal(active.length, selectedScenes?.length ?? scenes.length, 'Unknown scene in --scenes');
+    for (const scene of active) for (const language of ['zh', 'en']) await sceneCase(scene, language, 'light', scene.captureViewport ?? { width: 1440, height: 960 }, true);
+    for (const scene of active) for (const language of ['zh', 'en']) for (const theme of ['light', 'dark']) await sceneCase(scene, language, theme, { width: 800, height: 850 }, false);
   }
   assert.ok(manifest.captures.every(capture => capture.passed) && manifest.narrowQa.every(check => check.passed), 'Some capture or narrow QA cases failed. See manifest.json and failure PNGs.');
   for (const capture of manifest.captures) {
@@ -328,7 +334,14 @@ try {
   if (after) manifest.sourceProvenance.sourceUnchangedDuringCapture = after.head === before.head && after.sourceTreeSha256 === before.sourceTreeSha256 && after.helperTreeSha256 === before.helperTreeSha256;
   manifest.completedAt = new Date().toISOString();
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-  if (manifest.status === 'passed' && !probeHistory) {
+  if (manifest.status === 'passed' && !probeHistory && selectedScenes) {
+    const full = JSON.parse(await readFile(join(destination, 'manifest.json'), 'utf8'));
+    const merge = (previous, updated) => previous.map(item => updated.find(entry => entry.name === item.name) ?? item);
+    full.captures = merge(full.captures, manifest.captures);
+    full.narrowQa = merge(full.narrowQa, manifest.narrowQa);
+    full.supplementalCaptures = [...(full.supplementalCaptures ?? []).filter(entry => !selectedScenes.includes(entry.scene)), ...selectedScenes.map(scene => ({ scene, appVersion: currentVersion, capturedAt: manifest.capturedAt, sourceProvenance: manifest.sourceProvenance, browser: manifest.browser }))];
+    await writeFile(join(destination, 'manifest.json'), `${JSON.stringify(full, null, 2)}\n`);
+  } else if (manifest.status === 'passed' && !probeHistory) {
     await writeFile(join(destination, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   }
   await browser?.close();
