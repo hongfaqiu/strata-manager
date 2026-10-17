@@ -5,8 +5,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        当前功能范围见[使用指南](https://hongfaqiu.github.io/strata-manager/docs/user-guide.html) /
-        [User guide](https://hongfaqiu.github.io/strata-manager/docs/user-guide.en.html).
+        当前功能范围见[使用指南](https://strata-manager.cosfoc.com/docs/user-guide) /
+        [User guide](https://strata-manager.cosfoc.com/docs/user-guide.en).
         提交建议不表示该功能已经实现 / A request does not establish implemented support.
   - type: textarea
     id: workflow

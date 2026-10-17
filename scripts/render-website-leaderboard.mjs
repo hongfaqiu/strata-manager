@@ -3,8 +3,9 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { documentSeo, escapeHtml as escape, homePage, standalonePages } from './website-seo.mjs';
 
-// The Benchmark Arena leaderboard: one static shell per language. Data comes from the public
-// read-only API at runtime, with a JSON snapshot (refreshed at build time when reachable) as fallback.
+// The Benchmark Arena leaderboard: one static shell per language. The same Worker serves the site and
+// the public read-only API, so the page reads /v1/* from its own origin at runtime, with a JSON snapshot
+// (refreshed at build time from the API host when reachable) as fallback.
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const ARENA_API = 'https://arena.cosfoc.com';
 export const leaderboardPages = standalonePages.filter((entry) => entry.key === 'leaderboard');
@@ -26,7 +27,6 @@ export function renderLeaderboardPage(entry) {
   <meta name="description" content="${escape(c.description)}">
   ${documentSeo({ title: `${c.title} · Strata Manager`, description: c.description, page: entry.page, lang: entry.lang, alternates: leaderboardPages })}
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
-  <link rel="preconnect" href="${ARENA_API}" crossorigin>
   <link rel="stylesheet" href="docs.css">
   <link rel="stylesheet" href="leaderboard.css">
   <script src="docs.js"></script>
@@ -43,7 +43,7 @@ export function renderLeaderboardPage(entry) {
       <button class="header-action" id="doc-theme" type="button">${c.theme}</button>
     </nav>
   </header>
-  <main id="content" class="lb-main" data-api="${ARENA_API}" data-snapshot="arena-snapshot.json" data-privacy="docs/${en ? 'arena-privacy.en.html' : 'arena-privacy.html'}">
+  <main id="content" class="lb-main" data-api="" data-snapshot="arena-snapshot.json" data-privacy="docs/${en ? 'arena-privacy.en.html' : 'arena-privacy.html'}">
     <section class="lb-hero">
       <h1>${c.title}</h1>
       <p>${en ? 'Only the same model and the same quantization are compared. Each row is one hardware + launch-parameter combination, ranked by 8K decode median.' : '只在同一模型、同一量化内比较。每一行是一种硬件 + 启动参数组合，按 8K 解码中位数排序。'}</p>

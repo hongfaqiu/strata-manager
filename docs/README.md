@@ -1,6 +1,6 @@
 # Strata Manager 文档
 
-[官网](https://hongfaqiu.github.io/strata-manager/?lang=zh) · [产品介绍](../README.zh-CN.md) · [English](README.en.md)
+[官网](https://strata-manager.cosfoc.com/?lang=zh) · [产品介绍](../README.zh-CN.md) · [English](README.en.md)
 
 Strata Manager 是面向 Strata 本地推理的桌面工作台，集中管理运行环境、模型配置和服务生命周期，提供聊天、监控、API 使用统计、参数调优与 Benchmark 基准测试。它是独立社区项目，推理能力与协议以已安装的 Strata 运行时和具体模型为准。
 
@@ -34,7 +34,7 @@ Strata Manager 是面向 Strata 本地推理的桌面工作台，集中管理运
 - Benchmark 支持七类场景、固定并发和逐级升压，分别记录延迟、生成速度、缓存与资源趋势，并提供 JSON / CSV 报告。
 - 当前面向 Windows/Linux x64。正式发行、GPU、Linux 实机和跨版本更新的证据分别记录，不把界面截图或夹具当作实际模型验收。
 
-公开安装包：[最新稳定版发布页](https://github.com/hongfaqiu/strata-manager/releases/latest) · [官网平台下载](https://hongfaqiu.github.io/strata-manager/#get-started)。仅下载发布页实际列出的文件，并核对同版本的 SHA256SUMS。[下载说明](DOWNLOAD.md)列出安装步骤和当前支持范围。稳定版使用 `latest` 通道，预览版采用手工安装且不替换该通道。
+公开安装包：[最新稳定版发布页](https://github.com/hongfaqiu/strata-manager/releases/latest) · [官网平台下载](https://strata-manager.cosfoc.com/#get-started)。仅下载发布页实际列出的文件，并核对同版本的 SHA256SUMS。[下载说明](DOWNLOAD.md)列出安装步骤和当前支持范围。稳定版使用 `latest` 通道，预览版采用手工安装且不替换该通道。
 
 ## 许可与来源
 

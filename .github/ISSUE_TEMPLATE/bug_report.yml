@@ -5,9 +5,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        请先阅读[故障排查 / Troubleshooting](https://hongfaqiu.github.io/strata-manager/docs/troubleshooting.html)。
+        请先阅读[故障排查 / Troubleshooting](https://strata-manager.cosfoc.com/docs/troubleshooting)。
         不要提交 API 密钥、私人聊天、附件、工具参数或未脱敏诊断。
-        Read the [English guide](https://hongfaqiu.github.io/strata-manager/docs/troubleshooting.en.html) and redact private content.
+        Read the [English guide](https://strata-manager.cosfoc.com/docs/troubleshooting.en) and redact private content.
   - type: textarea
     id: environment
     attributes:

@@ -84,7 +84,7 @@ CI 产物以 `ci-<platform>-<arch>-<bundle>` 名称上传为 Actions artifacts�
 
 每次变更维护根目录 [CHANGELOG.md](../CHANGELOG.md) 的 `Unreleased` 中英文条目。发布前将本次内容归入 `## [实际版本]`，保留 `### 中文` 与 `### English` 两个非空段落。流水线通过 `scripts/release-notes.mjs` 读取与版本严格对应的日志，并将其写入 Release 和 updater 元数据；缺少对应版本或语言时拒绝构建发布。桌面更新弹窗按当前界面语言展示该版本日志，用户选择“确认更新”后才下载、验签和安装。
 
-官网的中英文更新日志直接从同一份 `CHANGELOG.md` 生成，入口位于首页导航、下载区与文档中心。修改此文件并推送到 `main` 会触发 GitHub Pages 构建；无需维护第二份官网日志。开发与待验收的改动保留在 `Unreleased`，有版本号但尚无公开安装包的候选必须注明 `Unreleased` 或 `Unpublished`，不要仅按源码版本宣称安装包已发布。
+官网的中英文更新日志直接从同一份 `CHANGELOG.md` 生成，入口位于首页导航、下载区与文档中心。修改此文件并推送到 `main` 会触发官网的 Cloudflare 部署；无需维护第二份官网日志。开发与待验收的改动保留在 `Unreleased`，有版本号但尚无公开安装包的候选必须注明 `Unreleased` 或 `Unpublished`，不要仅按源码版本宣称安装包已发布。
 
 1. 等待同仓库的编辑会话完成，冻结同一候选快照。在同一变更中同步根 `package.json`、`apps/desktop/package.json`、`packages/core/package.json`、Tauri config、Cargo workspace 和任何显式 Cargo package version。运行 `node scripts/release-check.mjs --tag v<version>`，将 `<version>` 替换为候选的实际版本；tag 必须与应用版本严格一致。该版本的中英文日志须位于唯一的 `## [<version>]`；README 三个入口、中英文下载/用户文档和官网应同步相应发布入口，不复用上一版本的通过结论。
 2. 完成 [VERIFICATION](VERIFICATION.md) 的最终检查和发布验收，更新中英文 README、用户指南、`docs/screenshots/` 的 WebP 封面及页面图与实际 revision；检查内容没有 API 密钥、个人会话、用户名或私有模型路径。截图使用示例数据时，在图片所在文档及官网的图外说明数据来源；图内使用正常模型名和界面内容，不能写成真实服务或性能证据。保留历史原型证据，同时单列本轮未通过/未运行项。

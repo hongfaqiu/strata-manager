@@ -49,7 +49,7 @@ The script uses the same Rust target for app and supervisor. Explicit `CARGO_BUI
 
 ## 官网 / Website
 
-[静态官网 / Product website](https://hongfaqiu.github.io/strata-manager/) 使用原生 HTML/CSS/JavaScript，中英文可切换。使用指南、下载、故障排查及许可等页面由仓库原文预渲染；发布后无需客户端请求 Markdown 或加载应用运行时。
+[静态官网 / Product website](https://strata-manager.cosfoc.com/) 使用原生 HTML/CSS/JavaScript，中英文可切换。使用指南、下载、故障排查及许可等页面由仓库原文预渲染；发布后无需客户端请求 Markdown 或加载应用运行时。
 
 ```sh
 pnpm install --frozen-lockfile --ignore-scripts
@@ -59,9 +59,9 @@ node scripts/build-website.mjs
 
 输出为 `dist/website`，可用任意静态 HTTP 服务预览。构建阶段复用已锁定的 Markdown 渲染依赖，检查本地页面、资源和锚点，并生成文档 sitemap。打包脚本从 `assets/icon.svg` 和 `docs/screenshots` 复制品牌与截图，不需要重复维护图片。截图使用示例数据，来源在 README 和官网的图外说明，不代表真实推理或性能结果。
 
-GitHub Pages 的发布源使用 **GitHub Actions**；推送 `main` 上的官网、Markdown 文档、许可、截图、图标或渲染脚本等改动时，`Publish website` 工作流自动发布，也可手动运行。官网部署与桌面应用的发行版本独立。
+官网和 Benchmark 排行榜接口由同一个 Cloudflare Worker（`services/arena`）托管在 `strata-manager.cosfoc.com`：静态页面来自 `dist/website`（Workers 静态资源），`/v1/*` 是排行榜 API；`arena.cosfoc.com` 仍指向同一 Worker，供已发布的应用调用。推送 `main` 上的官网、Markdown 文档、许可、截图、图标、渲染脚本或 `services/arena` 改动时，`Website and Arena on Cloudflare` 工作流先检查和构建，再应用待执行的 D1 迁移并用 wrangler 部署，也可在 `main` 上手动运行；PR 只构建、检查并试运行部署。官网部署与桌面应用的发行版本独立。
 
-The website uses plain HTML/CSS/JavaScript with a Chinese/English switch. Documentation is rendered at build time using locked dependencies; published pages contain their full content without fetching Markdown in the browser. The build checks local pages, assets and anchors and generates the documentation sitemap. Run the commands above and serve `dist/website` with any static HTTP server. The dedicated `Publish website` workflow deploys relevant website, documentation and license changes on `main` to GitHub Pages; it can also be dispatched manually. Screenshots use example data disclosed outside the images, not inference or performance results.
+The website uses plain HTML/CSS/JavaScript with a Chinese/English switch. Documentation is rendered at build time using locked dependencies; published pages contain their full content without fetching Markdown in the browser. The build checks local pages, assets and anchors and generates the documentation sitemap. Run the commands above and serve `dist/website` with any static HTTP server. The `Website and Arena on Cloudflare` workflow deploys relevant website, documentation, license and `services/arena` changes on `main` to one Cloudflare Worker that serves the site and the leaderboard API at `strata-manager.cosfoc.com` (and the API at `arena.cosfoc.com`); it can also be dispatched manually on `main`. Pull requests only build, check and dry-run the deploy. Screenshots use example data disclosed outside the images, not inference or performance results.
 
 ## 发布 / Release
 

@@ -1,21 +1,23 @@
-name: Publish website
+name: Website and Arena on Cloudflare
+
+# One Cloudflare Worker (services/arena) serves the static website (dist/website, Workers static
+# assets) and the Arena API (/v1/*) on strata-manager.cosfoc.com, plus the API host arena.cosfoc.com.
+# Pull requests build and check everything and dry-run the deploy; main, releases and manual runs on
+# main apply pending D1 migrations and deploy.
 
 on:
   push:
     branches: [main]
     paths:
       - 'website/**'
+      - 'services/arena/**'
       - 'CHANGELOG.md'
       - 'scripts/build-website.mjs'
-      - 'scripts/website-screenshots.mjs'
-      - 'scripts/website-screenshots.test.mjs'
+      - 'scripts/build-legacy-redirects.mjs'
+      - 'scripts/website-*.mjs'
       - 'scripts/render-website-docs.mjs'
       - 'scripts/render-website-docs.test.mjs'
-      - 'scripts/website-seo.mjs'
-      - 'scripts/website-seo.test.mjs'
-      - 'scripts/website-release-snapshot.mjs'
-      - 'scripts/website-release-snapshot.test.mjs'
-      - 'scripts/website-releases.test.mjs'
+      - 'scripts/render-website-leaderboard.mjs'
       - 'docs/**/*.md'
       - 'docs/screenshots/**'
       - 'README*'
@@ -23,6 +25,31 @@ on:
       - 'THIRD_PARTY_NOTICES.md'
       - 'apps/desktop/public/licenses/**'
       - 'apps/desktop/package.json'
+      - 'apps/desktop/src/updateReleaseNotes.ts'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'assets/icon.svg'
+      - '.github/workflows/website.yml'
+  pull_request:
+    paths:
+      - 'website/**'
+      - 'services/arena/**'
+      - 'CHANGELOG.md'
+      - 'scripts/build-website.mjs'
+      - 'scripts/build-legacy-redirects.mjs'
+      - 'scripts/website-*.mjs'
+      - 'scripts/render-website-docs.mjs'
+      - 'scripts/render-website-docs.test.mjs'
+      - 'scripts/render-website-leaderboard.mjs'
+      - 'docs/**/*.md'
+      - 'docs/screenshots/**'
+      - 'README*'
+      - 'LICENSE'
+      - 'THIRD_PARTY_NOTICES.md'
+      - 'apps/desktop/public/licenses/**'
+      - 'apps/desktop/package.json'
+      - 'apps/desktop/src/updateReleaseNotes.ts'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
@@ -39,23 +66,23 @@ permissions:
   contents: read
 
 concurrency:
-  group: github-pages
-  cancel-in-progress: true
+  group: cloudflare-website-${{ github.event_name == 'pull_request' && github.ref || 'production' }}
+  # Never cancel a production run halfway through migrations or a deploy; the next run redeploys main.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  WRANGLER_VERSION: '4.151.1'
 
 jobs:
   build:
+    name: Build and check website and Worker
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pages: read
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ (github.event_name == 'release' || github.event_name == 'workflow_run') && 'main' || github.sha }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -63,27 +90,72 @@ jobs:
           cache: pnpm
       - name: Install locked static rendering dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
-      - uses: actions/configure-pages@v5
-      - name: Check documentation, bilingual SEO and release metadata
-        run: node --test scripts/render-website-docs.test.mjs scripts/website-seo.test.mjs scripts/website-releases.test.mjs scripts/website-release-snapshot.test.mjs scripts/website-screenshots.test.mjs
+      - name: Check documentation, bilingual SEO, release metadata and legacy redirects
+        run: node --test scripts/render-website-docs.test.mjs scripts/website-seo.test.mjs scripts/website-releases.test.mjs scripts/website-release-snapshot.test.mjs scripts/website-screenshots.test.mjs scripts/website-legacy-redirects.test.mjs
+      - name: Arena Worker tests (API, website routing and headers)
+        working-directory: services/arena
+        run: npm test
       - name: Package the static website
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/build-website.mjs
-      - uses: actions/upload-pages-artifact@v4
+      - name: Dry-run the Worker deploy (bundle, assets and config)
+        working-directory: services/arena
+        run: npx --yes wrangler@${{ env.WRANGLER_VERSION }} deploy --dry-run --outdir ../../dist/worker
+      - uses: actions/upload-artifact@v4
         with:
+          name: website
           path: dist/website
+          include-hidden-files: true
+          retention-days: 7
 
   deploy:
+    name: Deploy to Cloudflare
     needs: build
+    if: ${{ github.repository == 'hongfaqiu/strata-manager' && github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
+    timeout-minutes: 15
     environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      name: cloudflare
+      url: https://strata-manager.cosfoc.com/
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:
-      - name: Publish to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ (github.event_name == 'release' || github.event_name == 'workflow_run') && 'main' || github.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: website
+          path: dist/website
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Require the deploy token
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::error::Repository secret CLOUDFLARE_API_TOKEN is missing (see services/arena/README.md, Deploy)."
+            exit 1
+          fi
+      - name: Apply pending D1 migrations
+        working-directory: services/arena
+        run: |
+          pending="$(npx --yes wrangler@$WRANGLER_VERSION d1 migrations list strata-arena --remote)"
+          echo "$pending"
+          if echo "$pending" | grep -q 'No migrations to apply'; then
+            echo "No pending migrations."
+          else
+            npx --yes wrangler@$WRANGLER_VERSION d1 migrations apply strata-arena --remote
+          fi
+      - name: Deploy the Worker with the website
+        working-directory: services/arena
+        run: npx --yes wrangler@$WRANGLER_VERSION deploy --message "${{ github.event_name }} ${{ github.sha }}"
+      - name: Smoke-test both hosts
+        run: |
+          set -e
+          for host in strata-manager.cosfoc.com arena.cosfoc.com; do
+            curl -fsS --retry 5 --retry-all-errors "https://$host/v1/health" | grep -q '"ok":true'
+          done
+          curl -fsS --retry 5 --retry-all-errors https://strata-manager.cosfoc.com/ | grep -q 'Strata Manager'
+          curl -fsS --retry 5 --retry-all-errors https://strata-manager.cosfoc.com/leaderboard | grep -q 'lb-root'
+          test "$(curl -s -o /dev/null -w '%{http_code}' https://arena.cosfoc.com/)" = 301

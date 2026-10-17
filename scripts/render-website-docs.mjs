@@ -252,6 +252,8 @@ export async function verifyStaticWebsite(output) {
       let target = resolve(output, pathname || 'index.html');
       if (pathname.endsWith('/')) target = join(target, 'index.html');
       if (target !== output && !target.startsWith(output + sep)) throw new Error(`Website link escapes output: ${url} in ${file}`);
+      // Clean URLs (`docs/changelog`) resolve to `docs/changelog.html`, like the Workers asset router.
+      if (!pathname.endsWith('/') && !/\.html$/.test(target)) target = await access(target).then(() => target, () => `${target}.html`);
       await access(target).catch(() => { throw new Error(`Missing website target: ${url} in ${file}`); });
       if (hash && pages.has(target)) {
         const id = escape(decodeURIComponent(hash));
