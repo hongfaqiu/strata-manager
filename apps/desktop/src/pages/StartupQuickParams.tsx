@@ -12,7 +12,7 @@ const QUICK_FIELDS = [
 ] as const;
 
 export function StartupQuickParams({
-  language, draft, disabled, showParameterNames, fieldValue, onFieldChange, engineFlags,
+  language, draft, disabled, showParameterNames, fieldValue, onFieldChange, engineFlags, engineHelpError,
 }: {
   language: AppLanguage;
   draft?: JsonObject;
@@ -22,6 +22,8 @@ export function StartupQuickParams({
   onFieldChange: (field: core.StartupFieldSpec, value: string) => void;
   /** Flags the installed engine prints in --help; undefined/null keeps every field enabled. */
   engineFlags?: readonly string[] | null;
+  /** Why the engine --help could not be read; the fields then follow the built-in catalog. */
+  engineHelpError?: string | null;
 }) {
   const zh = language === 'zh-CN';
   const fields = QUICK_FIELDS.map(key => core.STARTUP_TUNING_FIELDS.find(field => field.key === key)).filter((field): field is core.StartupFieldSpec => !!field);
@@ -32,6 +34,7 @@ export function StartupQuickParams({
         <strong>{zh ? '常用并发与启动参数' : 'Common batch and startup parameters'}</strong>
         <p>{zh ? '对齐官方 --batch / parallel、空闲卸载与弹性显存等高频项；完整分类仍在下方。' : 'High-frequency controls for --batch / parallel, idle unload and elastic VRAM. Full categories remain below.'}</p>
       </div>
+      {engineHelpError && <p className="startup-quick-params-help-error" role="status" data-testid="engine-help-error">{zh ? `未能读取当前引擎的参数列表，已按内置参数目录显示：${engineHelpError}` : `Could not read the installed engine's flag list; showing the built-in catalog instead. (${engineHelpError})`}</p>}
       <div className="startup-quick-params-grid">
         {fields.map(field => {
           const value = fieldValue(field);
