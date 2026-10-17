@@ -1,6 +1,7 @@
 import type { JsonObject } from './types';
 import { STARTUP_ENGINE_FLAGS } from './startup-engine-flags';
 import { startupServiceEndpoint } from './config-profile';
+import { concurrencyConfigError } from './concurrency';
 export { STARTUP_ENGINE_FLAGS } from './startup-engine-flags';
 
 export interface StartupTuning { context: string; kv: string; threads: string }
@@ -199,6 +200,15 @@ export const STARTUP_TUNING_FIELDS: readonly StartupFieldSpec[] = [
     ['tokenizer', 'Tokenizer 目录', 'Tokenizer directory', 'text'],
     ['log', '引擎日志路径', 'Engine log path', 'text'],
   ]),
+  // Concurrency companions (docs/BATCHING.md); the experimental switches are engine env, off by default upstream.
+  ...fields('speculation', 'arg', [
+    ['--trim-stage-weights', '多卡只加载本卡层权重', 'Trim stage weights per GPU', 'boolean'],
+  ]),
+  ...fields('speculation', 'config', [
+    ['env.STRATA_BATCH_ATTN_ROWS', '实验：并发注意力合并启动', 'Experimental: one attention launch for all slots', 'text', ['1']],
+    ['env.STRATA_BATCH_GDN_GROUPS', '实验：并发 GDN 合并启动', 'Experimental: one GDN launch for all slots', 'text', ['1']],
+    ['env.STRATA_PIPED_CONCURRENT', '实验：流水线旁并行读取提示词', 'Experimental: read prompts beside pipelined groups', 'text', ['1']],
+  ]),
 ];
 
 /** Optional one-line explanations shown under a field in the graphical editor (zh + en). */
@@ -287,6 +297,7 @@ export function parseStartupConfiguration(raw: string): JsonObject {
 }
 export function validateStartupConfiguration(config: JsonObject): void {
   startupServiceEndpoint(config);
+  const concurrencyError = concurrencyConfigError(config); if (concurrencyError) throw new Error(concurrencyError);
   for (const field of STARTUP_TUNING_FIELDS.filter(item => item.group === 'power')) {
     const value = config[field.key];
     if (value === undefined) continue;

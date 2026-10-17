@@ -1,6 +1,7 @@
 import type { AppLanguage, JsonObject } from '@strata-manager/core';
 import * as core from '@strata-manager/core';
 import { Dropdown } from '../OfficialControls';
+import { ConcurrencyCard } from './ConcurrencyCard';
 import './startup-quick-params.css';
 
 const QUICK_FIELDS = [
@@ -62,6 +63,7 @@ export function StartupQuickParams({
             </div>
           );
         })}
+        <ConcurrencyCard draft={draft} fieldValue={fieldValue} onFieldChange={onFieldChange} zh={zh}/>
       </div>
     </section>
   );
