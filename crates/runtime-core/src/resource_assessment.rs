@@ -224,6 +224,16 @@ fn cell_bytes(kv: &str) -> Option<f64> {
         _ => None,
     }
 }
+/// The model's trained context; past it Strata uses rope scaling (docs/DETAILS.md, "Context extension past 262K").
+const TRAINED_CONTEXT: u64 = 262_144;
+/// RoPE angle tables for a scaled context: ~0.26 KB per token (only past the trained window).
+fn rope_table_gb(context: u64) -> f64 {
+    if context > TRAINED_CONTEXT {
+        context as f64 * 266.0 / GB
+    } else {
+        0.0
+    }
+}
 // setup.py 4538-4560. Its k8v4 batch estimate deliberately uses the conservative int8 rule.
 fn slot_gb(context: u64, kv: &str, streaming: bool) -> f64 {
     let cells = if streaming {
@@ -260,6 +270,7 @@ fn estimate(request: &ResourceAssessmentRequest, hardware: HardwareSnapshot) -> 
     let mut kv = json!({"streaming":null,"streamingRamBytes":null});
     let mut slots = json!({"count":request.parallel,"perSlotVramBytes":null,"totalVramBytes":null});
     let mut recommendations = json!({"context":null,"parallel":null});
+    let mut context_extension = Value::Null;
     if let Some((baseline, arena, budget)) = model(&request.family, &request.quant) {
         ram["baselineBytes"] = json!(bytes(baseline, GIB));
         ram["expertBytes"] = json!(bytes(arena, GB));
@@ -304,8 +315,15 @@ fn estimate(request: &ResourceAssessmentRequest, hardware: HardwareSnapshot) -> 
         if request.images {
             unknowns.push("image_reserve_unknown".into());
         }
-        if request.context > 262144 {
-            unknowns.push("above_native_context".into());
+        if request.context > TRAINED_CONTEXT {
+            // setup.py resolve_rope: past the trained window setup adds yarn with context / 262144.
+            let cell = cell_bytes(&request.kv).unwrap_or(1056.0);
+            context_extension = json!({"trainedContext":TRAINED_CONTEXT,"scaling":"yarn",
+                "scale":(request.context as f64 / TRAINED_CONTEXT as f64).max(1.0),
+                "kvBytes":bytes(request.context as f64 * 13.0 * cell, 1.0),
+                "ropeBytes":bytes(rope_table_gb(request.context), GB)});
+            note("context_extension", false);
+            note("expert_cache_auto", false);
         }
         if cell_bytes(&request.kv).is_none() {
             unknowns.push("kv_unknown".into());
@@ -383,7 +401,10 @@ fn estimate(request: &ResourceAssessmentRequest, hardware: HardwareSnapshot) -> 
                 note("parallel_above_recommendation", true);
             }
             if matches!(request.quant.as_str(), "IQ3_XXS" | "IQ3_S") && !low_ram {
-                let need = arena + request.context as f64 * 13.0 * 1056.0 / GB + 24.0;
+                let need = arena
+                    + request.context as f64 * 13.0 * 1056.0 / GB
+                    + rope_table_gb(request.context)
+                    + 24.0;
                 ram["longContextBytes"] = json!(bytes(need, GIB));
                 if request.context > 131072 && ram_gib < need {
                     note("long_context_ram", true);
@@ -402,7 +423,7 @@ fn estimate(request: &ResourceAssessmentRequest, hardware: HardwareSnapshot) -> 
     }
     json!({"status":if risk {"risk"} else if !unknowns.is_empty() {"unknown"} else {"suggested"},"estimate":true,
         "sampledAt":hardware.sampled_at,"hardware":hardware,"ram":ram,"kv":kv,"slots":slots,"recommendations":recommendations,
-        "reasons":reasons,"unknowns":unknowns,"sourceRevision":SOURCE_REVISION})
+        "contextExtension":context_extension,"reasons":reasons,"unknowns":unknowns,"sourceRevision":SOURCE_REVISION})
 }
 
 pub async fn assess(
@@ -538,6 +559,39 @@ mod tests {
         req = request();
         req.parallel = 0;
         assert!(req.validate().is_err());
+    }
+    #[test]
+    fn extended_context_reports_yarn_factor_and_kv_plus_rope_memory() {
+        let mut req = request();
+        req.quant = "IQ3_S".into();
+        req.context = 1_048_576;
+        let result = estimate(&req, fixture(128.0, 32.0));
+        assert_eq!(result["contextExtension"]["scaling"], "yarn");
+        assert_eq!(result["contextExtension"]["scale"], 4.0);
+        assert_eq!(
+            result["contextExtension"]["kvBytes"],
+            1_048_576_u64 * 13 * 1056
+        );
+        assert_eq!(result["contextExtension"]["ropeBytes"], 1_048_576_u64 * 266);
+        assert!(result["unknowns"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|code| code != "above_native_context"));
+        let codes: Vec<_> = result["reasons"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|reason| reason["code"].as_str().unwrap())
+            .collect();
+        assert!(codes.contains(&"context_extension") && codes.contains(&"expert_cache_auto"));
+        req.kv = "q4_0".into();
+        assert_eq!(
+            estimate(&req, fixture(128.0, 32.0))["contextExtension"]["kvBytes"],
+            1_048_576_u64 * 13 * 576
+        );
+        req.context = 262_144;
+        assert!(estimate(&req, fixture(128.0, 32.0))["contextExtension"].is_null());
     }
     #[test]
     fn flags_long_context_and_transient_pressure_without_double_counting_running_models() {

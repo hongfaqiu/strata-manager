@@ -57,6 +57,7 @@ export function ResourceAssessmentPanel({ request, language, desktop = core.isDe
       <div><dt>{t('长上下文 RAM 建议阈值', 'Long-context RAM threshold')}</dt><dd>{size(result.ram.longContextBytes)}</dd></div>
       <div><dt>{t('KV streaming / RAM 分项', 'KV streaming / RAM component')}</dt><dd>{result.kv.streaming == null ? t('未知', 'Unknown') : result.kv.streaming ? t('开启', 'On') : t('关闭', 'Off')} / {size(result.kv.streamingRamBytes)}</dd></div>
       <div><dt>{t('单槽 / 批处理槽显存分项', 'Per-slot / batch-slot VRAM')}</dt><dd>{size(result.slots.perSlotVramBytes)} / {size(result.slots.totalVramBytes)}</dd></div>
+      {result.contextExtension && <div><dt>{t(`上下文扩展 YaRN ×${result.contextExtension.scale.toLocaleString(language, { maximumFractionDigits: 3 })}：KV / RoPE 表`, `Context extension YaRN ×${result.contextExtension.scale.toLocaleString(language, { maximumFractionDigits: 3 })}: KV / RoPE tables`)}</dt><dd>{size(result.contextExtension.kvBytes)} / {size(result.contextExtension.ropeBytes)}</dd></div>}
     </dl>
     <p>{core.resourceAssessmentMessage('estimate_scope', zh)}</p><p>{t('硬件采样', 'Hardware sampled')}: {new Date(result.sampledAt).toLocaleTimeString(language)} · {t('处理器指令', 'CPU ISA')}: {result.hardware.cpuIsa}{result.hardware.wsl ? ' · WSL' : ''}</p>
     <a href={`https://github.com/Niko1221/Strata/blob/${result.sourceRevision}/setup.py`} target="_blank" rel="noreferrer">{t('Strata 0.1.44 安装器规则', 'Strata 0.1.44 setup rules')}</a>

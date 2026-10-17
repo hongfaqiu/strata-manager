@@ -9,6 +9,7 @@ import { Checkbox, Dropdown, Segmented } from '../OfficialControls';
 import { ConfigurationNode } from './StartupConfigurationNode';
 import { StartupNetworkPowerSettings } from './StartupNetworkPowerSettings';
 import { StartupQuickParams } from './StartupQuickParams';
+import { ContextExtensionNotice } from './ContextExtensionNotice';
 import './startup-tuning.css';
 import './setup-tuning-interactions.css';
 import { useDraftGuard, type SaveDraft } from '../useDraftGuard';
@@ -180,6 +181,24 @@ export function StartupTuningPanel({ profile, desktop, language, onError, onMess
     if (Object.hasOwn(fieldEdits, field.key)) return fieldEdits[field.key]!;
     try { return draft ? core.startupFieldValue(draft, field) : ''; } catch { return ''; }
   };
+  const specOf = (key: string) => core.STARTUP_TUNING_FIELDS.find(field => field.key === key)!;
+  const editField = (field: StartupFieldSpec, value: string) => {
+    const edits: Record<string, string> = { [field.key]: value };
+    // Past the trained 262K the official setup adds yarn + context/262144; automatic rope flags follow the context, explicit ones stay.
+    if (field.key === '--max-context') {
+      const scaling = fieldValue(specOf('--rope-scaling')), scale = fieldValue(specOf('--rope-scale'));
+      const synced = core.syncContextExtension(fieldValue(field), value, scaling, scale);
+      if (synced.scaling !== scaling) edits['--rope-scaling'] = synced.scaling;
+      if (synced.scale !== scale) edits['--rope-scale'] = synced.scale;
+    }
+    setFieldEdits(previous => ({ ...previous, ...edits })); setMessage(''); setError('');
+  };
+  const contextValue = Number(fieldValue(specOf('--max-context')));
+  const contextChoiceLabel = (option: string) => {
+    const tokens = Number(option);
+    if (!Number.isSafeInteger(tokens) || tokens <= 0) return option;
+    return `${core.formatContextTokens(tokens, language)} · ${tokens.toLocaleString(language)}${core.isExtendedContext(tokens) ? (zh ? ' · 实验性' : ' · experimental') : ''}`;
+  };
   const updateTreeIssue = (path: string, issue: string, removedIndex?: number) => setTreeIssues(previous => {
     if (issue) return { ...previous, [path]: issue };
     const cleared: string[] = JSON.parse(path);
@@ -202,16 +221,17 @@ export function StartupTuningPanel({ profile, desktop, language, onError, onMess
       {config.isPending && <p className="muted">{zh ? '读取配置中…' : 'Reading configuration…'}</p>}
       {draft && <><div className="startup-tuning-navigation"><Segmented value={view} onValueChange={selectView} ariaLabel={zh ? '配置编辑方式' : 'Configuration editor'} options={[{ value: 'graph', label: zh ? '图形界面' : 'Graphical', disabled }, { value: 'json', label: zh ? '完整 JSON' : 'Full JSON', disabled }]}/>{view === 'graph' && <label className="startup-tuning-search"><Search size={15}/><input className="st-input" aria-label={zh ? '搜索启动参数' : 'Search startup parameters'} placeholder={zh ? '搜索名称或参数标志' : 'Search names or flags'} value={search} onChange={event => setSearch(event.target.value)}/></label>}</div>
         {view === 'json' ? <div className="startup-tuning-json-editor"><label className="st-label" htmlFor="startup-full-config-json">{zh ? '完整本地 JSON 配置' : 'Full local JSON configuration'}</label><textarea className="startup-tuning-json st-input" id="startup-full-config-json" spellCheck={false} value={raw} disabled={disabled} onChange={event => { setRaw(event.target.value); setError(''); setMessage(''); }}/></div> : <>
-          <StartupNetworkPowerSettings zh={zh} disabled={disabled} fallbackBaseUrl={profile.baseUrl} showParameterNames={showParameterNames} fieldValue={fieldValue} onFieldChange={(field, value) => { setFieldEdits(previous => ({ ...previous, [field.key]: value })); setMessage(''); setError(''); }}/>
-          <StartupQuickParams engineFlags={engineHelp.data?.flags ?? null} engineHelpError={engineHelp.error ? core.normalizeError(engineHelp.error).message : null} language={language} draft={draft} disabled={disabled} showParameterNames={showParameterNames} fieldValue={fieldValue} onFieldChange={(field, value) => { setFieldEdits(previous => ({ ...previous, [field.key]: value })); setMessage(''); setError(''); }}/>
+          <StartupNetworkPowerSettings zh={zh} disabled={disabled} fallbackBaseUrl={profile.baseUrl} showParameterNames={showParameterNames} fieldValue={fieldValue} onFieldChange={editField}/>
+          <ContextExtensionNotice mode="config" language={language} context={contextValue} kv={fieldValue(specOf('--kv'))} scaling={fieldValue(specOf('--rope-scaling'))} scale={fieldValue(specOf('--rope-scale'))} expertCache={fieldValue(specOf('--expert-cache'))} disabled={disabled} onUseRecommended={() => { setFieldEdits(previous => ({ ...previous, '--rope-scaling': 'yarn', '--rope-scale': core.formatRopeFactor(core.ropeFactorFor(contextValue)) })); setMessage(''); setError(''); }}/>
+          <StartupQuickParams engineFlags={engineHelp.data?.flags ?? null} engineHelpError={engineHelp.error ? core.normalizeError(engineHelp.error).message : null} language={language} draft={draft} disabled={disabled} showParameterNames={showParameterNames} fieldValue={fieldValue} onFieldChange={editField}/>
           <div className="startup-tuning-category"><label><span className="st-label">{zh ? '设置分类' : 'Settings category'}</span><Dropdown ariaLabel={zh ? '设置分类' : 'Settings category'} value={selectedGroup} disabled={disabled || !!needle} options={groups.map(([value, labelZh, labelEn]) => ({ value, label: zh ? labelZh : labelEn }))} onValueChange={value => setSelectedGroup(value as SettingsCategory)}/></label><label className="startup-tuning-parameter-names"><Checkbox checked={showParameterNames} onChange={event => setShowParameterNames(event.target.checked)}/>{zh ? '显示技术参数名称' : 'Show technical parameter names'}</label></div>
           <div className="startup-tuning-groups">{groups.filter(([group]) => needle || group === selectedGroup).map(([group, labelZh, labelEn]) => {
             const groupFields = core.STARTUP_TUNING_FIELDS.filter(field => field.group === (group === 'context-extension' ? 'context' : group) && (field.group !== 'context' || basicContextFields.has(field.key) !== (group === 'context-extension')) && (!needle || `${field.key} ${field.zh} ${field.en}`.toLowerCase().includes(needle)));
             if (!groupFields.length) return null;
             return <section className="startup-tuning-group startup-tuning-active-group" aria-label={zh ? labelZh : labelEn} key={group}>{needle && <h3>{zh ? labelZh : labelEn}</h3>}<div className="startup-tuning-fields">{groupFields.map(field => {
               const value = fieldValue(field); const label = zh ? field.zh : field.en;
-              const choices = field.kind === 'boolean' ? [{ value: '', label: zh ? '使用默认设置' : 'Use default' }, { value: 'true', label: field.target === 'arg' ? (zh ? '启用此选项' : 'Enable option') : (zh ? '开启' : 'On') }, { value: 'false', label: field.target === 'arg' ? (zh ? '不启用' : 'Disable option') : (zh ? '关闭' : 'Off') }] : [{ value: '', label: zh ? '使用默认设置' : 'Use default' }, ...(field.choices ?? []).map(option => ({ value: option, label: option }))];
-              return <div className="st-field" key={field.key}><span className="st-label">{label}</span>{showParameterNames && <code>{field.key}</code>}<Dropdown editable={field.kind !== 'boolean'} ariaLabel={label} disabled={disabled} value={value} editableDisplayValue={field.kind === 'boolean' ? undefined : value} placeholder={zh ? '使用默认设置' : 'Use default'} options={choices} onValueChange={next => { setFieldEdits(previous => ({ ...previous, [field.key]: next })); setMessage(''); setError(''); }}/></div>;
+              const choices = field.kind === 'boolean' ? [{ value: '', label: zh ? '使用默认设置' : 'Use default' }, { value: 'true', label: field.target === 'arg' ? (zh ? '启用此选项' : 'Enable option') : (zh ? '开启' : 'On') }, { value: 'false', label: field.target === 'arg' ? (zh ? '不启用' : 'Disable option') : (zh ? '关闭' : 'Off') }] : [{ value: '', label: zh ? '使用默认设置' : 'Use default' }, ...(field.choices ?? []).map(option => ({ value: option, label: field.key === '--max-context' ? contextChoiceLabel(option) : option }))];
+              return <div className="st-field" key={field.key}><span className="st-label">{label}</span>{showParameterNames && <code>{field.key}</code>}<Dropdown editable={field.kind !== 'boolean'} ariaLabel={label} disabled={disabled} value={value} editableDisplayValue={field.kind === 'boolean' ? undefined : value} placeholder={zh ? '使用默认设置' : 'Use default'} options={choices} onValueChange={next => editField(field, next)}/></div>;
             })}</div></section>;
           })}</div>
           <details className="startup-tuning-group startup-arguments"><summary><span>{zh ? '完整引擎参数列表（args）' : 'Full engine argument list (args)'}</span><small>{rows.length}</small></summary><div className="startup-argument-list">{rows.map(row => {

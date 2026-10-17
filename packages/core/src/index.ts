@@ -13,6 +13,7 @@ export * from './shared-chat-settings';
 export * from './bridge';
 export * from './config-profile';
 export * from './config-tuning';
+export * from './context-extension';
 export * from './tuning-types';
 export * from './analytics-types';
 export * from './installation-types';
