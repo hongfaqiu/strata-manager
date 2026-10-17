@@ -259,7 +259,8 @@ function validateKeyringCache(source) {
 }
 
 test('CI keyring cache is restore-only for pull requests and saved only by the trusted desktop job', async () => {
-  const source = await readFile(resolve(root, '.github/workflows/ci.yml'), 'utf8');
+  // Windows checkouts may use CRLF; the mutations below are written for LF.
+  const source = (await readFile(resolve(root, '.github/workflows/ci.yml'), 'utf8')).replaceAll('\r\n', '\n');
   const steps = validateKeyringCache(source);
   assert.deepEqual(steps.map(s => `${s.job}:${s.uses}`), ['native-linux:actions/cache/restore@v4', 'desktop:actions/cache/restore@v4',
     'desktop:actions/cache/restore@v4', 'desktop:actions/cache/save@v4']);

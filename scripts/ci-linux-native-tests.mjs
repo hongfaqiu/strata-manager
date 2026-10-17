@@ -96,7 +96,7 @@ export function moduleWeight(binary, module, active, platform) {
   const kindName = binary.id.slice(binary.id.indexOf(':') + 1);
   const hint = module === '(root)' ? hints[`${kindName} (root)`] : hints[module];
   if (hint !== undefined) return hint;
-  return module === '(root)' && kindName.startsWith('test:') ? active * 10 : active * 0.5;
+  return module === '(root)' && kindName.startsWith('test:') ? active * 10 : active * 0.1;
 }
 
 export function parseListing(text) {

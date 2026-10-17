@@ -388,10 +388,11 @@ test('measured scheduling hints bind integration roots to their binary and keep 
   assert.equal(moduleWeight(lifecycle, '(root)', 3, 'linux'), 52);
   assert.equal(moduleWeight(lifecycle, '(root)', 3, 'win32'), 58);
   assert.equal(moduleWeight(other, '(root)', 3, 'linux'), 30);
-  assert.equal(moduleWeight(lib, '(root)', 3, 'linux'), 1.5);
+  assert.ok(Math.abs(moduleWeight(lib, '(root)', 3, 'linux') - 0.3) < 1e-9);
   assert.equal(moduleWeight(lib, 'tuning::restart::tests', 27, 'linux'), 207);
   assert.equal(moduleWeight(lib, 'tuning::restart::tests', 27, 'win32'), 169);
-  assert.equal(moduleWeight(lib, 'unmeasured::tests', 10, 'linux'), 5);
+  assert.equal(moduleWeight(lib, 'unmeasured::tests', 10, 'linux'), 1);
+  assert.equal(moduleWeight(lib, 'unmeasured::tests', 10, 'win32'), 1);
   assert.equal(moduleWeight(lib, 'tuning::restart::tests', 0, 'linux'), 0, 'All-ignored modules carry no runtime.');
 });
 
