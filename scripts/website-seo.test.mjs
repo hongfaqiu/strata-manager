@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import test from 'node:test';
 import { documents, renderWebsiteDocs, verifyStaticWebsite } from './render-website-docs.mjs';
-import { documentSeo, parseWebsiteHtml, renderHomepage, renderSitemap, renderWebsiteSeo, site, standalonePages } from './website-seo.mjs';
+import { documentSeo, pageUrl, parseWebsiteHtml, publicPath, renderHomepage, renderSitemap, renderWebsiteSeo, site, standalonePages } from './website-seo.mjs';
 
 const source = `<!doctype html><html lang="zh-CN"><head>
 <meta name="description" content="安装与管理 Strata。" data-content-en="Set up &amp; manage Strata.">
@@ -88,12 +88,23 @@ test('Sitemap lists both complete homepage URLs and reciprocal document language
   }
   for (const document of documents) {
     const pair = documents.filter((entry) => entry.key === document.key);
-    const entry = entries.find((value) => value.includes(`<loc>${site + document.page}</loc>`));
+    const entry = entries.find((value) => value.includes(`<loc>${pageUrl(document.page)}</loc>`));
     assert.ok(entry);
     if (pair.length > 1) for (const counterpart of pair) {
-      assert.ok(entry.includes(`hreflang="${counterpart.lang === 'en' ? 'en' : 'zh-CN'}" href="${site + counterpart.page}"`));
+      assert.ok(entry.includes(`hreflang="${counterpart.lang === 'en' ? 'en' : 'zh-CN'}" href="${pageUrl(counterpart.page)}"`));
     }
   }
+});
+
+test('Public page URLs are the clean paths served by Workers static assets', () => {
+  assert.equal(site, 'https://strata-manager.cosfoc.com/');
+  assert.equal(publicPath('docs/index.html'), 'docs/');
+  assert.equal(publicPath('docs/index.en.html'), 'docs/index.en');
+  assert.equal(publicPath('docs/changelog.html'), 'docs/changelog');
+  assert.equal(publicPath('leaderboard.html'), 'leaderboard');
+  assert.equal(publicPath('en/'), 'en/');
+  assert.equal(pageUrl('leaderboard.en.html'), 'https://strata-manager.cosfoc.com/leaderboard.en');
+  assert.equal(pageUrl(''), site);
 });
 
 test('Rendered documentation uses language-specific home links and aligned metadata', async () => {
@@ -103,9 +114,9 @@ test('Rendered documentation uses language-specific home links and aligned metad
     for (const entry of documents) {
       const html = await readFile(join(output, entry.page), 'utf8');
       assert.ok(html.includes(`<a class="doc-brand" href="${entry.lang === 'en' ? '../en/' : '../'}">`));
-      assert.ok(html.includes(`<link rel="canonical" href="${site + entry.page}">`));
-      assert.ok(html.includes(`<meta property="og:url" content="${site + entry.page}">`));
-      assert.ok(html.includes(`"url":"${site + entry.page}"`));
+      assert.ok(html.includes(`<link rel="canonical" href="${pageUrl(entry.page)}">`));
+      assert.ok(html.includes(`<meta property="og:url" content="${pageUrl(entry.page)}">`));
+      assert.ok(html.includes(`"url":"${pageUrl(entry.page)}"`));
       assert.ok(html.includes(`"inLanguage":"${entry.lang === 'en' ? 'en' : 'zh-CN'}"`));
     }
     const unsafe = documentSeo({ title: '<Title>', description: '</script>', page: 'docs/example.html', lang: 'en', alternates: [] });

@@ -1,0 +1,53 @@
+name: Legacy GitHub Pages redirects
+
+# The website lives on Cloudflare (strata-manager.cosfoc.com). Run this once after the cutover: it
+# replaces the old GitHub Pages site (hongfaqiu.github.io/strata-manager/) with one redirect page per
+# old URL plus a 404 that maps every other path. Keep GitHub Pages enabled so the redirects stay up;
+# rerun only if the set of pages changes.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: node --test scripts/website-legacy-redirects.test.mjs
+      - name: Build the site (for its page list) and the redirect pages
+        env:
+          STRATA_WEBSITE_OFFLINE: '1'
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/build-website.mjs && node scripts/build-legacy-redirects.mjs
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist/legacy-redirects
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

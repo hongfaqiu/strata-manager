@@ -1,4 +1,4 @@
-import { cp, mkdir, rm, lstat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, rm, lstat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { documents, renderWebsiteDocs, verifyStaticWebsite } from './render-website-docs.mjs';
@@ -24,7 +24,6 @@ await cp(source, output, { recursive: true });
 await mkdir(join(output, 'assets', 'screenshots'), { recursive: true });
 await cp(join(root, 'assets', 'icon.svg'), join(output, 'assets', 'icon.svg'));
 await copyWebsiteScreenshots(join(root, 'docs', 'screenshots'), join(output, 'assets', 'screenshots'));
-await writeFile(join(output, '.nojekyll'), '');
 const documentCount = await renderWebsiteDocs(output);
 const leaderboard = await renderLeaderboardPages(output);
 await renderWebsiteSeo(output, documents);

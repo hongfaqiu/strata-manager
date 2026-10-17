@@ -6,8 +6,8 @@
 <p><strong>A desktop workspace for local inference with Strata.</strong><br />Prepare the runtime, manage models and services, and understand how your local API is running.</p>
 
 <p>
-<a href="https://hongfaqiu.github.io/strata-manager/en/"><strong>Website</strong></a> ·
-<a href="https://hongfaqiu.github.io/strata-manager/docs/index.en.html"><strong>Documentation</strong></a> ·
+<a href="https://strata-manager.cosfoc.com/en/"><strong>Website</strong></a> ·
+<a href="https://strata-manager.cosfoc.com/docs/index.en"><strong>Documentation</strong></a> ·
 <a href="docs/SYSTEM.en.md">System explanation</a> ·
 <a href="https://github.com/hongfaqiu/strata-manager/releases/latest"><strong>Download</strong></a> ·
 <a href="README.zh-CN.md">简体中文</a>
@@ -71,7 +71,7 @@ See the [daily experience notes](docs/DAILY_EXPERIENCE.md) and [verification rec
 
 ### Installers
 
-Choose a package from the [latest release](https://github.com/hongfaqiu/strata-manager/releases/latest) or the [website download section](https://hongfaqiu.github.io/strata-manager/en/#get-started). Install only files listed for the selected release and verify them against that release's `SHA256SUMS`.
+Choose a package from the [latest release](https://github.com/hongfaqiu/strata-manager/releases/latest) or the [website download section](https://strata-manager.cosfoc.com/en/#get-started). Install only files listed for the selected release and verify them against that release's `SHA256SUMS`.
 
 | Platform | Package | Setup |
 | --- | --- | --- |
