@@ -1,5 +1,5 @@
 import type { AppLanguage } from "@strata-manager/core";
-import { asObject, type MetricSnapshot } from '@strata-manager/core';
+import { asObject, decodeStreams, type MetricSnapshot } from '@strata-manager/core';
 import { LoaderCircle, PictureInPicture2 } from 'lucide-react';
 import './service-telemetry-statusbar.css';
 
@@ -42,7 +42,8 @@ export function ServiceTelemetryStatusBar({ language, hasProfile, online, connec
   // normalizeMetrics returns the last request's decode rate outside generation.
   // Only idle may present that historical rate, with an explicit recent label.
   const speed = showMetrics ? state === 'generating' ? metric.decodeTokS : reading ? metric.prefillTokS : state === 'idle' ? metric.decodeTokS : null : null;
-  const speedLabel = reading ? text('读取', 'Reading') : state === 'idle' ? text('最近生成', 'Last generation') : text('生成', 'Generation');
+  const streams = state === 'generating' && metric ? decodeStreams(metric.raw).length : 0;
+  const speedLabel = reading ? text('读取', 'Reading') : state === 'idle' ? text('最近生成', 'Last generation') : streams > 1 ? text(`${streams} 路合计`, `${streams} streams`) : text('生成', 'Generation');
   const format = (value: number, digits = 0) => value.toLocaleString(language, { maximumFractionDigits: digits, minimumFractionDigits: digits });
   const number = (value: number | null | undefined, suffix = '', digits = 0) => validNumber(value) ? `${format(value, digits)}${suffix}` : '–';
   const percent = (value: number | null | undefined) => validNumber(value) && value <= 100 ? number(value, '%') : '–';

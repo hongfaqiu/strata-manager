@@ -112,3 +112,15 @@ describe('startup fields', () => {
     expect(applyStartupField({ args: [] }, trim, 'true').args).toEqual(['--trim-stage-weights']);
   });
 });
+
+describe('decode streams', () => {
+  it('lists per-slot rates while several requests generate', async () => {
+    const { decodeStreams, decodeStreamsLabel } = await import('../src/metrics');
+    const raw = { live: { tok_s: 156, slots: [{ slot: 0, state: 'generating', tok_s: 80 }, { slot: 1, state: 'decoding', tok_s: 76 }, { slot: 2, state: 'idle', held_tokens: 900 }, { slot: 3, state: 'reading', tok_s: null }] } };
+    expect(decodeStreams(raw)).toEqual([80, 76]);
+    expect(decodeStreamsLabel([80, 76], true)).toBe('2 路合计 · 80.0 + 76.0');
+    expect(decodeStreamsLabel([80, 76, 70, 66, 60], false)).toBe('5 streams');
+    expect(decodeStreamsLabel([80], true)).toBeNull();
+    expect(decodeStreams({ live: { tok_s: 40 } })).toEqual([]);
+  });
+});

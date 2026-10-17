@@ -53,3 +53,17 @@ export function normalizeMetrics(value: unknown): MetricSnapshot {
     cacheHitRate: number(last?.hit_rate), requests, history, raw,
   };
 }
+
+/** Per-request decode rates of the slots generating right now ("parallel" / --batch); live.tok_s is their sum upstream. */
+export function decodeStreams(value: unknown): number[] {
+  const live = asObject(asObject(value).live);
+  if (!Array.isArray(live.slots)) return [];
+  return live.slots.map(asObject).filter(slot => slot.state === 'generating' || slot.state === 'decoding')
+    .map(slot => slot.tok_s).filter((rate): rate is number => typeof rate === 'number' && Number.isFinite(rate) && rate > 0);
+}
+/** "2 路合计 · 80 + 76" when more than one request generates; null otherwise. */
+export function decodeStreamsLabel(streams: number[], zh: boolean): string | null {
+  if (streams.length < 2) return null;
+  const parts = streams.length <= 4 ? streams.map(rate => rate.toFixed(rate >= 100 ? 0 : 1)).join(' + ') : null;
+  return zh ? `${streams.length} 路合计${parts ? ` · ${parts}` : ''}` : `${streams.length} streams${parts ? ` · ${parts}` : ''}`;
+}
