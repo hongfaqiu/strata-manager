@@ -16,6 +16,8 @@ interface OverviewPageProps {
   onImages?:()=>void;
   startupModel?:{name:string;configPath:string;lastActivatedAt?:number;onStart:()=>void};
   hasRuntime?:boolean;runtimeNeedsRepair?:boolean;setupLoading?:boolean;setupError?:string;startupBusy?:boolean;startupDisabled?:boolean;
+  /** First-run guide: resume strip while active; a reopen link in the empty state after it was skipped. */
+  guideNotice?:ReactNode;onOpenGuide?:()=>void;
 }
 const overviewLabels = {
   'zh-CN': { images: '图像支持', enabled: '已启用', disabled: '未启用', background: '后台检查', noCheck: '尚无检查记录', newProcess: '当前进程未检查', pending: '尚未完成检查', expired: '检查记录已过期', invalidTime: '检查时间待核验', deferred: '检查已延后', configuration: '运行配置', models: '模型管理', waitingService: '等待配置服务', waitingHint: '启用模型后，这里会显示实时负载、资源与近期请求。' },
@@ -37,7 +39,7 @@ const startupLabels = {
     recent: 'Recently enabled', available: 'Available', runtime: 'Strata detected', start: 'Enable this model', starting: 'Enabling…', choose: 'Choose a model', install: 'Install Strata', repair: 'Complete Strata setup',
   },
 } as const;
-export function OverviewPage({profile,health,backgroundHealth,metric,process,tasks,language,online,connecting,desktop,tasksLoading,healthError,metricsError,taskError,processError,controls,stateLabel,onRefresh,onCreateProfile,onChat,onCopy,onNavigate,onImages,onRestart,profiles,onSwitchProfile,actionsDisabled,startupModel,hasRuntime=false,runtimeNeedsRepair=false,setupLoading=false,setupError,startupBusy=false,startupDisabled=false}:OverviewPageProps) {
+export function OverviewPage({profile,health,backgroundHealth,metric,process,tasks,language,online,connecting,desktop,tasksLoading,healthError,metricsError,taskError,processError,controls,stateLabel,onRefresh,onCreateProfile,onChat,onCopy,onNavigate,onImages,onRestart,profiles,onSwitchProfile,actionsDisabled,startupModel,hasRuntime=false,runtimeNeedsRepair=false,setupLoading=false,setupError,startupBusy=false,startupDisabled=false,guideNotice,onOpenGuide}:OverviewPageProps) {
   const {t}=useTranslation();
     const labels = overviewLabels[(language === 'zh-CN' ? 'zh-CN' : 'en')];
   const startup = startupLabels[(language === 'zh-CN' ? 'zh-CN' : 'en')];
@@ -48,10 +50,12 @@ export function OverviewPage({profile,health,backgroundHealth,metric,process,tas
     </button>
   );
   return <div className={`overview-page${!profile ? ' overview-page--empty' : ''}`}>
+    {guideNotice}
     {!profile?<section className="service-hero overview-service overview-service-empty" aria-label={t('service')}>
       <div className="overview-service-main"><div className="hero-icon"><Server size={28} strokeWidth={1.5}/></div><div className="hero-copy">
         <div className="overview-service-title"><h2>{!desktop?t('noProfile'):setupPending?startup.checkingTitle:startupModel?startup.title:hasRuntime?startup.chooseTitle:startup.installTitle}</h2><Badge tone={hasRuntime?'positive':'muted'}>{hasRuntime?startup.runtime:t('offline')}</Badge></div>
         <p className="overview-setup-hint">{!desktop?t('noProfileHint'):setupPending?startup.checkingHint:startupModel?startupModel.lastActivatedAt?startup.recentHint:startup.modelHint:runtimeNeedsRepair?startup.repairHint:hasRuntime?startup.chooseHint:startup.installHint}</p>
+        {onOpenGuide&&<button type="button" className="ob-link ob-guide-link" onClick={onOpenGuide}>{t('obOpenGuide' as never)}<ArrowRight size={13} aria-hidden="true"/></button>}
         {startupModel&&<><div className="overview-service-model"><span>{t('model')}</span><strong>{startupModel.name}</strong><Badge>{startupModel.lastActivatedAt?startup.recent:startup.available}</Badge></div><div className="overview-service-endpoint"><code data-tooltip={startupModel.configPath}>{startupModel.configPath.split(/[\\/]/).pop()}</code>{startupModel.lastActivatedAt&&<time dateTime={new Date(startupModel.lastActivatedAt).toISOString()}>{new Date(startupModel.lastActivatedAt).toLocaleString(language)}</time>}</div></>}
       </div></div>
       <div className="overview-service-cta" role="group" aria-label={t('quickActions')}>
