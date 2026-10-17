@@ -339,7 +339,7 @@ try {
     const merge = (previous, updated) => previous.map(item => updated.find(entry => entry.name === item.name) ?? item);
     full.captures = merge(full.captures, manifest.captures);
     full.narrowQa = merge(full.narrowQa, manifest.narrowQa);
-    full.supplementalCaptures = [...(full.supplementalCaptures ?? []).filter(entry => !selectedScenes.includes(entry.scene)), ...selectedScenes.map(scene => ({ scene, appVersion: currentVersion, capturedAt: manifest.capturedAt, sourceProvenance: manifest.sourceProvenance, browser: manifest.browser }))];
+    full.supplementalCaptures = [...(full.supplementalCaptures ?? []).filter(entry => !selectedScenes.includes(entry.scene)), ...selectedScenes.map(scene => ({ scene, appVersion: currentVersion, capturedAt: manifest.capturedAt, sourceProvenance: { captureHEAD: manifest.sourceProvenance.captureHEAD, sourceTreeSha256: manifest.sourceProvenance.after?.sourceTreeSha256, helperTreeSha256: manifest.sourceProvenance.after?.helperTreeSha256, sourceUnchangedDuringCapture: manifest.sourceProvenance.sourceUnchangedDuringCapture }, browser: manifest.browser }))];
     await writeFile(join(destination, 'manifest.json'), `${JSON.stringify(full, null, 2)}\n`);
   } else if (manifest.status === 'passed' && !probeHistory) {
     await writeFile(join(destination, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);

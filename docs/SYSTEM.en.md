@@ -50,7 +50,7 @@ Results show line charts for prefill speed, decode speed and request duration, a
 
 The desktop treats chat and Benchmark as inference activity and coordinates tuning, service switches, runtime tasks and updates. Switching models or cancelling a Benchmark ends further work. The independent backend runs tuning and verifies configuration application and restoration. Desktop coordination does not exclude concurrent requests from other API clients. Reproducible measurements still require model and service identity, cache state, concurrency, resource headroom and external load.
 
-Interface examples: [context tiers](screenshots/changelog/0.1.5/benchmark.en.webp), [result report (demonstration data)](screenshots/changelog/0.1.5/benchmark-report.en.webp), and [scenario tests](screenshots/changelog/0.1.5/scenario-benchmark.en.webp).
+Interface examples: [context tiers](screenshots/benchmark.en.webp), [result report (demonstration data)](screenshots/benchmark-report.en.webp), and [scenario tests](screenshots/scenario-benchmark.en.webp).
 
 ## Application updates and engine downloads
 
@@ -62,7 +62,7 @@ The update journal records replacement plans, original-program backups and origi
 
 ## Status trends and validation boundaries
 
-The separate desktop monitor is closed by default and uses a compact, metrics-only layout. Drag anywhere and use the native context menu (or Shift+F10) for actions. The menu provides actions for returning to the main window, changing workspaces, copying the API address, refreshing or pausing sampling, pinning the monitor and opening its settings. Shared settings includes a “Floating monitor” panel for the default pin state, sample-time display and system tray monitoring; changes save automatically. When enabled, the tray updates status and speed independently, and clicking its icon restores the monitor. The monitor can also move to the tray through its context menu. Closing it preserves the main app. See the [monitor settings example](screenshots/changelog/0.1.5/floating-monitor-settings.en.webp).
+The separate desktop monitor is closed by default and uses a compact, metrics-only layout. Drag anywhere and use the native context menu (or Shift+F10) for actions. The menu provides actions for returning to the main window, changing workspaces, copying the API address, refreshing or pausing sampling, pinning the monitor and opening its settings. Shared settings includes a “Floating monitor” panel for the default pin state, sample-time display and system tray monitoring; changes save automatically. When enabled, the tray updates status and speed independently, and clicking its icon restores the monitor. The monitor can also move to the tray through its context menu. Closing it preserves the main app. See the [monitor settings example](screenshots/floating-monitor-settings.en.webp).
 
 “Quick speed test” from the monitor or tray runs in the main window. It sends the short-request and decode scenarios serially only when the model is ready and inference and management tasks are idle. This action sends actual inference requests. Routine monitoring still reads only an existing backend and does not start or restore stopped services. Native context menus, tray behavior, pinning and the system clipboard require separate desktop validation; screenshots do not replace those checks.
 
