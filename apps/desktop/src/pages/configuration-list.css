@@ -21,3 +21,10 @@ button.configuration-list-open { display: flex; justify-content: flex-start; fle
 .configuration-list-row:hover .configuration-list-actions, .configuration-list-row:focus-within .configuration-list-actions { opacity: 1; pointer-events: auto; }
 .configuration-confirm-path { display: block; overflow-wrap: anywhere; }
 @media (hover: none) { .configuration-list-actions { opacity: 1; pointer-events: auto; } }
+.configuration-list-head-actions { display: inline-flex; align-items: center; gap: 12px; }
+.configuration-list-version-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.configuration-list-version-toggle input { margin: 0; }
+.configuration-list-version-note { margin: 0 0 4px; font-size: 12px; color: var(--muted); }
+.configuration-list-others { margin-top: 8px; }
+.configuration-list-others > summary { cursor: pointer; font-size: 12px; font-weight: 500; color: var(--muted); padding: 4px 0; list-style-position: inside; }
+.configuration-list-others > summary:hover { color: var(--text); }

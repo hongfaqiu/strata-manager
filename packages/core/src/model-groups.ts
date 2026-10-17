@@ -1,4 +1,5 @@
 import type { JsonObject, LocalCandidate, LocalInstallationDetails, ServiceProfile } from './types';
+import type { DetectedRuntime } from './installation-types';
 
 const canonical = (value: string) => {
   const path = value.replace(/\\/g, '/').replace(/^\/\/\?\/([a-z]:\/)/i, '$1');
@@ -131,3 +132,166 @@ export function groupLocalModels(profiles: ServiceProfile[], candidates: LocalCa
   }
   return [...groups.values()];
 }
+
+/**
+ * Upstream Strata keeps one `strata-<model>.json` per installed version while
+ * every version shares the same `Strata-data` weights. These helpers only shape
+ * the display: which version a configuration belongs to, which version is
+ * current, and which copies are identical. Nothing here reads or writes files.
+ */
+
+const absolute = /^(?:[a-z]:[\\/]|[\\/]{2}|\/)/i;
+/** Comparable key for an installation directory, without a trailing separator. */
+export const installDirKey = (dir: string | undefined | null): string => dir ? configurationPathKey(dir).replace(/\/+$/, '') : '';
+
+const versionParts = (version: string) => version.trim().replace(/^v/i, '').split(/[.\-+_]/).filter(Boolean);
+/** Positive when `a` is newer. A known version is always newer than an unknown one. */
+export function compareRuntimeVersions(a?: string | null, b?: string | null): number {
+  if (!a || !b) return a ? 1 : b ? -1 : 0;
+  const left = versionParts(a), right = versionParts(b);
+  for (let index = 0; index < Math.max(left.length, right.length); index++) {
+    const x = left[index], y = right[index];
+    if (x === undefined || y === undefined) return x === undefined ? -1 : 1;
+    const nx = /^\d+$/.test(x) ? Number(x) : NaN, ny = /^\d+$/.test(y) ? Number(y) : NaN;
+    if (!Number.isNaN(nx) && !Number.isNaN(ny)) { if (nx !== ny) return nx - ny; continue; }
+    if (!Number.isNaN(nx) !== !Number.isNaN(ny)) return Number.isNaN(nx) ? -1 : 1;
+    if (x !== y) return x < y ? -1 : 1;
+  }
+  return 0;
+}
+
+export const configurationInstallDir = (entry: LocalModelConfiguration): string => entry.profile?.installDir || entry.candidate?.installDir || '';
+
+/** Installation directory → runtime version, from discovery first and detected runtimes second. */
+export function runtimeVersionIndex(candidates: LocalCandidate[] = [], runtimes: Pick<DetectedRuntime, 'installDir' | 'runtimeVersion'>[] = []): Map<string, string> {
+  const index = new Map<string, string>();
+  for (const runtime of runtimes) if (runtime.runtimeVersion) index.set(installDirKey(runtime.installDir), runtime.runtimeVersion);
+  for (const candidate of candidates) if (candidate.runtimeVersion) index.set(installDirKey(candidate.installDir), candidate.runtimeVersion);
+  return index;
+}
+
+export const configurationVersion = (entry: LocalModelConfiguration, versions: Map<string, string>): string | undefined =>
+  entry.candidate?.runtimeVersion ?? versions.get(installDirKey(configurationInstallDir(entry)));
+
+export interface CurrentInstallInput {
+  profiles: ServiceProfile[];
+  candidates?: LocalCandidate[];
+  runtimes?: Pick<DetectedRuntime, 'installDir' | 'runtimeVersion' | 'readiness'>[];
+  activeId?: string;
+  /** Whether the active profile is the service this application currently runs. */
+  activeRunning?: boolean;
+  lastUsedId?: string;
+}
+
+/** Running → last used → active profile → newest ready runtime → newest discovered version. */
+export function resolveCurrentInstallDir(input: CurrentInstallInput): string | undefined {
+  const dir = (id?: string) => id ? input.profiles.find(profile => profile.id === id)?.installDir || undefined : undefined;
+  if (input.activeRunning) { const running = dir(input.activeId); if (running) return running; }
+  const discoveredRunning = input.candidates?.find(candidate => candidate.running === true)?.installDir;
+  if (discoveredRunning) return discoveredRunning;
+  const remembered = dir(input.lastUsedId) ?? dir(input.activeId);
+  if (remembered) return remembered;
+  const newest = <T extends { installDir: string; runtimeVersion?: string }>(items: T[]) => [...items].sort((a, b) => compareRuntimeVersions(b.runtimeVersion, a.runtimeVersion))[0]?.installDir;
+  return newest((input.runtimes ?? []).filter(runtime => runtime.readiness === 'ready')) ?? newest(input.candidates ?? []);
+}
+
+const PATH_KEYS = new Set(['exe', 'cwd', 'log', 'tokenizer', 'lib_dirs']);
+/**
+ * Settings identity of a configuration with installation-local paths written as
+ * `<install>/…`, so two versions' copies of the same setup compare equal. Shared
+ * weights keep their real paths: copies pointing at different files never merge.
+ */
+export function configurationFingerprint(entry: LocalModelConfiguration): string | undefined {
+  const config = entry.config;
+  if (!config || typeof config !== 'object') return undefined;
+  const root = installDirKey(configurationInstallDir(entry));
+  const local = (value: string, pathField: boolean): string => {
+    if (!root) return value;
+    if (absolute.test(value)) {
+      const key = configurationPathKey(value);
+      if (key === root) return '<install>';
+      if (key.startsWith(`${root}/`)) return `<install>${key.slice(root.length)}`;
+      return key;
+    }
+    // Relative path fields already resolve against the installation. Other
+    // relative strings are compared as written; a group already shares weights.
+    return pathField ? `<install>/${value.replace(/\\/g, '/').replace(/^(?:\.\/)+/, '')}` : value;
+  };
+  const walk = (value: unknown, pathField = false): unknown => {
+    if (typeof value === 'string') return local(value, pathField);
+    if (Array.isArray(value)) return value.map(item => walk(item, pathField));
+    if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map(key => [key, walk((value as JsonObject)[key], PATH_KEYS.has(key))]));
+    return value;
+  };
+  return JSON.stringify(walk(config));
+}
+
+export interface VersionedConfiguration {
+  entry: LocalModelConfiguration;
+  version?: string;
+  installDir: string;
+  /** Belongs to the current installation. */
+  current: boolean;
+  /** Other configurations with identical settings, shown collapsed under this row. */
+  duplicates: { entry: LocalModelConfiguration; version?: string; installDir: string }[];
+}
+
+export interface FocusedModelGroup {
+  /** Rows shown by default: the current version, or the newest copy when the current one has none. */
+  primary: VersionedConfiguration[];
+  /** Rows of other versions, collapsed under “Other versions”. Empty when every version is shown. */
+  others: VersionedConfiguration[];
+  /** True when the current installation has no configuration for this model. */
+  fallback: boolean;
+  /** Every configuration of the group, including merged duplicates. */
+  total: number;
+}
+
+export interface FocusOptions {
+  currentInstallDir?: string;
+  versions: Map<string, string>;
+  showAll?: boolean;
+  /** Entry keys that always stay visible as their own row (running, selected, preparing…). */
+  pinned?: Iterable<string>;
+}
+
+/** Version-aware view of one model group. Display only: every configuration remains reachable. */
+export function focusModelGroup(group: LocalModelGroup, options: FocusOptions): FocusedModelGroup {
+  const currentKey = installDirKey(options.currentInstallDir);
+  const pinned = new Set(options.pinned ?? []);
+  const rows = group.configurations.map(entry => {
+    const installDir = configurationInstallDir(entry);
+    return { entry, installDir, version: configurationVersion(entry, options.versions), current: !!currentKey && installDirKey(installDir) === currentKey };
+  }).sort((a, b) => compareRuntimeVersions(b.version, a.version) || Number(b.current) - Number(a.current) || (b.entry.modifiedAt ?? 0) - (a.entry.modifiedAt ?? 0) || a.entry.configPath.localeCompare(b.entry.configPath));
+  const buckets = new Map<string, typeof rows>();
+  const representatives = new Set<(typeof rows)[number]>();
+  for (const row of rows) {
+    const fingerprint = configurationFingerprint(row.entry);
+    if (fingerprint === undefined) { representatives.add(row); continue; }
+    const bucket = buckets.get(fingerprint) ?? []; bucket.push(row); buckets.set(fingerprint, bucket);
+  }
+  const duplicatesOf = new Map<(typeof rows)[number], VersionedConfiguration['duplicates']>();
+  for (const bucket of buckets.values()) {
+    // Pinned rows stay, and so does the current version's own copy.
+    const kept = bucket.filter(row => pinned.has(row.entry.key) || row === (bucket.find(item => item.current) ?? (bucket.some(item => pinned.has(item.entry.key)) ? undefined : bucket[0])));
+    for (const row of kept) representatives.add(row);
+    const merged = bucket.filter(row => !kept.includes(row)).map(({ entry, version, installDir }) => ({ entry, version, installDir }));
+    if (merged.length) duplicatesOf.set(kept[0]!, merged);
+  }
+  const shown: VersionedConfiguration[] = rows.filter(row => representatives.has(row)).map(row => ({ ...row, duplicates: duplicatesOf.get(row) ?? [] }));
+  const total = group.configurations.length;
+  if (options.showAll) return { primary: shown, others: [], fallback: false, total };
+  let primary = shown.filter(row => row.current);
+  let fallback = false;
+  if (!primary.length && shown.length) {
+    const newest = installDirKey(shown[0]!.installDir);
+    primary = shown.filter(row => installDirKey(row.installDir) === newest);
+    fallback = true;
+  }
+  // A pinned row (for example the running configuration) is never hidden.
+  primary = shown.filter(row => primary.includes(row) || pinned.has(row.entry.key));
+  return { primary, others: shown.filter(row => !primary.includes(row)), fallback, total };
+}
+
+/** Number of configurations in other versions that the default view hides. */
+export const hiddenVersionCount = (focused: FocusedModelGroup): number => focused.others.reduce((sum, row) => sum + 1 + row.duplicates.length, 0);

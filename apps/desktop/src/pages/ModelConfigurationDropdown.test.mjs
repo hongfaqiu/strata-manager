@@ -72,3 +72,25 @@ test('unavailable delete callbacks have no action, and a disabled popup never di
   nodes(f.tree()).find(node => node.props.role === 'option').props.onClick();
   assert.deepEqual(f.calls.deleted, []); assert.deepEqual(f.calls.selected, []);
 });
+
+test('other-version rows stay behind a disclosure until revealed, and keyboard reaches them', () => {
+  const options = [{ value: 'current', name: 'strata-a.json', filePath: 'D:\\Strata-0.1.44\\strata-a.json', versionLabel: 'Strata 0.1.44', versionCurrent: true, sameLabel: '另有 1 个版本相同' }, { value: 'old', name: 'strata-a.json', filePath: 'D:\\Strata-0.1.38\\strata-a.json', versionLabel: 'Strata 0.1.38', section: 'other' }];
+  const f = fixture({ value: 'current', options, othersLabel: '其他版本 · 1' });
+  f.trigger().props.onClick(); f.render();
+  const listed = () => nodes(f.tree()).filter(node => node.props.role === 'option').map(node => node.props.id);
+  assert.equal(listed().length, 1);
+  const disclosure = () => nodes(f.tree()).find(node => node.props.className === 'model-configuration-others');
+  assert.equal(disclosure().props['aria-expanded'], false);
+  assert.ok(nodes(f.tree()).some(node => node.props.option?.versionLabel === 'Strata 0.1.44'));
+  f.trigger().props.onKeyDown({ key: 'ArrowDown', preventDefault: () => {} }); f.render();
+  assert.equal(listed().length, 2);
+  f.trigger().props.onKeyDown({ key: 'Enter', preventDefault: () => {} }); f.render();
+  assert.deepEqual(f.calls.selected, ['old']);
+});
+
+test('a selected other-version row opens with its section revealed', () => {
+  const options = [{ value: 'current', name: 'a.json', filePath: 'a' }, { value: 'old', name: 'b.json', filePath: 'b', section: 'other' }];
+  const f = fixture({ value: 'old', options, othersLabel: 'Other versions · 1' });
+  f.trigger().props.onClick(); f.render();
+  assert.equal(nodes(f.tree()).filter(node => node.props.role === 'option').length, 2);
+});

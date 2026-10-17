@@ -1,6 +1,6 @@
 import type { AppLanguage } from "@strata-manager/core";
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, RotateCcw } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { ArrowRight, ImageIcon, RotateCcw, Settings2 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import * as core from '@strata-manager/core';
@@ -67,6 +67,8 @@ export interface RuntimeConfigPageProps {
   onSaveDraftReady?: (save: SaveDraft | undefined) => void;
   /** Available only for the current owned service; a separate confirmation precedes restart. */
   onRestart?: () => Promise<unknown>;
+  /** The model's configuration switcher, shown with the page tools. */
+  configurations?: ReactNode;
 }
 
 /** Each configuration gets an independent editing session and draft. */
@@ -75,7 +77,7 @@ export function RuntimeConfigPage(props: RuntimeConfigPageProps) {
   return <RuntimeConfigSession key={identity} {...props} />;
 }
 
-function RuntimeConfigSession({ profile, online, language, desktop = core.isDesktop(), onError, onMessage, onSharedSettings, onServices, onImages, onCopied, onDeleted, onDirtyChange, onSaveDraftReady, onRestart }: RuntimeConfigPageProps) {
+function RuntimeConfigSession({ profile, online, language, desktop = core.isDesktop(), onError, onMessage, onSharedSettings, onServices, onImages, onCopied, onDeleted, onDirtyChange, onSaveDraftReady, onRestart, configurations }: RuntimeConfigPageProps) {
   const { t } = useTranslation();
   const zh = language === 'zh-CN';
   const localFile = desktop && !!profile?.configPath;
@@ -177,10 +179,19 @@ function RuntimeConfigSession({ profile, online, language, desktop = core.isDesk
   };
   const locked = saving || config.isFetching || !online || config.isError;
   return <section className="view view--runtime-config" id="view-config" aria-labelledby="workspace-page-title"><div className="runtime-config">
-    {onSharedSettings && <div className="runtime-config-section-actions"><button className="st-btn st-btn--secondary" type="button" onClick={onSharedSettings}>{zh ? '打开设置' : 'Open settings'}<ArrowRight size={15}/></button></div>}
+    <header className="runtime-config-head" aria-labelledby="runtime-config-startup-title">
+      <div className="runtime-config-head-text">
+        <div className="runtime-config-head-title"><h2 id="runtime-config-startup-title">{zh ? '模型启动配置' : 'Model startup configuration'}</h2><span className="runtime-config-apply-badge runtime-config-apply-badge--restart">{zh ? '保存后重启生效' : 'Restart after saving'}</span></div>
+        <p>{localFile ? (zh ? '图形界面与 JSON 编辑同一份完整配置。保存会备份原文件；当前服务在重启前继续使用已有配置。' : 'Graphical controls and JSON edit the same complete configuration. Saving backs up the previous file; the running service keeps its existing configuration until restarted.') : (zh ? '服务提供的运行配置字段只写入配置文件，重启后生效。完整本地 JSON 可在桌面应用中编辑。' : 'The run configuration fields exposed by this service are saved to its configuration file and applied after a restart. Edit the complete local JSON in the desktop app.')}</p>
+      </div>
+      {(configurations || onImages || onSharedSettings) && <div className="runtime-config-head-tools">
+        {configurations}
+        {onImages && <button className="st-btn st-btn--secondary" type="button" onClick={onImages}><ImageIcon size={15}/>{zh ? '快捷配置图像支持' : 'Set up image support'}</button>}
+        {onSharedSettings && <button className="st-btn st-btn--secondary runtime-config-quiet" type="button" onClick={onSharedSettings} data-tooltip={zh ? '公共设置：聊天默认值、API 与外部助手' : 'Shared settings: chat defaults, API and assistants'}><Settings2 size={15}/>{zh ? '打开设置' : 'Open settings'}</button>}
+      </div>}
+    </header>
     <section className="runtime-config-startup" aria-labelledby="runtime-config-startup-title">
-      <div className="runtime-config-startup-intro"><div className="runtime-config-section-heading"><h2 id="runtime-config-startup-title">{zh ? '模型启动配置' : 'Model startup configuration'}</h2><span className="runtime-config-apply-badge runtime-config-apply-badge--restart">{zh ? '保存后重启生效' : 'Restart after saving'}</span></div><p>{localFile ? (zh ? '图形界面与 JSON 编辑同一份完整配置。保存会备份原文件；当前服务在重启前继续使用已有配置。' : 'Graphical controls and JSON edit the same complete configuration. Saving backs up the previous file; the running service keeps its existing configuration until restarted.') : (zh ? '服务提供的运行配置字段只写入配置文件，重启后生效。完整本地 JSON 可在桌面应用中编辑。' : 'The run configuration fields exposed by this service are saved to its configuration file and applied after a restart. Edit the complete local JSON in the desktop app.')}</p><div className="runtime-config-section-actions">{onImages && <button className="st-btn st-btn--secondary" type="button" onClick={onImages}>{zh ? '快捷配置图像支持' : 'Set up image support'}</button>}{onServices && <button className="st-btn st-btn--secondary" type="button" onClick={onServices}><ArrowRight size={15}/>{zh ? '返回我的模型' : 'Return to My models'}</button>}</div></div>
-    <ResourceAssessmentPanel request={resourceRequest} language={language} desktop={desktop} unavailableReason={!profile ? (zh ? '选择本机模型后可读取资源建议。' : 'Select a local model to read resource guidance.') : !resourceDraft ? (zh ? '配置尚未读取或当前草稿不完整，容量保持未知。' : 'The configuration is not loaded or the draft is incomplete; capacity remains unknown.') : undefined}/>
+    <ResourceAssessmentPanel inline request={resourceRequest} language={language} desktop={desktop} unavailableReason={!profile ? (zh ? '选择本机模型后可读取资源建议。' : 'Select a local model to read resource guidance.') : !resourceDraft ? (zh ? '配置尚未读取或当前草稿不完整，容量保持未知。' : 'The configuration is not loaded or the draft is incomplete; capacity remains unknown.') : undefined}/>
     <StartupTuningPanel profile={profile} desktop={desktop} language={language} onError={onError} onMessage={onMessage} onRestart={onRestart} onCopied={onCopied} onDeleted={onDeleted} onDirtyChange={setStartupDirty} onSaveDraftReady={registerStartupSave} onDraftConfigChange={setResourceDraft}/>
     {!localFile && <div className="st-card cfg-card" id="cfg-card"><div className="req-head"><span className="card-title">{zh ? '服务配置文件字段' : 'Service configuration file fields'}</span><span className="muted small" id="cfg-file">{online ? String(config.data?.file ?? '') : ''}</span></div>
       <p className="runtime-config-restart-note">{zh ? '保存后重启模型生效。“默认”会清除该项的自定义值。' : 'Restart the model after saving. “Default” clears that field’s custom value.'}</p>
