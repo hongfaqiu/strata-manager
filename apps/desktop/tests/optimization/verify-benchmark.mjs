@@ -51,24 +51,24 @@ async function chooseScenarios(page, ids) {
   const names = { short: /^(短问答|Short answer)$/, code: /^(代码审查|Code review)$/, long: /^(长输入|Long input)$/, decode: /^(持续生成|Sustained generation)$/, cache: /^(重复输入缓存|Repeated input cache)$/, conversation: /^(多轮对话|Conversation)$/, custom: /^(自定义|Custom)$/ };
   for (const [id, name] of Object.entries(names)) await area(page).getByRole('checkbox', { name, exact: true }).setChecked(ids.includes(id));
 }
-async function advanced(page) {
-  const details = area(page).locator('.benchmark-advanced');
-  if (!await details.evaluate(element => element.open)) await details.locator('summary').click();
-}
+// Every scenario setting and result section is shown directly; nothing is folded.
 async function section(page, label) {
-  const summary = area(page).locator('summary').filter({ hasText: label });
-  await summary.waitFor();
-  assert.equal(await summary.count(), 1, `One section matches ${label}`);
-  const details = summary.locator('..');
-  if (!await details.evaluate(element => element.open)) await summary.click();
-  return details;
+  const heading = area(page).locator('.scenario-section > h3').filter({ hasText: label });
+  await heading.waitFor();
+  assert.equal(await heading.count(), 1, `One section matches ${label}`);
+  return heading.locator('..');
+}
+async function assertNothingFolded(page) {
+  assert.equal(await page.locator('.scenario-benchmark-page details').count(), 0, 'The scenario page has no collapsible sections');
 }
 async function assertFirstScreen(page) {
   const button = area(page).getByRole('button', { name: /^(开始测试|Start benchmark)$/ });
   const bounds = await button.boundingBox(), viewport = page.viewportSize();
   assert.ok(bounds && viewport && bounds.y >= 0 && bounds.y + bounds.height <= viewport.height, `Start action fits first screen: ${JSON.stringify({ bounds, viewport })}`);
-  assert.equal(await area(page).getByRole('checkbox').count(), 7);
-  assert.equal(await area(page).locator('.benchmark-advanced').evaluate(element => element.open), false);
+  assert.equal(await area(page).locator('.benchmark-plan').getByRole('checkbox').count(), 7);
+  await assertNothingFolded(page);
+  for (const name of [/^(每轮超时（秒）|Timeout per request \(seconds\))$/, /^(测试轮数|Rounds per scenario)$/]) assert.equal(await area(page).getByRole('spinbutton', { name }).isVisible(), true, 'Key settings are visible without expanding');
+  assert.equal(await area(page).getByRole('combobox', { name: /^(输入模式|Input mode)$/ }).isVisible(), true);
   assert.equal(await area(page).locator('.benchmark-scenario small').count(), 0, 'Scene explanations are on demand');
 }
 async function assertContextResultActions(page, hasHistory = true) {
@@ -104,7 +104,6 @@ async function dropdown(page, label, option) {
 async function configure(page, { rounds = 2, timeout = 5, warmup = false, repeat = false, scenarios = ['custom'], stopOnError = false } = {}) {
   await chooseScenarios(page, scenarios);
   await area(page).getByRole('spinbutton', { name: /^(测试轮数|Rounds per scenario)$/ }).fill(String(rounds));
-  await advanced(page);
   await area(page).getByRole('spinbutton', { name: /^(每轮超时（秒）|Timeout per request \(seconds\))$/ }).fill(String(timeout));
   if (warmup) await area(page).getByRole('switch', { name: /^(先预热一次|Run one warmup)$/ }).click();
   if (repeat) await dropdown(page, /^(输入模式|Input mode)$/, /^(重复输入 · 测试缓存|Repeated input · cache test)$/);
@@ -282,8 +281,10 @@ try {
     for (const call of calls) { assert.equal(call.body.model, 'Fixture A'); assert.equal(call.body.stream_options.include_usage, true); assert.equal(call.body.max_tokens, 256); }
     await section(page, /^(请求样本|Request samples)/);
     assert.equal(await area(page).locator('.benchmark-samples-table tbody tr').count(), 3);
-    const statistics = await section(page, /^(性能统计|Performance statistics)$/);
-    assert.match(await statistics.locator('.benchmark-summary').innerText(), /1,250/);
+    assert.match(await area(page).locator('.benchmark-summary-primary').innerText(), /1,250/);
+    assert.equal(await area(page).locator('.scenario-plot').filter({ hasText: /输出速度/ }).locator('.scenario-plot-dot').count(), 2, 'Warmup is excluded from per-request dots');
+    assert.match(await area(page).locator('.scenario-output').first().innerText(), /fixture output/);
+    await assertNothingFolded(page);
     const downloadEvent = page.waitForEvent('download'); await area(page).getByRole('button', { name: '导出 JSON' }).click();
     const download = await downloadEvent, exported = JSON.parse(await readFile(await download.path(), 'utf8'));
     assert.match(download.suggestedFilename(), /^strata-benchmark-.+\.json$/);
@@ -380,10 +381,12 @@ try {
     await section(page, /^(请求样本|Request samples)/);
     await dropdown(page, '筛选场景', '多轮对话');
     assert.equal(await area(page).locator('.benchmark-samples-table tbody tr').count(), 7);
-    const statistics = await section(page, /^(性能统计|Performance statistics)$/);
-    assert.match(await statistics.innerText(), /P99/);
+    assert.match(await area(page).locator('.benchmark-summary-primary').innerText(), /P99/);
     const comparisons = await section(page, /^(分场景对比|Scenario comparison)$/);
-    assert.equal(await comparisons.locator('.benchmark-comparison').count(), 1);
+    assert.equal(await comparisons.locator('tbody tr').count(), 6);
+    assert.equal(await comparisons.locator('.scenario-columns').count(), 2);
+    assert.equal(await comparisons.locator('.scenario-columns').first().locator('rect').count(), 6);
+    assert.match(await section(page, /^(测试条件|Test conditions)/).then(element => element.innerText()), /多轮对话/);
   });
   await run('serial-mixed-errors-json-csv', async page => {
     await configure(page, { rounds: 12, scenarios: ['short'] });
@@ -411,18 +414,21 @@ try {
     assert.equal(state.peak, 1); assert.equal(state.active, 0);
     assert.ok(report.telemetry.length >= 2); assert.ok(report.telemetry.some(point => point.gpuMemoryUsed === 4 * 1024 ** 3));
     await section(page, /^(请求样本|Request samples)/);
-    await section(page, /^(资源趋势|Resource trends)/);
+    await area(page).locator('.benchmark-resources').waitFor();
     assert.ok(report.samples.length > 100); assert.equal(await area(page).locator('.benchmark-samples-table tbody tr').count(), 100);
     assert.match(await area(page).locator('.benchmark-resource-latest').innerText(), /4 GiB/);
   });
   await run('cancel-serial-runner', async page => {
     await configure(page); await page.evaluate(() => { window.__fixture.benchmark.mode = 'hold'; });
     await start(page); await page.waitForFunction(() => window.__fixture.benchmark.active === 1);
-    assert.equal(await area(page).locator('.benchmark-plan-settings').isVisible(), false);
     await area(page).getByRole('heading', { name: '实时测试进度', exact: true }).waitFor();
-    await area(page).getByRole('button', { name: '查看设置', exact: true }).click();
-    assert.equal(await area(page).getByRole('checkbox').first().isDisabled(), true);
-    await area(page).getByRole('button', { name: '收起设置', exact: true }).click();
+    assert.equal(await area(page).locator('.benchmark-plan').getByRole('checkbox').count(), 0, 'Running replaces the editable plan with a read-only summary');
+    assert.match(await area(page).locator('.scenario-running-plan').innerText(), /自定义[\s\S]*每个场景 2 轮[\s\S]*超时 5 秒/);
+    await page.waitForFunction(() => /首 token .* 已接收 \d+ 字符/.test(document.querySelector('.scenario-live-now')?.textContent ?? ''));
+    assert.match(await area(page).locator('.scenario-live-now strong').innerText(), /^自定义$/);
+    assert.match(await area(page).locator('.scenario-tracker .is-active').innerText(), /自定义[\s\S]*0 \/ 2/);
+    assert.equal(await area(page).locator('.scenario-steps .is-current').count(), 1);
+    await assertNothingFolded(page);
     await area(page).getByRole('button', { name: '停止测试', exact: true }).click(); await finish(page);
     const [report] = await reports(page), state = await page.evaluate(() => window.__fixture.benchmark);
     assert.equal(report.state, 'cancelled'); assert.equal(report.samples.length, 1);
@@ -449,7 +455,7 @@ try {
   });
   for (const viewport of [{ width: 1366, height: 768 }, { width: 1800, height: 1200 }]) await run(`compact-default-first-screen-${viewport.width}`, async page => {
     await assertFirstScreen(page);
-    assert.equal(await area(page).getByRole('checkbox').evaluateAll(elements => elements.filter(element => element.checked).length), 6);
+    assert.equal(await area(page).locator('.benchmark-plan').getByRole('checkbox').evaluateAll(elements => elements.filter(element => element.checked).length), 6);
     await page.screenshot({ path: resolve(output, `compact-default-suite-${viewport.width}.png`), fullPage: false });
     await area(page).getByRole('button', { name: '测试说明', exact: true }).click();
     const guide = page.getByRole('dialog', { name: '场景测试说明', exact: true });
@@ -466,18 +472,18 @@ try {
     // Resource telemetry ticks every two seconds; synthetic SSE has two delays.
     await page.evaluate(() => { window.__fixture.benchmark.delayMs = 1200; });
     await start(page); await finish(page);
-    await area(page).locator('.benchmark-summary-primary').scrollIntoViewIfNeeded();
+    await area(page).locator('.benchmark-summary-primary').scrollIntoViewIfNeeded(); await assertNothingFolded(page);
     await page.screenshot({ path: resolve(output, `narrow-layout-${language}-results.png`), fullPage: true });
     const widths = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth, body: document.body.scrollWidth, table: document.querySelector('.benchmark-page .table-wrap').scrollWidth }));
     assert.ok(widths.document <= widths.viewport + 1 && widths.body <= widths.viewport + 1, JSON.stringify(widths));
     assert.equal(await area(page).getByRole('button', { name: language === 'en' ? 'Export JSON' : '导出 JSON' }).isEnabled(), true);
-    await section(page, /^(性能统计|Performance statistics)$/);
     await section(page, /^(请求样本|Request samples)/);
-    await section(page, /^(资源趋势|Resource trends)/);
+    await section(page, /^(测试条件|Test conditions)/);
+    await area(page).locator('.benchmark-resources').waitFor();
     const expandedWidths = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth, body: document.body.scrollWidth }));
     assert.ok(expandedWidths.document <= expandedWidths.viewport + 1 && expandedWidths.body <= expandedWidths.viewport + 1, JSON.stringify(expandedWidths));
     await page.screenshot({ path: resolve(output, `narrow-layout-${language}-expanded.png`), fullPage: true });
-    if (language === 'en') assert.match(await area(page).locator('.benchmark-section .benchmark-summary').innerText(), /Mean TTFT/);
+    if (language === 'en') assert.match(await area(page).locator('.benchmark-summary-primary').innerText(), /Mean TTFT/);
   }, `?language=${language}`, { width: 480, height: 1000 });
 } finally { await browser?.close(); await server.close(); }
 const resultName = selectedCase ? `browser-results-${selectedCase.replace(/[^a-z0-9-]/gi, '')}.json` : 'browser-results.json';
