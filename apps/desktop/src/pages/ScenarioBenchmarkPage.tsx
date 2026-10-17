@@ -8,6 +8,7 @@ import { Badge, Chart, Dialog, Empty, Field, Header, Metric, Panel } from '../co
 import { Checkbox, Dropdown, NumberField, Toggle } from '../OfficialControls';
 import './benchmark.css';
 import { BenchmarkComparisonPanel } from './BenchmarkComparisonPanel';
+import { ConcurrencyLadder } from './ConcurrencyLadder';
 
 type SavedReport = BenchmarkReport | BenchmarkSuiteReport;
 type Sample = BenchmarkSample | BenchmarkSuiteReport['samples'][number];
@@ -230,6 +231,7 @@ export function ScenarioBenchmarkPage({ profile, online, disabled, language, onR
       <div className="benchmark-live-budget"><progress max={Math.max(1,budget ?? 1)} value={Math.min(settled,budget ?? 1)} aria-label={text('计划进度','Plan progress')}/><span>{settled} / {number(budget,0)}</span></div>
       <div className="benchmark-live-latest"><span>{text('最近 TTFT','Latest TTFT')} <strong>{seconds(latestSample?.ttftMs)} s</strong></span><span>{text('最近 Decode','Latest decode')} <strong>{number(latestSample?.decodeTokS)} tok/s</strong></span><span>{text('实际输入 / 输出','Actual input / output')} <strong>{number(latestSample?.promptTokens,0)} / {number(latestSample?.completionTokens,0)} token</strong></span><span>GPU <strong>{number(latestTelemetry?.gpuUtil)} %</strong></span></div>
     </Panel>}
+    <ConcurrencyLadder profile={profile} online={online} disabled={disabled || running} language={language} onRunningChange={onRunningChange}/>
     <details className="benchmark-history-disclosure"><summary>{text("历史与升级对照", "History and upgrade comparison")}</summary><BenchmarkComparisonPanel reports={history} current={selected} baseline={baseline} language={language} disabled={running || disabled} replayDisabled={!online} onBaseline={saveBaseline} onReplay={report => { if (report.profileId !== profile?.id) { setError(text("请先选择基线对应的模型。", "Select the baseline model first.")); return; } if (isSuite(report)) void start({ ...report.options, kind: "suite", concurrency: 1 }); }}/></details>
     <details className="benchmark-export-options"><summary>{text("导出内容", "Export content")}</summary><label><Checkbox checked={includeContent} onChange={event => setIncludeContent(event.target.checked)}/>{text("导出时包含测试文本与输出", "Include test text and output in exports")}</label></details>
     {(!running || selected || resultSamples.length > 0) && <Panel className="benchmark-results" title={text('测试结果','Results')} action={history.length > 0 && <Dropdown ariaLabel={text('历史测试','Benchmark history')} value={selected?.id ?? ''} disabled={running} placeholder={text('历史测试','Benchmark history')} options={history.map(report => ({ value:report.id,label:`${new Date(report.startedAt).toLocaleString(language)} · ${report.model} · ${isSuite(report) ? report.options.kind === 'stress' ? text('旧版压力测试','Legacy stress') : text('场景测试','Suite') : text('串行测试','Serial')}` }))} onValueChange={value => { setSelected(history.find(report => report.id === value)); setFilter('all'); }}/> }>
