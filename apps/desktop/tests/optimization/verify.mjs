@@ -245,10 +245,13 @@ try {
     await page.getByRole('button', { name: 'Copy answer', exact: true }).waitFor();
     assert.equal(await page.getByText('已收到的部分回答', { exact: true }).count(), 1);
   });
-  await run('old supervisor disables full scenario without tuning mutation', '#tuning', async page => {
+  await run('old supervisor disables quick calibration and full scenario without tuning mutation', '#tuning', async page => {
+    await page.getByText('当前后台不支持快速校准。', { exact: false }).waitFor();
+    assert.equal(await page.getByRole('button', { name: '开始快速校准', exact: true }).isDisabled(), true);
+    await page.getByRole('radio', { name: '场景验收', exact: true }).click();
     await page.getByText('当前后台不支持完整场景实测。', { exact: false }).waitFor();
     assert.equal(await page.getByRole('button', { name: '开始实测', exact: true }).isDisabled(), true);
-    assert.equal(await page.evaluate(() => window.__fixture.calls.filter(call => call.command === 'tuning_start').length), 0);
+    assert.equal(await page.evaluate(() => window.__fixture.calls.filter(call => /^(tuning_start|calibrate_start)$/.test(call.command)).length), 0);
   });
   await run('settings help supports keyboard access without extra disclosure rows or preference changes', '#settings', async page => {
     const help = page.getByRole('button', { name: '本机后台帮助', exact: true });
@@ -263,21 +266,23 @@ try {
     assert.equal(await help.evaluate(element => element === document.activeElement), true);
     assert.equal(await page.evaluate(() => JSON.stringify(window.__fixture.store)), previous);
   });
-  await run('tuning help preserves model state and keeps one advanced control group', '#tuning', async page => {
+  await run('tuning help preserves model state and shows every setting without folding', '#tuning', async page => {
     const help = page.getByRole('button', { name: '调优测试帮助', exact: true }); await help.waitFor();
-    assert.equal(await page.locator('.tuning-page details.tuning-setup-disclosure').count(), 1);
-    assert.equal(await page.locator('.tuning-page details.tuning-advanced').count(), 1);
-    assert.equal(await page.locator('.tuning-advanced details').count(), 0);
-    await page.getByText('测试占用当前模型，完成后恢复原配置。', { exact: true }).waitFor();
-    await page.screenshot({ path: resolve(output, 'tuning-simplified.png') });
+    assert.equal(await page.locator('.tuning-page details').count(), 0, 'quick mode has no folding');
+    await page.getByText('校准期间暂时占用当前模型，其他请求会等待；不改配置、不重启。', { exact: true }).waitFor();
     const before = await page.evaluate(() => window.__fixture.calls.length);
     await help.focus(); await page.keyboard.press('Enter');
     await page.getByRole('dialog', { name: '调优测试说明', exact: true }).waitFor();
     await page.keyboard.press('Escape');
     assert.equal(await page.getByRole('dialog').count(), 0);
     assert.equal(await help.evaluate(element => element === document.activeElement), true);
+    await page.getByRole('radio', { name: '场景验收', exact: true }).click();
+    assert.equal(await page.locator('.tuning-page .tuning-advanced').count(), 1, 'one advanced group');
+    assert.equal(await page.locator('.tuning-page details').count(), 0, 'scenario mode has no folding');
+    await page.getByText('测试占用当前模型，完成后恢复原配置。', { exact: true }).waitFor();
+    await page.screenshot({ path: resolve(output, 'tuning-simplified.png') });
     const calls = await page.evaluate(index => window.__fixture.calls.slice(index), before);
-    assert.equal(calls.filter(call => /^(tuning_start|start_service|stop_service|restart_service)$/.test(call.command)).length, 0);
+    assert.deepEqual(calls.filter(call => /^(tuning_start|calibrate_start|start_service|stop_service|restart_service)$/.test(call.command)), []);
   });
   await run('missing engine version and image capability remain explicitly unknown', '#about', async page => {
     await page.getByText('未报告版本', { exact: true }).waitFor();

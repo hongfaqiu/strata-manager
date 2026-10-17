@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { request, streamChat, serviceStatus, restartService, takeOverService, discoverLocal, importLocal, ensureLocalService, supervisorStatus, listSetupHandoffs, resolveSetupHandoff, setBackgroundPolicy, tuningStart, readConfigSnapshot, writeConfig } from '../src';
+import { request, streamChat, serviceStatus, restartService, takeOverService, discoverLocal, importLocal, ensureLocalService, supervisorStatus, listSetupHandoffs, resolveSetupHandoff, setBackgroundPolicy, tuningStart, readConfigSnapshot, writeConfig, calibrateStart, calibrateStatus, calibrateCancel, tuningLive } from '../src';
 import type { ChatDelta, ServiceProfile, StreamEvent } from '../src';
 
 const native = vi.hoisted(() => ({ invoke: vi.fn() }));
@@ -33,6 +33,18 @@ describe('native bridge protocol', () => {
     native.invoke.mockResolvedValueOnce({ capabilities: { fullScenarioTuning: 1 } }).mockRejectedValueOnce('unknown_method: tuning_start_full_v1');
     await expect(tuningStart('model', request)).rejects.toThrow('unknown_method');
     expect(native.invoke.mock.calls).toEqual([['supervisor_status', undefined], ['tuning_start', { profileId: 'model', request }]]);
+  });
+  it('starts quick calibration only on a supervisor that reports it, and maps the other calibration calls', async () => {
+    for (const capabilities of [undefined, {}, { fullScenarioTuning: 1 }, { quickCalibration: '1' }, { quickCalibration: 0 }]) {
+      native.invoke.mockReset(); native.invoke.mockResolvedValue({ protocolVersion: 1, version: '99.0.0', capabilities });
+      await expect(calibrateStart('model')).rejects.toMatchObject({ code: 'SUPERVISOR_CAPABILITY_REQUIRED' });
+      expect(native.invoke.mock.calls).toEqual([['supervisor_status', undefined]]);
+    }
+    native.invoke.mockReset();
+    native.invoke.mockResolvedValueOnce({ capabilities: { quickCalibration: 1 } }).mockResolvedValue({ id: 'calibration' });
+    await calibrateStart('model', { rounds: 3 });
+    await calibrateStatus('model'); await calibrateCancel('job'); await tuningLive('job');
+    expect(native.invoke.mock.calls).toEqual([['supervisor_status', undefined], ['calibrate_start', { profileId: 'model', request: { rounds: 3 } }], ['calibrate_status', { profileId: 'model' }], ['calibrate_cancel', { jobId: 'job' }], ['tuning_live', { jobId: 'job' }]]);
   });
   it('keeps the explicitly selected short diagnostic available without full capability', async () => {
     native.invoke.mockResolvedValue({ id: 'diagnostic' });

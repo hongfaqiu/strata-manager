@@ -34,7 +34,7 @@ export interface LocalCandidate {
 export interface SupervisorStatus {
   startupFailures?: import('./startup-diagnostics').StartupFailureDiagnostic[];
   /** Missing on older supervisors; never infer this from protocol or package version. */
-  capabilities?: { fullScenarioTuning?: number; managerMcp?: number };
+  capabilities?: { fullScenarioTuning?: number; managerMcp?: number; quickCalibration?: number; tuningLive?: number };
   running: boolean;
   pid?: number;
   protocolVersion: number;

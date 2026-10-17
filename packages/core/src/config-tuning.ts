@@ -119,6 +119,7 @@ export const STARTUP_TUNING_FIELDS: readonly StartupFieldSpec[] = [
     ['--prefill', 'Prefill 分块（token）', 'Prefill chunk (tokens)', 'text', ['auto', 'auto:16384', 'auto:32768']],
     ['--no-prefill-borrow', '不借用专家缓存给 Prefill', 'Disable prefill borrowing', 'boolean'],
     ['--no-split-rows', '禁用分行 Prefill', 'Disable split rows', 'boolean'],
+    ['--prefill-pipe', '预填充分块（prefill pipe）', 'Prefill pipe', 'number', ['0', '1'], 0, 262144],
     ['--pcie-frac', 'PCIe 专家比例', 'PCIe expert fraction', 'number', undefined, 0, 1],
     ['--pcie-mode', 'PCIe 传输模式', 'PCIe transfer mode', 'text', ['dma', 'direct']],
   ]),
@@ -199,6 +200,14 @@ export const STARTUP_TUNING_FIELDS: readonly StartupFieldSpec[] = [
     ['log', '引擎日志路径', 'Engine log path', 'text'],
   ]),
 ];
+
+/** Optional one-line explanations shown under a field in the graphical editor (zh + en). */
+export const STARTUP_FIELD_HINTS: Readonly<Record<string, { zh: string; en: string }>> = {
+  '--prefill-pipe': {
+    zh: '仅在跨 GPU 层分配（--layer-split）时生效：按流水线切分提示词分块。0 关闭（默认），1 仅平均分块数，大于 1 为本机 b/a（token，可由快速校准或官方 --calibrate 测得），范围 0–262144。',
+    en: 'Only affects a layer split (--layer-split): sizes prompt chunks for the pipeline. 0 off (default), 1 only evens out the chunk count, > 1 is this PC\'s b/a in tokens (measured by quick calibration or the official --calibrate); range 0–262144.',
+  },
+};
 
 export function startupArgsOf(config: JsonObject): string[] { return config.args === undefined ? [] : argsOf(config); }
 export function startupFieldValue(config: JsonObject, field: StartupFieldSpec): string {

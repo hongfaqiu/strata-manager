@@ -20,6 +20,10 @@ use std::{
 };
 use tokio_util::sync::CancellationToken;
 
+#[path = "tuning_calibrate.rs"]
+pub mod calibrate;
+#[path = "tuning_live.rs"]
+pub mod live;
 #[path = "tuning_quality.rs"]
 mod quality;
 #[path = "tuning_restart.rs"]
@@ -190,6 +194,9 @@ pub struct TuningJob {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     pub notes: Vec<String>,
+    /// Sanitized, size-capped copy of the live log, attached when the job ends.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub live_log: Vec<live::LiveLogLine>,
     #[serde(flatten)]
     pub full: FullReport,
 }
@@ -390,6 +397,23 @@ fn update(
     persist(state, &entry.job)?;
     Ok(entry.job.clone())
 }
+/// Stores the ended job's log in its report without touching `updated_at`, so
+/// the published completion stays the same report apart from the log.
+fn attach_live_log(state: &RuntimeState, id: &str, log: Vec<live::LiveLogLine>) {
+    if log.is_empty() {
+        return;
+    }
+    let Ok(mut registry) = registry().lock() else {
+        return;
+    };
+    if let Some(entry) = registry
+        .get_mut(state.data_dir())
+        .and_then(|jobs| jobs.get_mut(id))
+    {
+        entry.job.live_log = log;
+        let _ = persist(state, &entry.job);
+    }
+}
 fn register_active(
     state: &RuntimeState,
     job: &TuningJob,
@@ -519,6 +543,10 @@ pub fn status(state: &RuntimeState, profile_id: String) -> Result<Option<TuningJ
     }
     Ok(indexed.or(live))
 }
+/// Live progress of a running tuning or calibration job; None when idle.
+pub fn live_status(job_id: &str) -> Option<live::LiveSnapshot> {
+    live::snapshot(job_id)
+}
 pub fn assert_available(state: &RuntimeState) -> Result<(), String> {
     if state
         .selection_changing
@@ -529,6 +557,13 @@ pub fn assert_available(state: &RuntimeState) -> Result<(), String> {
     assert_no_active_tuning(state)
 }
 pub fn assert_no_active_tuning(state: &RuntimeState) -> Result<(), String> {
+    if calibrate::any_active(state)? {
+        return Err("正在校准，请等待完成或取消校准".into());
+    }
+    assert_no_active_tuning_jobs(state)
+}
+/// Only the A/B/A tuning registry; calibration checks itself separately.
+pub(crate) fn assert_no_active_tuning_jobs(state: &RuntimeState) -> Result<(), String> {
     if registry()
         .lock()
         .map_err(|e| e.to_string())?
@@ -795,7 +830,7 @@ pub async fn start(
         .unwrap_or(candidates.len() * request.rounds * request.scenes.len() * 6);
     let token = CancellationToken::new();
     let job_identity = identity(&profile, &config, &metrics, &request.scenes);
-    let mut job=TuningJob{
+    let mut job=TuningJob{ live_log: vec![],
         id:uuid::Uuid::new_v4().to_string(),profile_id, state:Phase::Checking,scenes:request.scenes,rounds:request.rounds,max_tokens:request.max_tokens,
         started_at:now(),updated_at:now(),finished_at:None,completed_requests:0,total_requests,
         current_step:"waitingForIdle".into(),baseline,candidates,measurements:vec![],recommended_candidate_id:None,
@@ -805,8 +840,28 @@ pub async fn start(
     job.identity = restart::bound_identity(&profile, &config, &metrics, &job);
     register_active_checked(&state, &job, token.clone(), Some(pid))?;
     let id = job.id.clone();
+    live::begin(
+        &id,
+        if job.full.scope == restart::Scope::FullScenario {
+            job.full.progress.total_workloads
+        } else {
+            job.total_requests
+        },
+    );
     tokio::spawn(async move {
         let result = run(state.clone(), profile, pid, id.clone(), token.clone()).await;
+        live::log(
+            &id,
+            if result.is_ok() {
+                "finished"
+            } else if token.is_cancelled() {
+                "canceled"
+            } else {
+                "failed"
+            },
+            json!({}),
+        );
+        attach_live_log(&state, &id, live::end(&id));
         // Both successful request and full runs durably publish Completed and
         // their final timestamps before returning. Preserve that report once
         // consumers observe completion; only an error needs outer finalization.
@@ -887,7 +942,23 @@ async fn run(
                                 round + 1
                             )
                         })?;
-                        let mut measurement = measure(
+                        live::step(
+                            &id,
+                            match position {
+                                Position::BaselineBefore => "baselineBefore",
+                                Position::Candidate => "candidate",
+                                Position::BaselineAfter => "baselineAfter",
+                            },
+                            job.candidates
+                                .iter()
+                                .position(|c| c.id == candidate.id)
+                                .unwrap_or(0)
+                                + 1,
+                            job.candidates.len(),
+                            json!({"candidateId":candidate.id,"pcieFrac":parameters.pcie_frac,"specMinP":parameters.spec_min_p,"scene":scene,"cacheMode":cache_mode}),
+                            Some((round + 1, job.rounds)),
+                        );
+                        let measurement = measure(
                             &state,
                             &profile,
                             Probe {
@@ -896,10 +967,18 @@ async fn run(
                                 scene: *scene,
                                 max_tokens: job.max_tokens,
                                 maintenance_token: &maintenance_token,
+                                tune_extra: Value::Null,
                             },
                             &cancel,
-                        )
-                        .await;
+                        );
+                        live::unit_started(&id);
+                        let mut measurement = live::scope(id.clone(), measurement).await;
+                        live::unit_finished(&id, measurement.decode_tok_s);
+                        live::log(
+                            &id,
+                            "sample",
+                            json!({"candidate":candidate.id,"position":position,"scene":scene,"round":round + 1,"rate":measurement.decode_tok_s}),
+                        );
                         measurement.candidate_id = candidate.id.clone();
                         measurement.round = round;
                         measurement.position = position;
@@ -1026,6 +1105,8 @@ struct Probe<'a> {
     scene: Scene,
     max_tokens: usize,
     maintenance_token: &'a str,
+    /// Extra per-request `strata_tune` keys (e.g. `prefill_pipe`); Null for none.
+    tune_extra: Value,
 }
 async fn measure(
     state: &RuntimeState,
@@ -1039,9 +1120,16 @@ async fn measure(
         scene,
         max_tokens,
         maintenance_token,
+        tune_extra,
     } = probe;
     let mut record = empty_measurement(scene);
-    let body = json!({"messages":messages,"stream":true,"max_tokens":max_tokens,"temperature":0,"top_p":1,"top_k":1,"seed":1,"enable_thinking":false,"reasoning_effort":"none","reasoning_budget_tokens":0,"strata_checkpoint":false,"strata_tune":{"pcie_frac":parameters.pcie_frac,"spec_min_p":parameters.spec_min_p}});
+    let mut tune = json!({"pcie_frac":parameters.pcie_frac,"spec_min_p":parameters.spec_min_p});
+    if let (Some(tune), Some(extra)) = (tune.as_object_mut(), tune_extra.as_object()) {
+        for (key, value) in extra {
+            tune.insert(key.clone(), value.clone());
+        }
+    }
+    let body = json!({"messages":messages,"stream":true,"max_tokens":max_tokens,"temperature":0,"top_p":1,"top_k":1,"seed":1,"enable_thinking":false,"reasoning_effort":"none","reasoning_budget_tokens":0,"strata_checkpoint":false,"strata_tune":tune});
     let start = Instant::now();
     let builder = http::request_builder(
         &state.client,
@@ -1149,6 +1237,9 @@ async fn consume_response(
                 .get("reasoning_content")
                 .and_then(Value::as_str)
                 .unwrap_or("");
+            if !content.is_empty() || !reasoning.is_empty() {
+                live::on_delta();
+            }
             if (!content.is_empty() || !reasoning.is_empty()) && record.first_token_ms.is_none() {
                 record.first_token_ms = Some(start.elapsed().as_secs_f64() * 1000.0);
             }
@@ -1742,6 +1833,7 @@ async fn verify_restarted(
             scene: Scene::Chat,
             max_tokens: 32,
             maintenance_token: token,
+            tune_extra: Value::Null,
         },
         &CancellationToken::new(),
     )
@@ -1951,6 +2043,7 @@ mod tests {
     }
     fn admission_fixture_job(phase: Phase) -> TuningJob {
         TuningJob {
+            live_log: vec![],
             id: uuid::Uuid::new_v4().to_string(),
             profile_id: "isolated-admission".into(),
             state: phase,
@@ -2173,6 +2266,7 @@ mod tests {
             )
             .unwrap();
         let job = TuningJob {
+            live_log: vec![],
             id: uuid::Uuid::new_v4().to_string(),
             profile_id: profile.id.clone(),
             state: Phase::Applying,
@@ -2441,6 +2535,30 @@ mod tests {
             completed.recommended_candidate_id.as_deref(),
             Some("candidate-1")
         );
+        // The live log is kept in the report once the job ends: metadata only.
+        let mut logged = read_job(&state, &completed.id).unwrap();
+        for _ in 0..500 {
+            if !logged.live_log.is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            logged = read_job(&state, &completed.id).unwrap();
+        }
+        assert_eq!(
+            logged
+                .live_log
+                .iter()
+                .filter(|line| line.key == "sample")
+                .count(),
+            12
+        );
+        assert_eq!(logged.live_log.last().unwrap().key, "finished");
+        assert_eq!(
+            logged.updated_at, completed.updated_at,
+            "attaching the log keeps the report time"
+        );
+        let stored = serde_json::to_string(&logged).unwrap();
+        assert!(!stored.contains("refrigerator") && !stored.contains("\"prompt\":"));
         assert_eq!(fs::read(&profile.config_path).unwrap(), original);
         let source = Path::new(&profile.install_dir).join("source-config.json");
         assert_eq!(fs::read(&source).unwrap(), original);

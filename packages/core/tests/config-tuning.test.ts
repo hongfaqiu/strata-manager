@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyStartupField, applyStartupTuning, parseStartupConfiguration, replaceStartupArgument, STARTUP_ENGINE_FLAGS, STARTUP_TUNING_FIELDS, startupArgsOf, startupArgumentRows, startupFieldValue, startupTuningOf, validateStartupConfiguration } from '../src/config-tuning';
+import { applyStartupField, applyStartupTuning, STARTUP_FIELD_HINTS, parseStartupConfiguration, replaceStartupArgument, STARTUP_ENGINE_FLAGS, STARTUP_TUNING_FIELDS, startupArgsOf, startupArgumentRows, startupFieldValue, startupTuningOf, validateStartupConfiguration } from '../src/config-tuning';
 
 const config = { exe: 'engine.exe', args: ['--native', '模型.gguf', '--max-context', '524288', '--kv', 'int8', '--rope-scale', '2'], threads: 8, sampling: { temperature: .6 }, vision: { gpu: true }, mcp: [{ name: 'calculator' }], api_key: 'preserved' };
 describe('startup configuration tuning', () => {
@@ -113,6 +113,19 @@ describe('complete graphical and JSON startup configuration', () => {
     expect(STARTUP_ENGINE_FLAGS['--threads']).toBeUndefined();
     expect(STARTUP_ENGINE_FLAGS['--control-vector-layer-range']).toBe(2);
     for (const spec of STARTUP_TUNING_FIELDS.filter(item => item.target === 'arg')) expect(STARTUP_ENGINE_FLAGS[spec.key]).toBe(spec.kind === 'boolean' ? 0 : 1);
+  });
+  it('edits --prefill-pipe with the upstream 0–262144 range and a bilingual hint', () => {
+    expect(STARTUP_ENGINE_FLAGS['--prefill-pipe']).toBe(1);
+    const pipe = field('--prefill-pipe');
+    expect(pipe.group).toBe('prefill');
+    expect(applyStartupField({ args: ['--native', 'm.gguf'] }, pipe, '1536')).toEqual({ args: ['--native', 'm.gguf', '--prefill-pipe', '1536'] });
+    expect(applyStartupField({ args: [] }, pipe, '0')).toEqual({ args: ['--prefill-pipe', '0'] });
+    expect(applyStartupField({ args: [] }, pipe, '2.5')).toEqual({ args: ['--prefill-pipe', '2.5'] });
+    for (const value of ['-1', '262145', 'auto', 'abc']) expect(() => applyStartupField({ args: [] }, pipe, value)).toThrow();
+    expect(startupFieldValue({ args: ['--prefill-pipe', '768'] }, pipe)).toBe('768');
+    expect(validateStartupConfiguration({ args: ['--prefill-pipe', '768', '--stats'] })).toBeUndefined();
+    expect(STARTUP_FIELD_HINTS['--prefill-pipe']!.zh).toContain('0–262144');
+    expect(STARTUP_FIELD_HINTS['--prefill-pipe']!.en).toContain('0–262144');
   });
   it('can repair a missing known operand without swallowing the next unrelated flag', () => {
     const broken = { args: ['--max-context', '--kv', 'int8', '--stats'] };
