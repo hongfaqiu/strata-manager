@@ -18,7 +18,7 @@ test('finished benchmarks hand their report to the Arena uploader only after the
 });
 
 test('the Arena UI never reaches the network itself and the CSP stays IPC-only', () => {
-  for (const file of ['./ArenaPage.tsx', './arenaUpload.ts']) {
+  for (const file of ['./ArenaPage.tsx', './arenaUpload.ts', '../onboarding/arenaPublic.ts', '../onboarding/OnboardingPage.tsx']) {
     const source = read(file);
     assert.doesNotMatch(source, /\bfetch\(|XMLHttpRequest|https?:\/\//, `${file} uses the native bridge only`);
   }

@@ -29,15 +29,10 @@ const only = process.env.ONBOARDING_ONLY;
 async function run(name, url, action, { theme, arena = false, shot } = {}) {
   if (only && !name.includes(only)) return;
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: shots ? 2 : 1, colorScheme: theme === 'dark' ? 'dark' : 'light' });
-  await context.route('**/*', route => {
-    const target = new URL(route.request().url());
-    if (target.origin === origin) return route.continue();
-    if (arena && target.hostname === 'arena.cosfoc.com') {
-      if (target.pathname === '/v1/groups') return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(arenaGroups) });
-      if (target.pathname === '/v1/leaderboard') return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ group: target.searchParams.get('group'), rows: [{}], tierMedian: tiers[target.searchParams.get('group')] ?? null }) });
-    }
-    return route.abort();
-  });
+  // The webview never reaches the network: every external request is aborted. Arena data comes from the
+  // native `arena_get` command, mocked in the fixture only when `arena` is set.
+  await context.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
+  if (arena) await context.addInitScript(([groups, tiers]) => { window.__arenaMock = { groups, tiers }; }, [arenaGroups, tiers]);
   const page = await context.newPage(); page.setDefaultTimeout(10000);
   const errors = []; page.on('pageerror', error => errors.push(String(error)));
   try {
@@ -86,6 +81,8 @@ try {
     await page.getByRole('radio', { name: /Swift 1\.5\s*IQ3_S/ }).waitFor();
     assert.equal(await step(page), 'model');
     await page.getByText('35.2').waitFor();
+    const board = await page.evaluate(() => window.__fixture.calls.find(call => call.command === 'arena_get' && call.args.path === 'leaderboard' && call.args.query?.group === 'swift:IQ3_S')?.args.query);
+    assert.ok(board && (board.gpu || board.vram), 'leaderboard is read through arena_get with a query map');
     assert.equal(await page.getByRole('radio', { name: /Swift 1\.5\s*IQ3_S/ }).getAttribute('aria-checked'), 'true');
     await page.waitForFunction(() => window.__fixture.calls.some(call => call.command === 'assess_setup_resources'));
     await page.locator('[data-testid="resource-assessment"][data-status="suggested"]').waitFor();

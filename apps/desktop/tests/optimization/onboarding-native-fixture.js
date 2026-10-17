@@ -87,6 +87,20 @@ window.__TAURI_INTERNALS__ = {
     if (command === 'cancel_task') { const task = state.tasks.find(item => item.id === args.taskId); if (task) { task.state = 'cancelled'; task.finishedAt = Date.now(); } return; }
     if (command === 'connect_running_service') { const candidate = args.candidate; const connected = { ...modelProfile, id: 'connected-1', name: candidate.name, baseUrl: `http://127.0.0.1:${candidate.detectedPort}`, configPath: candidate.configPath, installDir: candidate.installDir }; state.profiles.push(connected); state.running[connected.id] = true; return { profileId: connected.id, restarting: false }; }
     if (command === 'import_local') { const candidate = args.candidate; const imported = { ...modelProfile, id: 'imported-1', name: candidate.name, configPath: candidate.configPath, installDir: candidate.installDir, pythonPath: candidate.pythonPath }; state.profiles.push(imported); return structuredClone(imported); }
+    if (command === 'arena_get') {
+      const mock = window.__arenaMock;
+      if (!mock) throw 'arena_unreachable';
+      if (args.path === 'groups') return structuredClone(mock.groups);
+      if (args.path === 'leaderboard') {
+        const median = mock.tiers[args.query?.group] ?? null;
+        const rows = median == null ? [] : [{ rank: 1, hw: { gpu: 'RTX 4090', vramGB: 24, ramGB: 96 }, params: { ctx: 32768, kv: 'int8', parallel: 1 }, seed: false, machines: 9, confidence: 'medium', decode: { p25: median * 0.92, median, p75: median * 1.06 }, prefill: 820, ttftMs: 410, decode32k: median * 0.8, decode128k: null, peakRamGB: 61, peakVramGB: 21.5 }];
+        return { group: args.query?.group ?? null, rows, tierMedian: median };
+      }
+      if (args.path === 'recommend') return { scene: args.query?.scene ?? 'chat', level: 'none', sameModel: null, otherModels: [] };
+      throw 'arena_path_invalid';
+    }
+    if (command === 'arena_status') return { consented: false, consentVersion: null, autoUpload: false, queued: 0, log: [], endpoint: 'arena', uploadAvailable: false, registered: false, banned: false };
+    if (command === 'arena_flush') return null;
     if (command === 'tuning_status') return null;
     if (command === 'has_api_key') return false;
     if (command === 'get_background_policy') return { mode: 'alwaysReady', autoRecover: false };

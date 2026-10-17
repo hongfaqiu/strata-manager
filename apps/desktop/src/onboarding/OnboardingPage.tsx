@@ -338,7 +338,7 @@ function ModelStep(props: StepProps & { runtimeProfile?: ServiceProfile }) {
 }
 function ModelRow({ row, t, max, memoryGB, gpu, groups, arenaFailed, selected, onSelect }: { row: Recommendation; t: Translate; max: number; memoryGB?: number; gpu?: ReturnType<typeof parseGpu>; groups?: Parameters<typeof arenaMatch>[0]; arenaFailed: boolean; selected: boolean; onSelect: () => void }) {
   const match = arenaMatch(groups, row.family, row.quant, gpu);
-  const tier = useQuery({ queryKey: ['arena-public-tier', match && arenaLeaderboardQuery(match)], queryFn: ({ signal }) => fetchArenaTier(arenaLeaderboardQuery(match!), signal), enabled: !!match, staleTime: 10 * 60_000, retry: false, refetchOnWindowFocus: false });
+  const tier = useQuery({ queryKey: ['arena-public-tier', match ? JSON.stringify(arenaLeaderboardQuery(match)) : null], queryFn: ({ signal }) => fetchArenaTier(arenaLeaderboardQuery(match!), signal), enabled: !!match, staleTime: 10 * 60_000, retry: false, refetchOnWindowFocus: false });
   const speed = tier.data?.decode;
   const bars = match ? confidenceBars(match.machines) : 0;
   const tags = [row.recommended && <em key="r" className="ob-tag">{t('obRecommended')}</em>, row.experimental && <em key="e" className="ob-tag is-muted">{t('obExperimental')}</em>, row.nvidiaOnly && <em key="n" className="ob-tag is-muted">{t('obNvidiaOnly')}</em>].filter(Boolean);
