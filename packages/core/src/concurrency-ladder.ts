@@ -1,5 +1,8 @@
 import { DEFAULT_BENCHMARK_SUITE_OPTIONS, summarizeBenchmarkSuite } from './benchmark-suite';
 import type { BenchmarkSuiteOptions, BenchmarkSuiteReport, BenchmarkSuiteSample } from './benchmark-suite-types';
+import { applyStartupField, STARTUP_TUNING_FIELDS } from './config-tuning';
+import { CONCURRENCY_ENGINE_MAX, type ConcurrencyChange, type ConcurrencyPlan, type ConcurrencySettings } from './concurrency';
+import type { JsonObject } from './types';
 
 /** One step of a concurrency ladder: N requests kept in flight together. */
 export interface ConcurrencyLadderRow {
@@ -81,4 +84,41 @@ const ladderMessages: Record<ConcurrencyLadderConclusion['code'], [string, strin
 };
 export function concurrencyLadderMessage(conclusion: ConcurrencyLadderConclusion, zh: boolean): string {
   return ladderMessages[conclusion.code][zh ? 0 : 1].replace(/\{\{(\w+)\}\}/g, (_, key: string) => String(conclusion.values[key] ?? ''));
+}
+
+/** A configuration version to compare: the slot count plus the companions the recommendation writes. */
+export interface ConcurrencyCandidate { id: string; parallel: number; experimental: boolean; edits: ConcurrencyChange[] }
+/** One at a time, the recommendation and one more slot (capped at the engine's 8), optionally the recommendation with the experimental launch switches. */
+export function concurrencyComparisonCandidates(settings: ConcurrencySettings, plan: ConcurrencyPlan, options: { experimental?: boolean } = {}): ConcurrencyCandidate[] {
+  const recommended = Math.max(2, plan.officialParallel, plan.parallel);
+  const counts = [...new Set([1, recommended, Math.min(CONCURRENCY_ENGINE_MAX, recommended + 1)])];
+  const companions = plan.companions.map(({ key, value }) => ({ key, value }));
+  const editsFor = (parallel: number): ConcurrencyChange[] => {
+    const edits: ConcurrencyChange[] = [{ key: 'parallel', value: parallel > 1 ? String(parallel) : '' }];
+    if (settings.batchArg !== null || settings.slotsArg !== null) edits.push({ key: '--batch', value: '' });
+    if (parallel > 1) edits.push(...companions);
+    else if (settings.batchMtp) edits.push({ key: '--batch-mtp', value: '' });
+    return edits;
+  };
+  const list: ConcurrencyCandidate[] = counts.map(parallel => ({ id: `p${parallel}`, parallel, experimental: false, edits: editsFor(parallel) }));
+  if (options.experimental) list.push({ id: `p${recommended}-exp`, parallel: recommended, experimental: true, edits: [...editsFor(recommended), { key: 'env.STRATA_BATCH_ATTN_ROWS', value: '1' }, { key: 'env.STRATA_BATCH_GDN_GROUPS', value: '1' }] });
+  return list;
+}
+export function applyConcurrencyEdits(config: JsonObject, edits: ConcurrencyChange[]): JsonObject {
+  return edits.reduce((next, edit) => {
+    const field = STARTUP_TUNING_FIELDS.find(item => item.key === edit.key);
+    return field ? applyStartupField(next, field, edit.value) : next;
+  }, config);
+}
+/** "<base>-parallel-4-20261017-1104.json"; "-exp" marks the experimental switches. */
+export function concurrencyVersionName(configPath: string, candidate: Pick<ConcurrencyCandidate, 'parallel' | 'experimental'>, at: Date): string {
+  const base = configPath.split(/[\\/]/).at(-1)?.replace(/\.json$/i, '').replace(/-parallel-\d+(?:-exp)?-\d{8}-\d{4}$/, '') || 'configuration';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${base}-parallel-${candidate.parallel}${candidate.experimental ? '-exp' : ''}-${at.getFullYear()}${pad(at.getMonth() + 1)}${pad(at.getDate())}-${pad(at.getHours())}${pad(at.getMinutes())}.json`;
+}
+/** A candidate's headline numbers from its ladder: peak total, one request alone, and TTFT P95 at the top step. */
+export interface ConcurrencyCandidateResult { id: string; peakTotalTokS: number | null; soloTokS: number | null; topTtftP95Ms: number | null; rows: ConcurrencyLadderRow[]; error?: string }
+export function concurrencyCandidateResult(id: string, rows: ConcurrencyLadderRow[], error?: string): ConcurrencyCandidateResult {
+  const totals = rows.map(row => row.totalTokS).filter((v): v is number => v !== null);
+  return { id, rows, peakTotalTokS: totals.length ? Math.max(...totals) : null, soloTokS: rows.find(row => row.concurrency === 1)?.perRequestTokS ?? null, topTtftP95Ms: rows.at(-1)?.ttftP95Ms ?? null, ...(error ? { error } : {}) };
 }

@@ -39,3 +39,33 @@ describe('concurrency ladder', () => {
     expect(concurrencyLadderConclusion([]).code).toBe('ladder_empty');
   });
 });
+
+describe('concurrency comparison candidates', async () => {
+  const { readConcurrencySettings, recommendConcurrency } = await import('../src/concurrency');
+  const { applyConcurrencyEdits, concurrencyCandidateResult, concurrencyComparisonCandidates, concurrencyVersionName } = await import('../src/concurrency-ladder');
+  const GIB = 2 ** 30;
+  const config = { model_name: 'qwen', args: ['--native', 'Qwen-Q2_0.gguf', '--max-context', '32768', '--mtp', 'm.gguf', '--batch', '2'] };
+  const settings = readConcurrencySettings(config);
+  const plan = recommendConcurrency({ settings, hardware: { gpus: [{ id: 0, name: 'GPU', vendor: 'nvidia', totalBytes: 32 * GIB }], totalMemoryBytes: 64 * GIB }, arenaGb: 34, useCase: 'multiUser' });
+  it('compares one at a time, the recommendation and one more, plus an optional experimental variant', () => {
+    const list = concurrencyComparisonCandidates(settings, plan, { experimental: true });
+    expect(list.map(c => c.id)).toEqual(['p1', 'p4', 'p5', 'p4-exp']);
+    expect(list[0]!.edits).toEqual([{ key: 'parallel', value: '' }, { key: '--batch', value: '' }]);
+    expect(list[1]!.edits).toEqual([{ key: 'parallel', value: '4' }, { key: '--batch', value: '' }, { key: '--batch-mtp', value: 'true' }, { key: '--adapt-async', value: '1' }]);
+    expect(list[3]!.edits.slice(-2)).toEqual([{ key: 'env.STRATA_BATCH_ATTN_ROWS', value: '1' }, { key: 'env.STRATA_BATCH_GDN_GROUPS', value: '1' }]);
+    const next = applyConcurrencyEdits(config, list[3]!.edits);
+    expect(next).toMatchObject({ parallel: 4, env: { STRATA_BATCH_ATTN_ROWS: '1', STRATA_BATCH_GDN_GROUPS: '1' } });
+    expect(next.args).toEqual(['--native', 'Qwen-Q2_0.gguf', '--max-context', '32768', '--mtp', 'm.gguf', '--batch-mtp', '--adapt-async', '1']);
+    expect(config.args).toContain('--batch');
+  });
+  it('names versions next to the base file without stacking suffixes', () => {
+    const at = new Date(2026, 9, 17, 11, 4);
+    expect(concurrencyVersionName('D:\\S\\strata-qwen.json', { parallel: 4, experimental: false }, at)).toBe('strata-qwen-parallel-4-20261017-1104.json');
+    expect(concurrencyVersionName('/s/strata-qwen-parallel-4-20261017-1104.json', { parallel: 5, experimental: true }, at)).toBe('strata-qwen-parallel-5-exp-20261017-1104.json');
+  });
+  it('summarizes a candidate ladder', () => {
+    const rows = [{ concurrency: 1, completed: 3, failed: 0, totalTokS: 40, perRequestTokS: 40, ttftP50Ms: 300, ttftP95Ms: 350 }, { concurrency: 4, completed: 9, failed: 0, totalTokS: 118, perRequestTokS: 30, ttftP50Ms: 500, ttftP95Ms: 900 }];
+    expect(concurrencyCandidateResult('p4', rows)).toMatchObject({ peakTotalTokS: 118, soloTokS: 40, topTtftP95Ms: 900 });
+    expect(concurrencyCandidateResult('p4', [], 'boom')).toMatchObject({ peakTotalTokS: null, error: 'boom' });
+  });
+});

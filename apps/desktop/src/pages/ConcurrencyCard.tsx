@@ -45,22 +45,27 @@ function defaultUseCase(settings: core.ConcurrencySettings): core.ConcurrencyUse
   return (settings.conversationCacheMib ?? 0) > 0 ? 'agent' : 'single';
 }
 
-export function ConcurrencyCard({ draft, fieldValue, onFieldChange, zh, hardware: hardwareOverride, platform }: ConcurrencyCardProps) {
-  const { installationId, desktop } = useConcurrencyEnvironment();
-  const config = useMemo(() => concurrencyDraft(draft, fieldValue), [draft, fieldValue]);
-  const settings = useMemo(() => core.readConcurrencySettings(config), [config]);
-  const identity = useMemo(() => core.concurrencyModelIdentity(config), [config]);
-  const [useCase, setUseCase] = useState<core.ConcurrencyUseCase>(() => defaultUseCase(settings));
-  const hardwareQuery = useQuery({
+/** GPUs and RAM from the native resource assessment (hardware only; its model estimates are not used here). */
+export function useConcurrencyHardware({ installationId, desktop, identity, settings, override }: { installationId?: string; desktop: boolean; identity: { family: string; quant: string } | null; settings: core.ConcurrencySettings; override?: core.ConcurrencyHardware | null }): core.ConcurrencyHardware | null {
+  const query = useQuery({
     queryKey: ['concurrency-hardware', installationId, identity?.family, identity?.quant],
-    enabled: hardwareOverride === undefined && desktop && !!installationId,
+    enabled: override === undefined && desktop && !!installationId,
     staleTime: 60_000,
     queryFn: async (): Promise<core.ConcurrencyHardware> => {
       const result = await core.assessSetupResources({ installationId: installationId!, family: identity?.family ?? 'unknown', quant: identity?.quant ?? 'unknown', context: Math.min(1_048_576, Math.max(512, settings.context ?? 32768)), images: false, kv: settings.kv.slice(0, 32), gpuIds: settings.gpuIds.filter(id => id <= 255).slice(0, 8), parallel: 1 });
       return { gpus: result.hardware.gpus.map(gpu => ({ id: gpu.id, name: gpu.name, vendor: gpu.vendor, totalBytes: gpu.totalBytes })), totalMemoryBytes: result.hardware.totalMemoryBytes };
     },
   });
-  const hardware = hardwareOverride !== undefined ? hardwareOverride : hardwareQuery.data ?? null;
+  return override !== undefined ? override : query.data ?? null;
+}
+
+export function ConcurrencyCard({ draft, fieldValue, onFieldChange, zh, hardware: hardwareOverride, platform }: ConcurrencyCardProps) {
+  const { installationId, desktop } = useConcurrencyEnvironment();
+  const config = useMemo(() => concurrencyDraft(draft, fieldValue), [draft, fieldValue]);
+  const settings = useMemo(() => core.readConcurrencySettings(config), [config]);
+  const identity = useMemo(() => core.concurrencyModelIdentity(config), [config]);
+  const [useCase, setUseCase] = useState<core.ConcurrencyUseCase>(() => defaultUseCase(settings));
+  const hardware = useConcurrencyHardware({ installationId, desktop, identity, settings, override: hardwareOverride });
   const arenaGb = identity ? core.modelExpertArenaGb(identity.family, identity.quant) : null;
   const plan = useMemo(() => core.recommendConcurrency({ settings, hardware, arenaGb, useCase }), [settings, hardware, arenaGb, useCase]);
   const os = platform ?? (typeof navigator !== 'undefined' && /Mac/i.test(navigator.userAgent) && !/Windows/i.test(navigator.userAgent) ? 'mac' : 'other');
