@@ -41,50 +41,50 @@ export function ApiIntegrationDialog({ profile, model, online, loaded, keyRequir
       {copyValue(zh ? 'OpenAI 地址' : 'OpenAI base URL', rootUrl ? `${rootUrl}/v1` : '')}
       {copyValue(zh ? '模型名' : 'Model ID', actualModel)}
     </div>
-    {!rootUrl ? <p className="notice error" role="alert">{zh ? '当前服务地址无效，请先检查服务配置。' : 'The service address is invalid. Check the service configuration first.'}</p> : !online ? <p className="notice warning" role="status">{zh ? '当前服务未连接，请确认服务已启动且地址可访问。可先查看接入方式。' : 'The service is disconnected. Check that it is running and its address is reachable; you can review setup steps now.'}</p> : !loaded ? <p className="notice warning" role="status">{zh ? '模型尚未就绪，请等待加载完成后调用。' : 'The model is not ready yet. Wait for it to finish loading before sending requests.'}</p> : null}
-    {!actualModel && <p className="api-integration-hint" role="status">{zh ? '启用模型后将自动填入实际模型名并开放示例复制。' : 'Enable a model to fill in its actual ID and copy the examples.'}</p>}
-    <p className="api-integration-hint">{keyRequired === false ? (zh ? '当前服务无需密钥；客户端要求时可填写 strata-local。' : 'This service requires no key. Use strata-local if the client requires one.') : keyRequired === true ? (zh ? '请将 YOUR_STRATA_API_KEY 替换为当前服务密钥。' : 'Replace YOUR_STRATA_API_KEY with your current service key.') : (zh ? '服务鉴权状态尚未核验；有密钥时填写当前服务密钥，无密钥可填 strata-local。' : 'Authentication has not been checked. Use your service key if required, or strata-local otherwise.')}</p>
+    {!rootUrl ? <p className="notice error" role="alert">{zh ? '服务地址无效，请检查服务配置。' : 'The service address is invalid. Check the service configuration first.'}</p> : !online ? <p className="notice warning" role="status">{zh ? '当前服务未连接。请确认服务已启动；接入方式可以先看。' : 'The service is disconnected. Check that it is running; you can review the setup steps now.'}</p> : !loaded ? <p className="notice warning" role="status">{zh ? '模型还在加载，完成后再调用。' : 'The model is still loading. Send requests once it is ready.'}</p> : null}
+    {!actualModel && <p className="api-integration-hint" role="status">{zh ? '启用模型后会填入模型名，并可复制示例。' : 'Enable a model to fill in its ID and copy the examples.'}</p>}
+    <p className="api-integration-hint">{keyRequired === false ? (zh ? '无需密钥。客户端必填时写 strata-local。' : 'No key required. Use strata-local if the client asks for one.') : keyRequired === true ? (zh ? '把 YOUR_STRATA_API_KEY 换成服务密钥。' : 'Replace YOUR_STRATA_API_KEY with your current service key.') : (zh ? '尚未确认是否需要密钥。有密钥就填密钥，没有就写 strata-local。' : 'Key requirement not checked yet. Use your service key, or strata-local if there is none.')}</p>
     <ApiVerificationPanel profile={profile} model={model} ready={online && loaded} language={language}/>
     <Segmented ariaLabel={zh ? '接入方式' : 'Connection method'} value={method} onValueChange={value => setMethod(value as Method)} options={[{value:'cherry',label:'Cherry Studio'},{value:'code',label:zh?'代码调用':'Code'},{value:'cursor',label:'Cursor'},{value:'claude',label:'Claude Code'},{value:'codex',label:'Codex'},{value:'opencode',label:'OpenCode'}]}/>
     <div className="api-integration-method">
       {method === 'cherry' && <>
-        <ol className="api-integration-steps"><li>{zh ? '打开“设置 → 模型服务 → 添加”，选择 OpenAI 类型并命名为 Strata。' : 'Open Settings → Model Provider → Add. Choose the OpenAI type and name it Strata.'}</li><li>{zh ? '填写下方地址、当前服务密钥和模型 ID；也可用“同步模型”获取列表。' : 'Enter the address below, your service key and the model ID, or use Sync models.'}</li><li>{zh ? '打开服务商启用开关，完成“模型检测”，即可在聊天中选择模型。' : 'Enable the provider and run Model Check, then select the model in chat.'}</li></ol>
+        <ol className="api-integration-steps"><li>{zh ? '设置 → 模型服务 → 添加，类型选 OpenAI，命名为 Strata。' : 'Settings → Model Provider → Add. Choose OpenAI and name it Strata.'}</li><li>{zh ? '填入下方地址、密钥和模型 ID，或点“同步模型”。' : 'Enter the address below, your key and the model ID, or use Sync models.'}</li><li>{zh ? '打开启用开关并做一次“模型检测”，即可在聊天里使用。' : 'Enable the provider, run Model Check, then pick the model in chat.'}</li></ol>
         <div className="api-integration-summary">{copyValue(zh ? 'Cherry API 地址' : 'Cherry API host', rootUrl, zh ? '自动追加 /v1/chat/completions' : 'Appends /v1/chat/completions automatically')}{copyValue(zh ? '模型 ID' : 'Model ID', actualModel)}</div>
         {officialLink(apiIntegrationDocs.cherry)}
       </>}
       {method === 'code' && <>
         <div className="api-integration-toolbar"><span>{zh ? 'OpenAI 兼容调用' : 'OpenAI compatible request'}</span><Dropdown ariaLabel={zh ? '代码语言' : 'Code language'} value={example} onValueChange={value => setExample(value as ApiCodeExample)} compact options={[{value:'powershell',label:'PowerShell'},{value:'curl',label:'curl (Bash)'},{value:'python',label:'Python'},{value:'javascript',label:'JavaScript (Node.js)'}]}/></div>
-        {configured ? code(zh ? '请求示例' : 'Request example', apiCodeExample(connection, example)) : <p className="api-integration-hint">{zh ? '服务就绪后显示完整请求示例。' : 'The full request example appears when service details are available.'}</p>}
+        {configured ? code(zh ? '请求示例' : 'Request example', apiCodeExample(connection, example)) : <p className="api-integration-hint">{zh ? '服务就绪后显示请求示例。' : 'The request example appears once the service is ready.'}</p>}
       </>}
       {method === 'opencode' && <>
-        <p className="api-integration-hint">{zh ? '将配置合并到项目根目录的 opencode.json，保留已有配置。在同一终端设置密钥并启动 OpenCode。' : 'Merge into opencode.json in your project root, keeping existing settings. Set the key and start OpenCode in the same terminal.'}</p>
+        <p className="api-integration-hint">{zh ? '把配置合并进项目根目录的 opencode.json（保留原有内容），再在同一终端启动 OpenCode。' : 'Merge into opencode.json in your project root (keep existing settings), then start OpenCode from the same terminal.'}</p>
         {configured && code('opencode.json', openCodeConfig(connection))}
         <div className="api-integration-toolbar"><span>{zh ? '启动命令' : 'Launch command'}</span>{shellPicker}</div>
         {configured && code(zh ? '终端命令' : 'Terminal command', openCodeLaunch(connection, shell))}
-        <p className="api-integration-hint">{zh ? '使用支持工具调用的模型。客户端实际调用仍需在 OpenCode 中验证。' : 'Use a model that supports tool calls. Verify actual requests in OpenCode.'}</p>
+        <p className="api-integration-hint">{zh ? '需选支持工具调用的模型；实际效果以 OpenCode 中使用为准。' : 'Use a model that supports tool calls; confirm results in OpenCode.'}</p>
         {officialLink(apiIntegrationDocs.opencode)}
       </>}
       {method === 'claude' && <>
-        <p className="api-integration-hint">{zh ? '在已安装 Claude Code 的终端运行下方配置，仅作用于当前终端。主模型与后台模型均指向当前本机模型。' : 'Run this in a terminal with Claude Code installed. It applies to that terminal only and routes main and background models to the selected local model.'}</p>
+        <p className="api-integration-hint">{zh ? '在装有 Claude Code 的终端运行，只对当前终端生效；主模型和后台模型都指向本机模型。' : 'Run in a terminal with Claude Code installed. Applies to that terminal only; main and background models both use the local model.'}</p>
         <div className="api-integration-summary">{copyValue('Anthropic Base URL', rootUrl, zh ? '使用根地址，不附加 /v1' : 'Use the service root, without /v1')}</div>
         <div className="api-integration-toolbar"><span>{zh ? '终端类型' : 'Shell'}</span>{shellPicker}</div>
         {configured && code(zh ? '配置并启动' : 'Configure and launch', claudeCodeLaunch(connection, shell))}
-        <p className="api-integration-hint">{zh ? '通过 Anthropic Messages 接口调用；工具调用效果取决于模型，客户端完整流程尚未实测。' : 'Uses Anthropic Messages. Tool use depends on the model; the complete client flow has not been tested.'}</p>
+        <p className="api-integration-hint">{zh ? '走 Anthropic Messages 接口；工具调用效果取决于模型。' : 'Uses Anthropic Messages; tool use depends on the model.'}</p>
         {officialLink(apiIntegrationDocs.claude)}
       </>}
       {method === 'cursor' && <>
-        <p className="api-integration-hint">{zh ? '在已安装 Cursor 的终端设置 OpenAI 兼容环境变量，然后打开当前项目。模型需在 Cursor 中选择对应本地模型名。' : 'Set OpenAI-compatible environment variables in a terminal with Cursor installed, then open the project. Select the local model name inside Cursor.'}</p>
+        <p className="api-integration-hint">{zh ? '在装有 Cursor 的终端设置环境变量并打开项目，再在 Cursor 里选本地模型名。' : 'Set the variables in a terminal with Cursor installed, open the project, then pick the local model in Cursor.'}</p>
         <div className="api-integration-toolbar"><span>{zh ? '终端类型' : 'Shell'}</span>{shellPicker}</div>
         {configured && code(zh ? '配置并打开 Cursor' : 'Configure and open Cursor', cursorEnvConfig(connection, shell))}
-        <p className="api-integration-hint">{zh ? '使用 OpenAI 兼容 /v1；实际模型列表与工具能力以 Cursor 客户端为准。' : 'Uses OpenAI-compatible /v1. Model listing and tool support depend on the Cursor client.'}</p>
+        <p className="api-integration-hint">{zh ? '走 OpenAI 兼容 /v1；模型列表和工具能力以 Cursor 为准。' : 'Uses OpenAI-compatible /v1; model list and tools depend on Cursor.'}</p>
         {officialLink(apiIntegrationDocs.cursor)}
       </>}
       {method === 'codex' && <>
-        <p className="api-integration-hint">{zh ? '将下方片段合并到 ~/.codex/config.toml，保留已有配置。在同一终端设置密钥并启动 Codex。' : 'Merge the snippet into ~/.codex/config.toml, keeping existing settings. Set the key and start Codex in the same terminal.'}</p>
+        <p className="api-integration-hint">{zh ? '把片段合并进 ~/.codex/config.toml（保留原有内容），再在同一终端启动 Codex。' : 'Merge into ~/.codex/config.toml (keep existing settings), then start Codex from the same terminal.'}</p>
         {configured && code('config.toml', codexConfigToml(connection))}
         <div className="api-integration-toolbar"><span>{zh ? '启动命令' : 'Launch command'}</span>{shellPicker}</div>
         {configured && code(zh ? '终端命令' : 'Terminal command', codexLaunch(connection, shell))}
-        <p className="api-integration-hint">{zh ? '通过 OpenAI 兼容接口调用；完整 Agent 流程取决于本机 Codex 版本。' : 'Uses the OpenAI-compatible API; the full agent flow depends on your Codex version.'}</p>
+        <p className="api-integration-hint">{zh ? '走 OpenAI 兼容接口；Agent 完整流程取决于 Codex 版本。' : 'Uses the OpenAI-compatible API; the agent flow depends on your Codex version.'}</p>
         {officialLink(apiIntegrationDocs.codex)}
       </>}
     </div>
