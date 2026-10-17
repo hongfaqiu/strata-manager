@@ -2470,5 +2470,148 @@
       "sha256": "6c7feb68f981cd59d6d4901f806194150b7a181ae32c7f8c4ce0982fa0706314"
     }
   ],
-  "helperTreeSha256": "627d66650cc313d310f06b89b131ee7606c85f289bd5278cc23cd0b1ca8602c1"
+  "helperTreeSha256": "627d66650cc313d310f06b89b131ee7606c85f289bd5278cc23cd0b1ca8602c1",
+  "featureScreens": {
+    "capturedAt": "2026-10-17T13:28:25.254Z",
+    "appVersion": "0.1.12",
+    "sourceHead": "1b701d7cc4aeb8bef675c25d8ff1963fd89cad64",
+    "browserVersion": "155.0.8059.84",
+    "source": "Real App components via the isolated test fixtures (onboarding-app.html, daily-experience-app.html, multi-version-app.html) plus scripts/screenshot-fixtures/arena-preview.js",
+    "scope": "Synthetic in-memory native data and leaderboard values. No real model, Strata runtime, network, account or file mutation.",
+    "conversion": "Lossless WebP with decoded RGBA equality",
+    "screens": [
+      {
+        "file": "onboarding.zh.webp",
+        "scene": "onboarding",
+        "language": "zh",
+        "sample": "First-run guide, model step: synthetic RTX 4090 machine and read-only leaderboard speeds",
+        "errors": [],
+        "consoleErrors": [],
+        "externalRequests": [],
+        "passed": true,
+        "layout": {
+          "width": 1440,
+          "height": 960,
+          "documentWidth": 1440,
+          "language": "zh-CN"
+        },
+        "png": "output/playwright/feature-screenshots/png/onboarding.zh.png",
+        "pngSha256": "cc837d918a5aea336f8522e3c51d7a275047c7fffd2c7d3f2327a11f9c88e46f",
+        "width": 2880,
+        "height": 1920,
+        "pixelEquality": true,
+        "sha256": "533aecfa5509a28e864507eedc6a16adbb6318b36bd6ba1b9439077f7ef12a57"
+      },
+      {
+        "file": "onboarding.en.webp",
+        "scene": "onboarding",
+        "language": "en",
+        "sample": "First-run guide, model step: synthetic RTX 4090 machine and read-only leaderboard speeds",
+        "errors": [],
+        "consoleErrors": [],
+        "externalRequests": [],
+        "passed": true,
+        "layout": {
+          "width": 1440,
+          "height": 960,
+          "documentWidth": 1440,
+          "language": "en"
+        },
+        "png": "output/playwright/feature-screenshots/png/onboarding.en.png",
+        "pngSha256": "67300d2b45f4a761d977ad02b8982d92e8db82aa7c9559c289b2c635f5e8785f",
+        "width": 2880,
+        "height": 1920,
+        "pixelEquality": true,
+        "sha256": "930e079b68450dcd0686840cd8972eb433f0129b039ed411d914b0756bacc9fc"
+      },
+      {
+        "file": "arena.zh.webp",
+        "scene": "arena",
+        "language": "zh",
+        "sample": "Benchmark leaderboard tab with synthetic groups, rows and recommendations served by the mocked native arena_get",
+        "errors": [],
+        "consoleErrors": [],
+        "externalRequests": [],
+        "passed": true,
+        "layout": {
+          "width": 1440,
+          "height": 960,
+          "documentWidth": 1440,
+          "language": "zh-CN"
+        },
+        "png": "output/playwright/feature-screenshots/png/arena.zh.png",
+        "pngSha256": "967aa8720c8ea66ecc0d5ae5ae96765cc258a2091f9d76b65afffcc27f9f0f2f",
+        "width": 2880,
+        "height": 1920,
+        "pixelEquality": true,
+        "sha256": "11b1fd02f75ed82507747c8b43293801d223865a5fa96e1b0cb97e77f8e9f1f1"
+      },
+      {
+        "file": "arena.en.webp",
+        "scene": "arena",
+        "language": "en",
+        "sample": "Benchmark leaderboard tab with synthetic groups, rows and recommendations served by the mocked native arena_get",
+        "errors": [],
+        "consoleErrors": [],
+        "externalRequests": [],
+        "passed": true,
+        "layout": {
+          "width": 1440,
+          "height": 960,
+          "documentWidth": 1440,
+          "language": "en"
+        },
+        "png": "output/playwright/feature-screenshots/png/arena.en.png",
+        "pngSha256": "6edae9c1eabc94c0a895d63cf26a6578ff53ac63425e9acf0ffcd990413aa789",
+        "width": 2880,
+        "height": 1920,
+        "pixelEquality": true,
+        "sha256": "881836650c235f921adaba0a08666f79e3d18cfe52e0c59e5db3010f6e5d2690"
+      },
+      {
+        "file": "config-cleanup.zh.webp",
+        "scene": "config-cleanup",
+        "language": "zh",
+        "sample": "Strata 0.1.38–0.1.44 side by side sharing one Strata-data folder; cleanup dialog lists old-version configurations only (read-only plan)",
+        "errors": [],
+        "consoleErrors": [],
+        "externalRequests": [],
+        "passed": true,
+        "layout": {
+          "width": 1440,
+          "height": 960,
+          "documentWidth": 1440,
+          "language": "zh-CN"
+        },
+        "png": "output/playwright/feature-screenshots/png/config-cleanup.zh.png",
+        "pngSha256": "1ec6bc8b9f654e42fbb87f8ed4b23b19b502c8385e810b38978a5f2214495370",
+        "width": 2880,
+        "height": 1920,
+        "pixelEquality": true,
+        "sha256": "d7ebc86f5aac18d2ae6091fe9e8babe7a9952fa3af873d99eaf74412efe0ba66"
+      },
+      {
+        "file": "config-cleanup.en.webp",
+        "scene": "config-cleanup",
+        "language": "en",
+        "sample": "Strata 0.1.38–0.1.44 side by side sharing one Strata-data folder; cleanup dialog lists old-version configurations only (read-only plan)",
+        "errors": [],
+        "consoleErrors": [],
+        "externalRequests": [],
+        "passed": true,
+        "layout": {
+          "width": 1440,
+          "height": 960,
+          "documentWidth": 1440,
+          "language": "en"
+        },
+        "png": "output/playwright/feature-screenshots/png/config-cleanup.en.png",
+        "pngSha256": "18d8b882fce02b45cc14e3c0570076338339a4be81cc8b9c81863ba8cea2c768",
+        "width": 2880,
+        "height": 1920,
+        "pixelEquality": true,
+        "sha256": "6415d894864fa89b8c78190437cb3c3b15e4d93f7bcf9cb4ccd542391b3f880d"
+      }
+    ]
+  }
 }

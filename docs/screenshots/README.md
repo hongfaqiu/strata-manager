@@ -33,6 +33,14 @@ Reproduce the root gallery with the following script. Data and scene definitions
 node scripts/capture-current-screenshots.mjs
 ```
 
+开始使用引导（`onboarding`）、Benchmark 排行榜（`arena`）和旧版本配置清理（`config-cleanup`）三组图由下列脚本生成。它在隔离测试夹具中运行真实界面，排行榜数据来自 [arena-preview.js](../../scripts/screenshot-fixtures/arena-preview.js) 的合成值；规格与上述根目录图库相同（1440 × 960、DPR 2、无损 WebP），记录写入 manifest 的 `featureScreens`。
+
+The getting-started guide (`onboarding`), Benchmark leaderboard (`arena`) and old-version configuration cleanup (`config-cleanup`) images come from the following script. It runs the real interface inside the isolated test fixtures, with synthetic leaderboard data from [arena-preview.js](../../scripts/screenshot-fixtures/arena-preview.js). The format matches the root gallery (1440 × 960, DPR 2, lossless WebP); records go to `featureScreens` in the manifest.
+
+```sh
+node scripts/capture-feature-screenshots.mjs
+```
+
 ## 历史批次 / Historical batches
 
 0.1.4 时期的根目录曾使用 18 个双语视图、共 36 张页面图，已被上述当前批次替换；替换前的根目录图片与 manifest 备份在本机 `output/playwright/docs-refresh-20261014/backup/`。版本日志中的历史配图保持各自来源：`changelog/0.1.4/` 保存该版本日志引用的 16 张原图，`changelog/0.1.7/` 保存 6 张原图，均与迁移前 Git HEAD 的文件字节一致。两版日志的图片引用已指向历史目录，正文未改，当前图库重拍不会改变其来源说明。`changelog/0.1.5/` 保留 2026-10-12 的 22 张独立发布图，`changelog/unreleased/` 保留更早的开发批次。
