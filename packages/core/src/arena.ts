@@ -14,13 +14,25 @@ export interface ArenaGpu { vendor: 'nvidia' | 'amd' | 'intel' | 'apple' | 'othe
 export interface ArenaParams { ctx: number; kv: string; gpuCount: number; parallel: number; poolWorkers: number | null; expertCache: string | null; pcieFrac: number | null; vision: boolean }
 export interface ArenaTier { ctx: number; prefill: number | null; decode: number | null; ttftMs: number | null; peakVramGB: number | null; peakRamGB: number | null; ok: boolean }
 export interface ArenaScenario { decode: number | null; prefill: number | null; ttftMs: number | null; maxConcurrency: number; requests: number; failed: number }
+/** One completed benchmark request: offsets from the run start, timings and token counts only. */
+export interface ArenaEvidenceRun { ctx: number; startMs: number; endMs: number; ttftMs: number; promptTokens: number; cachedTokens: number | null; completionTokens: number; prefill: number; decode: number; resourceSamples: number }
+export interface ArenaEvidenceCounters { requests: number; promptTokens: number; outputTokens: number }
+/**
+ * Run evidence: a content-free trace of the in-app run behind a context result. The native side serializes it,
+ * signs it with the install key and uploads it next to the result; the server checks it for internal consistency.
+ */
+export interface ArenaEvidence {
+  v: 1; engine: string | null; durationMs: number; intervalMs: number; runs: ArenaEvidenceRun[];
+  series: { count: number; stepMs: number; vramGB: (number | null)[]; ramGB: (number | null)[]; gpuUtil: (number | null)[] };
+  counters: { before: ArenaEvidenceCounters; after: ArenaEvidenceCounters } | null;
+}
 /** Exactly what is uploaded (the native side adds consentVersion and signs it with the per-install key). */
 export interface ArenaPayload {
   schema: 1; app: string; strata: string | null; kind: 'context' | 'scenario'; day: string;
   hw: { os: 'windows' | 'linux' | 'macos'; arch: 'x86_64' | 'aarch64'; cpu: string; ramGB: number; gpus: ArenaGpu[]; pcie: string | null; wsl: boolean };
   model: { family: string; quant: string; sha256: string | null; sizeGB: number | null };
   params: ArenaParams;
-  tiers?: ArenaTier[]; scenario?: ArenaScenario;
+  tiers?: ArenaTier[]; scenario?: ArenaScenario; evidence?: ArenaEvidence;
 }
 export interface ArenaLaunch extends ArenaParams { family: string; quant: string }
 export interface ArenaEnvironment { os: string; arch: string; appVersion: string; wsl?: boolean }
@@ -28,11 +40,15 @@ export type ArenaBuild = { payload: ArenaPayload } | { skip: 'not_completed' | '
 
 // The whitelist, as exact key sets. Both the builder and assertArenaPayloadSafe use it.
 export const ARENA_KEYS = {
-  root: ['schema', 'app', 'strata', 'kind', 'day', 'hw', 'model', 'params', 'tiers', 'scenario'],
+  root: ['schema', 'app', 'strata', 'kind', 'day', 'hw', 'model', 'params', 'tiers', 'scenario', 'evidence'],
   hw: ['os', 'arch', 'cpu', 'ramGB', 'gpus', 'pcie', 'wsl'], gpu: ['vendor', 'name', 'vramGB'],
   model: ['family', 'quant', 'sha256', 'sizeGB'], params: ['ctx', 'kv', 'gpuCount', 'parallel', 'poolWorkers', 'expertCache', 'pcieFrac', 'vision'],
   tier: ['ctx', 'prefill', 'decode', 'ttftMs', 'peakVramGB', 'peakRamGB', 'ok'], scenario: ['decode', 'prefill', 'ttftMs', 'maxConcurrency', 'requests', 'failed'],
+  evidence: ['v', 'engine', 'durationMs', 'intervalMs', 'runs', 'series', 'counters'],
+  evidenceRun: ['ctx', 'startMs', 'endMs', 'ttftMs', 'promptTokens', 'cachedTokens', 'completionTokens', 'prefill', 'decode', 'resourceSamples'],
+  evidenceSeries: ['count', 'stepMs', 'vramGB', 'ramGB', 'gpuUtil'], evidenceCounters: ['before', 'after'], counters: ['requests', 'promptTokens', 'outputTokens'],
 } as const;
+export const ARENA_EVIDENCE_MAX_RUNS = 48;
 
 const GB = 1024 ** 3;
 const round = (v: number | null | undefined, d = 1) => v == null || !Number.isFinite(v) ? null : Math.round(v * 10 ** d) / 10 ** d;
@@ -128,7 +144,8 @@ export async function buildArenaPayload(report: ContextBenchmarkReport | Benchma
         ok: done.length > 0 && median(done.map(s => s.decodeTokS)) !== null };
     });
     if (!tiers.some(t => t.ok)) return { skip: 'no_results' };
-    return { payload: { ...base, kind: 'context', tiers } };
+    const evidence = arenaEvidence(report as ContextBenchmarkReport, engineVersion);
+    return { payload: { ...base, kind: 'context', tiers, ...(evidence ? { evidence } : {}) } };
   }
   const measured = report.samples.filter(s => !s.warmup);
   const done = measured.filter(s => s.state === 'completed');
@@ -136,6 +153,23 @@ export async function buildArenaPayload(report: ContextBenchmarkReport | Benchma
   return { payload: { ...base, kind: 'scenario', scenario: {
     decode: round(median(done.map(s => s.decodeTokS)), 2), prefill: round(median(done.map(s => s.prefillTokS))), ttftMs: round(median(done.map(s => s.ttftMs)), 0),
     maxConcurrency: Math.max(1, ...report.stages.map(s => s.concurrency)), requests: measured.length, failed: measured.length - done.length } } };
+}
+
+/** Evidence from the report's own measurements: offsets relative to the run start, never wall-clock times, prompts or outputs. */
+export function arenaEvidence(report: ContextBenchmarkReport, engine: string | null): ArenaEvidence | null {
+  if (!report.evidence) return null;
+  const n = (v: number | null | undefined): v is number => typeof v === 'number' && Number.isFinite(v);
+  const runs = report.samples.filter(s => s.state === 'completed' && n(s.ttftMs) && n(s.prefillTokS) && n(s.decodeTokS) && n(s.promptTokens) && n(s.completionTokens))
+    .slice(0, ARENA_EVIDENCE_MAX_RUNS).map(s => {
+      const startMs = Math.max(0, Math.round(s.startedAt - report.startedAt));
+      return { ctx: s.targetTokens, startMs, endMs: startMs + Math.round(s.wallMs), ttftMs: Math.round(s.ttftMs!), promptTokens: s.promptTokens!, cachedTokens: s.cachedTokens ?? null,
+        completionTokens: s.completionTokens!, prefill: round(s.prefillTokS)!, decode: round(s.decodeTokS, 2)!, resourceSamples: s.resourceSamples };
+    });
+  if (!runs.length) return null;
+  const { series, counters } = report.evidence;
+  return { v: 1, engine, durationMs: Math.round(report.elapsedMs), intervalMs: report.resourceIntervalMs, runs,
+    series: { count: series.count, stepMs: series.stepMs, vramGB: [...series.vramGB], ramGB: [...series.ramGB], gpuUtil: [...series.gpuUtil] },
+    counters: counters ? { before: { ...counters.before }, after: { ...counters.after } } : null };
 }
 
 const SAFE_STRING = /^[A-Za-z0-9 ()+._-]{0,96}$/;
@@ -156,6 +190,22 @@ export function assertArenaPayloadSafe(payload: unknown): asserts payload is Are
   p.hw.gpus.forEach((g, i) => exact(g, ARENA_KEYS.gpu, `gpus[${i}]`));
   (p.tiers ?? []).forEach((t, i) => exact(t, ARENA_KEYS.tier, `tiers[${i}]`));
   if (p.scenario) exact(p.scenario, ARENA_KEYS.scenario, 'scenario');
+  if (p.evidence !== undefined) {
+    const e = p.evidence;
+    exact(e, ARENA_KEYS.evidence, 'evidence'); exact(e.series, ARENA_KEYS.evidenceSeries, 'evidence.series');
+    if (!Array.isArray(e.runs) || e.runs.length > ARENA_EVIDENCE_MAX_RUNS) fail('evidence.runs');
+    e.runs.forEach((r, i) => exact(r, ARENA_KEYS.evidenceRun, `evidence.runs[${i}]`));
+    if (e.counters !== null) { exact(e.counters, ARENA_KEYS.evidenceCounters, 'evidence.counters'); exact(e.counters.before, ARENA_KEYS.counters, 'evidence.counters.before'); exact(e.counters.after, ARENA_KEYS.counters, 'evidence.counters.after'); }
+    // Only numbers (and the engine version) inside the evidence: nothing that could carry text.
+    const numbers = (v: unknown, where: string): void => {
+      if (Array.isArray(v)) v.forEach((x, i) => numbers(x, `${where}[${i}]`));
+      else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) numbers(x, where + '.' + k);
+      else if (v !== null && (typeof v !== 'number' || !Number.isFinite(v))) fail(where + ' is not a number');
+    };
+    const { engine, ...rest } = e;
+    if (engine !== null && !/^\d+\.\d+\.\d+(?:\.\d+)?$/.test(engine)) fail('evidence.engine');
+    numbers(rest, 'evidence');
+  }
   walk(p, 'payload');
 }
 

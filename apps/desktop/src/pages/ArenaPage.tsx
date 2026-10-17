@@ -26,6 +26,15 @@ function Signal({ machines, seed }: { machines: number; seed?: boolean }) {
 }
 function Quant({ children }: { children: string }) { return <span className="arena-quant">{children}</span>; }
 
+/** Keeps the upload preview readable: numeric arrays (the run evidence series) wrap six values per line. */
+function compactNumberArrays(text: string): string {
+  return text.replace(/\[\n(\s*)((?:-?[\d.]+|null)(?:,\n\s*(?:-?[\d.]+|null))*)\n\s*\]/g, (_, indent: string, body: string) => {
+    const values = body.split(/,\n\s*/), lines: string[] = [];
+    for (let i = 0; i < values.length; i += 6) lines.push(values.slice(i, i + 6).join(', '));
+    return lines.length === 1 ? `[${lines[0]}]` : `[\n${lines.map(line => indent + line).join(',\n')}\n${indent.slice(2)}]`;
+  });
+}
+
 export function ArenaPage({ language, active }: { language: AppLanguage; active: boolean }) {
   const { t } = useTranslation();
   const desktop = core.isDesktop();
@@ -140,7 +149,7 @@ export function ArenaPage({ language, active }: { language: AppLanguage; active:
   // Builds without the upload key skip the consent screen entirely and show the board read-only.
   const showConsent = desktop && status && status.uploadAvailable && !status.consented && dismissed === false;
   if (showConsent) {
-    const preview = mine.payload ? JSON.stringify({ ...mine.payload, consentVersion: core.ARENA_CONSENT_VERSION }, null, 2) : '';
+    const preview = mine.payload ? compactNumberArrays(JSON.stringify({ ...mine.payload, consentVersion: core.ARENA_CONSENT_VERSION }, null, 2)) : '';
     return <div className="arena arena-consent">
       <section className="panel arena-consent-main">
         <h2>{t('arenaJoinTitle')}</h2>
@@ -172,7 +181,7 @@ export function ArenaPage({ language, active }: { language: AppLanguage; active:
   const uploads = status?.log.filter(entry => entry.status === 'uploaded').length ?? 0;
   const myRow = board?.rows.find(row => myGpu && row.hw.gpu === myGpu.name && mine.payload && sameParams(row.params, mine.payload.params) && !row.seed);
   const myDecode = decode8k(mine.payload);
-  const logStatus = (entry: ArenaLogEntry) => t(`arenaLog_${entry.status}`);
+  const logStatus = (entry: ArenaLogEntry) => t(entry.status === 'uploaded' && (entry.detail === 'verified' || entry.detail === 'pending') ? `arenaLog_${entry.detail}` : `arenaLog_${entry.status}`);
   const side = <aside className="panel arena-side">
     <div className="arena-side-sec">
       <header><h3>{t('arenaMyMachine')}</h3><span className="arena-muted">{myGpu ? `${gpuLabel(myGpu.name)} · ${number(mine.payload?.hw.ramGB, 0)} GB` : ''}</span></header>
@@ -191,11 +200,11 @@ export function ArenaPage({ language, active }: { language: AppLanguage; active:
         {status.queued > 0 && <><dt>{t('arenaQueued')}</dt><dd>{status.queued} <button type="button" className="arena-link" disabled={busy === 'flush'} onClick={() => void flush()}>{t('arenaRetryNow')}</button></dd></>}
         <dt>{t('arenaConsentVersion')}</dt><dd>{status.consentVersion}</dd>
       </dl> : status.uploadAvailable ? <div className="arena-join"><p className="arena-muted">{t('arenaNotJoined')}</p><button type="button" className="st-btn st-btn--primary" onClick={() => void reopen()}>{t('arenaJoin')}</button></div> : <p className="arena-muted">{t('arenaReadOnly')}</p>}
-      {status.consented && !status.banned && <p className="arena-muted arena-probation">{t('arenaProbationHint')}</p>}
+      {status.consented && !status.banned && <p className="arena-muted arena-verify">{t('arenaVerifiedHint')}</p>}
     </div>}
     {desktop && status && (status.log.length > 0 || status.consented) && <div className="arena-side-sec">
       <details className="arena-log"><summary>{t('arenaLog')}</summary>
-        {status.log.length ? <ol>{status.log.slice(0, 20).map((entry, index) => <li key={index}><time>{new Date(entry.at).toLocaleString(language, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</time><span>{entry.group ? groupLabel(entry.group).model + ' ' + groupLabel(entry.group).quant : entry.kind === 'withdraw' ? t('arenaWithdrawShort') : entry.kind === 'register' ? t('arenaKeyState') : ''}</span><b className={`arena-log-${entry.status}`}>{logStatus(entry)}</b></li>)}</ol> : <p className="arena-muted">{t('arenaLogEmpty')}</p>}
+        {status.log.length ? <ol>{status.log.slice(0, 20).map((entry, index) => <li key={index}><time>{new Date(entry.at).toLocaleString(language, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</time><span>{entry.group ? groupLabel(entry.group).model + ' ' + groupLabel(entry.group).quant : entry.kind === 'withdraw' ? t('arenaWithdrawShort') : entry.kind === 'register' ? t('arenaKeyState') : ''}</span><b className={`arena-log-${entry.status === 'uploaded' && entry.detail === 'pending' ? 'pending' : entry.status}`}>{logStatus(entry)}</b></li>)}</ol> : <p className="arena-muted">{t('arenaLogEmpty')}</p>}
       </details>
       {status.consented && <button type="button" className="arena-danger" onClick={() => setConfirmWithdraw(true)}>{t('arenaWithdraw')}</button>}
     </div>}

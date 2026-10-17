@@ -5,7 +5,7 @@ import type { BenchmarkTelemetry } from './benchmark-suite-types';
 import { asObject, normalizeError, StrataError } from './errors';
 import { normalizeMetrics } from './metrics';
 import type { JsonObject, ServiceProfile } from './types';
-import type { ContextBenchmarkOptions, ContextBenchmarkProgress, ContextBenchmarkReport, ContextBenchmarkSample, ContextBenchmarkSkippedTier } from './context-benchmark-types';
+import type { ContextBenchmarkCounters, ContextBenchmarkEvidence, ContextBenchmarkOptions, ContextBenchmarkProgress, ContextBenchmarkReport, ContextBenchmarkSample, ContextBenchmarkSkippedTier } from './context-benchmark-types';
 
 export const CONTEXT_BENCHMARK_TIERS = [8, 32, 64, 128, 256, 384, 512, 768, 1024].map(k => k * 1024);
 export const CONTEXT_BENCHMARK_HEADROOM = 64;
@@ -127,7 +127,33 @@ async function prepareMessages(profile: ServiceProfile, options: ContextBenchmar
   return candidate.messages;
 }
 
-function applyResources(sample: ContextBenchmarkSample, raw: JsonObject): void {
+/** One resource reading for run evidence: wall-clock time, GPU memory and RAM in bytes, GPU utilization in %. */
+type ResourcePoint = [at: number, vram: number | null, ram: number | null, util: number | null];
+type ResourceSink = (point: ResourcePoint) => void;
+const MAX_EVIDENCE_POINTS = 120;
+
+/** Engine `totals` counters from a /metrics response, or null when the engine does not report them. */
+export function benchmarkCounters(raw: JsonObject): ContextBenchmarkCounters | null {
+  const totals = asObject(raw.totals);
+  const requests = count(totals.requests), promptTokens = count(totals.prompt_tokens), outputTokens = count(totals.output_tokens);
+  return requests === null || promptTokens === null || outputTokens === null ? null : { requests, promptTokens, outputTokens };
+}
+
+/** Buckets resource points over the run: at most 120 steps of whole seconds, max memory (GB, 1 decimal), mean utilization. */
+export function benchmarkEvidenceSeries(points: readonly ResourcePoint[], startedAt: number, durationMs: number, intervalMs: number): ContextBenchmarkEvidence['series'] {
+  const stepMs = Math.max(intervalMs, Math.ceil(durationMs / MAX_EVIDENCE_POINTS / 1000) * 1000), length = Math.max(1, Math.ceil(durationMs / stepMs));
+  const vram: (number | null)[] = Array(length).fill(null), ram: (number | null)[] = Array(length).fill(null), util: number[][] = Array.from({ length }, () => []);
+  const gb = (v: number) => Math.round(v / 1024 ** 3 * 10) / 10;
+  for (const [at, v, r, u] of points) {
+    const i = Math.min(length - 1, Math.max(0, Math.floor((at - startedAt) / stepMs)));
+    if (v !== null) vram[i] = Math.max(vram[i] ?? 0, gb(v));
+    if (r !== null) ram[i] = Math.max(ram[i] ?? 0, gb(r));
+    if (u !== null) util[i]!.push(u);
+  }
+  return { count: points.length, stepMs, vramGB: vram, ramGB: ram, gpuUtil: util.map(u => u.length ? Math.round(Math.min(100, Math.max(0, u.reduce((a, b) => a + b, 0) / u.length))) : null) };
+}
+
+function applyResources(sample: ContextBenchmarkSample, raw: JsonObject, sink?: ResourceSink): void {
   const metrics = normalizeMetrics(raw), hw = asObject(raw.hardware);
   const used = numeric(metrics.gpuMemoryUsed), total = numeric(metrics.gpuMemoryTotal), ram = numeric(metrics.ramUsed);
   const directFree = numeric(hw.gpu_mem_free);
@@ -135,10 +161,10 @@ function applyResources(sample: ContextBenchmarkSample, raw: JsonObject): void {
   const peak = (old: number | null, value: number | null) => value === null ? old : old === null ? value : Math.max(old, value);
   sample.peakGpuMemory = peak(sample.peakGpuMemory, used); sample.peakRam = peak(sample.peakRam, ram);
   if (free !== null) sample.minGpuMemoryFree = sample.minGpuMemoryFree === null ? free : Math.min(sample.minGpuMemoryFree, free);
-  if (used !== null || ram !== null || free !== null) sample.resourceSamples++;
+  if (used !== null || ram !== null || free !== null) { sample.resourceSamples++; sink?.([Date.now(), used, ram, numeric(metrics.gpuUtil)]); }
 }
 
-async function infer(profile: ServiceProfile, options: ContextBenchmarkOptions, messages: JsonObject[], sample: ContextBenchmarkSample, signal: AbortSignal, track: (transport: Promise<void>) => void): Promise<void> {
+async function infer(profile: ServiceProfile, options: ContextBenchmarkOptions, messages: JsonObject[], sample: ContextBenchmarkSample, signal: AbortSignal, track: (transport: Promise<void>) => void, sink?: ResourceSink): Promise<void> {
   const controller = new AbortController();
   let began = clock();
   let active = true, done = false, failure: unknown, monitorPromise: Promise<void> | undefined;
@@ -161,7 +187,7 @@ async function infer(profile: ServiceProfile, options: ContextBenchmarkOptions, 
     }
     try {
       const raw = await bounded(request(profile, '/metrics'), Math.min(options.timeoutMs, 5000), controller.signal);
-      if (active && !controller.signal.aborted) applyResources(sample, raw);
+      if (active && !controller.signal.aborted) applyResources(sample, raw, sink);
     } catch { /* Missing host telemetry remains null; it does not replace request usage/timings. */ }
   };
   sample.startedAt = Date.now();
@@ -210,7 +236,7 @@ async function infer(profile: ServiceProfile, options: ContextBenchmarkOptions, 
     // cancellation/timeout. An in-flight sampler must settle before the next row.
     if (monitorPromise) await monitorPromise;
     if (sample.state === 'completed' && !controller.signal.aborted) {
-      try { applyResources(sample, await bounded(request(profile, '/metrics'), Math.min(options.timeoutMs, 5000), controller.signal)); } catch { /* Optional final sample. */ }
+      try { applyResources(sample, await bounded(request(profile, '/metrics'), Math.min(options.timeoutMs, 5000), controller.signal), sink); } catch { /* Optional final sample. */ }
     }
     signal.removeEventListener('abort', abort);
   }
@@ -238,6 +264,8 @@ export async function runContextBenchmark(profile: ServiceProfile, input: Contex
       startedAt: Date.now(), finishedAt: 0, elapsedMs: 0, options, samples: [], skippedTiers: plan.skipped, state: 'completed', stopReason: 'completed', resourceScope: 'system', resourceIntervalMs: 1000,
       ...(Object.keys(asObject(raw.hardware)).length ? { hardware: asObject(raw.hardware) } : {}), ...(Object.keys(asObject(raw.engine)).length ? { engine: asObject(raw.engine) } : {}) };
     const total = plan.supported.length * options.rounds;
+    // Run evidence: every resource sample and the engine counters around the run. Never prompts or outputs.
+    const points: ResourcePoint[] = [], countersBefore = benchmarkCounters(raw), sink: ResourceSink = point => { if (points.length < 100_000) points.push(point); };
     const emit = (currentTier: number | null, active: 0 | 1, sample?: ContextBenchmarkSample) => onProgress({ currentTier, active, total, elapsedMs: Math.max(0, clock() - began),
       completed: report.samples.filter(s => s.state === 'completed').length, failed: report.samples.filter(s => s.state === 'failed').length, cancelled: report.samples.filter(s => s.state === 'cancelled').length,
       ...(sample ? { sample: { ...sample } } : {}) });
@@ -254,7 +282,7 @@ export async function runContextBenchmark(profile: ServiceProfile, input: Contex
         const messages = await prepareMessages(profile, options, sample, `${crypto.randomUUID()} context-benchmark ${report.id}/${sample.index}`, controller.signal);
         const ready = await bounded(request(profile, '/health'), Math.min(options.timeoutMs, 5000), controller.signal); healthModel(ready, model);
         if ((count(ready.max_context) ?? 0) < tier) throw new StrataError('BENCHMARK_CONTEXT_CHANGED', '服务上下文容量发生变化，已停止后续请求');
-        await infer(profile, options, messages, sample, controller.signal, track);
+        await infer(profile, options, messages, sample, controller.signal, track, sink);
       } catch (error) {
         const normalized = normalizeError(error); sample.state = controller.signal.aborted ? 'cancelled' : 'failed';
         sample.error = normalized.message; sample.errorCode = normalized.code; sample.httpStatus = normalized.status;
@@ -267,7 +295,13 @@ export async function runContextBenchmark(profile: ServiceProfile, input: Contex
       }
     }
     if (controller.signal.aborted && report.state === 'completed') { report.state = 'cancelled'; report.stopReason = 'cancelled'; }
-    report.finishedAt = Date.now(); report.elapsedMs = Math.max(0, clock() - began); emit(null, 0);
+    report.finishedAt = Date.now(); report.elapsedMs = Math.max(0, clock() - began);
+    if (report.state === 'completed') {
+      const after = countersBefore ? await bounded(request(profile, '/metrics'), Math.min(options.timeoutMs, 5000), controller.signal).then(benchmarkCounters, () => null) : null;
+      report.evidence = { counters: countersBefore && after ? { before: countersBefore, after } : null,
+        series: benchmarkEvidenceSeries(points, report.startedAt, report.elapsedMs, report.resourceIntervalMs) };
+    }
+    emit(null, 0);
     return report;
   } finally {
     signal?.removeEventListener('abort', cancel);

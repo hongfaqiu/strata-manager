@@ -12,7 +12,7 @@ database_id = "ab1a795f-707f-488c-a1f7-c3866a43f78e"
 migrations_dir = "migrations"
 
 [vars]
-POW_BITS = "25"
+POW_BITS = "22"
 POW_SURGE = "30"
 
 [triggers]

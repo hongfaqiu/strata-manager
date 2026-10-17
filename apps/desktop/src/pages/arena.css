@@ -142,4 +142,4 @@
   .arena, .arena-consent { grid-template-columns: minmax(0, 1fr); }
   .arena-podium { grid-template-columns: 1fr 1fr 1fr; }
 }
-.arena-probation { margin: 10px 0 0; }
+.arena-verify { margin: 10px 0 0; }

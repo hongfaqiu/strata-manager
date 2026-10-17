@@ -50,6 +50,28 @@ describe('arena payload whitelist', () => {
     for (const value of strings) expect(value).not.toMatch(/[/\\@:]/);
   });
 
+  it('adds whitelisted run evidence: offsets, timings, token counts, resource series and engine counters only', async () => {
+    const series = { count: 41, stepMs: 9000, vramGB: [18.2, 21.4, 21.1], ramGB: [60.1, 61.5, 61.2], gpuUtil: [12, 88, 85] };
+    const report = contextReport({ evidence: { counters: { before: { requests: 37, promptTokens: 910000, outputTokens: 15000 }, after: { requests: 39, promptTokens: 950368, outputTokens: 16024 } }, series } });
+    report.samples[1]!.startedAt = report.startedAt + 17_500;
+    report.samples.push({ ...report.samples[0]!, targetTokens: 65536, state: 'failed', decodeTokS: null });
+    const built = await buildArenaPayload(report, env);
+    if (!('payload' in built)) throw new Error('expected payload');
+    const e = built.payload.evidence!;
+    expect(e).toEqual({ v: 1, engine: '0.1.44', durationMs: 372000, intervalMs: 1000, series, counters: report.evidence!.counters,
+      runs: [{ ctx: 8192, startMs: 0, endMs: 17150, ttftMs: 3150, promptTokens: 7592, cachedTokens: 0, completionTokens: 512, prefill: 2410.2, decode: 36.4, resourceSamples: 20 },
+        { ctx: 32768, startMs: 17500, endMs: 46200, ttftMs: 14700, promptTokens: 32168, cachedTokens: 0, completionTokens: 512, prefill: 2188.3, decode: 33.9, resourceSamples: 20 }] });
+    expect(() => assertArenaPayloadSafe(built.payload)).not.toThrow();
+    const text = JSON.stringify(built.payload);
+    for (const secret of SECRETS) expect(text, secret).not.toContain(secret);
+    const leaked = structuredClone(built.payload); (leaked.evidence!.runs[0] as unknown as Record<string, unknown>).output = 'hi';
+    expect(() => assertArenaPayloadSafe(leaked)).toThrow(/whitelisted/);
+    const texty = structuredClone(built.payload); (texty.evidence!.series.vramGB as unknown[])[0] = 'D 1';
+    expect(() => assertArenaPayloadSafe(texty)).toThrow(/not a number/);
+    const noEvidence = await buildArenaPayload(contextReport(), env);
+    expect('payload' in noEvidence && noEvidence.payload.evidence).toBeUndefined();
+  });
+
   it('fingerprint ignores modification times and paths', async () => {
     const a = await buildArenaPayload(contextReport(), env);
     const r = contextReport(); r.identity!.model.files = r.identity!.model.files!.map(f => ({ ...f, name: 'E:/other/' + f.name, modifiedAt: '1' }));

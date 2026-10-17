@@ -1,4 +1,5 @@
 import { hmacHex, signingMessage, sha256Hex, leadingZeroBits, powMessage } from '../src/crypto.js';
+import { evidenceMessage } from '../src/evidence.js';
 export const APP_KEY = 'test-app-key';
 export const installId = n => n.toString(16).padStart(64, 'a');
 const hex = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -20,6 +21,30 @@ export function submission(over = {}) {
   return { ...base, ...rest, hw: { ...base.hw, ...(over.hw ?? {}) }, model: { ...base.model, ...(over.model ?? {}) }, params: { ...base.params, ...(over.params ?? {}) } };
 }
 
+/**
+ * Run evidence consistent with a context submission: one completed request per ok tier, sampled every second,
+ * engine counters moving by exactly the reported tokens. `edit(ev)` mutates it for negative tests.
+ */
+export function evidenceFor(sub, edit = ev => ev) {
+  const runs = [];
+  let at = 2000;
+  for (const t of sub.tiers.filter(t => t.ok)) {
+    const promptTokens = Math.round(t.ctx * 0.92), completionTokens = 256;
+    const wall = Math.round((t.ttftMs + (completionTokens - 1) / t.decode * 1000) * 1.04);
+    runs.push({ ctx: t.ctx, startMs: at, endMs: at + wall, ttftMs: t.ttftMs, promptTokens, cachedTokens: 0, completionTokens, prefill: t.prefill, decode: t.decode, resourceSamples: Math.floor(wall / 1000) + 2 });
+    at += wall + 1500;
+  }
+  const durationMs = at + 500, intervalMs = 1000, stepMs = Math.max(intervalMs, Math.ceil(durationMs / 120 / 1000) * 1000), points = Math.ceil(durationMs / stepMs);
+  const vram = Math.max(...sub.tiers.map(t => t.peakVramGB ?? 0)), ram = Math.max(...sub.tiers.map(t => t.peakRamGB ?? 0));
+  const sum = k => runs.reduce((n, r) => n + r[k], 0);
+  const ev = { v: 1, engine: sub.strata, durationMs, intervalMs, runs,
+    series: { count: sum('resourceSamples') + 1, stepMs, vramGB: Array.from({ length: points }, (_, i) => i === points - 2 ? vram : Math.round((vram - 1.5) * 10) / 10),
+      ramGB: Array.from({ length: points }, (_, i) => i === points - 2 ? ram : Math.round((ram - 2) * 10) / 10), gpuUtil: Array.from({ length: points }, (_, i) => i ? 86 : 4) },
+    counters: { before: { requests: 120, promptTokens: 4_200_000, outputTokens: 61_000 },
+      after: { requests: 120 + runs.length, promptTokens: 4_200_000 + sum('promptTokens'), outputTokens: 61_000 + sum('completionTokens') } } };
+  return edit(ev) ?? ev;
+}
+
 let n = 0;
 const nextNonce = () => (++n).toString(16).padStart(32, '0');
 
@@ -32,6 +57,8 @@ export class Install {
     Object.assign(inst, { privateKey: pair.privateKey, publicKey: hex(raw), keyId: await sha256Hex(raw) });
     return inst;
   }
+  /** Body fields carrying signed evidence: the exact text and the install's signature over its digest. */
+  async evidence(ev) { const text = JSON.stringify(ev); return { evidence: text, evidenceSig: await this.sign(evidenceMessage(this.keyId, await sha256Hex(text))) }; }
   async sign(message) { return hex(await crypto.subtle.sign({ name: 'Ed25519' }, this.privateKey, new TextEncoder().encode(message))); }
   /** Builds a signed request. `app: false` omits the app HMAC; `install: false` omits the install signature. */
   async request(method, path, body, { appKey = APP_KEY, app = true, install = true, ts = Date.now(), nonce = nextNonce(), ip = '203.0.113.7', headers = {}, signer = this } = {}) {

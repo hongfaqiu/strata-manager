@@ -6,7 +6,8 @@ import { aggregate, filterOutliers, recommend } from '../src/stats.js';
 import { evaluate, TRUST } from '../src/trust.js';
 import { leadingZeroBits, powMessage, sha256Hex } from '../src/crypto.js';
 import { createD1 } from './d1-shim.mjs';
-import { APP_KEY, Install, installId, submission } from './fixtures.mjs';
+import { APP_KEY, Install, installId, submission, evidenceFor } from './fixtures.mjs';
+import { checkEvidence, parseEvidence } from '../src/evidence.js';
 
 const DAY = 86_400_000;
 const envOf = (over = {}) => ({ DB: createD1(), ARENA_APP_KEYS: 'old-key, ' + APP_KEY, IP_SALT: 'salt', SEED_TOKEN: 'seed-secret', POW_SECRET: 'pow-secret', POW_BITS: '8', ADMIN_TOKEN: 'admin-secret', ...over });
@@ -26,12 +27,13 @@ async function machine(env, who) {
   }
   return env.machines.get(who);
 }
-async function submit(env, body, opts = {}) {
+/** Context runs carry consistent signed run evidence unless `evidence: false`; a function edits it first. */
+async function submit(env, body, { evidence = true, ...opts } = {}) {
   const { installId: who = installId(1), ...payload } = body;
   const inst = await machine(env, who);
-  return call(env, await inst.request('POST', '/v1/submit', payload, opts));
+  const attach = evidence && payload.kind === 'context' ? await inst.evidence(evidenceFor(payload, typeof evidence === 'function' ? evidence : undefined)) : {};
+  return call(env, await inst.request('POST', '/v1/submit', { ...payload, ...attach }, opts));
 }
-const trustAll = env => env.DB.raw.prepare("UPDATE installs SET override = 'trust'").run();
 
 test('schema rejects unknown fields, paths, hostnames and free text, including a body installId', () => {
   const { installId: _i, ...plain } = submission();
@@ -84,7 +86,7 @@ test('registration needs the app key, a fresh solved challenge bound to the key,
   const good = await inst.register(call, env);
   assert.equal(good.status, 201);
   const body = await good.json();
-  assert.equal(body.keyId, inst.keyId); assert.equal(body.status, 'probation');
+  assert.equal(body.keyId, inst.keyId); assert.equal(body.status, 'pending');
   const c2 = await (await call(env, new Request('https://arena.test/v1/register/challenge', { method: 'POST' }))).json();
   const n2 = await inst.solve(c2.challenge, c2.bits);
   assert.equal((await call(env, await inst.request('POST', '/v1/register', { publicKey: inst.publicKey, challenge: c2.challenge, counter: n2, consentVersion: 1 }))).status, 200, 'idempotent re-register');
@@ -117,7 +119,7 @@ test('submit requires app key + registered install signature and rejects replays
   const req2 = await inst.request('POST', '/v1/submit', body, { nonce: 'c'.repeat(32) });
   assert.equal((await call(env, req1)).status, 201);
   assert.equal((await call(env, req2)).status, 409);
-  const big = await call(env, new Request('https://arena.test/v1/submit', { method: 'POST', body: 'x'.repeat(40000) }));
+  const big = await call(env, new Request('https://arena.test/v1/submit', { method: 'POST', body: 'x'.repeat(70000) }));
   assert.equal(big.status, 413);
   // The rotated-out key no longer works once removed from ARENA_APP_KEYS.
   const rotated = { ...env, ARENA_APP_KEYS: 'new-key' };
@@ -155,7 +157,7 @@ test('maintainer can ban an install key; banned keys cannot submit, re-register,
   const bad = env.machines.get(installId(3));
   assert.equal((await adminCall(env, 'GET', '/v1/admin/installs', undefined, 'nope')).status, 401);
   const list = await (await adminCall(env, 'GET', '/v1/admin/installs')).json();
-  assert.equal(list.installs.length, 1); assert.equal(list.installs[0].status, 'probation'); assert.equal(list.pow.bits, 8);
+  assert.equal(list.installs.length, 1); assert.equal(list.installs[0].status, 'verified'); assert.equal(list.installs[0].verified, 1); assert.equal(list.pow.bits, 8);
   const banned = await (await adminCall(env, 'POST', '/v1/admin/installs/' + bad.keyId, { action: 'ban' })).json();
   assert.equal(banned.status, 'banned'); assert.equal(banned.trust, 0);
   const { installId: _i, ...body } = submission();
@@ -183,14 +185,14 @@ async function populate(env) {
   [24.8, 25.3, 23.9].forEach((d, i) => rows.push(submission({ installId: installId(600 + i), decode: d, hw: { gpus: [{ vendor: 'nvidia', name: 'NVIDIA GeForce RTX 3090', vramGB: 24 }], pcie: 'Gen4 x16' } })));
   for (const r of rows) assert.equal((await submit(env, r, { ip: '198.51.100.' + Math.floor(Math.random() * 200) })).status, 201);
   await submit(env, submission({ installId: installId(900), decode: 33.8, params: { kv: 'q4_0', poolWorkers: 24 } }), { headers: { 'X-Arena-Seed': 'seed-secret' } });
-  await trustAll(env);
   return recompute(env);
 }
 
 test('leaderboard groups by model + quant and ranks hardware + parameter rows by 8K decode median', async () => {
   const env = envOf();
   const summary = await populate(env);
-  assert.deepEqual(summary.groups.map(g => g.group).sort(), ['swift:IQ2_XS', 'swift:IQ3_S']);
+  assert.deepEqual(summary.groups.map(g => g.group).sort(), ['swift:IQ2_XS', 'swift:IQ3_S', 'swift:IQ3_XXS'], 'verified runs form rows right away, even from two machines');
+  assert.equal(summary.groups.find(g => g.group === 'swift:IQ3_XXS').machines, 2);
   const lb = await (await get(env, '/v1/leaderboard?group=swift:IQ3_S')).json();
   assert.equal(lb.family, 'swift'); assert.equal(lb.quant, 'IQ3_S');
   const [first, second] = lb.rows;
@@ -211,54 +213,142 @@ test('leaderboard groups by model + quant and ranks hardware + parameter rows by
   assert.equal(env.DB.raw.prepare("SELECT COUNT(*) AS n FROM submissions WHERE flag = 'peer_outlier'").get().n, 1);
 });
 
-test('probation: new installs are stored but excluded until runs span two days and agree with peers', async () => {
+test('a verified in-app run counts on the leaderboard immediately; runs without or with failing evidence stay pending', async () => {
   const env = envOf();
-  // Three honest machines with the same config, each submitting once today.
-  for (const [i, d] of [35.2, 34.6, 36.1].entries()) await submit(env, submission({ installId: installId(10 + i), decode: d }));
-  let summary = await recompute(env);
-  assert.equal(summary.machines, 0); assert.equal(summary.pendingMachines, 3); assert.deepEqual(summary.groups, [], 'nothing public while everyone is in probation');
-  // Two more runs each, moved back to yesterday: now 3 runs over 2 server days, consistent with peers.
-  for (let i = 0; i < 3; i++) for (let k = 0; k < 2; k++) await submit(env, submission({ installId: installId(10 + i), decode: 35 + k * 0.3 }));
-  const ids = [...env.machines.values()].map(m => m.keyId);
-  env.DB.raw.prepare(`UPDATE submissions SET received_at = received_at - ${DAY} WHERE rowid IN (SELECT rowid FROM submissions ORDER BY rowid DESC LIMIT 6)`).run();
-  // A fabricated machine: same config, absurd speed, plenty of history.
-  for (let k = 0; k < 4; k++) await submit(env, submission({ installId: installId(99), decode: 90 + k, tiers: submission({ decode: 90 + k }).tiers.slice(0, 1) }));
-  env.DB.raw.prepare(`UPDATE submissions SET received_at = received_at - ${2 * DAY} WHERE rowid IN (SELECT rowid FROM submissions ORDER BY rowid DESC LIMIT 2)`).run();
-  summary = await recompute(env);
-  const status = Object.fromEntries(env.DB.raw.prepare('SELECT key_id, status, trust FROM installs').all().map(r => [r.key_id, r]));
-  for (const id of ids.slice(0, 3)) { assert.equal(status[id].status, 'trusted'); assert.ok(status[id].trust >= 0.9); }
-  const liar = env.machines.get(installId(99)).keyId;
-  assert.equal(status[liar].status, 'flagged'); assert.ok(status[liar].trust < 0.5);
-  assert.equal(summary.machines, 3);
-  const lb = await (await get(env, '/v1/leaderboard?group=swift:IQ3_S')).json();
-  assert.equal(lb.rows.length, 1); assert.equal(lb.rows[0].machines, 3); assert.ok(lb.rows[0].decode.median < 40, 'the liar never reaches the board');
-  // Maintainer hides a run and can reset a decision.
-  const detail = await (await adminCall(env, 'GET', '/v1/admin/installs/' + liar)).json();
-  assert.ok(detail.submissions.every(s => s.flag === 'peer_outlier'));
-  const hide = await adminCall(env, 'POST', '/v1/admin/submissions/' + detail.submissions[0].id, { hidden: true });
-  assert.deepEqual(await hide.json(), { id: detail.submissions[0].id, hidden: true });
-  assert.equal((await (await adminCall(env, 'POST', '/v1/admin/installs/' + ids[0], { action: 'reset' })).json()).status, 'trusted', 'reset recomputes from evidence');
+  const first = await (await submit(env, submission({ installId: installId(10), decode: 35.2 }))).json();
+  assert.deepEqual([first.evidence, first.counted, first.reasons], ['verified', true, []], 'first upload, no waiting period');
+  let lb = await (await get(env, '/v1/leaderboard?group=swift:IQ3_S')).json();
+  assert.equal(lb.rows.length, 1); assert.equal(lb.rows[0].machines, 1); assert.equal(lb.rows[0].confidence, 'none', 'labeled as a single-machine row');
+  assert.equal((await (await get(env, '/v1/groups')).json()).machines, 1);
+  // No evidence: stored, pending, not on the board.
+  const bare = await (await submit(env, submission({ installId: installId(11), decode: 34.6 }), { evidence: false })).json();
+  assert.deepEqual([bare.evidence, bare.counted], ['missing', false]);
+  // Evidence that contradicts the result: pending with the reason.
+  const liar = await (await submit(env, submission({ installId: installId(12), decode: 36.1 }), { evidence: ev => { ev.runs[0].decode = 18; } })).json();
+  assert.equal(liar.evidence, 'failed'); assert.ok(liar.reasons.includes('tier_decode_mismatch')); assert.equal(liar.counted, false);
+  lb = await (await get(env, '/v1/leaderboard?group=swift:IQ3_S')).json();
+  assert.equal(lb.rows[0].machines, 1, 'only the verified machine counts');
+  const summary = await (await get(env, '/v1/groups')).json();
+  assert.equal(summary.pendingMachines, 2);
+  const overview = await (await adminCall(env, 'GET', '/v1/admin/installs')).json();
+  assert.deepEqual(overview.counts, { installs: { verified: 1, pending: 2 }, runs: { verified: 1, missing: 1, failed: 1 } });
+  const installs = Object.fromEntries(overview.installs.map(i => [i.keyId, i]));
+  assert.equal(installs[env.machines.get(installId(10)).keyId].status, 'verified');
+  assert.equal(installs[env.machines.get(installId(11)).keyId].status, 'pending');
+  // Maintainers see the reason and can re-check the stored signed evidence.
+  const detail = await (await adminCall(env, 'GET', '/v1/admin/installs/' + env.machines.get(installId(12)).keyId)).json();
+  assert.equal(detail.submissions[0].evidence_status, 'failed'); assert.match(detail.submissions[0].evidence_reason, /tier_decode_mismatch/);
+  const audit = await (await adminCall(env, 'GET', '/v1/admin/submissions/' + first.id)).json();
+  assert.equal(audit.evidence_status, 'verified'); assert.equal(audit.evidence_sig.length, 128); assert.equal(JSON.parse(audit.evidence_json).v, 1);
+  assert.equal((await adminCall(env, 'GET', '/v1/admin/submissions/' + first.id, undefined, 'nope')).status, 401);
 });
 
-test('trust evaluation: corroboration for small configs, self flags and the flag-rate cut-off', () => {
+test('evidence must be signed by the install key over its exact text and contain only whitelisted fields', async () => {
+  const env = envOf();
+  await submit(env, submission());
+  const inst = env.machines.get(installId(1));
+  const { installId: _i, ...body } = submission();
+  const signed = await inst.evidence(evidenceFor(body));
+  const tampered = { ...signed, evidence: signed.evidence.replace('"decode":35.2', '"decode":95.2') };
+  assert.equal((await (await call(env, await inst.request('POST', '/v1/submit', { ...body, ...tampered }))).json()).error, 'invalid_evidence_signature');
+  const stranger = await Install.create();
+  const foreign = await stranger.evidence(evidenceFor(body));
+  assert.equal((await (await call(env, await inst.request('POST', '/v1/submit', { ...body, ...foreign }))).json()).error, 'invalid_evidence_signature', 'signed by another key');
+  assert.equal((await (await call(env, await inst.request('POST', '/v1/submit', { ...body, evidence: signed.evidence }))).json()).error, 'invalid_evidence_signature', 'unsigned');
+  const leaky = await inst.evidence(evidenceFor(body, ev => { ev.runs[0].output = 'hello'; }));
+  assert.match((await (await call(env, await inst.request('POST', '/v1/submit', { ...body, ...leaky }))).json()).error, /unknown_field|not_allowed|invalid/);
+  const prompt = await inst.evidence({ ...evidenceFor(body), prompt: 'secret' });
+  assert.equal((await call(env, await inst.request('POST', '/v1/submit', { ...body, ...prompt }))).status, 400);
+});
+
+test('evidence consistency checks: each contradiction leaves the run pending with its reason', () => {
+  const base = submission(), s = validateSubmission(base);
+  const check = (edit, sub = s) => checkEvidence(sub, parseEvidence(JSON.stringify(evidenceFor(base, edit))));
+  assert.deepEqual(check(), { status: 'verified', reasons: [] });
+  const cases = [
+    ['engine_mismatch', ev => { ev.engine = '0.1.40'; }],
+    ['timestamps', ev => { ev.runs[1].endMs = ev.runs[1].startMs; }],
+    ['timestamps_overlap', ev => { ev.runs[1].startMs = ev.runs[0].startMs + 10; }],
+    ['run_outside_duration', ev => { ev.durationMs = 20_000; }],
+    ['prompt_tokens_vs_tier', ev => { ev.runs[0].promptTokens = 9000; }],
+    ['cached_tokens', ev => { ev.runs[0].cachedTokens = ev.runs[0].promptTokens + 1; }],
+    ['ttft_vs_prefill', ev => { ev.runs[2].ttftMs = 2000; }],
+    ['wall_vs_decode', ev => { ev.runs[0].endMs = ev.runs[0].startMs + 1000; }],
+    ['tier_decode_mismatch', ev => { ev.runs[0].decode = 30; }],
+    ['tier_prefill_mismatch', ev => { ev.runs[0].prefill = 2000; }],
+    ['tier_without_runs', ev => { ev.runs.pop(); }],
+    ['run_without_tier', ev => { ev.runs.push({ ...ev.runs[2], ctx: 65536, startMs: ev.runs[2].endMs + 10, endMs: ev.runs[2].endMs + 20 }); }],
+    ['series_length', ev => { ev.series.vramGB.length = ev.series.ramGB.length = ev.series.gpuUtil.length = 10; }],
+    ['sample_count_below_runs', ev => { ev.series.count = 3; }],
+    ['sample_count_vs_duration', ev => { ev.series.count = 5000; }],
+    ['too_few_samples', ev => { for (const r of ev.runs) r.resourceSamples = 1; ev.series.count = 3; }],
+    ['vram_peak_mismatch', ev => { ev.series.vramGB = ev.series.vramGB.map(() => 12); }],
+    ['vram_exceeds_gpu', ev => { ev.series.vramGB[3] = 40; }],
+    ['ram_peak_mismatch', ev => { ev.series.ramGB = ev.series.ramGB.map(() => 20); }],
+    ['no_counters', ev => { ev.counters = null; }],
+    ['counters_went_backwards', ev => { ev.counters.after.requests = 100; }],
+    ['request_count_delta', ev => { ev.counters.after.requests = ev.counters.before.requests + 1; }],
+    ['prompt_token_delta', ev => { ev.counters.after.promptTokens = ev.counters.before.promptTokens + 1000; }],
+    ['output_token_delta', ev => { ev.counters.after.outputTokens = ev.counters.before.outputTokens + 10; }],
+  ];
+  for (const [reason, edit] of cases) {
+    const r = check(edit);
+    assert.equal(r.status, 'failed', reason); assert.ok(r.reasons.includes(reason), `${reason}: got ${r.reasons}`);
+  }
+  // Reported tier peaks must also fit the hardware.
+  const small = validateSubmission(submission({ hw: { gpus: [{ vendor: 'nvidia', name: 'NVIDIA GeForce RTX 4090', vramGB: 24 }] } }));
+  assert.equal(check(undefined, small).status, 'verified');
+  const { tiers: _t, ...plain } = base;
+  assert.deepEqual(checkEvidence(validateSubmission({ ...plain, kind: 'scenario', scenario: { decode: 31.4, prefill: 1980, ttftMs: 1200, maxConcurrency: 4, requests: 24, failed: 0 } }), parseEvidence(JSON.stringify(evidenceFor(base)))).reasons, ['scenario_unverifiable']);
+  assert.throws(() => parseEvidence(JSON.stringify({ ...evidenceFor(base), v: 2 })), /unsupported_evidence/);
+  assert.throws(() => parseEvidence('x'.repeat(20000)), /invalid_evidence/);
+});
+
+test('cross-validation flags outliers after the fact instead of gating, and flags installs that keep diverging', async () => {
+  const env = envOf();
+  for (const [i, d] of [35.2, 34.6, 36.1].entries()) assert.equal((await (await submit(env, submission({ installId: installId(10 + i), decode: d }))).json()).counted, true);
+  // A fabricated machine: same config, absurd speed, but evidence internally consistent with it.
+  for (let k = 0; k < 4; k++) await submit(env, submission({ installId: installId(99), decode: 90 + k, tiers: submission({ decode: 90 + k }).tiers.slice(0, 1) }));
+  const summary = await recompute(env);
+  const status = Object.fromEntries(env.DB.raw.prepare('SELECT key_id, status, trust, verified FROM installs').all().map(r => [r.key_id, r]));
+  const ids = [10, 11, 12].map(n => env.machines.get(installId(n)).keyId), liar = env.machines.get(installId(99)).keyId;
+  for (const id of ids) { assert.equal(status[id].status, 'verified'); assert.ok(status[id].trust >= 0.9, 'verified and consistent with peers'); }
+  assert.equal(status[liar].status, 'flagged'); assert.ok(status[liar].trust < 0.5); assert.equal(status[liar].verified, 4);
+  assert.equal(summary.machines, 3);
+  const lb = await (await get(env, '/v1/leaderboard?group=swift:IQ3_S')).json();
+  assert.equal(lb.rows.length, 1); assert.equal(lb.rows[0].machines, 3); assert.ok(lb.rows[0].decode.median < 40, 'the outlier is dropped once peers exist');
+  const detail = await (await adminCall(env, 'GET', '/v1/admin/installs/' + liar)).json();
+  assert.ok(detail.submissions.every(s => s.flag === 'peer_outlier' && s.evidence_status === 'verified'));
+  const hide = await adminCall(env, 'POST', '/v1/admin/submissions/' + detail.submissions[0].id, { hidden: true });
+  assert.deepEqual(await hide.json(), { id: detail.submissions[0].id, hidden: true });
+  // A maintainer override still applies, and reset recomputes from the evidence.
+  assert.equal((await (await adminCall(env, 'POST', '/v1/admin/installs/' + ids[0], { action: 'reset' })).json()).status, 'verified');
+});
+
+test('trust evaluation: verified vs pending, self flags, peer outliers and the flag-rate cut-off', () => {
   const now = Date.now();
   const row = (id, key, decode, dayOffset, extra = {}) => ({ id, install_hash: key, kind: 'context', received_at: now - dayOffset * DAY, family: 'swift', quant: 'IQ3_S', gpu_name: 'RTX', vram_gb: 24, ram_gb: 96,
-    ctx: 131072, kv: 'int8', parallel: 1, pool_workers: 16, expert_cache: 'auto', pcie_frac: null, gpu_count: 1, vision: 0, decode_8k: decode, prefill_8k: 2400, ttft_8k_ms: 3400, seed: 0, ...extra });
+    ctx: 131072, kv: 'int8', parallel: 1, pool_workers: 16, expert_cache: 'auto', pcie_frac: null, gpu_count: 1, vision: 0, decode_8k: decode, prefill_8k: 2400, ttft_8k_ms: 3400, seed: 0, evidence_status: 'verified', ...extra });
   const installs = [{ key_id: 'a' }, { key_id: 'b' }, { key_id: 'c' }];
   const subs = [row(1, 'a', 35, 0), row(2, 'a', 35.5, 1), row(3, 'a', 34.8, 2), row(4, 'b', 36, 0), row(5, 'b', 36.4, 1), row(6, 'b', 35.9, 1),
     row(7, 'c', 30, 0, { ttft_8k_ms: 200 }), row(8, 'c', 31, 1, { ttft_8k_ms: 300 }), row(9, 'c', 30.5, 1)];
-  const { installs: v, flags } = evaluate(installs, subs);
+  const { installs: v, flags, counts } = evaluate(installs, subs);
   assert.equal(flags.get(7), 'ttft_fast'); assert.equal(flags.get(9), null);
-  assert.equal(v.get('a').status, 'trusted', 'agrees with its peers within MAD bounds');
-  assert.deepEqual([v.get('a').compared, v.get('a').consistent], [1, 1]);
-  const pair = evaluate(installs.slice(0, 2), subs.slice(0, 6)).installs;
-  assert.equal(pair.get('a').status, 'trusted', 'a single peer within 20% corroborates');
-  assert.deepEqual([pair.get('a').compared, pair.get('a').corroborated], [0, 1]);
+  assert.equal(v.get('a').status, 'verified'); assert.deepEqual([v.get('a').compared, v.get('a').consistent], [1, 1]);
   assert.equal(v.get('c').status, 'flagged', `flag rate above ${TRUST.maxFlagRate}`);
-  const alone = evaluate([{ key_id: 'z' }], [row(1, 'z', 35, 0), row(2, 'z', 35, 1), row(3, 'z', 35, 2)]).installs.get('z');
-  assert.equal(alone.status, 'probation', 'no peer has confirmed this configuration yet');
-  const manual = evaluate([{ key_id: 'z', override: 'trust' }], [row(1, 'z', 35, 0)]).installs.get('z');
-  assert.equal(manual.status, 'trusted');
+  assert.equal(counts(subs[0]), true); assert.equal(counts(subs[8]), false, 'runs of a flagged install do not count');
+  const pair = evaluate(installs.slice(0, 2), subs.slice(0, 6)).installs;
+  assert.deepEqual([pair.get('a').compared, pair.get('a').corroborated], [0, 1], 'a single peer within 20% corroborates');
+  const alone = evaluate([{ key_id: 'z' }], [row(1, 'z', 35, 0)]);
+  assert.equal(alone.installs.get('z').status, 'verified', 'no peers needed: one verified run is enough');
+  assert.equal(alone.counts({ ...row(1, 'z', 35, 0) }), true);
+  const pending = evaluate([{ key_id: 'p' }], [row(1, 'p', 35, 0, { evidence_status: 'missing' }), row(2, 'p', 35, 0, { evidence_status: 'failed' })]);
+  assert.equal(pending.installs.get('p').status, 'pending'); assert.equal(pending.counts(row(1, 'p', 35, 0, { evidence_status: 'missing' })), false);
+  assert.ok(pending.installs.get('p').trust < alone.installs.get('z').trust);
+  const manual = evaluate([{ key_id: 'z', override: 'trust' }], [row(1, 'z', 35, 0, { evidence_status: 'missing' })]);
+  assert.equal(manual.installs.get('z').status, 'trusted'); assert.equal(manual.counts(row(1, 'z', 35, 0, { evidence_status: 'missing' })), true);
+  const outlier = evaluate([{ key_id: 'a' }, { key_id: 'b' }, { key_id: 'o' }], [...subs.slice(0, 6), row(20, 'o', 80, 0)]);
+  assert.equal(outlier.flags.get(20), 'peer_outlier'); assert.equal(outlier.counts(row(20, 'o', 80, 0)), false);
 });
 
 test('recommendation compares parameters inside the same model + quant first', async () => {

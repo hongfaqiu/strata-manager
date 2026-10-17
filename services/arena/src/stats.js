@@ -22,6 +22,8 @@ export function filterOutliers(values) {
 export const PARAM_KEYS = ['ctx', 'kv', 'parallel', 'poolWorkers', 'expertCache', 'pcieFrac', 'gpuCount', 'vision'];
 export const confidence = n => n >= 25 ? 'high' : n >= 10 ? 'medium' : n >= 3 ? 'low' : 'none';
 export const MIN_MACHINES = 3;
+/** A verified run forms a row on its own; rows with fewer than MIN_MACHINES are labeled low-confidence and never drive recommendations. */
+export const MIN_ROW_MACHINES = 1;
 
 /**
  * Builds leaderboard rows from raw submissions.
@@ -54,7 +56,7 @@ export function aggregate(subs) {
           d32: median(latest.map(r => r.decode_32k)), d128: median(latest.map(r => r.decode_128k)), ram: median(latest.map(r => r.peak_ram_gb)), vram: median(latest.map(r => r.peak_vram_gb)) };
       });
       const kept = filterOutliers(machines);
-      if (!kept.length || (!c.seed && kept.length < MIN_MACHINES)) continue;
+      if (!kept.length || (!c.seed && kept.length < MIN_ROW_MACHINES)) continue;
       const d = kept.map(m => m.decode).sort((a, b) => a - b);
       rows.push({ hw: c.hw, params: c.params, seed: c.seed, machines: kept.length, confidence: c.seed ? 'seed' : confidence(kept.length),
         decode: { p25: r1(quantile(d, 0.25)), median: r1(quantile(d, 0.5)), p75: r1(quantile(d, 0.75)) },

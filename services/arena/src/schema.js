@@ -2,28 +2,28 @@
 // so a client that starts sending something new (a path, a hostname) fails loudly instead of leaking.
 export const SCHEMA_VERSION = 1;
 export const CONSENT_VERSION = 1;
-export const MAX_BODY_BYTES = 32 * 1024;
+export const MAX_BODY_BYTES = 64 * 1024;
 
 export class ArenaError extends Error {
   constructor(status, code, message) { super(message ? code + ': ' + message : code); this.status = status; this.code = code; }
 }
-const bad = (code, message) => { throw new ArenaError(400, code, message); };
+export const bad = (code, message) => { throw new ArenaError(400, code, message); };
 const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
-function keys(obj, allowed, where) {
+export function keys(obj, allowed, where) {
   if (!isObj(obj)) bad('invalid_' + where, where + ' must be an object');
   for (const k of Object.keys(obj)) if (!allowed.includes(k)) bad('unknown_field', `${where}.${k} is not allowed`);
 }
-const str = (v, re, where, nullable = false) => {
+export const str = (v, re, where, nullable = false) => {
   if (v === null && nullable) return null;
   if (typeof v !== 'string' || !re.test(v)) bad('invalid_' + where, where + ' is invalid');
   return v;
 };
-const int = (v, min, max, where, nullable = false) => {
+export const int = (v, min, max, where, nullable = false) => {
   if (v === null && nullable) return null;
   if (!Number.isSafeInteger(v) || v < min || v > max) bad('invalid_' + where, where + ' out of range');
   return v;
 };
-const num = (v, min, max, where, nullable = true) => {
+export const num = (v, min, max, where, nullable = true) => {
   if (v === null && nullable) return null;
   if (typeof v !== 'number' || !Number.isFinite(v) || v < min || v > max) bad('invalid_' + where, where + ' out of range');
   return Math.round(v * 1000) / 1000;
@@ -42,7 +42,7 @@ export function pickTier(tiers, key) {
 
 /** Validates a parsed body and returns the normalized submission. The install is identified by its signing key, never by the body. Throws ArenaError. */
 export function validateSubmission(body) {
-  keys(body, ['schema', 'consentVersion', 'app', 'strata', 'kind', 'day', 'hw', 'model', 'params', 'tiers', 'scenario'], 'body');
+  keys(body, ['schema', 'consentVersion', 'evidence', 'evidenceSig', 'app', 'strata', 'kind', 'day', 'hw', 'model', 'params', 'tiers', 'scenario'], 'body');
   if (body.schema !== SCHEMA_VERSION) bad('unsupported_schema');
   int(body.consentVersion, 1, 1000, 'consentVersion');
   if (body.consentVersion < CONSENT_VERSION) bad('consent_outdated', 'consent version is older than the current policy');

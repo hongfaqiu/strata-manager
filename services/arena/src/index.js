@@ -1,6 +1,7 @@
 import { ArenaError, MAX_BODY_BYTES, validateSubmission, pickTier, CONSENT_VERSION, SCHEMA_VERSION } from './schema.js';
 import { aggregate, filterRows, recommend } from './stats.js';
 import { evaluate } from './trust.js';
+import { parseEvidence, checkEvidence, evidenceMessage } from './evidence.js';
 import { sha256Hex, hmacHex, safeEqual, signingMessage, verifyEd25519, hexToBytes, leadingZeroBits, powMessage } from './crypto.js';
 
 const DAY = 86_400_000;
@@ -9,7 +10,7 @@ export const LIMITS = { installPerDay: 30, ipPerDay: 120, deletePerDay: 10, regi
 const SIG_WINDOW_MS = 10 * 60_000;
 const CHALLENGE_TTL_MS = 10 * 60_000;
 /** Default proof-of-work difficulty (leading zero bits of SHA-256). Override with the POW_BITS variable. */
-export const DEFAULT_POW_BITS = 25;
+export const DEFAULT_POW_BITS = 22;
 const HEX64 = /^[a-f0-9]{64}$/;
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, OPTIONS', 'Access-Control-Max-Age': '86400' };
@@ -77,7 +78,7 @@ async function rateLimit(env, request, keyId, now, perInstall, kind) {
 }
 
 // ---------- registration: proof of work + app key + proof of possession ----------
-/** Current difficulty: POW_BITS (default 25), two bits harder while registrations surge past POW_SURGE per hour. */
+/** Current difficulty: POW_BITS (default 22), two bits harder while registrations surge past POW_SURGE per hour. */
 export async function powBits(env, now) {
   const base = Math.min(32, Math.max(8, Number(env.POW_BITS) || DEFAULT_POW_BITS));
   const surge = Number(env.POW_SURGE) || 30;
@@ -120,8 +121,8 @@ async function register(request, env, now) {
   if (existing) return json({ keyId, status: existing.status, registered: false }, 200);
   const ip = await ipKey(env, request, now, 'register');
   if (ip) await bump(env, now, [[ip, LIMITS.registerPerIpDay]]);
-  await env.DB.prepare('INSERT INTO installs (key_id, public_key, registered_at, last_seen_at, pow_bits) VALUES (?, ?, ?, ?, ?)').bind(keyId, publicKey, now, now, bits).run();
-  return json({ keyId, status: 'probation', registered: true }, 201);
+  await env.DB.prepare('INSERT INTO installs (key_id, public_key, registered_at, last_seen_at, pow_bits, status) VALUES (?, ?, ?, ?, ?, ?)').bind(keyId, publicKey, now, now, bits, 'pending').run();
+  return json({ keyId, status: 'pending', registered: true }, 201);
 }
 
 // ---------- submissions ----------
@@ -134,6 +135,14 @@ async function submit(request, env, now) {
   const s = validateSubmission(body);
   const keyId = install.key_id;
   await rateLimit(env, request, keyId, now, LIMITS.installPerDay, 'submit');
+  // Run evidence, signed by the install key over its exact text, then checked for internal consistency.
+  let evidence = { status: 'missing', reason: null, text: null, sig: null };
+  if (body.evidence !== undefined && body.evidence !== null) {
+    if (typeof body.evidenceSig !== 'string' || !/^[a-f0-9]{128}$/.test(body.evidenceSig)
+      || !(await verifyEd25519(install.public_key, body.evidenceSig, evidenceMessage(keyId, await sha256Hex(String(body.evidence)))))) throw new ArenaError(400, 'invalid_evidence_signature');
+    const verdict = checkEvidence(s, parseEvidence(body.evidence));
+    evidence = { status: verdict.status, reason: verdict.reasons.join(',').slice(0, 240) || null, text: body.evidence, sig: body.evidenceSig };
+  } else if (body.evidenceSig !== undefined) throw new ArenaError(400, 'invalid_evidence_signature');
   const seedToken = request.headers.get('X-Arena-Seed');
   const seed = !!(seedToken && env.SEED_TOKEN && safeEqual(await sha256Hex(seedToken), await sha256Hex(env.SEED_TOKEN)));
   const k8 = s.kind === 'context' ? pickTier(s.tiers, 'k8') : null, k32 = s.kind === 'context' ? pickTier(s.tiers, 'k32') : null, k128 = s.kind === 'context' ? pickTier(s.tiers, 'k128') : null;
@@ -142,15 +151,22 @@ async function submit(request, env, now) {
   const id = crypto.randomUUID();
   await env.DB.batch([env.DB.prepare(`INSERT INTO submissions (id, install_hash, received_at, day, schema_version, consent_version, app_version, strata_version, kind, os, arch, cpu, ram_gb, wsl,
     gpu_vendor, gpu_name, gpu_count, vram_gb, pcie, family, quant, model_sha256, model_size_gb, ctx, kv, parallel, pool_workers, expert_cache, pcie_frac, vision,
-    decode_8k, prefill_8k, ttft_8k_ms, decode_32k, decode_128k, peak_vram_gb, peak_ram_gb, result_json, seed)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+    decode_8k, prefill_8k, ttft_8k_ms, decode_32k, decode_128k, peak_vram_gb, peak_ram_gb, result_json, seed, evidence_status, evidence_reason, evidence_json, evidence_sig)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
     id, keyId, now, s.day, SCHEMA_VERSION, s.consentVersion, s.app, s.strata, s.kind, s.hw.os, s.hw.arch, s.hw.cpu, s.hw.ramGB, s.hw.wsl ? 1 : 0,
     primary?.vendor ?? null, primary?.name ?? null, s.params.gpuCount, primary?.vramGB ?? 0, s.hw.pcie, s.model.family, s.model.quant, s.model.sha256, s.model.sizeGB,
     s.params.ctx, s.params.kv, s.params.parallel, s.params.poolWorkers, s.params.expertCache, s.params.pcieFrac, s.params.vision ? 1 : 0,
     k8?.decode ?? null, k8?.prefill ?? null, k8?.ttftMs ?? null, k32?.decode ?? null, k128?.decode ?? null, maxOf('peakVramGB'), maxOf('peakRamGB'),
-    JSON.stringify(s.kind === 'context' ? { tiers: s.tiers } : { scenario: s.scenario }), seed ? 1 : 0),
+    JSON.stringify(s.kind === 'context' ? { tiers: s.tiers } : { scenario: s.scenario }), seed ? 1 : 0, evidence.status, evidence.reason, evidence.text, evidence.sig),
     env.DB.prepare('UPDATE installs SET last_seen_at = ? WHERE key_id = ?').bind(now, keyId)]);
-  return json({ accepted: true, id, ranked: !!k8, seed, status: install.status }, 201);
+  // A verified run counts right away: rebuild the aggregates now instead of waiting for the hourly cron.
+  let counted = false;
+  if (k8) {
+    await recompute(env, now);
+    const row = await env.DB.prepare('SELECT s.flag, i.status FROM submissions s JOIN installs i ON i.key_id = s.install_hash WHERE s.id = ?').bind(id).first();
+    counted = !row?.flag && !['banned', 'flagged'].includes(row?.status) && (evidence.status === 'verified' || seed || row?.status === 'trusted');
+  }
+  return json({ accepted: true, id, ranked: !!k8, seed, evidence: evidence.status, reasons: evidence.reason ? evidence.reason.split(',') : [], counted }, 201);
 }
 
 /** Withdraw: deletes every submission and the key registration. A banned key keeps only a tombstone (key_id + ban). */
@@ -168,34 +184,35 @@ async function deleteMine(request, env, now) {
       : env.DB.prepare('DELETE FROM installs WHERE key_id = ?').bind(install.key_id),
     env.DB.prepare('DELETE FROM rate_limits WHERE key LIKE ?').bind('in:submit:' + install.key_id.slice(0, 32)),
   ]);
+  // Withdrawn runs leave the public aggregates right away as well.
+  if (r.meta?.changes) await recompute(env, now);
   return json({ deleted: r.meta?.changes ?? 0, unregistered: true });
 }
 
 // ---------- aggregates ----------
 const SUB_COLUMNS = `id, install_hash, kind, received_at, family, quant, gpu_name, gpu_count, vram_gb, ram_gb, ctx, kv, parallel, pool_workers, expert_cache, pcie_frac, vision,
-  decode_8k, prefill_8k, ttft_8k_ms, decode_32k, decode_128k, peak_vram_gb, peak_ram_gb, seed, flag`;
+  decode_8k, prefill_8k, ttft_8k_ms, decode_32k, decode_128k, peak_vram_gb, peak_ram_gb, seed, flag, evidence_status`;
 async function inChunks(env, stmts, size = 90) { for (let i = 0; i < stmts.length; i += size) await env.DB.batch(stmts.slice(i, i + size)); }
 
-/** Reputation pass, then aggregates from trusted, unflagged runs only (maintainer seed rows are always trusted). */
+/** Reputation pass, then aggregates from counting runs only: verified evidence (or maintainer trust), unflagged; seed rows always count. */
 export async function recompute(env, now = Date.now()) {
   const { results: installs } = await env.DB.prepare('SELECT key_id, override, status, trust, runs, days, flagged, consistent, compared, corroborated FROM installs').all();
   const { results: subs } = await env.DB.prepare(`SELECT ${SUB_COLUMNS} FROM submissions WHERE hidden = 0 AND received_at >= ?`).bind(now - RETENTION_MS).all();
-  const { installs: verdicts, flags } = evaluate(installs, subs);
+  const { installs: verdicts, flags, counts } = evaluate(installs, subs);
   const updates = [];
   for (const inst of installs) {
     const v = verdicts.get(inst.key_id);
-    updates.push(env.DB.prepare('UPDATE installs SET status = ?, trust = ?, runs = ?, days = ?, flagged = ?, consistent = ?, compared = ?, corroborated = ?, computed_at = ? WHERE key_id = ?')
-      .bind(v.status, v.trust, v.runs, v.days, v.flagged, v.consistent, v.compared, v.corroborated, now, inst.key_id));
+    updates.push(env.DB.prepare('UPDATE installs SET status = ?, trust = ?, runs = ?, verified = ?, days = ?, flagged = ?, consistent = ?, compared = ?, corroborated = ?, computed_at = ? WHERE key_id = ?')
+      .bind(v.status, v.trust, v.runs, v.verified, v.days, v.flagged, v.consistent, v.compared, v.corroborated, now, inst.key_id));
   }
   for (const s of subs) { const f = flags.get(s.id) ?? null; if (f !== (s.flag ?? null)) updates.push(env.DB.prepare('UPDATE submissions SET flag = ? WHERE id = ?').bind(f, s.id)); }
   await inChunks(env, updates);
 
-  const trusted = s => s.seed || verdicts.get(s.install_hash)?.status === 'trusted';
-  const ranked = subs.filter(s => s.kind === 'context' && s.decode_8k !== null && !flags.get(s.id) && trusted(s));
-  const groups = aggregate(ranked);
-  const publicInstalls = new Set(subs.filter(s => !s.seed && trusted(s)).map(s => s.install_hash));
-  const pending = new Set(subs.filter(s => !s.seed && ['probation', 'flagged'].includes(verdicts.get(s.install_hash)?.status)).map(s => s.install_hash));
-  const summary = { computedAt: now, machines: publicInstalls.size, runs: subs.filter(s => !s.seed && publicInstalls.has(s.install_hash)).length, pendingMachines: pending.size,
+  const counting = subs.filter(s => counts(s));
+  const groups = aggregate(counting.filter(s => s.kind === 'context' && s.decode_8k !== null));
+  const publicInstalls = new Set(counting.filter(s => !s.seed).map(s => s.install_hash));
+  const pending = new Set(subs.filter(s => !s.seed && !publicInstalls.has(s.install_hash)).map(s => s.install_hash));
+  const summary = { computedAt: now, machines: publicInstalls.size, runs: counting.filter(s => !s.seed).length, pendingMachines: pending.size,
     groups: groups.map(({ rows, ...g }) => ({ ...g, top: rows.slice(0, 3).map(r => ({ hw: r.hw, params: r.params, seed: r.seed, machines: r.machines, decode: r.decode })) })) };
   await env.DB.batch([env.DB.prepare('DELETE FROM aggregates'), env.DB.prepare('INSERT INTO aggregates (key, json, computed_at) VALUES (?, ?, ?)').bind('groups', JSON.stringify(summary), now),
     env.DB.prepare('INSERT INTO aggregates (key, json, computed_at) VALUES (?, ?, ?)').bind('all', JSON.stringify(groups), now)]);
@@ -217,7 +234,7 @@ async function cached(env, key) {
   const row = await env.DB.prepare('SELECT json, computed_at FROM aggregates WHERE key = ?').bind(key).first();
   return row ? JSON.parse(row.json) : null;
 }
-const PUBLIC_CACHE = { ...CORS, 'Cache-Control': 'public, max-age=300' };
+const PUBLIC_CACHE = { ...CORS, 'Cache-Control': 'public, max-age=60' };
 
 // ---------- maintainer ----------
 async function requireAdmin(request, env) {
@@ -226,7 +243,7 @@ async function requireAdmin(request, env) {
   if (!env.ADMIN_TOKEN) throw new ArenaError(503, 'not_configured');
   if (!token || !safeEqual(await sha256Hex(token), await sha256Hex(String(env.ADMIN_TOKEN)))) throw new ArenaError(401, 'unauthorized');
 }
-const installView = i => ({ keyId: i.key_id, status: i.status, trust: i.trust, override: i.override, runs: i.runs, days: i.days, flagged: i.flagged,
+const installView = i => ({ keyId: i.key_id, status: i.status, trust: i.trust, override: i.override, runs: i.runs, verified: i.verified, days: i.days, flagged: i.flagged,
   consistent: i.consistent, compared: i.compared, corroborated: i.corroborated, registeredAt: i.registered_at, lastSeenAt: i.last_seen_at, powBits: i.pow_bits });
 async function admin(request, env, now, path) {
   await requireAdmin(request, env);
@@ -236,13 +253,17 @@ async function admin(request, env, now, path) {
     const { results } = status
       ? await env.DB.prepare('SELECT * FROM installs WHERE status = ? ORDER BY last_seen_at DESC LIMIT ?').bind(status, limit).all()
       : await env.DB.prepare('SELECT * FROM installs ORDER BY last_seen_at DESC LIMIT ?').bind(limit).all();
-    return json({ pow: await powBits(env, now), installs: results.map(installView) }, 200, NO_STORE);
+    // Overview counts: installs per status and runs per evidence status.
+    const { results: byStatus } = await env.DB.prepare('SELECT status, COUNT(*) AS n FROM installs GROUP BY status').all();
+    const { results: byEvidence } = await env.DB.prepare('SELECT evidence_status, COUNT(*) AS n FROM submissions WHERE hidden = 0 GROUP BY evidence_status').all();
+    return json({ pow: await powBits(env, now), counts: { installs: Object.fromEntries(byStatus.map(r => [r.status, r.n])), runs: Object.fromEntries(byEvidence.map(r => [r.evidence_status, r.n])) },
+      installs: results.map(installView) }, 200, NO_STORE);
   }
   const inst = /^\/v1\/admin\/installs\/([a-f0-9]{64})$/.exec(path);
   if (inst && request.method === 'GET') {
     const row = await env.DB.prepare('SELECT * FROM installs WHERE key_id = ?').bind(inst[1]).first();
     if (!row) throw new ArenaError(404, 'not_found');
-    const { results } = await env.DB.prepare(`SELECT id, received_at, kind, family, quant, gpu_name, vram_gb, ram_gb, ctx, kv, parallel, pool_workers, gpu_count, decode_8k, prefill_8k, ttft_8k_ms, flag, hidden, seed
+    const { results } = await env.DB.prepare(`SELECT id, received_at, kind, family, quant, gpu_name, vram_gb, ram_gb, ctx, kv, parallel, pool_workers, gpu_count, decode_8k, prefill_8k, ttft_8k_ms, flag, hidden, seed, evidence_status, evidence_reason
       FROM submissions WHERE install_hash = ? ORDER BY received_at DESC LIMIT 200`).bind(inst[1]).all();
     return json({ install: installView(row), submissions: results }, 200, NO_STORE);
   }
@@ -256,6 +277,13 @@ async function admin(request, env, now, path) {
     return json(installView(await env.DB.prepare('SELECT * FROM installs WHERE key_id = ?').bind(inst[1]).first()), 200, NO_STORE);
   }
   const sub = /^\/v1\/admin\/submissions\/([a-f0-9-]{36})$/.exec(path);
+  if (sub && request.method === 'GET') {
+    // Full audit view: the stored signed evidence can be re-verified against the install's public key.
+    const row = await env.DB.prepare(`SELECT s.id, s.install_hash AS keyId, s.received_at, s.kind, s.family, s.quant, s.result_json, s.flag, s.hidden, s.seed,
+      s.evidence_status, s.evidence_reason, s.evidence_json, s.evidence_sig, i.public_key FROM submissions s LEFT JOIN installs i ON i.key_id = s.install_hash WHERE s.id = ?`).bind(sub[1]).first();
+    if (!row) throw new ArenaError(404, 'not_found');
+    return json(row, 200, NO_STORE);
+  }
   if (sub && request.method === 'POST') {
     const { body } = await readBody(request);
     if (typeof body?.hidden !== 'boolean') throw new ArenaError(400, 'invalid_body');

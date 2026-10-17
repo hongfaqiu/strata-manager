@@ -39,3 +39,15 @@ test('builds without the CI app key show the board read-only and never offer con
   assert.match(page, /t\('arenaReadOnly'\)/);
   assert.doesNotMatch(page, /installId/, 'the preview shows no install identifier');
 });
+
+test('uploads say whether the run evidence verified, and the hint explains immediate counting', () => {
+  const page = read('./ArenaPage.tsx'), strings = read('../ArenaStrings.ts');
+  assert.match(page, /entry\.detail === 'verified' \|\| entry\.detail === 'pending'/);
+  assert.match(page, /t\('arenaVerifiedHint'\)/);
+  for (const key of ['arenaVerifiedHint', 'arenaLog_verified', 'arenaLog_pending']) {
+    const line = strings.split('\n').find(l => l.trim().startsWith(key + ':'));
+    assert.ok(line, key);
+    assert.equal(line.match(/'(?:[^'\\]|\\.)*'/g).length, 10, `${key} has all 10 languages`);
+  }
+  assert.doesNotMatch(strings, /2 天内上传 3 次|3 uploads over at least 2 days/, 'no probation wording left');
+});

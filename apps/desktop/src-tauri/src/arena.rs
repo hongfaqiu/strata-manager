@@ -77,7 +77,64 @@ pub struct Payload {
     tiers: Option<Vec<Tier>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     scenario: Option<Scenario>,
+    /// Run evidence of a context run; uploaded as signed text next to the result, never inside it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    evidence: Option<Evidence>,
 }
+/// Content-free trace of the in-app run (services/arena/src/evidence.js): offsets, timings, token counts,
+/// a downsampled resource series and engine counters. Field order here is the signed serialization.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct Evidence {
+    v: u8,
+    engine: Option<String>,
+    duration_ms: u64,
+    interval_ms: u64,
+    runs: Vec<EvidenceRun>,
+    series: EvidenceSeries,
+    counters: Option<EvidenceCounters>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct EvidenceRun {
+    ctx: u64,
+    start_ms: u64,
+    end_ms: u64,
+    ttft_ms: f64,
+    prompt_tokens: u64,
+    cached_tokens: Option<u64>,
+    completion_tokens: u64,
+    prefill: f64,
+    decode: f64,
+    resource_samples: u64,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct EvidenceSeries {
+    count: u64,
+    step_ms: u64,
+    #[serde(rename = "vramGB")]
+    vram_gb: Vec<Option<f64>>,
+    #[serde(rename = "ramGB")]
+    ram_gb: Vec<Option<f64>>,
+    gpu_util: Vec<Option<f64>>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EvidenceCounters {
+    before: Counters,
+    after: Counters,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct Counters {
+    requests: u64,
+    prompt_tokens: u64,
+    output_tokens: u64,
+}
+const EVIDENCE_VERSION: u8 = 1;
+const MAX_EVIDENCE_RUNS: usize = 48;
+const MAX_EVIDENCE_POINTS: usize = 121;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Hardware {
@@ -174,6 +231,9 @@ impl Payload {
         strings.extend(p.hw.pcie.iter());
         strings.extend(p.model.sha256.iter());
         strings.extend(p.params.expert_cache.iter());
+        if let Some(e) = &p.evidence {
+            strings.extend(e.engine.iter());
+        }
         for gpu in &p.hw.gpus {
             strings.push(&gpu.vendor);
             strings.push(&gpu.name);
@@ -197,6 +257,25 @@ impl Payload {
         }
         if let Some(s) = &p.scenario {
             numbers.extend([s.decode, s.prefill, s.ttft_ms]);
+        }
+        if let Some(e) = &p.evidence {
+            for r in &e.runs {
+                numbers.extend([Some(r.ttft_ms), Some(r.prefill), Some(r.decode)]);
+            }
+            for series in [&e.series.vram_gb, &e.series.ram_gb, &e.series.gpu_util] {
+                numbers.extend(series.iter().copied());
+            }
+            let points = e.series.vram_gb.len();
+            let evidence_ok = e.v == EVIDENCE_VERSION
+                && p.kind == "context"
+                && e.runs.len() <= MAX_EVIDENCE_RUNS
+                && (1..=MAX_EVIDENCE_POINTS).contains(&points)
+                && e.series.ram_gb.len() == points
+                && e.series.gpu_util.len() == points
+                && e.series.gpu_util.iter().flatten().all(|u| *u <= 100.0);
+            if !evidence_ok {
+                return Err("arena_payload_invalid: evidence".into());
+            }
         }
         if !finite(&numbers) {
             return Err("arena_payload_invalid: non-finite number".into());
@@ -523,11 +602,27 @@ fn signed_headers(
     }
     headers
 }
+/// What the install key signs for run evidence: a domain tag, the key id and the SHA-256 of the exact evidence text.
+fn evidence_message(key_id: &str, text: &str) -> String {
+    format!(
+        "strata-arena-evidence|v{EVIDENCE_VERSION}|{key_id}|{}",
+        hex(&Sha256::digest(text.as_bytes()))
+    )
+}
 /// Upload body: the validated payload plus the consent version, nothing else. The install is identified by its key.
-fn upload_body(payload: &Payload) -> Result<Vec<u8>, String> {
+/// Run evidence travels as its exact serialized text plus the install key's signature over it, so the server can
+/// store and re-verify it independently of the request signature.
+fn upload_body(payload: &Payload, install: Option<(&str, &SigningKey)>) -> Result<Vec<u8>, String> {
     let mut value = serde_json::to_value(payload).map_err(|e| e.to_string())?;
     let object: &mut Map<String, Value> = value.as_object_mut().ok_or("payload")?;
+    object.remove("evidence");
     object.insert("consentVersion".into(), json!(CONSENT_VERSION));
+    if let (Some(evidence), Some((key_id, signing))) = (&payload.evidence, install) {
+        let text = serde_json::to_string(evidence).map_err(|e| e.to_string())?;
+        let signature = signing.sign(evidence_message(key_id, &text).as_bytes());
+        object.insert("evidenceSig".into(), json!(hex(&signature.to_bytes())));
+        object.insert("evidence".into(), json!(text));
+    }
     serde_json::to_vec(&value).map_err(|e| e.to_string())
 }
 async fn signed_request(
@@ -936,8 +1031,11 @@ async fn flush(path: &Path, force: bool) {
             }
         };
         let (payload, key) = next;
-        let outcome = match (upload_body(&payload), load_signing_key(path, &key)) {
-            (Ok(body), Ok(signing)) => {
+        let prepared = load_signing_key(path, &key).and_then(|signing| {
+            upload_body(&payload, Some((&key.key_id, &signing))).map(|body| (body, signing))
+        });
+        let outcome = match prepared {
+            Ok((body, signing)) => {
                 signed_request(
                     reqwest::Method::POST,
                     "/v1/submit",
@@ -946,7 +1044,7 @@ async fn flush(path: &Path, force: bool) {
                 )
                 .await
             }
-            (Err(e), _) | (_, Err(e)) => Err(e),
+            Err(e) => Err(e),
         };
         let _guard = lock().lock().await;
         let mut arena = load(path);
@@ -977,9 +1075,15 @@ fn apply_upload(
 ) -> bool {
     let (kind, group) = (payload.kind.clone(), Some(payload.group()));
     match outcome {
-        Ok((status, _)) if (200..300).contains(&status) => {
+        Ok((status, response)) if (200..300).contains(&status) => {
             arena.queue.remove(index);
-            arena.push_log(&kind, "uploaded", None, group);
+            // "verified": the run evidence checked out and the result counts now; otherwise it waits for review.
+            let detail = match response["counted"].as_bool() {
+                Some(true) => Some("verified".to_string()),
+                Some(false) if payload.kind == "context" => Some("pending".to_string()),
+                _ => None,
+            };
+            arena.push_log(&kind, "uploaded", detail, group);
             false
         }
         Ok((401, response)) if error_code(&response) == "unregistered" => {
@@ -1036,6 +1140,22 @@ mod tests {
             "tiers": [{ "ctx": 8192, "prefill": 2410.2, "decode": 36.4, "ttftMs": 3150, "peakVramGB": 21.4, "peakRamGB": 61.5, "ok": true }]
         })
     }
+    /// A context payload whose run evidence is internally consistent (the server marks it verified).
+    fn verified_payload() -> Value {
+        let mut p = payload();
+        p["evidence"] = json!({
+            "v": 1, "engine": "0.1.44", "durationMs": 22000, "intervalMs": 1000,
+            "runs": [{ "ctx": 8192, "startMs": 2000, "endMs": 19800, "ttftMs": 3150, "promptTokens": 7592, "cachedTokens": 0,
+                "completionTokens": 512, "prefill": 2410.2, "decode": 36.4, "resourceSamples": 19 }],
+            "series": { "count": 21, "stepMs": 1000,
+                "vramGB": (0..22).map(|i| if i == 12 { 21.4 } else { 20.1 }).collect::<Vec<_>>(),
+                "ramGB": (0..22).map(|i| if i == 12 { 61.5 } else { 60.2 }).collect::<Vec<_>>(),
+                "gpuUtil": (0..22).map(|i| if i < 2 { 4 } else { 86 }).collect::<Vec<_>>() },
+            "counters": { "before": { "requests": 120, "promptTokens": 4200000, "outputTokens": 61000 },
+                "after": { "requests": 121, "promptTokens": 4207592, "outputTokens": 61512 } }
+        });
+        p
+    }
     fn temp_state() -> PathBuf {
         state_path(
             &std::env::temp_dir().join(format!("arena-state-{}", uuid::Uuid::new_v4().simple())),
@@ -1085,9 +1205,59 @@ mod tests {
     }
 
     #[test]
+    fn evidence_is_uploaded_as_signed_text_and_only_in_the_whitelisted_shape() {
+        use ed25519_dalek::{Signature, Verifier};
+        let signing = SigningKey::from_bytes(&[7u8; 32]);
+        let key_id = hex(&Sha256::digest(signing.verifying_key().as_bytes()));
+        let parsed = Payload::parse(verified_payload()).unwrap();
+        let body: Value =
+            serde_json::from_slice(&upload_body(&parsed, Some((&key_id, &signing))).unwrap())
+                .unwrap();
+        let text = body["evidence"].as_str().expect("evidence travels as text");
+        let evidence: Value = serde_json::from_str(text).unwrap();
+        assert_eq!(evidence["runs"][0]["promptTokens"], 7592);
+        assert_eq!(evidence["series"]["vramGB"].as_array().unwrap().len(), 22);
+        let signature: [u8; 64] = (0..64)
+            .map(|i| {
+                u8::from_str_radix(&body["evidenceSig"].as_str().unwrap()[i * 2..i * 2 + 2], 16)
+                    .unwrap()
+            })
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+        signing
+            .verifying_key()
+            .verify(
+                evidence_message(&key_id, text).as_bytes(),
+                &Signature::from_bytes(&signature),
+            )
+            .expect("signed by the install key over the exact text");
+        assert!(evidence_message(&key_id, text).starts_with("strata-arena-evidence|v1|"));
+        // Without a key nothing about the evidence is sent.
+        let unsigned: Value = serde_json::from_slice(&upload_body(&parsed, None).unwrap()).unwrap();
+        assert!(unsigned.get("evidence").is_none() && unsigned.get("evidenceSig").is_none());
+        // Anything outside the evidence schema is refused before it is queued.
+        let mut leaky = verified_payload();
+        leaky["evidence"]["runs"][0]["output"] = json!("hello");
+        assert!(Payload::parse(leaky).is_err());
+        let mut prompt = verified_payload();
+        prompt["evidence"]["prompt"] = json!("secret");
+        assert!(Payload::parse(prompt).is_err());
+        let mut texty = verified_payload();
+        texty["evidence"]["engine"] = json!("C:/strata");
+        assert!(Payload::parse(texty).is_err());
+        let mut uneven = verified_payload();
+        uneven["evidence"]["series"]["ramGB"] = json!([1.0]);
+        assert!(Payload::parse(uneven).is_err());
+        let mut util = verified_payload();
+        util["evidence"]["series"]["gpuUtil"][3] = json!(400);
+        assert!(Payload::parse(util).is_err());
+    }
+
+    #[test]
     fn accepts_the_whitelisted_shape_and_round_trips_it() {
         let parsed = Payload::parse(payload()).unwrap();
-        let body: Value = serde_json::from_slice(&upload_body(&parsed).unwrap()).unwrap();
+        let body: Value = serde_json::from_slice(&upload_body(&parsed, None).unwrap()).unwrap();
         let mut expected = payload();
         expected["consentVersion"] = json!(1);
         // Numbers may come back as floats (96 -> 96.0); compare them numerically.
@@ -1378,9 +1548,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(path.parent().unwrap().parent().unwrap());
     }
 
-    /// End-to-end against the deployed service with the real client code: register (proof of work), upload,
-    /// check probation through the maintainer API, withdraw, and confirm the key is gone. Needs a build with
-    /// STRATA_ARENA_APP_KEY; run with `--ignored`. ARENA_ADMIN_TOKEN (runtime) enables the maintainer checks.
+    /// End-to-end against the deployed service with the real client code: register (proof of work), upload a run
+    /// with signed evidence, see it on the public leaderboard right away, withdraw, and confirm it is gone. Needs a
+    /// build with STRATA_ARENA_APP_KEY; run with `--ignored`. ARENA_ADMIN_TOKEN (runtime) enables the maintainer checks.
     #[test]
     #[ignore]
     fn live_register_submit_withdraw() {
@@ -1394,13 +1564,32 @@ mod tests {
                 auto_upload: true,
                 ..Default::default()
             };
+            let mut live = verified_payload();
+            // A distinctive configuration so the row is unmistakably this test's.
+            live["params"]["poolWorkers"] = json!(13);
             state.queue.push(Queued {
-                payload: Payload::parse(payload()).unwrap(),
+                payload: Payload::parse(live).unwrap(),
                 attempts: 0,
                 next_at: 0,
             });
             save(&path, &state).unwrap();
             let started = std::time::Instant::now();
+            let board = || async {
+                let lb: Value = client()
+                    .get(format!("{}/v1/leaderboard?group=swift:IQ3_S", endpoint()))
+                    .send()
+                    .await
+                    .unwrap()
+                    .json()
+                    .await
+                    .unwrap();
+                lb["rows"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|r| r["params"]["poolWorkers"] == 13 && r["decode"]["median"] == 36.4)
+            };
+            assert!(!board().await, "no leftover test row");
             assert!(
                 ensure_registered(&path, true).await,
                 "{:?}",
@@ -1414,6 +1603,20 @@ mod tests {
             let after = load(&path);
             assert!(after.queue.is_empty(), "{:?}", after.log);
             assert_eq!(after.log[0].status, "uploaded", "{:?}", after.log);
+            assert_eq!(
+                after.log[0].detail.as_deref(),
+                Some("verified"),
+                "{:?}",
+                after.log
+            );
+            assert!(
+                board().await,
+                "a verified run is on the public leaderboard immediately"
+            );
+            println!(
+                "join time (key + registration + upload + visible on the leaderboard): {:.2}s",
+                started.elapsed().as_secs_f64()
+            );
             let admin = std::env::var("ARENA_ADMIN_TOKEN").ok();
             if let Some(token) = &admin {
                 let detail: Value = client()
@@ -1426,11 +1629,16 @@ mod tests {
                     .await
                     .unwrap();
                 println!("server view: {}", detail["install"]);
-                assert_eq!(detail["install"]["status"], "probation");
+                assert_eq!(detail["install"]["status"], "verified");
+                assert_eq!(detail["submissions"][0]["evidence_status"], "verified");
                 assert_eq!(detail["submissions"].as_array().unwrap().len(), 1);
             }
             let withdrawn = withdraw_at(&path, false).await.unwrap();
             assert_eq!(withdrawn["deleted"], 1);
+            assert!(
+                !board().await,
+                "withdrawn runs leave the leaderboard right away"
+            );
             assert!(!secret_file(&path).exists());
             if let Some(token) = &admin {
                 let status = client()
