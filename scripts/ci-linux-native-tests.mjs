@@ -21,6 +21,7 @@ function workflowBinding() {
   return {repository, runId, attempt};
 }
 export const IGNORED_POLICY = Object.freeze({
+  'strata-manager:arena::tests::live_register_submit_withdraw': 'Explicit live Arena register/submit/withdraw acceptance; requires a build with STRATA_ARENA_APP_KEY.',
   'strata-manager:configuration_details::tests::live_configuration_match_preserves_the_existing_owned_model': 'Explicit read-only acceptance against the user running supervisor.',
   'strata-runtime-core:discovery::tests::live_installation_discovery_is_read_only': 'Explicit live read-only installation verification.',
   'strata-runtime-core:installation::tests::official_archive_prepares_without_git_and_returns_only_a_setup_profile': 'Separately verified official source archive and real private venv; no model download.',
