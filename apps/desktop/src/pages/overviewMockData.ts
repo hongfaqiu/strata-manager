@@ -42,6 +42,15 @@ export function overviewMockState(): OverviewMockState {
   return 'idle';
 }
 
+/** DEV-only memory pressure for screenshots: ?mockPressure=normal | high (default keeps the classic 21.4/24 GB, 66.4/96 GB). */
+function overviewMockMemory(): { vramUsed: number; vramTotal: number; ramUsed: number; ramTotal: number } {
+  let p: string | null = null;
+  try { p = new URLSearchParams(window.location.search).get('mockPressure'); } catch { /* ignore */ }
+  if (p === 'normal') return { vramUsed: 14.2, vramTotal: 24, ramUsed: 38.5, ramTotal: 96 };
+  if (p === 'high') return { vramUsed: 31.2, vramTotal: 32, ramUsed: 55.5, ramTotal: 64 };
+  return { vramUsed: 21.4, vramTotal: 24, ramUsed: 66.4, ramTotal: 96 };
+}
+
 const nowSec = () => Math.floor(Date.now() / 1000);
 
 function sampleRequests(state: OverviewMockState): JsonObject[] {
@@ -123,19 +132,20 @@ export function buildOverviewMock(state: OverviewMockState = overviewMockState()
       };
 
   const gb = (n: number) => n * 1024 ** 3;
+  const mem = overviewMockMemory();
   const metric: MetricSnapshot = {
     state,
     model: String(health.model),
     decodeTokS: state === 'generating' ? 46.8 : Number(last.decode_tok_s),
     prefillTokS: state === 'generating' ? 820 : 910,
     gpuUtil: state === 'generating' ? 91.2 : 18.4,
-    gpuMemoryUsed: gb(21.4),
-    gpuMemoryTotal: gb(24),
+    gpuMemoryUsed: gb(mem.vramUsed),
+    gpuMemoryTotal: gb(mem.vramTotal),
     gpuTemperature: state === 'generating' ? 72 : 54,
     gpuPower: state === 'generating' ? 248 : 96,
     cpuUtil: state === 'generating' ? 34.2 : 8.1,
-    ramUsed: gb(66.4),
-    ramTotal: gb(96),
+    ramUsed: gb(mem.ramUsed),
+    ramTotal: gb(mem.ramTotal),
     queued: Number(live.queued),
     running: Number(live.running),
     cacheHitRate: 0.58,
@@ -146,14 +156,14 @@ export function buildOverviewMock(state: OverviewMockState = overviewMockState()
       engine: { model: health.model, max_context: 131072, expert_slots: 412, expert_cache_mib: 12288 },
       hardware: {
         cpu: state === 'generating' ? 34.2 : 8.1,
-        ram_used: gb(66.4),
-        ram_total: gb(96),
+        ram_used: gb(mem.ramUsed),
+        ram_total: gb(mem.ramTotal),
         gpu_util: state === 'generating' ? 91.2 : 18.4,
-        gpu_mem_used: gb(21.4),
-        gpu_mem_total: gb(24),
+        gpu_mem_used: gb(mem.vramUsed),
+        gpu_mem_total: gb(mem.vramTotal),
         gpu_temp: state === 'generating' ? 72 : 54,
         gpu_power: state === 'generating' ? 248 : 96,
-        gpus: [{ util: state === 'generating' ? 91.2 : 18.4, mem_used: gb(21.4), mem_total: gb(24), temp: state === 'generating' ? 72 : 54, power: state === 'generating' ? 248 : 96 }],
+        gpus: [{ util: state === 'generating' ? 91.2 : 18.4, mem_used: gb(mem.vramUsed), mem_total: gb(mem.vramTotal), temp: state === 'generating' ? 72 : 54, power: state === 'generating' ? 248 : 96 }],
         gpu_power_limit: 320, gpu_pcie_gen: 4, gpu_pcie_gen_max: 4, gpu_pcie_width: 16, gpu_pcie_rx_mb: state === 'generating' ? 1840 : 12,
       },
       // Same field names /metrics already reports (see OfficialMonitoring).

@@ -13,6 +13,14 @@ export interface ModelConfigurationOption {
   sourcePath?: string;
   state?: 'current' | 'lastUsed' | 'preparing';
   stateLabel?: string;
+  /** Runtime version tag, e.g. “Strata 0.1.44”. */
+  versionLabel?: string;
+  versionCurrent?: boolean;
+  /** Identical copies merged into this row, e.g. “2 other versions identical”. */
+  sameLabel?: string;
+  sameTitle?: string;
+  /** Rows of other runtime versions sit behind a disclosure. */
+  section?: 'other';
 }
 
 interface Props {
@@ -24,6 +32,8 @@ interface Props {
   disabled?: boolean;
   onValueChange: (value: string) => void;
   onDelete?: (value: string) => void;
+  /** Disclosure label for `section: 'other'` rows, e.g. “Other versions · 3”. */
+  othersLabel?: string;
 }
 
 function OptionContent({ option, language, modifiedLabel, compact = false }: { option: ModelConfigurationOption; language: Props['language']; modifiedLabel: string; compact?: boolean }) {
@@ -32,15 +42,18 @@ function OptionContent({ option, language, modifiedLabel, compact = false }: { o
   const lastActivated = language === 'zh-CN' ? '上次启用' : 'Last activated';
   const pathTitle = option.sourcePath && option.sourcePath !== option.filePath ? `${option.filePath}\n${language === 'zh-CN' ? '来源' : 'Source'}: ${option.sourcePath}` : option.filePath;
   return <span className="model-configuration-copy">
-    <span className="model-configuration-name"><strong data-tooltip={pathTitle}>{option.name}</strong>{option.stateLabel && <em className={`model-configuration-state ${option.state ?? ''}`}>{option.stateLabel}</em>}</span>
+    <span className="model-configuration-name"><strong data-tooltip={pathTitle}>{option.name}</strong>{option.versionLabel && <span className={`config-version-tag${option.versionCurrent ? ' is-current' : ''}`}>{option.versionLabel}</span>}{option.stateLabel && <em className={`model-configuration-state ${option.state ?? ''}`}>{option.stateLabel}</em>}{!compact && option.sameLabel && <span className="config-version-same" data-tooltip={option.sameTitle}>{option.sameLabel}</span>}</span>
     {option.summary && <span className="model-configuration-summary">{option.summary.split(' · ').map(stat => <span className="model-configuration-stat" key={stat}>{stat}</span>)}</span>}
     {!compact && <span className="model-configuration-times">{hasDate && <time dateTime={new Date(option.modifiedAt!).toISOString()}>{modifiedLabel} · {new Date(option.modifiedAt!).toLocaleString(language)}</time>}{hasActivation && <time dateTime={new Date(option.lastActivatedAt!).toISOString()}>{lastActivated} · {new Date(option.lastActivatedAt!).toLocaleString(language)}</time>}</span>}
   </span>;
 }
 
 /** Browsing changes only the displayed configuration. Runtime actions remain explicit. */
-export function ModelConfigurationDropdown({ value, options, language, ariaLabel, modifiedLabel, disabled = false, onValueChange, onDelete }: Props) {
+export function ModelConfigurationDropdown({ value, options: allOptions, language, ariaLabel, modifiedLabel, disabled = false, onValueChange, onDelete, othersLabel }: Props) {
   const id = useId();
+  const [othersOpen, setOthersOpen] = useState(allOptions.find(option => option.value === value)?.section === 'other');
+  const otherCount = allOptions.filter(option => option.section === 'other').length;
+  const options = othersOpen ? allOptions : allOptions.filter(option => option.section !== 'other');
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
@@ -49,7 +62,7 @@ export function ModelConfigurationDropdown({ value, options, language, ariaLabel
   const [position, setPosition] = useState<CSSProperties>({});
   const search = useRef({ text: '', at: 0 });
   const selectedIndex = options.findIndex(option => option.value === value);
-  const selected = options[selectedIndex] ?? options[0];
+  const selected = options[selectedIndex] ?? allOptions.find(option => option.value === value) ?? options[0];
   const menuId = `${id}-configurations`;
   const close = (focus = false) => { setOpen(false); if (focus) trigger.current?.focus({ preventScroll: true }); };
   const choose = (index: number) => { const option = options[index]; if (!option || disabled) return; onValueChange(option.value); close(true); };
@@ -57,6 +70,7 @@ export function ModelConfigurationDropdown({ value, options, language, ariaLabel
   const show = (last = false) => { if (!disabled && options.length) { setActive(selectedIndex >= 0 ? selectedIndex : last ? options.length - 1 : 0); setOpen(true); } };
 
   useEffect(() => { if (disabled || !options.length) setOpen(false); }, [disabled, options.length]);
+  useEffect(() => { if (allOptions.find(option => option.value === value)?.section === 'other') setOthersOpen(true); }, [value, allOptions]);
   useEffect(() => { if (active >= options.length) setActive(Math.max(0, options.length - 1)); }, [active, options.length]);
   useLayoutEffect(() => {
     if (!open) return;
@@ -85,7 +99,9 @@ export function ModelConfigurationDropdown({ value, options, language, ariaLabel
       if (!open) { show(event.key === 'ArrowUp' || event.key === 'End'); return; }
       if (event.key === 'Enter' || event.key === ' ') { choose(active); return; }
       if (event.key === 'Home') setActive(0);
-      else if (event.key === 'End') setActive(options.length - 1);
+      else if (event.key === 'End') { if (!othersOpen && otherCount > 0) setOthersOpen(true); setActive(allOptions.length - 1); }
+      // Arrowing past the last row of this version reveals the other versions.
+      else if (event.key === 'ArrowDown' && !othersOpen && otherCount > 0 && active === options.length - 1) { setOthersOpen(true); setActive(options.length); }
       else setActive(index => (index + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length);
     } else if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
       const now = Date.now(); search.current = { text: `${now - search.current.at < 700 ? search.current.text : ''}${event.key}`.toLowerCase(), at: now };
@@ -98,12 +114,13 @@ export function ModelConfigurationDropdown({ value, options, language, ariaLabel
       {selected && <OptionContent option={selected} language={language} modifiedLabel={modifiedLabel} compact/>}<ChevronDown size={17}/>
     </button>
     {open && createPortal(<div className="official-surface model-configuration-menu" role="listbox" id={menuId} aria-label={ariaLabel} style={position} ref={menu}>
-      {options.map((option, index) => <div className={`model-configuration-row${onDelete ? ' has-delete' : ''}`} key={option.value} onPointerMove={() => setActive(index)}>
+      {options.map((option, index) => <div className="model-configuration-entry" key={option.value}>{option.section === 'other' && options[index - 1]?.section !== 'other' && othersLabel && <button type="button" className="model-configuration-others" aria-expanded tabIndex={-1} onMouseDown={event => event.preventDefault()} onClick={() => setOthersOpen(false)}><ChevronDown size={14}/>{othersLabel}</button>}<div className={`model-configuration-row${onDelete ? ' has-delete' : ''}${option.section === 'other' ? ' is-other' : ''}`} onPointerMove={() => setActive(index)}>
         <button type="button" className={`model-configuration-option${index === active ? ' is-active' : ''}`} role="option" aria-selected={option.value === value} id={`${id}-option-${index}`} tabIndex={-1} data-index={index} onMouseDown={event => event.preventDefault()} onClick={() => choose(index)}>
           <OptionContent option={option} language={language} modifiedLabel={modifiedLabel}/><span className="model-configuration-selected">{option.value === value && <Check size={16}/>}</span>
         </button>
         {onDelete && <button type="button" className="model-configuration-delete" aria-label={`${language === 'zh-CN' ? '删除配置文件' : 'Delete configuration file'} ${option.name}`} data-tooltip={language === 'zh-CN' ? '删除配置文件' : 'Delete configuration file'} data-delete-index={index} tabIndex={index === active ? 0 : -1} disabled={disabled} onPointerDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); remove(index); }} onKeyDown={event => { if (event.key === 'Tab') { if (event.shiftKey) { event.preventDefault(); trigger.current?.focus(); } else close(true); } }}><Trash2 size={15}/></button>}
-      </div>)}
+      </div></div>)}
+      {!othersOpen && otherCount > 0 && othersLabel && <button type="button" className="model-configuration-others" aria-expanded={false} tabIndex={-1} onMouseDown={event => event.preventDefault()} onClick={() => setOthersOpen(true)}><ChevronDown size={14}/>{othersLabel}</button>}
     </div>, document.body)}
   </div>;
 }

@@ -107,3 +107,16 @@
 @container workspace (max-width:900px){.service-manager-statuses{grid-template-columns:1fr 1fr}}
 @container workspace (max-width:640px){.official-surface .service-manager .service-manager-card{padding:var(--st-s-4)}.service-manager-card-top{align-items:flex-start}.service-manager-symbol{display:none}.service-manager-toolbar{gap:var(--st-s-2)}.service-manager-details dl{grid-template-columns:1fr}.service-manager-statuses{gap:var(--st-s-3)}.service-manager-name{gap:var(--st-s-2)}}
 @media(prefers-reduced-motion:reduce){.service-manager-details{animation:none}.service-manager-expand svg{transition:none}}
+/* Version-aware configuration rows. */
+.model-configuration-entry{display:contents}
+.model-configuration-menu .model-configuration-others{display:flex;align-items:center;gap:6px;width:100%;min-height:32px;height:auto;padding:6px 12px;margin-top:2px;border:0;border-top:1px solid var(--st-line);border-radius:0;background:transparent;color:var(--st-ink-muted);font-size:var(--st-fs-sm);font-weight:500;justify-content:flex-start}
+.model-configuration-menu .model-configuration-others:hover{color:var(--st-ink)}
+.model-configuration-menu .model-configuration-others[aria-expanded=false] svg{transform:rotate(-90deg)}
+.model-configuration-menu .model-configuration-row.is-other .model-configuration-option:not([aria-selected=true]):not(.is-active){color:var(--st-ink-2,var(--st-ink))}
+.model-configuration-name .config-version-tag{margin-left:2px}
+.service-manager-version-note{margin:-2px 0 0;font-size:var(--st-fs-sm);color:var(--st-ink-muted)}
+.service-manager-version-toggle{display:inline-flex;align-items:center;gap:7px;font-size:var(--st-fs-sm);color:var(--st-ink-muted);cursor:pointer;white-space:nowrap}
+.service-manager-version-toggle input{margin:0;accent-color:var(--st-accent)}
+.model-configuration-menu .model-configuration-others{flex:none}
+.service-manager-version-toggle>span{cursor:pointer}
+.official-surface.model-configuration-menu{height:auto}

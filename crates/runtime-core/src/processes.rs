@@ -602,6 +602,25 @@ pub struct OwnedProcess {
 #[cfg(windows)]
 unsafe impl Send for OwnedProcess {}
 
+/// Windows: a child that cannot load a DLL (for example `cublas64_13.dll`) exits
+/// with `STATUS_DLL_NOT_FOUND` instead of raising a modal "系统错误" box. The
+/// process error mode is inherited by every child started afterwards.
+pub fn suppress_hard_error_dialogs() {
+    #[cfg(windows)]
+    {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| {
+            use windows_sys::Win32::System::Diagnostics::Debug::{
+                GetErrorMode, SetErrorMode, SEM_FAILCRITICALERRORS, SEM_NOOPENFILEERRORBOX,
+            };
+            // SAFETY: plain Win32 calls with no pointers; only adds flags to the current mode.
+            unsafe {
+                SetErrorMode(GetErrorMode() | SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX);
+            }
+        });
+    }
+}
+
 pub fn hidden(command: &mut Command) {
     #[cfg(windows)]
     {
