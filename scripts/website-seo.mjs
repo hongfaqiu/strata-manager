@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-export const site = 'https://hongfaqiu.github.io/strata-manager/';
+export const site = 'https://strata-manager.cosfoc.com/';
 export const languageCode = (language) => language === 'en' ? 'en' : 'zh-CN';
 export const homePage = (language) => language === 'en' ? 'en/' : '';
 export const escapeHtml = (value) => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
@@ -119,7 +119,10 @@ function element(tag, attributes, children = []) {
   return { tag, attributes: new Map(Object.entries(attributes)), children };
 }
 
-function pageUrl(page) { return new URL(page, site).href; }
+// Public URLs are the clean paths Workers static assets serves (html_handling auto-trailing-slash):
+// `docs/index.html` → `docs/`, `docs/changelog.html` → `docs/changelog`. Files keep their .html names.
+export function publicPath(page) { return page.replace(/(^|\/)index\.html$/, '$1').replace(/\.html$/, ''); }
+export function pageUrl(page) { return new URL(publicPath(page), site).href; }
 
 export function languageLinks(entries, defaultPage) {
   return entries.map(({ page, lang }) => `<link rel="alternate" hreflang="${languageCode(lang)}" href="${escapeHtml(pageUrl(page))}">`).join('\n  ')

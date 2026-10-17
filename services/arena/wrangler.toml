@@ -1,9 +1,25 @@
+# One Worker serves the website (static assets from dist/website, built by scripts/build-website.mjs)
+# and the Arena API (/v1/*). Deployed from main by .github/workflows/website.yml.
 name = "strata-arena"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
+account_id = "6cfa9aa494be7345e6e1ca12fa386a26"
 workers_dev = false
 
-routes = [{ pattern = "arena.cosfoc.com", custom_domain = true }]
+routes = [
+  { pattern = "strata-manager.cosfoc.com", custom_domain = true },
+  # API host compiled into shipped apps; non-API paths redirect to the website (src/site.js).
+  { pattern = "arena.cosfoc.com", custom_domain = true },
+]
+
+[assets]
+directory = "../../dist/website"
+binding = "ASSETS"
+html_handling = "auto-trailing-slash"
+not_found_handling = "404-page"
+# The Worker runs first for pages and the API (host redirect, headers); screenshots and vendor
+# scripts are served straight from the asset store with the rules in website/_headers.
+run_worker_first = ["/*", "!/assets/*", "!/vendor/*"]
 
 [[d1_databases]]
 binding = "DB"
@@ -17,5 +33,8 @@ POW_SURGE = "30"
 
 [triggers]
 crons = ["17 * * * *"]
+
+[observability]
+enabled = true
 
 # Secrets (wrangler secret put): ARENA_APP_KEYS (comma-separated HMAC keys), IP_SALT, SEED_TOKEN, POW_SECRET, ADMIN_TOKEN

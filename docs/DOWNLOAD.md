@@ -1,19 +1,19 @@
 # 下载与体验
 
-[文档目录](README.md) · [使用指南](USER_GUIDE.md) · [更新日志](../CHANGELOG.md) · [官网更新日志](https://hongfaqiu.github.io/strata-manager/docs/changelog.html) · [English](DOWNLOAD.en.md)
+[文档目录](README.md) · [使用指南](USER_GUIDE.md) · [更新日志](../CHANGELOG.md) · [官网更新日志](https://strata-manager.cosfoc.com/docs/changelog) · [English](DOWNLOAD.en.md)
 
 Strata Manager 是 Strata 运行环境与本地模型服务管理桌面工作台。桌面安装包包含应用和独立后台，Strata 运行环境与模型权重另行准备。
 
 ## 公开稳定版下载
 
-通过[最新稳定发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)或[官网下载区](https://hongfaqiu.github.io/strata-manager/#get-started)选择对应系统的安装包。公开稳定版的具体版本以发布页和官网下载区为准。仅安装所选发布页实际提供的文件，包含的功能以该版本说明为准；也可以[从源码体验](#从源码体验)。
+通过[最新稳定发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)或[官网下载区](https://strata-manager.cosfoc.com/#get-started)选择对应系统的安装包。公开稳定版的具体版本以发布页和官网下载区为准。仅安装所选发布页实际提供的文件，包含的功能以该版本说明为准；也可以[从源码体验](#从源码体验)。
 
 README、官网截图与使用指南描述当前源码功能；安装包包含的功能以所选版本的更新日志为准。[更新日志](../CHANGELOG.md)区分已发布版本与未发布开发更新。本文描述 CI 门禁覆盖范围，实际发布结果以对应版本的工作流和资产核验为准。
 
 | 平台 | 安装形式 | 说明 |
 | --- | --- | --- |
 | Windows x64 | [NSIS 安装包（.exe）](https://github.com/hongfaqiu/strata-manager/releases/latest) | 需要 WebView2；安装步骤见下方 |
-| Linux x64 | [AppImage / DEB](https://hongfaqiu.github.io/strata-manager/#get-started) | Ubuntu 22.04 CI 环境构建；系统安装与 GPU 支持范围见下方 |
+| Linux x64 | [AppImage / DEB](https://strata-manager.cosfoc.com/#get-started) | Ubuntu 22.04 CI 环境构建；系统安装与 GPU 支持范围见下方 |
 
 从[所选稳定发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)下载同一版本的 `SHA256SUMS`，将下载文件的 SHA256 与其中同名文件的值核对后再安装。发布页的更新签名文件供更新器验签，初次安装使用 `.exe`、`.AppImage` 或 `.deb`。
 
@@ -21,7 +21,7 @@ README、官网截图与使用指南描述当前源码功能；安装包包含�
 
 ## Windows 安装
 
-1. 从[最新稳定发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)或[官网下载区](https://hongfaqiu.github.io/strata-manager/#get-started)下载 Windows x64 NSIS 安装包，文件名以 `_x64-setup.exe` 结尾。
+1. 从[最新稳定发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)或[官网下载区](https://strata-manager.cosfoc.com/#get-started)下载 Windows x64 NSIS 安装包，文件名以 `_x64-setup.exe` 结尾。
 2. 核对版本与来源后运行安装器，按向导完成安装。Windows 需要 WebView2；缺少时按安装器或系统提示补齐。
 3. 从开始菜单或安装完成后的入口打开 Strata Manager。
 4. 按对应版本说明使用；先在 Strata 页面检查或准备运行环境，再按[第一次使用](USER_GUIDE.md#第一次使用)选择已有模型或准备新模型。安装桌面应用不会自动下载权重。
@@ -33,14 +33,14 @@ README、官网截图与使用指南描述当前源码功能；安装包包含�
 
 ### AppImage
 
-1. 从[最新稳定发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)或[官网下载区](https://hongfaqiu.github.io/strata-manager/#get-started)下载 Linux x64 的 `.AppImage` 文件。
+1. 从[最新稳定发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)或[官网下载区](https://strata-manager.cosfoc.com/#get-started)下载 Linux x64 的 `.AppImage` 文件。
 2. 在文件属性中允许执行，或在下载目录使用 `chmod +x` 并指定实际下载的文件名。
 3. 运行 AppImage；遇到 FUSE 或系统依赖提示时，按发行版说明处理。
 4. 按对应版本说明使用；完整流程见[使用指南](USER_GUIDE.md#第一次使用)，先检查 Strata 再选择本机模型。
 
 ### DEB
 
-从[最新稳定发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)或[官网下载区](https://hongfaqiu.github.io/strata-manager/#get-started)下载 Linux x64 的 `.deb` 文件，在 Ubuntu/Debian 的系统软件安装器中打开，按系统提示安装和处理依赖，再从应用菜单启动。Ubuntu 22.04 是 CI 构建环境；DEB 目前验证的是解包后启动，系统中的安装、卸载、登录自启动和真实 GPU 流程仍未验证。
+从[最新稳定发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)或[官网下载区](https://strata-manager.cosfoc.com/#get-started)下载 Linux x64 的 `.deb` 文件，在 Ubuntu/Debian 的系统软件安装器中打开，按系统提示安装和处理依赖，再从应用菜单启动。Ubuntu 22.04 是 CI 构建环境；DEB 目前验证的是解包后启动，系统中的安装、卸载、登录自启动和真实 GPU 流程仍未验证。
 
 ## 从源码体验
 
@@ -69,6 +69,6 @@ pnpm desktop 启动完整桌面应用和后台。pnpm dev 只运行前端，不�
 
 [GitHub Releases](https://github.com/hongfaqiu/strata-manager/releases)列出各版本的安装包和发布说明。预览版、稳定版、CI 测试包和自行构建的安装包是不同来源，请先核对版本及支持范围。
 
-公开且通过发布门禁的稳定版本才进入 `latest` 通道，下载入口始终指向[最新稳定发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)。发布记录和功能变化见[更新日志](../CHANGELOG.md)或[官网更新日志](https://hongfaqiu.github.io/strata-manager/docs/changelog.html)。预览版不覆盖稳定通道，未检测到 beta 也不代表当前预览版已经最新。
+公开且通过发布门禁的稳定版本才进入 `latest` 通道，下载入口始终指向[最新稳定发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)。发布记录和功能变化见[更新日志](../CHANGELOG.md)或[官网更新日志](https://strata-manager.cosfoc.com/docs/changelog)。预览版不覆盖稳定通道，未检测到 beta 也不代表当前预览版已经最新。
 
 当前源码分别管理应用更新、Strata 运行环境和模型权重。默认自动检查，展示日志并确认后安装；Windows x64 的 Strata 页面从上游发布信息选择匹配 ZIP，下载、解包、备份并替换程序文件，保留已有模型。详细行为见[使用指南](USER_GUIDE.md)。

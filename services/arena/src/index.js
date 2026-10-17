@@ -3,6 +3,7 @@ import { aggregate, filterRows, recommend } from './stats.js';
 import { evaluate } from './trust.js';
 import { parseEvidence, checkEvidence, evidenceMessage } from './evidence.js';
 import { sha256Hex, hmacHex, safeEqual, signingMessage, verifyEd25519, hexToBytes, leadingZeroBits, powMessage } from './crypto.js';
+import { isApiPath, serveSite } from './site.js';
 
 const DAY = 86_400_000;
 export const RETENTION_MS = 365 * DAY;
@@ -329,7 +330,12 @@ async function route(request, env, ctx, now) {
 }
 
 export default {
-  async fetch(request, env, ctx) { try { return await route(request, env, ctx, Date.now()); } catch (e) { return fail(e); } },
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    // Everything outside /v1 is the website (or, on the API host, a redirect to it).
+    if (env.ASSETS && !isApiPath(url.pathname)) return serveSite(request, env, url);
+    try { return await route(request, env, ctx, Date.now()); } catch (e) { return fail(e); }
+  },
   async scheduled(event, env, ctx) { ctx.waitUntil(maintain(env)); },
 };
 export { route };

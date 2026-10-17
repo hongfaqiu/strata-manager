@@ -1,0 +1,17 @@
+# Cloudflare Workers static assets: applied to files served without running the Worker
+# (/assets/* and /vendor/*). Everything else passes through services/arena/src/site.js,
+# which sets the same security headers and a per-type Cache-Control.
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+  Strict-Transport-Security: max-age=31536000
+
+# Screenshots and the icon change only with a release; file names are not fingerprinted.
+/assets/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+# Pinned third-party scripts (see vendor/README.md).
+/vendor/*
+  Cache-Control: public, max-age=604800, stale-while-revalidate=2592000

@@ -6,8 +6,8 @@
 <p><strong>面向 Strata 本地推理的桌面工作台。</strong><br />准备运行环境，管理模型与服务，掌握本机 API 的运行情况。</p>
 
 <p>
-<a href="https://hongfaqiu.github.io/strata-manager/"><strong>官网</strong></a> ·
-<a href="https://hongfaqiu.github.io/strata-manager/docs/index.html"><strong>文档中心</strong></a> ·
+<a href="https://strata-manager.cosfoc.com/"><strong>官网</strong></a> ·
+<a href="https://strata-manager.cosfoc.com/docs/"><strong>文档中心</strong></a> ·
 <a href="docs/SYSTEM.md">系统说明</a> ·
 <a href="https://github.com/hongfaqiu/strata-manager/releases/latest"><strong>下载</strong></a> ·
 <a href="README.md">English</a>
@@ -71,7 +71,7 @@ Strata Manager 提供模型下载列表与详情、统一显卡及运行选项�
 
 ### 安装包
 
-从[最新发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)或[官网下载区](https://hongfaqiu.github.io/strata-manager/#get-started)选择安装包。仅安装所选版本实际提供的文件，并用同一发布页的 `SHA256SUMS` 核对。
+从[最新发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)或[官网下载区](https://strata-manager.cosfoc.com/#get-started)选择安装包。仅安装所选版本实际提供的文件，并用同一发布页的 `SHA256SUMS` 核对。
 
 | 平台 | 安装形式 | 准备事项 |
 | --- | --- | --- |

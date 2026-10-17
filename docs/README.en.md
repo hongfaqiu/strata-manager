@@ -1,6 +1,6 @@
 # Strata Manager documentation
 
-[Website](https://hongfaqiu.github.io/strata-manager/?lang=en) · [Product overview](../README.md) · [简体中文](README.md)
+[Website](https://strata-manager.cosfoc.com/?lang=en) · [Product overview](../README.md) · [简体中文](README.md)
 
 Strata Manager is a desktop workspace for local inference with Strata. It brings runtime setup, model configurations and service lifecycle together with chat, monitoring, API usage, tuning and Benchmark performance tests. It is an independent community project. Inference capabilities and protocols depend on the installed Strata runtime and chosen model.
 
@@ -34,7 +34,7 @@ Strata Manager is a desktop workspace for local inference with Strata. It brings
 - Benchmark supports seven scenarios, fixed concurrency and ramp-up stress tests. It records latency, generation rates, caching and resource trends, with JSON / CSV reports.
 - Current targets are Windows/Linux x64. Release packages, GPU use, real Linux systems and cross-version updates are verified separately. Screenshots and controlled fixtures do not establish real-model acceptance.
 
-Public installers: [Latest stable release](https://github.com/hongfaqiu/strata-manager/releases/latest) · [Website downloads](https://hongfaqiu.github.io/strata-manager/en/#get-started). Download only listed assets and check the matching SHA256SUMS. [Download instructions](DOWNLOAD.en.md) explain installation and current support scope. Stable releases use `latest`; previews remain manual downloads and do not replace that channel.
+Public installers: [Latest stable release](https://github.com/hongfaqiu/strata-manager/releases/latest) · [Website downloads](https://strata-manager.cosfoc.com/en/#get-started). Download only listed assets and check the matching SHA256SUMS. [Download instructions](DOWNLOAD.en.md) explain installation and current support scope. Stable releases use `latest`; previews remain manual downloads and do not replace that channel.
 
 ## License and credits
 

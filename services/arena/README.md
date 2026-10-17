@@ -1,6 +1,13 @@
 # Benchmark Arena service
 
-Cloudflare Worker + D1 behind `https://arena.cosfoc.com`. It accepts opt-in benchmark summaries from Strata Manager and serves the leaderboard used by the app and the website.
+Cloudflare Worker + D1. It accepts opt-in benchmark summaries from Strata Manager and serves the leaderboard used by the app and the website. The same Worker also hosts the website:
+
+| Host | `/v1/*` | Everything else |
+| --- | --- | --- |
+| `strata-manager.cosfoc.com` | Arena API | Static website from `dist/website` (Workers static assets, `src/site.js`) |
+| `arena.cosfoc.com` | Arena API (compiled into shipped apps; behavior unchanged) | `301` to the website (`/` → `/leaderboard`) |
+
+Website routing (`wrangler.toml` `[assets]`): clean URLs (`html_handling = "auto-trailing-slash"`, so `docs/changelog.html` is served at `/docs/changelog` and the `.html` form redirects there), `404.html` for unknown paths, and the Worker runs first for everything except `/assets/*` and `/vendor/*`. Cache: HTML, sitemap and data revalidate on every visit (no file name is fingerprinted), CSS/JS 10 minutes, screenshots 1 day, vendor scripts 7 days, all with `stale-while-revalidate`; security headers (`nosniff`, `X-Frame-Options`, `frame-ancestors`, referrer and permissions policy, HSTS) come from `src/site.js` and `website/_headers`.
 
 ## API
 
@@ -93,16 +100,43 @@ npm test            # node:test against an in-memory D1 shim (node:sqlite), with
 
 ## Deploy
 
+CI deploys from `main` (`.github/workflows/website.yml`): website checks, `npm test`, `node scripts/build-website.mjs`, then **pending D1 migrations** (`wrangler d1 migrations list --remote`; `apply --remote` only when the list is not empty) and `wrangler deploy`, followed by a smoke test of both hosts. Migrations run before the new code, so they must stay additive (new tables/columns with defaults), never drop or rename what the deployed Worker still reads. Pull requests run everything up to `wrangler deploy --dry-run`.
+
+The workflow needs one repository secret, `CLOUDFLARE_API_TOKEN` (the account id is in `wrangler.toml`): an account API token for account `6cfa9aa494be7345e6e1ca12fa386a26` with
+
+- Account → Workers Scripts → Edit
+- Account → D1 → Edit (migrations)
+- Zone `cosfoc.com` → Workers Routes → Edit (the two custom domains)
+
+```sh
+gh secret set CLOUDFLARE_API_TOKEN -R hongfaqiu/strata-manager   # paste the token at the prompt
+```
+
+Manual deploy from a checkout (same steps as CI):
+
+```sh
+node scripts/build-website.mjs                  # from the repository root
+cd services/arena
+npx wrangler@4.151.1 d1 migrations apply strata-arena --remote
+npx wrangler@4.151.1 deploy
+```
+
+First-time setup only:
+
 ```sh
 wrangler d1 create strata-arena                 # once; put the id in wrangler.toml
-npm run migrate                                 # applies migrations/ in order to the remote DB
 wrangler secret put ARENA_APP_KEYS              # comma-separated; list old and new key during a rotation
 wrangler secret put IP_SALT
 wrangler secret put SEED_TOKEN
 wrangler secret put POW_SECRET
 wrangler secret put ADMIN_TOKEN
-npm run deploy                                  # POW_BITS / POW_SURGE are plain vars in wrangler.toml
 ```
+
+`POW_BITS` / `POW_SURGE` are plain vars in `wrangler.toml`; secrets are kept across deploys.
+
+### Old GitHub Pages address
+
+`hongfaqiu.github.io/strata-manager/` cannot send HTTP redirects. After the cutover, run the *Legacy GitHub Pages redirects* workflow once (`.github/workflows/website-legacy-redirects.yml`, manual only): it publishes one page per old URL (canonical + meta refresh + a script that keeps `?query` and `#fragment`) and a `404.html` that maps every other old path. Leave GitHub Pages enabled so they stay up.
 
 ### App key
 
