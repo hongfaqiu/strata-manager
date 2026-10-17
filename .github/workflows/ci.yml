@@ -19,49 +19,31 @@ jobs:
   changes:
     name: Detect app code changes
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       code: ${{ steps.set.outputs.code }}
+      native: ${{ steps.set.outputs.native }}
     steps:
       - uses: actions/checkout@v4
         with:
-          # Push events need history so dorny/paths-filter can diff against the previous SHA.
-          fetch-depth: 0
-      - uses: dorny/paths-filter@v3
-        id: filter
-        if: github.event_name != 'workflow_dispatch'
+          # A pull request's merge commit and its base parent; other events run everything.
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@v4
         with:
-          filters: |
-            code:
-              - 'apps/**'
-              - 'crates/**'
-              - 'packages/**'
-              - 'scripts/**'
-              - '!scripts/build-website.mjs'
-              - '!scripts/website-*.mjs'
-              - '!scripts/render-website-docs.mjs'
-              - '!scripts/render-website-docs.test.mjs'
-              - 'assets/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-              - 'package.json'
-              - 'pnpm-lock.yaml'
-              - 'pnpm-workspace.yaml'
-              - 'tsconfig.base.json'
-              - '.github/workflows/ci.yml'
-              - '.github/workflows/release.yml'
-              - '.github/workflows/release-from-ci.yml'
+          node-version: '24'
       - id: set
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "code=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "code=${{ steps.filter.outputs.code }}" >> "$GITHUB_OUTPUT"
-          fi
+        # Fails closed: push, manual, release/* and full-ci PRs, unknown paths and
+        # any detection error set both scopes to true. Skipped jobs report success.
+        env:
+          CI_PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          CI_HEAD_REF: ${{ github.head_ref }}
+        run: node scripts/ci-changes.mjs
 
   observer-compatibility:
     name: Strata 0.1.43.1 observer (${{ matrix.runner }})
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.native == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -118,7 +100,7 @@ jobs:
   native-windows:
     name: Windows native shard (${{ matrix.shard }}/3)
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.native == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -186,7 +168,7 @@ jobs:
   native-linux:
     name: Linux native shard (${{ matrix.shard }}/3)
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.native == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -232,7 +214,21 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev libgtk-3-dev libssl-dev librsvg2-dev libxdo-dev libdbus-1-dev pkg-config patchelf xdg-utils xvfb dbus-x11 gnome-keyring libglib2.0-bin libsecret-tools python3-venv python3-dbus build-essential curl gettext libgcr-3-dev libgcrypt20-dev libtasn1-6-dev libp11-kit-dev libcap-ng-dev
       - name: Linux Secret Service wrapper contracts
         run: python scripts/tests/release-linux-tests-contract.py
+      - name: Bind the private Linux test keyring cache to its build inputs
+        id: keyring-cache
+        run: |
+          key=$(bash scripts/build-linux-test-keyring.sh --cache-key)
+          printf 'key=%s\n' "$key" >> "$GITHUB_OUTPUT"
+      - name: Restore the verified private Linux test keyring (pull requests only)
+        # main and manual builds always compile the pinned source; only they save it.
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/strata-test-keyring-cache
+          key: ${{ steps.keyring-cache.outputs.key }}
       - name: Build the pinned private Linux test keyring
+        env:
+          STRATA_TEST_KEYRING_CACHE: ${{ runner.temp }}/strata-test-keyring-cache
         run: |
           daemon_path=$(bash scripts/build-linux-test-keyring.sh)
           printf 'STRATA_TEST_KEYRING_DAEMON=%s\n' "$daemon_path" >> "$GITHUB_ENV"
@@ -331,11 +327,40 @@ jobs:
       - name: Linux Secret Service wrapper contracts
         if: runner.os == 'Linux'
         run: python scripts/tests/release-linux-tests-contract.py
+      - name: Bind the private Linux test keyring cache to its build inputs
+        if: runner.os == 'Linux'
+        id: keyring-cache
+        run: |
+          key=$(bash scripts/build-linux-test-keyring.sh --cache-key)
+          printf 'key=%s\n' "$key" >> "$GITHUB_OUTPUT"
+      - name: Restore the verified private Linux test keyring (pull requests only)
+        if: runner.os == 'Linux' && github.event_name == 'pull_request'
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/strata-test-keyring-cache
+          key: ${{ steps.keyring-cache.outputs.key }}
       - name: Build the pinned private Linux test keyring
         if: runner.os == 'Linux'
+        env:
+          STRATA_TEST_KEYRING_CACHE: ${{ runner.temp }}/strata-test-keyring-cache
         run: |
           daemon_path=$(bash scripts/build-linux-test-keyring.sh)
           printf 'STRATA_TEST_KEYRING_DAEMON=%s\n' "$daemon_path" >> "$GITHUB_ENV"
+      - name: Look up the trusted private Linux test keyring cache
+        # Only this trusted main-branch job writes the keyring cache, from a fresh source build.
+        if: runner.os == 'Linux' && github.repository == 'hongfaqiu/strata-manager' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        id: keyring-cache-lookup
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/strata-test-keyring-cache
+          key: ${{ steps.keyring-cache.outputs.key }}
+          lookup-only: true
+      - name: Save the trusted private Linux test keyring cache
+        if: runner.os == 'Linux' && github.repository == 'hongfaqiu/strata-manager' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && steps.keyring-cache-lookup.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/strata-test-keyring-cache
+          key: ${{ steps.keyring-cache.outputs.key }}
       - name: Linux Secret Service fresh-connection regression
         if: runner.os == 'Linux'
         run: timeout --kill-after=5s 120s dbus-run-session -- xvfb-run -a bash scripts/release-linux-tests.sh /usr/bin/python3 scripts/tests/linux-secret-service-stress.py --deadline-seconds 100
@@ -356,7 +381,7 @@ jobs:
       - name: Version and release guard tests
         env:
           UPDATE_VERIFIER_BIN: ${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/debug/strata-update-verifier${{ runner.os == 'Windows' && '.exe' || '' }}
-        run: node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-assets.test.mjs scripts/release-publish.test.mjs scripts/preview-package-smoke.test.mjs scripts/download-upgrade-fixture.test.mjs scripts/release-from-ci.test.mjs scripts/ci-linux-native-tests.test.mjs scripts/ci-cache-policy.test.mjs
+        run: node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-assets.test.mjs scripts/release-publish.test.mjs scripts/preview-package-smoke.test.mjs scripts/download-upgrade-fixture.test.mjs scripts/release-from-ci.test.mjs scripts/ci-linux-native-tests.test.mjs scripts/ci-cache-policy.test.mjs scripts/ci-changes.test.mjs scripts/build-linux-test-keyring.test.mjs
       - name: Verify the signed beta.2 installer for the first stable upgrade
         if: runner.os == 'Windows' && steps.package-version.outputs.version == '0.1.2'
         id: upgrade-fixture
@@ -406,7 +431,7 @@ jobs:
     # Starts only after every shard and both desktop jobs succeeded, so no job
     # polls the Actions API while holding a Windows runner.
     needs: [changes, native-windows, native-linux, desktop]
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.native == 'true'
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     steps:

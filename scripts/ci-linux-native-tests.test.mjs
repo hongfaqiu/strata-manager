@@ -8,7 +8,7 @@ import {
   IGNORED_POLICY, WINDOWS_IGNORED_POLICY, targetPolicy, parseListing, parseCargoArtifacts, attachInventory, makePlan,
   validatePlan, selectionArgs, selectionBatches, argvBytes, windowsCommandUnits,
   MAX_FILTER_NAMES, MAX_ARGV_BYTES, MAX_WINDOWS_ARGV_BYTES, MAX_WINDOWS_COMMAND_UNITS, mergeBinaryReports,
-  failedTestNames, mergeRetriedBatch, MAX_RETRIED_TESTS,
+  failedTestNames, mergeRetriedBatch, MAX_RETRIED_TESTS, moduleWeight,
   parseResults, parseDocResults, validateCoverage, validateIgnoredPolicy, validateShardEvidence, parseOptions, workspaceDocTargets,
 } from './ci-linux-native-tests.mjs';
 
@@ -380,4 +380,32 @@ test('Cargo.lock binding ignores CRLF conversion between Windows shards and the 
   const { normalizedLockHash } = await import('./ci-linux-native-tests.mjs');
   assert.equal(normalizedLockHash('a\r\nb\r\n'), normalizedLockHash('a\nb\n'));
   assert.notEqual(normalizedLockHash('a\nb\n'), normalizedLockHash('a\nc\n'));
+});
+
+test('measured scheduling hints bind integration roots to their binary and keep unmeasured modules light', () => {
+  const lifecycle = {id: 'apps/supervisor:test:lifecycle'}; const other = {id: 'apps/supervisor:test:other'};
+  const lib = {id: 'crates/runtime-core:lib:strata_runtime_core'};
+  assert.equal(moduleWeight(lifecycle, '(root)', 3, 'linux'), 52);
+  assert.equal(moduleWeight(lifecycle, '(root)', 3, 'win32'), 58);
+  assert.equal(moduleWeight(other, '(root)', 3, 'linux'), 30);
+  assert.ok(Math.abs(moduleWeight(lib, '(root)', 3, 'linux') - 0.3) < 1e-9);
+  assert.equal(moduleWeight(lib, 'tuning::restart::tests', 27, 'linux'), 207);
+  assert.equal(moduleWeight(lib, 'tuning::restart::tests', 27, 'win32'), 169);
+  assert.equal(moduleWeight(lib, 'unmeasured::tests', 10, 'linux'), 1);
+  assert.equal(moduleWeight(lib, 'unmeasured::tests', 10, 'win32'), 1);
+  assert.equal(moduleWeight(lib, 'tuning::restart::tests', 0, 'linux'), 0, 'All-ignored modules carry no runtime.');
+});
+
+test('the slowest serial module shares its group with less work than the other groups', () => {
+  const names = (prefix, count) => Array.from({length: count}, (_, i) => c(`${prefix}::t${i}`));
+  const plan = makePlan([
+    {id: 'crates/runtime-core:lib:strata_runtime_core', package: 'strata-runtime-core', packagePath: 'crates/runtime-core', cases: [
+      ...names('tuning::restart::tests', 27), ...names('runtime_upgrade::tests', 22), ...names('idle_model::tests', 16),
+      ...names('tuning::workloads::tests', 15), ...names('installation::download::tests', 12), ...names('startup::tests', 15),
+      ...names('setup_handoff::tests', 10), ...names('health_watch::tests', 11)]},
+    {id: 'apps/supervisor:test:lifecycle', package: 'strata-supervisor', packagePath: 'apps/supervisor', cases: [c('a'), c('b'), c('c')]},
+  ], 3, fixtureBinding);
+  const restart = plan.groups.find(g => g.binaries.some(b => b.modules.includes('tuning::restart::tests')));
+  assert.deepEqual(restart.binaries.flatMap(b => b.modules), ['tuning::restart::tests']);
+  assert.ok(plan.groups.filter(g => g !== restart).every(g => !g.binaries.some(b => b.modules.includes('tuning::restart::tests'))));
 });
