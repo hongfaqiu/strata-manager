@@ -201,3 +201,24 @@ export function UsageSparkline({ values, color = 'accent', percentage = false }:
     {paths.map((points, index) => <g key={index}><path className="api-metric-area" d={areaPath(points, bottom)}/><path className="api-metric-line" d={linePath(points)}/>{points.length === 1 && <circle cx={points[0]!.x} cy={points[0]!.y} r={1.8}/>}</g>)}
   </svg>;
 }
+
+/** Share of request outcomes as a ring; zero-value outcomes are omitted from the ring but kept in the caller's legend. */
+export function OutcomeDonut({ items, label, centerLabel, centerValue }: { items: { label: string; value: number; color: ChartColor }[]; label: string; centerLabel: string; centerValue: string }) {
+  const total = items.reduce((sum, item) => sum + (knownMetric(item.value) ? item.value : 0), 0);
+  const radius = 42, circumference = 2 * Math.PI * radius, gap = total && items.filter(item => item.value > 0).length > 1 ? 1.6 : 0;
+  let offset = 0;
+  const description = `${label}: ${items.map(item => `${item.label} ${item.value.toLocaleString()}`).join(', ')}`;
+  return <div className="api-usage-donut">
+    <svg viewBox="0 0 100 100" role="img" aria-label={description}>
+      <circle className="api-usage-donut-track" cx="50" cy="50" r={radius}/>
+      {total > 0 && items.map(item => {
+        if (!(item.value > 0)) return null;
+        const length = item.value / total * circumference, dash = Math.max(0.0001, length - gap);
+        const segment = <circle key={item.label} className={`api-usage-donut-segment api-chart-color-${item.color}`} cx="50" cy="50" r={radius} strokeDasharray={`${dash} ${circumference - dash}`} strokeDashoffset={-offset} transform="rotate(-90 50 50)"/>;
+        offset += length;
+        return segment;
+      })}
+    </svg>
+    <div className="api-usage-donut-center"><strong>{centerValue}</strong><span>{centerLabel}</span></div>
+  </div>;
+}
