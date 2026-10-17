@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker, { maintain, recompute, RETENTION_MS, LIMITS } from '../src/index.js';
 import { validateSubmission } from '../src/schema.js';
-import { aggregate, filterOutliers, recommend } from '../src/stats.js';
+import { aggregate, facetOptions, filterOutliers, filterRows, recommend } from '../src/stats.js';
 import { evaluate, TRUST } from '../src/trust.js';
 import { leadingZeroBits, powMessage, sha256Hex } from '../src/crypto.js';
 import { createD1 } from './d1-shim.mjs';
@@ -211,6 +211,44 @@ test('leaderboard groups by model + quant and ranks hardware + parameter rows by
   assert.ok(groups.groups.every(g => !('rows' in g)) && groups.machines > 0);
   // The 12.0 run is flagged against its peers and never counted.
   assert.equal(env.DB.raw.prepare("SELECT COUNT(*) AS n FROM submissions WHERE flag = 'peer_outlier'").get().n, 1);
+});
+
+test('leaderboard filters by hardware tiers and launch parameters, re-ranks by the chosen sort and lists only existing options', async () => {
+  const env = envOf();
+  await populate(env);
+  const base = '/v1/leaderboard?group=swift:IQ3_S';
+  const lb = await (await get(env, base)).json();
+  assert.equal(lb.sort, 'decode8k'); assert.equal(lb.total, lb.rows.length);
+  assert.deepEqual(lb.options.ctx, [65536, 131072]); assert.deepEqual(lb.options.kv, ['int8', 'q4_0']);
+  assert.deepEqual(lb.options.vram, [24]); assert.deepEqual(lb.options.gpuCount, [1]); assert.deepEqual(lb.options.expertCache, ['auto']);
+  assert.ok(lb.options.gpus.some(g => g.gpu === 'NVIDIA GeForce RTX 3090' && g.vramGB === 24));
+  const ctx = await (await get(env, base + '&ctx=131072')).json();
+  assert.ok(ctx.rows.length > 0 && ctx.rows.every(r => r.params.ctx === 131072));
+  assert.deepEqual(ctx.rows.map(r => r.rank), ctx.rows.map((_, i) => i + 1), 'ranks restart inside the filter');
+  assert.equal(ctx.filter.ctx, 131072); assert.deepEqual(ctx.options, lb.options, 'options always describe the whole group');
+  const kv = await (await get(env, base + '&kv=q4_0')).json();
+  assert.ok(kv.rows.length && kv.rows.every(r => r.params.kv === 'q4_0'));
+  assert.equal((await (await get(env, base + '&ram=90')).json()).rows.length, lb.rows.length, 'RAM is matched to its tier (90 GB -> 96)');
+  assert.equal((await (await get(env, base + '&parallel=4')).json()).rows.length, 0);
+  assert.equal((await (await get(env, base + '&q=3090')).json()).rows.length, 1, 'keyword matches the GPU name');
+  assert.equal((await (await get(env, base + '&ctx=abc&sort=nope')).json()).rows.length, lb.rows.length, 'malformed values are ignored');
+  const byMachines = await (await get(env, base + '&sort=machines')).json();
+  assert.equal(byMachines.sort, 'machines'); assert.equal(byMachines.rows[0].machines, Math.max(...lb.rows.map(r => r.machines)));
+  assert.equal(byMachines.rows[0].rank, 1);
+  const byPrefill = await (await get(env, base + '&sort=prefill')).json();
+  for (let i = 1; i < byPrefill.rows.length; i++) assert.ok(byPrefill.rows[i - 1].prefill >= byPrefill.rows[i].prefill);
+});
+
+test('filterRows keeps rows without the sorted value last and unranked, and stays compatible with gpu / vram only', () => {
+  const row = (gpu, vramGB, decode, d128, over = {}) => ({ hw: { gpu, vramGB, ramGB: 64 }, params: { ctx: 131072, kv: 'int8', parallel: 1, gpuCount: 1, expertCache: null, ...over }, seed: false, machines: 3, decode: { p25: null, median: decode, p75: null }, prefill: decode * 50, decode128k: d128 });
+  const group = { rows: [row('NVIDIA GeForce RTX 4090', 24, 40, null), row('NVIDIA GeForce RTX 4080', 16, 30, 25), row('NVIDIA GeForce RTX 3090', 24, 28, 22, { parallel: 2 })] };
+  const long = filterRows(group, { sort: 'decode128k' });
+  assert.deepEqual(long.rows.map(r => [r.hw.gpu.slice(-4), r.rank]), [['4080', 1], ['3090', 2], ['4090', null]]);
+  assert.deepEqual(filterRows(group, { vram: '24' }).rows.map(r => r.rank), [1, 2]);
+  assert.deepEqual(filterRows(group, { gpu: 'NVIDIA GeForce RTX 4080' }).rows.map(r => r.decode.median), [30]);
+  assert.deepEqual(filterRows(group, { expertCache: 'auto', parallel: '2' }).rows.length, 1, 'a missing expert cache counts as auto');
+  assert.deepEqual(filterRows(group).rows.map(r => r.rank), [1, 2, 3]);
+  assert.deepEqual(facetOptions(group.rows).vram, [16, 24]); assert.deepEqual(facetOptions(group.rows).parallel, [1, 2]);
 });
 
 test('a verified in-app run counts on the leaderboard immediately; runs without or with failing evidence stay pending', async () => {

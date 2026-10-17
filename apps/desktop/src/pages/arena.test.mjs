@@ -51,3 +51,19 @@ test('uploads say whether the run evidence verified, and the hint explains immed
   }
   assert.doesNotMatch(strings, /2 天内上传 3 次|3 uploads over at least 2 days/, 'no probation wording left');
 });
+
+test('the leaderboard adds facet filters and a sort switch while keeping the hardware scope', () => {
+  const page = read('./ArenaPage.tsx'), strings = read('../ArenaStrings.ts');
+  assert.match(page, /\{ value: 'gpu', label: gpuLabel\(myGpu\.name\) \}, \{ value: 'vram', label: t\('arenaVramTier'/, 'my GPU / my VRAM tier / all scope stays');
+  assert.match(page, /core\.arenaLeaderboardQuery\(group, activeFilters, sort\)/, 'filters and sort reach the server');
+  assert.match(page, /core\.arenaApplyFilters\(board\?\.rows \?\? \[\], activeFilters, sort\)/, 'and are applied locally for servers that ignore them');
+  assert.match(page, /const FACET_ORDER: readonly ArenaFacet\[\] = \['vram', 'ram', 'ctx', 'kv', 'parallel', 'gpuCount', 'expertCache'\]/);
+  assert.match(page, /\(facetOptions\[facet\]\?\.length \?\? 0\) > 1/, 'only facets with a real choice are offered');
+  assert.match(page, /core\.ARENA_SORTS\.map/);
+  assert.match(page, /useEffect\(\(\) => \{ setFacets\(\{\}\); \}, \[group\]\)/, 'switching model + quant clears the filters');
+  for (const key of ['arenaFilters', 'arenaFilterAny', 'arenaFilterGpu', 'arenaFilterVram', 'arenaFilterRam', 'arenaFilterReset', 'arenaFilterShown', 'arenaNoMatch', 'arenaNoMatchHint', 'arenaSort', 'arenaSort_decode8k', 'arenaSort_decode128k', 'arenaSort_prefill', 'arenaSort_machines']) {
+    const line = strings.split('\n').find(l => l.trim().startsWith(key + ':'));
+    assert.ok(line, key);
+    assert.equal(line.match(/'(?:[^'\\]|\\.)*'/g).length, 10, `${key} has all 10 languages`);
+  }
+});
