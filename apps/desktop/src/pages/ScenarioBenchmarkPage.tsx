@@ -2,6 +2,7 @@ import type { AppLanguage } from "@strata-manager/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CircleHelp, Download, LoaderCircle, Play, Square, Timer } from 'lucide-react';
 import * as core from '@strata-manager/core';
+import { arenaAfterBenchmark } from './arenaUpload';
 import type { BenchmarkReport, BenchmarkSample, BenchmarkScenarioId, BenchmarkSuiteOptions, BenchmarkSuiteProgress, BenchmarkSuiteReport, BenchmarkTelemetry, ServiceProfile } from '@strata-manager/core';
 import { Badge, Chart, Dialog, Empty, Field, Header, Metric, Panel } from '../components';
 import { Checkbox, Dropdown, NumberField, Toggle } from '../OfficialControls';
@@ -139,6 +140,7 @@ export function ScenarioBenchmarkPage({ profile, online, disabled, language, onR
       setSelected(report);
       const next = retainedHistory([report, ...historyRef.current]); setHistory(next);
       await core.saveStore(STORE_KEY, next);
+      void arenaAfterBenchmark(report);
     } catch (err) { if (mounted.current) setError(core.normalizeError(err).message); }
     finally { controller.current = null; if (mounted.current) setRunning(false); onRunningChange(false); }
   }, [options, profile, online, disabled, loaded, onRunningChange, zh]);

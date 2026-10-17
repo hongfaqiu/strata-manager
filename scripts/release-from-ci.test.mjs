@@ -550,3 +550,13 @@ test('CI evidence accepts a successful change-detection gate job and rejects a f
   dup.jobs.push(gate(dup), { ...gate(dup), id: 8 });
   assert.throws(() => validateCiEvidence(dup.run, dup.jobs, dup.artifacts, plan), /Duplicate CI job/);
 });
+test('release installers compile in the Arena app key from the repository secret and refuse to build without it', async () => {
+  const workflow = (await readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')).replaceAll('\r\n', '\n');
+  const step = workflow.slice(workflow.indexOf('- name: Build test installers')).split('\n      - name:')[0];
+  assert.match(step, /STRATA_ARENA_APP_KEY: \$\{\{ secrets\.ARENA_APP_KEY \}\}/);
+  assert.match(step, /STRATA_ARENA_REQUIRE_KEY: \$\{\{ github\.repository == 'hongfaqiu\/strata-manager' && github\.event_name != 'pull_request' && '1' \|\| '' \}\}/);
+  const build = await readFile(new URL('../apps/desktop/src-tauri/build.rs', import.meta.url), 'utf8');
+  assert.match(build, /rerun-if-env-changed=STRATA_ARENA_APP_KEY/);
+  assert.match(build, /STRATA_ARENA_REQUIRE_KEY/);
+  assert.doesNotMatch(workflow, /ARENA_APP_KEY: ['"]?[0-9a-f]{32,}/, 'no key literal in CI');
+});

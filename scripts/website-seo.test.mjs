@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import test from 'node:test';
 import { documents, renderWebsiteDocs, verifyStaticWebsite } from './render-website-docs.mjs';
-import { documentSeo, parseWebsiteHtml, renderHomepage, renderSitemap, renderWebsiteSeo, site } from './website-seo.mjs';
+import { documentSeo, parseWebsiteHtml, renderHomepage, renderSitemap, renderWebsiteSeo, site, standalonePages } from './website-seo.mjs';
 
 const source = `<!doctype html><html lang="zh-CN"><head>
 <meta name="description" content="安装与管理 Strata。" data-content-en="Set up &amp; manage Strata.">
@@ -79,7 +79,7 @@ test('Sitemap lists both complete homepage URLs and reciprocal document language
   const sitemap = renderSitemap(documents);
   assert.doesNotMatch(sitemap, /\?lang=/);
   const entries = [...sitemap.matchAll(/<url>(.*?)<\/url>/gs)].map((match) => match[1]);
-  assert.equal(entries.length, documents.length + 2);
+  assert.equal(entries.length, documents.length + 2 + standalonePages.length);
   for (const url of [site, `${site}en/`]) {
     const entry = entries.find((value) => value.includes(`<loc>${url}</loc>`));
     assert.ok(entry.includes(`hreflang="zh-CN" href="${site}"`));

@@ -233,10 +233,11 @@ export function arenaMatch(groups: ArenaGroupSummary[] | undefined, family: stri
   const machines = tier.reduce((sum, item) => sum + item.machines, 0);
   return machines > 0 ? { group: group.group, level: 'vram', vramGB: gpu.vramGB, machines } : null;
 }
-export function arenaLeaderboardQuery(match: ArenaMatch): string {
-  const params = new URLSearchParams({ group: match.group });
-  if (match.level === 'gpu' && match.gpu) params.set('gpu', match.gpu); else if (match.vramGB) params.set('vram', String(match.vramGB));
-  return params.toString();
+/** Query map for the native `arena_get` leaderboard call; keys are within the backend's QUERY_KEYS allow-list. */
+export function arenaLeaderboardQuery(match: ArenaMatch): Record<string, string> {
+  const query: Record<string, string> = { group: match.group };
+  if (match.level === 'gpu' && match.gpu) query.gpu = match.gpu; else if (match.vramGB) query.vram = String(match.vramGB);
+  return query;
 }
 /** Machine count drives the 1–3 bar confidence glyph (not a colour scale). */
 export const confidenceBars = (machines: number) => machines >= 10 ? 3 : machines >= 3 ? 2 : machines > 0 ? 1 : 0;

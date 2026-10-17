@@ -3,6 +3,7 @@ import { TierAxis } from './D2PageStrips';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Copy, LoaderCircle, Play, Square } from 'lucide-react';
 import * as core from '@strata-manager/core';
+import { arenaAfterBenchmark } from './arenaUpload';
 import type { ContextBenchmarkOptions, ContextBenchmarkProgress, ContextBenchmarkReport, ContextBenchmarkSample, ServiceProfile } from '@strata-manager/core';
 import { Badge, Empty, Field, Header, Panel } from '../components';
 import { Checkbox, Dropdown, NumberField, Toggle } from '../OfficialControls';
@@ -87,6 +88,7 @@ export function ContextBenchmarkPage({ profile, online, disabled, language, onRu
       }, abort.signal);
       if (!mounted.current) return;
       setSelected(report); const next = retain([report, ...historyRef.current]); setHistory(next); await core.saveStore(STORE_KEY, next);
+      void arenaAfterBenchmark(report);
     } catch (err) { if (mounted.current) setError(core.normalizeError(err).message); }
     finally { controller.current = null; if (mounted.current) setRunning(false); onRunningChange(false); }
   };

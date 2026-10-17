@@ -83,4 +83,15 @@ export interface ContextBenchmarkReport {
   resourceIntervalMs: 1000;
   hardware?: JsonObject;
   engine?: JsonObject;
+  /** Content-free run trace kept for signed Arena run evidence: engine counters and a downsampled resource series. */
+  evidence?: ContextBenchmarkEvidence;
+}
+
+/** Engine /metrics `totals` counters. */
+export interface ContextBenchmarkCounters { requests: number; promptTokens: number; outputTokens: number }
+export interface ContextBenchmarkEvidence {
+  /** Counters before the first and after the last request; null when the engine does not report totals. */
+  counters: { before: ContextBenchmarkCounters; after: ContextBenchmarkCounters } | null;
+  /** Every resource sample of the run (count), bucketed into at most 120 steps: peak memory in GB, mean GPU utilization in %. */
+  series: { count: number; stepMs: number; vramGB: (number | null)[]; ramGB: (number | null)[]; gpuUtil: (number | null)[] };
 }

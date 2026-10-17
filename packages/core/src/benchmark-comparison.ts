@@ -10,6 +10,8 @@ export interface BenchmarkIdentity {
   model: { strength: 'sha256' | 'metadata' | 'unknown'; fingerprint: string | null; files?: JsonObject[] };
   savedConfigurationHash: string; effectiveStartupHash: string | null; effectiveVerified: boolean;
   engineProcess?: { pid: number; startedAt: number } | null;
+  /** Whitelisted launch parameters for Benchmark Arena; absent for unrecognized configurations. */
+  launch?: import('./arena').ArenaLaunch | null;
 }
 export interface BenchmarkComparison { comparable: boolean; differences: string[]; unknowns: string[]; }
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);

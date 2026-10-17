@@ -380,6 +380,10 @@ jobs:
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Benchmark Arena upload key, compiled in at build time. Builds without it (forks, PRs from forks) are
+          # read-only; release-capable runs in this repository fail the build if the secret is missing.
+          STRATA_ARENA_APP_KEY: ${{ secrets.ARENA_APP_KEY }}
+          STRATA_ARENA_REQUIRE_KEY: ${{ github.repository == 'hongfaqiu/strata-manager' && github.event_name != 'pull_request' && '1' || '' }}
         with:
           projectPath: apps/desktop
           tauriScript: pnpm tauri

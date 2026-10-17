@@ -141,10 +141,10 @@ test('arena match prefers same GPU, then VRAM tier, else nothing', () => {
   const groups = [{ group: 'swift:IQ3_S', family: 'swift', quant: 'IQ3_S', machines: 12, gpus: [{ gpu: 'RTX 4090', vramGB: 24, machines: 9 }, { gpu: 'RTX 3090', vramGB: 24, machines: 4 }] }];
   const same = model.arenaMatch(groups, 'swift', 'IQ3_S', gpu);
   assert.equal(same.level, 'gpu'); assert.equal(same.machines, 9);
-  assert.equal(model.arenaLeaderboardQuery(same), 'group=swift%3AIQ3_S&gpu=RTX+4090');
+  assert.equal(JSON.stringify(model.arenaLeaderboardQuery(same)), JSON.stringify({ group: 'swift:IQ3_S', gpu: 'RTX 4090' }));
   const other = model.arenaMatch(groups, 'swift', 'IQ3_S', model.parseGpu('NVIDIA GeForce RTX 4080 SUPER, 1, 24576 MiB'));
   assert.equal(other.level, 'vram'); assert.equal(other.machines, 13);
-  assert.equal(model.arenaLeaderboardQuery(other), 'group=swift%3AIQ3_S&vram=24');
+  assert.equal(JSON.stringify(model.arenaLeaderboardQuery(other)), JSON.stringify({ group: 'swift:IQ3_S', vram: '24' }));
   assert.equal(model.arenaMatch(groups, 'qwen', 'Q2_0', gpu), null);
   assert.equal(model.arenaMatch([], 'swift', 'IQ3_S', gpu), null, 'empty public data shows no measurement');
   assert.equal(model.arenaMatch(undefined, 'swift', 'IQ3_S', gpu), null, 'offline shows no measurement');

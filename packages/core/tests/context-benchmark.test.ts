@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CONTEXT_BENCHMARK_HEADROOM, CONTEXT_BENCHMARK_TIERS, DEFAULT_CONTEXT_BENCHMARK_OPTIONS, getContextBenchmarkTiers, planContextBenchmarkTiers, runContextBenchmark, validateContextBenchmarkOptions, compareContextBenchmarkReports } from '../src/context-benchmark';
+import { CONTEXT_BENCHMARK_HEADROOM, CONTEXT_BENCHMARK_TIERS, DEFAULT_CONTEXT_BENCHMARK_OPTIONS, getContextBenchmarkTiers, planContextBenchmarkTiers, runContextBenchmark, validateContextBenchmarkOptions, compareContextBenchmarkReports, benchmarkEvidenceSeries, benchmarkCounters } from '../src/context-benchmark';
 import { acquireBenchmarkEndpoint } from '../src/benchmark';
 import { StrataError } from '../src/errors';
 import type { ChatDelta } from '../src/chat';
@@ -174,6 +174,35 @@ describe('request metrics and whole-system resource observations', () => {
     const report = await settle(runContextBenchmark(profile, options(), () => {}));
     expect(report.samples[0]).toMatchObject({ state: 'completed', cachedTokens: 0, completionTokens: 512, prefillTokS: 1000, decodeTokS: 80, wallMs: 2500, ttftMs: 2500,
       peakGpuMemory: 900, minGpuMemoryFree: 100, peakRam: 2000, resourceSamples: 4 });
+  });
+
+  it('keeps a content-free run trace for Arena evidence: counters around the run and a bucketed resource series', async () => {
+    latency = 2500;
+    const GiB = 1024 ** 3;
+    bridge.request.mockImplementation(async (_profile, path, _method, body: JsonObject) => {
+      if (path === '/health') return { ...health };
+      if (path === '/v1/messages/count_tokens') return { input_tokens: tokenCount(body) };
+      const mid = performance.now() >= 1000 && performance.now() < 2500;
+      return { hardware: { gpu_mem_used: (mid ? 21.4 : 18) * GiB, gpu_mem_total: 24 * GiB, ram_used: (mid ? 61.5 : 60) * GiB, gpu_util: mid ? 90 : 10 },
+        totals: { requests: 10 + calls.length, prompt_tokens: 1000 + calls.length * 7000, output_tokens: 50 + calls.length * 512 } };
+    });
+    const report = await settle(runContextBenchmark(profile, options(), () => {}));
+    expect(report.evidence?.counters).toEqual({ before: { requests: 10, promptTokens: 1000, outputTokens: 50 }, after: { requests: 11, promptTokens: 8000, outputTokens: 562 } });
+    const series = report.evidence!.series;
+    expect(series.count).toBe(report.samples[0]!.resourceSamples);
+    expect(series.stepMs).toBe(1000); expect(series.vramGB).toHaveLength(Math.max(1, Math.ceil(report.elapsedMs / 1000)));
+    expect(Math.max(...series.vramGB.map(v => v ?? 0))).toBe(21.4); expect(Math.max(...series.ramGB.map(v => v ?? 0))).toBe(61.5);
+    expect(series.gpuUtil.every(u => u === null || (u >= 0 && u <= 100))).toBe(true);
+    expect(Object.keys(report.evidence!).sort()).toEqual(['counters', 'series']); expect(JSON.stringify(report.evidence)).not.toMatch(/:"/);
+  });
+
+  it('buckets long runs into at most 120 steps and leaves counters null when the engine has no totals', () => {
+    const t0 = 1_000_000, points = Array.from({ length: 3600 }, (_, i) => [t0 + i * 1000, (20 + (i === 1800 ? 2 : 0)) * 1024 ** 3, 60 * 1024 ** 3, i % 2 ? 100 : 50] as [number, number, number, number]);
+    const series = benchmarkEvidenceSeries(points, t0, 3_600_000, 1000);
+    expect(series.vramGB).toHaveLength(120); expect(series.stepMs).toBe(30_000); expect(series.count).toBe(3600);
+    expect(Math.max(...series.vramGB.map(v => v ?? 0))).toBe(22); expect(series.gpuUtil[0]).toBe(75);
+    expect(benchmarkCounters({ totals: { requests: 1 } })).toBeNull();
+    expect(benchmarkCounters({ totals: { requests: 3, prompt_tokens: 9, output_tokens: 2 } })).toEqual({ requests: 3, promptTokens: 9, outputTokens: 2 });
   });
 
   it('keeps missing/invalid fields null rather than assigning host history or invented cache misses', async () => {

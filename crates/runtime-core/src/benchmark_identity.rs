@@ -97,6 +97,9 @@ fn resource_configuration(args: &[String]) -> Option<Value> {
         "--kv-resident",
         "--expert-cache",
         "--vram-reserve-mib",
+        // Benchmark Arena compares these launch parameters within a model + quant group.
+        "--pool-workers",
+        "--pcie-frac",
     ] {
         if let Some(value) = option(args, &[flag]) {
             if value.len() > 64
