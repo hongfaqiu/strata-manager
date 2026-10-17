@@ -277,6 +277,21 @@ const strataReleaseCatalog = (() => {
       "zh": { "title": "用量 · 请求与 tokens", "description": "请求、tokens、延迟和缓存复用趋势。", "alt": "API 用量趋势，隔离示例数据", "badge": "API 用量" },
       "en": { "title": "Usage · Requests and tokens", "description": "Requests, tokens, latency and cache reuse.", "alt": "API usage trends, isolated example data", "badge": "USAGE" }
     },
+    "onboarding": {
+      "index": "12", "image": "onboarding",
+      "zh": { "title": "开始使用 · 分步引导", "description": "从检查环境到第一次聊天，按本机内存选模型。", "alt": "开始使用引导，隔离示例数据", "badge": "开始使用" },
+      "en": { "title": "Get started · Step-by-step guide", "description": "From environment checks to the first chat, with models filtered by this computer's memory.", "alt": "Getting started guide, isolated example data", "badge": "GET STARTED" }
+    },
+    "config-cleanup": {
+      "index": "12", "image": "config-cleanup",
+      "zh": { "title": "模型 · 旧版本配置清理", "description": "把旧版本运行配置移入可恢复的归档。", "alt": "旧版本配置清理，隔离示例数据", "badge": "多版本配置" },
+      "en": { "title": "Models · Clean up old-version configurations", "description": "Move old run configurations into a restorable archive.", "alt": "Old-version configuration cleanup, isolated example data", "badge": "MULTI-VERSION" }
+    },
+    "arena": {
+      "index": "04", "image": "arena",
+      "zh": { "title": "Benchmark · 排行榜", "description": "同模型、同量化对比不同硬件，可筛选并切换排序。", "alt": "Benchmark 排行榜，示例数据", "badge": "排行榜" },
+      "en": { "title": "Benchmark · Leaderboard", "description": "Compare the same model and quantization across hardware, with filters and sorting.", "alt": "Benchmark leaderboard, example data", "badge": "LEADERBOARD" }
+    },
     "running-services": {
       "index": "15", "image": "running-services",
       "zh": { "title": "服务 · 运行中实例", "description": "查看加载状态、模型、配置和 API 地址。", "alt": "运行中服务状态与连接", "badge": "运行中服务" },
