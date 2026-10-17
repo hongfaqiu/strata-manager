@@ -94,7 +94,7 @@ Strata Manager 提供模型下载列表与详情、统一的多显卡及运行�
 
 | 开始使用引导 | 旧版本配置清理 | Benchmark 排行榜 |
 | --- | --- | --- |
-| [![开始使用引导：检查环境、安装 Strata、按本机内存选模型、下载与第一次聊天](docs/screenshots/onboarding.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/onboarding.zh.webp) | [![旧版本配置清理：按 Strata 版本列出运行配置，移入可恢复的归档](docs/screenshots/config-cleanup.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/config-cleanup.zh.webp) | [![Benchmark 排行榜：同模型、同量化在不同硬件上的成绩、参数与调参建议](docs/screenshots/arena.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/arena.zh.webp) |
+| [![开始使用引导：检查环境、安装 Strata、按本机内存选模型、下载与第一次聊天](docs/screenshots/onboarding.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/onboarding.zh.webp) | [![旧版本配置清理：按 Strata 版本列出运行配置，移入可恢复的归档](docs/screenshots/config-cleanup.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/config-cleanup.zh.webp) | [![Benchmark 排行榜：同模型、同量化在不同硬件上的成绩与参数，可筛选、排序并给出调参建议](docs/screenshots/arena.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/arena.zh.webp) |
 
 <details>
 <summary><strong>更多界面：运行环境、聊天、公共设置、连接、更新、基准测试与监控</strong></summary>

@@ -289,8 +289,8 @@ const strataReleaseCatalog = (() => {
     },
     "arena": {
       "index": "04", "image": "arena",
-      "zh": { "title": "Benchmark · 排行榜", "description": "同模型、同量化对比不同硬件的成绩和参数。", "alt": "Benchmark 排行榜，示例数据", "badge": "排行榜" },
-      "en": { "title": "Benchmark · Leaderboard", "description": "Compare the same model and quantization across hardware.", "alt": "Benchmark leaderboard, example data", "badge": "LEADERBOARD" }
+      "zh": { "title": "Benchmark · 排行榜", "description": "同模型、同量化对比不同硬件，可筛选并切换排序。", "alt": "Benchmark 排行榜，示例数据", "badge": "排行榜" },
+      "en": { "title": "Benchmark · Leaderboard", "description": "Compare the same model and quantization across hardware, with filters and sorting.", "alt": "Benchmark leaderboard, example data", "badge": "LEADERBOARD" }
     },
     "running-services": {
       "index": "15", "image": "running-services",
