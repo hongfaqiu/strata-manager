@@ -42,6 +42,8 @@ pub(super) fn allowed_while_deferred(method: &str, params: &Value) -> bool {
             | "get_background_policy"
             | "runtime_upgrade_status"
             | "tuning_status"
+            | "tuning_live"
+            | "calibrate_status"
             | "request_capture_status"
             | "restore_local_registry"
             | "resume_supervisor"
