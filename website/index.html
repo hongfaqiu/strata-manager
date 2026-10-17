@@ -154,22 +154,22 @@
         <article class="feature-card">
           <span class="feature-number" aria-hidden="true">01</span>
           <h3 data-en="Environment &amp; Strata updates">环境与 Strata 更新</h3>
-          <p data-en="Detect existing installs, validate configs with backups, and update Windows engine ZIPs from GitHub, mirrors or a local package.">检测已有安装，校验配置并保留备份；Windows 引擎 ZIP 可走官方 GitHub、镜像或本地包。</p>
+          <p data-en="Detect existing installs, validate configs with backups, and update Windows engine ZIPs from GitHub, mirrors or a local package. First time? Getting started walks through installing Strata, picking and downloading a model, loading it and the first chat.">检测已有安装，校验配置并保留备份；Windows 引擎 ZIP 可走官方 GitHub、镜像或本地包。第一次用时，“开始使用”带你装好 Strata、选模型下载、加载到第一次聊天。</p>
         </article>
         <article class="feature-card">
           <span class="feature-number" aria-hidden="true">02</span>
           <h3 data-en="Models &amp; services">模型与服务</h3>
-          <p data-en="Pick a model from the download list, set GPU / context / KV / slots in one place, and start or stop the service. Resource estimates follow the current choice; unknowns stay unknowns—no capacity promise from missing evidence.">在下载列表选模型，详情里一次选好显卡、上下文、KV 和槽位；启停服务时资源评估跟着当前选择变。未知项就标未知，不会拿缺证据硬说容量。</p>
+          <p data-en="Pick a model from the download list, set GPU / context / KV / slots in one place, and start or stop the service. Resource estimates follow the current choice; unknowns stay unknowns—no capacity promise from missing evidence. Several Strata versions sharing one weight folder? Configurations are labeled by version, the current one comes first, and old-version copies can be cleaned up and restored.">在下载列表选模型，详情里一次选好显卡、上下文、KV 和槽位；启停服务时资源评估跟着当前选择变。未知项就标未知，不会拿缺证据硬说容量。多个 Strata 版本共用一份权重时，配置按版本标注、当前版本在前，旧版本的副本可以清理，也能恢复。</p>
         </article>
         <article class="feature-card">
           <span class="feature-number" aria-hidden="true">03</span>
           <h3 data-en="Shared chat &amp; API / MCP">公共聊天与 API / MCP</h3>
-          <p data-en="Streaming chat with attachments, shared generation defaults or per-model values. Configure connection targets, access keys and MCP in one place; the wizard includes Cursor and Codex examples without starting a model.">流式聊天和附件，公共生成参数可按模型继承或保留专用值。在“API 与外部助手”里配连接目标、密钥和 MCP；向导带 Cursor、Codex 示例，选目标不会启动模型。</p>
+          <p data-en="Streaming chat with attachments, shared generation defaults or per-model values. Configure connection targets, access keys and MCP in one place; the wizard includes Cursor and Codex examples without starting a model. Online verification checks the API step by step with timings and failure reasons.">流式聊天和附件，公共生成参数可按模型继承或保留专用值。在“API 与外部助手”里配连接目标、密钥和 MCP；向导带 Cursor、Codex 示例，选目标不会启动模型。在线验证逐步检查 API，每步给出耗时和失败原因。</p>
         </article>
         <article class="feature-card">
           <span class="feature-number" aria-hidden="true">04</span>
           <h3 data-en="Monitoring &amp; desktop strip">资源监控与桌面浮条</h3>
-          <p data-en="Hardware, API usage and recent generation vs input-processing trends keep their gaps. The desktop strip stays off until you turn it on—three layouts, metric order and colors—and never starts the backend just to sample.">硬件、API 用量，以及生成／输入处理的近期趋势都会留着缺失点。桌面浮条默认关掉，三种布局、指标排序和配色可调；打开它也不会为了采样去启动后台。</p>
+          <p data-en="Hardware, API usage and recent generation vs input-processing trends keep their gaps. The desktop strip stays off until you turn it on—three layouts, metric order and colors—and never starts the backend just to sample. API usage leads with requests, success rate, tokens and generation speed.">硬件、API 用量，以及生成／输入处理的近期趋势都会留着缺失点。桌面浮条默认关掉，三种布局、指标排序和配色可调；打开它也不会为了采样去启动后台。API 用量先看请求、成功率、Token 和生成速度。</p>
         </article>
         <article class="feature-card">
           <span class="feature-number" aria-hidden="true">05</span>
@@ -179,8 +179,9 @@
         <article class="feature-card" id="benchmark">
           <span class="feature-number" aria-hidden="true">06</span>
           <h3 data-en="Benchmark &amp; history">Benchmark 与历史对照</h3>
-          <p data-en="Run context tiers within the verified limit, or seven serial scenarios. Keep a pre-upgrade baseline and compare conditions; weak identity blocks direct speedup conclusions. Export PNG, JSON or CSV.">在核验上限内跑上下文档位，或串行七类场景。升级前可留基线对照条件；身份弱就不下直接提速结论。支持 PNG、JSON／CSV 导出。</p>
+          <p data-en="Run context tiers within the verified limit, or seven serial scenarios. Keep a pre-upgrade baseline and compare conditions; weak identity blocks direct speedup conclusions. Export PNG, JSON or CSV. Opt in to share results anonymously on the leaderboard and compare the same model and quantization across hardware.">在核验上限内跑上下文档位，或串行七类场景。升级前可留基线对照条件；身份弱就不下直接提速结论。支持 PNG、JSON／CSV 导出。同意后可把结果匿名分享到排行榜，按同模型、同量化对比不同硬件。</p>
           <a class="feature-link" href="#screen-benchmark" data-en="See the Benchmark workspace ↘">查看 Benchmark 工作区 ↘</a>
+          <a class="feature-link" href="leaderboard.html" data-href-en="leaderboard.en.html" data-en="Open the leaderboard ↗">查看排行榜 ↗</a>
         </article>
         </div>
       </div>
