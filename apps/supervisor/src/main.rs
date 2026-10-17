@@ -5,6 +5,8 @@ use strata_runtime_core::RuntimeState;
 use tokio_util::sync::CancellationToken;
 
 fn main() {
+    // Engine probes and services must never block on a Windows loader dialog.
+    strata_runtime_core::processes::suppress_hard_error_dialogs();
     if let Some(result) = strata_runtime_core::manager_mcp_stdio::run_if_requested() {
         match result {
             Ok(code) => std::process::exit(code),
