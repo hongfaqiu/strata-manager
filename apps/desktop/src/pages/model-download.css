@@ -102,3 +102,8 @@
 .model-download-variant .d2-variant-fit small{display:block}
 .model-download-variant .d2-variant-fit small{background:none;padding:0;border-radius:0;font-weight:500;margin:0}
 .d2-catalog-live.is-error{color:var(--danger,#c43d4b);font-family:inherit}.d2-catalog-live i.is-error{background:var(--danger,#c43d4b)}
+.model-download-context-presets{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px}
+.model-download-context-presets button{display:inline-flex;align-items:baseline;gap:5px;min-height:30px;padding:4px 11px;border:1px solid var(--st-line);border-radius:8px;background:transparent;font-size:13px;font-variant-numeric:tabular-nums;cursor:pointer}
+.model-download-context-presets button small{font-size:10px;color:var(--st-warn-text,#8a4b00)}
+.model-download-context-presets button.is-selected{border-color:var(--st-accent);color:var(--st-accent-text);background:color-mix(in srgb,var(--st-accent) 9%,transparent)}
+.model-download-detail-body>.context-extension{margin:-4px 0 14px}

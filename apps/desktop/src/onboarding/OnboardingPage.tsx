@@ -7,6 +7,7 @@ import type { LogEntry, ServiceProfile, TaskStatus } from '@strata-manager/core'
 import { Dropdown, Segmented, Toggle } from '../OfficialControls';
 import { D2DotAxis } from '../pages/D2Visuals';
 import { ResourceAssessmentPanel } from '../pages/ResourceAssessmentPanel';
+import { ContextExtensionNotice } from '../pages/ContextExtensionNotice';
 import { SetupHandoffActions } from '../pages/SetupHandoffActions';
 import { taskProgress } from '../pages/d2Estimates';
 import { fetchArenaGroups, fetchArenaTier } from './arenaPublic';
@@ -63,8 +64,8 @@ export interface OnboardingPageProps {
   onError: (error: unknown) => void;
 }
 
-const CONTEXTS = [8192, 32768, 65536, 131072];
-const contextLabel = (value: number) => `${Math.round(value / 1024)}K`;
+const CONTEXTS = [8192, 32768, 65536, 131072, 262144, 524288, 1048576];
+const contextLabel = (value: number) => core.formatContextTokens(value);
 const clock = (ms: number) => { const s = Math.max(0, Math.floor(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), r = s % 60; return `${h ? `${h}:` : ''}${String(m).padStart(h ? 2 : 1, '0')}:${String(r).padStart(2, '0')}`; };
 const gb = (value: number, digits = 1) => value.toLocaleString(undefined, { maximumFractionDigits: digits });
 const modelName = (family: string) => core.MODEL_CATALOG.find(model => model.family === family)?.name ?? family;
@@ -320,7 +321,8 @@ function ModelStep(props: StepProps & { runtimeProfile?: ServiceProfile }) {
       {selected && entry ? <>
         <div className="ob-side-sec"><span className="ob-eyebrow">{t('obSelected')}</span><h3>{entry.name} <code className="ob-quant">{selected.quant}</code></h3></div>
         <div className="ob-side-sec">
-          <label className="ob-field"><span>{t('obContext')}</span><Dropdown ariaLabel={t('obContext')} value={String(selected.context)} onValueChange={value => select({ context: Number(value) })} options={[...new Set([...CONTEXTS, selected.context])].sort((a, b) => a - b).map(value => ({ value: String(value), label: contextLabel(value) }))}/></label>
+          <label className="ob-field"><span>{t('obContext')}</span><Dropdown ariaLabel={t('obContext')} value={String(selected.context)} onValueChange={value => select({ context: Number(value) })} options={[...new Set([...CONTEXTS, selected.context])].sort((a, b) => a - b).map(value => ({ value: String(value), label: core.isExtendedContext(value) ? `${contextLabel(value)} · ${t('obExperimental')}` : contextLabel(value) }))}/></label>
+          <ContextExtensionNotice mode="setup" language={props.language} context={selected.context} kv={selected.context <= 8192 ? 'fp16' : 'int8'}/>
           <div className="ob-field is-row"><span>{t('obImages')}</span><Toggle ariaLabel={t('obImages')} checked={selected.images} disabled={!entry.images || !!info?.visionUntested} onCheckedChange={images => select({ images })}/></div>
         </div>
         <div className="ob-side-sec"><h4>{t('obFitHeading')}</h4>

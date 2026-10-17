@@ -120,3 +120,8 @@ test('disk refreshes preserve the same resource sample and resource query identi
   assert.deepEqual(lastQuery.queryKey,firstQuery.queryKey);assert.equal(lastQuery.enabled,true);
   assert.match(visibleText(tree),/50 GiB/);assert.match(visibleText(tree),/适合尝试/);assert.doesNotMatch(visibleText(tree),/正在更新预估/);
 });
+
+test('extended contexts show the yarn factor with KV and RoPE table components',()=>{
+  const tree=fixture({data:{...assessment,contextExtension:{trainedContext:262144,scaling:'yarn',scale:4,kvBytes:1048576*13*1056,ropeBytes:1048576*266}}}).render({compact:true});
+  assert.match(textOf(tree),/上下文扩展 YaRN ×4/);assert.match(textOf(tree),/13\.41 GiB/);assert.match(textOf(tree),/0\.26 GiB/);
+});

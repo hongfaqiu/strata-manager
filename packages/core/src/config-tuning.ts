@@ -1,6 +1,7 @@
 import type { JsonObject } from './types';
 import { STARTUP_ENGINE_FLAGS } from './startup-engine-flags';
 import { startupServiceEndpoint } from './config-profile';
+import { contextExtensionError } from './context-extension';
 export { STARTUP_ENGINE_FLAGS } from './startup-engine-flags';
 
 export interface StartupTuning { context: string; kv: string; threads: string }
@@ -67,7 +68,7 @@ const fields = (group: StartupFieldGroup, target: StartupFieldSpec['target'], va
  */
 export const STARTUP_TUNING_FIELDS: readonly StartupFieldSpec[] = [
   ...fields('context', 'arg', [
-    ['--max-context', '上下文容量（token）', 'Context capacity (tokens)', 'integer', ['4096', '32768', '65536', '131072', '262144', '524288'], 1, 2147483647],
+    ['--max-context', '上下文容量（token）', 'Context capacity (tokens)', 'integer', ['4096', '32768', '65536', '131072', '262144', '393216', '524288', '1048576'], 1, 2147483647],
     ['--kv', 'KV 缓存精度', 'KV precision', 'text', ['fp16', 'int8', 'q4_0', 'k8v4']],
     ['--kv-resident', '显存驻留 KV（token，0 为全部驻留）', 'Resident KV (tokens; 0 = full)', 'integer', undefined, 0],
     ['--kv-grow', '动态增长 KV', 'Grow KV dynamically', 'boolean'],
@@ -301,6 +302,8 @@ export function validateStartupConfiguration(config: JsonObject): void {
   const capacity = integer(context, '--max-context', 2147483647);
   if (resident && (!Number.isSafeInteger(Number(resident)) || Number(resident) < 0)) throw new Error('--kv-resident 必须为非负整数 / must be a nonnegative integer');
   if (resident && Number(resident) > (capacity ?? 4096)) throw new Error('上下文不能小于 --kv-resident，请同时调整两个参数 / context is below resident KV; adjust both options');
+  const ropeError = contextExtensionError(context, valueOf(args, '--rope-scaling'), valueOf(args, '--rope-scale'));
+  if (ropeError) throw new Error(ropeError);
   for (const key of ['exe', 'cwd', 'tokenizer', 'model_name', 'log', 'host']) if (config[key] !== undefined && typeof config[key] !== 'string') throw new Error(`${key}: 必须为字符串 / must be a string`);
   if (config.api_key !== undefined && typeof config.api_key !== 'string' && !(Array.isArray(config.api_key) && config.api_key.every(key => typeof key === 'string' && !!key.trim()))) throw new Error('api_key: 必须为字符串或非空密钥的数组 / must be a string or an array of nonempty keys');
   for (const key of ['sampling', 'env', 'vision']) if (config[key] !== undefined && config[key] !== null && (!config[key] || typeof config[key] !== 'object' || Array.isArray(config[key]))) throw new Error(`${key}: 必须为对象或 null / must be an object or null`);
