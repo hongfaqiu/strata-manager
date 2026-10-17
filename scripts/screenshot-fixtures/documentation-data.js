@@ -51,7 +51,7 @@
     }
     if (command === 'plugin:app|version') { record(command, args); return version; }
     if (command === 'plugin:updater|check') { record(command, args); return null; }
-    if (command === 'supervisor_status') { record(command, args); return { running: true, pid: 99000, protocolVersion: 1, activeServices: 1, activeLocalInstallation: 'a', version, capabilities: { fullScenarioTuning: 1, runtimeZipDownloadTest: 1 }, health: { a: { phase: 'healthy', apiHealthy: true, loaded: true, activeRequests: 1, pid: 99999, checkedAt: Date.now(), observerState: 'generating', failures: [] } } }; }
+    if (command === 'supervisor_status') { record(command, args); return { running: true, pid: 99000, protocolVersion: 1, activeServices: 1, activeLocalInstallation: 'a', version, capabilities: { fullScenarioTuning: 1, quickCalibration: 1, tuningLive: 1, runtimeZipDownloadTest: 1 }, health: { a: { phase: 'healthy', apiHealthy: true, loaded: true, activeRequests: 1, pid: 99999, checkedAt: Date.now(), observerState: 'generating', failures: [] } } }; }
     if (command === 'service_status') { record(command, args); const id = args.profileId || args.profile?.id || 'a'; return { profileId: id, running: id === 'a', owned: id === 'a', pid: id === 'a' ? 99999 : null, creationTime: id === 'a' ? 'documentation-instance-1' : undefined, phase: id === 'a' ? 'ready' : 'stopped' }; }
     if (command === 'strata_request') {
       record(command, args);

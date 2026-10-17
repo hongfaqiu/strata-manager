@@ -1,21 +1,21 @@
 {
   "capturedOn": "2026-10-14",
-  "capturedAt": "2026-10-17T11:56:04.063Z",
-  "appVersion": "0.1.12",
+  "capturedAt": "2026-10-17T18:36:27.448Z",
+  "appVersion": "0.1.13",
   "releaseStatus": "unreleased",
   "source": "Current production main.tsx and styles; isolated synthetic native IO",
   "scope": "No real model, GPU benchmark, native window acceptance, installation, update or user configuration changes.",
-  "sourceBaseCommit": "b7e40bbd5eed4714175f7ecca0d946d26482a178",
-  "sourceTreeSha256": "4027f8eb722633ffdde0a4bfff2d558c4a35347e0e7d39c4b2d610ecb19f8a24",
+  "sourceBaseCommit": "476f4a66569d3b6e006cc14dc853a8d972c824be",
+  "sourceTreeSha256": "be5a242b13c40388e4dc32ca59729e5e8543c91312636e83eaed7f659c61af93",
   "sourceUnchangedDuringCapture": true,
   "sources": [
     {
       "file": "CHANGELOG.md",
-      "sha256": "f0b0a85fca770f5cdd522700f1d80d3fc09babb35847fd83d56f781fb13c4762"
+      "sha256": "493461eb0afa1339828b25ee0cfdc2bd351bce90518354f3cecd2b0b891b7c41"
     },
     {
       "file": "apps/desktop/package.json",
-      "sha256": "166c57ab784aabd6f1f90a4dcb2a11328a3c5540c2d979a9837048eeab283ded"
+      "sha256": "a2c074fab74bf24f7ff40368a4fa78a3f0cb7fffadaabf1531915a41c6981634"
     },
     {
       "file": "apps/desktop/src-tauri/src/arena.rs",
@@ -55,7 +55,7 @@
     },
     {
       "file": "apps/desktop/src-tauri/src/lib.rs",
-      "sha256": "9c028e81e5e822ffc98fb82cfff0573ceab3a30dbbf9e62fb0c8a400ae1ea1d9"
+      "sha256": "2f8d8321722b1e78a43cc495a2632cae13ad39b8317921006d5ff88e528cc896"
     },
     {
       "file": "apps/desktop/src-tauri/src/main.rs",
@@ -151,7 +151,7 @@
     },
     {
       "file": "apps/desktop/src/App.tsx",
-      "sha256": "8778508fd0a459913ed9fece26f5de323bc710f9c54e1195357f04eb85a17085"
+      "sha256": "af073ee632ee389d125bad438c849014b66e442647fb2b27e7d3eefdb38624b3"
     },
     {
       "file": "apps/desktop/src/AppLogo.tsx",
@@ -163,7 +163,7 @@
     },
     {
       "file": "apps/desktop/src/ArenaStrings.ts",
-      "sha256": "9ec76a2641c2939f534e847fc512ccf25a69ae55f5d01623952f99affe4e0403"
+      "sha256": "f9f411d93a6955e284130d19ebf923d473adbb844e94fa044168e9a289fb17f5"
     },
     {
       "file": "apps/desktop/src/ChatAdvancedOptions.tsx",
@@ -235,7 +235,7 @@
     },
     {
       "file": "apps/desktop/src/OfficialMonitoring.tsx",
-      "sha256": "e78eb28624432df45e023ee2c97aa5e692aded266d73b3fec7fb992fc5022ecb"
+      "sha256": "4d11a9cd706bd5e57db51f61e8481f8a304205f5d4760cbe205aac524ef101b9"
     },
     {
       "file": "apps/desktop/src/OfficialStrings.ts",
@@ -271,7 +271,7 @@
     },
     {
       "file": "apps/desktop/src/SlotMonitor.tsx",
-      "sha256": "2329b76abf0b3bd6355bb4fdef6428752807612933a5d52160cad70ea7cc4899"
+      "sha256": "3276efb949c6098553a59da5a0869e52334bcec188fa2fe18acea5bd61ba436e"
     },
     {
       "file": "apps/desktop/src/TooltipLayer.tsx",
@@ -339,7 +339,7 @@
     },
     {
       "file": "apps/desktop/src/daily-experience.css",
-      "sha256": "12eda3874654fddebbef4ecdaf418572aa1f5e0569273cb63efe04ed64130e41"
+      "sha256": "11242b3d95a3fb1a588ff33b81f68fe175d6665cc2c2b4318d40b42e21c5d2bd"
     },
     {
       "file": "apps/desktop/src/floating-monitor-content.css",
@@ -395,7 +395,7 @@
     },
     {
       "file": "apps/desktop/src/layouts/ServiceTelemetryStatusBar.tsx",
-      "sha256": "ab87e3bf3435d569b7fd1a7ee1206bf471eda5bb7848f9f8ee37966e9a019c0c"
+      "sha256": "5b53dc78f1feeca20408fa1bfd743a6fd23f2ee3b21635db8c438211fa3f2bed"
     },
     {
       "file": "apps/desktop/src/layouts/WorkspaceLayout.tsx",
@@ -455,7 +455,7 @@
     },
     {
       "file": "apps/desktop/src/official-pages.css",
-      "sha256": "81768d315cf44d46f33f580907070139fe64ca851cf4871a0224cd6f379a3946"
+      "sha256": "a1d33c5548f5229e1e6dbcf3c0c17ab5cdf547988f57ab18e83d30e10664f7be"
     },
     {
       "file": "apps/desktop/src/official/LICENSE.strata",
@@ -495,7 +495,7 @@
     },
     {
       "file": "apps/desktop/src/onboarding/OnboardingPage.tsx",
-      "sha256": "a25aa868178b7c2d4e3903699c5f843b2c63efc0e4ba4a2db3cae2cad5f60df2"
+      "sha256": "7dff79e30f3d9ac5bff4cdee8040e6671114c11d4e0e17490bd8801ac7152521"
     },
     {
       "file": "apps/desktop/src/onboarding/OnboardingStrings.ts",
@@ -539,7 +539,7 @@
     },
     {
       "file": "apps/desktop/src/pages/ArenaPage.tsx",
-      "sha256": "811e0f1ffd500585b16fc346ef2722d902f39ee2a3b13933af4c75799ffe2d32"
+      "sha256": "ed37b045cf8a1e981bb79532babedd065896ebee64d34a11326d85195a1c0f30"
     },
     {
       "file": "apps/desktop/src/pages/BenchmarkComparisonPanel.tsx",
@@ -551,11 +551,27 @@
     },
     {
       "file": "apps/desktop/src/pages/BenchmarkPage.tsx",
-      "sha256": "e5d61c15cd5c1504172928f5d98c45b4eca09d46fca5fc96327b2ab78280aa7e"
+      "sha256": "350e75efa1c7ef62abb878fae7fab24f93f3d06f170acf7352893bd166f131d6"
     },
     {
       "file": "apps/desktop/src/pages/ChatPage.tsx",
       "sha256": "6570b46ec3b4c24d8bce882d4e3d7f6e5bc4ca6104c8b4d2f43e3cf22f01c7db"
+    },
+    {
+      "file": "apps/desktop/src/pages/ConcurrencyCard.test.mjs",
+      "sha256": "723f56dcb655b0fe261d707f7f26f1789a19be043bfc9269e7b79068a980ee88"
+    },
+    {
+      "file": "apps/desktop/src/pages/ConcurrencyCard.tsx",
+      "sha256": "7105b072937036f5f9277ad49bfac1182955819cc8bcecdd6c54b5436f085da4"
+    },
+    {
+      "file": "apps/desktop/src/pages/ConcurrencyChart.tsx",
+      "sha256": "b5688dd690fd874f0a7486edf32b5fe283d3eca2a5733b33e766b1075410f3f1"
+    },
+    {
+      "file": "apps/desktop/src/pages/ConcurrencyLadder.tsx",
+      "sha256": "9ad7634247eeacfd3484e999f69d627706ef661a3c0ec1469064edeb6f401433"
     },
     {
       "file": "apps/desktop/src/pages/ConfigCleanupDialog.tsx",
@@ -576,6 +592,14 @@
     {
       "file": "apps/desktop/src/pages/ContextBenchmarkPage.tsx",
       "sha256": "6cfbe780f945a8eaef1ee9231fa955c6f6a42312f791da0ce3fe27de624b369b"
+    },
+    {
+      "file": "apps/desktop/src/pages/ContextExtensionNotice.test.mjs",
+      "sha256": "40d778b8b7c2b2c183ff0cfaa659ca4d0a6f4970dd90cf8954759b67c39a73f2"
+    },
+    {
+      "file": "apps/desktop/src/pages/ContextExtensionNotice.tsx",
+      "sha256": "cfa93e16cdb11fcfc2cd7c62f379c2bab87d56d93aaa8d7b91398f784e878cb1"
     },
     {
       "file": "apps/desktop/src/pages/D2PageStrips.tsx",
@@ -627,7 +651,7 @@
     },
     {
       "file": "apps/desktop/src/pages/ModelDownloadPage.tsx",
-      "sha256": "f2c9f6afc72668ff2d9217d1b332c376a924e46ee65884a0bc876abb583c27cd"
+      "sha256": "f37bbdd782e52b3c977f512a652c4292ee04581d32e2519dbfb67bb1822637ca"
     },
     {
       "file": "apps/desktop/src/pages/ModelDownloadSettingsDialog.tsx",
@@ -651,11 +675,11 @@
     },
     {
       "file": "apps/desktop/src/pages/ResourceAssessmentPanel.test.mjs",
-      "sha256": "9d85638b536154221590161f8f5e01d53c2afbcfa5d3d1186201bd613f5c168e"
+      "sha256": "58107ab0cf10b0506b74f208763bf76d4e19da9c27b100e6eb9fede78498b8b1"
     },
     {
       "file": "apps/desktop/src/pages/ResourceAssessmentPanel.tsx",
-      "sha256": "d9960c45469dd2aad7917d9e824e184a46d4bc3affb1291f64861e026165fac1"
+      "sha256": "7d44525db61c98fc580d45dfcb78ae88f2875f3fa024661ea6212a06975695e7"
     },
     {
       "file": "apps/desktop/src/pages/RunningServicesPanel.test.mjs",
@@ -667,7 +691,7 @@
     },
     {
       "file": "apps/desktop/src/pages/RuntimeConfigPage.tsx",
-      "sha256": "f7611fefd245bacc10f7d21b482e399c27d92105b668f78f5c63c96f69ac209f"
+      "sha256": "d3a6b04dd99a0ed5486402dda1fa9d9dbd0913976401b79a1949ab34e62f7a36"
     },
     {
       "file": "apps/desktop/src/pages/RuntimeDownloadSettings.tsx",
@@ -686,8 +710,12 @@
       "sha256": "8b33692b8f5b39bb4ce70ad0c6762d97608ebf26ef498e7a08961ddbe61914e9"
     },
     {
+      "file": "apps/desktop/src/pages/ScenarioBenchmarkCharts.tsx",
+      "sha256": "346d78d775b52db1d0f738ad71cf7bda4498ce9fea2afc29230da21b9ea5d408"
+    },
+    {
       "file": "apps/desktop/src/pages/ScenarioBenchmarkPage.tsx",
-      "sha256": "56a691bcc7bae166641d4d46d70da3055c3e3f83bc98b9c2df48064bf78c9ef4"
+      "sha256": "1ae7012baa21178a91c278504a13d79d33f35a8e497b3373314115b1db3e427d"
     },
     {
       "file": "apps/desktop/src/pages/ServiceManagerPage.tsx",
@@ -727,15 +755,15 @@
     },
     {
       "file": "apps/desktop/src/pages/StartupQuickParams.tsx",
-      "sha256": "95458b5c0ba7eb51ef415f583af395b67a25f5e9107c2c093f25d6a9a8b0cce6"
+      "sha256": "960cc4285bc5674de99e79b8e2b926513677fac4a2ff5e53646e0f8c684937a2"
     },
     {
       "file": "apps/desktop/src/pages/StartupTuningPanel.tsx",
-      "sha256": "1e3f1834474a6902f94ef4f7c5807e9b831bb145a5d460b59c34cad1ec16ee94"
+      "sha256": "52a91663f13ab8a424177f14967ed8eb35220bcb621ea5af4f0c210630beb2f7"
     },
     {
       "file": "apps/desktop/src/pages/TuningPage.tsx",
-      "sha256": "71a0e08decf3b58169ceb346be03aec8c6f2caddb927f54775249ddf522ae6cf"
+      "sha256": "e9416969a3b6a054bcbe5436ade9cc34f758fdd2d2c9dc0ccfc5f04f6a874e52"
     },
     {
       "file": "apps/desktop/src/pages/VisionSupportDialog.tsx",
@@ -759,11 +787,11 @@
     },
     {
       "file": "apps/desktop/src/pages/arena.css",
-      "sha256": "43c4ce4fe16ad02c5b530247dab98cab6b033c8da1114a089ae82cbe71d57061"
+      "sha256": "10b8438734ec8a5965f4d04fe165a6eb66f0f9eae4a809e15ef533badb34ebda"
     },
     {
       "file": "apps/desktop/src/pages/arena.test.mjs",
-      "sha256": "cad0dbdbc2fe946501299d8852bfccbb9a46a05efbdedc573fd7954c92f2d12a"
+      "sha256": "3b50189922502faf0277d7c1c435d3e1d4a25aba6a4596f8ae3c9801f8518087"
     },
     {
       "file": "apps/desktop/src/pages/arenaUpload.ts",
@@ -771,7 +799,7 @@
     },
     {
       "file": "apps/desktop/src/pages/benchmark.css",
-      "sha256": "24abc7402ae240d6641d37456c283ee117969e77553135e4774b3bda975c84b3"
+      "sha256": "4e38cb0f1b809b0331b2e2dd8cc5f6a0ee244c88fe6649dee58aa961fe76fa97"
     },
     {
       "file": "apps/desktop/src/pages/benchmarkImageSave.ts",
@@ -790,6 +818,22 @@
       "sha256": "f0046a41c8ddcd17c6ccef9211e46d23c9e75062f8035e2021e6eaeca9d0b39f"
     },
     {
+      "file": "apps/desktop/src/pages/concurrency-card.css",
+      "sha256": "e047832bb837d6968c21cd54a03be2ff0926cd53a93e6222dffba7501e6e2a0a"
+    },
+    {
+      "file": "apps/desktop/src/pages/concurrency-chart.css",
+      "sha256": "c99fa233248b2dfe5a1bd7f57c33e549a681f491deea620ab623d3b4f72ea36d"
+    },
+    {
+      "file": "apps/desktop/src/pages/concurrency-ladder.css",
+      "sha256": "59b9ebedb59b60b6b62b74d5f653a7c97a93887041f94507de8d7dfbdf48ec82"
+    },
+    {
+      "file": "apps/desktop/src/pages/concurrencyContext.ts",
+      "sha256": "1e00894caa1e69620f53a8db7ea52fc1d512c8709a1b2f3449aff4bdfee0bc60"
+    },
+    {
       "file": "apps/desktop/src/pages/config-cleanup-dialog.css",
       "sha256": "39f43127a072184a788d257c1f1fe2e0a9895df24502da6b13cdecc04373e71d"
     },
@@ -804,6 +848,10 @@
     {
       "file": "apps/desktop/src/pages/configuration-list.css",
       "sha256": "7b0d31b8da1438cf6287dc63573bd4e4bd94e9c5d523d8783942ee7cd0e2f16c"
+    },
+    {
+      "file": "apps/desktop/src/pages/context-extension.css",
+      "sha256": "ca88c0e7b168025935858ede449310941555b207d66b46261936b1cbc29e66f2"
     },
     {
       "file": "apps/desktop/src/pages/contextBenchmarkImage.ts",
@@ -847,7 +895,7 @@
     },
     {
       "file": "apps/desktop/src/pages/model-download.css",
-      "sha256": "b3efc71eff5a56304f63fa903c23fccedf5725faf8f7c1a6028e5da3c5fe5a8c"
+      "sha256": "5dc8df307b84d42e2ad18ca2053eb931654b2bf634e363258a93e03df8b3cf1a"
     },
     {
       "file": "apps/desktop/src/pages/official-setup.css",
@@ -898,6 +946,14 @@
       "sha256": "85286d71ab72cb859d5b776f3f42d1fb1816b7623b9d95004775d9c5cd86ca65"
     },
     {
+      "file": "apps/desktop/src/pages/scenario-benchmark.css",
+      "sha256": "09b4888f34f2f241241fbf18c9cb194640aa9c4150644dbac6e1b4d1d85e9d33"
+    },
+    {
+      "file": "apps/desktop/src/pages/scenarioBenchmarkPage.test.mjs",
+      "sha256": "eb8672cdcc77adaa596407d4110e6ce0b67950237ef594f06dfb0caadc0bcf10"
+    },
+    {
       "file": "apps/desktop/src/pages/service-manager.css",
       "sha256": "ad715e067152aa9e23a075e9ebb492902b1777ecbf99291a15cf322f04046714"
     },
@@ -927,7 +983,39 @@
     },
     {
       "file": "apps/desktop/src/pages/tuning.css",
-      "sha256": "5f157a1dcc8049f88235998a4d458a0c97043616a4a770f42897cc07bd69b233"
+      "sha256": "d61b20f542736eafe03c86fe181f19a674c39b7c6b1bde6fa40421476d1e8d06"
+    },
+    {
+      "file": "apps/desktop/src/pages/tuning/ConcurrencyComparison.tsx",
+      "sha256": "8de9d853e42f1ffdaf19a8f983a04e29181be447553718482e827c0b1c2b719f"
+    },
+    {
+      "file": "apps/desktop/src/pages/tuning/QuickCalibration.tsx",
+      "sha256": "cdd904823abc04c56125d8c926851df87438dd18a90fbd0848042e4b0fbb491b"
+    },
+    {
+      "file": "apps/desktop/src/pages/tuning/TuningLive.tsx",
+      "sha256": "40ce15c1261a7767dcf628209c1c69f5c2fd6b381786bbd10e291a828db97a99"
+    },
+    {
+      "file": "apps/desktop/src/pages/tuning/concurrency-comparison.css",
+      "sha256": "bc20efed0a8fd07bb84ba804d4ec3a6702dea33366371f56c8ea20a6b46b2cb0"
+    },
+    {
+      "file": "apps/desktop/src/pages/tuning/concurrencyComparison.test.mjs",
+      "sha256": "c180f2503f86dc3510b38e349a0fb652e87bac1cea312bde6813ab4fbf1ca6ac"
+    },
+    {
+      "file": "apps/desktop/src/pages/tuning/concurrencyComparisonRunner.ts",
+      "sha256": "7cfdb0181035956957aca53a31c71f44ff2e9a4dbe481f61fab795a71e2520f7"
+    },
+    {
+      "file": "apps/desktop/src/pages/tuning/strings.ts",
+      "sha256": "ff226a3a3530a05bd2bc0244e60c6b9efff018678da8a45bc4b50f8810a628f5"
+    },
+    {
+      "file": "apps/desktop/src/pages/tuning/tuningLive.test.mjs",
+      "sha256": "aaa7b481ea6248143ee061da005015ae629410f5d2d7e861e75039538c11f91c"
     },
     {
       "file": "apps/desktop/src/pages/useBenchmarkContext.ts",
@@ -976,6 +1064,14 @@
     {
       "file": "apps/desktop/src/shared-settings.css",
       "sha256": "18d7a9b2091802be5f30335e64e2bde783eb3277ed8ff5982e88b49d022dd96e"
+    },
+    {
+      "file": "apps/desktop/src/slot-monitor.css",
+      "sha256": "bef14d549347b4086848e7f84b9ef3458083ed00f3f10c3dc5b7f55c5aad8771"
+    },
+    {
+      "file": "apps/desktop/src/slotMonitorHistory.test.mjs",
+      "sha256": "4f2d743e78f233b5fcbcdf710d116fbcf37925d21eabe06304c3d63a25c101e4"
     },
     {
       "file": "apps/desktop/src/startupStatusText.ts",
@@ -1047,7 +1143,7 @@
     },
     {
       "file": "packages/core/src/arena.ts",
-      "sha256": "4abb3eba1846a69c7db8bd4810b99d3eaf8b33fa2febea4e0cb41933cd104162"
+      "sha256": "4dc8b7ee1946dd32cc91ed4c61bbe958f304200d2f3f8ebe5102329699642f61"
     },
     {
       "file": "packages/core/src/benchmark-comparison.ts",
@@ -1055,11 +1151,11 @@
     },
     {
       "file": "packages/core/src/benchmark-suite-types.ts",
-      "sha256": "f0276ed5988a7483c04b28612dc089906741bd40e6524a2681f7add155968e0f"
+      "sha256": "7f88af39aec82acc10ac6da2d49855dc8903d90605bd33eb6f79d750fc78d14a"
     },
     {
       "file": "packages/core/src/benchmark-suite.ts",
-      "sha256": "8fd7ca04df4d50e273ae9e538d726407f17aa71e467bdffb54bd42f2c60a5d6c"
+      "sha256": "e6e61ea0b5ad7001287835354d9f1ea8e8bd219c68f29987ffc522d414cfdaa4"
     },
     {
       "file": "packages/core/src/benchmark.ts",
@@ -1067,7 +1163,11 @@
     },
     {
       "file": "packages/core/src/bridge.ts",
-      "sha256": "d7d7556974896951eedf0e4e8b45056db8abe834d930791413566c29598625e2"
+      "sha256": "2b372d13533072e500d9fa3a291338733eb0ca5f6009c6173aab193146486862"
+    },
+    {
+      "file": "packages/core/src/calibration.ts",
+      "sha256": "c5176580ae771974ba0993e326672855f37f7d09249a8f824cf6344f21035bb2"
     },
     {
       "file": "packages/core/src/catalog.ts",
@@ -1082,12 +1182,20 @@
       "sha256": "481a0eb26c9d271ef7046fad0ba420ec4e6fc85b0247e362cd8f652d36dbd416"
     },
     {
+      "file": "packages/core/src/concurrency-ladder.ts",
+      "sha256": "712d03e9c3b8c2da0df44c77909c5201be0c42e1122bc483e6765c9161775ad1"
+    },
+    {
+      "file": "packages/core/src/concurrency.ts",
+      "sha256": "cbed7180759e39263fdbb42cbfbe69a6ef85a55644a829d376570247a798aada"
+    },
+    {
       "file": "packages/core/src/config-profile.ts",
       "sha256": "18708134dcd48af7ef39816de8a990577254c8feb7b63c9cab4a8c50b2ce4563"
     },
     {
       "file": "packages/core/src/config-tuning.ts",
-      "sha256": "23539607da00038373b78afd6208fe1002cdcad61f721dc70731ce30532138da"
+      "sha256": "0c264efda4d5d731bb9c3c052ef4b92cbf2f3b9167363eb7b96f8f1b8e467328"
     },
     {
       "file": "packages/core/src/configuration-match.ts",
@@ -1100,6 +1208,10 @@
     {
       "file": "packages/core/src/context-benchmark.ts",
       "sha256": "ad2a0b395af150f30d8b8ccdcdda1e05bbfafdd5a2147a3e867724a27be01290"
+    },
+    {
+      "file": "packages/core/src/context-extension.ts",
+      "sha256": "42853616afecbd72d57fdf16db8a5430cbf8f07e0eb8fbd1167300d869a3352a"
     },
     {
       "file": "packages/core/src/engine-flag-support.ts",
@@ -1115,7 +1227,7 @@
     },
     {
       "file": "packages/core/src/index.ts",
-      "sha256": "8c32bfcab71179fa2c986cd0ec5b23bb2a7a3a20f6a2082051998488a65e0b41"
+      "sha256": "cee8d6ecd9b34d7d7633d66771e73b8092cd312b97da1905b7e05d8df1e142f3"
     },
     {
       "file": "packages/core/src/installation-types.ts",
@@ -1131,7 +1243,7 @@
     },
     {
       "file": "packages/core/src/metrics.ts",
-      "sha256": "b8f3010bb2fa2d0c225fb00a8050c9bdd17f955e573b8b0f4506332eea544866"
+      "sha256": "02b3d9cfca75caa69faa009841e9360bc70dcd678e1002a948c4465448dcbad1"
     },
     {
       "file": "packages/core/src/model-download.ts",
@@ -1151,7 +1263,7 @@
     },
     {
       "file": "packages/core/src/resource-assessment.ts",
-      "sha256": "574cc2bb96a0801c0504c9650efa52192c3b300ec0369e41947863c8a8af3e80"
+      "sha256": "341cf3a23fabd8a3ca1e02a3056d92e9413ef455c0cbd73a28f5913b4ab18557"
     },
     {
       "file": "packages/core/src/runtime-download.ts",
@@ -1187,15 +1299,15 @@
     },
     {
       "file": "packages/core/src/startup-engine-flags.ts",
-      "sha256": "378784b6ba499210ff8afcaef6be4203db2e40c3eb799d01caae29b86933a802"
+      "sha256": "01c2060d8164efae4e5a568dca7a3b3f88d7f187eefe494065b47eeecbe2093f"
     },
     {
       "file": "packages/core/src/tuning-types.ts",
-      "sha256": "b0330332aeab492ba79552482784b4eb2797291ee80adece3fa7f5de5a4af871"
+      "sha256": "6ad51018840c18780ebfeb251952f133865c0c24cc935123d56a3d72d5135006"
     },
     {
       "file": "packages/core/src/types.ts",
-      "sha256": "76939503f5dcd96255fa5de76f2434498a45bcdacf2b5528eeb3078509ea6930"
+      "sha256": "fd35a9be9a0784b6e522a9a0bded70054fde1f82ee454b4cdae2fee2c2417669"
     }
   ],
   "screens": [
@@ -1218,10 +1330,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/overview.zh.png",
-      "pngSha256": "1aea425b20af67427a227dd2f74560151d4d738e034597cb4dcddc11f34de3a8",
+      "pngSha256": "46a1fb0eb2cfd5dd9c3e37e55ca9e40569cd9901a090ffcfe39876eb574e3d7e",
       "width": 2880,
       "height": 1920,
-      "sha256": "910b35b495d58face31d07f723ce8f86046cee4177dd6e92b02293f0815eea9d",
+      "sha256": "9e2e16419b8d0dd499a1e6864571817232b0736e0e04acd656985cfa40670294",
       "pixelEquality": true
     },
     {
@@ -1243,10 +1355,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/runtime.zh.png",
-      "pngSha256": "3f51e1d8c3276b24636664d5f221bd16df41c804eb3d99e2934d56cf30559c90",
+      "pngSha256": "da7f5d20004b5caf2eeaf372b91cd8d0b29f67263e9022397a63ad85683d0fdc",
       "width": 2880,
       "height": 1920,
-      "sha256": "58d8c39de0cf24c4470f24b29aa62e1685eaa5c4af5af626f57b5fc3a486e110",
+      "sha256": "caf5e62c05fa598b5e831185b5005617a144b26f05b6a360442fcbc721312ac3",
       "pixelEquality": true
     },
     {
@@ -1268,10 +1380,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/models.zh.png",
-      "pngSha256": "05b1a03b82d3c93bd10b2519b5d744cccf50d82331c0aaa823a1b1cdaf2e564d",
+      "pngSha256": "055da8a7a8ef19d43c1cdfd653b30d797f0de961642d915d3e2795be13b69977",
       "width": 2880,
       "height": 1920,
-      "sha256": "4a7410a2a846453905a200ec5609f0a7598dfabbe8b41c45720c522dcf4611b3",
+      "sha256": "b035483a3cf10bb885eace958ab2cbf65d68789f39691d572440cbff213ca334",
       "pixelEquality": true
     },
     {
@@ -1293,10 +1405,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/config.zh.png",
-      "pngSha256": "a7589b2ab4bc98c3dcf7a00d19448fea5b622871b0d41bce370764ad32ed255a",
+      "pngSha256": "30769f5ba5df4638b7e22b3d36ada6c63670352bab715a0d523c5ad2451ed4d3",
       "width": 2880,
       "height": 1920,
-      "sha256": "57caadd11944dfabe1feae02a7df48d1b57802df56f497a27a4fa029b7d925a1",
+      "sha256": "3a1f5b679cd722fc94fcd5aba23fe526be00e07ad8d44bc59cd416a38081902b",
       "pixelEquality": true
     },
     {
@@ -1318,10 +1430,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/chat.zh.png",
-      "pngSha256": "733a22434b58ba26bdf6ccfed4d0b627940e945c0314b3560ed805a6cee933fa",
+      "pngSha256": "51e68f3741fd566a9900aa240ac6143726c87b8f23e032f783f0a5159eb35a2c",
       "width": 2880,
       "height": 1920,
-      "sha256": "9b3c047958a2e207d92df65d4348de5366746d923f61453afb3f2ce9d27427d2",
+      "sha256": "20ded3cc2acdcc9a1b75b6f4e64180f4cd3ba4ac7245d31f06585de0291af2c9",
       "pixelEquality": true
     },
     {
@@ -1343,10 +1455,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/usage.zh.png",
-      "pngSha256": "c396b394af84e5efe579afc746b76df811411989f6ba1b70aafed7221f2553c7",
+      "pngSha256": "2c28c21c060c2c39c288f4427126f074a9a48183f0d4650ac40fbd757eee643b",
       "width": 2880,
       "height": 1920,
-      "sha256": "d47025b5f50b8ec283ea2594b0d6db78bb5ec6064885a18930f9121b765ce668",
+      "sha256": "b1a62a098dd31d10ab878b9fef37836a440392811fd2c731f76aabe74e51b1ea",
       "pixelEquality": true
     },
     {
@@ -1368,10 +1480,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/tuning.zh.png",
-      "pngSha256": "279b6d86dde58cbd27004a320b333d3acf09a77550405795e3b186c4fe28d407",
+      "pngSha256": "dac18a14cc9630ca888cc8e12aa1173a09c40c864eacc0eabb91e554f1215a22",
       "width": 2880,
       "height": 1920,
-      "sha256": "180c4b68831592f5d088059eb111f4d7c9c9a6addb174c400c92cd31e61fbe50",
+      "sha256": "b430ca5cfb63da9661129e0720a1f42e19ea1e391888ec5553f67a705ef83f7e",
       "pixelEquality": true
     },
     {
@@ -1393,10 +1505,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/monitor.zh.png",
-      "pngSha256": "40e4aa21607045ef5b9c356e8a211e9075c68d71aca397bec54ee67ff4e30611",
+      "pngSha256": "0b55be0aa332ca2a8a8828b71da77567bb15f79fd215854dab5e4caf3ca0f034",
       "width": 2880,
       "height": 1920,
-      "sha256": "b2de6eeb33d939394e84ff363dd41385af13f8ce556dd5f132ada830d1293383",
+      "sha256": "a238fb97a90148e98aae87e99582b4ea35bf559474923af498989e830fbe5655",
       "pixelEquality": true
     },
     {
@@ -1418,10 +1530,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/settings.zh.png",
-      "pngSha256": "ccb583ffa421859bee75b33465f0c4316b7a8e524016281ba269e531cc22a637",
+      "pngSha256": "95da0024db6c924b3d9fab55819b28107080535fefd4dcebbb2fafd68e208f45",
       "width": 2880,
       "height": 1920,
-      "sha256": "f436b0f5e892a3a1f073d593dba5510fa2403f6d301b771cd1d3b34f962ed8c6",
+      "sha256": "7679f93ca3d5e6813ed452f0b26ebf616a1794c990246ab33316c417f90c6bf0",
       "pixelEquality": true
     },
     {
@@ -1443,10 +1555,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/about.zh.png",
-      "pngSha256": "423c0335754de72e25cc315116ab2aef78679ab13fc2119b8904b490640f76ec",
+      "pngSha256": "1bb11a47e5a004e08cf3e85f4bde5e02bdc0d8133036a27dcc2692dc1d41a134",
       "width": 2880,
       "height": 1920,
-      "sha256": "7ab0c4411498a09c208df9cb8d9f14a6cded66291492208756cba47f8ffd9d20",
+      "sha256": "f426d8958b2dd0ff39626cb9bbbc8750bb137d75ba51b89c9f041b765d70aff1",
       "pixelEquality": true
     },
     {
@@ -1468,10 +1580,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/benchmark.zh.png",
-      "pngSha256": "bff5a0b0bdf95da35393760027d410306d48208141cde1a0d1c292fa40731c0d",
+      "pngSha256": "b8197dc4fb79321f9b388b09f1fa11814fa726331c9bdf7527e14bdec8dd5b33",
       "width": 2880,
       "height": 1920,
-      "sha256": "d9d8053633229cc359c2bd3ac48fd52350977ee30de5f4436cb35deb1d6ff0a2",
+      "sha256": "b663fea098778d40cac08c3ebfba779b42151b91c8f867daea4042e49652e179",
       "pixelEquality": true
     },
     {
@@ -1493,10 +1605,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/common-chat-settings.zh.png",
-      "pngSha256": "06a253015c3a99099b25e431fa751642b5a978b7925adfc40b17534cb450f6e6",
+      "pngSha256": "b7a2a1e21e3fdc3cefe9eb226d311e7dc2affb7dea7c4434e24f54d4b6ba2443",
       "width": 2880,
       "height": 1920,
-      "sha256": "d2fd337a6a255e22885f4d50c24467bc8ad2315db055505672826fd63e9e07f9",
+      "sha256": "5ac5652886bfc39b1e4072149a48c10dd517f457a7a2e3cedb979602d3dcd125",
       "pixelEquality": true
     },
     {
@@ -1518,10 +1630,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/connections.zh.png",
-      "pngSha256": "fb70c34faa3d56bca60d0dd8960c3c94f98c4b0b599b80f7d37a44da7a504fa9",
+      "pngSha256": "baf1039c3a8d229b442893c9657ec3c147a2ccaad0b826d8ddb44ad0c66dddd9",
       "width": 2880,
       "height": 1920,
-      "sha256": "d33fd4ce1008ac336d1ed333d5189f149e7ead5160a65605a3b1afd76ff5e7aa",
+      "sha256": "fe8534ea8e1f9ebcbfe4e24d39830da47789725de2d8e69e216d846b3093279b",
       "pixelEquality": true
     },
     {
@@ -1543,10 +1655,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/runtime-tools.zh.png",
-      "pngSha256": "3c0fbecf41aa269645a72df189d187fbeb1d79da0ca9c31e1fc5177efd5dce8d",
+      "pngSha256": "9e8e7b90f5d30637fa1d02b576fa27e4f9b21acad6d88a5df368c9cc340de468",
       "width": 2880,
       "height": 1920,
-      "sha256": "2f18a587510d85c36bbd21c64210a29e37faa98968d6057ee55586017659b536",
+      "sha256": "8d7dbc5cc2183df03dadc091bb7236ecf7e8ec0233cb3bfde10b6946a29046e8",
       "pixelEquality": true
     },
     {
@@ -1568,10 +1680,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/app-updates.zh.png",
-      "pngSha256": "1216616fd02e8d3dbffb4974897d420ad4b8dcea002e7a12f73d41c73ff7a86e",
+      "pngSha256": "00e0b8a7bca09a10414241f0d160b80a1cd134f8c8278fece1b15b4b6657170f",
       "width": 2880,
       "height": 1920,
-      "sha256": "d9573afd26683740a39e56d81bbf0e87501d39b1a7523bcf29a143e123af4b83",
+      "sha256": "2b4e70d55ee563af71503d6545828a048c3e13c60f1fec6ba12e2424e5843ad1",
       "pixelEquality": true
     },
     {
@@ -1593,10 +1705,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/service-status.zh.png",
-      "pngSha256": "a85cf2a307bda1a73a6cbd922e9d8988ce43776bb3b9cbde76b31a6c72798f7f",
+      "pngSha256": "c62eaa9c19e572055f3a013929f8b7101cc6def4097e53f89cd5331876202a1e",
       "width": 2880,
       "height": 1920,
-      "sha256": "26f5b3b4e00d7ba5f5b7136406e7a57c21e16e1457fda8466f380d4ed9b809ba",
+      "sha256": "954ba4c8030ee08d82d9a3fb013da8d1cb07d845486a60ee30747749520236be",
       "pixelEquality": true
     },
     {
@@ -1618,10 +1730,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/runtime-download-settings.zh.png",
-      "pngSha256": "0733e4d1bee428ff344cce869823a0f52e9cf70993928dc01d0b9fad79c56fc4",
+      "pngSha256": "158fd178282787cee9f14fb092df415584e06033e79f520d2ec57c2290585f35",
       "width": 2880,
       "height": 1920,
-      "sha256": "72b6ec822dcede47200c43aadda65a3c81631d71bc6385708ccfbc9536afb9a2",
+      "sha256": "9cb2b6f78b8b19047d28d0c105802f774e7c45059b6148989d5f59fe911fe490",
       "pixelEquality": true
     },
     {
@@ -1647,10 +1759,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/floating-monitor.zh.png",
-      "pngSha256": "dd9821de5f8bc5646e0ac626de5d7b807425dc89cb6b87c2074b5c65437e0804",
+      "pngSha256": "a64afaf73a48e7d535f8d4afadab188d6405d8bac219e1bb0310ec922d04fe30",
       "width": 488,
       "height": 240,
-      "sha256": "f71b7c8f0e21b45448728e746f8ae91bf5be8692af94dde2c8fa713c4ad08bbe",
+      "sha256": "b24c0fd1dba8102dc3fc5ce903f6e675aee569a52919f533e9c5ae7ae7913f6d",
       "pixelEquality": true
     },
     {
@@ -1672,10 +1784,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/running-services.zh.png",
-      "pngSha256": "d1733f8ad05321901a72528eae4d5c096964dd35d027be95cbb61c843a9b7d1b",
+      "pngSha256": "7ec1f09f73dd651162fc2047d9b24c71f57880531982a51047343c913ea36537",
       "width": 2880,
       "height": 1920,
-      "sha256": "8bcb249f9d7cde408df10c1052fcfff91ee85036dbec3bb8869a078d8f1e2e11",
+      "sha256": "1666c1fd2ea2e5fe76e3a46544246a87287866aa36383c641df897bafac17629",
       "pixelEquality": true
     },
     {
@@ -1697,10 +1809,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/overview-api-guide.zh.png",
-      "pngSha256": "53d8beffc1d6118e67c0d71557c8d776bb15694ae5897cee930d0df2db306849",
+      "pngSha256": "e0ebeab1093d7c35c39fbffc9802f46d61a11488b8448867737c0446129fffcc",
       "width": 2880,
       "height": 1920,
-      "sha256": "425ccd22f60c379dd51428b353f3be1fcc052a195274aca39acbcbd3ad0a67e7",
+      "sha256": "9d0e848f73957a5000ed45a9488853fdf44e7683bee7a7b742adde97bbf2782d",
       "pixelEquality": true
     },
     {
@@ -1722,10 +1834,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/language-settings.zh.png",
-      "pngSha256": "4329559ddb7395bb6090722a4cece4b36b9f56b2f2c979b4513803c634f8a3cc",
+      "pngSha256": "291e7dbc26ea352673d341fe7da2b9e75a36e3bfc5ab3d80f800c878e4fdf8a0",
       "width": 2880,
       "height": 1920,
-      "sha256": "6bc9280c0e2c0d8e38694380d45fd235803b86979b69c890ebbae712c908ebd4",
+      "sha256": "9013e096784f277d9336ed5577ab20f0cfcdd94be0a3c6922342a9b739f623ef",
       "pixelEquality": true
     },
     {
@@ -1747,10 +1859,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/floating-monitor-settings.zh.png",
-      "pngSha256": "246aef824d673d50fac25a205864758f1e5090a96c7ad51123517f4d02d7a837",
+      "pngSha256": "c22e1b553da7ef79b32bac33d0186eaa718a54a129bee06dc799a6892762316b",
       "width": 2880,
       "height": 1920,
-      "sha256": "8cd2a10b4e58504120b5cd1e44ce881aa3198e6f46ae0d882e772145db3d2dc9",
+      "sha256": "ab7160a28e3b985a144324bbb33d3fa565e5e87e1e3588e6678de2954bbf2550",
       "pixelEquality": true
     },
     {
@@ -1772,10 +1884,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/scenario-benchmark.zh.png",
-      "pngSha256": "7f7a672c6190901ea694daffc38fc0d974f285067e01f5941e7ce2059ebd5898",
+      "pngSha256": "bf6264511ae6388aa212b1bd03183a07e6e6805e0358f16c779b8da7430f8678",
       "width": 2880,
       "height": 1920,
-      "sha256": "44929e42b231b0e21251c5a34ea1bad822cfeb1726d32f445caa69e43f519fc3",
+      "sha256": "3610d3670a2c19cf7b8c704e59716cedf73a34995c84f8f7c85d139e8501e799",
       "pixelEquality": true
     },
     {
@@ -1797,10 +1909,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/benchmark-report.zh.png",
-      "pngSha256": "cf0d643cf015bc1476e28ec8342e95217fe566210c46752a518115651bb2a2ed",
+      "pngSha256": "d3254fb3904bdce21ba1e92ad84ffe4cf6fdae6d9fb42f12223381a1456baa5a",
       "width": 2880,
       "height": 3120,
-      "sha256": "2545879aa47ea734799c216aea264126a7a93b73a95d39f57f37f41deb885589",
+      "sha256": "bca6d7c94bec01fd495756bbc5835c27009b0206dd9e4dd8431d6df4123e5589",
       "pixelEquality": true
     },
     {
@@ -1822,10 +1934,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/overview.en.png",
-      "pngSha256": "1fd83c53fe40d030b276b961af8b88bb76a76f04cf461d162343731c17275a9d",
+      "pngSha256": "70cb121a9b3488b9325be824ba7d377b87c9debdb7ceb61f27f2ee39febe2289",
       "width": 2880,
       "height": 1920,
-      "sha256": "a40c117649f5d7f78a1c217accaca4217dc14aeea29e1e02119991c34cf01a65",
+      "sha256": "948247f4a17378915e8025a2e611956f5463e793f509721b2622bf769f952a8b",
       "pixelEquality": true
     },
     {
@@ -1847,10 +1959,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/runtime.en.png",
-      "pngSha256": "e71de7b7c3f82fbea79ab4d071725fafaacf76e284a3aebb6633159c2764aaba",
+      "pngSha256": "e4e418d40b3a930539b8483f94dacbe7e080fbd16e9d82e3cf1f5c3a70d8b1ae",
       "width": 2880,
       "height": 1920,
-      "sha256": "f779a5630b3b5e8356bbea996939629824e3f35c4d7a60ffee86fd21706b0fc6",
+      "sha256": "7b0c052273508eed9a0ca8191bb81627037caac4614132026b7b6cac79e54cf4",
       "pixelEquality": true
     },
     {
@@ -1872,10 +1984,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/models.en.png",
-      "pngSha256": "6853c64a7dbf7ec45393a5695872cae917bf098ec0a02293d73d75317518d5e7",
+      "pngSha256": "829cfdd4ae165731eca989292a0645ea0ea26684f6d16d022c61daa1aa467d85",
       "width": 2880,
       "height": 1920,
-      "sha256": "0c07ed8bf61e8921627b8295d6f30abcd72ef94fee1ef09ecf8afb20e8520fd9",
+      "sha256": "46b7702d2be563901c13d2e2b286897172d563e81df2a9f5d9a0b274c65a006e",
       "pixelEquality": true
     },
     {
@@ -1897,10 +2009,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/config.en.png",
-      "pngSha256": "168a60c3cce6a1bda0fb80857a415344b8b56e4e57df62b4968c96719af5b5d8",
+      "pngSha256": "a45caa11af2c76cb3529c066e0f1fd7a399924f3b42265977c0c886f04fb930d",
       "width": 2880,
       "height": 1920,
-      "sha256": "2910b13281543b7cde9a58c01543edb0acf60ecf47cbfb922ec4fd9aee262e3f",
+      "sha256": "4b150d42c7a0e504f6fbaca38ab694a6aa4aa985bec7df1132778f73309da76e",
       "pixelEquality": true
     },
     {
@@ -1922,10 +2034,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/chat.en.png",
-      "pngSha256": "dd4e12cf2abd642ccba54e0823e61959a7179c39fa9f278382480b782dc1386d",
+      "pngSha256": "159dbb0b93a61c082d0d1651adfed8316255ae0ae94be13e796c2837fc53cf8c",
       "width": 2880,
       "height": 1920,
-      "sha256": "a3de7a3c325f2c801972796c2cf617256bb6c8f4545bfce65af8176ac3abd218",
+      "sha256": "f980c3e584b38bef3e0afe720abca6f3b61b53bde7106924f7a34ccf32085958",
       "pixelEquality": true
     },
     {
@@ -1947,10 +2059,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/usage.en.png",
-      "pngSha256": "8c62bb3d9cdd6bc7430fd37d1cece1abc127bc90694a6c6ab1a52c69b98dd6fe",
+      "pngSha256": "9d8ad82b83f6192be50fb937cb21d9d4e548f3dc211cc5c30c1b1abbe8cf3c13",
       "width": 2880,
       "height": 1920,
-      "sha256": "bffba27e76352102652048a6d732c1dd6e5abbb51bc8943badd0f46f10992b76",
+      "sha256": "58ca2a574ec0fcca6a22845ef9ae467786647ab443e13cf89d5a1bb7185803b4",
       "pixelEquality": true
     },
     {
@@ -1972,10 +2084,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/tuning.en.png",
-      "pngSha256": "e7c13cb273fad3f41460f821ddb4734307491d9e7a53485c5444be4acce86d02",
+      "pngSha256": "0eb1e8886d89b017724f04b4d32ae7abba63c3840a3df8555421b006addfb3f6",
       "width": 2880,
       "height": 1920,
-      "sha256": "4a587b1ac8dec239c7f1099276d43d5a4e76ecf83818c1f2fcc01e57b9e2bd74",
+      "sha256": "65da48f3365309d20a6d881b8b7fc18b9d9c98ed9a46ae8b2884be78d0802b82",
       "pixelEquality": true
     },
     {
@@ -1997,10 +2109,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/monitor.en.png",
-      "pngSha256": "aef00cca5643155eb3acef8579146c047178998823598300d553243debde2332",
+      "pngSha256": "1ba89a092cf1cd4657f73bad2ff6b3087d9324fec181be0b80ce2b9a3290df0a",
       "width": 2880,
       "height": 1920,
-      "sha256": "aa952236464da7ae44d253d3f58b5d18ec28683ffe42258144a9b39f2bb734be",
+      "sha256": "ccb0f6c727c7d28ac9f5409814bd05d185bd0f64b74f46dc5ffd4087ae9747ee",
       "pixelEquality": true
     },
     {
@@ -2022,10 +2134,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/settings.en.png",
-      "pngSha256": "b0603355cb88735ce4581e117a55ca8a0dbce691098c0b7a8fa07ae6b7c09c1f",
+      "pngSha256": "da2156ec8b5b85e9ac3e87d1a821cedb5155807bc80eeaddbf9a6a9340a62eb4",
       "width": 2880,
       "height": 1920,
-      "sha256": "c2b14179d9cc375567fb9ee0698b5e8b80bc0cbde59cbf333be59a921d2ec532",
+      "sha256": "25962631df25db3b43ff960dc8a6134de53a0e71bd503eeca0c0d9c0554c9322",
       "pixelEquality": true
     },
     {
@@ -2047,10 +2159,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/about.en.png",
-      "pngSha256": "5a78284ee45ef47516f909e61b7512db5073b58e2cda2767a5ead95fa5d57b86",
+      "pngSha256": "f5b4eb1e325494cd1a71a7c2826a11e93f86aa88f1b8b7b6a671814dab9496b2",
       "width": 2880,
       "height": 1920,
-      "sha256": "8cb0f30a5043c10fb5dea926559de15e58a2bcf404cebf7616c895fcb6c6fba2",
+      "sha256": "e655b9c796d96730005fdc66e007f2f999f0d4284195d215b52173d3beffafef",
       "pixelEquality": true
     },
     {
@@ -2072,10 +2184,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/benchmark.en.png",
-      "pngSha256": "c29388536795fbd965f399ed500b38b01ad289b0f276b0167deb4669397bcfbb",
+      "pngSha256": "84399c03ac30c1c92e8e82044e902dfc6ea87575256590eb95058f0f3e563f35",
       "width": 2880,
       "height": 1920,
-      "sha256": "648a1ff2e106ac06866c10b18b538849bd053b96c53114c643ee291f1979c1d8",
+      "sha256": "d954b0ca27ad3673b3760e7d3a5217eefc7fac7ae6b39a673bfbdee2faf6ea5d",
       "pixelEquality": true
     },
     {
@@ -2097,10 +2209,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/common-chat-settings.en.png",
-      "pngSha256": "e0e760b312ea85e10ce9b2b88fdeb98a9d4fc1fec8907d1361d8a594d84843e2",
+      "pngSha256": "87481ca90642ee45d44a96256bc1c47d1c7699b86abb5d32ec78e69a9afd0abc",
       "width": 2880,
       "height": 1920,
-      "sha256": "088bfcf0780c10823a6e41e9908c57c57d212355fb71c6f5358f15f3df583f35",
+      "sha256": "12d8fe63107a3e3fdb3e3d6852e515ec401d6a4662a308dc54bf044f5ebb71f3",
       "pixelEquality": true
     },
     {
@@ -2122,10 +2234,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/connections.en.png",
-      "pngSha256": "488add64271b42328c395832002c619dfd32a798967c6eb1e7e9cc0a60707c3a",
+      "pngSha256": "d34897cf31101b1683a053e67889ef2f98f6266d1e67e6190df6b7c8a5e58283",
       "width": 2880,
       "height": 1920,
-      "sha256": "13e59959009ced04f156c8a3045d6429a9133007b69a4c23dac4252c74b50f8f",
+      "sha256": "896b8e91b5faf3cd7e84b2d8f5f299037eda8994057d07cbc51c482ef592b6e3",
       "pixelEquality": true
     },
     {
@@ -2147,10 +2259,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/runtime-tools.en.png",
-      "pngSha256": "6bdda8d195714015c73c06e50c78dbb630b558e0521a74f1e0236bc66e7c2b88",
+      "pngSha256": "83a4b521a4dbcb50fc689b664087ebeb50be1b94000ddc6eed3ee66601ceac53",
       "width": 2880,
       "height": 1920,
-      "sha256": "6a846fa5b0abb17d5acb41c4360eaf2879beb558e2c66f358b0701c744aba8c9",
+      "sha256": "cc0ad0f003b3fb0f063531931164edacc09fab406f9b3f9f0f43a69a837545f2",
       "pixelEquality": true
     },
     {
@@ -2172,10 +2284,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/app-updates.en.png",
-      "pngSha256": "b2c8a721ca4f170b47593a9a826a42b3c74d9a06f29279c0859fcbdd1ebc16b7",
+      "pngSha256": "e665eb4761dac0c21e182a44bd01d3d7846e83ac7de95b42c0de01e180614606",
       "width": 2880,
       "height": 1920,
-      "sha256": "ad6744d92f325feec0ac128b7692ec4da2974c4d319ffe7c054cad871ea5222f",
+      "sha256": "0b1c6deb813f38d6ae096683a89db4099e72fef9b0dc9bbc3f19810fa498265c",
       "pixelEquality": true
     },
     {
@@ -2197,10 +2309,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/service-status.en.png",
-      "pngSha256": "6a3c7e9eb004cf76dd38f12f929d13a94118fce253dc57d0e4e0d7a2cda22ed1",
+      "pngSha256": "b24abaaee9984409ec750c84adfdb817ac370c16746d019bc6dfb396f62cdcb1",
       "width": 2880,
       "height": 1920,
-      "sha256": "18804f2a929d687148538d22715c12255f12270a84487170ffb05a6d1bfb4881",
+      "sha256": "4fee5cd14c46d1bbf2e001bdb5112e950cd729df435721d1188c5fb9ebb0dcb3",
       "pixelEquality": true
     },
     {
@@ -2222,10 +2334,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/runtime-download-settings.en.png",
-      "pngSha256": "fcc57d45cae057131f06be03f938550a9faad70a46696b1cfaf6f83dbeacc99d",
+      "pngSha256": "4e24759a6996d4e4bac9e668c6cfd30feccae96ffd7ae457527b1b1ae516ed8c",
       "width": 2880,
       "height": 1920,
-      "sha256": "68bc07e02729dda91bd60eee5d5377724e6be1989ee4a4c88189b3fa5e126eaa",
+      "sha256": "fea3308c7191a5a8cd6005711288e24feb714a14ed20a50acfbdd9eac4c0852e",
       "pixelEquality": true
     },
     {
@@ -2251,10 +2363,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/floating-monitor.en.png",
-      "pngSha256": "aaac57ceeece0904ca2c47b82824204a385a1d788564a808b7444d3e6c63081b",
+      "pngSha256": "b1745eb4153808c9958190c62aadc3be320d5b462f7da2ad661dc06bde3812a2",
       "width": 488,
       "height": 240,
-      "sha256": "ce4220b452eaaf88d433c1aad8c83d56d6edd1634c2a08af3a7c1f3a44fa3e35",
+      "sha256": "982e8ffcab9e6c585d1b38283f130155dec21f293c47e8372f3e16b60373bb38",
       "pixelEquality": true
     },
     {
@@ -2276,10 +2388,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/running-services.en.png",
-      "pngSha256": "1551c982d09b65fd61c4cd673313a0b4ae8affd54fde66475331a71550c07905",
+      "pngSha256": "402388b1c902cf0d83ba17f433b0b0daea708d1bd9a448ecec24ab37d3d922d2",
       "width": 2880,
       "height": 1920,
-      "sha256": "32f2d75b992e69c78479449f6c0ed8777eaf993d1617ed556731211f6c6c41a6",
+      "sha256": "bfa61151ed3fc4474b32d29b67d7d24b154e89e51e542a0a7daf948232d34154",
       "pixelEquality": true
     },
     {
@@ -2301,10 +2413,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/overview-api-guide.en.png",
-      "pngSha256": "3c4c2e127bbc47416f225bf041496da78d6841a4c1e7f6e91c3cf67600a6dbd8",
+      "pngSha256": "dd5303a758350aa60b4564745c3403822ab593f5f320ac21fa0a16fc98d7fb75",
       "width": 2880,
       "height": 1920,
-      "sha256": "6e668c2a96f568d7d26eddb4239f8f9d33c20d0a446c5536964343fe774b31f3",
+      "sha256": "183f463859b0c4f26c0ed2f820f730928b2cd803b851ff2ef7669870b374e7d7",
       "pixelEquality": true
     },
     {
@@ -2326,10 +2438,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/language-settings.en.png",
-      "pngSha256": "f375d06a956f19b336996c71160854b99da49f92992a56491d4b381b1349b37e",
+      "pngSha256": "743f2c27c1c22a548dc0ff6ae09ac0a029bea79a1cead4c56cbce9fa9315dbaa",
       "width": 2880,
       "height": 1920,
-      "sha256": "563e88be63cc79ec2bcbf44b75465b181ee37ff93d09fedc642f7f27175dd8d5",
+      "sha256": "5529f1d55b5429a18166dcc1e29306c394cce8c8037e88b9daf554abcccc5050",
       "pixelEquality": true
     },
     {
@@ -2351,10 +2463,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/floating-monitor-settings.en.png",
-      "pngSha256": "4121a2b978ea9af71a27badc0f161fe8799e5d354fa49e760ed3bc5a36f97560",
+      "pngSha256": "b354836016f693ba7aad290ac35d234187497a396130f7e2e2c4c51718a22fdc",
       "width": 2880,
       "height": 1920,
-      "sha256": "c814542e7a3b82dd2145a58a91fac96247bb5319bf596b56476de1d641db4c19",
+      "sha256": "4a53bbf6d48a68385c840206cc192730491e7f929dc060ee6f7bf1f5df62b72e",
       "pixelEquality": true
     },
     {
@@ -2376,10 +2488,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/scenario-benchmark.en.png",
-      "pngSha256": "8e5fc9c834d71f16674006e1fc19292720f05e999355724b89eba0ce7a1c925b",
+      "pngSha256": "5d763b9be5abf5313493966ce872923b3a1cdf03ea6e8166e981d678199595f1",
       "width": 2880,
       "height": 1920,
-      "sha256": "5c040aa84683412e19ec807a82a41a41db22816a5650c88b7c221f59b0a83eea",
+      "sha256": "e2f0290d94759a06aa9337b7ee2e14ae988e054e3101f447ba1e296ebcd02940",
       "pixelEquality": true
     },
     {
@@ -2401,10 +2513,10 @@
         "theme": "light"
       },
       "png": "output/playwright/docs-refresh-20261014/png/benchmark-report.en.png",
-      "pngSha256": "a65b39e06b367a895c032ed04f5ebc50d528c01ae1c7b3fdabacc8d7efb23ba8",
+      "pngSha256": "be1b27eeb6f2f81007bf44ecd19b4f81ab73e1e8071a3946ce3b7b46df0fa5ee",
       "width": 2880,
       "height": 3120,
-      "sha256": "26792ade9055192b65e8d6ac4a1ccd5dff6ea229b1b89170a1789546a0a33aa0",
+      "sha256": "ff1a7f44fe91f0746abed850610bd659fab1de8d544211543cf63db8c80e895e",
       "pixelEquality": true
     }
   ],
@@ -2416,7 +2528,7 @@
       "source": "overview.zh.webp",
       "width": 2880,
       "height": 1920,
-      "sha256": "910b35b495d58face31d07f723ce8f86046cee4177dd6e92b02293f0815eea9d",
+      "sha256": "9e2e16419b8d0dd499a1e6864571817232b0736e0e04acd656985cfa40670294",
       "pixelEquality": true
     },
     {
@@ -2424,7 +2536,7 @@
       "source": "overview.en.webp",
       "width": 2880,
       "height": 1920,
-      "sha256": "a40c117649f5d7f78a1c217accaca4217dc14aeea29e1e02119991c34cf01a65",
+      "sha256": "948247f4a17378915e8025a2e611956f5463e793f509721b2622bf769f952a8b",
       "pixelEquality": true
     },
     {
@@ -2432,7 +2544,7 @@
       "source": "overview.en.webp",
       "width": 2880,
       "height": 1920,
-      "sha256": "a40c117649f5d7f78a1c217accaca4217dc14aeea29e1e02119991c34cf01a65",
+      "sha256": "948247f4a17378915e8025a2e611956f5463e793f509721b2622bf769f952a8b",
       "pixelEquality": true
     }
   ],
@@ -2455,7 +2567,7 @@
     },
     {
       "file": "scripts/screenshot-fixtures/documentation-data.js",
-      "sha256": "fd58d49554540e17245dc99cf60aaa9d402f8fccca39d035d07ae4d881284983"
+      "sha256": "c2bb1fa42d498773769708e58c8dd3930268a7866008aa6ea9ebb742cacee086"
     },
     {
       "file": "scripts/screenshot-fixtures/report-data.js",
@@ -2470,148 +2582,5 @@
       "sha256": "6c7feb68f981cd59d6d4901f806194150b7a181ae32c7f8c4ce0982fa0706314"
     }
   ],
-  "helperTreeSha256": "627d66650cc313d310f06b89b131ee7606c85f289bd5278cc23cd0b1ca8602c1",
-  "featureScreens": {
-    "capturedAt": "2026-10-17T13:47:27.779Z",
-    "appVersion": "0.1.12",
-    "sourceHead": "9f349c60fc9daed3600f3840dadf2ae3a1fe3460",
-    "browserVersion": "155.0.8059.84",
-    "source": "Real App components via the isolated test fixtures (onboarding-app.html, daily-experience-app.html, multi-version-app.html) plus scripts/screenshot-fixtures/arena-preview.js",
-    "scope": "Synthetic in-memory native data and leaderboard values. No real model, Strata runtime, network, account or file mutation.",
-    "conversion": "Lossless WebP with decoded RGBA equality",
-    "screens": [
-      {
-        "file": "onboarding.zh.webp",
-        "scene": "onboarding",
-        "language": "zh",
-        "sample": "First-run guide, model step: synthetic RTX 4090 machine and read-only leaderboard speeds",
-        "errors": [],
-        "consoleErrors": [],
-        "externalRequests": [],
-        "passed": true,
-        "layout": {
-          "width": 1440,
-          "height": 960,
-          "documentWidth": 1440,
-          "language": "zh-CN"
-        },
-        "png": "output/playwright/feature-screenshots/png/onboarding.zh.png",
-        "pngSha256": "cc837d918a5aea336f8522e3c51d7a275047c7fffd2c7d3f2327a11f9c88e46f",
-        "width": 2880,
-        "height": 1920,
-        "pixelEquality": true,
-        "sha256": "533aecfa5509a28e864507eedc6a16adbb6318b36bd6ba1b9439077f7ef12a57"
-      },
-      {
-        "file": "onboarding.en.webp",
-        "scene": "onboarding",
-        "language": "en",
-        "sample": "First-run guide, model step: synthetic RTX 4090 machine and read-only leaderboard speeds",
-        "errors": [],
-        "consoleErrors": [],
-        "externalRequests": [],
-        "passed": true,
-        "layout": {
-          "width": 1440,
-          "height": 960,
-          "documentWidth": 1440,
-          "language": "en"
-        },
-        "png": "output/playwright/feature-screenshots/png/onboarding.en.png",
-        "pngSha256": "67300d2b45f4a761d977ad02b8982d92e8db82aa7c9559c289b2c635f5e8785f",
-        "width": 2880,
-        "height": 1920,
-        "pixelEquality": true,
-        "sha256": "930e079b68450dcd0686840cd8972eb433f0129b039ed411d914b0756bacc9fc"
-      },
-      {
-        "file": "config-cleanup.zh.webp",
-        "scene": "config-cleanup",
-        "language": "zh",
-        "sample": "Strata 0.1.38–0.1.44 side by side sharing one Strata-data folder; cleanup dialog lists old-version configurations only (read-only plan)",
-        "errors": [],
-        "consoleErrors": [],
-        "externalRequests": [],
-        "passed": true,
-        "layout": {
-          "width": 1440,
-          "height": 960,
-          "documentWidth": 1440,
-          "language": "zh-CN"
-        },
-        "png": "output/playwright/feature-screenshots/png/config-cleanup.zh.png",
-        "pngSha256": "1ec6bc8b9f654e42fbb87f8ed4b23b19b502c8385e810b38978a5f2214495370",
-        "width": 2880,
-        "height": 1920,
-        "pixelEquality": true,
-        "sha256": "d7ebc86f5aac18d2ae6091fe9e8babe7a9952fa3af873d99eaf74412efe0ba66"
-      },
-      {
-        "file": "config-cleanup.en.webp",
-        "scene": "config-cleanup",
-        "language": "en",
-        "sample": "Strata 0.1.38–0.1.44 side by side sharing one Strata-data folder; cleanup dialog lists old-version configurations only (read-only plan)",
-        "errors": [],
-        "consoleErrors": [],
-        "externalRequests": [],
-        "passed": true,
-        "layout": {
-          "width": 1440,
-          "height": 960,
-          "documentWidth": 1440,
-          "language": "en"
-        },
-        "png": "output/playwright/feature-screenshots/png/config-cleanup.en.png",
-        "pngSha256": "18d8b882fce02b45cc14e3c0570076338339a4be81cc8b9c81863ba8cea2c768",
-        "width": 2880,
-        "height": 1920,
-        "pixelEquality": true,
-        "sha256": "6415d894864fa89b8c78190437cb3c3b15e4d93f7bcf9cb4ccd542391b3f880d"
-      },
-      {
-        "file": "arena.zh.webp",
-        "scene": "arena",
-        "language": "zh",
-        "sample": "Benchmark leaderboard tab with synthetic groups, rows and recommendations served by the mocked native arena_get",
-        "errors": [],
-        "consoleErrors": [],
-        "externalRequests": [],
-        "passed": true,
-        "layout": {
-          "width": 1440,
-          "height": 960,
-          "documentWidth": 1440,
-          "language": "zh-CN"
-        },
-        "png": "output/playwright/feature-screenshots/png/arena.zh.png",
-        "pngSha256": "c8af875ae0e44f96fd9ab08e459470d73aada5a5030639835a3b73f5ddd42bf8",
-        "width": 2880,
-        "height": 1920,
-        "pixelEquality": true,
-        "sha256": "dd6ace79ab6bbef9188f795c4c93e20eb79e540dd8442047ec910c131679d14e"
-      },
-      {
-        "file": "arena.en.webp",
-        "scene": "arena",
-        "language": "en",
-        "sample": "Benchmark leaderboard tab with synthetic groups, rows and recommendations served by the mocked native arena_get",
-        "errors": [],
-        "consoleErrors": [],
-        "externalRequests": [],
-        "passed": true,
-        "layout": {
-          "width": 1440,
-          "height": 960,
-          "documentWidth": 1440,
-          "language": "en"
-        },
-        "png": "output/playwright/feature-screenshots/png/arena.en.png",
-        "pngSha256": "823a415c8b8e0c8a70cc15b4ba0c867edd14478516844cbc329038955c0e267f",
-        "width": 2880,
-        "height": 1920,
-        "pixelEquality": true,
-        "sha256": "b01cba70a2c4a26a967017ad1e72c41d58e30c2732db30e4b819e9459187e6d4"
-      }
-    ]
-  }
+  "helperTreeSha256": "4888b5cb3db70ec6794d1290d5d28bc4960b9a6f8d82f8152592c65ea81cb6b5"
 }
