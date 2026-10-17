@@ -1,5 +1,5 @@
 import { ArenaError, MAX_BODY_BYTES, validateSubmission, pickTier, CONSENT_VERSION, SCHEMA_VERSION } from './schema.js';
-import { aggregate, filterRows, recommend } from './stats.js';
+import { aggregate, facetOptions, filterRows, FILTER_KEYS, recommend } from './stats.js';
 import { evaluate } from './trust.js';
 import { parseEvidence, checkEvidence, evidenceMessage } from './evidence.js';
 import { sha256Hex, hmacHex, safeEqual, signingMessage, verifyEd25519, hexToBytes, leadingZeroBits, powMessage } from './crypto.js';
@@ -313,9 +313,13 @@ async function route(request, env, ctx, now) {
     const key = url.searchParams.get('group') ?? all[0]?.group;
     const group = all.find(g => g.group === key);
     if (!group) return json({ group: key ?? null, rows: [], gpus: [], tierMedian: null }, 200, PUBLIC_CACHE);
-    const gpu = url.searchParams.get('gpu') || undefined, vram = url.searchParams.get('vram') || undefined;
+    const p = url.searchParams, query = {};
+    for (const k of FILTER_KEYS) { const v = p.get(k); if (v !== null && v.trim() !== '' && v.length <= 128) query[k] = v.trim(); }
     const { rows, ...g } = group;
-    return json({ ...g, filter: { gpu: gpu ?? null, vram: vram ? Number(vram) : null }, ...filterRows(group, { gpu, vram }) }, 200, PUBLIC_CACHE);
+    const num = k => query[k] !== undefined && Number.isFinite(Number(query[k])) ? Number(query[k]) : null;
+    const result = filterRows(group, query);
+    const filter = { gpu: query.gpu ?? null, vram: num('vram'), ram: num('ram'), ctx: num('ctx'), kv: query.kv ?? null, parallel: num('parallel'), gpuCount: num('gpuCount'), expertCache: query.expertCache ?? null, q: query.q ?? null, sort: result.sort };
+    return json({ ...g, filter, options: facetOptions(rows), total: rows.length, ...result }, 200, PUBLIC_CACHE);
   }
   if (path === '/v1/recommend') {
     const p = url.searchParams, n = k => { const v = Number(p.get(k)); return p.has(k) && Number.isFinite(v) ? v : undefined; };
