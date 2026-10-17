@@ -6,7 +6,7 @@ async page => {
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
   const assert = (condition, message) => { if (!condition) throw Error(message); };
   const dialog = () => page.getByRole('dialog');
-  const methods = () => dialog().getByRole('radiogroup');
+  const methods = () => dialog().getByRole('radiogroup', { name: /^(?:接入方式|Connection method)$/ });
   const lastCopy = () => page.evaluate(() => window.__fixture.copied.at(-1));
   async function choose(name, option) { await dialog().getByRole('combobox', { name, exact: true }).click(); await page.getByRole('option', { name: option, exact: true }).click(); }
   async function copyAndCheck(button, expected) { await button.click(); assert(await lastCopy() === expected, 'Copied payload differs from displayed configuration'); }
@@ -32,7 +32,7 @@ async page => {
     const root = 'http://127.0.0.1:19001', model = 'Fixture A';
     await page.getByRole('button', { name: '接入 API', exact: true }).click();
     await dialog().waitFor();
-    assert(await methods().getByRole('radio').count() === 4, 'All four integration methods must be shown');
+    assert(await methods().getByRole('radio').count() === 6, 'All six integration methods must be shown');
     assert(await methods().getByRole('radio', { name: 'Cherry Studio', exact: true }).getAttribute('aria-checked') === 'true', 'Cherry Studio must be the default method');
     await copyAndCheck(dialog().getByRole('button', { name: '复制OpenAI 地址', exact: true }), `${root}/v1`);
     await copyAndCheck(dialog().getByRole('button', { name: '复制模型名', exact: true }), model);
