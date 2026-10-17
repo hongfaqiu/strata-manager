@@ -19,7 +19,7 @@ Website routing (`wrangler.toml` `[assets]`): clean URLs (`html_handling = "auto
 | POST | `/v1/submit` | app key + install key | Body must match the whitelist in `src/schema.js`; unknown keys are rejected. Optional `evidence` (text) + `evidenceSig`, see below. Response `{ accepted, id, ranked, seed, evidence, reasons, counted }`. |
 | DELETE | `/v1/me` | install key | Body `{}`. Deletes every submission of the key and the key registration. |
 | GET | `/v1/groups` | – | Model + quant groups with totals (`machines` counts installs with counted runs, `pendingMachines` installs with runs that do not count). |
-| GET | `/v1/leaderboard?group=&gpu=&vram=` | – | Rows for one group (hardware + launch parameters). |
+| GET | `/v1/leaderboard?group=&gpu=&vram=` | – | Rows for one group (hardware + launch parameters). Optional filters: `ram` (tier), `ctx`, `kv`, `parallel`, `gpuCount`, `expertCache`, `q` (GPU name keyword); `sort` = `decode8k` (default), `decode128k`, `prefill` or `machines`, ranks recomputed. The response adds `options` (distinct values per facet across the whole group), `total` and `sort`; unknown or malformed values are ignored. |
 | GET | `/v1/recommend?family=&quant=&gpu=&vram=&ram=&scene=&ctx=&kv=…` | – | Same-model parameter suggestions first, then other models. |
 | GET/POST | `/v1/admin/…` | `Authorization: Bearer ADMIN_TOKEN` | Maintainer endpoints, see below. |
 

@@ -1,8 +1,8 @@
-import { type ReactNode, useCallback, useEffect, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LoaderCircle, RefreshCw } from 'lucide-react';
 import * as core from '@strata-manager/core';
-import type { AppLanguage, ArenaGroups, ArenaLeaderboard, ArenaLogEntry, ArenaParamChange, ArenaParams, ArenaPayload, ArenaRecommendation, ArenaRecommendRow, ArenaRow, ArenaStatus, BenchmarkSuiteReport, ContextBenchmarkReport } from '@strata-manager/core';
+import type { AppLanguage, ArenaFacet, ArenaFilters, ArenaSort, ArenaGroups, ArenaLeaderboard, ArenaLogEntry, ArenaParamChange, ArenaParams, ArenaPayload, ArenaRecommendation, ArenaRecommendRow, ArenaRow, ArenaStatus, BenchmarkSuiteReport, ContextBenchmarkReport } from '@strata-manager/core';
 import { Dialog, Empty } from '../components';
 import { Dropdown, Segmented, Toggle } from '../OfficialControls';
 import { ARENA_EVENT, arenaBuild } from './arenaUpload';
@@ -10,6 +10,8 @@ import './arena.css';
 
 type Scene = 'chat' | 'long' | 'code';
 type Filter = 'gpu' | 'vram' | 'all';
+/** Facet dropdowns in display order; GPU model and VRAM only apply when the hardware scope is "all". */
+const FACET_ORDER: readonly ArenaFacet[] = ['vram', 'ram', 'ctx', 'kv', 'parallel', 'gpuCount', 'expertCache'];
 const DISMISS_KEY = 'arenaConsentDismissedV1';
 const familyName = (family: string) => core.MODEL_CATALOG.find(model => model.family === family)?.name ?? family;
 const groupLabel = (group: string) => { const [family = '', quant = ''] = group.split(':'); return { model: familyName(family), quant }; };
@@ -48,6 +50,8 @@ export function ArenaPage({ language, active }: { language: AppLanguage; active:
   const [group, setGroup] = useState('');
   const [filter, setFilter] = useState<Filter>('gpu');
   const [board, setBoard] = useState<ArenaLeaderboard>();
+  const [facets, setFacets] = useState<ArenaFilters>({});
+  const [sort, setSort] = useState<ArenaSort>('decode8k');
   const [scene, setScene] = useState<Scene>('chat');
   const [recommendation, setRecommendation] = useState<ArenaRecommendation>();
   const [mine, setMine] = useState<{ payload?: ArenaPayload; launch?: core.ArenaLaunch | null; built: boolean }>({ built: false });
@@ -91,15 +95,22 @@ export function ArenaPage({ language, active }: { language: AppLanguage; active:
     if (!groups?.groups.length) return;
     if (!group || !groups.groups.some(item => item.group === group)) setGroup(groups.groups.find(item => item.group === myGroup)?.group ?? groups.groups[0]!.group);
   }, [groups, group, myGroup]);
+  // A new model + quant starts unfiltered: its parameter values differ.
+  useEffect(() => { setFacets({}); }, [group]);
+  const scope: Filter = myGpu ? filter : 'all';
+  const activeFilters = useMemo<ArenaFilters>(() => {
+    const { gpu, vram, ...rest } = facets;
+    return scope === 'all' ? { ...rest, ...(gpu ? { gpu } : {}), ...(vram ? { vram } : {}) } : rest;
+  }, [facets, scope]);
   useEffect(() => {
     if (!active || !group || offline) return;
-    const query: Record<string, string> = { group };
-    if (filter === 'gpu' && myGpu) query.gpu = myGpu.name;
-    if (filter === 'vram' && myGpu) query.vram = String(myGpu.vramGB);
+    const query = core.arenaLeaderboardQuery(group, activeFilters, sort);
+    if (scope === 'gpu' && myGpu) query.gpu = myGpu.name;
+    if (scope === 'vram' && myGpu) query.vram = String(myGpu.vramGB);
     let current = true;
     void core.arenaGet<ArenaLeaderboard>('leaderboard', query).then(next => { if (current) setBoard(next); }).catch(() => { if (current) setOffline(true); });
     return () => { current = false; };
-  }, [active, group, filter, myGpu, offline]);
+  }, [active, group, scope, myGpu, offline, activeFilters, sort]);
   useEffect(() => {
     if (!active || view !== 'recommend' || offline) return;
     const hw = { gpu: myGpu?.name, vramGB: myGpu?.vramGB, ramGB: mine.payload?.hw.ramGB };
@@ -179,7 +190,10 @@ export function ArenaPage({ language, active }: { language: AppLanguage; active:
   // ---- shared side panel ----
   const lastUpload = status?.log.find(entry => entry.status === 'uploaded');
   const uploads = status?.log.filter(entry => entry.status === 'uploaded').length ?? 0;
-  const myRow = board?.rows.find(row => myGpu && row.hw.gpu === myGpu.name && mine.payload && sameParams(row.params, mine.payload.params) && !row.seed);
+  // Filters and sorting also run locally: harmless after the server applied them, and correct against servers that ignore them.
+  const { rows, tierMedian } = core.arenaApplyFilters(board?.rows ?? [], activeFilters, sort);
+  const isMine = (row: ArenaRow) => !!(myGpu && row.hw.gpu === myGpu.name && mine.payload && sameParams(row.params, mine.payload.params) && !row.seed);
+  const myRow = rows.find(isMine);
   const myDecode = decode8k(mine.payload);
   const logStatus = (entry: ArenaLogEntry) => t(entry.status === 'uploaded' && (entry.detail === 'verified' || entry.detail === 'pending') ? `arenaLog_${entry.detail}` : `arenaLog_${entry.status}`);
   const side = <aside className="panel arena-side">
@@ -187,7 +201,7 @@ export function ArenaPage({ language, active }: { language: AppLanguage; active:
       <header><h3>{t('arenaMyMachine')}</h3><span className="arena-muted">{myGpu ? `${gpuLabel(myGpu.name)} · ${number(mine.payload?.hw.ramGB, 0)} GB` : ''}</span></header>
       {myDecode != null ? <>
         <div className="arena-big"><strong>{number(myDecode)}</strong><span>{t('arenaDecodeUnit')}</span></div>
-        <p className="arena-muted">{myRow ? <><span className={myDecode >= myRow.decode.median ? 'arena-up' : 'arena-down'}>{myDecode >= myRow.decode.median ? '+' : '−'}{number(Math.abs(myDecode - myRow.decode.median))}</span> {t('arenaVsConfig', { median: number(myRow.decode.median), rank: myRow.rank ?? '—', total: board?.rows.length ?? 0 })}</> : t('arenaNoPeers')}</p>
+        <p className="arena-muted">{myRow ? <><span className={myDecode >= myRow.decode.median ? 'arena-up' : 'arena-down'}>{myDecode >= myRow.decode.median ? '+' : '−'}{number(Math.abs(myDecode - myRow.decode.median))}</span> {t('arenaVsConfig', { median: number(myRow.decode.median), rank: myRow.rank ?? '—', total: rows.length })}</> : t('arenaNoPeers')}</p>
         {mine.payload && <p className="arena-muted arena-mine-config">{groupLabel(`${mine.payload.model.family}:${mine.payload.model.quant}`).model} <Quant>{mine.payload.model.quant}</Quant>{chips(mine.payload.params)}</p>}
       </> : <p className="arena-muted">{mine.payload?.kind === 'scenario' ? t('arenaScenarioOnly') : t('arenaNoRun')}</p>}
     </div>
@@ -265,7 +279,10 @@ export function ArenaPage({ language, active }: { language: AppLanguage; active:
   }
 
   // ---- leaderboard ----
-  const rows = board?.rows ?? [];
+  const total = board?.total ?? board?.rows.length ?? 0;
+  const facetOptions = board?.options ?? core.arenaFacetOptions(board?.rows ?? []);
+  const gpuOptions = board?.options?.gpus ?? groups?.groups.find(item => item.group === group)?.gpus ?? [];
+  const filtered = Object.values(activeFilters).some(value => value);
   const summary = groups?.groups.find(item => item.group === group);
   const lows = rows.map(row => row.decode.p25 ?? row.decode.median), highs = rows.map(row => row.decode.p75 ?? row.decode.median);
   const lo = rows.length ? Math.floor(Math.min(...lows) * 0.92) : 0, hi = rows.length ? Math.ceil(Math.max(...highs, myDecode ?? 0) * 1.04) : 1;
@@ -276,39 +293,61 @@ export function ArenaPage({ language, active }: { language: AppLanguage; active:
     ...(myGpu ? [{ value: 'gpu', label: gpuLabel(myGpu.name) }, { value: 'vram', label: t('arenaVramTier', { gb: myGpu.vramGB }) }] : []),
     { value: 'all', label: t('arenaAllHardware') },
   ];
-  const activeFilter = myGpu ? filter : 'all';
+  const activeFilter = scope;
   const label = groupLabel(group);
+  const facetLabel = (facet: ArenaFacet) => facet === 'vram' ? t('arenaFilterVram') : facet === 'ram' ? t('arenaFilterRam') : paramName(facet);
+  const facetValue = (facet: ArenaFacet, value: number | string) => facet === 'ctx' && typeof value === 'number' ? ctxLabel(value) : facet === 'vram' || facet === 'ram' ? `${value} GB` : String(value);
+  const setFacet = (key: keyof ArenaFilters, value: string) => setFacets(previous => ({ ...previous, [key]: value }));
+  const facetControl = (key: keyof ArenaFilters, name: string, values: { value: string; label: string }[]) => <label className={`arena-filter is-${key}`} key={key}>
+    <span>{name}</span>
+    <Dropdown ariaLabel={name} value={activeFilters[key] ?? ''} options={[{ value: '', label: t('arenaFilterAny') }, ...values]} onValueChange={value => setFacet(key, value)}/>
+  </label>;
+  const facetControls = [
+    ...(scope === 'all' && gpuOptions.length > 1 ? [facetControl('gpu', t('arenaFilterGpu'), gpuOptions.map(item => ({ value: item.gpu, label: `${gpuLabel(item.gpu)} · ${item.vramGB} GB` })))] : []),
+    ...FACET_ORDER.filter(facet => (scope === 'all' || facet !== 'vram') && (facetOptions[facet]?.length ?? 0) > 1)
+      .map(facet => facetControl(facet, facetLabel(facet), facetOptions[facet].map(value => ({ value: String(value), label: facetValue(facet, value) })))),
+  ];
+  const sortValue = (row: ArenaRow) => core.arenaSortValue(row, sort);
+  const sorted = (key: ArenaSort) => sort === key ? ' is-sorted' : '';
+  const filterBar = <div className="arena-filterbar">
+    {facetControls.length > 0 && <div className="arena-filters" role="group" aria-label={t('arenaFilters')}>{facetControls}</div>}
+    <div className="arena-filter-foot">
+      <div className="arena-filter-meta">{board && <><span className="arena-muted">{t('arenaFilterShown', { shown: rows.length, total })}</span>{filtered && <button type="button" className="arena-link" onClick={() => setFacets({})}>{t('arenaFilterReset')}</button>}</>}</div>
+      <div className="arena-sort"><span className="arena-muted">{t('arenaSort')}</span><Segmented ariaLabel={t('arenaSort')} value={sort} onValueChange={value => setSort(value as ArenaSort)} options={core.ARENA_SORTS.map(value => ({ value, label: t(`arenaSort_${value}`) }))}/></div>
+    </div>
+  </div>;
   return <div className="arena-page">{toolbar}<div className="arena">
     <section className="panel arena-main">
       <header className="arena-head">
         <div className="arena-group"><Dropdown ariaLabel={t('arenaGroup')} value={group} options={groupOptions} onValueChange={setGroup}/>{summary && <span className="arena-muted">{t('arenaGroupHint', { configs: summary.configs, machines: summary.machines })}</span>}</div>
         <Segmented ariaLabel={t('arenaHardware')} value={activeFilter} onValueChange={value => setFilter(value as Filter)} options={filterOptions}/>
       </header>
-      {!board ? <div className="arena-loading"><LoaderCircle className="spin" size={18}/></div> : !rows.length ? <Empty title={t('arenaNoRows')} hint={t('arenaNoRowsHint')}/> : <>
-        <div className="arena-podium">{rows.slice(0, 3).map((row, index) => <div key={index} className={index === 0 ? 'first' : ''}>
-          <span className="arena-podium-rank">NO.{index + 1}</span>
+      {filterBar}
+      {!board ? <div className="arena-loading"><LoaderCircle className="spin" size={18}/></div> : !rows.length ? (filtered && total > 0 ? <Empty title={t('arenaNoMatch')} hint={t('arenaNoMatchHint')}><button type="button" className="st-btn st-btn--secondary" onClick={() => setFacets({})}>{t('arenaFilterReset')}</button></Empty> : <Empty title={t('arenaNoRows')} hint={t('arenaNoRowsHint')}/>) : <>
+        <div className="arena-podium">{rows.slice(0, 3).map((row, index) => <div key={index} className={index === 0 && row.rank === 1 ? 'first' : ''}>
+          <span className="arena-podium-rank">NO.{row.rank ?? '—'}</span>{sort !== 'decode8k' && <span className="arena-podium-metric">{t(`arenaSort_${sort}`)}</span>}
           <div className="arena-podium-hw">{gpuLabel(row.hw.gpu)} <span className="arena-muted">· {row.hw.vramGB} GB · {t('arenaRam', { gb: row.hw.ramGB })}</span></div>
-          <div className="arena-podium-value">{number(row.decode.median)}<small>tok/s</small></div>
+          <div className="arena-podium-value">{sort === 'machines' ? <>{row.machines}<small>{t('arenaColMachines')}</small></> : <>{number(sortValue(row), sort === 'prefill' ? 0 : 1)}<small>tok/s</small></>}</div>
           <div className="arena-podium-foot">{chips(row.params)}</div>
         </div>)}</div>
         <table className="arena-table">
           <colgroup><col style={{ width: 44 }}/><col/><col style={{ width: '21%' }}/><col style={{ width: 84 }}/><col style={{ width: 78 }}/><col style={{ width: 78 }}/><col style={{ width: 70 }}/></colgroup>
-          <thead><tr><th/><th>{t('arenaColConfig')}</th><th>{t('arenaColRange')}</th><th className="r">{t('arenaColMedian')}</th><th className="r">{t('arenaColPrefill')}</th><th className="r">128K</th><th className="r">{t('arenaColMachines')}</th></tr></thead>
-          <tbody>{rows.map((row, index) => { const me = row === myRow; return <tr key={index} className={me ? 'me' : ''}>
-            <td className="arena-rank">{String(row.rank ?? index + 1).padStart(2, '0')}</td>
+          <thead><tr><th/><th>{t('arenaColConfig')}</th><th>{t('arenaColRange')}</th><th className={'r' + sorted('decode8k')} aria-sort={sort === 'decode8k' ? 'descending' : undefined}>{t('arenaColMedian')}</th><th className={'r' + sorted('prefill')} aria-sort={sort === 'prefill' ? 'descending' : undefined}>{t('arenaColPrefill')}</th><th className={'r' + sorted('decode128k')} aria-sort={sort === 'decode128k' ? 'descending' : undefined}>128K</th><th className={'r' + sorted('machines')} aria-sort={sort === 'machines' ? 'descending' : undefined}>{t('arenaColMachines')}</th></tr></thead>
+          <tbody>{rows.map((row, index) => { const me = isMine(row); return <tr key={index} className={me ? 'me' : ''}>
+            <td className="arena-rank">{row.rank == null ? '—' : String(row.rank).padStart(2, '0')}</td>
             <td><div className="arena-hw"><b>{gpuLabel(row.hw.gpu)}</b> <span className="arena-muted">{row.hw.vramGB} GB · {t('arenaRam', { gb: row.hw.ramGB })}</span>{me && <span className="arena-tag mine">{t('arenaMine')}</span>}{row.seed && <span className="arena-tag">{t('arenaSeed')}</span>}</div>{chips(row.params)}</td>
             <td><span className="arena-range" title={`p25 ${number(row.decode.p25)} · p75 ${number(row.decode.p75)}`}>
-              {board.tierMedian != null && <span className="ref" style={{ left: x(board.tierMedian) }}/>}
+              {tierMedian != null && <span className="ref" style={{ left: x(tierMedian) }}/>}
               {row.decode.p25 != null && row.decode.p75 != null && <span className="iqr" style={{ left: x(row.decode.p25), width: `calc(${x(row.decode.p75)} - ${x(row.decode.p25)})` }}/>}
               <i style={{ left: x(row.decode.median) }}/>{me && myDecode != null && <b className="you" style={{ left: x(myDecode) }}/>}
             </span></td>
-            <td className="r"><span className="arena-value">{number(row.decode.median)}</span>{me && myDecode != null && <small className="arena-up">{t('arenaYou', { value: number(myDecode) })}</small>}</td>
-            <td className="r arena-num">{number(row.prefill, 0)}</td>
-            <td className="r arena-num">{number(row.decode128k)}</td>
-            <td className="r"><Signal machines={row.machines} seed={row.seed}/> <span className="arena-num arena-muted">{row.machines}</span></td>
+            <td className={'r' + sorted('decode8k')}><span className="arena-value">{number(row.decode.median)}</span>{me && myDecode != null && <small className="arena-up">{t('arenaYou', { value: number(myDecode) })}</small>}</td>
+            <td className={'r arena-num' + sorted('prefill')}>{number(row.prefill, 0)}</td>
+            <td className={'r arena-num' + sorted('decode128k')}>{number(row.decode128k)}</td>
+            <td className={'r' + sorted('machines')}><Signal machines={row.machines} seed={row.seed}/> <span className="arena-num arena-muted">{row.machines}</span></td>
           </tr>; })}</tbody>
         </table>
-        <div className="arena-axis"><span/><div><div className="arena-ticks">{ticks.map(v => <span key={v} style={{ left: x(v) }}>{v}</span>)}</div><small className="arena-muted">{t('arenaLegend', { median: number(board.tierMedian) })}</small></div></div>
+        <div className="arena-axis"><span/><div><div className="arena-ticks">{ticks.map(v => <span key={v} style={{ left: x(v) }}>{v}</span>)}</div><small className="arena-muted">{t('arenaLegend', { median: number(tierMedian) })}</small></div></div>
         <p className="arena-foot arena-muted">{t('arenaFootnote', { model: label.model, quant: label.quant })}</p>
       </>}
     </section>
