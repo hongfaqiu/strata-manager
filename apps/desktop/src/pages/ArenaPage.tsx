@@ -137,9 +137,10 @@ export function ArenaPage({ language, active }: { language: AppLanguage; active:
   const confidenceName = (row: { confidence: ArenaRow['confidence'] }) => t(`arenaConfidence_${row.confidence}`);
 
   // ---- consent ----
-  const showConsent = desktop && status && !status.consented && dismissed === false;
+  // Builds without the upload key skip the consent screen entirely and show the board read-only.
+  const showConsent = desktop && status && status.uploadAvailable && !status.consented && dismissed === false;
   if (showConsent) {
-    const preview = mine.payload ? JSON.stringify({ ...mine.payload, installId: '…', consentVersion: core.ARENA_CONSENT_VERSION }, null, 2) : '';
+    const preview = mine.payload ? JSON.stringify({ ...mine.payload, consentVersion: core.ARENA_CONSENT_VERSION }, null, 2) : '';
     return <div className="arena arena-consent">
       <section className="panel arena-consent-main">
         <h2>{t('arenaJoinTitle')}</h2>
@@ -150,12 +151,12 @@ export function ArenaPage({ language, active }: { language: AppLanguage; active:
         </ul>
         <h3>{t('arenaNever')}</h3>
         <p className="arena-muted">{t('arenaNeverHint')}</p>
-        <label className="arena-toggle-row"><Toggle checked={autoUpload} onCheckedChange={setAutoUpload} ariaLabel={t('arenaAutoUpload')}/><span><b>{t('arenaAutoUpload')}</b><small>{t('arenaAutoUploadHint')}</small></span></label>
+        <label className="arena-toggle-row"><Toggle checked={autoUpload} disabled={!status.uploadAvailable} onCheckedChange={setAutoUpload} ariaLabel={t('arenaAutoUpload')}/><span><b>{t('arenaAutoUpload')}</b><small>{t('arenaAutoUploadHint')}</small></span></label>
         {message && <p className="arena-error" role="alert">{message}</p>}
         <div className="arena-consent-actions">
           <span className="arena-muted">{t('arenaConsentFooter', { version: core.ARENA_CONSENT_VERSION })}</span>
           <button type="button" className="st-btn st-btn--secondary" onClick={() => void dismiss()}>{t('arenaNotNow')}</button>
-          <button type="button" className="st-btn st-btn--primary" disabled={busy === 'consent'} onClick={() => void consent()}>{busy === 'consent' && <LoaderCircle className="spin" size={14}/>}{t('arenaAgree')}</button>
+          <button type="button" className="st-btn st-btn--primary" disabled={busy === 'consent' || !status.uploadAvailable} onClick={() => void consent()}>{busy === 'consent' && <LoaderCircle className="spin" size={14}/>}{t('arenaAgree')}</button>
         </div>
       </section>
       <section className="panel arena-preview">
@@ -183,16 +184,18 @@ export function ArenaPage({ language, active }: { language: AppLanguage; active:
     </div>
     {desktop && status && <div className="arena-side-sec">
       {status.consented ? <dl className="arena-kv">
-        <dt>{t('arenaAutoUpload')}</dt><dd><Toggle checked={status.autoUpload} disabled={busy === 'toggle'} onCheckedChange={value => void toggleUpload(value)} ariaLabel={t('arenaAutoUpload')}/></dd>
+        <dt>{t('arenaAutoUpload')}</dt><dd><Toggle checked={status.autoUpload && status.uploadAvailable && !status.banned} disabled={busy === 'toggle' || !status.uploadAvailable || status.banned} onCheckedChange={value => void toggleUpload(value)} ariaLabel={t('arenaAutoUpload')}/></dd>
+        <dt>{t('arenaKeyState')}</dt><dd className={status.banned ? 'arena-down' : undefined}>{status.banned ? t('arenaBanned') : status.registered ? t('arenaRegistered') : <>{status.autoUpload && status.uploadAvailable && <LoaderCircle className="spin" size={12}/>}{t('arenaRegistering')}</>}</dd>
         <dt>{t('arenaUploaded')}</dt><dd>{t('arenaRuns', { count: uploads })}</dd>
         <dt>{t('arenaLastUpload')}</dt><dd>{lastUpload ? new Date(lastUpload.at).toLocaleString(language, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</dd>
         {status.queued > 0 && <><dt>{t('arenaQueued')}</dt><dd>{status.queued} <button type="button" className="arena-link" disabled={busy === 'flush'} onClick={() => void flush()}>{t('arenaRetryNow')}</button></dd></>}
         <dt>{t('arenaConsentVersion')}</dt><dd>{status.consentVersion}</dd>
-      </dl> : <div className="arena-join"><p className="arena-muted">{t('arenaNotJoined')}</p><button type="button" className="st-btn st-btn--primary" onClick={() => void reopen()}>{t('arenaJoin')}</button></div>}
+      </dl> : status.uploadAvailable ? <div className="arena-join"><p className="arena-muted">{t('arenaNotJoined')}</p><button type="button" className="st-btn st-btn--primary" onClick={() => void reopen()}>{t('arenaJoin')}</button></div> : <p className="arena-muted">{t('arenaReadOnly')}</p>}
+      {status.consented && !status.banned && <p className="arena-muted arena-probation">{t('arenaProbationHint')}</p>}
     </div>}
     {desktop && status && (status.log.length > 0 || status.consented) && <div className="arena-side-sec">
       <details className="arena-log"><summary>{t('arenaLog')}</summary>
-        {status.log.length ? <ol>{status.log.slice(0, 20).map((entry, index) => <li key={index}><time>{new Date(entry.at).toLocaleString(language, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</time><span>{entry.group ? groupLabel(entry.group).model + ' ' + groupLabel(entry.group).quant : entry.kind === 'withdraw' ? t('arenaWithdrawShort') : ''}</span><b className={`arena-log-${entry.status}`}>{logStatus(entry)}</b></li>)}</ol> : <p className="arena-muted">{t('arenaLogEmpty')}</p>}
+        {status.log.length ? <ol>{status.log.slice(0, 20).map((entry, index) => <li key={index}><time>{new Date(entry.at).toLocaleString(language, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</time><span>{entry.group ? groupLabel(entry.group).model + ' ' + groupLabel(entry.group).quant : entry.kind === 'withdraw' ? t('arenaWithdrawShort') : entry.kind === 'register' ? t('arenaKeyState') : ''}</span><b className={`arena-log-${entry.status}`}>{logStatus(entry)}</b></li>)}</ol> : <p className="arena-muted">{t('arenaLogEmpty')}</p>}
       </details>
       {status.consented && <button type="button" className="arena-danger" onClick={() => setConfirmWithdraw(true)}>{t('arenaWithdraw')}</button>}
     </div>}
@@ -206,7 +209,7 @@ export function ArenaPage({ language, active }: { language: AppLanguage; active:
   const toolbar = <div className="arena-toolbar">
     <Segmented ariaLabel={t('arenaView')} value={view} onValueChange={value => setView(value as 'board' | 'recommend')} options={[{ value: 'board', label: t('arenaBoard') }, { value: 'recommend', label: t('arenaRecommend') }]}/>
     {groups && groups.machines > 0 && <span className="arena-muted">{t('arenaTotals', { machines: groups.machines, runs: groups.runs })}{groups.computedAt ? ' · ' + t('arenaUpdated', { time: new Date(groups.computedAt).toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit' }) }) : ''}</span>}
-    {desktop && status && !status.consented && dismissed && <button type="button" className="arena-link" onClick={() => void reopen()}>{t('arenaJoin')}</button>}
+    {desktop && status && !status.consented && dismissed && status.uploadAvailable && <button type="button" className="arena-link" onClick={() => void reopen()}>{t('arenaJoin')}</button>}
   </div>;
 
   // ---- offline / empty ----

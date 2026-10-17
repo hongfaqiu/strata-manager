@@ -31,3 +31,11 @@ test('the leaderboard is a Benchmark tab and keeps the existing modes', () => {
   for (const mode of ["value: 'context'", "value: 'scenario'", "value: 'arena'"]) assert.ok(page.includes(mode), mode);
   assert.match(page, /<ArenaPage language=\{props\.language\} active=\{mode === 'arena'\}\/>/);
 });
+
+test('builds without the CI app key show the board read-only and never offer consent', () => {
+  const page = read('./ArenaPage.tsx');
+  assert.match(page, /const showConsent = desktop && status && status\.uploadAvailable && !status\.consented/);
+  assert.match(page, /disabled=\{busy === 'consent' \|\| !status\.uploadAvailable\}/);
+  assert.match(page, /t\('arenaReadOnly'\)/);
+  assert.doesNotMatch(page, /installId/, 'the preview shows no install identifier');
+});

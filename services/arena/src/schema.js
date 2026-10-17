@@ -40,13 +40,12 @@ export function pickTier(tiers, key) {
   return tiers.filter(t => t.ok && t.decode !== null && t.ctx >= lo && t.ctx <= hi).sort((a, b) => Math.abs(a.ctx - target) - Math.abs(b.ctx - target))[0] ?? null;
 }
 
-/** Validates a parsed body and returns the normalized submission (no installId). Throws ArenaError. */
+/** Validates a parsed body and returns the normalized submission. The install is identified by its signing key, never by the body. Throws ArenaError. */
 export function validateSubmission(body) {
-  keys(body, ['schema', 'consentVersion', 'installId', 'app', 'strata', 'kind', 'day', 'hw', 'model', 'params', 'tiers', 'scenario'], 'body');
+  keys(body, ['schema', 'consentVersion', 'app', 'strata', 'kind', 'day', 'hw', 'model', 'params', 'tiers', 'scenario'], 'body');
   if (body.schema !== SCHEMA_VERSION) bad('unsupported_schema');
   int(body.consentVersion, 1, 1000, 'consentVersion');
   if (body.consentVersion < CONSENT_VERSION) bad('consent_outdated', 'consent version is older than the current policy');
-  str(body.installId, /^[a-f0-9]{64}$/, 'installId');
   const app = str(body.app, /^\d{1,3}\.\d{1,3}\.\d{1,4}$/, 'app');
   const strata = str(body.strata, /^\d{1,3}\.\d{1,3}\.\d{1,4}(?:\.\d{1,4})?$/, 'strata', true);
   const kind = str(body.kind, /^(?:context|scenario)$/, 'kind');

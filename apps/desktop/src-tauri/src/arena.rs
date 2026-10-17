@@ -1,9 +1,12 @@
-//! Benchmark Arena: consent state, whitelisted upload queue with retry, signed requests and read-only API access.
+//! Benchmark Arena: consent state, per-install signing key, whitelisted upload queue with retry, and read-only API access.
 //!
 //! The webview cannot reach the network (CSP `connect-src` is IPC only), so everything goes through here.
 //! Payloads are re-validated against the exact schema-v1 shape (unknown fields are rejected) before they are
-//! queued; the only identifier added is the random per-install id, which the user can withdraw at any time.
+//! queued. The install is identified only by a random Ed25519 public key generated on consent; its private key
+//! stays on this machine (OS keyring, or an owner-only file when no keyring is available) and is deleted on
+//! withdraw. Release builds also carry an app key injected at CI build time; builds without it are read-only.
 use crate::{ClientState, State};
+use ed25519_dalek::{Signer, SigningKey};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
@@ -15,21 +18,26 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 pub const CONSENT_VERSION: u32 = 1;
 const SCHEMA_VERSION: u8 = 1;
 const DEFAULT_ENDPOINT: &str = "https://arena.cosfoc.com";
-/// Signing key shared by all desktop builds. It ships inside every binary, so it only filters out casual
-/// scripted traffic; server-side rate limits and sanity checks carry the real weight. Rotate via
-/// STRATA_ARENA_APP_KEY at build time (the Worker accepts a comma-separated list during rotation).
-const DEFAULT_APP_KEY: &str = "<rotated-out; injected at build time>";
 const MAX_ATTEMPTS: u32 = 8;
 const BACKOFF_SECS: [u64; 5] = [60, 300, 1_800, 7_200, 43_200];
 const MAX_LOG: usize = 100;
 const MAX_QUEUE: usize = 50;
 const MAX_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
+/// Highest proof-of-work difficulty the client accepts from the server (2^32 hashes is minutes, not hours).
+const MAX_POW_BITS: u32 = 32;
+const KEYRING_SERVICE: &str = "io.strata.manager";
+const KEYRING_USER: &str = "arena-install-key";
 
 fn endpoint() -> &'static str {
     option_env!("STRATA_ARENA_ENDPOINT").unwrap_or(DEFAULT_ENDPOINT)
 }
-fn app_key() -> &'static str {
-    option_env!("STRATA_ARENA_APP_KEY").unwrap_or(DEFAULT_APP_KEY)
+/// App key injected at build time from the CI secret ARENA_APP_KEY. The source tree carries none, so local and
+/// fork builds can read the leaderboard but cannot upload.
+fn app_key() -> Option<&'static str> {
+    option_env!("STRATA_ARENA_APP_KEY").filter(|key| key.len() >= 32)
+}
+pub fn upload_available() -> bool {
+    app_key().is_some()
 }
 fn now_ms() -> u64 {
     SystemTime::now()
@@ -238,12 +246,24 @@ impl Payload {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct ArenaState {
-    install_id: Option<String>,
     consent_version: Option<u32>,
     consented_at: Option<u64>,
     auto_upload: bool,
+    /// Public half of the install key and where its private half is kept.
+    key: Option<InstallKey>,
+    registered: bool,
+    register_attempts: u32,
+    register_next_at: u64,
+    banned: bool,
     queue: Vec<Queued>,
     log: Vec<LogEntry>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InstallKey {
+    public_key: String,
+    key_id: String,
+    store: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -265,7 +285,10 @@ struct LogEntry {
 }
 impl ArenaState {
     fn consented(&self) -> bool {
-        self.install_id.is_some() && self.consent_version == Some(CONSENT_VERSION)
+        self.key.is_some() && self.consent_version == Some(CONSENT_VERSION)
+    }
+    fn uploading(&self) -> bool {
+        upload_available() && self.consented() && self.auto_upload && !self.banned
     }
     fn push_log(
         &mut self,
@@ -291,6 +314,9 @@ impl ArenaState {
             "consented": self.consented(),
             "consentVersion": self.consent_version,
             "autoUpload": self.consented() && self.auto_upload,
+            "uploadAvailable": upload_available(),
+            "registered": self.registered,
+            "banned": self.banned,
             "queued": self.queue.len(),
             "log": self.log,
             "endpoint": endpoint(),
@@ -317,23 +343,140 @@ fn save(path: &Path, state: &ArenaState) -> Result<(), String> {
     .map_err(|e| e.to_string())?;
     std::fs::rename(&tmp, path).map_err(|e| e.to_string())
 }
-fn new_install_id() -> String {
-    format!(
-        "{}{}",
-        uuid::Uuid::new_v4().simple(),
-        uuid::Uuid::new_v4().simple()
-    )
-}
 /// Delay before the next try after `attempts` failures.
 pub fn backoff(attempts: u32) -> Duration {
     let index = (attempts.max(1) as usize - 1).min(BACKOFF_SECS.len() - 1);
     Duration::from_secs(BACKOFF_SECS[index])
 }
 
-// ---------- signing ----------
+// ---------- install key ----------
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
+fn unhex32(text: &str) -> Option<[u8; 32]> {
+    let text = text.trim();
+    if text.len() != 64 {
+        return None;
+    }
+    let mut out = [0u8; 32];
+    for (i, byte) in out.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(text.get(i * 2..i * 2 + 2)?, 16).ok()?;
+    }
+    Some(out)
+}
+fn secret_file(path: &Path) -> PathBuf {
+    path.with_file_name("install.key")
+}
+/// Writes a file only the current user can read (0600 on Unix; the per-user app data directory elsewhere).
+fn write_private(file: &Path, contents: &str) -> Result<(), String> {
+    use std::io::Write;
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut handle = options.open(file).map_err(|e| e.to_string())?;
+    handle
+        .write_all(contents.as_bytes())
+        .map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(file, std::fs::Permissions::from_mode(0o600))
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+fn keyring_entry() -> Option<keyring::Entry> {
+    keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER).ok()
+}
+/// Generates a fresh Ed25519 key and stores the private half: OS keyring first (verified by reading it back),
+/// otherwise an owner-only file next to the Arena state.
+fn create_key(path: &Path, use_keyring: bool) -> Result<InstallKey, String> {
+    let mut seed = [0u8; 32];
+    getrandom::getrandom(&mut seed).map_err(|e| format!("arena_key_random: {e}"))?;
+    let signing = SigningKey::from_bytes(&seed);
+    let secret = hex(&seed);
+    seed.fill(0);
+    let in_keyring = use_keyring
+        && keyring_entry().is_some_and(|entry| {
+            entry.set_password(&secret).is_ok()
+                && entry.get_password().ok().as_deref() == Some(secret.as_str())
+        });
+    let store = if in_keyring {
+        "keyring"
+    } else {
+        write_private(&secret_file(path), &secret)?;
+        "file"
+    };
+    let public = signing.verifying_key().to_bytes();
+    Ok(InstallKey {
+        public_key: hex(&public),
+        key_id: hex(&Sha256::digest(public)),
+        store: store.into(),
+    })
+}
+fn load_signing_key(path: &Path, key: &InstallKey) -> Result<SigningKey, String> {
+    let secret = if key.store == "keyring" {
+        keyring_entry()
+            .and_then(|entry| entry.get_password().ok())
+            .ok_or("arena_key_missing")?
+    } else {
+        std::fs::read_to_string(secret_file(path)).map_err(|_| "arena_key_missing")?
+    };
+    let signing = SigningKey::from_bytes(&unhex32(&secret).ok_or("arena_key_invalid")?);
+    if hex(&signing.verifying_key().to_bytes()) != key.public_key {
+        return Err("arena_key_mismatch".into());
+    }
+    Ok(signing)
+}
+fn delete_key(path: &Path, use_keyring: bool) {
+    if use_keyring {
+        if let Some(entry) = keyring_entry() {
+            let _ = entry.delete_credential();
+        }
+    }
+    let file = secret_file(path);
+    if file.exists() {
+        // Overwrite before unlinking so the seed does not linger in the file's old blocks on simple filesystems.
+        let _ = write_private(&file, &"0".repeat(64));
+        let _ = std::fs::remove_file(file);
+    }
+}
+
+// ---------- proof of work ----------
+fn leading_zero_bits(digest: &[u8]) -> u32 {
+    let mut bits = 0;
+    for byte in digest {
+        if *byte == 0 {
+            bits += 8;
+            continue;
+        }
+        return bits + byte.leading_zeros();
+    }
+    bits
+}
+/// Finds a counter so that SHA-256("strata-arena-pow|challenge|publicKey|counter") has `bits` leading zero bits.
+/// Mirrors services/arena/src/crypto.js. Runs on one core so it never starves a running benchmark.
+pub fn solve_pow(challenge: &str, public_key: &str, bits: u32) -> Option<u64> {
+    if bits > MAX_POW_BITS {
+        return None;
+    }
+    let mut prefix = Sha256::new();
+    prefix.update(format!("strata-arena-pow|{challenge}|{public_key}|").as_bytes());
+    (0..(1u64 << 53)).find(|counter| {
+        let mut hasher = prefix.clone();
+        hasher.update(counter.to_string().as_bytes());
+        leading_zero_bits(&hasher.finalize()) >= bits
+    })
+}
+
+// ---------- signing ----------
 pub fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
     let mut block = [0u8; 64];
     if key.len() > 64 {
@@ -349,22 +492,41 @@ pub fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
     outer.update(inner.finalize());
     outer.finalize().into()
 }
-fn signed_headers(body: &[u8], ts: u64, nonce: &str) -> [(&'static str, String); 3] {
-    let message = format!("{ts}\n{nonce}\n{}", hex(&Sha256::digest(body)));
-    [
+fn signing_message(body: &[u8], ts: u64, nonce: &str) -> String {
+    format!("{ts}\n{nonce}\n{}", hex(&Sha256::digest(body)))
+}
+/// Request headers: timestamp and nonce, the app-key HMAC when this build has one, and the install signature.
+fn signed_headers(
+    body: &[u8],
+    ts: u64,
+    nonce: &str,
+    app: Option<&str>,
+    install: Option<(&str, &SigningKey)>,
+) -> Vec<(&'static str, String)> {
+    let message = signing_message(body, ts, nonce);
+    let mut headers = vec![
         ("X-Arena-Ts", ts.to_string()),
         ("X-Arena-Nonce", nonce.to_string()),
-        (
+    ];
+    if let Some(key) = app {
+        headers.push((
             "X-Arena-Sig",
-            hex(&hmac_sha256(app_key().as_bytes(), message.as_bytes())),
-        ),
-    ]
+            hex(&hmac_sha256(key.as_bytes(), message.as_bytes())),
+        ));
+    }
+    if let Some((key_id, signing)) = install {
+        headers.push(("X-Arena-Key", key_id.to_string()));
+        headers.push((
+            "X-Arena-Install-Sig",
+            hex(&signing.sign(message.as_bytes()).to_bytes()),
+        ));
+    }
+    headers
 }
-/// Upload body: the validated payload plus the install id and consent version, nothing else.
-fn upload_body(payload: &Payload, install_id: &str) -> Result<Vec<u8>, String> {
+/// Upload body: the validated payload plus the consent version, nothing else. The install is identified by its key.
+fn upload_body(payload: &Payload) -> Result<Vec<u8>, String> {
     let mut value = serde_json::to_value(payload).map_err(|e| e.to_string())?;
     let object: &mut Map<String, Value> = value.as_object_mut().ok_or("payload")?;
-    object.insert("installId".into(), json!(install_id));
     object.insert("consentVersion".into(), json!(CONSENT_VERSION));
     serde_json::to_vec(&value).map_err(|e| e.to_string())
 }
@@ -372,12 +534,13 @@ async fn signed_request(
     method: reqwest::Method,
     path: &str,
     body: Vec<u8>,
+    install: Option<(&str, &SigningKey)>,
 ) -> Result<(u16, Value), String> {
     let nonce = uuid::Uuid::new_v4().simple().to_string();
     let mut request = client()
         .request(method, format!("{}{path}", endpoint()))
         .header("Content-Type", "application/json");
-    for (name, value) in signed_headers(&body, now_ms(), &nonce) {
+    for (name, value) in signed_headers(&body, now_ms(), &nonce, app_key(), install) {
         request = request.header(name, value);
     }
     let response = request
@@ -398,6 +561,14 @@ async fn signed_request(
 /// Whether a failed upload is worth retrying (server/network trouble) or permanently rejected.
 fn retryable(status: u16) -> bool {
     status >= 500 || status == 408 || status == 429
+}
+fn error_code(response: &Value) -> String {
+    response["error"]
+        .as_str()
+        .unwrap_or("")
+        .chars()
+        .take(48)
+        .collect()
 }
 
 // ---------- commands ----------
@@ -420,15 +591,32 @@ pub async fn arena_consent(
     if consent_version != CONSENT_VERSION {
         return Err("arena_consent_outdated".into());
     }
+    if !upload_available() {
+        return Err("arena_upload_unavailable".into());
+    }
     let path = state_path(&data_dir(&state));
-    let _guard = lock().lock().await;
-    let mut arena = load(&path);
-    arena.install_id.get_or_insert_with(new_install_id);
-    arena.consent_version = Some(CONSENT_VERSION);
-    arena.consented_at = Some(now_ms());
-    arena.auto_upload = auto_upload;
-    save(&path, &arena)?;
-    Ok(arena.status())
+    let status = {
+        let _guard = lock().lock().await;
+        let mut arena = load(&path);
+        if arena.key.is_none() {
+            let key_path = path.clone();
+            let key = tauri::async_runtime::spawn_blocking(move || create_key(&key_path, true))
+                .await
+                .map_err(|e| e.to_string())??;
+            arena.key = Some(key);
+            arena.registered = false;
+            arena.register_attempts = 0;
+            arena.register_next_at = 0;
+        }
+        arena.consent_version = Some(CONSENT_VERSION);
+        arena.consented_at = Some(now_ms());
+        arena.auto_upload = auto_upload;
+        save(&path, &arena)?;
+        arena.status()
+    };
+    // Registration (proof of work) happens in the background before the first upload.
+    tauri::async_runtime::spawn(async move { flush(&path, false).await });
+    Ok(status)
 }
 
 #[tauri::command]
@@ -441,6 +629,9 @@ pub async fn arena_set_auto_upload(
     let mut arena = load(&path);
     if enabled && !arena.consented() {
         return Err("arena_consent_required".into());
+    }
+    if enabled && !upload_available() {
+        return Err("arena_upload_unavailable".into());
     }
     arena.auto_upload = enabled;
     if !enabled {
@@ -467,7 +658,7 @@ pub async fn arena_enqueue(state: State<'_, ClientState>, payload: Value) -> Res
     let status = {
         let _guard = lock().lock().await;
         let mut arena = load(&path);
-        if !arena.consented() || !arena.auto_upload {
+        if !arena.uploading() {
             return Ok(arena.status());
         }
         let (kind, group) = (payload.kind.clone(), payload.group());
@@ -497,26 +688,43 @@ pub async fn arena_flush(state: State<'_, ClientState>) -> Result<Value, String>
 
 #[tauri::command]
 pub async fn arena_withdraw(state: State<'_, ClientState>) -> Result<Value, String> {
-    let path = state_path(&data_dir(&state));
+    withdraw_at(&state_path(&data_dir(&state)), true).await
+}
+/// Deletes this install's data and key registration on the server, then forgets the local key and state.
+async fn withdraw_at(path: &Path, use_keyring: bool) -> Result<Value, String> {
     let _guard = lock().lock().await;
-    let arena = load(&path);
+    let arena = load(path);
     let mut deleted = 0u64;
-    if let Some(install_id) = &arena.install_id {
-        let body =
-            serde_json::to_vec(&json!({ "installId": install_id })).map_err(|e| e.to_string())?;
-        let (status, response) = signed_request(reqwest::Method::DELETE, "/v1/me", body).await?;
-        if status != 200 {
-            return Err(format!(
-                "arena_withdraw_failed: {status} {}",
-                response["error"].as_str().unwrap_or("")
-            ));
+    if let (Some(key), true) = (&arena.key, arena.registered) {
+        // Signed by the install key only, so withdrawing works even in a build without the app key.
+        let signing = load_signing_key(path, key)?;
+        let (status, response) = signed_request(
+            reqwest::Method::DELETE,
+            "/v1/me",
+            b"{}".to_vec(),
+            Some((&key.key_id, &signing)),
+        )
+        .await?;
+        match status {
+            200 => deleted = response["deleted"].as_u64().unwrap_or(0),
+            // The server no longer knows this key (already withdrawn or expired): nothing left to delete.
+            401 if error_code(&response) == "unregistered" => {}
+            _ => {
+                return Err(format!(
+                    "arena_withdraw_failed: {status} {}",
+                    error_code(&response)
+                ))
+            }
         }
-        deleted = response["deleted"].as_u64().unwrap_or(0);
     }
-    // Forget the install id entirely: a later opt-in starts as a new, unlinked machine.
+    // Forget the key entirely: a later opt-in starts as a new, unlinked machine.
+    let key_path = path.to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || delete_key(&key_path, use_keyring))
+        .await
+        .map_err(|e| e.to_string())?;
     let mut fresh = ArenaState::default();
     fresh.push_log("withdraw", "deleted", Some(deleted.to_string()), None);
-    save(&path, &fresh)?;
+    save(path, &fresh)?;
     Ok(json!({ "deleted": deleted }))
 }
 
@@ -582,7 +790,7 @@ pub async fn arena_get(path: String, query: Option<Map<String, Value>>) -> Resul
     serde_json::from_slice(&bytes).map_err(|e| e.to_string())
 }
 
-// ---------- queue ----------
+// ---------- registration and queue ----------
 /// Background retry loop: first try shortly after launch, then every 15 minutes.
 pub fn start_background(data_dir: PathBuf) {
     let path = state_path(&data_dir);
@@ -594,20 +802,128 @@ pub fn start_background(data_dir: PathBuf) {
         }
     });
 }
+
+/// Applies a registration outcome to the state. Split out so the policy is testable without a network.
+fn apply_registration(arena: &mut ArenaState, outcome: Result<(u16, Value), String>) -> bool {
+    match outcome {
+        Ok((200 | 201, _)) => {
+            arena.registered = true;
+            arena.register_attempts = 0;
+            arena.register_next_at = 0;
+            arena.push_log("register", "registered", None, None);
+            true
+        }
+        Ok((403, response)) if error_code(&response) == "banned" => {
+            arena.banned = true;
+            arena.queue.clear();
+            arena.push_log("register", "rejected", Some("403 banned".into()), None);
+            false
+        }
+        failure => {
+            // Expired challenges, network errors and server trouble are all worth another try with a fresh challenge.
+            let detail = match failure {
+                Ok((status, response)) => format!("{status} {}", error_code(&response))
+                    .trim()
+                    .to_string(),
+                Err(e) => e.chars().take(64).collect(),
+            };
+            arena.register_attempts += 1;
+            arena.register_next_at = now_ms() + backoff(arena.register_attempts).as_millis() as u64;
+            arena.push_log("register", "retrying", Some(detail), None);
+            false
+        }
+    }
+}
+
+/// Registers the install key once: server challenge, proof of work off the async runtime, then a request signed
+/// with both the app key and the new install key (proof of possession).
+async fn ensure_registered(path: &Path, force: bool) -> bool {
+    let (key, signing) = {
+        let _guard = lock().lock().await;
+        let arena = load(path);
+        if arena.registered {
+            return true;
+        }
+        if !arena.uploading() || (!force && arena.register_next_at > now_ms()) {
+            return false;
+        }
+        let Some(key) = arena.key.clone() else {
+            return false;
+        };
+        match load_signing_key(path, &key) {
+            Ok(signing) => (key, signing),
+            Err(e) => {
+                let mut arena = arena;
+                apply_registration(&mut arena, Err(e));
+                let _ = save(path, &arena);
+                return false;
+            }
+        }
+    };
+    let outcome = async {
+        let (status, challenge) = signed_request(
+            reqwest::Method::POST,
+            "/v1/register/challenge",
+            Vec::new(),
+            None,
+        )
+        .await?;
+        if status != 200 {
+            return Ok((status, challenge));
+        }
+        let text = challenge["challenge"].as_str().unwrap_or("").to_string();
+        let bits = challenge["bits"].as_u64().unwrap_or(u64::MAX) as u32;
+        let public_key = key.public_key.clone();
+        let counter =
+            tauri::async_runtime::spawn_blocking(move || solve_pow(&text, &public_key, bits))
+                .await
+                .map_err(|e| e.to_string())?
+                .ok_or("arena_pow_unsolvable")?;
+        let body = serde_json::to_vec(&json!({
+            "publicKey": key.public_key,
+            "challenge": challenge["challenge"],
+            "counter": counter,
+            "consentVersion": CONSENT_VERSION,
+        }))
+        .map_err(|e| e.to_string())?;
+        signed_request(
+            reqwest::Method::POST,
+            "/v1/register",
+            body,
+            Some((&key.key_id, &signing)),
+        )
+        .await
+    }
+    .await;
+    let _guard = lock().lock().await;
+    let mut arena = load(path);
+    // Withdrawn or re-keyed while solving: drop the result.
+    if arena.key.as_ref().map(|k| &k.key_id) != Some(&key.key_id) {
+        return false;
+    }
+    let registered = apply_registration(&mut arena, outcome);
+    let _ = save(path, &arena);
+    registered
+}
+
 /// Uploads due items one at a time. `force` ignores the backoff schedule (user pressed "retry now").
 async fn flush(path: &Path, force: bool) {
     if FLUSHING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    if !ensure_registered(path, force).await {
+        FLUSHING.store(false, Ordering::SeqCst);
         return;
     }
     loop {
         let next = {
             let _guard = lock().lock().await;
             let arena = load(path);
-            if !arena.consented() || !arena.auto_upload {
+            if !arena.uploading() || !arena.registered {
                 break;
             }
             let now = now_ms();
-            let Some(install_id) = arena.install_id.clone() else {
+            let Some(key) = arena.key.clone() else {
                 break;
             };
             match arena
@@ -615,14 +931,22 @@ async fn flush(path: &Path, force: bool) {
                 .iter()
                 .position(|q| force && q.attempts < MAX_ATTEMPTS || q.next_at <= now)
             {
-                Some(index) => (index, arena.queue[index].payload.clone(), install_id),
+                Some(index) => (arena.queue[index].payload.clone(), key),
                 None => break,
             }
         };
-        let (_, payload, install_id) = next;
-        let outcome = match upload_body(&payload, &install_id) {
-            Ok(body) => signed_request(reqwest::Method::POST, "/v1/submit", body).await,
-            Err(e) => Err(e),
+        let (payload, key) = next;
+        let outcome = match (upload_body(&payload), load_signing_key(path, &key)) {
+            (Ok(body), Ok(signing)) => {
+                signed_request(
+                    reqwest::Method::POST,
+                    "/v1/submit",
+                    body,
+                    Some((&key.key_id, &signing)),
+                )
+                .await
+            }
+            (Err(e), _) | (_, Err(e)) => Err(e),
         };
         let _guard = lock().lock().await;
         let mut arena = load(path);
@@ -632,46 +956,9 @@ async fn flush(path: &Path, force: bool) {
         }) else {
             continue;
         };
-        let (kind, group) = (payload.kind.clone(), Some(payload.group()));
-        match outcome {
-            Ok((status, _)) if (200..300).contains(&status) => {
-                arena.queue.remove(index);
-                arena.push_log(&kind, "uploaded", None, group);
-            }
-            Ok((status, response)) if !retryable(status) => {
-                arena.queue.remove(index);
-                let code = response["error"]
-                    .as_str()
-                    .unwrap_or("")
-                    .chars()
-                    .take(48)
-                    .collect::<String>();
-                arena.push_log(
-                    &kind,
-                    "rejected",
-                    Some(format!("{status} {code}").trim().to_string()),
-                    group,
-                );
-            }
-            failure => {
-                let detail = match failure {
-                    Ok((status, _)) => status.to_string(),
-                    Err(e) => e.chars().take(64).collect(),
-                };
-                let item = &mut arena.queue[index];
-                item.attempts += 1;
-                if item.attempts >= MAX_ATTEMPTS {
-                    arena.queue.remove(index);
-                    arena.push_log(&kind, "rejected", Some(format!("gave_up {detail}")), group);
-                } else {
-                    item.next_at = now_ms() + backoff(item.attempts).as_millis() as u64;
-                    arena.push_log(&kind, "retrying", Some(detail), group);
-                    if force {
-                        let _ = save(path, &arena);
-                        break;
-                    }
-                }
-            }
+        if apply_upload(&mut arena, index, &payload, outcome, force) {
+            let _ = save(path, &arena);
+            break;
         }
         if save(path, &arena).is_err() {
             break;
@@ -680,9 +967,65 @@ async fn flush(path: &Path, force: bool) {
     FLUSHING.store(false, Ordering::SeqCst);
 }
 
+/// Applies one upload outcome to the queue. Returns true when the loop should stop.
+fn apply_upload(
+    arena: &mut ArenaState,
+    index: usize,
+    payload: &Payload,
+    outcome: Result<(u16, Value), String>,
+    force: bool,
+) -> bool {
+    let (kind, group) = (payload.kind.clone(), Some(payload.group()));
+    match outcome {
+        Ok((status, _)) if (200..300).contains(&status) => {
+            arena.queue.remove(index);
+            arena.push_log(&kind, "uploaded", None, group);
+            false
+        }
+        Ok((401, response)) if error_code(&response) == "unregistered" => {
+            // The server forgot this key (e.g. 12 months idle): register again, keep the item.
+            arena.registered = false;
+            arena.push_log(&kind, "retrying", Some("401 unregistered".into()), group);
+            true
+        }
+        Ok((403, response)) if error_code(&response) == "banned" => {
+            arena.banned = true;
+            arena.queue.clear();
+            arena.push_log(&kind, "rejected", Some("403 banned".into()), group);
+            true
+        }
+        Ok((status, response)) if !retryable(status) => {
+            arena.queue.remove(index);
+            let detail = format!("{status} {}", error_code(&response))
+                .trim()
+                .to_string();
+            arena.push_log(&kind, "rejected", Some(detail), group);
+            false
+        }
+        failure => {
+            let detail = match failure {
+                Ok((status, _)) => status.to_string(),
+                Err(e) => e.chars().take(64).collect(),
+            };
+            let item = &mut arena.queue[index];
+            item.attempts += 1;
+            if item.attempts >= MAX_ATTEMPTS {
+                arena.queue.remove(index);
+                arena.push_log(&kind, "rejected", Some(format!("gave_up {detail}")), group);
+                false
+            } else {
+                item.next_at = now_ms() + backoff(item.attempts).as_millis() as u64;
+                arena.push_log(&kind, "retrying", Some(detail), group);
+                force
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 
     fn payload() -> Value {
         json!({
@@ -692,6 +1035,11 @@ mod tests {
             "params": { "ctx": 131072, "kv": "int8", "gpuCount": 1, "parallel": 1, "poolWorkers": 16, "expertCache": "auto", "pcieFrac": null, "vision": false },
             "tiers": [{ "ctx": 8192, "prefill": 2410.2, "decode": 36.4, "ttftMs": 3150, "peakVramGB": 21.4, "peakRamGB": 61.5, "ok": true }]
         })
+    }
+    fn temp_state() -> PathBuf {
+        state_path(
+            &std::env::temp_dir().join(format!("arena-state-{}", uuid::Uuid::new_v4().simple())),
+        )
     }
 
     #[test]
@@ -711,12 +1059,36 @@ mod tests {
     }
 
     #[test]
+    fn source_builds_carry_no_app_key_and_cannot_upload() {
+        // The key only exists when CI injects STRATA_ARENA_APP_KEY; plain `cargo test` has none.
+        if option_env!("STRATA_ARENA_APP_KEY").is_none() {
+            assert!(!upload_available());
+            let state = ArenaState {
+                consent_version: Some(CONSENT_VERSION),
+                auto_upload: true,
+                key: Some(InstallKey {
+                    public_key: "00".repeat(32),
+                    key_id: "11".repeat(32),
+                    store: "file".into(),
+                }),
+                ..Default::default()
+            };
+            assert!(state.consented() && !state.uploading());
+            assert_eq!(state.status()["uploadAvailable"], false);
+        }
+        let source = include_str!("arena.rs");
+        let needle = ["APP_KEY", ": &str = \""].concat();
+        assert!(
+            !source.contains(&needle),
+            "no app key literal in the source"
+        );
+    }
+
+    #[test]
     fn accepts_the_whitelisted_shape_and_round_trips_it() {
         let parsed = Payload::parse(payload()).unwrap();
-        let body: Value =
-            serde_json::from_slice(&upload_body(&parsed, &"f".repeat(64)).unwrap()).unwrap();
+        let body: Value = serde_json::from_slice(&upload_body(&parsed).unwrap()).unwrap();
         let mut expected = payload();
-        expected["installId"] = json!("f".repeat(64));
         expected["consentVersion"] = json!(1);
         // Numbers may come back as floats (96 -> 96.0); compare them numerically.
         let numbers = |v: &Value| {
@@ -727,7 +1099,6 @@ mod tests {
         };
         assert_eq!(numbers(&body["hw"]), numbers(&expected["hw"]));
         assert_eq!(numbers(&body["params"]), numbers(&expected["params"]));
-        assert_eq!(body["installId"], expected["installId"]);
         let mut keys: Vec<_> = body.as_object().unwrap().keys().cloned().collect();
         keys.sort();
         assert_eq!(
@@ -737,14 +1108,14 @@ mod tests {
                 "consentVersion",
                 "day",
                 "hw",
-                "installId",
                 "kind",
                 "model",
                 "params",
                 "schema",
                 "strata",
                 "tiers"
-            ]
+            ],
+            "no install identifier in the body; the signing key identifies the install"
         );
     }
 
@@ -755,6 +1126,7 @@ mod tests {
             ("/hw/hostname", json!("DESKTOP-ALICE01")),
             ("/params/apiKey", json!("sk-1")),
             ("/tiers/0/output", json!("hello")),
+            ("/installId", json!("f".repeat(64))),
         ] {
             let mut p = payload();
             let (parent, key) = pointer.rsplit_once('/').unwrap();
@@ -790,18 +1162,178 @@ mod tests {
     }
 
     #[test]
-    fn signs_ts_nonce_and_body_digest() {
-        let headers = signed_headers(b"{}", 1_700_000_000_000, &"0".repeat(32));
-        let message = format!(
-            "1700000000000\n{}\n{}",
-            "0".repeat(32),
-            hex(&Sha256::digest(b"{}"))
+    fn install_key_signs_the_same_message_as_the_app_hmac() {
+        let path = temp_state();
+        let key = create_key(&path, false).unwrap();
+        let signing = load_signing_key(&path, &key).unwrap();
+        let nonce = "0".repeat(32);
+        let headers = signed_headers(
+            b"{}",
+            1_700_000_000_000,
+            &nonce,
+            Some("k".repeat(32).as_str()),
+            Some((&key.key_id, &signing)),
         );
+        let get = |name: &str| {
+            headers
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map(|(_, v)| v.clone())
+        };
+        let message = format!("1700000000000\n{nonce}\n{}", hex(&Sha256::digest(b"{}")));
         assert_eq!(
-            headers[2].1,
-            hex(&hmac_sha256(app_key().as_bytes(), message.as_bytes()))
+            get("X-Arena-Sig").unwrap(),
+            hex(&hmac_sha256("k".repeat(32).as_bytes(), message.as_bytes()))
         );
-        assert_eq!(headers[2].1.len(), 64);
+        assert_eq!(get("X-Arena-Key").unwrap(), key.key_id);
+        let public = VerifyingKey::from_bytes(&unhex32(&key.public_key).unwrap()).unwrap();
+        let sig_bytes: Vec<u8> = (0..64)
+            .map(|i| {
+                u8::from_str_radix(&get("X-Arena-Install-Sig").unwrap()[i * 2..i * 2 + 2], 16)
+                    .unwrap()
+            })
+            .collect();
+        let signature = Signature::from_slice(&sig_bytes).unwrap();
+        assert!(public.verify(message.as_bytes(), &signature).is_ok());
+        assert_eq!(key.key_id, hex(&Sha256::digest(public.to_bytes())));
+        // Without an app key (source build) only the install signature is sent.
+        let bare = signed_headers(b"{}", 1, &nonce, None, Some((&key.key_id, &signing)));
+        assert!(bare.iter().all(|(n, _)| *n != "X-Arena-Sig"));
+        let _ = std::fs::remove_dir_all(path.parent().unwrap().parent().unwrap());
+    }
+
+    #[test]
+    fn private_key_file_is_owner_only_verified_and_deleted_on_withdraw() {
+        let path = temp_state();
+        let key = create_key(&path, false).unwrap();
+        assert_eq!(key.store, "file");
+        let file = secret_file(&path);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        let other = InstallKey {
+            public_key: "00".repeat(32),
+            ..key.clone()
+        };
+        assert_eq!(
+            load_signing_key(&path, &other).unwrap_err(),
+            "arena_key_mismatch"
+        );
+        let state = ArenaState {
+            key: Some(key.clone()),
+            consent_version: Some(CONSENT_VERSION),
+            ..Default::default()
+        };
+        save(&path, &state).unwrap();
+        let saved = std::fs::read_to_string(&path).unwrap();
+        let secret = std::fs::read_to_string(&file).unwrap();
+        assert!(
+            !saved.contains(&secret),
+            "the private key never lands in state.json"
+        );
+        assert!(
+            state.status().to_string().find(&key.key_id).is_none(),
+            "status never exposes the key"
+        );
+        delete_key(&path, false);
+        assert!(!file.exists());
+        assert_eq!(
+            load_signing_key(&path, &key).unwrap_err(),
+            "arena_key_missing"
+        );
+        let _ = std::fs::remove_dir_all(path.parent().unwrap().parent().unwrap());
+    }
+
+    #[test]
+    fn proof_of_work_matches_the_server_definition() {
+        // Vector computed with services/arena/src/crypto.js (powMessage + leadingZeroBits).
+        let challenge = format!("1760680000000.{}.12.{}", "0".repeat(32), "1".repeat(32));
+        assert_eq!(solve_pow(&challenge, &"ab".repeat(32), 12), Some(890));
+        assert_eq!(leading_zero_bits(&[0, 0, 0x0f, 0xff]), 20);
+        assert_eq!(leading_zero_bits(&[0x80]), 0);
+        assert_eq!(
+            solve_pow(&challenge, &"ab".repeat(32), 33),
+            None,
+            "refuses absurd difficulty"
+        );
+    }
+
+    #[test]
+    fn registration_and_upload_outcomes() {
+        let mut arena = ArenaState {
+            consent_version: Some(CONSENT_VERSION),
+            auto_upload: true,
+            ..Default::default()
+        };
+        assert!(!apply_registration(
+            &mut arena,
+            Ok((400, json!({ "error": "challenge_expired" })))
+        ));
+        assert_eq!(arena.register_attempts, 1);
+        assert!(arena.register_next_at > now_ms());
+        assert!(apply_registration(&mut arena, Ok((201, json!({})))));
+        assert!(arena.registered && arena.register_attempts == 0);
+
+        let item = Payload::parse(payload()).unwrap();
+        let push = |arena: &mut ArenaState| {
+            arena.queue.push(Queued {
+                payload: item.clone(),
+                attempts: 0,
+                next_at: 0,
+            })
+        };
+        push(&mut arena);
+        assert!(apply_upload(
+            &mut arena,
+            0,
+            &item,
+            Ok((401, json!({ "error": "unregistered" }))),
+            false
+        ));
+        assert!(
+            !arena.registered && arena.queue.len() == 1,
+            "re-register, keep the run"
+        );
+        assert!(!apply_upload(
+            &mut arena,
+            0,
+            &item,
+            Ok((503, Value::Null)),
+            false
+        ));
+        assert_eq!(arena.queue[0].attempts, 1);
+        assert!(!apply_upload(
+            &mut arena,
+            0,
+            &item,
+            Ok((400, json!({ "error": "invalid_hw.cpu" }))),
+            false
+        ));
+        assert!(arena.queue.is_empty());
+        push(&mut arena);
+        push(&mut arena);
+        assert!(apply_upload(
+            &mut arena,
+            0,
+            &item,
+            Ok((403, json!({ "error": "banned" }))),
+            false
+        ));
+        assert!(
+            arena.banned && arena.queue.is_empty(),
+            "a banned key stops uploading entirely"
+        );
+        let mut fresh = ArenaState::default();
+        assert!(!apply_registration(
+            &mut fresh,
+            Ok((403, json!({ "error": "banned" })))
+        ));
+        assert!(fresh.banned);
     }
 
     #[test]
@@ -814,12 +1346,10 @@ mod tests {
 
     #[test]
     fn state_persists_and_consent_needs_current_version() {
-        let dir =
-            std::env::temp_dir().join(format!("arena-state-{}", uuid::Uuid::new_v4().simple()));
-        let path = state_path(&dir);
+        let path = temp_state();
         assert!(!load(&path).consented());
         let mut state = ArenaState {
-            install_id: Some(new_install_id()),
+            key: Some(create_key(&path, false).unwrap()),
             consent_version: Some(CONSENT_VERSION),
             auto_upload: true,
             ..Default::default()
@@ -835,20 +1365,84 @@ mod tests {
         save(&path, &state).unwrap();
         let loaded = load(&path);
         assert!(loaded.consented());
-        assert_eq!(loaded.install_id.as_ref().unwrap().len(), 64);
         assert_eq!(loaded.queue.len(), 1);
         assert_eq!(loaded.log.len(), MAX_LOG);
         let status = loaded.status();
         assert_eq!(status["queued"], 1);
-        assert!(
-            status.get("installId").is_none(),
-            "the install id never leaves the native side"
-        );
+        assert!(status.get("key").is_none() && status.get("installId").is_none());
         let outdated = ArenaState {
             consent_version: Some(0),
             ..loaded
         };
         assert!(!outdated.consented());
-        let _ = std::fs::remove_dir_all(dir);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap().parent().unwrap());
+    }
+
+    /// End-to-end against the deployed service with the real client code: register (proof of work), upload,
+    /// check probation through the maintainer API, withdraw, and confirm the key is gone. Needs a build with
+    /// STRATA_ARENA_APP_KEY; run with `--ignored`. ARENA_ADMIN_TOKEN (runtime) enables the maintainer checks.
+    #[test]
+    #[ignore]
+    fn live_register_submit_withdraw() {
+        assert!(upload_available(), "build with STRATA_ARENA_APP_KEY");
+        tauri::async_runtime::block_on(async {
+            let path = temp_state();
+            let key = create_key(&path, false).unwrap();
+            let mut state = ArenaState {
+                key: Some(key.clone()),
+                consent_version: Some(CONSENT_VERSION),
+                auto_upload: true,
+                ..Default::default()
+            };
+            state.queue.push(Queued {
+                payload: Payload::parse(payload()).unwrap(),
+                attempts: 0,
+                next_at: 0,
+            });
+            save(&path, &state).unwrap();
+            let started = std::time::Instant::now();
+            assert!(
+                ensure_registered(&path, true).await,
+                "{:?}",
+                load(&path).log
+            );
+            println!(
+                "registration incl. proof of work: {:.2}s",
+                started.elapsed().as_secs_f64()
+            );
+            flush(&path, true).await;
+            let after = load(&path);
+            assert!(after.queue.is_empty(), "{:?}", after.log);
+            assert_eq!(after.log[0].status, "uploaded", "{:?}", after.log);
+            let admin = std::env::var("ARENA_ADMIN_TOKEN").ok();
+            if let Some(token) = &admin {
+                let detail: Value = client()
+                    .get(format!("{}/v1/admin/installs/{}", endpoint(), key.key_id))
+                    .bearer_auth(token)
+                    .send()
+                    .await
+                    .unwrap()
+                    .json()
+                    .await
+                    .unwrap();
+                println!("server view: {}", detail["install"]);
+                assert_eq!(detail["install"]["status"], "probation");
+                assert_eq!(detail["submissions"].as_array().unwrap().len(), 1);
+            }
+            let withdrawn = withdraw_at(&path, false).await.unwrap();
+            assert_eq!(withdrawn["deleted"], 1);
+            assert!(!secret_file(&path).exists());
+            if let Some(token) = &admin {
+                let status = client()
+                    .get(format!("{}/v1/admin/installs/{}", endpoint(), key.key_id))
+                    .bearer_auth(token)
+                    .send()
+                    .await
+                    .unwrap()
+                    .status();
+                assert_eq!(status.as_u16(), 404, "registration deleted");
+            }
+            let _ = std::fs::remove_dir_all(path.parent().unwrap().parent().unwrap());
+        });
     }
 }

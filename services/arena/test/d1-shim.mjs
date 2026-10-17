@@ -1,9 +1,10 @@
-// Minimal D1 binding over node:sqlite for tests: prepare/bind/first/all/run and batch.
+// Minimal D1 binding over node:sqlite for tests: prepare/bind/first/all/run and batch. Applies every migration in order.
 import { DatabaseSync } from 'node:sqlite';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 export function createD1() {
   const db = new DatabaseSync(':memory:');
-  db.exec(readFileSync(new URL('../migrations/0001_init.sql', import.meta.url), 'utf8'));
+  const dir = new URL('../migrations/', import.meta.url);
+  for (const f of readdirSync(dir).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(new URL(f, dir), 'utf8'));
   const stmt = (sql, args = []) => ({
     bind: (...a) => stmt(sql, a),
     first: async col => { const row = db.prepare(sql).get(...args); return row ? (col ? row[col] : { ...row }) : null; },

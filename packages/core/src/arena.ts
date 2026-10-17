@@ -14,7 +14,7 @@ export interface ArenaGpu { vendor: 'nvidia' | 'amd' | 'intel' | 'apple' | 'othe
 export interface ArenaParams { ctx: number; kv: string; gpuCount: number; parallel: number; poolWorkers: number | null; expertCache: string | null; pcieFrac: number | null; vision: boolean }
 export interface ArenaTier { ctx: number; prefill: number | null; decode: number | null; ttftMs: number | null; peakVramGB: number | null; peakRamGB: number | null; ok: boolean }
 export interface ArenaScenario { decode: number | null; prefill: number | null; ttftMs: number | null; maxConcurrency: number; requests: number; failed: number }
-/** Exactly what is uploaded (the native side adds installId and consentVersion before signing). */
+/** Exactly what is uploaded (the native side adds consentVersion and signs it with the per-install key). */
 export interface ArenaPayload {
   schema: 1; app: string; strata: string | null; kind: 'context' | 'scenario'; day: string;
   hw: { os: 'windows' | 'linux' | 'macos'; arch: 'x86_64' | 'aarch64'; cpu: string; ramGB: number; gpus: ArenaGpu[]; pcie: string | null; wsl: boolean };
@@ -174,8 +174,16 @@ export interface ArenaRecommendation { scene: 'chat' | 'long' | 'code'; level: '
   otherModels: (ArenaRecommendRow & { group: string; family: string; quant: string; level: 'gpu' | 'vram' | 'none' })[] }
 
 // ---- Native state ----
-export interface ArenaLogEntry { at: number; kind: 'context' | 'scenario' | 'withdraw'; status: 'queued' | 'uploaded' | 'rejected' | 'retrying' | 'skipped' | 'deleted'; detail?: string; group?: string }
-export interface ArenaStatus { consented: boolean; consentVersion: number | null; autoUpload: boolean; queued: number; log: ArenaLogEntry[]; endpoint: string }
+export interface ArenaLogEntry { at: number; kind: 'context' | 'scenario' | 'withdraw' | 'register'; status: 'queued' | 'uploaded' | 'rejected' | 'retrying' | 'skipped' | 'deleted' | 'registered'; detail?: string; group?: string }
+export interface ArenaStatus {
+  consented: boolean; consentVersion: number | null; autoUpload: boolean; queued: number; log: ArenaLogEntry[]; endpoint: string;
+  /** False in builds without the CI-injected app key: the leaderboard is view-only. */
+  uploadAvailable: boolean;
+  /** The install key has been registered with the server (proof of work done). */
+  registered: boolean;
+  /** The maintainer disabled uploads from this install key. */
+  banned: boolean;
+}
 
 /** Query string for GET /v1/recommend describing this machine and (optionally) its current model + parameters. */
 export function arenaRecommendQuery(hw: { gpu?: string | null; vramGB?: number | null; ramGB?: number | null }, launch?: ArenaLaunch | null, scene: 'chat' | 'long' | 'code' = 'chat'): Record<string, string> {
