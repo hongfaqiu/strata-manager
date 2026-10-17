@@ -21,7 +21,6 @@ pub mod mcp_stdio;
 pub mod model_inspect;
 pub mod network;
 pub mod observer;
-pub mod official_update;
 pub mod policy;
 pub mod processes;
 mod registry_handoff;
@@ -771,7 +770,6 @@ impl RuntimeState {
                 | "restart_service"
                 | "take_over_service"
                 | "run_setup"
-                | "official_update"
                 | "install_runtime"
                 | "prepare_local_runtime"
                 | "write_config"
@@ -829,7 +827,6 @@ impl RuntimeState {
                     | "run_setup"
                     | "install_runtime"
                     | "update_runtime"
-                    | "official_update"
                     | "write_config"
                     | "write_config_cas_v1"
                     | "set_api_key"
@@ -855,7 +852,6 @@ impl RuntimeState {
                 | "run_setup"
                 | "install_runtime"
                 | "update_runtime"
-                | "official_update"
                 | "update_runtime_zip"
                 | "update_runtime_zip_download_v1"
                 | "write_config"
@@ -1101,9 +1097,7 @@ impl RuntimeState {
             )),
             "install_runtime" => value(install_runtime(&self, arg(&params, "directory")?)),
             "update_runtime" => value(runtime_upgrade::start(self.clone(), profile()?.id)),
-            "official_update_plan" => value(official_update::plan(&profile()?)),
             "engine_help_flags" => value(engine_help::flags(&profile()?)),
-            "official_update" => value(official_update::start(self.clone(), profile()?)),
             "update_runtime_zip" | "update_runtime_zip_download_v1" => {
                 value(runtime_upgrade::start_release_request_with_download(
                     self.clone(),

@@ -7,7 +7,11 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+- 移除运行环境页的“用官方脚本更新 Strata”；更新 Strata 继续使用版本检查与更新包（官方 GitHub、镜像或本地 ZIP）。
+
 ### English
+
+- Removed “Update Strata with the official script” from the runtime page; updating Strata continues through the version check and release packages (official GitHub, mirrors or a local ZIP).
 
 ## [0.1.11] - 2026-10-17
 

@@ -58,27 +58,6 @@ export function RequirementMeter({ label, machineGB }: { label?: string; machine
   </p>;
 }
 
-/** 运行配置: resource estimate from catalog + live VRAM. Labelled as an estimate, never as a measurement. */
-export function ConfigEstimate({ hardware, environment, label, online }: { hardware: HardwareReading; environment?: EnvironmentInfo; label?: string; online: boolean }) {
-  const { t } = useTranslation();
-  const machine = machineMemoryGB(hardware, environment);
-  const requirement = catalogRequirement(label);
-  const ramValue = requirement && machine ? requirement.ramGB / machine * 100 : undefined;
-  const fit = requirement ? fitState(requirement.ramGB, machine) : undefined;
-  return <section className="d2-lead st-card d2-estimate" data-testid="d2-config-estimate" aria-label={t('d2EstTitle')}>
-    <div className="d2-lead-rings">
-      <D2Ring empty={ramValue === undefined} parts={ramValue === undefined ? [] : [{ value: Math.min(100, ramValue), tone: fit === 'over' ? 'warn' : 'ram' }]} threshold={80} value={requirement ? `~${requirement.ramGB}` : t('d2Unmeasured')} unit={requirement ? `/ ${gbText(machine)} GB` : undefined} label={t('d2EstModel')}/>
-      <VramRing hardware={hardware}/>
-    </div>
-    <div className="d2-estimate-text">
-      <strong>{t('d2EstTitle')}</strong>
-      <p>{requirement ? `${requirement.name} · ${requirement.quant}` : t('d2EstUnknown')}</p>
-      {fit && <p className={`d2-fit is-${fit}`}>{t(`d2Fit_${fit}`)}</p>}
-      <small>{t('d2EstHint')}{!online ? ` ${t('d2NoLive')}` : ''}</small>
-    </div>
-  </section>;
-}
-
 /** 运行环境: device strip with glyphs. */
 export function EnvironmentDevices({ hardware, environment }: { hardware: HardwareReading; environment?: EnvironmentInfo }) {
   const { t } = useTranslation();

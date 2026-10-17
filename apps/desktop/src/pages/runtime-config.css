@@ -18,18 +18,12 @@
 .official-surface .runtime-config .cfg-form label{overflow-wrap:anywhere}
 @container workspace (max-width:1000px){.official-surface .runtime-config .cfg-form{grid-template-columns:minmax(0,1fr)}}
 @container workspace (max-width:640px){.official-surface .runtime-config{padding:var(--st-s-4)}}
-.runtime-config-section-heading{display:flex;align-items:center;justify-content:space-between;gap:var(--st-s-3);flex-wrap:wrap}
-.runtime-config-section-heading h2{margin:0;font-size:var(--st-fs-md);font-weight:700;line-height:var(--st-lh-body);color:var(--st-ink)}
 .runtime-config-apply-badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:var(--st-r-sm);font-size:var(--st-fs-xs);font-weight:500;background:var(--st-accent-tint);color:var(--st-accent-text)}
 .runtime-config-apply-badge--restart{background:var(--st-surface-2);color:var(--st-ink-soft);border:1px solid var(--st-line)}
 .runtime-config-sampling-entry{display:flex;align-items:center;gap:var(--st-s-5);justify-content:space-between;margin-top:var(--st-s-3)}
-.runtime-config-startup-intro p{margin:0;font-size:var(--st-fs-sm);color:var(--st-ink-muted);line-height:var(--st-lh-body)}
 .runtime-config-sampling-entry>button{flex:none;white-space:nowrap}
 .runtime-config-sampling-unavailable{max-width:220px;flex:none;font-size:var(--st-fs-xs);color:var(--st-ink-muted);line-height:var(--st-lh-body)}
-.runtime-config-startup{display:grid;gap:var(--st-s-4);min-width:0;padding-top:var(--st-s-3);border-top:1px solid var(--st-line)}
-.runtime-config-startup-intro{display:grid;gap:var(--st-s-3);padding:var(--st-s-2) 0}
-.runtime-config-section-actions{display:flex;gap:var(--st-s-3);flex-wrap:wrap}
-.runtime-config-section-actions button{height:36px;min-height:36px;padding:0 var(--st-s-3);font-size:var(--st-fs-sm);font-weight:500}
+.runtime-config-startup{display:grid;gap:var(--st-s-4);min-width:0}
 .runtime-config-restart-note{font-size:var(--st-fs-sm);line-height:var(--st-lh-body);color:var(--st-ink-soft);background:var(--st-surface-2);border-radius:var(--st-r-md);padding:var(--st-s-3) var(--st-s-4);margin:var(--st-s-4) 0}
 .official-surface .runtime-config .cfg-form.runtime-config-form{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--st-s-5)}
 .runtime-config-group{min-width:0;padding:0;border:0;margin:0}
@@ -50,3 +44,30 @@
 .runtime-config-hidden-help{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
 .runtime-config-help-content{font-size:14px;line-height:1.8;color:var(--st-ink-soft)}
 .runtime-config-help-content p{margin:0 0 14px}
+
+/* Page head: what this is and when it applies (left); switch, image setup and shared settings (right). */
+.runtime-config-head{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--st-s-4) var(--st-s-6);flex-wrap:wrap;padding:var(--st-s-1) 0 var(--st-s-1)}
+.runtime-config-head-text{flex:1 1 360px;min-width:0;display:grid;gap:6px}
+.runtime-config-head-title{display:flex;align-items:center;gap:var(--st-s-3);flex-wrap:wrap}
+.runtime-config-head-title h2{margin:0;font-size:var(--st-fs-lg);font-weight:650;line-height:1.35;color:var(--st-ink)}
+.runtime-config-head-text p{margin:0;max-width:76ch;font-size:var(--st-fs-sm);line-height:var(--st-lh-body);color:var(--st-ink-muted)}
+.runtime-config-head-tools{display:flex;align-items:center;justify-content:flex-end;gap:var(--st-s-2);flex-wrap:wrap}
+.runtime-config-head-tools>.notice{flex-basis:100%;margin:0}
+.official-surface .runtime-config-head-tools :is(.st-btn,.configuration-list-trigger){display:inline-flex;align-items:center;gap:6px;height:34px;min-height:34px;padding:0 var(--st-s-3);font-size:var(--st-fs-sm);font-weight:500;white-space:nowrap}
+.runtime-config-head-tools .configuration-list-floating{position:static;height:auto;padding:0;display:block;pointer-events:auto}
+.runtime-config-head-tools .configuration-list-floating-anchor{z-index:40;padding-bottom:6px;margin-bottom:-6px}
+.official-surface .runtime-config-head-tools .configuration-list-trigger{box-shadow:none;background:var(--st-surface);border:1px solid var(--st-line);border-radius:var(--st-r-md);color:var(--st-ink)}
+.official-surface .runtime-config-head-tools .runtime-config-quiet{background:transparent;border-color:transparent;color:var(--st-ink-soft)}
+.official-surface .runtime-config-head-tools .runtime-config-quiet:hover{background:var(--st-surface-2);color:var(--st-ink)}
+.runtime-config-apply-badge--restart{padding:2px 8px}
+
+/* Resource guidance: one quiet line, evidence on demand. */
+.resource-assessment.resource-assessment--inline{display:flex;flex-wrap:wrap;align-items:center;gap:2px var(--st-s-3);margin:0;padding:10px var(--st-s-4);border:0;border-radius:var(--st-r-md);background:var(--st-surface-2);font-size:var(--st-fs-sm)}
+.resource-assessment--inline .resource-assessment-heading{display:contents}
+.resource-assessment--inline .resource-assessment-heading>div{gap:var(--st-s-2)}
+.resource-assessment--inline .resource-assessment-heading strong{font-size:var(--st-fs-sm);font-weight:600;color:var(--st-ink-soft)}
+.resource-assessment--inline .resource-assessment-status{background:var(--st-surface);font-size:var(--st-fs-xs)}
+.resource-assessment--inline .resource-assessment-risk{font-size:var(--st-fs-xs);color:var(--st-warning,#9b6720)}
+.resource-assessment--inline :is(.resource-assessment-empty,.resource-assessment-error){order:2;flex:1 1 260px;margin:0}
+.resource-assessment--inline .resource-assessment-heading>button{order:3;margin-left:auto;width:28px;height:28px;min-height:28px}
+.resource-assessment--inline>details{order:4;flex-basis:100%;margin-top:6px}
