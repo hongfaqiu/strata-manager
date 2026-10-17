@@ -47,7 +47,7 @@ export function ConcurrencyLadderView({ zh, slots, running, disabled, levels, pr
         <p>{t(`按 ${levels.join(' → ')} 个同时请求逐级加压，每级约 40 秒，看总吞吐和单个请求怎么变。`, `Steps through ${levels.join(' → ')} requests at once, about 40 s each, to show total throughput against one request's speed.`)}{slots !== null && <b>{t(` 服务当前 ${slots} 个槽。`, ` The service runs ${slots} slot${slots === 1 ? '' : 's'}.`)}</b>}</p>
       </div>
       {running ? <button type="button" className="benchmark-stop" onClick={onStop}><Square size={14}/>{t('停止', 'Stop')}</button>
-        : <button type="button" className="primary" disabled={disabled} onClick={onStart} data-testid="concurrency-ladder-start"><Play size={14}/>{rows.length ? t('重新测试', 'Run again') : t('开始测试', 'Run ladder')}</button>}
+        : <button type="button" className="primary" disabled={disabled} onClick={onStart} data-testid="concurrency-ladder-start"><Play size={14}/>{rows.length ? t('重新跑阶梯', 'Run ladder again') : t('开始阶梯测试', 'Run ladder')}</button>}
     </header>
     {slots === 1 && !running && <p className="concurrency-ladder-note">{t('当前一次一个：多出的请求只会排队。在配置页开启并发后再测，可看到并发的真实收益。', 'One at a time now: extra requests only queue. Turn on concurrency in the configuration page to measure its real gain.')}</p>}
     {running && progress && <ol className="concurrency-ladder-steps" aria-label={t('进度', 'Progress')}>

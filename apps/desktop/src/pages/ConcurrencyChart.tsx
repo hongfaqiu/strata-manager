@@ -28,7 +28,7 @@ export function ConcurrencyChart({ items, zh, ariaLabel }: { items: ConcurrencyC
         </g>;
       })}
       {path && <path className="concurrency-chart-line" d={path}/>}
-      {line.map((point, i) => point && <g key={`p${i}`}><circle className="concurrency-chart-dot" cx={point[0]} cy={point[1]} r={4}/><text className="concurrency-chart-per" x={point[0] + bar / 2 + 4} y={point[1] + 4}>{fmt(items[i]!.perRequest)}</text></g>)}
+      {line.map((point, i) => point && <g key={`p${i}`}><circle className="concurrency-chart-dot" cx={point[0]} cy={point[1]} r={4}/><text className="concurrency-chart-per" x={point[0] + 8} y={point[1] - 8}>{fmt(items[i]!.perRequest)}</text></g>)}
     </svg>
   </figure>;
 }

@@ -60,15 +60,15 @@ export function useConcurrencyHardware({ installationId, desktop, identity, sett
 }
 
 export function ConcurrencyCard({ draft, fieldValue, onFieldChange, zh, hardware: hardwareOverride, platform }: ConcurrencyCardProps) {
-  const { installationId, desktop } = useConcurrencyEnvironment();
+  const { installationId, desktop, hardware: contextHardware, platform: contextPlatform } = useConcurrencyEnvironment();
   const config = useMemo(() => concurrencyDraft(draft, fieldValue), [draft, fieldValue]);
   const settings = useMemo(() => core.readConcurrencySettings(config), [config]);
   const identity = useMemo(() => core.concurrencyModelIdentity(config), [config]);
   const [useCase, setUseCase] = useState<core.ConcurrencyUseCase>(() => defaultUseCase(settings));
-  const hardware = useConcurrencyHardware({ installationId, desktop, identity, settings, override: hardwareOverride });
+  const hardware = useConcurrencyHardware({ installationId, desktop, identity, settings, override: hardwareOverride !== undefined ? hardwareOverride : contextHardware });
   const arenaGb = identity ? core.modelExpertArenaGb(identity.family, identity.quant) : null;
   const plan = useMemo(() => core.recommendConcurrency({ settings, hardware, arenaGb, useCase }), [settings, hardware, arenaGb, useCase]);
-  const os = platform ?? (typeof navigator !== 'undefined' && /Mac/i.test(navigator.userAgent) && !/Windows/i.test(navigator.userAgent) ? 'mac' : 'other');
+  const os = platform ?? contextPlatform ?? (typeof navigator !== 'undefined' && /Mac/i.test(navigator.userAgent) && !/Windows/i.test(navigator.userAgent) ? 'mac' : 'other');
   const ramGib = hardware?.totalMemoryBytes ? hardware.totalMemoryBytes / 2 ** 30 : null;
   const issues = useMemo(() => core.concurrencyIssues(settings, { platform: os, officialParallel: hardware ? plan.officialParallel : undefined, ramGib }), [settings, os, hardware, plan.officialParallel, ramGib]);
   const edits = useMemo(() => core.concurrencyPlanEdits(settings, plan), [settings, plan]);
