@@ -97,6 +97,24 @@ describe('suite validation and scenarios', () => {
     expect(report.samples[2]!.inputChars).toBeGreaterThan(output.length * 2);
   });
 
+  it('reports the in-flight request with live streamed characters and clears it once the request settles', async () => {
+    bridge.streamChat.mockImplementation((_profile, _body, delta: (delta: ChatDelta) => void) => new Promise<void>(resolve => {
+      setTimeout(() => delta({ reasoning: 'abcd' }), 100);
+      setTimeout(() => delta({ content: 'efghij' }), 400);
+      setTimeout(() => { delta({ done: true }); resolve(); }, 800);
+    }));
+    const events: BenchmarkSuiteProgress[] = [];
+    const report = await settle(runBenchmarkSuite(profile, options({ scenarios: ['short', 'code'] }), p => events.push(p)));
+    const live = events.filter(e => e.current);
+    expect(live[0]!.current).toMatchObject({ index: 1, scenario: 'short', turn: 1, warmup: false, ttftMs: null, streamedChars: 0 });
+    expect(live.some(e => e.current!.scenario === 'short' && e.current!.streamedChars === 4 && e.current!.ttftMs === 100)).toBe(true);
+    expect(live.some(e => e.current!.scenario === 'short' && e.current!.streamedChars === 10)).toBe(true);
+    expect(live.some(e => e.current!.scenario === 'code' && e.current!.index === 2)).toBe(true);
+    expect(events.filter(e => e.sample).every(e => !e.current)).toBe(true);
+    expect(events.at(-1)!.current).toBeUndefined();
+    expect(report.samples).toHaveLength(2);
+  });
+
   it('keeps cache prompts identical despite unique mode but varies regular prompts', async () => {
     await settle(runBenchmarkSuite(profile, options({ scenarios: ['cache', 'short'], rounds: 2, warmup: true, mode: 'unique' }), () => {}));
     const prompts = calls.map(c => (c.body.messages as JsonObject[])[0]!.content);

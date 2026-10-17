@@ -65,6 +65,19 @@ export interface BenchmarkSuiteProgress {
   elapsedMs: number;
   sample?: BenchmarkSuiteSample;
   telemetry?: BenchmarkTelemetry;
+  /** The request in flight, refreshed while it streams; absent between requests. */
+  current?: BenchmarkSuiteLiveRequest;
+}
+export interface BenchmarkSuiteLiveRequest {
+  index: number;
+  scenario: BenchmarkScenarioId;
+  turn: number;
+  warmup: boolean;
+  startedAt: number;
+  elapsedMs: number;
+  ttftMs: number | null;
+  /** Streamed answer plus reasoning characters received so far. */
+  streamedChars: number;
 }
 export interface BenchmarkSuiteReport {
   schemaVersion: 2 | 3;
