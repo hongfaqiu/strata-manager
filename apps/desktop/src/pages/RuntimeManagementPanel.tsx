@@ -1,7 +1,7 @@
 import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowUpCircle, Download, ExternalLink, LoaderCircle, RefreshCw, Square } from 'lucide-react';
+import { ArrowUpCircle, Download, ExternalLink, LoaderCircle, RefreshCw } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import * as core from '@strata-manager/core';
@@ -9,6 +9,7 @@ import { Panel } from '../components';
 import { releaseNotes } from '../updateReleaseNotes';
 import { RuntimeUpdateDialog } from './RuntimeUpdateDialog';
 import { RuntimeDownloadSettings } from './RuntimeDownloadSettings';
+import { RuntimeUpdateProgress } from '../runtimeUpdate/RuntimeUpdateProgress';
 import './install-runtime.css';
 
 interface Props {
@@ -50,6 +51,7 @@ export function RuntimeManagementPanel({ language, desktop, onInstall, selectedR
   const [checking, setChecking] = useState(false), [starting, setStarting] = useState(''), [actionError, setActionError] = useState('');
   const [taskLogs, setTaskLogs] = useState<core.LogEntry[]>([]);
   const [taskId, setTaskId] = useState(''); const observedTask = useRef('');
+  const [cancelling, setCancelling] = useState(''), [dismissedTask, setDismissedTask] = useState('');
   const [pending,setPending] = useState<{ runtime: core.DetectedRuntime; release: core.RuntimeUpdateInfo } | null>(null);
   const startingRef = useRef(false);
   const installation = useQuery({ queryKey: ['runtime-installation'], queryFn: core.localRuntimeInstallation, enabled: desktop && !installationStatus, refetchInterval: 10000 });
@@ -58,6 +60,8 @@ export function RuntimeManagementPanel({ language, desktop, onInstall, selectedR
   const downloadPreferences = useQuery({ queryKey: ['runtime-download-preferences'], queryFn: core.getRuntimeDownloadPreferences, enabled: desktop, staleTime: Infinity, retry: false });
   const activeTask = tasks.data?.find(task => task.state === 'running' && task.kind === 'update');
   const lastTask = tasks.data?.find(task => task.id === taskId);
+  // The card stays after the task ends (success, failure, cancel) until dismissed or a new update starts.
+  const shownTask = activeTask ?? (lastTask && lastTask.id !== dismissedTask ? lastTask : undefined);
   const status = installationStatus ?? installation.data, result = status?.result;
   const allRuntimes: core.DetectedRuntime[] = status?.detectedRuntimes ?? (result ? [{ installDir: result.installDir, pythonPath: result.pythonPath, sourceRevision: result.sourceRevision, readiness: 'ready', profile: result.profile }] : []);
   const runtimes = selectedRuntimeDir ? allRuntimes.filter(runtime => runtime.installDir === selectedRuntimeDir) : allRuntimes;
@@ -73,13 +77,16 @@ export function RuntimeManagementPanel({ language, desktop, onInstall, selectedR
       void query.invalidateQueries({ queryKey: ['process'] });
     }
   }, [activeTask?.id, query]);
+  const shownRunning = shownTask?.state === 'running';
   useEffect(() => {
-    if (!activeTask) return;
+    if (!shownTask) return;
     let stopped = false;
-    const refresh = () => { void core.readTaskLogs(activeTask.id, 40).then(logs => { if (!stopped) setTaskLogs(logs); }).catch(() => {}); };
-    refresh(); const timer = window.setInterval(refresh, 2000);
-    return () => { stopped = true; window.clearInterval(timer); };
-  }, [activeTask?.id]);
+    // Progress lines arrive about once per second; the log doubles as the speed sample source.
+    const refresh = () => { void core.readTaskLogs(shownTask.id, 200).then(logs => { if (!stopped) setTaskLogs(logs); }).catch(() => {}); };
+    refresh(); const timer = shownRunning ? window.setInterval(refresh, 1500) : undefined;
+    return () => { stopped = true; if (timer !== undefined) window.clearInterval(timer); };
+  }, [shownTask?.id, shownRunning]);
+  useEffect(() => { if (!shownRunning) setCancelling(''); }, [shownRunning]);
   const check = async () => {
     if (checking) return;
     setChecking(true); setActionError('');
@@ -109,10 +116,15 @@ export function RuntimeManagementPanel({ language, desktop, onInstall, selectedR
     finally { startingRef.current = false; setStarting(''); }
   };
   const cancel = async () => {
-    if (!activeTask) return;
+    if (!activeTask || cancelling === activeTask.id) return;
+    setCancelling(activeTask.id);
     try { await core.cancelTask(activeTask.id); await query.invalidateQueries({ queryKey: ['tasks'] }); }
-    catch (error) { setActionError(core.normalizeError(error).message); }
+    catch (error) { setCancelling(''); setActionError(core.normalizeError(error).message); }
   };
+  const retryTarget = updateTargets[0];
+  const retry = retryTarget && update.data?.installable && downloadPreferences.isSuccess && !operationDisabled && desktop && !activeTask
+    ? () => { setActionError(''); setPending({ runtime: retryTarget, release: update.data! }); }
+    : undefined;
   const savedDownload = pending && downloadPreferences.data ? core.resolveRuntimeDownloadPreferences(downloadPreferences.data, pending.release) : undefined;
   const updateButton = (runtime: core.DetectedRuntime) => <button type="button" className="primary" key={runtime.installDir} disabled={operationDisabled || !desktop || !downloadPreferences.isSuccess || !update.data?.installable || !!starting || !!activeTask} onClick={() => { if (update.data && downloadPreferences.isSuccess) { setActionError(''); setPending({ runtime, release: update.data }); } }}><ArrowUpCircle size={15}/>{starting === runtime.installDir ? text.updating : `${text.update} ${update.data?.latestVersion ?? ''}`}</button>;
   return <Panel title={text.title} className="runtime-management">
@@ -123,9 +135,7 @@ export function RuntimeManagementPanel({ language, desktop, onInstall, selectedR
     {(installation.error || update.error || update.data?.error) && <p className="notice error" role="alert">{core.normalizeError(installation.error ?? update.error ?? update.data?.error).message}</p>}
     <div className="actions">{!installed && onInstall && <button type="button" className="primary" onClick={onInstall}><Download size={15}/>{text.install}</button>}{!showInstallations && updateTargets.map(updateButton)}<button type="button" disabled={!desktop || checking || update.isFetching} onClick={() => void check()}>{checking || update.isFetching ? <LoaderCircle size={15} className="spin"/> : <RefreshCw size={15}/>} {text.check}</button>{update.data?.releaseUrl && <a className="runtime-release-link" href={update.data.releaseUrl} target="_blank" rel="noreferrer"><ExternalLink size={14}/>{text.upstream}</a>}{installed && updateTargets.length > 0 && !update.isLoading && !update.data?.installable && !update.data?.error && <span className="subtle">{text.noPackage}</span>}</div>
     {showInstallations && !!runtimes.length && <div className="runtime-installed-list">{runtimes.map(runtime => <div className="runtime-installed-item" key={runtime.installDir}><div><strong>{runtime.runtimeVersion ? `Strata ${runtime.runtimeVersion}` : 'Strata'}</strong><span className={runtime.readiness === 'ready' ? 'runtime-ready' : 'runtime-repair'}>{runtime.readiness === 'ready' ? text.ready : text.repair}</span><code>{runtime.installDir}</code></div>{needsUpdate(runtime.runtimeVersion, update.data?.latestVersion) && updateButton(runtime)}</div>)}</div>}
-    {activeTask && <div className="runtime-update-progress" role="status"><LoaderCircle className="spin" size={16}/><div><strong>{activeTask.message || text.updating}</strong>{taskLogs.length > 0 && <details><summary>{text.logs}</summary><pre>{taskLogs.map(entry => entry.message).join('\n')}</pre></details>}<button type="button" onClick={() => void cancel()}><Square size={13}/>{text.cancel}</button></div></div>}
-    {lastTask?.state === 'completed' && <p className="runtime-update-result runtime-ready" role="status">{text.completed}</p>}
-    {lastTask?.state === 'failed' && <p className="notice error" role="alert">{text.failed}: {lastTask.message}</p>}
+    {shownTask && <RuntimeUpdateProgress task={shownTask} logs={taskLogs} language={language} targetVersion={update.data?.latestVersion} cancelling={cancelling === shownTask.id} onCancel={() => void cancel()} onRetry={retry} onDismiss={() => setDismissedTask(shownTask.id)}/>}
     {actionError && <p className="notice error" role="alert">{actionError}</p>}
     <RuntimeDownloadSettings language={language} desktop={desktop} runtime={runtimes[0]} release={update.data} releaseLoading={update.isLoading || update.isFetching}/>
     {notes && update.data && <details className="runtime-release-notes"><summary>{text.notes} · {update.data.releaseName ?? update.data.latestVersion}</summary>{update.data.publishedAt && <p className="subtle">{text.published} {new Date(update.data.publishedAt).toLocaleDateString(language)}</p>}<div className="runtime-release-body" tabIndex={0} role="region" aria-label={text.notes}><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml components={{ a: ({ node: _node, title, children, ...props }) => <a {...props} data-tooltip={title} target="_blank" rel="noreferrer">{children}</a>, img: ({ node: _node, title, ...props }) => <img {...props} data-tooltip={title}/> }}>{notes}</ReactMarkdown></div></details>}

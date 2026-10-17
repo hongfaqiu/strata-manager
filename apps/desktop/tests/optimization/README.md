@@ -180,3 +180,13 @@ It checks eight pages in Chinese and English at 1200, 900 and 700 pixels,
 content-sized rails, option visibility, selection and keyboard navigation.
 Native IO is synthetic; services and GPU settings are not changed.
 Screenshots go to `output/playwright/tab-layout/`.
+
+Strata update progress states are verified with
+`node apps/desktop/tests/optimization/verify-runtime-update-progress.mjs`. It mounts
+the complete App on the Strata page with `runtime-update-progress-native-fixture.js`,
+which replays the backend's real update-task status lines (source, engine download
+with byte counts, retry, SHA256, unpack, replace, restore, rollback, cancel) without
+downloading or changing anything. Each case checks the stage/outcome the card shows,
+that no raw byte counts or automatic update prompt appear, and live byte updates.
+Screenshots go to `output/playwright/runtime-update-progress` (override with
+`RUNTIME_UPDATE_SHOTS`; `RUNTIME_UPDATE_CASES=downloading,done:dark` picks cases).

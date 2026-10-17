@@ -85,12 +85,18 @@ export function useRuntimeUpdates(desktop: boolean, ready: boolean, enabled: boo
     if (!enabled && !running.current && !automaticTask.current) releaseGate();
     if (!enabled || !idle || !downloadPreferences.isSuccess || pending || running.current || automaticTask.current || tasks.some(item => item.state === 'running') || !release.data?.installable) return;
     if (dismissed.current.has(`${release.data.latestVersion}:${release.data.checkedAt}`)) return;
+    // A runtime update or install that just finished makes the cached installation stale: wait for a
+    // fresh read instead of proposing the version that was just installed. Once the user has run an
+    // update after this release check, a failure or cancel is handled on the Strata page, not re-prompted.
+    const lastRuntimeTask = Math.max(0, ...tasks.filter(item => (item.kind === 'update' || item.kind === 'install') && item.state !== 'running').map(item => item.finishedAt ?? 0));
+    if (lastRuntimeTask && lastRuntimeTask > (installation.dataUpdatedAt ?? 0)) { void query.invalidateQueries({ queryKey: ['runtime-installation'] }); return; }
+    if (lastRuntimeTask && lastRuntimeTask >= release.data.checkedAt) return;
     const runtime = installation.data?.detectedRuntimes?.find(item => item.readiness === 'ready' && newer(item.runtimeVersion, release.data?.latestVersion) && !attempted.current.has(`${item.installDir}:${release.data?.latestVersion}:${release.data?.checkedAt}`));
     if (!runtime) return;
     const proposed = { runtime, release: release.data };
     attempted.current.add(updateKey(proposed));
     setActionError(''); setPending(proposed);
-  }, [desktop, ready, enabled, idle, hydrated, tasks, release.data, installation.data, downloadPreferences.isSuccess, query, wake, pending]);
+  }, [desktop, ready, enabled, idle, hydrated, tasks, release.data, installation.data, installation.dataUpdatedAt, downloadPreferences.isSuccess, query, wake, pending]);
 
   const confirm = async (download: core.RuntimeZipDownloadOptions = {}, assetName?: string) => {
     if (!pending || running.current || automaticTask.current || awaitingCreatedTask.current) return;

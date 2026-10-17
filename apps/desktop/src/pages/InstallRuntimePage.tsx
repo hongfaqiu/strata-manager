@@ -6,6 +6,7 @@ import type { LogEntry, RuntimeInstallationStatus, TaskStatus } from '@strata-ma
 import { Empty, Header, Panel } from '../components';
 import { Dropdown } from '../OfficialControls';
 import { RuntimeManagementPanel } from './RuntimeManagementPanel';
+import { humanizeTaskMessage } from '../runtimeUpdate/runtimeUpdateProgress';
 import './install-runtime.css';
 
 const words = {
@@ -211,7 +212,7 @@ export function InstallRuntimePage(props: InstallRuntimePageProps) {
           <div className="runtime-summary-selection"><span className={`runtime-summary-status ${detected.readiness === 'ready' ? 'runtime-ready' : 'runtime-repair'}`}>{detected.readiness === 'ready' ? <Check size={14}/> : <CircleAlert size={14}/>} {detected.readiness === 'ready' ? text.installed : text.runtimeRepair}</span><div><span className="runtime-selection-label">{text.chooseRuntime}</span><Dropdown ariaLabel={text.chooseRuntime} value={detected.installDir} disabled={busy || running} onValueChange={setSelectedRuntime} options={runtimes.map(runtime => ({ value: runtime.installDir, label: `${runtime.runtimeVersion ? `Strata ${runtime.runtimeVersion} · ` : ''}${runtime.installDir}${runtime.readiness === 'repair' ? ` · ${text.runtimeRepair}` : ''}` }))}/></div></div>
           <dl className="runtime-summary-facts"><div><dt>{text.directory}</dt><dd><code>{detected.installDir}</code></dd></div><div><dt>{text.version}</dt><dd>{detected.runtimeVersion ?? text.notPrepared}</dd></div></dl>
           {detected.readiness === 'repair' && <div className="runtime-repair-details" role="status"><p>{detected.reason ?? text.repairFallback}</p><small>{text.repairHint}</small></div>}
-          {running && <p className="runtime-summary-task" role="status"><LoaderCircle size={15} className="spin"/><span>{task.message}</span></p>}
+          {running && <p className="runtime-summary-task" role="status"><LoaderCircle size={15} className="spin"/><span>{humanizeTaskMessage(task.message, props.language)}</span></p>}
           <div className="actions runtime-summary-actions">{detected.readiness === 'repair' && !running && <button type="button" disabled={props.operationDisabled || !loaded || busy || !!statusError} onClick={() => void start(true)}><Download size={15}/>{action === 'start' ? text.starting : text.prepareRuntime}</button>}{running && <button type="button" disabled={busy || canceling} onClick={() => void cancel()}><Square size={13}/>{canceling ? text.canceling : text.cancel}</button>}<button type="button" aria-expanded={detailsOpen} aria-controls="install-runtime-details" onClick={() => setDetailsOpen(value => !value)}><FileText size={15}/>{text.details}</button>{running && logButton}</div>
           {detailsOpen && <dl id="install-runtime-details" className="runtime-summary-facts"><div><dt>{text.revision}</dt><dd><code>{detected.sourceRevision ?? '—'}</code></dd></div><div><dt>{text.python}</dt><dd><code>{detected.pythonPath || '—'}</code></dd></div></dl>}
           {errorBlock}
@@ -221,7 +222,7 @@ export function InstallRuntimePage(props: InstallRuntimePageProps) {
         <ol className="install-runtime-steps" aria-label={text.title}><li className="is-current"><span>1</span>{text.installStep}</li><li><span>2</span>{text.modelStep}</li><li><span>3</span>{text.serviceStep}</li></ol>
         <Panel title={text.installStep} className="install-runtime-card">
           <div className="install-runtime-state" role="status" aria-live="polite">{running || action === 'start' ? <LoaderCircle size={23} className="spin"/> : task?.state === 'failed' ? <CircleAlert size={23}/> : <Download size={23}/>}<div><h3>{action === 'start' ? text.starting : title}</h3><p>{running ? text.runningHint : task?.state === 'failed' || task?.state === 'cancelled' ? text.retryHint : text.noEstimate}</p></div></div>
-          {task?.message && <p className="install-runtime-message">{task.message}</p>}
+          {task?.message && <p className="install-runtime-message">{humanizeTaskMessage(task.message, props.language)}</p>}
           {installation.taskId && !task && <p className="install-runtime-message">{text.unknownTask}</p>}
           <div className="actions install-runtime-actions">{running ? <button type="button" disabled={busy || canceling} onClick={() => void cancel()}><Square size={14}/>{canceling ? text.canceling : text.cancel}</button> : <button type="button" className="primary" disabled={props.operationDisabled || !loaded || busy} onClick={() => void start()}><Download size={15}/>{task || installation.taskId ? text.retry : text.start}</button>}{logButton}</div>{errorBlock}
         </Panel>
