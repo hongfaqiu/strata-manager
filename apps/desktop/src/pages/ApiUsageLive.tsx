@@ -1,6 +1,5 @@
 import type { AppLanguage } from "@strata-manager/core";
-import { useId, useState } from 'react';
-import { ChevronDown, Cpu, Gauge, MemoryStick } from 'lucide-react';
+import { Cpu, Gauge, MemoryStick } from 'lucide-react';
 import { asObject, normalizeMetrics, runtimeSlots, type JsonObject } from '@strata-manager/core';
 import './api-usage-live.css';
 
@@ -38,7 +37,6 @@ function resourcePaths(samples: (number | null)[], fixedMax?: number | null) {
 }
 
 export function ApiUsageLive({ language, raw, sampledAt, stale = false, stopped = false, serviceId }: ApiUsageLiveProps) {
-  const [expanded, setExpanded] = useState(true), contentId = useId();
   const t = (cn: string, en: string) => language === 'zh-CN' ? cn : en;
   const unavailable = stopped || stale || !raw || Object.keys(raw).length === 0;
   // Never present a cached snapshot as the current resource use of a stopped/offline service.
@@ -69,11 +67,11 @@ export function ApiUsageLive({ language, raw, sampledAt, stale = false, stopped 
         : sampledAt && Number.isFinite(sampledAt) ? `${t('采样于', 'Sampled at')} ${new Date(sampledAt).toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : t('采样时间未提供', 'Sample time unavailable');
 
   return <section className="api-live-resources" data-service-id={serviceId} aria-label={t('当前服务实时负载', 'Current service resources')}>
-    <button type="button" className="api-live-toggle" aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded(value => !value)}>
+    <div className="api-live-header">
       <span className="api-live-heading"><strong>{t('实时资源与并行任务', 'Live resources and slots')}</strong><span>{t('当前服务的短时采样 · 独立于上方 API 历史时间范围', 'Short samples for this service · separate from the API history range')}</span></span>
-      <span className={`api-live-state${unavailable ? ' unavailable' : ''}`}>{status}</span><ChevronDown size={15} className={expanded ? 'expanded' : ''} aria-hidden="true" />
-    </button>
-    {expanded && <div id={contentId} className="api-live-content">
+      <span className={`api-live-state${unavailable ? ' unavailable' : ''}`}>{status}</span>
+    </div>
+    <div className="api-live-content">
       <div className="api-live-meta"><span role="status">{summaryLabel}</span>{!unavailable && <span>{t('处理中', 'Running')} {fmt(live.running)} · {t('等待中', 'Waiting')} {fmt(live.waiting ?? live.queued)}</span>}</div>
       <div className="api-live-grid">{resources.map(resource => {
         const paths = resourcePaths(resource.samples, resource.max), count = resource.samples.filter(value => value !== null).length;
@@ -96,6 +94,6 @@ export function ApiUsageLive({ language, raw, sampledAt, stale = false, stopped 
           })}</tbody></table></div>
             : <p className="api-live-slots-empty">{t('引擎尚未提供逐槽指标。', 'The engine has not supplied per-slot metrics.')}{currentPrefill && <span className="api-live-solo-prefill">{t('当前请求输入处理', 'Current request prefill')} {fmt(currentPrefill.percent, 1)}% · {fmt(currentPrefill.read)} / {fmt(currentPrefill.total)} tokens</span>}</p>}
       </div>
-    </div>}
+    </div>
   </section>;
 }
