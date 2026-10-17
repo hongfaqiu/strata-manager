@@ -37,8 +37,8 @@ export function renderLeaderboardPage(entry) {
   <header class="doc-header">
     <a class="doc-brand" href="./${homePage(entry.lang)}"><img src="assets/icon.svg" width="32" height="32" alt=""><span>Strata <span class="brand-subtitle">Manager</span></span></a>
     <nav class="header-actions" aria-label="${en ? 'Page controls' : '页面操作'}">
-      <a class="header-action lb-hide-narrow" href="./${homePage(entry.lang)}">${c.home}</a>
-      <a class="header-action lb-hide-narrow" href="docs/${en ? 'changelog.en.html' : 'changelog.html'}">${c.changelog}</a>
+      <a class="header-action" href="./${homePage(entry.lang)}">${c.home}</a>
+      <a class="header-action" href="docs/${en ? 'changelog.en.html' : 'changelog.html'}">${c.changelog}</a>
       <a class="header-action" href="${alternate.page}" hreflang="${alternate.lang === 'zh' ? 'zh-CN' : 'en'}" lang="${alternate.lang === 'zh' ? 'zh-CN' : 'en'}">${c.other}</a>
       <button class="header-action" id="doc-theme" type="button">${c.theme}</button>
     </nav>
@@ -46,7 +46,7 @@ export function renderLeaderboardPage(entry) {
   <main id="content" class="lb-main" data-api="" data-snapshot="arena-snapshot.json" data-privacy="docs/${en ? 'arena-privacy.en.html' : 'arena-privacy.html'}">
     <section class="lb-hero">
       <h1>${c.title}</h1>
-      <p>${en ? 'Only the same model and the same quantization are compared. Each row is one hardware + launch-parameter combination, ranked by 8K decode median.' : '只在同一模型、同一量化内比较。每一行是一种硬件 + 启动参数组合，按 8K 解码中位数排序。'}</p>
+      <p>${en ? 'Only the same model and the same quantization are compared. Each row is one hardware + launch-parameter combination, ranked by 8K decode median by default; filter by hardware and parameters or switch the ordering.' : '只在同一模型、同一量化内比较。每一行是一种硬件 + 启动参数组合，默认按 8K 解码中位数排序，可按硬件与参数筛选、切换排序。'}</p>
       <div class="lb-stats" id="lb-stats" aria-live="polite"></div>
     </section>
     <div id="lb-root" class="lb-root"><p class="lb-status">${c.loading}</p></div>

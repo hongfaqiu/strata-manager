@@ -1,4 +1,4 @@
-// Verified against Strata src/program/generate.cpp, parser in main(), 2026-10-11.
+// Verified against Strata src/program/generate.cpp, parser in main(), 2026-10-11 (--prefill-pipe added 2026-10-17, generate.cpp:2456).
 // Source-only inspection: no engine/model process is started to build this catalog.
 // Values are argv tokens; flags with arity 2 keep both operands intact.
 export const STARTUP_ENGINE_FLAGS: Readonly<Record<string, number>> = {
@@ -102,6 +102,7 @@ export const STARTUP_ENGINE_FLAGS: Readonly<Record<string, number>> = {
   "--mtp": 1,
   "--mtp-window": 1,
   "--pcie-frac": 1,
+  "--prefill-pipe": 1,
   "--adapt-every": 1,
   "--adapt-decay": 1,
   "--adapt-async": 1,

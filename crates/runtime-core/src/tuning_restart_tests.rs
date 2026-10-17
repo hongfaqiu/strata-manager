@@ -1565,3 +1565,48 @@ async fn restore_crash_before_or_after_config_write_recovers_previous_owned_hash
             .unwrap();
     }
 }
+
+#[test]
+fn restart_candidates_group_workloads_so_each_round_restarts_twice() {
+    let specs: Vec<workloads::WorkloadSpec> = ["a", "b", "c"]
+        .iter()
+        .map(|id| workloads::WorkloadSpec {
+            id: (*id).into(),
+            use_case: workloads::UseCase::Chat,
+            kind: workloads::WorkloadKind::ColdInput,
+            target_input_tokens: None,
+        })
+        .collect();
+    let restart = workload_order(&specs, CandidateKind::Restart);
+    assert_eq!(restart.len(), 9);
+    let positions: Vec<Position> = restart.iter().map(|(_, p)| *p).collect();
+    assert!(positions[..3]
+        .iter()
+        .all(|p| *p == Position::BaselineBefore));
+    assert!(positions[3..6].iter().all(|p| *p == Position::Candidate));
+    assert!(positions[6..].iter().all(|p| *p == Position::BaselineAfter));
+    // one switch into the candidate and one restore per round
+    let switches = positions.windows(2).filter(|w| w[0] != w[1]).count();
+    assert_eq!(switches, 2);
+    let request = workload_order(&specs, CandidateKind::Request);
+    assert_eq!(request[0].1, Position::BaselineBefore);
+    assert_eq!(request[1].1, Position::Candidate);
+    assert_eq!(request[2].1, Position::BaselineAfter);
+    assert_eq!(request[3].0.id, "b");
+    // every (workload, position) pair is still measured exactly once
+    for spec in &specs {
+        for position in [
+            Position::BaselineBefore,
+            Position::Candidate,
+            Position::BaselineAfter,
+        ] {
+            assert_eq!(
+                restart
+                    .iter()
+                    .filter(|(s, p)| s.id == spec.id && *p == position)
+                    .count(),
+                1
+            );
+        }
+    }
+}

@@ -14,6 +14,7 @@ export * from './bridge';
 export * from './config-profile';
 export * from './config-tuning';
 export * from './tuning-types';
+export * from './calibration';
 export * from './analytics-types';
 export * from './installation-types';
 export * from './runtime-types';

@@ -48,8 +48,77 @@
   };
   tuning.setJob = mode => { tuning.job = tuning.makeJob(mode); };
   if (query.get('job')) tuning.setJob(query.get('job'));
+
+  // Quick calibration mock data: an AMD (hip) card, so pcie_frac 0 is excluded.
+  const calibration = { job: null, starts: [], cancels: [], live: null };
+  fixture.calibration = calibration;
+  const pcieValues = [0.2, 0.35, 0.55, 0.75, 0.9, 1.0];
+  const pcieRate = { 0.2: 31.4, 0.35: 39.3, 0.55: 36.2, 0.75: 35.1, 0.9: 33.8, 1.0: 32.6 };
+  const jitter = [-0.6, 0.4, 0.1];
+  const samples = (values, rates, rounds) => values.flatMap(value => Array.from({ length: rounds }, (_, round) => ({ value, round, rate: Math.round((rates[value] + jitter[(round + values.indexOf(value)) % 3]) * 10) / 10 })));
+  calibration.makeJob = (mode = 'running') => {
+    const running = mode === 'running', nochange = mode === 'nochange';
+    const done = !running;
+    const pcieSamples = running ? samples(pcieValues, pcieRate, 3).filter(sample => sample.round < 2 || pcieValues.indexOf(sample.value) < 3) : samples(pcieValues, nochange ? { ...pcieRate, 0.35: 36.6 } : pcieRate, 3);
+    const chosenPcie = nochange ? 0.55 : 0.35;
+    const specRates = nochange ? { 0.3: 35.4, 0.5: 36.2, 0.7: 35.9 } : { 0.3: 38.1, 0.5: 39.3, 0.7: 39.6 };
+    const steps = [
+      { kind: 'warmup', status: 'done', metric: 'decode', values: [], rounds: 2, requests: 6, samples: [] },
+      { kind: 'prefillPipe', status: 'skipped', metric: 'prompt', values: [0, 1, 768, 1536, 3072, 6144], currentValue: 0, rounds: 3, requests: 0, samples: [], skippedReason: 'noLayerSplit' },
+      { kind: 'pcieFrac', status: running ? 'running' : 'done', metric: 'decode', values: pcieValues, currentValue: 0.55, rounds: 3, requests: 54, samples: pcieSamples, excluded: [{ value: 0, reason: 'amdPcieZero' }], ...(done ? { best: nochange ? 0.55 : 0.35, chosen: chosenPcie } : {}) },
+      { kind: 'specMinP', status: running ? 'pending' : 'done', metric: 'decode', values: [0.3, 0.5, 0.7], currentValue: 0.5, rounds: 3, requests: 27, samples: running ? [] : samples([0.3, 0.5, 0.7], specRates, 3), ...(done ? { best: 0.7, chosen: 0.5 } : {}) },
+      { kind: 'confirm', status: running ? 'pending' : nochange ? 'skipped' : 'done', metric: 'decode', values: [], rounds: 3, requests: 18, samples: running || nochange ? [] : [{ value: 0, round: 0, rate: 36.1 }, { value: 1, round: 0, rate: 39.2 }, { value: 0, round: 1, rate: 36.3 }, { value: 1, round: 1, rate: 39.4 }, { value: 0, round: 2, rate: 36.2 }, { value: 1, round: 2, rate: 39.3 }], ...(nochange ? { skippedReason: 'sameAsCurrent' } : {}) },
+    ];
+    const completed = running ? 6 + pcieSamples.length * 3 : 105;
+    return {
+      id: 'isolated-calibration-job', profileId: 'a', kind: 'quickCalibrate', state: running ? 'running' : 'completed',
+      startedAt: Date.now() - (running ? 214000 : 486000), updatedAt: Date.now(), ...(done ? { finishedAt: Date.now() } : {}),
+      backend: 'hip', layerSplit: false, rounds: 3, minGain: 0.03,
+      baseline: { pcieFrac: 0.55, specMinP: 0.5 },
+      ...(done ? { candidate: { pcieFrac: chosenPcie, specMinP: 0.5 }, recommended: { pcieFrac: chosenPcie, specMinP: 0.5 } } : {}),
+      settings: done && !nochange ? { '--pcie-frac': '0.35', '--spec-min-p': '0.50' } : {},
+      ...(done && !nochange ? { gain: 0.0856, baseRate: 36.2, tunedRate: 39.3 } : {}),
+      steps, completedRequests: completed, totalRequests: 105,
+      restartSuggestions: [{ poolWorkers: 13 }, { poolWorkers: 10 }, { adaptEvery: 1, adaptSwaps: 80, adaptDecay: 0.97 }, { adaptEvery: 1, adaptSwaps: 160, adaptDecay: 0.97 }],
+      identity: { model: 'Isolated synthetic model' }, configFingerprint: JSON.stringify(fixture.configs.a), notes: [],
+      ...(done ? { liveLog: [
+        { at: Date.now() - 400000, key: 'warmup', detail: {} },
+        { at: Date.now() - 300000, key: 'stepWinner', detail: { step: 'pcieFrac', chosen: chosenPcie } },
+        { at: Date.now() - 200000, key: 'stepWinner', detail: { step: 'specMinP', chosen: 0.5 } },
+        { at: Date.now() - 60000, key: 'finished', detail: nochange ? {} : { gain: 0.0856 } },
+      ] } : {}),
+    };
+  };
+  calibration.makeLive = job => {
+    const at = Date.now();
+    const pcie = job.steps.find(step => step.kind === 'pcieFrac');
+    const log = [
+      { at: at - 212000, key: 'waitingForIdle', detail: {} },
+      { at: at - 200000, key: 'warmup', detail: {} },
+      ...pcie.samples.map((sample, index) => ({ at: at - 190000 + index * 5200, key: 'sample', detail: { step: 'pcieFrac', value: sample.value, round: sample.round + 1, rate: sample.rate } })),
+    ];
+    return { jobId: job.id, stepKey: 'pcieFrac', stepIndex: 2, stepTotal: 4, parameters: { pcieFrac: 0.75, specMinP: 0.5, value: 0.75 }, round: 3, rounds: 3,
+      completedUnits: job.completedRequests, totalUnits: job.totalRequests, runningSince: job.startedAt, etaMs: 271000,
+      request: { startedAt: at - 1900, deltas: 72, firstTokenMs: 210, tokS: 35.4 }, lastTokS: 35.0, log, updatedAt: at };
+  };
+  if (query.get('calibration')) { calibration.job = calibration.makeJob(query.get('calibration')); if (calibration.job.state === 'running') calibration.live = calibration.makeLive(calibration.job); }
+  // The config was edited elsewhere after calibration started: its revision no longer matches the job fingerprint.
+  if (query.get('configEdited')) fixture.configs.a.args.push('--stats');
   internal.invoke = async (command, args = {}) => {
     const record = () => fixture.calls.push({ command, args: structuredClone(args) });
+    if (command === 'supervisor_status') {
+      const status = await originalInvoke(command, args);
+      return fixture.capability ? { ...status, capabilities: { ...(status.capabilities ?? {}), quickCalibration: 1, tuningLive: 1 } } : status;
+    }
+    if (command === 'calibrate_status') { record(); return args.profileId === 'a' ? structuredClone(calibration.job) : null; }
+    if (command === 'calibrate_start') { record(); calibration.starts.push(structuredClone(args)); calibration.job = calibration.makeJob('running'); calibration.live = calibration.makeLive(calibration.job); return structuredClone(calibration.job); }
+    if (command === 'calibrate_cancel') { record(); calibration.cancels.push(structuredClone(args)); calibration.job.state = 'canceled'; calibration.job.finishedAt = Date.now(); calibration.job.error = undefined; calibration.live = null; return; }
+    if (command === 'tuning_live') {
+      record();
+      if (calibration.live && args.jobId === calibration.live.jobId) return structuredClone(calibration.live);
+      if (tuning.job && args.jobId === tuning.job.id && ['running', 'checking', 'canceling'].includes(tuning.job.state)) return { jobId: tuning.job.id, stepKey: 'candidate', stepIndex: 1, stepTotal: 1, parameters: { candidateId: 'candidate-1', workloadKind: 'fullAgent', pcieFrac: 0.7, specMinP: 0.5 }, round: 1, rounds: 2, completedUnits: 3, totalUnits: 12, runningSince: tuning.job.startedAt, etaMs: 640000, request: { startedAt: Date.now() - 1200, deltas: 40, firstTokenMs: 320, tokS: 33.2 }, lastTokS: 32.8, log: [{ at: Date.now() - 30000, key: 'workloadDone', detail: { candidateId: 'candidate-1', position: 'baselineBefore', workloadKind: 'coldInput', round: 1, wallMs: 21400 } }], updatedAt: Date.now() };
+      return null;
+    }
     if (command === 'tuning_status') { record(); return args.profileId === 'a' ? structuredClone(tuning.job) : null; }
     if (command === 'tuning_start') {
       record(); tuning.starts.push(structuredClone(args)); tuning.job = tuning.makeJob('running', args.request); return structuredClone(tuning.job);

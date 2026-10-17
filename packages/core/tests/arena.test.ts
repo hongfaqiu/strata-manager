@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { arenaGpuVendor, arenaLaunchParams, arenaModelOf, arenaName, assertArenaPayloadSafe, buildArenaPayload, arenaRecommendQuery } from '../src/arena';
+import { arenaApplyFilters, arenaFacetOptions, arenaGpuVendor, arenaLaunchParams, arenaLeaderboardQuery, arenaModelOf, arenaName, assertArenaPayloadSafe, buildArenaPayload, arenaRecommendQuery } from '../src/arena';
+import type { ArenaParams, ArenaRow } from '../src/arena';
 import type { ContextBenchmarkReport } from '../src/context-benchmark-types';
 import type { BenchmarkSuiteReport } from '../src/benchmark-suite-types';
 
@@ -130,5 +131,33 @@ describe('arena helpers', () => {
   it('builds a recommend query', () => {
     expect(arenaRecommendQuery({ gpu: 'NVIDIA GeForce RTX 4090', vramGB: 24, ramGB: 96 }, contextReport().identity!.launch, 'long'))
       .toEqual({ scene: 'long', gpu: 'NVIDIA GeForce RTX 4090', vram: '24', ram: '96', family: 'swift', quant: 'IQ3_S', ctx: '131072', kv: 'int8', parallel: '1', poolWorkers: '16', expertCache: 'auto', gpuCount: '1' });
+  });
+});
+
+describe('leaderboard filters and sorting', () => {
+  const row = (gpu: string, vramGB: number, decode: number, decode128k: number | null, params: Partial<ArenaParams> = {}, machines = 3): ArenaRow => ({
+    hw: { gpu, vramGB, ramGB: 64 }, params: { ctx: 131072, kv: 'int8', gpuCount: 1, parallel: 1, poolWorkers: null, expertCache: null, pcieFrac: null, vision: false, ...params },
+    seed: false, machines, confidence: 'low', decode: { p25: null, median: decode, p75: null }, prefill: decode * 50, ttftMs: null, decode32k: null, decode128k, peakRamGB: null, peakVramGB: null });
+  const rows = [row('NVIDIA GeForce RTX 4090', 24, 40, null), row('NVIDIA GeForce RTX 4080', 16, 30, 25, { kv: 'q4_0' }, 9), row('NVIDIA GeForce RTX 3090', 24, 28, 22, { parallel: 2 })];
+
+  it('lists only existing facet values, ascending, with a missing expert cache as auto', () => {
+    const options = arenaFacetOptions(rows);
+    expect(options.vram).toEqual([16, 24]); expect(options.kv).toEqual(['int8', 'q4_0']); expect(options.parallel).toEqual([1, 2]); expect(options.expertCache).toEqual(['auto']);
+  });
+  it('filters by facet, GPU and keyword and re-ranks inside the result', () => {
+    expect(arenaApplyFilters(rows, { vram: '24' }).rows.map(r => r.rank)).toEqual([1, 2]);
+    expect(arenaApplyFilters(rows, { kv: 'q4_0' }).rows.map(r => r.hw.gpu)).toEqual(['NVIDIA GeForce RTX 4080']);
+    expect(arenaApplyFilters(rows, { q: '3090' }).rows).toHaveLength(1);
+    expect(arenaApplyFilters(rows, { gpu: 'NVIDIA GeForce RTX 4090', parallel: '' }).rows).toHaveLength(1);
+    expect(arenaApplyFilters(rows, { vram: '24' }).tierMedian).toBe(34);
+  });
+  it('sorts by the chosen metric with missing values last and unranked', () => {
+    expect(arenaApplyFilters(rows, {}, 'decode128k').rows.map(r => [r.hw.vramGB, r.rank])).toEqual([[16, 1], [24, 2], [24, null]]);
+    expect(arenaApplyFilters(rows, {}, 'machines').rows[0]!.machines).toBe(9);
+    expect(arenaApplyFilters(rows, {}).rows.map(r => r.decode.median)).toEqual([40, 30, 28]);
+  });
+  it('builds the leaderboard query without empty values or the default sort', () => {
+    expect(arenaLeaderboardQuery('swift:IQ3_S', { vram: '24', kv: '' })).toEqual({ group: 'swift:IQ3_S', vram: '24' });
+    expect(arenaLeaderboardQuery('swift:IQ3_S', {}, 'prefill')).toEqual({ group: 'swift:IQ3_S', sort: 'prefill' });
   });
 });

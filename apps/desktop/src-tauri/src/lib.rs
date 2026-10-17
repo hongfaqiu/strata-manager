@@ -450,6 +450,48 @@ async fn tuning_apply(
         .map_err(|e| e.to_string())
 }
 #[tauri::command]
+async fn tuning_live(state: State<'_, ClientState>, job_id: String) -> Result<Value, String> {
+    state
+        .ipc
+        .request("tuning_live", json!({"jobId":job_id}))
+        .await
+        .map_err(|e| e.to_string())
+}
+#[tauri::command]
+async fn calibrate_start(
+    state: State<'_, ClientState>,
+    profile_id: String,
+    request: Value,
+) -> Result<Value, String> {
+    state
+        .ipc
+        .request(
+            "calibrate_start",
+            json!({"profileId":profile_id,"request":request}),
+        )
+        .await
+        .map_err(|e| json!({"code":e.code,"message":e.message,"retriable":e.retriable}).to_string())
+}
+#[tauri::command]
+async fn calibrate_status(
+    state: State<'_, ClientState>,
+    profile_id: String,
+) -> Result<Value, String> {
+    state
+        .ipc
+        .request("calibrate_status", json!({"profileId":profile_id}))
+        .await
+        .map_err(|e| e.to_string())
+}
+#[tauri::command]
+async fn calibrate_cancel(state: State<'_, ClientState>, job_id: String) -> Result<Value, String> {
+    state
+        .ipc
+        .request("calibrate_cancel", json!({"jobId":job_id}))
+        .await
+        .map_err(|e| e.to_string())
+}
+#[tauri::command]
 async fn tuning_restore(state: State<'_, ClientState>, job_id: String) -> Result<Value, String> {
     state
         .ipc
@@ -1797,6 +1839,10 @@ pub fn run() {
             tuning_cancel,
             tuning_apply,
             tuning_restore,
+            tuning_live,
+            calibrate_start,
+            calibrate_status,
+            calibrate_cancel,
             switch_local_service,
             prepare_local_runtime,
             local_runtime_installation,
