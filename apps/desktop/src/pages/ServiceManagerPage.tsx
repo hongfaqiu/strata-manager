@@ -4,15 +4,19 @@ import type { HardwareReading } from './D2Visuals';
 import type { EnvironmentInfo } from '@strata-manager/core';
 import { useEffect, useRef, useState } from 'react';
 import { useQueries } from '@tanstack/react-query';
-import { ChevronDown, FileText, FolderOpen, LoaderCircle, MessageSquare, Pencil, Play, RefreshCw, Server, Settings2, Square, Trash2 } from 'lucide-react';
+import { Archive, ChevronDown, FileText, FolderOpen, LoaderCircle, MessageSquare, Pencil, Play, RefreshCw, Server, Settings2, Square, Trash2 } from 'lucide-react';
 import * as core from '@strata-manager/core';
 import type { JsonObject, LocalCandidate, LocalInstallationDetails, LocalModelConfiguration, LocalModelGroup, ProcessStatus, ServiceProfile } from '@strata-manager/core';
 import { Badge, Empty } from '../components';
-import { OfficialDialog } from '../OfficialControls';
+import { OfficialDialog, Toggle } from '../OfficialControls';
 import { ModelConfigurationDropdown } from './ModelConfigurationDropdown';
 import { ModelDeletionDialog } from './ModelDeletionDialog';
 import { ConfigurationDeletionDialog } from './ConfigurationDeletionDialog';
+import { ConfigCleanupDialog } from './ConfigCleanupDialog';
+import { useTranslation } from 'react-i18next';
+import { useShowAllVersions } from '../useShowAllVersions';
 import './service-manager.css';
+import './config-versions.css';
 
 type Action = (profile: ServiceProfile) => void | Promise<unknown>;
 type CandidateAction = (candidate: LocalCandidate) => void | Promise<unknown>;
@@ -30,6 +34,8 @@ export interface ServiceManagerPageProps {
   preparingId?: string;
   details?: LocalInstallationDetails[];
   candidates?: LocalCandidate[];
+  /** Detected Strata installations; used to label versions and pick the current one. */
+  runtimes?: core.DetectedRuntime[];
   discoveryLoading?: boolean;
   discoveryError?: unknown;
   onUseCandidate?: CandidateAction;
@@ -187,6 +193,9 @@ export function ServiceManagerPage(props: ServiceManagerPageProps) {
   const [confirmation, setConfirmation] = useState<{ action: ConfirmationAction; profile: ServiceProfile } | null>(null);
   const [modelDeletion, setModelDeletion] = useState<{ modelName: string; profiles: ServiceProfile[] } | null>(null);
   const [configurationDeletion, setConfigurationDeletion] = useState<ServiceProfile | null>(null);
+  const [cleanupOpen, setCleanupOpen] = useState(false);
+  const { t } = useTranslation();
+  const [showAllVersions, setShowAllVersions] = useShowAllVersions();
   const [scanning, setScanning] = useState(false);
   const scanPending = useRef(false);
   const pendingAction = useRef<string | null>(null);
@@ -259,6 +268,13 @@ export function ServiceManagerPage(props: ServiceManagerPageProps) {
   });
   const groupIsRunning = (group: LocalModelGroup) => group.configurations.some(entry => currentRunning && entry.profile?.id === activeId || entry.candidate?.running === true);
   const groups = core.groupLocalModels(profiles, props.candidates, modelDetails).sort((a, b) => Number(groupIsRunning(b)) - Number(groupIsRunning(a)));
+  const versions = core.runtimeVersionIndex(props.candidates, props.runtimes);
+  const currentInstallDir = core.resolveCurrentInstallDir({ profiles, candidates: props.candidates, runtimes: props.runtimes, activeId, activeRunning: currentRunning, lastUsedId: props.lastUsedId });
+  const currentInstallKey = core.installDirKey(currentInstallDir);
+  const installKeys = new Set(groups.flatMap(group => group.configurations.map(entry => core.installDirKey(core.configurationInstallDir(entry)))).filter(Boolean));
+  const multipleVersions = installKeys.size > 1;
+  const hasOldVersions = !!currentInstallKey && [...installKeys].some(key => key !== currentInstallKey);
+  const versionTag = (version?: string) => version ? t('mvVersionTag', { version }) : t('mvVersionUnknown');
   const repairGroups = groups.filter(hasMissingModelFiles);
   const repairKeys = new Set(repairGroups.map(group => group.key));
   const modelGroups = groups.filter(group => !repairKeys.has(group.key));
@@ -278,7 +294,12 @@ export function ServiceManagerPage(props: ServiceManagerPageProps) {
       const currentEntry = ownedCurrentEntry ?? group.configurations.find(item => item.candidate?.running === true);
       const lastUsedEntry = props.lastUsedId ? group.configurations.find(item => item.profile?.id === props.lastUsedId && item !== currentEntry) : undefined;
       const preparingEntry = props.preparingId ? group.configurations.find(item => item.profile?.id === props.preparingId) : undefined;
-      const entry = group.configurations.find(item => item.key === groupSelections[group.key]) ?? currentEntry ?? preparingEntry ?? group.configurations.find(item => item.profile?.id === activeId) ?? lastUsedEntry ?? group.configurations[0]!;
+      const activeEntry = group.configurations.find(item => item.profile?.id === activeId);
+      // Running, preparing, active and last-used rows always stay visible as their own option.
+      const focused = core.focusModelGroup(group, { currentInstallDir, versions, showAll: showAllVersions || !multipleVersions, pinned: [currentEntry, preparingEntry, activeEntry, lastUsedEntry].flatMap(item => item ? [item.key] : []) });
+      const shownRows = [...focused.primary, ...focused.others];
+      const representative = (key?: string) => key ? shownRows.find(row => row.entry.key === key || row.duplicates.some(item => item.entry.key === key))?.entry : undefined;
+      const entry = representative(groupSelections[group.key]) ?? currentEntry ?? preparingEntry ?? activeEntry ?? lastUsedEntry ?? focused.primary[0]?.entry ?? group.configurations[0]!;
       const { profile, candidate } = entry;
       const index = profile ? profiles.findIndex(item => item.id === profile.id) : -1;
       const healthQuery = healthQueries[index]; const processQuery = processQueries[index];
@@ -307,11 +328,16 @@ export function ServiceManagerPage(props: ServiceManagerPageProps) {
       const status = currentEntry ? ownedCurrentEntry && currentReady ? w.ready : w.running : preparingEntry ? w.preparing : needsRepair ? w.repair : !profile ? w.discovered : checking ? w.checking : readyForChat ? w.ready : external ? w.external : process?.running === false ? w.stopped : w.offline;
       return <section key={group.key} className={'service-manager-card st-card ' + (currentEntry ? 'is-current' : '')} data-profile-id={profile?.id} data-configuration-key={entry.key}>
         <div className="service-manager-card-top"><div className="service-manager-identity"><span className="service-manager-symbol"><Server size={23} strokeWidth={1.6} /></span><div><div className="service-manager-name"><h2>{group.name}</h2></div><span className="service-manager-subtitle">{group.configurations.length} {w.configurations}</span></div></div><Badge tone={currentEntry || readyForChat ? 'positive' : needsRepair ? 'warning' : ''}>{status}</Badge></div>
-        <div className="model-config-selector"><ModelConfigurationDropdown ariaLabel={group.name + ' ' + w.config} value={entry.key} language={language} modifiedLabel={w.modified} disabled={pageBusy || streaming} onValueChange={value => setGroupSelections(previous => ({ ...previous, [group.key]: value }))} onDelete={desktop ? value => { const item = group.configurations.find(configuration => configuration.key === value); if (!item || pageBusy || streaming) return; const target = item.profile ?? (item.candidate ? candidateProfile(item.candidate) : undefined); if (target) setConfigurationDeletion(target); } : undefined} options={group.configurations.map(item => {
+        <div className="model-config-selector"><ModelConfigurationDropdown ariaLabel={group.name + ' ' + w.config} value={entry.key} language={language} modifiedLabel={w.modified} disabled={pageBusy || streaming} onValueChange={value => setGroupSelections(previous => ({ ...previous, [group.key]: value }))} onDelete={desktop ? value => { const item = group.configurations.find(configuration => configuration.key === value); if (!item || pageBusy || streaming) return; const target = item.profile ?? (item.candidate ? candidateProfile(item.candidate) : undefined); if (target) setConfigurationDeletion(target); } : undefined} othersLabel={focused.others.length ? t('mvOtherVersions', { count: focused.others.length }) : undefined} options={shownRows.map(row => {
+          const item = row.entry;
           const detail = configurationSummary(item.config, language);
           const marker = item === currentEntry ? w.current : item === preparingEntry ? w.preparing : item === lastUsedEntry ? w.lastUsed : undefined;
-          return { value: item.key, name: configurationLabel(item), summary: detail, modifiedAt: item.modifiedAt, lastActivatedAt: item.lastActivatedAt, filePath: item.profile?.configPath || item.configPath, sourcePath: item.profile ? props.details?.find(record => record.profileId === item.profile!.id)?.originalConfigPath ?? item.candidate?.configPath : item.candidate?.configPath, stateLabel: marker, state: item === currentEntry ? 'current' as const : item === preparingEntry ? 'preparing' as const : item === lastUsedEntry ? 'lastUsed' as const : undefined };
+          return { value: item.key, name: configurationLabel(item), summary: detail, modifiedAt: item.modifiedAt, lastActivatedAt: item.lastActivatedAt, filePath: item.profile?.configPath || item.configPath, sourcePath: item.profile ? props.details?.find(record => record.profileId === item.profile!.id)?.originalConfigPath ?? item.candidate?.configPath : item.candidate?.configPath, stateLabel: marker, state: item === currentEntry ? 'current' as const : item === preparingEntry ? 'preparing' as const : item === lastUsedEntry ? 'lastUsed' as const : undefined,
+            ...(multipleVersions ? { versionLabel: versionTag(row.version), versionCurrent: row.current } : {}),
+            ...(row.duplicates.length ? { sameLabel: t('mvSameCopies', { count: row.duplicates.length }), sameTitle: `${t('mvSameCopiesTitle')}\n${row.duplicates.map(copy => `${versionTag(copy.version)} · ${copy.entry.configPath}`).join('\n')}` } : {}),
+            ...(focused.others.includes(row) ? { section: 'other' as const } : {}) };
         })} /></div>
+        {focused.fallback && multipleVersions && !showAllVersions && <p className="service-manager-version-note">{t('mvFallback')}</p>}
         <RequirementMeter label={`${group.name} ${configurationLabel(entry)} ${JSON.stringify(config ?? '')} ${entry.profile?.configPath ?? entry.configPath ?? ''}`} machineGB={props.hardware ? machineMemoryGB(props.hardware, props.environment) : undefined}/>
         {currentEntry && currentEntry.key !== entry.key && <div className="service-manager-current-config"><span>{w.currentConfiguration}</span><strong>{configurationLabel(currentEntry)}</strong></div>}
         {profile && healthQuery?.isError && <div className="service-manager-hint"><span>{core.normalizeError(healthQuery.error).message}</span></div>}
@@ -357,6 +383,8 @@ export function ServiceManagerPage(props: ServiceManagerPageProps) {
     <ModelsLead hardware={props.hardware ?? {}} environment={props.environment} online={!!props.hardwareOnline} models={modelGroups.length} configurations={configurationCount} current={props.hardwareOnline ? props.profiles.find(item => item.id === props.activeId)?.name : undefined}/>
     <div className="service-manager-list-heading"><span>{modelGroups.length} {w.total} · {configurationCount} {w.configurations}</span><div className="service-manager-toolbar">
       <button className="primary" onClick={props.onAdd} disabled={!desktop || streaming || pageBusy} data-tooltip={!desktop ? w.desktopRequired : undefined}><FolderOpen size={16} />{w.add}</button>
+      {multipleVersions && <span className="service-manager-version-toggle"><Toggle checked={showAllVersions} onCheckedChange={setShowAllVersions} ariaLabel={t('mvShowAllVersions')} tooltip={t('mvShowAllVersionsHint')}/><span aria-hidden="true" onClick={() => setShowAllVersions(!showAllVersions)}>{t('mvShowAllVersions')}</span></span>}
+      {desktop && hasOldVersions && <button onClick={() => setCleanupOpen(true)} disabled={streaming || pageBusy}><Archive size={14} />{t('mvCleanup')}</button>}
       <button onClick={() => void scan()} disabled={refreshing || pageBusy}><RefreshCw size={14} className={refreshing ? 'spin' : ''} />{w.refresh}</button>
     </div></div>
     {refreshing && <p className="service-manager-scanning" role="status"><LoaderCircle size={15} className="spin" />{w.scan}</p>}
@@ -374,6 +402,7 @@ export function ServiceManagerPage(props: ServiceManagerPageProps) {
       <div className="dialog-footer"><button disabled={!!busy[confirmation.profile.id]} onClick={() => setConfirmation(null)}>{w.cancel}</button><button className={confirmation.action === 'delete' || confirmation.action === 'stop' ? 'danger' : 'primary'} disabled={!!busy[confirmation.profile.id] || streaming || busyProfileIds.includes(confirmation.profile.id)} onClick={() => void run(confirmation.action, confirmation.profile, confirm.callback)}>{busy[confirmation.profile.id] ? <><LoaderCircle size={15} className="spin" />{w.working}</> : confirm.label}</button></div>
     </OfficialDialog>}
     {modelDeletion && <ModelDeletionDialog {...modelDeletion} language={language} disabled={streaming || pageBusy} onClose={() => setModelDeletion(null)} onDeleted={refreshAfterDeletion} />}
+    {cleanupOpen && currentInstallDir && <ConfigCleanupDialog currentInstallDir={currentInstallDir} directories={props.addedDirectories} onClose={() => setCleanupOpen(false)} onArchived={refreshAfterDeletion} />}
     {configurationDeletion && <ConfigurationDeletionDialog profile={configurationDeletion} language={language} onClose={() => setConfigurationDeletion(null)} onDeleted={refreshAfterDeletion} />}
   </div>;
 }

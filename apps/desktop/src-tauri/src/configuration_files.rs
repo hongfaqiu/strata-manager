@@ -163,7 +163,57 @@ pub fn archive(profile: &ServiceProfile, data_dir: &Path) -> Result<ArchivedConf
     fs::create_dir_all(&trash).map_err(|e| e.to_string())?;
     let archived = trash.join(format!("{}.json", uuid::Uuid::new_v4()));
     move_file(&original, &archived)?;
-    Ok(ArchivedConfiguration { original, archived })
+    let result = ArchivedConfiguration { original, archived };
+    if let Err(error) = record_manifest(&trash, &result) {
+        return match result.rollback() {
+            Ok(()) => Err(error),
+            Err(rollback) => Err(format!("{error}; {rollback}")),
+        };
+    }
+    Ok(result)
+}
+
+const MANIFEST: &str = "manifest.json";
+
+/// `config-trash/manifest.json` maps each archived file back to its original
+/// path, so a configuration can be restored by hand. Written whole or not at all.
+fn record_manifest(trash: &Path, archived: &ArchivedConfiguration) -> Result<(), String> {
+    let path = trash.join(MANIFEST);
+    let mut entries = match fs::symlink_metadata(&path) {
+        Ok(metadata) if !metadata.file_type().is_file() || metadata.len() > 8 * 1024 * 1024 => {
+            return Err("归档清单无效 / Invalid archive manifest".into())
+        }
+        Ok(_) => {
+            match serde_json::from_slice::<Value>(&fs::read(&path).map_err(|e| e.to_string())?) {
+                Ok(Value::Object(object)) => object
+                    .get("entries")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .ok_or("归档清单无效 / Invalid archive manifest")?,
+                _ => return Err("归档清单无效 / Invalid archive manifest".into()),
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(error) => return Err(error.to_string()),
+    };
+    let archived_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|time| time.as_millis() as u64)
+        .unwrap_or_default();
+    entries.push(serde_json::json!({
+        "archived": archived.archived.file_name().map(|name| name.to_string_lossy().into_owned()),
+        "originalPath": archived.original.to_string_lossy(),
+        "archivedAt": archived_at,
+    }));
+    let contents =
+        serde_json::to_vec_pretty(&serde_json::json!({"schemaVersion": 1, "entries": entries}))
+            .map_err(|e| e.to_string())?;
+    let temporary = trash.join(format!("{MANIFEST}.{}.tmp", uuid::Uuid::new_v4()));
+    write_new(&temporary, &contents)?;
+    fs::rename(&temporary, &path).map_err(|error| {
+        let _ = fs::remove_file(&temporary);
+        format!("归档清单写入失败 / Archive manifest write failed: {error}")
+    })
 }
 
 #[cfg(test)]
@@ -282,5 +332,41 @@ mod tests {
         assert!(archived.rollback().is_err());
         assert_eq!(fs::read_to_string(&source.config_path).unwrap(), "new file");
         assert!(archived.archived.is_file());
+    }
+
+    #[test]
+    fn archive_records_original_paths_in_the_manifest_and_refuses_a_corrupt_one() {
+        let temp = tempfile::tempdir().unwrap();
+        let data = temp.path().join("app-data");
+        let first = fixture(temp.path());
+        let archived = archive(&first, &data).unwrap();
+        let second_dir = temp.path().join("other");
+        fs::create_dir_all(&second_dir).unwrap();
+        let second = fixture(&second_dir);
+        archive(&second, &data).unwrap();
+        let manifest: Value =
+            serde_json::from_slice(&fs::read(data.join("config-trash/manifest.json")).unwrap())
+                .unwrap();
+        let entries = manifest["entries"].as_array().unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0]["originalPath"], first.config_path);
+        assert_eq!(
+            entries[0]["archived"],
+            archived
+                .archived
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .as_ref()
+        );
+        assert_eq!(entries[1]["originalPath"], second.config_path);
+
+        fs::write(data.join("config-trash/manifest.json"), b"not json").unwrap();
+        let third = fixture(temp.path());
+        assert!(archive(&third, &data).is_err());
+        assert!(
+            Path::new(&third.config_path).is_file(),
+            "the original is restored"
+        );
     }
 }

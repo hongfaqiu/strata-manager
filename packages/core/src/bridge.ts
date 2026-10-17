@@ -259,6 +259,10 @@ export const writeConfig = (profile: ServiceProfile, config: JsonObject, expecte
 export const copyConfiguration = (profile: ServiceProfile, filename: string, config: JsonObject): Promise<ServiceProfile> => native('copy_configuration', { profile, filename, config });
 /** Archive the actual configuration JSON after confirming all matching services are stopped. */
 export const deleteConfiguration = (profile: ServiceProfile): Promise<{ archivedPath: string }> => native('delete_configuration', { profile });
+export interface ConfigCleanupItem { profile: ServiceProfile; configPath: string; installDir: string; runtimeVersion?: string; modelName?: string; identical: boolean; identicalTo?: string }
+export interface ConfigCleanupPlan { currentInstallDir: string; currentVersion?: string; items: ConfigCleanupItem[] }
+/** Read-only: older-version run configurations that could be archived. Deletion stays per file via deleteConfiguration. */
+export const planConfigCleanup = (currentInstallDir: string, directories?: string[]): Promise<ConfigCleanupPlan> => native('plan_config_cleanup', { currentInstallDir, directories });
 /** Inspect only the primary GGUF bundle; configuration files and companions are retained. */
 export const planModelDeletion = (profiles: ServiceProfile[]): Promise<import('./types').ModelDeletionPlan> => native('plan_model_deletion', { profiles });
 /** Permanently remove the confirmed primary files after repeating reference, process and stat checks. */

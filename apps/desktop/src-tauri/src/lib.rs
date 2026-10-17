@@ -1,4 +1,5 @@
 mod arena;
+mod config_cleanup;
 mod configuration_details;
 mod configuration_files;
 mod daily_experience;
@@ -994,6 +995,45 @@ async fn delete_configuration(
     Ok(json!({"archivedPath":archived.archived.to_string_lossy()}))
 }
 
+/// Read-only: which older-version run configurations could be archived.
+#[tauri::command]
+async fn plan_config_cleanup(
+    state: State<'_, ClientState>,
+    directories: Option<Vec<String>>,
+    current_install_dir: String,
+) -> Result<config_cleanup::CleanupPlan, String> {
+    let current = std::path::PathBuf::from(&current_install_dir);
+    if !current.is_absolute() {
+        return Err(
+            "当前运行环境必须是本机绝对路径 / The current runtime must be an absolute local path"
+                .into(),
+        );
+    }
+    let candidates = runtime_detection::local_models(&state.ipc, directories).await?;
+    let candidates = candidates
+        .as_array()
+        .ok_or("模型检测结果格式无效 / Invalid model discovery result")?;
+    let registered: Vec<ServiceProfile> = serde_json::from_value(
+        state
+            .ipc
+            .request("local_installations", json!({}))
+            .await
+            .map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| error.to_string())?;
+    let protected: Vec<std::path::PathBuf> = registered
+        .iter()
+        .filter_map(|profile| configuration_details::source_path(profile, &state.ipc.data_dir))
+        .map(std::path::PathBuf::from)
+        .collect();
+    config_cleanup::plan(config_cleanup::CleanupInput {
+        candidates,
+        registered: &registered,
+        protected_paths: &protected,
+        current_install_dir: &current,
+    })
+}
+
 async fn model_deletion_context(
     ipc: &SupervisorClient,
     profiles: Vec<ServiceProfile>,
@@ -1801,6 +1841,7 @@ pub fn run() {
             validate_vision_files,
             copy_configuration,
             delete_configuration,
+            plan_config_cleanup,
             plan_model_deletion,
             delete_model_files,
             write_config,
