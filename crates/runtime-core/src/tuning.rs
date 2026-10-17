@@ -2498,6 +2498,16 @@ mod tests {
         for _ in 0..1500 {
             let job = status(state, profile.id.clone()).unwrap().unwrap();
             if !job.state.active() {
+                // The run task attaches the live log right after publishing completion; wait for it so
+                // callers snapshot the final report instead of racing that last write.
+                let mut job = job;
+                for _ in 0..250 {
+                    if !job.live_log.is_empty() {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                    job = status(state, profile.id.clone()).unwrap().unwrap();
+                }
                 return job;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
