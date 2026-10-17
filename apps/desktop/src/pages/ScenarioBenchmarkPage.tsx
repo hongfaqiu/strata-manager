@@ -9,6 +9,7 @@ import { Checkbox, Dropdown, NumberField, Toggle } from '../OfficialControls';
 import './benchmark.css';
 import { BenchmarkComparisonPanel } from './BenchmarkComparisonPanel';
 import { RequestDotPlot, ScenarioColumns, type RequestPoint } from './ScenarioBenchmarkCharts';
+import { ConcurrencyLadder } from './ConcurrencyLadder';
 import './scenario-benchmark.css';
 
 type SavedReport = BenchmarkReport | BenchmarkSuiteReport;
@@ -380,6 +381,7 @@ export function ScenarioBenchmarkPage({ profile, online, disabled, language, onR
     {(running || currentTelemetry.length > 0) && <Panel className="benchmark-resources" title={text('资源趋势','Resource trends')} action={<span className="benchmark-section-count">CPU {number(latestTelemetry?.cpuUtil)} % · GPU {number(latestTelemetry?.gpuUtil)} %</span>}><div className="benchmark-resource-latest"><span>{text('整卡显存','Whole-GPU memory')} {memory(latestTelemetry?.gpuMemoryUsed)} GiB</span><span>{text('整机 RAM','System RAM')} {memory(latestTelemetry?.ramUsed)} GiB</span></div><div className="benchmark-charts">
       <Chart label={text('CPU 使用率','CPU utilization')} values={currentTelemetry.map(point => point.cpuUtil)} unit="%"/><Chart label={text('GPU 使用率','GPU utilization')} values={currentTelemetry.map(point => point.gpuUtil)} unit="%"/><Chart label={text('显存使用','GPU memory used')} values={currentTelemetry.map(point => point.gpuMemoryUsed == null ? null : point.gpuMemoryUsed / 2 ** 30)} unit="GiB"/><Chart label={text('系统内存使用','RAM used')} values={currentTelemetry.map(point => point.ramUsed == null ? null : point.ramUsed / 2 ** 30)} unit="GiB"/>
     </div><p className="benchmark-metric-note subtle">{text('显示最近 360 次采样，完整数据在 JSON 中。缺失指标显示 —；资源读数是整机观测，可能包含其他进程。','Showing the latest 360 samples; JSON retains all telemetry. Missing metrics appear as —. Resource readings cover the whole system and may include other processes.')}</p></Panel>}
+    {profile && <ConcurrencyLadder profile={profile} online={online} disabled={disabled || running} language={language} onRunningChange={onRunningChange}/>}
     <BenchmarkComparisonPanel reports={history} current={selected} baseline={baseline} language={language} disabled={running || disabled} replayDisabled={!online} onBaseline={saveBaseline} onReplay={report => { if (report.profileId !== profile?.id) { setError(text("请先选择基线对应的模型。", "Select the baseline model first.")); return; } if (isSuite(report)) void start({ ...report.options, kind: "suite", concurrency: 1 }); }}/>
     {helpOpen && <Dialog title={text('场景测试说明','Scenario test guide')} onClose={() => setHelpOpen(false)}><div className="benchmark-help">
       <p>{text('场景测试固定一次只发送一个请求，按轮数跑完有限计划。对话的每一轮分别计为一个请求。','Scenario tests send one request at a time through a finite plan. Each conversation turn counts as a separate request.')}</p>

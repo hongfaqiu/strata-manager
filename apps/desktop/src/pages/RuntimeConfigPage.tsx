@@ -7,6 +7,7 @@ import * as core from '@strata-manager/core';
 import type { JsonObject, ServiceProfile } from '@strata-manager/core';
 import { Dropdown, NumberField } from '../OfficialControls';
 import { StartupTuningPanel } from './StartupTuningPanel';
+import { ConcurrencyEnvironmentContext } from './concurrencyContext';
 import { ResourceAssessmentPanel } from './ResourceAssessmentPanel';
 import './runtime-config.css';
 import { useDraftGuard, type SaveDraft } from '../useDraftGuard';
@@ -79,6 +80,7 @@ export function RuntimeConfigPage(props: RuntimeConfigPageProps) {
 
 function RuntimeConfigSession({ profile, online, language, desktop = core.isDesktop(), onError, onMessage, onSharedSettings, onServices, onImages, onCopied, onDeleted, onDirtyChange, onSaveDraftReady, onRestart, configurations }: RuntimeConfigPageProps) {
   const { t } = useTranslation();
+  const concurrencyEnvironment = useMemo(() => ({ installationId: profile?.id, desktop }), [profile?.id, desktop]);
   const zh = language === 'zh-CN';
   const localFile = desktop && !!profile?.configPath;
   const active = useRef(true);
@@ -192,7 +194,7 @@ function RuntimeConfigSession({ profile, online, language, desktop = core.isDesk
     </header>
     <section className="runtime-config-startup" aria-labelledby="runtime-config-startup-title">
     <ResourceAssessmentPanel inline request={resourceRequest} language={language} desktop={desktop} unavailableReason={!profile ? (zh ? '选择本机模型后可读取资源建议。' : 'Select a local model to read resource guidance.') : !resourceDraft ? (zh ? '配置尚未读取或当前草稿不完整，容量保持未知。' : 'The configuration is not loaded or the draft is incomplete; capacity remains unknown.') : undefined}/>
-    <StartupTuningPanel profile={profile} desktop={desktop} language={language} onError={onError} onMessage={onMessage} onRestart={onRestart} onCopied={onCopied} onDeleted={onDeleted} onDirtyChange={setStartupDirty} onSaveDraftReady={registerStartupSave} onDraftConfigChange={setResourceDraft}/>
+    <ConcurrencyEnvironmentContext.Provider value={concurrencyEnvironment}><StartupTuningPanel profile={profile} desktop={desktop} language={language} onError={onError} onMessage={onMessage} onRestart={onRestart} onCopied={onCopied} onDeleted={onDeleted} onDirtyChange={setStartupDirty} onSaveDraftReady={registerStartupSave} onDraftConfigChange={setResourceDraft}/></ConcurrencyEnvironmentContext.Provider>
     {!localFile && <div className="st-card cfg-card" id="cfg-card"><div className="req-head"><span className="card-title">{zh ? '服务配置文件字段' : 'Service configuration file fields'}</span><span className="muted small" id="cfg-file">{online ? String(config.data?.file ?? '') : ''}</span></div>
       <p className="runtime-config-restart-note">{zh ? '保存后重启模型生效。“默认”会清除该项的自定义值。' : 'Restart the model after saving. “Default” clears that field’s custom value.'}</p>
       {!profile ? <p className="muted">{zh ? '选择服务后可读取运行配置。' : 'Select a service to read its run configuration.'}</p> : !online ? <p className="muted" role="status">{zh ? '服务离线。连接成功后会自动读取运行配置；API Key 可在设置的“API 与外部助手”中保存。' : 'Service is offline. Run configuration loads when connected; save the API key in Settings > API and assistants.'}</p> : <>

@@ -285,6 +285,47 @@ mod resource_tests {
         assert!(text.contains("Qwen3.8-IQ3_S.gguf"));
     }
     #[test]
+    fn engine_slot_count_comes_from_the_effective_engine_args() {
+        // serve/server.py turns "parallel": N into --batch N on the engine command line; --slots is the alias.
+        let base = [
+            "strata",
+            "--native",
+            "/m/Qwen3.8-IQ3_S.gguf",
+            "--max-context",
+            "32768",
+        ];
+        let with = |extra: &[&str]| {
+            base.iter()
+                .chain(extra.iter())
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(resource_configuration(&with(&[])).unwrap()["parallel"], 1);
+        assert_eq!(
+            resource_configuration(&with(&["--slots", "4"])).unwrap()["parallel"],
+            4
+        );
+        assert_eq!(
+            resource_configuration(&with(&["--batch=8"])).unwrap()["parallel"],
+            8
+        );
+        assert!(resource_configuration(&with(&["--batch", "65"])).is_none());
+        assert!(resource_configuration(&with(&["--batch", "two"])).is_none());
+        let text = resource_configuration(&with(&[
+            "--batch",
+            "4",
+            "--batch-mtp",
+            "--batch-groups",
+            "2",
+        ]))
+        .unwrap()
+        .to_string();
+        assert!(
+            !text.contains("batch-groups"),
+            "only whitelisted recipe flags are exported"
+        );
+    }
+    #[test]
     fn custom_modes_and_ambiguous_capacity_do_not_become_default_recipes() {
         let mut args = [
             "strata",

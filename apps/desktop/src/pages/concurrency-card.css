@@ -1,0 +1,38 @@
+.concurrency-card{grid-column:1/-1;display:grid;gap:12px;margin-top:14px;padding-top:14px;border-top:1px solid var(--st-line,var(--border,#d7e2dc));color:var(--st-ink,var(--text,#213d31));min-width:0}
+.concurrency-card-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px 16px;flex-wrap:wrap}
+.concurrency-card-head>div{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.concurrency-card-head strong{font-size:15px}
+.concurrency-card-hw,.concurrency-card-now{font-size:12px;color:var(--st-ink-muted,var(--muted,#687c70));font-variant-numeric:tabular-nums}
+.concurrency-card-now[data-active=true]{color:var(--st-accent-text,#28765b);font-weight:600}
+.concurrency-card-facts{display:grid;grid-template-columns:1.4fr repeat(3,minmax(0,1fr));gap:12px;margin:0}
+.concurrency-card-facts>div{min-width:0}
+.concurrency-card-facts>div+div{border-left:1px solid var(--st-line,var(--border,#d7e2dc));padding-left:12px}
+.concurrency-card-facts dt{font-size:12px;color:var(--st-ink-muted,var(--muted,#687c70))}
+.concurrency-card-facts dd{margin:4px 0 0;font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.35}
+.concurrency-card-facts dd small{display:block;font-size:12px;font-weight:400;color:var(--st-ink-muted,var(--muted,#687c70))}
+.concurrency-card-primary dd{font-size:20px;color:var(--st-accent-text,#28765b)}
+.concurrency-card-facts dd[data-tone=warn]{color:var(--st-warning,#9b6720)}
+.concurrency-card-reason,.concurrency-card-long,.concurrency-card-advanced p{margin:0;font-size:13px;line-height:1.6}
+.concurrency-card-reason{color:var(--st-ink-muted,var(--muted,#687c70))}
+.concurrency-card-long{padding:8px 10px;border-left:3px solid var(--st-warning,#9b6720);background:color-mix(in srgb,var(--st-warning,#9b6720) 8%,transparent);border-radius:0 6px 6px 0}
+.concurrency-card-companions{display:grid;gap:4px;margin:0;padding:0;list-style:none;font-size:12px}
+.concurrency-card-companions li{display:flex;gap:10px;flex-wrap:wrap;align-items:baseline}
+.concurrency-card-companions code,.concurrency-card-switch code{font-size:11px;padding:1px 6px;border-radius:4px;background:var(--st-bg,var(--bg,#f1f6f3))}
+.concurrency-card-companions span{color:var(--st-ink-muted,var(--muted,#687c70))}
+.concurrency-card-apply{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.concurrency-card-diff{font-size:12px;color:var(--st-ink-muted,var(--muted,#687c70));font-variant-numeric:tabular-nums}
+.concurrency-card-issues{display:grid;gap:6px;margin:0;padding:0;list-style:none}
+.concurrency-card-issues li{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:13px;line-height:1.5;padding-left:10px;border-left:3px solid var(--st-line,var(--border,#d7e2dc))}
+.concurrency-card-issues li[data-severity=error]{border-color:var(--st-danger,#b44444);color:var(--st-danger,#b44444)}
+.concurrency-card-issues li[data-severity=warning]{border-color:var(--st-warning,#9b6720)}
+.concurrency-card-issues li[data-severity=info]{color:var(--st-ink-muted,var(--muted,#687c70))}
+.concurrency-card-fix{flex:none;font-size:12px;padding:3px 10px}
+.concurrency-card-advanced{display:grid;gap:8px;padding:12px;border:1px dashed var(--st-line,var(--border,#d7e2dc));border-radius:10px}
+.concurrency-card-advanced h4{margin:0;font-size:13px}
+.concurrency-card-advanced p{color:var(--st-ink-muted,var(--muted,#687c70));font-size:12px}
+.concurrency-card-switch{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.concurrency-card-switch>span{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;font-size:13px;min-width:0}
+.concurrency-card-switch small{flex-basis:100%;font-size:12px;color:var(--st-ink-muted,var(--muted,#687c70))}
+.concurrency-card-switch[data-disabled=true]{opacity:.55}
+.concurrency-card-tag{font-style:normal;font-size:11px;padding:0 6px;border-radius:4px;color:var(--st-warning,#9b6720);border:1px solid currentColor}
+@media(max-width:760px){.concurrency-card-facts{grid-template-columns:repeat(2,minmax(0,1fr))}.concurrency-card-facts>div:nth-child(3){border-left:0;padding-left:0}}

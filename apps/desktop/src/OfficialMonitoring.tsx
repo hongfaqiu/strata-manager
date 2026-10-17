@@ -1,6 +1,6 @@
 import type { AppLanguage } from "@strata-manager/core";
 import { Fragment, type ReactNode } from 'react';
-import { asObject, normalizeMetrics, requestPrefillTokS, type JsonObject } from '@strata-manager/core';
+import { asObject, decodeStreams, decodeStreamsLabel, normalizeMetrics, requestPrefillTokS, type JsonObject } from '@strata-manager/core';
 import sprite from './official/sprite.svg';
 import { SlotMonitor } from './SlotMonitor';
 
@@ -87,7 +87,7 @@ export function MonitoringPage({ raw, language, showAll, onShowAll, onRequest, e
   const generation = number(hw.gpu_pcie_gen_max) ?? number(hw.gpu_pcie_gen);
   const diskRead = number(hw.disk_read_mb), diskBig = diskRead !== null && diskRead >= 1000;
   const values: Record<string, { value: unknown; unit: string; sub: string }> = {
-    speed: { value: metrics.decodeTokS === null ? null : fmt(metrics.decodeTokS, 1), unit: 't/s', sub: state === 'generating' ? t('当前生成', 'Generating now') : last ? t('最近生成', 'Last generation') : t('生成速度', 'Generation speed') },
+    speed: { value: metrics.decodeTokS === null ? null : fmt(metrics.decodeTokS, 1), unit: 't/s', sub: state === 'generating' ? decodeStreamsLabel(decodeStreams(raw), language === 'zh-CN') ?? t('当前生成', 'Generating now') : last ? t('最近生成', 'Last generation') : t('生成速度', 'Generation speed') },
     prefill: { value: metrics.prefillTokS === null ? null : fmt(metrics.prefillTokS), unit: 't/s', sub: state === 'reading' ? t('当前输入处理', 'Processing input now') : state === 'generating' ? t('本次输入处理', 'Input processing this request') : last ? t('最近输入处理', 'Last input processing') : t('输入处理', 'Input processing') },
     gpu: { value: number(hw.gpu_util) === null ? null : fmt(hw.gpu_util), unit: '%', sub: multi ? per(gpu => number(gpu.util) === null ? '–' : `${fmt(gpu.util)}%`) : typeof st.gpu_name === 'string' ? st.gpu_name : st.gpu_note ? t('不可用', 'not available') : '' },
     vram: { value: number(hw.gpu_mem_used) === null ? null : gb(hw.gpu_mem_used), unit: number(hw.gpu_mem_total) !== null && Number(hw.gpu_mem_total) > 0 ? `/ ${gb(hw.gpu_mem_total, 0)} GB` : 'GB', sub: multi ? per(gpu => number(gpu.mem_used) === null ? '–' : `${gb(gpu.mem_used)} GB`) : number(eng.expert_slots) !== null && Number(eng.expert_slots) > 0 ? `${fmt(eng.expert_slots)} ${t('个专家已缓存', 'experts cached')}` : st.gpu_note ? t('Windows AMD 当前不可用', 'not available on Windows AMD yet') : '' },
