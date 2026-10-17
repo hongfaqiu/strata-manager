@@ -2412,16 +2412,16 @@
         "theme": "light",
         "language": "zh-CN"
       },
-      "nativeCallCount": 243,
+      "nativeCallCount": 279,
       "png": "output/playwright/daily-experience-capture/model-download-list.zh.png",
-      "pngSha256": "55b7897628eb43631c7ff5b43f399bfcfcb42c34005d03cbda7acaea24f4c9de",
+      "pngSha256": "1ff77efb8476f21e3a3ca28950150d10327cacdb73974e14c0ab4f0f8a53532d",
       "conversion": {
         "width": 2880,
         "height": 2400,
         "pixelsEqual": true
       },
-      "webpSha256": "90c068997e9f9b12925759278724ec48d7237f8e17c67fafc37d68c6ceddcfcd",
-      "bytes": 143090,
+      "webpSha256": "17704c07f1994f71b7b261484a394b70023fcb3327cf7904f4e7ce84b1da053b",
+      "bytes": 143306,
       "file": "docs/screenshots/daily-experience/model-download-list.zh.webp"
     },
     {
@@ -2454,16 +2454,16 @@
         "theme": "light",
         "language": "en"
       },
-      "nativeCallCount": 243,
+      "nativeCallCount": 247,
       "png": "output/playwright/daily-experience-capture/model-download-list.en.png",
-      "pngSha256": "9b6d18d056472e582806b83327ee7cd767112e798bf3218f660361bc61d3fe2c",
+      "pngSha256": "aca1fa4d9262a167daf4c50a012229de3288368f4ae9974b167b7b93d1de5344",
       "conversion": {
         "width": 2880,
         "height": 2400,
         "pixelsEqual": true
       },
-      "webpSha256": "a658b4902a75e0e89032a288e4283384d2fa783e565d8395a188913a33f3a9ad",
-      "bytes": 140618,
+      "webpSha256": "ad4df26f6bc002607d254b26e2ad61dce606bd6e535691f55fdc2daf509a4681",
+      "bytes": 141110,
       "file": "docs/screenshots/daily-experience/model-download-list.en.webp"
     },
     {
@@ -2496,16 +2496,16 @@
         "theme": "light",
         "language": "zh-CN"
       },
-      "nativeCallCount": 251,
+      "nativeCallCount": 287,
       "png": "output/playwright/daily-experience-capture/model-download-detail.zh.png",
-      "pngSha256": "df8ce9bed3dad8b55bb62d22e5c7f5b4ce1dff008d0b05fd4dcdbe5df009d001",
+      "pngSha256": "f481ddcee9322698fe15ce332ab9b27ecca22ce1ccce37e29a025f95acea6b57",
       "conversion": {
         "width": 2880,
         "height": 2400,
         "pixelsEqual": true
       },
-      "webpSha256": "16a56a92564c3897c3ba42f0d80e7ce0384e8d8920de9920d6165b9b02d5291d",
-      "bytes": 142794,
+      "webpSha256": "6ba37f3e7d3319ebbeed9f5a002b2e53bc671bb584cf8de9044c6301e5a573e8",
+      "bytes": 143242,
       "file": "docs/screenshots/daily-experience/model-download-detail.zh.webp"
     },
     {
@@ -2538,16 +2538,16 @@
         "theme": "light",
         "language": "en"
       },
-      "nativeCallCount": 283,
+      "nativeCallCount": 255,
       "png": "output/playwright/daily-experience-capture/model-download-detail.en.png",
-      "pngSha256": "098345b9afe9b0ab0955b8d009d8c5af147db94b88c80ed9a670ad0586da8ba7",
+      "pngSha256": "a5c9ca399225bbf4ff5629a253be25583011c4de18f927ac988e8ea2cea16199",
       "conversion": {
         "width": 2880,
         "height": 2400,
         "pixelsEqual": true
       },
-      "webpSha256": "47934ab61df1d6ccebc634332d1e6db6b02729bfbf5e24d149d372d87c2bee78",
-      "bytes": 140034,
+      "webpSha256": "13494ad427427c9f042072376c3b1468aaaced34e8058ba57dee238f738261b6",
+      "bytes": 140278,
       "file": "docs/screenshots/daily-experience/model-download-detail.en.webp"
     },
     {
@@ -2574,16 +2574,16 @@
         "theme": "light",
         "language": "zh-CN"
       },
-      "nativeCallCount": 326,
+      "nativeCallCount": 330,
       "png": "output/playwright/daily-experience-capture/api-verification.zh.png",
-      "pngSha256": "3b91a71beb9a1a2d2c445ace366e5c9af1a37fa90b438e1b2230e8504b578857",
+      "pngSha256": "0a6305440388f2bb66cd98f10a973af97486735e0aa665bccc17cffd29adf32d",
       "conversion": {
         "width": 2880,
         "height": 1920,
         "pixelsEqual": true
       },
-      "webpSha256": "dd17c94c6782b73a6d6652b4db67d4609682180ffd7b8a909bacb7b82ba78cc9",
-      "bytes": 122808,
+      "webpSha256": "7eb00c567508674620347e3842ccd93d99882307589922c5132edbe49839b520",
+      "bytes": 106896,
       "file": "docs/screenshots/daily-experience/api-verification.zh.webp"
     },
     {
@@ -2610,16 +2610,16 @@
         "theme": "light",
         "language": "en"
       },
-      "nativeCallCount": 326,
+      "nativeCallCount": 330,
       "png": "output/playwright/daily-experience-capture/api-verification.en.png",
-      "pngSha256": "55eea8cd90183ddecaed6ae2dbf6dc8e0158929a13a2b8a68461c9f88a63d81b",
+      "pngSha256": "f820a2522a758a64da7ee085b92091e898a12a5888e768f8fe28d9274b1639e4",
       "conversion": {
         "width": 2880,
         "height": 1920,
         "pixelsEqual": true
       },
-      "webpSha256": "24edf2b581f125ee8406c15f4781776a01307f5886837dcb7df1f4edac421419",
-      "bytes": 110922,
+      "webpSha256": "a20fe59012bb21f8886df42a22a0cb398cb26fc4b2ea961858a17775d1cbf155",
+      "bytes": 101006,
       "file": "docs/screenshots/daily-experience/api-verification.en.webp"
     },
     {
@@ -2646,16 +2646,16 @@
         "theme": "light",
         "language": "zh-CN"
       },
-      "nativeCallCount": 300,
+      "nativeCallCount": 336,
       "png": "output/playwright/daily-experience-capture/service-capabilities.zh.png",
-      "pngSha256": "c0704fe8c401e4596958ed5f6682a9a1cf0e17eaa77510a140c790f4c917d039",
+      "pngSha256": "641bc47170c8d22c95a7854ce6ee3d14cb7b3020730fd118e7929836b7176161",
       "conversion": {
         "width": 2880,
         "height": 1920,
         "pixelsEqual": true
       },
-      "webpSha256": "083b02b617fb70109d35eba9925c85c8a296c565e6053589f5eec2f5b0e66556",
-      "bytes": 82196,
+      "webpSha256": "384fbdfe6c240f854e59137bd5451515b3b11babfa8666d4784f71f4e2592cab",
+      "bytes": 82172,
       "file": "docs/screenshots/daily-experience/service-capabilities.zh.webp"
     },
     {
@@ -2682,16 +2682,16 @@
         "theme": "light",
         "language": "en"
       },
-      "nativeCallCount": 300,
+      "nativeCallCount": 304,
       "png": "output/playwright/daily-experience-capture/service-capabilities.en.png",
-      "pngSha256": "4962263df68ed1bc2fbe54ffbf82720ad36b7ff50da3564c29cf1f423a1a0ce3",
+      "pngSha256": "e00c4d701d349551e838debf92fc4e42abc894d10407575ad61c0359f65f8f86",
       "conversion": {
         "width": 2880,
         "height": 1920,
         "pixelsEqual": true
       },
-      "webpSha256": "e48346e51f3b82e50c3037f535bdff1b723ceac9024eb122250a5b7489fae9b9",
-      "bytes": 80344,
+      "webpSha256": "83ad0725fb0245f8f4a63ff0d8d4020cf059da9abbe6215c700e734ed08e84a4",
+      "bytes": 80602,
       "file": "docs/screenshots/daily-experience/service-capabilities.en.webp"
     },
     {
@@ -2718,16 +2718,16 @@
         "theme": "light",
         "language": "zh-CN"
       },
-      "nativeCallCount": 262,
+      "nativeCallCount": 298,
       "png": "output/playwright/daily-experience-capture/chat-execution.zh.png",
-      "pngSha256": "2a768b6c988af9f9fac9fb3edb9bd38cbf4d3ceaa2eea21f1a853fbf166b948d",
+      "pngSha256": "8132130760eddc105085136ca6631e0df58cf013f5aa433ad58c309180557051",
       "conversion": {
         "width": 2880,
         "height": 1920,
         "pixelsEqual": true
       },
-      "webpSha256": "ca3ba695a31b15b8aa366ed24f7b1dcb9ea8729e70407b113937a5b215a3947b",
-      "bytes": 74426,
+      "webpSha256": "9249a9731dd0ba303ca431ed175f7df4557414491bb0e775c49afc7b1128170c",
+      "bytes": 74808,
       "file": "docs/screenshots/daily-experience/chat-execution.zh.webp"
     },
     {
@@ -2754,16 +2754,16 @@
         "theme": "light",
         "language": "en"
       },
-      "nativeCallCount": 262,
+      "nativeCallCount": 298,
       "png": "output/playwright/daily-experience-capture/chat-execution.en.png",
-      "pngSha256": "2764865dbae0b895ac99385775cb7bc7e58a42367dbd7e78e64d1186245b3995",
+      "pngSha256": "561a707edbb8ec118c13c58351b3833f56fe23fe24ca38db1a4e99675445544b",
       "conversion": {
         "width": 2880,
         "height": 1920,
         "pixelsEqual": true
       },
-      "webpSha256": "07919bbf5ec51b3cd6af0918d6623c93322795e96e7725d89c64c232f4a748d3",
-      "bytes": 73968,
+      "webpSha256": "96a9cfd8282623bda61d1493e55add47a12af3063125786bc84f6137a99a185d",
+      "bytes": 75170,
       "file": "docs/screenshots/daily-experience/chat-execution.en.webp"
     },
     {
@@ -2808,16 +2808,16 @@
         "theme": "light",
         "language": "zh-CN"
       },
-      "nativeCallCount": 240,
+      "nativeCallCount": 244,
       "png": "output/playwright/daily-experience-capture/history-comparison.zh.png",
-      "pngSha256": "12e80b3951c2f2a8caabf892d9db28ea26c2586993b1041aa9b46fbbc168bee0",
+      "pngSha256": "4841ed1c00463f4627afca97f184a70ed66068f7ff438d53914ac33a0768a83e",
       "conversion": {
         "width": 2880,
         "height": 1920,
         "pixelsEqual": true
       },
-      "webpSha256": "3d677d59d75be45a6f5780158dd6ad38652cfdabb29c1137ff6e8ee6ee04aa75",
-      "bytes": 66448,
+      "webpSha256": "ed748bedad5568cb05684deaa6246e068f7d745627f10aec16a112544333c3fe",
+      "bytes": 66838,
       "file": "docs/screenshots/daily-experience/history-comparison.zh.webp"
     },
     {
@@ -2862,16 +2862,16 @@
         "theme": "light",
         "language": "en"
       },
-      "nativeCallCount": 240,
+      "nativeCallCount": 244,
       "png": "output/playwright/daily-experience-capture/history-comparison.en.png",
-      "pngSha256": "b77f3077881db79b7fcb4b2d0a7fe4cabad6c92f83c0cef6c3be6b4f02699862",
+      "pngSha256": "0f4eff4f308825e528eaf2924f2d0324351de150fcbef902b7f8234eb5aa8b89",
       "conversion": {
         "width": 2880,
         "height": 1920,
         "pixelsEqual": true
       },
-      "webpSha256": "6dd43fd9282ab360867b886b98a8f56f4ad8c8578c90de9bde8d0efbf1081c0c",
-      "bytes": 66664,
+      "webpSha256": "0041b807ebf52a013e3102aff66e5c7d9eca8ce4dd2787f83df1db4d40970294",
+      "bytes": 66590,
       "file": "docs/screenshots/daily-experience/history-comparison.en.webp"
     },
     {
@@ -2898,16 +2898,16 @@
         "theme": "light",
         "language": "zh-CN"
       },
-      "nativeCallCount": 231,
+      "nativeCallCount": 267,
       "png": "output/playwright/daily-experience-capture/startup-diagnostic.zh.png",
-      "pngSha256": "77a4d09e61cddef76f420838f14387375e12550bcecff02653966576b1cdff1a",
+      "pngSha256": "62159e124fcfb803c49593275612b1806aded9b32b8e23e34f857b45e921626a",
       "conversion": {
         "width": 2880,
         "height": 1920,
         "pixelsEqual": true
       },
-      "webpSha256": "5434aa7b58adaa079e54ccf2db083366f1aa2e74dc8d14e9a09d4c4d4a05fbe2",
-      "bytes": 94534,
+      "webpSha256": "fa3ce70e818d58ba8b3553e60bbb915f3302212649de69dfc02aa75aa62a1700",
+      "bytes": 94812,
       "file": "docs/screenshots/daily-experience/startup-diagnostic.zh.webp"
     },
     {
@@ -2934,16 +2934,16 @@
         "theme": "light",
         "language": "en"
       },
-      "nativeCallCount": 231,
+      "nativeCallCount": 267,
       "png": "output/playwright/daily-experience-capture/startup-diagnostic.en.png",
-      "pngSha256": "01ec8d04edc5597571ee599c4c376daed750cebf12fd32053e2feb299e93c45b",
+      "pngSha256": "7adffdb066827bc8ed87bf5a211082053e0fcfeae4590434ab1a3dc1252584e3",
       "conversion": {
         "width": 2880,
         "height": 1920,
         "pixelsEqual": true
       },
-      "webpSha256": "cd72db09da4423c7a3a00c4943801e199be360cf0cb3e4131c4f7c7460512864",
-      "bytes": 92950,
+      "webpSha256": "ed4385eb2970c5706477905e546f324bc5b5b62963e3c97d4fdfbf8b3b21d656",
+      "bytes": 93344,
       "file": "docs/screenshots/daily-experience/startup-diagnostic.en.webp"
     },
     {
@@ -2956,8 +2956,8 @@
         "height": 960
       },
       "viewportReason": "Default actual viewport for this scene.",
-      "sample": "Standalone real ApiUsagePage fixture; synthetic telemetry/statistics, not a whole App screenshot",
-      "wholeApp": false,
+      "sample": "Whole App with the dev-only API usage mock (?mockData=1); synthetic statistics and telemetry",
+      "wholeApp": true,
       "passed": true,
       "pageErrors": [],
       "consoleErrors": [],
@@ -2970,16 +2970,16 @@
         "theme": "light",
         "language": "zh-CN"
       },
-      "nativeCallCount": 0,
+      "nativeCallCount": 244,
       "png": "output/playwright/daily-experience-capture/api-usage.zh.png",
-      "pngSha256": "d3ba63a1c4effe13beeb2c27a4cc6021a7377e4322bd059b971a8e40ee220924",
+      "pngSha256": "ba604e58a5be6540bb13c7e4a78fca7a7e3ee38741c8178ebd00cee617316cb3",
       "conversion": {
         "width": 2880,
         "height": 1920,
         "pixelsEqual": true
       },
-      "webpSha256": "34a555f03ece49cc31637bcccfb9275bdb7ae3f745432d149c3ea8a5d4a63ed9",
-      "bytes": 90862,
+      "webpSha256": "9893a96a7b72264ec50f04121eb52c9dff32778f4fca3927d1eccd5d02b01142",
+      "bytes": 110238,
       "file": "docs/screenshots/daily-experience/api-usage.zh.webp"
     },
     {
@@ -2992,8 +2992,8 @@
         "height": 960
       },
       "viewportReason": "Default actual viewport for this scene.",
-      "sample": "Standalone real ApiUsagePage fixture; synthetic telemetry/statistics, not a whole App screenshot",
-      "wholeApp": false,
+      "sample": "Whole App with the dev-only API usage mock (?mockData=1); synthetic statistics and telemetry",
+      "wholeApp": true,
       "passed": true,
       "pageErrors": [],
       "consoleErrors": [],
@@ -3004,18 +3004,18 @@
         "documentWidth": 1440,
         "bodyWidth": 1440,
         "theme": "light",
-        "language": "zh-CN"
+        "language": "en"
       },
-      "nativeCallCount": 0,
+      "nativeCallCount": 244,
       "png": "output/playwright/daily-experience-capture/api-usage.en.png",
-      "pngSha256": "34b29f99d1905796b6430a02a1ea285fcfaf6e69bca232a9c9d2952a3eff2672",
+      "pngSha256": "e0f39227084088b1acea0c01467a30683a4f44dac9fce7530e96a12b98a90660",
       "conversion": {
         "width": 2880,
         "height": 1920,
         "pixelsEqual": true
       },
-      "webpSha256": "f6c8aef8d113c04da3b91828ed2fbaa556bb65fb3a4860a31cb79d1bb5f66c9b",
-      "bytes": 86728,
+      "webpSha256": "9a129b3dd9911c10b583e9122906ce8ca20cb1a71bda705f552f0cda3a5ab785",
+      "bytes": 107210,
       "file": "docs/screenshots/daily-experience/api-usage.en.webp"
     }
   ],
@@ -3044,9 +3044,9 @@
         "theme": "light",
         "language": "zh-CN"
       },
-      "nativeCallCount": 275,
+      "nativeCallCount": 279,
       "png": "output/playwright/daily-experience-capture/qa/model-download-list.zh.light.800.png",
-      "pngSha256": "e7669f1f6bc62416e6ccc3756d9d1176765dccb2e281ab2f6f5266cd9b699aa5"
+      "pngSha256": "1162f5b0e5a05e158d2f60008695f668604e8337aa97b29a276624fb392e97d2"
     },
     {
       "name": "model-download-list.zh.dark.800",
@@ -3072,9 +3072,9 @@
         "theme": "dark",
         "language": "zh-CN"
       },
-      "nativeCallCount": 243,
+      "nativeCallCount": 279,
       "png": "output/playwright/daily-experience-capture/qa/model-download-list.zh.dark.800.png",
-      "pngSha256": "ec9f2283182838ba83de3f0e5972598bc21cd1e989ea8271e0ea2d029df5bef9"
+      "pngSha256": "314befe79128f70c581b983e1135b9d9ca36b27676e1a1a7869c165d45922492"
     },
     {
       "name": "model-download-list.en.light.800",
@@ -3100,9 +3100,9 @@
         "theme": "light",
         "language": "en"
       },
-      "nativeCallCount": 275,
+      "nativeCallCount": 247,
       "png": "output/playwright/daily-experience-capture/qa/model-download-list.en.light.800.png",
-      "pngSha256": "96c1a1abdc23b0b3ecfa3293312ed2cd0eb3b56495d2f4032687d675c6391ed4"
+      "pngSha256": "8dc5896ebc07198e176d98ea49a6f5a187559c8a90d1421025a8f919b8d23a64"
     },
     {
       "name": "model-download-list.en.dark.800",
@@ -3128,9 +3128,9 @@
         "theme": "dark",
         "language": "en"
       },
-      "nativeCallCount": 243,
+      "nativeCallCount": 247,
       "png": "output/playwright/daily-experience-capture/qa/model-download-list.en.dark.800.png",
-      "pngSha256": "ab43c7c9bc8075ddddcc31b55a1f2c8129c3ee963607970fb89750ca299ff16b"
+      "pngSha256": "a183325af9ae26a6c981d5d5140018bd2c2a404c4421b9410abbed21d574717d"
     },
     {
       "name": "model-download-detail.zh.light.800",
@@ -3156,9 +3156,9 @@
         "theme": "light",
         "language": "zh-CN"
       },
-      "nativeCallCount": 251,
+      "nativeCallCount": 287,
       "png": "output/playwright/daily-experience-capture/qa/model-download-detail.zh.light.800.png",
-      "pngSha256": "79a48c88ddb0090f1040b7b1432794198ffdd0ebce149dfc683322c07ccc8740"
+      "pngSha256": "97ab4c514f64f8bb7c0f7b66b944c2ecb430cc850fd17e2c47de2eb3b267faa6"
     },
     {
       "name": "model-download-detail.zh.dark.800",
@@ -3184,9 +3184,9 @@
         "theme": "dark",
         "language": "zh-CN"
       },
-      "nativeCallCount": 283,
+      "nativeCallCount": 287,
       "png": "output/playwright/daily-experience-capture/qa/model-download-detail.zh.dark.800.png",
-      "pngSha256": "e0a5d3d3e37c48c98f53e95cc6f0765f9702658fa9515293ee5cebfcdd75a98f"
+      "pngSha256": "ca668e25113a229bd7ed5d9ac38ba57e0ce1b2ead17a8e26349bfcbcba9e5d4c"
     },
     {
       "name": "model-download-detail.en.light.800",
@@ -3212,9 +3212,9 @@
         "theme": "light",
         "language": "en"
       },
-      "nativeCallCount": 283,
+      "nativeCallCount": 287,
       "png": "output/playwright/daily-experience-capture/qa/model-download-detail.en.light.800.png",
-      "pngSha256": "4aa2b59eb05ec20ffc0a1f1c0694792957c4f5e5c05fe4d763c11ef1b26c078f"
+      "pngSha256": "f46c4384b1246c6879ba1dfd827d6b6a103dc2fd30e6c40db9d3039e78d9783f"
     },
     {
       "name": "model-download-detail.en.dark.800",
@@ -3240,9 +3240,9 @@
         "theme": "dark",
         "language": "en"
       },
-      "nativeCallCount": 251,
+      "nativeCallCount": 287,
       "png": "output/playwright/daily-experience-capture/qa/model-download-detail.en.dark.800.png",
-      "pngSha256": "28863fb1575ec516efef7ae2ac16303827acdbd3192c7debe4b89508d6405a53"
+      "pngSha256": "4473efb3d4fadc1251baa3d6c5f5fb0324e000212dccaeadfc30b2797b800e4c"
     },
     {
       "name": "api-verification.zh.light.800",
@@ -3268,9 +3268,9 @@
         "theme": "light",
         "language": "zh-CN"
       },
-      "nativeCallCount": 326,
+      "nativeCallCount": 330,
       "png": "output/playwright/daily-experience-capture/qa/api-verification.zh.light.800.png",
-      "pngSha256": "6b4498a14615eb264db13bfe633696c393625e3c1f31682e665511a3fc86487b"
+      "pngSha256": "ecd5fe0d52f8bfc3979c8f9864938f904c166c3b25fe58e631c7757042dcf9c0"
     },
     {
       "name": "api-verification.zh.dark.800",
@@ -3296,9 +3296,9 @@
         "theme": "dark",
         "language": "zh-CN"
       },
-      "nativeCallCount": 326,
+      "nativeCallCount": 330,
       "png": "output/playwright/daily-experience-capture/qa/api-verification.zh.dark.800.png",
-      "pngSha256": "edf994bb0f5d8ea2534225db85c6ed59ec6a61495008370ca79879d2793ada6b"
+      "pngSha256": "bdd7837ff1d9ff072378507621b8b234e579052d2bd205b003440f2805cea292"
     },
     {
       "name": "api-verification.en.light.800",
@@ -3324,9 +3324,9 @@
         "theme": "light",
         "language": "en"
       },
-      "nativeCallCount": 326,
+      "nativeCallCount": 330,
       "png": "output/playwright/daily-experience-capture/qa/api-verification.en.light.800.png",
-      "pngSha256": "f37590f9e51605b3cc66db178f655f8fa9f55adf9416db41c6c92550ca628757"
+      "pngSha256": "f458c2d2c7a7ef113a5c380a54b15c2c3b79a057b997496a71446896c8af5631"
     },
     {
       "name": "api-verification.en.dark.800",
@@ -3352,9 +3352,9 @@
         "theme": "dark",
         "language": "en"
       },
-      "nativeCallCount": 326,
+      "nativeCallCount": 362,
       "png": "output/playwright/daily-experience-capture/qa/api-verification.en.dark.800.png",
-      "pngSha256": "6e4bafaac8257f20d6b0ccbb18f3edbec5db124afeee4035317eade7073b0fea"
+      "pngSha256": "ac42b23ec2046a569e34e037bf0d6d375356270d4ee878def1bbd450c04549d2"
     },
     {
       "name": "service-capabilities.zh.light.800",
@@ -3380,9 +3380,9 @@
         "theme": "light",
         "language": "zh-CN"
       },
-      "nativeCallCount": 300,
+      "nativeCallCount": 304,
       "png": "output/playwright/daily-experience-capture/qa/service-capabilities.zh.light.800.png",
-      "pngSha256": "394946d40030cdc5d6a9b9a8f4db553cc2167e8a95e075d6fd25d3278530f02a"
+      "pngSha256": "a6d4dad3b010cecd621bffd4efff8b51715cf02c423c96c061ab75a747503117"
     },
     {
       "name": "service-capabilities.zh.dark.800",
@@ -3408,9 +3408,9 @@
         "theme": "dark",
         "language": "zh-CN"
       },
-      "nativeCallCount": 300,
+      "nativeCallCount": 304,
       "png": "output/playwright/daily-experience-capture/qa/service-capabilities.zh.dark.800.png",
-      "pngSha256": "d131c4a5ea8125ed6f4190d9806c377376f6b4d0d20688eda2bc40626a3ee48d"
+      "pngSha256": "011f4e0fdba4ce742397fb2fc1907ecfbea0edd9fb8d139b9547f1b35ef27a95"
     },
     {
       "name": "service-capabilities.en.light.800",
@@ -3436,9 +3436,9 @@
         "theme": "light",
         "language": "en"
       },
-      "nativeCallCount": 300,
+      "nativeCallCount": 304,
       "png": "output/playwright/daily-experience-capture/qa/service-capabilities.en.light.800.png",
-      "pngSha256": "63d4beab8efa16cca4d1eabc117af9b46e838819e3268a7e4a2859f13a889787"
+      "pngSha256": "bd108bd97ee48cfb47995271a865ce639abd8442446f96369943771274f65acb"
     },
     {
       "name": "service-capabilities.en.dark.800",
@@ -3464,9 +3464,9 @@
         "theme": "dark",
         "language": "en"
       },
-      "nativeCallCount": 300,
+      "nativeCallCount": 336,
       "png": "output/playwright/daily-experience-capture/qa/service-capabilities.en.dark.800.png",
-      "pngSha256": "e66dc8dfae28f631d0c17465c1925023aaab4a63cdcf030dfb8c63347afb6d02"
+      "pngSha256": "743a1ce5d31057f9a5a48a3995c647629d2f5040ecf83c7adf2dee976c9067f8"
     },
     {
       "name": "chat-execution.zh.light.800",
@@ -3492,9 +3492,9 @@
         "theme": "light",
         "language": "zh-CN"
       },
-      "nativeCallCount": 262,
+      "nativeCallCount": 298,
       "png": "output/playwright/daily-experience-capture/qa/chat-execution.zh.light.800.png",
-      "pngSha256": "2666df7d2144cb8c1ab827774f71eb33dbbe2ef72cc28b07853ec43f56408d8f"
+      "pngSha256": "62ca165a9be7026bfb29e97d2aa5cf1f75e5895306d0f7b95d98196f581b8b13"
     },
     {
       "name": "chat-execution.zh.dark.800",
@@ -3520,9 +3520,9 @@
         "theme": "dark",
         "language": "zh-CN"
       },
-      "nativeCallCount": 262,
+      "nativeCallCount": 266,
       "png": "output/playwright/daily-experience-capture/qa/chat-execution.zh.dark.800.png",
-      "pngSha256": "9c970b1dc4aacec98a4c509a6375ab927168a09bfdba4149b21a04ab16adcad5"
+      "pngSha256": "d19914bde688d0eededc50f4acaf944284a8f953685a6c7688354d72809a84dc"
     },
     {
       "name": "chat-execution.en.light.800",
@@ -3548,9 +3548,9 @@
         "theme": "light",
         "language": "en"
       },
-      "nativeCallCount": 262,
+      "nativeCallCount": 266,
       "png": "output/playwright/daily-experience-capture/qa/chat-execution.en.light.800.png",
-      "pngSha256": "a6cc103b79aba77f73836196924ec4fcf8de5f6934551cac56069ea28ed2ee22"
+      "pngSha256": "dc3cfc253e6cf0fc6cd247e226958a8bce559c55de2b2ca2bd4a2d1d0cb73596"
     },
     {
       "name": "chat-execution.en.dark.800",
@@ -3576,9 +3576,9 @@
         "theme": "dark",
         "language": "en"
       },
-      "nativeCallCount": 262,
+      "nativeCallCount": 298,
       "png": "output/playwright/daily-experience-capture/qa/chat-execution.en.dark.800.png",
-      "pngSha256": "7226e18bc7126c42ecefa3133cfbcbaa48eeaaa37b9b5941f3018b6232dc8027"
+      "pngSha256": "69d7e95bda196555e749702535113d389bc9f3687f4a008f75a56ab8ad49fca3"
     },
     {
       "name": "history-comparison.zh.light.800",
@@ -3622,9 +3622,9 @@
         "theme": "light",
         "language": "zh-CN"
       },
-      "nativeCallCount": 240,
+      "nativeCallCount": 244,
       "png": "output/playwright/daily-experience-capture/qa/history-comparison.zh.light.800.png",
-      "pngSha256": "6b8a3d38de4b745b86ad5615303fb2e06a0226b5ad0769807bb892636b1326c0"
+      "pngSha256": "b3b82021ecf2f4be18517a98bd3b0fb606231ad05c74c20791e03760574be67f"
     },
     {
       "name": "history-comparison.zh.dark.800",
@@ -3668,9 +3668,9 @@
         "theme": "dark",
         "language": "zh-CN"
       },
-      "nativeCallCount": 240,
+      "nativeCallCount": 244,
       "png": "output/playwright/daily-experience-capture/qa/history-comparison.zh.dark.800.png",
-      "pngSha256": "4dd0e476f1073d9f2f4a2ffc98baea1ced52efb45f1b520ed474c5cf8f415229"
+      "pngSha256": "7ab6c78aa1311785077e33d0654a3a9ed1152f998e910b96db64c8b200254439"
     },
     {
       "name": "history-comparison.en.light.800",
@@ -3714,9 +3714,9 @@
         "theme": "light",
         "language": "en"
       },
-      "nativeCallCount": 240,
+      "nativeCallCount": 244,
       "png": "output/playwright/daily-experience-capture/qa/history-comparison.en.light.800.png",
-      "pngSha256": "0b5efe9b201aa114b54e08b79173bea5fa3f6bfebc04ba18972ba2a0035c30ce"
+      "pngSha256": "18c4f37ee94390b5de3c503ac8c30d06fac64878182940408dbd5d45dd6ad232"
     },
     {
       "name": "history-comparison.en.dark.800",
@@ -3760,9 +3760,9 @@
         "theme": "dark",
         "language": "en"
       },
-      "nativeCallCount": 272,
+      "nativeCallCount": 276,
       "png": "output/playwright/daily-experience-capture/qa/history-comparison.en.dark.800.png",
-      "pngSha256": "a363f75aaf982cd90a48fd0d2c6b7b3e5a05194f65ab536e7368a31a2f33edda"
+      "pngSha256": "684ac21cd7ebc1585d20bdd7936b2d2a4d4d6634372d158fd435c1c71af9983f"
     },
     {
       "name": "startup-diagnostic.zh.light.800",
@@ -3788,9 +3788,9 @@
         "theme": "light",
         "language": "zh-CN"
       },
-      "nativeCallCount": 231,
+      "nativeCallCount": 235,
       "png": "output/playwright/daily-experience-capture/qa/startup-diagnostic.zh.light.800.png",
-      "pngSha256": "a3f542306b967b5d15cc99d9b62df4d931304fb3859f98029f1ea23020aebd14"
+      "pngSha256": "b45120b30d7c41dacac6ef9b177acaa4e48513bb129d2cbc4b537d80ea0c167f"
     },
     {
       "name": "startup-diagnostic.zh.dark.800",
@@ -3816,9 +3816,9 @@
         "theme": "dark",
         "language": "zh-CN"
       },
-      "nativeCallCount": 263,
+      "nativeCallCount": 267,
       "png": "output/playwright/daily-experience-capture/qa/startup-diagnostic.zh.dark.800.png",
-      "pngSha256": "436e6f8daa68fa35aa902d608ae0ba04ac7f8a198b09d9865398020f61b3edc1"
+      "pngSha256": "caf016f80214abb7ab72db44508ff42a28577cccc1166a36f7134801a00774c2"
     },
     {
       "name": "startup-diagnostic.en.light.800",
@@ -3844,9 +3844,9 @@
         "theme": "light",
         "language": "en"
       },
-      "nativeCallCount": 263,
+      "nativeCallCount": 267,
       "png": "output/playwright/daily-experience-capture/qa/startup-diagnostic.en.light.800.png",
-      "pngSha256": "da6c36c7c6e22dcd6ba3d9464b34a3ef56402ff92400137184cad6f0f7980ab7"
+      "pngSha256": "411c43cbdf26a16d659c79a7faf73f7f5b342e6da995946b8feb2862d457434c"
     },
     {
       "name": "startup-diagnostic.en.dark.800",
@@ -3872,9 +3872,9 @@
         "theme": "dark",
         "language": "en"
       },
-      "nativeCallCount": 231,
+      "nativeCallCount": 267,
       "png": "output/playwright/daily-experience-capture/qa/startup-diagnostic.en.dark.800.png",
-      "pngSha256": "784187610b19c0992c4b3a399ea01a7c2ec9e67896c66e59b3414a8e2fe4db33"
+      "pngSha256": "ddaf5969e005951c5eb2d2d9093c1d75e682f66ed46565891db9a25ac1361c02"
     },
     {
       "name": "api-usage.zh.light.800",
@@ -3886,8 +3886,8 @@
         "height": 850
       },
       "viewportReason": "Default actual viewport for this scene.",
-      "sample": "Standalone real ApiUsagePage fixture; synthetic telemetry/statistics, not a whole App screenshot",
-      "wholeApp": false,
+      "sample": "Whole App with the dev-only API usage mock (?mockData=1); synthetic statistics and telemetry",
+      "wholeApp": true,
       "passed": true,
       "pageErrors": [],
       "consoleErrors": [],
@@ -3900,9 +3900,9 @@
         "theme": "light",
         "language": "zh-CN"
       },
-      "nativeCallCount": 0,
+      "nativeCallCount": 244,
       "png": "output/playwright/daily-experience-capture/qa/api-usage.zh.light.800.png",
-      "pngSha256": "220a42a0608ef273229fc775247188aa2dafe007dbe64d55b94e7d710791c0d7"
+      "pngSha256": "52eed1c8faccb013e8c6447c2c0f39bc38433c23f0d6f0e4e21790574985b3a6"
     },
     {
       "name": "api-usage.zh.dark.800",
@@ -3914,8 +3914,8 @@
         "height": 850
       },
       "viewportReason": "Default actual viewport for this scene.",
-      "sample": "Standalone real ApiUsagePage fixture; synthetic telemetry/statistics, not a whole App screenshot",
-      "wholeApp": false,
+      "sample": "Whole App with the dev-only API usage mock (?mockData=1); synthetic statistics and telemetry",
+      "wholeApp": true,
       "passed": true,
       "pageErrors": [],
       "consoleErrors": [],
@@ -3928,9 +3928,9 @@
         "theme": "dark",
         "language": "zh-CN"
       },
-      "nativeCallCount": 0,
+      "nativeCallCount": 244,
       "png": "output/playwright/daily-experience-capture/qa/api-usage.zh.dark.800.png",
-      "pngSha256": "786142168893710590a500e45bd2e30b62d2d459745de74a8f49d8af83619af4"
+      "pngSha256": "f9cfe25a514bf269c6a0d5f055281e05e4da7674d3aa6fd86def4e99ecf86ef5"
     },
     {
       "name": "api-usage.en.light.800",
@@ -3942,8 +3942,8 @@
         "height": 850
       },
       "viewportReason": "Default actual viewport for this scene.",
-      "sample": "Standalone real ApiUsagePage fixture; synthetic telemetry/statistics, not a whole App screenshot",
-      "wholeApp": false,
+      "sample": "Whole App with the dev-only API usage mock (?mockData=1); synthetic statistics and telemetry",
+      "wholeApp": true,
       "passed": true,
       "pageErrors": [],
       "consoleErrors": [],
@@ -3954,11 +3954,11 @@
         "documentWidth": 800,
         "bodyWidth": 800,
         "theme": "light",
-        "language": "zh-CN"
+        "language": "en"
       },
-      "nativeCallCount": 0,
+      "nativeCallCount": 244,
       "png": "output/playwright/daily-experience-capture/qa/api-usage.en.light.800.png",
-      "pngSha256": "0faccc127c2369cb61ff70b9aa94c8340e1d0fa2a079f3ed6020072157870f67"
+      "pngSha256": "37de5791fc1fa8b47a54e95d515798ea6ab32544e8bc894d261eeb7cbef01662"
     },
     {
       "name": "api-usage.en.dark.800",
@@ -3970,8 +3970,8 @@
         "height": 850
       },
       "viewportReason": "Default actual viewport for this scene.",
-      "sample": "Standalone real ApiUsagePage fixture; synthetic telemetry/statistics, not a whole App screenshot",
-      "wholeApp": false,
+      "sample": "Whole App with the dev-only API usage mock (?mockData=1); synthetic statistics and telemetry",
+      "wholeApp": true,
       "passed": true,
       "pageErrors": [],
       "consoleErrors": [],
@@ -3982,11 +3982,11 @@
         "documentWidth": 800,
         "bodyWidth": 800,
         "theme": "dark",
-        "language": "zh-CN"
+        "language": "en"
       },
-      "nativeCallCount": 0,
+      "nativeCallCount": 276,
       "png": "output/playwright/daily-experience-capture/qa/api-usage.en.dark.800.png",
-      "pngSha256": "4b7ce2da471c050353cd3ed160ea197d2ae82e6934c851ccee882ca417ed9690"
+      "pngSha256": "0c342da435597e41af50e21de6f622e569e87c01f8a6daca6faadd06992c4894"
     }
   ],
   "browser": {
@@ -4010,5 +4010,191 @@
     "lossless": true,
     "pixelEquality": "RGBA byte equality after PNG/WebP decoding"
   },
-  "completedAt": "2026-10-16T16:54:45.452Z"
+  "completedAt": "2026-10-16T16:54:45.452Z",
+  "supplementalCaptures": [
+    {
+      "scene": "api-verification",
+      "appVersion": "0.1.12",
+      "capturedAt": "2026-10-17T13:05:22.957Z",
+      "sourceProvenance": {
+        "captureHEAD": "e220eda1aaf7babf6b576353f2c613b6785bf51a",
+        "sourceTreeSha256": "0714b5ba9c4b16a05d804b388c598418a6023c54876f51e8e635a909b33d903c",
+        "helperTreeSha256": "e8db07619cb9cc452a17cde1a810185fa9e2fe993e0fca6ed8a059ca6b981062",
+        "sourceUnchangedDuringCapture": true
+      },
+      "browser": {
+        "version": "155.0.8059.84",
+        "executablePath": "/usr/bin/google-chrome",
+        "arguments": [
+          "--disable-background-networking",
+          "--disable-component-update",
+          "--disable-sync",
+          "--no-first-run",
+          "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"
+        ],
+        "isolatedContext": true
+      }
+    },
+    {
+      "scene": "api-usage",
+      "appVersion": "0.1.12",
+      "capturedAt": "2026-10-17T13:05:22.957Z",
+      "sourceProvenance": {
+        "captureHEAD": "e220eda1aaf7babf6b576353f2c613b6785bf51a",
+        "sourceTreeSha256": "0714b5ba9c4b16a05d804b388c598418a6023c54876f51e8e635a909b33d903c",
+        "helperTreeSha256": "e8db07619cb9cc452a17cde1a810185fa9e2fe993e0fca6ed8a059ca6b981062",
+        "sourceUnchangedDuringCapture": true
+      },
+      "browser": {
+        "version": "155.0.8059.84",
+        "executablePath": "/usr/bin/google-chrome",
+        "arguments": [
+          "--disable-background-networking",
+          "--disable-component-update",
+          "--disable-sync",
+          "--no-first-run",
+          "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"
+        ],
+        "isolatedContext": true
+      }
+    },
+    {
+      "scene": "model-download-list",
+      "appVersion": "0.1.12",
+      "capturedAt": "2026-10-17T13:07:42.385Z",
+      "sourceProvenance": {
+        "captureHEAD": "12fe2bd5481b473c6b4da8f18bd4b6924cc15108",
+        "sourceTreeSha256": "0714b5ba9c4b16a05d804b388c598418a6023c54876f51e8e635a909b33d903c",
+        "helperTreeSha256": "e8db07619cb9cc452a17cde1a810185fa9e2fe993e0fca6ed8a059ca6b981062",
+        "sourceUnchangedDuringCapture": true
+      },
+      "browser": {
+        "version": "155.0.8059.84",
+        "executablePath": "/usr/bin/google-chrome",
+        "arguments": [
+          "--disable-background-networking",
+          "--disable-component-update",
+          "--disable-sync",
+          "--no-first-run",
+          "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"
+        ],
+        "isolatedContext": true
+      }
+    },
+    {
+      "scene": "model-download-detail",
+      "appVersion": "0.1.12",
+      "capturedAt": "2026-10-17T13:07:42.385Z",
+      "sourceProvenance": {
+        "captureHEAD": "12fe2bd5481b473c6b4da8f18bd4b6924cc15108",
+        "sourceTreeSha256": "0714b5ba9c4b16a05d804b388c598418a6023c54876f51e8e635a909b33d903c",
+        "helperTreeSha256": "e8db07619cb9cc452a17cde1a810185fa9e2fe993e0fca6ed8a059ca6b981062",
+        "sourceUnchangedDuringCapture": true
+      },
+      "browser": {
+        "version": "155.0.8059.84",
+        "executablePath": "/usr/bin/google-chrome",
+        "arguments": [
+          "--disable-background-networking",
+          "--disable-component-update",
+          "--disable-sync",
+          "--no-first-run",
+          "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"
+        ],
+        "isolatedContext": true
+      }
+    },
+    {
+      "scene": "service-capabilities",
+      "appVersion": "0.1.12",
+      "capturedAt": "2026-10-17T13:07:42.385Z",
+      "sourceProvenance": {
+        "captureHEAD": "12fe2bd5481b473c6b4da8f18bd4b6924cc15108",
+        "sourceTreeSha256": "0714b5ba9c4b16a05d804b388c598418a6023c54876f51e8e635a909b33d903c",
+        "helperTreeSha256": "e8db07619cb9cc452a17cde1a810185fa9e2fe993e0fca6ed8a059ca6b981062",
+        "sourceUnchangedDuringCapture": true
+      },
+      "browser": {
+        "version": "155.0.8059.84",
+        "executablePath": "/usr/bin/google-chrome",
+        "arguments": [
+          "--disable-background-networking",
+          "--disable-component-update",
+          "--disable-sync",
+          "--no-first-run",
+          "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"
+        ],
+        "isolatedContext": true
+      }
+    },
+    {
+      "scene": "chat-execution",
+      "appVersion": "0.1.12",
+      "capturedAt": "2026-10-17T13:07:42.385Z",
+      "sourceProvenance": {
+        "captureHEAD": "12fe2bd5481b473c6b4da8f18bd4b6924cc15108",
+        "sourceTreeSha256": "0714b5ba9c4b16a05d804b388c598418a6023c54876f51e8e635a909b33d903c",
+        "helperTreeSha256": "e8db07619cb9cc452a17cde1a810185fa9e2fe993e0fca6ed8a059ca6b981062",
+        "sourceUnchangedDuringCapture": true
+      },
+      "browser": {
+        "version": "155.0.8059.84",
+        "executablePath": "/usr/bin/google-chrome",
+        "arguments": [
+          "--disable-background-networking",
+          "--disable-component-update",
+          "--disable-sync",
+          "--no-first-run",
+          "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"
+        ],
+        "isolatedContext": true
+      }
+    },
+    {
+      "scene": "history-comparison",
+      "appVersion": "0.1.12",
+      "capturedAt": "2026-10-17T13:07:42.385Z",
+      "sourceProvenance": {
+        "captureHEAD": "12fe2bd5481b473c6b4da8f18bd4b6924cc15108",
+        "sourceTreeSha256": "0714b5ba9c4b16a05d804b388c598418a6023c54876f51e8e635a909b33d903c",
+        "helperTreeSha256": "e8db07619cb9cc452a17cde1a810185fa9e2fe993e0fca6ed8a059ca6b981062",
+        "sourceUnchangedDuringCapture": true
+      },
+      "browser": {
+        "version": "155.0.8059.84",
+        "executablePath": "/usr/bin/google-chrome",
+        "arguments": [
+          "--disable-background-networking",
+          "--disable-component-update",
+          "--disable-sync",
+          "--no-first-run",
+          "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"
+        ],
+        "isolatedContext": true
+      }
+    },
+    {
+      "scene": "startup-diagnostic",
+      "appVersion": "0.1.12",
+      "capturedAt": "2026-10-17T13:07:42.385Z",
+      "sourceProvenance": {
+        "captureHEAD": "12fe2bd5481b473c6b4da8f18bd4b6924cc15108",
+        "sourceTreeSha256": "0714b5ba9c4b16a05d804b388c598418a6023c54876f51e8e635a909b33d903c",
+        "helperTreeSha256": "e8db07619cb9cc452a17cde1a810185fa9e2fe993e0fca6ed8a059ca6b981062",
+        "sourceUnchangedDuringCapture": true
+      },
+      "browser": {
+        "version": "155.0.8059.84",
+        "executablePath": "/usr/bin/google-chrome",
+        "arguments": [
+          "--disable-background-networking",
+          "--disable-component-update",
+          "--disable-sync",
+          "--no-first-run",
+          "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"
+        ],
+        "isolatedContext": true
+      }
+    }
+  ]
 }

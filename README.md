@@ -24,7 +24,7 @@
 
 </div>
 
-**Strata Manager is an open-source desktop management app for [Niko1221/Strata](https://github.com/Niko1221/Strata), a local large language model inference engine.** It brings runtime setup, model configurations, service controls, chat, monitoring, tuning and benchmarking into one workspace. Existing supported model weights stay in place.
+**Strata Manager is an open-source desktop management app for [Niko1221/Strata](https://github.com/Niko1221/Strata), a local large language model inference engine.** It brings guided first setup, model downloads and configurations across Strata versions, service controls, chat, API and agent connections with online verification, usage statistics, monitoring, tuning and benchmarking with an opt-in public leaderboard into one workspace. Existing supported model weights stay in place.
 
 [![Strata Manager overview: service controls, GPU and system memory map, generation speed and recent requests](docs/screenshots/product-cover.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.en.webp)
 
@@ -35,7 +35,7 @@
 | Component | Responsibility |
 | --- | --- |
 | **Strata runtime** | Load models, execute inference and provide the API. Supported models, image input and protocols depend on the installed engine and chosen model. |
-| **Strata Manager** | Prepare and inspect the runtime, manage local models and configurations, control services, and present chat, monitoring, tuning and benchmarking tools. |
+| **Strata Manager** | Prepare and inspect the runtime, manage local models and configurations across Strata versions, control services, connect and verify the API, and present chat, usage, monitoring, tuning and benchmarking tools. |
 | **Your applications** | Connect to the running local API to use the model. |
 
 Manager is an independent community project. It manages supported Strata installations on **this computer**; the runtime and model weights are installed separately.
@@ -63,7 +63,7 @@ See the [system explanation](docs/SYSTEM.en.md) for component relationships and 
 
 ### Daily workflows
 
-Strata Manager provides a model download list and details, unified GPU/run options, resource assessment for the current selection, startup diagnostics, four capability states, chat request timing, explicit API verification and historical benchmark condition comparisons. Saved settings do not prove live engine support; missing evidence remains unverified, and settings that require a restart are identified separately. Verification never starts an unready model automatically.
+Strata Manager provides a model download list and details, unified multi-GPU and run options, resource assessment for the current selection, startup diagnostics, four capability states, chat request timing, a step-by-step API verification checklist, a usage dashboard and historical benchmark condition comparisons. Saved settings do not prove live engine support; missing evidence remains unverified, and settings that require a restart are identified separately. Verification never starts an unready model automatically.
 
 See the [daily experience notes](docs/DAILY_EXPERIENCE.md) and [verification record](docs/VERIFICATION.md).
 

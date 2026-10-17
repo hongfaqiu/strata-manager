@@ -24,7 +24,7 @@
 
 </div>
 
-**Strata Manager 是面向 [Niko1221/Strata 本地大模型推理引擎](https://github.com/Niko1221/Strata) 的开源桌面管理工具。** 将运行环境准备、模型配置、服务控制、聊天、监控、调优与基准测试集中到同一工作台，降低 Strata 的使用门槛。已有受支持的模型权重保持原位。
+**Strata Manager 是面向 [Niko1221/Strata 本地大模型推理引擎](https://github.com/Niko1221/Strata) 的开源桌面管理工具。** 将首次上手引导、模型下载与跨 Strata 版本的配置管理、服务控制、聊天、API 与 Agent 接入及在线验证、用量统计、监控、调优，以及可选上传公开排行榜的基准测试集中到同一工作台，降低 Strata 的使用门槛。已有受支持的模型权重保持原位。
 
 [![Strata Manager 总览：服务操作栏、GPU 与系统内存占用图、生成速度和最近请求](docs/screenshots/product-cover.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.zh.webp)
 
@@ -35,7 +35,7 @@
 | 组成 | 职责 |
 | --- | --- |
 | **Strata 运行时** | 加载模型、执行推理并提供 API。模型支持、图像输入与协议取决于已安装引擎和所选模型。 |
-| **Strata Manager** | 准备与检查运行环境，管理本机模型和配置，控制服务，并提供聊天、监控、调优与基准测试工具。 |
+| **Strata Manager** | 准备与检查运行环境，管理本机模型和跨 Strata 版本的配置，控制服务，接入并验证 API，并提供聊天、用量、监控、调优与基准测试工具。 |
 | **你的应用** | 连接已启动的本机 API，调用模型能力。 |
 
 Manager 是独立社区项目，管理的是**这台电脑**上受支持的 Strata 环境。运行时与模型权重独立安装。
@@ -63,7 +63,7 @@ API 使用统计无需捕获请求正文。可选的临时正文诊断是独立�
 
 ### 日常工作流程
 
-Strata Manager 提供模型下载列表与详情、统一显卡及运行选项、按选择变化的资源评估、启动失败诊断、服务能力四态、聊天请求计时、API 在线验证与历史 Benchmark 条件比较。保存设置不会证明当前引擎已生效；缺少证据显示“未核验”，需要重启的选项单独提示。模型未就绪时不会自动启动在线验证。
+Strata Manager 提供模型下载列表与详情、统一的多显卡及运行选项、按选择变化的资源评估、启动失败诊断、服务能力四态、聊天请求计时、逐步显示结果的 API 在线验证、用量面板与历史 Benchmark 条件比较。保存设置不会证明当前引擎已生效；缺少证据显示“未核验”，需要重启的选项单独提示。模型未就绪时不会自动启动在线验证。
 
 详见[日常体验说明](docs/DAILY_EXPERIENCE.md)与[验收记录](docs/VERIFICATION.md)。
 
