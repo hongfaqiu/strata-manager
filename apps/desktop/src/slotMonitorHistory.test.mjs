@@ -14,6 +14,6 @@ test('slot speed history keeps idle polls as gaps and caps at 30 samples', () =>
   for (let i = 0; i < 35; i++) history = nextSlotHistory(history, [{ id: 0, state: 'generating', tokS: 40 + i }, { id: 1, state: i % 2 ? 'idle' : 'generating', tokS: 30 }]);
   assert.equal(history[0].length, 30);
   assert.equal(history[0].at(-1), 74);
-  assert.deepEqual(history[1].slice(-2), [null, 30]);
-  assert.deepEqual(Object.keys(nextSlotHistory(history, [{ id: 1, state: 'idle', tokS: null }])), ['1'], 'slots that disappear are dropped');
+  assert.deepEqual([...history[1].slice(-2)], [null, 30]);
+  assert.deepEqual([...Object.keys(nextSlotHistory(history, [{ id: 1, state: 'idle', tokS: null }]))], ['1'], 'slots that disappear are dropped');
 });
