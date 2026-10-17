@@ -209,3 +209,75 @@ export interface TuningJob {
   error?: string;
   notes: string[];
 }
+
+/** Quick calibration (upstream tools/calibrate.py), a request-level sweep through the running engine. */
+export type CalibrationBackend = 'cuda' | 'hip' | 'sycl' | 'unknown';
+export type CalibrationStepKind = 'warmup' | 'prefillPipe' | 'pcieFrac' | 'specMinP' | 'confirm';
+export interface CalibrationParameters { pcieFrac: number; specMinP: number; prefillPipe?: number }
+export interface CalibrationSample { value: number; round: number; rate: number }
+export interface CalibrationStep {
+  kind: CalibrationStepKind;
+  status: 'pending' | 'running' | 'done' | 'skipped';
+  /** decode = generation tok/s; prompt = prompt read tok/s. */
+  metric: 'decode' | 'prompt';
+  values: number[];
+  currentValue?: number;
+  rounds: number;
+  requests: number;
+  samples: CalibrationSample[];
+  best?: number;
+  chosen?: number;
+  /** Values never measured, e.g. pcie_frac 0 on AMD (amdPcieZero) or an unconfirmed GPU. */
+  excluded?: { value: number; reason: 'amdPcieZero' | 'unconfirmedGpuPcieZero' | string }[];
+  skippedReason?: 'noLayerSplit' | 'contextTooSmall' | 'sameAsCurrent' | string;
+}
+export interface CalibrateRequest { rounds?: number }
+export interface CalibrationJob {
+  id: string;
+  profileId: string;
+  kind: 'quickCalibrate';
+  state: TuningJob['state'];
+  startedAt: number;
+  updatedAt: number;
+  finishedAt?: number;
+  backend: CalibrationBackend;
+  layerSplit: boolean;
+  rounds: number;
+  /** Relative gain a value needs over the current one, 0.03 like upstream. */
+  minGain: number;
+  baseline: CalibrationParameters;
+  candidate?: CalibrationParameters;
+  recommended?: CalibrationParameters;
+  /** Engine flags to write when applying, e.g. {"--pcie-frac": "0.35"}; empty means keep. */
+  settings: Record<string, string>;
+  gain?: number;
+  baseRate?: number;
+  tunedRate?: number;
+  steps: CalibrationStep[];
+  completedRequests: number;
+  totalRequests: number;
+  /** Official restart grids, ready for scenario verification restart candidates. */
+  restartSuggestions: TuningRestartParameters[];
+  identity: Record<string, unknown>;
+  configFingerprint: string;
+  error?: string;
+  notes: string[];
+}
+/** In-memory live progress of a running tuning or calibration job. */
+export interface TuningLiveSnapshot {
+  jobId: string;
+  stepKey: string;
+  stepIndex: number;
+  stepTotal: number;
+  parameters: Record<string, unknown>;
+  round: number | null;
+  rounds: number | null;
+  completedUnits: number;
+  totalUnits: number;
+  runningSince: number;
+  etaMs: number | null;
+  request: { startedAt: number; deltas: number; firstTokenMs: number | null; tokS: number | null } | null;
+  lastTokS: number | null;
+  log: { at: number; key: string; detail: Record<string, unknown> }[];
+  updatedAt: number;
+}

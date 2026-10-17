@@ -1090,6 +1090,29 @@ async fn reload(
         Ok(())
     }=>result}
 }
+/// Request candidates alternate A/B/A per workload. Restart candidates group
+/// every workload per position so each round restarts the engine twice.
+pub(super) fn workload_order(
+    specs: &[workloads::WorkloadSpec],
+    kind: CandidateKind,
+) -> Vec<(&workloads::WorkloadSpec, Position)> {
+    let positions = [
+        Position::BaselineBefore,
+        Position::Candidate,
+        Position::BaselineAfter,
+    ];
+    if kind == CandidateKind::Restart {
+        positions
+            .iter()
+            .flat_map(|position| specs.iter().map(move |spec| (spec, *position)))
+            .collect()
+    } else {
+        specs
+            .iter()
+            .flat_map(|spec| positions.iter().map(move |position| (spec, *position)))
+            .collect()
+    }
+}
 pub(super) async fn run_full(
     state: Arc<RuntimeState>,
     profile: ServiceProfile,
@@ -1182,25 +1205,40 @@ async fn run_full_bounded(
                 job.candidates.iter().rev().collect()
             };
             for candidate in candidates {
-                for spec in &specs {
-                    for position in [
-                        Position::BaselineBefore,
-                        Position::Candidate,
-                        Position::BaselineAfter,
-                    ] {
+                let candidate_index = job
+                    .candidates
+                    .iter()
+                    .position(|c| c.id == candidate.id)
+                    .unwrap_or(0)
+                    + 1;
+                // A restart candidate runs every workload per position, so the
+                // engine restarts once into the candidate and once back per
+                // round instead of twice per workload. Evaluation pairs by
+                // (candidate, workload, round, position) and is order-free.
+                let order = workload_order(&specs, candidate.kind);
+                let mut switched = false;
+                for (spec, position) in order {
                         if cancel.is_cancelled() {
                             return Err("已取消完整场景测量".into());
                         }
                         if position == Position::Candidate
                             && candidate.kind == CandidateKind::Restart
+                            && !switched
                         {
+                            live::step(&id, "loading", candidate_index, job.candidates.len(), json!({"candidateId":candidate.id,"restart":candidate.restart}), Some((round + 1, job.rounds)));
+                            live::log(&id, "restartCandidate", json!({"candidateId":candidate.id,"restart":candidate.restart}));
                             switch_stage(&state, &profile, &job, candidate, &token, &cancel)
                                 .await?;
+                            switched = true;
                         }
                         if position == Position::BaselineAfter
                             && candidate.kind == CandidateKind::Restart
+                            && switched
                         {
+                            live::step(&id, "restoringBaseline", candidate_index, job.candidates.len(), json!({"candidateId":candidate.id}), Some((round + 1, job.rounds)));
+                            live::log(&id, "restoreBaseline", json!({"candidateId":candidate.id}));
                             restore_stage(&state, &profile, &id, &token, false).await?;
+                            switched = false;
                         }
                         let parameters = if position == Position::Candidate {
                             candidate.parameters()
@@ -1231,6 +1269,19 @@ async fn run_full_bounded(
                             job.full.progress.workload_kind = Some(kind.clone());
                             job.full.progress.round = Some(round + 1);
                         })?;
+                        live::step(
+                            &id,
+                            match position {
+                                Position::BaselineBefore => "baselineBefore",
+                                Position::Candidate => "candidate",
+                                Position::BaselineAfter => "baselineAfter",
+                            },
+                            candidate_index,
+                            job.candidates.len(),
+                            json!({"candidateId":candidate.id,"workloadKind":kind,"workloadId":spec.id,"pcieFrac":parameters.pcie_frac,"specMinP":parameters.spec_min_p,"restart":if position == Position::Candidate { json!(candidate.restart) } else { Value::Null }}),
+                            Some((round + 1, job.rounds)),
+                        );
+                        live::unit_started(&id);
                         let freshly_loaded = matches!(
                             spec.kind,
                             WorkloadKind::ColdInput
@@ -1238,6 +1289,7 @@ async fn run_full_bounded(
                                 | WorkloadKind::LongRetrieval
                         );
                         if freshly_loaded {
+                            live::log(&id, "coldReload", json!({"workloadKind":kind}));
                             reload(
                                 &state,
                                 &profile,
@@ -1251,17 +1303,26 @@ async fn run_full_bounded(
                             )
                             .await?;
                         }
-                        let result = workloads::run_workload(
-                            &state,
-                            &profile,
-                            parameters,
-                            &token,
-                            spec,
-                            &opts,
-                            &cancel,
-                            freshly_loaded,
+                        let result = live::scope(
+                            id.clone(),
+                            workloads::run_workload(
+                                &state,
+                                &profile,
+                                parameters,
+                                &token,
+                                spec,
+                                &opts,
+                                &cancel,
+                                freshly_loaded,
+                            ),
                         )
                         .await?;
+                        let turn_rates: Vec<f64> = result["turns"]
+                            .as_array()
+                            .map(|turns| turns.iter().filter_map(|t| t["decodeTokS"].as_f64()).collect())
+                            .unwrap_or_default();
+                        live::unit_finished(&id, median(&turn_rates));
+                        live::log(&id, "workloadDone", json!({"candidateId":candidate.id,"position":position,"workloadKind":kind,"round":round + 1,"wallMs":result["wallMs"],"passed":result["complete"] == true && result["qualityPassed"] == true}));
                         let complete =
                             result["complete"] == true && result["qualityPassed"] == true;
                         update(&state, &id, |job| {
@@ -1295,7 +1356,6 @@ async fn run_full_bounded(
                             ));
                         }
                         crate::maintenance::wait_idle(&state, &profile).await?;
-                    }
                 }
             }
         }

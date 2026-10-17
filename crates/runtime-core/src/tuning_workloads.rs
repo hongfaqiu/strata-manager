@@ -249,6 +249,9 @@ fn apply_event(
                 let text = delta["content"].as_str().unwrap_or("");
                 let reasoning = delta["reasoning_content"].as_str().unwrap_or("");
                 let calls = delta["tool_calls"].as_array();
+                if !text.is_empty() || !reasoning.is_empty() {
+                    super::live::on_delta();
+                }
                 if (!text.is_empty()
                     || !reasoning.is_empty()
                     || calls.is_some_and(|v| !v.is_empty()))
@@ -316,6 +319,9 @@ fn apply_event(
                 let delta = &event["delta"];
                 let text = delta["text"].as_str().unwrap_or("");
                 let thinking = delta["thinking"].as_str().unwrap_or("");
+                if !text.is_empty() || !thinking.is_empty() {
+                    super::live::on_delta();
+                }
                 if (!text.is_empty() || !thinking.is_empty())
                     && collected.turn.first_token_ms.is_none()
                 {

@@ -244,10 +244,6 @@ html,body,#root{height:100%;min-height:0}body{overflow:hidden}.official-app{heig
 .settings-help-content{font-size:14px;line-height:1.8;color:var(--st-ink-soft)}
 .settings-help-content p{margin:0 0 14px;overflow-wrap:anywhere}
 .settings-help-content pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}
-.official-surface :is(.tuning-advanced,.tuning-diagnostic-details)>summary{display:list-item;list-style:disclosure-closed inside;cursor:pointer;min-height:28px;line-height:28px;border-radius:5px}
-.official-surface :is(.tuning-advanced,.tuning-diagnostic-details)[open]>summary{list-style-type:disclosure-open}
-.official-surface :is(.tuning-advanced,.tuning-diagnostic-details)>summary::marker{content:normal}
-.official-surface :is(.tuning-advanced,.tuning-diagnostic-details)>summary:hover{background:var(--st-surface-2)}
 
 /* Workspace tabs use the original rounded segmented surface. Breadcrumbs keep their navigation layout. */
 .workspace-subnav:not(.model-config-breadcrumb){margin:12px 28px 0;padding:4px;gap:4px;max-width:calc(100% - 56px);border:1px solid var(--st-line);border-radius:var(--st-r-md);background:var(--st-surface-2)}

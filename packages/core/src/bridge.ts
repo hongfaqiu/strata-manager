@@ -321,4 +321,18 @@ export const tuningStatus = (profileId: string): Promise<import('./tuning-types'
 export const tuningCancel = (jobId: string): Promise<void> => native('tuning_cancel', { jobId });
 export const tuningApply = (jobId: string, candidateId: string): Promise<import('./tuning-types').TuningJob> => native('tuning_apply', { jobId, candidateId });
 export const tuningRestore = (jobId: string): Promise<import('./tuning-types').TuningJob> => native('tuning_restore', { jobId });
+export const supportsQuickCalibration = (status: SupervisorStatus | undefined): boolean =>
+  Number.isSafeInteger(status?.capabilities?.quickCalibration) && (status?.capabilities?.quickCalibration ?? 0) >= 1;
+export const supportsTuningLive = (status: SupervisorStatus | undefined): boolean =>
+  Number.isSafeInteger(status?.capabilities?.tuningLive) && (status?.capabilities?.tuningLive ?? 0) >= 1;
+/** Live progress of a running job; null when idle or on a supervisor without live support. */
+export const tuningLive = (jobId: string): Promise<import('./tuning-types').TuningLiveSnapshot | null> => native('tuning_live', { jobId });
+export const calibrateStart = async (profileId: string, request: import('./tuning-types').CalibrateRequest = {}): Promise<import('./tuning-types').CalibrationJob> => {
+  if (!supportsQuickCalibration(await supervisorStatus())) {
+    throw new StrataError('SUPERVISOR_CAPABILITY_REQUIRED', '当前后台不支持快速校准。请完成当前请求并停止模型服务，让后台更新后重试。');
+  }
+  return native('calibrate_start', { profileId, request });
+};
+export const calibrateStatus = (profileId: string): Promise<import('./tuning-types').CalibrationJob | null> => native('calibrate_status', { profileId });
+export const calibrateCancel = (jobId: string): Promise<void> => native('calibrate_cancel', { jobId });
 export const analyticsQuery = <T extends import('./analytics-types').ApiAnalyticsData = import('./analytics-types').ApiAnalyticsData>(query: import('./analytics-types').ApiAnalyticsQuery): Promise<import('./analytics-types').ApiAnalyticsResult<T>> => native('analytics_query', { query });

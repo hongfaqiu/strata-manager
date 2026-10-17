@@ -1,14 +1,17 @@
-import type { AppLanguage } from "@strata-manager/core";
+import type { AppLanguage, CalibrationJob, ServiceProfile } from "@strata-manager/core";
 import { GainDotPlot } from './D2PageStrips';
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, Check, CircleHelp, Download, FlaskConical, LoaderCircle, Play, RotateCcw, Square } from 'lucide-react';
+import { Activity, Check, CircleHelp, Download, FlaskConical, Play, RotateCcw, X } from 'lucide-react';
 import * as core from '@strata-manager/core';
 import type { TuningJob, TuningScene, TuningUseCase, TuningRestartParameters, TuningWorkloadKind } from '@strata-manager/core';
 import { Dialog, Panel, Metric } from '../components';
 import { Dropdown, Segmented, Toggle } from '../OfficialControls';
 import './tuning.css';
 import { ExpertAdaptationCandidates } from './ExpertAdaptationCandidates';
+import { calibrationText } from './tuning/strings';
+import { LiveStatus } from './tuning/TuningLive';
+import { QuickCalibrationView } from './tuning/QuickCalibration';
 
 const zh = {
   setup: '测试设置', mode: '测试模式', fullMode: '完整场景', diagnosticMode: '短请求诊断',
@@ -98,12 +101,24 @@ const activeStates = new Set<TuningJob['state']>(['checking', 'running', 'cancel
 const cancelableStates = new Set<TuningJob['state']>(['checking', 'running', 'canceling']);
 const workloadKinds: TuningWorkloadKind[] = ['coldInput', 'hotPrefix', 'sessionSwitch', 'sustainedGeneration', 'fullAgent', 'longRetrieval', 'vision'];
 
-export function TuningPage({ profileId, language, desktop, owned, streaming, onChanged }: { profileId?: string; language: AppLanguage; desktop: boolean; owned: boolean; streaming: boolean; onChanged: () => void }) {
+type TuningMode = 'quick' | 'full' | 'diagnostic';
+type ApplyNotice = { kind: 'saved' | 'overwritten'; onOpen?: () => void; onRestart?: () => void } | null;
+
+export function TuningPage({ profileId, profile, language, desktop, owned, streaming, onChanged, onCopied, onRestart, onBenchmark }: { profileId?: string; profile?: ServiceProfile; language: AppLanguage; desktop: boolean; owned: boolean; streaming: boolean; onChanged: () => void; onCopied?: (profile: ServiceProfile) => void | Promise<void>; onRestart?: () => void | Promise<void>; onBenchmark?: () => void }) {
   const text = language === 'zh-CN' ? zh : en;
+  const cal = calibrationText(language);
   const query = useQueryClient();
+  // Quick calibration (the official calibrate.py scheme) is the default mode.
+  const [mode, setModeState] = useState<TuningMode>('quick');
+  const [modeTouched, setModeTouched] = useState(false);
+  const setMode = (next: TuningMode) => { setModeTouched(true); setModeState(next); };
+  const diagnostic = mode === 'diagnostic';
+  const [calibrationRounds, setCalibrationRounds] = useState(3);
+  const [suggested, setSuggested] = useState<TuningRestartParameters[]>([]);
+  const [notice, setNotice] = useState<ApplyNotice>(null);
+  const [overwriteOpen, setOverwriteOpen] = useState(false);
   const [useCase, setUseCase] = useState<TuningUseCase>('chat');
   const [helpOpen, setHelpOpen] = useState(false);
-  const [diagnostic, setDiagnostic] = useState(false);
   const [contextLimit, setContextLimit] = useState(8192);
   const [includeVision, setIncludeVision] = useState(false);
   const [workerTest, setWorkerTest] = useState(false);
@@ -124,10 +139,25 @@ export function TuningPage({ profileId, language, desktop, owned, streaming, onC
   const [error, setError] = useState('');
   const capability = useQuery({ queryKey: ['tuning-capability'], queryFn: core.supervisorStatus, enabled: desktop, refetchInterval: 5000, retry: false });
   const fullSupported = core.supportsFullScenarioTuning(capability.data);
+  const quickSupported = core.supportsQuickCalibration(capability.data);
+  const liveSupported = core.supportsTuningLive(capability.data);
   const status = useQuery({ queryKey: ['tuning', profileId], queryFn: () => core.tuningStatus(profileId!), enabled: desktop && !!profileId, refetchInterval: data => activeStates.has(data.state.data?.state as TuningJob['state']) ? 1000 : 5000, refetchIntervalInBackground: true });
+  const calibration = useQuery({ queryKey: ['calibration', profileId], queryFn: () => core.calibrateStatus(profileId!), enabled: desktop && !!profileId && quickSupported, refetchInterval: data => activeStates.has(data.state.data?.state as TuningJob['state']) ? 1000 : 5000, refetchIntervalInBackground: true });
   const job = status.data;
+  const calibrationJob: CalibrationJob | null = calibration.data ?? null;
   const active = !!job && activeStates.has(job.state);
-  useEffect(() => { if (!active) return; const timer = setInterval(() => setClock(Date.now()), 1000); return () => clearInterval(timer); }, [active]);
+  const calibrationActive = !!calibrationJob && activeStates.has(calibrationJob.state);
+  const anyActive = active || calibrationActive;
+  // Follow a job that is already running into its own mode, until the user picks one.
+  useEffect(() => {
+    if (modeTouched) return;
+    if (calibrationActive) setModeState('quick');
+    else if (active && job) setModeState(job.scope === 'fullScenario' ? 'full' : 'diagnostic');
+  }, [modeTouched, calibrationActive, active, job?.scope]);
+  const liveJobId = calibrationActive ? calibrationJob!.id : active ? job!.id : undefined;
+  const live = useQuery({ queryKey: ['tuning-live', liveJobId], queryFn: () => core.tuningLive(liveJobId!), enabled: desktop && !!liveJobId && liveSupported, refetchInterval: 1000, refetchIntervalInBackground: true, retry: false });
+  const liveSnapshot = live.data && live.data.jobId === liveJobId ? live.data : null;
+  useEffect(() => { if (!anyActive) return; const timer = setInterval(() => setClock(Date.now()), 1000); return () => clearInterval(timer); }, [anyActive]);
   const fullReport = job?.reportVersion === 2 && job.scope === 'fullScenario';
   const legacyReport = !!job && (job.reportVersion ?? 1) < 2;
   const recovery = job?.recovery;
@@ -136,12 +166,13 @@ export function TuningPage({ profileId, language, desktop, owned, streaming, onC
   const recommendedResources = job?.candidates.find(candidate => candidate.id === job.recommendedCandidateId)?.resourceAssessment;
   const workloadMeasurements = job?.workloadMeasurements ?? [];
   const selectedMeasurements = workloadMeasurements.filter(measurement => measurement.candidateId === selectedCandidate && measurement.position === 'candidate');
-  const restartCandidates: TuningRestartParameters[] = [...(workerTest ? [{ poolWorkers }] : []), ...(asyncTest ? [{ adaptAsync }] : []), ...(prefillTest ? [{ prefill }] : []), ...(reserveTest ? [{ vramReserveMib }] : []), ...Object.entries(adaptation).map(([key, value]) => ({ [key]: value }))];
+  const manualRestartCandidates: TuningRestartParameters[] = [...(workerTest ? [{ poolWorkers }] : []), ...(asyncTest ? [{ adaptAsync }] : []), ...(prefillTest ? [{ prefill }] : []), ...(reserveTest ? [{ vramReserveMib }] : []), ...Object.entries(adaptation).map(([key, value]) => ({ [key]: value }))];
+  const restartCandidates: TuningRestartParameters[] = [...suggested, ...manualRestartCandidates];
   const run = async (operation: () => Promise<unknown>) => {
     if (busy) return;
     setBusy(true); setError('');
-    try { await operation(); await query.invalidateQueries({ queryKey: ['tuning', profileId] }); onChanged(); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    try { await operation(); await Promise.all([query.invalidateQueries({ queryKey: ['tuning', profileId] }), query.invalidateQueries({ queryKey: ['calibration', profileId] })]); onChanged(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : core.normalizeError(cause).message); }
     finally { setBusy(false); }
   };
   const numeric = (value: number | null | undefined, digits = 2) => value == null || !Number.isFinite(value) ? '—' : value.toLocaleString(language, { maximumFractionDigits: digits });
@@ -160,60 +191,112 @@ export function TuningPage({ profileId, language, desktop, owned, streaming, onC
     const url = URL.createObjectURL(new Blob([JSON.stringify(job, null, 2)], { type: 'application/json' }));
     const link = document.createElement('a'); link.href = url; link.download = `strata-tuning-${new Date(job.startedAt).toISOString().slice(0, 10)}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
+  const exportCalibration = () => {
+    if (!calibrationJob) return;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(calibrationJob, null, 2)], { type: 'application/json' }));
+    const link = document.createElement('a'); link.href = url; link.download = `strata-calibration-${new Date(calibrationJob.startedAt).toISOString().slice(0, 10)}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  /** Default: a new config version next to the current one. Overwrite keeps a .bak copy. */
+  const applyCalibration = (overwrite: boolean) => run(async () => {
+    if (!profile || !calibrationJob) return;
+    setNotice(null);
+    const snapshot = await core.readConfigSnapshot(profile);
+    const next = core.applyCalibrationSettings(snapshot.config, calibrationJob.settings, calibrationJob.backend);
+    core.validateStartupConfiguration(next);
+    if (overwrite) {
+      await core.writeConfig(profile, next, snapshot.revision);
+      setNotice({ kind: 'overwritten', onRestart: onRestart ? () => { void onRestart(); } : undefined });
+    } else {
+      const copied = await core.copyConfiguration(profile, core.calibratedConfigName(profile.configPath, new Date()), next);
+      setNotice({ kind: 'saved', onOpen: onCopied ? () => { void onCopied(copied); } : undefined });
+    }
+  });
+  const verifyWithScenarios = () => {
+    setSuggested(core.restartCandidatesFromCalibration(calibrationJob));
+    setWorkerTest(false); setAdaptation({});
+    setMode('full');
+  };
+  const canApplyCalibration = !!profile && !busy && !streaming && !anyActive && core.calibrationHasChange(calibrationJob);
 
   const recommendedCandidate = job?.candidates.find(candidate => candidate.id === job.recommendedCandidateId);
   const canApply = fullReport && recommendedCandidate?.evaluation?.accepted && recommendedResources?.status === 'checked'
     && !active && !busy && !streaming && job?.state === 'completed'
     && (recommendedCandidate.kind !== 'restart' || !!recommendedCandidate.startupVerification?.parameters.length)
     && (!recovery || recovery.state === 'notNeeded' || (recovery.configurationRestored && recovery.serviceVerified));
-  const errorMessages = [...new Set([error, status.error ? core.normalizeError(status.error).message : '', job?.error,
-    ...(job?.measurements.flatMap(measurement => measurement.error ? [measurement.error] : []) ?? [])
+  const errorMessages = [...new Set([error, status.error ? core.normalizeError(status.error).message : '', mode !== 'quick' ? job?.error : calibrationJob?.state === 'failed' ? '' : '',
+    ...(mode !== 'quick' ? job?.measurements.flatMap(measurement => measurement.error ? [measurement.error] : []) ?? [] : [])
   ].filter((message): message is string => !!message))];
   const qualityFailures = workloadMeasurements.filter(measurement => !measurement.result.complete || !measurement.result.qualityPassed).length;
+  const startDisabled = !desktop || !profileId || !owned || streaming || anyActive || busy || recovery?.state === 'failed';
+  const liveStep = liveSnapshot?.stepKey ?? job?.progress?.phase;
+  const tuningStepLabel = liveStep && liveStep in text ? text[liveStep as keyof typeof text] : job?.currentStep ?? text.running;
+
+  const setupPanel = <>
+    <Panel title={text.setup} className="tuning-setup">
+      {mode === 'quick' && <>
+        <p className="tuning-lede">{cal.quickIntro}</p>
+        <div className="tuning-main-fields is-quick"><label className="tuning-field"><span>{cal.quickRounds}</span><Dropdown ariaLabel={cal.quickRounds} value={String(calibrationRounds)} disabled={anyActive || busy} options={[2, 3, 4].map(value => ({ value: String(value), label: `${value} ${cal.roundsUnit}` }))} onValueChange={value => setCalibrationRounds(Number(value))}/></label><p className="tuning-impact">{cal.quickRule}</p></div>
+        {desktop && !quickSupported && <p className="notice" role="status">{capability.isPending ? (language === 'zh-CN' ? '正在核对后台能力…' : 'Checking supervisor support…') : capability.error ? core.normalizeError(capability.error).message : cal.capability}<button disabled={capability.isFetching} onClick={() => void capability.refetch()}>{language === 'zh-CN' ? '重新核对' : 'Check again'}</button></p>}
+      </>}
+      {mode !== 'quick' && <div className="tuning-main-fields">
+        {mode === 'full' && <label className="tuning-field"><span>{text.useCase}</span><Dropdown ariaLabel={text.useCase} value={useCase} disabled={anyActive || busy} options={(['chat', 'agent', 'longDocument'] as const).map(value => ({ value, label: useCaseLabels[value] }))} onValueChange={value => { setUseCase(value as TuningUseCase); setContextLimit(value === 'longDocument' ? 32768 : 8192); }}/></label>}
+        <label className="tuning-field"><span>{text.rounds}</span><Dropdown ariaLabel={text.rounds} value={String(rounds)} disabled={anyActive || busy} options={[2, 3, 4].map(value => ({ value: String(value), label: String(value) }))} onValueChange={value => setRounds(Number(value))}/></label>
+        {diagnostic ? <label className="tuning-field"><span>{text.tokens}</span><Dropdown ariaLabel={text.tokens} value={String(maxTokens)} disabled={anyActive || busy} options={[128, 256, 512, 1024].map(value => ({ value: String(value), label: String(value) }))} onValueChange={value => setMaxTokens(Number(value))}/></label> : <label className="tuning-field"><span>{text.contextLimit}</span><Dropdown ariaLabel={text.contextLimit} value={String(contextLimit)} disabled={anyActive || busy} options={[4096, 8192, 16384, 32768, 65536, 131072].map(value => ({ value: String(value), label: value.toLocaleString(language) }))} onValueChange={value => setContextLimit(Number(value))}/></label>}
+      </div>}
+      {desktop && mode === 'full' && !fullSupported && <p className="notice" role="status">{capability.isPending ? (language === 'zh-CN' ? '正在核对后台的完整实测能力…' : 'Checking full scenario support…') : capability.error ? core.normalizeError(capability.error).message : language === 'zh-CN' ? '当前后台不支持完整场景实测。请完成当前请求并停止模型服务，让后台更新后再重新核对。短请求诊断不能替代完整实测。' : 'The current supervisor does not support full scenarios. Finish current requests and stop the model service so the supervisor can update, then check again. Short diagnostics do not replace full scenarios.'}<button disabled={capability.isFetching} onClick={() => void capability.refetch()}>{language === 'zh-CN' ? '重新核对' : 'Check again'}</button></p>}
+      <div className="tuning-setup-footer"><p className="tuning-impact">{mode === 'quick' ? cal.quickImpact : diagnostic ? text.diagnosticOnly : text.impact}</p>
+      <div className="actions">
+        {mode === 'quick' ? <button className="primary" data-testid="calibration-start" disabled={startDisabled || !quickSupported} onClick={() => void run(async () => { setNotice(null); await core.calibrateStart(profileId!, { rounds: calibrationRounds }); })}><Play size={15}/>{cal.startQuick}</button>
+          : <button className="primary" data-testid="tuning-start" disabled={startDisabled || (!diagnostic && (!fullSupported || restartCandidates.length > 4)) || (diagnostic && !scenes.length)} onClick={() => void run(() => core.tuningStart(profileId!, diagnostic ? { scenes, rounds, maxTokens } : { useCase, contextLimit, includeVision, rounds, maxTokens: 1024, ...(restartCandidates.length ? { restartCandidates } : {}) }))}><Play size={15}/>{text.start}</button>}
+      </div>
+      </div>
+      {mode === 'full' && restartCandidates.length > 4 && <p className="notice" role="alert">{language === 'zh-CN' ? '最多选择四个重启候选，请减少选项。' : 'Select no more than four restart candidates.'}</p>}
+      {mode === 'diagnostic' && <section className="tuning-advanced" data-testid="tuning-advanced"><h3>{text.advanced}</h3><div className="tuning-options">{(['chat', 'code', 'chinese'] as const).map(scene => <label key={scene}><Toggle ariaLabel={text[scene]} checked={scenes.includes(scene)} disabled={anyActive || busy} onCheckedChange={checked => setScenes(old => checked ? [...old, scene] : old.filter(item => item !== scene))}/>{text[scene]}</label>)}</div><p className="subtle">{text.scope}</p></section>}
+      {mode === 'full' && <section className="tuning-advanced" data-testid="tuning-advanced"><h3>{text.advanced}<small>{text.selected} {restartCandidates.length} / 4</small></h3>
+        <p className="subtle">{text.contextHint}</p><label className="tuning-toggle"><Toggle ariaLabel={text.includeVision} checked={includeVision} disabled={anyActive || busy} onCheckedChange={setIncludeVision}/><span>{text.includeVision}</span></label><p className="subtle">{text.visionHint}</p>
+        {!!suggested.length && <div className="tuning-suggested" data-testid="tuning-suggested"><h4>{cal.suggestions}</h4><ul>{suggested.map((item, index) => <li key={JSON.stringify(item)}><span>{item.poolWorkers != null ? `${cal.workers} ${item.poolWorkers}` : `${cal.adaptPreset} ${item.adaptEvery ?? '—'}/${item.adaptSwaps ?? '—'}/${item.adaptDecay ?? '—'}`}</span><button type="button" className="st-btn st-btn--icon" aria-label={cal.removeSuggestion} data-tooltip={cal.removeSuggestion} disabled={anyActive || busy} onClick={() => setSuggested(old => old.filter((_, i) => i !== index))}><X size={14}/></button></li>)}</ul><p className="subtle">{cal.verifyHint}</p></div>}
+        <h3>{text.restartTitle}</h3><p className="subtle">{text.restartHint}</p><div className="tuning-restart-options">
+          <div><label className="tuning-toggle"><Toggle ariaLabel={text.workerTest} checked={workerTest} disabled={anyActive || busy} onCheckedChange={setWorkerTest}/><span>{text.workerTest}</span></label>{workerTest && <Dropdown ariaLabel={text.worker} value={String(poolWorkers)} disabled={anyActive || busy} options={[1, 2, 4, 8, 12, 16, 24, 32].map(value => ({ value: String(value), label: String(value) }))} onValueChange={value => setPoolWorkers(Number(value))}/>}</div>
+          <div><label className="tuning-toggle"><Toggle ariaLabel={text.asyncTest} checked={asyncTest} disabled={anyActive || busy} onCheckedChange={setAsyncTest}/><span>{text.asyncTest}</span></label>{asyncTest && <label className="tuning-toggle"><Toggle ariaLabel={text.asyncValue} checked={adaptAsync} disabled={anyActive || busy} onCheckedChange={setAdaptAsync}/><span>{text.asyncValue}</span></label>}</div>
+          <div><label className="tuning-toggle"><Toggle ariaLabel={text.prefillTest} checked={prefillTest} disabled={anyActive || busy} onCheckedChange={setPrefillTest}/><span>{text.prefillTest}</span></label>{prefillTest && <Dropdown ariaLabel={text.prefill} value={String(prefill)} disabled={anyActive || busy} options={[512, 1024, 2048, 4096, 8192, 16384, 32768].map(value => ({ value: String(value), label: value.toLocaleString(language) }))} onValueChange={value => setPrefill(Number(value))}/>}</div>
+          <div><label className="tuning-toggle"><Toggle ariaLabel={text.reserveTest} checked={reserveTest} disabled={anyActive || busy} onCheckedChange={setReserveTest}/><span>{text.reserveTest}</span></label>{reserveTest && <Dropdown ariaLabel={text.reserve} value={String(vramReserveMib)} disabled={anyActive || busy} options={[256, 512, 1024, 2048, 4096, 8192].map(value => ({ value: String(value), label: value.toLocaleString(language) }))} onValueChange={value => setVramReserveMib(Number(value))}/>}</div>
+          <ExpertAdaptationCandidates value={adaptation} onChange={setAdaptation} language={language} disabled={anyActive || busy}/>
+        </div><p className="subtle">{text.reserveHint}</p><p className="subtle">{language === 'zh-CN' ? '专家策略在引擎未公开有效值时仅核验启动参数，并保留完整场景质量与耗时比较。' : 'When effective adaptive values are unpublished, the owned startup arguments are checked and full scenario quality and timings are compared.'}</p></section>}
+    </Panel>
+  </>;
 
   return <div className="tuning-page">
     <div className="tuning-heading"><h2><FlaskConical size={19}/>{text.title}</h2><button type="button" className="st-btn st-btn--icon" aria-label={language === 'zh-CN' ? '调优测试帮助' : 'Tuning test help'} data-tooltip={language === 'zh-CN' ? '调优测试帮助' : 'Tuning test help'} onClick={() => setHelpOpen(true)}><CircleHelp size={16}/></button></div>
     {!desktop || !profileId || !owned ? <p className="notice">{!desktop ? text.native : !profileId ? text.profile : text.ownership}</p> : null}
     {!!errorMessages.length && <div className="notice error tuning-errors" role="alert">{errorMessages.map(message => <p key={message}>{message}</p>)}</div>}
-    <details className="tuning-disclosure tuning-setup-disclosure" open={!active}><summary><span>{text.setup}</span><small>{active && job ? fullReport && job.useCase ? useCaseLabels[job.useCase] : text.diagnosticMode : diagnostic ? text.diagnosticMode : useCaseLabels[useCase]} · {active && job ? job.rounds : rounds} {text.rounds}</small></summary><Panel title={text.setup} className="tuning-setup">
-      <div className="tuning-main-fields">
-        <label className="tuning-field"><span>{text.useCase}</span><Dropdown ariaLabel={text.useCase} value={useCase} disabled={active || busy || diagnostic} options={(['chat', 'agent', 'longDocument'] as const).map(value => ({ value, label: useCaseLabels[value] }))} onValueChange={value => { setUseCase(value as TuningUseCase); setContextLimit(value === 'longDocument' ? 32768 : 8192); }}/></label>
-        <div className="tuning-field tuning-mode"><span>{text.mode}</span><Segmented ariaLabel={text.mode} value={diagnostic ? 'diagnostic' : 'full'} options={[{ value: 'full', label: text.fullMode, disabled: active || busy }, { value: 'diagnostic', label: text.diagnosticMode, disabled: active || busy }]} onValueChange={value => setDiagnostic(value === 'diagnostic')}/></div>
-        <label className="tuning-field"><span>{text.rounds}</span><Dropdown ariaLabel={text.rounds} value={String(rounds)} disabled={active || busy} options={[2, 3, 4].map(value => ({ value: String(value), label: String(value) }))} onValueChange={value => setRounds(Number(value))}/></label>
-        {diagnostic ? <label className="tuning-field"><span>{text.tokens}</span><Dropdown ariaLabel={text.tokens} value={String(maxTokens)} disabled={active || busy} options={[128, 256, 512, 1024].map(value => ({ value: String(value), label: String(value) }))} onValueChange={value => setMaxTokens(Number(value))}/></label> : <label className="tuning-field"><span>{text.contextLimit}</span><Dropdown ariaLabel={text.contextLimit} value={String(contextLimit)} disabled={active || busy} options={[4096, 8192, 16384, 32768, 65536, 131072].map(value => ({ value: String(value), label: value.toLocaleString(language) }))} onValueChange={value => setContextLimit(Number(value))}/></label>}
-      </div>
-      {desktop && !diagnostic && !fullSupported && <p className="notice" role="status">{capability.isPending ? (language === 'zh-CN' ? '正在核对后台的完整实测能力…' : 'Checking full scenario support…') : capability.error ? core.normalizeError(capability.error).message : language === 'zh-CN' ? '当前后台不支持完整场景实测。请完成当前请求并停止模型服务，让后台更新后再重新核对。短请求诊断不能替代完整实测。' : 'The current supervisor does not support full scenarios. Finish current requests and stop the model service so the supervisor can update, then check again. Short diagnostics do not replace full scenarios.'}<button disabled={capability.isFetching} onClick={() => void capability.refetch()}>{language === 'zh-CN' ? '重新核对' : 'Check again'}</button></p>}
-      <div className="tuning-setup-footer"><p className="tuning-impact">{diagnostic ? text.diagnosticOnly : text.impact}</p>
-      <div className="actions"><button className="primary" data-testid="tuning-start" disabled={!desktop || !profileId || !owned || streaming || active || busy || (!diagnostic && (!fullSupported || restartCandidates.length > 4)) || (diagnostic && !scenes.length) || recovery?.state === 'failed'} onClick={() => void run(() => core.tuningStart(profileId!, diagnostic ? { scenes, rounds, maxTokens } : { useCase, contextLimit, includeVision, rounds, maxTokens: 1024, ...(restartCandidates.length ? { restartCandidates } : {}) }))}><Play size={15}/>{text.start}</button></div>
-      </div>
-      {!diagnostic && restartCandidates.length > 4 && <p className="notice" role="alert">{language === 'zh-CN' ? '最多选择四个重启候选，请减少选项。' : 'Select no more than four restart candidates.'}</p>}
-      <details className="tuning-disclosure tuning-advanced"><summary><span>{text.advanced}</span><small>{diagnostic ? `${scenes.length} ${text.scenes}` : `${text.selected} ${restartCandidates.length} / 4`}</small></summary>
-        {diagnostic && <><div className="tuning-options">{(['chat', 'code', 'chinese'] as const).map(scene => <label key={scene}><Toggle ariaLabel={text[scene]} checked={scenes.includes(scene)} disabled={active || busy} onCheckedChange={checked => setScenes(old => checked ? [...old, scene] : old.filter(item => item !== scene))}/>{text[scene]}</label>)}</div><p className="subtle">{text.scope}</p></>}
-        {!diagnostic && <><p className="subtle">{text.contextHint}</p><label className="tuning-toggle"><Toggle ariaLabel={text.includeVision} checked={includeVision} disabled={active || busy} onCheckedChange={setIncludeVision}/><span>{text.includeVision}</span></label><p className="subtle">{text.visionHint}</p>
-          <h3>{text.restartTitle}</h3><p className="subtle">{text.restartHint}</p><div className="tuning-restart-options">
-            <div><label className="tuning-toggle"><Toggle ariaLabel={text.workerTest} checked={workerTest} disabled={active || busy} onCheckedChange={setWorkerTest}/><span>{text.workerTest}</span></label>{workerTest && <Dropdown ariaLabel={text.worker} value={String(poolWorkers)} disabled={active || busy} options={[1, 2, 4, 8, 12, 16, 24, 32].map(value => ({ value: String(value), label: String(value) }))} onValueChange={value => setPoolWorkers(Number(value))}/>}</div>
-            <div><label className="tuning-toggle"><Toggle ariaLabel={text.asyncTest} checked={asyncTest} disabled={active || busy} onCheckedChange={setAsyncTest}/><span>{text.asyncTest}</span></label>{asyncTest && <label className="tuning-toggle"><Toggle ariaLabel={text.asyncValue} checked={adaptAsync} disabled={active || busy} onCheckedChange={setAdaptAsync}/><span>{text.asyncValue}</span></label>}</div>
-            <div><label className="tuning-toggle"><Toggle ariaLabel={text.prefillTest} checked={prefillTest} disabled={active || busy} onCheckedChange={setPrefillTest}/><span>{text.prefillTest}</span></label>{prefillTest && <Dropdown ariaLabel={text.prefill} value={String(prefill)} disabled={active || busy} options={[512, 1024, 2048, 4096, 8192, 16384, 32768].map(value => ({ value: String(value), label: value.toLocaleString(language) }))} onValueChange={value => setPrefill(Number(value))}/>}</div>
-            <div><label className="tuning-toggle"><Toggle ariaLabel={text.reserveTest} checked={reserveTest} disabled={active || busy} onCheckedChange={setReserveTest}/><span>{text.reserveTest}</span></label>{reserveTest && <Dropdown ariaLabel={text.reserve} value={String(vramReserveMib)} disabled={active || busy} options={[256, 512, 1024, 2048, 4096, 8192].map(value => ({ value: String(value), label: value.toLocaleString(language) }))} onValueChange={value => setVramReserveMib(Number(value))}/>}</div>
-            <ExpertAdaptationCandidates value={adaptation} onChange={setAdaptation} language={language} disabled={active || busy}/>
-          </div><p className="subtle">{text.reserveHint}</p><p className="subtle">{language === 'zh-CN' ? '专家策略在引擎未公开有效值时仅核验启动参数，并保留完整场景质量与耗时比较。' : 'When effective adaptive values are unpublished, the owned startup arguments are checked and full scenario quality and timings are compared.'}</p></>}
-      </details>
+    <div className="tuning-mode-row"><Segmented ariaLabel={text.mode} value={mode} options={[{ value: 'quick', label: cal.quickMode, disabled: anyActive || busy }, { value: 'full', label: cal.fullMode, disabled: anyActive || busy }, { value: 'diagnostic', label: cal.diagnosticMode, disabled: anyActive || busy }]} onValueChange={value => setMode(value as TuningMode)}/></div>
 
-    </Panel></details>
-    {job && <>
+    {mode === 'quick' && calibrationJob && <Panel title={cal.quickMode} className="tuning-calibration-panel" action={<button onClick={exportCalibration}><Download size={14}/>{text.export}</button>}>
+      <QuickCalibrationView job={calibrationJob} live={calibrationActive ? liveSnapshot : null} text={cal} language={language} states={text as unknown as Record<string, string>} clock={clock} busy={busy}
+        canApply={canApplyCalibration} notice={notice} onCancel={() => void run(() => core.calibrateCancel(calibrationJob.id))}
+        onSaveVersion={() => void applyCalibration(false)} onOverwrite={() => setOverwriteOpen(true)} onVerify={verifyWithScenarios} onBenchmark={onBenchmark}/>
+    </Panel>}
+    {mode === 'quick' && active && job && <p className="notice" role="status">{text[job.state]} · {fullReport ? cal.fullMode : cal.diagnosticMode}</p>}
+    {(mode === 'quick' || !job) && setupPanel}
+
+    {mode !== 'quick' && job && <>
       <Panel title={text.progress} className="tuning-progress-panel" action={<button onClick={exportReport}><Download size={14}/>{text.export}</button>}>
         <p className="tuning-report-scope">{legacyReport ? text.legacyScope : fullReport ? text.fullScope : text.diagnosticScope}{fullReport && job.useCase ? ` · ${useCaseLabels[job.useCase]}` : ''}</p>
         {legacyReport && <p className="notice">{text.legacyHint}</p>}
-        <div className="tuning-progress" role="status" aria-live="polite">{active ? <LoaderCircle className="spin" size={16}/> : <Activity size={16}/>}<strong>{text[job.state]}</strong><span>{job.completedRequests} / {job.totalRequests} {text.requests}</span>{job && cancelableStates.has(job.state) && <button disabled={busy || job.state === 'canceling' || recovery?.state === 'restoring'} onClick={() => void run(() => core.tuningCancel(job.id))}><Square size={15}/>{text.cancel}</button>}</div>
-        {job.progress && <div className="tuning-stage"><strong>{text[job.progress.phase]}</strong><span>{job.progress.completedWorkloads} / {job.progress.totalWorkloads} {text.workloadProgress}{job.progress.workloadKind ? ` · ${text[job.progress.workloadKind]}` : ''}{job.progress.candidateId ? ` · ${job.progress.candidateId}` : ''}</span></div>}
-
-        <p className="subtle">{text.elapsed}: {seconds(Math.max(0, (job.finishedAt ?? clock) - job.startedAt))}</p>
-        <div className="st-progress" role="progressbar" aria-label={text.progress} aria-valuenow={job.completedRequests} aria-valuemin={0} aria-valuemax={job.totalRequests}><div className="st-progress__bar" style={{ width: `${job.totalRequests > 0 ? job.completedRequests / job.totalRequests * 100 : 0}%` }}/></div>
-      {recovery && <div className={`tuning-recovery ${recovery.state === 'failed' ? 'is-failed' : ''}`} role={recovery.state === 'failed' ? 'alert' : 'status'}><strong>{text.recoveryTitle}: {recoveryLabels[recovery.state]}</strong>{recovery.state !== 'notNeeded' && <p>{recovery.configurationRestored ? text.configurationRestored : `${text.configurationRestored}: ${text.notVerified}`} · {recovery.serviceVerified ? text.serviceVerified : `${text.serviceVerified}: ${text.notVerified}`}</p>}{recovery.error && <p>{recovery.error}</p>}</div>}
-        <details className="tuning-disclosure tuning-baseline-details"><summary>{text.baselineDetails}</summary>
+        {active ? <LiveStatus text={cal} language={language} state={text[job.state]} stepLabel={tuningStepLabel}
+          stepIndex={liveSnapshot?.stepIndex} stepTotal={liveSnapshot?.stepTotal} round={liveSnapshot?.round ?? job.progress?.round} rounds={liveSnapshot?.rounds ?? job.rounds}
+          parameters={[liveSnapshot?.parameters.candidateId ?? job.progress?.candidateId, job.progress?.workloadKind ? text[job.progress.workloadKind] : null, liveSnapshot?.parameters.pcieFrac != null ? `${text.pcie} ${liveSnapshot.parameters.pcieFrac}` : null, liveSnapshot?.parameters.specMinP != null ? `${text.mtp} ${liveSnapshot.parameters.specMinP}` : null].filter(Boolean).join(' · ')}
+          liveRate={liveSnapshot?.request?.tokS ?? null} lastRate={liveSnapshot?.lastTokS ?? null} elapsedMs={clock - job.startedAt} etaMs={liveSnapshot?.etaMs ?? null}
+          done={job.progress ? Math.max(job.progress.completedWorkloads, liveSnapshot?.completedUnits ?? 0) : Math.max(job.completedRequests, liveSnapshot?.completedUnits ?? 0)}
+          total={job.progress ? job.progress.totalWorkloads : job.totalRequests} unit={job.progress ? cal.progressWorkloads : cal.progressRequests}
+          cancelLabel={text.cancel} onCancel={cancelableStates.has(job.state) ? () => void run(() => core.tuningCancel(job.id)) : undefined} cancelDisabled={busy || job.state === 'canceling' || recovery?.state === 'restoring'}/>
+        : <><div className="tuning-progress" role="status" aria-live="polite"><Activity size={16}/><strong>{text[job.state]}</strong><span>{job.progress ? `${job.progress.completedWorkloads} / ${job.progress.totalWorkloads} ${text.workloadProgress}` : `${job.completedRequests} / ${job.totalRequests} ${text.requests}`}</span></div>
+          <p className="subtle">{text.elapsed}: {seconds(Math.max(0, (job.finishedAt ?? clock) - job.startedAt))}</p></>}
+        {recovery && <div className={`tuning-recovery ${recovery.state === 'failed' ? 'is-failed' : ''}`} role={recovery.state === 'failed' ? 'alert' : 'status'}><strong>{text.recoveryTitle}: {recoveryLabels[recovery.state]}</strong>{recovery.state !== 'notNeeded' && <p>{recovery.configurationRestored ? text.configurationRestored : `${text.configurationRestored}: ${text.notVerified}`} · {recovery.serviceVerified ? text.serviceVerified : `${text.serviceVerified}: ${text.notVerified}`}</p>}{recovery.error && <p>{recovery.error}</p>}</div>}
+        <section className="tuning-baseline"><h3>{text.baselineDetails}</h3>
         <div className="metrics-grid"><Metric label={`${text.baseline} · ${text.pcie}`} value={numeric(job.baseline.pcieFrac)}/><Metric label={`${text.baseline} · ${text.mtp}`} value={numeric(job.baseline.specMinP)}/></div>{fullReport && job.restartBaseline && <p className="subtle">{text.baseline}: {restartDescription(job.restartBaseline)}</p>}
         {fullReport && job.limits && <><p className="subtle">{text.testDeadline}: {numeric(job.limits.maxDurationSeconds / 60, 0)} min · {text.recoveryDeadline}: {numeric(job.limits.recoveryDeadlineSeconds / 60, 0)} min · {text.generationLimit}: {numeric(job.limits.generationRequestLimit, 0)} · {text.outputBudget}: {numeric(job.limits.outputTokenUpperBound, 0)}</p><p className="subtle">{text.budgetHint}</p></>}
-        </details>
+        </section>
       </Panel>
 
       {!active && <Panel title={text.result} className="tuning-result-summary">
@@ -226,7 +309,8 @@ export function TuningPage({ profileId, language, desktop, owned, streaming, onC
         {fullReport && recommendedCandidate && recommendedResources?.status !== 'checked' && <p className="notice error" role="alert">{recommendedResources?.status === 'insufficientHeadroom' ? text.resourceLowBlocked : text.resourceUnknownBlocked}</p>}
         {fullReport && recommendedCandidate?.kind === 'restart' && !recommendedCandidate.startupVerification?.parameters.length && <p className="notice" role="status">{text.startupUnverified}</p>}
       </Panel>}
-      {fullReport && <details className="tuning-disclosure tuning-report-details"><summary><span>{text.sceneResults}</span><small>{workloadMeasurements.length} {text.samples}{qualityFailures > 0 && <span> · {qualityFailures} {text.mismatch}</span>}</small></summary><Panel title={text.sceneResults}>
+      {setupPanel}
+      {fullReport && <Panel title={text.sceneResults} className="tuning-report" action={<small className="tuning-muted">{workloadMeasurements.length} {text.samples}{qualityFailures > 0 && <span> · {qualityFailures} {text.mismatch}</span>}</small>}>
         <p className="subtle">{text.scopeExplanation}</p>
         {!!job.candidates.length && <div className="tuning-purpose"><Dropdown ariaLabel={text.resultFor} value={selectedCandidate} onValueChange={setResultCandidate} options={job.candidates.map(candidate => ({ value: candidate.id, label: `${candidate.id} · ${candidate.kind === 'restart' ? text.restartCandidate : text.requestCandidate}` }))}/></div>}
         <div className="tuning-workloads">{workloadKinds.map(kind => {
@@ -241,14 +325,15 @@ export function TuningPage({ profileId, language, desktop, owned, streaming, onC
           {resourceAssessment && <><p>{text.resourceSamples}: {numeric(resourceAssessment.sampleCount, 0)} · {text.resourceFloor}: RAM {headroomSize(resourceAssessment.minimumRamHeadroomBytes)} / GPU {headroomSize(resourceAssessment.minimumGpuHeadroomBytes)}</p><p>{text.ramTotal}: {size(resourceAssessment.ramTotalBytes)} · {text.gpuTotal}: {size(resourceAssessment.gpuTotalBytes)}</p></>}
           <p>{text.resourceGateHint}</p>
         </div>
-      </Panel></details>}
-      <details className="tuning-disclosure tuning-report-details"><summary><span>{text.comparisons}</span><small>{job.candidates.length} {text.candidates}</small></summary><Panel title={text.candidates}>{fullReport && <p className="subtle">{text.gainTimingHint}</p>}
+      </Panel>}
+      {!!job.candidates.length && <Panel title={text.comparisons} className="tuning-report" action={<small className="tuning-muted">{job.candidates.length} {text.candidates}</small>}>{fullReport && <p className="subtle">{text.gainTimingHint}</p>}
         <div className="table-wrap"><table className="st-table tuning-candidates"><thead><tr><th>{text.candidate}</th><th>{text.pcie}</th><th>{text.mtp}</th><th>{fullReport ? text.wallGain : text.gain}</th><th>{text.drift}</th><th>{text.result}</th></tr></thead><tbody>{job.candidates.map(candidate => <tr key={candidate.id}><td><strong>{candidate.id}</strong><small className="tuning-candidate-kind">{candidate.kind === 'restart' ? restartDescription(candidate.restart) : text.requestCandidate}</small>{candidate.startupVerification && <small className="tuning-candidate-kind" data-testid={`startup-verification-${candidate.id}`}><strong>{text.startupVerification}</strong>{candidate.startupVerification.parameters.map(parameter => <span key={parameter.name}>{parameterLabels[parameter.name] ?? parameter.name} · {text[parameter.status]}<br/>{text.requested}: {startupValue(parameter.name, parameter.requested)} · {text.observed}: {startupValue(parameter.name, parameter.observed)}</span>)}</small>}</td><td>{numeric(candidate.pcieFrac)}</td><td>{numeric(candidate.specMinP)}</td><td>{candidate.evaluation?.gain == null ? '—' : `${numeric(candidate.evaluation.gain * 100, 1)}%`}</td><td>{candidate.evaluation?.drift == null ? '—' : `${numeric(candidate.evaluation.drift * 100, 1)}%`}</td><td>{candidate.evaluation ? text[candidate.evaluation.reason] ?? candidate.evaluation.reason : '—'}{candidate.dimensions && <small className="tuning-candidate-kind">{Object.entries(candidate.dimensions).map(([kind, evaluation]) => <span key={kind}>{text[kind as TuningWorkloadKind]}: {evaluation?.gain == null ? text.notTested : `${numeric(evaluation.gain * 100, 1)}%`} · {evaluation?.accepted ? text.ok : text.mismatch}</span>)}</small>}</td></tr>)}</tbody></table></div>
 
-      </Panel></details>
-      {fullReport && <details className="tuning-disclosure tuning-report-details"><summary><span>{text.workloadDetails}</span><small>{workloadMeasurements.length} {text.samples}</small></summary><Panel title={text.workloadDetails}><div className="table-wrap"><table className="st-table"><thead><tr><th>{text.scene}</th><th>{text.candidate}</th><th>{text.role}</th><th>{text.wall}</th><th>{text.ttft}</th><th>{text.visible}</th><th>{text.cachedTokens}</th><th>{text.contextMeasured}</th><th>{text.checks}</th></tr></thead><tbody>{workloadMeasurements.map(measurement => <tr key={measurement.id}><td>{text[measurement.kind]} · {measurement.round + 1}</td><td>{measurement.candidateId}</td><td>{text[measurement.position]}</td><td>{seconds(measurement.kind === 'fullAgent' ? measurement.result.fullAgentWallMs : measurement.result.wallMs)}</td><td>{seconds(measurement.result.firstTokenMs)}</td><td>{seconds(measurement.result.firstVisibleMs)}</td><td>{numeric(measurement.result.cachedTokens, 0)}</td><td>{numeric(measurement.result.actualContextTokens ?? measurement.result.inputTokens, 0)} / {numeric(measurement.result.targetInputTokens, 0)}</td><td><strong>{measurement.result.complete && measurement.result.qualityPassed ? text.ok : text.mismatch}</strong>{measurement.result.qualityReason && <small className="tuning-candidate-kind">{measurement.result.qualityDetail || measurement.result.qualityReason}</small>}</td></tr>)}</tbody></table></div></Panel></details>}
-      <details className="tuning-disclosure tuning-report-details tuning-diagnostic-details"><summary>{text.diagnosticDetails}</summary><Panel title={text.details}><p className="subtle">{text.explanation}</p><div className="table-wrap"><table className="st-table"><thead><tr><th>{text.scene}</th><th>{text.role}</th><th>{text.cache}</th><th>{text.ttft}</th><th>{text.visible}</th><th>{text.speed}</th><th>{text.output}</th><th>{text.quality}</th></tr></thead><tbody>{job.measurements.map(measurement => <tr key={measurement.id}><td>{text[measurement.scene]} · {measurement.round + 1}</td><td>{text[measurement.position]}</td><td>{text[measurement.cacheMode]}</td><td>{measurement.firstTokenMs == null ? '—' : `${numeric(measurement.firstTokenMs / 1000)} s`}</td><td>{measurement.firstVisibleMs == null ? '—' : `${numeric(measurement.firstVisibleMs / 1000)} s`}</td><td>{numeric(measurement.decodeTokS)} tok/s</td><td>{numeric(measurement.outputTokens, 0)}</td><td data-tooltip={measurement.error}>{measurement.complete && measurement.qualityPassed ? text.ok : text.mismatch}</td></tr>)}</tbody></table></div></Panel></details>
+      </Panel>}
+      {fullReport && !!workloadMeasurements.length && <Panel title={text.workloadDetails} className="tuning-report" action={<small className="tuning-muted">{workloadMeasurements.length} {text.samples}</small>}><div className="table-wrap"><table className="st-table"><thead><tr><th>{text.scene}</th><th>{text.candidate}</th><th>{text.role}</th><th>{text.wall}</th><th>{text.ttft}</th><th>{text.visible}</th><th>{text.cachedTokens}</th><th>{text.contextMeasured}</th><th>{text.checks}</th></tr></thead><tbody>{workloadMeasurements.map(measurement => <tr key={measurement.id}><td>{text[measurement.kind]} · {measurement.round + 1}</td><td>{measurement.candidateId}</td><td>{text[measurement.position]}</td><td>{seconds(measurement.kind === 'fullAgent' ? measurement.result.fullAgentWallMs : measurement.result.wallMs)}</td><td>{seconds(measurement.result.firstTokenMs)}</td><td>{seconds(measurement.result.firstVisibleMs)}</td><td>{numeric(measurement.result.cachedTokens, 0)}</td><td>{numeric(measurement.result.actualContextTokens ?? measurement.result.inputTokens, 0)} / {numeric(measurement.result.targetInputTokens, 0)}</td><td><strong>{measurement.result.complete && measurement.result.qualityPassed ? text.ok : text.mismatch}</strong>{measurement.result.qualityReason && <small className="tuning-candidate-kind">{measurement.result.qualityDetail || measurement.result.qualityReason}</small>}</td></tr>)}</tbody></table></div></Panel>}
+      {!!job.measurements.length && <Panel title={text.diagnosticDetails} className="tuning-report tuning-diagnostic-details"><p className="subtle">{text.explanation}</p><div className="table-wrap"><table className="st-table"><thead><tr><th>{text.scene}</th><th>{text.role}</th><th>{text.cache}</th><th>{text.ttft}</th><th>{text.visible}</th><th>{text.speed}</th><th>{text.output}</th><th>{text.quality}</th></tr></thead><tbody>{job.measurements.map(measurement => <tr key={measurement.id}><td>{text[measurement.scene]} · {measurement.round + 1}</td><td>{text[measurement.position]}</td><td>{text[measurement.cacheMode]}</td><td>{measurement.firstTokenMs == null ? '—' : `${numeric(measurement.firstTokenMs / 1000)} s`}</td><td>{measurement.firstVisibleMs == null ? '—' : `${numeric(measurement.firstVisibleMs / 1000)} s`}</td><td>{numeric(measurement.decodeTokS)} tok/s</td><td>{numeric(measurement.outputTokens, 0)}</td><td data-tooltip={measurement.error}>{measurement.complete && measurement.qualityPassed ? text.ok : text.mismatch}</td></tr>)}</tbody></table></div></Panel>}
     </>}
-    {helpOpen && <Dialog title={language === 'zh-CN' ? '调优测试说明' : 'Tuning test details'} onClose={() => setHelpOpen(false)}><div className="tuning-help-content"><p>{text.intro}</p><p>{diagnostic ? text.diagnosticHint : text.scenarioScope}</p><p>{diagnostic ? text.explanation : text.durationHint}</p>{!diagnostic && <><h3>{text.contextLimit}</h3><p>{text.contextHint}</p><h3>{text.startupVerification}</h3><p>{text.startupHint}</p><h3>{text.result}</h3><p>{text.scopeExplanation}</p><p>{text.gainTimingHint}</p><h3>{text.resourceTitle}</h3><p>{text.resourceHint}</p><p>{text.resourceGateHint}</p></>}</div></Dialog>}
+    {overwriteOpen && <Dialog title={cal.overwriteConfirm} onClose={() => setOverwriteOpen(false)}><div className="tuning-help-content"><p>{cal.overwriteBody}</p>{profile && <p className="tuning-muted">{profile.configPath}</p>}<div className="actions"><button onClick={() => setOverwriteOpen(false)}>{cal.cancel}</button><button className="primary" data-testid="calibration-overwrite-confirm" disabled={!canApplyCalibration} onClick={() => { setOverwriteOpen(false); void applyCalibration(true); }}><Check size={14}/>{cal.confirmOverwrite}</button></div></div></Dialog>}
+    {helpOpen && <Dialog title={language === 'zh-CN' ? '调优测试说明' : 'Tuning test details'} onClose={() => setHelpOpen(false)}><div className="tuning-help-content"><p>{text.intro}</p>{mode === 'quick' ? <><p>{cal.quickIntro}</p><p>{cal.quickRule}</p><p>{cal.verifyHint}</p></> : <><p>{diagnostic ? text.diagnosticHint : text.scenarioScope}</p><p>{diagnostic ? text.explanation : text.durationHint}</p></>}{mode === 'full' && <><h3>{text.contextLimit}</h3><p>{text.contextHint}</p><h3>{text.startupVerification}</h3><p>{text.startupHint}</p><h3>{text.result}</h3><p>{text.scopeExplanation}</p><p>{text.gainTimingHint}</p><h3>{text.resourceTitle}</h3><p>{text.resourceHint}</p><p>{text.resourceGateHint}</p></>}</div></Dialog>}
   </div>;
 }

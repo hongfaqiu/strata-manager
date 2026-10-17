@@ -326,7 +326,7 @@ impl RuntimeState {
             status["recoveryDeferred"] = json!(self.recovery_is_deferred());
             status["activeLocalInstallation"] = active_local_installation;
             status["localServiceDesired"] = local_service_desired;
-            status["capabilities"] = json!({"fullScenarioTuning": 1, "managerMcp": 1});
+            status["capabilities"] = json!({"fullScenarioTuning": 1, "managerMcp": 1, "quickCalibration": 1, "tuningLive": 1});
             status
         })
     }
@@ -783,6 +783,7 @@ impl RuntimeState {
                 | "switch_local_service"
                 | "tuning_start"
                 | "tuning_start_full_v1"
+                | "calibrate_start"
                 | "tuning_apply"
                 | "tuning_restore"
                 | "set_background_policy"
@@ -836,6 +837,7 @@ impl RuntimeState {
                     | "resolve_profile"
                     | "tuning_start"
                     | "tuning_start_full_v1"
+                    | "calibrate_start"
                     | "tuning_apply"
                     | "tuning_restore"
                     | "set_background_policy"
@@ -939,6 +941,27 @@ impl RuntimeState {
                 value(tuning::start(self.clone(), arg(&params, "profileId")?, request).await)
             }
             "tuning_status" => value(tuning::status(&self, arg(&params, "profileId")?)),
+            "tuning_live" => value(Ok::<_, String>(tuning::live_status(&arg::<String>(
+                &params, "jobId",
+            )?))),
+            "calibrate_start" => value(
+                tuning::calibrate::start(
+                    self.clone(),
+                    arg(&params, "profileId")?,
+                    params
+                        .get("request")
+                        .cloned()
+                        .map(serde_json::from_value)
+                        .transpose()
+                        .map_err(|e| format!("校准参数无效：{e}"))?
+                        .unwrap_or_default(),
+                )
+                .await,
+            ),
+            "calibrate_status" => {
+                value(tuning::calibrate::status(&self, arg(&params, "profileId")?))
+            }
+            "calibrate_cancel" => value(tuning::calibrate::cancel(&self, arg(&params, "jobId")?)),
             "tuning_cancel" => value(tuning::cancel(&self, arg(&params, "jobId")?)),
             "tuning_apply" => value(
                 tuning::apply(
