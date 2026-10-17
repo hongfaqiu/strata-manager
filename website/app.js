@@ -204,8 +204,8 @@ const strataReleaseCatalog = (() => {
     },
     "tuning": {
       "index": "08",
-      "zh": { "title": "调优 · 比较参数配置", "description": "按任务比较质量、速度与资源占用。", "alt": "参数调优：用途场景、参数候选与对比结果", "badge": "参数调优" },
-      "en": { "title": "Tuning · Compare configurations", "description": "Compare quality, speed and resource use for a workload.", "alt": "Parameter tuning: workload scenarios, candidates and comparison results", "badge": "TUNING" }
+      "zh": { "title": "调优 · 比较参数配置", "description": "按任务比较质量、速度与资源占用。", "alt": "参数调优：快速校准、场景验收与并发对比", "badge": "参数调优" },
+      "en": { "title": "Tuning · Compare configurations", "description": "Compare quality, speed and resource use for a workload.", "alt": "Parameter tuning: quick calibration, scenario checks and concurrency comparison", "badge": "TUNING" }
     },
     "settings": {
       "index": "09",
