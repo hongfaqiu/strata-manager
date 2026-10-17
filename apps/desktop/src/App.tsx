@@ -3,7 +3,7 @@ import { ConfigEstimate, EndpointHero, EnvironmentDevices, TasksTimeline, VramRe
 import { readHardware } from './pages/D2Visuals';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Activity, ArrowRight, Check, Download, FileText, FolderOpen, Gauge, HardDrive, LayoutDashboard, LoaderCircle, MessageSquare, RefreshCw, Search, Server, Settings2, SlidersHorizontal, Square, Terminal, Upload, X, Zap } from 'lucide-react';
+import { Activity, ArrowRight, Check, Download, FileText, Flag, FolderOpen, Gauge, HardDrive, LayoutDashboard, LoaderCircle, MessageSquare, RefreshCw, Search, Server, Settings2, SlidersHorizontal, Square, Terminal, Upload, X, Zap } from 'lucide-react';
 import * as core from '@strata-manager/core';
 import type { AppSettings, Attachment, ChatMessage, Conversation, ServiceProfile, TaskStatus, JsonObject, ChatOptions, ToolEvent } from '@strata-manager/core';
 import i18n, { type TextKey } from './i18n';
@@ -59,12 +59,14 @@ import { Dropdown, Segmented, Toggle } from './OfficialControls';
 import { useDraftGuard, type SaveDraft } from './useDraftGuard';
 import { createLatestStoreWriter, type LatestStoreWriter } from './storeWriteQueue.mjs';
 import { abortableRead } from './abortableRead';
+import { GuideResume, OnboardingPage } from './onboarding/OnboardingPage';
+import { ONBOARDING_KEY, deriveGuide, effectiveStatus, newProgress, normalizeProgress, type OnboardingProgress } from './onboarding/onboardingModel';
 
 function useStoredValue(writer: LatestStoreWriter, key: string, value: unknown, enabled: boolean, onError: (error: unknown) => void) {
   useEffect(() => { if (!enabled) return; writer.stage(key, value); void writer.flush(key).catch(onError); }, [writer, key, value, enabled, onError]);
 }
 
-type Page = 'overview' | 'profiles' | 'models' | 'catalog' | 'tuning' | 'chat' | 'monitoring' | 'benchmark' | 'usage' | 'requests' | 'tasks' | 'environment' | 'settings' | 'monitor-settings' | 'chat-defaults' | 'connections' | 'runtime-tools' | 'updates' | 'about' | 'config';
+type Page = 'guide' | 'overview' | 'profiles' | 'models' | 'catalog' | 'tuning' | 'chat' | 'monitoring' | 'benchmark' | 'usage' | 'requests' | 'tasks' | 'environment' | 'settings' | 'monitor-settings' | 'chat-defaults' | 'connections' | 'runtime-tools' | 'updates' | 'about' | 'config';
 const navigation: { id: Page; icon: typeof Activity; group: 'navDaily' | 'navModels' | 'navApplication' }[] = [
   { id: 'overview', icon: LayoutDashboard, group: 'navDaily' },
   { id: 'chat', icon: MessageSquare, group: 'navDaily' },
@@ -76,7 +78,7 @@ const navigation: { id: Page; icon: typeof Activity; group: 'navDaily' | 'navMod
   { id: 'tasks', icon: Terminal, group: 'navModels' },
   { id: 'settings', icon: Settings2, group: 'navApplication' },
 ];
-const routePage=(hash:string):Page=>{const value=hash.slice(1);return value==='localSetup'?'models':value==='monitor'?'monitoring':([...navigation.map(item=>item.id),'profiles','catalog','benchmark','usage','requests','tasks','environment','monitor-settings','chat-defaults','connections','runtime-tools','updates','about','config'] as string[]).includes(value)?value as Page:'overview';};
+const routePage=(hash:string):Page=>{const value=hash.slice(1);return value==='localSetup'?'models':value==='monitor'?'monitoring':([...navigation.map(item=>item.id),'guide','profiles','catalog','benchmark','usage','requests','tasks','environment','monitor-settings','chat-defaults','connections','runtime-tools','updates','about','config'] as string[]).includes(value)?value as Page:'overview';};
 const parentPage=(page:Page):Page=>['profiles','catalog','config'].includes(page)?'models':['usage','requests'].includes(page)?'monitoring':['about','updates','monitor-settings','chat-defaults','connections','runtime-tools'].includes(page)?'settings':page;
 const defaults: AppSettings = { language: core.matchAppLanguage(navigator.language), languagePreference: 'system', theme: 'system', closeToTray: true, skipExitConfirmation: false, pollInterval: 3000, autoCheckUpdates: true };
 
@@ -161,6 +163,10 @@ export function App() {
   const [startupFailure, setStartupFailure] = useState<core.StartupFailureDiagnostic>();
   const [resolvedStartupFailures, setResolvedStartupFailures] = useState<Record<string,number>>({});
   const [lastUsedId, setLastUsedId] = useState('');
+  const [guideProgress, setGuideProgress] = useState<OnboardingProgress | null>(null);
+  const [guideLoaded, setGuideLoaded] = useState(false);
+  const guideAutoOpened = useRef(false);
+  const pendingGuideSend = useRef(false);
   const preparingLocal = useRef(false);
   const preparationGeneration = useRef(0);
   const maySelectFirstPrepared = useRef(false);
@@ -251,6 +257,7 @@ export function App() {
   }, [bootAttempt]);
   useEffect(() => { if (ready && profiles.length) maySelectFirstPrepared.current = false; }, [ready, profiles.length]);
   useEffect(() => { if (ready) void core.loadStore<string>('lastUsedLocalInstallation', '').then(setLastUsedId); }, [ready]);
+  useEffect(() => { if (!ready) return; void core.loadStore<unknown>(ONBOARDING_KEY, null).then(value => setGuideProgress(normalizeProgress(value))).catch(reportStoreError).finally(() => setGuideLoaded(true)); }, [ready]);
   useEffect(() => { if (!desktop || !ready) return; let disposed=false;let unlisten: (() => void) | undefined; void import('@tauri-apps/api/event').then(({listen}) => listen<string>('tray-action-error', event => {if(!disposed)notify(event.payload, true);})).then(fn => {if(disposed)fn();else unlisten=fn;}).catch(error=>{if(!disposed)notify(errorText(error),true);}); return () => {disposed=true;unlisten?.();}; }, [desktop, ready]);
   useStoredValue(storeWriter, 'profiles', profiles, ready && !desktop, reportStoreError);
   useStoredValue(storeWriter, 'settings', settings, ready && !showLanguageSetup, reportStoreError);
@@ -263,6 +270,7 @@ export function App() {
   useStoredValue(storeWriter, 'sidebarCollapsed', sidebarCollapsed, ready, reportStoreError);
   useStoredValue(storeWriter, 'modelDiscoveryDirectories', modelDirectories, ready, reportStoreError);
   useStoredValue(storeWriter, 'chatPreferences', chatPreferences, preferencesReady, reportStoreError);
+  useStoredValue(storeWriter, ONBOARDING_KEY, guideProgress, ready && guideLoaded && guideProgress !== null, reportStoreError);
   useEffect(() => { if (!ready) return; storeWriter.stage('conversations', conversations); if (!streaming) void storeWriter.flush('conversations').catch(reportStoreError); }, [storeWriter, ready, conversations, streaming, reportStoreError]);
   useEffect(()=>{if(ready)setConversationId(conversations.find(c=>c.id===conversationIds[activeId]&&c.profileId===activeId)?.id??conversations.find(c=>c.profileId===activeId)?.id??'');},[ready,activeId]);
   useEffect(() => { if (!ready) return; const timer = setInterval(() => { void storeWriter.flushAll().catch(reportStoreError); }, 1000); return () => { clearInterval(timer); void storeWriter.flushAll().catch(reportStoreError); }; }, [storeWriter, ready, reportStoreError]);
@@ -316,7 +324,7 @@ export function App() {
     }).catch(error => { if (!disposed) notify(errorText(error), true); });
     return () => { disposed = true; };
   }, [ready, preparedProfiles.data, activeId]);
-  const discoveredCandidates = useQuery({ queryKey: ['discovered-local-models', modelDirectories.join('|')], queryFn: () => core.discoverLocal(modelDirectories.length ? modelDirectories : undefined), enabled: desktop && ready, staleTime: 30000, refetchInterval: ['overview', 'models', 'profiles', 'environment'].includes(page) ? 30000 : false, refetchOnWindowFocus: false });
+  const discoveredCandidates = useQuery({ queryKey: ['discovered-local-models', modelDirectories.join('|')], queryFn: () => core.discoverLocal(modelDirectories.length ? modelDirectories : undefined), enabled: desktop && ready, staleTime: 30000, refetchInterval: ['overview', 'models', 'profiles', 'environment', 'guide'].includes(page) ? 30000 : false, refetchOnWindowFocus: false });
   const supervisor = useQuery({ queryKey: ['supervisor'], queryFn: core.supervisorStatus, enabled: desktop && ready, refetchInterval: 10000, refetchOnWindowFocus: false });
   const observedSupervisorSelection = useRef({ signature: '', uiProfileId: activeId });
   const supervisorSelectedId = supervisor.data?.activeLocalInstallation;
@@ -373,8 +381,12 @@ export function App() {
     });
   }, [desktop, ready, tasks.data, query]);
   const logs = useQuery({ queryKey: ['logs', selectedTaskId ? 'task' : 'service', selectedTaskId || logProfile?.id, logProfile?.configPath], queryFn: () => selectedTaskId ? core.readTaskLogs(selectedTaskId, 2000) : core.readLogs(logProfile!, 2000), enabled: desktop && (!!selectedTaskId || !!logProfile) && page === 'tasks', refetchInterval: settings.pollInterval });
-  const environment = useQuery({ queryKey: ['environment'], queryFn: core.environmentInfo, enabled: desktop && ready && (page === 'environment' || page === 'models' || page === 'profiles' || page === 'catalog' || page === 'config'), staleTime: 30000 });
+  const guideStatus = effectiveStatus(guideProgress, profiles.length > 0);
+  const guideActive = guideLoaded && guideStatus === 'active';
+  const environment = useQuery({ queryKey: ['environment'], queryFn: core.environmentInfo, enabled: desktop && ready && (page === 'guide' || guideActive || page === 'environment' || page === 'models' || page === 'profiles' || page === 'catalog' || page === 'config'), staleTime: 30000 });
   const overviewRuntime = useQuery({ queryKey: ['runtime-installation'], queryFn: core.localRuntimeInstallation, enabled: desktop && ready && page === 'overview' && !profile, staleTime: 30000 });
+  const guideInstallRunning = !!tasks.data?.some(task => task.kind.includes('install') && task.state === 'running');
+  const guideRuntime = useQuery({ queryKey: ['runtime-installation'], queryFn: core.localRuntimeInstallation, enabled: desktop && ready && (page === 'guide' || guideActive), staleTime: 5000, refetchInterval: page === 'guide' ? (guideInstallRunning ? 2000 : 15000) : false });
   const availableModels = useQuery({ queryKey: ['availableModels', activeId, profile?.baseUrl], queryFn: () => core.request(profile!, '/v1/models'), enabled: !!profile && online && page === 'chat' });
   const apiModels = Array.isArray(object(availableModels.data).data) ? (object(availableModels.data).data as unknown[]).map(x => String(object(x).id ?? '')).filter(Boolean) : [];
 
@@ -635,6 +647,7 @@ export function App() {
     } catch (error) { if (!controller.signal.aborted) updateMessage(cid, assistant.id, message => ({ ...message, error: errorText(error) })); }
     finally { updateMessage(cid, assistant.id, message => ({ ...message, execution: core.finishChatExecution(message.execution ?? assistant.execution!, controller.signal.aborted, !!message.error), elapsedMs: performance.now() - started, firstTokenMs, reasoningMs: reasoningMs ?? (thinkingStarted===undefined ? undefined : performance.now()-thinkingStarted), stopped: controller.signal.aborted, tools: message.tools?.map(tool=>['writing','running'].includes(tool.status)?{...tool,status:'skipped'}:tool) })); setStreaming(false); abort.current = null; }
   };
+  useEffect(()=>{if(page==='chat'&&pendingGuideSend.current&&profile&&chatReady&&conversation&&draft.trim()){pendingGuideSend.current=false;void send();}},[page,chatReady,conversation?.id,draft]);
   useEffect(()=>{if(ready&&profile&&chatReady&&initialPromptPending.current){initialPromptPending.current=false;const url=new URL(location.href);url.searchParams.delete('q');history.replaceState(null,'',`${url.pathname}${url.search}${url.hash}`);if(draft.trim())void send();}},[ready,profile?.id,chatReady]);
   const addFiles = async (list: File[]) => {
     const added: Attachment[] = [];
@@ -751,7 +764,40 @@ export function App() {
   const hardwareOnline = overviewMock ? overviewOnline : online;
   const overviewDesktop = overviewMock ? true : desktop;
   const overviewBackground = overviewMock?.backgroundHealth ?? (profile ? supervisor.data?.health?.[profile.id] : undefined);
+  const updateGuide = (patch: Partial<OnboardingProgress>) => setGuideProgress(old => ({ ...(old ?? newProgress(Date.now())), ...patch, updatedAt: Date.now() }));
+  const completeGuide = () => updateGuide({ status: 'completed', completedAt: Date.now() });
+  const openGuide = () => { setGuideProgress(old => old && old.status !== 'active' ? { ...old, status: 'active', updatedAt: Date.now() } : old ?? newProgress(Date.now())); go('guide'); };
+  const guide = deriveGuide({ progress: guideProgress, desktop, tasks: tasks.data ?? [], handoffs: handoffs.data ?? [], runtime: guideRuntime.data, runtimePending: guideRuntime.isPending,
+    environment: environment.data, environmentFailed: environment.isError, profiles, candidates: discoveredCandidates.data ?? [], activeProfile: profile, online, loaded, starting: !!localProgress });
+  useEffect(() => {
+    // First run only: no stored guide record, nothing configured, nothing discovered yet → open the guide once.
+    if (guideAutoOpened.current || !desktop || !ready || !guideLoaded || guideProgress || profiles.length || !discoveredCandidates.isSuccess) return;
+    guideAutoOpened.current = true;
+    if (page === 'overview' && !location.hash && !initialPromptPending.current) navigate('guide');
+  }, [desktop, ready, guideLoaded, !!guideProgress, profiles.length, discoveredCandidates.isSuccess]);
+  const startGuideChat = (text: string) => {
+    if (!profile || inferenceBusy) return;
+    const item: Conversation = { id: id(), title: t('unnamed'), profileId: profile.id, messages: [], createdAt: Date.now(), updatedAt: Date.now() };
+    setConversations(old => [item, ...old]); setConversationId(item.id); setConversationIds(old => ({ ...old, [profile.id]: item.id })); setAttachments([]); setDraft(text);
+    pendingGuideSend.current = true; completeGuide(); go('chat');
+  };
+  const renderGuidePage = () => <OnboardingPage language={settings.language} desktop={desktop} progress={guideProgress} guide={guide} onProgress={updateGuide}
+    onRefreshRuntime={() => void guideRuntime.refetch()} environment={environment.data} environmentError={environment.error ? errorText(environment.error) : undefined} environmentLoading={environment.isFetching}
+    onRecheckEnvironment={() => void environment.refetch()} memoryGB={machineMemoryGB(hardware, environment.data)} tasks={tasks.data ?? []} handoffs={handoffs.data ?? []} profiles={profiles}
+    candidates={discoveredCandidates.data ?? []} candidatesLoading={discoveredCandidates.isFetching} activeProfile={profile} online={online} loaded={loaded} starting={!!localProgress}
+    startupLogs={startupLogs.data ?? []} modelName={typeof healthData.model === 'string' ? healthData.model : undefined} busy={!!busy || inferenceBusy || !!localProgress}
+    onPrepareModel={request => act('setup', () => runRecipe({ kind: 'setup', ...request }), 'modelPrepared') as Promise<TaskStatus | undefined>}
+    onStart={async selected => { await activateLocal(selected); }}
+    onLoad={async selected => { await core.request(selected, '/load', 'POST', {}); await query.invalidateQueries(); }}
+    onConnectCandidate={async candidate => { if (candidate.running) await connectObservedService(candidate); else await prepareImported(candidate, 'guide'); }}
+    onResolveHandoff={async (taskId, configPath) => { await core.resolveSetupHandoff(taskId, configPath); await query.invalidateQueries(); }}
+    onRefreshProfiles={refreshLocalProfiles} onRescan={() => void discoveredCandidates.refetch()} onAddDirectory={addModelDirectory}
+    onOpenCatalog={() => go('catalog')} onOpenConfig={selected => openModelConfig(selected)} onOpenTasks={() => { setSelectedTaskId(guide.setupTask?.id ?? guide.runtimeTask?.id ?? ''); go('tasks'); }}
+    onOpenBenchmark={() => monitorNavigation.current('quickBenchmark')} onCopy={content => void copy(content)} onSendFirstMessage={startGuideChat}
+    onFinish={() => { completeGuide(); go('overview'); }} onSkip={() => { updateGuide({ status: 'skipped' }); go('overview'); }} onLater={() => go('overview')} onError={error => notify(errorText(error), true)}/>;
   const renderOverviewPage=()=> <OverviewPage
+    guideNotice={guideActive && desktop && !overviewMock ? <GuideResume plan={guide.plan} onResume={() => go('guide')}/> : undefined}
+    onOpenGuide={!guideActive && desktop && !overviewMock ? openGuide : undefined}
     profile={overviewProfile} health={overviewHealth} backgroundHealth={overviewBackground} metric={overviewMetric} process={overviewProcess}
     tasks={overviewTasks} tasksLoading={overviewMock?false:tasks.isPending} language={settings.language} online={overviewOnline} connecting={overviewConnecting} desktop={overviewDesktop}
     healthError={overviewMock?undefined:(serviceRunning&&health.error?errorText(health.error):undefined)} metricsError={overviewMock?undefined:(online&&metrics.error?errorText(metrics.error):undefined)} taskError={overviewMock?undefined:(tasks.error?errorText(tasks.error):undefined)}
@@ -891,6 +937,7 @@ export function App() {
     setShowLanguageSetup(false);
   };
   const SettingsPage = () => <><Header title={t('settings')} /><div className="settings-layout d2-settings">
+    <Panel title={t('obSettingsTitle' as TextKey)}><div className="setting-toggle"><span><strong>{t('guideTitle')}</strong><small className="d2-setting-hint">{t('obSettingsHint' as TextKey)}</small></span><button type="button" className="st-btn st-btn--secondary" onClick={openGuide}><Flag size={14}/>{t('obReopen' as TextKey)}</button></div></Panel>
     <Panel title={t('appearance')}><Field label={t('theme')}><Segmented ariaLabel={t('theme')} value={settings.theme} onValueChange={theme => changeSettings({theme:theme as AppSettings['theme']})} options={(['dark','light','system'] as const).map(theme => ({value:theme,label:t(theme === 'system' ? 'systemTheme' : theme),icon:theme === 'dark' ? <OfficialIcon name="moon" size={15}/> : theme === 'light' ? <OfficialIcon name="sun" size={15}/> : <Settings2 size={15}/>}))} /></Field><Field label={t('language')} hint={settings.language === 'en' || settings.language === 'zh-CN' ? translate('d2LanguageCount', { count: core.supportedLanguages.length }) : `${translate('d2LanguageCount', { count: core.supportedLanguages.length })} · ${t('translationFallbackHint')}`}><Dropdown ariaLabel={t('language')} value={settings.languagePreference ?? settings.language} onValueChange={value => setInterfaceLanguage(value as core.LanguagePreference)} options={[{value:'system',label:t('systemLanguage')},...core.supportedLanguages.map(item=>({value:item.code,label:item.label}))]} /></Field></Panel>
     <Panel title={t('behavior')}><div className="setting-toggle"><span><strong data-tooltip={t('closeToTrayHint')}>{t('closeToTray')}</strong><small className="d2-setting-hint">{t('closeToTrayHint')}</small></span><Toggle ariaLabel={t('closeToTray')} disabled={!desktop} tooltip={nativeTitle} checked={settings.closeToTray} onCheckedChange={checked => changeSettings({closeToTray:checked})} /></div>{!settings.closeToTray && <label className="setting-toggle"><span><strong>{settings.language === 'zh-CN' ? '退出前询问' : 'Confirm before exiting'}</strong></span><Toggle ariaLabel={settings.language === 'zh-CN' ? '退出前询问' : 'Confirm before exiting'} checked={!settings.skipExitConfirmation} onCheckedChange={checked => changeSettings({skipExitConfirmation:!checked})}/></label>}</Panel>
     <DesktopLifecycleSettings section="background" currentVersion={appVersion} desktop={desktop} streaming={inferenceBusy} autoCheck={settings.autoCheckUpdates !== false} onAutoCheck={enabled => changeSettings({autoCheckUpdates:enabled})} update={appUpdates.state} onCheck={appUpdates.check} onDownload={appUpdates.download} onInstall={appUpdates.install} onError={error => notify(errorText(error),true)}/>
@@ -977,7 +1024,7 @@ export function App() {
     {desktop && <ConfigurationList groups={selectedConfigurationGroup?[selectedConfigurationGroup]:[]} selectedPath={configProfile?.configPath} activeId={activeId} running={processStatus?.owned===true&&processStatus?.running===true} lastUsedId={lastUsedId} disabled={processUnverified||!!busy||inferenceBusy||!!localProgress} dirty={configurationDirty} loading={discoveredCandidates.isPending} error={discoveredCandidates.error?errorText(discoveredCandidates.error):undefined} language={settings.language} onRefresh={()=>{void discoveredCandidates.refetch();void installationDetails.refetch();}} onDelete={entry=>{const candidate=entry.candidate;const selected=entry.profile??(candidate?{id:`configuration-${candidate.id}`,name:candidate.name,baseUrl:`http://127.0.0.1:${candidate.detectedPort??8080}`,installDir:candidate.installDir,pythonPath:candidate.pythonPath,configPath:candidate.configPath,managed:false}:undefined);if(selected)setModal({kind:'deleteConfiguration',profile:selected});}} onOpen={entry=>{if(entry.profile)openModelConfig(entry.profile);else if(entry.candidate)openDiscoveredConfig(entry.candidate);}} onUse={(entry,restart)=>navigationGuard.requestAsync(async()=>{if(entry.profile){openModelConfig(entry.profile,true);if(restart)await restartSelectedService(entry.profile);else await activateLocal(entry.profile);}else if(entry.candidate){navigate('models');await prepareImported(entry.candidate);}})}/>}
     <RuntimeConfigPage profile={configProfile} online={configOnline} language={settings.language} desktop={desktop} onSharedSettings={()=>go('settings')} onServices={()=>go('models')} onImages={desktop&&configProfile?.configPath&&!busy&&!inferenceBusy&&!localProgress?()=>setModal({kind:'vision',profile:configProfile}):undefined} onDirtyChange={setConfigurationDirty} onSaveDraftReady={registerConfigurationSave} onCopied={configurationCopied} onDeleted={configurationDeleted} onRestart={desktop && configProfile?.id===activeId && processStatus?.owned===true && processStatus?.running===true && !busy && !inferenceBusy && !localProgress ? ()=>restartSelectedService(configProfile) : undefined} onError={error=>notify(errorText(error),true)} onMessage={configurationSaved}/></>;
   const renderTuningPage = () => <><div className="tuning-config-entry"><div><strong>{settings.language==='zh-CN'?'调整模型设置':'Model settings'}</strong><p>{settings.language==='zh-CN'?'保存后重启生效':'Restart to apply changes'}</p></div><button disabled={!profile} onClick={()=>openModelConfig(profile)}><Settings2 size={15}/>{t('config')}</button></div><TuningPage key={profile?.id} profileId={profile?.id} language={settings.language} desktop={desktop} owned={processStatus?.owned === true && processStatus?.running === true} streaming={inferenceBusy} onChanged={() => void query.invalidateQueries()}/></>;
-  const pages: Record<Page, () => ReactNode> = { benchmark: () => null, about: renderAboutPage, overview: renderOverviewPage, tuning: renderTuningPage, config: renderRuntimeConfig, profiles: ProfilesPage, models: ProfilesPage, catalog: ModelsPage, chat: renderChatPage, monitoring: renderMonitoringPage, usage: () => <ApiUsagePage language={settings.language} profileId={profile?.id} profileName={profile?.name} desktop={desktop} onQuery={core.analyticsQuery} live={{raw:metric?.raw,sampledAt:metrics.dataUpdatedAt || undefined,stale:!online || metricsUnavailable || (metrics.dataUpdatedAt > 0 && Date.now()-metrics.dataUpdatedAt > Math.max(15000,settings.pollInterval*3)),stopped:serviceStopped}} onOpenDiagnostics={()=>go('requests')}/>, requests: RequestsPage, tasks: TasksPage, environment: EnvironmentPage, settings: SettingsPage, 'monitor-settings': MonitorSettingsPage, 'chat-defaults': ChatDefaultsPage, connections: renderConnectionsPage, 'runtime-tools': renderRuntimeToolsPage, updates: UpdatesPage };
+  const pages: Record<Page, () => ReactNode> = { guide: renderGuidePage, benchmark: () => null, about: renderAboutPage, overview: renderOverviewPage, tuning: renderTuningPage, config: renderRuntimeConfig, profiles: ProfilesPage, models: ProfilesPage, catalog: ModelsPage, chat: renderChatPage, monitoring: renderMonitoringPage, usage: () => <ApiUsagePage language={settings.language} profileId={profile?.id} profileName={profile?.name} desktop={desktop} onQuery={core.analyticsQuery} live={{raw:metric?.raw,sampledAt:metrics.dataUpdatedAt || undefined,stale:!online || metricsUnavailable || (metrics.dataUpdatedAt > 0 && Date.now()-metrics.dataUpdatedAt > Math.max(15000,settings.pollInterval*3)),stopped:serviceStopped}} onOpenDiagnostics={()=>go('requests')}/>, requests: RequestsPage, tasks: TasksPage, environment: EnvironmentPage, settings: SettingsPage, 'monitor-settings': MonitorSettingsPage, 'chat-defaults': ChatDefaultsPage, connections: renderConnectionsPage, 'runtime-tools': renderRuntimeToolsPage, updates: UpdatesPage };
 
   if (!ready) return <div className="desktop-app-frame"><WindowTitleBar desktop={desktop} language={settings.language} collapsed={sidebarCollapsed} version={appVersion} onClose={windowClose.requestClose} onError={error=>notify(errorText(error),true)}/>{windowClose.dialog}<div className="boot">{bootError ? <><p role="alert">{t('workspaceLoadFailed')}</p><details><summary>{t('details')}</summary>{bootError}</details><button onClick={() => setBootAttempt(value => value + 1)}><RefreshCw size={15}/>{t('retry')}</button></> : <><LoaderCircle className="spin" size={28}/><span>{t('loading')}</span></>}</div></div>;
   const runningCandidates = (discoveredCandidates.data ?? []).filter(candidate => candidate.running === true && typeof candidate.pid === 'number' && candidate.pid > 0 && typeof candidate.detectedPort === 'number' && candidate.detectedPort > 0);
@@ -989,7 +1036,7 @@ export function App() {
   const officialPage = page==='chat'||page==='monitoring'||page==='about'||page==='config';
   const live=object(metric?.raw.live);const modelTransition=metric?.state==='loading'||metric?.state==='unloading';const pillState=processUnverified?'unknown':!online?(connecting?'connecting':'disconnected'):metricsUnavailable?'unknown':modelTransition||metric?.state==='unloaded'?metric.state:Number(live.queued)>0?'queued':metric?.state??'unknown';
   const pillText=detectedOutsideSelection?(settings.language==='zh-CN'?'检测到运行中服务':'Running service detected'):!profile?t('noProfile'):processUnverified?(settings.language==='zh-CN'?'服务状态待核验':'Service state unverified'):serviceStopped?(settings.language==='zh-CN'?'未启动':'Not started'):!online?t(connecting?'connecting':'offline'):metricsUnavailable?(settings.language==='zh-CN'?'实时状态未核验':'Live state unverified'):modelTransition||metric?.state==='unloaded'?serviceState(metric.state):Number(live.queued)>0?`${number(numeric(live.queued),0)} ${t('queuedState')}`:pillState==='generating'?`${t('generatingState')} · ${number(numeric(live.tok_s))} tok/s`:pillState==='reading'?`${t('readingState')}${Number(live.prompt_total)>0?` · ${Math.round(Number(live.prompt_read)/Number(live.prompt_total)*100)}%`:''}`:typeof live.state==='string'?serviceState(live.state):typeof healthData.loaded==='boolean'?t(loaded?'loaded':'notLoaded'):t('online');
-  const navItems=navigation.map(item=>({id:item.id,label:item.id==='monitoring'?t('monitorWorkspace'):item.id==='models'?t('modelWorkspace'):item.id==='environment'?'Strata':item.id==='settings'?t('navSettings'):t(item.id as TextKey),group:t(item.group),icon:<item.icon size={18}/>}));
+  const navItems=[...(guideActive||page==='guide'?[{id:'guide' as Page,label:t('guideTitle'),group:t('navDaily'),icon:<Flag size={18}/>,badge:guide.plan?`${guide.plan.doneCount}/${guide.plan.total}`:undefined}]:[]),...navigation.map(item=>({id:item.id,label:item.id==='monitoring'?t('monitorWorkspace'):item.id==='models'?t('modelWorkspace'):item.id==='environment'?'Strata':item.id==='settings'?t('navSettings'):t(item.id as TextKey),group:t(item.group),icon:<item.icon size={18}/>}))];
   const parent=parentPage(page);
   const subpages:Page[]=parent==='models'?['models','catalog']:parent==='monitoring'?['monitoring','usage']:parent==='settings'?['settings','monitor-settings','chat-defaults','connections','runtime-tools','updates','about']:[];
   const sidebarNode=<Sidebar showBrand={false} items={navItems} page={parent} profiles={profiles} activeId={activeId} disabled={inferenceBusy} collapsed={sidebarCollapsed} onCollapse={()=>setSidebarCollapsed(old=>!old)} onNavigate={next=>go(next as Page)} onProfile={profileId=>{const selected=profiles.find(p=>p.id===profileId);if(selected)void activateLocal(selected).catch(error=>notify(errorText(error),true));}}/>;
