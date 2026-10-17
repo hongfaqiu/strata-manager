@@ -7,6 +7,7 @@
   const deny = /^(?:connect_running_service|import_local|switch_local_service|ensure_local_service|start_service|stop_service|restart_service|take_over_service|write_config|copy_configuration|delete_configuration|delete_model|strata_stream|run_setup|install_runtime|prepare_app_update|tuning_start|tuning_apply)$/;
   window.__TAURI_INTERNALS__.invoke = async (command, args = {}) => {
     if (deny.test(command)) { fixture.documentation.forbiddenCalls.push({ command }); throw Error(`Forbidden screenshot operation: ${command}`); }
+    if (command === 'engine_help_flags') { fixture.calls.push({command,args}); return {flags:[],source:'preview'}; }
     if (command === 'get_system_language') { fixture.calls.push({command,args}); return {locales:[language === 'en' ? 'en-US' : 'zh-CN']}; }
     if (command === 'read_config_snapshot') { fixture.calls.push({command,args}); const id = args.profile?.id ?? args.profileId ?? 'a'; return {config:structuredClone(fixture.configs[id]),revision:`preview-${id}`}; }
     if (command === 'discover_local') {
