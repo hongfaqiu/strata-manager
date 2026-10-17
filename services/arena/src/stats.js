@@ -76,13 +76,53 @@ export function aggregate(subs) {
   return out.sort((a, b) => b.machines - a.machines);
 }
 
-/** Filters a group's rows to a GPU (exact name) or VRAM tier and re-ranks. */
-export function filterRows(group, { gpu, vram } = {}) {
+/** Leaderboard orderings. Rows without the measured value sort last and stay unranked. */
+export const SORTS = { decode8k: r => r.decode?.median ?? null, decode128k: r => r.decode128k ?? null, prefill: r => r.prefill ?? null, machines: r => r.machines ?? null };
+export const DEFAULT_SORT = 'decode8k';
+/** Facets a group can be narrowed by: hardware tiers and the launch parameters that most change speed. */
+export const FACETS = {
+  vram: r => r.hw.vramGB, ram: r => r.hw.ramGB,
+  ctx: r => r.params.ctx, kv: r => r.params.kv, parallel: r => r.params.parallel, gpuCount: r => r.params.gpuCount, expertCache: r => r.params.expertCache ?? 'auto',
+};
+export const FILTER_KEYS = ['gpu', 'q', ...Object.keys(FACETS), 'sort'];
+const NUMERIC = new Set(['vram', 'ram', 'ctx', 'parallel', 'gpuCount']);
+const fin = v => v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v));
+
+/** Distinct values per facet across the whole group, so clients only offer options that exist. */
+export function facetOptions(rows) {
+  const gpus = new Map();
+  for (const r of rows) { const k = `${r.hw.gpu}|${r.hw.vramGB}`; gpus.set(k, (gpus.get(k) ?? 0) + r.machines); }
+  const out = { gpus: [...gpus].map(([k, n]) => { const i = k.lastIndexOf('|'); return { gpu: k.slice(0, i), vramGB: Number(k.slice(i + 1)), machines: n }; }).sort((a, b) => b.machines - a.machines || a.gpu.localeCompare(b.gpu)) };
+  for (const [key, get] of Object.entries(FACETS)) {
+    const values = [...new Set(rows.map(get).filter(v => v !== null && v !== undefined))];
+    out[key] = NUMERIC.has(key) ? values.sort((a, b) => a - b) : values.sort((a, b) => String(a).localeCompare(String(b)));
+  }
+  return out;
+}
+
+/**
+ * Narrows a group's rows and re-ranks them.
+ * gpu: exact name; q: GPU name keyword; vram / ram: any size, matched to its tier; ctx, kv, parallel, gpuCount, expertCache: exact.
+ * sort: one of SORTS (default 8K decode median). Unknown or malformed values are ignored, so older clients keep working.
+ */
+export function filterRows(group, query = {}) {
   let rows = group.rows;
+  const { gpu, q } = query;
   if (gpu) rows = rows.filter(r => r.hw.gpu === gpu);
-  else if (vram) rows = rows.filter(r => r.hw.vramGB === vramTier(Number(vram)));
-  const ref = median(rows.filter(r => !r.seed).map(r => r.decode.median));
-  return { rows: rows.map((r, i) => ({ rank: i + 1, ...r })), tierMedian: r1(ref) };
+  if (q && String(q).trim()) { const k = String(q).trim().toLowerCase(); rows = rows.filter(r => String(r.hw.gpu).toLowerCase().includes(k)); }
+  if (fin(query.vram)) rows = rows.filter(r => r.hw.vramGB === vramTier(Number(query.vram)));
+  if (fin(query.ram)) rows = rows.filter(r => r.hw.ramGB === ramTier(Number(query.ram)));
+  for (const key of ['ctx', 'parallel', 'gpuCount']) if (fin(query[key])) rows = rows.filter(r => FACETS[key](r) === Number(query[key]));
+  for (const key of ['kv', 'expertCache']) if (query[key]) rows = rows.filter(r => FACETS[key](r) === query[key]);
+  const sort = SORTS[query.sort] ? query.sort : DEFAULT_SORT, value = SORTS[sort];
+  const ordered = [...rows].sort((a, b) => {
+    const va = value(a), vb = value(b);
+    if (va === null || vb === null) return (va === null) - (vb === null);
+    return vb - va || b.decode.median - a.decode.median;
+  });
+  const ref = median(ordered.filter(r => !r.seed).map(r => r.decode.median));
+  let rank = 0;
+  return { sort, rows: ordered.map(r => ({ ...r, rank: value(r) === null ? null : ++rank })), tierMedian: r1(ref) };
 }
 
 const SCENE_FIELD = { chat: r => r.decode.median, long: r => r.decode128k, code: r => r.decode32k };

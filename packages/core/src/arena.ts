@@ -211,12 +211,23 @@ export function assertArenaPayloadSafe(payload: unknown): asserts payload is Are
 
 // ---- API response types (GET /v1/groups, /v1/leaderboard, /v1/recommend) ----
 export interface ArenaRowHardware { gpu: string; vramGB: number; ramGB: number }
-export interface ArenaRow { rank?: number; hw: ArenaRowHardware; params: ArenaParams; seed: boolean; machines: number; confidence: 'high' | 'medium' | 'low' | 'none' | 'seed';
+export interface ArenaRow { rank?: number | null; hw: ArenaRowHardware; params: ArenaParams; seed: boolean; machines: number; confidence: 'high' | 'medium' | 'low' | 'none' | 'seed';
   decode: { p25: number | null; median: number; p75: number | null }; prefill: number | null; ttftMs: number | null; decode32k: number | null; decode128k: number | null; peakRamGB: number | null; peakVramGB: number | null }
 export interface ArenaGroupSummary { group: string; family: string; quant: string; machines: number; seedMachines: number; configs: number; bestDecode: number; gpus: { gpu: string; vramGB: number; machines: number }[];
   top?: Pick<ArenaRow, 'hw' | 'params' | 'seed' | 'machines' | 'decode'>[] }
 export interface ArenaGroups { computedAt: number | null; machines: number; runs: number; groups: ArenaGroupSummary[] }
-export interface ArenaLeaderboard extends Partial<Omit<ArenaGroupSummary, 'group'>> { group: string | null; rows: ArenaRow[]; tierMedian: number | null; filter?: { gpu: string | null; vram: number | null } }
+export type ArenaSort = 'decode8k' | 'decode128k' | 'prefill' | 'machines';
+export const ARENA_SORTS: readonly ArenaSort[] = ['decode8k', 'decode128k', 'prefill', 'machines'];
+/** Leaderboard facets: hardware tiers and the launch parameters that most change speed. */
+export const ARENA_FACETS = ['vram', 'ram', 'ctx', 'kv', 'parallel', 'gpuCount', 'expertCache'] as const;
+export type ArenaFacet = typeof ARENA_FACETS[number];
+/** Active leaderboard filters as query-string values; an empty or missing value means "all". */
+export type ArenaFilters = Partial<Record<ArenaFacet | 'gpu' | 'q', string>>;
+export type ArenaFacetOptions = Record<ArenaFacet, (number | string)[]>;
+export interface ArenaLeaderboard extends Partial<Omit<ArenaGroupSummary, 'group'>> { group: string | null; rows: ArenaRow[]; tierMedian: number | null;
+  filter?: { gpu: string | null; vram: number | null } & Partial<Record<Exclude<ArenaFacet, 'vram'> | 'q', number | string | null>> & { sort?: ArenaSort };
+  /** Present on servers that support filtering: the whole group's distinct values per facet. */
+  options?: ArenaFacetOptions & { gpus?: { gpu: string; vramGB: number; machines: number }[] }; total?: number; sort?: ArenaSort }
 export interface ArenaRecommendRow { hw: ArenaRowHardware; params: ArenaParams; seed: boolean; machines: number; confidence: ArenaRow['confidence']; speed: number; decode: ArenaRow['decode']; peakRamGB: number | null; peakVramGB: number | null }
 export interface ArenaParamChange { param: keyof ArenaParams; from: unknown; to: unknown; gainPct: number; machines: number; confidence: ArenaRow['confidence']; peakRamGB: number | null }
 export interface ArenaRecommendation { scene: 'chat' | 'long' | 'code'; level: 'gpu' | 'vram' | 'none';
@@ -244,4 +255,50 @@ export function arenaRecommendQuery(hw: { gpu?: string | null; vramGB?: number |
     for (const k of ['ctx', 'kv', 'parallel', 'poolWorkers', 'expertCache', 'gpuCount'] as const) if (launch[k] !== null && launch[k] !== undefined) q[k] = String(launch[k]);
   }
   return q;
+}
+
+// ---- Leaderboard filtering and sorting (mirrors services/arena/src/stats.js filterRows) ----
+const SORT_VALUE: Record<ArenaSort, (row: ArenaRow) => number | null> = { decode8k: row => row.decode?.median ?? null, decode128k: row => row.decode128k ?? null, prefill: row => row.prefill ?? null, machines: row => row.machines ?? null };
+const FACET_VALUE: Record<ArenaFacet, (row: ArenaRow) => number | string> = {
+  vram: row => row.hw.vramGB, ram: row => row.hw.ramGB, ctx: row => row.params.ctx, kv: row => row.params.kv, parallel: row => row.params.parallel, gpuCount: row => row.params.gpuCount, expertCache: row => row.params.expertCache ?? 'auto',
+};
+const NUMERIC_FACETS = new Set<ArenaFacet>(['vram', 'ram', 'ctx', 'parallel', 'gpuCount']);
+export const arenaSortValue = (row: ArenaRow, sort: ArenaSort): number | null => (SORT_VALUE[sort] ?? SORT_VALUE.decode8k)(row);
+export const arenaFacetValue = (row: ArenaRow, facet: ArenaFacet): number | string => FACET_VALUE[facet](row);
+
+/** Distinct values per facet, ascending; clients only offer options that exist. */
+export function arenaFacetOptions(rows: ArenaRow[]): ArenaFacetOptions {
+  const out = {} as ArenaFacetOptions;
+  for (const facet of ARENA_FACETS) {
+    const values = [...new Set(rows.map(FACET_VALUE[facet]).filter(value => value !== null && value !== undefined))];
+    out[facet] = NUMERIC_FACETS.has(facet) ? (values as number[]).sort((a, b) => a - b) : values.sort((a, b) => String(a).localeCompare(String(b)));
+  }
+  return out;
+}
+
+/**
+ * Narrows rows to the active filters (exact facet values, GPU name, GPU keyword) and re-ranks them by `sort`.
+ * Rows without the sorted value go last with rank null. Applying it twice is harmless, so it also covers servers that ignore the filters.
+ */
+export function arenaApplyFilters(rows: ArenaRow[], filters: ArenaFilters, sort: ArenaSort = 'decode8k'): { rows: ArenaRow[]; tierMedian: number | null } {
+  let out = rows;
+  if (filters.gpu) out = out.filter(row => row.hw.gpu === filters.gpu);
+  const keyword = filters.q?.trim().toLowerCase();
+  if (keyword) out = out.filter(row => row.hw.gpu.toLowerCase().includes(keyword));
+  for (const facet of ARENA_FACETS) { const want = filters[facet]; if (want !== undefined && want !== '') out = out.filter(row => String(FACET_VALUE[facet](row)) === want); }
+  const value = SORT_VALUE[sort] ?? SORT_VALUE.decode8k;
+  out = [...out].sort((a, b) => { const va = value(a), vb = value(b); if (va === null || vb === null) return Number(va === null) - Number(vb === null); return vb - va || b.decode.median - a.decode.median; });
+  const medians = out.filter(row => !row.seed).map(row => row.decode.median).sort((a, b) => a - b);
+  const mid = (medians.length - 1) / 2;
+  const tierMedian = medians.length ? Math.round((medians[Math.floor(mid)]! + medians[Math.ceil(mid)]!) / 2 * 10) / 10 : null;
+  let rank = 0;
+  return { rows: out.map(row => ({ ...row, rank: value(row) === null ? null : ++rank })), tierMedian };
+}
+
+/** GET /v1/leaderboard query: group, hardware scope, active filters and sort (default sort omitted). */
+export function arenaLeaderboardQuery(group: string, filters: ArenaFilters = {}, sort: ArenaSort = 'decode8k'): Record<string, string> {
+  const query: Record<string, string> = { group };
+  for (const [key, value] of Object.entries(filters)) if (value !== undefined && value !== '') query[key] = value;
+  if (sort !== 'decode8k') query.sort = sort;
+  return query;
 }
