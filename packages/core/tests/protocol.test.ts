@@ -217,6 +217,8 @@ describe('bridge requests and errors', () => {
   it('catalog contains only the upstream family/quant combinations', () => {
     expect(MODEL_CATALOG.find(m => m.id === 'swift')?.quants).toEqual(['IQ2_XS', 'IQ3_XXS', 'IQ3_S']);
     expect(MODEL_CATALOG.find(m => m.id === 'coder')?.quants).toEqual(['IQ1_M']);
+    expect(MODEL_CATALOG.find(m => m.id === 'qwen36')?.quants).toEqual(['UD-Q4_K_XL', 'UD-Q6_K_XL', 'Q8_0']);
+    expect(MODEL_CATALOG.find(m => m.id === 'qwen36')?.minEngine).toBe('0.1.45');
     expect(MODEL_CATALOG.every(m => m.source.includes('Niko1221/Strata'))).toBe(true);
   });
 });

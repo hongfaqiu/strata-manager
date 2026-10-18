@@ -122,6 +122,7 @@ describe('arena helpers', () => {
   it('reads model + quant from file names and launch flags from the sanitized recipe', () => {
     expect(arenaModelOf('Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S.gguf')).toEqual({ family: 'swift', quant: 'IQ3_S' });
     expect(arenaModelOf('Qwen3.8-Flash-Next-UD-IQ4_XS.gguf')).toEqual({ family: 'unsloth', quant: 'UD-IQ4_XS' });
+    expect(arenaModelOf('Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf')).toEqual({ family: 'qwen36', quant: 'UD-Q4_K_XL' });
     expect(arenaModelOf('my-model.gguf')).toBeNull();
     expect(arenaModelOf('a-IQ3_S b-IQ2_XS')).toBeNull();
     expect(arenaLaunchParams({ args: ['--max-context', '65536', '--native', 'qwen3.8-flash-next-q2_0.gguf', '--kv', 'q4_0', '--pool-workers', '24', '--pcie-frac', '0.25'], parallel: 2, gpu: [0, 1], vision: true }))

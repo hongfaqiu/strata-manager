@@ -3099,6 +3099,30 @@ fn run_setup_with_preflight(
     )
 }
 
+fn engine_version_at_least(version: Option<&str>, need: &[u32]) -> bool {
+    let Some(version) = version else {
+        return false;
+    };
+    let parts: Vec<u32> = version
+        .trim()
+        .trim_start_matches('v')
+        .trim_start_matches('V')
+        .split(|c: char| !c.is_ascii_digit())
+        .filter(|p| !p.is_empty())
+        .filter_map(|p| p.parse().ok())
+        .collect();
+    for (i, required) in need.iter().enumerate() {
+        let have = parts.get(i).copied().unwrap_or(0);
+        if have > *required {
+            return true;
+        }
+        if have < *required {
+            return false;
+        }
+    }
+    true
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_setup_with_preflight_options(
     state: Arc<RuntimeState>,
@@ -3124,10 +3148,21 @@ fn run_setup_with_preflight_options(
         "swift" => ["IQ2_XS", "IQ3_XXS", "IQ3_S"].contains(&quant.as_str()),
         "coder" => quant == "IQ1_M",
         "unsloth" => ["UD-IQ4_XS", "UD-Q4_K_XL"].contains(&quant.as_str()),
+        // setup.py OWN_PATH_FAMILIES qwen36; MIN_ENGINE (0,1,45)
+        "qwen36" => ["UD-Q4_K_XL", "UD-Q6_K_XL", "Q8_0"].contains(&quant.as_str()),
         _ => false,
     };
     if !supported {
         return Err("模型 family / quant 组合不被已核实的官方安装器支持".into());
+    }
+    if model == "qwen36" {
+        let version = discovery::runtime_version(&root, None);
+        if !engine_version_at_least(version.as_deref(), &[0, 1, 45]) {
+            return Err(format!(
+                "Qwen3.6-35B-A3B 需要引擎 0.1.45 或更新版本（当前：{}）；请先更新 Strata",
+                version.as_deref().unwrap_or("未知")
+            ));
+        }
     }
     let disk_plan = preflight(&profile, &model, &quant, images)?;
     disk_plan.require_space()?;

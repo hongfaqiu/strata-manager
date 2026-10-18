@@ -9,7 +9,7 @@ use std::{
 };
 
 const GB: u64 = 1_000_000_000;
-const SOURCE: &str = "Strata fb58e0dbc8399662c0e47c76578c6e878b14f6cf setup.py MODELS/data_folder/5170-5206; decimal GB. Estimates exclude unknown dependency downloads and do not guarantee RAM/VRAM readiness.";
+const SOURCE: &str = "Strata 477ac13cbe8e582c20484871ce459d20d82df09d setup.py MODELS + OWN_PATH_FAMILIES (qwen36); decimal GB. Estimates exclude unknown dependency downloads and do not guarantee RAM/VRAM readiness.";
 
 #[derive(Default)]
 struct Settings {
@@ -101,6 +101,21 @@ fn exists(path: &Path) -> Result<bool, String> {
 }
 
 fn model_spec(family: &str, quant: &str) -> Result<(String, Vec<String>, u64, f64), String> {
+    // Qwen3.6 OWN_PATH: single Unsloth MTP GGUF (setup.py QWEN36_FILES / OWN_PATH_FAMILIES).
+    if family == "qwen36" {
+        let (download, arena) = match quant {
+            "UD-Q4_K_XL" => (22_853_663_008_u64, 22.9),
+            "UD-Q6_K_XL" => (32_611_711_264, 32.6),
+            "Q8_0" => (37_801_097_504, 37.8),
+            _ => return Err("模型/量化组合不被已核对的官方安装器支持".into()),
+        };
+        return Ok((
+            format!("qwen36-{quant}"),
+            vec![format!("Qwen3.6-35B-A3B-{quant}.gguf")],
+            download,
+            arena,
+        ));
+    }
     let (tag, prefix, count, suffix) = match family {
         "qwen" => ("", "Qwen3.8-Flash-Next-GSQ-RCO", 2, 2),
         "swift" => ("swift-", "Swift-Qwen3.8-Flash-Next-GSQ-RCO", 2, 2),
@@ -320,8 +335,16 @@ fn prepare_plan(
         .map(Path::to_owned)
         .unwrap_or_else(|| data.join("mtp"));
     let q2_conversion = family == "qwen" && quant == "Q2_0" && avx512;
-    let low_ram = family != "unsloth" && ram_gib < arena + 10.0;
-    let pack_bytes = if pack_ready {
+    // Qwen3.6: tokenizer-only pack (no experts.bin), MTP lives in the GGUF (install_own_path).
+    let own_path = family == "qwen36";
+    let low_ram = !own_path && family != "unsloth" && ram_gib < arena + 10.0;
+    let pack_bytes = if own_path {
+        if pack_ready || exists(&pack.join("tokenizer").join("vocab.json"))? {
+            0
+        } else {
+            64 * 1024 * 1024 // tokenizer extracted from the GGUF
+        }
+    } else if pack_ready {
         0
     } else if q2_conversion {
         40 * GB
@@ -332,21 +355,40 @@ fn prepare_plan(
     };
     let mmproj = if family == "swift" {
         "mmproj-Swift-Qwen3.8-Flash-Next-BF16.gguf"
+    } else if own_path {
+        "mmproj-F16.gguf" // Unsloth Qwen3.6 mmproj beside the GGUF (QWEN36_FILES)
     } else {
         "mmproj-Qwen3.8-Flash-Next-BF16.gguf"
     };
-    let vision_bytes =
-        if images && first_existing(&roots, &PathBuf::from("models").join(mmproj))?.is_none() {
-            GB
-        } else {
+    let vision_bytes = if !images {
+        0
+    } else if own_path {
+        // install_own_path keeps mmproj next to the model GGUF under models/<tag>/
+        if exists(&model_directory.join(mmproj))? {
             0
-        };
-    let mtp_bytes = if mtp.is_some() { 2 * GB } else { 8 * GB };
+        } else {
+            899_283_584 // QWEN36_FILES mmproj-F16.gguf
+        }
+    } else if first_existing(&roots, &PathBuf::from("models").join(mmproj))?.is_none() {
+        GB
+    } else {
+        0
+    };
+    let mtp_bytes = if own_path {
+        0
+    } else if mtp.is_some() {
+        2 * GB
+    } else {
+        8 * GB
+    };
     let mut requirements = vec![
-        (model_directory.clone(), missing),
+        (
+            model_directory.clone(),
+            missing.saturating_add(if own_path { vision_bytes } else { 0 }),
+        ),
         (mtp_directory, mtp_bytes),
         (pack, pack_bytes),
-        (data.join("models"), vision_bytes),
+        (data.join("models"), if own_path { 0 } else { vision_bytes }),
     ];
     // The upstream data-volume estimate does not bound wheel/engine downloads.
     // Include a small explicit runtime margin; still disclose the unknown total.
@@ -685,6 +727,16 @@ mod tests {
             .all(|name| name.starts_with("Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-")));
         assert_eq!(download, 83_600_000_000);
         assert_eq!(arena, 50.3);
+    }
+
+    #[test]
+    fn qwen36_uses_single_unsloth_gguf_and_own_path_sizes() {
+        let (tag, names, download, arena) = model_spec("qwen36", "UD-Q4_K_XL").unwrap();
+        assert_eq!(tag, "qwen36-UD-Q4_K_XL");
+        assert_eq!(names, vec!["Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf".to_string()]);
+        assert_eq!(download, 22_853_663_008);
+        assert_eq!(arena, 22.9);
+        assert!(model_spec("qwen36", "IQ3_S").is_err());
     }
 
     #[test]

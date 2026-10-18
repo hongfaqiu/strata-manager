@@ -317,7 +317,7 @@ fn engine_build_json_candidates(root: &Path, exe: Option<&Path>) -> Vec<PathBuf>
     paths
 }
 
-fn runtime_version(root: &Path, exe: Option<&Path>) -> Option<String> {
+pub(crate) fn runtime_version(root: &Path, exe: Option<&Path>) -> Option<String> {
     engine_build_json_candidates(root, exe)
         .into_iter()
         .find_map(|path| {

@@ -708,7 +708,7 @@ export function App() {
     if (!models.length) { selectPreparationRuntime(runtime.installDir); notify(t('prepareBeforeProfile')); return; }
     if (recipe.kind === 'setup') {
       // setup.py FAMILIES.name determines model_name; verify it against actual discovered configs.
-      const familyNames: Record<string, string> = { qwen: 'qwen3.8-flash-next', swift: 'swift-1.5', coder: 'qwen3.8-flash-next-coder', unsloth: 'qwen3.8-flash-next-unsloth' };
+      const familyNames: Record<string, string> = { qwen: 'qwen3.8-flash-next', swift: 'swift-1.5', coder: 'qwen3.8-flash-next-coder', unsloth: 'qwen3.8-flash-next-unsloth', qwen36: 'qwen3.6-35b-a3b' };
       const expected = `${familyNames[recipe.model]}-${recipe.quant.toLowerCase()}`;
       const matches = models.filter(model => model.name.toLowerCase() === expected);
       if (matches.length === 1) { await openConfigProfile(matches[0]!.configPath, runtime); return; }
@@ -892,6 +892,7 @@ export function App() {
 
   const ModelsPage = () => <ModelDownloadPage machineMemoryGB={machineMemoryGB(hardware, environment.data)} language={settings.language} desktop={desktop}
     fallbackRuntime={profile} runtimeOverride={preparationRuntime} runtimes={profiles}
+    runtimeVersions={detectedRuntimes ?? []}
     busy={!!busy || inferenceBusy || !!localProgress} tasks={tasks.data ?? []}
     onRuntimeChange={setPreparationRuntime} onChooseDirectory={() => choose(true)} onChooseFile={() => choose(false)}
     onPrepare={async request => { await act('setup', () => runRecipe({ kind: 'setup', ...request }), 'modelPrepared'); }}
