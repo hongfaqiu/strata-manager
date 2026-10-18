@@ -10,8 +10,10 @@ const text = tree => nodes(tree).flatMap(node => [node.props.children].flat(Infi
 const compile = file => ts.transpileModule(readFileSync(new URL(file, import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
 const contextExtension = { exports: {} };
 vm.runInNewContext(compile('../../../../packages/core/src/context-extension.ts'), { module: contextExtension, exports: contextExtension.exports, require: () => ({}) });
+const orcaImport = { exports: {} };
+vm.runInNewContext(compile('../../../../packages/core/src/orca-import.ts'), { module: orcaImport, exports: orcaImport.exports, require: () => ({}) });
 const concurrency = { exports: {} };
-vm.runInNewContext(compile('../../../../packages/core/src/concurrency.ts'), { module: concurrency, exports: concurrency.exports, require: name => name === './context-extension' ? contextExtension.exports : {} });
+vm.runInNewContext(compile('../../../../packages/core/src/concurrency.ts'), { module: concurrency, exports: concurrency.exports, require: name => name === './context-extension' ? contextExtension.exports : name === './orca-import' ? orcaImport.exports : {} });
 const keys = ['parallel', '--batch', '--batch-mtp', '--batch-groups', '--adapt-async', '--trim-stage-weights', '--conversation-cache-mib', '--conversation-cache-slots', '--max-context', 'env.STRATA_BATCH_ATTN_ROWS', 'env.STRATA_BATCH_GDN_GROUPS', 'env.STRATA_PIPED_CONCURRENT'];
 const core = { ...contextExtension.exports, ...concurrency.exports, STARTUP_TUNING_FIELDS: keys.map(key => ({ key })), applyStartupField: config => config, assessSetupResources: async () => { throw Error('not used'); } };
 const Segmented = props => jsx('segmented', props), Toggle = props => jsx('toggle', props);

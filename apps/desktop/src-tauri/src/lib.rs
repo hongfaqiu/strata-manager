@@ -668,6 +668,39 @@ async fn setup_disk_preflight(
 }
 
 #[tauri::command]
+async fn orca_import_plan(
+    state: State<'_, ClientState>,
+    profile: ServiceProfile,
+    request: Value,
+) -> Result<Value, String> {
+    state
+        .ipc
+        .request(
+            "orca_import_plan",
+            json!({"profile":profile,"request":request}),
+        )
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn run_orca_import(
+    state: State<'_, ClientState>,
+    profile: ServiceProfile,
+    request: Value,
+    options: Option<Value>,
+) -> Result<Value, String> {
+    state
+        .ipc
+        .request(
+            "run_orca_import",
+            json!({"profile":profile,"request":request,"options":options}),
+        )
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn run_setup(
     state: State<'_, ClientState>,
     profile: ServiceProfile,
@@ -1908,6 +1941,8 @@ pub fn run() {
             service_sharing::service_sharing_status,
             service_sharing::set_service_auth,
             setup_disk_preflight,
+            orca_import_plan,
+            run_orca_import,
             run_setup,
             inspect_gguf,
             manager_mcp_connection,

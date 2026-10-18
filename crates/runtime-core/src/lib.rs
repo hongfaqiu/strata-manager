@@ -22,6 +22,7 @@ pub mod mcp_stdio;
 pub mod model_inspect;
 pub mod network;
 pub mod observer;
+pub mod orca_import;
 pub mod policy;
 pub mod processes;
 mod registry_handoff;
@@ -1056,6 +1057,19 @@ impl RuntimeState {
             }
             "read_logs" => value(read_logs(&self, profile()?, arg(&params, "limit")?)),
             "environment_info" => value(environment_info(self.clone()).await),
+            "orca_import_plan" => value(orca_import_plan(&profile()?, arg(&params, "request")?)),
+            "run_orca_import" => value(run_orca_import(
+                self.clone(),
+                profile()?,
+                arg(&params, "request")?,
+                params
+                    .get("options")
+                    .filter(|v| !v.is_null())
+                    .cloned()
+                    .map(serde_json::from_value::<setup_options::SetupOptions>)
+                    .transpose()
+                    .map_err(|e| e.to_string())?,
+            )),
             "setup_disk_preflight" => value(Ok(disk::preflight(
                 &profile()?,
                 &arg::<String>(&params, "model")?,
@@ -3227,6 +3241,56 @@ fn run_setup_with_preflight_options(
             .unwrap_or_default(),
     };
     steps.push(step);
+    processes::launch_setup_task(state.clone(), intent, steps)
+}
+fn orca_memory() -> (u64, u64) {
+    let mut system = sysinfo::System::new();
+    system.refresh_memory();
+    (system.total_memory(), system.available_memory())
+}
+fn orca_import_plan(
+    profile: &ServiceProfile,
+    request: orca_import::OrcaImportRequest,
+) -> Result<orca_import::OrcaImportPlan, String> {
+    let root = processes::runtime_dir(profile)?;
+    Ok(orca_import::prepare(&root, &request, &disk::settings()?, orca_memory(), true)?.plan)
+}
+/// ORCA.md's manual compatibility workflow as one tracked setup task; registration reuses the setup handoff
+/// (family "orca", model_name orcarouter-qwen3.8-flash-next-uncensored-iq3_xxs, 32K, text only).
+fn run_orca_import(
+    state: Arc<RuntimeState>,
+    profile: ServiceProfile,
+    request: orca_import::OrcaImportRequest,
+    options: Option<crate::setup_options::SetupOptions>,
+) -> Result<TaskStatus, String> {
+    let options = options.map(|options| options.validated()).transpose()?;
+    let _operation = state.runtime_operations.lock().map_err(|e| e.to_string())?;
+    runtime_upgrade::assert_available(&state)?;
+    external_management::assert_profile_manager_owned(&state, &profile)?;
+    let root = processes::runtime_dir(&profile)?;
+    assert_stopped(&state, &profile)?;
+    let prepared = orca_import::prepare(&root, &request, &disk::settings()?, orca_memory(), true)?;
+    if prepared.plan.status != "ready" {
+        return Err(format!(
+            "未启动 OrcaRouter 导入：{}",
+            prepared.plan.problems.join("；")
+        ));
+    }
+    storage::backup(&root.join(orca_import::CONFIG_FILE))?;
+    let url = http::endpoint(&profile, "/health")?;
+    let env = options
+        .as_ref()
+        .map(|options| options.environment())
+        .transpose()?
+        .unwrap_or_default();
+    let steps = orca_import::steps(&prepared, env, url.port_or_known_default().unwrap_or(8080));
+    let intent = setup_handoff::SetupIntent {
+        profile,
+        family: orca_import::FAMILY.into(),
+        quant: orca_import::QUANT.into(),
+        context: orca_import::CONTEXT,
+        images: false,
+    };
     processes::launch_setup_task(state.clone(), intent, steps)
 }
 fn install_runtime(state: &RuntimeState, directory: String) -> Result<TaskStatus, String> {

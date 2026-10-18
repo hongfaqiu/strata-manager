@@ -1,3 +1,4 @@
+import { isOrcaRouterEvidence } from './orca-import';
 // Benchmark Arena: opt-in, anonymous sharing of benchmark results.
 // The upload payload is built from an explicit whitelist. Nothing from a report is copied wholesale:
 // no paths, hostnames, service addresses, API keys, prompts, outputs, process ids or exact timestamps.
@@ -77,7 +78,7 @@ const QUANT = /(?:^|[^A-Za-z0-9])((?:UD-)?(?:IQ[1-4]_(?:XXS|XS|S|M|NL)|Q[2-8]_(?
 /** Model family + quantization from file names only (basenames supplied by the identity), never from paths. */
 export function arenaModelOf(evidence: string): { family: string; quant: string } | null {
   const quants = [...new Set([...evidence.matchAll(QUANT)].map(m => m[1]!.toUpperCase()))];
-  if (quants.length !== 1) return null;
+  if (quants.length !== 1 || isOrcaRouterEvidence(evidence)) return null;
   const quant = quants[0]!;
   // Qwen3.6 Unsloth MTP files also use UD-* names; prefer architecture evidence over quant prefix.
   const family = /qwen3\.?6|qwen36/i.test(evidence) ? 'qwen36' : quant.startsWith('UD-') || /unsloth/i.test(evidence) ? 'unsloth' : /swift/i.test(evidence) ? 'swift' : /coder/i.test(evidence) ? 'coder' : /qwen/i.test(evidence) ? 'qwen' : null;

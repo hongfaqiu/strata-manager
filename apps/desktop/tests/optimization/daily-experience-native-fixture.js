@@ -26,6 +26,19 @@
       if(command==='list_local_models')return[{name:'Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S',configPath:'D:/AI/Strata/strata-swift-iq3_s.json',modelPath:'D:/AI/Strata/models/swift-iq3_s',sizeBytes:Math.round(83.6*2**30)}];
       if(command==='list_tasks')return[...await original(command,args),{id:'download-showcase-1',kind:'setup',state:'running',message:'Swift 1.5 IQ3_XXS 31.2 / 75.8 GB',startedAt:Date.now()-20*60000}];
     }
+    // OrcaRouter import (ORCA.md): orca=ready|lowram|blocked, orca-shard=<path the file picker returns>.
+    if(params.has('orca')){
+      const mode=params.get('orca')||'ready',gib=2**30,s1='Qwen3.8-Flash-Next-Uncensored-IQ3_XXS-00001-of-00002.gguf',s2='Qwen3.8-Flash-Next-Uncensored-IQ3_XXS-00002-of-00002.gguf';
+      if(command==='plugin:dialog|open'){f.calls.push({command,args:{}});return params.get('orca-shard')||`D:\\HF\\orcarouter\\${s1}`;}
+      if(command==='orca_import_plan'){
+        f.calls.push({command,args:structuredClone(args)});const q=args.request,local=q.source==='local',dir=local?q.shardPath.replace(/[\\/][^\\/]*$/,''):'D:/AI/Strata-data/models/orca-IQ3_XXS',sep=dir.includes('\\')?'\\':'/';
+        const shards=[[s1,44637691008],[s2,40564977024]].map(([name,bytes],i)=>({name,path:`${dir}${sep}${name}`,expectedBytes:bytes,presentBytes:local?bytes:i===0?12e9:0,state:local?'complete':i===0?'partial':'missing'}));
+        const download=local?0:shards.reduce((n,x)=>n+x.expectedBytes-(x.state==='partial'?x.presentBytes:0),0),extra=download+2e9;
+        const problems=mode==='blocked'?['运行环境还没有 Python 虚拟环境（.venv）；请先用官方菜单准备一个模型，再导入']:[];
+        return{status:problems.length?'blocked':'ready',source:q.source,repository:'orcarouter/Qwen3.8-Flash-Next-Uncensored-GGUF',revision:'d366e279688c1f2fd6e75e2f98475d38db534f1d',modelName:'orcarouter-qwen3.8-flash-next-uncensored-iq3_xxs',quant:'IQ3_XXS',context:32768,shardDirectory:dir,shards,downloadBytes:download,totalBytes:85202668032,packDirectory:'D:/AI/Strata-data/packs/orca-iq3_xxs',packReady:false,mtp:q.mtp,mtpDirectory:'D:/AI/Strata-data/mtp',mtpReady:true,configPath:'D:/AI/Strata/strata-orca-iq3_xxs.json',configExists:false,engine:'D:/AI/Strata/engine/strata.exe',ramTotalBytes:(mode==='lowram'?32:128)*gib,ramAvailableBytes:(mode==='lowram'?20:96)*gib,arenaGib:49.8,ramStatus:mode==='lowram'?'insufficient':'ok',disk:{status:'ready',dataDirectory:'D:/AI/Strata-data',modelDirectory:dir,modelDownloadBytesEstimate:download,reusableModelBytes:85202668032-download,additionalBytesEstimate:extra,estimate:true,volumes:[{directory:dir,mountPoint:'D:',availableBytes:412*gib,requiredAdditionalBytesEstimate:extra}],reason:'',source:'fixture'},problems,sourceNote:'fixture'};
+      }
+      if(command==='run_orca_import'){f.calls.push({command,args:structuredClone(args)});return{id:'orca-fixture-1',kind:'setup',state:'running',message:'任务已启动；查看日志了解真实进度',startedAt:Date.now()};}
+    }
     if(command==='service_status'){const value=await original(command,args);return{...value,startedAt:value.startedAt??(value.running?1:undefined)};}
     if(downloadCase)queueMicrotask(publishDownloadEvidence);
     if(downloadCase&&command==='store_set'&&args.key==='modelDownloadDefaultsV1'){

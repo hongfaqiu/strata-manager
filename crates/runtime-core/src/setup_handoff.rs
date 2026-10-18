@@ -252,6 +252,8 @@ fn family_name(family: &str) -> Option<&'static str> {
         "coder" => Some("qwen3.8-flash-next-coder"),
         "unsloth" => Some("qwen3.8-flash-next-unsloth"),
         "qwen36" => Some("qwen3.6-35b-a3b"), // setup.py OWN_PATH_FAMILIES name
+        // Manager's ORCA.md import (orca_import.rs), not a setup.py family.
+        "orca" => Some("orcarouter-qwen3.8-flash-next-uncensored"),
         _ => None,
     }
 }
@@ -826,6 +828,38 @@ sys.exit(spec.get('exit',0))
         assert_eq!(
             crate::store_get(&fixture.state, "localServiceDesired".into()).unwrap(),
             json!(false)
+        );
+    }
+
+    #[test]
+    fn orca_import_registers_only_the_orcarouter_config() {
+        let mut fixture = fixture();
+        fixture.intent.family = "orca".into();
+        fixture.intent.quant = "IQ3_XXS".into();
+        fixture.intent.context = 32768;
+        let mut orca = config(32768);
+        orca["model_name"] = json!("orcarouter-qwen3.8-flash-next-uncensored-iq3_xxs");
+        let mut official = config(32768);
+        official["model_name"] = json!("qwen3.8-flash-next-iq3_xxs");
+        spec(
+            &fixture,
+            vec![
+                ("strata-iq3_xxs.json", official),
+                ("strata-orca-iq3_xxs.json", orca),
+            ],
+            0.0,
+            0,
+        );
+        let task = launch(&fixture);
+        assert_eq!(wait(&fixture.state, &task.id).state, "completed");
+        let result = handoff(&fixture.state, &task.id);
+        assert_eq!(result.status, "registered", "{result:?}");
+        let profiles = fixture.state.registered_profiles().unwrap();
+        assert_eq!(profiles.len(), 1);
+        let registered = checked_config(Path::new(&profiles[0].config_path)).unwrap();
+        assert_eq!(
+            registered["model_name"],
+            "orcarouter-qwen3.8-flash-next-uncensored-iq3_xxs"
         );
     }
 
