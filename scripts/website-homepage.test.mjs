@@ -20,7 +20,7 @@ test('Homepage keeps the v0.1.7 layout with current screenshots and feature copy
   for (const id of ['main', 'get-started', 'download-status', 'release-notes-link', 'language-switch', 'language-label']) {
     assert.match(html, new RegExp(`id="${id}"`));
   }
-  for (const key of ['windows', 'appimage', 'deb', 'checksums']) assert.match(html, new RegExp(`data-download="${key}"`));
+  for (const key of ['windows', 'appimage', 'deb', 'checksums', 'dmg']) assert.match(html, new RegExp(`data-download="${key}"`));
   // Current product screenshots (top-level + daily-experience), not only old changelog pins
   for (const shot of [
     'product-cover', 'models', 'monitor', 'usage', 'chat', 'tuning', 'config', 'settings',

@@ -22,7 +22,8 @@ export function createReleaseSnapshot(release, catalog, generatedAt = new Date()
   if (!selected) throw new Error('No valid published release is available for the website snapshot.');
   if (typeof generatedAt !== 'string' || !Number.isFinite(Date.parse(generatedAt))) throw new Error('Release snapshot timestamp is invalid.');
   const accepted = catalog.assets(selected);
-  const urls = new Set(catalog.keys.map((key) => accepted[key]).filter(Boolean));
+  const downloadKeys = [...catalog.keys, ...(Array.isArray(catalog.optionalKeys) ? catalog.optionalKeys : [])];
+  const urls = new Set(downloadKeys.map((key) => accepted[key]).filter(Boolean));
   return {
     schemaVersion: 1,
     generatedAt: new Date(generatedAt).toISOString(),
