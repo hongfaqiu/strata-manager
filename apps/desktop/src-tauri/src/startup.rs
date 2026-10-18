@@ -1,7 +1,5 @@
 //! Login starts the independently staged supervisor, never a hidden WebView.
 use serde_json::Value;
-#[cfg(not(any(windows, target_os = "linux")))]
-use serde_json::json;
 use std::path::Path;
 // startup_status_tests.rs reaches these through `use super::*`.
 #[cfg(test)]
@@ -801,6 +799,7 @@ mod platform {
 #[cfg(not(any(windows, target_os = "linux")))]
 mod platform {
     use super::*;
+    use serde_json::json;
     pub fn status(_data: &Path) -> Result<Value, String> {
         Ok(
             json!({"configured":false,"enabled":false,"healthy":false,"supported":false,"backgroundOnly":true,"reasonCode":"unsupported","reason":"当前平台尚未配置独立后台登录启动"}),
