@@ -213,6 +213,9 @@ fn model(family: &str, quant: &str) -> Option<(f64, f64, bool)> {
         ("coder", "IQ1_M") => Some((32.0, 23.4, false)),
         ("unsloth", "UD-IQ4_XS") => Some((48.0, 59.5, true)),
         ("unsloth", "UD-Q4_K_XL") => Some((48.0, 77.0, true)),
+        ("unsloth", "UD-Q5_K_XL") => Some((108.0, 98.4, true)),
+        ("unsloth", "UD-Q6_K_XL") => Some((118.0, 109.2, true)),
+        ("unsloth", "Q8_0") => Some((136.0, 128.3, true)),
         // OWN_PATH_FAMILIES.models[*].ram_gb; arena ≈ GGUF size (docs/QWEN36.md / QWEN36_FILES)
         ("qwen36", "UD-Q4_K_XL") => Some((32.0, 22.9, false)),
         ("qwen36", "UD-Q6_K_XL") => Some((44.0, 32.6, false)),

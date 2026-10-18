@@ -28,4 +28,9 @@ describe('official setup inputs', () => {
     expect(MODEL_CATALOG.find(model => model.id === 'swift')?.quants).toContain('IQ3_S');
     expect(MODEL_CATALOG.find(model => model.id === 'qwen36')?.quants).toEqual(['UD-Q4_K_XL', 'UD-Q6_K_XL', 'Q8_0']);
   });
+  it('exposes Unsloth UD-Q5_K_XL / UD-Q6_K_XL / Q8_0 for high-RAM machines', () => {
+    expect(MODEL_CATALOG.find(model => model.id === 'unsloth')?.quants).toEqual([
+      'UD-IQ4_XS', 'UD-Q4_K_XL', 'UD-Q5_K_XL', 'UD-Q6_K_XL', 'Q8_0',
+    ]);
+  });
 });

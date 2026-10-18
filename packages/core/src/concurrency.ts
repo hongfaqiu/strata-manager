@@ -97,7 +97,7 @@ export function concurrencySlotPinnedRamGb(context: number, kv: string, streamin
 /** setup.py MODELS arena_gb (decimal GB), the same table as the native resource assessment. */
 export function modelExpertArenaGb(family: string, quant: string): number | null {
   // Flash-Next: setup.py MODELS arena_gb. Qwen3.6: GGUF file size (decimal GB) — no separate pack (docs/QWEN36.md, QWEN36_FILES).
-  const table: Record<string, number> = { 'qwen:Q2_0': 34, 'qwen:IQ2_XS': 35.5, 'swift:IQ2_XS': 35.5, 'qwen:IQ3_XXS': 42.9, 'swift:IQ3_XXS': 42.9, 'qwen:IQ3_S': 50.3, 'swift:IQ3_S': 50.3, 'coder:IQ1_M': 23.4, 'unsloth:UD-IQ4_XS': 59.5, 'unsloth:UD-Q4_K_XL': 77, 'qwen36:UD-Q4_K_XL': 22.9, 'qwen36:UD-Q6_K_XL': 32.6, 'qwen36:Q8_0': 37.8 };
+  const table: Record<string, number> = { 'qwen:Q2_0': 34, 'qwen:IQ2_XS': 35.5, 'swift:IQ2_XS': 35.5, 'qwen:IQ3_XXS': 42.9, 'swift:IQ3_XXS': 42.9, 'qwen:IQ3_S': 50.3, 'swift:IQ3_S': 50.3, 'coder:IQ1_M': 23.4, 'unsloth:UD-IQ4_XS': 59.5, 'unsloth:UD-Q4_K_XL': 77, 'unsloth:UD-Q5_K_XL': 98.4, 'unsloth:UD-Q6_K_XL': 109.2, 'unsloth:Q8_0': 128.3, 'qwen36:UD-Q4_K_XL': 22.9, 'qwen36:UD-Q6_K_XL': 32.6, 'qwen36:Q8_0': 37.8 };
   return table[`${family}:${quant}`] ?? null;
 }
 /** The family and quantization named by a config (model name, --native or --pack), or null when ambiguous. */
@@ -106,10 +106,10 @@ export function concurrencyModelIdentity(config: JsonObject): { family: string; 
   const evidence = [config.model_name, argValue(args, '--native'), argValue(args, '--pack')].filter(value => typeof value === 'string').join(' ');
   // OrcaRouter IQ3_XXS (ORCA.md) is not the GSQ-RCO IQ3_XXS of setup.py's table.
   if (isOrcaRouterEvidence(evidence)) return null;
-  const quants = [...evidence.matchAll(/(?:^|[^A-Za-z0-9])(?:UD-(?:IQ4_XS|Q4_K_XL|Q6_K_XL)|IQ(?:1_M|2_XS|3_XXS|3_S)|Q(?:2_0|8_0))(?=$|[^A-Za-z0-9])/gi)].map(match => match[0].replace(/^[^A-Za-z0-9]+/, '').toUpperCase());
+  const quants = [...evidence.matchAll(/(?:^|[^A-Za-z0-9])(?:UD-(?:IQ4_XS|Q4_K_XL|Q5_K_XL|Q6_K_XL)|IQ(?:1_M|2_XS|3_XXS|3_S)|Q(?:2_0|8_0))(?=$|[^A-Za-z0-9])/gi)].map(match => match[0].replace(/^[^A-Za-z0-9]+/, '').toUpperCase());
   if (new Set(quants).size !== 1) return null;
   const quant = quants[0]!;
-  const family = /qwen3\.?6|qwen36/i.test(evidence) ? 'qwen36' : quant.startsWith('UD-') ? 'unsloth' : /swift/i.test(evidence) ? 'swift' : /coder/i.test(evidence) ? 'coder' : 'qwen';
+  const family = /qwen3\.?6|qwen36/i.test(evidence) ? 'qwen36' : quant.startsWith('UD-') || (quant === 'Q8_0' && /flash-next/i.test(evidence)) || /unsloth/i.test(evidence) ? 'unsloth' : /swift/i.test(evidence) ? 'swift' : /coder/i.test(evidence) ? 'coder' : 'qwen';
   return { family, quant };
 }
 

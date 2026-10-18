@@ -81,11 +81,11 @@ export function resourceRequestFromConfiguration(config: JsonObject | undefined,
       || config.env && typeof config.env === 'object' && Object.keys(config.env).some(key => /^(?:STRATA_|CUDA_|HIP_|ROCR_)/.test(key))) return null;
     if (read('--expert-cache') && read('--expert-cache') !== 'auto' || read('--vram-reserve-mib') && read('--vram-reserve-mib') !== '700') return null;
     const evidence = [config.model_name, read('--native'), read('--pack')].filter(value => typeof value === 'string').join(' ');
-    const quants = [...evidence.matchAll(/(?:^|[^A-Za-z0-9])(?:UD-(?:IQ4_XS|Q4_K_XL|Q6_K_XL)|IQ(?:1_M|2_XS|3_XXS|3_S)|Q(?:2_0|8_0))(?=$|[^A-Za-z0-9])/gi)].map(match => match[0].replace(/^[^A-Za-z0-9]+/, '').toUpperCase());
+    const quants = [...evidence.matchAll(/(?:^|[^A-Za-z0-9])(?:UD-(?:IQ4_XS|Q4_K_XL|Q5_K_XL|Q6_K_XL)|IQ(?:1_M|2_XS|3_XXS|3_S)|Q(?:2_0|8_0))(?=$|[^A-Za-z0-9])/gi)].map(match => match[0].replace(/^[^A-Za-z0-9]+/, '').toUpperCase());
     if (new Set(quants).size !== 1) return null;
     const quant = quants[0];
     if (!quant || !/qwen|swift|coder|unsloth/i.test(evidence) || isOrcaRouterEvidence(evidence)) return null;
-    const family = /qwen3\.?6|qwen36/i.test(evidence) ? 'qwen36' : quant.startsWith('UD-') ? 'unsloth' : /swift/i.test(evidence) ? 'swift' : /coder/i.test(evidence) ? 'coder' : 'qwen';
+    const family = /qwen3\.?6|qwen36/i.test(evidence) ? 'qwen36' : quant.startsWith('UD-') || (quant === 'Q8_0' && /flash-next/i.test(evidence)) || /unsloth/i.test(evidence) ? 'unsloth' : /swift/i.test(evidence) ? 'swift' : /coder/i.test(evidence) ? 'coder' : 'qwen';
     const gpu = config.gpu ?? read('--gpu');
     const gpuIds = gpu == null ? [] : Array.isArray(gpu) ? gpu.map(Number) : String(gpu).split(',').map(Number);
     const context = Number(read('--max-context'));

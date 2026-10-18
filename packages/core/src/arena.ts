@@ -81,7 +81,7 @@ export function arenaModelOf(evidence: string): { family: string; quant: string 
   if (quants.length !== 1 || isOrcaRouterEvidence(evidence)) return null;
   const quant = quants[0]!;
   // Qwen3.6 Unsloth MTP files also use UD-* names; prefer architecture evidence over quant prefix.
-  const family = /qwen3\.?6|qwen36/i.test(evidence) ? 'qwen36' : quant.startsWith('UD-') || /unsloth/i.test(evidence) ? 'unsloth' : /swift/i.test(evidence) ? 'swift' : /coder/i.test(evidence) ? 'coder' : /qwen/i.test(evidence) ? 'qwen' : null;
+  const family = /qwen3\.?6|qwen36/i.test(evidence) ? 'qwen36' : quant.startsWith('UD-') || (quant === 'Q8_0' && /flash-next/i.test(evidence)) || /unsloth/i.test(evidence) ? 'unsloth' : /swift/i.test(evidence) ? 'swift' : /coder/i.test(evidence) ? 'coder' : /qwen/i.test(evidence) ? 'qwen' : null;
   return family ? { family, quant } : null;
 }
 

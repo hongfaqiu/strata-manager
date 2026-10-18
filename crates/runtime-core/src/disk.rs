@@ -120,7 +120,11 @@ fn model_spec(family: &str, quant: &str) -> Result<(String, Vec<String>, u64, f6
         "qwen" => ("", "Qwen3.8-Flash-Next-GSQ-RCO", 2, 2),
         "swift" => ("swift-", "Swift-Qwen3.8-Flash-Next-GSQ-RCO", 2, 2),
         "coder" => ("coder-", "Qwen3.8-Flash-Next-GSQ-RCO", 2, 2),
+        // setup.py: UD-IQ4_XS 3 shards; UD-Q4_K_XL 4; UD-Q5/Q6/Q8_0 6 (UNSLOTH_BIG_SHARDS).
         "unsloth" if quant == "UD-IQ4_XS" => ("unsloth-", "Qwen3.8-Flash-Next", 3, 3),
+        "unsloth" if matches!(quant, "UD-Q5_K_XL" | "UD-Q6_K_XL" | "Q8_0") => {
+            ("unsloth-", "Qwen3.8-Flash-Next", 6, 6)
+        }
         "unsloth" => ("unsloth-", "Qwen3.8-Flash-Next", 4, 4),
         _ => return Err("没有经过核对的模型目录规则".into()),
     };
@@ -132,6 +136,10 @@ fn model_spec(family: &str, quant: &str) -> Result<(String, Vec<String>, u64, f6
         ("coder", "IQ1_M") => (58_400_000_000, 23.4),
         ("unsloth", "UD-IQ4_XS") => (93_700_000_000, 59.5),
         ("unsloth", "UD-Q4_K_XL") => (111_300_000_000, 77.0),
+        // setup.py MODELS download_gb / arena_gb
+        ("unsloth", "UD-Q5_K_XL") => (158_300_000_000, 98.4),
+        ("unsloth", "UD-Q6_K_XL") => (169_200_000_000, 109.2),
+        ("unsloth", "Q8_0") => (188_200_000_000, 128.3),
         _ => return Err("模型/量化组合不被已核对的官方安装器支持".into()),
     };
     Ok((
@@ -744,6 +752,35 @@ mod tests {
         assert_eq!(download, 22_853_663_008);
         assert_eq!(arena, 22.9);
         assert!(model_spec("qwen36", "IQ3_S").is_err());
+    }
+
+    #[test]
+    fn unsloth_higher_quants_use_six_shards_and_setup_sizes() {
+        let (tag, names, download, arena) = model_spec("unsloth", "UD-Q5_K_XL").unwrap();
+        assert_eq!(tag, "unsloth-UD-Q5_K_XL");
+        assert_eq!(names.len(), 6);
+        assert_eq!(
+            names[0],
+            "Qwen3.8-Flash-Next-UD-Q5_K_XL-00001-of-00006.gguf"
+        );
+        assert_eq!(
+            names[5],
+            "Qwen3.8-Flash-Next-UD-Q5_K_XL-00006-of-00006.gguf"
+        );
+        assert_eq!(download, 158_300_000_000);
+        assert!((arena - 98.4).abs() < 1e-9);
+        let (_, q6, d6, a6) = model_spec("unsloth", "UD-Q6_K_XL").unwrap();
+        assert_eq!(q6.len(), 6);
+        assert_eq!(d6, 169_200_000_000);
+        assert!((a6 - 109.2).abs() < 1e-9);
+        let (_, q8, d8, a8) = model_spec("unsloth", "Q8_0").unwrap();
+        assert_eq!(q8[0], "Qwen3.8-Flash-Next-Q8_0-00001-of-00006.gguf");
+        assert_eq!(d8, 188_200_000_000);
+        assert!((a8 - 128.3).abs() < 1e-9);
+        let (_, iq4, _, _) = model_spec("unsloth", "UD-IQ4_XS").unwrap();
+        assert_eq!(iq4.len(), 3);
+        let (_, q4, _, _) = model_spec("unsloth", "UD-Q4_K_XL").unwrap();
+        assert_eq!(q4.len(), 4);
     }
 
     #[test]
