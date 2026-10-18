@@ -107,7 +107,9 @@ impl WorkloadRates {
 }
 /// Medians of several measurements, per side.
 pub fn median_rates(rows: &[WorkloadRates]) -> WorkloadRates {
-    let side = |f: fn(&WorkloadRates) -> Option<f64>| median(&rows.iter().filter_map(f).collect::<Vec<_>>());
+    let side = |f: fn(&WorkloadRates) -> Option<f64>| {
+        median(&rows.iter().filter_map(f).collect::<Vec<_>>())
+    };
     WorkloadRates {
         short: side(|r| r.short),
         long: side(|r| r.long),
@@ -396,7 +398,12 @@ fn version_at_least(version: &str, want: [u64; 3]) -> bool {
 /// Whether the engine refines the PCIe share by itself when no `--pcie-frac`
 /// is set: CUDA from 0.1.42 and RDNA4 (gfx1200/gfx1201) from 0.1.43, one GPU,
 /// no layer split, no `--batch`, no peer GPU. Unknown versions count as no.
-pub fn pcie_auto_supported(config: &Value, metrics: &Value, backend: Backend, layer_split: bool) -> bool {
+pub fn pcie_auto_supported(
+    config: &Value,
+    metrics: &Value,
+    backend: Backend,
+    layer_split: bool,
+) -> bool {
     let args: Vec<&str> = config
         .get("args")
         .and_then(Value::as_array)
@@ -427,7 +434,11 @@ pub fn pcie_auto_supported(config: &Value, metrics: &Value, backend: Backend, la
             let hardware = serde_json::to_string(&metrics["hardware_static"])
                 .unwrap_or_default()
                 .to_ascii_lowercase();
-            (hardware.contains("gfx1200") || hardware.contains("gfx1201") || hardware.contains("r9700") || hardware.contains("9070") || hardware.contains("9060"))
+            (hardware.contains("gfx1200")
+                || hardware.contains("gfx1201")
+                || hardware.contains("r9700")
+                || hardware.contains("9070")
+                || hardware.contains("9060"))
                 && version_at_least(version, [0, 1, 43])
         }
         _ => false,
@@ -509,7 +520,8 @@ pub fn confirm_verdict(
     goal: CalibrationGoal,
     auto_only: bool,
 ) -> (Option<f64>, bool, &'static str) {
-    let combined = |rows: &[WorkloadRates]| rows.iter().filter_map(|r| r.combined()).collect::<Vec<_>>();
+    let combined =
+        |rows: &[WorkloadRates]| rows.iter().filter_map(|r| r.combined()).collect::<Vec<_>>();
     let (Some(d), Some(c)) = (median(&combined(base)), median(&combined(candidate))) else {
         return (None, false, "noData");
     };
@@ -519,9 +531,7 @@ pub fn confirm_verdict(
     let gain = c / d - 1.0;
     if goal != CalibrationGoal::Speed {
         let (b, t) = (median_rates(base), median_rates(candidate));
-        let slower = |before: Option<f64>, after: Option<f64>| {
-            matches!((before, after), (Some(x), Some(y)) if x > 0.0 && y / x - 1.0 < -REGRESSION_TOLERANCE)
-        };
+        let slower = |before: Option<f64>, after: Option<f64>| matches!((before, after), (Some(x), Some(y)) if x > 0.0 && y / x - 1.0 < -REGRESSION_TOLERANCE);
         if slower(b.short, t.short) {
             return (Some(gain), false, "shortRegressed");
         }
@@ -1475,7 +1485,9 @@ async fn run(
             && (candidate.spec_min_p - current.spec_min_p).abs() < 1e-9;
         let (measured, accepted, reason) = confirm_verdict(&d, &c, job.goal, auto_only);
         gain = measured;
-        let combined = |rows: &[WorkloadRates]| median(&rows.iter().filter_map(|r| r.combined()).collect::<Vec<_>>());
+        let combined = |rows: &[WorkloadRates]| {
+            median(&rows.iter().filter_map(|r| r.combined()).collect::<Vec<_>>())
+        };
         base_rate = combined(&d);
         tuned_rate = combined(&c);
         base_rates = Some(median_rates(&d));
@@ -1684,7 +1696,10 @@ mod tests {
         );
         assert_eq!(unset.steps[2].current_value, Some(PCIE_AUTO));
         assert!(unset.steps[2].values.contains(&PCIE_AUTO));
-        assert!(!unset.steps[2].values.contains(&0.0), "AMD never measures 0");
+        assert!(
+            !unset.steps[2].values.contains(&0.0),
+            "AMD never measures 0"
+        );
         assert_eq!(plan_single.steps[1].status, StepStatus::Skipped);
         assert_eq!(
             plan_single.steps[1].skipped_reason.as_deref(),
@@ -1826,12 +1841,22 @@ mod tests {
         let tie = rows(&[(49.9, 40.0), (50.2, 40.1), (49.7, 39.8)]);
         assert_eq!(
             confirm_verdict(&base, &tie, CalibrationGoal::Balanced, true),
-            (confirm_verdict(&base, &tie, CalibrationGoal::Balanced, true).0, true, "autoPreferred")
+            (
+                confirm_verdict(&base, &tie, CalibrationGoal::Balanced, true).0,
+                true,
+                "autoPreferred"
+            )
         );
         assert!(!confirm_verdict(&base, &tie, CalibrationGoal::Balanced, false).1);
-        assert_eq!(confirm_verdict(&[], &tie, CalibrationGoal::Balanced, false).2, "noData");
+        assert_eq!(
+            confirm_verdict(&[], &tie, CalibrationGoal::Balanced, false).2,
+            "noData"
+        );
         // a fixed share has to beat automatic in the sweep by more than 3%
-        let s = samples(&[(PCIE_AUTO, &[50.0, 50.2, 50.1]), (0.35, &[51.0, 51.4, 51.2])]);
+        let s = samples(&[
+            (PCIE_AUTO, &[50.0, 50.2, 50.1]),
+            (0.35, &[51.0, 51.4, 51.2]),
+        ]);
         assert_eq!(
             sweep_winner(&s, &[PCIE_AUTO, 0.35], PCIE_AUTO),
             (Some(0.35), PCIE_AUTO)
@@ -1851,8 +1876,16 @@ mod tests {
         let cuda = json!({"engine":{"engine":"0.1.43.1"},"hardware_static":{"gpu":"NVIDIA GeForce RTX 5070"}});
         let args = |a: &[&str]| json!({"args": a});
         assert!(pcie_auto_supported(&args(&[]), &cuda, Backend::Cuda, false));
-        assert!(!pcie_auto_supported(&args(&[]), &cuda, Backend::Cuda, true), "layer split");
-        assert!(!pcie_auto_supported(&args(&["--batch", "4"]), &cuda, Backend::Cuda, false));
+        assert!(
+            !pcie_auto_supported(&args(&[]), &cuda, Backend::Cuda, true),
+            "layer split"
+        );
+        assert!(!pcie_auto_supported(
+            &args(&["--batch", "4"]),
+            &cuda,
+            Backend::Cuda,
+            false
+        ));
         assert!(!pcie_auto_supported(
             &args(&[]),
             &json!({"engine":{"engine":"0.1.41"}}),
@@ -1862,8 +1895,18 @@ mod tests {
         let rdna4 = json!({"engine":{"engine":"0.1.43"},"hardware_static":{"gpu":"AMD Radeon AI PRO R9700 (gfx1201)"}});
         assert!(pcie_auto_supported(&args(&[]), &rdna4, Backend::Hip, false));
         let rdna3 = json!({"engine":{"engine":"0.1.44"},"hardware_static":{"gpu":"AMD Radeon RX 7900 XTX (gfx1100)"}});
-        assert!(!pcie_auto_supported(&args(&[]), &rdna3, Backend::Hip, false));
-        assert!(!pcie_auto_supported(&args(&[]), &json!({}), Backend::Unknown, false));
+        assert!(!pcie_auto_supported(
+            &args(&[]),
+            &rdna3,
+            Backend::Hip,
+            false
+        ));
+        assert!(!pcie_auto_supported(
+            &args(&[]),
+            &json!({}),
+            Backend::Unknown,
+            false
+        ));
         assert!(config_sets_pcie(&args(&["--pcie-frac", "0.35"])));
         assert!(config_sets_pcie(&args(&["--pcie-frac=0.35"])));
         assert!(!config_sets_pcie(&args(&["--spec-min-p", "0.5"])));
