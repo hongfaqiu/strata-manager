@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { arenaApplyFilters, arenaFacetOptions, arenaGpuVendor, arenaLaunchParams, arenaLeaderboardQuery, arenaModelOf, arenaName, assertArenaPayloadSafe, buildArenaPayload, arenaRecommendQuery } from '../src/arena';
+import { arenaApplyFilters, arenaFailure, ARENA_SORTS, arenaFacetOptions, arenaGpuVendor, arenaLaunchParams, arenaLeaderboardQuery, arenaModelOf, arenaName, assertArenaPayloadSafe, buildArenaPayload, arenaRecommendQuery } from '../src/arena';
 import type { ArenaParams, ArenaRow } from '../src/arena';
 import type { ContextBenchmarkReport } from '../src/context-benchmark-types';
 import type { BenchmarkSuiteReport } from '../src/benchmark-suite-types';
@@ -159,5 +159,28 @@ describe('leaderboard filters and sorting', () => {
   it('builds the leaderboard query without empty values or the default sort', () => {
     expect(arenaLeaderboardQuery('swift:IQ3_S', { vram: '24', kv: '' })).toEqual({ group: 'swift:IQ3_S', vram: '24' });
     expect(arenaLeaderboardQuery('swift:IQ3_S', {}, 'prefill')).toEqual({ group: 'swift:IQ3_S', sort: 'prefill' });
+  });
+});
+
+describe('arena_get failures', () => {
+  it('treats only unreachable or temporarily failing servers as network trouble', () => {
+    expect(arenaFailure('network: error sending request')).toEqual({ kind: 'network', code: 'network: error sending request' });
+    for (const status of [500, 502, 503, 429, 408]) expect(arenaFailure(`arena_http_${status}`).kind).toBe('network');
+    expect(arenaFailure(new Error('network: operation timed out')).kind).toBe('network');
+  });
+  it('keeps app-side failures distinct and preserves the code for the user', () => {
+    for (const code of ['arena_query_invalid: sort', 'arena_path_invalid', 'arena_http_400', 'arena_http_404', 'arena_response_invalid: expected value at line 1 column 1', 'arena_response_too_large'])
+      expect(arenaFailure(code)).toEqual({ kind: 'app', code });
+    expect(arenaFailure({ code: 'X', message: 'arena_query_invalid: q' })).toEqual({ kind: 'app', code: 'arena_query_invalid: q' });
+  });
+});
+
+describe('leaderboard query keys reach the native allow-list', () => {
+  it('every key arenaLeaderboardQuery can produce is in arena.rs QUERY_KEYS', async () => {
+    const { readFileSync } = await import('node:fs');
+    const rust = readFileSync(new URL('../../../apps/desktop/src-tauri/src/arena.rs', import.meta.url), 'utf8');
+    const allowed = new Set([...(/const QUERY_KEYS: &\[&str\] = &\[([\s\S]*?)\];/.exec(rust)?.[1] ?? '').matchAll(/"([^"]+)"/g)].map(m => m[1]));
+    const all = { gpu: 'NVIDIA GeForce RTX 4080 SUPER', q: '4080', vram: '16', ram: '64', ctx: '524288', kv: 'int8', parallel: '1', gpuCount: '1', expertCache: 'auto' };
+    for (const sort of ARENA_SORTS) for (const key of Object.keys(arenaLeaderboardQuery('qwen:IQ3_S', all, sort))) expect(allowed, `${key} (sort=${sort})`).toContain(key);
   });
 });

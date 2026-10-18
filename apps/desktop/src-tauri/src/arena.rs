@@ -823,9 +823,14 @@ async fn withdraw_at(path: &Path, use_keyring: bool) -> Result<Value, String> {
     Ok(json!({ "deleted": deleted }))
 }
 
+/// Query keys `arena_get` forwards. Must cover every key the desktop sends: services/arena/src/stats.js
+/// FILTER_KEYS for /v1/leaderboard (including `q` and `sort`) and the /v1/recommend parameters.
+/// apps/desktop/src/pages/arena.test.mjs checks this list against both.
 const QUERY_KEYS: &[&str] = &[
     "group",
     "gpu",
+    "q",
+    "sort",
     "vram",
     "ram",
     "family",
@@ -839,9 +844,13 @@ const QUERY_KEYS: &[&str] = &[
     "gpuCount",
     "pcieFrac",
 ];
-#[tauri::command]
-pub async fn arena_get(path: String, query: Option<Map<String, Value>>) -> Result<Value, String> {
-    let route = match path.as_str() {
+/// Validates an `arena_get` request: route plus the forwarded query pairs. Rejections are local bugs or bad
+/// input, never network trouble, so they carry the `arena_query_invalid` / `arena_path_invalid` codes.
+fn arena_request(
+    path: &str,
+    query: Option<Map<String, Value>>,
+) -> Result<(&'static str, Vec<(String, String)>), String> {
+    let route = match path {
         "groups" => "/v1/groups",
         "leaderboard" => "/v1/leaderboard",
         "recommend" => "/v1/recommend",
@@ -855,16 +864,25 @@ pub async fn arena_get(path: String, query: Option<Map<String, Value>>) -> Resul
             Value::Bool(b) => b.to_string(),
             _ => continue,
         };
-        if !QUERY_KEYS.contains(&key.as_str())
-            || !(safe_text(&text)
-                || text
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, ':' | '_' | '.' | '-')))
+        if !QUERY_KEYS.contains(&key.as_str()) {
+            return Err(format!("arena_query_invalid: {key}"));
+        }
+        if !(safe_text(&text)
+            || text
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, ':' | '_' | '.' | '-')))
         {
-            return Err("arena_query_invalid".into());
+            return Err(format!("arena_query_invalid: {key}"));
         }
         pairs.push((key, text));
     }
+    Ok((route, pairs))
+}
+/// Error strings: `network: …` (could not reach the server), `arena_http_<status>`, `arena_response_too_large`,
+/// `arena_response_invalid: …` (reached the server but the body is not JSON) and the `arena_request` codes.
+#[tauri::command]
+pub async fn arena_get(path: String, query: Option<Map<String, Value>>) -> Result<Value, String> {
+    let (route, pairs) = arena_request(&path, query)?;
     let response = client()
         .get(format!("{}{route}", endpoint()))
         .query(&pairs)
@@ -882,7 +900,7 @@ pub async fn arena_get(path: String, query: Option<Map<String, Value>>) -> Resul
     if !status.is_success() {
         return Err(format!("arena_http_{}", status.as_u16()));
     }
-    serde_json::from_slice(&bytes).map_err(|e| e.to_string())
+    serde_json::from_slice(&bytes).map_err(|e| format!("arena_response_invalid: {e}"))
 }
 
 // ---------- registration and queue ----------
@@ -1128,6 +1146,74 @@ fn apply_upload(
 
 #[cfg(test)]
 mod tests {
+
+    fn query(pairs: &[(&str, &str)]) -> Option<Map<String, Value>> {
+        Some(
+            pairs
+                .iter()
+                .map(|(k, v)| (k.to_string(), Value::String(v.to_string())))
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn arena_request_accepts_every_leaderboard_query_the_app_sends() {
+        // Default view on an RTX 4080 SUPER: group + my-GPU scope.
+        let (route, pairs) = arena_request(
+            "leaderboard",
+            query(&[
+                ("group", "qwen:IQ3_S"),
+                ("gpu", "NVIDIA GeForce RTX 4080 SUPER"),
+            ]),
+        )
+        .unwrap();
+        assert_eq!(route, "/v1/leaderboard");
+        assert_eq!(pairs.len(), 2);
+        // Sort switch and GPU keyword (added with the filters in #35) used to be rejected as arena_query_invalid,
+        // which the page showed as "leaderboard unreachable".
+        for sort in ["decode128k", "prefill", "machines"] {
+            arena_request(
+                "leaderboard",
+                query(&[("group", "qwen:IQ3_S"), ("sort", sort)]),
+            )
+            .unwrap_or_else(|e| panic!("sort={sort}: {e}"));
+        }
+        arena_request(
+            "leaderboard",
+            query(&[("group", "qwen:IQ3_S"), ("q", "4080 SUPER")]),
+        )
+        .unwrap();
+        arena_request(
+            "leaderboard",
+            query(&[
+                ("group", "qwen:IQ3_S"),
+                ("vram", "16"),
+                ("ram", "64"),
+                ("ctx", "524288"),
+                ("kv", "int8"),
+                ("parallel", "1"),
+                ("gpuCount", "1"),
+                ("expertCache", "auto"),
+                ("sort", "prefill"),
+            ]),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn arena_request_rejects_unknown_keys_values_and_paths() {
+        assert_eq!(
+            arena_request("leaderboard", query(&[("token", "x")])).unwrap_err(),
+            "arena_query_invalid: token"
+        );
+        assert!(arena_request("leaderboard", query(&[("gpu", "a/b")]))
+            .unwrap_err()
+            .starts_with("arena_query_invalid"));
+        assert_eq!(
+            arena_request("admin", None).unwrap_err(),
+            "arena_path_invalid"
+        );
+    }
     use super::*;
     use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 

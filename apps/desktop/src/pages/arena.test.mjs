@@ -67,3 +67,33 @@ test('the leaderboard adds facet filters and a sort switch while keeping the har
     assert.equal(line.match(/'(?:[^'\\]|\\.)*'/g).length, 10, `${key} has all 10 languages`);
   }
 });
+
+// The native arena_get forwards only allow-listed query keys and rejects anything else as
+// arena_query_invalid. #35 added `sort` and `q` on the server and in the page but not here, so switching the
+// sort made every leaderboard request fail and the page claimed the leaderboard was unreachable.
+test('arena_get allows every query key the server accepts and the app sends', async () => {
+  const rust = read('../../src-tauri/src/arena.rs');
+  const list = /const QUERY_KEYS: &\[&str\] = &\[([\s\S]*?)\];/.exec(rust);
+  assert.ok(list, 'QUERY_KEYS found');
+  const allowed = new Set([...list[1].matchAll(/"([^"]+)"/g)].map(match => match[1]));
+  const { FILTER_KEYS } = await import('../../../../services/arena/src/stats.js');
+  for (const key of ['group', ...FILTER_KEYS]) assert.ok(allowed.has(key), `/v1/leaderboard key ${key} is allowed`);
+  const server = readFileSync(new URL('../../../../services/arena/src/index.js', import.meta.url), 'utf8');
+  const recommend = server.slice(server.indexOf("path === '/v1/recommend'"), server.indexOf("throw new ArenaError(404, 'not_found');", server.indexOf("path === '/v1/recommend'")));
+  const recommendKeys = new Set([...recommend.matchAll(/(?:p\.get|p\.has|n)\('([A-Za-z]+)'\)/g), ...recommend.matchAll(/\[([^\]]+)\]\) if/g)].flatMap(match => match[1].includes("'") ? [...match[1].matchAll(/'([A-Za-z]+)'/g)].map(m => m[1]) : [match[1]]));
+  assert.ok(recommendKeys.has('scene') && recommendKeys.has('poolWorkers'), 'recommend keys parsed');
+  for (const key of recommendKeys) assert.ok(allowed.has(key), `/v1/recommend key ${key} is allowed`);
+});
+
+test('only real network failures show "leaderboard unavailable"; app-side failures show the error and reset on retry', () => {
+  const page = read('./ArenaPage.tsx'), strings = read('../ArenaStrings.ts');
+  assert.doesNotMatch(page, /setOffline|catch \{ setOffline|\.catch\(\(\) => \{ if \(current\) set/, 'no failure is silently mapped to offline');
+  assert.equal(page.split('setFailure(core.arenaFailure(error))').length - 1, 3, 'groups, leaderboard and recommend all classify their errors');
+  assert.match(page, /failure\.kind === 'network' \? 'arenaOfflineTitle' : 'arenaErrorTitle'/);
+  assert.match(page, /if \(failure\.kind === 'app'\) \{ setFacets\(\{\}\); setSort\('decode8k'\); \}/);
+  for (const key of ['arenaErrorTitle', 'arenaErrorHint', 'arenaErrorCode']) {
+    const line = strings.split('\n').find(l => l.trim().startsWith(key + ':'));
+    assert.ok(line, key);
+    assert.equal(line.match(/'(?:[^'\\]|\\.)*'/g).length, 10, `${key} has all 10 languages`);
+  }
+});
