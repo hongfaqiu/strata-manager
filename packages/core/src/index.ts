@@ -16,6 +16,7 @@ export * from './config-tuning';
 export * from './context-extension';
 export * from './tuning-types';
 export * from './calibration';
+export * from './speed-tuning';
 export * from './analytics-types';
 export * from './installation-types';
 export * from './runtime-types';

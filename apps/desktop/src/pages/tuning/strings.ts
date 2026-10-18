@@ -25,13 +25,14 @@ const zh = {
   saveVersion: '另存为新配置版本', overwrite: '覆盖当前配置', overwriteConfirm: '覆盖当前配置文件？', overwriteBody: '会把推荐值写入当前配置文件，重启模型后生效。写入前会在同一目录保留一份 .bak 备份。',
   confirmOverwrite: '覆盖并保存', cancel: '取消',
   savedVersion: '已保存新配置版本', openVersion: '打开新配置', overwritten: '已写入当前配置，重启模型后生效。', restartNow: '立即重启',
-  verifyScenario: '用场景验收复核', verifyHint: '快速校准只测短生成。编程/Agent 和长文请再用场景验收确认（上游 #2722）；CPU 线程和专家策略需要重启，会作为候选一并测量。',
+  verifyScenario: '用场景验收复核', verifyHint: '一键提速同时测短回答和 512 token 长回答（上游 #2722）。完整的编程/Agent 与长文任务可以再用场景验收确认；CPU 线程和专家策略需要重启，会作为候选一并测量。',
   benchmark: '运行 Benchmark', benchmarkHint: '可选：用 Benchmark 测一次，是否上传到排行榜在 Benchmark 页单独确认。',
   backend: '显卡后端', layerSplit: '分层切分', yes: '是', no: '否', unknownBackend: '未确认',
   suggestions: '来自快速校准的重启候选', removeSuggestion: '移除', workers: 'CPU 线程', adaptPreset: '专家策略',
   capability: '当前后台不支持快速校准。请完成当前请求并停止模型服务，让后台更新后再试。',
   rule: '判定规则', ruleText: '每个值测 {rounds} 轮，交替顺序，取中位数；复核时当前/推荐交错各测 {rounds} 轮。',
   checking: '检查模型与环境', completed: '校准完成', interrupted: '校准中断',
+  auto: '自动（引擎决定）', detailsTitle: '测量明细', detailsHint: '最近一次一键提速的逐项测量：每个值的速度、选中的值和运行日志。', fullHint: '按用途跑完整任务（会重启模型几次，30–60 分钟），检查质量与资源余量后再决定是否应用。', historyTitle: '历史报告', historyHint: '短请求诊断已从界面移除，这里仍可查看以前的报告。',
 };
 type Strings = Record<keyof typeof zh, string>;
 const en: Strings = {
@@ -58,13 +59,14 @@ const en: Strings = {
   saveVersion: 'Save as new config version', overwrite: 'Overwrite current config', overwriteConfirm: 'Overwrite the current config file?', overwriteBody: 'Writes the recommended values into the current config file. They take effect after the model restarts. A .bak copy of the original is kept in the same folder before writing.',
   confirmOverwrite: 'Overwrite and save', cancel: 'Cancel',
   savedVersion: 'New config version saved', openVersion: 'Open new config', overwritten: 'Written to the current config. Restart the model to apply.', restartNow: 'Restart now',
-  verifyScenario: 'Verify with scenarios', verifyHint: 'Quick calibration only measures short generation. Confirm coding/Agent and long documents with scenario verification (upstream #2722). CPU workers and expert tiers need a restart and are measured there as candidates.',
+  verifyScenario: 'Verify with scenarios', verifyHint: 'One-click speed-up measures short answers and 512-token answers together (upstream #2722). Complete coding/Agent and long-document tasks can be confirmed with scenario verification; CPU workers and expert tiers need a restart and are measured there as candidates.',
   benchmark: 'Run Benchmark', benchmarkHint: 'Optional: run a Benchmark. Uploading to the leaderboard is confirmed separately on the Benchmark page.',
   backend: 'GPU backend', layerSplit: 'Layer split', yes: 'Yes', no: 'No', unknownBackend: 'Unconfirmed',
   suggestions: 'Restart candidates from quick calibration', removeSuggestion: 'Remove', workers: 'CPU workers', adaptPreset: 'Expert tier',
   capability: 'The current supervisor does not support quick calibration. Finish current requests and stop the model service so the supervisor can update, then try again.',
   rule: 'Rule', ruleText: 'Each value is measured {rounds} times in alternating order and the median decides; the confirmation interleaves current and recommended {rounds} times each.',
   checking: 'Checking model and environment', completed: 'Calibration complete', interrupted: 'Calibration interrupted',
+  auto: 'Automatic (engine)', detailsTitle: 'Measurement details', detailsHint: 'Every value of the latest one-click run: its speed, the chosen value and the run log.', fullHint: 'Runs complete tasks for one use case (restarts the model a few times, 30–60 minutes) and checks quality and resource headroom before you decide.', historyTitle: 'Past reports', historyHint: 'Short diagnostics were removed from the page; earlier reports can still be opened here.',
 };
 export type CalibrationText = Strings;
 export const calibrationText = (language: AppLanguage): Strings => language === 'zh-CN' ? zh : en;

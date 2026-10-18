@@ -13,6 +13,16 @@
 //!   (upstream #2465);
 //! - `pcie_frac` 0 is never measured or recommended unless the GPU is a
 //!   confirmed NVIDIA card (upstream #2498: it wedges AMD gfx1201 at boot);
+//! - `--pcie-frac` stays unset when the config leaves it to the engine: since
+//!   0.1.42 (CUDA) / 0.1.43 (RDNA4) the engine refines the share itself, and an
+//!   explicit value turns that off. "Engine default" (`PCIE_AUTO`, sent as no
+//!   per-request share) is measured next to the grid, a fixed value is written
+//!   only when it beats it by more than `MIN_GAIN`, and an explicit value is
+//!   removed again when automatic is not measurably slower;
+//! - the measurement mix includes long answers (`LONG_NEW` tokens, upstream
+//!   calibrate.py `TIER_MAX_NEW`): short 128-token chats alone hide the
+//!   expert-tier and long-answer effects (upstream #2722). With the balanced
+//!   goal a change is refused when it slows short or long answers down;
 //! - restart-bound settings (CPU workers, expert tier, AMD shared-expert
 //!   stream) are not restarted here. They are returned as suggested candidates
 //!   for the scenario verification, which already restarts under a journal.
@@ -27,6 +37,82 @@ pub const SWEEP_ROUNDS: usize = 3;
 pub const WARMUP_ROUNDS: usize = 2;
 pub const MAX_NEW: usize = 128;
 const PROMPTS: [Scene; 3] = [Scene::Code, Scene::Chat, Scene::Chinese];
+/// "Leave `--pcie-frac` to the engine": measured by sending no per-request share.
+pub const PCIE_AUTO: f64 = -1.0;
+/// Long answers, like upstream calibrate.py `TIER_MAX_NEW`.
+pub const LONG_NEW: usize = 512;
+/// Balanced goal: neither short nor long answers may get slower by more than this.
+pub const REGRESSION_TOLERANCE: f64 = 0.02;
+/// Going back to the engine's automatic share is accepted unless it is slower by more than this.
+pub const AUTO_TIE: f64 = 0.01;
+
+/// What the speed measurement is made of. `General` (the default) mixes short
+/// chats with a long answer so a value that only helps one of them is refused.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum CalibrationWorkload {
+    #[default]
+    General,
+    Chat,
+    Agent,
+    LongDocument,
+}
+impl CalibrationWorkload {
+    pub fn short(self) -> &'static [Scene] {
+        match self {
+            Self::General | Self::Chat => &PROMPTS,
+            Self::Agent => &[Scene::Code, Scene::Chat],
+            Self::LongDocument => &[Scene::Chat],
+        }
+    }
+    pub fn long(self) -> &'static [Scene] {
+        match self {
+            Self::General => &[Scene::Chinese],
+            Self::Chat => &[],
+            Self::Agent => &[Scene::Code],
+            Self::LongDocument => &[Scene::Chinese, Scene::Chat],
+        }
+    }
+    pub fn requests_per_rate(self) -> usize {
+        self.short().len() + self.long().len()
+    }
+}
+/// How a measured change is judged. `Speed` only looks at the combined rate;
+/// `Balanced` (default) and `Memory` also refuse slower short or long answers.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum CalibrationGoal {
+    Speed,
+    #[default]
+    Balanced,
+    Memory,
+}
+/// Decode tok/s of the short and the long answers of one measurement.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkloadRates {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub short: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub long: Option<f64>,
+}
+impl WorkloadRates {
+    /// Geometric mean, so a gain on one side cannot hide a loss on the other.
+    pub fn combined(self) -> Option<f64> {
+        match (self.short, self.long) {
+            (Some(s), Some(l)) => Some((s * l).sqrt()),
+            (one, other) => one.or(other),
+        }
+    }
+}
+/// Medians of several measurements, per side.
+pub fn median_rates(rows: &[WorkloadRates]) -> WorkloadRates {
+    let side = |f: fn(&WorkloadRates) -> Option<f64>| median(&rows.iter().filter_map(f).collect::<Vec<_>>());
+    WorkloadRates {
+        short: side(|r| r.short),
+        long: side(|r| r.long),
+    }
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -53,13 +139,18 @@ pub enum StepStatus {
     Done,
     Skipped,
 }
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Sample {
     pub value: f64,
     pub round: usize,
-    /// Decode tok/s (prompt read tok/s for the prompt-chunk step).
+    /// Decode tok/s (prompt read tok/s for the prompt-chunk step); with long
+    /// answers in the mix, the geometric mean of `short` and `long`.
     pub rate: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub short: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub long: Option<f64>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -103,6 +194,10 @@ pub struct CalibrateRequest {
     /// 2-4 sweep rounds; default 3 like upstream.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rounds: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workload: Option<CalibrationWorkload>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub goal: Option<CalibrationGoal>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -119,6 +214,20 @@ pub struct CalibrationJob {
     pub layer_split: bool,
     pub rounds: usize,
     pub min_gain: f64,
+    #[serde(default)]
+    pub workload: CalibrationWorkload,
+    #[serde(default)]
+    pub goal: CalibrationGoal,
+    /// The config sets `--pcie-frac` itself (false: the engine decides; then
+    /// `baseline.pcie_frac` is `PCIE_AUTO`).
+    #[serde(default = "default_true")]
+    pub pcie_flag: bool,
+    /// The engine refines the PCIe share by itself when no `--pcie-frac` is set.
+    #[serde(default)]
+    pub pcie_auto: bool,
+    /// The engine's PCIe share at start (what "automatic" was running at).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine_pcie_frac: Option<f64>,
     pub baseline: CalibrationParameters,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub candidate: Option<CalibrationParameters>,
@@ -132,6 +241,16 @@ pub struct CalibrationJob {
     pub base_rate: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tuned_rate: Option<f64>,
+    /// Short / long answer speeds before and after (`tuned_rates` only when a
+    /// candidate was confirmed against the current settings).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_rates: Option<WorkloadRates>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tuned_rates: Option<WorkloadRates>,
+    /// Why the confirmation accepted or refused: faster, autoPreferred,
+    /// belowMinGain, shortRegressed, longRegressed, noData.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verdict: Option<String>,
     pub steps: Vec<Step>,
     pub completed_requests: usize,
     pub total_requests: usize,
@@ -145,6 +264,10 @@ pub struct CalibrationJob {
     /// Sanitized, size-capped copy of the live log, attached when the job ends.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub live_log: Vec<live::LiveLogLine>,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 // ---------------------------------------------------------------- pure logic
@@ -205,17 +328,24 @@ pub fn detect_layer_split(config: &Value, metrics: &Value) -> bool {
     args_split || key_split
 }
 
-/// The official PCIe grid plus the current value. `pcie_frac` 0 is excluded
-/// unless the card is a confirmed NVIDIA GPU.
-pub fn pcie_values(current: f64, backend: Backend) -> (Vec<f64>, Vec<Excluded>) {
+/// The official PCIe grid plus the current value, and "engine default"
+/// (`PCIE_AUTO`) when the config leaves the share to the engine or the engine
+/// can refine it. `pcie_frac` 0 is excluded unless the card is a confirmed
+/// NVIDIA GPU.
+pub fn pcie_values(current: f64, backend: Backend, auto: bool) -> (Vec<f64>, Vec<Excluded>) {
     let mut values: Vec<f64> = PCIE_FRACS.to_vec();
-    values.push(round2(current));
+    if is_auto(current) || auto {
+        values.push(PCIE_AUTO);
+    }
+    if !is_auto(current) {
+        values.push(round2(current));
+    }
     values.sort_by(f64::total_cmp);
     values.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
     let mut excluded = vec![];
     if backend != Backend::Cuda {
         values.retain(|value| {
-            if *value <= 0.0 {
+            if value.abs() < 1e-9 {
                 excluded.push(Excluded {
                     value: *value,
                     reason: if backend == Backend::Hip {
@@ -231,6 +361,77 @@ pub fn pcie_values(current: f64, backend: Backend) -> (Vec<f64>, Vec<Excluded>) 
         });
     }
     (values, excluded)
+}
+
+pub fn is_auto(pcie_frac: f64) -> bool {
+    pcie_frac < 0.0
+}
+
+/// The config sets `--pcie-frac` (as two args or `--pcie-frac=N`).
+pub fn config_sets_pcie(config: &Value) -> bool {
+    config
+        .get("args")
+        .and_then(Value::as_array)
+        .is_some_and(|args| {
+            args.iter().any(|arg| {
+                arg.as_str()
+                    .is_some_and(|a| a == "--pcie-frac" || a.starts_with("--pcie-frac="))
+            })
+        })
+}
+
+fn version_at_least(version: &str, want: [u64; 3]) -> bool {
+    let parts: Vec<u64> = version
+        .trim_start_matches(|c: char| !c.is_ascii_digit())
+        .split(|c: char| !c.is_ascii_digit())
+        .take(3)
+        .map(|p| p.parse().unwrap_or(0))
+        .collect();
+    if parts.len() < 3 {
+        return false;
+    }
+    [parts[0], parts[1], parts[2]] >= want
+}
+
+/// Whether the engine refines the PCIe share by itself when no `--pcie-frac`
+/// is set: CUDA from 0.1.42 and RDNA4 (gfx1200/gfx1201) from 0.1.43, one GPU,
+/// no layer split, no `--batch`, no peer GPU. Unknown versions count as no.
+pub fn pcie_auto_supported(config: &Value, metrics: &Value, backend: Backend, layer_split: bool) -> bool {
+    let args: Vec<&str> = config
+        .get("args")
+        .and_then(Value::as_array)
+        .map(|args| args.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    let has = |flag: &str| {
+        args.iter()
+            .any(|a| *a == flag || a.starts_with(&format!("{flag}=")))
+    };
+    let batch = args
+        .iter()
+        .position(|a| *a == "--batch")
+        .and_then(|i| args.get(i + 1))
+        .is_some_and(|v| v.parse::<u64>().map_or(true, |n| n > 0))
+        || args
+            .iter()
+            .any(|a| a.strip_prefix("--batch=").is_some_and(|v| v != "0"));
+    if layer_split || batch || has("--peer-device") || has("--peer-gpu") {
+        return false;
+    }
+    let version = metrics["engine"]["engine"]
+        .as_str()
+        .or_else(|| metrics["engine"]["version"].as_str())
+        .unwrap_or("");
+    match backend {
+        Backend::Cuda => version_at_least(version, [0, 1, 42]),
+        Backend::Hip => {
+            let hardware = serde_json::to_string(&metrics["hardware_static"])
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            (hardware.contains("gfx1200") || hardware.contains("gfx1201") || hardware.contains("r9700") || hardware.contains("9070") || hardware.contains("9060"))
+                && version_at_least(version, [0, 1, 43])
+        }
+        _ => false,
+    }
 }
 
 pub fn spec_values(current: f64) -> Vec<f64> {
@@ -297,6 +498,46 @@ pub fn confirm_gain(default_rates: &[f64], candidate_rates: &[f64]) -> (Option<f
     }
 }
 
+/// The interleaved confirmation, per goal. Accepted when the combined median
+/// beats the current settings by more than `MIN_GAIN`; going back to the
+/// engine's automatic PCIe share (`auto_only`) is accepted unless it is slower
+/// by more than `AUTO_TIE`. Except for the speed goal, a change that slows the
+/// short or the long answers by more than `REGRESSION_TOLERANCE` is refused.
+pub fn confirm_verdict(
+    base: &[WorkloadRates],
+    candidate: &[WorkloadRates],
+    goal: CalibrationGoal,
+    auto_only: bool,
+) -> (Option<f64>, bool, &'static str) {
+    let combined = |rows: &[WorkloadRates]| rows.iter().filter_map(|r| r.combined()).collect::<Vec<_>>();
+    let (Some(d), Some(c)) = (median(&combined(base)), median(&combined(candidate))) else {
+        return (None, false, "noData");
+    };
+    if d <= 0.0 {
+        return (None, false, "noData");
+    }
+    let gain = c / d - 1.0;
+    if goal != CalibrationGoal::Speed {
+        let (b, t) = (median_rates(base), median_rates(candidate));
+        let slower = |before: Option<f64>, after: Option<f64>| {
+            matches!((before, after), (Some(x), Some(y)) if x > 0.0 && y / x - 1.0 < -REGRESSION_TOLERANCE)
+        };
+        if slower(b.short, t.short) {
+            return (Some(gain), false, "shortRegressed");
+        }
+        if slower(b.long, t.long) {
+            return (Some(gain), false, "longRegressed");
+        }
+    }
+    if gain > MIN_GAIN {
+        (Some(gain), true, "faster")
+    } else if auto_only && gain >= -AUTO_TIE {
+        (Some(gain), true, "autoPreferred")
+    } else {
+        (Some(gain), false, "belowMinGain")
+    }
+}
+
 /// Prompt chunks are kept only when faster in every paired round and by more
 /// than `MIN_GAIN` in the median (upstream `measure_pipe`).
 pub fn pipe_confirmed(default_rates: &[f64], candidate_rates: &[f64]) -> bool {
@@ -356,14 +597,20 @@ pub fn settings_for(
     baseline: CalibrationParameters,
     recommended: CalibrationParameters,
 ) -> serde_json::Map<String, Value> {
+    // Only the values that changed. A recommended `PCIE_AUTO` removes an
+    // explicit `--pcie-frac` (null) so the engine's own share applies again.
     let mut settings = serde_json::Map::new();
-    if (recommended.pcie_frac - baseline.pcie_frac).abs() > 1e-9
-        || (recommended.spec_min_p - baseline.spec_min_p).abs() > 1e-9
-    {
+    if (recommended.pcie_frac - baseline.pcie_frac).abs() > 1e-9 {
         settings.insert(
             "--pcie-frac".into(),
-            json!(format!("{:.2}", recommended.pcie_frac)),
+            if is_auto(recommended.pcie_frac) {
+                Value::Null
+            } else {
+                json!(format!("{:.2}", recommended.pcie_frac))
+            },
         );
+    }
+    if (recommended.spec_min_p - baseline.spec_min_p).abs() > 1e-9 {
         settings.insert(
             "--spec-min-p".into(),
             json!(format!("{:.2}", recommended.spec_min_p)),
@@ -412,8 +659,10 @@ pub fn plan(
     layer_split: bool,
     max_context: Option<u64>,
     rounds: usize,
+    workload: CalibrationWorkload,
+    pcie_auto: bool,
 ) -> Plan {
-    let prompts = PROMPTS.len();
+    let prompts = workload.requests_per_rate();
     let mut steps = vec![step(
         StepKind::Warmup,
         "decode",
@@ -456,12 +705,16 @@ pub fn plan(
         });
         steps.push(skipped);
     }
-    let (pcie, excluded) = pcie_values(baseline.pcie_frac, backend);
+    let (pcie, excluded) = pcie_values(baseline.pcie_frac, backend, pcie_auto);
     let mut pcie_step = step(
         StepKind::PcieFrac,
         "decode",
         pcie.clone(),
-        Some(round2(baseline.pcie_frac)),
+        Some(if is_auto(baseline.pcie_frac) {
+            PCIE_AUTO
+        } else {
+            round2(baseline.pcie_frac)
+        }),
         rounds,
         pcie.len() * rounds * prompts,
     );
@@ -489,6 +742,16 @@ pub fn plan(
         steps,
         total_requests,
     }
+}
+
+/// Long answers (`LONG_NEW` tokens): text that keeps going past 512 tokens.
+fn long_prompt_for(scene: Scene, nonce: &str) -> Value {
+    let text = match scene {
+        Scene::Code => "Write a complete, well documented Python module implementing an LRU cache class with get, put, delete, resize and statistics methods, type hints, docstrings on every method, and at least ten unittest test cases. Write the full code; do not abbreviate or skip parts.",
+        Scene::Chinese => "请用中文写一篇约一千五百字的说明文，介绍家用电脑运行本地大语言模型时，显卡显存、内存、硬盘和处理器各自起什么作用，以及它们如何影响回答速度。分成六个小节，每节至少四段，语言通俗，不要表格。请写完整，不要省略。",
+        Scene::Chat => "Write a detailed essay of about 1200 words on how weather forecasts are made, from collecting observations to numerical models and how forecasters communicate uncertainty. Use at least eight paragraphs and write the whole essay without summarising or stopping early.",
+    };
+    json!([{"role":"system","content":format!("Benchmark nonce {nonce}. Ignore that nonce in your answer. Follow the user's instructions exactly. Answer directly without reasoning or tool use.")},{"role":"user","content":text}])
 }
 
 fn pipe_messages(read: usize, tokens: usize) -> Value {
@@ -611,6 +874,8 @@ pub async fn start(
     request: CalibrateRequest,
 ) -> Result<CalibrationJob, String> {
     let rounds = request.rounds.unwrap_or(SWEEP_ROUNDS);
+    let workload = request.workload.unwrap_or_default();
+    let goal = request.goal.unwrap_or_default();
     if !(2..=4).contains(&rounds) {
         return Err("校准轮数须为 2–4".into());
     }
@@ -636,11 +901,17 @@ pub async fn start(
     let config: Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
     let backend = detect_backend(&config, &metrics);
     let layer_split = detect_layer_split(&config, &metrics);
+    let pcie_flag = config_sets_pcie(&config);
+    let pcie_auto = pcie_auto_supported(&config, &metrics, backend, layer_split);
     let prefill_pipe = metrics["engine"]
         .get("prefill_pipe")
         .and_then(engine_number);
     let baseline = CalibrationParameters {
-        pcie_frac: current.pcie_frac,
+        pcie_frac: if pcie_flag {
+            current.pcie_frac
+        } else {
+            PCIE_AUTO
+        },
         spec_min_p: current.spec_min_p,
         prefill_pipe: if layer_split {
             Some(prefill_pipe.unwrap_or(0.0))
@@ -652,7 +923,15 @@ pub async fn start(
     let Plan {
         steps,
         total_requests,
-    } = plan(baseline, backend, layer_split, max_context, rounds);
+    } = plan(
+        baseline,
+        backend,
+        layer_split,
+        max_context,
+        rounds,
+        workload,
+        pcie_auto,
+    );
     let workers = metrics["engine"]
         .get("pool_workers")
         .and_then(engine_number)
@@ -670,6 +949,11 @@ pub async fn start(
         layer_split,
         rounds,
         min_gain: MIN_GAIN,
+        workload,
+        goal,
+        pcie_flag,
+        pcie_auto,
+        engine_pcie_frac: Some(current.pcie_frac),
         baseline,
         candidate: None,
         recommended: None,
@@ -677,15 +961,19 @@ pub async fn start(
         gain: None,
         base_rate: None,
         tuned_rate: None,
+        base_rates: None,
+        tuned_rates: None,
+        verdict: None,
         steps,
         completed_requests: 0,
         total_requests,
         restart_suggestions: restart_suggestions(workers),
-        identity: json!({"model":metrics["engine"]["model"],"engineVersion":metrics["engine"]["version"],"maxContext":max_context,"poolWorkers":workers,"hardware":metrics["hardware_static"],"scheme":"strata-calibrate-v1"}),
+        identity: json!({"model":metrics["engine"]["model"],"engineVersion":metrics["engine"]["version"],"maxContext":max_context,"poolWorkers":workers,"hardware":metrics["hardware_static"],"scheme":"strata-calibrate-v2"}),
         config_fingerprint: fingerprint(&bytes),
         error: None,
         notes: vec![
             "Follows upstream tools/calibrate.py: request-level sweeps in one engine, alternating order, median of rounds, interleaved confirmation, 3% minimum gain.".into(),
+            "Short chats and 512-token answers are measured together; --pcie-frac is only written when a fixed share clearly beats the engine's own.".into(),
             "Nothing is written until you apply. Restart-bound settings are suggested for the scenario verification.".into(),
         ],
     };
@@ -745,6 +1033,17 @@ struct Runner<'a> {
     token: &'a str,
     step_index: usize,
     step_total: usize,
+    workload: CalibrationWorkload,
+}
+
+fn decode_rate(record: &Measurement) -> Option<f64> {
+    record
+        .decode_tok_s
+        .or_else(|| match (record.output_tokens, record.decode_ms) {
+            (Some(n), Some(ms)) if n > 8 && ms > 0.0 => Some(n as f64 / (ms / 1000.0)),
+            _ => None,
+        })
+        .filter(|r| r.is_finite() && *r > 0.0)
 }
 
 impl Runner<'_> {
@@ -783,30 +1082,36 @@ impl Runner<'_> {
         cal_update(self.state, self.id, |job| job.completed_requests += 1)?;
         Ok(record)
     }
-    /// Median decode tok/s over the three fixed prompts (upstream `Session.rate`).
-    async fn rate(&self, parameters: Parameters) -> Result<f64, String> {
+    /// Median decode tok/s over the short prompts (upstream `Session.rate`),
+    /// and over the long answers of the workload.
+    async fn rate(&self, parameters: Parameters) -> Result<WorkloadRates, String> {
         if require_owned(self.state, self.profile).await? != self.pid {
             return Err("模型进程在校准中发生变化".into());
         }
         crate::inspect_idle_http(self.state, self.profile).await?;
-        let mut rates = vec![];
-        for scene in PROMPTS {
-            let messages = prompt_for(scene, &uuid::Uuid::new_v4().to_string());
+        let (mut short, mut long) = (vec![], vec![]);
+        for scene in self.workload.short() {
+            let messages = prompt_for(*scene, &uuid::Uuid::new_v4().to_string());
             let record = self
-                .request(parameters, Value::Null, scene, &messages, MAX_NEW)
+                .request(parameters, Value::Null, *scene, &messages, MAX_NEW)
                 .await?;
-            let rate =
-                record
-                    .decode_tok_s
-                    .or_else(|| match (record.output_tokens, record.decode_ms) {
-                        (Some(n), Some(ms)) if n > 8 && ms > 0.0 => Some(n as f64 / (ms / 1000.0)),
-                        _ => None,
-                    });
-            if let Some(rate) = rate.filter(|r| r.is_finite() && *r > 0.0) {
-                rates.push(rate);
-            }
+            short.extend(decode_rate(&record));
         }
-        median(&rates).ok_or_else(|| "引擎没有报告生成速度，无法校准".into())
+        for scene in self.workload.long() {
+            let messages = long_prompt_for(*scene, &uuid::Uuid::new_v4().to_string());
+            let record = self
+                .request(parameters, Value::Null, *scene, &messages, LONG_NEW)
+                .await?;
+            long.extend(decode_rate(&record));
+        }
+        let rates = WorkloadRates {
+            short: median(&short),
+            long: median(&long),
+        };
+        if rates.combined().is_none() {
+            return Err("引擎没有报告生成速度，无法校准".into());
+        }
+        Ok(rates)
     }
     /// Prompt read tok/s of fresh prompts (upstream `measure_pipe.rate`).
     async fn prompt_rate(
@@ -898,6 +1203,7 @@ async fn run(
         token: &token,
         step_index: 0,
         step_total: active_steps,
+        workload: job.workload,
     };
     let base = Parameters {
         pcie_frac: job.baseline.pcie_frac,
@@ -968,6 +1274,7 @@ async fn run(
                         value: *value,
                         round: 0,
                         rate,
+                        ..Sample::default()
                     })
                 })
             })?;
@@ -1003,6 +1310,7 @@ async fn run(
                                 value,
                                 round: round + 1,
                                 rate,
+                                ..Sample::default()
                             })
                         })
                     })?;
@@ -1026,6 +1334,7 @@ async fn run(
     // 2./3. request-level sweeps, every value SWEEP_ROUNDS times
     let mut best_pcie = base.pcie_frac;
     let mut best_spec = base.spec_min_p;
+    let mut sweep_base: Option<WorkloadRates> = None;
     for kind in [StepKind::PcieFrac, StepKind::SpecMinP] {
         runner.step_index += 1;
         let step = job
@@ -1052,8 +1361,15 @@ async fn run(
                     }
                 };
                 runner.enter(kind, json!({"pcieFrac":parameters.pcie_frac,"specMinP":parameters.spec_min_p,"value":value}), Some((round + 1, rounds)));
-                let rate = runner.rate(parameters).await?;
-                let sample = Sample { value, round, rate };
+                let rates = runner.rate(parameters).await?;
+                let rate = rates.combined().unwrap_or(0.0);
+                let sample = Sample {
+                    value,
+                    round,
+                    rate,
+                    short: rates.short,
+                    long: rates.long,
+                };
                 samples.push(sample.clone());
                 live::log(
                     &id,
@@ -1070,7 +1386,25 @@ async fn run(
         } else {
             base.spec_min_p
         });
-        let (best, chosen) = sweep_winner(&samples, &step.values, current);
+        // The engine's own PCIe share is the reference where it can refine it:
+        // a fixed value has to beat automatic by more than MIN_GAIN.
+        let reference = if kind == StepKind::PcieFrac && job.pcie_auto {
+            PCIE_AUTO
+        } else {
+            current
+        };
+        let (best, chosen) = sweep_winner(&samples, &step.values, reference);
+        if kind == StepKind::PcieFrac {
+            let at_current: Vec<WorkloadRates> = samples
+                .iter()
+                .filter(|s| (s.value - current).abs() < 1e-9)
+                .map(|s| WorkloadRates {
+                    short: s.short.or(Some(s.rate)),
+                    long: s.long,
+                })
+                .collect();
+            sweep_base = Some(median_rates(&at_current));
+        }
         live::log(
             &id,
             "stepWinner",
@@ -1097,11 +1431,18 @@ async fn run(
         spec_min_p: best_spec,
     };
     let current = Parameters {
-        pcie_frac: round2(base.pcie_frac),
+        pcie_frac: if is_auto(base.pcie_frac) {
+            PCIE_AUTO
+        } else {
+            round2(base.pcie_frac)
+        },
         spec_min_p: round2(base.spec_min_p),
     };
     let mut recommended = base;
-    let (mut gain, mut base_rate, mut tuned_rate) = (None, None, None);
+    // Without a confirmation the "before" speed is the current value's sweep median.
+    let (mut gain, mut tuned_rate) = (None, None);
+    let mut base_rate = sweep_base.and_then(WorkloadRates::combined);
+    let (mut base_rates, mut tuned_rates, mut verdict) = (sweep_base, None, None);
     if candidate != current {
         cal_update(&state, &id, |job| {
             mark(job, StepKind::Confirm, |s| s.status = StepStatus::Running)
@@ -1110,27 +1451,37 @@ async fn run(
         for round in 0..rounds {
             for (index, parameters) in [(0.0, base), (1.0, candidate)] {
                 runner.enter(StepKind::Confirm, json!({"pcieFrac":parameters.pcie_frac,"specMinP":parameters.spec_min_p,"value":index}), Some((round + 1, rounds)));
-                let rate = runner.rate(parameters).await?;
+                let rates = runner.rate(parameters).await?;
                 if index == 0.0 {
-                    d.push(rate)
+                    d.push(rates)
                 } else {
-                    c.push(rate)
+                    c.push(rates)
                 }
                 cal_update(&state, &id, |job| {
                     mark(job, StepKind::Confirm, |s| {
                         s.samples.push(Sample {
                             value: index,
                             round,
-                            rate,
+                            rate: rates.combined().unwrap_or(0.0),
+                            short: rates.short,
+                            long: rates.long,
                         })
                     })
                 })?;
             }
         }
-        let (measured, accepted) = confirm_gain(&d, &c);
+        let auto_only = is_auto(candidate.pcie_frac)
+            && !is_auto(current.pcie_frac)
+            && (candidate.spec_min_p - current.spec_min_p).abs() < 1e-9;
+        let (measured, accepted, reason) = confirm_verdict(&d, &c, job.goal, auto_only);
         gain = measured;
-        base_rate = median(&d);
-        tuned_rate = median(&c);
+        let combined = |rows: &[WorkloadRates]| median(&rows.iter().filter_map(|r| r.combined()).collect::<Vec<_>>());
+        base_rate = combined(&d);
+        tuned_rate = combined(&c);
+        base_rates = Some(median_rates(&d));
+        tuned_rates = Some(median_rates(&c));
+        verdict = Some(reason.to_string());
+        live::log(&id, "verdict", json!({"reason":reason,"gain":measured}));
         if accepted {
             recommended = candidate;
         }
@@ -1160,7 +1511,7 @@ async fn run(
         );
     }
     // Never recommend pcie_frac 0 off a confirmed NVIDIA card (upstream #2498).
-    if job.backend != Backend::Cuda && recommended.pcie_frac <= 0.0 {
+    if job.backend != Backend::Cuda && recommended.pcie_frac.abs() < 1e-9 {
         recommended = base;
     }
     crate::maintenance::wait_idle(&state, &profile).await?;
@@ -1187,6 +1538,9 @@ async fn run(
         job.gain = gain;
         job.base_rate = base_rate;
         job.tuned_rate = tuned_rate;
+        job.base_rates = base_rates;
+        job.tuned_rates = tuned_rates;
+        job.verdict = verdict;
         job.state = Phase::Completed;
         job.finished_at = Some(now());
     })?;
@@ -1204,6 +1558,7 @@ mod tests {
                     value: *value,
                     round,
                     rate: *rate,
+                    ..Sample::default()
                 })
             })
             .collect()
@@ -1211,10 +1566,10 @@ mod tests {
 
     #[test]
     fn amd_and_unconfirmed_gpus_never_measure_pcie_zero() {
-        let (cuda, excluded) = pcie_values(0.55, Backend::Cuda);
+        let (cuda, excluded) = pcie_values(0.55, Backend::Cuda, false);
         assert_eq!(cuda, vec![0.0, 0.2, 0.35, 0.55, 0.75, 0.9, 1.0]);
         assert!(excluded.is_empty());
-        let (hip, excluded) = pcie_values(0.3, Backend::Hip);
+        let (hip, excluded) = pcie_values(0.3, Backend::Hip, false);
         assert!(!hip.contains(&0.0));
         assert!(hip.contains(&0.3), "the current value is always measured");
         assert_eq!(
@@ -1224,7 +1579,7 @@ mod tests {
                 reason: "amdPcieZero".into()
             }]
         );
-        let (unknown, excluded) = pcie_values(0.5, Backend::Unknown);
+        let (unknown, excluded) = pcie_values(0.5, Backend::Unknown, false);
         assert!(!unknown.contains(&0.0));
         assert_eq!(excluded[0].reason, "unconfirmedGpuPcieZero");
     }
@@ -1290,9 +1645,46 @@ mod tests {
             spec_min_p: 0.5,
             prefill_pipe: None,
         };
-        let plan_single = plan(base, Backend::Cuda, false, Some(65536), 3);
-        // warm-up 6 + pcie 7*3*3 + spec 3*3*3 + confirm 2*3*3
+        let plan_single = plan(
+            base,
+            Backend::Cuda,
+            false,
+            Some(65536),
+            3,
+            CalibrationWorkload::Chat,
+            false,
+        );
+        // chat only (the old mix): warm-up 6 + pcie 7*3*3 + spec 3*3*3 + confirm 2*3*3
         assert_eq!(plan_single.total_requests, 6 + 63 + 27 + 18);
+        // the default general mix adds one long answer to every measurement, and
+        // an engine that refines its own share measures "automatic" as well
+        let general = plan(
+            base,
+            Backend::Cuda,
+            false,
+            Some(65536),
+            2,
+            CalibrationWorkload::General,
+            true,
+        );
+        assert!(general.steps[2].values.contains(&PCIE_AUTO));
+        // warm-up 2*4 + pcie 8*2*4 + spec 3*2*4 + confirm 2*2*4
+        assert_eq!(general.total_requests, 8 + 64 + 24 + 16);
+        let unset = plan(
+            CalibrationParameters {
+                pcie_frac: PCIE_AUTO,
+                ..base
+            },
+            Backend::Hip,
+            false,
+            None,
+            2,
+            CalibrationWorkload::General,
+            false,
+        );
+        assert_eq!(unset.steps[2].current_value, Some(PCIE_AUTO));
+        assert!(unset.steps[2].values.contains(&PCIE_AUTO));
+        assert!(!unset.steps[2].values.contains(&0.0), "AMD never measures 0");
         assert_eq!(plan_single.steps[1].status, StepStatus::Skipped);
         assert_eq!(
             plan_single.steps[1].skipped_reason.as_deref(),
@@ -1307,6 +1699,8 @@ mod tests {
             true,
             Some(2048),
             3,
+            CalibrationWorkload::Chat,
+            false,
         );
         assert_eq!(
             plan_split.steps[1].status,
@@ -1326,6 +1720,8 @@ mod tests {
             true,
             Some(4096),
             3,
+            CalibrationWorkload::Chat,
+            false,
         );
         assert_eq!(
             plan_split.steps[1].requests,
@@ -1341,6 +1737,8 @@ mod tests {
             true,
             Some(32768),
             3,
+            CalibrationWorkload::Chat,
+            false,
         );
         assert_eq!(plan_split.steps[1].requests, 2 * (1 + 6 + 6));
         assert!(!plan_split.steps[2].values.contains(&0.0));
@@ -1360,7 +1758,32 @@ mod tests {
         };
         let settings = settings_for(base, tuned);
         assert_eq!(settings["--pcie-frac"], "0.35");
-        assert_eq!(settings["--spec-min-p"], "0.50");
+        assert!(
+            !settings.contains_key("--spec-min-p"),
+            "an unchanged MTP threshold is not written"
+        );
+        let spec_only = settings_for(
+            base,
+            CalibrationParameters {
+                spec_min_p: 0.7,
+                ..base
+            },
+        );
+        assert_eq!(spec_only["--spec-min-p"], "0.70");
+        assert!(
+            !spec_only.contains_key("--pcie-frac"),
+            "a fixed PCIe share is never written as a side effect"
+        );
+        // the config left the share to the engine and nothing beat it: nothing to write
+        let auto = CalibrationParameters {
+            pcie_frac: PCIE_AUTO,
+            ..base
+        };
+        assert!(settings_for(auto, auto).is_empty());
+        // a fixed value that clearly beat automatic is written
+        assert_eq!(settings_for(auto, tuned)["--pcie-frac"], "0.35");
+        // an explicit value goes back to automatic: the flag is removed (null)
+        assert_eq!(settings_for(base, auto)["--pcie-frac"], Value::Null);
         let piped = settings_for(
             CalibrationParameters {
                 prefill_pipe: Some(0.0),
@@ -1373,6 +1796,79 @@ mod tests {
         );
         assert_eq!(piped["--prefill-pipe"], "1536");
         assert!(!piped.contains_key("--pcie-frac"));
+    }
+
+    #[test]
+    fn the_engine_share_is_preferred_and_no_answer_length_may_regress() {
+        let rows = |pairs: &[(f64, f64)]| {
+            pairs
+                .iter()
+                .map(|(s, l)| WorkloadRates {
+                    short: Some(*s),
+                    long: Some(*l),
+                })
+                .collect::<Vec<_>>()
+        };
+        let base = rows(&[(50.0, 40.0), (50.5, 40.2), (49.8, 39.9)]);
+        // +8% on both: accepted
+        let faster = rows(&[(54.0, 43.2), (54.4, 43.5), (54.1, 43.0)]);
+        let (gain, accepted, reason) =
+            confirm_verdict(&base, &faster, CalibrationGoal::Balanced, false);
+        assert!(accepted && reason == "faster" && gain.unwrap() > MIN_GAIN);
+        // short chats +12% but long answers -5%: refused when balanced, accepted for speed
+        let lopsided = rows(&[(56.0, 38.0), (56.5, 38.1), (56.2, 37.9)]);
+        assert_eq!(
+            confirm_verdict(&base, &lopsided, CalibrationGoal::Balanced, false).2,
+            "longRegressed"
+        );
+        assert!(confirm_verdict(&base, &lopsided, CalibrationGoal::Speed, false).1);
+        // going back to automatic is accepted when it is not measurably slower
+        let tie = rows(&[(49.9, 40.0), (50.2, 40.1), (49.7, 39.8)]);
+        assert_eq!(
+            confirm_verdict(&base, &tie, CalibrationGoal::Balanced, true),
+            (confirm_verdict(&base, &tie, CalibrationGoal::Balanced, true).0, true, "autoPreferred")
+        );
+        assert!(!confirm_verdict(&base, &tie, CalibrationGoal::Balanced, false).1);
+        assert_eq!(confirm_verdict(&[], &tie, CalibrationGoal::Balanced, false).2, "noData");
+        // a fixed share has to beat automatic in the sweep by more than 3%
+        let s = samples(&[(PCIE_AUTO, &[50.0, 50.2, 50.1]), (0.35, &[51.0, 51.4, 51.2])]);
+        assert_eq!(
+            sweep_winner(&s, &[PCIE_AUTO, 0.35], PCIE_AUTO),
+            (Some(0.35), PCIE_AUTO)
+        );
+        assert_eq!(
+            WorkloadRates {
+                short: Some(64.0),
+                long: Some(36.0)
+            }
+            .combined(),
+            Some(48.0)
+        );
+    }
+
+    #[test]
+    fn pcie_auto_follows_the_engine_rules() {
+        let cuda = json!({"engine":{"engine":"0.1.43.1"},"hardware_static":{"gpu":"NVIDIA GeForce RTX 5070"}});
+        let args = |a: &[&str]| json!({"args": a});
+        assert!(pcie_auto_supported(&args(&[]), &cuda, Backend::Cuda, false));
+        assert!(!pcie_auto_supported(&args(&[]), &cuda, Backend::Cuda, true), "layer split");
+        assert!(!pcie_auto_supported(&args(&["--batch", "4"]), &cuda, Backend::Cuda, false));
+        assert!(!pcie_auto_supported(
+            &args(&[]),
+            &json!({"engine":{"engine":"0.1.41"}}),
+            Backend::Cuda,
+            false
+        ));
+        let rdna4 = json!({"engine":{"engine":"0.1.43"},"hardware_static":{"gpu":"AMD Radeon AI PRO R9700 (gfx1201)"}});
+        assert!(pcie_auto_supported(&args(&[]), &rdna4, Backend::Hip, false));
+        let rdna3 = json!({"engine":{"engine":"0.1.44"},"hardware_static":{"gpu":"AMD Radeon RX 7900 XTX (gfx1100)"}});
+        assert!(!pcie_auto_supported(&args(&[]), &rdna3, Backend::Hip, false));
+        assert!(!pcie_auto_supported(&args(&[]), &json!({}), Backend::Unknown, false));
+        assert!(config_sets_pcie(&args(&["--pcie-frac", "0.35"])));
+        assert!(config_sets_pcie(&args(&["--pcie-frac=0.35"])));
+        assert!(!config_sets_pcie(&args(&["--spec-min-p", "0.5"])));
+        let (values, _) = pcie_values(0.35, Backend::Cuda, true);
+        assert!(values.contains(&PCIE_AUTO) && values.contains(&0.35) && values.contains(&0.0));
     }
 
     #[test]
@@ -1417,7 +1913,10 @@ mod tests {
         let started = start(
             state.clone(),
             profile.id.clone(),
-            CalibrateRequest { rounds: Some(2) },
+            CalibrateRequest {
+                rounds: Some(2),
+                ..CalibrateRequest::default()
+            },
         )
         .await
         .unwrap();
@@ -1453,7 +1952,15 @@ mod tests {
             "spec_min_p had no effect and keeps the current value"
         );
         assert_eq!(job.settings["--pcie-frac"], "0.35");
+        assert!(
+            !job.settings.contains_key("--spec-min-p"),
+            "only changed values are written"
+        );
         assert!(job.gain.unwrap() > MIN_GAIN);
+        assert_eq!(job.workload, CalibrationWorkload::General);
+        assert_eq!(job.verdict.as_deref(), Some("faster"));
+        let rates = job.base_rates.unwrap();
+        assert!(rates.short.is_some() && rates.long.is_some(), "{rates:?}");
         assert_eq!(
             fs::read(&profile.config_path).unwrap(),
             original,

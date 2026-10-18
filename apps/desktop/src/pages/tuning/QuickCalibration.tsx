@@ -7,7 +7,7 @@ import type { CalibrationText } from './strings';
 const stepTitle = (text: CalibrationText, kind: CalibrationStep['kind']) => text[kind];
 const stateLabel = (text: CalibrationText, state: CalibrationJob['state'], fallback: Record<string, string>) =>
   (({ checking: text.checking, completed: text.completed, interrupted: text.interrupted, failed: text.failed, canceled: text.canceled } as Record<string, string>)[state]) ?? fallback[state] ?? state;
-const fmt = (value: number | undefined, digits = 2) => value == null ? '—' : Number.isInteger(value) ? String(value) : value.toFixed(digits);
+const fmt = (value: number | undefined, digits = 2, auto = '—') => value == null ? '—' : value < 0 ? auto : Number.isInteger(value) ? String(value) : value.toFixed(digits);
 
 export interface QuickCalibrationProps {
   job: CalibrationJob;
@@ -35,7 +35,7 @@ export function QuickCalibrationView({ job, live, text, language, states, clock,
   const confirm = job.steps.find(step => step.kind === 'confirm');
   const changed = core.calibrationHasChange(job);
   const params = live?.parameters ?? {};
-  const paramText = [params.pcieFrac != null ? `${text.pcieFrac} ${params.pcieFrac}` : '', params.specMinP != null ? `${text.specMinP} ${params.specMinP}` : '', params.value != null && running?.kind === 'prefillPipe' ? `${text.prefillPipe} ${params.value}` : ''].filter(Boolean).join(' · ');
+  const paramText = [params.pcieFrac != null ? `${text.pcieFrac} ${fmt(Number(params.pcieFrac), 2, text.auto)}` : '', params.specMinP != null ? `${text.specMinP} ${params.specMinP}` : '', params.value != null && running?.kind === 'prefillPipe' ? `${text.prefillPipe} ${params.value}` : ''].filter(Boolean).join(' · ');
   const rows = [
     { key: 'pcieFrac', label: text.pcieFrac, from: job.baseline.pcieFrac, to: job.recommended?.pcieFrac },
     { key: 'specMinP', label: text.specMinP, from: job.baseline.specMinP, to: job.recommended?.specMinP },
@@ -58,7 +58,7 @@ export function QuickCalibrationView({ job, live, text, language, states, clock,
         {job.gain != null && changed && <div className="tuning-verdict-gain"><strong>+{formatRate(job.gain * 100, language)}%</strong><span>{text.gain}</span><small>{formatRate(job.baseRate, language)} → {formatRate(job.tunedRate, language)} tok/s</small></div>}
       </div>
       {job.state === 'completed' && <table className="tuning-diff" data-testid="tuning-diff"><thead><tr><th>{text.parameter}</th><th>{text.from}</th><th>{text.to}</th></tr></thead>
-        <tbody>{rows.map(row => { const same = row.to == null || Math.abs((row.to ?? 0) - (row.from ?? 0)) < 1e-9; return <tr key={row.key} className={same ? '' : 'is-changed'}><td>{row.label}</td><td>{fmt(row.from)}</td><td>{same ? <span className="tuning-muted">{fmt(row.from)}</span> : <strong>{fmt(row.to)}</strong>}</td></tr>; })}</tbody></table>}
+        <tbody>{rows.map(row => { const same = row.to == null || Math.abs((row.to ?? 0) - (row.from ?? 0)) < 1e-9; return <tr key={row.key} className={same ? '' : 'is-changed'}><td>{row.label}</td><td>{fmt(row.from, 2, text.auto)}</td><td>{same ? <span className="tuning-muted">{fmt(row.from, 2, text.auto)}</span> : <strong>{fmt(row.to, 2, text.auto)}</strong>}</td></tr>; })}</tbody></table>}
       <div className="tuning-verdict-actions">
         {changed && <><button className="primary" data-testid="calibration-save-version" disabled={!canApply} onClick={onSaveVersion}><FilePlus2 size={15}/>{text.saveVersion}</button>
           <button data-testid="calibration-overwrite" disabled={!canApply} onClick={onOverwrite}><Save size={15}/>{text.overwrite}</button></>}
@@ -71,7 +71,7 @@ export function QuickCalibrationView({ job, live, text, language, states, clock,
     </section>}
 
     <ol className="tuning-steps" data-testid="tuning-steps">{job.steps.map(step => <li key={step.kind} className={`is-${step.status}`}>
-      <span className="tuning-step-dot"/><div><strong>{stepTitle(text, step.kind)}</strong><span>{text[step.status]}{step.skippedReason ? ` · ${text[step.skippedReason as keyof CalibrationText] ?? step.skippedReason}` : step.chosen != null && step.kind !== 'confirm' ? ` · ${text.chosen} ${fmt(step.chosen)}` : ''}</span></div>
+      <span className="tuning-step-dot"/><div><strong>{stepTitle(text, step.kind)}</strong><span>{text[step.status]}{step.skippedReason ? ` · ${text[step.skippedReason as keyof CalibrationText] ?? step.skippedReason}` : step.chosen != null && step.kind !== 'confirm' ? ` · ${text.chosen} ${fmt(step.chosen, 2, text.auto)}` : ''}</span></div>
     </li>)}</ol>
 
     <div className="tuning-sweeps">{measuredSteps.filter(step => step.status !== 'skipped').map(step => {

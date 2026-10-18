@@ -2,9 +2,10 @@ import type { AppLanguage, CalibrationJob, ServiceProfile } from "@strata-manage
 import { GainDotPlot } from './D2PageStrips';
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, Check, CircleHelp, Download, FlaskConical, Play, RotateCcw, X } from 'lucide-react';
+import { Activity, Check, ChevronRight, CircleHelp, Download, Play, RotateCcw, X, Zap } from 'lucide-react';
 import * as core from '@strata-manager/core';
-import type { TuningJob, TuningScene, TuningUseCase, TuningRestartParameters, TuningWorkloadKind } from '@strata-manager/core';
+import type { CalibrationGoal, CalibrationWorkload, SpeedFix, TuningJob, TuningUseCase, TuningRestartParameters, TuningWorkloadKind } from '@strata-manager/core';
+import { useTranslation } from 'react-i18next';
 import { Dialog, Panel, Metric } from '../components';
 import { Dropdown, Segmented, Toggle } from '../OfficialControls';
 import './tuning.css';
@@ -13,6 +14,8 @@ import { calibrationText } from './tuning/strings';
 import { LiveLog, LiveStatus } from './tuning/TuningLive';
 import { QuickCalibrationView } from './tuning/QuickCalibration';
 import { ConcurrencyComparison, QuickCalibrationConcurrencyNote } from './tuning/ConcurrencyComparison';
+import { SpeedBoost, useSpeedHealth } from './tuning/SpeedBoost';
+import { appliedFor, dismissJob, forgetApplied, leaveNotice, originFor, rememberApplied, takeNotice, type SpeedBoostApplied } from './tuning/speedBoostRecord';
 
 const zh = {
   setup: '测试设置', mode: '测试模式', fullMode: '完整场景', diagnosticMode: '短请求诊断',
@@ -102,24 +105,27 @@ const activeStates = new Set<TuningJob['state']>(['checking', 'running', 'cancel
 const cancelableStates = new Set<TuningJob['state']>(['checking', 'running', 'canceling']);
 const workloadKinds: TuningWorkloadKind[] = ['coldInput', 'hotPrefix', 'sessionSwitch', 'sustainedGeneration', 'fullAgent', 'longRetrieval', 'vision'];
 
-type TuningMode = 'quick' | 'full' | 'diagnostic';
+/** Where an applied calibration goes: a new version that is switched to (one-click), a new version only, or the current file. */
+type ApplyTarget = 'switch' | 'version' | 'overwrite';
 type ApplyNotice = { kind: 'saved' | 'overwritten'; onOpen?: () => void; onRestart?: () => void } | null;
 
 export function TuningPage({ profileId, profile, language, desktop, owned, streaming, onChanged, onCopied, onRestart, onBenchmark, onSwitchVersion }: { profileId?: string; profile?: ServiceProfile; language: AppLanguage; desktop: boolean; owned: boolean; streaming: boolean; onChanged: () => void; onCopied?: (profile: ServiceProfile) => void | Promise<void>; onRestart?: () => void | Promise<void>; onBenchmark?: () => void; onSwitchVersion?: (profile: ServiceProfile) => Promise<void> }) {
   const text = language === 'zh-CN' ? zh : en;
   const cal = calibrationText(language);
+  const { t } = useTranslation();
   const query = useQueryClient();
-  // Quick calibration (the official calibrate.py scheme) is the default mode.
-  const [mode, setModeState] = useState<TuningMode>('quick');
-  const [modeTouched, setModeTouched] = useState(false);
-  const setMode = (next: TuningMode) => { setModeTouched(true); setModeState(next); };
-  const diagnostic = mode === 'diagnostic';
-  const [calibrationRounds, setCalibrationRounds] = useState(3);
+  // One-click speed-up (quick calibration with short + long answers) is the page.
+  // Scenario verification and past reports live in the collapsed expert area.
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [workload, setWorkload] = useState<CalibrationWorkload>('general');
+  const [goal, setGoal] = useState<CalibrationGoal>('balanced');
+  const [boostNotice, setBoostNotice] = useState<string | null>(takeNotice);
+  const [calibrationRounds, setCalibrationRounds] = useState(2);
   const [suggested, setSuggested] = useState<TuningRestartParameters[]>([]);
   const [notice, setNotice] = useState<ApplyNotice>(null);
   const [overwriteOpen, setOverwriteOpen] = useState(false);
   /** Set when the config changed since calibration started; applying waits for confirmation. */
-  const [driftPending, setDriftPending] = useState<{ overwrite: boolean } | null>(null);
+  const [driftPending, setDriftPending] = useState<{ target: ApplyTarget } | null>(null);
   const [useCase, setUseCase] = useState<TuningUseCase>('chat');
   const [helpOpen, setHelpOpen] = useState(false);
   const [contextLimit, setContextLimit] = useState(8192);
@@ -135,9 +141,7 @@ export function TuningPage({ profileId, profile, language, desktop, owned, strea
   const [adaptation, setAdaptation] = useState<TuningRestartParameters>({});
   const [resultCandidate, setResultCandidate] = useState('');
   const [clock, setClock] = useState(Date.now);
-  const [scenes, setScenes] = useState<TuningScene[]>(['chat', 'code', 'chinese']);
   const [rounds, setRounds] = useState(2);
-  const [maxTokens, setMaxTokens] = useState(512);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const capability = useQuery({ queryKey: ['tuning-capability'], queryFn: core.supervisorStatus, enabled: desktop, refetchInterval: 5000, retry: false });
@@ -151,12 +155,8 @@ export function TuningPage({ profileId, profile, language, desktop, owned, strea
   const active = !!job && activeStates.has(job.state);
   const calibrationActive = !!calibrationJob && activeStates.has(calibrationJob.state);
   const anyActive = active || calibrationActive;
-  // Follow a job that is already running into its own mode, until the user picks one.
-  useEffect(() => {
-    if (modeTouched) return;
-    if (calibrationActive) setModeState('quick');
-    else if (active && job) setModeState(job.scope === 'fullScenario' ? 'full' : 'diagnostic');
-  }, [modeTouched, calibrationActive, active, job?.scope]);
+  // A scenario verification that is already running opens the expert area.
+  useEffect(() => { if (active) setAdvancedOpen(true); }, [active]);
   const liveJobId = calibrationActive ? calibrationJob!.id : active ? job!.id : undefined;
   const live = useQuery({ queryKey: ['tuning-live', liveJobId], queryFn: () => core.tuningLive(liveJobId!), enabled: desktop && !!liveJobId && liveSupported, refetchInterval: 1000, refetchIntervalInBackground: true, retry: false });
   const liveSnapshot = live.data && live.data.jobId === liveJobId ? live.data : null;
@@ -199,28 +199,62 @@ export function TuningPage({ profileId, profile, language, desktop, owned, strea
     const url = URL.createObjectURL(new Blob([JSON.stringify(calibrationJob, null, 2)], { type: 'application/json' }));
     const link = document.createElement('a'); link.href = url; link.download = `strata-calibration-${new Date(calibrationJob.startedAt).toISOString().slice(0, 10)}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
-  /** Default: a new config version next to the current one. Overwrite keeps a .bak copy. */
-  const applyCalibration = (overwrite: boolean, configChangeConfirmed = false) => run(async () => {
+  /** One-click: a new config version that is switched to (the original file is untouched).
+   * Expert area: a new version only, or overwrite (keeps a .bak copy). */
+  const applyCalibration = (target: ApplyTarget, configChangeConfirmed = false) => run(async () => {
     if (!profile || !calibrationJob) return;
-    setNotice(null);
+    setNotice(null); setBoostNotice(null);
     const snapshot = await core.readConfigSnapshot(profile);
-    if (!configChangeConfirmed && core.calibrationConfigChanged(calibrationJob, snapshot.revision)) { setDriftPending({ overwrite }); return; }
+    if (!configChangeConfirmed && core.calibrationConfigChanged(calibrationJob, snapshot.revision)) { setDriftPending({ target }); return; }
     const next = core.applyCalibrationSettings(snapshot.config, calibrationJob.settings, calibrationJob.backend);
     core.validateStartupConfiguration(next);
-    if (overwrite) {
+    if (target === 'overwrite') {
       await core.writeConfig(profile, next, snapshot.revision);
       setNotice({ kind: 'overwritten', onRestart: onRestart ? () => { void onRestart(); } : undefined });
-    } else {
+    } else if (target === 'version') {
       const copied = await core.copyConfiguration(profile, core.calibratedConfigName(profile.configPath, new Date()), next);
       onChanged();
       setNotice({ kind: 'saved', onOpen: onCopied ? () => { void onCopied(copied); } : undefined });
+    } else {
+      const copied = await core.copyConfiguration(profile, core.speedConfigName(profile.configPath, new Date(), 'boost'), next);
+      onChanged();
+      if (!onSwitchVersion) { setBoostNotice(t('sbSavedOnly', { name: copied.name })); return; }
+      rememberApplied({ kind: 'boost', jobId: calibrationJob.id, origin: originFor(profile), to: copied.id, name: copied.name, at: Date.now(), before: calibrationJob.baseRate ?? null, after: calibrationJob.tunedRate ?? null });
+      await onSwitchVersion(copied);
     }
+  });
+  /** Health fixes are saved the same way: a new version, then switched to. */
+  const applyFixes = (fixes: SpeedFix[]) => run(async () => {
+    if (!profile || !fixes.length) return;
+    setBoostNotice(null);
+    const snapshot = await core.readConfigSnapshot(profile);
+    const next = core.applySpeedFixes(snapshot.config, fixes);
+    core.validateStartupConfiguration(next);
+    const copied = await core.copyConfiguration(profile, core.speedConfigName(profile.configPath, new Date(), 'fix'), next);
+    onChanged();
+    if (!onSwitchVersion) { setBoostNotice(t('sbSavedOnly', { name: copied.name })); return; }
+    const previous = appliedFor(profile.id);
+    rememberApplied({ kind: previous?.kind === 'boost' ? 'boost' : 'fix', jobId: previous?.jobId, origin: originFor(profile), to: copied.id, name: copied.name, at: Date.now(), before: previous?.before ?? null, after: previous?.after ?? null });
+    await onSwitchVersion(copied);
+  });
+  /** Rollback switches back to the version in use before the first one-click change. */
+  const rollback = (record: SpeedBoostApplied) => run(async () => {
+    if (!onSwitchVersion) return;
+    const installed = await core.localInstallations().catch(() => [] as ServiceProfile[]);
+    const origin = installed.find(item => item.id === record.origin.id) ?? record.origin;
+    if (record.jobId) dismissJob(record.jobId);
+    forgetApplied(record.to);
+    leaveNotice(t('sbRolledBack'));
+    await onSwitchVersion(origin);
+    setBoostNotice(takeNotice());
   });
   const verifyWithScenarios = () => {
     setSuggested(core.restartCandidatesFromCalibration(calibrationJob));
     setWorkerTest(false); setAdaptation({});
-    setMode('full');
+    setAdvancedOpen(true);
+    requestAnimationFrame(() => document.querySelector('.tuning-setup')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   };
+  const health = useSpeedHealth({ profile, desktop, owned, goal });
   const canApplyCalibration = !!profile && !busy && !streaming && !anyActive && core.calibrationHasChange(calibrationJob);
 
   const recommendedCandidate = job?.candidates.find(candidate => candidate.id === job.recommendedCandidateId);
@@ -228,36 +262,29 @@ export function TuningPage({ profileId, profile, language, desktop, owned, strea
     && !active && !busy && !streaming && job?.state === 'completed'
     && (recommendedCandidate.kind !== 'restart' || !!recommendedCandidate.startupVerification?.parameters.length)
     && (!recovery || recovery.state === 'notNeeded' || (recovery.configurationRestored && recovery.serviceVerified));
-  const errorMessages = [...new Set([error, status.error ? core.normalizeError(status.error).message : '', mode !== 'quick' ? job?.error : calibrationJob?.state === 'failed' ? '' : '',
-    ...(mode !== 'quick' ? job?.measurements.flatMap(measurement => measurement.error ? [measurement.error] : []) ?? [] : [])
-  ].filter((message): message is string => !!message))];
+  const errorMessages = [...new Set([error, status.error ? core.normalizeError(status.error).message : ''].filter((message): message is string => !!message))];
+  const reportErrors = [...new Set([job?.error, ...(job?.measurements.flatMap(measurement => measurement.error ? [measurement.error] : []) ?? [])].filter((message): message is string => !!message))];
   const qualityFailures = workloadMeasurements.filter(measurement => !measurement.result.complete || !measurement.result.qualityPassed).length;
   const startDisabled = !desktop || !profileId || !owned || streaming || anyActive || busy || recovery?.state === 'failed';
   const liveStep = liveSnapshot?.stepKey ?? job?.progress?.phase;
   const tuningStepLabel = liveStep && liveStep in text ? text[liveStep as keyof typeof text] : job?.currentStep ?? text.running;
 
   const setupPanel = <>
-    <Panel title={text.setup} className="tuning-setup">
-      {mode === 'quick' && <>
-        <p className="tuning-lede">{cal.quickIntro}</p>
-        <div className="tuning-main-fields is-quick"><label className="tuning-field"><span>{cal.quickRounds}</span><Dropdown ariaLabel={cal.quickRounds} value={String(calibrationRounds)} disabled={anyActive || busy} options={[2, 3, 4].map(value => ({ value: String(value), label: `${value} ${cal.roundsUnit}` }))} onValueChange={value => setCalibrationRounds(Number(value))}/></label><p className="tuning-impact">{cal.quickRule}</p></div>
-        {desktop && !quickSupported && <p className="notice" role="status">{capability.isPending ? (language === 'zh-CN' ? '正在核对后台能力…' : 'Checking supervisor support…') : capability.error ? core.normalizeError(capability.error).message : cal.capability}<button disabled={capability.isFetching} onClick={() => void capability.refetch()}>{language === 'zh-CN' ? '重新核对' : 'Check again'}</button></p>}
-      </>}
-      {mode !== 'quick' && <div className="tuning-main-fields">
-        {mode === 'full' && <label className="tuning-field"><span>{text.useCase}</span><Dropdown ariaLabel={text.useCase} value={useCase} disabled={anyActive || busy} options={(['chat', 'agent', 'longDocument'] as const).map(value => ({ value, label: useCaseLabels[value] }))} onValueChange={value => { setUseCase(value as TuningUseCase); setContextLimit(value === 'longDocument' ? 32768 : 8192); }}/></label>}
+    <Panel title={cal.fullMode} className="tuning-setup">
+      <p className="tuning-lede">{cal.fullHint}</p>
+      {<div className="tuning-main-fields">
+        {<label className="tuning-field"><span>{text.useCase}</span><Dropdown ariaLabel={text.useCase} value={useCase} disabled={anyActive || busy} options={(['chat', 'agent', 'longDocument'] as const).map(value => ({ value, label: useCaseLabels[value] }))} onValueChange={value => { setUseCase(value as TuningUseCase); setContextLimit(value === 'longDocument' ? 32768 : 8192); }}/></label>}
         <label className="tuning-field"><span>{text.rounds}</span><Dropdown ariaLabel={text.rounds} value={String(rounds)} disabled={anyActive || busy} options={[2, 3, 4].map(value => ({ value: String(value), label: String(value) }))} onValueChange={value => setRounds(Number(value))}/></label>
-        {diagnostic ? <label className="tuning-field"><span>{text.tokens}</span><Dropdown ariaLabel={text.tokens} value={String(maxTokens)} disabled={anyActive || busy} options={[128, 256, 512, 1024].map(value => ({ value: String(value), label: String(value) }))} onValueChange={value => setMaxTokens(Number(value))}/></label> : <label className="tuning-field"><span>{text.contextLimit}</span><Dropdown ariaLabel={text.contextLimit} value={String(contextLimit)} disabled={anyActive || busy} options={[4096, 8192, 16384, 32768, 65536, 131072].map(value => ({ value: String(value), label: value.toLocaleString(language) }))} onValueChange={value => setContextLimit(Number(value))}/></label>}
+        <label className="tuning-field"><span>{text.contextLimit}</span><Dropdown ariaLabel={text.contextLimit} value={String(contextLimit)} disabled={anyActive || busy} options={[4096, 8192, 16384, 32768, 65536, 131072].map(value => ({ value: String(value), label: value.toLocaleString(language) }))} onValueChange={value => setContextLimit(Number(value))}/></label>
       </div>}
-      {desktop && mode === 'full' && !fullSupported && <p className="notice" role="status">{capability.isPending ? (language === 'zh-CN' ? '正在核对后台的完整实测能力…' : 'Checking full scenario support…') : capability.error ? core.normalizeError(capability.error).message : language === 'zh-CN' ? '当前后台不支持完整场景实测。请完成当前请求并停止模型服务，让后台更新后再重新核对。短请求诊断不能替代完整实测。' : 'The current supervisor does not support full scenarios. Finish current requests and stop the model service so the supervisor can update, then check again. Short diagnostics do not replace full scenarios.'}<button disabled={capability.isFetching} onClick={() => void capability.refetch()}>{language === 'zh-CN' ? '重新核对' : 'Check again'}</button></p>}
-      <div className="tuning-setup-footer"><p className="tuning-impact">{mode === 'quick' ? cal.quickImpact : diagnostic ? text.diagnosticOnly : text.impact}</p>
+      {desktop && !fullSupported && <p className="notice" role="status">{capability.isPending ? (language === 'zh-CN' ? '正在核对后台的完整实测能力…' : 'Checking full scenario support…') : capability.error ? core.normalizeError(capability.error).message : language === 'zh-CN' ? '当前后台不支持完整场景实测。请完成当前请求并停止模型服务，让后台更新后再重新核对。' : 'The current supervisor does not support full scenarios. Finish current requests and stop the model service so the supervisor can update, then check again.'}<button disabled={capability.isFetching} onClick={() => void capability.refetch()}>{language === 'zh-CN' ? '重新核对' : 'Check again'}</button></p>}
+      <div className="tuning-setup-footer"><p className="tuning-impact">{text.impact}</p>
       <div className="actions">
-        {mode === 'quick' ? <button className="primary" data-testid="calibration-start" disabled={startDisabled || !quickSupported} onClick={() => void run(async () => { setNotice(null); await core.calibrateStart(profileId!, { rounds: calibrationRounds }); })}><Play size={15}/>{cal.startQuick}</button>
-          : <button className="primary" data-testid="tuning-start" disabled={startDisabled || (!diagnostic && (!fullSupported || restartCandidates.length > 4)) || (diagnostic && !scenes.length)} onClick={() => void run(() => core.tuningStart(profileId!, diagnostic ? { scenes, rounds, maxTokens } : { useCase, contextLimit, includeVision, rounds, maxTokens: 1024, ...(restartCandidates.length ? { restartCandidates } : {}) }))}><Play size={15}/>{text.start}</button>}
+        <button className="primary" data-testid="tuning-start" disabled={startDisabled || !fullSupported || restartCandidates.length > 4} onClick={() => void run(() => core.tuningStart(profileId!, { useCase, contextLimit, includeVision, rounds, maxTokens: 1024, ...(restartCandidates.length ? { restartCandidates } : {}) }))}><Play size={15}/>{text.start}</button>
       </div>
       </div>
-      {mode === 'full' && restartCandidates.length > 4 && <p className="notice" role="alert">{language === 'zh-CN' ? '最多选择四个重启候选，请减少选项。' : 'Select no more than four restart candidates.'}</p>}
-      {mode === 'diagnostic' && <section className="tuning-advanced" data-testid="tuning-advanced"><h3>{text.advanced}</h3><div className="tuning-options">{(['chat', 'code', 'chinese'] as const).map(scene => <label key={scene}><Toggle ariaLabel={text[scene]} checked={scenes.includes(scene)} disabled={anyActive || busy} onCheckedChange={checked => setScenes(old => checked ? [...old, scene] : old.filter(item => item !== scene))}/>{text[scene]}</label>)}</div><p className="subtle">{text.scope}</p></section>}
-      {mode === 'full' && <section className="tuning-advanced" data-testid="tuning-advanced"><h3>{text.advanced}<small>{text.selected} {restartCandidates.length} / 4</small></h3>
+      {restartCandidates.length > 4 && <p className="notice" role="alert">{language === 'zh-CN' ? '最多选择四个重启候选，请减少选项。' : 'Select no more than four restart candidates.'}</p>}
+      {<section className="tuning-advanced" data-testid="tuning-advanced"><h3>{text.advanced}<small>{text.selected} {restartCandidates.length} / 4</small></h3>
         <p className="subtle">{text.contextHint}</p><label className="tuning-toggle"><Toggle ariaLabel={text.includeVision} checked={includeVision} disabled={anyActive || busy} onCheckedChange={setIncludeVision}/><span>{text.includeVision}</span></label><p className="subtle">{text.visionHint}</p>
         {!!suggested.length && <div className="tuning-suggested" data-testid="tuning-suggested"><h4>{cal.suggestions}</h4><ul>{suggested.map((item, index) => <li key={JSON.stringify(item)}><span>{item.poolWorkers != null ? `${cal.workers} ${item.poolWorkers}` : `${cal.adaptPreset} ${item.adaptEvery ?? '—'}/${item.adaptSwaps ?? '—'}/${item.adaptDecay ?? '—'}`}</span><button type="button" className="st-btn st-btn--icon" aria-label={cal.removeSuggestion} data-tooltip={cal.removeSuggestion} disabled={anyActive || busy} onClick={() => setSuggested(old => old.filter((_, i) => i !== index))}><X size={14}/></button></li>)}</ul><p className="subtle">{cal.verifyHint}</p></div>}
         <h3>{text.restartTitle}</h3><p className="subtle">{text.restartHint}</p><div className="tuning-restart-options">
@@ -270,25 +297,44 @@ export function TuningPage({ profileId, profile, language, desktop, owned, strea
     </Panel>
   </>;
 
+  const blocked = !desktop ? t('sbNeedDesktop') : !profileId ? t('sbNeedProfile') : !owned ? t('sbNeedOwned')
+    : desktop && !capability.isPending && !quickSupported ? t('sbUnsupported') : streaming ? t('sbBusy')
+    : active && job ? `${cal.fullMode} · ${text[job.state]}` : recovery?.state === 'failed' ? text.recoveryFailed : undefined;
+  const option = (value: string, label: string) => ({ value, label, disabled: anyActive || busy });
+
   return <div className="tuning-page">
-    <div className="tuning-heading"><h2><FlaskConical size={19}/>{text.title}</h2><button type="button" className="st-btn st-btn--icon" aria-label={language === 'zh-CN' ? '调优测试帮助' : 'Tuning test help'} data-tooltip={language === 'zh-CN' ? '调优测试帮助' : 'Tuning test help'} onClick={() => setHelpOpen(true)}><CircleHelp size={16}/></button></div>
-    {!desktop || !profileId || !owned ? <p className="notice">{!desktop ? text.native : !profileId ? text.profile : text.ownership}</p> : null}
+    <div className="tuning-heading sb-heading"><div><h2><Zap size={19}/>{t('sbTitle')}</h2><p className="sb-subtitle">{t('sbSubtitle')}</p></div><button type="button" className="st-btn st-btn--icon" aria-label={language === 'zh-CN' ? '调优测试帮助' : 'Tuning test help'} data-tooltip={language === 'zh-CN' ? '调优测试帮助' : 'Tuning test help'} onClick={() => setHelpOpen(true)}><CircleHelp size={16}/></button></div>
     {!!errorMessages.length && <div className="notice error tuning-errors" role="alert">{errorMessages.map(message => <p key={message}>{message}</p>)}</div>}
-    <div className="tuning-mode-row"><Segmented ariaLabel={text.mode} value={mode} options={[{ value: 'quick', label: cal.quickMode, disabled: anyActive || busy }, { value: 'full', label: cal.fullMode, disabled: anyActive || busy }, { value: 'diagnostic', label: cal.diagnosticMode, disabled: anyActive || busy }]} onValueChange={value => setMode(value as TuningMode)}/></div>
+    <SpeedBoost language={language} job={calibrationJob && calibrationJob.profileId === profileId ? calibrationJob : null} live={calibrationActive ? liveSnapshot : null} clock={clock} profile={profile}
+      blocked={blocked} busy={busy} canApply={canApplyCalibration} canSwitch={!!onSwitchVersion} checks={health.checks} notice={boostNotice}
+      onStart={() => void run(async () => { setNotice(null); setBoostNotice(null); await core.calibrateStart(profileId!, { rounds: calibrationRounds, workload, goal }); })}
+      onCancel={() => calibrationJob && void run(() => core.calibrateCancel(calibrationJob.id))}
+      onApply={() => void applyCalibration('switch')} onFix={fixes => void applyFixes(fixes)} onRollback={record => void rollback(record)}/>
+    <QuickCalibrationConcurrencyNote profile={profile} desktop={desktop} language={language}/>
+    <ConcurrencyComparison profile={profile} language={language} desktop={desktop} disabled={anyActive || busy || streaming} onSwitchVersion={onSwitchVersion} onChanged={onChanged}/>
 
-    {mode === 'quick' && calibrationJob && <Panel title={cal.quickMode} className="tuning-calibration-panel" action={<button onClick={exportCalibration}><Download size={14}/>{text.export}</button>}>
-      <QuickCalibrationView job={calibrationJob} live={calibrationActive ? liveSnapshot : null} text={cal} language={language} states={text as unknown as Record<string, string>} clock={clock} busy={busy}
-        canApply={canApplyCalibration} notice={notice} onCancel={() => void run(() => core.calibrateCancel(calibrationJob.id))}
-        onSaveVersion={() => void applyCalibration(false)} onOverwrite={() => setOverwriteOpen(true)} onVerify={verifyWithScenarios} onBenchmark={onBenchmark}/>
-    </Panel>}
-    {mode === 'quick' && active && job && <p className="notice" role="status">{text[job.state]} · {fullReport ? cal.fullMode : cal.diagnosticMode}</p>}
-    {mode === 'quick' && <QuickCalibrationConcurrencyNote profile={profile} desktop={desktop} language={language}/>}
-    {(mode === 'quick' || !job) && setupPanel}
-
-    {mode !== 'quick' && job && <>
+    {/* The expert area is the one collapsed region of the page (lifted from #38 by decision for one-click tuning). */}
+    <details className="tuning-expert" data-testid="tuning-expert" open={advancedOpen} onToggle={event => setAdvancedOpen(event.currentTarget.open)}>
+      <summary><ChevronRight size={16} className="tuning-expert-chevron" aria-hidden/><span><strong>{t('sbAdvanced')}</strong><small>{t('sbAdvancedHint')}</small></span></summary>
+      <div className="tuning-expert-body">
+      <section className="sb-options" data-testid="speed-boost-options">
+        <div className="sb-option"><span>{t('sbUseCase')}</span><Segmented ariaLabel={t('sbUseCase')} value={workload} options={[option('general', t('sbUseCaseGeneral')), option('chat', t('sbUseCaseChat')), option('agent', t('sbUseCaseAgent')), option('longDocument', t('sbUseCaseLong'))]} onValueChange={value => setWorkload(value as CalibrationWorkload)}/><p className="sb-muted">{t('sbUseCaseHint')}</p></div>
+        <div className="sb-option"><span>{t('sbGoal')}</span><Segmented ariaLabel={t('sbGoal')} value={goal} options={[option('speed', t('sbGoalSpeed')), option('balanced', t('sbGoalBalanced')), option('memory', t('sbGoalMemory'))]} onValueChange={value => setGoal(value as CalibrationGoal)}/><p className="sb-muted">{t('sbGoalHint')}</p></div>
+        <div className="sb-option is-narrow"><span>{t('sbRounds')}</span><Dropdown ariaLabel={t('sbRounds')} value={String(calibrationRounds)} disabled={anyActive || busy} options={[2, 3, 4].map(value => ({ value: String(value), label: t('sbRoundsValue', { count: value }) }))} onValueChange={value => setCalibrationRounds(Number(value))}/><p className="sb-muted">{t('sbRoundsHint')}</p></div>
+      </section>
+      {calibrationJob && <Panel title={cal.detailsTitle} className="tuning-calibration-panel" action={<button onClick={exportCalibration}><Download size={14}/>{text.export}</button>}>
+        <p className="tuning-lede">{cal.detailsHint}</p>
+        <QuickCalibrationView job={calibrationJob} live={calibrationActive ? liveSnapshot : null} text={cal} language={language} states={text as unknown as Record<string, string>} clock={clock} busy={busy}
+          canApply={canApplyCalibration} notice={notice} onCancel={() => void run(() => core.calibrateCancel(calibrationJob.id))}
+          onSaveVersion={() => void applyCalibration('version')} onOverwrite={() => setOverwriteOpen(true)} onVerify={verifyWithScenarios} onBenchmark={onBenchmark}/>
+      </Panel>}
+      {setupPanel}
+    {job && <>
+      {!fullReport && <div className="tuning-history-head"><h3>{cal.historyTitle}</h3><p className="sb-muted">{cal.historyHint}</p></div>}
       <Panel title={text.progress} className="tuning-progress-panel" action={<button onClick={exportReport}><Download size={14}/>{text.export}</button>}>
         <p className="tuning-report-scope">{legacyReport ? text.legacyScope : fullReport ? text.fullScope : text.diagnosticScope}{fullReport && job.useCase ? ` · ${useCaseLabels[job.useCase]}` : ''}</p>
         {legacyReport && <p className="notice">{text.legacyHint}</p>}
+        {!!reportErrors.length && <div className="notice error tuning-errors" role="alert">{reportErrors.map(message => <p key={message}>{message}</p>)}</div>}
         {active ? <LiveStatus text={cal} language={language} state={text[job.state]} stepLabel={tuningStepLabel}
           stepIndex={liveSnapshot?.stepIndex} stepTotal={liveSnapshot?.stepTotal} round={liveSnapshot?.round ?? job.progress?.round} rounds={liveSnapshot?.rounds ?? job.rounds}
           parameters={[liveSnapshot?.parameters.candidateId ?? job.progress?.candidateId, job.progress?.workloadKind ? text[job.progress.workloadKind] : null, liveSnapshot?.parameters.pcieFrac != null ? `${text.pcie} ${liveSnapshot.parameters.pcieFrac}` : null, liveSnapshot?.parameters.specMinP != null ? `${text.mtp} ${liveSnapshot.parameters.specMinP}` : null].filter(Boolean).join(' · ')}
@@ -316,7 +362,6 @@ export function TuningPage({ profileId, profile, language, desktop, owned, strea
         {fullReport && recommendedCandidate && recommendedResources?.status !== 'checked' && <p className="notice error" role="alert">{recommendedResources?.status === 'insufficientHeadroom' ? text.resourceLowBlocked : text.resourceUnknownBlocked}</p>}
         {fullReport && recommendedCandidate?.kind === 'restart' && !recommendedCandidate.startupVerification?.parameters.length && <p className="notice" role="status">{text.startupUnverified}</p>}
       </Panel>}
-      {setupPanel}
       {fullReport && <Panel title={text.sceneResults} className="tuning-report" action={<small className="tuning-muted">{workloadMeasurements.length} {text.samples}{qualityFailures > 0 && <span> · {qualityFailures} {text.mismatch}</span>}</small>}>
         <p className="subtle">{text.scopeExplanation}</p>
         {!!job.candidates.length && <div className="tuning-purpose"><Dropdown ariaLabel={text.resultFor} value={selectedCandidate} onValueChange={setResultCandidate} options={job.candidates.map(candidate => ({ value: candidate.id, label: `${candidate.id} · ${candidate.kind === 'restart' ? text.restartCandidate : text.requestCandidate}` }))}/></div>}
@@ -340,9 +385,10 @@ export function TuningPage({ profileId, profile, language, desktop, owned, strea
       {fullReport && !!workloadMeasurements.length && <Panel title={text.workloadDetails} className="tuning-report" action={<small className="tuning-muted">{workloadMeasurements.length} {text.samples}</small>}><div className="table-wrap"><table className="st-table"><thead><tr><th>{text.scene}</th><th>{text.candidate}</th><th>{text.role}</th><th>{text.wall}</th><th>{text.ttft}</th><th>{text.visible}</th><th>{text.cachedTokens}</th><th>{text.contextMeasured}</th><th>{text.checks}</th></tr></thead><tbody>{workloadMeasurements.map(measurement => <tr key={measurement.id}><td>{text[measurement.kind]} · {measurement.round + 1}</td><td>{measurement.candidateId}</td><td>{text[measurement.position]}</td><td>{seconds(measurement.kind === 'fullAgent' ? measurement.result.fullAgentWallMs : measurement.result.wallMs)}</td><td>{seconds(measurement.result.firstTokenMs)}</td><td>{seconds(measurement.result.firstVisibleMs)}</td><td>{numeric(measurement.result.cachedTokens, 0)}</td><td>{numeric(measurement.result.actualContextTokens ?? measurement.result.inputTokens, 0)} / {numeric(measurement.result.targetInputTokens, 0)}</td><td><strong>{measurement.result.complete && measurement.result.qualityPassed ? text.ok : text.mismatch}</strong>{measurement.result.qualityReason && <small className="tuning-candidate-kind">{measurement.result.qualityDetail || measurement.result.qualityReason}</small>}</td></tr>)}</tbody></table></div></Panel>}
       {!!job.measurements.length && <Panel title={text.diagnosticDetails} className="tuning-report tuning-diagnostic-details"><p className="subtle">{text.explanation}</p><div className="table-wrap"><table className="st-table"><thead><tr><th>{text.scene}</th><th>{text.role}</th><th>{text.cache}</th><th>{text.ttft}</th><th>{text.visible}</th><th>{text.speed}</th><th>{text.output}</th><th>{text.quality}</th></tr></thead><tbody>{job.measurements.map(measurement => <tr key={measurement.id}><td>{text[measurement.scene]} · {measurement.round + 1}</td><td>{text[measurement.position]}</td><td>{text[measurement.cacheMode]}</td><td>{measurement.firstTokenMs == null ? '—' : `${numeric(measurement.firstTokenMs / 1000)} s`}</td><td>{measurement.firstVisibleMs == null ? '—' : `${numeric(measurement.firstVisibleMs / 1000)} s`}</td><td>{numeric(measurement.decodeTokS)} tok/s</td><td>{numeric(measurement.outputTokens, 0)}</td><td data-tooltip={measurement.error}>{measurement.complete && measurement.qualityPassed ? text.ok : text.mismatch}</td></tr>)}</tbody></table></div></Panel>}
     </>}
-    <ConcurrencyComparison profile={profile} language={language} desktop={desktop} disabled={anyActive || busy || streaming} onSwitchVersion={onSwitchVersion} onChanged={onChanged}/>
-    {overwriteOpen && <Dialog title={cal.overwriteConfirm} onClose={() => setOverwriteOpen(false)}><div className="tuning-help-content"><p>{cal.overwriteBody}</p>{profile && <p className="tuning-muted">{profile.configPath}</p>}<div className="actions"><button onClick={() => setOverwriteOpen(false)}>{cal.cancel}</button><button className="primary" data-testid="calibration-overwrite-confirm" disabled={!canApplyCalibration} onClick={() => { setOverwriteOpen(false); void applyCalibration(true); }}><Check size={14}/>{cal.confirmOverwrite}</button></div></div></Dialog>}
-    {driftPending && <Dialog title={cal.driftTitle} onClose={() => setDriftPending(null)}><div className="tuning-help-content" data-testid="calibration-drift"><p role="alert">{cal.driftBody}</p>{profile && <p className="tuning-muted">{profile.configPath}</p>}<div className="actions"><button onClick={() => setDriftPending(null)}>{cal.cancel}</button><button className="primary" data-testid="calibration-drift-confirm" disabled={!canApplyCalibration} onClick={() => { const pending = driftPending; setDriftPending(null); void applyCalibration(pending.overwrite, true); }}><Check size={14}/>{cal.driftConfirm}</button></div></div></Dialog>}
-    {helpOpen && <Dialog title={language === 'zh-CN' ? '调优测试说明' : 'Tuning test details'} onClose={() => setHelpOpen(false)}><div className="tuning-help-content"><p>{text.intro}</p>{mode === 'quick' ? <><p>{cal.quickIntro}</p><p>{cal.quickRule}</p><p>{cal.verifyHint}</p></> : <><p>{diagnostic ? text.diagnosticHint : text.scenarioScope}</p><p>{diagnostic ? text.explanation : text.durationHint}</p></>}{mode === 'full' && <><h3>{text.contextLimit}</h3><p>{text.contextHint}</p><h3>{text.startupVerification}</h3><p>{text.startupHint}</p><h3>{text.result}</h3><p>{text.scopeExplanation}</p><p>{text.gainTimingHint}</p><h3>{text.resourceTitle}</h3><p>{text.resourceHint}</p><p>{text.resourceGateHint}</p></>}</div></Dialog>}
+      </div>
+    </details>
+    {overwriteOpen && <Dialog title={cal.overwriteConfirm} onClose={() => setOverwriteOpen(false)}><div className="tuning-help-content"><p>{cal.overwriteBody}</p>{profile && <p className="tuning-muted">{profile.configPath}</p>}<div className="actions"><button onClick={() => setOverwriteOpen(false)}>{cal.cancel}</button><button className="primary" data-testid="calibration-overwrite-confirm" disabled={!canApplyCalibration} onClick={() => { setOverwriteOpen(false); void applyCalibration('overwrite'); }}><Check size={14}/>{cal.confirmOverwrite}</button></div></div></Dialog>}
+    {driftPending && <Dialog title={cal.driftTitle} onClose={() => setDriftPending(null)}><div className="tuning-help-content" data-testid="calibration-drift"><p role="alert">{cal.driftBody}</p>{profile && <p className="tuning-muted">{profile.configPath}</p>}<div className="actions"><button onClick={() => setDriftPending(null)}>{cal.cancel}</button><button className="primary" data-testid="calibration-drift-confirm" disabled={!canApplyCalibration} onClick={() => { const pending = driftPending; setDriftPending(null); void applyCalibration(pending.target, true); }}><Check size={14}/>{cal.driftConfirm}</button></div></div></Dialog>}
+    {helpOpen && <Dialog title={language === 'zh-CN' ? '调优测试说明' : 'Tuning test details'} onClose={() => setHelpOpen(false)}><div className="tuning-help-content"><p>{t('sbSubtitle')}</p><p>{t('sbStartHint')}</p><p>{t('sbUseCaseHint')}</p><p>{cal.quickRule}</p><p>{t('sbApplyHint')}</p><h3>{cal.fullMode}</h3><p>{text.scenarioScope}</p><p>{text.durationHint}</p>{<><h3>{text.contextLimit}</h3><p>{text.contextHint}</p><h3>{text.startupVerification}</h3><p>{text.startupHint}</p><h3>{text.result}</h3><p>{text.scopeExplanation}</p><p>{text.gainTimingHint}</p><h3>{text.resourceTitle}</h3><p>{text.resourceHint}</p><p>{text.resourceGateHint}</p></>}</div></Dialog>}
   </div>;
 }
