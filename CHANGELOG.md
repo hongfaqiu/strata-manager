@@ -7,10 +7,32 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+### English
+
+## [0.2.0] - 2026-10-19
+
+### 中文
+
+- **一键提速（参数调优第一期）**：调优页默认「一键提速」，按通用场景测速并扫描可提速参数，显示前后对比；结果另存为新配置，可回退。场景验收收进高级；短请求诊断入口已去掉；修复快速校准把 PCIe 专家比例写死从而关掉自动的问题。
+- **排行榜**：修复切换排序后一直显示「暂时连不上排行榜」——请求参数白名单补上排序与搜索；真正断网才显示连不上，其它错误显示具体原因；重试时恢复默认筛选与排序。
+- **移除模型配置页的「资源适配建议」**；首次安装向导与下载页的精简资源预估保留。
+- **Qwen3.6-35B-A3B**：模型目录与安装流程支持引擎 0.1.45 的三档量化（UD-Q4_K_XL / UD-Q6_K_XL / Q8_0）；引擎过低时下载页禁用并提示。
+- **OrcaRouter 去审查模型**：下载模型页可导入官方兼容的 IQ3_XXS（自动下载分片或选本地），后台兼容打包后出现在「我的模型」，标明社区兼容、仅文本。
+- **Unsloth 更高量化**：在原有档位外增加 UD-Q5_K_XL、UD-Q6_K_XL、Q8_0（内存需求更高）。
+- **首次安装**：支持选择已下载的本地 Strata / 引擎安装包并跳过下载。
+- **复制为新配置**：已登记配置的副本会自动登记，可在配置列表中选用。
 - **macOS 第一期（实验）**：CI 在 `macos-15` / `aarch64-apple-darwin` 打出未公证 DMG 与 updater 用 `.app.tar.gz`（临时签名）。文档与官网标明实验包、Gatekeeper 限制，以及 **DMG alone 不含 Metal 引擎**（引擎仍待后续 `./setup.sh`）。不提供 Intel 包。关联 #53。
 
 ### English
 
+- **One-click speed boost (Tuning phase 1)**: Tuning defaults to one-click speedup for a general workload, compares before/after, and saves a new configuration you can roll back. Scenario checks move under Advanced; the short-request diagnostics entry is removed; quick calibration no longer pins PCIe expert share and disables auto.
+- **Leaderboard**: fixing sort switches that stuck on “leaderboard unavailable” — allowlist now includes sort and search; only real network failures show unavailable; other errors show a concrete reason; retry resets filters and sort.
+- **Removed the Resource fit advice panel** from model configuration; the compact estimate on onboarding and download remains.
+- **Qwen3.6-35B-A3B**: catalog and install flow support engine 0.1.45 quants (UD-Q4_K_XL / UD-Q6_K_XL / Q8_0); downloads disable with a hint when the engine is too old.
+- **OrcaRouter uncensored**: Download models can import the official-compatible IQ3_XXS (fetch shards or pick local files), run compat packaging in the background, and list the result under My models as community-compatible, text-only.
+- **Higher Unsloth quants**: adds UD-Q5_K_XL, UD-Q6_K_XL and Q8_0 (higher memory needs).
+- **First-time install**: choose an already-downloaded local Strata / engine archive and skip the download.
+- **Copy as new configuration**: copies of registered configurations are registered automatically and selectable in the list.
 - **macOS phase 1 (experimental)**: CI on `macos-15` / `aarch64-apple-darwin` produces an un-notarized DMG and updater `.app.tar.gz` (ad-hoc signing). Docs and the website mark the package experimental, note Gatekeeper limits, and state that the **DMG alone does not include a Metal engine** (engine setup remains a later `./setup.sh` phase). No Intel package. See #53.
 
 ## [0.1.13] - 2026-10-18
