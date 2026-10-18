@@ -3099,7 +3099,6 @@ fn run_setup_with_preflight(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 fn engine_version_at_least(version: Option<&str>, need: &[u32]) -> bool {
     let Some(version) = version else {
         return false;
@@ -3124,6 +3123,7 @@ fn engine_version_at_least(version: Option<&str>, need: &[u32]) -> bool {
     true
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_setup_with_preflight_options(
     state: Arc<RuntimeState>,
     profile: ServiceProfile,
