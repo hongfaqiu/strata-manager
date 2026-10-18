@@ -192,7 +192,7 @@ export function suggestedPath(facts: Pick<GuideFacts, 'hasModel' | 'hasProfile'>
 // ---- Recommendations ---------------------------------------------------------------------
 export interface Recommendation { family: core.CatalogModel['family']; name: string; quant: string; downloadGB: number; ramGB: number; fit?: 'fits' | 'tight' | 'over'; experimental: boolean; nvidiaOnly: boolean; recommended: boolean }
 const fitRank = { fits: 0, tight: 1, over: 2, unknown: 1 } as const;
-const sceneFamilies: Record<Scene, core.CatalogModel['family'][]> = { chat: ['swift', 'qwen', 'unsloth', 'coder'], long: ['qwen', 'swift', 'unsloth', 'coder'], code: ['coder', 'qwen', 'swift', 'unsloth'] };
+const sceneFamilies: Record<Scene, core.CatalogModel['family'][]> = { chat: ['swift', 'qwen', 'qwen36', 'unsloth', 'coder'], long: ['qwen', 'qwen36', 'swift', 'unsloth', 'coder'], code: ['coder', 'qwen', 'qwen36', 'swift', 'unsloth'] };
 
 /**
  * Every catalog family+quant ranked for a scene: what fits memory first, then the scene's

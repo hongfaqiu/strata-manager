@@ -128,7 +128,8 @@ test('recommendations fit memory, respect scene and push experimental last', () 
   assert.equal(new Set(chat.slice(0, 4).map(row => row.family)).size, 4, 'one row per family first');
   assert.equal(model.recommendations('code', 96, true)[0].family, 'coder');
   const small = model.recommendations('chat', 48, true);
-  assert.equal(small[0].family, 'coder', 'only coder IQ1_M (32 GB) fits 48 GB');
+  assert.equal(small[0].family, 'qwen36', 'qwen36 UD-Q4_K_XL (32 GB) and coder both fit 48 GB; chat scene prefers qwen36');
+  assert.ok(small.some(row => row.family === 'coder' && row.fit === 'fits'));
   const none = model.recommendations('chat', 16, false);
   assert.equal(none[0].recommended, false, 'nothing is recommended when nothing fits');
   const unsloth = model.recommendations('chat', 200, false, 20).filter(row => row.family === 'unsloth');

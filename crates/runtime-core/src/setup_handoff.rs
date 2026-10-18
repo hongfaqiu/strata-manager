@@ -251,6 +251,7 @@ fn family_name(family: &str) -> Option<&'static str> {
         "swift" => Some("swift-1.5"),
         "coder" => Some("qwen3.8-flash-next-coder"),
         "unsloth" => Some("qwen3.8-flash-next-unsloth"),
+        "qwen36" => Some("qwen3.6-35b-a3b"), // setup.py OWN_PATH_FAMILIES name
         _ => None,
     }
 }
@@ -399,7 +400,12 @@ fn asset_check(value: &Value, root: &Path) -> Result<(), String> {
             .windows(2)
             .filter(|pair| pair[0].as_str() == Some(flag))
         {
-            let path = PathBuf::from(pair[1].as_str().ok_or("模型资源路径类型无效")?);
+            let value = pair[1].as_str().ok_or("模型资源路径类型无效")?;
+            // Qwen3.6 own-path uses --mtp <count> (drafts per step), not a draft-file path.
+            if flag == "--mtp" && value.parse::<u32>().is_ok() {
+                continue;
+            }
+            let path = PathBuf::from(value);
             let path = if path.is_absolute() {
                 path
             } else {

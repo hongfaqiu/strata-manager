@@ -26,5 +26,6 @@ describe('official setup inputs', () => {
   });
   it('exposes the newly supported Swift IQ3_S tier', () => {
     expect(MODEL_CATALOG.find(model => model.id === 'swift')?.quants).toContain('IQ3_S');
+    expect(MODEL_CATALOG.find(model => model.id === 'qwen36')?.quants).toEqual(['UD-Q4_K_XL', 'UD-Q6_K_XL', 'Q8_0']);
   });
 });
