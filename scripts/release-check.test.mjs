@@ -284,7 +284,7 @@ test('real verifier checks every exposed installer and deduplicates official ali
       assert.equal(downloads.filter(value => value === name).length, 1);
       assert.equal(downloads.filter(value => value === `${name}.sig`).length, 1);
     }
-    assert.match(logs[0], /all installers (NSIS, AppImage, DEB, macOS app archive, DMG)/);
+    assert.match(logs[0], /all installers \(NSIS, AppImage, DEB, macOS app archive, DMG\)/);
     for (const path of paths) await assert.rejects(stat(path), { code: 'ENOENT' });
   });
 });
@@ -315,7 +315,7 @@ test('an uploaded DEB signature is verified even without a manifest alias', { sk
       assert.equal(downloads.filter(value => value === name).length, 1);
       assert.equal(downloads.filter(value => value === `${name}.sig`).length, 1);
     }
-    assert.match(logs[0], /all installers (NSIS, AppImage, DEB, macOS app archive, DMG)/);
+    assert.match(logs[0], /all installers \(NSIS, AppImage, DEB, macOS app archive, DMG\)/);
   });
 });
 
