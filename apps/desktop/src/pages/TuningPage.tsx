@@ -212,6 +212,7 @@ export function TuningPage({ profileId, profile, language, desktop, owned, strea
       setNotice({ kind: 'overwritten', onRestart: onRestart ? () => { void onRestart(); } : undefined });
     } else {
       const copied = await core.copyConfiguration(profile, core.calibratedConfigName(profile.configPath, new Date()), next);
+      onChanged();
       setNotice({ kind: 'saved', onOpen: onCopied ? () => { void onCopied(copied); } : undefined });
     }
   });

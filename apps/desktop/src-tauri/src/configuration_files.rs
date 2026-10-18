@@ -79,7 +79,8 @@ fn write_new(path: &Path, contents: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-/// Copies only the complete editor draft. Registration and service startup remain explicit actions.
+/// Copies only the complete editor draft into a new file. The command registers the copy
+/// when its source is registered; service startup always remains an explicit action.
 pub fn copy(
     profile: &ServiceProfile,
     filename: &str,

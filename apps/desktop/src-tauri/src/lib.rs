@@ -937,12 +937,51 @@ async fn copy_configuration(
         .request("assert_profile_management", json!({"profile":profile}))
         .await
         .map_err(|e| e.to_string())?;
-    tokio::task::spawn_blocking(move || {
-        let _management = _management;
-        configuration_files::copy(&profile, &filename, config)
-    })
-    .await
-    .map_err(|error| error.to_string())?
+    let registered: Vec<ServiceProfile> = serde_json::from_value(
+        state
+            .ipc
+            .request("local_installations", json!({}))
+            .await
+            .map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| error.to_string())?;
+    // A copy of a registered configuration joins the configuration list right away.
+    // A discovered, unregistered source stays a file; using it imports it as before.
+    let source_registered = registered.iter().any(|item| {
+        item.id == profile.id
+            && configuration_files::path_key(std::path::Path::new(&item.config_path))
+                == configuration_files::path_key(std::path::Path::new(&profile.config_path))
+    });
+    let source_id = profile.id.clone();
+    let copied =
+        tokio::task::spawn_blocking(move || configuration_files::copy(&profile, &filename, config))
+            .await
+            .map_err(|error| error.to_string())??;
+    if !source_registered {
+        return Ok(copied);
+    }
+    match state
+        .ipc
+        .request(
+            "register_configuration_copy",
+            json!({"sourceProfileId":source_id,"profile":copied}),
+        )
+        .await
+    {
+        // A supervisor predating copy registration keeps the earlier file-only behavior.
+        Err(error) if error.code == "unknown_method" => Ok(copied),
+        Ok(value) => serde_json::from_value(value).map_err(|error| error.to_string()),
+        Err(error) => {
+            let error = error.to_string();
+            // The file was created by this call and is not registered; never leave half a copy.
+            let path = std::path::PathBuf::from(&copied.config_path);
+            let cleanup = tokio::task::spawn_blocking(move || std::fs::remove_file(path)).await;
+            Err(match cleanup {
+                Ok(Ok(())) => format!("新配置登记失败，未保留副本 / Could not register the new configuration; the copy was removed: {error}"),
+                _ => format!("新配置登记失败，副本保留在 / Could not register the new configuration; the copy remains at {}: {error}", copied.config_path),
+            })
+        }
+    }
 }
 
 // Keep external-management handoff out of the gap between IPC validation and

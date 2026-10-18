@@ -997,7 +997,12 @@ export function App() {
       if(generation===preparationGeneration.current){preparingLocal.current=false;setLocalProgress(undefined);setStartupTarget(undefined);}
     }
   };
-  const configurationCopied = (copied:ServiceProfile) => {
+  const configurationCopied = async (copied:ServiceProfile) => {
+    // Copies of registered configurations are registered by the backend: open the
+    // saved record so it is listed and selectable. Nothing is started here.
+    const refreshed=desktop?await refreshLocalProfiles().catch(()=>profiles):profiles;
+    const registered=refreshed.find(item=>item.id===copied.id);
+    if(registered){navigationGuard.request(() => { setDiscoveredConfigProfile(undefined);setConfigProfileId(registered.id);navigate('config'); });return;}
     const directory=copied.configPath.replace(/[\\/][^\\/]+$/,'');
     setModelDirectories(previous=>[...new Set([...previous,directory])]);
     navigationGuard.request(() => { setDiscoveredConfigProfile(copied);setConfigProfileId('');navigate('config'); });
