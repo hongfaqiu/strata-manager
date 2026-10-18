@@ -108,7 +108,7 @@ test('missing downloads remove stale hrefs and leave keyboard and accessibility 
 test('initial HTML disables every asset download until metadata is verified', () => {
   const html = readFileSync(new URL('../website/index.html', import.meta.url), 'utf8');
   const anchors = [...html.matchAll(/<a\b[^>]*data-download="([^"]+)"[^>]*>/g)];
-  assert.equal(anchors.length, 4);
+  assert.equal(anchors.length, 5);
   for (const [tag] of anchors) {
     assert.doesNotMatch(tag, /\bhref=/);
     assert.match(tag, /aria-disabled="true"/);

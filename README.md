@@ -18,7 +18,7 @@
 <p>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-287e71" alt="MIT license" /></a>
 <img src="https://img.shields.io/badge/desktop-Tauri%202-24c8d8" alt="Tauri 2 desktop" />
-<img src="https://img.shields.io/badge/platforms-Windows%20%2F%20Linux%20x64-51606f" alt="Windows and Linux x64" />
+<img src="https://img.shields.io/badge/platforms-Windows%20%2F%20Linux%20x64%20%C2%B7%20macOS%20ARM%20experimental-51606f" alt="Windows and Linux x64; macOS Apple Silicon experimental" />
 <a href="https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml"><img src="https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml/badge.svg" alt="Build and test status" /></a>
 </p>
 
@@ -79,12 +79,13 @@ Choose a package from the [latest release](https://github.com/hongfaqiu/strata-m
 | --- | --- | --- |
 | **Windows x64** | NSIS installer (`.exe`) | Requires WebView2. [Windows installation](docs/DOWNLOAD.en.md#install-on-windows). |
 | **Linux x64** | AppImage or DEB | Built in Ubuntu 22.04 CI. [Linux installation and support scope](docs/DOWNLOAD.en.md#install-on-linux). |
+| **macOS Apple Silicon** | DMG (experimental) | Un-notarized CI package when a release lists it. Does **not** include a ready Metal engine. Intel not packaged. [macOS notes](docs/DOWNLOAD.en.md#macos-apple-silicon-experimental). |
 
 1. **Prepare the runtime.** Open Strata to inspect an existing installation, or follow Getting started. An existing supported runtime does not need reinstalling.
 2. **Choose a model and configuration.** My models lists discovered weights. Add a search directory when needed, select a configuration, or download new weights.
 3. **Choose Use.** Follow environment checks and loading until Model ready, then chat or copy the local API address into another application.
 
-The desktop installer contains Manager and its background process. Hardware and driver requirements depend on Strata and the model. macOS and ARM are outside the current release targets. Detailed steps and package limitations are in the [download guide](docs/DOWNLOAD.en.md); everyday use is covered in the [user guide](docs/USER_GUIDE.en.md).
+The desktop installer contains Manager and its background process. Hardware and driver requirements depend on Strata and the model. Published stable installers target Windows x64 and Linux x64. macOS Apple Silicon DMGs are **experimental** (ad-hoc signed, not notarized); the DMG alone does not provide Metal inference—engine setup remains a later phase via upstream `./setup.sh`. Intel Macs are not packaged. Detailed steps and package limitations are in the [download guide](docs/DOWNLOAD.en.md); everyday use is covered in the [user guide](docs/USER_GUIDE.en.md).
 
 ## Explore the workspace
 

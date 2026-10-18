@@ -7,7 +7,11 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+- **macOS 第一期（实验）**：CI 在 `macos-15` / `aarch64-apple-darwin` 打出未公证 DMG 与 updater 用 `.app.tar.gz`（临时签名）。文档与官网标明实验包、Gatekeeper 限制，以及 **DMG alone 不含 Metal 引擎**（引擎仍待后续 `./setup.sh`）。不提供 Intel 包。关联 #53。
+
 ### English
+
+- **macOS phase 1 (experimental)**: CI on `macos-15` / `aarch64-apple-darwin` produces an un-notarized DMG and updater `.app.tar.gz` (ad-hoc signing). Docs and the website mark the package experimental, note Gatekeeper limits, and state that the **DMG alone does not include a Metal engine** (engine setup remains a later `./setup.sh` phase). No Intel package. See #53.
 
 ## [0.1.13] - 2026-10-18
 

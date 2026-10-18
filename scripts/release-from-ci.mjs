@@ -29,8 +29,10 @@ export const PLATFORM_GATES = Object.freeze({
   linux: Object.freeze(['Linux Secret Service wrapper contracts', 'Build the pinned private Linux test keyring',
     'Linux Secret Service fresh-connection regression',
     'Verify Linux AppImage and DEB startup under Xvfb']),
+  macos: Object.freeze(['Use ad-hoc macOS signing without an Apple certificate',
+    'Package the macOS app archive for the updater', 'Upload the macOS updater archive']),
 });
-/** Separate job that aggregates all six shard proofs after both desktop jobs succeeded. */
+/** Separate job that aggregates all six shard proofs after all desktop jobs succeeded. */
 export const COVERAGE_JOB = 'Native coverage verification';
 export const COVERAGE_GATES = Object.freeze([
   "Download this attempt's Windows native coverage proofs",
@@ -61,6 +63,7 @@ export const OBSERVER_JOBS = Object.freeze([
 const jobsByPlatform = {
   windows: 'desktop (windows-latest, x86_64-pc-windows-msvc, nsis)',
   linux: 'desktop (ubuntu-22.04, x86_64-unknown-linux-gnu, appimage,deb)',
+  macos: 'desktop (macos-15, aarch64-apple-darwin, app,dmg)',
 };
 
 export function createPlan({ repository = REPOSITORY, tag, version, sourceSha: commit, runId, productName }) {
@@ -75,6 +78,9 @@ export function createPlan({ repository = REPOSITORY, tag, version, sourceSha: c
       { name: 'ci-windows-x64-nsis', kind: 'windows', installer: product + '_' + version + '_x64-setup.exe' },
       { name: 'ci-linux-amd64-appimage', kind: 'appimage', installer: product + '_' + version + '_amd64.AppImage' },
       { name: 'ci-linux-amd64-deb', kind: 'deb', installer: product + '_' + version + '_amd64.deb' },
+      // Updater archive first (latest.json darwin-aarch64); DMG is the manual download.
+      { name: 'ci-darwin-aarch64-app-tarball', kind: 'macos', installer: product + '_' + version + '_aarch64.app.tar.gz' },
+      { name: 'ci-darwin-aarch64-dmg', kind: 'macos', installer: product + '_' + version + '_aarch64.dmg' },
     ] };
 }
 export const assetNames = plan => ['latest.json', 'SHA256SUMS', ...plan.artifacts.flatMap(a => [a.installer, a.installer + '.sig'])];
@@ -105,7 +111,7 @@ export function validateCiEvidence(run, jobs, artifacts, plan, { nowMs = Date.no
   if (gateJobs.length > 1) fail('Duplicate CI job: ' + CHANGES_JOB);
   if (gateJobs.length) successfulJob(jobs, CHANGES_JOB, run);
   jobs = jobs.filter(j => j?.name !== CHANGES_JOB);
-  if (jobs.length !== 11) fail('Exactly the two desktop jobs, six native shards, two observer compatibility jobs and the coverage verification job are required.');
+  if (jobs.length !== 12) fail('Exactly the three desktop jobs, six native shards, two observer compatibility jobs and the coverage verification job are required.');
   const coverage = successfulJob(jobs, COVERAGE_JOB, run);
   if (coverage.run_attempt !== undefined && coverage.run_attempt !== run.run_attempt) fail('Coverage verification lacks current-attempt evidence.');
   for (const gate of COVERAGE_GATES) {
@@ -145,7 +151,7 @@ export function validateCiEvidence(run, jobs, artifacts, plan, { nowMs = Date.no
   const ids = new Set();
   const bound = plan.artifacts.map(expected => {
     const matches = artifacts.filter(a => a.name === expected.name); const a = matches[0];
-    const job = platformJobs[expected.kind === 'windows' ? 'windows' : 'linux'];
+    const job = platformJobs[expected.kind === 'windows' ? 'windows' : expected.kind === 'macos' ? 'macos' : 'linux'];
     if (matches.length !== 1 || !positive(a.id) || ids.has(a.id) || a.expired !== false
         || !positive(a.size_in_bytes) || a.size_in_bytes > maxBytes
         || !/^sha256:[0-9a-f]{64}$/.test(a.digest ?? '') || a.workflow_run?.id !== run.id
@@ -238,7 +244,7 @@ export function creationBranch(repository) {
 }
 export function validateLatestManifest(manifest, assets, plan) {
   const index = new Map(assets.map(a => [a.name, a]));
-  const mapping = { 'windows-x86_64': 0, 'windows-x86_64-nsis': 0, 'linux-x86_64': 1, 'linux-x86_64-appimage': 1, 'linux-x86_64-deb': 2 };
+  const mapping = { 'windows-x86_64': 0, 'windows-x86_64-nsis': 0, 'linux-x86_64': 1, 'linux-x86_64-appimage': 1, 'linux-x86_64-deb': 2, 'darwin-aarch64': 3 };
   if (manifest?.version !== plan.version || !manifest.platforms
       || JSON.stringify(Object.keys(manifest.platforms).sort()) !== JSON.stringify(Object.keys(mapping).sort())) fail('Canonical updater platforms and bundle aliases are required.');
   for (const [platform, i] of Object.entries(mapping)) {
@@ -463,12 +469,12 @@ export async function prepare({ validateOnly = false } = {}) {
   await writeFile(pathResolve(c.temp, 'prepared.json'), JSON.stringify(meta, null, 2), { flag: 'wx', mode: 0o600 });
   await readPrepared(c);
   await writeFile(pathResolve(c.temp, 'proof.json'), JSON.stringify(meta, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
-  console.log('Prepared three full-byte verified same-source CI installers (' + c.plan.version + '); validate-only=' + validateOnly + '.');
+  console.log('Prepared ' + c.plan.artifacts.length + ' full-byte verified same-source CI installers (' + c.plan.version + '); validate-only=' + validateOnly + '.');
   return meta;
 }
 export function validatePreparedRecord(meta, plan, { allowValidateOnly = false } = {}) {
   if (meta?.protocol !== CI_PROTOCOL || typeof meta.validateOnly !== 'boolean' || meta.validateOnly && !allowValidateOnly
-      || JSON.stringify(meta.plan) !== JSON.stringify(plan) || meta.installers?.length !== 3) fail('Prepared source/CI evidence mismatch or validate-only ledger cannot be signed.');
+      || JSON.stringify(meta.plan) !== JSON.stringify(plan) || meta.installers?.length !== plan.artifacts.length) fail('Prepared source/CI evidence mismatch or validate-only ledger cannot be signed.');
   for (const a of plan.artifacts) {
     const matches = meta.installers.filter(i => i.name === a.installer); const i = matches[0];
     if (matches.length !== 1 || i.artifactId !== a.id || i.zipSha256 !== a.sha256
@@ -521,7 +527,7 @@ export async function publish() {
   const p = c.plan;
   await regular(pathResolve(c.temp, 'signed.json'), 65536);
   const signed = JSON.parse(await readFile(pathResolve(c.temp, 'signed.json'), 'utf8'));
-  if (signed.protocol !== CI_PROTOCOL || signed.sourceSha !== p.sourceSha || signed.runId !== p.runId || signed.signatures?.length !== 3) fail('Signed evidence mismatch.');
+  if (signed.protocol !== CI_PROTOCOL || signed.sourceSha !== p.sourceSha || signed.runId !== p.runId || signed.signatures?.length !== p.artifacts.length) fail('Signed evidence mismatch.');
   for (const a of p.artifacts) {
     const entries = signed.signatures.filter(s => s.name === a.installer + '.sig');
     if (entries.length !== 1 || entries[0].sha256 !== await digest(pathResolve(c.temp, a.installer + '.sig'))) fail('Signed bytes changed.');
@@ -532,7 +538,7 @@ export async function publish() {
   const entry = i => ({ signature: signatures[i], url: 'https://github.com/' + p.repository + '/releases/download/' + encodeURIComponent(p.tag) + '/' + encodeURIComponent(p.artifacts[i].installer) });
   const manifest = { version: p.version, notes, pub_date: new Date().toISOString(), platforms: {
     'windows-x86_64': entry(0), 'windows-x86_64-nsis': entry(0), 'linux-x86_64': entry(1),
-    'linux-x86_64-appimage': entry(1), 'linux-x86_64-deb': entry(2),
+    'linux-x86_64-appimage': entry(1), 'linux-x86_64-deb': entry(2), 'darwin-aarch64': entry(3),
   } };
   validateLatestManifest(manifest, p.artifacts.flatMap((a, i) => [{ name: a.installer }, { name: a.installer + '.sig', signatureText: signatures[i] }]), p);
   await writeFile(pathResolve(c.temp, 'latest.json'), JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx', mode: 0o600 });

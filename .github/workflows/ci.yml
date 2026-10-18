@@ -271,6 +271,12 @@ jobs:
           - runner: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             bundles: appimage,deb
+          # Apple Silicon only. macos-14 retires around 2026-11-02.
+          # Intel (x86_64-apple-darwin) is skipped: upstream Strata Metal targets
+          # Apple Silicon, and a second arch is a full extra compile.
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            bundles: app,dmg
     runs-on: ${{ matrix.runner }}
     env:
       # Ordinary pull requests skip the release-mode installer build and its
@@ -356,7 +362,10 @@ jobs:
       - name: Version and release guard tests
         env:
           UPDATE_VERIFIER_BIN: ${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/debug/strata-update-verifier${{ runner.os == 'Windows' && '.exe' || '' }}
-        run: node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-assets.test.mjs scripts/release-publish.test.mjs scripts/preview-package-smoke.test.mjs scripts/download-upgrade-fixture.test.mjs scripts/release-from-ci.test.mjs scripts/ci-linux-native-tests.test.mjs scripts/ci-cache-policy.test.mjs
+        # ci-linux-native-tests.test.mjs runs a host libtest binary and rejects
+        # hosts that are not its Windows/Linux target. Skip it on darwin so the
+        # Apple Silicon job can reach packaging; Windows and Linux still run it.
+        run: node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-assets.test.mjs scripts/release-publish.test.mjs scripts/preview-package-smoke.test.mjs scripts/download-upgrade-fixture.test.mjs scripts/release-from-ci.test.mjs ${{ runner.os != 'macOS' && 'scripts/ci-linux-native-tests.test.mjs' || '' }} scripts/ci-cache-policy.test.mjs
       - name: Verify the signed beta.2 installer for the first stable upgrade
         if: runner.os == 'Windows' && steps.package-version.outputs.version == '0.1.2'
         id: upgrade-fixture
@@ -375,6 +384,9 @@ jobs:
       - name: Prepare packaged background binary
         if: env.PACKAGE_INSTALLERS == 'true'
         run: node scripts/prepare-sidecar.mjs --profile release --target ${{ matrix.target }}
+      - name: Use ad-hoc macOS signing without an Apple certificate
+        if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true'
+        run: echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
       - name: Build test installers
         if: env.PACKAGE_INSTALLERS == 'true'
         uses: tauri-apps/tauri-action@v1
@@ -392,6 +404,27 @@ jobs:
           workflowArtifactNamePattern: 'ci-[platform]-[arch]-[bundle]'
           uploadUpdaterJson: false
 
+      - name: Package the macOS app archive for the updater
+        if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true'
+        run: |
+          set -euo pipefail
+          app_dir="${CARGO_TARGET_DIR}/${{ matrix.target }}/release/bundle/macos"
+          version="${{ steps.package-version.outputs.version }}"
+          archive="${RUNNER_TEMP}/macos-updater/Strata Manager_${version}_aarch64.app.tar.gz"
+          test -d "${app_dir}/Strata Manager.app"
+          mkdir -p "$(dirname "$archive")"
+          tar -czf "$archive" -C "$app_dir" "Strata Manager.app"
+          test -f "$archive"
+          test ! -d "$archive"
+      - name: Upload the macOS updater archive
+        if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-darwin-aarch64-app-tarball
+          path: ${{ runner.temp }}/macos-updater/Strata Manager_${{ steps.package-version.outputs.version }}_aarch64.app.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+
       - name: Verify installed Windows package and background IPC
         if: runner.os == 'Windows' && env.PACKAGE_INSTALLERS == 'true'
         run: node scripts/preview-package-smoke.mjs --bundle-dir "${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/release/bundle" --version "${{ steps.package-version.outputs.version }}"
@@ -407,7 +440,7 @@ jobs:
 
   native-coverage:
     name: Native coverage verification
-    # Starts only after every shard and both desktop jobs succeeded, so no job
+    # Starts only after every shard and all desktop jobs succeeded, so no job
     # polls the Actions API while holding a Windows runner.
     needs: [changes, native-windows, native-linux, desktop]
     if: needs.changes.outputs.code == 'true'

@@ -4,6 +4,8 @@ const strataReleaseCatalog = (() => {
   const repo = 'hongfaqiu/strata-manager';
   const base = `https://github.com/${repo}/releases`;
   const keys = ['windows', 'appimage', 'deb', 'checksums'];
+  // DMG is optional: a published Windows/Linux release stays complete without it.
+  const optionalKeys = ['dmg'];
 
   function version(tag) {
     if (typeof tag !== 'string') return null;
@@ -62,9 +64,10 @@ const strataReleaseCatalog = (() => {
       appimage: `Strata.Manager_${clean}_amd64.AppImage`,
       deb: `Strata.Manager_${clean}_amd64.deb`,
       checksums: 'SHA256SUMS',
+      dmg: `Strata.Manager_${clean}_aarch64.dmg`,
     };
     const result = { notes: release.html_url };
-    for (const key of keys) {
+    for (const key of [...keys, ...optionalKeys]) {
       const matches = (Array.isArray(release.assets) ? release.assets : []).filter(asset =>
         asset.name === names[key] && asset.state === 'uploaded' && Number.isSafeInteger(asset.size) && asset.size > 0 &&
         asset.browser_download_url === `${base}/download/${tag}/${names[key]}`);
@@ -83,7 +86,7 @@ const strataReleaseCatalog = (() => {
   }
 
   function applyDownloads(elements, urls) {
-    for (const key of keys) {
+    for (const key of [...keys, ...optionalKeys]) {
       const element = elements[key];
       if (!element) continue;
       if (urls[key]) {
@@ -98,7 +101,7 @@ const strataReleaseCatalog = (() => {
     }
   }
 
-  return Object.freeze({ repo, keys, version, compare, select, selectResponses, assets, applyDownloads });
+  return Object.freeze({ repo, keys, optionalKeys, version, compare, select, selectResponses, assets, applyDownloads });
 })();
 
 // Website interactions.
@@ -655,7 +658,7 @@ const strataReleaseCatalog = (() => {
         : releaseState.snapshot
           ? (english ? 'Published release.' : '已发布版本。')
           : (english ? 'Latest published release.' : '最新已发布版本。');
-      const labels = { windows: 'Windows', appimage: 'AppImage', deb: 'DEB', checksums: 'SHA256SUMS' };
+      const labels = { windows: 'Windows', appimage: 'AppImage', deb: 'DEB', checksums: 'SHA256SUMS', dmg: 'DMG' };
       const missing = releaseState.missing.map(key => labels[key]).join(' / ');
       status.textContent = `${channel}${missing ? (english ? ` Unavailable assets: ${missing}. Those downloads are disabled.` : ` 缺少 ${missing} 资产，对应下载已禁用。`) : ''}`;
     }
@@ -668,7 +671,7 @@ const strataReleaseCatalog = (() => {
     document.querySelectorAll('.release-version').forEach(el => {
       el.textContent = activeReleaseTag;
     });
-    const elements = Object.fromEntries(strataReleaseCatalog.keys.map(key => [key, document.querySelector(`[data-download="${key}"]`)]));
+    const elements = Object.fromEntries([...strataReleaseCatalog.keys, ...strataReleaseCatalog.optionalKeys].map(key => [key, document.querySelector(`[data-download="${key}"]`)]));
     strataReleaseCatalog.applyDownloads(elements, urls);
     const notesBtn = document.getElementById('release-notes-link');
     if (notesBtn) notesBtn.href = urls.notes || `https://github.com/${strataReleaseCatalog.repo}/releases`;
