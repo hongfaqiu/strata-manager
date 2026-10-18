@@ -6,7 +6,7 @@ export interface CatalogRequirement { family: string; name: string; quant: strin
 export function catalogRequirement(text: string | undefined): CatalogRequirement | undefined {
   if (!text || core.isOrcaRouterEvidence(text)) return undefined;
   const lower = text.toLowerCase();
-  const family = /qwen3\.?6|qwen36/.test(lower) ? 'qwen36' : /swift/.test(lower) ? 'swift' : /coder/.test(lower) ? 'coder' : /unsloth|ud-/.test(lower) ? 'unsloth' : /qwen/.test(lower) ? 'qwen' : undefined;
+  const family = /qwen3\.?6|qwen36/.test(lower) ? 'qwen36' : /swift/.test(lower) ? 'swift' : /coder/.test(lower) ? 'coder' : /unsloth|ud-|flash-next-q8_0/.test(lower) ? 'unsloth' : /qwen/.test(lower) ? 'qwen' : undefined;
   const model = core.MODEL_CATALOG.find(entry => entry.family === family);
   if (!model) return undefined;
   const quant = [...model.quants].sort((a, b) => b.length - a.length).find(item => lower.includes(item.toLowerCase()));

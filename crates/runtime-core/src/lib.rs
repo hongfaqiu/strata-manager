@@ -3161,7 +3161,14 @@ fn run_setup_with_preflight_options(
         "qwen" => ["Q2_0", "IQ2_XS", "IQ3_XXS", "IQ3_S"].contains(&quant.as_str()),
         "swift" => ["IQ2_XS", "IQ3_XXS", "IQ3_S"].contains(&quant.as_str()),
         "coder" => quant == "IQ1_M",
-        "unsloth" => ["UD-IQ4_XS", "UD-Q4_K_XL"].contains(&quant.as_str()),
+        "unsloth" => [
+            "UD-IQ4_XS",
+            "UD-Q4_K_XL",
+            "UD-Q5_K_XL",
+            "UD-Q6_K_XL",
+            "Q8_0",
+        ]
+        .contains(&quant.as_str()),
         // setup.py OWN_PATH_FAMILIES qwen36; MIN_ENGINE (0,1,45)
         "qwen36" => ["UD-Q4_K_XL", "UD-Q6_K_XL", "Q8_0"].contains(&quant.as_str()),
         _ => false,
