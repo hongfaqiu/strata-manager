@@ -12,6 +12,8 @@
 .arena-link:hover { text-decoration: underline; }
 .arena-loading { display: flex; justify-content: center; padding: 48px 0; color: var(--st-ink-muted); }
 .arena .empty { border: 0; margin: 0; padding: 56px 24px; }
+.arena .empty .arena-error-code { margin: -4px 0 12px; max-width: 520px; overflow-wrap: anywhere; }
+.arena .empty .arena-error-code code { font-family: var(--st-font-mono); font-size: 12px; }
 .arena-quant { display: inline-block; font: 600 11px/1.5 var(--st-font-mono); padding: 0 6px; border-radius: 4px; background: var(--st-surface-2); color: var(--st-ink-soft); margin-left: 6px; vertical-align: 1px; }
 .arena-tag { display: inline-block; font-size: 11px; line-height: 17px; padding: 0 6px; margin-left: 8px; border-radius: 4px; border: 1px solid var(--st-line); color: var(--st-ink-muted); white-space: nowrap; font-weight: 500; }
 .arena-tag.mine { border-color: color-mix(in srgb, var(--st-accent) 45%, transparent); color: var(--st-accent-text); }

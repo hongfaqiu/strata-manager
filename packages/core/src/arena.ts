@@ -302,3 +302,19 @@ export function arenaLeaderboardQuery(group: string, filters: ArenaFilters = {},
   if (sort !== 'decode8k') query.sort = sort;
   return query;
 }
+
+// ---- arena_get failures ----
+/**
+ * Splits native `arena_get` failures: `network` means the server could not be reached or is temporarily down
+ * (`network: …`, HTTP 408/429/5xx); `app` means the request reached the app's own checks or the server answered
+ * something unusable (`arena_query_invalid`, other HTTP 4xx, `arena_response_invalid`, …). Only `network`
+ * should be shown as "check your network".
+ */
+export function arenaFailure(error: unknown): { kind: 'network' | 'app'; code: string } {
+  const text = typeof error === 'string' ? error : error instanceof Error ? error.message
+    : typeof (error as { message?: unknown } | null)?.message === 'string' ? (error as { message: string }).message : String(error);
+  const code = text.trim().slice(0, 160) || 'unknown';
+  const http = /^arena_http_(\d{3})\b/.exec(code);
+  const network = /^network:/i.test(code) || (!!http && (Number(http[1]) >= 500 || http[1] === '408' || http[1] === '429'));
+  return { kind: network ? 'network' : 'app', code };
+}

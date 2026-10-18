@@ -45,7 +45,9 @@ export function ArenaPage({ language, active }: { language: AppLanguage; active:
   const [dismissed, setDismissed] = useState<boolean>();
   const [view, setView] = useState<'board' | 'recommend'>('board');
   const [groups, setGroups] = useState<ArenaGroups>();
-  const [offline, setOffline] = useState(false);
+  // Why the leaderboard could not load: `network` (unreachable) vs `app` (our own request or response was bad).
+  const [failure, setFailure] = useState<{ kind: 'network' | 'app'; code: string }>();
+  const offline = !!failure;
   const [loading, setLoading] = useState(false);
   const [group, setGroup] = useState('');
   const [filter, setFilter] = useState<Filter>('gpu');
@@ -73,8 +75,8 @@ export function ArenaPage({ language, active }: { language: AppLanguage; active:
   }, []);
   const loadGroups = useCallback(async () => {
     setLoading(true);
-    try { const next = await core.arenaGet<ArenaGroups>('groups'); setGroups(next); setOffline(false); }
-    catch { setOffline(true); }
+    try { const next = await core.arenaGet<ArenaGroups>('groups'); setGroups(next); setFailure(undefined); }
+    catch (error) { setFailure(core.arenaFailure(error)); }
     finally { setLoading(false); }
   }, []);
 
@@ -108,14 +110,14 @@ export function ArenaPage({ language, active }: { language: AppLanguage; active:
     if (scope === 'gpu' && myGpu) query.gpu = myGpu.name;
     if (scope === 'vram' && myGpu) query.vram = String(myGpu.vramGB);
     let current = true;
-    void core.arenaGet<ArenaLeaderboard>('leaderboard', query).then(next => { if (current) setBoard(next); }).catch(() => { if (current) setOffline(true); });
+    void core.arenaGet<ArenaLeaderboard>('leaderboard', query).then(next => { if (current) setBoard(next); }).catch(error => { if (current) setFailure(core.arenaFailure(error)); });
     return () => { current = false; };
   }, [active, group, scope, myGpu, offline, activeFilters, sort]);
   useEffect(() => {
     if (!active || view !== 'recommend' || offline) return;
     const hw = { gpu: myGpu?.name, vramGB: myGpu?.vramGB, ramGB: mine.payload?.hw.ramGB };
     let current = true;
-    void core.arenaGet<ArenaRecommendation>('recommend', core.arenaRecommendQuery(hw, mine.launch, scene)).then(next => { if (current) setRecommendation(next); }).catch(() => { if (current) setOffline(true); });
+    void core.arenaGet<ArenaRecommendation>('recommend', core.arenaRecommendQuery(hw, mine.launch, scene)).then(next => { if (current) setRecommendation(next); }).catch(error => { if (current) setFailure(core.arenaFailure(error)); });
     return () => { current = false; };
   }, [active, view, scene, myGpu, mine.payload, mine.launch, offline]);
 
@@ -237,7 +239,11 @@ export function ArenaPage({ language, active }: { language: AppLanguage; active:
 
   // ---- offline / empty ----
   if (offline || (!groups && loading)) return <div className="arena-page">{toolbar}<div className="arena">
-    <section className="panel arena-main">{offline ? <Empty title={t('arenaOfflineTitle')} hint={t('arenaOfflineHint')}><button type="button" className="st-btn st-btn--secondary" disabled={loading} onClick={() => { setOffline(false); void loadGroups(); }}><RefreshCw size={14}/>{t('retry')}</button></Empty> : <div className="arena-loading"><LoaderCircle className="spin" size={18}/></div>}</section>
+    <section className="panel arena-main">{failure ? <Empty title={t(failure.kind === 'network' ? 'arenaOfflineTitle' : 'arenaErrorTitle')} hint={t(failure.kind === 'network' ? 'arenaOfflineHint' : 'arenaErrorHint')}>
+      {failure.kind === 'app' && <p className="arena-muted arena-error-code"><code>{t('arenaErrorCode', { code: failure.code, interpolation: { escapeValue: false } })}</code></p>}
+      {/* An app-side failure would repeat with the same filters and sort, so retrying starts from the defaults. */}
+      <button type="button" className="st-btn st-btn--secondary" disabled={loading} onClick={() => { if (failure.kind === 'app') { setFacets({}); setSort('decode8k'); } setFailure(undefined); void loadGroups(); }}><RefreshCw size={14}/>{t('retry')}</button>
+    </Empty> : <div className="arena-loading"><LoaderCircle className="spin" size={18}/></div>}</section>
     {side}</div>{withdrawDialog}</div>;
   if (groups && !groups.groups.length) return <div className="arena-page">{toolbar}<div className="arena">
     <section className="panel arena-main"><Empty title={t('arenaEmptyTitle')} hint={t('arenaEmptyHint')}/></section>{side}</div>{withdrawDialog}</div>;
