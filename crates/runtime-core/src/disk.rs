@@ -388,10 +388,7 @@ fn prepare_plan(
         ),
         (mtp_directory, mtp_bytes),
         (pack, pack_bytes),
-        (
-            data.join("models"),
-            if own_path { 0 } else { vision_bytes },
-        ),
+        (data.join("models"), if own_path { 0 } else { vision_bytes }),
     ];
     // The upstream data-volume estimate does not bound wheel/engine downloads.
     // Include a small explicit runtime margin; still disclose the unknown total.
