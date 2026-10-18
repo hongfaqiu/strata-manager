@@ -906,7 +906,13 @@ impl RuntimeState {
             ),
             "prepare_local_runtime" => {
                 tuning::assert_available(&self)?;
-                value(installation::start(self.clone()))
+                let archives: installation::LocalRuntimeArchives = params
+                    .get("localArchives")
+                    .filter(|value| !value.is_null())
+                    .map(|value| serde_json::from_value(value.clone()).map_err(|e| e.to_string()))
+                    .transpose()?
+                    .unwrap_or_default();
+                value(installation::start(self.clone(), archives))
             }
             "local_runtime_installation" => value(installation::status(&self)),
             "runtime_update_info" => value(

@@ -28,3 +28,11 @@ export interface DetectedRuntime {
   /** Unregistered runtimes have an empty configPath; use only for model setup. */
   profile: ServiceProfile;
 }
+
+/** Already-downloaded archives used instead of downloading during first-run setup. */
+export interface LocalRuntimeArchives {
+  /** Official Strata source ZIP. */
+  strataArchivePath?: string;
+  /** Official Windows engine ZIP; its asset is identified by SHA256. */
+  engineArchivePath?: string;
+}

@@ -245,14 +245,40 @@ function RuntimeStep(props: StepProps & { runtimeTask?: TaskStatus; runtimeFact:
   const { t, runtimeTask, runtimeFact } = props;
   const [starting, setStarting] = useState(false);
   const [canceling, setCanceling] = useState(false);
+  // Downloading stays the default; already-downloaded packages are an explicit choice.
+  const [packageSource, setPackageSource] = useState<'download' | 'local'>('download');
+  const [archives, setArchives] = useState<core.LocalRuntimeArchives>({});
+  const [pickError, setPickError] = useState('');
+  const [picking, setPicking] = useState(false);
+  const windows = /windows/i.test(props.environment?.os ?? (typeof navigator === 'undefined' ? '' : navigator.userAgent));
   const running = runtimeTask?.state === 'running';
   const logs = useTaskLogs(runtimeTask?.id, running);
+  const chosen: core.LocalRuntimeArchives | undefined = packageSource === 'local' ? { strataArchivePath: archives.strataArchivePath, ...(windows ? { engineArchivePath: archives.engineArchivePath } : {}) } : undefined;
+  const localMissing = packageSource === 'local' && !chosen?.strataArchivePath && !chosen?.engineArchivePath;
+  const pick = async (key: keyof core.LocalRuntimeArchives) => {
+    if (picking) return;
+    setPicking(true); setPickError('');
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const path = await open({ title: t(key === 'strataArchivePath' ? 'obLocalStrata' : 'obLocalEngine'), multiple: false, directory: false, filters: [{ name: 'ZIP', extensions: ['zip'] }] });
+      if (typeof path === 'string') setArchives(previous => ({ ...previous, [key]: path }));
+    } catch (error) { setPickError(core.normalizeError(error).message); } finally { setPicking(false); }
+  };
   const start = async () => {
-    if (starting || running) return;
+    if (starting || running || localMissing) return;
     setStarting(true);
-    try { const task = await core.prepareLocalRuntime(); props.onProgress({ runtimeTaskId: task.id }); props.onRefreshRuntime(); }
+    try { const task = await core.prepareLocalRuntime(chosen); props.onProgress({ runtimeTaskId: task.id }); props.onRefreshRuntime(); }
     catch (error) { props.onError(error); } finally { setStarting(false); }
   };
+  const archiveRow = (key: keyof core.LocalRuntimeArchives, label: string) => <div className="ob-check ob-archive" key={key}>
+    <Mark state={archives[key] ? 'ok' : 'none'}/>
+    <span className="ob-check-label">{label}</span>
+    <span className="ob-check-value">{archives[key] ? <code className="ob-mono-small" data-testid={`ob-archive-${key}`}>{archives[key]}</code> : <small className="is-alone">{t('obNotChosen')}</small>}</span>
+    <span className="ob-archive-actions">
+      <button type="button" className="st-btn st-btn--secondary" disabled={!props.desktop || picking || starting} onClick={() => void pick(key)}>{t('obChooseFile')}</button>
+      {archives[key] && <button type="button" className="ob-link" disabled={picking || starting} onClick={() => setArchives(previous => ({ ...previous, [key]: undefined }))}>{t('obClearFile')}</button>}
+    </span>
+  </div>;
   const cancel = async () => { if (!runtimeTask || canceling) return; setCanceling(true); try { await core.cancelTask(runtimeTask.id); } catch (error) { props.onError(error); } finally { setCanceling(false); } };
   const percent = running ? taskProgress(runtimeTask?.message) : undefined;
   const failed = runtimeFact === 'failed';
@@ -262,10 +288,19 @@ function RuntimeStep(props: StepProps & { runtimeTask?: TaskStatus; runtimeFact:
       : running ? <div className="ob-status"><Mark state="busy"/><div className="ob-status-body"><b>{runtimeTask!.message || t('obPreparing')}</b><div className={`ob-bar${percent === undefined ? ' is-indeterminate' : ''}`}><i style={percent === undefined ? undefined : { width: `${percent}%` }}/></div><small>{t('obRuntimeRunningHint')}</small></div></div>
       : failed ? <div className="ob-status is-bad"><Mark state="fail"/><div className="ob-status-body"><b>{runtimeTask?.message}</b></div></div>
       : null}
+    {!running && runtimeFact !== 'ready' && <div className="ob-package-source">
+      <div className="ob-field is-row"><span>{t('obPackageSource')}</span><Segmented ariaLabel={t('obPackageSource')} value={packageSource} onValueChange={value => { setPackageSource(value as 'download' | 'local'); setPickError(''); }} options={[{ value: 'download', label: t('obSourceDownload') }, { value: 'local', label: t('obSourceLocal') }]}/></div>
+      {packageSource === 'local' && <>
+        <p className="ob-note">{t(windows ? 'obLocalHintWindows' : 'obLocalHintLinux')}</p>
+        <div className="ob-checks">{archiveRow('strataArchivePath', t('obLocalStrata'))}{windows && archiveRow('engineArchivePath', t('obLocalEngine'))}</div>
+        {pickError && <p className="ob-error" role="alert">{pickError}</p>}
+      </>}
+    </div>}
     {(running || failed || (runtimeTask && runtimeFact !== 'ready')) && <><h4 className="ob-section-title">{t('obLogs')}</h4><Logs logs={logs.data ?? []} t={t}/></>}
     <footer className="ob-actions">
       {running && <button type="button" className="st-btn st-btn--secondary" disabled={canceling} onClick={() => void cancel()}><Square size={13}/>{t('obCancel')}</button>}
-      {!running && runtimeFact !== 'ready' && <button type="button" className="primary" disabled={!props.desktop || starting || runtimeFact === 'unknown'} onClick={() => void start()}>{starting && <LoaderCircle size={14} className="spin"/>}{t(failed ? 'obInstallRetry' : 'obInstallNow')}</button>}
+      {localMissing && <span className="ob-note">{t('obLocalRequired')}</span>}
+      {!running && runtimeFact !== 'ready' && <button type="button" className="primary" disabled={!props.desktop || starting || runtimeFact === 'unknown' || localMissing} onClick={() => void start()}>{starting && <LoaderCircle size={14} className="spin"/>}{t(failed ? 'obInstallRetry' : 'obInstallNow')}</button>}
       {!props.desktop && <span className="ob-note">{t('obDesktopOnly')}</span>}
     </footer>
   </div>;

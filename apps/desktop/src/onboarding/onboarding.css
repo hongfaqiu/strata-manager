@@ -176,3 +176,9 @@
   .ob-found-row{grid-template-columns:18px minmax(0,1fr) auto}.ob-found-row>:nth-child(2),.ob-found-row>:nth-child(4){display:none}
 }
 @media(prefers-reduced-motion:reduce){.ob-bar.is-indeterminate i{animation:none;left:0;width:100%;opacity:.4}.ob-bar i{transition:none}}
+
+/* First-run: already-downloaded installer packages */
+.ob-package-source{display:grid;gap:10px;margin-top:14px}
+.ob-package-source>.ob-field,.ob-package-source>.ob-note,.ob-package-source>.ob-error{margin:0;padding:0 18px}
+.ob-check.ob-archive{grid-template-columns:18px 132px minmax(0,1fr) auto}
+.ob-archive-actions{display:inline-flex;gap:8px;align-items:center}

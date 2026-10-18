@@ -19,9 +19,9 @@ use std::{
 pub const VERSION: &str = "0.1.41";
 mod release_zip;
 pub use release_zip::{
-    resolve_release_download_asset, start_install_release, start_release, start_release_request,
-    start_release_request_with_download, test_release_download, RuntimeZipDownloadCheckResult,
-    RuntimeZipDownloadOptions,
+    resolve_release_download_asset, start_install_release, start_install_release_with_archives,
+    start_release, start_release_request, start_release_request_with_download,
+    test_release_download, RuntimeZipDownloadCheckResult, RuntimeZipDownloadOptions,
 };
 const SERVER_SHA256: &str = "017efa1f4e76d72396738555d13eb1f9898d1c1c12730cf046d9b267b29987e5";
 const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS runtime_upgrades(task_id TEXT PRIMARY KEY,profile_id TEXT NOT NULL,journal TEXT NOT NULL,updated_at INTEGER NOT NULL);";

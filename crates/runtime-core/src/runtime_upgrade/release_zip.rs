@@ -26,6 +26,8 @@ const OBSERVER_COMPAT: &str =
 
 mod download_check;
 mod download_source;
+#[cfg(test)]
+mod local_archive_tests;
 pub use download_check::{
     resolve_release_download_asset, test_release_download, RuntimeZipDownloadCheckResult,
 };
@@ -65,6 +67,9 @@ struct Journal {
     requested_stop_current_service: bool,
     #[serde(default)]
     download: RuntimeZipDownloadOptions,
+    /// First-run setup only: the user's copy of the same-revision source ZIP.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    local_source_archive_path: Option<String>,
     version: Option<String>,
     revision: Option<String>,
     changes: Vec<Change>,
@@ -200,22 +205,42 @@ pub fn start_release_request_with_download(
         request_id,
         stop_current_service,
         download,
+        None,
     )
 }
 pub fn start_install_release(state: Arc<RuntimeState>) -> Result<TaskStatus, String> {
+    start_install_release_with_archives(state, installation::LocalRuntimeArchives::default())
+}
+/// First-run installation. Already-downloaded archives replace the matching
+/// downloads; the engine ZIP's official asset is identified by its SHA256.
+pub fn start_install_release_with_archives(
+    state: Arc<RuntimeState>,
+    archives: installation::LocalRuntimeArchives,
+) -> Result<TaskStatus, String> {
+    let archives = archives.validate()?;
     let root = installation::owned_directory(state.data_dir(), &["runtimes"])?
         .join(format!("release-{}", uuid::Uuid::new_v4()));
     fs::create_dir(&root).map_err(|e| e.to_string())?;
-    start(
+    let result = start(
         state,
-        root,
+        root.clone(),
         None,
         true,
         None,
         false,
-        RuntimeZipDownloadOptions::default(),
-    )
+        RuntimeZipDownloadOptions {
+            local_archive_path: archives.engine_archive_path,
+            download_url: None,
+        },
+        archives.strata_archive_path,
+    );
+    if result.is_err() {
+        // Nothing was admitted; leave no empty release directory behind.
+        let _ = fs::remove_dir(&root);
+    }
+    result
 }
+#[allow(clippy::too_many_arguments)]
 fn start(
     state: Arc<RuntimeState>,
     root: PathBuf,
@@ -224,8 +249,31 @@ fn start(
     request_id: Option<String>,
     stop_current_service: bool,
     download: RuntimeZipDownloadOptions,
+    local_source_archive_path: Option<String>,
 ) -> Result<TaskStatus, String> {
-    let download = download.validate(asset_name.as_deref())?;
+    // A new installation may name a local engine ZIP without an asset: its digest
+    // selects the official asset. Updates keep requiring an explicit asset.
+    let download = if new_install && asset_name.is_none() && download.download_url.is_none() {
+        let mut checked = download.clone();
+        checked.local_archive_path = None;
+        let mut checked = checked.validate(None)?;
+        if let Some(path) = download.local_archive_path {
+            installation::local_archive::check_path(
+                path.trim(),
+                installation::local_archive::ENGINE,
+            )?;
+            checked.local_archive_path = Some(path.trim().to_owned());
+        }
+        checked
+    } else {
+        download.validate(asset_name.as_deref())?
+    };
+    if local_source_archive_path.is_some() && !new_install {
+        return Err("本地 Strata 安装包仅用于首次安装".into());
+    }
+    if let Some(path) = &local_source_archive_path {
+        installation::local_archive::check_path(path, installation::local_archive::STRATA)?;
+    }
     let task_id = request_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     uuid::Uuid::parse_str(&task_id).map_err(|_| "更新请求标识必须为 UUID")?;
     if !cfg!(all(windows, target_arch = "x86_64")) {
@@ -321,6 +369,7 @@ fn start(
         requested_asset_name: asset_name.clone(),
         requested_stop_current_service: stop_current_service,
         download,
+        local_source_archive_path,
         asset_name,
         version: None,
         revision: None,
@@ -597,6 +646,108 @@ async fn source_archive(
         .map_err(|e| e.to_string())?;
     processes::log(&state.logs,id,"info",format!("同版本源码来自官方HTTPS提交 {revision}；本地SHA256 {digest}（上游没有发布源码ZIP摘要）"));
     Ok(target)
+}
+
+/// The user's copy of the same-revision source ZIP. Upstream publishes no digest
+/// for it, so it is accepted on the identity GitHub writes into a revision archive:
+/// one top-level `Strata-<revision>` directory. Extraction then applies every check
+/// a downloaded archive gets.
+fn local_source_archive(
+    state: &RuntimeState,
+    id: &str,
+    path: &Path,
+    revision: &str,
+) -> Result<PathBuf, String> {
+    if !super::valid_revision(revision) {
+        return Err("官方源码提交无效".into());
+    }
+    let directory = installation::owned_directory(state.data_dir(), &["downloads"])?;
+    let (output, digest, _) = installation::local_archive::copy_hashed(
+        state,
+        id,
+        path,
+        &directory,
+        MAX_SOURCE,
+        installation::local_archive::STRATA,
+    )?;
+    source_archive_revision(output.path(), revision)?;
+    let target = directory.join(format!("source-{revision}-{digest}.zip"));
+    if target.exists() {
+        if installation::file_hash(&target)? != digest {
+            return Err("已有源码缓存被修改".into());
+        }
+        return Ok(target);
+    }
+    output
+        .persist_noclobber(&target)
+        .map_err(|e| e.to_string())?;
+    processes::log(
+        &state.logs,
+        id,
+        "info",
+        format!(
+            "本地 Strata 安装包为官方提交 {revision} 的源码；本地SHA256 {digest}；原文件保持不变"
+        ),
+    );
+    Ok(target)
+}
+
+fn source_archive_revision(archive: &Path, revision: &str) -> Result<(), String> {
+    let wrong = || {
+        format!("所选 Strata 安装包不是当前官方 Release 的源码（需要 Strata-{revision}.zip，可在 GitHub 该提交页下载）/ The selected Strata archive is not this Release's source (expected Strata-{revision}.zip)")
+    };
+    let mut zip = zip::ZipArchive::new(File::open(archive).map_err(|e| e.to_string())?)
+        .map_err(|_| "所选 Strata 安装包不是有效的 ZIP 文件 / The selected Strata archive is not a valid ZIP file".to_string())?;
+    let prefix = format!("Strata-{revision}/");
+    if zip.is_empty() || zip.len() > 30_000 {
+        return Err(wrong());
+    }
+    for index in 0..zip.len() {
+        let entry = zip.by_index_raw(index).map_err(|e| e.to_string())?;
+        if !entry.name().starts_with(&prefix) {
+            return Err(wrong());
+        }
+    }
+    Ok(())
+}
+
+/// Identifies the official asset of a local engine ZIP by exact length and SHA256.
+fn local_engine_asset(
+    state: &RuntimeState,
+    id: &str,
+    info: &RuntimeUpdateInfo,
+    path: &Path,
+) -> Result<RuntimeReleaseAsset, String> {
+    cancelled(state, id)?;
+    let length = fs::metadata(path)
+        .map_err(|error| {
+            format!("无法读取引擎安装包：{error} / Cannot read the engine archive: {error}")
+        })?
+        .len();
+    let candidates: Vec<_> = info
+        .assets
+        .iter()
+        .filter(|asset| asset.size == length)
+        .collect();
+    let version = info.latest_version.as_deref().unwrap_or("?");
+    let mismatch = || {
+        format!("所选引擎 ZIP 与官方 Release v{version} 的 Windows 引擎包都不一致（版本或 GPU 类型不对，或文件不完整）/ The selected engine ZIP matches no Windows engine package of Release v{version} (wrong version or GPU type, or an incomplete file)")
+    };
+    if candidates.is_empty() {
+        return Err(mismatch());
+    }
+    processes::log(
+        &state.logs,
+        id,
+        "info",
+        format!("正在按官方 SHA256 识别本地引擎包 {}", path.display()),
+    );
+    let digest = installation::file_hash(path)?;
+    candidates
+        .into_iter()
+        .find(|asset| asset.sha256.eq_ignore_ascii_case(&digest))
+        .cloned()
+        .ok_or_else(mismatch)
 }
 
 fn reject_link(path: &Path) -> Result<(), String> {
@@ -1409,7 +1560,12 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
             .error
             .unwrap_or("官方Release暂没有可验证的Windows ZIP".into()));
     }
-    let asset = choose_asset(&info, &j.install_dir, j.asset_name.as_deref())?;
+    let asset = match (&j.asset_name, &j.download.local_archive_path) {
+        (None, Some(path)) if j.new_install => {
+            local_engine_asset(&state, &j.task_id, &info, Path::new(path))?
+        }
+        _ => choose_asset(&info, &j.install_dir, j.asset_name.as_deref())?,
+    };
     let revision = info.source_revision.clone().ok_or("发布源码提交未核验")?;
     let version = info.latest_version.clone().ok_or("发布版本缺失")?;
     if !j.new_install {
@@ -1431,15 +1587,20 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
             asset.name, asset.size
         ),
     )?;
-    let source = source_archive(
-        &state,
-        &j.task_id,
-        info.source_archive_url
-            .as_deref()
-            .ok_or("同版本源码地址缺失")?,
-        &revision,
-    )
-    .await?;
+    let source = match &j.local_source_archive_path {
+        Some(path) => local_source_archive(&state, &j.task_id, Path::new(path), &revision)?,
+        None => {
+            source_archive(
+                &state,
+                &j.task_id,
+                info.source_archive_url
+                    .as_deref()
+                    .ok_or("同版本源码地址缺失")?,
+                &revision,
+            )
+            .await?
+        }
+    };
     progress(
         &state,
         j,
@@ -2099,6 +2260,7 @@ mod tests {
             requested_asset_name: None,
             requested_stop_current_service: true,
             download: RuntimeZipDownloadOptions::default(),
+            local_source_archive_path: None,
             version: None,
             revision: None,
             changes: vec![],
@@ -2582,6 +2744,7 @@ mod tests {
             requested_asset_name: None,
             requested_stop_current_service: false,
             download: RuntimeZipDownloadOptions::default(),
+            local_source_archive_path: None,
             version: None,
             revision: None,
             changes: vec![],
@@ -3186,6 +3349,7 @@ mod tests {
             requested_asset_name: None,
             requested_stop_current_service: false,
             download: RuntimeZipDownloadOptions::default(),
+            local_source_archive_path: None,
             version: Some("0.1.42".into()),
             revision: None,
             changes: vec![],
@@ -3239,6 +3403,7 @@ mod tests {
             requested_asset_name: None,
             requested_stop_current_service: false,
             download: RuntimeZipDownloadOptions::default(),
+            local_source_archive_path: None,
             version: Some("0.1.42".into()),
             revision: None,
             changes,
@@ -3289,6 +3454,7 @@ mod tests {
             requested_asset_name: None,
             requested_stop_current_service: false,
             download: RuntimeZipDownloadOptions::default(),
+            local_source_archive_path: None,
             version: Some("0.1.42".into()),
             revision: None,
             changes,

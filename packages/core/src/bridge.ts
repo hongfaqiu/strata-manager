@@ -220,7 +220,8 @@ export const inspectModel = (request: ModelInspectRequest): Promise<TaskStatus> 
 export const getChatRuntimeEvidence = (profileId: string): Promise<ChatRuntimeEvidence> => native('chat_runtime_evidence', { profileId });
 export const installRuntime = (directory: string): Promise<TaskStatus> => native('install_runtime', { directory });
 /** Prepare the application-owned official source and private Python environment, without models. */
-export const prepareLocalRuntime = (): Promise<TaskStatus> => native('prepare_local_runtime');
+/** Without archives everything is downloaded; chosen local archives replace only their download. */
+export const prepareLocalRuntime = (localArchives?: import('./installation-types').LocalRuntimeArchives): Promise<TaskStatus> => native('prepare_local_runtime', localArchives && (localArchives.strataArchivePath || localArchives.engineArchivePath) ? { localArchives } : {});
 export const localRuntimeInstallation = (): Promise<import('./installation-types').RuntimeInstallationStatus> => native('local_runtime_installation');
 /** Task logs use the existing read-only log source contract; no engine configuration is read. */
 export const readTaskLogs = (taskId: string, limit = 200): Promise<LogEntry[]> => readLogs({ id: taskId, name: '', baseUrl: 'http://127.0.0.1:8000', installDir: '', pythonPath: '', configPath: '', managed: false }, limit);
