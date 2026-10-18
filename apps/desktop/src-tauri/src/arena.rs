@@ -844,12 +844,15 @@ const QUERY_KEYS: &[&str] = &[
     "gpuCount",
     "pcieFrac",
 ];
+/// Route path plus the query pairs `arena_get` will forward.
+type ArenaRouteQuery = (&'static str, Vec<(String, String)>);
+
 /// Validates an `arena_get` request: route plus the forwarded query pairs. Rejections are local bugs or bad
 /// input, never network trouble, so they carry the `arena_query_invalid` / `arena_path_invalid` codes.
 fn arena_request(
     path: &str,
     query: Option<Map<String, Value>>,
-) -> Result<(&'static str, Vec<(String, String)>), String> {
+) -> Result<ArenaRouteQuery, String> {
     let route = match path {
         "groups" => "/v1/groups",
         "leaderboard" => "/v1/leaderboard",
