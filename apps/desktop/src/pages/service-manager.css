@@ -120,3 +120,6 @@
 .model-configuration-menu .model-configuration-others{flex:none}
 .service-manager-version-toggle>span{cursor:pointer}
 .official-surface.model-configuration-menu{height:auto}
+
+.service-manager-repair-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.d2-req-hint{display:block;margin-top:4px;font-size:11px;line-height:1.5;color:var(--st-ink-muted);font-weight:400}

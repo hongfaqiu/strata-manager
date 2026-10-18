@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Check, Copy } from 'lucide-react';
 import type { EnvironmentInfo, TaskStatus } from '@strata-manager/core';
 import { D2Glyph, D2Ring, D2Ticks, D2Timeline, gib, type HardwareReading } from './D2Visuals';
-import { catalogRequirement, fitState, toGB } from './d2Estimates';
+import { catalogRequirement, environmentVramGB, fitState, toGB, usableMemoryGB } from './d2Estimates';
 
 const ratio = (used?: number, total?: number) => used !== undefined && total ? used / total * 100 : undefined;
 const gbText = (gb?: number, digits = 0) => gb === undefined ? '–' : gb.toLocaleString(undefined, { maximumFractionDigits: digits });
@@ -13,12 +13,29 @@ export function machineMemoryGB(hardware: HardwareReading, environment?: Environ
   return toGB(hardware.ramTotal) ?? (environment?.totalMemory ? environment.totalMemory / 1024 ** 3 : undefined);
 }
 
-function VramRing({ hardware, size = 104 }: { hardware: HardwareReading; size?: number }) {
+/** Prefer live /metrics VRAM; fall back to nvidia-smi capacity from environmentInfo.gpus. */
+export function machineVramGB(hardware: HardwareReading, environment?: EnvironmentInfo) {
+  return toGB(hardware.vramTotal) ?? environmentVramGB(environment?.gpus);
+}
+
+function VramRing({ hardware, environment, size = 104 }: { hardware: HardwareReading; environment?: EnvironmentInfo; size?: number }) {
   const { t } = useTranslation();
-  const value = ratio(hardware.vramUsed, hardware.vramTotal);
-  const experts = ratio(hardware.expertBytes, hardware.vramTotal);
+  const totalBytes = hardware.vramTotal ?? (() => {
+    const gb = environmentVramGB(environment?.gpus);
+    return gb !== undefined ? gb * 1024 ** 3 : undefined;
+  })();
+  const value = ratio(hardware.vramUsed, totalBytes);
+  const experts = ratio(hardware.expertBytes, totalBytes);
   const parts = value === undefined ? [] : experts !== undefined && experts <= value ? [{ value: experts, tone: 'expert' as const }, { value: value - experts, tone: 'model' as const }] : [{ value, tone: 'expert' as const }];
-  return <D2Ring size={size} empty={value === undefined} parts={parts} value={value === undefined ? t('d2Unmeasured') : gib(hardware.vramUsed)} unit={value === undefined ? undefined : `/ ${gib(hardware.vramTotal, 0)} GB`} label={t('d2Vram')}/>;
+  // Capacity from nvidia-smi is enough to avoid lingering 「未实测」 when the service is stopped.
+  const empty = value === undefined && totalBytes === undefined;
+  const display = value === undefined
+    ? (totalBytes !== undefined ? t('d2VramCapacity', { gb: gib(totalBytes, 0) }) : t('d2Unmeasured'))
+    : gib(hardware.vramUsed);
+  const unit = value === undefined
+    ? undefined
+    : `/ ${gib(totalBytes, 0)} GB`;
+  return <D2Ring size={size} empty={empty} parts={parts} value={display} unit={unit} label={t('d2Vram')}/>;
 }
 function RamRing({ hardware, environment, size = 104 }: { hardware: HardwareReading; environment?: EnvironmentInfo; size?: number }) {
   const { t } = useTranslation();
@@ -32,29 +49,33 @@ function RamRing({ hardware, environment, size = 104 }: { hardware: HardwareRead
 export function ModelsLead({ hardware, environment, models, configurations, current, online }: { hardware: HardwareReading; environment?: EnvironmentInfo; models: number; configurations: number; current?: string; online: boolean }) {
   const { t } = useTranslation();
   const ram = machineMemoryGB(hardware, environment);
+  const vram = machineVramGB(hardware, environment);
   const free = hardware.ramTotal !== undefined && hardware.ramUsed !== undefined ? toGB(hardware.ramTotal - hardware.ramUsed) : environment ? environment.availableMemory / 1024 ** 3 : undefined;
-  const gpu = hardware.gpuName ?? environment?.gpus[0];
+  const gpu = hardware.gpuName ?? environment?.gpus[0]?.split(',')[0]?.trim();
   return <section className="d2-lead st-card" data-testid="d2-models-lead" aria-label={t('d2Capacity')}>
-    <div className="d2-lead-rings"><VramRing hardware={hardware}/><RamRing hardware={hardware} environment={environment}/></div>
+    <div className="d2-lead-rings"><VramRing hardware={hardware} environment={environment}/><RamRing hardware={hardware} environment={environment}/></div>
     <dl className="d2-facts">
-      <div><dt>{t('d2Capacity')}</dt><dd>{gpu ? <>{gpu}{hardware.vramTotal ? ` · ${gib(hardware.vramTotal, 0)} GB` : ''}</> : t('d2Unmeasured')}</dd><dd className="d2-sub">{t('d2Ram')} {gbText(ram)} GB{free !== undefined ? ` · ${t('d2Free', { gb: gbText(free, 1) })}` : ''}</dd></div>
+      <div><dt>{t('d2Capacity')}</dt><dd>{gpu ? <>{gpu}{vram ? ` · ${gbText(vram)} GB` : ''}</> : t('d2Unmeasured')}</dd><dd className="d2-sub">{t('d2Ram')} {gbText(ram)} GB{free !== undefined ? ` · ${t('d2Free', { gb: gbText(free, 1) })}` : ''}</dd></div>
       <div><dt>{t('d2Local')}</dt><dd>{t('d2ModelsN', { count: models })}</dd><dd className="d2-sub">{t('d2ConfigsN', { count: configurations })}</dd></div>
       <div><dt>{t('d2Current')}</dt><dd className="d2-ellipsis" data-tooltip={current}>{current ?? '—'}</dd><dd className="d2-sub">{online ? t('d2Running') : t('ovStopped')}</dd></div>
     </dl>
-    {!online && <p className="d2-lead-note">{t('d2NoLive')}</p>}
+    {!online && <p className="d2-lead-note">{vram ? t('d2VramIdle') : t('d2NoLive')}</p>}
   </section>;
 }
 
-/** Per configuration: catalog memory requirement as a tick meter against machine memory. */
-export function RequirementMeter({ label, machineGB }: { label?: string; machineGB?: number }) {
+/** Per configuration: catalog peak memory as a soft meter; GPU offload keeps 「over」 from blocking enable. */
+export function RequirementMeter({ label, machineGB, vramGB }: { label?: string; machineGB?: number; vramGB?: number }) {
   const { t } = useTranslation();
   const requirement = catalogRequirement(label);
   if (!requirement) return <p className="d2-req is-unknown">{t('d2ReqLabel')} <span>{t('d2Unmeasured')}</span></p>;
-  const fit = fitState(requirement.ramGB, machineGB);
-  return <p className={`d2-req is-${fit ?? 'unknown'}`}>
+  const fit = fitState(requirement.ramGB, machineGB, vramGB);
+  const usable = usableMemoryGB(machineGB, vramGB);
+  const meterDenom = usable && usable > 0 ? usable : machineGB;
+  return <p className={`d2-req is-${fit ?? 'unknown'}`} data-testid="d2-requirement-meter" data-fit={fit ?? 'unknown'}>
     <span>{t('d2NeedRam', { gb: requirement.ramGB })}</span>
-    {machineGB ? <D2Ticks value={Math.min(100, requirement.ramGB / machineGB * 100)} label={t('d2NeedRam', { gb: requirement.ramGB })}/> : null}
-    <small>{machineGB ? t('d2OfMachine', { gb: gbText(machineGB) }) : t('d2Unmeasured')} · {requirement.quant} · {t('d2Download', { gb: requirement.downloadGB })}</small>
+    {meterDenom ? <D2Ticks value={Math.min(100, requirement.ramGB / meterDenom * 100)} label={t('d2NeedRam', { gb: requirement.ramGB })}/> : null}
+    <small>{machineGB ? t('d2OfMachine', { gb: gbText(machineGB) }) : t('d2Unmeasured')}{vramGB ? ` · VRAM ${gbText(vramGB)} GB` : ''} · {requirement.quant} · {t('d2Download', { gb: requirement.downloadGB })}</small>
+    <small className="d2-req-hint">{t('d2NeedRamHint')}</small>
   </p>;
 }
 
@@ -62,13 +83,14 @@ export function RequirementMeter({ label, machineGB }: { label?: string; machine
 export function EnvironmentDevices({ hardware, environment }: { hardware: HardwareReading; environment?: EnvironmentInfo }) {
   const { t } = useTranslation();
   const ram = machineMemoryGB(hardware, environment);
+  const vram = machineVramGB(hardware, environment);
   const used = toGB(hardware.ramUsed) ?? (environment ? (environment.totalMemory - environment.availableMemory) / 1024 ** 3 : undefined);
-  const gpus = environment?.gpus.length ? environment.gpus : hardware.gpuName ? [hardware.gpuName] : [];
+  const gpus = environment?.gpus.length ? environment.gpus.map(line => line.split(',')[0]?.trim() || line) : hardware.gpuName ? [hardware.gpuName] : [];
   return <section className="d2-devices st-card" data-testid="d2-environment-devices" aria-label={t('d2Devices')}>
     <div><D2Glyph kind="cpu"/><span><small>{t('d2Cpu')}</small><strong>{environment?.cpuName || t('d2Unmeasured')}</strong><em>{environment ? `${environment.os} · ${environment.arch}` : ''}{hardware.cores ? ` · ${hardware.cores}C/${hardware.threads ?? '?'}T` : ''}</em></span></div>
     <div><D2Glyph kind="ram"/><span><small>{t('d2Ram')}</small><strong>{ram ? `${gbText(ram)} GB` : t('d2Unmeasured')}</strong><em>{used !== undefined ? t('d2Used', { gb: gbText(used, 1) }) : ''}</em></span></div>
     <span className="d2-bus" aria-hidden="true"><i/>{hardware.pcie && <small>{hardware.pcie}</small>}</span>
-    <div><D2Glyph kind="gpu"/><span><small>{t('d2Gpu')}</small><strong>{gpus[0] ?? t('d2Unmeasured')}</strong><em>{hardware.vramTotal ? `${gib(hardware.vramTotal, 0)} GB` : ''}{gpus.length > 1 ? ` · +${gpus.length - 1}` : ''}</em></span></div>
+    <div><D2Glyph kind="gpu"/><span><small>{t('d2Gpu')}</small><strong>{gpus[0] ?? t('d2Unmeasured')}</strong><em>{vram ? `${gbText(vram)} GB` : ''}{gpus.length > 1 ? ` · +${gpus.length - 1}` : ''}</em></span></div>
   </section>;
 }
 
@@ -87,10 +109,16 @@ export function TasksTimeline({ tasks, onSelect, selected, now = Date.now() }: {
 }
 
 /** 显存与会话: one VRAM bar (the only stacked bar kept in D2) with a reserve mark. */
-export function VramReserveBar({ hardware, reserveGB }: { hardware: HardwareReading; reserveGB?: number }) {
+export function VramReserveBar({ hardware, environment, reserveGB }: { hardware: HardwareReading; environment?: EnvironmentInfo; reserveGB?: number }) {
   const { t } = useTranslation();
-  const total = hardware.vramTotal;
-  if (!total || hardware.vramUsed === undefined) return <section className="d2-vram st-card is-empty" data-testid="d2-vram-bar"><strong>{t('d2Vram')}</strong><span>{t('d2NoLive')}</span></section>;
+  const total = hardware.vramTotal ?? (() => {
+    const gb = environmentVramGB(environment?.gpus);
+    return gb !== undefined ? gb * 1024 ** 3 : undefined;
+  })();
+  if (!total) return <section className="d2-vram st-card is-empty" data-testid="d2-vram-bar"><strong>{t('d2Vram')}</strong><span>{t('d2Unmeasured')}</span></section>;
+  if (hardware.vramUsed === undefined) {
+    return <section className="d2-vram st-card is-empty" data-testid="d2-vram-bar"><strong>{t('d2Vram')}</strong><span>{t('d2VramCapacity', { gb: gib(total, 0) })} · {t('d2VramIdle')}</span></section>;
+  }
   const experts = Math.min(hardware.expertBytes ?? 0, hardware.vramUsed);
   const reserveMark = reserveGB !== undefined ? Math.max(0, 100 - reserveGB * 1024 ** 3 / total * 100) : undefined;
   return <section className="d2-vram st-card" data-testid="d2-vram-bar" aria-label={t('d2Vram')}>

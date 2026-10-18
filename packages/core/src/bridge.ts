@@ -273,6 +273,11 @@ export const planModelDeletion = (profiles: ServiceProfile[]): Promise<import('.
 export const deleteModelFiles = (profiles: ServiceProfile[], expectedFiles: import('./types').ModelDeletionFile[]): Promise<import('./types').ModelDeletionSummary> => native('delete_model_files', { profiles, expectedFiles });
 export const listLocalModels = (profile: ServiceProfile): Promise<LocalModel[]> => native('list_local_models', { profile });
 export const exportDiagnostics = (profile: ServiceProfile): Promise<string> => native('export_diagnostics', { profile });
+export const repairPythonDependencies = (installDir: string): Promise<{ pythonPath: string; installed: string[]; alreadyPresent: string[]; message: string }> => native('repair_python_dependencies', { installDir });
+export const supportDiagnosticsText = (input: { profile?: ServiceProfile; installDir?: string; pythonPath?: string; configPath?: string; reason?: string; runtimeVersion?: string; name?: string } = {}): Promise<string> => {
+  const { profile, ...extras } = input;
+  return native('support_diagnostics_text', { ...(profile ? { profile } : {}), extras });
+};
 export const assessSetupResources = (request: ResourceAssessmentRequest): Promise<SetupResourceAssessment> => native('assess_setup_resources', { request: validateResourceAssessmentRequest(request) });
 export const serviceSharingStatus = (profile: ServiceProfile): Promise<ServiceSharingStatus> => native('service_sharing_status', { profile });
 export const setServiceAuth = (profile: ServiceProfile, request: SetServiceAuthRequest): Promise<ServiceAuthResult> => native('set_service_auth', { profile, request });

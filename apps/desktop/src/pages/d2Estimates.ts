@@ -15,13 +15,28 @@ export function catalogRequirement(text: string | undefined): CatalogRequirement
   return info ? { family: model.family, name: model.name, quant, ramGB: info.ramGB, downloadGB: info.downloadGB } : undefined;
 }
 
-/** Fit of a requirement against total system memory (GB). undefined when memory is unknown. */
-export function fitState(ramGB: number, totalGB: number | undefined): 'fits' | 'tight' | 'over' | undefined {
+/**
+ * Fit of a peak catalog RAM figure against this machine.
+ * When VRAM is known, treat usable capacity as RAM + max(0, VRAM − 5 GiB) so GPU
+ * offload does not show a hard "over" that blocks beginners from enabling a config.
+ * `over` only when even that combined budget is short; UI must still allow 启用配置.
+ */
+export function fitState(ramGB: number, totalGB: number | undefined, vramGB?: number): 'fits' | 'tight' | 'over' | undefined {
   if (!totalGB) return undefined;
   if (ramGB <= totalGB * .8) return 'fits';
   if (ramGB <= totalGB) return 'tight';
+  const offload = typeof vramGB === 'number' && vramGB > 0 ? Math.max(0, vramGB - 5) : 0;
+  if (offload > 0 && ramGB <= totalGB + offload) return 'tight';
   return 'over';
 }
+
+/** Effective host+GPU budget used for the soft fit meter (GiB). */
+export function usableMemoryGB(totalGB: number | undefined, vramGB?: number): number | undefined {
+  if (!totalGB) return undefined;
+  const offload = typeof vramGB === 'number' && vramGB > 0 ? Math.max(0, vramGB - 5) : 0;
+  return totalGB + offload;
+}
+
 export const toGB = (bytes?: number) => bytes === undefined ? undefined : bytes / 1024 ** 3;
 
 /** Parse download progress from a task message: "42%" or "12.3 / 83.6 GB". */
@@ -32,4 +47,19 @@ export function taskProgress(message: string | undefined): number | undefined {
   const ratio = message.match(/(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)\s*(?:GB|GiB)/i);
   if (ratio && Number(ratio[2]) > 0) return Math.min(100, Number(ratio[1]) / Number(ratio[2]) * 100);
   return undefined;
+}
+
+/** Best VRAM capacity (GiB) parsed from environmentInfo().gpus lines (nvidia-smi csv). */
+export function environmentVramGB(gpus: string[] | undefined): number | undefined {
+  if (!gpus?.length) return undefined;
+  let best = 0;
+  for (const line of gpus) {
+    const memory = line.split(',').map(part => part.trim()).find(part => /\d\s*(MiB|MB|GiB|GB)$/i.test(part));
+    if (!memory) continue;
+    const amount = Number(memory.match(/[\d.]+/)?.[0]);
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+    const gb = /G/i.test(memory) ? amount : amount / 1024;
+    if (gb > best) best = gb;
+  }
+  return best > 0 ? Math.round(best) : undefined;
 }

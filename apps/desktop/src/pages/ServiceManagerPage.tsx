@@ -1,5 +1,5 @@
 import type { AppLanguage } from "@strata-manager/core";
-import { ModelsLead, RequirementMeter, machineMemoryGB } from './D2PageStrips';
+import { ModelsLead, RequirementMeter, machineMemoryGB, machineVramGB } from './D2PageStrips';
 import type { HardwareReading } from './D2Visuals';
 import type { EnvironmentInfo } from '@strata-manager/core';
 import { useEffect, useRef, useState } from 'react';
@@ -17,6 +17,8 @@ import { useTranslation } from 'react-i18next';
 import { useShowAllVersions } from '../useShowAllVersions';
 import './service-manager.css';
 import './config-versions.css';
+
+const pythonDepRepair = (reason?: string) => !!reason && /Python|regex|jinja2|依赖|依赖检测/i.test(reason);
 
 type Action = (profile: ServiceProfile) => void | Promise<unknown>;
 type CandidateAction = (candidate: LocalCandidate) => void | Promise<unknown>;
@@ -41,7 +43,7 @@ export interface ServiceManagerPageProps {
   onUseCandidate?: CandidateAction;
   /** Register and open the configuration without loading the model. */
   onConfigCandidate?: CandidateAction;
-  onRefreshDiscovery?: () => void | Promise<unknown>;
+  onRepairPython?: (installDir: string) => Promise<void>; onCopyDiagnostics?: (target: { installDir: string; pythonPath?: string; configPath?: string; reason?: string; runtimeVersion?: string; name?: string }) => Promise<void>; onRefreshDiscovery?: () => void | Promise<unknown>;
   /** Refresh saved records and discovery after deleting model weights or configuration JSON. */
   onModelDeleted?: () => void | Promise<unknown>;
   language: AppLanguage;
@@ -82,7 +84,7 @@ const words = {
     checking: '检查中', online: '接口可用', offline: '尚未就绪', ready: '已就绪', unknown: '未提供', loaded: '已加载', unloaded: '未加载',
     owned: '后台已接管', external: '等待后台接管', connectionOnly: '等待导入', readyToStart: '尚未启用', localModel: '本机模型', api: '本机 API 地址',
     process: '进程', stopped: '未启动', running: '运行中', modelState: '模型状态', health: '服务状态',
-    selected: '当前选择', select: '启用配置', chat: '聊天', start: '启用此模型', retryEnable: '重试启用', prepare: '准备模型', stop: '停止', restart: '重启',
+    selected: '当前选择', select: '启用配置', repairEnv: '修复运行环境', copyDiag: '复制诊断信息', chat: '聊天', start: '启用此模型', retryEnable: '重试启用', prepare: '准备模型', stop: '停止', restart: '重启',
     load: '加载模型', unload: '释放模型内存', takeover: '接管并启用', config: '运行配置', configShort: '配置', logs: '查看日志', lastActivated: '上次启用',
     details: '详情', hideDetails: '收起', edit: '重命名模型', remove: '移除保存的配置', deleteModel: '删除模型文件', retainConfigurations: '删除模型文件时保留全部 JSON 配置。', repairConfigurations: '待修复配置', repairConfigurationsHelp: '这些配置引用的模型权重缺失；仍可打开运行配置页编辑或删除 JSON。',
     installDir: 'Strata 目录', python: 'Python 路径', configPath: '模型配置文件', logPath: '引擎日志配置', version: '引擎版本', pid: '进程 ID',
@@ -115,7 +117,7 @@ const words = {
     checking: 'Checking', online: 'API available', offline: 'Not ready', ready: 'Ready', unknown: 'Not reported', loaded: 'Loaded', unloaded: 'Not loaded',
     owned: 'Managed by the background', external: 'Awaiting ownership', connectionOnly: 'Awaiting import', readyToStart: 'Not enabled', localModel: 'Local model', api: 'Local API address',
     process: 'Process', stopped: 'Not started', running: 'Running', modelState: 'Model state', health: 'Service status',
-    selected: 'Selected', select: 'Enable configuration', chat: 'Chat', start: 'Enable this model', retryEnable: 'Retry enabling', prepare: 'Prepare model', stop: 'Stop', restart: 'Restart',
+    selected: 'Selected', select: 'Enable configuration', repairEnv: 'Repair runtime environment', copyDiag: 'Copy diagnostics', chat: 'Chat', start: 'Enable this model', retryEnable: 'Retry enabling', prepare: 'Prepare model', stop: 'Stop', restart: 'Restart',
     load: 'Load model', unload: 'Unload model', takeover: 'Take ownership and enable', config: 'Runtime settings', configShort: 'Settings', logs: 'View logs', lastActivated: 'Last activated',
     details: 'Details', hideDetails: 'Collapse', edit: 'Rename model', remove: 'Remove saved configuration', deleteModel: 'Delete model files', retainConfigurations: 'Deleting model files retains all JSON configurations.', repairConfigurations: 'Configurations to repair', repairConfigurationsHelp: 'The model weights referenced by these configurations are missing. Open Runtime settings to edit or delete the JSON files.',
     installDir: 'Strata directory', python: 'Python path', configPath: 'Model configuration', logPath: 'Engine log setting', version: 'Engine version', pid: 'Process ID',
@@ -240,6 +242,31 @@ export function ServiceManagerPage(props: ServiceManagerPageProps) {
     catch (error) { if (mounted.current) { setErrors(previous => ({ ...previous, [profile.id]: core.normalizeError(error).message })); props.onError?.(error, profile); } }
     finally { pendingAction.current = null; if (mounted.current) setBusy(previous => ({ ...previous, [profile.id]: '' })); }
   };
+    const runRepair = async (entry: { key: string; profile?: core.ServiceProfile; candidate?: core.LocalCandidate }) => {
+    const installDir = entry.profile?.installDir || entry.candidate?.installDir;
+    if (!installDir || !props.onRepairPython) return;
+    const key = entry.key;
+    setBusy(old => ({ ...old, [key]: 'repair' })); setErrors(old => ({ ...old, [key]: '' }));
+    try { await props.onRepairPython(installDir); }
+    catch (error) { setErrors(old => ({ ...old, [key]: core.normalizeError(error).message })); }
+    finally { setBusy(old => ({ ...old, [key]: '' })); }
+  };
+  const runCopyDiag = async (entry: { key: string; profile?: core.ServiceProfile; candidate?: core.LocalCandidate; configPath?: string }) => {
+    if (!props.onCopyDiagnostics) return;
+    const key = entry.key;
+    setBusy(old => ({ ...old, [key]: 'copy' })); setErrors(old => ({ ...old, [key]: '' }));
+    try {
+      await props.onCopyDiagnostics({
+        installDir: entry.profile?.installDir || entry.candidate?.installDir || '',
+        pythonPath: entry.profile?.pythonPath || entry.candidate?.pythonPath,
+        configPath: entry.profile?.configPath || entry.configPath || entry.candidate?.configPath,
+        reason: entry.candidate?.reason,
+        runtimeVersion: entry.candidate?.runtimeVersion,
+        name: entry.profile?.name || entry.candidate?.name,
+      });
+    } catch (error) { setErrors(old => ({ ...old, [key]: core.normalizeError(error).message })); }
+    finally { setBusy(old => ({ ...old, [key]: '' })); }
+  };
   const runCandidate = async (name: string, entry: LocalModelConfiguration, action?: CandidateAction) => {
     if (!entry.candidate || !action || pendingAction.current || streaming || pageBusy) return;
     pendingAction.current = entry.key;
@@ -338,13 +365,13 @@ export function ServiceManagerPage(props: ServiceManagerPageProps) {
             ...(focused.others.includes(row) ? { section: 'other' as const } : {}) };
         })} /></div>
         {focused.fallback && multipleVersions && !showAllVersions && <p className="service-manager-version-note">{t('mvFallback')}</p>}
-        <RequirementMeter label={`${group.name} ${configurationLabel(entry)} ${JSON.stringify(config ?? '')} ${entry.profile?.configPath ?? entry.configPath ?? ''}`} machineGB={props.hardware ? machineMemoryGB(props.hardware, props.environment) : undefined}/>
+        <RequirementMeter label={`${group.name} ${configurationLabel(entry)} ${JSON.stringify(config ?? '')} ${entry.profile?.configPath ?? entry.configPath ?? ''}`} machineGB={props.hardware ? machineMemoryGB(props.hardware, props.environment) : undefined} vramGB={props.hardware || props.environment ? machineVramGB(props.hardware ?? {}, props.environment) : undefined}/>
         {currentEntry && currentEntry.key !== entry.key && <div className="service-manager-current-config"><span>{w.currentConfiguration}</span><strong>{configurationLabel(currentEntry)}</strong></div>}
         {profile && healthQuery?.isError && <div className="service-manager-hint"><span>{core.normalizeError(healthQuery.error).message}</span></div>}
         {profile && healthQuery?.isSuccess && (health.service !== 'strata' || health.status !== 'ok') && <p className="service-manager-error" role="alert">{w.invalidService}</p>}
         {canLoad && <p className="service-manager-hint">{w.noModelHelp}</p>}
         {profile && desktop && !owned && !checking && !canPrepare && !canTakeOver && <p className="service-manager-hint">{w.configure}</p>}
-        {needsRepair && <div className="service-manager-hint model-config-repair"><p>{w.repairHelp}</p>{candidate?.reason && <span>{candidate.reason}</span>}</div>}
+        {needsRepair && <div className="service-manager-hint model-config-repair"><p>{w.repairHelp}</p>{candidate?.reason && <span>{candidate.reason}</span>}<div className="service-manager-repair-actions">{pythonDepRepair(candidate?.reason) && <button type="button" className="primary" disabled={locked || !desktop || !props.onRepairPython} onClick={() => void runRepair(entry)}>{w.repairEnv}</button>}<button type="button" disabled={locked || !desktop || !props.onCopyDiagnostics} onClick={() => void runCopyDiag(entry)}>{w.copyDiag}</button></div></div>}
         {profile && processQuery?.isError && <p className="service-manager-error" role="alert">{w.inspectFailed}: {core.normalizeError(processQuery.error).message}</p>}
         {errors[busyKey] && <p className="service-manager-error" role="alert">{w.actionFailed}: {errors[busyKey]}</p>}
         <div className="service-manager-actions">

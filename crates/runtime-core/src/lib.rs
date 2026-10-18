@@ -25,6 +25,7 @@ pub mod observer;
 pub mod orca_import;
 pub mod policy;
 pub mod processes;
+pub mod python_repair;
 mod registry_handoff;
 pub mod request_capture;
 pub mod resource_assessment;
@@ -34,6 +35,7 @@ pub mod setup_handoff;
 pub mod setup_options;
 pub mod storage;
 pub mod store;
+pub mod support_diagnostics;
 pub mod tuning;
 pub mod types;
 
@@ -1218,6 +1220,40 @@ impl RuntimeState {
             )),
             "list_local_models" => value(list_local_models(profile()?)),
             "export_diagnostics" => value(export_diagnostics(self.clone(), profile()?).await),
+            "repair_python_dependencies" => {
+                let install_dir: String = arg(&params, "installDir")?;
+                value(
+                    tokio::task::spawn_blocking(move || {
+                        python_repair::repair_python_dependencies(&install_dir)
+                    })
+                    .await
+                    .map_err(|e| e.to_string())?,
+                )
+            }
+            "support_diagnostics_text" => {
+                let extras = params
+                    .get("extras")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({}));
+                let selected = params
+                    .get("profile")
+                    .filter(|value| !value.is_null())
+                    .map(|value| serde_json::from_value::<ServiceProfile>(value.clone()))
+                    .transpose()
+                    .map_err(|e| e.to_string())?;
+                let state = self.clone();
+                value(
+                    tokio::task::spawn_blocking(move || {
+                        support_diagnostics::support_diagnostics_text(
+                            &state,
+                            selected.as_ref(),
+                            &extras,
+                        )
+                    })
+                    .await
+                    .map_err(|e| e.to_string())?,
+                )
+            }
             "strata_request" => {
                 http::desktop_request(
                     &self,
@@ -2891,7 +2927,7 @@ async fn take_over_service(
     .await
     .map_err(|e| e.to_string())?
 }
-fn read_logs(
+pub(crate) fn read_logs(
     state: &RuntimeState,
     profile: ServiceProfile,
     limit: usize,
@@ -2928,13 +2964,13 @@ fn read_logs(
     Ok(entries)
 }
 
-fn output(program: &str, args: &[&str]) -> Option<String> {
+pub(crate) fn output(program: &str, args: &[&str]) -> Option<String> {
     output_with_timeout(program, args, Duration::from_secs(3))
 }
 
 /// Like [`output`], with a caller-chosen deadline. Python probes on Windows can
 /// exceed three seconds on a cold start (venv redirector plus antivirus scans).
-fn output_with_timeout(program: &str, args: &[&str], timeout: Duration) -> Option<String> {
+pub(crate) fn output_with_timeout(program: &str, args: &[&str], timeout: Duration) -> Option<String> {
     let logs: Logs = Default::default();
     let mut command = Command::new(program);
     command.args(args);
@@ -3027,7 +3063,7 @@ fn collect_environment() -> EnvironmentInfo {
         app_version: env!("CARGO_PKG_VERSION").into(),
     }
 }
-fn cached_environment(state: &RuntimeState) -> EnvironmentInfo {
+pub(crate) fn cached_environment(state: &RuntimeState) -> EnvironmentInfo {
     if let Ok(cache) = state.environment_cache.lock() {
         if let Some((time, info)) = cache.as_ref() {
             if now().saturating_sub(*time) < 60_000 {
