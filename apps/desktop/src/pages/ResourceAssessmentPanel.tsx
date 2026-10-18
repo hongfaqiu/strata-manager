@@ -13,7 +13,6 @@ export interface ResourceAssessmentPanelProps {
   desktop?: boolean;
   compact?: boolean;
   /** One quiet line with the status; evidence opens on demand. */
-  inline?: boolean;
   disk?: SetupDiskPreflight;
   diskPending?: boolean;
   diskError?: unknown;
@@ -25,7 +24,7 @@ export interface ResourceAssessmentPanelProps {
 }
 
 const loadHistoryDefault = () => core.loadStore<unknown[]>('benchmarkReportsV1', []);
-export function ResourceAssessmentPanel({ request, language, desktop = core.isDesktop(), compact = false, inline = false, disk, diskPending = false, diskError, onRefreshDisk, unavailableReason, assess = core.assessSetupResources, loadHistory = loadHistoryDefault }: ResourceAssessmentPanelProps) {
+export function ResourceAssessmentPanel({ request, language, desktop = core.isDesktop(), compact = false, disk, diskPending = false, diskError, onRefreshDisk, unavailableReason, assess = core.assessSetupResources, loadHistory = loadHistoryDefault }: ResourceAssessmentPanelProps) {
   const zh = language === 'zh-CN', t = (cn: string, en: string) => zh ? cn : en;
   const identity = request ? JSON.stringify(request) : '';
   const [settledIdentity, setSettledIdentity] = useState(identity);
@@ -84,11 +83,6 @@ export function ResourceAssessmentPanel({ request, language, desktop = core.isDe
   const diskLabels = { unknown: t('未知', 'Unknown'), pending: t('检查中…', 'Checking…'), error: t('检查失败', 'Check failed'), ready: t('充足', 'Sufficient'), insufficient: t('不足', 'Insufficient'), unchecked: t('未检查', 'Not checked') };
   const mainRisk = result?.reasons.find(reason => reason.severity === 'risk' && reason.code !== 'estimate_scope');
   const refreshButton = <button type="button" className="st-btn st-btn--icon" aria-label={t('重新读取资源', 'Refresh resources')} data-tooltip={t('重新读取资源', 'Refresh resources')} disabled={!desktop || !request || !current || query.isFetching} onClick={() => void Promise.all([query.refetch(), history.refetch()])}><RefreshCw size={14}/></button>;
-  if (inline && !compact) return <section className="resource-assessment resource-assessment--inline" aria-label={t('资源适配建议', 'Resource guidance')} data-testid="resource-assessment" data-status={result?.status ?? 'unknown'}>
-    <div className="resource-assessment-heading"><div><strong>{t('资源适配建议', 'Resource guidance')}</strong><span className={`resource-assessment-status ${result?.status ?? 'unknown'}`} role="status">{pending ? t('正在更新预估…', 'Updating estimate…') : status}</span>{result?.status === 'risk' && mainRisk && <span className="resource-assessment-risk">{core.resourceAssessmentMessage(mainRisk.code, zh)}</span>}</div>{refreshButton}</div>
-    {unavailableContent}
-    {assessmentContent && <details className="resource-assessment-details resource-assessment-disclosure"><summary><CircleHelp size={13}/>{t('查看估算与依据', 'View estimate and evidence')}</summary>{assessmentContent}</details>}
-  </section>;
   return <section className={`resource-assessment${compact ? ' resource-assessment--compact' : ''}`} aria-label={t('资源适配建议', 'Resource guidance')} data-testid="resource-assessment" data-status={result?.status ?? 'unknown'}>
     <div className="resource-assessment-heading"><div><strong>{compact ? t('当前选择的资源预估', 'Resource estimate for this selection') : t('资源适配建议', 'Resource guidance')}</strong><span className={`resource-assessment-status ${result?.status ?? 'unknown'}`} role="status">{pending ? t('正在更新预估…', 'Updating estimate…') : status}</span></div>{refreshButton}</div>
     {unavailableContent}

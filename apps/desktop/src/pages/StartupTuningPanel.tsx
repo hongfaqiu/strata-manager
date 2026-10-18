@@ -24,7 +24,6 @@ interface Props {
   onDirtyChange?: (dirty: boolean) => void;
   onSaveDraftReady?: (save: SaveDraft | undefined) => void;
   /** Read-only consumers receive the current valid graph/JSON draft, never the saved baseline after an invalid edit. */
-  onDraftConfigChange?: (config: JsonObject | undefined) => void;
 }
 type SettingsCategory = StartupFieldGroup | 'context-extension';
 const basicContextFields = new Set(['--max-context', '--kv', '--kv-grow']);
@@ -37,7 +36,7 @@ const groups: [SettingsCategory, string, string][] = [
   ['sampling', '默认采样', 'Default sampling'], ['paths', '路径与 GPU 分配', 'Paths and GPU allocation'],
 ];
 
-export function StartupTuningPanel({ profile, desktop, language, onError, onMessage, onRestart, onCopied, onDeleted, onDirtyChange, onSaveDraftReady, onDraftConfigChange }: Props) {
+export function StartupTuningPanel({ profile, desktop, language, onError, onMessage, onRestart, onCopied, onDeleted, onDirtyChange, onSaveDraftReady }: Props) {
   const zh = language === 'zh-CN'; const client = useQueryClient();
   const engineHelp = useQuery({ queryKey: ['engine-help-flags', profile?.id, profile?.configPath], queryFn: () => core.engineHelpFlags(profile!), enabled: desktop && !!profile?.managed, retry: false, staleTime: 10 * 60 * 1000 });
   const [draftConfig, setDraftConfig] = useState<JsonObject>();
@@ -77,11 +76,6 @@ export function StartupTuningPanel({ profile, desktop, language, onError, onMess
   })();
   dirtyRef.current = changed;
   useEffect(() => { onDirtyChange?.(changed); return () => onDirtyChange?.(false); }, [changed, onDirtyChange]);
-  const resourceDraftJson = (() => {
-    try { return JSON.stringify(view === 'json' ? core.parseStartupConfiguration(raw) : materialize()); }
-    catch { return ''; }
-  })();
-  useEffect(() => { onDraftConfigChange?.(resourceDraftJson ? JSON.parse(resourceDraftJson) as JsonObject : undefined); }, [resourceDraftJson, onDraftConfigChange]);
   const disabled = saving || config.isFetching || !draft;
   const mutate = (operation: (data: JsonObject) => JsonObject, ignoreTreeIssues = false) => {
     try { const next = operation(materialize(!ignoreTreeIssues)); setDraftConfig(next); setFieldEdits({}); setError(''); setMessage(''); }

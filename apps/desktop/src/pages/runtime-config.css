@@ -62,12 +62,3 @@
 .runtime-config-apply-badge--restart{padding:2px 8px}
 
 /* Resource guidance: one quiet line, evidence on demand. */
-.resource-assessment.resource-assessment--inline{display:flex;flex-wrap:wrap;align-items:center;gap:2px var(--st-s-3);margin:0;padding:10px var(--st-s-4);border:0;border-radius:var(--st-r-md);background:var(--st-surface-2);font-size:var(--st-fs-sm)}
-.resource-assessment--inline .resource-assessment-heading{display:contents}
-.resource-assessment--inline .resource-assessment-heading>div{gap:var(--st-s-2)}
-.resource-assessment--inline .resource-assessment-heading strong{font-size:var(--st-fs-sm);font-weight:600;color:var(--st-ink-soft)}
-.resource-assessment--inline .resource-assessment-status{background:var(--st-surface);font-size:var(--st-fs-xs)}
-.resource-assessment--inline .resource-assessment-risk{font-size:var(--st-fs-xs);color:var(--st-warning,#9b6720)}
-.resource-assessment--inline :is(.resource-assessment-empty,.resource-assessment-error){order:2;flex:1 1 260px;margin:0}
-.resource-assessment--inline .resource-assessment-heading>button{order:3;margin-left:auto;width:28px;height:28px;min-height:28px}
-.resource-assessment--inline>details{order:4;flex-basis:100%;margin-top:6px}
