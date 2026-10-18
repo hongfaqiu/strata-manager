@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
 import { MODEL_CATALOG } from '../../../../packages/core/src/catalog.ts';
+import { isOrcaRouterEvidence } from '../../../../packages/core/src/orca-import.ts';
 
 const load = (file, modules) => {
   const source = ts.transpileModule(readFileSync(new URL(file, import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -11,7 +12,7 @@ const load = (file, modules) => {
   vm.runInNewContext(source, { module, exports: module.exports, require: name => modules[name] ?? {} });
   return module.exports;
 };
-const estimates = load('./d2Estimates.ts', { '@strata-manager/core': { MODEL_CATALOG } });
+const estimates = load('./d2Estimates.ts', { '@strata-manager/core': { MODEL_CATALOG, isOrcaRouterEvidence } });
 const live = load('./catalogLive.ts', { './d2Estimates': estimates, react: {} });
 const swift = MODEL_CATALOG.find(model => model.family === 'swift');
 
@@ -22,6 +23,7 @@ test('identifies catalog quantization from a model or config label', () => {
   assert.equal(requirement.ramGB, 62);
   assert.equal(estimates.catalogRequirement('Swift IQ3_XXS').quant, 'IQ3_XXS');
   assert.equal(estimates.catalogRequirement('my-custom-model.gguf'), undefined, 'unknown models stay 未实测');
+  assert.equal(estimates.catalogRequirement('orcarouter-qwen3.8-flash-next-uncensored-iq3_xxs strata-orca-iq3_xxs.json'), undefined, 'OrcaRouter IQ3_XXS is not the official Qwen IQ3_XXS row');
 });
 
 test('fit uses total memory and is unknown without it', () => {

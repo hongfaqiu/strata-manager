@@ -10,6 +10,8 @@ import { ModelInspectPanel } from './ModelInspectPanel';
 import { ModelDownloadSettingsDialog } from './ModelDownloadSettingsDialog';
 import { ResourceAssessmentPanel } from './ResourceAssessmentPanel';
 import { ContextExtensionNotice } from './ContextExtensionNotice';
+import { OrcaImportPanel } from './OrcaImportPanel';
+import { orcaCopy } from './orcaCopy';
 import './model-download.css';
 import { D2DotAxis } from './D2Visuals';
 import { quantLive, rowLive, useCatalogNews, useChangedRows } from './catalogLive';
@@ -33,6 +35,8 @@ export interface ModelDownloadPageProps {
   onChooseFile: () => Promise<string | null>;
   onPrepare: (request: ReturnType<typeof core.snapshotModelDownloadRequest>) => Promise<void>;
   onImportConfig: (path: string, runtime?: ServiceProfile) => Promise<void>;
+  /** ORCA.md's OrcaRouter IQ3_XXS import; the section is hidden without it. */
+  onOrcaImport?: (profile: ServiceProfile, request: core.OrcaImportRequest, options: core.OfficialSetupOptions) => Promise<void>;
   onTasks: () => void;
   onEnvironment: () => void;
   onDirtyChange?: (dirty: boolean) => void;
@@ -49,7 +53,7 @@ const familyDescription = (family: string, zh: boolean) => ({
   qwen36: zh ? '读图与多请求并发（引擎 0.1.45+）' : 'Vision and concurrent requests (engine 0.1.45+)',
 }[family] ?? (zh ? '官方模型' : 'Official model'));
 
-export function ModelDownloadPage({ machineMemoryGB, language, desktop, fallbackRuntime, runtimeOverride, runtimes, runtimeVersions = [], busy, tasks, onRuntimeChange, onChooseDirectory, onChooseFile, onPrepare, onImportConfig, onTasks, onEnvironment, onDirtyChange, onSaveDraftReady }: ModelDownloadPageProps) {
+export function ModelDownloadPage({ machineMemoryGB, language, desktop, fallbackRuntime, runtimeOverride, runtimes, runtimeVersions = [], busy, tasks, onRuntimeChange, onChooseDirectory, onChooseFile, onPrepare, onImportConfig, onOrcaImport, onTasks, onEnvironment, onDirtyChange, onSaveDraftReady }: ModelDownloadPageProps) {
   const zh = language === 'zh-CN', text = (cn: string, en: string) => zh ? cn : en;
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
@@ -58,6 +62,7 @@ export function ModelDownloadPage({ machineMemoryGB, language, desktop, fallback
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
   const [existingOpen, setExistingOpen] = useState(false);
+  const [orcaOpen, setOrcaOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const submitLock = useRef(false);
@@ -147,6 +152,7 @@ export function ModelDownloadPage({ machineMemoryGB, language, desktop, fallback
       </div><footer className="model-download-submit"><div><span>{text('已选择', 'Selected')}: <strong>{quant} · {contextValid ? core.formatContextTokens(context, language) : '—'} · {images ? text('图像开启', 'Images on') : text('图像关闭', 'Images off')}</strong></span><button type="button" className="primary" disabled={!desktop || !runtime?.installDir || busy || submitting || settingsOpen || !defaults.isSuccess || !contextValid || engineBlocked || disk.isPending || disk.isError || disk.data?.status !== 'ready'} onClick={() => void prepare()}><Download size={18}/>{submitting ? text('正在检查并提交…', 'Checking and submitting…') : `${text('下载并准备', 'Download and prepare')} · ${info?.downloadGB ?? '—'} GB`}</button></div>{error && <p role="alert" className="model-download-error">{error}</p>}{engineBlocked && <p role="alert" className="model-download-error">{text(`此模型需要引擎 ${engineGate!.minEngine} 或更新（当前：${runtimeVersion ?? '未知'}）。请先更新 Strata。`, `This model needs engine ${engineGate!.minEngine} or newer (current: ${runtimeVersion ?? 'unknown'}). Update Strata first.`)}</p>}<p>{!desktop ? text('需要桌面后台执行模型准备。', 'Preparing models requires the desktop backend.') : busy ? text('请等待当前操作完成后再准备模型。', 'Wait for the current operation before preparing a model.') : engineBlocked ? text('引擎版本不足，无法准备此模型。', 'Engine too old to prepare this model.') : text('下载 → 打包 → 生成配置，完成后在“我的模型”手动启用。', 'Download → pack → create configuration. Enable it from My models when ready.')}</p></footer></div> : <div className="model-download-no-detail" aria-hidden="true"><HardDrive size={32}/></div>}
     </div>
     <details className="model-download-existing" onToggle={event => setExistingOpen(event.currentTarget.open)}><summary>{text('已有模型与兼容性检查', 'Existing models and compatibility')}</summary><div className="model-download-existing-actions"><p>{text('导入已有配置，或检查其它模型文件是否可用于当前环境。', 'Import an existing configuration, or check model-file compatibility with this runtime.')}</p><button type="button" disabled={!desktop || busy} onClick={() => void importConfig()}><FolderOpen size={16}/>{text('导入配置', 'Import configuration')}</button></div>{existingOpen && <><ModelInspectPanel key={runtime?.id ?? 'none'} language={language} desktop={desktop} installationId={runtime?.id} disabled={busy} onInspect={core.inspectModel} onChooseTarget={onChooseFile}/><div className="model-download-local-heading"><strong>{text('本地模型配置', 'Local model configurations')}</strong><button type="button" disabled={!desktop || !runtime?.installDir || localModels.isFetching} onClick={() => void localModels.refetch()}><RefreshCw size={14}/>{text('重新扫描', 'Rescan')}</button></div>{localModels.isError ? <p role="alert" className="model-download-error">{core.normalizeError(localModels.error).message}</p> : localModels.isPending && runtime ? <p>{text('正在读取…', 'Loading…')}</p> : localModels.data?.length ? <ul className="model-download-local-list">{localModels.data.map(model => <li key={model.configPath}><div><strong>{model.name}</strong><code>{model.configPath}</code></div><button type="button" disabled={busy} onClick={() => void onImportConfig(model.configPath, runtime)}>{text('导入配置', 'Import configuration')}</button></li>)}</ul> : <p>{text('所选运行环境没有可识别的本地模型配置。', 'No local model configurations were found in this runtime.')}</p>}</>}</details>
+    {onOrcaImport && <details className="model-download-orca" data-testid="orca-import-section" onToggle={event => setOrcaOpen(event.currentTarget.open)}><summary>{(orcaCopy[language] ?? orcaCopy.en).title}<span className="orca-import-badge" data-testid="orca-import-badge">{(orcaCopy[language] ?? orcaCopy.en).badge}</span></summary>{orcaOpen && <OrcaImportPanel language={language} desktop={desktop} runtime={runtime} busy={busy} options={saved.options} onChooseFile={onChooseFile} onImport={onOrcaImport}/>}</details>}
     {settingsOpen && <ModelDownloadSettingsDialog value={runtimeOverride ? { ...saved, runtime: runtimeOverride } : saved} runtimes={runtimeChoices} effectiveRuntime={runtime} modelDirectory={modelDirectory} language={language} desktop={desktop} onChooseDirectory={onChooseDirectory} onSave={saveDefaults} onClose={() => setSettingsOpen(false)} onDirtyChange={onDirtyChange} onSaveDraftReady={onSaveDraftReady}/>}
   </section>;
 }

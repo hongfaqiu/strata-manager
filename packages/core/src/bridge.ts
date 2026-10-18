@@ -216,6 +216,9 @@ export const readLogs = (profile: ServiceProfile, limit = 200): Promise<LogEntry
 export const environmentInfo = (): Promise<EnvironmentInfo> => native('environment_info');
 export const setupDiskPreflight = (profile: ServiceProfile, model: string, quant: string, images: boolean): Promise<SetupDiskPreflight> => native('setup_disk_preflight', { profile, model, quant, images });
 export const runSetup = (profile: ServiceProfile, model: string, quant: string, context: number, images: boolean, options?: OfficialSetupOptions): Promise<TaskStatus> => native('run_setup', { profile, model, quant, context, images, ...(options ? { options } : {}) });
+/** ORCA.md's OrcaRouter IQ3_XXS import: read-only plan, then one tracked setup task that registers its config. */
+export const orcaImportPlan = (profile: ServiceProfile, request: import('./orca-import').OrcaImportRequest): Promise<import('./orca-import').OrcaImportPlan> => native('orca_import_plan', { profile, request });
+export const runOrcaImport = (profile: ServiceProfile, request: import('./orca-import').OrcaImportRequest, options?: OfficialSetupOptions): Promise<TaskStatus> => native('run_orca_import', { profile, request, ...(options ? { options } : {}) });
 export const inspectModel = (request: ModelInspectRequest): Promise<TaskStatus> => native('inspect_gguf', { request });
 export const getChatRuntimeEvidence = (profileId: string): Promise<ChatRuntimeEvidence> => native('chat_runtime_evidence', { profileId });
 export const installRuntime = (directory: string): Promise<TaskStatus> => native('install_runtime', { directory });

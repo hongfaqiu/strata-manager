@@ -94,7 +94,7 @@ const markdownFileName = (title: string) => {
   const clean = title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/[ .]+$/g, '').trim() || 'conversation';
   return `${/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(clean) ? '_' : ''}${clean}.md`;
 };
-type Recipe = { kind: 'setup'; profile: ServiceProfile; model: string; quant: string; context: number; images: boolean; options?: core.OfficialSetupOptions } | { kind: 'install'; directory: string } | { kind: 'update'; profile: ServiceProfile };
+type Recipe = { kind: 'setup'; profile: ServiceProfile; model: string; quant: string; context: number; images: boolean; options?: core.OfficialSetupOptions } | { kind: 'orca'; profile: ServiceProfile; request: core.OrcaImportRequest; options?: core.OfficialSetupOptions } | { kind: 'install'; directory: string } | { kind: 'update'; profile: ServiceProfile };
 type Modal = { kind: 'profile'; profile?: ServiceProfile } | { kind: 'modelProfiles'; models: core.LocalModel[]; runtime: ServiceProfile } | { kind: 'rename'; conversation: Conversation } | { kind: 'deleteConversation'; conversation: Conversation } | { kind: 'request'; value: unknown } | { kind: 'options' } | { kind: 'vision'; profile: ServiceProfile } | { kind: 'deleteConfiguration'; profile: ServiceProfile } | null;
 
 export function App() {
@@ -670,7 +670,7 @@ export function App() {
     setAttachments(old => [...old, ...added]);
   };
   const runRecipe = async (recipe: Recipe) => {
-    const task = recipe.kind === 'setup' ? await core.runSetup(recipe.profile, recipe.model, recipe.quant, recipe.context, recipe.images, recipe.options) : recipe.kind === 'install' ? await core.installRuntime(recipe.directory) : await core.updateRuntime(recipe.profile);
+    const task = recipe.kind === 'setup' ? await core.runSetup(recipe.profile, recipe.model, recipe.quant, recipe.context, recipe.images, recipe.options) : recipe.kind === 'orca' ? await core.runOrcaImport(recipe.profile, recipe.request, recipe.options) : recipe.kind === 'install' ? await core.installRuntime(recipe.directory) : await core.updateRuntime(recipe.profile);
     observedTasks.current ??= new Map();
     observedTasks.current.set(task.id, task.state);
     setRecipes(old => ({ ...old, [task.id]: recipe })); return task;
@@ -706,10 +706,10 @@ export function App() {
       : recipe.profile;
     const models = await core.listLocalModels({ ...runtime, configPath: '' });
     if (!models.length) { selectPreparationRuntime(runtime.installDir); notify(t('prepareBeforeProfile')); return; }
-    if (recipe.kind === 'setup') {
+    if (recipe.kind === 'setup' || recipe.kind === 'orca') {
       // setup.py FAMILIES.name determines model_name; verify it against actual discovered configs.
       const familyNames: Record<string, string> = { qwen: 'qwen3.8-flash-next', swift: 'swift-1.5', coder: 'qwen3.8-flash-next-coder', unsloth: 'qwen3.8-flash-next-unsloth', qwen36: 'qwen3.6-35b-a3b' };
-      const expected = `${familyNames[recipe.model]}-${recipe.quant.toLowerCase()}`;
+      const expected = recipe.kind === 'orca' ? core.ORCA_MODEL_NAME : `${familyNames[recipe.model]}-${recipe.quant.toLowerCase()}`;
       const matches = models.filter(model => model.name.toLowerCase() === expected);
       if (matches.length === 1) { await openConfigProfile(matches[0]!.configPath, runtime); return; }
       setModal({ kind: 'modelProfiles', models, runtime });
@@ -897,6 +897,7 @@ export function App() {
     onRuntimeChange={setPreparationRuntime} onChooseDirectory={() => choose(true)} onChooseFile={() => choose(false)}
     onPrepare={async request => { await act('setup', () => runRecipe({ kind: 'setup', ...request }), 'modelPrepared'); }}
     onImportConfig={async (path, runtime) => { await act('import', () => openConfigProfile(path, runtime, false)); }}
+    onOrcaImport={async (runtime, request, options) => { await act('setup', () => runRecipe({ kind: 'orca', profile: runtime, request, options }), 'modelPrepared'); }}
     onTasks={() => go('tasks')} onEnvironment={() => go('environment')}
     onDirtyChange={setDownloadConfigurationDirty} onSaveDraftReady={registerDownloadConfigurationSave}/>;
 

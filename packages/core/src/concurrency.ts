@@ -1,3 +1,4 @@
+import { isOrcaRouterEvidence } from './orca-import';
 import type { JsonObject } from './types';
 import { TRAINED_CONTEXT } from './context-extension';
 
@@ -103,6 +104,8 @@ export function modelExpertArenaGb(family: string, quant: string): number | null
 export function concurrencyModelIdentity(config: JsonObject): { family: string; quant: string } | null {
   const args = argList(config);
   const evidence = [config.model_name, argValue(args, '--native'), argValue(args, '--pack')].filter(value => typeof value === 'string').join(' ');
+  // OrcaRouter IQ3_XXS (ORCA.md) is not the GSQ-RCO IQ3_XXS of setup.py's table.
+  if (isOrcaRouterEvidence(evidence)) return null;
   const quants = [...evidence.matchAll(/(?:^|[^A-Za-z0-9])(?:UD-(?:IQ4_XS|Q4_K_XL|Q6_K_XL)|IQ(?:1_M|2_XS|3_XXS|3_S)|Q(?:2_0|8_0))(?=$|[^A-Za-z0-9])/gi)].map(match => match[0].replace(/^[^A-Za-z0-9]+/, '').toUpperCase());
   if (new Set(quants).size !== 1) return null;
   const quant = quants[0]!;

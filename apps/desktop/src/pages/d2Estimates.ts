@@ -4,7 +4,7 @@ export interface CatalogRequirement { family: string; name: string; quant: strin
 
 /** Match a model/config label against the bundled catalog. Returns undefined when it cannot be identified. */
 export function catalogRequirement(text: string | undefined): CatalogRequirement | undefined {
-  if (!text) return undefined;
+  if (!text || core.isOrcaRouterEvidence(text)) return undefined;
   const lower = text.toLowerCase();
   const family = /qwen3\.?6|qwen36/.test(lower) ? 'qwen36' : /swift/.test(lower) ? 'swift' : /coder/.test(lower) ? 'coder' : /unsloth|ud-/.test(lower) ? 'unsloth' : /qwen/.test(lower) ? 'qwen' : undefined;
   const model = core.MODEL_CATALOG.find(entry => entry.family === family);

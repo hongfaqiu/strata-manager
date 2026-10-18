@@ -107,3 +107,41 @@
 .model-download-context-presets button small{font-size:10px;color:var(--st-warn-text,#8a4b00)}
 .model-download-context-presets button.is-selected{border-color:var(--st-accent);color:var(--st-accent-text);background:color-mix(in srgb,var(--st-accent) 9%,transparent)}
 .model-download-detail-body>.context-extension{margin:-4px 0 14px}
+
+/* 「导入 OrcaRouter 去审查模型」: one quiet section, neutral surfaces, the warning color only where RAM is short */
+.model-download-orca{margin-top:12px;border-top:1px solid var(--st-line);padding-top:16px;color:var(--st-ink-muted);font-size:13px}
+.model-download-orca>summary{cursor:pointer;width:fit-content;list-style:revert}
+.model-download-orca>summary .orca-import-badge{margin-left:10px}
+.orca-import{max-width:860px;margin:18px 0 8px;color:var(--st-ink);display:grid;gap:18px}
+.orca-import-badge{display:inline-block;font-size:12px;padding:2px 8px;border-radius:6px;border:1px solid var(--st-line);color:var(--st-ink-muted);white-space:nowrap}
+.orca-import-intro{margin:0;font-size:13px;line-height:1.6;color:var(--st-ink-muted)}
+.orca-import-intro a{display:inline-flex;align-items:center;gap:3px;color:var(--st-accent-text);white-space:nowrap}
+.orca-import-source{border:0;padding:0;margin:0;display:grid;gap:8px;min-width:0}
+.orca-import-source legend{font-size:13px;font-weight:600;margin-bottom:8px;color:var(--st-ink)}
+.orca-import-option{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border:1px solid var(--st-line);border-radius:10px;cursor:pointer;background:var(--st-surface)}
+.orca-import-option:has(input:checked){border-color:var(--st-accent);background:var(--st-accent-tint)}
+.orca-import-option>span,.orca-import-mtp>span{display:grid;gap:4px;min-width:0}
+.orca-import-option strong,.orca-import-mtp strong{font-size:14px;font-weight:500}
+.orca-import-option small,.orca-import-mtp small{font-size:12px;line-height:1.5;color:var(--st-ink-muted)}
+.orca-import-file{display:flex;align-items:center;gap:10px;min-width:0;padding-left:28px}
+.orca-import-file button{flex:none;display:inline-flex;align-items:center;gap:6px}
+.orca-import-file code{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--st-ink-muted)}
+.orca-import-mtp{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 14px;border:1px solid var(--st-line);border-radius:10px}
+.orca-import-checks h4{margin:0 0 8px;font-size:13px;color:var(--st-ink)}
+.orca-import-checks dl{margin:0;border-top:1px solid var(--st-line-soft)}
+.orca-import-checks dl>div{display:grid;grid-template-columns:96px 1fr;gap:12px;padding:10px 0;border-bottom:1px solid var(--st-line-soft);position:relative}
+.orca-import-checks dt{font-size:13px;color:var(--st-ink-muted);display:flex;align-items:center;gap:8px}
+.orca-import-checks dt::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--st-line);flex:none}
+.orca-import-checks .is-ok dt::before{background:var(--st-accent)}
+.orca-import-checks .is-warn dt::before{background:var(--st-warn)}
+.orca-import-checks .is-bad dt::before{background:var(--st-danger)}
+.orca-import-checks dd{margin:0;display:grid;gap:3px;min-width:0;font-size:13px;line-height:1.5}
+.orca-import-checks dd code{font-size:12px;color:var(--st-ink-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.orca-import-checks dd strong{display:flex;align-items:center;gap:6px;font-weight:500;color:var(--st-warn-text)}
+.orca-import-problems{margin-top:12px;font-size:13px;color:var(--st-ink)}.orca-import-problems ul{margin:6px 0 0;padding-left:18px;line-height:1.6;color:var(--st-danger-text)}
+.orca-import-submit{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.orca-import-submit button.primary{background:var(--st-accent);border:1px solid var(--st-accent);color:var(--st-accent-ink);min-height:44px;font-size:14px;font-weight:600;border-radius:12px;padding:10px 20px;white-space:nowrap}
+.orca-import-submit button:disabled{opacity:.5}
+.orca-import-submit p{flex:1;min-width:240px;margin:0;font-size:12px;line-height:1.6;color:var(--st-ink-muted)}
+.orca-import-note{margin:0;font-size:13px;color:var(--st-ink-muted)}
+.orca-import-error{margin:0;color:var(--st-danger)!important;font-size:13px;line-height:1.6;overflow-wrap:anywhere}

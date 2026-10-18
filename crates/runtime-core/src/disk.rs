@@ -8,14 +8,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const GB: u64 = 1_000_000_000;
+pub(crate) const GB: u64 = 1_000_000_000;
 const SOURCE: &str = "Strata 477ac13cbe8e582c20484871ce459d20d82df09d setup.py MODELS + OWN_PATH_FAMILIES (qwen36); decimal GB. Estimates exclude unknown dependency downloads and do not guarantee RAM/VRAM readiness.";
 
 #[derive(Default)]
-struct Settings {
-    data_dir: Option<PathBuf>,
-    installs: Vec<PathBuf>,
-    reusable_directory: Option<PathBuf>,
+pub(crate) struct Settings {
+    pub(crate) data_dir: Option<PathBuf>,
+    pub(crate) installs: Vec<PathBuf>,
+    pub(crate) reusable_directory: Option<PathBuf>,
 }
 
 pub(crate) struct Plan {
@@ -34,7 +34,7 @@ impl Plan {
     }
 }
 
-fn settings() -> Result<Settings, String> {
+pub(crate) fn settings() -> Result<Settings, String> {
     #[cfg(windows)]
     let base = std::env::var_os("APPDATA").map(PathBuf::from).or_else(|| {
         std::env::var_os("USERPROFILE").map(|p| PathBuf::from(p).join("AppData/Roaming"))
@@ -89,7 +89,7 @@ fn file_meta(path: &Path) -> Result<Option<fs::Metadata>, String> {
     }
 }
 
-fn file_len(path: &Path) -> Result<u64, String> {
+pub(crate) fn file_len(path: &Path) -> Result<u64, String> {
     Ok(file_meta(path)?
         .filter(fs::Metadata::is_file)
         .map(|m| m.len())
@@ -191,7 +191,11 @@ fn configured_model_directory(
     Ok(None)
 }
 
-fn source_roots(root: &Path, settings: &Settings, data: &Path) -> Result<Vec<PathBuf>, String> {
+pub(crate) fn source_roots(
+    root: &Path,
+    settings: &Settings,
+    data: &Path,
+) -> Result<Vec<PathBuf>, String> {
     let mut roots = vec![data.to_owned(), root.to_owned()];
     roots.extend(
         settings
@@ -239,7 +243,10 @@ fn source_roots(root: &Path, settings: &Settings, data: &Path) -> Result<Vec<Pat
     Ok(roots)
 }
 
-fn first_existing(roots: &[PathBuf], relative: &Path) -> Result<Option<PathBuf>, String> {
+pub(crate) fn first_existing(
+    roots: &[PathBuf],
+    relative: &Path,
+) -> Result<Option<PathBuf>, String> {
     for root in roots {
         let path = root.join(relative);
         if exists(&path)? {
@@ -440,7 +447,7 @@ fn existing_ancestor(path: &Path) -> Result<PathBuf, String> {
     }
 }
 
-fn read_space(path: &Path) -> Result<(PathBuf, u64), String> {
+pub(crate) fn read_space(path: &Path) -> Result<(PathBuf, u64), String> {
     let target = existing_ancestor(path)?;
     let disks = sysinfo::Disks::new_with_refreshed_list_specifics(
         sysinfo::DiskRefreshKind::nothing().with_storage(),
@@ -465,7 +472,7 @@ fn read_space(path: &Path) -> Result<(PathBuf, u64), String> {
     Ok((disk.1, disk.0.available_space()))
 }
 
-fn measure(plan: &mut Plan, reader: impl Fn(&Path) -> Result<(PathBuf, u64), String>) {
+pub(crate) fn measure(plan: &mut Plan, reader: impl Fn(&Path) -> Result<(PathBuf, u64), String>) {
     let mut grouped: Vec<SetupDiskVolume> = vec![];
     let mut errors = vec![];
     for mut volume in plan.report.volumes.drain(..) {
