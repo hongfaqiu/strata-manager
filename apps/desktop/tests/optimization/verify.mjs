@@ -155,6 +155,10 @@ try {
     assert.deepEqual(JSON.parse(await rawEditor(page).inputValue()), await page.evaluate(id => window.__fixture.configs[id], copied), 'Selecting the copy loads its saved startup configuration');
     assert.equal(await page.getByRole('button', { name: '保存完整配置', exact: true }).isDisabled(), true, 'The copied startup settings are a saved baseline, not an unsaved draft');
     assert.equal(await page.evaluate(() => window.__fixture.configs.a.args.includes('8')), false);
+    await page.getByText('新配置已创建并加入配置列表', { exact: false }).first().waitFor();
+    await page.getByRole('button', { name: '展开此模型的配置列表', exact: true }).click();
+    await page.locator('.configuration-list-row').filter({ hasText: 'a-copy.json' }).first().waitFor();
+    assert.equal(await page.evaluate(() => window.__fixture.calls.some(call => /^(switch_local_service|ensure_local_service|start_service|restart_service)$/.test(call.command))), false, 'Copying never starts the service');
   });
   await run('successful write followed by failed reload preserves saved content', '#config', async page => {
     const editor = await editJson(page);

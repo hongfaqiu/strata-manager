@@ -1,6 +1,7 @@
 pub mod analytics;
 pub mod benchmark_identity;
 pub mod chat_runtime;
+pub mod configuration_copy;
 pub mod diagnostics;
 pub mod discovery;
 pub mod disk;
@@ -776,6 +777,7 @@ impl RuntimeState {
                 | "write_config_cas_v1"
                 | "set_api_key"
                 | "import_local"
+                | "register_configuration_copy"
                 | "resolve_setup_handoff"
                 | "rename_local_installation"
                 | "remove_local_installation"
@@ -832,6 +834,7 @@ impl RuntimeState {
                     | "write_config_cas_v1"
                     | "set_api_key"
                     | "import_local"
+                    | "register_configuration_copy"
                     | "resolve_setup_handoff"
                     | "remove_local_installation"
                     | "resolve_profile"
@@ -860,6 +863,7 @@ impl RuntimeState {
                 | "write_config_cas_v1"
                 | "set_api_key"
                 | "import_local"
+                | "register_configuration_copy"
                 | "resolve_setup_handoff"
                 | "ensure_local_service"
                 | "rename_local_installation"
@@ -1224,6 +1228,10 @@ impl RuntimeState {
                 value(Ok(candidates))
             }
             "import_local" => value(self.import_local(arg(&params, "candidate")?)),
+            "register_configuration_copy" => value(self.register_configuration_copy(
+                arg(&params, "sourceProfileId")?,
+                arg(&params, "profile")?,
+            )),
             "ensure_local_service" => value(
                 self.clone()
                     .ensure_local_service(arg(&params, "profileId")?)
@@ -1362,6 +1370,29 @@ impl RuntimeState {
         transaction.execute("INSERT INTO local_installations(id,profile,original_profile,imported_at) VALUES(?1,?2,?3,?4)", rusqlite::params![prepared.profile.id,serialized,original,now() as i64]).map_err(|e| e.to_string())?;
         transaction.commit().map_err(|e| e.to_string())?;
         Ok(prepared.profile)
+    }
+
+    /// Registers a copy that the desktop wrote next to a registered configuration.
+    /// The copy is its own source; nothing is started or switched.
+    fn register_configuration_copy(
+        &self,
+        source_id: String,
+        copy: ServiceProfile,
+    ) -> Result<ServiceProfile, String> {
+        let _operation = self.runtime_operations.lock().map_err(|e| e.to_string())?;
+        runtime_upgrade::assert_available(self)?;
+        let source = self.registered_profile(&source_id)?;
+        let profile = configuration_copy::prepare(&source, copy, &self.registered_profiles()?)?;
+        let serialized = serde_json::to_string(&profile).map_err(|e| e.to_string())?;
+        self.database
+            .lock()
+            .map_err(|e| e.to_string())?
+            .execute(
+                "INSERT INTO local_installations(id,profile,original_profile,imported_at) VALUES(?1,?2,?2,?3)",
+                rusqlite::params![profile.id, serialized, now() as i64],
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(profile)
     }
 
     fn rename_local_installation(
