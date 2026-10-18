@@ -1,5 +1,7 @@
 //! Login starts the independently staged supervisor, never a hidden WebView.
-use serde_json::{json, Value};
+use serde_json::Value;
+#[cfg(not(any(windows, target_os = "linux")))]
+use serde_json::json;
 use std::path::Path;
 // startup_status_tests.rs reaches these through `use super::*`.
 #[cfg(test)]

@@ -321,15 +321,18 @@ jobs:
       - name: Verify the API metadata observer without model weights
         env:
           STRATA_TEST_ROOT: ${{ github.workspace }}/.reference/strata
+        run: python -c "import hashlib, os, pathlib, sys; sys.path.insert(0, 'apps/supervisor/resources'); import strata_observer; source = pathlib.Path(os.environ['STRATA_TEST_ROOT']) / 'serve/server.py'; digest = hashlib.sha256(source.read_bytes()).hexdigest(); sys.exit(0 if digest in strata_observer.SUPPORTED_HASHES else 'The pinned upstream source hash is unsupported; refusing to skip API tests.')"
+      # Full observer/MCP suites need Linux/Windows fixtures and can hang on
+      # macOS runners (real -m bootstrap network). Dedicated observer jobs
+      # already cover them on windows-latest and ubuntu-22.04. Keep this as a
+      # separate step (not a bash if) so Windows PowerShell never parses it.
+      - name: Run full observer and MCP suites
+        if: runner.os != 'macOS'
+        env:
+          STRATA_TEST_ROOT: ${{ github.workspace }}/.reference/strata
         run: |
-          python -c "import hashlib, os, pathlib, sys; sys.path.insert(0, 'apps/supervisor/resources'); import strata_observer; source = pathlib.Path(os.environ['STRATA_TEST_ROOT']) / 'serve/server.py'; digest = hashlib.sha256(source.read_bytes()).hexdigest(); sys.exit(0 if digest in strata_observer.SUPPORTED_HASHES else 'The pinned upstream source hash is unsupported; refusing to skip API tests.')"
-          # Full observer/MCP suites need Linux/Windows fixtures and can hang on
-          # macOS runners (real -m bootstrap network). Dedicated observer jobs
-          # already cover them on windows-latest and ubuntu-22.04.
-          if [ "${{ runner.os }}" != "macOS" ]; then
-            python apps/supervisor/tests/test_strata_observer.py
-            python apps/supervisor/tests/test_strata_mcp_guard.py
-          fi
+          python apps/supervisor/tests/test_strata_observer.py
+          python apps/supervisor/tests/test_strata_mcp_guard.py
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
