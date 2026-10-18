@@ -1,265 +1,281 @@
 //! Login starts the independently staged supervisor, never a hidden WebView.
 use serde_json::{json, Value};
+use std::path::Path;
+#[cfg(any(windows, target_os = "linux", test))]
+use std::path::PathBuf;
+#[cfg(any(windows, target_os = "linux", test))]
 use sha2::{Digest, Sha256};
-use std::{
-    fs,
-    io::Read,
-    path::{Path, PathBuf},
-};
+#[cfg(any(windows, target_os = "linux", test))]
+use std::{fs, io::Read};
 
-enum Registration {
-    Missing,
-    Invalid(&'static str),
-    Command(Vec<String>, Option<&'static str>),
-}
+#[cfg(any(windows, target_os = "linux", test))]
+mod registration {
+    use super::*;
+    use std::{
+        fs,
+        io::Read,
+        path::{Path, PathBuf},
+    };
+    use serde_json::{json, Value};
+    use sha2::{Digest, Sha256};
 
-fn reason(code: &str) -> &'static str {
-    match code {
-        "disabled_entry" => "系统已禁用此启动项。请在系统启动设置中启用，或在应用中重新开启。",
-        "restricted_entry" => "启动项含桌面环境限制或额外启动条件。请核对系统启动设置后重新启用。",
-        "missing_executable" => {
-            "已配置的后台文件不存在。请重新开启此项以修复；若仍失败，请修复应用安装。"
-        }
-        "corrupt_executable" => "已配置的后台文件校验失败。请修复应用安装，再重新开启此启动项。",
-        "wrong_data" => {
-            "此启动项使用其它数据目录。请在系统启动设置中移除同名项，再在本应用中启用。"
-        }
-        "foreign_entry" => {
-            "同名启动项不属于本应用的独立后台。请在系统启动设置中核对并移除，再启用本应用。"
-        }
-        "unreadable_entry" => "启动项无法读取。请检查系统启动设置和文件权限后重试。",
-        _ => "启动项内容无效。请在系统启动设置中移除同名项，再在本应用中重新启用。",
+    pub(super) enum Registration {
+        Missing,
+        Invalid(&'static str),
+        Command(Vec<String>, Option<&'static str>),
     }
-}
 
-fn status_value(registration: &Registration, data: &Path) -> Value {
-    let configured = !matches!(registration, Registration::Missing);
-    let mut status = json!({"configured":configured,"enabled":false,"healthy":false,"supported":true,"backgroundOnly":false});
-    let checked = match registration {
-        Registration::Missing => {
-            status["backgroundOnly"] = json!(true);
-            return status;
+    pub(super) fn reason(code: &str) -> &'static str {
+        match code {
+            "disabled_entry" => "系统已禁用此启动项。请在系统启动设置中启用，或在应用中重新开启。",
+            "restricted_entry" => "启动项含桌面环境限制或额外启动条件。请核对系统启动设置后重新启用。",
+            "missing_executable" => {
+                "已配置的后台文件不存在。请重新开启此项以修复；若仍失败，请修复应用安装。"
+            }
+            "corrupt_executable" => "已配置的后台文件校验失败。请修复应用安装，再重新开启此启动项。",
+            "wrong_data" => {
+                "此启动项使用其它数据目录。请在系统启动设置中移除同名项，再在本应用中启用。"
+            }
+            "foreign_entry" => {
+                "同名启动项不属于本应用的独立后台。请在系统启动设置中核对并移除，再启用本应用。"
+            }
+            "unreadable_entry" => "启动项无法读取。请检查系统启动设置和文件权限后重试。",
+            _ => "启动项内容无效。请在系统启动设置中移除同名项，再在本应用中重新启用。",
         }
-        Registration::Invalid(code) => Err(*code),
-        Registration::Command(args, inhibited) => match identity(args, data) {
-            Ok((executable, version, expected_hash)) => {
+    }
+
+    pub(super) fn status_value(registration: &Registration, data: &Path) -> Value {
+        let configured = !matches!(registration, Registration::Missing);
+        let mut status = json!({"configured":configured,"enabled":false,"healthy":false,"supported":true,"backgroundOnly":false});
+        let checked = match registration {
+            Registration::Missing => {
                 status["backgroundOnly"] = json!(true);
-                status["registeredVersion"] = json!(version);
-                if let Some(code) = inhibited {
-                    Err(*code)
-                } else {
-                    executable_hash(&executable, &expected_hash).map(|hash| {
-                        status["enabled"] = json!(true);
-                        status["healthy"] = json!(true);
-                        status["executableHash"] = json!(hash);
-                    })
+                return status;
+            }
+            Registration::Invalid(code) => Err(*code),
+            Registration::Command(args, inhibited) => match identity(args, data) {
+                Ok((executable, version, expected_hash)) => {
+                    status["backgroundOnly"] = json!(true);
+                    status["registeredVersion"] = json!(version);
+                    if let Some(code) = inhibited {
+                        Err(*code)
+                    } else {
+                        executable_hash(&executable, &expected_hash).map(|hash| {
+                            status["enabled"] = json!(true);
+                            status["healthy"] = json!(true);
+                            status["executableHash"] = json!(hash);
+                        })
+                    }
+                }
+                Err(code) => Err(code),
+            },
+        };
+        if let Err(code) = checked {
+            status["reasonCode"] = json!(code);
+            status["reason"] = json!(reason(code));
+        }
+        status
+    }
+
+    pub(super) fn identity(args: &[String], data: &Path) -> Result<(PathBuf, String, String), &'static str> {
+        identity_with_paths(args, data, &|path| dunce::canonicalize(path))
+    }
+
+    pub(super) fn linked_metadata(metadata: &fs::Metadata) -> bool {
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            // Reject all reparse tags, including junctions and non-symlink tags.
+            if metadata.file_attributes() & 0x400 != 0 {
+                return true;
+            }
+        }
+        metadata.file_type().is_symlink()
+    }
+
+    pub(super) fn identity_with_paths(
+        args: &[String],
+        data: &Path,
+        canonicalize: &impl Fn(&Path) -> std::io::Result<PathBuf>,
+    ) -> Result<(PathBuf, String, String), &'static str> {
+        if args.len() != 3 || args[1] != "--data-dir" {
+            return Err("foreign_entry");
+        }
+        let wanted_data = canonicalize(data).map_err(|_| "unreadable_entry")?;
+        let registered_data = Path::new(&args[2]);
+        if !registered_data.is_absolute()
+            || canonicalize(registered_data).ok().as_ref() != Some(&wanted_data)
+        {
+            return Err("wrong_data");
+        }
+        let executable = Path::new(&args[0]);
+        let filename = if cfg!(windows) {
+            "strata-supervisor.exe"
+        } else {
+            "strata-supervisor"
+        };
+        let separators: &[char] = if cfg!(windows) { &['/', '\\'] } else { &['/'] };
+        if !executable.is_absolute()
+            || executable.file_name().and_then(|v| v.to_str()) != Some(filename)
+            || args[0]
+                .split(separators)
+                .any(|part| matches!(part, "." | ".."))
+        {
+            return Err("foreign_entry");
+        }
+        let directory = executable.parent().ok_or("foreign_entry")?;
+        let name = directory
+            .file_name()
+            .and_then(|v| v.to_str())
+            .ok_or("foreign_entry")?;
+        let (version, hash) = name.rsplit_once('-').ok_or("foreign_entry")?;
+        let release = version
+            .split_once('-')
+            .map_or(version, |(release, _)| release);
+        if release.split('.').count() != 3
+            || release
+                .split('.')
+                .any(|v| v.is_empty() || !v.bytes().all(|b| b.is_ascii_digit()))
+            || version.len() > 80
+            || !version
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b".+-".contains(&b))
+            || hash.len() != 16
+            || !hash.bytes().all(|b| b.is_ascii_hexdigit())
+        {
+            return Err("foreign_entry");
+        }
+        let root_path = directory.parent().ok_or("foreign_entry")?;
+        if root_path.file_name().and_then(|v| v.to_str()) != Some("supervisor")
+            || canonicalize(root_path.parent().ok_or("foreign_entry")?)
+                .ok()
+                .as_ref()
+                != Some(&wanted_data)
+        {
+            return Err("foreign_entry");
+        }
+        // A removed staging directory is still an owned registration when its
+        // strict, dot-free hierarchy sits immediately below the known data directory.
+        // Existing links or unexpected objects must never use this missing-path rule.
+        let expected_root = wanted_data.join("supervisor");
+        match fs::symlink_metadata(root_path) {
+            Ok(metadata) => {
+                if !metadata.is_dir() || linked_metadata(&metadata) {
+                    return Err("foreign_entry");
+                }
+                let actual = canonicalize(root_path).map_err(|_| "unreadable_entry")?;
+                let expected = canonicalize(&expected_root).map_err(|_| "unreadable_entry")?;
+                if actual != expected
+                    || actual.file_name().and_then(|v| v.to_str()) != Some("supervisor")
+                {
+                    return Err("foreign_entry");
                 }
             }
-            Err(code) => Err(code),
-        },
-    };
-    if let Err(code) = checked {
-        status["reasonCode"] = json!(code);
-        status["reason"] = json!(reason(code));
-    }
-    status
-}
-
-fn identity(args: &[String], data: &Path) -> Result<(PathBuf, String, String), &'static str> {
-    identity_with_paths(args, data, &|path| dunce::canonicalize(path))
-}
-
-fn linked_metadata(metadata: &fs::Metadata) -> bool {
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        // Reject all reparse tags, including junctions and non-symlink tags.
-        if metadata.file_attributes() & 0x400 != 0 {
-            return true;
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err("unreadable_entry"),
         }
+        // Accept any retained staged version, including the previous package during
+        // a rolling upgrade. Never require the currently running package's path.
+        match fs::symlink_metadata(directory) {
+            Ok(metadata) => {
+                if !metadata.is_dir() || linked_metadata(&metadata) {
+                    return Err("foreign_entry");
+                }
+                // Windows may resolve an existing child to a physical mapped path
+                // while its parent retains its logical spelling. Resolve the whole
+                // expected child from the trusted data root instead of appending to
+                // a separately resolved parent. Strict ancestry and reparse guards
+                // above still apply to the registration's original path.
+                let actual = canonicalize(directory).map_err(|_| "unreadable_entry")?;
+                let expected =
+                    canonicalize(&expected_root.join(name)).map_err(|_| "unreadable_entry")?;
+                if actual != expected || actual.file_name().and_then(|v| v.to_str()) != Some(name) {
+                    return Err("foreign_entry");
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err("unreadable_entry"),
+        }
+        Ok((
+            executable.to_owned(),
+            version.to_owned(),
+            hash.to_ascii_lowercase(),
+        ))
     }
-    metadata.file_type().is_symlink()
-}
 
-fn identity_with_paths(
-    args: &[String],
-    data: &Path,
-    canonicalize: &impl Fn(&Path) -> std::io::Result<PathBuf>,
-) -> Result<(PathBuf, String, String), &'static str> {
-    if args.len() != 3 || args[1] != "--data-dir" {
-        return Err("foreign_entry");
-    }
-    let wanted_data = canonicalize(data).map_err(|_| "unreadable_entry")?;
-    let registered_data = Path::new(&args[2]);
-    if !registered_data.is_absolute()
-        || canonicalize(registered_data).ok().as_ref() != Some(&wanted_data)
-    {
-        return Err("wrong_data");
-    }
-    let executable = Path::new(&args[0]);
-    let filename = if cfg!(windows) {
-        "strata-supervisor.exe"
-    } else {
-        "strata-supervisor"
-    };
-    let separators: &[char] = if cfg!(windows) { &['/', '\\'] } else { &['/'] };
-    if !executable.is_absolute()
-        || executable.file_name().and_then(|v| v.to_str()) != Some(filename)
-        || args[0]
-            .split(separators)
-            .any(|part| matches!(part, "." | ".."))
-    {
-        return Err("foreign_entry");
-    }
-    let directory = executable.parent().ok_or("foreign_entry")?;
-    let name = directory
-        .file_name()
-        .and_then(|v| v.to_str())
-        .ok_or("foreign_entry")?;
-    let (version, hash) = name.rsplit_once('-').ok_or("foreign_entry")?;
-    let release = version
-        .split_once('-')
-        .map_or(version, |(release, _)| release);
-    if release.split('.').count() != 3
-        || release
-            .split('.')
-            .any(|v| v.is_empty() || !v.bytes().all(|b| b.is_ascii_digit()))
-        || version.len() > 80
-        || !version
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b".+-".contains(&b))
-        || hash.len() != 16
-        || !hash.bytes().all(|b| b.is_ascii_hexdigit())
-    {
-        return Err("foreign_entry");
-    }
-    let root_path = directory.parent().ok_or("foreign_entry")?;
-    if root_path.file_name().and_then(|v| v.to_str()) != Some("supervisor")
-        || canonicalize(root_path.parent().ok_or("foreign_entry")?)
-            .ok()
-            .as_ref()
-            != Some(&wanted_data)
-    {
-        return Err("foreign_entry");
-    }
-    // A removed staging directory is still an owned registration when its
-    // strict, dot-free hierarchy sits immediately below the known data directory.
-    // Existing links or unexpected objects must never use this missing-path rule.
-    let expected_root = wanted_data.join("supervisor");
-    match fs::symlink_metadata(root_path) {
-        Ok(metadata) => {
-            if !metadata.is_dir() || linked_metadata(&metadata) {
-                return Err("foreign_entry");
+    pub(super) fn executable_hash(executable: &Path, expected: &str) -> Result<String, &'static str> {
+        let before = fs::symlink_metadata(executable).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                "missing_executable"
+            } else {
+                "unreadable_entry"
             }
-            let actual = canonicalize(root_path).map_err(|_| "unreadable_entry")?;
-            let expected = canonicalize(&expected_root).map_err(|_| "unreadable_entry")?;
-            if actual != expected
-                || actual.file_name().and_then(|v| v.to_str()) != Some("supervisor")
-            {
-                return Err("foreign_entry");
-            }
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(_) => return Err("unreadable_entry"),
-    }
-    // Accept any retained staged version, including the previous package during
-    // a rolling upgrade. Never require the currently running package's path.
-    match fs::symlink_metadata(directory) {
-        Ok(metadata) => {
-            if !metadata.is_dir() || linked_metadata(&metadata) {
-                return Err("foreign_entry");
-            }
-            // Windows may resolve an existing child to a physical mapped path
-            // while its parent retains its logical spelling. Resolve the whole
-            // expected child from the trusted data root instead of appending to
-            // a separately resolved parent. Strict ancestry and reparse guards
-            // above still apply to the registration's original path.
-            let actual = canonicalize(directory).map_err(|_| "unreadable_entry")?;
-            let expected =
-                canonicalize(&expected_root.join(name)).map_err(|_| "unreadable_entry")?;
-            if actual != expected || actual.file_name().and_then(|v| v.to_str()) != Some(name) {
-                return Err("foreign_entry");
-            }
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(_) => return Err("unreadable_entry"),
-    }
-    Ok((
-        executable.to_owned(),
-        version.to_owned(),
-        hash.to_ascii_lowercase(),
-    ))
-}
-
-fn executable_hash(executable: &Path, expected: &str) -> Result<String, &'static str> {
-    let before = fs::symlink_metadata(executable).map_err(|error| {
-        if error.kind() == std::io::ErrorKind::NotFound {
-            "missing_executable"
-        } else {
-            "unreadable_entry"
-        }
-    })?;
-    if !before.is_file()
-        || linked_metadata(&before)
-        || before.len() < 4
-        || before.len() > 512 * 1024 * 1024
-    {
-        return Err("corrupt_executable");
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if before.permissions().mode() & 0o111 == 0 {
+        })?;
+        if !before.is_file()
+            || linked_metadata(&before)
+            || before.len() < 4
+            || before.len() > 512 * 1024 * 1024
+        {
             return Err("corrupt_executable");
         }
-    }
-    let mut file = fs::File::open(executable).map_err(|_| "unreadable_entry")?;
-    let mut header = [0u8; 4];
-    file.read_exact(&mut header)
-        .map_err(|_| "corrupt_executable")?;
-    if (cfg!(windows) && &header[..2] != b"MZ")
-        || (cfg!(target_os = "linux") && &header != b"\x7fELF")
-    {
-        return Err("corrupt_executable");
-    }
-    let mut hash = Sha256::new();
-    hash.update(header);
-    let mut consumed = 4u64;
-    let mut buffer = [0u8; 64 * 1024];
-    loop {
-        let count = file.read(&mut buffer).map_err(|_| "unreadable_entry")?;
-        if count == 0 {
-            break;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if before.permissions().mode() & 0o111 == 0 {
+                return Err("corrupt_executable");
+            }
         }
-        consumed += count as u64;
-        if consumed > before.len() {
+        let mut file = fs::File::open(executable).map_err(|_| "unreadable_entry")?;
+        let mut header = [0u8; 4];
+        file.read_exact(&mut header)
+            .map_err(|_| "corrupt_executable")?;
+        if (cfg!(windows) && &header[..2] != b"MZ")
+            || (cfg!(target_os = "linux") && &header != b"\x7fELF")
+        {
             return Err("corrupt_executable");
         }
-        hash.update(&buffer[..count]);
+        let mut hash = Sha256::new();
+        hash.update(header);
+        let mut consumed = 4u64;
+        let mut buffer = [0u8; 64 * 1024];
+        loop {
+            let count = file.read(&mut buffer).map_err(|_| "unreadable_entry")?;
+            if count == 0 {
+                break;
+            }
+            consumed += count as u64;
+            if consumed > before.len() {
+                return Err("corrupt_executable");
+            }
+            hash.update(&buffer[..count]);
+        }
+        let after = fs::symlink_metadata(executable).map_err(|_| "missing_executable")?;
+        let digest = format!("{:x}", hash.finalize());
+        if consumed != before.len()
+            || after.len() != before.len()
+            || after.modified().ok() != before.modified().ok()
+            || !after.is_file()
+            || linked_metadata(&after)
+            || !digest.starts_with(expected)
+        {
+            return Err("corrupt_executable");
+        }
+        Ok(digest)
     }
-    let after = fs::symlink_metadata(executable).map_err(|_| "missing_executable")?;
-    let digest = format!("{:x}", hash.finalize());
-    if consumed != before.len()
-        || after.len() != before.len()
-        || after.modified().ok() != before.modified().ok()
-        || !after.is_file()
-        || linked_metadata(&after)
-        || !digest.starts_with(expected)
-    {
-        return Err("corrupt_executable");
-    }
-    Ok(digest)
-}
 
-fn may_replace(registration: &Registration, data: &Path) -> Result<(), String> {
-    match registration {
-        Registration::Missing => Ok(()),
-        Registration::Command(args, _) => identity(args, data)
-            .map(|_| ())
-            .map_err(|code| reason(code).into()),
-        Registration::Invalid(code) => Err(reason(code).into()),
+    pub(super) fn may_replace(registration: &Registration, data: &Path) -> Result<(), String> {
+        match registration {
+            Registration::Missing => Ok(()),
+            Registration::Command(args, _) => identity(args, data)
+                .map(|_| ())
+                .map_err(|code| reason(code).into()),
+            Registration::Invalid(code) => Err(reason(code).into()),
+        }
     }
+
 }
+#[cfg(any(windows, target_os = "linux", test))]
+use registration::*;
 
 #[cfg(any(windows, test))]
 pub fn command_line(executable: &Path, data: &Path) -> String {
