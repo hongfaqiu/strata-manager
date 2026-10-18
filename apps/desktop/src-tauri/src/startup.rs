@@ -1,16 +1,9 @@
 //! Login starts the independently staged supervisor, never a hidden WebView.
 use serde_json::{json, Value};
-#[cfg(any(windows, target_os = "linux", test))]
-use sha2::{Digest, Sha256};
 use std::path::Path;
-#[cfg(any(windows, target_os = "linux", test))]
-use std::path::PathBuf;
-#[cfg(any(windows, target_os = "linux", test))]
-use std::{fs, io::Read};
 
 #[cfg(any(windows, target_os = "linux", test))]
 mod registration {
-    use super::*;
     use serde_json::{json, Value};
     use sha2::{Digest, Sha256};
     use std::{
