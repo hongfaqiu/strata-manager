@@ -391,12 +391,23 @@ fn first_config_engine(root: &Path) -> Option<PathBuf> {
     None
 }
 
+/// Windows Python starts can exceed the generic three-second probe budget on a
+/// cold machine (venv redirector, antivirus scans). A timed-out probe must not
+/// silently switch to a different interpreter.
+const PYTHON_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+const DEPENDENCY_CHECK_FAILED: &str = "依赖检测失败";
+const MAX_LAUNCHER_BYTES: u64 = 64 * 1024;
+
+fn python_output(path: &Path, args: &[&str]) -> Option<String> {
+    crate::output_with_timeout(&path.to_string_lossy(), args, PYTHON_PROBE_TIMEOUT)
+}
+
 fn python_probe(path: &Path, cache: &mut PythonCache) -> bool {
     let key = path_key(path);
     *cache.probes.entry(key).or_insert_with(|| {
         path.is_file()
-            && crate::output(
-                &path.to_string_lossy(),
+            && python_output(
+                path,
                 &[
                     "-I",
                     "-S",
@@ -409,7 +420,7 @@ fn python_probe(path: &Path, cache: &mut PythonCache) -> bool {
     })
 }
 
-fn missing_python_modules(root: &Path, python: &Path, cache: &mut PythonCache) -> Vec<String> {
+fn required_python_modules(root: &Path) -> Vec<&'static str> {
     let mut modules = Vec::new();
     if root.join("tools/strata_tokenizer.py").is_file() {
         modules.push("regex");
@@ -417,26 +428,116 @@ fn missing_python_modules(root: &Path, python: &Path, cache: &mut PythonCache) -
     if root.join("serve/frontend.py").is_file() {
         modules.push("jinja2");
     }
+    modules
+}
+
+fn missing_python_modules(root: &Path, python: &Path, cache: &mut PythonCache) -> Vec<String> {
+    let modules = required_python_modules(root);
     if modules.is_empty() {
         return Vec::new();
     }
     let key = format!("{}::{:?}", path_key(python), modules);
     cache.missing_modules.entry(key).or_insert_with(|| {
         let code = format!("import importlib.util,json;print(json.dumps([n for n in {} if importlib.util.find_spec(n) is None]))", serde_json::to_string(&modules).unwrap_or_default());
-        crate::output(&python.to_string_lossy(), &["-I", "-c", &code]).and_then(|text| serde_json::from_str::<Vec<String>>(&text).ok()).unwrap_or_else(|| vec!["依赖检测失败".into()])
+        python_output(python, &["-I", "-c", &code]).and_then(|text| serde_json::from_str::<Vec<String>>(&text).ok()).unwrap_or_else(|| vec![DEPENDENCY_CHECK_FAILED.into()])
     }).clone()
 }
 
+/// A Python path without resolving its final component. A Linux/macOS venv's
+/// `bin/python` is a symlink to the base interpreter; resolving it would probe
+/// the base interpreter and miss the venv's site-packages. The directory is
+/// still canonicalized so network shares and device paths stay rejected.
+fn python_path(path: &Path) -> Result<PathBuf, String> {
+    if !path.is_absolute() {
+        return Err("请选择本机磁盘上的绝对路径，不能使用网络共享".into());
+    }
+    let name = path.file_name().ok_or("Python 路径无效")?;
+    let parent = path.parent().ok_or("Python 路径无效")?;
+    let path = canonical_local(parent)?.join(name);
+    if !path.is_file() {
+        return Err("Python 不存在".into());
+    }
+    Ok(path)
+}
+
+/// The interpreters named by Strata's own launchers. setup.py writes
+/// `run-<model>.bat` / `run-<model>.sh` with `sys.executable` (the install's
+/// private venv) followed by `serve/server.py`; that is what users double-click.
+fn launcher_pythons(root: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(root) else {
+        return Vec::new();
+    };
+    let mut scripts: Vec<PathBuf> = entries
+        .take(MAX_DIRECTORIES)
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            name.starts_with("run-") && (name.ends_with(".bat") || name.ends_with(".sh"))
+        })
+        .filter(|path| {
+            fs::symlink_metadata(path).is_ok_and(|metadata| {
+                metadata.is_file()
+                    && !metadata.file_type().is_symlink()
+                    && metadata.len() <= MAX_LAUNCHER_BYTES
+            })
+        })
+        .collect();
+    scripts.sort();
+    let mut pythons = Vec::new();
+    for script in scripts.into_iter().take(16) {
+        let Ok(text) = fs::read_to_string(&script) else {
+            continue;
+        };
+        if let Some(python) = launcher_python(&text) {
+            if !pythons.contains(&python) {
+                pythons.push(python);
+            }
+        }
+    }
+    pythons
+}
+
+fn launcher_python(text: &str) -> Option<PathBuf> {
+    text.lines().find_map(|line| {
+        let line = line.trim();
+        let line = line.strip_prefix("exec ").unwrap_or(line).trim_start();
+        let rest = line.strip_prefix('"')?;
+        let end = rest.find('"')?;
+        let program = Path::new(&rest[..end]);
+        let server = rest[end + 1..].replace('\\', "/");
+        let name = program.file_name()?.to_str()?.to_ascii_lowercase();
+        (program.is_absolute() && name.starts_with("python") && server.contains("serve/server.py"))
+            .then(|| program.to_path_buf())
+    })
+}
+
+struct PythonChoice {
+    path: PathBuf,
+    missing: Vec<String>,
+}
+
+/// Choose the interpreter the configuration will run with. Candidates follow
+/// the engine's own launch order (saved profile, Strata launcher scripts, the
+/// install's venv, an observed process). The first candidate whose required
+/// modules import wins; otherwise the first runnable one is reported with its
+/// missing modules. A system Python is only a last resort and never hides an
+/// install-local environment that is complete.
 fn find_python(
     root: &Path,
     preferred: Option<&str>,
     hint: Option<&ProcessHint>,
     cache: &mut PythonCache,
-) -> Option<PathBuf> {
+) -> Option<PythonChoice> {
     let mut candidates = Vec::new();
     if let Some(path) = preferred.filter(|v| !v.is_empty()) {
         candidates.push(PathBuf::from(path));
     }
+    candidates.extend(launcher_pythons(root));
     candidates.extend([
         root.join(".venv/Scripts/python.exe"),
         root.join("venv/Scripts/python.exe"),
@@ -446,12 +547,20 @@ fn find_python(
     if let Some(hint) = hint {
         candidates.push(hint.python.clone());
     }
+    let mut seen = HashSet::new();
+    let mut first: Option<PythonChoice> = None;
     for path in candidates {
-        if let Ok(path) = canonical_local(&path) {
-            if python_probe(&path, cache) {
-                return Some(path);
-            }
+        let Ok(path) = python_path(&path) else {
+            continue;
+        };
+        if !seen.insert(path_key(&path)) || !python_probe(&path, cache) {
+            continue;
         }
+        let missing = missing_python_modules(root, &path, cache);
+        if missing.is_empty() {
+            return Some(PythonChoice { path, missing });
+        }
+        first.get_or_insert(PythonChoice { path, missing });
     }
     if cache.fallback.is_none() {
         #[cfg(windows)]
@@ -459,16 +568,49 @@ fn find_python(
         #[cfg(not(windows))]
         let programs = ["python3", "python"];
         let fallback = programs.into_iter().find_map(|program| {
-            let text = crate::output(
+            let text = crate::output_with_timeout(
                 program,
                 &["-I", "-S", "-c", "import sys;print(sys.executable)"],
+                PYTHON_PROBE_TIMEOUT,
             )?;
             let path = canonical_local(Path::new(text.trim())).ok()?;
             python_probe(&path, cache).then_some(path)
         });
         cache.fallback = Some(fallback);
     }
-    cache.fallback.clone().flatten()
+    if let Some(path) = cache.fallback.clone().flatten() {
+        if seen.insert(path_key(&path)) {
+            let missing = missing_python_modules(root, &path, cache);
+            if missing.is_empty() || first.is_none() {
+                return Some(PythonChoice { path, missing });
+            }
+        }
+    }
+    first
+}
+
+fn missing_modules_reason(choice: &PythonChoice) -> Option<String> {
+    if choice.missing.is_empty() {
+        return None;
+    }
+    let python = choice.path.display();
+    #[cfg(windows)]
+    let update = "UPDATE.bat";
+    #[cfg(not(windows))]
+    let update = "./update.sh";
+    if choice
+        .missing
+        .iter()
+        .any(|name| name == DEPENDENCY_CHECK_FAILED)
+    {
+        return Some(format!(
+            "Python 依赖检测失败或超时（{python}），请重新扫描；仍失败时在 Strata 目录运行 {update} 修复运行环境"
+        ));
+    }
+    Some(format!(
+        "Python 运行依赖缺失：{}（检测的 Python：{python}），请在 Strata 目录运行 {update} 修复运行环境",
+        choice.missing.join(", ")
+    ))
 }
 
 fn inspect_config(
@@ -513,15 +655,10 @@ fn inspect_config(
     if python.is_none() {
         fatal_reasons.push("没有可运行的本机 Python 3.10+ 环境".into());
     }
-    if let Some(python) = &python {
-        let missing = missing_python_modules(&root, python, cache);
-        if !missing.is_empty() {
-            fatal_reasons.push(format!(
-                "Python 运行依赖缺失：{}，请修复运行环境",
-                missing.join(", ")
-            ));
-        }
+    if let Some(reason) = python.as_ref().and_then(missing_modules_reason) {
+        fatal_reasons.push(reason);
     }
+    let python = python.map(|choice| choice.path);
     if !model_path.exists() {
         fatal_reasons.push("模型文件不存在，请重新定位或下载".into());
     }
@@ -1163,13 +1300,11 @@ fn inspect_runtime_directories(
         if python.is_none() {
             reasons.push("需要准备 Python 3.10+ 环境".to_owned());
         }
-        if let Some(python) = &python {
-            let missing = missing_python_modules(&root, python, &mut cache);
-            if !missing.is_empty() {
-                reasons.push(format!("Python 依赖缺失：{}", missing.join(", ")));
-            }
+        if let Some(reason) = python.as_ref().and_then(missing_modules_reason) {
+            reasons.push(reason);
         }
         let python_path = python
+            .map(|choice| choice.path)
             .map(|path| path.to_string_lossy().into_owned())
             .unwrap_or_default();
         let mut profile = registered.cloned().unwrap_or_else(|| ServiceProfile {
@@ -3259,5 +3394,122 @@ mod tests {
                 == 0,
             "random folders must not pull in sibling installs: {candidates:?}"
         );
+    }
+
+    #[test]
+    fn launcher_python_reads_strata_run_scripts() {
+        let bat = "@echo off\r\ntitle Strata Q2_0\r\ncd /d \"C:\\Strata\"\r\n\"C:\\Strata\\.venv\\Scripts\\python.exe\" \"C:\\Strata\\serve\\server.py\" \"--engine\" \"strata\" \"--config\" \"C:\\Strata\\strata-q2_0.json\" \"--port\" \"8080\"\r\nif errorlevel 1 pause\r\n";
+        #[cfg(windows)]
+        assert_eq!(
+            launcher_python(bat),
+            Some(PathBuf::from("C:\\Strata\\.venv\\Scripts\\python.exe"))
+        );
+        #[cfg(not(windows))]
+        assert_eq!(
+            launcher_python(bat),
+            None,
+            "a Windows path is not absolute here"
+        );
+        let sh = "#!/bin/sh\ncd \"/opt/strata\"\nexec \"/opt/strata/.venv/bin/python\" \"/opt/strata/serve/server.py\" \"--engine\" \"strata\"\n";
+        #[cfg(not(windows))]
+        assert_eq!(
+            launcher_python(sh),
+            Some(PathBuf::from("/opt/strata/.venv/bin/python"))
+        );
+        let _ = sh;
+        assert_eq!(
+            launcher_python("\"/usr/bin/python3\" tools/other.py\n"),
+            None
+        );
+        assert_eq!(launcher_python("\"/bin/rm\" serve/server.py\n"), None);
+    }
+
+    #[cfg(unix)]
+    fn fake_python(path: &Path, missing: &str) {
+        use std::os::unix::fs::PermissionsExt;
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            path,
+            format!("#!/bin/sh\ncase \"$*\" in\n  *find_spec*) echo '{missing}' ;;\n  *version_info*) echo ready ;;\n  *) exit 1 ;;\nesac\n"),
+        )
+        .unwrap();
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[cfg(unix)]
+    fn dependency_root() -> tempfile::TempDir {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temp.path().join("tools")).unwrap();
+        fs::create_dir_all(temp.path().join("serve")).unwrap();
+        fs::write(temp.path().join("tools/strata_tokenizer.py"), b"# fixture").unwrap();
+        fs::write(temp.path().join("serve/frontend.py"), b"# fixture").unwrap();
+        temp
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn install_launcher_python_wins_over_incomplete_saved_python() {
+        let temp = dependency_root();
+        let root = canonical_local(temp.path()).unwrap();
+        let system = root.join("system/python3");
+        fake_python(&system, r#"["regex", "jinja2"]"#);
+        let private = root.join("private-env/bin/python");
+        fake_python(&private, "[]");
+        fs::write(
+            root.join("run-q2_0.sh"),
+            format!(
+                "#!/bin/sh\ncd \"{}\"\nexec \"{}\" \"{}\" \"--engine\" \"strata\"\n",
+                root.display(),
+                private.display(),
+                root.join("serve/server.py").display()
+            ),
+        )
+        .unwrap();
+        let choice = find_python(
+            &root,
+            Some(&system.to_string_lossy()),
+            None,
+            &mut PythonCache::default(),
+        )
+        .unwrap();
+        assert_eq!(choice.path, private);
+        assert!(choice.missing.is_empty());
+        assert_eq!(missing_modules_reason(&choice), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn venv_python_symlink_is_probed_as_the_venv_and_reasons_name_it() {
+        let temp = dependency_root();
+        let root = canonical_local(temp.path()).unwrap();
+        let base = root.join("base/python3.12");
+        fake_python(&base, r#"["jinja2"]"#);
+        fs::create_dir_all(root.join(".venv/bin")).unwrap();
+        std::os::unix::fs::symlink(&base, root.join(".venv/bin/python")).unwrap();
+        let choice = find_python(&root, None, None, &mut PythonCache::default()).unwrap();
+        // The venv path is kept, not its resolved base interpreter, so the
+        // venv's own site-packages are what the import check sees.
+        if choice.path.starts_with(&root) {
+            assert_eq!(choice.path, root.join(".venv/bin/python"));
+            let reason = missing_modules_reason(&choice).unwrap();
+            assert!(reason.contains("jinja2"), "{reason}");
+            assert!(reason.contains(".venv/bin/python"), "{reason}");
+            assert!(reason.contains("update.sh"), "{reason}");
+        } else {
+            // The machine's own Python had every module and is a valid last resort.
+            assert!(choice.missing.is_empty());
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_dependency_check_is_not_reported_as_missing_modules() {
+        let choice = PythonChoice {
+            path: PathBuf::from("/opt/strata/.venv/bin/python"),
+            missing: vec![DEPENDENCY_CHECK_FAILED.into()],
+        };
+        let reason = missing_modules_reason(&choice).unwrap();
+        assert!(reason.contains("检测失败或超时"), "{reason}");
+        assert!(!reason.contains("依赖缺失"), "{reason}");
     }
 }
