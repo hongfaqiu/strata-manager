@@ -1,23 +1,23 @@
 //! Login starts the independently staged supervisor, never a hidden WebView.
 use serde_json::{json, Value};
+#[cfg(any(windows, target_os = "linux", test))]
+use sha2::{Digest, Sha256};
 use std::path::Path;
 #[cfg(any(windows, target_os = "linux", test))]
 use std::path::PathBuf;
-#[cfg(any(windows, target_os = "linux", test))]
-use sha2::{Digest, Sha256};
 #[cfg(any(windows, target_os = "linux", test))]
 use std::{fs, io::Read};
 
 #[cfg(any(windows, target_os = "linux", test))]
 mod registration {
     use super::*;
+    use serde_json::{json, Value};
+    use sha2::{Digest, Sha256};
     use std::{
         fs,
         io::Read,
         path::{Path, PathBuf},
     };
-    use serde_json::{json, Value};
-    use sha2::{Digest, Sha256};
 
     pub(super) enum Registration {
         Missing,
@@ -28,11 +28,15 @@ mod registration {
     pub(super) fn reason(code: &str) -> &'static str {
         match code {
             "disabled_entry" => "系统已禁用此启动项。请在系统启动设置中启用，或在应用中重新开启。",
-            "restricted_entry" => "启动项含桌面环境限制或额外启动条件。请核对系统启动设置后重新启用。",
+            "restricted_entry" => {
+                "启动项含桌面环境限制或额外启动条件。请核对系统启动设置后重新启用。"
+            }
             "missing_executable" => {
                 "已配置的后台文件不存在。请重新开启此项以修复；若仍失败，请修复应用安装。"
             }
-            "corrupt_executable" => "已配置的后台文件校验失败。请修复应用安装，再重新开启此启动项。",
+            "corrupt_executable" => {
+                "已配置的后台文件校验失败。请修复应用安装，再重新开启此启动项。"
+            }
             "wrong_data" => {
                 "此启动项使用其它数据目录。请在系统启动设置中移除同名项，再在本应用中启用。"
             }
@@ -77,7 +81,10 @@ mod registration {
         status
     }
 
-    pub(super) fn identity(args: &[String], data: &Path) -> Result<(PathBuf, String, String), &'static str> {
+    pub(super) fn identity(
+        args: &[String],
+        data: &Path,
+    ) -> Result<(PathBuf, String, String), &'static str> {
         identity_with_paths(args, data, &|path| dunce::canonicalize(path))
     }
 
@@ -203,7 +210,10 @@ mod registration {
         ))
     }
 
-    pub(super) fn executable_hash(executable: &Path, expected: &str) -> Result<String, &'static str> {
+    pub(super) fn executable_hash(
+        executable: &Path,
+        expected: &str,
+    ) -> Result<String, &'static str> {
         let before = fs::symlink_metadata(executable).map_err(|error| {
             if error.kind() == std::io::ErrorKind::NotFound {
                 "missing_executable"
@@ -272,7 +282,6 @@ mod registration {
             Registration::Invalid(code) => Err(reason(code).into()),
         }
     }
-
 }
 #[cfg(any(windows, target_os = "linux", test))]
 use registration::*;
