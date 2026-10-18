@@ -327,7 +327,7 @@ impl RuntimeState {
             status["recoveryDeferred"] = json!(self.recovery_is_deferred());
             status["activeLocalInstallation"] = active_local_installation;
             status["localServiceDesired"] = local_service_desired;
-            status["capabilities"] = json!({"fullScenarioTuning": 1, "managerMcp": 1, "quickCalibration": 1, "tuningLive": 1});
+            status["capabilities"] = json!({"fullScenarioTuning": 1, "managerMcp": 1, "quickCalibration": 2, "tuningLive": 1});
             status
         })
     }

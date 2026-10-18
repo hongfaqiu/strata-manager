@@ -216,7 +216,15 @@ export interface TuningJob {
 export type CalibrationBackend = 'cuda' | 'hip' | 'sycl' | 'unknown';
 export type CalibrationStepKind = 'warmup' | 'prefillPipe' | 'pcieFrac' | 'specMinP' | 'confirm';
 export interface CalibrationParameters { pcieFrac: number; specMinP: number; prefillPipe?: number }
-export interface CalibrationSample { value: number; round: number; rate: number }
+/** `rate` is the combined decode tok/s; with long answers in the mix, `short` and `long` are the two sides. */
+export interface CalibrationSample { value: number; round: number; rate: number; short?: number; long?: number }
+/** What a speed measurement is made of: general mixes short chats with a 512-token answer. */
+export type CalibrationWorkload = 'general' | 'chat' | 'agent' | 'longDocument';
+/** speed: combined rate only; balanced / memory: short and long answers may not get slower. */
+export type CalibrationGoal = 'speed' | 'balanced' | 'memory';
+export interface CalibrationRates { short?: number; long?: number }
+/** A pcie_frac of -1 in steps, parameters and live snapshots means "left to the engine" (no --pcie-frac). */
+export const PCIE_AUTO = -1;
 export interface CalibrationStep {
   kind: CalibrationStepKind;
   status: 'pending' | 'running' | 'done' | 'skipped';
@@ -233,7 +241,7 @@ export interface CalibrationStep {
   excluded?: { value: number; reason: 'amdPcieZero' | 'unconfirmedGpuPcieZero' | string }[];
   skippedReason?: 'noLayerSplit' | 'contextTooSmall' | 'sameAsCurrent' | string;
 }
-export interface CalibrateRequest { rounds?: number }
+export interface CalibrateRequest { rounds?: number; workload?: CalibrationWorkload; goal?: CalibrationGoal }
 export interface CalibrationJob {
   id: string;
   profileId: string;
@@ -247,14 +255,26 @@ export interface CalibrationJob {
   rounds: number;
   /** Relative gain a value needs over the current one, 0.03 like upstream. */
   minGain: number;
+  /** Absent on reports from before one-click tuning (they measured short chats only). */
+  workload?: CalibrationWorkload;
+  goal?: CalibrationGoal;
+  /** False: the config left --pcie-frac to the engine (baseline.pcieFrac is PCIE_AUTO). */
+  pcieFlag?: boolean;
+  /** The engine refines its own PCIe share when no --pcie-frac is set. */
+  pcieAuto?: boolean;
+  enginePcieFrac?: number;
   baseline: CalibrationParameters;
   candidate?: CalibrationParameters;
   recommended?: CalibrationParameters;
-  /** Engine flags to write when applying, e.g. {"--pcie-frac": "0.35"}; empty means keep. */
-  settings: Record<string, string>;
+  /** Engine flags to write when applying, e.g. {"--pcie-frac": "0.35"}; null removes a flag; empty means keep. */
+  settings: Record<string, string | null>;
   gain?: number;
   baseRate?: number;
   tunedRate?: number;
+  baseRates?: CalibrationRates;
+  tunedRates?: CalibrationRates;
+  /** faster | autoPreferred | belowMinGain | shortRegressed | longRegressed | noData */
+  verdict?: string;
   steps: CalibrationStep[];
   completedRequests: number;
   totalRequests: number;

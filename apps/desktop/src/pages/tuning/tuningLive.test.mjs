@@ -39,8 +39,14 @@ test('zh and en tables carry the same non-empty strings', () => {
   for (const table of [zh, en]) for (const [key, value] of Object.entries(table)) assert.ok(value.trim(), key);
 });
 
-test('the tuning page never folds content into <details>', () => {
-  for (const file of ['../TuningPage.tsx', './QuickCalibration.tsx', './TuningLive.tsx']) assert.doesNotMatch(readFileSync(new URL(file, import.meta.url), 'utf8'), /<details|<summary/);
+// #38 lifted for one-click tuning: the expert area is the one collapsed region, closed by default.
+test('the tuning page folds only the expert area into a single <details>', () => {
+  const page = readFileSync(new URL('../TuningPage.tsx', import.meta.url), 'utf8');
+  assert.equal(page.match(/<details/g)?.length, 1);
+  assert.equal(page.match(/<summary/g)?.length, 1);
+  assert.match(page, /<details className="tuning-expert"[^>]*open=\{advancedOpen\}/);
+  assert.match(page, /const \[advancedOpen, setAdvancedOpen\] = useState\(false\)/);
+  for (const file of ['./QuickCalibration.tsx', './TuningLive.tsx', './SpeedBoost.tsx']) assert.doesNotMatch(readFileSync(new URL(file, import.meta.url), 'utf8'), /<details|<summary/);
 });
 
 test('the sweep chart marks the winner, the current value, the 3% bar and the AMD exclusion', () => {

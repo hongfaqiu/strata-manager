@@ -1124,6 +1124,13 @@ async fn measure(
     } = probe;
     let mut record = empty_measurement(scene);
     let mut tune = json!({"pcie_frac":parameters.pcie_frac,"spec_min_p":parameters.spec_min_p});
+    // A negative share means "the engine's own" (quick calibration's PCIE_AUTO):
+    // no per-request pcie_frac, so the engine's automatic refinement stays on.
+    if parameters.pcie_frac < 0.0 {
+        if let Some(tune) = tune.as_object_mut() {
+            tune.remove("pcie_frac");
+        }
+    }
     if let (Some(tune), Some(extra)) = (tune.as_object_mut(), tune_extra.as_object()) {
         for (key, value) in extra {
             tune.insert(key.clone(), value.clone());

@@ -2,12 +2,30 @@
 
 [简体中文](TUNING.md) · [User guide](USER_GUIDE.en.md) · [Verification](VERIFICATION.md)
 
-Tuning compares a finite set of parameter candidates for the same model on this computer. Reports validate the selected use case; keep the original configuration when no stable gain is found. Isolated HTTP, real background-process fixtures and browser contracts have been tested. Full tuning with a real GPU and the final installed application remains pending.
+Tuning compares a finite set of parameter candidates for the same model on this computer. The default **one-click speed-up** takes about 10 minutes without restarting the model; use **scenario verification** in the advanced area to compare restart parameters and full task quality. Reports validate the selected use case; keep the original configuration when no stable gain is found. Isolated HTTP, real background-process fixtures and browser contracts have been tested. Full tuning with a real GPU and the final installed application remains pending.
 
-## Getting started
+## One-click speed-up (default)
+
+Open **Parameter tuning** and select **Speed up**; no use case has to be chosen first. The default "General" measurement covers short answers and long answers of 512+ tokens and only accepts a change that slows neither. It takes about 10 minutes, does not restart the model and does not edit the configuration file; the model is busy meanwhile.
+
+1. **Health check**, run when the page opens without using the model:
+   - **Free GPU memory**: when free VRAM after loading is below the safety floor (1 GiB on Windows, 512 MiB elsewhere, 2 GiB with the "Save GPU memory" goal), the fix reserves memory (`--vram-reserve-mib`) and switches a fixed expert cache to `--expert-cache auto`. A reserve suggested in the engine log wins when larger.
+   - **Long context**: at 64K+ context with no resident window, outside WSL and with enough free RAM, `--kv-resident 32768` keeps KV beyond the resident window in RAM (about 13.7 KB per token).
+   - **GPU/RAM split**: a fixed `--pcie-frac` is reported because it turns off the engine's own adjustment (information only).
+   - A fix saves a new configuration version (`*-speedfix-DATE.json`) and switches to it; the original file is untouched.
+2. **Baseline**: the current settings are measured first and always shown as "Before".
+3. **Sweep**: quick calibration measures prefill pipe, the GPU/RAM split (PCIe) and the MTP threshold. When the engine can split automatically (CUDA ≥ 0.1.42 on one GPU or RDNA4 ≥ 0.1.43, no layer split, no `--batch`, no `--peer-device`), "leave it to the engine" is the reference: a fixed value is only written when clearly faster (over 3%), and a fixed `--pcie-frac` is removed when automatic is not slower (within 1%).
+4. **Result**: before/after tok/s, short and long answers separately, and a plain-language line per change. When nothing is clearly faster the reason is explained and nothing is offered.
+5. **Use these settings** saves a new version (`*-speedup-DATE.json`) and switches to it; **Roll back** switches back to the previous version. The original file is never modified.
+
+**Advanced · expert mode** is collapsed by default and holds the optional use case (General / Chat / Coding and agents / Long writing), goal (Fastest / Balanced / Save GPU memory) and rounds per value; the detailed charts and log, save-as or overwrite, and scenario verification below. Historical short-request reports stay viewable there; new short diagnostics are no longer offered.
+
+## Scenario verification (advanced)
+
+### Getting started
 
 1. Wait for a local model to become ready in the desktop application. Existing models can be imported; tuning does not download another copy.
-2. Open **Parameter tuning** and choose **Everyday chat**, **Coding and Agent**, or **Long document analysis**.
+2. Open **Parameter tuning**, expand **Advanced · expert mode** and choose **Everyday chat**, **Coding and Agent**, or **Long document analysis** in scenario verification.
 3. Usually, keep the defaults and select **Start measurement**. The background waits for idle work before entering maintenance. Other API requests may wait or report busy during this period.
 4. Review task quality, repeated gains, resource headroom and recovery status. Only a complete report that passes every condition can **Apply and verify**. Measurement restores the original configuration.
 5. To undo an applied result, select **Restore original parameters**. Exported reports contain measurement metadata, without prompts, responses or tool bodies.
@@ -38,7 +56,7 @@ Each candidate runs interleaved **original A → candidate B → original A**, w
 
 Resources are sampled total machine RAM and primary-GPU memory use, including other programs. They do not establish exclusive model costs. Unknown or insufficient headroom prevents recommendation and application. Current conservative floors are 1 GiB RAM and 256 MiB primary-GPU memory. Sampled floors do not guarantee freedom from transient OOM or establish longer-context stability.
 
-**Run short request diagnostics only** keeps historical probes for observation. Old and diagnostic reports cannot apply new recommendations; original parameters from an already applied report can still be restored.
+Short request diagnostics were removed from the interface; historical reports remain viewable in the advanced area. Old and diagnostic reports cannot apply new recommendations; original parameters from an already applied report can still be restored.
 
 ## Cancellation, failure and recovery
 
