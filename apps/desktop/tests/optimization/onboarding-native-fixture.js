@@ -110,6 +110,7 @@ window.__TAURI_INTERNALS__ = {
     if (command === 'request_capture_status') return { state: 'disabled', expiresAtMs: null, reason: null };
     if (command === 'runtime_update_info') return null;
     if (command === 'plugin:event|listen') { const id = ++listenerId; listeners.set(id, { event: args.event, handler: args.handler }); return id; }
+    if (command === 'plugin:dialog|open') return window.__fixture.dialogPaths?.shift() ?? null;
     if (command.startsWith('plugin:') || ['apply_settings', 'confirm_window_close'].includes(command)) return null;
     window.__fixture.unmocked = [...(window.__fixture.unmocked ?? []), command];
     return null;

@@ -62,6 +62,27 @@ try {
     await page.getByRole('button', { name: '开始安装' }).click();
     await page.waitForFunction(() => window.__fixture.state.store.onboardingV1?.runtimeTaskId === 'rt-new');
     assert.equal(await page.evaluate(() => window.__fixture.calls.filter(call => call.command === 'prepare_local_runtime').length), 1);
+    assert.equal(await page.evaluate(() => window.__fixture.calls.find(call => call.command === 'prepare_local_runtime').args.localArchives), undefined, 'downloading stays the default');
+  });
+  await run('runtime install can use already-downloaded Strata and engine packages', 'onboarding-app.html?state=environment#guide', async page => {
+    await page.getByRole('button', { name: '继续 · 安装 Strata' }).click();
+    await page.waitForFunction(() => document.querySelector('[data-testid="onboarding"]')?.dataset.step === 'runtime');
+    if (shots) { await page.waitForTimeout(300); await page.screenshot({ path: resolve(shots, '03-runtime-default-download.png') }); }
+    await page.getByRole('radio', { name: '使用已下载的安装包' }).click();
+    await page.getByText('请至少选择一个安装包，或改为自动下载。').waitFor();
+    assert.equal(await page.getByRole('button', { name: '开始安装' }).isDisabled(), true, 'local mode needs a chosen package');
+    if (shots) { await page.waitForTimeout(300); await page.screenshot({ path: resolve(shots, '03a-local-packages-required.png') }); }
+    await page.evaluate(() => { window.__fixture.dialogPaths = ['C:\\Downloads\\Strata-0123456789abcdef.zip', 'C:\\Downloads\\strata-windows-x64.zip']; });
+    const choose = page.getByRole('button', { name: '选择文件…' });
+    await choose.first().click();
+    await page.locator('[data-testid="ob-archive-strataArchivePath"]').waitFor();
+    await choose.nth(1).click();
+    await page.locator('[data-testid="ob-archive-engineArchivePath"]').waitFor();
+    if (shots) { await page.waitForTimeout(300); await page.screenshot({ path: resolve(shots, '03-local-packages.png') }); }
+    await page.getByRole('button', { name: '开始安装' }).click();
+    await page.waitForFunction(() => window.__fixture.state.store.onboardingV1?.runtimeTaskId === 'rt-new');
+    const args = await page.evaluate(() => window.__fixture.calls.find(call => call.command === 'prepare_local_runtime').args);
+    assert.deepEqual(args.localArchives, { strataArchivePath: 'C:\\Downloads\\Strata-0123456789abcdef.zip', engineArchivePath: 'C:\\Downloads\\strata-windows-x64.zip' });
   });
   await run('environment warnings hold the environment step until accepted', 'onboarding-app.html?state=environment#guide', async page => {
     await page.getByText('未检测到显卡，生成会很慢').waitFor();

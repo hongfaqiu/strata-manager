@@ -24,10 +24,15 @@ mod window_layout;
 #[tauri::command]
 async fn prepare_local_runtime(
     state: tauri::State<'_, ClientState>,
+    local_archives: Option<strata_runtime_core::installation::LocalRuntimeArchives>,
 ) -> Result<serde_json::Value, String> {
+    let params = match local_archives.filter(|archives| !archives.is_empty()) {
+        Some(archives) => serde_json::json!({ "localArchives": archives }),
+        None => serde_json::json!({}),
+    };
     state
         .ipc
-        .request("prepare_local_runtime", serde_json::json!({}))
+        .request("prepare_local_runtime", params)
         .await
         .map_err(|e| e.to_string())
 }

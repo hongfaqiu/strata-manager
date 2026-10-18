@@ -6,6 +6,8 @@ use crate::{
     RuntimeState,
 };
 mod download;
+pub mod local_archive;
+pub use local_archive::LocalRuntimeArchives;
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -108,20 +110,34 @@ pub fn status(state: &RuntimeState) -> Result<InstallationStatus, String> {
 }
 
 /// The RPC returns immediately; cancellation uses the existing persisted task flag.
-pub fn start(state: Arc<RuntimeState>) -> Result<TaskStatus, String> {
+/// `archives` lets first-run setup use already-downloaded files instead of downloading.
+pub fn start(
+    state: Arc<RuntimeState>,
+    archives: LocalRuntimeArchives,
+) -> Result<TaskStatus, String> {
+    let archives = archives.validate()?;
     #[cfg(all(windows, target_arch = "x86_64"))]
     {
-        crate::runtime_upgrade::start_install_release(state)
+        crate::runtime_upgrade::start_install_release_with_archives(state, archives)
     }
     #[cfg(not(all(windows, target_arch = "x86_64")))]
     {
-        start_fallback(state)
+        start_fallback_with_archive(state, archives.strata_archive_path)
     }
 }
 
 /// Fixed-source preparation remains available for unsupported package platforms
 /// and explicit fallback workflows. Windows normally installs the latest Release.
 pub fn start_fallback(state: Arc<RuntimeState>) -> Result<TaskStatus, String> {
+    start_fallback_with_archive(state, None)
+}
+
+/// `local_source` replaces the fixed source download with the user's copy of the
+/// same archive; it must match the same SHA256.
+pub fn start_fallback_with_archive(
+    state: Arc<RuntimeState>,
+    local_source: Option<String>,
+) -> Result<TaskStatus, String> {
     let _operation = state.runtime_operations.lock().map_err(|e| e.to_string())?;
     crate::runtime_upgrade::assert_available(&state)?;
     let runtime = owned_directory(state.data_dir(), &["runtimes"])?
@@ -182,7 +198,7 @@ pub fn start_fallback(state: Arc<RuntimeState>) -> Result<TaskStatus, String> {
     }
     drop(_operation);
     tokio::spawn(async move {
-        let outcome = prepare(&state, &id, &runtime).await;
+        let outcome = prepare_with_archive(&state, &id, &runtime, local_source.as_deref()).await;
         if let Ok(mut tasks) = state.tasks.lock() {
             if let Some(record) = tasks.get_mut(&id) {
                 record.process.take();
@@ -1305,6 +1321,15 @@ pub(crate) async fn prepare(
     id: &str,
     root: &Path,
 ) -> Result<PreparedRuntime, String> {
+    prepare_with_archive(state, id, root, None).await
+}
+
+pub(crate) async fn prepare_with_archive(
+    state: &RuntimeState,
+    id: &str,
+    root: &Path,
+    local_source: Option<&str>,
+) -> Result<PreparedRuntime, String> {
     let mut owner = claim(state, root, SOURCE_REVISION)?;
     if owner.ready {
         for (relative, expected) in &owner.critical_hashes {
@@ -1327,7 +1352,17 @@ pub(crate) async fn prepare(
     }
     let python = ensure_python(state, id).await?;
     if !owner.source_ready {
-        let archive = download(state, id, SOURCE_URL, SOURCE_SHA256, MAX_ARCHIVE).await?;
+        let archive = match local_source {
+            Some(path) => local_archive::import_verified(
+                state,
+                id,
+                Path::new(path),
+                SOURCE_SHA256,
+                MAX_ARCHIVE,
+                local_archive::STRATA,
+            )?,
+            None => download(state, id, SOURCE_URL, SOURCE_SHA256, MAX_ARCHIVE).await?,
+        };
         progress(state, id, "正在安全解包固定版本的 Strata 官方源码")?;
         owner.critical_hashes = extract_source(&archive, root, || cancelled(state, id))?;
         owner.source_ready = true;
@@ -1959,14 +1994,20 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let state = RuntimeState::open(temp.path().join("data")).unwrap();
         let downloads = owned_directory(state.data_dir(), &["downloads"]).unwrap();
-        if std::env::var("STRATA_MANAGER_TEST_NETWORK_SOURCE").as_deref() != Ok("1") {
+        // STRATA_MANAGER_TEST_LOCAL_ARCHIVE=1 exercises first-run "use a downloaded package".
+        let local = std::env::var("STRATA_MANAGER_TEST_LOCAL_ARCHIVE").as_deref() == Ok("1");
+        if !local && std::env::var("STRATA_MANAGER_TEST_NETWORK_SOURCE").as_deref() != Ok("1") {
             fs::copy(
                 &archive,
                 downloads.join(format!("{SOURCE_SHA256}.download")),
             )
             .unwrap();
         }
-        let task = start(state.clone()).unwrap();
+        let archives = LocalRuntimeArchives {
+            strata_archive_path: local.then(|| archive.to_string_lossy().into_owned()),
+            engine_archive_path: None,
+        };
+        let task = start(state.clone(), archives).unwrap();
         let deadline = Instant::now() + Duration::from_secs(120);
         loop {
             let status = state
