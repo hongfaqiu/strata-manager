@@ -11,14 +11,14 @@ import { downloadAssetToFile, findDraftRelease, ghJson, validateRelease, verifyR
 const repository = 'example/strata-manager';
 const version = '0.1.0';
 const tag = `v${version}`;
-const filenames = { windows: 'Strata.Manager_0.1.0_x64-setup.exe', linux: 'Strata.Manager_0.1.0_amd64.AppImage', deb: 'Strata.Manager_0.1.0_amd64.deb' };
+const filenames = { windows: 'Strata.Manager_0.1.0_x64-setup.exe', linux: 'Strata.Manager_0.1.0_amd64.AppImage', deb: 'Strata.Manager_0.1.0_amd64.deb', macos: 'Strata.Manager_0.1.0_aarch64.app.tar.gz', dmg: 'Strata.Manager_0.1.0_aarch64.dmg' };
 const commitSha = '1'.repeat(40);
 const options = { repository, tag, version, expectedSha: commitSha, tagCommitSha: commitSha };
 function releaseFixture(signature = 'x'.repeat(50)) {
-  const assets = [filenames.windows, `${filenames.windows}.sig`, filenames.linux, `${filenames.linux}.sig`, filenames.deb, `${filenames.deb}.sig`, 'latest.json'].map((name, id) => ({ name, id: id + 1, size: 100 }));
+  const assets = [filenames.windows, `${filenames.windows}.sig`, filenames.linux, `${filenames.linux}.sig`, filenames.deb, `${filenames.deb}.sig`, filenames.macos, `${filenames.macos}.sig`, filenames.dmg, `${filenames.dmg}.sig`, 'latest.json'].map((name, id) => ({ name, id: id + 1, size: 100 }));
   const release = { tag_name: tag, draft: true, target_commitish: 'main', assets };
   const update = name => ({ signature, url: `https://github.com/${repository}/releases/download/${tag}/${name}` });
-  const manifest = { version, platforms: { 'windows-x86_64': update(filenames.windows), 'linux-x86_64': update(filenames.linux) } };
+  const manifest = { version, platforms: { 'windows-x86_64': update(filenames.windows), 'linux-x86_64': update(filenames.linux), 'darwin-aarch64': update(filenames.macos) } };
   return { release, manifest, update };
 }
 
@@ -123,6 +123,19 @@ test('wrong product, version or architecture cannot masquerade as the required i
     manifest.platforms['windows-x86_64'] = update(replacement);
     assert.throws(() => validateRelease(release, manifest, options), /current-version windows installer/);
   }
+});
+
+test('macOS updater archive and DMG are required with signatures', () => {
+  const { release, manifest, update } = releaseFixture();
+  assert.doesNotThrow(() => validateRelease(release, manifest, options));
+  assert.throws(() => validateRelease({ ...release, assets: release.assets.filter(a => !a.name.endsWith('.dmg') && !a.name.endsWith('.dmg.sig')) }, manifest, options), /\.dmg/);
+  assert.throws(() => validateRelease({ ...release, assets: release.assets.filter(a => a.name !== `${filenames.dmg}.sig`) }, manifest, options), /DMG update signature is missing/);
+  const wrongArch = structuredClone(manifest);
+  const bad = 'Strata.Manager_0.1.0_x86_64.app.tar.gz';
+  release.assets.find(a => a.name === filenames.macos).name = bad;
+  release.assets.find(a => a.name === `${filenames.macos}.sig`).name = bad + '.sig';
+  wrongArch.platforms['darwin-aarch64'] = update(bad);
+  assert.throws(() => validateRelease(release, wrongArch, options), /current-version macos installer/);
 });
 
 test('draft lookup uses the authenticated release list and scans beyond the first matching page', async () => {

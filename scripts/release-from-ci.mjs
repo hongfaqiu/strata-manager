@@ -216,7 +216,7 @@ export function validateReleaseInventory(release, plan, { allowPartial = false }
   if (release?.tag_name !== plan.tag || release.draft !== true || release.prerelease !== plan.prerelease
       || !positive(release.id) || !Array.isArray(release.assets)) fail('The actual matching unpublished draft is required.');
   const expected = assetNames(plan).sort(); const actual = release.assets.map(a => a.name).sort();
-  if (allowPartial ? actual.some(n => !expected.includes(n)) : JSON.stringify(actual) !== JSON.stringify(expected)) fail('Exactly the eight expected release assets are required.');
+  if (allowPartial ? actual.some(n => !expected.includes(n)) : JSON.stringify(actual) !== JSON.stringify(expected)) fail('Exactly the expected release assets are required.');
   const ids = new Set(); const names = new Set();
   for (const a of release.assets) {
     if (!positive(a.id) || ids.has(a.id) || names.has(a.name) || !positive(a.size)) fail('Nonempty distinct release assets are required.');
@@ -520,7 +520,7 @@ export async function sign() {
     runId: c.plan.runId, signatures: await Promise.all(c.plan.artifacts.map(async a => ({
       name: a.installer + '.sig', sha256: await digest(pathResolve(c.temp, a.installer + '.sig')),
     }))) }, null, 2), { flag: 'wx', mode: 0o600 });
-  console.log('All three installers signed for ' + c.plan.version + ' and verified by the source Rust verifier.');
+  console.log('All installers signed for ' + c.plan.version + ' and verified by the source Rust verifier.');
 }
 export async function publish() {
   const c = await context('publish'); await bindCi(c); await readPrepared(c); await verifyLocal(c);

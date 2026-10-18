@@ -9,7 +9,7 @@ import { pipeline } from 'node:stream/promises';
 import { requireReleaseTagCommit } from './release-tag.mjs';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const requiredPlatforms = { 'windows-x86_64': 'windows', 'linux-x86_64': 'appimage' };
+const requiredPlatforms = { 'windows-x86_64': 'windows', 'linux-x86_64': 'appimage', 'darwin-aarch64': 'macos' };
 const platformAliases = { 'windows-x86_64-nsis': 'windows-x86_64', 'linux-x86_64-appimage': 'linux-x86_64', 'linux-x86_64-deb': 'deb' };
 const installerExtension = /\.(?:exe|msi|appimage|deb|rpm|dmg|pkg|msix|msixbundle|appx|appxbundle|zip|tar\.gz|tgz|tar\.xz)(?:\.sig)?$/i;
 const supplementaryAsset = /^(?:LICENSE|LICENCE|COPYING|NOTICE|THIRD_PARTY_NOTICES|README|CHANGELOG|RELEASE_NOTES|CHECKSUMS|SHA\d+SUMS)(?:[._-].*)?$|\.(?:txt|md|pdf|png|jpe?g|webp|json|jsonl|sha(?:256|512)(?:sum)?|asc)$/i;
@@ -46,7 +46,7 @@ function referencedAsset(update, assets, repository, tag, platform) {
 
 function validateInstallerName(asset, kind, version, productName) {
   const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const suffix = { windows: '_x64-setup\\.exe', appimage: '_amd64\\.AppImage', deb: '_amd64\\.deb' }[kind];
+  const suffix = { windows: '_x64-setup\\.exe', appimage: '_amd64\\.AppImage', deb: '_amd64\\.deb', macos: '_aarch64\\.app\\.tar\\.gz', dmg: '_aarch64\\.dmg' }[kind];
   const match = new RegExp(`^(.+)_${escaped}${suffix}$`, 'i').exec(asset.name);
   // GitHub replaces spaces in Tauri's productName with dots. Linux package
   // names may use hyphens; all retain the same product, version and architecture.
@@ -73,6 +73,11 @@ export function validateRelease(release, manifest, { repository, tag, version, e
   validateInstallerName(debs[0], 'deb', version, productName);
   const deb = { asset: debs[0], signature: assets.get(`${debs[0].name}.sig`) };
   if (!deb.signature) throw new Error('DEB update signature is missing.');
+  const dmgs = [...assets.values()].filter(asset => asset.name.endsWith('.dmg'));
+  if (dmgs.length !== 1) throw new Error('Expected exactly one current-version .dmg installer.');
+  validateInstallerName(dmgs[0], 'dmg', version, productName);
+  const dmg = { asset: dmgs[0], signature: assets.get(`${dmgs[0].name}.sig`) };
+  if (!dmg.signature) throw new Error('DMG update signature is missing.');
   for (const [platform, target] of Object.entries(platformAliases)) {
     if (!Object.hasOwn(manifest.platforms, platform)) continue;
     const alias = referencedAsset(manifest.platforms[platform], assets, repository, tag, platform);
@@ -80,13 +85,13 @@ export function validateRelease(release, manifest, { repository, tag, version, e
     if (alias.asset.id !== expected.asset.id || (target !== 'deb' && alias.signatureText !== expected.signatureText)) throw new Error(`Updater alias must reference its verified installer: ${platform}`);
     updates[platform] = alias;
   }
-  const installers = [updates['windows-x86_64'].asset, updates['linux-x86_64'].asset, deb.asset];
+  const installers = [updates['windows-x86_64'].asset, updates['linux-x86_64'].asset, deb.asset, updates['darwin-aarch64'].asset, dmg.asset];
   const allowedAssets = new Set(['latest.json', ...installers.flatMap(asset => [asset.name, `${asset.name}.sig`])]);
   for (const asset of assets.values()) {
     if (allowedAssets.has(asset.name)) continue;
     if (installerExtension.test(asset.name) || asset.name.endsWith('.sig') || !supplementaryAsset.test(asset.name)) throw new Error(`Unexpected release asset: ${asset.name}`);
   }
-  return { updates, deb };
+  return { updates, deb, dmg };
 }
 
 export function ghJson(path, { execute = execFileSync } = {}) {
@@ -172,9 +177,10 @@ export async function verifyRelease({ repository = process.env.GITHUB_REPOSITORY
     const manifestPath = join(directory, 'latest.json');
     await fetchAsset(repository, manifestAsset, manifestPath);
     const manifest = JSON.parse(await limitedText(manifestPath, 1024 * 1024, 'latest.json'));
-    const { updates, deb } = validateRelease(release, manifest, { repository, tag, version, expectedSha, tagCommitSha, productName });
-    // Every installer must verify, even when DEB has no updater manifest alias.
+    const { updates, deb, dmg } = validateRelease(release, manifest, { repository, tag, version, expectedSha, tagCommitSha, productName });
+    // Every installer must verify, even when DEB/DMG have no updater manifest alias.
     if (!updates['linux-x86_64-deb']) updates.deb = deb;
+    updates.dmg = dmg;
     const downloaded = new Set();
     for (const [platform, update] of Object.entries(updates)) {
       if (downloaded.has(update.asset.id)) continue;
@@ -189,7 +195,7 @@ export async function verifyRelease({ repository = process.env.GITHUB_REPOSITORY
       execFileSync(verifierPath, ['--config', configPath, '--signature', signaturePath, '--artifact', artifactPath, '--version', version, '--require-signed-version'], { stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 32768 });
       downloaded.add(update.asset.id);
     }
-    logger(`Draft release verified: ${tag}; all three installers (NSIS, AppImage, DEB) match the built-in public key, signed version and uploaded signatures.`);
+    logger(`Draft release verified: ${tag}; all installers (NSIS, AppImage, DEB, macOS app archive, DMG) match the built-in public key, signed version and uploaded signatures.`);
   } finally {
     await cleanupOwnedDirectory(directory, parent);
   }

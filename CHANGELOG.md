@@ -21,6 +21,7 @@ Maintain both languages for each version. Move unreleased changes into the actua
 - **Unsloth 更高量化**：在原有档位外增加 UD-Q5_K_XL、UD-Q6_K_XL、Q8_0（内存需求更高）。
 - **首次安装**：支持选择已下载的本地 Strata / 引擎安装包并跳过下载。
 - **复制为新配置**：已登记配置的副本会自动登记，可在配置列表中选用。
+- **发布验签**：补上 `darwin-aarch64` 与 DMG 资产校验，使含 Mac 实验包的 Release 能通过门禁并公开。
 - **macOS 第一期（实验）**：CI 在 `macos-15` / `aarch64-apple-darwin` 打出未公证 DMG 与 updater 用 `.app.tar.gz`（临时签名）。文档与官网标明实验包、Gatekeeper 限制，以及 **DMG alone 不含 Metal 引擎**（引擎仍待后续 `./setup.sh`）。不提供 Intel 包。关联 #53。
 
 ### English
@@ -33,6 +34,7 @@ Maintain both languages for each version. Move unreleased changes into the actua
 - **Higher Unsloth quants**: adds UD-Q5_K_XL, UD-Q6_K_XL and Q8_0 (higher memory needs).
 - **First-time install**: choose an already-downloaded local Strata / engine archive and skip the download.
 - **Copy as new configuration**: copies of registered configurations are registered automatically and selectable in the list.
+- **Release verification**: allow `darwin-aarch64` and DMG assets so a release that includes the experimental Mac packages can pass the gate and publish.
 - **macOS phase 1 (experimental)**: CI on `macos-15` / `aarch64-apple-darwin` produces an un-notarized DMG and updater `.app.tar.gz` (ad-hoc signing). Docs and the website mark the package experimental, note Gatekeeper limits, and state that the **DMG alone does not include a Metal engine** (engine setup remains a later `./setup.sh` phase). No Intel package. See #53.
 
 ## [0.1.13] - 2026-10-18
