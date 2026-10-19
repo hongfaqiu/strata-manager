@@ -19,6 +19,9 @@ mod host;
 #[cfg(any(windows, test))]
 #[path = "taskbar_layout.rs"]
 mod layout;
+#[cfg(any(windows, test))]
+#[path = "taskbar_widget.rs"]
+pub(crate) mod widget;
 
 #[cfg(any(windows, test))]
 pub(crate) const MAX_FRAME: usize = 16 * 1024;
@@ -53,6 +56,9 @@ pub(crate) struct Preferences {
     pub metric_colors: BTreeMap<String, String>,
     #[serde(default)]
     pub english: bool,
+    /// Ring + item selection of the native taskbar widget.
+    #[serde(default)]
+    pub widget: widget::WidgetPrefs,
 }
 
 #[cfg(any(windows, test))]
@@ -103,6 +109,7 @@ impl Preferences {
                 .as_str()
                 .map(|language| crate::system_locale::uses_english_fallback(Some(language)))
                 .unwrap_or_else(|| value["english"].as_bool().unwrap_or(true)),
+            widget: widget::WidgetPrefs::normalize(&value["taskbar"]),
         }
     }
 
@@ -121,6 +128,7 @@ impl Preferences {
             && self.layout == normalized.layout
             && self.metric_colors.len() <= METRICS.len()
             && self.metric_colors == normalized.metric_colors
+            && self.widget.valid()
     }
 }
 
@@ -143,6 +151,12 @@ pub(crate) struct Sample {
     pub values: [Option<f64>; 11],
     pub identity: SampleIdentity,
     pub sampled_at: u64,
+    /// Status accent of the taskbar widget.
+    #[serde(default)]
+    pub tone: widget::Tone,
+    /// Total VRAM in GiB, for the VRAM ring.
+    #[serde(default)]
+    pub vram_total: Option<f64>,
 }
 
 #[cfg(any(windows, test))]
@@ -207,7 +221,23 @@ pub(crate) fn sample(snapshot: &Value) -> Sample {
             _ => t("连接不可用", "Unavailable"),
         }
     };
+    let tone = if transition.is_some() {
+        widget::Tone::Loading
+    } else if online {
+        match live["state"].as_str() {
+            Some("generating" | "reading" | "prefill") => widget::Tone::Busy,
+            _ => widget::Tone::Ready,
+        }
+    } else {
+        match snapshot["phase"].as_str() {
+            Some("stopped" | "none" | "online") => widget::Tone::Stopped,
+            _ => widget::Tone::Error,
+        }
+    };
+    let mut vram_total = None;
     if online {
+        vram_total =
+            gpu_number(hw, "gpu_mem_total", "mem_total", "sum").map(|v| v / 1_073_741_824.0);
         // Throughput remains strictly live; the desktop view can separately
         // label historical idle values. A native live graph never repeats history.
         values[0] = if live["state"] == "generating" {
@@ -235,6 +265,8 @@ pub(crate) fn sample(snapshot: &Value) -> Sample {
     Sample {
         state: state.into(),
         values,
+        tone,
+        vram_total,
         identity: SampleIdentity {
             profile: snapshot["profile"]["id"].as_str().map(str::to_owned),
             pid: snapshot["process"]["pid"].as_u64(),
@@ -311,6 +343,8 @@ impl SampleHistory {
 
     fn clear_stale(&mut self, english: bool) {
         self.current.values = [None; 11];
+        self.current.vram_total = None;
+        self.current.tone = widget::Tone::Error;
         self.current.state = if english {
             "Sample expired"
         } else {
@@ -381,10 +415,12 @@ pub(crate) enum HostFrame {
     Failed {
         message: String,
     },
-    Preferences {
-        metrics: Vec<String>,
-        show_graphs: bool,
+    /// Ring/item selection changed from the widget's context menu.
+    Widget {
+        widget: widget::WidgetPrefs,
     },
+    /// Left click or "打开 Strata Manager".
+    Main {},
     Floating {},
     Settings {},
     Close {},
@@ -452,9 +488,9 @@ impl Default for ModeStatus {
             active: false,
             visible: false,
             message: if cfg!(windows) {
-                "任务栏宽条为实验性适配，挂载时验证可用空间"
+                "任务栏监控挂载时会验证主屏任务栏的可用空间"
             } else {
-                "当前平台不支持原生任务栏宽条，保留桌面浮条"
+                "任务栏监控仅支持 Windows，保留桌面浮条"
             }
             .into(),
         }
@@ -664,6 +700,28 @@ pub(crate) fn shutdown(app: &AppHandle) {
     stop(app, "任务栏监控已关闭".into());
 }
 
+/// Restores the taskbar widget on launch when the user left it switched on.
+/// A failure falls back to the desktop strip exactly like a manual start.
+pub(crate) fn restore_on_launch(app: &AppHandle, settings: &Value) {
+    #[cfg(windows)]
+    if settings["floatingMonitor"]["taskbarEnabled"] == true {
+        let app = app.clone();
+        let preferences = Preferences::from_settings(settings);
+        tauri::async_runtime::spawn(async move {
+            // Let Explorer and the main window settle after sign-in.
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            let state = app.state::<TaskbarMonitorState>();
+            let _switch = state.switching.lock().await;
+            if let Err(error) = start(&app, preferences).await {
+                stop(&app, format!("任务栏监控恢复失败：{error}"));
+            }
+            notify_visibility(&app);
+        });
+    }
+    #[cfg(not(windows))]
+    let _ = (app, settings);
+}
+
 /// Settings application only updates a live presentation. It never starts a host.
 pub(crate) fn apply_preferences(app: &AppHandle, settings: &Value) -> Result<(), String> {
     #[cfg(windows)]
@@ -853,25 +911,27 @@ async fn start(app: &AppHandle, preferences: Preferences) -> Result<(), String> 
                         }
                     }
                 }
-                Ok(HostFrame::Preferences {
-                    metrics,
-                    show_graphs,
-                }) => {
-                    let valid = !metrics.is_empty()
-                        && metrics.len() <= 8
-                        && metrics.iter().all(|x| METRICS.contains(&x.as_str()));
-                    if valid {
+                Ok(HostFrame::Widget { widget }) => {
+                    if widget.valid() {
                         let _ = event_app.emit_to(
                             "main",
                             "monitor-preferences-patch",
-                            json!({"metrics":metrics,"showGraphs":show_graphs,"mode":"taskbar"}),
+                            json!({"taskbar":widget}),
                         );
                     }
+                }
+                Ok(HostFrame::Main {}) => {
+                    let _ = crate::floating_monitor::show_main(&event_app, None);
                 }
                 Ok(HostFrame::Settings {}) => {
                     let _ = crate::floating_monitor::show_main(&event_app, Some("settings".into()));
                 }
                 Ok(HostFrame::Floating {}) => {
+                    let _ = event_app.emit_to(
+                        "main",
+                        "monitor-preferences-patch",
+                        json!({"taskbarEnabled":false}),
+                    );
                     recover(&event_app, &event_session, "已切换到桌面浮条".into(), true).await;
                     break;
                 }
@@ -879,6 +939,11 @@ async fn start(app: &AppHandle, preferences: Preferences) -> Result<(), String> 
                     let state = event_app.state::<TaskbarMonitorState>();
                     let _switch = state.switching.lock().await;
                     if current(&event_app, &event_session) {
+                        let _ = event_app.emit_to(
+                            "main",
+                            "monitor-preferences-patch",
+                            json!({"taskbarEnabled":false}),
+                        );
                         if let Err(error) = close_monitor_locked(&event_app) {
                             let _ = event_app.emit_to("main", "tray-action-error", error);
                         }
@@ -1354,6 +1419,71 @@ mod tests {
         assert_eq!(
             Preferences::normalize(&json!({"fontSize":null})).font_size,
             16
+        );
+    }
+
+    #[test]
+    fn widget_preferences_roundtrip_through_settings_and_menu_frames() {
+        let settings = json!({"language":"zh-CN","floatingMonitor":{"taskbarEnabled":true,"taskbar":{"ring":"vram","items":["status","generation","bogus"]}}});
+        let preferences = Preferences::from_settings(&settings);
+        assert_eq!(preferences.widget.ring, "vram");
+        assert_eq!(preferences.widget.items, vec!["generation", "status"]);
+        assert!(preferences.valid());
+        let mut tampered = preferences.clone();
+        tampered.widget.items = vec!["status".into(), "generation".into()];
+        assert!(!tampered.valid());
+        // Legacy Configure frames without the widget field use the defaults.
+        let mut legacy = serde_json::to_value(&preferences).unwrap();
+        legacy.as_object_mut().unwrap().remove("widget");
+        let decoded: Preferences = serde_json::from_value(legacy).unwrap();
+        assert_eq!(decoded.widget, widget::WidgetPrefs::default());
+        // Menu changes come back as a bounded, allowlisted frame.
+        let frame = HostFrame::Widget {
+            widget: preferences.widget.clone(),
+        };
+        let mut encoded = Vec::new();
+        write_frame(&mut encoded, &frame).unwrap();
+        let Some(HostFrame::Widget { widget }) = read_frame(&mut encoded.as_slice()).unwrap()
+        else {
+            panic!("wrong widget frame");
+        };
+        assert_eq!(widget, preferences.widget);
+        assert!(read_frame::<_, HostFrame>(
+            &mut &b"{\"type\":\"widget\",\"widget\":{\"ring\":\"gpu\",\"items\":[],\"run\":1}}\n"[..]
+        )
+        .is_err());
+        assert!(matches!(
+            read_frame::<_, HostFrame>(&mut &b"{\"type\":\"main\"}\n"[..]).unwrap(),
+            Some(HostFrame::Main {})
+        ));
+    }
+
+    #[test]
+    fn sample_carries_status_tone_and_vram_total() {
+        let tone = |value: Value| sample(&value).tone;
+        assert_eq!(tone(json!({"phase":"stopped"})), widget::Tone::Stopped);
+        assert_eq!(tone(json!({"phase":"unavailable"})), widget::Tone::Error);
+        assert_eq!(
+            tone(
+                json!({"phase":"online","health":{"loaded":true},"metrics":{"live":{"state":"loading"}}})
+            ),
+            widget::Tone::Loading
+        );
+        assert_eq!(
+            tone(
+                json!({"phase":"online","health":{"loaded":true},"metrics":{"live":{"state":"idle"}}})
+            ),
+            widget::Tone::Ready
+        );
+        let busy = sample(
+            &json!({"phase":"online","health":{"loaded":true},"metrics":{"live":{"state":"generating","tok_s":20},"hardware":{"gpu_mem_used":2147483648u64,"gpu_mem_total":8589934592u64}}}),
+        );
+        assert_eq!(busy.tone, widget::Tone::Busy);
+        assert_eq!(busy.vram_total, Some(8.0));
+        assert_eq!(
+            sample(&json!({"phase":"stopped","metrics":{"hardware":{"gpu_mem_total":1}}}))
+                .vram_total,
+            None
         );
     }
 

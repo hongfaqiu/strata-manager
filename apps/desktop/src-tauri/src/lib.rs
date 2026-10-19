@@ -1819,6 +1819,7 @@ pub fn run() {
             app.manage(monitor_tray::MonitorTrayState::default());
             app.manage(taskbar_monitor::TaskbarMonitorState::default());
             monitor_tray::apply(app.handle(), &saved_settings)?;
+            taskbar_monitor::restore_on_launch(app.handle(), &saved_settings);
             let menu = Menu::with_items(
                 app,
                 &[&service_state, &show, &start, &stop, &quit, &stop_quit],

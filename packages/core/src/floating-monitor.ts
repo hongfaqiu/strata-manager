@@ -5,7 +5,36 @@ import type {
   FloatingMonitorMetric,
   FloatingMonitorPreferences,
   ResolvedFloatingMonitorPreferences,
+  TaskbarWidgetItem,
+  TaskbarWidgetPreferences,
+  TaskbarWidgetRing,
 } from './types';
+
+/** Canonical order; must match TaskbarWidget ITEMS in the Rust host. */
+export const TASKBAR_WIDGET_ITEMS: readonly TaskbarWidgetItem[] = ['generation', 'prefill', 'gpu', 'vram', 'temperature', 'status'];
+export const TASKBAR_WIDGET_RINGS: readonly TaskbarWidgetRing[] = ['gpu', 'vram', 'off'];
+export const TASKBAR_WIDGET_DEFAULTS: TaskbarWidgetPreferences = { ring: 'gpu', items: ['generation', 'prefill'] };
+
+/** Same rules as WidgetPrefs::normalize: allowlist, canonical order, never empty. */
+export function normalizeTaskbarWidgetPreferences(value?: unknown): TaskbarWidgetPreferences {
+  const source = value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown> : {};
+  const items = Array.isArray(source.items)
+    ? TASKBAR_WIDGET_ITEMS.filter(item => (source.items as unknown[]).includes(item))
+    : [...TASKBAR_WIDGET_DEFAULTS.items];
+  let ring = TASKBAR_WIDGET_RINGS.find(candidate => candidate === source.ring) ?? TASKBAR_WIDGET_DEFAULTS.ring;
+  if (ring === 'off' && items.length === 0) ring = 'gpu';
+  return { ring, items };
+}
+
+/** Toggle one item, refusing to leave the widget with nothing to show. */
+export function toggleTaskbarWidgetItem(preferences: TaskbarWidgetPreferences, item: TaskbarWidgetItem): TaskbarWidgetPreferences {
+  const items = preferences.items.includes(item)
+    ? preferences.items.filter(current => current !== item)
+    : TASKBAR_WIDGET_ITEMS.filter(current => current === item || preferences.items.includes(current));
+  if (preferences.ring === 'off' && items.length === 0) return preferences;
+  return { ring: preferences.ring, items };
+}
 
 export interface FloatingMonitorMetricDefinition {
   id: FloatingMonitorMetric;
@@ -68,6 +97,8 @@ export const FLOATING_MONITOR_DEFAULTS: ResolvedFloatingMonitorPreferences = {
   snapToEdge: false,
   metricColors: {},
   mode: 'floating',
+  taskbarEnabled: false,
+  taskbar: TASKBAR_WIDGET_DEFAULTS,
 };
 
 const validMetrics = new Set<string>(FLOATING_MONITOR_METRICS.map(metric => metric.id));
@@ -109,8 +140,11 @@ export function normalizeFloatingMonitorPreferences(value?: unknown): ResolvedFl
     showStatus: source.showStatus === true,
     snapToEdge: source.snapToEdge === true,
     metricColors,
-    // Retired taskbar preferences fall back to the supported desktop strip.
+    // The strip mode is always the desktop strip; the Windows taskbar widget
+    // is a separate opt-in (taskbarEnabled) restored by the native host.
     mode: 'floating',
+    taskbarEnabled: source.taskbarEnabled === true,
+    taskbar: normalizeTaskbarWidgetPreferences(source.taskbar),
   };
 }
 

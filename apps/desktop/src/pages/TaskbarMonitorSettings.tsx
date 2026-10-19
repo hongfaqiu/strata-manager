@@ -1,0 +1,120 @@
+import type { AppLanguage } from '@strata-manager/core';
+import { useRef, useState } from 'react';
+import { LoaderCircle } from 'lucide-react';
+
+import {
+  TASKBAR_WIDGET_ITEMS, normalizeTaskbarWidgetPreferences, toggleTaskbarWidgetItem,
+  type TaskbarWidgetItem, type TaskbarWidgetPreferences, type TaskbarWidgetRing,
+} from '@strata-manager/core';
+import { Panel } from '../components';
+import { Checkbox, Segmented, Toggle } from '../OfficialControls';
+import './taskbar-monitor-settings.css';
+
+interface Props {
+  enabled: boolean;
+  widget: TaskbarWidgetPreferences;
+  desktop: boolean;
+  language: AppLanguage;
+  modeStatus?: { mode: string; supported: boolean; active: boolean; visible?: boolean; message?: string };
+  onWidgetChange: (next: TaskbarWidgetPreferences) => void;
+  onEnabledChange?: (enabled: boolean) => Promise<void>;
+}
+
+/** Same wording as the native right-click menu (taskbar_widget::item_menu_label). */
+export const TASKBAR_ITEM_COPY: Record<'zh-CN' | 'en', Record<TaskbarWidgetItem, string>> = {
+  'zh-CN': { generation: '生成速度', prefill: '预填充速度', gpu: 'GPU 负载', vram: '显存占用', temperature: 'GPU 温度', status: '服务状态' },
+  en: { generation: 'Generation speed', prefill: 'Prefill speed', gpu: 'GPU load', vram: 'VRAM usage', temperature: 'GPU temperature', status: 'Service status' },
+};
+const SHORT: Record<'zh-CN' | 'en', Record<TaskbarWidgetItem, string>> = {
+  'zh-CN': { generation: '生成', prefill: '预填充', gpu: 'GPU', vram: '显存', temperature: '温度', status: '' },
+  en: { generation: 'Gen', prefill: 'Prefill', gpu: 'GPU', vram: 'VRAM', temperature: 'Temp', status: '' },
+};
+const EXAMPLE: Record<TaskbarWidgetItem, string> = {
+  generation: '21.3 tok/s', prefill: '3.2k tok/s', gpu: '76%', vram: '19.8 GB', temperature: '52℃', status: '',
+};
+
+/** Static example of the native widget, using the same item/ring rules. */
+export function TaskbarWidgetPreview({ widget, language }: { widget: TaskbarWidgetPreferences; language: AppLanguage }) {
+  const copy = language === 'zh-CN' ? 'zh-CN' : 'en';
+  const percent = widget.ring === 'vram' ? 83 : 76;
+  const columns: TaskbarWidgetItem[][] = [];
+  widget.items.forEach((item, index) => { if (index % 2 === 0) columns.push([item]); else columns.at(-1)!.push(item); });
+  return <div className="taskbar-widget-preview" aria-hidden="true">
+    {widget.ring === 'off'
+      ? <i className="taskbar-widget-preview-dot"/>
+      : <svg className="taskbar-widget-preview-ring" viewBox="0 0 36 36" width="32" height="32">
+        <circle cx="18" cy="18" r="15.5" className="track"/>
+        <circle cx="18" cy="18" r="15.5" className="value" pathLength="100" strokeDasharray={`${percent} 100`} transform="rotate(-90 18 18)"/>
+        <text x="18" y="18" dominantBaseline="central" textAnchor="middle">{percent}</text>
+      </svg>}
+    {columns.map(column => <span className="taskbar-widget-preview-column" key={column.join()}>
+      {column.map(item => item === 'status'
+        ? <span key={item} className="taskbar-widget-preview-line"><i className="taskbar-widget-preview-dot"/><b>{language === 'zh-CN' ? '生成中' : 'Generating'}</b></span>
+        : <span key={item} className="taskbar-widget-preview-line"><em>{SHORT[copy][item]}</em><b data-item={item}>{EXAMPLE[item]}</b></span>)}
+    </span>)}
+  </div>;
+}
+
+export function TaskbarMonitorSettings({ enabled, widget, desktop, language, modeStatus, onWidgetChange, onEnabledChange }: Props) {
+  const zh = language === 'zh-CN';
+  const copy = zh ? 'zh-CN' : 'en';
+  const value = normalizeTaskbarWidgetPreferences(widget);
+  const supported = desktop && modeStatus?.supported === true;
+  const active = modeStatus?.mode === 'taskbar' && modeStatus.active;
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState('');
+  const busy = useRef(false);
+  const toggle = async (next: boolean) => {
+    if (!supported || busy.current || !onEnabledChange) return;
+    busy.current = true; setPending(true); setError('');
+    try { await onEnabledChange(next); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+    finally { busy.current = false; setPending(false); }
+  };
+  const ringOptions: { value: TaskbarWidgetRing; label: string }[] = [
+    { value: 'gpu', label: zh ? 'GPU 负载' : 'GPU load' },
+    { value: 'vram', label: zh ? '显存占用' : 'VRAM usage' },
+    { value: 'off', label: zh ? '不显示' : 'None' },
+  ];
+  const status = !desktop ? (zh ? '请在桌面应用中使用。' : 'Available in the desktop app.')
+    : !supported ? (zh ? '仅支持 Windows 10 / 11 主屏任务栏。' : 'Windows 10 / 11 primary taskbar only.')
+    : active ? modeStatus?.message
+    : enabled && modeStatus?.message ? modeStatus.message
+    : zh ? '默认关闭。开启后显示在通知区左侧；右键可调整内容或关闭。' : 'Off by default. Shown left of the notification area; right-click it to adjust or close.';
+  return <Panel className="taskbar-monitor-settings" title={zh ? '任务栏监控（Windows）' : 'Taskbar monitor (Windows)'} action={
+    <div className="taskbar-monitor-settings-switch">
+      <span>{active ? (zh ? '开' : 'On') : (zh ? '关' : 'Off')}</span>
+      {pending && <LoaderCircle size={13} className="spin" aria-hidden="true"/>}
+      <Toggle ariaLabel={zh ? '任务栏监控' : 'Taskbar monitor'} checked={active} disabled={!supported || pending || !onEnabledChange} onCheckedChange={next => void toggle(next)}/>
+    </div>
+  }>
+    <p className="taskbar-monitor-settings-status" role="status">{status}</p>
+    {error && <p className="floating-monitor-settings-error" role="alert">{error}</p>}
+    <div className="taskbar-monitor-settings-body">
+      <div className="taskbar-monitor-settings-stage" aria-label={zh ? '任务栏监控示例预览' : 'Taskbar monitor example preview'}>
+        <span className="taskbar-monitor-settings-stage-label">{zh ? '示例' : 'Example'}</span>
+        <div className="taskbar-monitor-settings-taskbar"><TaskbarWidgetPreview widget={value} language={language}/><span className="taskbar-monitor-settings-clock">14:32<br/>2026/10/19</span></div>
+      </div>
+      <div className="taskbar-monitor-settings-options">
+        <section aria-labelledby="taskbar-monitor-ring">
+          <h3 id="taskbar-monitor-ring">{zh ? '圆环显示' : 'Ring shows'}</h3>
+          <Segmented ariaLabel={zh ? '圆环显示' : 'Ring shows'} value={value.ring} options={ringOptions.map(option => ({ ...option, disabled: !desktop || (option.value === 'off' && value.items.length === 0) }))} onValueChange={ring => onWidgetChange(normalizeTaskbarWidgetPreferences({ ...value, ring }))}/>
+        </section>
+        <section aria-labelledby="taskbar-monitor-items">
+          <h3 id="taskbar-monitor-items">{zh ? '显示内容' : 'Shown items'}</h3>
+          <div className="taskbar-monitor-settings-items">
+            {TASKBAR_WIDGET_ITEMS.map(item => {
+              const checked = value.items.includes(item);
+              const locked = checked && value.ring === 'off' && value.items.length === 1;
+              return <label key={item} className="taskbar-monitor-settings-item">
+                <Checkbox checked={checked} disabled={!desktop || locked} onChange={() => onWidgetChange(toggleTaskbarWidgetItem(value, item))}/>
+                <span>{TASKBAR_ITEM_COPY[copy][item]}</span>
+              </label>;
+            })}
+          </div>
+          <p className="taskbar-monitor-settings-hint">{zh ? '宽度随所选内容变化；与任务栏右键「自定义内容」同步。GPU 温度仅在显卡上报时出现在右键菜单中。' : 'Width follows the selection and stays in sync with the widget’s right-click “Customize” menu. GPU temperature appears in that menu only when the GPU reports it.'}</p>
+        </section>
+      </div>
+    </div>
+  </Panel>;
+}

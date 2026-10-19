@@ -50,7 +50,8 @@ export function FloatingMonitorSettings({ preferences, desktop, language, onChan
   const [paletteTheme, setPaletteTheme] = useState<'light' | 'dark'>(() => typeof document !== 'undefined' && document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light');
   const [announcement, setAnnouncement] = useState('');
   const visibilityChangePending = useRef(false);
-  const visible = modeStatus?.visible ?? modeStatus?.active ?? false;
+  // While the Windows taskbar widget is active the desktop strip is hidden.
+  const visible = modeStatus?.mode === 'taskbar' && modeStatus.active ? false : modeStatus?.visible ?? modeStatus?.active ?? false;
   const update = (patch: Partial<FloatingMonitorPreferences>) => onChange({ ...preferences, ...normalizeFloatingMonitorPreferences({ ...value, ...patch }) });
 
   useEffect(() => {

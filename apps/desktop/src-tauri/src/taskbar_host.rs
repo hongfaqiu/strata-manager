@@ -2,12 +2,11 @@
 //! The only cross-process UI operation is creating our own WS_CHILD under the
 //! discovered taskbar. Explorer windows are never moved, resized or reparented.
 use super::{
-    layout::{graph_points, vacant_rect, Rect},
-    read_frame, write_frame, HostFrame, ParentFrame, Preferences, Sample, SampleHistory,
-    TaskbarPlacement, METRICS,
+    layout::{vacant_rect, Rect},
+    read_frame, widget, write_frame, HostFrame, ParentFrame, Preferences, Sample, SampleHistory,
+    TaskbarPlacement,
 };
 use std::{
-    collections::VecDeque,
     io::BufReader,
     sync::{mpsc, Arc, Mutex},
     time::{Duration, Instant},
@@ -15,7 +14,9 @@ use std::{
 use windows::{
     core::{w, PCWSTR},
     Win32::{
-        Foundation::{CloseHandle, COLORREF, FILETIME, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
+        Foundation::{
+            CloseHandle, COLORREF, FILETIME, HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM,
+        },
         Graphics::Gdi::*,
         System::{
             Com::*,
@@ -31,34 +32,6 @@ use windows::{
 
 const CLASS: PCWSTR = w!("StrataReadOnlyTaskbarHost");
 const WAKE: u32 = WM_APP + 1;
-const LABELS: [&str; 11] = [
-    "生成",
-    "读取",
-    "GPU",
-    "显存",
-    "CPU",
-    "内存",
-    "温度",
-    "功耗",
-    "运行",
-    "排队",
-    "近缓存",
-];
-const LABELS_EN: [&str; 11] = [
-    "Gen ",
-    "Read ",
-    "GPU ",
-    "VRAM ",
-    "CPU ",
-    "RAM ",
-    "Temp ",
-    "Power ",
-    "Run ",
-    "Queue ",
-    "Last cache ",
-];
-const UNITS: [&str; 11] = ["t/s", "t/s", "%", "G", "%", "G", "°C", "W", "", "", "%"];
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Identity {
     hwnd: usize,
@@ -357,6 +330,7 @@ unsafe fn collect_visible(
 enum Event {
     Wake,
     Timer,
+    Theme,
     Menu,
     Rebuild,
     Destroyed(usize),
@@ -370,7 +344,13 @@ struct Render {
     preferences: Preferences,
     timeline: SampleHistory,
     dpi: u32,
-    painted: bool,
+    bar_height: i32,
+    /// Taskbar (not app) colour mode.
+    dark: bool,
+    /// Per-pixel alpha child window; false after a layered attempt failed.
+    layered: bool,
+    /// Last layout put on screen; equal layouts are not repainted.
+    last: Option<widget::Layout>,
 }
 
 /// Coalesced input stays bounded even while a Win32 popup runs its modal loop.
@@ -409,12 +389,28 @@ unsafe extern "system" fn window_proc(
         }
         match message {
             WM_PAINT => {
+                let mut ps = PAINTSTRUCT::default();
+                let _ = BeginPaint(hwnd, &mut ps);
+                let _ = EndPaint(hwnd, &ps);
+                // Layered windows keep their last UpdateLayeredWindow bitmap;
+                // the opaque fallback must redraw after being uncovered.
                 if let Ok(mut render) = context.render.lock() {
-                    render.painted = paint(hwnd, &render);
+                    if !render.layered {
+                        present(hwnd, &mut render, true);
+                    }
                 }
                 return LRESULT(0);
             }
             WM_ERASEBKGND => return LRESULT(1),
+            // Clicking the widget must never activate it or steal focus.
+            WM_MOUSEACTIVATE => return LRESULT(MA_NOACTIVATE as isize),
+            WM_LBUTTONUP => {
+                let _ = output(&HostFrame::Main {});
+                return LRESULT(0);
+            }
+            WM_SETTINGCHANGE | WM_THEMECHANGED | WM_DWMCOLORIZATIONCOLORCHANGED => {
+                let _ = context.events.try_send(Event::Theme);
+            }
             WM_CONTEXTMENU => {
                 let _ = context.events.try_send(Event::Menu);
                 return LRESULT(0);
@@ -441,352 +437,399 @@ unsafe extern "system" fn window_proc(
     DefWindowProcW(hwnd, message, wparam, lparam)
 }
 
-fn column_widths(preferences: &Preferences, dpi: u32) -> Vec<i32> {
-    let rows = if preferences.layout == "compact" {
-        1
-    } else {
-        2
+fn reading(sample: &Sample) -> widget::Reading<'_> {
+    widget::Reading {
+        generation: sample.values[0],
+        prefill: sample.values[1],
+        gpu: sample.values[2],
+        vram_used: sample.values[3],
+        vram_total: sample.vram_total,
+        temperature: sample.values[6],
+        state: &sample.state,
+        tone: sample.tone,
+    }
+}
+
+fn widget_size(preferences: &Preferences, dpi: u32, bar_height: i32) -> (i32, i32) {
+    widget::size(&preferences.widget, preferences.english, dpi, bar_height)
+}
+
+fn current_layout(render: &Render) -> widget::Layout {
+    widget::layout(
+        &render.preferences.widget,
+        render.preferences.english,
+        render.dpi,
+        render.bar_height,
+        &reading(&render.timeline.current),
+        &widget::Palette::new(render.dark),
+    )
+}
+
+/// Reads the TASKBAR colour mode (not the app mode). Missing value = dark,
+/// which is the Windows default for the taskbar on both Win10 and Win11.
+fn taskbar_is_dark() -> bool {
+    registry_dword(
+        "Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+        "SystemUsesLightTheme",
+    )
+    .is_none_or(|light| light == 0)
+}
+
+fn registry_dword(key: &str, value: &str) -> Option<u32> {
+    use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD};
+    let (key, value) = (wide(key), wide(value));
+    let mut data = 0u32;
+    let mut size = std::mem::size_of::<u32>() as u32;
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            key.as_ptr(),
+            value.as_ptr(),
+            RRF_RT_REG_DWORD,
+            std::ptr::null_mut(),
+            (&mut data as *mut u32).cast(),
+            &mut size,
+        )
     };
-    let mut columns = vec![0; preferences.metrics.len().div_ceil(rows).max(1)];
-    let font = f64::from(preferences.font_size);
-    let scale = f64::from(dpi) / 96.0;
-    for (position, metric) in preferences.metrics.iter().enumerate() {
-        let Some(index) = METRICS.iter().position(|id| id == metric) else {
-            continue;
-        };
-        let digits = match index {
-            0 | 1 => 6.,
-            2 | 4 | 6 | 10 => 3.,
-            3 | 5 => 5.,
-            _ => 4.,
-        };
-        let measure = |text: &str| {
-            text.chars()
-                .map(|c| if c.is_ascii() { 0.6 } else { 1. })
-                .sum::<f64>()
-                * font
-        };
-        let label = if preferences.show_labels {
-            measure(if preferences.english {
-                LABELS_EN[index]
-            } else {
-                LABELS[index]
-            })
-        } else {
-            0.
-        };
-        let unit = if preferences.show_units {
-            measure(UNITS[index])
-        } else {
-            0.
-        };
-        let graph = if preferences.show_graphs { 26. } else { 0. };
-        let width = ((label + digits * font * 0.58 + unit + graph + 8.) * scale).ceil() as i32;
-        let column = position / rows;
-        columns[column] = columns[column].max(width);
-    }
-    columns
+    (status == 0).then_some(data)
 }
 
-fn dimensions(preferences: &Preferences, dpi: u32) -> (i32, i32, usize) {
-    let rows = if preferences.layout == "compact" {
-        1
-    } else {
-        2
+/// Offscreen 32-bit top-down DIB used both as the GDI text mask surface and
+/// as the source of UpdateLayeredWindow / the opaque fallback blit.
+struct Surface {
+    dc: HDC,
+    bitmap: HBITMAP,
+    old: HGDIOBJ,
+    bits: *mut u8,
+    width: i32,
+    height: i32,
+}
+
+impl Surface {
+    unsafe fn new(width: i32, height: i32) -> Option<Self> {
+        let dc = CreateCompatibleDC(None);
+        if dc.0.is_null() {
+            return None;
+        }
+        let info = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: width,
+                biHeight: -height,
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: BI_RGB.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut bits = std::ptr::null_mut();
+        let bitmap = match CreateDIBSection(Some(dc), &info, DIB_RGB_COLORS, &mut bits, None, 0) {
+            Ok(bitmap) if !bits.is_null() => bitmap,
+            _ => {
+                let _ = DeleteDC(dc);
+                return None;
+            }
+        };
+        let old = SelectObject(dc, bitmap.into());
+        Some(Self {
+            dc,
+            bitmap,
+            old,
+            bits: bits.cast(),
+            width,
+            height,
+        })
+    }
+
+    fn bytes(&mut self) -> &mut [u8] {
+        // SAFETY: the DIB section owns width*height*4 bytes until Drop.
+        unsafe {
+            std::slice::from_raw_parts_mut(self.bits, (self.width * self.height * 4) as usize)
+        }
+    }
+}
+
+impl Drop for Surface {
+    fn drop(&mut self) {
+        unsafe {
+            SelectObject(self.dc, self.old);
+            let _ = DeleteObject(self.bitmap.into());
+            let _ = DeleteDC(self.dc);
+        }
+    }
+}
+
+/// Renders one text operation as a grayscale coverage mask. GDI cannot write
+/// alpha, so text is drawn white-on-black and tinted while compositing.
+unsafe fn text_mask(surface: &mut Surface, op: &widget::Op, english: bool) -> Option<Vec<u8>> {
+    let widget::Op::Text {
+        left,
+        top,
+        right,
+        bottom,
+        text,
+        size,
+        bold,
+        align,
+        ..
+    } = op
+    else {
+        return None;
     };
-    let scale = f64::from(dpi) / 96.0;
-    let width = column_widths(preferences, dpi).iter().sum::<i32>() + 8;
-    let height = ((preferences.font_size + 4) as f64 * rows as f64 * scale).ceil() as i32 + 4;
-    (width, height, rows)
-}
-
-fn metric_text(index: usize, number: f64) -> String {
-    if number >= 1e12 {
-        return format!("{number:.0e}");
-    }
-    if number >= 999.95 {
-        let (scale, suffix) = if number >= 999_950_000. {
-            (1e9, "G")
-        } else if number >= 999_950. {
-            (1e6, "M")
-        } else {
-            (1e3, "k")
-        };
-        return format!("{:.1}{suffix}", number / scale);
-    }
-    if matches!(index, 0 | 1 | 3 | 5) {
-        format!("{number:.1}")
+    surface.bytes().fill(0);
+    let face = if english {
+        w!("Segoe UI")
     } else {
-        format!("{number:.0}")
-    }
-}
-
-unsafe fn paint(hwnd: HWND, render: &Render) -> bool {
-    let mut ps = PAINTSTRUCT::default();
-    let dc = BeginPaint(hwnd, &mut ps);
-    if dc.0.is_null() {
-        return false;
-    }
-    let mut rect = RECT::default();
-    if GetClientRect(hwnd, &mut rect).is_err() {
-        let _ = EndPaint(hwnd, &ps);
-        return false;
-    }
-    let buffer = CreateCompatibleDC(Some(dc));
-    let bitmap = CreateCompatibleBitmap(dc, rect.right.max(1), rect.bottom.max(1));
-    if buffer.0.is_null() || bitmap.0.is_null() {
-        if !bitmap.0.is_null() {
-            let _ = DeleteObject(bitmap.into());
-        }
-        if !buffer.0.is_null() {
-            let _ = DeleteDC(buffer);
-        }
-        let _ = EndPaint(hwnd, &ps);
-        return false;
-    }
-    let old_bitmap = SelectObject(buffer, bitmap.into());
-    let brush = CreateSolidBrush(COLORREF(0x002b211b));
-    FillRect(buffer, &rect, brush);
-    let _ = DeleteObject(brush.into());
-    let font_height =
-        (render.preferences.font_size as f64 * render.dpi as f64 / 96.0).round() as i32;
+        w!("Microsoft YaHei UI")
+    };
     let font = CreateFontW(
-        -font_height,
+        -size,
         0,
         0,
         0,
-        500,
+        if *bold { 700 } else { 400 },
         0,
         0,
         0,
         DEFAULT_CHARSET,
         OUT_DEFAULT_PRECIS,
         CLIP_DEFAULT_PRECIS,
-        CLEARTYPE_QUALITY,
+        ANTIALIASED_QUALITY,
         0,
-        w!("Segoe UI"),
+        face,
     );
-    let old_font = SelectObject(buffer, font.into());
-    SetBkMode(buffer, TRANSPARENT);
-    let (_, _, rows) = dimensions(&render.preferences, render.dpi);
-    let column_widths = column_widths(&render.preferences, render.dpi);
-    let cell_height = (rect.bottom - 4) / rows as i32;
-    for (position, metric) in render.preferences.metrics.iter().enumerate() {
-        let Some(index) = METRICS.iter().position(|x| *x == metric) else {
-            continue;
-        };
-        let column = position / rows;
-        let cell_width = column_widths[column];
-        let x = 4 + column_widths[..column].iter().sum::<i32>();
-        let y = 2 + (position % rows) as i32 * cell_height;
-        let color = color(index, &render.preferences);
-        let graph_width = if render.preferences.show_graphs {
-            (26.0 * render.dpi as f64 / 96.0) as i32
-        } else {
-            0
-        };
-        if graph_width > 0 {
-            graph(
-                buffer,
-                &render.timeline.points,
-                index,
-                Rect {
-                    left: x + cell_width - graph_width - 3,
-                    top: y + 3,
-                    right: x + cell_width - 3,
-                    bottom: y + cell_height - 3,
-                },
-                color,
-            );
-        }
-        SetTextColor(buffer, color);
-        let label = if render.preferences.show_labels {
-            if render.preferences.english {
-                LABELS_EN[index]
-            } else {
-                LABELS[index]
-            }
-        } else {
-            ""
-        };
-        let unit =
-            if render.preferences.show_units && render.timeline.current.values[index].is_some() {
-                UNITS[index]
-            } else {
-                ""
-            };
-        let value = match render.timeline.current.values[index] {
-            Some(n) => metric_text(index, n),
-            None => "—".into(),
-        };
-        let text = format!("{label}{value}{unit}");
-        let mut text: Vec<u16> = text.encode_utf16().collect();
-        let mut area = RECT {
-            left: x,
-            top: y,
-            right: x + cell_width - graph_width - 4,
-            bottom: y + cell_height,
-        };
-        DrawTextW(
-            buffer,
-            &mut text,
-            &mut area,
-            DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX,
-        );
-    }
-    // When no telemetry is available, replace the first column's placeholder
-    // with the actual stopped/unavailable state; never retain previous digits.
-    if render.preferences.show_status && render.timeline.current.values.iter().all(Option::is_none)
-    {
-        let mut area = RECT {
-            left: 4,
-            top: 2,
-            right: rect.right - 4,
-            bottom: rect.bottom - 2,
-        };
-        let brush = CreateSolidBrush(COLORREF(0x002b211b));
-        FillRect(buffer, &area, brush);
-        let _ = DeleteObject(brush.into());
-        SetTextColor(buffer, COLORREF(0x00c7b8a8));
-        // The first paint may precede the first snapshot. An empty Rust slice
-        // has a dangling non-null pointer; do not pass that as a Win32 string.
-        let state = initial_status_text(&render.timeline.current.state, render.preferences.english);
-        let mut text: Vec<u16> = state.encode_utf16().collect();
-        DrawTextW(
-            buffer,
-            &mut text,
-            &mut area,
-            DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
-        );
-    }
-    let success = BitBlt(
-        dc,
-        0,
-        0,
-        rect.right,
-        rect.bottom,
-        Some(buffer),
-        0,
-        0,
-        SRCCOPY,
-    )
-    .is_ok();
-    SelectObject(buffer, old_font);
-    SelectObject(buffer, old_bitmap);
+    let old = SelectObject(surface.dc, font.into());
+    SetBkMode(surface.dc, TRANSPARENT);
+    SetTextColor(surface.dc, COLORREF(0x00ffffff));
+    let mut area = RECT {
+        left: *left,
+        top: *top,
+        right: *right,
+        bottom: *bottom,
+    };
+    let align = match align {
+        widget::Align::Left => DT_LEFT,
+        widget::Align::Center => DT_CENTER,
+        widget::Align::Right => DT_RIGHT,
+    };
+    // Never pass an empty slice: its dangling pointer is not a Win32 string.
+    let mut text: Vec<u16> = if text.is_empty() { " " } else { text }
+        .encode_utf16()
+        .collect();
+    DrawTextW(
+        surface.dc,
+        &mut text,
+        &mut area,
+        align | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX,
+    );
+    let _ = GdiFlush();
+    SelectObject(surface.dc, old);
     let _ = DeleteObject(font.into());
-    let _ = DeleteObject(bitmap.into());
-    let _ = DeleteDC(buffer);
-    let _ = EndPaint(hwnd, &ps);
-    success
+    Some(
+        surface
+            .bytes()
+            .chunks(4)
+            .map(|p| p[0].max(p[1]).max(p[2]))
+            .collect(),
+    )
 }
 
-fn initial_status_text(state: &str, english: bool) -> &str {
-    if state.trim().is_empty() {
-        if english {
-            "Waiting for sample"
-        } else {
-            "等待采样"
-        }
-    } else {
-        state
+/// Composes the current layout and puts it on screen. Unchanged layouts are
+/// skipped, so a once-per-second snapshot with equal values never repaints.
+unsafe fn present(hwnd: HWND, render: &mut Render, force: bool) -> bool {
+    let layout = current_layout(render);
+    if !force && render.last.as_ref() == Some(&layout) {
+        return true;
     }
+    let palette = widget::Palette::new(render.dark);
+    let background = if render.layered {
+        // Alpha 1 is visually transparent yet still hit-testable, so clicks
+        // and the WindowFromPhysicalPoint visibility probe keep working.
+        widget::Color([0, 0, 0, 1])
+    } else {
+        palette.opaque_background
+    };
+    let mut canvas = widget::Canvas::new(layout.width, layout.height, background);
+    widget::raster_shapes(&mut canvas, &layout.ops);
+    let Some(mut surface) = Surface::new(layout.width, layout.height) else {
+        return false;
+    };
+    for op in &layout.ops {
+        if let widget::Op::Text { color, .. } = op {
+            if let Some(mask) = text_mask(&mut surface, op, render.preferences.english) {
+                canvas.blend_mask(&mask, *color);
+            }
+        }
+    }
+    surface.bytes().copy_from_slice(&canvas.pixels);
+    let shown = if render.layered {
+        let size = SIZE {
+            cx: layout.width,
+            cy: layout.height,
+        };
+        let source = POINT::default();
+        let blend = BLENDFUNCTION {
+            BlendOp: AC_SRC_OVER as u8,
+            BlendFlags: 0,
+            SourceConstantAlpha: 255,
+            AlphaFormat: AC_SRC_ALPHA as u8,
+        };
+        UpdateLayeredWindow(
+            hwnd,
+            None,
+            None,
+            Some(&size),
+            Some(surface.dc),
+            Some(&source),
+            COLORREF(0),
+            Some(&blend),
+            ULW_ALPHA,
+        )
+        .is_ok()
+    } else {
+        let dc = GetDC(Some(hwnd));
+        let ok = !dc.0.is_null()
+            && BitBlt(
+                dc,
+                0,
+                0,
+                layout.width,
+                layout.height,
+                Some(surface.dc),
+                0,
+                0,
+                SRCCOPY,
+            )
+            .is_ok();
+        if !dc.0.is_null() {
+            ReleaseDC(Some(hwnd), dc);
+        }
+        ok
+    };
+    if shown {
+        render.last = Some(layout);
+    }
+    shown
 }
 
-fn color(index: usize, preferences: &Preferences) -> COLORREF {
-    const DEFAULTS: [&str; 11] = [
-        "#68e7a5", "#75bdff", "#ffbb75", "#5edbe8", "#c49af7", "#a3b3ff", "#ff959e", "#efd16a",
-        "#61d8b9", "#f7ae72", "#b5a2fa",
-    ];
-    let text = preferences
-        .metric_colors
-        .get(METRICS[index])
-        .map(String::as_str)
-        .unwrap_or(DEFAULTS[index]);
-    let rgb = text
-        .strip_prefix('#')
-        .and_then(|hex| u32::from_str_radix(hex, 16).ok())
-        .unwrap_or(0xe2e8f0);
-    COLORREF(((rgb & 0xff0000) >> 16) | (rgb & 0x00ff00) | ((rgb & 0xff) << 16))
-}
-unsafe fn graph(
-    dc: HDC,
-    history: &VecDeque<[Option<f64>; 11]>,
-    metric: usize,
-    rect: Rect,
-    color: COLORREF,
-) {
-    if rect.width() < 2 || rect.height() < 2 {
+/// Undocumented uxtheme ordinals (Win10 1903+) make the popup menu follow the
+/// taskbar's light/dark mode. Older builds keep the classic light menu.
+unsafe fn menu_theme(owner: HWND, dark: bool) {
+    use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
+    let build = {
+        use windows_sys::Win32::System::Registry::{
+            RegGetValueW, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ,
+        };
+        let (key, value) = (
+            wide("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion"),
+            wide("CurrentBuildNumber"),
+        );
+        let mut data = [0u16; 16];
+        let mut size = std::mem::size_of_val(&data) as u32;
+        let status = RegGetValueW(
+            HKEY_LOCAL_MACHINE,
+            key.as_ptr(),
+            value.as_ptr(),
+            RRF_RT_REG_SZ,
+            std::ptr::null_mut(),
+            data.as_mut_ptr().cast(),
+            &mut size,
+        );
+        if status != 0 {
+            return;
+        }
+        String::from_utf16_lossy(&data)
+            .trim_end_matches('\0')
+            .parse::<u32>()
+            .unwrap_or(0)
+    };
+    if build < 18362 {
         return;
     }
-    let values: Vec<_> = history.iter().map(|sample| sample[metric]).collect();
-    let pen = CreatePen(PS_SOLID, 1, color);
-    let old = SelectObject(dc, pen.into());
-    let mut previous = false;
-    for point in graph_points(&values, rect) {
-        if let Some((x, y)) = point {
-            if previous {
-                let _ = LineTo(dc, x, y);
-            } else {
-                let _ = MoveToEx(dc, x, y, None);
+    let Ok(module) = LoadLibraryW(w!("uxtheme.dll")) else {
+        return;
+    };
+    type SetPreferredAppMode = unsafe extern "system" fn(i32) -> i32;
+    type AllowDarkModeForWindow = unsafe extern "system" fn(HWND, i32) -> i32;
+    type FlushMenuThemes = unsafe extern "system" fn();
+    let ordinal = |n: usize| windows::core::PCSTR(n as *const u8);
+    if let Some(set) = GetProcAddress(module, ordinal(135)) {
+        let set: SetPreferredAppMode = std::mem::transmute(set);
+        // 2 = ForceDark, 3 = ForceLight.
+        set(if dark { 2 } else { 3 });
+    }
+    if let Some(allow) = GetProcAddress(module, ordinal(133)) {
+        let allow: AllowDarkModeForWindow = std::mem::transmute(allow);
+        allow(owner, i32::from(dark));
+    }
+    if let Some(flush) = GetProcAddress(module, ordinal(136)) {
+        let flush: FlushMenuThemes = std::mem::transmute(flush);
+        flush();
+    }
+}
+
+unsafe fn build_menu(entries: &[widget::MenuEntry]) -> Result<HMENU, String> {
+    let menu = CreatePopupMenu().map_err(|e| e.to_string())?;
+    let mut radios = Vec::new();
+    for entry in entries {
+        match entry {
+            widget::MenuEntry::Command { id, label } => {
+                let text = wide(label);
+                let _ = AppendMenuW(menu, MF_STRING, *id as usize, PCWSTR(text.as_ptr()));
             }
-            previous = true;
-        } else {
-            previous = false;
+            widget::MenuEntry::Toggle { id, label, checked } => {
+                let text = wide(label);
+                let flags = MF_STRING | if *checked { MF_CHECKED } else { MF_UNCHECKED };
+                let _ = AppendMenuW(menu, flags, *id as usize, PCWSTR(text.as_ptr()));
+            }
+            widget::MenuEntry::Radio { id, label, checked } => {
+                let text = wide(label);
+                let _ = AppendMenuW(menu, MF_STRING, *id as usize, PCWSTR(text.as_ptr()));
+                radios.push((*id, *checked));
+            }
+            widget::MenuEntry::Header { label } => {
+                let text = wide(label);
+                let _ = AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, PCWSTR(text.as_ptr()));
+            }
+            widget::MenuEntry::Separator => {
+                let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
+            }
+            widget::MenuEntry::Submenu { label, entries } => {
+                let child = build_menu(entries)?;
+                let text = wide(label);
+                let _ = AppendMenuW(menu, MF_POPUP, child.0 as usize, PCWSTR(text.as_ptr()));
+            }
         }
     }
-    SelectObject(dc, old);
-    let _ = DeleteObject(pen.into());
+    if let (Some(first), Some(last)) = (radios.first(), radios.last()) {
+        if let Some((checked, _)) = radios.iter().find(|(_, checked)| *checked) {
+            let _ = CheckMenuRadioItem(menu, first.0, last.0, *checked, MF_BYCOMMAND.0);
+        }
+    }
+    Ok(menu)
 }
 
 unsafe fn menu(owner: HWND, render: &Arc<Mutex<Render>>) -> Result<Option<Preferences>, String> {
-    let preferences = render
-        .lock()
-        .map_err(|_| "监控偏好不可用")?
-        .preferences
-        .clone();
-    let menu = CreatePopupMenu().map_err(|e| e.to_string())?;
-    let metrics = CreatePopupMenu().map_err(|e| e.to_string())?;
-    let labels = if preferences.english {
-        LABELS_EN
-    } else {
-        LABELS
+    let (preferences, temperature, dark) = {
+        let view = render.lock().map_err(|_| "监控偏好不可用")?;
+        (
+            view.preferences.clone(),
+            view.timeline.current.values[6].is_some(),
+            view.dark,
+        )
     };
-    let t = |cn, en| if preferences.english { en } else { cn };
-    for (index, label) in labels.iter().enumerate() {
-        let checked = preferences.metrics.iter().any(|x| x == METRICS[index]);
-        let flags = MF_STRING | if checked { MF_CHECKED } else { MF_UNCHECKED };
-        let text = wide(label);
-        let _ = AppendMenuW(metrics, flags, 100 + index, PCWSTR(text.as_ptr()));
-    }
-    let text = wide(t("自定义内容", "Choose metrics"));
-    let _ = AppendMenuW(menu, MF_POPUP, metrics.0 as usize, PCWSTR(text.as_ptr()));
-    let text = wide(t("显示折线", "Show graphs"));
-    let _ = AppendMenuW(
-        menu,
-        MF_STRING
-            | if preferences.show_graphs {
-                MF_CHECKED
-            } else {
-                MF_UNCHECKED
-            },
-        1,
-        PCWSTR(text.as_ptr()),
-    );
-    let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
-    for (id, label) in [
-        (2, t("切换桌面浮条", "Switch to desktop strip")),
-        (3, t("自定义设置", "Customize monitor")),
-        (4, t("关闭任务栏监控", "Close taskbar monitor")),
-    ] {
-        let text = wide(label);
-        let _ = AppendMenuW(menu, MF_STRING, id, PCWSTR(text.as_ptr()));
-    }
+    let entries = widget::menu(&preferences.widget, preferences.english, temperature);
+    menu_theme(owner, dark);
+    let menu = build_menu(&entries)?;
     let mut point = POINT::default();
     let _ = GetCursorPos(&mut point);
+    // Required for the popup to close on an outside click. The controller is
+    // an invisible tool window, so this never shows a taskbar button.
     let _ = SetForegroundWindow(owner);
     let selected = TrackPopupMenu(
         menu,
-        TPM_RETURNCMD | TPM_RIGHTBUTTON,
+        TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_BOTTOMALIGN,
         point.x,
         point.y,
         None,
@@ -796,41 +839,30 @@ unsafe fn menu(owner: HWND, render: &Arc<Mutex<Render>>) -> Result<Option<Prefer
     .0;
     let _ = PostMessageW(Some(owner), WM_NULL, WPARAM(0), LPARAM(0));
     let _ = DestroyMenu(menu);
-    let mut next = preferences;
-    match selected {
-        1 => next.show_graphs = !next.show_graphs,
-        2 => {
+    match widget::apply(&preferences.widget, selected.max(0) as u32) {
+        widget::MenuAction::Open => {
+            output(&HostFrame::Main {});
+        }
+        widget::MenuAction::Floating => {
             output(&HostFrame::Floating {});
-            return Ok(None);
         }
-        3 => {
-            output(&HostFrame::Settings {});
-            return Ok(None);
-        }
-        4 => {
+        widget::MenuAction::Close => {
             output(&HostFrame::Close {});
-            return Ok(None);
         }
-        100..=110 => {
-            let id = METRICS[(selected - 100) as usize];
-            if next.metrics.iter().any(|x| x == id) {
-                if next.metrics.len() <= 1 {
-                    return Ok(None);
-                }
-                next.metrics.retain(|x| x != id);
-            } else if next.metrics.len() < 8 {
-                next.metrics.push(id.into());
-            } else {
-                return Ok(None);
-            }
+        widget::MenuAction::Settings => {
+            output(&HostFrame::Settings {});
         }
-        _ => return Ok(None),
+        widget::MenuAction::Update(next) => {
+            output(&HostFrame::Widget {
+                widget: next.clone(),
+            });
+            let mut preferences = preferences;
+            preferences.widget = next;
+            return Ok(Some(preferences));
+        }
+        widget::MenuAction::Nothing => {}
     }
-    output(&HostFrame::Preferences {
-        metrics: next.metrics.clone(),
-        show_graphs: next.show_graphs,
-    });
-    Ok(Some(next))
+    Ok(None)
 }
 
 struct Attachment {
@@ -839,6 +871,29 @@ struct Attachment {
     bar: Rect,
     area: Rect,
     dpi: u32,
+    /// Windows found by the hit-test probe but missing from UI Automation.
+    blockers: Vec<Rect>,
+}
+
+/// Free space nearest the notification area. Re-evaluated on every
+/// inspection, so tray overflow/clock width changes move the widget.
+fn target_area(
+    inspection: &Inspection,
+    occupied: &[Rect],
+    width: i32,
+    height: i32,
+) -> Option<Rect> {
+    let available = Rect {
+        right: inspection.tray_left.min(inspection.bar.right),
+        ..inspection.bar
+    };
+    vacant_rect(
+        available,
+        occupied,
+        width,
+        height,
+        (inspection.dpi / 12) as i32,
+    )
 }
 
 fn placement(area: Rect, bar: Rect, tray_left: i32, dpi: u32) -> TaskbarPlacement {
@@ -871,34 +926,14 @@ impl VisibilityProbe {
 
 // Physical hit testing checks the displayed surface, not just WS_VISIBLE or a
 // successful BitBlt. Record classes/rectangles only; never collect window titles.
-unsafe fn inspect_visibility(
-    hwnd: HWND,
-    area: Rect,
-    widths: &[i32],
-    rows: usize,
-) -> VisibilityProbe {
-    let mut points = Vec::new();
-    for x in [1, 2, 3] {
-        for y in [1, 2, 3] {
-            points.push(POINT {
-                x: area.left + area.width() * x / 4,
-                y: area.top + area.height() * y / 4,
-            });
-        }
-    }
-    let mut left = area.left + 4;
-    for width in widths {
-        for row in 0..rows {
-            points.push(POINT {
-                x: left + width / 2,
-                y: area.top
-                    + 2
-                    + ((2 * row + 1) as i64 * i64::from(area.height() - 4) / (2 * rows) as i64)
-                        as i32,
-            });
-        }
-        left += width;
-    }
+unsafe fn inspect_visibility(hwnd: HWND, area: Rect, probes: &[(i32, i32)]) -> VisibilityProbe {
+    let points: Vec<_> = probes
+        .iter()
+        .map(|(x, y)| POINT {
+            x: area.left + x,
+            y: area.top + y,
+        })
+        .collect();
     let mut result = VisibilityProbe {
         own: 0,
         total: points.len(),
@@ -937,21 +972,16 @@ unsafe fn attach(
     context: &Context,
     instance: windows::Win32::Foundation::HINSTANCE,
 ) -> Result<Attachment, String> {
-    let (width, height, rows) = dimensions(preferences, inspection.dpi);
+    let (width, height) = widget_size(preferences, inspection.dpi, inspection.bar.height());
     let available = Rect {
         right: inspection.tray_left.min(inspection.bar.right),
         ..inspection.bar
     };
     let mut occupied = inspection.occupied.clone();
+    let mut blockers = Vec::new();
     for _ in 0..8 {
-        let area = vacant_rect(
-            available,
-            &occupied,
-            width,
-            height,
-            (inspection.dpi / 12) as i32,
-        )
-        .ok_or("任务栏没有足够且可确认的空闲空间，请减少指标或字号")?;
+        let area = target_area(inspection, &occupied, width, height)
+            .ok_or("任务栏没有足够且可确认的空闲空间，请在右键菜单中减少显示内容")?;
         let parent = HWND(inspection.identity.hwnd as *mut _);
         // Switch BEFORE the first bounds comparison and restore only after the
         // final child bounds verification, not immediately after CreateWindowExW.
@@ -972,9 +1002,16 @@ unsafe fn attach(
             y: area.top,
         };
         let mapped = ScreenToClient(parent, &mut position).as_bool();
+        let layered = context.render.lock().is_ok_and(|r| r.layered);
         let child = if mapped {
             CreateWindowExW(
-                WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+                WS_EX_NOACTIVATE
+                    | WS_EX_TOOLWINDOW
+                    | if layered {
+                        WS_EX_LAYERED
+                    } else {
+                        WINDOW_EX_STYLE(0)
+                    },
                 CLASS,
                 w!("Strata 任务栏监控"),
                 WS_CHILD | WS_CLIPSIBLINGS,
@@ -1017,7 +1054,8 @@ unsafe fn attach(
         }
         if let Ok(mut render) = context.render.lock() {
             render.dpi = inspection.dpi;
-            render.painted = false;
+            render.bar_height = inspection.bar.height();
+            render.last = None;
         }
         // CreateWindowEx places a WS_CHILD at the bottom of its sibling Z-order.
         // Raise only our child, never Explorer or a screen-level topmost overlay.
@@ -1033,24 +1071,33 @@ unsafe fn attach(
             let _ = DestroyWindow(child);
             return Err(format!("任务栏子窗口显示失败：{error}"));
         }
-        let _ = InvalidateRect(Some(child), None, false);
-        let _ = UpdateWindow(child);
-        if !context.render.lock().is_ok_and(|r| r.painted) {
+        let (painted, probes) = match context.render.lock() {
+            Ok(mut render) => {
+                let painted = present(child, &mut render, true);
+                (painted, widget::probe_points(&current_layout(&render)))
+            }
+            Err(_) => (false, Vec::new()),
+        };
+        if !painted {
             let _ = DestroyWindow(child);
+            // Layered child windows need Windows 8+ and a supportedOS manifest
+            // entry; retry once with an opaque, theme-coloured surface.
+            if let Ok(mut render) = context.render.lock() {
+                if render.layered {
+                    render.layered = false;
+                    continue;
+                }
+            }
             return Err("任务栏首帧绘制失败".into());
         }
-        let visibility = inspect_visibility(
-            child,
-            area,
-            &column_widths(preferences, inspection.dpi),
-            rows,
-        );
+        let visibility = inspect_visibility(child, area, &probes);
         if !visibility.confirmed() {
             let _ = DestroyWindow(child);
             let previous_count = occupied.len();
             for blocker in visibility.blockers {
                 if available.overlaps(blocker) && !occupied.contains(&blocker) {
                     occupied.push(blocker);
+                    blockers.push(blocker);
                 }
             }
             if occupied.len() == previous_count {
@@ -1064,9 +1111,14 @@ unsafe fn attach(
             bar: inspection.bar,
             area,
             dpi: inspection.dpi,
+            blockers,
         });
     }
     Err("任务栏空位持续被其它窗口遮挡，保留桌面浮条".into())
+}
+
+fn within_restart_grace(lost_since: Option<Instant>) -> bool {
+    lost_since.is_some_and(|since| since.elapsed() < Duration::from_secs(30))
 }
 
 pub(super) fn run() {
@@ -1147,7 +1199,10 @@ unsafe fn run_inner() -> Result<(), String> {
         preferences,
         timeline: SampleHistory::default(),
         dpi: 96,
-        painted: false,
+        bar_height: 48,
+        dark: taskbar_is_dark(),
+        layered: true,
+        last: None,
     }));
     let (events, events_rx) = mpsc::sync_channel(64);
     let context = Box::new(Context {
@@ -1198,6 +1253,10 @@ unsafe fn run_inner() -> Result<(), String> {
     let mut pending = Some((generation, Instant::now()));
     let mut last_inspect = Instant::now();
     let mut ready = false;
+    // Set while Explorer restarts: inspection errors are tolerated for a while
+    // and the widget re-attaches to the new taskbar instead of exiting.
+    let mut lost_since: Option<Instant> = None;
+    let mut theme_checked = Instant::now();
     let _ = inspect_tx.try_send(generation);
     let mut message = MSG::default();
     let outcome = 'main: loop {
@@ -1214,14 +1273,22 @@ unsafe fn run_inner() -> Result<(), String> {
         while let Ok(event) = events_rx.try_recv() {
             match event {
                 Event::Menu => {
-                    // Native menus use a modal message loop. Remove our child
-                    // while geometry validation is paused, then remeasure.
-                    if let Some(old) = attachment.take() {
-                        let _ = DestroyWindow(old.hwnd);
-                    }
+                    // Native menus run a modal loop that pauses validation. The
+                    // widget stays visible; geometry is remeasured afterwards.
                     if let Some(prefs) = menu(controller, &render)? {
+                        let resized = render.lock().is_ok_and(|view| {
+                            widget_size(&view.preferences, view.dpi, view.bar_height)
+                                != widget_size(&prefs, view.dpi, view.bar_height)
+                        });
                         if let Ok(mut view) = render.lock() {
                             view.preferences = prefs;
+                        }
+                        if resized {
+                            if let Some(old) = attachment.take() {
+                                let _ = DestroyWindow(old.hwnd);
+                            }
+                        } else if let (Some(current), Ok(mut view)) = (&attachment, render.lock()) {
+                            present(current.hwnd, &mut view, false);
                         }
                     }
                     generation += 1;
@@ -1234,9 +1301,25 @@ unsafe fn run_inner() -> Result<(), String> {
                             let _ = DestroyWindow(old.hwnd);
                         }
                     }
+                    lost_since = Some(Instant::now());
                     generation += 1;
                     let _ = inspect_tx.try_send(generation);
                     pending = Some((generation, Instant::now()));
+                }
+                Event::Theme | Event::Timer
+                    if matches!(event, Event::Theme)
+                        || theme_checked.elapsed() >= Duration::from_secs(2) =>
+                {
+                    theme_checked = Instant::now();
+                    let dark = taskbar_is_dark();
+                    if let Ok(mut view) = render.lock() {
+                        if view.dark != dark {
+                            view.dark = dark;
+                            if let Some(current) = &attachment {
+                                present(current.hwnd, &mut view, false);
+                            }
+                        }
+                    }
                 }
                 Event::Destroyed(hwnd)
                     if attachment
@@ -1277,8 +1360,8 @@ unsafe fn run_inner() -> Result<(), String> {
                     let changed = render
                         .lock()
                         .map(|view| {
-                            dimensions(&view.preferences, view.dpi)
-                                != dimensions(&preferences, view.dpi)
+                            widget_size(&view.preferences, view.dpi, view.bar_height)
+                                != widget_size(&preferences, view.dpi, view.bar_height)
                         })
                         .unwrap_or(true);
                     if let Ok(mut view) = render.lock() {
@@ -1289,8 +1372,8 @@ unsafe fn run_inner() -> Result<(), String> {
                             let _ = DestroyWindow(old.hwnd);
                         }
                     }
-                    if let Some(current) = &attachment {
-                        let _ = InvalidateRect(Some(current.hwnd), None, false);
+                    if let (Some(current), Ok(mut view)) = (&attachment, render.lock()) {
+                        present(current.hwnd, &mut view, false);
                     }
                     if pending.is_none() {
                         generation += 1;
@@ -1312,9 +1395,9 @@ unsafe fn run_inner() -> Result<(), String> {
                         let english = view.preferences.english;
                         view.timeline
                             .accept(*sample, strata_runtime_core::types::now(), english);
-                    }
-                    if let Some(current) = &attachment {
-                        let _ = InvalidateRect(Some(current.hwnd), None, false);
+                        if let Some(current) = &attachment {
+                            present(current.hwnd, &mut view, false);
+                        }
                     }
                 }
             }
@@ -1325,8 +1408,8 @@ unsafe fn run_inner() -> Result<(), String> {
                 .expire(strata_runtime_core::types::now(), english)
         });
         if expired {
-            if let Some(current) = &attachment {
-                let _ = InvalidateRect(Some(current.hwnd), None, false);
+            if let (Some(current), Ok(mut view)) = (&attachment, render.lock()) {
+                present(current.hwnd, &mut view, false);
             }
         }
         if let Ok((result_generation, result)) = result_rx.try_recv() {
@@ -1342,24 +1425,28 @@ unsafe fn run_inner() -> Result<(), String> {
                         .map_err(|_| "监控偏好不可用")?
                         .preferences
                         .clone();
+                    let (width, height) =
+                        widget_size(&preferences, inspection.dpi, inspection.bar.height());
                     let reusable = attachment.as_ref().is_some_and(|a| {
+                        let mut occupied = inspection.occupied.clone();
+                        occupied.extend(a.blockers.iter().copied());
                         a.shell == inspection.identity
                             && a.bar == inspection.bar
                             && a.dpi == inspection.dpi
                             && !inspection.occupied.iter().any(|r| r.overlaps(a.area))
+                            // The tray/clock grew or shrank: follow it.
+                            && target_area(&inspection, &occupied, width, height) == Some(a.area)
                     });
                     if reusable && std::env::var_os("STRATA_MANAGER_TASKBAR_DIAGNOSTICS").is_some()
                     {
                         if let Some(current) = &attachment {
                             let _dpi =
                                 ThreadDpiContext::for_window(HWND(current.shell.hwnd as *mut _))?;
-                            let (_, _, rows) = dimensions(&preferences, current.dpi);
-                            inspect_visibility(
-                                current.hwnd,
-                                current.area,
-                                &column_widths(&preferences, current.dpi),
-                                rows,
-                            );
+                            let probes = render
+                                .lock()
+                                .map(|view| widget::probe_points(&current_layout(&view)))
+                                .unwrap_or_default();
+                            inspect_visibility(current.hwnd, current.area, &probes);
                         }
                     }
                     if !reusable {
@@ -1367,7 +1454,11 @@ unsafe fn run_inner() -> Result<(), String> {
                             let _ = DestroyWindow(old.hwnd);
                         }
                         match attach(&inspection, &preferences, &context, instance) {
-                            Ok(new) => attachment = Some(new),
+                            Ok(new) => {
+                                attachment = Some(new);
+                                lost_since = None;
+                            }
+                            Err(_) if within_restart_grace(lost_since) => {}
                             Err(error) => break 'main Err(error),
                         }
                     }
@@ -1389,6 +1480,7 @@ unsafe fn run_inner() -> Result<(), String> {
                     }
                 }
                 Err(error) if error.contains("自动隐藏") && attachment.is_some() => {}
+                Err(_) if within_restart_grace(lost_since) => {}
                 Err(error) => break 'main Err(error),
             }
         }
@@ -1397,8 +1489,18 @@ unsafe fn run_inner() -> Result<(), String> {
         }
         if let Some(current) = &attachment {
             if shell().and_then(|hwnd| identity(hwnd)).ok() != Some(current.shell) {
-                break Err("Explorer 已重启，任务栏宿主退出以恢复桌面浮条".into());
+                // Explorer restarted: our child died with the old taskbar.
+                // Wait for the new one (TaskbarCreated also triggers this).
+                if let Some(old) = attachment.take() {
+                    if IsWindow(Some(old.hwnd)).as_bool() {
+                        let _ = DestroyWindow(old.hwnd);
+                    }
+                }
+                lost_since = Some(Instant::now());
             }
+        }
+        if lost_since.is_some() && !within_restart_grace(lost_since) && attachment.is_none() {
+            break Err("Explorer 重启后 30 秒内未能重新挂载任务栏监控".into());
         }
         if pending.is_none() && last_inspect.elapsed() >= Duration::from_millis(750) {
             generation += 1;
@@ -1438,22 +1540,6 @@ mod tests {
         probe.own = 0;
         probe.total = 0;
         assert!(!probe.confirmed());
-    }
-    #[test]
-    fn native_metrics_have_distinct_colors_and_custom_rgb_maps_to_colorref() {
-        let mut prefs = Preferences::normalize(&serde_json::Value::Null);
-        let values: std::collections::HashSet<_> = (0..METRICS.len())
-            .map(|index| color(index, &prefs).0)
-            .collect();
-        assert_eq!(values.len(), METRICS.len());
-        prefs.metric_colors.insert("gpu".into(), "#123456".into());
-        assert_eq!(color(2, &prefs).0, 0x563412);
-    }
-    #[test]
-    fn first_frame_without_a_snapshot_has_a_nonempty_native_string() {
-        assert_eq!(initial_status_text("", false), "等待采样");
-        assert_eq!(initial_status_text("  ", true), "Waiting for sample");
-        assert_eq!(initial_status_text("未启动", false), "未启动");
     }
     #[test]
     fn attachment_diagnostics_identify_each_changed_component() {
@@ -1521,32 +1607,14 @@ mod tests {
         );
     }
     #[test]
-    fn two_rows_fit_at_default_dpi_and_scale_together() {
-        let mut preferences = Preferences::normalize(&serde_json::Value::Null);
-        preferences.layout = "twoRow".into();
-        let (width, height, rows) = dimensions(&preferences, 96);
-        assert_eq!(rows, 2);
-        assert!(height <= 48);
-        assert!(width > 200);
-        let (large_width, large_height, _) = dimensions(&preferences, 144);
-        assert!(large_width > width && large_height > height);
+    fn restart_grace_is_bounded() {
+        assert!(!within_restart_grace(None));
+        assert!(within_restart_grace(Some(Instant::now())));
+        assert!(!within_restart_grace(
+            Instant::now().checked_sub(Duration::from_secs(31))
+        ));
     }
 
-    #[test]
-    fn requested_large_font_is_preserved_and_rejected_when_bar_is_too_short() {
-        let preferences =
-            Preferences::normalize(&serde_json::json!({"fontSize":36,"layout":"twoRow"}));
-        let (width, height, _) = dimensions(&preferences, 96);
-        assert_eq!(preferences.font_size, 36);
-        assert!(height > 48);
-        let bar = Rect {
-            left: 0,
-            top: 0,
-            right: 3840,
-            bottom: 48,
-        };
-        assert!(vacant_rect(bar, &[], width, height, 8).is_none());
-    }
     #[test]
     fn modal_menu_input_coalesces_without_losing_latest_sample_or_preferences() {
         let mut incoming = Incoming::default();

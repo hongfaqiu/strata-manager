@@ -7,6 +7,8 @@ import {
   floatingMonitorDimensions,
   normalizeFloatingMonitorPreferences,
   reorderFloatingMonitorMetrics,
+  normalizeTaskbarWidgetPreferences,
+  toggleTaskbarWidgetItem,
 } from '../src/floating-monitor';
 import type { FloatingMonitorMetric, FloatingMonitorPreferences } from '../src/types';
 
@@ -17,6 +19,7 @@ describe('floating monitor preferences', () => {
       fontSize: 16, layout: 'twoRow',
       metrics: ['generation', 'prefill', 'gpu', 'vram', 'cpu', 'ram'],
       showGraphs: true, showLabels: true, showUnits: true, mode: 'floating', snapToEdge: false, showStatus: false, metricColors: {},
+      taskbarEnabled: false, taskbar: { ring: 'gpu', items: ['generation', 'prefill'] },
     });
   });
 
@@ -325,5 +328,32 @@ describe('floating monitor metric reordering', () => {
     const result = reorderFloatingMonitorMetrics(single, 'gpu', 100);
     expect(result).toEqual(['gpu']);
     expect(result).not.toBe(single);
+  });
+});
+
+describe('taskbar widget preferences', () => {
+  it('is off by default with a GPU ring and the two speed lines', () => {
+    const resolved = normalizeFloatingMonitorPreferences();
+    expect(resolved.taskbarEnabled).toBe(false);
+    expect(resolved.taskbar).toEqual({ ring: 'gpu', items: ['generation', 'prefill'] });
+    expect(normalizeFloatingMonitorPreferences({ taskbarEnabled: 'yes' }).taskbarEnabled).toBe(false);
+    expect(normalizeFloatingMonitorPreferences({ taskbarEnabled: true }).taskbarEnabled).toBe(true);
+  });
+
+  it('matches the native normalisation: allowlist, canonical order, never empty', () => {
+    expect(normalizeTaskbarWidgetPreferences({ ring: 'cpu', items: ['status', 'bad', 'gpu', 'status', 3, 'generation'] }))
+      .toEqual({ ring: 'gpu', items: ['generation', 'gpu', 'status'] });
+    expect(normalizeTaskbarWidgetPreferences({ ring: 'vram', items: [] })).toEqual({ ring: 'vram', items: [] });
+    expect(normalizeTaskbarWidgetPreferences({ ring: 'off', items: [] })).toEqual({ ring: 'gpu', items: [] });
+    expect(normalizeTaskbarWidgetPreferences({ ring: 'off', items: 'gpu' })).toEqual({ ring: 'off', items: ['generation', 'prefill'] });
+  });
+
+  it('toggles items in canonical order and keeps at least one element', () => {
+    const base = normalizeTaskbarWidgetPreferences();
+    expect(toggleTaskbarWidgetItem(base, 'gpu').items).toEqual(['generation', 'prefill', 'gpu']);
+    expect(toggleTaskbarWidgetItem({ ring: 'gpu', items: ['status'] }, 'generation').items).toEqual(['generation', 'status']);
+    expect(toggleTaskbarWidgetItem(base, 'prefill').items).toEqual(['generation']);
+    const last = { ring: 'off' as const, items: ['vram' as const] };
+    expect(toggleTaskbarWidgetItem(last, 'vram')).toBe(last);
   });
 });

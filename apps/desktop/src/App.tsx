@@ -29,6 +29,7 @@ import { WorkspaceLayout } from './layouts/WorkspaceLayout';
 import { ServiceTelemetryStatusBar } from './layouts/ServiceTelemetryStatusBar';
 import { normalizeFloatingMonitorPreferences, openFloatingMonitor, readMonitorModeStatus, setMonitorVisibility, type MonitorModeStatus, type MonitorDestination } from './floatingMonitor';
 import { FloatingMonitorSettings } from './pages/FloatingMonitorSettings';
+import { TaskbarMonitorSettings } from './pages/TaskbarMonitorSettings';
 import type { LocalSetupProgress } from './pages/LocalSetupPage';
 import { DesktopLifecycleSettings } from './pages/DesktopLifecycleSettings';
 import { useAppUpdates } from './useAppUpdates';
@@ -923,10 +924,17 @@ export function App() {
     if (Array.isArray(patch.metrics)) allowed.metrics = patch.metrics;
     if (typeof patch.showGraphs === 'boolean') allowed.showGraphs = patch.showGraphs;
     if (typeof patch.showInTray === 'boolean') allowed.showInTray = patch.showInTray;
+    // Sent by the native taskbar widget (right-click menu / close).
+    if (typeof patch.taskbarEnabled === 'boolean') allowed.taskbarEnabled = patch.taskbarEnabled;
+    if (patch.taskbar !== undefined) allowed.taskbar = core.normalizeTaskbarWidgetPreferences(patch.taskbar);
     const next = normalizeFloatingMonitorPreferences({ ...previous, ...allowed });
     if (JSON.stringify(previous) !== JSON.stringify(next)) changeSettings({ floatingMonitor: next });
   };
   const changeMonitorVisibility = async (visible: boolean) => {
+    // Showing the desktop strip replaces the taskbar widget, also on next launch.
+    if (visible && normalizeFloatingMonitorPreferences(latestSettings.current.floatingMonitor).taskbarEnabled) {
+      changeSettings({ floatingMonitor: { ...normalizeFloatingMonitorPreferences(latestSettings.current.floatingMonitor), taskbarEnabled: false } });
+    }
     await storeWriter.flush('settings');
     const preferences = normalizeFloatingMonitorPreferences(latestSettings.current.floatingMonitor);
     const status = await setMonitorVisibility(visible, 'floating', preferences, latestSettings.current.language);
@@ -934,6 +942,15 @@ export function App() {
     setMonitorModeStatus(status);
     if (status.visible === true || status.active) monitorSettingsChange.current({ mode: status.mode });
     if ((status.visible ?? status.active) !== visible) throw new Error(status.message || 'Monitor visibility could not be changed');
+  };
+  const changeTaskbarMonitor = async (enabled: boolean) => {
+    const preferences = { ...normalizeFloatingMonitorPreferences(latestSettings.current.floatingMonitor), taskbarEnabled: enabled };
+    changeSettings({ floatingMonitor: preferences });
+    await storeWriter.flush('settings');
+    const status = await setMonitorVisibility(enabled, 'taskbar', preferences, latestSettings.current.language);
+    monitorModeRevision.current++;
+    setMonitorModeStatus(status);
+    if (enabled && !(status.mode === 'taskbar' && status.active)) throw new Error(status.message || 'Taskbar monitor could not be shown');
   };
   const UpdatesPage = () => <><Header title={t('appUpdates')} /><div className="settings-layout"><DesktopLifecycleSettings section="updates" currentVersion={appVersion} desktop={desktop} streaming={inferenceBusy} autoCheck={settings.autoCheckUpdates !== false} onAutoCheck={enabled => changeSettings({autoCheckUpdates:enabled})} update={appUpdates.state} onCheck={appUpdates.check} onDownload={appUpdates.download} onInstall={appUpdates.install} onError={error => notify(errorText(error),true)}/></div></>;
   const setInterfaceLanguage = (preference: core.LanguagePreference) => {
@@ -953,6 +970,7 @@ export function App() {
   </div></>;
   const MonitorSettingsPage = () => <><Header title={t('monitorSettings')} /><div className="settings-layout settings-layout--single">
     <Panel title={t('monitorRefresh')}><Field label={t('pollInterval')}><Dropdown ariaLabel={t('pollInterval')} value={String(settings.pollInterval)} onValueChange={value => changeSettings({pollInterval:Number(value)})} options={[2000,3000,5000,10000,30000].map(value => ({value:String(value),label:`${value/1000} ${t('seconds')}`}))} /></Field></Panel>
+    <TaskbarMonitorSettings enabled={normalizeFloatingMonitorPreferences(settings.floatingMonitor).taskbarEnabled} widget={normalizeFloatingMonitorPreferences(settings.floatingMonitor).taskbar} desktop={desktop} language={settings.language} modeStatus={monitorModeStatus} onWidgetChange={taskbar => changeSettings({floatingMonitor:{...normalizeFloatingMonitorPreferences(settings.floatingMonitor), taskbar}})} onEnabledChange={changeTaskbarMonitor}/>
     <FloatingMonitorSettings preferences={normalizeFloatingMonitorPreferences(settings.floatingMonitor)} desktop={desktop} language={settings.language} onChange={floatingMonitor => changeSettings({floatingMonitor})} modeStatus={monitorModeStatus} onVisibilityChange={changeMonitorVisibility} onOpen={() => {void changeMonitorVisibility(true).catch(error => notify(errorText(error), true));}}/>
   </div></>;
   const ChatDefaultsPage = () => <><Header title={t('chatDefaults')} /><div className="settings-layout">
