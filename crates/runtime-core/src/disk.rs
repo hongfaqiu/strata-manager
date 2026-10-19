@@ -16,6 +16,10 @@ pub(crate) struct Settings {
     pub(crate) data_dir: Option<PathBuf>,
     pub(crate) installs: Vec<PathBuf>,
     pub(crate) reusable_directory: Option<PathBuf>,
+    /// 「使用已有模型」(#75): the user's `--gguf-dir`, used where it is.
+    pub(crate) local_gguf_directory: Option<PathBuf>,
+    /// The data folder holding the chosen `mtp/rt` (setup's `--data-dir`).
+    pub(crate) local_data_directory: Option<PathBuf>,
 }
 
 pub(crate) struct Plan {
@@ -78,6 +82,7 @@ pub(crate) fn settings() -> Result<Settings, String> {
         data_dir,
         installs,
         reusable_directory: None,
+        ..Settings::default()
     })
 }
 
@@ -100,7 +105,10 @@ fn exists(path: &Path) -> Result<bool, String> {
     Ok(file_meta(path)?.is_some())
 }
 
-fn model_spec(family: &str, quant: &str) -> Result<(String, Vec<String>, u64, f64), String> {
+pub(crate) fn model_spec(
+    family: &str,
+    quant: &str,
+) -> Result<(String, Vec<String>, u64, f64), String> {
     // Qwen3.6 OWN_PATH: single Unsloth MTP GGUF (setup.py QWEN36_FILES / OWN_PATH_FAMILIES).
     if family == "qwen36" {
         let (download, arena) = match quant {
@@ -315,6 +323,23 @@ fn prepare_plan(
             reuse_directory = Some(candidate);
             break;
         }
+    }
+    if let Some(directory) = &settings.local_gguf_directory {
+        // The chosen folder is used in place, as --gguf-dir; nothing is downloaded or copied.
+        let containing = directory
+            .ancestors()
+            .find(|p| p.file_name().is_some_and(|name| name == "models"))
+            .and_then(Path::parent)
+            .map(Path::to_owned);
+        data = settings
+            .local_data_directory
+            .clone()
+            .or(containing)
+            .unwrap_or_else(|| data.clone());
+        model_directory = directory.clone();
+        reuse_directory = Some(directory.clone());
+    } else if let Some(directory) = &settings.local_data_directory {
+        data = directory.clone();
     }
     roots.retain(|r| r != &data);
     roots.insert(0, data.clone());
@@ -541,11 +566,13 @@ pub(crate) fn measure(plan: &mut Plan, reader: impl Fn(&Path) -> Result<(PathBuf
     };
 }
 
-pub(crate) fn plan(
+/// Setup plan; for 「使用已有模型」 the chosen `--gguf-dir` and the MTP data folder are validated first.
+pub(crate) fn plan_with_local(
     profile: &ServiceProfile,
     family: &str,
     quant: &str,
     images: bool,
+    local: Option<&crate::local_model::LocalModelRequest>,
 ) -> Result<Plan, String> {
     let root = processes::runtime_dir(profile)?;
     let mut system = sysinfo::System::new();
@@ -557,6 +584,18 @@ pub(crate) fn plan(
     let mut settings = settings()?;
     let (_, names, _, _) = model_spec(family, quant)?;
     settings.reusable_directory = configured_model_directory(profile, &names)?;
+    if let Some(local) = local {
+        crate::local_model::setup_group(local, family, quant)?;
+        let directory = PathBuf::from(local.gguf_directory.trim());
+        let data = crate::local_model::setup_mtp_data(local)?;
+        if let Some(data) = &data {
+            if let Some(hazard) = crate::local_model::migration_hazard(&directory, data) {
+                return Err(hazard);
+            }
+        }
+        settings.local_gguf_directory = Some(directory);
+        settings.local_data_directory = data;
+    }
     let mut result = prepare_plan(
         &root,
         family,
@@ -570,13 +609,14 @@ pub(crate) fn plan(
     Ok(result)
 }
 
-pub(crate) fn preflight(
+pub(crate) fn preflight_with_local(
     profile: &ServiceProfile,
     family: &str,
     quant: &str,
     images: bool,
+    local: Option<&crate::local_model::LocalModelRequest>,
 ) -> SetupDiskPreflight {
-    match plan(profile, family, quant, images) {
+    match plan_with_local(profile, family, quant, images, local) {
         Ok(plan) => plan.report,
         Err(reason) => SetupDiskPreflight {
             status: "unknown".into(),
@@ -820,6 +860,48 @@ mod tests {
         assert_eq!(p.gguf_directory, Some(directory));
         assert_eq!(p.report.model_download_bytes_estimate, Some(0));
         assert!(config.is_file());
+    }
+
+    #[test]
+    fn an_existing_local_model_is_used_in_place_with_the_mtp_data_folder() {
+        // #75 「使用已有模型」: setup.py --gguf-dir <chosen> --data-dir <folder holding mtp/rt>.
+        let f = fixture();
+        let chosen = f._temp.path().join("downloads").join("gguf");
+        fs::create_dir_all(&chosen).unwrap();
+        let (_, names, _, _) = model_spec("qwen", "IQ3_S").unwrap();
+        for name in &names {
+            fs::write(chosen.join(name), b"shard").unwrap();
+        }
+        let mtp_data = f._temp.path().join("mtp-home");
+        fs::create_dir_all(mtp_data.join("mtp/rt")).unwrap();
+        fs::write(mtp_data.join("mtp/rt/experts.bin"), b"x").unwrap();
+        let settings = Settings {
+            data_dir: Some(f.data.clone()),
+            local_gguf_directory: Some(chosen.clone()),
+            local_data_directory: Some(mtp_data.clone()),
+            ..Settings::default()
+        };
+        let p = prepare_plan(&f.root, "qwen", "IQ3_S", false, &settings, 64.0, false).unwrap();
+        assert_eq!(p.gguf_directory, Some(chosen.clone()));
+        assert_eq!(p.data_directory, mtp_data);
+        assert_eq!(p.report.model_download_bytes_estimate, Some(0));
+        // The chosen MTP layer is reused: only the 2 GB working margin, not the 8 GB download.
+        let mtp_volume = p
+            .report
+            .volumes
+            .iter()
+            .find(|v| v.directory == mtp_data.join("mtp").to_string_lossy())
+            .unwrap();
+        assert_eq!(mtp_volume.required_additional_bytes_estimate, 2 * GB);
+        // Without an MTP folder the default data folder is kept (MTP will be downloaded there).
+        let settings = Settings {
+            data_dir: Some(f.data.clone()),
+            local_gguf_directory: Some(chosen.clone()),
+            ..Settings::default()
+        };
+        let p = prepare_plan(&f.root, "qwen", "IQ3_S", false, &settings, 64.0, false).unwrap();
+        assert_eq!(p.gguf_directory, Some(chosen));
+        assert_eq!(p.data_directory, f.data);
     }
 
     #[test]

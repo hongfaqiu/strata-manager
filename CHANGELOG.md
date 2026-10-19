@@ -8,10 +8,12 @@ Maintain both languages for each version. Move unreleased changes into the actua
 ### 中文
 
 - **发布不再附带 `SHA256SUMS`**：从下一个版本起，GitHub 发布页只提供安装包、对应的 `.sig` 更新签名和 `latest.json`，共 11 项资产。应用内更新仍按 `latest.json` 与 `.sig` 验签；应用内对模型和引擎 ZIP 的大小与 SHA256 校验不变。已发布版本的资产保持原样。
+- **使用已有模型（#75）**：向导「选择模型」一步和「下载模型」页新增「使用已有模型」。选择存放 GGUF 的文件夹或其中一个分片后，Manager 按模型与量化版本分组，检查分片是否齐全、可读、GGUF 文件头和大小，再以官方安装器的 `--gguf-dir` 原地使用这些文件，不再下载模型权重；可选择已有的 MTP 草稿层（上游 setup.py 没有 `--mtp` 安装参数，因此映射为 `--data-dir`），并显示等效的 `START-HERE.bat` 命令。文件名与官方发布名不同但量化受支持时给出提示而不再拒绝；OrcaRouter 去审查 IQ3_XXS 走 ORCA.md 兼容流程；引擎不支持的量化会说明原因。已检测到但尚未登记的 Strata 运行环境现在也可直接用于准备模型，不再显示“请先选择 Strata 运行环境”。
 
 ### English
 
 - **Releases no longer include `SHA256SUMS`**: starting with the next version, GitHub releases provide the installers, their `.sig` updater signatures and `latest.json`, 11 assets in total. In-app updates still verify `latest.json` and `.sig`; the in-app size and SHA256 checks for model and engine ZIPs are unchanged. Assets of published releases stay as they are.
+- **Use an existing model (#75)**: the guide's model step and the Download models page now offer "Use an existing model". Choose the folder with your GGUF files (or one shard); Manager groups them by model and quantization, checks that every shard is present and readable with a valid GGUF header and size, and has the official installer use them in place with `--gguf-dir`, without downloading the weights again. An existing MTP draft layer can be chosen (upstream setup.py has no `--mtp` setup flag, so it maps to `--data-dir`), and the equivalent `START-HERE.bat` command is shown. Renamed files with a supported quantization get a warning instead of being refused; OrcaRouter Uncensored IQ3_XXS uses the ORCA.md compatibility workflow; quantizations the engine cannot run are explained. A detected Strata runtime that is not registered yet can now be used to prepare models directly instead of showing "Choose a Strata runtime first".
 
 ## [0.2.5] - 2026-10-19
 

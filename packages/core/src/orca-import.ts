@@ -21,7 +21,8 @@ export const ORCA_SHARDS = [
 ] as const;
 export const ORCA_TOTAL_BYTES = ORCA_SHARDS.reduce((sum, shard) => sum + shard.bytes, 0);
 
-export interface OrcaImportRequest { source: 'download' | 'local'; shardPath?: string; mtp: boolean }
+/** `mtpPath`: an existing MTP draft layer (`…/mtp/rt` with experts.bin), passed to the engine as `--mtp` (#75). */
+export interface OrcaImportRequest { source: 'download' | 'local'; shardPath?: string; mtp: boolean; mtpPath?: string }
 export interface OrcaShardState { name: string; path: string; expectedBytes: number; presentBytes: number; state: 'complete' | 'partial' | 'missing' | 'wrongSize' }
 export interface OrcaImportPlan {
   status: 'ready' | 'blocked';

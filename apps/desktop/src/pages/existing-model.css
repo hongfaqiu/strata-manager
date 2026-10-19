@@ -1,0 +1,67 @@
+/* 「使用已有模型」(#75): shared by the wizard model step and the Models page. */
+.model-download-local-gguf{margin-top:20px;border-top:1px solid var(--st-line);padding-top:16px;color:var(--st-ink-muted);font-size:13px}
+.model-download-local-gguf>summary{cursor:pointer;width:fit-content;list-style:revert}
+.existing-model{max-width:900px;margin:18px 0 8px;color:var(--st-ink);display:grid;gap:16px;min-width:0}
+.existing-model.is-compact{margin:0;max-width:none}
+.existing-model-intro{margin:0;font-size:13px;line-height:1.6;color:var(--st-ink-muted)}
+.existing-model-row{display:grid;grid-template-columns:150px minmax(0,1fr);gap:8px 14px;align-items:center;min-width:0}
+.existing-model-row>.existing-model-path,.existing-model-row>.existing-model-hint,.existing-model-row>.existing-model-error,.existing-model-row>.existing-model-ok{grid-column:2}
+.existing-model.is-compact .existing-model-row{grid-template-columns:minmax(0,1fr)}
+.existing-model.is-compact .existing-model-row>*{grid-column:1}
+.existing-model-label{font-size:13px;font-weight:600;color:var(--st-ink)}
+.existing-model-pick{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.existing-model-pick button{display:inline-flex;align-items:center;gap:6px;min-height:36px}
+.existing-model-icon{padding:6px 9px}
+.existing-model-link{border:0;background:transparent;color:var(--st-accent-text);padding:4px}
+.existing-model-path{font-size:12px;color:var(--st-ink-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.existing-model-hint{font-size:12px;line-height:1.55;color:var(--st-ink-muted);margin:0}
+.existing-model-note{margin:0;font-size:13px;line-height:1.6;color:var(--st-ink-muted)}
+.existing-model-error{margin:0;color:var(--st-danger)!important;font-size:13px;line-height:1.6;overflow-wrap:anywhere}
+.existing-model-ok{margin:0;color:var(--st-accent-text);font-size:12px;line-height:1.55;overflow-wrap:anywhere}
+.existing-model-groups{border:0;padding:0;margin:0;display:grid;gap:12px;min-width:0}
+.existing-model-groups legend{font-size:13px;font-weight:600;margin-bottom:8px;color:var(--st-ink)}
+.existing-model-group{border:1px solid var(--st-line);border-radius:10px;overflow:hidden;background:var(--st-surface)}
+.existing-model-group-head{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--st-line-soft);font-size:13px}
+.existing-model-group-head strong{font-weight:600;overflow-wrap:anywhere}
+.existing-model-group-head small{margin-left:auto;color:var(--st-ink-muted);font-size:12px;white-space:nowrap}
+.existing-model-variant{display:grid;grid-template-columns:auto minmax(120px,1.2fr) minmax(110px,1fr) auto;gap:12px;align-items:center;padding:10px 14px;cursor:pointer;border-top:1px solid var(--st-line-soft);font-size:13px}
+.existing-model-variant:first-of-type{border-top:0}
+.existing-model-variant.is-selected{background:var(--st-accent-tint)}
+.existing-model-quant{display:grid;gap:2px;min-width:0}
+.existing-model-quant code{font-size:13px;font-weight:600;color:var(--st-ink)}
+.existing-model-quant small,.existing-model-size{font-size:12px;color:var(--st-ink-muted)}
+.existing-model-badge{font-size:12px;padding:2px 8px;border-radius:6px;border:1px solid var(--st-line);white-space:nowrap}
+.existing-model-badge.is-ok{color:var(--st-accent-text);border-color:var(--st-accent)}
+.existing-model-badge.is-warn{color:var(--st-warn-text);border-color:var(--st-warn)}
+.existing-model-badge.is-bad{color:var(--st-danger-text);border-color:var(--st-danger)}
+.existing-model-detail{display:grid;gap:8px}
+.existing-model-problems,.existing-model-warnings,.existing-model-shards{list-style:none;margin:0;padding:0;display:grid;gap:6px;font-size:13px;line-height:1.55}
+.existing-model-problems li,.existing-model-warnings li{display:flex;gap:8px;align-items:flex-start;overflow-wrap:anywhere}
+.existing-model-problems li svg,.existing-model-warnings li svg{flex:none;margin-top:4px}
+.existing-model-problems{color:var(--st-danger-text)}
+.existing-model-warnings{color:var(--st-warn-text)}
+.existing-model-shards li{display:flex;justify-content:space-between;gap:12px;font-size:12px}
+.existing-model-shards li code{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.existing-model-shards li.is-bad span{color:var(--st-danger-text)}
+.existing-model-checks h4{margin:0 0 8px;font-size:13px;color:var(--st-ink)}
+.existing-model-checks dl{margin:0;border-top:1px solid var(--st-line-soft)}
+.existing-model-checks dl>div{display:grid;grid-template-columns:96px 1fr;gap:12px;padding:10px 0;border-bottom:1px solid var(--st-line-soft)}
+.existing-model-checks dt{font-size:13px;color:var(--st-ink-muted);display:flex;align-items:center;gap:8px}
+.existing-model-checks dt::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--st-line);flex:none}
+.existing-model-checks .is-ok dt::before{background:var(--st-accent)}
+.existing-model-checks .is-bad dt::before{background:var(--st-danger)}
+.existing-model-checks dd{margin:0;display:grid;gap:3px;min-width:0;font-size:13px;line-height:1.5}
+.existing-model-checks dd code{font-size:12px;color:var(--st-ink-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.existing-model-checks .existing-model-problems{margin-top:8px}
+.existing-model-command{display:grid;gap:6px;min-width:0}
+.existing-model-command code{display:block;font-size:12px;line-height:1.6;padding:10px 12px;border-radius:8px;background:var(--st-surface-sunken,var(--st-surface));border:1px solid var(--st-line-soft);overflow-wrap:anywhere;white-space:pre-wrap}
+.existing-model-submit{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.existing-model-submit button.primary{background:var(--st-accent);border:1px solid var(--st-accent);color:var(--st-accent-ink);min-height:44px;font-size:14px;font-weight:600;border-radius:12px;padding:10px 20px;white-space:nowrap}
+.existing-model-submit button:disabled{opacity:.5}
+.existing-model-submit small{flex:1;min-width:220px;font-size:12px;line-height:1.6;color:var(--st-ink-muted)}
+.ob-model-source{display:flex;justify-content:flex-start;margin:0 0 14px}
+@media(max-width:700px){.existing-model-row{grid-template-columns:minmax(0,1fr)}.existing-model-row>*{grid-column:1!important}.existing-model-variant{grid-template-columns:auto minmax(0,1fr) auto}.existing-model-size{display:none}}
+/* Beat `.official-surface code{font-size:inherit;color:inherit}` for paths and quant names. */
+section.existing-model code{font-family:var(--st-font-mono);font-size:12px;color:var(--st-ink-muted)}
+section.existing-model .existing-model-quant code{font-size:13px;font-weight:600;color:var(--st-ink)}
+section.existing-model .existing-model-command code{color:var(--st-ink)}
