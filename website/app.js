@@ -357,11 +357,15 @@ const strataReleaseCatalog = (() => {
     zh: {
       verdict: { fits: '可在本机运行，显存约余 {free} GB。', tight: '可以运行，但显存只剩约 {free} GB，长上下文会更慢。', over: '超出本机显存与内存，建议换更小的量化。' },
       checking: '正在检查…', upToDate: '已是最新 · SHA256 校验通过', copied: '已复制',
+      download: '下载', left: '约剩 {n} 分钟', verifying: '正在校验大小与 SHA256…', downloaded: '已下载 · 大小与 SHA256 校验通过',
+      boostStep: '第 {i}/{n} 步', boostClock: '已用 {t} · 约剩 {n} 分钟',
       cherry: 'Provider   OpenAI 兼容\nAPI 地址   http://127.0.0.1:19001/v1\nAPI 密钥   strata-local\n模型       Swift-Qwen3.8-Flash-Next',
     },
     en: {
       verdict: { fits: 'Runs on this computer with about {free} GB of VRAM to spare.', tight: 'Runs, but only about {free} GB of VRAM is left; long contexts will be slower.', over: 'Exceeds this computer\u2019s VRAM and memory. Pick a smaller quantization.' },
       checking: 'Checking…', upToDate: 'Up to date · SHA256 verified', copied: 'Copied',
+      download: 'Download', left: 'about {n} min left', verifying: 'Verifying size and SHA256…', downloaded: 'Downloaded · size and SHA256 verified',
+      boostStep: 'Step {i} of {n}', boostClock: '{t} elapsed · about {n} min left',
       cherry: 'Provider   OpenAI-compatible\nAPI host   http://127.0.0.1:19001/v1\nAPI key    strata-local\nModel      Swift-Qwen3.8-Flash-Next',
     },
   };
@@ -457,7 +461,7 @@ const strataReleaseCatalog = (() => {
   if (appFit && typeof ResizeObserver !== 'undefined') new ResizeObserver(fitApp).observe(appFit);
   window.addEventListener('resize', fitApp);
 
-  function renderScreen(key, { animate = false } = {}) {
+  function renderScreen(key, { animate = false, auto = false } = {}) {
     const view = stageViews[key];
     if (!view || !appWindow) return;
     activeView = key;
@@ -488,17 +492,18 @@ const strataReleaseCatalog = (() => {
       tab.setAttribute('aria-selected', String(selected));
       tab.tabIndex = selected ? 0 : -1;
     });
-    onViewShown(key);
+    onViewShown(key, auto);
   }
 
   wsTabs.forEach((tab, index) => {
-    tab.addEventListener('click', () => renderScreen(tab.dataset.screen, { animate: true }));
+    tab.addEventListener('click', event => { if (event.isTrusted) hero?.interrupt(); renderScreen(tab.dataset.screen, { animate: true }); });
     tab.addEventListener('keydown', event => {
       const moves = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: wsTabs.length - 1 };
       if (!(event.key in moves)) return;
       event.preventDefault();
       const target = wsTabs[(moves[event.key] + wsTabs.length) % wsTabs.length];
       target.focus();
+      hero?.interrupt();
       renderScreen(target.dataset.screen, { animate: true });
     });
   });
@@ -522,7 +527,101 @@ const strataReleaseCatalog = (() => {
     setTimeout(() => { if (label) label.textContent = original; button.classList.remove('is-done'); }, 1400);
   }));
 
-  // ---------- Live telemetry (pauses off-screen, off for reduced motion) ----------
+  // ---------- Demo runner: scripted loops that only advance while visible ----------
+  // Each demo plays a short script on repeat. Time stops while the demo is off-screen,
+  // hovered or the tab is hidden; a real click hands control to the visitor and the
+  // loop restarts after a quiet period. Reduced motion shows the finished state.
+  const STOP = Symbol('stop');
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const runners = [];
+  function createRunner(root, { play, final, onInterrupt, resumeAfter = 9000, threshold = 0.3 }) {
+    let gen = 0, running = false, visible = false, hovered = false, held = false, paused = false, timer = null;
+    const runner = {
+      get active() { return visible && !hovered && !held && !paused && !document.hidden; },
+      get running() { return running; },
+      get paused() { return paused; },
+      get held() { return held; },
+      async wait(ms, g) {
+        let left = ms, last = performance.now();
+        while (left > 0) {
+          if (g !== gen) throw STOP;
+          await wait(Math.min(50, left));
+          const now = performance.now();
+          if (runner.active) left -= now - last;
+          last = now;
+        }
+        if (g !== gen) throw STOP;
+      },
+      start() {
+        if (running || paused || held || !visible || !motionAllowed()) return;
+        running = true;
+        const g = ++gen;
+        (async () => {
+          try { for (;;) await play(g); }
+          catch (error) { if (error !== STOP) console.error(error); }
+          finally { if (g === gen) running = false; }
+        })();
+      },
+      stop() { gen += 1; running = false; },
+      interrupt() {
+        if (!motionAllowed()) return;
+        runner.stop();
+        held = true;
+        onInterrupt?.();
+        clearTimeout(timer);
+        timer = setTimeout(() => { held = false; changed(); runner.start(); }, resumeAfter);
+        changed();
+      },
+      pause() { runner.stop(); paused = true; held = false; clearTimeout(timer); onInterrupt?.(); changed(); },
+      resume() { paused = false; held = false; clearTimeout(timer); changed(); runner.start(); },
+      init() {
+        root.addEventListener('pointerenter', event => { if (event.pointerType !== 'mouse') return; hovered = true; root.classList.add('is-hovered'); });
+        root.addEventListener('pointerleave', () => { hovered = false; root.classList.remove('is-hovered'); });
+        if (!motionAllowed()) final?.();
+        if ('IntersectionObserver' in window) {
+          new IntersectionObserver(entries => { visible = entries[0].isIntersecting; if (visible) runner.start(); }, { threshold }).observe(root);
+        } else { visible = true; runner.start(); }
+        reduceMotion.addEventListener?.('change', () => { if (motionAllowed()) runner.start(); else { runner.stop(); final?.(); } changed(); });
+      },
+    };
+    const changed = () => root.dispatchEvent(new CustomEvent('demo-state'));
+    runners.push(runner);
+    return runner;
+  }
+  // A fake pointer that glides to an element and "clicks" it.
+  function makePointer(container) {
+    const element = container && $('[data-pointer]', container);
+    return {
+      hide() { element?.classList.remove('is-on'); },
+      async move(target, runner, g, ms = 760) {
+        if (!element || !target || !target.getClientRects().length) return false;
+        const box = container.getBoundingClientRect();
+        const scale = box.width / container.offsetWidth || 1;
+        const rect = target.getBoundingClientRect();
+        const x = (rect.left - box.left + rect.width * 0.5) / scale;
+        const y = (rect.top - box.top + rect.height * 0.55) / scale;
+        element.classList.add('is-on');
+        element.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+        await runner.wait(ms, g);
+        return true;
+      },
+      async click(target, runner, g) {
+        await this.move(target, runner, g);
+        if (!target) return;
+        if (element) { element.classList.remove('is-click'); void element.offsetWidth; element.classList.add('is-click'); }
+        target.classList.add('is-pressed');
+        await runner.wait(220, g);
+        target.classList.remove('is-pressed');
+      },
+    };
+  }
+
+  // ---------- Hero app: service state and live telemetry ----------
+  const svcLabels = {
+    zh: { stopped: '未启动', loading: '启动中', idle: '空闲', generating: '生成中' },
+    en: { stopped: 'Not started', loading: 'Starting', idle: 'Idle', generating: 'Generating' },
+  };
+  let svc = 'generating';
   const live = name => $$(`[data-live="${name}"]`);
   const setLive = (name, value) => live(name).forEach(element => {
     const first = element.firstChild;
@@ -530,49 +629,83 @@ const strataReleaseCatalog = (() => {
     else element.insertBefore(document.createTextNode(value), first);
   });
   const spark = Array.from({ length: 24 }, (_, i) => 33 - i * 0.12 + Math.sin(i * 0.9) * 0.6);
-  let tps = 32, load = 40, power = 210, genTokens = 140, clock = 14 * 3600 + 34 * 60 + 31, requestTotal = 128, tick = 0;
+  let tps = 32, load = 40, power = 210, vram = 21, genTokens = 140, clock = 14 * 3600 + 34 * 60 + 31, requestTotal = 128, tick = 0;
   const overviewSpark = $('.app-view[data-view="overview"] .m-spark');
   function drawSpark() {
     if (!overviewSpark) return;
-    const min = 26, max = 38;
-    const points = spark.map((value, i) => `${(i / (spark.length - 1) * 300).toFixed(1)} ${(60 - (value - min) / (max - min) * 56).toFixed(1)}`);
+    const min = 0, max = 38;
+    const points = spark.map((value, i) => `${(i / (spark.length - 1) * 300).toFixed(1)} ${(58 - (value - min) / (max - min) * 52).toFixed(1)}`);
     overviewSpark.querySelector('.line').setAttribute('d', `M${points.join(' L')}`);
     overviewSpark.querySelector('.area').setAttribute('d', `M${points.join(' L')} L300 60 L0 60 Z`);
   }
+  function paintTelemetry() {
+    const shown = tps > 0.05 ? tps.toFixed(1) : '—';
+    setLive('tps', tps > 0.05 ? String(Math.round(tps)) : '—');
+    ['tps1', 'tps2'].forEach(name => setLive(name, shown));
+    setLive('pill-tps', `${shown} tok/s`);
+    setLive('chat-tps', `${shown} tok/s`);
+    ['load', 'load2', 'load3'].forEach(name => setLive(name, String(load)));
+    ['power', 'power2', 'power3'].forEach(name => setLive(name, String(power)));
+    setLive('vram', String(Math.round(vram)));
+    setLive('gen-tokens', `${Math.min(genTokens, 512)} tokens · ${shown} tok/s`);
+    live('gen-bar').forEach(bar => { bar.style.width = `${Math.min(100, genTokens / 5.12)}%`; });
+    drawSpark();
+  }
+  function setSvc(state) {
+    svc = state;
+    if (!appWindow) return;
+    appWindow.dataset.svc = state;
+    $$('[data-svc-label]', appWindow).forEach(element => { element.textContent = svcLabels[currentLang][state]; });
+    $$('[data-svc-badge]', appWindow).forEach(element => {
+      element.classList.toggle('is-live', state === 'idle' || state === 'generating');
+      element.classList.toggle('is-starting', state === 'loading');
+    });
+    $$('.m-states [data-state]', appWindow).forEach(element => element.classList.toggle('is-on', element.dataset.state === state));
+    if (state === 'stopped') { tps = 0; load = 0; vram = 1; }
+    paintTelemetry();
+  }
+  const loadBar = $('[data-load-bar]');
+  const loadText = $('[data-load-text]');
+  function setLoad(percent) {
+    if (loadBar) loadBar.style.width = `${percent}%`;
+    if (loadText) loadText.textContent = `${(83.6 * percent / 100).toFixed(1)} / 83.6 GB`;
+    vram = 1 + 20 * percent / 100;
+    setLive('vram', String(Math.round(vram)));
+  }
   const requests = $('[data-requests]');
   const time = seconds => [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60].map(n => String(n).padStart(2, '0')).join(':');
-  function pushRequest() {
+  function pushRequest(speed = Math.max(tps, 29.5)) {
     if (!requests) return;
     clock += 20;
     requestTotal += 1;
     const row = document.createElement('li');
     row.className = 'is-new';
-    row.innerHTML = `<i></i><span>${time(clock)}</span><span>4,096 → 384</span><span>${tps.toFixed(1)} <small>tok/s</small></span>`;
+    row.innerHTML = `<i></i><span>${time(clock)}</span><span>4,096 → 384</span><span>${speed.toFixed(1)} <small>tok/s</small></span>`;
     requests.prepend(row);
     while (requests.children.length > 6) requests.lastElementChild.remove();
     setLive('reqs', String(requestTotal));
   }
   function telemetryTick() {
     tick += 1;
-    tps = Math.min(34.2, Math.max(29.6, tps + (Math.random() - 0.5) * 1.1));
-    load = Math.round(Math.min(47, Math.max(34, load + (Math.random() - 0.5) * 5)));
-    power = Math.round(Math.min(224, Math.max(196, power + (Math.random() - 0.5) * 9)));
-    genTokens = genTokens >= 512 ? 0 : genTokens + Math.round(tps * 1.2);
-    setLive('tps', String(Math.round(tps)));
-    ['tps1', 'tps2'].forEach(name => setLive(name, tps.toFixed(1)));
-    setLive('chat-tps', `${tps.toFixed(1)} tok/s`);
-    setLive('load', String(load)); setLive('load2', String(load));
-    setLive('power', String(power)); setLive('power2', String(power));
-    setLive('gen-tokens', `${Math.min(genTokens, 512)} tokens · ${tps.toFixed(1)} tok/s`);
-    live('gen-bar').forEach(bar => { bar.style.width = `${Math.min(100, genTokens / 5.12)}%`; });
-    spark.push(tps); spark.shift(); drawSpark();
-    if (tick % 3 === 0) pushRequest();
+    const generating = svc === 'generating';
+    const target = generating ? 31 + Math.random() * 2.8 : 0;
+    tps += (target - tps) * (generating ? 0.38 : 0.55);
+    if (!generating && tps < 0.6) tps = 0;
+    const targetLoad = { stopped: 0, loading: 24, idle: 3, generating: 40 }[svc];
+    load = Math.max(0, Math.round(load + (targetLoad + (Math.random() - 0.5) * (generating ? 8 : 2) - load) * 0.5));
+    const targetPower = { stopped: 18, loading: 120, idle: 34, generating: 210 }[svc];
+    power = Math.max(0, Math.round(power + (targetPower + (Math.random() - 0.5) * 10 - power) * 0.5));
+    if (generating) genTokens = genTokens >= 512 ? 0 : genTokens + Math.round(tps * 0.7);
+    spark.push(tps); spark.shift();
+    paintTelemetry();
+    // When the visitor is driving, keep requests trickling in on their own.
+    if (generating && tick % 4 === 0 && !(hero && hero.running)) pushRequest();
   }
   let telemetryTimer = null;
   let stageVisible = false;
   function updateTelemetry() {
     const run = stageVisible && motionAllowed() && !document.hidden;
-    if (run && !telemetryTimer) telemetryTimer = setInterval(telemetryTick, 1100);
+    if (run && !telemetryTimer) telemetryTimer = setInterval(telemetryTick, 600);
     if (!run && telemetryTimer) { clearInterval(telemetryTimer); telemetryTimer = null; }
   }
   drawSpark();
@@ -597,45 +730,70 @@ const strataReleaseCatalog = (() => {
     $$('[data-metric-switch] button').forEach(other => other.classList.toggle('is-on', other === button));
     renderBars(button.dataset.metric);
   }));
+  function bumpUsage() {
+    const last = bars?.lastElementChild;
+    if (!last) return;
+    last.style.setProperty('--h', Math.min(100, (Number(last.style.getPropertyValue('--h')) || 40) + 10));
+    last.classList.remove('is-bump'); void last.offsetWidth; last.classList.add('is-bump');
+  }
 
-  // ---------- Chat: stream the answer ----------
+  // ---------- Chat: type, send, stream ----------
   const answer = $('[data-stream]');
+  const chatScroll = $('.m-chat-scroll');
+  const composer = $('[data-composer]');
+  const composerText = $('[data-composer-text]');
+  const question = $('[data-chat-q]');
   const streamTargets = answer ? $$('li, code, p', answer) : [];
-  let streamRun = 0;
-  let streamed = false;
-  async function streamAnswer() {
-    if (!answer || !motionAllowed()) return;
-    const run = ++streamRun;
-    const texts = streamTargets.map(element => element.dataset.full ?? (element.dataset.full = element.textContent));
-    streamTargets.forEach(element => { element.textContent = ''; element.setAttribute('data-pending', ''); element.classList.remove('is-typing'); });
-    const pre = answer.querySelector('pre');
-    pre?.setAttribute('data-pending', '');
-    await wait(420);
-    for (let index = 0; index < streamTargets.length; index += 1) {
-      const element = streamTargets[index];
-      if (run !== streamRun) return;
-      if (element.tagName === 'CODE') pre?.removeAttribute('data-pending');
+  const fullText = element => element.dataset.full ?? (element.dataset.full = element.textContent);
+  function clearComposer() {
+    composer?.classList.remove('has-text', 'is-typing');
+    if (composerText) composerText.textContent = '';
+  }
+  function chatFinal() {
+    streamTargets.forEach(element => { if (element.dataset.full !== undefined) element.textContent = element.dataset.full; element.removeAttribute('data-pending'); element.classList.remove('is-typing'); });
+    answer?.querySelector('pre')?.removeAttribute('data-pending');
+    chatScroll?.classList.remove('is-empty', 'is-waiting');
+    clearComposer();
+  }
+  function chatReset() {
+    streamTargets.forEach(element => { fullText(element); element.textContent = ''; element.setAttribute('data-pending', ''); element.classList.remove('is-typing'); });
+    answer?.querySelector('pre')?.setAttribute('data-pending', '');
+    chatScroll?.classList.add('is-empty');
+    chatScroll?.classList.remove('is-waiting', 'is-sent');
+    clearComposer();
+  }
+  async function typeQuestion(runner, g) {
+    if (!composer || !question) return;
+    const chars = Array.from(question.textContent);
+    const step = currentLang === 'en' ? 2 : 1;
+    composer.classList.add('has-text', 'is-typing');
+    for (let i = 0; i < chars.length; i += step) {
+      composerText.textContent = chars.slice(0, i + step).join('');
+      await runner.wait(currentLang === 'en' ? 30 : 58, g);
+    }
+    composer.classList.remove('is-typing');
+  }
+  function sendQuestion() {
+    clearComposer();
+    chatScroll?.classList.remove('is-empty');
+    chatScroll?.classList.add('is-waiting', 'is-sent');
+  }
+  async function streamReply(runner, g) {
+    chatScroll?.classList.remove('is-waiting');
+    for (const element of streamTargets) {
+      if (element.tagName === 'CODE') answer.querySelector('pre')?.removeAttribute('data-pending');
       element.removeAttribute('data-pending');
       element.classList.add('is-typing');
-      const chars = Array.from(texts[index]);
+      const chars = Array.from(fullText(element));
       const step = currentLang === 'en' ? 3 : 2;
       for (let i = 0; i < chars.length; i += step) {
-        if (run !== streamRun) return;
         element.textContent = chars.slice(0, i + step).join('');
-        await wait(element.tagName === 'CODE' ? 12 : 26);
+        await runner.wait(element.tagName === 'CODE' ? 14 : 32, g);
       }
       element.classList.remove('is-typing');
-      await wait(140);
+      await runner.wait(130, g);
     }
-    streamed = true;
   }
-  function stopStream() {
-    if (!answer) return;
-    streamRun += 1;
-    streamTargets.forEach(element => { if (element.dataset.full !== undefined) element.textContent = element.dataset.full; element.removeAttribute('data-pending'); element.classList.remove('is-typing'); });
-    answer.querySelector('pre')?.removeAttribute('data-pending');
-  }
-  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
   // ---------- Runtime: check for updates ----------
   const verify = $('[data-verify]');
@@ -652,16 +810,82 @@ const strataReleaseCatalog = (() => {
     }, motionAllowed() ? 1700 : 0);
   });
 
-  function onViewShown(key) {
+  function onViewShown(key, auto) {
     if (key === 'usage' && bars && motionAllowed()) { bars.classList.remove('is-grow'); void bars.offsetWidth; bars.classList.add('is-grow'); }
-    if (key === 'chat') { if (stageVisible) streamAnswer(); }
-    else stopStream();
+    if (key === 'chat' && !auto) chatFinal();
   }
 
-  // ---------- Feature demos ----------
+  // ---------- Hero autoplay: start a model, chat with it, watch it work ----------
+  const heroPointer = makePointer(appWindow);
+  const navButton = key => $(`.app-nav[data-goto="${key}"]`, appWindow);
+  const showView = key => renderScreen(key, { animate: true, auto: true });
+  const hero = screenPanel && appWindow ? createRunner(screenPanel, {
+    threshold: 0.2,
+    resumeAfter: 10000,
+    async play(g) {
+      const w = ms => hero.wait(ms, g);
+      await w(500);
+      heroPointer.hide();
+      chatReset(); setLoad(0); setSvc('stopped'); showView('models');
+      await w(1300);
+      await heroPointer.click($('[data-demo-start]', appWindow), hero, g);
+      setSvc('loading');
+      for (let percent = 0; percent <= 100; percent += 2.5) { setLoad(percent); await w(55); }
+      setSvc('idle');
+      await w(900);
+      await heroPointer.click(navButton('chat'), hero, g); showView('chat');
+      await w(600);
+      await heroPointer.move(composer, hero, g);
+      await typeQuestion(hero, g);
+      await w(260);
+      await heroPointer.click($('[data-chat-send]', appWindow), hero, g);
+      sendQuestion(); setSvc('generating');
+      await w(800);
+      await streamReply(hero, g);
+      pushRequest(); setSvc('idle');
+      await w(1500);
+      await heroPointer.click(navButton('monitor'), hero, g); showView('monitor');
+      genTokens = 0; setSvc('generating');
+      await w(3200);
+      await heroPointer.click($$('.app-view[data-view="monitor"] .m-seg span')[1], hero, g); showView('usage');
+      await w(900);
+      pushRequest(); bumpUsage();
+      await w(2400);
+      setSvc('idle');
+      await heroPointer.click(navButton('overview'), hero, g); showView('overview');
+      heroPointer.hide();
+      await w(4200);
+    },
+    final() { heroPointer.hide(); chatFinal(); setLoad(100); setSvc('generating'); },
+    onInterrupt() { heroPointer.hide(); chatFinal(); setLoad(100); if (svc === 'stopped' || svc === 'loading') setSvc('generating'); },
+  }) : null;
+  const demoToggle = $('#demo-toggle');
+  const demoToggleLabel = $('[data-demo-label]');
+  function updateDemoToggle() {
+    if (!demoToggle || !hero) return;
+    demoToggle.hidden = !motionAllowed();
+    const stopped = hero.paused || hero.held;
+    demoToggle.setAttribute('aria-pressed', String(hero.paused));
+    demoToggle.classList.toggle('is-held', hero.held);
+    if (demoToggleLabel) demoToggleLabel.textContent = stopped ? (currentLang === 'en' ? 'Play demo' : '继续演示') : (currentLang === 'en' ? 'Pause demo' : '暂停演示');
+  }
+  demoToggle?.addEventListener('click', () => { if (hero.paused || hero.held) hero.resume(); else hero.pause(); });
+  screenPanel?.addEventListener('demo-state', updateDemoToggle);
+  // Any real click or keyboard focus inside the app takes over from the script.
+  screenPanel?.addEventListener('click', event => { if (event.isTrusted) hero?.interrupt(); }, true);
+  screenPanel?.addEventListener('focusin', () => hero?.interrupt());
+
+  // ---------- Feature demo: pick a quantization, then download ----------
   const fitDemo = $('[data-fit-demo]');
+  let fitRunner = null;
   if (fitDemo) {
     const options = $$('.fit-opt', fitDemo);
+    const pointer = makePointer(fitDemo);
+    const dl = $('[data-dl]', fitDemo);
+    const dlBar = $('[data-dl-bar]', fitDemo);
+    const dlText = $('[data-dl-text]', fitDemo);
+    const dlLabel = $('[data-dl-label]', fitDemo);
+    const dlButton = $('[data-dl-btn]', fitDemo);
     const select = option => {
       options.forEach(other => { const on = other === option; other.classList.toggle('is-on', on); other.setAttribute('aria-checked', String(on)); other.tabIndex = on ? 0 : -1; });
       const vram = Number(option.dataset.vram);
@@ -677,56 +901,248 @@ const strataReleaseCatalog = (() => {
       const box = $('[data-fit-verdict]', fitDemo);
       box.className = `fit-verdict ${level}`;
       box.textContent = copy[currentLang].verdict[verdict].replace('{free}', String(32 - vram));
+      if (dlLabel) dlLabel.textContent = `${copy[currentLang].download} · ${option.dataset.size} GB`;
     };
+    const setDownload = (state, percent = 0) => {
+      dl.dataset.state = state;
+      const text = copy[currentLang];
+      if (state === 'idle') { dlBar.style.width = '0%'; dlText.textContent = ''; }
+      if (state === 'run') {
+        dlBar.style.width = `${percent}%`;
+        const minutes = Math.max(1, Math.ceil((100 - percent) / 100 * 83.6 * 1024 / 412 / 60));
+        dlText.textContent = `${(83.6 * percent / 100).toFixed(1)} / 83.6 GB · 412 MB/s · ${text.left.replace('{n}', minutes)}`;
+      }
+      if (state === 'verify') { dlBar.style.width = '100%'; dlText.textContent = text.verifying; }
+      if (state === 'done') { dlBar.style.width = '100%'; dlText.textContent = text.downloaded; }
+    };
+    fitRunner = createRunner(fitDemo, {
+      async play(g) {
+        const w = ms => fitRunner.wait(ms, g);
+        await w(400);
+        pointer.hide(); select(options[0]); setDownload('idle');
+        await w(900);
+        for (const index of [2, 1, 0]) {
+          await pointer.click(options[index], fitRunner, g); select(options[index]);
+          await w(index ? 1500 : 900);
+        }
+        await pointer.click(dlButton, fitRunner, g);
+        for (let percent = 0; percent <= 100; percent += 1.25) { setDownload('run', percent); await w(55); }
+        setDownload('verify'); await w(1000);
+        setDownload('done'); pointer.hide();
+        await w(3200);
+      },
+      final() { pointer.hide(); select(options[0]); setDownload('done'); },
+      onInterrupt() { pointer.hide(); if (dl.dataset.state !== 'idle') setDownload('done'); },
+    });
     options.forEach((option, index) => {
       option.tabIndex = option.classList.contains('is-on') ? 0 : -1;
-      option.addEventListener('click', () => select(option));
+      const choose = () => { fitRunner.interrupt(); select(option); setDownload(index === 0 ? 'done' : 'idle'); };
+      option.addEventListener('click', event => { if (event.isTrusted) choose(); });
       option.addEventListener('keydown', event => {
         const delta = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
         if (!delta) return;
         event.preventDefault();
         const next = options[(index + delta + options.length) % options.length];
-        next.focus(); select(next);
+        next.focus(); next.click();
       });
+    });
+    fitDemo.refreshLanguage = () => { const on = options.find(option => option.classList.contains('is-on')); if (on) select(on); setDownload(dl.dataset.state, 100); };
+  }
+
+  // ---------- Feature demo: connect a client, then verify the API ----------
+  const connectDemo = $('[data-connect-demo]');
+  let connectRunner = null;
+  if (connectDemo) {
+    const pointer = makePointer(connectDemo);
+    const config = $('[data-client-config]', connectDemo);
+    const clientTabs = $$('[data-client]', connectDemo);
+    const steps = $$('[data-steps] li', connectDemo);
+    const result = $('[data-verify-result]', connectDemo);
+    const runButton = $('[data-steps-run]', connectDemo);
+    let manualRun = 0;
+    const setClient = tab => clientTabs.forEach(other => { const on = other === tab; other.classList.toggle('is-on', on); other.setAttribute('aria-selected', String(on)); });
+    const resetSteps = () => { steps.forEach(step => { step.classList.remove('is-ok', 'is-run'); step.querySelector('em').textContent = ''; }); result?.classList.remove('is-on'); };
+    async function runSteps(pause) {
+      resetSteps();
+      for (const step of steps) {
+        step.classList.add('is-run');
+        await pause(480);
+        step.classList.replace('is-run', 'is-ok');
+        step.querySelector('em').textContent = step.dataset.stepTime;
+      }
+      await pause(200);
+      result?.classList.add('is-on');
+    }
+    const runManual = () => {
+      const run = ++manualRun;
+      runSteps(async ms => { await wait(motionAllowed() ? ms : 0); if (run !== manualRun) throw STOP; }).catch(() => {});
+    };
+    async function typeConfig(text, g) {
+      const caret = '<span class="caret"></span>';
+      for (let i = 0; i <= text.length; i += 3) {
+        config.textContent = text.slice(0, i);
+        config.insertAdjacentHTML('beforeend', caret);
+        await connectRunner.wait(16, g);
+      }
+      config.textContent = text;
+    }
+    connectRunner = createRunner(connectDemo, {
+      async play(g) {
+        const w = ms => connectRunner.wait(ms, g);
+        for (const tab of clientTabs) {
+          await w(600);
+          await pointer.click(tab, connectRunner, g);
+          setClient(tab); resetSteps();
+          await typeConfig(clientConfigs[tab.dataset.client](), g);
+          await w(400);
+          await pointer.click(runButton, connectRunner, g);
+          await runSteps(w);
+          await w(2200);
+        }
+      },
+      final() { pointer.hide(); setClient(clientTabs[0]); config.textContent = clientConfigs.cursor(); runManual(); },
+      onInterrupt() { pointer.hide(); const on = clientTabs.find(tab => tab.classList.contains('is-on')) || clientTabs[0]; config.textContent = clientConfigs[on.dataset.client](); },
+    });
+    clientTabs.forEach(tab => tab.addEventListener('click', event => {
+      if (!event.isTrusted) return;
+      connectRunner.interrupt();
+      setClient(tab);
+      config.textContent = clientConfigs[tab.dataset.client]();
+      runManual();
+    }));
+    runButton?.addEventListener('click', event => { if (!event.isTrusted) return; connectRunner.interrupt(); runManual(); });
+  }
+
+  // ---------- Feature demo: one-click speed-up ----------
+  const boostDemo = $('[data-boost-demo]');
+  let boostRunner = null;
+  if (boostDemo) {
+    const pointer = makePointer(boostDemo);
+    const steps = $$('[data-boost-steps] li', boostDemo);
+    const stepLabel = $('[data-boost-step]', boostDemo);
+    const timeLabel = $('[data-boost-time]', boostDemo);
+    const sparkPath = $('[data-boost-spark]', boostDemo);
+    const samples = [];
+    const setPhase = phase => { boostDemo.dataset.phase = phase; };
+    const drawBoost = () => {
+      const points = samples.map((value, i) => `${(i / 59 * 300).toFixed(1)} ${(44 - (value - 18) / 18 * 40).toFixed(1)}`);
+      sparkPath?.setAttribute('d', points.length ? `M${points.join(' L')}` : 'M0 30');
+    };
+    const clockText = progress => {
+      const elapsed = Math.round(progress * 580);
+      const left = Math.max(1, Math.ceil((600 - elapsed) / 60));
+      const stamp = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`;
+      return copy[currentLang].boostClock.replace('{t}', stamp).replace('{n}', left);
+    };
+    boostRunner = createRunner(boostDemo, {
+      async play(g) {
+        const w = ms => boostRunner.wait(ms, g);
+        await w(400);
+        pointer.hide(); setPhase('idle');
+        await w(1500);
+        await pointer.click($('[data-boost-start]', boostDemo), boostRunner, g);
+        setPhase('run'); pointer.hide();
+        samples.length = 0; drawBoost();
+        steps.forEach(step => step.classList.remove('is-run', 'is-ok'));
+        for (let index = 0; index < steps.length; index += 1) {
+          steps[index].classList.add('is-run');
+          stepLabel.textContent = copy[currentLang].boostStep.replace('{i}', index + 1).replace('{n}', steps.length);
+          for (let k = 0; k < 12; k += 1) {
+            const base = index < 2 ? 27.4 : (k % 2 ? 31.6 : 27.6);
+            samples.push(base + (Math.random() - 0.5) * 1.6);
+            if (samples.length > 60) samples.shift();
+            drawBoost();
+            timeLabel.textContent = clockText((index * 12 + k) / (steps.length * 12));
+            await w(110);
+          }
+          steps[index].classList.replace('is-run', 'is-ok');
+        }
+        setPhase('done');
+        await w(2600);
+        await pointer.click($('[data-boost-apply]', boostDemo), boostRunner, g);
+        setPhase('applied'); pointer.hide();
+        await w(3600);
+      },
+      final() { pointer.hide(); setPhase('applied'); },
+      onInterrupt() { pointer.hide(); setPhase('applied'); },
     });
   }
 
-  const connectDemo = $('[data-connect-demo]');
-  const steps = connectDemo ? $$('[data-steps] li', connectDemo) : [];
-  let stepsRun = 0;
-  async function runSteps() {
-    const run = ++stepsRun;
-    steps.forEach(step => { step.classList.remove('is-ok', 'is-run'); step.querySelector('em').textContent = ''; });
-    for (const step of steps) {
-      if (run !== stepsRun) return;
-      step.classList.add('is-run');
-      await wait(motionAllowed() ? 520 : 0);
-      if (run !== stepsRun) return;
-      step.classList.replace('is-run', 'is-ok');
-      step.querySelector('em').textContent = step.dataset.stepTime;
-    }
-  }
-  if (connectDemo) {
-    const config = $('[data-client-config]', connectDemo);
-    const clientTabs = $$('[data-client]', connectDemo);
-    clientTabs.forEach(tab => tab.addEventListener('click', () => {
-      clientTabs.forEach(other => { const on = other === tab; other.classList.toggle('is-on', on); other.setAttribute('aria-selected', String(on)); });
-      config.textContent = clientConfigs[tab.dataset.client]();
-      runSteps();
-    }));
-    $('[data-steps-run]', connectDemo)?.addEventListener('click', runSteps);
-    if (!motionAllowed()) runSteps();
+  // ---------- Feature demo: floating monitor ----------
+  const monitorDemo = $('[data-monitor-demo]');
+  let monitorRunner = null;
+  if (monitorDemo) {
+    const scales = { gen: 40, pre: 2600, gpu: 100, vram: 32, cpu: 100, ram: 96 };
+    const values = { gen: 32, pre: 0, gpu: 40, vram: 21, cpu: 12, ram: 62 };
+    const history = Object.fromEntries(Object.keys(scales).map(key => [key, Array.from({ length: 40 }, (_, i) => {
+      const preset = { gen: 30 + Math.sin(i * 0.7) * 2, pre: i % 13 === 3 ? 1900 : 0, gpu: 38 + Math.sin(i) * 4, vram: 21, cpu: 11 + Math.sin(i * 1.3) * 2, ram: 62 }[key];
+      return Math.max(0, preset);
+    })]));
+    const format = { gen: v => v > 0.4 ? v.toFixed(0) : '0', pre: v => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v.toFixed(0), gpu: v => v.toFixed(0), vram: v => v.toFixed(1), cpu: v => v.toFixed(0), ram: v => v.toFixed(1) };
+    const stateBadge = $('[data-mon-state]', monitorDemo);
+    const stateLabel = $('[data-mon-label]', monitorDemo);
+    const reqText = $('[data-mon-req]', monitorDemo);
+    const reqBar = $('[data-mon-bar]', monitorDemo);
+    const log = $('[data-mon-log]', monitorDemo);
+    let monClock = 14 * 3600 + 34 * 60 + 31;
+    const clients = [['cursor', '2,310 → 512'], ['codex', '6,144 → 256'], ['claude-code', '4,096 → 384'], ['chat', '820 → 256']];
+    let clientIndex = 0;
+    const paint = () => {
+      Object.keys(scales).forEach(key => {
+        const span = $(`[data-mon="${key}"]`, monitorDemo);
+        if (span) span.textContent = format[key](values[key]);
+        const path = $(`[data-mon-line="${key}"]`, monitorDemo);
+        const points = history[key].map((value, i) => `${(i / 39 * 120).toFixed(1)} ${(22 - Math.min(1, value / scales[key]) * 20).toFixed(1)}`);
+        path?.setAttribute('d', `M${points.join(' L')}`);
+      });
+    };
+    const sample = () => { Object.keys(scales).forEach(key => { history[key].push(values[key]); history[key].shift(); }); paint(); };
+    const setState = generating => {
+      stateBadge?.classList.toggle('is-live', generating);
+      if (stateLabel) stateLabel.textContent = svcLabels[currentLang][generating ? 'generating' : 'idle'];
+    };
+    const ease = (key, target, k = 0.4, noise = 0) => { values[key] += (target + (Math.random() - 0.5) * noise - values[key]) * k; };
+    monitorRunner = createRunner(monitorDemo, {
+      async play(g) {
+        const w = ms => monitorRunner.wait(ms, g);
+        setState(false); reqText.textContent = '—'; reqBar.style.width = '0%';
+        for (let i = 0; i < 8; i += 1) { ease('gen', 0, 0.6); ease('pre', 0, 0.7); ease('gpu', 3, 0.5, 2); ease('cpu', 6, 0.5, 2); sample(); await w(200); }
+        setState(true);
+        const [client, shape] = clients[clientIndex++ % clients.length];
+        for (let i = 0; i < 5; i += 1) { ease('pre', 2100, 0.7, 300); ease('gpu', 92, 0.6, 4); ease('cpu', 24, 0.5, 4); sample(); await w(200); }
+        values.pre = 0;
+        let tokens = 0;
+        while (tokens < 384) {
+          ease('gen', 32, 0.45, 2.6); ease('gpu', 41, 0.5, 6); ease('cpu', 12, 0.5, 3); ease('pre', 0, 0.8);
+          tokens = Math.min(384, tokens + values.gen * 0.4);
+          reqText.textContent = `${Math.round(tokens)} tokens`;
+          reqBar.style.width = `${tokens / 3.84}%`;
+          sample(); await w(200);
+        }
+        monClock += 20;
+        const row = document.createElement('li');
+        row.className = 'is-new';
+        row.innerHTML = `<span>${time(monClock)}</span><span>${client}</span><span>${shape}</span><span>${values.gen.toFixed(1)} t/s</span>`;
+        log.prepend(row);
+        while (log.children.length > 3) log.lastElementChild.remove();
+      },
+      final() { setState(true); paint(); },
+    });
+    paint();
   }
 
+  // ---------- Feature demo: benchmark tiers, then the leaderboard ----------
   const boardDemo = $('[data-board-demo]');
+  let benchRunner = null;
   function sortBoard(metric) {
     if (!boardDemo) return;
     const list = $('[data-board]', boardDemo);
     const rows = $$('li', list);
-    const max = Math.max(...rows.map(row => Number(row.dataset[metric])));
+    const visibleRows = rows.filter(row => !row.classList.contains('is-pending'));
+    const max = Math.max(...visibleRows.map(row => Number(row.dataset[metric])));
     const before = new Map(rows.map(row => [row, row.getBoundingClientRect().top]));
-    rows.sort((a, b) => Number(b.dataset[metric]) - Number(a.dataset[metric])).forEach((row, index) => {
-      list.append(row);
+    rows.sort((a, b) => Number(b.dataset[metric]) - Number(a.dataset[metric])).forEach(row => list.append(row));
+    visibleRows.sort((a, b) => Number(b.dataset[metric]) - Number(a.dataset[metric])).forEach((row, index) => {
       row.firstElementChild.textContent = String(index + 1);
       row.querySelector('[data-val]').textContent = metric === 'decode' ? Number(row.dataset.decode).toFixed(1) : Number(row.dataset.prefill).toLocaleString('en-US');
       row.querySelector('i b').style.width = `${(Number(row.dataset[metric]) / max) * 100}%`;
@@ -734,34 +1150,73 @@ const strataReleaseCatalog = (() => {
     if (!motionAllowed()) return;
     rows.forEach(row => {
       const delta = before.get(row) - row.getBoundingClientRect().top;
-      if (!delta) return;
+      if (!delta || row.classList.contains('is-pending')) return;
       row.style.transition = 'none';
       row.style.transform = `translateY(${delta}px)`;
       requestAnimationFrame(() => { row.style.transition = ''; row.style.transform = ''; });
     });
   }
-  $$('[data-sort]', boardDemo || document).forEach(button => button.addEventListener('click', () => {
-    $$('[data-sort]', boardDemo).forEach(other => { const on = other === button; other.classList.toggle('is-on', on); other.setAttribute('aria-pressed', String(on)); });
-    sortBoard(button.dataset.sort);
-  }));
-
-  // Start demos when they scroll into view.
-  if ('IntersectionObserver' in window) {
-    const stage = $('.stage-canvas');
-    if (stage) new IntersectionObserver(entries => {
-      stageVisible = entries[0].isIntersecting;
-      updateTelemetry();
-      if (stageVisible && activeView === 'chat' && !streamed) streamAnswer();
-    }, { threshold: 0.15 }).observe(stage);
-    const once = (element, callback) => element && new IntersectionObserver((entries, observer) => {
-      if (entries[0].isIntersecting) { observer.disconnect(); callback(); }
-    }, { threshold: 0.35 }).observe(element);
-    once(connectDemo, () => { if (motionAllowed()) runSteps(); });
-    once(boardDemo, () => sortBoard('decode'));
-  } else {
-    stageVisible = true; updateTelemetry(); sortBoard('decode');
+  if (boardDemo) {
+    const pointer = makePointer(boardDemo);
+    const sortButtons = $$('[data-sort]', boardDemo);
+    const tabs = $$('[data-bench-tab]', boardDemo);
+    const tiers = $$('[data-tiers] li', boardDemo);
+    const progress = $('[data-bench-progress]', boardDemo);
+    const mine = $('.board-rows .is-mine', boardDemo);
+    const setPane = pane => { boardDemo.dataset.pane = pane; tabs.forEach(tab => tab.classList.toggle('is-on', tab.dataset.benchTab === pane)); };
+    const setSort = metric => { sortButtons.forEach(other => { const on = other.dataset.sort === metric; other.classList.toggle('is-on', on); other.setAttribute('aria-pressed', String(on)); }); sortBoard(metric); };
+    const fillTier = (tier, done) => { tier.querySelector('[data-c="pre"]').textContent = done ? tier.dataset.pre : '—'; tier.querySelector('[data-c="dec"]').textContent = done ? tier.dataset.dec : '—'; };
+    const showAll = () => { tiers.forEach(tier => { tier.classList.remove('is-wait', 'is-run'); fillTier(tier, true); }); if (progress) progress.textContent = `${tiers.length} / ${tiers.length}`; mine?.classList.remove('is-pending'); };
+    benchRunner = createRunner(boardDemo, {
+      async play(g) {
+        const w = ms => benchRunner.wait(ms, g);
+        await w(400);
+        pointer.hide(); setPane('tiers');
+        tiers.forEach(tier => { tier.classList.remove('is-run'); tier.classList.add('is-wait'); fillTier(tier, false); });
+        if (progress) progress.textContent = `0 / ${tiers.length}`;
+        mine?.classList.add('is-pending'); setSort('decode');
+        await w(900);
+        for (let index = 0; index < tiers.length; index += 1) {
+          tiers[index].classList.replace('is-wait', 'is-run');
+          await w(1100);
+          tiers[index].classList.remove('is-run'); fillTier(tiers[index], true);
+          if (progress) progress.textContent = `${index + 1} / ${tiers.length}`;
+        }
+        await w(700);
+        await pointer.click($('[data-bench-share]', boardDemo), benchRunner, g);
+        await w(300);
+        await pointer.click(tabs.find(tab => tab.dataset.benchTab === 'board'), benchRunner, g);
+        setPane('board');
+        await w(500);
+        mine?.classList.remove('is-pending'); mine?.classList.add('is-arrive'); setSort('decode');
+        await w(2600);
+        mine?.classList.remove('is-arrive');
+        await pointer.click(sortButtons[1], benchRunner, g); setSort('prefill');
+        await w(2400);
+        await pointer.click(sortButtons[0], benchRunner, g); setSort('decode');
+        pointer.hide();
+        await w(2400);
+      },
+      final() { pointer.hide(); showAll(); setPane('board'); setSort('decode'); },
+      onInterrupt() { pointer.hide(); showAll(); setSort(sortButtons.find(button => button.classList.contains('is-on'))?.dataset.sort || 'decode'); },
+    });
+    sortButtons.forEach(button => button.addEventListener('click', event => { if (!event.isTrusted) return; benchRunner.interrupt(); setPane('board'); setSort(button.dataset.sort); }));
+    tabs.forEach(tab => tab.addEventListener('click', event => { if (!event.isTrusted) return; benchRunner.interrupt(); setPane(tab.dataset.benchTab); }));
+    showAll(); setSort('decode');
   }
-  if (boardDemo && !motionAllowed()) sortBoard('decode');
+
+  // Gallery tiles replay their small CSS animations once they scroll into view.
+  if ('IntersectionObserver' in window) {
+    const tileObserver = new IntersectionObserver(entries => entries.forEach(entry => {
+      if (entry.isIntersecting) { entry.target.classList.add('in-view'); tileObserver.unobserve(entry.target); }
+    }), { threshold: 0.35 });
+    $$('.tile').forEach(tile => tileObserver.observe(tile));
+    const stage = $('.stage-canvas');
+    if (stage) new IntersectionObserver(entries => { stageVisible = entries[0].isIntersecting; updateTelemetry(); }, { threshold: 0.15 }).observe(stage);
+  } else {
+    stageVisible = true; updateTelemetry();
+    $$('.tile').forEach(tile => tile.classList.add('in-view'));
+  }
 
   // ---------- Language ----------
   function setLanguage(nextLang) {
@@ -784,6 +1239,9 @@ const strataReleaseCatalog = (() => {
     if (languageButton) { languageButton.setAttribute('aria-label', switchAction); languageButton.title = switchAction; }
     streamTargets.forEach(element => { delete element.dataset.full; });
     renderScreen(activeView);
+    setSvc(svc);
+    fitDemo?.refreshLanguage?.();
+    updateDemoToggle();
     if (lightboxModal?.classList.contains('active')) openLightbox(lightboxModal.dataset.screen);
     updateThemeButton();
   }
@@ -982,6 +1440,8 @@ const strataReleaseCatalog = (() => {
 
   setLanguage(pageLanguage);
   fitApp();
+  runners.forEach(runner => runner.init());
+  updateDemoToggle();
   animatePage();
   fetchLatestRelease();
 })();
