@@ -7,7 +7,11 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+- **发布不再附带 `SHA256SUMS`**：从下一个版本起，GitHub 发布页只提供安装包、对应的 `.sig` 更新签名和 `latest.json`，共 11 项资产。应用内更新仍按 `latest.json` 与 `.sig` 验签；应用内对模型和引擎 ZIP 的大小与 SHA256 校验不变。已发布版本的资产保持原样。
+
 ### English
+
+- **Releases no longer include `SHA256SUMS`**: starting with the next version, GitHub releases provide the installers, their `.sig` updater signatures and `latest.json`, 11 assets in total. In-app updates still verify `latest.json` and `.sig`; the in-app size and SHA256 checks for model and engine ZIPs are unchanged. Assets of published releases stay as they are.
 
 ## [0.2.5] - 2026-10-19
 

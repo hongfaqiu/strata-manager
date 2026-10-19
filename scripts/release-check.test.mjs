@@ -98,7 +98,11 @@ test('only current installers and official aliases may enter the updater manifes
   for (const name of ['foreign-old-installer.exe', 'Strata.Manager_0.0.9_x64-setup.exe', 'foreign.deb.sig', 'foreign-installer.zip']) {
     assert.throws(() => validateRelease({ ...release, assets: [...release.assets, { name, id: 99, size: 1 }] }, manifest, options), /Unexpected release asset/);
   }
-  assert.doesNotThrow(() => validateRelease({ ...release, assets: [...release.assets, { name: 'LICENSE', id: 98, size: 1 }, { name: 'SHA256SUMS', id: 99, size: 1 }] }, manifest, options));
+  // Supplementary files stay tolerated so already published releases (which still carry SHA256SUMS) keep verifying;
+  // new releases no longer produce it (see release-from-ci.test.mjs).
+  assert.doesNotThrow(() => validateRelease({ ...release, assets: [...release.assets, { name: 'LICENSE', id: 98, size: 1 }] }, manifest, options));
+  assert.doesNotThrow(() => validateRelease({ ...release, assets: [...release.assets, { name: 'SHA256SUMS', id: 99, size: 1 }] }, manifest, options));
+  assert.ok(!release.assets.some(asset => asset.name === 'SHA256SUMS'), 'the release fixture does not contain SHA256SUMS');
   assert.throws(() => validateRelease({ ...release, assets: [...release.assets, { name: 'Strata.Manager_0.1.0_arm64.deb', id: 99, size: 1 }] }, manifest, options), /exactly one/);
   assert.throws(() => validateRelease({ ...release, assets: [...release.assets, { ...release.assets[0] }] }, manifest, options), /Duplicate/);
 });

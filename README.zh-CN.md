@@ -73,7 +73,7 @@ Strata Manager 提供模型下载列表与详情、统一的多显卡及运行�
 
 ### 安装包
 
-从[最新发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)或[官网下载区](https://strata-manager.cosfoc.com/#get-started)选择安装包。仅安装所选版本实际提供的文件，并用同一发布页的 `SHA256SUMS` 核对。
+从[最新发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)或[官网下载区](https://strata-manager.cosfoc.com/#get-started)选择安装包。仅安装所选版本实际提供的文件。
 
 | 平台 | 安装形式 | 准备事项 |
 | --- | --- | --- |

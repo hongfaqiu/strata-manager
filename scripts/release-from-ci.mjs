@@ -83,7 +83,7 @@ export function createPlan({ repository = REPOSITORY, tag, version, sourceSha: c
       { name: 'ci-darwin-aarch64-dmg', kind: 'macos', installer: product + '_' + version + '_aarch64.dmg' },
     ] };
 }
-export const assetNames = plan => ['latest.json', 'SHA256SUMS', ...plan.artifacts.flatMap(a => [a.installer, a.installer + '.sig'])];
+export const assetNames = plan => ['latest.json', ...plan.artifacts.flatMap(a => [a.installer, a.installer + '.sig'])];
 const date = value => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? Date.parse(value) : fail('Valid CI timestamps are required.');
 function validateRun(run, plan, requireSuccess = true) {
   if (!positive(run?.id) || plan.runId !== undefined && run.id !== plan.runId
@@ -542,8 +542,6 @@ export async function publish() {
   } };
   validateLatestManifest(manifest, p.artifacts.flatMap((a, i) => [{ name: a.installer }, { name: a.installer + '.sig', signatureText: signatures[i] }]), p);
   await writeFile(pathResolve(c.temp, 'latest.json'), JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
-  const sums = (await Promise.all(p.artifacts.map(async a => await digest(pathResolve(c.temp, a.installer)) + '  ' + a.installer + '\n'))).join('');
-  await writeFile(pathResolve(c.temp, 'SHA256SUMS'), sums, { flag: 'wx', mode: 0o600 });
   const guard = requireDraft => c.modules['release-assets'].requireReleaseAssetsWritable({
     repository: p.repository, tag: p.tag, expectedSha: p.sourceSha, requireDraft,
   });
