@@ -2970,7 +2970,11 @@ pub(crate) fn output(program: &str, args: &[&str]) -> Option<String> {
 
 /// Like [`output`], with a caller-chosen deadline. Python probes on Windows can
 /// exceed three seconds on a cold start (venv redirector plus antivirus scans).
-pub(crate) fn output_with_timeout(program: &str, args: &[&str], timeout: Duration) -> Option<String> {
+pub(crate) fn output_with_timeout(
+    program: &str,
+    args: &[&str],
+    timeout: Duration,
+) -> Option<String> {
     let logs: Logs = Default::default();
     let mut command = Command::new(program);
     command.args(args);
