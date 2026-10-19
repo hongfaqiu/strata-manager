@@ -2,8 +2,8 @@
 (() => {
   'use strict';
   const key = 'strata-manager-site-theme';
-  const colorPreference = window.matchMedia('(prefers-color-scheme: dark)');
-  let theme = colorPreference.matches ? 'dark' : 'light';
+  // Light is the default; dark is only an explicit, remembered choice.
+  let theme = 'light';
   try {
     const saved = localStorage.getItem(key);
     if (saved === 'light' || saved === 'dark') theme = saved;
@@ -13,7 +13,7 @@
   function apply(value, persist = false) {
     document.documentElement.dataset.theme = value;
     const meta = document.getElementById('theme-color');
-    if (meta) meta.content = value === 'light' ? '#f5f4ef' : '#101c18';
+    if (meta) meta.content = value === 'light' ? '#f7f6f2' : '#14120f';
     const button = document.getElementById('doc-theme');
     if (button) {
       const label = value === 'light' ? (en ? 'Switch to dark theme' : '切换到深色主题') : (en ? 'Switch to light theme' : '切换到浅色主题');
@@ -43,11 +43,6 @@
     });
     document.getElementById('doc-theme')?.addEventListener('click', () => {
       apply(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light', true);
-    });
-    colorPreference.addEventListener('change', () => {
-      let saved;
-      try { saved = localStorage.getItem(key); } catch (_) {}
-      if (saved !== 'light' && saved !== 'dark') apply(colorPreference.matches ? 'dark' : 'light');
     });
   });
 })();

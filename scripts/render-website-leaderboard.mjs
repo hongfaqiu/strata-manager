@@ -22,7 +22,7 @@ export function renderLeaderboardPage(entry) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
-  <meta name="theme-color" content="#f5f4ef" id="theme-color">
+  <meta name="theme-color" content="#f7f6f2" id="theme-color">
   <title>${escape(c.title)} · Strata Manager</title>
   <meta name="description" content="${escape(c.description)}">
   ${documentSeo({ title: `${c.title} · Strata Manager`, description: c.description, page: entry.page, lang: entry.lang, alternates: leaderboardPages })}

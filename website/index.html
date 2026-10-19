@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f5f4ef" id="theme-color">
+  <meta name="theme-color" content="#f7f6f2" id="theme-color">
   <meta name="color-scheme" content="dark light">
   <script>
     (() => {
@@ -11,10 +11,9 @@
       try {
         const saved = localStorage.getItem('strata-manager-site-theme');
         if (saved === 'light' || saved === 'dark') theme = saved;
-        else if (window.matchMedia('(prefers-color-scheme: dark)').matches) theme = 'dark';
       } catch (_) {}
       document.documentElement.dataset.theme = theme;
-      document.getElementById('theme-color').content = theme === 'light' ? '#f5f4ef' : '#101c18';
+      document.getElementById('theme-color').content = theme === 'light' ? '#f7f6f2' : '#14120f';
     })();
   </script>
   <meta name="description" content="Niko1221/Strata 本地推理的开源桌面工作台：上手引导、模型与多版本配置管理、API/MCP 接入与验证、用量统计、监控、调优和 Benchmark 排行榜。已发布安装包支持 Windows / Linux x64；macOS（Apple Silicon）为实验 DMG。" data-content-en="Open-source desktop workspace for Niko1221/Strata: guided setup, models and multi-version configurations, API/MCP connections and verification, usage statistics, monitoring, tuning and a Benchmark leaderboard. Published installers support Windows / Linux x64; macOS (Apple Silicon) experimental DMG.">
@@ -36,6 +35,7 @@
   <link rel="alternate" hreflang="en" href="https://strata-manager.cosfoc.com/en/">
   <link rel="alternate" hreflang="x-default" href="https://strata-manager.cosfoc.com/">
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="preload" href="vendor/fonts/Geist.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="style.css">
   <script src="vendor/gsap.min.js" defer></script>
   <script src="vendor/ScrollTrigger.min.js" defer></script>
@@ -66,31 +66,56 @@
     <symbol id="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5"/></symbol>
     <symbol id="icon-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/></symbol>
     <symbol id="icon-expand" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></symbol>
+    <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+    <symbol id="icon-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+    <symbol id="icon-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="6.5" rx="1"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1"/></symbol>
+    <symbol id="icon-chat" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4V5Z"/></symbol>
+    <symbol id="icon-pulse" viewBox="0 0 24 24"><path d="M3 12h4l3-7 4 14 3-7h4"/></symbol>
+    <symbol id="icon-gauge" viewBox="0 0 24 24"><path d="M4.5 17a8.5 8.5 0 1 1 15 0M12 13l4-4"/></symbol>
+    <symbol id="icon-drive" viewBox="0 0 24 24"><path d="M3 13h18v6H3zM3 13l3-8h12l3 8M7 16h.01"/></symbol>
+    <symbol id="icon-server" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="7" rx="1.5"/><rect x="4" y="13" width="16" height="7" rx="1.5"/><path d="M8 7.5h.01M8 16.5h.01"/></symbol>
+    <symbol id="icon-sliders" viewBox="0 0 24 24"><path d="M4 7h10m4 0h2M4 17h4m4 0h8M14 5v4M8 15v4"/></symbol>
+    <symbol id="icon-terminal" viewBox="0 0 24 24"><path d="m5 7 5 5-5 5m8 0h6"/></symbol>
+    <symbol id="icon-cog" viewBox="0 0 24 24"><circle cx="8" cy="7" r="2.5"/><circle cx="16" cy="17" r="2.5"/><path d="M11 7h9M4 17h9M4 7h1.5M18.5 17H20"/></symbol>
+    <symbol id="icon-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></symbol>
+    <symbol id="icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7L8 5Z"/></symbol>
+    <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8m0-4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16m0 4v-4h-4"/></symbol>
+    <symbol id="icon-plug" viewBox="0 0 24 24"><path d="M9 3v5m6-5v5M6 8h12v3a6 6 0 0 1-12 0V8Zm6 9v4"/></symbol>
+    <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></symbol>
+    <symbol id="icon-send" viewBox="0 0 24 24"><path d="M21 3 10 14M21 3l-7 18-4-7-7-4 18-7Z"/></symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+    <symbol id="icon-warn" viewBox="0 0 24 24"><path d="M12 4 2.5 20h19L12 4Zm0 6v4m0 3h.01"/></symbol>
+    <symbol id="icon-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="icon-clip" viewBox="0 0 24 24"><path d="m20 11-8.5 8.5a5 5 0 0 1-7-7L13 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L14 7"/></symbol>
+    <symbol id="icon-chip" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/><rect x="9.5" y="9.5" width="5" height="5"/><path d="M9 3v3m6-3v3M9 18v3m6-3v3M3 9h3m-3 6h3m12-6h3m-3 6h3"/></symbol>
+    <symbol id="icon-ram" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="9" rx="1"/><path d="M7 10v3m4-3v3m4-3v3M5 16v2m14-2v2"/></symbol>
+    <symbol id="icon-gpu" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="11" rx="1.5"/><circle cx="9" cy="11.5" r="3"/><circle cx="16" cy="11.5" r="3"/><path d="M5 17v2"/></symbol>
   </svg>
   <a class="skip-link" href="#main" data-en="Skip to content">跳到主要内容</a>
 
   <header class="site-header" id="site-header">
     <div class="container header-inner">
       <a class="brand" href="#" aria-label="Strata Manager 首页" data-label-en="Strata Manager home">
-        <img src="assets/icon.svg" width="32" height="32" alt="">
+        <img src="assets/icon.svg" width="24" height="24" alt="">
         <span>Strata <span class="brand-subtitle">Manager</span></span>
       </a>
       <nav class="primary-nav" id="primary-nav" aria-label="主导航" data-label-en="Main navigation">
-        <a href="#about-strata" data-en="About Strata">了解 Strata</a>
-        <a href="#features" data-en="Features">核心功能</a>
         <a href="#workspace" data-en="Interface">界面</a>
+        <a href="#features" data-en="Features">核心功能</a>
+        <a href="#about-strata" data-en="About Strata">了解 Strata</a>
         <a href="docs/index.html" data-href-en="docs/index.en.html" data-en="Docs">文档中心</a>
-        <a href="#get-started" data-en="Download">下载</a>
         <a href="leaderboard.html" data-href-en="leaderboard.en.html" data-en="Leaderboard">排行榜</a>
         <a href="docs/changelog.html" data-href-en="docs/changelog.en.html" data-en="Changelog">更新日志</a>
         <a class="nav-source" href="https://github.com/hongfaqiu/strata-manager">GitHub <span aria-hidden="true">↗</span></a>
+        <a class="nav-download" href="#get-started" data-en="Download">下载</a>
       </nav>
       <div class="header-actions">
-        <button class="action-btn theme-switch" id="theme-switch" type="button" aria-label="切换到亮色模式" data-label-en="Switch to light mode" title="切换到亮色模式" data-title-en="Switch to light mode">
+        <button class="action-btn theme-switch" id="theme-switch" type="button" aria-label="切换到黑夜模式" data-label-en="Switch to dark mode" title="切换到黑夜模式" data-title-en="Switch to dark mode">
           <svg class="icon icon-theme-sun" aria-hidden="true"><use href="#icon-sun"/></svg>
           <svg class="icon icon-theme-moon" aria-hidden="true"><use href="#icon-moon"/></svg>
         </button>
         <a class="action-btn language-switch" id="language-switch" href="en/" aria-label="切换到 English" data-label-en="Switch to 简体中文" title="切换到 English" data-title-en="Switch to 简体中文"><span id="language-label" data-en="中文">EN</span></a>
+        <a class="pill pill-light header-download" href="#get-started" data-en="Download">下载</a>
         <button class="action-btn mobile-menu-btn" id="mobile-menu-btn" type="button" aria-expanded="false" aria-controls="primary-nav" aria-label="打开菜单" data-label-en="Open menu">
           <svg class="icon icon-menu-open" aria-hidden="true"><use href="#icon-menu"/></svg>
           <svg class="icon icon-menu-close" aria-hidden="true"><use href="#icon-close"/></svg>
@@ -105,53 +130,437 @@
         <div class="hero-title-block">
           <p class="hero-category" data-en="Strata Manager · Open-source desktop management">Strata Manager · 开源桌面管理工具</p>
           <h1 id="hero-title" class="hero-heading"><span data-en="Local inference.">本地大模型的</span><span data-en="Managed clearly.">管理与监控。</span></h1>
-        </div>
-        <div class="hero-content">
-          <p class="hero-lead" data-en="Strata is an open-source local LLM inference engine that combines CPU and GPU resources. Strata Manager turns it into one desktop workspace: guided first setup, model downloads and configurations across Strata versions, service control, API verification and usage, agent connections, monitoring, tuning and a shared Benchmark leaderboard.">Strata 是一款开源的本地大模型推理引擎，利用 CPU 与 GPU 协同运行模型。Strata Manager 把它装进一个桌面工作台：首次上手引导、模型下载与多版本配置、服务启停、API 验证与用量、Agent 接入、监控调优，以及共享的 Benchmark 排行榜。</p>
+          <p class="hero-lead" data-en="An open-source desktop workspace for the Strata inference engine: set up the engine, manage models, connect the API and watch the hardware from one window.">Strata 推理引擎的开源桌面工作台：装引擎、管模型、接 API、看硬件，都在一个窗口里。</p>
           <div class="hero-cta-group">
-            <a class="btn btn-primary" href="#get-started"><svg class="icon" aria-hidden="true"><use href="#icon-download"/></svg><span data-en="Get Strata Manager">下载 Strata Manager</span></a>
-            <a class="btn btn-secondary" href="docs/user-guide.html" data-href-en="docs/user-guide.en.html" data-en="User guide">使用指南</a>
+            <a class="pill pill-light pill-lg" href="#get-started"><span data-en="Get Strata Manager">下载 Strata Manager</span><svg class="icon" aria-hidden="true"><use href="#icon-download"/></svg></a>
+            <a class="pill pill-dark pill-lg" href="docs/user-guide.html" data-href-en="docs/user-guide.en.html"><span data-en="User guide">使用指南</span><svg class="icon" aria-hidden="true"><use href="#icon-arrow"/></svg></a>
           </div>
           <p class="hero-platforms"><span class="platform-dot" aria-hidden="true"></span><span data-en="Open source · Windows / Linux x64 · macOS Apple Silicon experimental">开源免费 · Windows / Linux x64 · macOS Apple Silicon 实验</span></p>
         </div>
-        <a class="hero-cover open-lightbox-btn" id="hero-preview-link" href="assets/screenshots/product-cover.zh.webp" data-href-en="assets/screenshots/product-cover.en.webp" data-target="overview" aria-label="放大查看总览" data-label-en="Enlarge Overview">
-          <img id="hero-preview-img" src="assets/screenshots/product-cover.zh.webp" data-src-en="assets/screenshots/product-cover.en.webp" width="2880" height="1920" alt="Strata Manager 总览：服务操作栏、GPU 与系统内存占用图、生成速度和最近请求" data-alt-en="Strata Manager overview: service controls, GPU and system memory map, generation speed and recent requests" fetchpriority="high">
-          <span class="hero-preview-caption"><span data-en="Current interface · Overview">当前界面 · 总览</span><span class="preview-expand"><span data-en="Enlarge interface">放大查看</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></span></span>
-        </a>
       </div>
     </section>
 
-    <section class="strata-section" id="about-strata" aria-labelledby="strata-title">
-      <div class="container strata-layout">
-        <div class="strata-explanation">
-          <h2 class="section-title" id="strata-title"><span data-en="Strata and Manager">Strata 与 Manager</span><span data-en="How they work together.">如何协作</span></h2>
-          <dl class="product-roles">
-            <div><dt data-en="Strata · Inference engine">Strata · 推理引擎</dt><dd data-en="Loads supported model weights, runs inference across CPU and GPU resources, and serves a local API for chat apps and developer tools.">加载受支持的模型权重，协调 CPU 与 GPU 执行推理，并通过本地 API 为聊天应用与开发工具提供服务。</dd></div>
-            <div><dt data-en="Strata Manager · Desktop management">Strata Manager · 桌面管理工具</dt><dd data-en="Manages the runtime, model configurations across Strata versions and the service lifecycle, with chat, API verification, usage statistics, hardware monitoring, tuning, Benchmark with an opt-in leaderboard, and connection guides for Cursor, Codex, Claude Code and more.">管理运行环境、跨 Strata 版本的模型配置和服务生命周期，提供聊天、API 在线验证、用量统计、硬件监控、参数调优、可选上传的 Benchmark 排行榜，以及 Cursor、Codex、Claude Code 等接入向导。</dd></div>
-          </dl>
-          <a class="text-link strata-source" href="https://github.com/Niko1221/Strata" data-en="Explore the Strata project ↗">了解 Strata 项目 ↗</a>
-        </div>
-        <figure class="architecture" aria-labelledby="architecture-caption">
-          <div class="architecture-flow" id="strata-diagram">
-            <div class="diagram-node diagram-manager"><span class="diagram-role" data-en="MANAGEMENT">管理层</span><strong>Strata Manager</strong><span class="diagram-detail" data-en="Install · Configure · Control · Monitor">安装 · 配置 · 启停 · 监控</span></div>
-            <div class="diagram-control" aria-hidden="true"><svg viewBox="0 0 24 48" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v42M7 8l5-5 5 5M7 40l5 5 5-5"/></svg></div>
-            <div class="diagram-node diagram-model"><svg class="diagram-symbol" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m16 4 12 6-12 6-12-6 12-6Zm-12 12 12 6 12-6M4 22l12 6 12-6"/></svg><strong data-en="Supported model weights">受支持的模型权重</strong><span class="diagram-detail" data-en="Compatible GGUF files">兼容的 GGUF 文件</span></div>
-            <span class="diagram-arrow diagram-load" aria-hidden="true"><span data-en="Load">加载</span><svg viewBox="0 0 40 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 10h35m-6-6 6 6-6 6"/></svg></span>
-            <div class="diagram-node diagram-engine"><span class="diagram-role" data-en="INFERENCE">推理层</span><strong>Strata</strong><span class="diagram-detail" data-en="CPU / GPU inference">CPU / GPU 协同推理</span><span class="diagram-api" data-en="Local API service">本地 API 服务</span></div>
-            <span class="diagram-arrow diagram-serve" aria-hidden="true"><span>API</span><svg viewBox="0 0 40 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 10h35m-6-6 6 6-6 6"/></svg></span>
-            <div class="diagram-node diagram-client"><svg class="diagram-symbol" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="5" width="26" height="18" rx="3"/><path d="M11 28h10m-5-5v5m-6-17 4 3-4 3m7 0h5"/></svg><strong data-en="Chat &amp; developer tools">聊天与开发工具</strong><span class="diagram-detail" data-en="OpenAI-compatible API">OpenAI 兼容 API</span></div>
+    <section class="stage-section" id="workspace" aria-labelledby="workspace-title">
+      <div class="container">
+        <h2 class="sr-only" id="workspace-title" data-en="Interface overview">管理与监控界面</h2>
+        <div class="stage">
+          <div class="workspace-tab-nav" role="tablist" aria-label="界面预览" data-label-en="Interface previews">
+            <button class="ws-tab active" id="tab-overview" role="tab" aria-selected="true" aria-controls="screen-panel" type="button" data-screen="overview" data-en="Overview">总览</button>
+            <button class="ws-tab" id="tab-models" role="tab" aria-selected="false" aria-controls="screen-panel" tabindex="-1" type="button" data-screen="models" data-en="Models">模型</button>
+            <button class="ws-tab" id="tab-monitor" role="tab" aria-selected="false" aria-controls="screen-panel" tabindex="-1" type="button" data-screen="monitor" data-en="Monitor">资源监控</button>
+            <button class="ws-tab" id="tab-usage" role="tab" aria-selected="false" aria-controls="screen-panel" tabindex="-1" type="button" data-screen="usage" data-en="API usage">API 用量</button>
+            <button class="ws-tab" id="tab-chat" role="tab" aria-selected="false" aria-controls="screen-panel" tabindex="-1" type="button" data-screen="chat" data-en="Chat">聊天</button>
+            <button class="ws-tab" id="tab-runtime" role="tab" aria-selected="false" aria-controls="screen-panel" tabindex="-1" type="button" data-screen="runtime" data-en="Strata">运行环境</button>
           </div>
-          <figcaption id="architecture-caption" data-en="Strata executes inference. Strata Manager manages and monitors the service.">Strata 执行模型推理，Strata Manager 管理与监控服务。</figcaption>
-          <p class="compatibility-note"><span data-en="Model compatibility and hardware requirements: ">模型兼容性与硬件要求：</span><a href="https://github.com/Niko1221/Strata/blob/main/docs/INSTALL.md" data-en="Strata documentation ↗">Strata 官方文档 ↗</a></p>
-        </figure>
+          <button class="demo-toggle" id="demo-toggle" type="button" aria-pressed="false" hidden><span class="demo-toggle-dot" aria-hidden="true"></span><span data-demo-label data-en="Pause demo">暂停演示</span></button>
+          <div class="stage-canvas" id="screen-panel" role="tabpanel" aria-labelledby="tab-overview">
+            <div class="app-fit" data-app-fit>
+              <div class="app-window" id="app-window" data-view="overview" data-svc="generating">
+                <aside class="app-side">
+                  <div class="app-brand"><img src="assets/icon.svg" width="28" height="28" alt=""><span><b>Strata</b> Manager<small>v0.2.2</small></span></div>
+                  <p class="app-group" data-en="DAILY USE">日常使用</p>
+                  <button class="app-nav is-active" type="button" tabindex="-1" data-goto="overview"><svg class="icon"><use href="#icon-grid"/></svg><span data-en="Overview">总览</span></button>
+                  <button class="app-nav" type="button" tabindex="-1" data-goto="chat"><svg class="icon"><use href="#icon-chat"/></svg><span data-en="Chat">聊天</span></button>
+                  <button class="app-nav" type="button" tabindex="-1" data-goto="monitor"><svg class="icon"><use href="#icon-pulse"/></svg><span data-en="Monitor">监控</span></button>
+                  <button class="app-nav" type="button" tabindex="-1" data-goto="benchmark"><svg class="icon"><use href="#icon-gauge"/></svg><span data-en="Benchmark">Benchmark 测试</span></button>
+                  <p class="app-group" data-en="MODELS &amp; SERVICES">模型与服务</p>
+                  <button class="app-nav" type="button" tabindex="-1" data-goto="models"><svg class="icon"><use href="#icon-drive"/></svg><span data-en="Models">模型</span></button>
+                  <button class="app-nav" type="button" tabindex="-1" data-goto="runtime"><svg class="icon"><use href="#icon-server"/></svg><span>Strata</span></button>
+                  <button class="app-nav" type="button" tabindex="-1" data-goto="tuning"><svg class="icon"><use href="#icon-sliders"/></svg><span data-en="Tuning">参数调优</span></button>
+                  <button class="app-nav" type="button" tabindex="-1" data-goto="tasks"><svg class="icon"><use href="#icon-terminal"/></svg><span data-en="Tasks &amp; logs">任务与日志</span></button>
+                  <p class="app-group" data-en="APPLICATION">应用</p>
+                  <button class="app-nav" type="button" tabindex="-1" data-goto="settings"><svg class="icon"><use href="#icon-cog"/></svg><span data-en="Settings">设置</span></button>
+                </aside>
+                <div class="app-body">
+                  <div class="app-top">
+                    <strong class="app-title" id="app-title" data-en="Overview">总览</strong>
+                    <span class="app-svc is-live" data-svc-badge><i></i><span data-svc-label data-en="Generating">生成中</span><span class="mono" data-live="pill-tps">32.0 tok/s</span></span>
+                    <span class="app-winctl" aria-hidden="true"><i></i><i></i><i></i></span>
+                  </div>
+                  <div class="app-views">
+                    <section class="app-view is-active" data-view="overview">
+                      <div class="m-card m-service">
+                        <div class="m-service-row">
+                          <span class="m-badge is-live" data-svc-badge><i></i><span data-svc-label data-en="Generating">生成中</span></span>
+                          <strong class="m-model">Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S</strong>
+                          <span class="m-dim mono">PID 99999</span>
+                          <span class="m-endpoint mono">http://127.0.0.1:19001/v1</span>
+                          <button class="m-btn m-copy" type="button" tabindex="-1" data-copy="http://127.0.0.1:19001/v1"><svg class="icon"><use href="#icon-copy"/></svg><span data-en="Copy API">复制 API</span></button>
+                        </div>
+                        <div class="m-actions">
+                          <span class="m-btn is-primary"><svg class="icon"><use href="#icon-chat"/></svg><span data-en="Open chat">打开聊天</span></span>
+                          <span class="m-btn is-danger"><svg class="icon"><use href="#icon-stop"/></svg><span data-en="Stop service">停止服务</span></span>
+                          <span class="m-btn"><svg class="icon"><use href="#icon-download"/></svg><span data-en="Release model memory">释放模型内存</span></span>
+                          <span class="m-btn"><svg class="icon"><use href="#icon-refresh"/></svg><span data-en="Restart">重启</span></span>
+                          <span class="m-btn"><span data-en="Switch model">切换模型</span><svg class="icon"><use href="#icon-chevron"/></svg></span>
+                          <span class="m-btn"><svg class="icon"><use href="#icon-plug"/></svg><span data-en="Connect API">接入 API</span></span>
+                        </div>
+                        <div class="m-notice"><svg class="icon"><use href="#icon-warn"/></svg><span data-en="1 queued, 1 in progress">1 个请求排队，1 个进行中</span><span class="m-dim" data-en="1 more">另有 1 项</span><span class="m-link" data-en="View monitoring →">查看监控 →</span></div>
+                        <div class="m-memory">
+                          <div class="m-mem-card">
+                            <div class="m-mem-head"><svg class="icon"><use href="#icon-gpu"/></svg><b>RTX 4080 SUPER</b><span class="m-dim" data-en="VRAM">显存</span><span class="m-big mono" data-live="vram">21</span><span class="m-dim mono">/ 32 GB</span></div>
+                            <div class="m-stack"><i class="s1" style="width:25%"></i><i class="s2" style="width:40.6%"></i><i class="s3"></i></div>
+                            <div class="m-legend"><span><i class="s1"></i><span data-en="Experts in VRAM">显存中的专家</span> <b class="mono">8</b></span><span><i class="s2"></i><span data-en="Model &amp; runtime">模型与运行时</span> <b class="mono">13</b></span><span><i class="s3"></i><span data-en="Free">可用</span> <b class="mono">11</b></span></div>
+                            <div class="m-gauges">
+                              <div class="m-gauge" style="--v:.40"><svg viewBox="0 0 36 36"><circle class="g-bg" cx="18" cy="18" r="15"/><circle class="g-fg" cx="18" cy="18" r="15"/></svg><b class="mono" data-live="load">40<small>%</small></b><span data-en="Load">负载</span></div>
+                              <div class="m-gauge" style="--v:.58"><svg viewBox="0 0 36 36"><circle class="g-bg" cx="18" cy="18" r="15"/><circle class="g-fg" cx="18" cy="18" r="15"/></svg><b class="mono">58<small>°C</small></b><span data-en="Temp">温度</span></div>
+                              <div class="m-gauge" style="--v:.66"><svg viewBox="0 0 36 36"><circle class="g-bg" cx="18" cy="18" r="15"/><circle class="g-fg" cx="18" cy="18" r="15"/></svg><b class="mono" data-live="power">210<small>W</small></b><span data-en="Power">功率</span></div>
+                            </div>
+                          </div>
+                          <div class="m-pcie mono"><span>PCIe 4.0 ×16</span><span class="m-dim">↓ 256 MB/s</span><i class="m-pcie-line"><b></b></i></div>
+                          <div class="m-mem-card">
+                            <div class="m-mem-head"><svg class="icon"><use href="#icon-ram"/></svg><b data-en="System memory">系统内存</b><span class="m-dim">RAM</span><span class="m-big mono">62</span><span class="m-dim mono">/ 96 GB</span></div>
+                            <div class="m-stack is-ram"><i class="r1" style="width:.6%"></i><i class="r2" style="width:64%"></i><i class="s3"></i></div>
+                            <div class="m-legend"><span><i class="r1"></i><span data-en="Parked chats">停放的会话</span> <b class="mono">0.5</b></span><span><i class="r2"></i><span data-en="Other use">其余占用</span> <b class="mono">61.5</b></span><span><i class="s3"></i><span data-en="Free">可用</span> <b class="mono">34</b></span></div>
+                            <div class="m-gauges">
+                              <div class="m-gauge is-grey" style="--v:.12"><svg viewBox="0 0 36 36"><circle class="g-bg" cx="18" cy="18" r="15"/><circle class="g-fg" cx="18" cy="18" r="15"/></svg><b class="mono">12<small>%</small></b><span>CPU</span></div>
+                              <div class="m-gauge is-grey" style="--v:.25"><svg viewBox="0 0 36 36"><circle class="g-bg" cx="18" cy="18" r="15"/><circle class="g-fg" cx="18" cy="18" r="15"/></svg><b class="mono">25<small>%</small></b><span data-en="Context">上下文</span></div>
+                              <div class="m-ctx"><span class="m-dim" data-en="16 cores · 24 threads">16 核 · 24 线程</span><span><span class="m-dim" data-en="Context">上下文</span> <b class="mono">33,152</b><span class="m-dim mono"> / 131,072</span></span></div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="m-overview-grid">
+                        <div class="m-cell">
+                          <div class="m-cell-head"><span data-en="Generation speed">生成速度</span><span class="m-link" data-en="View monitoring →">查看监控 →</span></div>
+                          <div class="m-speed"><b class="mono" data-live="tps">32</b><span class="m-dim mono">tok/s</span><span class="m-median"><span class="m-dim" data-en="Today's median">今日中位</span> <b class="mono">30.5</b></span></div>
+                          <svg class="m-spark" viewBox="0 0 300 60" preserveAspectRatio="none" aria-hidden="true"><path class="area" d="M0 18 L300 34 L300 60 L0 60 Z"/><path class="line" d="M0 18 L300 34"/></svg>
+                          <dl class="m-kv"><div><dt data-en="Active requests">运行请求</dt><dd class="mono">1</dd></div><div><dt data-en="Queued requests">排队请求</dt><dd class="mono is-warn">1</dd></div><div><dt data-en="Input processing speed">输入处理速度</dt><dd class="mono">2,048 <small>tok/s</small></dd></div><div><dt data-en="TTFT p50">首字 p50</dt><dd class="mono">3.12 <small>s</small></dd></div></dl>
+                        </div>
+                        <div class="m-cell">
+                          <div class="m-cell-head"><span data-en="Recent requests">最近请求</span><span class="m-link" data-en="API requests →">API 请求 →</span></div>
+                          <ol class="m-requests mono" data-requests>
+                            <li><i></i><span>14:34:31</span><span>4,096 → 384</span><span>30.5 <small>tok/s</small></span></li>
+                            <li><i></i><span>14:34:11</span><span>4,096 → 384</span><span>31.5 <small>tok/s</small></span></li>
+                            <li><i></i><span>14:33:51</span><span>4,096 → 384</span><span>32.5 <small>tok/s</small></span></li>
+                            <li><i></i><span>14:33:31</span><span>4,096 → 384</span><span>33.5 <small>tok/s</small></span></li>
+                            <li><i></i><span>14:33:11</span><span>4,096 → 384</span><span>34.5 <small>tok/s</small></span></li>
+                            <li><i></i><span>14:32:51</span><span>4,096 → 384</span><span>35.5 <small>tok/s</small></span></li>
+                          </ol>
+                        </div>
+                        <div class="m-cell">
+                          <div class="m-cell-head"><span data-en="API today">今日 API</span><span class="m-link" data-en="Usage details →">统计详情 →</span></div>
+                          <div class="m-today"><b class="mono" data-live="reqs">128</b><span class="m-dim" data-en="requests">次请求</span><b class="mono is-warn">96.9%</b><span class="m-dim" data-en="Success">成功</span></div>
+                          <p class="m-dim m-small"><span data-en="In">输入</span> <b class="mono">262,144</b> · <span data-en="Out">输出</span> <b class="mono">16,384</b> · <span data-en="Failed">失败</span> <b class="mono">2</b></p>
+                          <dl class="m-status"><div><dt data-en="Status">状态</dt><dd data-svc-label data-en="Generating">生成中</dd></div><div><dt data-en="Process">进程</dt><dd data-en="Running">运行中</dd></div><div><dt data-en="Images">图像支持</dt><dd data-en="Enabled">已启用</dd></div><div><dt data-en="Background check">后台检查</dt><dd data-en="Not checked">当前进程未检查</dd></div></dl>
+                        </div>
+                      </div>
+                    </section>
+                    <section class="app-view" data-view="models" hidden>
+                      <div class="m-seg"><span class="is-on" data-en="My models">我的模型</span><span data-en="Download models">下载模型</span></div>
+                      <div class="m-card m-capacity">
+                        <div class="m-ring" style="--v:.656"><svg viewBox="0 0 36 36"><circle class="g-bg" cx="18" cy="18" r="15"/><circle class="g-fg" cx="18" cy="18" r="15"/></svg><b class="mono">21<small>/ 32 GB</small></b><span data-en="VRAM">显存</span></div>
+                        <div class="m-ring is-grey" style="--v:.646"><svg viewBox="0 0 36 36"><circle class="g-bg" cx="18" cy="18" r="15"/><circle class="g-fg" cx="18" cy="18" r="15"/></svg><b class="mono">62<small>/ 96 GB</small></b><span data-en="Memory">内存</span></div>
+                        <dl class="m-capacity-facts">
+                          <div><dt data-en="This computer">本机容量</dt><dd>RTX 4080 SUPER · 32 GB</dd><dd class="m-dim" data-en="RAM 96 GB · 34 GB free">内存 96 GB · 空闲 34 GB</dd></div>
+                          <div><dt data-en="On this computer">已在本机</dt><dd data-en="2 models">2 个模型</dd><dd class="m-dim" data-en="2 configurations">2 份配置</dd></div>
+                          <div><dt data-en="Running now">当前运行</dt><dd class="m-ellipsis">Swift-Qwen3.8-Flash-Next-GSQ-RCO…</dd><dd class="m-dim" data-svc-label data-en="Generating">生成中</dd></div>
+                        </dl>
+                      </div>
+                      <div class="m-listhead"><span class="m-dim" data-en="2 local models · 2 configurations">2 个本机模型 · 2 份配置</span><span class="m-btn is-primary"><span data-en="Add folder">添加目录</span></span><span class="m-btn"><svg class="icon"><use href="#icon-refresh"/></svg><span data-en="Scan">扫描</span></span></div>
+                      <div class="m-card m-modelcard is-current">
+                        <div class="m-modelhead"><span class="m-tile"><svg class="icon"><use href="#icon-server"/></svg></span><div><b>Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S</b><span class="m-dim" data-en="1 configuration">1 份配置</span></div><span class="m-badge is-live" data-svc-badge><i></i><span data-svc-label data-en="Generating">生成中</span></span></div>
+                        <div class="m-config"><b class="mono">qwen.json</b><span class="m-tag" data-en="In use">当前使用</span><span class="m-dim"><span data-en="128K context">128K 上下文</span> · KV int8</span></div>
+                        <div class="m-need"><span data-en="Needs about 62 GB memory">运行约需 62 GB 内存</span><i class="m-ticks" style="--n:22"></i><span class="m-dim" data-en="This PC 96 GB · IQ3_S · Download 83.6 GB">本机 96 GB · IQ3_S · 下载 83.6 GB</span></div>
+                        <div class="m-loadrow" data-show="loading"><span data-en="Loading weights">正在加载权重</span><i><b data-load-bar></b></i><span class="mono" data-load-text>0.0 / 83.6 GB</span></div>
+                        <div class="m-actions" data-show="stopped"><span class="m-btn is-primary" data-demo-start><svg class="icon"><use href="#icon-play"/></svg><span data-en="Start configuration">启用配置</span></span><span class="m-btn"><svg class="icon"><use href="#icon-sliders"/></svg><span data-en="Configure">配置</span></span></div>
+                        <div class="m-actions" data-show="live"><span class="m-btn is-primary"><svg class="icon"><use href="#icon-chat"/></svg><span data-en="Chat">聊天</span></span><span class="m-btn"><svg class="icon"><use href="#icon-sliders"/></svg><span data-en="Configure">配置</span></span><span class="m-btn"><svg class="icon"><use href="#icon-stop"/></svg><span data-en="Stop">停止</span></span><span class="m-btn"><svg class="icon"><use href="#icon-refresh"/></svg><span data-en="Restart">重启</span></span></div>
+                      </div>
+                      <div class="m-card m-modelcard">
+                        <div class="m-modelhead"><span class="m-tile"><svg class="icon"><use href="#icon-server"/></svg></span><div><b>Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S · Vision</b><span class="m-dim" data-en="1 configuration">1 份配置</span></div><span class="m-badge"><span data-en="Not started">未启动</span></span></div>
+                        <div class="m-config"><b class="mono">vision.json</b><span class="m-dim"><span data-en="128K context">128K 上下文</span> · KV int8</span></div>
+                        <div class="m-actions"><span class="m-btn is-primary"><svg class="icon"><use href="#icon-play"/></svg><span data-en="Start configuration">启用配置</span></span><span class="m-btn"><svg class="icon"><use href="#icon-sliders"/></svg><span data-en="Configure">配置</span></span></div>
+                      </div>
+                    </section>
+
+                    <section class="app-view" data-view="monitor" hidden>
+                      <div class="m-seg"><span class="is-on" data-en="Monitor">监控</span><span data-en="API usage">API 使用统计</span></div>
+                      <div class="m-card">
+                        <p class="m-dim m-small"><span data-en="Last successful sample:">上次成功采样:</span> <span class="mono">2026/10/17 14:34:44</span></p>
+                        <div class="m-states"><b data-en="Model state">模型状态</b><span data-state="idle" data-en="Idle">空闲</span><span data-state="loading" data-en="Loading">读取中</span><span class="is-on" data-state="generating" data-en="Generating">生成中</span><span class="is-warn" data-en="Queued">排队中</span><span class="is-err" data-en="Error">错误</span></div>
+                        <div class="m-progress"><span data-svc-label data-en="Generating">生成中</span><span class="m-dim mono" data-live="gen-tokens">384 tokens · 32.0 tok/s</span><i><b data-live="gen-bar"></b></i></div>
+                      </div>
+                      <div class="m-card m-parallel">
+                        <div class="m-cell-head"><b data-en="Parallel tasks">并行任务</b><span class="m-dim m-small" data-en="Processing 1 · Waiting 1">处理中 1 · 等待中 1</span></div>
+                        <dl class="m-trio"><div><dt data-en="Active slots">生效槽数</dt><dd><b class="mono">2</b> <span class="m-dim" data-en="0 in use">0 个在用</span></dd></div><div><dt data-en="Combined speed">合计速度</dt><dd><b class="mono">—</b> <span class="m-dim mono">tok/s</span></dd></div><div><dt data-en="Queue">排队</dt><dd><b class="mono is-warn">1</b> <span class="m-dim" data-en="Slots full">槽已满</span></dd></div></dl>
+                      </div>
+                      <div class="m-metrics">
+                        <div class="m-metric is-wide"><span class="m-metric-label" data-en="Speed">速度</span><div class="m-two"><span><b class="mono" data-live="tps1">32.0</b><small class="mono">t/s</small><em data-en="Current generation">当前生成</em></span><span><b class="mono">2,048</b><small class="mono">t/s</small><em data-en="Input processing">本次输入处理</em></span></div><svg class="m-spark" viewBox="0 0 300 50" preserveAspectRatio="none" aria-hidden="true"><path class="area" d="M0 40 L60 34 L120 38 L180 22 L240 26 L300 24 L300 50 L0 50 Z"/><path class="line" d="M0 40 L60 34 L120 38 L180 22 L240 26 L300 24"/></svg></div>
+                        <div class="m-metric"><span class="m-metric-label" data-en="GPU load">GPU 负载</span><b class="mono" data-live="load2">40</b><small class="mono">%</small><em>RTX 4080 SUPER</em></div>
+                        <div class="m-metric"><span class="m-metric-label" data-en="VRAM">显存</span><b class="mono">21.0</b><small class="mono">/ 32 GB</small><em data-en="42 experts cached">42 个专家已缓存</em></div>
+                        <div class="m-metric"><span class="m-metric-label" data-en="GPU temp">GPU 温度</span><b class="mono">58</b><small class="mono">°C</small></div>
+                        <div class="m-metric"><span class="m-metric-label" data-en="Power">功耗</span><b class="mono" data-live="power2">210</b><small class="mono">W</small></div>
+                        <div class="m-metric"><span class="m-metric-label">PCIe</span><b class="mono">Gen4</b><small class="mono">x16</small><em data-en="To GPU 256 MB/s">传至 GPU 256 MB/s</em></div>
+                        <div class="m-metric"><span class="m-metric-label">CPU</span><b class="mono">12</b><small class="mono">%</small><em data-en="16 cores · 24 threads">16 核心 · 24 线程</em></div>
+                        <div class="m-metric"><span class="m-metric-label" data-en="Disk read">磁盘读取</span><b class="mono">84</b><small class="mono">MB/s</small><em data-en="Write 2.5 MB/s">写入 2.5 MB/s</em></div>
+                      </div>
+                    </section>
+
+                    <section class="app-view" data-view="usage" hidden>
+                      <div class="m-usagehead"><b data-en="API dashboard">API 监控大盘</b><span class="m-dim mono">Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S</span><span class="m-seg is-small"><span>1h</span><span class="is-on" data-en="Today">今日</span><span>24h</span><span data-en="3 days">3 天</span><span data-en="7 days">7 天</span></span></div>
+                      <div class="m-kpis">
+                        <div><span data-en="Requests">请求</span><b class="mono" data-live="reqs">128</b><em data-en="Active 0">处理中 0</em></div>
+                        <div><span data-en="Success rate">成功率</span><b class="mono">96.9%</b><em data-en="Succeeded 124">成功 124</em></div>
+                        <div><span data-en="Failed">失败</span><b class="mono is-err">2</b><em data-en="Cancelled 2 · Interrupted 0">已取消 2 · 服务中断 0</em></div>
+                        <div><span data-en="Input tokens">输入 Token</span><b class="mono" data-en="262.1K">26.21万</b><em data-en="Cache reuse 35K">缓存复用 3.5万</em></div>
+                        <div><span data-en="Output tokens">输出 Token</span><b class="mono" data-en="16.4K">1.64万</b><em data-en="Avg 128 per request">平均每次 128</em></div>
+                        <div><span data-en="Generation speed">生成速度</span><b class="mono">34.6<small> tok/s</small></b><em>P50 30.5 · P20 29</em></div>
+                      </div>
+                      <div class="m-card m-chartcard">
+                        <div class="m-cell-head"><b data-en="Request rate (per minute)">请求速率 (次/分钟)</b><span class="m-seg is-small" data-metric-switch><button type="button" tabindex="-1" class="is-on" data-metric="req" data-en="Requests">请求</button><button type="button" tabindex="-1" data-metric="tok">Token</button><button type="button" tabindex="-1" data-metric="lat" data-en="Latency">耗时</button><button type="button" tabindex="-1" data-metric="tps" data-en="Speed">生成速度</button></span></div>
+                        <div class="m-bars" data-bars></div>
+                        <div class="m-axis mono"><span>00:00</span><span>07:17</span><span>14:34</span></div>
+                        <p class="m-dim m-small" data-en="HTTP requests per interval, stacked by current outcome. Inference rounds are not counted twice.">每个时间段的 HTTP 请求数，按当前结果堆叠；推理轮次不会重复计入调用量。</p>
+                      </div>
+                    </section>
+
+                    <section class="app-view" data-view="chat" hidden>
+                      <div class="m-chat">
+                        <div class="m-chat-side">
+                          <b data-en="Chat history">聊天历史</b>
+                          <span class="m-btn is-primary is-block"><span data-en="New chat">新会话</span></span>
+                          <span class="m-input"><svg class="icon"><use href="#icon-search"/></svg><span data-en="Search chats">搜索聊天</span></span>
+                          <span class="m-dim m-small" data-en="Today">今天</span>
+                          <span class="m-thread is-on"><span data-en="Getting started with a local model">开始使用本机模型</span><small class="m-dim" data-en="14:34 · 2 messages">14:34 · 2 条消息</small></span>
+                        </div>
+                        <div class="m-chat-main">
+                          <div class="m-chat-scroll">
+                            <p class="m-bubble" data-chat-q data-en="How do I start using the local model and see how it is being called?">怎样开始使用本机模型，并查看调用情况？</p>
+                            <span class="m-thinking" aria-hidden="true"><i></i><i></i><i></i></span>
+                            <div class="m-answer" data-stream>
+                              <ol>
+                                <li data-en="In Models, pick a configuration and click Use.">在「模型」中选择配置并点击「使用」。</li>
+                                <li data-en="When the model is ready, open Chat.">等待模型就绪后打开「聊天」。</li>
+                                <li data-en="In Monitor → API usage, review requests, tokens and response time.">在「监控 → API 使用统计」中查看请求、Token 和响应耗时。</li>
+                              </ol>
+                              <pre class="m-code"><span class="m-code-lang">text</span><code>http://127.0.0.1:19001/v1</code></pre>
+                              <p data-en="A stopped service stays off until you start it.">停止的服务会保持未启动，直到手动启用。</p>
+                            </div>
+                            <div class="m-timing mono" data-chat-timing><span><span data-en="Wait">等待</span> 0.21 s</span><span>TTFT 0.38 s</span><span data-live="chat-tps">32.0 tok/s</span></div>
+                          </div>
+                          <div class="m-composer" data-composer><span class="m-dim" data-composer-ph data-en="Ask anything…">随时提问…</span><span class="m-composer-text" data-composer-text></span><span class="m-composer-tools"><svg class="icon"><use href="#icon-clip"/></svg><svg class="icon"><use href="#icon-sliders"/></svg><span class="m-dim m-small" data-en="Shift+Enter: new line">Shift+Enter：换行</span><span class="m-send" data-chat-send><svg class="icon"><use href="#icon-send"/></svg></span></span></div>
+                        </div>
+                      </div>
+                    </section>
+
+                    <section class="app-view" data-view="runtime" hidden>
+                      <div class="m-card m-hw">
+                        <div><svg class="icon"><use href="#icon-chip"/></svg><span><span class="m-dim" data-en="Processor">处理器</span><b>Intel Core i9</b><small class="m-dim">Windows · x86_64 · 16C/24T</small></span></div>
+                        <div><svg class="icon"><use href="#icon-ram"/></svg><span><span class="m-dim" data-en="Memory">内存</span><b>96 GB</b><small class="m-dim" data-en="62 GB used">已用 62 GB</small></span></div>
+                        <div><span class="m-dim mono m-small">PCIe 4.0 ×16</span><svg class="icon"><use href="#icon-gpu"/></svg><span><span class="m-dim" data-en="Graphics">显卡</span><b>RTX 4080 SUPER</b><small class="m-dim">32 GB</small></span></div>
+                      </div>
+                      <div class="m-card">
+                        <div class="m-cell-head"><b data-en="Runtime">运行环境</b><span class="m-btn"><svg class="icon"><use href="#icon-refresh"/></svg><span data-en="Detect again">重新检测</span></span></div>
+                        <div class="m-runtime-row"><span class="m-ok"><svg class="icon"><use href="#icon-check"/></svg><span data-en="Installed">已安装</span></span><span class="m-dim" data-en="Select runtime">选择运行环境</span><span class="m-select mono">Strata 0.1.43 · D:/AI/Strata</span></div>
+                        <div class="m-runtime-row m-small"><span class="m-dim" data-en="Runtime folder">运行环境目录</span><span class="mono">D:/AI/Strata</span><span class="m-push m-dim" data-en="Engine version">引擎版本</span><span class="mono">0.1.43</span></div>
+                      </div>
+                      <div class="m-card">
+                        <div class="m-cell-head"><b data-en="Strata updates">Strata 更新</b><span class="m-dim m-small" data-en="Official">官方</span></div>
+                        <div class="m-versions"><div><span class="m-dim" data-en="Installed">本机版本</span><b class="mono">0.1.43</b></div><div><span class="m-dim" data-en="Latest">最新版本</span><b class="mono" data-latest>—</b></div></div>
+                        <div class="m-verify" data-verify>
+                          <button class="m-btn" type="button" tabindex="-1" data-verify-run><svg class="icon"><use href="#icon-refresh"/></svg><span data-en="Check for updates">检查更新</span></button>
+                          <span class="m-verify-bar"><b></b></span>
+                          <span class="m-dim m-small mono" data-verify-text></span>
+                        </div>
+                      </div>
+                                          <div class="m-card">
+                        <div class="m-cell-head"><b data-en="System">系统</b><span class="m-btn"><svg class="icon"><use href="#icon-refresh"/></svg><span data-en="Refresh">刷新</span></span></div>
+                        <dl class="m-trio is-grid"><div><dt data-en="OS">系统</dt><dd>Windows</dd></div><div><dt data-en="Architecture">架构</dt><dd class="mono">x86_64</dd></div><div><dt data-en="Processor">处理器</dt><dd>Intel Core i9</dd></div><div><dt data-en="Physical memory">物理内存</dt><dd class="mono">96 GB</dd></div><div><dt data-en="Available memory">可用内存</dt><dd class="mono">34 GB</dd></div><div><dt data-en="Graphics">显卡</dt><dd>RTX 4080 SUPER</dd></div></dl>
+                      </div>
+                    </section>
+                  </div>
+                  <span class="demo-pointer" data-pointer aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5.5 3.2 19 11.4l-6.1 1.5-3.3 5.9z"/></svg></span>
+                  <div class="app-statusbar mono"><span class="is-live" data-svc-badge><i></i><span data-svc-label data-en="Generating">生成中</span></span><span><span data-en="Generation">生成</span> <b data-live="tps2">32.0</b> tok/s</span><span><span data-en="Running">运行</span> <b>1</b></span><span><span data-en="Queued">排队</span> <b class="is-warn">1</b></span><span>GPU <b data-live="load3">40</b>%</span><span>CPU <b>12%</b></span><span><span data-en="Temp">温度</span> <b>58°C</b></span><span><span data-en="Power">功耗</span> <b data-live="power3">210</b> W</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="display-detail-bar">
+            <div><span class="detail-num" id="screen-index">00</span><h3 id="screen-title" data-en="Overview · Service and hardware at a glance.">总览 · 服务与硬件一屏可见。</h3></div>
+            <p id="screen-description" data-en="Service controls, VRAM and memory use, generation speed, recent requests and today's API usage on one page, with issues surfaced first.">服务状态与启停、显存和内存占用、生成速度、最近请求与今日 API 集中在一页，异常时先看到提示。</p>
+            <a class="text-link open-lightbox-btn" id="screen-link" href="assets/screenshots/product-cover.zh.webp" data-href-en="assets/screenshots/product-cover.en.webp" data-target="overview"><span data-en="Real screenshot">真实截图</span> <svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></a>
+          </div>
+        </div>
+        <p class="image-note" data-en="Interface rebuilt in HTML from the current app, playing a scripted session · Hover to pause · Example data">界面按当前应用以 HTML 还原，自动演示一次真实操作 · 悬停暂停 · 展示数据</p>
       </div>
     </section>
 
     <section class="features-section" id="features" aria-label="核心功能" data-label-en="Core features">
       <div class="container">
-        <div class="feature-intro"><h2 data-en="What you can do day to day.">日常能做的事。</h2><p data-en="From the first install to everyday calls: set up the engine, manage models, connect and verify the API, read usage, tune and compare.">从第一次安装到日常调用：装引擎、管模型、接 API、看用量、调参数、比速度。</p></div>
-        <div class="feature-grid">
-        <article class="feature-card">
+        <article class="feature-row reveal" id="demo-models">
+          <div class="feature-copy">
+            <h2><span data-en="Pick models for this machine.">按本机挑模型。</span> <span class="muted" data-en="Choose a quantization against your VRAM and memory, see what each configuration needs, then download with size and SHA256 checks.">对照显存和内存选量化，看清每份配置要多少资源，再下载并按大小与 SHA256 校验。</span></h2>
+            <a class="arrow-link" href="#screen-model-download-detail" data-en="See model details →">查看模型详情 →</a>
+          </div>
+          <div class="feature-visual">
+            <div class="mini-window" data-fit-demo data-demo="fit">
+              <div class="mini-bar"><span class="mini-dots" aria-hidden="true"><i></i><i></i><i></i></span><span data-en="Models · Download details">模型 · 下载详情</span></div>
+              <div class="mini-body">
+                <p class="fit-model"><b>Swift-Qwen3.8-Flash-Next-GSQ-RCO</b><span class="m-dim mono">RTX 4080 SUPER 32 GB · RAM 96 GB</span></p>
+                <div class="fit-options" role="radiogroup" aria-label="量化版本" data-label-en="Quantization">
+                  <button type="button" role="radio" aria-checked="true" class="fit-opt is-on" data-vram="21" data-ram="62" data-verdict="fits" data-size="83.6"><b class="mono">IQ3_S</b><span class="mono">83.6 GB</span><em data-en="Fits">适合本机</em></button>
+                  <button type="button" role="radio" aria-checked="false" class="fit-opt" data-vram="30" data-ram="88" data-verdict="tight" data-size="112"><b class="mono">Q4_K_M</b><span class="mono">112 GB</span><em class="is-warn" data-en="Tight">偏紧</em></button>
+                  <button type="button" role="radio" aria-checked="false" class="fit-opt" data-vram="32" data-ram="96" data-verdict="over" data-size="210"><b class="mono">Q8_0</b><span class="mono">210 GB</span><em class="is-err" data-en="Too large">超出</em></button>
+                </div>
+                <div class="fit-bars">
+                  <div><span data-en="VRAM">显存</span><i><b data-fit="vram" style="width:65.6%"></b></i><span class="mono" data-fit-label="vram">21 / 32 GB</span></div>
+                  <div><span data-en="Memory">内存</span><i><b data-fit="ram" style="width:64.6%"></b></i><span class="mono" data-fit-label="ram">62 / 96 GB</span></div>
+                </div>
+                <p class="fit-verdict" data-fit-verdict data-en="Runs on this computer with about 11 GB of VRAM to spare.">可在本机运行，显存约余 11 GB。</p>
+                <div class="dl-row" data-dl data-state="done">
+                  <span class="m-btn is-primary dl-btn" data-dl-btn><svg class="icon"><use href="#icon-download"/></svg><span data-dl-label data-en="Download · 83.6 GB">下载 · 83.6 GB</span></span>
+                  <div class="dl-progress"><i><b data-dl-bar style="width:100%"></b></i><span class="mono" data-dl-text data-en="Downloaded · size and SHA256 verified">已下载 · 大小与 SHA256 校验通过</span></div>
+                </div>
+              </div>
+              <span class="demo-pointer is-mini" data-pointer aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5.5 3.2 19 11.4l-6.1 1.5-3.3 5.9z"/></svg></span>
+            </div>
+          </div>
+        </article>
+
+        <article class="feature-row is-flipped reveal" id="demo-connect">
+          <div class="feature-copy">
+            <h2><span data-en="Connect agents. Verify the API.">接入 Agent，核验 API。</span> <span class="muted" data-en="Copy the local endpoint into Cursor, Codex, Claude Code or Cherry Studio, then check identity, models, capabilities and one test request step by step.">把本机地址填进 Cursor、Codex、Claude Code 或 Cherry Studio，再逐步核验服务身份、模型、能力和一次测试请求。</span></h2>
+            <a class="arrow-link" href="#screen-api-verification" data-en="See API verification →">查看 API 验证 →</a>
+          </div>
+          <div class="feature-visual">
+            <div class="mini-window" data-connect-demo data-demo="connect">
+              <div class="mini-bar"><span class="mini-dots" aria-hidden="true"><i></i><i></i><i></i></span><span data-en="Settings · Connect API">设置 · 接入 API</span></div>
+              <div class="mini-body">
+                <div class="client-tabs" role="tablist" aria-label="客户端" data-label-en="Clients">
+                  <button type="button" role="tab" aria-selected="true" class="is-on" data-client="cursor">Cursor</button>
+                  <button type="button" role="tab" aria-selected="false" data-client="codex">Codex</button>
+                  <button type="button" role="tab" aria-selected="false" data-client="claude">Claude Code</button>
+                  <button type="button" role="tab" aria-selected="false" data-client="cherry">Cherry Studio</button>
+                </div>
+                <pre class="client-config mono" data-client-config>export OPENAI_BASE_URL='http://127.0.0.1:19001/v1'
+export OPENAI_API_KEY='strata-local'
+export OPENAI_MODEL='Swift-Qwen3.8-Flash-Next'
+cursor .</pre>
+                <div class="verify-head"><b data-en="Online check">在线验证</b><span class="m-dim m-small" data-en="Bounded test · tools are never executed">限时限量 · 工具不会真执行</span><button class="m-btn is-primary verify-run" type="button" data-steps-run><span data-en="Start check">开始验证</span></button></div>
+                <ol class="verify-steps" data-steps>
+                  <li data-step-time="0.0 s"><i></i><span data-en="Service identity and connection">服务身份与连接</span><em class="mono"></em></li>
+                  <li data-step-time="0.0 s"><i></i><span data-en="Model list">模型列表</span><em class="mono"></em></li>
+                  <li data-step-time="0.1 s"><i></i><span data-en="Capability check">能力检查</span><em class="mono"></em></li>
+                  <li data-step-time="0.3 s"><i></i><span data-en="Test request · text">测试请求 · 文本</span><em class="mono"></em></li>
+                </ol>
+                <p class="verify-result" data-verify-result data-en="This check passed · 0.4 s">本次验证通过 · 0.4 s</p>
+              </div>
+              <span class="demo-pointer is-mini" data-pointer aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5.5 3.2 19 11.4l-6.1 1.5-3.3 5.9z"/></svg></span>
+            </div>
+          </div>
+        </article>
+
+        <article class="feature-row reveal" id="demo-boost">
+          <div class="feature-copy">
+            <h2><span data-en="One-click speed-up.">一键提速。</span> <span class="muted" data-en="Measures this computer, tries GPU/RAM splits and draft settings, then shows before and after for short and long answers. You decide whether to use them; the original configuration stays.">在这台电脑上实测，试显卡与内存的分工和“提前猜词”力度，再给出短回答、长回答的前后对比。用不用由你决定，原配置不改。</span></h2>
+            <a class="arrow-link" href="docs/user-guide.html" data-href-en="docs/user-guide.en.html" data-en="How tuning works →">了解调优方式 →</a>
+          </div>
+          <div class="feature-visual">
+            <div class="mini-window boost" data-boost-demo data-demo="boost" data-phase="applied">
+              <div class="mini-bar"><span class="mini-dots" aria-hidden="true"><i></i><i></i><i></i></span><span data-en="Tuning · One-click speed-up">参数调优 · 一键提速</span></div>
+              <div class="mini-body">
+                <div class="boost-head"><b data-en="One-click speed-up">一键提速</b><p class="m-dim" data-en="Measures this computer and finds settings that make the model answer faster. You decide afterwards whether to use them.">在这台电脑上实测，找出让模型回答更快的设置。测完由你决定是否采用。</p></div>
+                <div class="boost-idle" data-phase-show="idle">
+                  <div class="boost-current"><span class="m-dim" data-en="Current speed">当前速度</span><b class="mono">27.4</b><small class="mono">tok/s</small></div>
+                  <div class="boost-cta"><span class="m-btn is-primary" data-boost-start><svg class="icon"><use href="#icon-gauge"/></svg><span data-en="Speed up">一键提速</span></span><span class="m-dim m-small" data-en="About 10 minutes · no restart · the model is busy meanwhile">约 10 分钟 · 不重启模型 · 期间模型暂时忙碌</span></div>
+                </div>
+                <div class="boost-run" data-phase-show="run">
+                  <div class="boost-runhead"><span class="m-badge is-warn"><i></i><span data-en="Measuring">正在测量</span></span><span class="mono m-small" data-boost-step>1/5</span><span class="m-dim m-small mono" data-boost-time></span></div>
+                  <ol class="boost-steps" data-boost-steps>
+                    <li><i></i><span data-en="Getting ready">准备中</span></li>
+                    <li><i></i><span data-en="Warming up the model">预热模型</span></li>
+                    <li><i></i><span data-en="Trying how work is split between GPU and RAM">试显卡与内存的分工</span></li>
+                    <li><i></i><span data-en="Trying how boldly the model drafts ahead">试“提前猜词”的力度</span></li>
+                    <li><i></i><span data-en="Checking old and new settings in turns">新旧设置轮流复核</span></li>
+                  </ol>
+                  <svg class="boost-spark" viewBox="0 0 300 44" preserveAspectRatio="none" aria-hidden="true"><path class="line" data-boost-spark d="M0 30"/></svg>
+                </div>
+                <div class="boost-result" data-phase-show="done applied">
+                  <div class="boost-gain"><b class="mono" data-en="17% faster">快了 17%</b><span class="m-dim m-small" data-en="Tokens per second (tok/s)">每秒生成的字词数（tok/s）</span></div>
+                  <div class="boost-bars">
+                    <div class="boost-pair"><span data-en="Short answers">短回答</span><div><i class="is-before" style="--w:.76"><em data-en="Before">调优前</em></i><b class="mono">27.4</b></div><div><i class="is-after" style="--w:.89"><em data-en="After">调优后</em></i><b class="mono">32.0</b></div></div>
+                    <div class="boost-pair"><span data-en="Long answers">长回答</span><div><i class="is-before" style="--w:.67"><em data-en="Before">调优前</em></i><b class="mono">24.1</b></div><div><i class="is-after" style="--w:.79"><em data-en="After">调优后</em></i><b class="mono">28.3</b></div></div>
+                  </div>
+                  <div class="boost-changes"><b data-en="What changes">改了什么</b><p data-en="Let the engine split work between GPU and RAM by itself; it keeps adjusting while it runs.">让引擎自己安排显卡与内存的分工，它会边用边调整。</p><p data-en="Adjust how boldly the model drafts ahead: 0.10 → 0.05.">调整“提前猜词”的力度：0.10 → 0.05。</p></div>
+                  <div class="boost-actions" data-phase-show="done"><span class="m-btn is-primary" data-boost-apply><span data-en="Use these settings">采用</span></span><span class="m-btn" data-en="Not now">先不用</span></div>
+                  <p class="boost-applied" data-phase-show="applied"><svg class="icon" aria-hidden="true"><use href="#icon-check"/></svg><span data-en="Speed-up settings in use · the original configuration is unchanged">已采用提速设置 · 原配置没有改动，可随时回滚</span></p>
+                </div>
+                <p class="m-dim m-small" data-en="Example data · results depend on your hardware">示例数据 · 实际结果取决于硬件</p>
+              </div>
+              <span class="demo-pointer is-mini" data-pointer aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5.5 3.2 19 11.4l-6.1 1.5-3.3 5.9z"/></svg></span>
+            </div>
+          </div>
+        </article>
+
+        <article class="feature-row is-flipped reveal" id="demo-monitor">
+          <div class="feature-copy">
+            <h2><span data-en="Watch the hardware work.">看着硬件干活。</span> <span class="muted" data-en="Generation and input processing stay separate, with GPU, VRAM, CPU and memory sampled alongside. The compact floating monitor stays off until you want it.">生成和输入处理分开统计，显卡、显存、CPU 与内存同步采样；紧凑的桌面浮条默认关闭，需要时再开。</span></h2>
+            <a class="arrow-link" href="#screen-floating-monitor" data-en="See the floating monitor →">查看桌面浮条 →</a>
+          </div>
+          <div class="feature-visual">
+            <div class="mini-window" data-monitor-demo data-demo="monitor">
+              <div class="mini-bar"><span class="mini-dots" aria-hidden="true"><i></i><i></i><i></i></span><span data-en="Floating monitor">桌面监控浮条</span><span class="mon-state m-badge is-live" data-mon-state><i></i><span data-mon-label data-en="Generating">生成中</span></span></div>
+              <div class="mini-body">
+                <div class="mon-grid">
+                  <div class="mon-cell" style="--c:#16834f"><span data-en="Generation">生成</span><b class="mono"><span data-mon="gen">32</span><small>t/s</small></b><svg viewBox="0 0 120 24" preserveAspectRatio="none" aria-hidden="true"><path data-mon-line="gen" d="M0 12 L120 12"/></svg></div>
+                  <div class="mon-cell" style="--c:#2a6fb6"><span data-en="Input">读取</span><b class="mono"><span data-mon="pre">1.2k</span><small>t/s</small></b><svg viewBox="0 0 120 24" preserveAspectRatio="none" aria-hidden="true"><path data-mon-line="pre" d="M0 12 L120 12"/></svg></div>
+                  <div class="mon-cell" style="--c:#b4581c"><span>GPU</span><b class="mono"><span data-mon="gpu">40</span><small>%</small></b><svg viewBox="0 0 120 24" preserveAspectRatio="none" aria-hidden="true"><path data-mon-line="gpu" d="M0 12 L120 12"/></svg></div>
+                  <div class="mon-cell" style="--c:#13797a"><span data-en="VRAM">显存</span><b class="mono"><span data-mon="vram">21.0</span><small>GiB</small></b><svg viewBox="0 0 120 24" preserveAspectRatio="none" aria-hidden="true"><path data-mon-line="vram" d="M0 12 L120 12"/></svg></div>
+                  <div class="mon-cell" style="--c:#8243b0"><span>CPU</span><b class="mono"><span data-mon="cpu">12</span><small>%</small></b><svg viewBox="0 0 120 24" preserveAspectRatio="none" aria-hidden="true"><path data-mon-line="cpu" d="M0 12 L120 12"/></svg></div>
+                  <div class="mon-cell" style="--c:#4f55c4"><span data-en="Memory">内存</span><b class="mono"><span data-mon="ram">62.0</span><small>GiB</small></b><svg viewBox="0 0 120 24" preserveAspectRatio="none" aria-hidden="true"><path data-mon-line="ram" d="M0 12 L120 12"/></svg></div>
+                </div>
+                <div class="mon-req"><span class="m-dim" data-en="Current request">当前请求</span><span class="mono" data-mon-req>384 tokens</span><i><b data-mon-bar style="width:75%"></b></i></div>
+                <ol class="mon-log mono" data-mon-log>
+                  <li><span>14:34:31</span><span>claude-code</span><span>4,096 → 384</span><span>30.5 t/s</span></li>
+                  <li><span>14:34:11</span><span>cursor</span><span>2,310 → 512</span><span>31.2 t/s</span></li>
+                  <li><span>14:33:51</span><span>chat</span><span>820 → 256</span><span>33.0 t/s</span></li>
+                </ol>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="feature-row reveal" id="demo-bench">
+          <div class="feature-copy">
+            <h2><span data-en="Benchmark, then compare.">先测速，再对比。</span> <span class="muted" data-en="Run context tiers or seven serial scenarios, keep history, and opt in to compare the same model and quantization across hardware on the public leaderboard.">按上下文档位或七类串行场景测试并留存历史；同意后匿名上传，在公开排行榜上按同模型、同量化对比不同硬件。</span></h2>
+            <a class="arrow-link" href="leaderboard.html" data-href-en="leaderboard.en.html" data-en="Open the leaderboard →">打开排行榜 →</a>
+          </div>
+          <div class="feature-visual">
+            <div class="mini-window" data-board-demo data-demo="bench" data-pane="board">
+              <div class="mini-bar"><span class="mini-dots" aria-hidden="true"><i></i><i></i><i></i></span><span data-en="Benchmark">Benchmark 测试</span></div>
+              <div class="mini-body">
+                <div class="bench-top"><span class="m-seg is-small"><span data-bench-tab="tiers" data-en="Context tiers">上下文档位</span><span class="is-on" data-bench-tab="board" data-en="Leaderboard">排行榜</span></span><span class="m-dim m-small mono">Qwen3.8-Flash-Next · IQ3_S</span></div>
+                <div class="bench-tiers" data-bench-pane="tiers">
+                  <div class="bench-runhead"><span data-en="Serial run within the verified 128K limit">在核验的 128K 上限内串行测试</span><span class="mono m-dim" data-bench-progress>4 / 4</span></div>
+                  <ol class="bench-rows" data-tiers>
+                    <li data-pre="2,048" data-dec="33.1"><span class="mono">4K</span><span class="mono" data-c="pre">2,048</span><span class="mono" data-c="dec">33.1</span><i></i></li>
+                    <li data-pre="1,960" data-dec="32.0"><span class="mono">16K</span><span class="mono" data-c="pre">1,960</span><span class="mono" data-c="dec">32.0</span><i></i></li>
+                    <li data-pre="1,720" data-dec="29.4"><span class="mono">64K</span><span class="mono" data-c="pre">1,720</span><span class="mono" data-c="dec">29.4</span><i></i></li>
+                    <li data-pre="1,410" data-dec="26.8"><span class="mono" data-en="128K max">128K 最大</span><span class="mono" data-c="pre">1,410</span><span class="mono" data-c="dec">26.8</span><i></i></li>
+                  </ol>
+                  <div class="bench-share"><span class="m-dim m-small" data-en="Share anonymously? You can withdraw it later.">匿名分享到排行榜？之后可随时撤回。</span><span class="m-btn is-primary" data-bench-share><span data-en="Share">分享</span></span></div>
+                </div>
+                <div class="bench-board" data-bench-pane="board">
+                  <div class="board-head"><b>Qwen3.8-Flash-Next <span class="m-tag mono">IQ3_S</span></b><span class="board-sort" role="group" aria-label="排序" data-label-en="Sort"><button type="button" aria-pressed="true" class="is-on" data-sort="decode" data-en="Decode">解码</button><button type="button" aria-pressed="false" data-sort="prefill" data-en="Prefill">预填充</button></span></div>
+                  <ol class="board-rows" data-board>
+                    <li data-decode="48.2" data-prefill="3120"><span class="mono">1</span><span>RTX 5090 · 32 GB</span><i><b></b></i><span class="mono" data-val></span></li>
+                    <li data-decode="41.7" data-prefill="2650"><span class="mono">2</span><span>RTX 4090 · 24 GB</span><i><b></b></i><span class="mono" data-val></span></li>
+                    <li data-decode="32.0" data-prefill="2048" class="is-mine"><span class="mono">3</span><span>RTX 4080 SUPER · 32 GB <em data-en="This PC">本机</em></span><i><b></b></i><span class="mono" data-val></span></li>
+                    <li data-decode="27.5" data-prefill="1710"><span class="mono">4</span><span>RTX 3090 · 24 GB</span><i><b></b></i><span class="mono" data-val></span></li>
+                    <li data-decode="22.9" data-prefill="1380"><span class="mono">5</span><span>RX 7900 XTX · 24 GB</span><i><b></b></i><span class="mono" data-val></span></li>
+                  </ol>
+                </div>
+                <p class="m-dim m-small" data-en="Example data · tok/s, median of shared runs">示例数据 · tok/s，取分享结果中位数</p>
+              </div>
+              <span class="demo-pointer is-mini" data-pointer aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5.5 3.2 19 11.4l-6.1 1.5-3.3 5.9z"/></svg></span>
+            </div>
+          </div>
+        </article>
+
+        <div class="feature-index">
+          <div class="feature-intro"><h2 data-en="What you can do day to day.">日常能做的事。</h2><p data-en="From the first install to everyday calls: set up the engine, manage models, connect and verify the API, read usage, tune and compare.">从第一次安装到日常调用：装引擎、管模型、接 API、看用量、调参数、比速度。</p></div>
+          <div class="feature-grid">
+          <article class="feature-card">
           <span class="feature-number" aria-hidden="true">01</span>
           <h3 data-en="Getting started &amp; Strata runtime">上手与 Strata 环境</h3>
           <p data-en="Getting started walks from checking the environment and installing Strata to downloading a model, loading it and the first chat. Detect existing installs and update Windows engine ZIPs from GitHub, mirrors or a local package, with size and SHA256 checks.">“开始使用”从检查环境、安装 Strata 一路带到下载模型、加载和第一次聊天。已有安装会被识别；Windows 引擎 ZIP 可走官方 GitHub、镜像或本地包，并按大小和 SHA256 校验。</p>
@@ -183,157 +592,278 @@
           <a class="feature-link" href="#screen-benchmark" data-en="See the Benchmark workspace ↘">查看 Benchmark 工作区 ↘</a>
           <a class="feature-link" href="leaderboard.html" data-href-en="leaderboard.en.html" data-en="Open the leaderboard ↗">查看排行榜 ↗</a>
         </article>
+          </div>
         </div>
       </div>
     </section>
 
-        <section class="workspace-section section-padding" id="daily-experience" aria-labelledby="daily-experience-title">
+    <section class="strata-section" id="about-strata" aria-labelledby="strata-title">
+      <div class="container strata-layout">
+        <div class="strata-explanation">
+          <h2 class="section-title" id="strata-title"><span data-en="Strata and Manager">Strata 与 Manager</span><span data-en="How they work together.">如何协作</span></h2>
+          <p class="strata-lead" data-en="Strata is an open-source local LLM inference engine that combines CPU and GPU resources. Strata Manager turns it into one desktop workspace: guided first setup, model downloads and configurations across Strata versions, service control, API verification and usage, agent connections, monitoring, tuning and a shared Benchmark leaderboard.">Strata 是一款开源的本地大模型推理引擎，利用 CPU 与 GPU 协同运行模型。Strata Manager 把它装进一个桌面工作台：首次上手引导、模型下载与多版本配置、服务启停、API 验证与用量、Agent 接入、监控调优，以及共享的 Benchmark 排行榜。</p>
+          <dl class="product-roles">
+            <div><dt data-en="Strata · Inference engine">Strata · 推理引擎</dt><dd data-en="Loads supported model weights, runs inference across CPU and GPU resources, and serves a local API for chat apps and developer tools.">加载受支持的模型权重，协调 CPU 与 GPU 执行推理，并通过本地 API 为聊天应用与开发工具提供服务。</dd></div>
+            <div><dt data-en="Strata Manager · Desktop management">Strata Manager · 桌面管理工具</dt><dd data-en="Manages the runtime, model configurations across Strata versions and the service lifecycle, with chat, API verification, usage statistics, hardware monitoring, tuning, Benchmark with an opt-in leaderboard, and connection guides for Cursor, Codex, Claude Code and more.">管理运行环境、跨 Strata 版本的模型配置和服务生命周期，提供聊天、API 在线验证、用量统计、硬件监控、参数调优、可选上传的 Benchmark 排行榜，以及 Cursor、Codex、Claude Code 等接入向导。</dd></div>
+          </dl>
+          <a class="text-link strata-source" href="https://github.com/Niko1221/Strata" data-en="Explore the Strata project ↗">了解 Strata 项目 ↗</a>
+        </div>
+        <figure class="architecture" aria-labelledby="architecture-caption">
+          <div class="architecture-flow" id="strata-diagram">
+            <div class="diagram-node diagram-manager"><span class="diagram-role" data-en="MANAGEMENT">管理层</span><strong>Strata Manager</strong><span class="diagram-detail" data-en="Install · Configure · Control · Monitor">安装 · 配置 · 启停 · 监控</span></div>
+            <div class="diagram-control" aria-hidden="true"><svg viewBox="0 0 24 48" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v42M7 8l5-5 5 5M7 40l5 5 5-5"/></svg></div>
+            <div class="diagram-node diagram-model"><svg class="diagram-symbol" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m16 4 12 6-12 6-12-6 12-6Zm-12 12 12 6 12-6M4 22l12 6 12-6"/></svg><strong data-en="Supported model weights">受支持的模型权重</strong><span class="diagram-detail" data-en="Compatible GGUF files">兼容的 GGUF 文件</span></div>
+            <span class="diagram-arrow diagram-load" aria-hidden="true"><span data-en="Load">加载</span><svg viewBox="0 0 40 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 10h35m-6-6 6 6-6 6"/></svg></span>
+            <div class="diagram-node diagram-engine"><span class="diagram-role" data-en="INFERENCE">推理层</span><strong>Strata</strong><span class="diagram-detail" data-en="CPU / GPU inference">CPU / GPU 协同推理</span><span class="diagram-api" data-en="Local API service">本地 API 服务</span></div>
+            <span class="diagram-arrow diagram-serve" aria-hidden="true"><span>API</span><svg viewBox="0 0 40 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 10h35m-6-6 6 6-6 6"/></svg></span>
+            <div class="diagram-node diagram-client"><svg class="diagram-symbol" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="5" width="26" height="18" rx="3"/><path d="M11 28h10m-5-5v5m-6-17 4 3-4 3m7 0h5"/></svg><strong data-en="Chat &amp; developer tools">聊天与开发工具</strong><span class="diagram-detail" data-en="OpenAI-compatible API">OpenAI 兼容 API</span></div>
+          </div>
+          <figcaption id="architecture-caption" data-en="Strata executes inference. Strata Manager manages and monitors the service.">Strata 执行模型推理，Strata Manager 管理与监控服务。</figcaption>
+          <p class="compatibility-note"><span data-en="Model compatibility and hardware requirements: ">模型兼容性与硬件要求：</span><a href="https://github.com/Niko1221/Strata/blob/main/docs/INSTALL.md" data-en="Strata documentation ↗">Strata 官方文档 ↗</a></p>
+        </figure>
+      </div>
+    </section>
+
+    <section class="shots-section" id="daily-experience" aria-labelledby="daily-experience-title">
       <div class="container">
-        <div class="section-header"><div><h2 class="section-title" id="daily-experience-title" data-en="Daily experience">日常体验</h2><p class="section-lead" data-en="Download, diagnose, verify and compare. Screenshots use isolated example data.">下载、诊断、核验和对照。截图用隔离示例数据。</p></div></div>
+        <div class="section-header"><div><h2 class="section-title" id="daily-experience-title" data-en="Daily experience">日常体验</h2><p class="section-lead" data-en="Download, diagnose, verify and compare. Rebuilt in HTML from the current app; each card links to the real screenshot.">下载、诊断、核验和对照。按当前界面用 HTML 还原，每张卡片都能打开真实截图。</p></div></div>
         <p class="section-lead" data-en="Getting started, model downloads, old-version config cleanup, startup failures, capability checks, API verification, chat timing, Benchmark history and the leaderboard—all from the current app. Missing evidence stays unknown.">开始使用引导、模型下载、旧版本配置清理、启动失败、能力核验、API 验证、聊天计时、Benchmark 历史和排行榜，都来自当前界面。缺证据就标未知。</p>
-        <div class="gallery-grid">
-          <figure class="gallery-item" id="screen-onboarding"><a class="gallery-preview open-lightbox-btn" href="assets/screenshots/onboarding.zh.webp" data-href-en="assets/screenshots/onboarding.en.webp" data-target="onboarding" aria-label="放大开始使用引导" data-label-en="Enlarge the getting-started guide"><img src="assets/screenshots/onboarding.zh.webp" data-src-en="assets/screenshots/onboarding.en.webp" width="2880" height="1920" decoding="async" alt="开始使用引导：选择模型，按本机内存筛选并参考排行榜速度" data-alt-en="Getting started guide: choose a model filtered by this computer's memory, with leaderboard speeds"><span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span></a><figcaption><h3 data-en="Get started · Step-by-step guide">开始使用 · 分步引导</h3><p data-en="From environment checks and installing Strata to choosing, downloading and starting a model and the first chat; filtered by this computer's memory, resumable at any time.">从检查环境、安装 Strata 到选模型、下载、启动和第一次聊天；按本机内存筛选，进度随时可续。</p></figcaption></figure>
-          <figure class="gallery-item" id="screen-model-download-list"><a class="gallery-preview open-lightbox-btn" href="assets/screenshots/daily-experience/model-download-list.zh.webp" data-href-en="assets/screenshots/daily-experience/model-download-list.en.webp" data-target="model-download-list" aria-label="放大模型下载列表" data-label-en="Enlarge model download list"><img src="assets/screenshots/daily-experience/model-download-list.zh.webp" data-src-en="assets/screenshots/daily-experience/model-download-list.en.webp" width="2880" height="1920" decoding="async" alt="模型下载列表：实时下载进度与本机适配" data-alt-en="Model download list: live download progress and fit for this computer"><span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span></a><figcaption><h3 data-en="Models · Download list">模型 · 下载列表</h3><p data-en="Pick a model in the list, then open details for GPU and run options.">先在列表里选模型，再进详情配显卡和运行选项。</p></figcaption></figure>
-          <figure class="gallery-item" id="screen-model-download-detail"><a class="gallery-preview open-lightbox-btn" href="assets/screenshots/daily-experience/model-download-detail.zh.webp" data-href-en="assets/screenshots/daily-experience/model-download-detail.en.webp" data-target="model-download-detail" aria-label="放大模型下载详情" data-label-en="Enlarge model download details"><img src="assets/screenshots/daily-experience/model-download-detail.zh.webp" data-src-en="assets/screenshots/daily-experience/model-download-detail.en.webp" width="2880" height="2400" decoding="async" alt="模型下载详情：量化版本、本机适配与资源估算" data-alt-en="Model download details: quantizations, fit for this computer and resource estimate"><span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span></a><figcaption><h3 data-en="Models · Choose and assess">模型 · 选择与评估</h3><p data-en="Unified GPU, context, KV and slots; estimates follow the current choice.">详情里统一显卡、上下文、KV 与槽位；资源建议跟着当前选择变。</p></figcaption></figure>
-          <figure class="gallery-item" id="screen-config-cleanup"><a class="gallery-preview open-lightbox-btn" href="assets/screenshots/config-cleanup.zh.webp" data-href-en="assets/screenshots/config-cleanup.en.webp" data-target="config-cleanup" aria-label="放大旧版本配置清理" data-label-en="Enlarge old-version configuration cleanup"><img src="assets/screenshots/config-cleanup.zh.webp" data-src-en="assets/screenshots/config-cleanup.en.webp" width="2880" height="1920" decoding="async" alt="清理旧版本配置：按版本列出运行配置，标出与当前版本是否相同" data-alt-en="Old-version configuration cleanup: run configurations grouped by version, marked same as or different from the current version"><span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span></a><figcaption><h3 data-en="Models · Clean up old-version configurations">模型 · 旧版本配置清理</h3><p data-en="When several Strata versions share models, move old run configurations into a restorable archive; models and shared data stay untouched, and edited configs are not selected by default.">多个 Strata 版本共用模型时，把旧版本目录里的运行配置移入可恢复的归档；模型和共享数据不动，改过的配置默认不勾选。</p></figcaption></figure>
-          <figure class="gallery-item" id="screen-startup-diagnostic"><a class="gallery-preview open-lightbox-btn" href="assets/screenshots/daily-experience/startup-diagnostic.zh.webp" data-href-en="assets/screenshots/daily-experience/startup-diagnostic.en.webp" data-target="startup-diagnostic" aria-label="放大启动失败诊断" data-label-en="Enlarge startup diagnostics"><img src="assets/screenshots/daily-experience/startup-diagnostic.zh.webp" data-src-en="assets/screenshots/daily-experience/startup-diagnostic.en.webp" width="2880" height="1920" decoding="async" alt="启动失败诊断" data-alt-en="Startup failure diagnostics"><span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span></a><figcaption><h3 data-en="Startup · Diagnostics">启动 · 失败诊断</h3><p data-en="See phase, duration, reason and redacted evidence, then open the matching config or log.">总览或任务里看阶段、耗时、原因和脱敏证据，再打开对应配置或日志。</p></figcaption></figure>
-          <figure class="gallery-item" id="screen-service-capabilities"><a class="gallery-preview open-lightbox-btn" href="assets/screenshots/daily-experience/service-capabilities.zh.webp" data-href-en="assets/screenshots/daily-experience/service-capabilities.en.webp" data-target="service-capabilities" aria-label="放大服务能力" data-label-en="Enlarge service capabilities"><img src="assets/screenshots/daily-experience/service-capabilities.zh.webp" data-src-en="assets/screenshots/daily-experience/service-capabilities.en.webp" width="2880" height="1920" decoding="async" alt="服务能力四态" data-alt-en="Service capability states"><span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span></a><figcaption><h3 data-en="Capabilities · Ready and unchecked">能力 · 可用与未核验</h3><p data-en="Available, unsupported, unchecked or needs restart; re-check after model or engine identity changes.">区分可用、不支持、未核验和需要重启；换模型或引擎身份变了要重新核验。</p></figcaption></figure>
-          <figure class="gallery-item" id="screen-api-verification"><a class="gallery-preview open-lightbox-btn" href="assets/screenshots/daily-experience/api-verification.zh.webp" data-href-en="assets/screenshots/daily-experience/api-verification.en.webp" data-target="api-verification" aria-label="放大 API 验证" data-label-en="Enlarge API verification"><img src="assets/screenshots/daily-experience/api-verification.zh.webp" data-src-en="assets/screenshots/daily-experience/api-verification.en.webp" width="2880" height="1920" decoding="async" alt="API 在线验证" data-alt-en="Explicit API verification"><span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span></a><figcaption><h3 data-en="API · Verify explicitly">API · 显式核验</h3><p data-en="Bounded text, tool-structure or image checks; needs a ready model, tools are never executed.">限时限量测文本、工具结构或图片；模型未就绪不能验证，工具不会真执行。</p></figcaption></figure>
-          <figure class="gallery-item" id="screen-chat-execution"><a class="gallery-preview open-lightbox-btn" href="assets/screenshots/daily-experience/chat-execution.zh.webp" data-href-en="assets/screenshots/daily-experience/chat-execution.en.webp" data-target="chat-execution" aria-label="放大聊天执行计时" data-label-en="Enlarge chat execution timing"><img src="assets/screenshots/daily-experience/chat-execution.zh.webp" data-src-en="assets/screenshots/daily-experience/chat-execution.en.webp" width="2880" height="1920" decoding="async" alt="聊天请求计时" data-alt-en="Chat request timing"><span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span></a><figcaption><h3 data-en="Chat · Request timing">聊天 · 请求计时</h3><p data-en="Waiting, thinking, tools and body stay separate; TTFT and totals use this request only.">分别展示等待、思考、工具和正文；TTFT 与总耗时只用这次请求的证据。</p></figcaption></figure>
-          <figure class="gallery-item" id="screen-api-usage"><a class="gallery-preview open-lightbox-btn" href="assets/screenshots/daily-experience/api-usage.zh.webp" data-href-en="assets/screenshots/daily-experience/api-usage.en.webp" data-target="api-usage" aria-label="放大 API 用量" data-label-en="Enlarge API usage"><img src="assets/screenshots/daily-experience/api-usage.zh.webp" data-src-en="assets/screenshots/daily-experience/api-usage.en.webp" width="2880" height="1920" decoding="async" alt="API 用量趋势" data-alt-en="API usage trends"><span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span></a><figcaption><h3 data-en="Usage · Requests and tokens">用量 · 请求与 tokens</h3><p data-en="Requests, tokens, latency and cache reuse; stats never capture request bodies.">看请求、tokens、延迟和缓存复用趋势；统计不抓请求正文。</p></figcaption></figure>
-          <figure class="gallery-item" id="screen-history-comparison"><a class="gallery-preview open-lightbox-btn" href="assets/screenshots/daily-experience/history-comparison.zh.webp" data-href-en="assets/screenshots/daily-experience/history-comparison.en.webp" data-target="history-comparison" aria-label="放大历史条件对照" data-label-en="Enlarge historical conditions"><img src="assets/screenshots/daily-experience/history-comparison.zh.webp" data-src-en="assets/screenshots/daily-experience/history-comparison.en.webp" width="2880" height="1920" decoding="async" alt="历史 Benchmark 条件比较" data-alt-en="Historical benchmark condition comparison"><span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span></a><figcaption><h3 data-en="Benchmark · Compare conditions">Benchmark · 对照条件</h3><p data-en="Keep a pre-upgrade baseline; weak identity blocks direct speedup claims.">升级前留基线，比对身份、输入、缓存和资源；弱身份不下直接提速结论。</p></figcaption></figure>
-          <figure class="gallery-item" id="screen-arena" style="grid-column:1 / -1"><a class="gallery-preview open-lightbox-btn" href="assets/screenshots/arena.zh.webp" data-href-en="assets/screenshots/arena.en.webp" data-target="arena" aria-label="放大 Benchmark 排行榜" data-label-en="Enlarge the Benchmark leaderboard"><img src="assets/screenshots/arena.zh.webp" data-src-en="assets/screenshots/arena.en.webp" width="2880" height="1920" decoding="async" alt="Benchmark 排行榜：同模型同量化在不同硬件上的解码速度与参数" data-alt-en="Benchmark leaderboard: decode speed and parameters for the same model and quantization across hardware"><span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span></a><figcaption><h3 data-en="Benchmark · Leaderboard">Benchmark · 排行榜</h3><p data-en="Compare the same model and quantization across GPUs with the parameters behind each result, filter by VRAM, RAM and launch parameters, switch the sort order, and get recommendations for this machine. Sharing is opt-in, and you can withdraw your data.">按同模型、同量化对比不同显卡的成绩和对应参数，可按显存、内存与启动参数筛选并切换排序，还给出本机的调参建议。分享需要你同意，也可随时撤回数据。</p><p class="gallery-related"><a class="text-link" href="leaderboard.html" data-href-en="leaderboard.en.html" data-en="Public leaderboard ↗">公开排行榜 ↗</a></p></figcaption></figure>
+        <div class="gallery-grid tile-grid">
+          <figure class="gallery-item" id="screen-onboarding">
+            <div class="tile" role="img" aria-label="开始使用引导：选择模型，按本机内存筛选并参考排行榜速度" data-label-en="Getting started guide: choose a model filtered by this computer's memory, with leaderboard speeds">
+              <div class="t-bar"><b data-en="Get started">开始使用</b><span class="mono">3/6</span></div>
+              <div class="t-body t-split">
+                <ol class="t-stepper">
+                  <li class="is-done" data-en="Check environment">检查运行环境</li>
+                  <li class="is-done" data-en="Install Strata">安装 Strata</li>
+                  <li class="is-now" data-en="Choose a model">选择模型</li>
+                  <li data-en="Download model">下载模型</li>
+                  <li data-en="Start service">启动服务</li>
+                  <li data-en="First chat">开始第一次聊天</li>
+                </ol>
+                <div class="t-list">
+                  <p class="t-row is-on"><span class="t-radio"></span><b>Swift 1.5 <span class="t-chip mono">IQ3_S</span></b><span class="mono">38.9 <small>tok/s</small></span></p>
+                  <p class="t-row"><span class="t-radio"></span><b>Qwen3.8-Flash-Next</b><span class="mono">34.6 <small>tok/s</small></span></p>
+                  <p class="t-row"><span class="t-radio"></span><b>Qwen3.8 Coder <span class="t-chip mono">IQ3_M</span></b><span class="mono">33.1 <small>tok/s</small></span></p>
+                  <p class="t-foot"><span class="m-dim" data-en="Filtered by 96 GB memory">按本机 96 GB 内存筛选</span><span class="t-btn" data-en="Download and install · 83.6 GB">下载并安装 · 83.6 GB</span></p>
+                </div>
+              </div>
+            </div>
+            <figcaption><h3 data-en="Get started · Step-by-step guide">开始使用 · 分步引导</h3><p data-en="From environment checks and installing Strata to choosing, downloading and starting a model and the first chat; filtered by this computer's memory, resumable at any time.">从检查环境、安装 Strata 到选模型、下载、启动和第一次聊天；按本机内存筛选，进度随时可续。</p><a class="shot-link open-lightbox-btn" href="assets/screenshots/onboarding.zh.webp" data-href-en="assets/screenshots/onboarding.en.webp" data-target="onboarding"><span data-en="Real screenshot">真实截图</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></a></figcaption>
+          </figure>
+          <figure class="gallery-item" id="screen-model-download-list">
+            <div class="tile" role="img" aria-label="模型下载列表：实时下载进度与本机适配" data-label-en="Model download list: live download progress and fit for this computer">
+              <div class="t-bar"><b data-en="Download models">下载模型</b><span class="m-dim">Hugging Face</span></div>
+              <div class="t-body t-list">
+                <p class="t-row"><b>Qwen3.8-Flash-Next</b><span class="t-chip" data-en="Fits">适合本机</span></p>
+                <div class="t-row is-on t-dl"><b>Swift 1.5</b><span class="mono t-dl-num">41%</span><i class="t-progress"><b style="--p:.41"></b></i><span class="m-dim mono">34.3 / 83.6 GB · 412 MB/s</span></div>
+                <p class="t-row"><b>Qwen3.8-Flash-Next Coder</b><span class="t-chip" data-en="Fits">适合本机</span></p>
+                <p class="t-row"><b>Qwen3.8-Flash-Next (Unsloth)</b><span class="t-chip is-warn" data-en="Tight">偏紧</span></p>
+              </div>
+            </div>
+            <figcaption><h3 data-en="Models · Download list">模型 · 下载列表</h3><p data-en="Pick a model in the list, then open details for GPU and run options.">先在列表里选模型，再进详情配显卡和运行选项。</p><a class="shot-link open-lightbox-btn" href="assets/screenshots/daily-experience/model-download-list.zh.webp" data-href-en="assets/screenshots/daily-experience/model-download-list.en.webp" data-target="model-download-list"><span data-en="Real screenshot">真实截图</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></a></figcaption>
+          </figure>
+          <figure class="gallery-item" id="screen-model-download-detail">
+            <div class="tile" role="img" aria-label="模型下载详情：量化版本、本机适配与资源估算" data-label-en="Model download details: quantizations, fit for this computer and resource estimate">
+              <div class="t-bar"><b>Swift 1.5</b><span class="m-dim" data-en="1. Choose a quantization">1. 选择量化版本</span></div>
+              <div class="t-body t-list">
+                <p class="t-row t-head mono"><span></span><span data-en="Quant">量化</span><span data-en="Download">下载</span><span data-en="VRAM">显存</span></p>
+                <p class="t-row t-q is-on"><span class="t-radio"></span><b class="mono">Q2_K <span class="t-chip" data-en="Pick">推荐</span></b><span class="mono">66.4 GB</span><span class="mono">48 GB</span></p>
+                <p class="t-row t-q"><span class="t-radio"></span><b class="mono">IQ3_XXS</b><span class="mono">73.8 GB</span><span class="mono">50 GB</span></p>
+                <p class="t-row t-q"><span class="t-radio"></span><b class="mono">IQ3_S</b><span class="mono">83.6 GB</span><span class="mono">52 GB</span></p>
+                <dl class="t-facts"><div><dt data-en="Est. VRAM">预计显存</dt><dd class="mono">48 GiB</dd></div><div><dt data-en="Est. RAM">建议内存</dt><dd class="mono">52 GiB</dd></div><div><dt data-en="Disk">磁盘空间</dt><dd data-en="Enough">充足</dd></div></dl>
+              </div>
+            </div>
+            <figcaption><h3 data-en="Models · Choose and assess">模型 · 选择与评估</h3><p data-en="Unified GPU, context, KV and slots; estimates follow the current choice.">详情里统一显卡、上下文、KV 与槽位；资源建议跟着当前选择变。</p><a class="shot-link open-lightbox-btn" href="assets/screenshots/daily-experience/model-download-detail.zh.webp" data-href-en="assets/screenshots/daily-experience/model-download-detail.en.webp" data-target="model-download-detail"><span data-en="Real screenshot">真实截图</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></a></figcaption>
+          </figure>
+          <figure class="gallery-item" id="screen-config-cleanup">
+            <div class="tile" role="img" aria-label="清理旧版本配置：按版本列出运行配置，标出与当前版本是否相同" data-label-en="Old-version configuration cleanup: run configurations grouped by version, marked same as or different from the current version">
+              <div class="t-bar"><b data-en="Clean up old-version configurations">清理旧版本配置</b><span class="mono">3 / 4</span></div>
+              <div class="t-body t-list">
+                <p class="t-group mono">Strata 0.1.42</p>
+                <p class="t-row t-check is-on"><span class="t-box"></span><span class="mono">qwen3-35b-q4_k_xl.json</span><span class="m-dim" data-en="Same as current">与当前版本相同</span></p>
+                <p class="t-group mono">Strata 0.1.40</p>
+                <p class="t-row t-check is-on"><span class="t-box"></span><span class="mono">qwen3-35b-iq2_xs.json</span><span class="m-dim" data-en="Same as current">与当前版本相同</span></p>
+                <p class="t-row t-check"><span class="t-box"></span><span class="mono">qwen3-35b-q2_k.json</span><span class="is-warn" data-en="Edited · differs">改过 · 与当前不同</span></p>
+                <p class="t-foot"><span class="m-dim" data-en="Models and shared data stay untouched">模型和共享数据不动</span><span class="t-btn is-danger" data-en="Archive 3 configurations">归档 3 个配置</span></p>
+              </div>
+            </div>
+            <figcaption><h3 data-en="Models · Clean up old-version configurations">模型 · 旧版本配置清理</h3><p data-en="When several Strata versions share models, move old run configurations into a restorable archive; models and shared data stay untouched, and edited configs are not selected by default.">多个 Strata 版本共用模型时，把旧版本目录里的运行配置移入可恢复的归档；模型和共享数据不动，改过的配置默认不勾选。</p><a class="shot-link open-lightbox-btn" href="assets/screenshots/config-cleanup.zh.webp" data-href-en="assets/screenshots/config-cleanup.en.webp" data-target="config-cleanup"><span data-en="Real screenshot">真实截图</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></a></figcaption>
+          </figure>
+          <figure class="gallery-item" id="screen-startup-diagnostic">
+            <div class="tile" role="img" aria-label="启动失败诊断" data-label-en="Startup failure diagnostics">
+              <div class="t-bar"><b data-en="Overview">总览</b><span class="t-chip is-err" data-en="Start failed">启动失败</span></div>
+              <div class="t-body t-list">
+                <p class="t-alert"><svg class="icon" aria-hidden="true"><use href="#icon-warn"/></svg><span><b data-en="Listening port is taken">监听端口被占用</b><small data-en="Port 19001 is used by another process">端口 19001 已被另一个进程使用</small></span></p>
+                <ol class="t-phases mono">
+                  <li class="is-done"><span data-en="Check config">检查配置</span><span>0.1 s</span></li>
+                  <li class="is-done"><span data-en="Start process">启动进程</span><span>1.4 s</span></li>
+                  <li class="is-err"><span data-en="Listen on port">监听端口</span><span>0.2 s</span></li>
+                </ol>
+                <p class="t-foot"><span class="t-btn" data-en="Open run configuration">打开运行配置</span><span class="t-btn is-ghost" data-en="View startup log">查看启动日志</span></p>
+              </div>
+            </div>
+            <figcaption><h3 data-en="Startup · Diagnostics">启动 · 失败诊断</h3><p data-en="See phase, duration, reason and redacted evidence, then open the matching config or log.">总览或任务里看阶段、耗时、原因和脱敏证据，再打开对应配置或日志。</p><a class="shot-link open-lightbox-btn" href="assets/screenshots/daily-experience/startup-diagnostic.zh.webp" data-href-en="assets/screenshots/daily-experience/startup-diagnostic.en.webp" data-target="startup-diagnostic"><span data-en="Real screenshot">真实截图</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></a></figcaption>
+          </figure>
+          <figure class="gallery-item" id="screen-service-capabilities">
+            <div class="tile" role="img" aria-label="服务能力四态" data-label-en="Service capability states">
+              <div class="t-bar"><b data-en="Current service capabilities">当前服务能力</b><span class="t-btn is-ghost" data-en="Check">核验服务能力</span></div>
+              <div class="t-body t-list t-caps">
+                <p class="t-row"><span data-en="Text chat">文本聊天</span><span class="t-chip" data-en="Available">可用</span></p>
+                <p class="t-row"><span>Anthropic Messages</span><span class="t-chip" data-en="Available">可用</span></p>
+                <p class="t-row"><span>Responses</span><span class="t-chip is-err" data-en="Unsupported">不支持</span></p>
+                <p class="t-row"><span data-en="Image input">图片输入</span><span class="t-chip is-muted" data-en="Unchecked">未核验</span></p>
+                <p class="t-row"><span data-en="Tool calls">工具调用</span><span class="t-chip is-warn" data-en="Needs restart">需要重启</span></p>
+              </div>
+            </div>
+            <figcaption><h3 data-en="Capabilities · Ready and unchecked">能力 · 可用与未核验</h3><p data-en="Available, unsupported, unchecked or needs restart; re-check after model or engine identity changes.">区分可用、不支持、未核验和需要重启；换模型或引擎身份变了要重新核验。</p><a class="shot-link open-lightbox-btn" href="assets/screenshots/daily-experience/service-capabilities.zh.webp" data-href-en="assets/screenshots/daily-experience/service-capabilities.en.webp" data-target="service-capabilities"><span data-en="Real screenshot">真实截图</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></a></figcaption>
+          </figure>
+          <figure class="gallery-item" id="screen-api-verification">
+            <div class="tile" role="img" aria-label="API 在线验证" data-label-en="Explicit API verification">
+              <div class="t-bar"><b data-en="Online check">在线验证</b><span class="t-seg"><span class="is-on" data-en="Text">文本</span><span data-en="Tools">工具结构</span><span data-en="Image">图片</span></span></div>
+              <div class="t-body t-list t-checks">
+                <p class="t-row"><i></i><span data-en="Service identity and connection">服务身份与连接</span><span class="mono">0.0 s</span></p>
+                <p class="t-row"><i></i><span data-en="Model list">模型列表</span><span class="mono">0.0 s</span></p>
+                <p class="t-row"><i></i><span data-en="Capability check">能力检查</span><span class="mono">0.1 s</span></p>
+                <p class="t-row"><i></i><span data-en="Test request · text">测试请求 · 文本</span><span class="mono">0.3 s</span></p>
+                <p class="t-pass" data-en="This check passed · 0.4 s">本次验证通过 · 0.4 s</p>
+              </div>
+            </div>
+            <figcaption><h3 data-en="API · Verify explicitly">API · 显式核验</h3><p data-en="Bounded text, tool-structure or image checks; needs a ready model, tools are never executed.">限时限量测文本、工具结构或图片；模型未就绪不能验证，工具不会真执行。</p><a class="shot-link open-lightbox-btn" href="assets/screenshots/daily-experience/api-verification.zh.webp" data-href-en="assets/screenshots/daily-experience/api-verification.en.webp" data-target="api-verification"><span data-en="Real screenshot">真实截图</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></a></figcaption>
+          </figure>
+          <figure class="gallery-item" id="screen-chat-execution">
+            <div class="tile" role="img" aria-label="聊天请求计时" data-label-en="Chat request timing">
+              <div class="t-bar"><b data-en="Chat">聊天</b><span class="m-dim mono">TTFT 0.38 s</span></div>
+              <div class="t-body t-list">
+                <p class="t-bubble" data-en="Isolated example: check the request status.">隔离示例：检查本次请求状态。</p>
+                <div class="t-timeline"><i style="--w:.08" data-en="Wait">等待</i><i style="--w:.3" class="is-think" data-en="Think">思考</i><i style="--w:.16" class="is-tool" data-en="Tool">工具</i><i style="--w:.46" class="is-body" data-en="Body">正文</i></div>
+                <p class="t-row mono t-timing"><span><span data-en="Wait">等待</span> 0.21 s</span><span><span data-en="Think">思考</span> 0.80 s</span><span><span data-en="Tool">工具</span> 0.42 s</span><span><span data-en="Body">正文</span> 1.24 s</span></p>
+                <p class="t-answer mono">STRATA_API_OK</p>
+              </div>
+            </div>
+            <figcaption><h3 data-en="Chat · Request timing">聊天 · 请求计时</h3><p data-en="Waiting, thinking, tools and body stay separate; TTFT and totals use this request only.">分别展示等待、思考、工具和正文；TTFT 与总耗时只用这次请求的证据。</p><a class="shot-link open-lightbox-btn" href="assets/screenshots/daily-experience/chat-execution.zh.webp" data-href-en="assets/screenshots/daily-experience/chat-execution.en.webp" data-target="chat-execution"><span data-en="Real screenshot">真实截图</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></a></figcaption>
+          </figure>
+          <figure class="gallery-item" id="screen-api-usage">
+            <div class="tile" role="img" aria-label="API 用量趋势" data-label-en="API usage trends">
+              <div class="t-bar"><b data-en="API dashboard">API 监控大盘</b><span class="t-seg"><span>1h</span><span class="is-on" data-en="Today">今日</span><span>7d</span></span></div>
+              <div class="t-body t-list">
+                <div class="t-kpis mono"><span><small data-en="Requests">请求</small>315</span><span><small data-en="Success">成功率</small>95.6%</span><span><small data-en="Failed">失败</small><em>8</em></span><span><small data-en="Speed">生成</small>44.3</span></div>
+                <div class="t-bars" aria-hidden="true"><i style="--h:.2"></i><i style="--h:.35"></i><i style="--h:.25"></i><i style="--h:.5"></i><i style="--h:.4"></i><i style="--h:.62"></i><i style="--h:.3"></i><i style="--h:.7"></i><i style="--h:.55"></i><i style="--h:.8"></i><i style="--h:.45"></i><i style="--h:.66"></i><i style="--h:.9"></i><i style="--h:.58"></i><i style="--h:.74"></i><i style="--h:.5"></i><i style="--h:.86"></i><i style="--h:.62"></i><i style="--h:.7"></i><i style="--h:.95"></i></div>
+                <p class="m-dim t-note" data-en="Request bodies are never captured">统计不抓请求正文</p>
+              </div>
+            </div>
+            <figcaption><h3 data-en="Usage · Requests and tokens">用量 · 请求与 tokens</h3><p data-en="Requests, tokens, latency and cache reuse; stats never capture request bodies.">看请求、tokens、延迟和缓存复用趋势；统计不抓请求正文。</p><a class="shot-link open-lightbox-btn" href="assets/screenshots/daily-experience/api-usage.zh.webp" data-href-en="assets/screenshots/daily-experience/api-usage.en.webp" data-target="api-usage"><span data-en="Real screenshot">真实截图</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></a></figcaption>
+          </figure>
+          <figure class="gallery-item" id="screen-history-comparison">
+            <div class="tile" role="img" aria-label="历史 Benchmark 条件比较" data-label-en="Historical benchmark condition comparison">
+              <div class="t-bar"><b data-en="History and upgrade comparison">历史与升级对照</b><span class="m-dim mono">A · B</span></div>
+              <div class="t-body t-list t-table">
+                <p class="t-row t-head mono"><span data-en="Metric">指标</span><span>A</span><span>B</span></p>
+                <p class="t-row mono"><span>TTFT (ms)</span><span>200</span><span>200</span></p>
+                <p class="t-row mono"><span>Prefill (tok/s)</span><span>100</span><span>100</span></p>
+                <p class="t-row mono"><span>Decode (tok/s)</span><span>20</span><span class="is-up">24</span></p>
+                <p class="t-unknown"><span data-en="Not verified: hardware, identity">未核验：硬件、身份</span><span data-en="No direct speedup claim">不下直接提速结论</span></p>
+              </div>
+            </div>
+            <figcaption><h3 data-en="Benchmark · Compare conditions">Benchmark · 对照条件</h3><p data-en="Keep a pre-upgrade baseline; weak identity blocks direct speedup claims.">升级前留基线，比对身份、输入、缓存和资源；弱身份不下直接提速结论。</p><a class="shot-link open-lightbox-btn" href="assets/screenshots/daily-experience/history-comparison.zh.webp" data-href-en="assets/screenshots/daily-experience/history-comparison.en.webp" data-target="history-comparison"><span data-en="Real screenshot">真实截图</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></a></figcaption>
+          </figure>
+          <figure class="gallery-item is-wide" id="screen-arena">
+            <div class="tile" role="img" aria-label="Benchmark 排行榜：同模型同量化在不同硬件上的解码速度与参数" data-label-en="Benchmark leaderboard: decode speed and parameters for the same model and quantization across hardware">
+              <div class="t-bar"><b data-en="Leaderboard">排行榜</b><span class="m-dim mono">Swift1.5-IQ2_S-46 · 4K</span></div>
+              <div class="t-body t-podium">
+                <div><span class="mono m-dim">01</span><b>RTX 5090</b><small class="m-dim">32 GB · 128 GB</small><strong class="mono">41.6 <small>tok/s</small></strong><span class="t-tags mono"><i>KV int8</i><i data-en="slots 1">槽 1</i></span></div>
+                <div><span class="mono m-dim">02</span><b>RTX 4090</b><small class="m-dim">24 GB · 96 GB</small><strong class="mono">38.9 <small>tok/s</small></strong><span class="t-tags mono"><i>KV int8</i><i data-en="slots 2">槽 2</i></span></div>
+                <div><span class="mono m-dim">03</span><b>RTX 4090</b><small class="m-dim">24 GB · 64 GB</small><strong class="mono">36.2 <small>tok/s</small></strong><span class="t-tags mono"><i>KV f16</i><i data-en="slots 1">槽 1</i></span></div>
+                <div class="t-filters"><span class="m-dim" data-en="Filter by VRAM, RAM and launch parameters">按显存、内存与启动参数筛选</span><span class="t-seg"><span class="is-on">4K</span><span>32K</span><span data-en="Prefill">预填充</span></span></div>
+              </div>
+            </div>
+            <figcaption><h3 data-en="Benchmark · Leaderboard">Benchmark · 排行榜</h3><p data-en="Compare the same model and quantization across GPUs with the parameters behind each result, filter by VRAM, RAM and launch parameters, switch the sort order, and get recommendations for this machine. Sharing is opt-in, and you can withdraw your data.">按同模型、同量化对比不同显卡的成绩和对应参数，可按显存、内存与启动参数筛选并切换排序，还给出本机的调参建议。分享需要你同意，也可随时撤回数据。</p><p class="gallery-related"><a class="shot-link open-lightbox-btn" href="assets/screenshots/arena.zh.webp" data-href-en="assets/screenshots/arena.en.webp" data-target="arena"><span data-en="Real screenshot">真实截图</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></a><a class="text-link" href="leaderboard.html" data-href-en="leaderboard.en.html" data-en="Public leaderboard ↗">公开排行榜 ↗</a></p></figcaption>
+          </figure>
         </div>
         <p class="compatibility-note"><a class="text-link" href="docs/user-guide.html#当前版本功能" data-href-en="docs/user-guide.en.html#current-features" data-en="Read the usage guide ↗">阅读使用说明 ↗</a></p>
       </div>
     </section>
 
-        <section class="workspace-section section-padding" id="workspace" aria-labelledby="workspace-title">
-      <div class="container">
-        <div class="section-header">
-          <div><h2 class="section-title" id="workspace-title" data-en="Interface overview">管理与监控界面</h2><p class="section-lead" data-en="Models, hardware, API usage, chat and the Strata environment.">模型、硬件、API 用量、聊天和 Strata 环境。</p></div>
-          <div class="workspace-tab-nav" role="tablist" aria-label="界面预览" data-label-en="Interface previews">
-            <button class="ws-tab" id="tab-models" role="tab" aria-selected="false" aria-controls="screen-panel" tabindex="-1" type="button" data-screen="models" data-en="Models">模型</button>
-            <button class="ws-tab active" id="tab-monitor" role="tab" aria-selected="true" aria-controls="screen-panel" type="button" data-screen="monitor" data-en="Monitor">资源监控</button>
-            <button class="ws-tab" id="tab-usage" role="tab" aria-selected="false" aria-controls="screen-panel" tabindex="-1" type="button" data-screen="usage" data-en="API usage">API 用量</button>
-            <button class="ws-tab" id="tab-chat" role="tab" aria-selected="false" aria-controls="screen-panel" tabindex="-1" type="button" data-screen="chat" data-en="Chat">聊天</button>
-            <button class="ws-tab" id="tab-runtime" role="tab" aria-selected="false" aria-controls="screen-panel" tabindex="-1" type="button" data-screen="runtime" data-en="Strata">运行环境</button>
-          </div>
-        </div>
-        <div class="workspace-display-frame" id="screen-panel" role="tabpanel" aria-labelledby="tab-monitor">
-          <a class="screen-lightbox-trigger open-lightbox-btn" id="screen-link" href="assets/screenshots/monitor.zh.webp" data-href-en="assets/screenshots/monitor.en.webp" data-target="monitor" aria-label="放大查看界面" data-label-en="Enlarge the interface">
-            <img class="display-screenshot" id="screen-image" src="assets/screenshots/monitor.zh.webp" data-src-en="assets/screenshots/monitor.en.webp" width="2880" height="1920" alt="Strata 硬件监控：GPU、显存、CPU 与服务状态" data-alt-en="Strata hardware monitoring: GPU, memory, CPU and service activity" decoding="async">
-            <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
-          </a>
-          <div class="display-detail-bar">
-            <div><span class="detail-num" id="screen-index">02</span><h3 id="screen-title" data-en="Monitor resource usage.">查看资源占用。</h3></div>
-            <p id="screen-description" data-en="See GPU, memory, CPU and service activity.">了解 GPU、显存、CPU 和模型的运行状态。</p>
-          </div>
-        </div>
-        <p class="image-note" data-en="Interface preview · Illustration data">界面预览 · 展示数据</p>
-      </div>
-    </section>
-
-        <section class="gallery-section section-padding" id="gallery" aria-labelledby="gallery-title">
+    <section class="shots-section gallery-section" id="gallery" aria-labelledby="gallery-title">
       <div class="container">
         <div class="section-header">
           <div><h2 class="section-title" id="gallery-title" data-en="Explore more workspaces">探索更多工作区</h2><p class="section-lead" data-en="From the Strata environment to Benchmark, see what each workspace does.">从运行环境到 Benchmark，看看每个工作区在干什么。</p></div>
           <a class="text-link" href="docs/user-guide.html" data-href-en="docs/user-guide.en.html" data-en="Read the user guide ↗">阅读使用指南 ↗</a>
         </div>
-        <div class="gallery-grid">
-          <figure class="gallery-item" id="screen-benchmark">
-            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/benchmark.zh.webp" data-href-en="assets/screenshots/benchmark.en.webp" data-target="benchmark" aria-label="放大查看 Benchmark 工作区" data-label-en="Enlarge the Benchmark workspace">
-              <img src="assets/screenshots/benchmark.zh.webp" data-src-en="assets/screenshots/benchmark.en.webp" width="2880" height="1920" decoding="async" alt="Benchmark 上下文档位：模型上限、串行测试计划与输出预算" data-alt-en="Benchmark context tiers: model limit, serial test plan and output allowance">
-              <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
-            </a>
-            <figcaption><span class="gallery-category" data-en="PERFORMANCE EVALUATION">性能评估</span><h3 data-en="Benchmark · Context tiers">Benchmark · 上下文档位</h3><p data-en="Test tiers serially within the verified context limit, including the actual maximum. Compare prefill, decode, duration and resources.">在模型核验上限内按档位串行测试，并覆盖实际最大上下文。对比预填充、解码、请求耗时与资源占用。</p><p class="gallery-related"><a class="text-link open-lightbox-btn" href="assets/screenshots/scenario-benchmark.zh.webp" data-href-en="assets/screenshots/scenario-benchmark.en.webp" data-target="scenario-benchmark" data-en="Scenario suite ↗">场景测试 ↗</a><a class="text-link open-lightbox-btn" href="assets/screenshots/benchmark-report.zh.webp" data-href-en="assets/screenshots/benchmark-report.en.webp" data-target="benchmark-report" data-en="Result report ↗">结果报告 ↗</a></p></figcaption>
-          </figure>
-          <figure class="gallery-item" id="screen-runtime">
-            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/runtime-download-settings.zh.webp" data-href-en="assets/screenshots/runtime-download-settings.en.webp" data-target="runtime" aria-label="放大查看 Strata 下载来源与校验" data-label-en="Enlarge Strata download sources and verification">
-              <img src="assets/screenshots/runtime-download-settings.zh.webp" data-src-en="assets/screenshots/runtime-download-settings.en.webp" width="2880" height="1920" decoding="async" alt="Strata 运行环境下载：来源选择、本地 ZIP 与校验结果" data-alt-en="Strata runtime downloads: source selection, local ZIP and verification results">
-              <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
-            </a>
-            <figcaption><span class="gallery-category" data-en="RUNTIME MANAGEMENT">运行环境</span><h3 data-en="Strata · Download sources and verification">Strata · 下载来源与校验</h3><p data-en="Official source, HTTPS mirror or local ZIP; verify size and SHA256 before replace.">选官方来源、HTTPS 镜像或本地 ZIP；装之前按官方长度和 SHA256 核验完整包。</p></figcaption>
-          </figure>
-          <figure class="gallery-item" id="screen-running-services">
-            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/running-services.zh.webp" data-href-en="assets/screenshots/running-services.en.webp" data-target="running-services" aria-label="放大查看运行中服务" data-label-en="Enlarge running services">
-              <img src="assets/screenshots/running-services.zh.webp" data-src-en="assets/screenshots/running-services.en.webp" width="2880" height="1920" decoding="async" alt="运行中服务状态与连接" data-alt-en="Running services status and connection">
-              <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
-            </a>
-            <figcaption><span class="gallery-category" data-en="RUNNING SERVICES">服务发现</span><h3 data-en="Services · Running instances">服务 · 运行中实例</h3><p data-en="On Windows, see loaded state, model, config and API URL; reconnect to an existing Manager backend first.">Windows 上查看实际加载状态、模型、配置和 API 地址；优先接回已有 Manager 后台。</p></figcaption>
-          </figure>
-          <figure class="gallery-item" id="screen-config">
-            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/config.zh.webp" data-href-en="assets/screenshots/config.en.webp" data-target="config" aria-label="放大查看运行配置" data-label-en="Enlarge runtime configuration">
-              <img src="assets/screenshots/config.zh.webp" data-src-en="assets/screenshots/config.en.webp" width="2880" height="1920" decoding="async" alt="运行配置：启动参数、图形化参数与 JSON 编辑" data-alt-en="Runtime configuration: launch parameters, graphical settings and JSON editing">
-              <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
-            </a>
-            <figcaption><span class="gallery-category" data-en="MODEL CONFIGURATION">模型配置</span><h3 data-en="Configuration · Edit and validate">运行配置 · 编辑与校验</h3><p data-en="Graphical controls or JSON for model and hardware settings, with validation and backups. The startup form reads engine --help.">图形控件或 JSON 调模型与硬件参数，校验配置并保留备份；启动快捷表单会读引擎 --help。</p></figcaption>
-          </figure>
-          <figure class="gallery-item" id="screen-chat">
-            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/chat.zh.webp" data-href-en="assets/screenshots/chat.en.webp" data-target="chat" aria-label="放大查看聊天工作区" data-label-en="Enlarge the chat workspace">
-              <img src="assets/screenshots/chat.zh.webp" data-src-en="assets/screenshots/chat.en.webp" width="2880" height="1920" decoding="async" alt="聊天工作区：多会话、流式回复与附件" data-alt-en="Chat workspace: conversations, streaming replies and attachments">
-              <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
-            </a>
-            <figcaption><span class="gallery-category" data-en="CHAT & INTEGRATION">聊天与接入</span><h3 data-en="Chat · Work with your model">聊天 · 与本机模型协作</h3><p data-en="Organize conversations, attach files and read streaming replies, with structured output and supported tools.">管理会话、加附件、看流式回复；结构化输出和受支持的工具都在这里。</p></figcaption>
-          </figure>
-          <figure class="gallery-item" id="screen-tuning">
-            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/tuning.zh.webp" data-href-en="assets/screenshots/tuning.en.webp" data-target="tuning" aria-label="放大查看参数调优" data-label-en="Enlarge parameter tuning">
-              <img src="assets/screenshots/tuning.zh.webp" data-src-en="assets/screenshots/tuning.en.webp" width="2880" height="1920" decoding="async" alt="参数调优：快速校准、场景验收与并发对比" data-alt-en="Parameter tuning: quick calibration, scenario checks and concurrency comparison">
-              <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
-            </a>
-            <figcaption><span class="gallery-category" data-en="PARAMETER TUNING">参数调优</span><h3 data-en="Tuning · Compare configurations">调优 · 比较参数配置</h3><p data-en="Pick chat, coding / Agent or long-doc workloads, compare quality, speed and resources, then apply.">按聊天、编程／Agent、长文选场景，比较质量、速度和占用后再应用。</p></figcaption>
-          </figure>
-          <figure class="gallery-item" id="screen-common-chat-settings">
-            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/common-chat-settings.zh.webp" data-href-en="assets/screenshots/common-chat-settings.en.webp" data-target="common-chat-settings" aria-label="放大查看公共聊天默认值" data-label-en="Enlarge shared settings">
-              <img src="assets/screenshots/common-chat-settings.zh.webp" data-src-en="assets/screenshots/common-chat-settings.en.webp" width="2880" height="1920" decoding="async" alt="公共聊天默认值与按模型继承选项" data-alt-en="Shared chat defaults and per-model inheritance">
-              <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
-            </a>
-            <figcaption><span class="gallery-category" data-en="SHARED CHAT DEFAULTS">公共聊天默认值</span><h3 data-en="Shared settings · Inherit when needed">公共设置 · 按需继承参数</h3><p data-en="New models inherit shared generation and MCP defaults; existing custom values stay until you opt in.">新模型默认继承公共生成参数和 MCP 开关；旧专用值保持独立，主动开启继承后才跟随。</p></figcaption>
-          </figure>
-          <figure class="gallery-item" id="screen-connections">
-            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/connections.zh.webp" data-href-en="assets/screenshots/connections.en.webp" data-target="connections" aria-label="放大查看 API 与外部助手" data-label-en="Enlarge connections">
-              <img src="assets/screenshots/connections.zh.webp" data-src-en="assets/screenshots/connections.en.webp" width="2880" height="1920" decoding="async" alt="API 与外部助手的连接目标、访问密钥和 MCP 配置" data-alt-en="API and external assistant connection targets, access keys and MCP configuration">
-              <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
-            </a>
-            <figcaption><span class="gallery-category" data-en="API & EXTERNAL ASSISTANTS">API 与外部助手</span><h3 data-en="Connections · Configure clients together">连接 · 集中配置客户端</h3><p data-en="Choose a target, save the app access key and copy API or MCP configs. Wizard includes Cursor and Codex examples.">选连接目标、保存应用访问密钥，复制 API 或 MCP 配置；向导含 Cursor、Codex 示例。</p><p class="gallery-related"><a class="text-link open-lightbox-btn" href="assets/screenshots/overview-api-guide.zh.webp" data-href-en="assets/screenshots/overview-api-guide.en.webp" data-target="overview-api-guide" data-en="API connection help ↗">API 接入帮助 ↗</a></p></figcaption>
-          </figure>
-          <figure class="gallery-item" id="screen-app-updates">
-            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/app-updates.zh.webp" data-href-en="assets/screenshots/app-updates.en.webp" data-target="app-updates" aria-label="放大查看应用更新" data-label-en="Enlarge updates">
-              <img src="assets/screenshots/app-updates.zh.webp" data-src-en="assets/screenshots/app-updates.en.webp" width="2880" height="1920" decoding="async" alt="应用更新页的当前版本、双语日志和安装确认" data-alt-en="Application updates with the current version, bilingual notes and installation confirmation">
-              <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
-            </a>
-            <figcaption><span class="gallery-category" data-en="APPLICATION UPDATES">应用更新</span><h3 data-en="Updates · Read before confirming">应用更新 · 先阅读，再确认</h3><p data-en="Read bundled bilingual notes offline, check for a new version and confirm. App updates verify Tauri signatures, separate from engine and model downloads.">离线看随包双语日志，检查新版本并确认安装；应用更新核验 Tauri 签名，与引擎、模型下载分开。</p></figcaption>
-          </figure>
-          <figure class="gallery-item" id="screen-service-status">
-            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/service-status.zh.webp" data-href-en="assets/screenshots/service-status.en.webp" data-target="service-status" aria-label="放大查看近期服务采样" data-label-en="Enlarge status">
-              <img src="assets/screenshots/service-status.zh.webp" data-src-en="assets/screenshots/service-status.en.webp" width="2880" height="1920" decoding="async" alt="服务状态快捷面板与生成、输入处理近期趋势" data-alt-en="Service status panel with recent generation and input-processing trends">
-              <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
-            </a>
-            <figcaption><span class="gallery-category" data-en="RECENT SERVICE TELEMETRY">近期服务采样</span><h3 data-en="Status · Follow recent activity">服务状态 · 查看近期活动</h3><p data-en="Up to 60 recent samples; generation and input processing stay separate. Idle rates are labelled recent generation.">最多 60 个近期采样，生成和输入处理分开；空闲速度标成“最近生成”，停掉或断联就藏实时指标。</p></figcaption>
-          </figure>
-          <figure class="gallery-item" id="screen-settings">
-            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/settings.zh.webp" data-href-en="assets/screenshots/settings.en.webp" data-target="settings" aria-label="放大查看应用设置" data-label-en="Enlarge application settings">
-              <img src="assets/screenshots/settings.zh.webp" data-src-en="assets/screenshots/settings.en.webp" width="2880" height="1920" decoding="async" alt="应用设置：语言、外观、后台与更新选项" data-alt-en="Application settings: language, appearance, background and update options">
-              <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
-            </a>
-            <figcaption><span class="gallery-category" data-en="APPLICATION PREFERENCES">应用偏好</span><h3 data-en="Settings · Make it your workspace">设置 · 调整工作台偏好</h3><p data-en="Settings split into shared defaults, desktop monitor, chat, API, VRAM and sessions, updates and About.">设置拆成公共设置、桌面监控、聊天默认、API、显存与会话、应用更新和关于。</p></figcaption>
-          </figure>
-          <figure class="gallery-item" id="screen-language-settings">
-            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/language-settings.zh.webp" data-href-en="assets/screenshots/language-settings.en.webp" data-target="language-settings" aria-label="放大查看语言设置" data-label-en="Enlarge language settings">
-              <img src="assets/screenshots/language-settings.zh.webp" data-src-en="assets/screenshots/language-settings.en.webp" width="2880" height="1920" decoding="async" alt="界面语言与系统跟随" data-alt-en="Interface language and system follow">
-              <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
-            </a>
-            <figcaption><span class="gallery-category" data-en="LANGUAGE">语言</span><h3 data-en="Language · System or bundled packs">语言 · 跟随系统或随包资源</h3><p data-en="Follow the system, or pick one of ten bundled languages including zh, en, ja, ko and more.">可跟随系统，或选简中、繁中、英、日、韩、德、法、西、葡、俄十种随包语言。</p></figcaption>
-          </figure>
-          <figure class="gallery-item" id="screen-floating-monitor" style="grid-column:1 / -1">
-            <a class="gallery-preview open-lightbox-btn" href="assets/screenshots/floating-monitor.zh.webp" data-href-en="assets/screenshots/floating-monitor.en.webp" data-target="floating-monitor" aria-label="放大查看按需打开的桌面监控" data-label-en="Enlarge floating monitor">
-              <img src="assets/screenshots/floating-monitor.zh.webp" data-src-en="assets/screenshots/floating-monitor.en.webp" width="440" height="80" decoding="async" alt="紧凑桌面监控浮条：服务状态与生成、输入处理指标" data-alt-en="Compact floating monitor: service status, generation and input-processing metrics">
-              <span class="image-expand" aria-hidden="true"><svg class="icon"><use href="#icon-expand"/></svg></span>
-            </a>
-            <figcaption><span class="gallery-category" data-en="OPTIONAL DESKTOP MONITOR">按需打开的桌面监控</span><h3 data-en="Floating monitor · Compact metrics">独立浮条 · 紧凑监控</h3><p data-en="Off by default. Three layouts, text size and metric order/colors. Drag the metrics strip; actions live in the context menu and tray.">默认关闭。三种布局、字号和指标排序配色；纯指标可拖，操作在右键菜单和托盘。</p><p class="gallery-related"><a class="text-link open-lightbox-btn" href="assets/screenshots/floating-monitor-settings.zh.webp" data-href-en="assets/screenshots/floating-monitor-settings.en.webp" data-target="floating-monitor-settings" data-en="Floating monitor settings ↗">监控浮动条设置 ↗</a></p></figcaption>
-          </figure>
-        </div>
-        <p class="image-note" data-en="Interface previews · Example data · Select an image to view it in full">界面预览 · 演示数据 · 点击图片查看完整界面</p>
+        <ul class="ws-index">
+          <li class="ws-row" id="screen-overview">
+            <span class="gallery-category" data-en="OVERVIEW">总览</span>
+            <div class="ws-copy"><h3 data-en="Overview · Service and hardware at a glance">总览 · 服务与硬件一屏可见</h3><p data-en="Service controls, VRAM and memory use, generation speed, recent requests and today's API usage on one page.">服务启停、显存和内存占用、生成速度、最近请求与今日 API 集中在一页。</p></div>
+            <p class="ws-links"><a class="shot-link open-lightbox-btn" href="assets/screenshots/product-cover.zh.webp" data-href-en="assets/screenshots/product-cover.en.webp" data-target="overview"><span data-en="Real screenshot">真实截图</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></a></p>
+          </li>
+          <li class="ws-row" id="screen-benchmark">
+            <span class="gallery-category" data-en="PERFORMANCE EVALUATION">性能评估</span>
+            <div class="ws-copy"><h3 data-en="Benchmark · Context tiers">Benchmark · 上下文档位</h3><p data-en="Test tiers serially within the verified context limit, including the actual maximum. Compare prefill, decode, duration and resources.">在模型核验上限内按档位串行测试，并覆盖实际最大上下文。对比预填充、解码、请求耗时与资源占用。</p></div>
+            <p class="ws-links"><a class="shot-link open-lightbox-btn" href="assets/screenshots/benchmark.zh.webp" data-href-en="assets/screenshots/benchmark.en.webp" data-target="benchmark"><span data-en="Real screenshot">真实截图</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></a><a class="shot-link open-lightbox-btn" href="assets/screenshots/scenario-benchmark.zh.webp" data-href-en="assets/screenshots/scenario-benchmark.en.webp" data-target="scenario-benchmark" data-en="Scenario suite ↗">场景测试 ↗</a><a class="shot-link open-lightbox-btn" href="assets/screenshots/benchmark-report.zh.webp" data-href-en="assets/screenshots/benchmark-report.en.webp" data-target="benchmark-report" data-en="Result report ↗">结果报告 ↗</a></p>
+          </li>
+          <li class="ws-row" id="screen-runtime">
+            <span class="gallery-category" data-en="RUNTIME MANAGEMENT">运行环境</span>
+            <div class="ws-copy"><h3 data-en="Strata · Download sources and verification">Strata · 下载来源与校验</h3><p data-en="Official source, HTTPS mirror or local ZIP; verify size and SHA256 before replace.">选官方来源、HTTPS 镜像或本地 ZIP；装之前按官方长度和 SHA256 核验完整包。</p></div>
+            <p class="ws-links"><a class="shot-link open-lightbox-btn" href="assets/screenshots/runtime-download-settings.zh.webp" data-href-en="assets/screenshots/runtime-download-settings.en.webp" data-target="runtime"><span data-en="Real screenshot">真实截图</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></a></p>
+          </li>
+          <li class="ws-row" id="screen-running-services">
+            <span class="gallery-category" data-en="RUNNING SERVICES">服务发现</span>
+            <div class="ws-copy"><h3 data-en="Services · Running instances">服务 · 运行中实例</h3><p data-en="On Windows, see loaded state, model, config and API URL; reconnect to an existing Manager backend first.">Windows 上查看实际加载状态、模型、配置和 API 地址；优先接回已有 Manager 后台。</p></div>
+            <p class="ws-links"><a class="shot-link open-lightbox-btn" href="assets/screenshots/running-services.zh.webp" data-href-en="assets/screenshots/running-services.en.webp" data-target="running-services"><span data-en="Real screenshot">真实截图</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></a></p>
+          </li>
+          <li class="ws-row" id="screen-config">
+            <span class="gallery-category" data-en="MODEL CONFIGURATION">模型配置</span>
+            <div class="ws-copy"><h3 data-en="Configuration · Edit and validate">运行配置 · 编辑与校验</h3><p data-en="Graphical controls or JSON for model and hardware settings, with validation and backups. The startup form reads engine --help.">图形控件或 JSON 调模型与硬件参数，校验配置并保留备份；启动快捷表单会读引擎 --help。</p></div>
+            <p class="ws-links"><a class="shot-link open-lightbox-btn" href="assets/screenshots/config.zh.webp" data-href-en="assets/screenshots/config.en.webp" data-target="config"><span data-en="Real screenshot">真实截图</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></a></p>
+          </li>
+          <li class="ws-row" id="screen-chat">
+            <span class="gallery-category" data-en="CHAT & INTEGRATION">聊天与接入</span>
+            <div class="ws-copy"><h3 data-en="Chat · Work with your model">聊天 · 与本机模型协作</h3><p data-en="Organize conversations, attach files and read streaming replies, with structured output and supported tools.">管理会话、加附件、看流式回复；结构化输出和受支持的工具都在这里。</p></div>
+            <p class="ws-links"><a class="shot-link open-lightbox-btn" href="assets/screenshots/chat.zh.webp" data-href-en="assets/screenshots/chat.en.webp" data-target="chat"><span data-en="Real screenshot">真实截图</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></a></p>
+          </li>
+          <li class="ws-row" id="screen-tuning">
+            <span class="gallery-category" data-en="PARAMETER TUNING">参数调优</span>
+            <div class="ws-copy"><h3 data-en="Tuning · Compare configurations">调优 · 比较参数配置</h3><p data-en="Pick chat, coding / Agent or long-doc workloads, compare quality, speed and resources, then apply.">按聊天、编程／Agent、长文选场景，比较质量、速度和占用后再应用。</p></div>
+            <p class="ws-links"><a class="shot-link open-lightbox-btn" href="assets/screenshots/tuning.zh.webp" data-href-en="assets/screenshots/tuning.en.webp" data-target="tuning"><span data-en="Real screenshot">真实截图</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></a></p>
+          </li>
+          <li class="ws-row" id="screen-common-chat-settings">
+            <span class="gallery-category" data-en="SHARED CHAT DEFAULTS">公共聊天默认值</span>
+            <div class="ws-copy"><h3 data-en="Shared settings · Inherit when needed">公共设置 · 按需继承参数</h3><p data-en="New models inherit shared generation and MCP defaults; existing custom values stay until you opt in.">新模型默认继承公共生成参数和 MCP 开关；旧专用值保持独立，主动开启继承后才跟随。</p></div>
+            <p class="ws-links"><a class="shot-link open-lightbox-btn" href="assets/screenshots/common-chat-settings.zh.webp" data-href-en="assets/screenshots/common-chat-settings.en.webp" data-target="common-chat-settings"><span data-en="Real screenshot">真实截图</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></a></p>
+          </li>
+          <li class="ws-row" id="screen-connections">
+            <span class="gallery-category" data-en="API & EXTERNAL ASSISTANTS">API 与外部助手</span>
+            <div class="ws-copy"><h3 data-en="Connections · Configure clients together">连接 · 集中配置客户端</h3><p data-en="Choose a target, save the app access key and copy API or MCP configs. Wizard includes Cursor and Codex examples.">选连接目标、保存应用访问密钥，复制 API 或 MCP 配置；向导含 Cursor、Codex 示例。</p></div>
+            <p class="ws-links"><a class="shot-link open-lightbox-btn" href="assets/screenshots/connections.zh.webp" data-href-en="assets/screenshots/connections.en.webp" data-target="connections"><span data-en="Real screenshot">真实截图</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></a><a class="shot-link open-lightbox-btn" href="assets/screenshots/overview-api-guide.zh.webp" data-href-en="assets/screenshots/overview-api-guide.en.webp" data-target="overview-api-guide" data-en="API connection help ↗">API 接入帮助 ↗</a></p>
+          </li>
+          <li class="ws-row" id="screen-app-updates">
+            <span class="gallery-category" data-en="APPLICATION UPDATES">应用更新</span>
+            <div class="ws-copy"><h3 data-en="Updates · Read before confirming">应用更新 · 先阅读，再确认</h3><p data-en="Read bundled bilingual notes offline, check for a new version and confirm. App updates verify Tauri signatures, separate from engine and model downloads.">离线看随包双语日志，检查新版本并确认安装；应用更新核验 Tauri 签名，与引擎、模型下载分开。</p></div>
+            <p class="ws-links"><a class="shot-link open-lightbox-btn" href="assets/screenshots/app-updates.zh.webp" data-href-en="assets/screenshots/app-updates.en.webp" data-target="app-updates"><span data-en="Real screenshot">真实截图</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></a></p>
+          </li>
+          <li class="ws-row" id="screen-service-status">
+            <span class="gallery-category" data-en="RECENT SERVICE TELEMETRY">近期服务采样</span>
+            <div class="ws-copy"><h3 data-en="Status · Follow recent activity">服务状态 · 查看近期活动</h3><p data-en="Up to 60 recent samples; generation and input processing stay separate. Idle rates are labelled recent generation.">最多 60 个近期采样，生成和输入处理分开；空闲速度标成“最近生成”，停掉或断联就藏实时指标。</p></div>
+            <p class="ws-links"><a class="shot-link open-lightbox-btn" href="assets/screenshots/service-status.zh.webp" data-href-en="assets/screenshots/service-status.en.webp" data-target="service-status"><span data-en="Real screenshot">真实截图</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></a></p>
+          </li>
+          <li class="ws-row" id="screen-settings">
+            <span class="gallery-category" data-en="APPLICATION PREFERENCES">应用偏好</span>
+            <div class="ws-copy"><h3 data-en="Settings · Make it your workspace">设置 · 调整工作台偏好</h3><p data-en="Settings split into shared defaults, desktop monitor, chat, API, VRAM and sessions, updates and About.">设置拆成公共设置、桌面监控、聊天默认、API、显存与会话、应用更新和关于。</p></div>
+            <p class="ws-links"><a class="shot-link open-lightbox-btn" href="assets/screenshots/settings.zh.webp" data-href-en="assets/screenshots/settings.en.webp" data-target="settings"><span data-en="Real screenshot">真实截图</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></a></p>
+          </li>
+          <li class="ws-row" id="screen-language-settings">
+            <span class="gallery-category" data-en="LANGUAGE">语言</span>
+            <div class="ws-copy"><h3 data-en="Language · System or bundled packs">语言 · 跟随系统或随包资源</h3><p data-en="Follow the system, or pick one of ten bundled languages including zh, en, ja, ko and more.">可跟随系统，或选简中、繁中、英、日、韩、德、法、西、葡、俄十种随包语言。</p></div>
+            <p class="ws-links"><a class="shot-link open-lightbox-btn" href="assets/screenshots/language-settings.zh.webp" data-href-en="assets/screenshots/language-settings.en.webp" data-target="language-settings"><span data-en="Real screenshot">真实截图</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></a></p>
+          </li>
+          <li class="ws-row has-strip" id="screen-floating-monitor">
+            <span class="gallery-category" data-en="OPTIONAL DESKTOP MONITOR">按需打开的桌面监控</span>
+            <div class="ws-copy"><h3 data-en="Floating monitor · Compact metrics">独立浮条 · 紧凑监控</h3><p data-en="Off by default. Three layouts, text size and metric order/colors. Drag the metrics strip; actions live in the context menu and tray.">默认关闭。三种布局、字号和指标排序配色；纯指标可拖，操作在右键菜单和托盘。</p></div>
+            <p class="ws-links"><a class="shot-link open-lightbox-btn" href="assets/screenshots/floating-monitor.zh.webp" data-href-en="assets/screenshots/floating-monitor.en.webp" data-target="floating-monitor"><span data-en="Real screenshot">真实截图</span><svg class="icon" aria-hidden="true"><use href="#icon-expand"/></svg></a><a class="shot-link open-lightbox-btn" href="assets/screenshots/floating-monitor-settings.zh.webp" data-href-en="assets/screenshots/floating-monitor-settings.en.webp" data-target="floating-monitor-settings" data-en="Floating monitor settings ↗">监控浮动条设置 ↗</a></p>
+            <div class="float-strip" role="img" aria-label="紧凑桌面监控浮条：服务状态与生成、输入处理指标" data-label-en="Compact floating monitor: service status, generation and input-processing metrics"><span style="--c:#16834f"><small data-en="Gen">生成</small><b class="mono">48 <small>t/s</small></b></span><span style="--c:#2a6fb6"><small data-en="Input">读取</small><b class="mono">1.2k <small>t/s</small></b></span><span style="--c:#b4581c"><small>GPU</small><b class="mono">36 <small>%</small></b></span><span style="--c:#13797a"><small data-en="VRAM">显存</small><b class="mono">12.4 <small>GiB</small></b></span><span style="--c:#8243b0"><small>CPU</small><b class="mono">12 <small>%</small></b></span><span style="--c:#4f55c4"><small data-en="RAM">内存</small><b class="mono">24.2 <small>GiB</small></b></span></div>
+          </li>
+        </ul>
+        <p class="image-note" data-en="Real screenshots open on demand, so nothing heavy loads up front · Example data">真实截图按需打开，不预先加载 · 演示数据</p>
       </div>
     </section>
 
@@ -371,19 +901,33 @@
 
   <footer class="site-footer">
     <div class="container">
-      <p class="project-note"><span data-en="Independent community project built on ">独立社区项目，基于 </span><a href="https://github.com/Niko1221/Strata">Niko1221/Strata</a><span data-en=". Runtime and model weights are prepared separately.">，运行时和模型另行准备。</span></p>
-      <div class="footer-bottom">
-        <span class="footer-credit">© 2026 Strata Manager</span>
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <a class="brand" href="#"><img src="assets/icon.svg" width="22" height="22" alt=""><span>Strata <span class="brand-subtitle">Manager</span></span></a>
+          <p class="project-note"><span data-en="Independent community project built on ">独立社区项目，基于 </span><a href="https://github.com/Niko1221/Strata">Niko1221/Strata</a><span data-en=". Runtime and model weights are prepared separately.">，运行时和模型另行准备。</span></p>
+        </div>
         <nav class="footer-links" aria-label="相关链接" data-label-en="Related links">
-          <a href="docs/user-guide.html" data-href-en="docs/user-guide.en.html" data-en="User guide">使用指南</a>
-          <a href="docs/system.html" data-href-en="docs/system.en.html" data-en="System explanation">系统说明</a>
-          <a href="leaderboard.html" data-href-en="leaderboard.en.html" data-en="Leaderboard">排行榜</a>
-          <a href="docs/arena-privacy.html" data-href-en="docs/arena-privacy.en.html" data-en="Leaderboard privacy">排行榜隐私</a>
-          <a href="docs/changelog.html" data-href-en="docs/changelog.en.html" data-en="Changelog">更新日志</a>
-          <a href="https://github.com/hongfaqiu/strata-manager">GitHub</a>
-          <a href="sitemap.xml" data-en="Sitemap">站点地图</a>
+          <div><p class="footer-heading" data-en="Product">产品</p>
+            <a href="#workspace" data-en="Interface">界面</a>
+            <a href="#features" data-en="Features">核心功能</a>
+            <a href="#get-started" data-en="Download">下载</a>
+            <a href="leaderboard.html" data-href-en="leaderboard.en.html" data-en="Leaderboard">排行榜</a>
+          </div>
+          <div><p class="footer-heading" data-en="Docs">文档</p>
+            <a href="docs/user-guide.html" data-href-en="docs/user-guide.en.html" data-en="User guide">使用指南</a>
+            <a href="docs/system.html" data-href-en="docs/system.en.html" data-en="System explanation">系统说明</a>
+            <a href="docs/download.html" data-href-en="docs/download.en.html" data-en="Installation help">安装帮助</a>
+            <a href="docs/changelog.html" data-href-en="docs/changelog.en.html" data-en="Changelog">更新日志</a>
+          </div>
+          <div><p class="footer-heading" data-en="Project">项目</p>
+            <a href="https://github.com/hongfaqiu/strata-manager">GitHub</a>
+            <a href="https://github.com/Niko1221/Strata">Niko1221/Strata</a>
+            <a href="docs/arena-privacy.html" data-href-en="docs/arena-privacy.en.html" data-en="Leaderboard privacy">排行榜隐私</a>
+            <a href="sitemap.xml" data-en="Sitemap">站点地图</a>
+          </div>
         </nav>
       </div>
+      <div class="footer-bottom"><span class="footer-credit">© 2026 Strata Manager</span><span class="footer-os" data-en="Windows · Linux · macOS (experimental)">Windows · Linux · macOS（实验）</span></div>
     </div>
   </footer>
 
@@ -394,7 +938,7 @@
         <div class="lightbox-title-group"><span class="lightbox-screen-badge" id="lightbox-badge">01 / MODELS</span><span class="lightbox-title" id="lightbox-title" data-en="Manage models and services.">管理模型与服务。</span></div>
         <button class="lightbox-close-btn action-btn" id="lightbox-close-btn" type="button" aria-label="关闭预览" data-label-en="Close preview"><svg class="icon" aria-hidden="true"><use href="#icon-close"/></svg></button>
       </div>
-      <div class="lightbox-image-container"><img id="lightbox-img" src="" alt="全屏截图预览" data-alt-en="Fullscreen screenshot preview"></div>
+      <div class="lightbox-image-container"><img id="lightbox-img" alt="全屏截图预览" data-alt-en="Fullscreen screenshot preview"></div>
     </div>
   </div>
 </body>
