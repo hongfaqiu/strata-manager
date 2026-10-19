@@ -7,10 +7,12 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+- **通过「模型 - 添加目录」加入的 Strata 能正常启动（#78）**：启动、依赖检测、一键修复、向导和 MCP 自检统一使用同一个解释器选择规则，和目录自己的 run-*.bat 一致（启动脚本指定的 Python、目录内 `.venv`、嵌入式 Python），并带上脚本设置的 PATH / PYTHONPATH，清掉系统的 PYTHONHOME；目录有自带环境时绝不改用系统 Python。配置里的引擎 exe 不存在时，扫描和启动前就会提示，不再等到加载模型时才报 WinError 2。加载失败不再只显示 `error sending request for url (.../load)`，而是按进程状态和引擎日志分成「引擎在加载模型时崩溃」「Python 环境不对」和仍在加载三种情况，原始错误保留在启动日志和诊断依据里；Windows 中文系统下的报错也不再乱码。
 - **发布不再附带 `SHA256SUMS`**：从下一个版本起，GitHub 发布页只提供安装包、对应的 `.sig` 更新签名和 `latest.json`，共 11 项资产。应用内更新仍按 `latest.json` 与 `.sig` 验签；应用内对模型和引擎 ZIP 的大小与 SHA256 校验不变。已发布版本的资产保持原样。
 
 ### English
 
+- **Strata folders added with Models → Add folder start correctly (#78)**: starting, the dependency check, one-click repair, the wizard and the MCP self-check now share one interpreter rule that matches the folder's own run-*.bat (the launcher's Python, the folder's `.venv`, or an embedded Python), keep the PATH / PYTHONPATH the script sets and drop the host PYTHONHOME; a folder with its own environment never falls back to the system Python. A configured engine exe that does not exist is reported at scan time and before starting, instead of as WinError 2 while loading. A failed load no longer shows just `error sending request for url (.../load)`: it is classified from the process state and engine log as "engine crashed while loading", "wrong Python environment" or still loading, with the raw error kept in the startup log and diagnostic evidence; Windows error text on Chinese systems is no longer garbled.
 - **Releases no longer include `SHA256SUMS`**: starting with the next version, GitHub releases provide the installers, their `.sig` updater signatures and `latest.json`, 11 assets in total. In-app updates still verify `latest.json` and `.sig`; the in-app size and SHA256 checks for model and engine ZIPs are unchanged. Assets of published releases stay as they are.
 
 ## [0.2.5] - 2026-10-19

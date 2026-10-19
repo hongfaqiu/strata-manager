@@ -14,6 +14,7 @@ pub mod health_watch;
 pub mod http;
 mod idle_model;
 pub mod installation;
+pub mod launcher_env;
 pub mod legacy;
 pub mod maintenance;
 pub mod manager_mcp;
@@ -1983,7 +1984,14 @@ impl RuntimeState {
                     );
                     // A cold load can outlast the /load request timeout while the engine
                     // is still working; only a real exit or rejection fails the start.
-                    model_load_wait::wait_for_model_load(
+                    let load_started = types::now();
+                    let python_facts = processes::launcher_env(&profile)
+                        .map(|env| model_load_wait::PythonFacts::from_launcher(&env))
+                        .unwrap_or_else(|_| model_load_wait::PythonFacts {
+                            python: profile.python_path.clone(),
+                            allowed: vec![profile.install_dir.clone()],
+                        });
+                    model_load_wait::wait_for_model_load_checked(
                         http::strata_request(
                             &self,
                             profile.clone(),
@@ -2019,6 +2027,28 @@ impl RuntimeState {
                                 .ok_or("后台启动记录丢失")?
                                 .refresh()?;
                             Ok((!status.running).then_some(status.exit_code))
+                        },
+                        |exited| {
+                            // #78: classify a failed /load from the process state
+                            // and the engine's stderr since the load started.
+                            let tail: Vec<String> = {
+                                let logs = self.logs.lock().ok()?;
+                                logs.get(&profile.id)?
+                                    .iter()
+                                    .filter(|entry| {
+                                        entry.timestamp >= load_started && entry.level == "stderr"
+                                    })
+                                    .map(|entry| entry.message.clone())
+                                    .collect()
+                            };
+                            let tail: Vec<&str> = tail.iter().map(String::as_str).collect();
+                            let start = tail.len().saturating_sub(400);
+                            let failure = model_load_wait::classify_load_failure(
+                                exited,
+                                &tail[start..],
+                                &python_facts,
+                            );
+                            model_load_wait::load_failure_error(&failure, &python_facts)
                         },
                         |line| processes::log(&self.logs, &profile.id, "info", &line),
                         model_load_wait::LoadWait::STARTUP,
@@ -2320,6 +2350,7 @@ struct StartupPlan {
     root: PathBuf,
     config: PathBuf,
     python: String,
+    launcher: launcher_env::LauncherEnv,
     host: String,
     port: u16,
     #[cfg(windows)]
@@ -2337,6 +2368,99 @@ impl StartupPlan {
             self.runtime_lease = Some(processes::acquire_runtime_lease(&self.root)?);
         }
         Ok(())
+    }
+}
+
+/// The engine path upstream `serve/server.py` will start: `exe` as written
+/// when absolute, else joined to the config's `cwd` (itself relative to the
+/// Strata folder, which is the server's working directory).
+fn configured_engine_path(root: &Path, config: &Value) -> Option<PathBuf> {
+    let exe = config.get("exe").and_then(Value::as_str)?;
+    let exe_path = Path::new(exe);
+    if exe_path.is_absolute() {
+        return Some(exe_path.to_path_buf());
+    }
+    let base = match config.get("cwd").and_then(Value::as_str) {
+        Some(cwd) if Path::new(cwd).is_absolute() => PathBuf::from(cwd),
+        Some(cwd) if !cwd.is_empty() => root.join(cwd),
+        _ => root.to_path_buf(),
+    };
+    Some(base.join(exe_path))
+}
+
+fn check_engine_exe(root: &Path, config: &Value) -> Result<(), String> {
+    let Some(engine) = configured_engine_path(root, config) else {
+        return Ok(());
+    };
+    if engine.is_file() {
+        return Ok(());
+    }
+    let elsewhere = discovery::engine_beside(root, &engine)
+        .map(|found| format!("；目录里有 {}，但配置没有指向它", found.display()))
+        .unwrap_or_default();
+    #[cfg(windows)]
+    let repair = "START-HERE.bat --setup";
+    #[cfg(not(windows))]
+    let repair = "./setup.sh --setup";
+    Err(diagnostics::error(
+        "STARTUP_ENGINE_MISSING",
+        format!(
+            "模型配置里的引擎文件不存在：{}{elsewhere}。Strata 会严格按配置的 exe 启动引擎，直接启动只会在加载模型时报错（WinError 2）；请在该 Strata 目录运行 {repair} 修复配置后重新扫描",
+            engine.display()
+        ),
+        "prepare",
+    ))
+}
+
+/// The same interpreter and environment the folder's launchers use (#78),
+/// checked to really start Python 3.
+fn resolve_startup_python(
+    profile: &ServiceProfile,
+    root: &Path,
+) -> Result<launcher_env::LauncherEnv, String> {
+    let saved = profile.python_path.trim();
+    let resolved = launcher_env::resolve(root, Some(saved), |path| {
+        path.is_absolute()
+            && path.is_file()
+            && output_with_timeout(
+                &path.to_string_lossy(),
+                &["-c", "import sys; print(sys.version_info.major)"],
+                Duration::from_secs(20),
+            )
+            .as_deref()
+                == Some("3")
+    });
+    match resolved {
+        Ok(env) => Ok(env),
+        Err(error) => {
+            // Keep the precise historical diagnostics for a hand-picked Python
+            // on a folder without its own environment.
+            if !saved.is_empty() && !launcher_env::has_own_environment(root) {
+                let path = Path::new(saved);
+                if path.is_absolute() {
+                    if let Err(io) = fs::metadata(path) {
+                        return Err(diagnostics::io_error(&io, "无法读取所选 Python", "prepare"));
+                    }
+                }
+                if !path.is_absolute() || !path.is_file() {
+                    return Err(diagnostics::error(
+                        "STARTUP_CONFIG_INVALID",
+                        "所选 Python 必须是存在的可执行文件绝对路径",
+                        "prepare",
+                    ));
+                }
+                return Err(diagnostics::error(
+                    "STARTUP_PYTHON_UNAVAILABLE",
+                    "所选 Python 无法运行 Python 3（权限不足、文件无效或探测超时）",
+                    "prepare",
+                ));
+            }
+            Err(diagnostics::error(
+                "STARTUP_PYTHON_UNAVAILABLE",
+                error,
+                "prepare",
+            ))
+        }
     }
 }
 
@@ -2388,33 +2512,12 @@ fn prepare_startup(
             line.contains("add_argument(\"--lazy\"") || line.contains("add_argument('--lazy'")
         })
     });
-    let python = processes::python(profile)?;
-    if !profile.python_path.trim().is_empty() && Path::new(&python).is_absolute() {
-        fs::metadata(&python)
-            .map_err(|error| diagnostics::io_error(&error, "无法读取所选 Python", "prepare"))?;
-    }
-    if !profile.python_path.trim().is_empty()
-        && (!Path::new(&python).is_absolute() || !Path::new(&python).is_file())
-    {
-        return Err(diagnostics::error(
-            "STARTUP_CONFIG_INVALID",
-            "所选 Python 必须是存在的可执行文件绝对路径",
-            "prepare",
-        ));
-    }
-    if output(
-        &python,
-        &["-c", "import sys; print(sys.version_info.major)"],
-    )
-    .as_deref()
-        != Some("3")
-    {
-        return Err(diagnostics::error(
-            "STARTUP_PYTHON_UNAVAILABLE",
-            "所选 Python 无法运行 Python 3（权限不足、文件无效或探测超时）",
-            "prepare",
-        ));
-    }
+    // The engine binary is started by upstream server.py exactly as the config
+    // names it (abs, or relative to the config's cwd). A missing file only
+    // shows up on the first /load as WinError 2 inside the HTTP handler (#78).
+    check_engine_exe(&root, &config_value)?;
+    let launcher = resolve_startup_python(profile, &root)?;
+    let python = launcher.python.to_string_lossy().to_string();
     if tasks.lock().map_err(|e| e.to_string())?.values().any(|t| {
         (t.profile_id.as_deref() == Some(&profile.id) || t.runtime_path.as_ref() == Some(&root))
             && t.status.state == "running"
@@ -2439,6 +2542,7 @@ fn prepare_startup(
         root,
         config,
         python,
+        launcher,
         host: endpoint.host,
         port: endpoint.port,
         #[cfg(windows)]
@@ -2506,9 +2610,9 @@ fn start_prepared_service_checked(
     network::assert_bind_available(plan.listen_address)?;
     let profile = plan.profile.clone();
     maintenance::clear_abandoned(state, &profile)?;
-    let mut command = Command::new(plan.python);
+    let mut command = Command::new(&plan.python);
     command
-        .current_dir(plan.root)
+        .current_dir(&plan.root)
         .args(["-u", "-m", "serve.server", "--engine", "strata", "--config"])
         .arg(plan.config)
         .args(["--host", &plan.host, "--port", &plan.port.to_string()])
@@ -2526,8 +2630,15 @@ fn start_prepared_service_checked(
         "STRATA_MANAGER_MCP_HELPER",
         std::env::current_exe().map_err(|e| e.to_string())?,
     );
+    // Same interpreter environment as the folder's run-*.bat (#78): venv /
+    // embedded PATH, the launcher's own variables, no host PYTHONHOME; the
+    // observer's sitecustomize stays first on PYTHONPATH.
+    plan.launcher.apply(&mut command, Some(&observer));
+    processes::log(&state.logs, &profile.id, "info", plan.launcher.describe());
+    if let Some(note) = &plan.launcher.ignored {
+        processes::log(&state.logs, &profile.id, "info", note);
+    }
     command
-        .env("PYTHONPATH", observer)
         .env(
             "STRATA_MANAGER_ANALYTICS_DIR",
             state.data_dir.join("analytics"),
@@ -3538,6 +3649,8 @@ ThreadingHTTPServer((a.host,a.port),Handler).serve_forever()
             base_url: format!("http://127.0.0.1:{port}"),
             managed: true,
         };
+        // The configured engine must exist: startup checks it like server.py starts it (#78).
+        fs::write(root.join("fixture"), b"engine fixture, never started").unwrap();
         fs::write(
             config,
             serde_json::to_vec(&json!({"exe":"fixture","args":[],"port":port})).unwrap(),

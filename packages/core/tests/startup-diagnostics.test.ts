@@ -69,11 +69,28 @@ describe('readable service errors', () => {
     const { readableServiceError } = await import('../src/startup-diagnostics');
     const raw = JSON.stringify({ code: 'STARTUP_UNKNOWN', details: { startupDiagnostic: { phase: 'loading', evidence: [{ source: 'serviceLog', message: '[strata] still starting (261 s) - please wait ...' }] } }, message: 'error sending request for url (http://127.0.0.1:8080/load)' });
     const text = readableServiceError(raw)!;
-    expect(text).toContain('本机服务未及时响应');
-    expect(text).toContain('http://127.0.0.1:8080/load');
+    expect(text).toContain('本机服务没有响应这次请求');
+    expect(text).toContain('启动日志');
+    expect(text).not.toContain('error sending request');
+    expect(text).not.toContain('http://127.0.0.1:8080/load');
     expect(text).not.toContain('{');
     expect(readableServiceError('plain failure')).toBe('plain failure');
     expect(readableServiceError(undefined)).toBeUndefined();
     expect(readableServiceError(JSON.stringify({ message: '{"nested":true}' }))).toContain('导出诊断');
+  });
+});
+
+describe('issue #78 load failure categories', () => {
+  it('accepts the engine and python categories from the supervisor', async () => {
+    const { parseStartupDiagnostic, primaryStartupDiagnosticAction } = await import('../src/startup-diagnostics');
+    for (const [category, code, action] of [['engine', 'STARTUP_ENGINE_CRASHED', 'viewLogs'], ['python', 'STARTUP_PYTHON_ENV_MISMATCH', 'openFiles']] as const) {
+      const value = parseStartupDiagnostic({ profileId: 'p', attemptStartedAt: 100, failedAt: 200, phase: 'loading', category, confidence: 'confirmed', code,
+        message: '引擎在加载模型时崩溃：FileNotFoundError: [WinError 2]', evidence: [{ source: 'serviceLog', at: 150, message: 'FileNotFoundError: [WinError 2] 系统找不到指定的文件。' }],
+        actions: [action, 'viewLogs', 'exportDiagnostics'] }, 'p')!;
+      expect(value.category).toBe(category);
+      expect(value.code).toBe(code);
+      expect(value.evidence[0]?.message).toContain('WinError 2');
+      expect(primaryStartupDiagnosticAction(value)).toBe(action);
+    }
   });
 });

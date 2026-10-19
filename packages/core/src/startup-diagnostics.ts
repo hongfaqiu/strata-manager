@@ -1,6 +1,6 @@
 import { asObject, normalizeError } from './errors';
 
-export type StartupDiagnosticCategory = 'resource' | 'port' | 'files' | 'config' | 'auth' | 'timeout' | 'unknown';
+export type StartupDiagnosticCategory = 'resource' | 'port' | 'files' | 'config' | 'auth' | 'timeout' | 'engine' | 'python' | 'unknown';
 export type StartupDiagnosticConfidence = 'confirmed' | 'suspected' | 'unknown';
 export type StartupDiagnosticAction = 'openResources' | 'openNetwork' | 'openFiles' | 'openConfig' | 'openCredentials' | 'checkStatus' | 'viewLogs' | 'exportDiagnostics';
 export interface StartupDiagnosticEvidence { source: 'startupError' | 'httpStatus' | 'serviceLog' | 'process'; at: number; message: string }
@@ -20,7 +20,7 @@ export interface StartupFailureDiagnostic {
   exitCode?: number;
 }
 
-const categories: StartupDiagnosticCategory[] = ['resource', 'port', 'files', 'config', 'auth', 'timeout', 'unknown'];
+const categories: StartupDiagnosticCategory[] = ['resource', 'port', 'files', 'config', 'auth', 'timeout', 'engine', 'python', 'unknown'];
 const confidences: StartupDiagnosticConfidence[] = ['confirmed', 'suspected', 'unknown'];
 const actions: StartupDiagnosticAction[] = ['openResources', 'openNetwork', 'openFiles', 'openConfig', 'openCredentials', 'checkStatus', 'viewLogs', 'exportDiagnostics'];
 const evidenceSources: StartupDiagnosticEvidence['source'][] = ['startupError', 'httpStatus', 'serviceLog', 'process'];
@@ -97,7 +97,9 @@ export function readableServiceError(value: unknown): string | undefined {
   const normalized = normalizeError(value);
   const message = safe(normalized.message.trim());
   if (!message) return undefined;
-  if (/error sending request|operation timed out|connection (?:refused|reset)/i.test(message)) return `本机服务未及时响应（模型可能仍在加载，可查看启动日志）/ The local service did not answer in time (the model may still be loading): ${message}`;
+  // #78: the raw transport text ("error sending request for url (.../load)") says nothing about the cause;
+  // it stays in the startup log and the diagnostic details, never in the headline.
+  if (/error sending request|operation timed out|connection (?:refused|reset|closed)/i.test(message)) return '本机服务没有响应这次请求（模型可能仍在加载，或引擎已经出错）；原始错误和引擎输出在启动日志里 / The local service did not answer (the model may still be loading, or the engine failed); the raw error and engine output are in the startup log.';
   if (/^\s*[[{]/.test(message)) return '后台返回了无法识别的错误，请导出诊断查看详情 / The backend returned an unreadable error; export diagnostics for details.';
   return message;
 }

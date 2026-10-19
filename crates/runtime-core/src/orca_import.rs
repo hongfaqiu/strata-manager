@@ -154,7 +154,12 @@ fn shard_states(directory: &Path, local: bool) -> Result<Vec<OrcaShard>, String>
         .collect()
 }
 
+/// The runtime's own interpreter through the shared launcher-aligned resolver
+/// (#78); the `.venv` path is only the expected location when none exists.
 fn venv_python(root: &Path) -> PathBuf {
+    if let Ok(env) = crate::launcher_env::resolve(root, None, |path| path.is_file()) {
+        return env.python;
+    }
     if cfg!(windows) {
         root.join(".venv/Scripts/python.exe")
     } else {
