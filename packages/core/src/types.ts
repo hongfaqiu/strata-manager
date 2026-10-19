@@ -95,9 +95,14 @@ export type TaskbarWidgetItem = 'generation' | 'prefill' | 'gpu' | 'vram' | 'tem
 /** Metric drawn as the ring gauge of the Windows taskbar widget. */
 export type TaskbarWidgetRing = 'gpu' | 'vram' | 'off';
 
+/** Metrics whose taskbar colour can be overridden; the status dot stays semantic. */
+export type TaskbarWidgetColorItem = Exclude<TaskbarWidgetItem, 'status'>;
+
 export interface TaskbarWidgetPreferences {
   ring: TaskbarWidgetRing;
   items: TaskbarWidgetItem[];
+  /** Optional `#rrggbb` per metric; missing entries follow the light/dark taskbar palette. */
+  colors?: Partial<Record<TaskbarWidgetColorItem, string>>;
 }
 
 export interface FloatingMonitorPreferences {

@@ -4,7 +4,7 @@ import type { FloatingMonitorAction, FloatingMonitorPreferences, FloatingMonitor
 
 export type { FloatingMonitorAction, FloatingMonitorPreferences } from '@strata-manager/core';
 export { normalizeFloatingMonitorPreferences } from '@strata-manager/core';
-export type MonitorDestination = 'overview' | 'chat' | 'monitoring' | 'usage' | 'tasks' | 'settings' | 'quickBenchmark';
+export type MonitorDestination = 'overview' | 'chat' | 'monitoring' | 'usage' | 'tasks' | 'settings' | 'taskbarColors' | 'quickBenchmark';
 
 export const FLOATING_MONITOR_ACTIONS: { id: FloatingMonitorAction; label: { 'zh-CN': string; en: string } }[] = [
   { id: 'main', label: { 'zh-CN': '显示主窗口', en: 'Show main window' } },

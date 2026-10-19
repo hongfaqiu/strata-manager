@@ -34,4 +34,24 @@
 .taskbar-monitor-settings-item{display:flex;align-items:center;gap:7px;min-width:0;font-size:12px;line-height:1.5;cursor:pointer}
 .taskbar-monitor-settings-item:has(input:disabled){cursor:default;opacity:.7}
 .taskbar-monitor-settings-hint{margin:10px 0 0;color:var(--st-ink-muted,var(--muted));font-size:11px;line-height:1.6}
+.taskbar-monitor-settings-colors{margin-top:18px}
+.taskbar-monitor-settings-colors h3{margin:0 0 6px;font-size:13px;font-weight:600}
+.taskbar-monitor-settings-colors ul{margin:0;padding:0;list-style:none;border-top:1px solid var(--st-line,var(--border))}
+.taskbar-monitor-settings-colors li{border-bottom:1px solid var(--st-line,var(--border))}
+.taskbar-color-row{display:flex;align-items:center;gap:10px;min-height:34px;font-size:12px}
+.taskbar-color-swatch{flex-shrink:0;width:18px;height:18px;padding:0;border:1px solid #0000002e;border-radius:5px;cursor:pointer}
+.taskbar-color-swatch:disabled{cursor:default;opacity:.6}
+.taskbar-color-swatch:focus-visible,.taskbar-color-preset:focus-visible,.taskbar-color-reset:focus-visible{outline:2px solid var(--st-accent,#2563eb);outline-offset:2px}
+.taskbar-color-name{min-width:72px}
+.taskbar-color-state{flex:1;min-width:0;color:var(--st-ink-muted,var(--muted));font-size:11px;font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.taskbar-color-reset{padding:2px 6px;border:0;border-radius:4px;background:none;color:var(--st-ink-muted,var(--muted));font-size:11px;cursor:pointer}
+.taskbar-color-reset:hover{color:var(--st-ink,inherit);background:var(--st-hover,#0000000d)}
+.taskbar-color-picker{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:0 0 10px 28px}
+.taskbar-color-preset{width:16px;height:16px;padding:0;border:0;border-radius:50%;cursor:pointer;box-shadow:inset 0 0 0 1px #0000001f}
+.taskbar-color-preset[aria-pressed=true]{box-shadow:0 0 0 2px #fff,0 0 0 3.5px currentColor}
+.taskbar-color-custom{display:inline-flex;align-items:center;gap:6px;margin-left:4px;color:var(--st-ink-muted,var(--muted));font-size:11px;cursor:pointer}
+.taskbar-color-custom input{width:18px;height:18px;padding:0;border:1px solid #0000002e;border-radius:5px;background:none;cursor:pointer;overflow:hidden}
+.taskbar-color-custom input::-webkit-color-swatch-wrapper{padding:0}
+.taskbar-color-custom input::-webkit-color-swatch{border:0}
+.taskbar-color-warning{margin:-4px 0 8px 28px;color:#a15c00;font-size:11px;line-height:1.5}
 @media (max-width:760px){.taskbar-monitor-settings-body{grid-template-columns:minmax(0,1fr)}.taskbar-monitor-settings-items{grid-template-columns:repeat(2,minmax(0,1fr))}}

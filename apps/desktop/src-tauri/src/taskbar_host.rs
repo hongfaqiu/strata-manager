@@ -857,6 +857,9 @@ unsafe fn menu(owner: HWND, render: &Arc<Mutex<Render>>) -> Result<Option<Prefer
         widget::MenuAction::Settings => {
             output(&HostFrame::Settings {});
         }
+        widget::MenuAction::Colors => {
+            output(&HostFrame::Colors {});
+        }
         widget::MenuAction::Update(next) => {
             output(&HostFrame::Widget {
                 widget: next.clone(),

@@ -184,7 +184,7 @@ export function App() {
   const [streaming, setStreaming] = useState(false);
   const [benchmarkRunning, setBenchmarkRunning] = useState(false);
   const [quickBenchmarkRequest, setQuickBenchmarkRequest] = useState(0);
-  const openFloatingSettings = useRef(false);
+  const openFloatingSettings = useRef<string | null>(null);
   const subnavigationRef = useRef<HTMLElement>(null);
   const inferenceBusy = streaming || benchmarkRunning;
   const [logSearch, setLogSearch] = useState('');
@@ -431,9 +431,10 @@ export function App() {
       navigationGuard.request(() => { navigate('benchmark'); setQuickBenchmarkRequest(value => value + 1); });
       return;
     }
-    if (destination === 'settings') {
-      openFloatingSettings.current = true;
-      if (page === 'monitor-settings') { document.getElementById('settings-floating-monitor')?.scrollIntoView({ block: 'start' }); openFloatingSettings.current = false; }
+    if (destination === 'settings' || destination === 'taskbarColors') {
+      const target = destination === 'taskbarColors' ? 'settings-taskbar-colors' : 'settings-floating-monitor';
+      openFloatingSettings.current = target;
+      if (page === 'monitor-settings') { document.getElementById(target)?.scrollIntoView({ block: 'start' }); openFloatingSettings.current = null; }
       go('monitor-settings');
       return;
     }
@@ -443,14 +444,15 @@ export function App() {
     if (!desktop || !ready) return;
     let disposed = false, unlisten: (() => void) | undefined;
     void import('@tauri-apps/api/event').then(({ listen }) => listen<MonitorDestination>('monitor-navigate', event => {
-      if (!disposed && ['overview', 'chat', 'monitoring', 'usage', 'tasks', 'settings', 'quickBenchmark'].includes(event.payload)) monitorNavigation.current(event.payload);
+      if (!disposed && ['overview', 'chat', 'monitoring', 'usage', 'tasks', 'settings', 'taskbarColors', 'quickBenchmark'].includes(event.payload)) monitorNavigation.current(event.payload);
     })).then(stop => { if (disposed) stop(); else unlisten = stop; }).catch(error => { if (!disposed) notify(errorText(error), true); });
     return () => { disposed = true; unlisten?.(); };
   }, [desktop, ready]);
   useEffect(() => {
     if (page === 'monitor-settings' && openFloatingSettings.current) {
-      openFloatingSettings.current = false;
-      document.getElementById('settings-floating-monitor')?.scrollIntoView({ block: 'start' });
+      const target = openFloatingSettings.current;
+      openFloatingSettings.current = null;
+      document.getElementById(target)?.scrollIntoView({ block: 'start' });
     }
   }, [page]);
   useEffect(() => {

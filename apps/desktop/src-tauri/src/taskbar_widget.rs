@@ -4,6 +4,7 @@
 //! Win32 host only turns the display list into pixels and menus.
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 /// Items in their canonical display order.
 pub(crate) const ITEMS: [&str; 6] = [
@@ -16,12 +17,37 @@ pub(crate) const ITEMS: [&str; 6] = [
 ];
 pub(crate) const RINGS: [&str; 3] = ["gpu", "vram", "off"];
 const DEFAULT_ITEMS: [&str; 2] = ["generation", "prefill"];
+/// Metrics whose colour the user may override. The status dot stays semantic.
+pub(crate) const COLOR_ITEMS: [&str; 5] = ["generation", "prefill", "gpu", "vram", "temperature"];
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct WidgetPrefs {
     pub ring: String,
     pub items: Vec<String>,
+    /// Optional per-metric colour (`#rrggbb`, lowercase). Missing entries use
+    /// the tuned light/dark taskbar palette; one override applies to both.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub colors: BTreeMap<String, String>,
+}
+
+/// Parses `#rgb`/`#rrggbb` (any case) into canonical lowercase `#rrggbb`.
+pub(crate) fn parse_hex_color(value: &str) -> Option<String> {
+    let hex = value.trim().strip_prefix('#')?;
+    if !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let full: String = match hex.len() {
+        3 => hex.chars().flat_map(|c| [c, c]).collect(),
+        6 => hex.into(),
+        _ => return None,
+    };
+    Some(format!("#{}", full.to_ascii_lowercase()))
+}
+
+fn hex_to_color(value: &str) -> Option<Color> {
+    let hex = parse_hex_color(value)?;
+    u32::from_str_radix(&hex[1..], 16).ok().map(rgb)
 }
 
 impl Default for WidgetPrefs {
@@ -29,6 +55,7 @@ impl Default for WidgetPrefs {
         Self {
             ring: "gpu".into(),
             items: DEFAULT_ITEMS.iter().map(|x| (*x).into()).collect(),
+            colors: BTreeMap::new(),
         }
     }
 }
@@ -55,10 +82,30 @@ impl WidgetPrefs {
         } else {
             ring
         };
+        // Unknown metrics and malformed colours are dropped, never rejected,
+        // so an older or hand-edited settings file still loads.
+        let colors = value["colors"]
+            .as_object()
+            .map(|map| {
+                COLOR_ITEMS
+                    .iter()
+                    .filter_map(|item| {
+                        let color = parse_hex_color(map.get(*item)?.as_str()?)?;
+                        Some(((*item).to_owned(), color))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         Self {
             ring: ring.into(),
             items,
+            colors,
         }
+    }
+
+    /// The user's colour for `item`, if any.
+    pub fn color(&self, item: &str) -> Option<Color> {
+        self.colors.get(item).and_then(|hex| hex_to_color(hex))
     }
 
     pub fn valid(&self) -> bool {
@@ -501,7 +548,9 @@ pub(crate) fn layout(
             radius,
             stroke,
             fraction,
-            color: palette.metric(&prefs.ring),
+            color: prefs
+                .color(&prefs.ring)
+                .unwrap_or(palette.metric(&prefs.ring)),
             track: palette.track,
         });
         ops.push(Op::Text {
@@ -554,14 +603,17 @@ pub(crate) fn layout(
         first = false;
         let column = column(item, english, &m);
         let (value, unit) = value_parts(item, reading, english);
+        let custom = prefs.color(item);
         let color = match item.as_str() {
+            "status" => tone,
+            _ if value == DASH => palette.muted,
+            // A custom colour replaces the graded temperature scheme too.
+            _ if custom.is_some() => custom.unwrap_or(palette.text),
             "temperature" => reading
                 .temperature
                 .filter(|t| t.is_finite())
                 .map(|t| palette.temperature(t))
                 .unwrap_or(palette.muted),
-            "status" => tone,
-            _ if value == DASH => palette.muted,
             other => palette.metric(other),
         };
         // Digits are right-aligned against a fixed split so they never shift.
@@ -814,6 +866,7 @@ pub(crate) const MENU_OPEN: u32 = 1;
 pub(crate) const MENU_FLOATING: u32 = 2;
 pub(crate) const MENU_CLOSE: u32 = 3;
 pub(crate) const MENU_SETTINGS: u32 = 4;
+pub(crate) const MENU_COLORS: u32 = 5;
 const MENU_ITEM: u32 = 100;
 const MENU_RING: u32 = 200;
 
@@ -823,6 +876,8 @@ pub(crate) enum MenuAction {
     Floating,
     Close,
     Settings,
+    /// Opens the colour section of the app's taskbar monitor settings.
+    Colors,
     Update(WidgetPrefs),
     Nothing,
 }
@@ -870,6 +925,10 @@ pub(crate) fn menu(prefs: &WidgetPrefs, english: bool, temperature: bool) -> Vec
             label: t("自定义内容", "Customize"),
             entries: custom,
         },
+        MenuEntry::Command {
+            id: MENU_COLORS,
+            label: t("自定义颜色…", "Customize colors…"),
+        },
         MenuEntry::Separator,
         MenuEntry::Command {
             id: MENU_FLOATING,
@@ -891,6 +950,7 @@ pub(crate) fn apply(prefs: &WidgetPrefs, id: u32) -> MenuAction {
         MENU_FLOATING => return MenuAction::Floating,
         MENU_CLOSE => return MenuAction::Close,
         MENU_SETTINGS => return MenuAction::Settings,
+        MENU_COLORS => return MenuAction::Colors,
         _ => {}
     }
     if let Some(item) = id

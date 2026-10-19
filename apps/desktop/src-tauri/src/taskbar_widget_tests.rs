@@ -51,12 +51,14 @@ fn normalize_filters_dedupes_orders_and_never_returns_an_empty_widget() {
     assert_eq!(prefs("off", &[]).ring, "gpu");
     assert!(!WidgetPrefs {
         ring: "off".into(),
-        items: vec![]
+        items: vec![],
+        ..WidgetPrefs::default()
     }
     .valid());
     assert!(!WidgetPrefs {
         ring: "gpu".into(),
-        items: vec!["prefill".into(), "generation".into()]
+        items: vec!["prefill".into(), "generation".into()],
+        ..WidgetPrefs::default()
     }
     .valid());
     assert!(serde_json::from_value::<WidgetPrefs>(json!({"ring":"gpu","items":[],"x":1})).is_err());
@@ -491,6 +493,12 @@ fn menu_lists_open_customize_and_close_with_checked_state() {
     assert!(
         matches!(entries.last(), Some(MenuEntry::Command { id: MENU_CLOSE, label }) if label == "关闭任务栏监控")
     );
+    assert!(
+        matches!(&entries[2], MenuEntry::Command { id: MENU_COLORS, label } if label == "自定义颜色…")
+    );
+    assert!(
+        matches!(&menu(&WidgetPrefs::default(), true, true)[2], MenuEntry::Command { id: MENU_COLORS, label } if label == "Customize colors…")
+    );
     let checked = ids(&entries);
     assert!(checked.contains(&(100, true)) && checked.contains(&(101, true)));
     assert!(checked.contains(&(102, false)));
@@ -523,6 +531,7 @@ fn menu_commands_toggle_items_switch_ring_and_change_width() {
     assert_eq!(apply(&base, MENU_CLOSE), MenuAction::Close);
     assert_eq!(apply(&base, MENU_FLOATING), MenuAction::Floating);
     assert_eq!(apply(&base, MENU_SETTINGS), MenuAction::Settings);
+    assert_eq!(apply(&base, MENU_COLORS), MenuAction::Colors);
     assert_eq!(apply(&base, 0), MenuAction::Nothing);
     assert_eq!(apply(&base, 106), MenuAction::Nothing);
     assert_eq!(apply(&base, 203), MenuAction::Nothing);
@@ -581,6 +590,18 @@ fn widget_preview_export() {
             busy(),
         ),
         (
+            "custom-colors",
+            WidgetPrefs::normalize(&json!({
+                "ring":"gpu",
+                "items":["generation","prefill","temperature"],
+                "colors":{"generation":"#14b8a6","prefill":"#ec4899","gpu":"#3b82f6","temperature":"#a855f7"}
+            })),
+            Reading {
+                temperature: Some(85.0),
+                ..busy()
+            },
+        ),
+        (
             "stopped",
             WidgetPrefs::default(),
             Reading {
@@ -616,4 +637,121 @@ fn widget_preview_export() {
         serde_json::to_vec_pretty(&json!({"cases":index,"menus":menus})).unwrap(),
     )
     .unwrap();
+}
+
+#[test]
+fn custom_colors_are_validated_canonicalised_and_backward_compatible() {
+    // Old settings without `colors` keep working and serialise unchanged.
+    let old = WidgetPrefs::normalize(&json!({"ring":"gpu","items":["generation"]}));
+    assert!(old.colors.is_empty());
+    assert_eq!(
+        serde_json::to_value(&old).unwrap(),
+        json!({"ring":"gpu","items":["generation"]})
+    );
+    let parsed = WidgetPrefs::normalize(&json!({
+        "ring":"gpu",
+        "items":["generation","prefill"],
+        "colors":{
+            "generation":"#FF8800",
+            "prefill":"#AbC",
+            "gpu":" #00ff00 ",
+            "vram":"red",
+            "temperature":"#12345",
+            "status":"#ffffff",
+            "unknown":"#000000"
+        }
+    }));
+    assert_eq!(
+        parsed
+            .colors
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect::<Vec<_>>(),
+        vec![
+            ("generation", "#ff8800"),
+            ("gpu", "#00ff00"),
+            ("prefill", "#aabbcc")
+        ]
+    );
+    assert!(parsed.valid());
+    assert_eq!(
+        parsed.color("generation"),
+        Some(Color([0xff, 0x88, 0x00, 255]))
+    );
+    assert_eq!(parsed.color("vram"), None);
+    for broken in [
+        json!(null),
+        json!("#fff"),
+        json!([1, 2]),
+        json!({"generation":5}),
+    ] {
+        let value =
+            WidgetPrefs::normalize(&json!({"ring":"gpu","items":["generation"],"colors":broken}));
+        assert!(value.colors.is_empty());
+    }
+    for bad in ["", "#", "fff", "#ggg", "#12345", "#1234567", "#ff88001"] {
+        assert_eq!(parse_hex_color(bad), None, "{bad}");
+    }
+    // A non-canonical colour is not "valid" so the host never stores it raw.
+    let raw = WidgetPrefs {
+        colors: [("generation".to_owned(), "#FFF".to_owned())].into(),
+        ..WidgetPrefs::default()
+    };
+    assert!(!raw.valid());
+    // Menu edits keep the user's colours.
+    let MenuAction::Update(next) = apply(&parsed, 102) else {
+        panic!("gpu toggles on")
+    };
+    assert_eq!(next.colors, parsed.colors);
+}
+
+#[test]
+fn custom_colors_override_the_theme_palette_on_both_taskbars() {
+    let prefs = WidgetPrefs::normalize(&json!({
+        "ring":"vram",
+        "items":["generation","prefill","temperature"],
+        "colors":{"generation":"#14b8a6","vram":"#3b82f6","temperature":"#a855f7"}
+    }));
+    let hot = Reading {
+        temperature: Some(85.0),
+        ..busy()
+    };
+    for dark in [false, true] {
+        let palette = Palette::new(dark);
+        let layout = layout(&prefs, false, 96, 48, &hot, &palette);
+        let ops = text_ops(&layout);
+        let colour = |text: &str| ops.iter().find(|op| op.0 == text).unwrap().5;
+        assert_eq!(colour("21.3"), rgb(0x14b8a6));
+        // Prefill has no override and keeps the tuned palette colour.
+        assert_eq!(colour("3.2k"), palette.metric("prefill"));
+        // The custom temperature colour replaces the graded red.
+        assert_eq!(colour("85"), rgb(0xa855f7));
+        assert_ne!(colour("85"), palette.temperature(85.0));
+        assert_eq!(colour("生成"), palette.muted);
+        let Op::Ring { color, .. } = &layout.ops[0] else {
+            panic!("ring first")
+        };
+        assert_eq!(*color, rgb(0x3b82f6));
+        // The status dot stays semantic.
+        assert!(layout
+            .ops
+            .iter()
+            .any(|op| matches!(op, Op::Dot { color, .. } if *color == palette.tone(Tone::Busy))));
+        // A missing reading is still drawn muted, not in the custom colour.
+        let idle = layout_for_missing(&prefs, &palette);
+        assert_eq!(idle, palette.muted);
+    }
+}
+
+fn layout_for_missing(prefs: &WidgetPrefs, palette: &Palette) -> Color {
+    let reading = Reading {
+        generation: None,
+        ..busy()
+    };
+    let layout = layout(prefs, false, 96, 48, &reading, palette);
+    text_ops(&layout)
+        .into_iter()
+        .find(|op| op.0 == DASH)
+        .unwrap()
+        .5
 }

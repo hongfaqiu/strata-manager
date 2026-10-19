@@ -1,10 +1,11 @@
 import type { AppLanguage } from '@strata-manager/core';
-import { useRef, useState } from 'react';
+import { useRef, useState, type CSSProperties } from 'react';
 import { LoaderCircle } from 'lucide-react';
 
 import {
-  TASKBAR_WIDGET_ITEMS, normalizeTaskbarWidgetPreferences, toggleTaskbarWidgetItem,
-  type TaskbarWidgetItem, type TaskbarWidgetPreferences, type TaskbarWidgetRing,
+  TASKBAR_WIDGET_COLOR_ITEMS, TASKBAR_WIDGET_COLOR_PRESETS, TASKBAR_WIDGET_ITEMS, TASKBAR_WIDGET_PALETTE,
+  lowContrastTaskbars, normalizeTaskbarWidgetPreferences, setTaskbarWidgetColor, toggleTaskbarWidgetItem,
+  type TaskbarWidgetColorItem, type TaskbarWidgetItem, type TaskbarWidgetPreferences, type TaskbarWidgetRing,
 } from '@strata-manager/core';
 import { Panel } from '../components';
 import { Checkbox, Segmented, Toggle } from '../OfficialControls';
@@ -39,10 +40,14 @@ export function TaskbarWidgetPreview({ widget, language }: { widget: TaskbarWidg
   const copy = language === 'zh-CN' ? 'zh-CN' : 'en';
   const percent = widget.ring === 'vram' ? 83 : 76;
   const showDot = !widget.items.includes('status');
+  const custom = (item: TaskbarWidgetItem, variable: string) => {
+    const color = item === 'status' ? undefined : widget.colors?.[item];
+    return color ? { [variable]: color } as CSSProperties : undefined;
+  };
   return <div className="taskbar-widget-preview" aria-hidden="true">
     {widget.ring === 'off'
       ? showDot && <i className="taskbar-widget-preview-dot"/>
-      : <span className="taskbar-widget-preview-ring" data-ring={widget.ring}>
+      : <span className="taskbar-widget-preview-ring" data-ring={widget.ring} style={custom(widget.ring, '--ring')}>
         <svg viewBox="0 0 36 36" width="28" height="28">
           <circle cx="18" cy="18" r="15" className="track"/>
           <circle cx="18" cy="18" r="15" className="value" pathLength="100" strokeDasharray={`${percent} 100`} transform="rotate(-90 18 18)"/>
@@ -50,13 +55,55 @@ export function TaskbarWidgetPreview({ widget, language }: { widget: TaskbarWidg
         </svg>
         {showDot && <i className="taskbar-widget-preview-dot"/>}
       </span>}
-    {widget.items.map(item => <span key={item} className="taskbar-widget-preview-metric" data-item={item}>
+    {widget.items.map(item => <span key={item} className="taskbar-widget-preview-metric" data-item={item} style={custom(item, '--metric')}>
       {item === 'status'
         ? <b className="taskbar-widget-preview-value">{copy === 'zh-CN' ? '运行中' : 'Busy'}</b>
         : <b className="taskbar-widget-preview-value">{EXAMPLE[item][0]}<small>{EXAMPLE[item][1]}</small></b>}
       <em>{SHORT[copy][item]}</em>
     </span>)}
   </div>;
+}
+
+/** Per-metric colour rows: swatch + presets + reset. One override applies to light and dark taskbars. */
+function TaskbarColorSettings({ widget, desktop, language, onWidgetChange }: { widget: TaskbarWidgetPreferences; desktop: boolean; language: AppLanguage; onWidgetChange: (next: TaskbarWidgetPreferences) => void }) {
+  const zh = language === 'zh-CN';
+  const copy = zh ? 'zh-CN' : 'en';
+  const [editing, setEditing] = useState<TaskbarWidgetColorItem | null>(null);
+  const set = (item: TaskbarWidgetColorItem, color?: string) => onWidgetChange(setTaskbarWidgetColor(widget, item, color));
+  const themeName = (theme: 'light' | 'dark') => zh ? (theme === 'light' ? '浅色' : '深色') : theme;
+  return <section id="settings-taskbar-colors" className="taskbar-monitor-settings-colors" aria-labelledby="taskbar-monitor-colors">
+    <h3 id="taskbar-monitor-colors">{zh ? '颜色' : 'Colors'}</h3>
+    <ul>
+      {TASKBAR_WIDGET_COLOR_ITEMS.map(item => {
+        const color = widget.colors?.[item];
+        const open = editing === item;
+        const low = color ? lowContrastTaskbars(color) : [];
+        const state = color ? color.toUpperCase() : item === 'temperature' ? (zh ? '默认 · 按温度变色' : 'Default · by temperature') : (zh ? '默认 · 跟随任务栏' : 'Default · follows taskbar');
+        return <li key={item} className={open ? 'is-open' : undefined}>
+          <div className="taskbar-color-row">
+            <button type="button" className="taskbar-color-swatch" disabled={!desktop} aria-expanded={open} aria-controls={`taskbar-color-${item}`}
+              aria-label={`${TASKBAR_ITEM_COPY[copy][item]}：${zh ? '选择颜色' : 'choose color'}`} onClick={() => setEditing(open ? null : item)}
+              style={color ? { background: color } : { background: `linear-gradient(135deg, ${TASKBAR_WIDGET_PALETTE.light[item]} 50%, ${TASKBAR_WIDGET_PALETTE.dark[item]} 50%)` }}/>
+            <span className="taskbar-color-name">{TASKBAR_ITEM_COPY[copy][item]}</span>
+            <span className="taskbar-color-state">{state}</span>
+            {color && <button type="button" className="taskbar-color-reset" disabled={!desktop} onClick={() => set(item)}>{zh ? '恢复默认' : 'Reset'}</button>}
+          </div>
+          {open && <div id={`taskbar-color-${item}`} className="taskbar-color-picker">
+            {TASKBAR_WIDGET_COLOR_PRESETS.map(preset => <button key={preset} type="button" className="taskbar-color-preset" style={{ background: preset }}
+              aria-label={preset} aria-pressed={color === preset} disabled={!desktop} onClick={() => set(item, preset)}/>)}
+            <label className="taskbar-color-custom">
+              <input type="color" value={color ?? TASKBAR_WIDGET_PALETTE.dark[item]} disabled={!desktop} onChange={event => set(item, event.currentTarget.value)}/>
+              <span>{zh ? '自定义…' : 'Custom…'}</span>
+            </label>
+          </div>}
+          {low.length > 0 && <p className="taskbar-color-warning" role="note">{zh
+            ? `在${low.map(themeName).join('、')}任务栏上对比度较低，可能不易看清。`
+            : `Low contrast on the ${low.map(themeName).join(' and ')} taskbar; it may be hard to read.`}</p>}
+        </li>;
+      })}
+    </ul>
+    <p className="taskbar-monitor-settings-hint">{zh ? '默认颜色会随任务栏深浅色自动切换；自定义颜色在两种任务栏上都使用同一颜色。服务状态圆点的颜色固定。' : 'Default colors switch with the taskbar’s light/dark mode; a custom color is used on both. The service-state dot keeps its fixed colors.'}</p>
+  </section>;
 }
 
 export function TaskbarMonitorSettings({ enabled, widget, desktop, language, modeStatus, onWidgetChange, onEnabledChange }: Props) {
@@ -98,6 +145,7 @@ export function TaskbarMonitorSettings({ enabled, widget, desktop, language, mod
       <div className="taskbar-monitor-settings-stage" aria-label={zh ? '任务栏监控示例预览' : 'Taskbar monitor example preview'}>
         <span className="taskbar-monitor-settings-stage-label">{zh ? '示例' : 'Example'}</span>
         <div className="taskbar-monitor-settings-taskbar"><TaskbarWidgetPreview widget={value} language={language}/><span className="taskbar-monitor-settings-clock">14:32<br/>2026/10/19</span></div>
+        <TaskbarColorSettings widget={value} desktop={desktop} language={language} onWidgetChange={onWidgetChange}/>
       </div>
       <div className="taskbar-monitor-settings-options">
         <section aria-labelledby="taskbar-monitor-ring">

@@ -423,6 +423,8 @@ pub(crate) enum HostFrame {
     Main {},
     Floating {},
     Settings {},
+    /// "自定义颜色…": open the colour rows of the taskbar settings.
+    Colors {},
     Close {},
 }
 
@@ -926,6 +928,12 @@ async fn start(app: &AppHandle, preferences: Preferences) -> Result<(), String> 
                 Ok(HostFrame::Settings {}) => {
                     let _ = crate::floating_monitor::show_main(&event_app, Some("settings".into()));
                 }
+                Ok(HostFrame::Colors {}) => {
+                    let _ = crate::floating_monitor::show_main(
+                        &event_app,
+                        Some("taskbarColors".into()),
+                    );
+                }
                 Ok(HostFrame::Floating {}) => {
                     let _ = event_app.emit_to(
                         "main",
@@ -1424,9 +1432,13 @@ mod tests {
 
     #[test]
     fn widget_preferences_roundtrip_through_settings_and_menu_frames() {
-        let settings = json!({"language":"zh-CN","floatingMonitor":{"taskbarEnabled":true,"taskbar":{"ring":"vram","items":["status","generation","bogus"]}}});
+        let settings = json!({"language":"zh-CN","floatingMonitor":{"taskbarEnabled":true,"taskbar":{"ring":"vram","items":["status","generation","bogus"],"colors":{"generation":"#14B8A6","status":"#000000","vram":"nope"}}}});
         let preferences = Preferences::from_settings(&settings);
         assert_eq!(preferences.widget.ring, "vram");
+        assert_eq!(
+            preferences.widget.colors,
+            [("generation".to_owned(), "#14b8a6".to_owned())].into()
+        );
         assert_eq!(preferences.widget.items, vec!["generation", "status"]);
         assert!(preferences.valid());
         let mut tampered = preferences.clone();
@@ -1455,6 +1467,10 @@ mod tests {
         assert!(matches!(
             read_frame::<_, HostFrame>(&mut &b"{\"type\":\"main\"}\n"[..]).unwrap(),
             Some(HostFrame::Main {})
+        ));
+        assert!(matches!(
+            read_frame::<_, HostFrame>(&mut &b"{\"type\":\"colors\"}\n"[..]).unwrap(),
+            Some(HostFrame::Colors {})
         ));
     }
 

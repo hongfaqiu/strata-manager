@@ -36,3 +36,17 @@ test('native menu changes are accepted back into settings', () => {
   assert.match(app, /allowed\.taskbar = core\.normalizeTaskbarWidgetPreferences\(patch\.taskbar\)/);
   assert.match(app, /setMonitorVisibility\(enabled, 'taskbar'/);
 });
+
+test('custom colours: settings rows, native fallback palette and menu entry stay in sync', () => {
+  const core = readFileSync(new URL('../../../../packages/core/src/floating-monitor.ts', import.meta.url), 'utf8');
+  // Default swatches mirror the native Palette::metric values.
+  const palette = core.slice(core.indexOf('TASKBAR_WIDGET_PALETTE'), core.indexOf('TASKBAR_BACKGROUNDS'));
+  for (const hex of palette.match(/#[0-9a-f]{6}/g)) assert.ok(native.includes(`rgb(0x${hex.slice(1)})`), hex);
+  assert.match(native, /COLOR_ITEMS: \[&str; 5\] = \["generation", "prefill", "gpu", "vram", "temperature"\]/);
+  assert.match(core, /TASKBAR_WIDGET_COLOR_ITEMS[^=]*= \['generation', 'prefill', 'gpu', 'vram', 'temperature'\]/);
+  assert.match(native, /t\("自定义颜色…", "Customize colors…"\)/);
+  assert.match(page, /id="settings-taskbar-colors"/);
+  assert.match(page, /'恢复默认'/);
+  assert.match(page, /type="color"/);
+  assert.match(app, /destination === 'taskbarColors' \? 'settings-taskbar-colors'/);
+});

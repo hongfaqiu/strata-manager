@@ -25,7 +25,14 @@ fn require_label(actual: &str, expected: &str) -> Result<(), String> {
 fn require_destination(destination: &str) -> Result<(), String> {
     if matches!(
         destination,
-        "overview" | "chat" | "monitoring" | "usage" | "tasks" | "settings" | "quickBenchmark"
+        "overview"
+            | "chat"
+            | "monitoring"
+            | "usage"
+            | "tasks"
+            | "settings"
+            | "taskbarColors"
+            | "quickBenchmark"
     ) {
         Ok(())
     } else {
@@ -1254,6 +1261,7 @@ mod tests {
             "usage",
             "tasks",
             "settings",
+            "taskbarColors",
             "quickBenchmark",
         ] {
             assert!(require_destination(destination).is_ok());
