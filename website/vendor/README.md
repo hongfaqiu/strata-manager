@@ -8,3 +8,7 @@ GSAP and ScrollTrigger are pinned to **3.13.0** and served locally, so the page 
 - License: https://gsap.com/standard-license/
 
 The page works without the animation scripts. Reduced-motion preferences disable all GSAP timelines and CSS transitions.
+
+# Website fonts
+
+`fonts/Geist.woff2` and `fonts/GeistMono.woff2` are Latin/number subsets of the Geist and Geist Mono variable fonts (https://github.com/vercel/geist-font), converted to WOFF2 with fontTools. Chinese text uses the system CJK sans. License: SIL Open Font License 1.1, see `fonts/OFL.txt`.

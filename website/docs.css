@@ -1,28 +1,30 @@
-/* The documentation shares the website's warm canvas and green ink. */
+/* Docs, leaderboard and 404 share the website's warm neutral canvas, Geist type and slim header. */
+@font-face { font-family: "Geist"; src: url("vendor/fonts/Geist.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: "Geist Mono"; src: url("vendor/fonts/GeistMono.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
 :root {
-  --bg: #f5f4ef;
-  --surface: #fff;
-  --raised: #eaece5;
-  --text: #20382e;
-  --muted: #5e6b62;
-  --green: #176b4c;
-  --border: #d8ddd4;
-  --code: #eaece5;
-  --header: rgba(245, 244, 239, .94);
+  --bg: #f7f6f2;
+  --surface: #fbfaf7;
+  --raised: #efede7;
+  --text: #1c1b18;
+  --muted: #6b675f;
+  --green: #11845a;
+  --border: #e2dfd8;
+  --code: #efede7;
+  --header: rgba(247, 246, 242, .82);
   color-scheme: light;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 :root[data-theme="dark"] {
-  --bg: #101c18;
-  --surface: #192822;
-  --raised: #15251e;
-  --text: #ecf0e7;
-  --muted: #b1bdb2;
-  --green: #a6d9b6;
-  --border: #35473b;
-  --code: #192822;
-  --header: rgba(16, 28, 24, .94);
+  --bg: #14120f;
+  --surface: #1b1915;
+  --raised: #24211c;
+  --text: #edece8;
+  --muted: #9c988f;
+  --green: #3dbe8b;
+  --border: #2c2925;
+  --code: #1b1915;
+  --header: rgba(20, 18, 15, .8);
   color-scheme: dark;
 }
 *, *::before, *::after { box-sizing: border-box; }
@@ -45,19 +47,20 @@ a, button, summary { -webkit-tap-highlight-color: transparent; }
   align-items: center;
   justify-content: space-between;
   gap: 32px;
-  min-height: 84px;
-  padding: 14px max(48px, calc((100% - 1240px) / 2));
+  min-height: 60px;
+  padding: 10px max(32px, calc((100% - 1200px) / 2));
   border-bottom: 1px solid var(--border);
   background: var(--header);
-  backdrop-filter: blur(16px);
+  backdrop-filter: saturate(1.4) blur(14px);
+  -webkit-backdrop-filter: saturate(1.4) blur(14px);
 }
-.doc-brand { display: inline-flex; align-items: center; gap: 11px; color: var(--text); font-size: 21px; font-weight: 750; line-height: 1.4; letter-spacing: -.7px; text-decoration: none; white-space: nowrap; }
-.doc-brand img { display: block; flex: 0 0 auto; }
-.doc-brand .brand-subtitle { font-weight: 450; }
+.doc-brand { display: inline-flex; align-items: center; gap: 9px; color: var(--text); font-size: 16px; font-weight: 600; line-height: 1.4; letter-spacing: -.02em; text-decoration: none; white-space: nowrap; }
+.doc-brand img { display: block; flex: 0 0 auto; width: 24px; height: 24px; }
+.doc-brand .brand-subtitle { font-weight: 400; color: var(--muted); }
 .header-actions { display: flex; align-items: center; gap: 6px; }
-.header-action { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 8px 12px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 14px; font-weight: 500; line-height: 1.5; text-decoration: none; white-space: nowrap; transition: color .18s, background .18s; }
-.header-action:hover { background: var(--raised); color: var(--green); }
-#doc-theme { color: var(--text); }
+.header-action { display: inline-flex; align-items: center; justify-content: center; min-height: 34px; padding: 6px 12px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font-size: 14px; font-weight: 500; line-height: 1.5; text-decoration: none; white-space: nowrap; transition: color .18s, background .18s; }
+.header-action:hover { background: var(--raised); color: var(--text); }
+#doc-theme { color: var(--text); border: 1px solid var(--border); }
 
 .doc-layout { display: grid; grid-template-columns: 218px minmax(0, 1fr); gap: 64px; width: min(1240px, calc(100% - 96px)); margin: 0 auto; padding: 48px 0 80px; }
 .doc-sidebar { align-self: start; position: sticky; top: 112px; min-width: 0; max-height: calc(100dvh - 140px); overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
@@ -69,13 +72,13 @@ a, button, summary { -webkit-tap-highlight-color: transparent; }
 .doc-navigation nav { display: grid; gap: 4px; margin-top: 16px; }
 .doc-navigation a { display: block; padding: 10px 12px; border-radius: 6px; color: var(--muted); font-size: 14px; font-weight: 450; line-height: 1.65; text-decoration: none; overflow-wrap: anywhere; transition: color .18s, background .18s; }
 .doc-navigation a:hover { background: var(--raised); color: var(--text); }
-.doc-navigation [aria-current="page"] { background: var(--raised); color: var(--green); font-weight: 650; }
+.doc-navigation [aria-current="page"] { background: var(--raised); color: var(--text); font-weight: 600; }
 .doc-main { width: 100%; min-width: 0; max-width: 920px; }
 .doc-meta { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px 24px; color: var(--muted); font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
 .doc-meta > span { min-width: 0; }
 .doc-meta a { text-decoration: none; }
 .doc-meta a:hover { text-decoration: underline; }
-.doc-meta code { font: 12px/1.8 ui-monospace, "Cascadia Code", Consolas, monospace; }
+.doc-meta code { font: 12px/1.8 "Geist Mono", ui-monospace, "Cascadia Code", Consolas, monospace; }
 .language-note { margin: 24px 0; padding: 14px 0; border-block: 1px solid var(--border); color: var(--muted); font-size: 13px; line-height: 1.8; }
 .doc-toc { margin-top: 28px; padding: 14px 0; border-block: 1px solid var(--border); }
 .doc-toc summary { color: var(--muted); font-size: 14px; font-weight: 600; }
@@ -85,7 +88,7 @@ a, button, summary { -webkit-tap-highlight-color: transparent; }
 .doc-toc .toc-depth-3 { padding-left: 18px; color: var(--muted); }
 
 .markdown-body { min-width: 0; overflow-wrap: anywhere; }
-.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6 { color: var(--text); line-height: 1.45; font-weight: 600; letter-spacing: -.03em; text-wrap: pretty; scroll-margin-top: 16px; }
+.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6 { color: var(--text); line-height: 1.45; font-weight: 500; letter-spacing: -.03em; text-wrap: pretty; scroll-margin-top: 16px; }
 .markdown-body h1 { margin: 32px 0 28px; font-size: clamp(34px, 3.3vw, 46px); line-height: 1.35; letter-spacing: -.045em; }
 .markdown-body h2 { margin: 60px 0 24px; padding-top: 24px; border-top: 1px solid var(--border); font-size: 28px; }
 .markdown-body h3 { margin: 36px 0 16px; font-size: 21px; }
@@ -97,10 +100,10 @@ a, button, summary { -webkit-tap-highlight-color: transparent; }
 .markdown-body li > ul, .markdown-body li > ol { margin-block: 10px; }
 .markdown-body li::marker { color: var(--muted); }
 .markdown-body strong { font-weight: 650; }
-.markdown-body code { padding: .15em .35em; border-radius: 4px; background: var(--code); font: .88em/1.65 ui-monospace, "Cascadia Code", Consolas, monospace; }
+.markdown-body code { padding: .15em .35em; border-radius: 4px; background: var(--code); font: .88em/1.65 "Geist Mono", ui-monospace, "Cascadia Code", Consolas, monospace; }
 .markdown-body pre { max-width: 100%; margin: 24px 0; padding: 20px 24px; overflow-x: auto; overscroll-behavior-x: contain; border: 1px solid var(--border); border-radius: 8px; background: var(--code); font-size: 14px; line-height: 1.75; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .markdown-body pre code { padding: 0; border-radius: 0; background: transparent; font-size: inherit; white-space: pre; overflow-wrap: normal; }
-.markdown-body .license-text { white-space: pre-wrap; overflow-wrap: anywhere; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
+.markdown-body .license-text { white-space: pre-wrap; overflow-wrap: anywhere; font-family: "Geist Mono", ui-monospace, "Cascadia Code", Consolas, monospace; }
 .markdown-body blockquote { margin: 24px 0; padding: 16px 0; border-block: 1px solid var(--border); color: var(--muted); }
 .markdown-body blockquote > :first-child { margin-top: 0; }
 .markdown-body blockquote > :last-child { margin-bottom: 0; }

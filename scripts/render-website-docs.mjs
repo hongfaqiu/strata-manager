@@ -184,7 +184,7 @@ function renderDocument(entry, markdown) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
-  <meta name="theme-color" content="#f5f4ef" id="theme-color">
+  <meta name="theme-color" content="#f7f6f2" id="theme-color">
   <title>${escape(title)} · Strata Manager</title>
   <meta name="description" content="${escape(description)}">
   ${documentSeo({ title: `${title} · Strata Manager`, description, page: entry.page, lang: entry.lang, alternates: documents.filter((item) => item.key === entry.key) })}

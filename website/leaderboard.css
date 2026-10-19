@@ -1,6 +1,6 @@
 /* Benchmark Arena leaderboard. Shares docs.css tokens; green is reserved for rank 1 and links. */
 .lb-main { width: min(1180px, calc(100% - 96px)); margin: 0 auto; padding: 44px 0 72px; }
-.lb-hero h1 { margin: 0; font-size: clamp(30px, 4vw, 44px); line-height: 1.15; letter-spacing: -.03em; }
+.lb-hero h1 { margin: 0; font-size: clamp(30px, 4vw, 44px); font-weight: 500; line-height: 1.15; letter-spacing: -.035em; }
 .lb-hero p { margin: 12px 0 0; max-width: 720px; color: var(--muted); font-size: 16px; line-height: 1.7; }
 .lb-stats { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 16px; color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
 .lb-stats span + span::before { content: "·"; margin-right: 18px; color: var(--border); }
@@ -8,7 +8,7 @@
 .lb-status { color: var(--muted); font-size: 14px; padding: 28px 0; margin: 0; }
 .lb-note { margin: 0 0 14px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--raised); color: var(--muted); font-size: 14px; }
 .lb-muted { color: var(--muted); font-size: 13px; }
-.lb-quant { display: inline-block; font: 600 12px/1.6 ui-monospace, "SFMono-Regular", Consolas, monospace; padding: 0 7px; border-radius: 5px; background: var(--raised); color: var(--text); margin-left: 6px; vertical-align: 2px; }
+.lb-quant { display: inline-block; font: 600 12px/1.6 "Geist Mono", ui-monospace, "SFMono-Regular", Consolas, monospace; padding: 0 7px; border-radius: 5px; background: var(--raised); color: var(--text); margin-left: 6px; vertical-align: 2px; }
 .lb-groups { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 14px; scrollbar-width: thin; }
 .lb-groups button { flex: none; display: inline-flex; align-items: center; gap: 4px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 14px; line-height: 1.4; }
 .lb-groups button b { font-weight: 600; }
@@ -42,17 +42,17 @@
 .lb-table th.is-sorted::after { content: " ↓"; }
 .lb-table td.lb-num.is-sorted { font-weight: 600; }
 .lb-params { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
-.lb-params span { font: 500 12px/20px ui-monospace, "SFMono-Regular", Consolas, monospace; padding: 0 6px; border-radius: 5px; border: 1px solid var(--border); background: var(--bg); color: var(--text); white-space: nowrap; }
+.lb-params span { font: 500 12px/20px "Geist Mono", ui-monospace, "SFMono-Regular", Consolas, monospace; padding: 0 6px; border-radius: 5px; border: 1px solid var(--border); background: var(--bg); color: var(--text); white-space: nowrap; }
 .lb-tag { display: inline-block; font-size: 12px; line-height: 18px; margin-left: 8px; padding: 0 6px; border: 1px solid var(--border); border-radius: 5px; color: var(--muted); white-space: nowrap; }
 .lb-podium { display: grid; grid-template-columns: 1.15fr 1fr 1fr; border-bottom: 1px solid var(--border); }
 .lb-podium > div { padding: 20px 22px; border-left: 1px solid var(--border); min-width: 0; }
 .lb-podium > div:first-child { border-left: 0; }
-.lb-rank { font: 600 12.5px ui-monospace, "SFMono-Regular", Consolas, monospace; letter-spacing: .04em; color: var(--muted); }
+.lb-rank { font: 600 12.5px "Geist Mono", ui-monospace, "SFMono-Regular", Consolas, monospace; letter-spacing: .04em; color: var(--muted); }
 .lb-podium .first .lb-rank { color: var(--green); }
 .lb-podium-hw { margin-top: 6px; font-size: 15px; line-height: 1.5; }
-.lb-podium-value { font: 650 34px/1 ui-monospace, "SFMono-Regular", Consolas, monospace; letter-spacing: -.03em; margin: 12px 0 2px; font-variant-numeric: tabular-nums; }
+.lb-podium-value { font: 650 34px/1 "Geist Mono", ui-monospace, "SFMono-Regular", Consolas, monospace; letter-spacing: -.03em; margin: 12px 0 2px; font-variant-numeric: tabular-nums; }
 .lb-podium .first .lb-podium-value { font-size: 42px; }
-.lb-podium-value small { font: 500 13px/1 -apple-system, "Segoe UI", sans-serif; color: var(--muted); margin-left: 6px; letter-spacing: 0; }
+.lb-podium-value small { font: 500 13px/1 "Geist", -apple-system, "Segoe UI", sans-serif; color: var(--muted); margin-left: 6px; letter-spacing: 0; }
 .lb-table { width: 100%; border-collapse: collapse; font-size: 14px; line-height: 1.5; }
 .lb-table th { text-align: left; font-weight: 500; font-size: 12.5px; color: var(--muted); padding: 12px 12px 10px; border-bottom: 1px solid var(--border); }
 .lb-table td { padding: 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
@@ -61,7 +61,7 @@
 .lb-table tbody tr:last-child td { border-bottom: 0; }
 .lb-table .r { text-align: right; white-space: nowrap; }
 .lb-col-range { width: 26%; }
-.lb-value { font: 650 16px ui-monospace, "SFMono-Regular", Consolas, monospace; font-variant-numeric: tabular-nums; }
+.lb-value { font: 650 16px "Geist Mono", ui-monospace, "SFMono-Regular", Consolas, monospace; font-variant-numeric: tabular-nums; }
 .lb-num { font-variant-numeric: tabular-nums; }
 .lb-range { position: relative; display: block; height: 18px; }
 .lb-range::before { content: ""; position: absolute; left: 0; right: 0; top: 8px; height: 2px; border-radius: 1px; background: var(--raised); }
