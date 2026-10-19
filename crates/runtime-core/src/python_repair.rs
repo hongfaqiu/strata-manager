@@ -3,6 +3,9 @@
 //!
 //! Launcher parsing is intentionally local and mirrored from `discovery` so repair
 //! stays usable if discovery helpers stay private; both prefer the same run-* scripts.
+use serde::Serialize;
+use std::{
+    fs,
     path::{Path, PathBuf},
     process::Command,
     time::Duration,
