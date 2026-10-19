@@ -33,10 +33,12 @@ test('authenticated snapshot requests the two exact repository endpoints and pub
   assert.deepEqual(Object.keys(snapshot.release), ['tag_name', 'draft', 'prerelease', 'published_at', 'html_url', 'assets']);
   assert.equal(snapshot.generatedAt, generatedAt);
   assert.equal(snapshot.release.tag_name, 'v0.1.2');
-  assert.equal(snapshot.release.assets.length, 4);
+  // Installers only: the website no longer publishes SHA256SUMS even though the release lists it.
+  assert.equal(snapshot.release.assets.length, 3);
+  assert.ok(snapshot.release.assets.every((asset) => asset.name !== 'SHA256SUMS'));
   for (const asset of snapshot.release.assets) assert.deepEqual(Object.keys(asset), ['name', 'state', 'size', 'browser_download_url']);
   assert.doesNotMatch(JSON.stringify(snapshot), /test-credential|must-not-be-published|not-needed|Authorization|uploader|body|author/);
-  assert.equal(Object.keys(catalog.assets(snapshot.release)).length, 5);
+  assert.equal(Object.keys(catalog.assets(snapshot.release)).length, 4);
 });
 
 test('rate limits, unexpected HTTP responses and network failures fail publication without logging secret response text', async () => {
@@ -88,7 +90,7 @@ test('local builds skip without credentials; explicit local input is revalidated
     const snapshot = await publishWebsiteReleaseSnapshot(output, { env: { WEBSITE_RELEASE_SNAPSHOT_INPUT: input }, fetchImpl: async () => { networkCalls++; throw new Error('unexpected network'); } });
     assert.equal(networkCalls, 0);
     assert.equal(snapshot.generatedAt, generatedAt);
-    assert.equal(JSON.parse(await readFile(join(output, 'release-catalog.json'), 'utf8')).release.assets.length, 4);
+    assert.equal(JSON.parse(await readFile(join(output, 'release-catalog.json'), 'utf8')).release.assets.length, 3);
     await assert.rejects(publishWebsiteReleaseSnapshot(output, { env: { CI: 'true', WEBSITE_RELEASE_SNAPSHOT_INPUT: input } }), /only allowed outside CI/);
     await assert.rejects(publishWebsiteReleaseSnapshot(output, { env: { GITHUB_TOKEN: 'test', WEBSITE_RELEASE_SNAPSHOT_INPUT: input } }), /only allowed outside CI/);
     await assert.rejects(publishWebsiteReleaseSnapshot(output, { env: { CI: 'true' } }), /requires GITHUB_TOKEN/);

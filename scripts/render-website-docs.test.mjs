@@ -98,3 +98,23 @@ test('Publication checks catch missing files and stale document anchors', async 
     await rm(output, { recursive: true, force: true });
   }
 });
+
+test('Docs render product screenshots as live HTML demos, never as images', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const { renderMarkdownContent, renderChangelog } = await import('./render-website-docs.mjs');
+  const pages = [
+    ['docs/USER_GUIDE.md', 'docs/user-guide.html', await readFile(new URL('../docs/USER_GUIDE.md', import.meta.url), 'utf8')],
+    ['docs/USER_GUIDE.en.md', 'docs/user-guide.en.html', await readFile(new URL('../docs/USER_GUIDE.en.md', import.meta.url), 'utf8')],
+  ];
+  const changelog = await readFile(new URL('../CHANGELOG.md', import.meta.url), 'utf8');
+  pages.push(['CHANGELOG.md', 'docs/changelog.html', renderChangelog(changelog, 'zh')], ['CHANGELOG.md', 'docs/changelog.en.html', renderChangelog(changelog, 'en')]);
+  for (const [source, page, markdown] of pages) {
+    const { html } = renderMarkdownContent(markdown, source, page);
+    assert.doesNotMatch(html, /<img[^>]+screenshots\//, `${page} has no screenshot images`);
+    assert.doesNotMatch(html, /<a[^>]+screenshots\/[^"]+\.webp"[^>]*><figure/, `${page} unwraps screenshot links`);
+    assert.ok((html.match(/<figure class="doc-demo"><div class="dd/g) || []).length >= 4, `${page} shows HTML demos`);
+    if (page.endsWith('.en.html')) assert.doesNotMatch(html.match(/<figure class="doc-demo">[\s\S]*?<\/figure>/g).join('').replace(/<ul class="dd-langs"[\s\S]*?<\/ul>/g, ''), /[\u3400-\u9fff]/);
+  }
+  assert.throws(() => renderMarkdownContent('![x](screenshots/brand-new-surface.zh.webp)', 'docs/USER_GUIDE.md', 'docs/user-guide.html'), /No HTML demo for screenshot/);
+  assert.match(renderMarkdownContent('![logo](../assets/icon.svg)', 'docs/USER_GUIDE.md', 'docs/user-guide.html').html, /<img/);
+});

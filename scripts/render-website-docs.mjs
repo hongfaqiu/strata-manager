@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { dirname, join, posix, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { documentSeo, homePage, site } from './website-seo.mjs';
+import { demoKindForScreenshot, renderDemoTile } from './website-demo-tiles.mjs';
 import { localizedReleaseNotes } from '../apps/desktop/src/updateReleaseNotes.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -14,6 +15,7 @@ const [{ default: React }, { renderToStaticMarkup }, { default: Markdown, defaul
   import(pathToFileURL(requireDesktop.resolve('remark-gfm')).href),
 ]);
 const h = React.createElement;
+const { Fragment } = React;
 const repository = 'https://github.com/hongfaqiu/strata-manager/blob/main/';
 
 export const documents = [
@@ -111,6 +113,9 @@ export function rewriteDocumentUrl(value, source, outputPage) {
   return repository + encodePath(target) + suffix;
 }
 
+const isScreenshot = (url) => typeof url === 'string' && /(?:^|\/)assets\/screenshots\/.+\.webp(?:[?#].*)?$/.test(url);
+const escapeText = (value) => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
 export function renderMarkdownContent(markdown, source, outputPage) {
   const headings = [];
   const html = renderToStaticMarkup(h(Markdown, {
@@ -119,7 +124,16 @@ export function renderMarkdownContent(markdown, source, outputPage) {
     urlTransform: (url) => rewriteDocumentUrl(url, source, outputPage),
     components: {
       table: ({ node, ...props }) => h('div', { className: 'table-scroll', tabIndex: 0 }, h('table', props)),
-      img: ({ node, ...props }) => h('img', { ...props, loading: 'lazy', decoding: 'async' }),
+      // Product screenshots become self-animating HTML recreations; other images stay images.
+      img: ({ node, ...props }) => {
+        if (!isScreenshot(props.src)) return h('img', { ...props, loading: 'lazy', decoding: 'async' });
+        const kind = demoKindForScreenshot(props.src);
+        if (!kind) throw new Error(`No HTML demo for screenshot ${props.src}; add one in website-demo-tiles.mjs.`);
+        const lang = documents.find((entry) => entry.page === outputPage)?.lang || 'zh';
+        return h('figure', { className: 'doc-demo', dangerouslySetInnerHTML: { __html: renderDemoTile(kind, { lang, label: props.alt || kind }) + (props.alt ? `<figcaption>${escapeText(props.alt)}</figcaption>` : '') } });
+      },
+      // The website ships no product screenshots: links to them keep their text but lose the link.
+      a: ({ node, ...props }) => (isScreenshot(props.href) ? h(Fragment, null, props.children) : h('a', props)),
     },
   }, markdown));
   return { html, headings };
@@ -190,7 +204,9 @@ function renderDocument(entry, markdown) {
   ${documentSeo({ title: `${title} · Strata Manager`, description, page: entry.page, lang: entry.lang, alternates: documents.filter((item) => item.key === entry.key) })}
   <link rel="icon" href="../assets/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="../docs.css">
+  <link rel="stylesheet" href="../demo-tiles.css">
   <script src="../docs.js"></script>
+  <script src="../demo-tiles.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#content">${chrome.skip}</a>

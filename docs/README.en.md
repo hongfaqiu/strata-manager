@@ -34,7 +34,7 @@ Strata Manager is a desktop workspace for local inference with Strata. It brings
 - Benchmark supports seven scenarios, fixed concurrency and ramp-up stress tests. It records latency, generation rates, caching and resource trends, with JSON / CSV reports.
 - Published stable packages target Windows/Linux x64; the macOS Apple Silicon DMG is experimental (un-notarized, no Metal engine included). Release packages, GPU use, real Linux/Mac systems and cross-version updates are verified separately. Screenshots and controlled fixtures do not establish real-model acceptance.
 
-Public installers: [Latest stable release](https://github.com/hongfaqiu/strata-manager/releases/latest) · [Website downloads](https://strata-manager.cosfoc.com/en/#get-started). Download only listed assets and check the matching SHA256SUMS. [Download instructions](DOWNLOAD.en.md) explain installation and current support scope. Stable releases use `latest`; previews remain manual downloads and do not replace that channel.
+Public installers: [Latest stable release](https://github.com/hongfaqiu/strata-manager/releases/latest) · [Website downloads](https://strata-manager.cosfoc.com/en/#get-started). Download only listed assets. [Download instructions](DOWNLOAD.en.md) explain installation and current support scope. Stable releases use `latest`; previews remain manual downloads and do not replace that channel.
 
 ## License and credits
 

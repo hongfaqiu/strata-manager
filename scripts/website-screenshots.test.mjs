@@ -103,3 +103,22 @@ test('Reject an existing destination junction instead of writing outside', async
   await assert.rejects(copyWebsiteScreenshots(source, destination), /links are not allowed/);
   await assert.rejects(access(join(outside, 'chat.webp')), { code: 'ENOENT' });
 });
+
+test('An include list publishes only the named files and fails when one is missing', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'strata-website-screenshots-include-'));
+  try {
+    const source = join(root, 'source');
+    const destination = join(root, 'destination');
+    await mkdir(join(source, 'daily-experience'), { recursive: true });
+    await writeFile(join(source, 'product-cover.zh.webp'), 'og');
+    await writeFile(join(source, 'chat.zh.webp'), 'chat');
+    await writeFile(join(source, 'daily-experience', 'api-usage.zh.webp'), 'usage');
+    assert.equal(await copyWebsiteScreenshots(source, destination, { include: ['product-cover.zh.webp'] }), 1);
+    assert.equal(await readFile(join(destination, 'product-cover.zh.webp'), 'utf8'), 'og');
+    await assert.rejects(access(join(destination, 'chat.zh.webp')), { code: 'ENOENT' });
+    await assert.rejects(access(join(destination, 'daily-experience')), { code: 'ENOENT' });
+    await assert.rejects(copyWebsiteScreenshots(source, join(root, 'other'), { include: ['missing.webp'] }), /Missing published screenshot: missing\.webp/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

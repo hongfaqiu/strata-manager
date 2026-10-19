@@ -16,7 +16,7 @@ README、官网截图与使用指南描述当前源码功能；安装包包含�
 | Linux x64 | [AppImage / DEB](https://strata-manager.cosfoc.com/#get-started) | Ubuntu 22.04 CI 环境构建；系统安装与 GPU 支持范围见下方 |
 | macOS Apple Silicon | [DMG](https://strata-manager.cosfoc.com/#get-started) | **实验包**。当前已发布稳定版可能尚无该文件；发布页列出 `*_aarch64.dmg` 后再下载。说明见下方 |
 
-从[所选稳定发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)下载同一版本的 `SHA256SUMS`，将下载文件的 SHA256 与其中同名文件的值核对后再安装。发布页的更新签名文件供更新器验签，初次安装使用 `.exe`、`.AppImage`、`.deb`，或发布页实际列出的 `.dmg`。
+发布页的更新签名文件供更新器验签，初次安装使用 `.exe`、`.AppImage`、`.deb`，或发布页实际列出的 `.dmg`。
 
 模型、图像和 API 协议以所选 Strata 运行时为准。检查硬件、驱动、RAM、VRAM 和磁盘要求后再准备模型；已有受支持权重无需重新下载。
 
