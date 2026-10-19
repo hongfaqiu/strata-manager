@@ -14,7 +14,7 @@ const choices = ['none', 'status', 'generation', 'vram', 'gpu'];
 test('#71: the preference lives in floatingMonitor and defaults to the status color', () => {
   assert.match(types, /export type TrayIconDisplay = 'none' \| 'status' \| 'generation' \| 'vram' \| 'gpu';/);
   assert.match(types, /trayIconDisplay\?: TrayIconDisplay;/);
-  assert.match(core, /trayIconDisplay: 'status',\n\};/);
+  assert.match(core, /trayIconDisplay: 'status',\r?\n\};/);
   assert.match(core, /TRAY_ICON_DISPLAYS: readonly TrayIconDisplay\[\] = \['none', 'status', 'generation', 'vram', 'gpu'\]/);
 });
 
