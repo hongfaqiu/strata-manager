@@ -1,67 +1,96 @@
-/* 「使用已有模型」(#75): shared by the wizard model step and the Models page. */
-.model-download-local-gguf{margin-top:20px;border-top:1px solid var(--st-line);padding-top:16px;color:var(--st-ink-muted);font-size:13px}
-.model-download-local-gguf>summary{cursor:pointer;width:fit-content;list-style:revert}
-.existing-model{max-width:900px;margin:18px 0 8px;color:var(--st-ink);display:grid;gap:16px;min-width:0}
-.existing-model.is-compact{margin:0;max-width:none}
+/* 「使用已有模型」(#75): shared by the wizard model step and the Models page.
+   One column, one left edge: label → control → quiet hint. Color only for problems. */
+.model-download-local-gguf{margin-top:24px;border-top:1px solid var(--st-line);padding-top:16px;color:var(--st-ink)}
+.model-download-local-gguf>summary{cursor:pointer;width:fit-content;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600;color:var(--st-ink)}
+.model-download-local-gguf>summary::before{content:"";width:6px;height:6px;border-right:1.5px solid var(--st-ink-muted);border-bottom:1.5px solid var(--st-ink-muted);transform:rotate(-45deg);transition:transform var(--st-dur,.15s) var(--st-ease,ease)}
+.model-download-local-gguf[open]>summary::before{transform:rotate(45deg)}
+.existing-model{max-width:760px;margin:16px 0 8px;color:var(--st-ink);display:grid;gap:22px;min-width:0}
+.existing-model.is-compact{margin:0;max-width:none;padding:4px 18px 20px}
 .existing-model-intro{margin:0;font-size:13px;line-height:1.6;color:var(--st-ink-muted)}
-.existing-model-row{display:grid;grid-template-columns:150px minmax(0,1fr);gap:8px 14px;align-items:center;min-width:0}
-.existing-model-row>.existing-model-path,.existing-model-row>.existing-model-hint,.existing-model-row>.existing-model-error,.existing-model-row>.existing-model-ok{grid-column:2}
-.existing-model.is-compact .existing-model-row{grid-template-columns:minmax(0,1fr)}
-.existing-model.is-compact .existing-model-row>*{grid-column:1}
-.existing-model-label{font-size:13px;font-weight:600;color:var(--st-ink)}
+/* section: label, then content, all on the same left edge */
+.existing-model-sec{display:grid;gap:8px;min-width:0;margin:0;padding:0;border:0}
+.existing-model-label{display:block;padding:0;font-size:13px;font-weight:600;color:var(--st-ink);line-height:1.4}
+.existing-model-groups>legend{float:left;width:100%;margin-bottom:8px}
+.existing-model-groups>legend+*{clear:both}
+.existing-model-hint{display:block;font-size:12px;line-height:1.55;color:var(--st-ink-muted);margin:0}
+.existing-model-note{margin:0;font-size:13px;line-height:1.6;color:var(--st-ink-muted)}
+.existing-model-error{margin:0;color:var(--st-danger-text)!important;font-size:13px;line-height:1.6;overflow-wrap:anywhere}
+.existing-model-ok{margin:0;display:flex;gap:8px;align-items:baseline;color:var(--st-ink);font-size:13px;line-height:1.55;overflow-wrap:anywhere}
+.existing-model-ok>span:last-child{display:grid;gap:2px;min-width:0}
+.existing-model-dot{width:6px;height:6px;border-radius:50%;background:var(--st-accent);flex:none;transform:translateY(-1px)}
+/* chosen path: a quiet field, buttons beside it */
+.existing-model-source{display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-width:0}
+.existing-model-pathbox{flex:1 1 260px;min-width:0;display:flex;align-items:center;gap:8px;min-height:36px;padding:0 6px 0 12px;border:1px solid var(--st-line);border-radius:8px;background:var(--st-surface-2);color:var(--st-ink-muted)}
+.existing-model-pathbox.is-empty{border-style:dashed;background:transparent}
 .existing-model-pick{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .existing-model-pick button{display:inline-flex;align-items:center;gap:6px;min-height:36px}
-.existing-model-icon{padding:6px 9px}
-.existing-model-link{border:0;background:transparent;color:var(--st-accent-text);padding:4px}
-.existing-model-path{font-size:12px;color:var(--st-ink-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-.existing-model-hint{font-size:12px;line-height:1.55;color:var(--st-ink-muted);margin:0}
-.existing-model-note{margin:0;font-size:13px;line-height:1.6;color:var(--st-ink-muted)}
-.existing-model-error{margin:0;color:var(--st-danger)!important;font-size:13px;line-height:1.6;overflow-wrap:anywhere}
-.existing-model-ok{margin:0;color:var(--st-accent-text);font-size:12px;line-height:1.55;overflow-wrap:anywhere}
-.existing-model-groups{border:0;padding:0;margin:0;display:grid;gap:12px;min-width:0}
-.existing-model-groups legend{font-size:13px;font-weight:600;margin-bottom:8px;color:var(--st-ink)}
-.existing-model-group{border:1px solid var(--st-line);border-radius:10px;overflow:hidden;background:var(--st-surface)}
-.existing-model-group-head{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--st-line-soft);font-size:13px}
-.existing-model-group-head strong{font-weight:600;overflow-wrap:anywhere}
-.existing-model-group-head small{margin-left:auto;color:var(--st-ink-muted);font-size:12px;white-space:nowrap}
-.existing-model-variant{display:grid;grid-template-columns:auto minmax(120px,1.2fr) minmax(110px,1fr) auto;gap:12px;align-items:center;padding:10px 14px;cursor:pointer;border-top:1px solid var(--st-line-soft);font-size:13px}
-.existing-model-variant:first-of-type{border-top:0}
+.existing-model-pathbox .existing-model-icon,.existing-model-pathbox .existing-model-link{flex:none;min-height:28px;height:28px;border:0;background:transparent;padding:0 8px;color:var(--st-ink-muted);font-size:12px}
+.existing-model-pathbox .existing-model-link{color:var(--st-accent-text)}
+.existing-model-pathbox .existing-model-icon:hover:not(:disabled){background:var(--st-surface);color:var(--st-ink)}
+.existing-model-path{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:34px}
+/* variants: one list, group names as quiet subheads */
+.existing-model-groups{min-width:0}
+.existing-model-list{border:1px solid var(--st-line);border-radius:10px;background:var(--st-surface);overflow:hidden}
+.existing-model-group+.existing-model-group{border-top:1px solid var(--st-line)}
+.existing-model-group-head{display:flex;align-items:baseline;gap:8px;padding:10px 14px 4px;font-size:12px;color:var(--st-ink-muted)}
+.existing-model-group-head strong{font-weight:600;color:var(--st-ink);overflow-wrap:anywhere}
+.existing-model-group-head small{margin-left:auto;font-size:12px;white-space:nowrap}
+.existing-model-variant{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:9px 14px;cursor:pointer;font-size:13px;transition:background var(--st-dur,.15s) var(--st-ease,ease)}
+.existing-model-variant:hover{background:var(--st-surface-2)}
 .existing-model-variant.is-selected{background:var(--st-accent-tint)}
-.existing-model-quant{display:grid;gap:2px;min-width:0}
-.existing-model-quant code{font-size:13px;font-weight:600;color:var(--st-ink)}
-.existing-model-quant small,.existing-model-size{font-size:12px;color:var(--st-ink-muted)}
-.existing-model-badge{font-size:12px;padding:2px 8px;border-radius:6px;border:1px solid var(--st-line);white-space:nowrap}
-.existing-model-badge.is-ok{color:var(--st-accent-text);border-color:var(--st-accent)}
-.existing-model-badge.is-warn{color:var(--st-warn-text);border-color:var(--st-warn)}
-.existing-model-badge.is-bad{color:var(--st-danger-text);border-color:var(--st-danger)}
-.existing-model-detail{display:grid;gap:8px}
-.existing-model-problems,.existing-model-warnings,.existing-model-shards{list-style:none;margin:0;padding:0;display:grid;gap:6px;font-size:13px;line-height:1.55}
+.existing-model-group .existing-model-variant:last-child{padding-bottom:11px}
+.existing-model-quant{display:flex;align-items:baseline;gap:10px;min-width:0;flex-wrap:wrap}
+.existing-model-quant small{font-size:12px;color:var(--st-ink-muted)}
+.existing-model-meta{display:flex;align-items:center;gap:16px;justify-content:flex-end;white-space:nowrap}
+.existing-model-size{font-size:12px;color:var(--st-ink-muted);font-variant-numeric:tabular-nums}
+.existing-model-status{display:inline-flex;align-items:center;gap:6px;min-width:64px;font-size:12px;color:var(--st-ink-muted)}
+.existing-model-status::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--st-accent);flex:none}
+.existing-model-status.is-warn{color:var(--st-warn-text)}
+.existing-model-status.is-warn::before{background:var(--st-warn)}
+.existing-model-status.is-bad{color:var(--st-danger-text)}
+.existing-model-status.is-bad::before{background:var(--st-danger)}
+.existing-model-detail{display:grid;gap:8px;margin-top:-12px}
+.existing-model-problems,.existing-model-warnings,.existing-model-shards{list-style:none;margin:0;padding:0;display:grid;gap:6px;font-size:12.5px;line-height:1.55}
 .existing-model-problems li,.existing-model-warnings li{display:flex;gap:8px;align-items:flex-start;overflow-wrap:anywhere}
-.existing-model-problems li svg,.existing-model-warnings li svg{flex:none;margin-top:4px}
+.existing-model-problems li svg,.existing-model-warnings li svg{flex:none;margin-top:3px}
 .existing-model-problems{color:var(--st-danger-text)}
 .existing-model-warnings{color:var(--st-warn-text)}
+.existing-model-shards{padding:8px 12px;border-radius:8px;background:var(--st-surface-2)}
 .existing-model-shards li{display:flex;justify-content:space-between;gap:12px;font-size:12px}
-.existing-model-shards li code{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.existing-model-shards li code{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.existing-model-shards li span{white-space:nowrap}
 .existing-model-shards li.is-bad span{color:var(--st-danger-text)}
-.existing-model-checks h4{margin:0 0 8px;font-size:13px;color:var(--st-ink)}
-.existing-model-checks dl{margin:0;border-top:1px solid var(--st-line-soft)}
-.existing-model-checks dl>div{display:grid;grid-template-columns:96px 1fr;gap:12px;padding:10px 0;border-bottom:1px solid var(--st-line-soft)}
-.existing-model-checks dt{font-size:13px;color:var(--st-ink-muted);display:flex;align-items:center;gap:8px}
+.existing-model-context{width:min(240px,100%)}
+/* optional / advanced: collapsed by default */
+.existing-model-more{border-top:1px solid var(--st-line-soft);padding-top:14px;min-width:0}
+.existing-model-more>summary{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:600;color:var(--st-ink);width:100%;list-style:none}
+.existing-model-more>summary small{margin-left:auto;font-size:12px;font-weight:400;color:var(--st-ink-muted)}
+.existing-model-more>summary small.is-bad{color:var(--st-danger-text)}
+.existing-model-chev{color:var(--st-ink-muted);transition:transform var(--st-dur,.15s) var(--st-ease,ease)}
+.existing-model-more[open] .existing-model-chev{transform:rotate(90deg)}
+.existing-model-more-body{display:grid;gap:10px;padding:10px 0 0 22px;min-width:0}
+.existing-model-checks dl{margin:0}
+.existing-model-checks dl>div{display:flex;gap:8px;align-items:baseline}
+.existing-model-checks dt{font-size:13px;color:var(--st-ink-muted);display:flex;align-items:center;gap:8px;flex:none}
 .existing-model-checks dt::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--st-line);flex:none}
 .existing-model-checks .is-ok dt::before{background:var(--st-accent)}
 .existing-model-checks .is-bad dt::before{background:var(--st-danger)}
-.existing-model-checks dd{margin:0;display:grid;gap:3px;min-width:0;font-size:13px;line-height:1.5}
-.existing-model-checks dd code{font-size:12px;color:var(--st-ink-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.existing-model-checks .existing-model-problems{margin-top:8px}
-.existing-model-command{display:grid;gap:6px;min-width:0}
-.existing-model-command code{display:block;font-size:12px;line-height:1.6;padding:10px 12px;border-radius:8px;background:var(--st-surface-sunken,var(--st-surface));border:1px solid var(--st-line-soft);overflow-wrap:anywhere;white-space:pre-wrap}
-.existing-model-submit{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
-.existing-model-submit button.primary{background:var(--st-accent);border:1px solid var(--st-accent);color:var(--st-accent-ink);min-height:44px;font-size:14px;font-weight:600;border-radius:12px;padding:10px 20px;white-space:nowrap}
+.existing-model-checks .is-bad dd>span{color:var(--st-danger-text)}
+.existing-model-checks dd{margin:0;display:flex;flex-wrap:wrap;gap:2px 10px;min-width:0;font-size:13px;line-height:1.5}
+.existing-model-checks dd code{font-size:12px;color:var(--st-ink-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;max-width:100%}
+.existing-model-command{gap:6px}
+.existing-model-command code{display:block;font-size:12px;line-height:1.6;padding:10px 12px;border-radius:8px;background:var(--st-surface-2);overflow-wrap:anywhere;white-space:pre-wrap}
+.existing-model-submit{display:flex;align-items:center;gap:8px 16px;flex-wrap:wrap;padding-top:18px;border-top:1px solid var(--st-line-soft)}
+.existing-model-submit button.primary{background:var(--st-accent);border:1px solid var(--st-accent);color:var(--st-accent-ink);min-height:40px;font-size:14px;font-weight:600;border-radius:10px;padding:8px 20px;white-space:nowrap}
 .existing-model-submit button:disabled{opacity:.5}
-.existing-model-submit small{flex:1;min-width:220px;font-size:12px;line-height:1.6;color:var(--st-ink-muted)}
-.ob-model-source{display:flex;justify-content:flex-start;margin:0 0 14px}
-@media(max-width:700px){.existing-model-row{grid-template-columns:minmax(0,1fr)}.existing-model-row>*{grid-column:1!important}.existing-model-variant{grid-template-columns:auto minmax(0,1fr) auto}.existing-model-size{display:none}}
+.existing-model-submit small{flex:1;min-width:200px;font-size:12px;line-height:1.6;color:var(--st-ink-muted)}
+/* wizard: the source switch shares the panel's 18px edge with the title */
+.ob-model-source{display:flex;justify-content:flex-start;margin:0;padding:16px 18px 0}
+.ob-model-source+.ob-head{padding-top:14px}
+@media(max-width:700px){.existing-model-meta{gap:10px}.existing-model-size{display:none}.existing-model-pathbox{flex-basis:100%}}
 /* Beat `.official-surface code{font-size:inherit;color:inherit}` for paths and quant names. */
 section.existing-model code{font-family:var(--st-font-mono);font-size:12px;color:var(--st-ink-muted)}
+section.existing-model .existing-model-path{color:var(--st-ink)}
+section.existing-model .existing-model-pathbox.is-empty .existing-model-path{color:var(--st-ink-muted);font-family:var(--st-font);font-size:13px}
 section.existing-model .existing-model-quant code{font-size:13px;font-weight:600;color:var(--st-ink)}
 section.existing-model .existing-model-command code{color:var(--st-ink)}

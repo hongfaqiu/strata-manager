@@ -2,7 +2,7 @@ import type { AppLanguage, LocalGgufGroup, LocalModelRequest, ModelDownloadReque
 import * as core from '@strata-manager/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { FileSearch, FolderOpen, HardDrive, RefreshCw, TriangleAlert, X } from 'lucide-react';
+import { ChevronRight, FileSearch, FolderOpen, RefreshCw, TriangleAlert, X } from 'lucide-react';
 import { Dropdown, Radio } from '../OfficialControls';
 import { existingModelCopy } from './existingModelCopy';
 import './existing-model.css';
@@ -42,6 +42,7 @@ export function ExistingModelPanel({ language, desktop, runtime, runtimeVersion,
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [mtpOpen, setMtpOpen] = useState(false);
   const lock = useRef(false);
   const scan = useQuery({ queryKey: ['local-model-scan', path], queryFn: () => core.scanLocalModels(path), enabled: desktop && !!path, retry: false, staleTime: 15000, refetchOnWindowFocus: false });
   const choices = useMemo(() => core.groupLocalGgufs(scan.data), [scan.data]);
@@ -86,7 +87,7 @@ export function ExistingModelPanel({ language, desktop, runtime, runtimeVersion,
     try {
       const chosen = kind === 'file' ? await onChooseFile() : await onChooseDirectory();
       if (!chosen) return;
-      if (kind === 'mtp') setMtpPath(chosen); else { setPath(chosen); setSelectedId(''); }
+      if (kind === 'mtp') { setMtpPath(chosen); setMtpOpen(true); } else { setPath(chosen); setSelectedId(''); }
     } catch (cause) { setError(core.normalizeError(cause).message); }
   };
   const start = async () => {
@@ -113,70 +114,88 @@ export function ExistingModelPanel({ language, desktop, runtime, runtimeVersion,
 
   const status = (item: LocalGgufGroup) => !item.installable ? 'bad' : item.warnings.length && item.kind !== 'official' ? 'warn' : 'ok';
   const statusLabel = (item: LocalGgufGroup) => ({ ok: t.usable, warn: t.checkFirst, bad: t.unusable })[status(item)];
+  const mtpState = !mtpPath ? t.mtpAuto : mtp.isFetching ? t.mtpChecking : mtpProblem ? t.unusable : t.mtpChosen;
   return <section className={`existing-model${compact ? ' is-compact' : ''}`} data-testid="existing-model" aria-label={t.title}>
     {!compact && <p className="existing-model-intro">{t.intro}</p>}
-    <div className="existing-model-row">
+    <div className="existing-model-sec">
       <span className="existing-model-label">{t.files}</span>
-      <div className="existing-model-pick">
-        <button type="button" disabled={disabled} data-testid="existing-model-folder" onClick={() => void pick('folder')}><FolderOpen size={15}/>{t.chooseFolder}</button>
-        <button type="button" disabled={disabled} data-testid="existing-model-file" onClick={() => void pick('file')}><FileSearch size={15}/>{t.chooseFile}</button>
-        {path && <button type="button" className="existing-model-icon" aria-label={t.rescan} title={t.rescan} disabled={disabled || scan.isFetching} onClick={() => void scan.refetch()}><RefreshCw size={14} className={scan.isFetching ? 'spin' : ''}/></button>}
+      <div className="existing-model-source">
+        <div className={`existing-model-pathbox${path ? '' : ' is-empty'}`}>
+          <FolderOpen size={15} aria-hidden="true"/>
+          <code className="existing-model-path" title={path || undefined} data-testid="existing-model-path">{path || t.noPath}</code>
+          {path && <button type="button" className="existing-model-icon" aria-label={t.rescan} title={t.rescan} disabled={disabled || scan.isFetching} onClick={() => void scan.refetch()}><RefreshCw size={14} className={scan.isFetching ? 'spin' : ''}/></button>}
+        </div>
+        <div className="existing-model-pick">
+          <button type="button" disabled={disabled} data-testid="existing-model-folder" onClick={() => void pick('folder')}>{t.chooseFolder}</button>
+          <button type="button" disabled={disabled} data-testid="existing-model-file" onClick={() => void pick('file')}><FileSearch size={15}/>{t.chooseFile}</button>
+        </div>
       </div>
-      <code className="existing-model-path" title={path || undefined} data-testid="existing-model-path">{path || t.noPath}</code>
     </div>
     {!desktop ? <p className="existing-model-note">{t.needDesktop}</p> : path && (scan.isPending ? <p className="existing-model-note" role="status">{t.scanning}</p>
       : scan.isError ? <p role="alert" className="existing-model-error">{core.normalizeError(scan.error).message}</p>
       : scan.data && <>
         {scan.data.problems.map(problem => <p key={problem} role="alert" className="existing-model-error">{problem}</p>)}
-        {!groups.length ? <p className="existing-model-note" data-testid="existing-model-empty">{t.noGgufs}</p> : <fieldset className="existing-model-groups" disabled={disabled} data-testid="existing-model-groups">
-          <legend>{t.quantLegend}</legend>
-          {choices.map(choice => <div key={choice.model} className="existing-model-group">
-            <div className="existing-model-group-head"><HardDrive size={16}/><strong>{choice.model}</strong><small>{t.variants(choice.variants.length)}</small></div>
-            {choice.variants.map(item => <label key={item.id} className={`existing-model-variant is-${status(item)}${item.id === selectedId ? ' is-selected' : ''}`} data-testid={`existing-model-variant-${item.quant ?? item.id}`}>
-              <Radio name="existing-model-variant" value={item.id} checked={item.id === selectedId} onChange={() => { setSelectedId(item.id); setError(''); setNotice(''); }}/>
-              <span className="existing-model-quant"><code>{item.quant ?? '—'}</code><small>{t.kind[item.kind]}</small></span>
-              <span className="existing-model-size">{gb(item.totalBytes, language)} GB · {t.shards(item.shards.length)}</span>
-              <span className={`existing-model-badge is-${status(item)}`}>{statusLabel(item)}</span>
-            </label>)}
-          </div>)}
+        {!groups.length ? <p className="existing-model-note" data-testid="existing-model-empty">{t.noGgufs}</p> : <fieldset className="existing-model-sec existing-model-groups" disabled={disabled} data-testid="existing-model-groups">
+          <legend className="existing-model-label">{t.quantLegend}</legend>
+          <div className="existing-model-list">
+            {choices.map(choice => <div key={choice.model} className="existing-model-group" role="group" aria-label={choice.model}>
+              <div className="existing-model-group-head"><strong>{choice.model}</strong><small>{t.variants(choice.variants.length)}</small></div>
+              {choice.variants.map(item => <label key={item.id} className={`existing-model-variant is-${status(item)}${item.id === selectedId ? ' is-selected' : ''}`} data-testid={`existing-model-variant-${item.quant ?? item.id}`}>
+                <Radio name="existing-model-variant" value={item.id} checked={item.id === selectedId} onChange={() => { setSelectedId(item.id); setError(''); setNotice(''); }}/>
+                <span className="existing-model-quant"><code>{item.quant ?? '—'}</code>{item.kind !== 'official' && <small>{t.kind[item.kind]}</small>}</span>
+                <span className="existing-model-meta">
+                  <span className="existing-model-size">{gb(item.totalBytes, language)} GB · {t.shards(item.shards.length)}</span>
+                  <span className={`existing-model-status is-${status(item)}`}>{statusLabel(item)}</span>
+                </span>
+              </label>)}
+            </div>)}
+          </div>
         </fieldset>}
-        {group && <div className="existing-model-detail" data-testid="existing-model-detail" aria-live="polite">
+        {group && (group.problems.length > 0 || group.warnings.length > 0 || group.shards.some(shard => shard.state !== 'ok')) && <div className="existing-model-detail" data-testid="existing-model-detail" aria-live="polite">
           {group.problems.length > 0 && <ul className="existing-model-problems" role="alert">{group.problems.map(problem => <li key={problem}><X size={13}/>{problem}</li>)}</ul>}
           {group.warnings.length > 0 && <ul className="existing-model-warnings" data-testid="existing-model-warnings">{group.warnings.map(warning => <li key={warning}><TriangleAlert size={13}/>{warning}</li>)}</ul>}
           {group.shards.some(shard => shard.state !== 'ok') && <ul className="existing-model-shards">{group.shards.map(shard => <li key={shard.name} className={`is-${shard.state === 'ok' ? 'ok' : 'bad'}`}><code>{shard.name}</code><span>{t.shardState[shard.state]}</span></li>)}</ul>}
         </div>}
       </>)}
     {group && action !== 'blocked' && <>
-      <div className="existing-model-row is-mtp">
-        <span className="existing-model-label">{t.mtpTitle}</span>
-        <div className="existing-model-pick">
-          <button type="button" disabled={disabled} data-testid="existing-model-mtp" onClick={() => void pick('mtp')}><FolderOpen size={15}/>{t.mtpChoose}</button>
-          {mtpPath && <button type="button" className="existing-model-link" disabled={disabled} onClick={() => setMtpPath('')}>{t.mtpClear}</button>}
-        </div>
-        <code className="existing-model-path" title={mtpPath || undefined}>{mtpPath || t.mtpNone}</code>
-        <small className="existing-model-hint">{t.mtpHint}</small>
-        {mtpPath && (mtp.isFetching ? <small className="existing-model-hint">{t.mtpChecking}</small> : mtpProblem ? <p role="alert" className="existing-model-error" data-testid="existing-model-mtp-problem">{mtpProblem}</p> : mtp.data?.rtDirectory && <small className="existing-model-ok" data-testid="existing-model-mtp-ok">{t.mtpFound(gb(mtp.data.expertsBytes, language))} · {orca ? t.mtpOrcaMap : mtp.data.dataDirectory ? t.mtpSetupMap(mtp.data.dataDirectory) : ''}</small>)}
-      </div>
-      <div className="existing-model-row">
+      <div className="existing-model-sec">
         <span className="existing-model-label">{t.context}</span>
-        {orca ? <span className="existing-model-hint">{t.orcaContext}</span> : <Dropdown ariaLabel={t.context} value={String(context)} onValueChange={value => setContext(Number(value))} options={CONTEXTS.map(value => ({ value: String(value), label: core.formatContextTokens(value, language) }))}/>}
+        {orca ? <span className="existing-model-hint">{t.orcaContext}</span> : <div className="existing-model-context"><Dropdown ariaLabel={t.context} value={String(context)} onValueChange={value => setContext(Number(value))} options={CONTEXTS.map(value => ({ value: String(value), label: core.formatContextTokens(value, language) }))}/></div>}
+        <small className="existing-model-hint">{t.vision}</small>
       </div>
-      <p className="existing-model-hint">{t.vision}</p>
-      {!runtime?.installDir ? <p className="existing-model-note" role="alert" data-testid="existing-model-need-runtime">{t.needRuntime}</p> : <div className="existing-model-checks" data-testid="existing-model-checks">
-        <h4>{t.checks}</h4>
+      <details className="existing-model-more" open={mtpOpen} onToggle={event => setMtpOpen(event.currentTarget.open)}>
+        <summary data-testid="existing-model-mtp-toggle"><ChevronRight size={14} className="existing-model-chev" aria-hidden="true"/><span>{t.mtpTitle}</span><small className={mtpProblem ? 'is-bad' : ''}>{mtpState}</small></summary>
+        <div className="existing-model-more-body">
+          <small className="existing-model-hint">{t.mtpHint}</small>
+          <div className="existing-model-source">
+            <div className={`existing-model-pathbox${mtpPath ? '' : ' is-empty'}`}>
+              <FolderOpen size={15} aria-hidden="true"/>
+              <code className="existing-model-path" title={mtpPath || undefined}>{mtpPath || t.mtpNone}</code>
+              {mtpPath && <button type="button" className="existing-model-link" disabled={disabled} onClick={() => setMtpPath('')}>{t.mtpClear}</button>}
+            </div>
+            <div className="existing-model-pick"><button type="button" disabled={disabled} data-testid="existing-model-mtp" onClick={() => void pick('mtp')}>{t.mtpChoose}</button></div>
+          </div>
+          {mtpPath && !mtp.isFetching && (mtpProblem ? <p role="alert" className="existing-model-error" data-testid="existing-model-mtp-problem">{mtpProblem}</p> : mtp.data?.rtDirectory && <p className="existing-model-ok" data-testid="existing-model-mtp-ok" title={orca ? t.mtpOrcaMap : mtp.data.dataDirectory ? t.mtpSetupMap(mtp.data.dataDirectory) : undefined}><span className="existing-model-dot" aria-hidden="true"/><span>{t.mtpFound(gb(mtp.data.expertsBytes, language))}{orca ? <small className="existing-model-hint">{t.mtpOrcaMap}</small> : mtp.data.dataDirectory ? <small className="existing-model-hint">{t.mtpMapped}</small> : null}</span></p>)}
+        </div>
+      </details>
+      {!runtime?.installDir ? <p className="existing-model-note" role="alert" data-testid="existing-model-need-runtime">{t.needRuntime}</p> : <div className="existing-model-sec existing-model-checks" data-testid="existing-model-checks">
+        <span className="existing-model-label">{t.checks}</span>
         {engineBlocked && <p role="alert" className="existing-model-error">{t.engine(engineGate!.minEngine ?? '', runtimeVersion ?? '—')}</p>}
         {checkPending ? <p className="existing-model-note">{t.checking}</p> : checkError ? <p role="alert" className="existing-model-error">{core.normalizeError(checkError).message}</p> : diskReport && <dl>
           <div className={`is-${diskReport.status === 'ready' ? 'ok' : 'bad'}`}><dt>{t.disk}</dt><dd><span>{diskReport.status === 'ready' ? ((diskReport.additionalBytesEstimate ?? 0) > 0 ? t.diskNeed(gb(diskReport.additionalBytesEstimate ?? 0, language)) : t.diskReady) : diskReport.status === 'insufficient' ? t.diskLow : t.diskUnknown}</span><code title={diskReport.dataDirectory}>{diskReport.dataDirectory}</code></dd></div>
         </dl>}
         {checkProblems.length > 0 && <ul className="existing-model-problems" role="alert" data-testid="existing-model-check-problems">{checkProblems.map(problem => <li key={problem}><X size={13}/>{problem}</li>)}</ul>}
       </div>}
-      {command && <div className="existing-model-command"><span className="existing-model-label">{t.command}</span><code data-testid="existing-model-command">{command}</code><small className="existing-model-hint">{t.commandHint}</small></div>}
+      {command && <details className="existing-model-more">
+        <summary data-testid="existing-model-command-toggle"><ChevronRight size={14} className="existing-model-chev" aria-hidden="true"/><span>{t.command}</span></summary>
+        <div className="existing-model-more-body existing-model-command"><code data-testid="existing-model-command">{command}</code><small className="existing-model-hint">{t.commandHint}</small></div>
+      </details>}
     </>}
     <footer className="existing-model-submit">
       <button type="button" className="primary" data-testid="existing-model-start" disabled={disabled || !runtime?.installDir || !ready || (orca && !onOrcaImport)} onClick={() => void start()}>{submitting ? t.starting : t.start}</button>
       <small>{group && !group.installable ? t.chooseVariant : orca ? t.orcaFootnote : t.footnote}</small>
     </footer>
     {error && <p role="alert" className="existing-model-error" data-testid="existing-model-error">{error}</p>}
-    {notice && <p role="status" className="existing-model-ok">{notice}</p>}
+    {notice && <p role="status" className="existing-model-ok" data-testid="existing-model-notice">{notice}</p>}
   </section>;
 }
