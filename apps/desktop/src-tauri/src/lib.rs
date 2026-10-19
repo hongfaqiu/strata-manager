@@ -722,6 +722,7 @@ async fn run_orca_import(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 async fn run_setup(
     state: State<'_, ClientState>,
     profile: ServiceProfile,

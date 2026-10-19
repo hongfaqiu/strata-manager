@@ -16,7 +16,7 @@ test('#75: the wizard model step offers 使用已有模型 next to downloading',
   assert.match(guide, /<ExistingModelPanel compact /);
   assert.match(guide, /onSetup=\{request => props\.onPrepareModel\(request\)\}/, 'same setup task as downloading, with localModel');
   assert.match(strings, /obSourceExisting: \["使用已有模型", "Use an existing model"/);
-  assert.match(app, /onChooseDirectory=\{\(\) => choose\(true\)\} onChooseFile=\{\(\) => choose\(false\)\}\n/);
+  assert.match(app, /onChooseDirectory=\{\(\) => choose\(true\)\} onChooseFile=\{\(\) => choose\(false\)\}\r?\n/);
 });
 
 test('#75: the Models page has the same flow after the wizard, with a visible shortcut', () => {
@@ -37,7 +37,7 @@ test('#75: localModel reaches run_setup and the disk preflight; scans are read-o
   assert.match(app, /core\.runSetup\(recipe\.profile, recipe\.model, recipe\.quant, recipe\.context, recipe\.images, recipe\.options, recipe\.localModel\)/);
   assert.match(panel, /core\.setupDiskPreflight\(setup\.profile, setup\.model, setup\.quant, false, setup\.localModel\)/, 'revalidated right before submitting');
   assert.match(tauri, /"localModel":local_model/);
-  assert.match(tauri, /scan_local_models,\n\s+check_mtp_path,/);
+  assert.match(tauri, /scan_local_models,\s+check_mtp_path,/);
 });
 
 test('#75: validation and MTP mapping are explained in Chinese and English', () => {
