@@ -122,14 +122,18 @@ pub fn start(
     }
     #[cfg(not(all(windows, target_arch = "x86_64")))]
     {
-        start_fallback_with_archive(state, archives.strata_archive_path)
+        start_fallback_with_archives(
+            state,
+            archives.strata_archive_path,
+            archives.engine_archive_path,
+        )
     }
 }
 
 /// Fixed-source preparation remains available for unsupported package platforms
 /// and explicit fallback workflows. Windows normally installs the latest Release.
 pub fn start_fallback(state: Arc<RuntimeState>) -> Result<TaskStatus, String> {
-    start_fallback_with_archive(state, None)
+    start_fallback_with_archives(state, None, None)
 }
 
 /// `local_source` replaces the fixed source download with the user's copy of the
@@ -137,6 +141,15 @@ pub fn start_fallback(state: Arc<RuntimeState>) -> Result<TaskStatus, String> {
 pub fn start_fallback_with_archive(
     state: Arc<RuntimeState>,
     local_source: Option<String>,
+) -> Result<TaskStatus, String> {
+    start_fallback_with_archives(state, local_source, None)
+}
+
+/// Like [`start_fallback_with_archive`], with an optional local Metal engine `.tar.gz` on Mac.
+pub fn start_fallback_with_archives(
+    state: Arc<RuntimeState>,
+    local_source: Option<String>,
+    local_engine: Option<String>,
 ) -> Result<TaskStatus, String> {
     let _operation = state.runtime_operations.lock().map_err(|e| e.to_string())?;
     crate::runtime_upgrade::assert_available(&state)?;
@@ -198,7 +211,7 @@ pub fn start_fallback_with_archive(
     }
     drop(_operation);
     tokio::spawn(async move {
-        let outcome = prepare_with_archive(&state, &id, &runtime, local_source.as_deref()).await;
+        let outcome = prepare_with_archives(&state, &id, &runtime, local_source.as_deref(), local_engine.as_deref()).await;
         if let Ok(mut tasks) = state.tasks.lock() {
             if let Some(record) = tasks.get_mut(&id) {
                 record.process.take();
@@ -1321,7 +1334,7 @@ pub(crate) async fn prepare(
     id: &str,
     root: &Path,
 ) -> Result<PreparedRuntime, String> {
-    prepare_with_archive(state, id, root, None).await
+    prepare_with_archives(state, id, root, None, None).await
 }
 
 pub(crate) async fn prepare_with_archive(
@@ -1329,6 +1342,16 @@ pub(crate) async fn prepare_with_archive(
     id: &str,
     root: &Path,
     local_source: Option<&str>,
+) -> Result<PreparedRuntime, String> {
+    prepare_with_archives(state, id, root, local_source, None).await
+}
+
+pub(crate) async fn prepare_with_archives(
+    state: &RuntimeState,
+    id: &str,
+    root: &Path,
+    local_source: Option<&str>,
+    local_engine: Option<&str>,
 ) -> Result<PreparedRuntime, String> {
     let mut owner = claim(state, root, SOURCE_REVISION)?;
     if owner.ready {
@@ -1348,6 +1371,7 @@ pub(crate) async fn prepare_with_archive(
             id,
             "已验证现有受管运行时；没有重新下载模型或替换用户文件",
         )?;
+        ensure_metal_engine(state, id, root, local_engine).await?;
         return Ok(result);
     }
     let python = ensure_python(state, id).await?;
@@ -1430,11 +1454,143 @@ pub(crate) async fn prepare_with_archive(
             managed: true,
         },
     };
+    ensure_metal_engine(state, id, root, local_engine).await?;
     owner.ready = true;
     owner.result = Some(result.clone());
     save_claim(&owner)?;
     Ok(result)
 }
+
+/// On macOS aarch64, download (or import) the pinned Metal engine package into `engine/`.
+/// No-op on other platforms. Skips when a matching Metal `BUILD.json` is already present
+/// or when `build-metal/strata` from an upstream source build already exists.
+async fn ensure_metal_engine(
+    state: &RuntimeState,
+    id: &str,
+    root: &Path,
+    local_engine: Option<&str>,
+) -> Result<(), String> {
+    if !crate::macos_metal::metal_engine_supported(std::env::consts::OS, std::env::consts::ARCH) {
+        if local_engine.is_some() {
+            return Err(
+                "仅 Apple Silicon Mac 可使用官方 Metal 引擎包 / Only Apple Silicon Macs use the official Metal engine package"
+                    .into(),
+            );
+        }
+        return Ok(());
+    }
+    cancelled(state, id)?;
+    if let Some(existing) = crate::macos_metal::resolve_metal_engine_binary(root) {
+        let build = existing
+            .parent()
+            .map(|parent| parent.join("BUILD.json"))
+            .filter(|path| path.is_file());
+        if let Some(build) = build {
+            if let Ok(value) =
+                serde_json::from_slice::<serde_json::Value>(&fs::read(build).unwrap_or_default())
+            {
+                if value["backend"].as_str() == Some("metal") {
+                    progress(
+                        state,
+                        id,
+                        format!("已检测到 Metal 引擎 {}；跳过重复安装", existing.display()),
+                    )?;
+                    return Ok(());
+                }
+            }
+        } else if existing
+            .components()
+            .any(|c| c.as_os_str() == crate::macos_metal::METAL_BUILD_DIR)
+        {
+            progress(
+                state,
+                id,
+                format!(
+                    "已检测到源码构建的 Metal 引擎 {}；跳过预制包安装",
+                    existing.display()
+                ),
+            )?;
+            return Ok(());
+        }
+    }
+    let engine_dir = root.join(crate::macos_metal::METAL_ENGINE_DIR);
+    let archive = match local_engine {
+        Some(path) => {
+            progress(state, id, format!("正在校验本地 Metal 引擎包 {}", path))?;
+            crate::macos_metal::verify_metal_engine_file(Path::new(path))?;
+            local_archive::import_verified(
+                state,
+                id,
+                Path::new(path),
+                crate::macos_metal::METAL_ENGINE_SHA256,
+                crate::macos_metal::METAL_ENGINE_SIZE
+                    .saturating_mul(2)
+                    .max(8 * 1024 * 1024),
+                local_archive::ENGINE,
+            )?
+        }
+        None => {
+            progress(
+                state,
+                id,
+                format!(
+                    "正在下载官方 Metal 引擎 {}（{} 字节）并校验 SHA256",
+                    crate::macos_metal::METAL_ENGINE_ASSET_NAME,
+                    crate::macos_metal::METAL_ENGINE_SIZE
+                ),
+            )?;
+            download_release(
+                state,
+                id,
+                &crate::macos_metal::metal_engine_download_url(),
+                crate::macos_metal::METAL_ENGINE_SHA256,
+                crate::macos_metal::METAL_ENGINE_SIZE
+                    .saturating_mul(2)
+                    .max(8 * 1024 * 1024),
+            )
+            .await?
+        }
+    };
+    crate::macos_metal::verify_metal_engine_file(&archive)?;
+    progress(state, id, "官方 Metal 引擎 SHA256 通过；正在解包到 engine/")?;
+    if engine_dir.exists() {
+        if engine_dir.join("BUILD.json").is_file() || engine_dir.join("strata").is_file() {
+            for entry in fs::read_dir(&engine_dir).map_err(|e| e.to_string())? {
+                let entry = entry.map_err(|e| e.to_string())?;
+                let path = entry.path();
+                if path.is_dir() {
+                    fs::remove_dir_all(&path).map_err(|e| e.to_string())?;
+                } else {
+                    fs::remove_file(&path).map_err(|e| e.to_string())?;
+                }
+            }
+        } else if fs::read_dir(&engine_dir)
+            .map_err(|e| e.to_string())?
+            .next()
+            .is_some()
+        {
+            return Err(
+                "engine/ 目录已有非 Metal 内容，拒绝覆盖；请改用空目录或已有 build-metal / The engine/ directory already has non-Metal contents; use an empty directory or an existing build-metal"
+                    .into(),
+            );
+        }
+    }
+    crate::macos_metal::extract_metal_engine_archive(&archive, &engine_dir, || {
+        cancelled(state, id)
+    })?;
+    crate::macos_metal::write_metal_install_marker(&engine_dir)?;
+    progress(
+        state,
+        id,
+        format!(
+            "Metal 引擎 {} 已安装到 {}",
+            crate::macos_metal::METAL_ENGINE_VERSION,
+            engine_dir.display()
+        ),
+    )?;
+    Ok(())
+}
+
 
 #[cfg(test)]
 mod tests {

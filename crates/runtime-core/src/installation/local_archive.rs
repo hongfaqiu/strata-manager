@@ -21,7 +21,7 @@ pub struct LocalRuntimeArchives {
     /// The Strata source ZIP (the official revision archive).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strata_archive_path: Option<String>,
-    /// The official engine ZIP from the Release (Windows only).
+    /// The official engine archive from the Release (Windows `.zip`, Mac Metal `.tar.gz`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engine_archive_path: Option<String>,
 }
@@ -47,17 +47,32 @@ fn normalized(value: Option<String>) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+fn has_archive_extension(path: &Path, extensions: &[&str]) -> bool {
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    extensions.iter().any(|ext| name.ends_with(ext))
+}
+
 /// Checks a user-selected path before any task is admitted.
 pub fn check_path(path: &str, label: Label) -> Result<(), String> {
+    check_path_with_extensions(path, label, &[".zip"])
+}
+
+/// Same as [`check_path`], but allows the listed extensions (for example `.tar.gz` on Mac).
+pub fn check_path_with_extensions(
+    path: &str,
+    label: Label,
+    extensions: &[&str],
+) -> Result<(), String> {
     let Label { zh, en } = label;
     let candidate = Path::new(path);
-    if !candidate.is_absolute()
-        || !candidate
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("zip"))
-    {
+    let joined = extensions.join(" / ");
+    if !candidate.is_absolute() || !has_archive_extension(candidate, extensions) {
         return Err(format!(
-            "{zh}必须是绝对路径的 .zip 文件 / The {en} must be an absolute path to a .zip file"
+            "{zh}必须是绝对路径的 {joined} 文件 / The {en} must be an absolute path to a {joined} file"
         ));
     }
     let metadata = fs::metadata(candidate)
@@ -75,18 +90,29 @@ impl LocalRuntimeArchives {
 
     /// Normalizes empty strings away and validates the platform and each file.
     pub fn validate(self) -> Result<Self, String> {
+        self.validate_for(std::env::consts::OS, std::env::consts::ARCH)
+    }
+
+    /// Platform-parameter form used by tests and Mac Metal installs.
+    pub fn validate_for(self, os: &str, arch: &str) -> Result<Self, String> {
         let archives = Self {
             strata_archive_path: normalized(self.strata_archive_path),
             engine_archive_path: normalized(self.engine_archive_path),
         };
-        if archives.engine_archive_path.is_some() && !cfg!(all(windows, target_arch = "x86_64")) {
-            return Err("此平台不使用引擎 ZIP：引擎由 Strata 安装脚本在准备模型时安装 / This platform does not use an engine ZIP; Strata's setup installs the engine while preparing the model".into());
+        let windows_engine = os == "windows" && arch == "x86_64";
+        let metal_engine = crate::macos_metal::metal_engine_supported(os, arch);
+        if archives.engine_archive_path.is_some() && !windows_engine && !metal_engine {
+            return Err("此平台不使用引擎安装包：引擎由 Strata 安装脚本在准备模型时安装 / This platform does not use an engine package; Strata's setup installs the engine while preparing the model".into());
         }
         if let Some(path) = &archives.strata_archive_path {
             check_path(path, STRATA)?;
         }
         if let Some(path) = &archives.engine_archive_path {
-            check_path(path, ENGINE)?;
+            if metal_engine {
+                check_path_with_extensions(path, ENGINE, &[".tar.gz", ".tgz"])?;
+            } else {
+                check_path(path, ENGINE)?;
+            }
         }
         Ok(archives)
     }

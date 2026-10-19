@@ -17,6 +17,7 @@ pub mod installation;
 pub mod launcher_env;
 pub mod legacy;
 pub mod local_model;
+pub mod macos_metal;
 pub mod maintenance;
 pub mod manager_mcp;
 pub mod manager_mcp_stdio;
