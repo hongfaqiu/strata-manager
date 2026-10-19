@@ -1,5 +1,5 @@
 [workspace]
-members = ["apps/desktop/src-tauri", "apps/supervisor", "crates/runtime-core", "crates/local-ipc", "crates/update-verifier"]
+members = ["apps/desktop/src-tauri", "apps/supervisor", "apps/server", "crates/runtime-core", "crates/local-ipc", "crates/update-verifier"]
 resolver = "2"
 
 [workspace.package]

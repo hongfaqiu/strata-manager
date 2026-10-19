@@ -5,6 +5,14 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **无头 Server 实验版（#6 P0/P1）**：新增 `strata-manager-server`（axum），默认 `127.0.0.1:8787`，首次运行生成 Bearer 令牌；`POST /api/v1/rpc` 对接 `RuntimeState::dispatch`，可托管同一套 Web 前端。浏览器侧增加 server 传输与令牌门禁；文件选择改为服务器路径输入；隐藏托盘、悬浮监控与桌面自动更新器。附 systemd unit、`scripts/package-server.sh` 与 `docs/SERVER.md`。（未改 `.github/workflows`，所需 CI 改动见 PR 说明。）
+
+### English
+
+- **Headless Server experiment (#6 P0/P1)**: adds `strata-manager-server` (axum), default bind `127.0.0.1:8787`, first-run Bearer token; `POST /api/v1/rpc` maps onto `RuntimeState::dispatch` and can serve the existing Web UI. Browser gains a server transport and token gate; file picks become server path inputs; tray, floating monitor and desktop updater are hidden. Includes systemd unit, `scripts/package-server.sh` and `docs/SERVER.md`. (`.github/workflows` unchanged — see PR for suggested CI jobs.)
+
 ## [0.2.6] - 2026-10-19
 
 ### 中文
