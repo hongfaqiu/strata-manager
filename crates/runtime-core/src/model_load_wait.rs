@@ -104,7 +104,8 @@ where
             }
             Some(false) => {
                 // The API can be briefly unresponsive while weights are mapped.
-                if health().await.is_ok_and(|value| loaded(&value)) {
+                let ready = health().await.is_ok_and(|value| loaded(&value));
+                if ready {
                     return Ok(());
                 }
             }
