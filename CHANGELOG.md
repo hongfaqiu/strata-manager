@@ -5,6 +5,8 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-10-19
+
 ### 中文
 
 - **通过「模型 - 添加目录」加入的 Strata 能正常启动（#78）**：启动、依赖检测、一键修复、向导和 MCP 自检统一使用同一个解释器选择规则，和目录自己的 run-*.bat 一致（启动脚本指定的 Python、目录内 `.venv`、嵌入式 Python），并带上脚本设置的 PATH / PYTHONPATH，清掉系统的 PYTHONHOME；目录有自带环境时绝不改用系统 Python。配置里的引擎 exe 不存在时，扫描和启动前就会提示，不再等到加载模型时才报 WinError 2。加载失败不再只显示 `error sending request for url (.../load)`，而是按进程状态和引擎日志分成「引擎在加载模型时崩溃」「Python 环境不对」和仍在加载三种情况，原始错误保留在启动日志和诊断依据里；Windows 中文系统下的报错也不再乱码。
