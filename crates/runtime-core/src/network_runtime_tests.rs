@@ -76,6 +76,8 @@ Server((a.host,a.port),Handler).serve_forever()
     let second_port = next_reserve.local_addr().unwrap().port();
     drop(reserve);
     let config_path = runtime.join("config.json");
+    // The #78 preflight requires the configured engine to exist.
+    fs::write(runtime.join("fixture.exe"), b"").unwrap();
     let first_config = json!({"exe":"fixture.exe","args":[],"host":"127.0.0.1","port":first_port});
     fs::write(&config_path, serde_json::to_vec(&first_config).unwrap()).unwrap();
     let profile = ServiceProfile {

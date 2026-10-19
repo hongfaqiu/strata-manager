@@ -4162,6 +4162,8 @@ ThreadingHTTPServer((a.host,a.port),Handler).serve_forever()
         assert!(prepare_owned_restart(&profile, &processes, &tasks, &owned_listeners).is_err());
         alive();
         fs::write(&path, b"{\"exe\":\"strata.exe\",\"args\":[]}").unwrap();
+        // The #78 preflight requires the configured engine to exist.
+        fs::write(temp.path().join("strata.exe"), b"").unwrap();
         profile.python_path = temp
             .path()
             .join("missing-python.exe")

@@ -120,10 +120,13 @@ fn inside(path: &Path, root: &Path) -> bool {
 /// taken against the Strata folder.
 fn launcher_path(root: &Path, raw: &str) -> PathBuf {
     let mut text = raw.trim().to_string();
-    let root_text = root.to_string_lossy().to_string();
     for token in ["%~dp0", "%~DP0", "$(dirname \"$0\")", "$(dirname $0)"] {
         if let Some(rest) = text.strip_prefix(token) {
-            text = format!("{root_text}/{}", rest.trim_start_matches(['\\', '/']));
+            // Join piece by piece so the result uses this platform's
+            // separator throughout (no `C:\\Strata/.venv` mixes).
+            let mut path = root.to_path_buf();
+            path.extend(rest.split(['\\', '/']).filter(|part| !part.is_empty()));
+            return path;
         }
     }
     if !cfg!(windows) {
