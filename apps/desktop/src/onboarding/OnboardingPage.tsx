@@ -301,8 +301,8 @@ function RuntimeStep(props: StepProps & { runtimeTask?: TaskStatus; runtimeFact:
 
 // ---- Model -------------------------------------------------------------------------------
 const existingIntro = (language: core.AppLanguage) => core.legacyLanguage(language) === 'zh-CN'
-  ? '已经有 GGUF 模型文件？选择它们所在的文件夹，确认量化版本后由官方安装器原地使用（等同 START-HERE.bat --gguf-dir），不再下载模型权重。'
-  : 'Already have GGUF model files? Choose their folder and the quantization; the official installer uses them in place (like START-HERE.bat --gguf-dir) without downloading the weights again.';
+  ? '选择已下载的 GGUF 文件夹，确认量化版本后原地使用，不再重复下载。'
+  : 'Choose a folder of downloaded GGUF files, confirm the quantization, and use them in place without downloading again.';
 function ModelStep(props: StepProps & { runtimeProfile?: ServiceProfile }) {
   const { t, progress, environment, memoryGB, runtimeProfile } = props;
   const scene: Scene = progress?.scene ?? 'chat';
