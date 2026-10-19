@@ -16,7 +16,7 @@ The README, website screenshots and user guide describe the current source. Inst
 | Linux x64 | [AppImage / DEB](https://strata-manager.cosfoc.com/en/#get-started) | Built in Ubuntu 22.04 CI; system installation and GPU scope below. |
 | macOS Apple Silicon | [DMG](https://strata-manager.cosfoc.com/en/#get-started) | **Experimental.** The current published stable release may not list this file yet; download only when `*_aarch64.dmg` appears. See notes below. |
 
-Download `SHA256SUMS` for the same version from the [selected stable release](https://github.com/hongfaqiu/strata-manager/releases/latest) and compare your file's SHA256 with its matching filename before installing. Update signature files are for updater verification; use the `.exe`, `.AppImage` or `.deb` for initial installation, or the `.dmg` once a release actually lists it.
+Update signature files are for updater verification; use the `.exe`, `.AppImage` or `.deb` for initial installation, or the `.dmg` once a release actually lists it.
 
 Models, image input and API protocols depend on your Strata runtime. Check hardware, drivers, RAM, VRAM and disk requirements before preparing weights. Supported existing weights do not need downloading again.
 

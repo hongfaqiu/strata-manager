@@ -3,7 +3,7 @@
 const strataReleaseCatalog = (() => {
   const repo = 'hongfaqiu/strata-manager';
   const base = `https://github.com/${repo}/releases`;
-  const keys = ['windows', 'appimage', 'deb', 'checksums'];
+  const keys = ['windows', 'appimage', 'deb'];
   // DMG is optional: a published Windows/Linux release stays complete without it.
   const optionalKeys = ['dmg'];
 
@@ -63,7 +63,6 @@ const strataReleaseCatalog = (() => {
       windows: `Strata.Manager_${clean}_x64-setup.exe`,
       appimage: `Strata.Manager_${clean}_amd64.AppImage`,
       deb: `Strata.Manager_${clean}_amd64.deb`,
-      checksums: 'SHA256SUMS',
       dmg: `Strata.Manager_${clean}_aarch64.dmg`,
     };
     const result = { notes: release.html_url };
@@ -342,7 +341,7 @@ const strataReleaseCatalog = (() => {
     }
   };
 
-  // Stage tabs map to rebuilt app views; each view links to its real screenshot.
+  // Stage tabs map to rebuilt app views.
   const stageViews = {
     overview: { screen: 'overview', title: { zh: '总览', en: 'Overview' } },
     models: { screen: 'models', title: { zh: '模型', en: 'Models' } },
@@ -404,20 +403,11 @@ const strataReleaseCatalog = (() => {
   const appWindow = $('#app-window');
   const appFit = $('[data-app-fit]');
   const appTitle = $('#app-title');
-  const screenLink = $('#screen-link');
   const screenTitle = $('#screen-title');
   const screenDescription = $('#screen-description');
   const screenIndex = $('#screen-index');
   const screenPanel = $('#screen-panel');
 
-  const lightboxModal = $('#lightbox-modal');
-  const lightboxImg = $('#lightbox-img');
-  const lightboxBadge = $('#lightbox-badge');
-  const lightboxTitle = $('#lightbox-title');
-  const lightboxCloseBtn = $('#lightbox-close-btn');
-  const lightboxBackdrop = $('#lightbox-backdrop');
-  const lightboxDialog = lightboxModal?.querySelector('.lightbox-dialog');
-  const lightboxBar = lightboxModal?.querySelector('.lightbox-bar');
   const mobileMenuBtn = $('#mobile-menu-btn');
   const primaryNav = $('#primary-nav');
   const themeButton = $('#theme-switch');
@@ -481,10 +471,6 @@ const strataReleaseCatalog = (() => {
     if (screenIndex) screenIndex.textContent = item.index;
     if (screenTitle) screenTitle.textContent = text.title;
     if (screenDescription) screenDescription.textContent = text.description;
-    if (screenLink) {
-      screenLink.href = new URL(`assets/screenshots/${item.image || view.screen}.${currentLang}.webp`, siteRoot).href;
-      screenLink.dataset.target = view.screen;
-    }
     screenPanel?.setAttribute('aria-labelledby', `tab-${key}`);
     wsTabs.forEach(tab => {
       const selected = tab.dataset.screen === key;
@@ -628,12 +614,12 @@ const strataReleaseCatalog = (() => {
     if (first && first.nodeType === Node.TEXT_NODE) first.nodeValue = value;
     else element.insertBefore(document.createTextNode(value), first);
   });
-  const spark = Array.from({ length: 24 }, (_, i) => 33 - i * 0.12 + Math.sin(i * 0.9) * 0.6);
-  let tps = 32, load = 40, power = 210, vram = 21, genTokens = 140, clock = 14 * 3600 + 34 * 60 + 31, requestTotal = 128, tick = 0;
+  const spark = Array.from({ length: 24 }, (_, i) => 104 - i * 0.2 + Math.sin(i * 0.9) * 2.4);
+  let tps = 104.6, load = 86, power = 265, vram = 21, genTokens = 140, clock = 14 * 3600 + 34 * 60 + 31, requestTotal = 128, tick = 0;
   const overviewSpark = $('.app-view[data-view="overview"] .m-spark');
   function drawSpark() {
     if (!overviewSpark) return;
-    const min = 0, max = 38;
+    const min = 0, max = 124;
     const points = spark.map((value, i) => `${(i / (spark.length - 1) * 300).toFixed(1)} ${(58 - (value - min) / (max - min) * 52).toFixed(1)}`);
     overviewSpark.querySelector('.line').setAttribute('d', `M${points.join(' L')}`);
     overviewSpark.querySelector('.area').setAttribute('d', `M${points.join(' L')} L300 60 L0 60 Z`);
@@ -643,7 +629,8 @@ const strataReleaseCatalog = (() => {
     setLive('tps', tps > 0.05 ? String(Math.round(tps)) : '—');
     ['tps1', 'tps2'].forEach(name => setLive(name, shown));
     setLive('pill-tps', `${shown} tok/s`);
-    setLive('chat-tps', `${shown} tok/s`);
+    // The chat timing line keeps the finished request's speed instead of decaying with the service.
+    if (svc === 'generating') setLive('chat-tps', `${shown} tok/s`);
     ['load', 'load2', 'load3'].forEach(name => setLive(name, String(load)));
     ['power', 'power2', 'power3'].forEach(name => setLive(name, String(power)));
     setLive('vram', String(Math.round(vram)));
@@ -674,7 +661,7 @@ const strataReleaseCatalog = (() => {
   }
   const requests = $('[data-requests]');
   const time = seconds => [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60].map(n => String(n).padStart(2, '0')).join(':');
-  function pushRequest(speed = Math.max(tps, 29.5)) {
+  function pushRequest(speed = Math.max(tps, 98 + Math.random() * 6)) {
     if (!requests) return;
     clock += 20;
     requestTotal += 1;
@@ -688,14 +675,15 @@ const strataReleaseCatalog = (() => {
   function telemetryTick() {
     tick += 1;
     const generating = svc === 'generating';
-    const target = generating ? 31 + Math.random() * 2.8 : 0;
-    tps += (target - tps) * (generating ? 0.38 : 0.55);
+    // RTX 4080 SUPER example: decode settles around 100–110 tok/s.
+    const target = generating ? 101 + Math.random() * 8 : 0;
+    tps += (target - tps) * (generating ? 0.6 : 0.55);
     if (!generating && tps < 0.6) tps = 0;
-    const targetLoad = { stopped: 0, loading: 24, idle: 3, generating: 40 }[svc];
+    const targetLoad = { stopped: 0, loading: 24, idle: 3, generating: 86 }[svc];
     load = Math.max(0, Math.round(load + (targetLoad + (Math.random() - 0.5) * (generating ? 8 : 2) - load) * 0.5));
-    const targetPower = { stopped: 18, loading: 120, idle: 34, generating: 210 }[svc];
+    const targetPower = { stopped: 18, loading: 120, idle: 34, generating: 265 }[svc];
     power = Math.max(0, Math.round(power + (targetPower + (Math.random() - 0.5) * 10 - power) * 0.5));
-    if (generating) genTokens = genTokens >= 512 ? 0 : genTokens + Math.round(tps * 0.7);
+    if (generating) genTokens = genTokens >= 512 ? 0 : genTokens + Math.round(tps * 0.6);
     spark.push(tps); spark.shift();
     paintTelemetry();
     // When the visitor is driving, keep requests trickling in on their own.
@@ -785,10 +773,11 @@ const strataReleaseCatalog = (() => {
       element.removeAttribute('data-pending');
       element.classList.add('is-typing');
       const chars = Array.from(fullText(element));
-      const step = currentLang === 'en' ? 3 : 2;
+      // Paced near ~100 tok/s (about 100 Chinese or 250 English characters per second) while staying readable.
+      const step = currentLang === 'en' ? 5 : 2;
       for (let i = 0; i < chars.length; i += step) {
         element.textContent = chars.slice(0, i + step).join('');
-        await runner.wait(element.tagName === 'CODE' ? 14 : 32, g);
+        await runner.wait(element.tagName === 'CODE' ? 14 : 20, g);
       }
       element.classList.remove('is-typing');
       await runner.wait(130, g);
@@ -1025,7 +1014,7 @@ const strataReleaseCatalog = (() => {
     const samples = [];
     const setPhase = phase => { boostDemo.dataset.phase = phase; };
     const drawBoost = () => {
-      const points = samples.map((value, i) => `${(i / 59 * 300).toFixed(1)} ${(44 - (value - 18) / 18 * 40).toFixed(1)}`);
+      const points = samples.map((value, i) => `${(i / 59 * 300).toFixed(1)} ${(44 - (value - 84) / 28 * 40).toFixed(1)}`);
       sparkPath?.setAttribute('d', points.length ? `M${points.join(' L')}` : 'M0 30');
     };
     const clockText = progress => {
@@ -1048,8 +1037,8 @@ const strataReleaseCatalog = (() => {
           steps[index].classList.add('is-run');
           stepLabel.textContent = copy[currentLang].boostStep.replace('{i}', index + 1).replace('{n}', steps.length);
           for (let k = 0; k < 12; k += 1) {
-            const base = index < 2 ? 27.4 : (k % 2 ? 31.6 : 27.6);
-            samples.push(base + (Math.random() - 0.5) * 1.6);
+            const base = index < 2 ? 92.4 : (k % 2 ? 104.8 : 92.8);
+            samples.push(base + (Math.random() - 0.5) * 4);
             if (samples.length > 60) samples.shift();
             drawBoost();
             timeLabel.textContent = clockText((index * 12 + k) / (steps.length * 12));
@@ -1072,10 +1061,10 @@ const strataReleaseCatalog = (() => {
   const monitorDemo = $('[data-monitor-demo]');
   let monitorRunner = null;
   if (monitorDemo) {
-    const scales = { gen: 40, pre: 2600, gpu: 100, vram: 32, cpu: 100, ram: 96 };
-    const values = { gen: 32, pre: 0, gpu: 40, vram: 21, cpu: 12, ram: 62 };
+    const scales = { gen: 130, pre: 4000, gpu: 100, vram: 32, cpu: 100, ram: 96 };
+    const values = { gen: 104, pre: 0, gpu: 86, vram: 21, cpu: 12, ram: 62 };
     const history = Object.fromEntries(Object.keys(scales).map(key => [key, Array.from({ length: 40 }, (_, i) => {
-      const preset = { gen: 30 + Math.sin(i * 0.7) * 2, pre: i % 13 === 3 ? 1900 : 0, gpu: 38 + Math.sin(i) * 4, vram: 21, cpu: 11 + Math.sin(i * 1.3) * 2, ram: 62 }[key];
+      const preset = { gen: 102 + Math.sin(i * 0.7) * 4, pre: i % 13 === 3 ? 3200 : 0, gpu: 84 + Math.sin(i) * 4, vram: 21, cpu: 11 + Math.sin(i * 1.3) * 2, ram: 62 }[key];
       return Math.max(0, preset);
     })]));
     const format = { gen: v => v > 0.4 ? v.toFixed(0) : '0', pre: v => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v.toFixed(0), gpu: v => v.toFixed(0), vram: v => v.toFixed(1), cpu: v => v.toFixed(0), ram: v => v.toFixed(1) };
@@ -1109,12 +1098,12 @@ const strataReleaseCatalog = (() => {
         for (let i = 0; i < 8; i += 1) { ease('gen', 0, 0.6); ease('pre', 0, 0.7); ease('gpu', 3, 0.5, 2); ease('cpu', 6, 0.5, 2); sample(); await w(200); }
         setState(true);
         const [client, shape] = clients[clientIndex++ % clients.length];
-        for (let i = 0; i < 5; i += 1) { ease('pre', 2100, 0.7, 300); ease('gpu', 92, 0.6, 4); ease('cpu', 24, 0.5, 4); sample(); await w(200); }
+        for (let i = 0; i < 5; i += 1) { ease('pre', 3200, 0.7, 260); ease('gpu', 97, 0.6, 3); ease('cpu', 24, 0.5, 4); sample(); await w(200); }
         values.pre = 0;
         let tokens = 0;
         while (tokens < 384) {
-          ease('gen', 32, 0.45, 2.6); ease('gpu', 41, 0.5, 6); ease('cpu', 12, 0.5, 3); ease('pre', 0, 0.8);
-          tokens = Math.min(384, tokens + values.gen * 0.4);
+          ease('gen', 105, 0.45, 7); ease('gpu', 86, 0.5, 6); ease('cpu', 12, 0.5, 3); ease('pre', 0, 0.8);
+          tokens = Math.min(384, tokens + values.gen * 0.2); // 200 ms per sample
           reqText.textContent = `${Math.round(tokens)} tokens`;
           reqBar.style.width = `${tokens / 3.84}%`;
           sample(); await w(200);
@@ -1242,7 +1231,6 @@ const strataReleaseCatalog = (() => {
     setSvc(svc);
     fitDemo?.refreshLanguage?.();
     updateDemoToggle();
-    if (lightboxModal?.classList.contains('active')) openLightbox(lightboxModal.dataset.screen);
     updateThemeButton();
   }
 
@@ -1255,65 +1243,6 @@ const strataReleaseCatalog = (() => {
       languageButton.href = destination.href;
     });
   }
-
-  // ---------- Lightbox for real screenshots ----------
-  let lightboxOpener = null;
-  const backgroundSections = [$('.site-header'), $('main'), $('.site-footer')];
-  function fitLightboxImage() {
-    if (!lightboxModal?.classList.contains('active') || !lightboxDialog || !lightboxBar) return;
-    const modalStyle = getComputedStyle(lightboxModal);
-    const dialogStyle = getComputedStyle(lightboxDialog);
-    const availableHeight = lightboxModal.clientHeight
-      - parseFloat(modalStyle.paddingTop) - parseFloat(modalStyle.paddingBottom)
-      - parseFloat(dialogStyle.borderTopWidth) - parseFloat(dialogStyle.borderBottomWidth)
-      - lightboxBar.getBoundingClientRect().height;
-    lightboxDialog.style.setProperty('--lightbox-image-height', `${Math.max(1, availableHeight)}px`);
-  }
-  if (lightboxModal && lightboxBar && typeof ResizeObserver !== 'undefined') {
-    const observer = new ResizeObserver(fitLightboxImage);
-    observer.observe(lightboxModal); observer.observe(lightboxBar);
-  }
-  window.addEventListener('resize', fitLightboxImage);
-
-  function openLightbox(screenKey) {
-    if (!lightboxModal) return;
-    const key = screens[screenKey] ? screenKey : 'overview';
-    const item = screens[key];
-    const text = item[currentLang];
-    lightboxImg.src = new URL(`assets/screenshots/${item.image || key}.${currentLang}.webp`, siteRoot).href;
-    lightboxImg.alt = text.alt;
-    lightboxImg.width = item.width || 2880;
-    lightboxImg.height = text.height || item.height || 1920;
-    lightboxBadge.textContent = `${item.index} / ${text.badge}`;
-    lightboxTitle.textContent = text.title;
-    if (!lightboxModal.classList.contains('active')) lightboxOpener = document.activeElement;
-    lightboxModal.classList.add('active');
-    lightboxModal.dataset.screen = key;
-    lightboxModal.setAttribute('aria-hidden', 'false');
-    fitLightboxImage();
-    document.body.style.overflow = 'hidden';
-    backgroundSections.forEach(section => { if (section) section.inert = true; });
-    lightboxCloseBtn?.focus();
-  }
-  function closeLightbox() {
-    lightboxModal.classList.remove('active');
-    lightboxModal.setAttribute('aria-hidden', 'true');
-    document.body.style.overflow = '';
-    backgroundSections.forEach(section => { if (section) section.inert = false; });
-    lightboxOpener?.focus({ preventScroll: true });
-  }
-  $$('.open-lightbox-btn').forEach(button => button.addEventListener('click', event => {
-    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    event.preventDefault();
-    openLightbox(button.dataset.target || stageViews[activeView].screen);
-  }));
-  lightboxCloseBtn?.addEventListener('click', closeLightbox);
-  lightboxBackdrop?.addEventListener('click', closeLightbox);
-  window.addEventListener('keydown', event => {
-    if (!lightboxModal?.classList.contains('active')) return;
-    if (event.key === 'Escape') closeLightbox();
-    if (event.key === 'Tab') { event.preventDefault(); lightboxCloseBtn?.focus(); }
-  });
 
   // ---------- Header, menu, theme ----------
   if (mobileMenuBtn && primaryNav) {
@@ -1353,7 +1282,7 @@ const strataReleaseCatalog = (() => {
         : releaseState.snapshot
           ? (english ? 'Published release.' : '已发布版本。')
           : (english ? 'Latest published release.' : '最新已发布版本。');
-      const labels = { windows: 'Windows', appimage: 'AppImage', deb: 'DEB', checksums: 'SHA256SUMS', dmg: 'DMG' };
+      const labels = { windows: 'Windows', appimage: 'AppImage', deb: 'DEB', dmg: 'DMG' };
       const missing = releaseState.missing.map(key => labels[key]).join(' / ');
       status.textContent = `${channel}${missing ? (english ? ` Unavailable assets: ${missing}. Those downloads are disabled.` : ` 缺少 ${missing} 资产，对应下载已禁用。`) : ''}`;
     }
@@ -1362,6 +1291,8 @@ const strataReleaseCatalog = (() => {
   function applyRelease(release, source = 'live') {
     const urls = strataReleaseCatalog.assets(release);
     activeReleaseTag = release?.tag_name || (currentLang === 'en' ? 'Unavailable' : '暂无可用发布');
+    // The demo window shows the published version; the build already wrote package.json's version as a fallback.
+    if (release?.tag_name) $$('[data-app-version]').forEach(el => { el.textContent = release.tag_name; });
     releaseState = release ? { kind: 'ready', preview: release.prerelease, snapshot: source === 'snapshot', missing: strataReleaseCatalog.keys.filter(key => !urls[key]) } : { kind: 'unavailable' };
     document.querySelectorAll('.release-version').forEach(el => { el.textContent = activeReleaseTag; });
     const elements = Object.fromEntries([...strataReleaseCatalog.keys, ...strataReleaseCatalog.optionalKeys].map(key => [key, document.querySelector(`[data-download="${key}"]`)]));
@@ -1397,15 +1328,24 @@ const strataReleaseCatalog = (() => {
       } catch (_) { return null; }
       finally { clearTimeout(timeout); }
     })();
+    // The verified snapshot covers first paint; refresh from GitHub only when it is missing
+    // or the visitor approaches the download section, so most visits skip the API entirely.
+    const snapshotRelease = await snapshotPromise;
+    const section = $('#get-started');
+    if (snapshotRelease && section && 'IntersectionObserver' in window) {
+      await new Promise(resolve => {
+        const observer = new IntersectionObserver(entries => {
+          if (entries.some(entry => entry.isIntersecting)) { observer.disconnect(); resolve(); }
+        }, { rootMargin: '400px 0px' });
+        observer.observe(section);
+      });
+    }
     try {
       const prefix = `https://api.github.com/repos/${strataReleaseCatalog.repo}/releases`;
-      const results = await Promise.allSettled([
-        metadata(`${prefix}/latest`, true),
-        metadata(`${prefix}?per_page=100`, false),
-      ]);
-      const latest = results[0].status === 'fulfilled' ? results[0].value : null;
-      const list = results[1].status === 'fulfilled' ? results[1].value : null;
-      const snapshot = await snapshotPromise;
+      // The bounded list is only needed when /latest has no stable release to offer.
+      const latest = await metadata(`${prefix}/latest`, true).catch(() => null);
+      const list = latest?.status === 200 ? { status: 200, releases: [] } : await metadata(`${prefix}?per_page=100`, false).catch(() => null);
+      const snapshot = snapshotRelease;
       const live = strataReleaseCatalog.selectResponses(latest, list);
       if (live) applyRelease(live);
       else if (!snapshot) applyRelease(null);
@@ -1414,10 +1354,11 @@ const strataReleaseCatalog = (() => {
     }
   }
 
-  // ---------- Scroll motion: GSAP + ScrollTrigger when available, CSS reveal otherwise ----------
+  // ---------- Scroll motion: CSS reveals triggered by IntersectionObserver (no animation library) ----------
   function animatePage() {
     if (!motionAllowed()) return;
     document.documentElement.classList.add('motion');
+    $$('.feature-card, .gallery-item, .download-card').forEach(element => element.classList.add('reveal', 'is-soft'));
     const reveals = $$('.reveal');
     if ('IntersectionObserver' in window) {
       const observer = new IntersectionObserver(entries => entries.forEach(entry => {
@@ -1425,17 +1366,30 @@ const strataReleaseCatalog = (() => {
       }), { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
       reveals.forEach(element => observer.observe(element));
     } else reveals.forEach(element => element.classList.add('is-visible'));
-    if (!window.gsap || !window.ScrollTrigger) return;
-    const { gsap, ScrollTrigger } = window;
-    gsap.registerPlugin(ScrollTrigger);
-    // No pinning or scroll hijacking: a soft entrance and a slight lift of the stage while it scrolls in.
-    gsap.matchMedia().add('(prefers-reduced-motion: no-preference)', () => {
-      gsap.from('.hero-title-block > *', { y: 16, opacity: 0, duration: .7, stagger: .07, ease: 'power3.out' });
-      gsap.from('.stage', { y: 40, opacity: 0, duration: 1, delay: .25, ease: 'power3.out' });
-      gsap.fromTo('.stage-canvas', { '--lift': 0 }, { '--lift': 1, ease: 'none', scrollTrigger: { trigger: '.stage-canvas', start: 'top bottom', end: 'top 80px', scrub: true } });
-      gsap.utils.toArray('.feature-card, .gallery-item, .download-card').forEach(item => gsap.from(item, { y: 14, opacity: 0, duration: .5, ease: 'power2.out', scrollTrigger: { trigger: item, start: 'top 94%', once: true } }));
-    });
-    window.addEventListener('load', () => ScrollTrigger.refresh(), { once: true });
+  }
+
+  // Below-the-fold workspace demos: load their player only when the list approaches the viewport.
+  function lazyDemoTiles() {
+    const list = $('.ws-index');
+    if (!list) return;
+    const load = () => {
+      if (document.querySelector('script[data-demo-tiles]')) return;
+      // Styles and player arrive together; the tiles stay inert <template> markup until then.
+      const style = document.createElement('link');
+      style.rel = 'stylesheet';
+      style.href = new URL('demo-tiles.css', siteRoot).href;
+      document.head.append(style);
+      const script = document.createElement('script');
+      script.src = new URL('demo-tiles.js', siteRoot).href;
+      script.defer = true;
+      script.dataset.demoTiles = '';
+      document.head.append(script);
+    };
+    if (!('IntersectionObserver' in window)) { load(); return; }
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) { observer.disconnect(); load(); }
+    }, { rootMargin: '600px 0px' });
+    observer.observe(list);
   }
 
   setLanguage(pageLanguage);
@@ -1443,5 +1397,6 @@ const strataReleaseCatalog = (() => {
   runners.forEach(runner => runner.init());
   updateDemoToggle();
   animatePage();
+  lazyDemoTiles();
   fetchLatestRelease();
 })();

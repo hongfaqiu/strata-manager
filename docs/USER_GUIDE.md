@@ -216,7 +216,7 @@ HTTP 请求、模型推理轮次和工具调用分别计数。一次 MCP 请求�
 
 自动检查默认开启，在打开应用及每 12 小时检查新版本。发现更新后，左上角版本入口显示更新标签；点击版本入口可进入独立的应用更新页，查看更新日志并确认下载和安装。当前版本的中英文日志随应用打包，可离线查看。也可以关闭自动检查，手动检查更新。失败时保留当前版本并提供重试；安装前检查后台是否空闲。正式应用更新使用内置公钥验证 Tauri 签名，下载有进度显示；应用、Strata 运行环境和模型权重分别管理，更新应用无需重新下载模型。
 
-通过[最新发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)或[官网下载区](https://strata-manager.cosfoc.com/#get-started)选择 Windows 安装包、AppImage 或 DEB，并核对同一发布页的 `SHA256SUMS`。应用通过 `latest` 更新通道提供更新。
+通过[最新发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)或[官网下载区](https://strata-manager.cosfoc.com/#get-started)选择 Windows 安装包、AppImage 或 DEB。应用通过 `latest` 更新通道提供更新。
 
 版本、安装包和当前支持范围见[下载与体验](DOWNLOAD.md)。Tauri 更新签名与 Windows 发布者代码签名不同，本项目目前没有 Windows Authenticode 发布者证书；请按下载说明处理系统的安装提示。
 

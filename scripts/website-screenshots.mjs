@@ -20,8 +20,11 @@ async function directoryRoot(path) {
   return realpath(path);
 }
 
-/** Copy only WebP assets, preserving relative paths and rejecting filesystem links. */
-export async function copyWebsiteScreenshots(source, destination) {
+/**
+ * Copy only WebP assets, preserving relative paths and rejecting filesystem links.
+ * `include` optionally limits publication to these relative paths (the whole tree is still validated).
+ */
+export async function copyWebsiteScreenshots(source, destination, { include } = {}) {
   const sourcePath = resolve(source);
   const sourceRoot = await directoryRoot(sourcePath);
   const files = [];
@@ -35,6 +38,13 @@ export async function copyWebsiteScreenshots(source, destination) {
   }
   // Validate the whole source tree, including ignored entries, before copying.
   await visit(sourcePath);
+  if (include) {
+    const wanted = new Set(include);
+    const kept = files.filter(file => wanted.has(relative(sourcePath, file).split(sep).join('/')));
+    const missing = [...wanted].filter(name => !kept.some(file => relative(sourcePath, file).split(sep).join('/') === name));
+    if (missing.length) throw new Error(`Missing published screenshot: ${missing.join(', ')}`);
+    files.splice(0, files.length, ...kept);
+  }
 
   const destinationPath = resolve(destination);
   const existing = await lstat(destinationPath).catch(error => {

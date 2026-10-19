@@ -34,7 +34,7 @@ Strata Manager 是面向 Strata 本地推理的桌面工作台，集中管理运
 - Benchmark 支持七类场景、固定并发和逐级升压，分别记录延迟、生成速度、缓存与资源趋势，并提供 JSON / CSV 报告。
 - 已发布稳定包面向 Windows/Linux x64；macOS Apple Silicon DMG 为实验包（未公证，不含 Metal 引擎）。正式发行、GPU、Linux/Mac 实机和跨版本更新的证据分别记录，不把界面截图或夹具当作实际模型验收。
 
-公开安装包：[最新稳定版发布页](https://github.com/hongfaqiu/strata-manager/releases/latest) · [官网平台下载](https://strata-manager.cosfoc.com/#get-started)。仅下载发布页实际列出的文件，并核对同版本的 SHA256SUMS。[下载说明](DOWNLOAD.md)列出安装步骤和当前支持范围。稳定版使用 `latest` 通道，预览版采用手工安装且不替换该通道。
+公开安装包：[最新稳定版发布页](https://github.com/hongfaqiu/strata-manager/releases/latest) · [官网平台下载](https://strata-manager.cosfoc.com/#get-started)。仅下载发布页实际列出的文件。[下载说明](DOWNLOAD.md)列出安装步骤和当前支持范围。稳定版使用 `latest` 通道，预览版采用手工安装且不替换该通道。
 
 ## 许可与来源
 

@@ -53,15 +53,17 @@ test('stable endpoint prevents falling back merely because the bounded list cont
 test('downloads use exact versioned assets actually returned by this repository', () => {
   const value = catalog.assets(release('v0.1.0'));
   assert.equal(value.windows, `${base}/download/v0.1.0/Strata.Manager_0.1.0_x64-setup.exe`);
-  assert.equal(value.checksums, `${base}/download/v0.1.0/SHA256SUMS`);
-  assert.equal(Object.keys(value).length, 5);
+  // The website no longer offers the SHA256SUMS file, even when a release still lists it.
+  assert.equal(value.checksums, undefined);
+  assert.ok(!Object.values(value).some(url => url.endsWith('/SHA256SUMS')));
+  assert.equal(Object.keys(value).length, 4);
 });
 
 test('missing assets have no guessed URL and a partial release remains visibly incomplete', () => {
   const complete = release('v0.1.0');
   const value = catalog.assets({ ...complete, assets: [complete.assets[0]] });
   assert.equal(value.windows, complete.assets[0].browser_download_url);
-  for (const key of ['appimage', 'deb', 'checksums']) assert.equal(value[key], undefined);
+  for (const key of ['appimage', 'deb']) assert.equal(value[key], undefined);
   assert.equal(Object.keys(catalog.assets({ ...complete, assets: [] })).length, 1);
 });
 
@@ -108,7 +110,7 @@ test('missing downloads remove stale hrefs and leave keyboard and accessibility 
 test('initial HTML disables every asset download until metadata is verified', () => {
   const html = readFileSync(new URL('../website/index.html', import.meta.url), 'utf8');
   const anchors = [...html.matchAll(/<a\b[^>]*data-download="([^"]+)"[^>]*>/g)];
-  assert.equal(anchors.length, 5);
+  assert.equal(anchors.length, 4);
   for (const [tag] of anchors) {
     assert.doesNotMatch(tag, /\bhref=/);
     assert.match(tag, /aria-disabled="true"/);

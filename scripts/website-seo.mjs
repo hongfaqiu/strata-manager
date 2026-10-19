@@ -1,3 +1,4 @@
+import { injectDemoTiles } from './website-demo-tiles.mjs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -150,9 +151,10 @@ export function documentSeo({ title, description, page, lang, alternates }) {
   <script type="application/ld+json">${JSON.stringify(structured).replaceAll('<', '\\u003c')}</script>`;
 }
 
-export function renderHomepage(source, language, googleVerificationToken) {
+export function renderHomepage(source, language, googleVerificationToken, appVersion) {
   if (language !== 'zh' && language !== 'en') throw new Error(`Unknown website language: ${language}`);
-  const root = parseWebsiteHtml(source);
+  if (appVersion !== undefined && !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(appVersion)) throw new Error(`Invalid app version: ${appVersion}`);
+  const root = parseWebsiteHtml(injectDemoTiles(source, { appVersion }));
   const nodes = elements(root);
   const html = nodes.find((node) => node.tag === 'html');
   const head = nodes.find((node) => node.tag === 'head');
@@ -164,6 +166,10 @@ export function renderHomepage(source, language, googleVerificationToken) {
     head.children.push(element('meta', { name: 'google-site-verification', content: googleVerificationToken }));
   }
   html.attributes.set('lang', languageCode(language));
+  if (appVersion !== undefined) {
+    // Demo windows show the version being built so the mockup cannot drift behind releases.
+    for (const node of nodes.filter((item) => item.attributes.has('data-app-version'))) text(node, `v${appVersion}`);
+  }
   for (const node of nodes) {
     if (node.attributes.has('data-en')) {
       if (!node.attributes.has('data-zh')) node.attributes.set('data-zh', textOf(node));
@@ -258,7 +264,7 @@ ${pages.map((entry) => {
 `;
 }
 
-export async function renderWebsiteSeo(output, documents) {
+export async function renderWebsiteSeo(output, documents, { appVersion } = {}) {
   const source = await readFile(join(output, 'index.html'), 'utf8');
   const verificationConfig = await readFile(join(output, 'google-site-verification.json'), 'utf8').catch((error) => {
     if (error.code !== 'ENOENT') throw error;
@@ -270,8 +276,8 @@ export async function renderWebsiteSeo(output, documents) {
     if (verification.urlPrefix !== site || typeof verification.verificationToken !== 'string' || !verification.verificationToken) throw new Error('Google site verification configuration does not match this website.');
     googleVerificationToken = verification.verificationToken;
   }
-  await writeFile(join(output, 'index.html'), renderHomepage(source, 'zh', googleVerificationToken));
+  await writeFile(join(output, 'index.html'), renderHomepage(source, 'zh', googleVerificationToken, appVersion));
   await mkdir(join(output, 'en'), { recursive: true });
-  await writeFile(join(output, 'en', 'index.html'), renderHomepage(source, 'en', googleVerificationToken));
+  await writeFile(join(output, 'en', 'index.html'), renderHomepage(source, 'en', googleVerificationToken, appVersion));
   await writeFile(join(output, 'sitemap.xml'), renderSitemap(documents));
 }

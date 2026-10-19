@@ -1,4 +1,4 @@
-import { cp, mkdir, rm, lstat } from 'node:fs/promises';
+import { cp, mkdir, rm, lstat, readFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { documents, renderWebsiteDocs, verifyStaticWebsite } from './render-website-docs.mjs';
@@ -23,10 +23,12 @@ await mkdir(output, { recursive: true });
 await cp(source, output, { recursive: true });
 await mkdir(join(output, 'assets', 'screenshots'), { recursive: true });
 await cp(join(root, 'assets', 'icon.svg'), join(output, 'assets', 'icon.svg'));
-await copyWebsiteScreenshots(join(root, 'docs', 'screenshots'), join(output, 'assets', 'screenshots'));
+// Pages show HTML recreations instead of screenshots; only the social-preview (OG) images are published.
+await copyWebsiteScreenshots(join(root, 'docs', 'screenshots'), join(output, 'assets', 'screenshots'), { include: ['product-cover.zh.webp', 'product-cover.en.webp'] });
 const documentCount = await renderWebsiteDocs(output);
 const leaderboard = await renderLeaderboardPages(output);
-await renderWebsiteSeo(output, documents);
+const { version: appVersion } = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
+await renderWebsiteSeo(output, documents, { appVersion });
 const releaseSnapshot = await publishWebsiteReleaseSnapshot(output);
 const checked = await verifyStaticWebsite(output);
 console.log(`Static website ready: ${output} (${documentCount} documents; ${checked.localTargets} local links/assets verified)`);
