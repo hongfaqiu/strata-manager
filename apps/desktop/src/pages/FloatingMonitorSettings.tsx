@@ -4,12 +4,11 @@ import { ArrowDown, ArrowUp, Check, ChevronDown, LoaderCircle, RotateCcw } from 
 
 import {
   FLOATING_MONITOR_DEFAULTS, FLOATING_MONITOR_METRICS, FLOATING_MONITOR_PALETTES, FLOATING_MONITOR_PRESETS,
-  floatingMonitorDimensions, normalizeFloatingMonitorPreferences, normalizeMetrics, TRAY_ICON_DISPLAYS,
-  type FloatingMonitorLayout, type FloatingMonitorMetric, type FloatingMonitorPreferences, type TrayIconDisplay,
+  floatingMonitorDimensions, normalizeFloatingMonitorPreferences, normalizeMetrics,
+  type FloatingMonitorLayout, type FloatingMonitorMetric, type FloatingMonitorPreferences,
 } from '@strata-manager/core';
 import { Panel } from '../components';
-import { AppLogo } from '../AppLogo';
-import { Checkbox, Segmented, Slider, Toggle } from '../OfficialControls';
+import { Checkbox, Slider, Toggle } from '../OfficialControls';
 import { FloatingMonitorContent } from '../FloatingMonitorContent';
 import type { MonitorPoint } from '../floatingMonitorHistory';
 import './floating-monitor-settings.css';
@@ -39,32 +38,6 @@ const exampleHistory: MonitorPoint[] = [0.66, 0.78, 0.73, 0.87, 0.93, 0.84, 1.04
     temperature: 62 * (0.9 + 0.1 * factor), power: 184 * factor, running: 1, queued: 0, cache: null,
   },
 }));
-
-/** Labels for the main tray icon choices (#71), in TRAY_ICON_DISPLAYS order. */
-export const TRAY_ICON_DISPLAY_COPY: Record<TrayIconDisplay, { 'zh-CN': string; en: string }> = {
-  none: { 'zh-CN': '无', en: 'None' },
-  status: { 'zh-CN': '状态色', en: 'Status color' },
-  generation: { 'zh-CN': '生成速度', en: 'Generation speed' },
-  vram: { 'zh-CN': '显存占用', en: 'VRAM usage' },
-  gpu: { 'zh-CN': 'GPU 负载', en: 'GPU load' },
-};
-
-/** Example reading per choice; mirrors the native renderer (tray_live.rs). */
-const trayIconExample: Record<TrayIconDisplay, { tone?: 'ready' | 'generating'; digits?: string }> = {
-  none: {},
-  status: { tone: 'ready' },
-  generation: { tone: 'generating', digits: '49' },
-  vram: { tone: 'generating', digits: '83' },
-  gpu: { tone: 'generating', digits: '76' },
-};
-
-function TrayIconPreview({ display }: { display: TrayIconDisplay }) {
-  const example = trayIconExample[display];
-  return <span className="tray-icon-preview" data-display={display} data-tone={example.tone} aria-hidden="true">
-    <AppLogo size={32}/>
-    {example.tone && (example.digits ? <span className="tray-icon-preview-band">{example.digits}</span> : <span className="tray-icon-preview-dot"/>)}
-  </span>;
-}
 
 export function FloatingMonitorSettings({ preferences, desktop, language, onChange, onOpen, onVisibilityChange, modeStatus }: Props) {
   const zh = language === 'zh-CN';
@@ -248,21 +221,6 @@ export function FloatingMonitorSettings({ preferences, desktop, language, onChan
         <Toggle ariaLabel={option.title} tooltip={option.hint} checked={value[option.key]} disabled={!desktop} onCheckedChange={checked => update({ [option.key]: checked })}/>
       </div>)}
     </div>
-
-    <section className="floating-monitor-settings-tray" aria-labelledby={`${id}-tray`}>
-      <div className="floating-monitor-settings-tray-copy">
-        <h3 id={`${id}-tray`}>{zh ? '在托盘图标显示' : 'Show on the tray icon'}</h3>
-        <p>{zh ? '不打开浮条也能看到状态，窗口隐藏到托盘时照常更新。悬停托盘图标可查看完整读数。' : 'See the state without the strip; it keeps updating while hidden to the tray. Hover the icon for full readings.'}</p>
-      </div>
-      <div className="floating-monitor-settings-tray-control">
-        <TrayIconPreview display={value.trayIconDisplay}/>
-        <Segmented ariaLabel={zh ? '在托盘图标显示' : 'Show on the tray icon'} value={value.trayIconDisplay} onValueChange={next => update({ trayIconDisplay: next as TrayIconDisplay })}
-          options={TRAY_ICON_DISPLAYS.map(option => ({ value: option, label: TRAY_ICON_DISPLAY_COPY[option][zh ? 'zh-CN' : 'en'], disabled: !desktop }))}/>
-      </div>
-      <p className="floating-monitor-settings-tray-sample">{value.trayIconDisplay === 'none'
-        ? (zh ? '托盘使用普通应用图标。' : 'The tray uses the plain app icon.')
-        : <>{zh ? '悬停提示示例：' : 'Tooltip example: '}<span>Strata Manager · Qwen3-30B-A3B · 48.6 tok/s · {zh ? '显存' : 'VRAM'} 19.8/24 GB · GPU 76%</span></>}</p>
-    </section>
 
     <details className="floating-monitor-settings-more">
       <summary>{zh ? '更多设置' : 'More settings'}<ChevronDown size={14} aria-hidden="true"/></summary>

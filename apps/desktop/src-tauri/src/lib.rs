@@ -18,7 +18,6 @@ mod startup;
 mod supervisor_client;
 mod system_locale;
 mod taskbar_monitor;
-mod tray_live;
 mod vision_files;
 mod window_layout;
 
@@ -306,11 +305,8 @@ async fn refresh_tray(app: &tauri::AppHandle) -> Result<(), String> {
         .tray_stop
         .set_enabled(can_stop)
         .map_err(|error| error.to_string())?;
-    // With live readings on (#71) the live loop owns the tooltip.
-    if !tray_live::owns_tooltip(app) {
-        if let Some(tray) = app.tray_by_id(tray_live::MAIN_TRAY) {
-            let _ = tray.set_tooltip(Some(format!("Strata Manager · {message}")));
-        }
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        let _ = tray.set_tooltip(Some(format!("Strata Manager · {message}")));
     }
     Ok(())
 }
@@ -1573,7 +1569,6 @@ async fn apply_settings(
     let english =
         system_locale::uses_english_fallback(settings.get("language").and_then(Value::as_str));
     monitor_tray::apply(&app, &settings)?;
-    tray_live::apply(&app, &settings);
     taskbar_monitor::apply_preferences(&app, &settings)?;
     floating_monitor::apply_preferences(&app, &settings).await?;
     state.tray_english.store(english, Ordering::Relaxed);
@@ -1822,14 +1817,13 @@ pub fn run() {
                 tray_stop_quit: stop_quit.clone(),
             });
             app.manage(monitor_tray::MonitorTrayState::default());
-            app.manage(tray_live::TrayLiveState::default());
             app.manage(taskbar_monitor::TaskbarMonitorState::default());
             monitor_tray::apply(app.handle(), &saved_settings)?;
             let menu = Menu::with_items(
                 app,
                 &[&service_state, &show, &start, &stop, &quit, &stop_quit],
             )?;
-            TrayIconBuilder::with_id(tray_live::MAIN_TRAY)
+            TrayIconBuilder::with_id("main-tray")
                 .icon(app.default_window_icon().ok_or("应用图标缺失")?.clone())
                 .tooltip("Strata Manager")
                 .menu(&menu)
@@ -1874,7 +1868,6 @@ pub fn run() {
                     _ => {}
                 })
                 .build(app)?;
-            tray_live::start(app.handle(), &saved_settings);
             let handle = app.handle().clone();
             let update_handle = handle.clone();
             tauri::async_runtime::spawn(async move {

@@ -5,14 +5,6 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
-### 中文
-
-- **托盘图标显示实时读数（#71）**：「设置 → 监控浮条」新增「在托盘图标显示：无 / 状态色 / 生成速度 / 显存占用 / GPU 负载」，默认「状态色」。主托盘图标右下角的小圆点按服务状态变色（灰 = 停止，蓝 = 启动或加载中，绿 = 就绪，橙 = 生成中，红 = 异常）；选择数值时图标底部显示内置点阵数字（tok/s、显存 % 或 GPU %），不依赖系统字体。悬停提示更新为「模型名 · 21.3 tok/s · 显存 38.4/44 GB · GPU 50%」，macOS 菜单栏图标旁另显示短文本。读数复用浮动监控的只读快照，每 1–2 秒采样一次，图标不变时不重绘；窗口隐藏到托盘时照常更新。选「无」恢复普通应用图标。
-
-### English
-
-- **Live readings on the tray icon (#71)**: Settings → Monitor strip adds "Show on the tray icon: None / Status color / Generation speed / VRAM usage / GPU load", defaulting to Status color. A small dot on the main tray icon follows the service state (gray = stopped, blue = starting or loading, green = ready, orange = generating, red = error); numeric choices draw built-in pixel digits (tok/s, VRAM % or GPU %) along the bottom of the icon without relying on system fonts. The tooltip now reads "model · 21.3 tok/s · VRAM 38.4/44 GB · GPU 50%", and macOS also shows short text next to the menu-bar icon. Readings reuse the floating monitor's read-only snapshot, sampled every 1–2 seconds, and the icon is only redrawn when it changes; it keeps updating while the window is hidden to the tray. Choose None to keep the plain app icon.
-
 ## [0.2.6] - 2026-10-19
 
 ### 中文

@@ -90,8 +90,6 @@ export type FloatingMonitorAction = 'main' | 'chat' | 'monitoring' | 'usage' | '
 export type FloatingMonitorMetric = 'generation' | 'prefill' | 'gpu' | 'vram' | 'cpu' | 'ram' | 'temperature' | 'power' | 'running' | 'queued' | 'cache';
 export type FloatingMonitorLayout = 'compact' | 'twoRow' | 'panel';
 export type FloatingMonitorMode = 'floating' | 'taskbar';
-/** What the main tray icon shows (#71); `status` only tints the icon. */
-export type TrayIconDisplay = 'none' | 'status' | 'generation' | 'vram' | 'gpu';
 
 export interface FloatingMonitorPreferences {
   actions: FloatingMonitorAction[];
@@ -110,8 +108,6 @@ export interface FloatingMonitorPreferences {
   /** Missing entries follow the light/dark default palette. */
   metricColors?: Partial<Record<FloatingMonitorMetric, string>>;
   mode?: FloatingMonitorMode;
-  /** Optional on settings saved before #71; defaults to `status`. */
-  trayIconDisplay?: TrayIconDisplay;
 }
 
 export interface ResolvedFloatingMonitorPreferences extends FloatingMonitorPreferences {
@@ -125,7 +121,6 @@ export interface ResolvedFloatingMonitorPreferences extends FloatingMonitorPrefe
   snapToEdge: boolean;
   metricColors: Partial<Record<FloatingMonitorMetric, string>>;
   mode: FloatingMonitorMode;
-  trayIconDisplay: TrayIconDisplay;
 }
 
 export interface AppSettings {
