@@ -21,6 +21,7 @@ pub mod manager_mcp_stdio;
 pub mod mcp_probe;
 pub mod mcp_stdio;
 pub mod model_inspect;
+mod model_load_wait;
 pub mod network;
 pub mod observer;
 pub mod orca_import;
@@ -1980,33 +1981,49 @@ impl RuntimeState {
                         "info",
                         "启动阶段：本机 API 已就绪，正在加载模型；以下显示引擎实际输出",
                     );
-                    let result = http::strata_request(
-                        &self,
-                        profile.clone(),
-                        "/load".into(),
-                        "POST".into(),
-                        Some(json!({})),
+                    // A cold load can outlast the /load request timeout while the engine
+                    // is still working; only a real exit or rejection fails the start.
+                    model_load_wait::wait_for_model_load(
+                        http::strata_request(
+                            &self,
+                            profile.clone(),
+                            "/load".into(),
+                            "POST".into(),
+                            Some(json!({})),
+                        ),
+                        || {
+                            let request = http::request_builder(
+                                &self.client,
+                                &profile,
+                                "/health",
+                                "GET",
+                                None,
+                            );
+                            async move {
+                                request?
+                                    .timeout(Duration::from_secs(5))
+                                    .send()
+                                    .await
+                                    .map_err(|e| format!("HTTP 请求失败: {e}"))?
+                                    .error_for_status()
+                                    .map_err(|e| format!("HTTP 请求失败: {e}"))?
+                                    .json::<Value>()
+                                    .await
+                                    .map_err(|e| e.to_string())
+                            }
+                        },
+                        || {
+                            let mut processes = self.processes.lock().map_err(|e| e.to_string())?;
+                            let status = processes
+                                .get_mut(&profile.id)
+                                .ok_or("后台启动记录丢失")?
+                                .refresh()?;
+                            Ok((!status.running).then_some(status.exit_code))
+                        },
+                        |line| processes::log(&self.logs, &profile.id, "info", &line),
+                        model_load_wait::LoadWait::STARTUP,
                     )
-                    .await
-                    .map_err(|error| diagnostics::during(&error, "loading"))?;
-                    if !matches!(
-                        result.get("status").and_then(Value::as_str),
-                        Some("loaded" | "already loaded")
-                    ) {
-                        return Err(format!("模型加载未完成: {result}"));
-                    }
-                    let loaded = http::strata_request(
-                        &self,
-                        profile.clone(),
-                        "/health".into(),
-                        "GET".into(),
-                        None,
-                    )
-                    .await
-                    .map_err(|error| diagnostics::during(&error, "loading"))?;
-                    if loaded.get("loaded").and_then(Value::as_bool) != Some(true) {
-                        return Err("模型加载响应成功但健康状态未就绪".into());
-                    }
+                    .await?;
                 }
                 store_set(
                     &self,
