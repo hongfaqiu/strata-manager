@@ -9,6 +9,18 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### English
 
+## [0.2.3] - 2026-10-19
+
+### 中文
+
+- **本地 / ZIP 引擎安装报「系统找不到指定的路径」（#65）**：修复 v0.2.2 的回归——引擎解包目录已缩短为 `e`，但读取 `BUILD.json` 仍使用旧的 `engine` 目录，导致 HIP 等 ZIP 安装与更新在解包后立即报 os error 3。解包、读取与替换现统一使用同一目录。
+- **虚拟显示器被识别为显卡（#66）**：Windows 未检测到 NVIDIA 显卡时，不再把 Meta Virtual Monitor、Parsec、远程桌面、Microsoft 基本显示适配器等软件/虚拟显示设备列为 GPU。
+
+### English
+
+- **Local / ZIP engine install fails with "path not found" (#65)**: fixes a v0.2.2 regression where the engine was extracted into the shortened `e` directory but `BUILD.json` was still read from the old `engine` directory, so HIP and other ZIP installs/updates failed with os error 3 right after extraction. Extraction, reading and replacement now share one directory.
+- **Virtual displays detected as GPUs (#66)**: on Windows without an NVIDIA GPU, software/virtual display adapters such as Meta Virtual Monitor, Parsec, Remote Desktop and Microsoft Basic Display are no longer listed as GPUs.
+
 ## [0.2.2] - 2026-10-19
 
 ### 中文

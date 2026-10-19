@@ -135,22 +135,14 @@ fn hardware(state: &RuntimeState) -> Result<HardwareSnapshot, String> {
     let mut gpus = gpus;
     #[cfg(windows)]
     if gpus.is_empty() {
-        if let Some(names) = crate::output(
-            "powershell.exe",
-            &[
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                "Get-CimInstance Win32_VideoController | ForEach-Object { $_.Name }",
-            ],
-        ) {
+        if let Some(names) = crate::display_adapters::windows_gpu_names() {
             gpus = names
-                .lines()
+                .into_iter()
                 .enumerate()
                 .map(|(id, name)| GpuSnapshot {
                     id: id as u32,
                     vendor: "unknown".into(),
-                    name: name.into(),
+                    name,
                     total_bytes: None,
                     available_bytes: None,
                     source: "windows-video-controller".into(),
