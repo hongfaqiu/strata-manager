@@ -10,5 +10,11 @@ fn main() {
     {
         panic!("STRATA_ARENA_REQUIRE_KEY=1 but STRATA_ARENA_APP_KEY is missing or shorter than 32 characters");
     }
-    tauri_build::build()
+    println!("cargo:rerun-if-changed=windows-app-manifest.xml");
+    // Keep Tauri's default manifest (Common Controls v6) and declare
+    // supportedOS so the taskbar monitor can use a per-pixel-alpha child window.
+    let windows = tauri_build::WindowsAttributes::new()
+        .app_manifest(include_str!("windows-app-manifest.xml"));
+    tauri_build::try_build(tauri_build::Attributes::new().windows_attributes(windows))
+        .expect("failed to run tauri build script");
 }

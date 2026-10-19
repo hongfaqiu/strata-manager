@@ -29,6 +29,7 @@ import { WorkspaceLayout } from './layouts/WorkspaceLayout';
 import { ServiceTelemetryStatusBar } from './layouts/ServiceTelemetryStatusBar';
 import { normalizeFloatingMonitorPreferences, openFloatingMonitor, readMonitorModeStatus, setMonitorVisibility, type MonitorModeStatus, type MonitorDestination } from './floatingMonitor';
 import { FloatingMonitorSettings } from './pages/FloatingMonitorSettings';
+import { TaskbarMonitorSettings } from './pages/TaskbarMonitorSettings';
 import type { LocalSetupProgress } from './pages/LocalSetupPage';
 import { DesktopLifecycleSettings } from './pages/DesktopLifecycleSettings';
 import { useAppUpdates } from './useAppUpdates';
@@ -187,7 +188,7 @@ export function App() {
   const [streaming, setStreaming] = useState(false);
   const [benchmarkRunning, setBenchmarkRunning] = useState(false);
   const [quickBenchmarkRequest, setQuickBenchmarkRequest] = useState(0);
-  const openFloatingSettings = useRef(false);
+  const openFloatingSettings = useRef<string | null>(null);
   const subnavigationRef = useRef<HTMLElement>(null);
   const inferenceBusy = streaming || benchmarkRunning;
   const [logSearch, setLogSearch] = useState('');
@@ -444,9 +445,10 @@ export function App() {
       navigationGuard.request(() => { navigate('benchmark'); setQuickBenchmarkRequest(value => value + 1); });
       return;
     }
-    if (destination === 'settings') {
-      openFloatingSettings.current = true;
-      if (page === 'monitor-settings') { document.getElementById('settings-floating-monitor')?.scrollIntoView({ block: 'start' }); openFloatingSettings.current = false; }
+    if (destination === 'settings' || destination === 'taskbarColors') {
+      const target = destination === 'taskbarColors' ? 'settings-taskbar-colors' : 'settings-floating-monitor';
+      openFloatingSettings.current = target;
+      if (page === 'monitor-settings') { document.getElementById(target)?.scrollIntoView({ block: 'start' }); openFloatingSettings.current = null; }
       go('monitor-settings');
       return;
     }
@@ -456,14 +458,15 @@ export function App() {
     if (!tauriShell || !ready) return;
     let disposed = false, unlisten: (() => void) | undefined;
     void import('@tauri-apps/api/event').then(({ listen }) => listen<MonitorDestination>('monitor-navigate', event => {
-      if (!disposed && ['overview', 'chat', 'monitoring', 'usage', 'tasks', 'settings', 'quickBenchmark'].includes(event.payload)) monitorNavigation.current(event.payload);
+      if (!disposed && ['overview', 'chat', 'monitoring', 'usage', 'tasks', 'settings', 'taskbarColors', 'quickBenchmark'].includes(event.payload)) monitorNavigation.current(event.payload);
     })).then(stop => { if (disposed) stop(); else unlisten = stop; }).catch(error => { if (!disposed) notify(errorText(error), true); });
     return () => { disposed = true; unlisten?.(); };
   }, [tauriShell, ready]);
   useEffect(() => {
     if (page === 'monitor-settings' && openFloatingSettings.current) {
-      openFloatingSettings.current = false;
-      document.getElementById('settings-floating-monitor')?.scrollIntoView({ block: 'start' });
+      const target = openFloatingSettings.current;
+      openFloatingSettings.current = null;
+      document.getElementById(target)?.scrollIntoView({ block: 'start' });
     }
   }, [page]);
   useEffect(() => {
@@ -937,10 +940,17 @@ export function App() {
     if (Array.isArray(patch.metrics)) allowed.metrics = patch.metrics;
     if (typeof patch.showGraphs === 'boolean') allowed.showGraphs = patch.showGraphs;
     if (typeof patch.showInTray === 'boolean') allowed.showInTray = patch.showInTray;
+    // Sent by the native taskbar widget (right-click menu / close).
+    if (typeof patch.taskbarEnabled === 'boolean') allowed.taskbarEnabled = patch.taskbarEnabled;
+    if (patch.taskbar !== undefined) allowed.taskbar = core.normalizeTaskbarWidgetPreferences(patch.taskbar);
     const next = normalizeFloatingMonitorPreferences({ ...previous, ...allowed });
     if (JSON.stringify(previous) !== JSON.stringify(next)) changeSettings({ floatingMonitor: next });
   };
   const changeMonitorVisibility = async (visible: boolean) => {
+    // Showing the desktop strip replaces the taskbar widget, also on next launch.
+    if (visible && normalizeFloatingMonitorPreferences(latestSettings.current.floatingMonitor).taskbarEnabled) {
+      changeSettings({ floatingMonitor: { ...normalizeFloatingMonitorPreferences(latestSettings.current.floatingMonitor), taskbarEnabled: false } });
+    }
     await storeWriter.flush('settings');
     const preferences = normalizeFloatingMonitorPreferences(latestSettings.current.floatingMonitor);
     const status = await setMonitorVisibility(visible, 'floating', preferences, latestSettings.current.language);
@@ -948,6 +958,15 @@ export function App() {
     setMonitorModeStatus(status);
     if (status.visible === true || status.active) monitorSettingsChange.current({ mode: status.mode });
     if ((status.visible ?? status.active) !== visible) throw new Error(status.message || 'Monitor visibility could not be changed');
+  };
+  const changeTaskbarMonitor = async (enabled: boolean) => {
+    const preferences = { ...normalizeFloatingMonitorPreferences(latestSettings.current.floatingMonitor), taskbarEnabled: enabled };
+    changeSettings({ floatingMonitor: preferences });
+    await storeWriter.flush('settings');
+    const status = await setMonitorVisibility(enabled, 'taskbar', preferences, latestSettings.current.language);
+    monitorModeRevision.current++;
+    setMonitorModeStatus(status);
+    if (enabled && !(status.mode === 'taskbar' && status.active)) throw new Error(status.message || 'Taskbar monitor could not be shown');
   };
   const UpdatesPage = () => serverMode ? <><Header title={t('appUpdates')} /><Panel title={settings.language==='zh-CN'?'无头服务更新':'Server updates'}><p className="subtle">{settings.language==='zh-CN'?'无头版通过替换二进制或 deb/tarball 升级，不使用桌面自动更新器。':'The headless build is upgraded by replacing the binary or package; the desktop updater is not used.'}</p></Panel></> : <><Header title={t('appUpdates')} /><div className="settings-layout"><DesktopLifecycleSettings section="updates" currentVersion={appVersion} desktop={desktop} streaming={inferenceBusy} autoCheck={settings.autoCheckUpdates !== false} onAutoCheck={enabled => changeSettings({autoCheckUpdates:enabled})} update={appUpdates.state} onCheck={appUpdates.check} onDownload={appUpdates.download} onInstall={appUpdates.install} onError={error => notify(errorText(error),true)}/></div></>;
   const setInterfaceLanguage = (preference: core.LanguagePreference) => {
@@ -967,6 +986,7 @@ export function App() {
   </div></>;
   const MonitorSettingsPage = () => <><Header title={t('monitorSettings')} /><div className="settings-layout settings-layout--single">
     <Panel title={t('monitorRefresh')}><Field label={t('pollInterval')}><Dropdown ariaLabel={t('pollInterval')} value={String(settings.pollInterval)} onValueChange={value => changeSettings({pollInterval:Number(value)})} options={[2000,3000,5000,10000,30000].map(value => ({value:String(value),label:`${value/1000} ${t('seconds')}`}))} /></Field></Panel>
+    {!serverMode && <TaskbarMonitorSettings enabled={normalizeFloatingMonitorPreferences(settings.floatingMonitor).taskbarEnabled} widget={normalizeFloatingMonitorPreferences(settings.floatingMonitor).taskbar} desktop={desktop} language={settings.language} modeStatus={monitorModeStatus} onWidgetChange={taskbar => changeSettings({floatingMonitor:{...normalizeFloatingMonitorPreferences(settings.floatingMonitor), taskbar}})} onEnabledChange={changeTaskbarMonitor}/>}
     {!serverMode && <FloatingMonitorSettings preferences={normalizeFloatingMonitorPreferences(settings.floatingMonitor)} desktop={desktop} language={settings.language} onChange={floatingMonitor => changeSettings({floatingMonitor})} modeStatus={monitorModeStatus} onVisibilityChange={changeMonitorVisibility} onOpen={() => {void changeMonitorVisibility(true).catch(error => notify(errorText(error), true));}}/>}
   </div></>;
   const ChatDefaultsPage = () => <><Header title={t('chatDefaults')} /><div className="settings-layout">

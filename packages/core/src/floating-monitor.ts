@@ -5,7 +5,99 @@ import type {
   FloatingMonitorMetric,
   FloatingMonitorPreferences,
   ResolvedFloatingMonitorPreferences,
+  TaskbarWidgetColorItem,
+  TaskbarWidgetItem,
+  TaskbarWidgetPreferences,
+  TaskbarWidgetRing,
 } from './types';
+
+/** Canonical order; must match TaskbarWidget ITEMS in the Rust host. */
+export const TASKBAR_WIDGET_ITEMS: readonly TaskbarWidgetItem[] = ['generation', 'prefill', 'gpu', 'vram', 'temperature', 'status'];
+export const TASKBAR_WIDGET_RINGS: readonly TaskbarWidgetRing[] = ['gpu', 'vram', 'off'];
+export const TASKBAR_WIDGET_DEFAULTS: TaskbarWidgetPreferences = { ring: 'gpu', items: ['generation', 'prefill'] };
+
+/** Same order as COLOR_ITEMS in taskbar_widget.rs. */
+export const TASKBAR_WIDGET_COLOR_ITEMS: readonly TaskbarWidgetColorItem[] = ['generation', 'prefill', 'gpu', 'vram', 'temperature'];
+/** Tuned defaults of the native widget (Palette::metric); temperature is graded, shown here at <60 ℃. */
+export const TASKBAR_WIDGET_PALETTE: Record<'light' | 'dark', Record<TaskbarWidgetColorItem, string>> = {
+  dark: { generation: '#4ade80', prefill: '#60c8fa', gpu: '#fb923c', vram: '#c4a5fd', temperature: '#4ade80' },
+  light: { generation: '#15803d', prefill: '#0369a1', gpu: '#c2410c', vram: '#7e22ce', temperature: '#15803d' },
+};
+/** Typical Windows 11 taskbar backgrounds. */
+export const TASKBAR_BACKGROUNDS = { light: '#f3f3f3', dark: '#202020' } as const;
+/** Presets that keep ≥3:1 contrast on both the light and the dark taskbar. */
+export const TASKBAR_WIDGET_COLOR_PRESETS: readonly string[] = ['#059669', '#0d9488', '#0891b2', '#3b82f6', '#8b5cf6', '#db2777', '#ef4444', '#ea580c'];
+
+/** `#rgb`/`#rrggbb` in any case → lowercase `#rrggbb`; anything else → undefined (same as parse_hex_color). */
+export function normalizeHexColor(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const digits = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(value.trim())?.[1];
+  if (!digits) return undefined;
+  const hex = digits.length === 3 ? [...digits].map(c => c + c).join('') : digits;
+  return `#${hex.toLowerCase()}`;
+}
+
+function luminance(hex: string): number {
+  const channel = (offset: number) => {
+    const value = parseInt(hex.slice(offset, offset + 2), 16) / 255;
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
+}
+
+/** WCAG contrast ratio between two colours (1–21); NaN for invalid input. */
+export function colorContrast(a: string, b: string): number {
+  const x = normalizeHexColor(a), y = normalizeHexColor(b);
+  if (!x || !y) return Number.NaN;
+  const [lx, ly] = [luminance(x), luminance(y)];
+  return (Math.max(lx, ly) + 0.05) / (Math.min(lx, ly) + 0.05);
+}
+
+/** Taskbar themes on which `color` falls below 3:1 (value text may be hard to read). */
+export function lowContrastTaskbars(color: string, minimum = 3): ('light' | 'dark')[] {
+  return (['light', 'dark'] as const).filter(theme => !(colorContrast(color, TASKBAR_BACKGROUNDS[theme]) >= minimum));
+}
+
+function normalizeTaskbarColors(value: unknown): TaskbarWidgetPreferences['colors'] {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const source = value as Record<string, unknown>;
+  const colors: Partial<Record<TaskbarWidgetColorItem, string>> = {};
+  for (const item of TASKBAR_WIDGET_COLOR_ITEMS) {
+    const color = normalizeHexColor(source[item]);
+    if (color) colors[item] = color;
+  }
+  return Object.keys(colors).length ? colors : undefined;
+}
+
+/** Same rules as WidgetPrefs::normalize: allowlist, canonical order, never empty, validated colours. */
+export function normalizeTaskbarWidgetPreferences(value?: unknown): TaskbarWidgetPreferences {
+  const source = value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown> : {};
+  const items = Array.isArray(source.items)
+    ? TASKBAR_WIDGET_ITEMS.filter(item => (source.items as unknown[]).includes(item))
+    : [...TASKBAR_WIDGET_DEFAULTS.items];
+  let ring = TASKBAR_WIDGET_RINGS.find(candidate => candidate === source.ring) ?? TASKBAR_WIDGET_DEFAULTS.ring;
+  if (ring === 'off' && items.length === 0) ring = 'gpu';
+  const colors = normalizeTaskbarColors(source.colors);
+  return colors ? { ring, items, colors } : { ring, items };
+}
+
+/** Toggle one item, refusing to leave the widget with nothing to show. Colours are kept. */
+export function toggleTaskbarWidgetItem(preferences: TaskbarWidgetPreferences, item: TaskbarWidgetItem): TaskbarWidgetPreferences {
+  const items = preferences.items.includes(item)
+    ? preferences.items.filter(current => current !== item)
+    : TASKBAR_WIDGET_ITEMS.filter(current => current === item || preferences.items.includes(current));
+  if (preferences.ring === 'off' && items.length === 0) return preferences;
+  return { ...preferences, items };
+}
+
+/** Set (valid hex) or clear (undefined/invalid) one metric's custom colour. */
+export function setTaskbarWidgetColor(preferences: TaskbarWidgetPreferences, item: TaskbarWidgetColorItem, color?: string): TaskbarWidgetPreferences {
+  const next: Partial<Record<TaskbarWidgetColorItem, string>> = { ...preferences.colors };
+  const value = normalizeHexColor(color);
+  if (value) next[item] = value; else delete next[item];
+  return normalizeTaskbarWidgetPreferences({ ...preferences, colors: next });
+}
 
 export interface FloatingMonitorMetricDefinition {
   id: FloatingMonitorMetric;
@@ -68,6 +160,8 @@ export const FLOATING_MONITOR_DEFAULTS: ResolvedFloatingMonitorPreferences = {
   snapToEdge: false,
   metricColors: {},
   mode: 'floating',
+  taskbarEnabled: false,
+  taskbar: TASKBAR_WIDGET_DEFAULTS,
 };
 
 const validMetrics = new Set<string>(FLOATING_MONITOR_METRICS.map(metric => metric.id));
@@ -109,8 +203,11 @@ export function normalizeFloatingMonitorPreferences(value?: unknown): ResolvedFl
     showStatus: source.showStatus === true,
     snapToEdge: source.snapToEdge === true,
     metricColors,
-    // Retired taskbar preferences fall back to the supported desktop strip.
+    // The strip mode is always the desktop strip; the Windows taskbar widget
+    // is a separate opt-in (taskbarEnabled) restored by the native host.
     mode: 'floating',
+    taskbarEnabled: source.taskbarEnabled === true,
+    taskbar: normalizeTaskbarWidgetPreferences(source.taskbar),
   };
 }
 

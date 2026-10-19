@@ -90,6 +90,20 @@ export type FloatingMonitorAction = 'main' | 'chat' | 'monitoring' | 'usage' | '
 export type FloatingMonitorMetric = 'generation' | 'prefill' | 'gpu' | 'vram' | 'cpu' | 'ram' | 'temperature' | 'power' | 'running' | 'queued' | 'cache';
 export type FloatingMonitorLayout = 'compact' | 'twoRow' | 'panel';
 export type FloatingMonitorMode = 'floating' | 'taskbar';
+/** Items the Windows taskbar widget can show, in display order. */
+export type TaskbarWidgetItem = 'generation' | 'prefill' | 'gpu' | 'vram' | 'temperature' | 'status';
+/** Metric drawn as the ring gauge of the Windows taskbar widget. */
+export type TaskbarWidgetRing = 'gpu' | 'vram' | 'off';
+
+/** Metrics whose taskbar colour can be overridden; the status dot stays semantic. */
+export type TaskbarWidgetColorItem = Exclude<TaskbarWidgetItem, 'status'>;
+
+export interface TaskbarWidgetPreferences {
+  ring: TaskbarWidgetRing;
+  items: TaskbarWidgetItem[];
+  /** Optional `#rrggbb` per metric; missing entries follow the light/dark taskbar palette. */
+  colors?: Partial<Record<TaskbarWidgetColorItem, string>>;
+}
 
 export interface FloatingMonitorPreferences {
   actions: FloatingMonitorAction[];
@@ -108,6 +122,9 @@ export interface FloatingMonitorPreferences {
   /** Missing entries follow the light/dark default palette. */
   metricColors?: Partial<Record<FloatingMonitorMetric, string>>;
   mode?: FloatingMonitorMode;
+  /** Windows taskbar monitor (任务栏监控). Off by default. */
+  taskbarEnabled?: boolean;
+  taskbar?: TaskbarWidgetPreferences;
 }
 
 export interface ResolvedFloatingMonitorPreferences extends FloatingMonitorPreferences {
@@ -121,6 +138,8 @@ export interface ResolvedFloatingMonitorPreferences extends FloatingMonitorPrefe
   snapToEdge: boolean;
   metricColors: Partial<Record<FloatingMonitorMetric, string>>;
   mode: FloatingMonitorMode;
+  taskbarEnabled: boolean;
+  taskbar: TaskbarWidgetPreferences;
 }
 
 export interface AppSettings {

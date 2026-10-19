@@ -7,6 +7,14 @@ import {
   floatingMonitorDimensions,
   normalizeFloatingMonitorPreferences,
   reorderFloatingMonitorMetrics,
+  normalizeTaskbarWidgetPreferences,
+  toggleTaskbarWidgetItem,
+  setTaskbarWidgetColor,
+  normalizeHexColor,
+  colorContrast,
+  lowContrastTaskbars,
+  TASKBAR_WIDGET_COLOR_PRESETS,
+  TASKBAR_WIDGET_PALETTE,
 } from '../src/floating-monitor';
 import type { FloatingMonitorMetric, FloatingMonitorPreferences } from '../src/types';
 
@@ -17,6 +25,7 @@ describe('floating monitor preferences', () => {
       fontSize: 16, layout: 'twoRow',
       metrics: ['generation', 'prefill', 'gpu', 'vram', 'cpu', 'ram'],
       showGraphs: true, showLabels: true, showUnits: true, mode: 'floating', snapToEdge: false, showStatus: false, metricColors: {},
+      taskbarEnabled: false, taskbar: { ring: 'gpu', items: ['generation', 'prefill'] },
     });
   });
 
@@ -325,5 +334,66 @@ describe('floating monitor metric reordering', () => {
     const result = reorderFloatingMonitorMetrics(single, 'gpu', 100);
     expect(result).toEqual(['gpu']);
     expect(result).not.toBe(single);
+  });
+});
+
+describe('taskbar widget preferences', () => {
+  it('is off by default with a GPU ring and the two speed lines', () => {
+    const resolved = normalizeFloatingMonitorPreferences();
+    expect(resolved.taskbarEnabled).toBe(false);
+    expect(resolved.taskbar).toEqual({ ring: 'gpu', items: ['generation', 'prefill'] });
+    expect(normalizeFloatingMonitorPreferences({ taskbarEnabled: 'yes' }).taskbarEnabled).toBe(false);
+    expect(normalizeFloatingMonitorPreferences({ taskbarEnabled: true }).taskbarEnabled).toBe(true);
+  });
+
+  it('matches the native normalisation: allowlist, canonical order, never empty', () => {
+    expect(normalizeTaskbarWidgetPreferences({ ring: 'cpu', items: ['status', 'bad', 'gpu', 'status', 3, 'generation'] }))
+      .toEqual({ ring: 'gpu', items: ['generation', 'gpu', 'status'] });
+    expect(normalizeTaskbarWidgetPreferences({ ring: 'vram', items: [] })).toEqual({ ring: 'vram', items: [] });
+    expect(normalizeTaskbarWidgetPreferences({ ring: 'off', items: [] })).toEqual({ ring: 'gpu', items: [] });
+    expect(normalizeTaskbarWidgetPreferences({ ring: 'off', items: 'gpu' })).toEqual({ ring: 'off', items: ['generation', 'prefill'] });
+  });
+
+  it('toggles items in canonical order and keeps at least one element', () => {
+    const base = normalizeTaskbarWidgetPreferences();
+    expect(toggleTaskbarWidgetItem(base, 'gpu').items).toEqual(['generation', 'prefill', 'gpu']);
+    expect(toggleTaskbarWidgetItem({ ring: 'gpu', items: ['status'] }, 'generation').items).toEqual(['generation', 'status']);
+    expect(toggleTaskbarWidgetItem(base, 'prefill').items).toEqual(['generation']);
+    const last = { ring: 'off' as const, items: ['vram' as const] };
+    expect(toggleTaskbarWidgetItem(last, 'vram')).toBe(last);
+  });
+});
+
+describe('taskbar widget colours', () => {
+  it('keeps old preferences unchanged and validates overrides like the native host', () => {
+    expect(normalizeTaskbarWidgetPreferences({ ring: 'gpu', items: ['generation'] })).toEqual({ ring: 'gpu', items: ['generation'] });
+    expect(normalizeTaskbarWidgetPreferences({ ring: 'gpu', items: ['generation'], colors: {
+      generation: '#FF8800', prefill: '#AbC', gpu: ' #00ff00 ', vram: 'red', temperature: '#12345', status: '#ffffff', other: '#000000',
+    } })).toEqual({ ring: 'gpu', items: ['generation'], colors: { generation: '#ff8800', prefill: '#aabbcc', gpu: '#00ff00' } });
+    for (const broken of [null, '#fff', [1], { generation: 5 }]) {
+      expect(normalizeTaskbarWidgetPreferences({ ring: 'gpu', items: ['generation'], colors: broken })).toEqual({ ring: 'gpu', items: ['generation'] });
+    }
+    for (const bad of ['', '#', 'fff', '#ggg', '#12345', '#1234567', 7]) expect(normalizeHexColor(bad)).toBeUndefined();
+    expect(normalizeFloatingMonitorPreferences({ taskbar: { ring: 'vram', items: [], colors: { vram: '#123456' } } }).taskbar)
+      .toEqual({ ring: 'vram', items: [], colors: { vram: '#123456' } });
+  });
+
+  it('sets, resets and preserves colours across item toggles', () => {
+    const base = normalizeTaskbarWidgetPreferences();
+    const custom = setTaskbarWidgetColor(base, 'generation', '#3B82F6');
+    expect(custom.colors).toEqual({ generation: '#3b82f6' });
+    expect(toggleTaskbarWidgetItem(custom, 'gpu').colors).toEqual({ generation: '#3b82f6' });
+    expect(setTaskbarWidgetColor(custom, 'generation')).toEqual(base);
+    expect(setTaskbarWidgetColor(custom, 'prefill', 'nope')).toEqual(custom);
+  });
+
+  it('presets stay readable on both taskbars; defaults pass 4.5:1 on their own taskbar', () => {
+    for (const preset of TASKBAR_WIDGET_COLOR_PRESETS) expect(lowContrastTaskbars(preset)).toEqual([]);
+    expect(lowContrastTaskbars('#ffffff')).toEqual(['light']);
+    expect(lowContrastTaskbars('#000000')).toEqual(['dark']);
+    expect(lowContrastTaskbars('bad')).toEqual(['light', 'dark']);
+    expect(colorContrast('#000000', '#ffffff')).toBeCloseTo(21, 5);
+    for (const color of Object.values(TASKBAR_WIDGET_PALETTE.light)) expect(colorContrast(color, '#f3f3f3')).toBeGreaterThanOrEqual(4.5);
+    for (const color of Object.values(TASKBAR_WIDGET_PALETTE.dark)) expect(colorContrast(color, '#202020')).toBeGreaterThanOrEqual(4.5);
   });
 });

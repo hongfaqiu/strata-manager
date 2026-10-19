@@ -82,34 +82,6 @@ pub(crate) fn vacant_rect(
     })
 }
 
-/// Independent scale per metric; None deliberately breaks a rendered polyline.
-pub(crate) fn graph_points(values: &[Option<f64>], area: Rect) -> Vec<Option<(i32, i32)>> {
-    if area.width() < 2 || area.height() < 2 {
-        return Vec::new();
-    }
-    let values = &values[values.len().saturating_sub(60)..];
-    let valid = |v: f64| v.is_finite() && v >= 0.0;
-    let max = values
-        .iter()
-        .flatten()
-        .copied()
-        .filter(|v| valid(*v))
-        .fold(1.0, f64::max);
-    values
-        .iter()
-        .enumerate()
-        .map(|(index, value)| {
-            value.filter(|v| valid(*v)).map(|value| {
-                let x = area.left + index as i32 * (area.width() - 1) / 59;
-                let y = area.bottom
-                    - 1
-                    - ((value / max).clamp(0.0, 1.0) * (area.height() - 1) as f64).round() as i32;
-                (x, y)
-            })
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,21 +208,50 @@ mod tests {
         assert!(vacant_rect(bar, &[bar], 300, 42, i32::MAX).is_none());
     }
     #[test]
-    fn graph_unknowns_break_and_metrics_scale_independently() {
-        let area = Rect {
+    fn widget_follows_the_notification_area_when_the_tray_resizes() {
+        // 1920x48 taskbar at 100 %, centred task buttons, tray left edge moves
+        // from 1700 to 1610 when an overflow icon is added.
+        let bar = Rect {
             left: 0,
-            top: 0,
-            right: 60,
-            bottom: 11,
+            top: 1032,
+            right: 1920,
+            bottom: 1080,
         };
-        let decode = graph_points(&[Some(10.0), None, Some(20.0)], area);
-        let prefill = graph_points(&[Some(1000.0), None, Some(2000.0)], area);
-        assert_eq!(decode, prefill);
-        assert_eq!(decode, vec![Some((0, 5)), None, Some((2, 0))]);
-        assert_eq!(
-            graph_points(&[Some(f64::NAN), Some(-1.0)], area),
-            vec![None, None]
-        );
-        assert_eq!(graph_points(&vec![Some(1.0); 80], area).len(), 60);
+        let buttons = [Rect {
+            left: 760,
+            top: 1032,
+            right: 1160,
+            bottom: 1080,
+        }];
+        let place = |tray_left: i32| {
+            vacant_rect(
+                Rect {
+                    right: tray_left,
+                    ..bar
+                },
+                &buttons,
+                156,
+                40,
+                8,
+            )
+            .unwrap()
+        };
+        let before = place(1700);
+        let after = place(1610);
+        assert_eq!(before.right, 1692);
+        assert_eq!(after.right, 1602);
+        assert_eq!((before.top, before.bottom), (1036, 1076));
+        assert_eq!(after.width(), before.width());
+        // When the gap beside the tray closes, the next free space left of
+        // the task buttons is used; with no space at all there is no placement.
+        let squeezed = vacant_rect(Rect { right: 1250, ..bar }, &buttons, 156, 40, 8).unwrap();
+        assert_eq!(squeezed.right, 752);
+        let full = [Rect {
+            left: 0,
+            top: 1032,
+            right: 1250,
+            bottom: 1080,
+        }];
+        assert!(vacant_rect(Rect { right: 1250, ..bar }, &full, 156, 40, 8).is_none());
     }
 }
