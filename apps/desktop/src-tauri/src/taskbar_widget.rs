@@ -82,7 +82,7 @@ pub(crate) enum Tone {
 }
 
 /// Straight (non-premultiplied) RGBA.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct Color(pub [u8; 4]);
 
 impl Serialize for Color {
@@ -102,6 +102,7 @@ const fn rgba(hex: u32, alpha: u8) -> Color {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Palette {
     pub text: Color,
+    /// Neutral secondary colour for labels and units-free captions.
     pub muted: Color,
     pub track: Color,
     /// Used only when per-pixel transparency is unavailable.
@@ -109,51 +110,75 @@ pub(crate) struct Palette {
     dark: bool,
 }
 
+/// Typical Windows 11 taskbar colours; every value colour is tuned to keep a
+/// WCAG contrast of at least 4.5:1 against the matching one.
+pub(crate) const TASKBAR_LIGHT: Color = rgb(0xf3f3f3);
+pub(crate) const TASKBAR_DARK: Color = rgb(0x202020);
+
 impl Palette {
     /// `dark` describes the TASKBAR (SystemUsesLightTheme == 0), not the app.
     pub fn new(dark: bool) -> Self {
         if dark {
             Self {
                 text: rgb(0xffffff),
-                muted: rgba(0xffffff, 178),
-                track: rgba(0xffffff, 56),
-                opaque_background: rgb(0x202020),
+                muted: rgb(0xb4b4b4),
+                track: rgba(0xffffff, 40),
+                opaque_background: TASKBAR_DARK,
                 dark,
             }
         } else {
             Self {
-                text: rgba(0x000000, 228),
-                muted: rgba(0x000000, 150),
-                track: rgba(0x000000, 38),
-                opaque_background: rgb(0xf3f3f3),
+                text: rgb(0x1a1a1a),
+                muted: rgb(0x5c5c5c),
+                track: rgba(0x000000, 28),
+                opaque_background: TASKBAR_LIGHT,
                 dark,
             }
+        }
+    }
+
+    /// One hue per metric so a glance tells them apart; the label repeats it
+    /// in words, so colour is never the only cue.
+    pub fn metric(&self, item: &str) -> Color {
+        match (item, self.dark) {
+            ("generation", true) => rgb(0x4ade80),
+            ("generation", false) => rgb(0x15803d),
+            ("prefill", true) => rgb(0x60c8fa),
+            ("prefill", false) => rgb(0x0369a1),
+            ("gpu", true) => rgb(0xfb923c),
+            ("gpu", false) => rgb(0xc2410c),
+            ("vram", true) => rgb(0xc4a5fd),
+            ("vram", false) => rgb(0x7e22ce),
+            (_, true) => rgb(0xffffff),
+            (_, false) => rgb(0x1a1a1a),
         }
     }
 
     pub fn tone(&self, tone: Tone) -> Color {
         match (tone, self.dark) {
-            (Tone::Stopped, true) => rgb(0x9ca3af),
-            (Tone::Stopped, false) => rgb(0x6b7280),
-            (Tone::Loading, true) => rgb(0x60a5fa),
-            (Tone::Loading, false) => rgb(0x2563eb),
+            (Tone::Stopped, true) => rgb(0xa1a1aa),
+            (Tone::Stopped, false) => rgb(0x5c5c5c),
+            (Tone::Loading, true) => rgb(0x60c8fa),
+            (Tone::Loading, false) => rgb(0x0369a1),
             (Tone::Ready, true) => rgb(0x4ade80),
-            (Tone::Ready, false) => rgb(0x16a34a),
-            (Tone::Busy, true) => rgb(0xfb923c),
-            (Tone::Busy, false) => rgb(0xea580c),
-            (Tone::Error, true) => rgb(0xf87171),
-            (Tone::Error, false) => rgb(0xdc2626),
+            (Tone::Ready, false) => rgb(0x15803d),
+            (Tone::Busy, true) => rgb(0xfacc15),
+            (Tone::Busy, false) => rgb(0x9a5b00),
+            (Tone::Error, true) => rgb(0xfb7185),
+            (Tone::Error, false) => rgb(0xbe123c),
         }
     }
 
+    /// Green below 60 ℃, amber from 60 to 80 ℃, red above 80 ℃.
     pub fn temperature(&self, celsius: f64) -> Color {
-        self.tone(if celsius < 70.0 {
-            Tone::Ready
-        } else if celsius < 85.0 {
-            Tone::Busy
-        } else {
-            Tone::Error
-        })
+        match (celsius, self.dark) {
+            (c, true) if c < 60.0 => rgb(0x4ade80),
+            (c, false) if c < 60.0 => rgb(0x15803d),
+            (c, true) if c <= 80.0 => rgb(0xfacc15),
+            (c, false) if c <= 80.0 => rgb(0x9a5b00),
+            (_, true) => rgb(0xfb7185),
+            (_, false) => rgb(0xbe123c),
+        }
     }
 }
 
@@ -190,34 +215,21 @@ pub(crate) fn tokens(value: Option<f64>) -> String {
     }
 }
 
-/// "21.3 tok/s", or a bare dash when there is no live value.
-pub(crate) fn speed(value: Option<f64>) -> String {
-    match tokens(value) {
-        dash if dash == DASH => dash,
-        text => format!("{text} tok/s"),
-    }
-}
-
-pub(crate) fn percent(value: Option<f64>) -> String {
+/// Whole number ("76"), or a dash.
+pub(crate) fn whole(value: Option<f64>) -> String {
     value
         .filter(|v| v.is_finite() && *v >= 0.0)
-        .map(|v| format!("{:.0}%", v.min(100.0)))
+        .map(|v| format!("{v:.0}"))
         .unwrap_or_else(|| DASH.into())
 }
 
-pub(crate) fn gigabytes(value: Option<f64>) -> String {
+/// GiB with one decimal below 100 ("19.8"), whole above ("140").
+pub(crate) fn gib(value: Option<f64>) -> String {
     match value.filter(|v| v.is_finite() && *v >= 0.0) {
-        Some(v) if v >= 99.95 => format!("{v:.0} GB"),
-        Some(v) => format!("{v:.1} GB"),
+        Some(v) if v >= 99.95 => format!("{v:.0}"),
+        Some(v) => format!("{v:.1}"),
         None => DASH.into(),
     }
-}
-
-pub(crate) fn celsius(value: Option<f64>) -> String {
-    value
-        .filter(|v| v.is_finite() && *v >= 0.0)
-        .map(|v| format!("{v:.0}℃"))
-        .unwrap_or_else(|| DASH.into())
 }
 
 /// Ring fill in 0..=1 and the number shown inside it.
@@ -273,16 +285,43 @@ pub(crate) fn item_menu_label(item: &str, english: bool) -> &'static str {
     }
 }
 
-/// Worst-case value text: width depends on this, never on the live value,
-/// so the widget does not jitter or re-attach every second.
-fn template(item: &str, english: bool) -> &'static str {
+/// Number part, unit part and worst-case template of each item. Width is
+/// derived from the template, never from the live value, so it cannot jitter.
+fn value_parts(item: &str, reading: &Reading, english: bool) -> (String, &'static str) {
+    match item {
+        "generation" => (tokens(reading.generation), "t/s"),
+        "prefill" => (tokens(reading.prefill), "t/s"),
+        "gpu" => (whole(reading.gpu.map(|v| v.min(100.0))), "%"),
+        "vram" => (gib(reading.vram_used), "GB"),
+        "temperature" => (whole(reading.temperature), "℃"),
+        _ => (tone_word(reading.tone, english).into(), ""),
+    }
+}
+
+fn template(item: &str, english: bool) -> (&'static str, &'static str) {
     match (item, english) {
-        ("generation" | "prefill", _) => "999.9 tok/s",
-        ("gpu", _) => "100%",
-        ("vram", _) => "99.9 GB",
-        ("temperature", _) => "100℃",
-        (_, false) => "正在载入模型",
-        (_, true) => "Loading model",
+        // tokens() never exceeds four glyphs: "99.9", "999", "9.9k", "99k".
+        ("generation" | "prefill", _) => ("99.9", "t/s"),
+        ("gpu", _) => ("100", "%"),
+        ("vram", _) => ("99.9", "GB"),
+        ("temperature", _) => ("100", "℃"),
+        (_, false) => ("载入中", ""),
+        (_, true) => ("Loading", ""),
+    }
+}
+
+pub(crate) fn tone_word(tone: Tone, english: bool) -> &'static str {
+    match (tone, english) {
+        (Tone::Stopped, false) => "未启动",
+        (Tone::Loading, false) => "载入中",
+        (Tone::Ready, false) => "就绪",
+        (Tone::Busy, false) => "运行中",
+        (Tone::Error, false) => "异常",
+        (Tone::Stopped, true) => "Off",
+        (Tone::Loading, true) => "Loading",
+        (Tone::Ready, true) => "Ready",
+        (Tone::Busy, true) => "Busy",
+        (Tone::Error, true) => "Error",
     }
 }
 
@@ -292,6 +331,7 @@ pub(crate) fn text_width(text: &str, size: f32) -> f32 {
     text.chars()
         .map(|c| match c {
             ' ' | '.' | ',' | ':' | 'i' | 'l' | 'I' | '/' => 0.3,
+            't' | 'f' | 'r' | 'j' => 0.36,
             '0'..='9' => 0.56,
             '%' => 0.86,
             'm' | 'w' | 'M' | 'W' => 0.86,
@@ -303,6 +343,9 @@ pub(crate) fn text_width(text: &str, size: f32) -> f32 {
         * size
         * 1.04
 }
+
+/// Bold digits are a little wider than regular ones.
+const BOLD: f32 = 1.06;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -329,6 +372,8 @@ pub(crate) enum Op {
         cy: f32,
         radius: f32,
         color: Color,
+        /// Clears this much space around the dot (e.g. where it sits on the ring).
+        halo: f32,
     },
     Text {
         left: i32,
@@ -340,6 +385,9 @@ pub(crate) enum Op {
         bold: bool,
         color: Color,
         align: Align,
+        /// Bottom-aligned (shared baseline for a number and its unit) instead
+        /// of vertically centred.
+        bottom_align: bool,
     },
 }
 
@@ -354,8 +402,11 @@ struct Metrics {
     scale: f32,
     height: i32,
     pad: f32,
+    gap: f32,
     ring_diameter: f32,
-    font: f32,
+    value: f32,
+    unit: f32,
+    label: f32,
 }
 
 fn metrics(dpi: u32, bar_height: i32) -> Metrics {
@@ -364,53 +415,62 @@ fn metrics(dpi: u32, bar_height: i32) -> Metrics {
     let max = (40.0 * scale).round() as i32;
     let height = (bar_height - (4.0 * scale).round() as i32).clamp(min, max);
     let h = height as f32;
+    let value = (h * 0.36).min(14.0 * scale).round();
     Metrics {
         scale,
         height,
-        pad: 4.0 * scale,
-        ring_diameter: (h - 6.0 * scale).min(32.0 * scale),
-        font: ((h - 2.0 * scale) / 2.0 * 0.78).min(12.0 * scale).round(),
+        pad: 3.0 * scale,
+        gap: 6.0 * scale,
+        ring_diameter: (h - 10.0 * scale).min(28.0 * scale),
+        value,
+        unit: (value * 0.66).round(),
+        label: (h * 0.26).min(10.0 * scale).round(),
     }
 }
 
-/// Selected items in canonical order.
-fn cells(prefs: &WidgetPrefs) -> Vec<&str> {
-    prefs.items.iter().map(String::as_str).collect()
+/// One column per selected item: value (+ compact unit) over a small label.
+struct Column {
+    value: f32,
+    unit: f32,
+    width: f32,
 }
 
-/// Width of every column for the selected items, at most two cells each.
-fn columns(prefs: &WidgetPrefs, english: bool, m: &Metrics) -> Vec<f32> {
-    let gap = 4.0 * m.scale;
-    cells(prefs)
-        .chunks(2)
-        .map(|pair| {
-            pair.iter()
-                .map(|item| {
-                    let label = if *item == "status" {
-                        // Status shows a coloured dot instead of a label.
-                        m.font * 0.7
-                    } else {
-                        text_width(item_label(item, english), m.font)
-                    };
-                    (label + gap + text_width(template(item, english), m.font)).ceil()
-                })
-                .fold(0.0, f32::max)
-        })
-        .collect()
+fn column(item: &str, english: bool, m: &Metrics) -> Column {
+    let (value, unit) = template(item, english);
+    let bold = item != "status";
+    let value = text_width(value, m.value) * if bold { BOLD } else { 1.0 };
+    let unit = if unit.is_empty() {
+        0.0
+    } else {
+        text_width(unit, m.unit) + m.scale
+    };
+    let label = text_width(item_label(item, english), m.label);
+    let (value, unit) = (value.ceil(), unit.ceil());
+    Column {
+        value,
+        unit,
+        width: (value + unit).max(label.ceil()),
+    }
 }
 
 pub(crate) fn size(prefs: &WidgetPrefs, english: bool, dpi: u32, bar_height: i32) -> (i32, i32) {
     let m = metrics(dpi, bar_height);
     let mut x = m.pad;
+    let mut first = true;
     if prefs.ring != "off" {
         x += m.ring_diameter;
-    } else {
+        first = false;
+    } else if !prefs.has("status") {
         // Status accent dot.
         x += 6.0 * m.scale;
+        first = false;
     }
-    let columns = columns(prefs, english, &m);
-    for width in &columns {
-        x += 8.0 * m.scale + width;
+    for item in &prefs.items {
+        if !first {
+            x += m.gap;
+        }
+        first = false;
+        x += column(item, english, &m).width;
     }
     ((x + m.pad).ceil() as i32, m.height)
 }
@@ -429,123 +489,127 @@ pub(crate) fn layout(
     let tone = palette.tone(reading.tone);
     let mut ops = Vec::new();
     let mut x = m.pad;
+    let mut first = true;
     if let Some((fraction, label)) = ring_value(&prefs.ring, reading) {
         let d = m.ring_diameter;
         let stroke = (d * 0.11).max(2.5 * m.scale);
         let (cx, cy) = (x + d / 2.0, h / 2.0);
+        let radius = (d - stroke) / 2.0;
         ops.push(Op::Ring {
             cx,
             cy,
-            radius: (d - stroke) / 2.0,
+            radius,
             stroke,
             fraction,
-            color: tone,
+            color: palette.metric(&prefs.ring),
             track: palette.track,
         });
-        let size = (d * 0.36).round() as i32;
         ops.push(Op::Text {
             left: (cx - d / 2.0).floor() as i32,
             top: (cy - d / 2.0).floor() as i32,
             right: (cx + d / 2.0).ceil() as i32,
             bottom: (cy + d / 2.0).ceil() as i32,
             text: label,
-            size,
+            size: (d * 0.4).round() as i32,
             bold: true,
             color: palette.text,
             align: Align::Center,
+            bottom_align: false,
         });
+        if !prefs.has("status") {
+            // Service state rides on the ring's lower-right edge.
+            let offset = radius * std::f32::consts::FRAC_1_SQRT_2;
+            ops.push(Op::Dot {
+                cx: cx + offset,
+                cy: cy + offset,
+                radius: 2.5 * m.scale,
+                color: tone,
+                halo: 1.5 * m.scale,
+            });
+        }
         x += d;
-    } else {
+        first = false;
+    } else if !prefs.has("status") {
         let radius = 2.5 * m.scale;
         ops.push(Op::Dot {
             cx: x + radius,
             cy: h / 2.0,
             radius,
             color: tone,
+            halo: 0.0,
         });
         x += 6.0 * m.scale;
+        first = false;
     }
-    let gap = 4.0 * m.scale;
-    let line = h / 2.0;
-    let items = cells(prefs);
-    for (pair, column) in items.chunks(2).zip(columns(prefs, english, &m)) {
-        x += 8.0 * m.scale;
-        for (row, item) in pair.iter().enumerate() {
-            let top = if pair.len() == 1 {
-                (h - line) / 2.0
+    // Value line and label line, centred as one block.
+    let value_line = (m.value * 1.25).round();
+    let label_line = (m.label * 1.3).round();
+    let top = ((h - value_line - label_line) / 2.0).round();
+    let (value_top, value_bottom) = (top as i32, (top + value_line) as i32);
+    let label_bottom = (top + value_line + label_line) as i32;
+    for item in &prefs.items {
+        if !first {
+            x += m.gap;
+        }
+        first = false;
+        let column = column(item, english, &m);
+        let (value, unit) = value_parts(item, reading, english);
+        let color = match item.as_str() {
+            "temperature" => reading
+                .temperature
+                .filter(|t| t.is_finite())
+                .map(|t| palette.temperature(t))
+                .unwrap_or(palette.muted),
+            "status" => tone,
+            _ if value == DASH => palette.muted,
+            other => palette.metric(other),
+        };
+        // Digits are right-aligned against a fixed split so they never shift.
+        let start = (x + (column.width - column.value - column.unit) / 2.0).round();
+        let split = start + column.value;
+        ops.push(Op::Text {
+            left: start as i32,
+            top: value_top,
+            right: split as i32,
+            bottom: value_bottom,
+            text: value,
+            size: m.value as i32,
+            bold: item != "status",
+            color,
+            align: if unit.is_empty() {
+                Align::Center
             } else {
-                row as f32 * line
-            };
-            let (top, bottom) = (top.round() as i32, (top + line).round() as i32);
-            let left = x.round() as i32;
-            let right = (x + column).round() as i32;
-            let (value, color) = match *item {
-                "generation" => (speed(reading.generation), palette.text),
-                "prefill" => (speed(reading.prefill), palette.text),
-                "gpu" => (percent(reading.gpu), palette.text),
-                "vram" => (gigabytes(reading.vram_used), palette.text),
-                "temperature" => (
-                    celsius(reading.temperature),
-                    reading
-                        .temperature
-                        .map(|t| palette.temperature(t))
-                        .unwrap_or(palette.muted),
-                ),
-                _ => (
-                    if reading.state.trim().is_empty() {
-                        if english { "Waiting" } else { "等待采样" }.to_owned()
-                    } else {
-                        reading.state.to_owned()
-                    },
-                    palette.text,
-                ),
-            };
-            if *item == "status" {
-                let radius = 3.0 * m.scale;
-                ops.push(Op::Dot {
-                    cx: x + radius,
-                    cy: (top + bottom) as f32 / 2.0,
-                    radius,
-                    color: tone,
-                });
-                ops.push(Op::Text {
-                    left: (x + m.font * 0.7 + gap).round() as i32,
-                    top,
-                    right,
-                    bottom,
-                    text: value,
-                    size: m.font as i32,
-                    bold: false,
-                    color,
-                    align: Align::Left,
-                });
-                continue;
-            }
-            let label = item_label(item, english);
+                Align::Right
+            },
+            bottom_align: true,
+        });
+        if !unit.is_empty() {
             ops.push(Op::Text {
-                left,
-                top,
-                right: (x + text_width(label, m.font)).ceil() as i32,
-                bottom,
-                text: label.into(),
-                size: m.font as i32,
-                bold: false,
-                color: palette.muted,
-                align: Align::Left,
-            });
-            ops.push(Op::Text {
-                left: (x + text_width(label, m.font) + gap).round() as i32,
-                top,
-                right,
-                bottom,
-                text: value,
-                size: m.font as i32,
+                left: (split + m.scale).round() as i32,
+                top: value_top,
+                right: (split + column.unit) as i32,
+                bottom: value_bottom - (m.scale).round() as i32,
+                text: unit.into(),
+                size: m.unit as i32,
                 bold: false,
                 color,
-                align: Align::Right,
+                align: Align::Left,
+                bottom_align: true,
             });
         }
-        x += column;
+        ops.push(Op::Text {
+            left: x.floor() as i32,
+            top: value_bottom,
+            right: (x + column.width).ceil() as i32,
+            bottom: label_bottom,
+            text: item_label(item, english).into(),
+            size: m.label as i32,
+            bold: false,
+            color: palette.muted,
+            align: Align::Center,
+            bottom_align: false,
+        });
+        x += column.width;
     }
     Layout { width, height, ops }
 }
@@ -582,6 +646,7 @@ pub(crate) struct Canvas {
     pub width: usize,
     pub height: usize,
     pub pixels: Vec<u8>,
+    background: [u8; 4],
 }
 
 impl Canvas {
@@ -595,6 +660,22 @@ impl Canvas {
             width,
             height,
             pixels: pixel.repeat(width * height),
+            background: pixel,
+        }
+    }
+
+    /// Fades a pixel back to the background (used to cut a gap around a dot).
+    pub fn clear(&mut self, x: usize, y: usize, coverage: f32) {
+        if x >= self.width || y >= self.height || coverage <= 0.0 {
+            return;
+        }
+        let c = coverage.min(1.0);
+        let index = (y * self.width + x) * 4;
+        for (pixel, background) in self.pixels[index..index + 4]
+            .iter_mut()
+            .zip(self.background)
+        {
+            *pixel = (f32::from(*pixel) * (1.0 - c) + f32::from(background) * c).round() as u8;
         }
     }
 
@@ -667,10 +748,18 @@ pub(crate) fn raster_shapes(canvas: &mut Canvas, ops: &[Op]) {
                 cy,
                 radius,
                 color,
-            } => each_pixel(canvas, cx, cy, radius + 1.0, |canvas, x, y, dx, dy| {
-                let coverage = (radius + 0.5 - (dx * dx + dy * dy).sqrt()).clamp(0.0, 1.0);
-                canvas.blend(x, y, color, coverage);
-            }),
+                halo,
+            } => each_pixel(
+                canvas,
+                cx,
+                cy,
+                radius + halo + 1.0,
+                |canvas, x, y, dx, dy| {
+                    let distance = (dx * dx + dy * dy).sqrt();
+                    canvas.clear(x, y, (radius + halo + 0.5 - distance).clamp(0.0, 1.0));
+                    canvas.blend(x, y, color, (radius + 0.5 - distance).clamp(0.0, 1.0));
+                },
+            ),
             Op::Text { .. } => {}
         }
     }

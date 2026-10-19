@@ -63,13 +63,13 @@ fn normalize_filters_dedupes_orders_and_never_returns_an_empty_widget() {
 }
 
 #[test]
-fn formats_tokens_percent_memory_and_temperature_compactly() {
+fn formats_numbers_compactly_without_decimals_above_100() {
     for (value, text) in [
         (0.0, "0.0"),
         (21.34, "21.3"),
         (99.94, "99.9"),
         (99.96, "100"),
-        (812.4, "812"),
+        (128.4, "128"),
         (999.4, "999"),
         (999.6, "1.0k"),
         (3_180.0, "3.2k"),
@@ -77,18 +77,197 @@ fn formats_tokens_percent_memory_and_temperature_compactly() {
         (2_500_000.0, "2.5M"),
     ] {
         assert_eq!(tokens(Some(value)), text, "{value}");
-        assert!(tokens(Some(value)).chars().count() <= 5);
+        assert!(tokens(Some(value)).chars().count() <= 4 || value >= 1e6);
     }
     for invalid in [None, Some(f64::NAN), Some(-1.0), Some(f64::INFINITY)] {
         assert_eq!(tokens(invalid), "—");
-        assert_eq!(speed(invalid), "—");
+        assert_eq!(whole(invalid), "—");
+        assert_eq!(gib(invalid), "—");
     }
-    assert_eq!(speed(Some(21.34)), "21.3 tok/s");
-    assert_eq!(percent(Some(76.4)), "76%");
-    assert_eq!(percent(Some(130.0)), "100%");
-    assert_eq!(gigabytes(Some(19.84)), "19.8 GB");
-    assert_eq!(gigabytes(Some(140.0)), "140 GB");
-    assert_eq!(celsius(Some(52.4)), "52℃");
+    assert_eq!(whole(Some(52.4)), "52");
+    assert_eq!(gib(Some(19.84)), "19.8");
+    assert_eq!(gib(Some(140.0)), "140");
+}
+
+fn text_ops(layout: &Layout) -> Vec<(&str, i32, i32, i32, i32, Color)> {
+    layout
+        .ops
+        .iter()
+        .filter_map(|op| match op {
+            Op::Text {
+                text,
+                left,
+                top,
+                right,
+                bottom,
+                color,
+                ..
+            } => Some((text.as_str(), *left, *top, *right, *bottom, *color)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn each_metric_is_a_value_over_label_column_in_its_own_colour() {
+    let palette = Palette::new(true);
+    let layout = layout(&WidgetPrefs::default(), false, 96, 48, &busy(), &palette);
+    assert_eq!(
+        texts(&layout),
+        vec!["76", "21.3", "t/s", "生成", "3.2k", "t/s", "预填充"]
+    );
+    assert_eq!(layout.height, 40);
+    let ops = text_ops(&layout);
+    let (gen, gen_unit, gen_label) = (ops[1], ops[2], ops[3]);
+    // Label sits directly below the value, inside the same column.
+    assert!(gen_label.2 >= gen.4 - 1, "{gen:?} {gen_label:?}");
+    assert!(
+        gen_label.1 <= gen.1 && gen_label.3 >= gen_unit.3,
+        "{gen:?} {gen_unit:?} {gen_label:?}"
+    );
+    // Unit follows the number on the same line.
+    assert!(gen_unit.1 >= gen.3 && gen_unit.4 <= gen.4);
+    assert_eq!(gen.5, palette.metric("generation"));
+    assert_eq!(gen_unit.5, palette.metric("generation"));
+    assert_eq!(gen_label.5, palette.muted);
+    assert_eq!(ops[4].5, palette.metric("prefill"));
+    assert_ne!(palette.metric("generation"), palette.metric("prefill"));
+    // Ring uses the GPU metric colour; the status dot carries the tone.
+    let Op::Ring { color, track, .. } = &layout.ops[0] else {
+        panic!("ring first")
+    };
+    assert_eq!(*color, palette.metric("gpu"));
+    assert!(track.0[3] <= 48);
+    assert!(layout
+        .ops
+        .iter()
+        .any(|op| matches!(op, Op::Dot { color, halo, .. } if *color == palette.tone(Tone::Busy) && *halo > 0.0)));
+}
+
+#[test]
+fn default_widget_is_narrower_than_the_previous_two_line_design() {
+    // The previous "label value" rows measured 156 px at 100 %.
+    let (width, _) = size(&WidgetPrefs::default(), false, 96, 48);
+    assert!(width <= 140, "width {width}");
+    assert!(width >= 110, "width {width}");
+    let (wide, _) = size(&WidgetPrefs::default(), false, 144, 72);
+    assert!(
+        (wide as f32 - width as f32 * 1.5).abs() <= 4.0,
+        "{wide} vs {width}"
+    );
+}
+
+#[test]
+fn columns_have_fixed_widths_so_values_do_not_jitter() {
+    let prefs = prefs(
+        "gpu",
+        &["generation", "prefill", "gpu", "vram", "temperature"],
+    );
+    let palette = Palette::new(false);
+    let mut previous: Option<Vec<(i32, i32)>> = None;
+    for (generation, prefill, gpu) in [(0.4, 9.0, 1.0), (99.9, 999.0, 100.0), (8.1, 31_000.0, 55.0)]
+    {
+        let reading = Reading {
+            generation: Some(generation),
+            prefill: Some(prefill),
+            gpu: Some(gpu),
+            ..busy()
+        };
+        let layout = layout(&prefs, false, 96, 48, &reading, &palette);
+        let rects: Vec<_> = text_ops(&layout).iter().map(|op| (op.1, op.3)).collect();
+        if let Some(previous) = &previous {
+            assert_eq!(previous, &rects);
+        }
+        previous = Some(rects);
+    }
+    // Missing values fall back to the neutral colour, not the metric hue.
+    let quiet = Reading {
+        state: "未启动",
+        ..Reading::default()
+    };
+    let layout = layout(&WidgetPrefs::default(), false, 96, 48, &quiet, &palette);
+    assert_eq!(text_ops(&layout)[1].0, "—");
+    assert_eq!(text_ops(&layout)[1].5, palette.muted);
+}
+
+#[test]
+fn temperature_is_graded_and_status_uses_tone_words() {
+    for dark in [false, true] {
+        let palette = Palette::new(dark);
+        let green = palette.temperature(52.0);
+        let amber = palette.temperature(70.0);
+        let red = palette.temperature(85.0);
+        assert_eq!(palette.temperature(59.9), green);
+        assert_eq!(palette.temperature(60.0), amber);
+        assert_eq!(palette.temperature(80.0), amber);
+        assert_eq!(palette.temperature(80.1), red);
+        assert!(green != amber && amber != red);
+    }
+    let palette = Palette::new(true);
+    let layout = layout(
+        &prefs("off", &["temperature", "status"]),
+        false,
+        96,
+        48,
+        &busy(),
+        &palette,
+    );
+    assert!(text_ops(&layout)
+        .iter()
+        .any(|op| op.0 == "52" && op.5 == palette.temperature(52.0)));
+    assert!(text_ops(&layout).iter().any(|op| op.0 == "℃"));
+    assert!(text_ops(&layout)
+        .iter()
+        .any(|op| op.0 == "运行中" && op.5 == palette.tone(Tone::Busy)));
+    assert!(texts(&layout).contains(&"温度") && texts(&layout).contains(&"状态"));
+    // With the status column shown there is no extra accent dot.
+    assert!(!layout.ops.iter().any(|op| matches!(op, Op::Dot { .. })));
+}
+
+fn contrast(a: Color, b: Color) -> f64 {
+    let luminance = |c: Color| {
+        let channel = |v: u8| {
+            let v = f64::from(v) / 255.0;
+            if v <= 0.039_28 {
+                v / 12.92
+            } else {
+                ((v + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * channel(c.0[0]) + 0.7152 * channel(c.0[1]) + 0.0722 * channel(c.0[2])
+    };
+    let (x, y) = (luminance(a), luminance(b));
+    (x.max(y) + 0.05) / (x.min(y) + 0.05)
+}
+
+#[test]
+fn value_colours_reach_4_5_to_1_on_win11_light_and_dark_taskbars() {
+    for (dark, background) in [(false, TASKBAR_LIGHT), (true, TASKBAR_DARK)] {
+        let palette = Palette::new(dark);
+        let mut colours = vec![palette.text, palette.muted];
+        colours.extend(["generation", "prefill", "gpu", "vram"].map(|m| palette.metric(m)));
+        colours.extend([40.0, 70.0, 90.0].map(|t| palette.temperature(t)));
+        colours.extend(
+            [
+                Tone::Stopped,
+                Tone::Loading,
+                Tone::Ready,
+                Tone::Busy,
+                Tone::Error,
+            ]
+            .map(|t| palette.tone(t)),
+        );
+        for colour in colours {
+            assert_eq!(colour.0[3], 255);
+            let ratio = contrast(colour, background);
+            assert!(ratio >= 4.5, "{colour:?} on {background:?}: {ratio:.2}");
+        }
+        let metrics: std::collections::HashSet<_> = ["generation", "prefill", "gpu", "vram"]
+            .map(|m| palette.metric(m))
+            .into_iter()
+            .collect();
+        assert_eq!(metrics.len(), 4);
+    }
 }
 
 #[test]
@@ -112,28 +291,6 @@ fn ring_uses_selected_metric_and_handles_missing_totals() {
         ..reading
     };
     assert_eq!(ring_value("gpu", &over).unwrap().0, Some(1.0));
-}
-
-#[test]
-fn default_layout_has_ring_number_and_two_requested_lines() {
-    let layout = layout(
-        &WidgetPrefs::default(),
-        false,
-        96,
-        48,
-        &busy(),
-        &Palette::new(true),
-    );
-    assert_eq!(
-        texts(&layout),
-        vec!["76", "生成", "21.3 tok/s", "预填充", "3.2k tok/s"]
-    );
-    assert_eq!(layout.height, 40);
-    assert!((100..200).contains(&layout.width), "width {}", layout.width);
-    let Op::Ring { color, .. } = &layout.ops[0] else {
-        panic!("ring first")
-    };
-    assert_eq!(*color, Palette::new(true).tone(Tone::Busy));
 }
 
 #[test]
@@ -215,63 +372,7 @@ fn width_depends_on_items_and_dpi_but_not_on_values() {
     // Removing the ring narrows the widget.
     assert!(size(&prefs("off", &["generation", "prefill"]), false, 96, 48).0 < w);
     // A ring-only widget is compact.
-    assert!(size(&prefs("gpu", &[]), false, 96, 48).0 <= 48);
-}
-
-#[test]
-fn single_item_column_is_vertically_centred() {
-    let layout = layout(
-        &prefs("off", &["temperature"]),
-        false,
-        96,
-        48,
-        &busy(),
-        &Palette::new(true),
-    );
-    let Some(Op::Text { top, bottom, .. }) = layout.ops.last() else {
-        panic!("text expected")
-    };
-    assert_eq!(top + bottom, layout.height);
-    assert!(matches!(layout.ops[0], Op::Dot { .. }));
-}
-
-#[test]
-fn temperature_and_status_use_semantic_colors() {
-    let palette = Palette::new(true);
-    assert_eq!(palette.temperature(52.0), palette.tone(Tone::Ready));
-    assert_eq!(palette.temperature(78.0), palette.tone(Tone::Busy));
-    assert_eq!(palette.temperature(91.0), palette.tone(Tone::Error));
-    let layout = layout(
-        &prefs("gpu", &["temperature", "status"]),
-        false,
-        96,
-        48,
-        &busy(),
-        &palette,
-    );
-    assert!(layout.ops.iter().any(|op| matches!(op, Op::Text { text, color, .. } if text == "52℃" && *color == palette.tone(Tone::Ready))));
-    assert!(layout
-        .ops
-        .iter()
-        .any(|op| matches!(op, Op::Dot { color, .. } if *color == palette.tone(Tone::Busy))));
-    assert!(texts(&layout).contains(&"生成中"));
-}
-
-#[test]
-fn light_and_dark_taskbars_get_contrasting_text() {
-    let dark = Palette::new(true);
-    let light = Palette::new(false);
-    assert_eq!(dark.text.0[..3], [255, 255, 255]);
-    assert_eq!(light.text.0[..3], [0, 0, 0]);
-    for tone in [
-        Tone::Stopped,
-        Tone::Loading,
-        Tone::Ready,
-        Tone::Busy,
-        Tone::Error,
-    ] {
-        assert_ne!(dark.tone(tone), light.tone(tone));
-    }
+    assert!(size(&prefs("gpu", &[]), false, 96, 48).0 <= 40);
 }
 
 #[test]

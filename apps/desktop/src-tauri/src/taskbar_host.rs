@@ -572,6 +572,7 @@ unsafe fn text_mask(surface: &mut Surface, op: &widget::Op, english: bool) -> Op
         size,
         bold,
         align,
+        bottom_align,
         ..
     } = op
     else {
@@ -621,7 +622,11 @@ unsafe fn text_mask(surface: &mut Surface, op: &widget::Op, english: bool) -> Op
         surface.dc,
         &mut text,
         &mut area,
-        align | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX,
+        align
+            | if *bottom_align { DT_BOTTOM } else { DT_VCENTER }
+            | DT_SINGLELINE
+            | DT_END_ELLIPSIS
+            | DT_NOPREFIX,
     );
     let _ = GdiFlush();
     SelectObject(surface.dc, old);

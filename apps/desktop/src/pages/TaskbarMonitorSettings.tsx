@@ -26,31 +26,35 @@ export const TASKBAR_ITEM_COPY: Record<'zh-CN' | 'en', Record<TaskbarWidgetItem,
   en: { generation: 'Generation speed', prefill: 'Prefill speed', gpu: 'GPU load', vram: 'VRAM usage', temperature: 'GPU temperature', status: 'Service status' },
 };
 const SHORT: Record<'zh-CN' | 'en', Record<TaskbarWidgetItem, string>> = {
-  'zh-CN': { generation: '生成', prefill: '预填充', gpu: 'GPU', vram: '显存', temperature: '温度', status: '' },
-  en: { generation: 'Gen', prefill: 'Prefill', gpu: 'GPU', vram: 'VRAM', temperature: 'Temp', status: '' },
+  'zh-CN': { generation: '生成', prefill: '预填充', gpu: 'GPU', vram: '显存', temperature: '温度', status: '状态' },
+  en: { generation: 'Gen', prefill: 'Prefill', gpu: 'GPU', vram: 'VRAM', temperature: 'Temp', status: 'Status' },
 };
-const EXAMPLE: Record<TaskbarWidgetItem, string> = {
-  generation: '21.3 tok/s', prefill: '3.2k tok/s', gpu: '76%', vram: '19.8 GB', temperature: '52℃', status: '',
+/** Example reading; number and compact unit are drawn separately like the native widget. */
+const EXAMPLE: Record<Exclude<TaskbarWidgetItem, 'status'>, [string, string]> = {
+  generation: ['21.3', 't/s'], prefill: ['3.2k', 't/s'], gpu: ['76', '%'], vram: ['19.8', 'GB'], temperature: ['52', '℃'],
 };
 
-/** Static example of the native widget, using the same item/ring rules. */
+/** Static example of the native widget (dark taskbar palette), using the same item/ring rules. */
 export function TaskbarWidgetPreview({ widget, language }: { widget: TaskbarWidgetPreferences; language: AppLanguage }) {
   const copy = language === 'zh-CN' ? 'zh-CN' : 'en';
   const percent = widget.ring === 'vram' ? 83 : 76;
-  const columns: TaskbarWidgetItem[][] = [];
-  widget.items.forEach((item, index) => { if (index % 2 === 0) columns.push([item]); else columns.at(-1)!.push(item); });
+  const showDot = !widget.items.includes('status');
   return <div className="taskbar-widget-preview" aria-hidden="true">
     {widget.ring === 'off'
-      ? <i className="taskbar-widget-preview-dot"/>
-      : <svg className="taskbar-widget-preview-ring" viewBox="0 0 36 36" width="32" height="32">
-        <circle cx="18" cy="18" r="15.5" className="track"/>
-        <circle cx="18" cy="18" r="15.5" className="value" pathLength="100" strokeDasharray={`${percent} 100`} transform="rotate(-90 18 18)"/>
-        <text x="18" y="18" dominantBaseline="central" textAnchor="middle">{percent}</text>
-      </svg>}
-    {columns.map(column => <span className="taskbar-widget-preview-column" key={column.join()}>
-      {column.map(item => item === 'status'
-        ? <span key={item} className="taskbar-widget-preview-line"><i className="taskbar-widget-preview-dot"/><b>{language === 'zh-CN' ? '生成中' : 'Generating'}</b></span>
-        : <span key={item} className="taskbar-widget-preview-line"><em>{SHORT[copy][item]}</em><b data-item={item}>{EXAMPLE[item]}</b></span>)}
+      ? showDot && <i className="taskbar-widget-preview-dot"/>
+      : <span className="taskbar-widget-preview-ring" data-ring={widget.ring}>
+        <svg viewBox="0 0 36 36" width="28" height="28">
+          <circle cx="18" cy="18" r="15" className="track"/>
+          <circle cx="18" cy="18" r="15" className="value" pathLength="100" strokeDasharray={`${percent} 100`} transform="rotate(-90 18 18)"/>
+          <text x="18" y="18" dominantBaseline="central" textAnchor="middle">{percent}</text>
+        </svg>
+        {showDot && <i className="taskbar-widget-preview-dot"/>}
+      </span>}
+    {widget.items.map(item => <span key={item} className="taskbar-widget-preview-metric" data-item={item}>
+      {item === 'status'
+        ? <b className="taskbar-widget-preview-value">{copy === 'zh-CN' ? '运行中' : 'Busy'}</b>
+        : <b className="taskbar-widget-preview-value">{EXAMPLE[item][0]}<small>{EXAMPLE[item][1]}</small></b>}
+      <em>{SHORT[copy][item]}</em>
     </span>)}
   </div>;
 }
