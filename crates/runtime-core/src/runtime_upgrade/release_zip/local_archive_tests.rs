@@ -163,6 +163,30 @@ fn extract_engine_writes_nested_rocm_paths_without_tempfile_persist() {
 }
 
 #[test]
+fn engine_build_is_read_from_the_directory_the_engine_was_extracted_to() {
+    // #65: v0.2.2 extracted into `<work>/e` but still read `<work>/engine/BUILD.json`,
+    // failing every install/update with "os error 3" right after extraction.
+    let temp = tempfile::tempdir().unwrap();
+    let work = temp.path().join("work");
+    fs::create_dir(&work).unwrap();
+    let archive = temp.path().join("engine.zip");
+    let deep = "rocm/bin/hipblaslt/library/gfx1100/TensileLibrary_sample.dat.zlib";
+    fs::write(
+        &archive,
+        zip(&[
+            ("BUILD.json", r#"{"version":"0.1.45"}"#),
+            ("strata.exe", "exe"),
+            (deep, "kernel-bytes"),
+        ]),
+    )
+    .unwrap();
+    extract(&archive, &engine_work_dir(&work), false, || Ok(())).unwrap();
+    let build = read_engine_build(&work).unwrap();
+    assert_eq!(build["version"].as_str(), Some("0.1.45"));
+    assert!(!work.join("engine").exists());
+}
+
+#[test]
 fn local_engine_archive_selects_the_official_asset_by_digest() {
     let temp = tempfile::tempdir().unwrap();
     let state = RuntimeState::open(temp.path().join("state")).unwrap();

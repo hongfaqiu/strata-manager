@@ -469,7 +469,7 @@ mod tests {
             fs::read(state.data_dir().join("config.json")).unwrap(),
             b"readonly fixture config"
         );
-        for name in ["downloads", "runtimes", "zip-updates"] {
+        for name in ["downloads", "runtimes", "zip-updates", "zu"] {
             assert!(
                 !state.data_dir().join(name).exists(),
                 "source check created {name}"
@@ -823,7 +823,7 @@ mod tests {
             crate::store_get(&state, crate::runtime_upgrade::UPDATE_INFO_KEY.into()).unwrap(),
             metadata
         );
-        for name in ["downloads", "runtimes", "zip-updates"] {
+        for name in ["downloads", "runtimes", "zip-updates", "zu"] {
             assert!(!state.data_dir().join(name).exists());
         }
     }

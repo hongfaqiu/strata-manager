@@ -146,6 +146,21 @@ fn complete(
     processes::log(&state.logs, &j.task_id, "info", message);
     Ok(())
 }
+/// Short engine extraction directory inside the task work dir (kept short for
+/// Windows MAX_PATH, #62). Every reader of the extracted engine must use this,
+/// otherwise the update reads a directory that was never created (#65).
+const ENGINE_WORK_DIR: &str = "e";
+
+fn engine_work_dir(work: &Path) -> PathBuf {
+    work.join(ENGINE_WORK_DIR)
+}
+
+fn read_engine_build(work: &Path) -> Result<Value, String> {
+    let path = engine_work_dir(work).join("BUILD.json");
+    let bytes = fs::read(&path).map_err(|e| map_extract_io("读取引擎 BUILD.json", &path, e))?;
+    serde_json::from_slice(&bytes).map_err(|e| format!("引擎 BUILD.json 无效：{e}"))
+}
+
 fn work_dir(state: &RuntimeState, id: &str) -> Result<PathBuf, String> {
     if uuid::Uuid::parse_str(id).is_err() {
         return Err("ZIP更新日志标识无效".into());
@@ -1691,7 +1706,7 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
     j.revision = Some(revision.clone());
     j.asset_name = Some(asset.name.clone());
     let work = work_dir(&state, &j.task_id)?;
-    for part in ["source", "e", "replacement", "backup"] {
+    for part in ["source", ENGINE_WORK_DIR, "replacement", "backup"] {
         fs::create_dir(work.join(part)).map_err(|e| e.to_string())?;
     }
     progress(
@@ -1756,13 +1771,10 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
         "extractingEngine",
         "官方引擎SHA256和精确长度通过；正在安全解包运行文件",
     )?;
-    let engine_files = extract(&engine, &work.join("e"), false, || {
+    let engine_files = extract(&engine, &engine_work_dir(&work), false, || {
         cancelled(&state, &j.task_id)
     })?;
-    let build: Value = serde_json::from_slice(
-        &fs::read(work.join("engine/BUILD.json")).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())?;
+    let build = read_engine_build(&work)?;
     if build["version"].as_str() != Some(&version) {
         return Err("引擎ZIP内部版本与Release不一致，未停止服务".into());
     }
@@ -1837,7 +1849,7 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
                 &j.install_dir,
                 &work,
                 &relative,
-                &work.join("e").join(file),
+                &engine_work_dir(&work).join(file),
                 &mut j.changes,
             )?;
         }
