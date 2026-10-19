@@ -9,6 +9,18 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### English
 
+## [0.2.2] - 2026-10-19
+
+### 中文
+
+- **本地 Strata 源码包识别（#63）**：从 GitHub Release 下载的 `Strata-<版本>.zip` / `Strata-v<版本>.zip`（顶层目录不再仅限 `Strata-<commit>/`）可直接作为本地安装包通过校验。
+- **HIP / 深层引擎 ZIP 解包（#62）**：引擎解包改为直接写入并缩短工作目录，Windows 使用长路径前缀；避免 tempfile + MoveFileEx 在深层 `rocm/...` 路径上报「系统找不到指定的路径」。路径过长时给出中文提示。
+
+### English
+
+- **Local Strata source archives (#63)**: GitHub Release `Strata-<version>.zip` / `Strata-v<version>.zip` trees are accepted as local install archives (not only `Strata-<commit>/` folder names).
+- **HIP / deep engine ZIP extract (#62)**: engine unpack writes files directly with a shorter work directory and Windows long-path prefixes, avoiding tempfile + MoveFileEx “path not found” on deep `rocm/...` trees; overlong paths get a clear Chinese hint.
+
 ## [0.2.1] - 2026-10-19
 
 ### 中文
