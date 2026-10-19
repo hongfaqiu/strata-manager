@@ -252,8 +252,9 @@ function RuntimeStep(props: StepProps & { runtimeTask?: TaskStatus; runtimeFact:
   const [starting, setStarting] = useState(false);
   const [canceling, setCanceling] = useState(false);
   // Same local-package flow as the Strata page (#74): one hook, one prepareLocalRuntime call.
-  const windows = core.runtimePackageIsWindows(props.environment?.os);
-  const packages = useLocalRuntimePackages(windows, key => t(key === 'strataArchivePath' ? 'obLocalStrata' : 'obLocalEngine'));
+  const packagePlatform = core.runtimePackagePlatform(props.environment?.os);
+  const windows = packagePlatform === 'windows';
+  const packages = useLocalRuntimePackages(packagePlatform, key => t(key === 'strataArchivePath' ? 'obLocalStrata' : 'obLocalEngine'));
   const { source: packageSource, archives, pickError, picking, pick, chosen, missing: localMissing } = packages;
   const running = runtimeTask?.state === 'running';
   const logs = useTaskLogs(runtimeTask?.id, running);
@@ -284,7 +285,7 @@ function RuntimeStep(props: StepProps & { runtimeTask?: TaskStatus; runtimeFact:
     {!running && runtimeFact !== 'ready' && <div className="ob-package-source">
       <div className="ob-field is-row"><span>{t('obPackageSource')}</span><Segmented ariaLabel={t('obPackageSource')} value={packageSource} onValueChange={value => packages.setSource(value as core.RuntimePackageSource)} options={[{ value: 'download', label: t('obSourceDownload') }, { value: 'local', label: t('obSourceLocal') }]}/></div>
       {packageSource === 'local' && <>
-        <p className="ob-note">{t(windows ? 'obLocalHintWindows' : 'obLocalHintLinux')}</p>
+        <p className="ob-note">{t(packagePlatform === 'windows' ? 'obLocalHintWindows' : packagePlatform === 'macos' ? 'obLocalHintMac' : 'obLocalHintLinux')}</p>
         <div className="ob-checks">{archiveRow('strataArchivePath', t('obLocalStrata'))}{windows && archiveRow('engineArchivePath', t('obLocalEngine'))}</div>
         {pickError && <p className="ob-error" role="alert">{pickError}</p>}
       </>}

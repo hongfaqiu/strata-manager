@@ -282,7 +282,8 @@ fn first_model(args: &[Value]) -> Result<Option<&str>, String> {
 /// Official and common self-extracted engine folder names.
 /// Prefer the run-config `exe` path for validity; these names are only fallbacks.
 pub(crate) fn known_engine_dir_names() -> &'static [&'static str] {
-    &["engine", "engine-cuda12", "engine_cuda12"]
+    // `build-metal` is the upstream ./setup.sh layout on Apple Silicon (docs/MAC.md).
+    &["engine", "engine-cuda12", "engine_cuda12", "build-metal"]
 }
 
 fn engine_build_json_candidates(root: &Path, exe: Option<&Path>) -> Vec<PathBuf> {
@@ -341,26 +342,42 @@ fn resolve_engine(cwd: &Path, exe: &str) -> PathBuf {
     let Some(file_name) = path.file_name() else {
         return primary;
     };
+    // On Mac, configs may still say strata.exe while the Metal package ships `strata`.
+    let alt_names: Vec<&std::ffi::OsStr> = {
+        let raw = file_name.to_string_lossy();
+        let mut names = vec![file_name];
+        if raw.eq_ignore_ascii_case("strata.exe") {
+            names.push(std::ffi::OsStr::new("strata"));
+        } else if raw.eq_ignore_ascii_case("strata") {
+            names.push(std::ffi::OsStr::new("strata.exe"));
+        }
+        names
+    };
     for name in known_engine_dir_names() {
-        let candidate = cwd.join(name).join(file_name);
-        if candidate.is_file() {
-            return candidate;
+        for file in &alt_names {
+            let candidate = cwd.join(name).join(file);
+            if candidate.is_file() {
+                return candidate;
+            }
         }
     }
     if let Ok(entries) = fs::read_dir(cwd) {
         for entry in entries.take(MAX_DIRECTORIES).flatten() {
             let name = entry.file_name();
             let name = name.to_string_lossy();
-            if !name.to_ascii_lowercase().starts_with("engine") {
+            let lower = name.to_ascii_lowercase();
+            if !(lower.starts_with("engine") || lower == "build-metal") {
                 continue;
             }
             let dir = entry.path();
             if !dir.is_dir() || dir.is_symlink() {
                 continue;
             }
-            let candidate = dir.join(file_name);
-            if candidate.is_file() {
-                return candidate;
+            for file in &alt_names {
+                let candidate = dir.join(file);
+                if candidate.is_file() {
+                    return candidate;
+                }
             }
         }
     }

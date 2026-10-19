@@ -8,10 +8,12 @@ Maintain both languages for each version. Move unreleased changes into the actua
 ### 中文
 
 - **无头 Server 实验版（#6 P0/P1）**：新增 `strata-manager-server`（axum），默认 `127.0.0.1:8787`，首次运行生成 Bearer 令牌；`POST /api/v1/rpc` 对接 `RuntimeState::dispatch`，可托管同一套 Web 前端。浏览器侧增加 server 传输与令牌门禁；文件选择改为服务器路径输入；隐藏托盘、悬浮监控与桌面自动更新器。附 systemd unit、`scripts/package-server.sh` 与 `docs/SERVER.md`。CI 增加 server crate 测试与 Linux 打包产物；发布资产在原 11 项之外增加 `Strata.Manager.Server_<ver>_amd64.tar.gz` / `.deb`（共 13 项，仍无 `SHA256SUMS`，Server 包不进 updater）。
+- **macOS Metal 引擎预制包（#53 第二期 a）**：在 Apple Silicon 上可下载并校验上游 `strata-engine-*-macos-arm64-metal.tar.gz`（钉死 v0.2.0-beta 资产名与 SHA256，应用内校验，不附带 SHA256SUMS），解包到 `engine/`；也支持选用本地 `.tar.gz` 或已有 Strata/`engine`、`build-metal` 目录。Mac 上不提供 Windows/Linux 引擎包；模型目录隐藏上游未在 Metal 验收的 Qwen3.6 / Swift / Coder；默认 `--spec 2`，不开放 PC `--calibrate` 与 `--parallel`。`./setup.sh` 源码构建仍为手动提示，真机推理验收待进行。
 
 ### English
 
 - **Headless Server experiment (#6 P0/P1)**: adds `strata-manager-server` (axum), default bind `127.0.0.1:8787`, first-run Bearer token; `POST /api/v1/rpc` maps onto `RuntimeState::dispatch` and can serve the existing Web UI. Browser gains a server transport and token gate; file picks become server path inputs; tray, floating monitor and desktop updater are hidden. Includes systemd unit, `scripts/package-server.sh` and `docs/SERVER.md`. CI tests and packages the server on Linux; releases add `Strata.Manager.Server_<ver>_amd64.tar.gz` / `.deb` (13 assets total, still no `SHA256SUMS`; server packages are updater-independent).
+- **macOS Metal prebuilt engine (#53 phase 2a)**: on Apple Silicon, Manager can download and verify the upstream `strata-engine-*-macos-arm64-metal.tar.gz` (pinned v0.2.0-beta asset name and SHA256; in-app checks only, no SHA256SUMS files), extract into `engine/`, or use a local `.tar.gz` / existing Strata `engine` or `build-metal` directory. Windows/Linux engine packages are never offered on Mac; the catalog hides Qwen3.6 / Swift / Coder (not measured on Metal upstream); defaults use `--spec 2` and omit PC `--calibrate` / `--parallel`. `./setup.sh` remains a manual hint; real-device inference validation is still pending.
 
 ## [0.2.6] - 2026-10-19
 

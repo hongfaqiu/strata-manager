@@ -201,7 +201,9 @@ const sceneFamilies: Record<Scene, core.CatalogModel['family'][]> = { chat: ['sw
  */
 export function recommendations(scene: Scene, memoryGB: number | undefined, nvidia: boolean, limit = 5): Recommendation[] {
   const order = sceneFamilies[scene];
-  const rows = core.MODEL_CATALOG.flatMap(model => model.quants.map(quant => {
+  const catalogPlatform = (typeof navigator !== 'undefined' && /Mac/i.test(navigator.userAgent) && !/Windows/i.test(navigator.userAgent)) ? 'macos' as const : 'other' as const;
+  const catalogModels = catalogPlatform === 'macos' ? core.MODEL_CATALOG.filter(m => core.macCatalogFamilyAllowed(m.family)) : core.MODEL_CATALOG;
+  const rows = catalogModels.flatMap(model => model.quants.map(quant => {
     const info = model.quantInfo[quant]!;
     return { family: model.family, name: model.name, quant, downloadGB: info.downloadGB, ramGB: info.ramGB, fit: fitState(info.ramGB, memoryGB), experimental: !!info.experimental, nvidiaOnly: !!info.nvidiaOnly, recommended: false };
   }));
