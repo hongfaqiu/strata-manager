@@ -33,6 +33,6 @@ export interface DetectedRuntime {
 export interface LocalRuntimeArchives {
   /** Official Strata source ZIP. */
   strataArchivePath?: string;
-  /** Official Windows engine ZIP; its asset is identified by SHA256. */
+  /** Official engine archive (Windows `.zip` or Mac Metal `.tar.gz`); identified by SHA256. */
   engineArchivePath?: string;
 }

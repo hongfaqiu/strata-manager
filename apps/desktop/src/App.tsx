@@ -62,6 +62,7 @@ import { useDraftGuard, type SaveDraft } from './useDraftGuard';
 import { createLatestStoreWriter, type LatestStoreWriter } from './storeWriteQueue.mjs';
 import { abortableRead } from './abortableRead';
 import { GuideResume, OnboardingPage } from './onboarding/OnboardingPage';
+import { ServerAuthGate } from './ServerAuthGate';
 import { ONBOARDING_KEY, deriveGuide, effectiveStatus, newProgress, normalizeProgress, type OnboardingProgress } from './onboarding/onboardingModel';
 
 function useStoredValue(writer: LatestStoreWriter, key: string, value: unknown, enabled: boolean, onError: (error: unknown) => void) {
@@ -104,11 +105,14 @@ export function App() {
   const [storeWriter] = useState(() => createLatestStoreWriter(core.saveStore));
   const storeErrorTime = useRef(0);
   const desktop = core.isDesktop();
-  const appVersion = useAppVersion(desktop);
+  const tauriShell = core.isTauri();
+  const serverMode = core.isServerMode();
+  const appVersion = useAppVersion(tauriShell);
   const query = useQueryClient();
   const [ready, setReady] = useState(false);
   const [bootError, setBootError] = useState('');
   const [bootAttempt, setBootAttempt] = useState(0);
+  const [serverAuthed, setServerAuthed] = useState(() => !core.isServerMode() || !!core.getServerToken());
   const [page, setPage] = useState<Page>(()=>!location.hash && new URLSearchParams(location.search).has('q') ? 'chat' : routePage(location.hash));
   const [sidebarCollapsed,setSidebarCollapsed]=useState(false);
   const [profiles, setProfiles] = useState<ServiceProfile[]>([]);
@@ -174,7 +178,7 @@ export function App() {
   const maySelectFirstPrepared = useRef(false);
   const exporting = useRef(false);
   const [toast, setToast] = useState<{ text: string; error?: boolean; taskId?: string } | null>(null);
-  const windowClose = useWindowClose({ desktop, ready, settings, onSettings: setSettings, beforeExit: navigationGuard.request,
+  const windowClose = useWindowClose({ desktop: tauriShell, ready, settings, onSettings: setSettings, beforeExit: navigationGuard.request,
     saveSettings: next => { storeWriter.stage('settings', next); return storeWriter.flush('settings'); },
     flushStores: () => { if (ready) storeWriter.stage('conversations', conversationsRef.current); return storeWriter.flushAll(); },
     onError: error => setToast({ text: core.normalizeError(error).message, error: true }) });
@@ -241,12 +245,13 @@ export function App() {
     finally { setBusy(''); }
   };
   useEffect(() => {
+    if (serverMode && !serverAuthed) return;
     let mounted = true;
     setBootError('');
     void Promise.all([desktop ? core.localInstallations() : core.loadStore<ServiceProfile[]>('profiles', []), core.loadStore<AppSettings | null>('settings', null), core.loadStore<Conversation[]>('conversations', []), core.loadStore<string>('activeProfile', ''), core.loadStore<Record<string, ChatOptions>>('chatOptionsByProfile', {}), core.loadStore<Record<string, Recipe>>('taskRecipes', {}), core.loadStore<ChatPreferences>('chatPreferences', defaultChatPreferences),core.loadStore<Record<string,string>>('activeConversationIds',{}),core.loadStore<boolean>('sidebarCollapsed',false),core.loadStore<string[]>('modelDiscoveryDirectories',[]),core.loadStore<unknown>('commonChatDefaults',core.DEFAULT_COMMON_CHAT_DEFAULTS),core.loadStore<Record<string,boolean>>('chatDefaultsInheritance',{}), core.getSystemLanguage().catch(()=>({locales:[...navigator.languages]} as core.SystemLanguage))]).then(async ([p, s, c, a, o, r, ui, ids, collapsed, directories, common, inheritance, detectedLanguage]) => {
       const restored = desktop ? await core.restoreServiceSelection(p, a, item => core.serviceStatus(item.id, item), () => core.discoverLocal(directories.length ? directories : undefined)) : undefined;
       if (!mounted) return;
-      const restoredSettings: AppSettings = {...defaults, ...s, ...core.resolveLanguageSettings(s, detectedLanguage.locales, detectedLanguage.installerLanguage), floatingMonitor: {...s?.floatingMonitor, ...normalizeFloatingMonitorPreferences(s?.floatingMonitor)}};
+      const restoredSettings: AppSettings = {...defaults, ...s, ...core.resolveLanguageSettings(s, detectedLanguage.locales, detectedLanguage.installerLanguage), floatingMonitor: {...s?.floatingMonitor, ...normalizeFloatingMonitorPreferences(s?.floatingMonitor)}, ...(serverMode ? { theme: (s?.theme === 'dark' || s?.theme === 'light' || s?.theme === 'system') ? s.theme : 'light', closeToTray: false, autoCheckUpdates: false } : {})};
       setSystemLanguage(detectedLanguage);
       setShowLanguageSetup(s === null);
       storeWriter.seed('conversations', c);
@@ -256,11 +261,11 @@ export function App() {
       if (desktop) void core.applySettings(restoredSettings).catch(error => notify(errorText(error), true));
     }).catch(error => { if (mounted) setBootError(errorText(error)); });
     return () => { mounted = false; abort.current?.abort(); };
-  }, [bootAttempt]);
+  }, [bootAttempt, serverMode, serverAuthed]);
   useEffect(() => { if (ready && profiles.length) maySelectFirstPrepared.current = false; }, [ready, profiles.length]);
   useEffect(() => { if (ready) void core.loadStore<string>('lastUsedLocalInstallation', '').then(setLastUsedId); }, [ready]);
   useEffect(() => { if (!ready) return; void core.loadStore<unknown>(ONBOARDING_KEY, null).then(value => setGuideProgress(normalizeProgress(value))).catch(reportStoreError).finally(() => setGuideLoaded(true)); }, [ready]);
-  useEffect(() => { if (!desktop || !ready) return; let disposed=false;let unlisten: (() => void) | undefined; void import('@tauri-apps/api/event').then(({listen}) => listen<string>('tray-action-error', event => {if(!disposed)notify(event.payload, true);})).then(fn => {if(disposed)fn();else unlisten=fn;}).catch(error=>{if(!disposed)notify(errorText(error),true);}); return () => {disposed=true;unlisten?.();}; }, [desktop, ready]);
+  useEffect(() => { if (!tauriShell || !ready) return; let disposed=false;let unlisten: (() => void) | undefined; void import('@tauri-apps/api/event').then(({listen}) => listen<string>('tray-action-error', event => {if(!disposed)notify(event.payload, true);})).then(fn => {if(disposed)fn();else unlisten=fn;}).catch(error=>{if(!disposed)notify(errorText(error),true);}); return () => {disposed=true;unlisten?.();}; }, [tauriShell, ready]);
   useStoredValue(storeWriter, 'profiles', profiles, ready && !desktop, reportStoreError);
   useStoredValue(storeWriter, 'settings', settings, ready && !showLanguageSetup, reportStoreError);
   useStoredValue(storeWriter, 'activeProfile', activeId, ready, reportStoreError);
@@ -357,8 +362,8 @@ export function App() {
     acquire: () => { if (updateOwnerRef.current) return false; updateOwnerRef.current=owner; setUpdateOwner(owner); return true; },
     release: () => { if (updateOwnerRef.current===owner) { updateOwnerRef.current=null; setUpdateOwner(null); } },
   });
-  const appUpdates = useAppUpdates(desktop, settings.autoCheckUpdates !== false, ready, automaticUpdatesIdle && updateOwner !== 'runtime', updateGate('app'));
-  const runtimeUpdates = useRuntimeUpdates(desktop, ready, settings.autoCheckUpdates !== false, automaticUpdatesIdle && updateOwner !== 'app' && !appUpdates.dialogOpen && !['checking','downloading','installing'].includes(appUpdates.state.phase), tasks.data, settings.language, error => notify(errorText(error), true), updateGate('runtime'), () => openStrataUpdates.current());
+  const appUpdates = useAppUpdates(tauriShell, settings.autoCheckUpdates !== false, ready, automaticUpdatesIdle && updateOwner !== 'runtime', updateGate('app'));
+  const runtimeUpdates = useRuntimeUpdates(tauriShell, ready, settings.autoCheckUpdates !== false, automaticUpdatesIdle && updateOwner !== 'app' && !appUpdates.dialogOpen && !['checking','downloading','installing'].includes(appUpdates.state.phase), tasks.data, settings.language, error => notify(errorText(error), true), updateGate('runtime'), () => openStrataUpdates.current());
   const installationDetails = useQuery({ queryKey: ['localInstallationDetails', profiles.map(p => p.id).join(',')], queryFn: core.localInstallationDetails, enabled: desktop && ready, staleTime: 5000 });
   const startupLogs = useQuery({ queryKey: ['startupLogs', startupTarget?.id], queryFn: () => core.readLogs(startupTarget!, 80), enabled: desktop && !!localProgress && !!startupTarget, refetchInterval: 1000, refetchIntervalInBackground: true, retry: false });
   useEffect(() => {
@@ -397,13 +402,22 @@ export function App() {
 
   const choose = async (directory: boolean): Promise<string | null> => {
     if (!desktop) return null;
+    if (serverMode || !tauriShell) {
+      const zh = settings.language === 'zh-CN';
+      const hint = directory
+        ? (zh ? '请输入服务器上的目录绝对路径' : 'Enter an absolute directory path on the server')
+        : (zh ? '请输入服务器上的文件绝对路径' : 'Enter an absolute file path on the server');
+      const value = window.prompt(hint, '');
+      const trimmed = value?.trim() ?? '';
+      return trimmed ? trimmed : null;
+    }
     try { const { open } = await import('@tauri-apps/plugin-dialog'); const selected = await open({ directory, multiple: false }); return typeof selected === 'string' ? selected : null; } catch (error) { notify(errorText(error), true); return null; }
   };
   const saveFile = async (name: string, content: string) => {
     if (exporting.current) return;
     exporting.current = true;
     try {
-      if (!desktop) { downloadMarkdown(name, content); notify(t('saved')); return; }
+      if (!desktop || serverMode || !tauriShell) { downloadMarkdown(name, content); notify(t('saved')); return; }
       const { save } = await import('@tauri-apps/plugin-dialog');
       const selected = await save({ defaultPath: name, filters: [{ name: 'Markdown', extensions: ['md'] }] });
       if (!selected) return;
@@ -441,13 +455,13 @@ export function App() {
     go(destination);
   };
   useEffect(() => {
-    if (!desktop || !ready) return;
+    if (!tauriShell || !ready) return;
     let disposed = false, unlisten: (() => void) | undefined;
     void import('@tauri-apps/api/event').then(({ listen }) => listen<MonitorDestination>('monitor-navigate', event => {
       if (!disposed && ['overview', 'chat', 'monitoring', 'usage', 'tasks', 'settings', 'taskbarColors', 'quickBenchmark'].includes(event.payload)) monitorNavigation.current(event.payload);
     })).then(stop => { if (disposed) stop(); else unlisten = stop; }).catch(error => { if (!disposed) notify(errorText(error), true); });
     return () => { disposed = true; unlisten?.(); };
-  }, [desktop, ready]);
+  }, [tauriShell, ready]);
   useEffect(() => {
     if (page === 'monitor-settings' && openFloatingSettings.current) {
       const target = openFloatingSettings.current;
@@ -459,15 +473,15 @@ export function App() {
     subnavigationRef.current?.querySelector('[aria-current="page"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }, [page, ready, settings.language]);
   useEffect(() => {
-    if (!desktop || !ready) return;
+    if (!tauriShell || !ready) return;
     let disposed = false, unlisten: (() => void) | undefined;
     void import('@tauri-apps/api/event').then(({ listen }) => listen<boolean>('monitor-tray-preference', event => {
       if (!disposed && typeof event.payload === 'boolean') monitorSettingsChange.current({ showInTray: event.payload });
     })).then(stop => { if (disposed) stop(); else unlisten = stop; }).catch(error => { if (!disposed) notify(errorText(error), true); });
     return () => { disposed = true; unlisten?.(); };
-  }, [desktop, ready]);
+  }, [tauriShell, ready]);
   useEffect(() => {
-    if (!desktop || !ready) return;
+    if (!tauriShell || !ready) return;
     let disposed = false;
     const stops: (() => void)[] = [];
     const revision = monitorModeRevision.current;
@@ -485,7 +499,7 @@ export function App() {
       ])) { if (disposed) stop(); else stops.push(stop); }
     }).catch(error => { if (!disposed) notify(errorText(error), true); });
     return () => { disposed = true; for (const stop of stops) stop(); };
-  }, [desktop, ready]);
+  }, [tauriShell, ready]);
   const appUpdateVersion = appUpdates.state.version && !['idle', 'current', 'installed'].includes(appUpdates.state.phase) ? appUpdates.state.version : undefined;
   const openAppUpdates = () => { if (appUpdateVersion) void appUpdates.openDialog(); else go('updates'); };
   const prepareImported = async (candidate: core.LocalCandidate, destination: Page = 'models') => {
@@ -954,7 +968,7 @@ export function App() {
     setMonitorModeStatus(status);
     if (enabled && !(status.mode === 'taskbar' && status.active)) throw new Error(status.message || 'Taskbar monitor could not be shown');
   };
-  const UpdatesPage = () => <><Header title={t('appUpdates')} /><div className="settings-layout"><DesktopLifecycleSettings section="updates" currentVersion={appVersion} desktop={desktop} streaming={inferenceBusy} autoCheck={settings.autoCheckUpdates !== false} onAutoCheck={enabled => changeSettings({autoCheckUpdates:enabled})} update={appUpdates.state} onCheck={appUpdates.check} onDownload={appUpdates.download} onInstall={appUpdates.install} onError={error => notify(errorText(error),true)}/></div></>;
+  const UpdatesPage = () => serverMode ? <><Header title={t('appUpdates')} /><Panel title={settings.language==='zh-CN'?'无头服务更新':'Server updates'}><p className="subtle">{settings.language==='zh-CN'?'无头版通过替换二进制或 deb/tarball 升级，不使用桌面自动更新器。':'The headless build is upgraded by replacing the binary or package; the desktop updater is not used.'}</p></Panel></> : <><Header title={t('appUpdates')} /><div className="settings-layout"><DesktopLifecycleSettings section="updates" currentVersion={appVersion} desktop={desktop} streaming={inferenceBusy} autoCheck={settings.autoCheckUpdates !== false} onAutoCheck={enabled => changeSettings({autoCheckUpdates:enabled})} update={appUpdates.state} onCheck={appUpdates.check} onDownload={appUpdates.download} onInstall={appUpdates.install} onError={error => notify(errorText(error),true)}/></div></>;
   const setInterfaceLanguage = (preference: core.LanguagePreference) => {
     const next = core.resolveLanguageSettings({languagePreference:preference}, systemLanguage.locales);
     changeSettings(next);
@@ -967,13 +981,13 @@ export function App() {
   const SettingsPage = () => <><Header title={t('settings')} /><div className="settings-layout d2-settings">
     <Panel title={t('obSettingsTitle' as TextKey)}><div className="setting-toggle"><span><strong>{t('guideTitle')}</strong><small className="d2-setting-hint">{t('obSettingsHint' as TextKey)}</small></span><button type="button" className="st-btn st-btn--secondary" onClick={openGuide}><Flag size={14}/>{t('obReopen' as TextKey)}</button></div></Panel>
     <Panel title={t('appearance')}><Field label={t('theme')}><Segmented ariaLabel={t('theme')} value={settings.theme} onValueChange={theme => changeSettings({theme:theme as AppSettings['theme']})} options={(['dark','light','system'] as const).map(theme => ({value:theme,label:t(theme === 'system' ? 'systemTheme' : theme),icon:theme === 'dark' ? <OfficialIcon name="moon" size={15}/> : theme === 'light' ? <OfficialIcon name="sun" size={15}/> : <Settings2 size={15}/>}))} /></Field><Field label={t('language')} hint={settings.language === 'en' || settings.language === 'zh-CN' ? translate('d2LanguageCount', { count: core.supportedLanguages.length }) : `${translate('d2LanguageCount', { count: core.supportedLanguages.length })} · ${t('translationFallbackHint')}`}><Dropdown ariaLabel={t('language')} value={settings.languagePreference ?? settings.language} onValueChange={value => setInterfaceLanguage(value as core.LanguagePreference)} options={[{value:'system',label:t('systemLanguage')},...core.supportedLanguages.map(item=>({value:item.code,label:item.label}))]} /></Field></Panel>
-    <Panel title={t('behavior')}><div className="setting-toggle"><span><strong data-tooltip={t('closeToTrayHint')}>{t('closeToTray')}</strong><small className="d2-setting-hint">{t('closeToTrayHint')}</small></span><Toggle ariaLabel={t('closeToTray')} disabled={!desktop} tooltip={nativeTitle} checked={settings.closeToTray} onCheckedChange={checked => changeSettings({closeToTray:checked})} /></div>{!settings.closeToTray && <label className="setting-toggle"><span><strong>{settings.language === 'zh-CN' ? '退出前询问' : 'Confirm before exiting'}</strong></span><Toggle ariaLabel={settings.language === 'zh-CN' ? '退出前询问' : 'Confirm before exiting'} checked={!settings.skipExitConfirmation} onCheckedChange={checked => changeSettings({skipExitConfirmation:!checked})}/></label>}</Panel>
-    <DesktopLifecycleSettings section="background" currentVersion={appVersion} desktop={desktop} streaming={inferenceBusy} autoCheck={settings.autoCheckUpdates !== false} onAutoCheck={enabled => changeSettings({autoCheckUpdates:enabled})} update={appUpdates.state} onCheck={appUpdates.check} onDownload={appUpdates.download} onInstall={appUpdates.install} onError={error => notify(errorText(error),true)}/>
+    {!serverMode && <Panel title={t('behavior')}><div className="setting-toggle"><span><strong data-tooltip={t('closeToTrayHint')}>{t('closeToTray')}</strong><small className="d2-setting-hint">{t('closeToTrayHint')}</small></span><Toggle ariaLabel={t('closeToTray')} disabled={!desktop} tooltip={nativeTitle} checked={settings.closeToTray} onCheckedChange={checked => changeSettings({closeToTray:checked})} /></div>{!settings.closeToTray && <label className="setting-toggle"><span><strong>{settings.language === 'zh-CN' ? '退出前询问' : 'Confirm before exiting'}</strong></span><Toggle ariaLabel={settings.language === 'zh-CN' ? '退出前询问' : 'Confirm before exiting'} checked={!settings.skipExitConfirmation} onCheckedChange={checked => changeSettings({skipExitConfirmation:!checked})}/></label>}</Panel>}
+    {!serverMode && <DesktopLifecycleSettings section="background" currentVersion={appVersion} desktop={desktop} streaming={inferenceBusy} autoCheck={settings.autoCheckUpdates !== false} onAutoCheck={enabled => changeSettings({autoCheckUpdates:enabled})} update={appUpdates.state} onCheck={appUpdates.check} onDownload={appUpdates.download} onInstall={appUpdates.install} onError={error => notify(errorText(error),true)}/>}
   </div></>;
   const MonitorSettingsPage = () => <><Header title={t('monitorSettings')} /><div className="settings-layout settings-layout--single">
     <Panel title={t('monitorRefresh')}><Field label={t('pollInterval')}><Dropdown ariaLabel={t('pollInterval')} value={String(settings.pollInterval)} onValueChange={value => changeSettings({pollInterval:Number(value)})} options={[2000,3000,5000,10000,30000].map(value => ({value:String(value),label:`${value/1000} ${t('seconds')}`}))} /></Field></Panel>
-    <TaskbarMonitorSettings enabled={normalizeFloatingMonitorPreferences(settings.floatingMonitor).taskbarEnabled} widget={normalizeFloatingMonitorPreferences(settings.floatingMonitor).taskbar} desktop={desktop} language={settings.language} modeStatus={monitorModeStatus} onWidgetChange={taskbar => changeSettings({floatingMonitor:{...normalizeFloatingMonitorPreferences(settings.floatingMonitor), taskbar}})} onEnabledChange={changeTaskbarMonitor}/>
-    <FloatingMonitorSettings preferences={normalizeFloatingMonitorPreferences(settings.floatingMonitor)} desktop={desktop} language={settings.language} onChange={floatingMonitor => changeSettings({floatingMonitor})} modeStatus={monitorModeStatus} onVisibilityChange={changeMonitorVisibility} onOpen={() => {void changeMonitorVisibility(true).catch(error => notify(errorText(error), true));}}/>
+    {!serverMode && <TaskbarMonitorSettings enabled={normalizeFloatingMonitorPreferences(settings.floatingMonitor).taskbarEnabled} widget={normalizeFloatingMonitorPreferences(settings.floatingMonitor).taskbar} desktop={desktop} language={settings.language} modeStatus={monitorModeStatus} onWidgetChange={taskbar => changeSettings({floatingMonitor:{...normalizeFloatingMonitorPreferences(settings.floatingMonitor), taskbar}})} onEnabledChange={changeTaskbarMonitor}/>}
+    {!serverMode && <FloatingMonitorSettings preferences={normalizeFloatingMonitorPreferences(settings.floatingMonitor)} desktop={desktop} language={settings.language} onChange={floatingMonitor => changeSettings({floatingMonitor})} modeStatus={monitorModeStatus} onVisibilityChange={changeMonitorVisibility} onOpen={() => {void changeMonitorVisibility(true).catch(error => notify(errorText(error), true));}}/>}
   </div></>;
   const ChatDefaultsPage = () => <><Header title={t('chatDefaults')} /><div className="settings-layout">
     <CommonChatSettingsPanel value={commonChatDefaults} onChange={next=>setCommonChatDefaults(core.normalizeCommonChatDefaults(next))} language={settings.language} profileName={profile?.name} inheritsCommon={inheritsCommon} onInheritanceChange={profile?changeChatInheritance:undefined}/>
@@ -1060,7 +1074,8 @@ export function App() {
   const renderTuningPage = () => <><div className="tuning-config-entry"><div><strong>{settings.language==='zh-CN'?'调整模型设置':'Model settings'}</strong><p>{settings.language==='zh-CN'?'保存后重启生效':'Restart to apply changes'}</p></div><button disabled={!profile} onClick={()=>openModelConfig(profile)}><Settings2 size={15}/>{t('config')}</button></div><TuningPage key={profile?.id} profileId={profile?.id} profile={profile} language={settings.language} desktop={desktop} owned={processStatus?.owned === true && processStatus?.running === true} streaming={inferenceBusy} onChanged={() => void query.invalidateQueries()} onCopied={configurationCopied} onRestart={profile && profile.id===activeId && processStatus?.owned===true && processStatus?.running===true && !busy && !inferenceBusy && !localProgress ? ()=>restartSelectedService(profile) : undefined} onBenchmark={()=>go('benchmark')} onSwitchVersion={desktop && processStatus?.owned===true ? activateLocal : undefined}/></>;
   const pages: Record<Page, () => ReactNode> = { guide: renderGuidePage, benchmark: () => null, about: renderAboutPage, overview: renderOverviewPage, tuning: renderTuningPage, config: renderRuntimeConfig, profiles: ProfilesPage, models: ProfilesPage, catalog: ModelsPage, chat: renderChatPage, monitoring: renderMonitoringPage, usage: () => <ApiUsagePage language={settings.language} profileId={overviewMock?overviewMock.profile.id:profile?.id} profileName={overviewMock?overviewMock.profile.name:profile?.name} desktop={overviewMock?true:desktop} onQuery={overviewMock?apiUsageMockClient:core.analyticsQuery} live={overviewMock?{raw:overviewMock.stopped?undefined:overviewMock.metric?.raw,sampledAt:Date.now(),stopped:overviewMock.stopped}:{raw:metric?.raw,sampledAt:metrics.dataUpdatedAt || undefined,stale:!online || metricsUnavailable || (metrics.dataUpdatedAt > 0 && Date.now()-metrics.dataUpdatedAt > Math.max(15000,settings.pollInterval*3)),stopped:serviceStopped}} onOpenDiagnostics={()=>go('requests')}/>, requests: RequestsPage, tasks: TasksPage, environment: EnvironmentPage, settings: SettingsPage, 'monitor-settings': MonitorSettingsPage, 'chat-defaults': ChatDefaultsPage, connections: renderConnectionsPage, 'runtime-tools': renderRuntimeToolsPage, updates: UpdatesPage };
 
-  if (!ready) return <div className="desktop-app-frame"><WindowTitleBar desktop={desktop} language={settings.language} collapsed={sidebarCollapsed} version={appVersion} onClose={windowClose.requestClose} onError={error=>notify(errorText(error),true)}/>{windowClose.dialog}<div className="boot">{bootError ? <><p role="alert">{t('workspaceLoadFailed')}</p><details><summary>{t('details')}</summary>{bootError}</details><button onClick={() => setBootAttempt(value => value + 1)}><RefreshCw size={15}/>{t('retry')}</button></> : <><LoaderCircle className="spin" size={28}/><span>{t('loading')}</span></>}</div></div>;
+  if (serverMode && !serverAuthed) return <ServerAuthGate language={settings.language} onAuthed={() => { setServerAuthed(true); setBootAttempt(v => v + 1); }}/>;
+  if (!ready) return <div className="desktop-app-frame" data-server-mode={serverMode || undefined}><WindowTitleBar desktop={tauriShell} language={settings.language} collapsed={sidebarCollapsed} version={appVersion} onClose={windowClose.requestClose} onError={error=>notify(errorText(error),true)}/>{windowClose.dialog}<div className="boot">{bootError ? <><p role="alert">{t('workspaceLoadFailed')}</p><details><summary>{t('details')}</summary>{bootError}</details><button onClick={() => setBootAttempt(value => value + 1)}><RefreshCw size={15}/>{t('retry')}</button></> : <><LoaderCircle className="spin" size={28}/><span>{t('loading')}</span></>}</div></div>;
   const runningCandidates = (discoveredCandidates.data ?? []).filter(candidate => candidate.running === true && typeof candidate.pid === 'number' && candidate.pid > 0 && typeof candidate.detectedPort === 'number' && candidate.detectedPort > 0);
   const observedRunningCandidates = runningCandidates.filter(candidate => !profiles.some(saved =>
     core.configurationPathKey(saved.configPath, saved.installDir) === core.configurationPathKey(candidate.configPath, candidate.installDir)
@@ -1072,7 +1087,8 @@ export function App() {
   const pillText=detectedOutsideSelection?(settings.language==='zh-CN'?'检测到运行中服务':'Running service detected'):!profile?((discoveredCandidates.data?.length)?t('modelsFoundCta'):t('noProfile')):processUnverified?(settings.language==='zh-CN'?'服务状态待核验':'Service state unverified'):serviceStopped?(settings.language==='zh-CN'?'未启动':'Not started'):!online?t(connecting?'connecting':'offline'):metricsUnavailable?(settings.language==='zh-CN'?'实时状态未核验':'Live state unverified'):modelTransition||metric?.state==='unloaded'?serviceState(metric.state):Number(live.queued)>0?`${number(numeric(live.queued),0)} ${t('queuedState')}`:pillState==='generating'?`${t('generatingState')} · ${number(numeric(live.tok_s))} tok/s`:pillState==='reading'?`${t('readingState')}${Number(live.prompt_total)>0?` · ${Math.round(Number(live.prompt_read)/Number(live.prompt_total)*100)}%`:''}`:typeof live.state==='string'?serviceState(live.state):typeof healthData.loaded==='boolean'?t(loaded?'loaded':'notLoaded'):t('online');
   const navItems=[...(guideActive||page==='guide'?[{id:'guide' as Page,label:t('guideTitle'),group:t('navDaily'),icon:<Flag size={18}/>,badge:guide.plan?`${guide.plan.doneCount}/${guide.plan.total}`:undefined}]:[]),...navigation.map(item=>({id:item.id,label:item.id==='monitoring'?t('monitorWorkspace'):item.id==='models'?t('modelWorkspace'):item.id==='environment'?'Strata':item.id==='settings'?t('navSettings'):t(item.id as TextKey),group:t(item.group),icon:<item.icon size={18}/>}))];
   const parent=parentPage(page);
-  const subpages:Page[]=parent==='models'?['models','catalog']:parent==='monitoring'?['monitoring','usage']:parent==='settings'?['settings','monitor-settings','chat-defaults','connections','runtime-tools','updates','about']:[];
+  const settingsSubpages:Page[]=serverMode?['settings','chat-defaults','connections','runtime-tools','about']:['settings','monitor-settings','chat-defaults','connections','runtime-tools','updates','about'];
+  const subpages:Page[]=parent==='models'?['models','catalog']:parent==='monitoring'?['monitoring','usage']:parent==='settings'?settingsSubpages:[];
   const sidebarNode=<Sidebar showBrand={false} items={navItems} page={parent} profiles={profiles} activeId={activeId} disabled={inferenceBusy} collapsed={sidebarCollapsed} onCollapse={()=>setSidebarCollapsed(old=>!old)} onNavigate={next=>go(next as Page)} onProfile={profileId=>{const selected=profiles.find(p=>p.id===profileId);if(selected)void activateLocal(selected).catch(error=>notify(errorText(error),true));}}/>;
   const selectedTuning = backgroundTuning.data?.find(job=>job?.profileId===activeId);
   const tuningActive = !!selectedTuning && ['checking','running','canceling','applying','rollingBack'].includes(selectedTuning.state);
@@ -1088,8 +1104,8 @@ export function App() {
   const statusPillText = overviewMock
     ? (settings.language === 'zh-CN' ? overviewMock.pillLabel : overviewMock.pillLabelEn)
     : (startupStatus?.label ?? pillText);
-  const titleBar=<WindowTitleBar desktop={desktop} language={settings.language} collapsed={sidebarCollapsed} version={appVersion} updateVersion={appUpdateVersion} onVersionClick={openAppUpdates} title={navItems.find(item=>item.id===parent)?.label} onClose={windowClose.requestClose} onError={error=>notify(errorText(error),true)} status={<ServiceStatusPopover language={settings.language} label={statusPillText} state={statusPillState} profile={statusProfile} process={statusProcess} processUnverified={overviewMock?false:processUnverified} online={statusOnline} loaded={overviewMock?true:(online&&typeof healthData.loaded==='boolean'?healthData.loaded:undefined)} metric={statusMetric} metricUpdatedAt={overviewMock?Date.now():metrics.dataUpdatedAt} metricsUnavailable={overviewMock?false:metricsUnavailable} connecting={statusConnecting} activity={statusActivity} startup={startupStatus} actions={serviceActions} actionsDisabled={quickActionsDisabled} onRefresh={()=>query.invalidateQueries()} onNavigate={go}/>}/>;
-  const statusBar=processUnverified?<footer className="workspace-statusbar service-telemetry-statusbar" aria-label={settings.language==='zh-CN'?'服务监控':'Service telemetry'} data-state="unverified"><span className="workspace-statusbar-state service-telemetry-state"><span className="service-telemetry-dot" aria-hidden="true"/>{settings.language==='zh-CN'?'服务状态待核验':'Service state unverified'}</span><button type="button" className="service-telemetry-floating" onClick={()=>void openFloatingMonitor().catch(error=>notify(errorText(error),true))} aria-label={settings.language==='zh-CN'?'打开监控浮条':'Open floating monitor'} data-tooltip={settings.language==='zh-CN'?'打开监控浮条':'Open floating monitor'}><Activity size={14}/></button></footer>:<ServiceTelemetryStatusBar language={settings.language} hasProfile={!!statusProfile} online={statusOnline} connecting={statusConnecting} stopped={overviewMock?false:serviceStopped} detected={overviewMock?false:detectedOutsideSelection} metric={statusMetric} unavailable={overviewMock?false:metricsUnavailable} stateLabel={serviceState} desktop={overviewDesktop} onOpenFloating={()=>void openFloatingMonitor().catch(error=>notify(errorText(error),true))}/>;
+  const titleBar=<WindowTitleBar desktop={tauriShell} language={settings.language} collapsed={sidebarCollapsed} version={appVersion} updateVersion={appUpdateVersion} onVersionClick={openAppUpdates} title={navItems.find(item=>item.id===parent)?.label} onClose={windowClose.requestClose} onError={error=>notify(errorText(error),true)} status={<ServiceStatusPopover language={settings.language} label={statusPillText} state={statusPillState} profile={statusProfile} process={statusProcess} processUnverified={overviewMock?false:processUnverified} online={statusOnline} loaded={overviewMock?true:(online&&typeof healthData.loaded==='boolean'?healthData.loaded:undefined)} metric={statusMetric} metricUpdatedAt={overviewMock?Date.now():metrics.dataUpdatedAt} metricsUnavailable={overviewMock?false:metricsUnavailable} connecting={statusConnecting} activity={statusActivity} startup={startupStatus} actions={serviceActions} actionsDisabled={quickActionsDisabled} onRefresh={()=>query.invalidateQueries()} onNavigate={go}/>}/>;
+  const statusBar=processUnverified?<footer className="workspace-statusbar service-telemetry-statusbar" aria-label={settings.language==='zh-CN'?'服务监控':'Service telemetry'} data-state="unverified"><span className="workspace-statusbar-state service-telemetry-state"><span className="service-telemetry-dot" aria-hidden="true"/>{settings.language==='zh-CN'?'服务状态待核验':'Service state unverified'}</span>{tauriShell && <button type="button" className="service-telemetry-floating" onClick={()=>void openFloatingMonitor().catch(error=>notify(errorText(error),true))} aria-label={settings.language==='zh-CN'?'打开监控浮条':'Open floating monitor'} data-tooltip={settings.language==='zh-CN'?'打开监控浮条':'Open floating monitor'}><Activity size={14}/></button>}</footer>:<ServiceTelemetryStatusBar language={settings.language} hasProfile={!!statusProfile} online={statusOnline} connecting={statusConnecting} stopped={overviewMock?false:serviceStopped} detected={overviewMock?false:detectedOutsideSelection} metric={statusMetric} unavailable={overviewMock?false:metricsUnavailable} stateLabel={serviceState} desktop={overviewDesktop && tauriShell} onOpenFloating={tauriShell ? ()=>void openFloatingMonitor().catch(error=>notify(errorText(error),true)) : undefined}/>;
   const subnavigation=page==='config'?<nav className="workspace-subnav model-config-breadcrumb" aria-label={t('config')}><button type="button" onClick={()=>go('models')}><ArrowRight size={15} className="back-arrow"/>{t('myModels')}</button><span aria-hidden="true">/</span><strong>{configProfile?.name ?? t('model')} · {t('config')}</strong></nav>:subpages.length>0&&<nav ref={subnavigationRef} className="workspace-subnav" aria-label={navItems.find(item=>item.id===parent)?.label}>{subpages.map(item=><button key={item} type="button" className={(page===item || item==='models' && page==='profiles')?'is-active':''} aria-current={(page===item || item==='models' && page==='profiles')?'page':undefined} onClick={()=>go(item)}>{item==='monitor-settings'?t('monitorSettings'):item==='chat-defaults'?t('chatDefaults'):item==='connections'?(settings.language==='zh-CN'?'API 与外部助手':'API and assistants'):item==='runtime-tools'?(settings.language==='zh-CN'?'显存与会话':'VRAM and sessions'):item==='settings'?(settings.language==='zh-CN'?'公共设置':'Shared settings'):item==='updates'?t('appUpdates'):item==='requests'?t('apiMonitorTitle'):item==='models'?t('myModels'):item==='catalog'?t('downloadModels'):t(item as TextKey)}</button>)}</nav>;
   const failureCandidate = page==='tasks' ? startupFailure ?? core.latestStartupDiagnostic(supervisor.data?.startupFailures,logProfile?.id??profile?.id??'') : startupFailure?.profileId===profile?.id ? startupFailure : core.latestStartupDiagnostic(supervisor.data?.startupFailures,profile?.id??'');
   // A failure recorded for a model that has since become ready, or is loading again right now, is stale.
@@ -1104,7 +1120,7 @@ export function App() {
     if (action === 'openFiles') { go('environment'); return; }
     if (target) openModelConfig(target); else go('models');
   };
-  return <div className="desktop-app-frame">{ready && showLanguageSetup && <LanguageSetupDialog settings={settings} onChange={setInterfaceLanguage} onConfirm={confirmLanguage}/>} {titleBar}<AppLayout sidebar={sidebarNode} collapsed={sidebarCollapsed}><WorkspaceLayout statusBar={statusBar}>{subnavigation}{shownStartupFailure && ["overview","models","profiles","tasks"].includes(page) && <StartupDiagnosticCard language={settings.language} diagnostic={shownStartupFailure} profileName={profiles.find(p=>p.id===shownStartupFailure.profileId)?.name} onAction={onStartupDiagnostic} disabled={!!busy || inferenceBusy}/>} {localProgress && ['overview','models','profiles','tasks'].includes(page) && <StartupProgress language={settings.language} progress={{...localProgress,startedAt:startupStartedAt,logs:startupLogs.data??[]}} modelName={startupTarget?.name} apiUrl={startupTarget?.baseUrl}/>} {page==='benchmark'?null:officialPage?pages[page]():<div className={`management-content management-content--${page}`}><div className="main-content">{runningServicePanel}{pages[page]()}</div></div>}<div hidden={page!=='benchmark'} className="management-content management-content--benchmark"><div className="main-content"><BenchmarkPage profile={profile} online={online && loaded} disabled={streaming || !!busy || !!localProgress || !!tasks.data?.some(task=>task.state==='running') || !!backgroundTuning.data?.some(job=>job && ['checking','running','canceling','applying','rollingBack'].includes(job.state)) || updateOwner!==null} language={settings.language} onRunningChange={setBenchmarkRunning} quickRunRequest={quickBenchmarkRequest}/></div></div></WorkspaceLayout>
+  return <div className="desktop-app-frame" data-server-mode={serverMode || undefined}>{ready && showLanguageSetup && <LanguageSetupDialog settings={settings} onChange={setInterfaceLanguage} onConfirm={confirmLanguage}/>} {titleBar}<AppLayout sidebar={sidebarNode} collapsed={sidebarCollapsed}><WorkspaceLayout statusBar={statusBar}>{subnavigation}{shownStartupFailure && ["overview","models","profiles","tasks"].includes(page) && <StartupDiagnosticCard language={settings.language} diagnostic={shownStartupFailure} profileName={profiles.find(p=>p.id===shownStartupFailure.profileId)?.name} onAction={onStartupDiagnostic} disabled={!!busy || inferenceBusy}/>} {localProgress && ['overview','models','profiles','tasks'].includes(page) && <StartupProgress language={settings.language} progress={{...localProgress,startedAt:startupStartedAt,logs:startupLogs.data??[]}} modelName={startupTarget?.name} apiUrl={startupTarget?.baseUrl}/>} {page==='benchmark'?null:officialPage?pages[page]():<div className={`management-content management-content--${page}`}><div className="main-content">{runningServicePanel}{pages[page]()}</div></div>}<div hidden={page!=='benchmark'} className="management-content management-content--benchmark"><div className="main-content"><BenchmarkPage profile={profile} online={online && loaded} disabled={streaming || !!busy || !!localProgress || !!tasks.data?.some(task=>task.state==='running') || !!backgroundTuning.data?.some(job=>job && ['checking','running','canceling','applying','rollingBack'].includes(job.state)) || updateOwner!==null} language={settings.language} onRunningChange={setBenchmarkRunning} quickRunRequest={quickBenchmarkRequest}/></div></div></WorkspaceLayout>
     {toast&&<div className="st-toasts" id="toasts" aria-live="polite"><div className={`st-toast st-toast--${toast.error?'error':'success'}`} role={toast.error?'alert':'status'}><OfficialIcon name={toast.error?'error':'check'}/><div><div className="st-toast__title">{t(toast.error?'error':'success')}</div><span>{toast.text}</span>{toast.taskId && <div className="actions">{tasks.data?.find(task => task.id === toast.taskId) && taskNextActions(tasks.data.find(task => task.id === toast.taskId)!)}<button className="st-btn st-btn--secondary" onClick={() => go('tasks')}>{t('viewAllTasks')}</button></div>}</div><button className="st-btn st-btn--icon" aria-label={t('close')} onClick={()=>setToast(null)}><X size={16}/></button></div></div>}{busy&&<div className="busy-indicator" role="status"><LoaderCircle className="spin" size={14}/>{t('working')}</div>}
     {modal?.kind === 'modelProfiles' && <ModelProfilesDialog models={modal.models} disabled={!!busy} onClose={() => setModal(null)} onChoose={path => void act('taskProfile', () => openConfigProfile(path, modal.runtime))}/>}
     {modal?.kind === 'profile' && <ProfileDialog key={modal.profile?.id ?? 'new'} existing={modal.profile} onClose={() => setModal(null)} onSave={async (p, key) => { if (desktop) p = await core.renameLocalInstallation(p.id, p.name); if (key.trim()) await core.setApiKey(p.id, key.trim()); setProfiles(old => old.some(x => x.id === p.id) ? old.map(x => x.id === p.id ? p : x) : [...old, p]); if (!desktop && !profiles.some(item => item.id === p.id)) setActiveId(p.id); setModal(null); await query.invalidateQueries(); notify(t('saved')); }} choose={choose} native={desktop} errorText={errorText} />}

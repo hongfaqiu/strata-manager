@@ -12,8 +12,65 @@ import { arenaLaunchParams, assertArenaPayloadSafe, type ArenaPayload, type Aren
 
 export interface LocalModel { name: string; configPath: string; modelPath: string; sizeBytes: number | null }
 
-export function isDesktop(): boolean {
+export type ServerBootstrap = {
+  apiBase: string;
+  version: string;
+  features?: { pathPicker?: boolean; updater?: boolean; tray?: boolean; floatingMonitor?: boolean };
+};
+
+declare global {
+  interface Window {
+    __STRATA_MANAGER_SERVER__?: ServerBootstrap;
+  }
+}
+
+const SERVER_TOKEN_KEY = 'strata-manager-server-token';
+
+/** True inside the Tauri desktop shell (window chrome, tray, native dialogs). */
+export function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+/** True when the page was served by strata-manager-server (injected bootstrap). */
+export function isServerMode(): boolean {
+  return typeof window !== 'undefined' && !!window.__STRATA_MANAGER_SERVER__;
+}
+
+/**
+ * True when a native Manager backend is available (Tauri IPC or headless server RPC).
+ * Historical name used across the UI for "full app" capabilities.
+ */
+export function isDesktop(): boolean {
+  return isTauri() || isServerMode();
+}
+
+export function serverBootstrap(): ServerBootstrap | undefined {
+  return typeof window !== 'undefined' ? window.__STRATA_MANAGER_SERVER__ : undefined;
+}
+
+export function getServerToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const fromQuery = new URLSearchParams(window.location.search).get('token');
+    if (fromQuery && fromQuery.length >= 16) {
+      sessionStorage.setItem(SERVER_TOKEN_KEY, fromQuery);
+      const url = new URL(window.location.href);
+      url.searchParams.delete('token');
+      window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+      return fromQuery;
+    }
+    return sessionStorage.getItem(SERVER_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setServerToken(token: string): void {
+  sessionStorage.setItem(SERVER_TOKEN_KEY, token.trim());
+}
+
+export function clearServerToken(): void {
+  sessionStorage.removeItem(SERVER_TOKEN_KEY);
 }
 
 /** Read only: never starts a runtime or changes the system language. */
@@ -22,12 +79,46 @@ export async function getSystemLanguage(): Promise<SystemLanguage> {
   return { locales: typeof navigator === 'undefined' ? [] : [...navigator.languages] };
 }
 
-async function native<T>(command: string, args?: Record<string, unknown>): Promise<T> {
-  if (!isDesktop()) throw new StrataError('DESKTOP_REQUIRED', '此操作需要 Strata Manager 桌面应用');
+async function serverRpc<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  const boot = serverBootstrap();
+  if (!boot) throw new StrataError('DESKTOP_REQUIRED', '此操作需要 Strata Manager 桌面应用或无头服务');
+  const token = getServerToken();
+  if (!token) throw new StrataError('AUTH_REQUIRED', '请先填写无头服务的访问令牌');
+  let response: Response;
   try {
-    const { invoke } = await import('@tauri-apps/api/core');
-    return await invoke<T>(command, args);
-  } catch (error) { throw normalizeError(error); }
+    response = await fetch(`${boot.apiBase}/rpc`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ method: command, params: args ?? {} }),
+    });
+  } catch (error) {
+    throw normalizeError(error);
+  }
+  let payload: { ok?: boolean; result?: T; error?: { message?: string } };
+  try {
+    payload = await response.json();
+  } catch {
+    throw new StrataError('INVALID_RESPONSE', `HTTP ${response.status}`, response.status);
+  }
+  if (!response.ok || payload.ok === false) {
+    throw normalizeError(payload.error?.message ?? `HTTP ${response.status}`, response.status);
+  }
+  return payload.result as T;
+}
+
+async function native<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  if (isTauri()) {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      return await invoke<T>(command, args);
+    } catch (error) { throw normalizeError(error); }
+  }
+  if (isServerMode()) return serverRpc<T>(command, args);
+  throw new StrataError('DESKTOP_REQUIRED', '此操作需要 Strata Manager 桌面应用');
 }
 
 let dbPromise: Promise<IDBDatabase> | undefined;
@@ -186,6 +277,23 @@ export async function streamChat(profile: ServiceProfile, body: JsonObject, onDe
       if (streamError) throw streamError;
       parser.finish();
     } finally { signal?.removeEventListener('abort', cancel); }
+  } else if (isServerMode()) {
+    if (signal?.aborted) throw new StrataError('CANCELLED', '请求已取消');
+    const completion = await native<JsonObject>('strata_request', {
+      profile: normalizedProfile(profile),
+      path: '/v1/chat/completions',
+      method: 'POST',
+      body: { ...body, stream: false },
+    });
+    const choice = Array.isArray((completion as { choices?: unknown }).choices)
+      ? (completion as { choices: Array<{ message?: { content?: string; reasoning_content?: string } }> }).choices[0]
+      : undefined;
+    const content = choice?.message?.content ?? '';
+    const reasoning = choice?.message?.reasoning_content ?? '';
+    if (reasoning) onDelta({ reasoning });
+    if (content) onDelta({ content });
+    onDelta({ done: true });
+    completed = true;
   } else {
     const response = await browserFetch(profile, '/v1/chat/completions', 'POST', body, signal);
     if (!response.ok) await responseJSON(response);

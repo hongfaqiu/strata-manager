@@ -97,7 +97,7 @@ export function InstallRuntimePage(props: InstallRuntimePageProps) {
   const snapshot = useRef<{ installation: RuntimeInstallationStatus; task?: TaskStatus }>({ installation: {} });
   const describe = (value: unknown) => core.normalizeError(value).message;
   // The guide's local ZIP flow (#46), also offered here after the guide is skipped (#74).
-  const packages = useLocalRuntimePackages(core.runtimePackageIsWindows(props.os), key => text[key === 'strataArchivePath' ? 'localStrata' : 'localEngine']);
+  const packages = useLocalRuntimePackages(core.runtimePackagePlatform(props.os), key => text[key === 'strataArchivePath' ? 'localStrata' : 'localEngine']);
   const localChoice = useRef(packages); localChoice.current = packages;
 
   const refresh = useCallback(async (manual = false) => {

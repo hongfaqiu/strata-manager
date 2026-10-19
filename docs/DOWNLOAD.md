@@ -52,7 +52,7 @@ README、官网截图与使用指南描述当前源码功能；安装包包含�
 - 应用内更新（若启用）使用 `Strata.Manager_<version>_aarch64.app.tar.gz`；`latest.json` 的 `darwin-aarch64` 指向该归档，不指向 DMG。
 - CI 在 `macos-15` 上设置 `APPLE_SIGNING_IDENTITY=-` 做**临时（ad-hoc）签名**。没有 Apple 开发者证书，因此**没有公证、没有硬化运行时**。Gatekeeper 可能拦截；确认文件来自本项目发布页后，系统仍可能要求移除隔离或以右键打开。这不是已经在真机验收过的安装步骤。
 - **不提供** Intel（`x86_64-apple-darwin`）安装包。上游 Strata Metal 面向 Apple Silicon。
-- **DMG alone 不能完成推理。** Metal 引擎仍需后续按上游 [Niko1221/Strata `docs/MAC.md`](https://github.com/Niko1221/Strata/blob/main/docs/MAC.md) 用 `./setup.sh` 本机构建；Manager 尚未把该路径接入「一键安装」。上游 0.1.45 Metal 主线仍有已知编译门禁。
+- **DMG 仍不含引擎。** 第二期起，Manager 在 Apple Silicon 上可下载并校验上游 [v0.2.0-beta](https://github.com/Niko1221/Strata/releases/tag/v0.2.0-beta) 预制包 `strata-engine-*-macos-arm64-metal.tar.gz`（应用内 SHA256，不附带 SHA256SUMS），也可选用已有本地 Strata/`engine` 或 `build-metal` 目录。`./setup.sh` 源码构建仍可手动按 [docs/MAC.md](https://github.com/Niko1221/Strata/blob/main/docs/MAC.md) 操作，Manager 暂不自动调用。真机推理验收仍待进行。
 - `Info.plist` 最低系统版本为 15.0。CI 只证明 runner 能编译并打包；不证明在 Mac 硬件上能启动、发现引擎或完成推理。
 
 ## 从源码体验
