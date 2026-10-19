@@ -2929,11 +2929,17 @@ fn read_logs(
 }
 
 fn output(program: &str, args: &[&str]) -> Option<String> {
+    output_with_timeout(program, args, Duration::from_secs(3))
+}
+
+/// Like [`output`], with a caller-chosen deadline. Python probes on Windows can
+/// exceed three seconds on a cold start (venv redirector plus antivirus scans).
+fn output_with_timeout(program: &str, args: &[&str], timeout: Duration) -> Option<String> {
     let logs: Logs = Default::default();
     let mut command = Command::new(program);
     command.args(args);
     let mut process = OwnedProcess::spawn(command, logs.clone(), "probe").ok()?;
-    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+    let deadline = std::time::Instant::now() + timeout;
     let success = loop {
         let status = process.refresh().ok()?;
         if !status.running {
