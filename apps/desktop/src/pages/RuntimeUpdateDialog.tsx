@@ -18,6 +18,8 @@ export interface RuntimeUpdateDialogProps {
   initialPreferences?: RuntimeDownloadPreferences;
   onConfirm: (download?: RuntimeZipDownloadOptions, assetName?: string) => void; onDismiss: () => void;
   busy?: boolean; canConfirm?: boolean; error?: string;
+  /** Opened from the Strata page's "Install from local package" entry (#74): start on a local ZIP. */
+  localEntry?: boolean;
 }
 
 type DownloadMode = 'official' | 'local' | 'mirror';
@@ -28,14 +30,14 @@ function validMirrorUrl(value: string) {
   catch { return false; }
 }
 
-export function RuntimeUpdateDialog({ language, runtime, release, assetName, initialDownload, initialPreferences, onConfirm, onDismiss, busy = false, canConfirm = true, error }: RuntimeUpdateDialogProps) {
+export function RuntimeUpdateDialog({ language, runtime, release, assetName, initialDownload, initialPreferences, onConfirm, onDismiss, busy = false, canConfirm = true, error, localEntry = false }: RuntimeUpdateDialogProps) {
   const zh = language === 'zh-CN';
   const notes = releaseNotes(release.notes);
   const version = release.latestVersion ?? release.supportedVersion;
   const releaseKey = JSON.stringify([version, release.sourceRevision, release.assets.map(asset => [asset.name, asset.sha256, asset.url])]);
   const automatic = useQuery({ queryKey: ['runtime-download-asset', runtime.installDir, releaseKey], queryFn: () => core.resolveRuntimeZipAsset(runtime.installDir), enabled: core.isDesktop() && !!release.assets.length, retry: false });
   const automaticAsset = automatic.isSuccess ? release.assets.find(asset => asset.name === automatic.data?.name && asset.url === automatic.data?.url && asset.sha256 === automatic.data?.sha256) : undefined;
-  const initialMode: DownloadMode = initialPreferences?.mode ?? (initialDownload?.localArchivePath !== undefined ? 'local' : initialDownload?.downloadUrl !== undefined ? 'mirror' : 'official');
+  const initialMode: DownloadMode = localEntry ? 'local' : initialPreferences?.mode ?? (initialDownload?.localArchivePath !== undefined ? 'local' : initialDownload?.downloadUrl !== undefined ? 'mirror' : 'official');
   const selectionKey = JSON.stringify([runtime.installDir, release.latestVersion, release.checkedAt, release.sourceRevision, release.assets.map(asset => [asset.name, asset.sha256, asset.url]), assetName, initialDownload?.localArchivePath, initialDownload?.downloadUrl, initialPreferences]);
   const initialSelection = (): DownloadSelection => {
     const fixedSource = initialMode === 'local' || initialMode === 'mirror' && !initialPreferences?.sourceId && !/\{(?:url|version|asset)\}/.test(initialPreferences?.mirrorUrl ?? '');
@@ -57,7 +59,7 @@ export function RuntimeUpdateDialog({ language, runtime, release, assetName, ini
   const preferences: RuntimeDownloadPreferences = { mode: selection.mode, ...(selection.assetName ? { assetName: selection.assetName } : {}), releaseVersion: selection.releaseVersion, ...(selection.mode === 'local' ? { localArchivePath: selection.localArchivePath } : selection.mode === 'mirror' ? selection.sourceId ? { sourceId: selection.sourceId } : { mirrorUrl: selection.downloadUrl } : {}) };
   const resolved = core.resolveRuntimeDownloadPreferences(preferences, release, automaticAsset?.name);
   const sourceReady = !!selectedAsset && !resolved.requiresSelection;
-  const savedSourceNeedsSelection = initialMode !== 'official' && selection.mode === initialMode && !sourceReady && (!!selectedAsset || automatic.isError || selection.mode === 'local' && !selection.localArchivePath || selection.mode === 'mirror' && !selection.sourceId && !selection.downloadUrl);
+  const savedSourceNeedsSelection = !localEntry && initialMode !== 'official' && selection.mode === initialMode && !sourceReady && (!!selectedAsset || automatic.isError || selection.mode === 'local' && !selection.localArchivePath || selection.mode === 'mirror' && !selection.sourceId && !selection.downloadUrl);
   const changeSelection = (changes: Partial<DownloadSelection>) => {
     if (inputsDisabled || currentState.current.busy || !currentState.current.canConfirm || currentSelection.current !== selection) return;
     setSelection({ ...selection, ...changes }); setDownloadError(''); setCopied('');
@@ -98,11 +100,12 @@ export function RuntimeUpdateDialog({ language, runtime, release, assetName, ini
     onConfirm(resolved.download, selectedAsset?.name || selection.assetName || undefined);
   };
   const dismiss = () => { if (!busy && !currentState.current.busy) onDismiss(); };
-  return <Dialog title={zh ? '确认更新 Strata' : 'Confirm Strata update'} wide onClose={dismiss}>
+  return <Dialog title={localEntry ? zh ? '使用本地安装包' : 'Install from local package' : zh ? '确认更新 Strata' : 'Confirm Strata update'} wide onClose={dismiss}>
     <div className="runtime-update-dialog">
       <p className="runtime-update-release-name">{release.releaseName || `Strata ${version}`}</p>
       <dl className="runtime-update-details"><div><dt>{zh ? '本机版本' : 'Installed version'}</dt><dd>{runtime.runtimeVersion ?? '—'}</dd></div><div><dt>{zh ? '更新至' : 'Update to'}</dt><dd>{version}</dd></div></dl>
       <code className="runtime-update-directory">{runtime.installDir}</code>
+      {localEntry && <p className="runtime-update-download-hint" data-testid="runtime-local-entry-hint">{zh ? `选择本机已下载的 Strata ${version} 官方引擎 ZIP，可更新到该版本或重装当前版本。安装前按官方 SHA256 校验，不匹配不会安装。` : `Choose a downloaded official Strata ${version} engine ZIP to update to that version or reinstall it. It is verified against the official SHA256 before installation; a mismatch is not installed.`}</p>}
       <fieldset className="runtime-update-download" disabled={inputsDisabled}>
         <legend>{zh ? '引擎 ZIP 下载方式' : 'Engine ZIP source'}</legend>
         {savedSourceNeedsSelection && <p className="notice warning" role="status">{zh ? '已保存的下载来源需要重新选择，或改用官方下载。' : 'Reselect the saved source, or choose official downloading.'}</p>}

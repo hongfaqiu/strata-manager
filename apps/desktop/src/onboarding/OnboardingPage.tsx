@@ -10,6 +10,7 @@ import { ResourceAssessmentPanel } from '../pages/ResourceAssessmentPanel';
 import { ContextExtensionNotice } from '../pages/ContextExtensionNotice';
 import { SetupHandoffActions } from '../pages/SetupHandoffActions';
 import { taskProgress } from '../pages/d2Estimates';
+import { useLocalRuntimePackages } from '../pages/LocalRuntimePackage';
 import { fetchArenaGroups, fetchArenaTier } from './arenaPublic';
 import {
   arenaLeaderboardQuery, arenaMatch, confidenceBars, defaultContext, parseGpu,
@@ -245,25 +246,12 @@ function RuntimeStep(props: StepProps & { runtimeTask?: TaskStatus; runtimeFact:
   const { t, runtimeTask, runtimeFact } = props;
   const [starting, setStarting] = useState(false);
   const [canceling, setCanceling] = useState(false);
-  // Downloading stays the default; already-downloaded packages are an explicit choice.
-  const [packageSource, setPackageSource] = useState<'download' | 'local'>('download');
-  const [archives, setArchives] = useState<core.LocalRuntimeArchives>({});
-  const [pickError, setPickError] = useState('');
-  const [picking, setPicking] = useState(false);
-  const windows = /windows/i.test(props.environment?.os ?? (typeof navigator === 'undefined' ? '' : navigator.userAgent));
+  // Same local-package flow as the Strata page (#74): one hook, one prepareLocalRuntime call.
+  const windows = core.runtimePackageIsWindows(props.environment?.os);
+  const packages = useLocalRuntimePackages(windows, key => t(key === 'strataArchivePath' ? 'obLocalStrata' : 'obLocalEngine'));
+  const { source: packageSource, archives, pickError, picking, pick, chosen, missing: localMissing } = packages;
   const running = runtimeTask?.state === 'running';
   const logs = useTaskLogs(runtimeTask?.id, running);
-  const chosen: core.LocalRuntimeArchives | undefined = packageSource === 'local' ? { strataArchivePath: archives.strataArchivePath, ...(windows ? { engineArchivePath: archives.engineArchivePath } : {}) } : undefined;
-  const localMissing = packageSource === 'local' && !chosen?.strataArchivePath && !chosen?.engineArchivePath;
-  const pick = async (key: keyof core.LocalRuntimeArchives) => {
-    if (picking) return;
-    setPicking(true); setPickError('');
-    try {
-      const { open } = await import('@tauri-apps/plugin-dialog');
-      const path = await open({ title: t(key === 'strataArchivePath' ? 'obLocalStrata' : 'obLocalEngine'), multiple: false, directory: false, filters: [{ name: 'ZIP', extensions: ['zip'] }] });
-      if (typeof path === 'string') setArchives(previous => ({ ...previous, [key]: path }));
-    } catch (error) { setPickError(core.normalizeError(error).message); } finally { setPicking(false); }
-  };
   const start = async () => {
     if (starting || running || localMissing) return;
     setStarting(true);
@@ -276,7 +264,7 @@ function RuntimeStep(props: StepProps & { runtimeTask?: TaskStatus; runtimeFact:
     <span className="ob-check-value">{archives[key] ? <code className="ob-mono-small" data-testid={`ob-archive-${key}`}>{archives[key]}</code> : <small className="is-alone">{t('obNotChosen')}</small>}</span>
     <span className="ob-archive-actions">
       <button type="button" className="st-btn st-btn--secondary" disabled={!props.desktop || picking || starting} onClick={() => void pick(key)}>{t('obChooseFile')}</button>
-      {archives[key] && <button type="button" className="ob-link" disabled={picking || starting} onClick={() => setArchives(previous => ({ ...previous, [key]: undefined }))}>{t('obClearFile')}</button>}
+      {archives[key] && <button type="button" className="ob-link" disabled={picking || starting} onClick={() => packages.clear(key)}>{t('obClearFile')}</button>}
     </span>
   </div>;
   const cancel = async () => { if (!runtimeTask || canceling) return; setCanceling(true); try { await core.cancelTask(runtimeTask.id); } catch (error) { props.onError(error); } finally { setCanceling(false); } };
@@ -289,7 +277,7 @@ function RuntimeStep(props: StepProps & { runtimeTask?: TaskStatus; runtimeFact:
       : failed ? <div className="ob-status is-bad"><Mark state="fail"/><div className="ob-status-body"><b>{runtimeTask?.message}</b></div></div>
       : null}
     {!running && runtimeFact !== 'ready' && <div className="ob-package-source">
-      <div className="ob-field is-row"><span>{t('obPackageSource')}</span><Segmented ariaLabel={t('obPackageSource')} value={packageSource} onValueChange={value => { setPackageSource(value as 'download' | 'local'); setPickError(''); }} options={[{ value: 'download', label: t('obSourceDownload') }, { value: 'local', label: t('obSourceLocal') }]}/></div>
+      <div className="ob-field is-row"><span>{t('obPackageSource')}</span><Segmented ariaLabel={t('obPackageSource')} value={packageSource} onValueChange={value => packages.setSource(value as core.RuntimePackageSource)} options={[{ value: 'download', label: t('obSourceDownload') }, { value: 'local', label: t('obSourceLocal') }]}/></div>
       {packageSource === 'local' && <>
         <p className="ob-note">{t(windows ? 'obLocalHintWindows' : 'obLocalHintLinux')}</p>
         <div className="ob-checks">{archiveRow('strataArchivePath', t('obLocalStrata'))}{windows && archiveRow('engineArchivePath', t('obLocalEngine'))}</div>

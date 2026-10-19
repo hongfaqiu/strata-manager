@@ -6,6 +6,7 @@ import type { LogEntry, RuntimeInstallationStatus, TaskStatus } from '@strata-ma
 import { Empty, Header, Panel } from '../components';
 import { Dropdown } from '../OfficialControls';
 import { RuntimeManagementPanel } from './RuntimeManagementPanel';
+import { LocalRuntimePackageFields, useLocalRuntimePackages } from './LocalRuntimePackage';
 import './install-runtime.css';
 
 const words = {
@@ -28,6 +29,7 @@ const words = {
     environment: '运行环境', installed: '已安装', version: '引擎版本', notPrepared: '尚未准备引擎',
     prepareRuntime: '准备完整运行环境', repairHint: '在应用管理目录准备完整的独立运行环境，原目录保留。完成后可以切换使用。',
     repairFallback: '已检测到 Strata 文件，但 Python 或运行依赖尚未就绪。',
+    startLocal: '使用本地安装包安装', localPackage: '使用本地安装包', localStrata: 'Strata 安装包', localEngine: '引擎安装包',
   },
   en: {
     title: 'Strata', intro: 'On a new computer, install Strata before preparing a model.', installedIntro: 'Manage local Strata runtimes, versions and upstream updates in one place.',
@@ -48,6 +50,7 @@ const words = {
     environment: 'Runtime', installed: 'Installed', version: 'Engine version', notPrepared: 'Engine not prepared yet',
     prepareRuntime: 'Prepare a complete runtime', repairHint: 'Prepare a complete, separate runtime in the app-managed directory. The original directory is retained; switch after preparation.',
     repairFallback: 'Strata files were detected, but Python or runtime dependencies are not ready.',
+    startLocal: 'Install from local package', localPackage: 'Install from local package', localStrata: 'Strata package', localEngine: 'Engine package',
   },
 } as const;
 
@@ -57,6 +60,8 @@ export interface InstallRuntimePageProps {
   autoCheck?: boolean;
   operationDisabled?: boolean;
   onUpdateStarted?: () => void;
+  /** Detected OS name; Windows also offers the separate engine ZIP. */
+  os?: string;
 }
 
 function detectedRuntimes(status: RuntimeInstallationStatus): core.DetectedRuntime[] {
@@ -91,6 +96,9 @@ export function InstallRuntimePage(props: InstallRuntimePageProps) {
   const polling = useRef(false);
   const snapshot = useRef<{ installation: RuntimeInstallationStatus; task?: TaskStatus }>({ installation: {} });
   const describe = (value: unknown) => core.normalizeError(value).message;
+  // The guide's local ZIP flow (#46), also offered here after the guide is skipped (#74).
+  const packages = useLocalRuntimePackages(core.runtimePackageIsWindows(props.os), key => text[key === 'strataArchivePath' ? 'localStrata' : 'localEngine']);
+  const localChoice = useRef(packages); localChoice.current = packages;
 
   const refresh = useCallback(async (manual = false) => {
     if (!mounted.current || !callbacks.current.desktop || operation.current) return;
@@ -144,7 +152,8 @@ export function InstallRuntimePage(props: InstallRuntimePageProps) {
   const start = async (repair = false) => {
     if (props.operationDisabled) return;
     const current = snapshot.current;
-    if (!mounted.current || !callbacks.current.desktop || operation.current || !loaded || statusError || current.task?.state === 'running' || (!repair && detectedRuntimes(current.installation).length > 0)) return;
+    const local = localChoice.current;
+    if (!mounted.current || !callbacks.current.desktop || operation.current || !loaded || statusError || current.task?.state === 'running' || local.missing || (!repair && detectedRuntimes(current.installation).length > 0)) return;
     operation.current = true;
     epoch.current += 1;
     const life = lifetime.current;
@@ -153,7 +162,7 @@ export function InstallRuntimePage(props: InstallRuntimePageProps) {
     cancelPending.current = '';
     setCancelRequested('');
     try {
-      const created = await core.prepareLocalRuntime();
+      const created = await core.prepareLocalRuntime(local.chosen);
       if (!mounted.current || life !== lifetime.current) return;
       const next = { ...current.installation, taskId: created.id };
       snapshot.current = { installation: next, task: created };
@@ -211,8 +220,9 @@ export function InstallRuntimePage(props: InstallRuntimePageProps) {
           <div className="runtime-summary-selection"><span className={`runtime-summary-status ${detected.readiness === 'ready' ? 'runtime-ready' : 'runtime-repair'}`}>{detected.readiness === 'ready' ? <Check size={14}/> : <CircleAlert size={14}/>} {detected.readiness === 'ready' ? text.installed : text.runtimeRepair}</span><div><span className="runtime-selection-label">{text.chooseRuntime}</span><Dropdown ariaLabel={text.chooseRuntime} value={detected.installDir} disabled={busy || running} onValueChange={setSelectedRuntime} options={runtimes.map(runtime => ({ value: runtime.installDir, label: `${runtime.runtimeVersion ? `Strata ${runtime.runtimeVersion} · ` : ''}${runtime.installDir}${runtime.readiness === 'repair' ? ` · ${text.runtimeRepair}` : ''}` }))}/></div></div>
           <dl className="runtime-summary-facts"><div><dt>{text.directory}</dt><dd><code>{detected.installDir}</code></dd></div><div><dt>{text.version}</dt><dd>{detected.runtimeVersion ?? text.notPrepared}</dd></div></dl>
           {detected.readiness === 'repair' && <div className="runtime-repair-details" role="status"><p>{detected.reason ?? text.repairFallback}</p><small>{text.repairHint}</small></div>}
+          {detected.readiness === 'repair' && !running && <LocalRuntimePackageFields packages={packages} disabled={busy}/>}
           {running && <p className="runtime-summary-task" role="status"><LoaderCircle size={15} className="spin"/><span>{task.message}</span></p>}
-          <div className="actions runtime-summary-actions">{detected.readiness === 'repair' && !running && <button type="button" disabled={props.operationDisabled || !loaded || busy || !!statusError} onClick={() => void start(true)}><Download size={15}/>{action === 'start' ? text.starting : text.prepareRuntime}</button>}{running && <button type="button" disabled={busy || canceling} onClick={() => void cancel()}><Square size={13}/>{canceling ? text.canceling : text.cancel}</button>}<button type="button" aria-expanded={detailsOpen} aria-controls="install-runtime-details" onClick={() => setDetailsOpen(value => !value)}><FileText size={15}/>{text.details}</button>{running && logButton}</div>
+          <div className="actions runtime-summary-actions">{detected.readiness === 'repair' && !running && <button type="button" disabled={props.operationDisabled || !loaded || busy || !!statusError || packages.missing} onClick={() => void start(true)}><Download size={15}/>{action === 'start' ? text.starting : text.prepareRuntime}</button>}{running && <button type="button" disabled={busy || canceling} onClick={() => void cancel()}><Square size={13}/>{canceling ? text.canceling : text.cancel}</button>}<button type="button" aria-expanded={detailsOpen} aria-controls="install-runtime-details" onClick={() => setDetailsOpen(value => !value)}><FileText size={15}/>{text.details}</button>{running && logButton}</div>
           {detailsOpen && <dl id="install-runtime-details" className="runtime-summary-facts"><div><dt>{text.revision}</dt><dd><code>{detected.sourceRevision ?? '—'}</code></dd></div><div><dt>{text.python}</dt><dd><code>{detected.pythonPath || '—'}</code></dd></div></dl>}
           {errorBlock}
         </Panel>
@@ -223,7 +233,8 @@ export function InstallRuntimePage(props: InstallRuntimePageProps) {
           <div className="install-runtime-state" role="status" aria-live="polite">{running || action === 'start' ? <LoaderCircle size={23} className="spin"/> : task?.state === 'failed' ? <CircleAlert size={23}/> : <Download size={23}/>}<div><h3>{action === 'start' ? text.starting : title}</h3><p>{running ? text.runningHint : task?.state === 'failed' || task?.state === 'cancelled' ? text.retryHint : text.noEstimate}</p></div></div>
           {task?.message && <p className="install-runtime-message">{task.message}</p>}
           {installation.taskId && !task && <p className="install-runtime-message">{text.unknownTask}</p>}
-          <div className="actions install-runtime-actions">{running ? <button type="button" disabled={busy || canceling} onClick={() => void cancel()}><Square size={14}/>{canceling ? text.canceling : text.cancel}</button> : <button type="button" className="primary" disabled={props.operationDisabled || !loaded || busy} onClick={() => void start()}><Download size={15}/>{task || installation.taskId ? text.retry : text.start}</button>}{logButton}</div>{errorBlock}
+          {!running && <LocalRuntimePackageFields packages={packages} disabled={busy}/>}
+          <div className="actions install-runtime-actions">{running ? <button type="button" disabled={busy || canceling} onClick={() => void cancel()}><Square size={14}/>{canceling ? text.canceling : text.cancel}</button> : <button type="button" className="primary" disabled={props.operationDisabled || !loaded || busy || packages.missing} onClick={() => void start()}><Download size={15}/>{task || installation.taskId ? text.retry : packages.source === 'local' ? text.startLocal : text.start}</button>}{logButton}</div>{errorBlock}
         </Panel>
       </> : null}
       {logsOpen && installation.taskId && <Panel title={text.logs} className="install-runtime-log-panel">{logError && <p className="install-runtime-log-error" role="alert">{text.logsUnavailable}: {logError}</p>}<div id="install-runtime-logs" className="install-runtime-logs" role="log" aria-label={text.logs} aria-live="off">{logs.length ? logs.map((entry, index) => <div className="install-runtime-log-line" key={`${entry.timestamp}-${index}`}><time dateTime={new Date(entry.timestamp).toISOString()}>{new Date(entry.timestamp).toLocaleTimeString(props.language)}</time><span className={`install-runtime-log-level ${entry.level}`}>{entry.level}</span><span>{entry.message}</span></div>) : <p>{text.emptyLogs}</p>}</div></Panel>}
