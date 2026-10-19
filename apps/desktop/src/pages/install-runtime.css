@@ -96,3 +96,19 @@
 .runtime-update-result{margin:14px 18px;font-size:12px}
 .runtime-installed-summary>.panel-header>button{min-height:32px;font-size:12px;box-shadow:none}
 @container workspace (max-width:640px){.runtime-summary-selection{align-items:flex-start;flex-direction:column;gap:9px}.runtime-summary-selection>div{width:100%;flex-direction:column;align-items:flex-start;gap:6px}.runtime-summary-selection .official-dropdown{width:100%;max-width:100%}.runtime-summary-facts{gap:8px}.runtime-summary-facts>div{width:100%}}
+.local-package{margin-top:17px;border:1px solid var(--st-line-soft);border-radius:7px;overflow:hidden}
+.local-package-source{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 13px;font-size:13px;color:var(--st-ink-muted)}
+.local-package-hint{margin:0;padding:9px 13px;border-top:1px solid var(--st-line-soft);font-size:12px;line-height:1.7;color:var(--st-ink-muted)}
+.local-package-rows{border-top:1px solid var(--st-line-soft)}
+.local-package-row{display:grid;grid-template-columns:18px 110px minmax(0,1fr) auto;gap:12px;align-items:center;padding:9px 13px;border-top:1px solid var(--st-line-soft);font-size:13px}
+.local-package-rows>.local-package-row:first-child{border-top:0}
+.local-package-mark{display:flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--st-surface-2);color:var(--st-ink-muted)}
+.local-package-mark.is-chosen{background:var(--st-accent-tint);color:var(--st-accent-text)}
+.local-package-label{color:var(--st-ink-muted)}
+.local-package-value{min-width:0;overflow-wrap:anywhere}
+.local-package-value small{font-size:12px;color:var(--st-ink-muted)}
+.local-package-value code{font-size:12px}
+.local-package-actions{display:flex;align-items:center;gap:8px}
+.local-package-required{margin:0;padding:8px 13px;border-top:1px solid var(--st-line-soft);font-size:12px;color:var(--st-warn-text)}
+.local-package .notice{margin:8px 13px}
+@media (max-width:640px){.local-package-row{grid-template-columns:18px minmax(0,1fr)}.local-package-value,.local-package-actions{grid-column:2}}

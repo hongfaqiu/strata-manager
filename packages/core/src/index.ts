@@ -20,6 +20,7 @@ export * from './calibration';
 export * from './speed-tuning';
 export * from './analytics-types';
 export * from './installation-types';
+export * from './local-runtime-package';
 export * from './runtime-types';
 export * from './runtime-download';
 export * from './model-groups';
