@@ -1,18 +1,15 @@
 //! One-click repair of Strata's private Python: install missing regex / jinja2
 //! into the interpreter named by `run-*.bat` / `run-*.sh` (or the install venv).
 //!
-//! Launcher parsing is intentionally local and mirrored from `discovery` so repair
-//! stays usable if discovery helpers stay private; both prefer the same run-* scripts.
+//! The interpreter comes from `crate::launcher_env`, the same resolver the
+//! dependency probe and the managed launch use (#56, #78).
 use serde::Serialize;
 use std::{
-    fs,
     path::{Path, PathBuf},
     process::Command,
     time::Duration,
 };
 
-const MAX_LAUNCHER_BYTES: u64 = 64 * 1024;
-const MAX_DIRECTORIES: usize = 64;
 const PIP_TIMEOUT: Duration = Duration::from_secs(180);
 
 #[derive(Clone, Debug, Serialize)]
@@ -22,96 +19,6 @@ pub struct PythonRepairResult {
     pub installed: Vec<String>,
     pub already_present: Vec<String>,
     pub message: String,
-}
-
-fn path_is_local_file(path: &Path) -> bool {
-    path.is_absolute()
-        && path.is_file()
-        && fs::symlink_metadata(path).is_ok_and(|meta| meta.is_file())
-}
-
-/// Keep the venv path (do not resolve the final symlink) so site-packages stay correct.
-fn python_path(path: &Path) -> Option<PathBuf> {
-    if !path.is_absolute() {
-        return None;
-    }
-    let name = path.file_name()?;
-    let parent = path.parent()?;
-    let parent = dunce::canonicalize(parent).ok()?;
-    let path = parent.join(name);
-    path_is_local_file(&path).then_some(path)
-}
-
-fn launcher_python(text: &str) -> Option<PathBuf> {
-    text.lines().find_map(|line| {
-        let line = line.trim();
-        let line = line.strip_prefix("exec ").unwrap_or(line).trim_start();
-        let rest = line.strip_prefix('"')?;
-        let end = rest.find('"')?;
-        let program = Path::new(&rest[..end]);
-        let server = rest[end + 1..].replace('\\', "/");
-        let name = program.file_name()?.to_str()?.to_ascii_lowercase();
-        (program.is_absolute() && name.starts_with("python") && server.contains("serve/server.py"))
-            .then(|| program.to_path_buf())
-    })
-}
-
-fn launcher_pythons(root: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = fs::read_dir(root) else {
-        return Vec::new();
-    };
-    let mut scripts: Vec<PathBuf> = entries
-        .take(MAX_DIRECTORIES)
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| {
-            let name = path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or_default()
-                .to_ascii_lowercase();
-            name.starts_with("run-") && (name.ends_with(".bat") || name.ends_with(".sh"))
-        })
-        .filter(|path| {
-            fs::symlink_metadata(path).is_ok_and(|metadata| {
-                metadata.is_file()
-                    && !metadata.file_type().is_symlink()
-                    && metadata.len() <= MAX_LAUNCHER_BYTES
-            })
-        })
-        .collect();
-    scripts.sort();
-    let mut pythons = Vec::new();
-    for script in scripts.into_iter().take(16) {
-        let Ok(text) = fs::read_to_string(&script) else {
-            continue;
-        };
-        if let Some(python) = launcher_python(&text).and_then(|path| python_path(&path)) {
-            if !pythons.contains(&python) {
-                pythons.push(python);
-            }
-        }
-    }
-    pythons
-}
-
-fn install_candidates(root: &Path) -> Vec<PathBuf> {
-    let mut candidates = launcher_pythons(root);
-    for relative in [
-        ".venv/Scripts/python.exe",
-        "venv/Scripts/python.exe",
-        ".venv/bin/python",
-        "venv/bin/python",
-        ".venv/bin/python3",
-        "venv/bin/python3",
-    ] {
-        if let Some(path) = python_path(&root.join(relative)) {
-            if !candidates.contains(&path) {
-                candidates.push(path);
-            }
-        }
-    }
-    candidates
 }
 
 fn probe_python(path: &Path) -> bool {
@@ -218,13 +125,7 @@ pub fn repair_python_dependencies(install_dir: &str) -> Result<PythonRepairResul
     if !root.is_dir() {
         return Err("安装目录不存在".into());
     }
-    let python = install_candidates(&root)
-        .into_iter()
-        .find(|path| probe_python(path))
-        .ok_or_else(|| {
-            "未找到 Strata 启动脚本或私有 venv 中的 Python 3.10+；请先完成引擎安装或运行 update 脚本"
-                .to_owned()
-        })?;
+    let python = crate::launcher_env::resolve(&root, None, probe_python)?.python;
     let missing = missing_modules(&python)?;
     let required = ["regex".to_owned(), "jinja2".to_owned()];
     let already_present: Vec<String> = required
@@ -255,32 +156,4 @@ pub fn repair_python_dependencies(install_dir: &str) -> Result<PythonRepairResul
         already_present,
         message: format!("已向 {} 安装 {}", python.display(), missing.join(", ")),
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn launcher_python_reads_strata_run_scripts() {
-        let bat = "@echo off\r\n\"C:\\Strata\\.venv\\Scripts\\python.exe\" \"C:\\Strata\\serve\\server.py\" \"--engine\" \"strata\"\r\n";
-        #[cfg(windows)]
-        assert_eq!(
-            launcher_python(bat),
-            Some(PathBuf::from("C:\\Strata\\.venv\\Scripts\\python.exe"))
-        );
-        #[cfg(not(windows))]
-        assert_eq!(launcher_python(bat), None);
-        let sh = "#!/bin/sh\nexec \"/opt/strata/.venv/bin/python\" \"/opt/strata/serve/server.py\" \"--engine\" \"strata\"\n";
-        #[cfg(not(windows))]
-        assert_eq!(
-            launcher_python(sh),
-            Some(PathBuf::from("/opt/strata/.venv/bin/python"))
-        );
-        let _ = (bat, sh);
-        assert_eq!(
-            launcher_python("\"/usr/bin/python3\" tools/other.py\n"),
-            None
-        );
-    }
 }

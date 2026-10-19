@@ -15,6 +15,8 @@ pub enum StartupCategory {
     Config,
     Auth,
     Timeout,
+    Engine,
+    Python,
     Unknown,
 }
 
@@ -266,6 +268,11 @@ pub fn build(
         "STARTUP_API_TIMEOUT" | "STARTUP_LOAD_TIMEOUT" => {
             (StartupCategory::Timeout, StartupConfidence::Confirmed)
         }
+        "STARTUP_ENGINE_CRASHED" => (StartupCategory::Engine, StartupConfidence::Confirmed),
+        "STARTUP_ENGINE_MISSING" => (StartupCategory::Files, StartupConfidence::Confirmed),
+        "STARTUP_PYTHON_ENV_MISMATCH" | "STARTUP_PYTHON_UNAVAILABLE" => {
+            (StartupCategory::Python, StartupConfidence::Confirmed)
+        }
         _ if matches!(http_status, Some(401 | 403)) => {
             (StartupCategory::Auth, StartupConfidence::Confirmed)
         }
@@ -345,7 +352,7 @@ pub fn build(
     let primary = match category {
         StartupCategory::Resource => StartupAction::OpenResources,
         StartupCategory::Port => StartupAction::OpenNetwork,
-        StartupCategory::Files => StartupAction::OpenFiles,
+        StartupCategory::Files | StartupCategory::Python => StartupAction::OpenFiles,
         StartupCategory::Config
             if matches!(
                 code.as_str(),
@@ -851,6 +858,8 @@ ThreadingHTTPServer((a.host,a.port),Handler).serve_forever()
         let port = listener.local_addr().unwrap().port();
         drop(listener);
         let config = root.join("fixture.json");
+        // The configured engine must exist: startup checks it like server.py starts it (#78).
+        fs::write(root.join("fixture.exe"), b"engine fixture, never started").unwrap();
         fs::write(
             &config,
             serde_json::to_vec(&json!({"exe":"fixture.exe","args":[],"port":port})).unwrap(),
@@ -999,5 +1008,45 @@ ThreadingHTTPServer((a.host,a.port),Handler).serve_forever()
         );
         assert!(foreign.local_addr().is_ok());
         assert!(other_state.processes.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn load_failure_codes_from_issue_78_have_their_own_categories() {
+        for (code, category, action) in [
+            (
+                "STARTUP_ENGINE_CRASHED",
+                StartupCategory::Engine,
+                StartupAction::ViewLogs,
+            ),
+            (
+                "STARTUP_PYTHON_ENV_MISMATCH",
+                StartupCategory::Python,
+                StartupAction::OpenFiles,
+            ),
+            (
+                "STARTUP_PYTHON_UNAVAILABLE",
+                StartupCategory::Python,
+                StartupAction::OpenFiles,
+            ),
+            (
+                "STARTUP_ENGINE_MISSING",
+                StartupCategory::Files,
+                StartupAction::OpenFiles,
+            ),
+        ] {
+            let raw = error(code, "x", "loading");
+            let diagnostic = build("p", 1, 2, &raw, &[], None);
+            assert_eq!(diagnostic.category, category, "{code}");
+            assert_eq!(
+                diagnostic.confidence,
+                StartupConfidence::Confirmed,
+                "{code}"
+            );
+            assert_eq!(diagnostic.actions[0], action, "{code}");
+            assert_eq!(
+                serde_json::to_value(&diagnostic).unwrap()["category"],
+                serde_json::to_value(&category).unwrap()
+            );
+        }
     }
 }

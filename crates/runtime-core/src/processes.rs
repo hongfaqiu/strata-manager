@@ -1791,6 +1791,13 @@ pub fn restore_tasks(
 }
 
 pub fn setup_python(profile: &ServiceProfile, root: &Path) -> Result<(String, Vec<Step>), String> {
+    // A folder that already has its own environment (run-*.bat interpreter,
+    // .venv or embedded Python) runs setup.py with exactly that one (#78).
+    if crate::launcher_env::has_own_environment(root) {
+        let env =
+            crate::launcher_env::resolve(root, Some(&profile.python_path), |path| path.is_file())?;
+        return Ok((env.python.to_string_lossy().into(), vec![]));
+    }
     let env_dir = root.join(".venv");
     let interpreter = if cfg!(windows) {
         env_dir.join("Scripts/python.exe")
@@ -1804,7 +1811,7 @@ pub fn setup_python(profile: &ServiceProfile, root: &Path) -> Result<(String, Ve
         return Err(".venv 存在但Python解释器缺失；请检查该环境，管理器不会删除已有目录".into());
     }
     let step = Step {
-        program: python(profile)?,
+        program: bootstrap_python(profile),
         args: vec!["-m".into(), "venv".into(), env_dir.to_string_lossy().into()],
         cwd: root.to_owned(),
         env: Default::default(),
@@ -1852,22 +1859,28 @@ pub(crate) fn acquire_runtime_lease(
     )
 }
 
-pub fn python(profile: &ServiceProfile) -> Result<String, String> {
+/// The interpreter that creates a new `.venv` during setup. Only setup may
+/// use the host Python: the folder has no environment of its own yet.
+fn bootstrap_python(profile: &ServiceProfile) -> String {
     if !profile.python_path.trim().is_empty() {
-        return Ok(profile.python_path.clone());
+        return profile.python_path.clone();
     }
-    let root = Path::new(&profile.install_dir);
-    for path in [
-        root.join(".venv/Scripts/python.exe"),
-        root.join("venv/Scripts/python.exe"),
-        root.join(".venv/bin/python"),
-        root.join("venv/bin/python"),
-    ] {
-        if path.is_file() {
-            return Ok(path.to_string_lossy().into());
-        }
-    }
-    Ok("python".into())
+    "python".into()
+}
+
+/// The interpreter a Strata folder's own launchers use (#56, #78): the
+/// run-*.bat / run-*.sh interpreter, the private venv or an embedded Python.
+/// A folder with its own environment never runs with the host Python.
+pub fn launcher_env(profile: &ServiceProfile) -> Result<crate::launcher_env::LauncherEnv, String> {
+    crate::launcher_env::resolve(
+        Path::new(&profile.install_dir),
+        Some(profile.python_path.as_str()),
+        |path| path.is_file(),
+    )
+}
+
+pub fn python(profile: &ServiceProfile) -> Result<String, String> {
+    Ok(launcher_env(profile)?.python.to_string_lossy().into())
 }
 
 #[cfg(test)]

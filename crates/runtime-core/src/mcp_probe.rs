@@ -109,8 +109,9 @@ fn fixed_paths(profile: &ServiceProfile) -> Result<(PathBuf, PathBuf, PathBuf), 
         return Err("MCP 自检需要已登记的绝对安装目录和 Python 路径".into());
     }
     let root = dunce::canonicalize(&profile.install_dir).map_err(|_| "Strata 安装目录不可读取")?;
-    let python =
-        dunce::canonicalize(&profile.python_path).map_err(|_| "已登记的 Python 不可读取")?;
+    // The same interpreter the folder's launchers use (#78), not a stale saved one.
+    let python = crate::processes::python(profile)?;
+    let python = dunce::canonicalize(&python).map_err(|_| "已登记的 Python 不可读取")?;
     if !python.is_file()
         || !root.join("setup.py").is_file()
         || !root.join("serve/server.py").is_file()

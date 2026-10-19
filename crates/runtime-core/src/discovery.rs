@@ -367,6 +367,14 @@ fn resolve_engine(cwd: &Path, exe: &str) -> PathBuf {
     primary
 }
 
+/// An engine with the configured file name in one of the folder's engine
+/// directories, used only to tell the user where the engine actually is.
+pub(crate) fn engine_beside(root: &Path, configured: &Path) -> Option<PathBuf> {
+    let name = configured.file_name()?.to_str()?;
+    let found = resolve_engine(root, name);
+    (found.is_file() && found != configured).then_some(found)
+}
+
 fn first_config_engine(root: &Path) -> Option<PathBuf> {
     for config in config_paths(root)
         .into_iter()
@@ -396,7 +404,6 @@ fn first_config_engine(root: &Path) -> Option<PathBuf> {
 /// silently switch to a different interpreter.
 const PYTHON_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 const DEPENDENCY_CHECK_FAILED: &str = "依赖检测失败";
-const MAX_LAUNCHER_BYTES: u64 = 64 * 1024;
 
 fn python_output(path: &Path, args: &[&str]) -> Option<String> {
     crate::output_with_timeout(&path.to_string_lossy(), args, PYTHON_PROBE_TIMEOUT)
@@ -460,62 +467,6 @@ fn python_path(path: &Path) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-/// The interpreters named by Strata's own launchers. setup.py writes
-/// `run-<model>.bat` / `run-<model>.sh` with `sys.executable` (the install's
-/// private venv) followed by `serve/server.py`; that is what users double-click.
-fn launcher_pythons(root: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = fs::read_dir(root) else {
-        return Vec::new();
-    };
-    let mut scripts: Vec<PathBuf> = entries
-        .take(MAX_DIRECTORIES)
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| {
-            let name = path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or_default()
-                .to_ascii_lowercase();
-            name.starts_with("run-") && (name.ends_with(".bat") || name.ends_with(".sh"))
-        })
-        .filter(|path| {
-            fs::symlink_metadata(path).is_ok_and(|metadata| {
-                metadata.is_file()
-                    && !metadata.file_type().is_symlink()
-                    && metadata.len() <= MAX_LAUNCHER_BYTES
-            })
-        })
-        .collect();
-    scripts.sort();
-    let mut pythons = Vec::new();
-    for script in scripts.into_iter().take(16) {
-        let Ok(text) = fs::read_to_string(&script) else {
-            continue;
-        };
-        if let Some(python) = launcher_python(&text) {
-            if !pythons.contains(&python) {
-                pythons.push(python);
-            }
-        }
-    }
-    pythons
-}
-
-fn launcher_python(text: &str) -> Option<PathBuf> {
-    text.lines().find_map(|line| {
-        let line = line.trim();
-        let line = line.strip_prefix("exec ").unwrap_or(line).trim_start();
-        let rest = line.strip_prefix('"')?;
-        let end = rest.find('"')?;
-        let program = Path::new(&rest[..end]);
-        let server = rest[end + 1..].replace('\\', "/");
-        let name = program.file_name()?.to_str()?.to_ascii_lowercase();
-        (program.is_absolute() && name.starts_with("python") && server.contains("serve/server.py"))
-            .then(|| program.to_path_buf())
-    })
-}
-
 struct PythonChoice {
     path: PathBuf,
     missing: Vec<String>,
@@ -533,19 +484,34 @@ fn find_python(
     hint: Option<&ProcessHint>,
     cache: &mut PythonCache,
 ) -> Option<PythonChoice> {
+    // Same candidates and rule as the managed launch (crate::launcher_env, #78):
+    // a folder with its own environment is never probed or run with the host
+    // Python, even when its own interpreter misses a module.
+    let own_env = crate::launcher_env::has_own_environment(root);
+    let own: Vec<PathBuf> = crate::launcher_env::own_candidates(root)
+        .into_iter()
+        .map(|candidate| candidate.path)
+        .collect();
+    let belongs = |path: &Path| {
+        own.iter().any(|own| path_key(own) == path_key(path))
+            || path_key(path).starts_with(&format!(
+                "{}{}",
+                path_key(root),
+                std::path::MAIN_SEPARATOR
+            ))
+    };
     let mut candidates = Vec::new();
     if let Some(path) = preferred.filter(|v| !v.is_empty()) {
-        candidates.push(PathBuf::from(path));
+        let path = PathBuf::from(path);
+        if !own_env || belongs(&path) {
+            candidates.push(path);
+        }
     }
-    candidates.extend(launcher_pythons(root));
-    candidates.extend([
-        root.join(".venv/Scripts/python.exe"),
-        root.join("venv/Scripts/python.exe"),
-        root.join(".venv/bin/python"),
-        root.join("venv/bin/python"),
-    ]);
+    candidates.extend(own.iter().cloned());
     if let Some(hint) = hint {
-        candidates.push(hint.python.clone());
+        if !own_env || belongs(&hint.python) {
+            candidates.push(hint.python.clone());
+        }
     }
     let mut seen = HashSet::new();
     let mut first: Option<PythonChoice> = None;
@@ -561,6 +527,9 @@ fn find_python(
             return Some(PythonChoice { path, missing });
         }
         first.get_or_insert(PythonChoice { path, missing });
+    }
+    if own_env {
+        return first;
     }
     if cache.fallback.is_none() {
         #[cfg(windows)]
@@ -651,6 +620,18 @@ fn inspect_config(
     }
     if !engine.is_file() {
         fatal_reasons.push("引擎文件不存在，请修复运行环境".into());
+    } else if !resolve(&cwd, exe).is_file() {
+        // Upstream server.py starts exactly the configured exe; an engine found
+        // elsewhere in the folder does not make this configuration startable (#78).
+        #[cfg(windows)]
+        let repair = "START-HERE.bat --setup";
+        #[cfg(not(windows))]
+        let repair = "./setup.sh --setup";
+        fatal_reasons.push(format!(
+            "配置里的引擎路径不存在（{}），目录里的引擎在 {}；Strata 按配置路径启动引擎，请运行 {repair} 修复配置",
+            resolve(&cwd, exe).display(),
+            engine.display()
+        ));
     }
     if python.is_none() {
         fatal_reasons.push("没有可运行的本机 Python 3.10+ 环境".into());
@@ -3308,7 +3289,7 @@ mod tests {
     }
 
     #[test]
-    fn config_exe_falls_back_to_engine_cuda12_when_classic_engine_missing() {
+    fn config_exe_pointing_at_a_missing_engine_needs_repair_even_if_another_engine_exists() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("Strata");
         fs::create_dir_all(root.join("serve")).unwrap();
@@ -3344,12 +3325,18 @@ mod tests {
             .iter()
             .find(|c| c.name == "legacy-exe-path")
             .unwrap_or_else(|| panic!("expected legacy-exe-path, got {candidates:?}"));
+        // Upstream server.py starts exactly engine/strata.exe; the engine in
+        // engine_cuda12/ does not make this configuration startable (#78:
+        // FileNotFoundError [WinError 2] on the first /load).
         assert_eq!(
             hit.availability.as_deref(),
-            Some("ready"),
+            Some("repair"),
             "reason={:?}",
             hit.reason
         );
+        let reason = hit.reason.as_deref().unwrap();
+        assert!(reason.contains("配置里的引擎路径不存在"), "{reason}");
+        assert!(reason.contains("engine_cuda12"), "{reason}");
         assert_eq!(hit.runtime_version.as_deref(), Some("0.1.44.1"));
     }
 
@@ -3398,30 +3385,33 @@ mod tests {
 
     #[test]
     fn launcher_python_reads_strata_run_scripts() {
+        use crate::launcher_env::launcher_python_in;
         let bat = "@echo off\r\ntitle Strata Q2_0\r\ncd /d \"C:\\Strata\"\r\n\"C:\\Strata\\.venv\\Scripts\\python.exe\" \"C:\\Strata\\serve\\server.py\" \"--engine\" \"strata\" \"--config\" \"C:\\Strata\\strata-q2_0.json\" \"--port\" \"8080\"\r\nif errorlevel 1 pause\r\n";
         #[cfg(windows)]
         assert_eq!(
-            launcher_python(bat),
+            launcher_python_in(Path::new("C:\\Strata"), bat),
             Some(PathBuf::from("C:\\Strata\\.venv\\Scripts\\python.exe"))
         );
         #[cfg(not(windows))]
-        assert_eq!(
-            launcher_python(bat),
-            None,
-            "a Windows path is not absolute here"
-        );
+        assert!(launcher_python_in(Path::new("/opt/strata"), bat).is_some());
         let sh = "#!/bin/sh\ncd \"/opt/strata\"\nexec \"/opt/strata/.venv/bin/python\" \"/opt/strata/serve/server.py\" \"--engine\" \"strata\"\n";
         #[cfg(not(windows))]
         assert_eq!(
-            launcher_python(sh),
+            launcher_python_in(Path::new("/opt/strata"), sh),
             Some(PathBuf::from("/opt/strata/.venv/bin/python"))
         );
         let _ = sh;
         assert_eq!(
-            launcher_python("\"/usr/bin/python3\" tools/other.py\n"),
+            launcher_python_in(
+                Path::new("/opt/strata"),
+                "\"/usr/bin/python3\" tools/other.py\n"
+            ),
             None
         );
-        assert_eq!(launcher_python("\"/bin/rm\" serve/server.py\n"), None);
+        assert_eq!(
+            launcher_python_in(Path::new("/opt/strata"), "\"/bin/rm\" serve/server.py\n"),
+            None
+        );
     }
 
     #[cfg(unix)]
