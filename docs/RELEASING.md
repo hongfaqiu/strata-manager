@@ -23,8 +23,9 @@
 | 平台 | Rust target | 发布文件 |
 | --- | --- | --- |
 | Windows x64 | `x86_64-pc-windows-msvc` | NSIS `*-setup.exe` 及 `.sig` |
-| Linux x64 | `x86_64-unknown-linux-gnu` | `.AppImage`、`.AppImage.sig` 和 `.deb` |
+| Linux x64 | `x86_64-unknown-linux-gnu` | `.AppImage`、`.AppImage.sig` 和桌面 `.deb` |
 | macOS Apple Silicon（实验） | `aarch64-apple-darwin` | `*_aarch64.dmg`（手工下载）与 `*_aarch64.app.tar.gz`（updater；`latest.json` 的 `darwin-aarch64`）。临时签名、**未公证**；不提供 Intel。**DMG 仍不含引擎**；Manager 可装上游预制 Metal 包（真机验收待进行）。 |
+| Linux x64 无头 Server（#6） | `x86_64-unknown-linux-gnu` | `Strata.Manager.Server_<ver>_amd64.tar.gz` 与 `Strata.Manager.Server_<ver>_amd64.deb`（**无** updater `.sig`；不进 `latest.json`） |
 
 每个安装包包含桌面外壳及独立 `strata-supervisor` 后台。Python、Strata 运行时和模型权重使用应用内的独立安装/导入流程，模型不进入 GitHub 构建工件。平台安装包构建成功不等于对应 GPU 推理已验收；必须在发布说明中列出实际测试的平台、驱动和范围。
 
@@ -91,7 +92,7 @@ CI 产物以 `ci-<platform>-<arch>-<bundle>` 名称上传为 Actions artifacts�
 2. 完成 [VERIFICATION](VERIFICATION.md) 的最终检查和发布验收，更新中英文 README、用户指南、`docs/screenshots/` 的 WebP 封面及页面图与实际 revision；检查内容没有 API 密钥、个人会话、用户名或私有模型路径。截图使用示例数据时，在图片所在文档及官网的图外说明数据来源；图内使用正常模型名和界面内容，不能写成真实服务或性能证据。保留历史原型证据，同时单列本轮未通过/未运行项。
 3. 推送已审核的代码，等待完整 CI 后，创建并推送 `v<version>` tag，例如 `v0.2.0-beta.1`。版本 tag 触发 `.github/workflows/release.yml`，它调用同一提交的 `release-from-ci.yml`。也可手动运行 `Release desktop` 并填写 `release_tag`；可选 `ci_run_id` 指定已验收 run。旧 tag 缺少 `strata-release-ci/v2` 协议时明确拒绝，不改写 tag；v2 要求 Windows 分片证明，不接受仅有旧串行 Windows 门禁的 v1 CI。
 4. 控制器优先选择同仓库、同源码 SHA、同 CI workflow 的完整成功 run；已有运行则等待它完成，没有可用 run 才按不可变 tag 补跑一次 CI。复用要求两个 desktop job、三个 Windows 分片、三个 Linux 分片、两个 Strata 0.1.44 observer compatibility job，以及原版本/观察器/原生/格式/Clippy/安装启动门禁全部通过，并检查当前 run attempt。版本 0.1.2 仍额外要求原 beta.2 升级门禁。PR 合并 SHA、其他源码、失败、取消、过期或不完整产物均不可复用。
-5. 下载三种 CI artifact，冻结 ID 和 GitHub ZIP digest，安全解包并核对版本、产品名、架构及原始安装包 hash。签名前和上传前重验源码、tag、run 与原始字节；仅为原始安装包生成带应用版本的 Tauri updater 签名。单个发布 job 生成 `latest.json` 与每个安装包的 `.sig`（不再生成 `SHA256SUMS`），创建或续写草稿，无需再次编译应用或跨平台合并 manifest。`scripts/release-verify.mjs` 下载实际草稿资产，通过同源码的 `strata-update-verifier` 和内置公钥核验三份载荷、可信注释、版本、完整 11 项资产（5 个安装包、5 份 `.sig`、`latest.json`）与 URL；全部成功才公开。
+5. 下载桌面 CI artifact 与 Linux `ci-linux-amd64-server`，冻结 ID 和 GitHub ZIP digest，安全解包并核对版本、产品名、架构及原始字节 hash。签名前和上传前重验源码、tag、run 与原始字节；**仅为桌面安装包**生成带应用版本的 Tauri updater 签名。单个发布 job 生成 `latest.json`、每个桌面安装包的 `.sig`，以及无头 Server 的 `Strata.Manager.Server_<ver>_amd64.tar.gz` / `.deb`（不再生成 `SHA256SUMS`），创建或续写草稿，无需再次编译桌面应用或跨平台合并 manifest。`scripts/release-verify.mjs` 下载实际草稿资产，通过同源码的 `strata-update-verifier` 和内置公钥核验桌面载荷、可信注释、版本、完整 **13** 项资产（5 个桌面安装包、5 份 `.sig`、`latest.json`、2 个无头 Server 包）与 URL；全部成功才公开。
 6. 发布阶段使用仓库级队列锁，并在锁内完整检查已公开稳定版本。只有 SemVer 严格更高的稳定版本成为 latest；旧版本或等价版本仍可公开下载，但不替换更新通道。带 SemVer prerelease 的版本始终不覆盖稳定自动更新通道。公开状态和 latest 选择在同一次 PATCH 中提交；发布前再次核对真实 tag commit。
 
 发布队列采用 GitHub 的 `queue: max`，最多保留 100 个 pending 发布，避免默认队列只保留一个等待任务而取消其它版本。超出队列上限会被 GitHub 取消；超过版本列表分页上限则拒绝发布。人工发布或没有采用此锁的旧工作流仍可能竞争，不能视作已获得服务器级版本比较 CAS。[GitHub 并发队列文档](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)。

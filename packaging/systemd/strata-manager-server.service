@@ -1,0 +1,24 @@
+[Unit]
+Description=Strata Manager Server (headless Web UI)
+Documentation=https://github.com/hongfaqiu/strata-manager/blob/main/docs/SERVER.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=strata-manager
+Group=strata-manager
+Environment=STRATA_MANAGER_DATA_DIR=/var/lib/strata-manager
+Environment=STRATA_MANAGER_BIND=127.0.0.1:8787
+Environment=STRATA_MANAGER_WEB_ROOT=/usr/share/strata-manager-server/web
+ExecStart=/usr/bin/strata-manager-server
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/strata-manager
+
+[Install]
+WantedBy=multi-user.target

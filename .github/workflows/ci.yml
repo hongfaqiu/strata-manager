@@ -35,6 +35,7 @@ jobs:
               - 'apps/**'
               - 'crates/**'
               - 'packages/**'
+              - 'packaging/**'
               - 'scripts/**'
               - '!scripts/build-website.mjs'
               - '!scripts/website-*.mjs'
@@ -389,6 +390,32 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Rust checks
         run: cargo clippy --workspace --locked --all-targets --target ${{ matrix.target }} -- -D warnings
+      - name: Headless server crate tests
+        if: runner.os == 'Linux'
+        run: cargo test -p strata-manager-server --locked --all-targets
+      - name: Package headless server
+        if: runner.os == 'Linux' && env.PACKAGE_INSTALLERS == 'true'
+        env:
+          STRATA_MANAGER_SKIP_FRONTEND_BUILD: '1'
+          STRATA_MANAGER_WEB_ROOT: ${{ github.workspace }}/apps/desktop/dist
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/server-packages"
+          bash scripts/package-server.sh "$RUNNER_TEMP/server-packages"
+          version="${{ steps.package-version.outputs.version }}"
+          test -f "$RUNNER_TEMP/server-packages/Strata.Manager.Server_${version}_amd64.tar.gz"
+          test -f "$RUNNER_TEMP/server-packages/Strata.Manager.Server_${version}_amd64.deb"
+      - name: Upload headless server packages
+        if: runner.os == 'Linux' && env.PACKAGE_INSTALLERS == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-linux-amd64-server
+          path: |
+            ${{ runner.temp }}/server-packages/Strata.Manager.Server_${{ steps.package-version.outputs.version }}_amd64.tar.gz
+            ${{ runner.temp }}/server-packages/Strata.Manager.Server_${{ steps.package-version.outputs.version }}_amd64.deb
+          if-no-files-found: error
+          compression-level: 0
       - name: Prepare packaged background binary
         if: env.PACKAGE_INSTALLERS == 'true'
         run: node scripts/prepare-sidecar.mjs --profile release --target ${{ matrix.target }}

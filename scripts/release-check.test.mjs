@@ -15,7 +15,8 @@ const filenames = { windows: 'Strata.Manager_0.1.0_x64-setup.exe', linux: 'Strat
 const commitSha = '1'.repeat(40);
 const options = { repository, tag, version, expectedSha: commitSha, tagCommitSha: commitSha };
 function releaseFixture(signature = 'x'.repeat(50)) {
-  const assets = [filenames.windows, `${filenames.windows}.sig`, filenames.linux, `${filenames.linux}.sig`, filenames.deb, `${filenames.deb}.sig`, filenames.macos, `${filenames.macos}.sig`, filenames.dmg, `${filenames.dmg}.sig`, 'latest.json'].map((name, id) => ({ name, id: id + 1, size: 100 }));
+  const server = [`Strata.Manager.Server_${version}_amd64.tar.gz`, `Strata.Manager.Server_${version}_amd64.deb`];
+  const assets = [filenames.windows, `${filenames.windows}.sig`, filenames.linux, `${filenames.linux}.sig`, filenames.deb, `${filenames.deb}.sig`, filenames.macos, `${filenames.macos}.sig`, filenames.dmg, `${filenames.dmg}.sig`, 'latest.json', ...server].map((name, id) => ({ name, id: id + 1, size: 100 }));
   const release = { tag_name: tag, draft: true, target_commitish: 'main', assets };
   const update = name => ({ signature, url: `https://github.com/${repository}/releases/download/${tag}/${name}` });
   const manifest = { version, platforms: { 'windows-x86_64': update(filenames.windows), 'linux-x86_64': update(filenames.linux), 'darwin-aarch64': update(filenames.macos) } };

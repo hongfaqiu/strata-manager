@@ -68,7 +68,8 @@ export function validateRelease(release, manifest, { repository, tag, version, e
     updates[platform] = referencedAsset(manifest.platforms[platform], assets, repository, tag, platform);
     validateInstallerName(updates[platform].asset, kind, version, productName);
   }
-  const debs = [...assets.values()].filter(asset => asset.name.endsWith('.deb'));
+  const isServerPackage = name => /^Strata\.Manager\.Server_/i.test(name);
+  const debs = [...assets.values()].filter(asset => asset.name.endsWith('.deb') && !isServerPackage(asset.name));
   if (debs.length !== 1) throw new Error('Expected exactly one current-version .deb installer.');
   validateInstallerName(debs[0], 'deb', version, productName);
   const deb = { asset: debs[0], signature: assets.get(`${debs[0].name}.sig`) };
@@ -86,12 +87,19 @@ export function validateRelease(release, manifest, { repository, tag, version, e
     updates[platform] = alias;
   }
   const installers = [updates['windows-x86_64'].asset, updates['linux-x86_64'].asset, deb.asset, updates['darwin-aarch64'].asset, dmg.asset];
-  const allowedAssets = new Set(['latest.json', ...installers.flatMap(asset => [asset.name, `${asset.name}.sig`])]);
+  const serverNames = [
+    `Strata.Manager.Server_${version}_amd64.tar.gz`,
+    `Strata.Manager.Server_${version}_amd64.deb`,
+  ];
+  for (const name of serverNames) {
+    if (!assets.has(name)) throw new Error(`Missing nonempty release asset: ${name}`);
+  }
+  const allowedAssets = new Set(['latest.json', ...installers.flatMap(asset => [asset.name, `${asset.name}.sig`]), ...serverNames]);
   for (const asset of assets.values()) {
     if (allowedAssets.has(asset.name)) continue;
     if (installerExtension.test(asset.name) || asset.name.endsWith('.sig') || !supplementaryAsset.test(asset.name)) throw new Error(`Unexpected release asset: ${asset.name}`);
   }
-  return { updates, deb, dmg };
+  return { updates, deb, dmg, serverPackages: serverNames.map(name => assets.get(name)) };
 }
 
 export function ghJson(path, { execute = execFileSync } = {}) {
@@ -195,7 +203,7 @@ export async function verifyRelease({ repository = process.env.GITHUB_REPOSITORY
       execFileSync(verifierPath, ['--config', configPath, '--signature', signaturePath, '--artifact', artifactPath, '--version', version, '--require-signed-version'], { stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 32768 });
       downloaded.add(update.asset.id);
     }
-    logger(`Draft release verified: ${tag}; all installers (NSIS, AppImage, DEB, macOS app archive, DMG) match the built-in public key, signed version and uploaded signatures.`);
+    logger(`Draft release verified: ${tag}; all installers (NSIS, AppImage, DEB, macOS app archive, DMG) match the built-in public key, signed version and uploaded signatures; headless server tar.gz/deb are present without updater signatures.`);
   } finally {
     await cleanupOwnedDirectory(directory, parent);
   }

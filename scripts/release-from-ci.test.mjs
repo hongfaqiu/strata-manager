@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import {
-  CI_PROTOCOL, REPOSITORY, COMMON_GATES, COVERAGE_JOB, COVERAGE_GATES, PLATFORM_GATES, SHARD_GATES, WINDOWS_SHARD_GATES, createPlan, assetNames,
+  CI_PROTOCOL, REPOSITORY, COMMON_GATES, COVERAGE_JOB, COVERAGE_GATES, PLATFORM_GATES, SHARD_GATES, WINDOWS_SHARD_GATES, createPlan, assetNames, serverPackageNames,
   validateSourceProtocol, validateCiEvidence, validateInstallerEntries, validateLiveWriters,
   validateLatestManifest, validateReleaseInventory, validateReleaseMetadata, draftMetadataPayload, creationBranch,
   requireSourceRelease, validatePreparedRecord, readPrepared,
@@ -118,6 +118,10 @@ function ciFixture(p = plan, runId = 123) {
     size_in_bytes: 10, digest: 'sha256:' + String(i + 1).repeat(64), expired: false,
     created_at: '2026-01-01T00:05:00Z', expires_at: '2099-01-01T00:00:00Z',
     workflow_run: { id: runId, head_sha: p.sourceSha } }));
+  artifacts.push({ id: 200, name: p.serverArtifact.name,
+    size_in_bytes: 20, digest: 'sha256:' + 'a'.repeat(64), expired: false,
+    created_at: '2026-01-01T00:05:00Z', expires_at: '2099-01-01T00:00:00Z',
+    workflow_run: { id: runId, head_sha: p.sourceSha } });
   return { run, jobs, artifacts };
 }
 const boundPlan = p => { const f = ciFixture(p); return validateCiEvidence(f.run, f.jobs, f.artifacts, p); };
@@ -132,6 +136,8 @@ test('plan derives current version, product, architecture and prerelease without
     assert.equal(p.artifacts[4].installer, 'Strata.Manager_' + version + '_aarch64.dmg');
     assert.equal(p.artifacts[1].id, undefined);
     assert.equal(p.artifacts.length, 5);
+    assert.equal(p.serverArtifact.name, 'ci-linux-amd64-server');
+    assert.deepEqual(p.serverArtifact.files, serverPackageNames(version));
   }
 });
 test('unsafe source, version, tag and product inputs are rejected', () => {
@@ -416,6 +422,7 @@ function releaseFixture(p = plan) {
   const assets = p.artifacts.flatMap(a => [{ id: id++, name: a.installer, size: 10 },
     { id: id++, name: a.installer + '.sig', size: 10, signatureText: 'fixture-' + a.kind }]);
   assets.push({ id: id++, name: 'latest.json', size: 10 });
+  for (const name of serverPackageNames(p.version)) assets.push({ id: id++, name, size: 10 });
   const entry = i => ({ signature: 'fixture-' + p.artifacts[i].kind, url: 'https://github.com/' + REPOSITORY + '/releases/download/' + encodeURIComponent(p.tag) + '/' + encodeURIComponent(p.artifacts[i].installer) });
   return { release: { id: 4, tag_name: p.tag, draft: true, prerelease: p.prerelease, assets },
     manifest: { version: p.version, platforms: {
@@ -517,6 +524,8 @@ test('prepared evidence binds run, attempt, artifact hash, installer hash and va
   const p = boundPlan(plan);
   const meta = { protocol: CI_PROTOCOL, validateOnly: false, plan: p, installers: p.artifacts.map(a => ({
     name: a.installer, artifactId: a.id, zipSha256: a.sha256, size: 10, sha256: 'a'.repeat(64),
+  })), serverPackages: p.serverArtifact.files.map(name => ({
+    name, artifactId: p.serverArtifact.id, zipSha256: p.serverArtifact.sha256, size: 10, sha256: 'a'.repeat(64),
   })) };
   assert.equal(validatePreparedRecord(meta, p), true);
   for (const change of [
@@ -531,17 +540,30 @@ test('real full-byte prepared reader catches installer and ZIP tampering and pro
   const temp = await mkdtemp(join(tmpdir(), 'strata-promotion-test-'));
   try {
     const p = boundPlan(plan); const installer = Buffer.from('installer fixture');
+    const py = process.platform === 'win32' ? 'python' : 'python3';
     for (const a of p.artifacts) {
-      execFileSync(process.platform === 'win32' ? 'python' : 'python3', ['-c',
+      execFileSync(py, ['-c',
         "import zipfile,sys; z=zipfile.ZipFile(sys.argv[1],'w'); z.writestr(sys.argv[2],b'installer fixture'); z.close()",
         join(temp, a.id + '.zip'), a.installer]);
       const zip = await readFile(join(temp, a.id + '.zip'));
       a.zipSize = zip.length; a.sha256 = hash(zip);
     }
-    const meta = { protocol: CI_PROTOCOL, validateOnly: true, plan: p, installers: [] };
+    execFileSync(py, ['-c',
+      "import zipfile,sys; z=zipfile.ZipFile(sys.argv[1],'w');\nfor n in sys.argv[2:]: z.writestr(n, b'server fixture');\nz.close()",
+      join(temp, p.serverArtifact.id + '.zip'), ...p.serverArtifact.files]);
+    {
+      const zip = await readFile(join(temp, p.serverArtifact.id + '.zip'));
+      p.serverArtifact.zipSize = zip.length; p.serverArtifact.sha256 = hash(zip);
+    }
+    const serverBlob = Buffer.from('server fixture');
+    const meta = { protocol: CI_PROTOCOL, validateOnly: true, plan: p, installers: [], serverPackages: [] };
     for (const a of p.artifacts) {
       await writeFile(join(temp, a.installer), installer);
       meta.installers.push({ name: a.installer, artifactId: a.id, zipSha256: a.sha256, size: installer.length, sha256: hash(installer) });
+    }
+    for (const name of p.serverArtifact.files) {
+      await writeFile(join(temp, name), serverBlob);
+      meta.serverPackages.push({ name, artifactId: p.serverArtifact.id, zipSha256: p.serverArtifact.sha256, size: serverBlob.length, sha256: hash(serverBlob) });
     }
     await writeFile(join(temp, 'prepared.json'), JSON.stringify(meta));
     await readPrepared({ temp, plan: p, validateOnly: true });
@@ -557,10 +579,11 @@ test('real full-byte prepared reader catches installer and ZIP tampering and pro
     await assert.rejects(readPrepared({ temp, plan: p, validateOnly: true }), /bytes changed/);
   } finally { await rm(temp, { recursive: true, force: true }); }
 });
-test('the inventory is five installers, five signatures and latest.json, with no SHA256SUMS', async () => {
-  assert.equal(assetNames(plan).length, 11);
-  assert.equal(new Set(assetNames(plan)).size, 11);
+test('the inventory is five installers, five signatures, latest.json and two headless server packages, with no SHA256SUMS', async () => {
+  assert.equal(assetNames(plan).length, 13);
+  assert.equal(new Set(assetNames(plan)).size, 13);
   assert.ok(!assetNames(plan).includes('SHA256SUMS'));
+  for (const name of serverPackageNames(plan.version)) assert.ok(assetNames(plan).includes(name));
   // The publisher never writes a checksum file, and a draft carrying one is not the expected inventory.
   const source = await readFile(new URL('./release-from-ci.mjs', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /SHA256SUMS/);

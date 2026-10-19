@@ -78,7 +78,7 @@ Choose a package from the [latest release](https://github.com/hongfaqiu/strata-m
 | Platform | Package | Setup |
 | --- | --- | --- |
 | **Windows x64** | NSIS installer (`.exe`) | Requires WebView2. [Windows installation](docs/DOWNLOAD.en.md#install-on-windows). |
-| **Linux x64** | AppImage or DEB | Built in Ubuntu 22.04 CI. [Linux installation and support scope](docs/DOWNLOAD.en.md#install-on-linux). |
+| **Linux x64** | AppImage or DEB; experimental headless server: [docs/SERVER.en.md](docs/SERVER.en.md) | Built in Ubuntu 22.04 CI. [Linux installation and support scope](docs/DOWNLOAD.en.md#install-on-linux). |
 | **macOS Apple Silicon** | DMG (experimental) | Un-notarized CI package when a release lists it. Can install the upstream prebuilt Metal engine package (real-device validation still pending). Intel not packaged. [macOS notes](docs/DOWNLOAD.en.md#macos-apple-silicon-experimental). |
 
 1. **Prepare the runtime.** Open Strata to inspect an existing installation, or follow Getting started. An existing supported runtime does not need reinstalling.
