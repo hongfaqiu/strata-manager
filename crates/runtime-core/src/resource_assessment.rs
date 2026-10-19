@@ -203,6 +203,7 @@ pub(crate) fn hardware_signature(state: &RuntimeState) -> Result<Value, String> 
 }
 
 // setup.py MODELS 201-240: numeric RAM thresholds are compared to ram_gb() (GiB).
+// These are official *peak* host-RAM figures before GPU expert offload. UI copy must not treat them as a hard gate.
 // Expert arenas and KV/slot estimates follow the original decimal-GB arithmetic; do not silently change its units.
 fn model(family: &str, quant: &str) -> Option<(f64, f64, bool)> {
     match (family, quant) {

@@ -74,6 +74,7 @@ export function ServiceStatusPopover({ language, label, state, profile, process,
     return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', keys); document.removeEventListener('focusin', focus); window.removeEventListener('resize', place); };
   }, [open]);
   const jump = (page: 'monitoring' | 'models' | 'tasks') => { close(); onNavigate(page); };
+  const modelsFoundHint = /发现|found|models/i.test(label);
   const refresh = async () => {
     if (refreshing) return;
     setRefreshing(true); setRefreshError('');
@@ -114,10 +115,10 @@ export function ServiceStatusPopover({ language, label, state, profile, process,
         <div className="service-status-resources"><ResourceMeter label={text('显存', 'VRAM')} {...vram}/><ResourceMeter label={text('内存', 'RAM')} {...ram}/></div>
         {liveMetrics && contextUsed !== null && contextTotal !== null && contextTotal > 0 && <ResourceMeter label={contextLabel} value={`${format(contextUsed)} / ${format(contextTotal)} tokens`} percent={contextUsed / contextTotal * 100}/>}
         <div className="service-status-telemetry-meta"><span>{text('近 3 分钟采样', 'Samples from the last 3 min')}</span><span role={metricsUnavailable ? 'status' : undefined}>{metricsUnavailable ? text('采集暂停 · 保留历史', 'Paused · history retained') : metricUpdatedAt ? new Date(metricUpdatedAt).toLocaleTimeString(language, {hour:'2-digit', minute:'2-digit', second:'2-digit'}) : text('等待监控', 'Waiting for metrics')}</span></div>
-      </div> : !startup ? <div className="service-status-empty">{!profile ? text('选择模型后查看实时负载', 'Select a model to view live load') : stopped ? text('启动服务后查看实时负载', 'Start the service to view live load') : text('连接服务后查看实时负载', 'Connect to view live load')}</div> : null}
+      </div> : !startup ? <div className="service-status-empty">{!profile ? <><p>{modelsFoundHint ? text('本机已发现模型，打开「我的模型」启用即可。', 'Local models were found. Open My models to enable one.') : text('选择模型后查看实时负载', 'Select a model to view live load')}</p><button type="button" className="primary" onClick={() => jump('models')}>{text('去启用模型', 'Enable a model')}</button></> : stopped ? text('启动服务后查看实时负载', 'Start the service to view live load') : text('连接服务后查看实时负载', 'Connect to view live load')}</div> : null}
       {unloadedHint && <p className="service-status-context">{unloadedHint}</p>}
       {refreshError && <p className="notice error" role="alert">{refreshError}</p>}
-      {profile && <fieldset className="service-status-actions" disabled={actionsDisabled || processUnverified}>{actions}</fieldset>}
+      {profile ? <fieldset className="service-status-actions" disabled={actionsDisabled || processUnverified}>{actions}</fieldset> : <div className="service-status-actions"><button type="button" className="primary" onClick={() => jump('models')}>{text('打开我的模型', 'Open My models')}</button></div>}
       <nav aria-label={text('快捷跳转', 'Quick navigation')}><button type="button" onClick={() => jump('monitoring')}><Activity size={15}/>{text('监控', 'Monitor')}</button><button type="button" onClick={() => jump('models')}><Settings2 size={15}/>{text('模型管理', 'Models')}</button><button type="button" onClick={() => jump('tasks')}><Terminal size={15}/>{text('任务与日志', 'Tasks & logs')}</button></nav>
     </div>, document.body)}
   </>;

@@ -33,6 +33,16 @@ test('fit uses total memory and is unknown without it', () => {
   assert.equal(estimates.fitState(62, undefined), undefined);
 });
 
+test('fit softens to tight when GPU offload covers the peak RAM shortfall', () => {
+  // 31 GB RAM + 24 GB VRAM: peak 48 is over RAM alone but within RAM+(VRAM-5)
+  assert.equal(estimates.fitState(48, 31, 24), 'tight');
+  assert.equal(estimates.fitState(48, 31), 'over');
+  assert.equal(estimates.fitState(48, 31, 8), 'over', 'tiny VRAM still over');
+  assert.equal(estimates.environmentVramGB(['NVIDIA GeForce RTX 4090, 560.94, 24564 MiB']), 24);
+  assert.equal(estimates.environmentVramGB(['Intel UHD']), undefined);
+  assert.equal(estimates.usableMemoryGB(31, 24), 31 + 19);
+});
+
 test('parses download progress from task messages', () => {
   assert.equal(estimates.taskProgress('Downloading 42%'), 42);
   assert.equal(Math.round(estimates.taskProgress('Swift 1.5 IQ3_XXS 下载中 31.2 / 75.8 GB')), 41);

@@ -65,7 +65,7 @@ export function ResourceAssessmentPanel({ request, language, desktop = core.isDe
         <p className="resource-assessment-caption">{t('按当前选择的上下文与并发数估算；建议不会自动修改你的配置。', 'Estimates use the selected context and concurrency. Recommendations never change your configuration automatically.')}</p>
         <dl className="resource-assessment-facts">
           <div><dt>{t('本机 RAM / 当前可用', 'System RAM / available now')}</dt><dd>{size(result.hardware.totalMemoryBytes)} / {size(result.hardware.availableMemoryBytes)}</dd></div>
-          <div><dt>{t('官方 RAM 建议阈值', 'Official RAM guidance threshold')}</dt><dd>{size(result.ram.baselineBytes)}</dd></div>
+          <div><dt>{t('官方峰值 RAM 参考（含显存卸载可更低）', 'Official peak RAM guidance (lower with GPU offload)')}</dt><dd>{size(result.ram.baselineBytes)}</dd></div>
           <div><dt>{t('预计运行模式', 'Estimated mode')}</dt><dd>{modes[result.ram.mode]}</dd></div>
           <div><dt>{t('建议上下文 / 并发', 'Suggested context / concurrency')}</dt><dd>{result.recommendations.context == null ? t('未知', 'Unknown') : `${(result.recommendations.context / 1024).toLocaleString(language)}K`} / {result.recommendations.parallel ?? t('未知', 'Unknown')}</dd></div>
         </dl>
@@ -89,7 +89,7 @@ export function ResourceAssessmentPanel({ request, language, desktop = core.isDe
     {compact ? <>
       <dl className="resource-assessment-summary">
         <div><dt>{t('本机可用 RAM', 'Available system RAM')}</dt><dd>{size(result?.hardware.availableMemoryBytes)}</dd></div>
-        <div><dt>{t('官方 RAM 建议阈值', 'Official RAM guidance threshold')}</dt><dd>{size(result?.ram.baselineBytes)}</dd></div>
+        <div><dt>{t('官方峰值 RAM 参考（含显存卸载可更低）', 'Official peak RAM guidance (lower with GPU offload)')}</dt><dd>{size(result?.ram.baselineBytes)}</dd></div>
         <div><dt>{t('磁盘空间', 'Disk space')}</dt><dd data-disk-status={diskStatus}>{diskLabels[diskStatus]}</dd></div>
       </dl>
       {result?.status === 'risk' && <p className="resource-assessment-risk" role="status">{mainRisk ? core.resourceAssessmentMessage(mainRisk.code, zh) : t('当前资源选择存在风险，请展开查看完整依据。', 'This selection has resource risks. Expand to inspect the evidence.')}</p>}

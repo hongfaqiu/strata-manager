@@ -73,7 +73,7 @@ const disk = {status:'ready',dataDirectory:'D:/fixture',modelDirectory:'D:/fixtu
 test('compact guidance summarizes three metrics while one disclosure retains detailed evidence',()=>{
   const onRefreshDisk=()=>{},tree=fixture({},[{id:'measurement',startedAt:1000,ramPeakBytes:20*1024**3,vramPeakBytes:null}]).render({compact:true,disk,onRefreshDisk});
   const visible=visibleText(tree),disclosure=nodes(tree).find(node=>node.type==='details');
-  assert.match(visible,/当前选择的资源预估/);assert.match(visible,/本机可用 RAM/);assert.match(visible,/50 GiB/);assert.match(visible,/官方 RAM 建议阈值/);assert.match(visible,/磁盘空间/);assert.match(visible,/充足/);
+  assert.match(visible,/当前选择的资源预估/);assert.match(visible,/本机可用 RAM/);assert.match(visible,/50 GiB/);assert.match(visible,/官方峰值 RAM 参考/);assert.match(visible,/磁盘空间/);assert.match(visible,/充足/);
   assert.match(visible,/参考值不等于运行保证/);
   assert.doesNotMatch(visible,/Fixture GPU|专家权重规模|相同资源选择的历史实测/);
   assert.equal(nodes(tree).filter(node=>node.type==='details').length,1);
