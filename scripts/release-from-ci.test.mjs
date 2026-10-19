@@ -415,7 +415,7 @@ function releaseFixture(p = plan) {
   let id = 1;
   const assets = p.artifacts.flatMap(a => [{ id: id++, name: a.installer, size: 10 },
     { id: id++, name: a.installer + '.sig', size: 10, signatureText: 'fixture-' + a.kind }]);
-  assets.push({ id: id++, name: 'latest.json', size: 10 }, { id: id++, name: 'SHA256SUMS', size: 10 });
+  assets.push({ id: id++, name: 'latest.json', size: 10 });
   const entry = i => ({ signature: 'fixture-' + p.artifacts[i].kind, url: 'https://github.com/' + REPOSITORY + '/releases/download/' + encodeURIComponent(p.tag) + '/' + encodeURIComponent(p.artifacts[i].installer) });
   return { release: { id: 4, tag_name: p.tag, draft: true, prerelease: p.prerelease, assets },
     manifest: { version: p.version, platforms: {
@@ -557,9 +557,17 @@ test('real full-byte prepared reader catches installer and ZIP tampering and pro
     await assert.rejects(readPrepared({ temp, plan: p, validateOnly: true }), /bytes changed/);
   } finally { await rm(temp, { recursive: true, force: true }); }
 });
-test('the inventory is five installers, five signatures and two metadata files', () => {
-  assert.equal(assetNames(plan).length, 12);
-  assert.equal(new Set(assetNames(plan)).size, 12);
+test('the inventory is five installers, five signatures and latest.json, with no SHA256SUMS', async () => {
+  assert.equal(assetNames(plan).length, 11);
+  assert.equal(new Set(assetNames(plan)).size, 11);
+  assert.ok(!assetNames(plan).includes('SHA256SUMS'));
+  // The publisher never writes a checksum file, and a draft carrying one is not the expected inventory.
+  const source = await readFile(new URL('./release-from-ci.mjs', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /SHA256SUMS/);
+  const f = releaseFixture();
+  f.release.assets.push({ id: 99, name: 'SHA256SUMS', size: 10 });
+  assert.throws(() => validateReleaseInventory(f.release, plan), /Exactly the expected release assets/);
+  assert.throws(() => validateReleaseInventory(f.release, plan, { allowPartial: true }), /Exactly the expected release assets/);
 });
 
 test('CI evidence accepts a successful change-detection gate job and rejects a failed or duplicated one', () => {

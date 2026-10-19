@@ -96,7 +96,7 @@ test('a tag moved during inventory collection fails the final source check', asy
   assert.equal(tagReads, 2);
 });
 
-test('checksum replacement requires the existing unique draft and refuses invalid guard options', async () => {
+test('asset replacement requires the existing unique draft and refuses invalid guard options', async () => {
   await assert.rejects(guard([], { requireDraft: true }), /exactly one unpublished draft/);
   assert.equal((await guard([release()], { requireDraft: true })).releaseId, 1);
   await assert.rejects(guard([release(1, false)], { requireDraft: true }), /already publicly released/);
