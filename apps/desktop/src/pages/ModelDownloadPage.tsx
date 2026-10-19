@@ -1,7 +1,7 @@
 import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, ArrowUpRight, ChevronRight, Download, FolderOpen, HardDrive, RefreshCw, Search, Settings2, X } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, ChevronRight, Download, FileInput, FolderOpen, HardDrive, RefreshCw, Search, Settings2, X } from 'lucide-react';
 import * as core from '@strata-manager/core';
 import type { ServiceProfile, TaskStatus } from '@strata-manager/core';
 import { NumberField, Radio, Toggle } from '../OfficialControls';
@@ -11,6 +11,8 @@ import { ModelDownloadSettingsDialog } from './ModelDownloadSettingsDialog';
 import { ResourceAssessmentPanel } from './ResourceAssessmentPanel';
 import { ContextExtensionNotice } from './ContextExtensionNotice';
 import { OrcaImportPanel } from './OrcaImportPanel';
+import { ExistingModelPanel, type LocalSetupRequest } from './ExistingModelPanel';
+import { existingModelCopy } from './existingModelCopy';
 import { orcaCopy } from './orcaCopy';
 import './model-download.css';
 import { D2DotAxis } from './D2Visuals';
@@ -26,6 +28,10 @@ export interface ModelDownloadPageProps {
   runtimes: ServiceProfile[];
   /** Detected Strata engine versions keyed by install directory (for minEngine gates). */
   runtimeVersions?: { installDir: string; runtimeVersion?: string }[];
+  /** Detected runtimes; the first ready one is used when no runtime was chosen yet (#75). */
+  detectedRuntimes?: core.DetectedRuntime[];
+  /** START-HERE.bat vs. python setup.py in the 「使用已有模型」 command preview. */
+  windows?: boolean;
   busy: boolean;
   tasks: TaskStatus[];
   /** Total system memory in GB, from /metrics or environment info. Undefined shows 未实测. */
@@ -34,9 +40,11 @@ export interface ModelDownloadPageProps {
   onChooseDirectory: () => Promise<string | null>;
   onChooseFile: () => Promise<string | null>;
   onPrepare: (request: ReturnType<typeof core.snapshotModelDownloadRequest>) => Promise<void>;
+  /** 「使用已有模型」(#75): official setup with --gguf-dir (and --data-dir for an existing MTP layer). */
+  onLocalSetup?: (request: LocalSetupRequest) => Promise<TaskStatus | void | undefined>;
   onImportConfig: (path: string, runtime?: ServiceProfile) => Promise<void>;
   /** ORCA.md's OrcaRouter IQ3_XXS import; the section is hidden without it. */
-  onOrcaImport?: (profile: ServiceProfile, request: core.OrcaImportRequest, options: core.OfficialSetupOptions) => Promise<void>;
+  onOrcaImport?: (profile: ServiceProfile, request: core.OrcaImportRequest, options: core.OfficialSetupOptions) => Promise<TaskStatus | void | undefined>;
   onTasks: () => void;
   onEnvironment: () => void;
   onDirtyChange?: (dirty: boolean) => void;
@@ -53,7 +61,7 @@ const familyDescription = (family: string, zh: boolean) => ({
   qwen36: zh ? '读图与多请求并发（引擎 0.1.45+）' : 'Vision and concurrent requests (engine 0.1.45+)',
 }[family] ?? (zh ? '官方模型' : 'Official model'));
 
-export function ModelDownloadPage({ machineMemoryGB, language, desktop, fallbackRuntime, runtimeOverride, runtimes, runtimeVersions = [], busy, tasks, onRuntimeChange, onChooseDirectory, onChooseFile, onPrepare, onImportConfig, onOrcaImport, onTasks, onEnvironment, onDirtyChange, onSaveDraftReady }: ModelDownloadPageProps) {
+export function ModelDownloadPage({ machineMemoryGB, language, desktop, fallbackRuntime, runtimeOverride, runtimes, runtimeVersions = [], detectedRuntimes = [], windows = false, busy, tasks, onRuntimeChange, onChooseDirectory, onChooseFile, onPrepare, onLocalSetup, onImportConfig, onOrcaImport, onTasks, onEnvironment, onDirtyChange, onSaveDraftReady }: ModelDownloadPageProps) {
   const zh = language === 'zh-CN', text = (cn: string, en: string) => zh ? cn : en;
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
@@ -63,6 +71,8 @@ export function ModelDownloadPage({ machineMemoryGB, language, desktop, fallback
   const [showDetail, setShowDetail] = useState(false);
   const [existingOpen, setExistingOpen] = useState(false);
   const [orcaOpen, setOrcaOpen] = useState(false);
+  const [localOpen, setLocalOpen] = useState(false);
+  const localSection = useRef<HTMLDetailsElement>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const submitLock = useRef(false);
@@ -71,7 +81,9 @@ export function ModelDownloadPage({ machineMemoryGB, language, desktop, fallback
   const knownDirectory = useRef<{ runtimeKey: string; path: string } | undefined>(undefined);
   const defaults = useQuery({ queryKey: defaultsQueryKey, queryFn: async () => core.normalizeModelDownloadDefaults(await core.loadStore<unknown>(core.MODEL_DOWNLOAD_DEFAULTS_KEY, null)), staleTime: Infinity, retry: false, refetchOnWindowFocus: false });
   const saved = defaults.data ?? core.defaultModelDownloadDefaults();
-  const runtime = [runtimeOverride, saved.runtime, fallbackRuntime].find((candidate): candidate is ServiceProfile => !!candidate?.managed && !!candidate.installDir);
+  // A detected, ready runtime counts even before it is registered: preparing a model is what registers it (#75).
+  const detectedReady = detectedRuntimes.find(item => item.readiness === 'ready' && !!item.profile.installDir)?.profile;
+  const runtime = [runtimeOverride, saved.runtime, fallbackRuntime, detectedReady].find((candidate): candidate is ServiceProfile => !!candidate?.managed && !!candidate.installDir);
   const searchTerm = search.trim().toLocaleLowerCase();
   const filtered = core.MODEL_CATALOG.filter(model => `${model.name} ${model.family} ${familyDescription(model.family, zh)}`.toLocaleLowerCase().includes(searchTerm));
   const entry = filtered.find(model => model.id === selectedId) ?? filtered[0];
@@ -133,7 +145,7 @@ export function ModelDownloadPage({ machineMemoryGB, language, desktop, fallback
   };
   const selectModel = (id: string) => { setSelectedId(id); setShowDetail(true); setError(''); requestAnimationFrame(() => { if (window.matchMedia('(max-width: 1050px)').matches) detailHeading.current?.focus(); }); };
   return <section className="model-download-page" data-testid="model-download-page" data-detail={showDetail}>
-    <header className="model-download-header"><div><h2>{text('下载模型', 'Download models')}</h2><p>{text('浏览官方模型目录，选择版本并准备到本机。', 'Browse the official catalog, choose a variant, and prepare it locally.')}</p></div><div className="model-download-actions"><button type="button" disabled={defaults.isPending || submitting} onClick={() => setSettingsOpen(true)}><Settings2 size={18}/>{text('模型下载配置', 'Download settings')}</button><button type="button" onClick={onTasks}><Download size={18}/>{text('下载任务', 'Download tasks')}<span className="model-download-count">{downloadCount}</span></button></div></header>
+    <header className="model-download-header"><div><h2>{text('下载模型', 'Download models')}</h2><p>{text('浏览官方模型目录，选择版本并准备到本机。', 'Browse the official catalog, choose a variant, and prepare it locally.')}</p></div><div className="model-download-actions">{onLocalSetup && <button type="button" data-testid="existing-model-shortcut" onClick={() => { if (localSection.current) { localSection.current.open = true; localSection.current.scrollIntoView({ block: 'start', behavior: 'smooth' }); } }}><FileInput size={18}/>{existingModelCopy(language).title}</button>}<button type="button" disabled={defaults.isPending || submitting} onClick={() => setSettingsOpen(true)}><Settings2 size={18}/>{text('模型下载配置', 'Download settings')}</button><button type="button" onClick={onTasks}><Download size={18}/>{text('下载任务', 'Download tasks')}<span className="model-download-count">{downloadCount}</span></button></div></header>
     <div className="model-download-common"><Settings2 size={17}/><strong>{text('公共配置', 'Shared settings')}</strong>{defaults.isPending ? <span role="status">{text('正在读取…', 'Loading…')}</span> : defaults.isError ? <span role="alert" className="model-download-error">{text('公共配置读取失败，请打开配置检查后保存。', 'Shared settings could not be read. Open settings and save to recover.')}</span> : <><span>{sourceLabel}</span><span aria-hidden="true">·</span><code title={modelDirectory ?? runtime?.installDir}>{runtime?.installDir ? modelDirectory ?? runtime.installDir : text('尚未选择运行环境', 'No runtime selected')}</code><span aria-hidden="true">·</span><span>{gpuLabel}{saved.options.backend !== 'auto' ? ` (${backendLabel})` : ''}</span></>}<small>{text('新下载任务使用这些默认设置。', 'Defaults apply to new download tasks.')}</small></div>
     {!runtime?.installDir && !defaults.isPending && <div className="model-download-runtime-needed"><p>{text('选择已有 Strata 运行环境，或先安装运行环境。模型目录可以先浏览。', 'Choose an existing Strata runtime or install one first. You can browse the catalog now.')}</p><button type="button" onClick={() => setSettingsOpen(true)}>{text('选择运行环境', 'Choose runtime')}</button><button type="button" onClick={onEnvironment}>{text('安装运行环境', 'Install runtime')}</button></div>}
     <div className="model-download-browser">
@@ -151,6 +163,7 @@ export function ModelDownloadPage({ machineMemoryGB, language, desktop, fallback
         <ResourceAssessmentPanel compact desktop={desktop} language={language} request={resourceRequest} unavailableReason={!runtime ? text('选择运行环境后可检查本机资源。', 'Choose a runtime to check local resources.') : !contextValid ? text('请填写有效的上下文长度后重新预估。', 'Enter a valid context length to estimate resources.') : saved.options.gpus === 'all' ? text('已选择全部 GPU，当前规则无法完整估算多卡配置。', 'All GPUs are selected. Current rules cannot fully estimate multi-GPU configurations.') : undefined} disk={disk.data} diskPending={disk.isPending && !!runtime && desktop && defaults.isSuccess} diskError={disk.error} onRefreshDisk={() => void disk.refetch()}/>
       </div><footer className="model-download-submit"><div><span>{text('已选择', 'Selected')}: <strong>{quant} · {contextValid ? core.formatContextTokens(context, language) : '—'} · {images ? text('图像开启', 'Images on') : text('图像关闭', 'Images off')}</strong></span><button type="button" className="primary" disabled={!desktop || !runtime?.installDir || busy || submitting || settingsOpen || !defaults.isSuccess || !contextValid || engineBlocked || disk.isPending || disk.isError || disk.data?.status !== 'ready'} onClick={() => void prepare()}><Download size={18}/>{submitting ? text('正在检查并提交…', 'Checking and submitting…') : `${text('下载并准备', 'Download and prepare')} · ${info?.downloadGB ?? '—'} GB`}</button></div>{error && <p role="alert" className="model-download-error">{error}</p>}{engineBlocked && <p role="alert" className="model-download-error">{text(`此模型需要引擎 ${engineGate!.minEngine} 或更新（当前：${runtimeVersion ?? '未知'}）。请先更新 Strata。`, `This model needs engine ${engineGate!.minEngine} or newer (current: ${runtimeVersion ?? 'unknown'}). Update Strata first.`)}</p>}<p>{!desktop ? text('需要桌面后台执行模型准备。', 'Preparing models requires the desktop backend.') : busy ? text('请等待当前操作完成后再准备模型。', 'Wait for the current operation before preparing a model.') : engineBlocked ? text('引擎版本不足，无法准备此模型。', 'Engine too old to prepare this model.') : text('下载 → 打包 → 生成配置，完成后在“我的模型”手动启用。', 'Download → pack → create configuration. Enable it from My models when ready.')}</p></footer></div> : <div className="model-download-no-detail" aria-hidden="true"><HardDrive size={32}/></div>}
     </div>
+    {onLocalSetup && <details ref={localSection} className="model-download-local-gguf" data-testid="existing-model-section" onToggle={event => setLocalOpen(event.currentTarget.open)}><summary>{text('使用已有模型（本地 GGUF 文件）', 'Use an existing model (local GGUF files)')}</summary>{localOpen && <ExistingModelPanel language={language} desktop={desktop} runtime={runtime} runtimeVersion={runtimeVersion} busy={busy} options={saved.options} windows={windows} onChooseDirectory={onChooseDirectory} onChooseFile={onChooseFile} onSetup={onLocalSetup} onOrcaImport={onOrcaImport}/>}</details>}
     <details className="model-download-existing" onToggle={event => setExistingOpen(event.currentTarget.open)}><summary>{text('已有模型与兼容性检查', 'Existing models and compatibility')}</summary><div className="model-download-existing-actions"><p>{text('导入已有配置，或检查其它模型文件是否可用于当前环境。', 'Import an existing configuration, or check model-file compatibility with this runtime.')}</p><button type="button" disabled={!desktop || busy} onClick={() => void importConfig()}><FolderOpen size={16}/>{text('导入配置', 'Import configuration')}</button></div>{existingOpen && <><ModelInspectPanel key={runtime?.id ?? 'none'} language={language} desktop={desktop} installationId={runtime?.id} disabled={busy} onInspect={core.inspectModel} onChooseTarget={onChooseFile}/><div className="model-download-local-heading"><strong>{text('本地模型配置', 'Local model configurations')}</strong><button type="button" disabled={!desktop || !runtime?.installDir || localModels.isFetching} onClick={() => void localModels.refetch()}><RefreshCw size={14}/>{text('重新扫描', 'Rescan')}</button></div>{localModels.isError ? <p role="alert" className="model-download-error">{core.normalizeError(localModels.error).message}</p> : localModels.isPending && runtime ? <p>{text('正在读取…', 'Loading…')}</p> : localModels.data?.length ? <ul className="model-download-local-list">{localModels.data.map(model => <li key={model.configPath}><div><strong>{model.name}</strong><code>{model.configPath}</code></div><button type="button" disabled={busy} onClick={() => void onImportConfig(model.configPath, runtime)}>{text('导入配置', 'Import configuration')}</button></li>)}</ul> : <p>{text('所选运行环境没有可识别的本地模型配置。', 'No local model configurations were found in this runtime.')}</p>}</>}</details>
     {onOrcaImport && <details className="model-download-orca" data-testid="orca-import-section" onToggle={event => setOrcaOpen(event.currentTarget.open)}><summary>{(orcaCopy[language] ?? orcaCopy.en).title}<span className="orca-import-badge" data-testid="orca-import-badge">{(orcaCopy[language] ?? orcaCopy.en).badge}</span></summary>{orcaOpen && <OrcaImportPanel language={language} desktop={desktop} runtime={runtime} busy={busy} options={saved.options} onChooseFile={onChooseFile} onImport={onOrcaImport}/>}</details>}
     {settingsOpen && <ModelDownloadSettingsDialog value={runtimeOverride ? { ...saved, runtime: runtimeOverride } : saved} runtimes={runtimeChoices} effectiveRuntime={runtime} modelDirectory={modelDirectory} language={language} desktop={desktop} onChooseDirectory={onChooseDirectory} onSave={saveDefaults} onClose={() => setSettingsOpen(false)} onDirtyChange={onDirtyChange} onSaveDraftReady={onSaveDraftReady}/>}

@@ -13,7 +13,7 @@ export interface OrcaImportPanelProps {
   busy: boolean;
   options: OfficialSetupOptions;
   onChooseFile: () => Promise<string | null>;
-  onImport: (profile: ServiceProfile, request: OrcaImportRequest, options: OfficialSetupOptions) => Promise<void>;
+  onImport: (profile: ServiceProfile, request: OrcaImportRequest, options: OfficialSetupOptions) => Promise<unknown>;
 }
 
 const gb = (bytes: number, language: string) => (bytes / 1e9).toLocaleString(language, { maximumFractionDigits: 2, minimumFractionDigits: 2 });

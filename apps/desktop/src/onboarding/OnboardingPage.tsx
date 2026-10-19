@@ -11,6 +11,7 @@ import { ContextExtensionNotice } from '../pages/ContextExtensionNotice';
 import { SetupHandoffActions } from '../pages/SetupHandoffActions';
 import { taskProgress } from '../pages/d2Estimates';
 import { useLocalRuntimePackages } from '../pages/LocalRuntimePackage';
+import { ExistingModelPanel } from '../pages/ExistingModelPanel';
 import { fetchArenaGroups, fetchArenaTier } from './arenaPublic';
 import {
   arenaLeaderboardQuery, arenaMatch, confidenceBars, defaultContext, parseGpu,
@@ -46,6 +47,10 @@ export interface OnboardingPageProps {
   modelName?: string;
   busy: boolean;
   onPrepareModel: (request: ModelPrepareRequest) => Promise<TaskStatus | undefined>;
+  /** 「使用已有模型」(#75): ORCA.md import of local OrcaRouter shards. */
+  onOrcaImport?: (profile: ServiceProfile, request: core.OrcaImportRequest, options: core.OfficialSetupOptions) => Promise<TaskStatus | undefined>;
+  onChooseDirectory?: () => Promise<string | null>;
+  onChooseFile?: () => Promise<string | null>;
   onStart: (profile: ServiceProfile) => Promise<void>;
   onLoad: (profile: ServiceProfile) => Promise<void>;
   onConnectCandidate: (candidate: core.LocalCandidate) => Promise<void>;
@@ -295,6 +300,9 @@ function RuntimeStep(props: StepProps & { runtimeTask?: TaskStatus; runtimeFact:
 }
 
 // ---- Model -------------------------------------------------------------------------------
+const existingIntro = (language: core.AppLanguage) => core.legacyLanguage(language) === 'zh-CN'
+  ? '已经有 GGUF 模型文件？选择它们所在的文件夹，确认量化版本后由官方安装器原地使用（等同 START-HERE.bat --gguf-dir），不再下载模型权重。'
+  : 'Already have GGUF model files? Choose their folder and the quantization; the official installer uses them in place (like START-HERE.bat --gguf-dir) without downloading the weights again.';
 function ModelStep(props: StepProps & { runtimeProfile?: ServiceProfile }) {
   const { t, progress, environment, memoryGB, runtimeProfile } = props;
   const scene: Scene = progress?.scene ?? 'chat';
@@ -312,6 +320,7 @@ function ModelStep(props: StepProps & { runtimeProfile?: ServiceProfile }) {
   const disk = useQuery({ queryKey: ['setup-disk', runtime?.installDir, selected?.family, selected?.quant, selected?.images], queryFn: () => core.setupDiskPreflight(runtime!, selected!.family, selected!.quant, selected!.images), enabled: props.desktop && !!runtime?.installDir && !!selected, staleTime: 15000, retry: false });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [source, setSource] = useState<'catalog' | 'existing'>('catalog');
   const max = Math.max(memoryGB ?? 0, ...rows.map(row => row.ramGB)) * 1.08;
   const options = defaults.data?.options;
   const request = runtime && selected && options && options.gpus !== 'all' ? { installationId: runtime.id, family: selected.family, quant: selected.quant, context: selected.context, images: selected.images, kv: selected.context <= 8192 ? 'fp16' : 'int8', gpuIds: options.gpus ? options.gpus.split(',').map(Number) : [], parallel: 1 } : undefined;
@@ -326,8 +335,19 @@ function ModelStep(props: StepProps & { runtimeProfile?: ServiceProfile }) {
       if (task) props.onProgress({ setupTaskId: task.id, selection: selected });
     } catch (cause) { setError(core.normalizeError(cause).message); } finally { setSubmitting(false); }
   };
+  const sourceSwitch = props.onChooseDirectory && props.onChooseFile ? <div className="ob-model-source" data-testid="ob-model-source"><Segmented ariaLabel={t('obModelSource')} value={source} onValueChange={value => setSource(value as 'catalog' | 'existing')} options={[{ value: 'catalog', label: t('obSourceCatalog') }, { value: 'existing', label: t('obSourceExisting') }]}/></div> : null;
+  // Same flow as the Models page (#75): official setup with --gguf-dir, or the ORCA.md import.
+  if (source === 'existing' && props.onChooseDirectory && props.onChooseFile) return <div className="ob-panel" data-testid="ob-existing-model">
+    {sourceSwitch}
+    <Head title={t('obSourceExisting')}>{existingIntro(props.language)}</Head>
+    <ExistingModelPanel compact language={props.language} desktop={props.desktop} runtime={runtime} runtimeVersion={props.guide.readyRuntime?.runtimeVersion} busy={props.busy} options={options ?? core.normalizeOfficialSetupOptions()} windows={core.runtimePackageIsWindows(environment?.os)}
+      onChooseDirectory={props.onChooseDirectory} onChooseFile={props.onChooseFile}
+      onSetup={request => props.onPrepareModel(request)} onOrcaImport={props.onOrcaImport}
+      onStarted={(task, chosen) => { if (!task) return; props.onProgress({ setupTaskId: task.id, ...(chosen.family !== 'orca' && core.MODEL_CATALOG.some(model => model.family === chosen.family) ? { selection: { family: chosen.family, quant: chosen.quant, context: chosen.context, images: false } } : {}) }); }}/>
+  </div>;
   return <div className="ob-split">
     <div className="ob-panel">
+      {sourceSwitch}
       <Head title={t('guideChooseModel')} aside={<Segmented ariaLabel={t('guideChooseModel')} value={scene} onValueChange={value => props.onProgress({ scene: value as Scene, selection: undefined })} options={[{ value: 'chat', label: t('obSceneChat') }, { value: 'long', label: t('obSceneLong') }, { value: 'code', label: t('obSceneCode') }]}/>}>{memoryGB ? t('obModelIntro', { gb: Math.round(memoryGB) }) : t('guidePrepareModelHint')}</Head>
       <div className="ob-models" role="radiogroup" aria-label={t('guideChooseModel')}>
         <div className="ob-model is-head" aria-hidden="true"><span/><span>{t('obColModel')}</span><span>{memoryGB ? t('obColMemory', { gb: Math.round(memoryGB) }) : t('obMemoryRow')}</span><span className="ob-right">{t('obColDownload')}</span><span className="ob-right">{t('obColSpeed')}</span></div>
