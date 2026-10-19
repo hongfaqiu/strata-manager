@@ -5,6 +5,7 @@ pub mod configuration_copy;
 pub mod diagnostics;
 pub mod discovery;
 pub mod disk;
+mod display_adapters;
 pub mod engine_help;
 pub mod external;
 pub mod external_management;
@@ -3037,17 +3038,7 @@ fn collect_environment() -> EnvironmentInfo {
     let mut gpus = gpus;
     #[cfg(windows)]
     if gpus.is_empty() {
-        gpus = output(
-            "powershell.exe",
-            &[
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                "Get-CimInstance Win32_VideoController | ForEach-Object { $_.Name }",
-            ],
-        )
-        .map(|text| text.lines().map(str::to_owned).collect())
-        .unwrap_or_default();
+        gpus = display_adapters::windows_gpu_names().unwrap_or_default();
     }
     EnvironmentInfo {
         os: sysinfo::System::long_os_version().unwrap_or_else(|| std::env::consts::OS.into()),
