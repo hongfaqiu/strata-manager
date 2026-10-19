@@ -73,7 +73,7 @@ See the [daily experience notes](docs/DAILY_EXPERIENCE.md) and [verification rec
 
 ### Installers
 
-Choose a package from the [latest release](https://github.com/hongfaqiu/strata-manager/releases/latest) or the [website download section](https://strata-manager.cosfoc.com/en/#get-started). Install only files listed for the selected release and verify them against that release's `SHA256SUMS`.
+Choose a package from the [latest release](https://github.com/hongfaqiu/strata-manager/releases/latest) or the [website download section](https://strata-manager.cosfoc.com/en/#get-started). Install only files listed for the selected release.
 
 | Platform | Package | Setup |
 | --- | --- | --- |
