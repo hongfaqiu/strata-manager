@@ -320,6 +320,11 @@ const strataReleaseCatalog = (() => {
       "zh": { "title": "Benchmark · 历史条件对照", "description": "查看历史数据与未知条件，不据弱身份宣称直接提速。", "alt": "历史 Benchmark 条件比较，隔离示例数据", "badge": "历史对照" },
       "en": { "title": "Benchmark · Historical conditions", "description": "Inspect historical values and unknown conditions without direct speedup claims from weak identity.", "alt": "Historical benchmark conditions, isolated example data", "badge": "HISTORY" }
     },
+    "runtime-overview": {
+      "index": "05", "image": "runtime",
+      "zh": { "title": "Strata · 运行环境与更新", "description": "识别本机硬件与已装 Strata，选择运行环境、检查更新并按官方长度和 SHA256 校验。", "alt": "Strata 运行环境：硬件、已安装版本、运行目录与更新", "badge": "运行环境" },
+      "en": { "title": "Strata · Runtime and updates", "description": "Detect hardware and installed Strata, choose a runtime, check for updates and verify size and SHA256.", "alt": "Strata runtime: hardware, installed version, runtime folder and updates", "badge": "RUNTIME" }
+    },
     "usage": {
       "index": "03",
       "zh": {
@@ -337,194 +342,452 @@ const strataReleaseCatalog = (() => {
     }
   };
 
-  // 提取需要国际化翻译的 DOM 元素
+  // Stage tabs map to rebuilt app views; each view links to its real screenshot.
+  const stageViews = {
+    overview: { screen: 'overview', title: { zh: '总览', en: 'Overview' } },
+    models: { screen: 'models', title: { zh: '模型', en: 'Models' } },
+    monitor: { screen: 'monitor', title: { zh: '监控', en: 'Monitor' } },
+    usage: { screen: 'usage', title: { zh: '监控', en: 'Monitor' } },
+    chat: { screen: 'chat', title: { zh: '聊天', en: 'Chat' } },
+    runtime: { screen: 'runtime-overview', title: { zh: 'Strata', en: 'Strata' } },
+  };
+  const sidebarScreens = { benchmark: 'benchmark', tuning: 'tuning', settings: 'settings' };
+
+  const copy = {
+    zh: {
+      verdict: { fits: '可在本机运行，显存约余 {free} GB。', tight: '可以运行，但显存只剩约 {free} GB，长上下文会更慢。', over: '超出本机显存与内存，建议换更小的量化。' },
+      checking: '正在检查…', upToDate: '已是最新 · SHA256 校验通过', copied: '已复制',
+      cherry: 'Provider   OpenAI 兼容\nAPI 地址   http://127.0.0.1:19001/v1\nAPI 密钥   strata-local\n模型       Swift-Qwen3.8-Flash-Next',
+    },
+    en: {
+      verdict: { fits: 'Runs on this computer with about {free} GB of VRAM to spare.', tight: 'Runs, but only about {free} GB of VRAM is left; long contexts will be slower.', over: 'Exceeds this computer\u2019s VRAM and memory. Pick a smaller quantization.' },
+      checking: 'Checking…', upToDate: 'Up to date · SHA256 verified', copied: 'Copied',
+      cherry: 'Provider   OpenAI-compatible\nAPI host   http://127.0.0.1:19001/v1\nAPI key    strata-local\nModel      Swift-Qwen3.8-Flash-Next',
+    },
+  };
+  const clientConfigs = {
+    cursor: () => "export OPENAI_BASE_URL='http://127.0.0.1:19001/v1'\nexport OPENAI_API_KEY='strata-local'\nexport OPENAI_MODEL='Swift-Qwen3.8-Flash-Next'\ncursor .",
+    codex: () => '# ~/.codex/config.toml\nmodel_provider = "strata"\nmodel = "Swift-Qwen3.8-Flash-Next"\n\n[model_providers.strata]\nname = "Strata (local)"\nbase_url = "http://127.0.0.1:19001/v1"\nenv_key = "STRATA_API_KEY"\nwire_api = "chat"',
+    claude: () => "export ANTHROPIC_BASE_URL='http://127.0.0.1:19001'\nexport ANTHROPIC_AUTH_TOKEN='strata-local'\nexport ANTHROPIC_MODEL='Swift-Qwen3.8-Flash-Next'\nclaude",
+    cherry: () => copy[currentLang].cherry,
+  };
+
+  // Text that switches language (static HTML already carries both).
   const translatable = Array.from(document.querySelectorAll('[data-en]')).map(element => ({
     element,
     zh: element.getAttribute('data-zh') ?? element.textContent,
     en: element.dataset.en,
   }));
-
   const attributeTranslations = [
-    ['data-alt-en', 'alt'],
-    ['data-title-en', 'title'],
-    ['data-label-en', 'aria-label'],
-    ['data-content-en', 'content'],
-    ['data-href-en', 'href'],
-    ['data-src-en', 'src'],
+    ['data-alt-en', 'alt'], ['data-title-en', 'title'], ['data-label-en', 'aria-label'],
+    ['data-content-en', 'content'], ['data-href-en', 'href'], ['data-src-en', 'src'],
   ].flatMap(([dataAttribute, attribute]) =>
     Array.from(document.querySelectorAll(`[${dataAttribute}]`)).map(element => ({
-      element,
-      attribute,
+      element, attribute,
       zh: element.getAttribute(dataAttribute.replace(/-en$/, '-zh')) ?? element.getAttribute(attribute),
       en: element.getAttribute(dataAttribute),
     }))
   );
 
-  // DOM 节点引用
-  const languageButton = document.getElementById('language-switch');
-  const languageLabel = document.getElementById('language-label');
-  const wsTabs = Array.from(document.querySelectorAll('.ws-tab'));
-  const screenImage = document.getElementById('screen-image');
-  const screenLink = document.getElementById('screen-link');
-  const screenTitle = document.getElementById('screen-title');
-  const screenDescription = document.getElementById('screen-description');
-  const screenIndex = document.getElementById('screen-index');
-  const heroImage = document.getElementById('hero-preview-img');
+  const $ = (selector, root = document) => root.querySelector(selector);
+  const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const motionAllowed = () => !reduceMotion.matches;
 
-  // 灯箱引用
-  const lightboxModal = document.getElementById('lightbox-modal');
-  const lightboxImg = document.getElementById('lightbox-img');
-  const lightboxBadge = document.getElementById('lightbox-badge');
-  const lightboxTitle = document.getElementById('lightbox-title');
-  const lightboxCloseBtn = document.getElementById('lightbox-close-btn');
-  const lightboxBackdrop = document.getElementById('lightbox-backdrop');
+  const languageButton = $('#language-switch');
+  const languageLabel = $('#language-label');
+  const wsTabs = $$('.ws-tab');
+  const appWindow = $('#app-window');
+  const appFit = $('[data-app-fit]');
+  const appTitle = $('#app-title');
+  const screenLink = $('#screen-link');
+  const screenTitle = $('#screen-title');
+  const screenDescription = $('#screen-description');
+  const screenIndex = $('#screen-index');
+  const screenPanel = $('#screen-panel');
+
+  const lightboxModal = $('#lightbox-modal');
+  const lightboxImg = $('#lightbox-img');
+  const lightboxBadge = $('#lightbox-badge');
+  const lightboxTitle = $('#lightbox-title');
+  const lightboxCloseBtn = $('#lightbox-close-btn');
+  const lightboxBackdrop = $('#lightbox-backdrop');
   const lightboxDialog = lightboxModal?.querySelector('.lightbox-dialog');
   const lightboxBar = lightboxModal?.querySelector('.lightbox-bar');
-
-  // 移动端菜单
-  const mobileMenuBtn = document.getElementById('mobile-menu-btn');
-  const primaryNav = document.getElementById('primary-nav');
-
-  const themeButton = document.getElementById('theme-switch');
-  const themeColorMeta = document.getElementById('theme-color');
+  const mobileMenuBtn = $('#mobile-menu-btn');
+  const primaryNav = $('#primary-nav');
+  const themeButton = $('#theme-switch');
+  const themeColorMeta = $('#theme-color');
   const THEME_KEY = 'strata-manager-site-theme';
 
-  let activeScreenKey = wsTabs.find(tab => tab.classList.contains('active'))?.dataset.screen || 'models';
+  let activeView = wsTabs.find(tab => tab.classList.contains('active'))?.dataset.screen || 'overview';
   let currentLang = 'zh';
 
-  function currentTheme() {
-    return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
-  }
-
+  function currentTheme() { return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'; }
   function updateThemeButton() {
     if (!themeButton) return;
     const toLight = currentTheme() === 'dark';
-    const label = currentLang === 'en'
-      ? (toLight ? 'Switch to light mode' : 'Switch to dark mode')
-      : (toLight ? '切换到亮色模式' : '切换到黑夜模式');
+    const label = currentLang === 'en' ? (toLight ? 'Switch to light mode' : 'Switch to dark mode') : (toLight ? '切换到亮色模式' : '切换到黑夜模式');
     themeButton.setAttribute('aria-label', label);
     themeButton.title = label;
   }
-
   function applyTheme(theme, persist = false) {
     const next = theme === 'light' ? 'light' : 'dark';
     document.documentElement.dataset.theme = next;
-    if (themeColorMeta) themeColorMeta.content = next === 'light' ? '#f5f4ef' : '#101c18';
-    if (persist) {
-      try { localStorage.setItem(THEME_KEY, next); } catch (_) {}
-    }
+    if (themeColorMeta) themeColorMeta.content = next === 'light' ? '#f7f6f2' : '#14120f';
+    if (persist) { try { localStorage.setItem(THEME_KEY, next); } catch (_) {} }
     updateThemeButton();
   }
 
-  // 渲染工作台屏幕
-  function renderScreen(key) {
-    if (!screens[key]) return;
-    activeScreenKey = key;
-    const item = screens[key];
-    const copy = item[currentLang];
-    const imagePath = new URL(`assets/screenshots/${item.image || key}.${currentLang}.webp`, siteRoot).href;
+  // ---------- App mockup: scale to fit, switch views ----------
+  function fitApp() {
+    if (!appFit || !appWindow) return;
+    const width = appFit.clientWidth;
+    if (!width) return;
+    const compact = width < 700;
+    appWindow.classList.toggle('is-compact', compact);
+    const designWidth = compact ? 680 : 1120;
+    const designHeight = compact ? 860 : 700;
+    const scale = Math.min(1.1, width / designWidth);
+    appWindow.style.transform = `scale(${scale})`;
+    appWindow.style.marginLeft = `${Math.max(0, (width - designWidth * scale) / 2)}px`;
+    appFit.style.height = `${designHeight * scale}px`;
+    appFit.classList.add('is-scaled');
+  }
+  if (appFit && typeof ResizeObserver !== 'undefined') new ResizeObserver(fitApp).observe(appFit);
+  window.addEventListener('resize', fitApp);
 
-    // 平滑淡入淡出图片
-    if (screenImage) {
-      screenImage.style.opacity = '0.5';
-      screenImage.onload = () => {
-        screenImage.style.opacity = '1';
-      };
-      screenImage.src = imagePath;
-      screenImage.alt = copy.alt;
-      screenImage.width = item.width || 2880;
-      screenImage.height = copy.height || item.height || 1920;
-      if (screenImage.complete && screenImage.naturalWidth > 0) screenImage.style.opacity = '1';
-    }
-
-    if (screenLink) {
-      screenLink.href = imagePath;
-      screenLink.dataset.target = key;
-    }
-
+  function renderScreen(key, { animate = false } = {}) {
+    const view = stageViews[key];
+    if (!view || !appWindow) return;
+    activeView = key;
+    const item = screens[view.screen];
+    const text = item[currentLang];
+    appWindow.dataset.view = key;
+    $$('.app-view', appWindow).forEach(section => {
+      const on = section.dataset.view === key;
+      section.hidden = !on;
+      section.classList.toggle('is-active', on);
+      section.classList.remove('is-entering');
+      if (on && animate && motionAllowed()) { void section.offsetWidth; section.classList.add('is-entering'); }
+    });
+    const navTarget = key === 'usage' ? 'monitor' : key;
+    $$('.app-nav', appWindow).forEach(button => button.classList.toggle('is-active', button.dataset.goto === navTarget));
+    if (appTitle) appTitle.textContent = view.title[currentLang];
     if (screenIndex) screenIndex.textContent = item.index;
-    if (screenTitle) screenTitle.textContent = copy.title;
-    if (screenDescription) screenDescription.textContent = copy.description;
-    const screenPanel = document.getElementById('screen-panel');
-    if (screenPanel) screenPanel.setAttribute('aria-labelledby', `tab-${key}`);
-
+    if (screenTitle) screenTitle.textContent = text.title;
+    if (screenDescription) screenDescription.textContent = text.description;
+    if (screenLink) {
+      screenLink.href = new URL(`assets/screenshots/${item.image || view.screen}.${currentLang}.webp`, siteRoot).href;
+      screenLink.dataset.target = view.screen;
+    }
+    screenPanel?.setAttribute('aria-labelledby', `tab-${key}`);
     wsTabs.forEach(tab => {
-      const isSelected = tab.dataset.screen === key;
-      tab.classList.toggle('active', isSelected);
-      tab.setAttribute('aria-selected', String(isSelected));
-      tab.tabIndex = isSelected ? 0 : -1;
+      const selected = tab.dataset.screen === key;
+      tab.classList.toggle('active', selected);
+      tab.setAttribute('aria-selected', String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+    });
+    onViewShown(key);
+  }
+
+  wsTabs.forEach((tab, index) => {
+    tab.addEventListener('click', () => renderScreen(tab.dataset.screen, { animate: true }));
+    tab.addEventListener('keydown', event => {
+      const moves = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: wsTabs.length - 1 };
+      if (!(event.key in moves)) return;
+      event.preventDefault();
+      const target = wsTabs[(moves[event.key] + wsTabs.length) % wsTabs.length];
+      target.focus();
+      renderScreen(target.dataset.screen, { animate: true });
+    });
+  });
+  $$('.app-nav', appWindow || document).forEach(button => button.addEventListener('click', () => {
+    const goto = button.dataset.goto;
+    if (stageViews[goto]) renderScreen(goto, { animate: true });
+    else if (sidebarScreens[goto]) openLightbox(sidebarScreens[goto]);
+  }));
+  const monitorSeg = $$('.app-view[data-view="monitor"] .m-seg span');
+  const usageSeg = $$('.app-view[data-view="usage"] > .m-seg span');
+  if (monitorSeg[1]) monitorSeg[1].addEventListener('click', () => renderScreen('usage', { animate: true }));
+  if (usageSeg[0]) usageSeg[0].addEventListener('click', () => renderScreen('monitor', { animate: true }));
+
+  // Copy the endpoint for real.
+  $$('[data-copy]').forEach(button => button.addEventListener('click', async () => {
+    const label = button.querySelector('span');
+    const original = label?.textContent;
+    try { await navigator.clipboard.writeText(button.dataset.copy); } catch (_) { return; }
+    if (label) label.textContent = copy[currentLang].copied;
+    button.classList.add('is-done');
+    setTimeout(() => { if (label) label.textContent = original; button.classList.remove('is-done'); }, 1400);
+  }));
+
+  // ---------- Live telemetry (pauses off-screen, off for reduced motion) ----------
+  const live = name => $$(`[data-live="${name}"]`);
+  const setLive = (name, value) => live(name).forEach(element => {
+    const first = element.firstChild;
+    if (first && first.nodeType === Node.TEXT_NODE) first.nodeValue = value;
+    else element.insertBefore(document.createTextNode(value), first);
+  });
+  const spark = Array.from({ length: 24 }, (_, i) => 33 - i * 0.12 + Math.sin(i * 0.9) * 0.6);
+  let tps = 32, load = 40, power = 210, genTokens = 140, clock = 14 * 3600 + 34 * 60 + 31, requestTotal = 128, tick = 0;
+  const overviewSpark = $('.app-view[data-view="overview"] .m-spark');
+  function drawSpark() {
+    if (!overviewSpark) return;
+    const min = 26, max = 38;
+    const points = spark.map((value, i) => `${(i / (spark.length - 1) * 300).toFixed(1)} ${(60 - (value - min) / (max - min) * 56).toFixed(1)}`);
+    overviewSpark.querySelector('.line').setAttribute('d', `M${points.join(' L')}`);
+    overviewSpark.querySelector('.area').setAttribute('d', `M${points.join(' L')} L300 60 L0 60 Z`);
+  }
+  const requests = $('[data-requests]');
+  const time = seconds => [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60].map(n => String(n).padStart(2, '0')).join(':');
+  function pushRequest() {
+    if (!requests) return;
+    clock += 20;
+    requestTotal += 1;
+    const row = document.createElement('li');
+    row.className = 'is-new';
+    row.innerHTML = `<i></i><span>${time(clock)}</span><span>4,096 → 384</span><span>${tps.toFixed(1)} <small>tok/s</small></span>`;
+    requests.prepend(row);
+    while (requests.children.length > 6) requests.lastElementChild.remove();
+    setLive('reqs', String(requestTotal));
+  }
+  function telemetryTick() {
+    tick += 1;
+    tps = Math.min(34.2, Math.max(29.6, tps + (Math.random() - 0.5) * 1.1));
+    load = Math.round(Math.min(47, Math.max(34, load + (Math.random() - 0.5) * 5)));
+    power = Math.round(Math.min(224, Math.max(196, power + (Math.random() - 0.5) * 9)));
+    genTokens = genTokens >= 512 ? 0 : genTokens + Math.round(tps * 1.2);
+    setLive('tps', String(Math.round(tps)));
+    ['tps1', 'tps2'].forEach(name => setLive(name, tps.toFixed(1)));
+    setLive('chat-tps', `${tps.toFixed(1)} tok/s`);
+    setLive('load', String(load)); setLive('load2', String(load));
+    setLive('power', String(power)); setLive('power2', String(power));
+    setLive('gen-tokens', `${Math.min(genTokens, 512)} tokens · ${tps.toFixed(1)} tok/s`);
+    live('gen-bar').forEach(bar => { bar.style.width = `${Math.min(100, genTokens / 5.12)}%`; });
+    spark.push(tps); spark.shift(); drawSpark();
+    if (tick % 3 === 0) pushRequest();
+  }
+  let telemetryTimer = null;
+  let stageVisible = false;
+  function updateTelemetry() {
+    const run = stageVisible && motionAllowed() && !document.hidden;
+    if (run && !telemetryTimer) telemetryTimer = setInterval(telemetryTick, 1100);
+    if (!run && telemetryTimer) { clearInterval(telemetryTimer); telemetryTimer = null; }
+  }
+  drawSpark();
+  document.addEventListener('visibilitychange', updateTelemetry);
+  reduceMotion.addEventListener?.('change', updateTelemetry);
+
+  // ---------- API usage chart ----------
+  const bars = $('[data-bars]');
+  const series = {
+    req: i => 0.25 + 0.6 * Math.abs(Math.sin(i * 0.34 + 0.6)) + (i === 47 ? 0.9 : 0),
+    tok: i => 0.3 + 0.55 * Math.abs(Math.sin(i * 0.28 + 1.4)) + 0.1 * Math.sin(i * 1.7),
+    lat: i => 0.45 + 0.25 * Math.sin(i * 0.5) + 0.12 * Math.cos(i * 1.3),
+    tps: i => 0.62 + 0.12 * Math.sin(i * 0.4 + 2) + 0.05 * Math.cos(i * 2.1),
+  };
+  function renderBars(metric) {
+    if (!bars) return;
+    if (!bars.children.length) bars.innerHTML = Array.from({ length: 48 }, (_, i) => `<i style="--i:${i}"></i>`).join('');
+    Array.from(bars.children).forEach((bar, i) => bar.style.setProperty('--h', Math.round(Math.min(1, series[metric](i) / 1.8 * 1.7) * 100)));
+  }
+  renderBars('req');
+  $$('[data-metric-switch] button').forEach(button => button.addEventListener('click', () => {
+    $$('[data-metric-switch] button').forEach(other => other.classList.toggle('is-on', other === button));
+    renderBars(button.dataset.metric);
+  }));
+
+  // ---------- Chat: stream the answer ----------
+  const answer = $('[data-stream]');
+  const streamTargets = answer ? $$('li, code, p', answer) : [];
+  let streamRun = 0;
+  let streamed = false;
+  async function streamAnswer() {
+    if (!answer || !motionAllowed()) return;
+    const run = ++streamRun;
+    const texts = streamTargets.map(element => element.dataset.full ?? (element.dataset.full = element.textContent));
+    streamTargets.forEach(element => { element.textContent = ''; element.setAttribute('data-pending', ''); element.classList.remove('is-typing'); });
+    const pre = answer.querySelector('pre');
+    pre?.setAttribute('data-pending', '');
+    await wait(420);
+    for (let index = 0; index < streamTargets.length; index += 1) {
+      const element = streamTargets[index];
+      if (run !== streamRun) return;
+      if (element.tagName === 'CODE') pre?.removeAttribute('data-pending');
+      element.removeAttribute('data-pending');
+      element.classList.add('is-typing');
+      const chars = Array.from(texts[index]);
+      const step = currentLang === 'en' ? 3 : 2;
+      for (let i = 0; i < chars.length; i += step) {
+        if (run !== streamRun) return;
+        element.textContent = chars.slice(0, i + step).join('');
+        await wait(element.tagName === 'CODE' ? 12 : 26);
+      }
+      element.classList.remove('is-typing');
+      await wait(140);
+    }
+    streamed = true;
+  }
+  function stopStream() {
+    if (!answer) return;
+    streamRun += 1;
+    streamTargets.forEach(element => { if (element.dataset.full !== undefined) element.textContent = element.dataset.full; element.removeAttribute('data-pending'); element.classList.remove('is-typing'); });
+    answer.querySelector('pre')?.removeAttribute('data-pending');
+  }
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+  // ---------- Runtime: check for updates ----------
+  const verify = $('[data-verify]');
+  $('[data-verify-run]')?.addEventListener('click', () => {
+    if (!verify || verify.classList.contains('is-running')) return;
+    const text = $('[data-verify-text]', verify);
+    verify.classList.add('is-running');
+    text.textContent = copy[currentLang].checking;
+    setTimeout(() => {
+      verify.classList.remove('is-running');
+      text.textContent = copy[currentLang].upToDate;
+      const latest = $('[data-latest]');
+      if (latest) latest.textContent = '0.1.43';
+    }, motionAllowed() ? 1700 : 0);
+  });
+
+  function onViewShown(key) {
+    if (key === 'usage' && bars && motionAllowed()) { bars.classList.remove('is-grow'); void bars.offsetWidth; bars.classList.add('is-grow'); }
+    if (key === 'chat') { if (stageVisible) streamAnswer(); }
+    else stopStream();
+  }
+
+  // ---------- Feature demos ----------
+  const fitDemo = $('[data-fit-demo]');
+  if (fitDemo) {
+    const options = $$('.fit-opt', fitDemo);
+    const select = option => {
+      options.forEach(other => { const on = other === option; other.classList.toggle('is-on', on); other.setAttribute('aria-checked', String(on)); other.tabIndex = on ? 0 : -1; });
+      const vram = Number(option.dataset.vram);
+      const ram = Number(option.dataset.ram);
+      const verdict = option.dataset.verdict;
+      const level = verdict === 'over' ? 'is-err' : verdict === 'tight' ? 'is-warn' : '';
+      [['vram', vram, 32], ['ram', ram, 96]].forEach(([name, value, total]) => {
+        const bar = $(`[data-fit="${name}"]`, fitDemo);
+        bar.style.width = `${(value / total) * 100}%`;
+        bar.className = level;
+        $(`[data-fit-label="${name}"]`, fitDemo).textContent = verdict === 'over' && name === 'vram' ? `> ${total} GB` : `${value} / ${total} GB`;
+      });
+      const box = $('[data-fit-verdict]', fitDemo);
+      box.className = `fit-verdict ${level}`;
+      box.textContent = copy[currentLang].verdict[verdict].replace('{free}', String(32 - vram));
+    };
+    options.forEach((option, index) => {
+      option.tabIndex = option.classList.contains('is-on') ? 0 : -1;
+      option.addEventListener('click', () => select(option));
+      option.addEventListener('keydown', event => {
+        const delta = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+        if (!delta) return;
+        event.preventDefault();
+        const next = options[(index + delta + options.length) % options.length];
+        next.focus(); select(next);
+      });
     });
   }
 
-  // 设置语言环境
+  const connectDemo = $('[data-connect-demo]');
+  const steps = connectDemo ? $$('[data-steps] li', connectDemo) : [];
+  let stepsRun = 0;
+  async function runSteps() {
+    const run = ++stepsRun;
+    steps.forEach(step => { step.classList.remove('is-ok', 'is-run'); step.querySelector('em').textContent = ''; });
+    for (const step of steps) {
+      if (run !== stepsRun) return;
+      step.classList.add('is-run');
+      await wait(motionAllowed() ? 520 : 0);
+      if (run !== stepsRun) return;
+      step.classList.replace('is-run', 'is-ok');
+      step.querySelector('em').textContent = step.dataset.stepTime;
+    }
+  }
+  if (connectDemo) {
+    const config = $('[data-client-config]', connectDemo);
+    const clientTabs = $$('[data-client]', connectDemo);
+    clientTabs.forEach(tab => tab.addEventListener('click', () => {
+      clientTabs.forEach(other => { const on = other === tab; other.classList.toggle('is-on', on); other.setAttribute('aria-selected', String(on)); });
+      config.textContent = clientConfigs[tab.dataset.client]();
+      runSteps();
+    }));
+    $('[data-steps-run]', connectDemo)?.addEventListener('click', runSteps);
+    if (!motionAllowed()) runSteps();
+  }
+
+  const boardDemo = $('[data-board-demo]');
+  function sortBoard(metric) {
+    if (!boardDemo) return;
+    const list = $('[data-board]', boardDemo);
+    const rows = $$('li', list);
+    const max = Math.max(...rows.map(row => Number(row.dataset[metric])));
+    const before = new Map(rows.map(row => [row, row.getBoundingClientRect().top]));
+    rows.sort((a, b) => Number(b.dataset[metric]) - Number(a.dataset[metric])).forEach((row, index) => {
+      list.append(row);
+      row.firstElementChild.textContent = String(index + 1);
+      row.querySelector('[data-val]').textContent = metric === 'decode' ? Number(row.dataset.decode).toFixed(1) : Number(row.dataset.prefill).toLocaleString('en-US');
+      row.querySelector('i b').style.width = `${(Number(row.dataset[metric]) / max) * 100}%`;
+    });
+    if (!motionAllowed()) return;
+    rows.forEach(row => {
+      const delta = before.get(row) - row.getBoundingClientRect().top;
+      if (!delta) return;
+      row.style.transition = 'none';
+      row.style.transform = `translateY(${delta}px)`;
+      requestAnimationFrame(() => { row.style.transition = ''; row.style.transform = ''; });
+    });
+  }
+  $$('[data-sort]', boardDemo || document).forEach(button => button.addEventListener('click', () => {
+    $$('[data-sort]', boardDemo).forEach(other => { const on = other === button; other.classList.toggle('is-on', on); other.setAttribute('aria-pressed', String(on)); });
+    sortBoard(button.dataset.sort);
+  }));
+
+  // Start demos when they scroll into view.
+  if ('IntersectionObserver' in window) {
+    const stage = $('.stage-canvas');
+    if (stage) new IntersectionObserver(entries => {
+      stageVisible = entries[0].isIntersecting;
+      updateTelemetry();
+      if (stageVisible && activeView === 'chat' && !streamed) streamAnswer();
+    }, { threshold: 0.15 }).observe(stage);
+    const once = (element, callback) => element && new IntersectionObserver((entries, observer) => {
+      if (entries[0].isIntersecting) { observer.disconnect(); callback(); }
+    }, { threshold: 0.35 }).observe(element);
+    once(connectDemo, () => { if (motionAllowed()) runSteps(); });
+    once(boardDemo, () => sortBoard('decode'));
+  } else {
+    stageVisible = true; updateTelemetry(); sortBoard('decode');
+  }
+  if (boardDemo && !motionAllowed()) sortBoard('decode');
+
+  // ---------- Language ----------
   function setLanguage(nextLang) {
     currentLang = nextLang === 'en' ? 'en' : 'zh';
     document.documentElement.lang = currentLang === 'en' ? 'en' : 'zh-CN';
     document.title = pageTitles[currentLang];
-
-    translatable.forEach(item => {
-      item.element.textContent = item[currentLang];
-    });
-
-    if (activeReleaseTag) {
-      document.querySelectorAll('.release-version').forEach(el => {
-        el.textContent = activeReleaseTag;
-      });
-    }
+    translatable.forEach(item => { item.element.textContent = item[currentLang]; });
+    if (activeReleaseTag) $$('.release-version').forEach(el => { el.textContent = activeReleaseTag; });
     renderReleaseStatus();
-
     attributeTranslations.forEach(item => {
-      const val = item[currentLang];
-      if (val !== null && val !== undefined) {
-        item.element.setAttribute(item.attribute, val);
-      }
+      const value = item[currentLang];
+      if (value !== null && value !== undefined) item.element.setAttribute(item.attribute, value);
     });
-
-    const ogLocale = document.getElementById('og-locale');
-    const ogLocaleAlt = document.getElementById('og-locale-alternate');
+    const ogLocale = $('#og-locale');
+    const ogLocaleAlt = $('#og-locale-alternate');
     if (ogLocale) ogLocale.content = currentLang === 'en' ? 'en_US' : 'zh_CN';
     if (ogLocaleAlt) ogLocaleAlt.content = currentLang === 'en' ? 'zh_CN' : 'en_US';
-
     if (languageLabel) languageLabel.textContent = currentLang === 'en' ? '中文' : 'EN';
     const switchAction = currentLang === 'en' ? 'Switch to 简体中文' : 'Switch to English';
-    if (languageButton) {
-      languageButton.setAttribute('aria-label', switchAction);
-      languageButton.title = switchAction;
-    }
-
-    renderScreen(activeScreenKey);
-    if (heroImage) heroImage.src = new URL(`assets/screenshots/product-cover.${currentLang}.webp`, siteRoot).href;
-    if (lightboxModal.classList.contains('active')) openLightbox(lightboxModal.dataset.screen);
+    if (languageButton) { languageButton.setAttribute('aria-label', switchAction); languageButton.title = switchAction; }
+    streamTargets.forEach(element => { delete element.dataset.full; });
+    renderScreen(activeView);
+    if (lightboxModal?.classList.contains('active')) openLightbox(lightboxModal.dataset.screen);
     updateThemeButton();
-
   }
 
-  // 绑定工作台 Tab 事件（支持键盘方向键无障碍切换）
-  wsTabs.forEach((tab, index) => {
-    tab.addEventListener('click', () => {
-      renderScreen(tab.dataset.screen);
-    });
-
-    tab.addEventListener('keydown', event => {
-      let targetIndex = index;
-      if (event.key === 'ArrowRight') {
-        targetIndex = (index + 1) % wsTabs.length;
-      } else if (event.key === 'ArrowLeft') {
-        targetIndex = (index - 1 + wsTabs.length) % wsTabs.length;
-      } else if (event.key === 'Home') {
-        targetIndex = 0;
-      } else if (event.key === 'End') {
-        targetIndex = wsTabs.length - 1;
-      } else {
-        return;
-      }
-      event.preventDefault();
-      wsTabs[targetIndex].focus();
-      renderScreen(wsTabs[targetIndex].dataset.screen);
-    });
-  });
-
-  // 语言切换按钮
   if (languageButton) {
     languageButton.addEventListener('click', () => {
       const destination = new URL(currentLang === 'zh' ? 'en/' : './', siteRoot);
@@ -535,9 +798,9 @@ const strataReleaseCatalog = (() => {
     });
   }
 
-  // 全屏灯箱 (Lightbox) 交互控制
+  // ---------- Lightbox for real screenshots ----------
   let lightboxOpener = null;
-  const backgroundSections = [document.querySelector('.site-header'), document.querySelector('main'), document.querySelector('.site-footer')];
+  const backgroundSections = [$('.site-header'), $('main'), $('.site-footer')];
   function fitLightboxImage() {
     if (!lightboxModal?.classList.contains('active') || !lightboxDialog || !lightboxBar) return;
     const modalStyle = getComputedStyle(lightboxModal);
@@ -549,25 +812,22 @@ const strataReleaseCatalog = (() => {
     lightboxDialog.style.setProperty('--lightbox-image-height', `${Math.max(1, availableHeight)}px`);
   }
   if (lightboxModal && lightboxBar && typeof ResizeObserver !== 'undefined') {
-    const lightboxResizeObserver = new ResizeObserver(fitLightboxImage);
-    lightboxResizeObserver.observe(lightboxModal);
-    lightboxResizeObserver.observe(lightboxBar);
+    const observer = new ResizeObserver(fitLightboxImage);
+    observer.observe(lightboxModal); observer.observe(lightboxBar);
   }
   window.addEventListener('resize', fitLightboxImage);
 
   function openLightbox(screenKey) {
-    const requestedKey = screenKey || activeScreenKey;
-    const key = screens[requestedKey] ? requestedKey : 'models';
+    if (!lightboxModal) return;
+    const key = screens[screenKey] ? screenKey : 'overview';
     const item = screens[key];
-    const copy = item[currentLang];
-
+    const text = item[currentLang];
     lightboxImg.src = new URL(`assets/screenshots/${item.image || key}.${currentLang}.webp`, siteRoot).href;
-    lightboxImg.alt = copy.alt;
+    lightboxImg.alt = text.alt;
     lightboxImg.width = item.width || 2880;
-    lightboxImg.height = copy.height || item.height || 1920;
-    lightboxBadge.textContent = item.index + ' / ' + key.toUpperCase();
-    lightboxTitle.textContent = copy.title;
-
+    lightboxImg.height = text.height || item.height || 1920;
+    lightboxBadge.textContent = `${item.index} / ${text.badge}`;
+    lightboxTitle.textContent = text.title;
     if (!lightboxModal.classList.contains('active')) lightboxOpener = document.activeElement;
     lightboxModal.classList.add('active');
     lightboxModal.dataset.screen = key;
@@ -577,7 +837,6 @@ const strataReleaseCatalog = (() => {
     backgroundSections.forEach(section => { if (section) section.inert = true; });
     lightboxCloseBtn?.focus();
   }
-
   function closeLightbox() {
     lightboxModal.classList.remove('active');
     lightboxModal.setAttribute('aria-hidden', 'true');
@@ -585,60 +844,38 @@ const strataReleaseCatalog = (() => {
     backgroundSections.forEach(section => { if (section) section.inert = false; });
     lightboxOpener?.focus({ preventScroll: true });
   }
-
-  document.querySelectorAll('.open-lightbox-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-      e.preventDefault();
-      openLightbox(btn.dataset.target || activeScreenKey);
-    });
+  $$('.open-lightbox-btn').forEach(button => button.addEventListener('click', event => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    openLightbox(button.dataset.target || stageViews[activeView].screen);
+  }));
+  lightboxCloseBtn?.addEventListener('click', closeLightbox);
+  lightboxBackdrop?.addEventListener('click', closeLightbox);
+  window.addEventListener('keydown', event => {
+    if (!lightboxModal?.classList.contains('active')) return;
+    if (event.key === 'Escape') closeLightbox();
+    if (event.key === 'Tab') { event.preventDefault(); lightboxCloseBtn?.focus(); }
   });
 
-  if (lightboxCloseBtn) lightboxCloseBtn.addEventListener('click', closeLightbox);
-  if (lightboxBackdrop) lightboxBackdrop.addEventListener('click', closeLightbox);
-  window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && lightboxModal.classList.contains('active')) {
-      closeLightbox();
-    }
-    if (e.key === 'Tab' && lightboxModal.classList.contains('active')) {
-      e.preventDefault();
-      lightboxCloseBtn?.focus();
-    }
-  });
-
-  // 移动端汉堡菜单控制
+  // ---------- Header, menu, theme ----------
   if (mobileMenuBtn && primaryNav) {
     mobileMenuBtn.addEventListener('click', () => {
-      const isOpen = primaryNav.classList.toggle('open');
-      mobileMenuBtn.setAttribute('aria-expanded', String(isOpen));
+      const open = primaryNav.classList.toggle('open');
+      mobileMenuBtn.setAttribute('aria-expanded', String(open));
     });
-
-    primaryNav.querySelectorAll('a').forEach(link => {
-      link.addEventListener('click', () => {
-        primaryNav.classList.remove('open');
-        mobileMenuBtn.setAttribute('aria-expanded', 'false');
-      });
-    });
+    $$('a', primaryNav).forEach(link => link.addEventListener('click', () => {
+      primaryNav.classList.remove('open');
+      mobileMenuBtn.setAttribute('aria-expanded', 'false');
+    }));
   }
+  const header = $('#site-header');
+  const onScroll = () => header?.classList.toggle('is-scrolled', window.scrollY > 8);
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+  themeButton?.addEventListener('click', () => applyTheme(currentTheme() === 'dark' ? 'light' : 'dark', true));
+  // Light is the default; dark is only an explicit, remembered choice.
 
-  if (themeButton) {
-    themeButton.addEventListener('click', () => {
-      applyTheme(currentTheme() === 'dark' ? 'light' : 'dark', true);
-    });
-  }
-
-  try {
-    window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', event => {
-      let saved = null;
-      try { saved = localStorage.getItem(THEME_KEY); } catch (_) {}
-      if (saved !== 'light' && saved !== 'dark') applyTheme(event.matches ? 'light' : 'dark');
-    });
-  } catch (_) {}
-
-  // 初始化语言
-  const initialLanguage = pageLanguage;
-
-  // Enable downloads only after validating published assets from this repository.
+  // ---------- Releases: enable downloads only after validating published assets ----------
   let activeReleaseTag = null;
   let releaseState = { kind: 'loading' };
 
@@ -668,9 +905,7 @@ const strataReleaseCatalog = (() => {
     const urls = strataReleaseCatalog.assets(release);
     activeReleaseTag = release?.tag_name || (currentLang === 'en' ? 'Unavailable' : '暂无可用发布');
     releaseState = release ? { kind: 'ready', preview: release.prerelease, snapshot: source === 'snapshot', missing: strataReleaseCatalog.keys.filter(key => !urls[key]) } : { kind: 'unavailable' };
-    document.querySelectorAll('.release-version').forEach(el => {
-      el.textContent = activeReleaseTag;
-    });
+    document.querySelectorAll('.release-version').forEach(el => { el.textContent = activeReleaseTag; });
     const elements = Object.fromEntries([...strataReleaseCatalog.keys, ...strataReleaseCatalog.optionalKeys].map(key => [key, document.querySelector(`[data-download="${key}"]`)]));
     strataReleaseCatalog.applyDownloads(elements, urls);
     const notesBtn = document.getElementById('release-notes-link');
@@ -721,26 +956,32 @@ const strataReleaseCatalog = (() => {
     }
   }
 
+  // ---------- Scroll motion: GSAP + ScrollTrigger when available, CSS reveal otherwise ----------
   function animatePage() {
+    if (!motionAllowed()) return;
+    document.documentElement.classList.add('motion');
+    const reveals = $$('.reveal');
+    if ('IntersectionObserver' in window) {
+      const observer = new IntersectionObserver(entries => entries.forEach(entry => {
+        if (entry.isIntersecting) { entry.target.classList.add('is-visible'); observer.unobserve(entry.target); }
+      }), { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+      reveals.forEach(element => observer.observe(element));
+    } else reveals.forEach(element => element.classList.add('is-visible'));
     if (!window.gsap || !window.ScrollTrigger) return;
     const { gsap, ScrollTrigger } = window;
     gsap.registerPlugin(ScrollTrigger);
-    // No scroll interception or pinned stages; the page remains a normal document.
+    // No pinning or scroll hijacking: a soft entrance and a slight lift of the stage while it scrolls in.
     gsap.matchMedia().add('(prefers-reduced-motion: no-preference)', () => {
-      gsap.from('.hero-title-block, .hero-content', { y: 22, opacity: 0, duration: .7, stagger: .1, ease: 'power3.out' });
-      gsap.fromTo('.hero-cover', { scale: .86, y: 36 }, {
-        scale: 1, y: 0, ease: 'none',
-        scrollTrigger: { trigger: '.hero-cover', start: 'top 92%', end: 'top 100px', scrub: true, invalidateOnRefresh: true },
-      });
-      gsap.from('.feature-card', { y: 26, opacity: 0, duration: .55, stagger: .08, ease: 'power3.out', scrollTrigger: { trigger: '.feature-grid', start: 'top 90%', once: true } });
-      gsap.from('.workspace-display-frame', { y: 18, opacity: 0, duration: .8, ease: 'power3.out', scrollTrigger: { trigger: '.workspace-display-frame', start: 'top 90%', once: true } });
-      gsap.utils.toArray('.gallery-item').forEach(item => gsap.from(item, { y: 18, opacity: 0, duration: .5, ease: 'power3.out', scrollTrigger: { trigger: item, start: 'top 92%', once: true } }));
-      gsap.from('.download-card', { x: -18, opacity: 0, duration: .5, stagger: .1, ease: 'power3.out', scrollTrigger: { trigger: '.download-cards-grid', start: 'top 90%', once: true } });
+      gsap.from('.hero-title-block > *', { y: 16, opacity: 0, duration: .7, stagger: .07, ease: 'power3.out' });
+      gsap.from('.stage', { y: 40, opacity: 0, duration: 1, delay: .25, ease: 'power3.out' });
+      gsap.fromTo('.stage-canvas', { '--lift': 0 }, { '--lift': 1, ease: 'none', scrollTrigger: { trigger: '.stage-canvas', start: 'top bottom', end: 'top 80px', scrub: true } });
+      gsap.utils.toArray('.feature-card, .gallery-item, .download-card').forEach(item => gsap.from(item, { y: 14, opacity: 0, duration: .5, ease: 'power2.out', scrollTrigger: { trigger: item, start: 'top 94%', once: true } }));
     });
     window.addEventListener('load', () => ScrollTrigger.refresh(), { once: true });
   }
 
-  setLanguage(initialLanguage);
+  setLanguage(pageLanguage);
+  fitApp();
   animatePage();
   fetchLatestRelease();
 })();

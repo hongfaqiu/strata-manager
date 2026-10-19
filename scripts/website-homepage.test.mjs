@@ -15,6 +15,12 @@ test('Homepage keeps the v0.1.7 layout with current screenshots and feature copy
   assert.match(html, /class="feature-grid"/);
   assert.match(html, /id="daily-experience"/);
   assert.match(html, /class="workspace-tab-nav"/);
+  // Product views are rebuilt in HTML; every stage tab has a matching app view.
+  assert.match(html, /id="app-window"/);
+  for (const view of ['overview', 'models', 'monitor', 'usage', 'chat', 'runtime']) {
+    assert.match(html, new RegExp(`data-screen="${view}"`));
+    assert.match(html, new RegExp(`class="app-view[^"]*" data-view="${view}"`));
+  }
   assert.match(html, /class="gallery-grid"/);
   assert.match(html, /id="get-started"/);
   for (const id of ['main', 'get-started', 'download-status', 'release-notes-link', 'language-switch', 'language-label']) {
@@ -63,5 +69,6 @@ test('Homepage script keeps release validation, lightbox catalog and optional mo
   assert.match(js, /release-catalog\.json/);
   assert.match(js, /Latest published release|最新已发布版本/);
   assert.match(js, /gsap|ScrollTrigger/);
+  assert.match(js, /prefers-reduced-motion: reduce/);
   assert.doesNotMatch(js, /未发行|Unreleased|稳定版|UNRELEASED/);
 });
