@@ -81,7 +81,7 @@ fn local_source_archive_requires_the_release_revision_and_keeps_the_original() {
         (&format!("{prefix}/serve/server.py"), "server"),
     ]);
     fs::write(&good, &bytes).unwrap();
-    let cached = local_source_archive(&state, &id, &good, REVISION).unwrap();
+    let cached = local_source_archive(&state, &id, &good, REVISION, "1.0.0").unwrap();
     assert_eq!(fs::read(&cached).unwrap(), bytes);
     assert_eq!(fs::read(&good).unwrap(), bytes);
     assert!(cached
@@ -106,9 +106,60 @@ fn local_source_archive_requires_the_release_revision_and_keeps_the_original() {
     ] {
         let path = temp.path().join(name);
         fs::write(&path, bytes).unwrap();
-        let error = local_source_archive(&state, &id, &path, REVISION).unwrap_err();
+        let error = local_source_archive(&state, &id, &path, REVISION, "1.0.0").unwrap_err();
         assert!(error.contains("Strata 安装包"), "{error}");
     }
+}
+
+#[test]
+fn local_source_archive_accepts_release_tag_named_prefix() {
+    let temp = tempfile::tempdir().unwrap();
+    let state = RuntimeState::open(temp.path().join("state")).unwrap();
+    let id = task(&state);
+    // GitHub Release "Source code (zip)" uses Strata-<tag>/, not Strata-<commit>/.
+    for prefix in ["Strata-1.0.0", "Strata-v1.0.0"] {
+        let path = temp.path().join(format!("{prefix}.zip"));
+        let bytes = zip(&[
+            (&format!("{prefix}/setup.py"), "setup"),
+            (&format!("{prefix}/serve/server.py"), "server"),
+        ]);
+        fs::write(&path, &bytes).unwrap();
+        let cached = local_source_archive(&state, &id, &path, REVISION, "1.0.0").unwrap();
+        assert_eq!(fs::read(&cached).unwrap(), bytes);
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+    }
+    // A different version tag must still be refused.
+    let wrong = temp.path().join("Strata-9.9.9.zip");
+    fs::write(
+        &wrong,
+        zip(&[
+            ("Strata-9.9.9/setup.py", "x"),
+            ("Strata-9.9.9/serve/server.py", "x"),
+        ]),
+    )
+    .unwrap();
+    let error = local_source_archive(&state, &id, &wrong, REVISION, "1.0.0").unwrap_err();
+    assert!(error.contains("Strata 安装包"), "{error}");
+}
+
+#[test]
+fn extract_engine_writes_nested_rocm_paths_without_tempfile_persist() {
+    let temp = tempfile::tempdir().unwrap();
+    let archive = temp.path().join("engine.zip");
+    // Mimic HIP-Style nesting that previously failed persist on Windows (#62).
+    let deep = "rocm/bin/hipblaslt/library/gfx1201/TensileLibrary_sample.dat.zlib";
+    let bytes = zip(&[
+        ("BUILD.json", r#"{"version":"1.0.0"}"#),
+        ("strata.exe", "exe"),
+        (deep, "kernel-bytes"),
+        ("amdhip64_7.dll", "dll"),
+    ]);
+    fs::write(&archive, bytes).unwrap();
+    let dest = temp.path().join("e");
+    let files = extract(&archive, &dest, false, || Ok(())).unwrap();
+    assert!(files.iter().any(|f| f == deep));
+    assert_eq!(fs::read_to_string(dest.join(deep)).unwrap(), "kernel-bytes");
+    assert!(dest.join("strata.exe").is_file());
 }
 
 #[test]
