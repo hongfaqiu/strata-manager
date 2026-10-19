@@ -7,7 +7,13 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+- **多显卡显示**：总览按「2× 显卡型号」显示同型号多卡，并逐卡列出显存、负载和温度；运行环境卡片不再只显示首张卡加「+1」。PCIe 链路注明来自 GPU 0。
+- **大模型加载不再误报失败**：冷加载超过 `/load` 请求超时（5 分钟）但引擎仍在加载时，继续等待模型就绪（最长 30 分钟，进程退出才判失败），总览显示「模型加载中（已 N 秒）」；启动失败记录在模型加载中或已就绪后自动隐藏，且不再把原始 JSON 显示给用户。
+
 ### English
+
+- **Multiple GPUs**: the overview names identical cards as "2× model" with per-card VRAM, load and temperature; the environment strip no longer shows only the first card plus "+1". The PCIe link is labelled as GPU 0's.
+- **Slow model loads are no longer reported as failures**: when a cold load outlasts the 5-minute `/load` request timeout while the engine is still loading, startup keeps waiting for readiness (up to 30 minutes; only a process exit fails it) and the overview shows "Loading the model (N s so far)". Stale startup failures are hidden while the model loads or once it is ready, and raw JSON is never shown.
 
 ## [0.2.3] - 2026-10-19
 
