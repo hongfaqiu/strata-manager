@@ -5,6 +5,14 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **macOS Metal 引擎预制包（#53 第二期 a）**：在 Apple Silicon 上可下载并校验上游 `strata-engine-*-macos-arm64-metal.tar.gz`（钉死 v0.2.0-beta 资产名与 SHA256，应用内校验，不附带 SHA256SUMS），解包到 `engine/`；也支持选用本地 `.tar.gz` 或已有 Strata/`engine`、`build-metal` 目录。Mac 上不提供 Windows/Linux 引擎包；模型目录隐藏上游未在 Metal 验收的 Qwen3.6 / Swift / Coder；默认 `--spec 2`，不开放 PC `--calibrate` 与 `--parallel`。`./setup.sh` 源码构建仍为手动提示，真机推理验收待进行。
+
+### English
+
+- **macOS Metal prebuilt engine (#53 phase 2a)**: on Apple Silicon, Manager can download and verify the upstream `strata-engine-*-macos-arm64-metal.tar.gz` (pinned v0.2.0-beta asset name and SHA256; in-app checks only, no SHA256SUMS files), extract into `engine/`, or use a local `.tar.gz` / existing Strata `engine` or `build-metal` directory. Windows/Linux engine packages are never offered on Mac; the catalog hides Qwen3.6 / Swift / Coder (not measured on Metal upstream); defaults use `--spec 2` and omit PC `--calibrate` / `--parallel`. `./setup.sh` remains a manual hint; real-device inference validation is still pending.
+
 ## [0.2.6] - 2026-10-19
 
 ### 中文

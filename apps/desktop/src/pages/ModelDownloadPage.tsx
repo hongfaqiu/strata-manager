@@ -65,7 +65,8 @@ export function ModelDownloadPage({ machineMemoryGB, language, desktop, fallback
   const zh = language === 'zh-CN', text = (cn: string, en: string) => zh ? cn : en;
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
-  const [selectedId, setSelectedId] = useState(core.MODEL_CATALOG[0]?.id ?? '');
+  const initialCatalog = core.filterCatalogForPlatform(core.MODEL_CATALOG, core.runtimePackagePlatform(typeof navigator !== 'undefined' ? navigator.userAgent : undefined));
+  const [selectedId, setSelectedId] = useState(initialCatalog[0]?.id ?? '');
   const [selections, setSelections] = useState<Record<string, Selection>>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
@@ -85,7 +86,9 @@ export function ModelDownloadPage({ machineMemoryGB, language, desktop, fallback
   const detectedReady = detectedRuntimes.find(item => item.readiness === 'ready' && !!item.profile.installDir)?.profile;
   const runtime = [runtimeOverride, saved.runtime, fallbackRuntime, detectedReady].find((candidate): candidate is ServiceProfile => !!candidate?.managed && !!candidate.installDir);
   const searchTerm = search.trim().toLocaleLowerCase();
-  const filtered = core.MODEL_CATALOG.filter(model => `${model.name} ${model.family} ${familyDescription(model.family, zh)}`.toLocaleLowerCase().includes(searchTerm));
+  const packagePlatform = core.runtimePackagePlatform(typeof navigator !== 'undefined' ? navigator.userAgent : undefined);
+  const catalog = core.filterCatalogForPlatform(core.MODEL_CATALOG, packagePlatform);
+  const filtered = catalog.filter(model => `${model.name} ${model.family} ${familyDescription(model.family, zh)}`.toLocaleLowerCase().includes(searchTerm));
   const entry = filtered.find(model => model.id === selectedId) ?? filtered[0];
   const selection: Selection = entry ? selections[entry.id] ?? { quant: entry.quants[0] ?? '', context: 32768, images: false } : { quant: '', context: 32768, images: false };
   const { quant, context, images } = selection;
@@ -110,12 +113,12 @@ export function ModelDownloadPage({ machineMemoryGB, language, desktop, fallback
   const liveDownloads = tasks.some(task => /setup|download|prepare/i.test(task.kind) && task.state === 'running');
   useEffect(() => { if (!desktop || !liveDownloads) return; const timer = window.setInterval(() => { void queryClient.invalidateQueries({ queryKey: ['tasks'] }); }, 3000); return () => window.clearInterval(timer); }, [desktop, liveDownloads, queryClient]);
   const liveLocal = localModels.data;
-  const rows = Object.fromEntries(core.MODEL_CATALOG.map(model => [model.id, rowLive(model, tasks, liveLocal, machineMemoryGB)]));
+  const rows = Object.fromEntries(catalog.map(model => [model.id, rowLive(model, tasks, liveLocal, machineMemoryGB)]));
   const changedRows = useChangedRows(Object.fromEntries(Object.entries(rows).map(([id, row]) => [id, JSON.stringify([row.local, row.downloading, row.progress === undefined ? -1 : Math.floor(row.progress / 5), row.failed, row.fit])])));
-  const news = useCatalogNews(core.MODEL_CATALOG);
+  const news = useCatalogNews(catalog);
   const liveAt = Math.max(localModels.dataUpdatedAt || 0, disk.dataUpdatedAt || 0);
   const fitLabel = (fit?: string) => fit === 'fits' ? text('适合', 'Fits') : fit === 'tight' ? text('偏紧', 'Tight') : fit === 'over' ? text('内存不足', 'Too large') : text('未实测', 'Not measured');
-  const maxRam = Math.max(machineMemoryGB ?? 0, ...core.MODEL_CATALOG.flatMap(model => Object.values(model.quantInfo).map(value => value.ramGB))) * 1.05;
+  const maxRam = Math.max(machineMemoryGB ?? 0, ...catalog.flatMap(model => Object.values(model.quantInfo).map(value => value.ramGB))) * 1.05;
   const setSelection = (patch: Partial<Selection>) => { if (entry) { setSelections(current => ({ ...current, [entry.id]: { ...selection, ...patch } })); setError(''); } };
   const resourceRequest = defaults.isSuccess && runtime && entry && contextValid && saved.options.gpus !== 'all' ? {
     installationId: runtime.id, family: entry.family, quant, context, images, kv: context <= 8192 ? 'fp16' : 'int8', gpuIds: saved.options.gpus ? saved.options.gpus.split(',').map(Number) : [], parallel: 1,
