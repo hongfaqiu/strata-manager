@@ -16,6 +16,7 @@ mod idle_model;
 pub mod installation;
 pub mod launcher_env;
 pub mod legacy;
+pub mod local_model;
 pub mod maintenance;
 pub mod manager_mcp;
 pub mod manager_mcp_stdio;
@@ -1075,12 +1076,15 @@ impl RuntimeState {
                     .transpose()
                     .map_err(|e| e.to_string())?,
             )),
-            "setup_disk_preflight" => value(Ok(disk::preflight(
+            "setup_disk_preflight" => value(Ok(disk::preflight_with_local(
                 &profile()?,
                 &arg::<String>(&params, "model")?,
                 &arg::<String>(&params, "quant")?,
                 arg(&params, "images")?,
+                local_model_param(&params)?.as_ref(),
             ))),
+            "scan_local_models" => value(local_model::scan(&arg::<String>(&params, "path")?)),
+            "check_mtp_path" => value(local_model::check_mtp(&arg::<String>(&params, "path")?)),
             "run_setup" => value(run_setup_with_options(
                 self.clone(),
                 profile()?,
@@ -1096,6 +1100,7 @@ impl RuntimeState {
                     .transpose()
                     .map_err(|e| format!("准备选项无效: {e}"))?
                     .unwrap_or_default(),
+                local_model_param(&params)?,
             )),
             "inspect_gguf" => value(model_inspect::start(self.clone(), arg(&params, "request")?)),
             "manager_mcp_connection" => value(manager_mcp::connection(
@@ -3241,6 +3246,17 @@ pub(crate) fn assert_stopped(state: &RuntimeState, profile: &ServiceProfile) -> 
     }
     Ok(())
 }
+/// 「使用已有模型」(#75): the optional `localModel` of run_setup / setup_disk_preflight.
+fn local_model_param(params: &Value) -> Result<Option<local_model::LocalModelRequest>, String> {
+    params
+        .get("localModel")
+        .filter(|v| !v.is_null())
+        .cloned()
+        .map(serde_json::from_value::<local_model::LocalModelRequest>)
+        .transpose()
+        .map_err(|e| format!("已有模型参数无效: {e}"))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_setup_with_options(
     state: Arc<RuntimeState>,
@@ -3250,7 +3266,9 @@ fn run_setup_with_options(
     context: u32,
     images: bool,
     options: crate::setup_options::SetupOptions,
+    local: Option<local_model::LocalModelRequest>,
 ) -> Result<TaskStatus, String> {
+    // An existing model is used in place: `--gguf-dir <folder>`, and `--data-dir <folder holding mtp/rt>`.
     run_setup_with_preflight_options(
         state,
         profile,
@@ -3258,7 +3276,9 @@ fn run_setup_with_options(
         quant,
         context,
         images,
-        disk::plan,
+        move |profile, family, quant, images| {
+            disk::plan_with_local(profile, family, quant, images, local.as_ref())
+        },
         Some(options),
     )
 }
@@ -3322,22 +3342,7 @@ fn run_setup_with_preflight_options(
     if !(512..=1_048_576).contains(&context) {
         return Err("context 必须为 512–1048576；实际容量由安装器检查内存和模型决定".into());
     }
-    let supported = match model.as_str() {
-        "qwen" => ["Q2_0", "IQ2_XS", "IQ3_XXS", "IQ3_S"].contains(&quant.as_str()),
-        "swift" => ["IQ2_XS", "IQ3_XXS", "IQ3_S"].contains(&quant.as_str()),
-        "coder" => quant == "IQ1_M",
-        "unsloth" => [
-            "UD-IQ4_XS",
-            "UD-Q4_K_XL",
-            "UD-Q5_K_XL",
-            "UD-Q6_K_XL",
-            "Q8_0",
-        ]
-        .contains(&quant.as_str()),
-        // setup.py OWN_PATH_FAMILIES qwen36; MIN_ENGINE (0,1,45)
-        "qwen36" => ["UD-Q4_K_XL", "UD-Q6_K_XL", "Q8_0"].contains(&quant.as_str()),
-        _ => false,
-    };
+    let supported = local_model::setup_supports(&model, &quant);
     if !supported {
         return Err("模型 family / quant 组合不被已核实的官方安装器支持".into());
     }

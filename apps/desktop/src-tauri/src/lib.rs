@@ -656,13 +656,34 @@ async fn setup_disk_preflight(
     model: String,
     quant: String,
     images: bool,
+    local_model: Option<Value>,
 ) -> Result<Value, String> {
     state
         .ipc
         .request(
             "setup_disk_preflight",
-            json!({"profile":profile,"model":model,"quant":quant,"images":images}),
+            json!({"profile":profile,"model":model,"quant":quant,"images":images,"localModel":local_model}),
         )
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 「使用已有模型」(#75): read-only scan of a chosen GGUF file or folder.
+#[tauri::command]
+async fn scan_local_models(state: State<'_, ClientState>, path: String) -> Result<Value, String> {
+    state
+        .ipc
+        .request("scan_local_models", json!({"path":path}))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 「使用已有模型」(#75): read-only check of an existing MTP draft layer.
+#[tauri::command]
+async fn check_mtp_path(state: State<'_, ClientState>, path: String) -> Result<Value, String> {
+    state
+        .ipc
+        .request("check_mtp_path", json!({"path":path}))
         .await
         .map_err(|e| e.to_string())
 }
@@ -701,6 +722,7 @@ async fn run_orca_import(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 async fn run_setup(
     state: State<'_, ClientState>,
     profile: ServiceProfile,
@@ -709,8 +731,9 @@ async fn run_setup(
     context: u32,
     images: bool,
     options: Option<Value>,
+    local_model: Option<Value>,
 ) -> Result<Value, String> {
-    state.ipc.request("run_setup",json!({"profile":profile,"model":model,"quant":quant,"context":context,"images":images,"options":options})).await.map_err(|e|e.to_string())
+    state.ipc.request("run_setup",json!({"profile":profile,"model":model,"quant":quant,"context":context,"images":images,"options":options,"localModel":local_model})).await.map_err(|e|e.to_string())
 }
 
 #[tauri::command]
@@ -1941,6 +1964,8 @@ pub fn run() {
             service_sharing::service_sharing_status,
             service_sharing::set_service_auth,
             setup_disk_preflight,
+            scan_local_models,
+            check_mtp_path,
             orca_import_plan,
             run_orca_import,
             run_setup,

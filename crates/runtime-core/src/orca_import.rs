@@ -50,6 +50,9 @@ pub struct OrcaImportRequest {
     /// Local mode: shard 1; shard 2 must sit beside it under its own name.
     pub shard_path: Option<String>,
     pub mtp: bool,
+    /// 「使用已有模型」(#75): an existing MTP draft layer (`<x>/rt` holding experts.bin), used as `--mtp`.
+    #[serde(default)]
+    pub mtp_path: Option<String>,
 }
 
 #[derive(Clone, Serialize, Debug, PartialEq)]
@@ -321,9 +324,21 @@ pub(crate) fn prepare(
     ]
     .iter()
     .all(|f| pack.join(f).is_file());
-    let mtp_found = disk::first_existing(&roots, Path::new("mtp/rt/experts.bin"))
-        .ok()
-        .flatten();
+    let chosen_mtp = request
+        .mtp_path
+        .as_deref()
+        .filter(|p| request.mtp && !p.trim().is_empty())
+        .map(crate::local_model::check_mtp)
+        .transpose()?;
+    if let Some(problem) = chosen_mtp.as_ref().and_then(|c| c.problems.first()) {
+        problems.push(problem.clone());
+    }
+    let mtp_found = match chosen_mtp.as_ref().and_then(|c| c.rt_directory.as_ref()) {
+        Some(rt) => Some(PathBuf::from(rt).join("experts.bin")),
+        None => disk::first_existing(&roots, Path::new("mtp/rt/experts.bin"))
+            .ok()
+            .flatten(),
+    };
     let mtp_ready = mtp_found.is_some();
     let mtp_directory = mtp_found
         .as_ref()
@@ -846,6 +861,7 @@ mod tests {
             source: "local".into(),
             shard_path: Some(shards.join(SHARDS[0].0).to_string_lossy().into()),
             mtp: true,
+            mtp_path: None,
         };
         let blocked = prepare(
             &root,
@@ -978,6 +994,7 @@ mod tests {
             source: "download".into(),
             shard_path: None,
             mtp: false,
+            mtp_path: None,
         };
         let plan = prepare(
             &root,
@@ -1012,6 +1029,7 @@ mod tests {
             source: "download".into(),
             shard_path: None,
             mtp: true,
+            mtp_path: None,
         };
         let plan = prepare(
             &root,
@@ -1053,6 +1071,7 @@ mod tests {
                     .into(),
             ),
             mtp: false,
+            mtp_path: None,
         };
         assert!(prepare(
             &root,
@@ -1064,6 +1083,49 @@ mod tests {
         .err()
         .unwrap()
         .contains("Q5_0"));
+    }
+
+    #[test]
+    fn a_chosen_mtp_layer_is_used_as_the_engine_mtp() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = runtime(temp.path());
+        let data = temp.path().join("data");
+        let rt = temp.path().join("elsewhere").join("draft").join("rt");
+        fs::create_dir_all(&rt).unwrap();
+        fs::write(rt.join("experts.bin"), b"x").unwrap();
+        let request = OrcaImportRequest {
+            source: "download".into(),
+            shard_path: None,
+            mtp: true,
+            mtp_path: Some(rt.to_string_lossy().into()),
+        };
+        let prepared = prepare(
+            &root,
+            &request,
+            &settings(&data),
+            (128 << 30, 100 << 30),
+            false,
+        )
+        .unwrap();
+        assert!(prepared.plan.mtp_ready, "{:?}", prepared.plan.problems);
+        assert_eq!(PathBuf::from(&prepared.plan.mtp_directory).join("rt"), rt);
+        let missing = OrcaImportRequest {
+            mtp_path: Some(temp.path().to_string_lossy().into()),
+            ..request
+        };
+        let prepared = prepare(
+            &root,
+            &missing,
+            &settings(&data),
+            (128 << 30, 100 << 30),
+            false,
+        )
+        .unwrap();
+        assert!(prepared
+            .plan
+            .problems
+            .iter()
+            .any(|p| p.contains("experts.bin")));
     }
 
     #[test]
@@ -1086,6 +1148,7 @@ mod tests {
             source: "download".into(),
             shard_path: None,
             mtp: true,
+            mtp_path: None,
         };
         let plan = prepare(
             &root,
