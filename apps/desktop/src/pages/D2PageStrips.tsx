@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, Copy } from 'lucide-react';
-import type { EnvironmentInfo, TaskStatus } from '@strata-manager/core';
+import { gpuSummary, splitGpuNames, type EnvironmentInfo, type TaskStatus } from '@strata-manager/core';
 import { D2Glyph, D2Ring, D2Ticks, D2Timeline, gib, type HardwareReading } from './D2Visuals';
 import { catalogRequirement, environmentVramGB, fitState, toGB, usableMemoryGB } from './d2Estimates';
 
@@ -85,12 +85,12 @@ export function EnvironmentDevices({ hardware, environment }: { hardware: Hardwa
   const ram = machineMemoryGB(hardware, environment);
   const vram = machineVramGB(hardware, environment);
   const used = toGB(hardware.ramUsed) ?? (environment ? (environment.totalMemory - environment.availableMemory) / 1024 ** 3 : undefined);
-  const gpus = environment?.gpus.length ? environment.gpus.map(line => line.split(',')[0]?.trim() || line) : hardware.gpuName ? [hardware.gpuName] : [];
+  const gpus = environment?.gpus.length ? environment.gpus.map(line => line.split(',')[0]?.trim() || line) : splitGpuNames(hardware.gpuName);
   return <section className="d2-devices st-card" data-testid="d2-environment-devices" aria-label={t('d2Devices')}>
     <div><D2Glyph kind="cpu"/><span><small>{t('d2Cpu')}</small><strong>{environment?.cpuName || t('d2Unmeasured')}</strong><em>{environment ? `${environment.os} · ${environment.arch}` : ''}{hardware.cores ? ` · ${hardware.cores}C/${hardware.threads ?? '?'}T` : ''}</em></span></div>
     <div><D2Glyph kind="ram"/><span><small>{t('d2Ram')}</small><strong>{ram ? `${gbText(ram)} GB` : t('d2Unmeasured')}</strong><em>{used !== undefined ? t('d2Used', { gb: gbText(used, 1) }) : ''}</em></span></div>
     <span className="d2-bus" aria-hidden="true"><i/>{hardware.pcie && <small>{hardware.pcie}</small>}</span>
-    <div><D2Glyph kind="gpu"/><span><small>{t('d2Gpu')}</small><strong>{gpus[0] ?? t('d2Unmeasured')}</strong><em>{vram ? `${gbText(vram)} GB` : ''}{gpus.length > 1 ? ` · +${gpus.length - 1}` : ''}</em></span></div>
+    <div><D2Glyph kind="gpu"/><span><small>{t('d2Gpu')}</small><strong title={gpus.length > 1 ? gpus.join('\n') : undefined}>{gpus.length ? gpuSummary(gpus) : t('d2Unmeasured')}</strong><em>{vram ? `${gbText(vram)} GB` : ''}</em></span></div>
   </section>;
 }
 

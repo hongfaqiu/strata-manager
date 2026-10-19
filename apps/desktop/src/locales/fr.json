@@ -739,5 +739,9 @@
   "ovEnableImages": "Activer les images",
   "ovBackground": "Vérification en arrière-plan",
   "ovNotChecked": "Non vérifié pour ce processus",
-  "ovConfiguration": "Configuration"
+  "ovConfiguration": "Configuration",
+  "ovIssueLoading": "Chargement du modèle ({{seconds}} s écoulées) ; un gros modèle peut prendre plusieurs minutes la première fois",
+  "ovIssueLoadingNow": "Chargement du modèle ; un gros modèle peut prendre plusieurs minutes la première fois",
+  "ovGpuCards": "Par GPU",
+  "ovPcieFirstCard": "Lien du GPU 0"
 }
