@@ -67,3 +67,19 @@ export function decodeStreamsLabel(streams: number[], zh: boolean): string | nul
   const parts = streams.length <= 4 ? streams.map(rate => rate.toFixed(rate >= 100 ? 0 : 1)).join(' + ') : null;
   return zh ? `${streams.length} 路合计${parts ? ` · ${parts}` : ''}` : `${streams.length} streams${parts ? ` · ${parts}` : ''}`;
 }
+
+export type ModelLoadNotice = { kind: 'loading'; seconds: number | null } | { kind: 'notLoaded' } | null;
+/**
+ * Overview line for a running service whose model is not ready. A cold load that is still
+ * progressing (upstream `live.state === 'loading'`, or a start this app is still waiting on)
+ * is normal progress with an elapsed time, never a warning or an error.
+ */
+export function modelLoadNotice(input: { online: boolean; loaded: unknown; metric?: MetricSnapshot; loadingSince?: number; now?: number }): ModelLoadNotice {
+  if (!input.online || input.loaded !== false) return null;
+  const live = asObject(input.metric?.raw.live);
+  const upstream = number(live.load_elapsed_s);
+  const since = typeof input.loadingSince === 'number' && input.loadingSince > 0 ? input.loadingSince : undefined;
+  if (input.metric?.state !== 'loading' && since === undefined) return { kind: 'notLoaded' };
+  const seconds = upstream ?? (since === undefined ? null : Math.max(0, ((input.now ?? Date.now()) - since) / 1000));
+  return { kind: 'loading', seconds: seconds === null ? null : Math.round(seconds) };
+}

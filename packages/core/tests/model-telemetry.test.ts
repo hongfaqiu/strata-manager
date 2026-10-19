@@ -21,3 +21,17 @@ describe('model lifecycle telemetry', () => {
     expect(ready.decodeTokS).toBe(95);
   });
 });
+
+describe('model load notice on the overview', async () => {
+  const { modelLoadNotice } = await import('../src/metrics');
+  it('treats a long but progressing load as loading with elapsed time, not as an error', () => {
+    expect(modelLoadNotice({ online: true, loaded: false, metric: normalizeMetrics({ live: { state: 'loading', load_elapsed_s: 261.4 } }) })).toEqual({ kind: 'loading', seconds: 261 });
+    expect(modelLoadNotice({ online: true, loaded: false, metric: normalizeMetrics({ live: { state: 'idle' } }), loadingSince: 1_000, now: 100_000 })).toEqual({ kind: 'loading', seconds: 99 });
+    expect(modelLoadNotice({ online: true, loaded: false, metric: normalizeMetrics({ live: { state: 'loading' } }) })).toEqual({ kind: 'loading', seconds: null });
+  });
+  it('keeps the not-loaded warning only when nothing is loading, and clears once ready', () => {
+    expect(modelLoadNotice({ online: true, loaded: false, metric: normalizeMetrics({ live: { state: 'idle' } }) })).toEqual({ kind: 'notLoaded' });
+    expect(modelLoadNotice({ online: true, loaded: true, metric: normalizeMetrics({ live: { state: 'loading' } }), loadingSince: 1 })).toBeNull();
+    expect(modelLoadNotice({ online: false, loaded: false })).toBeNull();
+  });
+});

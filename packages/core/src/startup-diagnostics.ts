@@ -86,3 +86,18 @@ export function primaryStartupDiagnosticAction(diagnostic: StartupFailureDiagnos
   return diagnostic.actions.find(action => action !== 'viewLogs' && action !== 'exportDiagnostics'
     && (action !== 'checkStatus' || diagnostic.processRunning === true)) ?? 'viewLogs';
 }
+
+/**
+ * A stored service error (a native JSON envelope such as
+ * `{"code":"STARTUP_UNKNOWN","details":{…},"message":"…"}`) as one readable line.
+ * Raw JSON is never shown to users; the structured detail stays in diagnostics.
+ */
+export function readableServiceError(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  const normalized = normalizeError(value);
+  const message = safe(normalized.message.trim());
+  if (!message) return undefined;
+  if (/error sending request|operation timed out|connection (?:refused|reset)/i.test(message)) return `本机服务未及时响应（模型可能仍在加载，可查看启动日志）/ The local service did not answer in time (the model may still be loading): ${message}`;
+  if (/^\s*[[{]/.test(message)) return '后台返回了无法识别的错误，请导出诊断查看详情 / The backend returned an unreadable error; export diagnostics for details.';
+  return message;
+}

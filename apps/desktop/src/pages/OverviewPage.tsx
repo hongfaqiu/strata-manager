@@ -9,7 +9,7 @@ import { OverviewDashboard, type OverviewNavigationTarget } from './OverviewDash
 
 interface OverviewPageProps {
   profile?:ServiceProfile;health:JsonObject;backgroundHealth?:BackgroundHealthSnapshot;metric?:MetricSnapshot;process?:ProcessStatus;tasks:TaskStatus[];language:AppLanguage;
-  online:boolean;connecting:boolean;desktop:boolean;tasksLoading:boolean;healthError?:string;metricsError?:string;taskError?:string;processError?:string;
+  loadingSince?:number;online:boolean;connecting:boolean;desktop:boolean;tasksLoading:boolean;healthError?:string;metricsError?:string;taskError?:string;processError?:string;
   controls:ReactNode;stateLabel:(state:string)=>string;onRefresh:()=>void;onCreateProfile:()=>void;onChat:()=>void;onCopy:(content:string)=>void;
   onNavigate:(page:OverviewNavigationTarget)=>void;
   onRestart?:()=>void;profiles?:{id:string;name:string}[];onSwitchProfile?:(id:string)=>void;actionsDisabled?:boolean;
@@ -39,7 +39,7 @@ const startupLabels = {
     recent: 'Recently enabled', available: 'Available', runtime: 'Strata detected', start: 'Enable this model', starting: 'Enabling…', choose: 'Choose a model', install: 'Install Strata', repair: 'Complete Strata setup',
   },
 } as const;
-export function OverviewPage({profile,health,backgroundHealth,metric,process,tasks,language,online,connecting,desktop,tasksLoading,healthError,metricsError,taskError,processError,controls,stateLabel,onRefresh,onCreateProfile,onChat,onCopy,onNavigate,onImages,onRestart,profiles,onSwitchProfile,actionsDisabled,startupModel,hasRuntime=false,runtimeNeedsRepair=false,setupLoading=false,setupError,startupBusy=false,startupDisabled=false,guideNotice,onOpenGuide}:OverviewPageProps) {
+export function OverviewPage({profile,health,backgroundHealth,metric,process,tasks,language,online,connecting,desktop,tasksLoading,healthError,metricsError,taskError,processError,controls,stateLabel,onRefresh,onCreateProfile,onChat,onCopy,onNavigate,onImages,onRestart,profiles,onSwitchProfile,actionsDisabled,startupModel,hasRuntime=false,runtimeNeedsRepair=false,setupLoading=false,setupError,startupBusy=false,startupDisabled=false,guideNotice,onOpenGuide,loadingSince}:OverviewPageProps) {
   const {t}=useTranslation();
     const labels = overviewLabels[(language === 'zh-CN' ? 'zh-CN' : 'en')];
   const startup = startupLabels[(language === 'zh-CN' ? 'zh-CN' : 'en')];
@@ -71,7 +71,7 @@ export function OverviewPage({profile,health,backgroundHealth,metric,process,tas
     </section>:<OverviewDashboard profile={profile} health={health} backgroundHealth={backgroundHealth} metric={metric} process={process} tasks={tasks} language={language}
       online={online} connecting={connecting} desktop={desktop} tasksLoading={tasksLoading} healthError={healthError} metricsError={metricsError} taskError={taskError} processError={processError}
       controls={controls} stateLabel={stateLabel} onRefresh={onRefresh} onChat={onChat} onCopy={onCopy} onNavigate={onNavigate} onImages={onImages} onRestart={onRestart}
-      profiles={profiles} onSwitchProfile={onSwitchProfile} actionsDisabled={actionsDisabled}/>}
+      profiles={profiles} onSwitchProfile={onSwitchProfile} actionsDisabled={actionsDisabled} loadingSince={loadingSince}/>}
     {!profile && <div className="overview-waiting-strip" role="status">
       <span className="overview-waiting-dot" aria-hidden="true"/>
       <div>
