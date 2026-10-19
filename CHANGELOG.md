@@ -7,6 +7,12 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+### English
+
+## [0.2.5] - 2026-10-19
+
+### 中文
+
 - **跳过向导后仍可使用本地安装包（#74）**：Strata 页面新增「使用已下载的安装包」入口。未安装时可选择本机已下载的 Strata 源码 ZIP 和（Windows）引擎 ZIP 安装，校验与安装流程与向导完全相同；运行环境需要补齐时同样可用；已安装时可通过「使用本地安装包」用官方引擎 ZIP 更新或重装当前版本，安装前按官方 SHA256 校验。
 
 ### English
