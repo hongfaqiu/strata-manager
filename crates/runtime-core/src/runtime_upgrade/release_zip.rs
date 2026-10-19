@@ -150,7 +150,7 @@ fn work_dir(state: &RuntimeState, id: &str) -> Result<PathBuf, String> {
     if uuid::Uuid::parse_str(id).is_err() {
         return Err("ZIP更新日志标识无效".into());
     }
-    let root = installation::owned_directory(state.data_dir(), &["zip-updates"])?;
+    let root = installation::owned_directory(state.data_dir(), &["zu"])?;
     let path = root.join(id);
     if path.exists() {
         reject_link(&path)?;
@@ -649,14 +649,16 @@ async fn source_archive(
 }
 
 /// The user's copy of the same-revision source ZIP. Upstream publishes no digest
-/// for it, so it is accepted on the identity GitHub writes into a revision archive:
-/// one top-level `Strata-<revision>` directory. Extraction then applies every check
-/// a downloaded archive gets.
+/// for it, so it is accepted on the identity GitHub writes into the archive:
+/// one top-level `Strata-<revision>/` directory, or the Release page's
+/// `Strata-<version>/` / `Strata-v<version>/` alias for the same commit (#63).
+/// Extraction then applies every check a downloaded archive gets.
 fn local_source_archive(
     state: &RuntimeState,
     id: &str,
     path: &Path,
     revision: &str,
+    version: &str,
 ) -> Result<PathBuf, String> {
     if !super::valid_revision(revision) {
         return Err("官方源码提交无效".into());
@@ -670,7 +672,7 @@ fn local_source_archive(
         MAX_SOURCE,
         installation::local_archive::STRATA,
     )?;
-    source_archive_revision(output.path(), revision)?;
+    source_archive_revision(output.path(), revision, version)?;
     let target = directory.join(format!("source-{revision}-{digest}.zip"));
     if target.exists() {
         if installation::file_hash(&target)? != digest {
@@ -692,19 +694,53 @@ fn local_source_archive(
     Ok(target)
 }
 
-fn source_archive_revision(archive: &Path, revision: &str) -> Result<(), String> {
+fn source_archive_prefixes(revision: &str, version: &str) -> Vec<String> {
+    let mut prefixes = vec![format!("Strata-{revision}/")];
+    let version = version.trim().trim_start_matches('v');
+    if !version.is_empty()
+        && version
+            .bytes()
+            .all(|b| b.is_ascii_digit() || b == b'.' || b == b'-')
+    {
+        for name in [format!("Strata-{version}"), format!("Strata-v{version}")] {
+            let prefix = format!("{name}/");
+            if !prefixes.contains(&prefix) {
+                prefixes.push(prefix);
+            }
+        }
+    }
+    prefixes
+}
+
+fn source_archive_revision(archive: &Path, revision: &str, version: &str) -> Result<(), String> {
+    let prefixes = source_archive_prefixes(revision, version);
     let wrong = || {
-        format!("所选 Strata 安装包不是当前官方 Release 的源码（需要 Strata-{revision}.zip，可在 GitHub 该提交页下载）/ The selected Strata archive is not this Release's source (expected Strata-{revision}.zip)")
+        format!(
+            "所选 Strata 安装包不是当前官方 Release 的源码（需要 Strata-{revision}.zip，或 GitHub Release 页的 Strata-{version}.zip / Strata-v{version}.zip）/ The selected Strata archive is not this Release's source (expected Strata-{revision}.zip or the Release-page Strata-{version}.zip / Strata-v{version}.zip)"
+        )
     };
     let mut zip = zip::ZipArchive::new(File::open(archive).map_err(|e| e.to_string())?)
         .map_err(|_| "所选 Strata 安装包不是有效的 ZIP 文件 / The selected Strata archive is not a valid ZIP file".to_string())?;
-    let prefix = format!("Strata-{revision}/");
     if zip.is_empty() || zip.len() > 30_000 {
         return Err(wrong());
     }
+    let mut matched: Option<String> = None;
     for index in 0..zip.len() {
         let entry = zip.by_index_raw(index).map_err(|e| e.to_string())?;
-        if !entry.name().starts_with(&prefix) {
+        let name = entry.name();
+        let prefix = match &matched {
+            Some(prefix) => prefix.clone(),
+            None => {
+                let found = prefixes
+                    .iter()
+                    .find(|prefix| name.starts_with(prefix.as_str()))
+                    .cloned()
+                    .ok_or_else(wrong)?;
+                matched = Some(found.clone());
+                found
+            }
+        };
+        if !name.starts_with(&prefix) {
             return Err(wrong());
         }
     }
@@ -835,6 +871,92 @@ fn source_file(relative: &str) -> bool {
             || relative.starts_with("README")
     }
 }
+
+/// Windows Win32 APIs without long-path awareness fail around MAX_PATH (260) with
+/// ERROR_PATH_NOT_FOUND (3) or ERROR_FILENAME_EXCED_RANGE (206). HIP engine ZIPs
+/// ship deep `rocm/bin/hipblaslt/...` names; AppData work dirs tip over the limit.
+#[cfg(windows)]
+fn io_fs_path(path: &Path) -> PathBuf {
+    let value = path.as_os_str();
+    if value.is_empty() {
+        return path.to_path_buf();
+    }
+    let text = value.to_string_lossy();
+    if text.starts_with(r"\\?\") {
+        return path.to_path_buf();
+    }
+    if !path.is_absolute() {
+        return path.to_path_buf();
+    }
+    if let Some(rest) = text.strip_prefix(r"\\") {
+        PathBuf::from(format!(r"\\?\UNC\{rest}"))
+    } else {
+        PathBuf::from(format!(r"\\?\{text}"))
+    }
+}
+#[cfg(not(windows))]
+fn io_fs_path(path: &Path) -> PathBuf {
+    path.to_path_buf()
+}
+
+fn map_extract_io(action: &str, path: &Path, error: std::io::Error) -> String {
+    let hint = match error.raw_os_error() {
+        Some(3) | Some(206) => {
+            "；Windows 路径过长或不存在（HIP 引擎含深层 rocm 文件时常见）。请将 Strata 装到较短路径（如 D:\\Strata），或在系统中启用长路径后重试 / Windows path is too long or missing (common with deep HIP rocm files). Install Strata to a short path such as D:\\Strata, or enable long paths."
+        }
+        Some(5) => "；没有写入权限 / Access denied",
+        Some(32) => "；文件被占用 / File is in use",
+        Some(112) => "；磁盘空间不足 / Disk full",
+        _ => "",
+    };
+    format!("{action}失败（{}）：{error}{hint}", path.display())
+}
+
+/// Publish a brand-new file without tempfile DELETE_ON_CLOSE + MoveFileEx, which
+/// on Windows has returned ERROR_PATH_NOT_FOUND (os error 3) while extracting the
+/// official HIP engine ZIP after SHA256 verification (#62).
+fn publish_new_file_from_reader(
+    target: &Path,
+    reader: &mut impl Read,
+    size: u64,
+    check: &impl Fn() -> Result<(), String>,
+) -> Result<(), String> {
+    let target = io_fs_path(target);
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent).map_err(|e| map_extract_io("创建解包目录", parent, e))?;
+    }
+    let mut output = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&target)
+        .map_err(|e| map_extract_io("创建解包文件", &target, e))?;
+    let mut received = 0u64;
+    let mut bytes = [0u8; 65536];
+    loop {
+        check()?;
+        let n = reader
+            .read(&mut bytes)
+            .map_err(|e| map_extract_io("读取 ZIP 条目", &target, e))?;
+        if n == 0 {
+            break;
+        }
+        received += n as u64;
+        if received > size {
+            return Err("ZIP展开长度与清单不符".into());
+        }
+        output
+            .write_all(&bytes[..n])
+            .map_err(|e| map_extract_io("写入解包文件", &target, e))?;
+    }
+    if received != size {
+        return Err("ZIP文件被截断".into());
+    }
+    output
+        .sync_all()
+        .map_err(|e| map_extract_io("同步解包文件", &target, e))?;
+    Ok(())
+}
+
 fn extract(
     archive: &Path,
     destination: &Path,
@@ -909,34 +1031,8 @@ fn extract(
     for (i, name, size) in entries {
         check()?;
         let target = safe_target(destination, &name)?;
-        if let Some(parent) = target.parent() {
-            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
         let mut entry = zip.by_index(i).map_err(|e| e.to_string())?;
-        let mut output =
-            tempfile::NamedTempFile::new_in(target.parent().ok_or("ZIP目标缺少父目录")?)
-                .map_err(|e| e.to_string())?;
-        let mut received = 0u64;
-        let mut bytes = [0u8; 65536];
-        loop {
-            check()?;
-            let n = entry.read(&mut bytes).map_err(|e| e.to_string())?;
-            if n == 0 {
-                break;
-            }
-            received += n as u64;
-            if received > size {
-                return Err("ZIP展开长度与清单不符".into());
-            }
-            output.write_all(&bytes[..n]).map_err(|e| e.to_string())?;
-        }
-        if received != size {
-            return Err("ZIP文件被截断".into());
-        }
-        output.as_file().sync_all().map_err(|e| e.to_string())?;
-        output
-            .persist_noclobber(&target)
-            .map_err(|e| e.to_string())?;
+        publish_new_file_from_reader(&target, &mut entry, size, &check)?;
         files.push(name);
     }
     let required = if source {
@@ -1401,13 +1497,33 @@ fn add_change(
     Ok(())
 }
 fn replace_file(source: &Path, target: &Path) -> Result<(), String> {
+    let target = io_fs_path(target);
     let parent = target.parent().ok_or("程序文件没有父目录")?;
-    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    let mut temp = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
-    let mut file = File::open(source).map_err(|e| e.to_string())?;
-    std::io::copy(&mut file, &mut temp).map_err(|e| e.to_string())?;
-    temp.as_file().sync_all().map_err(|e| e.to_string())?;
-    temp.persist(target).map_err(|e| e.to_string())?;
+    fs::create_dir_all(parent).map_err(|e| map_extract_io("创建程序目录", parent, e))?;
+    let staged = parent.join(format!(
+        ".strata-replace-{}-{}.partial",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ));
+    {
+        let mut output = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&staged)
+            .map_err(|e| map_extract_io("创建替换暂存", &staged, e))?;
+        let mut file = File::open(source).map_err(|e| e.to_string())?;
+        std::io::copy(&mut file, &mut output).map_err(|e| e.to_string())?;
+        output
+            .sync_all()
+            .map_err(|e| map_extract_io("同步替换暂存", &staged, e))?;
+    }
+    if target.exists() {
+        fs::remove_file(&target).map_err(|e| map_extract_io("移除旧程序文件", &target, e))?;
+    }
+    fs::rename(&staged, &target).map_err(|e| {
+        let _ = fs::remove_file(&staged);
+        map_extract_io("发布程序文件", &target, e)
+    })?;
     Ok(())
 }
 fn apply(
@@ -1575,7 +1691,7 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
     j.revision = Some(revision.clone());
     j.asset_name = Some(asset.name.clone());
     let work = work_dir(&state, &j.task_id)?;
-    for part in ["source", "engine", "replacement", "backup"] {
+    for part in ["source", "e", "replacement", "backup"] {
         fs::create_dir(work.join(part)).map_err(|e| e.to_string())?;
     }
     progress(
@@ -1588,7 +1704,9 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
         ),
     )?;
     let source = match &j.local_source_archive_path {
-        Some(path) => local_source_archive(&state, &j.task_id, Path::new(path), &revision)?,
+        Some(path) => {
+            local_source_archive(&state, &j.task_id, Path::new(path), &revision, &version)?
+        }
         None => {
             source_archive(
                 &state,
@@ -1638,7 +1756,7 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
         "extractingEngine",
         "官方引擎SHA256和精确长度通过；正在安全解包运行文件",
     )?;
-    let engine_files = extract(&engine, &work.join("engine"), false, || {
+    let engine_files = extract(&engine, &work.join("e"), false, || {
         cancelled(&state, &j.task_id)
     })?;
     let build: Value = serde_json::from_slice(
@@ -1719,7 +1837,7 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
                 &j.install_dir,
                 &work,
                 &relative,
-                &work.join("engine").join(file),
+                &work.join("e").join(file),
                 &mut j.changes,
             )?;
         }
@@ -2836,7 +2954,7 @@ mod tests {
         );
         assert_eq!(state.tasks.lock().unwrap().len(), 1);
         assert!(state.processes.lock().unwrap().is_empty());
-        assert!(!state.data_dir().join("zip-updates").exists());
+        assert!(!state.data_dir().join("zu").exists());
     }
 
     use std::io::Cursor;
@@ -2921,7 +3039,7 @@ mod tests {
         .contains("不一致"));
         assert_eq!(state.tasks.lock().unwrap().len(), 1);
         assert!(state.processes.lock().unwrap().is_empty());
-        assert!(!state.data_dir().join("zip-updates").exists());
+        assert!(!state.data_dir().join("zu").exists());
         let mut old = serde_json::to_value(&journal).unwrap();
         old.as_object_mut().unwrap().remove("download");
         assert_eq!(
