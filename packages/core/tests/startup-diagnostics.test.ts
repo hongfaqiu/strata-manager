@@ -63,3 +63,17 @@ describe('startup diagnostics', () => {
     expect(value.evidence).toEqual([{ source: 'httpStatus', at: 200, message: 'HTTP 401' }]);
   });
 });
+
+describe('readable service errors', () => {
+  it('never shows the native JSON envelope of a preparation failure', async () => {
+    const { readableServiceError } = await import('../src/startup-diagnostics');
+    const raw = JSON.stringify({ code: 'STARTUP_UNKNOWN', details: { startupDiagnostic: { phase: 'loading', evidence: [{ source: 'serviceLog', message: '[strata] still starting (261 s) - please wait ...' }] } }, message: 'error sending request for url (http://127.0.0.1:8080/load)' });
+    const text = readableServiceError(raw)!;
+    expect(text).toContain('本机服务未及时响应');
+    expect(text).toContain('http://127.0.0.1:8080/load');
+    expect(text).not.toContain('{');
+    expect(readableServiceError('plain failure')).toBe('plain failure');
+    expect(readableServiceError(undefined)).toBeUndefined();
+    expect(readableServiceError(JSON.stringify({ message: '{"nested":true}' }))).toContain('导出诊断');
+  });
+});

@@ -2,6 +2,7 @@ export * from './types';
 export * from './errors';
 export * from './catalog';
 export * from './metrics';
+export * from './gpu-summary';
 export * from './chat';
 export * from './chat-execution';
 export * from './service-capabilities';

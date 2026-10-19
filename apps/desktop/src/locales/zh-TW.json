@@ -739,5 +739,9 @@
   "ovEnableImages": "啟用圖像",
   "ovBackground": "背景檢查",
   "ovNotChecked": "目前程序未檢查",
-  "ovConfiguration": "執行設定"
+  "ovConfiguration": "執行設定",
+  "ovIssueLoading": "模型載入中（已 {{seconds}} 秒），大型模型首次載入可能需要幾分鐘",
+  "ovIssueLoadingNow": "模型載入中，大型模型首次載入可能需要幾分鐘",
+  "ovGpuCards": "各顯示卡",
+  "ovPcieFirstCard": "GPU 0 連結"
 }

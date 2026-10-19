@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Activity, AlertTriangle, ArrowRight, Boxes, Check, ChevronDown, Copy, Cpu, MemoryStick, MessageSquare, MonitorSmartphone, Plug, RefreshCw, RotateCcw, Settings2 } from 'lucide-react';
-import { normalizeBaseUrl, type AppLanguage, type BackgroundHealthSnapshot, type JsonObject, type MetricSnapshot, type ProcessStatus, type ServiceProfile, type TaskStatus } from '@strata-manager/core';
+import { gpuCards, gpuSetName, modelLoadNotice, normalizeBaseUrl, type AppLanguage, type BackgroundHealthSnapshot, type JsonObject, type MetricSnapshot, type ProcessStatus, type ServiceProfile, type TaskStatus } from '@strata-manager/core';
 import { ApiIntegrationDialog } from '../ApiIntegrationDialog';
 import { useOverviewUsage } from './OverviewUsage';
 import './overview-dashboard.css';
@@ -15,6 +15,8 @@ export interface OverviewDashboardProps {
   stateLabel: (state: string) => string; onRefresh: () => void; onChat: () => void; onCopy: (content: string) => void;
   onNavigate: (page: OverviewNavigationTarget) => void; onImages?: () => void; onRestart?: () => void;
   profiles?: { id: string; name: string }[]; onSwitchProfile?: (id: string) => void; actionsDisabled?: boolean;
+  /** Epoch ms when the app started a model start/load that is still in progress. */
+  loadingSince?: number;
 }
 type Tone = 'ok' | 'warn' | 'bad' | 'idle';
 const GiB = 1024 ** 3;
@@ -84,7 +86,8 @@ export function OverviewDashboard(props: OverviewDashboardProps) {
   const parked = parkedCache.enabled === true ? num(parkedCache.bytes) : null;
   const vramOther = vramUsed === null ? null : Math.max(0, vramUsed - (experts ?? 0)), ramOther = ramUsed === null ? null : Math.max(0, ramUsed - (parked ?? 0));
   const width = (v: number | null, total: number | null) => v !== null && total ? `${Math.max(0, Math.min(100, v / total * 100))}%` : '0%';
-  const gpuCount = Array.isArray(hw.gpus) ? hw.gpus.length : 0, powerLimit = num(hw.gpu_power_limit);
+  const cards = gpuCards(raw), multiGpu = cards.length > 1, gpuName = gpuSetName(raw) ?? 'GPU', powerLimit = num(hw.gpu_power_limit);
+  const loadNotice = modelLoadNotice({ online, loaded: health.loaded, metric, loadingSince: props.loadingSince });
   const lastRequest = metric?.requests[0];
   const capacity = num(engine.max_context) ?? num(health.max_context);
   const prompt = num(live.state === 'idle' ? lastRequest?.prompt_tokens : live.prompt_tokens), generated = num(live.state === 'idle' ? lastRequest?.output_tokens : live.generated);
@@ -104,7 +107,9 @@ export function OverviewDashboard(props: OverviewDashboardProps) {
   const issues: { tone: Tone; text: string; action?: ReactNode }[] = [];
   const link = (label: string, page: OverviewNavigationTarget) => <button type="button" className="text-button ovw-link" onClick={() => onNavigate(page)}>{label}<ArrowRight size={13} aria-hidden="true" /></button>;
   if (stopped) issues.push({ tone: 'bad', text: desktop && proc?.running === false ? t('ovIssueStopped') : t('ovIssueUnreachable'), action: link(t('ovViewLogs'), 'tasks') });
-  if (online && health.loaded === false) issues.push({ tone: 'warn', text: t('ovIssueNotLoaded') });
+  // A slow cold load is normal progress, not a warning (Xiaohongshu feedback).
+  if (loadNotice?.kind === 'loading') issues.push({ tone: 'idle', text: loadNotice.seconds !== null ? t('ovIssueLoading', { seconds: loadNotice.seconds }) : t('ovIssueLoadingNow') });
+  else if (loadNotice?.kind === 'notLoaded') issues.push({ tone: 'warn', text: t('ovIssueNotLoaded') });
   if (vramPct !== null && vramPct >= T.memoryWarn) issues.push({ tone: vramPct >= T.memoryBad ? 'bad' : 'warn', text: t('ovIssueVram', { pct: Math.round(vramPct) }), action: link(t('openMonitor'), 'monitoring') });
   if (num(metric?.gpuTemperature) !== null && metric!.gpuTemperature! >= T.tempAlert) issues.push({ tone: 'warn', text: t('ovIssueTemp', { temp: fmt(metric!.gpuTemperature, 0) }) });
   if (queued > 0) issues.push({ tone: 'warn', text: t('ovIssueQueue', { queued, running: active }), action: link(t('openMonitor'), 'monitoring') });
@@ -150,11 +155,21 @@ export function OverviewDashboard(props: OverviewDashboardProps) {
 
     <section className={`ovw-map${stopped ? ' is-off' : ''}`} aria-label={t('ovHardware')}>
       <div className="ovw-dev ovw-dev-gpu">
-        <div className="ovw-dev-head"><MonitorSmartphone size={15} aria-hidden="true" /><strong>{typeof hwStatic.gpu_name === 'string' ? hwStatic.gpu_name : 'GPU'}</strong>{gpuCount > 1 && <em>×{gpuCount}</em>}<span className="ovw-grow" /><span className="ovw-dev-key">{t('ovVram')}</span><b className={`ovw-num ovw-dev-value t-${toneOf(vramPct, T.memoryWarn, T.memoryBad)}`}>{gib(vramUsed)}<small> / {gib(vramTotal, 0)} GB</small></b></div>
+        <div className="ovw-dev-head"><MonitorSmartphone size={15} aria-hidden="true" /><strong title={typeof hwStatic.gpu_name === 'string' ? hwStatic.gpu_name : undefined}>{gpuName}</strong><span className="ovw-grow" /><span className="ovw-dev-key">{t('ovVram')}</span><b className={`ovw-num ovw-dev-value t-${toneOf(vramPct, T.memoryWarn, T.memoryBad)}`}>{gib(vramUsed)}<small> / {gib(vramTotal, 0)} GB</small></b></div>
         <div className={`ovw-mem t-${toneOf(vramPct, T.memoryWarn, T.memoryBad)}`} role="meter" aria-label={t('ovVram')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={vramPct === null ? undefined : Math.round(vramPct)}>
           {experts !== null && <i className="seg-a" style={{ width: width(experts, vramTotal) }} />}<i className="seg-b" style={{ width: width(vramOther, vramTotal) }} /><s style={{ left: `${T.memoryWarn}%` }} />
         </div>
         {legend([[t('ovExperts'), experts, 'seg-a'], [t('ovModelRuntime'), vramOther, 'seg-b']], vramUsed !== null && vramTotal !== null ? vramTotal - vramUsed : null)}
+        {multiGpu && <ul className="ovw-gpu-cards" aria-label={t('ovGpuCards')} data-testid="overview-gpu-cards">{cards.map(card => {
+          const pct = card.memUsed !== null && card.memTotal ? card.memUsed / card.memTotal * 100 : null;
+          return <li key={card.index} title={card.name ?? undefined}>
+            <span className="ovw-gpu-id">GPU {card.index}</span>
+            <span className={`ovw-gpu-bar t-${toneOf(pct, T.memoryWarn, T.memoryBad)}`} aria-hidden="true"><i style={{ width: width(card.memUsed, card.memTotal) }} /></span>
+            <b className="ovw-num">{gib(card.memUsed)}<small> / {gib(card.memTotal, 0)} GB</small></b>
+            <span className="ovw-num">{fmt(card.util, 0)}%</span>
+            <span className="ovw-num">{fmt(card.temp, 0)}°C</span>
+          </li>;
+        })}</ul>}
         <div className="ovw-arcs">
           <Arc value={num(metric?.gpuUtil)} max={100} label={t('ovLoad')} text={<>{fmt(metric?.gpuUtil, 0)}<small>%</small></>} warn={T.gpuWarn} bad={T.gpuBad} />
           <Arc value={num(metric?.gpuTemperature)} max={100} label={t('ovTemp')} text={<>{fmt(metric?.gpuTemperature, 0)}<small>°C</small></>} warn={T.tempWarn} bad={T.tempBad} />
@@ -165,6 +180,7 @@ export function OverviewDashboard(props: OverviewDashboardProps) {
         <span className="ovw-bus-line" />
         <b className="ovw-num">{num(hw.gpu_pcie_gen) !== null ? `PCIe ${hw.gpu_pcie_gen}.0` : 'PCIe'}{num(hw.gpu_pcie_width) !== null ? ` ×${hw.gpu_pcie_width}` : ''}</b>
         {num(hw.gpu_pcie_rx_mb) !== null && <small className="ovw-num">↓ {fmt(hw.gpu_pcie_rx_mb, 0)} MB/s</small>}
+        {multiGpu && num(hw.gpu_pcie_gen) !== null && <small>{t('ovPcieFirstCard')}</small>}
       </div>
       <div className="ovw-dev ovw-dev-ram">
         <div className="ovw-dev-head"><MemoryStick size={15} aria-hidden="true" /><strong>{t('ram')}</strong><span className="ovw-grow" /><span className="ovw-dev-key">RAM</span><b className={`ovw-num ovw-dev-value t-${toneOf(ramPct, T.memoryWarn, T.memoryBad)}`}>{gib(ramUsed)}<small> / {gib(ramTotal, 0)} GB</small></b></div>

@@ -263,7 +263,9 @@ pub fn build(
         "STARTUP_AUTH_REQUIRED" | "STARTUP_FORBIDDEN" | "UNAUTHORIZED" | "FORBIDDEN" => {
             (StartupCategory::Auth, StartupConfidence::Confirmed)
         }
-        "STARTUP_API_TIMEOUT" => (StartupCategory::Timeout, StartupConfidence::Confirmed),
+        "STARTUP_API_TIMEOUT" | "STARTUP_LOAD_TIMEOUT" => {
+            (StartupCategory::Timeout, StartupConfidence::Confirmed)
+        }
         _ if matches!(http_status, Some(401 | 403)) => {
             (StartupCategory::Auth, StartupConfidence::Confirmed)
         }
