@@ -7,6 +7,7 @@ import {
   floatingMonitorDimensions,
   normalizeFloatingMonitorPreferences,
   reorderFloatingMonitorMetrics,
+  TRAY_ICON_DISPLAYS,
 } from '../src/floating-monitor';
 import type { FloatingMonitorMetric, FloatingMonitorPreferences } from '../src/types';
 
@@ -17,6 +18,7 @@ describe('floating monitor preferences', () => {
       fontSize: 16, layout: 'twoRow',
       metrics: ['generation', 'prefill', 'gpu', 'vram', 'cpu', 'ram'],
       showGraphs: true, showLabels: true, showUnits: true, mode: 'floating', snapToEdge: false, showStatus: false, metricColors: {},
+      trayIconDisplay: 'status',
     });
   });
 
@@ -152,6 +154,30 @@ describe('floating monitor presets and metric catalogue', () => {
         expect((Math.max(surface, foreground) + 0.05) / (Math.min(surface, foreground) + 0.05)).toBeGreaterThanOrEqual(4.5);
       }
     }
+  });
+});
+
+describe('tray icon display preference (#71)', () => {
+  it('defaults to the status color, including settings saved before #71', () => {
+    expect(FLOATING_MONITOR_DEFAULTS.trayIconDisplay).toBe('status');
+    expect(normalizeFloatingMonitorPreferences({ showInTray: true }).trayIconDisplay).toBe('status');
+  });
+
+  it.each(['none', 'status', 'generation', 'vram', 'gpu'] as const)('keeps the supported choice %s', choice => {
+    expect(normalizeFloatingMonitorPreferences({ trayIconDisplay: choice }).trayIconDisplay).toBe(choice);
+  });
+
+  it('offers exactly the five native choices in menu order', () => {
+    expect(TRAY_ICON_DISPLAYS).toEqual(['none', 'status', 'generation', 'vram', 'gpu']);
+  });
+
+  it.each([null, 1, true, 'prefill', 'GPU', '', { value: 'gpu' }])('falls back to status for %j', trayIconDisplay => {
+    expect(normalizeFloatingMonitorPreferences({ trayIconDisplay }).trayIconDisplay).toBe('status');
+  });
+
+  it('is independent of the separate monitor tray icon toggle', () => {
+    expect(normalizeFloatingMonitorPreferences({ showInTray: false, trayIconDisplay: 'none' })).toMatchObject({ showInTray: false, trayIconDisplay: 'none' });
+    expect(normalizeFloatingMonitorPreferences({ showInTray: true, trayIconDisplay: 'vram' })).toMatchObject({ showInTray: true, trayIconDisplay: 'vram' });
   });
 });
 

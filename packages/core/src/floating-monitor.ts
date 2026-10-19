@@ -5,6 +5,7 @@ import type {
   FloatingMonitorMetric,
   FloatingMonitorPreferences,
   ResolvedFloatingMonitorPreferences,
+  TrayIconDisplay,
 } from './types';
 
 export interface FloatingMonitorMetricDefinition {
@@ -68,7 +69,11 @@ export const FLOATING_MONITOR_DEFAULTS: ResolvedFloatingMonitorPreferences = {
   snapToEdge: false,
   metricColors: {},
   mode: 'floating',
+  trayIconDisplay: 'status',
 };
+
+/** Tray icon choices in menu order; the native side accepts the same ids. */
+export const TRAY_ICON_DISPLAYS: readonly TrayIconDisplay[] = ['none', 'status', 'generation', 'vram', 'gpu'];
 
 const validMetrics = new Set<string>(FLOATING_MONITOR_METRICS.map(metric => metric.id));
 const validActions = new Set<string>([
@@ -111,6 +116,8 @@ export function normalizeFloatingMonitorPreferences(value?: unknown): ResolvedFl
     metricColors,
     // Retired taskbar preferences fall back to the supported desktop strip.
     mode: 'floating',
+    trayIconDisplay: typeof source.trayIconDisplay === 'string' && (TRAY_ICON_DISPLAYS as readonly string[]).includes(source.trayIconDisplay)
+      ? source.trayIconDisplay as TrayIconDisplay : 'status',
   };
 }
 
