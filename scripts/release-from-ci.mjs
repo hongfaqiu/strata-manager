@@ -28,6 +28,9 @@ export const PLATFORM_GATES = Object.freeze({
   windows: Object.freeze(['Verify installed Windows package and background IPC']),
   linux: Object.freeze(['Linux Secret Service wrapper contracts', 'Build the pinned private Linux test keyring',
     'Linux Secret Service fresh-connection regression',
+    'Headless server crate tests',
+    'Package headless server',
+    'Upload headless server packages',
     'Verify Linux AppImage and DEB startup under Xvfb']),
   macos: Object.freeze(['Use ad-hoc macOS signing without an Apple certificate',
     'Package the macOS app archive for the updater', 'Upload the macOS updater archive']),
@@ -73,6 +76,7 @@ export function createPlan({ repository = REPOSITORY, tag, version, sourceSha: c
       || !/^[A-Za-z0-9][A-Za-z0-9 .-]{0,79}$/.test(productName) || productName.endsWith('.')
       || productName.endsWith(' ') || productName.includes('..')) fail('Explicit repository, source SHA, SemVer tag and safe product name are required.');
   const product = productName.replaceAll(' ', '.');
+  const serverFiles = serverPackageNames(version);
   return { protocol: CI_PROTOCOL, repository, tag, version, sourceSha: commit, runId, productName,
     prerelease: Boolean(match[4]), workflowPath, artifacts: [
       { name: 'ci-windows-x64-nsis', kind: 'windows', installer: product + '_' + version + '_x64-setup.exe' },
@@ -81,9 +85,21 @@ export function createPlan({ repository = REPOSITORY, tag, version, sourceSha: c
       // Updater archive first (latest.json darwin-aarch64); DMG is the manual download.
       { name: 'ci-darwin-aarch64-app-tarball', kind: 'macos', installer: product + '_' + version + '_aarch64.app.tar.gz' },
       { name: 'ci-darwin-aarch64-dmg', kind: 'macos', installer: product + '_' + version + '_aarch64.dmg' },
-    ] };
+    ],
+    // Updater-independent headless server packages (no .sig); promoted from Linux CI.
+    serverArtifact: { name: 'ci-linux-amd64-server', files: serverFiles },
+  };
 }
-export const assetNames = plan => ['latest.json', ...plan.artifacts.flatMap(a => [a.installer, a.installer + '.sig'])];
+/** Headless server Release assets (not part of the Tauri updater). */
+export const serverPackageNames = version => [
+  'Strata.Manager.Server_' + version + '_amd64.tar.gz',
+  'Strata.Manager.Server_' + version + '_amd64.deb',
+];
+export const assetNames = plan => [
+  'latest.json',
+  ...plan.artifacts.flatMap(a => [a.installer, a.installer + '.sig']),
+  ...(plan.serverArtifact?.files ?? serverPackageNames(plan.version)),
+];
 const date = value => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? Date.parse(value) : fail('Valid CI timestamps are required.');
 function validateRun(run, plan, requireSuccess = true) {
   if (!positive(run?.id) || plan.runId !== undefined && run.id !== plan.runId
@@ -149,9 +165,8 @@ export function validateCiEvidence(run, jobs, artifacts, plan, { nowMs = Date.no
     platformJobs[platform] = job;
   }
   const ids = new Set();
-  const bound = plan.artifacts.map(expected => {
+  const bindArtifact = (expected, job) => {
     const matches = artifacts.filter(a => a.name === expected.name); const a = matches[0];
-    const job = platformJobs[expected.kind === 'windows' ? 'windows' : expected.kind === 'macos' ? 'macos' : 'linux'];
     if (matches.length !== 1 || !positive(a.id) || ids.has(a.id) || a.expired !== false
         || !positive(a.size_in_bytes) || a.size_in_bytes > maxBytes
         || !/^sha256:[0-9a-f]{64}$/.test(a.digest ?? '') || a.workflow_run?.id !== run.id
@@ -159,8 +174,14 @@ export function validateCiEvidence(run, jobs, artifacts, plan, { nowMs = Date.no
         || date(a.created_at) < date(job.started_at) || date(a.created_at) > date(job.completed_at)) fail('A unique current-attempt immutable artifact is required: ' + expected.name);
     ids.add(a.id);
     return { ...expected, id: a.id, sha256: a.digest.slice(7), zipSize: a.size_in_bytes };
+  };
+  const bound = plan.artifacts.map(expected => {
+    const job = platformJobs[expected.kind === 'windows' ? 'windows' : expected.kind === 'macos' ? 'macos' : 'linux'];
+    return bindArtifact(expected, job);
   });
-  return { ...plan, runId: run.id, runAttempt: run.run_attempt, artifacts: bound };
+  if (!plan.serverArtifact?.name || !Array.isArray(plan.serverArtifact.files) || plan.serverArtifact.files.length !== 2) fail('Headless server artifact plan is required.');
+  const serverArtifact = bindArtifact(plan.serverArtifact, platformJobs.linux);
+  return { ...plan, runId: run.id, runAttempt: run.run_attempt, artifacts: bound, serverArtifact };
 }
 export function validateSourceProtocol(helper, workflow) {
   if (!helper.includes("export const CI_PROTOCOL = '" + CI_PROTOCOL + "';")
@@ -450,6 +471,23 @@ export async function resolveCi({ validateOnly = false } = {}) {
     'ci_found=' + result.ci_found + '\nci_status=' + result.ci_status + '\nci_run_id=' + result.ci_run_id + '\nsource_sha=' + result.source_sha + '\n');
   console.log(JSON.stringify(result)); return result;
 }
+export function validateServerZipEntries(entries, serverArtifact) {
+  if (!Array.isArray(entries) || !serverArtifact?.files || entries.length !== serverArtifact.files.length) fail('Headless server ZIP must contain exactly the expected packages.');
+  const byName = new Map();
+  for (const e of entries) {
+    if (typeof e.name !== 'string' || !e.name || e.name.length > 240 || /[\\/\x00-\x1f\x7f:]/.test(e.name)
+        || e.isDirectory !== false || e.encrypted !== false
+        || !positive(e.size) || e.size > maxBytes || !positive(e.compressedSize) || e.compressedSize > maxBytes
+        || !Number.isSafeInteger(e.mode) || e.mode < 0
+        || (e.mode & 0xf000) && (e.mode & 0xf000) !== 0x8000) fail('Unsafe headless server ZIP entry.');
+    if (byName.has(e.name)) fail('Duplicate headless server ZIP entry.');
+    byName.set(e.name, e);
+  }
+  for (const name of serverArtifact.files) {
+    if (!byName.has(name)) fail('Missing headless server package in CI ZIP: ' + name);
+  }
+  return serverArtifact.files.map(name => byName.get(name));
+}
 export async function prepare({ validateOnly = false } = {}) {
   const c = await context('prepare', validateOnly); await bindCi(c);
   await mkdir(c.temp, { mode: 0o700 });
@@ -465,20 +503,39 @@ export async function prepare({ validateOnly = false } = {}) {
     if (size !== entry.size) fail('Extracted installer size mismatch.');
     installers.push({ name: a.installer, size, sha256: await digest(file), artifactId: a.id, zipSha256: a.sha256 });
   }
-  const meta = { protocol: CI_PROTOCOL, validateOnly, plan: c.plan, installers };
+  const server = c.plan.serverArtifact;
+  const serverZip = pathResolve(c.temp, server.id + '.zip');
+  await download(base + '/actions/artifacts/' + server.id + '/zip', serverZip, server.zipSize);
+  if (await digest(serverZip) !== server.sha256) fail('Headless server CI artifact ZIP SHA256 mismatch.');
+  const serverEntries = validateServerZipEntries(JSON.parse(command(python, ['-c', zipMetadata, serverZip])), server);
+  const serverPackages = [];
+  for (const entry of serverEntries) {
+    const file = pathResolve(c.temp, entry.name);
+    command(python, ['-c', zipExtract, serverZip, entry.name, file, String(entry.size)]);
+    const size = await regular(file);
+    if (size !== entry.size) fail('Extracted headless server package size mismatch.');
+    serverPackages.push({ name: entry.name, size, sha256: await digest(file), artifactId: server.id, zipSha256: server.sha256 });
+  }
+  const meta = { protocol: CI_PROTOCOL, validateOnly, plan: c.plan, installers, serverPackages };
   await writeFile(pathResolve(c.temp, 'prepared.json'), JSON.stringify(meta, null, 2), { flag: 'wx', mode: 0o600 });
   await readPrepared(c);
   await writeFile(pathResolve(c.temp, 'proof.json'), JSON.stringify(meta, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
-  console.log('Prepared ' + c.plan.artifacts.length + ' full-byte verified same-source CI installers (' + c.plan.version + '); validate-only=' + validateOnly + '.');
+  console.log('Prepared ' + c.plan.artifacts.length + ' installers and ' + serverPackages.length + ' headless server packages (' + c.plan.version + '); validate-only=' + validateOnly + '.');
   return meta;
 }
 export function validatePreparedRecord(meta, plan, { allowValidateOnly = false } = {}) {
   if (meta?.protocol !== CI_PROTOCOL || typeof meta.validateOnly !== 'boolean' || meta.validateOnly && !allowValidateOnly
-      || JSON.stringify(meta.plan) !== JSON.stringify(plan) || meta.installers?.length !== plan.artifacts.length) fail('Prepared source/CI evidence mismatch or validate-only ledger cannot be signed.');
+      || JSON.stringify(meta.plan) !== JSON.stringify(plan) || meta.installers?.length !== plan.artifacts.length
+      || meta.serverPackages?.length !== plan.serverArtifact.files.length) fail('Prepared source/CI evidence mismatch or validate-only ledger cannot be signed.');
   for (const a of plan.artifacts) {
     const matches = meta.installers.filter(i => i.name === a.installer); const i = matches[0];
     if (matches.length !== 1 || i.artifactId !== a.id || i.zipSha256 !== a.sha256
         || !positive(i.size) || i.size > maxBytes || !sha.test(i.sha256 ?? '')) fail('Prepared installer evidence mismatch.');
+  }
+  for (const name of plan.serverArtifact.files) {
+    const matches = meta.serverPackages.filter(i => i.name === name); const i = matches[0];
+    if (matches.length !== 1 || i.artifactId !== plan.serverArtifact.id || i.zipSha256 !== plan.serverArtifact.sha256
+        || !positive(i.size) || i.size > maxBytes || !sha.test(i.sha256 ?? '')) fail('Prepared headless server evidence mismatch.');
   }
   return true;
 }
@@ -494,6 +551,16 @@ export async function readPrepared(c) {
     const zip = pathResolve(c.temp, a.id + '.zip');
     const entry = validateInstallerEntries(JSON.parse(command(python, ['-c', zipMetadata, zip])), a);
     if (entry.size !== i.size || command(python, ['-c', zipByteHash, zip, entry.name, String(entry.size)]).trim() !== i.sha256) fail('Prepared installer no longer matches the verified CI ZIP bytes.');
+  }
+  const server = c.plan.serverArtifact;
+  const serverZip = pathResolve(c.temp, server.id + '.zip');
+  if (await regular(serverZip) !== server.zipSize || await digest(serverZip) !== server.sha256) fail('Prepared headless server ZIP bytes changed.');
+  const serverEntries = validateServerZipEntries(JSON.parse(command(python, ['-c', zipMetadata, serverZip])), server);
+  for (const entry of serverEntries) {
+    const i = meta.serverPackages.find(p => p.name === entry.name);
+    if (!i || await regular(pathResolve(c.temp, entry.name)) !== i.size || await digest(pathResolve(c.temp, entry.name)) !== i.sha256
+        || entry.size !== i.size
+        || command(python, ['-c', zipByteHash, serverZip, entry.name, String(entry.size)]).trim() !== i.sha256) fail('Prepared headless server package no longer matches the verified CI ZIP bytes.');
   }
   return meta;
 }
