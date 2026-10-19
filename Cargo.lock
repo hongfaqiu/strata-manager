@@ -3983,6 +3983,7 @@ version = "0.2.6"
 dependencies = [
  "base64 0.22.1",
  "dunce",
+ "flate2",
  "futures-util",
  "keyring",
  "libc",
@@ -3993,6 +3994,7 @@ dependencies = [
  "sha2",
  "strata-local-ipc",
  "sysinfo",
+ "tar",
  "tempfile",
  "tokio",
  "tokio-util",

@@ -584,8 +584,8 @@ mod tests {
             encoder.write_all(&fs::read(&tar_path).unwrap()).unwrap();
             encoder.finish().unwrap();
         }
-        let err =
-            extract_metal_engine_archive(&gz_path, &temp.path().join("out"), || Ok(())).unwrap_err();
+        let err = extract_metal_engine_archive(&gz_path, &temp.path().join("out"), || Ok(()))
+            .unwrap_err();
         assert!(err.contains("cublas") || err.contains("未识别"), "{err}");
     }
 

@@ -37,9 +37,11 @@ test('#74: an installed engine can be updated or reinstalled from a local ZIP', 
 });
 
 test('the guide and the Strata page share one local-package flow', () => {
-  assert.match(guide, /useLocalRuntimePackages\(windows,/);
-  assert.match(install, /useLocalRuntimePackages\(core\.runtimePackageIsWindows\(props\.os\)/);
-  assert.match(shared, /core\.localRuntimePackageSelection\(source, archives, windows\)/);
-  assert.match(shared, /filters: \[\{ name: 'ZIP', extensions: \['zip'\] \}\]/);
-  for (const key of ['obPackageSource', 'obSourceDownload', 'obSourceLocal', 'obLocalHintWindows', 'obLocalHintLinux', 'obLocalStrata', 'obLocalEngine', 'obLocalRequired']) assert.match(shared, new RegExp(`'${key}'`));
+  assert.match(guide, /useLocalRuntimePackages\(packagePlatform,/);
+  assert.match(install, /useLocalRuntimePackages\(core\.runtimePackagePlatform\(props\.os\)/);
+  assert.match(shared, /core\.localRuntimePackageSelection\(source, archives, platform\)/);
+  assert.match(shared, /filters: macEngine/);
+  assert.match(shared, /name: 'TAR\.GZ'/);
+  assert.match(shared, /name: 'ZIP'/);
+  for (const key of ['obPackageSource', 'obSourceDownload', 'obSourceLocal', 'obLocalHintWindows', 'obLocalHintLinux', 'obLocalHintMac', 'obLocalStrata', 'obLocalEngine', 'obLocalRequired']) assert.match(shared, new RegExp(`'${key}'`));
 });

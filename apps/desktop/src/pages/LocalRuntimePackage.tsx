@@ -7,37 +7,54 @@ import { Segmented } from '../OfficialControls';
 export type LocalArchiveKey = keyof core.LocalRuntimeArchives;
 
 /**
- * Local Strata/engine ZIP choice shared by the setup guide and the Strata page (#46, #74).
+ * Local Strata/engine archive choice shared by the setup guide and the Strata page (#46, #74, #53).
  * Both hand the result to `prepareLocalRuntime`, so validation and installation are identical.
  */
-export function useLocalRuntimePackages(windows: boolean, dialogTitle: (key: LocalArchiveKey) => string) {
+export function useLocalRuntimePackages(
+  platformOrWindows: core.RuntimePackagePlatform | boolean,
+  dialogTitle: (key: LocalArchiveKey) => string,
+) {
+  const platform: core.RuntimePackagePlatform =
+    typeof platformOrWindows === 'boolean' ? (platformOrWindows ? 'windows' : 'linux') : platformOrWindows;
   // Downloading stays the default; already-downloaded packages are an explicit choice.
   const [source, setSourceState] = useState<core.RuntimePackageSource>('download');
   const [archives, setArchives] = useState<core.LocalRuntimeArchives>({});
   const [pickError, setPickError] = useState('');
   const [picking, setPicking] = useState(false);
-  const selection = core.localRuntimePackageSelection(source, archives, windows);
+  const selection = core.localRuntimePackageSelection(source, archives, platform);
   const setSource = (value: core.RuntimePackageSource) => { setSourceState(value); setPickError(''); };
   const pick = async (key: LocalArchiveKey) => {
     if (picking) return;
     setPicking(true); setPickError('');
     try {
       const { open } = await import('@tauri-apps/plugin-dialog');
-      const path = await open({ title: dialogTitle(key), multiple: false, directory: false, filters: [{ name: 'ZIP', extensions: ['zip'] }] });
+      const macEngine = platform === 'macos' && key === 'engineArchivePath';
+      const path = await open({
+        title: dialogTitle(key),
+        multiple: false,
+        directory: false,
+        filters: macEngine
+          ? [{ name: 'TAR.GZ', extensions: ['gz', 'tgz'] }]
+          : [{ name: 'ZIP', extensions: ['zip'] }],
+      });
       if (typeof path === 'string') setArchives(previous => ({ ...previous, [key]: path }));
     } catch (error) { setPickError(core.normalizeError(error).message); } finally { setPicking(false); }
   };
   const clear = (key: LocalArchiveKey) => setArchives(previous => ({ ...previous, [key]: undefined }));
-  return { source, setSource, archives, pick, clear, picking, pickError, windows, chosen: selection.chosen, missing: selection.missing };
+  const windows = platform === 'windows';
+  const offersEngine = core.runtimePackageOffersEngine(platform);
+  return { source, setSource, archives, pick, clear, picking, pickError, windows, platform, offersEngine, chosen: selection.chosen, missing: selection.missing };
 }
 
 export type LocalRuntimePackages = ReturnType<typeof useLocalRuntimePackages>;
 
 /** Strata page version of the guide's "使用已下载的安装包" fields, with the same strings and hints. */
 export function LocalRuntimePackageFields({ packages, disabled = false }: { packages: LocalRuntimePackages; disabled?: boolean }) {
-  const { t: translate } = useTranslation();
+  const { t: translate, i18n } = useTranslation();
   const t = (key: string) => String(translate(key));
-  const { source, archives, windows } = packages;
+  const { source, archives, platform, offersEngine } = packages;
+  const hintKey = platform === 'windows' ? 'obLocalHintWindows' : platform === 'macos' ? 'obLocalHintMac' : 'obLocalHintLinux';
+  const hintLanguage = i18n.language?.toLowerCase().startsWith('zh') ? 'zh-CN' as const : 'en' as const;
   const row = (key: LocalArchiveKey, label: string) => <div className="local-package-row" key={key}>
     <span className={`local-package-mark${archives[key] ? ' is-chosen' : ''}`} aria-hidden="true">{archives[key] ? <Check size={12}/> : <Minus size={12}/>}</span>
     <span className="local-package-label">{label}</span>
@@ -47,11 +64,12 @@ export function LocalRuntimePackageFields({ packages, disabled = false }: { pack
       {archives[key] && <button type="button" className="text-button" disabled={disabled || packages.picking} onClick={() => packages.clear(key)}>{t('obClearFile')}</button>}
     </span>
   </div>;
-  return <div className="local-package" data-testid="local-runtime-package">
+  return <div className="local-package" data-testid="local-runtime-package" data-platform={platform}>
     <div className="local-package-source"><span>{t('obPackageSource')}</span><Segmented ariaLabel={t('obPackageSource')} value={source} onValueChange={value => packages.setSource(value as core.RuntimePackageSource)} options={[{ value: 'download', label: t('obSourceDownload'), disabled }, { value: 'local', label: t('obSourceLocal'), disabled }]}/></div>
     {source === 'local' && <>
-      <p className="local-package-hint">{t(windows ? 'obLocalHintWindows' : 'obLocalHintLinux')}</p>
-      <div className="local-package-rows">{row('strataArchivePath', t('obLocalStrata'))}{windows && row('engineArchivePath', t('obLocalEngine'))}</div>
+      <p className="local-package-hint">{t(hintKey)}</p>
+      <div className="local-package-rows">{row('strataArchivePath', t('obLocalStrata'))}{offersEngine && row('engineArchivePath', t('obLocalEngine'))}</div>
+      {platform === 'macos' && <p className="local-package-hint" data-testid="metal-manual-build-hint">{core.metalManualBuildHint(hintLanguage)}</p>}
       {packages.pickError && <p className="notice error" role="alert">{packages.pickError}</p>}
       {packages.missing && <p className="local-package-required" role="status">{t('obLocalRequired')}</p>}
     </>}

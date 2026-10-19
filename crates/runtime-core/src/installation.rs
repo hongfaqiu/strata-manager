@@ -211,7 +211,14 @@ pub fn start_fallback_with_archives(
     }
     drop(_operation);
     tokio::spawn(async move {
-        let outcome = prepare_with_archives(&state, &id, &runtime, local_source.as_deref(), local_engine.as_deref()).await;
+        let outcome = prepare_with_archives(
+            &state,
+            &id,
+            &runtime,
+            local_source.as_deref(),
+            local_engine.as_deref(),
+        )
+        .await;
         if let Ok(mut tasks) = state.tasks.lock() {
             if let Some(record) = tasks.get_mut(&id) {
                 record.process.take();
@@ -1334,7 +1341,7 @@ pub(crate) async fn prepare(
     id: &str,
     root: &Path,
 ) -> Result<PreparedRuntime, String> {
-    prepare_with_archives(state, id, root, None, None).await
+    prepare_with_archive(state, id, root, None).await
 }
 
 pub(crate) async fn prepare_with_archive(
@@ -1590,7 +1597,6 @@ async fn ensure_metal_engine(
     )?;
     Ok(())
 }
-
 
 #[cfg(test)]
 mod tests {
