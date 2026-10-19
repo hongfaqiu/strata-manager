@@ -14,6 +14,7 @@ README、官网截图与使用指南描述当前源码功能；安装包包含�
 | --- | --- | --- |
 | Windows x64 | [NSIS 安装包（.exe）](https://github.com/hongfaqiu/strata-manager/releases/latest) | 需要 WebView2；安装步骤见下方 |
 | Linux x64 | [AppImage / DEB](https://strata-manager.cosfoc.com/#get-started) | Ubuntu 22.04 CI 环境构建；系统安装与 GPU 支持范围见下方 |
+| Linux x64 无头 Server（实验） | [`Strata.Manager.Server_<版本>_amd64.tar.gz` / `.deb`](https://strata-manager.cosfoc.com/#get-started) | 无桌面的服务器，浏览器访问；见 [Server 说明](SERVER.md) |
 | macOS Apple Silicon | [DMG](https://strata-manager.cosfoc.com/#get-started) | **实验包**。当前已发布稳定版可能尚无该文件；发布页列出 `*_aarch64.dmg` 后再下载。说明见下方 |
 
 发布页的更新签名文件供更新器验签，初次安装使用 `.exe`、`.AppImage`、`.deb`，或发布页实际列出的 `.dmg`。
@@ -43,6 +44,10 @@ README、官网截图与使用指南描述当前源码功能；安装包包含�
 
 从[最新稳定发布页](https://github.com/hongfaqiu/strata-manager/releases/latest)或[官网下载区](https://strata-manager.cosfoc.com/#get-started)下载 Linux x64 的 `.deb` 文件，在 Ubuntu/Debian 的系统软件安装器中打开，按系统提示安装和处理依赖，再从应用菜单启动。Ubuntu 22.04 是 CI 构建环境；DEB 目前验证的是解包后启动，系统中的安装、卸载、登录自启动和真实 GPU 流程仍未验证。
 
+
+### 无头 Server（实验）
+
+没有桌面环境的 Ubuntu 服务器可使用发布页的 `Strata.Manager.Server_<版本>_amd64.tar.gz` 或 `.deb`。它运行 `strata-manager-server`，默认只监听 `127.0.0.1:8787`，首次运行生成访问令牌，通过浏览器使用同一套界面；附 systemd 服务。Server 包不提供更新签名，也不走桌面自动更新，升级时替换包即可。安装与远程访问见 [Server 说明](SERVER.md)。
 
 ## macOS（Apple Silicon，实验）
 

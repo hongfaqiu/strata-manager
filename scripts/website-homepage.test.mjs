@@ -39,7 +39,7 @@ test('Homepage keeps the v0.1.7 layout, links every current screenshot and rebui
   for (const id of ['main', 'get-started', 'download-status', 'release-notes-link', 'language-switch', 'language-label']) {
     assert.match(html, new RegExp(`id="${id}"`));
   }
-  for (const key of ['windows', 'appimage', 'deb', 'dmg']) assert.match(html, new RegExp(`data-download="${key}"`));
+  for (const key of ['windows', 'appimage', 'deb', 'dmg', 'server', 'serverDeb']) assert.match(html, new RegExp(`data-download="${key}"`));
   // Release checksum files are not offered on the website.
   assert.doesNotMatch(html, /SHA256SUMS|data-download="checksums"|SHA256 校验文件|SHA256 checksums/);
   // Every current product surface (top-level + daily-experience screenshots) has an HTML recreation.

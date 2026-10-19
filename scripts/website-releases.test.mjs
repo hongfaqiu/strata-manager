@@ -59,6 +59,15 @@ test('downloads use exact versioned assets actually returned by this repository'
   assert.equal(Object.keys(value).length, 4);
 });
 
+test('optional headless server packages resolve only when the release lists them', () => {
+  const plain = release('v0.2.7');
+  assert.equal(catalog.assets(plain).server, undefined);
+  const extra = ['Strata.Manager.Server_0.2.7_amd64.tar.gz', 'Strata.Manager.Server_0.2.7_amd64.deb'];
+  const value = catalog.assets({ ...plain, assets: [...plain.assets, ...extra.map(name => ({ name, state: 'uploaded', size: 1, browser_download_url: `${base}/download/v0.2.7/${name}` }))] });
+  assert.equal(value.server, `${base}/download/v0.2.7/${extra[0]}`);
+  assert.equal(value.serverDeb, `${base}/download/v0.2.7/${extra[1]}`);
+});
+
 test('missing assets have no guessed URL and a partial release remains visibly incomplete', () => {
   const complete = release('v0.1.0');
   const value = catalog.assets({ ...complete, assets: [complete.assets[0]] });
@@ -110,7 +119,7 @@ test('missing downloads remove stale hrefs and leave keyboard and accessibility 
 test('initial HTML disables every asset download until metadata is verified', () => {
   const html = readFileSync(new URL('../website/index.html', import.meta.url), 'utf8');
   const anchors = [...html.matchAll(/<a\b[^>]*data-download="([^"]+)"[^>]*>/g)];
-  assert.equal(anchors.length, 4);
+  assert.equal(anchors.length, 6);
   for (const [tag] of anchors) {
     assert.doesNotMatch(tag, /\bhref=/);
     assert.match(tag, /aria-disabled="true"/);

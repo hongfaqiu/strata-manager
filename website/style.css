@@ -665,6 +665,16 @@ button.m-btn:hover{border-color:var(--a-muted)}
   .footer-links{grid-template-columns:1fr 1fr}
   .footer-bottom{flex-direction:column}
 }
+/* Windows taskbar monitor recreation (feature card 07): tuned light/dark palettes from the native widget */
+.tb-demo{grid-column:3;justify-self:start;display:flex;align-items:center;gap:6px;height:44px;margin-top:12px;padding:0 12px 0 14px;border-radius:8px;background:#202020;color:#fff;font-variant-numeric:tabular-nums;--gen:#4ade80;--prefill:#60c8fa;--ring:#fb923c;--label:#b4b4b4;--track:rgba(255,255,255,.16)}
+:root[data-theme=light] .tb-demo{background:#f3f3f3;color:#1a1a1a;box-shadow:inset 0 0 0 1px var(--line);--gen:#15803d;--prefill:#0369a1;--ring:#c2410c;--label:#5c5c5c;--track:rgba(0,0,0,.11)}
+.tb-ring svg{display:block}.tb-ring circle{fill:none;stroke-width:3.4}.tb-track{stroke:var(--track)}.tb-value{stroke:var(--ring);transition:stroke-dasharray .6s}
+.tb-ring text{fill:currentColor;font-size:12px;font-weight:700}
+.tb-metric{display:flex;flex-direction:column;align-items:center;min-width:44px;line-height:1.15}
+.tb-metric b{font-size:14px;font-weight:700}.tb-metric small{margin-left:1px;font-size:9px;font-weight:400}.tb-metric em{font-style:normal;font-size:10px;color:var(--label)}
+.tb-gen b{color:var(--gen)}.tb-prefill b{color:var(--prefill)}
+.tb-clock{margin-left:14px;font-size:10.5px;line-height:1.35;text-align:center;opacity:.9}
+@media (max-width:760px){.tb-demo{grid-column:1/-1}}
 @media (prefers-reduced-motion:reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}

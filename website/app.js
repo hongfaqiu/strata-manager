@@ -4,8 +4,8 @@ const strataReleaseCatalog = (() => {
   const repo = 'hongfaqiu/strata-manager';
   const base = `https://github.com/${repo}/releases`;
   const keys = ['windows', 'appimage', 'deb'];
-  // DMG is optional: a published Windows/Linux release stays complete without it.
-  const optionalKeys = ['dmg'];
+  // DMG and the headless server packages are optional: a Windows/Linux desktop release stays complete without them.
+  const optionalKeys = ['dmg', 'server', 'serverDeb'];
 
   function version(tag) {
     if (typeof tag !== 'string') return null;
@@ -64,6 +64,8 @@ const strataReleaseCatalog = (() => {
       appimage: `Strata.Manager_${clean}_amd64.AppImage`,
       deb: `Strata.Manager_${clean}_amd64.deb`,
       dmg: `Strata.Manager_${clean}_aarch64.dmg`,
+      server: `Strata.Manager.Server_${clean}_amd64.tar.gz`,
+      serverDeb: `Strata.Manager.Server_${clean}_amd64.deb`,
     };
     const result = { notes: release.html_url };
     for (const key of [...keys, ...optionalKeys]) {
@@ -1395,8 +1397,27 @@ const strataReleaseCatalog = (() => {
   setLanguage(pageLanguage);
   fitApp();
   runners.forEach(runner => runner.init());
+  // Taskbar monitor recreation: example readings tick only while visible and motion is allowed.
+  function taskbarDemo() {
+    const root = document.querySelector('.tb-demo');
+    if (!root || reduceMotion.matches) return;
+    const gen = root.querySelector('[data-tb="gen"]'), prefill = root.querySelector('[data-tb="prefill"]');
+    const ring = root.querySelector('.tb-value'), label = root.querySelector('.tb-ring text');
+    const frames = [[21.3, 3200, 76], [22.1, 3100, 78], [20.8, 3400, 74], [21.7, 2900, 79]];
+    let index = 0, timer = 0;
+    const tick = () => {
+      index = (index + 1) % frames.length;
+      const [g, p, r] = frames[index];
+      gen.textContent = g.toFixed(1); prefill.textContent = `${(p / 1000).toFixed(1)}k`;
+      ring.setAttribute('stroke-dasharray', `${r} 100`); label.textContent = String(r);
+    };
+    const run = on => { clearInterval(timer); if (on) timer = setInterval(tick, 1400); };
+    if ('IntersectionObserver' in window) new IntersectionObserver(entries => run(entries[0].isIntersecting), { threshold: 0.4 }).observe(root);
+  }
+
   updateDemoToggle();
   animatePage();
   lazyDemoTiles();
+  taskbarDemo();
   fetchLatestRelease();
 })();

@@ -14,6 +14,7 @@ The README, website screenshots and user guide describe the current source. Inst
 | --- | --- | --- |
 | Windows x64 | [NSIS installer (.exe)](https://github.com/hongfaqiu/strata-manager/releases/latest) | Requires WebView2; installation steps below. |
 | Linux x64 | [AppImage / DEB](https://strata-manager.cosfoc.com/en/#get-started) | Built in Ubuntu 22.04 CI; system installation and GPU scope below. |
+| Linux x64 headless server (experimental) | [`Strata.Manager.Server_<version>_amd64.tar.gz` / `.deb`](https://strata-manager.cosfoc.com/en/#get-started) | For servers without a desktop, used in a browser; see the [server guide](SERVER.en.md) |
 | macOS Apple Silicon | [DMG](https://strata-manager.cosfoc.com/en/#get-started) | **Experimental.** The current published stable release may not list this file yet; download only when `*_aarch64.dmg` appears. See notes below. |
 
 Update signature files are for updater verification; use the `.exe`, `.AppImage` or `.deb` for initial installation, or the `.dmg` once a release actually lists it.
@@ -43,6 +44,10 @@ The project currently has no Windows Authenticode publisher certificate. Windows
 
 Download the Linux x64 `.deb` file from the [latest stable release](https://github.com/hongfaqiu/strata-manager/releases/latest) or the [website download section](https://strata-manager.cosfoc.com/en/#get-started), then open it in the Ubuntu/Debian system package installer. Follow system instructions for installation and dependencies, then launch it from the application menu. Ubuntu 22.04 is the CI build environment; the DEB check covers launching its extracted contents. System-level installation, uninstall, login startup and real GPU workflows remain unverified.
 
+
+### Headless server (experimental)
+
+For Ubuntu servers without a desktop, use the release assets `Strata.Manager.Server_<version>_amd64.tar.gz` or `.deb`. They run `strata-manager-server`, which listens on `127.0.0.1:8787` by default, creates an access token on first run and serves the same interface in a browser; a systemd unit is included. Server packages have no updater signature and are not updated by the desktop auto-updater; upgrade by replacing the package. See the [server guide](SERVER.en.md) for installation and remote access.
 
 ## macOS (Apple Silicon, experimental)
 
