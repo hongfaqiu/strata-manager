@@ -251,7 +251,7 @@ export function App() {
     void Promise.all([desktop ? core.localInstallations() : core.loadStore<ServiceProfile[]>('profiles', []), core.loadStore<AppSettings | null>('settings', null), core.loadStore<Conversation[]>('conversations', []), core.loadStore<string>('activeProfile', ''), core.loadStore<Record<string, ChatOptions>>('chatOptionsByProfile', {}), core.loadStore<Record<string, Recipe>>('taskRecipes', {}), core.loadStore<ChatPreferences>('chatPreferences', defaultChatPreferences),core.loadStore<Record<string,string>>('activeConversationIds',{}),core.loadStore<boolean>('sidebarCollapsed',false),core.loadStore<string[]>('modelDiscoveryDirectories',[]),core.loadStore<unknown>('commonChatDefaults',core.DEFAULT_COMMON_CHAT_DEFAULTS),core.loadStore<Record<string,boolean>>('chatDefaultsInheritance',{}), core.getSystemLanguage().catch(()=>({locales:[...navigator.languages]} as core.SystemLanguage))]).then(async ([p, s, c, a, o, r, ui, ids, collapsed, directories, common, inheritance, detectedLanguage]) => {
       const restored = desktop ? await core.restoreServiceSelection(p, a, item => core.serviceStatus(item.id, item), () => core.discoverLocal(directories.length ? directories : undefined)) : undefined;
       if (!mounted) return;
-      const restoredSettings: AppSettings = {...defaults, ...s, ...core.resolveLanguageSettings(s, detectedLanguage.locales, detectedLanguage.installerLanguage), floatingMonitor: {...s?.floatingMonitor, ...normalizeFloatingMonitorPreferences(s?.floatingMonitor)}, ...(serverMode ? { theme: (s?.theme === 'dark' || s?.theme === 'light' || s?.theme === 'system') ? s.theme : 'light', closeToTray: false, autoCheckUpdates: false } : {})};
+      const restoredSettings: AppSettings = {...defaults, ...s, ...core.resolveLanguageSettings(s, detectedLanguage.locales, detectedLanguage.installerLanguage), floatingMonitor: {...core.withoutRetiredFloatingMonitorKeys(s?.floatingMonitor), ...normalizeFloatingMonitorPreferences(s?.floatingMonitor)}, ...(serverMode ? { theme: (s?.theme === 'dark' || s?.theme === 'light' || s?.theme === 'system') ? s.theme : 'light', closeToTray: false, autoCheckUpdates: false } : {})};
       setSystemLanguage(detectedLanguage);
       setShowLanguageSetup(s === null);
       storeWriter.seed('conversations', c);
@@ -472,14 +472,6 @@ export function App() {
   useEffect(() => {
     subnavigationRef.current?.querySelector('[aria-current="page"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }, [page, ready, settings.language]);
-  useEffect(() => {
-    if (!tauriShell || !ready) return;
-    let disposed = false, unlisten: (() => void) | undefined;
-    void import('@tauri-apps/api/event').then(({ listen }) => listen<boolean>('monitor-tray-preference', event => {
-      if (!disposed && typeof event.payload === 'boolean') monitorSettingsChange.current({ showInTray: event.payload });
-    })).then(stop => { if (disposed) stop(); else unlisten = stop; }).catch(error => { if (!disposed) notify(errorText(error), true); });
-    return () => { disposed = true; unlisten?.(); };
-  }, [tauriShell, ready]);
   useEffect(() => {
     if (!tauriShell || !ready) return;
     let disposed = false;
@@ -946,8 +938,7 @@ export function App() {
     const allowed: Partial<core.FloatingMonitorPreferences> = {};
     if (Array.isArray(patch.metrics)) allowed.metrics = patch.metrics;
     if (typeof patch.showGraphs === 'boolean') allowed.showGraphs = patch.showGraphs;
-    if (typeof patch.showInTray === 'boolean') allowed.showInTray = patch.showInTray;
-    // Sent by the native taskbar widget (right-click menu / close).
+    // Sent by the native taskbar widget (right-click menu / close) and the strip's "收起到任务栏监控".
     if (typeof patch.taskbarEnabled === 'boolean') allowed.taskbarEnabled = patch.taskbarEnabled;
     if (patch.taskbar !== undefined) allowed.taskbar = core.normalizeTaskbarWidgetPreferences(patch.taskbar);
     const next = normalizeFloatingMonitorPreferences({ ...previous, ...allowed });

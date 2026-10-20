@@ -5,6 +5,14 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **浮条「收起到系统托盘」改为「收起到任务栏监控」，删除「托盘监控」图标（用户反馈）**：以前在浮条右键选「收起到系统托盘」，会在通知区多出第二个图标——「托盘监控」，用像素小字显示当前速度，右键菜单里还有「关闭托盘监控」；设置页「更多设置」里的「普通托盘图标」开关控制的也是它。现在这个图标连同它的代码、开关和文字全部删除。Windows 上浮条右键菜单改为「收起到任务栏监控」：浮条隐藏，由任务栏监控在任务栏上接着显示实时读数，并记住到下次启动；要换回浮条，在任务栏监控右键选「切换为桌面浮条」。其他系统没有任务栏监控，菜单里不再出现这一项。系统托盘只保留一个普通应用图标，不显示读数。以前打开过「普通托盘图标」的设置会在升级后自动移除，不会自动打开任务栏监控；需要时在「任务栏监控」设置里打开即可。
+
+### English
+
+- **The strip's "Move to system tray" is now "Move to taskbar monitor", and the "tray monitor" icon is gone (user report)**: choosing "Move to system tray" in the strip's menu used to add a second notification-area icon, the tray monitor, which drew the current speed in tiny pixel digits and had a "Close tray monitor" item; the "Standard tray icon" switch under "More settings" controlled the same icon. That icon is removed together with its code, switch and text. On Windows the strip's menu now offers "Move to taskbar monitor": the strip hides, the taskbar monitor carries on showing the live readings on the taskbar, and this is remembered for the next launch; choose "Switch to desktop strip" in the taskbar monitor's menu to go back. Other systems have no taskbar monitor and no longer show the entry. The system tray keeps a single plain app icon with no readings. An old "Standard tray icon" setting is dropped on upgrade and does not turn the taskbar monitor on by itself; switch it on under "Taskbar monitor" if you want it.
+
 ## [0.2.10] - 2026-10-20
 
 ### 中文

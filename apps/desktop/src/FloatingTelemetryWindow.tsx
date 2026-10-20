@@ -9,7 +9,7 @@ import { floatingMonitorDimensions, isDesktop, modelTelemetry, normalizeMetrics 
 import i18n from './i18n';
 import { FloatingMonitorContent } from './FloatingMonitorContent';
 import { appendMonitorHistory, type MonitorHistory } from './floatingMonitorHistory';
-import { FLOATING_MONITOR_ACTIONS, minimizeMonitorToTray, normalizeFloatingMonitorPreferences, readFloatingMonitor, resizeMonitorWindow, showMainFromMonitor, type MonitorModeStatus, type FloatingMonitorAction, type FloatingMonitorSnapshot } from './floatingMonitor';
+import { FLOATING_MONITOR_ACTIONS, moveMonitorToTaskbar, normalizeFloatingMonitorPreferences, readFloatingMonitor, readMonitorModeStatus, resizeMonitorWindow, showMainFromMonitor, type MonitorModeStatus, type FloatingMonitorAction, type FloatingMonitorSnapshot } from './floatingMonitor';
 import './floating-telemetry-window.css';
 
 export function FloatingTelemetryWindow() {
@@ -19,6 +19,8 @@ export function FloatingTelemetryWindow() {
   const [busy, setBusy] = useState(false);
   const [paused, setPaused] = useState(false);
   const [docked, setDocked] = useState(false);
+  // Only Windows can host the taskbar widget; elsewhere the strip has no "move to taskbar" entry.
+  const [taskbarSupported, setTaskbarSupported] = useState(false);
   const [resumeAfter, setResumeAfter] = useState<number | null>(null);
   const [feedback, setFeedback] = useState('');
   const [liveSettings, setLiveSettings] = useState<FloatingMonitorSnapshot['settings']>();
@@ -82,10 +84,13 @@ export function FloatingTelemetryWindow() {
   useEffect(() => {
     if (!desktop) return;
     let disposed = false, unlisten: (() => void) | undefined;
+    void readMonitorModeStatus().then(status => { if (!disposed) setTaskbarSupported(status.supported === true); }).catch(() => {});
     void listen<MonitorModeStatus>('monitor-mode-status', event => {
+      if (disposed) return;
+      setTaskbarSupported(event.payload.supported === true);
       // A closed host also reports floating/inactive while this window stays hidden.
       // Only monitor-restored may resume this window's sampling.
-      if (!disposed && event.payload.mode === 'taskbar' && event.payload.active) setDocked(true);
+      if (event.payload.mode === 'taskbar' && event.payload.active) setDocked(true);
     }).then(stop => { if (disposed) stop(); else unlisten = stop; });
     return () => { disposed = true; unlisten?.(); };
   }, [desktop]);
@@ -146,11 +151,11 @@ export function FloatingTelemetryWindow() {
     };
     return labels[state] ?? text('状态未知', 'Unknown state');
   };
-  type Action = FloatingMonitorAction | 'settings' | 'tray' | 'close';
+  type Action = FloatingMonitorAction | 'settings' | 'taskbar' | 'close';
   const label = (operation: Action) => operation === 'pin' && pinned ? text('取消置顶', 'Unpin monitor')
     : operation === 'pause' && paused ? text('恢复采样', 'Resume sampling')
     : operation === 'settings' ? text('自定义浮条', 'Customize monitor')
-    : operation === 'tray' ? text('收起到系统托盘', 'Move to system tray')
+    : operation === 'taskbar' ? text('收起到任务栏监控', 'Move to taskbar monitor')
     : operation === 'close' ? text('关闭浮条', 'Close monitor')
     : FLOATING_MONITOR_ACTIONS.find(item => item.id === operation)!.label[(language === 'zh-CN' ? 'zh-CN' : 'en')];
   const disabled = (operation: Action) => !desktop || busy || operation === 'copyApiUrl' && !data?.profile?.baseUrl
@@ -161,7 +166,11 @@ export function FloatingTelemetryWindow() {
     try {
       if (operation === 'pin') { await getCurrentWindow().setAlwaysOnTop(!pinned); setPinned(value => !value); }
       else if (operation === 'close') await getCurrentWindow().close();
-      else if (operation === 'tray') { await minimizeMonitorToTray(); setDocked(true); }
+      else if (operation === 'taskbar') {
+        const status = await moveMonitorToTaskbar(preferences, language);
+        if (!(status.mode === 'taskbar' && status.active)) throw new Error(status.message || text('任务栏监控未能显示，已保留桌面浮条', 'The taskbar monitor could not be shown; the desktop strip stays open'));
+        setDocked(true);
+      }
       else if (operation === 'pause') { if (paused) { setResumeAfter(snapshot.dataUpdatedAt); void snapshot.refetch(); } setPaused(value => !value); }
       else if (operation === 'refresh') {
         const result = await snapshot.refetch();
@@ -186,7 +195,7 @@ export function FloatingTelemetryWindow() {
         ...(['pause', 'pin'].includes(item.id) ? { checked: item.id === 'pause' ? paused : pinned } : {}),
         action: () => { void actionRef.current(item.id); },
       }));
-      items.push({ item: 'Separator' }, { id: 'tray', text: label('tray'), action: () => { void actionRef.current('tray'); } }, { id: 'settings', text: label('settings'), action: () => { void actionRef.current('settings'); } }, { id: 'close', text: label('close'), action: () => { void actionRef.current('close'); } });
+      items.push({ item: 'Separator' }, ...(taskbarSupported ? [{ id: 'taskbar', text: label('taskbar'), action: () => { void actionRef.current('taskbar'); } }] : []), { id: 'settings', text: label('settings'), action: () => { void actionRef.current('settings'); } }, { id: 'close', text: label('close'), action: () => { void actionRef.current('close'); } });
       const next = await Menu.new({ items });
       if (!mounted.current) { await next.close(); return; }
       menu.current = next;

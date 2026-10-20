@@ -109,7 +109,6 @@ export interface FloatingMonitorPreferences {
   actions: FloatingMonitorAction[];
   alwaysOnTop: boolean;
   showSampleTime: boolean;
-  showInTray: boolean;
   /** Optional on persisted settings from older desktop versions. */
   fontSize?: number;
   layout?: FloatingMonitorLayout;

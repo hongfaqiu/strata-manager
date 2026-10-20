@@ -149,7 +149,6 @@ export const FLOATING_MONITOR_DEFAULTS: ResolvedFloatingMonitorPreferences = {
   actions: [],
   alwaysOnTop: true,
   showSampleTime: false,
-  showInTray: false,
   fontSize: 16,
   layout: 'twoRow',
   metrics: ['generation', 'prefill', 'gpu', 'vram', 'cpu', 'ram'],
@@ -168,6 +167,21 @@ const validMetrics = new Set<string>(FLOATING_MONITOR_METRICS.map(metric => metr
 const validActions = new Set<string>([
   'main', 'chat', 'monitoring', 'usage', 'tasks', 'quickBenchmark', 'copyApiUrl', 'refresh', 'pause', 'pin',
 ]);
+
+/**
+ * Keys of retired features that must not survive a settings round trip.
+ * `showInTray` drove the separate "托盘监控" tray icon with its own readout; that icon
+ * was removed and the taskbar widget (任务栏监控) is the only background readout.
+ */
+export const RETIRED_FLOATING_MONITOR_KEYS = ['showInTray'] as const;
+
+/** Copy persisted floating-monitor settings without retired keys; never mutates the input. */
+export function withoutRetiredFloatingMonitorKeys(value?: unknown): Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return {};
+  const copy: Record<string, unknown> = { ...value as Record<string, unknown> };
+  for (const key of RETIRED_FLOATING_MONITOR_KEYS) delete copy[key];
+  return copy;
+}
 
 /** Resolve old or malformed persisted preferences without mutating input settings. */
 export function normalizeFloatingMonitorPreferences(value?: unknown): ResolvedFloatingMonitorPreferences {
@@ -193,7 +207,6 @@ export function normalizeFloatingMonitorPreferences(value?: unknown): ResolvedFl
     actions,
     alwaysOnTop: source.alwaysOnTop !== false,
     showSampleTime: source.showSampleTime === true,
-    showInTray: source.showInTray === true,
     fontSize,
     layout: source.layout === 'compact' || source.layout === 'panel' ? source.layout : 'twoRow',
     metrics: metrics.length ? metrics : [...FLOATING_MONITOR_DEFAULTS.metrics],

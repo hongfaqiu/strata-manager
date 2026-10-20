@@ -7,7 +7,6 @@ mod floating_monitor;
 mod http;
 mod invoke_policy;
 mod model_files;
-mod monitor_tray;
 mod png_export;
 mod running_service_connection;
 mod runtime_detection;
@@ -1568,7 +1567,6 @@ async fn apply_settings(
     );
     let english =
         system_locale::uses_english_fallback(settings.get("language").and_then(Value::as_str));
-    monitor_tray::apply(&app, &settings)?;
     taskbar_monitor::apply_preferences(&app, &settings)?;
     floating_monitor::apply_preferences(&app, &settings).await?;
     state.tray_english.store(english, Ordering::Relaxed);
@@ -1816,9 +1814,7 @@ pub fn run() {
                 tray_quit: quit.clone(),
                 tray_stop_quit: stop_quit.clone(),
             });
-            app.manage(monitor_tray::MonitorTrayState::default());
             app.manage(taskbar_monitor::TaskbarMonitorState::default());
-            monitor_tray::apply(app.handle(), &saved_settings)?;
             taskbar_monitor::restore_on_launch(app.handle(), &saved_settings);
             let menu = Menu::with_items(
                 app,
@@ -1926,7 +1922,7 @@ pub fn run() {
             taskbar_monitor::set_monitor_mode,
             taskbar_monitor::set_monitor_visibility,
             taskbar_monitor::monitor_mode_status,
-            monitor_tray::minimize_monitor_to_tray,
+            taskbar_monitor::move_monitor_to_taskbar,
             floating_monitor::monitor_snapshot,
             floating_monitor::show_main_from_monitor,
             get_startup_status,

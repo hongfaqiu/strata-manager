@@ -58,11 +58,6 @@
 .floating-monitor-settings-option strong{font-size:12px;font-weight:500}
 .floating-monitor-settings-option small{display:block;margin-top:4px;color:var(--st-ink-muted,var(--muted));font-size:11px;line-height:1.6}
 .floating-monitor-settings-option .official-toggle{flex-shrink:0}
-.floating-monitor-settings-more{margin-top:12px;padding-top:12px;border-top:1px solid var(--st-line,var(--border))}
-.floating-monitor-settings-more>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 0;color:var(--st-ink-muted,var(--muted));font-size:12px;cursor:pointer;list-style:none}
-.floating-monitor-settings-more>summary::-webkit-details-marker{display:none}
-.floating-monitor-settings-more[open]>summary>svg{transform:rotate(180deg)}
-.floating-monitor-settings-more>.setting-toggle{margin-top:5px}
 .floating-monitor-settings-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-top:16px}
 .floating-monitor-settings-footer>span{display:flex;align-items:center;gap:5px;color:var(--st-ink-muted,var(--muted));font-size:11px}
 .floating-monitor-settings :is(button,input,summary,.floating-monitor-settings-preview-scroll):focus-visible{outline:2px solid var(--st-accent,#00a77f);outline-offset:3px}
