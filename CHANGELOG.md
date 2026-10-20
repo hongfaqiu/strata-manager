@@ -5,6 +5,8 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+## [0.2.11] - 2026-10-20
+
 ### 中文
 
 - **苹果芯片 Mac 能识别显卡了（用户反馈，M5 Pro）**：以前在 Mac 上只用 `nvidia-smi` 找显卡，Apple 芯片的 GPU 永远找不到，环境检查一直提示「未检测到显卡，生成会很慢」，运行环境页和「我的模型」也显示「未实测」。现在 macOS 上会读 `system_profiler SPDisplaysDataType` 和 IOKit 的 `IOAccelerator`（不需要管理员权限），显示芯片名、GPU 核数和 Metal 版本，例如「Apple M5 Pro · Metal 4 · 20 核 GPU」。按厂商识别，不维护芯片型号列表，以后的 M6、Ultra 等新芯片也能认出。Apple 芯片的 GPU 和系统共用统一内存，所以显示为「统一内存 48 GB（与系统共用），GPU 最多可用约 36 GB」；其中 GPU 可用量读 Metal 的 `recommendedMaxWorkingSetSize`（与 Strata 引擎相同），读不到时按 macOS 默认比例估算。模型推荐和「是否放得下」只按内存计算，不会把统一内存再当作显存加一次。服务运行时，总览的 GPU 卡片把「显存」改称「GPU 可用」，PCIe 链路改为「片上 · 统一内存」。Intel Mac 现在也会显示显卡名称，提示仍是「不是 NVIDIA 显卡」；没有 Metal 的虚拟机显卡会提示可能很慢。诊断信息里也会写出 GPU 核数、Metal 版本和统一内存。
