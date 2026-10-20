@@ -15,10 +15,18 @@ pub(crate) const ITEMS: [&str; 6] = [
     "temperature",
     "status",
 ];
-pub(crate) const RINGS: [&str; 3] = ["gpu", "vram", "off"];
+pub(crate) const RINGS: [&str; 4] = ["gpu", "vram", "context", "off"];
 const DEFAULT_ITEMS: [&str; 2] = ["generation", "prefill"];
-/// Metrics whose colour the user may override. The status dot stays semantic.
-pub(crate) const COLOR_ITEMS: [&str; 5] = ["generation", "prefill", "gpu", "vram", "temperature"];
+/// Metrics whose colour the user may override. The status dot stays semantic;
+/// `context` is a ring-only metric.
+pub(crate) const COLOR_ITEMS: [&str; 6] = [
+    "generation",
+    "prefill",
+    "gpu",
+    "vram",
+    "temperature",
+    "context",
+];
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -115,6 +123,27 @@ impl WidgetPrefs {
     fn has(&self, item: &str) -> bool {
         self.items.iter().any(|x| x == item)
     }
+
+    /// Generation and prefill share one stacked column when both are shown.
+    pub fn stacks_speeds(&self) -> bool {
+        self.has("generation") && self.has("prefill")
+    }
+
+    /// Drawn columns in order: the two speeds collapse into one `"speeds"`.
+    fn columns(&self) -> Vec<&str> {
+        let stack = self.stacks_speeds();
+        self.items
+            .iter()
+            .filter(|item| !(stack && *item == "prefill"))
+            .map(|item| {
+                if stack && item == "generation" {
+                    "speeds"
+                } else {
+                    item.as_str()
+                }
+            })
+            .collect()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -196,6 +225,8 @@ impl Palette {
             ("gpu", false) => rgb(0xc2410c),
             ("vram", true) => rgb(0xc4a5fd),
             ("vram", false) => rgb(0x7e22ce),
+            ("context", true) => rgb(0x2dd4bf),
+            ("context", false) => rgb(0x0f766e),
             (_, true) => rgb(0xffffff),
             (_, false) => rgb(0x1a1a1a),
         }
@@ -238,6 +269,9 @@ pub(crate) struct Reading<'a> {
     pub vram_used: Option<f64>,
     pub vram_total: Option<f64>,
     pub temperature: Option<f64>,
+    /// Tokens of the current (idle: last) request and the model's maximum.
+    pub context_used: Option<f64>,
+    pub context_total: Option<f64>,
     pub state: &'a str,
     pub tone: Tone,
 }
@@ -285,6 +319,10 @@ pub(crate) fn ring_value(ring: &str, reading: &Reading) -> Option<(Option<f32>, 
         "gpu" => reading.gpu.map(|v| v / 100.0),
         "vram" => match (reading.vram_used, reading.vram_total) {
             (Some(used), Some(total)) if total > 0.0 => Some(used / total),
+            _ => None,
+        },
+        "context" => match (reading.context_used, reading.context_total) {
+            (Some(used), Some(total)) if used >= 0.0 && total > 0.0 => Some(used / total),
             _ => None,
         },
         _ => return None,
@@ -391,8 +429,9 @@ pub(crate) fn text_width(text: &str, size: f32) -> f32 {
         * 1.04
 }
 
-/// Bold digits are a little wider than regular ones.
-const BOLD: f32 = 1.06;
+/// GDI weight of every widget text. Regular (not bold) keeps the strip
+/// light next to the system clock; contrast comes from colour, not weight.
+pub(crate) const TEXT_WEIGHT: i32 = 400;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -422,6 +461,14 @@ pub(crate) enum Op {
         /// Clears this much space around the dot (e.g. where it sits on the ring).
         halo: f32,
     },
+    /// Tiny filled icon that tells the stacked speed lines apart.
+    Glyph {
+        cx: f32,
+        cy: f32,
+        radius: f32,
+        shape: Glyph,
+        color: Color,
+    },
     Text {
         left: i32,
         top: i32,
@@ -429,13 +476,48 @@ pub(crate) enum Op {
         bottom: i32,
         text: String,
         size: i32,
-        bold: bool,
+        weight: i32,
         color: Color,
         align: Align,
         /// Bottom-aligned (shared baseline for a number and its unit) instead
         /// of vertically centred.
         bottom_align: bool,
     },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum Glyph {
+    /// Four-point spark: generation (new tokens).
+    Spark,
+    /// Right arrow: prefill (reading the prompt in).
+    Arrow,
+}
+
+/// Unit-radius outline of a glyph; mirrored by TASKBAR_GLYPHS in the
+/// settings preview so both draw the same shape.
+pub(crate) fn glyph_points(shape: Glyph) -> &'static [(f32, f32)] {
+    match shape {
+        Glyph::Spark => &[
+            (0.0, -1.0),
+            (0.28, -0.28),
+            (1.0, 0.0),
+            (0.28, 0.28),
+            (0.0, 1.0),
+            (-0.28, 0.28),
+            (-1.0, 0.0),
+            (-0.28, -0.28),
+        ],
+        Glyph::Arrow => &[
+            (-1.0, -0.18),
+            (0.1, -0.18),
+            (0.1, -0.72),
+            (1.0, 0.0),
+            (0.1, 0.72),
+            (0.1, 0.18),
+            (-1.0, 0.18),
+        ],
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -454,6 +536,9 @@ struct Metrics {
     value: f32,
     unit: f32,
     label: f32,
+    /// Font size of the two stacked speed lines and their units.
+    stack: f32,
+    stack_unit: f32,
 }
 
 fn metrics(dpi: u32, bar_height: i32) -> Metrics {
@@ -472,6 +557,8 @@ fn metrics(dpi: u32, bar_height: i32) -> Metrics {
         value,
         unit: (value * 0.66).round(),
         label: (h * 0.26).min(10.0 * scale).round(),
+        stack: (h * 0.3).min(12.0 * scale).round(),
+        stack_unit: ((h * 0.3).min(12.0 * scale) * 0.68).round(),
     }
 }
 
@@ -482,10 +569,25 @@ struct Column {
     width: f32,
 }
 
+/// Glyph diameter and the space it takes before the stacked value.
+fn glyph_box(m: &Metrics) -> (f32, f32) {
+    let diameter = m.stack * 0.68;
+    (diameter, (diameter + 2.0 * m.scale).ceil())
+}
+
 fn column(item: &str, english: bool, m: &Metrics) -> Column {
+    if item == "speeds" {
+        let (value, unit) = template("generation", english);
+        let value = text_width(value, m.stack).ceil();
+        let unit = (text_width(unit, m.stack_unit) + m.scale).ceil();
+        return Column {
+            value,
+            unit,
+            width: glyph_box(m).1 + value + unit,
+        };
+    }
     let (value, unit) = template(item, english);
-    let bold = item != "status";
-    let value = text_width(value, m.value) * if bold { BOLD } else { 1.0 };
+    let value = text_width(value, m.value);
     let unit = if unit.is_empty() {
         0.0
     } else {
@@ -512,7 +614,7 @@ pub(crate) fn size(prefs: &WidgetPrefs, english: bool, dpi: u32, bar_height: i32
         x += 6.0 * m.scale;
         first = false;
     }
-    for item in &prefs.items {
+    for item in prefs.columns() {
         if !first {
             x += m.gap;
         }
@@ -560,7 +662,7 @@ pub(crate) fn layout(
             bottom: (cy + d / 2.0).ceil() as i32,
             text: label,
             size: (d * 0.4).round() as i32,
-            bold: true,
+            weight: TEXT_WEIGHT,
             color: palette.text,
             align: Align::Center,
             bottom_align: false,
@@ -596,15 +698,9 @@ pub(crate) fn layout(
     let top = ((h - value_line - label_line) / 2.0).round();
     let (value_top, value_bottom) = (top as i32, (top + value_line) as i32);
     let label_bottom = (top + value_line + label_line) as i32;
-    for item in &prefs.items {
-        if !first {
-            x += m.gap;
-        }
-        first = false;
-        let column = column(item, english, &m);
-        let (value, unit) = value_parts(item, reading, english);
+    let metric_color = |item: &str, value: &str| {
         let custom = prefs.color(item);
-        let color = match item.as_str() {
+        match item {
             "status" => tone,
             _ if value == DASH => palette.muted,
             // A custom colour replaces the graded temperature scheme too.
@@ -615,7 +711,27 @@ pub(crate) fn layout(
                 .map(|t| palette.temperature(t))
                 .unwrap_or(palette.muted),
             other => palette.metric(other),
-        };
+        }
+    };
+    for item in prefs.columns() {
+        if !first {
+            x += m.gap;
+        }
+        first = false;
+        let column = column(item, english, &m);
+        if item == "speeds" {
+            speed_stack(&mut ops, x, &column, h, &m, |line| {
+                let (value, unit) = value_parts(line, reading, english);
+                let color = metric_color(line, &value);
+                // The glyph keeps the metric hue so each line stays identifiable.
+                let glyph = prefs.color(line).unwrap_or(palette.metric(line));
+                (value, unit, color, glyph)
+            });
+            x += column.width;
+            continue;
+        }
+        let (value, unit) = value_parts(item, reading, english);
+        let color = metric_color(item, &value);
         // Digits are right-aligned against a fixed split so they never shift.
         let start = (x + (column.width - column.value - column.unit) / 2.0).round();
         let split = start + column.value;
@@ -626,7 +742,7 @@ pub(crate) fn layout(
             bottom: value_bottom,
             text: value,
             size: m.value as i32,
-            bold: item != "status",
+            weight: TEXT_WEIGHT,
             color,
             align: if unit.is_empty() {
                 Align::Center
@@ -643,7 +759,7 @@ pub(crate) fn layout(
                 bottom: value_bottom - (m.scale).round() as i32,
                 text: unit.into(),
                 size: m.unit as i32,
-                bold: false,
+                weight: TEXT_WEIGHT,
                 color,
                 align: Align::Left,
                 bottom_align: true,
@@ -656,7 +772,7 @@ pub(crate) fn layout(
             bottom: label_bottom,
             text: item_label(item, english).into(),
             size: m.label as i32,
-            bold: false,
+            weight: TEXT_WEIGHT,
             color: palette.muted,
             align: Align::Center,
             bottom_align: false,
@@ -664,6 +780,66 @@ pub(crate) fn layout(
         x += column.width;
     }
     Layout { width, height, ops }
+}
+
+type SpeedLine = (String, &'static str, Color, Color);
+
+/// Generation over prefill in one column: glyph, right-aligned number, unit.
+/// No caption line; the glyphs (and the settings page) say which is which.
+fn speed_stack(
+    ops: &mut Vec<Op>,
+    x: f32,
+    column: &Column,
+    h: f32,
+    m: &Metrics,
+    line: impl Fn(&'static str) -> SpeedLine,
+) {
+    let line_height = (m.stack * 1.25).round();
+    let gap = m.scale.round();
+    let top = ((h - 2.0 * line_height - gap) / 2.0).round();
+    let (diameter, glyph_width) = glyph_box(m);
+    let start = x.round();
+    let split = start + glyph_width + column.value;
+    for (index, (item, shape)) in [("generation", Glyph::Spark), ("prefill", Glyph::Arrow)]
+        .into_iter()
+        .enumerate()
+    {
+        let (value, unit, color, glyph) = line(item);
+        let line_top = top + index as f32 * (line_height + gap);
+        let bottom = line_top + line_height;
+        ops.push(Op::Glyph {
+            cx: start + diameter / 2.0,
+            // Centred on the digits' x-height band, not the whole line box.
+            cy: bottom - m.stack * 0.6,
+            radius: diameter / 2.0,
+            shape,
+            color: glyph,
+        });
+        ops.push(Op::Text {
+            left: (start + glyph_width) as i32,
+            top: line_top as i32,
+            right: split as i32,
+            bottom: bottom as i32,
+            text: value,
+            size: m.stack as i32,
+            weight: TEXT_WEIGHT,
+            color,
+            align: Align::Right,
+            bottom_align: true,
+        });
+        ops.push(Op::Text {
+            left: (split + m.scale).round() as i32,
+            top: line_top as i32,
+            right: (split + column.unit) as i32,
+            bottom: bottom as i32 - m.scale.round() as i32,
+            text: unit.into(),
+            size: m.stack_unit as i32,
+            weight: TEXT_WEIGHT,
+            color,
+            align: Align::Left,
+            bottom_align: true,
+        });
+    }
 }
 
 /// Points for the host's physical hit-test probe: the widget corners' inner
@@ -677,7 +853,9 @@ pub(crate) fn probe_points(layout: &Layout) -> Vec<(i32, i32)> {
     }
     for op in &layout.ops {
         let point = match op {
-            Op::Ring { cx, cy, .. } | Op::Dot { cx, cy, .. } => (*cx as i32, *cy as i32),
+            Op::Ring { cx, cy, .. } | Op::Dot { cx, cy, .. } | Op::Glyph { cx, cy, .. } => {
+                (*cx as i32, *cy as i32)
+            }
             Op::Text {
                 left,
                 top,
@@ -812,9 +990,48 @@ pub(crate) fn raster_shapes(canvas: &mut Canvas, ops: &[Op]) {
                     canvas.blend(x, y, color, (radius + 0.5 - distance).clamp(0.0, 1.0));
                 },
             ),
+            Op::Glyph {
+                cx,
+                cy,
+                radius,
+                shape,
+                color,
+            } => {
+                let points: Vec<(f32, f32)> = glyph_points(shape)
+                    .iter()
+                    .map(|(px, py)| (cx + px * radius, cy + py * radius))
+                    .collect();
+                // 4x4 supersampling keeps the tiny outline crisp yet smooth.
+                each_pixel(canvas, cx, cy, radius + 1.0, |canvas, x, y, _, _| {
+                    let mut hits = 0u32;
+                    for sy in 0..4 {
+                        for sx in 0..4 {
+                            let px = x as f32 + (sx as f32 + 0.5) / 4.0;
+                            let py = y as f32 + (sy as f32 + 0.5) / 4.0;
+                            hits += u32::from(inside(&points, px, py));
+                        }
+                    }
+                    canvas.blend(x, y, color, hits as f32 / 16.0);
+                });
+            }
             Op::Text { .. } => {}
         }
     }
+}
+
+/// Even-odd point-in-polygon test.
+fn inside(points: &[(f32, f32)], x: f32, y: f32) -> bool {
+    let mut result = false;
+    let mut previous = points[points.len() - 1];
+    for &current in points {
+        if (current.1 > y) != (previous.1 > y)
+            && x < (previous.0 - current.0) * (y - current.1) / (previous.1 - current.1) + current.0
+        {
+            result = !result;
+        }
+        previous = current;
+    }
+    result
 }
 
 fn each_pixel(
@@ -906,6 +1123,7 @@ pub(crate) fn menu(prefs: &WidgetPrefs, english: bool, temperature: bool) -> Vec
             label: match *ring {
                 "gpu" => t("GPU 负载", "GPU load"),
                 "vram" => t("显存占用", "VRAM usage"),
+                "context" => t("上下文占用", "Context usage"),
                 _ => t("不显示圆环", "No ring"),
             },
             checked: prefs.ring == *ring,

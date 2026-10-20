@@ -445,6 +445,8 @@ fn reading(sample: &Sample) -> widget::Reading<'_> {
         vram_used: sample.values[3],
         vram_total: sample.vram_total,
         temperature: sample.values[6],
+        context_used: sample.context_used,
+        context_total: sample.context_total,
         state: &sample.state,
         tone: sample.tone,
     }
@@ -570,7 +572,7 @@ unsafe fn text_mask(surface: &mut Surface, op: &widget::Op, english: bool) -> Op
         bottom,
         text,
         size,
-        bold,
+        weight,
         align,
         bottom_align,
         ..
@@ -589,7 +591,7 @@ unsafe fn text_mask(surface: &mut Surface, op: &widget::Op, english: bool) -> Op
         0,
         0,
         0,
-        if *bold { 700 } else { 400 },
+        *weight,
         0,
         0,
         0,

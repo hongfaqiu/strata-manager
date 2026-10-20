@@ -5,6 +5,18 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **任务栏监控：生成与预填充上下叠放，更窄**：同时选中「生成速度」和「预填充速度」时，两项合成一列，上行是生成（星形小图标），下行是预填充（箭头小图标），各自保持原来的颜色，不再占两列、也不再显示「生成 / 预填充」文字标签。默认布局在 100% 缩放下从 134 px 缩到 87 px（150% 下从 199 px 缩到 131 px）。只选其中一项时保持原来「数字在上、标签在下」的样式。两个速度本来就不会同时有数值：生成只在生成中显示，预填充只在读取提示词时显示，另一行显示「—」。
+- **任务栏监控：新增「上下文」圆环**：「圆环显示」新增「上下文」选项（设置页和任务栏右键菜单都有）：显示当前请求（空闲时为上一次请求）的输入加输出 Token 占模型最大上下文的比例，数据与概览页的「上下文」仪表相同；读不到时圆环留空。圆环用新的青色，深浅色任务栏上对比度都不低于 4.5:1，也可以在「颜色」里自定义。
+- **任务栏监控：字体更细**：数字、单位和圆环中的数字由粗体改为常规字重，标签保持常规字重，看起来更接近系统时钟。
+
+### English
+
+- **Taskbar monitor: generation and prefill stack, narrower**: with both "Generation speed" and "Prefill speed" selected, they now share one column: generation on top (spark icon) and prefill below (arrow icon), each in its own colour, without the "Gen / Prefill" captions. The default layout shrinks from 134 px to 87 px at 100 % scaling (199 px to 131 px at 150 %). With only one of them selected the number-over-label column stays as before. The two speeds never have values at the same time anyway: generation shows while generating, prefill while reading the prompt, and the other line shows "—".
+- **Taskbar monitor: new "Context" ring**: "Ring shows" gains a "Context" option (in Settings and in the taskbar right-click menu). It shows the input plus output tokens of the current request (the last one when idle) as a share of the model's maximum context, from the same data as the overview "Context" gauge; the ring stays empty when unknown. It uses a new teal with at least 4.5:1 contrast on light and dark taskbars and can be customised under "Colors".
+- **Taskbar monitor: lighter text**: numbers, units and the ring value now use the regular weight instead of bold; labels stay regular, closer to the system clock.
+
 ## [0.2.9] - 2026-10-20
 
 ### 中文

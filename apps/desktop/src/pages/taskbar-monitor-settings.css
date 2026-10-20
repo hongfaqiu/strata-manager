@@ -10,11 +10,12 @@
 .taskbar-widget-preview{display:flex;align-items:center;gap:6px;height:40px;white-space:nowrap;--tone:#facc15}
 .taskbar-widget-preview-ring{position:relative;flex-shrink:0;display:block;width:28px;height:28px;--ring:#fb923c}
 .taskbar-widget-preview-ring[data-ring=vram]{--ring:#c4a5fd}
+.taskbar-widget-preview-ring[data-ring=context]{--ring:#2dd4bf}
 .taskbar-widget-preview-ring svg{display:block}
 .taskbar-widget-preview-ring circle{fill:none;stroke-width:3.4}
 .taskbar-widget-preview-ring .track{stroke:#ffffff28}
 .taskbar-widget-preview-ring .value{stroke:var(--ring)}
-.taskbar-widget-preview-ring text{fill:#fff;font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
+.taskbar-widget-preview-ring text{fill:#fff;font-size:12px;font-weight:400;font-variant-numeric:tabular-nums}
 .taskbar-widget-preview-ring .taskbar-widget-preview-dot{position:absolute;right:1px;bottom:1px;box-shadow:0 0 0 1.5px #202020}
 .taskbar-widget-preview-dot{display:inline-block;flex-shrink:0;width:5px;height:5px;border-radius:50%;background:var(--tone)}
 .taskbar-widget-preview-metric{display:flex;flex-direction:column;align-items:center;line-height:1.15;--metric:#fff}
@@ -24,7 +25,13 @@
 .taskbar-widget-preview-metric[data-item=vram]{--metric:#c4a5fd}
 .taskbar-widget-preview-metric[data-item=temperature]{--metric:#4ade80}
 .taskbar-widget-preview-metric[data-item=status]{--metric:var(--tone)}
-.taskbar-widget-preview-value{color:var(--metric);font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
+.taskbar-widget-preview-value{color:var(--metric);font-size:14px;font-weight:400;font-variant-numeric:tabular-nums}
+.taskbar-widget-preview-stack{display:flex;flex-direction:column;align-items:flex-end;gap:1px;line-height:1.2}
+.taskbar-widget-preview-line{display:flex;align-items:center;gap:3px;color:var(--metric);font-size:12px;font-weight:400;font-variant-numeric:tabular-nums;--metric:#fff}
+.taskbar-widget-preview-line[data-item=generation]{--metric:#4ade80}
+.taskbar-widget-preview-line[data-item=prefill]{--metric:#60c8fa}
+.taskbar-widget-preview-line small{margin-left:-2px;font-size:8px}
+.taskbar-widget-preview-glyph{flex-shrink:0;fill:currentColor}
 .taskbar-widget-preview-metric[data-item=status] .taskbar-widget-preview-value{font-weight:400}
 .taskbar-widget-preview-value small{margin-left:1px;font-size:9px;font-weight:400}
 .taskbar-widget-preview-metric em{font-style:normal;font-size:10px;color:#b4b4b4}

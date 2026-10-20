@@ -352,6 +352,9 @@ describe('taskbar widget preferences', () => {
     expect(normalizeTaskbarWidgetPreferences({ ring: 'vram', items: [] })).toEqual({ ring: 'vram', items: [] });
     expect(normalizeTaskbarWidgetPreferences({ ring: 'off', items: [] })).toEqual({ ring: 'gpu', items: [] });
     expect(normalizeTaskbarWidgetPreferences({ ring: 'off', items: 'gpu' })).toEqual({ ring: 'off', items: ['generation', 'prefill'] });
+    expect(normalizeTaskbarWidgetPreferences({ ring: 'context', items: ['generation'] })).toEqual({ ring: 'context', items: ['generation'] });
+    expect(normalizeTaskbarWidgetPreferences({ ring: 'context', items: [], colors: { context: '#3B82F6' } }))
+      .toEqual({ ring: 'context', items: [], colors: { context: '#3b82f6' } });
   });
 
   it('toggles items in canonical order and keeps at least one element', () => {

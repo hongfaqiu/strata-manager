@@ -13,6 +13,8 @@ fn busy() -> Reading<'static> {
         vram_used: Some(19.8),
         vram_total: Some(24.0),
         temperature: Some(52.0),
+        context_used: Some(12_400.0),
+        context_total: Some(32_768.0),
         state: "生成中",
         tone: Tone::Busy,
     }
@@ -113,10 +115,11 @@ fn text_ops(layout: &Layout) -> Vec<(&str, i32, i32, i32, i32, Color)> {
 #[test]
 fn each_metric_is_a_value_over_label_column_in_its_own_colour() {
     let palette = Palette::new(true);
-    let layout = layout(&WidgetPrefs::default(), false, 96, 48, &busy(), &palette);
+    let single = prefs("gpu", &["generation", "temperature"]);
+    let layout = layout(&single, false, 96, 48, &busy(), &palette);
     assert_eq!(
         texts(&layout),
-        vec!["76", "21.3", "t/s", "生成", "3.2k", "t/s", "预填充"]
+        vec!["76", "21.3", "t/s", "生成", "52", "℃", "温度"]
     );
     assert_eq!(layout.height, 40);
     let ops = text_ops(&layout);
@@ -132,7 +135,6 @@ fn each_metric_is_a_value_over_label_column_in_its_own_colour() {
     assert_eq!(gen.5, palette.metric("generation"));
     assert_eq!(gen_unit.5, palette.metric("generation"));
     assert_eq!(gen_label.5, palette.muted);
-    assert_eq!(ops[4].5, palette.metric("prefill"));
     assert_ne!(palette.metric("generation"), palette.metric("prefill"));
     // Ring uses the GPU metric colour; the status dot carries the tone.
     let Op::Ring { color, track, .. } = &layout.ops[0] else {
@@ -144,19 +146,217 @@ fn each_metric_is_a_value_over_label_column_in_its_own_colour() {
         .ops
         .iter()
         .any(|op| matches!(op, Op::Dot { color, halo, .. } if *color == palette.tone(Tone::Busy) && *halo > 0.0)));
+    // A lone prefill keeps the number-over-label column too.
+    let prefill = layout_texts(&prefs("gpu", &["prefill"]));
+    assert_eq!(prefill, vec!["76", "3.2k", "t/s", "预填充"]);
+}
+
+fn layout_texts(prefs: &WidgetPrefs) -> Vec<String> {
+    let layout = layout(prefs, false, 96, 48, &busy(), &Palette::new(true));
+    texts(&layout).into_iter().map(str::to_owned).collect()
+}
+
+fn glyphs(layout: &Layout) -> Vec<(Glyph, f32, f32, Color)> {
+    layout
+        .ops
+        .iter()
+        .filter_map(|op| match op {
+            Op::Glyph {
+                shape,
+                cx,
+                cy,
+                color,
+                ..
+            } => Some((*shape, *cx, *cy, *color)),
+            _ => None,
+        })
+        .collect()
 }
 
 #[test]
-fn default_widget_is_narrower_than_the_previous_two_line_design() {
-    // The previous "label value" rows measured 156 px at 100 %.
-    let (width, _) = size(&WidgetPrefs::default(), false, 96, 48);
-    assert!(width <= 140, "width {width}");
-    assert!(width >= 110, "width {width}");
-    let (wide, _) = size(&WidgetPrefs::default(), false, 144, 72);
-    assert!(
-        (wide as f32 - width as f32 * 1.5).abs() <= 4.0,
-        "{wide} vs {width}"
+fn both_speeds_stack_in_one_column_with_distinct_glyphs_and_no_caption() {
+    for dark in [false, true] {
+        let palette = Palette::new(dark);
+        for (dpi, bar) in [(96, 48), (120, 60), (144, 72)] {
+            let both = WidgetPrefs::default();
+            assert!(both.stacks_speeds());
+            let layout = layout(&both, false, dpi, bar, &busy(), &palette);
+            // Ring label, then two lines of number + unit. No "生成"/"预填充" captions.
+            assert_eq!(texts(&layout), vec!["76", "21.3", "t/s", "3.2k", "t/s"]);
+            let ops = text_ops(&layout);
+            let (gen, prefill) = (ops[1], ops[3]);
+            assert!(
+                prefill.2 >= gen.4,
+                "generation above prefill: {gen:?} {prefill:?}"
+            );
+            // Same right edge: the digits line up in one column.
+            assert_eq!(gen.3, prefill.3);
+            assert_eq!(gen.5, palette.metric("generation"));
+            assert_eq!(ops[2].5, palette.metric("generation"));
+            assert_eq!(prefill.5, palette.metric("prefill"));
+            let marks = glyphs(&layout);
+            assert_eq!(marks.len(), 2);
+            assert_eq!((marks[0].0, marks[1].0), (Glyph::Spark, Glyph::Arrow));
+            assert!(marks[0].2 < marks[1].2 && marks[0].1 == marks[1].1);
+            assert!(marks[0].1 < gen.1 as f32, "glyph left of the number");
+            assert_eq!(marks[0].3, palette.metric("generation"));
+            assert_eq!(marks[1].3, palette.metric("prefill"));
+        }
+        // An idle line shows a muted dash but keeps its coloured glyph.
+        let generating_only = Reading {
+            prefill: None,
+            ..busy()
+        };
+        let layout = layout(
+            &WidgetPrefs::default(),
+            false,
+            96,
+            48,
+            &generating_only,
+            &palette,
+        );
+        let dash = text_ops(&layout)[3];
+        assert_eq!((dash.0, dash.5), (DASH, palette.muted));
+        assert_eq!(glyphs(&layout)[1].3, palette.metric("prefill"));
+    }
+    // Custom colours apply to their line and glyph.
+    let custom = WidgetPrefs::normalize(
+        &json!({"ring":"gpu","items":["generation","prefill"],"colors":{"prefill":"#ec4899"}}),
     );
+    let layout = layout(&custom, false, 96, 48, &busy(), &Palette::new(true));
+    assert_eq!(text_ops(&layout)[3].5, rgb(0xec4899));
+    assert_eq!(glyphs(&layout)[1].3, rgb(0xec4899));
+    // Other items keep their own columns after the stack.
+    let mixed = layout_texts(&prefs("gpu", &["generation", "prefill", "temperature"]));
+    assert_eq!(
+        mixed,
+        vec!["76", "21.3", "t/s", "3.2k", "t/s", "52", "℃", "温度"]
+    );
+}
+
+#[test]
+fn stacked_speeds_are_much_narrower_than_two_columns() {
+    let (stacked, _) = size(&WidgetPrefs::default(), false, 96, 48);
+    // The two-column layout of #84 measured 134 px at 100 %.
+    assert!(stacked <= 100, "width {stacked}");
+    let one = size(&prefs("gpu", &["generation"]), false, 96, 48).0;
+    assert!(stacked < one + 15, "{stacked} vs single {one}");
+    for (dpi, bar) in [(120, 60), (144, 72)] {
+        let scaled = size(&WidgetPrefs::default(), false, dpi, bar).0 as f32;
+        let factor = dpi as f32 / 96.0;
+        assert!(
+            (scaled - stacked as f32 * factor).abs() <= 6.0,
+            "{dpi}: {scaled}"
+        );
+    }
+}
+
+#[test]
+fn text_is_drawn_regular_not_bold() {
+    let layout = layout(
+        &prefs("vram", &ITEMS),
+        false,
+        144,
+        72,
+        &busy(),
+        &Palette::new(false),
+    );
+    assert!(layout
+        .ops
+        .iter()
+        .all(|op| !matches!(op, Op::Text { weight, .. } if *weight != 400)));
+}
+
+#[test]
+fn glyph_raster_is_filled_inside_and_clear_outside() {
+    let draw = |shape, background| {
+        let mut canvas = Canvas::new(20, 20, background);
+        raster_shapes(
+            &mut canvas,
+            &[Op::Glyph {
+                cx: 10.0,
+                cy: 10.0,
+                radius: 6.0,
+                shape,
+                color: rgb(0xff0000),
+            }],
+        );
+        canvas
+    };
+    for shape in [Glyph::Spark, Glyph::Arrow] {
+        let canvas = draw(shape, Color([0, 0, 0, 1]));
+        let alpha = |x: usize, y: usize| canvas.pixels[(y * 20 + x) * 4 + 3];
+        assert!(alpha(10, 10) > 200, "{shape:?} centre");
+        assert_eq!(alpha(1, 1), 1, "{shape:?} corner untouched");
+        assert!(canvas
+            .pixels
+            .chunks(4)
+            .all(|p| p[0] <= p[3] && p[2] <= p[3]));
+    }
+    // The shapes differ clearly: the spark has a top point, the arrow a wide head.
+    let (spark, arrow) = (glyph_points(Glyph::Spark), glyph_points(Glyph::Arrow));
+    assert!(inside(spark, 0.0, -0.6) && !inside(arrow, 0.0, -0.6));
+    assert!(inside(arrow, 0.4, -0.4) && !inside(spark, 0.4, -0.4));
+}
+
+#[test]
+fn context_ring_uses_request_tokens_over_model_maximum() {
+    let reading = busy();
+    let (fraction, label) = ring_value("context", &reading).unwrap();
+    assert!((fraction.unwrap() - 12_400.0 / 32_768.0).abs() < 1e-4);
+    assert_eq!(label, "38");
+    for missing in [
+        Reading {
+            context_total: None,
+            ..busy()
+        },
+        Reading {
+            context_used: None,
+            ..busy()
+        },
+        Reading {
+            context_total: Some(0.0),
+            ..busy()
+        },
+    ] {
+        assert_eq!(ring_value("context", &missing), Some((None, "–".into())));
+    }
+    let over = Reading {
+        context_used: Some(1e9),
+        ..busy()
+    };
+    assert_eq!(ring_value("context", &over).unwrap().0, Some(1.0));
+    for dark in [false, true] {
+        let palette = Palette::new(dark);
+        let shown = layout(
+            &prefs("context", &["generation"]),
+            false,
+            96,
+            48,
+            &busy(),
+            &palette,
+        );
+        let Op::Ring {
+            color, fraction, ..
+        } = &shown.ops[0]
+        else {
+            panic!("ring first")
+        };
+        assert_eq!(*color, palette.metric("context"));
+        assert!(fraction.is_some());
+        let unknown = Reading {
+            context_total: None,
+            ..busy()
+        };
+        let empty = layout(&prefs("context", &[]), false, 96, 48, &unknown, &palette);
+        assert!(matches!(&empty.ops[0], Op::Ring { fraction: None, .. }));
+    }
+    let custom = WidgetPrefs::normalize(
+        &json!({"ring":"context","items":[],"colors":{"context":"#3b82f6"}}),
+    );
+    assert_eq!(custom.ring, "context");
+    assert_eq!(custom.color("context"), Some(rgb(0x3b82f6)));
+    assert!(custom.valid());
 }
 
 #[test]
@@ -247,7 +447,8 @@ fn value_colours_reach_4_5_to_1_on_win11_light_and_dark_taskbars() {
     for (dark, background) in [(false, TASKBAR_LIGHT), (true, TASKBAR_DARK)] {
         let palette = Palette::new(dark);
         let mut colours = vec![palette.text, palette.muted];
-        colours.extend(["generation", "prefill", "gpu", "vram"].map(|m| palette.metric(m)));
+        colours
+            .extend(["generation", "prefill", "gpu", "vram", "context"].map(|m| palette.metric(m)));
         colours.extend([40.0, 70.0, 90.0].map(|t| palette.temperature(t)));
         colours.extend(
             [
@@ -264,11 +465,12 @@ fn value_colours_reach_4_5_to_1_on_win11_light_and_dark_taskbars() {
             let ratio = contrast(colour, background);
             assert!(ratio >= 4.5, "{colour:?} on {background:?}: {ratio:.2}");
         }
-        let metrics: std::collections::HashSet<_> = ["generation", "prefill", "gpu", "vram"]
-            .map(|m| palette.metric(m))
-            .into_iter()
-            .collect();
-        assert_eq!(metrics.len(), 4);
+        let metrics: std::collections::HashSet<_> =
+            ["generation", "prefill", "gpu", "vram", "context"]
+                .map(|m| palette.metric(m))
+                .into_iter()
+                .collect();
+        assert_eq!(metrics.len(), 5);
     }
 }
 
@@ -331,6 +533,11 @@ fn every_operation_stays_inside_the_widget() {
                         assert!(cx - radius - stroke / 2.0 >= 0.0);
                         assert!(cy - radius - stroke / 2.0 >= 0.0);
                         assert!(cy + radius + stroke / 2.0 <= layout.height as f32);
+                    }
+                    Op::Glyph { cx, cy, radius, .. } => {
+                        assert!(cx - radius >= 0.0 && cy - radius >= 0.0);
+                        assert!(cy + radius <= layout.height as f32);
+                        assert!(cx + radius <= layout.width as f32);
                     }
                     Op::Dot { .. } => {}
                 }
@@ -503,6 +710,7 @@ fn menu_lists_open_customize_and_close_with_checked_state() {
     assert!(checked.contains(&(100, true)) && checked.contains(&(101, true)));
     assert!(checked.contains(&(102, false)));
     assert!(checked.contains(&(200, true)) && checked.contains(&(201, false)));
+    assert!(checked.contains(&(202, false)) && checked.contains(&(203, false)));
     // Temperature appears only when available or already selected.
     assert!(!ids(&menu(&WidgetPrefs::default(), true, false))
         .iter()
@@ -534,12 +742,16 @@ fn menu_commands_toggle_items_switch_ring_and_change_width() {
     assert_eq!(apply(&base, MENU_COLORS), MenuAction::Colors);
     assert_eq!(apply(&base, 0), MenuAction::Nothing);
     assert_eq!(apply(&base, 106), MenuAction::Nothing);
-    assert_eq!(apply(&base, 203), MenuAction::Nothing);
+    let MenuAction::Update(context) = apply(&base, 202) else {
+        panic!("context ring")
+    };
+    assert_eq!(context.ring, "context");
+    assert_eq!(apply(&base, 204), MenuAction::Nothing);
     // The last visible element cannot be removed.
     let ring_only = prefs("off", &["generation"]);
     assert_eq!(apply(&ring_only, 100), MenuAction::Nothing);
     let gpu_only = prefs("gpu", &[]);
-    assert_eq!(apply(&gpu_only, 202), MenuAction::Nothing);
+    assert_eq!(apply(&gpu_only, 203), MenuAction::Nothing);
     // Every update stays canonical so the settings page round-trips it.
     let MenuAction::Update(reordered) = apply(&prefs("gpu", &["status"]), 100) else {
         panic!()
@@ -564,6 +776,8 @@ fn widget_preview_export() {
         vram_used: Some(19.8),
         vram_total: Some(24.0),
         temperature: Some(44.0),
+        context_used: Some(3_900.0),
+        context_total: Some(32_768.0),
         state: "空闲",
         tone: Tone::Ready,
     };
@@ -584,6 +798,12 @@ fn widget_preview_export() {
             prefs("vram", &["generation", "prefill", "gpu", "temperature"]),
             busy(),
         ),
+        (
+            "context-ring",
+            prefs("context", &["generation", "prefill", "temperature"]),
+            busy(),
+        ),
+        ("single-generation", prefs("gpu", &["generation"]), busy()),
         (
             "no-ring-status",
             prefs("off", &["generation", "vram", "status"]),
@@ -727,7 +947,7 @@ fn custom_colors_override_the_theme_palette_on_both_taskbars() {
         // The custom temperature colour replaces the graded red.
         assert_eq!(colour("85"), rgb(0xa855f7));
         assert_ne!(colour("85"), palette.temperature(85.0));
-        assert_eq!(colour("生成"), palette.muted);
+        assert_eq!(colour("温度"), palette.muted);
         let Op::Ring { color, .. } = &layout.ops[0] else {
             panic!("ring first")
         };

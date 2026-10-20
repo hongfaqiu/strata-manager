@@ -42,11 +42,31 @@ test('custom colours: settings rows, native fallback palette and menu entry stay
   // Default swatches mirror the native Palette::metric values.
   const palette = core.slice(core.indexOf('TASKBAR_WIDGET_PALETTE'), core.indexOf('TASKBAR_BACKGROUNDS'));
   for (const hex of palette.match(/#[0-9a-f]{6}/g)) assert.ok(native.includes(`rgb(0x${hex.slice(1)})`), hex);
-  assert.match(native, /COLOR_ITEMS: \[&str; 5\] = \["generation", "prefill", "gpu", "vram", "temperature"\]/);
-  assert.match(core, /TASKBAR_WIDGET_COLOR_ITEMS[^=]*= \['generation', 'prefill', 'gpu', 'vram', 'temperature'\]/);
+  assert.match(native, /COLOR_ITEMS: \[&str; 6\] = \[\s*"generation",\s*"prefill",\s*"gpu",\s*"vram",\s*"temperature",\s*"context",?\s*\]/);
+  assert.match(core, /TASKBAR_WIDGET_COLOR_ITEMS[^=]*= \['generation', 'prefill', 'gpu', 'vram', 'temperature', 'context'\]/);
   assert.match(native, /t\("自定义颜色…", "Customize colors…"\)/);
   assert.match(page, /id="settings-taskbar-colors"/);
   assert.match(page, /'恢复默认'/);
   assert.match(page, /type="color"/);
   assert.match(app, /destination === 'taskbarColors' \? 'settings-taskbar-colors'/);
+});
+
+test('context ring is offered in settings, menu and core with the same order', () => {
+  const core = readFileSync(new URL('../../../../packages/core/src/floating-monitor.ts', import.meta.url), 'utf8');
+  assert.match(native, /RINGS: \[&str; 4\] = \["gpu", "vram", "context", "off"\]/);
+  assert.match(core, /TASKBAR_WIDGET_RINGS[^=]*= \['gpu', 'vram', 'context', 'off'\]/);
+  assert.match(native, /"context" => t\("上下文占用", "Context usage"\)/);
+  assert.match(page, /\{ value: 'context', label: zh \? '上下文' : 'Context' \}/);
+  assert.match(page, /context: '上下文占用'/);
+  assert.match(page, /context: 'Context usage'/);
+});
+
+test('settings preview stacks both speeds with the native glyph outlines', () => {
+  assert.match(page, /stacked = widget\.items\.includes\('generation'\) && widget\.items\.includes\('prefill'\)/);
+  const outline = name => {
+    const body = native.slice(native.indexOf(`Glyph::${name} => &[`), native.indexOf(']', native.indexOf(`Glyph::${name} => &[`)));
+    return [...body.matchAll(/\((-?[\d.]+), (-?[\d.]+)\)/g)].map(m => `${Number(m[1])},${Number(m[2])}`).join(' ');
+  };
+  assert.ok(page.includes(`generation: '${outline('Spark')}'`), outline('Spark'));
+  assert.ok(page.includes(`prefill: '${outline('Arrow')}'`), outline('Arrow'));
 });

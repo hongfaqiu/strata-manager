@@ -34,13 +34,29 @@ const SHORT: Record<'zh-CN' | 'en', Record<TaskbarWidgetItem, string>> = {
 const EXAMPLE: Record<Exclude<TaskbarWidgetItem, 'status'>, [string, string]> = {
   generation: ['21.3', 't/s'], prefill: ['3.2k', 't/s'], gpu: ['76', '%'], vram: ['19.8', 'GB'], temperature: ['52', '℃'],
 };
+/** Colour rows also cover the ring-only context metric. */
+const COLOR_COPY: Record<'zh-CN' | 'en', Record<TaskbarWidgetColorItem, string>> = {
+  'zh-CN': { ...TASKBAR_ITEM_COPY['zh-CN'], context: '上下文占用' },
+  en: { ...TASKBAR_ITEM_COPY.en, context: 'Context usage' },
+};
+const RING_EXAMPLE: Record<Exclude<TaskbarWidgetRing, 'off'>, number> = { gpu: 76, vram: 83, context: 37 };
+/** Same unit-radius polygons as taskbar_widget::glyph_points (spark = generation, arrow = prefill). */
+export const TASKBAR_GLYPHS = {
+  generation: '0,-1 0.28,-0.28 1,0 0.28,0.28 0,1 -0.28,0.28 -1,0 -0.28,-0.28',
+  prefill: '-1,-0.18 0.1,-0.18 0.1,-0.72 1,0 0.1,0.72 0.1,0.18 -1,0.18',
+} as const;
+function Glyph({ item }: { item: 'generation' | 'prefill' }) {
+  return <svg className="taskbar-widget-preview-glyph" viewBox="-1 -1 2 2" width="8" height="8" aria-hidden="true"><polygon points={TASKBAR_GLYPHS[item]}/></svg>;
+}
 
 /** Static example of the native widget (dark taskbar palette), using the same item/ring rules. */
 export function TaskbarWidgetPreview({ widget, language }: { widget: TaskbarWidgetPreferences; language: AppLanguage }) {
   const copy = language === 'zh-CN' ? 'zh-CN' : 'en';
-  const percent = widget.ring === 'vram' ? 83 : 76;
+  const percent = widget.ring === 'off' ? 0 : RING_EXAMPLE[widget.ring];
+  // Both speeds share one stacked column (taskbar_widget::stacks_speeds).
+  const stacked = widget.items.includes('generation') && widget.items.includes('prefill');
   const showDot = !widget.items.includes('status');
-  const custom = (item: TaskbarWidgetItem, variable: string) => {
+  const custom = (item: TaskbarWidgetItem | TaskbarWidgetColorItem, variable: string) => {
     const color = item === 'status' ? undefined : widget.colors?.[item];
     return color ? { [variable]: color } as CSSProperties : undefined;
   };
@@ -55,7 +71,13 @@ export function TaskbarWidgetPreview({ widget, language }: { widget: TaskbarWidg
         </svg>
         {showDot && <i className="taskbar-widget-preview-dot"/>}
       </span>}
-    {widget.items.map(item => <span key={item} className="taskbar-widget-preview-metric" data-item={item} style={custom(item, '--metric')}>
+    {widget.items.map(item => stacked && item === 'prefill' ? null : stacked && item === 'generation'
+      ? <span key="speeds" className="taskbar-widget-preview-stack" data-item="speeds">
+        {(['generation', 'prefill'] as const).map(line => <b key={line} className="taskbar-widget-preview-line" data-item={line} style={custom(line, '--metric')}>
+          <Glyph item={line}/>{EXAMPLE[line][0]}<small>{EXAMPLE[line][1]}</small>
+        </b>)}
+      </span>
+      : <span key={item} className="taskbar-widget-preview-metric" data-item={item} style={custom(item, '--metric')}>
       {item === 'status'
         ? <b className="taskbar-widget-preview-value">{copy === 'zh-CN' ? '运行中' : 'Busy'}</b>
         : <b className="taskbar-widget-preview-value">{EXAMPLE[item][0]}<small>{EXAMPLE[item][1]}</small></b>}
@@ -82,9 +104,9 @@ function TaskbarColorSettings({ widget, desktop, language, onWidgetChange }: { w
         return <li key={item} className={open ? 'is-open' : undefined}>
           <div className="taskbar-color-row">
             <button type="button" className="taskbar-color-swatch" disabled={!desktop} aria-expanded={open} aria-controls={`taskbar-color-${item}`}
-              aria-label={`${TASKBAR_ITEM_COPY[copy][item]}：${zh ? '选择颜色' : 'choose color'}`} onClick={() => setEditing(open ? null : item)}
+              aria-label={`${COLOR_COPY[copy][item]}：${zh ? '选择颜色' : 'choose color'}`} onClick={() => setEditing(open ? null : item)}
               style={color ? { background: color } : { background: `linear-gradient(135deg, ${TASKBAR_WIDGET_PALETTE.light[item]} 50%, ${TASKBAR_WIDGET_PALETTE.dark[item]} 50%)` }}/>
-            <span className="taskbar-color-name">{TASKBAR_ITEM_COPY[copy][item]}</span>
+            <span className="taskbar-color-name">{COLOR_COPY[copy][item]}</span>
             <span className="taskbar-color-state">{state}</span>
             {color && <button type="button" className="taskbar-color-reset" disabled={!desktop} onClick={() => set(item)}>{zh ? '恢复默认' : 'Reset'}</button>}
           </div>
@@ -125,6 +147,7 @@ export function TaskbarMonitorSettings({ enabled, widget, desktop, language, mod
   const ringOptions: { value: TaskbarWidgetRing; label: string }[] = [
     { value: 'gpu', label: zh ? 'GPU 负载' : 'GPU load' },
     { value: 'vram', label: zh ? '显存占用' : 'VRAM usage' },
+    { value: 'context', label: zh ? '上下文' : 'Context' },
     { value: 'off', label: zh ? '不显示' : 'None' },
   ];
   const status = !desktop ? (zh ? '请在桌面应用中使用。' : 'Available in the desktop app.')
@@ -151,6 +174,7 @@ export function TaskbarMonitorSettings({ enabled, widget, desktop, language, mod
         <section aria-labelledby="taskbar-monitor-ring">
           <h3 id="taskbar-monitor-ring">{zh ? '圆环显示' : 'Ring shows'}</h3>
           <Segmented ariaLabel={zh ? '圆环显示' : 'Ring shows'} value={value.ring} options={ringOptions.map(option => ({ ...option, disabled: !desktop || (option.value === 'off' && value.items.length === 0) }))} onValueChange={ring => onWidgetChange(normalizeTaskbarWidgetPreferences({ ...value, ring }))}/>
+          {value.ring === 'context' && <p className="taskbar-monitor-settings-hint">{zh ? '上下文占用 = 当前（空闲时为上一次）请求的输入加输出 Token ÷ 模型最大上下文；读不到时圆环留空。' : 'Context usage = input plus output tokens of the current (or, when idle, the last) request ÷ the model’s maximum context. The ring stays empty when unknown.'}</p>}
         </section>
         <section aria-labelledby="taskbar-monitor-items">
           <h3 id="taskbar-monitor-items">{zh ? '显示内容' : 'Shown items'}</h3>
@@ -164,7 +188,7 @@ export function TaskbarMonitorSettings({ enabled, widget, desktop, language, mod
               </label>;
             })}
           </div>
-          <p className="taskbar-monitor-settings-hint">{zh ? '宽度随所选内容变化；与任务栏右键「自定义内容」同步。GPU 温度仅在显卡上报时出现在右键菜单中。' : 'Width follows the selection and stays in sync with the widget’s right-click “Customize” menu. GPU temperature appears in that menu only when the GPU reports it.'}</p>
+          <p className="taskbar-monitor-settings-hint">{zh ? '宽度随所选内容变化；与任务栏右键「自定义内容」同步。同时显示生成和预填充速度时，两项上下叠成一列：上行是生成（星形），下行是预填充（箭头）。GPU 温度仅在显卡上报时出现在右键菜单中。' : 'Width follows the selection and stays in sync with the widget’s right-click “Customize” menu. With both speeds shown they stack in one column: generation on top (spark), prefill below (arrow). GPU temperature appears in that menu only when the GPU reports it.'}</p>
         </section>
       </div>
     </div>

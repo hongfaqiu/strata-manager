@@ -93,10 +93,10 @@ export type FloatingMonitorMode = 'floating' | 'taskbar';
 /** Items the Windows taskbar widget can show, in display order. */
 export type TaskbarWidgetItem = 'generation' | 'prefill' | 'gpu' | 'vram' | 'temperature' | 'status';
 /** Metric drawn as the ring gauge of the Windows taskbar widget. */
-export type TaskbarWidgetRing = 'gpu' | 'vram' | 'off';
+export type TaskbarWidgetRing = 'gpu' | 'vram' | 'context' | 'off';
 
-/** Metrics whose taskbar colour can be overridden; the status dot stays semantic. */
-export type TaskbarWidgetColorItem = Exclude<TaskbarWidgetItem, 'status'>;
+/** Metrics whose taskbar colour can be overridden; the status dot stays semantic. `context` is ring-only. */
+export type TaskbarWidgetColorItem = Exclude<TaskbarWidgetItem, 'status'> | 'context';
 
 export interface TaskbarWidgetPreferences {
   ring: TaskbarWidgetRing;

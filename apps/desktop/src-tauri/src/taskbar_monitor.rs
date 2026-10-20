@@ -157,6 +157,12 @@ pub(crate) struct Sample {
     /// Total VRAM in GiB, for the VRAM ring.
     #[serde(default)]
     pub vram_total: Option<f64>,
+    /// Context ring: tokens of the current (idle: last) request and the
+    /// model's maximum context, as on the overview "上下文" gauge.
+    #[serde(default)]
+    pub context_used: Option<f64>,
+    #[serde(default)]
+    pub context_total: Option<f64>,
 }
 
 #[cfg(any(windows, test))]
@@ -235,7 +241,21 @@ pub(crate) fn sample(snapshot: &Value) -> Sample {
         }
     };
     let mut vram_total = None;
+    let (mut context_used, mut context_total) = (None, None);
     if online {
+        // Same source as OverviewDashboard's context gauge.
+        context_total = number(&snapshot["metrics"]["engine"]["max_context"])
+            .or_else(|| number(&snapshot["health"]["max_context"]))
+            .filter(|v| *v > 0.0);
+        let (prompt, generated) = if live["state"] == "idle" {
+            (
+                number(&last["prompt_tokens"]),
+                number(&last["output_tokens"]),
+            )
+        } else {
+            (number(&live["prompt_tokens"]), number(&live["generated"]))
+        };
+        context_used = prompt.zip(generated).map(|(p, g)| p + g);
         vram_total =
             gpu_number(hw, "gpu_mem_total", "mem_total", "sum").map(|v| v / 1_073_741_824.0);
         // Throughput remains strictly live; the desktop view can separately
@@ -267,6 +287,8 @@ pub(crate) fn sample(snapshot: &Value) -> Sample {
         values,
         tone,
         vram_total,
+        context_used,
+        context_total,
         identity: SampleIdentity {
             profile: snapshot["profile"]["id"].as_str().map(str::to_owned),
             pid: snapshot["process"]["pid"].as_u64(),
@@ -344,6 +366,8 @@ impl SampleHistory {
     fn clear_stale(&mut self, english: bool) {
         self.current.values = [None; 11];
         self.current.vram_total = None;
+        self.current.context_used = None;
+        self.current.context_total = None;
         self.current.tone = widget::Tone::Error;
         self.current.state = if english {
             "Sample expired"
@@ -1501,6 +1525,40 @@ mod tests {
                 .vram_total,
             None
         );
+    }
+
+    #[test]
+    fn sample_reads_context_like_the_overview_gauge() {
+        // Live request: prompt + generated so far over the engine maximum.
+        let live = sample(
+            &json!({"phase":"online","health":{"loaded":true,"max_context":4096},"metrics":{"engine":{"max_context":32768},"live":{"state":"generating","prompt_tokens":12000,"generated":400},"requests":[{"prompt_tokens":5,"output_tokens":5}]}}),
+        );
+        assert_eq!(
+            (live.context_used, live.context_total),
+            (Some(12_400.0), Some(32_768.0))
+        );
+        // Idle: the last request; health supplies the maximum when the engine does not.
+        let idle = sample(
+            &json!({"phase":"online","health":{"loaded":true,"max_context":1048576},"metrics":{"live":{"state":"idle"},"requests":[{"prompt_tokens":3000,"output_tokens":900}]}}),
+        );
+        assert_eq!(
+            (idle.context_used, idle.context_total),
+            (Some(3_900.0), Some(1_048_576.0))
+        );
+        // Unknown pieces stay unknown, and offline samples carry nothing.
+        let partial = sample(
+            &json!({"phase":"online","health":{"loaded":true},"metrics":{"engine":{"max_context":0},"live":{"state":"generating","prompt_tokens":10}}}),
+        );
+        assert_eq!((partial.context_used, partial.context_total), (None, None));
+        let stopped =
+            sample(&json!({"phase":"stopped","metrics":{"engine":{"max_context":32768}}}));
+        assert_eq!((stopped.context_used, stopped.context_total), (None, None));
+        let mut history = SampleHistory {
+            current: live,
+            ..SampleHistory::default()
+        };
+        history.clear_stale(false);
+        assert_eq!(history.current.context_total, None);
     }
 
     fn fixture_sample(sampled_at: u64) -> Sample {
