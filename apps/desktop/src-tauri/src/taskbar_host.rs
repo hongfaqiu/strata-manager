@@ -100,6 +100,16 @@ impl ThreadDpiContext {
         if target.0.is_null() {
             return Err("无法读取任务栏 DPI 上下文".into());
         }
+        Self::enter(target)
+    }
+
+    /// The host process has no DPI manifest (it runs before Tauri sets one),
+    /// so anything created outside a guard is bitmap-stretched at 125/150 %.
+    unsafe fn per_monitor_v2() -> Result<Self, String> {
+        Self::enter(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)
+    }
+
+    unsafe fn enter(target: DPI_AWARENESS_CONTEXT) -> Result<Self, String> {
         let previous = SetThreadDpiAwarenessContext(target);
         if previous.0.is_null() {
             return Err("无法匹配任务栏 DPI 上下文".into());
@@ -445,6 +455,8 @@ fn reading(sample: &Sample) -> widget::Reading<'_> {
         vram_used: sample.values[3],
         vram_total: sample.vram_total,
         temperature: sample.values[6],
+        context_used: sample.context_used,
+        context_total: sample.context_total,
         state: &sample.state,
         tone: sample.tone,
     }
@@ -570,7 +582,7 @@ unsafe fn text_mask(surface: &mut Surface, op: &widget::Op, english: bool) -> Op
         bottom,
         text,
         size,
-        bold,
+        weight,
         align,
         bottom_align,
         ..
@@ -589,7 +601,7 @@ unsafe fn text_mask(surface: &mut Surface, op: &widget::Op, english: bool) -> Op
         0,
         0,
         0,
-        if *bold { 700 } else { 400 },
+        *weight,
         0,
         0,
         0,
@@ -815,6 +827,32 @@ unsafe fn build_menu(entries: &[widget::MenuEntry]) -> Result<HMENU, String> {
     Ok(menu)
 }
 
+/// Hidden top-level window that owns the context menu. Unlike the controller
+/// it is not WS_EX_NOACTIVATE, so it can become the foreground window: the
+/// menu loop then gets mouse tracking (hover highlight, hover-open submenus)
+/// and closes on an outside click. Created per-monitor-v2 DPI aware so the
+/// menu is rendered at the monitor's real DPI instead of being stretched.
+unsafe fn create_menu_owner(
+    instance: windows::Win32::Foundation::HINSTANCE,
+) -> Result<HWND, String> {
+    let _dpi = ThreadDpiContext::per_monitor_v2()?;
+    CreateWindowExW(
+        WS_EX_TOOLWINDOW,
+        CLASS,
+        w!("Strata taskbar menu owner"),
+        WS_POPUP,
+        0,
+        0,
+        0,
+        0,
+        None,
+        None,
+        Some(instance),
+        None,
+    )
+    .map_err(|e| e.to_string())
+}
+
 unsafe fn menu(owner: HWND, render: &Arc<Mutex<Render>>) -> Result<Option<Preferences>, String> {
     let (preferences, temperature, dark) = {
         let view = render.lock().map_err(|_| "监控偏好不可用")?;
@@ -825,25 +863,33 @@ unsafe fn menu(owner: HWND, render: &Arc<Mutex<Render>>) -> Result<Option<Prefer
         )
     };
     let entries = widget::menu(&preferences.widget, preferences.english, temperature);
-    menu_theme(owner, dark);
-    let menu = build_menu(&entries)?;
-    let mut point = POINT::default();
-    let _ = GetCursorPos(&mut point);
-    // Required for the popup to close on an outside click. The controller is
-    // an invisible tool window, so this never shows a taskbar button.
-    let _ = SetForegroundWindow(owner);
-    let selected = TrackPopupMenu(
-        menu,
-        TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_BOTTOMALIGN,
-        point.x,
-        point.y,
-        None,
-        owner,
-        None,
-    )
-    .0;
-    let _ = PostMessageW(Some(owner), WM_NULL, WPARAM(0), LPARAM(0));
-    let _ = DestroyMenu(menu);
+    let selected = {
+        // Build, position and track in the owner's per-monitor-v2 context:
+        // crisp text at 125/150 % and physical cursor coordinates.
+        let _dpi = ThreadDpiContext::for_window(owner)?;
+        menu_theme(owner, dark);
+        let menu = build_menu(&entries)?;
+        let mut point = POINT::default();
+        let _ = GetCursorPos(&mut point);
+        // The click on our widget grants this process foreground rights.
+        // A foreground owner is what makes the native menu loop highlight
+        // on hover, open submenus on hover and close on an outside click.
+        // The owner is a hidden tool window: no taskbar button appears.
+        let _ = SetForegroundWindow(owner);
+        let selected = TrackPopupMenuEx(
+            menu,
+            (TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_BOTTOMALIGN | TPM_LEFTALIGN).0,
+            point.x,
+            point.y,
+            owner,
+            None,
+        )
+        .0;
+        // Documented workaround so the next click after the menu works.
+        let _ = PostMessageW(Some(owner), WM_NULL, WPARAM(0), LPARAM(0));
+        let _ = DestroyMenu(menu);
+        selected
+    };
     match widget::apply(&preferences.widget, selected.max(0) as u32) {
         widget::MenuAction::Open => {
             output(&HostFrame::Main {});
@@ -1236,7 +1282,15 @@ unsafe fn run_inner() -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
     drop(controller_dpi);
+    let menu_owner = match create_menu_owner(instance) {
+        Ok(hwnd) => hwnd,
+        Err(error) => {
+            let _ = DestroyWindow(controller);
+            return Err(format!("无法创建任务栏菜单窗口：{error}"));
+        }
+    };
     if SetTimer(Some(controller), 1, 250, None) == 0 {
+        let _ = DestroyWindow(menu_owner);
         let _ = DestroyWindow(controller);
         return Err("无法启动任务栏有效性检查".into());
     }
@@ -1283,7 +1337,7 @@ unsafe fn run_inner() -> Result<(), String> {
                 Event::Menu => {
                     // Native menus run a modal loop that pauses validation. The
                     // widget stays visible; geometry is remeasured afterwards.
-                    if let Some(prefs) = menu(controller, &render)? {
+                    if let Some(prefs) = menu(menu_owner, &render)? {
                         let resized = render.lock().is_ok_and(|view| {
                             widget_size(&view.preferences, view.dpi, view.bar_height)
                                 != widget_size(&prefs, view.dpi, view.bar_height)
@@ -1522,6 +1576,7 @@ unsafe fn run_inner() -> Result<(), String> {
         }
     }
     let _ = KillTimer(Some(controller), 1);
+    let _ = DestroyWindow(menu_owner);
     let _ = DestroyWindow(controller);
     // No Explorer rectangle restoration is needed: none was ever modified.
     outcome

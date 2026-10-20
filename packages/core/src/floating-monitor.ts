@@ -13,15 +13,15 @@ import type {
 
 /** Canonical order; must match TaskbarWidget ITEMS in the Rust host. */
 export const TASKBAR_WIDGET_ITEMS: readonly TaskbarWidgetItem[] = ['generation', 'prefill', 'gpu', 'vram', 'temperature', 'status'];
-export const TASKBAR_WIDGET_RINGS: readonly TaskbarWidgetRing[] = ['gpu', 'vram', 'off'];
+export const TASKBAR_WIDGET_RINGS: readonly TaskbarWidgetRing[] = ['gpu', 'vram', 'context', 'off'];
 export const TASKBAR_WIDGET_DEFAULTS: TaskbarWidgetPreferences = { ring: 'gpu', items: ['generation', 'prefill'] };
 
 /** Same order as COLOR_ITEMS in taskbar_widget.rs. */
-export const TASKBAR_WIDGET_COLOR_ITEMS: readonly TaskbarWidgetColorItem[] = ['generation', 'prefill', 'gpu', 'vram', 'temperature'];
+export const TASKBAR_WIDGET_COLOR_ITEMS: readonly TaskbarWidgetColorItem[] = ['generation', 'prefill', 'gpu', 'vram', 'temperature', 'context'];
 /** Tuned defaults of the native widget (Palette::metric); temperature is graded, shown here at <60 ℃. */
 export const TASKBAR_WIDGET_PALETTE: Record<'light' | 'dark', Record<TaskbarWidgetColorItem, string>> = {
-  dark: { generation: '#4ade80', prefill: '#60c8fa', gpu: '#fb923c', vram: '#c4a5fd', temperature: '#4ade80' },
-  light: { generation: '#15803d', prefill: '#0369a1', gpu: '#c2410c', vram: '#7e22ce', temperature: '#15803d' },
+  dark: { generation: '#4ade80', prefill: '#60c8fa', gpu: '#fb923c', vram: '#c4a5fd', temperature: '#4ade80', context: '#2dd4bf' },
+  light: { generation: '#15803d', prefill: '#0369a1', gpu: '#c2410c', vram: '#7e22ce', temperature: '#15803d', context: '#0f766e' },
 };
 /** Typical Windows 11 taskbar backgrounds. */
 export const TASKBAR_BACKGROUNDS = { light: '#f3f3f3', dark: '#202020' } as const;
