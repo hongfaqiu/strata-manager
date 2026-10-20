@@ -1,6 +1,8 @@
 //! Official tag source + SHA256-published engine ZIPs, merged transactionally.
 //! No upstream updater scripts, model downloads, directory clears or external stops.
-use super::{cancelled, RuntimeReleaseAsset, RuntimeUpdateInfo, SelectionFlag, UpgradeFlag};
+use super::{
+    cancelled, engine_package, RuntimeReleaseAsset, RuntimeUpdateInfo, SelectionFlag, UpgradeFlag,
+};
 use crate::{http, installation, maintenance, processes, storage, types::*, RuntimeState};
 use futures_util::StreamExt;
 use rusqlite::params;
@@ -28,6 +30,8 @@ mod download_check;
 mod download_source;
 #[cfg(test)]
 mod local_archive_tests;
+#[cfg(test)]
+mod package_tests;
 pub use download_check::{
     resolve_release_download_asset, test_release_download, RuntimeZipDownloadCheckResult,
 };
@@ -273,9 +277,10 @@ fn start(
         checked.local_archive_path = None;
         let mut checked = checked.validate(None)?;
         if let Some(path) = download.local_archive_path {
-            installation::local_archive::check_path(
+            installation::local_archive::check_path_with_extensions(
                 path.trim(),
                 installation::local_archive::ENGINE,
+                &installation::local_archive::WINDOWS_ENGINE_EXTENSIONS,
             )?;
             checked.local_archive_path = Some(path.trim().to_owned());
         }
@@ -292,17 +297,13 @@ fn start(
     let task_id = request_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     uuid::Uuid::parse_str(&task_id).map_err(|_| "更新请求标识必须为 UUID")?;
     if !cfg!(all(windows, target_arch = "x86_64")) {
-        return Err("官方引擎ZIP自动安装目前支持Windows x64；可使用源码安装方式".into());
+        return Err("官方引擎包自动安装目前支持Windows x64；可使用源码安装方式".into());
     }
-    if asset_name.as_deref().is_some_and(|name| {
-        !matches!(
-            name,
-            "strata-windows-x64.zip"
-                | "strata-windows-x64-cuda12.zip"
-                | "strata-windows-x64-hip.zip"
-        )
-    }) {
-        return Err("不是支持的官方Strata ZIP资产".into());
+    if asset_name
+        .as_deref()
+        .is_some_and(|name| !engine_package::is_installable_asset_name(name))
+    {
+        return Err("不是支持的官方Strata引擎包资产".into());
     }
     let operation = state.runtime_operations.lock().map_err(|e| e.to_string())?;
     for profile in state.registered_profiles()? {
@@ -508,6 +509,40 @@ fn variant(root: &Path) -> Option<&'static str> {
     None
 }
 
+/// Legacy HIP ZIPs carried several GPU families in one engine (and old ones list no
+/// archs). Such an install may move to either 0.2+ HIP package, but only by the
+/// user's explicit choice; the automatic choice never guesses the GPU family.
+const HIP_MULTI: &str = "hip-multi";
+
+fn hip_variant(build: &Value) -> &'static str {
+    let archs: Vec<&str> = build["archs"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    if archs.is_empty() {
+        HIP_MULTI
+    } else if archs
+        .iter()
+        .all(|arch| matches!(*arch, "gfx1100" | "gfx1101" | "gfx1102" | "gfx1151"))
+    {
+        "hip-rdna3"
+    } else if archs
+        .iter()
+        .all(|arch| matches!(*arch, "gfx1200" | "gfx1201"))
+    {
+        "hip"
+    } else {
+        HIP_MULTI
+    }
+}
+
+/// Whether an installed engine type may be replaced by a package variant.
+fn variant_compatible(installed: &str, asset: &str) -> bool {
+    installed == asset || installed == HIP_MULTI && matches!(asset, "hip" | "hip-rdna3")
+}
+
 fn directory_variant(directory: &Path) -> Option<&'static str> {
     let build: Value =
         serde_json::from_slice(&fs::read(directory.join("BUILD.json")).ok()?).ok()?;
@@ -515,7 +550,7 @@ fn directory_variant(directory: &Path) -> Option<&'static str> {
         .as_str()
         .is_some_and(|s| s.eq_ignore_ascii_case("hip"))
     {
-        return Some("hip");
+        return Some(hip_variant(&build));
     }
     if build["backend"]
         .as_str()
@@ -547,12 +582,23 @@ fn choose_asset(
     let previous = variant(root);
     let asset = if let Some(name) = requested {
         info.assets.iter().find(|a| a.name == name)
+    } else if previous == Some(HIP_MULTI) {
+        // The old multi-family HIP ZIP has a direct successor only while upstream still
+        // publishes it; otherwise the user picks RX 9000 or RX 7000 / Strix Halo.
+        let legacy = info
+            .assets
+            .iter()
+            .find(|a| a.variant == "hip" && engine_package::legacy_variant(&a.name).is_some());
+        if legacy.is_none() && info.assets.iter().any(|a| a.variant.starts_with("hip")) {
+            return Err("此Release把AMD HIP引擎按显卡分成两个包，请手动选择：RX 9000 / R9700 选 HIP RX 9000，RX 7000 / Strix Halo 选 HIP RX 7000 / Strix Halo / Choose the AMD package for your GPU".into());
+        }
+        legacy
     } else {
         let wanted = previous.unwrap_or("cuda13");
         info.assets.iter().find(|a| a.variant == wanted)
     }
-    .ok_or("此Release没有匹配当前运行环境的可校验官方ZIP")?;
-    if previous.is_some_and(|v| v != asset.variant) {
+    .ok_or("此Release没有匹配当前运行环境的可校验官方引擎包")?;
+    if previous.is_some_and(|v| !variant_compatible(v, &asset.variant)) {
         return Err(
             "所选ZIP与当前CUDA/HIP环境不匹配；请保留当前运行环境类型，避免破坏已有模型配置".into(),
         );
@@ -560,12 +606,8 @@ fn choose_asset(
     Ok(asset.clone())
 }
 
-fn version_parts(version: &str) -> Option<Vec<u32>> {
-    version
-        .trim_start_matches('v')
-        .split('.')
-        .map(|part| part.parse::<u32>().ok())
-        .collect()
+fn version_parts(version: &str) -> Option<(Vec<u32>, bool, String)> {
+    engine_package::version_key(version)
 }
 
 fn prevent_downgrade(root: &Path, version: &str) -> Result<(), String> {
@@ -715,7 +757,7 @@ fn source_archive_prefixes(revision: &str, version: &str) -> Vec<String> {
     if !version.is_empty()
         && version
             .bytes()
-            .all(|b| b.is_ascii_digit() || b == b'.' || b == b'-')
+            .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')
     {
         for name in [format!("Strata-{version}"), format!("Strata-v{version}")] {
             let prefix = format!("{name}/");
@@ -782,7 +824,7 @@ fn local_engine_asset(
         .collect();
     let version = info.latest_version.as_deref().unwrap_or("?");
     let mismatch = || {
-        format!("所选引擎 ZIP 与官方 Release v{version} 的 Windows 引擎包都不一致（版本或 GPU 类型不对，或文件不完整）/ The selected engine ZIP matches no Windows engine package of Release v{version} (wrong version or GPU type, or an incomplete file)")
+        format!("所选引擎包与官方 Release v{version} 的 Windows 引擎包都不一致（版本或 GPU 类型不对，或文件不完整）/ The selected engine package matches no Windows engine package of Release v{version} (wrong version or GPU type, or an incomplete file)")
     };
     if candidates.is_empty() {
         return Err(mismatch());
@@ -868,7 +910,18 @@ fn source_file(relative: &str) -> bool {
     if parts.next().is_some() {
         matches!(
             first,
-            "serve" | "tools" | "data" | "src" | "include" | "cmake" | "ref" | "sycl" | "docs"
+            "serve"
+                | "tools"
+                | "data"
+                | "src"
+                | "include"
+                | "cmake"
+                | "ref"
+                | "sycl"
+                | "docs"
+                // 0.2+: serve/server.py imports strata_control; strata_cli is its terminal client.
+                | "strata_control"
+                | "strata_cli"
         ) || relative.starts_with("third_party/ggml/")
     } else {
         relative.ends_with(".py")
@@ -972,6 +1025,146 @@ fn publish_new_file_from_reader(
     Ok(())
 }
 
+/// The engine archive must not supply configs, models, Python or unknown root files.
+fn engine_file_allowed(relative: &str) -> bool {
+    let lower = relative.to_ascii_lowercase();
+    matches!(
+        relative,
+        "BUILD.json"
+            | "strata.exe"
+            | "strata-vision.exe"
+            | "strata-vision-hip.exe"
+            | "strata-device.exe"
+            | engine_package::MANIFEST_NAME
+            // Linux packages (0.2+).
+            | "strata"
+            | "strata-vision"
+            | "strata-vision-hip"
+            | "SYSTEM-LIBS.txt"
+    ) || lower.ends_with(".dll")
+        || lower.ends_with(".hsaco")
+        || !relative.contains('/') && relative.starts_with("lib") && relative.contains(".so")
+        || [
+            "kernels/",
+            "licenses/",
+            "lib/",
+            "rocm/",
+            "hipblaslt/",
+            "rocblas/",
+        ]
+        .iter()
+        .any(|prefix| relative.starts_with(prefix))
+}
+
+/// Strata 0.2+ component engine (`.tar.gz`, flat). Same rules as the ZIP path: regular
+/// files only, safe relative names, no case collisions, bounded counts and sizes.
+fn extract_package(
+    archive: &Path,
+    destination: &Path,
+    expanded_limit: u64,
+    check: impl Fn() -> Result<(), String>,
+) -> Result<Vec<String>, String> {
+    fs::create_dir_all(destination).map_err(|e| e.to_string())?;
+    reject_link(destination)?;
+    let file = File::open(archive).map_err(|e| e.to_string())?;
+    let mut tar = tar::Archive::new(flate2::read::GzDecoder::new(std::io::BufReader::new(file)));
+    let mut names = HashSet::new();
+    let mut files = Vec::new();
+    let mut total = 0u64;
+    let limit = expanded_limit.min(engine_package::MAX_PACKAGE_EXPANDED);
+    for entry in tar.entries().map_err(|e| {
+        format!("引擎包不是有效的 tar.gz / Engine package is not a valid tar.gz：{e}")
+    })? {
+        check()?;
+        let mut entry = entry.map_err(|e| {
+            format!("引擎包不是有效的 tar.gz / Engine package is not a valid tar.gz：{e}")
+        })?;
+        let kind = entry.header().entry_type();
+        let raw = entry.path_bytes();
+        let name = std::str::from_utf8(&raw)
+            .map_err(|_| "引擎包含非 UTF-8 路径".to_owned())?
+            .to_owned();
+        let name = name.trim_start_matches("./");
+        if kind.is_dir() {
+            if !name.is_empty() && name != "." {
+                safe_relative(name)?;
+            }
+            continue;
+        }
+        if !(kind.is_file() || kind == tar::EntryType::Continuous) {
+            return Err(format!(
+                "引擎包含链接或特殊文件，已拒绝：{name} / Engine package contains a link or special file"
+            ));
+        }
+        let relative = name.to_owned();
+        safe_relative(&relative)?;
+        if files.len() >= 30_000 {
+            return Err("引擎包文件数超过安全上限".into());
+        }
+        if !names.insert(relative.to_ascii_lowercase()) {
+            return Err("引擎包包含重复或大小写冲突路径".into());
+        }
+        let size = entry.header().size().map_err(|e| e.to_string())?;
+        total = total.checked_add(size).ok_or("引擎包展开体积无效")?;
+        if total > limit || size > 1024 * 1024 * 1024 {
+            return Err("引擎包展开体积超过安全上限".into());
+        }
+        if !engine_file_allowed(&relative) {
+            return Err(format!("引擎包含未识别的运行文件：{relative}"));
+        }
+        let target = safe_target(destination, &relative)?;
+        publish_new_file_from_reader(&target, &mut entry, size, &check)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = entry.header().mode().unwrap_or(0o644) & 0o755 | 0o600;
+            fs::set_permissions(&target, fs::Permissions::from_mode(mode))
+                .map_err(|e| e.to_string())?;
+        }
+        files.push(relative);
+    }
+    let executable = if destination.join("strata.exe").is_file() {
+        "strata.exe"
+    } else {
+        "strata"
+    };
+    if [executable, "BUILD.json", engine_package::MANIFEST_NAME]
+        .into_iter()
+        .any(|name| !destination.join(name).is_file())
+    {
+        return Err("官方引擎包缺少必要程序文件，未修改当前安装".into());
+    }
+    Ok(files)
+}
+
+/// Engine archive by its official asset kind: a 0.2+ package or a legacy ZIP.
+fn extract_engine(
+    archive: &Path,
+    destination: &Path,
+    asset: &RuntimeReleaseAsset,
+    check: impl Fn() -> Result<(), String>,
+) -> Result<Vec<String>, String> {
+    if engine_package::parse_package_name(&asset.name).is_none() {
+        return extract(archive, destination, false, check);
+    }
+    let files = extract_package(
+        archive,
+        destination,
+        asset
+            .installed_bytes
+            .unwrap_or(engine_package::MAX_PACKAGE_EXPANDED),
+        &check,
+    )?;
+    engine_package::verify_extracted(destination, &files, asset, "windows-x86_64", &check)?;
+    Ok(files)
+}
+
+/// A release may drop Python requirements (0.2.0 moved its build tools out), but an
+/// added or changed pin needs a fresh environment.
+fn requirements_compatible(installed: &[String], release: &[String]) -> bool {
+    release.iter().all(|row| installed.contains(row))
+}
+
 fn extract(
     archive: &Path,
     destination: &Path,
@@ -1026,18 +1219,7 @@ fn extract(
             continue;
         }
         // The engine ZIP must not supply configs, models, Python or unknown root files.
-        if !source
-            && !(relative == "BUILD.json"
-                || relative == "strata.exe"
-                || relative == "strata-vision.exe"
-                || relative == "strata-device.exe"
-                || relative.to_ascii_lowercase().ends_with(".dll")
-                || relative.to_ascii_lowercase().ends_with(".hsaco")
-                || relative.starts_with("kernels/")
-                || relative.starts_with("licenses/")
-                || relative.starts_with("lib/")
-                || relative.starts_with("rocm/"))
-        {
+        if !source && !engine_file_allowed(&relative) {
             return Err(format!("引擎ZIP含未识别的运行文件：{relative}"));
         }
         entries.push((i, relative, file.size()));
@@ -1378,7 +1560,9 @@ fn engine_directories(
             let parent = executable.parent().ok_or("配置的引擎路径没有父目录")?;
             let parent =
                 dunce::canonicalize(parent).map_err(|_| "配置引擎目录不存在，不能安全替换")?;
-            if directory_variant(&parent).is_some_and(|variant| variant != asset.variant) {
+            if directory_variant(&parent)
+                .is_some_and(|variant| !variant_compatible(variant, &asset.variant))
+            {
                 return Err("此目录的模型配置使用不同CUDA/HIP引擎；所选ZIP不会替换不匹配的引擎，请分别准备对应运行环境".into());
             }
             let relative = parent
@@ -1611,6 +1795,7 @@ async fn prepare_python(
     state: &RuntimeState,
     j: &mut Journal,
     asset: &RuntimeReleaseAsset,
+    bundled_cuda: bool,
 ) -> Result<String, String> {
     let base = installation::ensure_python(state, &j.task_id).await?;
     let venv = j.install_dir.join(".venv");
@@ -1640,7 +1825,8 @@ async fn prepare_python(
     .arg(j.install_dir.join("requirements.txt"))
     .current_dir(&j.install_dir);
     installation::run_owned(state, &j.task_id, pip, "正在安装此Release的Python依赖").await?;
-    if matches!(asset.variant.as_str(), "cuda12" | "cuda13") {
+    // 0.2+ CUDA packages bundle cuBLAS and link cudart statically.
+    if matches!(asset.variant.as_str(), "cuda12" | "cuda13") && !bundled_cuda {
         let packages = if asset.variant == "cuda12" {
             [
                 "nvidia-cublas-cu12==12.9.1.4",
@@ -1699,8 +1885,12 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
     };
     let revision = info.source_revision.clone().ok_or("发布源码提交未核验")?;
     let version = info.latest_version.clone().ok_or("发布版本缺失")?;
+    let engine_version = asset
+        .engine_version
+        .clone()
+        .unwrap_or_else(|| version.clone());
     if !j.new_install {
-        prevent_downgrade(&j.install_dir, &version)?;
+        prevent_downgrade(&j.install_dir, &engine_version)?;
     }
     j.version = Some(version.clone());
     j.revision = Some(revision.clone());
@@ -1763,7 +1953,7 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
     let engine =
         download_source::engine_archive(&state, &j.task_id, &asset, &j.download, &work).await?;
     if fs::metadata(&engine).map_err(|e| e.to_string())?.len() != asset.size {
-        return Err("官方ZIP精确长度与Release清单不符".into());
+        return Err("官方引擎包精确长度与Release清单不符".into());
     }
     progress(
         &state,
@@ -1771,24 +1961,32 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
         "extractingEngine",
         "官方引擎SHA256和精确长度通过；正在安全解包运行文件",
     )?;
-    let engine_files = extract(&engine, &engine_work_dir(&work), false, || {
+    let engine_files = extract_engine(&engine, &engine_work_dir(&work), &asset, || {
         cancelled(&state, &j.task_id)
     })?;
     let build = read_engine_build(&work)?;
-    if build["version"].as_str() != Some(&version) {
-        return Err("引擎ZIP内部版本与Release不一致，未停止服务".into());
+    if build["version"].as_str() != Some(&engine_version) {
+        return Err("引擎包内部版本与Release不一致，未停止服务".into());
     }
+    let bundled_cuda = engine_files.iter().any(|name| {
+        let name = name.to_ascii_lowercase();
+        name.starts_with("cublas64_") && name.ends_with(".dll")
+    });
     let associated = profiles(&state, &j.install_dir)?;
+    let release_requirements = normalized_requirements(&work.join("source/requirements.txt"))?;
     if !j.new_install
-        && normalized_requirements(&j.install_dir.join("requirements.txt"))?
-            != normalized_requirements(&work.join("source/requirements.txt"))?
+        && !requirements_compatible(
+            &normalized_requirements(&j.install_dir.join("requirements.txt"))?,
+            &release_requirements,
+        )
     {
         return Err("此Release改变了Python依赖；现有Python环境保持原位。请先准备新的独立运行环境后再迁移，当前服务未停止".into());
     }
     for profile in &associated {
-        if normalized_requirements(&Path::new(&profile.install_dir).join("requirements.txt"))?
-            != normalized_requirements(&work.join("source/requirements.txt"))?
-        {
+        if !requirements_compatible(
+            &normalized_requirements(&Path::new(&profile.install_dir).join("requirements.txt"))?,
+            &release_requirements,
+        ) {
             return Err(
                 "关联服务的Python依赖与新版不同；保留其原环境，未停止服务，请先准备独立环境迁移"
                     .into(),
@@ -1956,7 +2154,7 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
                 "preparingPython",
                 "运行程序已解包，正在准备独立Python环境和依赖；不会启动模型",
             )?;
-            python = Some(prepare_python(&state, j, &asset).await?);
+            python = Some(prepare_python(&state, j, &asset, bundled_cuda).await?);
         }
         if let Some(python) = &python {
             check_python(&state, &j.task_id, python, &j.install_dir).await?;
@@ -2944,7 +3142,7 @@ mod tests {
                 .expect("unsupported platforms must refuse even a cached ZIP request");
                 assert_eq!(
                     error,
-                    "官方引擎ZIP自动安装目前支持Windows x64；可使用源码安装方式"
+                    "官方引擎包自动安装目前支持Windows x64；可使用源码安装方式"
                 );
             }
         }

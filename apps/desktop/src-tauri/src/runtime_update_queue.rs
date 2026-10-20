@@ -390,14 +390,9 @@ async fn start_with_download_probe(
     let _process = guard(ipc).await?;
     let runtime = root(&install_dir)?;
     if asset_name.as_deref().is_some_and(|asset| {
-        !matches!(
-            asset,
-            "strata-windows-x64.zip"
-                | "strata-windows-x64-cuda12.zip"
-                | "strata-windows-x64-hip.zip"
-        )
+        !strata_runtime_core::runtime_upgrade::engine_package::is_installable_asset_name(asset)
     }) {
-        return Err("不是支持的官方 Strata ZIP".into());
+        return Err("不是支持的官方 Strata 引擎包".into());
     }
     let mut values = records(ipc).await?;
     if let Some(existing) = values.iter().find(|record| {

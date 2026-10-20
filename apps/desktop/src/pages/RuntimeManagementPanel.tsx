@@ -64,7 +64,7 @@ export function RuntimeManagementPanel({ language, desktop, onInstall, selectedR
   const status = installationStatus ?? installation.data, result = status?.result;
   const allRuntimes: core.DetectedRuntime[] = status?.detectedRuntimes ?? (result ? [{ installDir: result.installDir, pythonPath: result.pythonPath, sourceRevision: result.sourceRevision, readiness: 'ready', profile: result.profile }] : []);
   const runtimes = selectedRuntimeDir ? allRuntimes.filter(runtime => runtime.installDir === selectedRuntimeDir) : allRuntimes;
-  const updateTargets = runtimes.filter(runtime => needsUpdate(runtime.runtimeVersion, update.data?.latestVersion));
+  const updateTargets = runtimes.filter(runtime => needsUpdate(runtime.runtimeVersion, update.data?.latestVersion) && !core.runtimeEngineIsCurrent(runtime.runtimeVersion, update.data));
   const installed = allRuntimes.length > 0;
   const notes = releaseNotes(update.data?.notes);
   useEffect(() => {

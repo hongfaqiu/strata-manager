@@ -15,7 +15,7 @@ const hasClasses = (node, ...classes) => classes.every(value => (node.props.clas
 const source = ts.transpileModule(readFileSync(new URL('./RuntimeUpdateDialog.tsx', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
 const downloadModule = { exports: {} };
 vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../../../../packages/core/src/runtime-download.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { module: downloadModule, exports: downloadModule.exports, URL, require: () => ({}) });
-const { resolveRuntimeDownloadPreferences, runtimeDownloadSources } = downloadModule.exports;
+const { resolveRuntimeDownloadPreferences, runtimeDownloadSources, runtimeAssetLabel, runtimeEngineArchiveFilters, runtimeEngineIsCurrent } = downloadModule.exports;
 const sharedControls = { Dropdown: 'dropdown' };
 const sourceControl = tree => nodes(tree).find(node => node.type === 'dropdown' && node.props.options.some(option => option.value === 'official'));
 const assetControl = tree => nodes(tree).find(node => node.type === 'dropdown' && node.props.options.some(option => option.value === assets[0].name));
@@ -48,7 +48,7 @@ function fixture(overrides = {}) {
   const core = {
     isDesktop: () => true,
     configurationPathKey,
-    runtimeDownloadSources, resolveRuntimeDownloadPreferences,
+    runtimeDownloadSources, resolveRuntimeDownloadPreferences, runtimeAssetLabel, runtimeEngineArchiveFilters,
     resolveRuntimeZipAsset: async (...args) => overrides.resolveAsset ? await overrides.resolveAsset(...args) : assets.find(asset => asset.name === args[1]) ?? assets[1],
     normalizeError: error => ({ message: error instanceof Error ? error.message : String(error) }),
     localInstallations: async () => { calls.installations++; return overrides.installations ? await overrides.installations() : profiles; },
@@ -99,7 +99,7 @@ function fixture(overrides = {}) {
   const mode = value => { sourceControl(tree).props.onValueChange(value === 'mirror' ? 'custom' : value); render(); };
   const chooseAsset = value => { assetControl(tree).props.onValueChange(value); render(); };
   const mirror = value => { nodes(tree).find(node => node.type === 'input' && node.props.type === 'url').props.onChange({ target: { value } }); render(); };
-  const browse = () => buttons().find(node => text(node).includes('选择 ZIP 文件')).props.onClick();
+  const browse = () => buttons().find(node => text(node).includes('选择引擎包文件')).props.onClick();
   return { calls, props, query, assetQuery, render, confirm, cancel, settle, mode, chooseAsset, mirror, browse, tree: () => tree };
 }
 
@@ -125,7 +125,7 @@ test('local ZIP uses the auto matched package but requires a file; picker cancel
   f.mode('local'); assert.equal(f.confirm().props.disabled, true); f.confirm().props.onClick();
   f.chooseAsset(assets[1].name); assert.equal(f.confirm().props.disabled, true);
   f.browse(); await f.settle();
-  assert.deepEqual(JSON.parse(JSON.stringify(f.calls.picker[0].filters)), [{ name: 'ZIP', extensions: ['zip'] }]);
+  assert.deepEqual(JSON.parse(JSON.stringify(f.calls.picker[0].filters)), [{ name: '引擎包（tar.gz / ZIP）', extensions: ['gz', 'tgz', 'zip'] }]);
   assert.equal(f.confirm().props.disabled, true); assert.equal(f.calls.confirmed, 0); assert.deepEqual(f.calls.mutations, []);
   picked = 'D:\\Downloads\\Strata-cuda12.zip'; f.browse(); await f.settle();
   assert.equal(f.confirm().props.disabled, false); assert.ok(text(f.tree()).includes(picked));
@@ -281,7 +281,7 @@ function parentFixture(kind, savedPreferences = { mode: 'official' }) {
   const core = {
     updateRuntimeZip: async (...args) => { calls.updates.push(JSON.parse(JSON.stringify(args))); return { id: 'update-task', kind: 'update', state: 'running' }; },
     listTasks: async () => tasks, loadStore: async () => '',
-    resolveRuntimeDownloadPreferences, getRuntimeDownloadPreferences: async () => queryData['runtime-download-preferences'].data,
+    resolveRuntimeDownloadPreferences, runtimeAssetLabel, runtimeEngineArchiveFilters, runtimeEngineIsCurrent, getRuntimeDownloadPreferences: async () => queryData['runtime-download-preferences'].data,
     saveStore: async (...args) => calls.saved.push(args), cancelTask: async id => calls.canceled.push(id),
     normalizeError: error => ({ message: error instanceof Error ? error.message : String(error) }),
   };
@@ -374,7 +374,7 @@ function settingsFixture(overrides = {}) {
     useEffect: (fn, deps) => { const effect = slot(() => ({})); if (!sameDeps(effect.deps, deps)) { effect.deps = deps; effects.push(fn); } },
   };
   const core = {
-    getRuntimeDownloadPreferences: async () => preferences.data, resolveRuntimeDownloadPreferences, runtimeDownloadSources,
+    getRuntimeDownloadPreferences: async () => preferences.data, resolveRuntimeDownloadPreferences, runtimeDownloadSources, runtimeAssetLabel, runtimeEngineArchiveFilters,
     resolveRuntimeZipAsset: async (_dir, name) => overrides.resolveAsset ? await overrides.resolveAsset() : assets.find(asset => asset.name === name) ?? assets[1],
     normalizeError: error => ({ message: error instanceof Error ? error.message : String(error) }),
     saveRuntimeDownloadPreferences: async value => { calls.saved.push(JSON.parse(JSON.stringify(value))); if (overrides.save) await overrides.save(value); },

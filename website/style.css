@@ -690,3 +690,4 @@ button.m-btn:hover{border-color:var(--a-muted)}
   .motion .reveal{opacity:1;transform:none}
   .demo-pointer{display:none}
 }
+.hero-platforms+.hero-platforms{margin-top:6px}

@@ -26,6 +26,8 @@
 
 **Strata Manager is an open-source desktop management app for [Niko1221/Strata](https://github.com/Niko1221/Strata), a local large language model inference engine.** It brings guided first setup, model downloads and configurations across Strata versions, service controls, chat, API and agent connections with online verification, usage statistics, monitoring, tuning and benchmarking with an opt-in public leaderboard into one workspace. Existing supported model weights stay in place.
 
+**Supports Strata 0.2.0**: installs and updates its signed `.tar.gz` Windows engine packages; earlier ZIP releases keep working.
+
 [![Strata Manager overview: service controls, GPU and system memory map, generation speed and recent requests](docs/screenshots/product-cover.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.en.webp)
 
 <p align="center"><a href="https://strata-manager.cosfoc.com/assets/video/intro.en.mp4"><img src="docs/media/intro-video.en.webp" width="640" alt="Play the 2-minute Strata Manager intro video" /></a><br /><sub>2-minute intro video · <a href="https://strata-manager.cosfoc.com/en/#intro-video">watch on the website</a> · <a href="https://strata-manager.cosfoc.com/#intro-video">中文版</a></sub></p>

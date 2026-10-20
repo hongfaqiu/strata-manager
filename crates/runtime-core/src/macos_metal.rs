@@ -62,12 +62,7 @@ pub fn platform_accepts_engine_asset(os: &str, arch: &str, asset_name: &str) -> 
         return is_pinned_metal_engine_asset(name);
     }
     if os == "windows" && arch == "x86_64" {
-        return matches!(
-            name,
-            "strata-windows-x64.zip"
-                | "strata-windows-x64-cuda12.zip"
-                | "strata-windows-x64-hip.zip"
-        );
+        return crate::runtime_upgrade::engine_package::is_installable_asset_name(name);
     }
     false
 }
