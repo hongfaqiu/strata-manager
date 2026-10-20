@@ -5,6 +5,18 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **一键提速支持 Strata 0.2.0（用户反馈，RTX 4080 Super）**：在 Strata 0.2.0（引擎 0.1.45.3）上打开「参数调优 → 一键提速」，会显示「测量没有完成：服务观察器版本、心跳或持久化状态不完整，保留当前服务」。原因是 0.2.0 给服务端的 `_json` 新增了 `retry_after` 参数，统计观察器的结构检查不认识这个签名，于是整体停用。观察器一停，一键提速、完整场景验收和运行中原地更新都没法安全地暂停请求，API 使用统计也会中断。现在观察器会把 `retry_after` 原样转发给上游，并已把 0.2.0 的 `serve/server.py` 和 `serve/mcp.py` 加入审核清单。上游 MockEngine 的 36 项 HTTP 合同测试全部通过，没有跳过；0.1.43.1 和 0.1.44.1 也重新跑过。已在用 0.2.0 的服务更新 Manager 后需要重启一次。
+- **一键提速失败提示说清原因和做法**：观察器检查失败时，不再只显示一句笼统的报错，而是分别说明是哪种情况（版本不在兼容列表、观察器没有运行、心跳超时、数据库写不进去、观察器没有接管服务）以及该怎么做（更新 Manager、重启模型服务、检查磁盘空间），中英文等 10 种语言都已翻译。
+- **打开页面不再把以前的失败当成当前报错**：打开页面之前就已失败的测量，改为灰色的「上次测量（时间）没有完成」，附上原因，可以点「不再显示」关掉。只有本次打开页面后发生的失败才显示为红色报错。旧版本留下的那条笼统报错会改成解释：常见原因是旧版 Manager 还不兼容这个 Strata 版本。
+
+### English
+
+- **One-click speed-up works with Strata 0.2.0 (user report, RTX 4080 Super)**: on Strata 0.2.0 (engine 0.1.45.3), "Tuning → One-click speed-up" showed "The measurement did not finish: 服务观察器版本、心跳或持久化状态不完整，保留当前服务". The cause: 0.2.0 adds a `retry_after` parameter to the server's `_json`, the usage observer's structural check did not recognize that signature, and the observer turned itself off. With the observer off, one-click speed-up, scenario verification and in-place updates of a running service cannot safely pause requests, and API usage statistics stop. The observer now passes `retry_after` through to upstream unchanged, and the 0.2.0 `serve/server.py` and `serve/mcp.py` are on the reviewed list. All 36 upstream MockEngine HTTP contract tests pass with no skips; 0.1.43.1 and 0.1.44.1 were re-run too. A service already running 0.2.0 needs one restart after updating Manager.
+- **Speed-up failures say what is wrong and what to do**: when the observer check fails, you no longer get one vague message. It says which case applies (version not on the compatibility list, observer not running, no heartbeat, database not writable, observer not attached) and what to do (update Manager, restart the model service, check disk space), in all 10 interface languages.
+- **Old failures are no longer shown as current errors**: a measurement that failed before the page was opened now appears as a grey "The last measurement (time) did not finish" with the reason, and can be dismissed. Only failures from this visit are red. The vague message left by older versions is replaced by an explanation: usually an older Manager did not support that Strata version yet.
+
 ## [0.2.9] - 2026-10-20
 
 ### 中文

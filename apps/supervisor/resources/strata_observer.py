@@ -54,7 +54,8 @@ _RUN_ARGS = "self, ids, thinking, tools, max_new, sampling, cancel, force=None"
 CORE_SERVICE = {"run": {_RUN_ARGS}, "_note": {"self, n, evs, st=None, rate=None"},
                 "begin_request": {"self, path, req"}}
 CORE_HANDLER = {"do_POST": {"self"}, "do_GET": {"self"}, "send_response": {"self, code, message=None"},
-                "_note": {"self, **values"}, "_json": {"self, code, obj", "self, code, obj, headers=None"},
+                "_note": {"self, **values"}, "_json": {"self, code, obj", "self, code, obj, headers=None",
+                          "self, code, obj, headers=None, retry_after=None"},
                 "_capture": {"self, items, api"}}
 OPTIONAL = ("load_state", "expert_stats", "mcp")
 
@@ -834,14 +835,17 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
             return handler_note(self, **values)
 
         @functools.wraps(emit_json)
-        def observed_json(self, code, obj, headers=None):
-            # 0.1.43.1 adds optional headers for retryable 503s. Older reviewed
-            # handlers still take two arguments, so omit the new argument when
-            # the upstream caller does not supply any headers.
+        def observed_json(self, code, obj, headers=None, retry_after=None):
+            # 0.1.43.1 adds optional headers for retryable 503s and 0.2.0 adds
+            # retry_after for 429/503. Older reviewed handlers take fewer
+            # arguments, so forward only what the upstream caller supplied.
             def emit():
-                if headers is None:
-                    return emit_json(self, code, obj)
-                return emit_json(self, code, obj, headers=headers)
+                extra = {}
+                if headers is not None:
+                    extra["headers"] = headers
+                if retry_after is not None:
+                    extra["retry_after"] = retry_after
+                return emit_json(self, code, obj, **extra)
 
             ctx = getattr(self, "_manager_context", None)
             if ctx and isinstance(obj, dict):

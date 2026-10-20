@@ -14,6 +14,7 @@ import { calibrationText } from './tuning/strings';
 import { LiveLog, LiveStatus } from './tuning/TuningLive';
 import { QuickCalibrationView } from './tuning/QuickCalibration';
 import { ConcurrencyComparison, QuickCalibrationConcurrencyNote } from './tuning/ConcurrencyComparison';
+import { speedBoostFailureText } from './tuning/speedBoostFailure';
 import { SpeedBoost, useSpeedHealth } from './tuning/SpeedBoost';
 import { appliedFor, dismissJob, forgetApplied, leaveNotice, originFor, rememberApplied, takeNotice, type SpeedBoostApplied } from './tuning/speedBoostRecord';
 
@@ -263,7 +264,7 @@ export function TuningPage({ profileId, profile, language, desktop, owned, strea
     && (recommendedCandidate.kind !== 'restart' || !!recommendedCandidate.startupVerification?.parameters.length)
     && (!recovery || recovery.state === 'notNeeded' || (recovery.configurationRestored && recovery.serviceVerified));
   const errorMessages = [...new Set([error, status.error ? core.normalizeError(status.error).message : ''].filter((message): message is string => !!message))];
-  const reportErrors = [...new Set([job?.error, ...(job?.measurements.flatMap(measurement => measurement.error ? [measurement.error] : []) ?? [])].filter((message): message is string => !!message))];
+  const reportErrors = [...new Set([job?.error, ...(job?.measurements.flatMap(measurement => measurement.error ? [measurement.error] : []) ?? [])].filter((message): message is string => !!message).map(message => speedBoostFailureText(message, t)))];
   const qualityFailures = workloadMeasurements.filter(measurement => !measurement.result.complete || !measurement.result.qualityPassed).length;
   const startDisabled = !desktop || !profileId || !owned || streaming || anyActive || busy || recovery?.state === 'failed';
   const liveStep = liveSnapshot?.stepKey ?? job?.progress?.phase;
@@ -324,7 +325,7 @@ export function TuningPage({ profileId, profile, language, desktop, owned, strea
       </section>
       {calibrationJob && <Panel title={cal.detailsTitle} className="tuning-calibration-panel" action={<button onClick={exportCalibration}><Download size={14}/>{text.export}</button>}>
         <p className="tuning-lede">{cal.detailsHint}</p>
-        <QuickCalibrationView job={calibrationJob} live={calibrationActive ? liveSnapshot : null} text={cal} language={language} states={text as unknown as Record<string, string>} clock={clock} busy={busy}
+        <QuickCalibrationView job={calibrationJob.error ? { ...calibrationJob, error: speedBoostFailureText(calibrationJob.error, t) } : calibrationJob} live={calibrationActive ? liveSnapshot : null} text={cal} language={language} states={text as unknown as Record<string, string>} clock={clock} busy={busy}
           canApply={canApplyCalibration} notice={notice} onCancel={() => void run(() => core.calibrateCancel(calibrationJob.id))}
           onSaveVersion={() => void applyCalibration('version')} onOverwrite={() => setOverwriteOpen(true)} onVerify={verifyWithScenarios} onBenchmark={onBenchmark}/>
       </Panel>}

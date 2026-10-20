@@ -100,6 +100,15 @@ def make_handler(svc):
                 self.assertEqual(result["mode"], "disabled")
                 self.assertFalse(result["capabilities"]["core"])
 
+    def test_020_retry_after_json_signature_is_structural(self):
+        # Strata 0.2.0 adds retry_after=None to Handler._json for 429/503.
+        source = self.BASE.replace("def _json(self, code, obj, headers=None)",
+                                   "def _json(self, code, obj, headers=None, retry_after=None)")
+        self.assertEqual(observer.analyze_source(source)["mode"], "structural")
+        unknown = self.BASE.replace("def _json(self, code, obj, headers=None)",
+                                    "def _json(self, code, obj, headers=None, retry_after=None, extra=None)")
+        self.assertEqual(observer.analyze_source(unknown)["mode"], "disabled")
+
     def test_unparsable_source_disables(self):
         self.assertEqual(observer.analyze_source("def (:")["mode"], "disabled")
 
@@ -156,6 +165,33 @@ class InstrumentModes(unittest.TestCase):
         ns, _, status = self.instrument(None, digest=next(iter(observer.SUPPORTED_HASHES)))
         self.assertTrue(ns.get("_strata_manager_instrumented"))
         self.assertEqual(status["observerMode"], "reviewed")
+
+    def _json_calls(self, signature):
+        ns = {}
+        exec(SyntheticSources.BASE.replace("def _json(self, code, obj, headers=None): pass",
+             "def _json(" + signature + "): CALLS.append(dict(locals()))"), ns)
+        ns["CALLS"] = calls = []
+        with tempfile.TemporaryDirectory() as temp:
+            journal = observer.Journal(temp, "json")
+            try:
+                observer.instrument_globals(ns, journal=journal, source_hash="1" * 64,
+                                            analysis=observer.analyze_source(SyntheticSources.BASE))
+            finally:
+                journal.close()
+        return ns["make_handler"](object()), calls
+
+    def test_json_forwards_only_arguments_the_upstream_caller_supplied(self):
+        handler, calls = self._json_calls("self, code, obj, headers=None, retry_after=None")
+        instance = handler.__new__(handler)
+        handler._json(instance, 429, {"error": {}}, retry_after=1)
+        handler._json(instance, 503, {"error": {}}, headers={"Retry-After": "2"})
+        handler._json(instance, 200, {})
+        self.assertEqual([(c["code"], c["headers"], c["retry_after"]) for c in calls],
+                         [(429, None, 1), (503, {"Retry-After": "2"}, None), (200, None, None)])
+        # Pre-0.1.43.1 handlers take only (code, obj): never pass optional keywords to them.
+        old, old_calls = self._json_calls("self, code, obj")
+        old._json(old.__new__(old), 200, {})
+        self.assertEqual([c["code"] for c in old_calls], [200])
 
     def test_loader_injects_structural_analysis_for_unreviewed_source(self):
         with tempfile.TemporaryDirectory() as temp:
