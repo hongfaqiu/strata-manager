@@ -3814,10 +3814,11 @@ mod tests {
     #[test]
     fn reviewed_hashes_come_from_the_shared_compat_file() {
         let hashes = reviewed_observer_hashes();
-        // 0.1.44.1, plus every earlier reviewed source.
+        // 0.2.0-beta (control package / official App), 0.1.44.1, plus every earlier reviewed source.
+        assert!(hashes.contains("d3c615f50cbfee032968a059aca039c1771abd6f8c077829f8f8fc6791b3cf97"));
         assert!(hashes.contains("6c45c639e28a873b854606719d9ce2bb2e0df666f105164e78e2735878b9aa8f"));
         assert!(hashes.contains("2aa0d2060766799be2ea7045dc13ca5bab2cec39ad5c29bc8a54d816ed246e7c"));
-        assert!(hashes.len() >= 7 && hashes.iter().all(|h| h.len() == 64));
+        assert!(hashes.len() >= 8 && hashes.iter().all(|h| h.len() == 64));
     }
     #[test]
     fn python_probe_accepts_standard_library_http_server_without_web_frameworks() {

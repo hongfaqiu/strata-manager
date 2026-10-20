@@ -47,6 +47,49 @@ fn identity(id: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
+/// Maintenance (tuning, drain before an in-place update) pauses new requests
+/// through the observer's admission table, so it needs an active observer.
+/// Each message says what is missing and what to do; the desktop maps these
+/// exact texts to localized strings (tuning/speedBoostFailure.ts).
+pub(crate) const OBSERVER_MISSING: &str =
+    "服务观察器没有运行，无法安全暂停请求。请重启这个模型服务后再试";
+pub(crate) const OBSERVER_UNSUPPORTED: &str =
+    "这个 Strata 版本的服务端还不在统计观察器的兼容列表里，无法安全暂停请求。请把 Strata Manager 更新到最新版本，然后重启这个模型服务";
+pub(crate) const OBSERVER_JOURNAL_FAILED: &str =
+    "统计观察器写不进本地数据库（可能是磁盘已满或没有写入权限）。请检查磁盘空间后重启这个模型服务";
+pub(crate) const OBSERVER_STALE: &str =
+    "服务观察器超过 1 分钟没有心跳，可能已经卡住。请重启这个模型服务后再试";
+pub(crate) const OBSERVER_INACTIVE: &str =
+    "服务观察器当前没有接管这个服务（可能是会话已结束），保留当前服务。请重启这个模型服务后再试";
+
+/// The first reason a persisted observer status cannot back maintenance, if any.
+fn observer_status_problem(status: &Value, id: &str, now: u64) -> Option<&'static str> {
+    if status["serviceId"].as_str() != Some(id) {
+        return Some(OBSERVER_INACTIVE);
+    }
+    if status["supported"] != true || status["error"].as_str() == Some("unsupported_runtime") {
+        // Only an unsupported source keeps the session alive with supported=false.
+        // A finished session also writes supported=false, but without an error.
+        return Some(if status["error"].as_str() == Some("unsupported_runtime") {
+            OBSERVER_UNSUPPORTED
+        } else {
+            OBSERVER_INACTIVE
+        });
+    }
+    if status["journalWriteFailed"] != false {
+        return Some(OBSERVER_JOURNAL_FAILED);
+    }
+    if status["observerActive"] != true || status["error"].as_str().is_some() {
+        return Some(OBSERVER_INACTIVE);
+    }
+    if status["updatedAtMs"]
+        .as_u64()
+        .is_none_or(|time| now.saturating_sub(time) > 65_000 || time > now + 1_000)
+    {
+        return Some(OBSERVER_STALE);
+    }
+    None
+}
 fn verify_observer(state: &RuntimeState, id: &str) -> Result<(), String> {
     if !identity(id) {
         return Err("本机安装标识无效".into());
@@ -55,22 +98,13 @@ fn verify_observer(state: &RuntimeState, id: &str) -> Result<(), String> {
         .data_dir
         .join("analytics")
         .join(format!("status-{id}.json"));
-    let bytes =
-        fs::read(&path).map_err(|_| "服务观察器不可用，无法核验安全维护，请先修复兼容性")?;
+    let bytes = fs::read(&path).map_err(|_| OBSERVER_MISSING)?;
     if bytes.len() > 4096 {
         return Err("服务观察器状态无效".into());
     }
     let status: Value = serde_json::from_slice(&bytes).map_err(|_| "服务观察器状态无法核验")?;
-    if status["serviceId"].as_str() != Some(id)
-        || status["supported"] != true
-        || status["observerActive"] != true
-        || status["journalWriteFailed"] != false
-        || status["error"].as_str().is_some()
-        || status["updatedAtMs"].as_u64().is_none_or(|time| {
-            crate::now().saturating_sub(time) > 65_000 || time > crate::now() + 1_000
-        })
-    {
-        return Err("服务观察器版本、心跳或持久化状态不完整，保留当前服务".into());
+    if let Some(problem) = observer_status_problem(&status, id, crate::now()) {
+        return Err(problem.into());
     }
     let pid = status["pid"]
         .as_u64()
@@ -291,5 +325,85 @@ mod tests {
         fs::write(&status, serde_json::to_vec(&changed).unwrap()).unwrap();
         assert!(begin(&state, "fixture", None, "drain").is_err());
         state.cleanup();
+    }
+}
+
+#[cfg(test)]
+mod status_tests {
+    use super::*;
+    fn healthy(now: u64) -> Value {
+        json!({"serviceId":"svc","pid":1,"updatedAtMs":now,"supported":true,
+               "observerActive":true,"journalWriteFailed":false,"error":null,
+               "observerMode":"structural"})
+    }
+    #[test]
+    fn healthy_reviewed_structural_and_partial_observers_allow_maintenance() {
+        let now = 1_000_000;
+        for mode in ["reviewed", "structural", "partial"] {
+            let mut status = healthy(now);
+            status["observerMode"] = json!(mode);
+            assert_eq!(observer_status_problem(&status, "svc", now), None, "{mode}");
+        }
+    }
+    #[test]
+    fn each_failure_names_what_is_missing_and_what_to_do() {
+        let now = 1_000_000;
+        let case = |change: &dyn Fn(&mut Value)| {
+            let mut status = healthy(now);
+            change(&mut status);
+            observer_status_problem(&status, "svc", now)
+        };
+        // An unreviewed source the structural probe could not observe (Strata
+        // 0.2.0 before this release): the observer keeps running, analytics off.
+        assert_eq!(
+            case(&|s| {
+                s["supported"] = json!(false);
+                s["observerActive"] = json!(false);
+                s["error"] = json!("unsupported_runtime");
+                s["observerMode"] = json!("disabled");
+            }),
+            Some(OBSERVER_UNSUPPORTED)
+        );
+        assert_eq!(
+            case(&|s| s["journalWriteFailed"] = json!(true)),
+            Some(OBSERVER_JOURNAL_FAILED)
+        );
+        assert_eq!(
+            case(&|s| s["updatedAtMs"] = json!(now - 70_000)),
+            Some(OBSERVER_STALE)
+        );
+        assert_eq!(
+            case(&|s| s["updatedAtMs"] = json!(now + 5_000)),
+            Some(OBSERVER_STALE)
+        );
+        assert_eq!(
+            case(&|s| s["updatedAtMs"] = Value::Null),
+            Some(OBSERVER_STALE)
+        );
+        // A finished session writes supported=false without an error.
+        assert_eq!(
+            case(&|s| {
+                s["supported"] = json!(false);
+                s["observerActive"] = json!(false);
+            }),
+            Some(OBSERVER_INACTIVE)
+        );
+        assert_eq!(
+            case(&|s| s["observerActive"] = json!(false)),
+            Some(OBSERVER_INACTIVE)
+        );
+        assert_eq!(
+            case(&|s| s["serviceId"] = json!("other")),
+            Some(OBSERVER_INACTIVE)
+        );
+        for message in [
+            OBSERVER_MISSING,
+            OBSERVER_UNSUPPORTED,
+            OBSERVER_JOURNAL_FAILED,
+            OBSERVER_STALE,
+            OBSERVER_INACTIVE,
+        ] {
+            assert!(message.contains("重启这个模型服务"), "{message}");
+        }
     }
 }

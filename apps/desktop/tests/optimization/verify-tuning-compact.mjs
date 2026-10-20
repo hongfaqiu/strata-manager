@@ -109,7 +109,7 @@ async function run(name, language, action, { job = '', calibration = '', extra =
     if (['zh-CN', 'en'].includes(language)) await area(page).getByRole('heading', { name: labels(language).title, exact: true }).waitFor();
     else await area(page).locator('h2').first().waitFor();
     await area(page).locator('[data-testid="speed-health"] li').first().waitFor();
-    if (calibration) await page.waitForFunction(() => !!document.querySelector('[data-testid="speed-boost-running"], [data-testid="speed-boost-result"], [data-testid="speed-boost-same"]'));
+    if (calibration) await page.waitForFunction(() => !!document.querySelector('[data-testid="speed-boost-running"], [data-testid="speed-boost-result"], [data-testid="speed-boost-same"], [data-testid="speed-boost-failed-earlier"]'));
     else if (job) await page.waitForFunction(() => !!document.querySelector('.tuning-live, .tuning-progress'));
     else await page.waitForFunction(() => document.querySelector('[data-testid="speed-boost-start"]') && !document.querySelector('[data-testid="speed-boost-start"]').disabled);
     await action(page, labels(language));
@@ -156,6 +156,29 @@ try {
       await hero(page).getByText('35.4', { exact: true }).waitFor();
       await oneFold(page, false);
     });
+    // A run refused before this page opened (Manager 0.2.8 on Strata 0.2.0) is history: neutral, timed, dismissible.
+    await run(`failed-earlier-${language}`, language, async page => {
+      const zh = language === 'zh-CN';
+      const notice = hero(page).getByTestId('speed-boost-failed-earlier');
+      await notice.waitFor();
+      assert.equal(await hero(page).getByRole('alert').count(), 0, 'An earlier failure is not shown as a current error');
+      assert.match(await notice.innerText(), zh ? /上次测量（.+）没有完成[\s\S]*更新 Strata Manager/ : /The last measurement \(.+\) did not finish[\s\S]*Update Strata Manager/);
+      assert.doesNotMatch(await notice.innerText(), /持久化状态不完整/, 'The raw 0.2.8 message is explained, not repeated');
+      if (process.env.STRATA_SCREENSHOT_DIR) await page.screenshot({ path: resolve(process.env.STRATA_SCREENSHOT_DIR, `failed-earlier.${zh ? 'zh' : 'en'}.png`) });
+      await notice.getByRole('button').click();
+      await notice.waitFor({ state: 'detached' });
+      assert.equal(await hero(page).getByTestId('speed-boost-start').innerText(), labels(language).title === '一键提速' ? '一键提速' : 'Speed up');
+    }, { calibration: 'failedEarlier' });
+    // A run refused now says what is missing and what to do.
+    await run(`failed-current-${language}`, language, async page => {
+      const zh = language === 'zh-CN';
+      await hero(page).getByTestId('speed-boost-start').click();
+      const alert = hero(page).getByTestId('speed-boost-failed');
+      await alert.waitFor();
+      assert.equal(await alert.getAttribute('role'), 'alert');
+      assert.match(await alert.innerText(), zh ? /^测量没有完成：当前 Strata 版本还不在统计观察器的兼容列表里[\s\S]*重启这个模型服务/ : /^The measurement did not finish: This Strata version is not on the usage observer’s compatibility list yet[\s\S]*restart this model service/);
+      if (process.env.STRATA_SCREENSHOT_DIR) await page.screenshot({ path: resolve(process.env.STRATA_SCREENSHOT_DIR, `failed-current.${zh ? 'zh' : 'en'}.png`) });
+    }, { extra: '&observer=unsupported' });
     await run(`advanced-options-${language}`, language, async page => {
       const text = labels(language);
       await openAdvanced(page);
