@@ -237,8 +237,10 @@ pub async fn resolve_release_download_asset(
     if !Path::new(install_dir).is_absolute() {
         return Err("运行环境目录必须是绝对路径".into());
     }
-    if requested.is_none() && super::variant(Path::new(install_dir)).is_none() {
-        return Err("无法识别当前 CUDA/HIP 引擎，请手动选择更新包".into());
+    // Linux packages match by the detected GPU when the installed engine has no known type.
+    let unknown = requested.is_none() && super::variant(Path::new(install_dir)).is_none();
+    if unknown && super::engine_package::this_release_install_platform() != Some("linux-x86_64") {
+        return Err("无法识别当前 CUDA/HIP 引擎，请手动选择更新包 / The installed CUDA/HIP engine is not recognised; choose the update package".into());
     }
     let cached = crate::store_get(state, super::super::UPDATE_INFO_KEY.into())?;
     let info = tokio::time::timeout(
@@ -247,8 +249,23 @@ pub async fn resolve_release_download_asset(
     )
     .await
     .map_err(|_| "匹配更新包超过 20 秒，请检查网络后重试".to_owned())??;
-    let asset = super::choose_asset(&info, Path::new(install_dir), requested)?;
-    select_official_asset(&info, &asset.name)
+    if unknown && super::release_platform(&info) != "linux-x86_64" {
+        return Err("无法识别当前 CUDA/HIP 引擎，请手动选择更新包 / The installed CUDA/HIP engine is not recognised; choose the update package".into());
+    }
+    let install_dir = install_dir.to_owned();
+    let requested = requested.map(str::to_owned);
+    let chosen = {
+        let info = info.clone();
+        // GPU probes run tools (nvidia-smi, rocminfo); keep them off the async workers.
+        tokio::task::spawn_blocking(move || {
+            super::choose_asset(&info, Path::new(&install_dir), requested.as_deref())
+        })
+        .await
+        .map_err(|error| error.to_string())??
+    };
+    let mut asset = select_official_asset(&info, &chosen.name)?;
+    asset.match_reason = chosen.match_reason;
+    Ok(asset)
 }
 
 pub async fn test_release_download(

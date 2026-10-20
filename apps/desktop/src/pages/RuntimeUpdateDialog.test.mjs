@@ -15,7 +15,7 @@ const hasClasses = (node, ...classes) => classes.every(value => (node.props.clas
 const source = ts.transpileModule(readFileSync(new URL('./RuntimeUpdateDialog.tsx', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
 const downloadModule = { exports: {} };
 vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../../../../packages/core/src/runtime-download.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { module: downloadModule, exports: downloadModule.exports, URL, require: () => ({}) });
-const { resolveRuntimeDownloadPreferences, runtimeDownloadSources, runtimeAssetLabel, runtimeEngineArchiveFilters, runtimeEngineIsCurrent } = downloadModule.exports;
+const { resolveRuntimeDownloadPreferences, runtimeDownloadSources, runtimeAssetLabel, runtimeBilingualText, runtimeEngineArchiveFilters, runtimeEngineIsCurrent, runtimeReasonText, runtimeTrialRollback } = downloadModule.exports;
 const sharedControls = { Dropdown: 'dropdown' };
 const sourceControl = tree => nodes(tree).find(node => node.type === 'dropdown' && node.props.options.some(option => option.value === 'official'));
 const assetControl = tree => nodes(tree).find(node => node.type === 'dropdown' && node.props.options.some(option => option.value === assets[0].name));
@@ -48,7 +48,7 @@ function fixture(overrides = {}) {
   const core = {
     isDesktop: () => true,
     configurationPathKey,
-    runtimeDownloadSources, resolveRuntimeDownloadPreferences, runtimeAssetLabel, runtimeEngineArchiveFilters,
+    runtimeDownloadSources, resolveRuntimeDownloadPreferences, runtimeAssetLabel, runtimeBilingualText, runtimeEngineArchiveFilters,
     resolveRuntimeZipAsset: async (...args) => overrides.resolveAsset ? await overrides.resolveAsset(...args) : assets.find(asset => asset.name === args[1]) ?? assets[1],
     normalizeError: error => ({ message: error instanceof Error ? error.message : String(error) }),
     localInstallations: async () => { calls.installations++; return overrides.installations ? await overrides.installations() : profiles; },
@@ -168,6 +168,37 @@ test('unknown or mismatched automatic assets never guess the first package and a
   }
 });
 
+const linuxAssets = ['cuda12', 'cuda13', 'hip-halo', 'hip-rx7900', 'hip'].map((variant, index) => ({
+  name: `strata-engine-0.1.45.3-linux-x86_64-${variant === 'hip' ? 'hip-rx9070' : variant.startsWith('cuda') ? `cuda-${variant}` : variant}.tar.gz`,
+  url: `https://official.example.com/0.2.0/${variant}.tar.gz`, size: (index + 1) * 1024 * 1024, sha256: String(index + 1).repeat(64), variant, engineVersion: '0.1.45.3',
+}));
+
+test('Linux packages show the GPU match reason in the interface language and the trial-start promise', async () => {
+  const matchReason = '检测到 NVIDIA 驱动 580.95.05、计算能力 8.9，选择 CUDA 13 / Detected NVIDIA driver 580.95.05, compute capability 8.9: CUDA 13';
+  for (const [language, expected, hint] of [['zh-CN', '检测到 NVIDIA 驱动 580.95.05、计算能力 8.9，选择 CUDA 13', '未通过会自动恢复当前版本'], ['en', 'Detected NVIDIA driver 580.95.05, compute capability 8.9: CUDA 13', 'the current version is restored automatically']]) {
+    const f = fixture({ resolveAsset: async () => ({ ...linuxAssets[1], matchReason }), props: { language, release: { latestVersion: '0.2.0', supportedVersion: '0.2.0', checkedAt: 100, assets: linuxAssets } } });
+    await f.settle();
+    const matched = nodes(f.tree()).find(node => node.props?.['data-testid'] === 'runtime-auto-match');
+    assert.ok(text(matched).includes('CUDA 13') && text(matched).includes(expected), text(matched));
+    assert.equal(text(matched).includes(language === 'en' ? '检测到' : 'Detected'), false);
+    assert.ok(text(nodes(f.tree()).find(node => node.props?.['data-testid'] === 'runtime-trial-hint')).includes(hint));
+    const labels = assetControl(f.tree()) ?? nodes(f.tree()).find(node => node.type === 'dropdown' && node.props.options.some(option => option.value === linuxAssets[0].name));
+    assert.deepEqual([...labels.props.options.slice(1).map(option => option.label)], ['CUDA 12', 'CUDA 13', 'AMD HIP · Strix Halo', 'AMD HIP · RX 7000', 'AMD HIP · RX 9000 / R9700']);
+    f.confirm().props.onClick();
+    assert.deepEqual(f.calls.confirmedArgs, [{ download: {}, assetName: linuxAssets[1].name }]);
+  }
+});
+
+test('an undetected Linux GPU asks for a manual package with the backend reason', async () => {
+  const reason = '没有检测到 NVIDIA 或 AMD 显卡（驱动未安装或无法读取），请在「官方更新包」中手动选择对应显卡的引擎包 / No NVIDIA or AMD GPU was detected (driver missing or unreadable); choose the engine package for your GPU under "Official update package"';
+  const f = fixture({ resolveAsset: async () => { throw new Error(reason); }, props: { release: { latestVersion: '0.2.0', supportedVersion: '0.2.0', checkedAt: 100, assets: linuxAssets } } });
+  await f.settle();
+  const matched = nodes(f.tree()).find(node => node.props?.['data-testid'] === 'runtime-auto-match');
+  assert.equal(matched.props.role, 'alert');
+  assert.equal(text(matched), '没有检测到 NVIDIA 或 AMD 显卡（驱动未安装或无法读取），请在「官方更新包」中手动选择对应显卡的引擎包');
+  assert.equal(f.confirm().props.disabled, true);
+});
+
 test('pending automatic matching cannot authorize a stale confirmation handler', async () => {
   const request = deferred(); const f = fixture({ resolveAsset: () => request.promise });
   await f.settle(); const old = f.confirm();
@@ -281,7 +312,7 @@ function parentFixture(kind, savedPreferences = { mode: 'official' }) {
   const core = {
     updateRuntimeZip: async (...args) => { calls.updates.push(JSON.parse(JSON.stringify(args))); return { id: 'update-task', kind: 'update', state: 'running' }; },
     listTasks: async () => tasks, loadStore: async () => '',
-    resolveRuntimeDownloadPreferences, runtimeAssetLabel, runtimeEngineArchiveFilters, runtimeEngineIsCurrent, getRuntimeDownloadPreferences: async () => queryData['runtime-download-preferences'].data,
+    resolveRuntimeDownloadPreferences, runtimeAssetLabel, runtimeEngineArchiveFilters, runtimeEngineIsCurrent, runtimeReasonText, runtimeTrialRollback, getRuntimeDownloadPreferences: async () => queryData['runtime-download-preferences'].data,
     saveStore: async (...args) => calls.saved.push(args), cancelTask: async id => calls.canceled.push(id),
     normalizeError: error => ({ message: error instanceof Error ? error.message : String(error) }),
   };
@@ -318,6 +349,20 @@ for (const kind of ['manual', 'automatic']) {
       assert.deepEqual(f.calls.updates, [[runtime.installDir, assets[1].name, true, download]]);
       assert.equal(f.calls.started, 1);
     }
+  });
+
+  if (kind === 'manual') test('a rolled-back trial start explains the restored version and the reason', async () => {
+    const f = parentFixture(kind); await f.open();
+    f.dialog().props.onConfirm({}, assets[1].name); await f.settle();
+    f.tasks.push({ id: 'update-task', kind: 'update', state: 'failed', message: '新引擎试启动未通过，已自动恢复原版本 0.1.44，模型与配置未改动 / The new engine failed its trial start; the previous version 0.1.44 was restored and models and settings are unchanged. 原因 / Reason: engine: --version 退出码 127 / --version exited 127\nlibamdhip64.so.7: cannot open shared object file' });
+    f.render();
+    const notice = nodes(f.tree()).find(node => node.props?.['data-testid'] === 'runtime-trial-rollback');
+    assert.ok(notice, 'the rollback notice is shown');
+    assert.ok(text(notice).includes('已恢复原版本 0.1.44'));
+    assert.ok(text(notice).includes('libamdhip64.so.7'));
+    assert.equal(text(notice).includes('The new engine'), false);
+    assert.ok(text(notice).includes('engine: --version 退出码 127'));
+    assert.equal(text(notice).includes('exited 127'), false);
   });
 
   test(`${kind} update entry refreshes a changed release before accepting a downloaded ZIP`, async () => {
@@ -374,7 +419,7 @@ function settingsFixture(overrides = {}) {
     useEffect: (fn, deps) => { const effect = slot(() => ({})); if (!sameDeps(effect.deps, deps)) { effect.deps = deps; effects.push(fn); } },
   };
   const core = {
-    getRuntimeDownloadPreferences: async () => preferences.data, resolveRuntimeDownloadPreferences, runtimeDownloadSources, runtimeAssetLabel, runtimeEngineArchiveFilters,
+    getRuntimeDownloadPreferences: async () => preferences.data, resolveRuntimeDownloadPreferences, runtimeDownloadSources, runtimeAssetLabel, runtimeBilingualText, runtimeEngineArchiveFilters,
     resolveRuntimeZipAsset: async (_dir, name) => overrides.resolveAsset ? await overrides.resolveAsset() : assets.find(asset => asset.name === name) ?? assets[1],
     normalizeError: error => ({ message: error instanceof Error ? error.message : String(error) }),
     saveRuntimeDownloadPreferences: async value => { calls.saved.push(JSON.parse(JSON.stringify(value))); if (overrides.save) await overrides.save(value); },

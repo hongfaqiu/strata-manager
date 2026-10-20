@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getRuntimeDownloadPreferences, resolveRuntimeDownloadPreferences, runtimeAssetLabel, runtimeDownloadSources, runtimeEngineArchiveFilters, runtimeEngineIsCurrent, saveRuntimeDownloadPreferences } from '../src/runtime-download';
+import { getRuntimeDownloadPreferences, resolveRuntimeDownloadPreferences, runtimeAssetLabel, runtimeBilingualText, runtimeDownloadSources, runtimeEngineArchiveFilters, runtimeEngineIsCurrent, runtimeReasonText, runtimeTrialRollback, saveRuntimeDownloadPreferences } from '../src/runtime-download';
 import { resolveRuntimeZipAsset, testRuntimeZipDownload } from '../src/bridge';
 import type { RuntimeUpdateInfo } from '../src/runtime-types';
 
@@ -81,6 +81,33 @@ describe('Strata 0.2 engine packages', () => {
     expect(runtimeAssetLabel({ name: pkg('hip-rx9070'), variant: 'hip' })).toBe('AMD HIP · RX 9000 / R9700');
     expect(runtimeAssetLabel({ name: pkg('hip-rdna3'), variant: 'hip-rdna3' })).toBe('AMD HIP · RX 7000 / Strix Halo');
     expect(runtimeAssetLabel({ name: 'strata-windows-x64-hip.zip', variant: 'hip' })).toBe('AMD HIP');
+    const linux = (backend: string) => `strata-engine-0.1.45.3-linux-x86_64-${backend}.tar.gz`;
+    expect(runtimeAssetLabel({ name: linux('hip-rx7900'), variant: 'hip-rx7900' })).toBe('AMD HIP · RX 7000');
+    expect(runtimeAssetLabel({ name: linux('hip-halo'), variant: 'hip-halo' })).toBe('AMD HIP · Strix Halo');
+    expect(runtimeAssetLabel({ name: linux('hip-rx9070'), variant: 'hip' })).toBe('AMD HIP · RX 9000 / R9700');
+  });
+  it('shows one language of a bilingual backend message', () => {
+    const reason = '检测到 NVIDIA 驱动 580.95.05、计算能力 8.9，选择 CUDA 13 / Detected NVIDIA driver 580.95.05, compute capability 8.9: CUDA 13';
+    expect(runtimeBilingualText(reason, true)).toBe('检测到 NVIDIA 驱动 580.95.05、计算能力 8.9，选择 CUDA 13');
+    expect(runtimeBilingualText(reason, false)).toBe('Detected NVIDIA driver 580.95.05, compute capability 8.9: CUDA 13');
+    const amd = '检测到 AMD 显卡 gfx1100，选择 AMD HIP · RX 7000/Strix Halo / Detected AMD GPU gfx1100: AMD HIP · RX 7000/Strix Halo';
+    expect(runtimeBilingualText(amd, false)).toBe('Detected AMD GPU gfx1100: AMD HIP · RX 7000/Strix Halo');
+    expect(runtimeBilingualText('请选择 RX 7000 / Strix Halo 包 / Choose the RX 7000 / Strix Halo package', true)).toBe('请选择 RX 7000 / Strix Halo 包');
+    expect(runtimeBilingualText('plain message', true)).toBe('plain message');
+  });
+  it('recognises a rolled-back trial start and keeps its reason', () => {
+    const reason = 'engine: --version 退出码 127 / --version exited 127: libamdhip64.so.7: cannot open shared object file';
+    const restored = runtimeTrialRollback(`新引擎试启动未通过，已自动恢复原版本 0.1.44，模型与配置未改动 / The new engine failed its trial start; the previous version 0.1.44 was restored and models and settings are unchanged. 原因 / Reason: ${reason}`);
+    expect(restored).toEqual({ restoredVersion: '0.1.44', reason });
+    expect(runtimeTrialRollback('新引擎试启动未通过，已撤销本次安装，模型与配置未改动 / The new engine failed its trial start; this installation was undone and models and settings are unchanged. 原因 / Reason: timeout')).toEqual({ reason: 'timeout' });
+    expect(runtimeTrialRollback('下载失败')).toBeUndefined();
+    expect(runtimeTrialRollback(undefined)).toBeUndefined();
+  });
+  it('localises each reason line and keeps the engine folder and raw output', () => {
+    const reason = 'engine-cuda12: --version 退出码 127 / --version exited 127\n./strata: libcudart.so.13: cannot open shared object file';
+    expect(runtimeReasonText(reason, true)).toBe('engine-cuda12: --version 退出码 127\n./strata: libcudart.so.13: cannot open shared object file');
+    expect(runtimeReasonText(reason, false)).toBe('engine-cuda12: --version exited 127\n./strata: libcudart.so.13: cannot open shared object file');
+    expect(runtimeReasonText('服务健康检查超时', false)).toBe('服务健康检查超时');
   });
   it('lets the file picker choose tar.gz packages and legacy ZIPs', () => {
     expect(runtimeEngineArchiveFilters(true)[0]!.extensions).toEqual(['gz', 'tgz', 'zip']);
