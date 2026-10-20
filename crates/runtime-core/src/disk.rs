@@ -38,7 +38,8 @@ impl Plan {
     }
 }
 
-pub(crate) fn settings() -> Result<Settings, String> {
+/// Upstream Strata's per-user `settings.json` (it remembers `data_dir`, the model data folder).
+pub(crate) fn upstream_settings_path() -> Result<PathBuf, String> {
     #[cfg(windows)]
     let base = std::env::var_os("APPDATA").map(PathBuf::from).or_else(|| {
         std::env::var_os("USERPROFILE").map(|p| PathBuf::from(p).join("AppData/Roaming"))
@@ -50,11 +51,15 @@ pub(crate) fn settings() -> Result<Settings, String> {
     let Some(base) = base else {
         return Err("无法读取 Strata 用户数据目录设置".into());
     };
-    let path = base.join(if cfg!(windows) {
+    Ok(base.join(if cfg!(windows) {
         "Strata/settings.json"
     } else {
         "strata/settings.json"
-    });
+    }))
+}
+
+pub(crate) fn settings() -> Result<Settings, String> {
+    let path = upstream_settings_path()?;
     let Some(meta) = file_meta(&path)? else {
         return Ok(Settings::default());
     };

@@ -338,6 +338,12 @@ export const installRuntime = (directory: string): Promise<TaskStatus> => native
 /** Prepare the application-owned official source and private Python environment, without models. */
 /** Without archives everything is downloaded; chosen local archives replace only their download. */
 export const prepareLocalRuntime = (localArchives?: import('./installation-types').LocalRuntimeArchives): Promise<TaskStatus> => native('prepare_local_runtime', localArchives && (localArchives.strataArchivePath || localArchives.engineArchivePath) ? { localArchives } : {});
+/** `probePath`: also report free space where a folder being chosen would go (nothing is created). */
+export const storageLocations = (installDir?: string, probePath?: string): Promise<import('./storage-location').StorageLocations> => native('storage_locations', { ...(installDir ? { installDir } : {}), ...(probePath ? { probePath } : {}) });
+/** `null` returns new engine installs to the app data folder. */
+export const setEngineInstallRoot = (directory: string | null): Promise<import('./storage-location').StorageLocation> => native('set_engine_install_root', { directory });
+/** `moveFiles`: copy, verify, repoint run configurations and remove the old copies (a background task). */
+export const setModelDataDirectory = (directory: string, moveFiles: boolean, installDir?: string): Promise<import('./storage-location').ModelDirectoryChange> => native('set_model_data_directory', { directory, moveFiles, ...(installDir ? { installDir } : {}) });
 export const localRuntimeInstallation = (): Promise<import('./installation-types').RuntimeInstallationStatus> => native('local_runtime_installation');
 /** Task logs use the existing read-only log source contract; no engine configuration is read. */
 export const readTaskLogs = (taskId: string, limit = 200): Promise<LogEntry[]> => readLogs({ id: taskId, name: '', baseUrl: 'http://127.0.0.1:8000', installDir: '', pythonPath: '', configPath: '', managed: false }, limit);
