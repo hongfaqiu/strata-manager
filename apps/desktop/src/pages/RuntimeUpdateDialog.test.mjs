@@ -15,6 +15,9 @@ const hasClasses = (node, ...classes) => classes.every(value => (node.props.clas
 const source = ts.transpileModule(readFileSync(new URL('./RuntimeUpdateDialog.tsx', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
 const downloadModule = { exports: {} };
 vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../../../../packages/core/src/runtime-download.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { module: downloadModule, exports: downloadModule.exports, URL, require: () => ({}) });
+const versionsModule = { exports: {} };
+vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../../../../packages/core/src/runtime-versions.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { module: versionsModule, exports: versionsModule.exports, require: () => ({}) });
+const { runtimeUpdateAllowedByPin, runtimeVersionDirection } = versionsModule.exports;
 const { resolveRuntimeDownloadPreferences, runtimeDownloadSources, runtimeAssetLabel, runtimeBilingualText, runtimeEngineArchiveFilters, runtimeEngineIsCurrent, runtimeReasonText, runtimeTrialRollback } = downloadModule.exports;
 const sharedControls = { Dropdown: 'dropdown' };
 const sourceControl = tree => nodes(tree).find(node => node.type === 'dropdown' && node.props.options.some(option => option.value === 'official'));
@@ -48,7 +51,7 @@ function fixture(overrides = {}) {
   const core = {
     isDesktop: () => true,
     configurationPathKey,
-    runtimeDownloadSources, resolveRuntimeDownloadPreferences, runtimeAssetLabel, runtimeBilingualText, runtimeEngineArchiveFilters,
+    runtimeDownloadSources, resolveRuntimeDownloadPreferences, runtimeAssetLabel, runtimeBilingualText, runtimeEngineArchiveFilters, runtimeVersionDirection,
     resolveRuntimeZipAsset: async (...args) => overrides.resolveAsset ? await overrides.resolveAsset(...args) : assets.find(asset => asset.name === args[1]) ?? assets[1],
     normalizeError: error => ({ message: error instanceof Error ? error.message : String(error) }),
     localInstallations: async () => { calls.installations++; return overrides.installations ? await overrides.installations() : profiles; },
@@ -280,6 +283,17 @@ test('stale saved sources retain their mode and require reselection without sile
   }
 });
 
+test('a chosen older version is confirmed as a downgrade and resolves that version\'s package', async () => {
+  const resolved = [];
+  const f = fixture({ props: { targetVersion: '0.1.30' }, resolveAsset: async (...args) => { resolved.push(args); return assets[1]; } });
+  f.props.release = { ...f.props.release, latestVersion: '0.1.30' }; f.render(); await f.settle();
+  const all = text(f.tree());
+  assert.equal(f.tree().props.title, '降级到 Strata 0.1.30');
+  assert.ok(all.includes('这是降级：0.1.41 → 0.1.30'));
+  assert.ok(all.includes('切换到'));
+  assert.ok(resolved.some(args => args[2] === '0.1.30'), 'the automatic package is matched against the chosen release');
+});
+
 test('new release clears a previously prefilled local source and guards its old confirmation handler', async () => {
   const f = fixture({ props: { initialDownload: { localArchivePath: 'D:\\Downloads\\0.1.42.zip' }, assetName: assets[1].name } }); await f.settle();
   const old = f.confirm(); f.props.release = { ...f.props.release, latestVersion: '0.1.43', checkedAt: 101 }; f.props.initialDownload = { localArchivePath: '' }; f.render(); f.render();
@@ -288,7 +302,7 @@ test('new release clears a previously prefilled local source and guards its old 
   assert.equal(sourceControl(f.tree()).props.value, 'local');
 });
 
-function parentFixture(kind, savedPreferences = { mode: 'official' }) {
+function parentFixture(kind, savedPreferences = { mode: 'official' }, pin = '') {
   const file = kind === 'manual' ? './RuntimeManagementPanel.tsx' : '../useRuntimeUpdates.ts';
   const compiled = ts.transpileModule(readFileSync(new URL(file, import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
   const calls = { updates: [], saved: [], canceled: [], started: 0 }, slots = [], effects = [];
@@ -298,6 +312,7 @@ function parentFixture(kind, savedPreferences = { mode: 'official' }) {
     'tasks': { data: tasks },
     'runtime-update-info': { data: { latestVersion: '0.1.42', supportedVersion: '0.1.41', checkedAt: 100, assets, installable: true } },
     'runtime-download-preferences': { data: savedPreferences, isSuccess: true, isPending: false },
+    'runtime-pin': { data: pin, isSuccess: true, isPending: false },
   };
   const queryClient = { invalidateQueries: async () => {}, setQueryData: (key, data) => { queryData[key[0]].data = data; } };
   let cursor = 0, tree;
@@ -311,7 +326,8 @@ function parentFixture(kind, savedPreferences = { mode: 'official' }) {
   };
   const core = {
     updateRuntimeZip: async (...args) => { calls.updates.push(JSON.parse(JSON.stringify(args))); return { id: 'update-task', kind: 'update', state: 'running' }; },
-    listTasks: async () => tasks, loadStore: async () => '',
+    listTasks: async () => tasks, loadStore: async () => '', runtimeUpdateAllowedByPin, getRuntimePin: async () => pin,
+    runtimeReleaseInfo: async version => ({ ...queryData['runtime-update-info'].data, latestVersion: version, checkedAt: 200 }),
     resolveRuntimeDownloadPreferences, runtimeAssetLabel, runtimeEngineArchiveFilters, runtimeEngineIsCurrent, runtimeReasonText, runtimeTrialRollback, getRuntimeDownloadPreferences: async () => queryData['runtime-download-preferences'].data,
     saveStore: async (...args) => calls.saved.push(args), cancelTask: async id => calls.canceled.push(id),
     normalizeError: error => ({ message: error instanceof Error ? error.message : String(error) }),
@@ -325,6 +341,7 @@ function parentFixture(kind, savedPreferences = { mode: 'official' }) {
       '../components': { Panel: 'panel' }, '../OfficialControls': sharedControls,
       '../updateReleaseNotes': { releaseNotes }, './RuntimeUpdateDialog': { RuntimeUpdateDialog: 'update-dialog' }, './pages/RuntimeUpdateDialog': { RuntimeUpdateDialog: 'update-dialog' },
       './RuntimeDownloadSettings': { RuntimeDownloadSettings: 'download-settings' },
+      './RuntimeVersionChoice': { RuntimeVersionChoice: 'version-choice', useRuntimePin: () => queryData['runtime-pin'] },
       'react-markdown': { default: 'markdown' }, 'remark-gfm': { default: 'remark-gfm' },
     })[name] ?? {},
   });
@@ -339,6 +356,33 @@ function parentFixture(kind, savedPreferences = { mode: 'official' }) {
   };
   return { calls, props, tasks, queryData, render, dialog, settle, open, tree: () => tree };
 }
+
+for (const kind of ['manual', 'automatic']) test(`${kind} update entry stays quiet when Strata is pinned below the latest release`, async () => {
+  const f = parentFixture(kind, { mode: 'official' }, '0.1.41'); f.props.showInstallations = false; f.render(); await f.settle();
+  if (kind === 'manual') {
+    assert.equal(nodes(f.tree()).find(node => node.type === 'button' && node.props.className === 'primary'), undefined, 'no update button beyond the pin');
+    assert.ok(text(f.tree()).includes('已固定在 0.1.41'));
+  }
+  assert.equal(f.dialog(), undefined); assert.equal(f.calls.updates.length, 0);
+});
+
+test('choosing an older version opens a targeted confirmation and forwards the chosen version', async () => {
+  const f = parentFixture('manual'); f.props.showInstallations = false; f.render(); await f.settle();
+  const choice = nodes(f.tree()).find(node => node.type === 'version-choice');
+  assert.ok(choice, 'the version list is on the Strata page');
+  choice.props.onChoose('0.1.30'); await f.settle();
+  assert.equal(f.dialog().props.targetVersion, '0.1.30');
+  assert.equal(f.dialog().props.release.latestVersion, '0.1.30');
+  f.dialog().props.onConfirm({}, assets[1].name); await f.settle();
+  assert.deepEqual(f.calls.updates, [[runtime.installDir, assets[1].name, true, { targetVersion: '0.1.30' }]]);
+});
+
+test('version direction distinguishes upgrade, downgrade and reinstall', () => {
+  assert.equal(runtimeVersionDirection('0.2.1', '0.1.44'), 'downgrade');
+  assert.equal(runtimeVersionDirection('0.1.44', '0.2.1'), 'upgrade');
+  assert.equal(runtimeVersionDirection('v0.2.1', '0.2.1'), 'same');
+  assert.equal(runtimeVersionDirection(undefined, '0.2.1'), 'unknown');
+});
 
 for (const kind of ['manual', 'automatic']) {
   test(`${kind} update entry forwards the official asset, explicit stop authorization and selected source`, async () => {

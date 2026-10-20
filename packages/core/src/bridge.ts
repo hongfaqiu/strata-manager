@@ -338,6 +338,12 @@ export const installRuntime = (directory: string): Promise<TaskStatus> => native
 /** Prepare the application-owned official source and private Python environment, without models. */
 /** Without archives everything is downloaded; chosen local archives replace only their download. */
 export const prepareLocalRuntime = (localArchives?: import('./installation-types').LocalRuntimeArchives): Promise<TaskStatus> => native('prepare_local_runtime', localArchives && (localArchives.strataArchivePath || localArchives.engineArchivePath) ? { localArchives } : {});
+/** `probePath`: also report free space where a folder being chosen would go (nothing is created). */
+export const storageLocations = (installDir?: string, probePath?: string): Promise<import('./storage-location').StorageLocations> => native('storage_locations', { ...(installDir ? { installDir } : {}), ...(probePath ? { probePath } : {}) });
+/** `null` returns new engine installs to the app data folder. */
+export const setEngineInstallRoot = (directory: string | null): Promise<import('./storage-location').StorageLocation> => native('set_engine_install_root', { directory });
+/** `moveFiles`: copy, verify, repoint run configurations and remove the old copies (a background task). */
+export const setModelDataDirectory = (directory: string, moveFiles: boolean, installDir?: string): Promise<import('./storage-location').ModelDirectoryChange> => native('set_model_data_directory', { directory, moveFiles, ...(installDir ? { installDir } : {}) });
 export const localRuntimeInstallation = (): Promise<import('./installation-types').RuntimeInstallationStatus> => native('local_runtime_installation');
 /** Task logs use the existing read-only log source contract; no engine configuration is read. */
 export const readTaskLogs = (taskId: string, limit = 200): Promise<LogEntry[]> => readLogs({ id: taskId, name: '', baseUrl: 'http://127.0.0.1:8000', installDir: '', pythonPath: '', configPath: '', managed: false }, limit);
@@ -351,7 +357,12 @@ export const updateRuntimeZip = (installDir: string, assetName?: string, stopCur
   installDir, ...(assetName ? { assetName } : {}), stopCurrentService,
   ...(download.localArchivePath?.trim() ? { localArchivePath: download.localArchivePath.trim() } : {}),
   ...(download.downloadUrl?.trim() ? { downloadUrl: download.downloadUrl.trim() } : {}),
+  ...(download.targetVersion?.trim() ? { targetVersion: download.targetVersion.trim() } : {}),
 });
+/** Every published Strata release (cached for 6 h by the background service). */
+export const runtimeReleaseVersions = (force = false): Promise<import('./runtime-versions').RuntimeReleaseVersions> => native('runtime_release_versions', { force });
+/** One chosen release, verified like the latest one; read-only. */
+export const runtimeReleaseInfo = (version: string): Promise<import('./runtime-types').RuntimeUpdateInfo> => native('runtime_release_info', { version });
 /** Read-only ZIP integrity or bounded network/Range check; never creates an update task. */
 export const testRuntimeZipDownload = (assetName: string, download: RuntimeZipDownloadOptions = {}): Promise<RuntimeZipDownloadCheckResult> => native('test_runtime_zip_download', {
   assetName,
@@ -359,8 +370,8 @@ export const testRuntimeZipDownload = (assetName: string, download: RuntimeZipDo
   ...(download.downloadUrl?.trim() ? { downloadUrl: download.downloadUrl.trim() } : {}),
 });
 /** Read-only package selection using the installed engine's CUDA/HIP metadata. */
-export const resolveRuntimeZipAsset = (installDir: string, assetName?: string): Promise<RuntimeReleaseAsset> => native('resolve_runtime_zip_asset', {
-  installDir, ...(assetName ? { assetName } : {}),
+export const resolveRuntimeZipAsset = (installDir: string, assetName?: string, targetVersion?: string): Promise<RuntimeReleaseAsset> => native('resolve_runtime_zip_asset', {
+  installDir, ...(assetName ? { assetName } : {}), ...(targetVersion ? { targetVersion } : {}),
 });
 export const listTasks = (): Promise<TaskStatus[]> => native('list_tasks');
 export const listSetupHandoffs = (): Promise<SetupHandoff[]> => native('list_setup_handoffs');

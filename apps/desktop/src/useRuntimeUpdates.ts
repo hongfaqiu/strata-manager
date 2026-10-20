@@ -49,6 +49,8 @@ export function useRuntimeUpdates(desktop: boolean, ready: boolean, enabled: boo
   const dismissed = useRef(new Set<string>());
   const downloadPreferences = useQuery({ queryKey: ['runtime-download-preferences'], queryFn: core.getRuntimeDownloadPreferences, enabled: desktop && ready, staleTime: Infinity, retry: false });
   const installation = useQuery({ queryKey: ['runtime-installation'], queryFn: core.localRuntimeInstallation, enabled: desktop && ready && enabled, refetchInterval: enabled ? 5 * 60 * 1000 : false, refetchOnWindowFocus: false });
+  // A pinned version stops prompts for anything newer (set on the Strata page).
+  const pin = useQuery({ queryKey: ['runtime-pin'], queryFn: core.getRuntimePin, enabled: desktop && ready, staleTime: Infinity, retry: false });
   const release = useQuery({ queryKey: ['runtime-update-info'], queryFn: () => core.runtimeUpdateInfo(), enabled: desktop && ready && enabled, staleTime: 12 * 60 * 60 * 1000, refetchInterval: enabled ? 12 * 60 * 60 * 1000 : false, refetchOnWindowFocus: enabled });
   useEffect(() => {
     if (enabled) {
@@ -83,14 +85,15 @@ export function useRuntimeUpdates(desktop: boolean, ready: boolean, enabled: boo
       void query.invalidateQueries({ queryKey: ['process'] });
     }
     if (!enabled && !running.current && !automaticTask.current) releaseGate();
-    if (!enabled || !idle || !downloadPreferences.isSuccess || pending || running.current || automaticTask.current || tasks.some(item => item.state === 'running') || !release.data?.installable) return;
+    if (!enabled || !idle || !downloadPreferences.isSuccess || pin.isPending || pending || running.current || automaticTask.current || tasks.some(item => item.state === 'running') || !release.data?.installable) return;
+    if (!core.runtimeUpdateAllowedByPin(release.data.latestVersion, pin.data)) return;
     if (dismissed.current.has(`${release.data.latestVersion}:${release.data.checkedAt}`)) return;
     const runtime = installation.data?.detectedRuntimes?.find(item => item.readiness === 'ready' && newer(item.runtimeVersion, release.data?.latestVersion) && !core.runtimeEngineIsCurrent(item.runtimeVersion, release.data) && !attempted.current.has(`${item.installDir}:${release.data?.latestVersion}:${release.data?.checkedAt}`));
     if (!runtime) return;
     const proposed = { runtime, release: release.data };
     attempted.current.add(updateKey(proposed));
     setActionError(''); setPending(proposed);
-  }, [desktop, ready, enabled, idle, hydrated, tasks, release.data, installation.data, downloadPreferences.isSuccess, query, wake, pending]);
+  }, [desktop, ready, enabled, idle, hydrated, tasks, release.data, installation.data, downloadPreferences.isSuccess, pin.isPending, pin.data, query, wake, pending]);
 
   const confirm = async (download: core.RuntimeZipDownloadOptions = {}, assetName?: string) => {
     if (!pending || running.current || automaticTask.current || awaitingCreatedTask.current) return;

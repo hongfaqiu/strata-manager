@@ -40,6 +40,7 @@ pub mod service_sharing;
 pub mod setup_handoff;
 pub mod setup_options;
 pub mod storage;
+pub mod storage_location;
 pub mod store;
 pub mod support_diagnostics;
 pub mod tuning;
@@ -868,6 +869,7 @@ impl RuntimeState {
                 | "update_runtime"
                 | "update_runtime_zip"
                 | "update_runtime_zip_download_v1"
+                | "update_runtime_zip_version_v1"
                 | "write_config"
                 | "write_config_cas_v1"
                 | "set_api_key"
@@ -928,8 +930,55 @@ impl RuntimeState {
                 value(installation::start(self.clone(), archives))
             }
             "local_runtime_installation" => value(installation::status(&self)),
+            "storage_locations" => value(storage_location::locations(
+                &self,
+                params
+                    .get("installDir")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+                params
+                    .get("probePath")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+            )),
+            "set_engine_install_root" => value(storage_location::set_engine_root(
+                &self,
+                params
+                    .get("directory")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+            )),
+            "set_model_data_directory" => {
+                tuning::assert_available(&self)?;
+                value(storage_location::set_model_directory(
+                    self.clone(),
+                    arg(&params, "directory")?,
+                    params
+                        .get("installDir")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned),
+                    params
+                        .get("moveFiles")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
+                ))
+            }
             "runtime_update_info" => value(
                 runtime_upgrade::update_info(
+                    &self,
+                    params
+                        .get("force")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
+                )
+                .await,
+            ),
+            "runtime_release_info" => {
+                let version: String = arg(&params, "version")?;
+                value(runtime_upgrade::release_info_for_version(&version).await)
+            }
+            "runtime_release_versions" => value(
+                runtime_upgrade::release_versions(
                     &self,
                     params
                         .get("force")
@@ -941,9 +990,18 @@ impl RuntimeState {
             "resolve_runtime_zip_asset_v1" => {
                 let install_dir: String = arg(&params, "installDir")?;
                 let requested = params.get("assetName").and_then(Value::as_str);
+                let target = params
+                    .get("targetVersion")
+                    .and_then(Value::as_str)
+                    .filter(|version| !version.is_empty());
                 value(
-                    runtime_upgrade::resolve_release_download_asset(&self, &install_dir, requested)
-                        .await,
+                    runtime_upgrade::resolve_release_download_asset_for(
+                        &self,
+                        &install_dir,
+                        requested,
+                        target,
+                    )
+                    .await,
                 )
             }
             "test_runtime_zip_download_v1" => {
@@ -1157,7 +1215,9 @@ impl RuntimeState {
             "install_runtime" => value(install_runtime(&self, arg(&params, "directory")?)),
             "update_runtime" => value(runtime_upgrade::start(self.clone(), profile()?.id)),
             "engine_help_flags" => value(engine_help::flags(&profile()?)),
-            "update_runtime_zip" | "update_runtime_zip_download_v1" => {
+            "update_runtime_zip"
+            | "update_runtime_zip_download_v1"
+            | "update_runtime_zip_version_v1" => {
                 value(runtime_upgrade::start_release_request_with_download(
                     self.clone(),
                     arg(&params, "installDir")?,

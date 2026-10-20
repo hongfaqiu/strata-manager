@@ -96,9 +96,10 @@ pub fn status(state: &RuntimeState) -> Result<InstallationStatus, String> {
     if let Some(runtimes) = cached {
         status.detected_runtimes = runtimes;
     } else {
-        status.detected_runtimes = crate::discovery::discover_runtimes_for_state(
+        status.detected_runtimes = crate::discovery::discover_runtimes_for_state_with(
             &state.registered_profiles()?,
             state.data_dir(),
+            crate::storage_location::custom_engine_root(state)?.map(|root| root.join("runtimes")),
         );
         let mut cache = cache.lock().map_err(|e| e.to_string())?;
         if cache.len() >= 32 {
@@ -153,7 +154,7 @@ pub fn start_fallback_with_archives(
 ) -> Result<TaskStatus, String> {
     let _operation = state.runtime_operations.lock().map_err(|e| e.to_string())?;
     crate::runtime_upgrade::assert_available(&state)?;
-    let runtime = owned_directory(state.data_dir(), &["runtimes"])?
+    let runtime = crate::storage_location::engine_runtimes_root(&state)?
         .join(format!("strata-{}", &SOURCE_REVISION[..12]));
     let id = uuid::Uuid::new_v4().to_string();
     let task = TaskStatus {
