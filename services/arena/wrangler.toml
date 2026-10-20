@@ -17,9 +17,10 @@ directory = "../../dist/website"
 binding = "ASSETS"
 html_handling = "auto-trailing-slash"
 not_found_handling = "404-page"
-# The Worker runs first for pages and the API (host redirect, headers); screenshots and vendor
-# scripts are served straight from the asset store with the rules in website/_headers.
-run_worker_first = ["/*", "!/assets/*", "!/vendor/*"]
+# The Worker runs first for pages and the API (host redirect, headers); screenshots, the icon and
+# vendor scripts are served straight from the asset store with the rules in website/_headers.
+# Videos (/assets/video/*) go through the Worker, which answers Range requests with 206 (src/site.js).
+run_worker_first = ["/*", "!/assets/screenshots/*", "!/assets/icon.svg", "!/vendor/*"]
 
 [[d1_databases]]
 binding = "DB"
