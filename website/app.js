@@ -1394,6 +1394,28 @@ const strataReleaseCatalog = (() => {
     observer.observe(list);
   }
 
+  // The intro video stays at preload="none"; its poster is fetched only when the section nears the viewport.
+  function lazyIntroVideo() {
+    const video = $('.intro-video');
+    if (!video) return;
+    const play = $('.intro-video-play');
+    if (play) {
+      // One large, obvious play target over the poster; native controls take over once playback starts.
+      play.hidden = false;
+      play.addEventListener('click', () => { video.play().catch(() => {}); });
+      video.addEventListener('play', () => { play.hidden = true; });
+    }
+    const load = () => {
+      const poster = currentLang === 'en' ? video.dataset.posterEn : video.dataset.poster;
+      if (poster && !video.poster) video.poster = new URL(poster, siteRoot).href;
+    };
+    if (!('IntersectionObserver' in window)) { load(); return; }
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) { observer.disconnect(); load(); }
+    }, { rootMargin: '400px 0px' });
+    observer.observe(video);
+  }
+
   setLanguage(pageLanguage);
   fitApp();
   runners.forEach(runner => runner.init());
@@ -1418,6 +1440,7 @@ const strataReleaseCatalog = (() => {
   updateDemoToggle();
   animatePage();
   lazyDemoTiles();
+  lazyIntroVideo();
   taskbarDemo();
   fetchLatestRelease();
 })();

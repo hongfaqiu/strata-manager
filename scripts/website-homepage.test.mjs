@@ -65,6 +65,9 @@ test('Homepage keeps the v0.1.7 layout, links every current screenshot and rebui
   assert.doesNotMatch(html, /gsap|ScrollTrigger/);
   assert.match(html, /<link rel="preload" href="vendor\/fonts\/Geist\.woff2" as="font" type="font\/woff2" crossorigin>/);
   assert.doesNotMatch(html, /loading="lazy"/);
+  // The intro video is a deliberate addition: nothing downloads until play, no autoplay, per-language files.
+  assert.match(html, /<video class="intro-video" controls playsinline preload="none"[^>]* src="assets\/video\/intro\.zh\.mp4" data-src-en="assets\/video\/intro\.en\.mp4"/);
+  assert.doesNotMatch(html, /<video[^>]*\s(?:autoplay|poster=)/);
   assert.doesNotMatch(html, /发布候选|候选版|稳定版|未发行|Unreleased|Release candidate|Current stable/i);
   assert.doesNotMatch(html, /赋能|一站式|轻松|无缝/);
 });

@@ -28,6 +28,8 @@
 
 [![Strata Manager 总览：服务操作栏、GPU 与系统内存占用图、生成速度和最近请求](docs/screenshots/product-cover.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.zh.webp)
 
+<p align="center"><a href="https://strata-manager.cosfoc.com/assets/video/intro.zh.mp4"><img src="docs/media/intro-video.zh.webp" width="640" alt="播放 Strata Manager 两分钟介绍视频" /></a><br /><sub>两分钟介绍视频 · <a href="https://strata-manager.cosfoc.com/#intro-video">在官网观看</a> · <a href="https://strata-manager.cosfoc.com/en/#intro-video">English version</a></sub></p>
+
 ## Strata 是什么，Manager 负责什么？
 
 [Strata](https://github.com/Niko1221/Strata) 是开源的本地大模型（LLM）推理引擎，协调 GPU 显存、RAM 和 CPU 资源运行它支持的模型，并提供浏览器界面与本机 API。
