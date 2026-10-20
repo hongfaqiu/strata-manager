@@ -234,6 +234,16 @@ pub async fn resolve_release_download_asset(
     install_dir: &str,
     requested: Option<&str>,
 ) -> Result<RuntimeReleaseAsset, String> {
+    resolve_release_download_asset_for(state, install_dir, requested, None).await
+}
+
+/// As above, for a chosen release version instead of the latest one.
+pub async fn resolve_release_download_asset_for(
+    state: &RuntimeState,
+    install_dir: &str,
+    requested: Option<&str>,
+    target_version: Option<&str>,
+) -> Result<RuntimeReleaseAsset, String> {
     if !Path::new(install_dir).is_absolute() {
         return Err("运行环境目录必须是绝对路径".into());
     }
@@ -243,10 +253,12 @@ pub async fn resolve_release_download_asset(
         return Err("无法识别当前 CUDA/HIP 引擎，请手动选择更新包 / The installed CUDA/HIP engine is not recognised; choose the update package".into());
     }
     let cached = crate::store_get(state, super::super::UPDATE_INFO_KEY.into())?;
-    let info = tokio::time::timeout(
-        CHECK_TIMEOUT,
-        super::super::update_info_with_cache(cached, false),
-    )
+    let info = tokio::time::timeout(CHECK_TIMEOUT, async {
+        match target_version {
+            Some(version) => super::super::release_versions::release_info(version).await,
+            None => super::super::update_info_with_cache(cached, false).await,
+        }
+    })
     .await
     .map_err(|_| "匹配更新包超过 20 秒，请检查网络后重试".to_owned())??;
     if unknown && super::release_platform(&info) != "linux-x86_64" {
@@ -504,6 +516,7 @@ mod tests {
             RuntimeZipDownloadOptions {
                 local_archive_path: Some(source.to_string_lossy().into()),
                 download_url: None,
+                target_version: None,
             },
         )
         .await
@@ -536,6 +549,7 @@ mod tests {
                 RuntimeZipDownloadOptions {
                     local_archive_path: Some(source.to_string_lossy().into()),
                     download_url: None,
+                    target_version: None,
                 },
             )
             .await
@@ -774,6 +788,7 @@ mod tests {
                 RuntimeZipDownloadOptions {
                     local_archive_path: None,
                     download_url: Some(url.into()),
+                    target_version: None,
                 }
             )
             .await
@@ -821,6 +836,7 @@ mod tests {
             let options = RuntimeZipDownloadOptions {
                 local_archive_path: None,
                 download_url: (!prefix.is_empty()).then(|| format!("{prefix}{official_url}")),
+                target_version: None,
             };
             let result = test_release_download(&state, &asset_name, options).await;
             eprintln!(

@@ -351,7 +351,12 @@ export const updateRuntimeZip = (installDir: string, assetName?: string, stopCur
   installDir, ...(assetName ? { assetName } : {}), stopCurrentService,
   ...(download.localArchivePath?.trim() ? { localArchivePath: download.localArchivePath.trim() } : {}),
   ...(download.downloadUrl?.trim() ? { downloadUrl: download.downloadUrl.trim() } : {}),
+  ...(download.targetVersion?.trim() ? { targetVersion: download.targetVersion.trim() } : {}),
 });
+/** Every published Strata release (cached for 6 h by the background service). */
+export const runtimeReleaseVersions = (force = false): Promise<import('./runtime-versions').RuntimeReleaseVersions> => native('runtime_release_versions', { force });
+/** One chosen release, verified like the latest one; read-only. */
+export const runtimeReleaseInfo = (version: string): Promise<import('./runtime-types').RuntimeUpdateInfo> => native('runtime_release_info', { version });
 /** Read-only ZIP integrity or bounded network/Range check; never creates an update task. */
 export const testRuntimeZipDownload = (assetName: string, download: RuntimeZipDownloadOptions = {}): Promise<RuntimeZipDownloadCheckResult> => native('test_runtime_zip_download', {
   assetName,
@@ -359,8 +364,8 @@ export const testRuntimeZipDownload = (assetName: string, download: RuntimeZipDo
   ...(download.downloadUrl?.trim() ? { downloadUrl: download.downloadUrl.trim() } : {}),
 });
 /** Read-only package selection using the installed engine's CUDA/HIP metadata. */
-export const resolveRuntimeZipAsset = (installDir: string, assetName?: string): Promise<RuntimeReleaseAsset> => native('resolve_runtime_zip_asset', {
-  installDir, ...(assetName ? { assetName } : {}),
+export const resolveRuntimeZipAsset = (installDir: string, assetName?: string, targetVersion?: string): Promise<RuntimeReleaseAsset> => native('resolve_runtime_zip_asset', {
+  installDir, ...(assetName ? { assetName } : {}), ...(targetVersion ? { targetVersion } : {}),
 });
 export const listTasks = (): Promise<TaskStatus[]> => native('list_tasks');
 export const listSetupHandoffs = (): Promise<SetupHandoff[]> => native('list_setup_handoffs');

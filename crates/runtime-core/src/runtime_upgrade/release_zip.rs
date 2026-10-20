@@ -35,7 +35,8 @@ mod local_archive_tests;
 #[cfg(test)]
 mod package_tests;
 pub use download_check::{
-    resolve_release_download_asset, test_release_download, RuntimeZipDownloadCheckResult,
+    resolve_release_download_asset, resolve_release_download_asset_for, test_release_download,
+    RuntimeZipDownloadCheckResult,
 };
 pub use download_source::RuntimeZipDownloadOptions;
 
@@ -252,6 +253,7 @@ pub fn start_install_release_with_archives(
         RuntimeZipDownloadOptions {
             local_archive_path: archives.engine_archive_path,
             download_url: None,
+            target_version: None,
         },
         archives.strata_archive_path,
     );
@@ -2000,7 +2002,12 @@ async fn ensure_dependencies(
 
 async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, String> {
     cancelled(&state, &j.task_id)?;
-    let info = super::update_info_for_installation(&state).await?;
+    // A chosen version is re-read and verified now; otherwise the latest checked release.
+    let target = j.download.target_version.clone();
+    let info = match target.as_deref() {
+        Some(version) => super::release_versions::release_info(version).await?,
+        None => super::update_info_for_installation(&state).await?,
+    };
     if info.error.is_some() || !info.installable {
         return Err(info
             .error
@@ -2034,8 +2041,17 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
         .engine_version
         .clone()
         .unwrap_or_else(|| version.clone());
-    if !j.new_install {
+    // Only an explicitly chosen version may go down; trial start and rollback still apply.
+    if !j.new_install && target.is_none() {
         prevent_downgrade(&j.install_dir, &engine_version)?;
+    }
+    if let Some(target) = &target {
+        processes::log(
+            &state.logs,
+            &j.task_id,
+            "info",
+            format!("安装所选版本 Strata {target}（引擎 {engine_version}）/ Installing the chosen Strata {target} (engine {engine_version})"),
+        );
     }
     j.version = Some(version.clone());
     j.revision = Some(revision.clone());
@@ -3417,6 +3433,7 @@ mod tests {
         let options = RuntimeZipDownloadOptions {
             local_archive_path: Some(archive.to_string_lossy().into()),
             download_url: None,
+            target_version: None,
         };
         let name = "strata-windows-x64.zip";
         let id = uuid::Uuid::new_v4().to_string();
@@ -3460,6 +3477,7 @@ mod tests {
         let different = RuntimeZipDownloadOptions {
             local_archive_path: None,
             download_url: Some("https://mirror.example/engine.zip".into()),
+            target_version: None,
         };
         assert!(start_release_request_with_download(
             state.clone(),

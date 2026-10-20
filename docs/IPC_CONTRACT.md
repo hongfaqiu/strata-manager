@@ -82,6 +82,11 @@
 - `test_runtime_zip_download({assetName,localArchivePath?,downloadUrl?}) -> RuntimeZipDownloadCheckResult`：Tauri 直接调用当前后台 `test_runtime_zip_download_v1`，只做来源测试，不创建安装任务或下载缓存文件。
 - `update_runtime_zip({installDir,assetName?,stopCurrentService?,localArchivePath?,downloadUrl?}) -> TaskStatus`：经桌面持久更新队列提交。stopCurrentService 默认 false；服务中断授权仅来自显式更新确认。官方来源使用后台 `update_runtime_zip`，自定义来源使用 `update_runtime_zip_download_v1`。队列分配持久 requestId 并协调批准的服务停止、后台能力/包交接、任务状态与原状态恢复；requestId 不是额外的前端 invoke 参数。
 
+- `runtime_release_versions({force?}) -> RuntimeReleaseVersions`：只读。上游发布列表（`releases?per_page=100`），去掉草稿和无效标签，从新到旧排序；每项含 `version`、`tag`、`prerelease`、`packaging`（`feed`/`zip`）和 `installable`（本平台有安装包，旧版 ZIP 还需有 GitHub SHA256 摘要）。缓存 6 小时，失败后 10 分钟内不重试，失败时保留上次列表并返回 `error`。
+- `runtime_release_info({version}) -> RuntimeUpdateInfo`：只读。按 `releases/tags/v{version}` 读取并核验指定版本，校验规则与 `runtime_update_info` 相同（签名清单的签名、格式、通道、有效期，以及清单版本等于所选版本），但不做序号防回放、也不保存序号；结果不写入最新版本缓存。
+- `update_runtime_zip(...,targetVersion?)`：可选 `targetVersion` 指定安装某个版本（可低于当前版本）。队列此时调用后台 `update_runtime_zip_version_v1`；旧后台返回 `unknown_method` 时直接报错，不会退回到安装最新版本。只有指定了 `targetVersion` 时才跳过“禁止降级”检查；包核验、源码核验、试启动与自动回滚不变。`resolve_runtime_zip_asset` 同样接受 `targetVersion`，按所选版本匹配安装包。
+- 固定版本保存在 store 键 `runtimePinnedVersion`（空字符串表示未固定），只由前端用来停止比它新的更新提示。
+
 localArchivePath 与 downloadUrl 互斥。镜像只接受经过校验的 HTTPS 地址；传输来源不改变官方版本、文件名、长度和 SHA256 校验条件。本地来源测试读取完整文件并核验长度/摘要；网络来源测试最多 64 KiB，核验可访问性、长度和 Range，不声明完整 SHA256 已验证。实际安装始终校验完整 ZIP 的官方 SHA256/长度及对应源码，并执行解包与替换范围检查。
 
 只读测试和包匹配不调用 `ensure_connected`，因此不为了“测试”启动后台或发起包切换；旧后台 `unknown_method` 返回明确的“后台不支持下载来源测试/自动匹配更新包”错误。它们可以读取官方元数据，不等于完全无网络请求。不得遇到旧后台拒绝便改用其他变更 RPC。
