@@ -61,6 +61,9 @@ pub struct EnvironmentInfo {
     pub total_memory: u64,
     pub available_memory: u64,
     pub gpus: Vec<String>,
+    /// Structured GPU facts where `gpus` lines cannot carry them (macOS: Apple unified memory, cores, Metal).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub gpu_details: Vec<crate::apple_gpu::GpuDetail>,
     pub python: Option<String>,
     pub git: Option<String>,
     pub app_version: String,

@@ -1,4 +1,5 @@
 pub mod analytics;
+pub mod apple_gpu;
 pub mod benchmark_identity;
 mod byte_size;
 pub mod chat_runtime;
@@ -3176,6 +3177,20 @@ fn collect_environment() -> EnvironmentInfo {
     if gpus.is_empty() {
         gpus = display_adapters::windows_gpu_names().unwrap_or_default();
     }
+    // macOS has no nvidia-smi: Apple Silicon GPUs come from system_profiler/IOKit (unified memory).
+    let gpu_details = if gpus.is_empty() && cfg!(target_os = "macos") {
+        apple_gpu::probe(system.total_memory())
+    } else {
+        Vec::new()
+    };
+    let gpus = if gpus.is_empty() {
+        gpu_details
+            .iter()
+            .map(apple_gpu::environment_line)
+            .collect()
+    } else {
+        gpus
+    };
     EnvironmentInfo {
         os: sysinfo::System::long_os_version().unwrap_or_else(|| std::env::consts::OS.into()),
         arch: std::env::consts::ARCH.into(),
@@ -3187,6 +3202,7 @@ fn collect_environment() -> EnvironmentInfo {
         total_memory: system.total_memory(),
         available_memory: system.available_memory(),
         gpus,
+        gpu_details,
         python: output("py", &["--version"])
             .or_else(|| output("python", &["--version"]))
             .or_else(|| output("python3", &["--version"])),

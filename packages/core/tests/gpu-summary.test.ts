@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { gpuCards, gpuSetName, gpuSummary, splitGpuNames } from '../src/gpu-summary';
+import { gpuCards, gpuSetName, gpuSummary, isUnifiedGpuName, splitGpuNames, unifiedGpu } from '../src/gpu-summary';
 
 const GiB = 1024 ** 3;
 // Xiaohongshu report: two 22 GB RTX 2080 Ti cards, upstream joins their names with " + ".
@@ -30,5 +30,22 @@ describe('multi-GPU naming', () => {
     expect(gpuSetName({})).toBeNull();
     expect(splitGpuNames(' A +  + B ')).toEqual(['A', 'B']);
     expect(gpuCards({ hardware_static: { gpu_name: 'A' }, hardware: { gpus: [{}, {}] } }).map(card => card.name)).toEqual([null, null]);
+  });
+});
+
+describe('Apple Silicon unified GPU', () => {
+  const m5 = { name: 'Apple M5 Pro', vendor: 'apple', cores: 20, unifiedMemory: true, memoryBytes: 48 * GiB, gpuBudgetBytes: 36 * GiB, gpuBudgetEstimated: false, metal: 4, source: 'system_profiler' };
+  it('is found by vendor and the unified flag, not by a chip list', () => {
+    expect(unifiedGpu({ gpuDetails: [m5] })?.name).toBe('Apple M5 Pro');
+    expect(unifiedGpu({ gpuDetails: [{ ...m5, name: 'Apple M9 Hyper' }] })?.name).toBe('Apple M9 Hyper');
+    expect(unifiedGpu({ gpuDetails: [{ ...m5, vendor: 'amd', unifiedMemory: false, name: 'AMD Radeon Pro 5500M' }] })).toBeUndefined();
+    expect(unifiedGpu({})).toBeUndefined();
+    expect(unifiedGpu(undefined)).toBeUndefined();
+  });
+  it('recognizes the upstream telemetry name of a running service', () => {
+    expect(isUnifiedGpuName('Apple M5 Pro')).toBe(true);
+    expect(isUnifiedGpuName('Apple M1 Max')).toBe(true);
+    expect(isUnifiedGpuName('NVIDIA GeForce RTX 4090')).toBe(false);
+    expect(isUnifiedGpuName(undefined)).toBe(false);
   });
 });

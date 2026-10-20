@@ -14,7 +14,7 @@ import { useLocalRuntimePackages } from '../pages/LocalRuntimePackage';
 import { ExistingModelPanel } from '../pages/ExistingModelPanel';
 import { fetchArenaGroups, fetchArenaTier } from './arenaPublic';
 import {
-  arenaLeaderboardQuery, arenaMatch, confidenceBars, defaultContext, parseGpu,
+  arenaLeaderboardQuery, arenaMatch, confidenceBars, defaultContext, gpuRowValue, parseGpu,
   recommendations, smallestCatalogRamGB, type EnvironmentCheck, type GuideFacts, type GuidePath, type GuidePlan, type GuideState, type GuideSelection, type OnboardingProgress,
   type Recommendation, type Scene, type StepId, type StepState,
 } from './onboardingModel';
@@ -186,6 +186,7 @@ function EntryScreen(props: OnboardingPageProps & { t: Translate; runtimeFact: G
   const { t, environment, candidates, profiles } = props;
   const running = candidates.filter(candidate => candidate.running === true);
   const gpus = environment?.gpus.map(parseGpu) ?? [];
+  const appleGpu = core.unifiedGpu(environment);
   const memory = props.memoryGB;
   const sizes = core.MODEL_CATALOG.flatMap(model => Object.values(model.quantInfo).map(info => info.downloadGB));
   const suggested: GuidePath = running.length > 0 || profiles.length > 0 ? 'connect' : 'install';
@@ -195,7 +196,7 @@ function EntryScreen(props: OnboardingPageProps & { t: Translate; runtimeFact: G
   const rows: { key: string; label: string; value: string; detail?: string; state: 'ok' | 'warn' | 'none' | 'busy' }[] = [
     { key: 'runtime', label: t('obRuntimeRow'), value: runtimeValue, state: props.runtimeFact === 'ready' ? 'ok' : props.runtimeFact === 'unknown' || props.runtimeFact === 'running' ? 'busy' : props.runtimeFact === 'repair' ? 'warn' : 'none' },
     { key: 'running', label: t('obRunningRow'), value: props.candidatesLoading ? t('obChecking') : running.length ? t('obFoundN', { count: running.length }) : t('obNotFound'), detail: running.map(candidate => candidate.detectedPort ? `127.0.0.1:${candidate.detectedPort}` : candidate.name).join(' · ') || undefined, state: props.candidatesLoading ? 'busy' : running.length ? 'ok' : 'none' },
-    { key: 'gpu', label: t('obGpuRow'), value: props.environmentLoading ? t('obChecking') : gpus.length ? gpus.map(gpu => gpu.vramGB ? `${gpu.name} · ${gpu.vramGB} GB` : gpu.name).join(' / ') : environment ? t('obNotFound') : t('obUnreadable'), detail: gpus[0]?.driver ? t('obEnvDriver', { version: gpus[0].driver }) : undefined, state: props.environmentLoading ? 'busy' : gpus.length ? 'ok' : 'warn' },
+    { key: 'gpu', label: t('obGpuRow'), value: props.environmentLoading ? t('obChecking') : gpuRowValue(environment) ?? (environment ? t('obNotFound') : t('obUnreadable')), detail: appleGpu ? appleGpuDetail(appleGpu, t) : gpus[0]?.driver ? t('obEnvDriver', { version: gpus[0].driver }) : undefined, state: props.environmentLoading ? 'busy' : gpus.length ? 'ok' : 'warn' },
     { key: 'memory', label: t('obMemoryRow'), value: memory ? `${Math.round(memory)} GB` : props.environmentLoading ? t('obChecking') : t('obUnreadable'), state: !memory ? (props.environmentLoading ? 'busy' : 'warn') : memory * .8 >= smallestCatalogRamGB() ? 'ok' : 'warn' },
   ];
   const start = () => props.onProgress({ path: choice });
@@ -222,8 +223,19 @@ function EntryScreen(props: OnboardingPageProps & { t: Translate; runtimeFact: G
 }
 
 // ---- Environment -------------------------------------------------------------------------
+/** "20 核 GPU · 统一内存 48 GB，GPU 可用约 36 GB" — unified memory is the system RAM, not extra VRAM. */
+function appleGpuDetail(gpu: core.GpuDetail, t: Translate) {
+  const gib = (bytes?: number) => bytes && bytes > 0 ? Math.round(bytes / 1024 ** 3) : 0;
+  return unifiedText({ cores: gpu.cores ?? 0, total: gib(gpu.memoryBytes), budget: gib(gpu.gpuBudgetBytes) }, t);
+}
+function unifiedText(params: Record<string, number>, t: Translate) {
+  const parts = [params.cores ? t('obEnvGpuCores', { count: params.cores }) : '', params.total ? (params.budget ? t('obEnvAppleUnified', { total: params.total, budget: params.budget }) : t('obEnvAppleUnifiedOnly', { total: params.total })) : ''];
+  return parts.filter(Boolean).join(' · ') || t('obEnvAppleUnifiedShort');
+}
 function checkDetail(check: EnvironmentCheck, t: Translate) {
   if (!check.detail) return undefined;
+  if (check.detail === 'appleUnified') return unifiedText(check.params ?? {}, t);
+  if (check.detail === 'appleNoMetal') return t('obEnvAppleNoMetal');
   if (check.detail.startsWith('driver:')) return t('obEnvDriver', { version: check.detail.slice(7) });
   const minimum = smallestCatalogRamGB();
   return ({ arch: t('obEnvArch'), noGpu: t('obEnvNoGpu'), nonNvidia: t('obEnvNonNvidia'), low: t('obEnvLowMemory', { gb: minimum, need: Math.ceil(minimum / .8) }), unknown: t('obUnreadable'), bundled: t('obEnvPythonBundled'), required: t('obEnvPythonRequired') } as Record<string, string>)[check.detail];

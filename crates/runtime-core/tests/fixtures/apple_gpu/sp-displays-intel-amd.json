@@ -1,0 +1,42 @@
+{
+  "SPDisplaysDataType" : [
+    {
+      "_name" : "Intel UHD Graphics 630",
+      "spdisplays_automatic_graphics_switching" : "spdisplays_supported",
+      "spdisplays_device-id" : "0x3e9b",
+      "spdisplays_gmux-version" : "5.0.0",
+      "spdisplays_mtlgpufamilysupport" : "spdisplays_metal3",
+      "spdisplays_revision-id" : "0x0002",
+      "spdisplays_vendor" : "Intel",
+      "spdisplays_vram_shared" : "1536 MB",
+      "sppci_bus" : "spdisplays_builtin",
+      "sppci_device_type" : "spdisplays_gpu",
+      "sppci_model" : "Intel UHD Graphics 630"
+    },
+    {
+      "_name" : "AMD Radeon Pro 5500M",
+      "spdisplays_automatic_graphics_switching" : "spdisplays_supported",
+      "spdisplays_device-id" : "0x7340",
+      "spdisplays_efi-version" : "01.01.190",
+      "spdisplays_gmux-version" : "5.0.0",
+      "spdisplays_mtlgpufamilysupport" : "spdisplays_metal3",
+      "spdisplays_ndrvs" : [
+        {
+          "_name" : "Color LCD",
+          "spdisplays_connection_type" : "spdisplays_internal",
+          "spdisplays_main" : "spdisplays_yes"
+        }
+      ],
+      "spdisplays_optionrom-version" : "113-D3220E-190",
+      "spdisplays_pcie_width" : "x16",
+      "spdisplays_revision-id" : "0x0040",
+      "spdisplays_rom-revision" : "113-D3220E-190",
+      "spdisplays_vbios-version" : "113-D3220E-190",
+      "spdisplays_vendor" : "ATI (0x1002)",
+      "spdisplays_vram" : "8 GB",
+      "sppci_bus" : "spdisplays_pcie_device",
+      "sppci_device_type" : "spdisplays_gpu",
+      "sppci_model" : "AMD Radeon Pro 5500M"
+    }
+  ]
+}

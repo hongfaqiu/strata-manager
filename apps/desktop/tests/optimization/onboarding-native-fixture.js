@@ -10,6 +10,13 @@ const state = { profiles: [], candidates: [], tasks: [], handoffs: [], runtime: 
 const readyRuntime = () => { state.runtime = { detectedRuntimes: [{ installDir: runtimeProfile.installDir, pythonPath: runtimeProfile.pythonPath, runtimeVersion: '0.1.44', readiness: 'ready', profile: runtimeProfile }] }; };
 const log = (message, offset) => ({ timestamp: now - offset, level: 'INFO', message });
 if (scenario === 'environment') { environment.gpus = []; environment.totalMemory = 64 * GB; state.store.onboardingV1 = progress({}); }
+// ?mac=m5pro: Apple M5 Pro (48 GB) as the macOS probe reports it (system_profiler + Metal working set).
+// ?mac=old: the same Mac on v0.2.10, which found no GPU (no nvidia-smi on macOS).
+const mac = params.get('mac');
+if (mac) {
+  Object.assign(environment, { os: 'macOS 26.1', arch: 'aarch64', cpuName: 'Apple M5 Pro', totalMemory: 48 * GB, availableMemory: 29.6 * GB, python: 'Python 3.12.15', gpus: mac === 'old' ? [] : ['Apple M5 Pro'] });
+  if (mac !== 'old') environment.gpuDetails = [{ name: 'Apple M5 Pro', vendor: 'apple', cores: 20, unifiedMemory: true, memoryBytes: 48 * GB, gpuBudgetBytes: 36 * GB, gpuBudgetEstimated: false, metal: 4, source: 'system_profiler' }];
+}
 if (scenario === 'install') {
   state.store.onboardingV1 = progress({ runtimeTaskId: 'rt-1' });
   state.tasks = [{ id: 'rt-1', kind: 'install-runtime', state: 'running', message: '正在安装运行依赖（torch、gguf）', startedAt: now - 352000 }];
@@ -67,6 +74,8 @@ window.__TAURI_INTERNALS__ = {
     if (command === 'switch_local_service' || command === 'ensure_local_service') { if (state.holdStart) return new Promise(() => {}); state.running[args.profileId] = true; state.loaded[args.profileId] = true; return; }
     if (command === 'strata_request') {
       if (args.path.startsWith('/health')) return { service: 'strata', status: 'ok', loaded: !!state.loaded[profile?.id], model: 'Swift-1.5-IQ3_S' };
+      // Strata's macOS telemetry (serve/telemetry.py _Metal): IOAccelerator load and in-use memory, Metal working set as total.
+      if (args.path.startsWith('/metrics') && mac && mac !== 'old') return { live: { state: 'idle' }, engine: { model: 'Swift-1.5-IQ3_S', max_context: 131072 }, hardware_static: { gpu_name: 'Apple M5 Pro', cores: 12, threads: 12 }, hardware: { ram_total: environment.totalMemory, ram_used: 31.2 * GB, gpu_mem_total: 36 * GB, gpu_mem_used: 21.4 * GB, gpu_util: 87, cpu: 14, gpus: [{ index: 0, util: 87, mem_used: 21.4 * GB, mem_total: 36 * GB }] }, requests: [] };
       if (args.path.startsWith('/metrics')) return { live: { state: 'idle' }, engine: { model: 'Swift-1.5-IQ3_S', max_context: 131072 }, hardware: { ram_total: environment.totalMemory, ram_used: 25 * GB, vram_total: 24 * GB, vram_used: 21.4 * GB, gpu_util: 3 }, requests: [] };
       if (args.path === '/load') { state.loaded[profile.id] = true; return { ok: true }; }
       if (args.path.startsWith('/v1/models')) return { data: [{ id: 'Swift-1.5-IQ3_S' }] };

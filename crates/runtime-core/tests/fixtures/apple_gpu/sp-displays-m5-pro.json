@@ -1,0 +1,29 @@
+{
+  "SPDisplaysDataType" : [
+    {
+      "_name" : "Apple M5 Pro",
+      "spdisplays_mtlgpufamilysupport" : "spdisplays_metal4",
+      "spdisplays_ndrvs" : [
+        {
+          "_name" : "Color LCD",
+          "_spdisplays_display-product-id" : "a050",
+          "_spdisplays_display-vendor-id" : "610",
+          "_spdisplays_pixels" : "3456 x 2234",
+          "_spdisplays_resolution" : "1728 x 1117 @ 120.00Hz",
+          "spdisplays_ambient_brightness" : "spdisplays_yes",
+          "spdisplays_connection_type" : "spdisplays_internal",
+          "spdisplays_display_type" : "spdisplays_built-in-liquid-retina-xdr",
+          "spdisplays_main" : "spdisplays_yes",
+          "spdisplays_mirror" : "spdisplays_off",
+          "spdisplays_online" : "spdisplays_yes",
+          "spdisplays_pixelresolution" : "spdisplays_3456x2234Retina"
+        }
+      ],
+      "spdisplays_vendor" : "sppci_vendor_Apple",
+      "sppci_bus" : "spdisplays_builtin",
+      "sppci_cores" : "20",
+      "sppci_device_type" : "spdisplays_gpu",
+      "sppci_model" : "Apple M5 Pro"
+    }
+  ]
+}

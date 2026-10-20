@@ -35,6 +35,13 @@ pub fn support_diagnostics_text(
     ));
     if env.gpus.is_empty() {
         lines.push("GPU: （未检测到 nvidia-smi 输出）".into());
+    } else if !env.gpu_details.is_empty() {
+        for (index, gpu) in env.gpu_details.iter().enumerate() {
+            lines.push(format!(
+                "GPU[{index}]: {}",
+                crate::apple_gpu::diagnostic_line(gpu)
+            ));
+        }
     } else {
         for (index, gpu) in env.gpus.iter().enumerate() {
             lines.push(format!("GPU[{index}]: {gpu}"));
