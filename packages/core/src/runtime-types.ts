@@ -45,6 +45,8 @@ export interface RuntimeZipDownloadOptions {
   localArchivePath?: string;
   /** Complete HTTPS engine ZIP URL, rather than a mirror base URL. */
   downloadUrl?: string;
+  /** Install this official release (up or down) instead of the latest; every source is verified against it. */
+  targetVersion?: string;
 }
 
 /** Saved download choices; a local ZIP or literal URL belongs to one release. */

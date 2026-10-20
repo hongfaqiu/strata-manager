@@ -17,6 +17,7 @@ This page describes the current source; published betas have their own release n
 | Installation not detected | Add its search directory in My models, inspect the runtime in Strata, and follow source, Python, config, weight and tokenizer diagnostics. |
 | Weights exist, but preparation is suggested | My models directly lists discovered models. Add a missing directory and check configurations; bare weights may lack a runnable config. Runtime and weight failures are separate. |
 | Disk preflight is insufficient, unknown or failed | Check the actual destination disk/path, free space and refresh. A new preparation cannot proceed before preflight is ready. |
+| Drive C: has no room for models | Click **Change** under Strata → Storage locations, or at the top of Download models, and move the models to another drive. New engine installs can go to another drive too. |
 | Downloads or dependencies fail | Read the failed download/dependency log, check network, proxy and directory access, then retry after correcting the cause. |
 | Multiple configurations found | Switch configurations within the model card and check paths, modification dates and current/last-used markers. Viewing a configuration does not switch the running service. |
 | Running installation cannot be taken over | Let active work finish and read identity diagnostics. Unknown or busy processes are not forcibly stopped. |

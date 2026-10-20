@@ -1,3 +1,5 @@
+#[cfg(any(target_os = "macos", test))]
+mod app_menu;
 mod arena;
 mod config_cleanup;
 mod configuration_details;
@@ -173,6 +175,13 @@ fn show_interface(app: &tauri::AppHandle) {
         let _ = window.unminimize();
         let _ = window.set_focus();
     }
+}
+
+/// Leave the interface while background services keep running (tray "Quit",
+/// macOS Cmd+Q).
+fn quit_interface(app: &tauri::AppHandle) {
+    app.state::<ClientState>().cleanup_ui();
+    app.exit(0);
 }
 
 fn quit_with_services(app: &tauri::AppHandle) {
@@ -876,6 +885,7 @@ async fn update_runtime_zip(
     stop_current_service: Option<bool>,
     local_archive_path: Option<String>,
     download_url: Option<String>,
+    target_version: Option<String>,
 ) -> Result<Value, String> {
     runtime_update_queue::start(
         &state.ipc,
@@ -885,9 +895,105 @@ async fn update_runtime_zip(
         strata_runtime_core::runtime_upgrade::RuntimeZipDownloadOptions {
             local_archive_path,
             download_url,
+            target_version,
         },
     )
     .await
+}
+
+/// One chosen Strata release, verified like the latest one (read-only).
+#[tauri::command]
+async fn runtime_release_info(
+    state: State<'_, ClientState>,
+    version: String,
+) -> Result<Value, String> {
+    match state
+        .ipc
+        .request("runtime_release_info", json!({"version": version}))
+        .await
+    {
+        Ok(value) => Ok(value),
+        Err(error) if error.code == "unknown_method" => Err(
+            "后台服务版本较旧，无法读取指定版本；请完全退出并重新打开应用后再试 / The background service is older; quit and reopen the app, then try again".into(),
+        ),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+/// Every published Strata release for the version picker (cached by the background service).
+#[tauri::command]
+async fn runtime_release_versions(
+    state: State<'_, ClientState>,
+    force: Option<bool>,
+) -> Result<Value, String> {
+    match state
+        .ipc
+        .request("runtime_release_versions", json!({"force": force.unwrap_or(false)}))
+        .await
+    {
+        Ok(value) => Ok(value),
+        Err(error) if error.code == "unknown_method" => Err(
+            "后台服务版本较旧，无法列出 Strata 版本；请完全退出并重新打开应用后再试 / The background service is older; quit and reopen the app, then try again".into(),
+        ),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+/// Engine / model storage locations (user feedback: "everything can only go on C:").
+#[tauri::command]
+async fn storage_locations(
+    state: State<'_, ClientState>,
+    install_dir: Option<String>,
+    probe_path: Option<String>,
+) -> Result<Value, String> {
+    storage_request(
+        &state,
+        "storage_locations",
+        json!({"installDir": install_dir, "probePath": probe_path}),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn set_engine_install_root(
+    state: State<'_, ClientState>,
+    directory: Option<String>,
+) -> Result<Value, String> {
+    storage_request(
+        &state,
+        "set_engine_install_root",
+        json!({"directory": directory}),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn set_model_data_directory(
+    state: State<'_, ClientState>,
+    directory: String,
+    install_dir: Option<String>,
+    move_files: Option<bool>,
+) -> Result<Value, String> {
+    storage_request(
+        &state,
+        "set_model_data_directory",
+        json!({"directory": directory, "installDir": install_dir, "moveFiles": move_files.unwrap_or(false)}),
+    )
+    .await
+}
+
+async fn storage_request(
+    state: &State<'_, ClientState>,
+    method: &str,
+    params: Value,
+) -> Result<Value, String> {
+    match state.ipc.request(method, params).await {
+        Ok(result) => Ok(result),
+        Err(error) if error.code == "unknown_method" => {
+            Err("当前后台版本不支持更改存储位置，请重启应用完成后台更新后重试 / Restart the app to update the background service".into())
+        }
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 #[tauri::command]
@@ -924,11 +1030,12 @@ async fn resolve_runtime_zip_asset(
     state: State<'_, ClientState>,
     install_dir: String,
     asset_name: Option<String>,
+    target_version: Option<String>,
 ) -> Result<Value, String> {
     match strata_local_ipc::call(
         &state.ipc.data_dir,
         "resolve_runtime_zip_asset_v1",
-        json!({"installDir":install_dir, "assetName":asset_name}),
+        json!({"installDir":install_dir, "assetName":asset_name, "targetVersion": target_version}),
     )
     .await
     {
@@ -1745,6 +1852,8 @@ pub fn run() {
                 .get("closeToTray")
                 .and_then(Value::as_bool)
                 .unwrap_or(true);
+            #[cfg(target_os = "macos")]
+            app_menu::install(app, english)?;
             let show = MenuItem::with_id(
                 app,
                 "show",
@@ -1876,10 +1985,7 @@ pub fn run() {
                     }
                     "service-start" => tray_service_action(app, true),
                     "service-stop" => tray_service_action(app, false),
-                    "quit" => {
-                        app.state::<ClientState>().cleanup_ui();
-                        app.exit(0);
-                    }
+                    "quit" => quit_interface(app),
                     "stop-quit" => {
                         quit_with_services(app);
                     }
@@ -2000,6 +2106,11 @@ pub fn run() {
             engine_help_flags,
             update_runtime_zip,
             runtime_update_info,
+            runtime_release_versions,
+            runtime_release_info,
+            storage_locations,
+            set_engine_install_root,
+            set_model_data_directory,
             test_runtime_zip_download,
             resolve_runtime_zip_asset,
             list_tasks,
@@ -2041,6 +2152,12 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("Strata Manager initialization failed");
     app.run(|handle, event| {
+        // Clicking the Dock icon brings the main window back even when it was
+        // hidden to the menu bar icon or only the floating strip is showing.
+        #[cfg(target_os = "macos")]
+        if let tauri::RunEvent::Reopen { .. } = event {
+            show_interface(handle);
+        }
         if matches!(event, tauri::RunEvent::Exit) {
             taskbar_monitor::shutdown(handle);
             handle.state::<ClientState>().cleanup_ui();

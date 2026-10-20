@@ -44,6 +44,17 @@ Then open **Models → Download models**, selecting the available quantization, 
 
 Model cards show the actual data destination, free space on each destination disk and estimated additional bytes after counting reusable weights or resumable files. The background checks again before preparation and refuses to start downloads when space is insufficient or unknown. These are estimates from the reviewed installer, not proof of driver, memory or complete dependency readiness. Importing an existing model does not require downloading or reserving room for another full copy of its weights.
 
+### Put models and engines on another drive
+
+Model files are usually 70–120 GB. By default they live in `Strata-data` next to the Strata engine (on Windows, in the app data folder on C:), and they can go on any drive: click **Change** under **Strata → Storage locations**, in the first-run guide's environment check, or at the top of **Download models**, then choose a folder. Choosing a drive root such as `D:\` uses a `Strata-data` folder inside it.
+
+- **Move my existing models there (recommended)**: files are copied to the new folder and verified (SHA-256), the paths in model configurations are updated and the new location is remembered, and only then are the old files deleted. On the same drive the folders are moved in place without extra space. If anything fails or you cancel, the old files and setting stay as they were. Models cannot start while files move; stop a running service first.
+- **Use the new location for new downloads only**: existing models stay where they are and keep working.
+
+The location is shared with official Strata (the `data_dir` in Strata's `settings.json`), so the official installer uses it too.
+
+**New engine install location** decides where Strata engines installed from now on (about 1 GB) go; installed engines stay where they are. Paths are limited to 120 characters and must be a real folder the current user can write to (not a link or redirected folder).
+
 Open the separate **Tasks & logs** sidebar menu for preparation, download and update tasks, actual log output and downloaded bytes when available. Use the task's supported cancel or retry action after correcting an error. A completed, verified preparation appears in My models without replacing your current selection. Select **Use** when you are ready to switch.
 
 ## Start chatting
@@ -251,6 +262,14 @@ Interrupted or canceled engine downloads retain their received bytes. Confirming
 Automatic checks share the app's default-enabled setting and still require confirmation. Preparation preserves the current service; switching follows idle and process-identity checks and briefly interrupts the local API. The updated service is checked, and failure or cancellation after switching attempts to restore backups and previous registrations. Recovery failures retain diagnostics for repair before retrying.
 
 This workflow uses upstream release information and matching ZIP assets. ZIP engine updates currently target matching official Windows x64 packages; missing platform assets preserve the existing installation. Linux retains release information and notes without offering Windows ZIP updates; Linux source-build upgrades are not implemented. External startup hooks, unknown processes or incompatible dependencies are rejected before stopping services.
+
+### Install a specific Strata version
+
+**Install a specific version** on the Strata page lists every upstream Strata release, newest first, marked **Current**, **Latest** and **Pre-release**. Versions without a package for this platform cannot be chosen. After you pick one, the button says whether it upgrades, downgrades or reinstalls; it opens the same confirmation as a normal update, with the same download sources, service-stop authorization and logs.
+
+Downgrades use the same installation path as upgrades. From 0.2 on, the signed update feed is verified (signature, schema, channel, expiry) and its version must equal the chosen version; legacy ZIPs are checked against the SHA256 that GitHub publishes. The package is unpacked into a staging directory and the new engine gets a trial start; if that fails, the previous version is restored automatically. A chosen version is used for that installation only and does not change the record of the latest version. Before a downgrade the dialog warns that an older engine may not support models, quantizations or options added later; model files and configurations are kept and you can upgrade again; if the two versions need different Python packages, the installation is refused and the current version stays.
+
+With **Stay on {version} and stop update prompts** checked (the installed version), releases newer than the pinned version no longer prompt for an update, and the Strata page shows **Pinned** instead of an update button. The pin only affects prompts: you can still choose any version from the list, and unchecking it restores automatic prompts.
 
 An existing Strata installation was updated to 0.1.42 on one Windows machine: all 24 original configuration files were unchanged, the existing model was loaded again with its 131072 context setting preserved, and a short API request returned `OK`. This was not a full 128K-context test and does not establish compatibility for every GPU/model, Linux or the complete UI flow. Updating the Tauri app itself across versions requires separate acceptance. See the [verification record](VERIFICATION.md#特定-windows-机器的-strata-0142-实机更新) for details.
 

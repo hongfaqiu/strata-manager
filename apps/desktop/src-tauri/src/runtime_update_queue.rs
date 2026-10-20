@@ -332,10 +332,13 @@ async fn health(ipc: &SupervisorClient, profile: &ServiceProfile) -> Result<Valu
 fn backend_params(record: &Record) -> Value {
     // The legacy bridge already stopped the specifically approved services.
     // A newly appearing service must never be stopped by the subsequent ZIP task.
-    json!({"installDir": record.install_dir, "assetName": record.asset_name, "requestId": record.task.id, "stopCurrentService": false, "localArchivePath": record.download.local_archive_path, "downloadUrl": record.download.download_url})
+    json!({"installDir": record.install_dir, "assetName": record.asset_name, "requestId": record.task.id, "stopCurrentService": false, "localArchivePath": record.download.local_archive_path, "downloadUrl": record.download.download_url, "targetVersion": record.download.target_version})
 }
 fn backend_method(download: &RuntimeZipDownloadOptions) -> &'static str {
-    if download.is_custom() {
+    // A background service that predates version choice must refuse, not install the latest.
+    if download.target_version.is_some() {
+        "update_runtime_zip_version_v1"
+    } else if download.is_custom() {
         "update_runtime_zip_download_v1"
     } else {
         "update_runtime_zip"
@@ -412,9 +415,12 @@ async fn start_with_download_probe(
         return Err("此 Strata 仍有无法确认归属的外部服务；本次更新不会自动停止它".into());
     }
     let request_id = uuid::Uuid::new_v4().to_string();
-    let params = json!({"installDir": runtime, "assetName": asset_name, "requestId": request_id, "stopCurrentService": stop_current_service, "localArchivePath": download.local_archive_path, "downloadUrl": download.download_url});
+    let params = json!({"installDir": runtime, "assetName": asset_name, "requestId": request_id, "stopCurrentService": stop_current_service, "localArchivePath": download.local_archive_path, "downloadUrl": download.download_url, "targetVersion": download.target_version});
     match strata_local_ipc::call(&ipc.data_dir, backend_method(&download), params).await {
         Ok(task) => return Ok(task),
+        Err(error) if error.code == "unknown_method" && download.target_version.is_some() => {
+            return Err("后台服务版本较旧，不支持安装指定版本；请完全退出并重新打开应用后再试。运行环境未改动 / The background service is older and cannot install a chosen version; quit and reopen the app. Nothing was changed".into());
+        }
         Err(error) if error.code == "unknown_method" => {}
         Err(error) => return Err(error.to_string()),
     }
@@ -1004,6 +1010,7 @@ mod tests {
                 local_archive_path: local.then(|| archive.to_string_lossy().into_owned()),
                 download_url: (!local)
                     .then(|| "https://mirror.example/strata-windows-x64.zip".into()),
+                target_version: None,
             };
             let (client, state, stop, server) = fixture(temp.path(), &runtime, false).await;
             let task = start_with_download_probe(
@@ -1029,6 +1036,7 @@ mod tests {
                     RuntimeZipDownloadOptions {
                         local_archive_path: Some(other.to_string_lossy().into()),
                         download_url: None,
+                        target_version: None,
                     },
                     safe_probe,
                 )
@@ -1088,6 +1096,7 @@ mod tests {
         let download = RuntimeZipDownloadOptions {
             local_archive_path: None,
             download_url: Some("https://mirror.example/strata-windows-x64.zip".into()),
+            target_version: None,
         };
         let first = start_with_download_probe(
             &client,
@@ -1116,10 +1125,12 @@ mod tests {
             RuntimeZipDownloadOptions {
                 local_archive_path: None,
                 download_url: Some("https://another.example/strata-windows-x64.zip".into()),
+                target_version: None,
             },
             RuntimeZipDownloadOptions {
                 local_archive_path: Some(second_archive.to_string_lossy().into()),
                 download_url: None,
+                target_version: None,
             },
             RuntimeZipDownloadOptions::default(),
         ] {
@@ -1153,6 +1164,7 @@ mod tests {
         let download = RuntimeZipDownloadOptions {
             local_archive_path: Some(archive.to_string_lossy().into()),
             download_url: None,
+            target_version: None,
         };
         let (client, state, stop, server) = fixture(temp.path(), &runtime, false).await;
         let accepted = start_with_download_probe(
@@ -1194,6 +1206,7 @@ mod tests {
         let download = RuntimeZipDownloadOptions {
             local_archive_path: Some(temp.path().join("missing.zip").to_string_lossy().into()),
             download_url: None,
+            target_version: None,
         };
         assert!(start_with_download_probe(
             &client,
@@ -1689,5 +1702,28 @@ mod tests {
         );
         assert_eq!(get(&client, KEY).await.unwrap(), intent);
         println!("Unconfirmed ZIP update refused; supervisor {}, service PID {}, loaded={} unchanged; saved update intent unchanged", after["pid"], after_status["pid"], before_health["loaded"]);
+    }
+}
+
+#[cfg(test)]
+mod version_method_tests {
+    use super::*;
+
+    #[test]
+    fn a_chosen_version_uses_a_method_older_services_refuse() {
+        let chosen = RuntimeZipDownloadOptions {
+            target_version: Some("0.1.44".into()),
+            ..Default::default()
+        };
+        assert_eq!(backend_method(&chosen), "update_runtime_zip_version_v1");
+        assert_eq!(
+            backend_method(&RuntimeZipDownloadOptions::default()),
+            "update_runtime_zip"
+        );
+        let mirror = RuntimeZipDownloadOptions {
+            download_url: Some("https://mirror.example/a.zip".into()),
+            ..Default::default()
+        };
+        assert_eq!(backend_method(&mirror), "update_runtime_zip_download_v1");
     }
 }

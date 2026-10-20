@@ -17,6 +17,10 @@ pub struct RuntimeZipDownloadOptions {
     pub local_archive_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub download_url: Option<String>,
+    /// Install this official release instead of the latest one (up or down). Sent only
+    /// with `update_runtime_zip_version_v1`, so an older background service refuses it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_version: Option<String>,
 }
 
 impl RuntimeZipDownloadOptions {
@@ -33,6 +37,15 @@ impl RuntimeZipDownloadOptions {
             .download_url
             .filter(|value| !value.trim().is_empty())
             .map(|value| value.trim().to_owned());
+        self.target_version = self
+            .target_version
+            .map(|value| value.trim().trim_start_matches('v').to_owned())
+            .filter(|value| !value.is_empty());
+        if let Some(version) = &self.target_version {
+            if !crate::runtime_upgrade::engine_package::valid_version(version) {
+                return Err("所选 Strata 版本号无效 / Invalid Strata version".into());
+            }
+        }
         if self.local_archive_path.is_some() && self.download_url.is_some() {
             return Err("本地引擎包 和镜像下载地址只能选择一种".into());
         }
@@ -254,6 +267,40 @@ mod tests {
         }
     }
     #[test]
+    fn a_chosen_version_is_normalized() {
+        let chosen = |version: &str| RuntimeZipDownloadOptions {
+            target_version: Some(version.into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            chosen(" v0.1.44 ")
+                .validate(None)
+                .unwrap()
+                .target_version
+                .as_deref(),
+            Some("0.1.44")
+        );
+        assert_eq!(
+            chosen("0.2.0-beta")
+                .validate(None)
+                .unwrap()
+                .target_version
+                .as_deref(),
+            Some("0.2.0-beta")
+        );
+        assert_eq!(chosen("  ").validate(None).unwrap().target_version, None);
+        assert!(chosen("latest").validate(None).is_err());
+        assert!(chosen("../0.1").validate(None).is_err());
+        // Any source still has to match the chosen release's verified digest and size.
+        let mirror = RuntimeZipDownloadOptions {
+            download_url: Some("https://mirror.example/strata-windows-x64.zip".into()),
+            target_version: Some("0.1.44".into()),
+            ..Default::default()
+        };
+        assert!(mirror.validate(Some("strata-windows-x64.zip")).is_ok());
+    }
+
+    #[test]
     fn options_require_an_explicit_official_asset_and_safe_source() {
         let temp = tempfile::tempdir().unwrap();
         let local = temp.path().join("engine.zip");
@@ -262,6 +309,7 @@ mod tests {
         let options = RuntimeZipDownloadOptions {
             local_archive_path: Some(local.clone()),
             download_url: None,
+            target_version: None,
         };
         assert!(options.clone().validate(None).is_err());
         assert!(options.validate(Some("strata-windows-x64.zip")).is_ok());
@@ -273,20 +321,23 @@ mod tests {
         ] {
             assert!(RuntimeZipDownloadOptions {
                 local_archive_path: None,
-                download_url: Some(url.into())
+                download_url: Some(url.into()),
+                target_version: None,
             }
             .validate(Some("strata-windows-x64.zip"))
             .is_err());
         }
         assert!(RuntimeZipDownloadOptions {
             local_archive_path: Some(local),
-            download_url: Some("https://mirror.test/a.zip".into())
+            download_url: Some("https://mirror.test/a.zip".into()),
+            target_version: None,
         }
         .validate(Some("strata-windows-x64.zip"))
         .is_err());
         assert!(RuntimeZipDownloadOptions {
             local_archive_path: None,
-            download_url: Some("https://mirror.test/download?token=123".into())
+            download_url: Some("https://mirror.test/download?token=123".into()),
+            target_version: None,
         }
         .validate(Some("strata-windows-x64.zip"))
         .is_ok());
@@ -306,6 +357,7 @@ mod tests {
         let options = RuntimeZipDownloadOptions {
             local_archive_path: Some(source.to_string_lossy().into()),
             download_url: None,
+            target_version: None,
         };
         let staged = engine_archive(&state, &id, &asset(bytes), &options, temp.path())
             .await

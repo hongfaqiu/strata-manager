@@ -13,6 +13,7 @@ import { taskProgress } from '../pages/d2Estimates';
 import { ManagedPythonPanel } from '../pages/ManagedPythonPanel';
 import { useLocalRuntimePackages } from '../pages/LocalRuntimePackage';
 import { ExistingModelPanel } from '../pages/ExistingModelPanel';
+import { GuideStorageRows } from '../pages/StorageLocation';
 import { fetchArenaGroups, fetchArenaTier } from './arenaPublic';
 import {
   arenaLeaderboardQuery, arenaMatch, confidenceBars, defaultContext, parseGpu,
@@ -238,7 +239,9 @@ function EnvironmentStep(props: StepProps & { checks?: EnvironmentCheck[]; verdi
       {!props.desktop ? <div className="ob-check"><Mark state="warn"/><span className="ob-check-label">{t('obSystemRow')}</span><span className="ob-check-value">{t('obDesktopOnly')}</span></div>
         : !checks ? <div className="ob-check"><Mark state={props.environmentError ? 'warn' : 'busy'}/><span className="ob-check-label">{t('obSystemRow')}</span><span className="ob-check-value">{props.environmentError ?? t('obChecking')}</span></div>
         : checks.map(check => <div key={check.id} className="ob-check"><Mark state={check.state}/><span className="ob-check-label">{label(check.id)}</span><span className="ob-check-value">{check.value || (checkDetail(check, t) ? '' : '—')}{checkDetail(check, t) && <small className={`${check.state === 'ok' ? '' : `is-${check.state}`}${check.value ? '' : ' is-alone'}`}>{checkDetail(check, t)}</small>}</span></div>)}
-      <div className="ob-check"><Mark state="none"/><span className="ob-check-label">{t('obInstallLocation')}</span><span className="ob-check-value">{t('obInstallLocationValue')}</span></div>
+      {props.desktop ? <GuideStorageRows language={props.language} desktop={props.desktop} onChooseDirectory={props.readOnly ? undefined : props.onChooseDirectory}
+        renderRow={(rowLabel, value, action) => <div key={rowLabel} className={`ob-check${action ? ' has-action' : ''}`} data-testid="ob-storage-row"><Mark state="none"/><span className="ob-check-label">{rowLabel}</span><span className="ob-check-value ob-storage-value">{value}</span>{action}</div>}/>
+        : <div className="ob-check"><Mark state="none"/><span className="ob-check-label">{t('obInstallLocation')}</span><span className="ob-check-value">{t('obInstallLocationValue')}</span></div>}
     </div>
     {!props.readOnly && checks?.some(check => check.id === 'python' && check.state === 'fail') && <ManagedPythonPanel variant="compact" language={props.language} desktop={props.desktop} found={props.environment?.python} onInstalled={props.onRecheckEnvironment}/>}
     {!props.readOnly && <footer className="ob-actions">

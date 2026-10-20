@@ -33,7 +33,7 @@ test('#74: an installed engine can be updated or reinstalled from a local ZIP', 
   assert.match(panel, /localEntry=\{!!pending\.local\}/);
   assert.match(dialog, /localEntry \? 'local' :/);
   assert.match(dialog, /savedSourceNeedsSelection = !localEntry &&/);
-  assert.match(panel, /core\.updateRuntimeZip\(runtime\.installDir, selectedAssetName, true, download\)/, 'the existing verified update path installs the ZIP');
+  assert.match(panel, /core\.updateRuntimeZip\(runtime\.installDir, selectedAssetName, true, pending\.target \? \{ \.\.\.download, targetVersion: pending\.target \} : download\)/, 'the existing verified update path installs the ZIP');
 });
 
 test('the guide and the Strata page share one local-package flow', () => {
