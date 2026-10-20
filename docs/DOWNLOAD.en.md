@@ -59,6 +59,7 @@ This phase only proves that **CI can produce an unsigned / un-notarized Apple Si
 - **Intel** (`x86_64-apple-darwin`) packages are **not** built. Upstream Strata Metal targets Apple Silicon.
 - **The DMG still does not bundle an engine.** From phase 2, on Apple Silicon Manager can download and verify the upstream [v0.2.0-beta](https://github.com/Niko1221/Strata/releases/tag/v0.2.0-beta) prebuilt package `strata-engine-*-macos-arm64-metal.tar.gz` (in-app SHA256; we do not ship SHA256SUMS), or use an existing local Strata/`engine` or `build-metal` directory. A `./setup.sh` source build remains a manual option per [docs/MAC.md](https://github.com/Niko1221/Strata/blob/main/docs/MAC.md); Manager does not invoke it automatically. Real-device inference validation is still pending.
 - `Info.plist` sets the minimum system version to 15.0. CI shows that a `macos-15` runner can compile and package the app. It does not show that the app launches, finds an engine, or runs inference on Mac hardware.
+- The window uses native macOS traffic-light buttons (top left) and a native menu bar (the Edit menu makes Cmd+C / Cmd+V work; Cmd+Q quits the interface while background services keep running; Cmd+W closes the window; Cmd+M minimizes). Windows and Linux keep the custom title bar.
 
 ## Try source
 

@@ -1,3 +1,5 @@
+#[cfg(any(target_os = "macos", test))]
+mod app_menu;
 mod arena;
 mod config_cleanup;
 mod configuration_details;
@@ -173,6 +175,13 @@ fn show_interface(app: &tauri::AppHandle) {
         let _ = window.unminimize();
         let _ = window.set_focus();
     }
+}
+
+/// Leave the interface while background services keep running (tray "Quit",
+/// macOS Cmd+Q).
+fn quit_interface(app: &tauri::AppHandle) {
+    app.state::<ClientState>().cleanup_ui();
+    app.exit(0);
 }
 
 fn quit_with_services(app: &tauri::AppHandle) {
@@ -1724,6 +1733,8 @@ pub fn run() {
                 .get("closeToTray")
                 .and_then(Value::as_bool)
                 .unwrap_or(true);
+            #[cfg(target_os = "macos")]
+            app_menu::install(app, english)?;
             let show = MenuItem::with_id(
                 app,
                 "show",
@@ -1855,10 +1866,7 @@ pub fn run() {
                     }
                     "service-start" => tray_service_action(app, true),
                     "service-stop" => tray_service_action(app, false),
-                    "quit" => {
-                        app.state::<ClientState>().cleanup_ui();
-                        app.exit(0);
-                    }
+                    "quit" => quit_interface(app),
                     "stop-quit" => {
                         quit_with_services(app);
                     }
@@ -2018,6 +2026,12 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("Strata Manager initialization failed");
     app.run(|handle, event| {
+        // Clicking the Dock icon brings the main window back even when it was
+        // hidden to the menu bar icon or only the floating strip is showing.
+        #[cfg(target_os = "macos")]
+        if let tauri::RunEvent::Reopen { .. } = event {
+            show_interface(handle);
+        }
         if matches!(event, tauri::RunEvent::Exit) {
             taskbar_monitor::shutdown(handle);
             handle.state::<ClientState>().cleanup_ui();
