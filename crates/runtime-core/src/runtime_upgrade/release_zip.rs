@@ -240,7 +240,8 @@ pub fn start_install_release_with_archives(
     archives: installation::LocalRuntimeArchives,
 ) -> Result<TaskStatus, String> {
     let archives = archives.validate()?;
-    let root = installation::owned_directory(state.data_dir(), &["runtimes"])?
+    // The engine folder chosen under "Storage locations", or the app data folder.
+    let root = crate::storage_location::engine_runtimes_root(&state)?
         .join(format!("release-{}", uuid::Uuid::new_v4()));
     fs::create_dir(&root).map_err(|e| e.to_string())?;
     let result = start(

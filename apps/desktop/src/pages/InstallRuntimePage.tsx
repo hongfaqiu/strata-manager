@@ -6,6 +6,7 @@ import type { LogEntry, RuntimeInstallationStatus, TaskStatus } from '@strata-ma
 import { Empty, Header, Panel } from '../components';
 import { Dropdown } from '../OfficialControls';
 import { RuntimeManagementPanel } from './RuntimeManagementPanel';
+import { StorageLocationPanel } from './StorageLocation';
 import { LocalRuntimePackageFields, useLocalRuntimePackages } from './LocalRuntimePackage';
 import './install-runtime.css';
 
@@ -62,6 +63,8 @@ export interface InstallRuntimePageProps {
   onUpdateStarted?: () => void;
   /** Detected OS name; Windows also offers the separate engine ZIP. */
   os?: string;
+  /** Native folder picker; enables the storage location panel. */
+  onChooseDirectory?: () => Promise<string | null>;
 }
 
 function detectedRuntimes(status: RuntimeInstallationStatus): core.DetectedRuntime[] {
@@ -227,6 +230,7 @@ export function InstallRuntimePage(props: InstallRuntimePageProps) {
           {errorBlock}
         </Panel>
         <RuntimeManagementPanel operationDisabled={props.operationDisabled} autoCheck={props.autoCheck} language={props.language} desktop={props.desktop} installationStatus={installation} selectedRuntimeDir={detected.installDir} showInstallations={false} onUpdateStarted={props.onUpdateStarted}/>
+        {props.onChooseDirectory && <StorageLocationPanel language={props.language} desktop={props.desktop} installDir={detected.installDir} operationDisabled={props.operationDisabled || running} onChooseDirectory={props.onChooseDirectory}/>}
       </> : initial ? <div className="runtime-detecting" role="status"><LoaderCircle size={18} className="spin"/>{text.checking}</div> : loaded && !statusError ? <>
         <ol className="install-runtime-steps" aria-label={text.title}><li className="is-current"><span>1</span>{text.installStep}</li><li><span>2</span>{text.modelStep}</li><li><span>3</span>{text.serviceStep}</li></ol>
         <Panel title={text.installStep} className="install-runtime-card">
@@ -236,6 +240,7 @@ export function InstallRuntimePage(props: InstallRuntimePageProps) {
           {!running && <LocalRuntimePackageFields packages={packages} disabled={busy}/>}
           <div className="actions install-runtime-actions">{running ? <button type="button" disabled={busy || canceling} onClick={() => void cancel()}><Square size={14}/>{canceling ? text.canceling : text.cancel}</button> : <button type="button" className="primary" disabled={props.operationDisabled || !loaded || busy || packages.missing} onClick={() => void start()}><Download size={15}/>{task || installation.taskId ? text.retry : packages.source === 'local' ? text.startLocal : text.start}</button>}{logButton}</div>{errorBlock}
         </Panel>
+        {props.onChooseDirectory && <StorageLocationPanel language={props.language} desktop={props.desktop} operationDisabled={running || busy} onChooseDirectory={props.onChooseDirectory}/>}
       </> : null}
       {logsOpen && installation.taskId && <Panel title={text.logs} className="install-runtime-log-panel">{logError && <p className="install-runtime-log-error" role="alert">{text.logsUnavailable}: {logError}</p>}<div id="install-runtime-logs" className="install-runtime-logs" role="log" aria-label={text.logs} aria-live="off">{logs.length ? logs.map((entry, index) => <div className="install-runtime-log-line" key={`${entry.timestamp}-${index}`}><time dateTime={new Date(entry.timestamp).toISOString()}>{new Date(entry.timestamp).toLocaleTimeString(props.language)}</time><span className={`install-runtime-log-level ${entry.level}`}>{entry.level}</span><span>{entry.message}</span></div>) : <p>{text.emptyLogs}</p>}</div></Panel>}
     </>}

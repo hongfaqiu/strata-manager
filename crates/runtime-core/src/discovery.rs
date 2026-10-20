@@ -1255,7 +1255,20 @@ pub fn discover_runtimes_for_state(
     profiles: &[ServiceProfile],
     data_dir: &Path,
 ) -> Vec<DetectedRuntime> {
-    let mut roots = expand_runtime_directories(vec![data_dir.join("runtimes")]);
+    discover_runtimes_for_state_with(profiles, data_dir, None)
+}
+
+/// Also scans `engine_root` (a `runtimes` folder chosen for new engine installs).
+pub fn discover_runtimes_for_state_with(
+    profiles: &[ServiceProfile],
+    data_dir: &Path,
+    engine_root: Option<PathBuf>,
+) -> Vec<DetectedRuntime> {
+    let mut roots = expand_runtime_directories(
+        std::iter::once(data_dir.join("runtimes"))
+            .chain(engine_root)
+            .collect(),
+    );
     roots.extend(common_directories());
     inspect_runtime_directories(profiles, roots)
 }

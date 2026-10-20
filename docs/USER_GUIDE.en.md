@@ -43,6 +43,17 @@ Then open **Models → Download models**, selecting the available quantization, 
 
 Model cards show the actual data destination, free space on each destination disk and estimated additional bytes after counting reusable weights or resumable files. The background checks again before preparation and refuses to start downloads when space is insufficient or unknown. These are estimates from the reviewed installer, not proof of driver, memory or complete dependency readiness. Importing an existing model does not require downloading or reserving room for another full copy of its weights.
 
+### Put models and engines on another drive
+
+Model files are usually 70–120 GB. By default they live in `Strata-data` next to the Strata engine (on Windows, in the app data folder on C:), and they can go on any drive: click **Change** under **Strata → Storage locations**, in the first-run guide's environment check, or at the top of **Download models**, then choose a folder. Choosing a drive root such as `D:\` uses a `Strata-data` folder inside it.
+
+- **Move my existing models there (recommended)**: files are copied to the new folder and verified (SHA-256), the paths in model configurations are updated and the new location is remembered, and only then are the old files deleted. On the same drive the folders are moved in place without extra space. If anything fails or you cancel, the old files and setting stay as they were. Models cannot start while files move; stop a running service first.
+- **Use the new location for new downloads only**: existing models stay where they are and keep working.
+
+The location is shared with official Strata (the `data_dir` in Strata's `settings.json`), so the official installer uses it too.
+
+**New engine install location** decides where Strata engines installed from now on (about 1 GB) go; installed engines stay where they are. Paths are limited to 120 characters and must be a real folder the current user can write to (not a link or redirected folder).
+
 Open the separate **Tasks & logs** sidebar menu for preparation, download and update tasks, actual log output and downloaded bytes when available. Use the task's supported cancel or retry action after correcting an error. A completed, verified preparation appears in My models without replacing your current selection. Select **Use** when you are ready to switch.
 
 ## Start chatting

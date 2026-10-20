@@ -909,6 +909,63 @@ async fn runtime_release_versions(
     }
 }
 
+/// Engine / model storage locations (user feedback: "everything can only go on C:").
+#[tauri::command]
+async fn storage_locations(
+    state: State<'_, ClientState>,
+    install_dir: Option<String>,
+    probe_path: Option<String>,
+) -> Result<Value, String> {
+    storage_request(
+        &state,
+        "storage_locations",
+        json!({"installDir": install_dir, "probePath": probe_path}),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn set_engine_install_root(
+    state: State<'_, ClientState>,
+    directory: Option<String>,
+) -> Result<Value, String> {
+    storage_request(
+        &state,
+        "set_engine_install_root",
+        json!({"directory": directory}),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn set_model_data_directory(
+    state: State<'_, ClientState>,
+    directory: String,
+    install_dir: Option<String>,
+    move_files: Option<bool>,
+) -> Result<Value, String> {
+    storage_request(
+        &state,
+        "set_model_data_directory",
+        json!({"directory": directory, "installDir": install_dir, "moveFiles": move_files.unwrap_or(false)}),
+    )
+    .await
+}
+
+async fn storage_request(
+    state: &State<'_, ClientState>,
+    method: &str,
+    params: Value,
+) -> Result<Value, String> {
+    match state.ipc.request(method, params).await {
+        Ok(result) => Ok(result),
+        Err(error) if error.code == "unknown_method" => {
+            Err("当前后台版本不支持更改存储位置，请重启应用完成后台更新后重试 / Restart the app to update the background service".into())
+        }
+        Err(error) => Err(error.to_string()),
+    }
+}
+
 #[tauri::command]
 async fn runtime_update_info(
     state: State<'_, ClientState>,
@@ -2020,6 +2077,9 @@ pub fn run() {
             runtime_update_info,
             runtime_release_versions,
             runtime_release_info,
+            storage_locations,
+            set_engine_install_root,
+            set_model_data_directory,
             test_runtime_zip_download,
             resolve_runtime_zip_asset,
             list_tasks,
