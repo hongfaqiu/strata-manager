@@ -1,5 +1,6 @@
 pub mod analytics;
 pub mod benchmark_identity;
+mod byte_size;
 pub mod chat_runtime;
 pub mod configuration_copy;
 pub mod diagnostics;
@@ -2654,6 +2655,7 @@ fn start_prepared_service_checked(
         operation.validate_processes(state, &mut processes)?;
     }
     let mut gpu_power_lease = gpu_power::GpuPowerLease::apply(&plan.config_value)?;
+    storage::mark_engine_log_session(&profile);
     let mut process = match OwnedProcess::spawn(command, state.logs.clone(), &profile.id) {
         Ok(process) => process,
         Err(error) => {

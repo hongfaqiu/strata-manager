@@ -184,7 +184,10 @@ fn import_archive(
                 &state.logs,
                 id,
                 "info",
-                format!("已读取本地引擎包 {received}/{} 字节", asset.size),
+                format!(
+                    "已读取本地引擎包 {}",
+                    crate::byte_size::progress_amount(received, Some(asset.size), None)
+                ),
             );
             at = Instant::now();
         }
@@ -204,7 +207,10 @@ fn import_archive(
         &state.logs,
         id,
         "info",
-        format!("本地引擎包 官方 SHA256 校验通过，共 {received} 字节；原文件保持不变"),
+        format!(
+            "本地引擎包 官方 SHA256 校验通过，共 {}；原文件保持不变",
+            crate::byte_size::human_bytes(received)
+        ),
     );
     Ok(destination.to_owned())
 }

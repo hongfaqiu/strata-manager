@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Activity, AlertTriangle, ArrowRight, Boxes, Check, ChevronDown, Copy, Cpu, MemoryStick, MessageSquare, MonitorSmartphone, Plug, RefreshCw, RotateCcw, Settings2 } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowRight, Boxes, Check, ChevronDown, Copy, Cpu, MemoryStick, MessageSquare, MonitorSmartphone, Plug, RefreshCw, RotateCcw, Settings2, SlidersHorizontal } from 'lucide-react';
 import { gpuCards, gpuSetName, modelLoadNotice, normalizeBaseUrl, type AppLanguage, type BackgroundHealthSnapshot, type JsonObject, type MetricSnapshot, type ProcessStatus, type ServiceProfile, type TaskStatus } from '@strata-manager/core';
 import { ApiIntegrationDialog } from '../ApiIntegrationDialog';
 import { useOverviewUsage } from './OverviewUsage';
@@ -77,7 +77,10 @@ export function OverviewDashboard(props: OverviewDashboardProps) {
   const stopped = !online && !connecting;
   const generating = metric?.state === 'generating' || metric?.state === 'reading';
   const loaded = online && health.loaded === true;
-  const model = String(health.model ?? engine.model ?? '') || profile.name;
+  // One name everywhere (Xiaohongshu feedback): the model the user picked, as in the startup card, the
+  // sidebar and the switch menu. The name clients send to the API (config model_name) is a labeled detail.
+  const servedModel = String(health.model ?? engine.model ?? '');
+  const model = profile.name || servedModel;
   let endpoint = profile.baseUrl; try { endpoint = `${normalizeBaseUrl(profile.baseUrl)}/v1`; } catch { /* keep raw */ }
 
   const vramUsed = num(metric?.gpuMemoryUsed), vramTotal = num(metric?.gpuMemoryTotal), ramUsed = num(metric?.ramUsed), ramTotal = num(metric?.ramTotal);
@@ -132,7 +135,7 @@ export function OverviewDashboard(props: OverviewDashboardProps) {
       <div className="ovw-id">
         <span className={`ovw-state t-${stateTone}`}><i aria-hidden="true" />{stateWord}</span>
         <h2 title={model}>{model}</h2>
-        <span className="ovw-sub">{[profile.name !== model ? profile.name : '', proc?.pid ? `PID ${proc.pid}` : ''].filter(Boolean).join(' · ')}</span>
+        <span className="ovw-sub">{servedModel && servedModel !== model && <span className="ovw-api-name" data-tooltip={t('ovApiModelHint')}>{t('ovApiModel')} <code>{servedModel}</code></span>}{servedModel && servedModel !== model && proc?.pid ? ' · ' : ''}{proc?.pid ? `PID ${proc.pid}` : ''}</span>
       </div>
       <div className="ovw-endpoint"><code>{endpoint}</code><button type="button" className="ovw-btn ovw-btn-ghost" onClick={copy}>{copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}<span>{copied ? t('ovCopied') : t('ovCopyApi')}</span></button></div>
       <div className="ovw-actions" role="group" aria-label={t('quickActions')}>
@@ -142,6 +145,7 @@ export function OverviewDashboard(props: OverviewDashboardProps) {
         {switchable && <div className="ovw-switch"><button type="button" className="ovw-btn" aria-expanded={menuOpen} aria-haspopup="listbox" onClick={() => setMenuOpen(v => !v)} disabled={props.actionsDisabled}><Boxes size={14} aria-hidden="true" /><span>{t('ovSwitchModel')}</span><ChevronDown size={13} aria-hidden="true" /></button>
           {menuOpen && <ul className="ovw-menu" role="listbox" aria-label={t('ovSwitchModel')}>{props.profiles!.map(item => <li key={item.id}><button type="button" role="option" aria-selected={item.id === profile.id} onClick={() => { setMenuOpen(false); if (item.id !== profile.id) props.onSwitchProfile!(item.id); }}>{item.id === profile.id ? <Check size={13} aria-hidden="true" /> : <span className="ovw-menu-pad" />}{item.name}</button></li>)}
             <li className="ovw-menu-foot"><button type="button" onClick={() => { setMenuOpen(false); onNavigate('profiles'); }}>{t('ovManageModels')}</button></li></ul>}</div>}
+        {desktop && profile.managed && profile.configPath && <button type="button" className="ovw-btn" data-testid="overview-startup-params" data-tooltip={t('ovLaunchParamsHint')} onClick={() => onNavigate('config')}><SlidersHorizontal size={14} aria-hidden="true" /><span>{t('ovLaunchParams')}</span></button>}
         <button type="button" className="ovw-btn overview-shortcut-api" onClick={() => setApiOpen(true)}><Plug size={14} aria-hidden="true" /><span>{t('ovIntegration')}</span></button>
       </div>
     </section>

@@ -136,11 +136,8 @@ fn resumed_total(response: &reqwest::Response, offset: u64, limit: u64) -> Resul
     Ok(total)
 }
 
-fn amount(received: u64, total: Option<u64>) -> String {
-    match total {
-        Some(total) => format!("{received} / {total} 字节"),
-        None => format!("{received} 字节 / 总量未知"),
-    }
+fn amount(received: u64, total: Option<u64>, bytes_per_second: Option<f64>) -> String {
+    crate::byte_size::progress_amount(received, total, bytes_per_second)
 }
 
 async fn retry(
@@ -153,16 +150,18 @@ async fn retry(
     cancelled(state, id)?;
     if attempt == MAX_ATTEMPTS {
         return Err(format!(
-            "官方下载已尝试 {MAX_ATTEMPTS} 次，{reason}；已保存 {received} 字节，可重试续传"
+            "官方下载已尝试 {MAX_ATTEMPTS} 次，{reason}；已保存 {}，可重试续传",
+            crate::byte_size::human_bytes(received)
         ));
     }
     progress(
         state,
         id,
         format!(
-            "下载重试 {}/{}：{reason}；已保存 {received} 字节",
+            "下载重试 {}/{}：{reason}；已保存 {}",
             attempt + 1,
-            MAX_ATTEMPTS
+            MAX_ATTEMPTS,
+            crate::byte_size::human_bytes(received)
         ),
     )?;
     cancellable_wait(
@@ -231,7 +230,10 @@ pub(super) async fn download_with_client(
             if received == 0 {
                 format!("正在从官方来源下载: {url}")
             } else {
-                format!("断点续传，已下载 {received} 字节: {url}")
+                format!(
+                    "断点续传，已下载 {}: {url}",
+                    crate::byte_size::human_bytes(received)
+                )
             },
         )?;
         let mut request = client.get(url).header(header::ACCEPT_ENCODING, "identity");
@@ -270,7 +272,14 @@ pub(super) async fn download_with_client(
                 drop(output);
                 cancelled(state, id)?;
                 publish(&partial, &cache)?;
-                progress(state, id, format!("SHA256 校验通过，共 {received} 字节"))?;
+                progress(
+                    state,
+                    id,
+                    format!(
+                        "SHA256 校验通过，共 {}",
+                        crate::byte_size::human_bytes(received)
+                    ),
+                )?;
                 return Ok(cache);
             }
             output.set_len(0).map_err(|error| error.to_string())?;
@@ -304,8 +313,13 @@ pub(super) async fn download_with_client(
         } else {
             return Err(format!("官方下载返回 HTTP {status}，请检查来源后重试"));
         };
-        progress(state, id, format!("下载进度：{}", amount(received, total)))?;
+        progress(
+            state,
+            id,
+            format!("下载进度：{}", amount(received, total, None)),
+        )?;
         let mut last_log = Instant::now();
+        let mut logged_received = received;
         let mut stream = response.bytes_stream();
         let interruption = loop {
             let next = match cancellable_wait(state, id, stream.next(), IDLE_TIMEOUT).await {
@@ -329,8 +343,15 @@ pub(super) async fn download_with_client(
                         .map_err(|error| format!("磁盘写入失败: {error}"))?;
                     received = next_size;
                     if last_log.elapsed() >= Duration::from_secs(1) {
-                        progress(state, id, format!("下载进度：{}", amount(received, total)))?;
+                        let speed =
+                            (received - logged_received) as f64 / last_log.elapsed().as_secs_f64();
+                        progress(
+                            state,
+                            id,
+                            format!("下载进度：{}", amount(received, total, Some(speed))),
+                        )?;
                         last_log = Instant::now();
+                        logged_received = received;
                     }
                 }
             }
@@ -353,7 +374,14 @@ pub(super) async fn download_with_client(
         drop(output);
         cancelled(state, id)?;
         publish(&partial, &cache)?;
-        progress(state, id, format!("SHA256 校验通过，共 {received} 字节"))?;
+        progress(
+            state,
+            id,
+            format!(
+                "SHA256 校验通过，共 {}",
+                crate::byte_size::human_bytes(received)
+            ),
+        )?;
         return Ok(cache);
     }
     unreachable!("the final failed attempt returns its error")

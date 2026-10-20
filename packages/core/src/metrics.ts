@@ -83,3 +83,27 @@ export function modelLoadNotice(input: { online: boolean; loaded: unknown; metri
   const seconds = upstream ?? (since === undefined ? null : Math.max(0, ((input.now ?? Date.now()) - since) / 1000));
   return { kind: 'loading', seconds: seconds === null ? null : Math.round(seconds) };
 }
+
+/** How long after the service process starts a failed poll is still treated as part of starting up. */
+export const SERVICE_START_GRACE_MS = 120_000;
+
+/**
+ * Polling failures a slow cold start produces on its own (Xiaohongshu feedback: 2× RTX 2080 Ti):
+ * the API port is not open yet, or a busy engine answers late. Hide them while a start is pending,
+ * within the grace window after the process started, and (for metrics) while health reports a load
+ * in progress; the load banner and startup card already say what is happening. Anything that
+ * persists past that is surfaced unchanged.
+ */
+export function visibleServiceError(input: { error?: string; kind: 'health' | 'metrics'; starting: boolean; loaded?: unknown; processStartedAt?: number; now?: number; graceMs?: number }): string | undefined {
+  if (!input.error) return undefined;
+  if (input.starting) return undefined;
+  if (input.kind === 'metrics' && input.loaded === false) return undefined;
+  const startedAt = typeof input.processStartedAt === 'number' && input.processStartedAt > 0 ? input.processStartedAt : undefined;
+  if (startedAt !== undefined && (input.now ?? Date.now()) - startedAt < (input.graceMs ?? SERVICE_START_GRACE_MS)) return undefined;
+  return input.error;
+}
+
+/** Engine output is mostly statistics ("missed experts skipped", "cache hit rate"); only real failures are marked. */
+export function engineLogTone(message: string): 'error' | 'normal' {
+  return /traceback|exception\b|\berror\b|[a-z]error:|out of memory|\boom\b|fatal|panic|segmentation fault|access violation|failed to/i.test(message) ? 'error' : 'normal';
+}
