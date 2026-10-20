@@ -1220,11 +1220,14 @@ mod tests {
             assert!(!plan.source.join("models").exists() && !plan.source.join("mtp").exists());
             let config: Value =
                 serde_json::from_slice(&fs::read(&plan.configs[0]).unwrap()).unwrap();
-            assert_eq!(
-                config["model"],
-                json!(plan.target.join("models/qwen/a-00001-of-00002.gguf"))
-            );
-            assert_eq!(config["mtp"], json!(plan.target.join("mtp/rt")));
+            // Built per component so the expectation uses the platform separator.
+            let model = plan
+                .target
+                .join("models")
+                .join("qwen")
+                .join("a-00001-of-00002.gguf");
+            assert_eq!(config["model"], json!(model));
+            assert_eq!(config["mtp"], json!(plan.target.join("mtp").join("rt")));
             assert_eq!(config["port"], 8080);
             let settings: Value =
                 serde_json::from_slice(&fs::read(&plan.settings_path).unwrap()).unwrap();
