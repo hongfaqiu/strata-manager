@@ -1,0 +1,16 @@
++-o AGXAcceleratorG17X  <class AGXAcceleratorG17X, id 0x1000004a2, registered, matched, active, busy 0 (0 ms), retain 52>
+    {
+      "IOClass" = "AGXAcceleratorG17X"
+      "CFBundleIdentifier" = "com.apple.AGXG17X"
+      "IOProviderClass" = "AppleARMIODevice"
+      "model" = "Apple M5 Pro"
+      "gpu-core-count" = 20
+      "IOMatchedAtBoot" = Yes
+      "PerformanceStatistics" = {"In use system memory (driver)"=0,"Alloc system memory"=31138471936,"Tiler Utilization %"=41,"recoveryCount"=0,"lastRecoveryTime"=0,"Renderer Utilization %"=38,"TiledSceneBytes"=2359296,"Device Utilization %"=87,"SplitSceneCount"=0,"Allocated PB Size"=201326592,"In use system memory"=22548578304}
+      "AGXParameterBufferMaxSize" = 1677721600
+    }
+    
+  +-o IOUserClientCreator  <class IOUserClientCreator, id 0x1000004a3, registered, matched, active, busy 0 (0 ms), retain 5>
+      {
+        "IOUserClientCreator" = "pid 402, WindowServer"
+      }

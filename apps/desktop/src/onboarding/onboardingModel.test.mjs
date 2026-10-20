@@ -11,7 +11,8 @@ const load = (file, modules) => {
   vm.runInNewContext(source, { module, exports: module.exports, URLSearchParams, require: name => modules[name] ?? {} });
   return module.exports;
 };
-const core = { MODEL_CATALOG };
+const { unifiedGpu } = load('../../../../packages/core/src/gpu-summary.ts', { './errors': { asObject: value => value && typeof value === 'object' && !Array.isArray(value) ? value : {} } });
+const core = { MODEL_CATALOG, unifiedGpu };
 const estimates = load('../pages/d2Estimates.ts', { '@strata-manager/core': core });
 const model = load('./onboardingModel.ts', { '@strata-manager/core': core, '../pages/d2Estimates': estimates });
 const GB = 1024 ** 3;
@@ -46,6 +47,44 @@ test('parses GPU strings from environment info', () => {
   assert.equal(gpu.vramGB, 24);
   assert.equal(gpu.nvidia, true);
   assert.equal(model.parseGpu('Apple M3 Max').vramGB, undefined);
+});
+
+// Captured shape of environment_info on an Apple M5 Pro (48 GB) from the macOS probe (system_profiler + Metal).
+const m5Pro = { name: 'Apple M5 Pro', vendor: 'apple', cores: 20, unifiedMemory: true, memoryBytes: 48 * GB, gpuBudgetBytes: 36 * GB, gpuBudgetEstimated: false, metal: 4, source: 'system_profiler' };
+const mac = { os: 'macOS 26.1 Tahoe', arch: 'aarch64', cpuName: 'Apple M5 Pro', totalMemory: 48 * GB, availableMemory: 30 * GB, gpus: ['Apple M5 Pro'], gpuDetails: [m5Pro], python: 'Python 3.12.15', git: null, appVersion: '0.2.10' };
+
+test('Apple Silicon: the on-chip GPU passes the check with unified memory, never "no GPU"', () => {
+  const gpu = model.environmentChecks(mac).find(check => check.id === 'gpu');
+  assert.equal(gpu.state, 'ok');
+  assert.equal(gpu.value, 'Apple M5 Pro · Metal 4');
+  assert.equal(gpu.detail, 'appleUnified');
+  assert.deepEqual({ ...gpu.params }, { cores: 20, total: 48, budget: 36 });
+  assert.equal(model.environmentVerdict(model.environmentChecks(mac)), 'pass');
+  assert.equal(model.gpuRowValue(mac), 'Apple M5 Pro · Metal 4');
+  // An unknown future chip is still Apple by vendor; a VM GPU without Metal is a warning, not a silent pass.
+  assert.equal(model.environmentChecks({ ...mac, gpuDetails: [{ ...m5Pro, name: 'Apple M9 Hyper' }] }).find(check => check.id === 'gpu').state, 'ok');
+  const vm = model.environmentChecks({ ...mac, gpus: ['Apple Paravirtual device'], gpuDetails: [{ ...m5Pro, name: 'Apple Paravirtual device', cores: undefined, metal: undefined }] }).find(check => check.id === 'gpu');
+  assert.deepEqual([vm.state, vm.detail], ['warn', 'appleNoMetal']);
+  // The release before this fix: no nvidia-smi, empty gpus.
+  assert.equal(model.environmentChecks({ ...mac, gpus: [], gpuDetails: undefined }).find(check => check.id === 'gpu').detail, 'noGpu');
+});
+
+test('Intel Macs keep the non-NVIDIA warning and gain the GPU name', () => {
+  const intel = { ...mac, arch: 'x86_64', gpus: ['Intel UHD Graphics 630', 'AMD Radeon Pro 5500M'], gpuDetails: [
+    { name: 'Intel UHD Graphics 630', vendor: 'intel', unifiedMemory: false, gpuBudgetEstimated: false, metal: 3, source: 'system_profiler' },
+    { name: 'AMD Radeon Pro 5500M', vendor: 'amd', unifiedMemory: false, memoryBytes: 8 * GB, gpuBudgetEstimated: false, metal: 3, source: 'system_profiler' },
+  ] };
+  const gpu = model.environmentChecks(intel).find(check => check.id === 'gpu');
+  assert.deepEqual([gpu.state, gpu.detail], ['warn', 'nonNvidia']);
+  assert.equal(gpu.value, 'Intel UHD Graphics 630 / AMD Radeon Pro 5500M');
+});
+
+test('Apple Silicon recommendations fit against unified RAM only (no VRAM added on top)', () => {
+  const rows = model.recommendations('chat', 48, false, 50);
+  for (const row of rows) assert.equal(row.fit, estimates.fitState(row.ramGB, 48));
+  // The machine VRAM a Mac reports is undefined, so fitState never adds an offload budget.
+  assert.equal(estimates.environmentVramGB(mac.gpus), undefined);
+  assert.equal(estimates.usableMemoryGB(48, undefined), 48);
 });
 
 test('environment checks: all pass auto-skips, missing Python fails off Windows', () => {
