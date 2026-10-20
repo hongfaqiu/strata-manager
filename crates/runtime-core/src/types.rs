@@ -62,6 +62,9 @@ pub struct EnvironmentInfo {
     pub available_memory: u64,
     pub gpus: Vec<String>,
     pub python: Option<String>,
+    /// `python` is the app-private interpreter installed with one click.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub python_managed: bool,
     pub git: Option<String>,
     pub app_version: String,
 }

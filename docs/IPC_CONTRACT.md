@@ -49,6 +49,7 @@
 - `run_setup({profile,model,quant,context,images,options?}) -> TaskStatus`：官方非交互模型准备任务。options 为 `OfficialSetupOptions`；后台按 `SetupOptions` 验证，不接受任意命令字符串。返回 task ID，日志由任务页读取。
 - `inspect_gguf({request}) -> TaskStatus`：模型文件检查任务；request 为 `ModelInspectRequest`，Core 名为 `inspectModel`。
 - `install_runtime({directory}) -> TaskStatus`：官方运行环境准备；拒绝覆盖未知非空目录，只有本应用数据库与目录标记均匹配的失败安装允许重试，保留旧半成品，不自动下载模型权重。
+- `managed_python_status() -> ManagedPythonStatus`、`install_managed_python({source?}) -> TaskStatus`：macOS / glibc Linux 的应用内 Python（python-build-standalone 20261009 · CPython 3.12.15）。只读状态含 `supported/installed/interpreter/downloadBytes/task`；安装任务按固定的官方长度与 SHA-256 校验（`source` 只能是含 `{url}` 的 HTTPS GitHub 代理模板或完整 HTTPS 地址，不改变摘要），逐项检查解包条目后原子移入 `toolchains/`，可用 `cancel_task` 取消。安装后 `install_runtime` 与 `environment_info` 优先使用它（`pythonManaged: true`）；不改 PATH、系统或 Homebrew Python。Windows 仍由 `install_runtime` 下载 python.org 安装器。
 - `prepare_local_runtime() -> TaskStatus`、`local_runtime_installation() -> RuntimeInstallationStatus`：创建源码和私有 Python 环境的后台任务，以及恢复任务 ID/经过核验的结果，不下载模型权重。
 - `update_runtime({profile}) -> TaskStatus`：官方运行时更新流程，禁止盲目覆盖配置；ZIP 更新是后文的独立入口。
 - `list_tasks() -> TaskStatus[]`、`cancel_task({taskId}) -> void`：含桌面维护的持久 ZIP 更新队列与后台任务协调；不是仅内存任务列表。

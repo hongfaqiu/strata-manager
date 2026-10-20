@@ -10,6 +10,7 @@ import { ResourceAssessmentPanel } from '../pages/ResourceAssessmentPanel';
 import { ContextExtensionNotice } from '../pages/ContextExtensionNotice';
 import { SetupHandoffActions } from '../pages/SetupHandoffActions';
 import { taskProgress } from '../pages/d2Estimates';
+import { ManagedPythonPanel } from '../pages/ManagedPythonPanel';
 import { useLocalRuntimePackages } from '../pages/LocalRuntimePackage';
 import { ExistingModelPanel } from '../pages/ExistingModelPanel';
 import { fetchArenaGroups, fetchArenaTier } from './arenaPublic';
@@ -226,7 +227,7 @@ function checkDetail(check: EnvironmentCheck, t: Translate) {
   if (!check.detail) return undefined;
   if (check.detail.startsWith('driver:')) return t('obEnvDriver', { version: check.detail.slice(7) });
   const minimum = smallestCatalogRamGB();
-  return ({ arch: t('obEnvArch'), noGpu: t('obEnvNoGpu'), nonNvidia: t('obEnvNonNvidia'), low: t('obEnvLowMemory', { gb: minimum, need: Math.ceil(minimum / .8) }), unknown: t('obUnreadable'), bundled: t('obEnvPythonBundled'), required: t('obEnvPythonRequired') } as Record<string, string>)[check.detail];
+  return ({ arch: t('obEnvArch'), noGpu: t('obEnvNoGpu'), nonNvidia: t('obEnvNonNvidia'), low: t('obEnvLowMemory', { gb: minimum, need: Math.ceil(minimum / .8) }), unknown: t('obUnreadable'), bundled: t('obEnvPythonBundled'), managed: t('obEnvPythonManaged'), required: t('obEnvPythonRequired') } as Record<string, string>)[check.detail];
 }
 function EnvironmentStep(props: StepProps & { checks?: EnvironmentCheck[]; verdict: GuideFacts['environment']; readOnly: boolean }) {
   const { t, checks, verdict } = props;
@@ -239,6 +240,7 @@ function EnvironmentStep(props: StepProps & { checks?: EnvironmentCheck[]; verdi
         : checks.map(check => <div key={check.id} className="ob-check"><Mark state={check.state}/><span className="ob-check-label">{label(check.id)}</span><span className="ob-check-value">{check.value || (checkDetail(check, t) ? '' : '—')}{checkDetail(check, t) && <small className={`${check.state === 'ok' ? '' : `is-${check.state}`}${check.value ? '' : ' is-alone'}`}>{checkDetail(check, t)}</small>}</span></div>)}
       <div className="ob-check"><Mark state="none"/><span className="ob-check-label">{t('obInstallLocation')}</span><span className="ob-check-value">{t('obInstallLocationValue')}</span></div>
     </div>
+    {!props.readOnly && checks?.some(check => check.id === 'python' && check.state === 'fail') && <ManagedPythonPanel variant="compact" language={props.language} desktop={props.desktop} found={props.environment?.python} onInstalled={props.onRecheckEnvironment}/>}
     {!props.readOnly && <footer className="ob-actions">
       {verdict === 'fail' && <span className="ob-note is-bad">{t('obEnvBlocked')}</span>}
       <button type="button" className="primary" disabled={verdict === 'fail' || verdict === 'loading' || verdict === 'unavailable'} onClick={() => props.onProgress({ environmentAccepted: true })}>{t('obContinueInstall')}</button>
@@ -282,6 +284,7 @@ function RuntimeStep(props: StepProps & { runtimeTask?: TaskStatus; runtimeFact:
       : running ? <div className="ob-status"><Mark state="busy"/><div className="ob-status-body"><b>{runtimeTask!.message || t('obPreparing')}</b><div className={`ob-bar${percent === undefined ? ' is-indeterminate' : ''}`}><i style={percent === undefined ? undefined : { width: `${percent}%` }}/></div><small>{t('obRuntimeRunningHint')}</small></div></div>
       : failed ? <div className="ob-status is-bad"><Mark state="fail"/><div className="ob-status-body"><b>{runtimeTask?.message}</b></div></div>
       : null}
+    {failed && core.needsManagedPython(runtimeTask?.message) && <ManagedPythonPanel variant="compact" language={props.language} desktop={props.desktop} found={props.environment?.python}/>}
     {!running && runtimeFact !== 'ready' && <div className="ob-package-source">
       <div className="ob-field is-row"><span>{t('obPackageSource')}</span><Segmented ariaLabel={t('obPackageSource')} value={packageSource} onValueChange={value => packages.setSource(value as core.RuntimePackageSource)} options={[{ value: 'download', label: t('obSourceDownload') }, { value: 'local', label: t('obSourceLocal') }]}/></div>
       {packageSource === 'local' && <>

@@ -256,6 +256,8 @@ export interface EnvironmentInfo {
   availableMemory: number;
   gpus: string[];
   python: string | null;
+  /** `python` is the app-private interpreter installed with one click (macOS / Linux). */
+  pythonManaged?: boolean;
   git: string | null;
   appVersion: string;
 }

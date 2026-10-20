@@ -7,6 +7,7 @@ use crate::{
 };
 mod download;
 pub mod local_archive;
+pub mod managed_python;
 pub use local_archive::LocalRuntimeArchives;
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
@@ -1158,8 +1159,13 @@ fn python_probe(program: &Path, prefix: &[&str]) -> Option<String> {
     }
 }
 fn find_python(data_dir: &Path) -> Option<String> {
+    // The app-private Python the user installed with one click wins over PATH.
     #[cfg(not(windows))]
-    let _ = data_dir;
+    if let Some(private) = managed_python::installed_interpreter(data_dir) {
+        if let Some(path) = python_probe(&private, &[]) {
+            return Some(path);
+        }
+    }
     #[cfg(windows)]
     {
         let private = data_dir
@@ -1285,6 +1291,15 @@ pub(crate) async fn ensure_python(state: &RuntimeState, id: &str) -> Result<Stri
     }
     #[cfg(not(windows))]
     {
+        if managed_python::distribution(
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            cfg!(target_env = "musl"),
+        )
+        .is_some()
+        {
+            return Err(format!("本机缺少 Python 3.10+（含 venv/ensurepip）。可一键安装应用内 Python {}，完成后重试。", managed_python::PYTHON_VERSION));
+        }
         Err("本机缺少 64 位 Python 3.10+ 或 venv/ensurepip。本应用不会执行 sudo。Ubuntu/Debian 请由系统管理员安装 python3、python3-venv、python3-pip；Fedora 安装 python3、python3-pip；NixOS 需提供可运行 pip wheel 的 Python/uv 环境。安装后点击重试。".into())
     }
     #[cfg(windows)]

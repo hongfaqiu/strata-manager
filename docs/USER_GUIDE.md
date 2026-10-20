@@ -46,7 +46,7 @@ Strata Manager 是开源的 Strata 运行环境与本地模型服务管理桌面
 
 模型卡片会显示实际数据目录、各目标磁盘的可用空间和预计新增量，并扣除可复用的权重或断点文件。开始准备前后台会再次检查；空间不足或无法确认时不会启动下载。数字是按所选模型及已核对的安装器规则估算，不能保证驱动、内存或全部依赖都已就绪。导入已有模型不需要再次准备或满足整套权重的下载空间。
 
-Windows 检测 64 位 Python 3.10+；未找到时提供经 SHA256 校验的官方 Python 私有安装路径。Linux 需要 Python 3.10+、venv 和 ensurepip；缺失依赖会给出提示，应用不执行 sudo。Linux 崩溃保护还需要允许 pidfd、clone 和 close_range 的 64 位 Linux 5.9+ 环境；不支持时拒绝启动受管子进程。缺 Python 的完整安装分支仍待干净机器验收。
+Windows 检测 64 位 Python 3.10+；未找到时提供经 SHA256 校验的官方 Python 私有安装路径。Linux 需要 Python 3.10+、venv 和 ensurepip；缺失依赖会给出提示，应用不执行 sudo。macOS（Apple 芯片与 Intel）和 glibc Linux（x86_64 / aarch64）找不到带 venv 的 Python 3.10+ 时（macOS 自带的是 3.9），引导页「检查运行环境」「安装 Strata」和 Strata 页会出现「一键安装 Python」：把 python-build-standalone 20261009 的 CPython 3.12.15（与上游 `setup.sh` 固定的构建相同）装到应用的 `toolchains` 目录，显示进度，可以取消。可选 GitHub 或 GitHub 代理（GH Proxy / GHProxy，默认沿用引擎包已选的代理）下载，任何来源都必须与官方字节数和 SHA-256 一致；不需要管理员权限，不改 PATH，不改动系统或 Homebrew 的 Python。之后安装 Strata 会自动使用它。Linux 崩溃保护还需要允许 pidfd、clone 和 close_range 的 64 位 Linux 5.9+ 环境；不支持时拒绝启动受管子进程。缺 Python 的完整安装分支仍待干净机器验收。
 
 ## 日常使用
 
