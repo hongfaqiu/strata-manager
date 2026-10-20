@@ -74,6 +74,8 @@ export function runtimeAssetLabel(asset: Pick<RuntimeReleaseAsset, 'name' | 'var
     case 'cuda13': return 'CUDA 13';
     case 'cuda12': return 'CUDA 12';
     case 'hip-rdna3': return 'AMD HIP · RX 7000 / Strix Halo';
+    case 'hip-rx7900': return 'AMD HIP · RX 7000';
+    case 'hip-halo': return 'AMD HIP · Strix Halo';
     case 'hip': return asset.name.endsWith('.zip') ? 'AMD HIP' : 'AMD HIP · RX 9000 / R9700';
     default: return String(asset.variant).toUpperCase();
   }
@@ -85,4 +87,45 @@ export function runtimeAssetLabel(asset: Pick<RuntimeReleaseAsset, 'name' | 'var
  */
 export function runtimeEngineIsCurrent(runtimeVersion: string | undefined, release: Pick<RuntimeUpdateInfo, 'assets'> | undefined): boolean {
   return !!runtimeVersion && !!release?.assets.some(asset => !!asset.engineVersion && asset.engineVersion === runtimeVersion);
+}
+
+const CJK = /[\u3400-\u9fff\uff00-\uffef\u3000-\u303f]/;
+
+/**
+ * Picks one language from a backend `中文 / English` message. The split is the first ` / ` after which no
+ * Chinese text follows, so labels such as `RX 7000 / Strix Halo` inside either half stay intact.
+ */
+export function runtimeBilingualText(text: string, zh: boolean): string {
+  let from = 0;
+  for (;;) {
+    const at = text.indexOf(' / ', from);
+    if (at < 0) return text;
+    const before = text.slice(0, at), after = text.slice(at + 3);
+    if (CJK.test(before) && !CJK.test(after)) return (zh ? before : after).trim();
+    from = at + 3;
+  }
+}
+
+export interface RuntimeTrialRollback {
+  /** Version restored after the failed trial; absent when a first installation was undone. */
+  restoredVersion?: string;
+  /** Reason as reported by the engine or health check, one language per line where the backend is bilingual. */
+  reason: string;
+}
+
+/** Localises each line of a multi-line backend reason, keeping an engine folder prefix such as `engine-cuda12: `. */
+export function runtimeReasonText(reason: string, zh: boolean): string {
+  return reason.split('\n').map(line => {
+    const prefix = /^[\w.-]+: (?=.*[\u3400-\u9fff])/.exec(line)?.[0] ?? '';
+    return prefix + runtimeBilingualText(line.slice(prefix.length), zh);
+  }).join('\n');
+}
+
+/** Recognises the backend message of an engine update that failed its trial start and was rolled back. */
+export function runtimeTrialRollback(message: string | undefined): RuntimeTrialRollback | undefined {
+  if (!message || !message.includes('新引擎试启动未通过')) return undefined;
+  const restoredVersion = /已自动恢复原版本 (\S+?)，/.exec(message)?.[1];
+  const marker = message.indexOf('原因 / Reason: ');
+  const reason = marker >= 0 ? message.slice(marker + '原因 / Reason: '.length).trim() : '';
+  return { ...(restoredVersion ? { restoredVersion } : {}), reason };
 }

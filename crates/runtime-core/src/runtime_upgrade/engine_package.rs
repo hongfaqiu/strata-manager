@@ -121,20 +121,51 @@ pub fn host_platform(os: &str, arch: &str) -> Option<&'static str> {
     }
 }
 
-/// Manager variant of an asset Manager can install with its Windows release flow.
+/// Manager variant of an asset Manager can install with its release flow (Windows x64 or
+/// Linux x86_64). Whether it fits this computer is [`asset_platform`]'s business.
 pub fn installable_variant(name: &str) -> Option<&'static str> {
     if let Some(variant) = legacy_variant(name) {
         return Some(variant);
     }
     let package = parse_package_name(name)?;
-    (package.platform == "windows-x86_64")
-        .then(|| manager_variant(&package.backend, &package.variant))
-        .flatten()
-        .filter(|variant| matches!(*variant, "cuda13" | "cuda12" | "hip" | "hip-rdna3"))
+    let variant = manager_variant(&package.backend, &package.variant)?;
+    match package.platform {
+        "windows-x86_64" => matches!(variant, "cuda13" | "cuda12" | "hip" | "hip-rdna3"),
+        "linux-x86_64" => matches!(
+            variant,
+            "cuda13" | "cuda12" | "hip" | "hip-rx7900" | "hip-halo"
+        ),
+        _ => false,
+    }
+    .then_some(variant)
 }
 
 pub fn is_installable_asset_name(name: &str) -> bool {
     installable_variant(name).is_some()
+}
+
+/// Feed platform of an installable asset (legacy ZIPs are Windows x64 only).
+pub fn asset_platform(name: &str) -> Option<&'static str> {
+    if legacy_variant(name).is_some() {
+        return Some("windows-x86_64");
+    }
+    installable_variant(name)?;
+    Some(parse_package_name(name)?.platform)
+}
+
+/// Platforms whose engines Manager installs from official releases.
+pub fn release_install_platform(os: &str, arch: &str) -> Option<&'static str> {
+    host_platform(os, arch).filter(|p| matches!(*p, "windows-x86_64" | "linux-x86_64"))
+}
+
+/// This build's release install platform, if any.
+pub fn this_release_install_platform() -> Option<&'static str> {
+    release_install_platform(std::env::consts::OS, std::env::consts::ARCH)
+}
+
+/// Whether an asset can be installed by this computer's release flow.
+pub fn asset_installable_here(name: &str) -> bool {
+    this_release_install_platform().is_some_and(|host| asset_platform(name) == Some(host))
 }
 
 /// Accepts a release/package version: numeric dot parts plus an optional SemVer pre-release.
@@ -299,7 +330,7 @@ fn hex64(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
-/// Windows engine packages listed by a verified feed and actually attached to the release.
+/// Engine packages for `platform` listed by a verified feed and actually attached to the release.
 /// GitHub's own digest and size must equal the signed feed's, so neither source alone decides.
 pub fn feed_assets(
     feed: &Value,
@@ -381,6 +412,14 @@ pub fn feed_assets(
             engine_version: Some(version.into()),
             manifest_sha256: Some(manifest_sha256.to_ascii_lowercase()),
             installed_bytes: Some(installed_bytes),
+            nvidia_min_driver: package["min_driver"]["nvidia"]
+                .as_str()
+                .filter(|v| {
+                    v.len() <= 32
+                        && v.split('.')
+                            .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+                })
+                .map(str::to_owned),
             archs: package["archs"]
                 .as_array()
                 .into_iter()
@@ -388,6 +427,7 @@ pub fn feed_assets(
                 .filter_map(|a| a.as_str().map(str::to_owned))
                 .take(32)
                 .collect(),
+            match_reason: None,
         });
     }
     Ok(assets)
@@ -582,7 +622,32 @@ mod tests {
                 "strata-engine-0.1.45.3-windows-x86_64-hip-rdna3.tar.gz",
                 Some("hip-rdna3"),
             ),
-            ("strata-engine-0.1.45.3-linux-x86_64-hip-halo.tar.gz", None),
+            (
+                "strata-engine-0.1.45.3-linux-x86_64-hip-halo.tar.gz",
+                Some("hip-halo"),
+            ),
+            (
+                "strata-engine-0.1.45.3-linux-x86_64-hip-rx7900.tar.gz",
+                Some("hip-rx7900"),
+            ),
+            (
+                "strata-engine-0.1.45.3-linux-x86_64-hip-rx9070.tar.gz",
+                Some("hip"),
+            ),
+            (
+                "strata-engine-0.1.45.3-linux-x86_64-cuda-cuda13.tar.gz",
+                Some("cuda13"),
+            ),
+            (
+                "strata-engine-0.1.45.3-linux-x86_64-cuda-cuda12.tar.gz",
+                Some("cuda12"),
+            ),
+            // Linux has no RDNA3 bundle and Windows no separate Halo package.
+            ("strata-engine-0.1.45.3-linux-x86_64-hip-rdna3.tar.gz", None),
+            (
+                "strata-engine-0.1.45.3-windows-x86_64-hip-halo.tar.gz",
+                None,
+            ),
             ("strata-engine-0.1.45.3-macos-arm64-metal.tar.gz", None),
             ("strata-windows-x64.zip", Some("cuda13")),
             ("strata-windows-x64-hip.zip", Some("hip")),
@@ -641,7 +706,39 @@ mod tests {
             assert!(installable_variant(&asset.name).is_some());
         }
         let linux = feed_assets(&feed, &release, "v0.2.0-beta", "linux-x86_64").unwrap();
-        assert_eq!(linux.len(), 5);
+        let variants: Vec<_> = linux.iter().map(|a| a.variant.as_str()).collect();
+        assert_eq!(
+            variants,
+            ["cuda12", "cuda13", "hip-halo", "hip-rx7900", "hip"]
+        );
+        for asset in &linux {
+            assert_eq!(asset_platform(&asset.name), Some("linux-x86_64"));
+            assert_eq!(
+                installable_variant(&asset.name),
+                Some(asset.variant.as_str())
+            );
+        }
+        let driver = |v: &str| {
+            linux
+                .iter()
+                .find(|a| a.variant == v)
+                .unwrap()
+                .nvidia_min_driver
+                .clone()
+        };
+        assert_eq!(driver("cuda13").as_deref(), Some("580.65"));
+        assert_eq!(driver("cuda12").as_deref(), Some("575.51"));
+        assert_eq!(driver("hip-halo"), None);
+        assert_eq!(
+            release_install_platform("linux", "x86_64"),
+            Some("linux-x86_64")
+        );
+        assert_eq!(release_install_platform("macos", "aarch64"), None);
+        assert_eq!(release_install_platform("linux", "aarch64"), None);
+        assert_eq!(
+            asset_platform("strata-windows-x64.zip"),
+            Some("windows-x86_64")
+        );
     }
 
     #[test]
