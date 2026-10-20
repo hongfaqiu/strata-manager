@@ -2,7 +2,7 @@
 (() => {
   const params = new URLSearchParams(location.search), fixture = window.__fixture;
   const originalInvoke = window.__TAURI_INTERNALS__.invoke;
-  fixture.store.settings = { ...fixture.store.settings, language: params.get('language') || 'zh-CN', theme: params.get('theme') || 'light', pollInterval: 1000, floatingMonitor: { actions: [], alwaysOnTop: true, showSampleTime: false, showInTray: false, layout: params.get('layout') || 'twoRow', fontSize: Number(params.get('fontSize') || 16), showGraphs: !params.has('noGraphs'), showLabels: !params.has('noLabels'), showStatus: params.has('showStatus'), snapToEdge: false, ...(params.has('floating-settings') ? fixture.store.settings.floatingMonitor : {}) } };
+  fixture.store.settings = { ...fixture.store.settings, language: params.get('language') || 'zh-CN', theme: params.get('theme') || 'light', pollInterval: 1000, floatingMonitor: { actions: [], alwaysOnTop: true, showSampleTime: false, layout: params.get('layout') || 'twoRow', fontSize: Number(params.get('fontSize') || 16), showGraphs: !params.has('noGraphs'), showLabels: !params.has('noLabels'), showStatus: params.has('showStatus'), snapToEdge: false, ...(params.has('floating-settings') ? fixture.store.settings.floatingMonitor : {}) } };
   const control = { visible: params.get('window') === 'monitor' || params.has('visible'), state: params.get('state') || 'generating', phase: params.has('stopped') ? 'stopped' : params.has('unavailable') ? 'unavailable' : 'online', loaded: !params.has('unloaded'), queued: params.has('queued') ? 2 : 0, stale: params.has('stale'), fail: params.has('failed'), holdSnapshot: false, heldSnapshots: 0, reads: 0, pinned: true, closed: false, shownMain: 0, destinations: [], opened: 0, menus: [], popups: [] };
   fixture.monitor = control;
   if (params.has('dock-close')) {
@@ -66,7 +66,7 @@
     if (command === 'plugin:window|set_always_on_top') { record(command, args); control.pinned = args.value; return; }
     if (command === 'plugin:window|set_size') { record(command, args); control.size = structuredClone(args.value?.size || args.value?.Logical || args.value); return; }
     if (command === 'plugin:window|start_dragging') { record(command, args); control.drags = (control.drags || 0) + 1; return; }
-    if (command === 'minimize_monitor_to_tray') { record(command, args); control.trayMinimized = (control.trayMinimized || 0) + 1; control.visible = false; fixture.emitEvent('monitor-suspended', null); fixture.emitEvent('monitor-mode-status', { mode: 'floating', active: false, visible: false, supported: true }); return; }
+    if (command === 'move_monitor_to_taskbar') { record(command, args); control.taskbarMoves = (control.taskbarMoves || 0) + 1; control.visible = true; control.mode = 'taskbar'; const status = { mode: 'taskbar', active: true, visible: true, supported: true, message: '浏览器夹具：已收起到任务栏监控' }; fixture.emitEvent('monitor-mode-status', status); return status; }
     if (command === 'plugin:window|close') { record(command, args); control.closed = true; control.visible = false; fixture.emitEvent('monitor-mode-status', { mode: 'floating', active: false, visible: false, supported: true }); return; }
     if (command === 'show_main_from_monitor') { record(command, args); control.shownMain++; control.destinations.push(args.destination ?? null); return; }
     if (command === 'open_monitor_window') { record(command, args); control.opened++; control.visible = true; fixture.emitEvent('monitor-mode-status', { mode: 'floating', active: false, visible: true, supported: true }); return; }

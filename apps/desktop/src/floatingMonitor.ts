@@ -39,11 +39,12 @@ export async function openFloatingMonitor(): Promise<void> {
 // General bridge calls may start or replace a supervisor during connection recovery.
 export const readFloatingMonitor = (): Promise<FloatingMonitorSnapshot> => invoke('monitor_snapshot');
 export const showMainFromMonitor = (destination?: MonitorDestination): Promise<void> => invoke('show_main_from_monitor', { destination });
-export const minimizeMonitorToTray = (): Promise<void> => invoke('minimize_monitor_to_tray');
 export interface MonitorModeStatus { mode: FloatingMonitorMode; supported: boolean; active: boolean; visible?: boolean; message?: string }
 export const setMonitorMode = (mode: FloatingMonitorMode, preferences: FloatingMonitorPreferences, language: AppLanguage = 'zh-CN'): Promise<MonitorModeStatus> => invoke('set_monitor_mode', { mode, preferences: { ...preferences, language } });
 
 export const readMonitorModeStatus = (): Promise<MonitorModeStatus> => invoke('monitor_mode_status');
 export const setMonitorVisibility = (visible: boolean, mode: FloatingMonitorMode, preferences: FloatingMonitorPreferences, language: AppLanguage = 'zh-CN'): Promise<MonitorModeStatus> => invoke('set_monitor_visibility', { visible, mode, preferences: { ...preferences, language } });
+// The strip's "收起到任务栏监控": the taskbar widget replaces it and is remembered for the next launch.
+export const moveMonitorToTaskbar = (preferences: FloatingMonitorPreferences, language: AppLanguage = 'zh-CN'): Promise<MonitorModeStatus> => invoke('move_monitor_to_taskbar', { preferences: { ...preferences, language } });
 export const resizeMonitorWindow = (width: number, height: number): Promise<{ width: number; height: number }> => invoke('resize_monitor_window', { width, height });
 import type { AppLanguage } from '@strata-manager/core';

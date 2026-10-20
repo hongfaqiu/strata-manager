@@ -28,7 +28,7 @@ pub(crate) fn app_command_allowed(window: &str, webview: &str, command: &str) ->
                 command,
                 "monitor_snapshot"
                     | "show_main_from_monitor"
-                    | "minimize_monitor_to_tray"
+                    | "move_monitor_to_taskbar"
                     | "resize_monitor_window"
                     | "set_monitor_mode"
                     | "set_monitor_visibility"
@@ -79,7 +79,7 @@ mod tests {
                 command,
                 "monitor_snapshot"
                     | "show_main_from_monitor"
-                    | "minimize_monitor_to_tray"
+                    | "move_monitor_to_taskbar"
                     | "resize_monitor_window"
                     | "set_monitor_mode"
                     | "set_monitor_visibility"
@@ -98,9 +98,9 @@ mod tests {
         assert_eq!(
             allowed,
             [
-                "minimize_monitor_to_tray",
                 "monitor_mode_status",
                 "monitor_snapshot",
+                "move_monitor_to_taskbar",
                 "resize_monitor_window",
                 "set_monitor_mode",
                 "set_monitor_visibility",

@@ -1,6 +1,6 @@
 import type { AppLanguage } from '@strata-manager/core';
 import { useEffect, useId, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Check, ChevronDown, LoaderCircle, RotateCcw } from 'lucide-react';
+import { ArrowDown, ArrowUp, Check, LoaderCircle, RotateCcw } from 'lucide-react';
 
 import {
   FLOATING_MONITOR_DEFAULTS, FLOATING_MONITOR_METRICS, FLOATING_MONITOR_PALETTES, FLOATING_MONITOR_PRESETS,
@@ -222,14 +222,6 @@ export function FloatingMonitorSettings({ preferences, desktop, language, onChan
         <Toggle ariaLabel={option.title} tooltip={option.hint} checked={value[option.key]} disabled={!desktop} onCheckedChange={checked => update({ [option.key]: checked })}/>
       </div>)}
     </div>
-
-    <details className="floating-monitor-settings-more">
-      <summary>{zh ? '更多设置' : 'More settings'}<ChevronDown size={14} aria-hidden="true"/></summary>
-      <div className="setting-toggle floating-monitor-settings-option">
-        <span><strong>{zh ? '普通托盘图标' : 'Standard tray icon'}</strong></span>
-        <Toggle ariaLabel={zh ? '在系统托盘显示监控' : 'Show monitor in the system tray'} tooltip={zh ? '点击托盘图标打开监控；右键或 Shift+F10 查看菜单。' : 'Click the tray icon to open the monitor. Right-click or Shift+F10 opens its menu.'} checked={value.showInTray} disabled={!desktop} onCheckedChange={showInTray => update({ showInTray })}/>
-      </div>
-    </details>
 
     <div className="floating-monitor-settings-footer">
       <span><Check size={13} aria-hidden="true"/>{zh ? '设置自动保存' : 'Settings save automatically'}</span>

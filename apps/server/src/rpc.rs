@@ -10,7 +10,7 @@ const DESKTOP_ONLY: &[&str] = &[
     "set_monitor_mode",
     "set_monitor_visibility",
     "monitor_mode_status",
-    "minimize_monitor_to_tray",
+    "move_monitor_to_taskbar",
     "monitor_snapshot",
     "show_main_from_monitor",
     "confirm_window_close",

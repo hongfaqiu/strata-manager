@@ -13,6 +13,8 @@ import {
   normalizeHexColor,
   colorContrast,
   lowContrastTaskbars,
+  RETIRED_FLOATING_MONITOR_KEYS,
+  withoutRetiredFloatingMonitorKeys,
   TASKBAR_WIDGET_COLOR_PRESETS,
   TASKBAR_WIDGET_PALETTE,
 } from '../src/floating-monitor';
@@ -21,7 +23,7 @@ import type { FloatingMonitorMetric, FloatingMonitorPreferences } from '../src/t
 describe('floating monitor preferences', () => {
   it('defaults to a readable two-row monitor', () => {
     expect(normalizeFloatingMonitorPreferences()).toEqual({
-      actions: [], alwaysOnTop: true, showSampleTime: false, showInTray: false,
+      actions: [], alwaysOnTop: true, showSampleTime: false,
       fontSize: 16, layout: 'twoRow',
       metrics: ['generation', 'prefill', 'gpu', 'vram', 'cpu', 'ram'],
       showGraphs: true, showLabels: true, showUnits: true, mode: 'floating', snapToEdge: false, showStatus: false, metricColors: {},
@@ -37,9 +39,19 @@ describe('floating monitor preferences', () => {
 
   it('retains legacy preferences and adds the new defaults', () => {
     const legacy: FloatingMonitorPreferences = {
-      actions: ['main', 'refresh'], alwaysOnTop: false, showSampleTime: true, showInTray: true,
+      actions: ['main', 'refresh'], alwaysOnTop: false, showSampleTime: true,
     };
     expect(normalizeFloatingMonitorPreferences(legacy)).toEqual({ ...FLOATING_MONITOR_DEFAULTS, ...legacy });
+  });
+
+  it('drops the retired tray-monitor switch from old settings without touching the input', () => {
+    const saved = { showInTray: true, alwaysOnTop: false, futureKey: 'kept', taskbarEnabled: true };
+    expect(normalizeFloatingMonitorPreferences(saved)).not.toHaveProperty('showInTray');
+    expect(normalizeFloatingMonitorPreferences(saved)).toMatchObject({ alwaysOnTop: false, taskbarEnabled: true });
+    expect(withoutRetiredFloatingMonitorKeys(saved)).toEqual({ alwaysOnTop: false, futureKey: 'kept', taskbarEnabled: true });
+    expect(saved.showInTray).toBe(true);
+    expect(RETIRED_FLOATING_MONITOR_KEYS).toEqual(['showInTray']);
+    for (const value of [undefined, null, [], 'x', 3]) expect(withoutRetiredFloatingMonitorKeys(value)).toEqual({});
   });
 
   it('keeps metric order while removing duplicates and unknown metrics', () => {
@@ -76,7 +88,7 @@ describe('floating monitor preferences', () => {
 
   it('uses boolean defaults for invalid boolean values', () => {
     expect(normalizeFloatingMonitorPreferences({
-      alwaysOnTop: 0, showSampleTime: 'true', showInTray: 1,
+      alwaysOnTop: 0, showSampleTime: 'true',
       showGraphs: null, showLabels: 0, showUnits: 'false', snapToEdge: 'true', showStatus: 1,
     })).toEqual(FLOATING_MONITOR_DEFAULTS);
   });

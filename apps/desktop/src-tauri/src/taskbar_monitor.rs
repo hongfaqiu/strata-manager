@@ -649,6 +649,40 @@ pub(crate) async fn set_monitor_visibility(
     serde_json::to_value(current_status(&app)?).map_err(|e| e.to_string())
 }
 
+/// The strip's "收起到任务栏监控" entry: the taskbar widget replaces the strip
+/// and stays on for the next launch, exactly like the settings switch. There is
+/// no separate tray readout any more; the app's tray icon stays plain.
+#[tauri::command]
+pub(crate) async fn move_monitor_to_taskbar(
+    app: AppHandle,
+    window: WebviewWindow,
+    preferences: Value,
+) -> Result<Value, String> {
+    if window.label() != crate::floating_monitor::LABEL {
+        return Err("该操作仅允许监控浮条调用".into());
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (app, preferences);
+        Err("任务栏监控仅支持 Windows，保留桌面浮条".into())
+    }
+    #[cfg(windows)]
+    {
+        let state = app.state::<TaskbarMonitorState>();
+        let _switch = state.switching.lock().await;
+        set_mode_locked(&app, "taskbar", preferences).await?;
+        let status = current_status(&app)?;
+        if status.mode == "taskbar" && status.active {
+            let _ = app.emit_to(
+                "main",
+                "monitor-preferences-patch",
+                json!({"taskbarEnabled": true}),
+            );
+        }
+        serde_json::to_value(status).map_err(|e| e.to_string())
+    }
+}
+
 async fn set_mode_locked(app: &AppHandle, mode: &str, preferences: Value) -> Result<(), String> {
     if mode == "floating" {
         open_floating_locked(app).await
