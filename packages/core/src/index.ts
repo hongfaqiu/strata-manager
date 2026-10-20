@@ -23,6 +23,7 @@ export * from './installation-types';
 export * from './local-runtime-package';
 export * from './runtime-types';
 export * from './runtime-download';
+export * from './managed-python';
 export * from './model-groups';
 export * from './configuration-match';
 export * from './service-selection';

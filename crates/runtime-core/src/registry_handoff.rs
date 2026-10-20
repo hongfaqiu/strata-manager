@@ -39,6 +39,7 @@ pub(super) fn allowed_while_deferred(method: &str, params: &Value) -> bool {
             | "list_local_models"
             | "has_api_key"
             | "environment_info"
+            | "managed_python_status"
             | "get_background_policy"
             | "runtime_upgrade_status"
             | "tuning_status"
