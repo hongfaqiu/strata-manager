@@ -1,7 +1,8 @@
 /**
  * TEMPORARY DEV-only Overview mock.
  * Enable with ?mockData=1 | #mockData=1 | localStorage mockData=1
- * Optional state: ?mockData=generating (default idle)
+ * Optional state: ?mockData=generating | loading (default idle)
+ * loading = Xiaohongshu feedback: two GPUs, slow cold load, startup card above the running card.
  * Keep separate from ?artDemo=1 (hero art cycle).
  */
 import type {
@@ -15,14 +16,14 @@ import type {
   TaskStatus,
 } from '@strata-manager/core';
 
-export type OverviewMockState = 'idle' | 'generating' | 'stopped';
+export type OverviewMockState = 'idle' | 'generating' | 'stopped' | 'loading';
 
 export function overviewMockEnabled(): boolean {
   if (typeof import.meta !== 'undefined' && import.meta.env?.DEV !== true) return false;
   if (typeof window === 'undefined') return false;
   try {
     const q = new URLSearchParams(window.location.search).get('mockData');
-    if (q === '1' || q === 'idle' || q === 'generating' || q === 'stopped') return true;
+    if (q === '1' || q === 'idle' || q === 'generating' || q === 'stopped' || q === 'loading') return true;
     if (/(?:^|[?#&])mockData(?:=1|=idle|=generating)?(?:&|$)/.test(window.location.hash)) return true;
     const stored = window.localStorage.getItem('mockData');
     if (stored === '1' || stored === 'idle' || stored === 'generating') return true;
@@ -36,6 +37,7 @@ export function overviewMockState(): OverviewMockState {
     const q = new URLSearchParams(window.location.search).get('mockData');
     if (q === 'generating') return 'generating';
     if (q === 'stopped') return 'stopped';
+    if (q === 'loading') return 'loading';
     if (/(?:^|[?#&])mockData=generating(?:&|$)/.test(window.location.hash)) return 'generating';
     if (window.localStorage.getItem('mockData') === 'generating') return 'generating';
   } catch { /* ignore */ }
@@ -79,7 +81,14 @@ function sampleRequests(state: OverviewMockState): JsonObject[] {
   return rows;
 }
 
-export function buildOverviewMock(state: OverviewMockState = overviewMockState()) {
+export interface OverviewMockStartup { phase: 'loading'; startedAt: number; apiUrl: string; modelName: string; logs: { timestamp: number; level: string; message: string }[] }
+export type OverviewMock = ReturnType<typeof baseOverviewMock> & { startup?: OverviewMockStartup; errors?: { health: string; metrics: string } };
+
+export function buildOverviewMock(state: OverviewMockState = overviewMockState()): OverviewMock {
+  return state === 'loading' ? loadingMock(baseOverviewMock('idle')) : baseOverviewMock(state);
+}
+
+function baseOverviewMock(state: OverviewMockState) {
   const profile: ServiceProfile = {
     id: 'mock-profile-dev',
     name: 'Swift-Qwen3.8-Flash-Next IQ3_S',
@@ -304,6 +313,46 @@ export function buildOverviewMock(state: OverviewMockState = overviewMockState()
     pillState: state === 'stopped' ? 'disconnected' : state,
     pillLabel: state === 'generating' ? '生成中 · 46.8 tok/s' : state === 'stopped' ? '已停止' : '空闲',
     pillLabelEn: state === 'generating' ? 'Generating · 46.8 tok/s' : state === 'stopped' ? 'Stopped' : 'Idle',
+  };
+}
+
+/** Engine output for the loading mock (this session only). */
+export const LOADING_MOCK_LOGS: string[] = [
+  'strata serve: layer split: layers 0-23 -> GPU 0, layers 24-47 -> GPU 1',
+  'strata serve: loading experts: 112/512 (21.9%)',
+  'strata serve: loading experts: 236/512 (46.1%)',
+  'strata serve: KV streaming: 2 GPUs, 1048576 context',
+  'strata serve: still starting (20 s)',
+];
+
+/** Xiaohongshu feedback (2× RTX 2080 Ti 22 GB): the picked model is still loading. */
+function loadingMock(base: ReturnType<typeof baseOverviewMock>): OverviewMock {
+  const gb = (n: number) => n * 1024 ** 3;
+  const startedAt = Date.now() - 22_000;
+  const profile: ServiceProfile = { ...base.profile, name: 'Qwen3.8-Flash-Next-refusal-Q4kxl', configPath: 'C:/Strata/configs/qwen3.8-flash-next-AP-1m.json' };
+  const health: JsonObject = { loaded: false, model: 'qwen3.8-flash-next-AP-1m', images: false, api_key: false, max_context: 1048576 };
+  const gpus = [{ index: 0, util: 0, mem_used: gb(1.5), mem_total: gb(22), temp: 41, power: 58 }, { index: 1, util: 33, mem_used: gb(2), mem_total: gb(22), temp: 37, power: 41 }];
+  const raw: JsonObject = {
+    ...base.metric.raw,
+    live: { state: 'loading', queued: 0, running: 0 },
+    engine: { model: health.model, max_context: 1048576 },
+    requests: [],
+    hardware: { ...(base.metric.raw.hardware as JsonObject), gpus, gpu_util: 33, gpu_mem_used: gb(3.5), gpu_mem_total: gb(44), gpu_temp: 41, gpu_power: 99, gpu_power_limit: 250, gpu_pcie_gen: 3, gpu_pcie_gen_max: 3, cpu: 18, ram_used: gb(40.5), ram_total: gb(64) },
+    hardware_static: { gpu_name: 'NVIDIA GeForce RTX 2080 Ti', cores: 8, threads: 16, psutil: true },
+    conversation_cache: { enabled: false },
+  };
+  const metric: MetricSnapshot = { ...base.metric, state: 'loading', model: String(health.model), decodeTokS: null, prefillTokS: null, gpuUtil: 33, gpuMemoryUsed: gb(3.5), gpuMemoryTotal: gb(44), gpuTemperature: 41, gpuPower: 99, cpuUtil: 18, ramUsed: gb(40.5), ramTotal: gb(64), queued: 0, running: 0, requests: [], raw };
+  const process: ProcessStatus = { ...base.process, pid: 9780, startedAt, creationTime: new Date(startedAt).toISOString() };
+  return {
+    ...base,
+    profile, health, metric, process, tasks: [] as TaskStatus[],
+    backgroundHealth: { ...base.backgroundHealth, loaded: false, observerState: 'idle', pid: 9780 } as BackgroundHealthSnapshot,
+    profiles: [{ id: profile.id, name: profile.name, configPath: profile.configPath, managed: true }, ...base.profiles.slice(1)],
+    pillState: 'loading' as const, pillLabel: '加载中', pillLabelEn: 'Loading',
+    /** The startup card the app shows above the running card while a start is pending. */
+    startup: { phase: 'loading' as const, startedAt, apiUrl: profile.baseUrl, modelName: profile.name, logs: LOADING_MOCK_LOGS.map((message, index) => ({ timestamp: startedAt + 2_000 + index * 4_000, level: 'engine', message })) },
+    /** Transient polling failures a slow cold load produces before the API answers. */
+    errors: { health: 'HTTP 请求失败：error sending request for url (http://127.0.0.1:8080/health): connection refused', metrics: 'operation timed out' },
   };
 }
 
