@@ -158,7 +158,7 @@
             <div class="app-fit" data-app-fit>
               <div class="app-window" id="app-window" data-view="overview" data-svc="generating">
                 <aside class="app-side">
-                  <div class="app-brand"><img src="assets/icon.svg" width="28" height="28" alt=""><span><b>Strata</b> Manager<small data-app-version>v0.2.10</small></span></div>
+                  <div class="app-brand"><img src="assets/icon.svg" width="28" height="28" alt=""><span><b>Strata</b> Manager<small data-app-version>v0.2.11</small></span></div>
                   <p class="app-group" data-en="DAILY USE">日常使用</p>
                   <button class="app-nav is-active" type="button" tabindex="-1" data-goto="overview"><svg class="icon"><use href="#icon-grid"/></svg><span data-en="Overview">总览</span></button>
                   <button class="app-nav" type="button" tabindex="-1" data-goto="chat"><svg class="icon"><use href="#icon-chat"/></svg><span data-en="Chat">聊天</span></button>
@@ -579,7 +579,7 @@ cursor .</pre>
           <article class="feature-card">
           <span class="feature-number" aria-hidden="true">01</span>
           <h3 data-en="Getting started &amp; Strata runtime">上手与 Strata 环境</h3>
-          <p data-en="Getting started walks from checking the environment and installing Strata to downloading a model, loading it and the first chat. Detect existing installs and update Windows engine ZIPs from GitHub, mirrors or a local package, with size checks and pinned hashes. On Apple Silicon, the upstream prebuilt Metal engine can be installed in the app (preview; not yet validated on real Mac hardware).">“开始使用”从检查环境、安装 Strata 一路带到下载模型、加载和第一次聊天。已有安装会被识别；Windows 引擎 ZIP 可走官方 GitHub、镜像或本地包，并按大小和固定哈希校验。Apple Silicon 上可在应用内安装上游预编译 Metal 引擎（预览，尚未在真机 Mac 上验证）。</p>
+          <p data-en="Getting started walks from checking the environment and installing Strata to downloading a model, loading it and the first chat. Detect existing installs and update Windows engine ZIPs from GitHub, mirrors or a local package, with size checks and pinned hashes. Pick a specific Strata version to upgrade or downgrade, or pin the current one. Engines and models can live on another drive. If Python is too old on macOS or Linux, one click installs a private Python 3.12 for the app. On Apple Silicon, the upstream prebuilt Metal engine can be installed in the app, and the GPU is detected with its unified memory; macOS uses native window buttons and menu bar (preview; not yet validated on real Mac hardware).">“开始使用”从检查环境、安装 Strata 一路带到下载模型、加载和第一次聊天。已有安装会被识别；Windows 引擎 ZIP 可走官方 GitHub、镜像或本地包，并按大小和固定哈希校验。可以指定 Strata 版本升级或降级，也能固定在当前版本；引擎和模型可放到其他盘。macOS 和 Linux 上 Python 版本不够时，可一键安装应用自用的 Python 3.12。Apple Silicon 上可在应用内安装上游预编译 Metal 引擎，并识别显卡与统一内存；macOS 使用原生窗口按钮和菜单栏（预览，尚未在真机 Mac 上验证）。</p>
         </article>
         <article class="feature-card">
           <span class="feature-number" aria-hidden="true">02</span>
@@ -611,7 +611,7 @@ cursor .</pre>
         <article class="feature-card" id="taskbar-monitor">
           <span class="feature-number" aria-hidden="true">07</span>
           <h3 data-en="Windows taskbar monitor">Windows 任务栏监控</h3>
-          <p data-en="Optional and off by default: a compact widget next to the notification area shows a GPU, VRAM or context ring with generation and prefill speed stacked in one column, and can add GPU load, VRAM, temperature or service state. Right-click to pick items, the ring metric and per-metric colors; it follows light and dark taskbars and falls back to the desktop strip when there is no room.">可选，默认关闭：通知区左侧的小部件用圆环显示 GPU、显存或上下文，旁边一列上下叠放生成与预填充速度，还可加入 GPU 负载、显存、温度或服务状态。右键选择显示内容、圆环指标和每项颜色；跟随任务栏深浅色，放不下时回到桌面浮条。</p>
+          <p data-en="Optional and off by default: a compact widget next to the notification area shows a GPU, VRAM or context ring with generation and prefill speed stacked in one column, and can add GPU load, VRAM, temperature or service state. Right-click to pick items, the ring metric and per-metric colors; it follows light and dark taskbars and falls back to the desktop strip when there is no room. The desktop strip can also collapse into it from its context menu.">可选，默认关闭：通知区左侧的小部件用圆环显示 GPU、显存或上下文，旁边一列上下叠放生成与预填充速度，还可加入 GPU 负载、显存、温度或服务状态。右键选择显示内容、圆环指标和每项颜色；跟随任务栏深浅色，放不下时回到桌面浮条。桌面浮条也可从右键菜单收起到任务栏监控。</p>
           <div class="tb-demo" aria-hidden="true">
             <span class="tb-ring"><svg viewBox="0 0 36 36" width="26" height="26"><circle cx="18" cy="18" r="15" class="tb-track"/><circle cx="18" cy="18" r="15" class="tb-value" pathLength="100" stroke-dasharray="82 100" transform="rotate(-90 18 18)"/><text x="18" y="18" dominant-baseline="central" text-anchor="middle">82</text></svg></span>
             <span class="tb-speeds"><span class="tb-line tb-gen"><svg viewBox="-1 -1 2 2" aria-hidden="true"><polygon points="0,-1 .28,-.28 1,0 .28,.28 0,1 -.28,.28 -1,0 -.28,-.28"/></svg><b data-tb="gen">—</b><small>t/s</small></span><span class="tb-line tb-prefill"><svg viewBox="-1 -1 2 2" aria-hidden="true"><polygon points="-1,-.18 .1,-.18 .1,-.72 1,0 .1,.72 .1,.18 -1,.18"/></svg><b data-tb="prefill">3.2k</b><small>t/s</small></span></span>
@@ -891,7 +891,7 @@ cursor .</pre>
           <li class="ws-row" id="screen-floating-monitor">
             <div class="dd-slot" data-demo-tile="floating-monitor" aria-label="独立浮条 · 紧凑监控" data-label-en="Floating monitor · Compact metrics"></div>
             <span class="gallery-category" data-en="OPTIONAL DESKTOP MONITOR">按需打开的桌面监控</span>
-            <div class="ws-copy"><h3 data-en="Floating monitor · Compact metrics">独立浮条 · 紧凑监控</h3><p data-en="Off by default. Three layouts, text size and metric order/colors. Drag the metrics strip; actions live in the context menu and tray.">默认关闭。三种布局、字号和指标排序配色；纯指标可拖，操作在右键菜单和托盘。</p></div>
+            <div class="ws-copy"><h3 data-en="Floating monitor · Compact metrics">独立浮条 · 紧凑监控</h3><p data-en="Off by default. Three layouts, text size and metric order/colors. Drag the metrics strip; actions live in its context menu, and on Windows it can collapse into the taskbar monitor.">默认关闭。三种布局、字号和指标排序配色；纯指标可拖，操作在右键菜单，Windows 上可收起到任务栏监控。</p></div>
           </li>
         </ul>
         <p class="image-note"><span data-en="Every screen is rebuilt in HTML and plays while visible · Example data">每个界面都用 HTML 还原，进入视口时自动播放 · 演示数据</span></p>

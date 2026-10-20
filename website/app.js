@@ -242,13 +242,13 @@ const strataReleaseCatalog = (() => {
     },
     "floating-monitor": {
       "index": "14", "width": 440, "height": 80, "image": "floating-monitor",
-      "zh": { "title": "独立浮条 · 紧凑监控", "description": "纯指标浮条支持任意位置拖动，操作集中在原生右键菜单与系统托盘。", "alt": "紧凑桌面监控浮条：服务状态与生成、输入处理指标", "badge": "桌面监控浮条" },
-      "en": { "title": "Floating monitor · Compact metrics", "description": "Drag the metrics-only strip anywhere and use its native context menu or system tray for actions.", "alt": "Compact floating monitor: service status, generation and input-processing metrics", "badge": "FLOATING MONITOR" }
+      "zh": { "title": "独立浮条 · 紧凑监控", "description": "纯指标浮条支持任意位置拖动，操作集中在原生右键菜单；Windows 上可收起到任务栏监控。", "alt": "紧凑桌面监控浮条：服务状态与生成、输入处理指标", "badge": "桌面监控浮条" },
+      "en": { "title": "Floating monitor · Compact metrics", "description": "Drag the metrics-only strip anywhere and use its native context menu for actions; on Windows it can collapse into the taskbar monitor.", "alt": "Compact floating monitor: service status, generation and input-processing metrics", "badge": "FLOATING MONITOR" }
     },
     "floating-monitor-settings": {
       "index": "14", "image": "floating-monitor-settings",
-      "zh": { "title": "浮条设置 · 显示与托盘", "description": "设置默认置顶、采样时间与系统托盘监控。", "alt": "监控浮动条设置：置顶、采样时间和系统托盘监控", "badge": "浮条设置" },
-      "en": { "title": "Monitor settings · Display and tray", "description": "Set the default pin state, sample-time display and system tray monitoring.", "alt": "Floating monitor settings: pin state, sample time and system tray monitoring", "badge": "MONITOR SETTINGS" }
+      "zh": { "title": "浮条设置 · 布局与显示", "description": "设置布局、字号、指标顺序、默认置顶与采样时间。", "alt": "监控浮动条设置：布局、字号、指标顺序、置顶和采样时间", "badge": "浮条设置" },
+      "en": { "title": "Monitor settings · Layout and display", "description": "Set the layout, text size, metric order, default pin state and sample-time display.", "alt": "Floating monitor settings: layout, text size, metric order, pin state and sample time", "badge": "MONITOR SETTINGS" }
     },
     "overview-api-guide": {
       "index": "11", "image": "overview-api-guide",
