@@ -1420,17 +1420,25 @@ const strataReleaseCatalog = (() => {
   fitApp();
   runners.forEach(runner => runner.init());
   // Taskbar monitor recreation: example readings tick only while visible and motion is allowed.
+  // Like the real widget, only one speed is live at a time (prefill, then generation); the other shows a dash.
   function taskbarDemo() {
     const root = document.querySelector('.tb-demo');
-    if (!root || reduceMotion.matches) return;
-    const gen = root.querySelector('[data-tb="gen"]'), prefill = root.querySelector('[data-tb="prefill"]');
+    if (!root) return;
+    const lines = { gen: root.querySelector('.tb-gen'), prefill: root.querySelector('.tb-prefill') };
     const ring = root.querySelector('.tb-value'), label = root.querySelector('.tb-ring text');
-    const frames = [[21.3, 3200, 76], [22.1, 3100, 78], [20.8, 3400, 74], [21.7, 2900, 79]];
+    const show = (phase, value) => Object.entries(lines).forEach(([key, line]) => {
+      const live = key === phase;
+      line.classList.toggle('idle', !live);
+      line.querySelector('b').textContent = live ? value : '—';
+    });
+    show('prefill', '3.2k');
+    if (reduceMotion.matches) return;
+    const frames = [['prefill', '3.2k', 82], ['prefill', '3.4k', 84], ['gen', '21.3', 76], ['gen', '22.1', 78], ['gen', '20.8', 74], ['gen', '21.7', 77]];
     let index = 0, timer = 0;
     const tick = () => {
       index = (index + 1) % frames.length;
-      const [g, p, r] = frames[index];
-      gen.textContent = g.toFixed(1); prefill.textContent = `${(p / 1000).toFixed(1)}k`;
+      const [phase, value, r] = frames[index];
+      show(phase, value);
       ring.setAttribute('stroke-dasharray', `${r} 100`); label.textContent = String(r);
     };
     const run = on => { clearInterval(timer); if (on) timer = setInterval(tick, 1400); };

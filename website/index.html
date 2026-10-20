@@ -158,7 +158,7 @@
             <div class="app-fit" data-app-fit>
               <div class="app-window" id="app-window" data-view="overview" data-svc="generating">
                 <aside class="app-side">
-                  <div class="app-brand"><img src="assets/icon.svg" width="28" height="28" alt=""><span><b>Strata</b> Manager<small data-app-version>v0.2.9</small></span></div>
+                  <div class="app-brand"><img src="assets/icon.svg" width="28" height="28" alt=""><span><b>Strata</b> Manager<small data-app-version>v0.2.10</small></span></div>
                   <p class="app-group" data-en="DAILY USE">日常使用</p>
                   <button class="app-nav is-active" type="button" tabindex="-1" data-goto="overview"><svg class="icon"><use href="#icon-grid"/></svg><span data-en="Overview">总览</span></button>
                   <button class="app-nav" type="button" tabindex="-1" data-goto="chat"><svg class="icon"><use href="#icon-chat"/></svg><span data-en="Chat">聊天</span></button>
@@ -611,11 +611,10 @@ cursor .</pre>
         <article class="feature-card" id="taskbar-monitor">
           <span class="feature-number" aria-hidden="true">07</span>
           <h3 data-en="Windows taskbar monitor">Windows 任务栏监控</h3>
-          <p data-en="Optional and off by default: a compact widget next to the notification area shows a GPU or VRAM ring with generation and prefill speed, and can add GPU load, VRAM, temperature or service state. Right-click to pick items, the ring metric and per-metric colors; it follows light and dark taskbars and falls back to the desktop strip when there is no room.">可选，默认关闭：通知区左侧的小部件用圆环显示 GPU 或显存，旁边是生成与预填充速度，还可加入 GPU 负载、显存、温度或服务状态。右键选择显示内容、圆环指标和每项颜色；跟随任务栏深浅色，放不下时回到桌面浮条。</p>
+          <p data-en="Optional and off by default: a compact widget next to the notification area shows a GPU, VRAM or context ring with generation and prefill speed stacked in one column, and can add GPU load, VRAM, temperature or service state. Right-click to pick items, the ring metric and per-metric colors; it follows light and dark taskbars and falls back to the desktop strip when there is no room.">可选，默认关闭：通知区左侧的小部件用圆环显示 GPU、显存或上下文，旁边一列上下叠放生成与预填充速度，还可加入 GPU 负载、显存、温度或服务状态。右键选择显示内容、圆环指标和每项颜色；跟随任务栏深浅色，放不下时回到桌面浮条。</p>
           <div class="tb-demo" aria-hidden="true">
-            <span class="tb-ring"><svg viewBox="0 0 36 36" width="26" height="26"><circle cx="18" cy="18" r="15" class="tb-track"/><circle cx="18" cy="18" r="15" class="tb-value" pathLength="100" stroke-dasharray="76 100" transform="rotate(-90 18 18)"/><text x="18" y="18" dominant-baseline="central" text-anchor="middle">76</text></svg></span>
-            <span class="tb-metric tb-gen"><b><span data-tb="gen">21.3</span><small>t/s</small></b><em data-en="Gen">生成</em></span>
-            <span class="tb-metric tb-prefill"><b><span data-tb="prefill">3.2k</span><small>t/s</small></b><em data-en="Prefill">预填充</em></span>
+            <span class="tb-ring"><svg viewBox="0 0 36 36" width="26" height="26"><circle cx="18" cy="18" r="15" class="tb-track"/><circle cx="18" cy="18" r="15" class="tb-value" pathLength="100" stroke-dasharray="82 100" transform="rotate(-90 18 18)"/><text x="18" y="18" dominant-baseline="central" text-anchor="middle">82</text></svg></span>
+            <span class="tb-speeds"><span class="tb-line tb-gen"><svg viewBox="-1 -1 2 2" aria-hidden="true"><polygon points="0,-1 .28,-.28 1,0 .28,.28 0,1 -.28,.28 -1,0 -.28,-.28"/></svg><b data-tb="gen">—</b><small>t/s</small></span><span class="tb-line tb-prefill"><svg viewBox="-1 -1 2 2" aria-hidden="true"><polygon points="-1,-.18 .1,-.18 .1,-.72 1,0 .1,.72 .1,.18 -1,.18"/></svg><b data-tb="prefill">3.2k</b><small>t/s</small></span></span>
             <span class="tb-clock">14:32<br>2026/10/19</span>
           </div>
         </article>
