@@ -81,6 +81,11 @@ a[aria-disabled=true]{opacity:.4;cursor:default;pointer-events:none}
 .display-detail-bar p{color:var(--muted);font-size:14px;line-height:1.5}
 .text-link{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:14px;transition:color .15s}.text-link:hover{color:var(--text)}.text-link .icon{width:14px;height:14px}
 .image-note{margin-top:10px;padding-inline:4px;color:var(--faint);font-size:12px}
+.hero-video-link{align-self:center;margin-left:6px}
+.intro-video-section{padding:0 0 120px}
+.intro-video-frame{position:relative;overflow:hidden;aspect-ratio:16/9;border:1px solid var(--line);border-radius:14px;background:var(--bg-2)}
+.intro-video{display:block;width:100%;height:100%;object-fit:cover;background:var(--bg-2)}
+.intro-video-play{position:absolute;left:50%;top:50%;width:76px;height:76px;display:grid;place-items:center;border:0;border-radius:50%;background:rgb(20 18 15/.78);color:#fff;transform:translate(-50%,-50%);transition:background .15s,transform .15s}.intro-video-play:hover{background:rgb(20 18 15/.92);transform:translate(-50%,-50%) scale(1.04)}.intro-video-play[hidden]{display:none}.intro-video-play .icon{width:30px;height:30px;margin-left:4px;fill:currentColor;stroke:none}
 
 /* ---------- Desktop app mockup (design size 1120 × 700, scaled by app.js) ---------- */
 .app-window{--w:1120px;--h:700px;width:var(--w);height:var(--h);display:grid;grid-template-columns:184px 1fr;border-radius:10px;background:var(--a-bg);color:var(--a-ink);box-shadow:var(--shadow);overflow:hidden;font:12px/1.45 var(--sans);transform-origin:0 0;text-align:left;letter-spacing:0}
@@ -641,6 +646,10 @@ button.m-btn:hover{border-color:var(--a-muted)}
   .hero-lead{font-size:16px}
   .hero-cta-group .pill-lg{flex:1 1 auto}
   .stage-section{padding-bottom:72px}
+  .intro-video-section{padding-bottom:72px}
+  .intro-video-frame{border-radius:10px}
+  .intro-video-play{width:56px;height:56px}.intro-video-play .icon{width:22px;height:22px}
+  .hero-video-link{flex-basis:100%;margin:4px 0 0 4px}
   .stage-canvas{padding:14px;border-radius:12px}
   .feature-copy{padding:28px 24px}.feature-copy h2{font-size:19px}
   .feature-visual{padding:20px 14px}

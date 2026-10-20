@@ -30,6 +30,8 @@
 
 [![Strata Manager overview: service controls, GPU and system memory map, generation speed and recent requests](docs/screenshots/product-cover.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.en.webp)
 
+<p align="center"><a href="https://strata-manager.cosfoc.com/assets/video/intro.en.mp4"><img src="docs/media/intro-video.en.webp" width="640" alt="Play the 2-minute Strata Manager intro video" /></a><br /><sub>2-minute intro video · <a href="https://strata-manager.cosfoc.com/en/#intro-video">watch on the website</a> · <a href="https://strata-manager.cosfoc.com/#intro-video">中文版</a></sub></p>
+
 ## What is Strata, and what does Manager do?
 
 [Strata](https://github.com/Niko1221/Strata) is an open-source local LLM inference engine. It coordinates GPU memory, RAM and CPU resources to run supported models, and provides a browser interface and a local API.
