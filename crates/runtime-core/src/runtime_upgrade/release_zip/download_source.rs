@@ -34,19 +34,24 @@ impl RuntimeZipDownloadOptions {
             .filter(|value| !value.trim().is_empty())
             .map(|value| value.trim().to_owned());
         if self.local_archive_path.is_some() && self.download_url.is_some() {
-            return Err("本地 ZIP 和镜像下载地址只能选择一种".into());
+            return Err("本地引擎包 和镜像下载地址只能选择一种".into());
         }
         if self.is_custom() && asset_name.is_none_or(str::is_empty) {
-            return Err("使用本地 ZIP 或镜像前，请选择对应的官方更新包".into());
+            return Err("使用本地引擎包 或镜像前，请选择对应的官方更新包".into());
         }
         if let Some(path) = &self.local_archive_path {
             let path = Path::new(path);
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or_default()
+                .to_ascii_lowercase();
             if !path.is_absolute()
-                || !path
-                    .extension()
-                    .is_some_and(|ext| ext.eq_ignore_ascii_case("zip"))
+                || !installation::local_archive::WINDOWS_ENGINE_EXTENSIONS
+                    .iter()
+                    .any(|extension| name.ends_with(extension))
             {
-                return Err("本地更新包必须是绝对路径的 ZIP 文件".into());
+                return Err("本地更新包必须是绝对路径的 ZIP 或 tar.gz 文件 / The local package must be an absolute path to a ZIP or tar.gz file".into());
             }
         }
         if let Some(value) = &self.download_url {
@@ -61,7 +66,7 @@ impl RuntimeZipDownloadOptions {
     pub fn validate_local_file(&self) -> Result<(), String> {
         if let Some(path) = &self.local_archive_path {
             let metadata =
-                std::fs::metadata(path).map_err(|error| format!("无法读取本地 ZIP：{error}"))?;
+                std::fs::metadata(path).map_err(|error| format!("无法读取本地引擎包：{error}"))?;
             if !metadata.is_file() {
                 return Err("本地更新包不是普通文件".into());
             }
@@ -71,7 +76,7 @@ impl RuntimeZipDownloadOptions {
 }
 
 fn mirror_url(value: &str) -> Result<url::Url, String> {
-    let url = url::Url::parse(value).map_err(|_| "镜像地址必须是完整的 HTTPS 引擎 ZIP 下载地址")?;
+    let url = url::Url::parse(value).map_err(|_| "镜像地址必须是完整的 HTTPS 引擎包 下载地址")?;
     if url.scheme() != "https"
         || url.host_str().is_none()
         || !url.username().is_empty()
@@ -96,7 +101,13 @@ pub(super) async fn engine_archive(
             id,
             Path::new(path),
             asset,
-            &work.join("local-engine.zip"),
+            &work.join(
+                if super::engine_package::parse_package_name(&asset.name).is_some() {
+                    "local-engine.tar.gz"
+                } else {
+                    "local-engine.zip"
+                },
+            ),
         );
     }
     let archive = if let Some(url) = &options.download_url {
@@ -121,7 +132,7 @@ pub(super) async fn engine_archive(
         installation::download_release(state, id, &asset.url, &asset.sha256, asset.size).await?
     };
     if archive.metadata().map_err(|error| error.to_string())?.len() != asset.size {
-        return Err("引擎 ZIP 精确长度与官方 Release 清单不符".into());
+        return Err("引擎包 精确长度与官方 Release 清单不符".into());
     }
     Ok(archive)
 }
@@ -134,10 +145,10 @@ fn import_archive(
     destination: &Path,
 ) -> Result<PathBuf, String> {
     cancelled(state, id)?;
-    let mut source = File::open(path).map_err(|error| format!("无法读取本地 ZIP：{error}"))?;
+    let mut source = File::open(path).map_err(|error| format!("无法读取本地引擎包：{error}"))?;
     let metadata = source.metadata().map_err(|error| error.to_string())?;
     if !metadata.is_file() || metadata.len() != asset.size {
-        return Err("本地 ZIP 的长度与所选官方更新包不符，请检查版本和 GPU 类型".into());
+        return Err("本地引擎包 的长度与所选官方更新包不符，请检查版本和 GPU 类型".into());
     }
     processes::log(
         &state.logs,
@@ -156,13 +167,13 @@ fn import_archive(
         cancelled(state, id)?;
         let count = source
             .read(&mut buffer)
-            .map_err(|error| format!("本地 ZIP 读取失败：{error}"))?;
+            .map_err(|error| format!("本地引擎包 读取失败：{error}"))?;
         if count == 0 {
             break;
         }
         received += count as u64;
         if received > asset.size {
-            return Err("读取期间本地 ZIP 长度发生变化，已拒绝安装".into());
+            return Err("读取期间本地引擎包 长度发生变化，已拒绝安装".into());
         }
         hash.update(&buffer[..count]);
         output
@@ -173,13 +184,13 @@ fn import_archive(
                 &state.logs,
                 id,
                 "info",
-                format!("已读取本地 ZIP {received}/{} 字节", asset.size),
+                format!("已读取本地引擎包 {received}/{} 字节", asset.size),
             );
             at = Instant::now();
         }
     }
     if received != asset.size || format!("{:x}", hash.finalize()) != asset.sha256 {
-        return Err("本地 ZIP 的 SHA256 与所选官方更新包不符，已拒绝解包或安装".into());
+        return Err("本地引擎包 的 SHA256 与所选官方更新包不符，已拒绝解包或安装".into());
     }
     cancelled(state, id)?;
     output
@@ -193,7 +204,7 @@ fn import_archive(
         &state.logs,
         id,
         "info",
-        format!("本地 ZIP 官方 SHA256 校验通过，共 {received} 字节；原文件保持不变"),
+        format!("本地引擎包 官方 SHA256 校验通过，共 {received} 字节；原文件保持不变"),
     );
     Ok(destination.to_owned())
 }
@@ -233,6 +244,7 @@ mod tests {
             size: bytes.len() as u64,
             sha256: format!("{:x}", Sha256::digest(bytes)),
             variant: "cuda13".into(),
+            ..Default::default()
         }
     }
     #[test]

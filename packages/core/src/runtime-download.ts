@@ -1,5 +1,5 @@
 import { loadStore, saveStore } from './bridge';
-import type { RuntimeDownloadPreferences, RuntimeUpdateInfo, RuntimeZipDownloadOptions } from './runtime-types';
+import type { RuntimeDownloadPreferences, RuntimeReleaseAsset, RuntimeUpdateInfo, RuntimeZipDownloadOptions } from './runtime-types';
 
 const storeKey = 'runtimeDownloadPreferences';
 const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
@@ -61,4 +61,28 @@ export function resolveRuntimeDownloadPreferences(value: RuntimeDownloadPreferen
   )) : '';
   const valid = !!asset && (sameRelease || hasTemplate) && !unsupportedTemplate && validUrl(resolved);
   return { assetName, download: { downloadUrl: valid ? resolved : '' }, requiresSelection: !valid };
+}
+
+/** File-picker filter for a downloaded engine package: Strata 0.2+ `.tar.gz` or a legacy ZIP. */
+export function runtimeEngineArchiveFilters(zh: boolean): { name: string; extensions: string[] }[] {
+  return [{ name: zh ? '引擎包（tar.gz / ZIP）' : 'Engine package (tar.gz / ZIP)', extensions: ['gz', 'tgz', 'zip'] }];
+}
+
+/** Short GPU label of an official engine package. */
+export function runtimeAssetLabel(asset: Pick<RuntimeReleaseAsset, 'name' | 'variant'>): string {
+  switch (asset.variant) {
+    case 'cuda13': return 'CUDA 13';
+    case 'cuda12': return 'CUDA 12';
+    case 'hip-rdna3': return 'AMD HIP · RX 7000 / Strix Halo';
+    case 'hip': return asset.name.endsWith('.zip') ? 'AMD HIP' : 'AMD HIP · RX 9000 / R9700';
+    default: return String(asset.variant).toUpperCase();
+  }
+}
+
+/**
+ * Strata 0.2+ release versions differ from their engine version (0.2.0-beta ships engine 0.1.45.3).
+ * A runtime whose engine already matches a package of the release is up to date.
+ */
+export function runtimeEngineIsCurrent(runtimeVersion: string | undefined, release: Pick<RuntimeUpdateInfo, 'assets'> | undefined): boolean {
+  return !!runtimeVersion && !!release?.assets.some(asset => !!asset.engineVersion && asset.engineVersion === runtimeVersion);
 }

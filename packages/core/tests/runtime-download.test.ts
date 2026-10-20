@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getRuntimeDownloadPreferences, resolveRuntimeDownloadPreferences, runtimeDownloadSources, saveRuntimeDownloadPreferences } from '../src/runtime-download';
+import { getRuntimeDownloadPreferences, resolveRuntimeDownloadPreferences, runtimeAssetLabel, runtimeDownloadSources, runtimeEngineArchiveFilters, runtimeEngineIsCurrent, saveRuntimeDownloadPreferences } from '../src/runtime-download';
 import { resolveRuntimeZipAsset, testRuntimeZipDownload } from '../src/bridge';
 import type { RuntimeUpdateInfo } from '../src/runtime-types';
 
@@ -70,5 +70,26 @@ describe('saved runtime download choices', () => {
     vi.stubGlobal('window', { __TAURI_INTERNALS__: { invoke } });
     await testRuntimeZipDownload(assetName, { localArchivePath: ' D:\\Downloads\\engine.zip ' });
     expect(invoke).toHaveBeenCalledExactlyOnceWith('test_runtime_zip_download', { assetName, localArchivePath: 'D:\\Downloads\\engine.zip' }, undefined);
+  });
+});
+
+describe('Strata 0.2 engine packages', () => {
+  it('names each GPU package and keeps the legacy HIP ZIP label', () => {
+    const pkg = (backend: string) => `strata-engine-0.1.45.3-windows-x86_64-${backend}.tar.gz`;
+    expect(runtimeAssetLabel({ name: pkg('cuda-cuda13'), variant: 'cuda13' })).toBe('CUDA 13');
+    expect(runtimeAssetLabel({ name: pkg('cuda-cuda12'), variant: 'cuda12' })).toBe('CUDA 12');
+    expect(runtimeAssetLabel({ name: pkg('hip-rx9070'), variant: 'hip' })).toBe('AMD HIP · RX 9000 / R9700');
+    expect(runtimeAssetLabel({ name: pkg('hip-rdna3'), variant: 'hip-rdna3' })).toBe('AMD HIP · RX 7000 / Strix Halo');
+    expect(runtimeAssetLabel({ name: 'strata-windows-x64-hip.zip', variant: 'hip' })).toBe('AMD HIP');
+  });
+  it('lets the file picker choose tar.gz packages and legacy ZIPs', () => {
+    expect(runtimeEngineArchiveFilters(true)[0]!.extensions).toEqual(['gz', 'tgz', 'zip']);
+    expect(runtimeEngineArchiveFilters(false)[0]!.name).toBe('Engine package (tar.gz / ZIP)');
+  });
+  it('treats an engine that matches a 0.2 package as current although the release version differs', () => {
+    const info = { assets: [{ name: 'strata-engine-0.1.45.3-windows-x86_64-cuda-cuda13.tar.gz', url: '', size: 1, sha256: 'a'.repeat(64), variant: 'cuda13' as const, engineVersion: '0.1.45.3' }] };
+    expect(runtimeEngineIsCurrent('0.1.45.3', info)).toBe(true);
+    expect(runtimeEngineIsCurrent('0.1.45', info)).toBe(false);
+    expect(runtimeEngineIsCurrent('0.1.45.3', { assets: [{ ...info.assets[0]!, engineVersion: undefined }] })).toBe(false);
   });
 });

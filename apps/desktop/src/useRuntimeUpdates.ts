@@ -85,7 +85,7 @@ export function useRuntimeUpdates(desktop: boolean, ready: boolean, enabled: boo
     if (!enabled && !running.current && !automaticTask.current) releaseGate();
     if (!enabled || !idle || !downloadPreferences.isSuccess || pending || running.current || automaticTask.current || tasks.some(item => item.state === 'running') || !release.data?.installable) return;
     if (dismissed.current.has(`${release.data.latestVersion}:${release.data.checkedAt}`)) return;
-    const runtime = installation.data?.detectedRuntimes?.find(item => item.readiness === 'ready' && newer(item.runtimeVersion, release.data?.latestVersion) && !attempted.current.has(`${item.installDir}:${release.data?.latestVersion}:${release.data?.checkedAt}`));
+    const runtime = installation.data?.detectedRuntimes?.find(item => item.readiness === 'ready' && newer(item.runtimeVersion, release.data?.latestVersion) && !core.runtimeEngineIsCurrent(item.runtimeVersion, release.data) && !attempted.current.has(`${item.installDir}:${release.data?.latestVersion}:${release.data?.checkedAt}`));
     if (!runtime) return;
     const proposed = { runtime, release: release.data };
     attempted.current.add(updateKey(proposed));
@@ -104,7 +104,7 @@ export function useRuntimeUpdates(desktop: boolean, ready: boolean, enabled: boo
       attempted.current.add(updateKey(proposed)); setPending(proposed); setActionError(''); return;
     }
     const current = installation.data?.detectedRuntimes?.find(item => item.installDir === pending.runtime.installDir && item.readiness === 'ready');
-    if (!current || !newer(current.runtimeVersion, latest.latestVersion)) { setPending(null); return; }
+    if (!current || !newer(current.runtimeVersion, latest.latestVersion) || core.runtimeEngineIsCurrent(current.runtimeVersion, latest)) { setPending(null); return; }
     if (!acquireGate()) {
       setActionError(language === 'zh-CN' ? '另一个更新正在进行，请完成后再确认。' : 'Another update is in progress. Confirm again when it finishes.'); return;
     }

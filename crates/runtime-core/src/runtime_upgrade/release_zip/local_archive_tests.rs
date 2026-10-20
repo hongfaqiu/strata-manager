@@ -45,6 +45,7 @@ fn asset(name: &str, variant: &str, bytes: &[u8]) -> RuntimeReleaseAsset {
         size: bytes.len() as u64,
         sha256: format!("{:x}", Sha256::digest(bytes)),
         variant: variant.into(),
+        ..Default::default()
     }
 }
 
@@ -66,6 +67,7 @@ fn info(assets: Vec<RuntimeReleaseAsset>) -> RuntimeUpdateInfo {
         update_available: true,
         installable: true,
         error: None,
+        feed_sequence: None,
     }
 }
 

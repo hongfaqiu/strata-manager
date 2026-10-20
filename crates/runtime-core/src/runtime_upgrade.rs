@@ -17,6 +17,7 @@ use std::{
 };
 
 pub const VERSION: &str = "0.1.41";
+pub mod engine_package;
 mod release_zip;
 pub use release_zip::{
     resolve_release_download_asset, start_install_release, start_install_release_with_archives,
@@ -26,7 +27,7 @@ pub use release_zip::{
 const SERVER_SHA256: &str = "017efa1f4e76d72396738555d13eb1f9898d1c1c12730cf046d9b267b29987e5";
 const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS runtime_upgrades(task_id TEXT PRIMARY KEY,profile_id TEXT NOT NULL,journal TEXT NOT NULL,updated_at INTEGER NOT NULL);";
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeReleaseAsset {
     pub name: String,
@@ -34,11 +35,21 @@ pub struct RuntimeReleaseAsset {
     pub size: u64,
     pub sha256: String,
     pub variant: String,
+    /// Engine version of a Strata 0.2+ component package; legacy ZIPs share the release version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine_version: Option<String>,
+    /// SHA-256 of the package's signed `engine-component.json`, from the signed feed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manifest_sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub installed_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub archs: Vec<String>,
 }
 
 /// Official release metadata and SHA256-published engine ZIPs. Checking never
 /// runs upstream scripts or changes an installation.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeUpdateInfo {
     pub checked_at: u64,
@@ -58,6 +69,9 @@ pub struct RuntimeUpdateInfo {
     pub update_available: bool,
     pub installable: bool,
     pub error: Option<String>,
+    /// Highest signed feed sequence accepted, so an older feed cannot be replayed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feed_sequence: Option<u64>,
 }
 
 const UPDATE_INFO_KEY: &str = "strataUpstreamUpdateInfo";
@@ -82,7 +96,7 @@ fn release_update_info(release: &Value) -> Result<RuntimeUpdateInfo, String> {
         .ok_or("上游发布信息缺少版本号")?
         .trim_start_matches('v')
         .to_string();
-    if version.split('.').any(|part| part.parse::<u32>().is_err()) {
+    if !engine_package::valid_version(&version) {
         return Err("上游版本号格式无法识别；未改变本机运行环境".into());
     }
     let release_url = release["html_url"].as_str().and_then(|value| {
@@ -97,12 +111,7 @@ fn release_update_info(release: &Value) -> Result<RuntimeUpdateInfo, String> {
         .flatten()
         .filter_map(|item| {
             let name = item["name"].as_str()?;
-            let variant = match name {
-                "strata-windows-x64.zip" => "cuda13",
-                "strata-windows-x64-cuda12.zip" => "cuda12",
-                "strata-windows-x64-hip.zip" => "hip",
-                _ => return None,
-            };
+            let variant = engine_package::legacy_variant(name)?;
             let url = item["browser_download_url"].as_str()?;
             if url != format!("https://github.com/Niko1221/Strata/releases/download/{tag}/{name}") {
                 return None;
@@ -120,6 +129,7 @@ fn release_update_info(release: &Value) -> Result<RuntimeUpdateInfo, String> {
                 size,
                 sha256: digest.to_ascii_lowercase(),
                 variant: variant.into(),
+                ..Default::default()
             })
         })
         .collect::<Vec<_>>();
@@ -143,6 +153,7 @@ fn release_update_info(release: &Value) -> Result<RuntimeUpdateInfo, String> {
         source_archive_url: None,
         update_available: newer,
         error: None,
+        feed_sequence: None,
     })
 }
 
@@ -181,10 +192,7 @@ fn cached_installation_metadata(cached: Value, checked_now: u64) -> Option<Runti
         return None;
     }
     let version = info.latest_version.as_deref()?;
-    if version.is_empty()
-        || version.len() > 80
-        || version.split('.').any(|part| part.parse::<u32>().is_err())
-    {
+    if !engine_package::valid_version(version) {
         return None;
     }
     let revision = info
@@ -194,14 +202,24 @@ fn cached_installation_metadata(cached: Value, checked_now: u64) -> Option<Runti
     if info.source_archive_url.as_deref()
         != Some(format!("https://codeload.github.com/Niko1221/Strata/zip/{revision}").as_str())
         || !info.assets.iter().all(|asset| {
-            let variant = match asset.name.as_str() {
-                "strata-windows-x64.zip" => "cuda13",
-                "strata-windows-x64-cuda12.zip" => "cuda12",
-                "strata-windows-x64-hip.zip" => "hip",
-                _ => return false,
+            let Some(variant) = engine_package::installable_variant(&asset.name) else {
+                return false;
             };
+            let limit = if engine_package::legacy_variant(&asset.name).is_some() {
+                1024 * 1024 * 1024
+            } else {
+                engine_package::MAX_PACKAGE_BYTES
+            };
+            let package_fields = engine_package::legacy_variant(&asset.name).is_some()
+                || asset.engine_version.as_deref().is_some_and(|v| {
+                    engine_package::parse_package_name(&asset.name)
+                        .is_some_and(|parsed| parsed.version == v)
+                }) && asset.manifest_sha256.as_deref().is_some_and(|sha| {
+                    sha.len() == 64 && sha.bytes().all(|b| b.is_ascii_hexdigit())
+                });
             asset.variant == variant
-                && (1..=1024 * 1024 * 1024).contains(&asset.size)
+                && package_fields
+                && (1..=limit).contains(&asset.size)
                 && asset.sha256.len() == 64
                 && asset.sha256.bytes().all(|b| b.is_ascii_hexdigit())
                 && asset.sha256 == asset.sha256.to_ascii_lowercase()
@@ -243,7 +261,9 @@ pub async fn update_info_with_cache(
             return Ok(constrain_installable(info));
         }
     }
+    let cached_for_feed = cached.clone();
     let response = async {
+        let cached = cached_for_feed;
         let client = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(8))
             .timeout(Duration::from_secs(20))
@@ -264,6 +284,21 @@ pub async fn update_info_with_cache(
             .map_err(|error| format!("无法读取上游发布信息：{error}"))?;
         let mut info = release_update_info(&release)?;
         let tag = release["tag_name"].as_str().ok_or("发布标记缺失")?;
+        let previous_sequence = cached["feedSequence"].as_u64();
+        match release_feed_assets(&release, tag, previous_sequence).await {
+            Ok(Some((sequence, assets))) => {
+                info.feed_sequence = Some(sequence.max(previous_sequence.unwrap_or(0)));
+                info.assets.extend(assets);
+            }
+            Ok(None) => {}
+            // A legacy release stays installable without a feed; a feed-only one must verify.
+            Err(error) if info.assets.is_empty() => return Err(error),
+            Err(_) => {}
+        }
+        info.installable = zip_installable(&info.assets, std::env::consts::OS, std::env::consts::ARCH);
+        if info.assets.is_empty() && info.update_available {
+            info.error = Some("此上游版本没有 Manager 可安装的 Windows 引擎包；已安装的运行时不受影响 / This upstream release has no engine package Manager can install; existing runtimes are unaffected".into());
+        }
         let mut reference: Value = client
             .get(format!(
                 "https://api.github.com/repos/Niko1221/Strata/git/ref/tags/{tag}"
@@ -328,6 +363,7 @@ pub async fn update_info_with_cache(
                     update_available: false,
                     installable: false,
                     error: None,
+                    feed_sequence: None,
                 });
             info.checked_at = now();
             info.error = Some(error);
@@ -336,6 +372,91 @@ pub async fn update_info_with_cache(
         }
     });
     Ok(info)
+}
+
+/// Fetch and verify `strata-feed.json` (+ `.sig`) when the release carries one.
+async fn release_feed_assets(
+    release: &Value,
+    tag: &str,
+    previous_sequence: Option<u64>,
+) -> Result<Option<(u64, Vec<RuntimeReleaseAsset>)>, String> {
+    let url_for = |name: &str| {
+        release["assets"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|item| item["name"].as_str() == Some(name))
+            .and_then(|item| item["browser_download_url"].as_str())
+            .filter(|url| {
+                *url == format!("https://github.com/Niko1221/Strata/releases/download/{tag}/{name}")
+            })
+            .map(str::to_owned)
+    };
+    let (Some(feed_url), Some(signature_url)) = (
+        url_for(engine_package::FEED_NAME),
+        url_for(engine_package::FEED_SIGNATURE_NAME),
+    ) else {
+        return Ok(None);
+    };
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(8))
+        .timeout(Duration::from_secs(20))
+        .user_agent("Strata-Manager-runtime-updates")
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= 5 {
+                return attempt.error("release redirect limit exceeded");
+            }
+            if attempt.url().scheme() == "https"
+                && matches!(
+                    attempt.url().host_str(),
+                    Some(
+                        "github.com"
+                            | "release-assets.githubusercontent.com"
+                            | "objects.githubusercontent.com"
+                    )
+                )
+            {
+                attempt.follow()
+            } else {
+                attempt.error("release redirect origin refused")
+            }
+        }))
+        .build()
+        .map_err(|error| error.to_string())?;
+    let fetch = |url: String| {
+        let client = client.clone();
+        async move {
+            let response = client
+                .get(&url)
+                .send()
+                .await
+                .map_err(|error| format!("无法下载上游更新 feed：{error}"))?
+                .error_for_status()
+                .map_err(|error| format!("无法下载上游更新 feed：{error}"))?;
+            if response
+                .content_length()
+                .is_some_and(|n| n > engine_package::MAX_FEED_BYTES)
+            {
+                return Err("更新 feed 超过大小上限 / Update feed is too large".to_owned());
+            }
+            let mut bytes = Vec::new();
+            let mut stream = response.bytes_stream();
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk.map_err(|error| error.to_string())?;
+                if bytes.len() as u64 + chunk.len() as u64 > engine_package::MAX_FEED_BYTES {
+                    return Err("更新 feed 超过大小上限 / Update feed is too large".to_owned());
+                }
+                bytes.extend_from_slice(&chunk);
+            }
+            Ok::<_, String>(bytes)
+        }
+    };
+    let feed = fetch(feed_url).await?;
+    let signature = fetch(signature_url).await?;
+    let feed = engine_package::verify_feed(&feed, &signature, previous_sequence, now())?;
+    let sequence = feed["sequence"].as_u64().unwrap_or_default();
+    let assets = engine_package::feed_assets(&feed, release, tag, "windows-x86_64")?;
+    Ok(Some((sequence, assets)))
 }
 
 fn valid_revision(value: &str) -> bool {
@@ -676,14 +797,10 @@ fn engine_metadata(profile: &ServiceProfile, config: &Value) -> Result<Value, St
         .map_err(|_| "引擎 BUILD.json 无效".into())
 }
 fn newer_than_supported(version: &str) -> bool {
-    let numbers = |text: &str| {
-        text.trim_start_matches('v')
-            .split('.')
-            .map(str::parse::<u32>)
-            .collect::<Result<Vec<_>, _>>()
-            .ok()
-    };
-    match (numbers(version), numbers(VERSION)) {
+    match (
+        engine_package::version_key(version),
+        engine_package::version_key(VERSION),
+    ) {
         (Some(a), Some(b)) => a > b,
         _ => false,
     }
@@ -1944,6 +2061,45 @@ mod tests {
                 "browser_download_url":"https://github.com/Niko1221/Strata/releases/download/v0.1.42/strata-windows-x64.zip",
                 "digest":format!("sha256:{}","a".repeat(64))}]
         })
+    }
+
+    #[test]
+    fn the_0_2_0_beta_release_is_recognised_and_its_feed_packages_are_cached_as_installable() {
+        let release: Value = serde_json::from_str(include_str!(
+            "runtime_upgrade/fixtures/release-v0.2.0-beta.json"
+        ))
+        .unwrap();
+        let mut info = release_update_info(&release).unwrap();
+        assert_eq!(info.latest_version.as_deref(), Some("0.2.0-beta"));
+        assert!(info.update_available && info.assets.is_empty());
+        let feed = engine_package::verify_feed(
+            include_bytes!("runtime_upgrade/fixtures/strata-feed.json"),
+            include_bytes!("runtime_upgrade/fixtures/strata-feed.json.sig"),
+            None,
+            now(),
+        )
+        .unwrap();
+        info.assets =
+            engine_package::feed_assets(&feed, &release, "v0.2.0-beta", "windows-x86_64").unwrap();
+        info.installable = zip_installable(&info.assets, "windows", "x86_64");
+        let revision = "3d1fb48090e8f2cefc22d7b5845fb7f5b71f33fa";
+        info.source_revision = Some(revision.into());
+        info.source_archive_url = Some(format!(
+            "https://codeload.github.com/Niko1221/Strata/zip/{revision}"
+        ));
+        info.feed_sequence = Some(101);
+        let cached = serde_json::to_value(&info).unwrap();
+        assert_eq!(cached["feedSequence"], 101);
+        assert_eq!(cached["assets"][0]["engineVersion"], "0.1.45.3");
+        let restored: RuntimeUpdateInfo = serde_json::from_value(cached.clone()).unwrap();
+        assert_eq!(restored.assets.len(), 4);
+        if cfg!(all(windows, target_arch = "x86_64")) {
+            assert!(cached_installation_metadata(cached.clone(), info.checked_at).is_some());
+            let mut forged = cached;
+            forged["assets"][0]["engineVersion"] = json!("9.9.9");
+            assert!(cached_installation_metadata(forged, info.checked_at).is_none());
+        }
+        assert!(newer_than_supported("0.2.0-beta") && !newer_than_supported("0.1.41-rc"));
     }
 
     fn installation_metadata_fixture(checked_at: u64) -> RuntimeUpdateInfo {

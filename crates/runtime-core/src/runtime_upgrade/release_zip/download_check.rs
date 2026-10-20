@@ -33,15 +33,13 @@ fn select_official_asset(
         .assets
         .iter()
         .find(|asset| asset.name == name)
-        .ok_or("此 Release 没有所选的可校验官方 ZIP")?;
+        .ok_or("此 Release 没有所选的可校验官方引擎包")?;
     let version = info
         .latest_version
         .as_deref()
         .ok_or("官方 Release 版本缺失")?;
-    if !matches!(
-        name,
-        "strata-windows-x64.zip" | "strata-windows-x64-cuda12.zip" | "strata-windows-x64-hip.zip"
-    ) || !(1..=1024 * 1024 * 1024).contains(&asset.size)
+    if !super::engine_package::is_installable_asset_name(name)
+        || !(1..=super::engine_package::MAX_PACKAGE_BYTES).contains(&asset.size)
         || asset.sha256.len() != 64
         || !asset.sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
         || ![format!("v{version}"), version.to_owned()]
@@ -95,10 +93,10 @@ fn check_local(
     path: &Path,
     asset: &RuntimeReleaseAsset,
 ) -> Result<RuntimeZipDownloadCheckResult, String> {
-    let mut file = File::open(path).map_err(|error| format!("无法读取本地 ZIP：{error}"))?;
+    let mut file = File::open(path).map_err(|error| format!("无法读取本地引擎包：{error}"))?;
     let metadata = file.metadata().map_err(|error| error.to_string())?;
     if !metadata.is_file() || metadata.len() != asset.size {
-        return Err("本地 ZIP 的长度与所选官方更新包不符".into());
+        return Err("本地引擎包 的长度与所选官方更新包不符".into());
     }
     let mut digest = Sha256::new();
     let mut buffer = [0u8; 256 * 1024];
@@ -106,22 +104,22 @@ fn check_local(
     loop {
         let count = file
             .read(&mut buffer)
-            .map_err(|error| format!("本地 ZIP 读取失败：{error}"))?;
+            .map_err(|error| format!("本地引擎包 读取失败：{error}"))?;
         if count == 0 {
             break;
         }
         checked = checked
             .checked_add(count as u64)
-            .ok_or("本地 ZIP 长度无效")?;
+            .ok_or("本地引擎包 长度无效")?;
         if checked > asset.size {
-            return Err("读取期间本地 ZIP 长度发生变化，请重试".into());
+            return Err("读取期间本地引擎包 长度发生变化，请重试".into());
         }
         digest.update(&buffer[..count]);
     }
     if checked != asset.size
         || format!("{:x}", digest.finalize()) != asset.sha256.to_ascii_lowercase()
     {
-        return Err("本地 ZIP 的 SHA256 与所选官方更新包不符".into());
+        return Err("本地引擎包 的 SHA256 与所选官方更新包不符".into());
     }
     Ok(RuntimeZipDownloadCheckResult {
         source: "local".into(),
@@ -276,7 +274,7 @@ pub async fn test_release_download(
     if let Some(path) = download.local_archive_path {
         return tokio::task::spawn_blocking(move || check_local(Path::new(&path), &asset))
             .await
-            .map_err(|error| format!("本地 ZIP 检查失败：{error}"))?;
+            .map_err(|error| format!("本地引擎包 检查失败：{error}"))?;
     }
     let mirror = download.download_url.is_some();
     let source = if mirror { "mirror" } else { "official" };
@@ -306,6 +304,7 @@ mod tests {
             name: "strata-windows-x64.zip".into(),
             url: "https://github.com/Niko1221/Strata/releases/download/v0.1.42/strata-windows-x64.zip".into(),
             size: bytes.len() as u64, sha256: format!("{:x}", Sha256::digest(bytes)), variant: "cuda13".into(),
+            ..Default::default()
         }
     }
 
@@ -325,6 +324,7 @@ mod tests {
             update_available: true,
             installable: true,
             error: None,
+            feed_sequence: None,
         })
         .unwrap()
     }

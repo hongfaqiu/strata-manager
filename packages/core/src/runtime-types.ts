@@ -24,7 +24,13 @@ export interface RuntimeReleaseAsset {
   url: string;
   size: number;
   sha256: string;
-  variant: 'cuda13' | 'cuda12' | 'hip';
+  /** `hip` is RX 9000 / R9700 (or the legacy all-in-one HIP ZIP); `hip-rdna3` is RX 7000 / Strix Halo. */
+  variant: 'cuda13' | 'cuda12' | 'hip' | 'hip-rdna3';
+  /** Strata 0.2+ component package: its engine version (legacy ZIPs share the release version). */
+  engineVersion?: string;
+  manifestSha256?: string;
+  installedBytes?: number;
+  archs?: string[];
 }
 
 /** Optional engine ZIP source; integrity always comes from the official release asset. */

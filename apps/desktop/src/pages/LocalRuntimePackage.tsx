@@ -35,7 +35,9 @@ export function useLocalRuntimePackages(
         directory: false,
         filters: macEngine
           ? [{ name: 'TAR.GZ', extensions: ['gz', 'tgz'] }]
-          : [{ name: 'ZIP', extensions: ['zip'] }],
+          : key === 'engineArchivePath'
+            ? [{ name: 'tar.gz / ZIP', extensions: ['gz', 'tgz', 'zip'] }]
+            : [{ name: 'ZIP', extensions: ['zip'] }],
       });
       if (typeof path === 'string') setArchives(previous => ({ ...previous, [key]: path }));
     } catch (error) { setPickError(core.normalizeError(error).message); } finally { setPicking(false); }

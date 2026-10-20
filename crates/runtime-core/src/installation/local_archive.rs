@@ -56,6 +56,8 @@ fn has_archive_extension(path: &Path, extensions: &[&str]) -> bool {
     extensions.iter().any(|ext| name.ends_with(ext))
 }
 
+pub const WINDOWS_ENGINE_EXTENSIONS: [&str; 3] = [".zip", ".tar.gz", ".tgz"];
+
 /// Checks a user-selected path before any task is admitted.
 pub fn check_path(path: &str, label: Label) -> Result<(), String> {
     check_path_with_extensions(path, label, &[".zip"])
@@ -111,7 +113,8 @@ impl LocalRuntimeArchives {
             if metal_engine {
                 check_path_with_extensions(path, ENGINE, &[".tar.gz", ".tgz"])?;
             } else {
-                check_path(path, ENGINE)?;
+                // Strata 0.2+ publishes `.tar.gz` component engines; older releases ZIPs.
+                check_path_with_extensions(path, ENGINE, &WINDOWS_ENGINE_EXTENSIONS)?;
             }
         }
         Ok(archives)

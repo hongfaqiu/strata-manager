@@ -1,0 +1,2 @@
+# Signed upstream fixtures are verified byte for byte.
+crates/runtime-core/src/runtime_upgrade/fixtures/** -text
