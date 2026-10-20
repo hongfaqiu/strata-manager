@@ -45,6 +45,11 @@
 .ob-check{display:grid;grid-template-columns:18px 132px minmax(0,1fr);gap:12px;align-items:center;padding:10px 18px;border-top:1px solid var(--st-line-soft);font-size:13px}
 .ob-checks>.ob-check:first-child{border-top:0}
 .ob-check-label{color:var(--st-ink-muted)}
+.ob-check.has-action{grid-template-columns:18px 132px minmax(0,1fr) auto}
+.ob-check.has-action>button{min-height:30px;padding:4px 12px;font-size:13px}
+.ob-storage-value{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px}
+.ob-check .ob-storage-value code{font-family:var(--st-font-mono);font-size:12.5px;font-weight:400;color:var(--st-ink);overflow-wrap:anywhere}
+.ob-storage-value small{margin-left:0!important}
 .ob-check-value{font-weight:500;min-width:0;overflow-wrap:anywhere}
 .ob-check-value small{font-weight:400;color:var(--st-ink-muted);margin-left:8px;font-size:12px}
 .ob-check-value small.is-alone{margin-left:0;font-size:13px}
@@ -173,6 +178,7 @@
 @container workspace (max-width:680px){
   .ob-model{grid-template-columns:18px minmax(0,1fr) 90px}.ob-model>:nth-child(3),.ob-model>:nth-child(4){display:none}
   .ob-check{grid-template-columns:18px 96px minmax(0,1fr)}
+  .ob-check.has-action{grid-template-columns:18px 96px minmax(0,1fr)}.ob-check.has-action>button{grid-column:3;justify-self:start}
   .ob-found-row{grid-template-columns:18px minmax(0,1fr) auto}.ob-found-row>:nth-child(2),.ob-found-row>:nth-child(4){display:none}
 }
 @media(prefers-reduced-motion:reduce){.ob-bar.is-indeterminate i{animation:none;left:0;width:100%;opacity:.4}.ob-bar i{transition:none}}
@@ -182,3 +188,4 @@
 .ob-package-source>.ob-field,.ob-package-source>.ob-note,.ob-package-source>.ob-error{margin:0;padding:0 18px}
 .ob-check.ob-archive{grid-template-columns:18px 132px minmax(0,1fr) auto}
 .ob-archive-actions{display:inline-flex;gap:8px;align-items:center}
+.ob-checks>.ob-error{padding:8px 18px}

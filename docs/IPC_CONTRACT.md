@@ -50,6 +50,7 @@
 - `inspect_gguf({request}) -> TaskStatus`：模型文件检查任务；request 为 `ModelInspectRequest`，Core 名为 `inspectModel`。
 - `install_runtime({directory}) -> TaskStatus`：官方运行环境准备；拒绝覆盖未知非空目录，只有本应用数据库与目录标记均匹配的失败安装允许重试，保留旧半成品，不自动下载模型权重。
 - `prepare_local_runtime() -> TaskStatus`、`local_runtime_installation() -> RuntimeInstallationStatus`：创建源码和私有 Python 环境的后台任务，以及恢复任务 ID/经过核验的结果，不下载模型权重。
+- `storage_locations(installDir?, probePath?) -> StorageLocations`、`set_engine_install_root(directory | null) -> StorageLocation`、`set_model_data_directory(directory, installDir?, moveFiles) -> { directory, moving, taskId? }`：查看并更改模型保存位置（上游 `settings.json` 的 `data_dir`）和新引擎安装位置。`moveFiles` 时创建 `move-model-data` 任务：复制 → SHA-256 核对 → 改写运行配置中的路径 → 写入设置 → 删除旧文件；任一步失败都恢复配置和设置并保留旧文件。移动期间与运行时更新共用同一把锁，模型不能启动。旧版后台不认识这些方法时返回 `unknown_method`，界面提示重启应用。
 - `update_runtime({profile}) -> TaskStatus`：官方运行时更新流程，禁止盲目覆盖配置；ZIP 更新是后文的独立入口。
 - `list_tasks() -> TaskStatus[]`、`cancel_task({taskId}) -> void`：含桌面维护的持久 ZIP 更新队列与后台任务协调；不是仅内存任务列表。
 - `read_logs({profile,limit}) -> LogEntry[]`：读取服务或任务日志。Core `readTaskLogs(taskId,limit)` 把 taskId 放入只用于日志查询的 profile.id；后台按 TaskRecord 查所属日志，不把该伪档案用于模型控制。
