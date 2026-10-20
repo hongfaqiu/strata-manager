@@ -680,11 +680,12 @@ async fn source_archive(
     let mut received = 0u64;
     let mut hash = Sha256::new();
     let mut at = Instant::now();
+    let mut at_received = 0u64;
     loop {
         cancelled(state, id)?;
         tokio::select! {
             bytes=stream.next()=>{let Some(bytes)=bytes else{break};let bytes=bytes.map_err(|e|e.to_string())?;received=received.checked_add(bytes.len() as u64).ok_or("源码体积无效")?;if received>MAX_SOURCE{return Err("源码ZIP超过安全上限".into());}hash.update(&bytes);output.write_all(&bytes).map_err(|e|e.to_string())?;
-                if at.elapsed()>Duration::from_secs(1){processes::log(&state.logs,id,"info",format!("官方同版本源码已下载 {received} 字节"));at=Instant::now();}}
+                if at.elapsed()>Duration::from_secs(1){let speed=(received-at_received) as f64/at.elapsed().as_secs_f64();processes::log(&state.logs,id,"info",format!("官方同版本源码已下载 {}",crate::byte_size::progress_amount(received,None,Some(speed)).replace(" / 总量未知","")));at=Instant::now();at_received=received;}}
             _=tokio::time::sleep(Duration::from_millis(100))=>{}
         }
     }
@@ -1904,8 +1905,9 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
         j,
         "downloading",
         &format!(
-            "正在下载官方Release v{version}：{}（{}字节）及同提交源码",
-            asset.name, asset.size
+            "正在下载官方Release v{version}：{}（{}）及同提交源码",
+            asset.name,
+            crate::byte_size::human_bytes(asset.size)
         ),
     )?;
     let source = match &j.local_source_archive_path {
@@ -1946,8 +1948,9 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
         j,
         "downloadingEngine",
         &format!(
-            "源码兼容检查通过；正在下载官方{}（{}字节），完成后核验官方SHA256",
-            asset.name, asset.size
+            "源码兼容检查通过；正在下载官方{}（{}），完成后核验官方SHA256",
+            asset.name,
+            crate::byte_size::human_bytes(asset.size)
         ),
     )?;
     let engine =

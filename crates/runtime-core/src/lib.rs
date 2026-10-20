@@ -1,5 +1,6 @@
 pub mod analytics;
 pub mod benchmark_identity;
+mod byte_size;
 pub mod chat_runtime;
 pub mod configuration_copy;
 pub mod diagnostics;

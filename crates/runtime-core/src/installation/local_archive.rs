@@ -213,7 +213,10 @@ pub(crate) fn import_verified(
                 progress(
                     state,
                     id,
-                    format!("本地{zh}校验通过（{received} 字节）；已有相同的已校验缓存"),
+                    format!(
+                        "本地{zh}校验通过（{}）；已有相同的已校验缓存",
+                        crate::byte_size::human_bytes(received)
+                    ),
                 )?;
                 return Ok(candidate);
             }
@@ -225,7 +228,10 @@ pub(crate) fn import_verified(
         progress(
             state,
             id,
-            format!("本地{zh}官方 SHA256 校验通过，共 {received} 字节；原文件保持不变"),
+            format!(
+                "本地{zh}官方 SHA256 校验通过，共 {}；原文件保持不变",
+                crate::byte_size::human_bytes(received)
+            ),
         )?;
         return Ok(candidate);
     }

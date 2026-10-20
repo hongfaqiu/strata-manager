@@ -13,6 +13,7 @@ Maintain both languages for each version. Move unreleased changes into the actua
   - 冷启动期间，接口还没打开或引擎忙时偶尔失败的轮询不再显示成红色报错：启动进行中、进程启动后 2 分钟内、以及 `/health` 报告模型仍在加载时，状态和指标的连接失败会被隐藏；超过这段时间仍然失败才提示。
   - 启动卡里的「引擎输出」默认收起，只在标题行显示最新一行；展开后注明这是加载进度和统计，不是报错。真正的错误行（Traceback、`…Error:`、显存不足、fatal 等）标红，并自动展开。
   - 运行卡新增「启动参数」按钮，直接打开当前模型的启动参数页（上下文长度、显卡分配、完整引擎参数列表、完整 JSON 编辑，保存前自动备份，可「保存并重启当前模型」）。
+- **Strata 引擎下载与更新进度改为易读格式**：以前进度显示原始字节数（如 `1320702444 / 2254857830 字节`），现在显示为 `下载进度：1.23 GiB / 2.10 GiB（58%）· 12.4 MiB/s`，带百分比和下载速度。断点续传、重试、SHA256 校验通过、本地引擎包读取、官方同版本源码下载等提示也都改用 KiB / MiB / GiB。更新弹窗「包信息」里的精确字节数保持不变。
 
 ### English
 
@@ -22,6 +23,7 @@ Maintain both languages for each version. Move unreleased changes into the actua
   - During a cold start, polls that fail because the API port is not open yet or the engine is busy are no longer shown as red errors. Health and metrics failures are hidden while a start is pending, for 2 minutes after the process starts, and (metrics) while `/health` reports the model is still loading; failures that last longer are shown.
   - The startup card's "Engine output" is collapsed by default with only the latest line in its header; expanded, it notes that these are load progress and statistics, not errors. Real error lines (Traceback, `…Error:`, out of memory, fatal) are red and expand the panel automatically.
   - The running card has a new "Startup parameters" button that opens the current model's startup parameters (context length, GPU split, the full engine argument list and the full JSON editor; saves are backed up, and "Save and restart current model" applies them).
+- **Readable Strata engine download and update progress**: progress used to show raw byte counts (e.g. `1320702444 / 2254857830 字节`). It now reads like `下载进度：1.23 GiB / 2.10 GiB（58%）· 12.4 MiB/s`, with percent and download speed. Resume, retry, SHA256-verified, local engine package and same-version source download messages also use KiB / MiB / GiB. Exact byte counts under "Package details" in the update dialog are unchanged.
 
 ## [0.2.8] - 2026-10-19
 

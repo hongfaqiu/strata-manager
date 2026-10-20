@@ -1541,9 +1541,9 @@ async fn ensure_metal_engine(
                 state,
                 id,
                 format!(
-                    "正在下载官方 Metal 引擎 {}（{} 字节）并校验 SHA256",
+                    "正在下载官方 Metal 引擎 {}（{}）并校验 SHA256",
                     crate::macos_metal::METAL_ENGINE_ASSET_NAME,
-                    crate::macos_metal::METAL_ENGINE_SIZE
+                    crate::byte_size::human_bytes(crate::macos_metal::METAL_ENGINE_SIZE)
                 ),
             )?;
             download_release(
