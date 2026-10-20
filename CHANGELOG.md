@@ -5,6 +5,8 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+## [0.2.9] - 2026-10-20
+
 ### 中文
 
 - **Linux 官方预编译引擎**：Linux x86_64（桌面版与无头 Server）现在也能从签名 feed 安装和更新官方引擎包：CUDA 13、CUDA 12、AMD HIP RX 9000 / R9700、AMD HIP RX 7000、AMD HIP Strix Halo。校验与 Windows 完全相同：feed Ed25519 签名、渠道、有效期和序号，整包 SHA256，安全解包，再按包内签名清单 `engine-component.json` 逐个核对文件。「自动匹配」会先看已安装引擎的 `BUILD.json`（兼容 Linux 包没有 `backend`、只有 `variant` 如 `halo` 的写法），没有引擎时按检测到的显卡选包：NVIDIA 读取驱动版本和计算能力（`nvidia-smi`，退而读 `/proc/driver/nvidia/version`），优先 CUDA 13，驱动低于 feed 要求时改选 CUDA 12 或提示升级驱动；AMD 读取 `gfx` 架构（KFD 拓扑，退而用 `rocminfo`）。同时检测到 NVIDIA 与 AMD、未检测到显卡或有多个包都合适时，不猜测，提示在「官方更新包」中手动选择，并在界面上显示匹配理由。解包后保留可执行权限；Linux 的 `.venv` 缺少新版依赖时会自动补装。源码安装方式不变；首次安装仍走源码方式，之后的版本更新使用官方预编译引擎。
