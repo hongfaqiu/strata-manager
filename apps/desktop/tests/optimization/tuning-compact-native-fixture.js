@@ -113,7 +113,16 @@
   const lowHealth = query.get('health') === 'low';
   if (query.get('calibration') === 'autoback') fixture.configs.a.args.push('--pcie-frac', '0.55');
   if (lowHealth) fixture.configs.a.args.push('--max-context', '131072', '--expert-cache', '900');
-  if (query.get('calibration')) { calibration.job = calibration.makeJob(query.get('calibration')); if (calibration.job.state === 'running') calibration.live = calibration.makeLive(calibration.job); }
+  // failedEarlier: a run from an older Manager that the observer gate refused (Strata 0.2.0 before the
+  // observer supported it). It ended two hours before the page opened, so it is history, not a current error.
+  calibration.makeFailed = (error, endedAt) => ({ ...calibration.makeJob('running'), state: 'failed', startedAt: endedAt - 1500, updatedAt: endedAt, finishedAt: endedAt,
+    completedRequests: 0, error, steps: calibration.makeJob('running').steps.map(step => ({ ...step, status: step.status === 'skipped' ? 'skipped' : 'pending', samples: [] })) });
+  const legacyObserverError = '服务观察器版本、心跳或持久化状态不完整，保留当前服务';
+  const unsupportedObserverError = '这个 Strata 版本的服务端还不在统计观察器的兼容列表里，无法安全暂停请求。请把 Strata Manager 更新到最新版本，然后重启这个模型服务';
+  if (query.get('calibration') === 'failedEarlier') calibration.job = calibration.makeFailed(legacyObserverError, Date.now() - 2 * 3600_000);
+  else if (query.get('calibration')) { calibration.job = calibration.makeJob(query.get('calibration')); if (calibration.job.state === 'running') calibration.live = calibration.makeLive(calibration.job); }
+  // observer=unsupported: the gate refuses a new run (an unsupported Strata server), so the failure is current.
+  calibration.startFailure = query.get('observer') === 'unsupported' ? unsupportedObserverError : null;
   // The config was edited elsewhere after calibration started: its revision no longer matches the job fingerprint.
   if (query.get('configEdited')) fixture.configs.a.args.push('--stats');
   // Health check inputs: the running engine's INFO facts and free RAM (synthetic).
@@ -136,7 +145,7 @@
       return;
     }
     if (command === 'calibrate_status') { record(); return args.profileId === 'a' ? structuredClone(calibration.job) : null; }
-    if (command === 'calibrate_start') { record(); calibration.starts.push(structuredClone(args)); calibration.job = calibration.makeJob('running'); calibration.live = calibration.makeLive(calibration.job); return structuredClone(calibration.job); }
+    if (command === 'calibrate_start') { record(); calibration.starts.push(structuredClone(args)); if (calibration.startFailure) { calibration.job = calibration.makeFailed(calibration.startFailure, Date.now()); calibration.live = null; return structuredClone(calibration.job); } calibration.job = calibration.makeJob('running'); calibration.live = calibration.makeLive(calibration.job); return structuredClone(calibration.job); }
     if (command === 'calibrate_cancel') { record(); calibration.cancels.push(structuredClone(args)); calibration.job.state = 'canceled'; calibration.job.finishedAt = Date.now(); calibration.job.error = undefined; calibration.live = null; return; }
     if (command === 'tuning_live') {
       record();

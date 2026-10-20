@@ -39,10 +39,16 @@ OFFICIAL_0143_HASH = "55ee9d1160f0da457cabe6f9dfea9884296b6d70fd3d14abd4ed42e6f7
 OFFICIAL_01431_HASH = "6046f030abca250fd09f9a4fc95f5bb764d8420754acce049db2e4db77335bad"
 OFFICIAL_0144_HASH = "2aa0d2060766799be2ea7045dc13ca5bab2cec39ad5c29bc8a54d816ed246e7c"
 OFFICIAL_01441_HASH = "6c45c639e28a873b854606719d9ce2bb2e0df666f105164e78e2735878b9aa8f"
-KEEP_AWAKE_SOURCE_HASHES = {OFFICIAL_0142_HASH, OFFICIAL_0143_HASH, OFFICIAL_01431_HASH, OFFICIAL_0144_HASH, OFFICIAL_01441_HASH}
-NONFINITE_SOURCE_HASHES = {OFFICIAL_0143_HASH, OFFICIAL_01431_HASH, OFFICIAL_0144_HASH, OFFICIAL_01441_HASH}
+# Strata 0.2.0-beta (control package serve/server.py, also shipped by the official App).
+OFFICIAL_020_HASH = "d3c615f50cbfee032968a059aca039c1771abd6f8c077829f8f8fc6791b3cf97"
+KEEP_AWAKE_SOURCE_HASHES = {OFFICIAL_0142_HASH, OFFICIAL_0143_HASH, OFFICIAL_01431_HASH, OFFICIAL_0144_HASH,
+                            OFFICIAL_01441_HASH, OFFICIAL_020_HASH}
+NONFINITE_SOURCE_HASHES = {OFFICIAL_0143_HASH, OFFICIAL_01431_HASH, OFFICIAL_0144_HASH, OFFICIAL_01441_HASH,
+                           OFFICIAL_020_HASH}
 HEADER_JSON_SOURCE_HASHES = {OFFICIAL_01431_HASH, OFFICIAL_0144_HASH, OFFICIAL_01441_HASH}
-RETRYABLE_503_SOURCE_HASHES = {OFFICIAL_01431_HASH, OFFICIAL_0144_HASH, OFFICIAL_01441_HASH}
+# 0.2.0 adds retry_after=None to Handler._json (429/503 Retry-After).
+RETRY_AFTER_JSON_SOURCE_HASHES = {OFFICIAL_020_HASH}
+RETRYABLE_503_SOURCE_HASHES = {OFFICIAL_01431_HASH, OFFICIAL_0144_HASH, OFFICIAL_01441_HASH, OFFICIAL_020_HASH}
 
 
 class BlockingLazyEngine(server.MockEngine):
@@ -986,7 +992,9 @@ class JournalAndLoader(unittest.TestCase):
         handler_factory = next(n for n in module.body if isinstance(n, ast.FunctionDef) and n.name == "make_handler")
         handler = next(n for n in handler_factory.body if isinstance(n, ast.ClassDef))
         handler_methods = {n.name: n for n in handler.body if isinstance(n, ast.FunctionDef)}
-        json_arguments = "self, code, obj, headers=None" if SOURCE_HASH in HEADER_JSON_SOURCE_HASHES else "self, code, obj"
+        json_arguments = ("self, code, obj, headers=None, retry_after=None" if SOURCE_HASH in RETRY_AFTER_JSON_SOURCE_HASHES
+                          else "self, code, obj, headers=None" if SOURCE_HASH in HEADER_JSON_SOURCE_HASHES
+                          else "self, code, obj")
         for name, arguments in {"do_POST": "self", "send_response": "self, code, message=None",
                                 "_note": "self, **values", "_json": json_arguments,
                                 "_capture": "self, items, api"}.items():

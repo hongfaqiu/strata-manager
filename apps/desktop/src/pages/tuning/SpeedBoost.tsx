@@ -5,6 +5,7 @@ import { Check, CircleAlert, CircleDashed, Info, RotateCcw, Square, Zap } from '
 import * as core from '@strata-manager/core';
 import type { AppLanguage, CalibrationJob, ServiceProfile, SpeedCheck, SpeedFix, TuningLiveSnapshot } from '@strata-manager/core';
 import { appliedFor, dismissJob, dismissedJobs, type SpeedBoostApplied } from './speedBoostRecord';
+import { isEarlierFailure, speedBoostFailureText } from './speedBoostFailure';
 
 const active = (job: CalibrationJob | null) => !!job && ['checking', 'running', 'canceling'].includes(job.state);
 const stepKey: Record<string, string> = { warmup: 'sbStepWarmup', prefillPipe: 'sbStepPrefillPipe', pcieFrac: 'sbStepPcieFrac', specMinP: 'sbStepSpecMinP', confirm: 'sbStepConfirm' };
@@ -65,6 +66,8 @@ export interface SpeedBoostProps {
 export function SpeedBoost({ language, job, live, clock, profile, blocked, busy, canApply, canSwitch, checks, onStart, onCancel, onApply, onFix, onRollback, notice }: SpeedBoostProps) {
   const { t } = useTranslation();
   const [, rerender] = useState(0);
+  // Failures that ended before the page was opened are history, not a current error.
+  const [openedAt] = useState(Date.now);
   const dismissed = dismissedJobs();
   const number = (value: number | null | undefined, digits = 1) => value == null || !Number.isFinite(value) ? '—' : value.toLocaleString(language, { minimumFractionDigits: digits, maximumFractionDigits: digits });
   const running = active(job);
@@ -131,9 +134,17 @@ export function SpeedBoost({ language, job, live, clock, profile, blocked, busy,
         <button type="button" data-testid="speed-boost-start" disabled={!!blocked || busy} onClick={onStart}><Zap size={14}/>{t('sbRetry')}</button></div>
     </div>;
   } else {
-    const failed = job && ['failed', 'interrupted'].includes(job.state);
+    const failed = !!job && ['failed', 'interrupted'].includes(job.state) && !dismissed.includes(job.id);
+    const earlier = failed && isEarlierFailure(job, openedAt);
+    const reason = speedBoostFailureText(job?.error, t);
+    const when = job ? new Date(job.finishedAt ?? job.updatedAt ?? job.startedAt).toLocaleString(language, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
     hero = <div className="sb-idle" data-testid="speed-boost-idle">
-      {failed && <p className="notice error" role="alert">{t('sbFailed')}{job?.error ? `：${job.error}` : ''}</p>}
+      {failed && (earlier
+        ? <div className="notice sb-failed-earlier" role="status" data-testid="speed-boost-failed-earlier">
+            <p><strong>{t('sbFailedEarlier', { time: when })}</strong>{reason ? <span>{reason}</span> : null}</p>
+            <button type="button" className="sb-dismiss" disabled={busy} onClick={() => { dismissJob(job!.id); rerender(value => value + 1); }}>{t('sbFailedDismiss')}</button>
+          </div>
+        : <p className="notice error" role="alert" data-testid="speed-boost-failed">{t('sbFailed')}{reason ? `${language.startsWith('zh') ? '：' : ': '}${reason}` : ''}</p>)}
       {job?.state === 'canceled' && <p className="notice" role="status">{t('sbCanceled')}</p>}
       <button className="primary sb-start" data-testid="speed-boost-start" disabled={!!blocked || busy} onClick={onStart}><Zap size={17}/>{failed ? t('sbRetry') : t('sbStart')}</button>
       <p className="sb-muted">{blocked ?? t('sbStartHint')}</p>

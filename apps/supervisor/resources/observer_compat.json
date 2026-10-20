@@ -69,6 +69,17 @@
       "mcpPySha256": [
         "659c8e3c7db7d51c939870f843b2350f3efcf2ce8f1ff4b4372db4631e39b77f"
       ]
+    },
+    {
+      "version": "0.2.0-beta",
+      "ref": "3d1fb48090e8f2cefc22d7b5845fb7f5b71f33fa",
+      "serverPySha256": [
+        "d3c615f50cbfee032968a059aca039c1771abd6f8c077829f8f8fc6791b3cf97"
+      ],
+      "review": "Handler._json gains retry_after=None (429/503 Retry-After); the observer forwards it only when supplied. Service.run/_run/_note/begin_request, do_POST/_post, send_response/_note/_capture and the four inference routes unchanged; /v1/images/generations and the /v1/v1 alias are admitted (maintenance drain) but not counted as inference. Same source as the control package the official App ships. Full MockEngine HTTP suite (36 tests, no skips) passes; needs jinja2+regex. mcp.py: StdioTransport.start spawns via serve.lifeline.popen instead of Popen+contain; the Linux guard replaces start (same cfg keys and attributes), so containment is unchanged.",
+      "mcpPySha256": [
+        "cfd4eb622e667f159a865120053646d0d25afbecf2cc2ab797d035f6dbfad7b0"
+      ]
     }
   ],
   "ciFixture": {
