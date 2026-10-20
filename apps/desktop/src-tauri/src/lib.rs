@@ -855,6 +855,7 @@ async fn update_runtime_zip(
     stop_current_service: Option<bool>,
     local_archive_path: Option<String>,
     download_url: Option<String>,
+    target_version: Option<String>,
 ) -> Result<Value, String> {
     runtime_update_queue::start(
         &state.ipc,
@@ -864,9 +865,48 @@ async fn update_runtime_zip(
         strata_runtime_core::runtime_upgrade::RuntimeZipDownloadOptions {
             local_archive_path,
             download_url,
+            target_version,
         },
     )
     .await
+}
+
+/// One chosen Strata release, verified like the latest one (read-only).
+#[tauri::command]
+async fn runtime_release_info(
+    state: State<'_, ClientState>,
+    version: String,
+) -> Result<Value, String> {
+    match state
+        .ipc
+        .request("runtime_release_info", json!({"version": version}))
+        .await
+    {
+        Ok(value) => Ok(value),
+        Err(error) if error.code == "unknown_method" => Err(
+            "后台服务版本较旧，无法读取指定版本；请完全退出并重新打开应用后再试 / The background service is older; quit and reopen the app, then try again".into(),
+        ),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+/// Every published Strata release for the version picker (cached by the background service).
+#[tauri::command]
+async fn runtime_release_versions(
+    state: State<'_, ClientState>,
+    force: Option<bool>,
+) -> Result<Value, String> {
+    match state
+        .ipc
+        .request("runtime_release_versions", json!({"force": force.unwrap_or(false)}))
+        .await
+    {
+        Ok(value) => Ok(value),
+        Err(error) if error.code == "unknown_method" => Err(
+            "后台服务版本较旧，无法列出 Strata 版本；请完全退出并重新打开应用后再试 / The background service is older; quit and reopen the app, then try again".into(),
+        ),
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 /// Engine / model storage locations (user feedback: "everything can only go on C:").
@@ -960,11 +1000,12 @@ async fn resolve_runtime_zip_asset(
     state: State<'_, ClientState>,
     install_dir: String,
     asset_name: Option<String>,
+    target_version: Option<String>,
 ) -> Result<Value, String> {
     match strata_local_ipc::call(
         &state.ipc.data_dir,
         "resolve_runtime_zip_asset_v1",
-        json!({"installDir":install_dir, "assetName":asset_name}),
+        json!({"installDir":install_dir, "assetName":asset_name, "targetVersion": target_version}),
     )
     .await
     {
@@ -2034,6 +2075,8 @@ pub fn run() {
             engine_help_flags,
             update_runtime_zip,
             runtime_update_info,
+            runtime_release_versions,
+            runtime_release_info,
             storage_locations,
             set_engine_install_root,
             set_model_data_directory,

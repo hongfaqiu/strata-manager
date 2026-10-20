@@ -20,6 +20,8 @@ export interface RuntimeUpdateDialogProps {
   busy?: boolean; canConfirm?: boolean; error?: string;
   /** Opened from the Strata page's "Install from local package" entry (#74): start on a local ZIP. */
   localEntry?: boolean;
+  /** A version chosen from the list (up or down) rather than the latest release. */
+  targetVersion?: string;
 }
 
 type DownloadMode = 'official' | 'local' | 'mirror';
@@ -30,12 +32,13 @@ function validMirrorUrl(value: string) {
   catch { return false; }
 }
 
-export function RuntimeUpdateDialog({ language, runtime, release, assetName, initialDownload, initialPreferences, onConfirm, onDismiss, busy = false, canConfirm = true, error, localEntry = false }: RuntimeUpdateDialogProps) {
+export function RuntimeUpdateDialog({ language, runtime, release, assetName, initialDownload, initialPreferences, onConfirm, onDismiss, busy = false, canConfirm = true, error, localEntry = false, targetVersion }: RuntimeUpdateDialogProps) {
   const zh = language === 'zh-CN';
   const notes = releaseNotes(release.notes);
   const version = release.latestVersion ?? release.supportedVersion;
   const releaseKey = JSON.stringify([version, release.sourceRevision, release.assets.map(asset => [asset.name, asset.sha256, asset.url])]);
-  const automatic = useQuery({ queryKey: ['runtime-download-asset', runtime.installDir, releaseKey], queryFn: () => core.resolveRuntimeZipAsset(runtime.installDir), enabled: core.isDesktop() && !!release.assets.length, retry: false });
+  const direction = targetVersion ? core.runtimeVersionDirection(runtime.runtimeVersion, targetVersion) : undefined;
+  const automatic = useQuery({ queryKey: ['runtime-download-asset', runtime.installDir, releaseKey, targetVersion ?? ''], queryFn: () => core.resolveRuntimeZipAsset(runtime.installDir, undefined, targetVersion), enabled: core.isDesktop() && !!release.assets.length, retry: false });
   const automaticAsset = automatic.isSuccess ? release.assets.find(asset => asset.name === automatic.data?.name && asset.url === automatic.data?.url && asset.sha256 === automatic.data?.sha256) : undefined;
   const matchReason = automaticAsset && automatic.data?.matchReason ? core.runtimeBilingualText(automatic.data.matchReason, zh) : '';
   const automaticError = automatic.isError ? core.runtimeBilingualText(core.normalizeError(automatic.error).message, zh) : '';
@@ -102,11 +105,16 @@ export function RuntimeUpdateDialog({ language, runtime, release, assetName, ini
     onConfirm(resolved.download, selectedAsset?.name || selection.assetName || undefined);
   };
   const dismiss = () => { if (!busy && !currentState.current.busy) onDismiss(); };
-  return <Dialog title={localEntry ? zh ? '使用本地安装包' : 'Install from local package' : zh ? '确认更新 Strata' : 'Confirm Strata update'} wide onClose={dismiss}>
+  const title = targetVersion ? direction === 'downgrade' ? zh ? `降级到 Strata ${version}` : `Downgrade to Strata ${version}` : direction === 'same' ? zh ? `重新安装 Strata ${version}` : `Reinstall Strata ${version}` : zh ? `安装 Strata ${version}` : `Install Strata ${version}`
+    : localEntry ? zh ? '使用本地安装包' : 'Install from local package' : zh ? '确认更新 Strata' : 'Confirm Strata update';
+  const confirmLabel = targetVersion ? direction === 'downgrade' ? willStop ? zh ? '停止服务并降级' : 'Stop services and downgrade' : zh ? '确认降级' : 'Confirm downgrade' : willStop ? zh ? '停止服务并安装' : 'Stop services and install' : zh ? '确认安装' : 'Confirm install'
+    : willStop ? zh ? '停止服务并更新' : 'Stop services and update' : zh ? '确认更新' : 'Confirm update';
+  return <Dialog title={title} wide onClose={dismiss}>
     <div className="runtime-update-dialog">
       <p className="runtime-update-release-name">{release.releaseName || `Strata ${version}`}</p>
-      <dl className="runtime-update-details"><div><dt>{zh ? '本机版本' : 'Installed version'}</dt><dd>{runtime.runtimeVersion ?? '—'}</dd></div><div><dt>{zh ? '更新至' : 'Update to'}</dt><dd>{version}</dd></div></dl>
+      <dl className="runtime-update-details"><div><dt>{zh ? '本机版本' : 'Installed version'}</dt><dd>{runtime.runtimeVersion ?? '—'}</dd></div><div><dt>{targetVersion ? zh ? '切换到' : 'Switch to' : zh ? '更新至' : 'Update to'}</dt><dd>{version}</dd></div></dl>
       <code className="runtime-update-directory">{runtime.installDir}</code>
+      {direction === 'downgrade' && <div className="notice warning runtime-downgrade-warning" role="status" data-testid="runtime-downgrade-warning"><strong>{zh ? `这是降级：${runtime.runtimeVersion ?? '—'} → ${version}` : `This is a downgrade: ${runtime.runtimeVersion ?? '—'} → ${version}`}</strong><p>{zh ? '旧版引擎可能不支持新版本才有的模型、量化或参数，相关模型可能无法启动。模型文件和配置不会被删除；需要时可以在这里再升级回来。若两个版本的 Python 依赖不同，会拒绝安装并保持当前版本。' : 'An older engine may not support models, quantizations or options added later, so some models may not start. Model files and configurations are kept, and you can upgrade again here. If the two versions need different Python packages, the install is refused and the current version stays.'}</p></div>}
       {localEntry && <p className="runtime-update-download-hint" data-testid="runtime-local-entry-hint">{zh ? `选择本机已下载的 Strata ${version} 官方引擎包（tar.gz 或旧版 ZIP），可更新到该版本或重装当前版本。安装前按官方 SHA256 校验，不匹配不会安装。` : `Choose a downloaded official Strata ${version} engine package (tar.gz or legacy ZIP) to update to that version or reinstall it. It is verified against the official SHA256 before installation; a mismatch is not installed.`}</p>}
       <fieldset className="runtime-update-download" disabled={inputsDisabled}>
         <legend>{zh ? '引擎包下载方式' : 'Engine package source'}</legend>
@@ -130,7 +138,7 @@ export function RuntimeUpdateDialog({ language, runtime, release, assetName, ini
       </div></details>
       {!canConfirm && !busy && <p className="runtime-update-waiting" role="status">{zh ? '当前正在处理请求或任务，空闲后可确认更新。' : 'Requests or tasks are in progress. You can confirm the update when they finish.'}</p>}
       {error && <p className="notice error" role="alert">{error}</p>}
-      <div className="runtime-update-dialog-actions"><button type="button" disabled={busy} onClick={dismiss}>{zh ? '暂不更新' : 'Not now'}</button><button type="button" className="primary" disabled={busy || !canConfirm || checkingServices || browsing || !sourceReady} onClick={confirm}>{busy ? <LoaderCircle size={15} className="spin"/> : <ArrowUpCircle size={15}/>} {busy ? zh ? '正在开始更新…' : 'Starting update…' : willStop ? zh ? '停止服务并更新' : 'Stop services and update' : zh ? '确认更新' : 'Confirm update'}</button></div>
+      <div className="runtime-update-dialog-actions"><button type="button" disabled={busy} onClick={dismiss}>{targetVersion ? zh ? '取消' : 'Cancel' : zh ? '暂不更新' : 'Not now'}</button><button type="button" className="primary" disabled={busy || !canConfirm || checkingServices || browsing || !sourceReady} onClick={confirm}>{busy ? <LoaderCircle size={15} className="spin"/> : <ArrowUpCircle size={15}/>} {busy ? targetVersion ? zh ? '正在开始安装…' : 'Starting install…' : zh ? '正在开始更新…' : 'Starting update…' : confirmLabel}</button></div>
     </div>
   </Dialog>;
 }
