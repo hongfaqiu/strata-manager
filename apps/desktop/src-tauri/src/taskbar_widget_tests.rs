@@ -975,3 +975,48 @@ fn layout_for_missing(prefs: &WidgetPrefs, palette: &Palette) -> Color {
         .unwrap()
         .5
 }
+
+#[test]
+fn native_menu_model_has_unique_ids_contiguous_radios_and_every_ring() {
+    for english in [false, true] {
+        let entries = menu(&prefs("context", &["generation"]), english, true);
+        let all = ids(&entries);
+        let unique: std::collections::HashSet<_> = all.iter().map(|(id, _)| *id).collect();
+        assert_eq!(unique.len(), all.len(), "duplicate menu ids");
+        // CheckMenuRadioItem needs one contiguous id range per radio group.
+        let MenuEntry::Submenu {
+            entries: custom, ..
+        } = &entries[1]
+        else {
+            panic!("customize submenu")
+        };
+        let radios: Vec<_> = custom
+            .iter()
+            .filter_map(|e| match e {
+                MenuEntry::Radio { id, label, checked } => Some((*id, label.as_str(), *checked)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            radios.iter().map(|r| r.0).collect::<Vec<_>>(),
+            (200..200 + RINGS.len() as u32).collect::<Vec<_>>()
+        );
+        assert_eq!(radios.iter().filter(|r| r.2).count(), 1);
+        assert!(radios[2].2, "context ring is checked");
+        assert_eq!(
+            radios[2].1,
+            if english {
+                "Context usage"
+            } else {
+                "上下文占用"
+            }
+        );
+        // Every id except the already-checked ring maps back to an action.
+        let current = prefs("context", &["generation"]);
+        for (id, checked) in all {
+            if !(checked && (200..300).contains(&id)) {
+                assert_ne!(apply(&current, id), MenuAction::Nothing, "{id}");
+            }
+        }
+    }
+}

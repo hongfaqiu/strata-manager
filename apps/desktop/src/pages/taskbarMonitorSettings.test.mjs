@@ -70,3 +70,19 @@ test('settings preview stacks both speeds with the native glyph outlines', () =>
   assert.ok(page.includes(`generation: '${outline('Spark')}'`), outline('Spark'));
   assert.ok(page.includes(`prefill: '${outline('Arrow')}'`), outline('Arrow'));
 });
+
+test('right-click menu is a crisp native Win32 popup owned by a foreground-capable window', () => {
+  const host = readFileSync(new URL('../../src-tauri/src/taskbar_host.rs', import.meta.url), 'utf8');
+  const owner = host.slice(host.indexOf('unsafe fn create_menu_owner'), host.indexOf('unsafe fn menu('));
+  assert.match(owner, /ThreadDpiContext::per_monitor_v2\(\)/);
+  assert.doesNotMatch(owner, /WS_EX_NOACTIVATE/);
+  const track = host.slice(host.indexOf('unsafe fn menu('), host.indexOf('struct Attachment'));
+  assert.match(track, /ThreadDpiContext::for_window\(owner\)/);
+  assert.match(track, /SetForegroundWindow\(owner\)/);
+  assert.match(track, /TrackPopupMenuEx\(/);
+  assert.match(track, /TPM_RIGHTBUTTON/);
+  assert.match(track, /PostMessageW\(Some\(owner\), WM_NULL/);
+  assert.match(host, /AppendMenuW\(menu, MF_POPUP/);
+  assert.match(host, /CheckMenuRadioItem/);
+  assert.match(host, /menu\(menu_owner, &render\)/);
+});
