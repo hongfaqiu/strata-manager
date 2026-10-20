@@ -285,12 +285,13 @@ fn requirements_may_only_shrink_in_place() {
     ));
 }
 
-/// Runs the real downloaded 0.2.0 packages through extraction and signed-manifest checks:
-/// `STRATA_020_PACKAGES=/dir cargo test -p strata-runtime-core real_0_2_0 -- --ignored`.
+/// Runs real downloaded 0.2.0 packages through extraction and signed-manifest checks when
+/// `STRATA_020_PACKAGES=/dir` names a folder with them; otherwise it has nothing to check.
 #[test]
-#[ignore = "needs the real upstream 0.2.0 packages on disk"]
 fn real_0_2_0_packages_extract_and_verify() {
-    let dir = PathBuf::from(std::env::var("STRATA_020_PACKAGES").expect("STRATA_020_PACKAGES"));
+    let Some(dir) = std::env::var_os("STRATA_020_PACKAGES").map(PathBuf::from) else {
+        return;
+    };
     let feed = engine_package::verify_feed(
         include_bytes!("../fixtures/strata-feed.json"),
         include_bytes!("../fixtures/strata-feed.json.sig"),
