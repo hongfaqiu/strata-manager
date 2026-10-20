@@ -26,7 +26,7 @@
 
 **Strata Manager 是面向 [Niko1221/Strata 本地大模型推理引擎](https://github.com/Niko1221/Strata) 的开源桌面管理工具。** 将首次上手引导、模型下载与跨 Strata 版本的配置管理、服务控制、聊天、API 与 Agent 接入及在线验证、用量统计、监控、调优，以及可选上传公开排行榜的基准测试集中到同一工作台，降低 Strata 的使用门槛。已有受支持的模型权重保持原位。
 
-**支持 Strata 0.2.0**：可安装、更新其签名的 `.tar.gz` Windows 引擎包；旧版 ZIP 发布仍可使用。
+**支持 Strata 0.2.0**：可一键安装、更新其签名的 `.tar.gz` 引擎包，Windows 与 Linux x86_64（v0.2.9 起）均可；新引擎先试启动，失败自动回滚。旧版 ZIP 发布仍可使用。
 
 [![Strata Manager 总览：服务操作栏、GPU 与系统内存占用图、生成速度和最近请求](docs/screenshots/product-cover.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.zh.webp)
 
