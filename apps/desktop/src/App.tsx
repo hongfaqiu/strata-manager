@@ -783,6 +783,10 @@ export function App() {
   const mockStartup = overviewMock?.startup;
   const mockErrors = overviewMock?.errors;
   const overviewConnecting = overviewMock ? !!mockStartup : connecting;
+  // A slow cold start fails a few polls on its own; only failures that outlast it are shown (Xiaohongshu feedback).
+  const overviewStarting = overviewMock ? !!mockStartup : !!localProgress;
+  const overviewHealthError = core.visibleServiceError({ kind: 'health', error: overviewMock ? (mockErrors ? errorText(mockErrors.health) : undefined) : (serviceRunning && health.error ? errorText(health.error) : undefined), starting: overviewStarting, processStartedAt: overviewProcess?.startedAt });
+  const overviewMetricsError = core.visibleServiceError({ kind: 'metrics', error: overviewMock ? (mockErrors ? errorText(mockErrors.metrics) : undefined) : (online && metrics.error ? errorText(metrics.error) : undefined), starting: overviewStarting, loaded: overviewHealth.loaded, processStartedAt: overviewProcess?.startedAt });
   // D2 page visuals read the same live /metrics hardware block; DEV mock mode substitutes the overview mock so screenshots cover running/stopped states.
   const hardware = readHardware((overviewMock ? overviewMetric : metric)?.raw as Record<string, unknown> | undefined);
   const hardwareOnline = overviewMock ? overviewOnline : online;
@@ -826,7 +830,7 @@ export function App() {
     onOpenGuide={!guideActive && desktop && !overviewMock ? openGuide : undefined}
     profile={overviewProfile} health={overviewHealth} backgroundHealth={overviewBackground} metric={overviewMetric} process={overviewProcess}
     tasks={overviewTasks} tasksLoading={overviewMock?false:tasks.isPending} language={settings.language} online={overviewOnline} connecting={overviewConnecting} desktop={overviewDesktop}
-    healthError={overviewMock?(mockErrors?errorText(mockErrors.health):undefined):(serviceRunning&&health.error?errorText(health.error):undefined)} metricsError={overviewMock?(mockErrors?errorText(mockErrors.metrics):undefined):(online&&metrics.error?errorText(metrics.error):undefined)} taskError={overviewMock?undefined:(tasks.error?errorText(tasks.error):undefined)}
+    healthError={overviewHealthError} metricsError={overviewMetricsError} taskError={overviewMock?undefined:(tasks.error?errorText(tasks.error):undefined)}
     processError={overviewMock?undefined:(process.error?errorText(process.error):loaded||localProgress||metric?.state==='loading'?undefined:core.readableServiceError(supervisor.data?.preparationFailures?.find(item=>item.profileId===profile?.id)?.lastError))} loadingSince={overviewMock?mockStartup?.startedAt:(localProgress?startupStartedAt||undefined:undefined)}
     controls={overviewMock ? <div className="actions service-actions" aria-hidden="true">{overviewMock.stopped ? <button type="button" className="primary" tabIndex={-1}>{t('start')}</button> : <><button type="button" className="danger" tabIndex={-1}>{t('stop')}</button><button type="button" tabIndex={-1}>{t('unload')}</button></>}</div> : serviceActions}
     startupModel={overviewModel&&overviewStartup?{name:overviewModel.name,configPath:overviewModel.configPath,lastActivatedAt:overviewStartup.lastActivatedAt,onStart:()=>void act('overviewStart',async()=>{if(overviewStartup.profile)await activateLocal(overviewStartup.profile);else if(overviewStartup.candidate)await prepareImported(overviewStartup.candidate,'overview');},'success')}:undefined}
@@ -837,7 +841,7 @@ export function App() {
     onSwitchProfile={overviewMock?()=>undefined:id=>{const next=profiles.find(item=>item.id===id);if(next)void act('switchProfile',()=>activateLocal(next),'success');}}
     actionsDisabled={!!busy||!!localProgress||inferenceBusy||processUnverified}
     onImages={desktop&&profile?.configPath&&!busy&&!inferenceBusy&&!localProgress?()=>setModal({kind:'vision',profile}):undefined}
-    stateLabel={serviceState} onRefresh={()=>void query.invalidateQueries()} onCreateProfile={()=>go('models')} onChat={()=>conversation?go('chat'):addConversation()} onNavigate={go}/>;
+    stateLabel={serviceState} onRefresh={()=>void query.invalidateQueries()} onCreateProfile={()=>go('models')} onChat={()=>conversation?go('chat'):addConversation()} onNavigate={target=>{if(target==='config'&&profile&&!overviewMock)openModelConfig(profile);else go(target);}}/>;
 
   const operateService = async (action: () => Promise<unknown>) => { await action(); await refreshLocalProfiles(); await query.invalidateQueries(); notify(t('success')); };
   const connectObservedService = async (candidate: core.LocalCandidate) => {

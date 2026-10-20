@@ -5,6 +5,24 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **概览：模型名称统一、加载时不再满屏报错（小红书用户反馈，2× RTX 2080 Ti）**：
+  - 上方启动卡和下方运行卡现在都显示你选中的模型名。配置里的 `model_name`（客户端调用 API 时填写的名称）作为「API 模型名」小字显示在旁边。以前下方大标题用的是 `model_name`，看起来像启动了另一个模型。
+  - 修复启动日志里混进上一次运行记录的问题。上游以追加方式写引擎日志，Manager 之前会把文件末尾的旧内容（上次的请求统计，如 `missed experts skipped`、`prompt … tokens`）当成本次启动输出显示。现在只显示本次启动之后写入的内容。
+  - 冷启动期间，接口还没打开或引擎忙时偶尔失败的轮询不再显示成红色报错：启动进行中、进程启动后 2 分钟内、以及 `/health` 报告模型仍在加载时，状态和指标的连接失败会被隐藏；超过这段时间仍然失败才提示。
+  - 启动卡里的「引擎输出」默认收起，只在标题行显示最新一行；展开后注明这是加载进度和统计，不是报错。真正的错误行（Traceback、`…Error:`、显存不足、fatal 等）标红，并自动展开。
+  - 运行卡新增「启动参数」按钮，直接打开当前模型的启动参数页（上下文长度、显卡分配、完整引擎参数列表、完整 JSON 编辑，保存前自动备份，可「保存并重启当前模型」）。
+
+### English
+
+- **Overview: one model name, no wall of errors while loading (Xiaohongshu feedback, 2× RTX 2080 Ti)**:
+  - The startup card and the running card now both show the model you picked. The configuration's `model_name` (the name clients send to the API) appears next to it as a small "API model name" detail. The running card used to put `model_name` in the headline, which looked like a different model had started.
+  - Fixed old runs leaking into the startup log. Upstream appends to the engine log, and Manager showed the end of the file, including the previous run's per-request statistics (`missed experts skipped`, `prompt … tokens`), as this start's output. Only lines written after this start are shown now.
+  - During a cold start, polls that fail because the API port is not open yet or the engine is busy are no longer shown as red errors. Health and metrics failures are hidden while a start is pending, for 2 minutes after the process starts, and (metrics) while `/health` reports the model is still loading; failures that last longer are shown.
+  - The startup card's "Engine output" is collapsed by default with only the latest line in its header; expanded, it notes that these are load progress and statistics, not errors. Real error lines (Traceback, `…Error:`, out of memory, fatal) are red and expand the panel automatically.
+  - The running card has a new "Startup parameters" button that opens the current model's startup parameters (context length, GPU split, the full engine argument list and the full JSON editor; saves are backed up, and "Save and restart current model" applies them).
+
 ## [0.2.8] - 2026-10-19
 
 ### 中文

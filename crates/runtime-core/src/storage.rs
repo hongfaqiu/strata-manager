@@ -44,17 +44,17 @@ pub fn read_snapshot(profile: &ServiceProfile) -> Result<ConfigSnapshot, String>
     })
 }
 
-pub fn engine_logs(
-    profile: &ServiceProfile,
-    limit: usize,
-) -> Result<Vec<crate::types::LogEntry>, String> {
-    let config = match read(profile) {
-        Ok(config) => config,
-        Err(_) => return Ok(vec![]),
-    };
-    let Some(log) = config.get("log").and_then(Value::as_str) else {
-        return Ok(vec![]);
-    };
+/// Upstream opens the configured engine log in append mode, so the file keeps
+/// every earlier session. Remember where the file ended when Manager started
+/// the service; reading resumes there so a new start never replays the last
+/// session's per-request statistics as if they were this load's output
+/// (Xiaohongshu feedback). Keyed by the resolved log path.
+static ENGINE_LOG_SESSIONS: Mutex<Option<std::collections::HashMap<PathBuf, u64>>> =
+    Mutex::new(None);
+
+fn engine_log_path(profile: &ServiceProfile) -> Option<PathBuf> {
+    let config = read(profile).ok()?;
+    let log = config.get("log").and_then(Value::as_str)?;
     let mut path = PathBuf::from(log);
     if !path.is_absolute() {
         let cwd = config
@@ -69,9 +69,42 @@ pub fn engine_logs(
         })
         .join(path);
     }
+    Some(path)
+}
+
+/// Call right before spawning the service: later reads skip what is already in the log.
+pub fn mark_engine_log_session(profile: &ServiceProfile) {
+    let Some(path) = engine_log_path(profile) else {
+        return;
+    };
+    let length = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+    if let Ok(mut sessions) = ENGINE_LOG_SESSIONS.lock() {
+        sessions
+            .get_or_insert_with(Default::default)
+            .insert(path, length);
+    }
+}
+
+fn engine_log_session_start(path: &Path) -> Option<u64> {
+    ENGINE_LOG_SESSIONS
+        .lock()
+        .ok()?
+        .as_ref()?
+        .get(path)
+        .copied()
+}
+
+pub fn engine_logs(
+    profile: &ServiceProfile,
+    limit: usize,
+) -> Result<Vec<crate::types::LogEntry>, String> {
+    let Some(path) = engine_log_path(profile) else {
+        return Ok(vec![]);
+    };
     if !path.is_file() {
         return Ok(vec![]);
     }
+    let session = engine_log_session_start(&path);
     let mut file = fs::File::open(path).map_err(|e| e.to_string())?;
     let metadata = file.metadata().map_err(|e| e.to_string())?;
     let timestamp = metadata
@@ -80,7 +113,12 @@ pub fn engine_logs(
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| d.as_millis() as u64)
         .unwrap_or_else(now);
-    let start = metadata.len().saturating_sub(256 * 1024);
+    // A file shorter than the mark was truncated or replaced: all of it is new.
+    let session = session
+        .filter(|start| *start <= metadata.len())
+        .unwrap_or(0);
+    let tail = metadata.len().saturating_sub(256 * 1024);
+    let start = tail.max(session);
     file.seek(SeekFrom::Start(start))
         .map_err(|e| e.to_string())?;
     let mut bytes = Vec::new();
@@ -89,7 +127,8 @@ pub fn engine_logs(
         .map_err(|e| e.to_string())?;
     let text = String::from_utf8_lossy(&bytes);
     let mut lines: Vec<_> = text.lines().collect();
-    if start > 0 && !lines.is_empty() {
+    // Only a cut inside the 256 KiB window can split a line; the session mark sits at an end of file.
+    if start > session && !lines.is_empty() {
         lines.remove(0);
     }
     Ok(lines
@@ -414,6 +453,43 @@ mod tests {
             config_path: directory.join("config.json").to_string_lossy().into(),
             managed: true,
         }
+    }
+    #[test]
+    fn engine_log_reads_resume_at_the_session_mark() {
+        let directory = tempfile::tempdir().unwrap();
+        let profile = fixture_profile(directory.path());
+        fs::write(&profile.config_path, br#"{"log":"engine.log"}"#).unwrap();
+        let log = directory.path().join("engine.log");
+        fs::write(
+            &log,
+            "previous: prompt 131 tokens\nprevious: route tail skip\n",
+        )
+        .unwrap();
+        let messages = |profile: &ServiceProfile| -> Vec<String> {
+            engine_logs(profile, 50)
+                .unwrap()
+                .into_iter()
+                .map(|entry| entry.message)
+                .collect()
+        };
+        assert_eq!(
+            messages(&profile).len(),
+            2,
+            "without a mark the whole tail is shown"
+        );
+        mark_engine_log_session(&profile);
+        assert!(messages(&profile).is_empty(), "nothing new since the start");
+        let mut file = fs::OpenOptions::new().append(true).open(&log).unwrap();
+        file.write_all(b"current: loading experts 1/2\ncurrent: still starting\n")
+            .unwrap();
+        drop(file);
+        assert_eq!(
+            messages(&profile),
+            vec!["current: loading experts 1/2", "current: still starting"]
+        );
+        // A rotated (shorter) file is entirely new.
+        fs::write(&log, "fresh\n").unwrap();
+        assert_eq!(messages(&profile), vec!["fresh"]);
     }
     #[test]
     fn config_cas_rejects_stale_and_raw_byte_changes_without_extra_files() {

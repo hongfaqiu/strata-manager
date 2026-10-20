@@ -1,4 +1,4 @@
-import type { AppLanguage } from "@strata-manager/core";
+import { engineLogTone, type AppLanguage } from "@strata-manager/core";
 import { useEffect, useRef, useState } from 'react';
 import { Check, Clock3, FileText, LoaderCircle } from 'lucide-react';
 import type { LogEntry } from '@strata-manager/core';
@@ -25,12 +25,12 @@ export interface StartupProgressProps {
 const words = {
   'zh-CN': {
     title: '正在准备本机模型', importing: '检查并加入我的模型', starting: '启动本机 API', loading: '加载模型并验证就绪',
-    elapsed: '已用时', noLogs: '等待后台首次输出。', logs: '启动详情', waiting: '当前阶段尚未返回新的日志。大型模型的首次加载可能需要数分钟。',
+    elapsed: '已用时', noLogs: '等待后台首次输出。', logs: '引擎输出', lines: '{n} 行', logsNote: '这是引擎的运行记录（加载进度和统计），不是报错；真正的错误会用红色标出并自动展开。', waiting: '当前阶段尚未返回新的日志。大型模型的首次加载可能需要数分钟。',
     hint: '这里显示真实启动阶段与后台输出；模型文件会保留。', pid: '进程', api: 'API 地址',
   },
   en: {
     title: 'Preparing the local model', importing: 'Check and add to My models', starting: 'Start local API', loading: 'Load the model and verify readiness',
-    elapsed: 'Elapsed', noLogs: 'Waiting for the first background output.', logs: 'Startup details', waiting: 'This stage has not produced a new log yet. Large models can take several minutes to load for the first time.',
+    elapsed: 'Elapsed', noLogs: 'Waiting for the first background output.', logs: 'Engine output', lines: '{n} lines', logsNote: 'This is the engine\'s own record (load progress and statistics), not errors; real errors are shown in red and expand automatically.', waiting: 'This stage has not produced a new log yet. Large models can take several minutes to load for the first time.',
     hint: 'Actual startup stages and background output are shown here. Model files are retained.', pid: 'Process', api: 'API address',
   },
 } as const;
@@ -58,6 +58,8 @@ export function StartupProgress({ language, progress, modelName, apiUrl }: Start
   const phase = ['importing', 'starting', 'loading'].indexOf(progress.phase);
   const latestAt = logs.at(-1)?.timestamp ?? startedAt;
   const label = text[progress.phase];
+  const hasError = logs.some(log => engineLogTone(log.message) === 'error');
+  const latest = logs.at(-1)?.message.trim();
   return <section className="startup-progress" aria-label={text.title} data-testid="startup-progress">
     <div className="startup-progress-heading" role="status" aria-live="polite">
       <LoaderCircle className="spin" size={20}/><div><strong>{modelName || progress.modelName ? `${text.title} · ${modelName ?? progress.modelName}` : text.title}</strong><p>{label}</p></div>
@@ -68,7 +70,10 @@ export function StartupProgress({ language, progress, modelName, apiUrl }: Start
     </li>)}</ol>
     {progress.message && progress.message !== label && <p className="startup-progress-message">{progress.message}</p>}
     {(progress.pid || apiUrl || progress.apiUrl) && <p className="startup-progress-connection">{progress.pid && <span>{text.pid} {progress.pid}</span>}{(apiUrl || progress.apiUrl) && <span>{text.api} <code>{apiUrl ?? progress.apiUrl}</code></span>}</p>}
-    <details className="startup-progress-logs" open><summary><FileText size={14}/>{text.logs}</summary><div className="startup-progress-log-output" tabIndex={0}>{logs.length ? logs.map((log, index) => <div key={`${log.timestamp}-${index}`}><time>{new Date(log.timestamp).toLocaleTimeString(language)}</time><span>{log.message}</span></div>) : <p>{text.noLogs}</p>}</div></details>
+    {/* Collapsed by default: raw engine statistics read like errors to most users (Xiaohongshu feedback). */}
+    <details className="startup-progress-logs" open={hasError || undefined}><summary><FileText size={14}/>{text.logs}{logs.length > 0 && <small>{text.lines.replace('{n}', String(logs.length))}</small>}{latest && <span className={`startup-progress-latest${engineLogTone(latest) === 'error' ? ' is-error' : ''}`}>{latest}</span>}</summary>
+      <p className="startup-progress-logs-note">{text.logsNote}</p>
+      <div className="startup-progress-log-output" tabIndex={0}>{logs.length ? logs.map((log, index) => <div key={`${log.timestamp}-${index}`} className={engineLogTone(log.message) === 'error' ? 'is-error' : undefined}><time>{new Date(log.timestamp).toLocaleTimeString(language)}</time><span>{log.message}</span></div>) : <p>{text.noLogs}</p>}</div></details>
     {now - latestAt >= 30_000 && <p className="startup-progress-waiting">{text.waiting}</p>}
     <p className="startup-progress-hint">{text.hint}</p>
   </section>;
