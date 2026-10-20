@@ -1,7 +1,8 @@
 //! Official tag source + SHA256-published engine ZIPs, merged transactionally.
 //! No upstream updater scripts, model downloads, directory clears or external stops.
 use super::{
-    cancelled, engine_package, RuntimeReleaseAsset, RuntimeUpdateInfo, SelectionFlag, UpgradeFlag,
+    cancelled, engine_package, gpu_select, RuntimeReleaseAsset, RuntimeUpdateInfo, SelectionFlag,
+    UpgradeFlag,
 };
 use crate::{http, installation, maintenance, processes, storage, types::*, RuntimeState};
 use futures_util::StreamExt;
@@ -28,6 +29,7 @@ const OBSERVER_COMPAT: &str =
 
 mod download_check;
 mod download_source;
+mod engine_trial;
 #[cfg(test)]
 mod local_archive_tests;
 #[cfg(test)]
@@ -296,14 +298,14 @@ fn start(
     }
     let task_id = request_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     uuid::Uuid::parse_str(&task_id).map_err(|_| "更新请求标识必须为 UUID")?;
-    if !cfg!(all(windows, target_arch = "x86_64")) {
-        return Err("官方引擎包自动安装目前支持Windows x64；可使用源码安装方式".into());
+    if engine_package::this_release_install_platform().is_none() {
+        return Err("官方引擎包自动安装目前支持 Windows x64 和 Linux x86_64；可使用源码安装方式 / Official engine packages install on Windows x64 and Linux x86_64; use the source install here".into());
     }
     if asset_name
         .as_deref()
-        .is_some_and(|name| !engine_package::is_installable_asset_name(name))
+        .is_some_and(|name| !engine_package::asset_installable_here(name))
     {
-        return Err("不是支持的官方Strata引擎包资产".into());
+        return Err("不是本平台支持的官方Strata引擎包资产 / Not an official Strata engine package for this platform".into());
     }
     let operation = state.runtime_operations.lock().map_err(|e| e.to_string())?;
     for profile in state.registered_profiles()? {
@@ -485,9 +487,18 @@ fn start(
     Ok(status)
 }
 
+/// Platform whose engine layout an installed directory is read with.
+fn host_platform() -> &'static str {
+    engine_package::this_release_install_platform().unwrap_or("windows-x86_64")
+}
+
 fn variant(root: &Path) -> Option<&'static str> {
+    variant_for(root, host_platform())
+}
+
+fn variant_for(root: &Path, platform: &str) -> Option<&'static str> {
     for directory in crate::discovery::known_engine_dir_names() {
-        if let Some(value) = directory_variant(&root.join(directory)) {
+        if let Some(value) = directory_variant_for(&root.join(directory), platform) {
             return Some(value);
         }
     }
@@ -500,7 +511,7 @@ fn variant(root: &Path) -> Option<&'static str> {
             }
             let path = entry.path();
             if path.is_dir() && !path.is_symlink() {
-                if let Some(value) = directory_variant(&path) {
+                if let Some(value) = directory_variant_for(&path, platform) {
                     return Some(value);
                 }
             }
@@ -514,25 +525,29 @@ fn variant(root: &Path) -> Option<&'static str> {
 /// user's explicit choice; the automatic choice never guesses the GPU family.
 const HIP_MULTI: &str = "hip-multi";
 
-fn hip_variant(build: &Value) -> &'static str {
+fn hip_variant(build: &Value, platform: &str) -> &'static str {
     let archs: Vec<&str> = build["archs"]
         .as_array()
         .into_iter()
         .flatten()
         .filter_map(Value::as_str)
         .collect();
+    let all = |set: &[&str]| !archs.is_empty() && archs.iter().all(|arch| set.contains(arch));
     if archs.is_empty() {
         HIP_MULTI
-    } else if archs
-        .iter()
-        .all(|arch| matches!(*arch, "gfx1100" | "gfx1101" | "gfx1102" | "gfx1151"))
-    {
-        "hip-rdna3"
-    } else if archs
-        .iter()
-        .all(|arch| matches!(*arch, "gfx1200" | "gfx1201"))
-    {
+    } else if all(&["gfx1200", "gfx1201"]) {
         "hip"
+    } else if platform == "linux-x86_64" {
+        // Linux splits RDNA3 into separate RX 7000 and Strix Halo packages.
+        if all(&["gfx1100", "gfx1101", "gfx1102"]) {
+            "hip-rx7900"
+        } else if all(&["gfx1151"]) {
+            "hip-halo"
+        } else {
+            HIP_MULTI
+        }
+    } else if all(&["gfx1100", "gfx1101", "gfx1102", "gfx1151"]) {
+        "hip-rdna3"
     } else {
         HIP_MULTI
     }
@@ -540,23 +555,49 @@ fn hip_variant(build: &Value) -> &'static str {
 
 /// Whether an installed engine type may be replaced by a package variant.
 fn variant_compatible(installed: &str, asset: &str) -> bool {
-    installed == asset || installed == HIP_MULTI && matches!(asset, "hip" | "hip-rdna3")
+    installed == asset || installed == HIP_MULTI && asset.starts_with("hip")
 }
 
 fn directory_variant(directory: &Path) -> Option<&'static str> {
+    directory_variant_for(directory, host_platform())
+}
+
+fn directory_variant_for(directory: &Path, platform: &str) -> Option<&'static str> {
     let build: Value =
         serde_json::from_slice(&fs::read(directory.join("BUILD.json")).ok()?).ok()?;
-    if build["backend"]
-        .as_str()
-        .is_some_and(|s| s.eq_ignore_ascii_case("hip"))
-    {
-        return Some(hip_variant(&build));
+    build_variant(&build, platform)
+}
+
+/// Manager variant of an engine `BUILD.json`. Windows CUDA builds carry `cuda` and no
+/// `backend`; HIP builds `backend: hip` and `archs`; 0.2+ Linux packages may have no
+/// `backend` at all but a `variant` naming their package (`halo`, `rx7900`, `cuda13`).
+fn build_variant(build: &Value, platform: &str) -> Option<&'static str> {
+    let backend = build["backend"].as_str().map(str::to_ascii_lowercase);
+    if let Some(declared) = build["variant"].as_str() {
+        let backends: &[&str] = match backend.as_deref() {
+            Some(backend) => &[backend][..],
+            None => &["hip", "cuda"],
+        };
+        for backend in backends {
+            if let Some(variant) = engine_package::manager_variant(backend, declared) {
+                let package = format!("strata-engine-0.0-{platform}-{backend}-{declared}.tar.gz");
+                if engine_package::installable_variant(&package) == Some(variant) {
+                    return Some(variant);
+                }
+            }
+        }
     }
-    if build["backend"]
-        .as_str()
-        .is_some_and(|backend| !backend.eq_ignore_ascii_case("cuda"))
-    {
-        return None;
+    let gfx_archs = build["archs"].as_array().is_some_and(|archs| {
+        !archs.is_empty()
+            && archs
+                .iter()
+                .all(|arch| arch.as_str().is_some_and(|a| a.starts_with("gfx")))
+    });
+    match backend.as_deref() {
+        Some("hip") => return Some(hip_variant(build, platform)),
+        None if gfx_archs => return Some(hip_variant(build, platform)),
+        Some("cuda") | None => {}
+        Some(_) => return None,
     }
     let major = build["cuda"].as_u64().or_else(|| {
         let value = build["cuda"].as_str()?;
@@ -579,9 +620,39 @@ fn choose_asset(
     root: &Path,
     requested: Option<&str>,
 ) -> Result<RuntimeReleaseAsset, String> {
-    let previous = variant(root);
+    choose_asset_with(info, root, requested, &gpu_select::probe_host)
+}
+
+/// Platform of a release's installable packages (legacy ZIPs are Windows).
+fn release_platform(info: &RuntimeUpdateInfo) -> &'static str {
+    info.assets
+        .iter()
+        .find_map(|asset| engine_package::asset_platform(&asset.name))
+        .unwrap_or_else(host_platform)
+}
+
+fn choose_asset_with(
+    info: &RuntimeUpdateInfo,
+    root: &Path,
+    requested: Option<&str>,
+    probe: &dyn Fn() -> gpu_select::GpuProbe,
+) -> Result<RuntimeReleaseAsset, String> {
+    let platform = release_platform(info);
+    let previous = variant_for(root, platform);
     let asset = if let Some(name) = requested {
-        info.assets.iter().find(|a| a.name == name)
+        info.assets.iter().find(|a| a.name == name).cloned()
+    } else if platform == "linux-x86_64" && previous.is_none_or(|v| v == HIP_MULTI) {
+        // No engine yet, a local build without a type, or a multi-family HIP engine: the
+        // detected GPU decides. When it cannot, the user picks the package.
+        let pool: Vec<RuntimeReleaseAsset> = info
+            .assets
+            .iter()
+            .filter(|a| previous.is_none() || a.variant.starts_with("hip"))
+            .cloned()
+            .collect();
+        let (mut asset, reason) = gpu_select::pick(&pool, &probe())?;
+        asset.match_reason = Some(reason);
+        Some(asset)
     } else if previous == Some(HIP_MULTI) {
         // The old multi-family HIP ZIP has a direct successor only while upstream still
         // publishes it; otherwise the user picks RX 9000 or RX 7000 / Strix Halo.
@@ -592,18 +663,18 @@ fn choose_asset(
         if legacy.is_none() && info.assets.iter().any(|a| a.variant.starts_with("hip")) {
             return Err("此Release把AMD HIP引擎按显卡分成两个包，请手动选择：RX 9000 / R9700 选 HIP RX 9000，RX 7000 / Strix Halo 选 HIP RX 7000 / Strix Halo / Choose the AMD package for your GPU".into());
         }
-        legacy
+        legacy.cloned()
     } else {
         let wanted = previous.unwrap_or("cuda13");
-        info.assets.iter().find(|a| a.variant == wanted)
+        info.assets.iter().find(|a| a.variant == wanted).cloned()
     }
-    .ok_or("此Release没有匹配当前运行环境的可校验官方引擎包")?;
+    .ok_or("此Release没有匹配当前运行环境的可校验官方引擎包 / This release has no verifiable official engine package for this runtime")?;
     if previous.is_some_and(|v| !variant_compatible(v, &asset.variant)) {
         return Err(
-            "所选ZIP与当前CUDA/HIP环境不匹配；请保留当前运行环境类型，避免破坏已有模型配置".into(),
+            "所选引擎包与当前CUDA/HIP环境不匹配；请保留当前运行环境类型，避免破坏已有模型配置 / The selected package does not match this runtime's CUDA/HIP type".into(),
         );
     }
-    Ok(asset.clone())
+    Ok(asset)
 }
 
 fn version_parts(version: &str) -> Option<(Vec<u32>, bool, String)> {
@@ -824,7 +895,7 @@ fn local_engine_asset(
         .collect();
     let version = info.latest_version.as_deref().unwrap_or("?");
     let mismatch = || {
-        format!("所选引擎包与官方 Release v{version} 的 Windows 引擎包都不一致（版本或 GPU 类型不对，或文件不完整）/ The selected engine package matches no Windows engine package of Release v{version} (wrong version or GPU type, or an incomplete file)")
+        format!("所选引擎包与官方 Release v{version} 的引擎包都不一致（版本、平台或 GPU 类型不对，或文件不完整）/ The selected engine package matches no engine package of Release v{version} (wrong version, platform or GPU type, or an incomplete file)")
     };
     if candidates.is_empty() {
         return Err(mismatch());
@@ -1038,6 +1109,7 @@ fn engine_file_allowed(relative: &str) -> bool {
             | engine_package::MANIFEST_NAME
             // Linux packages (0.2+).
             | "strata"
+            | "strata-device"
             | "strata-vision"
             | "strata-vision-hip"
             | "SYSTEM-LIBS.txt"
@@ -1155,7 +1227,9 @@ fn extract_engine(
             .unwrap_or(engine_package::MAX_PACKAGE_EXPANDED),
         &check,
     )?;
-    engine_package::verify_extracted(destination, &files, asset, "windows-x86_64", &check)?;
+    let platform = engine_package::asset_platform(&asset.name)
+        .ok_or("不是支持的官方引擎包 / Not a supported official engine package")?;
+    engine_package::verify_extracted(destination, &files, asset, platform, &check)?;
     Ok(files)
 }
 
@@ -1712,6 +1786,11 @@ fn replace_file(source: &Path, target: &Path) -> Result<(), String> {
             .map_err(|e| map_extract_io("创建替换暂存", &staged, e))?;
         let mut file = File::open(source).map_err(|e| e.to_string())?;
         std::io::copy(&mut file, &mut output).map_err(|e| e.to_string())?;
+        // Linux engines need their executable bit (strata, strata-vision).
+        #[cfg(unix)]
+        output
+            .set_permissions(file.metadata().map_err(|e| e.to_string())?.permissions())
+            .map_err(|e| e.to_string())?;
         output
             .sync_all()
             .map_err(|e| map_extract_io("同步替换暂存", &staged, e))?;
@@ -1808,7 +1887,10 @@ async fn prepare_python(
         .arg(&venv)
         .current_dir(&j.install_dir);
     installation::run_owned(state, &j.task_id, command, "正在创建新Strata私有Python环境").await?;
+    #[cfg(windows)]
     let python = venv.join("Scripts/python.exe");
+    #[cfg(not(windows))]
+    let python = venv.join("bin/python");
     let mut pip = Command::new(&python);
     pip.args([
         "-I",
@@ -1869,20 +1951,82 @@ async fn check_python(
         .current_dir(source);
     installation::run_owned(state, id, probe, "正在验证Python依赖及新版服务源码语法").await
 }
+/// Linux source installs prepare their `.venv` but install its packages only in upstream's
+/// setup. Before replacing anything, an update fills a Manager-owned `.venv` with the
+/// release's pinned requirements so the prebuilt engine can serve; other Pythons only check.
+async fn ensure_dependencies(
+    state: &RuntimeState,
+    j: &Journal,
+    python: &str,
+    source: &Path,
+) -> Result<(), String> {
+    let owned_venv = cfg!(target_os = "linux")
+        && !j.new_install
+        && Path::new(python).starts_with(j.install_dir.join(".venv"));
+    if !owned_venv {
+        return check_python(state, &j.task_id, python, source).await;
+    }
+    if check_python(state, &j.task_id, python, source)
+        .await
+        .is_ok()
+    {
+        return Ok(());
+    }
+    let mut pip = Command::new(python);
+    pip.args([
+        "-I",
+        "-m",
+        "pip",
+        "--isolated",
+        "install",
+        "--disable-pip-version-check",
+        "--index-url",
+        "https://pypi.org/simple",
+        "--only-binary=:all:",
+        "-r",
+    ])
+    .arg(source.join("requirements.txt"))
+    .current_dir(&j.install_dir);
+    installation::run_owned(
+        state,
+        &j.task_id,
+        pip,
+        "私有 Python 环境缺少此 Release 的依赖，正在安装（服务未停止）/ Installing this release's Python packages into the private environment (services keep running)",
+    )
+    .await?;
+    check_python(state, &j.task_id, python, source).await
+}
+
 async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, String> {
     cancelled(&state, &j.task_id)?;
     let info = super::update_info_for_installation(&state).await?;
     if info.error.is_some() || !info.installable {
         return Err(info
             .error
-            .unwrap_or("官方Release暂没有可验证的Windows ZIP".into()));
+            .unwrap_or("官方Release暂没有本平台可验证的引擎包 / The official release has no verifiable engine package for this platform".into()));
     }
     let asset = match (&j.asset_name, &j.download.local_archive_path) {
         (None, Some(path)) if j.new_install => {
             local_engine_asset(&state, &j.task_id, &info, Path::new(path))?
         }
-        _ => choose_asset(&info, &j.install_dir, j.asset_name.as_deref())?,
+        _ => {
+            let (info, root, name) = (info.clone(), j.install_dir.clone(), j.asset_name.clone());
+            tokio::task::spawn_blocking(move || choose_asset(&info, &root, name.as_deref()))
+                .await
+                .map_err(|e| e.to_string())??
+        }
     };
+    if let Some(reason) = &asset.match_reason {
+        processes::log(
+            &state.logs,
+            &j.task_id,
+            "info",
+            format!(
+                "按显卡自动选择引擎包 / Package chosen for this GPU: {} ({reason})",
+                asset.name
+            ),
+        );
+    }
     let revision = info.source_revision.clone().ok_or("发布源码提交未核验")?;
     let version = info.latest_version.clone().ok_or("发布版本缺失")?;
     let engine_version = asset
@@ -1970,7 +2114,7 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
     }
     let bundled_cuda = engine_files.iter().any(|name| {
         let name = name.to_ascii_lowercase();
-        name.starts_with("cublas64_") && name.ends_with(".dll")
+        name.starts_with("cublas64_") && name.ends_with(".dll") || name.starts_with("libcublas.so")
     });
     let associated = profiles(&state, &j.install_dir)?;
     let release_requirements = normalized_requirements(&work.join("source/requirements.txt"))?;
@@ -2018,9 +2162,11 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
             .map(|r| r.python_path);
     }
     if let Some(python) = &python {
-        check_python(&state, &j.task_id, python, &work.join("source")).await?;
+        ensure_dependencies(&state, j, python, &work.join("source")).await?;
     }
     let directories = engine_directories(&j.install_dir, &asset, &associated)?;
+    // Read before any file changes: the version a failed trial start returns to.
+    let previous_engine = engine_trial::installed_engine_version(&j.install_dir, &directories);
     for relative in source_files {
         // Existing data files may be user-supplied expert profiles or models.
         // Never overwrite them without a previous manager-owned manifest.
@@ -2040,7 +2186,7 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
             &mut j.changes,
         )?;
     }
-    for directory in directories {
+    for directory in &directories {
         for file in &engine_files {
             let relative = portable(&directory.join(file));
             add_change(
@@ -2137,6 +2283,8 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
     let install_dir = j.install_dir.clone();
     let stop_error =
         stop_drained_owned_profiles(&state, &install_dir, &associated, &owned, Some(j))?;
+    // Set when the new engine fails its trial start or the restarted services fail health.
+    let mut trial_failure: Option<String> = None;
     let result = async {
         if let Some(error) = stop_error {
             return Err(error);
@@ -2144,9 +2292,46 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
         if crate::discovery::has_running_installation(&j.install_dir)? {
             return Err("检测到其它程序仍在运行此目录，未替换文件".into());
         }
-        apply(&j.install_dir, &work, &j.changes, || {
-            cancelled(&state, &j.task_id)
-        })?;
+        progress(
+            &state,
+            j,
+            "trialStart",
+            "正在替换程序文件并试启动新引擎；未通过会自动恢复原版本 / Replacing program files and trial-starting the new engine; a failure restores the previous version",
+        )?;
+        let applied = {
+            let (root, work, changes, dirs) = (
+                j.install_dir.clone(),
+                work.clone(),
+                j.changes.clone(),
+                directories.clone(),
+            );
+            let (check_state, id) = (state.clone(), j.task_id.clone());
+            tokio::task::spawn_blocking(move || {
+                engine_trial::apply_and_trial(
+                    &root,
+                    &work,
+                    &changes,
+                    &dirs,
+                    &engine_trial::run_engine_version,
+                    || cancelled(&check_state, &id),
+                )
+            })
+            .await
+            .map_err(|e| e.to_string())?
+        };
+        match applied {
+            Ok(passed) => progress(
+                &state,
+                j,
+                "trialStart",
+                &format!("新引擎试启动通过 / The new engine passed its trial start: {}", passed.join("; ")),
+            )?,
+            Err(engine_trial::ApplyFailure::Apply(error)) => return Err(error),
+            Err(engine_trial::ApplyFailure::Trial(reason)) => {
+                trial_failure = Some(reason.clone());
+                return Err(reason);
+            }
+        }
         if j.new_install {
             progress(
                 &state,
@@ -2170,11 +2355,22 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
         // passed verification. Controlled /load carries the matching token.
         for (index,running) in j.running.iter().enumerate() {
             let target=target_profile(j,&running.profile);
-            start_lazy_service(state.clone(), target.clone()).await?;
-            wait_health(&state, &j.task_id, &target, false).await?;
-            if running.loaded {
-                super::post(&state, &target, "/load", json!({}), guards.get(index).map(|guard|guard.token()), 1200).await?;
-                wait_health(&state, &j.task_id, &target, true).await?;
+            let restarted = async {
+                start_lazy_service(state.clone(), target.clone()).await?;
+                wait_health(&state, &j.task_id, &target, false).await?;
+                if running.loaded {
+                    super::post(&state, &target, "/load", json!({}), guards.get(index).map(|guard|guard.token()), 1200).await?;
+                    wait_health(&state, &j.task_id, &target, true).await?;
+                }
+                Ok::<(), String>(())
+            }
+            .await;
+            if let Err(error) = restarted {
+                // The restarted service is the full trial of the new engine.
+                if cancelled(&state, &j.task_id).is_ok() {
+                    trial_failure = Some(format!("{}: {error}", target.name));
+                }
+                return Err(error);
             }
         }
         cancelled(&state, &j.task_id)?;
@@ -2217,8 +2413,14 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
                 {
                     j.phase = "rolledBack".into();
                     persist(&state, j)?;
+                    let error = match &trial_failure {
+                        Some(reason) => {
+                            engine_trial::failure_message(previous_engine.as_deref(), reason)
+                        }
+                        None => error.clone(),
+                    };
                     return Err(format!(
-                        "{error}；程序文件已恢复，原服务启动失败：{restart}"
+                        "{error}；程序文件已恢复，原服务启动失败 / Program files restored, the previous service failed to start：{restart}"
                     ));
                 }
                 if running.loaded {
@@ -2234,13 +2436,23 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
                 }
             }
         }
+        let message = match &trial_failure {
+            Some(reason) => engine_trial::failure_message(previous_engine.as_deref(), reason),
+            None => {
+                format!("{error}；已恢复原程序版本 / The previous program version was restored")
+            }
+        };
         progress(
             &state,
             j,
             "rolledBack",
-            "原程序文件已恢复，模型与配置保持原位；更新可重试",
+            if trial_failure.is_some() {
+                &message
+            } else {
+                "原程序文件已恢复，模型与配置保持原位；更新可重试 / Program files restored; models and settings unchanged. The update can be retried"
+            },
         )?;
-        return Err(format!("{error}；已恢复原程序版本"));
+        return Err(message);
     }
     Ok(format!(
         "Strata已{}至官方Release v{version}；模型、配置及会话已保留",
@@ -2301,7 +2513,12 @@ pub(super) fn recover(state: &RuntimeState) -> Result<(), String> {
         }
         if matches!(
             j.phase.as_str(),
-            "replacing" | "preparingPython" | "verifying" | "rollingBack" | "rollbackFailed"
+            "replacing"
+                | "trialStart"
+                | "preparingPython"
+                | "verifying"
+                | "rollingBack"
+                | "rollbackFailed"
         ) {
             let result = if crate::discovery::has_running_installation(&j.install_dir)? {
                 Err("目录仍由外部服务使用，不能回滚程序文件".into())
@@ -3093,7 +3310,7 @@ mod tests {
             },
         );
         state.runtime_upgrading.store(true, Ordering::Release);
-        if cfg!(all(windows, target_arch = "x86_64")) {
+        if engine_package::this_release_install_platform().is_some() {
             let cached = start_release_request(
                 state.clone(),
                 root.to_string_lossy().into(),
@@ -3104,16 +3321,24 @@ mod tests {
             .unwrap();
             assert_eq!(cached.id, status.id);
             assert_eq!(cached.message, status.message);
-            assert!(start_release_request(
+            // Windows sees a changed asset; Linux refuses a Windows ZIP outright.
+            let changed = start_release_request(
                 state.clone(),
                 root.to_string_lossy().into(),
                 Some("strata-windows-x64-cuda12.zip".into()),
                 Some(id.clone()),
-                false
+                false,
             )
             .err()
-            .unwrap()
-            .contains("不一致"));
+            .unwrap();
+            assert!(
+                changed.contains(if cfg!(windows) {
+                    "不一致"
+                } else {
+                    "本平台"
+                }),
+                "{changed}"
+            );
             assert!(start_release_request(
                 state.clone(),
                 root.to_string_lossy().into(),
@@ -3125,7 +3350,7 @@ mod tests {
             .unwrap()
             .contains("不一致"));
         } else {
-            // A stored Windows request never bypasses the local platform guard.
+            // A stored request never bypasses the local platform guard.
             for (asset, confirmed) in [
                 (None, false),
                 (Some("strata-windows-x64-cuda12.zip".into()), false),
@@ -3140,10 +3365,7 @@ mod tests {
                 )
                 .err()
                 .expect("unsupported platforms must refuse even a cached ZIP request");
-                assert_eq!(
-                    error,
-                    "官方引擎包自动安装目前支持Windows x64；可使用源码安装方式"
-                );
+                assert!(error.contains("Windows x64 和 Linux x86_64"), "{error}");
             }
         }
         let unchanged: String = state

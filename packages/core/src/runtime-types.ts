@@ -24,13 +24,20 @@ export interface RuntimeReleaseAsset {
   url: string;
   size: number;
   sha256: string;
-  /** `hip` is RX 9000 / R9700 (or the legacy all-in-one HIP ZIP); `hip-rdna3` is RX 7000 / Strix Halo. */
-  variant: 'cuda13' | 'cuda12' | 'hip' | 'hip-rdna3';
+  /**
+   * `hip` is RX 9000 / R9700 (or the legacy all-in-one HIP ZIP); `hip-rdna3` is the Windows RX 7000 / Strix Halo
+   * package. Linux splits it into `hip-rx7900` (RX 7000) and `hip-halo` (Strix Halo).
+   */
+  variant: 'cuda13' | 'cuda12' | 'hip' | 'hip-rdna3' | 'hip-rx7900' | 'hip-halo';
   /** Strata 0.2+ component package: its engine version (legacy ZIPs share the release version). */
   engineVersion?: string;
   manifestSha256?: string;
   installedBytes?: number;
   archs?: string[];
+  /** Lowest NVIDIA driver the CUDA package runs on, from the signed feed. */
+  nvidiaMinDriver?: string;
+  /** Bilingual `中文 / English` reason when the package was picked from the detected GPU. */
+  matchReason?: string;
 }
 
 /** Optional engine ZIP source; integrity always comes from the official release asset. */

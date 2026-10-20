@@ -383,7 +383,7 @@ export function App() {
     }
     const last = finished[finished.length - 1]!;
     setToast({
-      text: finished.map(task => `${t(task.kind.includes('setup') ? 'setupTask' : task.kind.includes('install') ? 'installTask' : task.kind.includes('update') ? 'updateTask' : 'task')} · ${t(task.state === 'completed' ? 'completed' : task.state === 'cancelled' ? 'taskCancelled' : 'taskFailed')}${task.state === 'failed' ? `: ${task.message}` : ''}`).join(' · '),
+      text: finished.map(task => `${t(task.kind.includes('setup') ? 'setupTask' : task.kind.includes('install') ? 'installTask' : task.kind.includes('update') ? 'updateTask' : 'task')} · ${t(task.state === 'completed' ? 'completed' : task.state === 'cancelled' ? 'taskCancelled' : 'taskFailed')}${task.state === 'failed' ? `: ${core.runtimeTrialRollback(task.message) ? t('engineTrialRolledBack') : task.message}` : ''}`).join(' · '),
       error: finished.some(task => task.state === 'failed'), taskId: finished.length === 1 ? last.id : undefined,
     });
   }, [desktop, ready, tasks.data, query]);

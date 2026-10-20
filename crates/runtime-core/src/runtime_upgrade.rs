@@ -18,6 +18,7 @@ use std::{
 
 pub const VERSION: &str = "0.1.41";
 pub mod engine_package;
+pub mod gpu_select;
 mod release_zip;
 pub use release_zip::{
     resolve_release_download_asset, start_install_release, start_install_release_with_archives,
@@ -45,6 +46,12 @@ pub struct RuntimeReleaseAsset {
     pub installed_bytes: Option<u64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub archs: Vec<String>,
+    /// Oldest NVIDIA driver the package supports (signed feed `min_driver.nvidia`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nvidia_min_driver: Option<String>,
+    /// Why automatic matching chose this package (only on a resolve result, never cached).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub match_reason: Option<String>,
 }
 
 /// Official release metadata and SHA256-published engine ZIPs. Checking never
@@ -78,8 +85,14 @@ const UPDATE_INFO_KEY: &str = "strataUpstreamUpdateInfo";
 const UPDATE_CHECK_INTERVAL: u64 = 12 * 60 * 60 * 1000;
 const INSTALLATION_METADATA_MAX_AGE: u64 = 10 * 60 * 1000;
 
+/// Windows x64 installs legacy ZIPs and Windows packages; Linux x86_64 its own 0.2+ packages.
 fn zip_installable(assets: &[RuntimeReleaseAsset], os: &str, arch: &str) -> bool {
-    os == "windows" && arch == "x86_64" && !assets.is_empty()
+    let Some(host) = engine_package::release_install_platform(os, arch) else {
+        return false;
+    };
+    assets
+        .iter()
+        .any(|asset| engine_package::asset_platform(&asset.name) == Some(host))
 }
 
 fn constrain_installable(mut info: RuntimeUpdateInfo) -> RuntimeUpdateInfo {
@@ -297,7 +310,7 @@ pub async fn update_info_with_cache(
         }
         info.installable = zip_installable(&info.assets, std::env::consts::OS, std::env::consts::ARCH);
         if info.assets.is_empty() && info.update_available {
-            info.error = Some("此上游版本没有 Manager 可安装的 Windows 引擎包；已安装的运行时不受影响 / This upstream release has no engine package Manager can install; existing runtimes are unaffected".into());
+            info.error = Some("此上游版本没有 Manager 可在本平台安装的引擎包；已安装的运行时不受影响 / This upstream release has no engine package Manager can install on this platform; existing runtimes are unaffected".into());
         }
         let mut reference: Value = client
             .get(format!(
@@ -455,7 +468,9 @@ async fn release_feed_assets(
     let signature = fetch(signature_url).await?;
     let feed = engine_package::verify_feed(&feed, &signature, previous_sequence, now())?;
     let sequence = feed["sequence"].as_u64().unwrap_or_default();
-    let assets = engine_package::feed_assets(&feed, release, tag, "windows-x86_64")?;
+    // Linux lists its own packages; every other host keeps the Windows list as before.
+    let platform = engine_package::this_release_install_platform().unwrap_or("windows-x86_64");
+    let assets = engine_package::feed_assets(&feed, release, tag, platform)?;
     Ok(Some((sequence, assets)))
 }
 
@@ -2100,6 +2115,49 @@ mod tests {
             assert!(cached_installation_metadata(forged, info.checked_at).is_none());
         }
         assert!(newer_than_supported("0.2.0-beta") && !newer_than_supported("0.1.41-rc"));
+    }
+
+    #[test]
+    fn linux_x86_64_installs_its_own_0_2_0_feed_packages_only() {
+        let release: Value = serde_json::from_str(include_str!(
+            "runtime_upgrade/fixtures/release-v0.2.0-beta.json"
+        ))
+        .unwrap();
+        let mut info = release_update_info(&release).unwrap();
+        let feed = engine_package::verify_feed(
+            include_bytes!("runtime_upgrade/fixtures/strata-feed.json"),
+            include_bytes!("runtime_upgrade/fixtures/strata-feed.json.sig"),
+            None,
+            now(),
+        )
+        .unwrap();
+        info.assets =
+            engine_package::feed_assets(&feed, &release, "v0.2.0-beta", "linux-x86_64").unwrap();
+        assert_eq!(info.assets.len(), 5);
+        assert!(zip_installable(&info.assets, "linux", "x86_64"));
+        // Linux packages never make Windows, macOS or Linux arm64 installable.
+        for (os, arch) in [
+            ("windows", "x86_64"),
+            ("macos", "aarch64"),
+            ("linux", "aarch64"),
+        ] {
+            assert!(!zip_installable(&info.assets, os, arch), "{os}/{arch}");
+        }
+        // Legacy Windows ZIPs stay visible but are not installable on Linux.
+        let legacy = release_update_info(&windows_release_fixture()).unwrap();
+        assert!(!zip_installable(&legacy.assets, "linux", "x86_64"));
+        info.installable = zip_installable(&info.assets, "linux", "x86_64");
+        let revision = "3d1fb48090e8f2cefc22d7b5845fb7f5b71f33fa";
+        info.source_revision = Some(revision.into());
+        info.source_archive_url = Some(format!(
+            "https://codeload.github.com/Niko1221/Strata/zip/{revision}"
+        ));
+        let cached = serde_json::to_value(&info).unwrap();
+        assert_eq!(cached["assets"][1]["nvidiaMinDriver"], "580.65");
+        assert_eq!(
+            cached_installation_metadata(cached, info.checked_at).is_some(),
+            cfg!(all(target_os = "linux", target_arch = "x86_64"))
+        );
     }
 
     fn installation_metadata_fixture(checked_at: u64) -> RuntimeUpdateInfo {

@@ -23,3 +23,5 @@
 .runtime-update-service-warning p{margin:0}
 .runtime-update-dialog-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-top:4px}
 @media(max-width:520px){.runtime-update-details{grid-template-columns:minmax(0,1fr)}.runtime-update-dialog-actions>button{flex:1}.runtime-update-download-value,.runtime-update-local-file{flex-wrap:wrap}.runtime-update-download-value a,.runtime-update-download-value code{flex-basis:100%}}
+.runtime-update-match-reason{display:block;margin-top:2px;font-size:11px;color:var(--st-ink-muted);overflow-wrap:anywhere}
+.runtime-update-trial-hint{margin:0;padding-left:10px;border-left:2px solid var(--st-line);color:var(--st-ink-muted);font-size:12px;line-height:1.6}

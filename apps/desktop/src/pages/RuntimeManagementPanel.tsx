@@ -26,6 +26,7 @@ const labels = {
     updating: '正在更新', completed: '更新完成', ready: '已安装', repair: '需要修复', failed: '更新失败',
     localPackage: '使用本地安装包', localPackageChecking: '正在读取发布信息…',
     package: '更新包', automaticPackage: '自动匹配当前环境', latestInstalled: '已是最新版本', noPackage: '当前平台暂无更新包', cancel: '取消更新', logs: '下载与安装日志',
+    trialFailed: '新引擎试启动未通过，已自动回滚', trialRestored: '已恢复原版本 {version}，模型与配置未改动，可继续使用。', trialUndone: '已撤销本次安装，模型与配置未改动。', trialReason: '原因',
   },
   en: {
     title: 'Strata updates', current: 'Installed version', latest: 'Latest version', check: 'Check for updates', checking: 'Checking…', unknown: '—',
@@ -33,6 +34,7 @@ const labels = {
     updating: 'Updating', completed: 'Update complete', ready: 'Installed', repair: 'Needs repair', failed: 'Update failed',
     localPackage: 'Install from local package', localPackageChecking: 'Loading release information…',
     package: 'Update package', automaticPackage: 'Match the current runtime', latestInstalled: 'Up to date', noPackage: 'No package for this platform', cancel: 'Cancel update', logs: 'Download and installation logs',
+    trialFailed: 'The new engine failed its trial start and was rolled back', trialRestored: 'Version {version} was restored; models and settings are unchanged and ready to use.', trialUndone: 'This installation was undone; models and settings are unchanged.', trialReason: 'Reason',
   },
 } as const;
 function needsUpdate(current: string | undefined, latest: string | undefined) {
@@ -61,6 +63,7 @@ export function RuntimeManagementPanel({ language, desktop, onInstall, selectedR
   const downloadPreferences = useQuery({ queryKey: ['runtime-download-preferences'], queryFn: core.getRuntimeDownloadPreferences, enabled: desktop, staleTime: Infinity, retry: false });
   const activeTask = tasks.data?.find(task => task.state === 'running' && task.kind === 'update');
   const lastTask = tasks.data?.find(task => task.id === taskId);
+  const trialRollback = lastTask?.state === 'failed' ? core.runtimeTrialRollback(lastTask.message) : undefined;
   const status = installationStatus ?? installation.data, result = status?.result;
   const allRuntimes: core.DetectedRuntime[] = status?.detectedRuntimes ?? (result ? [{ installDir: result.installDir, pythonPath: result.pythonPath, sourceRevision: result.sourceRevision, readiness: 'ready', profile: result.profile }] : []);
   const runtimes = selectedRuntimeDir ? allRuntimes.filter(runtime => runtime.installDir === selectedRuntimeDir) : allRuntimes;
@@ -142,7 +145,7 @@ export function RuntimeManagementPanel({ language, desktop, onInstall, selectedR
     {showInstallations && !!runtimes.length && <div className="runtime-installed-list">{runtimes.map(runtime => <div className="runtime-installed-item" key={runtime.installDir}><div><strong>{runtime.runtimeVersion ? `Strata ${runtime.runtimeVersion}` : 'Strata'}</strong><span className={runtime.readiness === 'ready' ? 'runtime-ready' : 'runtime-repair'}>{runtime.readiness === 'ready' ? text.ready : text.repair}</span><code>{runtime.installDir}</code></div>{needsUpdate(runtime.runtimeVersion, update.data?.latestVersion) && updateButton(runtime)}</div>)}</div>}
     {activeTask && <div className="runtime-update-progress" role="status"><LoaderCircle className="spin" size={16}/><div><strong>{activeTask.message || text.updating}</strong>{taskLogs.length > 0 && <details><summary>{text.logs}</summary><pre>{taskLogs.map(entry => entry.message).join('\n')}</pre></details>}<button type="button" onClick={() => void cancel()}><Square size={13}/>{text.cancel}</button></div></div>}
     {lastTask?.state === 'completed' && <p className="runtime-update-result runtime-ready" role="status">{text.completed}</p>}
-    {lastTask?.state === 'failed' && <p className="notice error" role="alert">{text.failed}: {lastTask.message}</p>}
+    {lastTask?.state === 'failed' && (trialRollback ? <div className="notice warning runtime-trial-rollback" role="alert" data-testid="runtime-trial-rollback"><strong>{text.trialFailed}</strong><p>{trialRollback.restoredVersion ? text.trialRestored.replace('{version}', trialRollback.restoredVersion) : text.trialUndone}</p>{trialRollback.reason && <div className="runtime-trial-reason"><span>{text.trialReason}</span><code>{core.runtimeReasonText(trialRollback.reason, language === 'zh-CN')}</code></div>}</div> : <p className="notice error" role="alert">{text.failed}: {lastTask.message}</p>)}
     {actionError && <p className="notice error" role="alert">{actionError}</p>}
     <RuntimeDownloadSettings language={language} desktop={desktop} runtime={runtimes[0]} release={update.data} releaseLoading={update.isLoading || update.isFetching}/>
     {notes && update.data && <details className="runtime-release-notes"><summary>{text.notes} · {update.data.releaseName ?? update.data.latestVersion}</summary>{update.data.publishedAt && <p className="subtle">{text.published} {new Date(update.data.publishedAt).toLocaleDateString(language)}</p>}<div className="runtime-release-body" tabIndex={0} role="region" aria-label={text.notes}><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml components={{ a: ({ node: _node, title, children, ...props }) => <a {...props} data-tooltip={title} target="_blank" rel="noreferrer">{children}</a>, img: ({ node: _node, title, ...props }) => <img {...props} data-tooltip={title}/> }}>{notes}</ReactMarkdown></div></details>}
