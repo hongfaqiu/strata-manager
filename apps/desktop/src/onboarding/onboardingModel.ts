@@ -102,7 +102,7 @@ export function environmentChecks(info: core.EnvironmentInfo): EnvironmentCheck[
     { id: 'memory', state: !memoryGB ? 'warn' : memoryGB * .8 >= minimum ? 'ok' : 'warn', value: memoryGB ? `${Math.round(memoryGB)} GB` : '', detail: !memoryGB ? 'unknown' : memoryGB * .8 >= minimum ? undefined : 'low' },
     windows
       ? { id: 'python', state: 'ok', value: info.python ?? '', detail: info.python ? undefined : 'bundled' }
-      : { id: 'python', state: pythonOk ? 'ok' : 'fail', value: info.python ?? '', detail: pythonOk ? undefined : 'required' },
+      : { id: 'python', state: pythonOk ? 'ok' : 'fail', value: info.python ?? '', detail: pythonOk ? (info.pythonManaged ? 'managed' : undefined) : 'required' },
   ];
 }
 /**

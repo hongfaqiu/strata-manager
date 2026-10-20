@@ -49,6 +49,7 @@
 - `run_setup({profile,model,quant,context,images,options?}) -> TaskStatus`：官方非交互模型准备任务。options 为 `OfficialSetupOptions`；后台按 `SetupOptions` 验证，不接受任意命令字符串。返回 task ID，日志由任务页读取。
 - `inspect_gguf({request}) -> TaskStatus`：模型文件检查任务；request 为 `ModelInspectRequest`，Core 名为 `inspectModel`。
 - `install_runtime({directory}) -> TaskStatus`：官方运行环境准备；拒绝覆盖未知非空目录，只有本应用数据库与目录标记均匹配的失败安装允许重试，保留旧半成品，不自动下载模型权重。
+- `managed_python_status() -> ManagedPythonStatus`、`install_managed_python({source?}) -> TaskStatus`：macOS / glibc Linux 的应用内 Python（python-build-standalone 20261009 · CPython 3.12.15）。只读状态含 `supported/installed/interpreter/downloadBytes/task`；安装任务按固定的官方长度与 SHA-256 校验（`source` 只能是含 `{url}` 的 HTTPS GitHub 代理模板或完整 HTTPS 地址，不改变摘要），逐项检查解包条目后原子移入 `toolchains/`，可用 `cancel_task` 取消。安装后 `install_runtime` 与 `environment_info` 优先使用它（`pythonManaged: true`）；不改 PATH、系统或 Homebrew Python。Windows 仍由 `install_runtime` 下载 python.org 安装器。
 - `prepare_local_runtime() -> TaskStatus`、`local_runtime_installation() -> RuntimeInstallationStatus`：创建源码和私有 Python 环境的后台任务，以及恢复任务 ID/经过核验的结果，不下载模型权重。
 - `storage_locations(installDir?, probePath?) -> StorageLocations`、`set_engine_install_root(directory | null) -> StorageLocation`、`set_model_data_directory(directory, installDir?, moveFiles) -> { directory, moving, taskId? }`：查看并更改模型保存位置（上游 `settings.json` 的 `data_dir`）和新引擎安装位置。`moveFiles` 时创建 `move-model-data` 任务：复制 → SHA-256 核对 → 改写运行配置中的路径 → 写入设置 → 删除旧文件；任一步失败都恢复配置和设置并保留旧文件。移动期间与运行时更新共用同一把锁，模型不能启动。旧版后台不认识这些方法时返回 `unknown_method`，界面提示重启应用。
 - `update_runtime({profile}) -> TaskStatus`：官方运行时更新流程，禁止盲目覆盖配置；ZIP 更新是后文的独立入口。
@@ -82,6 +83,11 @@
 - `resolve_runtime_zip_asset({installDir,assetName?}) -> RuntimeReleaseAsset`：Tauri 直接调用当前后台 `resolve_runtime_zip_asset_v1`。显式 assetName 做核验；未指定时按已安装引擎的 CUDA/HIP 信息选择当前官方可用包，无法可靠匹配时返回错误，不猜测任意来源。
 - `test_runtime_zip_download({assetName,localArchivePath?,downloadUrl?}) -> RuntimeZipDownloadCheckResult`：Tauri 直接调用当前后台 `test_runtime_zip_download_v1`，只做来源测试，不创建安装任务或下载缓存文件。
 - `update_runtime_zip({installDir,assetName?,stopCurrentService?,localArchivePath?,downloadUrl?}) -> TaskStatus`：经桌面持久更新队列提交。stopCurrentService 默认 false；服务中断授权仅来自显式更新确认。官方来源使用后台 `update_runtime_zip`，自定义来源使用 `update_runtime_zip_download_v1`。队列分配持久 requestId 并协调批准的服务停止、后台能力/包交接、任务状态与原状态恢复；requestId 不是额外的前端 invoke 参数。
+
+- `runtime_release_versions({force?}) -> RuntimeReleaseVersions`：只读。上游发布列表（`releases?per_page=100`），去掉草稿和无效标签，从新到旧排序；每项含 `version`、`tag`、`prerelease`、`packaging`（`feed`/`zip`）和 `installable`（本平台有安装包，旧版 ZIP 还需有 GitHub SHA256 摘要）。缓存 6 小时，失败后 10 分钟内不重试，失败时保留上次列表并返回 `error`。
+- `runtime_release_info({version}) -> RuntimeUpdateInfo`：只读。按 `releases/tags/v{version}` 读取并核验指定版本，校验规则与 `runtime_update_info` 相同（签名清单的签名、格式、通道、有效期，以及清单版本等于所选版本），但不做序号防回放、也不保存序号；结果不写入最新版本缓存。
+- `update_runtime_zip(...,targetVersion?)`：可选 `targetVersion` 指定安装某个版本（可低于当前版本）。队列此时调用后台 `update_runtime_zip_version_v1`；旧后台返回 `unknown_method` 时直接报错，不会退回到安装最新版本。只有指定了 `targetVersion` 时才跳过“禁止降级”检查；包核验、源码核验、试启动与自动回滚不变。`resolve_runtime_zip_asset` 同样接受 `targetVersion`，按所选版本匹配安装包。
+- 固定版本保存在 store 键 `runtimePinnedVersion`（空字符串表示未固定），只由前端用来停止比它新的更新提示。
 
 localArchivePath 与 downloadUrl 互斥。镜像只接受经过校验的 HTTPS 地址；传输来源不改变官方版本、文件名、长度和 SHA256 校验条件。本地来源测试读取完整文件并核验长度/摘要；网络来源测试最多 64 KiB，核验可访问性、长度和 Range，不声明完整 SHA256 已验证。实际安装始终校验完整 ZIP 的官方 SHA256/长度及对应源码，并执行解包与替换范围检查。
 

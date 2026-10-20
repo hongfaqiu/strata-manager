@@ -258,6 +258,8 @@ export interface EnvironmentInfo {
   /** Structured GPU facts (macOS): Apple Silicon unified memory, core count and Metal family. Absent elsewhere. */
   gpuDetails?: GpuDetail[];
   python: string | null;
+  /** `python` is the app-private interpreter installed with one click (macOS / Linux). */
+  pythonManaged?: boolean;
   git: string | null;
   appVersion: string;
 }

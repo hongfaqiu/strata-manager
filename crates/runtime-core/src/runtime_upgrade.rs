@@ -19,11 +19,14 @@ use std::{
 pub const VERSION: &str = "0.1.41";
 pub mod engine_package;
 pub mod gpu_select;
+mod release_versions;
 mod release_zip;
+pub use release_versions::{RuntimeReleaseVersion, RuntimeReleaseVersions};
 pub use release_zip::{
-    resolve_release_download_asset, start_install_release, start_install_release_with_archives,
-    start_release, start_release_request, start_release_request_with_download,
-    test_release_download, RuntimeZipDownloadCheckResult, RuntimeZipDownloadOptions,
+    resolve_release_download_asset, resolve_release_download_asset_for, start_install_release,
+    start_install_release_with_archives, start_release, start_release_request,
+    start_release_request_with_download, test_release_download, RuntimeZipDownloadCheckResult,
+    RuntimeZipDownloadOptions,
 };
 const SERVER_SHA256: &str = "017efa1f4e76d72396738555d13eb1f9898d1c1c12730cf046d9b267b29987e5";
 const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS runtime_upgrades(task_id TEXT PRIMARY KEY,profile_id TEXT NOT NULL,journal TEXT NOT NULL,updated_at INTEGER NOT NULL);";
@@ -170,6 +173,19 @@ fn release_update_info(release: &Value) -> Result<RuntimeUpdateInfo, String> {
     })
 }
 
+/// Every published release (cached), for installing a chosen version.
+pub async fn release_versions(
+    state: &RuntimeState,
+    force: bool,
+) -> Result<RuntimeReleaseVersions, String> {
+    release_versions::list(state, force).await
+}
+
+/// One chosen release, verified like the latest (read-only; nothing is cached or installed).
+pub async fn release_info_for_version(version: &str) -> Result<RuntimeUpdateInfo, String> {
+    release_versions::release_info(version).await
+}
+
 pub async fn update_info(state: &RuntimeState, force: bool) -> Result<RuntimeUpdateInfo, String> {
     let cached = crate::store_get(state, UPDATE_INFO_KEY.into())?;
     let info = update_info_with_cache(cached, force).await?;
@@ -274,88 +290,12 @@ pub async fn update_info_with_cache(
             return Ok(constrain_installable(info));
         }
     }
-    let cached_for_feed = cached.clone();
-    let response = async {
-        let cached = cached_for_feed;
-        let client = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(8))
-            .timeout(Duration::from_secs(20))
-            .redirect(reqwest::redirect::Policy::none())
-            .user_agent("Strata-Manager-runtime-updates")
-            .build()
-            .map_err(|error| error.to_string())?;
-        let release: Value = client
-            .get("https://api.github.com/repos/Niko1221/Strata/releases/latest")
-            .header("Accept", "application/vnd.github+json")
-            .send()
-            .await
-            .map_err(|error| format!("无法连接上游更新接口：{error}"))?
-            .error_for_status()
-            .map_err(|error| format!("上游更新接口暂不可用：{error}"))?
-            .json()
-            .await
-            .map_err(|error| format!("无法读取上游发布信息：{error}"))?;
-        let mut info = release_update_info(&release)?;
-        let tag = release["tag_name"].as_str().ok_or("发布标记缺失")?;
-        let previous_sequence = cached["feedSequence"].as_u64();
-        match release_feed_assets(&release, tag, previous_sequence).await {
-            Ok(Some((sequence, assets))) => {
-                info.feed_sequence = Some(sequence.max(previous_sequence.unwrap_or(0)));
-                info.assets.extend(assets);
-            }
-            Ok(None) => {}
-            // A legacy release stays installable without a feed; a feed-only one must verify.
-            Err(error) if info.assets.is_empty() => return Err(error),
-            Err(_) => {}
-        }
-        info.installable = zip_installable(&info.assets, std::env::consts::OS, std::env::consts::ARCH);
-        if info.assets.is_empty() && info.update_available {
-            info.error = Some("此上游版本没有 Manager 可在本平台安装的引擎包；已安装的运行时不受影响 / This upstream release has no engine package Manager can install on this platform; existing runtimes are unaffected".into());
-        }
-        let mut reference: Value = client
-            .get(format!(
-                "https://api.github.com/repos/Niko1221/Strata/git/ref/tags/{tag}"
-            ))
-            .header("Accept", "application/vnd.github+json")
-            .send()
-            .await
-            .map_err(|e| e.to_string())?
-            .error_for_status()
-            .map_err(|e| e.to_string())?
-            .json()
-            .await
-            .map_err(|e| e.to_string())?;
-        if reference["object"]["type"] == "tag" {
-            let sha = reference["object"]["sha"]
-                .as_str()
-                .filter(|s| valid_revision(s))
-                .ok_or("源码标记SHA无效")?;
-            reference = client
-                .get(format!(
-                    "https://api.github.com/repos/Niko1221/Strata/git/tags/{sha}"
-                ))
-                .send()
-                .await
-                .map_err(|e| e.to_string())?
-                .error_for_status()
-                .map_err(|e| e.to_string())?
-                .json()
-                .await
-                .map_err(|e| e.to_string())?;
-        }
-        let revision = reference["object"]["sha"]
-            .as_str()
-            .filter(|s| valid_revision(s))
-            .ok_or("无法核验同版本源码提交")?;
-        if reference["object"]["type"] != "commit" {
-            return Err("发布标记未指向源码提交".into());
-        }
-        info.source_revision = Some(revision.into());
-        info.source_archive_url = Some(format!(
-            "https://codeload.github.com/Niko1221/Strata/zip/{revision}"
-        ));
-        Ok(info)
-    }
+    let previous_sequence = cached["feedSequence"].as_u64();
+    let response = fetch_release_info(
+        "https://api.github.com/repos/Niko1221/Strata/releases/latest",
+        previous_sequence,
+        None,
+    )
     .await;
     let info = constrain_installable(match response {
         Ok(info) => info,
@@ -387,11 +327,104 @@ pub async fn update_info_with_cache(
     Ok(info)
 }
 
+/// Read one release (latest, or a tag) with its verified feed and source commit.
+/// `expected_version` pins both the release tag and the signed feed's app version.
+async fn fetch_release_info(
+    release_api: &str,
+    previous_sequence: Option<u64>,
+    expected_version: Option<&str>,
+) -> Result<RuntimeUpdateInfo, String> {
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(8))
+        .timeout(Duration::from_secs(20))
+        .redirect(reqwest::redirect::Policy::none())
+        .user_agent("Strata-Manager-runtime-updates")
+        .build()
+        .map_err(|error| error.to_string())?;
+    let release: Value = client
+        .get(release_api)
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|error| format!("无法连接上游更新接口：{error}"))?
+        .error_for_status()
+        .map_err(|error| format!("上游更新接口暂不可用：{error}"))?
+        .json()
+        .await
+        .map_err(|error| format!("无法读取上游发布信息：{error}"))?;
+    let mut info = release_update_info(&release)?;
+    if expected_version.is_some_and(|expected| info.latest_version.as_deref() != Some(expected)) {
+        return Err(
+            "上游发布的版本号与所选版本不一致 / The release does not match the chosen version"
+                .into(),
+        );
+    }
+    let tag = release["tag_name"].as_str().ok_or("发布标记缺失")?;
+    match release_feed_assets(&release, tag, previous_sequence, expected_version).await {
+        Ok(Some((sequence, assets))) => {
+            info.feed_sequence = Some(sequence.max(previous_sequence.unwrap_or(0)));
+            info.assets.extend(assets);
+        }
+        Ok(None) => {}
+        // A legacy release stays installable without a feed; a feed-only one must verify.
+        Err(error) if info.assets.is_empty() => return Err(error),
+        Err(_) => {}
+    }
+    info.installable = zip_installable(&info.assets, std::env::consts::OS, std::env::consts::ARCH);
+    if info.assets.is_empty() && info.update_available {
+        info.error = Some("此上游版本没有 Manager 可在本平台安装的引擎包；已安装的运行时不受影响 / This upstream release has no engine package Manager can install on this platform; existing runtimes are unaffected".into());
+    }
+    let mut reference: Value = client
+        .get(format!(
+            "https://api.github.com/repos/Niko1221/Strata/git/ref/tags/{tag}"
+        ))
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())?;
+    if reference["object"]["type"] == "tag" {
+        let sha = reference["object"]["sha"]
+            .as_str()
+            .filter(|s| valid_revision(s))
+            .ok_or("源码标记SHA无效")?;
+        reference = client
+            .get(format!(
+                "https://api.github.com/repos/Niko1221/Strata/git/tags/{sha}"
+            ))
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .error_for_status()
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    let revision = reference["object"]["sha"]
+        .as_str()
+        .filter(|s| valid_revision(s))
+        .ok_or("无法核验同版本源码提交")?;
+    if reference["object"]["type"] != "commit" {
+        return Err("发布标记未指向源码提交".into());
+    }
+    info.source_revision = Some(revision.into());
+    info.source_archive_url = Some(format!(
+        "https://codeload.github.com/Niko1221/Strata/zip/{revision}"
+    ));
+    Ok(info)
+}
+
 /// Fetch and verify `strata-feed.json` (+ `.sig`) when the release carries one.
 async fn release_feed_assets(
     release: &Value,
     tag: &str,
     previous_sequence: Option<u64>,
+    expected_version: Option<&str>,
 ) -> Result<Option<(u64, Vec<RuntimeReleaseAsset>)>, String> {
     let url_for = |name: &str| {
         release["assets"]
@@ -467,6 +500,11 @@ async fn release_feed_assets(
     let feed = fetch(feed_url).await?;
     let signature = fetch(signature_url).await?;
     let feed = engine_package::verify_feed(&feed, &signature, previous_sequence, now())?;
+    if expected_version.is_some_and(|expected| feed["app"]["version"].as_str() != Some(expected)) {
+        return Err(
+            "签名 feed 的版本与所选版本不一致 / The signed feed is for a different version".into(),
+        );
+    }
     let sequence = feed["sequence"].as_u64().unwrap_or_default();
     // Linux lists its own packages; every other host keeps the Windows list as before.
     let platform = engine_package::this_release_install_platform().unwrap_or("windows-x86_64");

@@ -1,0 +1,24 @@
+.managed-python{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:12px;align-items:start;padding:14px 16px;border:1px solid var(--st-line);border-radius:7px;background:var(--st-surface);font-size:12px;line-height:1.7}
+.managed-python.is-compact{border-width:1px 0 0;border-radius:0;background:transparent;padding:16px 18px}
+.managed-python.is-inline{border:0;border-radius:0;background:transparent;padding:16px 0 0}
+.managed-python-mark{margin-top:2px;color:var(--st-icon)}
+.managed-python.is-installed .managed-python-mark{color:var(--st-accent-text)}
+.managed-python.is-failed .managed-python-mark{color:var(--st-danger-text)}
+.managed-python.is-running .managed-python-mark{color:var(--st-accent-text)}
+.managed-python-body{display:grid;gap:6px;min-width:0}
+.managed-python-body strong{font-size:13px;font-weight:600;color:var(--st-ink)}
+.managed-python-body p{color:var(--st-ink-muted);max-width:640px}
+.managed-python-body code{font-family:"SFMono-Regular","Cascadia Code",Consolas,monospace;font-size:11px;color:var(--st-ink-soft);overflow-wrap:anywhere;user-select:text}
+.managed-python-step{color:var(--st-ink-soft)!important;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.managed-python-error{color:var(--st-danger-text)!important;white-space:pre-wrap;overflow-wrap:anywhere}
+.managed-python-source{display:flex;align-items:center;gap:10px;margin-top:4px;color:var(--st-ink-muted)}
+.managed-python-source>span{white-space:nowrap}
+.managed-python-source .official-dropdown.managed-python-select{width:180px;flex:none}
+.managed-python-actions{display:flex;gap:8px;align-items:center}
+.managed-python-actions button{white-space:nowrap}
+.managed-python-bar{height:4px;border-radius:2px;background:color-mix(in srgb,var(--st-ink) 9%,transparent);position:relative;overflow:hidden;margin:4px 0 2px;max-width:640px}
+.managed-python-bar i{position:absolute;left:0;top:0;bottom:0;border-radius:2px;background:var(--st-accent);transition:width .6s ease}
+.managed-python-bar.is-indeterminate i{width:30%;animation:managed-python-slide 1.4s ease-in-out infinite}
+@keyframes managed-python-slide{0%{left:-30%}100%{left:100%}}
+@container workspace (max-width:640px){.managed-python{grid-template-columns:18px minmax(0,1fr)}.managed-python-actions{grid-column:2}}
+@media(prefers-reduced-motion:reduce){.managed-python-bar.is-indeterminate i{animation:none;left:0;width:100%;opacity:.4}.managed-python-bar i{transition:none}.managed-python .spin{animation:none}}

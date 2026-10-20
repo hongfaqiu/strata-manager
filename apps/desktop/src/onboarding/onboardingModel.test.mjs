@@ -92,6 +92,10 @@ test('environment checks: all pass auto-skips, missing Python fails off Windows'
   assert.equal(model.environmentVerdict(model.environmentChecks(base)), 'pass');
   assert.equal(model.environmentVerdict(model.environmentChecks({ ...base, os: 'Ubuntu 24.04' })), 'fail');
   assert.equal(model.environmentVerdict(model.environmentChecks({ ...base, os: 'Ubuntu 24.04', python: 'Python 3.12.3' })), 'pass');
+  // macOS ships Python 3.9; the one-click app-private Python passes and is labelled as such.
+  const mac = { ...base, os: 'macOS 15.5', arch: 'aarch64', gpus: [] };
+  assert.deepEqual({ ...model.environmentChecks({ ...mac, python: 'Python 3.9.6' }).find(check => check.id === 'python') }, { id: 'python', state: 'fail', value: 'Python 3.9.6', detail: 'required' });
+  assert.deepEqual({ ...model.environmentChecks({ ...mac, python: 'Python 3.12.15', pythonManaged: true }).find(check => check.id === 'python') }, { id: 'python', state: 'ok', value: 'Python 3.12.15', detail: 'managed' });
   assert.equal(model.environmentVerdict(model.environmentChecks({ ...base, gpus: [] })), 'warn');
   assert.equal(model.environmentVerdict(model.environmentChecks({ ...base, totalMemory: 32 * GB })), 'warn');
   assert.equal(model.environmentVerdict(undefined), 'loading');

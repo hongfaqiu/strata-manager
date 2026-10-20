@@ -870,6 +870,7 @@ impl RuntimeState {
                 | "update_runtime"
                 | "update_runtime_zip"
                 | "update_runtime_zip_download_v1"
+                | "update_runtime_zip_version_v1"
                 | "write_config"
                 | "write_config_cas_v1"
                 | "set_api_key"
@@ -973,12 +974,35 @@ impl RuntimeState {
                 )
                 .await,
             ),
+            "runtime_release_info" => {
+                let version: String = arg(&params, "version")?;
+                value(runtime_upgrade::release_info_for_version(&version).await)
+            }
+            "runtime_release_versions" => value(
+                runtime_upgrade::release_versions(
+                    &self,
+                    params
+                        .get("force")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
+                )
+                .await,
+            ),
             "resolve_runtime_zip_asset_v1" => {
                 let install_dir: String = arg(&params, "installDir")?;
                 let requested = params.get("assetName").and_then(Value::as_str);
+                let target = params
+                    .get("targetVersion")
+                    .and_then(Value::as_str)
+                    .filter(|version| !version.is_empty());
                 value(
-                    runtime_upgrade::resolve_release_download_asset(&self, &install_dir, requested)
-                        .await,
+                    runtime_upgrade::resolve_release_download_asset_for(
+                        &self,
+                        &install_dir,
+                        requested,
+                        target,
+                    )
+                    .await,
                 )
             }
             "test_runtime_zip_download_v1" => {
@@ -1190,9 +1214,19 @@ impl RuntimeState {
                 arg(&params, "external")?,
             )),
             "install_runtime" => value(install_runtime(&self, arg(&params, "directory")?)),
+            "managed_python_status" => value(installation::managed_python::status(&self)),
+            "install_managed_python" => value(installation::managed_python::start(
+                self.clone(),
+                params
+                    .get("source")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+            )),
             "update_runtime" => value(runtime_upgrade::start(self.clone(), profile()?.id)),
             "engine_help_flags" => value(engine_help::flags(&profile()?)),
-            "update_runtime_zip" | "update_runtime_zip_download_v1" => {
+            "update_runtime_zip"
+            | "update_runtime_zip_download_v1"
+            | "update_runtime_zip_version_v1" => {
                 value(runtime_upgrade::start_release_request_with_download(
                     self.clone(),
                     arg(&params, "installDir")?,
@@ -3240,6 +3274,7 @@ fn collect_environment() -> EnvironmentInfo {
         python: output("py", &["--version"])
             .or_else(|| output("python", &["--version"]))
             .or_else(|| output("python3", &["--version"])),
+        python_managed: false,
         git: output("git", &["--version"]),
         app_version: env!("CARGO_PKG_VERSION").into(),
     }
@@ -3252,7 +3287,14 @@ pub(crate) fn cached_environment(state: &RuntimeState) -> EnvironmentInfo {
             }
         }
     }
-    let info = collect_environment();
+    let mut info = collect_environment();
+    // Report the interpreter Strata will actually use after a one-click install.
+    if let Some(python) = installation::managed_python::installed_interpreter(state.data_dir()) {
+        if let Some(version) = output(&python.to_string_lossy(), &["--version"]) {
+            info.python = Some(version);
+            info.python_managed = true;
+        }
+    }
     if let Ok(mut cache) = state.environment_cache.lock() {
         *cache = Some((now(), info.clone()));
     }
