@@ -5,6 +5,18 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **聊天里的数学公式会排版显示（跟进上游 Strata #3268）**：以前回答里的 LaTeX 公式显示成一串 `$...$` 原文。现在行内公式 `$...$`、`\(...\)` 和独立公式 `$$...$$`、`\[...\]` 都用 KaTeX 排版。KaTeX 和它的字体随应用打包，不联网；只有回答里出现公式时才加载，没有公式的对话不受影响。金额不会被当成公式（「花费 $5 和 $10」保持原文），`\$` 是普通美元符号，代码块和行内代码里的内容也不会被识别；还没写完的公式（例如正在流式输出）先按原文显示。KaTeX 的 `trust` 保持关闭，公式里不能插入链接或图片。
+- **可以设置思考长度上限（跟进上游 Strata #2141）**：生成设置里「思考」下面新增「思考长度上限」，填一个 token 数，模型想到上限时会收尾思考并直接作答；留空表示不限，和以前一样。请求里同时带上 Strata 的 `reasoning_budget_tokens` 和 llama-server 的 `thinking_budget_tokens`；思考关闭时不发送。这个上限只用于本应用的聊天请求，不会写进服务的共享默认参数。
+- **对话里可以直接预览模型写的 HTML**：回答里的 ```` ```html ```` 代码块多了「代码 / 预览」切换，默认显示代码，点「预览」后才运行；回答还在生成时不能预览。预览在沙箱里运行：页面里的脚本可以执行，但不能联网、不能访问应用页面、Tauri 接口、本地存储或你的文件，也不能弹窗、提交表单或跳转主窗口。桌面版通过独立的 `strata-preview` 协议加载页面，并附带禁止所有网络请求的 CSP。预览可以重新运行、全屏查看，也可以另存为 `.html` 文件。
+
+### English
+
+- **Math in chat answers is typeset (following upstream Strata #3268)**: LaTeX in answers used to show as raw `$...$`. Inline `$...$` and `\(...\)` and display `$$...$$` and `\[...\]` are now drawn with KaTeX. KaTeX and its fonts ship with the app, need no network, and load only when an answer contains a formula, so chats without math are unaffected. Money is not mistaken for math ("costs $5 and $10" stays text), `\$` is a plain dollar sign, and code blocks and inline code are never searched; an unfinished formula (for example while streaming) shows as its source. KaTeX's `trust` stays off, so formulas cannot insert links or images.
+- **Thinking budget (following upstream Strata #2141)**: Generation settings have a new **Thinking budget** under Thinking. Enter a number of tokens and the model wraps up its thinking at that point and answers; leave it blank for no limit, as before. Requests carry both Strata's `reasoning_budget_tokens` and llama-server's `thinking_budget_tokens`; nothing is sent while thinking is off. The budget applies to this app's chat requests only and is never saved as a shared service default.
+- **Preview HTML from an answer in the chat**: ```` ```html ```` blocks in answers get a **Code / Preview** switch. Code is the default and nothing runs until you choose Preview, which is unavailable while the answer is still being written. The preview is sandboxed: its scripts run, but cannot reach the network, the app page, Tauri commands, local storage or your files, and cannot open popups, submit forms or navigate the main window. The desktop app loads the page from a separate `strata-preview` scheme with a CSP that blocks every network request. A preview can be run again, viewed full screen, or saved as an `.html` file.
+
 ## [0.2.11] - 2026-10-20
 
 ### 中文
