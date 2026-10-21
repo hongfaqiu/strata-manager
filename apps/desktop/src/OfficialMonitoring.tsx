@@ -1,6 +1,6 @@
 import type { AppLanguage } from "@strata-manager/core";
 import { Fragment, type ReactNode } from 'react';
-import { asObject, decodeStreams, decodeStreamsLabel, normalizeMetrics, requestPrefillTokS, type JsonObject } from '@strata-manager/core';
+import { asObject, decodeStreams, decodeStreamsLabel, gpuFieldUnavailable, gpuTelemetryDetails, normalizeMetrics, requestPrefillTokS, type JsonObject } from '@strata-manager/core';
 import sprite from './official/sprite.svg';
 import { SlotMonitor } from './SlotMonitor';
 
@@ -86,14 +86,19 @@ export function MonitoringPage({ raw, language, showAll, onShowAll, onRequest, e
   const per = (fn: (gpu: JsonObject) => string) => gpus.map(gpu => `GPU ${fmt(gpu.index)} ${fn(gpu)}`).join(' · ');
   const generation = number(hw.gpu_pcie_gen_max) ?? number(hw.gpu_pcie_gen);
   const diskRead = number(hw.disk_read_mb), diskBig = diskRead !== null && diskRead >= 1000;
+  // AMD readings come from the driver through the manager (#86); a field the driver lacks says so instead of staying blank.
+  const amd = gpuTelemetryDetails(raw), missing = gpuFieldUnavailable(amd, language === 'zh-CN');
+  const gpuName = typeof st.gpu_name === 'string' ? st.gpu_name : '';
+  const clock = amd.clockMhz === null ? '' : `${fmt(amd.clockMhz)} MHz`;
+  const gpuSub = [gpuName, clock].filter(Boolean).join(' · ');
   const values: Record<string, { value: unknown; unit: string; sub: string }> = {
     speed: { value: metrics.decodeTokS === null ? null : fmt(metrics.decodeTokS, 1), unit: 't/s', sub: state === 'generating' ? decodeStreamsLabel(decodeStreams(raw), language === 'zh-CN') ?? t('当前生成', 'Generating now') : last ? t('最近生成', 'Last generation') : t('生成速度', 'Generation speed') },
     prefill: { value: metrics.prefillTokS === null ? null : fmt(metrics.prefillTokS), unit: 't/s', sub: state === 'reading' ? t('当前输入处理', 'Processing input now') : state === 'generating' ? t('本次输入处理', 'Input processing this request') : last ? t('最近输入处理', 'Last input processing') : t('输入处理', 'Input processing') },
-    gpu: { value: number(hw.gpu_util) === null ? null : fmt(hw.gpu_util), unit: '%', sub: multi ? per(gpu => number(gpu.util) === null ? '–' : `${fmt(gpu.util)}%`) : typeof st.gpu_name === 'string' ? st.gpu_name : st.gpu_note ? t('不可用', 'not available') : '' },
-    vram: { value: number(hw.gpu_mem_used) === null ? null : gb(hw.gpu_mem_used), unit: number(hw.gpu_mem_total) !== null && Number(hw.gpu_mem_total) > 0 ? `/ ${gb(hw.gpu_mem_total, 0)} GB` : 'GB', sub: multi ? per(gpu => number(gpu.mem_used) === null ? '–' : `${gb(gpu.mem_used)} GB`) : number(eng.expert_slots) !== null && Number(eng.expert_slots) > 0 ? `${fmt(eng.expert_slots)} ${t('个专家已缓存', 'experts cached')}` : st.gpu_note ? t('Windows AMD 当前不可用', 'not available on Windows AMD yet') : '' },
-    temp: { value: number(hw.gpu_temp) === null ? null : fmt(hw.gpu_temp), unit: '°C', sub: multi ? per(gpu => number(gpu.temp) === null ? '–' : `${fmt(gpu.temp)}°`) : '' },
-    power: { value: number(hw.gpu_power) === null ? null : fmt(hw.gpu_power), unit: 'W', sub: number(hw.gpu_power_limit) !== null && Number(hw.gpu_power_limit) > 0 ? `${t('上限', 'of')} ${fmt(hw.gpu_power_limit)} W${t('', ' limit')}` : '' },
-    pcie: { value: generation === null ? null : `Gen${fmt(generation)}`, unit: number(hw.gpu_pcie_width) === null ? '' : `x${fmt(hw.gpu_pcie_width)}`, sub: number(hw.gpu_pcie_rx_mb) === null ? '' : `${t('传至 GPU', 'to GPU')} ${fmt(hw.gpu_pcie_rx_mb, Number(hw.gpu_pcie_rx_mb) < 10 ? 1 : 0)} MB/s${number(hw.gpu_pcie_gen) !== null && generation !== null && Number(hw.gpu_pcie_gen) < generation ? ` · ${t('空闲', 'idle')} Gen${fmt(hw.gpu_pcie_gen)}` : ''}` },
+    gpu: { value: number(hw.gpu_util) === null ? null : fmt(hw.gpu_util), unit: '%', sub: multi ? per(gpu => number(gpu.util) === null ? '–' : `${fmt(gpu.util)}%`) : gpuSub ? gpuSub : st.gpu_note ? t('不可用', 'not available') : number(hw.gpu_util) === null ? missing : '' },
+    vram: { value: number(hw.gpu_mem_used) === null ? null : gb(hw.gpu_mem_used), unit: number(hw.gpu_mem_total) !== null && Number(hw.gpu_mem_total) > 0 ? `/ ${gb(hw.gpu_mem_total, 0)} GB` : 'GB', sub: multi ? per(gpu => number(gpu.mem_used) === null ? '–' : `${gb(gpu.mem_used)} GB`) : number(eng.expert_slots) !== null && Number(eng.expert_slots) > 0 ? `${fmt(eng.expert_slots)} ${t('个专家已缓存', 'experts cached')}` : st.gpu_note ? t('Windows AMD 当前不可用', 'not available on Windows AMD yet') : number(hw.gpu_mem_used) === null ? missing : amd.memClockMhz !== null ? `${t('显存频率', 'memory clock')} ${fmt(amd.memClockMhz)} MHz` : '' },
+    temp: { value: number(hw.gpu_temp) === null ? null : fmt(hw.gpu_temp), unit: '°C', sub: multi ? per(gpu => number(gpu.temp) === null ? '–' : `${fmt(gpu.temp)}°`) : number(hw.gpu_temp) === null ? missing : [amd.hotspotTemp === null ? '' : `${t('热点', 'hotspot')} ${fmt(amd.hotspotTemp)} °C`, amd.fanRpm === null ? '' : `${t('风扇', 'fan')} ${fmt(amd.fanRpm)} RPM`].filter(Boolean).join(' · ') },
+    power: { value: number(hw.gpu_power) === null ? null : fmt(hw.gpu_power), unit: 'W', sub: number(hw.gpu_power_limit) !== null && Number(hw.gpu_power_limit) > 0 ? `${t('上限', 'of')} ${fmt(hw.gpu_power_limit)} W${t('', ' limit')}` : number(hw.gpu_power) === null ? missing : '' },
+    pcie: { value: generation === null ? null : `Gen${fmt(generation)}`, unit: number(hw.gpu_pcie_width) === null ? '' : `x${fmt(hw.gpu_pcie_width)}`, sub: number(hw.gpu_pcie_rx_mb) === null ? (generation === null ? missing : '') : `${t('传至 GPU', 'to GPU')} ${fmt(hw.gpu_pcie_rx_mb, Number(hw.gpu_pcie_rx_mb) < 10 ? 1 : 0)} MB/s${number(hw.gpu_pcie_gen) !== null && generation !== null && Number(hw.gpu_pcie_gen) < generation ? ` · ${t('空闲', 'idle')} Gen${fmt(hw.gpu_pcie_gen)}` : ''}` },
     cpu: { value: number(hw.cpu) === null ? null : fmt(hw.cpu), unit: '%', sub: number(st.threads) !== null && Number(st.threads) > 0 ? `${number(st.cores) !== null && Number(st.cores) > 0 ? `${fmt(st.cores)} ${t('核心', 'cores')} · ` : ''}${fmt(st.threads)} ${t('线程', 'threads')}` : '' },
     disk: { value: diskRead === null ? null : fmt(diskBig ? diskRead / 1024 : diskRead, diskBig ? 2 : diskRead < 10 ? 1 : 0), unit: diskRead === null ? '' : diskBig ? 'GB/s' : 'MB/s', sub: diskRead === null ? st.psutil ? '' : t('需要 psutil（安装时自动安装）', 'needs psutil (setup installs it)') : number(hw.disk_write_mb) === null ? '' : `${t('写入', 'write')} ${fmt(hw.disk_write_mb, 1)} MB/s` },
   };
