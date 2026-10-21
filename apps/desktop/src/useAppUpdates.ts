@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { loadStore, prepareAppUpdate, saveStore } from '@strata-manager/core';
+import { checkAppUpdate, closeAppUpdate, downloadAppUpdate, installAppUpdate, loadStore, prepareAppUpdate, saveStore } from '@strata-manager/core';
 import { AppUpdateController, CHECK_INTERVAL, type AppUpdateState } from './appUpdateController';
 
 export type { AppUpdateState } from './appUpdateController';
@@ -11,8 +11,22 @@ export function useAppUpdates(desktop: boolean, enabled: boolean, ready: boolean
   const controllerRef = useRef<AppUpdateController | null>(null);
   if (!controllerRef.current) controllerRef.current = new AppUpdateController({
     check: async () => {
-      const { check } = await import('@tauri-apps/plugin-updater');
-      return check({ timeout: 30000 });
+      const result = await checkAppUpdate(30000);
+      if (!result.update) return { update: null, source: result.source, fallbackChain: result.fallbackChain, attempts: result.attempts };
+      const { update } = result;
+      return {
+        ...result,
+        update: {
+          version: update.version,
+          body: update.body,
+          source: update.source,
+          fallbackChain: update.fallbackChain,
+          attempts: update.attempts,
+          download: (onEvent, options) => downloadAppUpdate(update.id, onEvent, options?.timeout ?? 600000),
+          install: options => installAppUpdate(update.id, options?.restartAfterInstall ?? true),
+          close: () => closeAppUpdate(update.id),
+        },
+      };
     },
     prepare: prepareAppUpdate,
     loadLastCheck: () => loadStore<number>('lastAppUpdateCheck', 0),

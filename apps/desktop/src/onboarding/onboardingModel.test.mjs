@@ -12,7 +12,9 @@ const load = (file, modules) => {
   return module.exports;
 };
 const { unifiedGpu } = load('../../../../packages/core/src/gpu-summary.ts', { './errors': { asObject: value => value && typeof value === 'object' && !Array.isArray(value) ? value : {} } });
-const core = { MODEL_CATALOG, unifiedGpu };
+const platformModule = load('../../../../packages/core/src/local-runtime-package.ts', {});
+const community = load('../../../../packages/core/src/community-catalog.ts', { './catalog': { MODEL_CATALOG }, './local-runtime-package': platformModule });
+const core = { MODEL_CATALOG, unifiedGpu, ...platformModule, ...community };
 const estimates = load('../pages/d2Estimates.ts', { '@strata-manager/core': core });
 const model = load('./onboardingModel.ts', { '@strata-manager/core': core, '../pages/d2Estimates': estimates });
 const GB = 1024 ** 3;
@@ -219,6 +221,25 @@ test('deriveGuide reads runtime, setup task, handoff and target from backend sta
     tasks: [{ id: 'setup-1', kind: 'setup', state: 'completed', message: '', startedAt: 0 }], handoffs: [{ taskId: 'setup-1', status: 'registered', profileId: 'p1' }] });
   assert.equal(loadedOther.facts.loaded, false, 'only the guide target counts as loaded');
   assert.equal(model.deriveGuide({ ...base, desktop: false, progress }).facts.environment, 'unavailable');
+});
+
+test('Mac recommendations never offer families the Metal engine cannot run', () => {
+  const mac = model.recommendations('chat', 48, false, 50, 'macos').map(row => row.family);
+  for (const family of ['swift', 'coder', 'qwen36', 'unsloth']) assert.equal(mac.includes(family), false, family);
+  assert.ok(mac.includes('qwen'));
+  const windows = model.recommendations('chat', 96, true, 50, 'windows').map(row => row.family);
+  assert.ok(windows.includes('swift'));
+});
+
+test('community selections survive a restart only when they are still valid', () => {
+  const base = { schemaVersion: 1, status: 'active' };
+  const keep = model.normalizeProgress({ ...base, selection: { family: 'community:sc117-abliterated', quant: 'IQ3_XXS', context: 32768, images: true } });
+  assert.equal(keep.selection.family, 'community:sc117-abliterated');
+  assert.equal(model.normalizeProgress({ ...base, selection: { family: 'community:sc117-abliterated', quant: 'Q8_0', context: 32768 } }).selection, undefined);
+  const found = model.normalizeProgress({ ...base, selection: { family: 'community:hf:someone/repo@unsloth', quant: 'UD-Q4_K_XL', context: 32768 } });
+  assert.equal(found.selection.quant, 'UD-Q4_K_XL');
+  assert.equal(model.normalizeProgress({ ...base, selection: { family: 'community:hf:someone/repo@unsloth', quant: 'Q2_0', context: 32768 } }).selection, undefined);
+  assert.equal(model.normalizeProgress({ ...base, selection: { family: 'community:hf:../x@qwen', quant: 'Q2_0', context: 32768 } }).selection, undefined);
 });
 
 test('a completed install whose runtime still needs repair stays on step 2 and shows the backend reason', () => {

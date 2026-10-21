@@ -10,6 +10,9 @@
   fixture.updateAvailable = params.has('available');
   fixture.stopped = params.has('stopped');
   fixture.copied = [];
+  const source = id => id === 'official'
+    ? { id, label: 'GitHub', kind: 'official', selectedBy: 'automatic', manifestUrl: 'https://github.com/hongfaqiu/strata-manager/releases/latest/download/latest.json', downloadUrl: 'https://github.com/hongfaqiu/strata-manager/releases/download/v0.2.0/Strata.Manager_0.2.0_x64-setup.exe' }
+    : { id, label: id === 'gh-proxy' ? 'GH Proxy' : 'GHProxy', kind: 'mirror', selectedBy: 'automatic', manifestUrl: `https://${id === 'gh-proxy' ? 'gh-proxy.org' : 'ghproxy.net'}/https://github.com/hongfaqiu/strata-manager/releases/latest/download/latest.json`, downloadUrl: `https://${id === 'gh-proxy' ? 'gh-proxy.org' : 'ghproxy.net'}/https://github.com/hongfaqiu/strata-manager/releases/download/v0.2.0/Strata.Manager_0.2.0_x64-setup.exe` };
   // Clipboard writes stay inside the fixture rather than changing the host clipboard.
   const clipboard = navigator.clipboard || {};
   Object.defineProperty(clipboard, 'writeText', { configurable: true, value: async value => { fixture.copied.push(value); } });
@@ -20,13 +23,25 @@
       fixture.calls.push({ command, args: structuredClone(args) });
       return fixture.currentVersion;
     }
-    if (command === 'plugin:updater|check') {
+    if (command === 'check_app_update') {
       fixture.calls.push({ command, args: structuredClone(args) });
-      return fixture.updateAvailable ? { rid: 4321, currentVersion: fixture.currentVersion, version: '0.2.0', date: '2026-10-12T00:00:00Z', body: fixture.updateNotes, rawJson: {} } : null;
+      const chosen = source(params.get('source') || 'ghproxy');
+      const fallbackChain = chosen.id === 'official' ? [] : [source('official')];
+      const attempts = [{ stage: 'probe', result: 'success', source: chosen, durationMs: 120 }, { stage: 'check', result: fixture.updateAvailable ? 'selected' : 'current', source: chosen, message: fixture.updateAvailable ? 'version 0.2.0' : undefined }];
+      return fixture.updateAvailable ? {
+        update: { id: 'fixture-update', currentVersion: fixture.currentVersion, version: '0.2.0', date: '2026-10-12T00:00:00Z', body: fixture.updateNotes, rawJson: {}, source: chosen, fallbackChain, attempts },
+        source: chosen,
+        fallbackChain,
+        attempts,
+      } : { update: null, source: chosen, fallbackChain, attempts };
     }
-    if (/^plugin:updater\|(?:download|install|download_and_install)$/.test(command) || command === 'prepare_app_update') {
+    if (/^(?:download_app_update|install_app_update)$/.test(command) || command === 'prepare_app_update') {
       fixture.calls.push({ command, args: structuredClone(args) });
       throw Error(`Forbidden app-update fixture mutation: ${command}`);
+    }
+    if (command === 'close_app_update') {
+      fixture.calls.push({ command, args: structuredClone(args) });
+      return null;
     }
     if (command === 'supervisor_status') {
       const status = await originalInvoke(command, args);

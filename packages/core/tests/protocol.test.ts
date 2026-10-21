@@ -127,6 +127,18 @@ describe('chat request semantics', () => {
     expect(buildChatRequest([{ ...assistant, content: '', reasoning: 'thinking', tools: [] }], options).messages).toEqual([{ role: 'assistant', content: '', reasoning_content: 'thinking' }]);
     expect(buildChatRequest([message], { ...options, reasoningEffort: 'off' }).reasoning_effort).toBe('none');
   });
+  it('sends an optional thinking budget under both the Strata and llama-server names (upstream #2141)', () => {
+    const plain = buildChatRequest([message], options);
+    expect(plain).not.toHaveProperty('reasoning_budget_tokens'); expect(plain).not.toHaveProperty('thinking_budget_tokens');
+    expect(buildChatRequest([message], { ...options, thinkingBudgetTokens: null })).not.toHaveProperty('thinking_budget_tokens');
+    expect(buildChatRequest([message], { ...options, thinkingBudgetTokens: 0 })).not.toHaveProperty('thinking_budget_tokens');
+    expect(buildChatRequest([message], { ...options, thinkingBudgetTokens: 2048 })).toMatchObject({ reasoning_effort: 'high', reasoning_budget_tokens: 2048, thinking_budget_tokens: 2048 });
+    // thinking off: no budget is sent, the effort already disables it
+    expect(buildChatRequest([message], { ...options, reasoningEffort: 'off', thinkingBudgetTokens: 2048 })).not.toHaveProperty('reasoning_budget_tokens');
+    for (const bad of [-1, 1.5, Number.NaN, 1_000_001]) expect(() => buildChatRequest([message], { ...options, thinkingBudgetTokens: bad })).toThrow(/思考长度上限/);
+    // the budget is request-local and never becomes a shared /settings default
+    expect(buildSharedDefaults({ ...options, thinkingBudgetTokens: 512 })).not.toHaveProperty('reasoning_budget_tokens');
+  });
 });
 
 describe('official outward MCP configuration', () => {

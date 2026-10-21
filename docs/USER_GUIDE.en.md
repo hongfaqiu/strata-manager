@@ -44,6 +44,27 @@ Then open **Models → Download models**, selecting the available quantization, 
 
 Model cards show the actual data destination, free space on each destination disk and estimated additional bytes after counting reusable weights or resumable files. The background checks again before preparation and refuses to start downloads when space is insufficient or unknown. These are estimates from the reviewed installer, not proof of driver, memory or complete dependency readiness. Importing an existing model does not require downloading or reserving room for another full copy of its weights.
 
+### Choosing a model: official and community builds
+
+"Choose a model" (step 3 of the guide and the Download models page) lists official models by default, and recommendations come only from them. The speed on the right of each row is marked **estimate**. It is not measured on your machine. It is upstream Strata's published measurement of the same model and quantization on a reference machine: for Mac, the M5 Max 128 GB, or the M4 32 GB / M1 Max 34 GB SSD-streaming runs; for PC, the RTX 5070 12 GB, RX 9070 XT 16 GB or R9700 32 GB. "≤" means your machine is weaker than the reference and "≥" means it is stronger. Time to first token is a 4K prompt divided by the measured prompt speed. Hover a row or open its details to see the exact source and which figures are extrapolated.
+
+**When a Mac's memory cannot hold the whole model (48 GB, for example)**, the engine streams the experts from the internal SSD. It runs and does not fail; it is just slower (see upstream [MAC.md](https://github.com/Niko1221/Strata/blob/main/docs/MAC.md)). Swift, Coder and Qwen3.6 do not run on Mac. Official Unsloth is unavailable on Mac too, because the app's Mac installer takes only Qwen3.8-Flash-Next Q2_0 / IQ3_XXS / IQ3_S. All of them are greyed out with the reason.
+
+Switch to **Community · uncensored** to see third-party builds:
+
+- **Built-in entries:**
+  - SC117 abliterated: one-click download.
+  - alesha-pro's control vector build: downloadable on PC. On Mac the vector is not ported, so it equals the official build.
+  - OrcaRouter: on PC it uses the existing ORCA import. It is unavailable on Mac.
+- **Discovered entries:** GGUFs from Hugging Face that Strata can run directly. They refresh every 24 hours, or when you click **Refresh**. When offline, the cache or the built-in entries are shown.
+- **Risks:**
+  - Community builds have their safety refusals removed and are not verified by Strata.
+  - The MTP draft head is not abliterated.
+  - Long-running agents may start refusing again.
+
+  Use them only where you can take responsibility for the results.
+- **Download:** files are pinned to one commit of the source repository and each one is checked for size and SHA-256. The official installer then packs them into a separate `community/` data folder with its own configuration, so official models are never overwritten. The details state the estimated extra disk before you download. Files byte-identical to official shards (alesha-pro's shards, for example) are hard-linked from the official download already on this PC after a SHA-256 check, so they are not downloaded again.
+
 ### Put models and engines on another drive
 
 Model files are usually 70–120 GB. By default they live in `Strata-data` next to the Strata engine (on Windows, in the app data folder on C:), and they can go on any drive: click **Change** under **Strata → Storage locations**, in the first-run guide's environment check, or at the top of **Download models**, then choose a folder. Choosing a drive root such as `D:\` uses a `Strata-data` folder inside it.
@@ -237,7 +258,7 @@ Dynamic VRAM adjustment depends on runtime support. If the engine rejects adjust
 
 ## Application updates
 
-Automatic checks are enabled by default, on launch and every 12 hours. An available update adds a badge to the top-left version entry. Click that entry to open the dedicated App updates page, review release notes and confirm downloading and installation. The installed version's bilingual notes are bundled for offline viewing. Disable automatic checks to check manually. Failures preserve the current app and can be retried; installation checks that the background is idle. Downloads show progress, and the updater verifies official Tauri signatures with the embedded public key.
+Automatic checks are enabled by default, on launch and every 12 hours. An available update adds a badge to the top-left version entry. Click that entry to open the dedicated App updates page, review release notes and confirm downloading and installation. The installed version's bilingual notes are bundled for offline viewing. Disable automatic checks to check manually. Failures preserve the current app and can be retried; installation checks that the background is idle. Downloads show progress, and the updater verifies official Tauri signatures with the embedded public key. App updates share the engine download source: if none is chosen the fastest host is probed, failed hosts fall back to official GitHub, and the UI shows which source was used.
 
 Choose a Windows installer, AppImage or DEB from the [latest release](https://github.com/hongfaqiu/strata-manager/releases/latest) or the [website download section](https://strata-manager.cosfoc.com/en/#get-started). App updates use the `latest` channel.
 

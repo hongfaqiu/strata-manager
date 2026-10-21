@@ -48,4 +48,7 @@ export * from './concurrency';
 export * from './concurrency-ladder';
 export * from './orca-import';
 export * from './storage-location';
+export * from './community-catalog';
+export * from './community-discovery';
+export * from './model-performance';
 export * as gpuRoles from './gpu-roles';

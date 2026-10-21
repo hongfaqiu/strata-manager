@@ -201,7 +201,7 @@ fn official_choice(first: &str) -> Option<(String, String)> {
 
 /// For a renamed copy: the family its name points to. setup.py's `gguf_dir_shards` then finds it as the one
 /// first shard in the folder whose name contains the size.
-fn inferred_family(stem: &str, quant: &str) -> Option<&'static str> {
+pub(crate) fn inferred_family(stem: &str, quant: &str) -> Option<&'static str> {
     let lower = stem.to_ascii_lowercase();
     let family = if lower.contains("qwen3.6") {
         "qwen36"
