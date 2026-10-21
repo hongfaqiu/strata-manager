@@ -51,7 +51,7 @@ README、官网截图与使用指南描述当前源码功能；安装包包含�
 
 ## macOS（Apple Silicon，实验）
 
-v0.2.11 之后的版本起，DMG 和应用内更新包都使用 **Developer ID 签名并经 Apple 公证**（`.app` 已 staple 公证票据，DMG 用 Developer ID 签名、里面就是这个已 staple 的应用），双击 DMG、把应用拖进「应用程序」后直接打开即可，不需要右键打开或 `xattr` 去隔离。v0.2.11 及更早的 DMG 仍是临时签名、未公证。当前阶段仍**不**声称 Manager 已在 Mac 上完成引擎发现或模型推理验收。
+从 v0.2.12 起，DMG 和应用内更新包都使用 **Developer ID 签名并经 Apple 公证**（`.app` 已 staple 公证票据，DMG 用 Developer ID 签名、里面就是这个已 staple 的应用），双击 DMG、把应用拖进「应用程序」后直接打开即可，不需要右键打开或 `xattr` 去隔离。v0.2.11 及更早的 DMG 仍是临时签名、未公证。当前阶段仍**不**声称 Manager 已在 Mac 上完成引擎发现或模型推理验收。
 
 - 手工安装文件为 `Strata.Manager_<version>_aarch64.dmg`。官网下载按钮只在该发布**实际包含**这个文件时启用。
 - 应用内更新（若启用）使用 `Strata.Manager_<version>_aarch64.app.tar.gz`；`latest.json` 的 `darwin-aarch64` 指向该归档，不指向 DMG。
@@ -77,13 +77,13 @@ pnpm desktop 启动完整桌面应用和后台。pnpm dev 只运行前端，不�
 
 ## 支持范围
 
-- 已发布稳定安装包仍以 Windows/Linux x64 为主。macOS（Apple Silicon）DMG 为**实验包**（v0.2.11 之后已签名并公证），随含该资产的版本标签发布；不提供 Intel 包。**不要**假定 DMG 已含可用 Metal 引擎。模型、硬件、图像和 API 能力以 Strata 运行时与具体模型为准。
+- 已发布稳定安装包仍以 Windows/Linux x64 为主。macOS（Apple Silicon）DMG 为**实验包**（v0.2.12 起已签名并公证），随含该资产的版本标签发布；不提供 Intel 包。**不要**假定 DMG 已含可用 Metal 引擎。模型、硬件、图像和 API 能力以 Strata 运行时与具体模型为准。
 - 当前源码实现全局 Strata 管理与匹配的 Windows x64 ZIP 引擎更新、已有模型自动展示、图形化/JSON 运行配置、服务控制、聊天、持久化元数据统计和完整用途场景调优。已发布包以对应版本说明为准；截图使用示例数据，不代表实机模型性能。
 - 稳定版通过 `latest` 更新通道提供更新；预览版仅手工下载和安装，不替换稳定通道。
 - Windows CI 门禁包含静默安装、桌面启动、私有后台 IPC、正常关闭和卸载；已通过的历史 revision 见 [VERIFICATION](VERIFICATION.md)。
 - Linux CI 门禁包含 Ubuntu 22.04 Xvfb 下 AppImage 与解包 DEB 启动、私有后台 IPC 和正常关闭；不承诺所有 Linux 发行版均兼容。
 - 真实 GPU 完整流程、Strata ZIP 实机更新、Linux 系统 DEB 安装/卸载、登录自启动、缺少 Python 的 Windows 自动安装、Tauri 自动更新的真实跨版本下载、验签、安装和服务恢复仍需独立验收。跨版本 NSIS 安装器检查不等同自动更新端到端验收。ZIP 引擎更新仅使用匹配的官方 Windows x64 发布包；Linux 保留发布信息查看，但不提供不可执行的 Windows ZIP 更新。
-- Windows 安装包目前没有 Authenticode 发布者证书。Tauri 更新包签名用于验证更新文件，不能替代 Windows 发布者签名。macOS 包的 Developer ID 签名和 Apple 公证（v0.2.11 之后）与 Tauri 更新签名相互独立：前者让 Gatekeeper 放行，后者让应用内更新验证更新文件。
+- Windows 安装包目前没有 Authenticode 发布者证书。Tauri 更新包签名用于验证更新文件，不能替代 Windows 发布者签名。macOS 包的 Developer ID 签名和 Apple 公证（v0.2.12 起）与 Tauri 更新签名相互独立：前者让 Gatekeeper 放行，后者让应用内更新验证更新文件。
 
 ## 版本与更新
 

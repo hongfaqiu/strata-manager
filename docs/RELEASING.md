@@ -24,7 +24,7 @@
 | --- | --- | --- |
 | Windows x64 | `x86_64-pc-windows-msvc` | NSIS `*-setup.exe` 及 `.sig` |
 | Linux x64 | `x86_64-unknown-linux-gnu` | `.AppImage`、`.AppImage.sig` 和桌面 `.deb` |
-| macOS Apple Silicon（实验） | `aarch64-apple-darwin` | `*_aarch64.dmg`（手工下载）与 `*_aarch64.app.tar.gz`（updater；`latest.json` 的 `darwin-aarch64`）。v0.2.11 之后 Developer ID 签名 + Apple 公证（见下方「macOS 签名与公证」）；不提供 Intel。**DMG 仍不含引擎**；Manager 可装上游预制 Metal 包（真机验收待进行）。 |
+| macOS Apple Silicon（实验） | `aarch64-apple-darwin` | `*_aarch64.dmg`（手工下载）与 `*_aarch64.app.tar.gz`（updater；`latest.json` 的 `darwin-aarch64`）。v0.2.12 起 Developer ID 签名 + Apple 公证（见下方「macOS 签名与公证」）；不提供 Intel。**DMG 仍不含引擎**；Manager 可装上游预制 Metal 包（真机验收待进行）。 |
 | Linux x64 无头 Server（#6） | `x86_64-unknown-linux-gnu` | `Strata.Manager.Server_<ver>_amd64.tar.gz` 与 `Strata.Manager.Server_<ver>_amd64.deb`（**无** updater `.sig`；不进 `latest.json`） |
 
 每个安装包包含桌面外壳及独立 `strata-supervisor` 后台。Python、Strata 运行时和模型权重使用应用内的独立安装/导入流程，模型不进入 GitHub 构建工件。平台安装包构建成功不等于对应 GPU 推理已验收；必须在发布说明中列出实际测试的平台、驱动和范围。
