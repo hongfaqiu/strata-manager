@@ -13,6 +13,10 @@ on:
         description: Optional complete CI run for the exact tagged commit
         type: string
         default: ''
+      defer_macos:
+        description: Publish Windows/Linux now and add notarized macOS later (macos-notarize-followup.yml)
+        type: boolean
+        default: false
 
 permissions:
   actions: write
@@ -30,4 +34,5 @@ jobs:
       release_tag: ${{ inputs.release_tag || github.ref_name }}
       expected_source_sha: ${{ github.event_name == 'push' && github.sha || '' }}
       ci_run_id: ${{ inputs.ci_run_id || '' }}
+      defer_macos: ${{ inputs.defer_macos || false }}
     secrets: inherit

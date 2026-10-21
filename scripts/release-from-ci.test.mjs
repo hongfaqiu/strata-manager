@@ -146,7 +146,7 @@ function ciFixture(p = plan, runId = 123) {
     size_in_bytes: 10, digest: 'sha256:' + String(i + 1).repeat(64), expired: false,
     created_at: '2026-01-01T00:05:00Z', expires_at: '2099-01-01T00:00:00Z',
     workflow_run: { id: runId, head_sha: p.sourceSha } }));
-  artifacts.push({ id: 200, name: p.serverArtifact.name,
+  if (p.serverArtifact) artifacts.push({ id: 200, name: p.serverArtifact.name,
     size_in_bytes: 20, digest: 'sha256:' + 'a'.repeat(64), expired: false,
     created_at: '2026-01-01T00:05:00Z', expires_at: '2099-01-01T00:00:00Z',
     workflow_run: { id: runId, head_sha: p.sourceSha } });
@@ -643,4 +643,80 @@ test('release installers compile in the Arena app key from the repository secret
   assert.match(build, /rerun-if-env-changed=STRATA_ARENA_APP_KEY/);
   assert.match(build, /STRATA_ARENA_REQUIRE_KEY/);
   assert.doesNotMatch(workflow, /ARENA_APP_KEY: ['"]?[0-9a-f]{32,}/, 'no key literal in CI');
+});
+
+// ---- macOS deferred notarization ("Mac 稍后补发") ----
+const deferPlan = createPlan({ tag: 'v0.2.0', version: '0.2.0', sourceSha: 'a'.repeat(40), productName: 'Strata Manager', macos: 'defer' });
+const followupPlan = createPlan({ tag: 'v0.2.0', version: '0.2.0', sourceSha: 'a'.repeat(40), productName: 'Strata Manager', macos: 'followup' });
+function manifestFor(p, assets) {
+  const index = new Map(assets.map(a => [a.name, a]));
+  return { version: p.version, platforms: Object.fromEntries(Object.entries(manifestPlatforms(p)).map(([platform, name]) => {
+    const installer = p.artifacts.find(a => a.name === name).installer;
+    return [platform, { signature: index.get(installer + '.sig').signatureText,
+      url: 'https://github.com/' + REPOSITORY + '/releases/download/' + encodeURIComponent(p.tag) + '/' + encodeURIComponent(installer) }];
+  })) };
+}
+test('macOS release mode defaults to include and rejects unknown values', () => {
+  assert.equal(macosMode(undefined), 'include');
+  assert.equal(macosMode(''), 'include');
+  for (const mode of ['include', 'defer', 'followup']) assert.equal(macosMode(mode), mode);
+  for (const bad of ['true', 'DEFER', 'skip']) assert.throws(() => macosMode(bad), /MACOS_RELEASE_MODE/);
+  assert.throws(() => createPlan({ tag: 'v0.2.0', version: '0.2.0', sourceSha: 'a'.repeat(40), productName: 'Strata Manager', macos: 'later' }));
+  assert.equal(plan.macos, 'include');
+});
+test('deferred release ships Windows/Linux/server only and no darwin updater entry', () => {
+  assert.deepEqual(deferPlan.artifacts.map(a => a.name), ['ci-windows-x64-nsis', 'ci-linux-amd64-appimage', 'ci-linux-amd64-deb']);
+  assert.ok(deferPlan.serverArtifact);
+  const names = assetNames(deferPlan);
+  assert.ok(!names.some(n => /aarch64/.test(n)), names.join());
+  assert.equal(names.length, 1 + 3 * 2 + 2);
+  assert.equal(Object.hasOwn(manifestPlatforms(deferPlan), 'darwin-aarch64'), false);
+  assert.equal(manifestPlatforms(plan)['darwin-aarch64'], 'ci-darwin-aarch64-app-tarball');
+  let id = 1;
+  const assets = deferPlan.artifacts.flatMap(a => [{ id: id++, name: a.installer, size: 1 }, { id: id++, name: a.installer + '.sig', size: 1, signatureText: 'sig-' + a.kind }]);
+  const manifest = manifestFor(deferPlan, assets);
+  assert.equal(validateLatestManifest(manifest, assets, deferPlan), true);
+  const withMac = structuredClone(manifest); withMac.platforms['darwin-aarch64'] = manifest.platforms['windows-x86_64'];
+  assert.throws(() => validateLatestManifest(withMac, assets, deferPlan), /platforms/);
+  // A normal release still requires darwin-aarch64.
+  assert.throws(() => validateLatestManifest(manifest, assets, plan));
+});
+test('deferred release body carries the follow-up marker; normal bodies are unchanged', () => {
+  assert.equal(releaseBody('notes', plan), 'notes');
+  const body = releaseBody('notes\n', deferPlan);
+  assert.ok(body.startsWith('notes\n\n'));
+  assert.ok(body.includes(MACOS_DEFERRED_MARKER));
+  assert.equal(draftMetadataPayload(deferPlan, body).body, body);
+});
+test('a deferred (submit-only) macOS CI job feeds defer and follow-up plans but never a normal release', () => {
+  const deferredMacJob = j => { if (j.name.startsWith('desktop (macos-15')) j.steps = j.steps.filter(s => s.name !== 'Wait for notarization and staple the macOS DMG and app'); };
+  for (const [p, ok] of [[plan, false], [deferPlan, true], [followupPlan, true]]) {
+    const f = ciFixture(p); f.jobs.forEach(deferredMacJob);
+    if (ok) assert.ok(validateCiEvidence(f.run, f.jobs, f.artifacts, p));
+    else assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, p), /Wait for notarization/);
+  }
+  // A skipped wait gate is as bad as a missing one for normal releases.
+  const f = ciFixture(plan);
+  f.jobs.find(j => j.name.startsWith('desktop (macos-15')).steps.find(s => s.name.startsWith('Wait for')).conclusion = 'skipped';
+  assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, plan), /Wait for notarization/);
+  // Every deferred gate still fails closed.
+  for (const gate of MACOS_DEFERRED_GATES) {
+    const g = ciFixture(deferPlan); g.jobs.forEach(deferredMacJob);
+    g.jobs.find(j => j.name.startsWith('desktop (macos-15')).steps.find(s => s.name === gate).conclusion = 'failure';
+    assert.throws(() => validateCiEvidence(g.run, g.jobs, g.artifacts, deferPlan), new RegExp(gate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+});
+test('follow-up plan binds only the macOS bytes plus the notarization record and cannot build a release inventory', () => {
+  assert.deepEqual(followupPlan.artifacts.map(a => a.name), ['ci-darwin-aarch64-app-tarball', 'ci-darwin-aarch64-dmg', 'ci-darwin-aarch64-notarization']);
+  assert.equal(followupPlan.artifacts[2].installer, 'Strata.Manager_0.2.0_aarch64.notarization.json');
+  assert.equal(followupPlan.serverArtifact, undefined);
+  assert.throws(() => assetNames(followupPlan), /follow-up/);
+  assert.throws(() => manifestPlatforms(followupPlan), /follow-up/);
+  const f = ciFixture(followupPlan);
+  const bound = validateCiEvidence(f.run, f.jobs, f.artifacts, followupPlan);
+  assert.equal(bound.artifacts.length, 3);
+  assert.ok(bound.artifacts.every(a => Number.isSafeInteger(a.id)));
+  const missing = ciFixture(followupPlan); missing.artifacts = missing.artifacts.filter(a => a.name !== 'ci-darwin-aarch64-notarization');
+  assert.throws(() => validateCiEvidence(missing.run, missing.jobs, missing.artifacts, followupPlan), /ci-darwin-aarch64-notarization/);
+  assert.equal(validateInstallerEntries([{ name: 'Strata Manager_0.2.0_aarch64.notarization.json', size: 9, compressedSize: 9, mode: 0o100644, isDirectory: false, encrypted: false }], followupPlan.artifacts[2]).size, 9);
 });

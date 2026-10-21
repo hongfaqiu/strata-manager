@@ -553,17 +553,17 @@ export async function prepare({ validateOnly = false } = {}) {
   const server = c.plan.serverArtifact;
   const serverPackages = [];
   if (server) {
-  const serverZip = pathResolve(c.temp, server.id + '.zip');
-  await download(base + '/actions/artifacts/' + server.id + '/zip', serverZip, server.zipSize);
-  if (await digest(serverZip) !== server.sha256) fail('Headless server CI artifact ZIP SHA256 mismatch.');
-  const serverEntries = validateServerZipEntries(JSON.parse(command(python, ['-c', zipMetadata, serverZip])), server);
-  for (const entry of serverEntries) {
-    const file = pathResolve(c.temp, entry.name);
-    command(python, ['-c', zipExtract, serverZip, entry.name, file, String(entry.size)]);
-    const size = await regular(file);
-    if (size !== entry.size) fail('Extracted headless server package size mismatch.');
-    serverPackages.push({ name: entry.name, size, sha256: await digest(file), artifactId: server.id, zipSha256: server.sha256 });
-  }
+    const serverZip = pathResolve(c.temp, server.id + '.zip');
+    await download(base + '/actions/artifacts/' + server.id + '/zip', serverZip, server.zipSize);
+    if (await digest(serverZip) !== server.sha256) fail('Headless server CI artifact ZIP SHA256 mismatch.');
+    const serverEntries = validateServerZipEntries(JSON.parse(command(python, ['-c', zipMetadata, serverZip])), server);
+    for (const entry of serverEntries) {
+      const file = pathResolve(c.temp, entry.name);
+      command(python, ['-c', zipExtract, serverZip, entry.name, file, String(entry.size)]);
+      const size = await regular(file);
+      if (size !== entry.size) fail('Extracted headless server package size mismatch.');
+      serverPackages.push({ name: entry.name, size, sha256: await digest(file), artifactId: server.id, zipSha256: server.sha256 });
+    }
   }
   const meta = { protocol: CI_PROTOCOL, validateOnly, plan: c.plan, installers, serverPackages };
   await writeFile(pathResolve(c.temp, 'prepared.json'), JSON.stringify(meta, null, 2), { flag: 'wx', mode: 0o600 });
