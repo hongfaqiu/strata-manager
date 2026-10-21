@@ -75,6 +75,8 @@ MCP servers can execute tools and may contact other systems according to their o
 
 Choose a configuration in **Models → My models** and select **Runtime settings** to open the **Runtime configuration** secondary page inside Models. Graphical controls cover context, KV, memory, caching, CPU, prefill, speculation, server, vision, sampling and network settings. Suggested choices also accept custom values. The full argument list and other JSON fields remain editable; use the JSON view to inspect or edit the original structure.
 
+**Default experimental speed projection** under Default sampling has three choices: On, Off and Use default (removes `sampling.experimental_speed_projection`). It is only the default for requests that leave the parameter out; a value in the request and the shared sampling settings come first, and the per-chat switch in Chat works as before. It needs an engine that has already loaded the experimental projection control vector; this setting does not load or download one. Restart the model after saving.
+
 Saves validate JSON and write atomically with a backup. Discovered configurations can be inspected and edited before using a model, without starting it. File-based changes generally require a service restart; saving does not prove the running service uses the new values. A saved service configuration records its name, address, environment and config path; it does not create or copy model weights.
 
 ## Connect a local API client

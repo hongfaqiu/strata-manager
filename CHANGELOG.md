@@ -5,6 +5,14 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **启动配置可以设置“默认实验投影”（用户反馈 #104）**：聊天页早就有按会话开关实验投影，但模型启动配置的“默认采样”里没有对应选项，只能手改 JSON。现在“运行配置 → 默认采样”新增“默认实验投影”，可选开启、关闭或使用默认设置：开启和关闭分别写入 JSON 的 `true` / `false`，使用默认设置会删除 `sampling.experimental_speed_projection`，不强制开或关。原来没有这一项或值为 `null` 的配置显示为“使用默认设置”，只打开页面不会改写文件；`"false"`、`0`、`1` 这类非布尔值在图形界面和 JSON 保存时都会被拒绝（Strata 遇到这类值会拒绝启动）。保存时只改这一项，其他采样参数、未知字段和启动参数保持原样。优先级不变：请求里的值优先，其次是共享采样设置，最后才是启动配置里的默认值；Manager 聊天仍按会话开关显式发送。这个选项需要引擎已经加载实验投影控制向量才会起作用，Manager 不会帮你加载或下载向量；保存后重启模型生效。
+
+### English
+
+- **Set a default experimental speed projection in the startup configuration (user request #104)**: Chat has long had a per-chat experimental projection switch, but a model's startup configuration had no matching entry under Default sampling, so it had to be edited in JSON. **Runtime configuration → Default sampling** now has **Default experimental speed projection** with On, Off and Use default. On and Off write JSON `true` / `false`; Use default removes `sampling.experimental_speed_projection` instead of forcing either. A configuration without the entry, or with `null`, shows Use default, and just opening the page does not rewrite the file. Values that are not booleans, such as `"false"`, `0` or `1`, are refused in both the graphical editor and JSON saves (Strata refuses to start with them). Saving changes only this entry and keeps other sampling settings, unknown fields and startup arguments as they were. The order of precedence is unchanged: the request's own value first, then the shared sampling settings, then the startup configuration default; Manager chat keeps sending its per-chat switch. The setting only takes effect when the engine has already loaded an experimental projection control vector, and Manager does not load or download one; restart the model after saving.
+
 ## [0.2.11] - 2026-10-20
 
 ### 中文

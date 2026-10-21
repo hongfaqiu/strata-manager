@@ -159,4 +159,40 @@ describe('network and GPU power startup settings', () => {
     for (const device of [-1, .5, 4294967296, Infinity, '0']) expect(() => validateStartupConfiguration({ ...complete, manager_gpu_power_limit_device: device })).toThrow('manager_gpu_power_limit_device');
     expect(applyStartupField({ manager_gpu_power_limit_device: 2 }, field('manager_gpu_power_limit_device'), '')).toEqual({});
   });
+  describe('default experimental speed projection (#104)', () => {
+    const projection = field('sampling.experimental_speed_projection');
+    const base = { exe: 'engine.exe', args: ['--native', 'm.gguf', '--unknown-flag', 'x'], sampling: { temperature: .6, top_k: 20, future_key: 'kept' }, custom: { nested: [1, 2] } };
+    it('is a boolean field in the default sampling category with a hint', () => {
+      expect(projection).toMatchObject({ group: 'sampling', target: 'config', kind: 'boolean' });
+      expect(STARTUP_FIELD_HINTS['sampling.experimental_speed_projection']?.zh).toContain('控制向量');
+      expect(STARTUP_FIELD_HINTS['sampling.experimental_speed_projection']?.en).toContain('control vector');
+    });
+    it('shows a missing or null value as "use default" without rewriting it', () => {
+      expect(startupFieldValue(base, projection)).toBe('');
+      const stored = { ...base, sampling: { ...base.sampling, experimental_speed_projection: null } };
+      expect(startupFieldValue(stored, projection)).toBe('');
+      expect(stored.sampling.experimental_speed_projection).toBeNull();
+      expect(() => validateStartupConfiguration(stored)).not.toThrow();
+      expect(startupFieldValue({ sampling: { experimental_speed_projection: true } }, projection)).toBe('true');
+      expect(startupFieldValue({ sampling: { experimental_speed_projection: false } }, projection)).toBe('false');
+      // Other fields still show a stored null as such.
+      expect(startupFieldValue({ sampling: { temperature: null } }, field('sampling.temperature'))).toBe('null');
+    });
+    it('writes JSON booleans or removes only the target field', () => {
+      const on = applyStartupField(base, projection, 'true');
+      expect(on).toEqual({ ...base, sampling: { ...base.sampling, experimental_speed_projection: true } });
+      expect(base.sampling).not.toHaveProperty('experimental_speed_projection');
+      const off = applyStartupField(on, projection, 'false');
+      expect(off.sampling).toEqual({ ...base.sampling, experimental_speed_projection: false });
+      expect(applyStartupField(off, projection, '')).toEqual(base);
+      const fromNull = applyStartupField({ ...base, sampling: { ...base.sampling, experimental_speed_projection: null } }, projection, '');
+      expect(fromNull).toEqual(base);
+      expect(applyStartupField({ exe: 'engine.exe' }, projection, 'false')).toEqual({ exe: 'engine.exe', sampling: { experimental_speed_projection: false } });
+      for (const value of [on, off]) expect(() => validateStartupConfiguration(parseStartupConfiguration(JSON.stringify(value)))).not.toThrow();
+    });
+    it('rejects non-boolean values in the graphical editor and in JSON', () => {
+      for (const text of ['1', '0', 'yes', 'False']) expect(() => applyStartupField(base, projection, text)).toThrow('experimental_speed_projection');
+      for (const value of ['false', 'true', 0, 1, {}, []]) expect(() => validateStartupConfiguration({ ...base, sampling: { experimental_speed_projection: value } })).toThrow('experimental_speed_projection');
+    });
+  });
 });
