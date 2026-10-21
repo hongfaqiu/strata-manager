@@ -692,3 +692,43 @@ button.m-btn:hover{border-color:var(--a-muted)}
   .demo-pointer{display:none}
 }
 .hero-platforms+.hero-platforms{margin-top:6px}
+/* Hero app: bottom status bar, service-status popover and floating strip (mirror the desktop app's
+   ServiceTelemetryStatusBar, ServiceStatusPopover and floating monitor; example data). */
+.app-statusbar{gap:14px}
+.sb-state{display:inline-flex;align-items:center;gap:6px;color:var(--a-soft);flex:none}
+.sb-dot{width:6px;height:6px;border-radius:50%;background:var(--a-muted);transition:background .25s}
+.sb-spin{display:none;width:10px;height:10px;border:1.5px solid var(--a-warn);border-right-color:transparent;border-radius:50%;animation:spin .8s linear infinite}
+.app-statusbar[data-state=generating] .sb-dot,.app-statusbar[data-state=idle] .sb-dot{background:var(--a-accent)}
+.app-statusbar[data-state=reading] .sb-dot{background:#2a6fb6}
+.app-statusbar[data-state=connecting] .sb-dot,.app-statusbar[data-state=detected] .sb-dot{background:var(--a-warn);animation:live .8s ease-in-out infinite}
+.app-statusbar[data-state=loading] .sb-dot{display:none}.app-statusbar[data-state=loading] .sb-spin{display:inline-block}
+.app-statusbar[data-state=loading] .sb-state{color:var(--a-warn)}
+.sb-elapsed{flex:none}.app-statusbar:not([data-state=loading]) [data-sb-only=loading]{display:none}
+.sb-values{display:flex;align-items:center;gap:14px;min-width:0;overflow:hidden}
+.app-statusbar[data-state=stopped] .sb-values,.app-statusbar[data-state=connecting] .sb-values,.app-statusbar[data-state=detected] .sb-values{display:none}
+.app-statusbar[data-state=loading] .sb-speed{display:none}
+.sb-float{display:inline-grid;place-items:center;width:22px;height:20px;margin-left:auto;padding:0;border:0;border-radius:5px;background:none;color:var(--a-muted);cursor:pointer;flex:none}
+.sb-float svg{width:14px;height:14px}.sb-float:hover,.sb-float.is-on{background:var(--a-line-soft);color:var(--a-ink)}
+[data-pop-anchor]{cursor:pointer}[data-pop-anchor].is-on{border-color:var(--a-muted)}
+.app-popover{position:absolute;z-index:15;top:56px;right:58px;width:318px;display:grid;gap:10px;padding:14px;border:1px solid var(--a-line);border-radius:10px;background:var(--a-surface);box-shadow:0 14px 36px rgba(0,0,0,.18);font-size:11.5px;transform-origin:85% 0}
+.app-popover[hidden],.app-float[hidden]{display:none}
+.pop-head{display:grid;gap:2px}.pop-head b{font-size:12.5px;color:var(--a-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pop-summary{display:flex;align-items:center;gap:8px;min-width:0}.pop-summary small{color:var(--a-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pop-chip{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 8px;border-radius:999px;background:var(--a-tint);color:var(--a-accent-text);font-weight:600;flex:none}.pop-chip i{width:6px;height:6px;border-radius:50%;background:var(--a-accent)}
+.pop-trends{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.pop-trends section{padding:8px;border:1px solid var(--a-line-soft);border-radius:7px}
+.pop-trends header{display:flex;justify-content:space-between;gap:6px;color:var(--a-soft);font-size:10.5px}.pop-trends header small{color:var(--a-muted)}
+.pop-trends svg{display:block;width:100%;height:42px;margin-top:4px}
+.pop-base{stroke:var(--a-line-soft);stroke-width:1;fill:none}.pop-line{stroke:var(--a-accent);stroke-width:1.6;fill:none;vector-effect:non-scaling-stroke}
+.pop-trends section+section .pop-line{stroke:#b4581c}
+.pop-res{display:grid;grid-template-columns:1fr 1fr;gap:10px}.pop-res.is-one{grid-template-columns:1fr}
+.pop-res p{display:flex;justify-content:space-between;gap:6px;margin:0 0 4px;color:var(--a-soft);font-size:10.5px}.pop-res p b{color:var(--a-ink);font-weight:600}
+.pop-meter{display:block;height:4px;border-radius:2px;background:var(--a-line-soft);overflow:hidden}.pop-meter b{display:block;height:100%;border-radius:2px;background:var(--a-accent);transition:width .5s}
+.pop-meta{display:flex;justify-content:space-between;margin:0;color:var(--a-muted);font-size:10px}
+.app-float{position:absolute;z-index:15;right:22px;bottom:40px;display:flex;gap:14px;padding:8px 14px;border:1px solid var(--a-line);border-radius:10px;background:var(--a-surface);box-shadow:0 14px 36px rgba(0,0,0,.2);font-size:11px;transform-origin:100% 100%}
+.app-float span{display:inline-flex;align-items:baseline;gap:4px;padding-left:8px;border-left:2px solid var(--c)}
+.app-float small{color:var(--a-muted);font-size:10px}.app-float b{color:var(--a-ink);font:600 13px/1 var(--mono);font-variant-numeric:tabular-nums}
+.motion .app-popover.is-open{animation:pop-in .22s cubic-bezier(.2,.8,.2,1)}
+.motion .app-float.is-open{animation:pop-in .26s cubic-bezier(.2,.8,.2,1)}
+@keyframes pop-in{from{opacity:0;transform:translateY(-4px) scale(.97)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.sb-spin,.app-statusbar .sb-dot{animation:none!important}}
