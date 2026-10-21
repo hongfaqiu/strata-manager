@@ -5,6 +5,12 @@ import { normalizeGpuSelection, normalizeOfficialSetupOptions, validateHfEndpoin
 describe('official setup inputs', () => {
   it('accepts per-task download choices without carrying stale mirror configuration', () => {
     expect(normalizeOfficialSetupOptions({ source: 'mirror', hfEndpoint: 'https://hf-mirror.com/' })).toEqual({ source: 'mirror', backend: 'auto', gpus: '', hfEndpoint: 'https://hf-mirror.com' });
+    // Strata 0.2.2 --gpu-roles: canonical text, the chosen cards must be the ones the roles turn on.
+    expect(normalizeOfficialSetupOptions({ gpus: '0,2', gpuRoles: '2=main,0=helper' })).toEqual({ source: 'official', backend: 'auto', gpus: '0,2', gpuRoles: '0=helper,2=main' });
+    expect(normalizeOfficialSetupOptions({ gpus: '', gpuRoles: '1=main' }).gpuRoles).toBe('1=main');
+    expect(() => normalizeOfficialSetupOptions({ gpus: '0,1', gpuRoles: '0=helper,2=main' })).toThrow();
+    expect(() => normalizeOfficialSetupOptions({ gpus: 'all', gpuRoles: '0=main' })).toThrow();
+    expect(() => normalizeOfficialSetupOptions({ gpuRoles: '0=main,1=main' })).toThrow();
     expect(normalizeOfficialSetupOptions({ source: 'modelscope', hfEndpoint: 'https://old.example' })).not.toHaveProperty('hfEndpoint');
   });
   it('rejects credentials, query strings, unsafe protocols and malformed endpoints', () => {

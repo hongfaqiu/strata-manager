@@ -1,10 +1,10 @@
 import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useState } from 'react';
 import { CircleHelp, Copy } from 'lucide-react';
-import { normalizeOfficialSetupOptions, type OfficialSetupOptions } from '@strata-manager/core';
+import { gpuRoles, normalizeOfficialSetupOptions, type OfficialSetupOptions } from '@strata-manager/core';
 import { Dialog } from '../components';
 import { Dropdown, Toggle } from '../OfficialControls';
-import { GpuSelector, type GpuOption } from './GpuSelector';
+import { GpuSelector, parseGpuSelection, type GpuOption } from './GpuSelector';
 import './official-setup.css';
 import './setup-tuning-interactions.css';
 import './calibrate-entry.css';
@@ -26,6 +26,14 @@ export function SetupAdvancedOptions({ language, value, onChange, onValidityChan
   try { normalizeOfficialSetupOptions(value); } catch (failure) { error = failure instanceof Error ? failure.message : String(failure); }
   useEffect(() => { onValidityChange?.(!error); }, [error, onValidityChange]);
   const update = (patch: Partial<OfficialSetupOptions>) => onChange({ ...value, ...patch });
+  const selected = parseGpuSelection(value.gpus).mode === 'ids' ? parseGpuSelection(value.gpus).ids : [];
+  const mainOf = (roles?: string) => { const parsed = roles ? gpuRoles.parseRolesText(roles) : null; const main = parsed && Object.keys(parsed).find(key => parsed[Number(key)] === 'main'); return main ?? undefined; };
+  /** The chosen cards as Helpers with `main` as Main; undefined (plain --gpu / --gpus) when no Main is picked or it is no longer chosen. */
+  const rolesFor = (gpus: string, main?: string) => {
+    const ids = parseGpuSelection(gpus).mode === 'ids' ? parseGpuSelection(gpus).ids : [];
+    if (!main || ids.length < 2 || !ids.includes(Number(main))) return undefined;
+    return gpuRoles.rolesText(Object.fromEntries(ids.map(id => [id, id === Number(main) ? 'main' : 'helper'])) as gpuRoles.Roles);
+  };
   const customized = (value.source ?? 'official') !== 'official' || (value.backend ?? 'auto') !== 'auto' || !!value.gpus?.trim();
   const calibrateCommand = [
     zh ? '# 在已安装的 Strata 目录中执行（不会由本应用直接启动）' : '# Run inside your Strata install directory (this app does not execute it)',
@@ -48,8 +56,9 @@ export function SetupAdvancedOptions({ language, value, onChange, onValidityChan
         <label><span>{zh ? '显卡类型' : 'GPU type'}</span><Dropdown ariaLabel={zh ? '显卡类型' : 'GPU type'} value={value.backend ?? 'auto'} onValueChange={backend => update({ backend: backend as OfficialSetupOptions['backend'] })} options={[{value:'auto',label:zh?'自动识别（推荐）':'Automatic (recommended)'},{value:'cuda',label:zh?'NVIDIA 显卡（CUDA）':'NVIDIA (CUDA)'},{value:'hip',label:zh?'AMD 显卡（HIP）':'AMD (HIP)'},{value:'sycl',label:zh?'Intel 显卡（SYCL）':'Intel (SYCL)'}]}/></label>
         <div className="official-setup-wide" data-testid="setup-gpu-selector">
           <span className="official-setup-field-label">{zh ? '使用哪些显卡' : 'GPUs to use'}</span>
-          <GpuSelector language={language} value={value.gpus ?? ''} onChange={gpus => update({ gpus })} availableGpus={availableGpus} disabled={disabled}/>
+          <GpuSelector language={language} value={value.gpus ?? ''} onChange={gpus => update({ gpus, gpuRoles: rolesFor(gpus, mainOf(value.gpuRoles)) })} availableGpus={availableGpus} disabled={disabled}/>
         </div>
+        {selected.length > 1 && <label className="official-setup-wide"><span>{zh ? '主卡（Strata 0.2.2 起）' : 'Main card (Strata 0.2.2+)'}</span><Dropdown ariaLabel={zh ? '主卡' : 'Main card'} value={mainOf(value.gpuRoles) ?? ''} onValueChange={main => update({ gpuRoles: rolesFor(value.gpus ?? '', main) })} options={[{ value: '', label: zh ? '由安装器决定（按编号顺序，最后一张为主卡）' : 'Let setup decide (index order, last is Main)' }, ...selected.map(id => ({ value: String(id), label: `GPU ${id}${availableGpus?.find(gpu => gpu.id === id) ? ` · ${availableGpus.find(gpu => gpu.id === id)!.name}` : ''}` }))]}/><small className="official-setup-note">{zh ? '主卡运行每次回答的最后一段，其余所选显卡为辅助卡，未选的显卡关闭（写入 --gpu-roles）。需要 Strata 0.2.2 或更新的运行环境。' : 'Main runs the last stage of every answer; the other chosen cards are Helpers and the rest are Off (passed as --gpu-roles). Needs a Strata 0.2.2 or newer runtime.'}</small></label>}
       </div>
       {value.backend === 'hip' && <p className="official-setup-note">{zh ? 'Windows 上的 AMD 显卡仅支持单卡。' : 'AMD on Windows supports one GPU only.'}</p>}
       <section className="calibrate-entry" data-testid="calibrate-entry" aria-label={zh ? '一键校准入口' : 'One-click calibrate entry'}>

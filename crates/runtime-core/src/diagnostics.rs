@@ -202,6 +202,11 @@ fn resource_report(message: &str) -> bool {
         || lower.contains("pageable resident complement allocation failed")
 }
 
+/// The line Strata 0.2.2 exits with when every card in "gpu_roles" is Off.
+fn all_cards_off(text: &str) -> bool {
+    text.contains("every graphics card is set to Off")
+}
+
 pub fn build(
     profile_id: &str,
     attempt_started_at: u64,
@@ -291,6 +296,16 @@ pub fn build(
         if code == "STARTUP_UNKNOWN" {
             code = "STARTUP_RESOURCE_REPORTED".into();
         }
+    }
+    // Strata 0.2.2 serve/server.py card_roles_lines: every card in "gpu_roles" is Off and the
+    // CUDA/HIP/SYCL engine refuses to start. Say so instead of a generic engine exit.
+    if matches!(category, StartupCategory::Unknown | StartupCategory::Engine)
+        && (all_cards_off(&message) || current.iter().any(|entry| all_cards_off(&entry.message)))
+    {
+        category = StartupCategory::Config;
+        confidence = StartupConfidence::Confirmed;
+        code = "STARTUP_GPU_ALL_OFF".into();
+        message = "显卡角色全部为「关闭」，此引擎至少需要一张主卡或辅助卡才能启动。请在启动配置的「显卡角色」中打开一张卡。 / Every graphics card is set to Off, and this engine needs a Main or Helper card to start. Turn a card on under GPU roles in the startup settings.".into();
     }
     if !matches!(phase.as_str(), "prepare" | "starting" | "loading") {
         phase = "prepare".into();
@@ -614,6 +629,36 @@ mod tests {
         assert!(!serde_json::to_string(&result)
             .unwrap()
             .contains("secret-value"));
+    }
+
+    #[test]
+    fn strata_022_all_cards_off_exit_points_to_the_gpu_roles() {
+        // serve/server.py card_roles_lines (v0.2.2), printed before the engine starts.
+        let logs = vec![LogEntry {
+            timestamp: 15,
+            level: "error".into(),
+            message: "[strata] every graphics card is set to Off, and this engine cannot start without one. Turn a card on (Main or Helper) in the app or with strata launch --gpu-roles.".into(),
+        }];
+        for raw in [
+            "exit 1",
+            &error("STARTUP_ENGINE_CRASHED", "engine exited", "starting"),
+        ] {
+            let result = build("p", 10, 20, raw, &logs, None);
+            assert_eq!(result.category, StartupCategory::Config);
+            assert_eq!(result.confidence, StartupConfidence::Confirmed);
+            assert_eq!(result.code, "STARTUP_GPU_ALL_OFF");
+            assert_eq!(result.actions[0], StartupAction::OpenConfig);
+            assert!(result.message.contains("显卡角色") && result.message.contains("GPU roles"));
+        }
+        // An older log line before this attempt is not this failure.
+        let old = vec![LogEntry {
+            timestamp: 5,
+            ..logs[0].clone()
+        }];
+        assert_eq!(
+            build("p", 10, 20, "exit 1", &old, None).code,
+            "STARTUP_UNKNOWN"
+        );
     }
 
     #[test]

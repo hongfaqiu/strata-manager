@@ -13,6 +13,11 @@ describe('sharing review and safe client handoff', () => {
   it('requires auth for LAN and rejects ambiguous key operations', () => {
     expect(() => buildSharingPreview({ ...status, keyCount: 0 }, { expectedRevision: status.configRevision, host: '0.0.0.0', port: 18081, keyAction: 'keep' })).toThrow('SHARING_KEY_REQUIRED');
     expect(() => buildSharingPreview(status, { expectedRevision: status.configRevision, host: '0.0.0.0', port: 18081, keyAction: 'clear' })).toThrow('SHARING_KEY_REQUIRED');
+    // Strata 0.2.2: "api_key": "none" is an explicit choice to serve without a key, allowed on the LAN.
+    const none = buildSharingPreview(status, { expectedRevision: status.configRevision, host: '0.0.0.0', port: 18081, keyAction: 'none' });
+    expect([none.keyCountAfterSave, none.noKeyAfterSave, none.authChanged]).toEqual([0, true, true]);
+    expect(buildSharingPreview({ ...status, keyCount: 0, noKeyChosen: true }, { expectedRevision: status.configRevision, host: '0.0.0.0', port: 18081, keyAction: 'keep' }).noKeyAfterSave).toBe(true);
+    expect(() => buildSharingPreview(status, { expectedRevision: status.configRevision, host: '0.0.0.0', port: 18081, keyAction: 'none', serverKey: 'x' })).toThrow('SHARING_OPTIONS_INVALID');
     expect(() => buildSharingPreview(status, { expectedRevision: status.configRevision, host: '127.0.0.1', port: 18081, keyAction: 'keep', serverKey: 'hidden' })).toThrow('SHARING_OPTIONS_INVALID');
     expect(() => buildSharingPreview(status, { expectedRevision: status.configRevision, host: '127.0.0.1', port: 0, keyAction: 'keep' })).toThrow('SHARING_PORT_INVALID');
   });
