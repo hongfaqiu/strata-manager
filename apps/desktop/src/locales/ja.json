@@ -246,6 +246,8 @@
   "enabledOn": "オン",
   "enabledOff": "オフ",
   "nvmlUnavailable": "読み取れません（NVML）",
+  "aboutGpuReadings": "GPU の計測値",
+  "gpuReadingsAmd": "AMD ドライバー（{{source}}）",
   "threadsCount": "{{count}} スレッド",
   "openAiBase": "OpenAI ベース URL",
   "anthropicBase": "Anthropic ベース URL",

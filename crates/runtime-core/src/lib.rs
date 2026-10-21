@@ -1,3 +1,4 @@
+pub mod amd_gpu;
 pub mod analytics;
 pub mod apple_gpu;
 pub mod benchmark_identity;

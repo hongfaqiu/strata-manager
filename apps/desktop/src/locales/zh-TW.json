@@ -246,6 +246,8 @@
   "enabledOn": "開",
   "enabledOff": "關",
   "nvmlUnavailable": "無法讀取（NVML）",
+  "aboutGpuReadings": "GPU 讀數",
+  "gpuReadingsAmd": "AMD 驅動程式（{{source}}）",
   "threadsCount": "{{count}} 執行緒",
   "openAiBase": "OpenAI 基礎地址",
   "anthropicBase": "Anthropic 基礎地址",
