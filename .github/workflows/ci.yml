@@ -441,9 +441,49 @@ jobs:
       # always waits (fails if not accepted); defer only submits. Runs whose macOS
       # is not stapled can only feed a release that defers macOS, and
       # macos-notarize-followup.yml staples and adds macOS later.
+      # Apple notarization only runs for builds that can become a release:
+      # pull requests (including release/* and full-ci) never submit; a push to
+      # main submits only when v<version> is not tagged yet (a release candidate)
+      # or the tag already points at this commit (re-run of the release commit).
+      # Manual runs (including the release resolver's tag dispatch) keep
+      # MACOS_NOTARIZATION. Skipped runs are still signed, but the release
+      # resolver never reuses them for macOS; it dispatches a fresh tag CI.
+      - name: Decide whether this run notarizes macOS
+        id: notary-policy
+        if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true'
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          VERSION: ${{ steps.package-version.outputs.version }}
+        run: |
+          set -euo pipefail
+          mode="$MACOS_NOTARIZATION"
+          reason="$EVENT_NAME uses MACOS_NOTARIZATION=$mode"
+          if [ "$EVENT_NAME" = pull_request ]; then
+            mode=skipped; reason='pull requests never submit to Apple'
+          elif [ "$EVENT_NAME" = push ]; then
+            tag="v$VERSION"
+            if refs=$(git ls-remote --tags origin "refs/tags/$tag" "refs/tags/$tag^{}"); then
+              tag_sha=$(printf '%s\n' "$refs" | awk -v r="refs/tags/$tag^{}" '$2 == r { print $1 }')
+              [ -n "$tag_sha" ] || tag_sha=$(printf '%s\n' "$refs" | awk -v r="refs/tags/$tag" '$2 == r { print $1 }')
+              if [ -z "$tag_sha" ]; then
+                reason="$tag is not tagged yet (release candidate)"
+              elif [ "$tag_sha" = "$GITHUB_SHA" ]; then
+                reason="$tag already points at this commit (release commit re-run)"
+              else
+                mode=skipped; reason="$tag is already released from another commit (version not bumped)"
+              fi
+            else
+              echo '::warning title=macOS notarization::Could not list tags; notarizing to be safe.'
+            fi
+          fi
+          echo "macOS notarization: $mode ($reason)"
+          [ "$mode" != skipped ] || echo "::notice title=macOS notarization skipped::$reason. Signed only; this run cannot publish macOS."
+          printf '### macOS notarization: `%s`\n\n%s\n' "$mode" "$reason" >> "$GITHUB_STEP_SUMMARY"
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
       - name: Prepare macOS signing and notarization
         if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true'
         env:
+          NOTARY_MODE: ${{ steps.notary-policy.outputs.mode }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
@@ -497,7 +537,9 @@ jobs:
             echo "STRATA_MACOS_SIGNED=1"
           } >> "$GITHUB_ENV"
 
-          if [ -n "${APPLE_API_ISSUER:-}" ] && [ -n "${APPLE_API_KEY:-}" ] && [ -n "${APPLE_API_PRIVATE_KEY:-}" ]; then
+          if [ "$NOTARY_MODE" = skipped ]; then
+            echo 'Notarization: skipped for this run (Developer ID signed only).'
+          elif [ -n "${APPLE_API_ISSUER:-}" ] && [ -n "${APPLE_API_KEY:-}" ] && [ -n "${APPLE_API_PRIVATE_KEY:-}" ]; then
             key_dir="$RUNNER_TEMP/strata-private-keys"
             mkdir -p "$key_dir"
             chmod 700 "$key_dir"
@@ -568,7 +610,7 @@ jobs:
       # fails if Apple still can't be reached, because without a submission id
       # nothing can be followed up later.
       - name: Submit the macOS app for notarization
-        if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true'
+        if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true' && steps.notary-policy.outputs.mode != 'skipped'
         run: |
           set -uo pipefail
           version="${{ steps.package-version.outputs.version }}"
@@ -629,7 +671,7 @@ jobs:
       # signing problem always fail.
       - name: Wait for notarization and staple the macOS app
         id: notarize-wait
-        if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true' && env.MACOS_NOTARIZATION != 'defer'
+        if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true' && env.MACOS_NOTARIZATION != 'defer' && steps.notary-policy.outputs.mode != 'skipped'
         env:
           MACOS_NOTARIZATION_TIMEOUT: ${{ vars.MACOS_NOTARIZATION_TIMEOUT || '30m' }}
         run: |

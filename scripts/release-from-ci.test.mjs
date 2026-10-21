@@ -10,7 +10,7 @@ import {
   validateSourceProtocol, validateCiEvidence, validateInstallerEntries, validateLiveWriters,
   validateLatestManifest, validateReleaseInventory, validateReleaseMetadata, draftMetadataPayload, creationBranch,
   requireSourceRelease, validatePreparedRecord, readPrepared,
-  findReusableCi, hasIncompleteStepInventory, inventory, WRITER_JOBS, validateWriterProtocol, command,
+  findReusableCi, skippedMacosNotarization, hasIncompleteStepInventory, inventory, WRITER_JOBS, validateWriterProtocol, command,
 } from './release-from-ci.mjs';
 
 const clone = value => structuredClone(value);
@@ -72,7 +72,18 @@ test('the macOS desktop job stays behind the docs-only skip and publishes Develo
   assert.doesNotMatch(desktop, /echo "APPLE_API_(KEY|ISSUER|KEY_PATH)=/);
   // auto is the default: wait up to the timeout, otherwise leave macOS for the follow-up.
   assert.match(desktop, /MACOS_NOTARIZATION: \$\{\{ inputs\.macos_notarization \|\| vars\.MACOS_NOTARIZATION \|\| 'auto' \}\}/);
-  assert.match(desktop, /- name: Wait for notarization and staple the macOS app\n {8}id: notarize-wait\n {8}if: runner\.os == 'macOS' && env\.PACKAGE_INSTALLERS == 'true' && env\.MACOS_NOTARIZATION != 'defer'/);
+  assert.match(desktop, /- name: Wait for notarization and staple the macOS app\n {8}id: notarize-wait\n {8}if: runner\.os == 'macOS' && env\.PACKAGE_INSTALLERS == 'true' && env\.MACOS_NOTARIZATION != 'defer' && steps\.notary-policy\.outputs\.mode != 'skipped'/);
+  // Pull requests never notarize; main pushes only for an untagged (release candidate) version.
+  assert.match(desktop, /- name: Submit the macOS app for notarization\n {8}if: runner\.os == 'macOS' && env\.PACKAGE_INSTALLERS == 'true' && steps\.notary-policy\.outputs\.mode != 'skipped'\n/);
+  const policy = desktop.slice(desktop.indexOf('- name: Decide whether this run notarizes macOS'), desktop.indexOf('- name: Prepare macOS signing and notarization'));
+  assert.match(policy, /id: notary-policy/);
+  assert.match(policy, /if \[ "\$EVENT_NAME" = pull_request \]; then\n {12}mode=skipped;/);
+  assert.match(policy, /git ls-remote --tags origin "refs\/tags\/\$tag" "refs\/tags\/\$tag\^\{\}"/);
+  assert.match(policy, /elif \[ "\$tag_sha" = "\$GITHUB_SHA" \]; then/);
+  assert.match(policy, /mode=skipped; reason="\$tag is already released from another commit/);
+  assert.match(policy, />> "\$GITHUB_STEP_SUMMARY"/);
+  assert.doesNotMatch(policy, /workflow_dispatch/);
+  assert.match(desktop, /if \[ "\$NOTARY_MODE" = skipped \]; then\n {12}echo 'Notarization: skipped/);
   assert.match(desktop, /- name: Confirm the macOS app is stapled and the DMG is signed\n {8}if: runner\.os == 'macOS' && env\.PACKAGE_INSTALLERS == 'true' && steps\.notarize-wait\.outputs\.stapled == 'true'/);
   assert.match(desktop, /echo 'stapled=true' >> "\$GITHUB_OUTPUT"/);
   assert.match(desktop, /'In Progress'\)\n {14}if \[ "\$MACOS_NOTARIZATION" = auto \]; then unstapled /);
@@ -285,7 +296,9 @@ test('every required shared and platform gate fails closed independently', () =>
   for (const [position, gates] of [[0, [...COMMON_GATES, ...PLATFORM_GATES.windows]], [1, [...COMMON_GATES, ...PLATFORM_GATES.linux]], [2, [...COMMON_GATES, ...PLATFORM_GATES.macos]]]) {
     for (const name of gates) {
       const f = ciFixture(); f.jobs[position].steps.find(s => s.name === name).conclusion = 'skipped';
-      assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, plan), new RegExp(name.replace(/[()[\]]/g, '\\$&')));
+      // A skipped macOS submit step means CI deliberately skipped notarization.
+      const expected = position === 2 && name === 'Submit the macOS app for notarization' ? /skipped macOS notarization/ : new RegExp(name.replace(/[()[\]]/g, '\\$&'));
+      assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, plan), expected);
     }
   }
 });
@@ -565,6 +578,30 @@ test('resolver surfaces non-reusable successful CI instead of a false missing st
   f.jobs.pop();
   await assert.rejects(findReusableCi(plan, { fetchJson: fakeApi([f]) }), /not reusable/);
   await assert.rejects(findReusableCi(plan, { runId: 123, fetchJson: fakeApi([f]) }), /not reusable/);
+});
+test('a signed-only CI that skipped notarization is never reused and lets the resolver dispatch a tag CI', async () => {
+  const skip = f => { const mac = f.jobs.find(j => j.name.startsWith('desktop (macos-15'));
+    for (const step of mac.steps) if (['Submit the macOS app for notarization', 'Wait for notarization and staple the macOS app',
+      'Confirm the macOS app is stapled and the DMG is signed'].includes(step.name)) step.conclusion = 'skipped'; return f; };
+  const f = skip(ciFixture());
+  f.run.event = 'push';
+  assert.equal(skippedMacosNotarization(f.jobs), true);
+  assert.equal(skippedMacosNotarization(ciFixture().jobs), false);
+  for (const macos of ['include', 'defer', 'followup']) {
+    const p = { ...plan, ...createPlan({ ...plan, macos }) };
+    const g = skip(ciFixture(p));
+    assert.throws(() => validateCiEvidence(g.run, g.jobs, g.artifacts, p), /skipped macOS notarization/);
+  }
+  // Search: ignored (missing -> dispatch), and an older notarized run is still preferred.
+  assert.deepEqual(await findReusableCi(plan, { fetchJson: fakeApi([f]) }), { status: 'missing' });
+  const good = ciFixture(plan, 122);
+  f.run.created_at = '2026-01-02T00:00:00Z';
+  assert.equal((await findReusableCi(plan, { fetchJson: fakeApi([f, good]) })).runId, 122);
+  // Explicit run id: refused for every mode, auto included.
+  await assert.rejects(findReusableCi(plan, { runId: 123, fetchJson: fakeApi([f]) }), /skipped macOS notarization/);
+  await assert.rejects(resolveMacosMode(plan, p => findReusableCi(p, { runId: 123, fetchJson: fakeApi([skip(ciFixture(p))]) })), /skipped macOS notarization/);
+  const auto = await resolveMacosMode(plan, p => findReusableCi(p, { fetchJson: fakeApi([skip(ciFixture(p))]) }));
+  assert.deepEqual(auto, { mode: 'include', found: { status: 'missing' } });
 });
 test('bounded inventory refuses incomplete and malformed pagination', async () => {
   await assert.rejects(inventory('/inventory', 'items', async () => ({ items: Array(100).fill({}) })), /incomplete/);
