@@ -5,6 +5,14 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **Mac / Linux 首次使用卡在「安装 Strata」（用户反馈，macOS · M5 Pro）**：点「开始安装」后日志显示「Strata 源码与私有 Python 环境已就绪：下一步准备模型」，页面却仍停在第 2 步、提示「检测到 Strata 文件但运行依赖未就绪」，再点安装也一样，步骤条也点不到「选择模型」。原因是 Mac 和 Linux 的安装只创建了私有 Python 环境、检查了 pip，没有安装 Strata 的 Python 依赖；而检测运行环境时要求 `regex`、`jinja2` 能导入，于是安装任务说「已就绪」，检测却一直判为「需要修复」。现在安装会在私有环境里按源码自带的固定版本 `requirements.txt` 安装依赖（只用官方 PyPI 的预编译包，不改系统或 Homebrew 的 Python），装完再检查一次，仍缺就明确报错，不会再假装成功。已经装过的用户不用重装，再点一次「开始安装」就会补装依赖并进入下一步。安装结束后会立即重新检测，不用等下一次轮询；如果运行环境仍需修复，页面会直接显示具体原因（例如缺了哪些依赖）。Windows 的安装流程原本就会安装依赖，不受影响。
+
+### English
+
+- **First run on Mac / Linux got stuck at "Install Strata" (user report, macOS · M5 Pro)**: after "Start install" the log said "Strata source and private Python environment are ready; next, prepare a model", yet the guide stayed on step 2 saying "Strata files were found but runtime dependencies are not ready". Installing again did the same, and the step list would not move on to "Choose a model". On Mac and Linux the installer only created the private Python environment and checked pip; it never installed Strata's Python packages, while runtime detection requires `regex` and `jinja2` to import. So the task reported "ready" and detection kept saying "needs repair". Installation now installs the source's pinned `requirements.txt` into the private environment (pre-built wheels from the official PyPI only; the system and Homebrew Python are not touched), checks again afterwards, and reports a clear error instead of succeeding when something is still missing. Existing installs do not need a reinstall: pressing "Start install" once more adds the missing packages and moves on. Readiness is re-read as soon as the install finishes instead of on the next poll, and if the runtime still needs repair the guide shows the exact reason (for example which packages are missing). Windows installation already installed the packages and is unchanged.
+
 ## [0.2.11] - 2026-10-20
 
 ### 中文
