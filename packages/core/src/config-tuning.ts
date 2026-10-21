@@ -184,6 +184,7 @@ export const STARTUP_TUNING_FIELDS: readonly StartupFieldSpec[] = [
     ['sampling.top_p', '默认 Top P', 'Default top P', 'number', undefined, 0, 1, true],
     ['sampling.top_k', '默认 Top K', 'Default top K', 'integer', undefined, 1, 64],
     ['sampling.min_p', '默认 Min P', 'Default min P', 'number', undefined, 0, 1],
+    ['sampling.experimental_speed_projection', '默认实验投影', 'Default experimental speed projection', 'boolean'],
   ]),
   ...fields('network', 'config', [
     ['host', '监听地址', 'Listen address', 'text', ['127.0.0.1', 'localhost', '0.0.0.0', '::']],
@@ -214,11 +215,18 @@ export const STARTUP_TUNING_FIELDS: readonly StartupFieldSpec[] = [
 
 /** Optional one-line explanations shown under a field in the graphical editor (zh + en). */
 export const STARTUP_FIELD_HINTS: Readonly<Record<string, { zh: string; en: string }>> = {
+  'sampling.experimental_speed_projection': {
+    zh: '仅在引擎已加载实验投影控制向量时生效，不会自动加载或下载向量，也不保证提速或效果。只给没带这个参数的请求当默认值：请求里的值和共享采样设置优先，Manager 聊天仍按会话开关发送。保存后重启模型生效；“使用默认设置”会删除这一项，不会强制开启。',
+    en: 'Only takes effect when the engine has already loaded an experimental projection control vector; this does not load or download one and promises no speed-up or quality change. It is the default for requests that leave the parameter out: a value in the request and the shared sampling settings come first, and Manager chat keeps sending its per-chat switch. Restart the model after saving; “Use default” removes the entry rather than forcing it on.',
+  },
   '--prefill-pipe': {
     zh: '仅在跨 GPU 层分配（--layer-split）时生效：按流水线切分提示词分块。0 关闭（默认），1 仅平均分块数，大于 1 为本机 b/a（token，可由快速校准或官方 --calibrate 测得），范围 0–262144。',
     en: 'Only affects a layer split (--layer-split): sizes prompt chunks for the pipeline. 0 off (default), 1 only evens out the chunk count, > 1 is this PC\'s b/a in tokens (measured by quick calibration or the official --calibrate); range 0–262144.',
   },
 };
+
+/** Config fields whose stored null means the same as leaving them out. */
+const NULL_AS_DEFAULT_FIELDS: ReadonlySet<string> = new Set(['sampling.experimental_speed_projection']);
 
 export function startupArgsOf(config: JsonObject): string[] { return config.args === undefined ? [] : argsOf(config); }
 export function startupFieldValue(config: JsonObject, field: StartupFieldSpec): string {
@@ -228,6 +236,8 @@ export function startupFieldValue(config: JsonObject, field: StartupFieldSpec): 
   }
   let value: unknown = config;
   for (const key of field.key.split('.')) value = value && typeof value === 'object' && !Array.isArray(value) && Object.hasOwn(value, key) ? (value as JsonObject)[key] : undefined;
+  // Strata treats a null sampling default like a missing one: show "Use default" and leave the stored null alone until edited.
+  if (value === null && NULL_AS_DEFAULT_FIELDS.has(field.key)) return '';
   return value === undefined ? '' : value === null ? 'null' : typeof value === 'object' ? JSON.stringify(value) : String(value);
 }
 
@@ -319,4 +329,7 @@ export function validateStartupConfiguration(config: JsonObject): void {
   if (config.api_key !== undefined && typeof config.api_key !== 'string' && !(Array.isArray(config.api_key) && config.api_key.every(key => typeof key === 'string' && !!key.trim()))) throw new Error('api_key: 必须为字符串或非空密钥的数组 / must be a string or an array of nonempty keys');
   for (const key of ['sampling', 'env', 'vision']) if (config[key] !== undefined && config[key] !== null && (!config[key] || typeof config[key] !== 'object' || Array.isArray(config[key]))) throw new Error(`${key}: 必须为对象或 null / must be an object or null`);
   for (const key of ['api_monitor', 'open_browser', 'lazy_load', 'fit_max_tokens']) if (config[key] !== undefined && typeof config[key] !== 'boolean') throw new Error(`${key}: 必须为布尔值 / must be a boolean`);
+  // Strata refuses to start on a non-boolean here ("false", 0, 1); null and a missing key mean "use the default".
+  const projection = (config.sampling as JsonObject | null | undefined)?.experimental_speed_projection;
+  if (projection != null && typeof projection !== 'boolean') throw new Error('sampling.experimental_speed_projection: 必须为 true、false 或 null / must be true, false or null');
 }
