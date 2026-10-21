@@ -472,7 +472,7 @@ pub async fn check_app_update(
                         attempts: attempts.clone(),
                     },
                 );
-                return Ok(serde_json::to_value(AppUpdateCheckResult {
+                return serde_json::to_value(AppUpdateCheckResult {
                     source: Some(current_source.clone()),
                     fallback_chain: fallback_chain.clone(),
                     attempts: attempts.clone(),
@@ -488,7 +488,7 @@ pub async fn check_app_update(
                         attempts,
                     }),
                 })
-                .map_err(|e| e.to_string())?);
+                .map_err(|e| e.to_string());
             }
             Ok(None) => {
                 authoritative = Some(source_for_attempt.clone());
@@ -519,13 +519,13 @@ pub async fn check_app_update(
     }
 
     if official_current {
-        return Ok(serde_json::to_value(AppUpdateCheckResult {
+        return serde_json::to_value(AppUpdateCheckResult {
             update: None,
             source: authoritative,
             fallback_chain: Vec::new(),
             attempts,
         })
-        .map_err(|e| e.to_string())?);
+        .map_err(|e| e.to_string());
     }
 
     Err(format_attempts_error(
