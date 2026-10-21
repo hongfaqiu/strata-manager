@@ -104,7 +104,7 @@ export function OnboardingPage(props: OnboardingPageProps) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
 
-  const { facts, plan, checks, runtimeTask, setupTask, handoff, readyRuntime, target } = props.guide;
+  const { facts, plan, checks, runtimeTask, setupTask, handoff, readyRuntime, repairReason, target } = props.guide;
   const runtimeFact = facts.runtime, verdict = facts.environment;
   const path: GuidePath | null = progress?.path ?? null;
   const shown = viewing && plan?.steps.some(step => step.id === viewing) ? viewing : plan?.current;
@@ -159,7 +159,7 @@ export function OnboardingPage(props: OnboardingPageProps) {
   const doneNote = viewingDone ? <div className="ob-done-note"><Check size={14}/><span>{t('obStepDone')}</span><button type="button" className="ob-link" onClick={() => setViewing(undefined)}>{t('obGoCurrent')}<ArrowRight size={13}/></button></div> : null;
   const shared = { ...props, t, now, facts, target };
   const body = shown === 'environment' ? <EnvironmentStep {...shared} checks={checks} verdict={verdict} readOnly={viewingDone}/>
-    : shown === 'runtime' ? <RuntimeStep {...shared} runtimeTask={runtimeTask} runtimeFact={runtimeFact} readyVersion={readyRuntime?.runtimeVersion} onRefreshRuntime={props.onRefreshRuntime}/>
+    : shown === 'runtime' ? <RuntimeStep {...shared} runtimeTask={runtimeTask} runtimeFact={runtimeFact} readyVersion={readyRuntime?.runtimeVersion} repairReason={repairReason} onRefreshRuntime={props.onRefreshRuntime}/>
     : shown === 'model' ? <ModelStep {...shared} runtimeProfile={readyRuntime?.profile}/>
     : shown === 'download' ? <DownloadStep {...shared} setupTask={setupTask} handoff={handoff}/>
     : shown === 'start' || shown === 'load' ? <StartStep {...shared}/>
@@ -267,7 +267,7 @@ function EnvironmentStep(props: StepProps & { checks?: EnvironmentCheck[]; verdi
 }
 
 // ---- Runtime -----------------------------------------------------------------------------
-function RuntimeStep(props: StepProps & { runtimeTask?: TaskStatus; runtimeFact: GuideFacts['runtime']; readyVersion?: string; onRefreshRuntime: () => void }) {
+function RuntimeStep(props: StepProps & { runtimeTask?: TaskStatus; runtimeFact: GuideFacts['runtime']; readyVersion?: string; repairReason?: string; onRefreshRuntime: () => void }) {
   const { t, runtimeTask, runtimeFact } = props;
   const [starting, setStarting] = useState(false);
   const [canceling, setCanceling] = useState(false);
@@ -301,6 +301,7 @@ function RuntimeStep(props: StepProps & { runtimeTask?: TaskStatus; runtimeFact:
     {runtimeFact === 'ready' ? <div className="ob-status is-ok"><Mark state="ok"/><div><b>{t('obRuntimeReady')}{props.readyVersion ? ` · ${props.readyVersion}` : ''}</b></div></div>
       : running ? <div className="ob-status"><Mark state="busy"/><div className="ob-status-body"><b>{runtimeTask!.message || t('obPreparing')}</b><div className={`ob-bar${percent === undefined ? ' is-indeterminate' : ''}`}><i style={percent === undefined ? undefined : { width: `${percent}%` }}/></div><small>{t('obRuntimeRunningHint')}</small></div></div>
       : failed ? <div className="ob-status is-bad"><Mark state="fail"/><div className="ob-status-body"><b>{runtimeTask?.message}</b></div></div>
+      : runtimeFact === 'repair' && props.repairReason ? <div className="ob-status" data-testid="ob-runtime-repair-reason"><Mark state="warn"/><div className="ob-status-body"><small>{props.repairReason}</small></div></div>
       : null}
     {failed && core.needsManagedPython(runtimeTask?.message) && <ManagedPythonPanel variant="compact" language={props.language} desktop={props.desktop} found={props.environment?.python}/>}
     {!running && runtimeFact !== 'ready' && <div className="ob-package-source">

@@ -241,3 +241,22 @@ test('community selections survive a restart only when they are still valid', ()
   assert.equal(model.normalizeProgress({ ...base, selection: { family: 'community:hf:someone/repo@unsloth', quant: 'Q2_0', context: 32768 } }).selection, undefined);
   assert.equal(model.normalizeProgress({ ...base, selection: { family: 'community:hf:../x@qwen', quant: 'Q2_0', context: 32768 } }).selection, undefined);
 });
+
+test('a completed install whose runtime still needs repair stays on step 2 and shows the backend reason', () => {
+  // Real 0.2.11 macOS state: the task completed, but discovery reports the venv without jinja2/regex.
+  const runtimeProfile = { id: 'runtime-a', name: 'Strata', baseUrl: 'http://127.0.0.1:1', installDir: '/rt', pythonPath: '/rt/.venv/bin/python', configPath: '', managed: true };
+  const base = { desktop: true, handoffs: [], runtimePending: false, environmentFailed: false, profiles: [], candidates: [], online: false, loaded: false, starting: false };
+  const progress = { ...model.newProgress(1, 'install'), runtimeTaskId: 'install-1' };
+  const tasks = [{ id: 'install-1', kind: 'install-runtime', state: 'completed', message: '', startedAt: 0, finishedAt: 1 }];
+  const reason = 'Python 运行依赖缺失：regex, jinja2（检测的 Python：/rt/.venv/bin/python）';
+  const stuck = model.deriveGuide({ ...base, progress, tasks, runtime: { taskId: 'install-1', result: { installDir: '/rt', pythonPath: '/rt/.venv/bin/python', profile: runtimeProfile }, detectedRuntimes: [{ readiness: 'repair', reason, profile: runtimeProfile }] } });
+  assert.equal(stuck.facts.runtime, 'repair');
+  assert.equal(stuck.plan.current, 'runtime');
+  assert.equal(stuck.repairReason, reason, 'the reason is surfaced instead of a silent loop');
+  // After the fixed backend installs requirements.txt, discovery reports ready and the guide advances.
+  const fixed = model.deriveGuide({ ...base, progress, tasks, runtime: { taskId: 'install-1', detectedRuntimes: [{ readiness: 'ready', profile: runtimeProfile }] } });
+  assert.equal(fixed.facts.runtime, 'ready');
+  assert.equal(fixed.repairReason, undefined);
+  assert.equal(fixed.plan.current, 'model');
+  assert.equal(fixed.plan.steps.find(step => step.id === 'runtime').state, 'done');
+});

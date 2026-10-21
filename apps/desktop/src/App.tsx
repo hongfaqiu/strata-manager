@@ -397,6 +397,10 @@ export function App() {
   const detectedRuntimes = versionRuntime.data?.detectedRuntimes;
   const guideInstallRunning = !!tasks.data?.some(task => task.kind.includes('install') && task.state === 'running');
   const guideRuntime = useQuery({ queryKey: ['runtime-installation'], queryFn: core.localRuntimeInstallation, enabled: desktop && ready && (page === 'guide' || guideActive), staleTime: 5000, refetchInterval: page === 'guide' ? (guideInstallRunning ? 2000 : 15000) : false });
+  // A finished install changes runtime readiness; re-read it now instead of on the next 15 s poll.
+  const lastInstallFinish = Math.max(0, ...(tasks.data ?? []).filter(task => task.kind.includes('install') && task.state !== 'running').map(task => task.finishedAt ?? 0));
+  const refetchGuideRuntime = guideRuntime.refetch;
+  useEffect(() => { if (lastInstallFinish && (page === 'guide' || guideActive)) void refetchGuideRuntime(); }, [lastInstallFinish, page, guideActive, refetchGuideRuntime]);
   const availableModels = useQuery({ queryKey: ['availableModels', activeId, profile?.baseUrl], queryFn: () => core.request(profile!, '/v1/models'), enabled: !!profile && online && page === 'chat' });
   const apiModels = Array.isArray(object(availableModels.data).data) ? (object(availableModels.data).data as unknown[]).map(x => String(object(x).id ?? '')).filter(Boolean) : [];
 
