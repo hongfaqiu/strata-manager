@@ -554,27 +554,124 @@ fn existing_ancestor(path: &Path) -> Result<PathBuf, String> {
 
 pub(crate) fn read_space(path: &Path) -> Result<(PathBuf, u64), String> {
     let target = existing_ancestor(path)?;
+    #[cfg(unix)]
+    {
+        // Ask the file system that actually holds the folder. On macOS, /Users lives on the
+        // writable Data volume behind a firmlink, while the only listed mount that prefixes
+        // it is the sealed read-only system volume "/", so a mount-table lookup reported
+        // "read-only" and the UI showed "free space unknown".
+        let space = unix_space(&target)?;
+        let mount = space
+            .mount
+            .clone()
+            .or_else(|| listed_mount(&target).map(|(mount, _)| mount))
+            .unwrap_or_else(|| target.clone());
+        space_result(mount, space)
+    }
+    #[cfg(not(unix))]
+    {
+        let (mount, disk) = listed_mount(&target).ok_or("找不到目标目录对应的磁盘挂载")?;
+        space_result(
+            mount,
+            Space {
+                total: disk.total,
+                available: disk.available,
+                read_only: disk.read_only,
+                mount: None,
+            },
+        )
+    }
+}
+
+/// One file system's capacity as seen from a folder on it.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Space {
+    pub total: u64,
+    pub available: u64,
+    pub read_only: bool,
+    /// Where it is mounted, when the platform says so directly (macOS `statfs`).
+    pub mount: Option<PathBuf>,
+}
+
+pub(crate) fn space_result(mount: PathBuf, space: Space) -> Result<(PathBuf, u64), String> {
+    if space.total == 0 {
+        return Err("无法读取目标磁盘容量；可能未挂载或当前用户无权限".into());
+    }
+    if space.read_only {
+        return Err("目标磁盘为只读；无法写入准备文件".into());
+    }
+    Ok((mount, space.available))
+}
+
+/// The deepest mount in the system disk list that contains `target`.
+fn listed_mount(target: &Path) -> Option<(PathBuf, Space)> {
     let disks = sysinfo::Disks::new_with_refreshed_list_specifics(
         sysinfo::DiskRefreshKind::nothing().with_storage(),
     );
-    let disk = disks
+    disks
         .list()
         .iter()
         .filter_map(|disk| {
             dunce::canonicalize(disk.mount_point())
                 .ok()
                 .filter(|mount| target.starts_with(mount))
-                .map(|mount| (disk, mount))
+                .map(|mount| {
+                    (
+                        mount,
+                        Space {
+                            total: disk.total_space(),
+                            available: disk.available_space(),
+                            read_only: disk.is_read_only(),
+                            mount: None,
+                        },
+                    )
+                })
         })
-        .max_by_key(|(_, mount)| mount.components().count())
-        .ok_or("找不到目标目录对应的磁盘挂载")?;
-    if disk.0.total_space() == 0 {
-        return Err("无法读取目标磁盘容量；可能未挂载或当前用户无权限".into());
+        .max_by_key(|(mount, _)| mount.components().count())
+}
+
+/// `statvfs` (and on macOS `statfs` for the mount point) of an existing folder.
+#[cfg(unix)]
+// statvfs field widths differ between Linux and macOS, so the casts are needed on one of them.
+#[allow(clippy::unnecessary_cast)]
+fn unix_space(target: &Path) -> Result<Space, String> {
+    use std::os::unix::ffi::OsStrExt;
+    let path = std::ffi::CString::new(target.as_os_str().as_bytes())
+        .map_err(|_| "目标目录路径包含空字符".to_owned())?;
+    let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statvfs(path.as_ptr(), &mut stat) } != 0 {
+        return Err(format!(
+            "无法读取目标磁盘容量：{} / Cannot read free space",
+            std::io::Error::last_os_error()
+        ));
     }
-    if disk.0.is_read_only() {
-        return Err("目标磁盘为只读；无法写入准备文件".into());
+    let unit = if stat.f_frsize > 0 {
+        stat.f_frsize as u64
+    } else {
+        stat.f_bsize as u64
+    };
+    Ok(Space {
+        total: (stat.f_blocks as u64).saturating_mul(unit),
+        available: (stat.f_bavail as u64).saturating_mul(unit),
+        read_only: stat.f_flag as u64 & libc::ST_RDONLY as u64 != 0,
+        mount: statfs_mount(&path),
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn statfs_mount(path: &std::ffi::CStr) -> Option<PathBuf> {
+    let mut stat: libc::statfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statfs(path.as_ptr(), &mut stat) } != 0 {
+        return None;
     }
-    Ok((disk.1, disk.0.available_space()))
+    let name = unsafe { std::ffi::CStr::from_ptr(stat.f_mntonname.as_ptr()) };
+    let name = name.to_str().ok()?;
+    (!name.is_empty()).then(|| PathBuf::from(name))
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn statfs_mount(_path: &std::ffi::CStr) -> Option<PathBuf> {
+    None
 }
 
 pub(crate) fn measure(plan: &mut Plan, reader: impl Fn(&Path) -> Result<(PathBuf, u64), String>) {
@@ -1073,6 +1170,52 @@ mod tests {
             small_ram.report.additional_bytes_estimate,
             Some(144_900_000_000)
         );
+    }
+
+    #[test]
+    fn free_space_comes_from_the_folder_file_system_not_a_read_only_parent_mount() {
+        // macOS: "/" is the sealed read-only system volume; /Users is on the writable Data
+        // volume. The folder's own file system decides, not the listed "/" mount.
+        let data = Space {
+            total: 994_662_584_320,
+            available: 512_000_000_000,
+            read_only: false,
+            mount: Some(PathBuf::from("/System/Volumes/Data")),
+        };
+        assert_eq!(
+            space_result(PathBuf::from("/System/Volumes/Data"), data.clone()).unwrap(),
+            (PathBuf::from("/System/Volumes/Data"), 512_000_000_000)
+        );
+        let sealed = Space {
+            read_only: true,
+            ..data.clone()
+        };
+        assert!(space_result(PathBuf::from("/"), sealed)
+            .unwrap_err()
+            .contains("只读"));
+        assert!(space_result(PathBuf::from("/"), Space { total: 0, ..data })
+            .unwrap_err()
+            .contains("容量"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_space_reads_a_writable_folder_and_its_missing_children() {
+        let temp = tempfile::tempdir().unwrap();
+        let space = unix_space(temp.path()).unwrap();
+        assert!(space.total > 0 && space.available > 0 && !space.read_only);
+        #[cfg(target_os = "macos")]
+        assert!(space
+            .mount
+            .as_ref()
+            .is_some_and(|mount| mount.is_absolute()));
+        // A folder that does not exist yet is measured on its nearest existing parent.
+        let missing = temp
+            .path()
+            .join("Library/Application Support/io.strata.manager/runtimes/Strata-data");
+        let (mount, available) = read_space(&missing).unwrap();
+        assert!(mount.is_absolute() && available > 0);
+        assert!(!temp.path().join("Library").exists());
     }
 
     #[test]

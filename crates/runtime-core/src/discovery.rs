@@ -467,6 +467,13 @@ fn missing_python_modules(root: &Path, python: &Path, cache: &mut PythonCache) -
     }).clone()
 }
 
+/// Modules `root` needs before discovery reports it "ready", probed with
+/// `python` (same rule and probe as discovery). Installation uses this so a
+/// prepared runtime is never handed back while discovery still says "repair".
+pub(crate) fn missing_runtime_modules(root: &Path, python: &Path) -> Vec<String> {
+    missing_python_modules(root, python, &mut PythonCache::default())
+}
+
 /// A Python path without resolving its final component. A Linux/macOS venv's
 /// `bin/python` is a symlink to the base interpreter; resolving it would probe
 /// the base interpreter and miss the venv's site-packages. The directory is
