@@ -1459,6 +1459,39 @@ async fn export_diagnostics(
         .map_err(|e| e.to_string())
 }
 
+/// 「修复 Python 依赖」: same gap as below; the supervisor does the work.
+#[tauri::command]
+async fn repair_python_dependencies(
+    state: State<'_, ClientState>,
+    install_dir: String,
+) -> Result<Value, String> {
+    state
+        .ipc
+        .request(
+            "repair_python_dependencies",
+            json!({"installDir": install_dir}),
+        )
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 「复制诊断信息」: the supervisor builds the text; the desktop only forwards (#103).
+#[tauri::command]
+async fn support_diagnostics_text(
+    state: State<'_, ClientState>,
+    profile: Option<ServiceProfile>,
+    extras: Option<Value>,
+) -> Result<Value, String> {
+    state
+        .ipc
+        .request(
+            "support_diagnostics_text",
+            json!({"profile": profile, "extras": extras.unwrap_or_else(|| json!({}))}),
+        )
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 async fn discover_local(
     state: State<'_, ClientState>,
@@ -2130,6 +2163,8 @@ pub fn run() {
             write_png_export,
             list_local_models,
             export_diagnostics,
+            support_diagnostics_text,
+            repair_python_dependencies,
             discover_local,
             import_local,
             ensure_local_service,

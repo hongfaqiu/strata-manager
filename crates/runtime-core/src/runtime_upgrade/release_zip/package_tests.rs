@@ -137,6 +137,9 @@ fn package_files_from_every_0_2_0_platform_pass_the_engine_whitelist() {
         "libamdhip64.so.7",
         "hipblaslt/library/gfx1151/extop_gfx1151.co",
         "rocblas/library/Kernels.so-000-gfx1151.hsaco",
+        // #103: the hipBLASLt tuning table shipped in the official Windows HIP RX 9070 package.
+        "tuning/gfx1201-hipblaslt-100500.txt",
+        "rocm_kpack.dll",
     ] {
         assert!(engine_file_allowed(name), "{name}");
     }
@@ -365,6 +368,158 @@ fn linux_picks_the_package_by_detected_gpu_unless_the_engine_already_says() {
         "hip-halo"
     );
     assert!(choose_asset_with(&info, temp.path(), None, &rtx).is_err());
+}
+
+fn windows_asset(upstream: &str, variant: &str, archs: &[&str]) -> RuntimeReleaseAsset {
+    let mut asset = release_asset(
+        &format!("strata-engine-0.1.46-windows-x86_64-{upstream}.tar.gz"),
+        variant,
+    );
+    asset.archs = archs.iter().map(|a| (*a).to_owned()).collect();
+    asset
+}
+
+/// The four Windows packages of the real v0.2.1 feed.
+fn windows_info() -> RuntimeUpdateInfo {
+    RuntimeUpdateInfo {
+        assets: vec![
+            windows_asset(
+                "cuda-cuda12",
+                "cuda12",
+                &[
+                    "sm_60",
+                    "sm_61",
+                    "sm_70",
+                    "sm_75",
+                    "sm_80",
+                    "sm_86",
+                    "sm_89",
+                    "compute_89",
+                ],
+            ),
+            windows_asset(
+                "cuda-cuda13",
+                "cuda13",
+                &["sm_75", "sm_86", "sm_89", "sm_120", "compute_120"],
+            ),
+            windows_asset("hip-rx9070", "hip", &["gfx1200", "gfx1201"]),
+            windows_asset(
+                "hip-rdna3",
+                "hip-rdna3",
+                &["gfx1100", "gfx1101", "gfx1102", "gfx1151"],
+            ),
+        ],
+        ..Default::default()
+    }
+}
+
+#[test]
+fn every_file_of_the_official_windows_hip_package_is_allowed() {
+    // #103: the v0.2.1 HIP RX 9070 package (830 files, `rocm/` and `tuning/`) was refused.
+    let manifest: Value = serde_json::from_slice(include_bytes!(
+        "../fixtures/manifest-windows-hip-rx9070.json"
+    ))
+    .unwrap();
+    let files = manifest["files"].as_array().unwrap();
+    assert_eq!(files.len(), 830);
+    for file in files {
+        let path = file["path"].as_str().unwrap();
+        assert!(engine_file_allowed(path), "{path}");
+    }
+}
+
+#[test]
+fn windows_first_install_picks_hip_for_an_amd_only_computer() {
+    let temp = tempfile::tempdir().unwrap();
+    let info = windows_info();
+    // #103: RX 9070 XT (gfx1201) plus the Ryzen iGPU (gfx1036), no NVIDIA driver.
+    let rx9070 = || gpu_select::GpuProbe {
+        amd_gfx: vec!["gfx1036".into(), "gfx1201".into()],
+        ..Default::default()
+    };
+    let chosen = choose_asset_with(&info, temp.path(), None, &rx9070).unwrap();
+    assert_eq!(
+        chosen.name,
+        "strata-engine-0.1.46-windows-x86_64-hip-rx9070.tar.gz"
+    );
+    assert!(chosen.match_reason.unwrap().contains("gfx1201"));
+    let rx7900 = || gpu_select::GpuProbe {
+        amd_gfx: vec!["gfx1100".into()],
+        ..Default::default()
+    };
+    assert_eq!(
+        choose_asset_with(&info, temp.path(), None, &rx7900)
+            .unwrap()
+            .variant,
+        "hip-rdna3"
+    );
+    // An AMD card no package supports asks the user instead of installing CUDA.
+    let rx6800 = || gpu_select::GpuProbe {
+        amd_gfx: vec!["gfx1030".into()],
+        ..Default::default()
+    };
+    assert!(choose_asset_with(&info, temp.path(), None, &rx6800)
+        .unwrap_err()
+        .contains("手动选择"));
+    // NVIDIA, NVIDIA + AMD, or nothing detected: CUDA 13 as before.
+    let rtx = || gpu_select::GpuProbe {
+        nvidia_driver: Some("581.57".into()),
+        nvidia_caps: vec![(8, 9)],
+        amd_gfx: vec![],
+    };
+    let mixed = || gpu_select::GpuProbe {
+        nvidia_driver: Some("581.57".into()),
+        nvidia_caps: vec![(8, 9)],
+        amd_gfx: vec!["gfx1036".into()],
+    };
+    for probe in [
+        &rtx as &dyn Fn() -> gpu_select::GpuProbe,
+        &mixed,
+        &gpu_select::GpuProbe::default,
+    ] {
+        assert_eq!(
+            choose_asset_with(&info, temp.path(), None, probe)
+                .unwrap()
+                .variant,
+            "cuda13"
+        );
+    }
+    // An installed engine keeps its type and is never re-detected.
+    fs::create_dir_all(temp.path().join("engine")).unwrap();
+    fs::write(
+        temp.path().join("engine/BUILD.json"),
+        br#"{"version":"0.1.46","cuda":"13.0"}"#,
+    )
+    .unwrap();
+    let probed = std::cell::Cell::new(false);
+    let watch = || {
+        probed.set(true);
+        rx9070()
+    };
+    let chosen = choose_asset_with(&info, temp.path(), None, &watch).unwrap();
+    assert_eq!((chosen.variant.as_str(), probed.get()), ("cuda13", false));
+}
+
+#[test]
+fn windows_first_install_keeps_the_legacy_hip_zip_for_amd() {
+    let temp = tempfile::tempdir().unwrap();
+    let info = RuntimeUpdateInfo {
+        assets: vec![
+            release_asset("strata-windows-x64.zip", "cuda13"),
+            release_asset("strata-windows-x64-hip.zip", "hip"),
+        ],
+        ..Default::default()
+    };
+    let rx9070 = || gpu_select::GpuProbe {
+        amd_gfx: vec!["gfx1201".into()],
+        ..Default::default()
+    };
+    assert_eq!(
+        choose_asset_with(&info, temp.path(), None, &rx9070)
+            .unwrap()
+            .name,
+        "strata-windows-x64-hip.zip"
+    );
 }
 
 fn release_asset(name: &str, variant: &str) -> RuntimeReleaseAsset {
