@@ -276,7 +276,7 @@ export interface GuideInput {
   desktop: boolean;
   tasks: core.TaskStatus[];
   handoffs: core.SetupHandoff[];
-  runtime?: { taskId?: string; result?: { installDir: string; pythonPath: string; profile: core.ServiceProfile }; detectedRuntimes?: { readiness: 'ready' | 'repair'; runtimeVersion?: string; profile: core.ServiceProfile }[] };
+  runtime?: { taskId?: string; result?: { installDir: string; pythonPath: string; profile: core.ServiceProfile }; detectedRuntimes?: { readiness: 'ready' | 'repair'; runtimeVersion?: string; reason?: string; profile: core.ServiceProfile }[] };
   runtimePending: boolean;
   environment?: core.EnvironmentInfo;
   environmentFailed: boolean;
@@ -295,6 +295,8 @@ export interface GuideState {
   setupTask?: core.TaskStatus;
   handoff?: core.SetupHandoff;
   readyRuntime?: { runtimeVersion?: string; profile: core.ServiceProfile };
+  /** Why the detected runtime still needs repair (backend fact, shown verbatim). */
+  repairReason?: string;
   target?: core.ServiceProfile;
 }
 
@@ -323,5 +325,6 @@ export function deriveGuide(input: GuideInput): GuideState {
     online: input.online && isTarget, loaded: input.loaded && isTarget, starting: input.starting,
   };
   const plan = progress?.path ? guidePlan(progress.path, facts, progress) : undefined;
-  return { facts, plan, checks, runtimeTask, setupTask, handoff, readyRuntime, target };
+  const repairReason = runtime === 'repair' ? detected.find(item => item.readiness === 'repair' && item.reason)?.reason : undefined;
+  return { facts, plan, checks, runtimeTask, setupTask, handoff, readyRuntime, repairReason, target };
 }
