@@ -50,7 +50,7 @@
   "downloadingAppUpdate": "Descargando actualización",
   "installingAppUpdate": "Instalando actualización",
   "restartForUpdate": "Actualización instalada; reinicia la interfaz para aplicarla",
-  "updaterHint": "Tras confirmar, se verifica la firma del paquete y se instala solo cuando no hay actividad.",
+  "updaterHint": "Tras confirmar, se verifica la firma del paquete y se instala solo cuando no hay actividad. Las actualizaciones de la app usan la misma fuente de descarga que el motor; si no hay una elegida, se mide la más rápida y GitHub oficial sigue siendo el respaldo.",
   "updateConfirmTitle": "¿Actualizar a {{version}}?",
   "releaseNotesTitle": "Notas de esta versión",
   "releaseNotesMissing": "La versión {{version}} no tiene notas de publicación.",

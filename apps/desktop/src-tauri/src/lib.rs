@@ -1,5 +1,6 @@
 #[cfg(any(target_os = "macos", test))]
 mod app_menu;
+mod app_updates;
 mod arena;
 mod config_cleanup;
 mod configuration_details;
@@ -2029,6 +2030,7 @@ pub fn run() {
                 tray_quit: quit.clone(),
                 tray_stop_quit: stop_quit.clone(),
             });
+            app.manage(app_updates::AppUpdateStore::default());
             app.manage(taskbar_monitor::TaskbarMonitorState::default());
             taskbar_monitor::restore_on_launch(app.handle(), &saved_settings);
             let menu = Menu::with_items(
@@ -2141,6 +2143,10 @@ pub fn run() {
             set_startup_enabled,
             get_background_policy,
             set_background_policy,
+            app_updates::check_app_update,
+            app_updates::download_app_update,
+            app_updates::install_app_update,
+            app_updates::close_app_update,
             prepare_app_update,
             restart_interface,
             tuning_start,

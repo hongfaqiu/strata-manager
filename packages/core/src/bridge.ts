@@ -451,6 +451,54 @@ export const startupStatus = (): Promise<StartupStatus> => native('get_startup_s
 export const setStartupEnabled = (enabled: boolean): Promise<StartupStatus> => native('set_startup_enabled', { enabled });
 export const backgroundPolicy = (): Promise<BackgroundPolicy> => native('get_background_policy');
 export const setBackgroundPolicy = (mode: BackgroundPolicy['mode'], autoRecover: boolean, idleUnloadMinutes = 15): Promise<BackgroundPolicy> => native('set_background_policy', { mode, autoRecover, idleUnloadMinutes });
+export interface AppUpdateSourceInfo {
+  id: string;
+  label: string;
+  kind: 'official' | 'mirror' | 'custom' | string;
+  selectedBy: 'automatic' | 'preference' | 'fallback' | string;
+  manifestUrl: string;
+  downloadUrl?: string;
+}
+export interface AppUpdateAttempt {
+  stage: 'probe' | 'check' | 'download' | string;
+  result: 'success' | 'failed' | 'selected' | 'current' | 'no-update' | string;
+  source: AppUpdateSourceInfo;
+  message?: string;
+  durationMs?: number;
+}
+export interface AppUpdateDownloadEvent {
+  event: 'Source' | 'Started' | 'Progress' | 'Finished' | string;
+  data: { contentLength?: number; chunkLength?: number };
+  source?: AppUpdateSourceInfo;
+  fallbackChain?: AppUpdateSourceInfo[];
+  attempts?: AppUpdateAttempt[];
+}
+export interface NativeAppUpdate {
+  id: string;
+  currentVersion: string;
+  version: string;
+  date?: string;
+  body?: string;
+  rawJson: JsonObject | null | unknown;
+  source: AppUpdateSourceInfo;
+  fallbackChain: AppUpdateSourceInfo[];
+  attempts: AppUpdateAttempt[];
+}
+export interface AppUpdateCheckResult {
+  update: NativeAppUpdate | null;
+  source?: AppUpdateSourceInfo;
+  fallbackChain: AppUpdateSourceInfo[];
+  attempts: AppUpdateAttempt[];
+}
+export const checkAppUpdate = (timeoutMs = 30000): Promise<AppUpdateCheckResult> => native('check_app_update', { timeoutMs });
+export async function downloadAppUpdate(updateId: string, onEvent: (event: AppUpdateDownloadEvent) => void, timeoutMs = 600000): Promise<void> {
+  const { Channel } = await import('@tauri-apps/api/core');
+  const channel = new Channel<AppUpdateDownloadEvent>();
+  channel.onmessage = event => onEvent(event);
+  await native<void>('download_app_update', { updateId, timeoutMs, onEvent: channel });
+}
+export const installAppUpdate = (updateId: string, restartAfterInstall = true): Promise<void> => native('install_app_update', { updateId, restartAfterInstall });
+export const closeAppUpdate = (updateId: string): Promise<void> => native('close_app_update', { updateId });
 export const prepareAppUpdate = (): Promise<void> => native('prepare_app_update');
 export const restartInterface = (): Promise<void> => native('restart_interface');
 export const supportsFullScenarioTuning = (status: SupervisorStatus | undefined): boolean =>
