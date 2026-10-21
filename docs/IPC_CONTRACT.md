@@ -82,7 +82,7 @@
 ## Rust invoke：ZIP 来源、匹配与更新
 
 - `runtime_update_info({force?}) -> RuntimeUpdateInfo`：官方发布版本、源码、可校验资产、安装支持范围与错误；Core 默认 force=false，桌面元数据层复用已核验数据。
-- `resolve_runtime_zip_asset({installDir,assetName?}) -> RuntimeReleaseAsset`：Tauri 直接调用当前后台 `resolve_runtime_zip_asset_v1`。显式 assetName 做核验；未指定时按已安装引擎的 CUDA/HIP 信息选择当前官方可用包，无法可靠匹配时返回错误，不猜测任意来源。没有已装引擎时：Linux 按检测到的显卡选包；Windows 只检测到 AMD 显卡（`Win32_VideoController` 名称映射到 gfx 架构，没有官方包的核显等会被忽略）时选对应 HIP 包，其余情况仍默认 CUDA 13（#103）。
+- `resolve_runtime_zip_asset({installDir,assetName?}) -> RuntimeReleaseAsset`：Tauri 直接调用当前后台 `resolve_runtime_zip_asset_v1`。显式 assetName 做核验；未指定时按已安装引擎的 CUDA/HIP 信息选择当前官方可用包，无法可靠匹配时返回错误，不猜测任意来源。没有已装引擎时：Linux 按检测到的显卡选包；Windows 上 `nvidia-smi` 能读出驱动和计算能力时，按两者在 CUDA 包里选（Pascal/Volta 或驱动低于 CUDA 13 要求时选 CUDA 12，都不满足时报错并提示更新驱动或手动选包）；只检测到 AMD 显卡（`Win32_VideoController` 名称映射到 gfx 架构，没有官方包的核显等会被忽略）时选对应 HIP 包；什么都检测不到或 `nvidia-smi` 读不出计算能力时仍默认 CUDA 13（#103）。
 - `test_runtime_zip_download({assetName,localArchivePath?,downloadUrl?}) -> RuntimeZipDownloadCheckResult`：Tauri 直接调用当前后台 `test_runtime_zip_download_v1`，只做来源测试，不创建安装任务或下载缓存文件。
 - `update_runtime_zip({installDir,assetName?,stopCurrentService?,localArchivePath?,downloadUrl?}) -> TaskStatus`：经桌面持久更新队列提交。stopCurrentService 默认 false；服务中断授权仅来自显式更新确认。官方来源使用后台 `update_runtime_zip`，自定义来源使用 `update_runtime_zip_download_v1`。队列分配持久 requestId 并协调批准的服务停止、后台能力/包交接、任务状态与原状态恢复；requestId 不是额外的前端 invoke 参数。
 
