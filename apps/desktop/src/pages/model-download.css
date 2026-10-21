@@ -95,7 +95,7 @@
 .d2-catalog-progress i{position:absolute;left:0;bottom:0;height:2px;background:#178a62;transition:width .6s ease}
 .d2-catalog-progress:before{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:color-mix(in srgb,var(--st-ink,#000) 9%,transparent)}
 .d2-catalog-news{font-style:normal;font-size:10.5px;padding:0 6px;border:1px solid #178a62;color:#178a62;border-radius:9px}
-.model-download-variant-head,.model-download-variant{grid-template-columns:minmax(0,1.3fr) .8fr .8fr minmax(110px,1.2fr)!important}
+.model-download-variant-head,.model-download-variant{grid-template-columns:minmax(0,1.1fr) .7fr .7fr minmax(100px,1.1fr) minmax(92px,1fr)!important}
 .d2-variant-fit{display:grid;gap:3px;min-width:0}.d2-variant-fit small{font-size:11.5px;color:var(--st-ink-muted,var(--muted))}
 .d2-variant-fit small.is-fits{color:#178a62}.d2-variant-fit small.is-tight,.d2-variant-fit small.is-over{color:#b9771c}
 @media (prefers-reduced-motion:reduce){.d2-catalog-live i.is-on{animation:none}}

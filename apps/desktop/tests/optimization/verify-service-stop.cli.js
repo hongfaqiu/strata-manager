@@ -40,7 +40,7 @@ async page => {
       }
       const calls = await page.evaluate(() => window.__fixture.calls);
       const stops = calls.filter(call => call.command === 'stop_service');
-      const forbidden = calls.filter(call => /^(start_service|restart_service|ensure_local_service|switch_local_service|take_over_service|prepare_app_update|plugin:updater\|download|plugin:updater\|install)$/.test(call.command) || call.command === 'strata_request' && call.args.method === 'POST');
+      const forbidden = calls.filter(call => /^(start_service|restart_service|ensure_local_service|switch_local_service|take_over_service|prepare_app_update|download_app_update|install_app_update|plugin:updater\|download|plugin:updater\|install)$/.test(call.command) || call.command === 'strata_request' && call.args.method === 'POST');
       assert(stops.length === 1 && stops[0].args.profileId === 'a', 'Only the explicit in-memory stop for active profile should run');
       assert(forbidden.length === 0, 'Stopping must not start services or perform other mutations');
       assert(errors.length === errorStart, `Browser errors: ${errors.slice(errorStart).join('; ')}`);

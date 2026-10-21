@@ -8,7 +8,7 @@ import desktopPackage from '../../package.json';
 import bundledChangelog from '../../../../CHANGELOG.md?raw';
 import { Dialog, Panel } from '../components';
 import { Dropdown, Toggle } from '../OfficialControls';
-import type { AppUpdateState } from '../useAppUpdates';
+import { appUpdateSourceSummary, type AppUpdateState } from '../appUpdateController';
 import { startupStatusHint } from '../startupStatusText';
 import { bundledAppRelease } from '../bundledAppRelease';
 import { localizedReleaseNotes, releaseNotes } from '../updateReleaseNotes';
@@ -62,6 +62,7 @@ export function DesktopLifecycleSettings({ section = 'all', currentVersion = des
   if (idleSupported && !idlePeriods.includes(idleMinutes)) idlePeriods.push(idleMinutes);
   const idleHint = policy.data && !idleSupported ? t('idleModelReleaseUpdate') : policy.data?.mode === 'alwaysReady' ? (zh ? '先关闭“保持模型就绪”' : 'Turn off “Keep model ready” first') : '';
   const notesBody = (notes: string | null, missing: string, label: string) => <div className="settings-release-body" role="region" tabIndex={0} aria-label={label}>{notes ? <ReleaseNotesMarkdown>{notes}</ReleaseNotesMarkdown> : <p className="subtle">{missing}</p>}</div>;
+  const { source: sourceSummary, fallback: fallbackSummary } = appUpdateSourceSummary(update.source, update.fallbackChain, zh);
 
   return <>
     {background && <Panel title={t('backgroundSettings')} action={helpAction('background', zh ? '本机后台帮助' : 'Background service help')}>
@@ -84,6 +85,8 @@ export function DesktopLifecycleSettings({ section = 'all', currentVersion = des
       {update.phase in phaseKey && <p role="status" aria-live="polite">{t(phaseKey[update.phase as keyof typeof phaseKey], { version: update.version })}</p>}
       {update.error && <div className="notice error" role="alert">{t(update.errorStage === 'download' ? 'updateDownloadFailed' : update.errorStage === 'install' ? 'updateInstallFailed' : 'updateCheckFailed')}<button type="button" onClick={() => setHelp('error')}>{zh ? '查看原因' : 'View reason'}</button></div>}
       {downloading && <p role="status">{t(update.total ? 'downloadBytes' : 'downloadBytesUnknown', { received: formatBytes(update.received), total: formatBytes(update.total ?? 0) })}</p>}
+      {sourceSummary && <p className="subtle" role="status">{sourceSummary}</p>}
+      {fallbackSummary && <p className="subtle" role="status">{fallbackSummary}</p>}
       <div className="actions">
         <button type="button" disabled={!desktop || downloading || update.downloaded || update.phase === 'checking' || update.phase === 'installed'} onClick={() => void onCheck()}>{update.phase === 'checking' ? <LoaderCircle className="spin" size={15}/> : <RefreshCw size={15}/>} {t('checkUpdates')}</button>
         {update.version && !update.downloaded && update.phase !== 'current' && update.phase !== 'installed' && <button type="button" className="primary" disabled={!desktop || downloading || update.phase === 'checking'} onClick={() => void onDownload()}><Download size={15}/>{t('reviewAppUpdate')}</button>}

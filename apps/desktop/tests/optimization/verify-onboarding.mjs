@@ -110,7 +110,7 @@ try {
   }, { arena: true, shot: '04-model.png' });
   await run('model step degrades offline and starts the real setup task', 'onboarding-app.html?state=model-offline#guide', async page => {
     await page.getByText('暂时读不到排行榜数据，不影响下载。').waitFor();
-    assert.ok(await page.getByText('尚无实测').count() >= 3);
+    assert.ok(await page.locator('.ob-model .cat-est-tag').count() >= 3, 'rows without Arena data show a labelled 估算, not "尚无实测"');
     await page.locator('[data-testid="resource-assessment"][data-status="suggested"]').waitFor();
     if (shots) { await page.waitForTimeout(300); await page.screenshot({ path: resolve(shots, '04b-model-offline.png') }); }
     await page.getByRole('button', { name: /下载并准备/ }).click();
@@ -119,6 +119,40 @@ try {
     assert.equal(setup.model, 'swift'); assert.equal(setup.quant, 'IQ3_S');
     await page.waitForFunction(() => document.querySelector('[data-testid="onboarding"]')?.dataset.step === 'download');
     assert.equal(await page.getByRole('switch', { name: '下载完成后自动启动并加载' }).getAttribute('aria-checked'), 'false', 'auto start defaults to off');
+  });
+  await run('Mac 48 GB model step greys out unsupported families and explains SSD streaming', 'onboarding-app.html?state=model&mac=m5pro#guide', async page => {
+    await page.getByRole('radio', { name: /Qwen3\.8-Flash-Next\s*Q2_0/ }).waitFor();
+    const blocked = page.locator('[data-testid="ob-mac-unavailable"]');
+    await blocked.getByText('Swift 1.5').waitFor();
+    assert.equal(await page.getByRole('radio', { name: /Swift/ }).count(), 0, 'Swift is never offered on a Mac');
+    assert.equal(await page.getByRole('radio', { name: /Unsloth/ }).count(), 0, 'the Mac installer takes only --family qwen');
+    await page.locator('[data-testid="mac-unsloth-installer"]').getByText(/只接受 Qwen3\.8-Flash-Next/).waitFor();
+    assert.equal(await page.getByRole('radio', { name: /IQ2_XS|UD-IQ4_XS/ }).count(), 0, 'only the Mac sizes are offered');
+    await page.getByText(/不会失败，只是更慢/).first().waitFor();
+    await page.getByRole('link', { name: /MAC\.md/ }).first().waitFor();
+  }, { shot: 'catalog-mac-48gb-official.png' });
+  await run('community scope labels sources and risks, and blocks Mac-only gaps with the reason', 'onboarding-app.html?state=model&mac=m5pro#guide', async page => {
+    await page.locator('[data-testid="ob-model-scope"]').getByText('社区 · 无审查').click();
+    await page.getByRole('radio', { name: /SC117 abliterated\s*Q2_0/ }).waitFor();
+    await page.getByText('去拒答向量在 Mac 引擎未移植，等同官方版。').first().waitFor();
+    await page.getByText(/gemv/).first().waitFor();
+    await page.getByText(/MTP 草稿头没有做去审查/).waitFor();
+    await page.getByRole('link', { name: /SC117\/Qwen3\.8-Flash-Next-GSQ-RCO-abliterated-GGUF/ }).waitFor();
+    await page.locator('[data-testid="community-disk"]').getByText(/预计额外占用磁盘/).waitFor();
+    await page.getByText(/以硬链接复用/).waitFor();
+    await page.getByRole('radio', { name: /example-user/ }).first().waitFor();
+    assert.equal(await page.evaluate(() => window.__fixture.calls.filter(call => call.command === 'hf_models_api' && call.args.path.startsWith('/api/models/ISTA-DASLab')).length), 0, 'official repos are not re-discovered');
+  }, { shot: 'catalog-mac-48gb-community.png' });
+  await run('community download pins the revision and runs the community setup', 'onboarding-app.html?state=model-offline&hf=offline#guide', async page => {
+    await page.locator('[data-testid="ob-model-scope"]').getByText('社区 · 无审查').click();
+    await page.getByText('无法连接 Hugging Face，只显示内置条目').waitFor();
+    await page.getByRole('radio', { name: /SC117 abliterated\s*IQ3_XXS/ }).click();
+    await page.getByRole('button', { name: /下载并准备/ }).click();
+    await page.waitForFunction(() => window.__fixture.calls.some(call => call.command === 'run_community_setup'));
+    const args = await page.evaluate(() => window.__fixture.calls.find(call => call.command === 'run_community_setup').args);
+    assert.equal(args.request.slug, 'sc117-abliterated'); assert.equal(args.request.quant, 'IQ3_XXS');
+    assert.match(args.request.revision, /^[0-9a-f]{40}$/);
+    assert.equal(args.request.files.length, 2); assert.ok(args.request.files.every(file => /^[0-9a-f]{64}$/.test(file.sha256)));
   });
   await run('download step shows live task progress', 'onboarding-app.html?state=download#guide', async page => {
     await page.getByText('Swift 1.5 IQ3_S 下载中 31.2 / 83.6 GB').waitFor();

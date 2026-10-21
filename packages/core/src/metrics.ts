@@ -54,6 +54,24 @@ export function normalizeMetrics(value: unknown): MetricSnapshot {
   };
 }
 
+export type GpuTelemetrySource = 'amd-adlx' | 'amdgpu-sysfs';
+export interface GpuTelemetryDetails {
+  /** Set when the manager filled the GPU readings from AMD's driver (#86); null = the engine's own (NVML) reading. */
+  source: GpuTelemetrySource | null;
+  clockMhz: number | null; memClockMhz: number | null; hotspotTemp: number | null; fanRpm: number | null;
+}
+/** Extra GPU readings the manager adds for AMD cards (ADLX on Windows, amdgpu sysfs on Linux). */
+export function gpuTelemetryDetails(value: unknown): GpuTelemetryDetails {
+  const raw = asObject(value), hw = asObject(raw.hardware), st = asObject(raw.hardware_static);
+  const source = st.gpu_telemetry_source === 'amd-adlx' || st.gpu_telemetry_source === 'amdgpu-sysfs' ? st.gpu_telemetry_source : null;
+  return { source, clockMhz: number(hw.gpu_clock_mhz), memClockMhz: number(hw.gpu_mem_clock_mhz), hotspotTemp: number(hw.gpu_hotspot_temp), fanRpm: number(hw.gpu_fan_rpm) };
+}
+/** Sub-line for a field the AMD driver did not report; empty for other GPUs so their cards are unchanged. */
+export function gpuFieldUnavailable(details: GpuTelemetryDetails, zh: boolean): string {
+  if (!details.source) return '';
+  return zh ? 'AMD 驱动未提供此项' : 'not reported by the AMD driver';
+}
+
 /** Per-request decode rates of the slots generating right now ("parallel" / --batch); live.tok_s is their sum upstream. */
 export function decodeStreams(value: unknown): number[] {
   const live = asObject(asObject(value).live);

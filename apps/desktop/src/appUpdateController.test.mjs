@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { AppUpdateController, CHECK_INTERVAL } from './appUpdateController.ts';
+import { AppUpdateController, CHECK_INTERVAL, appUpdateSourceSummary } from './appUpdateController.ts';
 
 const deferred = () => {
   let resolve, reject;
@@ -8,34 +8,74 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 const tick = () => new Promise(resolve => setImmediate(resolve));
+const source = (id, label = id === 'official' ? 'GitHub' : id === 'gh-proxy' ? 'GH Proxy' : 'GHProxy', selectedBy = 'automatic', kind = id === 'official' ? 'official' : 'mirror') => ({
+  id, label, kind, selectedBy,
+  manifestUrl: id === 'official'
+    ? 'https://github.com/hongfaqiu/strata-manager/releases/latest/download/latest.json'
+    : `https://${id === 'gh-proxy' ? 'gh-proxy.org' : 'ghproxy.net'}/https://github.com/hongfaqiu/strata-manager/releases/latest/download/latest.json`,
+  downloadUrl: id === 'official'
+    ? 'https://github.com/hongfaqiu/strata-manager/releases/download/v0.2.0/Strata.Manager_0.2.0_x64-setup.exe'
+    : `https://${id === 'gh-proxy' ? 'gh-proxy.org' : 'ghproxy.net'}/https://github.com/hongfaqiu/strata-manager/releases/download/v0.2.0/Strata.Manager_0.2.0_x64-setup.exe`,
+});
 function fixture(overrides = {}) {
   const calls = [], states = [];
   let lastCheck = 0;
+  const defaultSource = source('ghproxy');
+  const fallbackSource = source('official', 'GitHub', 'fallback', 'official');
   const update = {
     version: '0.2.0', body: '### 中文\n- 测试更新。\n\n### English\n- Fixture update.',
+    source: defaultSource,
+    fallbackChain: [fallbackSource],
+    attempts: [{ stage: 'check', result: 'selected', source: defaultSource, message: 'version 0.2.0' }],
     download: async onEvent => {
       calls.push('download');
-      onEvent({ event: 'Started', data: { contentLength: 10 } });
+      onEvent({ event: 'Source', data: {}, source: update.source, fallbackChain: update.fallbackChain, attempts: update.attempts });
+      onEvent({ event: 'Started', data: { contentLength: 10 }, source: update.source, fallbackChain: update.fallbackChain, attempts: update.attempts });
       onEvent({ event: 'Progress', data: { chunkLength: 4 } });
       onEvent({ event: 'Progress', data: { chunkLength: 6 } });
-      onEvent({ event: 'Finished' });
+      onEvent({ event: 'Finished', data: {} });
     },
     install: async () => { calls.push('install'); },
     close: async () => { calls.push('close'); },
     ...overrides.update,
   };
+  const normalizeCheck = value => {
+    if (value && typeof value === 'object' && 'update' in value) return value;
+    return {
+      update: value ?? null,
+      source: value?.source,
+      fallbackChain: value?.fallbackChain ?? [],
+      attempts: value?.attempts ?? [],
+    };
+  };
   const controller = new AppUpdateController({
-    check: async () => { calls.push('check'); return update; },
+    check: async () => {
+      calls.push('check');
+      const result = overrides.dependencies?.check ? await overrides.dependencies.check() : update;
+      return normalizeCheck(result);
+    },
     prepare: async () => { calls.push('prepare'); },
     loadLastCheck: async () => lastCheck,
     saveLastCheck: async time => { lastCheck = time; calls.push('saveCheck'); },
     now: () => CHECK_INTERVAL + 1,
-    ...overrides.dependencies,
+    ...Object.fromEntries(Object.entries(overrides.dependencies ?? {}).filter(([key]) => key !== 'check')),
   });
   controller.attach(state => states.push(state));
   controller.configure({ desktop: true, ready: true, enabled: overrides.enabled ?? true, idle: overrides.idle ?? true });
   return { controller, calls, states, update };
 }
+
+test('source summaries keep the chosen host and fallback order in both languages', () => {
+  const chosen = source('ghproxy');
+  const official = source('official', 'GitHub', 'fallback', 'official');
+  assert.deepEqual(appUpdateSourceSummary(chosen, [official], true), {
+    source: '更新来源: 自动选择 · GHProxy',
+    fallback: '失败时依次回退: 官方 GitHub',
+  });
+  assert.deepEqual(appUpdateSourceSummary({ ...official, selectedBy: 'fallback' }, [], false), {
+    source: 'Update source: Fallback · Official GitHub',
+  });
+});
 
 test('automatic and manual checks offer the candidate and never download or install it', async () => {
   const { controller, calls, update } = fixture();
@@ -64,6 +104,34 @@ test('confirmation verifies progress and installs the displayed candidate only o
   assert.equal(calls.filter(call => call === 'install').length, 1);
   controller.detach();
   assert.equal(calls.filter(call => call === 'close').length, 1);
+});
+
+test('download fallback republishes the active source and resets progress for the successful retry', async () => {
+  const mirror = source('ghproxy');
+  const official = source('official', 'GitHub', 'fallback', 'official');
+  const mirrorAttempts = [{ stage: 'check', result: 'selected', source: mirror, message: 'version 0.2.0' }];
+  const officialAttempts = [...mirrorAttempts, { stage: 'download', result: 'failed', source: mirror, message: 'mirror timeout' }];
+  const { controller, states } = fixture({ update: {
+    source: mirror,
+    fallbackChain: [official],
+    download: async onEvent => {
+      onEvent({ event: 'Source', data: {}, source: mirror, fallbackChain: [official], attempts: mirrorAttempts });
+      onEvent({ event: 'Started', data: { contentLength: 10 }, source: mirror, fallbackChain: [official], attempts: mirrorAttempts });
+      onEvent({ event: 'Progress', data: { chunkLength: 7 } });
+      onEvent({ event: 'Source', data: {}, source: official, fallbackChain: [], attempts: officialAttempts });
+      onEvent({ event: 'Started', data: { contentLength: 4 }, source: official, fallbackChain: [], attempts: officialAttempts });
+      onEvent({ event: 'Progress', data: { chunkLength: 4 } });
+      onEvent({ event: 'Finished', data: {} });
+    },
+  } });
+  await controller.check();
+  await controller.confirm('0.2.0');
+  assert.equal(controller.state.phase, 'installed');
+  assert.equal(controller.state.source.id, 'official');
+  assert.ok(states.some(state => state.phase === 'downloading' && state.source?.id === 'ghproxy' && state.received === 7));
+  assert.ok(states.some(state => state.phase === 'downloading' && state.source?.id === 'official' && state.received === 0));
+  assert.ok(states.some(state => state.phase === 'downloading' && state.source?.id === 'official' && state.received === 4));
+  controller.detach();
 });
 
 test('deferring a candidate keeps later timers and idle transitions from authorizing it', async () => {
