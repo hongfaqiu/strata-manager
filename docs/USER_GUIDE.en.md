@@ -48,7 +48,7 @@ Model cards show the actual data destination, free space on each destination dis
 
 "Choose a model" (step 3 of the guide and the Download models page) lists official models by default, and recommendations come only from them. The speed on the right of each row is marked **estimate**. It is not measured on your machine. It is upstream Strata's published measurement of the same model and quantization on a reference machine: for Mac, the M5 Max 128 GB, or the M4 32 GB / M1 Max 34 GB SSD-streaming runs; for PC, the RTX 5070 12 GB, RX 9070 XT 16 GB or R9700 32 GB. "≤" means your machine is weaker than the reference and "≥" means it is stronger. Time to first token is a 4K prompt divided by the measured prompt speed. Hover a row or open its details to see the exact source and which figures are extrapolated.
 
-**When a Mac's memory cannot hold the whole model (48 GB, for example)**, the engine streams the experts from the internal SSD. It runs and does not fail; it is just slower (see upstream [MAC.md](https://github.com/Niko1221/Strata/blob/main/docs/MAC.md)). Swift, Coder and Qwen3.6 do not run on Mac and are greyed out with the reason.
+**When a Mac's memory cannot hold the whole model (48 GB, for example)**, the engine streams the experts from the internal SSD. It runs and does not fail; it is just slower (see upstream [MAC.md](https://github.com/Niko1221/Strata/blob/main/docs/MAC.md)). Swift, Coder and Qwen3.6 do not run on Mac. Official Unsloth is unavailable on Mac too, because the app's Mac installer takes only Qwen3.8-Flash-Next Q2_0 / IQ3_XXS / IQ3_S. All of them are greyed out with the reason.
 
 Switch to **Community · uncensored** to see third-party builds:
 
@@ -63,7 +63,7 @@ Switch to **Community · uncensored** to see third-party builds:
   - Long-running agents may start refusing again.
 
   Use them only where you can take responsibility for the results.
-- **Download:** files are pinned to one commit of the source repository and each one is checked for size and SHA-256. The official installer then packs them into a separate `community/` data folder with its own configuration, so official models are never overwritten.
+- **Download:** files are pinned to one commit of the source repository and each one is checked for size and SHA-256. The official installer then packs them into a separate `community/` data folder with its own configuration, so official models are never overwritten. The details state the estimated extra disk before you download. Files byte-identical to official shards (alesha-pro's shards, for example) are hard-linked from the official download already on this PC after a SHA-256 check, so they are not downloaded again.
 
 ### Put models and engines on another drive
 
