@@ -7,10 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       macos_notarization:
-        description: 'macOS notarization: wait (staple in CI) or defer (submit only; finish with macos-notarize-followup.yml)'
-        type: choice
-        options: [wait, defer]
-        default: wait
+        description: 'macOS notarization: empty = repository variable MACOS_NOTARIZATION or auto; auto, wait or defer'
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -290,8 +289,8 @@ jobs:
       # smoke tests. main, tags, manual runs, release/* PRs and PRs labelled
       # full-ci still build exactly what a release would promote.
       PACKAGE_INSTALLERS: ${{ github.event_name != 'pull_request' || startsWith(github.head_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'full-ci') }}
-      # wait (default) or defer; see the macOS signing steps and docs/RELEASING.md.
-      MACOS_NOTARIZATION: ${{ inputs.macos_notarization || vars.MACOS_NOTARIZATION || 'wait' }}
+      # auto (default), wait or defer; see the macOS signing steps and docs/RELEASING.md.
+      MACOS_NOTARIZATION: ${{ inputs.macos_notarization || vars.MACOS_NOTARIZATION || 'auto' }}
       CARGO_TARGET_DIR: ${{ github.workspace }}/apps/desktop/src-tauri/target
       CARGO_TERM_COLOR: always
       CARGO_PROFILE_DEV_DEBUG: '0'
@@ -436,9 +435,11 @@ jobs:
       # APPLE_SIGNING_IDENTITY as "provided" and fails. Notarization credentials
       # use STRATA_NOTARY_* names so tauri only signs; the DMG (which contains
       # the app) is submitted once below.
-      # MACOS_NOTARIZATION=wait (default) waits for Apple and staples in this job.
-      # defer submits without waiting; such runs can only feed a release with
-      # defer_macos, and macos-notarize-followup.yml staples and adds macOS later.
+      # MACOS_NOTARIZATION: auto (default) waits up to MACOS_NOTARIZATION_TIMEOUT
+      # and staples, or leaves macOS for the follow-up when Apple is slow; wait
+      # always waits (fails if not accepted); defer only submits. Runs whose macOS
+      # is not stapled can only feed a release that defers macOS, and
+      # macos-notarize-followup.yml staples and adds macOS later.
       - name: Prepare macOS signing and notarization
         if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true'
         env:
@@ -451,7 +452,7 @@ jobs:
           REQUIRE_APPLE_SIGNING: ${{ github.repository == 'hongfaqiu/strata-manager' && github.event_name != 'pull_request' && '1' || '' }}
         run: |
           set -euo pipefail
-          case "$MACOS_NOTARIZATION" in wait|defer) ;; *) echo '::error::MACOS_NOTARIZATION must be wait or defer.'; exit 1;; esac
+          case "$MACOS_NOTARIZATION" in auto|wait|defer) ;; *) echo '::error::MACOS_NOTARIZATION must be auto, wait or defer.'; exit 1;; esac
           echo "macOS notarization mode: $MACOS_NOTARIZATION"
           if [ -z "${APPLE_CERTIFICATE:-}" ] || [ -z "${APPLE_CERTIFICATE_PASSWORD:-}" ]; then
             if [ -n "$REQUIRE_APPLE_SIGNING" ]; then
@@ -605,8 +606,15 @@ jobs:
           PY
           echo "STRATA_NOTARY_SUBMISSION=$id" >> "$GITHUB_ENV"
 
+      # wait: up to 60 min, fail if Apple has not accepted. auto (default): wait up
+      # to MACOS_NOTARIZATION_TIMEOUT (repository variable, default 30m); if Apple
+      # is still processing, keep the signed-but-unstapled bytes, skip the confirm
+      # gate below and let the release defer macOS. Invalid/Rejected always fails.
       - name: Wait for notarization and staple the macOS DMG and app
-        if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true' && env.MACOS_NOTARIZATION == 'wait'
+        id: notarize-wait
+        if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true' && env.MACOS_NOTARIZATION != 'defer'
+        env:
+          MACOS_NOTARIZATION_TIMEOUT: ${{ vars.MACOS_NOTARIZATION_TIMEOUT || '30m' }}
         run: |
           set -euo pipefail
           # stapler/spctl look tickets up online; retry transient runner network failures.
@@ -620,15 +628,26 @@ jobs:
             echo 'Not submitted (no credentials): nothing to staple.'
             exit 0
           fi
+          timeout=60m
+          if [ "$MACOS_NOTARIZATION" = auto ]; then
+            [[ "$MACOS_NOTARIZATION_TIMEOUT" =~ ^[0-9]+[smh]$ ]] || { echo '::error::MACOS_NOTARIZATION_TIMEOUT must look like 30m.'; exit 1; }
+            timeout="$MACOS_NOTARIZATION_TIMEOUT"
+          fi
           auth=(--key "$STRATA_NOTARY_KEY_PATH" --key-id "$STRATA_NOTARY_KEY_ID" --issuer "$STRATA_NOTARY_ISSUER")
-          result=$(xcrun notarytool wait "$STRATA_NOTARY_SUBMISSION" "${auth[@]}" --timeout 60m --output-format json || true)
+          xcrun notarytool wait "$STRATA_NOTARY_SUBMISSION" "${auth[@]}" --timeout "$timeout" > /dev/null 2>&1 || true
+          result=$(xcrun notarytool info "$STRATA_NOTARY_SUBMISSION" "${auth[@]}" --output-format json || true)
           status=$(printf '%s' "$result" | python3 -c 'import json,sys
           try: print(json.loads(sys.stdin.read()).get("status", ""))
           except Exception: print("")')
           echo "Notary submission $STRATA_NOTARY_SUBMISSION: ${status:-unknown}"
+          if [ "$status" = 'In Progress' ] && [ "$MACOS_NOTARIZATION" = auto ]; then
+            echo "::warning title=macOS notarization deferred::Apple is still notarizing after $timeout; this run's macOS bytes stay unstapled. The release will publish Windows/Linux first and macos-notarize-followup.yml adds macOS once Apple accepts."
+            echo 'stapled=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ "$status" != Accepted ]; then
             xcrun notarytool log "$STRATA_NOTARY_SUBMISSION" "${auth[@]}" || true
-            echo '::error title=macOS notarization::Apple did not accept the DMG in time. Re-run, or release with defer_macos and let macos-notarize-followup.yml finish macOS.'
+            echo '::error title=macOS notarization::Apple did not accept the DMG (or did not finish in wait mode).'
             exit 1
           fi
           retry xcrun stapler staple "$dmg"
@@ -649,6 +668,18 @@ jobs:
           record['dmg']['stapledSha256'] = h.hexdigest()
           json.dump(record, open(path, 'w'), indent=2)
           PY
+          echo 'stapled=true' >> "$GITHUB_OUTPUT"
+
+      # Normal (non-deferred) releases require this gate; it only runs when both
+      # the DMG and the app carry Apple's ticket.
+      - name: Confirm the macOS DMG and app are stapled
+        if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true' && steps.notarize-wait.outputs.stapled == 'true'
+        run: |
+          set -euo pipefail
+          retry() { local n; for n in 1 2 3 4; do "$@" && return 0; echo "::warning::attempt $n failed: $*"; sleep $((n * 15)); done; "$@"; }
+          bundle="${CARGO_TARGET_DIR}/${{ matrix.target }}/release/bundle"
+          retry xcrun stapler validate "$bundle/dmg/Strata Manager_${{ steps.package-version.outputs.version }}_aarch64.dmg"
+          retry xcrun stapler validate "$bundle/macos/Strata Manager.app"
 
       - name: Package the macOS app archive for the updater
         if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true'

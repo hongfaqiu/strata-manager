@@ -35,12 +35,13 @@ export const PLATFORM_GATES = Object.freeze({
   // Normal releases require the stapled (waited) notarization gate as well.
   macos: Object.freeze(['Prepare macOS signing and notarization', 'Verify the macOS code signature',
     'Submit the macOS DMG for notarization', 'Wait for notarization and staple the macOS DMG and app',
-    'Package the macOS app archive for the updater', 'Upload the macOS updater archive',
+    'Confirm the macOS DMG and app are stapled', 'Package the macOS app archive for the updater', 'Upload the macOS updater archive',
     'Upload the macOS DMG', 'Upload the macOS notarization record']),
 });
 /** Deferred macOS (and its follow-up) only needs signed bytes and a submitted notarization. */
+export const MACOS_STAPLED_GATE = 'Confirm the macOS DMG and app are stapled';
 export const MACOS_DEFERRED_GATES = Object.freeze(PLATFORM_GATES.macos.filter(
-  gate => gate !== 'Wait for notarization and staple the macOS DMG and app'));
+  gate => gate !== 'Wait for notarization and staple the macOS DMG and app' && gate !== MACOS_STAPLED_GATE));
 /**
  * include: normal release (all five installers, macOS stapled in CI).
  * defer: publish Windows/Linux/server now; macOS assets and darwin-aarch64 come later.
@@ -53,10 +54,28 @@ export const MACOS_COMPLETED_NOTE = '<!-- strata-macos-notarized -->\n\n> macOS 
 export function releaseBody(baseBody, plan) {
   return plan.macos === 'defer' ? baseBody.replace(/\n*$/, '\n\n') + MACOS_DEFERRED_NOTE : baseBody;
 }
-export function macosMode(value = process.env.MACOS_RELEASE_MODE) {
+/**
+ * MACOS_RELEASE_MODE as requested by the workflow. auto (the workflow default)
+ * is only resolved by the resolve phase: include when the CI macOS bytes are
+ * stapled, otherwise defer. Later phases receive the resolved mode.
+ */
+export function macosMode(value = process.env.MACOS_RELEASE_MODE, { allowAuto = false } = {}) {
   const mode = value === undefined || value === '' ? 'include' : value;
-  if (!MACOS_MODES.includes(mode)) fail('MACOS_RELEASE_MODE must be include, defer or followup.');
+  if (mode === 'auto' && allowAuto) return mode;
+  if (!MACOS_MODES.includes(mode)) fail('MACOS_RELEASE_MODE must be include, defer or followup' + (allowAuto ? ' or auto.' : ' (auto is resolved first).'));
   return mode;
+}
+/** Resolve auto: prefer a fully stapled same-source CI, else the same CI with macOS deferred. */
+export async function resolveMacosMode(plan, find) {
+  try {
+    return { mode: 'include', found: await find({ ...plan, ...createPlan({ ...plan, macos: 'include' }) }) };
+  } catch (error) {
+    // Fall back only when CI exists but is not reusable as a full release. The
+    // defer evidence is the same except for the macOS staple gates, so any other
+    // defect still refuses below.
+    if (!String(error?.message).startsWith('Same-source CI exists but is not reusable')) throw error;
+  }
+  return { mode: 'defer', found: await find({ ...plan, ...createPlan({ ...plan, macos: 'defer' }) }) };
 }
 /** Separate job that aggregates all six shard proofs after all desktop jobs succeeded. */
 export const COVERAGE_JOB = 'Native coverage verification';
@@ -450,7 +469,8 @@ const zipByteHash = [
 const python = process.platform === 'win32' ? 'python' : 'python3';
 
 async function context(phase, validateOnly = false) {
-  const macos = macosMode();
+  const requested = macosMode(undefined, { allowAuto: phase === 'resolve' });
+  const macos = requested === 'auto' ? 'include' : requested;
   if (macos === 'followup' && ['sign', 'publish'].includes(phase)) fail('The macOS follow-up signs and publishes with its own workflow.');
   if (process.env.GITHUB_REPOSITORY !== REPOSITORY || !isAbsolute(process.env.SOURCE_ROOT ?? '')) fail('Explicit repository and absolute SOURCE_ROOT are required.');
   const root = await realpath(process.env.SOURCE_ROOT); const commit = process.env.EXPECTED_SOURCE_SHA;
@@ -482,7 +502,7 @@ async function context(phase, validateOnly = false) {
   await requireSourceRelease(plan, { validateOnly,
     requireTag: modules['release-tag'].requireReleaseTagCommit,
     requireWritable: modules['release-assets'].requireReleaseAssetsWritable });
-  return { root, temp, modules, plan, validateOnly };
+  return { root, temp, modules, plan, validateOnly, requested };
 }
 async function bindCi(c) {
   const found = await findReusableCi(c.plan);
@@ -511,11 +531,14 @@ async function assertWriters(plan) {
   validateLiveWriters(runs, plan, Number(process.env.GITHUB_RUN_ID));
 }
 export async function resolveCi({ validateOnly = false } = {}) {
-  const c = await context('resolve', validateOnly); const found = await findReusableCi(c.plan);
+  const c = await context('resolve', validateOnly);
+  let mode = c.plan.macos; let found;
+  if (c.requested === 'auto') ({ mode, found } = await resolveMacosMode(c.plan, p => findReusableCi(p)));
+  else found = await findReusableCi(c.plan);
   const result = { ci_found: found.status === 'success', ci_status: found.status, ci_run_id: found.runId ?? '',
-    source_sha: c.plan.sourceSha, protocol: CI_PROTOCOL };
+    source_sha: c.plan.sourceSha, protocol: CI_PROTOCOL, macos_mode: mode };
   if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT,
-    'ci_found=' + result.ci_found + '\nci_status=' + result.ci_status + '\nci_run_id=' + result.ci_run_id + '\nsource_sha=' + result.source_sha + '\n');
+    'ci_found=' + result.ci_found + '\nci_status=' + result.ci_status + '\nci_run_id=' + result.ci_run_id + '\nsource_sha=' + result.source_sha + '\nmacos_mode=' + mode + '\n');
   console.log(JSON.stringify(result)); return result;
 }
 export function validateServerZipEntries(entries, serverArtifact) {

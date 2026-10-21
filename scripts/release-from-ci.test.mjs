@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import {
-  CI_PROTOCOL, REPOSITORY, COMMON_GATES, MACOS_DEFERRED_GATES, MACOS_DEFERRED_MARKER, manifestPlatforms, releaseBody, macosMode, COVERAGE_JOB, COVERAGE_GATES, PLATFORM_GATES, SHARD_GATES, WINDOWS_SHARD_GATES, createPlan, assetNames, serverPackageNames,
+  CI_PROTOCOL, REPOSITORY, COMMON_GATES, MACOS_DEFERRED_GATES, resolveMacosMode, MACOS_DEFERRED_MARKER, manifestPlatforms, releaseBody, macosMode, COVERAGE_JOB, COVERAGE_GATES, PLATFORM_GATES, SHARD_GATES, WINDOWS_SHARD_GATES, createPlan, assetNames, serverPackageNames,
   validateSourceProtocol, validateCiEvidence, validateInstallerEntries, validateLiveWriters,
   validateLatestManifest, validateReleaseInventory, validateReleaseMetadata, draftMetadataPayload, creationBranch,
   requireSourceRelease, validatePreparedRecord, readPrepared,
@@ -60,9 +60,13 @@ test('the macOS desktop job stays behind the docs-only skip and publishes Develo
   assert.match(desktop, /spctl --assess --type execute/);
   // tauri itself must not notarize (credentials use STRATA_NOTARY_* names); only the waited step staples.
   assert.doesNotMatch(desktop, /echo "APPLE_API_(KEY|ISSUER|KEY_PATH)=/);
-  assert.match(desktop, /MACOS_NOTARIZATION: \$\{\{ inputs\.macos_notarization \|\| vars\.MACOS_NOTARIZATION \|\| 'wait' \}\}/);
-  assert.match(desktop, /- name: Wait for notarization and staple the macOS DMG and app\n {8}if: runner\.os == 'macOS' && env\.PACKAGE_INSTALLERS == 'true' && env\.MACOS_NOTARIZATION == 'wait'/);
-  assert.match(workflow, /macos_notarization:\n {8}description: [^\n]+\n {8}type: choice\n {8}options: \[wait, defer\]\n {8}default: wait/);
+  // auto is the default: wait up to the timeout, otherwise leave macOS for the follow-up.
+  assert.match(desktop, /MACOS_NOTARIZATION: \$\{\{ inputs\.macos_notarization \|\| vars\.MACOS_NOTARIZATION \|\| 'auto' \}\}/);
+  assert.match(desktop, /- name: Wait for notarization and staple the macOS DMG and app\n {8}id: notarize-wait\n {8}if: runner\.os == 'macOS' && env\.PACKAGE_INSTALLERS == 'true' && env\.MACOS_NOTARIZATION != 'defer'/);
+  assert.match(desktop, /- name: Confirm the macOS DMG and app are stapled\n {8}if: runner\.os == 'macOS' && env\.PACKAGE_INSTALLERS == 'true' && steps\.notarize-wait\.outputs\.stapled == 'true'/);
+  assert.match(desktop, /echo 'stapled=true' >> "\$GITHUB_OUTPUT"/);
+  assert.match(desktop, /"\$status" = 'In Progress' \] && \[ "\$MACOS_NOTARIZATION" = auto \]/);
+  assert.match(workflow, /macos_notarization:\n {8}description: [^\n]+\n {8}type: string\n {8}default: ''/);
   // tauri-action must not upload the pre-notarization DMG; the stapled one is uploaded under the same name.
   assert.match(desktop, /uploadWorkflowArtifacts: \$\{\{ runner\.os != 'macOS' \}\}/);
   assert.match(desktop, /name: ci-darwin-aarch64-dmg/);
@@ -75,7 +79,11 @@ test('the macOS desktop job stays behind the docs-only skip and publishes Develo
   }
   assert.match(desktop, /name: ci-darwin-aarch64-notarization/);
   // A deferred CI only lacks the waited staple gate.
-  assert.deepEqual(PLATFORM_GATES.macos.filter(g => !MACOS_DEFERRED_GATES.includes(g)), ['Wait for notarization and staple the macOS DMG and app']);
+  assert.deepEqual(PLATFORM_GATES.macos.filter(g => !MACOS_DEFERRED_GATES.includes(g)), ['Wait for notarization and staple the macOS DMG and app', 'Confirm the macOS DMG and app are stapled']);
+  for (const [before, after] of [['Wait for notarization and staple the macOS DMG and app', 'Confirm the macOS DMG and app are stapled'],
+    ['Confirm the macOS DMG and app are stapled', 'Package the macOS app archive for the updater']]) {
+    assert.ok(desktop.indexOf('- name: ' + before) < desktop.indexOf('- name: ' + after), before + ' < ' + after);
+  }
   assert.match(desktop, /name: ci-darwin-aarch64-app-tarball/);
   assert.match(desktop, /if: runner\.os == 'macOS' && env\.PACKAGE_INSTALLERS == 'true'/);
   assert.doesNotMatch(desktop, /target: x86_64-apple-darwin/);
@@ -689,11 +697,12 @@ test('deferred release body carries the follow-up marker; normal bodies are unch
   assert.equal(draftMetadataPayload(deferPlan, body).body, body);
 });
 test('a deferred (submit-only) macOS CI job feeds defer and follow-up plans but never a normal release', () => {
-  const deferredMacJob = j => { if (j.name.startsWith('desktop (macos-15')) j.steps = j.steps.filter(s => s.name !== 'Wait for notarization and staple the macOS DMG and app'); };
+  // auto timeout: the wait step succeeded but the stapled confirmation was skipped.
+  const deferredMacJob = j => { if (j.name.startsWith('desktop (macos-15')) j.steps.find(s => s.name === 'Confirm the macOS DMG and app are stapled').conclusion = 'skipped'; };
   for (const [p, ok] of [[plan, false], [deferPlan, true], [followupPlan, true]]) {
     const f = ciFixture(p); f.jobs.forEach(deferredMacJob);
     if (ok) assert.ok(validateCiEvidence(f.run, f.jobs, f.artifacts, p));
-    else assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, p), /Wait for notarization/);
+    else assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, p), /Confirm the macOS DMG and app are stapled/);
   }
   // A skipped wait gate is as bad as a missing one for normal releases.
   const f = ciFixture(plan);
@@ -719,4 +728,27 @@ test('follow-up plan binds only the macOS bytes plus the notarization record and
   const missing = ciFixture(followupPlan); missing.artifacts = missing.artifacts.filter(a => a.name !== 'ci-darwin-aarch64-notarization');
   assert.throws(() => validateCiEvidence(missing.run, missing.jobs, missing.artifacts, followupPlan), /ci-darwin-aarch64-notarization/);
   assert.equal(validateInstallerEntries([{ name: 'Strata Manager_0.2.0_aarch64.notarization.json', size: 9, compressedSize: 9, mode: 0o100644, isDirectory: false, encrypted: false }], followupPlan.artifacts[2]).size, 9);
+});
+
+test('auto resolves to include for stapled CI, to defer only when CI is not reusable as a full release', async () => {
+  const requested = createPlan({ tag: 'v0.2.0', version: '0.2.0', sourceSha: 'a'.repeat(40), productName: 'Strata Manager' });
+  const evidence = (mutate = () => {}) => async p => { const f = ciFixture(p); mutate(f); return { status: 'success', runId: 123, plan: validateCiEvidence(f.run, f.jobs, f.artifacts, p) }; };
+  const wrap = find => async p => { try { return await find(p); } catch (e) { throw new Error('Same-source CI exists but is not reusable: ' + e.message); } };
+  let r = await resolveMacosMode(requested, wrap(evidence()));
+  assert.equal(r.mode, 'include');
+  assert.equal(r.found.plan.artifacts.length, 5);
+  const unstapled = f => { f.jobs.find(j => j.name.startsWith('desktop (macos-15')).steps.find(s => s.name === 'Confirm the macOS DMG and app are stapled').conclusion = 'skipped'; };
+  r = await resolveMacosMode(requested, wrap(evidence(unstapled)));
+  assert.equal(r.mode, 'defer');
+  assert.equal(r.found.plan.artifacts.length, 3);
+  // Pending CI keeps include (the resolver polls again) instead of deferring early.
+  r = await resolveMacosMode(requested, async () => ({ status: 'pending', runId: 5 }));
+  assert.equal(r.mode, 'include');
+  // Anything else wrong with the CI (e.g. a failed macOS signature gate) refuses in both modes.
+  const broken = f => { f.jobs.find(j => j.name.startsWith('desktop (macos-15')).steps.find(s => s.name === 'Verify the macOS code signature').conclusion = 'failure'; };
+  await assert.rejects(resolveMacosMode(requested, wrap(evidence(broken))), /Verify the macOS code signature/);
+  // Network or other errors never fall back.
+  await assert.rejects(resolveMacosMode(requested, async () => { throw new Error('Inventory pagination was incomplete.'); }), /pagination/);
+  assert.equal(macosMode('auto', { allowAuto: true }), 'auto');
+  assert.throws(() => macosMode('auto'), /auto is resolved first/);
 });

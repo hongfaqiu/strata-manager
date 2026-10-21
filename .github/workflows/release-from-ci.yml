@@ -18,9 +18,9 @@ on:
       source_ref:
         type: string
         default: ''
-      defer_macos:
-        type: boolean
-        default: false
+      macos_mode:
+        type: string
+        default: ''
   workflow_dispatch:
     inputs:
       release_tag:
@@ -43,10 +43,10 @@ on:
         description: Validation only; source ref defaults to this workflow commit
         type: string
         default: ''
-      defer_macos:
-        description: Publish Windows/Linux now; macos-notarize-followup.yml adds notarized macOS later
-        type: boolean
-        default: false
+      macos_mode:
+        description: 'macOS: empty = repository variable MACOS_RELEASE_MODE or auto; auto (stapled CI ships macOS, otherwise Windows/Linux first and macos-notarize-followup.yml adds macOS), include or defer'
+        type: string
+        default: ''
 
 permissions:
   actions: write
@@ -60,13 +60,14 @@ jobs:
     outputs:
       source_sha: ${{ steps.source.outputs.sha }}
       ci_run_id: ${{ steps.ci.outputs.ci_run_id }}
+      macos_mode: ${{ steps.ci.outputs.macos_mode }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
       RELEASE_TAG: ${{ inputs.release_tag }}
       CI_RUN_ID: ${{ inputs.ci_run_id }}
       SOURCE_ROOT: ${{ github.workspace }}/release-source
-      MACOS_RELEASE_MODE: ${{ inputs.defer_macos && 'defer' || 'include' }}
+      MACOS_RELEASE_MODE: ${{ inputs.macos_mode || vars.MACOS_RELEASE_MODE || 'auto' }}
     steps:
       - name: Require the canonical repository and a source version tag
         shell: bash
@@ -123,7 +124,7 @@ jobs:
               echo "::warning::Same-source CI run $run_id failed; waiting for it to be re-run (gh run rerun $run_id --failed)."
             elif [[ "$status" == missing && "$dispatched" == false && "$VALIDATE_ONLY" != true && -z "$CI_RUN_ID" ]]; then
               # Dispatch by immutable tag; resolve checks its exact SHA again.
-              # Deferred releases do not wait for Apple in CI either.
+              # Deferred releases do not wait for Apple in CI either; auto uses CI's default.
               if [[ "$MACOS_RELEASE_MODE" == defer ]]; then
                 gh workflow run ci.yml --repo "$GH_REPO" --ref "$RELEASE_TAG" -f macos_notarization=defer
               else
@@ -159,7 +160,8 @@ jobs:
       SOURCE_ROOT: ${{ github.workspace }}/release-source
       CARGO_TARGET_DIR: ${{ github.workspace }}/release-source/target
       UPDATE_VERIFIER_BIN: ${{ github.workspace }}/release-source/target/release/strata-update-verifier
-      MACOS_RELEASE_MODE: ${{ inputs.defer_macos && 'defer' || 'include' }}
+      # Resolved by the resolver (auto -> include or defer); never auto here.
+      MACOS_RELEASE_MODE: ${{ needs.resolve.outputs.macos_mode }}
       CARGO_PROFILE_DEV_DEBUG: '0'
       CARGO_PROFILE_TEST_DEBUG: '0'
       CARGO_INCREMENTAL: '0'
