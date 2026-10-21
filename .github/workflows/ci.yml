@@ -123,13 +123,16 @@ jobs:
           PY
 
   native-windows:
-    name: Windows native shard (${{ matrix.shard }}/3)
+    name: Windows native shard (${{ matrix.shard }}/5)
     needs: changes
     if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2]
+        # Five shards per platform; scripts/ci-linux-native-tests.mjs balances them by
+        # measured module time and splits slow modules (tuning::restart::tests).
+        # release-from-ci.mjs NATIVE_SHARDS must match.
+        shard: [0, 1, 2, 3, 4]
     runs-on: windows-latest
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/apps/desktop/src-tauri/target
@@ -182,7 +185,7 @@ jobs:
       - name: Prepare independent background binary
         run: node scripts/prepare-sidecar.mjs --profile debug --target x86_64-pc-windows-msvc
       - name: Run every assigned native test on the independent Windows runner
-        run: node scripts/ci-linux-native-tests.mjs --target x86_64-pc-windows-msvc --groups 3 --shard ${{ matrix.shard }}/3 --output "${{ runner.temp }}/native-shard-${{ matrix.shard }}.json"
+        run: node scripts/ci-linux-native-tests.mjs --target x86_64-pc-windows-msvc --groups 5 --shard ${{ matrix.shard }}/5 --output "${{ runner.temp }}/native-shard-${{ matrix.shard }}.json"
       - name: Upload the complete native coverage proof
         uses: actions/upload-artifact@v4
         with:
@@ -191,13 +194,16 @@ jobs:
           if-no-files-found: error
 
   native-linux:
-    name: Linux native shard (${{ matrix.shard }}/3)
+    name: Linux native shard (${{ matrix.shard }}/5)
     needs: changes
     if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2]
+        # Five shards per platform; scripts/ci-linux-native-tests.mjs balances them by
+        # measured module time and splits slow modules (tuning::restart::tests).
+        # release-from-ci.mjs NATIVE_SHARDS must match.
+        shard: [0, 1, 2, 3, 4]
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     env:
@@ -257,7 +263,7 @@ jobs:
       - name: Prepare independent background binary
         run: node scripts/prepare-sidecar.mjs --profile debug --target x86_64-unknown-linux-gnu
       - name: Run every assigned native test with the private Linux keyring
-        run: node scripts/ci-linux-native-tests.mjs --target x86_64-unknown-linux-gnu --groups 3 --shard ${{ matrix.shard }}/3 --output "$RUNNER_TEMP/native-shard-${{ matrix.shard }}.json"
+        run: node scripts/ci-linux-native-tests.mjs --target x86_64-unknown-linux-gnu --groups 5 --shard ${{ matrix.shard }}/5 --output "$RUNNER_TEMP/native-shard-${{ matrix.shard }}.json"
       - name: Upload the complete native coverage proof
         uses: actions/upload-artifact@v4
         with:
@@ -827,6 +833,6 @@ jobs:
           merge-multiple: true
           path: ${{ runner.temp }}/linux-native-coverage
       - name: Native tests (Windows)
-        run: node scripts/ci-linux-native-tests.mjs --target x86_64-pc-windows-msvc --groups 3 --aggregate "$RUNNER_TEMP/windows-native-coverage" --output "$RUNNER_TEMP/windows-native-coverage.json"
+        run: node scripts/ci-linux-native-tests.mjs --target x86_64-pc-windows-msvc --groups 5 --aggregate "$RUNNER_TEMP/windows-native-coverage" --output "$RUNNER_TEMP/windows-native-coverage.json"
       - name: Native tests (Linux)
-        run: node scripts/ci-linux-native-tests.mjs --aggregate "$RUNNER_TEMP/linux-native-coverage" --output "$RUNNER_TEMP/linux-native-coverage.json"
+        run: node scripts/ci-linux-native-tests.mjs --groups 5 --aggregate "$RUNNER_TEMP/linux-native-coverage" --output "$RUNNER_TEMP/linux-native-coverage.json"

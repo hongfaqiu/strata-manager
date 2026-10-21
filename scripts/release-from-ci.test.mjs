@@ -165,8 +165,8 @@ function ciFixture(p = plan, runId = 123) {
     job('desktop (windows-latest, x86_64-pc-windows-msvc, nsis)', [...COMMON_GATES, ...PLATFORM_GATES.windows], 10),
     job('desktop (ubuntu-22.04, x86_64-unknown-linux-gnu, appimage,deb)', [...COMMON_GATES, ...PLATFORM_GATES.linux], 11),
     job('desktop (macos-15, aarch64-apple-darwin, app,dmg)', [...COMMON_GATES, ...PLATFORM_GATES.macos], 12),
-    ...[0, 1, 2].map(i => job('Linux native shard (' + i + '/3)', SHARD_GATES, 20 + i)),
-    ...[0, 1, 2].map(i => job('Windows native shard (' + i + '/3)', WINDOWS_SHARD_GATES, 30 + i)),
+    ...[0, 1, 2, 3, 4].map(i => job('Linux native shard (' + i + '/5)', SHARD_GATES, 20 + i)),
+    ...[0, 1, 2, 3, 4].map(i => job('Windows native shard (' + i + '/5)', WINDOWS_SHARD_GATES, 30 + i)),
     ...observerJobs.map((name, i) => job(name, observerGates, 40 + i)),
     job(COVERAGE_JOB, COVERAGE_GATES, 50),
   ];
@@ -317,10 +317,10 @@ test('each native shard requires every real test, private keyring and coverage u
 test('v1 plans cannot accept v2 native evidence or reuse the old five-job CI', () => {
   const f = ciFixture(); const oldPlan = { ...plan, protocol: 'strata-release-ci/v1' };
   assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, oldPlan), /protocol/);
-  assert.throws(() => validateCiEvidence(f.run, f.jobs.slice(0, 5), f.artifacts, plan), /six native shards/);
+  assert.throws(() => validateCiEvidence(f.run, f.jobs.slice(0, 5), f.artifacts, plan), /10 native shards \(5 per platform\)/);
 });
-for (const shard of [0, 1, 2]) {
-  const position = 6 + shard;
+for (const shard of [0, 1, 2, 3, 4]) {
+  const position = 8 + shard;
   for (const [label, mutate] of [
     ['missing', (f, index) => { f.jobs.splice(index, 1); }],
     ['duplicate', (f, index) => { f.jobs.push(clone(f.jobs[index])); }],

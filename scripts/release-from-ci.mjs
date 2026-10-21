@@ -90,7 +90,9 @@ export async function resolveMacosMode(plan, find) {
   }
   return { mode: 'defer', found: await find({ ...plan, ...createPlan({ ...plan, macos: 'defer' }) }) };
 }
-/** Separate job that aggregates all six shard proofs after all desktop jobs succeeded. */
+/** Native test shards per platform; must match the ci.yml native-windows/native-linux matrices. */
+export const NATIVE_SHARDS = 5;
+/** Separate job that aggregates all ten shard proofs after all desktop jobs succeeded. */
 export const COVERAGE_JOB = 'Native coverage verification';
 export const COVERAGE_GATES = Object.freeze([
   "Download this attempt's Windows native coverage proofs",
@@ -200,7 +202,7 @@ export function validateCiEvidence(run, jobs, artifacts, plan, { nowMs = Date.no
   if (gateJobs.length > 1) fail('Duplicate CI job: ' + CHANGES_JOB);
   if (gateJobs.length) successfulJob(jobs, CHANGES_JOB, run);
   jobs = jobs.filter(j => j?.name !== CHANGES_JOB);
-  if (jobs.length !== 12) fail('Exactly the three desktop jobs, six native shards, two observer compatibility jobs and the coverage verification job are required.');
+  if (jobs.length !== 3 + 2 * NATIVE_SHARDS + OBSERVER_JOBS.length + 1) fail('Exactly the three desktop jobs, ' + 2 * NATIVE_SHARDS + ' native shards (' + NATIVE_SHARDS + ' per platform), ' + OBSERVER_JOBS.length + ' observer compatibility jobs and the coverage verification job are required.');
   const coverage = successfulJob(jobs, COVERAGE_JOB, run);
   if (coverage.run_attempt !== undefined && coverage.run_attempt !== run.run_attempt) fail('Coverage verification lacks current-attempt evidence.');
   for (const gate of COVERAGE_GATES) {
@@ -216,8 +218,8 @@ export function validateCiEvidence(run, jobs, artifacts, plan, { nowMs = Date.no
     }
   }
   for (const [platform, gates] of [['Linux', SHARD_GATES], ['Windows', WINDOWS_SHARD_GATES]]) {
-    for (let shard = 0; shard < 3; shard++) {
-      const job = successfulJob(jobs, platform + ' native shard (' + shard + '/3)', run);
+    for (let shard = 0; shard < NATIVE_SHARDS; shard++) {
+      const job = successfulJob(jobs, platform + ' native shard (' + shard + '/' + NATIVE_SHARDS + ')', run);
       for (const name of gates) {
         const steps = job.steps?.filter(s => s.name === name) ?? [];
         if (steps.length !== 1 || steps[0].status !== 'completed' || steps[0].conclusion !== 'success') fail('Required native shard gate failed or missing: ' + name);

@@ -8,7 +8,7 @@ import {
   IGNORED_POLICY, WINDOWS_IGNORED_POLICY, targetPolicy, parseListing, parseCargoArtifacts, attachInventory, makePlan,
   validatePlan, selectionArgs, selectionBatches, argvBytes, windowsCommandUnits,
   MAX_FILTER_NAMES, MAX_ARGV_BYTES, MAX_WINDOWS_ARGV_BYTES, MAX_WINDOWS_COMMAND_UNITS, mergeBinaryReports,
-  failedTestNames, mergeRetriedBatch, MAX_RETRIED_TESTS,
+  failedTestNames, mergeRetriedBatch, MAX_RETRIED_TESTS, MAX_UNIT_SECONDS, MAX_NATIVE_GROUPS,
   parseResults, parseDocResults, validateCoverage, validateIgnoredPolicy, validateShardEvidence, parseOptions, workspaceDocTargets,
 } from './ci-linux-native-tests.mjs';
 
@@ -120,6 +120,31 @@ test('module scheduling is deterministic and preserves every test and empty exec
   assert.throws(() => validatePlan(broken));
   const omitted = clone(plan); omitted.groups.pop(); assert.throws(() => validatePlan(omitted));
   const altered = clone(plan); altered.binding.sourceSha = 'c'.repeat(40); assert.throws(() => validatePlan(altered));
+});
+
+test('a measured slow module is split into interleaved parts across shards without losing or duplicating tests', () => {
+  const restart = Array.from({length: 30}, (_, i) => c(`tuning::restart::tests::case_${String(i).padStart(2, '0')}`));
+  const others = Array.from({length: 20}, (_, i) => c(`fast::case_${String(i).padStart(2, '0')}`));
+  for (const [target, platform] of [['x86_64-unknown-linux-gnu', 'linux'], ['x86_64-pc-windows-msvc', 'win32']]) {
+    const binding = {...fixtureBinding, target, platform, groups: 5};
+    const build = () => makePlan([{id: 'core:lib:core', package: 'fixture-core', packagePath: 'core', cases: [...restart, ...others, c('fast::ignored', true)]},
+      {id: 'empty:bin:empty', package: 'fixture-empty', packagePath: 'empty', cases: []}], 5, binding);
+    const plan = build();
+    assert.equal(validatePlan(plan), true);
+    assert.equal(plan.inventoryHash, build().inventoryHash);
+    const owners = new Set(plan.groups.filter(g => g.binaries.some(b => b.names.some(n => n.startsWith('tuning::restart::')))).map(g => g.index));
+    assert.ok(owners.size >= 3, `restart tests spread over ${owners.size} shards`);
+    const names = plan.groups.flatMap(g => g.binaries.flatMap(b => b.names));
+    assert.equal(names.length, new Set(names).size);
+    assert.equal(names.length, restart.length + others.length + 1);
+    for (const g of plan.groups) for (const b of g.binaries) for (const m of b.modules) {
+      const part = /\[(\d+)\/(\d+)\]$/.exec(m); if (part) assert.ok(Number(part[1]) <= Number(part[2]));
+    }
+    const heaviest = Math.max(...plan.groups.map(g => g.estimatedSeconds));
+    const total = plan.groups.reduce((sum, g) => sum + g.estimatedSeconds, 0);
+    assert.ok(heaviest <= total / 5 + MAX_UNIT_SECONDS, 'no shard exceeds the balanced share by more than one unit');
+  }
+  assert.throws(() => makePlan(fixturePlan().binaries, MAX_NATIVE_GROUPS + 1, {...fixtureBinding, groups: MAX_NATIVE_GROUPS + 1}));
 });
 
 test('selection uses exact positive OR filters without dropping a longer substring sibling', () => {
@@ -264,8 +289,10 @@ test('independent runner evidence cannot mix profiles, toolchains, sources, igno
 test('CLI uses zero-based independent shards and refuses invalid or unbounded selection', () => {
   assert.deepEqual(parseOptions(['--shard', '0/3']).shard, {index: 0, count: 3});
   assert.deepEqual(parseOptions(['--groups', '4', '--shard', '3/4']).shard, {index: 3, count: 4});
+  assert.deepEqual(parseOptions(['--groups', '5', '--shard', '4/5']).shard, {index: 4, count: 5});
+  assert.deepEqual(parseOptions(['--groups', '6', '--shard', '5/6']).shard, {index: 5, count: 6});
   assert.equal(parseOptions(['--target', 'x86_64-pc-windows-msvc', '--shard', '1/3']).target, 'x86_64-pc-windows-msvc');
-  for (const args of [['--shard', '3/3'], ['--shard', '1/2'], ['--groups', '8'], ['--ignored', 'true'], ['--target', 'aarch64-pc-windows-msvc'], ['--target', 'x86_64-apple-darwin'], ['--shard', '0/3', '--aggregate', 'proof']]) assert.throws(() => parseOptions(args));
+  for (const args of [['--shard', '3/3'], ['--shard', '1/2'], ['--groups', '8'], ['--groups', '7'], ['--groups', '6', '--shard', '6/6'], ['--groups', '5', '--shard', '1/6'], ['--ignored', 'true'], ['--target', 'aarch64-pc-windows-msvc'], ['--target', 'x86_64-apple-darwin'], ['--shard', '0/3', '--aggregate', 'proof']]) assert.throws(() => parseOptions(args));
 });
 
 test('Windows exact selections bound both UTF-8 argv and the quoted UTF-16 CreateProcess command line', () => {

@@ -64,28 +64,30 @@ export function validateIgnoredPolicy(binaries, target = 'x86_64-unknown-linux-g
 const inventoryForHash = binaries => binaries.map(({id, package: packageName, packagePath, platform, target, cases}) => ({id, package: packageName, packagePath, platform, target, cases}));
 const planHash = plan => hash(JSON.stringify({binding: plan.binding, inventory: inventoryForHash(plan.binaries), groups: plan.groups}));
 const knownSeconds = Object.freeze({
-  // Sequential completion deltas in successful Linux CI 38159155279; scheduling hints only.
-  'tuning::restart::tests': 276, 'startup::tests': 187,
-  'runtime_upgrade::tests': 128, 'idle_model::tests': 103,
-  'tuning::workloads::tests': 102, 'setup_handoff::tests': 78,
-  'health_watch::tests': 54, 'tuning::tests': 43,
-  'request_capture::tests': 35, 'runtime_upgrade::release_zip::tests': 34,
-  'tuning::status_tests': 29, 'external_management::tests': 29,
-  'registry_handoff::tests': 29, 'tuning_service_operation_tests': 25,
-  'installation::tests': 25,
+  // Summed per-test completion deltas in Linux CI 39636091232 (three shards); scheduling hints only.
+  'tuning::restart::tests': 288, 'tuning::workloads::tests': 58,
+  'runtime_upgrade::tests': 56, 'idle_model::tests': 46, 'installation::download::tests': 41,
+  'startup::tests': 38, 'setup_handoff::tests': 33, 'tuning::tests': 27,
+  'native_probe_tests': 25, 'health_watch::tests': 22, 'request_capture::tests': 17,
+  'installation::tests': 16, 'runtime_upgrade::release_zip::download_check::tests': 14,
+  'runtime_upgrade::release_zip::tests': 14, 'tuning::calibrate::tests': 11,
+  'tuning::status_tests': 10, 'storage_location::tests': 10, 'registry_handoff::tests': 10,
+  'external_management::tests': 10, 'tuning_service_operation_tests': 9, 'diagnostics::tests': 9,
 });
 const windowsKnownSeconds = Object.freeze({
-  // Sequential completion deltas in successful Windows CI 38169497754.
+  // Summed per-test completion deltas in Windows CI 39636091232 (three shards).
   // Hints affect scheduling only; no test deadline or assertion changes.
-  'tuning::restart::tests': 268, 'runtime_upgrade::tests': 58,
-  'idle_model::tests': 37, 'tuning::workloads::tests': 23,
-  'tuning::tests': 21, 'setup_handoff::tests': 21,
-  'runtime_upgrade::release_zip::tests': 20, 'legacy::tests': 17,
-  'analytics::tests': 14, 'request_capture::tests': 12,
-  'supervisor_client::tests': 12, 'health_watch::tests': 12,
-  'tuning_service_operation_tests': 10, 'startup::tests': 10,
-  'tuning::status_tests': 7, 'native_probe_tests': 7,
+  'tuning::restart::tests': 182, 'runtime_upgrade::tests': 48,
+  'idle_model::tests': 31, 'startup::tests': 23, 'runtime_upgrade::release_zip::tests': 20,
+  'installation::download::tests': 19, 'setup_handoff::tests': 16, 'tuning::workloads::tests': 16,
+  'supervisor_client::tests': 16, 'network_runtime_tests': 14, 'tuning::tests': 14,
+  'native_probe_tests': 13, 'request_capture::tests': 12, 'legacy::tests': 10,
+  'runtime_upgrade::release_zip::download_check::tests': 9, 'health_watch::tests': 8,
 });
+// Modules estimated above this many seconds are split into interleaved parts so
+// one slow module (tuning::restart::tests) no longer sets the shard floor.
+export const MAX_UNIT_SECONDS = 60;
+export const MAX_NATIVE_GROUPS = 6;
 
 export function parseListing(text) {
   const cases = []; let summary;
@@ -177,7 +179,7 @@ export function makePlan(binaries, count, binding) {
   binding = {...binding, platform: binding.platform ?? policy.platform};
   validateTargetBinding(binding);
   binaries = binaries.map(b => ({...b, target: b.target ?? binding.target, platform: b.platform ?? binding.platform}));
-  if (!Number.isSafeInteger(count) || count < 1 || count > 4 || !binaries.length
+  if (!Number.isSafeInteger(count) || count < 1 || count > MAX_NATIVE_GROUPS || !binaries.length
       || new Set(binaries.map(b => b.id)).size !== binaries.length) fail('Invalid bounded group plan.');
   const groups = Array.from({length: count}, (_, index) => ({index, estimatedSeconds: 0, binaries: []}));
   const modules = [];
@@ -193,8 +195,13 @@ export function makePlan(binaries, count, binding) {
     if (!entries.size) entries.set('(empty)', []);
     for (const [module, names] of entries) {
       const active = names.filter(name => !binary.cases.find(c => c.name === name).ignored).length;
-      modules.push({binaryId: binary.id, module, names: sorted(names),
-        weight: active ? (policy.platform === 'win32' ? windowsKnownSeconds[module] ?? (module === '(root)' ? active * 22 : active * 2) : knownSeconds[module] ?? active * 4) : 0});
+      const weight = active ? (policy.platform === 'win32' ? windowsKnownSeconds[module] ?? (module === '(root)' ? active * 22 : active * 2) : knownSeconds[module] ?? active * 4) : 0;
+      const ordered = sorted(names);
+      const parts = Math.max(1, Math.min(ordered.length, Math.ceil(weight / MAX_UNIT_SECONDS)));
+      for (let part = 0; part < parts; part++) {
+        modules.push({binaryId: binary.id, module: parts === 1 ? module : `${module} [${part + 1}/${parts}]`,
+          names: ordered.filter((_, index) => index % parts === part), weight: weight / parts});
+      }
     }
   }
   modules.sort((a, b) => b.weight - a.weight || compare(`${a.binaryId}:${a.module}`, `${b.binaryId}:${b.module}`));
@@ -217,7 +224,7 @@ export function makePlan(binaries, count, binding) {
 
 export function validatePlan(plan) {
   if (plan?.schema !== 1 || !Array.isArray(plan.binaries) || !Array.isArray(plan.groups)
-      || !plan.binaries.length || !plan.groups.length || plan.groups.length > 4) fail('Invalid coverage plan.');
+      || !plan.binaries.length || !plan.groups.length || plan.groups.length > MAX_NATIVE_GROUPS) fail('Invalid coverage plan.');
   validateTargetBinding(plan.binding);
   if (plan.inventoryHash !== planHash(plan) || new Set(plan.binaries.map(b => b.id)).size !== plan.binaries.length
       || plan.binaries.some(b => b.target !== plan.binding.target || b.platform !== plan.binding.platform)) fail('The source/platform/inventory/group binding changed.');
@@ -411,7 +418,7 @@ export function validateCoverage(plan, reports, docs) {
 }
 
 export function validateShardEvidence(shards) {
-  if (!Array.isArray(shards) || !shards.length || shards.length > 4) fail('A bounded complete shard set is required.');
+  if (!Array.isArray(shards) || !shards.length || shards.length > MAX_NATIVE_GROUPS) fail('A bounded complete shard set is required.');
   const first = shards[0];
   const policy = validateTargetBinding(first.binding);
   if (!first.binding || first.binding.groups !== shards.length || !/^[a-f0-9]{40}$/.test(first.binding.sourceSha ?? '')
@@ -524,10 +531,10 @@ export function parseOptions(args) {
     const flag = args[i]; const value = args[++i];
     if (!value || !['--target', '--groups', '--output', '--shard', '--aggregate'].includes(flag)) fail('Use --target, --groups (1-4), --output, --shard (1/N), or repeated --aggregate files.');
     if (flag === '--aggregate') options.aggregate.push(resolve(value));
-    else if (flag === '--groups') { if (!/^[1-4]$/.test(value)) fail('Native groups must be 1-4.'); options.groups = Number(value); }
+    else if (flag === '--groups') { if (!/^[1-6]$/.test(value)) fail('Native groups must be 1-6.'); options.groups = Number(value); }
     else if (flag === '--output') options.output = resolve(value);
     else if (flag === '--target') { targetPolicy(value); options.target = value; }
-    else { const match = /^([0-3])\/([1-4])$/.exec(value); if (!match || Number(match[1]) >= Number(match[2])) fail('Invalid bounded zero-based shard.'); options.shard = {index: Number(match[1]), count: Number(match[2])}; }
+    else { const match = /^([0-5])\/([1-6])$/.exec(value); if (!match || Number(match[1]) >= Number(match[2])) fail('Invalid bounded zero-based shard.'); options.shard = {index: Number(match[1]), count: Number(match[2])}; }
   }
   if (options.shard && options.shard.count !== options.groups) fail('Shard count must equal the complete group plan.');
   if (options.aggregate.length && options.shard) fail('Aggregation cannot execute a shard.');
@@ -543,7 +550,7 @@ export async function main(args = process.argv.slice(2)) {
       if (s.isSymbolicLink()) fail('Shard evidence must not be a symbolic link.');
       if (s.isDirectory()) {
         const entries = await readdir(file);
-        if (!entries.length || entries.some(name => !/^native-shard-[0-3]\.json$/.test(name))) fail('The aggregate directory must contain only bounded native shard evidence.');
+        if (!entries.length || entries.some(name => !/^native-shard-[0-5]\.json$/.test(name))) fail('The aggregate directory must contain only bounded native shard evidence.');
         files.push(...entries.sort(compare).map(name => resolve(file, name)));
       } else if (s.isFile()) files.push(file); else fail('Invalid shard evidence file.');
     }
@@ -623,7 +630,7 @@ export async function main(args = process.argv.slice(2)) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   if (process.argv[2] === '--internal-group') {
-    if (process.argv.length !== 6 || !/^[0-3]$/.test(process.argv[4])) fail('Invalid internal group command.');
+    if (process.argv.length !== 6 || !/^[0-5]$/.test(process.argv[4])) fail('Invalid internal group command.');
     await worker(process.argv[3], Number(process.argv[4]), process.argv[5]);
   } else await main();
 }
