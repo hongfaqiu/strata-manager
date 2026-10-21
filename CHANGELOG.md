@@ -5,6 +5,14 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **Mac 上「剩余空间未知」（用户反馈，macOS 27）**：在 Mac 上，「开始使用 → 检查运行环境」里的「新引擎安装位置」和「模型文件」两行总是显示「剩余空间未知」，存储位置页和安装前的磁盘检查也读不到剩余空间。原因是：macOS 的系统卷「/」是只读的，用户文件夹实际在可写的「数据」卷上，但以前按挂载列表找目录所在磁盘时只匹配到「/」，于是判断为「目标磁盘为只读」。现在 macOS 和 Linux 直接向目录所在的文件系统查询剩余空间和是否只读（`statvfs`，macOS 另用 `statfs` 取真实挂载点）；目录还不存在时按最近的已存在上级目录计算。Windows 不变。
+
+### English
+
+- **"Free space unknown" on a Mac (user report, macOS 27)**: on a Mac, the "New engine location" and "Model files" rows under Get started → Check environment always said "Free space unknown", and the Storage location page and the pre-install disk check could not read free space either. macOS keeps its system volume "/" read-only and user folders live on the writable Data volume, but the app matched the folder against the mount list, found only "/", and decided the disk was read-only. macOS and Linux now ask the folder's own file system for free space and the read-only flag (`statvfs`, plus `statfs` for the real mount point on macOS); a folder that does not exist yet is measured on its nearest existing parent. Windows is unchanged.
+
 ## [0.2.12] - 2026-10-21
 
 ### 中文
