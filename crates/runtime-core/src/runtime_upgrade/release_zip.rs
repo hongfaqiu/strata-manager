@@ -691,16 +691,39 @@ fn choose_asset_with(
     Ok(asset)
 }
 
-/// First engine for a Windows runtime. With an AMD GPU and no NVIDIA one the detected
-/// AMD architecture decides (a legacy multi-family HIP ZIP when the release still has
-/// one); when it cannot, the user picks the package. Otherwise CUDA 13, as before.
+/// First engine for a Windows runtime. An NVIDIA GPU that `nvidia-smi` describes gets the
+/// CUDA package its driver and compute capability can run (CUDA 12 for Pascal / Volta or a
+/// driver below CUDA 13's minimum), and the user picks when neither fits. With only AMD GPUs
+/// the detected AMD architecture decides (a legacy multi-family HIP ZIP when the release
+/// still has one), again asking the user when it cannot. When nothing usable is detected
+/// (no GPU, or an NVIDIA card without a readable `nvidia-smi`), CUDA 13 as before.
 fn windows_first_asset(
     assets: &[RuntimeReleaseAsset],
     probe: &gpu_select::GpuProbe,
 ) -> Result<Option<RuntimeReleaseAsset>, String> {
     let nvidia = probe.nvidia_driver.is_some() || !probe.nvidia_caps.is_empty();
-    if nvidia || probe.amd_gfx.is_empty() {
-        return Ok(assets.iter().find(|a| a.variant == "cuda13").cloned());
+    let cuda13 = || assets.iter().find(|a| a.variant == "cuda13").cloned();
+    if nvidia {
+        if probe.nvidia_driver.is_none() || probe.nvidia_caps.is_empty() {
+            return Ok(cuda13());
+        }
+        let pool: Vec<RuntimeReleaseAsset> = assets
+            .iter()
+            .filter(|a| a.variant.starts_with("cuda"))
+            .cloned()
+            .collect();
+        // An AMD iGPU next to the NVIDIA card does not make the choice ambiguous: Windows
+        // packages run one backend and the NVIDIA card is the one to use.
+        let nvidia_only = gpu_select::GpuProbe {
+            amd_gfx: Vec::new(),
+            ..probe.clone()
+        };
+        let (mut asset, reason) = gpu_select::pick(&pool, &nvidia_only)?;
+        asset.match_reason = Some(reason);
+        return Ok(Some(asset));
+    }
+    if probe.amd_gfx.is_empty() {
+        return Ok(cuda13());
     }
     if let Some(legacy) = assets
         .iter()

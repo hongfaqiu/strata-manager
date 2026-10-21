@@ -524,6 +524,66 @@ fn strata_022_rx6000_packages_are_listed_and_picked_by_gpu() {
     }
 }
 
+/// Windows first install with an NVIDIA card: the real v0.2.2 Windows CUDA packages (CUDA 12:
+/// sm_60-sm_89, driver 576.02+; CUDA 13: sm_75+, driver 580.65+) decide by `nvidia-smi`.
+#[test]
+fn windows_first_install_picks_the_cuda_package_the_nvidia_card_runs() {
+    let feed = engine_package::verify_feed(
+        include_bytes!("../fixtures/strata-feed-v0.2.2.json"),
+        include_bytes!("../fixtures/strata-feed-v0.2.2.json.sig"),
+        None,
+        now(),
+    )
+    .unwrap();
+    let release: Value =
+        serde_json::from_str(include_str!("../fixtures/release-v0.2.2.json")).unwrap();
+    let info = RuntimeUpdateInfo {
+        assets: engine_package::feed_assets(&feed, &release, "v0.2.2", "windows-x86_64").unwrap(),
+        ..Default::default()
+    };
+    let temp = tempfile::tempdir().unwrap();
+    let card = |driver: Option<&str>, caps: &[(u32, u32)], amd: &[&str]| gpu_select::GpuProbe {
+        nvidia_driver: driver.map(str::to_owned),
+        nvidia_caps: caps.to_vec(),
+        amd_gfx: amd.iter().map(|g| (*g).to_owned()).collect(),
+    };
+    let choose = |probe: gpu_select::GpuProbe| {
+        choose_asset_with(&info, temp.path(), None, &move || probe.clone())
+    };
+    // RTX 4090 on a current driver, also with a Ryzen iGPU: CUDA 13.
+    for amd in [&[][..], &["gfx1036"][..]] {
+        let chosen = choose(card(Some("581.57"), &[(8, 9)], amd)).unwrap();
+        assert_eq!(chosen.variant, "cuda13");
+        assert!(chosen.match_reason.unwrap().contains("581.57"));
+    }
+    // GTX 1080 (Pascal, sm_61): CUDA 13 dropped it, so CUDA 12.
+    assert_eq!(
+        choose(card(Some("581.57"), &[(6, 1)], &[]))
+            .unwrap()
+            .variant,
+        "cuda12"
+    );
+    // A driver new enough for CUDA 12 but not for CUDA 13.
+    assert_eq!(
+        choose(card(Some("577.00"), &[(8, 9)], &[]))
+            .unwrap()
+            .variant,
+        "cuda12"
+    );
+    // A driver too old for both: an error naming the driver to update to, instead of an
+    // engine that cannot start.
+    let old = choose(card(Some("560.94"), &[(8, 9)], &[])).unwrap_err();
+    assert!(
+        old.contains("576.02") && old.contains("Update the driver"),
+        "{old}"
+    );
+    // nvidia-smi unreadable (no compute capability): CUDA 13 as before.
+    assert_eq!(
+        choose(card(Some("581.57"), &[], &[])).unwrap().variant,
+        "cuda13"
+    );
+}
+
 #[test]
 fn windows_first_install_picks_hip_for_an_amd_only_computer() {
     let temp = tempfile::tempdir().unwrap();
@@ -557,7 +617,7 @@ fn windows_first_install_picks_hip_for_an_amd_only_computer() {
     assert!(choose_asset_with(&info, temp.path(), None, &rx6800)
         .unwrap_err()
         .contains("手动选择"));
-    // NVIDIA, NVIDIA + AMD, or nothing detected: CUDA 13 as before.
+    // A current NVIDIA card (+ AMD iGPU), or nothing detected: CUDA 13 as before.
     let rtx = || gpu_select::GpuProbe {
         nvidia_driver: Some("581.57".into()),
         nvidia_caps: vec![(8, 9)],
