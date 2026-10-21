@@ -390,6 +390,23 @@ async fn ordered_sources(
     (order_automatic_sources(successes), attempts, true)
 }
 
+/// Decide whether a check that found no update should report "up to date".
+///
+/// Official GitHub saying "no update" is authoritative. When only a mirror
+/// answered (for example GitHub itself is unreachable), the mirror serves the
+/// same signed `latest.json`, so its "no update" is reported as up to date
+/// instead of failing the whole check. Only when no source answered at all is
+/// the check an error.
+fn up_to_date_source(
+    official_current: bool,
+    authoritative: Option<AppUpdateSource>,
+) -> Option<AppUpdateSource> {
+    match authoritative {
+        Some(source) if official_current || source.id != "official" => Some(source),
+        _ => None,
+    }
+}
+
 #[tauri::command]
 pub async fn check_app_update(
     app: AppHandle,
@@ -518,10 +535,10 @@ pub async fn check_app_update(
         }
     }
 
-    if official_current {
+    if let Some(source) = up_to_date_source(official_current, authoritative) {
         return serde_json::to_value(AppUpdateCheckResult {
             update: None,
-            source: authoritative,
+            source: Some(source),
             fallback_chain: Vec::new(),
             attempts,
         })
@@ -810,6 +827,32 @@ mod tests {
             )
             .unwrap()
         ));
+    }
+
+    #[test]
+    fn mirror_no_update_is_up_to_date_when_github_is_unreachable() {
+        let mirror = source_view(
+            &builtin_sources()[0],
+            "automatic",
+            source_manifest_url(&builtin_sources()[0]).unwrap(),
+            None,
+        );
+        // Mirror said "no update", official GitHub then failed: report up to date.
+        let resolved = up_to_date_source(false, Some(mirror.clone())).expect("up to date");
+        assert_eq!(resolved.id, "gh-proxy");
+        // Official GitHub said "no update".
+        let official = source_view(
+            &official_source(),
+            "fallback",
+            source_manifest_url(&official_source()).unwrap(),
+            None,
+        );
+        assert_eq!(
+            up_to_date_source(true, Some(official)).map(|s| s.id),
+            Some("official".to_string())
+        );
+        // Nobody answered: the check is an error.
+        assert!(up_to_date_source(false, None).is_none());
     }
 
     #[test]
