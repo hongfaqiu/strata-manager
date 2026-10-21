@@ -184,7 +184,8 @@ fn preferred_source_from_preferences(value: &Value) -> Option<SourceSpec> {
             return Some(source);
         }
     }
-    prefs.mirror_url
+    prefs
+        .mirror_url
         .as_deref()
         .and_then(|template| custom_source(template).ok())
 }
@@ -268,7 +269,9 @@ fn official_release_url(url: &Url) -> bool {
         && url.password().is_none()
         && url.query().is_none()
         && url.fragment().is_none()
-        && url.path().starts_with("/hongfaqiu/strata-manager/releases/download/")
+        && url
+            .path()
+            .starts_with("/hongfaqiu/strata-manager/releases/download/")
 }
 
 fn attempt(
@@ -343,19 +346,21 @@ async fn probe_source(source: SourceSpec) -> (SourceSpec, Result<u64, String>) {
         .send()
         .await;
     match response {
-        Ok(response) if response.status().is_success() || response.status() == StatusCode::PARTIAL_CONTENT => {
+        Ok(response)
+            if response.status().is_success()
+                || response.status() == StatusCode::PARTIAL_CONTENT =>
+        {
             let elapsed = started.elapsed().as_millis().min(u64::MAX as u128) as u64;
             (source, Ok(elapsed))
         }
-        Ok(response) => (
-            source,
-            Err(format!("HTTP {}", response.status())),
-        ),
+        Ok(response) => (source, Err(format!("HTTP {}", response.status()))),
         Err(error) => (source, Err(error.to_string())),
     }
 }
 
-async fn ordered_sources(preferred: Option<SourceSpec>) -> (Vec<SourceSpec>, Vec<AppUpdateAttempt>, bool) {
+async fn ordered_sources(
+    preferred: Option<SourceSpec>,
+) -> (Vec<SourceSpec>, Vec<AppUpdateAttempt>, bool) {
     if let Some(source) = preferred {
         return (preferred_order(source), Vec::new(), false);
     }
@@ -419,15 +424,22 @@ pub async fn check_app_update(
                         "check",
                         "failed",
                         source_for_attempt,
-                        Some("update manifest did not point to the canonical GitHub release asset".into()),
+                        Some(
+                            "update manifest did not point to the canonical GitHub release asset"
+                                .into(),
+                        ),
                         None,
                     ));
                     continue;
                 }
                 let official_download_url = update.download_url.clone();
                 let mirrored_download_url = source_download_url(source, &official_download_url)?;
-                let current_source =
-                    source_view(source, selection, manifest_url.clone(), Some(mirrored_download_url.clone()));
+                let current_source = source_view(
+                    source,
+                    selection,
+                    manifest_url.clone(),
+                    Some(mirrored_download_url.clone()),
+                );
                 update.download_url = mirrored_download_url;
                 update.timeout = Some(timeout);
                 let fallback_chain = ordered
@@ -448,22 +460,18 @@ pub async fn check_app_update(
                     None,
                 ));
                 let id = Uuid::new_v4().to_string();
-                updates
-                    .updates
-                    .lock()
-                    .map_err(|e| e.to_string())?
-                    .insert(
-                        id.clone(),
-                        ManagedAppUpdate {
-                            update: update.clone(),
-                            official_download_url,
-                            bytes: None,
-                            ordered_sources: ordered.iter().skip(index).cloned().collect(),
-                            current_source: current_source.clone(),
-                            fallback_chain: fallback_chain.clone(),
-                            attempts: attempts.clone(),
-                        },
-                    );
+                updates.updates.lock().map_err(|e| e.to_string())?.insert(
+                    id.clone(),
+                    ManagedAppUpdate {
+                        update: update.clone(),
+                        official_download_url,
+                        bytes: None,
+                        ordered_sources: ordered.iter().skip(index).cloned().collect(),
+                        current_source: current_source.clone(),
+                        fallback_chain: fallback_chain.clone(),
+                        attempts: attempts.clone(),
+                    },
+                );
                 return Ok(serde_json::to_value(AppUpdateCheckResult {
                     source: Some(current_source.clone()),
                     fallback_chain: fallback_chain.clone(),
@@ -487,7 +495,11 @@ pub async fn check_app_update(
                 official_current = source.id == "official";
                 attempts.push(attempt(
                     "check",
-                    if official_current { "current" } else { "no-update" },
+                    if official_current {
+                        "current"
+                    } else {
+                        "no-update"
+                    },
                     source_for_attempt,
                     None,
                     None,
@@ -605,8 +617,12 @@ pub async fn download_app_update(
         } else {
             "fallback"
         };
-        let current_source =
-            source_view(source, selection, manifest_url.clone(), Some(download_url.clone()));
+        let current_source = source_view(
+            source,
+            selection,
+            manifest_url.clone(),
+            Some(download_url.clone()),
+        );
         let fallback_chain = ordered
             .iter()
             .skip(index + 1)
@@ -739,23 +755,25 @@ mod tests {
             "gh-proxy"
         );
         assert_eq!(
-            preferred_source_from_preferences(&json!({"mode":"mirror","mirrorUrl":"https://mirror.example/{url}"}))
-                .unwrap()
-                .id,
+            preferred_source_from_preferences(
+                &json!({"mode":"mirror","mirrorUrl":"https://mirror.example/{url}"})
+            )
+            .unwrap()
+            .id,
             "custom"
         );
-        assert!(
-            preferred_source_from_preferences(&json!({"mode":"mirror","mirrorUrl":"https://mirror.example/{version}/{asset}"}))
-                .is_none()
-        );
-        assert!(
-            preferred_source_from_preferences(&json!({"mode":"mirror","mirrorUrl":"https://mirror.example/app.exe"}))
-                .is_none()
-        );
-        assert!(
-            preferred_source_from_preferences(&json!({"mode":"local","localArchivePath":"/tmp/engine.zip"}))
-                .is_none()
-        );
+        assert!(preferred_source_from_preferences(
+            &json!({"mode":"mirror","mirrorUrl":"https://mirror.example/{version}/{asset}"})
+        )
+        .is_none());
+        assert!(preferred_source_from_preferences(
+            &json!({"mode":"mirror","mirrorUrl":"https://mirror.example/app.exe"})
+        )
+        .is_none());
+        assert!(preferred_source_from_preferences(
+            &json!({"mode":"local","localArchivePath":"/tmp/engine.zip"})
+        )
+        .is_none());
     }
 
     #[test]
@@ -767,8 +785,13 @@ mod tests {
             format!("https://ghproxy.net/{OFFICIAL_MANIFEST_URL}")
         );
         assert!(resolve_wrapped_url("http://ghproxy.net/{url}", OFFICIAL_MANIFEST_URL).is_err());
-        assert!(resolve_wrapped_url("https://user:pw@ghproxy.net/{url}", OFFICIAL_MANIFEST_URL).is_err());
-        assert!(resolve_wrapped_url("https://ghproxy.net/{url}#frag", OFFICIAL_MANIFEST_URL).is_err());
+        assert!(
+            resolve_wrapped_url("https://user:pw@ghproxy.net/{url}", OFFICIAL_MANIFEST_URL)
+                .is_err()
+        );
+        assert!(
+            resolve_wrapped_url("https://ghproxy.net/{url}#frag", OFFICIAL_MANIFEST_URL).is_err()
+        );
         assert!(official_release_url(
             &Url::parse(
                 "https://github.com/hongfaqiu/strata-manager/releases/download/v0.2.11/Strata.Manager_0.2.11_x64-setup.exe"
