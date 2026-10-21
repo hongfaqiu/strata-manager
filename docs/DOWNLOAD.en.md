@@ -51,7 +51,7 @@ For Ubuntu servers without a desktop, use the release assets `Strata.Manager.Ser
 
 ## macOS (Apple Silicon, experimental)
 
-From the first release after v0.2.11, the DMG and the in-app update archive are **signed with a Developer ID and notarized by Apple** (the notarization ticket is stapled to the `.app`, and the Developer ID signed DMG contains that stapled app). Open the DMG, drag the app to Applications and open it normally; no context-menu open or `xattr` quarantine removal is needed. DMGs for v0.2.11 and earlier remain ad-hoc signed and un-notarized. This phase still does **not** claim that Manager discovers an engine or runs model inference on Mac hardware.
+From v0.2.12, the DMG and the in-app update archive are **signed with a Developer ID and notarized by Apple** (the notarization ticket is stapled to the `.app`, and the Developer ID signed DMG contains that stapled app). Open the DMG, drag the app to Applications and open it normally; no context-menu open or `xattr` quarantine removal is needed. DMGs for v0.2.11 and earlier remain ad-hoc signed and un-notarized. This phase still does **not** claim that Manager discovers an engine or runs model inference on Mac hardware.
 
 - The manual installer is `Strata.Manager_<version>_aarch64.dmg`. The website button enables only when that published release actually contains the file.
 - In-app updates (when enabled) use `Strata.Manager_<version>_aarch64.app.tar.gz`. The `darwin-aarch64` entry in `latest.json` points at that archive, not the DMG.
@@ -77,13 +77,13 @@ pnpm desktop starts the complete desktop app and background process. pnpm dev ru
 
 ## Support scope
 
-- Published stable installers remain primarily Windows/Linux x64. The macOS (Apple Silicon) DMG is **experimental** (signed and notarized after v0.2.11) and ships only with tags that include that asset; Intel packages are not built. **Do not** assume the DMG already includes a working Metal engine. Models, hardware, image input and API capabilities depend on the Strata runtime and chosen model.
+- Published stable installers remain primarily Windows/Linux x64. The macOS (Apple Silicon) DMG is **experimental** (signed and notarized from v0.2.12) and ships only with tags that include that asset; Intel packages are not built. **Do not** assume the DMG already includes a working Metal engine. Models, hardware, image input and API capabilities depend on the Strata runtime and chosen model.
 - Current source implements global Strata management and matching Windows x64 ZIP engine updates, automatic local model listings, graphical/JSON runtime configuration, service controls, chat, persistent usage metadata and complete use-case tuning. Published packages have their own release notes; screenshot examples do not establish real-model performance.
 - Stable updates use the `latest` channel; previews remain manual downloads and do not replace that channel.
 - Windows CI gates cover silent installation, desktop startup, private background IPC, clean shutdown and uninstall; [VERIFICATION](VERIFICATION.md) records passing historical revisions.
 - Linux CI gates cover AppImage and extracted DEB startup, private background IPC and clean shutdown in Ubuntu 22.04 with Xvfb, without claiming compatibility across all distributions.
 - Complete real GPU workflows, Strata ZIP updates on a real machine, Linux system DEB installation/uninstall, login startup, Windows automatic setup without Python, and the real Tauri cross-version update download, verification, installation and service recovery require separate acceptance. Cross-version NSIS installer checks are distinct from that updater flow. ZIP engine updates require a matching official Windows x64 package; Linux retains release information but does not offer Windows ZIP updates.
-- Windows installers currently have no Authenticode publisher certificate. Tauri update signatures verify update files and are separate from Windows publisher signing. On macOS, Developer ID signing and Apple notarization (after v0.2.11) are separate from the Tauri update signature: the former lets Gatekeeper open the app, the latter lets in-app updates verify update files.
+- Windows installers currently have no Authenticode publisher certificate. Tauri update signatures verify update files and are separate from Windows publisher signing. On macOS, Developer ID signing and Apple notarization (from v0.2.12) are separate from the Tauri update signature: the former lets Gatekeeper open the app, the latter lets in-app updates verify update files.
 
 ## Releases and updates
 

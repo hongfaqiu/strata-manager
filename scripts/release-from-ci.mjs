@@ -33,11 +33,24 @@ export const PLATFORM_GATES = Object.freeze({
     'Upload headless server packages',
     'Verify Linux AppImage and DEB startup under Xvfb']),
   // Normal releases require the stapled (waited) notarization gate as well.
-  macos: Object.freeze(['Prepare macOS signing and notarization', 'Verify the macOS code signature',
+  macos: Object.freeze(['Decide whether this run notarizes macOS', 'Prepare macOS signing and notarization', 'Verify the macOS code signature',
     'Submit the macOS app for notarization', 'Wait for notarization and staple the macOS app',
     'Confirm the macOS app is stapled and the DMG is signed', 'Package the macOS app archive for the updater', 'Upload the macOS updater archive',
     'Upload the macOS DMG', 'Upload the macOS notarization record']),
 });
+/**
+ * Pull requests and main pushes whose v<version> tag already exists on another
+ * commit skip Apple notarization (CI's policy step skips the submit step).
+ * Such runs are signed only and are never reusable for any release mode: the
+ * resolver ignores them and dispatches a fresh tag CI instead.
+ */
+export const MACOS_SUBMIT_GATE = 'Submit the macOS app for notarization';
+export const MACOS_NOTARIZATION_SKIPPED = 'Same-source CI skipped macOS notarization (signed only); a notarizing tag CI run is required.';
+export function skippedMacosNotarization(jobs) {
+  if (!Array.isArray(jobs)) return false;
+  return jobs.some(job => job?.name === jobsByPlatform.macos && Array.isArray(job.steps)
+    && job.steps.some(step => step?.name === MACOS_SUBMIT_GATE && step.conclusion === 'skipped'));
+}
 /** Deferred macOS (and its follow-up) only needs signed bytes and a submitted notarization. */
 export const MACOS_STAPLED_GATE = 'Confirm the macOS app is stapled and the DMG is signed';
 export const MACOS_DEFERRED_GATES = Object.freeze(PLATFORM_GATES.macos.filter(
@@ -181,6 +194,7 @@ export function validateCiEvidence(run, jobs, artifacts, plan, { nowMs = Date.no
   if (plan?.protocol !== CI_PROTOCOL) fail('The current complete native CI protocol is required.');
   validateRun(run, plan);
   if (!Array.isArray(jobs) || !Array.isArray(artifacts)) fail('Complete jobs and artifact inventories are required.');
+  if (skippedMacosNotarization(jobs)) fail(MACOS_NOTARIZATION_SKIPPED);
   // CI's 'Detect app code changes' gate decides whether app jobs run; it must succeed when present.
   const gateJobs = jobs.filter(j => j?.name === CHANGES_JOB);
   if (gateJobs.length > 1) fail('Duplicate CI job: ' + CHANGES_JOB);
@@ -412,6 +426,9 @@ export async function findReusableCi(plan, { runId = plan.runId, fetchJson = jso
     const jobs = await inventory(base + '/actions/runs/' + run.id + '/attempts/' + run.run_attempt + '/jobs', 'jobs', fetchJson);
     const artifacts = await inventory(base + '/actions/runs/' + run.id + '/artifacts', 'artifacts', fetchJson);
     if (hasIncompleteStepInventory(jobs)) { pending ??= run.id; continue; }
+    // Signed-only runs (notarization skipped) are not candidates; with no other
+    // candidate the caller dispatches a notarizing CI for the tag.
+    if (skippedMacosNotarization(jobs)) continue;
     try { return { status: 'success', runId: run.id, plan: validateCiEvidence(run, jobs, artifacts, plan) }; }
     catch (error) {
       // Keep searching older same-source successes; surface why reuse was refused if none qualify.
