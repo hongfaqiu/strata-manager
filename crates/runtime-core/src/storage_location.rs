@@ -303,10 +303,40 @@ pub fn set_engine_root(
 
 /// Remember `directory` as upstream's data folder, keeping every other setting.
 fn write_upstream_data_dir(directory: &Path) -> Result<(), String> {
-    write_data_dir_at(&disk::upstream_settings_path()?, directory)
+    remember_data_dir(
+        &disk::upstream_settings_path()?,
+        disk::upstream_app_settings_path().as_deref(),
+        directory,
+    )
 }
 
-fn write_data_dir_at(path: &Path, directory: &Path) -> Result<(), String> {
+/// Write the choice with the time it was made (`data_dir_at`, seconds), so upstream's
+/// "the newer choice wins" sync between the Terminal's settings.json and the app's
+/// app-settings.json (Strata 0.2.2) keeps it instead of an older choice. The app's file is
+/// only updated when it already exists, and best effort: the Terminal file is the contract.
+fn remember_data_dir(
+    settings: &Path,
+    app_settings: Option<&Path>,
+    directory: &Path,
+) -> Result<(), String> {
+    let at = now_seconds();
+    write_data_dir_at(settings, directory, at)?;
+    if let Some(app) = app_settings.filter(|path| path.is_file()) {
+        if let Err(error) = write_data_dir_at(app, directory, at) {
+            eprintln!("[storage] could not update {}: {error}", app.display());
+        }
+    }
+    Ok(())
+}
+
+fn now_seconds() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0)
+}
+
+fn write_data_dir_at(path: &Path, directory: &Path, at: f64) -> Result<(), String> {
     let path = path.to_path_buf();
     let mut settings = match fs::read(&path) {
         Ok(bytes) if bytes.len() <= 1024 * 1024 => {
@@ -322,6 +352,7 @@ fn write_data_dir_at(path: &Path, directory: &Path) -> Result<(), String> {
         settings = json!({});
     }
     settings["data_dir"] = json!(directory.to_string_lossy());
+    settings["data_dir_at"] = json!(at);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
@@ -439,6 +470,8 @@ struct MovePlan {
     same_volume: bool,
     /// Upstream settings.json that remembers the data folder.
     settings_path: PathBuf,
+    /// The upstream app's app-settings.json, updated too when it exists.
+    app_settings_path: Option<PathBuf>,
     /// Run configurations whose model paths follow the files.
     configs: Vec<PathBuf>,
 }
@@ -496,6 +529,7 @@ fn plan_move(source: &Path, target: &Path) -> Result<MovePlan, String> {
         total,
         same_volume,
         settings_path: disk::upstream_settings_path()?,
+        app_settings_path: disk::upstream_app_settings_path(),
         configs: Vec::new(),
     })
 }
@@ -799,7 +833,11 @@ fn execute_move(state: &RuntimeState, id: &str, plan: &MovePlan) -> Result<Strin
                 format!("无法写入 {}：{e}", path.display())
             })?;
         }
-        write_data_dir_at(&plan.settings_path, &plan.target)?;
+        remember_data_dir(
+            &plan.settings_path,
+            plan.app_settings_path.as_deref(),
+            &plan.target,
+        )?;
         Ok(originals.len())
     })();
     let configs = match switched {
@@ -1010,6 +1048,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn remembered_data_dir_is_stamped_and_never_creates_the_app_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let settings = temp.path().join("strata").join("settings.json");
+        let app = temp.path().join("share").join("app-settings.json");
+        let target = temp.path().join("models");
+        remember_data_dir(&settings, Some(&app), &target).unwrap();
+        let written: Value = serde_json::from_slice(&fs::read(&settings).unwrap()).unwrap();
+        assert_eq!(written["data_dir"], json!(target));
+        assert!(written["data_dir_at"].as_f64().unwrap() > 1_700_000_000.0);
+        // The upstream app has not been set up here: its file stays absent.
+        assert!(!app.exists());
+        // A stale stamp left by the Terminal is refreshed, never kept.
+        fs::write(&settings, br#"{"data_dir":"old","data_dir_at":5}"#).unwrap();
+        remember_data_dir(&settings, None, &target).unwrap();
+        let written: Value = serde_json::from_slice(&fs::read(&settings).unwrap()).unwrap();
+        assert!(written["data_dir_at"].as_f64().unwrap() > 5.0);
+    }
+
+    #[test]
     fn repoint_rewrites_only_paths_inside_the_old_folder() {
         let from = if cfg!(windows) {
             PathBuf::from("C:\\Data\\Strata-data")
@@ -1134,6 +1191,7 @@ mod tests {
             total: 0,
             same_volume: false,
             settings_path: temp.path().join("settings.json"),
+            app_settings_path: None,
             configs: vec![],
         };
         undo_placement(
@@ -1181,6 +1239,14 @@ mod tests {
         let mut plan = plan_move(&source, &target).unwrap();
         plan.same_volume = same_volume;
         plan.settings_path = settings_path;
+        let app_settings = temp.path().join("app").join("app-settings.json");
+        fs::create_dir_all(app_settings.parent().unwrap()).unwrap();
+        fs::write(
+            &app_settings,
+            br#"{"data_dir":"old","data_dir_at":1,"theme":"dark"}"#,
+        )
+        .unwrap();
+        plan.app_settings_path = Some(app_settings.clone());
         plan.configs = vec![config];
         let id = "move-test".to_owned();
         state.tasks.lock().unwrap().insert(
@@ -1234,6 +1300,16 @@ mod tests {
             assert_eq!(settings["data_dir"], json!(plan.target));
             assert_eq!(settings["installs"], json!(["x"]));
             assert_eq!(settings["lang"], "zh");
+            // Stamped, so upstream's newer-choice-wins sync keeps it (Strata 0.2.2).
+            let at = settings["data_dir_at"].as_f64().unwrap();
+            assert!(at > 1_700_000_000.0, "{at}");
+            let app: Value = serde_json::from_slice(
+                &fs::read(plan.app_settings_path.as_ref().unwrap()).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(app["data_dir"], json!(plan.target));
+            assert_eq!(app["data_dir_at"], json!(at));
+            assert_eq!(app["theme"], "dark");
             assert!(fs::read_dir(&plan.target)
                 .unwrap()
                 .flatten()

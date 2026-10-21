@@ -114,10 +114,21 @@ export const OBSERVER_GATES = Object.freeze([
   'Verify the reviewed source and observer compatibility',
   'Verify all Strata 0.1.43.1 observer HTTP contracts without skips',
 ]);
-export const OBSERVER_JOBS = Object.freeze([
-  'Strata 0.1.43.1 observer (windows-latest)',
-  'Strata 0.1.43.1 observer (ubuntu-22.04)',
+// Strata 0.2.2 (Service.run gains declared_only) has its own reviewed fixture job.
+export const OBSERVER_022_GATES = Object.freeze([
+  'Preserve the verified upstream source bytes',
+  'Check out the reviewed Strata 0.2.2 API fixture',
+  'Install MockEngine test dependencies only',
+  'Verify the reviewed source and observer compatibility',
+  'Verify all Strata 0.2.2 observer HTTP contracts without skips',
 ]);
+export const OBSERVER_JOB_GATES = Object.freeze({
+  'Strata 0.1.43.1 observer (windows-latest)': OBSERVER_GATES,
+  'Strata 0.1.43.1 observer (ubuntu-22.04)': OBSERVER_GATES,
+  'Strata 0.2.2 observer (windows-latest)': OBSERVER_022_GATES,
+  'Strata 0.2.2 observer (ubuntu-22.04)': OBSERVER_022_GATES,
+});
+export const OBSERVER_JOBS = Object.freeze(Object.keys(OBSERVER_JOB_GATES));
 const jobsByPlatform = {
   windows: 'desktop (windows-latest, x86_64-pc-windows-msvc, nsis)',
   linux: 'desktop (ubuntu-22.04, x86_64-unknown-linux-gnu, appimage,deb)',
@@ -200,7 +211,7 @@ export function validateCiEvidence(run, jobs, artifacts, plan, { nowMs = Date.no
   if (gateJobs.length > 1) fail('Duplicate CI job: ' + CHANGES_JOB);
   if (gateJobs.length) successfulJob(jobs, CHANGES_JOB, run);
   jobs = jobs.filter(j => j?.name !== CHANGES_JOB);
-  if (jobs.length !== 12) fail('Exactly the three desktop jobs, six native shards, two observer compatibility jobs and the coverage verification job are required.');
+  if (jobs.length !== 14) fail('Exactly the three desktop jobs, six native shards, four observer compatibility jobs and the coverage verification job are required.');
   const coverage = successfulJob(jobs, COVERAGE_JOB, run);
   if (coverage.run_attempt !== undefined && coverage.run_attempt !== run.run_attempt) fail('Coverage verification lacks current-attempt evidence.');
   for (const gate of COVERAGE_GATES) {
@@ -210,7 +221,7 @@ export function validateCiEvidence(run, jobs, artifacts, plan, { nowMs = Date.no
   for (const name of OBSERVER_JOBS) {
     const job = successfulJob(jobs, name, run);
     if (job.run_attempt !== run.run_attempt) fail('Required observer job lacks current-attempt evidence: ' + name);
-    for (const gate of OBSERVER_GATES) {
+    for (const gate of OBSERVER_JOB_GATES[name]) {
       const steps = job.steps?.filter(step => step.name === gate) ?? [];
       if (steps.length !== 1 || steps[0].status !== 'completed' || steps[0].conclusion !== 'success') fail('Required observer gate failed or missing: ' + gate);
     }

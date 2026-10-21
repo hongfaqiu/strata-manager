@@ -58,10 +58,80 @@ pub(crate) fn upstream_settings_path() -> Result<PathBuf, String> {
     }))
 }
 
+/// The upstream desktop app's own settings file (Strata 0.2.2+ `app-settings.json`, beside its
+/// components folder; `strata_control/discovery.py::app_settings_file`). It names a data folder
+/// too: the Terminal and the app keep whichever was chosen last (`data_dir_at`).
+pub(crate) fn upstream_app_settings_path() -> Option<PathBuf> {
+    if let Some(dir) = std::env::var_os("STRATA_COMPONENTS_DIR").filter(|v| !v.is_empty()) {
+        return Some(PathBuf::from(dir).parent()?.join("app-settings.json"));
+    }
+    #[cfg(windows)]
+    let base = std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("USERPROFILE").map(|p| PathBuf::from(p).join("AppData/Local")))
+        .map(|base| base.join("Strata"));
+    #[cfg(not(windows))]
+    let base = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|p| PathBuf::from(p).join(".local/share")))
+        .map(|base| base.join("strata"));
+    Some(base?.join("app-settings.json"))
+}
+
+/// The data folder a settings file names and when it was chosen: `data_dir_at` (seconds),
+/// else the file's modification time, as upstream's `_data_dir_entry` reads it.
+pub(crate) fn data_dir_entry(path: &Path) -> Option<(PathBuf, f64)> {
+    let meta = fs::metadata(path).ok()?;
+    if !meta.is_file() || meta.len() > 1024 * 1024 {
+        return None;
+    }
+    let value: Value = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
+    let folder = value["data_dir"].as_str().filter(|s| !s.is_empty())?;
+    let at = value["data_dir_at"]
+        .as_f64()
+        .filter(|at| at.is_finite() && *at > 0.0)
+        .or_else(|| {
+            let modified = meta.modified().ok()?;
+            Some(
+                modified
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .ok()?
+                    .as_secs_f64(),
+            )
+        })
+        .unwrap_or(0.0);
+    Some((PathBuf::from(folder), at))
+}
+
+/// The shared models folder: the Terminal's choice unless the upstream app chose a different,
+/// existing folder later (a disconnected disk is never adopted, as in `sync_data_dir`).
+fn newer_data_dir(terminal: &Path, app: Option<&Path>) -> Option<PathBuf> {
+    let mine = data_dir_entry(terminal);
+    let theirs = app.and_then(data_dir_entry);
+    match (mine, theirs) {
+        (Some((_, at)), Some((theirs, their_at))) if their_at > at && theirs.is_dir() => {
+            Some(theirs)
+        }
+        (Some((mine, _)), _) => Some(mine),
+        (None, Some((theirs, _))) if theirs.is_dir() => Some(theirs),
+        _ => None,
+    }
+}
+
 pub(crate) fn settings() -> Result<Settings, String> {
-    let path = upstream_settings_path()?;
+    settings_from(
+        &upstream_settings_path()?,
+        upstream_app_settings_path().as_deref(),
+    )
+}
+
+fn settings_from(path: &Path, app_path: Option<&Path>) -> Result<Settings, String> {
+    let path = path.to_path_buf();
     let Some(meta) = file_meta(&path)? else {
-        return Ok(Settings::default());
+        return Ok(Settings {
+            data_dir: newer_data_dir(&path, app_path),
+            ..Settings::default()
+        });
     };
     if !meta.is_file() || meta.len() > 1024 * 1024 {
         return Err("Strata settings.json 不是受支持的小型配置文件".into());
@@ -71,10 +141,7 @@ pub(crate) fn settings() -> Result<Settings, String> {
         &fs::read(&path).map_err(|e| format!("无法读取 {}: {e}", path.display()))?,
     )
     .unwrap_or(Value::Null);
-    let data_dir = value["data_dir"]
-        .as_str()
-        .filter(|s| !s.is_empty())
-        .map(PathBuf::from);
+    let data_dir = newer_data_dir(&path, app_path);
     let installs = value["installs"]
         .as_array()
         .into_iter()
@@ -788,6 +855,50 @@ mod tests {
             fs::write(dir.join(&names[1]), vec![2; 8192]).unwrap();
         }
         dir
+    }
+
+    #[test]
+    fn the_newer_of_the_terminal_and_app_data_folders_wins() {
+        let temp = tempfile::tempdir().unwrap();
+        let terminal = temp.path().join("settings.json");
+        let app = temp.path().join("app-settings.json");
+        let (mine, theirs) = (temp.path().join("mine"), temp.path().join("theirs"));
+        fs::create_dir_all(&theirs).unwrap();
+        let write = |path: &Path, folder: &Path, at: f64| {
+            fs::write(
+                path,
+                serde_json::to_vec(
+                    &serde_json::json!({"data_dir": folder, "data_dir_at": at, "installs": ["i"]}),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        };
+        write(&terminal, &mine, 100.0);
+        write(&app, &theirs, 200.0);
+        let s = settings_from(&terminal, Some(&app)).unwrap();
+        assert_eq!(s.data_dir.as_deref(), Some(theirs.as_path()));
+        assert_eq!(s.installs, [PathBuf::from("i")]);
+        // The Terminal's later choice wins.
+        write(&terminal, &mine, 300.0);
+        assert_eq!(
+            settings_from(&terminal, Some(&app)).unwrap().data_dir,
+            Some(mine.clone())
+        );
+        // A newer app folder that is gone (a disconnected disk) is never adopted.
+        write(&app, &temp.path().join("unplugged"), 400.0);
+        assert_eq!(
+            settings_from(&terminal, Some(&app)).unwrap().data_dir,
+            Some(mine.clone())
+        );
+        // Only the app names a folder.
+        fs::remove_file(&terminal).unwrap();
+        write(&app, &theirs, 1.0);
+        assert_eq!(
+            settings_from(&terminal, Some(&app)).unwrap().data_dir,
+            Some(theirs.clone())
+        );
+        assert_eq!(settings_from(&terminal, None).unwrap().data_dir, None);
     }
 
     #[test]

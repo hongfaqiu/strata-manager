@@ -540,6 +540,13 @@ fn hip_variant(build: &Value, platform: &str) -> &'static str {
         HIP_MULTI
     } else if all(&["gfx1200", "gfx1201"]) {
         "hip"
+    } else if all(&["gfx1030", "gfx1031"]) {
+        // RX 6000 (Strata 0.2.2+): one package per platform under different names.
+        if platform == "linux-x86_64" {
+            "hip-rx6000"
+        } else {
+            "hip-rdna2"
+        }
     } else if platform == "linux-x86_64" {
         // Linux splits RDNA3 into separate RX 7000 and Strix Halo packages.
         if all(&["gfx1100", "gfx1101", "gfx1102"]) {

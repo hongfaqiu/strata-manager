@@ -20,18 +20,30 @@ const makePlan = (version = '0.2.0') => createPlan({
 });
 const plan = makePlan();
 // Independent expectations from the reviewed observer-compatibility matrix in ci.yml.
-const observerJobs = ['Strata 0.1.43.1 observer (windows-latest)', 'Strata 0.1.43.1 observer (ubuntu-22.04)'];
-const observerGates = [
-  'Preserve the verified upstream source bytes', 'Check out the reviewed Strata 0.1.43.1 API fixture',
+const observerGatesFor = version => [
+  'Preserve the verified upstream source bytes', `Check out the reviewed Strata ${version} API fixture`,
   'Install MockEngine test dependencies only', 'Verify the reviewed source and observer compatibility',
-  'Verify all Strata 0.1.43.1 observer HTTP contracts without skips',
+  `Verify all Strata ${version} observer HTTP contracts without skips`,
 ];
-test('observer compatibility expectations match the two-platform reviewed workflow and its named gates', async () => {
+const observerVersions = ['0.1.43.1', '0.2.2'];
+const observerJobGates = Object.fromEntries(observerVersions.flatMap(version => ['windows-latest', 'ubuntu-22.04']
+  .map(runner => [`Strata ${version} observer (${runner})`, observerGatesFor(version)])));
+const observerJobs = Object.keys(observerJobGates);
+test('observer compatibility expectations match the two-platform reviewed workflows and their named gates', async () => {
   const workflow = (await readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')).replaceAll('\r\n', '\n');
-  const observer = workflow.slice(workflow.indexOf('\n  observer-compatibility:')).split('\n  native-windows:')[0];
-  assert.ok(observer.includes('name: Strata 0.1.43.1 observer (${{ matrix.runner }})'));
-  assert.match(observer, /runner: \[windows-latest,\s*ubuntu-22\.04\]/);
-  for (const gate of observerGates) assert.ok(observer.includes('- name: ' + gate), gate);
+  const jobs = {
+    '0.1.43.1': workflow.slice(workflow.indexOf('\n  observer-compatibility:')).split('\n  observer-compatibility-022:')[0],
+    '0.2.2': workflow.slice(workflow.indexOf('\n  observer-compatibility-022:')).split('\n  native-windows:')[0],
+  };
+  for (const version of observerVersions) {
+    const observer = jobs[version];
+    assert.ok(observer.includes(`name: Strata ${version} observer (\${{ matrix.runner }})`), version);
+    assert.match(observer, /runner: \[windows-latest,\s*ubuntu-22\.04\]/);
+    assert.match(observer, /needs: changes\n {4}if: needs\.changes\.outputs\.code == 'true'/);
+    for (const gate of observerGatesFor(version)) assert.ok(observer.includes('- name: ' + gate), gate);
+  }
+  assert.match(jobs['0.2.2'], /ref: 011c9e600a93bbc9fd451c563501b5831c32bbca/);
+  assert.ok(jobs['0.2.2'].includes("expected = 'bc09af76400932500f9ce09f401bf097ad7e7b120374d2cfbe3f4142fadd2304'"));
 });
 test('the macOS desktop job stays behind the docs-only skip and publishes Developer ID signed Apple Silicon artifacts', async () => {
   const workflow = (await readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')).replaceAll('\r\n', '\n');
@@ -167,7 +179,7 @@ function ciFixture(p = plan, runId = 123) {
     job('desktop (macos-15, aarch64-apple-darwin, app,dmg)', [...COMMON_GATES, ...PLATFORM_GATES.macos], 12),
     ...[0, 1, 2].map(i => job('Linux native shard (' + i + '/3)', SHARD_GATES, 20 + i)),
     ...[0, 1, 2].map(i => job('Windows native shard (' + i + '/3)', WINDOWS_SHARD_GATES, 30 + i)),
-    ...observerJobs.map((name, i) => job(name, observerGates, 40 + i)),
+    ...observerJobs.map((name, i) => job(name, observerJobGates[name], 40 + i)),
     job(COVERAGE_JOB, COVERAGE_GATES, 50),
   ];
   if (p.version === '0.1.2') jobs[0].steps.push(...[
@@ -384,7 +396,7 @@ for (const name of observerJobs) {
     assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, plan));
   });
   test(`observer compatibility ${name} requires every reviewed-source and HTTP-contract step`, () => {
-    for (const gate of observerGates) for (const state of ['missing', 'duplicate', 'skipped', 'failure', 'cancelled', 'queued']) {
+    for (const gate of observerJobGates[name]) for (const state of ['missing', 'duplicate', 'skipped', 'failure', 'cancelled', 'queued']) {
       const f = ciFixture(), steps = f.jobs.find(job => job.name === name).steps;
       const index = steps.findIndex(step => step.name === gate);
       if (state === 'missing') steps.splice(index, 1);

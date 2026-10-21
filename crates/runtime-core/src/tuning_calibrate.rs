@@ -327,7 +327,55 @@ pub fn detect_layer_split(config: &Value, metrics: &Value) -> bool {
         Some(Value::Bool(b)) => *b,
         _ => false,
     };
-    args_split || key_split
+    args_split || key_split || config_gpu_count(config) > 1
+}
+
+/// Cards the run settings start on, as Strata 0.2.2 `gpu_list` reads them: a hand-set
+/// `gpu` (2, "0,2" or [0, 2]) wins; otherwise the Main/Helper cards of a valid
+/// `gpu_roles` map. Unreadable values count as none.
+pub fn config_gpu_count(config: &Value) -> usize {
+    let listed = match config.get("gpu") {
+        Some(Value::Array(items)) => items
+            .iter()
+            .filter(|item| {
+                item.as_u64().is_some() || item.as_str().is_some_and(|t| !t.trim().is_empty())
+            })
+            .count(),
+        Some(Value::String(text)) => text.split(',').filter(|t| !t.trim().is_empty()).count(),
+        Some(Value::Number(n)) if n.as_u64().is_some() => 1,
+        _ => 0,
+    };
+    if listed > 0 {
+        return listed;
+    }
+    let Some(roles) = config.get("gpu_roles").and_then(Value::as_object) else {
+        return 0;
+    };
+    let mut on = 0;
+    let mut mains = 0;
+    for (card, role) in roles {
+        if card.trim().parse::<u32>().is_err() {
+            return 0;
+        }
+        match role
+            .as_str()
+            .map(|r| r.trim().to_ascii_lowercase())
+            .as_deref()
+        {
+            Some("main") => {
+                mains += 1;
+                on += 1;
+            }
+            Some("helper") => on += 1,
+            Some("off") => {}
+            _ => return 0,
+        }
+    }
+    if mains > 1 {
+        0
+    } else {
+        on
+    }
 }
 
 /// The official PCIe grid plus the current value, and "engine default"
@@ -1943,6 +1991,27 @@ mod tests {
             &json!({})
         ));
         assert!(detect_layer_split(&json!({"layer_split":"23"}), &json!({})));
+        // Strata 0.2.2 splits whenever the run settings name several cards.
+        assert!(detect_layer_split(&json!({"gpu":[0,1]}), &json!({})));
+        assert!(detect_layer_split(&json!({"gpu":"0,2"}), &json!({})));
+        assert!(!detect_layer_split(&json!({"gpu":1}), &json!({})));
+        assert!(detect_layer_split(
+            &json!({"gpu_roles":{"0":"helper","1":"main"}}),
+            &json!({})
+        ));
+        assert!(!detect_layer_split(
+            &json!({"gpu_roles":{"0":"off","1":"main"}}),
+            &json!({})
+        ));
+        assert!(!detect_layer_split(
+            &json!({"gpu_roles":{"0":"main","1":"main"}}),
+            &json!({})
+        ));
+        // A hand-set single-card "gpu" wins over the roles.
+        assert!(!detect_layer_split(
+            &json!({"gpu":[1],"gpu_roles":{"0":"helper","1":"main"}}),
+            &json!({})
+        ));
         assert!(!detect_layer_split(
             &json!({"args":[]}),
             &json!({"engine":{"prefill_stages":1}})
