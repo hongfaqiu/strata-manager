@@ -118,6 +118,55 @@ fn kfd_gfx(root: &Path) -> Vec<String> {
     found
 }
 
+/// Windows has no KFD topology: the AMD target of a display adapter name from
+/// `Win32_VideoController` (the list Manager already shows). Only the discrete RDNA3 /
+/// RDNA4 cards and Strix Halo that official packages are built for; anything else (an
+/// integrated "AMD Radeon(TM) Graphics", older cards) is unknown and left out.
+pub fn amd_gfx_from_adapter_name(name: &str) -> Option<&'static str> {
+    let name = name.to_ascii_lowercase().replace("(tm)", " ");
+    let name = name.split_whitespace().collect::<Vec<_>>().join(" ");
+    if !name.contains("radeon") {
+        return None;
+    }
+    const TABLE: &[(&str, &str)] = &[
+        // RDNA4: RX 9070 / 9070 XT / 9070 GRE and Radeon AI PRO R9700 (Navi 48), RX 9060 (Navi 44).
+        ("rx 9070", "gfx1201"),
+        ("r9700", "gfx1201"),
+        ("rx 9060", "gfx1200"),
+        // RDNA3: Navi 31 / 32 / 33 and their Radeon PRO siblings.
+        ("rx 7900", "gfx1100"),
+        ("pro w7900", "gfx1100"),
+        ("pro w7800", "gfx1100"),
+        ("rx 7800", "gfx1101"),
+        ("rx 7700", "gfx1101"),
+        ("pro w7700", "gfx1101"),
+        ("rx 7600", "gfx1102"),
+        ("rx 7650", "gfx1102"),
+        ("pro w7600", "gfx1102"),
+        ("pro w7500", "gfx1102"),
+        // Strix Halo (Ryzen AI Max): Radeon 8060S / 8050S / 8040S.
+        ("radeon 8060s", "gfx1151"),
+        ("radeon 8050s", "gfx1151"),
+        ("radeon 8040s", "gfx1151"),
+    ];
+    TABLE
+        .iter()
+        .find(|(marker, _)| name.contains(marker))
+        .map(|(_, gfx)| *gfx)
+}
+
+/// AMD targets of Windows display adapter names, sorted and deduplicated.
+pub fn amd_gfx_from_adapter_names(names: &[String]) -> Vec<String> {
+    let mut found: Vec<String> = names
+        .iter()
+        .filter_map(|name| amd_gfx_from_adapter_name(name))
+        .map(str::to_owned)
+        .collect();
+    found.sort();
+    found.dedup();
+    found
+}
+
 /// Probe this computer. Never fails: anything unreadable stays empty.
 pub fn probe_host() -> GpuProbe {
     let mut probe = GpuProbe::default();
@@ -141,6 +190,12 @@ pub fn probe_host() -> GpuProbe {
     if probe.amd_gfx.is_empty() {
         if let Some(text) = crate::output_with_timeout("rocminfo", &[], Duration::from_secs(10)) {
             probe.amd_gfx = parse_rocminfo(&text);
+        }
+    }
+    #[cfg(windows)]
+    if probe.amd_gfx.is_empty() {
+        if let Some(names) = crate::display_adapters::windows_gpu_names() {
+            probe.amd_gfx = amd_gfx_from_adapter_names(&names);
         }
     }
     probe
@@ -237,22 +292,48 @@ pub fn pick(
         ));
     }
     if amd {
-        let gfx = probe.amd_gfx.join(", ");
-        let fits: Vec<_> = assets
+        let hip: Vec<_> = assets
             .iter()
             .filter(|a| a.variant.starts_with("hip"))
-            .filter(|a| {
-                probe
-                    .amd_gfx
-                    .iter()
-                    .all(|g| a.archs.iter().any(|arch| arch == g))
-            })
             .collect();
+        // An AMD target no package is built for (typically the integrated GPU next to a
+        // discrete card, e.g. gfx1036 beside gfx1201, #103) does not block the choice.
+        let (supported, ignored): (Vec<&String>, Vec<&String>) = probe
+            .amd_gfx
+            .iter()
+            .partition(|g| hip.iter().any(|a| a.archs.iter().any(|arch| arch == *g)));
+        let wanted: Vec<&String> = if supported.is_empty() {
+            probe.amd_gfx.iter().collect()
+        } else {
+            supported
+        };
+        let gfx = wanted
+            .iter()
+            .map(|g| g.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let fits: Vec<_> = hip
+            .iter()
+            .copied()
+            .filter(|a| wanted.iter().all(|g| a.archs.iter().any(|arch| arch == *g)))
+            .collect();
+        let note = if ignored.is_empty() || wanted.len() == probe.amd_gfx.len() {
+            String::new()
+        } else {
+            let ignored = ignored
+                .iter()
+                .map(|g| g.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                "（忽略无官方引擎包的 {ignored}）/ (ignoring {ignored}, which no package supports)"
+            )
+        };
         return match fits.as_slice() {
             [asset] => Ok((
                 (*asset).clone(),
                 format!(
-                    "检测到 AMD 显卡 {gfx}，选择 {} / Detected AMD GPU {gfx}: {}",
+                    "检测到 AMD 显卡 {gfx}，选择 {} / Detected AMD GPU {gfx}: {}{note}",
                     hip_label(&asset.variant),
                     hip_label(&asset.variant)
                 ),
@@ -391,6 +472,45 @@ mod tests {
         assert!(pick_variant(amd(&["gfx1030"]))
             .unwrap_err()
             .contains("gfx1030"));
+        // #103: RX 9070 XT next to the Ryzen iGPU (gfx1036, no package): the iGPU is
+        // ignored and named in the reason instead of blocking the choice.
+        let (asset, reason) = pick(&assets, &amd(&["gfx1036", "gfx1201"])).unwrap();
+        assert_eq!(asset.variant, "hip");
+        assert!(
+            reason.contains("gfx1201") && reason.contains("gfx1036"),
+            "{reason}"
+        );
+    }
+
+    #[test]
+    fn windows_adapter_names_map_to_amd_targets() {
+        for (name, gfx) in [
+            ("AMD Radeon RX 9070 XT", Some("gfx1201")),
+            ("AMD Radeon RX 9070", Some("gfx1201")),
+            ("AMD Radeon AI PRO R9700", Some("gfx1201")),
+            ("AMD Radeon RX 9060 XT", Some("gfx1200")),
+            ("AMD Radeon RX 7900 XTX", Some("gfx1100")),
+            ("AMD Radeon RX 7900 GRE", Some("gfx1100")),
+            ("AMD Radeon PRO W7900", Some("gfx1100")),
+            ("AMD Radeon RX 7800 XT", Some("gfx1101")),
+            ("AMD Radeon RX 7700 XT", Some("gfx1101")),
+            ("AMD Radeon RX 7600", Some("gfx1102")),
+            ("AMD Radeon(TM) 8060S Graphics", Some("gfx1151")),
+            // Integrated graphics and cards no package is built for stay unknown.
+            ("AMD Radeon(TM) Graphics", None),
+            ("AMD Radeon RX 6800 XT", None),
+            ("NVIDIA GeForce RTX 4090", None),
+            ("Meta Virtual Monitor", None),
+        ] {
+            assert_eq!(amd_gfx_from_adapter_name(name), gfx, "{name}");
+        }
+        assert_eq!(
+            amd_gfx_from_adapter_names(&[
+                "AMD Radeon(TM) Graphics".into(),
+                "AMD Radeon RX 9070 XT".into(),
+            ]),
+            ["gfx1201"]
+        );
     }
 
     #[test]

@@ -73,6 +73,8 @@
 - `delete_model_files({profiles,expectedFiles}) -> ModelDeletionSummary`：永久删除显式确认的主文件；expectedFiles 包含 path、sizeBytes、modifiedAt。执行前及进程检查后重查配置引用与文件身份。保留配置与伴随文件，不能以旧计划直接删除变化后的文件。
 - `list_local_models({profile}) -> LocalModel[]`：返回配置/安装器识别的模型，不默认全系统扫描。
 - `export_diagnostics({profile}) -> string`：返回脱敏诊断文件路径。
+- `support_diagnostics_text({profile?,extras?}) -> string`：桌面转发同名后台 RPC，返回「复制诊断信息」的脱敏文本（0.2.11 及以前桌面端漏注册此命令，#103）。
+- `repair_python_dependencies({installDir}) -> {pythonPath,installed,alreadyPresent,message}`：桌面转发同名后台 RPC。
 - `write_markdown_export({path,content}) -> string`：原子写 UTF-8 Markdown，返回绝对路径；仅 .md、最多 16 MiB，拒绝目录和符号链接。文件选择由桌面保存对话框完成。
 
 配置快照或 CAS RPC 遇到旧后台 `unknown_method` 时映射 `SUPERVISOR_CAPABILITY_REQUIRED`，不会回退到旧 `write_config` 无版本写入。后台仍保留旧 RPC 供既有协议使用，不是新前端的可用兼容退路。CAS 同时检查登记/管理归属、运行时更新、调优、模型切换及退出状态。
@@ -80,7 +82,7 @@
 ## Rust invoke：ZIP 来源、匹配与更新
 
 - `runtime_update_info({force?}) -> RuntimeUpdateInfo`：官方发布版本、源码、可校验资产、安装支持范围与错误；Core 默认 force=false，桌面元数据层复用已核验数据。
-- `resolve_runtime_zip_asset({installDir,assetName?}) -> RuntimeReleaseAsset`：Tauri 直接调用当前后台 `resolve_runtime_zip_asset_v1`。显式 assetName 做核验；未指定时按已安装引擎的 CUDA/HIP 信息选择当前官方可用包，无法可靠匹配时返回错误，不猜测任意来源。
+- `resolve_runtime_zip_asset({installDir,assetName?}) -> RuntimeReleaseAsset`：Tauri 直接调用当前后台 `resolve_runtime_zip_asset_v1`。显式 assetName 做核验；未指定时按已安装引擎的 CUDA/HIP 信息选择当前官方可用包，无法可靠匹配时返回错误，不猜测任意来源。没有已装引擎时：Linux 按检测到的显卡选包；Windows 只检测到 AMD 显卡（`Win32_VideoController` 名称映射到 gfx 架构，没有官方包的核显等会被忽略）时选对应 HIP 包，其余情况仍默认 CUDA 13（#103）。
 - `test_runtime_zip_download({assetName,localArchivePath?,downloadUrl?}) -> RuntimeZipDownloadCheckResult`：Tauri 直接调用当前后台 `test_runtime_zip_download_v1`，只做来源测试，不创建安装任务或下载缓存文件。
 - `update_runtime_zip({installDir,assetName?,stopCurrentService?,localArchivePath?,downloadUrl?}) -> TaskStatus`：经桌面持久更新队列提交。stopCurrentService 默认 false；服务中断授权仅来自显式更新确认。官方来源使用后台 `update_runtime_zip`，自定义来源使用 `update_runtime_zip_download_v1`。队列分配持久 requestId 并协调批准的服务停止、后台能力/包交接、任务状态与原状态恢复；requestId 不是额外的前端 invoke 参数。
 
