@@ -42,9 +42,9 @@ fn select_python(
 
 fn probe_python(program: &OsStr) -> io::Result<String> {
     let mut command = Command::new(program);
-    // Keep site-packages for the two actual MockEngine dependencies; -I prevents
+    // Keep site-packages for the MockEngine dependencies (regex: the 0.2+ tokenizer helper); -I prevents
     // an unrelated PYTHONPATH from making an unprepared interpreter look ready.
-    command.args(["-I", "-c", "import json,sys,jinja2,markupsafe;print(json.dumps({'executable':sys.executable,'version':sys.version}))"]);
+    command.args(["-I", "-c", "import json,sys,jinja2,markupsafe,regex;print(json.dumps({'executable':sys.executable,'version':sys.version}))"]);
     crate::processes::hidden(&mut command);
     let output = command.output()?;
     if !output.status.success() {

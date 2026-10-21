@@ -37,7 +37,7 @@
 
 | 文件 | 固定来源 | SHA256 |
 | --- | --- | --- |
-| Strata 源码 ZIP | [固定上游 revision](https://codeload.github.com/Niko1221/Strata/zip/fb58e0dbc8399662c0e47c76578c6e878b14f6cf) | `b6b559866cf7d422d7acace638d542049ea7e3543720f574cb97b2d0bd530d7b` |
+| Strata 源码 ZIP | [固定上游 revision（v0.2.2）](https://codeload.github.com/Niko1221/Strata/zip/011c9e600a93bbc9fd451c563501b5831c32bbca) | `0c3139c33e2df981a1542f7b8243ed094d9922c8551c24ab67f01cfcee9eaf5d` |
 | Python 3.13.16 Windows x64 | [Python.org 安装器](https://www.python.org/ftp/python/3.13.16/python-3.13.16-amd64.exe) | `fb4f9f5d438b2396da0086dc70b935c530cb578e37adc6d354f7ad2037fee83b` |
 
 源码归档已实际下载、解包并完成私有 venv/pip 准备；Python 安装器已实际下载，hash 与 [Python.org 签名元数据](https://www.python.org/ftp/python/3.13.16/python-3.13.16-amd64.exe.sigstore) 一致，但尚未执行缺 Python 时的安装分支。Windows 安装到应用数据目录，不修改 PATH、安装全局 Git 或要求管理员权限；Linux 检测 Python/venv/ensurepip，缺少系统依赖时提供诊断，不执行 sudo。

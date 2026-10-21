@@ -15,6 +15,10 @@ const SOURCE_HASHES: &[&str] = &[
     "017efa1f4e76d72396738555d13eb1f9898d1c1c12730cf046d9b267b29987e5",
     "458612e929771181d4e5419dbff5bb6499b5e8fef29a5c42aa08824d4e1d9dbf",
     "ce9266730b632e919ff93809ea6f9ecd6f91f12da19597a2d95a7edb29700dfa",
+    // Strata v0.2.2 (the pinned source since SOURCE_REVISION 011c9e6): Handler._capture,
+    // begin_request, the four inference routes and the capture lease contract are unchanged
+    // from 0.2.0-beta; the CI fixture runs request_capture_tests against it.
+    "bc09af76400932500f9ce09f401bf097ad7e7b120374d2cfbe3f4142fadd2304",
 ];
 
 #[derive(Debug, Serialize)]
