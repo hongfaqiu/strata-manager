@@ -51,11 +51,11 @@ README、官网截图与使用指南描述当前源码功能；安装包包含�
 
 ## macOS（Apple Silicon，实验）
 
-v0.2.11 之后的版本起，DMG 和应用内更新包都使用 **Developer ID 签名并经 Apple 公证**（DMG 和 `.app` 都已 staple 公证票据），双击 DMG、把应用拖进「应用程序」后直接打开即可，不需要右键打开或 `xattr` 去隔离。v0.2.11 及更早的 DMG 仍是临时签名、未公证。当前阶段仍**不**声称 Manager 已在 Mac 上完成引擎发现或模型推理验收。
+v0.2.11 之后的版本起，DMG 和应用内更新包都使用 **Developer ID 签名并经 Apple 公证**（`.app` 已 staple 公证票据，DMG 用 Developer ID 签名、里面就是这个已 staple 的应用），双击 DMG、把应用拖进「应用程序」后直接打开即可，不需要右键打开或 `xattr` 去隔离。v0.2.11 及更早的 DMG 仍是临时签名、未公证。当前阶段仍**不**声称 Manager 已在 Mac 上完成引擎发现或模型推理验收。
 
 - 手工安装文件为 `Strata.Manager_<version>_aarch64.dmg`。官网下载按钮只在该发布**实际包含**这个文件时启用。
 - 应用内更新（若启用）使用 `Strata.Manager_<version>_aarch64.app.tar.gz`；`latest.json` 的 `darwin-aarch64` 指向该归档，不指向 DMG。
-- 签名在 CI（`macos-15`）中完成：导入 Developer ID Application 证书，启用硬化运行时（hardened runtime）签名应用和后台 `strata-supervisor`，用 App Store Connect API key 公证 DMG（连同里面的 `.app`）并 staple，再用 `codesign`、`stapler validate`、`spctl` 检查后才上传。没有证书的 fork 或 PR 构建回退为临时（ad-hoc）签名，本仓库可发布的构建缺少证书或公证凭据时直接失败。
+- 签名在 CI（`macos-15`）中完成：导入 Developer ID Application 证书，启用硬化运行时（hardened runtime）签名应用和后台 `strata-supervisor`，用 App Store Connect API key 公证 `.app` 并 staple，再把已 staple 的应用放进 DMG、用 Developer ID 签名 DMG（DMG 本身不单独公证），再用 `codesign`、`stapler validate`、`spctl` 检查后才上传。没有证书的 fork 或 PR 构建回退为临时（ad-hoc）签名，本仓库可发布的构建缺少证书或公证凭据时直接失败。
 - 从临时签名的旧版升级到签名版后，macOS 会把它视为签名身份不同的应用：首次读取钥匙串里保存的凭据时可能弹窗询问，选「始终允许」即可；之前给旧版授予的系统权限（如有）可能需要重新授予。
 - **不提供** Intel（`x86_64-apple-darwin`）安装包。上游 Strata Metal 面向 Apple Silicon。
 - **DMG 仍不含引擎。** 第二期起，Manager 在 Apple Silicon 上可下载并校验上游 [v0.2.0-beta](https://github.com/Niko1221/Strata/releases/tag/v0.2.0-beta) 预制包 `strata-engine-*-macos-arm64-metal.tar.gz`（应用内 SHA256，不附带 SHA256SUMS），也可选用已有本地 Strata/`engine` 或 `build-metal` 目录。`./setup.sh` 源码构建仍可手动按 [docs/MAC.md](https://github.com/Niko1221/Strata/blob/main/docs/MAC.md) 操作，Manager 暂不自动调用。真机推理验收仍待进行。
