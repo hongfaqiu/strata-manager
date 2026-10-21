@@ -1,7 +1,7 @@
 {
   "capturedOn": "2026-10-14",
   "capturedAt": "2026-10-17T18:36:27.448Z",
-  "appVersion": "0.2.11",
+  "appVersion": "0.2.12",
   "releaseStatus": "unreleased",
   "source": "Current production main.tsx and styles; isolated synthetic native IO",
   "scope": "No real model, GPU benchmark, native window acceptance, installation, update or user configuration changes.",
