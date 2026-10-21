@@ -33,7 +33,7 @@ test('observer compatibility expectations match the two-platform reviewed workfl
   assert.match(observer, /runner: \[windows-latest,\s*ubuntu-22\.04\]/);
   for (const gate of observerGates) assert.ok(observer.includes('- name: ' + gate), gate);
 });
-test('the macOS desktop job stays behind the docs-only skip and publishes ad-hoc Apple Silicon artifacts', async () => {
+test('the macOS desktop job stays behind the docs-only skip and publishes Developer ID signed Apple Silicon artifacts', async () => {
   const workflow = (await readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')).replaceAll('\r\n', '\n');
   const changes = workflow.slice(workflow.indexOf('\n  changes:'), workflow.indexOf('\n  observer-compatibility:'));
   assert.match(changes, /dorny\/paths-filter@v3/);
@@ -44,10 +44,22 @@ test('the macOS desktop job stays behind the docs-only skip and publishes ad-hoc
   assert.match(desktop, /runner: macos-15\n {12}target: aarch64-apple-darwin\n {12}bundles: app,dmg/);
   assert.match(desktop, /runner\.os != 'macOS' && 'scripts\/ci-linux-native-tests\.test\.mjs'/);
   assert.doesNotMatch(desktop, /runner: macos-14/);
-  for (const step of ['Use ad-hoc macOS signing without an Apple certificate', 'Package the macOS app archive for the updater', 'Upload the macOS updater archive']) {
+  for (const step of PLATFORM_GATES.macos) {
     assert.ok(desktop.includes('- name: ' + step), step);
   }
+  // Forks / PRs without secrets keep the ad-hoc fallback; release-capable runs here must sign and notarize.
   assert.match(desktop, /APPLE_SIGNING_IDENTITY=-/);
+  assert.match(desktop, /REQUIRE_APPLE_SIGNING: \$\{\{ github\.repository == 'hongfaqiu\/strata-manager' && github\.event_name != 'pull_request' && '1' \|\| '' \}\}/);
+  for (const secret of ['APPLE_CERTIFICATE', 'APPLE_CERTIFICATE_PASSWORD', 'APPLE_API_ISSUER', 'APPLE_API_KEY', 'APPLE_API_PRIVATE_KEY']) {
+    assert.ok(desktop.includes(secret + ': ${{ secrets.' + secret + ' }}'), secret);
+  }
+  assert.match(desktop, /xcrun notarytool submit "\$dmg"/);
+  assert.match(desktop, /xcrun stapler validate "\$dmg"/);
+  assert.match(desktop, /spctl --assess --type execute/);
+  // tauri-action must not upload the pre-notarization DMG; the stapled one is uploaded under the same name.
+  assert.match(desktop, /uploadWorkflowArtifacts: \$\{\{ runner\.os != 'macOS' \}\}/);
+  assert.match(desktop, /name: ci-darwin-aarch64-dmg/);
+  assert.ok(desktop.indexOf('- name: Notarize and staple the macOS DMG') < desktop.indexOf('- name: Upload the macOS DMG'));
   assert.match(desktop, /name: ci-darwin-aarch64-app-tarball/);
   assert.match(desktop, /if: runner\.os == 'macOS' && env\.PACKAGE_INSTALLERS == 'true'/);
   assert.doesNotMatch(desktop, /target: x86_64-apple-darwin/);
@@ -151,7 +163,8 @@ test('source protocol explicitly rejects old fixed release and missing CI marker
   const helper = "export const CI_PROTOCOL = '" + CI_PROTOCOL + "';";
   const ci = 'name: Reusable release CI protocol\nrun: node scripts/release-from-ci.mjs protocol';
   assert.equal(validateSourceProtocol(helper, ci), true);
-  assert.equal(CI_PROTOCOL, 'strata-release-ci/v3');
+  assert.equal(CI_PROTOCOL, 'strata-release-ci/v4');
+  assert.throws(() => validateSourceProtocol("export const CI_PROTOCOL = 'strata-release-ci/v3';", ci), /protocol/);
   assert.throws(() => validateSourceProtocol("export const CI_PROTOCOL = 'strata-release-ci/v1';", ci), /protocol/);
   assert.throws(() => validateSourceProtocol('export const PLAN = {}', ci), /protocol/);
   assert.throws(() => validateSourceProtocol(helper, 'node scripts/release-check.mjs'), /protocol/);

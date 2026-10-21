@@ -7,7 +7,7 @@ import { resolve as pathResolve, dirname, isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { pipeline } from 'node:stream/promises';
 
-export const CI_PROTOCOL = 'strata-release-ci/v3';
+export const CI_PROTOCOL = 'strata-release-ci/v4';
 export const REPOSITORY = 'hongfaqiu/strata-manager';
 const workflowPath = '.github/workflows/ci.yml';
 const maxBytes = 512 * 1024 * 1024;
@@ -32,8 +32,10 @@ export const PLATFORM_GATES = Object.freeze({
     'Package headless server',
     'Upload headless server packages',
     'Verify Linux AppImage and DEB startup under Xvfb']),
-  macos: Object.freeze(['Use ad-hoc macOS signing without an Apple certificate',
-    'Package the macOS app archive for the updater', 'Upload the macOS updater archive']),
+  macos: Object.freeze(['Prepare macOS signing and notarization',
+    'Notarize and staple the macOS DMG', 'Verify macOS signature and notarization',
+    'Package the macOS app archive for the updater', 'Upload the macOS updater archive',
+    'Upload the macOS DMG']),
 });
 /** Separate job that aggregates all six shard proofs after all desktop jobs succeeded. */
 export const COVERAGE_JOB = 'Native coverage verification';

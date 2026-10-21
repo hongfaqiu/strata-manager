@@ -24,7 +24,7 @@
 | --- | --- | --- |
 | Windows x64 | `x86_64-pc-windows-msvc` | NSIS `*-setup.exe` 及 `.sig` |
 | Linux x64 | `x86_64-unknown-linux-gnu` | `.AppImage`、`.AppImage.sig` 和桌面 `.deb` |
-| macOS Apple Silicon（实验） | `aarch64-apple-darwin` | `*_aarch64.dmg`（手工下载）与 `*_aarch64.app.tar.gz`（updater；`latest.json` 的 `darwin-aarch64`）。临时签名、**未公证**；不提供 Intel。**DMG 仍不含引擎**；Manager 可装上游预制 Metal 包（真机验收待进行）。 |
+| macOS Apple Silicon（实验） | `aarch64-apple-darwin` | `*_aarch64.dmg`（手工下载）与 `*_aarch64.app.tar.gz`（updater；`latest.json` 的 `darwin-aarch64`）。v0.2.11 之后 Developer ID 签名 + Apple 公证（见下方「macOS 签名与公证」）；不提供 Intel。**DMG 仍不含引擎**；Manager 可装上游预制 Metal 包（真机验收待进行）。 |
 | Linux x64 无头 Server（#6） | `x86_64-unknown-linux-gnu` | `Strata.Manager.Server_<ver>_amd64.tar.gz` 与 `Strata.Manager.Server_<ver>_amd64.deb`（**无** updater `.sig`；不进 `latest.json`） |
 
 每个安装包包含桌面外壳及独立 `strata-supervisor` 后台。Python、Strata 运行时和模型权重使用应用内的独立安装/导入流程，模型不进入 GitHub 构建工件。平台安装包构建成功不等于对应 GPU 推理已验收；必须在发布说明中列出实际测试的平台、驱动和范围。
@@ -63,6 +63,25 @@ pnpm --filter @strata-manager/desktop tauri signer generate -w $strataSigningKey
 签名环境变量仅在工作流的签名步骤显式注入；`.env` 文件不能替代它们。正式 Release 缺少私钥、公钥、HTTPS endpoint 或更新产物配置时会失败。更新签名与 Windows Authenticode/发行者代码签名是不同能力；本流程不声称拥有 Windows 发布者证书。
 
 官方依据：[Tauri updater](https://v2.tauri.app/plugin/updater/)、[Tauri GitHub Action](https://github.com/tauri-apps/tauri-action)、[Tauri sidecar](https://v2.tauri.app/develop/sidecar/)。
+
+## macOS 签名与公证
+
+macOS 包在 CI 的 `desktop (macos-15, …)` job 中签名和公证，Release 只发布这些已公证的字节，并另外加 Tauri 更新签名（`.sig`）。两种签名互不影响：Developer ID 签名改的是 `.app`/DMG 本身，updater 签的是打包好的 `.app.tar.gz`。
+
+需要的 Actions secrets（`gh secret set <名字> -R hongfaqiu/strata-manager`，从标准输入或文件写入，不要把内容放进命令参数）：
+
+| Secret | 内容 |
+| --- | --- |
+| `APPLE_CERTIFICATE` | Developer ID Application 证书和私钥导出的 `.p12`，base64 |
+| `APPLE_CERTIFICATE_PASSWORD` | 该 `.p12` 的密码 |
+| `APPLE_API_KEY` | App Store Connect API key 的 Key ID |
+| `APPLE_API_ISSUER` | App Store Connect API 的 Issuer ID |
+| `APPLE_API_PRIVATE_KEY` | `AuthKey_<KeyID>.p8` 的完整内容；job 里写到临时文件并通过 `APPLE_API_KEY_PATH` 交给 tauri 和 `notarytool` |
+| `APPLE_TEAM_ID` | 可选；设置后要求签名身份属于这个团队 |
+
+流程：「Prepare macOS signing and notarization」把证书导入临时钥匙串、得出 `APPLE_SIGNING_IDENTITY`；tauri 以硬化运行时签名 `.app` 和 `strata-supervisor`，公证并 staple `.app`；「Notarize and staple the macOS DMG」公证并 staple DMG；「Verify macOS signature and notarization」检查 `codesign`、`stapler validate` 和 `spctl`；最后上传 DMG 和 updater 归档，并删除临时钥匙串和 `.p8`。没有证书时（fork、外部 PR）回退为临时签名；本仓库的 main、tag 和手动构建缺少证书或公证凭据时直接失败，避免发布未公证的包。
+
+应用不需要额外 entitlements：没有加载第三方动态库，WebView 的 JIT 在系统 WebKit 进程中；下载的 Python 和 Metal 引擎作为独立子进程运行，不受父进程硬化运行时的限制。
 
 ## 日常 CI
 

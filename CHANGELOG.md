@@ -5,6 +5,14 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **macOS 安装包使用 Developer ID 签名并经 Apple 公证**：以前 Mac 上的 DMG 只有临时签名、没有公证，第一次打开会被 Gatekeeper 拦下，要右键打开或用 `xattr` 去掉隔离。现在 CI 用 Developer ID Application 证书、以硬化运行时签名应用和后台 `strata-supervisor`，用 App Store Connect API key 公证 `.app` 和 DMG 并 staple 公证票据，上传前用 `codesign`、`stapler validate` 和 `spctl` 检查。下载后双击 DMG、拖进「应用程序」即可直接打开。应用内更新照旧：Tauri 更新签名不受影响，更新包里的 `.app` 同样已签名和公证。从临时签名的旧版升级后，macOS 会把它当作签名身份不同的应用：第一次读取保存在钥匙串里的凭据时可能弹窗询问，选「始终允许」即可。没有证书的 fork 和外部 PR 构建仍回退为临时签名；本仓库可发布的构建缺少证书或公证凭据时直接失败。
+
+### English
+
+- **macOS packages are signed with a Developer ID and notarized by Apple**: the Mac DMG used to be ad-hoc signed and un-notarized, so Gatekeeper blocked the first launch and you had to open it from the context menu or remove quarantine with `xattr`. CI now signs the app and the `strata-supervisor` background process with a Developer ID Application certificate and the hardened runtime, notarizes the `.app` and the DMG with an App Store Connect API key, staples the tickets, and checks them with `codesign`, `stapler validate` and `spctl` before uploading. Open the DMG, drag the app to Applications and open it normally. In-app updates work as before: the Tauri update signature is unaffected, and the `.app` inside the update archive is signed and notarized too. After upgrading from an ad-hoc signed build, macOS treats the app as a different signing identity, so the first read of credentials saved in the Keychain may ask for permission; choose "Always Allow". Fork and external PR builds without the certificate still fall back to ad-hoc signing; release-capable builds in this repository fail if the certificate or notarization credentials are missing.
+
 ## [0.2.11] - 2026-10-20
 
 ### 中文
