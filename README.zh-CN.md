@@ -85,13 +85,13 @@ Strata Manager 提供模型下载列表与详情、统一的多显卡及运行�
 | **Windows x64** | NSIS 安装包（`.exe`） | 需要 WebView2；[Windows 安装说明](docs/DOWNLOAD.md#windows-安装)。 |
 | **Linux x64** | AppImage 或 DEB | Ubuntu 22.04 CI 环境构建；[Linux 安装与支持范围](docs/DOWNLOAD.md#linux-安装)。 |
 | **Linux x64 无头 Server（实验）** | `Strata.Manager.Server_<版本>_amd64.tar.gz` 或 `.deb` | 无桌面环境的服务器，浏览器访问；不走桌面自动更新。[Server 说明](docs/SERVER.md)。 |
-| **macOS Apple Silicon** | DMG（实验） | 未公证 CI 包，仅当发布页列出时下载。DMG 本身不含引擎；应用内可下载并校验上游预编译 Metal 引擎包（预览，尚未在真机 Mac 上验证推理）。不提供 Intel。[macOS 说明](docs/DOWNLOAD.md#macosapple-silicon实验)。 |
+| **macOS Apple Silicon** | DMG（实验） | v0.2.11 之后的版本使用 Developer ID 签名并经 Apple 公证（更早的为临时签名），仅当发布页列出时下载。DMG 本身不含引擎；应用内可下载并校验上游预编译 Metal 引擎包（预览，尚未在真机 Mac 上验证推理）。不提供 Intel。[macOS 说明](docs/DOWNLOAD.md#macosapple-silicon实验)。 |
 
 1. **准备运行环境。** 打开 Strata 页面检查已有安装，或按“开始使用”引导准备；已有受支持环境无需重装。
 2. **选择模型与配置。** “我的模型”列出发现的权重，按需添加搜索目录，选择运行配置或下载新权重。
 3. **点击“使用”。** 跟踪环境检查与加载，等待“模型可用”后开始聊天，或将本机 API 地址复制到其它应用。
 
-桌面安装包包含 Manager 与独立后台。硬件和驱动要求取决于 Strata 与模型。已发布稳定包面向 Windows x64 与 Linux x64。macOS Apple Silicon 的 DMG 为**实验包**（临时签名、未公证）；**仅有 DMG 不能推理**：可在应用内安装上游预编译 Metal 引擎包（预览，尚未在真机 Mac 上完成启动与推理验收），或按上游 `./setup.sh` 本机构建。不提供 Intel 包。安装步骤及包的支持范围见[下载说明](docs/DOWNLOAD.md)，日常操作见[使用指南](docs/USER_GUIDE.md)。
+桌面安装包包含 Manager 与独立后台。硬件和驱动要求取决于 Strata 与模型。已发布稳定包面向 Windows x64 与 Linux x64。macOS Apple Silicon 的 DMG 为**实验包**（v0.2.11 之后已签名并公证）；**仅有 DMG 不能推理**：可在应用内安装上游预编译 Metal 引擎包（预览，尚未在真机 Mac 上完成启动与推理验收），或按上游 `./setup.sh` 本机构建。不提供 Intel 包。安装步骤及包的支持范围见[下载说明](docs/DOWNLOAD.md)，日常操作见[使用指南](docs/USER_GUIDE.md)。
 
 ## 界面一览
 

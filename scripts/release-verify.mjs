@@ -54,17 +54,25 @@ function validateInstallerName(asset, kind, version, productName) {
   if (!match || product(match[1]) !== product(productName)) throw new Error(`Expected the current-version ${kind} installer for ${productName}: ${asset.name}`);
 }
 
-export function validateRelease(release, manifest, { repository, tag, version, expectedSha, tagCommitSha, productName = 'Strata Manager' }) {
-  if (release.tag_name !== tag || release.draft !== true) throw new Error('Expected a draft release for the exact requested tag.');
+/**
+ * macos: 'required' (default) or 'deferred' — a release whose notarized macOS
+ * assets are still pending must carry none of them and no darwin updater entry.
+ * published: the macOS follow-up re-verifies an already public release.
+ */
+export function validateRelease(release, manifest, { repository, tag, version, expectedSha, tagCommitSha, productName = 'Strata Manager', macos = 'required', published = false }) {
+  if (!['required', 'deferred'].includes(macos) || typeof published !== 'boolean') throw new Error('Invalid release verification mode.');
+  if (release.tag_name !== tag || release.draft !== !published) throw new Error(published ? 'Expected the published release for the exact requested tag.' : 'Expected a draft release for the exact requested tag.');
+  const deferred = macos === 'deferred';
   if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(expectedSha ?? '') || tagCommitSha !== expectedSha) throw new Error('The actual release tag does not match the workflow commit.');
   if (typeof manifest.version !== 'string' || manifest.version.replace(/^v/, '') !== version) throw new Error('latest.json version does not match the application.');
   const assets = assetIndex(release);
   if (!assets.has('latest.json')) throw new Error('Missing nonempty release asset: latest.json');
   if (!manifest.platforms || typeof manifest.platforms !== 'object' || Array.isArray(manifest.platforms)) throw new Error('Missing updater platforms.');
-  const allowedPlatforms = new Set([...Object.keys(requiredPlatforms), ...Object.keys(platformAliases)]);
+  const platforms = Object.entries(requiredPlatforms).filter(([platform]) => !deferred || platform !== 'darwin-aarch64');
+  const allowedPlatforms = new Set([...platforms.map(([platform]) => platform), ...Object.keys(platformAliases)]);
   for (const platform of Object.keys(manifest.platforms)) if (!allowedPlatforms.has(platform)) throw new Error(`Unsupported updater platform: ${platform}`);
   const updates = {};
-  for (const [platform, kind] of Object.entries(requiredPlatforms)) {
+  for (const [platform, kind] of platforms) {
     updates[platform] = referencedAsset(manifest.platforms[platform], assets, repository, tag, platform);
     validateInstallerName(updates[platform].asset, kind, version, productName);
   }
@@ -75,10 +83,16 @@ export function validateRelease(release, manifest, { repository, tag, version, e
   const deb = { asset: debs[0], signature: assets.get(`${debs[0].name}.sig`) };
   if (!deb.signature) throw new Error('DEB update signature is missing.');
   const dmgs = [...assets.values()].filter(asset => asset.name.endsWith('.dmg'));
-  if (dmgs.length !== 1) throw new Error('Expected exactly one current-version .dmg installer.');
-  validateInstallerName(dmgs[0], 'dmg', version, productName);
-  const dmg = { asset: dmgs[0], signature: assets.get(`${dmgs[0].name}.sig`) };
-  if (!dmg.signature) throw new Error('DMG update signature is missing.');
+  let dmg = null;
+  if (deferred) {
+    // Un-notarized macOS bytes are never published; the follow-up adds them later.
+    if (dmgs.length || [...assets.values()].some(asset => /\.app\.tar\.gz(?:\.sig)?$|\.dmg\.sig$/i.test(asset.name))) throw new Error('A release with deferred macOS notarization must not contain macOS assets.');
+  } else {
+    if (dmgs.length !== 1) throw new Error('Expected exactly one current-version .dmg installer.');
+    validateInstallerName(dmgs[0], 'dmg', version, productName);
+    dmg = { asset: dmgs[0], signature: assets.get(`${dmgs[0].name}.sig`) };
+    if (!dmg.signature) throw new Error('DMG update signature is missing.');
+  }
   for (const [platform, target] of Object.entries(platformAliases)) {
     if (!Object.hasOwn(manifest.platforms, platform)) continue;
     const alias = referencedAsset(manifest.platforms[platform], assets, repository, tag, platform);
@@ -86,7 +100,8 @@ export function validateRelease(release, manifest, { repository, tag, version, e
     if (alias.asset.id !== expected.asset.id || (target !== 'deb' && alias.signatureText !== expected.signatureText)) throw new Error(`Updater alias must reference its verified installer: ${platform}`);
     updates[platform] = alias;
   }
-  const installers = [updates['windows-x86_64'].asset, updates['linux-x86_64'].asset, deb.asset, updates['darwin-aarch64'].asset, dmg.asset];
+  const installers = [updates['windows-x86_64'].asset, updates['linux-x86_64'].asset, deb.asset,
+    ...(deferred ? [] : [updates['darwin-aarch64'].asset, dmg.asset])];
   const serverNames = [
     `Strata.Manager.Server_${version}_amd64.tar.gz`,
     `Strata.Manager.Server_${version}_amd64.deb`,
@@ -167,12 +182,32 @@ async function cleanupOwnedDirectory(directory, parent) {
   await rm(checked, { recursive: true, force: true });
 }
 
-export async function verifyRelease({ repository = process.env.GITHUB_REPOSITORY, tag = process.env.RELEASE_TAG, expectedSha = process.env.GITHUB_SHA, root = repositoryRoot, verifierPath = process.env.UPDATE_VERIFIER_BIN, fetchRelease = ghJson, fetchTag = ghJson, fetchAsset = downloadAssetToFile, logger = console.log } = {}) {
+/** The exact unique published (non-draft) release for a tag; used only by the macOS follow-up. */
+export async function findPublishedRelease(repository, tag, { fetchPage = ghJson, maxPages = 10 } = {}) {
+  const matches = [];
+  for (let page = 1; page <= maxPages; page++) {
+    const releases = await fetchPage(`/repos/${repository}/releases?per_page=100&page=${page}`);
+    if (!Array.isArray(releases) || releases.length > 100) throw new Error('Expected a release list of at most 100 entries.');
+    for (const release of releases) {
+      if (!release || typeof release !== 'object' || Array.isArray(release) || typeof release.tag_name !== 'string' || typeof release.draft !== 'boolean') throw new Error('Invalid release list entry: tag_name and draft are required.');
+      if (release.tag_name === tag) matches.push(release);
+    }
+    if (releases.length < 100) {
+      if (matches.length !== 1) throw new Error('Expected exactly one release for the exact requested tag.');
+      if (matches[0].draft !== false) throw new Error('Expected the published release for the exact requested tag.');
+      return matches[0];
+    }
+  }
+  throw new Error('Release pagination limit reached before uniqueness could be verified.');
+}
+
+export async function verifyRelease({ repository = process.env.GITHUB_REPOSITORY, tag = process.env.RELEASE_TAG, expectedSha = process.env.GITHUB_SHA, root = repositoryRoot, verifierPath = process.env.UPDATE_VERIFIER_BIN, fetchRelease = ghJson, fetchTag = ghJson, fetchAsset = downloadAssetToFile, logger = console.log, macos = 'required', published = false } = {}) {
   if (!repository || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) || !tag) throw new Error('GITHUB_REPOSITORY and RELEASE_TAG are required.');
   if (!verifierPath) throw new Error('Build strata-update-verifier and set UPDATE_VERIFIER_BIN before publishing.');
   const configPath = resolve(root, 'apps/desktop/src-tauri/tauri.conf.json');
   const { version, productName } = JSON.parse(await readFile(configPath, 'utf8'));
-  const release = await findDraftRelease(repository, tag, { fetchPage: fetchRelease });
+  const release = published ? await findPublishedRelease(repository, tag, { fetchPage: fetchRelease })
+    : await findDraftRelease(repository, tag, { fetchPage: fetchRelease });
   // target_commitish is only a creation hint when the tag already exists.
   // Resolve the exact tag ref, including annotated tags, for source identity.
   const tagCommitSha = await requireReleaseTagCommit(repository, tag, expectedSha, { fetchJson: fetchTag });
@@ -185,10 +220,10 @@ export async function verifyRelease({ repository = process.env.GITHUB_REPOSITORY
     const manifestPath = join(directory, 'latest.json');
     await fetchAsset(repository, manifestAsset, manifestPath);
     const manifest = JSON.parse(await limitedText(manifestPath, 1024 * 1024, 'latest.json'));
-    const { updates, deb, dmg } = validateRelease(release, manifest, { repository, tag, version, expectedSha, tagCommitSha, productName });
+    const { updates, deb, dmg } = validateRelease(release, manifest, { repository, tag, version, expectedSha, tagCommitSha, productName, macos, published });
     // Every installer must verify, even when DEB/DMG have no updater manifest alias.
     if (!updates['linux-x86_64-deb']) updates.deb = deb;
-    updates.dmg = dmg;
+    if (dmg) updates.dmg = dmg;
     const downloaded = new Set();
     for (const [platform, update] of Object.entries(updates)) {
       if (downloaded.has(update.asset.id)) continue;
@@ -203,7 +238,7 @@ export async function verifyRelease({ repository = process.env.GITHUB_REPOSITORY
       execFileSync(verifierPath, ['--config', configPath, '--signature', signaturePath, '--artifact', artifactPath, '--version', version, '--require-signed-version'], { stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 32768 });
       downloaded.add(update.asset.id);
     }
-    logger(`Draft release verified: ${tag}; all installers (NSIS, AppImage, DEB, macOS app archive, DMG) match the built-in public key, signed version and uploaded signatures; headless server tar.gz/deb are present without updater signatures.`);
+    logger(`${published ? 'Published' : 'Draft'} release verified: ${tag}; all installers (NSIS, AppImage, DEB${dmg ? ', macOS app archive, DMG' : '; macOS deferred until notarization'}) match the built-in public key, signed version and uploaded signatures; headless server tar.gz/deb are present without updater signatures.`);
   } finally {
     await cleanupOwnedDirectory(directory, parent);
   }

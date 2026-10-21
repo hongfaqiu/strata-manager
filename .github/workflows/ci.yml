@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      macos_notarization:
+        description: 'macOS notarization: empty = repository variable MACOS_NOTARIZATION or auto; auto, wait or defer'
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -51,6 +56,7 @@ jobs:
               - '.github/workflows/ci.yml'
               - '.github/workflows/release.yml'
               - '.github/workflows/release-from-ci.yml'
+              - '.github/workflows/macos-notarize-followup.yml'
       - id: set
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -284,6 +290,8 @@ jobs:
       # smoke tests. main, tags, manual runs, release/* PRs and PRs labelled
       # full-ci still build exactly what a release would promote.
       PACKAGE_INSTALLERS: ${{ github.event_name != 'pull_request' || startsWith(github.head_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'full-ci') }}
+      # auto (default), wait or defer; see the macOS signing steps and docs/RELEASING.md.
+      MACOS_NOTARIZATION: ${{ inputs.macos_notarization || vars.MACOS_NOTARIZATION || 'auto' }}
       CARGO_TARGET_DIR: ${{ github.workspace }}/apps/desktop/src-tauri/target
       CARGO_TERM_COLOR: always
       CARGO_PROFILE_DEV_DEBUG: '0'
@@ -374,7 +382,7 @@ jobs:
         # ci-linux-native-tests.test.mjs runs a host libtest binary and rejects
         # hosts that are not its Windows/Linux target. Skip it on darwin so the
         # Apple Silicon job can reach packaging; Windows and Linux still run it.
-        run: node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-assets.test.mjs scripts/release-publish.test.mjs scripts/preview-package-smoke.test.mjs scripts/download-upgrade-fixture.test.mjs scripts/release-from-ci.test.mjs ${{ runner.os != 'macOS' && 'scripts/ci-linux-native-tests.test.mjs' || '' }} scripts/ci-cache-policy.test.mjs
+        run: node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-assets.test.mjs scripts/release-publish.test.mjs scripts/preview-package-smoke.test.mjs scripts/download-upgrade-fixture.test.mjs scripts/release-from-ci.test.mjs scripts/macos-notarize-followup.test.mjs ${{ runner.os != 'macOS' && 'scripts/ci-linux-native-tests.test.mjs' || '' }} scripts/ci-cache-policy.test.mjs
       - name: Verify the signed beta.2 installer for the first stable upgrade
         if: runner.os == 'Windows' && steps.package-version.outputs.version == '0.1.2'
         id: upgrade-fixture
@@ -419,9 +427,96 @@ jobs:
       - name: Prepare packaged background binary
         if: env.PACKAGE_INSTALLERS == 'true'
         run: node scripts/prepare-sidecar.mjs --profile release --target ${{ matrix.target }}
-      - name: Use ad-hoc macOS signing without an Apple certificate
+      # macOS Developer ID signing + notarization. Every Apple secret is optional
+      # so fork PRs and forks still build: without APPLE_CERTIFICATE the build
+      # keeps the previous ad-hoc signature (APPLE_SIGNING_IDENTITY=-). Release-
+      # capable runs in this repository (main, tags, manual runs) refuse to fall
+      # back, because release-from-ci.yml promotes exactly these bytes.
+      # Only non-empty values go to $GITHUB_ENV: tauri treats an empty
+      # APPLE_SIGNING_IDENTITY as "provided" and fails. Notarization credentials
+      # use STRATA_NOTARY_* names so tauri only signs; the app is submitted once
+      # below and the DMG is only Developer ID signed (not notarized).
+      # MACOS_NOTARIZATION: auto (default) waits up to MACOS_NOTARIZATION_TIMEOUT
+      # and staples, or leaves macOS for the follow-up when Apple is slow; wait
+      # always waits (fails if not accepted); defer only submits. Runs whose macOS
+      # is not stapled can only feed a release that defers macOS, and
+      # macos-notarize-followup.yml staples and adds macOS later.
+      - name: Prepare macOS signing and notarization
         if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true'
-        run: echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          REQUIRE_APPLE_SIGNING: ${{ github.repository == 'hongfaqiu/strata-manager' && github.event_name != 'pull_request' && '1' || '' }}
+        run: |
+          set -euo pipefail
+          case "$MACOS_NOTARIZATION" in auto|wait|defer) ;; *) echo '::error::MACOS_NOTARIZATION must be auto, wait or defer.'; exit 1;; esac
+          echo "macOS notarization mode: $MACOS_NOTARIZATION"
+          if [ -z "${APPLE_CERTIFICATE:-}" ] || [ -z "${APPLE_CERTIFICATE_PASSWORD:-}" ]; then
+            if [ -n "$REQUIRE_APPLE_SIGNING" ]; then
+              echo '::error title=macOS signing::APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD are required for release-capable builds in this repository.'
+              exit 1
+            fi
+            echo '::warning title=macOS unsigned::No Apple certificate (fork or PR without secrets); using ad-hoc signing, not notarized.'
+            echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          # Temporary keychain, deleted by the clean-up step at the end of the job.
+          keychain="$RUNNER_TEMP/strata-signing.keychain-db"
+          kc_pass=$(openssl rand -base64 32)
+          echo "::add-mask::$kc_pass"
+          cert="$RUNNER_TEMP/strata-signing.p12"
+          ( umask 077; printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$cert" )
+          security create-keychain -p "$kc_pass" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$kc_pass" "$keychain"
+          security import "$cert" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -f pkcs12 \
+            -T /usr/bin/codesign -T /usr/bin/security > /dev/null
+          rm -f "$cert"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kc_pass" "$keychain" > /dev/null
+          existing=()
+          while IFS= read -r k; do existing+=("$k"); done < <(security list-keychains -d user | tr -d '"' | sed 's/^ *//')
+          security list-keychains -d user -s "$keychain" "${existing[@]}"
+          identity=$(security find-identity -v -p codesigning "$keychain" | grep -o '"Developer ID Application: [^"]*"' | head -n1 | tr -d '"' || true)
+          if [ -z "$identity" ]; then
+            echo "::error title=macOS signing::APPLE_CERTIFICATE has no 'Developer ID Application' identity (export the certificate together with its private key as .p12)."
+            exit 1
+          fi
+          if [ -n "${APPLE_TEAM_ID:-}" ] && [[ "$identity" != *"($APPLE_TEAM_ID)" ]]; then
+            echo "::error title=macOS signing::Signing identity does not belong to APPLE_TEAM_ID."
+            exit 1
+          fi
+          echo "Signing identity: $identity"
+          {
+            echo "APPLE_SIGNING_IDENTITY=$identity"
+            echo "STRATA_SIGNING_KEYCHAIN=$keychain"
+            echo "STRATA_MACOS_SIGNED=1"
+          } >> "$GITHUB_ENV"
+
+          if [ -n "${APPLE_API_ISSUER:-}" ] && [ -n "${APPLE_API_KEY:-}" ] && [ -n "${APPLE_API_PRIVATE_KEY:-}" ]; then
+            key_dir="$RUNNER_TEMP/strata-private-keys"
+            mkdir -p "$key_dir"
+            chmod 700 "$key_dir"
+            key_path="$key_dir/AuthKey_${APPLE_API_KEY}.p8"
+            ( umask 077; printf '%s\n' "$APPLE_API_PRIVATE_KEY" > "$key_path" )
+            {
+              echo "STRATA_NOTARY_ISSUER=$APPLE_API_ISSUER"
+              echo "STRATA_NOTARY_KEY_ID=$APPLE_API_KEY"
+              echo "STRATA_NOTARY_KEY_PATH=$key_path"
+              echo "STRATA_MACOS_NOTARIZE=1"
+            } >> "$GITHUB_ENV"
+            echo 'Notarization: App Store Connect API key'
+          elif [ -n "$REQUIRE_APPLE_SIGNING" ]; then
+            echo '::error title=macOS notarization::APPLE_API_ISSUER / APPLE_API_KEY / APPLE_API_PRIVATE_KEY are required for release-capable builds in this repository.'
+            exit 1
+          else
+            echo '::warning title=macOS not notarized::Developer ID signed without notarization credentials; Gatekeeper will still warn.'
+          fi
+
       - name: Build test installers
         if: env.PACKAGE_INSTALLERS == 'true'
         uses: tauri-apps/tauri-action@v1
@@ -435,9 +530,174 @@ jobs:
           projectPath: apps/desktop
           tauriScript: pnpm tauri
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --config '{"bundle":{"createUpdaterArtifacts":false}}'
-          uploadWorkflowArtifacts: true
+          # macOS uploads its own artifacts after notarization (see below).
+          uploadWorkflowArtifacts: ${{ runner.os != 'macOS' }}
           workflowArtifactNamePattern: 'ci-[platform]-[arch]-[bundle]'
           uploadUpdaterJson: false
+
+      - name: Verify the macOS code signature
+        if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true'
+        run: |
+          set -euo pipefail
+          bundle="${CARGO_TARGET_DIR}/${{ matrix.target }}/release/bundle"
+          app="$bundle/macos/Strata Manager.app"
+          dmg="$bundle/dmg/Strata Manager_${{ steps.package-version.outputs.version }}_aarch64.dmg"
+          test -d "$app"
+          test -f "$dmg"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          for bin in "$app" "$app/Contents/MacOS/strata-supervisor"; do
+            info=$(codesign -dv --verbose=4 "$bin" 2>&1)
+            printf '%s\n' "$info" | grep -E '^(Identifier|Format|CodeDirectory|CDHash|Authority|TeamIdentifier|Timestamp|Runtime Version)=?' || true
+            if [ -n "${STRATA_MACOS_SIGNED:-}" ]; then
+              printf '%s\n' "$info" | grep -q '^Authority=Developer ID Application:' || { echo "::error::$bin is not Developer ID signed"; exit 1; }
+              printf '%s\n' "$info" | grep -Eq '^CodeDirectory .*flags=.*runtime' || { echo "::error::$bin lacks the hardened runtime"; exit 1; }
+            fi
+          done
+          if [ -n "${STRATA_MACOS_SIGNED:-}" ]; then
+            if ! codesign -dv --verbose=2 "$dmg" 2>&1 | grep -q '^Authority=Developer ID Application:'; then
+              codesign --force --sign "$APPLE_SIGNING_IDENTITY" --timestamp "$dmg"
+            fi
+            codesign --verify --strict --verbose=2 "$dmg"
+          else
+            echo 'Ad-hoc signed (no Apple certificate).'
+          fi
+
+      # Only the .app is notarized (one zip submission, like tauri does); the DMG
+      # is never submitted. Once the app is stapled, the DMG is rebuilt around the
+      # stapled app and Developer ID signed. Submitting retries network errors and
+      # fails if Apple still can't be reached, because without a submission id
+      # nothing can be followed up later.
+      - name: Submit the macOS app for notarization
+        if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true'
+        run: |
+          set -uo pipefail
+          version="${{ steps.package-version.outputs.version }}"
+          bundle="${CARGO_TARGET_DIR}/${{ matrix.target }}/release/bundle"
+          app="$bundle/macos/Strata Manager.app"
+          dmg="$bundle/dmg/Strata Manager_${version}_aarch64.dmg"
+          record_dir="$RUNNER_TEMP/macos-notarization"
+          mkdir -p "$record_dir" || exit 1
+          if [ -z "${STRATA_MACOS_NOTARIZE:-}" ]; then
+            echo 'No notarization credentials: nothing submitted.'
+            exit 0
+          fi
+          zip="$RUNNER_TEMP/macos-notarization-upload/Strata Manager.zip"
+          mkdir -p "$(dirname "$zip")" && ditto -c -k --keepParent "$app" "$zip" || exit 1
+          result=$(bash scripts/macos-notary.sh retry 'notarytool submit' xcrun notarytool submit "$zip" \
+            --key "$STRATA_NOTARY_KEY_PATH" --key-id "$STRATA_NOTARY_KEY_ID" --issuer "$STRATA_NOTARY_ISSUER" --output-format json 2>&1)
+          rc=$?
+          id=$(printf '%s\n' "$result" | python3 -c 'import json,sys
+          for line in sys.stdin:
+              try: print(json.loads(line).get("id", "")); break
+              except Exception: pass')
+          if [ "$rc" -ne 0 ] || ! [[ "$id" =~ ^[0-9a-fA-F-]{36}$ ]]; then
+            echo '::error title=macOS notarization::Could not submit the app to Apple.'
+            exit 1
+          fi
+          echo "Notary submission: $id"
+          cdhash=$(codesign -dv --verbose=4 "$app" 2>&1 | sed -n 's/^CDHash=//p' | head -n1)
+          team=$(codesign -dv --verbose=4 "$app" 2>&1 | sed -n 's/^TeamIdentifier=//p' | head -n1)
+          ZIP="$zip" DMG="$dmg" SUBMISSION="$id" VERSION="$version" CDHASH="$cdhash" TEAM="$team" \
+            python3 - "$record_dir/Strata Manager_${version}_aarch64.notarization.json" <<'PY' || exit 1
+          import hashlib, json, os, sys
+          def sha(path):
+              h = hashlib.sha256()
+              with open(path, 'rb') as f:
+                  for chunk in iter(lambda: f.read(1 << 20), b''): h.update(chunk)
+              return h.hexdigest()
+          if not os.environ['CDHASH'] or not os.environ['TEAM']: sys.exit('App CDHash/TeamIdentifier unreadable')
+          dmg = os.environ['DMG']
+          record = {
+            'protocol': 'strata-macos-notarization/v2', 'submissionId': os.environ['SUBMISSION'],
+            'version': os.environ['VERSION'], 'sourceSha': os.environ['GITHUB_SHA'],
+            'runId': int(os.environ['GITHUB_RUN_ID']), 'runAttempt': int(os.environ['GITHUB_RUN_ATTEMPT']),
+            'mode': os.environ['MACOS_NOTARIZATION'], 'stapled': False,
+            'app': {'cdhash': os.environ['CDHASH'].lower(), 'teamIdentifier': os.environ['TEAM'], 'submittedZipSha256': sha(os.environ['ZIP'])},
+            'dmg': {'name': os.path.basename(dmg), 'sha256': sha(dmg), 'size': os.path.getsize(dmg)},
+          }
+          with open(sys.argv[1], 'x') as f: json.dump(record, f, indent=2)
+          PY
+          rm -rf "$(dirname "$zip")"
+          echo "STRATA_NOTARY_SUBMISSION=$id" >> "$GITHUB_ENV"
+
+      # wait: up to 60 min, fail if Apple is still processing. auto (default): wait
+      # up to MACOS_NOTARIZATION_TIMEOUT (repository variable, default 30m); if Apple
+      # is still processing, keep the signed-but-unstapled bytes, skip the confirm
+      # gate below and let the release defer macOS. Network errors are retried
+      # 3 times 30 s apart and end as a ::warning:: (unstapled, so macOS is deferred
+      # or the release refused, never shipped unstapled). Invalid/Rejected and any
+      # signing problem always fail.
+      - name: Wait for notarization and staple the macOS app
+        id: notarize-wait
+        if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true' && env.MACOS_NOTARIZATION != 'defer'
+        env:
+          MACOS_NOTARIZATION_TIMEOUT: ${{ vars.MACOS_NOTARIZATION_TIMEOUT || '30m' }}
+        run: |
+          set -uo pipefail
+          version="${{ steps.package-version.outputs.version }}"
+          bundle="${CARGO_TARGET_DIR}/${{ matrix.target }}/release/bundle"
+          app="$bundle/macos/Strata Manager.app"
+          dmg="$bundle/dmg/Strata Manager_${version}_aarch64.dmg"
+          record="$RUNNER_TEMP/macos-notarization/Strata Manager_${version}_aarch64.notarization.json"
+          notary=scripts/macos-notary.sh
+          unstapled() { echo "::warning title=macOS not stapled::$1 This run's macOS bytes stay unstapled: the release publishes Windows/Linux first and macos-notarize-followup.yml adds macOS once Apple accepts."; echo 'stapled=false' >> "$GITHUB_OUTPUT"; exit 0; }
+          if [ -z "${STRATA_NOTARY_SUBMISSION:-}" ]; then
+            echo 'Not submitted (no credentials): nothing to staple.'
+            exit 0
+          fi
+          timeout=60m
+          [ "$MACOS_NOTARIZATION" = auto ] && timeout="$MACOS_NOTARIZATION_TIMEOUT"
+          [[ "$timeout" =~ ^([0-9]+)([smh])$ ]] || { echo '::error::MACOS_NOTARIZATION_TIMEOUT must look like 30m.'; exit 1; }
+          case "${BASH_REMATCH[2]}" in s) secs=${BASH_REMATCH[1]};; m) secs=$((BASH_REMATCH[1] * 60));; h) secs=$((BASH_REMATCH[1] * 3600));; esac
+          status=$(bash "$notary" wait "$STRATA_NOTARY_SUBMISSION" "$secs"); rc=$?
+          [ "$rc" -eq 75 ] && unstapled 'Could not reach Apple to read the notarization status.'
+          [ "$rc" -eq 0 ] || exit 1
+          echo "Notary submission $STRATA_NOTARY_SUBMISSION: $status"
+          case "$status" in
+            Accepted) ;;
+            'In Progress')
+              if [ "$MACOS_NOTARIZATION" = auto ]; then unstapled "Apple is still notarizing after $timeout."; fi
+              echo '::error title=macOS notarization::Apple did not finish within 60 minutes (wait mode).'; exit 1;;
+            *)
+              bash "$notary" log "$STRATA_NOTARY_SUBMISSION" || true
+              echo "::error title=macOS notarization::Apple did not accept the app ($status)."; exit 1;;
+          esac
+          bash "$notary" staple-app "$app"; rc=$?
+          [ "$rc" -eq 75 ] && unstapled 'Could not reach Apple to staple the app.'
+          [ "$rc" -eq 0 ] || exit 1
+          team=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["app"]["teamIdentifier"])' "$record") || exit 1
+          bash "$notary" restage-dmg "$dmg" "$app" "$APPLE_SIGNING_IDENTITY" "$team"; rc=$?
+          [ "$rc" -eq 75 ] && unstapled 'Could not reach the Apple timestamp service to sign the rebuilt DMG.'
+          [ "$rc" -eq 0 ] || exit 1
+          python3 - "$record" "$dmg" <<'PY' || exit 1
+          import hashlib, json, os, sys
+          path, dmg = sys.argv[1], sys.argv[2]
+          record = json.load(open(path))
+          h = hashlib.sha256()
+          with open(dmg, 'rb') as f:
+              for chunk in iter(lambda: f.read(1 << 20), b''): h.update(chunk)
+          record['stapled'] = True
+          record['dmg'].update({'sha256': h.hexdigest(), 'size': os.path.getsize(dmg)})
+          json.dump(record, open(path, 'w'), indent=2)
+          PY
+          echo 'stapled=true' >> "$GITHUB_OUTPUT"
+
+      # Normal (non-deferred) releases require this gate; it only runs when the app
+      # carries Apple's ticket and the DMG was rebuilt around it. Offline checks
+      # must pass; the online stapler check only warns on network errors.
+      - name: Confirm the macOS app is stapled and the DMG is signed
+        if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true' && steps.notarize-wait.outputs.stapled == 'true'
+        run: |
+          set -uo pipefail
+          version="${{ steps.package-version.outputs.version }}"
+          bundle="${CARGO_TARGET_DIR}/${{ matrix.target }}/release/bundle"
+          app="$bundle/macos/Strata Manager.app"
+          record="$RUNNER_TEMP/macos-notarization/Strata Manager_${version}_aarch64.notarization.json"
+          read -r cdhash team < <(python3 -c 'import json,sys; r = json.load(open(sys.argv[1])); print(r["app"]["cdhash"], r["app"]["teamIdentifier"])' "$record") || exit 1
+          test -s "$app/Contents/CodeResources" || { echo '::error::The app is not stapled.'; exit 1; }
+          bash scripts/macos-notary.sh verify-dmg "$bundle/dmg/Strata Manager_${version}_aarch64.dmg" "$cdhash" "$team" || exit 1
+          bash scripts/macos-notary.sh retry 'stapler validate' xcrun stapler validate "$app"; rc=$?
+          [ "$rc" -eq 0 ] || [ "$rc" -eq 75 ] || exit 1
 
       - name: Package the macOS app archive for the updater
         if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true'
@@ -459,6 +719,32 @@ jobs:
           path: ${{ runner.temp }}/macos-updater/Strata Manager_${{ steps.package-version.outputs.version }}_aarch64.app.tar.gz
           if-no-files-found: error
           compression-level: 0
+
+      # Uploaded here instead of by tauri-action so the artifact holds the DMG
+      # rebuilt around the stapled app (when stapled) that releases promote.
+      - name: Upload the macOS DMG
+        if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-darwin-aarch64-dmg
+          path: ${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/release/bundle/dmg/Strata Manager_${{ steps.package-version.outputs.version }}_aarch64.dmg
+          if-no-files-found: error
+          compression-level: 0
+
+      # Submission id, the app CDHash and the exact DMG bytes, for macos-notarize-followup.yml.
+      - name: Upload the macOS notarization record
+        if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-darwin-aarch64-notarization
+          path: ${{ runner.temp }}/macos-notarization/Strata Manager_${{ steps.package-version.outputs.version }}_aarch64.notarization.json
+          if-no-files-found: ${{ env.STRATA_MACOS_NOTARIZE == '1' && 'error' || 'ignore' }}
+
+      - name: Remove the macOS signing keychain and API key
+        if: always() && runner.os == 'macOS'
+        run: |
+          if [ -n "${STRATA_SIGNING_KEYCHAIN:-}" ]; then security delete-keychain "$STRATA_SIGNING_KEYCHAIN" || true; fi
+          rm -rf "$RUNNER_TEMP/strata-private-keys" "$RUNNER_TEMP/strata-signing.p12"
 
       - name: Verify installed Windows package and background IPC
         if: runner.os == 'Windows' && env.PACKAGE_INSTALLERS == 'true'
