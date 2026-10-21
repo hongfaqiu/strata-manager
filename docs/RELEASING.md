@@ -66,7 +66,7 @@ pnpm --filter @strata-manager/desktop tauri signer generate -w $strataSigningKey
 
 ## macOS 签名与公证
 
-macOS 包在 CI 的 `desktop (macos-15, …)` job 中签名和公证，Release 只发布这些已公证的字节，并另外加 Tauri 更新签名（`.sig`）。两种签名互不影响：Developer ID 签名改的是 `.app`/DMG 本身，updater 签的是打包好的 `.app.tar.gz`。
+macOS 包在 CI 的 `desktop (macos-15, …)` job 中签名和公证，Release 只发布这些字节，并另外加 Tauri 更新签名（`.sig`）。两种签名互不影响：Developer ID 签名改的是 `.app`/DMG 本身，updater 签的是打包好的 `.app.tar.gz`。
 
 需要的 Actions secrets（`gh secret set <名字> -R hongfaqiu/strata-manager`，从标准输入或文件写入，不要把内容放进命令参数）：
 
@@ -76,12 +76,38 @@ macOS 包在 CI 的 `desktop (macos-15, …)` job 中签名和公证，Release �
 | `APPLE_CERTIFICATE_PASSWORD` | 该 `.p12` 的密码 |
 | `APPLE_API_KEY` | App Store Connect API key 的 Key ID |
 | `APPLE_API_ISSUER` | App Store Connect API 的 Issuer ID |
-| `APPLE_API_PRIVATE_KEY` | `AuthKey_<KeyID>.p8` 的完整内容；job 里写到临时文件并通过 `APPLE_API_KEY_PATH` 交给 tauri 和 `notarytool` |
+| `APPLE_API_PRIVATE_KEY` | `AuthKey_<KeyID>.p8` 的完整内容；job 里写到 `$RUNNER_TEMP` 下的临时文件，结束时删除 |
 | `APPLE_TEAM_ID` | 可选；设置后要求签名身份属于这个团队 |
 
-流程：「Prepare macOS signing and notarization」把证书导入临时钥匙串、得出 `APPLE_SIGNING_IDENTITY`；tauri 以硬化运行时签名 `.app` 和 `strata-supervisor`，公证并 staple `.app`；「Notarize and staple the macOS DMG」公证并 staple DMG；「Verify macOS signature and notarization」检查 `codesign`、`stapler validate` 和 `spctl`；最后上传 DMG 和 updater 归档，并删除临时钥匙串和 `.p8`。没有证书时（fork、外部 PR）回退为临时签名；本仓库的 main、tag 和手动构建缺少证书或公证凭据时直接失败，避免发布未公证的包。
+CI 流程：「Prepare macOS signing and notarization」把证书导入临时钥匙串；tauri 以硬化运行时签名 `.app` 和 `strata-supervisor`（tauri 自己不公证）；「Verify the macOS code signature」检查签名；「Submit the macOS DMG for notarization」把 DMG 提交一次（里面的 app 一起公证），记下 submission id 和提交字节的 SHA-256，上传为工件 `ci-darwin-aarch64-notarization`；「Wait for notarization and staple the macOS DMG and app」按模式等待并 staple、用 `stapler validate` 和 `spctl` 检查；「Confirm the macOS DMG and app are stapled」只在两者都 staple 成功时运行。没有证书时（fork、外部 PR）回退为临时签名；本仓库的 main、tag 和手动构建缺少证书或公证凭据时直接失败。
 
 应用不需要额外 entitlements：没有加载第三方动态库，WebView 的 JIT 在系统 WebKit 进程中；下载的 Python 和 Metal 引擎作为独立子进程运行，不受父进程硬化运行时的限制。
+
+### Mac 稍后补发（默认开启）
+
+Apple 公证有时要几十分钟。为了不拖住 Windows/Linux，默认是 `auto`：
+
+- **CI**（`MACOS_NOTARIZATION`，默认 `auto`）：等待公证最多 `MACOS_NOTARIZATION_TIMEOUT`（仓库变量，默认 `30m`）。期间通过就和以前一样 staple，Confirm 门禁通过；超时还在处理中就保留已签名、未 staple 的字节，Confirm 门禁跳过，job 照样成功。Apple 返回 Invalid/Rejected 一律失败。`wait` 最多等 60 分钟、不通过就失败；`defer` 只提交不等待。
+- **Release**（`MACOS_RELEASE_MODE`，默认 `auto`）：resolver 先按完整发布校验同源 CI；macOS 已 staple 就五个安装包一起发（`include`）。只有 CI 唯一缺的是 staple 门禁时才转为 `defer`：只发 Windows/Linux 和 Server，`latest.json` 不含 `darwin-aarch64`，Release 说明里加一段「macOS 正在公证」的标记。其它任何问题都照常拒绝。**未 staple 的 Mac 包永远不会发布。**
+- **补发**（`.github/workflows/macos-notarize-followup.yml`）：每 30 分钟（以及手动触发）找出带标记、还没有 DMG 的已发布 Release，在 macOS runner 上重新绑定同源 CI 的 macOS 工件和公证记录（字节必须与 CI 工件和记录的 SHA-256 一致），向 Apple 查询状态：仍在处理就结束等下次；Invalid/Rejected 打印 notary log 并失败；Accepted 时核对 notary log 的 SHA-256 和 app 的 CDHash，staple DMG 和 app，`codesign`/`stapler validate`/`spctl` 检查，用 Tauri 私钥签名并用源码里的 Rust 验签器验证，上传 DMG、`.app.tar.gz` 和两个 `.sig`，最后把 `darwin-aarch64` 加进 `latest.json`（这是提交点，之前中断可安全重跑；之后再跑只做校验），再完整验证整个 Release 并把说明改成「已补发」。它和发版共用 `release-publish-<repo>` 并发锁。
+
+在补发完成前，Mac 上的旧版本检查更新会报「`darwin-aarch64` not found」并且不会安装任何东西，这是 Tauri updater 对缺失平台的行为；补发后自动恢复。
+
+开关：
+
+| 想要 | 怎么做 |
+| --- | --- |
+| 关闭稍后补发（公证不完就不发版） | `gh variable set MACOS_RELEASE_MODE --body include` 和 `gh variable set MACOS_NOTARIZATION --body wait` |
+| 单次发版指定模式 | 手动运行 `Release desktop`，`macos_mode` 填 `include` / `defer` / `auto` |
+| 单次 CI 指定模式 | 手动运行 `Build and test`，`macos_notarization` 填 `wait` / `defer` / `auto` |
+| 调整 CI 等待时间 | `gh variable set MACOS_NOTARIZATION_TIMEOUT --body 20m` |
+| 暂停定时补发 | `gh variable set MACOS_FOLLOWUP --body off`（手动触发仍可用） |
+
+### macOS signing, notarization and deferred macOS (English)
+
+CI signs the app and `strata-supervisor` with the Developer ID certificate and the hardened runtime, submits the DMG to Apple once (the app inside is notarized with it) and records the submission id and the submitted SHA-256 as the `ci-darwin-aarch64-notarization` artifact. By default (`MACOS_NOTARIZATION=auto`, `MACOS_RELEASE_MODE=auto`) CI waits up to `MACOS_NOTARIZATION_TIMEOUT` (default `30m`). If Apple accepts in time, the DMG and app are stapled and the release ships all five installers as before. If Apple is still processing, the release resolver switches to `defer`: Windows, Linux and the server packages are published, `latest.json` has no `darwin-aarch64` entry and the release notes carry a marker. Unstapled macOS bytes are never published. `macos-notarize-followup.yml` runs every 30 minutes (or on demand). Once Apple accepts the submission, it checks the notary log against the recorded bytes and the app CDHash, staples and verifies the CI-built DMG and app, signs them for the updater, uploads them, and then adds `darwin-aarch64` to `latest.json`. That last step is the commit point, so an interrupted run can be retried safely. Until then, Mac clients checking for updates get a "platform not found" error and install nothing.
+
+To turn this off, set the repository variables `MACOS_RELEASE_MODE=include` and `MACOS_NOTARIZATION=wait`. Per run, use the `macos_mode` input of `Release desktop` or the `macos_notarization` input of `Build and test`. Set `MACOS_FOLLOWUP=off` to pause the scheduled follow-up.
 
 ## 日常 CI
 
