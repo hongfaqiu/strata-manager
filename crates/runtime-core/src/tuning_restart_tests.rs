@@ -483,6 +483,27 @@ fn finite_flags_preserve_model_rope_kv_and_legacy_defaults() {
         })
     )
     .is_err());
+    // adapt-async is refused on any multi-device start, however the split is configured.
+    let mut resident = config.clone();
+    resident["args"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!("--resident-experts"));
+    let async_only = RestartParameters {
+        adapt_async: Some(true),
+        ..Default::default()
+    };
+    assert!(with_restart(&resident, Some(&async_only)).is_ok());
+    for (key, value) in [
+        ("layer_split", json!("24")),
+        ("gpu", json!([0, 1])),
+        ("gpu_roles", json!({"0":"helper","1":"main"})),
+    ] {
+        let mut split = resident.clone();
+        split[key] = value;
+        let error = with_restart(&split, Some(&async_only)).unwrap_err();
+        assert!(error.contains("多设备"), "{key}: {error}");
+    }
     assert!(serde_json::from_value::<RestartParameters>(json!({"asyncSwap":true})).is_err());
     let legacy: FullReport = serde_json::from_value(json!({})).unwrap();
     assert_eq!(legacy.report_version, 1);

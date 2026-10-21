@@ -325,9 +325,10 @@ fn validate_restart(config: &Value, p: &RestartParameters) -> Result<(), String>
         {
             return Err("adapt-async需要已有resident RAM模式；调优不会自动开启大内存配置".into());
         }
-        if args
-            .iter()
-            .any(|a| a == "--layer-split" || a == "--split-device")
+        // A layer split also comes from the top-level `layer_split` key or several cards in
+        // `gpu` / `gpu_roles` (Strata adds --layer-split itself at start), not only from args.
+        if super::calibrate::detect_layer_split(config, &Value::Null)
+            || args.iter().any(|a| a == "--split-device")
         {
             return Err("此有限搜索尚不支持多设备异步tier候选，保持原配置".into());
         }

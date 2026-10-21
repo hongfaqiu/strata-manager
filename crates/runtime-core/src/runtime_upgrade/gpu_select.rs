@@ -149,10 +149,26 @@ pub fn amd_gfx_from_adapter_name(name: &str) -> Option<&'static str> {
         ("radeon 8050s", "gfx1151"),
         ("radeon 8040s", "gfx1151"),
     ];
+    if let Some(gfx) = rdna2_desktop_gfx(&name) {
+        return Some(gfx);
+    }
     TABLE
         .iter()
         .find(|(marker, _)| name.contains(marker))
         .map(|(_, gfx)| *gfx)
+}
+
+/// RX 6000 desktop cards the Strata 0.2.2 RDNA2 packages are built for: Navi 21
+/// (RX 6800 / 6900 / 6950, PRO W6800) is gfx1030, Navi 22 (RX 6700 / 6750) gfx1031.
+/// The model number must be a whole word: laptop parts such as RX 6800S / 6700S are
+/// Navi 23 (gfx1032) and RX 6600 / 6500 are gfx1032 / gfx1034, which no package covers.
+fn rdna2_desktop_gfx(name: &str) -> Option<&'static str> {
+    let words: Vec<&str> = name.split_whitespace().collect();
+    words.windows(2).find_map(|pair| match pair {
+        ["rx", "6800" | "6900" | "6950"] | ["pro", "w6800"] => Some("gfx1030"),
+        ["rx", "6700" | "6750"] => Some("gfx1031"),
+        _ => None,
+    })
 }
 
 /// AMD targets of Windows display adapter names, sorted and deduplicated.
@@ -317,27 +333,34 @@ pub fn pick(
             .copied()
             .filter(|a| wanted.iter().all(|g| a.archs.iter().any(|arch| arch == *g)))
             .collect();
-        let note = if ignored.is_empty() || wanted.len() == probe.amd_gfx.len() {
-            String::new()
+        let (note_zh, note_en) = if ignored.is_empty() || wanted.len() == probe.amd_gfx.len() {
+            (String::new(), String::new())
         } else {
             let ignored = ignored
                 .iter()
                 .map(|g| g.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!(
-                "（忽略无官方引擎包的 {ignored}）/ (ignoring {ignored}, which no package supports)"
+            (
+                format!("（忽略无官方引擎包的 {ignored}）"),
+                format!(" (ignoring {ignored}, which no package supports)"),
             )
         };
         return match fits.as_slice() {
-            [asset] => Ok((
-                (*asset).clone(),
-                format!(
-                    "检测到 AMD 显卡 {gfx}，选择 {} / Detected AMD GPU {gfx}: {}{note}",
-                    hip_label(&asset.variant),
-                    hip_label(&asset.variant)
-                ),
-            )),
+            [asset] => {
+                let label = hip_label(&asset.variant);
+                let (untested_zh, untested_en) = if untested_variant(&asset.variant) {
+                    (UNTESTED_ZH, UNTESTED_EN)
+                } else {
+                    ("", "")
+                };
+                Ok((
+                    (*asset).clone(),
+                    format!(
+                        "检测到 AMD 显卡 {gfx}，选择 {label}{untested_zh}{note_zh} / Detected AMD GPU {gfx}: {label}{untested_en}{note_en}"
+                    ),
+                ))
+            }
             [] => Err(manual(
                 &format!("没有官方引擎包同时支持 AMD 显卡 {gfx}"),
                 &format!("No official engine package supports AMD GPU {gfx}"),
@@ -354,12 +377,21 @@ pub fn pick(
     ))
 }
 
+/// Packages upstream built but has not run on a real card (RX 6000 in Strata 0.2.2).
+pub fn untested_variant(variant: &str) -> bool {
+    matches!(variant, "hip-rx6000" | "hip-rdna2")
+}
+
+const UNTESTED_ZH: &str = "（上游未经实机测试）";
+const UNTESTED_EN: &str = " (untested by upstream on a real card)";
+
 fn hip_label(variant: &str) -> &'static str {
     match variant {
         "hip" => "AMD HIP · RX 9000/R9700",
         "hip-rx7900" => "AMD HIP · RX 7000",
         "hip-halo" => "AMD HIP · Strix Halo",
         "hip-rdna3" => "AMD HIP · RX 7000/Strix Halo",
+        "hip-rx6000" | "hip-rdna2" => "AMD HIP · RX 6000",
         _ => "AMD HIP",
     }
 }
@@ -468,7 +500,7 @@ mod tests {
         assert!(pick_variant(amd(&["gfx1100", "gfx1151"]))
             .unwrap_err()
             .contains("手动选择"));
-        // RDNA2 has no package.
+        // The 0.2.0-beta feed has no RDNA2 package (0.2.2 adds one, see below).
         assert!(pick_variant(amd(&["gfx1030"]))
             .unwrap_err()
             .contains("gfx1030"));
@@ -480,6 +512,50 @@ mod tests {
             reason.contains("gfx1201") && reason.contains("gfx1036"),
             "{reason}"
         );
+    }
+
+    #[test]
+    fn rx6000_picks_the_strata_022_rdna2_package_and_says_it_is_untested() {
+        let mut linux = linux_assets();
+        linux.push(asset("hip-rx6000", &["gfx1030", "gfx1031"], None));
+        for gfx in ["gfx1030", "gfx1031"] {
+            let (asset, reason) = pick(&linux, &amd(&[gfx])).unwrap();
+            assert_eq!(asset.variant, "hip-rx6000");
+            assert!(
+                reason.contains("RX 6000")
+                    && reason.contains("未经实机测试")
+                    && reason.contains("untested"),
+                "{reason}"
+            );
+        }
+        let windows = vec![
+            asset(
+                "cuda13",
+                &["sm_75", "sm_86", "sm_89", "sm_120"],
+                Some("580.65"),
+            ),
+            asset("hip-rdna2", &["gfx1030", "gfx1031"], None),
+            asset(
+                "hip-rdna3",
+                &["gfx1100", "gfx1101", "gfx1102", "gfx1151"],
+                None,
+            ),
+            asset("hip", &["gfx1200", "gfx1201"], None),
+        ];
+        let (asset, reason) = pick(&windows, &amd(&["gfx1031"])).unwrap();
+        assert_eq!(asset.variant, "hip-rdna2");
+        // Each half of the bilingual reason carries its own untested note.
+        let (zh, en) = reason.split_once(" / ").unwrap();
+        assert!(
+            zh.contains("未经实机测试") && !zh.contains("untested"),
+            "{zh}"
+        );
+        assert!(en.contains("untested") && !en.contains("未经"), "{en}");
+        // Tested packages carry no note.
+        let (_, reason) = pick(&windows, &amd(&["gfx1201"])).unwrap();
+        assert!(!reason.contains("untested"), "{reason}");
+        // An RX 6600 (gfx1032) still has no package.
+        assert!(pick(&windows, &amd(&["gfx1032"])).is_err());
     }
 
     #[test]
@@ -498,7 +574,14 @@ mod tests {
             ("AMD Radeon(TM) 8060S Graphics", Some("gfx1151")),
             // Integrated graphics and cards no package is built for stay unknown.
             ("AMD Radeon(TM) Graphics", None),
-            ("AMD Radeon RX 6800 XT", None),
+            // RX 6000 (Strata 0.2.2 RDNA2 packages): desktop Navi 21 / 22 only.
+            ("AMD Radeon RX 6800 XT", Some("gfx1030")),
+            ("AMD Radeon RX 6950 XT", Some("gfx1030")),
+            ("AMD Radeon PRO W6800", Some("gfx1030")),
+            ("AMD Radeon RX 6700 XT", Some("gfx1031")),
+            ("AMD Radeon RX 6750 XT", Some("gfx1031")),
+            ("AMD Radeon RX 6800S", None),
+            ("AMD Radeon RX 6600 XT", None),
             ("NVIDIA GeForce RTX 4090", None),
             ("Meta Virtual Monitor", None),
         ] {
