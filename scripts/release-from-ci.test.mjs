@@ -6,11 +6,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import {
-  CI_PROTOCOL, REPOSITORY, COMMON_GATES, COVERAGE_JOB, COVERAGE_GATES, PLATFORM_GATES, SHARD_GATES, WINDOWS_SHARD_GATES, createPlan, assetNames, serverPackageNames,
+  CI_PROTOCOL, REPOSITORY, COMMON_GATES, MACOS_DEFERRED_GATES, resolveMacosMode, MACOS_DEFERRED_MARKER, manifestPlatforms, releaseBody, macosMode, COVERAGE_JOB, COVERAGE_GATES, PLATFORM_GATES, SHARD_GATES, WINDOWS_SHARD_GATES, createPlan, assetNames, serverPackageNames,
   validateSourceProtocol, validateCiEvidence, validateInstallerEntries, validateLiveWriters,
   validateLatestManifest, validateReleaseInventory, validateReleaseMetadata, draftMetadataPayload, creationBranch,
   requireSourceRelease, validatePreparedRecord, readPrepared,
-  findReusableCi, hasIncompleteStepInventory, inventory, WRITER_JOBS, validateWriterProtocol, command,
+  findReusableCi, skippedMacosNotarization, hasIncompleteStepInventory, inventory, WRITER_JOBS, validateWriterProtocol, command,
 } from './release-from-ci.mjs';
 
 const clone = value => structuredClone(value);
@@ -33,7 +33,7 @@ test('observer compatibility expectations match the two-platform reviewed workfl
   assert.match(observer, /runner: \[windows-latest,\s*ubuntu-22\.04\]/);
   for (const gate of observerGates) assert.ok(observer.includes('- name: ' + gate), gate);
 });
-test('the macOS desktop job stays behind the docs-only skip and publishes ad-hoc Apple Silicon artifacts', async () => {
+test('the macOS desktop job stays behind the docs-only skip and publishes Developer ID signed Apple Silicon artifacts', async () => {
   const workflow = (await readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')).replaceAll('\r\n', '\n');
   const changes = workflow.slice(workflow.indexOf('\n  changes:'), workflow.indexOf('\n  observer-compatibility:'));
   assert.match(changes, /dorny\/paths-filter@v3/);
@@ -44,10 +44,70 @@ test('the macOS desktop job stays behind the docs-only skip and publishes ad-hoc
   assert.match(desktop, /runner: macos-15\n {12}target: aarch64-apple-darwin\n {12}bundles: app,dmg/);
   assert.match(desktop, /runner\.os != 'macOS' && 'scripts\/ci-linux-native-tests\.test\.mjs'/);
   assert.doesNotMatch(desktop, /runner: macos-14/);
-  for (const step of ['Use ad-hoc macOS signing without an Apple certificate', 'Package the macOS app archive for the updater', 'Upload the macOS updater archive']) {
+  for (const step of PLATFORM_GATES.macos) {
     assert.ok(desktop.includes('- name: ' + step), step);
   }
+  // Forks / PRs without secrets keep the ad-hoc fallback; release-capable runs here must sign and notarize.
   assert.match(desktop, /APPLE_SIGNING_IDENTITY=-/);
+  assert.match(desktop, /REQUIRE_APPLE_SIGNING: \$\{\{ github\.repository == 'hongfaqiu\/strata-manager' && github\.event_name != 'pull_request' && '1' \|\| '' \}\}/);
+  for (const secret of ['APPLE_CERTIFICATE', 'APPLE_CERTIFICATE_PASSWORD', 'APPLE_API_ISSUER', 'APPLE_API_KEY', 'APPLE_API_PRIVATE_KEY']) {
+    assert.ok(desktop.includes(secret + ': ${{ secrets.' + secret + ' }}'), secret);
+  }
+  // Only the app is notarized (zipped); the DMG is rebuilt around the stapled app and only Developer ID signed.
+  assert.match(desktop, /ditto -c -k --keepParent "\$app" "\$zip"/);
+  assert.match(desktop, /xcrun notarytool submit "\$zip"/);
+  assert.doesNotMatch(desktop, /notarytool submit "\$dmg"/);
+  assert.doesNotMatch(desktop, /notarytool submit[^\n]*--wait/);
+  assert.doesNotMatch(desktop, /stapler (staple|validate) "\$dmg"/);
+  assert.doesNotMatch(desktop, /primary-signature/);
+  assert.match(desktop, /bash "\$notary" staple-app "\$app"/);
+  assert.match(desktop, /bash "\$notary" restage-dmg "\$dmg" "\$app" "\$APPLE_SIGNING_IDENTITY" "\$team"/);
+  assert.match(desktop, /bash scripts\/macos-notary\.sh verify-dmg /);
+  // Network errors are retried by the helper, so these steps must not run under bash -e.
+  for (const step of ['Submit the macOS app for notarization', 'Wait for notarization and staple the macOS app', 'Confirm the macOS app is stapled and the DMG is signed']) {
+    const body = desktop.slice(desktop.indexOf('- name: ' + step));
+    assert.match(body, /^[^\n]*\n(?: {8}[^\n]*\n)*? {10}set -uo pipefail\n/, step);
+  }
+  // tauri itself must not notarize (credentials use STRATA_NOTARY_* names); only the waited step staples.
+  assert.doesNotMatch(desktop, /echo "APPLE_API_(KEY|ISSUER|KEY_PATH)=/);
+  // auto is the default: wait up to the timeout, otherwise leave macOS for the follow-up.
+  assert.match(desktop, /MACOS_NOTARIZATION: \$\{\{ inputs\.macos_notarization \|\| vars\.MACOS_NOTARIZATION \|\| 'auto' \}\}/);
+  assert.match(desktop, /- name: Wait for notarization and staple the macOS app\n {8}id: notarize-wait\n {8}if: runner\.os == 'macOS' && env\.PACKAGE_INSTALLERS == 'true' && env\.MACOS_NOTARIZATION != 'defer' && steps\.notary-policy\.outputs\.mode != 'skipped'/);
+  // Pull requests never notarize; main pushes only for an untagged (release candidate) version.
+  assert.match(desktop, /- name: Submit the macOS app for notarization\n {8}if: runner\.os == 'macOS' && env\.PACKAGE_INSTALLERS == 'true' && steps\.notary-policy\.outputs\.mode != 'skipped'\n/);
+  const policy = desktop.slice(desktop.indexOf('- name: Decide whether this run notarizes macOS'), desktop.indexOf('- name: Prepare macOS signing and notarization'));
+  assert.match(policy, /id: notary-policy/);
+  assert.match(policy, /if \[ "\$EVENT_NAME" = pull_request \]; then\n {12}mode=skipped;/);
+  assert.match(policy, /git ls-remote --tags origin "refs\/tags\/\$tag" "refs\/tags\/\$tag\^\{\}"/);
+  assert.match(policy, /elif \[ "\$tag_sha" = "\$GITHUB_SHA" \]; then/);
+  assert.match(policy, /mode=skipped; reason="\$tag is already released from another commit/);
+  assert.match(policy, />> "\$GITHUB_STEP_SUMMARY"/);
+  assert.doesNotMatch(policy, /workflow_dispatch/);
+  assert.match(desktop, /if \[ "\$NOTARY_MODE" = skipped \]; then\n {12}echo 'Notarization: skipped/);
+  assert.match(desktop, /- name: Confirm the macOS app is stapled and the DMG is signed\n {8}if: runner\.os == 'macOS' && env\.PACKAGE_INSTALLERS == 'true' && steps\.notarize-wait\.outputs\.stapled == 'true'/);
+  assert.match(desktop, /echo 'stapled=true' >> "\$GITHUB_OUTPUT"/);
+  assert.match(desktop, /'In Progress'\)\n {14}if \[ "\$MACOS_NOTARIZATION" = auto \]; then unstapled /);
+  // Unreachable Apple ends unstapled with a warning (rc 75); anything else non-zero fails.
+  assert.match(desktop, /\[ "\$rc" -eq 75 \] && unstapled 'Could not reach Apple to read the notarization status\.'\n {10}\[ "\$rc" -eq 0 \] \|\| exit 1/);
+  assert.match(desktop, /echo "::error title=macOS notarization::Apple did not accept the app \(\$status\)\."; exit 1;;/);
+  assert.match(workflow, /macos_notarization:\n {8}description: [^\n]+\n {8}type: string\n {8}default: ''/);
+  // tauri-action must not upload the pre-notarization DMG; the stapled one is uploaded under the same name.
+  assert.match(desktop, /uploadWorkflowArtifacts: \$\{\{ runner\.os != 'macOS' \}\}/);
+  assert.match(desktop, /name: ci-darwin-aarch64-dmg/);
+  for (const [before, after] of [['Verify the macOS code signature', 'Submit the macOS app for notarization'],
+    ['Submit the macOS app for notarization', 'Wait for notarization and staple the macOS app'],
+    ['Wait for notarization and staple the macOS app', 'Package the macOS app archive for the updater'],
+    ['Wait for notarization and staple the macOS app', 'Upload the macOS DMG'],
+    ['Wait for notarization and staple the macOS app', 'Upload the macOS notarization record']]) {
+    assert.ok(desktop.indexOf('- name: ' + before) < desktop.indexOf('- name: ' + after), before + ' < ' + after);
+  }
+  assert.match(desktop, /name: ci-darwin-aarch64-notarization/);
+  // A deferred CI only lacks the waited staple gate.
+  assert.deepEqual(PLATFORM_GATES.macos.filter(g => !MACOS_DEFERRED_GATES.includes(g)), ['Wait for notarization and staple the macOS app', 'Confirm the macOS app is stapled and the DMG is signed']);
+  for (const [before, after] of [['Wait for notarization and staple the macOS app', 'Confirm the macOS app is stapled and the DMG is signed'],
+    ['Confirm the macOS app is stapled and the DMG is signed', 'Package the macOS app archive for the updater']]) {
+    assert.ok(desktop.indexOf('- name: ' + before) < desktop.indexOf('- name: ' + after), before + ' < ' + after);
+  }
   assert.match(desktop, /name: ci-darwin-aarch64-app-tarball/);
   assert.match(desktop, /if: runner\.os == 'macOS' && env\.PACKAGE_INSTALLERS == 'true'/);
   assert.doesNotMatch(desktop, /target: x86_64-apple-darwin/);
@@ -118,7 +178,7 @@ function ciFixture(p = plan, runId = 123) {
     size_in_bytes: 10, digest: 'sha256:' + String(i + 1).repeat(64), expired: false,
     created_at: '2026-01-01T00:05:00Z', expires_at: '2099-01-01T00:00:00Z',
     workflow_run: { id: runId, head_sha: p.sourceSha } }));
-  artifacts.push({ id: 200, name: p.serverArtifact.name,
+  if (p.serverArtifact) artifacts.push({ id: 200, name: p.serverArtifact.name,
     size_in_bytes: 20, digest: 'sha256:' + 'a'.repeat(64), expired: false,
     created_at: '2026-01-01T00:05:00Z', expires_at: '2099-01-01T00:00:00Z',
     workflow_run: { id: runId, head_sha: p.sourceSha } });
@@ -151,7 +211,8 @@ test('source protocol explicitly rejects old fixed release and missing CI marker
   const helper = "export const CI_PROTOCOL = '" + CI_PROTOCOL + "';";
   const ci = 'name: Reusable release CI protocol\nrun: node scripts/release-from-ci.mjs protocol';
   assert.equal(validateSourceProtocol(helper, ci), true);
-  assert.equal(CI_PROTOCOL, 'strata-release-ci/v3');
+  assert.equal(CI_PROTOCOL, 'strata-release-ci/v4');
+  assert.throws(() => validateSourceProtocol("export const CI_PROTOCOL = 'strata-release-ci/v3';", ci), /protocol/);
   assert.throws(() => validateSourceProtocol("export const CI_PROTOCOL = 'strata-release-ci/v1';", ci), /protocol/);
   assert.throws(() => validateSourceProtocol('export const PLAN = {}', ci), /protocol/);
   assert.throws(() => validateSourceProtocol(helper, 'node scripts/release-check.mjs'), /protocol/);
@@ -235,7 +296,9 @@ test('every required shared and platform gate fails closed independently', () =>
   for (const [position, gates] of [[0, [...COMMON_GATES, ...PLATFORM_GATES.windows]], [1, [...COMMON_GATES, ...PLATFORM_GATES.linux]], [2, [...COMMON_GATES, ...PLATFORM_GATES.macos]]]) {
     for (const name of gates) {
       const f = ciFixture(); f.jobs[position].steps.find(s => s.name === name).conclusion = 'skipped';
-      assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, plan), new RegExp(name.replace(/[()[\]]/g, '\\$&')));
+      // A skipped macOS submit step means CI deliberately skipped notarization.
+      const expected = position === 2 && name === 'Submit the macOS app for notarization' ? /skipped macOS notarization/ : new RegExp(name.replace(/[()[\]]/g, '\\$&'));
+      assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, plan), expected);
     }
   }
 });
@@ -516,6 +579,30 @@ test('resolver surfaces non-reusable successful CI instead of a false missing st
   await assert.rejects(findReusableCi(plan, { fetchJson: fakeApi([f]) }), /not reusable/);
   await assert.rejects(findReusableCi(plan, { runId: 123, fetchJson: fakeApi([f]) }), /not reusable/);
 });
+test('a signed-only CI that skipped notarization is never reused and lets the resolver dispatch a tag CI', async () => {
+  const skip = f => { const mac = f.jobs.find(j => j.name.startsWith('desktop (macos-15'));
+    for (const step of mac.steps) if (['Submit the macOS app for notarization', 'Wait for notarization and staple the macOS app',
+      'Confirm the macOS app is stapled and the DMG is signed'].includes(step.name)) step.conclusion = 'skipped'; return f; };
+  const f = skip(ciFixture());
+  f.run.event = 'push';
+  assert.equal(skippedMacosNotarization(f.jobs), true);
+  assert.equal(skippedMacosNotarization(ciFixture().jobs), false);
+  for (const macos of ['include', 'defer', 'followup']) {
+    const p = { ...plan, ...createPlan({ ...plan, macos }) };
+    const g = skip(ciFixture(p));
+    assert.throws(() => validateCiEvidence(g.run, g.jobs, g.artifacts, p), /skipped macOS notarization/);
+  }
+  // Search: ignored (missing -> dispatch), and an older notarized run is still preferred.
+  assert.deepEqual(await findReusableCi(plan, { fetchJson: fakeApi([f]) }), { status: 'missing' });
+  const good = ciFixture(plan, 122);
+  f.run.created_at = '2026-01-02T00:00:00Z';
+  assert.equal((await findReusableCi(plan, { fetchJson: fakeApi([f, good]) })).runId, 122);
+  // Explicit run id: refused for every mode, auto included.
+  await assert.rejects(findReusableCi(plan, { runId: 123, fetchJson: fakeApi([f]) }), /skipped macOS notarization/);
+  await assert.rejects(resolveMacosMode(plan, p => findReusableCi(p, { runId: 123, fetchJson: fakeApi([skip(ciFixture(p))]) })), /skipped macOS notarization/);
+  const auto = await resolveMacosMode(plan, p => findReusableCi(p, { fetchJson: fakeApi([skip(ciFixture(p))]) }));
+  assert.deepEqual(auto, { mode: 'include', found: { status: 'missing' } });
+});
 test('bounded inventory refuses incomplete and malformed pagination', async () => {
   await assert.rejects(inventory('/inventory', 'items', async () => ({ items: Array(100).fill({}) })), /incomplete/);
   await assert.rejects(inventory('/inventory', 'items', async () => ({ items: {} })));
@@ -614,4 +701,104 @@ test('release installers compile in the Arena app key from the repository secret
   assert.match(build, /rerun-if-env-changed=STRATA_ARENA_APP_KEY/);
   assert.match(build, /STRATA_ARENA_REQUIRE_KEY/);
   assert.doesNotMatch(workflow, /ARENA_APP_KEY: ['"]?[0-9a-f]{32,}/, 'no key literal in CI');
+});
+
+// ---- macOS deferred notarization ("Mac 稍后补发") ----
+const deferPlan = createPlan({ tag: 'v0.2.0', version: '0.2.0', sourceSha: 'a'.repeat(40), productName: 'Strata Manager', macos: 'defer' });
+const followupPlan = createPlan({ tag: 'v0.2.0', version: '0.2.0', sourceSha: 'a'.repeat(40), productName: 'Strata Manager', macos: 'followup' });
+function manifestFor(p, assets) {
+  const index = new Map(assets.map(a => [a.name, a]));
+  return { version: p.version, platforms: Object.fromEntries(Object.entries(manifestPlatforms(p)).map(([platform, name]) => {
+    const installer = p.artifacts.find(a => a.name === name).installer;
+    return [platform, { signature: index.get(installer + '.sig').signatureText,
+      url: 'https://github.com/' + REPOSITORY + '/releases/download/' + encodeURIComponent(p.tag) + '/' + encodeURIComponent(installer) }];
+  })) };
+}
+test('macOS release mode defaults to include and rejects unknown values', () => {
+  assert.equal(macosMode(undefined), 'include');
+  assert.equal(macosMode(''), 'include');
+  for (const mode of ['include', 'defer', 'followup']) assert.equal(macosMode(mode), mode);
+  for (const bad of ['true', 'DEFER', 'skip']) assert.throws(() => macosMode(bad), /MACOS_RELEASE_MODE/);
+  assert.throws(() => createPlan({ tag: 'v0.2.0', version: '0.2.0', sourceSha: 'a'.repeat(40), productName: 'Strata Manager', macos: 'later' }));
+  assert.equal(plan.macos, 'include');
+});
+test('deferred release ships Windows/Linux/server only and no darwin updater entry', () => {
+  assert.deepEqual(deferPlan.artifacts.map(a => a.name), ['ci-windows-x64-nsis', 'ci-linux-amd64-appimage', 'ci-linux-amd64-deb']);
+  assert.ok(deferPlan.serverArtifact);
+  const names = assetNames(deferPlan);
+  assert.ok(!names.some(n => /aarch64/.test(n)), names.join());
+  assert.equal(names.length, 1 + 3 * 2 + 2);
+  assert.equal(Object.hasOwn(manifestPlatforms(deferPlan), 'darwin-aarch64'), false);
+  assert.equal(manifestPlatforms(plan)['darwin-aarch64'], 'ci-darwin-aarch64-app-tarball');
+  let id = 1;
+  const assets = deferPlan.artifacts.flatMap(a => [{ id: id++, name: a.installer, size: 1 }, { id: id++, name: a.installer + '.sig', size: 1, signatureText: 'sig-' + a.kind }]);
+  const manifest = manifestFor(deferPlan, assets);
+  assert.equal(validateLatestManifest(manifest, assets, deferPlan), true);
+  const withMac = structuredClone(manifest); withMac.platforms['darwin-aarch64'] = manifest.platforms['windows-x86_64'];
+  assert.throws(() => validateLatestManifest(withMac, assets, deferPlan), /platforms/);
+  // A normal release still requires darwin-aarch64.
+  assert.throws(() => validateLatestManifest(manifest, assets, plan));
+});
+test('deferred release body carries the follow-up marker; normal bodies are unchanged', () => {
+  assert.equal(releaseBody('notes', plan), 'notes');
+  const body = releaseBody('notes\n', deferPlan);
+  assert.ok(body.startsWith('notes\n\n'));
+  assert.ok(body.includes(MACOS_DEFERRED_MARKER));
+  assert.equal(draftMetadataPayload(deferPlan, body).body, body);
+});
+test('a deferred (submit-only) macOS CI job feeds defer and follow-up plans but never a normal release', () => {
+  // auto timeout: the wait step succeeded but the stapled confirmation was skipped.
+  const deferredMacJob = j => { if (j.name.startsWith('desktop (macos-15')) j.steps.find(s => s.name === 'Confirm the macOS app is stapled and the DMG is signed').conclusion = 'skipped'; };
+  for (const [p, ok] of [[plan, false], [deferPlan, true], [followupPlan, true]]) {
+    const f = ciFixture(p); f.jobs.forEach(deferredMacJob);
+    if (ok) assert.ok(validateCiEvidence(f.run, f.jobs, f.artifacts, p));
+    else assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, p), /Confirm the macOS app is stapled and the DMG is signed/);
+  }
+  // A skipped wait gate is as bad as a missing one for normal releases.
+  const f = ciFixture(plan);
+  f.jobs.find(j => j.name.startsWith('desktop (macos-15')).steps.find(s => s.name.startsWith('Wait for')).conclusion = 'skipped';
+  assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, plan), /Wait for notarization/);
+  // Every deferred gate still fails closed.
+  for (const gate of MACOS_DEFERRED_GATES) {
+    const g = ciFixture(deferPlan); g.jobs.forEach(deferredMacJob);
+    g.jobs.find(j => j.name.startsWith('desktop (macos-15')).steps.find(s => s.name === gate).conclusion = 'failure';
+    assert.throws(() => validateCiEvidence(g.run, g.jobs, g.artifacts, deferPlan), new RegExp(gate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+});
+test('follow-up plan binds only the macOS bytes plus the notarization record and cannot build a release inventory', () => {
+  assert.deepEqual(followupPlan.artifacts.map(a => a.name), ['ci-darwin-aarch64-app-tarball', 'ci-darwin-aarch64-dmg', 'ci-darwin-aarch64-notarization']);
+  assert.equal(followupPlan.artifacts[2].installer, 'Strata.Manager_0.2.0_aarch64.notarization.json');
+  assert.equal(followupPlan.serverArtifact, undefined);
+  assert.throws(() => assetNames(followupPlan), /follow-up/);
+  assert.throws(() => manifestPlatforms(followupPlan), /follow-up/);
+  const f = ciFixture(followupPlan);
+  const bound = validateCiEvidence(f.run, f.jobs, f.artifacts, followupPlan);
+  assert.equal(bound.artifacts.length, 3);
+  assert.ok(bound.artifacts.every(a => Number.isSafeInteger(a.id)));
+  const missing = ciFixture(followupPlan); missing.artifacts = missing.artifacts.filter(a => a.name !== 'ci-darwin-aarch64-notarization');
+  assert.throws(() => validateCiEvidence(missing.run, missing.jobs, missing.artifacts, followupPlan), /ci-darwin-aarch64-notarization/);
+  assert.equal(validateInstallerEntries([{ name: 'Strata Manager_0.2.0_aarch64.notarization.json', size: 9, compressedSize: 9, mode: 0o100644, isDirectory: false, encrypted: false }], followupPlan.artifacts[2]).size, 9);
+});
+
+test('auto resolves to include for stapled CI, to defer only when CI is not reusable as a full release', async () => {
+  const requested = createPlan({ tag: 'v0.2.0', version: '0.2.0', sourceSha: 'a'.repeat(40), productName: 'Strata Manager' });
+  const evidence = (mutate = () => {}) => async p => { const f = ciFixture(p); mutate(f); return { status: 'success', runId: 123, plan: validateCiEvidence(f.run, f.jobs, f.artifacts, p) }; };
+  const wrap = find => async p => { try { return await find(p); } catch (e) { throw new Error('Same-source CI exists but is not reusable: ' + e.message); } };
+  let r = await resolveMacosMode(requested, wrap(evidence()));
+  assert.equal(r.mode, 'include');
+  assert.equal(r.found.plan.artifacts.length, 5);
+  const unstapled = f => { f.jobs.find(j => j.name.startsWith('desktop (macos-15')).steps.find(s => s.name === 'Confirm the macOS app is stapled and the DMG is signed').conclusion = 'skipped'; };
+  r = await resolveMacosMode(requested, wrap(evidence(unstapled)));
+  assert.equal(r.mode, 'defer');
+  assert.equal(r.found.plan.artifacts.length, 3);
+  // Pending CI keeps include (the resolver polls again) instead of deferring early.
+  r = await resolveMacosMode(requested, async () => ({ status: 'pending', runId: 5 }));
+  assert.equal(r.mode, 'include');
+  // Anything else wrong with the CI (e.g. a failed macOS signature gate) refuses in both modes.
+  const broken = f => { f.jobs.find(j => j.name.startsWith('desktop (macos-15')).steps.find(s => s.name === 'Verify the macOS code signature').conclusion = 'failure'; };
+  await assert.rejects(resolveMacosMode(requested, wrap(evidence(broken))), /Verify the macOS code signature/);
+  // Network or other errors never fall back.
+  await assert.rejects(resolveMacosMode(requested, async () => { throw new Error('Inventory pagination was incomplete.'); }), /pagination/);
+  assert.equal(macosMode('auto', { allowAuto: true }), 'auto');
+  assert.throws(() => macosMode('auto'), /auto is resolved first/);
 });
