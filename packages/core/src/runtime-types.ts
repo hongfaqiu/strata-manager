@@ -26,9 +26,10 @@ export interface RuntimeReleaseAsset {
   sha256: string;
   /**
    * `hip` is RX 9000 / R9700 (or the legacy all-in-one HIP ZIP); `hip-rdna3` is the Windows RX 7000 / Strix Halo
-   * package. Linux splits it into `hip-rx7900` (RX 7000) and `hip-halo` (Strix Halo).
+   * package. Linux splits it into `hip-rx7900` (RX 7000) and `hip-halo` (Strix Halo). Strata 0.2.2 adds RX 6000:
+   * `hip-rx6000` on Linux and `hip-rdna2` on Windows (built, not tested by upstream on a real card).
    */
-  variant: 'cuda13' | 'cuda12' | 'hip' | 'hip-rdna3' | 'hip-rx7900' | 'hip-halo';
+  variant: 'cuda13' | 'cuda12' | 'hip' | 'hip-rdna3' | 'hip-rx7900' | 'hip-halo' | 'hip-rx6000' | 'hip-rdna2';
   /** Strata 0.2+ component package: its engine version (legacy ZIPs share the release version). */
   engineVersion?: string;
   manifestSha256?: string;

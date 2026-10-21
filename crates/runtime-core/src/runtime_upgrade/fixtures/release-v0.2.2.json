@@ -1,0 +1,221 @@
+{
+ "prerelease": false,
+ "html_url": "https://github.com/Niko1221/Strata/releases/tag/v0.2.2",
+ "name": "Strata 0.2.2",
+ "draft": false,
+ "published_at": "2026-10-21T11:10:21Z",
+ "tag_name": "v0.2.2",
+ "body": "",
+ "assets": [
+  {
+   "name": "install-manifest.txt",
+   "size": 407,
+   "digest": "sha256:ec69673fb5bd067660b7a243da807e9760ed6b3187417427212040813f2e436a",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/install-manifest.txt"
+  },
+  {
+   "name": "install.ps1",
+   "size": 10803,
+   "digest": "sha256:2539103acb0d548e0d4976fe2fb87ddcabe6eebba39a880b1781548650d3b03d",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/install.ps1"
+  },
+  {
+   "name": "install.sh",
+   "size": 7306,
+   "digest": "sha256:6b05d4d26e68e9a1100d56216b53369eabbca38a2ede715da3dafb5dcfa10d40",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/install.sh"
+  },
+  {
+   "name": "latest.json",
+   "size": 2187,
+   "digest": "sha256:d2842f2e8cba7dfcdb103d23e24e995aac825f6d1674d6b5b5feec13b392b0fc",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/latest.json"
+  },
+  {
+   "name": "SHA256SUMS.txt",
+   "size": 3528,
+   "digest": "sha256:977b2f4d118e1d33fa1afbde425e5d048ff2a55018481b5039925b5538cc2282",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/SHA256SUMS.txt"
+  },
+  {
+   "name": "Strata-0.2.2-linux-amd-rx7900.AppImage",
+   "size": 519657976,
+   "digest": "sha256:a77a3c13bb1747a305284eb1cf48171d0515cace217a986b35214db3192a8032",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/Strata-0.2.2-linux-amd-rx7900.AppImage"
+  },
+  {
+   "name": "Strata-0.2.2-linux-amd-rx9070.AppImage",
+   "size": 686365176,
+   "digest": "sha256:4d9b4b38846525437f3b7b172a6f794499e17747e4e23860dc5bcbaddc73f377",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/Strata-0.2.2-linux-amd-rx9070.AppImage"
+  },
+  {
+   "name": "Strata-0.2.2-linux-amd-strixhalo.AppImage",
+   "size": 452868600,
+   "digest": "sha256:d6d1a986887d07cadb90e7f7280fbda8b98529d0a438be7148fca6e2c04acc18",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/Strata-0.2.2-linux-amd-strixhalo.AppImage"
+  },
+  {
+   "name": "Strata-0.2.2-linux-nvidia-cuda12.AppImage",
+   "size": 1114139128,
+   "digest": "sha256:7506fd9ef8fba9122f5744c7bc77ce402215800d4ea7e70d7b21890e734fd539",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/Strata-0.2.2-linux-nvidia-cuda12.AppImage"
+  },
+  {
+   "name": "Strata-0.2.2-linux-nvidia-cuda13.AppImage",
+   "size": 889494008,
+   "digest": "sha256:5e9727f181e7f1b9e02a676cac1c98b1ddbc7656f7e865da3d7a30f2841e6ffd",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/Strata-0.2.2-linux-nvidia-cuda13.AppImage"
+  },
+  {
+   "name": "Strata-0.2.2-linux-update.AppImage",
+   "size": 290220536,
+   "digest": "sha256:f53673d7ffff23056e427f61a5ebd8f782acae3d6bc22046870a8d19d51bef5a",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/Strata-0.2.2-linux-update.AppImage"
+  },
+  {
+   "name": "Strata-0.2.2-mac.dmg",
+   "size": 166291049,
+   "digest": "sha256:9bc58193a543830061eeb5b8b5e6c82f0f05c9b0d8e810ade7c61ee8694c3955",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/Strata-0.2.2-mac.dmg"
+  },
+  {
+   "name": "Strata-0.2.2-windows-cuda12.exe",
+   "size": 773508905,
+   "digest": "sha256:22929baed9ef5c006677efed38f2bfe1b589b5bd1227045dc989290e80b69748",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/Strata-0.2.2-windows-cuda12.exe"
+  },
+  {
+   "name": "Strata-0.2.2-windows-cuda13.exe",
+   "size": 644597987,
+   "digest": "sha256:77de559fad009c639a2de3522177e1e1e60240d63c07126cba766eb46ec990d7",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/Strata-0.2.2-windows-cuda13.exe"
+  },
+  {
+   "name": "Strata-0.2.2-windows-hip-rdna3.exe",
+   "size": 229994098,
+   "digest": "sha256:17f8e1e3ff4cf4b20ff3b5448ad47cafbcff2c007deadc4a95aedd028810f8c6",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/Strata-0.2.2-windows-hip-rdna3.exe"
+  },
+  {
+   "name": "Strata-0.2.2-windows-hip.exe",
+   "size": 549817313,
+   "digest": "sha256:648e7b696b81d74fe32d4601cf7a5c5c32511b51e6808442b359d53d535edc25",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/Strata-0.2.2-windows-hip.exe"
+  },
+  {
+   "name": "Strata-0.2.2-windows-update.exe",
+   "size": 111533455,
+   "digest": "sha256:a0257b8cd5001995c4bff7102e46603a1fb20d56fc59213f6abcab5b341df833",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/Strata-0.2.2-windows-update.exe"
+  },
+  {
+   "name": "strata-control-0.1.47-linux-x86_64.tar.gz",
+   "size": 98643722,
+   "digest": "sha256:7ac52e3d4ef8f50466fa0cc662be218975373309214519aa0b68fafd39e66fe8",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/strata-control-0.1.47-linux-x86_64.tar.gz"
+  },
+  {
+   "name": "strata-control-0.1.47-macos-arm64.tar.gz",
+   "size": 49913800,
+   "digest": "sha256:bb25eb49e29407621ceaebd7d1381360f8eac3f35b92bb0b351c8ff0755cc2fd",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/strata-control-0.1.47-macos-arm64.tar.gz"
+  },
+  {
+   "name": "strata-control-0.1.47-windows-x86_64.zip",
+   "size": 72195109,
+   "digest": "sha256:91dc0a8adda3d4b5ce6307dd0f7b9d64ee26d093f544e822f764b97506f601d3",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/strata-control-0.1.47-windows-x86_64.zip"
+  },
+  {
+   "name": "strata-engine-0.1.47-linux-x86_64-cuda-cuda12.tar.gz",
+   "size": 852820136,
+   "digest": "sha256:0c7b9155dc247f9a62c3a25581d4adf2d9826b8115aaf957e8e557b13887d2f8",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/strata-engine-0.1.47-linux-x86_64-cuda-cuda12.tar.gz"
+  },
+  {
+   "name": "strata-engine-0.1.47-linux-x86_64-cuda-cuda13.tar.gz",
+   "size": 605615066,
+   "digest": "sha256:45a6df98aaf4b6b7c05087a4ab428be8df478ddcc07193a13cbaab312b85895e",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/strata-engine-0.1.47-linux-x86_64-cuda-cuda13.tar.gz"
+  },
+  {
+   "name": "strata-engine-0.1.47-linux-x86_64-hip-halo.tar.gz",
+   "size": 168734229,
+   "digest": "sha256:c278d2809df6f502d7cc201a211fe9828a701e6146d408f60f167090e667547d",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/strata-engine-0.1.47-linux-x86_64-hip-halo.tar.gz"
+  },
+  {
+   "name": "strata-engine-0.1.47-linux-x86_64-hip-rx6000.tar.gz",
+   "size": 197875835,
+   "digest": "sha256:558e5c1c3ce72c4cb06b548098abd53f9a5de7b640527977ba708f58931fb2ae",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/strata-engine-0.1.47-linux-x86_64-hip-rx6000.tar.gz"
+  },
+  {
+   "name": "strata-engine-0.1.47-linux-x86_64-hip-rx7900.tar.gz",
+   "size": 242020538,
+   "digest": "sha256:ecaaee56a0fb44313ed246f57655f95857f017a64cb5fb43104b0417c86b21ba",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/strata-engine-0.1.47-linux-x86_64-hip-rx7900.tar.gz"
+  },
+  {
+   "name": "strata-engine-0.1.47-linux-x86_64-hip-rx9070.tar.gz",
+   "size": 403291829,
+   "digest": "sha256:16236f330efc86beb383c7ad63f67c9578d3c5a13f6e59a4863c334840d1fde2",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/strata-engine-0.1.47-linux-x86_64-hip-rx9070.tar.gz"
+  },
+  {
+   "name": "strata-engine-0.1.47-macos-arm64-metal.tar.gz",
+   "size": 5133090,
+   "digest": "sha256:6f72dd302074944d21d53fb1e53a2fe6455176670e39332d52c095679a42d939",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/strata-engine-0.1.47-macos-arm64-metal.tar.gz"
+  },
+  {
+   "name": "strata-engine-0.1.47-windows-x86_64-cuda-cuda12.tar.gz",
+   "size": 821886741,
+   "digest": "sha256:5647820167f62a168e9ec1bfc29a8dfd4d6daf4a521a801f76f834250164b4d1",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/strata-engine-0.1.47-windows-x86_64-cuda-cuda12.tar.gz"
+  },
+  {
+   "name": "strata-engine-0.1.47-windows-x86_64-cuda-cuda13.tar.gz",
+   "size": 580428476,
+   "digest": "sha256:59833d875b2f3807791533f5dd077a0cb0ed08d4c1cab3136ad2ceb165871cd1",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/strata-engine-0.1.47-windows-x86_64-cuda-cuda13.tar.gz"
+  },
+  {
+   "name": "strata-engine-0.1.47-windows-x86_64-hip-rdna2.tar.gz",
+   "size": 176252301,
+   "digest": "sha256:f9e8954f2bf1c153994441ffd69006f0492e1d8300650098058ede1a4d7c742a",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/strata-engine-0.1.47-windows-x86_64-hip-rdna2.tar.gz"
+  },
+  {
+   "name": "strata-engine-0.1.47-windows-x86_64-hip-rdna3.tar.gz",
+   "size": 241603634,
+   "digest": "sha256:63d28c3d47a96ee654889d61379797596394b01bceb9b7cfe89cdd952c830f33",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/strata-engine-0.1.47-windows-x86_64-hip-rdna3.tar.gz"
+  },
+  {
+   "name": "strata-engine-0.1.47-windows-x86_64-hip-rx9070.tar.gz",
+   "size": 562626280,
+   "digest": "sha256:4c9bc08bc87b6657dfab5644064bd688c7dc7f27ac97f99dae65d65c2b9418c0",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/strata-engine-0.1.47-windows-x86_64-hip-rx9070.tar.gz"
+  },
+  {
+   "name": "strata-feed.json",
+   "size": 11744,
+   "digest": "sha256:fbf4acaa462f8010f8280425b96ed4ed9825ac428828b4d6de74f1d28f9d3a18",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/strata-feed.json"
+  },
+  {
+   "name": "strata-feed.json.sig",
+   "size": 151,
+   "digest": "sha256:ba94d3cfec8843dad2bdc1d8f514f694848c35e90623de88765786aa9809b1fd",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/strata-feed.json.sig"
+  },
+  {
+   "name": "Strata.app.tar.gz",
+   "size": 166168065,
+   "digest": "sha256:7893204294cc6d0cd92084b9dd20da37b296ec2df01562487bd829f60307a449",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.2/Strata.app.tar.gz"
+  }
+ ]
+}

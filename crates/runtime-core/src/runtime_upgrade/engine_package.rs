@@ -106,6 +106,10 @@ pub fn manager_variant(backend: &str, variant: &str) -> Option<&'static str> {
         ("hip", "rdna3") => "hip-rdna3",
         ("hip", "rx7900") => "hip-rx7900",
         ("hip", "halo") => "hip-halo",
+        // RX 6000 (gfx1030, gfx1031), new in Strata 0.2.2: Linux calls it `rx6000`, Windows
+        // `rdna2`. Upstream built both but has not tested them on a real RX 6000 card.
+        ("hip", "rx6000") => "hip-rx6000",
+        ("hip", "rdna2") => "hip-rdna2",
         ("metal", "") => "metal",
         _ => return None,
     })
@@ -130,10 +134,13 @@ pub fn installable_variant(name: &str) -> Option<&'static str> {
     let package = parse_package_name(name)?;
     let variant = manager_variant(&package.backend, &package.variant)?;
     match package.platform {
-        "windows-x86_64" => matches!(variant, "cuda13" | "cuda12" | "hip" | "hip-rdna3"),
+        "windows-x86_64" => matches!(
+            variant,
+            "cuda13" | "cuda12" | "hip" | "hip-rdna3" | "hip-rdna2"
+        ),
         "linux-x86_64" => matches!(
             variant,
-            "cuda13" | "cuda12" | "hip" | "hip-rx7900" | "hip-halo"
+            "cuda13" | "cuda12" | "hip" | "hip-rx7900" | "hip-halo" | "hip-rx6000"
         ),
         _ => false,
     }
