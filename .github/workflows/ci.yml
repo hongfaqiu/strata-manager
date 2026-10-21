@@ -56,6 +56,7 @@ jobs:
               - '.github/workflows/ci.yml'
               - '.github/workflows/release.yml'
               - '.github/workflows/release-from-ci.yml'
+              - '.github/workflows/macos-notarize-followup.yml'
       - id: set
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -381,7 +382,7 @@ jobs:
         # ci-linux-native-tests.test.mjs runs a host libtest binary and rejects
         # hosts that are not its Windows/Linux target. Skip it on darwin so the
         # Apple Silicon job can reach packaging; Windows and Linux still run it.
-        run: node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-assets.test.mjs scripts/release-publish.test.mjs scripts/preview-package-smoke.test.mjs scripts/download-upgrade-fixture.test.mjs scripts/release-from-ci.test.mjs ${{ runner.os != 'macOS' && 'scripts/ci-linux-native-tests.test.mjs' || '' }} scripts/ci-cache-policy.test.mjs
+        run: node --test scripts/release-check.test.mjs scripts/release-tag.test.mjs scripts/release-assets.test.mjs scripts/release-publish.test.mjs scripts/preview-package-smoke.test.mjs scripts/download-upgrade-fixture.test.mjs scripts/release-from-ci.test.mjs scripts/macos-notarize-followup.test.mjs ${{ runner.os != 'macOS' && 'scripts/ci-linux-native-tests.test.mjs' || '' }} scripts/ci-cache-policy.test.mjs
       - name: Verify the signed beta.2 installer for the first stable upgrade
         if: runner.os == 'Windows' && steps.package-version.outputs.version == '0.1.2'
         id: upgrade-fixture
