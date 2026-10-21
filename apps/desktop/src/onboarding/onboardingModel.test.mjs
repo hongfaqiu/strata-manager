@@ -225,7 +225,7 @@ test('deriveGuide reads runtime, setup task, handoff and target from backend sta
 
 test('Mac recommendations never offer families the Metal engine cannot run', () => {
   const mac = model.recommendations('chat', 48, false, 50, 'macos').map(row => row.family);
-  for (const family of ['swift', 'coder', 'qwen36']) assert.equal(mac.includes(family), false, family);
+  for (const family of ['swift', 'coder', 'qwen36', 'unsloth']) assert.equal(mac.includes(family), false, family);
   assert.ok(mac.includes('qwen'));
   const windows = model.recommendations('chat', 96, true, 50, 'windows').map(row => row.family);
   assert.ok(windows.includes('swift'));

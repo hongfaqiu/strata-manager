@@ -75,3 +75,22 @@ export function MemoryNote({ estimate, memoryGB, copy }: { estimate: Performance
   if (estimate.mode === 'lowRam' && estimate.memoryGB) return <p className="cat-note">{copy.lowRamNote(estimate.memoryGB)} <a href={core.PERFORMANCE_SOURCES.pcFit} target="_blank" rel="noreferrer">MODELS.md<ArrowUpRight size={11}/></a></p>;
   return null;
 }
+
+/** Disk the community install adds (its own data folder), shown before the download starts. */
+export function CommunityDisk({ model, quant, copy }: { model: CommunityModel; quant: string; copy: CatalogCopy }) {
+  const disk = core.communityDiskEstimate(model, quant);
+  return <div className="cat-disk" data-testid="community-disk">
+    <b>{copy.diskTitle} · {copy.diskExtra(disk.worstGB, disk.bestGB)}</b>
+    <p className="cat-note">{copy.diskParts(disk.filesGB, disk.packGB, disk.mtpGB)}</p>
+    {disk.officialGB > 0 && <p className="cat-note">{copy.diskReuse(disk.officialGB)}</p>}
+  </div>;
+}
+
+/** The reasons under the greyed-out official families on a Mac: Metal engine scope, and the installer's qwen-only rule for Unsloth. */
+export function MacBlockNotes({ models, platform, copy }: { models: { family: string }[]; platform: RuntimePackagePlatform; copy: CatalogCopy }) {
+  const reasons = new Set(models.map(model => core.officialFamilyBlock(model.family, platform)));
+  return <>
+    {reasons.has('macFamily') && <BlockNote reason="macFamily" source={core.UPSTREAM_MAC_LIMITS_SOURCE} copy={copy}/>}
+    {reasons.has('macInstaller') && <p className="cat-block" data-testid="mac-unsloth-installer">{copy.macUnslothInstaller} <a href={core.UPSTREAM_MAC_APP_SOURCE} target="_blank" rel="noreferrer">MAC.md<ArrowUpRight size={11}/></a></p>}
+  </>;
+}

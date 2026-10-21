@@ -23,6 +23,8 @@ export interface CatalogCopy {
   refresh: string;
   downloadCommunity: (gb: number | string) => string;
   pipelineNote: string; projectorNote: string; controlVectorNote: string;
+  diskTitle: string; diskExtra: (worst: number, best: number) => string; diskParts: (files: number, pack: number, mtp: number) => string; diskReuse: (official: number) => string;
+  macUnslothInstaller: string;
   colModel: string; colSpeed: string;
   stats: (downloads: number, likes: number) => string;
 }
@@ -46,7 +48,7 @@ const zh: CatalogCopy = {
   block: {
     macGemv: 'Mac 不可用：Metal 引擎的 gemv 没有 IQ3_XXS 专家内核（上游 PR #2931 未合并），且需要 49.8 GiB 专家缓存。',
     macControlVector: '去拒答向量在 Mac 引擎未移植，等同官方版。',
-    macFamily: 'Mac 暂不可用：上游 Metal 引擎目前只支持 Qwen3.8-Flash-Next 与 Unsloth（MAC.md）。',
+    macFamily: 'Mac 暂不可用：上游 Metal 引擎目前不支持 Swift、Coder 和 Qwen3.6（MAC.md）。',
     macQuant: 'Mac 安装器只接受 Qwen3.8-Flash-Next 的 Q2_0、IQ3_XXS、IQ3_S，这个版本在 Mac 上不能一键安装。',
   },
   blockSource: '上游依据',
@@ -75,6 +77,11 @@ const zh: CatalogCopy = {
   pipelineNote: '下载固定提交的文件并逐个校验 SHA-256，再用官方安装器（--gguf-dir）准备；配置单独登记为 community-…，不覆盖官方配置。',
   projectorNote: '图片使用官方视觉编码器（安装器只接受官方 SHA-256）。',
   controlVectorNote: '分片与官方 ISTA-DASLab 文件逐字节相同，另加一个去拒答控制向量（安装时以 --experimental-speed-projection 传入）。',
+  diskTitle: '预计额外占用磁盘',
+  diskExtra: (worst, best) => best === worst ? `约 ${worst} GB` : `约 ${best}–${worst} GB`,
+  diskParts: (files, pack, mtp) => `社区版装在独立的数据目录（不动官方安装）：模型文件 ${files} GB + 独立打包 ${pack} GB + MTP 草稿层最多 ${mtp} GB（已有则复用）。`,
+  diskReuse: official => `其中 ${official} GB 与官方分片逐字节相同：本机已下载官方版时，校验 SHA-256 后以硬链接复用，不再下载、也不额外占用（跨磁盘时改为本地复制）。`,
+  macUnslothInstaller: 'Mac 暂不可用：上游 Mac 安装器只接受 Qwen3.8-Flash-Next（--family qwen）的 Q2_0 / IQ3_XXS / IQ3_S，Unsloth 的多分片文件目前要用 ./setup.sh 重新打包，应用里无法安装（MAC.md）。',
   colModel: '模型与量化', colSpeed: '速度（估算）',
   stats: (downloads, likes) => `${k(downloads)} 次下载 · ${k(likes)} 赞`,
 };
@@ -96,7 +103,7 @@ const en: CatalogCopy = {
   block: {
     macGemv: 'Not available on a Mac: the Metal gemv has no IQ3_XXS expert kernel (upstream PR #2931 is not merged), and it needs a 49.8 GiB expert arena.',
     macControlVector: 'The refusal vector is not ported to the Mac engine; this equals the official model.',
-    macFamily: 'Not available on a Mac yet: the upstream Metal engine runs Qwen3.8-Flash-Next and Unsloth only (MAC.md).',
+    macFamily: 'Not available on a Mac yet: the upstream Metal engine does not run Swift, Coder or Qwen3.6 (MAC.md).',
     macQuant: 'The Mac installer takes only Qwen3.8-Flash-Next Q2_0, IQ3_XXS and IQ3_S, so this build cannot be installed with one click on a Mac.',
   },
   blockSource: 'Upstream reference',
@@ -125,6 +132,11 @@ const en: CatalogCopy = {
   pipelineNote: 'Downloads the files of the pinned commit, checks each SHA-256, then prepares them with the official installer (--gguf-dir); the config is registered separately as community-… and never replaces the official one.',
   projectorNote: 'Pictures use the official vision encoder (the installer accepts only the official SHA-256).',
   controlVectorNote: 'The shards are byte-identical to the official ISTA-DASLab files, plus a refusal-direction control vector (passed as --experimental-speed-projection).',
+  diskTitle: 'Estimated extra disk',
+  diskExtra: (worst, best) => best === worst ? `about ${worst} GB` : `about ${best}–${worst} GB`,
+  diskParts: (files, pack, mtp) => `Community builds go into their own data folder (the official install is untouched): model files ${files} GB + a separate pack ${pack} GB + the MTP draft layer up to ${mtp} GB (reused when present).`,
+  diskReuse: official => `${official} GB of that is byte-identical to official shards: when the official build is already downloaded, it is reused through a hard link after a SHA-256 check, with no download and no extra disk (a local copy across drives).`,
+  macUnslothInstaller: 'Not available on Mac yet: the upstream Mac installer takes only Qwen3.8-Flash-Next (--family qwen) at Q2_0 / IQ3_XXS / IQ3_S; Unsloth’s many-shard files need the ./setup.sh repack for now, so the app cannot install them (MAC.md).',
   colModel: 'Model and quantization', colSpeed: 'Speed (est.)',
   stats: (downloads, likes) => `${k(downloads)} downloads · ${k(likes)} likes`,
 };

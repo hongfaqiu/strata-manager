@@ -6,7 +6,7 @@ import * as core from '@strata-manager/core';
 import type { CommunityModel, PerformanceHardware, RuntimePackagePlatform, ServiceProfile, TaskStatus } from '@strata-manager/core';
 import { Radio, Toggle } from '../OfficialControls';
 import { catalogCopy } from '../catalog/catalogCopy';
-import { BlockNote, CommunityBadge, CommunityRisks, CommunitySource, EstimateCell, MemoryNote, memoryLine } from '../catalog/catalogUi';
+import { BlockNote, CommunityBadge, CommunityDisk, CommunityRisks, CommunitySource, EstimateCell, MemoryNote, memoryLine } from '../catalog/catalogUi';
 
 const CONTEXTS = [32768, 131072, 262144];
 
@@ -72,6 +72,7 @@ export function CommunityModelDetail({ model, platform, hardware, machineMemoryG
       <div className="model-download-context-presets" role="group" aria-label={text('常用上下文', 'Common contexts')}>{CONTEXTS.map(value => <button key={value} type="button" className={context === value ? 'is-selected' : undefined} aria-pressed={context === value} onClick={() => setContext(value)}>{core.formatContextTokens(value, language)}</button>)}</div>
       {model.images && <label className="cat-images"><span>{text('图像支持', 'Images')}</span><Toggle ariaLabel={text('图像支持', 'Images')} checked={images} onCheckedChange={setImages}/></label>}
     </div>}
+    {availability.downloadable && <CommunityDisk model={model} quant={chosen} copy={copy}/>}
     <CommunityRisks model={model} copy={copy}/>
     {model.kind === 'control-vector' && <p className="cat-note">{copy.controlVectorNote}</p>}
     {model.images && availability.downloadable && <p className="cat-note">{copy.projectorNote}</p>}

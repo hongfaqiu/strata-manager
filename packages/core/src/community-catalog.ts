@@ -73,6 +73,8 @@ const alesha = (quant: string, size: number, sha256: string) => quantEntry([
 ], 'qwen', quant);
 
 export const UPSTREAM_GEMV_SOURCE = 'https://github.com/Niko1221/Strata/pull/2931';
+/** MAC.md: the app offers Q2_0 / IQ3_XXS / IQ3_S; Unsloth's many-shard files need ./setup.sh's repack for now. */
+export const UPSTREAM_MAC_APP_SOURCE = 'https://github.com/Niko1221/Strata/blob/main/docs/MAC.md#the-desktop-app-and-strata-launch-on-a-mac';
 export const UPSTREAM_MAC_LIMITS_SOURCE = 'https://github.com/Niko1221/Strata/blob/main/docs/MAC.md#limits-this-version';
 
 export const BUILTIN_COMMUNITY_MODELS: CommunityModel[] = [
@@ -149,9 +151,43 @@ export function communityQuantAvailability(model: CommunityModel, quant: string,
   return entry;
 }
 
+/** SHA-256 of ISTA-DASLab's official shards (setup.py ISTA_FILES): a community file with one of these is byte-identical. */
+export const OFFICIAL_SHARD_SHA256 = new Set([
+  '69820c02ec7d0b45ef2ebb19d6620299db749fe2aded7f39f93c6b88b199b720', '92cee27ae5bbadcd732416a0f7a7f0acc092399dbbe8f5a5efa707c2ec0a49d7',
+  '219ea929900dfa9ef091f3aa473fdba6874b65fcb36526d7d851ac9e95856d15', '4c1eb2ceb4915e1192f4f386021897bde56a97f40a0bb78bb86465e0f7d2aca3',
+  '316b46f3a2dbd68c900f43136ab9449f9dcc3725dfd8c794847c204bc161e113',
+]);
+export interface CommunityDiskEstimate {
+  /** All files of the size (GB, decimal). */
+  filesGB: number;
+  /** Of those, files byte-identical to an official shard: hard-linked from an official download when present (0 extra). */
+  officialGB: number;
+  /** The separate pack setup builds in the community folder (runtime-core community_model.rs prepare). */
+  packGB: number;
+  /** MTP draft layer, only when no data folder has it yet (setup reuses it). */
+  mtpGB: number;
+  /** Extra disk with no official files on this PC, and with them (official shards reused). */
+  worstGB: number;
+  bestGB: number;
+}
+/** Disk the community install adds next to the official one (its own data folder): the same figures the native disk plan uses. */
+export function communityDiskEstimate(model: CommunityModel, quant: string): CommunityDiskEstimate {
+  const info = model.quantInfo[quant];
+  const files = [...(info?.files ?? []), ...(model.controlVector ? [model.controlVector] : [])];
+  const gb = (bytes: number) => Math.round(bytes / 1e8) / 10;
+  const filesGB = gb(files.reduce((sum, file) => sum + file.size, 0));
+  const officialGB = gb(files.filter(file => file.sha256 && OFFICIAL_SHARD_SHA256.has(file.sha256)).reduce((sum, file) => sum + file.size, 0));
+  const packGB = model.family === 'qwen' && quant === 'Q2_0' ? 40 : 2;
+  const mtpGB = 8;
+  return { filesGB, officialGB, packGB, mtpGB, worstGB: Math.round(filesGB + packGB + mtpGB), bestGB: Math.round(filesGB - officialGB + packGB) };
+}
+
 /** Why an official family is unavailable on this platform (Metal engine scope, docs/MAC.md). */
-export function officialFamilyBlock(family: string, platform: RuntimePackagePlatform): 'macFamily' | undefined {
-  return platform === 'macos' && !macCatalogFamilyAllowed(family) ? 'macFamily' : undefined;
+export function officialFamilyBlock(family: string, platform: RuntimePackagePlatform): 'macFamily' | 'macInstaller' | undefined {
+  if (platform !== 'macos') return undefined;
+  if (!macCatalogFamilyAllowed(family)) return 'macFamily';
+  // setup.py mac_control_setup (the installer the app drives on a Mac) accepts only `--family qwen`.
+  return family === 'unsloth' ? 'macInstaller' : undefined;
 }
 
 export interface CommunitySetupRequest {

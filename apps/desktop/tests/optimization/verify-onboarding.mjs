@@ -125,6 +125,8 @@ try {
     const blocked = page.locator('[data-testid="ob-mac-unavailable"]');
     await blocked.getByText('Swift 1.5').waitFor();
     assert.equal(await page.getByRole('radio', { name: /Swift/ }).count(), 0, 'Swift is never offered on a Mac');
+    assert.equal(await page.getByRole('radio', { name: /Unsloth/ }).count(), 0, 'the Mac installer takes only --family qwen');
+    await page.locator('[data-testid="mac-unsloth-installer"]').getByText(/只接受 Qwen3\.8-Flash-Next/).waitFor();
     assert.equal(await page.getByRole('radio', { name: /IQ2_XS|UD-IQ4_XS/ }).count(), 0, 'only the Mac sizes are offered');
     await page.getByText(/不会失败，只是更慢/).first().waitFor();
     await page.getByRole('link', { name: /MAC\.md/ }).first().waitFor();
@@ -136,6 +138,8 @@ try {
     await page.getByText(/gemv/).first().waitFor();
     await page.getByText(/MTP 草稿头没有做去审查/).waitFor();
     await page.getByRole('link', { name: /SC117\/Qwen3\.8-Flash-Next-GSQ-RCO-abliterated-GGUF/ }).waitFor();
+    await page.locator('[data-testid="community-disk"]').getByText(/预计额外占用磁盘/).waitFor();
+    await page.getByText(/以硬链接复用/).waitFor();
     await page.getByRole('radio', { name: /example-user/ }).first().waitFor();
     assert.equal(await page.evaluate(() => window.__fixture.calls.filter(call => call.command === 'hf_models_api' && call.args.path.startsWith('/api/models/ISTA-DASLab')).length), 0, 'official repos are not re-discovered');
   }, { shot: 'catalog-mac-48gb-community.png' });

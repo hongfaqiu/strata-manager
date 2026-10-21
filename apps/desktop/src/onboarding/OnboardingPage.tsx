@@ -13,7 +13,7 @@ import { ManagedPythonPanel } from '../pages/ManagedPythonPanel';
 import { useLocalRuntimePackages } from '../pages/LocalRuntimePackage';
 import { ExistingModelPanel } from '../pages/ExistingModelPanel';
 import { catalogCopy, type CatalogCopy } from '../catalog/catalogCopy';
-import { BlockNote, catalogHardware, CommunityBadge, CommunityRisks, CommunitySource, EstimateCell, MemoryNote, memoryLine, useCommunityModels } from '../catalog/catalogUi';
+import { BlockNote, catalogHardware, MacBlockNotes, CommunityBadge, CommunityDisk, CommunityRisks, CommunitySource, EstimateCell, MemoryNote, memoryLine, useCommunityModels } from '../catalog/catalogUi';
 import { GuideStorageRows } from '../pages/StorageLocation';
 import { fetchArenaGroups, fetchArenaTier } from './arenaPublic';
 import {
@@ -407,7 +407,7 @@ function ModelStep(props: StepProps & { runtimeProfile?: ServiceProfile }) {
         : communityRows.map(row => <ModelRow key={`${row.model.id}-${row.quant}`} name={row.model.name} quant={row.quant} family={row.model.family} downloadGB={row.info.downloadGB} ramGB={row.info.ramGB} tags={[<CommunityBadge key="c" model={row.model} copy={copy}/>]}
           t={t} copy={copy} hardware={hardware} memoryGB={memoryGB} blocked={row.availability.downloadable ? undefined : row.availability.reason === 'orcaImport' ? undefined : copy.block[row.availability.reason as keyof typeof copy.block]}
           selected={selected?.family === core.communityFamily(row.model.id) && selected.quant === row.quant} onSelect={() => props.onProgress({ selection: { family: core.communityFamily(row.model.id), quant: row.quant, context: selected?.context ?? defaultContext(scene), images: false } })}/>)}
-        {scope === 'official' && blockedFamilies.length > 0 && <div className="ob-blocked" data-testid="ob-mac-unavailable"><span className="ob-blocked-head">{copy.macUnavailableHeading}</span>{blockedFamilies.map(model => <div key={model.id} className="ob-blocked-row" aria-disabled="true"><b>{model.name}</b><small>{model.quants.join(' · ')}</small></div>)}<BlockNote reason="macFamily" source={core.UPSTREAM_MAC_LIMITS_SOURCE} copy={copy}/></div>}
+        {scope === 'official' && blockedFamilies.length > 0 && <div className="ob-blocked" data-testid="ob-mac-unavailable"><span className="ob-blocked-head">{copy.macUnavailableHeading}</span>{blockedFamilies.map(model => <div key={model.id} className="ob-blocked-row" aria-disabled="true"><b>{model.name}</b><small>{model.quants.join(' · ')}</small></div>)}<MacBlockNotes models={blockedFamilies} platform={platform} copy={copy}/></div>}
       </div>
       <footer className="ob-links">
         <button type="button" className="ob-link" onClick={props.onOpenCatalog}>{t('obAllModels')}<ArrowRight size={13}/></button>
@@ -426,6 +426,7 @@ function ModelStep(props: StepProps & { runtimeProfile?: ServiceProfile }) {
           <div className="ob-field is-row"><span>{t('obImages')}</span><Toggle ariaLabel={t('obImages')} checked={selected.images && imagesAllowed} disabled={!imagesAllowed} onCheckedChange={images => select({ images })}/></div>
         </div>
         {estimate && <div className="ob-side-sec ob-side-estimate"><h4>{copy.colSpeed}</h4><EstimateCell estimate={estimate} copy={copy}/><small className="ob-note">{copy.basis[estimate.basis]}</small><MemoryNote estimate={estimate} memoryGB={memoryGB} copy={copy}/></div>}
+        {communityRow && canDownload && <div className="ob-side-sec"><CommunityDisk model={communityRow.model} quant={communityRow.quant} copy={copy}/></div>}
         {communityRow && <div className="ob-side-sec"><CommunityRisks model={communityRow.model} copy={copy}/></div>}
         {!communityRow && <div className="ob-side-sec"><h4>{t('obFitHeading')}</h4>
           <ResourceAssessmentPanel compact desktop={props.desktop} language={props.language} request={request} disk={disk.data} diskPending={disk.isPending && disk.fetchStatus !== 'idle'} diskError={disk.error} onRefreshDisk={() => void disk.refetch()} unavailableReason={!runtime ? t('obNeedRuntime') : undefined}/>

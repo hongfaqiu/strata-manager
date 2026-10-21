@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   BUILTIN_COMMUNITY_MODELS, MAC_SETUP_QUANTS, SUPPORTED_QUANTS, communityAvailability, communityFromTree, communityModelName,
-  communityQuantAvailability, communitySetupRequest, inferFamily, platformQuants, isKnownRepo, mergeCommunityModels, officialFamilyBlock, quantOfStem, setupSupports,
+  communityDiskEstimate, communityQuantAvailability, communitySetupRequest, inferFamily, platformQuants, isKnownRepo, mergeCommunityModels, officialFamilyBlock, quantOfStem, setupSupports,
 } from '../src/community-catalog';
 import type { HfTreeEntry } from '../src/community-catalog';
 
@@ -64,8 +64,26 @@ describe('built-in community entries', () => {
   it('greys official Swift / Coder / Qwen3.6 out on Mac only', () => {
     for (const family of ['swift', 'coder', 'qwen36']) expect(officialFamilyBlock(family, 'macos')).toBe('macFamily');
     expect(officialFamilyBlock('qwen', 'macos')).toBeUndefined();
-    expect(officialFamilyBlock('unsloth', 'macos')).toBeUndefined();
+    // setup.py mac_control_setup takes only --family qwen (MAC.md: Unsloth needs the ./setup.sh repack).
+    expect(officialFamilyBlock('unsloth', 'macos')).toBe('macInstaller');
+    expect(officialFamilyBlock('unsloth', 'windows')).toBeUndefined();
     expect(officialFamilyBlock('swift', 'windows')).toBeUndefined();
+  });
+});
+
+describe('community disk estimate', () => {
+  it('counts official-identical shards as reusable and keeps the separate pack and MTP', () => {
+    const alesha = BUILTIN_COMMUNITY_MODELS.find(model => model.id === 'alesha-pro-cvec')!;
+    const sc117 = BUILTIN_COMMUNITY_MODELS.find(model => model.id === 'sc117-abliterated')!;
+    const a = communityDiskEstimate(alesha, 'IQ3_XXS');
+    expect(a.filesGB).toBeCloseTo(75.8, 0);
+    expect(a.officialGB).toBeCloseTo(75.8, 0);          // both shards are ISTA's own bytes
+    expect(a).toMatchObject({ packGB: 2, mtpGB: 8, bestGB: 2 });
+    expect(a.worstGB).toBe(86);
+    const s = communityDiskEstimate(sc117, 'Q2_0');
+    expect(s.officialGB).toBeCloseTo(28.8, 1);           // only the shared n-gram shard 2
+    expect(s.packGB).toBe(40);
+    expect(s.bestGB).toBeLessThan(s.worstGB);
   });
 });
 

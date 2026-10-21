@@ -35,3 +35,4 @@
 .cat-blocked-row small{font:11px var(--st-font-mono);color:var(--st-ink-muted)}
 .cat-model-row-meta{display:block;font-size:12px;color:var(--st-ink-muted);margin-top:2px}
 .model-download-model.cat-is-blocked strong,.model-download-model.cat-is-blocked .model-download-model-icon{opacity:.55}
+.cat-disk{display:grid;gap:4px;margin:12px 0 0;padding:10px 12px;border:1px solid var(--st-line-soft);border-radius:10px}.cat-disk b{font-size:12.5px;font-weight:650}
