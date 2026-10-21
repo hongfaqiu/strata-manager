@@ -246,6 +246,8 @@
   "enabledOn": "ativado",
   "enabledOff": "desativado",
   "nvmlUnavailable": "não é possível ler (NVML)",
+  "aboutGpuReadings": "Leituras da GPU",
+  "gpuReadingsAmd": "Driver AMD ({{source}})",
   "threadsCount": "{{count}} threads",
   "openAiBase": "URL base do OpenAI",
   "anthropicBase": "URL base do Anthropic",

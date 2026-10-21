@@ -246,6 +246,8 @@
   "enabledOn": "켬",
   "enabledOff": "끔",
   "nvmlUnavailable": "읽을 수 없음(NVML)",
+  "aboutGpuReadings": "GPU 측정값",
+  "gpuReadingsAmd": "AMD 드라이버({{source}})",
   "threadsCount": "스레드 {{count}}개",
   "openAiBase": "OpenAI 기본 URL",
   "anthropicBase": "Anthropic 기본 URL",

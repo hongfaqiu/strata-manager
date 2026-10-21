@@ -22,6 +22,7 @@
 | 存在多个配置 | 同一模型卡片下切换配置，核对路径、修改日期和当前/上次使用标记；仅查看配置不会切换运行服务 |
 | 运行中实例无法接管 | 等待原请求结束并阅读身份诊断；身份不明或繁忙的进程不会被强行停止 |
 | Mac 显卡显示「未检测到」或「未实测」 | Apple 芯片的 GPU 与系统共用统一内存，显示为「统一内存 … GB，GPU 最多可用约 … GB」，不会单独列出显存。在 Strata 页点「刷新」重新检测；仍未显示时，在终端运行 `system_profiler SPDisplaysDataType -json` 和 `ioreg -l -w0 -r -c IOAccelerator`，把输出附在反馈里。Intel Mac 的 AMD/Intel 显卡会显示名称，但 Strata 不使用它们 |
+| AMD 显卡的监控显示「–」或「AMD 驱动未提供此项」 | 引擎只能读 NVIDIA 显卡；AMD 显卡的负载、显存、温度、功耗、频率由管理器从驱动读取（本机服务才会补充）。Windows 需要安装 AMD Adrenalin 驱动（`C:\Windows\System32\amdadlx64.dll` 存在），驱动或显卡不支持的项目显示「AMD 驱动未提供此项」；Linux 使用内核 amdgpu 驱动的 `/sys/class/drm/card*/device` 文件。「关于」页的「GPU 读数」显示当前数据来源 |
 | Mac / Linux 提示「需要 Python 3.10+」 | macOS 自带 Python 3.9。在提示处点「一键安装 Python」，装好后点「重新检测」或「重试安装」；GitHub 慢时把下载来源换成 GitHub 代理。已下载的部分会保留 |
 | Linux 依赖或崩溃保护不可用 | 按提示检查 Python、venv、内核及系统限制；应用不执行 sudo 或绕过系统限制 |
 

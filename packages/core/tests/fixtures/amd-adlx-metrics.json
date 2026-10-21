@@ -1,0 +1,17 @@
+{
+  "live": { "state": "idle", "queued": 0, "running": 0 },
+  "hardware": {
+    "cpu": 2.0, "ram_used": 30064771072, "ram_total": 68719476736,
+    "gpu_util": 87.0, "gpu_mem_used": 21474836480, "gpu_mem_total": 25769803776,
+    "gpu_temp": 64.0, "gpu_hotspot_temp": 79.0, "gpu_power": 312.0,
+    "gpu_clock_mhz": 2500.0, "gpu_mem_clock_mhz": 1250.0, "gpu_fan_rpm": 1450.0,
+    "gpu_pcie_gen_max": 4.0, "gpu_pcie_width": 16.0,
+    "gpus": [{ "index": 0, "name": "AMD Radeon RX 7900 XTX", "util": 87.0, "mem_used": 21474836480, "mem_total": 25769803776, "temp": 64.0, "hotspot_temp": 79.0, "power": 312.0, "clock_mhz": 2500.0, "mem_clock_mhz": 1250.0, "fan_rpm": 1450.0 }]
+  },
+  "hardware_static": {
+    "gpu_name": "AMD Radeon RX 7900 XTX", "gpu_count": 1, "gpu_vram_total_mib": 24576,
+    "gpu_note": null, "gpu_note_engine": "Windows AMD: no NVML", "gpu_telemetry_source": "amd-adlx",
+    "cores": 12, "threads": 24, "psutil": true
+  },
+  "history": { "cpu": [1, 2, 2], "gpu_util": [null, 10, 87], "gpu_temp": [null, 50, 64] }
+}

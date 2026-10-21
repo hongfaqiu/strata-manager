@@ -246,6 +246,8 @@
   "enabledOn": "an",
   "enabledOff": "aus",
   "nvmlUnavailable": "nicht auslesbar (NVML)",
+  "aboutGpuReadings": "GPU-Messwerte",
+  "gpuReadingsAmd": "AMD-Treiber ({{source}})",
   "threadsCount": "{{count}} Threads",
   "openAiBase": "OpenAI-Basis-URL",
   "anthropicBase": "Anthropic-Basis-URL",
