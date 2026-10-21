@@ -23,6 +23,7 @@
 | 运行中实例无法接管 | 等待原请求结束并阅读身份诊断；身份不明或繁忙的进程不会被强行停止 |
 | Mac 显卡显示「未检测到」或「未实测」 | Apple 芯片的 GPU 与系统共用统一内存，显示为「统一内存 … GB，GPU 最多可用约 … GB」，不会单独列出显存。在 Strata 页点「刷新」重新检测；仍未显示时，在终端运行 `system_profiler SPDisplaysDataType -json` 和 `ioreg -l -w0 -r -c IOAccelerator`，把输出附在反馈里。Intel Mac 的 AMD/Intel 显卡会显示名称，但 Strata 不使用它们 |
 | Mac / Linux 提示「需要 Python 3.10+」 | macOS 自带 Python 3.9。在提示处点「一键安装 Python」，装好后点「重新检测」或「重试安装」；GitHub 慢时把下载来源换成 GitHub 代理。已下载的部分会保留 |
+| Windows AMD 显卡装成了 CUDA 引擎，或准备模型时提示「no ready-made AMD engine」（404） | 新装的运行环境现在按显卡选包：只检测到 AMD 显卡时安装对应的 HIP 引擎包（RX 9000/R9700 选 RX 9070 包，RX 7000/Strix Halo 选 RDNA3 包），核显会被忽略。已装成 CUDA 的旧运行环境请重新安装一个运行环境。准备模型时 Manager 会把已校验的官方 HIP 引擎标记为可直接使用，安装器不再去下载已停止发布的旧 ZIP |
 | Linux 依赖或崩溃保护不可用 | 按提示检查 Python、venv、内核及系统限制；应用不执行 sudo 或绕过系统限制 |
 
 已有模型导入不需要再次下载整套权重。新准备的空间估算不代表 RAM、VRAM、驱动和所有依赖都已就绪。

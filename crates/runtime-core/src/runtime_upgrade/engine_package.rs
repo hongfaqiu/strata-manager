@@ -592,6 +592,95 @@ pub fn verify_extracted(
     Ok(())
 }
 
+/// `BUILD.json` key that keeps the package's own `source` after [`mark_hip_engine_for_setup`].
+pub const ORIGINAL_SOURCE_KEY: &str = "strata_manager_original_source";
+
+/// Upstream `setup.py` (0.2.x, Windows) only reuses a HIP engine in `engine/` whose
+/// `BUILD.json` says `"source": "prebuilt"`; otherwise it downloads the retired
+/// `strata-windows-x64-hip.zip` and fails with HTTP 404. The official 0.2+ HIP packages
+/// Manager installs say `"source": "f-021-rel"` (#103). For an untouched official
+/// Windows HIP package (signed manifest verified, `BUILD.json` equal to its listed
+/// digest) this sets `source` to `prebuilt` and keeps the original value under
+/// [`ORIGINAL_SOURCE_KEY`]. Anything else is left alone. Returns whether it wrote.
+pub fn mark_hip_engine_for_setup(engine: &Path) -> Result<bool, String> {
+    let build_path = engine.join("BUILD.json");
+    let Ok(build_bytes) = std::fs::read(&build_path) else {
+        return Ok(false);
+    };
+    if build_bytes.len() > 64 * 1024 {
+        return Ok(false);
+    }
+    let Ok(Value::Object(mut build)) = serde_json::from_slice::<Value>(&build_bytes) else {
+        return Ok(false);
+    };
+    let source = build
+        .get("source")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_owned();
+    if build.get("backend").and_then(Value::as_str) != Some("hip")
+        || source == "prebuilt"
+        || source.starts_with("local")
+        || build.contains_key(ORIGINAL_SOURCE_KEY)
+    {
+        return Ok(false);
+    }
+    let mut manifest = Vec::new();
+    match File::open(engine.join(MANIFEST_NAME)) {
+        Ok(file) => {
+            file.take(MAX_MANIFEST_BYTES + 1)
+                .read_to_end(&mut manifest)
+                .map_err(|e| e.to_string())?;
+        }
+        Err(_) => return Ok(false),
+    }
+    if manifest.len() as u64 > MAX_MANIFEST_BYTES {
+        return Ok(false);
+    }
+    let Ok(manifest) = serde_json::from_slice::<Value>(&manifest) else {
+        return Ok(false);
+    };
+    if manifest["id"].as_str() != Some("strata-engine")
+        || manifest["platform"].as_str() != Some("windows-x86_64")
+        || manifest["backend"].as_str() != Some("hip")
+    {
+        return Ok(false);
+    }
+    let mut body = manifest.clone();
+    let Some(signature) = body.as_object_mut().and_then(|map| map.remove("signature")) else {
+        return Ok(false);
+    };
+    let mut payload = String::new();
+    canonical_json(&body, &mut payload)?;
+    if verify_signature(&signature, payload.as_bytes(), "引擎清单").is_err() {
+        return Ok(false);
+    }
+    let listed = manifest["files"].as_array().and_then(|files| {
+        files
+            .iter()
+            .find(|file| file["path"].as_str() == Some("BUILD.json"))
+    });
+    let digest = format!("{:x}", Sha256::digest(&build_bytes));
+    if !listed.is_some_and(|file| {
+        file["sha256"]
+            .as_str()
+            .is_some_and(|sha| sha.eq_ignore_ascii_case(&digest))
+            && file["bytes"].as_u64() == Some(build_bytes.len() as u64)
+    }) {
+        return Ok(false);
+    }
+    build.insert(ORIGINAL_SOURCE_KEY.into(), Value::String(source));
+    build.insert("source".into(), Value::String("prebuilt".into()));
+    let text = serde_json::to_vec_pretty(&Value::Object(build)).map_err(|e| e.to_string())?;
+    let temporary = engine.join("BUILD.json.strata-manager.tmp");
+    std::fs::write(&temporary, text).map_err(|e| e.to_string())?;
+    if let Err(error) = std::fs::rename(&temporary, &build_path) {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(error.to_string());
+    }
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -602,6 +691,77 @@ mod tests {
     const RELEASE: &str = include_str!("fixtures/release-v0.2.0-beta.json");
     const CUDA13_MANIFEST: &[u8] = include_bytes!("fixtures/manifest-windows-cuda13.json");
     const NOW: u64 = 1_792_400_000_000;
+    /// The real v0.2.1 Windows HIP RX 9070 package: its signed manifest and `BUILD.json` (#103).
+    const HIP_MANIFEST: &[u8] = include_bytes!("fixtures/manifest-windows-hip-rx9070.json");
+    const HIP_BUILD: &[u8] = include_bytes!("fixtures/build-windows-hip-rx9070.json");
+
+    #[test]
+    fn official_windows_hip_engine_is_marked_prebuilt_for_setup_once() {
+        let temp = tempfile::tempdir().unwrap();
+        let engine = temp.path();
+        std::fs::write(engine.join(MANIFEST_NAME), HIP_MANIFEST).unwrap();
+        std::fs::write(engine.join("BUILD.json"), HIP_BUILD).unwrap();
+        assert!(mark_hip_engine_for_setup(engine).unwrap());
+        let build: Value =
+            serde_json::from_slice(&std::fs::read(engine.join("BUILD.json")).unwrap()).unwrap();
+        assert_eq!(build["source"], "prebuilt");
+        assert_eq!(build[ORIGINAL_SOURCE_KEY], "f-021-rel");
+        // Everything setup.py checks besides `source` is unchanged.
+        let original: Value = serde_json::from_slice(HIP_BUILD).unwrap();
+        for key in [
+            "backend",
+            "version",
+            "archs",
+            "lib_dirs",
+            "vision_gpu",
+            "commit",
+        ] {
+            assert_eq!(build[key], original[key], "{key}");
+        }
+        // Already marked: nothing more to write.
+        assert!(!mark_hip_engine_for_setup(engine).unwrap());
+        assert!(!engine.join("BUILD.json.strata-manager.tmp").exists());
+    }
+
+    #[test]
+    fn hip_marking_leaves_other_engines_alone() {
+        let temp = tempfile::tempdir().unwrap();
+        let engine = temp.path();
+        // No engine at all.
+        assert!(!mark_hip_engine_for_setup(engine).unwrap());
+        // A BUILD.json edited by hand no longer matches the signed digest.
+        std::fs::write(engine.join(MANIFEST_NAME), HIP_MANIFEST).unwrap();
+        let edited = String::from_utf8(HIP_BUILD.to_vec())
+            .unwrap()
+            .replace("gfx1200", "gfx1100");
+        std::fs::write(engine.join("BUILD.json"), &edited).unwrap();
+        assert!(!mark_hip_engine_for_setup(engine).unwrap());
+        assert_eq!(
+            std::fs::read_to_string(engine.join("BUILD.json")).unwrap(),
+            edited
+        );
+        // A tampered manifest fails its signature.
+        std::fs::write(engine.join("BUILD.json"), HIP_BUILD).unwrap();
+        let tampered = String::from_utf8(HIP_MANIFEST.to_vec())
+            .unwrap()
+            .replace("gfx1201", "gfx1100");
+        std::fs::write(engine.join(MANIFEST_NAME), tampered).unwrap();
+        assert!(!mark_hip_engine_for_setup(engine).unwrap());
+        // A CUDA package and a local HIP build are not touched.
+        std::fs::write(engine.join(MANIFEST_NAME), CUDA13_MANIFEST).unwrap();
+        std::fs::write(
+            engine.join("BUILD.json"),
+            br#"{"version":"0.1.45.3","cuda":"13.0"}"#,
+        )
+        .unwrap();
+        assert!(!mark_hip_engine_for_setup(engine).unwrap());
+        std::fs::write(
+            engine.join("BUILD.json"),
+            br#"{"source":"local-hip","backend":"hip","version":"0.1.46"}"#,
+        )
+        .unwrap();
+        assert!(!mark_hip_engine_for_setup(engine).unwrap());
+    }
 
     #[test]
     fn package_names_parse_exactly_and_map_to_manager_variants() {

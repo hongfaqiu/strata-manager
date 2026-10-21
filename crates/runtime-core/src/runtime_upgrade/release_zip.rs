@@ -656,6 +656,10 @@ fn choose_asset_with(
         let (mut asset, reason) = gpu_select::pick(&pool, &probe())?;
         asset.match_reason = Some(reason);
         Some(asset)
+    } else if platform == "windows-x86_64" && previous.is_none() {
+        // No engine yet on Windows: an AMD-only computer gets its HIP package instead of
+        // the CUDA default (#103). Anything else keeps CUDA 13 as before.
+        windows_first_asset(&info.assets, &probe())?
     } else if previous == Some(HIP_MULTI) {
         // The old multi-family HIP ZIP has a direct successor only while upstream still
         // publishes it; otherwise the user picks RX 9000 or RX 7000 / Strix Halo.
@@ -678,6 +682,33 @@ fn choose_asset_with(
         );
     }
     Ok(asset)
+}
+
+/// First engine for a Windows runtime. With an AMD GPU and no NVIDIA one the detected
+/// AMD architecture decides (a legacy multi-family HIP ZIP when the release still has
+/// one); when it cannot, the user picks the package. Otherwise CUDA 13, as before.
+fn windows_first_asset(
+    assets: &[RuntimeReleaseAsset],
+    probe: &gpu_select::GpuProbe,
+) -> Result<Option<RuntimeReleaseAsset>, String> {
+    let nvidia = probe.nvidia_driver.is_some() || !probe.nvidia_caps.is_empty();
+    if nvidia || probe.amd_gfx.is_empty() {
+        return Ok(assets.iter().find(|a| a.variant == "cuda13").cloned());
+    }
+    if let Some(legacy) = assets
+        .iter()
+        .find(|a| a.variant == "hip" && engine_package::legacy_variant(&a.name).is_some())
+    {
+        return Ok(Some(legacy.clone()));
+    }
+    let pool: Vec<RuntimeReleaseAsset> = assets
+        .iter()
+        .filter(|a| a.variant.starts_with("hip"))
+        .cloned()
+        .collect();
+    let (mut asset, reason) = gpu_select::pick(&pool, probe)?;
+    asset.match_reason = Some(reason);
+    Ok(Some(asset))
 }
 
 fn version_parts(version: &str) -> Option<(Vec<u32>, bool, String)> {
@@ -1127,6 +1158,8 @@ fn engine_file_allowed(relative: &str) -> bool {
             "rocm/",
             "hipblaslt/",
             "rocblas/",
+            // hipBLASLt tuning tables of the 0.2+ HIP packages (`tuning/gfx1201-hipblaslt-100500.txt`, #103).
+            "tuning/",
         ]
         .iter()
         .any(|prefix| relative.starts_with(prefix))
