@@ -1,5 +1,5 @@
 import { asObject } from './errors';
-import type { JsonObject } from './types';
+import type { EnvironmentInfo, GpuDetail, JsonObject } from './types';
 
 /** One card from the official `/metrics` `hardware.gpus` records (bytes, %, °C, W). */
 export interface GpuCard { index: number; name: string | null; memUsed: number | null; memTotal: number | null; util: number | null; temp: number | null; power: number | null }
@@ -35,4 +35,16 @@ export function gpuSetName(raw: unknown): string | null {
   const cards = gpuCards(raw);
   if (cards.length > 1 && names.length === 1) return `${cards.length}× ${names[0]}`;
   return names.length ? gpuSummary(names) : null;
+}
+
+/**
+ * The Apple Silicon GPU of this machine, if any. Its memory is the system RAM (unified), so callers must not add
+ * it to RAM as if it were separate VRAM. `liveGpuName` (upstream `hardware_static.gpu_name`) covers a running
+ * service when the environment probe is unavailable; an Apple vendor name is enough, no chip list is kept.
+ */
+export function unifiedGpu(environment?: Pick<EnvironmentInfo, 'gpuDetails'> | null): GpuDetail | undefined {
+  return environment?.gpuDetails?.find(gpu => gpu.unifiedMemory && gpu.vendor === 'apple');
+}
+export function isUnifiedGpuName(name: unknown): boolean {
+  return typeof name === 'string' && /^Apple\b/i.test(name.trim());
 }

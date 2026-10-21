@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Activity, AlertTriangle, ArrowRight, Boxes, Check, ChevronDown, Copy, Cpu, MemoryStick, MessageSquare, MonitorSmartphone, Plug, RefreshCw, RotateCcw, Settings2, SlidersHorizontal } from 'lucide-react';
-import { gpuCards, gpuSetName, modelLoadNotice, normalizeBaseUrl, type AppLanguage, type BackgroundHealthSnapshot, type JsonObject, type MetricSnapshot, type ProcessStatus, type ServiceProfile, type TaskStatus } from '@strata-manager/core';
+import { gpuCards, gpuSetName, isUnifiedGpuName, modelLoadNotice, normalizeBaseUrl, type AppLanguage, type BackgroundHealthSnapshot, type JsonObject, type MetricSnapshot, type ProcessStatus, type ServiceProfile, type TaskStatus } from '@strata-manager/core';
 import { ApiIntegrationDialog } from '../ApiIntegrationDialog';
 import { useOverviewUsage } from './OverviewUsage';
 import './overview-dashboard.css';
@@ -90,6 +90,8 @@ export function OverviewDashboard(props: OverviewDashboardProps) {
   const vramOther = vramUsed === null ? null : Math.max(0, vramUsed - (experts ?? 0)), ramOther = ramUsed === null ? null : Math.max(0, ramUsed - (parked ?? 0));
   const width = (v: number | null, total: number | null) => v !== null && total ? `${Math.max(0, Math.min(100, v / total * 100))}%` : '0%';
   const cards = gpuCards(raw), multiGpu = cards.length > 1, gpuName = gpuSetName(raw) ?? 'GPU', powerLimit = num(hw.gpu_power_limit);
+  // Apple Silicon: upstream reports the Metal working set of the unified memory, not VRAM, and there is no PCIe link.
+  const unifiedGpu = isUnifiedGpuName(gpuName);
   const loadNotice = modelLoadNotice({ online, loaded: health.loaded, metric, loadingSince: props.loadingSince });
   const lastRequest = metric?.requests[0];
   const capacity = num(engine.max_context) ?? num(health.max_context);
@@ -159,7 +161,7 @@ export function OverviewDashboard(props: OverviewDashboardProps) {
 
     <section className={`ovw-map${stopped ? ' is-off' : ''}`} aria-label={t('ovHardware')}>
       <div className="ovw-dev ovw-dev-gpu">
-        <div className="ovw-dev-head"><MonitorSmartphone size={15} aria-hidden="true" /><strong title={typeof hwStatic.gpu_name === 'string' ? hwStatic.gpu_name : undefined}>{gpuName}</strong><span className="ovw-grow" /><span className="ovw-dev-key">{t('ovVram')}</span><b className={`ovw-num ovw-dev-value t-${toneOf(vramPct, T.memoryWarn, T.memoryBad)}`}>{gib(vramUsed)}<small> / {gib(vramTotal, 0)} GB</small></b></div>
+        <div className="ovw-dev-head"><MonitorSmartphone size={15} aria-hidden="true" /><strong title={typeof hwStatic.gpu_name === 'string' ? hwStatic.gpu_name : undefined}>{gpuName}</strong><span className="ovw-grow" /><span className="ovw-dev-key">{t(unifiedGpu ? 'd2UnifiedGpu' : 'ovVram')}</span><b className={`ovw-num ovw-dev-value t-${toneOf(vramPct, T.memoryWarn, T.memoryBad)}`}>{gib(vramUsed)}<small> / {gib(vramTotal, 0)} GB</small></b></div>
         <div className={`ovw-mem t-${toneOf(vramPct, T.memoryWarn, T.memoryBad)}`} role="meter" aria-label={t('ovVram')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={vramPct === null ? undefined : Math.round(vramPct)}>
           {experts !== null && <i className="seg-a" style={{ width: width(experts, vramTotal) }} />}<i className="seg-b" style={{ width: width(vramOther, vramTotal) }} /><s style={{ left: `${T.memoryWarn}%` }} />
         </div>
@@ -182,7 +184,7 @@ export function OverviewDashboard(props: OverviewDashboardProps) {
       </div>
       <div className={`ovw-bus${generating ? ' is-on' : ''}`} aria-hidden="true">
         <span className="ovw-bus-line" />
-        <b className="ovw-num">{num(hw.gpu_pcie_gen) !== null ? `PCIe ${hw.gpu_pcie_gen}.0` : 'PCIe'}{num(hw.gpu_pcie_width) !== null ? ` ×${hw.gpu_pcie_width}` : ''}</b>
+        {unifiedGpu ? <b className="ovw-num">{t('d2OnChip')}</b> : <b className="ovw-num">{num(hw.gpu_pcie_gen) !== null ? `PCIe ${hw.gpu_pcie_gen}.0` : 'PCIe'}{num(hw.gpu_pcie_width) !== null ? ` ×${hw.gpu_pcie_width}` : ''}</b>}
         {num(hw.gpu_pcie_rx_mb) !== null && <small className="ovw-num">↓ {fmt(hw.gpu_pcie_rx_mb, 0)} MB/s</small>}
         {multiGpu && num(hw.gpu_pcie_gen) !== null && <small>{t('ovPcieFirstCard')}</small>}
       </div>

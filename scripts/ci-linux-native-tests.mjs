@@ -24,6 +24,8 @@ export const IGNORED_POLICY = Object.freeze({
   'strata-manager:arena::tests::live_register_submit_withdraw': 'Explicit live Arena register/submit/withdraw acceptance; requires a build with STRATA_ARENA_APP_KEY.',
   'strata-manager:configuration_details::tests::live_configuration_match_preserves_the_existing_owned_model': 'Explicit read-only acceptance against the user running supervisor.',
   'strata-runtime-core:discovery::tests::live_installation_discovery_is_read_only': 'Explicit live read-only installation verification.',
+  'strata-runtime-core:installation::managed_python::tests::live_install_is_used_by_runtime_preparation': 'Explicit live pinned python-build-standalone download (official or STRATA_PBS_SOURCE proxy) into a temporary data directory; size and SHA-256 enforced, no runtime install.',
+  'strata-runtime-core:installation::managed_python::tests::real_archive_extracts_and_passes_the_install_probe': 'Separately downloaded python-build-standalone archive supplied through STRATA_PBS_ARCHIVE; bounded extraction and interpreter probe only.',
   'strata-runtime-core:installation::tests::official_archive_prepares_without_git_and_returns_only_a_setup_profile': 'Separately verified official source archive and real private venv; no model download.',
   'strata-runtime-core:model_inspect::tests::isolated_inspect_task_reports_output_and_cancels_without_model_start': 'Explicit isolated Python process fixture requiring an absolute interpreter.',
   'strata-runtime-core:runtime_upgrade::release_zip::download_check::tests::live_official_download_source_probe_readonly': 'Explicit live official/proxy source acceptance; current network metadata and at most 64 KiB per source, without runtime mutation.',

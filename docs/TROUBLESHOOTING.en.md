@@ -21,6 +21,8 @@ This page describes the current source; published betas have their own release n
 | Downloads or dependencies fail | Read the failed download/dependency log, check network, proxy and directory access, then retry after correcting the cause. |
 | Multiple configurations found | Switch configurations within the model card and check paths, modification dates and current/last-used markers. Viewing a configuration does not switch the running service. |
 | Running installation cannot be taken over | Let active work finish and read identity diagnostics. Unknown or busy processes are not forcibly stopped. |
+| A Mac's GPU shows "not detected" or "Not measured" | Apple GPUs share unified memory with the system, shown as "… GB unified memory; the GPU can use about … GB" rather than separate VRAM. Click Refresh on the Strata page to detect again. If it is still missing, run `system_profiler SPDisplaysDataType -json` and `ioreg -l -w0 -r -c IOAccelerator` in Terminal and attach the output to your report. Intel Macs show their AMD/Intel GPU names, but Strata does not use those GPUs. |
+| Mac / Linux says "Python 3.10+ is required" | macOS ships Python 3.9. Choose **Install Python** where the message appears, then **Check again** or **Retry installation**. If GitHub is slow, switch the download source to a GitHub proxy; partial downloads are kept. |
 | Linux dependencies or containment are unavailable | Follow diagnostics for Python, venv, kernel and system restrictions. Manager does not run sudo or bypass these restrictions. |
 
 Importing an existing model does not require another full weights download. Disk estimates do not establish RAM, VRAM, driver or dependency readiness.

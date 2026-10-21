@@ -322,6 +322,9 @@ export const restartService = (profile: ServiceProfile): Promise<ProcessStatus> 
 export const takeOverService = (profile: ServiceProfile): Promise<ProcessStatus> => native('take_over_service', { profile });
 export const readLogs = (profile: ServiceProfile, limit = 200): Promise<LogEntry[]> => native('read_logs', { profile, limit });
 export const environmentInfo = (): Promise<EnvironmentInfo> => native('environment_info');
+export const managedPythonStatus = (): Promise<import('./managed-python').ManagedPythonStatus> => native('managed_python_status');
+/** `source` is an optional HTTPS proxy template with `{url}`; the archive digest is fixed in the backend. */
+export const installManagedPython = (source?: string): Promise<TaskStatus> => native('install_managed_python', source ? { source } : {});
 /** `localModel` (#75 「使用已有模型」): the chosen `--gguf-dir` and optional MTP folder, checked before the estimate. */
 export const setupDiskPreflight = (profile: ServiceProfile, model: string, quant: string, images: boolean, localModel?: import('./local-model').LocalModelRequest): Promise<SetupDiskPreflight> => native('setup_disk_preflight', { profile, model, quant, images, ...(localModel ? { localModel } : {}) });
 export const runSetup = (profile: ServiceProfile, model: string, quant: string, context: number, images: boolean, options?: OfficialSetupOptions, localModel?: import('./local-model').LocalModelRequest): Promise<TaskStatus> => native('run_setup', { profile, model, quant, context, images, ...(options ? { options } : {}), ...(localModel ? { localModel } : {}) });

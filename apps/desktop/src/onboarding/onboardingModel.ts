@@ -79,7 +79,7 @@ export function parseGpu(value: string): ParsedGpu {
 }
 
 export type CheckState = 'ok' | 'warn' | 'fail';
-export interface EnvironmentCheck { id: 'system' | 'gpu' | 'memory' | 'python'; state: CheckState; value: string; detail?: string }
+export interface EnvironmentCheck { id: 'system' | 'gpu' | 'memory' | 'python'; state: CheckState; value: string; detail?: string; params?: Record<string, number> }
 const GB = 1024 ** 3;
 export const smallestCatalogRamGB = () => Math.min(...core.MODEL_CATALOG.flatMap(model => Object.values(model.quantInfo).map(info => info.ramGB)));
 
@@ -88,20 +88,46 @@ export function environmentChecks(info: core.EnvironmentInfo): EnvironmentCheck[
   const windows = /windows/i.test(info.os);
   const arch64 = /x86_64|amd64|x64|aarch64|arm64/i.test(info.arch);
   const gpus = info.gpus.map(parseGpu);
+  const apple = core.unifiedGpu(info);
   const memoryGB = info.totalMemory > 0 ? info.totalMemory / GB : 0;
   const minimum = smallestCatalogRamGB();
   const python = info.python?.match(/(\d+)\.(\d+)/);
   const pythonOk = !!python && (Number(python[1]) > 3 || Number(python[1]) === 3 && Number(python[2]) >= 10);
   return [
     { id: 'system', state: arch64 ? 'ok' : 'fail', value: `${info.os} · ${info.arch}`, detail: arch64 ? undefined : 'arch' },
-    gpus.length
+    apple ? appleGpuCheck(apple)
+    : gpus.length
       ? { id: 'gpu', state: gpus.some(gpu => gpu.nvidia) ? 'ok' : 'warn', value: gpus.map(gpu => gpu.vramGB ? `${gpu.name} · ${gpu.vramGB} GB` : gpu.name).join(' / '), detail: gpus.some(gpu => gpu.nvidia) ? (gpus.find(gpu => gpu.nvidia)?.driver ? `driver:${gpus.find(gpu => gpu.nvidia)!.driver}` : undefined) : 'nonNvidia' }
       : { id: 'gpu', state: 'warn', value: '', detail: 'noGpu' },
     { id: 'memory', state: !memoryGB ? 'warn' : memoryGB * .8 >= minimum ? 'ok' : 'warn', value: memoryGB ? `${Math.round(memoryGB)} GB` : '', detail: !memoryGB ? 'unknown' : memoryGB * .8 >= minimum ? undefined : 'low' },
     windows
       ? { id: 'python', state: 'ok', value: info.python ?? '', detail: info.python ? undefined : 'bundled' }
-      : { id: 'python', state: pythonOk ? 'ok' : 'fail', value: info.python ?? '', detail: pythonOk ? undefined : 'required' },
+      : { id: 'python', state: pythonOk ? 'ok' : 'fail', value: info.python ?? '', detail: pythonOk ? (info.pythonManaged ? 'managed' : undefined) : 'required' },
   ];
+}
+/**
+ * Apple Silicon: the GPU is on the chip and uses the unified memory pool. It runs Strata's Metal engine, so it is
+ * not a "no GPU / non-NVIDIA" warning. Without a Metal family (e.g. a VM's paravirtual GPU) it stays a warning.
+ */
+function appleGpuCheck(gpu: core.GpuDetail): EnvironmentCheck {
+  const gib = (bytes?: number) => bytes && bytes > 0 ? Math.round(bytes / GB) : 0;
+  const params: Record<string, number> = {};
+  if (gpu.cores) params.cores = gpu.cores;
+  if (gib(gpu.memoryBytes)) params.total = gib(gpu.memoryBytes);
+  if (gib(gpu.gpuBudgetBytes)) params.budget = gib(gpu.gpuBudgetBytes);
+  return { id: 'gpu', state: gpu.metal ? 'ok' : 'warn', value: appleGpuValue(gpu), detail: gpu.metal ? 'appleUnified' : 'appleNoMetal', params };
+}
+/** "Apple M5 Pro · Metal 4": facts that need no translation. */
+export function appleGpuValue(gpu: core.GpuDetail): string {
+  return gpu.metal ? `${gpu.name} · Metal ${gpu.metal}` : gpu.name;
+}
+/** One GPU row value for the guide entry, Apple-aware; NVIDIA rows keep "<name> · <VRAM> GB". */
+export function gpuRowValue(info: core.EnvironmentInfo | undefined): string | undefined {
+  if (!info) return undefined;
+  const apple = core.unifiedGpu(info);
+  if (apple) return appleGpuValue(apple);
+  const gpus = info.gpus.map(parseGpu);
+  return gpus.length ? gpus.map(gpu => gpu.vramGB ? `${gpu.name} · ${gpu.vramGB} GB` : gpu.name).join(' / ') : undefined;
 }
 export function environmentVerdict(checks: EnvironmentCheck[] | undefined): 'loading' | 'pass' | 'warn' | 'fail' {
   if (!checks) return 'loading';

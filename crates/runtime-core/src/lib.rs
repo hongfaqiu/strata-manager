@@ -1,4 +1,5 @@
 pub mod analytics;
+pub mod apple_gpu;
 pub mod benchmark_identity;
 mod byte_size;
 pub mod chat_runtime;
@@ -1213,6 +1214,14 @@ impl RuntimeState {
                 arg(&params, "external")?,
             )),
             "install_runtime" => value(install_runtime(&self, arg(&params, "directory")?)),
+            "managed_python_status" => value(installation::managed_python::status(&self)),
+            "install_managed_python" => value(installation::managed_python::start(
+                self.clone(),
+                params
+                    .get("source")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+            )),
             "update_runtime" => value(runtime_upgrade::start(self.clone(), profile()?.id)),
             "engine_help_flags" => value(engine_help::flags(&profile()?)),
             "update_runtime_zip"
@@ -3236,6 +3245,20 @@ fn collect_environment() -> EnvironmentInfo {
     if gpus.is_empty() {
         gpus = display_adapters::windows_gpu_names().unwrap_or_default();
     }
+    // macOS has no nvidia-smi: Apple Silicon GPUs come from system_profiler/IOKit (unified memory).
+    let gpu_details = if gpus.is_empty() && cfg!(target_os = "macos") {
+        apple_gpu::probe(system.total_memory())
+    } else {
+        Vec::new()
+    };
+    let gpus = if gpus.is_empty() {
+        gpu_details
+            .iter()
+            .map(apple_gpu::environment_line)
+            .collect()
+    } else {
+        gpus
+    };
     EnvironmentInfo {
         os: sysinfo::System::long_os_version().unwrap_or_else(|| std::env::consts::OS.into()),
         arch: std::env::consts::ARCH.into(),
@@ -3247,9 +3270,11 @@ fn collect_environment() -> EnvironmentInfo {
         total_memory: system.total_memory(),
         available_memory: system.available_memory(),
         gpus,
+        gpu_details,
         python: output("py", &["--version"])
             .or_else(|| output("python", &["--version"]))
             .or_else(|| output("python3", &["--version"])),
+        python_managed: false,
         git: output("git", &["--version"]),
         app_version: env!("CARGO_PKG_VERSION").into(),
     }
@@ -3262,7 +3287,14 @@ pub(crate) fn cached_environment(state: &RuntimeState) -> EnvironmentInfo {
             }
         }
     }
-    let info = collect_environment();
+    let mut info = collect_environment();
+    // Report the interpreter Strata will actually use after a one-click install.
+    if let Some(python) = installation::managed_python::installed_interpreter(state.data_dir()) {
+        if let Some(version) = output(&python.to_string_lossy(), &["--version"]) {
+            info.python = Some(version);
+            info.python_managed = true;
+        }
+    }
     if let Ok(mut cache) = state.environment_cache.lock() {
         *cache = Some((now(), info.clone()));
     }

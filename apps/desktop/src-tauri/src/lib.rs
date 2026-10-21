@@ -658,6 +658,27 @@ async fn environment_info(state: State<'_, ClientState>) -> Result<Value, String
 }
 
 #[tauri::command]
+async fn managed_python_status(state: State<'_, ClientState>) -> Result<Value, String> {
+    state
+        .ipc
+        .request("managed_python_status", json!({}))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn install_managed_python(
+    state: State<'_, ClientState>,
+    source: Option<String>,
+) -> Result<Value, String> {
+    state
+        .ipc
+        .request("install_managed_python", json!({ "source": source }))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn setup_disk_preflight(
     state: State<'_, ClientState>,
     profile: ServiceProfile,
@@ -2062,6 +2083,8 @@ pub fn run() {
             service_status,
             read_logs,
             environment_info,
+            managed_python_status,
+            install_managed_python,
             daily_experience::assess_setup_resources,
             daily_experience::benchmark_identity,
             service_sharing::service_sharing_status,

@@ -255,9 +255,29 @@ export interface EnvironmentInfo {
   totalMemory: number;
   availableMemory: number;
   gpus: string[];
+  /** Structured GPU facts (macOS): Apple Silicon unified memory, core count and Metal family. Absent elsewhere. */
+  gpuDetails?: GpuDetail[];
   python: string | null;
+  /** `python` is the app-private interpreter installed with one click (macOS / Linux). */
+  pythonManaged?: boolean;
   git: string | null;
   appVersion: string;
+}
+
+/** One GPU as the native probe saw it (`system_profiler` / IOKit on macOS). Bytes are binary (GiB = 2^30). */
+export interface GpuDetail {
+  name: string;
+  vendor: 'apple' | 'amd' | 'intel' | 'nvidia' | 'unknown' | string;
+  cores?: number;
+  /** Apple Silicon: the GPU shares system RAM; `memoryBytes` is then the whole unified pool, not extra VRAM. */
+  unifiedMemory: boolean;
+  memoryBytes?: number;
+  /** Unified memory only: Metal's per-process GPU working set (`recommendedMaxWorkingSetSize`). */
+  gpuBudgetBytes?: number;
+  gpuBudgetEstimated: boolean;
+  /** Highest Metal family, e.g. 4 for "Metal 4". */
+  metal?: number;
+  source: string;
 }
 
 export interface SetupDiskVolume {

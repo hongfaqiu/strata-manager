@@ -1,0 +1,27 @@
+{
+  "SPDisplaysDataType" : [
+    {
+      "_name" : "Apple M1 Max",
+      "spdisplays_mtlgpufamilysupport" : "spdisplays_metal3",
+      "spdisplays_ndrvs" : [
+        {
+          "_name" : "Color LCD",
+          "_spdisplays_pixels" : "3456 x 2234",
+          "spdisplays_connection_type" : "spdisplays_internal",
+          "spdisplays_main" : "spdisplays_yes",
+          "spdisplays_online" : "spdisplays_yes"
+        },
+        {
+          "_name" : "DELL U2723QE",
+          "_spdisplays_pixels" : "3840 x 2160",
+          "spdisplays_online" : "spdisplays_yes"
+        }
+      ],
+      "spdisplays_vendor" : "sppci_vendor_Apple",
+      "sppci_bus" : "spdisplays_builtin",
+      "sppci_cores" : "32",
+      "sppci_device_type" : "spdisplays_gpu",
+      "sppci_model" : "Apple M1 Max"
+    }
+  ]
+}
