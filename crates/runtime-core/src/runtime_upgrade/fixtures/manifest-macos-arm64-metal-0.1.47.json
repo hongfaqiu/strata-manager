@@ -1,0 +1,181 @@
+{
+ "schema_version": 2,
+ "id": "strata-engine",
+ "name": "strata-engine",
+ "version": "0.1.47",
+ "platform": "macos-arm64",
+ "backend": "metal",
+ "archs": [
+  "apple-gpu"
+ ],
+ "min_driver": {},
+ "build_id": "76f90e58436d+metal",
+ "entrypoint": "strata",
+ "files": [
+  {
+   "path": "strata",
+   "sha256": "365639889a1c57ee1fd22ddf5867505370234181d14b756e0bd64792100b5358",
+   "bytes": 4785912
+  },
+  {
+   "path": "BUILD.json",
+   "sha256": "f559db0291ac98e70b39afd0e39a9ab57b6f6ce470eebf7e706f729714e6bc02",
+   "bytes": 177
+  },
+  {
+   "path": "metal/data/draft_vocab.bin",
+   "sha256": "b1e1d3a7a9e4bf862dcd5923ce661fb59bbd07907e594df5cf86a62ac235cb91",
+   "bytes": 425196
+  },
+  {
+   "path": "metal/data/expert-profile.bin",
+   "sha256": "8f59b4aa8873209dff11c11e37bcda9529a1335b724a1afeea37bf6388975baf",
+   "bytes": 196632
+  },
+  {
+   "path": "metal/engine-msl/mtp.metal",
+   "sha256": "564c849df5c36a22baae10b3f11396a5b45cb5835a67a3ee37325e418195fd4c",
+   "bytes": 3476
+  },
+  {
+   "path": "metal/engine-msl/mtp_chain.metal",
+   "sha256": "5d0876818c854100b481012b31cc0c36fc450fce19f2b174e499e203c77da42b",
+   "bytes": 4476
+  },
+  {
+   "path": "metal/engine-msl/ple.metal",
+   "sha256": "b963decaa7501071f29de2735f51e7211ea2131357d49d645eeb965d4d7b6560",
+   "bytes": 4882
+  },
+  {
+   "path": "metal/ggml-common.h",
+   "sha256": "0061131b615c5721fc88a78feeb22c1f8c450f1c2646a317d80796a653bf595c",
+   "bytes": 135161
+  },
+  {
+   "path": "metal/kernels/alu_bench.metal",
+   "sha256": "ee66e276756709d68bf32ceef5013020b1ec021e9c1c3c3369be90155cefd18d",
+   "bytes": 9115
+  },
+  {
+   "path": "metal/kernels/dense_mm.metal",
+   "sha256": "13404b1469e973fa5492a117872893ba867b15cc4cf43e54fedc67a5dcfce801",
+   "bytes": 3822
+  },
+  {
+   "path": "metal/kernels/gdn.metal",
+   "sha256": "14f15256921b999d15a7ba2493d927bae0e1b6a0c230106daa0be078c250b676",
+   "bytes": 9621
+  },
+  {
+   "path": "metal/kernels/gdn_prompt.metal",
+   "sha256": "fcedc347d5736a9869c3b59d78406d9460f2565cc0ac9b00cb0c7a4ee793420c",
+   "bytes": 26835
+  },
+  {
+   "path": "metal/kernels/gemv.metal",
+   "sha256": "a9f0e0ee93d0e499e64298b8728159e4151f64d026ae39dc5a911f86e5167e13",
+   "bytes": 14755
+  },
+  {
+   "path": "metal/kernels/glue.metal",
+   "sha256": "60be1604f314accd4e46dcfc59390ac9c7da4ef0f4b4d1ccdd3ce1ca451fe489",
+   "bytes": 3004
+  },
+  {
+   "path": "metal/kernels/gr.metal",
+   "sha256": "7e1f81accf93abeaf3609c454cd3eec460ca8862a957e254319ef2d79b142e94",
+   "bytes": 8958
+  },
+  {
+   "path": "metal/kernels/gr2.metal",
+   "sha256": "0b09f32d9fa6c634b974efa950016598b1cb153f5dc71210460cf79f2679ed4c",
+   "bytes": 17459
+  },
+  {
+   "path": "metal/kernels/gridbar.metal",
+   "sha256": "54312af1cbff3abfffe3ecff65def5d576c5a2438232c61aa34ab56882fa7612",
+   "bytes": 2820
+  },
+  {
+   "path": "metal/kernels/mm_bench.metal",
+   "sha256": "eab8a1ab0b0d6534f443e81684a2b5d245ab54e3ce34b8a8975fec20af97473a",
+   "bytes": 5724
+  },
+  {
+   "path": "metal/kernels/mma.metal",
+   "sha256": "2281254989131ad5029dc92411563b64779c0a4e90c02f461f538f989c1f505f",
+   "bytes": 10580
+  },
+  {
+   "path": "metal/kernels/moe.metal",
+   "sha256": "7fe9722f11f8225b2e050a1ef38cfecba2f02ba9822e58049ecd075a95cade84",
+   "bytes": 17606
+  },
+  {
+   "path": "metal/kernels/moe_mm.metal",
+   "sha256": "4e5599a00f99831a2a5edf3eb1af0d504bc2a23f9b1606c7dd45b5c107bd12a7",
+   "bytes": 65446
+  },
+  {
+   "path": "metal/kernels/prompt.metal",
+   "sha256": "ccf36014fb222b38792943abfe54fc2ca777cb6bf9923ef6bf239051f13ad01b",
+   "bytes": 8823
+  },
+  {
+   "path": "metal/kernels/qsa.metal",
+   "sha256": "551b207c0e79580561dcc25318eab771e25f9a5efc4df2a29a10dab913e43e09",
+   "bytes": 19612
+  },
+  {
+   "path": "metal/kernels/qsa2.metal",
+   "sha256": "a80d2210a212209b79df96d1aa9070d62f200da11949e9808bfc2c6e5cf45073",
+   "bytes": 13951
+  },
+  {
+   "path": "metal/kernels/qsa_prompt.metal",
+   "sha256": "3990d3cc0bffec0cf836691f4dba962ce00b55310abfe4643982c885e9ec73c7",
+   "bytes": 21402
+  },
+  {
+   "path": "metal/kernels/quant.metal",
+   "sha256": "f1dfe1d58b9f5b04ec4a67778c77dc63066b4843957d97350f539076dfef4185",
+   "bytes": 49341
+  },
+  {
+   "path": "metal/kernels/router.metal",
+   "sha256": "908d7f1159e2a95a8476b761ed1b96492351d148a9d237410957c04d7b4db2a9",
+   "bytes": 5515
+  },
+  {
+   "path": "metal/kernels/rt_bench.metal",
+   "sha256": "f7659ba9ccec4fa5bb6e6141f146d88d159680b9f06f5705fa6f3a6f82097151",
+   "bytes": 2985
+  },
+  {
+   "path": "metal/kernels/sample.metal",
+   "sha256": "c81f5396eff98963bda4a1b8961c368e54212616c440e6588958895245f2f91f",
+   "bytes": 2748
+  },
+  {
+   "path": "metal/kernels/units.metal",
+   "sha256": "fbff7d43641179240d3e3ae08579b41935bd670e6c79fdae56782d8fc6128fba",
+   "bytes": 14927
+  },
+  {
+   "path": "metal/kernels/wrap_probe.metal",
+   "sha256": "7ed1743df1900f09f81209e9693548651590edaddbc6510b0af269f40bf8da03",
+   "bytes": 600
+  },
+  {
+   "path": "strata-vision",
+   "sha256": "8954e92e25a7c38a877a9d7245774266753f087af6dd86793237085dada622ee",
+   "bytes": 8198464
+  }
+ ],
+ "signature": {
+  "alg": "ed25519",
+  "key_id": "5d1bc23abbeffd0d",
+  "value": "MvwzA2kaysBsnOwaCru7vmq9EODsRaz21nnIEKd7QtFu3ESnUMzBgAhZPNHG6HjUhTQH361oEA4YB4IPnHngAg=="
+ }
+}
