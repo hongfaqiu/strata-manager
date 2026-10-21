@@ -610,6 +610,80 @@ const strataReleaseCatalog = (() => {
     en: { stopped: 'Not started', loading: 'Starting', idle: 'Idle', generating: 'Generating' },
   };
   let svc = 'generating';
+  // Bottom status bar: same states and wording as the desktop ServiceTelemetryStatusBar.
+  const sbLabels = {
+    zh: { connecting: '正在连接', detected: '检测到运行中服务', stopped: '服务未启动', loading: '正在载入模型', reading: '读取中', idle: '空闲', generating: '生成中' },
+    en: { connecting: 'Connecting', detected: 'Running service detected', stopped: 'Service not started', loading: 'Loading model', reading: 'Reading', idle: 'Idle', generating: 'Generating' },
+  };
+  const sbSpeedLabels = { zh: { reading: '读取', idle: '最近生成', generating: '生成' }, en: { reading: 'Reading', idle: 'Last generation', generating: 'Generation' } };
+  const statusbar = $('[data-statusbar]');
+  let sbState = 'generating', lastTps = 104.6, prefill = 3184, temp = 58, cpu = 12;
+  const gpuHist = Array.from({ length: 24 }, (_, i) => 84 + Math.sin(i * 0.8) * 4);
+  const sbSet = (key, value) => { const element = statusbar && $(`[data-sb-${key}]`, statusbar); if (element) element.textContent = value; };
+  function setStatusbar(state) {
+    sbState = state;
+    if (!statusbar) return;
+    statusbar.dataset.state = state;
+    sbSet('label', sbLabels[currentLang][state] ?? '');
+    paintStatusbar();
+  }
+  function paintStatusbar() {
+    if (!statusbar) return;
+    const state = sbState;
+    const speed = state === 'generating' ? tps : state === 'reading' ? prefill : state === 'idle' ? lastTps : 0;
+    sbSet('speed-label', sbSpeedLabels[currentLang][state] ?? '');
+    sbSet('speed', speed > 0.05 ? speed.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '–');
+    sbSet('running', state === 'generating' || state === 'reading' ? '1' : '0');
+    const queued = state === 'generating' ? 1 : 0;
+    sbSet('queued', String(queued));
+    $('[data-sb-queued]', statusbar)?.classList.toggle('is-warn', queued > 0);
+    sbSet('cpu', String(cpu));
+    sbSet('temp', String(temp));
+  }
+  // Service-status popover (opened from the top pill) and the floating strip (opened from the status bar).
+  const popover = $('[data-svc-popover]');
+  const popAnchor = $('[data-pop-anchor]');
+  const floatStrip = $('[data-float]');
+  const floatButton = $('[data-sb-float]');
+  const sparkPath = (values, max) => {
+    const points = values.map((value, i) => `${(4 + i / (values.length - 1) * 152).toFixed(1)} ${(44 - Math.max(0, Math.min(1, value / max)) * 38).toFixed(1)}`);
+    return `M${points.join(' L')}`;
+  };
+  function paintPopover() {
+    if (popover && !popover.hidden) {
+      $('[data-pop-spark="tps"]', popover)?.setAttribute('d', sparkPath(spark, 124));
+      $('[data-pop-spark="gpu"]', popover)?.setAttribute('d', sparkPath(gpuHist, 100));
+      const used = Math.max(1, vram);
+      const vramText = $('[data-pop-vram]', popover); if (vramText) vramText.textContent = `${used.toFixed(1)} / 32.0 GB`;
+      const vramBar = $('[data-pop-vram-bar]', popover); if (vramBar) vramBar.style.width = `${(used / 32 * 100).toFixed(1)}%`;
+      const context = 33152 + (genTokens % 512);
+      const ctx = $('[data-pop-ctx]', popover); if (ctx) ctx.textContent = context.toLocaleString('en-US');
+      const ctxBar = $('[data-pop-ctx-bar]', popover); if (ctxBar) ctxBar.style.width = `${(context / 131072 * 100).toFixed(1)}%`;
+      const stamp = $('[data-pop-time]', popover); if (stamp) stamp.textContent = time(clock + tick % 60);
+      const title = $('[data-pop-speed-title]', popover); if (title) title.textContent = currentLang === 'en' ? 'Generation speed trend' : '生成速度趋势';
+    }
+    if (floatStrip && !floatStrip.hidden) {
+      const gen = $('[data-float-gen]', floatStrip); if (gen) gen.textContent = tps > 0.05 ? tps.toFixed(1) : '—';
+      const fv = $('[data-float-vram]', floatStrip); if (fv) fv.textContent = Math.max(1, vram).toFixed(1);
+      setLive('load2f', String(load));
+    }
+  }
+  function showPopover(on) {
+    if (!popover) return;
+    popover.hidden = !on;
+    popover.classList.toggle('is-open', on);
+    popAnchor?.classList.toggle('is-on', on);
+    paintPopover();
+  }
+  function showFloat(on) {
+    if (!floatStrip) return;
+    floatStrip.hidden = !on;
+    floatStrip.classList.toggle('is-open', on);
+    floatButton?.classList.toggle('is-on', on);
+    paintPopover();
+  }
+  popAnchor?.addEventListener('click', event => { event.stopPropagation(); showPopover(popover?.hidden ?? false); });
+  floatButton?.addEventListener('click', () => showFloat(floatStrip?.hidden ?? false));
   const live = name => $$(`[data-live="${name}"]`);
   const setLive = (name, value) => live(name).forEach(element => {
     const first = element.firstChild;
@@ -639,6 +713,8 @@ const strataReleaseCatalog = (() => {
     setLive('gen-tokens', `${Math.min(genTokens, 512)} tokens · ${shown} tok/s`);
     live('gen-bar').forEach(bar => { bar.style.width = `${Math.min(100, genTokens / 5.12)}%`; });
     drawSpark();
+    paintStatusbar();
+    paintPopover();
   }
   function setSvc(state) {
     svc = state;
@@ -651,6 +727,8 @@ const strataReleaseCatalog = (() => {
     });
     $$('.m-states [data-state]', appWindow).forEach(element => element.classList.toggle('is-on', element.dataset.state === state));
     if (state === 'stopped') { tps = 0; load = 0; vram = 1; }
+    if (svc !== 'generating' && tps > 1) lastTps = tps;
+    setStatusbar(state);
     paintTelemetry();
   }
   const loadBar = $('[data-load-bar]');
@@ -681,12 +759,17 @@ const strataReleaseCatalog = (() => {
     const target = generating ? 101 + Math.random() * 8 : 0;
     tps += (target - tps) * (generating ? 0.6 : 0.55);
     if (!generating && tps < 0.6) tps = 0;
-    const targetLoad = { stopped: 0, loading: 24, idle: 3, generating: 86 }[svc];
+    const targetLoad = sbState === 'reading' ? 72 : { stopped: 0, loading: 24, idle: 3, generating: 86 }[svc];
     load = Math.max(0, Math.round(load + (targetLoad + (Math.random() - 0.5) * (generating ? 8 : 2) - load) * 0.5));
-    const targetPower = { stopped: 18, loading: 120, idle: 34, generating: 265 }[svc];
+    const targetPower = sbState === 'reading' ? 220 : { stopped: 18, loading: 120, idle: 34, generating: 265 }[svc];
     power = Math.max(0, Math.round(power + (targetPower + (Math.random() - 0.5) * 10 - power) * 0.5));
     if (generating) genTokens = genTokens >= 512 ? 0 : genTokens + Math.round(tps * 0.6);
+    if (generating && tps > 1) lastTps = tps;
+    temp = Math.round(temp + (({ stopped: 38, loading: 47, idle: 45, generating: 60 })[svc] + (Math.random() - 0.5) * 2 - temp) * 0.3);
+    cpu = Math.max(1, Math.round(cpu + (({ stopped: 3, loading: 22, idle: 4, generating: 12 })[svc] + (Math.random() - 0.5) * 4 - cpu) * 0.5));
+    prefill = 3100 + Math.random() * 180;
     spark.push(tps); spark.shift();
+    gpuHist.push(load); gpuHist.shift();
     paintTelemetry();
     // When the visitor is driving, keep requests trickling in on their own.
     if (generating && tick % 4 === 0 && !(hero && hero.running)) pushRequest();
@@ -817,11 +900,13 @@ const strataReleaseCatalog = (() => {
       const w = ms => hero.wait(ms, g);
       await w(500);
       heroPointer.hide();
-      chatReset(); setLoad(0); setSvc('stopped'); showView('models');
-      await w(1300);
+      chatReset(); setLoad(0); showPopover(false); showFloat(false); setSvc('stopped'); setStatusbar('connecting'); showView('models');
+      await w(900);
+      setStatusbar('stopped');
+      await w(900);
       await heroPointer.click($('[data-demo-start]', appWindow), hero, g);
       setSvc('loading');
-      for (let percent = 0; percent <= 100; percent += 2.5) { setLoad(percent); await w(55); }
+      for (let percent = 0; percent <= 100; percent += 2.5) { setLoad(percent); sbSet('elapsed', String(Math.round(percent * 0.38))); await w(55); }
       setSvc('idle');
       await w(900);
       await heroPointer.click(navButton('chat'), hero, g); showView('chat');
@@ -830,8 +915,9 @@ const strataReleaseCatalog = (() => {
       await typeQuestion(hero, g);
       await w(260);
       await heroPointer.click($('[data-chat-send]', appWindow), hero, g);
-      sendQuestion(); setSvc('generating');
+      sendQuestion(); setStatusbar('reading'); load = 68; power = 205; paintTelemetry();
       await w(800);
+      setSvc('generating');
       await streamReply(hero, g);
       pushRequest(); setSvc('idle');
       await w(1500);
@@ -844,11 +930,20 @@ const strataReleaseCatalog = (() => {
       await w(2400);
       setSvc('idle');
       await heroPointer.click(navButton('overview'), hero, g); showView('overview');
+      await w(900);
+      // Status checks: the top pill opens the service-status panel; the status bar opens the floating strip.
+      setSvc('generating');
+      await heroPointer.click(popAnchor, hero, g); showPopover(true);
+      await w(3400);
+      showPopover(false);
+      await heroPointer.click(floatButton, hero, g); showFloat(true);
+      await w(3200);
       heroPointer.hide();
-      await w(4200);
+      showFloat(false);
+      await w(1600);
     },
-    final() { heroPointer.hide(); chatFinal(); setLoad(100); setSvc('generating'); },
-    onInterrupt() { heroPointer.hide(); chatFinal(); setLoad(100); if (svc === 'stopped' || svc === 'loading') setSvc('generating'); },
+    final() { heroPointer.hide(); chatFinal(); setLoad(100); showPopover(false); showFloat(false); setSvc('generating'); },
+    onInterrupt() { heroPointer.hide(); chatFinal(); setLoad(100); showPopover(false); showFloat(false); if (svc === 'stopped' || svc === 'loading') setSvc('generating'); else setStatusbar(svc); },
   }) : null;
   const demoToggle = $('#demo-toggle');
   const demoToggleLabel = $('[data-demo-label]');
@@ -1230,7 +1325,7 @@ const strataReleaseCatalog = (() => {
     if (languageButton) { languageButton.setAttribute('aria-label', switchAction); languageButton.title = switchAction; }
     streamTargets.forEach(element => { delete element.dataset.full; });
     renderScreen(activeView);
-    setSvc(svc);
+    { const keep = sbState; setSvc(svc); setStatusbar(keep); }
     fitDemo?.refreshLanguage?.();
     updateDemoToggle();
     updateThemeButton();

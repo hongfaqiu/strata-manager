@@ -175,7 +175,7 @@
                 <div class="app-body">
                   <div class="app-top">
                     <strong class="app-title" id="app-title" data-en="Overview">总览</strong>
-                    <span class="app-svc is-live" data-svc-badge><i></i><span data-svc-label data-en="Generating">生成中</span><span class="mono" data-live="pill-tps">104.6 tok/s</span></span>
+                    <span class="app-svc is-live" data-svc-badge data-pop-anchor><i></i><span data-svc-label data-en="Generating">生成中</span><span class="mono" data-live="pill-tps">104.6 tok/s</span></span>
                     <span class="app-winctl" aria-hidden="true"><i></i><i></i><i></i></span>
                   </div>
                   <div class="app-views">
@@ -371,7 +371,32 @@
                     </section>
                   </div>
                   <span class="demo-pointer" data-pointer aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5.5 3.2 19 11.4l-6.1 1.5-3.3 5.9z"/></svg></span>
-                  <div class="app-statusbar mono"><span class="is-live" data-svc-badge><i></i><span data-svc-label data-en="Generating">生成中</span></span><span><span data-en="Generation">生成</span> <b data-live="tps2">104.6</b> tok/s</span><span><span data-en="Running">运行</span> <b>1</b></span><span><span data-en="Queued">排队</span> <b class="is-warn">1</b></span><span>GPU <b data-live="load3">86</b>%</span><span>CPU <b>12%</b></span><span><span data-en="Temp">温度</span> <b>58°C</b></span><span><span data-en="Power">功耗</span> <b data-live="power3">265</b> W</span></div>
+                  <div class="app-statusbar mono" data-statusbar data-state="generating">
+                    <span class="sb-state"><i class="sb-dot"></i><i class="sb-spin"></i><span data-sb-label>生成中</span></span>
+                    <span class="sb-elapsed" data-sb-only="loading"><span data-en="Elapsed">已用</span> <b data-sb-elapsed>0</b> <span data-en="s">秒</span></span>
+                    <span class="sb-values"><span class="sb-speed"><span data-sb-speed-label>生成</span> <b data-sb-speed>104.6</b> tok/s</span><span><span data-en="Running">运行</span> <b data-sb-running>1</b></span><span><span data-en="Queued">排队</span> <b data-sb-queued class="is-warn">1</b></span><span>GPU <b data-live="load3">86</b>%</span><span>CPU <b data-sb-cpu>12</b>%</span><span><span data-en="Temp">温度</span> <b data-sb-temp>58</b>°C</span><span><span data-en="Power">功耗</span> <b data-live="power3">265</b> W</span></span>
+                    <button class="sb-float" type="button" tabindex="-1" data-sb-float aria-label="打开监控浮条" data-label-en="Open floating monitor"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 9V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4"/><rect x="12" y="13" width="10" height="7" rx="2"/></svg></button>
+                  </div>
+                  <div class="app-popover" data-svc-popover hidden>
+                    <div class="pop-head"><span class="m-dim" data-en="Service status">服务状态</span><b>Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S</b></div>
+                    <div class="pop-summary"><span class="pop-chip"><i></i><span data-en="API online">API 在线</span></span><small class="mono">http://127.0.0.1:19001/v1</small></div>
+                    <div class="pop-trends">
+                      <section><header><span data-pop-speed-title>生成速度趋势</span><small>tok/s</small></header><svg viewBox="0 0 160 48" preserveAspectRatio="none" aria-hidden="true"><path class="pop-base" d="M4 44H156"/><path class="pop-line" data-pop-spark="tps" d="M4 44H156"/></svg></section>
+                      <section><header><span data-en="GPU load trend">GPU 负载趋势</span><small>%</small></header><svg viewBox="0 0 160 48" preserveAspectRatio="none" aria-hidden="true"><path class="pop-base" d="M4 44H156"/><path class="pop-line" data-pop-spark="gpu" d="M4 44H156"/></svg></section>
+                    </div>
+                    <div class="pop-res">
+                      <div><p><span data-en="VRAM">显存</span><b class="mono" data-pop-vram>21.0 / 32.0 GB</b></p><i class="pop-meter"><b data-pop-vram-bar style="width:66%"></b></i></div>
+                      <div><p><span data-en="RAM">内存</span><b class="mono">62.0 / 96.0 GB</b></p><i class="pop-meter"><b style="width:64.6%"></b></i></div>
+                    </div>
+                    <div class="pop-res is-one"><div><p><span data-en="Context">上下文</span><b class="mono"><span data-pop-ctx>33,152</span> / 131,072 tokens</b></p><i class="pop-meter"><b data-pop-ctx-bar style="width:25.3%"></b></i></div></div>
+                    <p class="pop-meta"><span data-en="Samples from the last 3 min">近 3 分钟采样</span><span class="mono" data-pop-time>14:34:31</span></p>
+                  </div>
+                  <div class="app-float" data-float hidden aria-label="桌面监控浮条（演示）" data-label-en="Floating monitor (demo)">
+                    <span style="--c:#16834f"><small data-en="Gen">生成</small><b data-float-gen>104.6</b><small>t/s</small></span>
+                    <span style="--c:#2a6fb6"><small data-en="Input">读取</small><b>3.2</b><small>k t/s</small></span>
+                    <span style="--c:#b4581c"><small>GPU</small><b data-live="load2f">86</b><small>%</small></span>
+                    <span style="--c:#13797a"><small data-en="VRAM">显存</small><b data-float-vram>21.0</b><small>GiB</small></span>
+                  </div>
                 </div>
               </div>
             </div>
