@@ -258,6 +258,18 @@ fn family_name(family: &str) -> Option<&'static str> {
     }
 }
 
+/// The model_name a finished setup task registers: setup.py's `<family name>-<quant>`, or Manager's
+/// `community-<slug>-<quant>` for a community model (community_model.rs renames the config to it).
+fn expected_model_name(intent: &SetupIntent) -> Option<String> {
+    if let Some(slug) = intent
+        .family
+        .strip_prefix(crate::community_model::FAMILY_PREFIX)
+    {
+        return Some(crate::community_model::model_name(slug, &intent.quant));
+    }
+    family_name(&intent.family).map(|name| format!("{name}-{}", intent.quant.to_ascii_lowercase()))
+}
+
 fn context(value: &Value) -> Option<u32> {
     let args = value.get("args")?.as_array()?;
     let indices: Vec<_> = args
@@ -287,8 +299,7 @@ fn checked_config(path: &Path) -> Result<Value, String> {
 }
 
 fn compatible(value: &Value, intent: &SetupIntent) -> bool {
-    let expected = family_name(&intent.family)
-        .map(|name| format!("{name}-{}", intent.quant.to_ascii_lowercase()));
+    let expected = expected_model_name(intent);
     value
         .get("model_name")
         .and_then(Value::as_str)
@@ -430,11 +441,8 @@ fn find_and_register(
 ) -> Result<String, RegistrationError> {
     let root =
         dunce::canonicalize(&intent.profile.install_dir).map_err(|e| failure(e.to_string()))?;
-    let expected = format!(
-        "{}-{}",
-        family_name(&intent.family).ok_or_else(|| failure("未知的模型family，未登记"))?,
-        intent.quant.to_ascii_lowercase()
-    );
+    let expected =
+        expected_model_name(intent).ok_or_else(|| failure("未知的模型family，未登记"))?;
     let mut candidates = Vec::new();
     let mut incomplete = Vec::new();
     for directory in [root.clone(), root.join("configs")] {

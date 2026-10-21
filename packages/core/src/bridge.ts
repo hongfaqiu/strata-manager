@@ -335,6 +335,10 @@ export const checkMtpPath = (path: string): Promise<import('./local-model').MtpC
 /** ORCA.md's OrcaRouter IQ3_XXS import: read-only plan, then one tracked setup task that registers its config. */
 export const orcaImportPlan = (profile: ServiceProfile, request: import('./orca-import').OrcaImportRequest): Promise<import('./orca-import').OrcaImportPlan> => native('orca_import_plan', { profile, request });
 export const runOrcaImport = (profile: ServiceProfile, request: import('./orca-import').OrcaImportRequest, options?: OfficialSetupOptions): Promise<TaskStatus> => native('run_orca_import', { profile, request, ...(options ? { options } : {}) });
+/** Community model (pinned Hugging Face repo + revision + SHA-256): download, verify, then setup --gguf-dir, one tracked task. */
+export const runCommunitySetup = (profile: ServiceProfile, request: import('./community-catalog').CommunitySetupRequest, context: number, images: boolean, options?: OfficialSetupOptions): Promise<TaskStatus> => native('run_community_setup', { profile, request, context, images, ...(options ? { options } : {}) });
+/** Read-only Hugging Face model API GET (`/api/models...` only, size-limited); the webview's CSP has no network. */
+export const huggingFaceApi = (path: string): Promise<string> => native('hf_models_api', { path });
 export const inspectModel = (request: ModelInspectRequest): Promise<TaskStatus> => native('inspect_gguf', { request });
 export const getChatRuntimeEvidence = (profileId: string): Promise<ChatRuntimeEvidence> => native('chat_runtime_evidence', { profileId });
 export const installRuntime = (directory: string): Promise<TaskStatus> => native('install_runtime', { directory });

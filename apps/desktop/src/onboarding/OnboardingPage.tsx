@@ -5,7 +5,6 @@ import { ArrowRight, Check, Copy, FolderPlus, LoaderCircle, Minus, RefreshCw, Sq
 import * as core from '@strata-manager/core';
 import type { LogEntry, ServiceProfile, TaskStatus } from '@strata-manager/core';
 import { Dropdown, Segmented, Toggle } from '../OfficialControls';
-import { D2DotAxis } from '../pages/D2Visuals';
 import { ResourceAssessmentPanel } from '../pages/ResourceAssessmentPanel';
 import { ContextExtensionNotice } from '../pages/ContextExtensionNotice';
 import { SetupHandoffActions } from '../pages/SetupHandoffActions';
@@ -13,12 +12,14 @@ import { taskProgress } from '../pages/d2Estimates';
 import { ManagedPythonPanel } from '../pages/ManagedPythonPanel';
 import { useLocalRuntimePackages } from '../pages/LocalRuntimePackage';
 import { ExistingModelPanel } from '../pages/ExistingModelPanel';
+import { catalogCopy, type CatalogCopy } from '../catalog/catalogCopy';
+import { BlockNote, catalogHardware, CommunityBadge, CommunityRisks, CommunitySource, EstimateCell, MemoryNote, memoryLine, useCommunityModels } from '../catalog/catalogUi';
 import { GuideStorageRows } from '../pages/StorageLocation';
 import { fetchArenaGroups, fetchArenaTier } from './arenaPublic';
 import {
   arenaLeaderboardQuery, arenaMatch, confidenceBars, defaultContext, gpuRowValue, parseGpu,
   recommendations, smallestCatalogRamGB, type EnvironmentCheck, type GuideFacts, type GuidePath, type GuidePlan, type GuideState, type GuideSelection, type OnboardingProgress,
-  type Recommendation, type Scene, type StepId, type StepState,
+  type Scene, type StepId, type StepState,
 } from './onboardingModel';
 import '../pages/d2-visuals.css';
 import './onboarding.css';
@@ -51,6 +52,8 @@ export interface OnboardingPageProps {
   onPrepareModel: (request: ModelPrepareRequest) => Promise<TaskStatus | undefined>;
   /** 「使用已有模型」(#75): ORCA.md import of local OrcaRouter shards. */
   onOrcaImport?: (profile: ServiceProfile, request: core.OrcaImportRequest, options: core.OfficialSetupOptions) => Promise<TaskStatus | undefined>;
+  /** A community model from the 「选择模型」 list: pinned download + SHA-256, then setup --gguf-dir. */
+  onCommunitySetup?: (profile: ServiceProfile, request: core.CommunitySetupRequest, context: number, images: boolean, options: core.OfficialSetupOptions) => Promise<TaskStatus | undefined>;
   onChooseDirectory?: () => Promise<string | null>;
   onChooseFile?: () => Promise<string | null>;
   onStart: (profile: ServiceProfile) => Promise<void>;
@@ -76,7 +79,7 @@ const CONTEXTS = [8192, 32768, 65536, 131072, 262144, 524288, 1048576];
 const contextLabel = (value: number) => core.formatContextTokens(value);
 const clock = (ms: number) => { const s = Math.max(0, Math.floor(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), r = s % 60; return `${h ? `${h}:` : ''}${String(m).padStart(h ? 2 : 1, '0')}:${String(r).padStart(2, '0')}`; };
 const gb = (value: number, digits = 1) => value.toLocaleString(undefined, { maximumFractionDigits: digits });
-const modelName = (family: string) => core.MODEL_CATALOG.find(model => model.family === family)?.name ?? family;
+const modelName = (family: string) => core.MODEL_CATALOG.find(model => model.family === family)?.name ?? core.BUILTIN_COMMUNITY_MODELS.find(model => core.communityFamily(model.id) === family)?.name ?? (core.communityIdOf(family)?.replace(/^hf:/, '') ?? family);
 const settled = (state: StepState) => state === 'done' || state === 'skipped';
 export const STEP_LABELS: Record<StepId, string> = { environment: 'guideCheckEnvironment', runtime: 'guideInstallRuntime', model: 'guideChooseModel', download: 'obStepDownload', start: 'guideStartAndLoad', chat: 'guideFirstChat', discover: 'guideDiscover', load: 'obStepLoad' };
 
@@ -328,25 +331,46 @@ function ModelStep(props: StepProps & { runtimeProfile?: ServiceProfile }) {
   const gpus = environment?.gpus.map(parseGpu) ?? [];
   const gpu = gpus.find(item => item.nvidia) ?? gpus[0];
   const nvidia = gpus.some(item => item.nvidia);
-  const rows = useMemo(() => recommendations(scene, memoryGB, nvidia), [scene, memoryGB, nvidia]);
-  const selected = progress?.selection && rows.some(row => row.family === progress.selection!.family && row.quant === progress.selection!.quant) ? progress.selection : rows[0] ? { family: rows[0].family, quant: rows[0].quant, context: defaultContext(scene), images: false } : undefined;
+  const platform = core.runtimePackagePlatform(environment?.os);
+  const copy = catalogCopy(props.language);
+  const hardware = catalogHardware(platform, memoryGB, environment?.gpus);
+  const [scope, setScope] = useState<'official' | 'community'>(() => core.isCommunityFamily(progress?.selection?.family ?? '') ? 'community' : 'official');
+  const community = useCommunityModels(platform, scope === 'community');
+  const rows = useMemo(() => recommendations(scene, memoryGB, nvidia, 5, platform), [scene, memoryGB, nvidia, platform]);
+  const blockedFamilies = core.MODEL_CATALOG.filter(model => core.officialFamilyBlock(model.family, platform));
+  // An entry this platform cannot download at all shows once (its first size), not once per size.
+  const communityRows = community.models.flatMap(model => (core.communityAvailability(model, platform).downloadable ? model.quants : model.quants.slice(0, 1)).map(quant => ({ model, quant, info: model.quantInfo[quant]!, availability: core.communityQuantAvailability(model, quant, platform) })));
+  const stored = progress?.selection;
+  const officialSelected = stored && rows.some(row => row.family === stored.family && row.quant === stored.quant) ? stored : rows[0] ? { family: rows[0].family, quant: rows[0].quant, context: stored?.context ?? defaultContext(scene), images: false } : undefined;
+  const firstCommunity = communityRows.find(row => row.availability.downloadable) ?? communityRows[0];
+  const communitySelected = stored && communityRows.some(row => core.communityFamily(row.model.id) === stored.family && row.quant === stored.quant) ? stored : firstCommunity ? { family: core.communityFamily(firstCommunity.model.id), quant: firstCommunity.quant, context: stored?.context ?? defaultContext(scene), images: false } : undefined;
+  const selected = scope === 'community' ? communitySelected : officialSelected;
   const select = (patch: Partial<GuideSelection>) => { if (selected) props.onProgress({ selection: { ...selected, ...patch } }); };
-  const entry = core.MODEL_CATALOG.find(model => model.family === selected?.family);
-  const info = selected ? entry?.quantInfo[selected.quant] : undefined;
+  const communityRow = scope === 'community' ? communityRows.find(row => selected && core.communityFamily(row.model.id) === selected.family && row.quant === selected.quant) : undefined;
+  const installFamily = communityRow ? communityRow.model.family : selected?.family;
+  const entry = core.MODEL_CATALOG.find(model => model.family === installFamily);
+  const info = selected && !communityRow ? entry?.quantInfo[selected.quant] : undefined;
+  const estimate = selected && installFamily ? core.estimatePerformance(installFamily, selected.quant, hardware) : undefined;
   const arena = useQuery({ queryKey: ['arena-public-groups'], queryFn: ({ signal }) => fetchArenaGroups(signal), staleTime: 10 * 60_000, retry: false, refetchOnWindowFocus: false });
   const defaults = useQuery({ queryKey: ['model-download-defaults'], queryFn: async () => core.normalizeModelDownloadDefaults(await core.loadStore<unknown>(core.MODEL_DOWNLOAD_DEFAULTS_KEY, null)), staleTime: Infinity, retry: false });
   const runtime = defaults.data?.runtime ?? runtimeProfile;
-  const disk = useQuery({ queryKey: ['setup-disk', runtime?.installDir, selected?.family, selected?.quant, selected?.images], queryFn: () => core.setupDiskPreflight(runtime!, selected!.family, selected!.quant, selected!.images), enabled: props.desktop && !!runtime?.installDir && !!selected, staleTime: 15000, retry: false });
+  const disk = useQuery({ queryKey: ['setup-disk', runtime?.installDir, selected?.family, selected?.quant, selected?.images], queryFn: () => core.setupDiskPreflight(runtime!, selected!.family, selected!.quant, selected!.images), enabled: props.desktop && !!runtime?.installDir && !!selected && !communityRow, staleTime: 15000, retry: false });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [source, setSource] = useState<'catalog' | 'existing'>('catalog');
-  const max = Math.max(memoryGB ?? 0, ...rows.map(row => row.ramGB)) * 1.08;
   const options = defaults.data?.options;
-  const request = runtime && selected && options && options.gpus !== 'all' ? { installationId: runtime.id, family: selected.family, quant: selected.quant, context: selected.context, images: selected.images, kv: selected.context <= 8192 ? 'fp16' : 'int8', gpuIds: options.gpus ? options.gpus.split(',').map(Number) : [], parallel: 1 } : undefined;
+  const request = runtime && selected && installFamily && options && options.gpus !== 'all' ? { installationId: runtime.id, family: installFamily, quant: selected.quant, context: selected.context, images: selected.images, kv: selected.context <= 8192 ? 'fp16' : 'int8', gpuIds: options.gpus ? options.gpus.split(',').map(Number) : [], parallel: 1 } : undefined;
   const prepare = async () => {
     if (!runtime || !selected || !options || submitting) return;
     setSubmitting(true); setError('');
     try {
+      if (communityRow) {
+        if (!props.onCommunitySetup) throw new Error(t('obDesktopOnly'));
+        const snapshot = core.snapshotModelDownloadRequest(runtime, { model: communityRow.model.family, quant: selected.quant, context: selected.context, images: selected.images && communityRow.model.images }, options);
+        const task = await props.onCommunitySetup(snapshot.profile, core.communitySetupRequest(communityRow.model, selected.quant), snapshot.context, snapshot.images, snapshot.options);
+        if (task) props.onProgress({ setupTaskId: task.id, selection: selected });
+        return;
+      }
       const snapshot = core.snapshotModelDownloadRequest(runtime, { model: selected.family, quant: selected.quant, context: selected.context, images: selected.images }, options);
       const checked = await core.setupDiskPreflight(snapshot.profile, snapshot.model, snapshot.quant, snapshot.images);
       if (checked.status !== 'ready') throw new Error(t(checked.status === 'insufficient' ? 'obDiskInsufficient' : 'obDiskUnknown'));
@@ -364,54 +388,79 @@ function ModelStep(props: StepProps & { runtimeProfile?: ServiceProfile }) {
       onSetup={request => props.onPrepareModel(request)} onOrcaImport={props.onOrcaImport}
       onStarted={(task, chosen) => { if (!task) return; props.onProgress({ setupTaskId: task.id, ...(chosen.family !== 'orca' && core.MODEL_CATALOG.some(model => model.family === chosen.family) ? { selection: { family: chosen.family, quant: chosen.quant, context: chosen.context, images: false } } : {}) }); }}/>
   </div>;
+  const availability = communityRow?.availability;
+  const canDownload = !communityRow || !!availability?.downloadable;
+  const downloadGB = communityRow ? communityRow.info.downloadGB : info?.downloadGB ?? 0;
+  const imagesAllowed = communityRow ? communityRow.model.images : !!entry?.images && !info?.visionUntested;
   return <div className="ob-split">
     <div className="ob-panel">
       {sourceSwitch}
-      <Head title={t('guideChooseModel')} aside={<Segmented ariaLabel={t('guideChooseModel')} value={scene} onValueChange={value => props.onProgress({ scene: value as Scene, selection: undefined })} options={[{ value: 'chat', label: t('obSceneChat') }, { value: 'long', label: t('obSceneLong') }, { value: 'code', label: t('obSceneCode') }]}/>}>{memoryGB ? t('obModelIntro', { gb: Math.round(memoryGB) }) : t('guidePrepareModelHint')}</Head>
+      <Head title={t('guideChooseModel')} aside={scope === 'official' ? <Segmented ariaLabel={t('guideChooseModel')} value={scene} onValueChange={value => props.onProgress({ scene: value as Scene, selection: undefined })} options={[{ value: 'chat', label: t('obSceneChat') }, { value: 'long', label: t('obSceneLong') }, { value: 'code', label: t('obSceneCode') }]}/> : undefined}>{memoryGB ? t('obModelIntro', { gb: Math.round(memoryGB) }) : t('guidePrepareModelHint')}</Head>
+      <div className="ob-scope" data-testid="ob-model-scope"><Segmented ariaLabel={copy.scopeLabel} value={scope} onValueChange={value => setScope(value as 'official' | 'community')} options={[{ value: 'official', label: copy.scopeOfficial }, { value: 'community', label: copy.scopeCommunity }]}/>
+        {scope === 'community' && <span className="cat-discovery" role="status">{copy.discovery[community.state]}{community.state !== 'loading' && <button type="button" onClick={() => void community.refresh()}>{copy.refresh}</button>}</span>}</div>
+      {scope === 'community' && <p className="ob-scope-intro">{copy.communityIntro}</p>}
       <div className="ob-models" role="radiogroup" aria-label={t('guideChooseModel')}>
-        <div className="ob-model is-head" aria-hidden="true"><span/><span>{t('obColModel')}</span><span>{memoryGB ? t('obColMemory', { gb: Math.round(memoryGB) }) : t('obMemoryRow')}</span><span className="ob-right">{t('obColDownload')}</span><span className="ob-right">{t('obColSpeed')}</span></div>
-        {rows.map(row => <ModelRow key={`${row.family}-${row.quant}`} row={row} t={t} max={max} memoryGB={memoryGB} gpu={gpu} groups={arena.data?.groups} arenaFailed={arena.isError}
-          selected={selected?.family === row.family && selected.quant === row.quant} onSelect={() => props.onProgress({ selection: { family: row.family, quant: row.quant, context: selected?.context ?? defaultContext(scene), images: false } })}/>)}
+        <div className="ob-model is-head" aria-hidden="true"><span/><span>{copy.colModel}</span><span className="ob-right">{copy.colSpeed}</span></div>
+        {scope === 'official' ? rows.map(row => <ModelRow key={`${row.family}-${row.quant}`} name={row.name} quant={row.quant} family={row.family} downloadGB={row.downloadGB} ramGB={row.ramGB} tags={[row.recommended && <em key="r" className="ob-tag">{t('obRecommended')}</em>, row.experimental && <em key="e" className="ob-tag is-muted">{t('obExperimental')}</em>, row.nvidiaOnly && <em key="n" className="ob-tag is-muted">{t('obNvidiaOnly')}</em>]}
+          t={t} copy={copy} hardware={hardware} memoryGB={memoryGB} gpu={gpu} groups={arena.data?.groups} arenaFailed={arena.isError}
+          selected={selected?.family === row.family && selected.quant === row.quant} onSelect={() => props.onProgress({ selection: { family: row.family, quant: row.quant, context: selected?.context ?? defaultContext(scene), images: false } })}/>)
+        : communityRows.map(row => <ModelRow key={`${row.model.id}-${row.quant}`} name={row.model.name} quant={row.quant} family={row.model.family} downloadGB={row.info.downloadGB} ramGB={row.info.ramGB} tags={[<CommunityBadge key="c" model={row.model} copy={copy}/>]}
+          t={t} copy={copy} hardware={hardware} memoryGB={memoryGB} blocked={row.availability.downloadable ? undefined : row.availability.reason === 'orcaImport' ? undefined : copy.block[row.availability.reason as keyof typeof copy.block]}
+          selected={selected?.family === core.communityFamily(row.model.id) && selected.quant === row.quant} onSelect={() => props.onProgress({ selection: { family: core.communityFamily(row.model.id), quant: row.quant, context: selected?.context ?? defaultContext(scene), images: false } })}/>)}
+        {scope === 'official' && blockedFamilies.length > 0 && <div className="ob-blocked" data-testid="ob-mac-unavailable"><span className="ob-blocked-head">{copy.macUnavailableHeading}</span>{blockedFamilies.map(model => <div key={model.id} className="ob-blocked-row" aria-disabled="true"><b>{model.name}</b><small>{model.quants.join(' · ')}</small></div>)}<BlockNote reason="macFamily" source={core.UPSTREAM_MAC_LIMITS_SOURCE} copy={copy}/></div>}
       </div>
       <footer className="ob-links">
         <button type="button" className="ob-link" onClick={props.onOpenCatalog}>{t('obAllModels')}<ArrowRight size={13}/></button>
         <button type="button" className="ob-link" onClick={props.onOpenCatalog}>{t('obImportExisting')}<ArrowRight size={13}/></button>
-        <p>{arena.isError ? t('obSpeedOffline') : t('obSpeedNote')}</p>
+        <p>{copy.estimateMethod} {arena.isError ? t('obSpeedOffline') : t('obSpeedNote')}</p>
       </footer>
     </div>
     <aside className="ob-panel ob-side">
-      {selected && entry ? <>
-        <div className="ob-side-sec"><span className="ob-eyebrow">{t('obSelected')}</span><h3>{entry.name} <code className="ob-quant">{selected.quant}</code></h3></div>
+      {selected && (entry || communityRow) ? <>
+        <div className="ob-side-sec"><span className="ob-eyebrow">{t('obSelected')}</span><h3>{communityRow ? communityRow.model.name : entry!.name} <code className="ob-quant">{selected.quant}</code></h3>
+          {communityRow && <><CommunityBadge model={communityRow.model} copy={copy}/><CommunitySource model={communityRow.model} copy={copy}/></>}</div>
+        {communityRow && !canDownload && <div className="ob-side-sec">{availability?.reason === 'orcaImport' ? <p className="cat-note">{copy.orcaImport}</p> : <BlockNote reason={availability!.reason as keyof typeof copy.block} source={availability?.reason === 'macQuant' ? undefined : communityRow.model.macBlockSource} copy={copy}/>}</div>}
         <div className="ob-side-sec">
           <label className="ob-field"><span>{t('obContext')}</span><Dropdown ariaLabel={t('obContext')} value={String(selected.context)} onValueChange={value => select({ context: Number(value) })} options={[...new Set([...CONTEXTS, selected.context])].sort((a, b) => a - b).map(value => ({ value: String(value), label: core.isExtendedContext(value) ? `${contextLabel(value)} · ${t('obExperimental')}` : contextLabel(value) }))}/></label>
           <ContextExtensionNotice mode="setup" language={props.language} context={selected.context} kv={selected.context <= 8192 ? 'fp16' : 'int8'}/>
-          <div className="ob-field is-row"><span>{t('obImages')}</span><Toggle ariaLabel={t('obImages')} checked={selected.images} disabled={!entry.images || !!info?.visionUntested} onCheckedChange={images => select({ images })}/></div>
+          <div className="ob-field is-row"><span>{t('obImages')}</span><Toggle ariaLabel={t('obImages')} checked={selected.images && imagesAllowed} disabled={!imagesAllowed} onCheckedChange={images => select({ images })}/></div>
         </div>
-        <div className="ob-side-sec"><h4>{t('obFitHeading')}</h4>
+        {estimate && <div className="ob-side-sec ob-side-estimate"><h4>{copy.colSpeed}</h4><EstimateCell estimate={estimate} copy={copy}/><small className="ob-note">{copy.basis[estimate.basis]}</small><MemoryNote estimate={estimate} memoryGB={memoryGB} copy={copy}/></div>}
+        {communityRow && <div className="ob-side-sec"><CommunityRisks model={communityRow.model} copy={copy}/></div>}
+        {!communityRow && <div className="ob-side-sec"><h4>{t('obFitHeading')}</h4>
           <ResourceAssessmentPanel compact desktop={props.desktop} language={props.language} request={request} disk={disk.data} diskPending={disk.isPending && disk.fetchStatus !== 'idle'} diskError={disk.error} onRefreshDisk={() => void disk.refetch()} unavailableReason={!runtime ? t('obNeedRuntime') : undefined}/>
-        </div>
+        </div>}
         <div className="ob-side-sec ob-side-actions">
           {error && <p className="ob-error" role="alert">{error}</p>}
-          <button type="button" className="primary ob-wide" disabled={!props.desktop || !runtime || !options || submitting || props.busy || disk.data?.status === 'insufficient'} onClick={() => void prepare()}>{submitting && <LoaderCircle size={14} className="spin"/>}{t('obDownloadAndPrepare', { gb: gb(info?.downloadGB ?? 0) })}</button>
-          <span className="ob-note ob-center">{t('obPipeline')}</span>
+          {communityRow && availability?.reason === 'orcaImport' && platform !== 'macos'
+            ? <button type="button" className="st-btn st-btn--secondary ob-wide" onClick={props.onOpenCatalog}>{copy.orcaOpen}<ArrowRight size={13}/></button>
+            : <button type="button" className="primary ob-wide" disabled={!canDownload || !props.desktop || !runtime || !options || submitting || props.busy || (!communityRow && disk.data?.status === 'insufficient')} onClick={() => void prepare()}>{submitting && <LoaderCircle size={14} className="spin"/>}{communityRow ? copy.downloadCommunity(gb(downloadGB)) : t('obDownloadAndPrepare', { gb: gb(downloadGB) })}</button>}
+          <span className="ob-note ob-center">{communityRow ? copy.pipelineNote : t('obPipeline')}</span>
+          {communityRow?.model.kind === 'control-vector' && <span className="ob-note">{copy.controlVectorNote}</span>}
+          {communityRow && communityRow.model.images && <span className="ob-note">{copy.projectorNote}</span>}
           <button type="button" className="ob-link ob-center" onClick={props.onOpenCatalog}>{t('obDownloadSettings')}<ArrowRight size={13}/></button>
         </div>
-      </> : <div className="ob-side-sec"><p className="ob-note">{t('obNeedRuntime')}</p></div>}
+      </> : <div className="ob-side-sec"><p className="ob-note">{scope === 'community' ? copy.discovery[community.state] : t('obNeedRuntime')}</p></div>}
     </aside>
   </div>;
 }
-function ModelRow({ row, t, max, memoryGB, gpu, groups, arenaFailed, selected, onSelect }: { row: Recommendation; t: Translate; max: number; memoryGB?: number; gpu?: ReturnType<typeof parseGpu>; groups?: Parameters<typeof arenaMatch>[0]; arenaFailed: boolean; selected: boolean; onSelect: () => void }) {
-  const match = arenaMatch(groups, row.family, row.quant, gpu);
+interface ModelRowProps { name: string; quant: string; family: string; downloadGB: number; ramGB: number; tags: ReactNode[]; t: Translate; copy: CatalogCopy; hardware: core.PerformanceHardware; memoryGB?: number; gpu?: ReturnType<typeof parseGpu>; groups?: Parameters<typeof arenaMatch>[0]; arenaFailed?: boolean; blocked?: string; selected: boolean; onSelect: () => void }
+/** Two lines: name + quant (one line, ellipsis) over "needs / this machine / mode · download"; speed on the right. */
+function ModelRow({ name, quant, family, downloadGB, ramGB, tags, t, copy, hardware, memoryGB, gpu, groups, arenaFailed, blocked, selected, onSelect }: ModelRowProps) {
+  const match = groups ? arenaMatch(groups, family, quant, gpu) : null;
   const tier = useQuery({ queryKey: ['arena-public-tier', match ? JSON.stringify(arenaLeaderboardQuery(match)) : null], queryFn: ({ signal }) => fetchArenaTier(arenaLeaderboardQuery(match!), signal), enabled: !!match, staleTime: 10 * 60_000, retry: false, refetchOnWindowFocus: false });
   const speed = tier.data?.decode;
   const bars = match ? confidenceBars(match.machines) : 0;
-  const tags = [row.recommended && <em key="r" className="ob-tag">{t('obRecommended')}</em>, row.experimental && <em key="e" className="ob-tag is-muted">{t('obExperimental')}</em>, row.nvidiaOnly && <em key="n" className="ob-tag is-muted">{t('obNvidiaOnly')}</em>].filter(Boolean);
-  return <button type="button" role="radio" aria-checked={selected} className={`ob-model${selected ? ' is-on' : ''}`} onClick={onSelect}>
+  const estimate = core.estimatePerformance(family, quant, hardware);
+  const visibleTags = tags.filter(Boolean);
+  return <button type="button" role="radio" aria-checked={selected} className={`ob-model${selected ? ' is-on' : ''}${blocked ? ' is-blocked' : ''}`} onClick={onSelect} title={blocked}>
     <span className="ob-radio" aria-hidden="true"/>
-    <span className="ob-model-name"><b>{row.name}</b><code className="ob-quant">{row.quant}</code>{tags}</span>
-    <span className="ob-model-fit"><D2DotAxis value={row.ramGB} max={max} limit={memoryGB} warn={row.fit !== 'fits'} label={`${row.ramGB} GB`}/><small>{row.ramGB} GB · {t(row.fit === 'fits' ? 'obFits' : row.fit === 'tight' ? 'obTight' : row.fit === 'over' ? 'obOver' : 'obNotMeasured')}</small></span>
-    <span className="ob-right ob-mono">{gb(row.downloadGB)} GB</span>
-    <span className="ob-right ob-speed">{speed !== undefined && match ? <><b>{gb(speed)}</b> tok/s<small><span className="ob-sig" aria-hidden="true">{[1, 2, 3].map(level => <i key={level} className={level <= bars ? 'is-on' : ''}/>)}</span>{t(match.level === 'gpu' ? 'obArenaGpu' : 'obArenaVram')} · {t('obMachines', { count: match.machines })}</small></> : <small>{arenaFailed || !tier.isPending || !match ? t('obNotMeasured') : '…'}</small>}</span>
+    <span className="ob-model-main">
+      <span className="ob-model-name"><b title={name}>{name}</b><code className="ob-quant">{quant}</code></span>
+      <span className="ob-model-meta">{visibleTags.length > 0 && <span className="ob-model-tags">{visibleTags}</span>}<span className={estimate.mode === 'macStreaming' || estimate.mode === 'lowRam' || estimate.mode === 'tooSmall' ? 'is-warn' : undefined}>{memoryLine(estimate, ramGB, memoryGB, copy)}</span><span>{copy.download(gb(downloadGB))}</span></span>
+      {blocked && <span className="ob-model-blocked">{blocked}</span>}
+    </span>
+    <span className="ob-right ob-speed">{speed !== undefined && match ? <><b>{gb(speed)}</b> tok/s<small><span className="ob-sig" aria-hidden="true">{[1, 2, 3].map(level => <i key={level} className={level <= bars ? 'is-on' : ''}/>)}</span>{t(match.level === 'gpu' ? 'obArenaGpu' : 'obArenaVram')} · {t('obMachines', { count: match.machines })}</small></> : match && tier.isPending && !arenaFailed ? <small>…</small> : <EstimateCell estimate={estimate} copy={copy}/>}</span>
   </button>;
 }
 

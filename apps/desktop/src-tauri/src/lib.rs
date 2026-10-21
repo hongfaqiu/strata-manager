@@ -7,6 +7,7 @@ mod configuration_files;
 mod daily_experience;
 mod floating_monitor;
 mod http;
+mod huggingface;
 mod invoke_policy;
 mod model_files;
 mod png_export;
@@ -745,6 +746,25 @@ async fn run_orca_import(
         .request(
             "run_orca_import",
             json!({"profile":profile,"request":request,"options":options}),
+        )
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn run_community_setup(
+    state: State<'_, ClientState>,
+    profile: ServiceProfile,
+    request: Value,
+    context: u32,
+    images: bool,
+    options: Option<Value>,
+) -> Result<Value, String> {
+    state
+        .ipc
+        .request(
+            "run_community_setup",
+            json!({"profile":profile,"request":request,"context":context,"images":images,"options":options}),
         )
         .await
         .map_err(|e| e.to_string())
@@ -2094,6 +2114,8 @@ pub fn run() {
             check_mtp_path,
             orca_import_plan,
             run_orca_import,
+            run_community_setup,
+            huggingface::hf_models_api,
             run_setup,
             inspect_gguf,
             manager_mcp_connection,

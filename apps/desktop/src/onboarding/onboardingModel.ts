@@ -47,8 +47,16 @@ export function normalizeProgress(value: unknown): OnboardingProgress | null {
     const model = core.MODEL_CATALOG.find(entry => entry.family === selection.family);
     const quant = str(selection.quant);
     const context = Number(selection.context);
-    if (model && quant && model.quants.includes(quant) && Number.isInteger(context) && context >= 512 && context <= 1048576) {
+    const contextOk = Number.isInteger(context) && context >= 512 && context <= 1048576;
+    if (model && quant && model.quants.includes(quant) && contextOk) {
       progress.selection = { family: model.family, quant, context, images: selection.images === true && model.images };
+    } else if (typeof selection.family === 'string' && quant && contextOk) {
+      // Community entries: a built-in one by id with one of its quants, or a discovered `hf:<owner>/<repo>@<family>` entry.
+      const id = core.communityIdOf(selection.family);
+      const builtin = core.BUILTIN_COMMUNITY_MODELS.find(entry => entry.id === id);
+      const [repo, family] = id?.startsWith('hf:') ? id.slice(3).split('@') : [];
+      const discovered = !!repo && !!family && core.isRepoId(repo) && core.setupSupports(family, quant);
+      if (builtin ? builtin.quants.includes(quant) : discovered) progress.selection = { family: selection.family, quant, context, images: selection.images === true && (builtin?.images ?? true) };
     }
   }
   for (const key of ['runtimeTaskId', 'setupTaskId', 'profileId'] as const) { const item = str(value[key]); if (item) progress[key] = item; }
@@ -225,11 +233,13 @@ const sceneFamilies: Record<Scene, core.CatalogModel['family'][]> = { chat: ['sw
  * family order, then the larger (higher quality) quant. Experimental or NVIDIA-only variants
  * on a machine without NVIDIA sink to the end. The first row is the recommendation.
  */
-export function recommendations(scene: Scene, memoryGB: number | undefined, nvidia: boolean, limit = 5): Recommendation[] {
+export function recommendations(scene: Scene, memoryGB: number | undefined, nvidia: boolean, limit = 5, platform?: core.RuntimePackagePlatform): Recommendation[] {
   const order = sceneFamilies[scene];
-  const catalogPlatform = (typeof navigator !== 'undefined' && /Mac/i.test(navigator.userAgent) && !/Windows/i.test(navigator.userAgent)) ? 'macos' as const : 'other' as const;
-  const catalogModels = catalogPlatform === 'macos' ? core.MODEL_CATALOG.filter(m => core.macCatalogFamilyAllowed(m.family)) : core.MODEL_CATALOG;
-  const rows = catalogModels.flatMap(model => model.quants.map(quant => {
+  // The environment's OS when known (the guide passes it); else the browser's user agent. Mac families the Metal
+  // engine cannot run are listed apart, greyed out with the reason (ModelStep), never recommended.
+  const catalogPlatform = platform && platform !== 'other' ? platform : core.runtimePackagePlatform();
+  const catalogModels = core.filterCatalogForPlatform(core.MODEL_CATALOG, catalogPlatform);
+  const rows = catalogModels.flatMap(model => core.platformQuants(model.quants, catalogPlatform).map(quant => {
     const info = model.quantInfo[quant]!;
     return { family: model.family, name: model.name, quant, downloadGB: info.downloadGB, ramGB: info.ramGB, fit: fitState(info.ramGB, memoryGB), experimental: !!info.experimental, nvidiaOnly: !!info.nvidiaOnly, recommended: false };
   }));

@@ -96,7 +96,7 @@ const markdownFileName = (title: string) => {
   const clean = title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/[ .]+$/g, '').trim() || 'conversation';
   return `${/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(clean) ? '_' : ''}${clean}.md`;
 };
-type Recipe = { kind: 'setup'; profile: ServiceProfile; model: string; quant: string; context: number; images: boolean; options?: core.OfficialSetupOptions; localModel?: core.LocalModelRequest } | { kind: 'orca'; profile: ServiceProfile; request: core.OrcaImportRequest; options?: core.OfficialSetupOptions } | { kind: 'install'; directory: string } | { kind: 'update'; profile: ServiceProfile };
+type Recipe = { kind: 'setup'; profile: ServiceProfile; model: string; quant: string; context: number; images: boolean; options?: core.OfficialSetupOptions; localModel?: core.LocalModelRequest } | { kind: 'orca'; profile: ServiceProfile; request: core.OrcaImportRequest; options?: core.OfficialSetupOptions } | { kind: 'community'; profile: ServiceProfile; request: core.CommunitySetupRequest; context: number; images: boolean; options?: core.OfficialSetupOptions } | { kind: 'install'; directory: string } | { kind: 'update'; profile: ServiceProfile };
 type Modal = { kind: 'profile'; profile?: ServiceProfile } | { kind: 'modelProfiles'; models: core.LocalModel[]; runtime: ServiceProfile } | { kind: 'rename'; conversation: Conversation } | { kind: 'deleteConversation'; conversation: Conversation } | { kind: 'request'; value: unknown } | { kind: 'options' } | { kind: 'vision'; profile: ServiceProfile } | { kind: 'deleteConfiguration'; profile: ServiceProfile } | null;
 
 export function App() {
@@ -679,7 +679,7 @@ export function App() {
     setAttachments(old => [...old, ...added]);
   };
   const runRecipe = async (recipe: Recipe) => {
-    const task = recipe.kind === 'setup' ? await core.runSetup(recipe.profile, recipe.model, recipe.quant, recipe.context, recipe.images, recipe.options, recipe.localModel) : recipe.kind === 'orca' ? await core.runOrcaImport(recipe.profile, recipe.request, recipe.options) : recipe.kind === 'install' ? await core.installRuntime(recipe.directory) : await core.updateRuntime(recipe.profile);
+    const task = recipe.kind === 'setup' ? await core.runSetup(recipe.profile, recipe.model, recipe.quant, recipe.context, recipe.images, recipe.options, recipe.localModel) : recipe.kind === 'orca' ? await core.runOrcaImport(recipe.profile, recipe.request, recipe.options) : recipe.kind === 'community' ? await core.runCommunitySetup(recipe.profile, recipe.request, recipe.context, recipe.images, recipe.options) : recipe.kind === 'install' ? await core.installRuntime(recipe.directory) : await core.updateRuntime(recipe.profile);
     observedTasks.current ??= new Map();
     observedTasks.current.set(task.id, task.state);
     setRecipes(old => ({ ...old, [task.id]: recipe })); return task;
@@ -715,10 +715,10 @@ export function App() {
       : recipe.profile;
     const models = await core.listLocalModels({ ...runtime, configPath: '' });
     if (!models.length) { selectPreparationRuntime(runtime.installDir); notify(t('prepareBeforeProfile')); return; }
-    if (recipe.kind === 'setup' || recipe.kind === 'orca') {
+    if (recipe.kind === 'setup' || recipe.kind === 'orca' || recipe.kind === 'community') {
       // setup.py FAMILIES.name determines model_name; verify it against actual discovered configs.
       const familyNames: Record<string, string> = { qwen: 'qwen3.8-flash-next', swift: 'swift-1.5', coder: 'qwen3.8-flash-next-coder', unsloth: 'qwen3.8-flash-next-unsloth', qwen36: 'qwen3.6-35b-a3b' };
-      const expected = recipe.kind === 'orca' ? core.ORCA_MODEL_NAME : `${familyNames[recipe.model]}-${recipe.quant.toLowerCase()}`;
+      const expected = recipe.kind === 'orca' ? core.ORCA_MODEL_NAME : recipe.kind === 'community' ? core.communityModelName(recipe.request.slug, recipe.request.quant) : `${familyNames[recipe.model]}-${recipe.quant.toLowerCase()}`;
       const matches = models.filter(model => model.name.toLowerCase() === expected);
       if (matches.length === 1) { await openConfigProfile(matches[0]!.configPath, runtime); return; }
       setModal({ kind: 'modelProfiles', models, runtime });
@@ -808,6 +808,7 @@ export function App() {
     startupLogs={startupLogs.data ?? []} modelName={typeof healthData.model === 'string' ? healthData.model : undefined} busy={!!busy || inferenceBusy || !!localProgress}
     onPrepareModel={request => act('setup', () => runRecipe({ kind: 'setup', ...request }), 'modelPrepared') as Promise<TaskStatus | undefined>}
     onOrcaImport={(runtime, request, options) => act('setup', () => runRecipe({ kind: 'orca', profile: runtime, request, options }), 'modelPrepared') as Promise<TaskStatus | undefined>}
+    onCommunitySetup={(runtime, request, context, images, options) => act('setup', () => runRecipe({ kind: 'community', profile: runtime, request, context, images, options }), 'modelPrepared') as Promise<TaskStatus | undefined>}
     onChooseDirectory={() => choose(true)} onChooseFile={() => choose(false)}
     onStart={async selected => { await activateLocal(selected); }}
     onLoad={async selected => { await core.request(selected, '/load', 'POST', {}); await query.invalidateQueries(); }}
@@ -909,6 +910,7 @@ export function App() {
     onError={error=>notify(errorText(error),true)}/>;
 
   const ModelsPage = () => <ModelDownloadPage machineMemoryGB={machineMemoryGB(hardware, environment.data)} language={settings.language} desktop={desktop}
+    platform={core.runtimePackagePlatform(environment.data?.os)} gpus={environment.data?.gpus}
     fallbackRuntime={profile} runtimeOverride={preparationRuntime} runtimes={profiles}
     runtimeVersions={detectedRuntimes ?? []} detectedRuntimes={detectedRuntimes ?? []} windows={core.runtimePackageIsWindows(environment.data?.os)}
     busy={!!busy || inferenceBusy || !!localProgress} tasks={tasks.data ?? []}
@@ -916,6 +918,7 @@ export function App() {
     onPrepare={async request => { await act('setup', () => runRecipe({ kind: 'setup', ...request }), 'modelPrepared'); }}
     onImportConfig={async (path, runtime) => { await act('import', () => openConfigProfile(path, runtime, false)); }}
     onOrcaImport={(runtime, request, options) => act('setup', () => runRecipe({ kind: 'orca', profile: runtime, request, options }), 'modelPrepared') as Promise<TaskStatus | undefined>}
+    onCommunitySetup={(runtime, request, context, images, options) => act('setup', () => runRecipe({ kind: 'community', profile: runtime, request, context, images, options }), 'modelPrepared') as Promise<TaskStatus | undefined>}
     onLocalSetup={request => act('setup', () => runRecipe({ kind: 'setup', ...request }), 'modelPrepared') as Promise<TaskStatus | undefined>}
     onTasks={() => go('tasks')} onEnvironment={() => go('environment')}
     onDirtyChange={setDownloadConfigurationDirty} onSaveDraftReady={registerDownloadConfigurationSave}/>;

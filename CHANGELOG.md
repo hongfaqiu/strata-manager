@@ -5,6 +5,31 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **「选择模型」列表更清楚，并加入标注清楚的社区（无审查）版本（用户反馈）**：引导页第 3 步和「下载模型」页的模型列表改版。模型名不再折成三行：每行只有两行文字，第一行是名称和量化，第二行是标签、内存需求和下载大小。原来的「尚无实测」换成按本机硬件给出的「估算」生成速度，悬停可看依据；详情里再给出首字延迟（4K 提示词）和内存/显存需求，并写明参考的是哪台机器的公开实测、是否为外推。估算全部取自 Strata 上游文档（MAC.md、MODELS.md、QWEN36.md，固定在提交 9de04cd）里同一模型和量化的实测，或由这些实测按量化比例外推，不是本机实测。48 GB 这类内存放不下整个模型的 Mac 会直接说明：引擎会把专家从 SSD 流式读取，能运行、不会失败，只是更慢（上游实测 M4 32 GB 的 Q2_0 为 13.5–14.1 tok/s，M1 Max 34 GB 为 7.9 tok/s），并附 MAC.md 链接。
+- 列表顶部新增「官方 / 社区 · 无审查」切换，默认仍是官方，推荐也只来自官方。社区页内置三个条目：SC117 的 Qwen3.8-Flash-Next GSQ-RCO abliterated（Q2_0 / IQ2_XS / IQ3_XXS / IQ3_S，固定版本，每个分片都有字节数和 SHA-256）、alesha-pro 的去拒答控制向量版、OrcaRouter IQ3_XXS。社区条目都有「社区」标记、来源仓库链接（指向固定的提交）和风险提示：去掉了安全拒答、MTP 草稿头没有做 abliteration、作为智能体长期运行时可能又开始拒答。SC117 和 alesha-pro 可以一键下载：走现有的任务流程，先按固定版本下载并逐个核对大小和 SHA-256，再用官方安装程序的 `--gguf-dir` 打包；安装放在单独的 `community/` 数据目录，生成 `strata-community-…json` 配置，不会覆盖同尺寸的官方配置，也不会改动已记住的数据目录。图像功能使用官方、经过 SHA-256 校验的图像投影文件。OrcaRouter 仍走原来的 ORCA 导入流程。
+- **Mac 上不能用的条目会变灰并写明原因**：Swift、Coder、Qwen3.6 在 Mac 上变灰（Metal 引擎只支持 Qwen 和 Unsloth 系列），不再出现在推荐里。OrcaRouter 在 Mac 上不可用：Metal 引擎没有 IQ3_XXS 的 gemv 内核，附上游 PR 链接。alesha-pro 在 Mac 上显示「去拒答向量在 Mac 引擎未移植，等同官方版」。Mac 安装程序不接受的量化（例如 IQ2_XS）也会单独标出。
+- **自动发现社区模型**：社区页会通过 Hugging Face API 搜索 Strata 能直接运行的 GGUF：量化必须在支持列表里，文件布局和系列必须是 Strata 支持的（GSQ-RCO 双分片或 Unsloth UD），分片齐全、都有 SHA-256，并排除剪枝或蒸馏版本；在 Mac 上只保留 Qwen 和 Unsloth 系列。结果缓存 24 小时，可以手动刷新；离线或请求失败时显示上次的缓存或内置条目，不影响页面。发现的条目标为「社区 · 未验证」，同样可以一键下载（固定到发现时的提交并核对 SHA-256）。桌面端只允许三种只读的 Hugging Face API 请求。
+
+### English
+
+- **A clearer "Choose a model" list, with clearly labelled community (uncensored) builds (user report)**: the model list in step 3 of the guide and on Download models is redesigned. Model names no longer wrap onto three lines: each row has two lines, the name and quantization first, then tags, memory need and download size. "Not measured yet" is replaced by an **estimated** generation speed for this machine, with its basis on hover; the details add the time to first token (4K prompt) and the memory/VRAM need, and name the reference machine and whether a figure is extrapolated. Every estimate comes from upstream Strata's own measurements of the same model and quantization (MAC.md, MODELS.md, QWEN36.md, pinned at commit 9de04cd), or is extrapolated from them by quantization size. Nothing is measured on this machine. A Mac whose memory cannot hold the whole model, such as 48 GB, now says so plainly: the engine streams the experts from the SSD, so it runs and does not fail, it is just slower (upstream measured 13.5–14.1 tok/s for Q2_0 on an M4 32 GB and 7.9 tok/s on an M1 Max 34 GB). A link to MAC.md is shown.
+- A new **Official / Community · uncensored** switch sits above the list. Official stays the default, and recommendations still come only from official models. The community view ships three entries:
+  - SC117's Qwen3.8-Flash-Next GSQ-RCO abliterated (Q2_0 / IQ2_XS / IQ3_XXS / IQ3_S, pinned revision, size and SHA-256 for every shard)
+  - alesha-pro's refusal-direction control vector build
+  - OrcaRouter IQ3_XXS
+
+  Each community entry carries a "Community" badge, a link to its source repository at the pinned commit, and the risks: safety refusals are removed, the MTP draft head is not abliterated, and long-running agents may start refusing again. SC117 and alesha-pro download with one click through the existing task flow. The files are fetched at the pinned revision and each one is checked for size and SHA-256, then packed by the official installer with `--gguf-dir`. The install goes into its own `community/` data folder and gets a `strata-community-…json` configuration. It never overwrites the official configuration of the same size or the remembered data folder. Images use the official, SHA-256-checked projector. OrcaRouter keeps the existing ORCA import flow.
+- **Entries a Mac cannot run are greyed out with the reason**: Swift, Coder and Qwen3.6 are greyed out on Mac, because the Metal engine supports only the Qwen and Unsloth families, and they are never recommended there. OrcaRouter is unavailable on Mac because the Metal engine has no IQ3_XXS gemv kernel; the upstream PR is linked. alesha-pro on Mac says "the refusal-direction vector is not ported to the Mac engine, so it equals the official build". Quantizations the Mac installer does not accept (such as IQ2_XS) are marked too.
+- **Automatic community discovery**: the community view uses the Hugging Face API to find GGUFs that Strata can run directly. To qualify, a build must:
+  - use a quantization from the supported list
+  - use a layout and family Strata supports (GSQ-RCO two-shard sets or Unsloth UD)
+  - have complete, SHA-256-hashed shards
+  - not be pruned or distilled
+
+  On Mac only the Qwen and Unsloth families are kept. Results are cached for 24 hours and can be refreshed by hand. When offline, or when a request fails, the last cache or the built-in entries are shown and the page keeps working. Discovered entries are labelled "Community · unverified" and download with one click as well, pinned to the commit seen at discovery and checked against SHA-256. The desktop app allows only three read-only Hugging Face API request shapes.
+
 ## [0.2.11] - 2026-10-20
 
 ### 中文

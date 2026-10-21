@@ -3,6 +3,7 @@ pub mod apple_gpu;
 pub mod benchmark_identity;
 mod byte_size;
 pub mod chat_runtime;
+pub mod community_model;
 pub mod configuration_copy;
 pub mod diagnostics;
 pub mod discovery;
@@ -782,6 +783,7 @@ impl RuntimeState {
                 | "restart_service"
                 | "take_over_service"
                 | "run_setup"
+                | "run_community_setup"
                 | "install_runtime"
                 | "prepare_local_runtime"
                 | "write_config"
@@ -839,6 +841,7 @@ impl RuntimeState {
                     | "restart_service"
                     | "take_over_service"
                     | "run_setup"
+                    | "run_community_setup"
                     | "install_runtime"
                     | "update_runtime"
                     | "write_config"
@@ -866,6 +869,7 @@ impl RuntimeState {
                 | "restart_service"
                 | "take_over_service"
                 | "run_setup"
+                | "run_community_setup"
                 | "install_runtime"
                 | "update_runtime"
                 | "update_runtime_zip"
@@ -1129,6 +1133,20 @@ impl RuntimeState {
                 self.clone(),
                 profile()?,
                 arg(&params, "request")?,
+                params
+                    .get("options")
+                    .filter(|v| !v.is_null())
+                    .cloned()
+                    .map(serde_json::from_value::<setup_options::SetupOptions>)
+                    .transpose()
+                    .map_err(|e| e.to_string())?,
+            )),
+            "run_community_setup" => value(run_community_setup(
+                self.clone(),
+                profile()?,
+                arg(&params, "request")?,
+                arg(&params, "context")?,
+                arg(&params, "images")?,
                 params
                     .get("options")
                     .filter(|v| !v.is_null())
@@ -3562,6 +3580,69 @@ fn run_orca_import(
         quant: orca_import::QUANT.into(),
         context: orca_import::CONTEXT,
         images: false,
+    };
+    processes::launch_setup_task(state.clone(), intent, steps)
+}
+/// A community model from the 「选择模型」 list (community_model.rs): pinned download + SHA-256, then the official
+/// installer with `--gguf-dir`, registered as `community-<slug>-<quant>` beside the official configs.
+fn run_community_setup(
+    state: Arc<RuntimeState>,
+    profile: ServiceProfile,
+    request: community_model::CommunitySetupRequest,
+    context: u32,
+    images: bool,
+    options: Option<crate::setup_options::SetupOptions>,
+) -> Result<TaskStatus, String> {
+    let options = options.map(|options| options.validated()).transpose()?;
+    let _operation = state.runtime_operations.lock().map_err(|e| e.to_string())?;
+    runtime_upgrade::assert_available(&state)?;
+    external_management::assert_profile_manager_owned(&state, &profile)?;
+    let root = processes::runtime_dir(&profile)?;
+    assert_stopped(&state, &profile)?;
+    if !(512..=1_048_576).contains(&context) {
+        return Err("context 必须为 512–1048576；实际容量由安装器检查内存和模型决定".into());
+    }
+    let prepared = community_model::prepare(&root, &request, &disk::settings()?)?;
+    prepared.plan.require_space()?;
+    for entry in fs::read_dir(&root).map_err(|e| e.to_string())? {
+        let path = entry.map_err(|e| e.to_string())?.path();
+        if path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .starts_with("strata-")
+            && path.extension().is_some_and(|x| x == "json")
+        {
+            storage::backup(&path)?;
+        }
+    }
+    let url = http::endpoint(&profile, "/health")?;
+    let (python, mut steps) = processes::setup_python(&profile, &root)?;
+    let env = options
+        .as_ref()
+        .map(|options| options.environment())
+        .transpose()?
+        .unwrap_or_default();
+    let mut setup_args = Vec::new();
+    if let Some(options) = &options {
+        options.append_args(&mut setup_args)?;
+    }
+    steps.extend(community_model::steps(
+        &prepared,
+        &request,
+        &python,
+        env,
+        context,
+        images,
+        url.port_or_known_default().unwrap_or(8080),
+        setup_args,
+    ));
+    let intent = setup_handoff::SetupIntent {
+        profile,
+        family: format!("{}{}", community_model::FAMILY_PREFIX, request.slug),
+        quant: request.quant.clone(),
+        context,
+        images,
     };
     processes::launch_setup_task(state.clone(), intent, steps)
 }

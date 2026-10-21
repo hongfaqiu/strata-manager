@@ -47,6 +47,7 @@
 
 - `setup_disk_preflight({profile,model,quant,images}) -> SetupDiskPreflight`：模型下载、复用和准备空间的只读计划。
 - `run_setup({profile,model,quant,context,images,options?}) -> TaskStatus`：官方非交互模型准备任务。options 为 `OfficialSetupOptions`；后台按 `SetupOptions` 验证，不接受任意命令字符串。返回 task ID，日志由任务页读取。
+- `run_community_setup({profile,request,context,images,options?}) -> TaskStatus`：社区（第三方）模型的一键准备。request 为 `CommunitySetupRequest`（`slug`、`repo`、40 位十六进制 `revision`、`family`、`quant`、带 `size`/`sha256` 的完整分片列表，可选根目录下 ≤64 MiB 的 `controlVector`）；后台拒绝未固定提交、缺 SHA-256、路径越界、分片不全、文件名推断的系列/量化与请求不符或安装器不接受的组合。任务按固定提交下载并逐个核对大小和 SHA-256，再用官方 `setup.py --gguf-dir` 打包到 `<data>/community/<slug>-<quant>`，配置改名为 `strata-community-<slug>-<quant>.json`（model_name `community-<slug>-<quant>`），同尺寸官方配置与 settings.json 的 `data_dir` 原样恢复。
 - `inspect_gguf({request}) -> TaskStatus`：模型文件检查任务；request 为 `ModelInspectRequest`，Core 名为 `inspectModel`。
 - `install_runtime({directory}) -> TaskStatus`：官方运行环境准备；拒绝覆盖未知非空目录，只有本应用数据库与目录标记均匹配的失败安装允许重试，保留旧半成品，不自动下载模型权重。
 - `managed_python_status() -> ManagedPythonStatus`、`install_managed_python({source?}) -> TaskStatus`：macOS / glibc Linux 的应用内 Python（python-build-standalone 20261009 · CPython 3.12.15）。只读状态含 `supported/installed/interpreter/downloadBytes/task`；安装任务按固定的官方长度与 SHA-256 校验（`source` 只能是含 `{url}` 的 HTTPS GitHub 代理模板或完整 HTTPS 地址，不改变摘要），逐项检查解包条目后原子移入 `toolchains/`，可用 `cancel_task` 取消。安装后 `install_runtime` 与 `environment_info` 优先使用它（`pythonManaged: true`）；不改 PATH、系统或 Homebrew Python。Windows 仍由 `install_runtime` 下载 python.org 安装器。
