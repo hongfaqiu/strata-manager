@@ -26,6 +26,8 @@ const DESKTOP_ONLY: &[&str] = &[
     "set_startup_enabled",
     "prepare_app_update",
     "write_png_export",
+    "register_html_preview",
+    "write_html_preview",
     "validate_vision_files",
     "copy_configuration",
     "delete_configuration",
