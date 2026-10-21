@@ -24,7 +24,7 @@
 | --- | --- | --- |
 | Windows x64 | `x86_64-pc-windows-msvc` | NSIS `*-setup.exe` 及 `.sig` |
 | Linux x64 | `x86_64-unknown-linux-gnu` | `.AppImage`、`.AppImage.sig` 和桌面 `.deb` |
-| macOS Apple Silicon（实验） | `aarch64-apple-darwin` | `*_aarch64.dmg`（手工下载）与 `*_aarch64.app.tar.gz`（updater；`latest.json` 的 `darwin-aarch64`）。临时签名、**未公证**；不提供 Intel。**DMG 仍不含引擎**；Manager 可装上游预制 Metal 包（真机验收待进行）。 |
+| macOS Apple Silicon（实验） | `aarch64-apple-darwin` | `*_aarch64.dmg`（手工下载）与 `*_aarch64.app.tar.gz`（updater；`latest.json` 的 `darwin-aarch64`）。v0.2.12 起 Developer ID 签名 + Apple 公证（见下方「macOS 签名与公证」）；不提供 Intel。**DMG 仍不含引擎**；Manager 可装上游预制 Metal 包（真机验收待进行）。 |
 | Linux x64 无头 Server（#6） | `x86_64-unknown-linux-gnu` | `Strata.Manager.Server_<ver>_amd64.tar.gz` 与 `Strata.Manager.Server_<ver>_amd64.deb`（**无** updater `.sig`；不进 `latest.json`） |
 
 每个安装包包含桌面外壳及独立 `strata-supervisor` 后台。Python、Strata 运行时和模型权重使用应用内的独立安装/导入流程，模型不进入 GitHub 构建工件。平台安装包构建成功不等于对应 GPU 推理已验收；必须在发布说明中列出实际测试的平台、驱动和范围。
@@ -63,6 +63,55 @@ pnpm --filter @strata-manager/desktop tauri signer generate -w $strataSigningKey
 签名环境变量仅在工作流的签名步骤显式注入；`.env` 文件不能替代它们。正式 Release 缺少私钥、公钥、HTTPS endpoint 或更新产物配置时会失败。更新签名与 Windows Authenticode/发行者代码签名是不同能力；本流程不声称拥有 Windows 发布者证书。
 
 官方依据：[Tauri updater](https://v2.tauri.app/plugin/updater/)、[Tauri GitHub Action](https://github.com/tauri-apps/tauri-action)、[Tauri sidecar](https://v2.tauri.app/develop/sidecar/)。
+
+## macOS 签名与公证
+
+macOS 包在 CI 的 `desktop (macos-15, …)` job 中签名和公证，Release 只发布这些字节，并另外加 Tauri 更新签名（`.sig`）。两种签名互不影响：Developer ID 签名改的是 `.app`/DMG 本身，updater 签的是打包好的 `.app.tar.gz`。
+
+需要的 Actions secrets（`gh secret set <名字> -R hongfaqiu/strata-manager`，从标准输入或文件写入，不要把内容放进命令参数）：
+
+| Secret | 内容 |
+| --- | --- |
+| `APPLE_CERTIFICATE` | Developer ID Application 证书和私钥导出的 `.p12`，base64 |
+| `APPLE_CERTIFICATE_PASSWORD` | 该 `.p12` 的密码 |
+| `APPLE_API_KEY` | App Store Connect API key 的 Key ID |
+| `APPLE_API_ISSUER` | App Store Connect API 的 Issuer ID |
+| `APPLE_API_PRIVATE_KEY` | `AuthKey_<KeyID>.p8` 的完整内容；job 里写到 `$RUNNER_TEMP` 下的临时文件，结束时删除 |
+| `APPLE_TEAM_ID` | 可选；设置后要求签名身份属于这个团队 |
+
+CI 流程：「Prepare macOS signing and notarization」把证书导入临时钥匙串；tauri 以硬化运行时签名 `.app` 和 `strata-supervisor`（tauri 自己不公证）；「Verify the macOS code signature」检查签名并给 DMG 签 Developer ID；「Submit the macOS app for notarization」用 `ditto` 把 `.app` 打成 zip 提交一次（**只公证 app，DMG 不单独公证**），记下 submission id、app 的 CDHash、提交 zip 和 DMG 的 SHA-256，上传为工件 `ci-darwin-aarch64-notarization`；「Wait for notarization and staple the macOS app」按模式等待，通过后 staple app、`stapler validate`、`spctl --type execute`，再用 `hdiutil` 把 DMG 转成可写、把里面的 app 换成已 staple 的同一个 app（CDHash 必须一致，保留 DMG 布局）、压回 UDZO，并用 Developer ID 重新签名 DMG；「Confirm the macOS app is stapled and the DMG is signed」离线检查 app 带票据、DMG 是 Developer ID 签名且里面是同一个已 staple 的 app（DMG 用 `codesign` 校验，不再 `stapler validate`/`spctl` DMG），只在以上都成功时运行。脚本在 `scripts/macos-notary.sh`，CI 和补发共用：`notarytool` 查询/等待、`stapler staple/validate`、`spctl`、带时间戳的 `codesign` 遇到网络错误（如 `NSURLErrorDomain -1009`、CloudKit `-1005`）重试 3 次、间隔 30 秒，仍是网络错误只给 `::warning::`（这时 app 未 staple，Mac 按「稍后补发」处理，不会发布未 staple 的包）；这些步骤不用 `bash -e`，以免第一次出错就退出。签名身份不对、DMG 里的 app 不是公证的那个、Apple 返回 Invalid/Rejected 时一律失败。没有证书时（fork、外部 PR）回退为临时签名；本仓库的 main、tag 和手动构建缺少证书或公证凭据时直接失败。
+
+应用不需要额外 entitlements：没有加载第三方动态库，WebView 的 JIT 在系统 WebKit 进程中；下载的 Python 和 Metal 引擎作为独立子进程运行，不受父进程硬化运行时的限制。
+
+### Mac 稍后补发（默认开启）
+
+Apple 公证有时要几十分钟。为了不拖住 Windows/Linux，默认是 `auto`：
+
+- **什么时候提交公证**：「Decide whether this run notarizes macOS」先决定本次是否公证，结果写进 job summary。**PR 永远不公证**（包括 `release/*` 和 `full-ci` PR，仍会签名）；推到 main 时只有 `v<版本>` 还没有 tag（也就是改了版本号的发版提交），或者 tag 正好指向这个提交（发版提交重跑）时才公证，版本号没改就只签名（`skipped`）；手动运行（包括 resolver 在 tag 上补派的 CI）照常按 `MACOS_NOTARIZATION`。`skipped` 的 CI 不会被任何发版模式复用：resolver 跳过它，找不到别的同源 CI 就在 tag 上重新派一次 CI，绝不发布未公证的 Mac 包。
+
+- **CI**（`MACOS_NOTARIZATION`，默认 `auto`）：等待公证最多 `MACOS_NOTARIZATION_TIMEOUT`（仓库变量，默认 `30m`）。期间通过就和以前一样 staple，Confirm 门禁通过；超时还在处理中就保留已签名、未 staple 的字节，Confirm 门禁跳过，job 照样成功。Apple 返回 Invalid/Rejected 一律失败。`wait` 最多等 60 分钟、不通过就失败；`defer` 只提交不等待。
+- **Release**（`MACOS_RELEASE_MODE`，默认 `auto`）：resolver 先按完整发布校验同源 CI；macOS 已 staple 就五个安装包一起发（`include`）。只有 CI 唯一缺的是 staple 门禁时才转为 `defer`：只发 Windows/Linux 和 Server，`latest.json` 不含 `darwin-aarch64`，Release 说明里加一段「macOS 正在公证」的标记。其它任何问题都照常拒绝。**未 staple 的 Mac 包永远不会发布。**
+- **补发**（`.github/workflows/macos-notarize-followup.yml`）：每 30 分钟（以及手动触发）找出带标记、还没有 DMG 的已发布 Release，在 macOS runner 上重新绑定同源 CI 的 macOS 工件和公证记录（字节必须与 CI 工件和记录的 SHA-256 一致），向 Apple 查询状态：仍在处理（或连不上 Apple）就结束等下次；Invalid/Rejected 打印 notary log 并失败；Accepted 时核对 notary log 的 SHA-256（提交的 app zip）和 app 的 CDHash，staple app 并检查，导入 Developer ID 证书，把 CI 的 DMG 换成装有已 staple app 的版本并重新签名，`codesign` 校验，用 Tauri 私钥签名并用源码里的 Rust 验签器验证，上传 DMG、`.app.tar.gz` 和两个 `.sig`，最后把 `darwin-aarch64` 加进 `latest.json`（这是提交点，之前中断可安全重跑；之后再跑只做校验），再完整验证整个 Release 并把说明改成「已补发」。它和发版共用 `release-publish-<repo>` 并发锁。
+
+在补发完成前，Mac 上的旧版本检查更新会报「`darwin-aarch64` not found」并且不会安装任何东西，这是 Tauri updater 对缺失平台的行为；补发后自动恢复。
+
+开关：
+
+| 想要 | 怎么做 |
+| --- | --- |
+| 关闭稍后补发（公证不完就不发版） | `gh variable set MACOS_RELEASE_MODE --body include` 和 `gh variable set MACOS_NOTARIZATION --body wait` |
+| 单次发版指定模式 | 手动运行 `Release desktop`，`macos_mode` 填 `include` / `defer` / `auto` |
+| 单次 CI 指定模式 | 手动运行 `Build and test`，`macos_notarization` 填 `wait` / `defer` / `auto` |
+| 调整 CI 等待时间 | `gh variable set MACOS_NOTARIZATION_TIMEOUT --body 20m` |
+| 暂停定时补发 | `gh variable set MACOS_FOLLOWUP --body off`（手动触发仍可用） |
+
+### macOS signing, notarization and deferred macOS (English)
+
+CI signs the app and `strata-supervisor` with the Developer ID certificate and the hardened runtime. It submits only the app to Apple, once, as a `ditto` zip; the DMG is never notarized itself. It records the submission id, the app CDHash and the SHA-256 of the zip and the DMG as the `ci-darwin-aarch64-notarization` artifact. Once the app is stapled, `hdiutil` rebuilds the DMG around the same stapled app, keeping its layout and checking that the CDHash matches, and the DMG is signed with the Developer ID again. The DMG is verified with `codesign`, not `stapler validate` or `spctl`. The shared helper `scripts/macos-notary.sh` retries `notarytool` status and wait calls, `stapler`, `spctl` and timestamped `codesign` on network errors (such as `NSURLErrorDomain -1009`) 3 times, 30 seconds apart. If Apple is still unreachable, it only emits a `::warning::` and leaves macOS unstapled, which means deferred, never published unstapled. A wrong signing identity or an Invalid/Rejected result from Apple always fails. By default (`MACOS_NOTARIZATION=auto`, `MACOS_RELEASE_MODE=auto`) CI waits up to `MACOS_NOTARIZATION_TIMEOUT` (default `30m`). If Apple accepts in time, the DMG and app are stapled and the release ships all five installers as before. If Apple is still processing, the release resolver switches to `defer`: Windows, Linux and the server packages are published, `latest.json` has no `darwin-aarch64` entry and the release notes carry a marker. Unstapled macOS bytes are never published. `macos-notarize-followup.yml` runs every 30 minutes (or on demand). Once Apple accepts the submission, it checks the notary log against the recorded zip and the app CDHash, staples the CI-built app, rebuilds the CI DMG around it and signs it with the Developer ID, then signs both files for the updater, uploads them, and then adds `darwin-aarch64` to `latest.json`. That last step is the commit point, so an interrupted run can be retried safely. Until then, Mac clients checking for updates get a "platform not found" error and install nothing.
+
+Notarization only runs for builds that can become a release. The "Decide whether this run notarizes macOS" step writes its decision to the job summary. Pull requests never submit to Apple, including `release/*` and `full-ci` PRs, which are still signed. A push to `main` submits only when `v<version>` is not tagged yet (the version-bump commit) or the tag already points at that commit (a re-run). Otherwise the run is signed only (`skipped`). Manual runs, including the resolver's tag dispatch, follow `MACOS_NOTARIZATION`. A `skipped` run is never reused by any release mode: the resolver ignores it and dispatches a fresh CI on the tag, so unnotarized macOS bytes are never published.
+
+To turn this off, set the repository variables `MACOS_RELEASE_MODE=include` and `MACOS_NOTARIZATION=wait`. Per run, use the `macos_mode` input of `Release desktop` or the `macos_notarization` input of `Build and test`. Set `MACOS_FOLLOWUP=off` to pause the scheduled follow-up.
 
 ## 日常 CI
 

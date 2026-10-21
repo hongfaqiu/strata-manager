@@ -1,0 +1,6 @@
++-o AGXAccelerator  <class AGXAccelerator, id 0x10000042a, registered, matched, active, busy 0 (0 ms), retain 12>
+    {
+      "IOClass" = "AGXAccelerator"
+      "model" = "Apple M2 Ultra"
+      "PerformanceStatistics" = {"Renderer Utilization %"=3,"Tiler Utilization %"=2,"In use system memory"=1234567890}
+    }

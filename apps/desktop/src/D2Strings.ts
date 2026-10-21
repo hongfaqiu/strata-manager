@@ -1,6 +1,11 @@
 // Strings for the D2 page visuals (pages/D2PageStrips.tsx). Order per key: zh-CN, en, zh-TW, ja, ko, de, fr, es, pt, ru.
 const rows: Record<string, [string, string, string, string, string, string, string, string, string, string]> = {
   d2Capacity: ['本机容量', 'Machine capacity', '本機容量', 'このPCの容量', '이 PC 용량', 'Kapazität dieses Rechners', 'Capacité de cette machine', 'Capacidad del equipo', 'Capacidade da máquina', 'Ресурсы компьютера'],
+  d2UnifiedGpu: ["GPU 可用", "GPU budget", "GPU 可用", "GPU 使用可能", "GPU 사용 가능", "GPU-Budget", "Budget GPU", "Presupuesto GPU", "Orçamento da GPU", "Доступно GPU"],
+  d2UnifiedMemory: ["统一内存 {{gb}} GB", "{{gb}} GB unified memory", "統一記憶體 {{gb}} GB", "ユニファイドメモリ {{gb}} GB", "통합 메모리 {{gb}}GB", "{{gb}} GB gemeinsamer Speicher", "{{gb}} Go de mémoire unifiée", "{{gb}} GB de memoria unificada", "{{gb}} GB de memória unificada", "Единая память {{gb}} ГБ"],
+  d2UnifiedShared: ["统一内存", "unified memory", "統一記憶體", "ユニファイドメモリ", "통합 메모리", "gemeinsamer Speicher", "mémoire unifiée", "memoria unificada", "memória unificada", "единая память"],
+  d2GpuCores: ["{{count}} 核", "{{count}} cores", "{{count}} 核", "{{count}} コア", "{{count}}코어", "{{count}} Kerne", "{{count}} cœurs", "{{count}} núcleos", "{{count}} núcleos", "ядер: {{count}}"],
+  d2OnChip: ["片上 · 统一内存", "On-chip · unified memory", "晶片內 · 統一記憶體", "オンチップ · ユニファイドメモリ", "온칩 · 통합 메모리", "On-Chip · gemeinsamer Speicher", "Sur la puce · mémoire unifiée", "En el chip · memoria unificada", "No chip · memória unificada", "На кристалле · единая память"],
   d2Vram: ['显存', 'VRAM', '顯示記憶體', 'VRAM', 'VRAM', 'VRAM', 'VRAM', 'VRAM', 'VRAM', 'Видеопамять'],
   d2Ram: ['内存', 'Memory', '記憶體', 'メモリ', '메모리', 'Arbeitsspeicher', 'Mémoire', 'Memoria', 'Memória', 'ОЗУ'],
   d2Gpu: ['显卡', 'GPU', '顯示卡', 'GPU', 'GPU', 'GPU', 'GPU', 'GPU', 'GPU', 'Видеокарта'],
