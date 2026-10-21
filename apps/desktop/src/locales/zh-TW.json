@@ -39,7 +39,7 @@
   "downloadingAppUpdate": "正在下載更新",
   "installingAppUpdate": "正在安裝更新",
   "restartForUpdate": "更新已安裝，重啟介面後生效",
-  "updaterHint": "確認更新後校驗安裝包簽名，空閒時才安裝。",
+  "updaterHint": "確認更新後校驗安裝包簽名，空閒時才安裝。下載來源與引擎下載相同；未指定鏡像時會自動測速，失敗後回退到官方 GitHub。",
   "updateConfirmTitle": "更新至 {{version}}？",
   "releaseNotesTitle": "本版本更新日誌",
   "releaseNotesMissing": "版本 {{version}} 的 Release 暫無更新日誌。",

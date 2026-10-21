@@ -50,7 +50,7 @@
   "downloadingAppUpdate": "更新をダウンロード中",
   "installingAppUpdate": "更新をインストール中",
   "restartForUpdate": "更新をインストールしました。適用するには画面を再起動してください",
-  "updaterHint": "確認後にパッケージの署名を検証し、アイドル時のみインストールします。",
+  "updaterHint": "確認後にパッケージの署名を検証し、アイドル時のみインストールします。アプリ更新はエンジンと同じダウンロード元を使い、未指定時は最速源を計測し、公式 GitHub がフォールバックになります。",
   "updateConfirmTitle": "{{version}} に更新しますか？",
   "releaseNotesTitle": "このバージョンのリリースノート",
   "releaseNotesMissing": "リリース {{version}} にはリリースノートがありません。",

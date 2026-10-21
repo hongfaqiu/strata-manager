@@ -50,7 +50,7 @@
   "downloadingAppUpdate": "Update wird heruntergeladen",
   "installingAppUpdate": "Update wird installiert",
   "restartForUpdate": "Update installiert; Oberfläche zur Nutzung neu starten",
-  "updaterHint": "Nach der Bestätigung wird die Paketsignatur geprüft und die Installation nur im Leerlauf durchgeführt.",
+  "updaterHint": "Nach der Bestätigung wird die Paketsignatur geprüft und die Installation nur im Leerlauf durchgeführt. App-Updates nutzen dieselbe Downloadquelle wie Engine-Downloads; ohne Auswahl wird die schnellste Quelle gemessen und offizielles GitHub bleibt der Rückfall.",
   "updateConfirmTitle": "Auf {{version}} aktualisieren?",
   "releaseNotesTitle": "Versionshinweise zu dieser Version",
   "releaseNotesMissing": "Für Version {{version}} liegen keine Versionshinweise vor.",

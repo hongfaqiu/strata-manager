@@ -235,7 +235,7 @@ Dynamic VRAM adjustment depends on runtime support. If the engine rejects adjust
 
 ## Application updates
 
-Automatic checks are enabled by default, on launch and every 12 hours. An available update adds a badge to the top-left version entry. Click that entry to open the dedicated App updates page, review release notes and confirm downloading and installation. The installed version's bilingual notes are bundled for offline viewing. Disable automatic checks to check manually. Failures preserve the current app and can be retried; installation checks that the background is idle. Downloads show progress, and the updater verifies official Tauri signatures with the embedded public key.
+Automatic checks are enabled by default, on launch and every 12 hours. An available update adds a badge to the top-left version entry. Click that entry to open the dedicated App updates page, review release notes and confirm downloading and installation. The installed version's bilingual notes are bundled for offline viewing. Disable automatic checks to check manually. Failures preserve the current app and can be retried; installation checks that the background is idle. Downloads show progress, and the updater verifies official Tauri signatures with the embedded public key. App updates share the engine download source: if none is chosen the fastest host is probed, failed hosts fall back to official GitHub, and the UI shows which source was used.
 
 Choose a Windows installer, AppImage or DEB from the [latest release](https://github.com/hongfaqiu/strata-manager/releases/latest) or the [website download section](https://strata-manager.cosfoc.com/en/#get-started). App updates use the `latest` channel.
 
