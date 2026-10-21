@@ -5,6 +5,14 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **Mac 上的 Metal 引擎更新到 0.1.47（上游 Strata v0.2.2）**：Manager 原来固定安装 v0.2.0-beta 的 Metal 引擎 0.1.45.3，低于上游 0.2.2 要求的最低引擎版本 0.1.46。现在改装 v0.2.2 的 `strata-engine-0.1.47-macos-arm64-metal.tar.gz`（5,133,090 字节，固定 SHA256）。这个包新增了图片识别程序 `strata-vision` 和 `metal/data`、`metal/engine-msl` 目录，都已加入白名单。解包后，Manager 会用包内签名清单 `engine-component.json` 逐个核对文件的 SHA256 和大小：清单的摘要必须与签名 feed 一致、签名必须有效，清单之外的文件或改动过一个字节都会被拒绝，并清掉解包出来的文件。以前由 Manager 安装的旧版 Metal 引擎，在下次安装或修复运行环境时会自动换成新版；你自己选的引擎目录和源码构建（`build-metal`）不会被替换。
+
+### English
+
+- **The Mac Metal engine moves to 0.1.47 (upstream Strata v0.2.2)**: Manager used to install the v0.2.0-beta Metal engine 0.1.45.3, which is below the minimum engine 0.1.46 that upstream 0.2.2 requires. It now installs v0.2.2's `strata-engine-0.1.47-macos-arm64-metal.tar.gz` (5,133,090 bytes, pinned SHA256). That package adds the `strata-vision` picture reader and the `metal/data` and `metal/engine-msl` folders, all of which are allowed now. After unpacking, Manager checks each file's SHA256 and size against the package's signed manifest `engine-component.json`: the manifest must match the digest in the signed feed and carry a valid signature, and any file outside the manifest or a single changed byte is refused and the unpacked files are removed. A Metal engine that Manager installed earlier is replaced with the new one the next time you install or repair the runtime; engine folders you chose yourself and source builds (`build-metal`) are never replaced.
+
 ## [0.2.12] - 2026-10-21
 
 ### 中文

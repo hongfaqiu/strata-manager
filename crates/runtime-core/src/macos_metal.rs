@@ -14,17 +14,24 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// Upstream release that first shipped the ready-made Metal engine component.
-pub const METAL_RELEASE_TAG: &str = "v0.2.0-beta";
+/// Upstream release whose ready-made Metal engine component Manager installs. Strata 0.2.2
+/// needs engine 0.1.46 or newer, so the 0.1.45.3 package of v0.2.0-beta is no longer enough.
+pub const METAL_RELEASE_TAG: &str = "v0.2.2";
 /// Exact asset name on that release (do not fuzzy-match Windows/Linux packages).
-pub const METAL_ENGINE_ASSET_NAME: &str = "strata-engine-0.1.45.3-macos-arm64-metal.tar.gz";
+pub const METAL_ENGINE_ASSET_NAME: &str = "strata-engine-0.1.47-macos-arm64-metal.tar.gz";
 /// Official SHA-256 of [`METAL_ENGINE_ASSET_NAME`] (in-app check only; we do not ship SHA256SUMS).
 pub const METAL_ENGINE_SHA256: &str =
-    "47c5f5a8936e1497ed4c24ca0a26a46812affbce43d530106a317214c353d207";
+    "6f72dd302074944d21d53fb1e53a2fe6455176670e39332d52c095679a42d939";
 /// Exact byte length of the published archive.
-pub const METAL_ENGINE_SIZE: u64 = 2_353_518;
+pub const METAL_ENGINE_SIZE: u64 = 5_133_090;
 /// `BUILD.json` / component version inside the archive.
-pub const METAL_ENGINE_VERSION: &str = "0.1.45.3";
+pub const METAL_ENGINE_VERSION: &str = "0.1.47";
+/// SHA-256 of the package's signed `engine-component.json`, from the signed v0.2.2 feed
+/// (`manifest_sha256`). Every extracted file is checked against that manifest.
+pub const METAL_MANIFEST_SHA256: &str =
+    "f602b2f0099e851889868dc1ad0cddc7bdbc8ad0f30a376993faa1c07463724e";
+/// The picture reader (vision) binary that 0.1.47 packages ship beside `strata`.
+pub const METAL_VISION_BINARY: &str = "strata-vision";
 /// Relative engine directory after extract (same layout as Windows `engine/`).
 pub const METAL_ENGINE_DIR: &str = "engine";
 /// Mach-O entrypoint inside [`METAL_ENGINE_DIR`].
@@ -146,6 +153,8 @@ fn metal_entry_allowed(relative: &str) -> bool {
     relative == "BUILD.json"
         || relative == "engine-component.json"
         || relative == METAL_ENGINE_BINARY
+        || relative == METAL_VISION_BINARY
+        // Kernel sources compiled at start, `metal/data/*.bin` and `metal/engine-msl/*.metal`.
         || relative.starts_with("metal/")
 }
 
@@ -249,7 +258,7 @@ pub fn extract_metal_engine_archive(
             let mut perms = fs::metadata(&target)
                 .map_err(|e| e.to_string())?
                 .permissions();
-            if relative_str == METAL_ENGINE_BINARY {
+            if relative_str == METAL_ENGINE_BINARY || relative_str == METAL_VISION_BINARY {
                 perms.set_mode(0o755);
             } else {
                 perms.set_mode(mode & 0o777);
@@ -285,6 +294,24 @@ pub fn extract_metal_engine_archive(
         ));
     }
     Ok(files)
+}
+
+/// Check the extracted files against the package's signed `engine-component.json`: the
+/// manifest must hash to [`METAL_MANIFEST_SHA256`], carry a valid feed-key signature, name
+/// this exact package, and list exactly the extracted files with their SHA-256 and size.
+pub fn verify_metal_manifest(
+    destination: &Path,
+    files: &[String],
+    check: &dyn Fn() -> Result<(), String>,
+) -> Result<(), String> {
+    use crate::runtime_upgrade::{engine_package, RuntimeReleaseAsset};
+    let asset = RuntimeReleaseAsset {
+        name: METAL_ENGINE_ASSET_NAME.into(),
+        engine_version: Some(METAL_ENGINE_VERSION.into()),
+        manifest_sha256: Some(METAL_MANIFEST_SHA256.into()),
+        ..Default::default()
+    };
+    engine_package::verify_extracted(destination, files, &asset, "macos-arm64", check)
 }
 
 /// Mac engine argv defaults from upstream `docs/MAC.md` (no `--parallel`).
@@ -353,6 +380,21 @@ pub fn manual_build_hint() -> (&'static str, &'static str) {
 pub fn is_metal_engine_archive_path(path: &str) -> bool {
     let lower = path.to_ascii_lowercase();
     lower.ends_with(".tar.gz") || lower.ends_with(".tgz")
+}
+
+/// Whether `engine_dir` holds a Metal engine Manager itself installed (its marker exists)
+/// from an older pin, e.g. 0.1.45.3 from v0.2.0-beta, below Strata 0.2.2's minimum engine
+/// 0.1.46. Engines the user brought (no marker) and source builds are never replaced.
+pub fn managed_metal_install_outdated(engine_dir: &Path) -> bool {
+    let Ok(bytes) = fs::read(engine_dir.join(".strata-manager-metal.json")) else {
+        return false;
+    };
+    let Ok(marker) = serde_json::from_slice::<Value>(&bytes) else {
+        return false;
+    };
+    marker["version"]
+        .as_str()
+        .is_some_and(|version| version != METAL_ENGINE_VERSION)
 }
 
 /// Write a small marker so readiness can show the installed Metal package pin.
@@ -433,7 +475,8 @@ mod tests {
         let names = [
             "strata-windows-x64.zip",
             "strata-engine-0.1.45.3-macos-arm64-metal.tar.gz",
-            "Strata-0.2.0-beta-mac.dmg",
+            "strata-engine-0.1.47-macos-arm64-metal.tar.gz",
+            "Strata-0.2.2-mac.dmg",
         ];
         assert_eq!(
             select_engine_asset_name("macos", "aarch64", names),
@@ -441,6 +484,101 @@ mod tests {
         );
         assert_eq!(select_engine_asset_name("linux", "x86_64", names), None);
         assert_eq!(select_engine_asset_name("windows", "x86_64", names), None);
+    }
+
+    /// The signed manifest of the real v0.2.2 Metal package (0.1.47): the pinned digest, a
+    /// valid feed-key signature, and every listed file (incl. `strata-vision`) allowed.
+    #[test]
+    fn real_0_1_47_metal_manifest_matches_the_pin_and_the_allowlist() {
+        let bytes =
+            include_bytes!("runtime_upgrade/fixtures/manifest-macos-arm64-metal-0.1.47.json");
+        assert_eq!(
+            format!("{:x}", Sha256::digest(bytes)),
+            METAL_MANIFEST_SHA256
+        );
+        let asset = crate::runtime_upgrade::RuntimeReleaseAsset {
+            name: METAL_ENGINE_ASSET_NAME.into(),
+            engine_version: Some(METAL_ENGINE_VERSION.into()),
+            manifest_sha256: Some(METAL_MANIFEST_SHA256.into()),
+            ..Default::default()
+        };
+        let files = crate::runtime_upgrade::engine_package::verify_manifest_bytes(
+            bytes,
+            &asset,
+            "macos-arm64",
+        )
+        .unwrap();
+        assert!(files.contains_key(METAL_VISION_BINARY), "{files:?}");
+        assert!(files.keys().any(|p| p.starts_with("metal/data/")));
+        assert!(files.keys().any(|p| p.starts_with("metal/engine-msl/")));
+        for path in files.keys() {
+            assert!(metal_entry_allowed(path), "{path}");
+        }
+        assert!(files.len() < MAX_METAL_ENTRIES);
+        assert!(files.values().map(|(_, size)| size).sum::<u64>() < MAX_METAL_EXPANDED);
+        // Another platform or version is refused.
+        let mut other = asset.clone();
+        other.engine_version = Some("0.1.45.3".into());
+        assert!(
+            crate::runtime_upgrade::engine_package::verify_manifest_bytes(
+                bytes,
+                &other,
+                "macos-arm64"
+            )
+            .is_err()
+        );
+    }
+
+    /// With `STRATA_METAL_0147=/path/strata-engine-0.1.47-macos-arm64-metal.tar.gz`: the
+    /// real package passes the pin, extracts and matches its signed manifest.
+    #[test]
+    fn real_0_1_47_metal_package_extracts_and_verifies() {
+        let Some(archive) = std::env::var_os("STRATA_METAL_0147").map(PathBuf::from) else {
+            return;
+        };
+        verify_metal_engine_file(&archive).unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let engine = temp.path().join("engine");
+        let files = extract_metal_engine_archive(&archive, &engine, || Ok(())).unwrap();
+        verify_metal_manifest(&engine, &files, &|| Ok(())).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for binary in [METAL_ENGINE_BINARY, METAL_VISION_BINARY] {
+                let mode = fs::metadata(engine.join(binary))
+                    .unwrap()
+                    .permissions()
+                    .mode();
+                assert_eq!(mode & 0o111, 0o111, "{binary}");
+            }
+        }
+        // One changed byte is caught by the signed manifest.
+        let kernel = engine.join("metal/kernels/units.metal");
+        let mut bytes = fs::read(&kernel).unwrap();
+        bytes.push(b' ');
+        fs::write(&kernel, bytes).unwrap();
+        assert!(verify_metal_manifest(&engine, &files, &|| Ok(())).is_err());
+        eprintln!(
+            "verified {} ({} files)",
+            METAL_ENGINE_ASSET_NAME,
+            files.len()
+        );
+    }
+
+    #[test]
+    fn only_an_older_manager_installed_metal_engine_is_replaced() {
+        let temp = tempfile::tempdir().unwrap();
+        let engine = temp.path();
+        // A user-provided engine (no marker) is kept.
+        assert!(!managed_metal_install_outdated(engine));
+        fs::write(
+            engine.join(".strata-manager-metal.json"),
+            br#"{"version":"0.1.45.3","releaseTag":"v0.2.0-beta"}"#,
+        )
+        .unwrap();
+        assert!(managed_metal_install_outdated(engine));
+        write_metal_install_marker(engine).unwrap();
+        assert!(!managed_metal_install_outdated(engine));
     }
 
     #[test]
@@ -502,7 +640,7 @@ mod tests {
         {
             let file = File::create(&tar_path).unwrap();
             let mut builder = tar::Builder::new(file);
-            let build = br#"{"version":"0.1.45.3","backend":"metal"}"#;
+            let build = br#"{"version":"0.1.47","backend":"metal"}"#;
             let mut header = tar::Header::new_gnu();
             header.set_size(build.len() as u64);
             header.set_mode(0o644);
@@ -556,7 +694,7 @@ mod tests {
             for (name, data, mode) in [
                 (
                     "BUILD.json",
-                    br#"{"version":"0.1.45.3","backend":"metal"}"#.as_slice(),
+                    br#"{"version":"0.1.47","backend":"metal"}"#.as_slice(),
                     0o644,
                 ),
                 ("strata", b"x".as_slice(), 0o755),
@@ -587,7 +725,7 @@ mod tests {
     #[test]
     fn archive_path_helper_recognizes_tar_gz() {
         assert!(is_metal_engine_archive_path(
-            "/tmp/strata-engine-0.1.45.3-macos-arm64-metal.tar.gz"
+            "/tmp/strata-engine-0.1.47-macos-arm64-metal.tar.gz"
         ));
         assert!(is_metal_engine_archive_path("/tmp/x.tgz"));
         assert!(!is_metal_engine_archive_path("/tmp/strata-windows-x64.zip"));
