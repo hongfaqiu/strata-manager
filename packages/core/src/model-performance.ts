@@ -1,0 +1,151 @@
+/**
+ * Approximate speed / time-to-first-token / memory for a catalog (or community) quant on this machine.
+ *
+ * Every number comes from a measurement published in Strata's docs (pinned below), never from Manager itself:
+ * the UI must label the result 「估算」 and name the reference hardware. Rules:
+ * - Mac (Metal): resident when the unified memory reaches MAC.md's "Recommended from" (else the experts stream
+ *   from the SSD; it slows down, it does not fail). Resident speeds are the M5 Max 128 GB runs (an upper bound for
+ *   chips with less memory bandwidth); streaming speeds are the M4 32 GB / M1 Max 34 GB runs (more memory = a bigger
+ *   expert arena, MAC.md: "The arena's size matters most", so a 48 GB Mac sits toward the upper end).
+ * - PC: the RTX 5070 12 GB / RX 9070 XT 16 GB / R9700 32 GB / RTX 3060 12 GB tables of MODELS.md and QWEN36.md.
+ *   "RAM ≥ experts + 10 GB" (MODELS.md "Will it fit?") else the low-RAM mode (much slower, no published number).
+ *   Less VRAM than the reference → the figure is an upper bound; more → a lower bound (MODELS.md: more VRAM is faster).
+ * - Time to first token = 4,096 prompt tokens / the measured prompt rate (range over the published rates).
+ * - IQ3_S streaming on a Mac has no measurement: extrapolated from IQ3_XXS by expert bytes (43 → 50 GB), flagged.
+ * Community GSQ-RCO files share the official tensor layout, so they use the same family's figures
+ * (SC117's IQ3_S was reported at 94-109 tok/s on an M5 Max, like the official IQ3_S; Strata issue #2898).
+ */
+import type { RuntimePackagePlatform } from './local-runtime-package';
+
+export const PERFORMANCE_DOCS_REVISION = '9de04cd44e927a9a3df6bbc0e94fc1be8b844ba4';
+const doc = (file: string, anchor = '') => `https://github.com/Niko1221/Strata/blob/${PERFORMANCE_DOCS_REVISION}/docs/${file}${anchor}`;
+export const PERFORMANCE_SOURCES = {
+  macM5Max: doc('MAC.md', '#measured-m5-max-128-gb-macos-272'),
+  macStream: doc('MAC.md', '#m4-mac-mini-32-gb-experts-streamed-from-the-ssd'),
+  macMemory: doc('MAC.md', '#what-you-need'),
+  pcRtx5070: doc('MODELS.md', '#which-model-sizes-versions-and-what-fits'),
+  pcFit: doc('MODELS.md', '#will-it-fit'),
+  pcR9700: doc('MODELS.md', '#unsloths-files-ud-iq4_xs-to-q8_0'),
+  qwen36: doc('MODELS.md', '#qwen36-35b-a3b'),
+} as const;
+export type PerformanceBasis = 'macM5Max' | 'macStream' | 'macStreamExtrapolated' | 'pcRtx5070' | 'pcRx9070xt' | 'pcR9700' | 'pcRtx3060' | 'none';
+export type PerformanceMode = 'macResident' | 'macStreaming' | 'macUnsupported' | 'gpu' | 'lowRam' | 'tooSmall' | 'unknown';
+export interface Range { low: number; high: number }
+export interface PerformanceHardware { platform: RuntimePackagePlatform; memoryGB?: number; vramGB?: number; gpuVendor?: 'nvidia' | 'amd' | 'other' }
+export interface PerformanceEstimate {
+  mode: PerformanceMode;
+  /** Generated tokens per second. */
+  decode?: Range;
+  /** Seconds to the first token after a 4K-token prompt. */
+  ttft4k?: Range;
+  /** 'upper': this machine is likely slower than the reference (less VRAM / bandwidth); 'lower': likely faster. */
+  bound?: 'upper' | 'lower';
+  /** Memory needed: Mac unified memory (resident), PC system RAM (experts + 10 GB). */
+  memoryGB?: number;
+  /** Mac: unified memory from which the pack stays resident. */
+  residentFromGB?: number;
+  /** Reference VRAM of the measurement (PC). */
+  referenceVramGB?: number;
+  basis: PerformanceBasis;
+  extrapolated: boolean;
+  source?: string;
+}
+
+const r = (low: number, high: number): Range => ({ low, high });
+const ttft = (lowRate: number, highRate: number): Range => ({ low: Math.round(4096 / highRate * 10) / 10, high: Math.round(4096 / lowRate * 10) / 10 });
+
+/** MAC.md "What you need" (needs about / recommended from); IQ2_XS: +8.4 GB like Q2_0, flagged. */
+const MAC_MEMORY: Record<string, { needs: number; residentFrom: number; extrapolated?: boolean }> = {
+  Q2_0: { needs: 46, residentFrom: 64 }, IQ2_XS: { needs: 48, residentFrom: 66, extrapolated: true },
+  IQ3_XXS: { needs: 55, residentFrom: 74 }, IQ3_S: { needs: 63, residentFrom: 96 }, 'UD-Q4_K_XL': { needs: 91, residentFrom: 128 },
+};
+/** MAC.md M5 Max 128 GB: decode (MTP, prompt1 / story), 4K prompt rate. */
+const MAC_RESIDENT: Record<string, { decode: Range; prompt: number }> = {
+  Q2_0: { decode: r(108.2, 119.5), prompt: 1430 }, IQ3_XXS: { decode: r(97.0, 108.9), prompt: 1260 },
+  IQ3_S: { decode: r(94.1, 98.2), prompt: 1320 }, 'UD-Q4_K_XL': { decode: r(73.7, 94.0), prompt: 1150 },
+};
+/** MAC.md streaming: M1 Max 34 GB (7.9 tok/s, 186 tok/s prompt) and M4 32 GB (tables, release-build re-run). */
+const MAC_STREAM: Record<string, { decode: Range; prompt: Range; extrapolated?: boolean }> = {
+  Q2_0: { decode: r(7.9, 14.1), prompt: r(80, 186) },
+  IQ3_XXS: { decode: r(7.7, 10.0), prompt: r(62.5, 89) },
+  IQ3_S: { decode: r(6.6, 8.6), prompt: r(54, 77), extrapolated: true },
+};
+/** MODELS.md "Will it fit?": experts per size (GB); RAM need = experts + 10. Unsloth: "RAM for all of them in RAM". */
+const PC_RAM: Record<string, Record<string, number>> = {
+  qwen: { Q2_0: 44, IQ2_XS: 45.5, IQ3_XXS: 53, IQ3_S: 60 },
+  swift: { IQ2_XS: 45.5, IQ3_XXS: 53, IQ3_S: 60 },
+  coder: { IQ1_M: 33 },
+  unsloth: { 'UD-IQ4_XS': 72, 'UD-Q4_K_XL': 88, 'UD-Q5_K_XL': 108, 'UD-Q6_K_XL': 118, Q8_0: 136 },
+  qwen36: { 'UD-Q4_K_XL': 32, 'UD-Q6_K_XL': 44, Q8_0: 52 },
+};
+interface PcRef { basis: PerformanceBasis; vram: number; decode: Range; prompt: Range }
+/** MODELS.md RTX 5070 12 GB + 64 GB (short chat / 128K context; 4K prompt 910-1,580 tok/s). */
+const RTX5070: Record<string, PcRef> = Object.fromEntries(Object.entries({ Q2_0: [76, 94], IQ2_XS: [63, 79], IQ3_XXS: [49, 62], IQ3_S: [46, 53], IQ1_M: [43, 55] })
+  .map(([quant, [low, high]]) => [quant, { basis: 'pcRtx5070' as const, vram: 12, decode: r(low!, high!), prompt: r(910, 1580) }]));
+/** MODELS.md RX 9070 XT 16 GB + 47 GB (32K prompt rate). */
+const RX9070XT: Record<string, PcRef> = {
+  Q2_0: { basis: 'pcRx9070xt', vram: 16, decode: r(48, 60), prompt: r(1160, 1160) },
+  IQ2_XS: { basis: 'pcRx9070xt', vram: 16, decode: r(36, 52), prompt: r(1110, 1110) },
+  IQ1_M: { basis: 'pcRx9070xt', vram: 16, decode: r(33, 44), prompt: r(1420, 1420) },
+};
+/** MODELS.md Unsloth table, AMD R9700 32 GB (story / code, 32K prompt); IQ3_S row for comparison. */
+const R9700: Record<string, PcRef> = {
+  IQ3_S: { basis: 'pcR9700', vram: 32, decode: r(75, 95), prompt: r(1110, 1320) },
+  'UD-Q4_K_XL': { basis: 'pcR9700', vram: 32, decode: r(63, 87), prompt: r(1110, 1320) },
+  'UD-Q5_K_XL': { basis: 'pcR9700', vram: 32, decode: r(57, 82), prompt: r(810, 1260) },
+  'UD-Q6_K_XL': { basis: 'pcR9700', vram: 32, decode: r(54, 76), prompt: r(1020, 1020) },
+  Q8_0: { basis: 'pcR9700', vram: 32, decode: r(53, 74), prompt: r(1230, 1300) },
+};
+/** MODELS.md / QWEN36.md Qwen3.6 UD-Q4_K_XL: R9700 117.8 (pp4096 6,223), RTX 3060 59.7 (pp2048 2,022). */
+const QWEN36: Record<'amd' | 'nvidia', PcRef> = {
+  amd: { basis: 'pcR9700', vram: 32, decode: r(117.8, 117.8), prompt: r(6223, 6223) },
+  nvidia: { basis: 'pcRtx3060', vram: 12, decode: r(59.7, 59.7), prompt: r(2022, 2022) },
+};
+
+function pcReference(family: string, quant: string, vendor: PerformanceHardware['gpuVendor'], vram: number | undefined): PcRef | undefined {
+  if (family === 'qwen36') return quant === 'UD-Q4_K_XL' ? QWEN36[vendor === 'amd' ? 'amd' : 'nvidia'] : undefined;
+  if (family === 'unsloth') return R9700[quant];
+  if (family === 'qwen' || family === 'swift' || family === 'coder') {
+    if (vendor === 'amd') return (vram ?? 0) >= 24 && R9700[quant] ? R9700[quant] : RX9070XT[quant] ?? RTX5070[quant];
+    return RTX5070[quant];
+  }
+  return undefined;
+}
+
+/** Estimate for one family/quant ("community:<id>" callers pass the entry's install family). */
+export function estimatePerformance(family: string, quant: string, hardware: PerformanceHardware): PerformanceEstimate {
+  if (hardware.platform === 'macos') {
+    if (family !== 'qwen' && family !== 'unsloth') return { mode: 'macUnsupported', basis: 'none', extrapolated: false };
+    const memory = MAC_MEMORY[quant];
+    if (!memory) return { mode: 'unknown', basis: 'none', extrapolated: false };
+    const base = { memoryGB: memory.needs, residentFromGB: memory.residentFrom };
+    const total = hardware.memoryGB;
+    if (total !== undefined && total < 16) return { mode: 'tooSmall', ...base, basis: 'none', extrapolated: !!memory.extrapolated, source: PERFORMANCE_SOURCES.macMemory };
+    if (total === undefined || total >= memory.residentFrom) {
+      const resident = MAC_RESIDENT[quant];
+      if (!resident) return { mode: 'macResident', ...base, basis: 'none', extrapolated: !!memory.extrapolated, source: PERFORMANCE_SOURCES.macMemory };
+      return { mode: 'macResident', ...base, decode: resident.decode, ttft4k: ttft(resident.prompt, resident.prompt), bound: total !== undefined && total < 128 ? 'upper' : undefined, basis: 'macM5Max', extrapolated: !!memory.extrapolated, source: PERFORMANCE_SOURCES.macM5Max };
+    }
+    const stream = MAC_STREAM[quant];
+    if (!stream) return { mode: 'macStreaming', ...base, basis: 'none', extrapolated: !!memory.extrapolated, source: PERFORMANCE_SOURCES.macMemory };
+    return { mode: 'macStreaming', ...base, decode: stream.decode, ttft4k: ttft(stream.prompt.low, stream.prompt.high), basis: stream.extrapolated ? 'macStreamExtrapolated' : 'macStream', extrapolated: !!stream.extrapolated || !!memory.extrapolated, source: PERFORMANCE_SOURCES.macStream };
+  }
+  const ram = PC_RAM[family]?.[quant];
+  if (ram === undefined) return { mode: 'unknown', basis: 'none', extrapolated: false };
+  if (hardware.memoryGB !== undefined && hardware.memoryGB < ram) return { mode: 'lowRam', memoryGB: ram, basis: 'none', extrapolated: false, source: PERFORMANCE_SOURCES.pcFit };
+  const ref = pcReference(family, quant, hardware.gpuVendor, hardware.vramGB);
+  if (!ref) return { mode: 'gpu', memoryGB: ram, basis: 'none', extrapolated: false, source: PERFORMANCE_SOURCES.pcFit };
+  const vram = hardware.vramGB;
+  const bound = vram === undefined ? undefined : vram < ref.vram - 1 ? 'upper' : vram > ref.vram + 1 ? 'lower' : undefined;
+  const source = ref.basis === 'pcR9700' ? (family === 'qwen36' ? PERFORMANCE_SOURCES.qwen36 : PERFORMANCE_SOURCES.pcR9700) : ref.basis === 'pcRtx3060' ? PERFORMANCE_SOURCES.qwen36 : PERFORMANCE_SOURCES.pcRtx5070;
+  return { mode: 'gpu', memoryGB: ram, decode: ref.decode, ttft4k: ttft(ref.prompt.low, ref.prompt.high), bound, referenceVramGB: ref.vram, basis: ref.basis, extrapolated: false, source };
+}
+
+/** "≈ 8–14" / "≤ 120" / "≥ 60" (rounded, no false precision). */
+export function formatRange(range: Range | undefined, bound?: 'upper' | 'lower', digits = 0): string | undefined {
+  if (!range) return undefined;
+  const fmt = (value: number) => value >= 10 || digits === 0 ? String(Math.round(value)) : value.toFixed(digits);
+  if (bound === 'upper') return `≤ ${fmt(range.high)}`;
+  if (bound === 'lower') return `≥ ${fmt(range.low)}`;
+  return fmt(range.low) === fmt(range.high) ? `≈ ${fmt(range.low)}` : `${fmt(range.low)}–${fmt(range.high)}`;
+}

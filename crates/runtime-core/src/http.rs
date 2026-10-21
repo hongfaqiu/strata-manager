@@ -677,7 +677,13 @@ async fn request_from(
     if bytes.is_empty() {
         return Ok(Value::Null);
     }
-    serde_json::from_slice(&bytes).map_err(|e| format!("响应不是有效 JSON: {e}"))
+    let mut value: Value =
+        serde_json::from_slice(&bytes).map_err(|e| format!("响应不是有效 JSON: {e}"))?;
+    if method == "GET" && (path == "/metrics" || path.starts_with("/metrics?")) {
+        // The engine reads only NVIDIA cards; fill AMD readings for a service on this PC (#86).
+        crate::amd_gpu::augment_local_metrics(&profile.base_url, &mut value).await;
+    }
+    Ok(value)
 }
 
 // reqwest chunks need not align with UTF-8 code points or SSE events.

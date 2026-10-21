@@ -7,7 +7,7 @@ async page => {
   const version = () => page.locator('#app-version-button');
   const candidate = () => page.locator('.window-title-bar-update-badge');
   const dialog = () => page.getByRole('dialog');
-  const forbidden = /^(?:plugin:updater\|(?:download|install|download_and_install)|prepare_app_update|start_service|stop_service|restart_service|ensure_local_service|switch_local_service|take_over_service)$/;
+  const forbidden = /^(?:plugin:updater\|(?:download|install|download_and_install)|download_app_update|install_app_update|prepare_app_update|start_service|stop_service|restart_service|ensure_local_service|switch_local_service|take_over_service)$/;
   async function run(name, query, action, viewport = { width: 1366, height: 900 }) {
     const errorStart = pageErrors.length;
     try {
@@ -47,6 +47,7 @@ async page => {
     await version().click();
     await dialog().waitFor();
     assert((await dialog().innerText()).includes('隔离验收：新版统一应用标识和版本入口'), 'Candidate notes must appear in the review dialog');
+    assert((await dialog().innerText()).includes('更新来源: 自动选择 · GHProxy'), 'Chosen update source must be visible in the dialog');
     await dialog().getByRole('button', { name: '稍后', exact: true }).click();
     await dialog().waitFor({ state: 'hidden' });
     assert(await candidate().count() === 1, 'Dismissal must preserve the candidate badge');
@@ -62,6 +63,7 @@ async page => {
     await page.getByRole('region', { name: '可用更新日志', exact: true }).waitFor();
     assert((await page.getByRole('region', { name: '可用更新日志', exact: true }).innerText()).includes('隔离验收'), 'Candidate notes must be visible on updates page');
     assert((await page.getByRole('region', { name: '最近一次更新日志', exact: true }).innerText()).includes('聊天加入'), 'Installed and candidate release notes must remain distinct');
+    assert((await page.getByText('更新来源: 自动选择 · GHProxy', { exact: true }).count()) >= 1, 'Update source summary must be shown on the settings page');
   });
   await run('collapsed-version-badge-light', 'collapsed&automatic&available', async () => {
     await candidate().waitFor();
@@ -95,6 +97,7 @@ async page => {
     await version().click();
     await dialog().waitFor();
     assert((await dialog().innerText()).includes('Isolated acceptance: unify'), 'English candidate notes are missing');
+    assert((await dialog().innerText()).includes('Update source: Automatic · GHProxy'), 'English update source summary is missing');
   }, { width: 900, height: 700 });
   return { scope: 'Real React App in Chromium with synthetic Tauri IO. No actual updater installs, services or GPU.', results, passed: results.every(result => result.passed) };
 }

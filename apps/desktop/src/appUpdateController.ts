@@ -1,9 +1,12 @@
-import type { Update } from '@tauri-apps/plugin-updater';
+import type { AppUpdateAttempt, AppUpdateCheckResult, AppUpdateDownloadEvent, AppUpdateSourceInfo } from '@strata-manager/core';
 
 export interface AppUpdateState {
   phase: 'idle' | 'checking' | 'available' | 'current' | 'downloading' | 'downloaded' | 'installing' | 'installed' | 'error';
   version?: string;
   notes?: string;
+  source?: AppUpdateSourceInfo;
+  fallbackChain?: AppUpdateSourceInfo[];
+  attempts?: AppUpdateAttempt[];
   received: number;
   total?: number;
   downloaded: boolean;
@@ -11,9 +14,21 @@ export interface AppUpdateState {
   errorStage?: 'check' | 'download' | 'install';
 }
 
-type UpdateResource = Pick<Update, 'version' | 'body' | 'download' | 'install' | 'close'>;
+interface UpdateResource {
+  version: string;
+  body?: string;
+  source?: AppUpdateSourceInfo;
+  fallbackChain?: AppUpdateSourceInfo[];
+  attempts?: AppUpdateAttempt[];
+  download: (onEvent: (event: AppUpdateDownloadEvent) => void, options?: { timeout?: number }) => Promise<void>;
+  install: (options?: { restartAfterInstall?: boolean }) => Promise<void>;
+  close: () => Promise<void>;
+}
+interface CheckResult extends Pick<AppUpdateCheckResult, 'source' | 'fallbackChain' | 'attempts'> {
+  update: UpdateResource | null;
+}
 interface Dependencies {
-  check: () => Promise<UpdateResource | null>;
+  check: () => Promise<CheckResult>;
   prepare: () => Promise<unknown>;
   loadLastCheck: () => Promise<number>;
   saveLastCheck: (time: number) => Promise<unknown>;
@@ -31,12 +46,28 @@ interface HeldUpdate {
 }
 
 export const CHECK_INTERVAL = 12 * 60 * 60 * 1000;
+
+export function appUpdateSourceLabel(source: AppUpdateSourceInfo | undefined, zh: boolean): string | null {
+  if (!source) return null;
+  if (source.kind === 'official') return zh ? '官方 GitHub' : 'Official GitHub';
+  if (source.kind === 'custom') return zh ? '自定义 HTTPS' : 'Custom HTTPS';
+  return source.label;
+}
+
+export function appUpdateSourceSummary(source: AppUpdateSourceInfo | undefined, fallbackChain: AppUpdateSourceInfo[] | undefined, zh: boolean): { source?: string; fallback?: string } {
+  const name = appUpdateSourceLabel(source, zh);
+  return {
+    ...(name ? { source: `${zh ? '更新来源' : 'Update source'}: ${source?.selectedBy === 'automatic' ? zh ? '自动选择 · ' : 'Automatic · ' : source?.selectedBy === 'fallback' ? zh ? '回退到 · ' : 'Fallback · ' : zh ? '已选来源 · ' : 'Selected · '}${name}` } : {}),
+    ...(fallbackChain?.length ? { fallback: `${zh ? '失败时依次回退' : 'Fallback order on failure'}: ${fallbackChain.map(item => appUpdateSourceLabel(item, zh)).filter(Boolean).join(' -> ')}` } : {}),
+  };
+}
 interface Options { desktop: boolean; enabled: boolean; ready: boolean; idle?: boolean }
 
 // Keep one native operation in flight; close its resources only after it settles.
 export class AppUpdateController {
   private dependencies: Dependencies;
   private held: HeldUpdate | null = null;
+  private lastCheck: Pick<AppUpdateState, 'source' | 'fallbackChain' | 'attempts'> = { fallbackChain: [], attempts: [] };
   private session = 0;
   private active = false;
   private options = { desktop: false, enabled: false, ready: false, idle: true };
@@ -64,6 +95,7 @@ export class AppUpdateController {
     this.listener = undefined;
     this.pendingAutomatic = false;
     this.pendingAutomaticForce = false;
+    this.lastCheck = { fallbackChain: [], attempts: [] };
     this.state = { phase: 'idle', received: 0, downloaded: false };
     if (!this.operation) void this.release();
   }
@@ -88,9 +120,15 @@ export class AppUpdateController {
 
   private publish(phase: AppUpdateState['phase'], extra: Partial<AppUpdateState> = {}) {
     const held = this.held;
+    const meta = held ? {
+      source: held.update.source,
+      fallbackChain: held.update.fallbackChain ?? [],
+      attempts: held.update.attempts ?? [],
+    } : this.lastCheck;
     this.state = {
       phase, received: held?.received ?? 0, downloaded: held?.downloaded ?? false,
       ...(held ? { version: held.update.version, notes: held.update.body, total: held.total } : {}),
+      ...meta,
       ...extra,
     };
     this.listener?.(this.state);
@@ -141,8 +179,17 @@ export class AppUpdateController {
     this.publish('downloading');
     await held.update.download(event => {
       if (!this.usable(session)) return;
+      if (event.source) held.update.source = event.source;
+      if (event.fallbackChain) held.update.fallbackChain = event.fallbackChain;
+      if (event.attempts) held.update.attempts = event.attempts;
+      if (event.event === 'Source') {
+        held.received = 0;
+        held.total = undefined;
+        this.publish('downloading');
+        return;
+      }
       if (event.event === 'Started') held.total = event.data.contentLength;
-      if (event.event === 'Progress') held.received += event.data.chunkLength;
+      if (event.event === 'Progress') held.received += event.data.chunkLength ?? 0;
       this.publish('downloading');
     }, { timeout: 600000 });
     // Finished is a progress event. Wait for successful native verification.
@@ -154,8 +201,13 @@ export class AppUpdateController {
     if (!this.usable(session) || this.held?.downloaded || this.state.phase === 'installed') return;
     this.stage = 'check';
     this.publish('checking');
-    const update = await this.dependencies.check();
-    const next: HeldUpdate | null = update ? { update, downloaded: false, received: 0 } : null;
+    const result = await this.dependencies.check();
+    const next: HeldUpdate | null = result.update ? { update: result.update, downloaded: false, received: 0 } : null;
+    this.lastCheck = {
+      source: result.update?.source ?? result.source,
+      fallbackChain: result.update?.fallbackChain ?? result.fallbackChain ?? [],
+      attempts: result.update?.attempts ?? result.attempts ?? [],
+    };
     if (!this.usable(session)) { if (next) await this.close(next); return; }
     await this.release();
     if (!this.usable(session)) { if (next) await this.close(next); return; }
