@@ -373,3 +373,31 @@ async function cryptoReleaseFixture(scenario, operation) {
     await operation({ run, downloads, paths, logs });
   } finally { await temporary.cleanup(); }
 }
+
+test('deferred macOS releases verify without macOS assets and refuse any macOS asset or darwin entry', () => {
+  const { release, manifest } = releaseFixture();
+  const deferredNames = new Set([filenames.macos, `${filenames.macos}.sig`, filenames.dmg, `${filenames.dmg}.sig`]);
+  const deferredRelease = { ...release, assets: release.assets.filter(asset => !deferredNames.has(asset.name)) };
+  const deferredManifest = { ...manifest, platforms: { ...manifest.platforms } };
+  delete deferredManifest.platforms['darwin-aarch64'];
+  const result = validateRelease(deferredRelease, deferredManifest, { ...options, macos: 'deferred' });
+  assert.equal(result.dmg, null);
+  assert.equal(Object.hasOwn(result.updates, 'darwin-aarch64'), false);
+  // Default mode still requires macOS.
+  assert.throws(() => validateRelease(deferredRelease, deferredManifest, options), /darwin-aarch64|dmg/i);
+  // Deferred mode rejects a darwin entry and any macOS asset.
+  assert.throws(() => validateRelease(deferredRelease, manifest, { ...options, macos: 'deferred' }), /darwin-aarch64/);
+  for (const name of deferredNames) {
+    const withMac = { ...deferredRelease, assets: [...deferredRelease.assets, { name, id: 900, size: 100 }] };
+    assert.throws(() => validateRelease(withMac, deferredManifest, { ...options, macos: 'deferred' }), /macOS assets/);
+  }
+  assert.throws(() => validateRelease(deferredRelease, deferredManifest, { ...options, macos: 'later' }), /mode/);
+});
+
+test('the macOS follow-up verifies a published release only when asked to', () => {
+  const { release, manifest } = releaseFixture();
+  const published = { ...release, draft: false };
+  assert.ok(validateRelease(published, manifest, { ...options, published: true }));
+  assert.throws(() => validateRelease(published, manifest, options), /draft/);
+  assert.throws(() => validateRelease(release, manifest, { ...options, published: true }), /published/);
+});

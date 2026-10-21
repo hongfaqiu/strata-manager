@@ -51,11 +51,12 @@ README、官网截图与使用指南描述当前源码功能；安装包包含�
 
 ## macOS（Apple Silicon，实验）
 
-CI 能打出未公证的 Apple Silicon DMG。已有用户在 M5 Pro 上运行，并据其反馈在 0.2.11 修复了显卡识别和 Python 版本问题；但 Manager **仍不**声称已在 Mac 上完成 Metal 模型推理验收。
+从 v0.2.12 起，DMG 和应用内更新包都使用 **Developer ID 签名并经 Apple 公证**（`.app` 已 staple 公证票据，DMG 用 Developer ID 签名、里面就是这个已 staple 的应用），双击 DMG、把应用拖进「应用程序」后直接打开即可，不需要右键打开或 `xattr` 去隔离。v0.2.11 及更早的 DMG 仍是临时签名、未公证。已有用户在 M5 Pro 上运行，并据其反馈在 0.2.11 修复了显卡识别和 Python 版本问题；但 Manager **仍不**声称已在 Mac 上完成 Metal 模型推理验收。
 
 - 手工安装文件为 `Strata.Manager_<version>_aarch64.dmg`。官网下载按钮只在该发布**实际包含**这个文件时启用。
 - 应用内更新（若启用）使用 `Strata.Manager_<version>_aarch64.app.tar.gz`；`latest.json` 的 `darwin-aarch64` 指向该归档，不指向 DMG。
-- CI 在 `macos-15` 上设置 `APPLE_SIGNING_IDENTITY=-` 做**临时（ad-hoc）签名**。没有 Apple 开发者证书，因此**没有公证、没有硬化运行时**。Gatekeeper 可能拦截；确认文件来自本项目发布页后，系统仍可能要求移除隔离或以右键打开。这不是已经在真机验收过的安装步骤。
+- 签名在 CI（`macos-15`）中完成：导入 Developer ID Application 证书，启用硬化运行时（hardened runtime）签名应用和后台 `strata-supervisor`，用 App Store Connect API key 公证 `.app` 并 staple，再把已 staple 的应用放进 DMG、用 Developer ID 签名 DMG（DMG 本身不单独公证），再用 `codesign`、`stapler validate`、`spctl` 检查后才上传。没有证书的 fork 或 PR 构建回退为临时（ad-hoc）签名，本仓库可发布的构建缺少证书或公证凭据时直接失败。
+- 从临时签名的旧版升级到签名版后，macOS 会把它视为签名身份不同的应用：首次读取钥匙串里保存的凭据时可能弹窗询问，选「始终允许」即可；之前给旧版授予的系统权限（如有）可能需要重新授予。
 - **不提供** Intel（`x86_64-apple-darwin`）安装包。上游 Strata Metal 面向 Apple Silicon。
 - **DMG 仍不含引擎。** 第二期起，Manager 在 Apple Silicon 上可下载并校验上游 [v0.2.0-beta](https://github.com/Niko1221/Strata/releases/tag/v0.2.0-beta) 预制包 `strata-engine-*-macos-arm64-metal.tar.gz`（应用内 SHA256，不附带 SHA256SUMS），也可选用已有本地 Strata/`engine` 或 `build-metal` 目录。`./setup.sh` 源码构建仍可手动按 [docs/MAC.md](https://github.com/Niko1221/Strata/blob/main/docs/MAC.md) 操作，Manager 暂不自动调用。真机推理验收仍待进行。
 - `Info.plist` 最低系统版本为 15.0。CI 本身只证明 runner 能编译并打包；真机上的运行情况以上面的用户反馈为准，Metal 推理仍未验收。
@@ -78,13 +79,13 @@ pnpm desktop 启动完整桌面应用和后台。pnpm dev 只运行前端，不�
 
 ## 支持范围
 
-- 已发布稳定安装包仍以 Windows/Linux x64 为主。macOS（Apple Silicon）DMG 为**实验包**（未公证），随含该资产的版本标签发布；不提供 Intel 包。**不要**假定 DMG 已含可用 Metal 引擎。模型、硬件、图像和 API 能力以 Strata 运行时与具体模型为准。
+- 已发布稳定安装包仍以 Windows/Linux x64 为主。macOS（Apple Silicon）DMG 为**实验包**（v0.2.12 起已签名并公证），随含该资产的版本标签发布；不提供 Intel 包。**不要**假定 DMG 已含可用 Metal 引擎。模型、硬件、图像和 API 能力以 Strata 运行时与具体模型为准。
 - 当前源码实现全局 Strata 管理与匹配的 Windows x64 ZIP 引擎更新、已有模型自动展示、图形化/JSON 运行配置、服务控制、聊天、持久化元数据统计和完整用途场景调优。已发布包以对应版本说明为准；截图使用示例数据，不代表实机模型性能。
 - 稳定版通过 `latest` 更新通道提供更新；预览版仅手工下载和安装，不替换稳定通道。
 - Windows CI 门禁包含静默安装、桌面启动、私有后台 IPC、正常关闭和卸载；已通过的历史 revision 见 [VERIFICATION](VERIFICATION.md)。
 - Linux CI 门禁包含 Ubuntu 22.04 Xvfb 下 AppImage 与解包 DEB 启动、私有后台 IPC 和正常关闭；不承诺所有 Linux 发行版均兼容。
 - 真实 GPU 完整流程、Strata ZIP 实机更新、Linux 系统 DEB 安装/卸载、登录自启动、缺少 Python 的 Windows 自动安装、Tauri 自动更新的真实跨版本下载、验签、安装和服务恢复仍需独立验收。跨版本 NSIS 安装器检查不等同自动更新端到端验收。ZIP 引擎更新仅使用匹配的官方 Windows x64 发布包；Linux 保留发布信息查看，但不提供不可执行的 Windows ZIP 更新。
-- Windows 安装包目前没有 Authenticode 发布者证书。Tauri 更新包签名用于验证更新文件，不能替代 Windows 发布者签名。macOS 实验包同样只有临时签名与（若发布）Tauri 更新签名，**没有 Apple 公证**。
+- Windows 安装包目前没有 Authenticode 发布者证书。Tauri 更新包签名用于验证更新文件，不能替代 Windows 发布者签名。macOS 包的 Developer ID 签名和 Apple 公证（v0.2.12 起）与 Tauri 更新签名相互独立：前者让 Gatekeeper 放行，后者让应用内更新验证更新文件。
 
 ## 版本与更新
 
