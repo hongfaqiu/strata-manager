@@ -1,0 +1,168 @@
+name: macOS notarization follow-up
+
+# "Mac 稍后补发": releases published while Apple was still notarizing carry
+# Windows/Linux only. This workflow checks the CI notarization submission and,
+# once Apple accepts it, staples and verifies the CI-built DMG and app, signs
+# them for the updater and adds them (then darwin-aarch64 in latest.json) to the
+# same release. Un-notarized macOS bytes are never uploaded.
+on:
+  schedule:
+    - cron: '17,47 * * * *'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag to finish (empty = every published release still waiting for macOS)
+        type: string
+        default: ''
+      ci_run_id:
+        description: Optional CI run whose macOS bytes to use (defaults to the newest eligible same-source run)
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  pending:
+    name: Find releases waiting for macOS
+    if: github.repository == 'hongfaqiu/strata-manager' && (vars.MACOS_FOLLOWUP != 'off' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    outputs:
+      tags: ${{ steps.find.outputs.tags }}
+      count: ${{ steps.find.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: List published releases without notarized macOS assets
+        id: find
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag || '' }}
+        run: node scripts/macos-notarize-followup.mjs pending
+
+  finish:
+    name: Add notarized macOS to ${{ matrix.tag }}
+    needs: pending
+    if: needs.pending.outputs.count != '0' && needs.pending.outputs.count != ''
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        tag: ${{ fromJSON(needs.pending.outputs.tags) }}
+    runs-on: macos-15
+    timeout-minutes: 60
+    # Same lock as the release publisher: never write a release concurrently.
+    concurrency:
+      group: release-publish-${{ github.repository }}
+      queue: max
+      cancel-in-progress: false
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ matrix.tag }}
+      CI_RUN_ID: ${{ inputs.ci_run_id || '' }}
+      MACOS_RELEASE_MODE: followup
+      SOURCE_ROOT: ${{ github.workspace }}/release-source
+      CARGO_TARGET_DIR: ${{ github.workspace }}/release-source/target
+      UPDATE_VERIFIER_BIN: ${{ github.workspace }}/release-source/target/release/strata-update-verifier
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Check out the release tag source independently
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.tag }}
+          path: release-source
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Bind the release tag source
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]
+          printf 'EXPECTED_SOURCE_SHA=%s\n' "$(git -C release-source rev-parse HEAD)" >> "$GITHUB_ENV"
+          printf 'RELEASE_TEMP=%s/strata-macos-followup\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - name: Bind this repository's same-source CI macOS bytes and notarization record
+        run: node scripts/release-from-ci.mjs prepare
+      # The DMG is rebuilt around the stapled app, so it is Developer ID signed
+      # again here (temporary keychain, removed at the end of the job).
+      - name: Import the Developer ID certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          [ -n "${APPLE_CERTIFICATE:-}" ] && [ -n "${APPLE_CERTIFICATE_PASSWORD:-}" ] || { echo '::error::APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD are required.'; exit 1; }
+          keychain="$RUNNER_TEMP/strata-signing.keychain-db"
+          kc_pass=$(openssl rand -base64 32)
+          echo "::add-mask::$kc_pass"
+          cert="$RUNNER_TEMP/strata-signing.p12"
+          ( umask 077; printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$cert" )
+          security create-keychain -p "$kc_pass" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$kc_pass" "$keychain"
+          security import "$cert" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -f pkcs12 -T /usr/bin/codesign -T /usr/bin/security > /dev/null
+          rm -f "$cert"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kc_pass" "$keychain" > /dev/null
+          existing=()
+          while IFS= read -r k; do existing+=("$k"); done < <(security list-keychains -d user | tr -d '"' | sed 's/^ *//')
+          security list-keychains -d user -s "$keychain" "${existing[@]}"
+          identity=$(security find-identity -v -p codesigning "$keychain" | grep -o '"Developer ID Application: [^"]*"' | head -n1 | tr -d '"' || true)
+          [ -n "$identity" ] || { echo "::error::APPLE_CERTIFICATE has no 'Developer ID Application' identity."; exit 1; }
+          if [ -n "${APPLE_TEAM_ID:-}" ] && [[ "$identity" != *"($APPLE_TEAM_ID)" ]]; then echo '::error::Signing identity does not belong to APPLE_TEAM_ID.'; exit 1; fi
+          echo "Signing identity: $identity"
+          { echo "APPLE_SIGNING_IDENTITY=$identity"; echo "STRATA_SIGNING_KEYCHAIN=$keychain"; } >> "$GITHUB_ENV"
+      - name: Check Apple notarization, then staple the app and rebuild the DMG
+        id: staple
+        env:
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: node scripts/macos-notarize-followup.mjs staple
+      - uses: pnpm/action-setup@v4
+        if: steps.staple.outputs.status == 'accepted'
+        with:
+          run_install: false
+      - name: Install the tag source's locked signing tool
+        if: steps.staple.outputs.status == 'accepted'
+        working-directory: release-source
+        run: pnpm install --frozen-lockfile
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.staple.outputs.status == 'accepted'
+      - name: Build the tag source's public signature verifier
+        if: steps.staple.outputs.status == 'accepted'
+        working-directory: release-source
+        run: cargo build -p strata-update-verifier --release --locked
+      - name: Sign the stapled macOS files for the updater
+        if: steps.staple.outputs.status == 'accepted'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: node scripts/macos-notarize-followup.mjs sign
+      - name: Add the macOS assets, then darwin-aarch64 to latest.json
+        if: steps.staple.outputs.status == 'accepted'
+        run: node scripts/macos-notarize-followup.mjs publish
+      - name: Remove the signing keychain and notary API key
+        if: always()
+        run: |
+          if [ -n "${STRATA_SIGNING_KEYCHAIN:-}" ]; then security delete-keychain "$STRATA_SIGNING_KEYCHAIN" || true; fi
+          rm -rf "$RUNNER_TEMP/strata-private-keys" "$RUNNER_TEMP/strata-signing.p12"
