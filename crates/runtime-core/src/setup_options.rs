@@ -157,6 +157,58 @@ impl SetupOptions {
 mod tests {
     use super::*;
 
+    /// Every setup.py flag (and the choices) Manager passes exists in the pinned upstream
+    /// source. Reads the verified upstream checkout (`STRATA_TEST_ROOT`, CI checks out the
+    /// pinned revision); without one it only runs on CI, where a missing fixture fails.
+    #[test]
+    fn the_pinned_upstream_setup_accepts_every_flag_manager_passes() {
+        let root = std::env::var_os("STRATA_TEST_ROOT")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.reference/strata")
+            });
+        let Ok(setup) = std::fs::read_to_string(root.join("setup.py")) else {
+            assert!(
+                std::env::var_os("CI").is_none(),
+                "CI must provide the pinned upstream checkout"
+            );
+            return;
+        };
+        for flag in [
+            "--yes",
+            "--setup",
+            "--no-start",
+            "--no-browser",
+            "--family",
+            "--model",
+            "--context",
+            "--vision",
+            "--port",
+            "--data-dir",
+            "--gguf-dir",
+            "--source",
+            "--backend",
+            "--gpu",
+            "--gpus",
+        ] {
+            assert!(
+                setup.contains(&format!("add_argument(\"{flag}\"")),
+                "{flag}"
+            );
+        }
+        assert!(setup.contains(
+            r#"ap.add_argument("--vision", choices=["yes", "no", "none", "gpu", "cpu"]"#
+        ));
+        assert!(setup.contains(r#"ap.add_argument("--backend", choices=["cuda", "hip", "sycl"]"#));
+        let sources = setup
+            .lines()
+            .find(|line| line.starts_with("SOURCES = ("))
+            .expect("SOURCES");
+        for source in ["\"modelscope\"", "\"huggingface\""] {
+            assert!(sources.contains(source), "{sources}");
+        }
+    }
+
     #[test]
     fn setup_flags_preserve_gpu_order_and_reject_duplicates_before_launch() {
         let options = SetupOptions {

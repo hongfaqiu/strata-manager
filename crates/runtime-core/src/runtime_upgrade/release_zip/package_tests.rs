@@ -796,3 +796,35 @@ fn check_real_packages(env: &str, feed: &[u8], sig: &[u8], release: &str, tag: &
     }
     assert!(checked > 0, "no packages found in {}", dir.display());
 }
+
+/// The pinned fresh-install source moved from fb58e0d (0.1.41) to Strata v0.2.2: its pinned
+/// Python packages are a subset of the old ones (cmake / ninja moved to the build-only
+/// file), so runtimes prepared from the old pin take the v0.2.2 release update in place.
+#[test]
+fn strata_022_requirements_fit_runtimes_prepared_from_the_previous_pin() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/runtime_upgrade/fixtures");
+    let old = normalized_requirements(&dir.join("requirements-fb58e0d.txt")).unwrap();
+    let new = normalized_requirements(&dir.join("requirements-v0.2.2.txt")).unwrap();
+    assert!(requirements_compatible(&old, &new));
+    assert!(!new
+        .iter()
+        .any(|row| row.starts_with("cmake") || row.starts_with("ninja")));
+    assert!(new.contains(&"regex==2026.9.10".to_owned()));
+}
+
+/// The pinned source's `serve/server.py` is reviewed for the observer, at the same ref.
+#[test]
+fn the_pinned_source_revision_is_a_reviewed_observer_source() {
+    let compat: Value = serde_json::from_str(OBSERVER_COMPAT).unwrap();
+    let entry = compat["reviewed"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["ref"] == installation::SOURCE_REVISION)
+        .expect("observer_compat.json reviews the pinned revision");
+    assert_eq!(entry["version"], "0.2.2");
+    let reviewed = reviewed_observer_hashes();
+    for hash in entry["serverPySha256"].as_array().unwrap() {
+        assert!(reviewed.contains(hash.as_str().unwrap()));
+    }
+}
