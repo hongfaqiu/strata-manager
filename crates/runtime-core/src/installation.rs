@@ -75,6 +75,21 @@ struct Claim {
     result: Option<PreparedRuntime>,
 }
 
+// Installation polling should not start another Python/process probe every
+// 1.5 seconds. Cache only read-only discovery, never installation results.
+type DiscoveryCache = HashMap<PathBuf, (Instant, Vec<crate::discovery::DetectedRuntime>)>;
+fn discovery_cache() -> &'static Mutex<DiscoveryCache> {
+    static CACHE: std::sync::OnceLock<Mutex<DiscoveryCache>> = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+/// A finished installation changes what discovery reports; the next status
+/// call must not show the readiness probed before the task ran.
+pub(crate) fn invalidate_discovery(data_dir: &Path) {
+    if let Ok(mut cache) = discovery_cache().lock() {
+        cache.remove(data_dir);
+    }
+}
+
 pub fn status(state: &RuntimeState) -> Result<InstallationStatus, String> {
     let value = crate::store_get(state, RESULT_KEY.into())?;
     let mut status: InstallationStatus = if value.is_null() {
@@ -82,11 +97,7 @@ pub fn status(state: &RuntimeState) -> Result<InstallationStatus, String> {
     } else {
         serde_json::from_value(value).map_err(|e| e.to_string())?
     };
-    // Installation polling should not start another Python/process probe every
-    // 1.5 seconds. Cache only read-only discovery, never installation results.
-    type DiscoveryCache = HashMap<PathBuf, (Instant, Vec<crate::discovery::DetectedRuntime>)>;
-    static CACHE: std::sync::OnceLock<Mutex<DiscoveryCache>> = std::sync::OnceLock::new();
-    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let cache = discovery_cache();
     let key = state.data_dir().to_owned();
     let cached = cache
         .lock()
@@ -265,6 +276,7 @@ pub fn start_fallback_with_archives(
                 let _ = processes::persist_task_logs(&state.database, &state.logs, &id);
             }
         }
+        invalidate_discovery(state.data_dir());
     });
     Ok(task)
 }
@@ -1394,6 +1406,9 @@ pub(crate) async fn prepare_with_archives(
             id,
             "已验证现有受管运行时；没有重新下载模型或替换用户文件",
         )?;
+        // Runtimes prepared by 0.2.11 and earlier on macOS/Linux have a venv
+        // with only pip; discovery then reports "repair" forever and first-run setup loops.
+        ensure_python_dependencies(state, id, root, Path::new(&result.python_path)).await?;
         ensure_metal_engine(state, id, root, local_engine).await?;
         return Ok(result);
     }
@@ -1453,6 +1468,7 @@ pub(crate) async fn prepare_with_archives(
     pip.args(["-I", "-m", "pip", "--version"]).current_dir(root);
     run_owned(state, id, pip, "正在验证私有 Python 环境的 pip").await?;
     cancelled(state, id)?;
+    ensure_python_dependencies(state, id, root, &venv_python).await?;
     let port = std::net::TcpListener::bind(("127.0.0.1", 0))
         .map_err(|e| e.to_string())?
         .local_addr()
@@ -1482,6 +1498,62 @@ pub(crate) async fn prepare_with_archives(
     owner.result = Some(result.clone());
     save_claim(&owner)?;
     Ok(result)
+}
+
+/// Install the source's pinned `requirements.txt` into the private venv when
+/// the modules discovery requires are missing. Without this the task reports
+/// "ready" while discovery keeps the same runtime at "repair", and first-run
+/// setup can never leave the "Install Strata" step.
+async fn ensure_python_dependencies(
+    state: &RuntimeState,
+    id: &str,
+    root: &Path,
+    python: &Path,
+) -> Result<(), String> {
+    let missing = crate::discovery::missing_runtime_modules(root, python);
+    if missing.is_empty() {
+        return Ok(());
+    }
+    let requirements = root.join("requirements.txt");
+    if !requirements.is_file() || requirements.is_symlink() {
+        return Err(format!(
+            "私有 Python 环境缺少运行依赖（{}），且源码没有 requirements.txt；请重新准备运行环境",
+            missing.join(", ")
+        ));
+    }
+    let mut pip = Command::new(python);
+    pip.args([
+        "-I",
+        "-m",
+        "pip",
+        "--isolated",
+        "install",
+        "--disable-pip-version-check",
+        "--index-url",
+        "https://pypi.org/simple",
+        "--only-binary=:all:",
+        "-r",
+    ])
+    .arg(&requirements)
+    .current_dir(root);
+    run_owned(
+        state,
+        id,
+        pip,
+        "正在私有 Python 环境安装 Strata 运行依赖（requirements.txt）",
+    )
+    .await?;
+    cancelled(state, id)?;
+    let missing = crate::discovery::missing_runtime_modules(root, python);
+    if !missing.is_empty() {
+        return Err(format!(
+            "安装依赖后私有 Python 环境仍缺少：{}；查看日志后重试",
+            missing.join(", ")
+        ));
+    }
+    progress(state, id, "Strata 运行依赖已就绪")?;
+    invalidate_discovery(state.data_dir());
+    Ok(())
 }
 
 /// On macOS aarch64, download (or import) the pinned Metal engine package into `engine/`.
@@ -2160,6 +2232,93 @@ mod tests {
         .unwrap();
         assert!(extract_source(&archive, &root, || Err("cancelled".into())).is_err());
         assert!(!root.join("setup.py").exists());
+    }
+    /// A runtime root that requires `regex`/`jinja2` (like the pinned source) and
+    /// a fake interpreter: the import probe reports both missing until the fake
+    /// `pip install` creates `installed`; `pip_exit` controls pip's result.
+    #[cfg(unix)]
+    fn fake_runtime(temp: &Path, pip_creates: bool, pip_exit: i32) -> (PathBuf, PathBuf) {
+        use std::os::unix::fs::PermissionsExt;
+        let root = temp.join("runtime");
+        fs::create_dir_all(root.join("tools")).unwrap();
+        fs::create_dir_all(root.join("serve")).unwrap();
+        fs::write(root.join("tools/strata_tokenizer.py"), "").unwrap();
+        fs::write(root.join("serve/frontend.py"), "").unwrap();
+        fs::write(root.join("requirements.txt"), "regex\njinja2\n").unwrap();
+        let marker = temp.join("installed");
+        let python = temp.join("python");
+        let install = if pip_creates {
+            format!("echo \"$@\" > '{}'", marker.display())
+        } else {
+            String::new()
+        };
+        fs::write(
+            &python,
+            format!(
+                "#!/bin/sh\nif [ \"$2\" = \"-c\" ]; then\n  if [ -f '{marker}' ]; then echo '[]'; else echo '[\"regex\", \"jinja2\"]'; fi\n  exit 0\nfi\n{install}\nexit {pip_exit}\n",
+                marker = marker.display()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&python, fs::Permissions::from_mode(0o755)).unwrap();
+        (root, python)
+    }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn prepared_runtime_installs_missing_python_dependencies_once() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = RuntimeState::open(temp.path().join("data")).unwrap();
+        let id = fixture_task(&state);
+        let (root, python) = fake_runtime(temp.path(), true, 0);
+        assert_eq!(
+            crate::discovery::missing_runtime_modules(&root, &python),
+            ["regex", "jinja2"]
+        );
+        ensure_python_dependencies(&state, &id, &root, &python)
+            .await
+            .unwrap();
+        let args = fs::read_to_string(temp.path().join("installed")).unwrap();
+        assert!(args.contains("pip --isolated install"), "{args}");
+        assert!(args.contains("--only-binary=:all:"), "{args}");
+        assert!(args.contains("requirements.txt"), "{args}");
+        assert!(crate::discovery::missing_runtime_modules(&root, &python).is_empty());
+        // Already complete: no second pip run.
+        fs::remove_file(temp.path().join("installed")).unwrap();
+        fs::write(temp.path().join("installed"), "kept").unwrap();
+        ensure_python_dependencies(&state, &id, &root, &python)
+            .await
+            .unwrap();
+        assert_eq!(
+            fs::read_to_string(temp.path().join("installed")).unwrap(),
+            "kept"
+        );
+    }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn dependency_install_failure_is_reported_instead_of_ready() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = RuntimeState::open(temp.path().join("data")).unwrap();
+        let id = fixture_task(&state);
+        let (root, python) = fake_runtime(temp.path(), false, 1);
+        let error = ensure_python_dependencies(&state, &id, &root, &python)
+            .await
+            .unwrap_err();
+        assert!(error.contains("失败"), "{error}");
+        // pip "succeeds" but the modules still do not import.
+        let temp = tempfile::tempdir().unwrap();
+        let (root, python) = fake_runtime(temp.path(), false, 0);
+        let error = ensure_python_dependencies(&state, &id, &root, &python)
+            .await
+            .unwrap_err();
+        assert!(
+            error.contains("仍缺少") && error.contains("jinja2"),
+            "{error}"
+        );
+        fs::remove_file(root.join("requirements.txt")).unwrap();
+        let error = ensure_python_dependencies(&state, &id, &root, &python)
+            .await
+            .unwrap_err();
+        assert!(error.contains("requirements.txt"), "{error}");
     }
     #[tokio::test]
     #[ignore = "Uses the externally verified official source archive and creates a real private venv; no model download"]
