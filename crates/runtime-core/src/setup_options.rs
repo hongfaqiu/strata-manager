@@ -12,6 +12,10 @@ pub struct SetupOptions {
     pub hf_endpoint: Option<String>,
     pub backend: Option<String>,
     pub gpus: Option<String>,
+    /// Strata 0.2.2 setup.py --gpu-roles: `0=helper,1=main` (cards not named are Off).
+    /// When given it decides the cards; `gpus` may only repeat the cards it turns on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gpu_roles: Option<String>,
 }
 
 fn has_controls(value: &str) -> bool {
@@ -59,6 +63,65 @@ pub fn normalize_gpus(value: &str) -> Result<String, String> {
     Ok(indices.join(","))
 }
 
+/// setup.py parse_roles (v0.2.2): `number=role` pairs, one Main at most, at least one card on.
+/// Returns the canonical text (by card number) and the cards that are on.
+pub fn normalize_gpu_roles(value: &str) -> Result<(String, Vec<u8>), String> {
+    if has_controls(value) {
+        return Err("显卡角色包含无效字符".into());
+    }
+    let mut roles = BTreeMap::new();
+    for part in value.replace(';', ",").split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        let (card, role) = part
+            .split_once('=')
+            .or_else(|| part.split_once(':'))
+            .ok_or("显卡角色请写成 编号=main|helper|off，例如 1=main,0=helper")?;
+        let card = card.trim();
+        let role = role.trim().to_ascii_lowercase();
+        if card.is_empty() || !card.bytes().all(|c| c.is_ascii_digit()) {
+            return Err("显卡角色的编号必须为数字".into());
+        }
+        let card: u8 = card.parse().map_err(|_| "GPU 编号必须为 0–255")?;
+        if !["main", "helper", "off"].contains(&role.as_str()) {
+            return Err("显卡角色只能是 main、helper 或 off".into());
+        }
+        if roles.insert(card, role).is_some() || roles.len() > 8 {
+            return Err("显卡角色的编号不能重复，且最多 8 张卡".into());
+        }
+    }
+    let on: Vec<u8> = roles
+        .iter()
+        .filter(|(_, role)| role.as_str() != "off")
+        .map(|(card, _)| *card)
+        .collect();
+    if roles
+        .values()
+        .filter(|role| role.as_str() == "main")
+        .count()
+        > 1
+    {
+        return Err("只能有一张主卡（main）".into());
+    }
+    if on.is_empty() {
+        return Err("安装时至少需要一张主卡或辅助卡".into());
+    }
+    let text = roles
+        .iter()
+        .map(|(card, role)| format!("{card}={role}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    Ok((text, on))
+}
+
+/// Strata before 0.2.2 has no --gpu-roles and would stop at an unknown option.
+pub fn setup_supports_gpu_roles(root: &std::path::Path) -> bool {
+    std::fs::read_to_string(root.join("setup.py"))
+        .is_ok_and(|text| text.contains("\"--gpu-roles\""))
+}
+
 impl SetupOptions {
     pub fn validated(&self) -> Result<Self, String> {
         let source = self.source.as_deref().unwrap_or("official");
@@ -68,11 +131,29 @@ impl SetupOptions {
         {
             return Err("未知下载源或计算后端".into());
         }
-        let gpus = normalize_gpus(self.gpus.as_deref().unwrap_or(""))?;
+        let mut gpus = normalize_gpus(self.gpus.as_deref().unwrap_or(""))?;
+        let gpu_roles = match self.gpu_roles.as_deref().map(str::trim) {
+            None | Some("") => None,
+            Some(text) => {
+                let (roles, on) = normalize_gpu_roles(text)?;
+                let mut asked: Vec<u8> = gpus
+                    .split(',')
+                    .filter(|part| !part.is_empty())
+                    .filter_map(|part| part.parse().ok())
+                    .collect();
+                asked.sort_unstable();
+                if gpus == "all" || (!asked.is_empty() && asked != on) {
+                    return Err("显卡角色与所选 GPU 编号不一致".into());
+                }
+                gpus = on.iter().map(u8::to_string).collect::<Vec<_>>().join(",");
+                Some(roles)
+            }
+        };
         if cfg!(windows) && backend == "hip" && (gpus == "all" || gpus.contains(',')) {
             return Err("官方 Windows AMD 安装器目前只支持单卡，请指定一个 GPU 编号".into());
         }
         Ok(Self {
+            gpu_roles,
             source: Some(source.into()),
             backend: Some(backend.into()),
             gpus: Some(gpus),
@@ -101,7 +182,10 @@ impl SetupOptions {
             args.extend(["--backend".into(), backend.into()]);
         }
         let gpus = options.gpus.as_deref().unwrap_or("");
-        if !gpus.is_empty() {
+        if let Some(roles) = &options.gpu_roles {
+            // setup.py: --gpu-roles and --gpu / --gpus are exclusive; the roles name the cards.
+            args.extend(["--gpu-roles".into(), roles.clone()]);
+        } else if !gpus.is_empty() {
             args.extend([
                 if gpus == "all" || gpus.contains(',') {
                     "--gpus"
@@ -156,6 +240,63 @@ impl SetupOptions {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn strata_022_gpu_roles_replace_gpu_flags_and_are_checked_before_launch() {
+        let options = SetupOptions {
+            gpus: Some("2,0".into()),
+            gpu_roles: Some(" 2=MAIN; 0:helper,1=off ".into()),
+            ..Default::default()
+        };
+        let mut args = vec![];
+        options.append_args(&mut args).unwrap();
+        assert_eq!(
+            args,
+            [
+                "--source",
+                "huggingface",
+                "--gpu-roles",
+                "0=helper,1=off,2=main"
+            ]
+        );
+        let validated = options.validated().unwrap();
+        assert_eq!(validated.gpus.as_deref(), Some("0,2"));
+        for bad in [
+            "0=main,1=main",
+            "0=off",
+            "1=boss",
+            "x=main",
+            "0=main,0=helper",
+            "1",
+        ] {
+            let options = SetupOptions {
+                gpu_roles: Some(bad.into()),
+                ..Default::default()
+            };
+            assert!(options.validated().is_err(), "{bad}");
+        }
+        for gpus in ["all", "0", "0,1"] {
+            let options = SetupOptions {
+                gpus: Some(gpus.into()),
+                gpu_roles: Some("0=helper,2=main".into()),
+                ..Default::default()
+            };
+            assert!(options.validated().is_err(), "{gpus}");
+        }
+        // An old task record without the field still reads.
+        let old: SetupOptions =
+            serde_json::from_str(r#"{"source":"official","gpus":"1"}"#).unwrap();
+        assert!(old.gpu_roles.is_none());
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::write(temp.path().join("setup.py"), "ap.add_argument(\"--gpus\")").unwrap();
+        assert!(!setup_supports_gpu_roles(temp.path()));
+        std::fs::write(
+            temp.path().join("setup.py"),
+            "ap.add_argument(\"--gpu-roles\", metavar=\"LIST\")",
+        )
+        .unwrap();
+        assert!(setup_supports_gpu_roles(temp.path()));
+    }
 
     #[test]
     fn setup_flags_preserve_gpu_order_and_reject_duplicates_before_launch() {

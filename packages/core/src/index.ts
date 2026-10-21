@@ -48,3 +48,4 @@ export * from './concurrency';
 export * from './concurrency-ladder';
 export * from './orca-import';
 export * from './storage-location';
+export * as gpuRoles from './gpu-roles';

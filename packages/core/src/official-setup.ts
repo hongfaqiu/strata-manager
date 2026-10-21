@@ -1,3 +1,4 @@
+import { parseRolesText, rolesText } from './gpu-roles';
 /** Explicit per-task overrides for the official setup.py, never shell arguments. */
 export interface OfficialSetupOptions {
   source?: 'official' | 'mirror' | 'modelscope';
@@ -5,6 +6,8 @@ export interface OfficialSetupOptions {
   backend?: 'auto' | 'cuda' | 'hip' | 'sycl';
   /** Empty means upstream automatic choice; accepts one index, comma-separated indices, or all. */
   gpus?: string;
+  /** Strata 0.2.2 setup.py --gpu-roles (`0=helper,1=main`). When set it names the cards and replaces --gpu / --gpus. */
+  gpuRoles?: string;
 }
 export interface ModelInspectRequest {
   installationId: string;
@@ -38,7 +41,16 @@ export function normalizeOfficialSetupOptions(options: OfficialSetupOptions = {}
   const source = options.source ?? 'official';
   const backend = options.backend ?? 'auto';
   if (!['official', 'mirror', 'modelscope'].includes(source) || !['auto', 'cuda', 'hip', 'sycl'].includes(backend)) throw new Error('未知安装选项 / Unknown setup option');
-  return { source, backend, gpus: normalizeGpuSelection(options.gpus ?? ''), ...(source === 'mirror' ? { hfEndpoint: validateHfEndpoint(options.hfEndpoint ?? '') } : {}) };
+  const gpus = normalizeGpuSelection(options.gpus ?? '');
+  let gpuRoles: string | undefined;
+  if (options.gpuRoles?.trim()) {
+    const roles = parseRolesText(options.gpuRoles);
+    if (!roles) throw new Error('显卡角色格式为 编号=main|helper|off，只能有一张主卡 / GPU roles are number=main|helper|off with one Main');
+    const on = Object.keys(roles).map(Number).filter(i => roles[i] !== 'off').sort((a, b) => a - b).join(',');
+    if (gpus === 'all' || (gpus && gpus.split(',').map(Number).sort((a, b) => a - b).join(',') !== on)) throw new Error('显卡角色与所选显卡不一致 / GPU roles do not match the chosen GPUs');
+    gpuRoles = rolesText(roles);
+  }
+  return { source, backend, gpus, ...(gpuRoles ? { gpuRoles } : {}), ...(source === 'mirror' ? { hfEndpoint: validateHfEndpoint(options.hfEndpoint ?? '') } : {}) };
 }
 export function validateModelInspectRequest(request: ModelInspectRequest): ModelInspectRequest {
   const target = request.target.trim();

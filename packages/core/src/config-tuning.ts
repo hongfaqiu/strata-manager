@@ -3,6 +3,7 @@ import { STARTUP_ENGINE_FLAGS } from './startup-engine-flags';
 import { startupServiceEndpoint } from './config-profile';
 import { concurrencyConfigError } from './concurrency';
 import { contextExtensionError } from './context-extension';
+import { parseSaved } from './gpu-roles';
 export { STARTUP_ENGINE_FLAGS } from './startup-engine-flags';
 
 export interface StartupTuning { context: string; kv: string; threads: string }
@@ -117,6 +118,9 @@ export const STARTUP_TUNING_FIELDS: readonly StartupFieldSpec[] = [
     ['--host-core', '主循环核心', 'Host-loop core', 'text', ['first', 'last']],
     ['--no-host-worker', '禁用主循环工作线程', 'Disable host worker', 'boolean'],
   ]),
+  ...fields('cpu', 'config', [
+    ['pool_cores', '实验：CPU 专家线程使用的逻辑处理器', 'Experimental: logical processors for CPU expert workers', 'text'],
+  ]),
   ...fields('prefill', 'arg', [
     ['--prefill', 'Prefill 分块（token）', 'Prefill chunk (tokens)', 'text', ['auto', 'auto:16384', 'auto:32768']],
     ['--no-prefill-borrow', '不借用专家缓存给 Prefill', 'Disable prefill borrowing', 'boolean'],
@@ -214,11 +218,22 @@ export const STARTUP_TUNING_FIELDS: readonly StartupFieldSpec[] = [
 
 /** Optional one-line explanations shown under a field in the graphical editor (zh + en). */
 export const STARTUP_FIELD_HINTS: Readonly<Record<string, { zh: string; en: string }>> = {
+  pool_cores: {
+    zh: '进阶、默认关闭：把 CPU 专家线程固定到这些逻辑处理器，例如 0,2,4,6 或 2-14:2（起-止:步长）。需要 Strata 0.2.2（引擎 0.1.47）及以上；留空保持默认分配。args 里已有 --pool-cores 时以它为准。',
+    en: 'Advanced, off by default: pins the CPU expert workers to these logical processors, e.g. 0,2,4,6 or 2-14:2 (start-end:step). Needs Strata 0.2.2 (engine 0.1.47) or newer; leave empty for the default placement. A --pool-cores in args wins.',
+  },
   '--prefill-pipe': {
     zh: '仅在跨 GPU 层分配（--layer-split）时生效：按流水线切分提示词分块。0 关闭（默认），1 仅平均分块数，大于 1 为本机 b/a（token，可由快速校准或官方 --calibrate 测得），范围 0–262144。',
     en: 'Only affects a layer split (--layer-split): sizes prompt chunks for the pipeline. 0 off (default), 1 only evens out the chunk count, > 1 is this PC\'s b/a in tokens (measured by quick calibration or the official --calibrate); range 0–262144.',
   },
 };
+
+const POOL_CORES = /^[0-9]+(-[0-9]+(:[0-9]+)?)?(,[0-9]+(-[0-9]+(:[0-9]+)?)?)*$/;
+/** serve/server.py pool_cores_args (v0.2.2): a text like "0,2,4,6" / "2-14:2", or a list of processor numbers. */
+export function poolCoresValid(value: unknown): boolean {
+  if (Array.isArray(value)) return value.length > 0 && value.every(v => Number.isSafeInteger(v) && (v as number) >= 0);
+  return typeof value === 'string' && POOL_CORES.test(value.replace(/ /g, ''));
+}
 
 export function startupArgsOf(config: JsonObject): string[] { return config.args === undefined ? [] : argsOf(config); }
 export function startupFieldValue(config: JsonObject, field: StartupFieldSpec): string {
@@ -317,6 +332,8 @@ export function validateStartupConfiguration(config: JsonObject): void {
   if (ropeError) throw new Error(ropeError);
   for (const key of ['exe', 'cwd', 'tokenizer', 'model_name', 'log', 'host']) if (config[key] !== undefined && typeof config[key] !== 'string') throw new Error(`${key}: 必须为字符串 / must be a string`);
   if (config.api_key !== undefined && typeof config.api_key !== 'string' && !(Array.isArray(config.api_key) && config.api_key.every(key => typeof key === 'string' && !!key.trim()))) throw new Error('api_key: 必须为字符串或非空密钥的数组 / must be a string or an array of nonempty keys');
+  if (config.pool_cores !== undefined && config.pool_cores !== null && config.pool_cores !== '' && !poolCoresValid(config.pool_cores)) throw new Error('pool_cores: 逻辑处理器编号，如 "0,2,4,6" 或 "2-14:2" / logical processor numbers like "0,2,4,6" or "2-14:2"');
+  if (config.gpu_roles !== undefined && config.gpu_roles !== null && !parseSaved(config.gpu_roles)) throw new Error('gpu_roles: 每张卡为 main / helper / off，最多一张 main / each card is main, helper or off, with at most one main');
   for (const key of ['sampling', 'env', 'vision']) if (config[key] !== undefined && config[key] !== null && (!config[key] || typeof config[key] !== 'object' || Array.isArray(config[key]))) throw new Error(`${key}: 必须为对象或 null / must be an object or null`);
   for (const key of ['api_monitor', 'open_browser', 'lazy_load', 'fit_max_tokens']) if (config[key] !== undefined && typeof config[key] !== 'boolean') throw new Error(`${key}: 必须为布尔值 / must be a boolean`);
 }

@@ -17,6 +17,8 @@ pub struct ServiceSharingStatus {
     pub port: u16,
     pub has_server_key: bool,
     pub key_count: usize,
+    /// `"api_key": "none"`: the owner chose to serve without a key (Strata 0.2.2+).
+    pub no_key_chosen: bool,
     pub running: bool,
     pub owned: bool,
     pub restart_required: bool,
@@ -42,6 +44,8 @@ pub enum KeyAction {
     Keep,
     Set,
     Clear,
+    /// Write `"api_key": "none"` (Strata 0.2.2: served without a key on purpose).
+    None,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -51,7 +55,25 @@ pub struct ServiceAuthResult {
     pub client_credential_needs_update: bool,
 }
 
+/// Strata 0.2.2 serve/server.py explicit_no_key: `"none"` (any case, spaces around) is never a key.
+pub(crate) fn explicit_no_key(value: Option<&Value>) -> bool {
+    value
+        .and_then(Value::as_str)
+        .is_some_and(|key| key.trim().eq_ignore_ascii_case("none"))
+}
+/// The client key an imported config hands the app: its string `api_key`, never the
+/// Strata 0.2.2 `"none"` (served without a key on purpose; no Authorization is sent).
+pub(crate) fn import_client_key(config: &Value) -> Option<String> {
+    let key = config.get("api_key")?;
+    if explicit_no_key(Some(key)) {
+        return None;
+    }
+    key.as_str().filter(|s| !s.is_empty()).map(str::to_owned)
+}
 fn key_count(config: &Value) -> usize {
+    if explicit_no_key(config.get("api_key")) {
+        return 0;
+    }
     match config.get("api_key") {
         Some(Value::String(key)) => usize::from(!key.trim().is_empty()),
         Some(Value::Array(keys)) => keys
@@ -176,6 +198,7 @@ pub fn status(
         port: configured.port,
         has_server_key: key_count > 0,
         key_count,
+        no_key_chosen: explicit_no_key(snapshot.config.get("api_key")),
         running: live.is_some(),
         owned: live.is_some(),
         restart_required,
@@ -215,6 +238,12 @@ fn edited(config: &Value, request: &SetServiceAuthRequest) -> Result<Value, Stri
             }
             object.remove("api_key");
         }
+        KeyAction::None => {
+            if request.server_key.is_some() {
+                return Err("SHARING_OPTIONS_INVALID".into());
+            }
+            object.insert("api_key".into(), json!("none"));
+        }
         KeyAction::Set => {
             let key = request
                 .server_key
@@ -228,7 +257,8 @@ fn edited(config: &Value, request: &SetServiceAuthRequest) -> Result<Value, Stri
             object.insert("api_key".into(), json!(key));
         }
     }
-    if !ip.is_loopback() && key_count(&next) == 0 {
+    // A key is recommended on a network, never required once the owner chose none (Strata 0.2.2).
+    if !ip.is_loopback() && key_count(&next) == 0 && !explicit_no_key(next.get("api_key")) {
         return Err("SHARING_KEY_REQUIRED: 局域网监听需先设置服务端密钥".into());
     }
     Ok(next)
@@ -346,6 +376,36 @@ mod tests {
         change.key_action = KeyAction::Set;
         change.server_key = Some("secret\r\nvalue".into());
         assert!(!edited(&json!({}), &change).unwrap_err().contains("secret"));
+    }
+    #[test]
+    fn strata_022_no_key_is_an_explicit_choice_that_allows_lan() {
+        let mut change = request("a".repeat(64));
+        change.host = "0.0.0.0".into();
+        change.key_action = KeyAction::None;
+        let next = edited(&json!({"api_key":["old","other"]}), &change).unwrap();
+        assert_eq!(next["api_key"], "none");
+        assert_eq!(key_count(&next), 0);
+        // Keeping a written "none" on the LAN stays allowed; any case and spaces are the same choice.
+        change.key_action = KeyAction::Keep;
+        assert!(edited(&json!({"api_key":" None "}), &change).is_ok());
+        assert_eq!(key_count(&json!({"api_key":"NONE"})), 0);
+        assert!(explicit_no_key(Some(&json!("none"))));
+        assert!(!explicit_no_key(Some(&json!(["none"]))));
+        assert!(!explicit_no_key(Some(&json!("none-key"))));
+        assert_eq!(import_client_key(&json!({"api_key":" none "})), None);
+        assert_eq!(
+            import_client_key(&json!({"api_key":"real-secret"})).as_deref(),
+            Some("real-secret")
+        );
+        assert_eq!(import_client_key(&json!({"api_key":""})), None);
+        // Removing authentication is still not enough for the LAN; a new key cannot ride along with "none".
+        change.key_action = KeyAction::Clear;
+        assert!(edited(&json!({"api_key":"old"}), &change)
+            .unwrap_err()
+            .contains("SHARING_KEY_REQUIRED"));
+        change.key_action = KeyAction::None;
+        change.server_key = Some("x".into());
+        assert!(edited(&json!({}), &change).is_err());
     }
     fn fixture() -> (tempfile::TempDir, Arc<RuntimeState>, ServiceProfile) {
         let directory = tempfile::tempdir().unwrap();

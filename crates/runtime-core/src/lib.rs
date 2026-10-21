@@ -1489,12 +1489,10 @@ impl RuntimeState {
         // old profile identifier when available so existing conversations and
         // OS-credential entries remain associated with the imported model.
         if http::key(&prepared.profile.id)?.is_none() {
-            if let Some(secret) = storage::read(&prepared.original_profile)?
-                .get("api_key")
-                .and_then(Value::as_str)
-                .filter(|s| !s.is_empty())
+            if let Some(secret) =
+                service_sharing::import_client_key(&storage::read(&prepared.original_profile)?)
             {
-                set_api_key(prepared.profile.id.clone(), secret.into())?;
+                set_api_key(prepared.profile.id.clone(), secret)?;
             }
         }
         let mut database = self.database.lock().map_err(|e| e.to_string())?;
@@ -3449,6 +3447,13 @@ fn run_setup_with_preflight_options(
                 version.as_deref().unwrap_or("未知")
             ));
         }
+    }
+    if options
+        .as_ref()
+        .is_some_and(|options| options.gpu_roles.is_some())
+        && !crate::setup_options::setup_supports_gpu_roles(&root)
+    {
+        return Err("这个运行环境的官方安装器不支持显卡角色（--gpu-roles 需要 Strata 0.2.2 或更新版本）；请先更新运行环境，或改用“指定显卡”".into());
     }
     let disk_plan = preflight(&profile, &model, &quant, images)?;
     disk_plan.require_space()?;
