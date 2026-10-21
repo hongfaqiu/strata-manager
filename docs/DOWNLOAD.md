@@ -51,14 +51,16 @@ README、官网截图与使用指南描述当前源码功能；安装包包含�
 
 ## macOS（Apple Silicon，实验）
 
-当前阶段只证明 **CI 能打出未公证的 Apple Silicon DMG**，**不**声称 Manager 已在 Mac 上完成引擎发现或模型推理验收。
+CI 能打出未公证的 Apple Silicon DMG。已有用户在 M5 Pro 上运行，并据其反馈在 0.2.11 修复了显卡识别和 Python 版本问题；但 Manager **仍不**声称已在 Mac 上完成 Metal 模型推理验收。
 
 - 手工安装文件为 `Strata.Manager_<version>_aarch64.dmg`。官网下载按钮只在该发布**实际包含**这个文件时启用。
 - 应用内更新（若启用）使用 `Strata.Manager_<version>_aarch64.app.tar.gz`；`latest.json` 的 `darwin-aarch64` 指向该归档，不指向 DMG。
 - CI 在 `macos-15` 上设置 `APPLE_SIGNING_IDENTITY=-` 做**临时（ad-hoc）签名**。没有 Apple 开发者证书，因此**没有公证、没有硬化运行时**。Gatekeeper 可能拦截；确认文件来自本项目发布页后，系统仍可能要求移除隔离或以右键打开。这不是已经在真机验收过的安装步骤。
 - **不提供** Intel（`x86_64-apple-darwin`）安装包。上游 Strata Metal 面向 Apple Silicon。
 - **DMG 仍不含引擎。** 第二期起，Manager 在 Apple Silicon 上可下载并校验上游 [v0.2.0-beta](https://github.com/Niko1221/Strata/releases/tag/v0.2.0-beta) 预制包 `strata-engine-*-macos-arm64-metal.tar.gz`（应用内 SHA256，不附带 SHA256SUMS），也可选用已有本地 Strata/`engine` 或 `build-metal` 目录。`./setup.sh` 源码构建仍可手动按 [docs/MAC.md](https://github.com/Niko1221/Strata/blob/main/docs/MAC.md) 操作，Manager 暂不自动调用。真机推理验收仍待进行。
-- `Info.plist` 最低系统版本为 15.0。CI 只证明 runner 能编译并打包；不证明在 Mac 硬件上能启动、发现引擎或完成推理。
+- `Info.plist` 最低系统版本为 15.0。CI 本身只证明 runner 能编译并打包；真机上的运行情况以上面的用户反馈为准，Metal 推理仍未验收。
+- 能识别 Apple 芯片显卡：显示芯片名、GPU 核数和 Metal 版本，统一内存只计算一次，并显示 GPU 最多可用的部分（读 Metal 的 `recommendedMaxWorkingSetSize`）。
+- macOS 自带的 `/usr/bin/python3` 是 3.9，达不到 Strata 要求的 3.10+。引导页和 Strata 页会提供「一键安装 Python」：把 python-build-standalone 的 CPython 3.12.15 装到应用目录，按官方字节数和 SHA-256 校验，不需要管理员权限，不改 PATH，也不碰系统或 Homebrew 的 Python。
 - 窗口使用 macOS 原生的红黄绿按钮（左上角）和原生菜单栏（编辑菜单支持 Cmd+C / Cmd+V；Cmd+Q 退出界面，后台服务保持运行；Cmd+W 关闭窗口；Cmd+M 最小化）。Windows / Linux 仍是自绘标题栏。
 
 ## 从源码体验

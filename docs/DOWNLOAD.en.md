@@ -51,14 +51,16 @@ For Ubuntu servers without a desktop, use the release assets `Strata.Manager.Ser
 
 ## macOS (Apple Silicon, experimental)
 
-This phase only proves that **CI can produce an unsigned / un-notarized Apple Silicon DMG**. It does **not** claim that Manager discovers an engine or runs model inference on Mac hardware.
+CI can produce an un-notarized Apple Silicon DMG. A user runs it on an M5 Pro, and their reports led to the GPU detection and Python fixes in 0.2.11; Manager still does **not** claim validated Metal model inference on Mac hardware.
 
 - The manual installer is `Strata.Manager_<version>_aarch64.dmg`. The website button enables only when that published release actually contains the file.
 - In-app updates (when enabled) use `Strata.Manager_<version>_aarch64.app.tar.gz`. The `darwin-aarch64` entry in `latest.json` points at that archive, not the DMG.
 - CI on `macos-15` sets `APPLE_SIGNING_IDENTITY=-` for **ad-hoc signing**. There is no Apple Developer certificate, so there is **no notarization and no hardened runtime**. Gatekeeper may block the app. After confirming the file comes from this project's release page, macOS may still require removing quarantine or opening it from the context menu. That note is not an installation procedure verified on Mac hardware.
 - **Intel** (`x86_64-apple-darwin`) packages are **not** built. Upstream Strata Metal targets Apple Silicon.
 - **The DMG still does not bundle an engine.** From phase 2, on Apple Silicon Manager can download and verify the upstream [v0.2.0-beta](https://github.com/Niko1221/Strata/releases/tag/v0.2.0-beta) prebuilt package `strata-engine-*-macos-arm64-metal.tar.gz` (in-app SHA256; we do not ship SHA256SUMS), or use an existing local Strata/`engine` or `build-metal` directory. A `./setup.sh` source build remains a manual option per [docs/MAC.md](https://github.com/Niko1221/Strata/blob/main/docs/MAC.md); Manager does not invoke it automatically. Real-device inference validation is still pending.
-- `Info.plist` sets the minimum system version to 15.0. CI shows that a `macos-15` runner can compile and package the app. It does not show that the app launches, finds an engine, or runs inference on Mac hardware.
+- `Info.plist` sets the minimum system version to 15.0. CI by itself only shows that a `macos-15` runner can compile and package the app; real-device behavior is limited to the user reports above, and Metal inference is still unvalidated.
+- The Apple GPU is detected with its chip name, GPU core count and Metal version; unified memory is counted once, together with the share the GPU can use (read from Metal's `recommendedMaxWorkingSetSize`).
+- macOS ships Python 3.9 as `/usr/bin/python3`, below the 3.10+ Strata needs. The guide and the Strata page offer "Install Python": CPython 3.12.15 from python-build-standalone goes into the app folder, checked against the official byte count and SHA-256, with no administrator rights, no PATH change and no change to the system or Homebrew Python.
 - The window uses native macOS traffic-light buttons (top left) and a native menu bar (the Edit menu makes Cmd+C / Cmd+V work; Cmd+Q quits the interface while background services keep running; Cmd+W closes the window; Cmd+M minimizes). Windows and Linux keep the custom title bar.
 
 ## Try source
