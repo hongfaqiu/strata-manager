@@ -80,6 +80,28 @@
       "mcpPySha256": [
         "cfd4eb622e667f159a865120053646d0d25afbecf2cc2ab797d035f6dbfad7b0"
       ]
+    },
+    {
+      "version": "0.2.1",
+      "ref": "90767252f420e25223c739d604145ad15911d48b",
+      "serverPySha256": [
+        "f15efbe6a1e3a97d58ddbc0fa9a68ce544c90f6c1b03cbf6cecf50c625a5a5f8"
+      ],
+      "review": "Service.run/_run/_note/begin_request/ensure_loaded/metrics, do_POST/do_GET/_post/send_response/_note/_json/_capture, request_stats and run_with_mcp are byte-identical (AST) to 0.2.0-beta; only unrelated code changed.",
+      "mcpPySha256": [
+        "cfd4eb622e667f159a865120053646d0d25afbecf2cc2ab797d035f6dbfad7b0"
+      ]
+    },
+    {
+      "version": "0.2.2",
+      "ref": "011c9e600a93bbc9fd451c563501b5831c32bbca",
+      "serverPySha256": [
+        "bc09af76400932500f9ce09f401bf097ad7e7b120374d2cfbe3f4142fadd2304"
+      ],
+      "review": "Service.run/_run gain declared_only=False (run_with_mcp and the tool routes pass declared_only=True by keyword; it only limits which <tool_call> blocks parse as calls); the observer accepts that signature and forwards the keyword. The event/done contract, _note, begin_request, handler methods, routes and request_stats are unchanged; ensure_loaded only maps an OSError at engine start to EngineDied. mcp.py is identical to 0.2.0-beta.",
+      "mcpPySha256": [
+        "cfd4eb622e667f159a865120053646d0d25afbecf2cc2ab797d035f6dbfad7b0"
+      ]
     }
   ],
   "ciFixture": {

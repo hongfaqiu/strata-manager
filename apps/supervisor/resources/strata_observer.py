@@ -51,7 +51,9 @@ SUPPORTED_HASHES = _load_reviewed_hashes()
 
 # Structural contract the observer wraps. Each capability lists (owner, method, accepted signatures).
 _RUN_ARGS = "self, ids, thinking, tools, max_new, sampling, cancel, force=None"
-CORE_SERVICE = {"run": {_RUN_ARGS}, "_note": {"self, n, evs, st=None, rate=None"},
+# Strata 0.2.2 adds declared_only (MCP and tool routes pass it by keyword); the wrapper forwards it.
+_RUN_ARGS_022 = _RUN_ARGS + ", declared_only=False"
+CORE_SERVICE = {"run": {_RUN_ARGS, _RUN_ARGS_022}, "_note": {"self, n, evs, st=None, rate=None"},
                 "begin_request": {"self, path, req"}}
 CORE_HANDLER = {"do_POST": {"self"}, "do_GET": {"self"}, "send_response": {"self, code, message=None"},
                 "_note": {"self, **values"}, "_json": {"self, code, obj", "self, code, obj, headers=None",
@@ -631,10 +633,12 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
         return original_note(self, n, *args, **kwargs)
 
     @functools.wraps(original_run)
-    def run(self, ids, thinking, tools, max_new, sampling, cancel, force=None):
+    def run(self, ids, thinking, tools, max_new, sampling, cancel, force=None, **extra):
+        # extra carries keywords newer sources accept (0.2.2 declared_only); older sources
+        # never receive one because their callers never pass it.
         ctx = _ctx()
         if not ctx:
-            yield from original_run(self, ids, thinking, tools, max_new, sampling, cancel, force)
+            yield from original_run(self, ids, thinking, tools, max_new, sampling, cancel, force, **extra)
             return
         # A lazy model may have become ready after HTTP admission. Record only
         # its verified loaded service identity; failed loads remain unknown.
@@ -654,7 +658,7 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
         started = {key: value for key, value in info.items() if key != "clock"}
         started.update(finish="pending", outputTokens=None, durationS=None)
         journal.append("run_start", started)
-        generator = original_run(self, ids, thinking, tools, max_new, sampling, cancel, force)
+        generator = original_run(self, ids, thinking, tools, max_new, sampling, cancel, force, **extra)
         try:
             for kind, value in generator:
                 if kind == "event" and getattr(value, "kind", None) == "tool_call":
