@@ -105,9 +105,52 @@ def make_handler(svc):
         source = self.BASE.replace("def _json(self, code, obj, headers=None)",
                                    "def _json(self, code, obj, headers=None, retry_after=None)")
         self.assertEqual(observer.analyze_source(source)["mode"], "structural")
-        unknown = self.BASE.replace("def _json(self, code, obj, headers=None)",
-                                    "def _json(self, code, obj, headers=None, retry_after=None, extra=None)")
-        self.assertEqual(observer.analyze_source(unknown)["mode"], "disabled")
+        # A defaulted parameter appended after retry_after is forwarded by the wrapper.
+        newer = self.BASE.replace("def _json(self, code, obj, headers=None)",
+                                  "def _json(self, code, obj, headers=None, retry_after=None, extra=None)")
+        self.assertEqual(observer.analyze_source(newer)["mode"], "structural")
+        # The older two- and three-argument shapes are exact: their wrapper would bind an
+        # appended positional parameter to headers.
+        for shape in ("self, code, obj, extra=None", "self, code, obj, headers=None, extra=None"):
+            with self.subTest(shape=shape):
+                source = self.BASE.replace("def _json(self, code, obj, headers=None)", "def _json(" + shape + ")")
+                self.assertEqual(observer.analyze_source(source)["mode"], "disabled")
+
+    def test_appended_defaulted_parameters_stay_structural(self):
+        run = "def run(self, ids, thinking, tools, max_new, sampling, cancel, force=None)"
+        for old, new in (
+                (run, run[:-1] + ", declared_only=False)"),                      # Strata 0.2.2
+                (run, run[:-1] + ", declared_only=False, budget=None)"),
+                (run, run[:-1] + ", *, trace=None, **extra)"),
+                (run, run[:-1] + ", *more, **extra)"),
+                ("def _note(self, n, evs, st=None, rate=None)", "def _note(self, n, evs, st=None, rate=None, final=False)"),
+                ("def begin_request(self, path, req)", "def begin_request(self, path, req, client=None, **kw)"),
+                ("def send_response(self, code, message=None)", "def send_response(self, code, message=None, **kw)"),
+                ("def _note(self, **values)", "def _note(self, *args, **values)"),
+                ("def _capture(self, items, api)", "def _capture(self, items, api, limit=None)"),
+                ("def do_POST(self)", "def do_POST(self, *args, **kwargs)")):
+            with self.subTest(change=new):
+                result = observer.analyze_source(self.BASE.replace(old, new))
+                self.assertEqual(result["mode"], "structural", result)
+
+    def test_breaking_core_signature_changes_still_disable(self):
+        run = "def run(self, ids, thinking, tools, max_new, sampling, cancel, force=None)"
+        for old, new in (
+                (run, "def run(self, ids, thinking, tools, max_new, sampling, force=None)"),        # removed
+                (run, "def run(self, ids, thinking, tools, max_tokens, sampling, cancel, force=None)"),  # renamed
+                (run, "def run(self, ids, tools, thinking, max_new, sampling, cancel, force=None)"),  # reordered
+                (run, run[:-1] + ", declared_only)"),                                  # new required positional
+                (run, run[:-1] + ", *, budget)"),                                      # new required keyword-only
+                (run, "def run(self, ids, thinking, tools, max_new, sampling, cancel, force)"),     # optional made required
+                (run, "def run(self, ids, thinking, tools, max_new, sampling, cancel=None, force=None)"),  # required made optional
+                (run, "def run(self, ids, thinking, tools, max_new, sampling, cancel, *, force=None)"),   # force made keyword-only
+                ("def _note(self, **values)", "def _note(self, values)"),             # **values removed
+                ("def begin_request(self, path, req)", "def begin_request(self, path, req, client)"),
+                ("def do_GET(self)", "def do_GET(self, path)")):
+            with self.subTest(change=new):
+                result = observer.analyze_source(self.BASE.replace(old, new))
+                self.assertEqual(result["mode"], "disabled", result)
+                self.assertFalse(result["capabilities"]["core"])
 
     def test_unparsable_source_disables(self):
         self.assertEqual(observer.analyze_source("def (:")["mode"], "disabled")
@@ -192,6 +235,42 @@ class InstrumentModes(unittest.TestCase):
         old, old_calls = self._json_calls("self, code, obj")
         old._json(old.__new__(old), 200, {})
         self.assertEqual([c["code"] for c in old_calls], [200])
+
+    def test_wrappers_forward_appended_arguments(self):
+        source = (SyntheticSources.BASE
+                  .replace("def run(self, ids, thinking, tools, max_new, sampling, cancel, force=None): pass",
+                           "def run(self, ids, thinking, tools, max_new, sampling, cancel, force=None, budget=None, **extra):\n"
+                           "        CALLS.append(('run', force, budget, extra)); yield 'token'")
+                  .replace("def begin_request(self, path, req): pass",
+                           "def begin_request(self, path, req, client=None): CALLS.append(('begin', client))")
+                  .replace("def _json(self, code, obj, headers=None): pass",
+                           "def _json(self, code, obj, headers=None, retry_after=None, trace=None, **kw):\n"
+                           "            CALLS.append(('json', headers, retry_after, trace, kw))")
+                  .replace("def _capture(self, items, api): pass",
+                           "def _capture(self, items, api, limit=None): CALLS.append(('capture', limit)); yield from items"))
+        analysis = observer.analyze_source(source)
+        self.assertEqual(analysis["mode"], "structural", analysis)
+        ns = {}
+        exec(source, ns)
+        ns["CALLS"] = calls = []
+        with tempfile.TemporaryDirectory() as temp:
+            journal = observer.Journal(temp, "forward")
+            try:
+                observer.instrument_globals(ns, journal=journal, source_hash="2" * 64, analysis=analysis)
+            finally:
+                journal.close()
+        svc = ns["Service"].__new__(ns["Service"])
+        self.assertEqual(list(svc.run([1], False, None, 8, {}, None, True, 5, declared_only=True)), ["token"])
+        self.assertEqual(list(svc.run([1], False, None, 8, {}, None, budget=7)), ["token"])
+        svc.begin_request("/v1/chat/completions", {}, "cli")
+        handler = ns["make_handler"](object())
+        instance = handler.__new__(handler)
+        handler._json(instance, 200, {}, None, None, "t1")
+        handler._json(instance, 200, {}, trace="t2", tag=1)
+        self.assertEqual(list(handler._capture(instance, ["a"], "openai", 3)), ["a"])
+        self.assertEqual(calls, [("run", True, 5, {"declared_only": True}), ("run", None, 7, {}), ("begin", "cli"),
+                                 ("json", None, None, "t1", {}), ("json", None, None, "t2", {"tag": 1}),
+                                 ("capture", 3)])
 
     def test_loader_injects_structural_analysis_for_unreviewed_source(self):
         with tempfile.TemporaryDirectory() as temp:
