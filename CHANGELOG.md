@@ -5,6 +5,14 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **AMD 显卡也能看到 GPU 读数（用户反馈 #86，RX 7900 XTX）**：引擎的硬件采样只读 NVIDIA，AMD 显卡上 GPU 负载、显存、温度、功耗、PCIe 一直显示「–」。现在服务跑在本机、引擎又没给出任何 GPU 读数时，管理器会自己从 AMD 驱动读数补上：Windows 用 Adrenalin 驱动自带的 ADLX（`System32\amdadlx64.dll`），Linux 读内核 amdgpu 的 sysfs，不需要额外安装。监控页、总览、浮条和任务栏监控都会显示 GPU 负载、显存、温度和热点温度、功耗、核心与显存频率、风扇转速；驱动没给的项显示「–」并注明「AMD 驱动未提供此项」。引擎已有的读数一律不改，NVIDIA 机器显示不变。「关于」页会写明 GPU 读数来自 AMD 驱动。
+
+### English
+
+- **AMD GPUs now show GPU readings (user report #86, RX 7900 XTX)**: the engine's hardware sampling only reads NVIDIA, so GPU load, VRAM, temperature, power and PCIe always showed "–" on AMD cards. When the service runs on this computer and the engine reports no GPU readings at all, the manager now reads them from the AMD driver: ADLX from the Adrenalin driver (`System32\amdadlx64.dll`) on Windows, and the kernel amdgpu sysfs on Linux, with nothing extra to install. The Monitor page, Overview, the floating strip and the taskbar monitor show GPU load, VRAM, temperature and hotspot, power, core and memory clocks and fan speed; anything the driver does not provide shows "–" with "Not provided by the AMD driver". Readings the engine already reports are never changed, and NVIDIA machines look the same as before. The About page says the GPU readings come from the AMD driver.
+
 ## [0.2.12] - 2026-10-21
 
 ### 中文
