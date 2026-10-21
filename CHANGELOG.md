@@ -5,6 +5,14 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **Windows AMD 显卡装不上 AMD 引擎（用户反馈 #103，RX 9070 XT）**：这台电脑只有 AMD 显卡（RX 9070 XT，gfx1201，外加一块 gfx1036 核显），却卡在三个地方。一是首次安装运行环境时，Windows 上没有已装引擎就一律选 CUDA 13 引擎包，装上的引擎在这台电脑上根本启动不了。现在 Windows 会读系统显卡列表（`Win32_VideoController`），按显卡型号判断 AMD 架构：只有 AMD 显卡时安装对应的 HIP 包（RX 9000 / R9700 选 RX 9070 包，RX 7000 / Strix Halo 选 RDNA3 包）；有 NVIDIA 显卡或什么都没检测到时仍然用 CUDA 13。Linux 和 Windows 选包时都会忽略没有官方引擎包的核显，不再因为多一块核显就要求手动选择。二是官方 HIP 引擎包下载并校验通过后，解包时报「引擎包含未识别的运行文件：tuning/gfx1201-hipblaslt-100500.txt」。这是包里自带的 hipBLASLt 调优表，Manager 的文件白名单漏了 `tuning/` 目录；现在已加入，每个文件仍要和签名清单逐一核对。三是准备模型时上游 `setup.py` 只认 `BUILD.json` 里 `source` 为 `prebuilt` 的 HIP 引擎，官方 0.2 包写的是别的值，于是安装器去下载早已不再发布的 `strata-windows-x64-hip.zip`，返回 404。这一处的根因在上游安装器；Manager 现在会在 Windows 上准备模型前，先核对 `engine/` 里的官方 HIP 引擎（签名清单有效、`BUILD.json` 与清单摘要一致），确认无误后把 `source` 标为 `prebuilt`，原值另存一份，安装器就会直接用它。另外修复了桌面端「复制诊断信息」和「修复 Python 依赖」报 `Command … not found` 的问题：这两个命令后台早就有，桌面端漏注册了。
+
+### English
+
+- **Windows AMD GPUs could not get the AMD engine (user report #103, RX 9070 XT)**: on a computer with only AMD graphics (an RX 9070 XT, gfx1201, plus a gfx1036 iGPU) the engine step failed three ways. First, a new runtime on Windows always got the CUDA 13 package when no engine was installed yet, and that engine cannot start there. Windows now reads the system's GPU list (`Win32_VideoController`) and maps the card name to its AMD architecture: with only AMD GPUs it installs the matching HIP package (RX 9000 / R9700: the RX 9070 package; RX 7000 / Strix Halo: the RDNA3 package); with an NVIDIA GPU, or when nothing is detected, it still uses CUDA 13. On both Linux and Windows an integrated GPU that no official package supports is ignored instead of forcing a manual choice. Second, the official HIP package downloaded and verified, then failed to unpack with "unknown runtime file: tuning/gfx1201-hipblaslt-100500.txt". That is the package's own hipBLASLt tuning table, and Manager's file allowlist was missing the `tuning/` folder; it is allowed now, and every file is still checked against the signed manifest. Third, upstream `setup.py` only reuses a HIP engine whose `BUILD.json` says `source: prebuilt`. The official 0.2 packages say something else, so the installer tried to download the retired `strata-windows-x64-hip.zip` and got a 404. The cause is in the upstream installer. Before model preparation on Windows, Manager now checks the official HIP engine in `engine/` (valid signed manifest, `BUILD.json` matching its listed digest), marks `source` as `prebuilt`, keeps the original value alongside, and the installer then uses it. Also fixed: **Copy diagnostics** and **Repair Python dependencies** failed on the desktop with `Command … not found`. The background service has had both for a long time, but the desktop app never registered them.
+
 ## [0.2.11] - 2026-10-20
 
 ### 中文

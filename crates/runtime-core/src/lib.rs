@@ -3464,6 +3464,12 @@ fn run_setup_with_preflight_options(
             storage::backup(&path)?;
         }
     }
+    // #103: upstream setup.py (0.2.x) only reuses a Windows HIP engine whose BUILD.json
+    // says "prebuilt"; otherwise it asks for the retired strata-windows-x64-hip.zip (HTTP
+    // 404). Mark the verified official HIP package Manager installed so setup keeps it.
+    if cfg!(windows) {
+        let _ = runtime_upgrade::engine_package::mark_hip_engine_for_setup(&root.join("engine"));
+    }
     let url = http::endpoint(&profile, "/health")?;
     let (setup_python, mut steps) = processes::setup_python(&profile, &root)?;
     let intent = setup_handoff::SetupIntent {
