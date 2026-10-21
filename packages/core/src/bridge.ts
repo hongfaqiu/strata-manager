@@ -432,6 +432,10 @@ export const applySettings = (settings: AppSettings): Promise<void> => native('a
 export const saveMarkdown = (path: string, content: string): Promise<string> => native('write_markdown_export', { path, content });
 /** Save an already-previewed PNG to the path selected in the native Save As dialog. */
 export const savePng = (path: string, bytes: number[]): Promise<string> => native('write_png_export', { path, bytes });
+/** Desktop only: keep a model-written HTML document for the sandboxed `strata-preview` scheme and return its id. */
+export const registerHtmlPreview = (html: string): Promise<string> => native('register_html_preview', { html });
+/** Desktop only: write a previewed HTML document to a path chosen in the save dialog. */
+export const saveHtmlPreview = (path: string, html: string): Promise<string> => native('write_html_preview', { path, html });
 export const discoverLocal = (directories?: string[]): Promise<LocalCandidate[]> => native('discover_local', { ...(directories ? { directories } : {}) });
 export const connectRunningService = (candidate: LocalCandidate): Promise<{ profileId: string; restarting: boolean }> => native('connect_running_service', { candidate });
 export const importLocal = (candidate: LocalCandidate): Promise<ServiceProfile> => native('import_local', { candidate });

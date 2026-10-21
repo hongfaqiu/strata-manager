@@ -6,6 +6,7 @@ mod configuration_details;
 mod configuration_files;
 mod daily_experience;
 mod floating_monitor;
+mod html_preview;
 mod http;
 mod huggingface;
 mod invoke_policy;
@@ -1456,6 +1457,23 @@ async fn write_png_export(path: String, bytes: Vec<u8>) -> Result<String, String
 }
 
 #[tauri::command]
+fn register_html_preview(
+    previews: State<'_, html_preview::HtmlPreviews>,
+    html: String,
+) -> Result<String, String> {
+    previews.register(html)
+}
+
+#[tauri::command]
+async fn write_html_preview(path: String, html: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        html_preview::save(std::path::Path::new(&path), &html)
+    })
+    .await
+    .map_err(|error| format!("HTML 保存任务失败 / HTML save task failed: {error}"))?
+}
+
+#[tauri::command]
 async fn list_local_models(
     state: State<'_, ClientState>,
     profile: ServiceProfile,
@@ -1883,6 +1901,20 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .manage(html_preview::HtmlPreviews::default())
+        .register_uri_scheme_protocol(html_preview::SCHEME, |context, request| {
+            // Only the main chat webview embeds previews; other webviews get nothing.
+            if context.webview_label() != "main" {
+                return tauri::http::Response::builder()
+                    .status(tauri::http::StatusCode::FORBIDDEN)
+                    .body(Vec::new())
+                    .unwrap_or_default();
+            }
+            context
+                .app_handle()
+                .state::<html_preview::HtmlPreviews>()
+                .respond(&request)
+        })
         .setup(|app| {
             let _ = window_layout::fit_initial_window(app);
             let data_dir = supervisor_client::data_directory(&app.path().app_data_dir()?);
@@ -2183,6 +2215,8 @@ pub fn run() {
             write_config,
             write_markdown_export,
             write_png_export,
+            register_html_preview,
+            write_html_preview,
             list_local_models,
             export_diagnostics,
             support_diagnostics_text,

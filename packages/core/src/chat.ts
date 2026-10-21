@@ -5,6 +5,11 @@ import { configuredPromptCache, describeServiceCapability, parseServiceCapabilit
 export interface ChatOptions {
   model: string;
   reasoningEffort: 'off' | 'low' | 'medium' | 'high';
+  /**
+   * Hard cap on thinking tokens. null/undefined/0 means no cap (the server's own default applies).
+   * Sent as Strata's `reasoning_budget_tokens` and llama-server's `thinking_budget_tokens`; ignored when thinking is off.
+   */
+  thinkingBudgetTokens?: number | null;
   temperature: number; topP: number; maxTokens: number;
   systemPrompt: string; mcp: boolean;
   topK?: number;
@@ -202,6 +207,15 @@ function assistantMessages(message: ChatMessage): JsonObject[] {
   return out;
 }
 
+export const MAX_THINKING_BUDGET_TOKENS = 1_000_000;
+/** Request-only thinking cap. Strata reads `reasoning_budget_tokens` (and, since upstream #2141, llama.cpp's `thinking_budget_tokens`). */
+export function buildThinkingBudgetFields(options: Pick<ChatOptions, 'reasoningEffort' | 'thinkingBudgetTokens'>): JsonObject {
+  const budget = options.thinkingBudgetTokens;
+  if (budget == null || budget === 0) return {};
+  if (!Number.isSafeInteger(budget) || budget < 0 || budget > MAX_THINKING_BUDGET_TOKENS) invalid(`思考长度上限需为 1–${MAX_THINKING_BUDGET_TOKENS} 的整数，留空表示不限`);
+  if (options.reasoningEffort === 'off') return {};
+  return { reasoning_budget_tokens: budget, thinking_budget_tokens: budget };
+}
 /** The official /settings defaults object, shared by all API clients (MCP/system prompt are not defaults). */
 export function buildSharedDefaults(options: ChatOptions): JsonObject {
   if (!Number.isFinite(options.temperature) || options.temperature < 0 || options.temperature > 2 || !Number.isFinite(options.topP) || options.topP <= 0 || options.topP > 1) throw new StrataError('INVALID_CHAT_OPTIONS', 'temperature 需在 0–2，topP 需在 (0,1]');
@@ -235,7 +249,7 @@ export function buildChatRequest(messages: ChatMessage[], options: ChatOptions):
     const offset = advanced.response_format && api[0]?.role !== 'system' ? 1 : 0;
     advanced.strata_prefix = chars === undefined ? { messages: prefixIndex + 1 + offset } : { message: prefixIndex + offset, chars };
   }
-  return { model: options.model, messages: api, stream: true, ...sampling, ...advanced, ...(options.mcp ? { strata_mcp: true } : {}) };
+  return { model: options.model, messages: api, stream: true, ...sampling, ...buildThinkingBudgetFields(options), ...advanced, ...(options.mcp ? { strata_mcp: true } : {}) };
 }
 
 /** Streaming SSE framer: CR/LF, multiline data and UTF-8 boundaries all survive arbitrary chunks. */
