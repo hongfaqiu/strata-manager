@@ -53,35 +53,48 @@ test('the macOS desktop job stays behind the docs-only skip and publishes Develo
   for (const secret of ['APPLE_CERTIFICATE', 'APPLE_CERTIFICATE_PASSWORD', 'APPLE_API_ISSUER', 'APPLE_API_KEY', 'APPLE_API_PRIVATE_KEY']) {
     assert.ok(desktop.includes(secret + ': ${{ secrets.' + secret + ' }}'), secret);
   }
-  assert.match(desktop, /xcrun notarytool submit "\$dmg"/);
+  // Only the app is notarized (zipped); the DMG is rebuilt around the stapled app and only Developer ID signed.
+  assert.match(desktop, /ditto -c -k --keepParent "\$app" "\$zip"/);
+  assert.match(desktop, /xcrun notarytool submit "\$zip"/);
+  assert.doesNotMatch(desktop, /notarytool submit "\$dmg"/);
   assert.doesNotMatch(desktop, /notarytool submit[^\n]*--wait/);
-  assert.match(desktop, /retry xcrun stapler validate "\$dmg"/);
-  assert.match(desktop, /retry xcrun stapler staple "\$app"/);
-  assert.match(desktop, /spctl --assess --type execute/);
+  assert.doesNotMatch(desktop, /stapler (staple|validate) "\$dmg"/);
+  assert.doesNotMatch(desktop, /primary-signature/);
+  assert.match(desktop, /bash "\$notary" staple-app "\$app"/);
+  assert.match(desktop, /bash "\$notary" restage-dmg "\$dmg" "\$app" "\$APPLE_SIGNING_IDENTITY" "\$team"/);
+  assert.match(desktop, /bash scripts\/macos-notary\.sh verify-dmg /);
+  // Network errors are retried by the helper, so these steps must not run under bash -e.
+  for (const step of ['Submit the macOS app for notarization', 'Wait for notarization and staple the macOS app', 'Confirm the macOS app is stapled and the DMG is signed']) {
+    const body = desktop.slice(desktop.indexOf('- name: ' + step));
+    assert.match(body, /^[^\n]*\n(?: {8}[^\n]*\n)*? {10}set -uo pipefail\n/, step);
+  }
   // tauri itself must not notarize (credentials use STRATA_NOTARY_* names); only the waited step staples.
   assert.doesNotMatch(desktop, /echo "APPLE_API_(KEY|ISSUER|KEY_PATH)=/);
   // auto is the default: wait up to the timeout, otherwise leave macOS for the follow-up.
   assert.match(desktop, /MACOS_NOTARIZATION: \$\{\{ inputs\.macos_notarization \|\| vars\.MACOS_NOTARIZATION \|\| 'auto' \}\}/);
-  assert.match(desktop, /- name: Wait for notarization and staple the macOS DMG and app\n {8}id: notarize-wait\n {8}if: runner\.os == 'macOS' && env\.PACKAGE_INSTALLERS == 'true' && env\.MACOS_NOTARIZATION != 'defer'/);
-  assert.match(desktop, /- name: Confirm the macOS DMG and app are stapled\n {8}if: runner\.os == 'macOS' && env\.PACKAGE_INSTALLERS == 'true' && steps\.notarize-wait\.outputs\.stapled == 'true'/);
+  assert.match(desktop, /- name: Wait for notarization and staple the macOS app\n {8}id: notarize-wait\n {8}if: runner\.os == 'macOS' && env\.PACKAGE_INSTALLERS == 'true' && env\.MACOS_NOTARIZATION != 'defer'/);
+  assert.match(desktop, /- name: Confirm the macOS app is stapled and the DMG is signed\n {8}if: runner\.os == 'macOS' && env\.PACKAGE_INSTALLERS == 'true' && steps\.notarize-wait\.outputs\.stapled == 'true'/);
   assert.match(desktop, /echo 'stapled=true' >> "\$GITHUB_OUTPUT"/);
-  assert.match(desktop, /"\$status" = 'In Progress' \] && \[ "\$MACOS_NOTARIZATION" = auto \]/);
+  assert.match(desktop, /'In Progress'\)\n {14}if \[ "\$MACOS_NOTARIZATION" = auto \]; then unstapled /);
+  // Unreachable Apple ends unstapled with a warning (rc 75); anything else non-zero fails.
+  assert.match(desktop, /\[ "\$rc" -eq 75 \] && unstapled 'Could not reach Apple to read the notarization status\.'\n {10}\[ "\$rc" -eq 0 \] \|\| exit 1/);
+  assert.match(desktop, /echo "::error title=macOS notarization::Apple did not accept the app \(\$status\)\."; exit 1;;/);
   assert.match(workflow, /macos_notarization:\n {8}description: [^\n]+\n {8}type: string\n {8}default: ''/);
   // tauri-action must not upload the pre-notarization DMG; the stapled one is uploaded under the same name.
   assert.match(desktop, /uploadWorkflowArtifacts: \$\{\{ runner\.os != 'macOS' \}\}/);
   assert.match(desktop, /name: ci-darwin-aarch64-dmg/);
-  for (const [before, after] of [['Verify the macOS code signature', 'Submit the macOS DMG for notarization'],
-    ['Submit the macOS DMG for notarization', 'Wait for notarization and staple the macOS DMG and app'],
-    ['Wait for notarization and staple the macOS DMG and app', 'Package the macOS app archive for the updater'],
-    ['Wait for notarization and staple the macOS DMG and app', 'Upload the macOS DMG'],
-    ['Wait for notarization and staple the macOS DMG and app', 'Upload the macOS notarization record']]) {
+  for (const [before, after] of [['Verify the macOS code signature', 'Submit the macOS app for notarization'],
+    ['Submit the macOS app for notarization', 'Wait for notarization and staple the macOS app'],
+    ['Wait for notarization and staple the macOS app', 'Package the macOS app archive for the updater'],
+    ['Wait for notarization and staple the macOS app', 'Upload the macOS DMG'],
+    ['Wait for notarization and staple the macOS app', 'Upload the macOS notarization record']]) {
     assert.ok(desktop.indexOf('- name: ' + before) < desktop.indexOf('- name: ' + after), before + ' < ' + after);
   }
   assert.match(desktop, /name: ci-darwin-aarch64-notarization/);
   // A deferred CI only lacks the waited staple gate.
-  assert.deepEqual(PLATFORM_GATES.macos.filter(g => !MACOS_DEFERRED_GATES.includes(g)), ['Wait for notarization and staple the macOS DMG and app', 'Confirm the macOS DMG and app are stapled']);
-  for (const [before, after] of [['Wait for notarization and staple the macOS DMG and app', 'Confirm the macOS DMG and app are stapled'],
-    ['Confirm the macOS DMG and app are stapled', 'Package the macOS app archive for the updater']]) {
+  assert.deepEqual(PLATFORM_GATES.macos.filter(g => !MACOS_DEFERRED_GATES.includes(g)), ['Wait for notarization and staple the macOS app', 'Confirm the macOS app is stapled and the DMG is signed']);
+  for (const [before, after] of [['Wait for notarization and staple the macOS app', 'Confirm the macOS app is stapled and the DMG is signed'],
+    ['Confirm the macOS app is stapled and the DMG is signed', 'Package the macOS app archive for the updater']]) {
     assert.ok(desktop.indexOf('- name: ' + before) < desktop.indexOf('- name: ' + after), before + ' < ' + after);
   }
   assert.match(desktop, /name: ci-darwin-aarch64-app-tarball/);
@@ -698,11 +711,11 @@ test('deferred release body carries the follow-up marker; normal bodies are unch
 });
 test('a deferred (submit-only) macOS CI job feeds defer and follow-up plans but never a normal release', () => {
   // auto timeout: the wait step succeeded but the stapled confirmation was skipped.
-  const deferredMacJob = j => { if (j.name.startsWith('desktop (macos-15')) j.steps.find(s => s.name === 'Confirm the macOS DMG and app are stapled').conclusion = 'skipped'; };
+  const deferredMacJob = j => { if (j.name.startsWith('desktop (macos-15')) j.steps.find(s => s.name === 'Confirm the macOS app is stapled and the DMG is signed').conclusion = 'skipped'; };
   for (const [p, ok] of [[plan, false], [deferPlan, true], [followupPlan, true]]) {
     const f = ciFixture(p); f.jobs.forEach(deferredMacJob);
     if (ok) assert.ok(validateCiEvidence(f.run, f.jobs, f.artifacts, p));
-    else assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, p), /Confirm the macOS DMG and app are stapled/);
+    else assert.throws(() => validateCiEvidence(f.run, f.jobs, f.artifacts, p), /Confirm the macOS app is stapled and the DMG is signed/);
   }
   // A skipped wait gate is as bad as a missing one for normal releases.
   const f = ciFixture(plan);
@@ -737,7 +750,7 @@ test('auto resolves to include for stapled CI, to defer only when CI is not reus
   let r = await resolveMacosMode(requested, wrap(evidence()));
   assert.equal(r.mode, 'include');
   assert.equal(r.found.plan.artifacts.length, 5);
-  const unstapled = f => { f.jobs.find(j => j.name.startsWith('desktop (macos-15')).steps.find(s => s.name === 'Confirm the macOS DMG and app are stapled').conclusion = 'skipped'; };
+  const unstapled = f => { f.jobs.find(j => j.name.startsWith('desktop (macos-15')).steps.find(s => s.name === 'Confirm the macOS app is stapled and the DMG is signed').conclusion = 'skipped'; };
   r = await resolveMacosMode(requested, wrap(evidence(unstapled)));
   assert.equal(r.mode, 'defer');
   assert.equal(r.found.plan.artifacts.length, 3);

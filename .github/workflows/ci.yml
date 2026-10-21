@@ -434,8 +434,8 @@ jobs:
       # back, because release-from-ci.yml promotes exactly these bytes.
       # Only non-empty values go to $GITHUB_ENV: tauri treats an empty
       # APPLE_SIGNING_IDENTITY as "provided" and fails. Notarization credentials
-      # use STRATA_NOTARY_* names so tauri only signs; the DMG (which contains
-      # the app) is submitted once below.
+      # use STRATA_NOTARY_* names so tauri only signs; the app is submitted once
+      # below and the DMG is only Developer ID signed (not notarized).
       # MACOS_NOTARIZATION: auto (default) waits up to MACOS_NOTARIZATION_TIMEOUT
       # and staples, or leaves macOS for the follow-up when Apple is slow; wait
       # always waits (fails if not accepted); defer only submits. Runs whose macOS
@@ -562,125 +562,142 @@ jobs:
             echo 'Ad-hoc signed (no Apple certificate).'
           fi
 
-      # One submission: notarizing the DMG also notarizes the app inside it, so
-      # both can be stapled from the same ticket set.
-      - name: Submit the macOS DMG for notarization
+      # Only the .app is notarized (one zip submission, like tauri does); the DMG
+      # is never submitted. Once the app is stapled, the DMG is rebuilt around the
+      # stapled app and Developer ID signed. Submitting retries network errors and
+      # fails if Apple still can't be reached, because without a submission id
+      # nothing can be followed up later.
+      - name: Submit the macOS app for notarization
         if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true'
         run: |
-          set -euo pipefail
+          set -uo pipefail
           version="${{ steps.package-version.outputs.version }}"
           bundle="${CARGO_TARGET_DIR}/${{ matrix.target }}/release/bundle"
           app="$bundle/macos/Strata Manager.app"
           dmg="$bundle/dmg/Strata Manager_${version}_aarch64.dmg"
           record_dir="$RUNNER_TEMP/macos-notarization"
-          mkdir -p "$record_dir"
+          mkdir -p "$record_dir" || exit 1
           if [ -z "${STRATA_MACOS_NOTARIZE:-}" ]; then
             echo 'No notarization credentials: nothing submitted.'
             exit 0
           fi
-          field() { printf '%s' "$1" | python3 -c 'import json,sys
-          try: print(json.loads(sys.stdin.read()).get(sys.argv[1], ""))
-          except Exception: print("")' "$2"; }
-          result=$(xcrun notarytool submit "$dmg" --key "$STRATA_NOTARY_KEY_PATH" --key-id "$STRATA_NOTARY_KEY_ID" --issuer "$STRATA_NOTARY_ISSUER" --output-format json)
-          id=$(field "$result" id)
-          [[ "$id" =~ ^[0-9a-fA-F-]{36}$ ]] || { echo '::error title=macOS notarization::Apple did not return a submission id.'; exit 1; }
+          zip="$RUNNER_TEMP/macos-notarization-upload/Strata Manager.zip"
+          mkdir -p "$(dirname "$zip")" && ditto -c -k --keepParent "$app" "$zip" || exit 1
+          result=$(bash scripts/macos-notary.sh retry 'notarytool submit' xcrun notarytool submit "$zip" \
+            --key "$STRATA_NOTARY_KEY_PATH" --key-id "$STRATA_NOTARY_KEY_ID" --issuer "$STRATA_NOTARY_ISSUER" --output-format json 2>&1)
+          rc=$?
+          id=$(printf '%s\n' "$result" | python3 -c 'import json,sys
+          for line in sys.stdin:
+              try: print(json.loads(line).get("id", "")); break
+              except Exception: pass')
+          if [ "$rc" -ne 0 ] || ! [[ "$id" =~ ^[0-9a-fA-F-]{36}$ ]]; then
+            echo '::error title=macOS notarization::Could not submit the app to Apple.'
+            exit 1
+          fi
           echo "Notary submission: $id"
           cdhash=$(codesign -dv --verbose=4 "$app" 2>&1 | sed -n 's/^CDHash=//p' | head -n1)
           team=$(codesign -dv --verbose=4 "$app" 2>&1 | sed -n 's/^TeamIdentifier=//p' | head -n1)
-          DMG="$dmg" SUBMISSION="$id" VERSION="$version" CDHASH="$cdhash" TEAM="$team" \
-            python3 - "$record_dir/Strata Manager_${version}_aarch64.notarization.json" <<'PY'
+          ZIP="$zip" DMG="$dmg" SUBMISSION="$id" VERSION="$version" CDHASH="$cdhash" TEAM="$team" \
+            python3 - "$record_dir/Strata Manager_${version}_aarch64.notarization.json" <<'PY' || exit 1
           import hashlib, json, os, sys
-          dmg = os.environ['DMG']
-          h = hashlib.sha256()
-          with open(dmg, 'rb') as f:
-              for chunk in iter(lambda: f.read(1 << 20), b''): h.update(chunk)
+          def sha(path):
+              h = hashlib.sha256()
+              with open(path, 'rb') as f:
+                  for chunk in iter(lambda: f.read(1 << 20), b''): h.update(chunk)
+              return h.hexdigest()
           if not os.environ['CDHASH'] or not os.environ['TEAM']: sys.exit('App CDHash/TeamIdentifier unreadable')
+          dmg = os.environ['DMG']
           record = {
-            'protocol': 'strata-macos-notarization/v1', 'submissionId': os.environ['SUBMISSION'],
+            'protocol': 'strata-macos-notarization/v2', 'submissionId': os.environ['SUBMISSION'],
             'version': os.environ['VERSION'], 'sourceSha': os.environ['GITHUB_SHA'],
             'runId': int(os.environ['GITHUB_RUN_ID']), 'runAttempt': int(os.environ['GITHUB_RUN_ATTEMPT']),
             'mode': os.environ['MACOS_NOTARIZATION'], 'stapled': False,
-            'dmg': {'name': os.path.basename(dmg), 'submittedSha256': h.hexdigest(), 'size': os.path.getsize(dmg)},
-            'app': {'cdhash': os.environ['CDHASH'].lower(), 'teamIdentifier': os.environ['TEAM']},
+            'app': {'cdhash': os.environ['CDHASH'].lower(), 'teamIdentifier': os.environ['TEAM'], 'submittedZipSha256': sha(os.environ['ZIP'])},
+            'dmg': {'name': os.path.basename(dmg), 'sha256': sha(dmg), 'size': os.path.getsize(dmg)},
           }
           with open(sys.argv[1], 'x') as f: json.dump(record, f, indent=2)
           PY
+          rm -rf "$(dirname "$zip")"
           echo "STRATA_NOTARY_SUBMISSION=$id" >> "$GITHUB_ENV"
 
-      # wait: up to 60 min, fail if Apple has not accepted. auto (default): wait up
-      # to MACOS_NOTARIZATION_TIMEOUT (repository variable, default 30m); if Apple
+      # wait: up to 60 min, fail if Apple is still processing. auto (default): wait
+      # up to MACOS_NOTARIZATION_TIMEOUT (repository variable, default 30m); if Apple
       # is still processing, keep the signed-but-unstapled bytes, skip the confirm
-      # gate below and let the release defer macOS. Invalid/Rejected always fails.
-      - name: Wait for notarization and staple the macOS DMG and app
+      # gate below and let the release defer macOS. Network errors are retried
+      # 3 times 30 s apart and end as a ::warning:: (unstapled, so macOS is deferred
+      # or the release refused, never shipped unstapled). Invalid/Rejected and any
+      # signing problem always fail.
+      - name: Wait for notarization and staple the macOS app
         id: notarize-wait
         if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true' && env.MACOS_NOTARIZATION != 'defer'
         env:
           MACOS_NOTARIZATION_TIMEOUT: ${{ vars.MACOS_NOTARIZATION_TIMEOUT || '30m' }}
         run: |
-          set -euo pipefail
-          # stapler/spctl look tickets up online; retry transient runner network failures.
-          retry() { local n; for n in 1 2 3 4; do "$@" && return 0; echo "::warning::attempt $n failed: $*"; sleep $((n * 15)); done; "$@"; }
+          set -uo pipefail
           version="${{ steps.package-version.outputs.version }}"
           bundle="${CARGO_TARGET_DIR}/${{ matrix.target }}/release/bundle"
           app="$bundle/macos/Strata Manager.app"
           dmg="$bundle/dmg/Strata Manager_${version}_aarch64.dmg"
           record="$RUNNER_TEMP/macos-notarization/Strata Manager_${version}_aarch64.notarization.json"
+          notary=scripts/macos-notary.sh
+          unstapled() { echo "::warning title=macOS not stapled::$1 This run's macOS bytes stay unstapled: the release publishes Windows/Linux first and macos-notarize-followup.yml adds macOS once Apple accepts."; echo 'stapled=false' >> "$GITHUB_OUTPUT"; exit 0; }
           if [ -z "${STRATA_NOTARY_SUBMISSION:-}" ]; then
             echo 'Not submitted (no credentials): nothing to staple.'
             exit 0
           fi
           timeout=60m
-          if [ "$MACOS_NOTARIZATION" = auto ]; then
-            [[ "$MACOS_NOTARIZATION_TIMEOUT" =~ ^[0-9]+[smh]$ ]] || { echo '::error::MACOS_NOTARIZATION_TIMEOUT must look like 30m.'; exit 1; }
-            timeout="$MACOS_NOTARIZATION_TIMEOUT"
-          fi
-          auth=(--key "$STRATA_NOTARY_KEY_PATH" --key-id "$STRATA_NOTARY_KEY_ID" --issuer "$STRATA_NOTARY_ISSUER")
-          xcrun notarytool wait "$STRATA_NOTARY_SUBMISSION" "${auth[@]}" --timeout "$timeout" > /dev/null 2>&1 || true
-          result=$(xcrun notarytool info "$STRATA_NOTARY_SUBMISSION" "${auth[@]}" --output-format json || true)
-          status=$(printf '%s' "$result" | python3 -c 'import json,sys
-          try: print(json.loads(sys.stdin.read()).get("status", ""))
-          except Exception: print("")')
-          echo "Notary submission $STRATA_NOTARY_SUBMISSION: ${status:-unknown}"
-          if [ "$status" = 'In Progress' ] && [ "$MACOS_NOTARIZATION" = auto ]; then
-            echo "::warning title=macOS notarization deferred::Apple is still notarizing after $timeout; this run's macOS bytes stay unstapled. The release will publish Windows/Linux first and macos-notarize-followup.yml adds macOS once Apple accepts."
-            echo 'stapled=false' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if [ "$status" != Accepted ]; then
-            xcrun notarytool log "$STRATA_NOTARY_SUBMISSION" "${auth[@]}" || true
-            echo '::error title=macOS notarization::Apple did not accept the DMG (or did not finish in wait mode).'
-            exit 1
-          fi
-          retry xcrun stapler staple "$dmg"
-          retry xcrun stapler staple "$app"
-          retry xcrun stapler validate "$dmg"
-          retry xcrun stapler validate "$app"
-          codesign --verify --deep --strict --verbose=2 "$app"
-          retry spctl --assess --type execute --verbose=4 "$app"
-          retry spctl --assess --type open --context context:primary-signature --verbose=4 "$dmg"
-          python3 - "$record" "$dmg" <<'PY'
-          import hashlib, json, sys
+          [ "$MACOS_NOTARIZATION" = auto ] && timeout="$MACOS_NOTARIZATION_TIMEOUT"
+          [[ "$timeout" =~ ^([0-9]+)([smh])$ ]] || { echo '::error::MACOS_NOTARIZATION_TIMEOUT must look like 30m.'; exit 1; }
+          case "${BASH_REMATCH[2]}" in s) secs=${BASH_REMATCH[1]};; m) secs=$((BASH_REMATCH[1] * 60));; h) secs=$((BASH_REMATCH[1] * 3600));; esac
+          status=$(bash "$notary" wait "$STRATA_NOTARY_SUBMISSION" "$secs"); rc=$?
+          [ "$rc" -eq 75 ] && unstapled 'Could not reach Apple to read the notarization status.'
+          [ "$rc" -eq 0 ] || exit 1
+          echo "Notary submission $STRATA_NOTARY_SUBMISSION: $status"
+          case "$status" in
+            Accepted) ;;
+            'In Progress')
+              if [ "$MACOS_NOTARIZATION" = auto ]; then unstapled "Apple is still notarizing after $timeout."; fi
+              echo '::error title=macOS notarization::Apple did not finish within 60 minutes (wait mode).'; exit 1;;
+            *)
+              bash "$notary" log "$STRATA_NOTARY_SUBMISSION" || true
+              echo "::error title=macOS notarization::Apple did not accept the app ($status)."; exit 1;;
+          esac
+          bash "$notary" staple-app "$app"; rc=$?
+          [ "$rc" -eq 75 ] && unstapled 'Could not reach Apple to staple the app.'
+          [ "$rc" -eq 0 ] || exit 1
+          team=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["app"]["teamIdentifier"])' "$record") || exit 1
+          bash "$notary" restage-dmg "$dmg" "$app" "$APPLE_SIGNING_IDENTITY" "$team"; rc=$?
+          [ "$rc" -eq 75 ] && unstapled 'Could not reach the Apple timestamp service to sign the rebuilt DMG.'
+          [ "$rc" -eq 0 ] || exit 1
+          python3 - "$record" "$dmg" <<'PY' || exit 1
+          import hashlib, json, os, sys
           path, dmg = sys.argv[1], sys.argv[2]
           record = json.load(open(path))
           h = hashlib.sha256()
           with open(dmg, 'rb') as f:
               for chunk in iter(lambda: f.read(1 << 20), b''): h.update(chunk)
           record['stapled'] = True
-          record['dmg']['stapledSha256'] = h.hexdigest()
+          record['dmg'].update({'sha256': h.hexdigest(), 'size': os.path.getsize(dmg)})
           json.dump(record, open(path, 'w'), indent=2)
           PY
           echo 'stapled=true' >> "$GITHUB_OUTPUT"
 
-      # Normal (non-deferred) releases require this gate; it only runs when both
-      # the DMG and the app carry Apple's ticket.
-      - name: Confirm the macOS DMG and app are stapled
+      # Normal (non-deferred) releases require this gate; it only runs when the app
+      # carries Apple's ticket and the DMG was rebuilt around it. Offline checks
+      # must pass; the online stapler check only warns on network errors.
+      - name: Confirm the macOS app is stapled and the DMG is signed
         if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true' && steps.notarize-wait.outputs.stapled == 'true'
         run: |
-          set -euo pipefail
-          retry() { local n; for n in 1 2 3 4; do "$@" && return 0; echo "::warning::attempt $n failed: $*"; sleep $((n * 15)); done; "$@"; }
+          set -uo pipefail
+          version="${{ steps.package-version.outputs.version }}"
           bundle="${CARGO_TARGET_DIR}/${{ matrix.target }}/release/bundle"
-          retry xcrun stapler validate "$bundle/dmg/Strata Manager_${{ steps.package-version.outputs.version }}_aarch64.dmg"
-          retry xcrun stapler validate "$bundle/macos/Strata Manager.app"
+          app="$bundle/macos/Strata Manager.app"
+          record="$RUNNER_TEMP/macos-notarization/Strata Manager_${version}_aarch64.notarization.json"
+          read -r cdhash team < <(python3 -c 'import json,sys; r = json.load(open(sys.argv[1])); print(r["app"]["cdhash"], r["app"]["teamIdentifier"])' "$record") || exit 1
+          test -s "$app/Contents/CodeResources" || { echo '::error::The app is not stapled.'; exit 1; }
+          bash scripts/macos-notary.sh verify-dmg "$bundle/dmg/Strata Manager_${version}_aarch64.dmg" "$cdhash" "$team" || exit 1
+          bash scripts/macos-notary.sh retry 'stapler validate' xcrun stapler validate "$app"; rc=$?
+          [ "$rc" -eq 0 ] || [ "$rc" -eq 75 ] || exit 1
 
       - name: Package the macOS app archive for the updater
         if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true'
@@ -704,7 +721,7 @@ jobs:
           compression-level: 0
 
       # Uploaded here instead of by tauri-action so the artifact holds the DMG
-      # after notarization (stapled in wait mode) that releases promote.
+      # rebuilt around the stapled app (when stapled) that releases promote.
       - name: Upload the macOS DMG
         if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true'
         uses: actions/upload-artifact@v4
@@ -714,7 +731,7 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
-      # Submission id and the exact submitted bytes, for macos-notarize-followup.yml.
+      # Submission id, the app CDHash and the exact DMG bytes, for macos-notarize-followup.yml.
       - name: Upload the macOS notarization record
         if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true'
         uses: actions/upload-artifact@v4

@@ -3,7 +3,8 @@
  *
  * Phases (all fail closed; nothing here prints secrets):
  *   pending  (ubuntu) list published releases that still wait for notarized macOS assets
- *   staple   (macOS)  check the CI notarization submission; when Accepted, staple and verify
+ *   staple   (macOS)  check the CI app submission; when Accepted, staple the app, rebuild the
+ *                     CI DMG around it and Developer ID sign the DMG (the DMG is never notarized)
  *   sign     (macOS)  Tauri updater signatures for the stapled DMG and app archive
  *   publish  (macOS)  add the four macOS assets, then darwin-aarch64 to latest.json (commit point)
  *
@@ -22,7 +23,7 @@ const fail = message => { throw new Error(message); };
 const base = '/repos/' + REPOSITORY;
 const tagPattern = /^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/;
 const submissionPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-export const RECORD_PROTOCOL = 'strata-macos-notarization/v1';
+export const RECORD_PROTOCOL = 'strata-macos-notarization/v2';
 export const NOTARY_PENDING = 'In Progress';
 
 async function digest(file) {
@@ -66,18 +67,18 @@ export function validateRecord(record, plan, dmgSha256) {
       || record.version !== plan.version || record.sourceSha !== plan.sourceSha || record.runId !== plan.runId
       || record.runAttempt !== plan.runAttempt || !['auto', 'wait', 'defer'].includes(record.mode) || typeof record.stapled !== 'boolean'
       || typeof record.dmg?.name !== 'string' || record.dmg.name.replaceAll(' ', '.') !== names.dmg
-      || !/^[0-9a-f]{64}$/.test(record.dmg.submittedSha256 ?? '') || !Number.isSafeInteger(record.dmg.size)
-      || !/^[0-9a-f]{40}$/.test(record.app?.cdhash ?? '') || !/^[A-Z0-9]{10}$/.test(record.app?.teamIdentifier ?? '')) fail('The CI notarization record does not match the bound CI run and DMG.');
-  const expected = record.stapled ? record.dmg.stapledSha256 : record.dmg.submittedSha256;
-  if (dmgSha256 !== expected) fail('The bound CI DMG is not the notarized submission recorded by CI.');
+      || !/^[0-9a-f]{64}$/.test(record.dmg.sha256 ?? '') || !Number.isSafeInteger(record.dmg.size)
+      || !/^[0-9a-f]{40}$/.test(record.app?.cdhash ?? '') || !/^[A-Z0-9]{10}$/.test(record.app?.teamIdentifier ?? '')
+      || !/^[0-9a-f]{64}$/.test(record.app?.submittedZipSha256 ?? '')) fail('The CI notarization record does not match the bound CI run and DMG.');
+  if (dmgSha256 !== record.dmg.sha256) fail('The bound CI DMG is not the one recorded by the notarizing CI run.');
   return record;
 }
 
-/** Apple's log must accept exactly the submitted bytes and cover the app's code directory. */
+/** Apple's log must accept exactly the submitted app zip and cover the app's code directory. */
 export function validateNotaryLog(log, record) {
   const cdhashes = (Array.isArray(log?.ticketContents) ? log.ticketContents : []).map(t => String(t?.cdhash ?? '').toLowerCase());
   if (log?.jobId?.toLowerCase() !== record.submissionId.toLowerCase() || log.status !== 'Accepted'
-      || log.sha256 !== record.dmg.submittedSha256) fail('Apple notary log does not accept the recorded DMG bytes.');
+      || log.sha256 !== record.app.submittedZipSha256) fail('Apple notary log does not accept the recorded app submission.');
   if (!cdhashes.includes(record.app.cdhash)) fail('Apple notary ticket does not cover the app code directory.');
   return true;
 }
@@ -146,15 +147,14 @@ async function followupState() {
   const record = validateRecord(JSON.parse(await readFile(join(temp, names.record), 'utf8')), plan, await digest(join(temp, names.dmg)));
   return { temp: resolve(temp), root: await realpath(process.env.SOURCE_ROOT), plan, names, record, out: join(resolve(temp), 'macos-out') };
 }
-const retry = (binary, args) => {
-  for (let attempt = 1; ; attempt++) {
-    try { return execFileSync(binary, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 300000 }); }
-    catch (error) {
-      if (attempt >= 4) { process.stderr.write(String(error.stdout ?? '') + String(error.stderr ?? '')); fail(binary + ' ' + args[0] + ' failed'); }
-      execFileSync('sleep', [String(attempt * 15)]);
-    }
-  }
-};
+// Network retries (3 x 30 s, then exit 75 with a ::warning::) live in macos-notary.sh, shared with ci.yml.
+export const NET_UNRESOLVED = 75;
+const notaryScript = new URL('./macos-notary.sh', import.meta.url).pathname;
+function notary(args, env) {
+  const r = spawnSync('bash', [notaryScript, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'], env: { ...process.env, ...env }, maxBuffer: 16 * 1024 * 1024 });
+  if (r.error) fail('macos-notary.sh ' + args[0] + ' could not run');
+  return { status: r.status, stdout: r.stdout ?? '' };
+}
 // Never let a failing command echo its arguments (they include notary credentials).
 const run = (binary, args) => {
   try { return execFileSync(binary, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 300000, maxBuffer: 16 * 1024 * 1024 }); }
@@ -167,7 +167,7 @@ async function notaryAuth(temp) {
   await mkdir(dir, { recursive: true, mode: 0o700 });
   const path = join(dir, 'AuthKey_' + keyId + '.p8');
   await writeFile(path, key.endsWith('\n') ? key : key + '\n', { mode: 0o600 });
-  return { args: ['--key', path, '--key-id', keyId, '--issuer', issuer], cleanup: () => rm(dir, { recursive: true, force: true }) };
+  return { env: { STRATA_NOTARY_KEY_PATH: path, STRATA_NOTARY_KEY_ID: keyId, STRATA_NOTARY_ISSUER: issuer }, cleanup: () => rm(dir, { recursive: true, force: true }) };
 }
 function codesignOutput(path) {
   // codesign -dv writes its details to stderr.
@@ -181,37 +181,37 @@ function requireDeveloperId(path, record, { cdhash = false } = {}) {
   if (cdhash && (info.match(/^CDHash=([0-9a-f]+)$/m)?.[1] ?? '').toLowerCase() !== record.app.cdhash) fail('The app code directory differs from the notarized CI app.');
 }
 
+const pendingLater = (s, why) => {
+  console.log('::notice title=macOS notarization pending::' + s.plan.tag + ': ' + why + ' The scheduled follow-up will try again.');
+  return output({ status: 'pending' });
+};
 async function staple() {
   const s = await followupState();
+  const identity = process.env.APPLE_SIGNING_IDENTITY ?? '';
+  if (!identity.startsWith('Developer ID Application: ') || !identity.endsWith('(' + s.record.app.teamIdentifier + ')')) fail('The imported signing identity does not belong to the recorded Developer ID team.');
   const auth = await notaryAuth(s.temp);
   try {
-    const info = JSON.parse(run('xcrun', ['notarytool', 'info', s.record.submissionId, ...auth.args, '--output-format', 'json']));
-    const status = info?.status;
+    const r = notary(['status', s.record.submissionId], auth.env);
+    if (r.status === NET_UNRESOLVED) return pendingLater(s, 'Apple could not be reached.');
+    if (r.status !== 0) fail('Could not read the notarization status.');
+    const status = r.stdout.trim();
     console.log('Notary submission ' + s.record.submissionId + ': ' + status);
-    if (status === NOTARY_PENDING) {
-      console.log('::notice title=macOS notarization pending::' + s.plan.tag + ' is still being notarized; the scheduled follow-up will check again.');
-      return output({ status: 'pending' });
-    }
+    if (status === NOTARY_PENDING) return pendingLater(s, 'Apple is still notarizing.');
     if (status !== 'Accepted') {
-      try { process.stdout.write(run('xcrun', ['notarytool', 'log', s.record.submissionId, ...auth.args])); } catch {}
-      fail('Apple did not accept the macOS submission (' + status + '); fix the build and release a new version.');
+      notary(['log', s.record.submissionId], auth.env);
+      fail('Apple did not accept the macOS app (' + status + '); fix the build and release a new version.');
     }
     const logPath = join(s.temp, 'notary-log.json');
     await rm(logPath, { force: true });
-    run('xcrun', ['notarytool', 'log', s.record.submissionId, ...auth.args, logPath]);
+    const l = notary(['log', s.record.submissionId, logPath], auth.env);
+    if (l.status === NET_UNRESOLVED) return pendingLater(s, 'Apple could not be reached for the notary log.');
+    if (l.status !== 0) fail('Could not read the notary log.');
     validateNotaryLog(JSON.parse(await readFile(logPath, 'utf8')), s.record);
   } finally { await auth.cleanup(); }
 
+  // Only the app is notarized: staple it, then rebuild the CI DMG around it and Developer ID sign the DMG.
   await rm(s.out, { recursive: true, force: true });
   await mkdir(s.out, { mode: 0o700 });
-  const dmg = join(s.out, s.names.dmg);
-  await copyFile(join(s.temp, s.names.dmg), dmg);
-  if (!s.record.stapled) retry('xcrun', ['stapler', 'staple', dmg]);
-  retry('xcrun', ['stapler', 'validate', dmg]);
-  run('codesign', ['--verify', '--strict', '--verbose=2', dmg]);
-  requireDeveloperId(dmg, s.record);
-  retry('spctl', ['--assess', '--type', 'open', '--context', 'context:primary-signature', '--verbose=4', dmg]);
-
   const work = join(s.temp, 'macos-app');
   await rm(work, { recursive: true, force: true });
   await mkdir(work, { mode: 0o700 });
@@ -222,11 +222,15 @@ async function staple() {
   requireDeveloperId(app, s.record, { cdhash: true });
   requireDeveloperId(join(app, 'Contents/MacOS/strata-supervisor'), s.record);
   run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', app]);
-  let stapled = true;
-  try { run('xcrun', ['stapler', 'validate', app]); } catch { stapled = false; }
-  if (!stapled) retry('xcrun', ['stapler', 'staple', app]);
-  retry('xcrun', ['stapler', 'validate', app]);
-  retry('spctl', ['--assess', '--type', 'execute', '--verbose=4', app]);
+  const stapledApp = notary(['staple-app', app]);
+  if (stapledApp.status === NET_UNRESOLVED) return pendingLater(s, 'Apple could not be reached to staple the app.');
+  if (stapledApp.status !== 0) fail('Stapling or verifying the app failed.');
+  const dmg = join(s.out, s.names.dmg);
+  await copyFile(join(s.temp, s.names.dmg), dmg);
+  const restaged = notary(['restage-dmg', dmg, app, identity, s.record.app.teamIdentifier]);
+  if (restaged.status === NET_UNRESOLVED) return pendingLater(s, 'The Apple timestamp service could not be reached to sign the DMG.');
+  if (restaged.status !== 0) fail('Rebuilding or signing the DMG around the stapled app failed.');
+  requireDeveloperId(dmg, s.record);
   const archive = join(s.out, s.names.tarball);
   run('tar', ['-czf', archive, '-C', work, 'Strata Manager.app']);
   validateTarEntries(run('tar', ['-tzf', archive]).split('\n').filter(Boolean));
@@ -234,7 +238,7 @@ async function staple() {
     files: [{ name: s.names.dmg, sha256: await digest(dmg), size: await regularSize(dmg) },
       { name: s.names.tarball, sha256: await digest(archive), size: await regularSize(archive) }] };
   await writeFile(join(s.out, 'staged.json'), JSON.stringify(staged, null, 2), { flag: 'wx', mode: 0o600 });
-  console.log('Stapled and verified ' + s.names.dmg + ' and ' + s.names.tarball + '.');
+  console.log('Stapled the app, rebuilt and signed the DMG, verified ' + s.names.dmg + ' and ' + s.names.tarball + '.');
   return output({ status: 'accepted' });
 }
 

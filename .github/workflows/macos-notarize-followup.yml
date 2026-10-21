@@ -102,7 +102,36 @@ jobs:
           printf 'RELEASE_TEMP=%s/strata-macos-followup\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - name: Bind this repository's same-source CI macOS bytes and notarization record
         run: node scripts/release-from-ci.mjs prepare
-      - name: Check Apple notarization, then staple and verify
+      # The DMG is rebuilt around the stapled app, so it is Developer ID signed
+      # again here (temporary keychain, removed at the end of the job).
+      - name: Import the Developer ID certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          [ -n "${APPLE_CERTIFICATE:-}" ] && [ -n "${APPLE_CERTIFICATE_PASSWORD:-}" ] || { echo '::error::APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD are required.'; exit 1; }
+          keychain="$RUNNER_TEMP/strata-signing.keychain-db"
+          kc_pass=$(openssl rand -base64 32)
+          echo "::add-mask::$kc_pass"
+          cert="$RUNNER_TEMP/strata-signing.p12"
+          ( umask 077; printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$cert" )
+          security create-keychain -p "$kc_pass" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$kc_pass" "$keychain"
+          security import "$cert" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -f pkcs12 -T /usr/bin/codesign -T /usr/bin/security > /dev/null
+          rm -f "$cert"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kc_pass" "$keychain" > /dev/null
+          existing=()
+          while IFS= read -r k; do existing+=("$k"); done < <(security list-keychains -d user | tr -d '"' | sed 's/^ *//')
+          security list-keychains -d user -s "$keychain" "${existing[@]}"
+          identity=$(security find-identity -v -p codesigning "$keychain" | grep -o '"Developer ID Application: [^"]*"' | head -n1 | tr -d '"' || true)
+          [ -n "$identity" ] || { echo "::error::APPLE_CERTIFICATE has no 'Developer ID Application' identity."; exit 1; }
+          if [ -n "${APPLE_TEAM_ID:-}" ] && [[ "$identity" != *"($APPLE_TEAM_ID)" ]]; then echo '::error::Signing identity does not belong to APPLE_TEAM_ID.'; exit 1; fi
+          echo "Signing identity: $identity"
+          { echo "APPLE_SIGNING_IDENTITY=$identity"; echo "STRATA_SIGNING_KEYCHAIN=$keychain"; } >> "$GITHUB_ENV"
+      - name: Check Apple notarization, then staple the app and rebuild the DMG
         id: staple
         env:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
@@ -132,6 +161,8 @@ jobs:
       - name: Add the macOS assets, then darwin-aarch64 to latest.json
         if: steps.staple.outputs.status == 'accepted'
         run: node scripts/macos-notarize-followup.mjs publish
-      - name: Remove the notary API key
+      - name: Remove the signing keychain and notary API key
         if: always()
-        run: rm -rf "$RUNNER_TEMP/strata-private-keys"
+        run: |
+          if [ -n "${STRATA_SIGNING_KEYCHAIN:-}" ]; then security delete-keychain "$STRATA_SIGNING_KEYCHAIN" || true; fi
+          rm -rf "$RUNNER_TEMP/strata-private-keys" "$RUNNER_TEMP/strata-signing.p12"

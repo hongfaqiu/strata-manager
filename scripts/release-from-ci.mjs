@@ -34,14 +34,14 @@ export const PLATFORM_GATES = Object.freeze({
     'Verify Linux AppImage and DEB startup under Xvfb']),
   // Normal releases require the stapled (waited) notarization gate as well.
   macos: Object.freeze(['Prepare macOS signing and notarization', 'Verify the macOS code signature',
-    'Submit the macOS DMG for notarization', 'Wait for notarization and staple the macOS DMG and app',
-    'Confirm the macOS DMG and app are stapled', 'Package the macOS app archive for the updater', 'Upload the macOS updater archive',
+    'Submit the macOS app for notarization', 'Wait for notarization and staple the macOS app',
+    'Confirm the macOS app is stapled and the DMG is signed', 'Package the macOS app archive for the updater', 'Upload the macOS updater archive',
     'Upload the macOS DMG', 'Upload the macOS notarization record']),
 });
 /** Deferred macOS (and its follow-up) only needs signed bytes and a submitted notarization. */
-export const MACOS_STAPLED_GATE = 'Confirm the macOS DMG and app are stapled';
+export const MACOS_STAPLED_GATE = 'Confirm the macOS app is stapled and the DMG is signed';
 export const MACOS_DEFERRED_GATES = Object.freeze(PLATFORM_GATES.macos.filter(
-  gate => gate !== 'Wait for notarization and staple the macOS DMG and app' && gate !== MACOS_STAPLED_GATE));
+  gate => gate !== 'Wait for notarization and staple the macOS app' && gate !== MACOS_STAPLED_GATE));
 /**
  * include: normal release (all five installers, macOS stapled in CI).
  * defer: publish Windows/Linux/server now; macOS assets and darwin-aarch64 come later.
