@@ -208,6 +208,24 @@ pub(crate) struct Prepared {
 }
 
 /// Folders, names and the disk plan; reads only.
+/// Where setup keeps the official shard a community file may be identical to (`<data>/models/<QUANT>/...`).
+fn official_counterpart(
+    data: &Path,
+    request: &CommunitySetupRequest,
+    name: &str,
+) -> Option<PathBuf> {
+    if request.family != "qwen" {
+        return None;
+    }
+    let at = name.rfind("-of-")?.checked_sub(6)?;
+    let suffix = name.get(at..)?;
+    if !suffix.starts_with("-0000") || !suffix.ends_with(".gguf") {
+        return None;
+    }
+    let official = format!("Qwen3.8-Flash-Next-GSQ-RCO-{}{suffix}", request.quant);
+    Some(data.join("models").join(&request.quant).join(official))
+}
+
 pub(crate) fn prepare(
     root: &Path,
     request: &CommunitySetupRequest,
@@ -238,6 +256,14 @@ pub(crate) fn prepare(
         if have == file.size {
             reusable += have;
             continue;
+        }
+        // An official ISTA-DASLab shard of the same name pattern and size already downloaded in the data folder:
+        // the fetch step hard-links it after checking its SHA-256 (see HELPER reuse_official), so no download.
+        if let Some(official) = official_counterpart(&data, request, &name) {
+            if disk::file_len(&official)? == file.size {
+                reusable += file.size;
+                continue;
+            }
         }
         let partial = disk::file_len(&gguf_directory.join(format!("{name}.part")))?;
         reusable += partial.min(file.size);
@@ -314,15 +340,87 @@ def write_json(path, value):
     tmp.write_text(json.dumps(value, indent=1) + "\n", encoding="utf-8")
     tmp.replace(path)
 
+def official_roots():
+    """The data folders setup itself reads model files from (data_folder's sources): the remembered one, the default
+    one, other installs, and a Strata-data folder nested in any of them."""
+    found = []
+    try:
+        found.append(Path(setup.data_folder_in_place()[0]))
+    except Exception:
+        pass
+    try:
+        settings = setup.load_settings()
+        found += [Path(setup.home()), *[Path(p) for p in setup.other_installs(settings)]]
+        if settings.get("data_dir"):
+            found.append(Path(settings["data_dir"]))
+    except Exception:
+        pass
+    found += [f / "Strata-data" for f in list(found)]
+    return list(dict.fromkeys(found))
+
+def file_sha256(path):
+    import hashlib
+    h, done, total = hashlib.sha256(), 0, path.stat().st_size
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(16 * 1024 * 1024), b""):
+            h.update(chunk); done += len(chunk)
+            if done % (4 * 1024 ** 3) < 16 * 1024 * 1024:
+                print(f"  checking {path.name}: {done * 100 // max(total, 1)}%", flush=True)
+    return h.hexdigest()
+
+def reuse_official(dst, size, sha, community):
+    """A community file that is byte-for-byte one of ISTA-DASLab's official shards (same size and SHA-256 as setup's
+    pinned ISTA_FILES) is taken from an official download already on this PC instead of downloading it again: a hard
+    link (no extra disk; setup never rewrites a verified shard in place), else a local copy. The official file is only
+    read; a candidate is used only when its own SHA-256 (setup's .done mark or a fresh hash) matches."""
+    names = [n for n, v in getattr(setup, "ISTA_FILES", {}).items() if tuple(v) == (size, sha)]
+    if not names:
+        return False
+    for base in official_roots():
+        for name in names:
+            quant = name.split("-0000", 1)[0].rsplit("-", 1)[-1]     # ...-GSQ-RCO-<QUANT>-00001-of-00002.gguf
+            for cand in (base / "models" / quant / name, base / "models" / quant.lower() / name, base / "models" / name):
+                try:
+                    if community in cand.resolve().parents or not cand.is_file() or cand.stat().st_size != size:
+                        continue
+                    mark = cand.with_name(cand.name + ".done")
+                    marked = mark.exists() and f"sha256 {sha}" in mark.read_text(encoding="utf-8", errors="replace")
+                    if not marked and file_sha256(cand) != sha:
+                        print(f"  {cand} differs from the published file; not reused", flush=True)
+                        continue
+                    tmp = dst.with_name(dst.name + ".reuse")
+                    if tmp.exists():
+                        tmp.unlink()
+                    try:
+                        os.link(cand, tmp)
+                        how = "hard link"
+                    except OSError:
+                        shutil.copyfile(cand, tmp)
+                        how = "copy"
+                        if file_sha256(tmp) != sha:
+                            tmp.unlink()
+                            print(f"  the copy of {cand} did not verify; downloading instead", flush=True)
+                            return False
+                    tmp.replace(dst)
+                    dst.with_name(dst.name + ".done").write_text(f"sha256 {sha}\nreused {how} {cand}\n", encoding="utf-8")
+                    print(f"  {dst.name}: reused the official file {cand} ({how}, SHA-256 matches)", flush=True)
+                    return True
+                except OSError as e:
+                    print(f"  could not reuse {cand}: {e}", flush=True)
+    return False
+
 if cmd == "fetch":
     dest, repo, rev, items = Path(rest[0]), rest[1], rest[2], rest[3:]
     dest.mkdir(parents=True, exist_ok=True)
+    community = dest.resolve().parent.parent
     for item in items:
         remote, size, sha = item.rsplit("|", 2); size = int(size)
         dst = dest / remote.rsplit("/", 1)[-1]
         mark = dst.with_name(dst.name + ".done")
         if dst.exists() and dst.stat().st_size == size and mark.exists() and f"sha256 {sha}" in mark.read_text(encoding="utf-8", errors="replace"):
             print(f"{dst.name} already downloaded and verified", flush=True)
+            continue
+        if reuse_official(dst, size, sha, community):
             continue
         setup.download(f"{setup.hf_endpoint()}/{repo}/resolve/{rev}/{remote}", dst, f"{repo.split('/')[-1]}: {dst.name}")
         if dst.stat().st_size != size:
@@ -598,6 +696,18 @@ mod tests {
         );
         assert_eq!(prepared.setup_config, "strata-iq3_s.json");
         assert_eq!(prepared.download_bytes, 60_000_000_000);
+        assert_eq!(
+            official_counterpart(
+                &data,
+                &request,
+                "Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_S-00002-of-00002.gguf"
+            ),
+            Some(data.join("models/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf"))
+        );
+        assert_eq!(
+            official_counterpart(&data, &request, "Huihui-refusal-direction-r.gguf"),
+            None
+        );
         let steps = steps(
             &prepared,
             &request,
@@ -631,6 +741,97 @@ mod tests {
                 "strata-community-sc117-abliterated-iq3_s.json",
                 "community-sc117-abliterated-iq3_s"
             ]
+        );
+    }
+
+    use std::fs;
+
+    fn python() -> Option<String> {
+        if let Some(selected) = std::env::var_os("STRATA_MANAGER_TEST_PYTHON") {
+            return Some(selected.to_string_lossy().into());
+        }
+        let out = std::process::Command::new(if cfg!(windows) { "py" } else { "python3" })
+            .args(["-c", "import sys;print(sys.executable)"])
+            .output()
+            .ok()?;
+        out.status
+            .success()
+            .then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned())
+    }
+
+    #[test]
+    fn fetch_reuses_a_verified_official_shard_and_never_a_different_one() {
+        let Some(python) = python() else {
+            eprintln!("no Python: skipped");
+            return;
+        };
+        let temp = tempfile::tempdir().unwrap();
+        let (root, data) = (temp.path().join("root"), temp.path().join("data"));
+        let official = data.join("models").join("IQ3_S");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&official).unwrap();
+        let name = "Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf";
+        fs::write(official.join(name), b"official shard bytes").unwrap();
+        let real = {
+            use sha2::Digest;
+            format!("{:x}", sha2::Sha256::digest(b"official shard bytes"))
+        };
+        fs::write(
+            root.join("setup.py"),
+            format!(
+                "from pathlib import Path\nISTA_FILES = {{{name:?}: (20, {real:?})}}\n\
+                 def data_folder_in_place(): return Path({data:?}), []\n\
+                 def load_settings(): return {{}}\n\
+                 def home(): return Path({root:?})\n\
+                 def other_installs(s): return []\n\
+                 def hf_endpoint(): return 'https://example.invalid'\n\
+                 def download(*a): raise SystemExit('download attempted')\n\
+                 def fail(*a): raise SystemExit(str(a))\n\
+                 def verify_sha256(*a): pass\n",
+                data = data.to_string_lossy(),
+                root = root.to_string_lossy()
+            ),
+        )
+        .unwrap();
+        let dest = data
+            .join("community")
+            .join("alesha-pro-cvec-iq3_s")
+            .join("models")
+            .join("IQ3_S");
+        let run = |item: String| {
+            std::process::Command::new(&python)
+                .args([
+                    "-c",
+                    HELPER,
+                    &root.to_string_lossy(),
+                    "fetch",
+                    &dest.to_string_lossy(),
+                    "a/b",
+                    &"a".repeat(40),
+                    &item,
+                ])
+                .output()
+                .unwrap()
+        };
+        let out = run(format!("IQ3_S/{name}|20|{real}"));
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert_eq!(fs::read(dest.join(name)).unwrap(), b"official shard bytes");
+        assert!(fs::read_to_string(dest.join(format!("{name}.done")))
+            .unwrap()
+            .contains(&format!("sha256 {real}")));
+        // Same size, different bytes: the official file is not reused (and is left as it is).
+        fs::remove_dir_all(data.join("community")).unwrap();
+        fs::write(official.join(name), b"OFFICIAL SHARD BYTES").unwrap();
+        let out = run(format!("IQ3_S/{name}|20|{real}"));
+        assert!(!out.status.success());
+        assert!(String::from_utf8_lossy(&out.stdout).contains("not reused"));
+        assert_eq!(
+            fs::read(official.join(name)).unwrap(),
+            b"OFFICIAL SHARD BYTES"
         );
     }
 }
