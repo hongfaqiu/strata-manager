@@ -539,6 +539,8 @@ jobs:
             echo 'No notarization credentials: DMG is Developer ID signed only.'
             exit 0
           fi
+          # stapler/spctl look tickets up online; retry transient runner network failures.
+          retry() { local n; for n in 1 2 3 4; do "$@" && return 0; echo "::warning::attempt $n failed: $*"; sleep $((n * 15)); done; "$@"; }
           auth=(--key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER")
           result=$(xcrun notarytool submit "$dmg" "${auth[@]}" --wait --timeout 45m --output-format json || true)
           field() { printf '%s' "$result" | python3 -c 'import json,sys
@@ -552,8 +554,8 @@ jobs:
             echo '::error title=macOS notarization::Apple did not accept the DMG.'
             exit 1
           fi
-          xcrun stapler staple "$dmg"
-          xcrun stapler validate "$dmg"
+          retry xcrun stapler staple "$dmg"
+          retry xcrun stapler validate "$dmg"
 
       - name: Verify macOS signature and notarization
         if: runner.os == 'macOS' && env.PACKAGE_INSTALLERS == 'true'
@@ -562,6 +564,8 @@ jobs:
           bundle="${CARGO_TARGET_DIR}/${{ matrix.target }}/release/bundle"
           app="$bundle/macos/Strata Manager.app"
           dmg="$bundle/dmg/Strata Manager_${{ steps.package-version.outputs.version }}_aarch64.dmg"
+          # stapler/spctl look tickets up online; retry transient runner network failures.
+          retry() { local n; for n in 1 2 3 4; do "$@" && return 0; echo "::warning::attempt $n failed: $*"; sleep $((n * 15)); done; "$@"; }
           codesign --verify --deep --strict --verbose=2 "$app"
           for bin in "$app" "$app/Contents/MacOS/strata-supervisor"; do
             info=$(codesign -dv --verbose=4 "$bin" 2>&1)
@@ -572,10 +576,10 @@ jobs:
             fi
           done
           if [ -n "${STRATA_MACOS_NOTARIZE:-}" ]; then
-            xcrun stapler validate "$app"
-            xcrun stapler validate "$dmg"
-            spctl --assess --type execute --verbose=4 "$app"
-            spctl --assess --type open --context context:primary-signature --verbose=4 "$dmg"
+            retry xcrun stapler validate "$app"
+            retry xcrun stapler validate "$dmg"
+            retry spctl --assess --type execute --verbose=4 "$app"
+            retry spctl --assess --type open --context context:primary-signature --verbose=4 "$dmg"
           elif [ -n "${STRATA_MACOS_SIGNED:-}" ]; then
             echo 'Developer ID signed, not notarized.'
           else

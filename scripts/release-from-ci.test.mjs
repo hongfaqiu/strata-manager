@@ -54,7 +54,7 @@ test('the macOS desktop job stays behind the docs-only skip and publishes Develo
     assert.ok(desktop.includes(secret + ': ${{ secrets.' + secret + ' }}'), secret);
   }
   assert.match(desktop, /xcrun notarytool submit "\$dmg"/);
-  assert.match(desktop, /xcrun stapler validate "\$dmg"/);
+  assert.match(desktop, /retry xcrun stapler validate "\$dmg"/);
   assert.match(desktop, /spctl --assess --type execute/);
   // tauri-action must not upload the pre-notarization DMG; the stapled one is uploaded under the same name.
   assert.match(desktop, /uploadWorkflowArtifacts: \$\{\{ runner\.os != 'macOS' \}\}/);
