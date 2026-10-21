@@ -91,7 +91,8 @@ test('the follow-up workflow is scheduled, serialized with publishing and never 
   assert.match(script, /notary\(\['restage-dmg', dmg, app, identity, s\.record\.app\.teamIdentifier\]\)/);
 });
 
-test('macos-notary.sh retries network errors 3 times, then only warns (75); other errors fail at once', async () => {
+// The helper only ever runs on macOS runners; it needs a POSIX bash.
+test('macos-notary.sh retries network errors 3 times, then only warns (75); other errors fail at once', { skip: process.platform === 'win32' }, async () => {
   const { spawnSync } = await import('node:child_process');
   const { mkdtemp, writeFile: write } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
