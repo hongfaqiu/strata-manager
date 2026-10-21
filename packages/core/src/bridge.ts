@@ -335,6 +335,10 @@ export const checkMtpPath = (path: string): Promise<import('./local-model').MtpC
 /** ORCA.md's OrcaRouter IQ3_XXS import: read-only plan, then one tracked setup task that registers its config. */
 export const orcaImportPlan = (profile: ServiceProfile, request: import('./orca-import').OrcaImportRequest): Promise<import('./orca-import').OrcaImportPlan> => native('orca_import_plan', { profile, request });
 export const runOrcaImport = (profile: ServiceProfile, request: import('./orca-import').OrcaImportRequest, options?: OfficialSetupOptions): Promise<TaskStatus> => native('run_orca_import', { profile, request, ...(options ? { options } : {}) });
+/** Community model (pinned Hugging Face repo + revision + SHA-256): download, verify, then setup --gguf-dir, one tracked task. */
+export const runCommunitySetup = (profile: ServiceProfile, request: import('./community-catalog').CommunitySetupRequest, context: number, images: boolean, options?: OfficialSetupOptions): Promise<TaskStatus> => native('run_community_setup', { profile, request, context, images, ...(options ? { options } : {}) });
+/** Read-only Hugging Face model API GET (`/api/models...` only, size-limited); the webview's CSP has no network. */
+export const huggingFaceApi = (path: string): Promise<string> => native('hf_models_api', { path });
 export const inspectModel = (request: ModelInspectRequest): Promise<TaskStatus> => native('inspect_gguf', { request });
 export const getChatRuntimeEvidence = (profileId: string): Promise<ChatRuntimeEvidence> => native('chat_runtime_evidence', { profileId });
 export const installRuntime = (directory: string): Promise<TaskStatus> => native('install_runtime', { directory });
@@ -428,6 +432,10 @@ export const applySettings = (settings: AppSettings): Promise<void> => native('a
 export const saveMarkdown = (path: string, content: string): Promise<string> => native('write_markdown_export', { path, content });
 /** Save an already-previewed PNG to the path selected in the native Save As dialog. */
 export const savePng = (path: string, bytes: number[]): Promise<string> => native('write_png_export', { path, bytes });
+/** Desktop only: keep a model-written HTML document for the sandboxed `strata-preview` scheme and return its id. */
+export const registerHtmlPreview = (html: string): Promise<string> => native('register_html_preview', { html });
+/** Desktop only: write a previewed HTML document to a path chosen in the save dialog. */
+export const saveHtmlPreview = (path: string, html: string): Promise<string> => native('write_html_preview', { path, html });
 export const discoverLocal = (directories?: string[]): Promise<LocalCandidate[]> => native('discover_local', { ...(directories ? { directories } : {}) });
 export const connectRunningService = (candidate: LocalCandidate): Promise<{ profileId: string; restarting: boolean }> => native('connect_running_service', { candidate });
 export const importLocal = (candidate: LocalCandidate): Promise<ServiceProfile> => native('import_local', { candidate });
@@ -443,6 +451,54 @@ export const startupStatus = (): Promise<StartupStatus> => native('get_startup_s
 export const setStartupEnabled = (enabled: boolean): Promise<StartupStatus> => native('set_startup_enabled', { enabled });
 export const backgroundPolicy = (): Promise<BackgroundPolicy> => native('get_background_policy');
 export const setBackgroundPolicy = (mode: BackgroundPolicy['mode'], autoRecover: boolean, idleUnloadMinutes = 15): Promise<BackgroundPolicy> => native('set_background_policy', { mode, autoRecover, idleUnloadMinutes });
+export interface AppUpdateSourceInfo {
+  id: string;
+  label: string;
+  kind: 'official' | 'mirror' | 'custom' | string;
+  selectedBy: 'automatic' | 'preference' | 'fallback' | string;
+  manifestUrl: string;
+  downloadUrl?: string;
+}
+export interface AppUpdateAttempt {
+  stage: 'probe' | 'check' | 'download' | string;
+  result: 'success' | 'failed' | 'selected' | 'current' | 'no-update' | string;
+  source: AppUpdateSourceInfo;
+  message?: string;
+  durationMs?: number;
+}
+export interface AppUpdateDownloadEvent {
+  event: 'Source' | 'Started' | 'Progress' | 'Finished' | string;
+  data: { contentLength?: number; chunkLength?: number };
+  source?: AppUpdateSourceInfo;
+  fallbackChain?: AppUpdateSourceInfo[];
+  attempts?: AppUpdateAttempt[];
+}
+export interface NativeAppUpdate {
+  id: string;
+  currentVersion: string;
+  version: string;
+  date?: string;
+  body?: string;
+  rawJson: JsonObject | null | unknown;
+  source: AppUpdateSourceInfo;
+  fallbackChain: AppUpdateSourceInfo[];
+  attempts: AppUpdateAttempt[];
+}
+export interface AppUpdateCheckResult {
+  update: NativeAppUpdate | null;
+  source?: AppUpdateSourceInfo;
+  fallbackChain: AppUpdateSourceInfo[];
+  attempts: AppUpdateAttempt[];
+}
+export const checkAppUpdate = (timeoutMs = 30000): Promise<AppUpdateCheckResult> => native('check_app_update', { timeoutMs });
+export async function downloadAppUpdate(updateId: string, onEvent: (event: AppUpdateDownloadEvent) => void, timeoutMs = 600000): Promise<void> {
+  const { Channel } = await import('@tauri-apps/api/core');
+  const channel = new Channel<AppUpdateDownloadEvent>();
+  channel.onmessage = event => onEvent(event);
+  await native<void>('download_app_update', { updateId, timeoutMs, onEvent: channel });
+}
+export const installAppUpdate = (updateId: string, restartAfterInstall = true): Promise<void> => native('install_app_update', { updateId, restartAfterInstall });
+export const closeAppUpdate = (updateId: string): Promise<void> => native('close_app_update', { updateId });
 export const prepareAppUpdate = (): Promise<void> => native('prepare_app_update');
 export const restartInterface = (): Promise<void> => native('restart_interface');
 export const supportsFullScenarioTuning = (status: SupervisorStatus | undefined): boolean =>

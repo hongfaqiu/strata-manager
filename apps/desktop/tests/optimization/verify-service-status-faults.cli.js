@@ -46,7 +46,7 @@ async page => {
         };
       });
       const evidence = await action();
-      const mutations = await page.evaluate(() => window.__fixture.calls.filter(call => /^(start_service|stop_service|restart_service|ensure_local_service|switch_local_service|take_over_service|prepare_app_update|plugin:updater\|download|plugin:updater\|install)$/.test(call.command) || call.command === 'strata_request' && call.args.method === 'POST'));
+      const mutations = await page.evaluate(() => window.__fixture.calls.filter(call => /^(start_service|stop_service|restart_service|ensure_local_service|switch_local_service|take_over_service|prepare_app_update|download_app_update|install_app_update|plugin:updater\|download|plugin:updater\|install)$/.test(call.command) || call.command === 'strata_request' && call.args.method === 'POST'));
       assert(mutations.length === 0, `Unexpected mutations: ${JSON.stringify(mutations)}`);
       assert(browserErrors.length === errorsBefore, `Browser errors: ${browserErrors.slice(errorsBefore).join('; ')}`);
       await page.screenshot({ path: `output/playwright/service-status-faults/${name}.png` });

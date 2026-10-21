@@ -18,7 +18,7 @@ async page => {
       await page.locator('.overview-shortcut-api').waitFor();
       await page.locator('.boot').waitFor({ state: 'hidden' });
       await action();
-      const forbidden = await page.evaluate(() => window.__fixture.calls.filter(call => /^(?:plugin:updater\|(?:download|install|download_and_install)|prepare_app_update|start_service|stop_service|restart_service|ensure_local_service|switch_local_service|take_over_service)$/.test(call.command) || call.command === 'strata_request' && call.args.method === 'POST'));
+      const forbidden = await page.evaluate(() => window.__fixture.calls.filter(call => /^(?:plugin:updater\|(?:download|install|download_and_install)|download_app_update|install_app_update|prepare_app_update|start_service|stop_service|restart_service|ensure_local_service|switch_local_service|take_over_service)$/.test(call.command) || call.command === 'strata_request' && call.args.method === 'POST'));
       assert(forbidden.length === 0, `Unexpected service/API/updater mutations: ${JSON.stringify(forbidden)}`);
       assert(errors.length === errorStart, `Browser errors: ${errors.slice(errorStart).join('; ')}`);
       await page.screenshot({ path: `output/playwright/app-updates/${name}.png`, fullPage: true });

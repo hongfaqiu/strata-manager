@@ -65,6 +65,18 @@ window.__TAURI_INTERNALS__ = {
   async invoke(command, args = {}) {
     calls.push({ command, args: structuredClone(args) });
     const profile = args.profile ?? state.profiles.find(item => item.id === args.profileId);
+    // Hugging Face discovery (read-only allow-listed API): a synthetic community repo; ?hf=offline fails like no network.
+    if (command === 'hf_models_api') {
+      if (params.get('hf') === 'offline') throw 'Hugging Face 不可达';
+      const repo = 'example-user/Qwen3.8-Flash-Next-GSQ-RCO-uncensored-GGUF', rev = 'f'.repeat(40);
+      if (args.path.startsWith('/api/models?')) return JSON.stringify([{ id: repo, downloads: 812, likes: 9 }, { id: 'ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF', downloads: 99999 }]);
+      if (args.path === `/api/models/${repo}`) return JSON.stringify({ id: repo, sha: rev, downloads: 812, likes: 9, lastModified: '2026-10-12T08:00:00.000Z' });
+      if (args.path.startsWith(`/api/models/${repo}/tree/${rev}`)) {
+        const file = (quant, i, size) => ({ path: `${quant}/Qwen3.8-Flash-Next-GSQ-RCO-uncensored-${quant}-0000${i}-of-00002.gguf`, size, lfs: { oid: String(i).repeat(64), size } });
+        return JSON.stringify([file('Q2_0', 1, 17.2e9), file('Q2_0', 2, 28.8e9), file('IQ3_XXS', 1, 26.1e9), file('IQ3_XXS', 2, 28.8e9)]);
+      }
+      throw 'not found';
+    }
     if (command === 'store_get') return structuredClone(state.store[args.key] ?? null);
     if (command === 'store_set') { state.store[args.key] = structuredClone(args.value); return; }
     if (command === 'get_system_language') return { locales: ['zh-CN'] };
@@ -91,6 +103,7 @@ window.__TAURI_INTERNALS__ = {
     if (command === 'read_logs') return structuredClone(state.logs[args.profile?.id] ?? []);
     if (command === 'prepare_local_runtime') { const task = { id: 'rt-new', kind: 'install-runtime', state: 'running', message: '正在下载 Strata 源码包', startedAt: Date.now() }; state.tasks.push(task); state.runtime = { taskId: task.id }; return structuredClone(task); }
     if (command === 'run_setup') { const task = { id: 'setup-new', kind: 'setup', state: 'running', message: '正在准备下载', startedAt: Date.now() }; state.tasks.push(task); state.handoffs.push({ taskId: task.id, status: 'pending' }); return structuredClone(task); }
+    if (command === 'run_community_setup') { const task = { id: 'setup-community', kind: 'setup', state: 'running', message: '正在下载社区模型', startedAt: Date.now() }; state.tasks.push(task); state.handoffs.push({ taskId: task.id, status: 'pending' }); return structuredClone(task); }
     if (command === 'setup_disk_preflight') return { status: 'ready', dataDirectory: runtimeProfile.installDir, modelDirectory: `${runtimeProfile.installDir}\\models`, modelDownloadBytesEstimate: 83.6e9, reusableModelBytes: 0, additionalBytesEstimate: 90e9, estimate: true, volumes: [{ directory: runtimeProfile.installDir, mountPoint: 'D:\\', availableBytes: 405 * GB, requiredAdditionalBytesEstimate: 90e9 }], reason: '', source: 'fixture' };
     if (command === 'assess_setup_resources') return assessment();
     if (command === 'cancel_task') { const task = state.tasks.find(item => item.id === args.taskId); if (task) { task.state = 'cancelled'; task.finishedAt = Date.now(); } return; }
