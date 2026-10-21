@@ -85,6 +85,9 @@ describe('Strata 0.2 engine packages', () => {
     expect(runtimeAssetLabel({ name: linux('hip-rx7900'), variant: 'hip-rx7900' })).toBe('AMD HIP · RX 7000');
     expect(runtimeAssetLabel({ name: linux('hip-halo'), variant: 'hip-halo' })).toBe('AMD HIP · Strix Halo');
     expect(runtimeAssetLabel({ name: linux('hip-rx9070'), variant: 'hip' })).toBe('AMD HIP · RX 9000 / R9700');
+    // Strata 0.2.2 RX 6000 packages: upstream built them but never ran them on a real card.
+    expect(runtimeAssetLabel({ name: linux('hip-rx6000'), variant: 'hip-rx6000' }, true)).toBe('AMD HIP · RX 6000（上游未经实机测试）');
+    expect(runtimeAssetLabel({ name: pkg('hip-rdna2'), variant: 'hip-rdna2' })).toBe('AMD HIP · RX 6000 (untested by upstream on a real card)');
   });
   it('shows one language of a bilingual backend message', () => {
     const reason = '检测到 NVIDIA 驱动 580.95.05、计算能力 8.9，选择 CUDA 13 / Detected NVIDIA driver 580.95.05, compute capability 8.9: CUDA 13';

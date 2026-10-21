@@ -68,9 +68,11 @@ export function runtimeEngineArchiveFilters(zh: boolean): { name: string; extens
   return [{ name: zh ? '引擎包（tar.gz / ZIP）' : 'Engine package (tar.gz / ZIP)', extensions: ['gz', 'tgz', 'zip'] }];
 }
 
-/** Short GPU label of an official engine package. */
-export function runtimeAssetLabel(asset: Pick<RuntimeReleaseAsset, 'name' | 'variant'>): string {
+/** Short GPU label of an official engine package; `zh` picks the language of the "untested" note. */
+export function runtimeAssetLabel(asset: Pick<RuntimeReleaseAsset, 'name' | 'variant'>, zh = false): string {
   switch (asset.variant) {
+    case 'hip-rx6000':
+    case 'hip-rdna2': return zh ? 'AMD HIP · RX 6000（上游未经实机测试）' : 'AMD HIP · RX 6000 (untested by upstream on a real card)';
     case 'cuda13': return 'CUDA 13';
     case 'cuda12': return 'CUDA 12';
     case 'hip-rdna3': return 'AMD HIP · RX 7000 / Strix Halo';

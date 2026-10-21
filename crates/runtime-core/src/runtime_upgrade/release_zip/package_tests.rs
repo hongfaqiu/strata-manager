@@ -428,6 +428,102 @@ fn every_file_of_the_official_windows_hip_package_is_allowed() {
     }
 }
 
+/// Every file of the 12 signed Strata v0.2.2 engine packages (0.1.47) that Manager's release
+/// flow installs passes the allowlist: the HIP packages ship `tuning/*-hipblaslt-*.txt`.
+#[test]
+fn every_file_of_the_strata_022_engine_packages_is_allowed() {
+    let list = include_str!("../fixtures/engine-0.1.47-paths.txt");
+    let mut packages = HashSet::new();
+    let mut tuning = 0;
+    for line in list.lines().filter(|l| !l.starts_with('#')) {
+        let (package, path) = line.split_once(' ').unwrap();
+        if package.starts_with("macos-") {
+            continue; // Metal installs through its own flow.
+        }
+        packages.insert(package);
+        tuning += usize::from(path.starts_with("tuning/"));
+        assert!(engine_file_allowed(path), "{package}: {path}");
+    }
+    assert_eq!(packages.len(), 11);
+    assert!(tuning >= 5, "{tuning}");
+}
+
+#[test]
+fn strata_022_rx6000_packages_are_listed_and_picked_by_gpu() {
+    let feed = engine_package::verify_feed(
+        include_bytes!("../fixtures/strata-feed-v0.2.2.json"),
+        include_bytes!("../fixtures/strata-feed-v0.2.2.json.sig"),
+        Some(102),
+        now(),
+    )
+    .unwrap();
+    let release: Value =
+        serde_json::from_str(include_str!("../fixtures/release-v0.2.2.json")).unwrap();
+    let info = |platform| RuntimeUpdateInfo {
+        assets: engine_package::feed_assets(&feed, &release, "v0.2.2", platform).unwrap(),
+        ..Default::default()
+    };
+    let (linux, windows) = (info("linux-x86_64"), info("windows-x86_64"));
+    let variants = |info: &RuntimeUpdateInfo| {
+        info.assets
+            .iter()
+            .map(|a| a.variant.clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        variants(&linux),
+        [
+            "cuda12",
+            "cuda13",
+            "hip-halo",
+            "hip-rx6000",
+            "hip-rx7900",
+            "hip"
+        ]
+    );
+    assert_eq!(
+        variants(&windows),
+        ["cuda12", "cuda13", "hip-rdna2", "hip-rdna3", "hip"]
+    );
+    let temp = tempfile::tempdir().unwrap();
+    let rx6800 = || gpu_select::GpuProbe {
+        amd_gfx: vec!["gfx1030".into()],
+        ..Default::default()
+    };
+    let chosen = choose_asset_with(&linux, temp.path(), None, &rx6800).unwrap();
+    assert_eq!(
+        chosen.name,
+        "strata-engine-0.1.47-linux-x86_64-hip-rx6000.tar.gz"
+    );
+    assert!(chosen.match_reason.unwrap().contains("untested"));
+    // Windows first install (no engine yet): an RX 6700 XT gets the RDNA2 package.
+    let rx6700 = || gpu_select::GpuProbe {
+        amd_gfx: vec!["gfx1031".into()],
+        ..Default::default()
+    };
+    let chosen = choose_asset_with(&windows, temp.path(), None, &rx6700).unwrap();
+    assert_eq!(
+        chosen.name,
+        "strata-engine-0.1.47-windows-x86_64-hip-rdna2.tar.gz"
+    );
+    // An installed RX 6000 engine is recognised from its BUILD.json and kept.
+    for (platform, build, variant) in [
+        (
+            "linux-x86_64",
+            r#"{"version":"0.1.47","variant":"rx6000","archs":["gfx1030","gfx1031"]}"#,
+            "hip-rx6000",
+        ),
+        (
+            "windows-x86_64",
+            r#"{"backend":"hip","platform":"windows-x64","archs":["gfx1030","gfx1031"]}"#,
+            "hip-rdna2",
+        ),
+    ] {
+        let build: Value = serde_json::from_str(build).unwrap();
+        assert_eq!(build_variant(&build, platform), Some(variant), "{platform}");
+    }
+}
+
 #[test]
 fn windows_first_install_picks_hip_for_an_amd_only_computer() {
     let temp = tempfile::tempdir().unwrap();
@@ -637,22 +733,36 @@ fn requirements_may_only_shrink_in_place() {
 /// `STRATA_020_PACKAGES=/dir` names a folder with them; otherwise it has nothing to check.
 #[test]
 fn real_0_2_0_packages_extract_and_verify() {
-    let Some(dir) = std::env::var_os("STRATA_020_PACKAGES").map(PathBuf::from) else {
-        return;
-    };
-    let feed = engine_package::verify_feed(
+    check_real_packages(
+        "STRATA_020_PACKAGES",
         include_bytes!("../fixtures/strata-feed.json"),
         include_bytes!("../fixtures/strata-feed.json.sig"),
-        None,
-        now(),
-    )
-    .unwrap();
-    let release: Value =
-        serde_json::from_str(include_str!("../fixtures/release-v0.2.0-beta.json")).unwrap();
+        include_str!("../fixtures/release-v0.2.0-beta.json"),
+        "v0.2.0-beta",
+    );
+}
+
+/// The same for Strata v0.2.2 (engine 0.1.47) with `STRATA_022_PACKAGES=/dir`.
+#[test]
+fn real_0_2_2_packages_extract_and_verify() {
+    check_real_packages(
+        "STRATA_022_PACKAGES",
+        include_bytes!("../fixtures/strata-feed-v0.2.2.json"),
+        include_bytes!("../fixtures/strata-feed-v0.2.2.json.sig"),
+        include_str!("../fixtures/release-v0.2.2.json"),
+        "v0.2.2",
+    );
+}
+
+fn check_real_packages(env: &str, feed: &[u8], sig: &[u8], release: &str, tag: &str) {
+    let Some(dir) = std::env::var_os(env).map(PathBuf::from) else {
+        return;
+    };
+    let feed = engine_package::verify_feed(feed, sig, None, now()).unwrap();
+    let release: Value = serde_json::from_str(release).unwrap();
     let mut checked = 0;
     for platform in ["windows-x86_64", "linux-x86_64"] {
-        for asset in engine_package::feed_assets(&feed, &release, "v0.2.0-beta", platform).unwrap()
-        {
+        for asset in engine_package::feed_assets(&feed, &release, tag, platform).unwrap() {
             let archive = dir.join(&asset.name);
             if !archive.exists() {
                 continue;
