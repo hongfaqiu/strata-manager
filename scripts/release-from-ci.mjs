@@ -32,11 +32,32 @@ export const PLATFORM_GATES = Object.freeze({
     'Package headless server',
     'Upload headless server packages',
     'Verify Linux AppImage and DEB startup under Xvfb']),
-  macos: Object.freeze(['Prepare macOS signing and notarization',
-    'Notarize and staple the macOS DMG', 'Verify macOS signature and notarization',
+  // Normal releases require the stapled (waited) notarization gate as well.
+  macos: Object.freeze(['Prepare macOS signing and notarization', 'Verify the macOS code signature',
+    'Submit the macOS DMG for notarization', 'Wait for notarization and staple the macOS DMG and app',
     'Package the macOS app archive for the updater', 'Upload the macOS updater archive',
-    'Upload the macOS DMG']),
+    'Upload the macOS DMG', 'Upload the macOS notarization record']),
 });
+/** Deferred macOS (and its follow-up) only needs signed bytes and a submitted notarization. */
+export const MACOS_DEFERRED_GATES = Object.freeze(PLATFORM_GATES.macos.filter(
+  gate => gate !== 'Wait for notarization and staple the macOS DMG and app'));
+/**
+ * include: normal release (all five installers, macOS stapled in CI).
+ * defer: publish Windows/Linux/server now; macOS assets and darwin-aarch64 come later.
+ * followup: bind only the macOS CI bytes plus the notarization record for the follow-up.
+ */
+export const MACOS_MODES = Object.freeze(['include', 'defer', 'followup']);
+export const MACOS_DEFERRED_MARKER = '<!-- strata-macos-deferred -->';
+export const MACOS_DEFERRED_NOTE = MACOS_DEFERRED_MARKER + '\n\n> macOS 安装包正在等待 Apple 公证，公证通过后会自动补发到本页并加入应用内更新。\n> The macOS packages are waiting for Apple notarization and will be added here (and to in-app updates) once notarized.\n';
+export const MACOS_COMPLETED_NOTE = '<!-- strata-macos-notarized -->\n\n> macOS 安装包已通过 Apple 公证并补发。The notarized macOS packages have been added.\n';
+export function releaseBody(baseBody, plan) {
+  return plan.macos === 'defer' ? baseBody.replace(/\n*$/, '\n\n') + MACOS_DEFERRED_NOTE : baseBody;
+}
+export function macosMode(value = process.env.MACOS_RELEASE_MODE) {
+  const mode = value === undefined || value === '' ? 'include' : value;
+  if (!MACOS_MODES.includes(mode)) fail('MACOS_RELEASE_MODE must be include, defer or followup.');
+  return mode;
+}
 /** Separate job that aggregates all six shard proofs after all desktop jobs succeeded. */
 export const COVERAGE_JOB = 'Native coverage verification';
 export const COVERAGE_GATES = Object.freeze([
@@ -71,37 +92,54 @@ const jobsByPlatform = {
   macos: 'desktop (macos-15, aarch64-apple-darwin, app,dmg)',
 };
 
-export function createPlan({ repository = REPOSITORY, tag, version, sourceSha: commit, runId, productName }) {
+export function createPlan({ repository = REPOSITORY, tag, version, sourceSha: commit, runId, productName, macos = 'include' }) {
   const match = typeof version === 'string' && semver.exec(version);
+  if (!MACOS_MODES.includes(macos)) fail('Unknown macOS release mode.');
   if (repository !== REPOSITORY || !match || tag !== 'v' + version || !sourceSha.test(commit ?? '')
       || runId !== undefined && !positive(runId) || typeof productName !== 'string'
       || !/^[A-Za-z0-9][A-Za-z0-9 .-]{0,79}$/.test(productName) || productName.endsWith('.')
       || productName.endsWith(' ') || productName.includes('..')) fail('Explicit repository, source SHA, SemVer tag and safe product name are required.');
   const product = productName.replaceAll(' ', '.');
   const serverFiles = serverPackageNames(version);
+  const desktop = [
+    { name: 'ci-windows-x64-nsis', kind: 'windows', installer: product + '_' + version + '_x64-setup.exe' },
+    { name: 'ci-linux-amd64-appimage', kind: 'appimage', installer: product + '_' + version + '_amd64.AppImage' },
+    { name: 'ci-linux-amd64-deb', kind: 'deb', installer: product + '_' + version + '_amd64.deb' },
+  ];
+  const mac = [
+    // Updater archive first (latest.json darwin-aarch64); DMG is the manual download.
+    { name: 'ci-darwin-aarch64-app-tarball', kind: 'macos', installer: product + '_' + version + '_aarch64.app.tar.gz' },
+    { name: 'ci-darwin-aarch64-dmg', kind: 'macos', installer: product + '_' + version + '_aarch64.dmg' },
+  ];
+  // Follow-up only: CI's notarization submission record (never a release asset).
+  const record = { name: 'ci-darwin-aarch64-notarization', kind: 'macos', record: true, installer: product + '_' + version + '_aarch64.notarization.json' };
+  const artifacts = macos === 'include' ? [...desktop, ...mac] : macos === 'defer' ? desktop : [...mac, record];
   return { protocol: CI_PROTOCOL, repository, tag, version, sourceSha: commit, runId, productName,
-    prerelease: Boolean(match[4]), workflowPath, artifacts: [
-      { name: 'ci-windows-x64-nsis', kind: 'windows', installer: product + '_' + version + '_x64-setup.exe' },
-      { name: 'ci-linux-amd64-appimage', kind: 'appimage', installer: product + '_' + version + '_amd64.AppImage' },
-      { name: 'ci-linux-amd64-deb', kind: 'deb', installer: product + '_' + version + '_amd64.deb' },
-      // Updater archive first (latest.json darwin-aarch64); DMG is the manual download.
-      { name: 'ci-darwin-aarch64-app-tarball', kind: 'macos', installer: product + '_' + version + '_aarch64.app.tar.gz' },
-      { name: 'ci-darwin-aarch64-dmg', kind: 'macos', installer: product + '_' + version + '_aarch64.dmg' },
-    ],
+    prerelease: Boolean(match[4]), workflowPath, macos, artifacts,
     // Updater-independent headless server packages (no .sig); promoted from Linux CI.
-    serverArtifact: { name: 'ci-linux-amd64-server', files: serverFiles },
+    ...(macos === 'followup' ? {} : { serverArtifact: { name: 'ci-linux-amd64-server', files: serverFiles } }),
   };
+}
+/** latest.json platform -> plan artifact name. darwin-aarch64 only when macOS ships. */
+export function manifestPlatforms(plan) {
+  const map = { 'windows-x86_64': 'ci-windows-x64-nsis', 'windows-x86_64-nsis': 'ci-windows-x64-nsis',
+    'linux-x86_64': 'ci-linux-amd64-appimage', 'linux-x86_64-appimage': 'ci-linux-amd64-appimage',
+    'linux-x86_64-deb': 'ci-linux-amd64-deb', 'darwin-aarch64': 'ci-darwin-aarch64-app-tarball' };
+  if (plan.macos === 'defer') delete map['darwin-aarch64'];
+  if (plan.macos === 'followup') fail('The follow-up plan has no complete updater manifest.');
+  return map;
 }
 /** Headless server Release assets (not part of the Tauri updater). */
 export const serverPackageNames = version => [
   'Strata.Manager.Server_' + version + '_amd64.tar.gz',
   'Strata.Manager.Server_' + version + '_amd64.deb',
 ];
-export const assetNames = plan => [
-  'latest.json',
-  ...plan.artifacts.flatMap(a => [a.installer, a.installer + '.sig']),
-  ...(plan.serverArtifact?.files ?? serverPackageNames(plan.version)),
-];
+export const assetNames = plan => {
+  if (plan.macos === 'followup') fail('The follow-up plan adds assets to an existing release.');
+  return ['latest.json',
+    ...plan.artifacts.flatMap(a => [a.installer, a.installer + '.sig']),
+    ...(plan.serverArtifact?.files ?? serverPackageNames(plan.version))];
+};
 const date = value => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? Date.parse(value) : fail('Valid CI timestamps are required.');
 function validateRun(run, plan, requireSuccess = true) {
   if (!positive(run?.id) || plan.runId !== undefined && run.id !== plan.runId
@@ -156,7 +194,7 @@ export function validateCiEvidence(run, jobs, artifacts, plan, { nowMs = Date.no
   const platformJobs = {};
   for (const [platform, name] of Object.entries(jobsByPlatform)) {
     const job = successfulJob(jobs, name, run);
-    const gates = [...COMMON_GATES, ...PLATFORM_GATES[platform]];
+    const gates = [...COMMON_GATES, ...(platform === 'macos' && plan.macos !== 'include' ? MACOS_DEFERRED_GATES : PLATFORM_GATES[platform])];
     if (platform === 'windows' && plan.version === '0.1.2') gates.push(
       'Verify the signed beta.2 installer for the first stable upgrade',
       'Verify beta.2 to first stable upgrade and retained application data');
@@ -181,6 +219,7 @@ export function validateCiEvidence(run, jobs, artifacts, plan, { nowMs = Date.no
     const job = platformJobs[expected.kind === 'windows' ? 'windows' : expected.kind === 'macos' ? 'macos' : 'linux'];
     return bindArtifact(expected, job);
   });
+  if (plan.macos === 'followup') return { ...plan, runId: run.id, runAttempt: run.run_attempt, artifacts: bound };
   if (!plan.serverArtifact?.name || !Array.isArray(plan.serverArtifact.files) || plan.serverArtifact.files.length !== 2) fail('Headless server artifact plan is required.');
   const serverArtifact = bindArtifact(plan.serverArtifact, platformJobs.linux);
   return { ...plan, runId: run.id, runAttempt: run.run_attempt, artifacts: bound, serverArtifact };
@@ -257,6 +296,8 @@ export function validateReleaseMetadata(release, plan, body) {
 export async function requireSourceRelease(plan, { validateOnly = false, requireTag, requireWritable }) {
   if (validateOnly) return;
   await requireTag(plan.repository, plan.tag, plan.sourceSha);
+  // The follow-up adds to an already published release; it checks that release itself.
+  if (plan.macos === 'followup') return;
   await requireWritable({ repository: plan.repository, tag: plan.tag, expectedSha: plan.sourceSha,
     requireDraft: false, logger: () => {} });
 }
@@ -267,11 +308,13 @@ export function creationBranch(repository) {
 }
 export function validateLatestManifest(manifest, assets, plan) {
   const index = new Map(assets.map(a => [a.name, a]));
-  const mapping = { 'windows-x86_64': 0, 'windows-x86_64-nsis': 0, 'linux-x86_64': 1, 'linux-x86_64-appimage': 1, 'linux-x86_64-deb': 2, 'darwin-aarch64': 3 };
+  const mapping = manifestPlatforms(plan);
   if (manifest?.version !== plan.version || !manifest.platforms
       || JSON.stringify(Object.keys(manifest.platforms).sort()) !== JSON.stringify(Object.keys(mapping).sort())) fail('Canonical updater platforms and bundle aliases are required.');
-  for (const [platform, i] of Object.entries(mapping)) {
-    const name = plan.artifacts[i].installer; const update = manifest.platforms[platform];
+  for (const [platform, artifactName] of Object.entries(mapping)) {
+    const artifact = plan.artifacts.find(a => a.name === artifactName);
+    if (!artifact) fail('Updater platform has no planned installer: ' + platform);
+    const name = artifact.installer; const update = manifest.platforms[platform];
     const signature = index.get(name + '.sig')?.signatureText;
     if (!index.has(name) || !signature || update?.signature !== signature
         || update.url !== 'https://github.com/' + plan.repository + '/releases/download/' + encodeURIComponent(plan.tag) + '/' + encodeURIComponent(name)) fail('Manifest URL/signature mismatch: ' + platform);
@@ -407,6 +450,8 @@ const zipByteHash = [
 const python = process.platform === 'win32' ? 'python' : 'python3';
 
 async function context(phase, validateOnly = false) {
+  const macos = macosMode();
+  if (macos === 'followup' && ['sign', 'publish'].includes(phase)) fail('The macOS follow-up signs and publishes with its own workflow.');
   if (process.env.GITHUB_REPOSITORY !== REPOSITORY || !isAbsolute(process.env.SOURCE_ROOT ?? '')) fail('Explicit repository and absolute SOURCE_ROOT are required.');
   const root = await realpath(process.env.SOURCE_ROOT); const commit = process.env.EXPECTED_SOURCE_SHA;
   if (!sourceSha.test(commit ?? '') || command('git', ['-C', root, 'rev-parse', 'HEAD']).trim() !== commit
@@ -430,7 +475,7 @@ async function context(phase, validateOnly = false) {
       runId = JSON.parse(await readFile(pathResolve(temp, 'prepared.json'), 'utf8')).plan?.runId;
     }
   }
-  const plan = createPlan({ tag: process.env.RELEASE_TAG, sourceSha: commit, version, productName: config.productName, runId });
+  const plan = createPlan({ tag: process.env.RELEASE_TAG, sourceSha: commit, version, productName: config.productName, runId, macos });
   if (['sign', 'publish'].includes(phase)) {
     if (validateOnly || process.env.GITHUB_ACTIONS !== 'true') fail('Signing and publishing require the isolated GitHub Actions runner.');
   }
@@ -506,17 +551,19 @@ export async function prepare({ validateOnly = false } = {}) {
     installers.push({ name: a.installer, size, sha256: await digest(file), artifactId: a.id, zipSha256: a.sha256 });
   }
   const server = c.plan.serverArtifact;
+  const serverPackages = [];
+  if (server) {
   const serverZip = pathResolve(c.temp, server.id + '.zip');
   await download(base + '/actions/artifacts/' + server.id + '/zip', serverZip, server.zipSize);
   if (await digest(serverZip) !== server.sha256) fail('Headless server CI artifact ZIP SHA256 mismatch.');
   const serverEntries = validateServerZipEntries(JSON.parse(command(python, ['-c', zipMetadata, serverZip])), server);
-  const serverPackages = [];
   for (const entry of serverEntries) {
     const file = pathResolve(c.temp, entry.name);
     command(python, ['-c', zipExtract, serverZip, entry.name, file, String(entry.size)]);
     const size = await regular(file);
     if (size !== entry.size) fail('Extracted headless server package size mismatch.');
     serverPackages.push({ name: entry.name, size, sha256: await digest(file), artifactId: server.id, zipSha256: server.sha256 });
+  }
   }
   const meta = { protocol: CI_PROTOCOL, validateOnly, plan: c.plan, installers, serverPackages };
   await writeFile(pathResolve(c.temp, 'prepared.json'), JSON.stringify(meta, null, 2), { flag: 'wx', mode: 0o600 });
@@ -528,13 +575,13 @@ export async function prepare({ validateOnly = false } = {}) {
 export function validatePreparedRecord(meta, plan, { allowValidateOnly = false } = {}) {
   if (meta?.protocol !== CI_PROTOCOL || typeof meta.validateOnly !== 'boolean' || meta.validateOnly && !allowValidateOnly
       || JSON.stringify(meta.plan) !== JSON.stringify(plan) || meta.installers?.length !== plan.artifacts.length
-      || meta.serverPackages?.length !== plan.serverArtifact.files.length) fail('Prepared source/CI evidence mismatch or validate-only ledger cannot be signed.');
+      || meta.serverPackages?.length !== (plan.serverArtifact?.files.length ?? 0)) fail('Prepared source/CI evidence mismatch or validate-only ledger cannot be signed.');
   for (const a of plan.artifacts) {
     const matches = meta.installers.filter(i => i.name === a.installer); const i = matches[0];
     if (matches.length !== 1 || i.artifactId !== a.id || i.zipSha256 !== a.sha256
         || !positive(i.size) || i.size > maxBytes || !sha.test(i.sha256 ?? '')) fail('Prepared installer evidence mismatch.');
   }
-  for (const name of plan.serverArtifact.files) {
+  for (const name of plan.serverArtifact?.files ?? []) {
     const matches = meta.serverPackages.filter(i => i.name === name); const i = matches[0];
     if (matches.length !== 1 || i.artifactId !== plan.serverArtifact.id || i.zipSha256 !== plan.serverArtifact.sha256
         || !positive(i.size) || i.size > maxBytes || !sha.test(i.sha256 ?? '')) fail('Prepared headless server evidence mismatch.');
@@ -555,6 +602,7 @@ export async function readPrepared(c) {
     if (entry.size !== i.size || command(python, ['-c', zipByteHash, zip, entry.name, String(entry.size)]).trim() !== i.sha256) fail('Prepared installer no longer matches the verified CI ZIP bytes.');
   }
   const server = c.plan.serverArtifact;
+  if (!server) return meta;
   const serverZip = pathResolve(c.temp, server.id + '.zip');
   if (await regular(serverZip) !== server.zipSize || await digest(serverZip) !== server.sha256) fail('Prepared headless server ZIP bytes changed.');
   const serverEntries = validateServerZipEntries(JSON.parse(command(python, ['-c', zipMetadata, serverZip])), server);
@@ -602,13 +650,12 @@ export async function publish() {
     if (entries.length !== 1 || entries[0].sha256 !== await digest(pathResolve(c.temp, a.installer + '.sig'))) fail('Signed bytes changed.');
   }
   const notes = c.modules['release-notes'].releaseNotes(await readFile(pathResolve(c.root, 'CHANGELOG.md'), 'utf8'), p.version);
-  const body = c.modules['release-notes'].githubReleaseNotes(notes, p.sourceSha);
+  const body = releaseBody(c.modules['release-notes'].githubReleaseNotes(notes, p.sourceSha), p);
   const signatures = await Promise.all(p.artifacts.map(async a => (await readFile(pathResolve(c.temp, a.installer + '.sig'), 'utf8')).replace(/[\r\n]+$/, '')));
-  const entry = i => ({ signature: signatures[i], url: 'https://github.com/' + p.repository + '/releases/download/' + encodeURIComponent(p.tag) + '/' + encodeURIComponent(p.artifacts[i].installer) });
-  const manifest = { version: p.version, notes, pub_date: new Date().toISOString(), platforms: {
-    'windows-x86_64': entry(0), 'windows-x86_64-nsis': entry(0), 'linux-x86_64': entry(1),
-    'linux-x86_64-appimage': entry(1), 'linux-x86_64-deb': entry(2), 'darwin-aarch64': entry(3),
-  } };
+  const entry = name => { const i = p.artifacts.findIndex(a => a.name === name);
+    return { signature: signatures[i], url: 'https://github.com/' + p.repository + '/releases/download/' + encodeURIComponent(p.tag) + '/' + encodeURIComponent(p.artifacts[i].installer) }; };
+  const manifest = { version: p.version, notes, pub_date: new Date().toISOString(), platforms:
+    Object.fromEntries(Object.entries(manifestPlatforms(p)).map(([platform, name]) => [platform, entry(name)])) };
   validateLatestManifest(manifest, p.artifacts.flatMap((a, i) => [{ name: a.installer }, { name: a.installer + '.sig', signatureText: signatures[i] }]), p);
   await writeFile(pathResolve(c.temp, 'latest.json'), JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   const guard = requireDraft => c.modules['release-assets'].requireReleaseAssetsWritable({
@@ -644,7 +691,8 @@ export async function publish() {
   for (const asset of uploaded.assets) {
     if (asset.size !== await regular(pathResolve(c.temp, asset.name)) || asset.digest !== 'sha256:' + await digest(pathResolve(c.temp, asset.name))) fail('Uploaded SHA256/size differs from verified local assets.');
   }
-  await c.modules['release-verify'].verifyRelease({ repository: p.repository, tag: p.tag, expectedSha: p.sourceSha, root: c.root, verifierPath: process.env.UPDATE_VERIFIER_BIN });
+  await c.modules['release-verify'].verifyRelease({ repository: p.repository, tag: p.tag, expectedSha: p.sourceSha, root: c.root, verifierPath: process.env.UPDATE_VERIFIER_BIN,
+    macos: p.macos === 'defer' ? 'deferred' : 'required' });
   await assertWriters(p); await guard(true);
   const finalDraft = await c.modules['release-verify'].findDraftRelease(p.repository, p.tag);
   validateReleaseInventory(finalDraft, p);

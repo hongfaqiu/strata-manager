@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import {
-  CI_PROTOCOL, REPOSITORY, COMMON_GATES, COVERAGE_JOB, COVERAGE_GATES, PLATFORM_GATES, SHARD_GATES, WINDOWS_SHARD_GATES, createPlan, assetNames, serverPackageNames,
+  CI_PROTOCOL, REPOSITORY, COMMON_GATES, MACOS_DEFERRED_GATES, MACOS_DEFERRED_MARKER, manifestPlatforms, releaseBody, macosMode, COVERAGE_JOB, COVERAGE_GATES, PLATFORM_GATES, SHARD_GATES, WINDOWS_SHARD_GATES, createPlan, assetNames, serverPackageNames,
   validateSourceProtocol, validateCiEvidence, validateInstallerEntries, validateLiveWriters,
   validateLatestManifest, validateReleaseInventory, validateReleaseMetadata, draftMetadataPayload, creationBranch,
   requireSourceRelease, validatePreparedRecord, readPrepared,
@@ -54,12 +54,28 @@ test('the macOS desktop job stays behind the docs-only skip and publishes Develo
     assert.ok(desktop.includes(secret + ': ${{ secrets.' + secret + ' }}'), secret);
   }
   assert.match(desktop, /xcrun notarytool submit "\$dmg"/);
+  assert.doesNotMatch(desktop, /notarytool submit[^\n]*--wait/);
   assert.match(desktop, /retry xcrun stapler validate "\$dmg"/);
+  assert.match(desktop, /retry xcrun stapler staple "\$app"/);
   assert.match(desktop, /spctl --assess --type execute/);
+  // tauri itself must not notarize (credentials use STRATA_NOTARY_* names); only the waited step staples.
+  assert.doesNotMatch(desktop, /echo "APPLE_API_(KEY|ISSUER|KEY_PATH)=/);
+  assert.match(desktop, /MACOS_NOTARIZATION: \$\{\{ inputs\.macos_notarization \|\| vars\.MACOS_NOTARIZATION \|\| 'wait' \}\}/);
+  assert.match(desktop, /- name: Wait for notarization and staple the macOS DMG and app\n {8}if: runner\.os == 'macOS' && env\.PACKAGE_INSTALLERS == 'true' && env\.MACOS_NOTARIZATION == 'wait'/);
+  assert.match(workflow, /macos_notarization:\n {8}description: [^\n]+\n {8}type: choice\n {8}options: \[wait, defer\]\n {8}default: wait/);
   // tauri-action must not upload the pre-notarization DMG; the stapled one is uploaded under the same name.
   assert.match(desktop, /uploadWorkflowArtifacts: \$\{\{ runner\.os != 'macOS' \}\}/);
   assert.match(desktop, /name: ci-darwin-aarch64-dmg/);
-  assert.ok(desktop.indexOf('- name: Notarize and staple the macOS DMG') < desktop.indexOf('- name: Upload the macOS DMG'));
+  for (const [before, after] of [['Verify the macOS code signature', 'Submit the macOS DMG for notarization'],
+    ['Submit the macOS DMG for notarization', 'Wait for notarization and staple the macOS DMG and app'],
+    ['Wait for notarization and staple the macOS DMG and app', 'Package the macOS app archive for the updater'],
+    ['Wait for notarization and staple the macOS DMG and app', 'Upload the macOS DMG'],
+    ['Wait for notarization and staple the macOS DMG and app', 'Upload the macOS notarization record']]) {
+    assert.ok(desktop.indexOf('- name: ' + before) < desktop.indexOf('- name: ' + after), before + ' < ' + after);
+  }
+  assert.match(desktop, /name: ci-darwin-aarch64-notarization/);
+  // A deferred CI only lacks the waited staple gate.
+  assert.deepEqual(PLATFORM_GATES.macos.filter(g => !MACOS_DEFERRED_GATES.includes(g)), ['Wait for notarization and staple the macOS DMG and app']);
   assert.match(desktop, /name: ci-darwin-aarch64-app-tarball/);
   assert.match(desktop, /if: runner\.os == 'macOS' && env\.PACKAGE_INSTALLERS == 'true'/);
   assert.doesNotMatch(desktop, /target: x86_64-apple-darwin/);
