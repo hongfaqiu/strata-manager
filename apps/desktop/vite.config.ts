@@ -22,6 +22,6 @@ export default defineConfig({
   envPrefix: ['VITE_', 'TAURI_ENV_'],
   build: {
     target: 'es2022',
-    rollupOptions: { output: { manualChunks: { react: ['react', 'react-dom'], markdown: ['react-markdown', 'remark-gfm', 'remark-math'], query: ['@tanstack/react-query'], i18n: ['i18next', 'react-i18next'] } } },
+    rollupOptions: { output: { manualChunks: { react: ['react', 'react-dom'], markdown: ['react-markdown', 'remark-gfm'], query: ['@tanstack/react-query'], i18n: ['i18next', 'react-i18next'] } } },
   },
 });
