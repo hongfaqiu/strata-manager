@@ -302,10 +302,26 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-unknown-linux-gnu
+      # Cache the downloaded .deb files (not the installed tree) so slow Ubuntu mirrors
+      # cannot stall the job; dpkg still runs every maintainer script. Only trusted main
+      # pushes save; the key pins the runner image and the package list.
+      - name: Linux apt cache key
+        id: apt-key
+        run: echo "key=$(bash scripts/ci-linux-apt-deps.sh key)" >> "$GITHUB_OUTPUT"
+      - name: Restore cached Linux apt archives
+        id: apt-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: ${{ steps.apt-key.outputs.key }}
       - name: Linux build and headless test dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev libgtk-3-dev libssl-dev librsvg2-dev libxdo-dev libdbus-1-dev pkg-config patchelf xdg-utils xvfb dbus-x11 gnome-keyring libglib2.0-bin libsecret-tools python3-venv python3-dbus build-essential curl gettext libgcr-3-dev libgcrypt20-dev libtasn1-6-dev libp11-kit-dev libcap-ng-dev
+        run: bash scripts/ci-linux-apt-deps.sh install "$RUNNER_TEMP/apt-archives"
+      - name: Save Linux apt archives
+        if: ${{ steps.apt-cache.outputs.cache-hit != 'true' && github.repository == 'hongfaqiu/strata-manager' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: ${{ steps.apt-key.outputs.key }}
       - name: Linux Secret Service wrapper contracts
         run: python scripts/tests/release-linux-tests-contract.py
       - name: Build the pinned private Linux test keyring
@@ -416,11 +432,29 @@ jobs:
         with:
           components: rustfmt, clippy
           targets: ${{ matrix.target }}
+      # Cache the downloaded .deb files (not the installed tree) so slow Ubuntu mirrors
+      # cannot stall the job; dpkg still runs every maintainer script. Only trusted main
+      # pushes save; the key pins the runner image and the package list.
+      - name: Linux apt cache key
+        id: apt-key
+        if: runner.os == 'Linux'
+        run: echo "key=$(bash scripts/ci-linux-apt-deps.sh key)" >> "$GITHUB_OUTPUT"
+      - name: Restore cached Linux apt archives
+        id: apt-cache
+        if: runner.os == 'Linux'
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: ${{ steps.apt-key.outputs.key }}
       - name: Linux build and headless test dependencies
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev libgtk-3-dev libssl-dev librsvg2-dev libxdo-dev libdbus-1-dev pkg-config patchelf xdg-utils xvfb dbus-x11 gnome-keyring libglib2.0-bin libsecret-tools python3-venv python3-dbus build-essential curl gettext libgcr-3-dev libgcrypt20-dev libtasn1-6-dev libp11-kit-dev libcap-ng-dev
+        run: bash scripts/ci-linux-apt-deps.sh install "$RUNNER_TEMP/apt-archives"
+      - name: Save Linux apt archives
+        if: ${{ runner.os == 'Linux' && steps.apt-cache.outputs.cache-hit != 'true' && github.repository == 'hongfaqiu/strata-manager' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: ${{ steps.apt-key.outputs.key }}
       - name: Linux Secret Service wrapper contracts
         if: runner.os == 'Linux'
         run: python scripts/tests/release-linux-tests-contract.py
