@@ -72,7 +72,7 @@ Strata Manager 是开源的 Strata 运行环境与本地模型服务管理桌面
 
 Windows 检测 64 位 Python 3.10+；未找到时提供经 SHA256 校验的官方 Python 私有安装路径。Linux 需要 Python 3.10+、venv 和 ensurepip；缺失依赖会给出提示，应用不执行 sudo。Linux 崩溃保护还需要允许 pidfd、clone 和 close_range 的 64 位 Linux 5.9+ 环境；不支持时拒绝启动受管子进程。缺 Python 的完整安装分支仍待干净机器验收。
 
-macOS（Apple 芯片与 Intel）和 glibc Linux（x86_64 / aarch64）找不到带 venv 的 Python 3.10+ 时（macOS 自带的是 3.9），引导页「检查运行环境」「安装 Strata」和 Strata 页会出现「一键安装 Python」：把 python-build-standalone 20261009 的 CPython 3.12.15（与上游 `setup.sh` 固定的构建相同）装到应用的 `toolchains` 目录，显示进度，可以取消。可选 GitHub 或 GitHub 代理（GH Proxy / GHProxy，默认沿用引擎包已选的代理）下载，任何来源都必须与官方字节数和 SHA-256 一致；不需要管理员权限，不改 PATH，不改动系统或 Homebrew 的 Python。之后安装 Strata 会自动使用它。
+macOS（Apple 芯片与 Intel）和 glibc Linux（x86_64 / aarch64）找不到带 venv 的 Python 3.10+ 时（macOS 自带的是 3.9），引导页「检查运行环境」「安装 Strata」和 Strata 页会出现「一键安装 Python」：把 python-build-standalone 20261009 的 CPython 3.12.15（与上游 `setup.sh` 固定的构建相同）装到应用的 `toolchains` 目录，显示进度，可以取消。可选 GitHub 或 GitHub 代理（gh-proxy.org / ghproxy.net，默认沿用引擎包已选的代理）下载，任何来源都必须与官方字节数和 SHA-256 一致；不需要管理员权限，不改 PATH，不改动系统或 Homebrew 的 Python。之后安装 Strata 会自动使用它。
 
 ## 日常使用
 
@@ -256,7 +256,7 @@ Strata 是全局运行环境，在独立 Strata 页面管理。查看本机版�
 
 选择或取消本地文件只改变弹窗选项，最终确认后才创建更新任务并按需要停止服务。本地 ZIP 仅省去引擎包下载，同版本源码和官方发布信息仍需网络；本地 ZIP 和固定镜像地址绑定所选版本，版本改变后需重新选择；内置代理和自定义模板可跟随新版本。
 
-Strata 页的“下载设置与测试”默认收起，已是最新版本时也可使用。可切换官方 GitHub、GH Proxy、GHProxy、自定义 HTTPS 或本地 ZIP，保存后预填更新弹窗。两个内置代理会跟随当前官方版本和匹配包，可随时切回官方；第三方来源的速度和可用性取决于网络。本地 ZIP 和固定地址绑定版本，更新后需重选；自定义模板支持 `{url}`、`{version}`、`{asset}`。
+Strata 页的“下载设置与测试”默认收起，已是最新版本时也可使用。可切换官方 GitHub、gh-proxy.org、ghproxy.net、自定义 HTTPS 或本地 ZIP，保存后预填更新弹窗。两个内置代理会跟随当前官方版本和匹配包，可随时切回官方；第三方来源的速度和可用性取决于网络。本地 ZIP 和固定地址绑定版本，更新后需重选；自定义模板支持 `{url}`、`{version}`、`{asset}`。
 
 “测试下载来源”不创建更新任务或停止服务：本地文件检查完整大小与 SHA256；网络只读取最多 64 KiB 样本，并报告服务器是否支持 HTTP Range 续传。网络测试通过不代表完整文件校验通过，安装时仍会校验完整文件。后台版本尚不支持测试时会明确提示更新后台，不会为测试自动交接或停止模型。
 

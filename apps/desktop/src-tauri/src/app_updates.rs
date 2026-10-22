@@ -121,13 +121,13 @@ fn builtin_sources() -> Vec<SourceSpec> {
     vec![
         SourceSpec {
             id: "gh-proxy".into(),
-            label: "GH Proxy".into(),
+            label: "gh-proxy.org".into(),
             kind: "mirror".into(),
             template: Some("https://gh-proxy.org/{url}".into()),
         },
         SourceSpec {
             id: "ghproxy".into(),
-            label: "GHProxy".into(),
+            label: "ghproxy.net".into(),
             kind: "mirror".into(),
             template: Some("https://ghproxy.net/{url}".into()),
         },
@@ -853,6 +853,24 @@ mod tests {
         );
         // Nobody answered: the check is an error.
         assert!(up_to_date_source(false, None).is_none());
+    }
+
+    #[test]
+    fn builtin_mirror_labels_name_their_distinct_hosts() {
+        let sources = builtin_sources();
+        for source in &sources {
+            let template = source.template.as_deref().unwrap();
+            let host = Url::parse(&template.replace("{url}", ""))
+                .unwrap()
+                .host_str()
+                .unwrap()
+                .to_string();
+            assert_eq!(source.label, host);
+        }
+        let mut labels: Vec<_> = sources.iter().map(|s| s.label.to_lowercase()).collect();
+        labels.sort();
+        labels.dedup();
+        assert_eq!(labels.len(), sources.len());
     }
 
     #[test]

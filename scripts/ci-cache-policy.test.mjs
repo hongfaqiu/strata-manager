@@ -210,3 +210,78 @@ test('release LTO and code generation remain unchanged', async () => {
   assert.match(profile ?? '', /^lto\s*=\s*"thin"\s*$/m);
   assert.match(profile ?? '', /^codegen-units\s*=\s*1\s*$/m);
 });
+
+// Linux apt archives: restore everywhere, save only from trusted main pushes, never in release workflows.
+function validateAptCaches(source, {requiredJobs = [], forbid = false} = {}) {
+  const lines = source.replaceAll('\r\n', '\n').split('\n');
+  assert.ok(!lines.some(line => /uses:\s*actions\/cache@/.test(line)), 'Use split actions/cache/restore and actions/cache/save so saves stay explicitly guarded.');
+  const jobs = lines.flatMap((line, index) => /^ {2}[A-Za-z0-9_-]+:$/.test(line) && index > lines.indexOf('jobs:') ? [index] : []);
+  const saveJobs = [];
+  for (let i = 0; i < jobs.length; i++) {
+    const jobName = lines[jobs[i]].trim().slice(0, -1);
+    const job = lines.slice(jobs[i] + 1, jobs[i + 1] ?? lines.length);
+    const steps = job.flatMap((line, index) => /^ {6}- /.test(line) ? [index] : []).map((start, k, all) => job.slice(start, all[k + 1] ?? job.length));
+    const restores = steps.filter(step => step.some(line => /uses:\s*actions\/cache\/restore@/.test(line)));
+    const saves = steps.filter(step => step.some(line => /uses:\s*actions\/cache\/save@/.test(line)));
+    if (forbid) { assert.equal(restores.length + saves.length, 0, 'Release workflows must not use caches.'); continue; }
+    for (const step of [...restores, ...saves]) {
+      const inputs = mapping(step, 'with', 8);
+      assert.equal(inputs.get('path'), '${{ runner.temp }}/apt-archives', 'Only downloaded apt archives may be cached.');
+      assert.equal(inputs.get('key'), '${{ steps.apt-key.outputs.key }}', 'The apt key must come from scripts/ci-linux-apt-deps.sh.');
+    }
+    assert.equal(restores.length, saves.length, `${jobName}: every apt restore needs exactly one guarded save.`);
+    for (const step of saves) {
+      const condition = step.map(line => /^ {8}if:\s*(.*)$/.exec(line)?.[1]).find(Boolean);
+      assert.ok(condition, 'An explicit trusted apt cache save condition is required.');
+      const inner = condition.replace(/^\$\{\{\s*|\s*\}\}$/g, '')
+        .replace(/^runner\.os == 'Linux' && /, '')
+        .replace(/^steps\.apt-cache\.outputs\.cache-hit != 'true' && /, '');
+      validateSave(`\${{ ${inner} }}`, false);
+      saveJobs.push(jobName);
+    }
+  }
+  assert.deepEqual(saveJobs.toSorted(), requiredJobs.toSorted(), 'Each Linux apt install job must restore and guard-save exactly one apt archive cache.');
+}
+
+const aptJob = `jobs:
+  native-linux:
+    steps:
+      - name: Restore cached Linux apt archives
+        id: apt-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: \${{ runner.temp }}/apt-archives
+          key: \${{ steps.apt-key.outputs.key }}
+      - name: Save Linux apt archives
+        if: \${{ steps.apt-cache.outputs.cache-hit != 'true' && ${trusted.slice(4, -3)} }}
+        uses: actions/cache/save@v4
+        with:
+          path: \${{ runner.temp }}/apt-archives
+          key: \${{ steps.apt-key.outputs.key }}
+`;
+
+test('apt cache validator accepts a trusted save and rejects untrusted ones', () => {
+  validateAptCaches(aptJob, {requiredJobs: ['native-linux']});
+  for (const mutate of [
+    text => text.replace("github.ref == 'refs/heads/main'", "github.ref != ''"),
+    text => text.replace("(github.event_name == 'push' || github.event_name == 'workflow_dispatch')", 'true'),
+    text => text.replace(/ {8}if: .*\n/, ''),
+    text => text.replace(/key: .*\n$/, 'key: apt-static\n'),
+    text => text.replace(/path: .*apt-archives/, 'path: output/signing'),
+    text => text.replace('actions/cache/restore@v4', 'actions/cache@v4'),
+  ]) assert.throws(() => validateAptCaches(mutate(aptJob), {requiredJobs: ['native-linux']}));
+  assert.throws(() => validateAptCaches(aptJob, {requiredJobs: []}));
+  assert.throws(() => validateAptCaches(aptJob, {forbid: true}));
+});
+
+test('CI workflow caches Linux apt archives only through trusted saves', async () => {
+  const source = await readFile(resolve(root, '.github/workflows/ci.yml'), 'utf8');
+  validateAptCaches(source, {requiredJobs: ['desktop', 'native-linux']});
+  const installs = source.split('\n').filter(line => /ci-linux-apt-deps\.sh install/.test(line)).length;
+  assert.equal(installs, 2, 'Both Linux dependency installs must use the cached installer.');
+  assert.ok(!/apt-get install/.test(source), 'Linux packages must be installed through scripts/ci-linux-apt-deps.sh so the cache key covers them.');
+});
+
+test('release workflows do not use apt caches', async () => {
+  for (const name of ['release.yml', 'release-from-ci.yml']) validateAptCaches(await readFile(resolve(root, '.github/workflows', name), 'utf8'), {forbid: true});
+});
