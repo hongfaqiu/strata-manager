@@ -117,13 +117,13 @@ To turn this off, set the repository variables `MACOS_RELEASE_MODE=include` and 
 
 `.github/workflows/ci.yml` 在主分支 push、Pull Request 和手动触发时运行 Windows/Linux 矩阵。功能分支通过 PR 自动打包；尚未创建 PR 时，可选择该分支手动运行。PR 使用合并结果进行验收，避免同一功能分支 push 与 PR 重复构建；手动运行使用独立并发组，不取消自动验收。使用 Node 24、`package.json` 固定的 pnpm 和 Rust stable；pnpm 11.21.0 要求 Node >=22.13。
 
-检查范围为版本一致性和发布门禁测试、TypeScript、核心与 HTTP 协议夹具测试、前端生产构建、Rust 格式、workspace 单元/集成测试、Clippy，以及两平台桌面安装包构建。Windows 和 Linux 原生测试各使用三个独立 runner；每个 runner 仍以 `--test-threads=1` 串行运行分配到的测试，保留原有测试超时。Windows 的进程、端口和凭据夹具由独立虚拟机隔离；Linux 使用固定私有 Secret Service、DBus 和 Xvfb。
+检查范围为版本一致性和发布门禁测试、TypeScript、核心与 HTTP 协议夹具测试、前端生产构建、Rust 格式、workspace 单元/集成测试、Clippy，以及两平台桌面安装包构建。Windows 和 Linux 原生测试各使用五个独立 runner（分片 0–4）；每个 runner 仍以 `--test-threads=1` 串行运行分配到的测试，保留原有测试超时。Windows 的进程、端口和凭据夹具由独立虚拟机隔离；Linux 使用固定私有 Secret Service、DBus 和 Xvfb。
 
-`scripts/ci-linux-native-tests.mjs` 支持两个原生平台，从 Cargo 的全部 workspace 测试可执行文件枚举测试，再按完整模块确定分片。实际执行的名字和计数必须与计划一致；当前 Linux 七项、Windows 十五项需要实机或外部准备的 ignored 测试逐项登记，新增或减少必须显式审核。0.1.8 仅增加了 Windows 指定真实服务的只读所有者验收项；它要求用户显式提供实际目标，CI 不默认执行，原有十四项和 Linux 七项保持不变。两平台各自的分片 0 额外执行完整 workspace 文档测试。每个平台的打包 job 必须等本平台三个分片全部成功，并汇总绑定相同源码、锁文件、工具链、平台、profile 和当前 run attempt 的覆盖证明；遗漏、重复、跨平台、旧 attempt 或失败均阻断。两个 desktop job 同时执行 Clippy 和安装包构建，随后汇总完整原生覆盖证明，再执行实际包安装或启动检查。Windows 正向测试筛选还限制命令行长度，避免分片参数触及 Windows 进程参数上限。产物只在整个十 job CI 和包验收成功后允许复用：两个 desktop job、六个原生分片，以及 Windows/Linux 两个 Strata 0.1.44 observer compatibility job。
+`scripts/ci-linux-native-tests.mjs` 支持两个原生平台，从 Cargo 的全部 workspace 测试可执行文件枚举测试，再按模块的实测耗时（CI 39636091232 中逐个测试的完成时间差汇总）用最长优先法分到各分片；估计超过 60 秒的模块（目前主要是 `tuning::restart::tests`）按测试名交错拆成若干份，避免单个慢模块决定分片下限。耗时只影响调度，不改变任何测试的超时或断言；分片数上限为 6。实际执行的名字和计数必须与计划一致；当前 Linux 七项、Windows 十五项需要实机或外部准备的 ignored 测试逐项登记，新增或减少必须显式审核。0.1.8 仅增加了 Windows 指定真实服务的只读所有者验收项；它要求用户显式提供实际目标，CI 不默认执行，原有十四项和 Linux 七项保持不变。两平台各自的分片 0 额外执行完整 workspace 文档测试。每个平台的五个分片必须全部成功，并汇总绑定相同源码、锁文件、工具链、平台、profile 和当前 run attempt 的覆盖证明；遗漏、重复、跨平台、旧 attempt 或失败均阻断。三个 desktop job 与分片并行执行 Clippy、安装包构建和实际包安装或启动检查；它们和全部分片都成功后，「Native coverage verification」汇总完整原生覆盖证明。Windows 正向测试筛选还限制命令行长度，避免分片参数触及 Windows 进程参数上限。产物只在除「Detect app code changes」外的全部 18 个 job 和包验收成功后允许复用：三个 desktop job、十个原生分片（每平台五个）、Windows/Linux 各两个 observer compatibility job（Strata 0.1.43.1 与 0.2.2，共四个），以及覆盖汇总 job。分片数在 `ci.yml` 的两个 matrix 和 `scripts/release-from-ci.mjs` 的 `NATIVE_SHARDS` 中必须一致。
 
-两个 observer job 必须属于同一源码、run 与当前 attempt，并且完整成功。发布门禁逐项要求保留上游源码字节、检出已审核的 API fixture、安装 MockEngine 测试依赖、验证源码 canonical hash 与 observer 兼容性，以及执行全部 HTTP 合同测试且没有跳过。job 或任一关键步骤缺失、重复、失败、取消、跳过或尚未完成均阻断；旧八 job 证据不能替代新增兼容性验收。此检查不下载模型权重，也不代表真实 GPU 推理通过。
+四个 observer job 必须属于同一源码、run 与当前 attempt，并且完整成功。发布门禁逐项要求保留上游源码字节、检出已审核的 API fixture、安装 MockEngine 测试依赖、验证源码 canonical hash 与 observer 兼容性，以及执行全部 HTTP 合同测试且没有跳过。job 或任一关键步骤缺失、重复、失败、取消、跳过或尚未完成均阻断；旧八 job 证据不能替代新增兼容性验收。此检查不下载模型权重，也不代表真实 GPU 推理通过。
 
-Rust dev/test 使用 `debug=0` 和 `incremental=0`，保留 debug assertions、溢出检查及原测试超时；release 的 thin LTO 和 codegen 配置保持原值。缓存仅保留依赖与当前 target；关闭 Cargo 工具二进制、workspace crate 和全 registry crate 缓存。只有本仓库 main 的 push/手动构建保存缓存；PR、tag、功能分支与六个原生测试分片只恢复。每个 target 只有 desktop job 保存一次，避免分片重复压缩。首次切换 profile 会产生新缓存键，应分别记录冷缓存与后续命中时的耗时。
+Rust dev/test 使用 `debug=0` 和 `incremental=0`，保留 debug assertions、溢出检查及原测试超时；release 的 thin LTO 和 codegen 配置保持原值。缓存仅保留依赖与当前 target；关闭 Cargo 工具二进制、workspace crate 和全 registry crate 缓存。只有本仓库 main 的 push/手动构建保存缓存；PR、tag 和功能分支只恢复。原生测试分片使用独立的 test-profile 缓存键，同一 target 的五个分片共用一个键，并发保存时只有第一个生效。首次切换 profile 会产生新缓存键，应分别记录冷缓存与后续命中时的耗时。
 
 CI 产物以 `ci-<platform>-<arch>-<bundle>` 名称上传为 Actions artifacts。它们关闭 updater artifacts，不是正式签名发行版。拉取请求不接触更新私钥。
 
@@ -140,7 +140,7 @@ CI 产物以 `ci-<platform>-<arch>-<bundle>` 名称上传为 Actions artifacts�
 1. 等待同仓库的编辑会话完成，冻结同一候选快照。在同一变更中同步根 `package.json`、`apps/desktop/package.json`、`packages/core/package.json`、Tauri config、Cargo workspace 和任何显式 Cargo package version。运行 `node scripts/release-check.mjs --tag v<version>`，将 `<version>` 替换为候选的实际版本；tag 必须与应用版本严格一致。该版本的中英文日志须位于唯一的 `## [<version>]`；README 三个入口、中英文下载/用户文档和官网应同步相应发布入口，不复用上一版本的通过结论。
 2. 完成 [VERIFICATION](VERIFICATION.md) 的最终检查和发布验收，更新中英文 README、用户指南、`docs/screenshots/` 的 WebP 封面及页面图与实际 revision；检查内容没有 API 密钥、个人会话、用户名或私有模型路径。截图使用示例数据时，在图片所在文档及官网的图外说明数据来源；图内使用正常模型名和界面内容，不能写成真实服务或性能证据。保留历史原型证据，同时单列本轮未通过/未运行项。
 3. 推送已审核的代码，等待完整 CI 后，创建并推送 `v<version>` tag，例如 `v0.2.0-beta.1`。版本 tag 触发 `.github/workflows/release.yml`，它调用同一提交的 `release-from-ci.yml`。也可手动运行 `Release desktop` 并填写 `release_tag`；可选 `ci_run_id` 指定已验收 run。旧 tag 缺少 `strata-release-ci/v2` 协议时明确拒绝，不改写 tag；v2 要求 Windows 分片证明，不接受仅有旧串行 Windows 门禁的 v1 CI。
-4. 控制器优先选择同仓库、同源码 SHA、同 CI workflow 的完整成功 run；已有运行则等待它完成，没有可用 run 才按不可变 tag 补跑一次 CI。复用要求两个 desktop job、三个 Windows 分片、三个 Linux 分片、两个 Strata 0.1.44 observer compatibility job，以及原版本/观察器/原生/格式/Clippy/安装启动门禁全部通过，并检查当前 run attempt。版本 0.1.2 仍额外要求原 beta.2 升级门禁。PR 合并 SHA、其他源码、失败、取消、过期或不完整产物均不可复用。
+4. 控制器优先选择同仓库、同源码 SHA、同 CI workflow 的完整成功 run；已有运行则等待它完成，没有可用 run 才按不可变 tag 补跑一次 CI。复用要求三个 desktop job、五个 Windows 分片、五个 Linux 分片、四个 observer compatibility job（Strata 0.1.43.1 与 0.2.2，各含 Windows/Linux）、覆盖汇总 job，以及原版本/观察器/原生/格式/Clippy/安装启动门禁全部通过，并检查当前 run attempt。版本 0.1.2 仍额外要求原 beta.2 升级门禁。PR 合并 SHA、其他源码、失败、取消、过期或不完整产物均不可复用。
 5. 下载桌面 CI artifact 与 Linux `ci-linux-amd64-server`，冻结 ID 和 GitHub ZIP digest，安全解包并核对版本、产品名、架构及原始字节 hash。签名前和上传前重验源码、tag、run 与原始字节；**仅为桌面安装包**生成带应用版本的 Tauri updater 签名。单个发布 job 生成 `latest.json`、每个桌面安装包的 `.sig`，以及无头 Server 的 `Strata.Manager.Server_<ver>_amd64.tar.gz` / `.deb`（不再生成 `SHA256SUMS`），创建或续写草稿，无需再次编译桌面应用或跨平台合并 manifest。`scripts/release-verify.mjs` 下载实际草稿资产，通过同源码的 `strata-update-verifier` 和内置公钥核验桌面载荷、可信注释、版本、完整 **13** 项资产（5 个桌面安装包、5 份 `.sig`、`latest.json`、2 个无头 Server 包）与 URL；全部成功才公开。
 6. 发布阶段使用仓库级队列锁，并在锁内完整检查已公开稳定版本。只有 SemVer 严格更高的稳定版本成为 latest；旧版本或等价版本仍可公开下载，但不替换更新通道。带 SemVer prerelease 的版本始终不覆盖稳定自动更新通道。公开状态和 latest 选择在同一次 PATCH 中提交；发布前再次核对真实 tag commit。
 
@@ -148,7 +148,7 @@ CI 产物以 `ci-<platform>-<arch>-<bundle>` 名称上传为 Actions artifacts�
 
 发布流程提供无写入演练：手动运行 `Release verified CI installers`，设置 `validate_only=true`、`release_tag=v<源码中的版本>`、`source_ref=<完整 SHA>`、`expected_source_sha=<同一 SHA>` 和 `ci_run_id=<完整成功 run>`。它检查并下载三种原始产物，上传不含密钥的字节证明，跳过签名和 Release 写入；无需创建新版本 tag。真实发布与演练都保留完整拒绝条件测试。
 
-CI 失败后修改源码并运行新的完整 CI；如仅需重试外部环境故障，选择 **Re-run all jobs**。发布复用要求同一个 attempt 的全部十个 job 和产物，不能混用“只重跑失败 job”与上一 attempt 的通过证明。
+CI 失败后修改源码并运行新的完整 CI；如仅需重试外部环境故障，选择 **Re-run all jobs**。发布复用要求同一个 attempt 的全部 16 个 job 和产物，不能混用“只重跑失败 job”与上一 attempt 的通过证明。
 
 GitHub 对相对默认分支修改工作流的 `target_commitish` 要求额外的 Workflows 写权限，内置 `GITHUB_TOKEN` 无法授予该权限。对于已经存在且核验了真实 commit 的 tag，工作流将默认分支用作 Release 创建提示，避免该权限要求；该提示不会重写现有 tag，也不用于判断产物来源。当前 tag 的真实提交始终由独立 ref 检查绑定。[GitHub Release 权限规则](https://docs.github.com/en/rest/releases/releases#create-a-release)。
 
