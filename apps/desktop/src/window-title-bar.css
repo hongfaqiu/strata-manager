@@ -67,3 +67,6 @@
 :root[data-window-chrome="macos"] .manager-shell{--manager-nav-collapsed-width:88px}
 @media(prefers-reduced-motion:reduce){.window-title-bar .window-title-bar-button,.window-title-bar-brand,.window-title-bar-brand-name{transition:none}.window-title-bar .service-status-trigger .st-pill__dot,.window-title-bar .service-status-trigger .st-pill__dot::after{animation:none!important}}
 .exit-remember { display: flex; align-items: center; gap: 8px; margin: 18px 0; font-size: 13px; }
+.window-title-bar-update-badge[data-active]{font-variant-numeric:tabular-nums;animation:window-title-bar-update-pulse 1.6s ease-in-out infinite}
+@keyframes window-title-bar-update-pulse{50%{opacity:.6}}
+@media (prefers-reduced-motion:reduce){.window-title-bar-update-badge[data-active]{animation:none}}

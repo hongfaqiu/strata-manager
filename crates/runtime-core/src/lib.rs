@@ -50,6 +50,8 @@ pub mod tuning;
 pub mod types;
 
 #[cfg(test)]
+mod app_update_keep_services_tests;
+#[cfg(test)]
 mod network_runtime_tests;
 #[cfg(test)]
 mod tuning_contract_tests;
@@ -513,6 +515,16 @@ impl RuntimeState {
         }
     }
     async fn prepare_app_update(self: Arc<Self>) -> Result<(), String> {
+        self.prepare_app_update_with(true).await
+    }
+    /// The desktop installer replaces only the UI package. The supervisor runs
+    /// from a data-directory copy and owns the engine, so a desktop update can
+    /// leave running services (and their in-flight API requests) untouched.
+    /// Supervisor replacement still drains services through `prepare_upgrade`.
+    async fn prepare_app_update_with(
+        self: Arc<Self>,
+        verify_idle_services: bool,
+    ) -> Result<(), String> {
         tuning::assert_no_active_tuning(&self)?;
         if self
             .ensure_locks
@@ -537,7 +549,7 @@ impl RuntimeState {
             .values()
             .filter_map(|p| p.profile.clone())
             .collect();
-        for profile in profiles {
+        for profile in profiles.into_iter().filter(|_| verify_idle_services) {
             let running = self
                 .processes
                 .lock()
@@ -1082,7 +1094,14 @@ impl RuntimeState {
                 }
                 value(Ok(policy))
             }
-            "prepare_app_update" => value(self.clone().prepare_app_update().await),
+            "prepare_app_update" => {
+                // Older desktop builds send `{}` and keep the strict check.
+                let keep_services = params
+                    .get("keepServices")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                value(self.clone().prepare_app_update_with(!keep_services).await)
+            }
             "store_get" => {
                 let key: String = arg(&params, "key")?;
                 if key == "profiles" {

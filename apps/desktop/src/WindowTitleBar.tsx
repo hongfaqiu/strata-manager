@@ -15,6 +15,8 @@ export interface WindowTitleBarProps {
   collapsed?: boolean;
   version?: string;
   updateVersion?: string;
+  /** Overrides the badge for an update in progress or ready to install. */
+  updateStatus?: { badge: string; label: string; active: boolean };
   onVersionClick?: () => void;
   onError?: (error: unknown) => void;
   onClose?: () => void;
@@ -23,7 +25,7 @@ export interface WindowTitleBarProps {
 }
 
 /** close() emits the native CloseRequested event, including the background policy. */
-export function WindowTitleBar({ desktop, language, title, status, collapsed = false, version, updateVersion, onVersionClick, onError, onClose, chrome = currentWindowChrome() }: WindowTitleBarProps) {
+export function WindowTitleBar({ desktop, language, title, status, collapsed = false, version, updateVersion, updateStatus, onVersionClick, onError, onClose, chrome = currentWindowChrome() }: WindowTitleBarProps) {
   // macOS draws its own traffic lights over the header's top-left corner;
   // Windows/Linux keep the custom buttons on the right.
   const nativeControls = chrome === 'macos';
@@ -40,8 +42,8 @@ export function WindowTitleBar({ desktop, language, title, status, collapsed = f
     ? { window: 'Application window', minimize: 'Minimize', maximize: 'Maximize', restore: 'Restore window', close: 'Close window' }
     : { window: '应用窗口', minimize: '最小化', maximize: '最大化', restore: '还原窗口', close: '关闭窗口' };
   const versionLabel = language !== 'zh-CN'
-    ? `App version v${version}${updateVersion ? `, update v${updateVersion} available, review update` : ', view app updates'}`
-    : `应用版本 v${version}${updateVersion ? `，有新版本 v${updateVersion}，查看更新` : '，查看应用更新'}`;
+    ? `App version v${version}${updateStatus ? `, ${updateStatus.label}` : updateVersion ? `, update v${updateVersion} available, review update` : ', view app updates'}`
+    : `应用版本 v${version}${updateStatus ? `，${updateStatus.label}` : updateVersion ? `，有新版本 v${updateVersion}，查看更新` : '，查看应用更新'}`;
 
   useEffect(() => {
     mounted.current = true;
@@ -109,7 +111,7 @@ export function WindowTitleBar({ desktop, language, title, status, collapsed = f
           <span className="window-title-bar-brand-name"><strong>Strata</strong><span>Manager</span></span>
           {version && <button id="app-version-button" type="button" className="window-title-bar-version" data-tauri-drag-region="false" aria-label={versionLabel} aria-haspopup={updateVersion ? 'dialog' : undefined} data-tooltip={versionLabel} disabled={!onVersionClick} onClick={onVersionClick} onDoubleClick={event => event.stopPropagation()}>
             <span className="window-title-bar-version-number">v{version}</span>
-            {updateVersion && <span className="window-title-bar-update-badge" aria-hidden="true"><span>{language !== 'zh-CN' ? 'Update' : '有更新'}</span></span>}
+            {(updateVersion || updateStatus) && <span className="window-title-bar-update-badge" data-active={updateStatus?.active || undefined} aria-hidden="true"><span>{updateStatus?.badge ?? (language !== 'zh-CN' ? 'Update' : '有更新')}</span></span>}
           </button>}
         </div>
       </div>
