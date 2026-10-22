@@ -12,8 +12,8 @@ export function useWindowClose({ desktop, ready, settings, onSettings, onError, 
   const exitingRef = useRef(false);
   const exitRequest = useRef<() => void>(() => {});
   const text = settings.language !== 'zh-CN'
-    ? { title: 'Exit Strata Manager?', hint: 'This stops local model services and background tasks managed by this app.', remember: 'Do not ask again', cancel: 'Cancel', exit: 'Stop services and exit', exiting: 'Saving and exiting…' }
-    : { title: '退出 Strata Manager？', hint: '退出将停止本软件管理的本机模型服务和后台任务。', remember: '不再提示', cancel: '取消', exit: '停止服务并退出', exiting: '正在保存并退出…' };
+    ? { title: 'Exit Strata Manager?', hint: 'This stops local model services and background tasks managed by this app.', remember: 'Do not ask again', cancel: 'Cancel', tray: 'Minimize to tray', exit: 'Stop services and exit', exiting: 'Saving and exiting…' }
+    : { title: '退出 Strata Manager？', hint: '退出将停止本软件管理的本机模型服务和后台任务。', remember: '不再提示', cancel: '取消', tray: '最小化到托盘', exit: '停止服务并退出', exiting: '正在保存并退出…' };
   useEffect(() => {
     if (!desktop) return;
     let disposed = false, unlisten: (() => void) | undefined;
@@ -40,11 +40,24 @@ export function useWindowClose({ desktop, ready, settings, onSettings, onError, 
     } catch (error) { handlerRef.current(error); }
     finally { exitingRef.current = false; setExiting(false); }
   };
+  // Keeps services running and only hides the window. With "do not ask again"
+  // ticked, this becomes the saved close behaviour (closeToTray: true).
+  const minimizeToTray = async () => {
+    if (exitingRef.current) return;
+    setOpen(false);
+    try {
+      if (remember && ready) {
+        const next = { ...settingsRef.current, closeToTray: true, closeToTrayRevision: core.CLOSE_TO_TRAY_REVISION };
+        await (saveSettings ? saveSettings(next) : core.saveStore('settings', next)); await core.applySettings(next); onSettings(next);
+      }
+      await invoke('hide_main_window');
+    } catch (error) { handlerRef.current(error); }
+  };
   const confirm = () => { setOpen(false); if (beforeExit) beforeExit(() => { void confirmExit(); }); else void confirmExit(); };
   exitRequest.current = () => {
     setRemember(false);
     if (settingsRef.current.skipExitConfirmation) confirm(); else setOpen(true);
   };
   const cancel = () => { if (!exitingRef.current) setOpen(false); };
-  return { requestClose, dialog: open ? <Dialog title={text.title} onClose={cancel}><p>{text.hint}</p><label className="exit-remember"><Checkbox checked={remember} disabled={!ready || exiting} onChange={event => setRemember(event.target.checked)}/>{text.remember}</label><div className="dialog-footer"><button type="button" disabled={exiting} onClick={cancel}>{text.cancel}</button><button type="button" className="danger-solid" disabled={exiting} onClick={() => void confirm()}>{exiting ? text.exiting : text.exit}</button></div></Dialog> : null };
+  return { requestClose, dialog: open ? <Dialog title={text.title} onClose={cancel}><p>{text.hint}</p><label className="exit-remember"><Checkbox checked={remember} disabled={!ready || exiting} onChange={event => setRemember(event.target.checked)}/>{text.remember}</label><div className="dialog-footer"><button type="button" disabled={exiting} onClick={cancel}>{text.cancel}</button><button type="button" disabled={exiting} onClick={() => void minimizeToTray()}>{text.tray}</button><button type="button" className="danger-solid" disabled={exiting} onClick={() => void confirm()}>{exiting ? text.exiting : text.exit}</button></div></Dialog> : null };
 }

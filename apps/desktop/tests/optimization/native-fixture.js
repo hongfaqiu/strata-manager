@@ -2,7 +2,7 @@
 const profiles = ['a', 'b'].map(id => ({ id, name: `Fixture ${id.toUpperCase()}`, baseUrl: `http://127.0.0.1:${id === 'a' ? 19001 : 19002}`, installDir: `fixture/${id}`, pythonPath: 'fixture/python.exe', configPath: `fixture/${id}.json`, managed: true }));
 const configs = Object.fromEntries(profiles.map(profile => [profile.id, { exe: 'fixture/python.exe', cwd: profile.installDir, args: ['--model', `fixture/${profile.id}.gguf`, '--pool-workers', '4'], model_name: profile.name }]));
 const message = { id: 'partial', role: 'assistant', content: '已收到的部分回答', error: 'STREAM_INCOMPLETE', createdAt: Date.now() };
-const store = { settings: { language: 'zh-CN', theme: 'light', pollInterval: 60000, autoCheckUpdates: false, closeToTray: false, skipExitConfirmation: false }, activeProfile: 'a', onboardingOpen: false, conversations: [{ id: 'conversation', profileId: 'a', title: 'Partial answer fixture', messages: [message], createdAt: Date.now(), updatedAt: Date.now() }], activeConversationIds: { a: 'conversation' } };
+const store = { settings: { language: 'zh-CN', theme: 'light', pollInterval: 60000, autoCheckUpdates: false, closeToTray: false, closeToTrayRevision: 1, skipExitConfirmation: false }, activeProfile: 'a', onboardingOpen: false, conversations: [{ id: 'conversation', profileId: 'a', title: 'Partial answer fixture', messages: [message], createdAt: Date.now(), updatedAt: Date.now() }], activeConversationIds: { a: 'conversation' } };
 // Only the floating-settings replay persists its synthetic preferences on reload.
 const floatingSettingsParams = new URLSearchParams(location.search);
 const floatingSettingsKey = floatingSettingsParams.has('floating-settings') ? `strata-floating-settings-fixture-${floatingSettingsParams.get('case') || 'default'}-${floatingSettingsParams.get('replay') || 'default'}` : null;
@@ -116,6 +116,7 @@ window.__TAURI_INTERNALS__ = {
     if (command === 'plugin:event|emit' || command === 'plugin:event|emit_to') { window.__fixture.emitEvent(args.event, args.payload); return; }
     if (command === 'apply_settings') { store.settings = structuredClone(args.settings); window.__fixture.emitEvent('monitor-preferences-changed', store.settings); return; }
     if (command === 'confirm_window_close') return;
+    if (command === 'hide_main_window') return;
     if (command.startsWith('plugin:') || ['apply_settings', 'local_runtime_installation'].includes(command)) return null;
     throw Error(`Unmocked fixture command: ${command}`);
   },

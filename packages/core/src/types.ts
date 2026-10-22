@@ -147,6 +147,8 @@ export interface AppSettings {
   theme: 'dark' | 'light' | 'system';
   closeToTray: boolean;
   skipExitConfirmation?: boolean;
+  /** See CLOSE_TO_TRAY_REVISION: present once closeToTray reflects a real user choice. */
+  closeToTrayRevision?: number;
   pollInterval: number;
   autoCheckUpdates?: boolean;
   floatingMonitor?: FloatingMonitorPreferences;

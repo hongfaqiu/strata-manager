@@ -52,3 +52,4 @@ export * from './community-catalog';
 export * from './community-discovery';
 export * from './model-performance';
 export * as gpuRoles from './gpu-roles';
+export * from './window-close-settings';

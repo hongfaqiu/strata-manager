@@ -14,6 +14,7 @@ const DESKTOP_ONLY: &[&str] = &[
     "monitor_snapshot",
     "show_main_from_monitor",
     "confirm_window_close",
+    "hide_main_window",
     "restart_interface",
     "arena_status",
     "arena_consent",
