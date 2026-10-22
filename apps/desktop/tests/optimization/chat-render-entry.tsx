@@ -38,13 +38,16 @@ const math: ChatMessage[] = [
   ].join('\n') },
 ];
 const page = `<!doctype html>
-<html><head><title>Bouncing balls</title><style>body{margin:0;font:14px system-ui;background:#0f172a;color:#e2e8f0}canvas{display:block}p{position:absolute;top:8px;left:12px;margin:0}</style></head>
+<html><head><title>Bouncing balls</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap"><style>body{margin:0;font:14px Inter,system-ui;background:#0f172a;color:#e2e8f0}canvas{display:block}p{position:absolute;top:8px;left:12px;margin:0}</style></head>
 <body><p id="n"></p><canvas id="c"></canvas><script>
 const c=document.getElementById('c'),x=c.getContext('2d');c.width=920;c.height=480;
 const balls=Array.from({length:14},(_,i)=>({x:40+i*50,y:60+(i%5)*40,r:10+(i%4)*5,h:i*26}));
 for(const b of balls){x.beginPath();x.arc(b.x,b.y+120,b.r,0,7);x.fillStyle='hsl('+b.h+' 80% 60%)';x.fill();}
 const parentAccess=(()=>{try{return String(!!parent.document)}catch(e){return 'blocked'}})();
-fetch('data:,x').then(()=>'allowed',()=>'blocked').then(net=>{document.getElementById('n').textContent='Canvas · '+balls.length+' balls · network: '+net+' · parent access: '+parentAccess;});
+const csp=[];document.addEventListener('securitypolicyviolation',e=>csp.push(e.blockedURI));
+(async()=>{await fetch('https://fonts.googleapis.com/css2?family=Inter').catch(()=>{});await fetch('http://ipc.localhost/plugin').catch(()=>{});await new Promise(r=>setTimeout(r,50));
+const blocked=host=>csp.some(u=>u.includes(host))?'blocked':'allowed';
+document.getElementById('n').textContent='Canvas · '+balls.length+' balls · network: '+blocked('fonts.googleapis.com')+' · ipc: '+blocked('ipc.localhost')+' · parent access: '+parentAccess;})();
 </script></body></html>`;
 const html: ChatMessage[] = [
   { id: 'q2', role: 'user', content: en ? 'Make a small canvas demo page.' : '做一个小的 canvas 演示页面。', createdAt: at },

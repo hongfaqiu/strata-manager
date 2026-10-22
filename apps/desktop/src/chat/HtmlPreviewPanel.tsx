@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { Maximize2, Minimize2, X } from 'lucide-react';
+import { ExternalLink, Maximize2, Minimize2, X } from 'lucide-react';
 import * as core from '@strata-manager/core';
 import { OfficialIcon } from '../OfficialIcon';
 import './chat-render.css';
 import type { HtmlPreviewItem } from './htmlPreviewContext';
-import { clampPreviewWidth, htmlFileName, MAX_PREVIEW_CHARS, PREVIEW_SANDBOX, PREVIEW_SCHEME, PREVIEW_WIDTH, withPreviewPolicy } from './htmlPreview';
+import { clampPreviewWidth, htmlFileName, MAX_PREVIEW_CHARS, PREVIEW_SANDBOX, PREVIEW_SCHEME, PREVIEW_WIDTH, sandboxedTabDocument, withPreviewPolicy } from './htmlPreview';
 
 type Frame = { src?: string; srcDoc?: string } | { error: string };
 
@@ -33,6 +33,15 @@ async function saveHtml(html: string): Promise<string | null> {
   link.href = url; link.download = name; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   return name;
+}
+
+/** Desktop: a cache copy opened by the system browser. Browser mode: a new tab that holds the same sandboxed frame. */
+export async function openInBrowser(html: string): Promise<void> {
+  if (html.length > MAX_PREVIEW_CHARS) throw new Error('HTML > 4 MiB');
+  if (core.isTauri()) { await core.openHtmlPreviewInBrowser(html); return; }
+  const url = URL.createObjectURL(new Blob([sandboxedTabDocument(html)], { type: 'text/html;charset=utf-8' })), link = document.createElement('a');
+  link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 export function readPreviewWidth(): number {
@@ -72,6 +81,7 @@ export function HtmlPreviewPanel({ item, width, available, overlay, onWidthChang
     return () => window.removeEventListener('keydown', onKey);
   }, [full, overlay, onClose]);
   const save = () => { saveHtml(item.code).then(path => { if (path && live.current) onMessage?.(t('htmlPreviewSaved', { path })); }, error => onMessage?.(core.normalizeError(error).message, true)); };
+  const browse = () => { openInBrowser(item.code).catch(error => onMessage?.(core.normalizeError(error).message, true)); };
   const startDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     event.preventDefault();
@@ -91,6 +101,7 @@ export function HtmlPreviewPanel({ item, width, available, overlay, onWidthChang
   const tools = <>
     <button type="button" className="st-btn st-btn--icon" aria-label={t('htmlPreviewReload')} data-tooltip={t('htmlPreviewReload')} onClick={() => setRevision(value => value + 1)}><OfficialIcon name="refresh" size={16}/></button>
     <button type="button" className="st-btn st-btn--icon" aria-label={full ? t('htmlPreviewExitFullscreen') : t('htmlPreviewFullscreen')} data-tooltip={full ? t('htmlPreviewExitFullscreen') : t('htmlPreviewFullscreen')} onClick={() => setFull(value => !value)}>{full ? <Minimize2 size={16}/> : <Maximize2 size={16}/>}</button>
+    <button type="button" className="st-btn st-btn--icon" aria-label={t('htmlPreviewOpenBrowser')} data-tooltip={t('htmlPreviewOpenBrowser')} onClick={browse}><ExternalLink size={16}/></button>
     <button type="button" className="st-btn st-btn--icon" aria-label={t('htmlPreviewSave')} data-tooltip={t('htmlPreviewSave')} onClick={save}><OfficialIcon name="download" size={16}/></button>
   </>;
   const panelWidth = overlay ? undefined : clampPreviewWidth(width, available);

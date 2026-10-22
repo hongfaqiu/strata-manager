@@ -54,11 +54,11 @@ try {
     assert.equal(await frame.getAttribute('sandbox'), 'allow-scripts');
     const note = page.frameLocator('.chat-preview iframe').locator('#n');
     await note.filter({ hasText: 'network' }).waitFor();
-    assert.match(await note.innerText(), /network: blocked · parent access: blocked/);
+    assert.match(await note.innerText(), /network: allowed · ipc: blocked · parent access: blocked/);
     await page.waitForTimeout(1200); // four re-renders later the panel and its page are still there (regression: #114 Preview snapped back to Code)
     assert.equal(await page.locator('.chat-preview').count(), 1);
     assert.equal(await block.getByRole('button', { name: previewLabel }).getAttribute('aria-pressed'), 'true');
-    assert.match(await note.innerText(), /network: blocked/);
+    assert.match(await note.innerText(), /network: allowed/);
     assert.equal(await page.locator('.chat-preview--overlay').count(), 0, 'side by side on a wide window');
     // the chat stays usable next to the panel
     await page.locator('#input').click(); assert.equal(await page.evaluate(() => document.activeElement?.id), 'input');
@@ -70,6 +70,14 @@ try {
     assert.equal(Number(await page.evaluate(() => localStorage.getItem('strata-manager.chat.htmlPreviewWidth'))), Math.round(after));
     await page.mouse.move(5, 5); await page.waitForTimeout(300);
     await page.screenshot({ path: resolve(output, `${lang}-html-panel.png`) });
+    // Open in browser (browser mode): a new tab holding the same sandboxed frame
+    const [tab] = await Promise.all([page.context().waitForEvent('page'), page.getByRole('button', { name: lang === 'en' ? 'Open in browser' : '在浏览器中打开' }).click()]);
+    await tab.locator('iframe').waitFor();
+    assert.equal(await tab.locator('iframe').getAttribute('sandbox'), 'allow-scripts');
+    assert.equal(await tab.title(), 'Bouncing balls');
+    await tab.frameLocator('iframe').locator('#n').filter({ hasText: 'network' }).waitFor();
+    assert.match(await tab.frameLocator('iframe').locator('#n').innerText(), /network: allowed · ipc: blocked · parent access: blocked/);
+    await tab.close();
     // another block replaces the panel's page
     await page.locator('.st-code--html').nth(1).getByRole('button', { name: previewLabel }).click();
     await page.frameLocator('.chat-preview iframe').locator('h1').waitFor();
