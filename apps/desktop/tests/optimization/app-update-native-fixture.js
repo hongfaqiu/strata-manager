@@ -12,7 +12,7 @@
   fixture.copied = [];
   const source = id => id === 'official'
     ? { id, label: 'GitHub', kind: 'official', selectedBy: 'automatic', manifestUrl: 'https://github.com/hongfaqiu/strata-manager/releases/latest/download/latest.json', downloadUrl: 'https://github.com/hongfaqiu/strata-manager/releases/download/v0.2.0/Strata.Manager_0.2.0_x64-setup.exe' }
-    : { id, label: id === 'gh-proxy' ? 'GH Proxy' : 'GHProxy', kind: 'mirror', selectedBy: 'automatic', manifestUrl: `https://${id === 'gh-proxy' ? 'gh-proxy.org' : 'ghproxy.net'}/https://github.com/hongfaqiu/strata-manager/releases/latest/download/latest.json`, downloadUrl: `https://${id === 'gh-proxy' ? 'gh-proxy.org' : 'ghproxy.net'}/https://github.com/hongfaqiu/strata-manager/releases/download/v0.2.0/Strata.Manager_0.2.0_x64-setup.exe` };
+    : { id, label: id === 'gh-proxy' ? 'gh-proxy.org' : 'ghproxy.net', kind: 'mirror', selectedBy: 'automatic', manifestUrl: `https://${id === 'gh-proxy' ? 'gh-proxy.org' : 'ghproxy.net'}/https://github.com/hongfaqiu/strata-manager/releases/latest/download/latest.json`, downloadUrl: `https://${id === 'gh-proxy' ? 'gh-proxy.org' : 'ghproxy.net'}/https://github.com/hongfaqiu/strata-manager/releases/download/v0.2.0/Strata.Manager_0.2.0_x64-setup.exe` };
   // Clipboard writes stay inside the fixture rather than changing the host clipboard.
   const clipboard = navigator.clipboard || {};
   Object.defineProperty(clipboard, 'writeText', { configurable: true, value: async value => { fixture.copied.push(value); } });

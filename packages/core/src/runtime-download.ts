@@ -4,10 +4,13 @@ import type { RuntimeDownloadPreferences, RuntimeReleaseAsset, RuntimeUpdateInfo
 const storeKey = 'runtimeDownloadPreferences';
 const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
 
-/** Third-party GitHub release proxies; the official source remains the default. */
+/**
+ * Third-party GitHub release proxies; the official source remains the default.
+ * Labels are the proxy hostnames so the two similarly named services stay distinguishable (#126).
+ */
 export const runtimeDownloadSources = [
-  { id: 'gh-proxy', label: 'GH Proxy', urlTemplate: 'https://gh-proxy.org/{url}' },
-  { id: 'ghproxy', label: 'GHProxy', urlTemplate: 'https://ghproxy.net/{url}' },
+  { id: 'gh-proxy', label: 'gh-proxy.org', urlTemplate: 'https://gh-proxy.org/{url}' },
+  { id: 'ghproxy', label: 'ghproxy.net', urlTemplate: 'https://ghproxy.net/{url}' },
 ] as const;
 
 function normalize(value: unknown): RuntimeDownloadPreferences {

@@ -26,7 +26,7 @@ try {
   };
   const chooseSource = async (scope, zh, source, dialog = false) => {
     const name = dialog ? zh ? '引擎 ZIP 下载方式' : 'Engine ZIP source' : zh ? '下载方式' : 'Download source';
-    const label = source === 'official' ? zh ? '官方自动下载' : 'Official download' : source === 'local' ? zh ? '本地已下载 ZIP' : 'Downloaded ZIP' : source === 'gh-proxy' ? 'GH Proxy' : source === 'ghproxy' ? 'GHProxy' : zh ? '自定义 HTTPS' : 'Custom HTTPS';
+    const label = source === 'official' ? zh ? '官方自动下载' : 'Official download' : source === 'local' ? zh ? '本地已下载 ZIP' : 'Downloaded ZIP' : source === 'gh-proxy' ? 'gh-proxy.org' : source === 'ghproxy' ? 'ghproxy.net' : zh ? '自定义 HTTPS' : 'Custom HTTPS';
     await scope.getByRole('combobox', { name, exact: true }).click();
     await page.getByRole('option', { name: label, exact: true }).click();
   };
@@ -239,7 +239,7 @@ try {
       await page.reload();
       await page.getByRole('button', { name: zh ? '更新至 0.1.43' : 'Update to 0.1.43' }).click();
       const dialog = page.getByRole('dialog');
-      assert.match(await dialog.getByRole('combobox', { name: zh ? '引擎 ZIP 下载方式' : 'Engine ZIP source' }).innerText(), source === 'ghproxy' ? /GHProxy/ : /GH Proxy/);
+      assert.match(await dialog.getByRole('combobox', { name: zh ? '引擎 ZIP 下载方式' : 'Engine ZIP source' }).innerText(), source === 'ghproxy' ? /ghproxy\.net/ : /gh-proxy\.org/);
       await dialog.getByText(zh ? '自动匹配 · CUDA12' : 'Auto matched · CUDA12', { exact: true }).waitFor();
       assert.equal(await page.evaluate(() => window.__fixture.calls.some(call => /update_runtime_zip|stop_service|start_service/.test(call.command))), false);
       results.push({ language, mode: `preset-${source}`, autoMatchedEngine: 'cuda12', preferenceKeepsAutomaticPackage: true });

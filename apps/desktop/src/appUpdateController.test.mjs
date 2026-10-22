@@ -8,7 +8,7 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 const tick = () => new Promise(resolve => setImmediate(resolve));
-const source = (id, label = id === 'official' ? 'GitHub' : id === 'gh-proxy' ? 'GH Proxy' : 'GHProxy', selectedBy = 'automatic', kind = id === 'official' ? 'official' : 'mirror') => ({
+const source = (id, label = id === 'official' ? 'GitHub' : id === 'gh-proxy' ? 'gh-proxy.org' : 'ghproxy.net', selectedBy = 'automatic', kind = id === 'official' ? 'official' : 'mirror') => ({
   id, label, kind, selectedBy,
   manifestUrl: id === 'official'
     ? 'https://github.com/hongfaqiu/strata-manager/releases/latest/download/latest.json'
@@ -69,7 +69,7 @@ test('source summaries keep the chosen host and fallback order in both languages
   const chosen = source('ghproxy');
   const official = source('official', 'GitHub', 'fallback', 'official');
   assert.deepEqual(appUpdateSourceSummary(chosen, [official], true), {
-    source: '更新来源: 自动选择 · GHProxy',
+    source: '更新来源: 自动选择 · ghproxy.net',
     fallback: '失败时依次回退: 官方 GitHub',
   });
   assert.deepEqual(appUpdateSourceSummary({ ...official, selectedBy: 'fallback' }, [], false), {
