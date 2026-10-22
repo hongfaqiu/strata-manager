@@ -191,7 +191,7 @@ jobs:
       fail-fast: false
       matrix:
         # Five shards per platform; scripts/ci-linux-native-tests.mjs balances them by
-        # measured module time and splits slow modules (tuning::restart::tests).
+        # measured per-test time (scripts/native-test-timings.json) and splits slow modules.
         # release-from-ci.mjs NATIVE_SHARDS must match.
         shard: [0, 1, 2, 3, 4]
     runs-on: windows-latest
@@ -263,7 +263,7 @@ jobs:
       fail-fast: false
       matrix:
         # Five shards per platform; scripts/ci-linux-native-tests.mjs balances them by
-        # measured module time and splits slow modules (tuning::restart::tests).
+        # measured per-test time (scripts/native-test-timings.json) and splits slow modules.
         # release-from-ci.mjs NATIVE_SHARDS must match.
         shard: [0, 1, 2, 3, 4]
     runs-on: ubuntu-22.04
