@@ -61,6 +61,19 @@ export function appUpdateSourceSummary(source: AppUpdateSourceInfo | undefined, 
     ...(fallbackChain?.length ? { fallback: `${zh ? '失败时依次回退' : 'Fallback order on failure'}: ${fallbackChain.map(item => appUpdateSourceLabel(item, zh)).filter(Boolean).join(' -> ')}` } : {}),
   };
 }
+/** Title-bar badge for an update the user can reopen, including one running with its dialog closed. */
+export function appUpdateBadge(state: AppUpdateState, zh: boolean): { badge: string; label: string; active: boolean } | null {
+  if (!state.version || ['idle', 'current', 'installed'].includes(state.phase)) return null;
+  const version = `v${state.version}`;
+  if (state.phase === 'downloading') {
+    const percent = state.total ? Math.min(100, Math.floor(state.received / state.total * 100)) : undefined;
+    const amount = percent === undefined ? '' : ` ${percent}%`;
+    return { active: true, badge: zh ? `下载中${amount}` : `Downloading${amount}`, label: zh ? `正在后台下载更新 ${version}${amount}，查看进度` : `Downloading update ${version} in the background${amount}, view progress` };
+  }
+  if (state.phase === 'installing') return { active: true, badge: zh ? '安装中' : 'Installing', label: zh ? `正在安装更新 ${version}，查看进度` : `Installing update ${version}, view progress` };
+  if (state.phase === 'downloaded') return { active: false, badge: zh ? '待安装' : 'Ready', label: zh ? `更新 ${version} 已下载，查看并安装` : `Update ${version} downloaded, review and install` };
+  return { active: false, badge: zh ? '有更新' : 'Update', label: zh ? `有新版本 ${version}，查看更新` : `Update ${version} available, review update` };
+}
 interface Options { desktop: boolean; enabled: boolean; ready: boolean; idle?: boolean }
 
 // Keep one native operation in flight; close its resources only after it settles.

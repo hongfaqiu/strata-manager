@@ -408,7 +408,9 @@ async fn prepare_app_update(state: State<'_, ClientState>) -> Result<Value, Stri
     }
     state
         .ipc
-        .request("prepare_app_update", json!({}))
+        // The supervisor and engine run outside the installation directory and
+        // survive the UI restart, so the UI update never drains or stops them.
+        .request("prepare_app_update", json!({"keepServices": true}))
         .await
         .map_err(|e| e.to_string())
 }

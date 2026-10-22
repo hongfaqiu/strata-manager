@@ -23,7 +23,9 @@ export function AppUpdateDialog({ language, state, idle = true, onConfirm, onClo
   const version = state.version;
   const notes = localizedReleaseNotes(state.notes, language) ?? releaseNotes(state.notes);
   const busy = ['checking', 'downloading', 'installing'].includes(state.phase);
-  const close = () => { if (!busy) onClose(); };
+  // Closing only hides the dialog. The controller keeps the confirmed
+  // download/installation running and the title bar badge reopens it.
+  const close = () => onClose();
   const bytes = (value: number) => `${(value / 1024 ** 2).toFixed(1)} MiB`;
   const progress = (state.total ? text.downloadBytes : text.downloadBytesUnknown).replace('{{received}}', bytes(state.received)).replace('{{total}}', bytes(state.total ?? 0));
   const errorText = state.errorStage === 'download' ? text.updateDownloadFailed : state.errorStage === 'install' ? text.updateInstallFailed : text.updateCheckFailed;
@@ -39,8 +41,9 @@ export function AppUpdateDialog({ language, state, idle = true, onConfirm, onClo
       {fallbackSummary && <p className="app-update-confirm-hint">{fallbackSummary}</p>}
       {!idle && !busy && <p className="notice" role="status">{text.updateWaitForIdle}</p>}
       {state.error && <div className="notice error" role="alert"><span>{errorText}<details><summary>{text.updateErrorDetails}</summary>{state.error}</details></span></div>}
+      {busy && state.phase !== 'checking' && <p className="app-update-confirm-hint">{text.updateBackgroundHint}</p>}
       {busy && <div className="app-update-progress" role="status" aria-live="polite"><LoaderCircle size={16} className="spin"/><span>{state.phase === 'downloading' ? `${text.downloadingAppUpdate} · ${progress}` : state.phase === 'installing' ? text.installingAppUpdate : text.checkingUpdates}</span></div>}
-      <div className="dialog-footer"><button type="button" disabled={busy} onClick={close}>{text.updateLater}</button><button type="button" className="primary" disabled={busy || !idle} onClick={() => void onConfirm(version)}>{busy ? <LoaderCircle size={15} className="spin"/> : <Download size={15}/>} {state.downloaded ? text.installAppUpdate : text.confirmAppUpdate}</button></div>
+      <div className="dialog-footer"><button type="button" onClick={close}>{busy ? text.updateContinueInBackground : text.updateLater}</button><button type="button" className="primary" disabled={busy || !idle} onClick={() => void onConfirm(version)}>{busy ? <LoaderCircle size={15} className="spin"/> : <Download size={15}/>} {state.downloaded ? text.installAppUpdate : text.confirmAppUpdate}</button></div>
     </div>
   </Dialog>;
 }
