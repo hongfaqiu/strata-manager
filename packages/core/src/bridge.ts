@@ -436,6 +436,8 @@ export const savePng = (path: string, bytes: number[]): Promise<string> => nativ
 export const registerHtmlPreview = (html: string): Promise<string> => native('register_html_preview', { html });
 /** Desktop only: write a previewed HTML document to a path chosen in the save dialog. */
 export const saveHtmlPreview = (path: string, html: string): Promise<string> => native('write_html_preview', { path, html });
+/** Desktop only: write a copy of a previewed HTML document to the app cache and open it in the default browser. Returns the file path. */
+export const openHtmlPreviewInBrowser = (html: string): Promise<string> => native('open_html_preview_in_browser', { html });
 export const discoverLocal = (directories?: string[]): Promise<LocalCandidate[]> => native('discover_local', { ...(directories ? { directories } : {}) });
 export const connectRunningService = (candidate: LocalCandidate): Promise<{ profileId: string; restarting: boolean }> => native('connect_running_service', { candidate });
 export const importLocal = (candidate: LocalCandidate): Promise<ServiceProfile> => native('import_local', { candidate });

@@ -64,17 +64,25 @@ test('the message view draws math and keeps money as text (server render)', asyn
   assert.match(view('Radius $r = 2$ here'), /st-math st-math--source">\$r = 2\$/);
   assert.match(view('$$\nx = 1\n$$'), /st-math-block/);
   assert.ok(!view('costs $5 and $10').includes('st-math'));
-  // a ```html block opens as code; while streaming the preview cannot be chosen, and no frame is ever rendered on the server
-  const page = view('```html\n<p>hi</p><script>alert(1)</script>\n```');
-  assert.match(page, /st-code--html/); assert.ok(!page.includes('<iframe')); assert.ok(!page.includes('<script>'));
-  assert.match(view('```html\n<p>hi</p>', true), /aria-checked="false"[^>]*disabled/);
+  // a ```html block starts collapsed to its header; nothing runs on the server, and Preview waits for the finished answer
+  const page = view('```html\n<title>Demo page</title>\n<p>hi</p><script>alert(1)</script>\n```');
+  assert.match(page, /st-code--html" data-expanded="false"/); assert.match(page, /aria-expanded="false"/);
+  assert.match(page, /<pre id="[^"]+" hidden="">/); assert.match(page, /Demo page/); assert.match(page, /2 lines/);
+  assert.ok(!page.includes('<iframe')); assert.ok(!page.includes('<script>'));
+  const { HtmlPreviewContext } = await server.ssrLoadModule('/src/chat/htmlPreviewContext.ts');
+  const hosted = (content, streaming, activeId) => renderToStaticMarkup(React.createElement(HtmlPreviewContext.Provider, { value: { activeId, open: () => {} } }, React.createElement(ChatMessageView, { message: { id: 'm', role: 'assistant', content, createdAt: 0 }, language: 'en', showReasoning: false, streaming, stateLabel: s => s, onCopy: () => {} })));
+  assert.match(hosted('```html\n<p>hi</p>', true), /class="st-code__preview" aria-pressed="false" disabled=""/);
+  assert.match(hosted('```html\n<p>hi</p>\n```', false, 'm:0'), /class="st-code__preview" aria-pressed="true">/);
+  assert.ok(!page.includes('st-code__preview'), 'no Preview button without the chat page hosting the panel');
 });
 
-test('the preview policy forbids the network and parent access, and matches the native scheme', async () => {
-  const { PREVIEW_CSP, PREVIEW_SANDBOX, withPreviewPolicy, htmlFileName, isHtmlLanguage } = html;
+test('the preview policy allows https/wss but not http, ipc or the parent, and matches the native scheme', async () => {
+  const { PREVIEW_CSP, PREVIEW_SANDBOX, withPreviewPolicy, htmlFileName, isHtmlLanguage, sandboxedTabDocument } = html;
   assert.equal(PREVIEW_SANDBOX, 'allow-scripts');
-  for (const directive of ["default-src 'none'", "connect-src 'none'", "form-action 'none'", "frame-src 'none'", "base-uri 'none'"]) assert.ok(PREVIEW_CSP.includes(directive), directive);
-  assert.ok(!/https?:|ipc:|'self'|\*/.test(PREVIEW_CSP));
+  for (const directive of ["default-src 'none'", 'connect-src https: wss: data: blob:', 'script-src \'unsafe-inline\' \'unsafe-eval\' https:', 'font-src https: data:', "form-action 'none'", "frame-src 'none'", "base-uri 'none'"]) assert.ok(PREVIEW_CSP.includes(directive), directive);
+  const sources = PREVIEW_CSP.split(/[; ]+/);
+  for (const banned of ['http:', 'ws:', 'ipc:', '*', "'self'"]) assert.ok(!sources.includes(banned), banned);
+  assert.ok(!/localhost|allow-same-origin|allow-popups|allow-top-navigation/.test(PREVIEW_CSP + PREVIEW_SANDBOX));
   const native = await readFile(new URL('../../src-tauri/src/html_preview.rs', import.meta.url), 'utf8');
   assert.ok(native.includes(`"${PREVIEW_CSP}; sandbox allow-scripts"`), 'native CSP = PREVIEW_CSP + sandbox');
   const conf = JSON.parse(await readFile(new URL('../../src-tauri/tauri.conf.json', import.meta.url), 'utf8'));
@@ -85,4 +93,50 @@ test('the preview policy forbids the network and parent access, and matches the 
   assert.equal(htmlFileName('<title>My: page / 1</title>'), 'My page 1.html');
   assert.equal(htmlFileName('<p>none</p>'), 'preview.html');
   assert.ok(isHtmlLanguage('HTML') && isHtmlLanguage('htm') && !isHtmlLanguage('xml'));
+  // browser-mode "Open in browser": the tab is only a sandboxed frame; the page itself never runs in the tab's (app) origin
+  const tab = sandboxedTabDocument('<title>A "b" & c</title><script>alert("x")</script>');
+  assert.match(tab, /<iframe sandbox="allow-scripts" referrerpolicy="no-referrer" srcdoc="&lt;meta http-equiv=&quot;Content-Security-Policy&quot;/);
+  assert.ok(!tab.includes('<script') && !tab.includes('allow-same-origin') && !tab.includes('Content-Security-Policy" content'));
+  assert.match(tab, /<title>A "b" &amp; c<\/title>/);
+});
+
+test('desktop "Open in browser" goes through one native command that writes to the app cache and uses the opener', async () => {
+  const lib = await readFile(new URL('../../src-tauri/src/lib.rs', import.meta.url), 'utf8');
+  const command = lib.slice(lib.indexOf('async fn open_html_preview_in_browser'), lib.indexOf('async fn list_local_models'));
+  assert.match(command, /app_cache_dir\(\)/); assert.match(command, /join\("html-previews"\)/);
+  assert.match(command, /html_preview::write_browser_copy/); assert.match(command, /\.opener\(\)\s*\.open_path\(/);
+  assert.match(lib, /write_html_preview,\s*open_html_preview_in_browser,/, 'registered in the invoke handler');
+  const bridge = await readFile(new URL('../../../../packages/core/src/bridge.ts', import.meta.url), 'utf8');
+  assert.match(bridge, /openHtmlPreviewInBrowser = \(html: string\): Promise<string> => native\('open_html_preview_in_browser', \{ html \}\)/);
+  // the frontend gets no new opener permissions (the command runs in Rust), and the preview origin gets no capability at all
+  const caps = await readFile(new URL('../../src-tauri/capabilities/default.json', import.meta.url), 'utf8');
+  assert.ok(!caps.includes('remote') && !caps.includes('strata-preview'));
+});
+
+
+// Regression (#114 follow-up): Preview snapped back to Code. ChatMessageView passed `components={{pre:()=>…}}` to ReactMarkdown, a new
+// component type on every render, and App's `notify` was a new function each render, so every metric poll remounted each code
+// block and reset its state. The element types must be module-level and the callbacks stable.
+test('code blocks keep their state across re-renders (stable Markdown components, stable callbacks)', async () => {
+  const view = await server.ssrLoadModule('/src/ChatMessageView.tsx');
+  const again = await server.ssrLoadModule('/src/ChatMessageView.tsx');
+  assert.equal(typeof view.chatMarkdownComponents.pre, 'function');
+  assert.equal(view.chatMarkdownComponents, again.chatMarkdownComponents);
+  const source = await readFile(new URL('../ChatMessageView.tsx', import.meta.url), 'utf8');
+  assert.ok(!/components=\{\{/.test(source), 'no inline components object for ReactMarkdown');
+  assert.match(source, /components=\{chatMarkdownComponents\}/);
+  const app = await readFile(new URL('../App.tsx', import.meta.url), 'utf8');
+  assert.match(app, /const notify = useCallback\(/, 'the chat onMessage callback is stable');
+  assert.match(app, /const copy = useCallback\(/, 'the chat onCopy callback is stable');
+});
+
+test('preview panel width stays between its minimum and a usable chat', () => {
+  const { clampPreviewWidth, PREVIEW_WIDTH, htmlTitle, lineCount } = html;
+  assert.equal(clampPreviewWidth(100, 1400), PREVIEW_WIDTH.min);
+  assert.equal(clampPreviewWidth(5000, 1400), 1400 - PREVIEW_WIDTH.chatMin);
+  assert.equal(clampPreviewWidth(600, 1400), 600);
+  assert.equal(clampPreviewWidth(Number.NaN, 1400), PREVIEW_WIDTH.fallback);
+  assert.equal(clampPreviewWidth(600, 500), PREVIEW_WIDTH.min);
+  assert.equal(htmlTitle('<title> My\n page </title>'), 'My page'); assert.equal(htmlTitle('<p>x</p>'), '');
+  assert.equal(lineCount('a\nb\nc'), 3); assert.equal(lineCount(''), 0);
 });

@@ -1476,6 +1476,29 @@ async fn write_html_preview(path: String, html: String) -> Result<String, String
     .map_err(|error| format!("HTML 保存任务失败 / HTML save task failed: {error}"))?
 }
 
+/// "Open in browser" for an HTML preview: a fresh copy in the app cache, opened by the system default browser
+/// (the same opener plugin the app uses for links, called from Rust so the frontend needs no path scope).
+#[tauri::command]
+async fn open_html_preview_in_browser(
+    app: tauri::AppHandle,
+    html: String,
+) -> Result<String, String> {
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| format!("找不到缓存目录 / Cache folder unavailable: {error}"))?
+        .join("html-previews");
+    let path =
+        tauri::async_runtime::spawn_blocking(move || html_preview::write_browser_copy(&dir, &html))
+            .await
+            .map_err(|error| format!("HTML 写入任务失败 / HTML write task failed: {error}"))??;
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_path(path.to_string_lossy(), None::<&str>)
+        .map_err(|error| format!("无法打开浏览器 / Could not open the browser: {error}"))?;
+    Ok(path.display().to_string())
+}
+
 #[tauri::command]
 async fn list_local_models(
     state: State<'_, ClientState>,
@@ -2251,6 +2274,7 @@ pub fn run() {
             write_png_export,
             register_html_preview,
             write_html_preview,
+            open_html_preview_in_browser,
             list_local_models,
             export_diagnostics,
             support_diagnostics_text,

@@ -232,7 +232,7 @@ export function App() {
     if (/fetch|network|connect|offline/i.test(raw)) return `${t('connectionHint')} (${raw})`;
     return raw;
   };
-  const notify = (text: string, error = false) => setToast({ text, error });
+  const notify = useCallback((text: string, error = false) => setToast({ text, error }), []);
   const copy = useCallback(async (content: string) => { try { await navigator.clipboard.writeText(content); setToast({ text: t('copied') }); return true; } catch { setToast({ text: t('clipboardUnavailable'), error: true }); return false; } }, [t]);
   const reportStoreError = useCallback((error: unknown) => {
     if (Date.now() - storeErrorTime.current < 5000) return;
