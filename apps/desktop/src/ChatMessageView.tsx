@@ -1,5 +1,5 @@
 import type { AppLanguage } from "@strata-manager/core";
-import { Children, isValidElement, memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Children, createContext, isValidElement, memo, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -15,19 +15,35 @@ import { prepareMathMarkdown } from './chat/chatMath';
 import { isHtmlLanguage } from './chat/htmlPreview';
 
 type Copy=(value:string)=>void|Promise<boolean|void>;type Notify=(text:string,error?:boolean)=>void;
-function CodeBlock({ children, onCopy, onMessage, streaming }: {children?:ReactNode;onCopy:Copy;onMessage?:Notify;streaming:boolean}) {
-  const {t}=useTranslation(); const child=Children.toArray(children)[0]; const props=isValidElement<{children?:ReactNode;className?:string}>(child)?child.props:{};
-  const text=String(props.children??'').replace(/\n$/,''); const classes=props.className??'';
+/**
+ * What code blocks need from their message. It travels by context so the Markdown `components` below can be one module-level
+ * object: an inline components object (pre: () => …) is a new component type on every render, and React then remounts every code
+ * block (an HTML block lost its Preview choice each time the app re-rendered, e.g. on a metrics poll).
+ */
+interface BlockContext{messageId:string;base:number;streaming:boolean;onCopy:Copy;onMessage?:Notify}
+const MessageBlocks=createContext<BlockContext|null>(null);
+type MdNode={position?:{start?:{offset?:number}}};
+function CodeBlock({ children, node }: {children?:ReactNode;node?:MdNode}) {
+  const {t}=useTranslation(); const block=useContext(MessageBlocks); const child=Children.toArray(children)[0]; const props=isValidElement<{children?:ReactNode;className?:string}>(child)?child.props:{};
+  const text=String(props.children??'').replace(/\n$/,''); const classes=props.className??''; const onCopy=block?.onCopy??(()=>{});
   if(/\bmath-display\b/.test(classes))return <div className="st-math-block"><MathView tex={text} block/></div>;
   const language=classes.replace(/^language-/,'');
-  if(isHtmlLanguage(language))return <HtmlCodeBlock code={text} language={language} streaming={streaming} onCopy={onCopy} onMessage={onMessage}>{children}</HtmlCodeBlock>;
+  if(isHtmlLanguage(language))return <HtmlCodeBlock id={`${block?.messageId??''}:${(block?.base??0)+(node?.position?.start?.offset??0)}`} code={text} language={language} streaming={block?.streaming??false} onCopy={onCopy}>{children}</HtmlCodeBlock>;
   return <div className="st-code"><div className="st-code__head"><span>{language}</span><OfficialCopyButton value={text} onCopy={onCopy} label={t('copyCode')}/></div><pre>{children}</pre></div>;
 }
 const remarkPlugins:NonNullable<MarkdownOptions['remarkPlugins']>=[remarkGfm,[remarkMath,{singleDollarTextMath:false}]];
+/** Module-level on purpose (see BlockContext): the element types must stay the same across renders. */
+export const chatMarkdownComponents:NonNullable<MarkdownOptions['components']>={
+  pre:({node,children})=><CodeBlock node={node as MdNode|undefined}>{children}</CodeBlock>,
+  code:({node:_node,title,className,children,...props})=>/\bmath-inline\b/.test(className??'')?<MathView tex={String(children??'')}/>:<code className={className??'inline'} {...props} data-tooltip={title}>{children}</code>,
+  a:({node:_node,title,...props})=><a {...props} data-tooltip={title}/>,
+  img:({node:_node,title,...props})=><img {...props} data-tooltip={title}/>,
+};
 /** Math is found by chat/chatMath.ts (money and code stay text) and drawn by KaTeX, loaded only when an answer has a formula. */
-const Markdown = memo(function Markdown({text,streaming,onCopy,onMessage}:{text:string;streaming:boolean;onCopy:Copy;onMessage?:Notify}) {
+const Markdown = memo(function Markdown({text,messageId,base,streaming,onCopy,onMessage}:{text:string;messageId:string;base:number;streaming:boolean;onCopy:Copy;onMessage?:Notify}) {
   const source=useMemo(()=>prepareMathMarkdown(text),[text]);
-  return <ReactMarkdown remarkPlugins={remarkPlugins} components={{pre:({children})=><CodeBlock onCopy={onCopy} onMessage={onMessage} streaming={streaming}>{children}</CodeBlock>,code:({node:_node,title,className,children,...props})=>/\bmath-inline\b/.test(className??'')?<MathView tex={String(children??'')}/>:<code className={className??'inline'} {...props} data-tooltip={title}>{children}</code>,a:({node:_node,title,...props})=><a {...props} data-tooltip={title}/>,img:({node:_node,title,...props})=><img {...props} data-tooltip={title}/>}}>{source}</ReactMarkdown>;
+  const block=useMemo<BlockContext>(()=>({messageId,base,streaming,onCopy,onMessage}),[messageId,base,streaming,onCopy,onMessage]);
+  return <MessageBlocks.Provider value={block}><ReactMarkdown remarkPlugins={remarkPlugins} components={chatMarkdownComponents}>{source}</ReactMarkdown></MessageBlocks.Provider>;
 });
 function ToolCall({tool,language,stateLabel}:{tool:ToolEvent;language:string;stateLabel:(state:string)=>string}) {
   const {t}=useTranslation(); const [open,setOpen]=useState(false); const raw=tool.raw??{}; const state=tool.status; const args=tool.arguments==null?'':JSON.stringify(tool.arguments,null,2); const preview=tool.result??args.replace(/\s+/g,' ');
@@ -43,7 +59,7 @@ export const ChatMessageView = memo(function ChatMessageView({message,language,s
   const ran=message.tools?.filter(tool=>['done','error','completed'].includes(tool.status)).length??0;
   const limit=message.tools?.find(tool=>tool.status==='limit');
   const meta=streaming?'':[n?`${t('tokenCount',{count:n})}${!message.execution&&elapsed!=null&&elapsed>0.25?` · ${fmt(n/elapsed)} tok/s`:''}`:'',message.stopped?t('stopped'):'',ran?t('toolCallCount',{count:ran}):'',limit?t('toolRoundLimit',{count:limit.raw?.max_rounds??'—'}):''].filter(Boolean).join(' · ');
-  const answer:ReactNode[]=[];let position=0;(message.tools??[]).filter(tool=>tool.status!=='limit').forEach((tool,index)=>{const at=Math.min(Math.max(tool.at??0,position),message.content.length);if(at>position)answer.push(<Markdown key={`text-${index}`} text={message.content.slice(position,at)} streaming={streaming} onCopy={onCopy} onMessage={onMessage}/>);answer.push(<ToolCall key={tool.id??index} tool={tool} language={language} stateLabel={stateLabel}/>);position=at;});if(position<message.content.length)answer.push(<Markdown key="tail" text={message.content.slice(position)} streaming={streaming} onCopy={onCopy} onMessage={onMessage}/>);
+  const answer:ReactNode[]=[];let position=0;(message.tools??[]).filter(tool=>tool.status!=='limit').forEach((tool,index)=>{const at=Math.min(Math.max(tool.at??0,position),message.content.length);if(at>position)answer.push(<Markdown key={`text-${index}`} text={message.content.slice(position,at)} messageId={message.id} base={position} streaming={streaming} onCopy={onCopy} onMessage={onMessage}/>);answer.push(<ToolCall key={tool.id??index} tool={tool} language={language} stateLabel={stateLabel}/>);position=at;});if(position<message.content.length)answer.push(<Markdown key="tail" text={message.content.slice(position)} messageId={message.id} base={position} streaming={streaming} onCopy={onCopy} onMessage={onMessage}/>);
   if(message.role==='user')return <div className="st-msg st-msg--user">{!!message.attachments?.length&&<div className="msg-images">{message.attachments.map(file=>file.type==='image'?<img src={file.content} alt={file.name} key={file.id}/>:<span className="chip" key={file.id}><OfficialIcon name="attach" size={16}/>{file.name}</span>)}</div>}<div className="st-bubble">{message.content}</div><div className="st-msg__meta">{t('you')} · {new Date(message.createdAt).toLocaleTimeString(language,{hour:'2-digit',minute:'2-digit'})}</div></div>;
   return <div className="st-msg st-msg--assistant">{message.execution&&<ChatExecutionStatus execution={message.execution} streaming={streaming} language={language}/>}<details ref={reasoning} className="st-collapse think" hidden={!message.reasoning}><summary onClick={()=>{touched.current=true;}}><OfficialIcon name="thinking" size={16}/><span className="think-title">{thinkingNow?t('thinkingNow'):message.reasoningMs!=null?t('thoughtFor',{seconds:fmt(message.reasoningMs/1000)}):t('thoughts')}</span><OfficialIcon name="chevron" size={16} className="st-chev"/></summary><div className="st-collapse__body thinking">{message.reasoning}</div></details><div className={`st-bubble ${streaming&&!!message.content?'cursor':''}`}>{message.error && <div className="msg-error" role="alert">{message.stopped?t('stopped'):message.error}</div>}{!message.content&&streaming&&!message.tools?.length?message.reasoning?<span className="muted cursor">{t('writingAnswer')}</span>:<span className="cursor"/>:<>{answer}</>}</div><div className="st-msg__meta"><span className="meta-text">{meta}</span><OfficialCopyButton value={message.content} onCopy={onCopy} label={t('copyAnswer')} hidden={streaming||!message.content} size={16}/></div></div>;
 });

@@ -64,10 +64,16 @@ test('the message view draws math and keeps money as text (server render)', asyn
   assert.match(view('Radius $r = 2$ here'), /st-math st-math--source">\$r = 2\$/);
   assert.match(view('$$\nx = 1\n$$'), /st-math-block/);
   assert.ok(!view('costs $5 and $10').includes('st-math'));
-  // a ```html block opens as code; while streaming the preview cannot be chosen, and no frame is ever rendered on the server
-  const page = view('```html\n<p>hi</p><script>alert(1)</script>\n```');
-  assert.match(page, /st-code--html/); assert.ok(!page.includes('<iframe')); assert.ok(!page.includes('<script>'));
-  assert.match(view('```html\n<p>hi</p>', true), /aria-checked="false"[^>]*disabled/);
+  // a ```html block starts collapsed to its header; nothing runs on the server, and Preview waits for the finished answer
+  const page = view('```html\n<title>Demo page</title>\n<p>hi</p><script>alert(1)</script>\n```');
+  assert.match(page, /st-code--html" data-expanded="false"/); assert.match(page, /aria-expanded="false"/);
+  assert.match(page, /<pre id="[^"]+" hidden="">/); assert.match(page, /Demo page/); assert.match(page, /2 lines/);
+  assert.ok(!page.includes('<iframe')); assert.ok(!page.includes('<script>'));
+  const { HtmlPreviewContext } = await server.ssrLoadModule('/src/chat/htmlPreviewContext.ts');
+  const hosted = (content, streaming, activeId) => renderToStaticMarkup(React.createElement(HtmlPreviewContext.Provider, { value: { activeId, open: () => {} } }, React.createElement(ChatMessageView, { message: { id: 'm', role: 'assistant', content, createdAt: 0 }, language: 'en', showReasoning: false, streaming, stateLabel: s => s, onCopy: () => {} })));
+  assert.match(hosted('```html\n<p>hi</p>', true), /class="st-code__preview" aria-pressed="false" disabled=""/);
+  assert.match(hosted('```html\n<p>hi</p>\n```', false, 'm:0'), /class="st-code__preview" aria-pressed="true">/);
+  assert.ok(!page.includes('st-code__preview'), 'no Preview button without the chat page hosting the panel');
 });
 
 test('the preview policy forbids the network and parent access, and matches the native scheme', async () => {
@@ -85,4 +91,31 @@ test('the preview policy forbids the network and parent access, and matches the 
   assert.equal(htmlFileName('<title>My: page / 1</title>'), 'My page 1.html');
   assert.equal(htmlFileName('<p>none</p>'), 'preview.html');
   assert.ok(isHtmlLanguage('HTML') && isHtmlLanguage('htm') && !isHtmlLanguage('xml'));
+});
+
+// Regression (#114 follow-up): Preview snapped back to Code. ChatMessageView passed `components={{pre:()=>…}}` to ReactMarkdown, a new
+// component type on every render, and App's `notify` was a new function each render, so every metric poll remounted each code
+// block and reset its state. The element types must be module-level and the callbacks stable.
+test('code blocks keep their state across re-renders (stable Markdown components, stable callbacks)', async () => {
+  const view = await server.ssrLoadModule('/src/ChatMessageView.tsx');
+  const again = await server.ssrLoadModule('/src/ChatMessageView.tsx');
+  assert.equal(typeof view.chatMarkdownComponents.pre, 'function');
+  assert.equal(view.chatMarkdownComponents, again.chatMarkdownComponents);
+  const source = await readFile(new URL('../ChatMessageView.tsx', import.meta.url), 'utf8');
+  assert.ok(!/components=\{\{/.test(source), 'no inline components object for ReactMarkdown');
+  assert.match(source, /components=\{chatMarkdownComponents\}/);
+  const app = await readFile(new URL('../App.tsx', import.meta.url), 'utf8');
+  assert.match(app, /const notify = useCallback\(/, 'the chat onMessage callback is stable');
+  assert.match(app, /const copy = useCallback\(/, 'the chat onCopy callback is stable');
+});
+
+test('preview panel width stays between its minimum and a usable chat', () => {
+  const { clampPreviewWidth, PREVIEW_WIDTH, htmlTitle, lineCount } = html;
+  assert.equal(clampPreviewWidth(100, 1400), PREVIEW_WIDTH.min);
+  assert.equal(clampPreviewWidth(5000, 1400), 1400 - PREVIEW_WIDTH.chatMin);
+  assert.equal(clampPreviewWidth(600, 1400), 600);
+  assert.equal(clampPreviewWidth(Number.NaN, 1400), PREVIEW_WIDTH.fallback);
+  assert.equal(clampPreviewWidth(600, 500), PREVIEW_WIDTH.min);
+  assert.equal(htmlTitle('<title> My\n page </title>'), 'My page'); assert.equal(htmlTitle('<p>x</p>'), '');
+  assert.equal(lineCount('a\nb\nc'), 3); assert.equal(lineCount(''), 0);
 });

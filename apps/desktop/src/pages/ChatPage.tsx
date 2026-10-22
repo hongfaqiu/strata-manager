@@ -1,10 +1,13 @@
 import type { AppLanguage } from "@strata-manager/core";
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pencil, Search } from 'lucide-react';
 import type { Attachment, Conversation, ServiceProfile } from '@strata-manager/core';
 import { ChatMessageView } from '../ChatMessageView';
 import { OfficialIcon } from '../OfficialIcon';
+import { HtmlPreviewPanel, readPreviewWidth, storePreviewWidth } from '../chat/HtmlPreviewPanel';
+import { HtmlPreviewContext, type HtmlPreviewHost, type HtmlPreviewItem } from '../chat/htmlPreviewContext';
+import { PREVIEW_WIDTH } from '../chat/htmlPreview';
 import './chat-history.css';
 
 export interface ChatPageProps {
@@ -20,8 +23,18 @@ export function ChatPage({conversation,profile,online,supportsImages,modelName,l
   const workspace=useRef<HTMLElement>(null);
   const [search,setSearch]=useState('');
   const [narrow,setNarrow]=useState(()=>window.innerWidth<1000);
+  const [workspaceWidth,setWorkspaceWidth]=useState(()=>window.innerWidth);
+  const [preview,setPreview]=useState<HtmlPreviewItem|null>(null);
+  const [previewWidth,setPreviewWidth]=useState(readPreviewWidth);
   const [historyCollapsed,setHistoryCollapsed]=useState<boolean|null>(null);
   const historyOpen=historyCollapsed===null?!narrow:!historyCollapsed;
+  // The preview sits beside the chat when both fit (chat keeps PREVIEW_WIDTH.chatMin); otherwise it becomes a drawer over it.
+  const previewSpace=workspaceWidth-(historyOpen&&!narrow?248:0);
+  const previewOverlay=previewSpace<PREVIEW_WIDTH.min+PREVIEW_WIDTH.chatMin;
+  const openPreview=useCallback((item:HtmlPreviewItem)=>setPreview(item),[]);
+  const closePreview=useCallback(()=>setPreview(null),[]);
+  const previewHost=useMemo<HtmlPreviewHost>(()=>({activeId:preview?.id,open:openPreview}),[preview?.id,openPreview]);
+  const resizePreview=useCallback((width:number,done:boolean)=>{setPreviewWidth(width);if(done)storePreviewWidth(width);},[]);
   const label=(cn:string,en:string)=>language==='zh-CN'?cn:en;
   const active=activeConversationId??conversation?.id;
   const newConversation=()=>{if(!profile||streaming)return;setSearch('');onNewConversation();if(narrow)setHistoryCollapsed(true);};
@@ -37,13 +50,14 @@ export function ChatPage({conversation,profile,online,supportsImages,modelName,l
   },[conversations,profile?.id,search,language]);
   useEffect(()=>{
     const section=workspace.current;if(!section)return;
-    const observer=new ResizeObserver(entries=>{const width=entries[0]?.contentRect.width;if(width!==undefined)setNarrow(width<760);});
+    const observer=new ResizeObserver(entries=>{const width=entries[0]?.contentRect.width;if(width!==undefined){setNarrow(width<760);setWorkspaceWidth(width);}});
     observer.observe(section);return()=>observer.disconnect();
   },[]);
   useEffect(()=>{setSearch('');},[profile?.id]);
+  useEffect(()=>{setPreview(null);},[conversation?.id]);
   useEffect(()=>{const scroll=chatScroll.current;if(scroll&&(scrolledConversation.current!==conversation?.id||nearBottom.current)){scroll.scrollTop=scroll.scrollHeight;nearBottom.current=true;}scrolledConversation.current=conversation?.id??'';},[conversation?.messages,conversation?.id,streaming]);
   useEffect(()=>{if(!draft&&input.current)input.current.style.height='auto';},[draft]);
-  return <section ref={workspace} className={`view view--chat chat-workspace${narrow?' chat-workspace--narrow':''}`} id="view-chat" role="tabpanel" aria-labelledby="workspace-page-title">
+  return <section ref={workspace} className={`view view--chat chat-workspace${narrow?' chat-workspace--narrow':''}${preview?' chat-workspace--preview':''}`} id="view-chat" role="tabpanel" aria-labelledby="workspace-page-title">
     {narrow&&historyOpen&&<button type="button" className="chat-history-scrim" aria-label={label('收起聊天历史','Close chat history')} onClick={()=>setHistoryCollapsed(true)}/>}
     <aside className="chat-history" id="chat-history" aria-label={label('聊天历史','Chat history')} hidden={!historyOpen}>
       <div className="chat-history-heading"><strong>{label('聊天历史','Chat history')}</strong></div>
@@ -55,9 +69,11 @@ export function ChatPage({conversation,profile,online,supportsImages,modelName,l
       </div>)}</div>):<p className="chat-history-empty">{search.trim()?label('没有匹配的聊天','No matching chats'):label('本服务还没有聊天记录','No chats for this service yet')}</p>}</div>
     </aside>
     <div className="chat-main"><div className="chat-history-toolbar"><button type="button" className="st-btn st-btn--icon" aria-label={label(historyOpen?'收起聊天历史':'展开聊天历史',historyOpen?'Collapse chat history':'Expand chat history')} aria-controls="chat-history" aria-expanded={historyOpen} onClick={()=>setHistoryCollapsed(historyOpen)}><OfficialIcon name="chat" size={18}/></button><span>{conversation?.title??label('新聊天','New chat')}</span></div>
-    <div className="chat-scroll" id="chat-scroll" ref={chatScroll} onScroll={event=>{const scroll=event.currentTarget;nearBottom.current=scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight<120;}}><div className="chat" id="chat">{!conversation?.messages.length ? <div className="chat-empty" id="chat-empty"><div className="chat-empty__title">{t('askAnything')}</div><div className="chat-empty__sub" id="chat-empty-sub">{!profile ? t('chatNeedsProfile') : !online ? t('chatNeedsOnline') : translate('localChatSubtitle',{model:modelName??t('model')})}</div></div> : conversation.messages.map(message => <ChatMessageView key={message.id} message={message} language={language} showReasoning={showReasoning} streaming={streaming && message.id === conversation.messages.at(-1)?.id} stateLabel={stateLabel} onCopy={onCopy} onMessage={onMessage} />)}</div></div><div className="composer-wrap"><form className={`st-composer ${dragging ? 'dragging' : ''}`} id="composer" onSubmit={event=>{event.preventDefault();void onSend();}} onDragOver={event=>{event.preventDefault();setDragging(true);}} onDragLeave={()=>setDragging(false)} onDrop={event=>{event.preventDefault();setDragging(false);if(!streaming)void onAddFiles([...event.dataTransfer.files]);}}>
+    <HtmlPreviewContext.Provider value={previewHost}><div className="chat-scroll" id="chat-scroll" ref={chatScroll} onScroll={event=>{const scroll=event.currentTarget;nearBottom.current=scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight<120;}}><div className="chat" id="chat">{!conversation?.messages.length ? <div className="chat-empty" id="chat-empty"><div className="chat-empty__title">{t('askAnything')}</div><div className="chat-empty__sub" id="chat-empty-sub">{!profile ? t('chatNeedsProfile') : !online ? t('chatNeedsOnline') : translate('localChatSubtitle',{model:modelName??t('model')})}</div></div> : conversation.messages.map(message => <ChatMessageView key={message.id} message={message} language={language} showReasoning={showReasoning} streaming={streaming && message.id === conversation.messages.at(-1)?.id} stateLabel={stateLabel} onCopy={onCopy} onMessage={onMessage} />)}</div></div></HtmlPreviewContext.Provider><div className="composer-wrap"><form className={`st-composer ${dragging ? 'dragging' : ''}`} id="composer" onSubmit={event=>{event.preventDefault();void onSend();}} onDragOver={event=>{event.preventDefault();setDragging(true);}} onDragLeave={()=>setDragging(false)} onDrop={event=>{event.preventDefault();setDragging(false);if(!streaming)void onAddFiles([...event.dataTransfer.files]);}}>
     <div className="attachments" id="attachments" hidden={!attachments.length}>{attachments.map(file=><span className="chip" key={file.id}><OfficialIcon name={file.type==='image'?'image':'attach'} size={16}/>{file.name}<button type="button" className="st-btn st-btn--icon" disabled={streaming} aria-label={`${t('removeAttachment')}: ${file.name}`} onClick={()=>onRemoveAttachment(file.id)}><OfficialIcon name="trash" size={14}/></button></span>)}</div>
     <textarea ref={input} id="input" rows={2} aria-label={t('message')} placeholder={t('askAnythingPlaceholder')} value={draft} disabled={streaming} onChange={event=>{onDraftChange(event.target.value);event.target.style.height='auto';event.target.style.height=`${Math.min(event.target.scrollHeight,innerHeight*.4)}px`;}} onKeyDown={event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.nativeEvent.isComposing){event.preventDefault();void onSend();}}} onPaste={event=>{const list=[...event.clipboardData.files];if(list.length){event.preventDefault();void onAddFiles(list);}}}/>
     <div className="st-composer__bar"><button type="button" className="st-btn st-btn--icon" id="attach-btn" data-tooltip={t(supportsImages?'attachImage':'attachText')} aria-label={t('attachFileLabel')} disabled={streaming||!profile} onClick={()=>files.current?.click()}><OfficialIcon name="attach"/></button><input ref={files} type="file" id="file" multiple hidden aria-label={t('attachments')} accept="image/*,text/*,.md,.json,.csv,.yaml,.yml,.py,.js,.ts,.tsx,.rs,.log,.sql" onChange={event=>{void onAddFiles([...event.target.files??[]]);event.target.value='';}}/><button type="button" className="st-btn st-btn--icon" id="new-btn" data-tooltip={t('newChatLabel')} aria-label={t('newChatLabel')} disabled={!profile||streaming} onClick={onNewConversation}><OfficialIcon name="new-chat"/></button><button type="button" className="st-btn st-btn--icon" id="export-btn" data-tooltip={t('saveChatTitle')} aria-label={t('saveChatLabel')} disabled={!conversation?.messages.length||streaming} onClick={()=>conversation&&onExport(conversation)}><OfficialIcon name="download"/></button><button type="button" className="st-btn st-btn--icon" id="sampling-btn" data-tooltip={t('samplingAndThinking')} aria-label={t('samplingAndThinking')} onClick={onOpenSampling}><OfficialIcon name="settings"/></button><span className="spacer"/><span className="composer-hint" id="composer-hint">{!streaming&&t('shiftEnterHint')}</span><button type="button" className="st-btn st-btn--secondary" id="stop-btn" hidden={!streaming} onClick={onCancel}><OfficialIcon name="stop" size={16}/>{t('stoppedShort')}</button><button type="submit" className="st-btn st-btn--primary st-btn--send" id="send-btn" hidden={streaming} aria-label={t('send')} disabled={!online||!profile||(!draft.trim()&&!attachments.length)}><OfficialIcon name="send"/></button></div>
-  </form></div></div></section>;
+  </form></div></div>
+    {preview&&<HtmlPreviewPanel key={preview.id} item={preview} width={previewWidth} available={previewSpace} overlay={previewOverlay} onWidthChange={resizePreview} onClose={closePreview} onMessage={onMessage}/>}
+  </section>;
 }

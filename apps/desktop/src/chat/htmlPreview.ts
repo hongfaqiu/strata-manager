@@ -8,7 +8,7 @@
  *   which also blocks the `ipc:` protocol behind Tauri commands;
  * - outside the desktop app (browser/server mode) it falls back to `srcdoc` with the same policy as a <meta> tag (srcdoc also
  *   inherits the host page's CSP, which can only make it stricter);
- * - nothing runs until the user switches to Preview, and never while the answer is still streaming.
+ * - nothing runs until the user opens the preview panel, and never while the answer is still streaming.
  */
 export const PREVIEW_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; object-src 'none'; manifest-src 'none'; form-action 'none'; base-uri 'none'";
 export const PREVIEW_SANDBOX = 'allow-scripts';
@@ -26,9 +26,22 @@ export function withPreviewPolicy(html: string): string {
   return doctype ? doctype[0] + meta + html.slice(doctype[0].length) : meta + html;
 }
 
+/** The page's own <title>, if it has a short one. */
+export const htmlTitle = (html: string): string => (/<title[^>]*>([^<]{1,120})<\/title>/i.exec(html)?.[1] ?? '').replace(/\s+/g, ' ').trim();
+
+/** Lines in a code block, as shown in its collapsed header. */
+export const lineCount = (code: string): number => code ? code.split('\n').length : 0;
+
+/** Preview panel width: what the user dragged to, kept within the space next to a usable chat. */
+export const PREVIEW_WIDTH = { min: 320, fallback: 520, chatMin: 380, storageKey: 'strata-manager.chat.htmlPreviewWidth' } as const;
+export function clampPreviewWidth(width: number, available: number): number {
+  const max = Math.max(PREVIEW_WIDTH.min, available - PREVIEW_WIDTH.chatMin);
+  return Math.round(Math.min(Math.max(Number.isFinite(width) ? width : PREVIEW_WIDTH.fallback, PREVIEW_WIDTH.min), max));
+}
+
 /** A file name from the page's <title>, safe on every desktop file system. */
 export function htmlFileName(html: string): string {
-  const title = /<title[^>]*>([^<]{1,120})<\/title>/i.exec(html)?.[1]?.trim() ?? '';
+  const title = htmlTitle(html);
   const safe = title.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
   return `${safe || 'preview'}.html`;
 }

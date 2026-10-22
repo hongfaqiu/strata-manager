@@ -1,8 +1,11 @@
 // Chat rendering strings (math, HTML preview, thinking budget). Order: zh-CN, en, zh-TW, ja, ko, de, fr, es, pt, ru.
 const rows: Record<string, [string, string, string, string, string, string, string, string, string, string]> = {
   htmlPreviewTab: ['预览', 'Preview', '預覽', 'プレビュー', '미리보기', 'Vorschau', 'Aperçu', 'Vista previa', 'Pré-visualizar', 'Просмотр'],
-  htmlCodeTab: ['代码', 'Code', '程式碼', 'コード', '코드', 'Code', 'Code', 'Código', 'Código', 'Код'],
-  htmlPreviewView: ['HTML 显示方式', 'HTML view', 'HTML 顯示方式', 'HTML の表示', 'HTML 보기 방식', 'HTML-Ansicht', 'Affichage HTML', 'Vista HTML', 'Visualização HTML', 'Вид HTML'],
+  htmlLineCount: ['{{count}} 行', '{{count}} lines', '{{count}} 行', '{{count}} 行', '{{count}}줄', '{{count}} Zeilen', '{{count}} lignes', '{{count}} líneas', '{{count}} linhas', 'Строк: {{count}}'],
+  htmlExpandCode: ['展开代码', 'Show code', '展開程式碼', 'コードを表示', '코드 펼치기', 'Code anzeigen', 'Afficher le code', 'Mostrar código', 'Mostrar código', 'Показать код'],
+  htmlCollapseCode: ['收起代码', 'Hide code', '收合程式碼', 'コードを隠す', '코드 접기', 'Code ausblenden', 'Masquer le code', 'Ocultar código', 'Ocultar código', 'Скрыть код'],
+  htmlPreviewClose: ['关闭预览', 'Close preview', '關閉預覽', 'プレビューを閉じる', '미리보기 닫기', 'Vorschau schließen', 'Fermer l’aperçu', 'Cerrar vista previa', 'Fechar pré-visualização', 'Закрыть просмотр'],
+  htmlPreviewResize: ['拖动调整预览宽度', 'Drag to resize the preview', '拖曳調整預覽寬度', 'ドラッグでプレビューの幅を変更', '드래그하여 미리보기 너비 조절', 'Ziehen, um die Vorschaubreite zu ändern', 'Faire glisser pour redimensionner l’aperçu', 'Arrastra para cambiar el ancho de la vista previa', 'Arraste para redimensionar a pré-visualização', 'Перетащите, чтобы изменить ширину просмотра'],
   htmlPreviewTitle: ['HTML 预览', 'HTML preview', 'HTML 預覽', 'HTML プレビュー', 'HTML 미리보기', 'HTML-Vorschau', 'Aperçu HTML', 'Vista previa HTML', 'Pré-visualização HTML', 'Просмотр HTML'],
   htmlPreviewStreaming: ['生成完成后可预览', 'Preview is available when the answer is finished', '生成完成後可預覽', '回答の完了後にプレビューできます', '답변이 끝나면 미리볼 수 있습니다', 'Vorschau ist nach Abschluss der Antwort verfügbar', 'Aperçu disponible une fois la réponse terminée', 'La vista previa estará disponible al terminar la respuesta', 'A pré-visualização fica disponível quando a resposta terminar', 'Просмотр станет доступен после завершения ответа'],
   htmlPreviewSandbox: ['沙箱预览：脚本可以运行，但不能联网，也不能访问应用和你的文件', 'Sandboxed: scripts run, but cannot reach the network, the app or your files', '沙箱預覽：腳本可以執行，但不能連網，也不能存取應用程式和你的檔案', 'サンドボックス: スクリプトは動きますが、ネットワーク・アプリ・ファイルにはアクセスできません', '샌드박스: 스크립트는 실행되지만 네트워크, 앱, 파일에는 접근할 수 없습니다', 'Sandbox: Skripte laufen, haben aber keinen Zugriff auf Netzwerk, App oder Dateien', 'Bac à sable : les scripts s’exécutent sans accès au réseau, à l’app ni à vos fichiers', 'Aislado: los scripts se ejecutan sin acceso a la red, la app ni tus archivos', 'Isolado: os scripts executam sem acesso à rede, ao app nem aos seus arquivos', 'Песочница: скрипты работают без доступа к сети, приложению и файлам'],
@@ -20,4 +23,4 @@ const rows: Record<string, [string, string, string, string, string, string, stri
 };
 const codes = ['zh-CN', 'en', 'zh-TW', 'ja', 'ko', 'de', 'fr', 'es', 'pt', 'ru'] as const;
 export const chatRenderStrings: Record<string, Record<string, string>> = Object.fromEntries(codes.map((code, index) => [code, Object.fromEntries(Object.entries(rows).map(([key, values]) => [key, values[index]!]))]));
-Object.assign(chatRenderStrings.en!, { thinkingBudgetTokens_one: '{{count}} token' });
+Object.assign(chatRenderStrings.en!, { thinkingBudgetTokens_one: '{{count}} token', htmlLineCount_one: '{{count}} line' });
