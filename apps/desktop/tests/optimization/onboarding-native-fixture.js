@@ -6,7 +6,7 @@ const runtimeProfile = { id: 'runtime-1', name: 'Strata', baseUrl: 'http://127.0
 const modelProfile = { id: 'swift-iq3', name: 'Swift 1.5 IQ3_S', baseUrl: 'http://127.0.0.1:8080', installDir: runtimeProfile.installDir, pythonPath: runtimeProfile.pythonPath, configPath: 'C:\\Users\\fixture\\AppData\\Strata Manager\\runtime\\configs\\swift-1.5-iq3_s.json', managed: true };
 const progress = (patch) => ({ schemaVersion: 1, status: 'active', path: 'install', scene: 'chat', autoStart: false, startedAt: now - 900000, updatedAt: now - 1000, ...patch });
 const environment = { os: 'Windows 11 Pro 24H2', arch: 'x86_64', cpuName: 'AMD Ryzen 9 7950X', totalMemory: 96 * GB, availableMemory: 71 * GB, gpus: ['NVIDIA GeForce RTX 4090, 560.94, 24564 MiB'], python: null, git: null, appVersion: '0.1.11' };
-const state = { profiles: [], candidates: [], tasks: [], handoffs: [], runtime: {}, running: {}, loaded: {}, store: { settings: { language: 'zh-CN', theme: params.get('theme') || 'light', pollInterval: 60000, autoCheckUpdates: false, closeToTray: false, skipExitConfirmation: false, languagePreference: 'zh-CN' } }, logs: {}, holdStart: false };
+const state = { profiles: [], candidates: [], tasks: [], handoffs: [], runtime: {}, running: {}, loaded: {}, store: { settings: { language: 'zh-CN', theme: params.get('theme') || 'light', pollInterval: 60000, autoCheckUpdates: false, closeToTray: false, closeToTrayRevision: 1, skipExitConfirmation: false, languagePreference: 'zh-CN' } }, logs: {}, holdStart: false };
 const readyRuntime = () => { state.runtime = { detectedRuntimes: [{ installDir: runtimeProfile.installDir, pythonPath: runtimeProfile.pythonPath, runtimeVersion: '0.1.44', readiness: 'ready', profile: runtimeProfile }] }; };
 const log = (message, offset) => ({ timestamp: now - offset, level: 'INFO', message });
 if (scenario === 'environment') { environment.gpus = []; environment.totalMemory = 64 * GB; state.store.onboardingV1 = progress({}); }
@@ -133,7 +133,7 @@ window.__TAURI_INTERNALS__ = {
     if (command === 'runtime_update_info') return null;
     if (command === 'plugin:event|listen') { const id = ++listenerId; listeners.set(id, { event: args.event, handler: args.handler }); return id; }
     if (command === 'plugin:dialog|open') return window.__fixture.dialogPaths?.shift() ?? null;
-    if (command.startsWith('plugin:') || ['apply_settings', 'confirm_window_close'].includes(command)) return null;
+    if (command.startsWith('plugin:') || ['apply_settings', 'confirm_window_close', 'hide_main_window'].includes(command)) return null;
     window.__fixture.unmocked = [...(window.__fixture.unmocked ?? []), command];
     return null;
   },

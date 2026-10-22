@@ -1722,6 +1722,35 @@ async fn local_installation_details(state: State<'_, ClientState>) -> Result<Val
     Ok(details)
 }
 
+/// Startup value of the close-to-tray flag before the renderer applies its
+/// settings. Mirrors `migrateWindowCloseSettings` in packages/core: v0.1.0
+/// betas persisted `closeToTray: false` as a default, so a `false` without the
+/// `closeToTrayRevision` marker is only honoured when the user also disabled
+/// the exit confirmation.
+fn saved_close_to_tray(settings: &Value) -> bool {
+    match settings.get("closeToTray").and_then(Value::as_bool) {
+        Some(false) => {
+            let marked = settings
+                .get("closeToTrayRevision")
+                .and_then(Value::as_u64)
+                .is_some_and(|revision| revision >= 1);
+            let skips_confirmation = settings
+                .get("skipExitConfirmation")
+                .and_then(Value::as_bool)
+                == Some(true);
+            !(marked || skips_confirmation)
+        }
+        _ => true,
+    }
+}
+
+/// Exit dialog's "minimize to tray": hide the main window exactly like a
+/// close-to-tray close, leaving managed services running.
+#[tauri::command]
+fn hide_main_window(window: tauri::WebviewWindow) -> Result<(), String> {
+    window.hide().map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 async fn confirm_window_close(
     app: tauri::AppHandle,
@@ -1934,10 +1963,7 @@ pub fn run() {
             let english = system_locale::uses_english_fallback(
                 saved_settings.get("language").and_then(Value::as_str),
             );
-            let close = saved_settings
-                .get("closeToTray")
-                .and_then(Value::as_bool)
-                .unwrap_or(true);
+            let close = saved_close_to_tray(&saved_settings);
             #[cfg(target_os = "macos")]
             app_menu::install(app, english)?;
             let show = MenuItem::with_id(
@@ -2240,6 +2266,7 @@ pub fn run() {
             apply_settings,
             system_locale::get_system_language,
             confirm_window_close,
+            hide_main_window,
             rename_local_installation,
             analytics_query,
             request_capture_status,
@@ -2260,4 +2287,31 @@ pub fn run() {
             handle.state::<ClientState>().cleanup_ui();
         }
     });
+}
+
+#[cfg(test)]
+mod window_close_tests {
+    use super::saved_close_to_tray;
+    use serde_json::{json, Value};
+
+    #[test]
+    fn beta_default_false_minimizes_to_tray() {
+        assert!(saved_close_to_tray(&Value::Null));
+        assert!(saved_close_to_tray(&json!({"closeToTray": true})));
+        // What v0.1.0-beta.1/beta.2 persisted, and later merges of it.
+        assert!(saved_close_to_tray(&json!({"closeToTray": false})));
+        assert!(saved_close_to_tray(
+            &json!({"closeToTray": false, "skipExitConfirmation": false})
+        ));
+    }
+
+    #[test]
+    fn explicit_quit_choices_are_kept() {
+        assert!(!saved_close_to_tray(
+            &json!({"closeToTray": false, "closeToTrayRevision": 1})
+        ));
+        assert!(!saved_close_to_tray(
+            &json!({"closeToTray": false, "skipExitConfirmation": true})
+        ));
+    }
 }
