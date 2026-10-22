@@ -10,7 +10,9 @@ import {
   MAX_FILTER_NAMES, MAX_ARGV_BYTES, MAX_WINDOWS_ARGV_BYTES, MAX_WINDOWS_COMMAND_UNITS, mergeBinaryReports,
   failedTestNames, mergeRetriedBatch, MAX_RETRIED_TESTS, MAX_UNIT_SECONDS, MAX_NATIVE_GROUPS,
   parseResults, parseDocResults, validateCoverage, validateIgnoredPolicy, validateShardEvidence, parseOptions, workspaceDocTargets,
+  testEstimates,
 } from './ci-linux-native-tests.mjs';
+import { parseShardLog, summarize } from './native-test-timings.mjs';
 
 const clone = value => structuredClone(value);
 const c = (name, ignored = false) => ({name, kind: 'test', ignored});
@@ -127,8 +129,10 @@ test('a measured slow module is split into interleaved parts across shards witho
   const others = Array.from({length: 20}, (_, i) => c(`fast::case_${String(i).padStart(2, '0')}`));
   for (const [target, platform] of [['x86_64-unknown-linux-gnu', 'linux'], ['x86_64-pc-windows-msvc', 'win32']]) {
     const binding = {...fixtureBinding, target, platform, groups: 5};
+    const timings = {[platform]: {modules: {'core:lib:core': {'tuning::restart::tests': [250, 30]}},
+      tests: {'core:lib:core': {'tuning::restart::tests::case_00': 40, 'tuning::restart::tests::case_01': 23}}}};
     const build = () => makePlan([{id: 'core:lib:core', package: 'fixture-core', packagePath: 'core', cases: [...restart, ...others, c('fast::ignored', true)]},
-      {id: 'empty:bin:empty', package: 'fixture-empty', packagePath: 'empty', cases: []}], 5, binding);
+      {id: 'empty:bin:empty', package: 'fixture-empty', packagePath: 'empty', cases: []}], 5, binding, timings);
     const plan = build();
     assert.equal(validatePlan(plan), true);
     assert.equal(plan.inventoryHash, build().inventoryHash);
@@ -145,6 +149,40 @@ test('a measured slow module is split into interleaved parts across shards witho
     assert.ok(heaviest <= total / 5 + MAX_UNIT_SECONDS, 'no shard exceeds the balanced share by more than one unit');
   }
   assert.throws(() => makePlan(fixturePlan().binaries, MAX_NATIVE_GROUPS + 1, {...fixtureBinding, groups: MAX_NATIVE_GROUPS + 1}));
+});
+
+test('measured timings weight individual tests and give new or unmeasured tests the conservative fallback', () => {
+  const timings = {linux: {modules: {'core:lib:core': {'slow::tests': [50, 3]}}, tests: {'core:lib:core': {'slow::tests::big': 40}}}};
+  const names = ['slow::tests::big', 'slow::tests::small_a', 'slow::tests::small_b', 'slow::tests::new_one', 'slow::tests::skipped'];
+  const estimates = testEstimates('core:lib:core', 'slow::tests', names, names.slice(0, 4), 'linux', timings);
+  assert.equal(estimates.get('slow::tests::big'), 40);
+  assert.equal(estimates.get('slow::tests::skipped'), 0);
+  // 10 s measured for the two small tests plus a 4 s fallback for the one test added since the run.
+  assert.equal(estimates.get('slow::tests::small_a'), 14 / 3);
+  const unmeasured = testEstimates('core:lib:core', 'other::tests', ['other::tests::a'], ['other::tests::a'], 'linux', timings);
+  assert.equal(unmeasured.get('other::tests::a'), 4);
+  assert.equal(testEstimates('w', '(root)', ['x'], ['x'], 'win32', {}).get('x'), 22);
+});
+
+test('timing regeneration derives serial per-test wall time from shard job logs', () => {
+  const log = [
+    '\uFEFF2026-10-22T06:06:35.0000000Z Native group 3: crates/core:lib:core, batch 1/1 (3 default cases)\r',
+    '2026-10-22T06:06:35.5000000Z running 3 tests\r',
+    '2026-10-22T06:06:36.0000000Z test a::tests::one ... ok\r',
+    '2026-10-22T06:06:46.0000000Z test a::tests::two ... ok\r',
+    '2026-10-22T06:06:47.0000000Z test a::tests::skip ... ignored, explicit\r',
+    '2026-10-22T06:06:48.0000000Z test root_case ... ok\r',
+    '2026-10-22T06:06:49.0000000Z Native group 3: crates/core:test:it, batch 1/1 (1 default cases)\r',
+    '2026-10-22T06:06:50.0000000Z running 1 test\r',
+    '2026-10-22T06:06:52.0000000Z test it::x ... ok\r',
+  ].join('\n');
+  const results = parseShardLog(log);
+  assert.deepEqual(results.map(r => [r.binary, r.name, r.seconds]), [
+    ['crates/core:lib:core', 'a::tests::one', 0.5], ['crates/core:lib:core', 'a::tests::two', 10],
+    ['crates/core:lib:core', 'root_case', 1], ['crates/core:test:it', 'it::x', 2]]);
+  const summary = summarize([...results, {binary: 'crates/core:lib:core', name: 'a::tests::two', seconds: 99}]);
+  assert.deepEqual(summary.modules['crates/core:lib:core'], {'(root)': [1, 1], 'a::tests': [10.5, 2]});
+  assert.deepEqual(summary.tests['crates/core:lib:core'], {'a::tests::two': 10, root_case: 1});
 });
 
 test('selection uses exact positive OR filters without dropping a longer substring sibling', () => {

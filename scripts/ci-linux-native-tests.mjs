@@ -1,7 +1,7 @@
 /** Run every default Cargo test with serial libtest groups on independent native runners. */
 import { spawn } from 'node:child_process';
 import { readFile, writeFile, mkdir, mkdtemp, lstat, realpath, access, readdir } from 'node:fs/promises';
-import { constants, createReadStream } from 'node:fs';
+import { constants, createReadStream, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, resolve, relative, isAbsolute, delimiter } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -63,27 +63,29 @@ export function validateIgnoredPolicy(binaries, target = 'x86_64-unknown-linux-g
 
 const inventoryForHash = binaries => binaries.map(({id, package: packageName, packagePath, platform, target, cases}) => ({id, package: packageName, packagePath, platform, target, cases}));
 const planHash = plan => hash(JSON.stringify({binding: plan.binding, inventory: inventoryForHash(plan.binaries), groups: plan.groups}));
-const knownSeconds = Object.freeze({
-  // Summed per-test completion deltas in Linux CI 39636091232 (three shards); scheduling hints only.
-  'tuning::restart::tests': 288, 'tuning::workloads::tests': 58,
-  'runtime_upgrade::tests': 56, 'idle_model::tests': 46, 'installation::download::tests': 41,
-  'startup::tests': 38, 'setup_handoff::tests': 33, 'tuning::tests': 27,
-  'native_probe_tests': 25, 'health_watch::tests': 22, 'request_capture::tests': 17,
-  'installation::tests': 16, 'runtime_upgrade::release_zip::download_check::tests': 14,
-  'runtime_upgrade::release_zip::tests': 14, 'tuning::calibrate::tests': 11,
-  'tuning::status_tests': 10, 'storage_location::tests': 10, 'registry_handoff::tests': 10,
-  'external_management::tests': 10, 'tuning_service_operation_tests': 9, 'diagnostics::tests': 9,
-});
-const windowsKnownSeconds = Object.freeze({
-  // Summed per-test completion deltas in Windows CI 39636091232 (three shards).
-  // Hints affect scheduling only; no test deadline or assertion changes.
-  'tuning::restart::tests': 182, 'runtime_upgrade::tests': 48,
-  'idle_model::tests': 31, 'startup::tests': 23, 'runtime_upgrade::release_zip::tests': 20,
-  'installation::download::tests': 19, 'setup_handoff::tests': 16, 'tuning::workloads::tests': 16,
-  'supervisor_client::tests': 16, 'network_runtime_tests': 14, 'tuning::tests': 14,
-  'native_probe_tests': 13, 'request_capture::tests': 12, 'legacy::tests': 10,
-  'runtime_upgrade::release_zip::download_check::tests': 9, 'health_watch::tests': 8,
-});
+// Measured per-test wall times from the native shard logs of one CI run, regenerated with
+// `node scripts/native-test-timings.mjs --run <id> --write`. Scheduling hints only; no test
+// deadline or assertion depends on them. Modules absent from the file use the conservative
+// per-test fallback below so new slow tests are over- rather than under-estimated.
+const TIMINGS = JSON.parse(readFileSync(resolve(root, 'scripts/native-test-timings.json'), 'utf8'));
+const fallbackSeconds = (platform, module) => platform === 'win32' ? (module === '(root)' ? 22 : 2) : 4;
+export function testEstimates(binaryId, module, names, activeNames, platform, timings = TIMINGS) {
+  const measured = timings[platform]?.modules?.[binaryId]?.[module];
+  const known = timings[platform]?.tests?.[binaryId] ?? {};
+  const active = new Set(activeNames);
+  const estimates = new Map(names.map(name => [name, 0]));
+  if (!measured) { for (const name of active) estimates.set(name, fallbackSeconds(platform, module)); return estimates; }
+  const [total, count] = measured;
+  const listed = [...active].filter(name => Object.hasOwn(known, name));
+  const listedSeconds = listed.reduce((sum, name) => sum + known[name], 0);
+  const unlisted = [...active].filter(name => !Object.hasOwn(known, name));
+  // Tests beyond the measured count are new since the timing run: give them the fallback.
+  const extra = Math.max(0, active.size - count) * fallbackSeconds(platform, module);
+  const each = unlisted.length ? (Math.max(0, total - listedSeconds) + extra) / unlisted.length : 0;
+  for (const name of listed) estimates.set(name, known[name]);
+  for (const name of unlisted) estimates.set(name, each);
+  return estimates;
+}
 // Modules estimated above this many seconds are split into interleaved parts so
 // one slow module (tuning::restart::tests) no longer sets the shard floor.
 export const MAX_UNIT_SECONDS = 60;
@@ -174,7 +176,7 @@ export function parseDocResults(run, targets) {
     ignored: summaries.reduce((sum, s) => sum + s[2], 0)};
 }
 
-export function makePlan(binaries, count, binding) {
+export function makePlan(binaries, count, binding, timings = TIMINGS) {
   const policy = targetPolicy(binding?.target);
   binding = {...binding, platform: binding.platform ?? policy.platform};
   validateTargetBinding(binding);
@@ -194,13 +196,20 @@ export function makePlan(binaries, count, binding) {
     }
     if (!entries.size) entries.set('(empty)', []);
     for (const [module, names] of entries) {
-      const active = names.filter(name => !binary.cases.find(c => c.name === name).ignored).length;
-      const weight = active ? (policy.platform === 'win32' ? windowsKnownSeconds[module] ?? (module === '(root)' ? active * 22 : active * 2) : knownSeconds[module] ?? active * 4) : 0;
       const ordered = sorted(names);
+      const active = ordered.filter(name => !binary.cases.find(c => c.name === name).ignored);
+      const estimates = testEstimates(binary.id, module, ordered, active, policy.platform, timings);
+      const weight = active.reduce((sum, name) => sum + estimates.get(name), 0);
       const parts = Math.max(1, Math.min(ordered.length, Math.ceil(weight / MAX_UNIT_SECONDS)));
-      for (let part = 0; part < parts; part++) {
+      // Split a slow module by longest-estimate-first so one very slow test cannot stack with others.
+      const split = Array.from({length: parts}, () => ({names: [], weight: 0}));
+      for (const name of [...ordered].sort((a, b) => estimates.get(b) - estimates.get(a) || compare(a, b))) {
+        const target = split.reduce((best, p, index) => p.weight < split[best].weight || (p.weight === split[best].weight && p.names.length < split[best].names.length) ? index : best, 0);
+        split[target].names.push(name); split[target].weight += estimates.get(name);
+      }
+      for (const [part, {names: partNames, weight: partWeight}] of split.entries()) {
         modules.push({binaryId: binary.id, module: parts === 1 ? module : `${module} [${part + 1}/${parts}]`,
-          names: ordered.filter((_, index) => index % parts === part), weight: weight / parts});
+          names: sorted(partNames), weight: partWeight});
       }
     }
   }
