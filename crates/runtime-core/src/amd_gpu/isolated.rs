@@ -115,7 +115,7 @@ impl IsolatedReader {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     fn state(&self) -> (bool, bool, bool) {
         let shared = self.shared.lock().unwrap();
         (
