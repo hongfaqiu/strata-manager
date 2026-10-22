@@ -12,6 +12,12 @@ const assetName = 'strata-cuda12.zip';
 afterEach(() => vi.unstubAllGlobals());
 
 describe('saved runtime download choices', () => {
+  it('lists each built-in mirror under a distinct label that names its host (#126)', () => {
+    const key = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+    expect(new Set(runtimeDownloadSources.map(source => key(source.label))).size).toBe(runtimeDownloadSources.length);
+    expect(new Set(runtimeDownloadSources.map(source => new URL(source.urlTemplate.replace('{url}', '')).host)).size).toBe(runtimeDownloadSources.length);
+    for (const source of runtimeDownloadSources) expect(source.label).toBe(new URL(source.urlTemplate.replace('{url}', '')).host);
+  });
   it('follows automatic engine selection and the current official URL for each built-in source', () => {
     for (const source of runtimeDownloadSources) {
       const preferences = { mode: 'mirror' as const, sourceId: source.id };
