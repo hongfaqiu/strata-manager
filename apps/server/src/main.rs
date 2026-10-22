@@ -1,8 +1,16 @@
 use strata_manager_server::{bind_listener, build_router, config::ServerConfig, PRODUCT_VERSION};
 use tracing_subscriber::EnvFilter;
 
+fn main() {
+    // AMD telemetry runs in a child of this exe so a driver fault cannot end the server (#124).
+    if let Some(code) = strata_runtime_core::amd_gpu::run_worker_if_requested() {
+        std::process::exit(code);
+    }
+    serve();
+}
+
 #[tokio::main]
-async fn main() {
+async fn serve() {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env().add_directive("info".parse().unwrap()))
         .init();

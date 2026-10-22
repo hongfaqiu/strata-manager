@@ -14,6 +14,8 @@
 
 #[cfg(windows)]
 mod adlx;
+#[cfg(any(windows, test))]
+mod isolated;
 #[cfg(any(target_os = "linux", test))]
 mod sysfs;
 
@@ -23,7 +25,9 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 /// One AMD GPU. Memory in bytes, power in watts, clocks in MHz; `None` = not reported.
-#[derive(Clone, Debug, Default, PartialEq)]
+/// Serialized as the line protocol of the Windows telemetry helper process.
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct AmdGpuSample {
     pub name: Option<String>,
     pub util: Option<f64>,
@@ -162,13 +166,43 @@ fn sample_platform() -> Option<AmdTelemetry> {
 }
 #[cfg(windows)]
 fn sample_platform() -> Option<AmdTelemetry> {
-    adlx::snapshot().map(|gpus| AmdTelemetry {
+    // A binary that does not route `WORKER_FLAG` would start a second copy of itself.
+    // STRATA_MANAGER_AMD_TELEMETRY=0 turns the AMD driver readings off entirely.
+    if !WORKER_ROUTED.load(std::sync::atomic::Ordering::Relaxed)
+        || std::env::var_os("STRATA_MANAGER_AMD_TELEMETRY").as_deref()
+            == Some(std::ffi::OsStr::new("0"))
+    {
+        return None;
+    }
+    static READER: isolated::IsolatedReader =
+        isolated::IsolatedReader::new(adlx::spawn_helper, isolated::IDLE_EXIT);
+    READER.snapshot().map(|gpus| AmdTelemetry {
         source: "amd-adlx",
         gpus,
     })
 }
 #[cfg(not(any(target_os = "linux", windows)))]
 fn sample_platform() -> Option<AmdTelemetry> {
+    None
+}
+
+/// Argument that turns a process started from this binary into the Windows ADLX helper.
+pub const WORKER_FLAG: &str = "--amd-adlx-telemetry";
+
+static WORKER_ROUTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Call first in `main` of every binary that serves `/metrics` (supervisor, server). Returns the
+/// exit code when this process was started as the AMD telemetry helper; otherwise records that
+/// the binary routes the helper flag, which enables AMD telemetry on Windows (#124 / #127: ADLX
+/// is never loaded into the supervisor process itself).
+pub fn run_worker_if_requested() -> Option<i32> {
+    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new(WORKER_FLAG)) {
+        #[cfg(windows)]
+        return Some(adlx::worker_main());
+        #[cfg(not(windows))]
+        return Some(2);
+    }
+    WORKER_ROUTED.store(true, std::sync::atomic::Ordering::Relaxed);
     None
 }
 
