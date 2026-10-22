@@ -49,19 +49,70 @@ def _load_reviewed_hashes(path=COMPAT_FILE):
 
 SUPPORTED_HASHES = _load_reviewed_hashes()
 
-# Structural contract the observer wraps. Each capability lists (owner, method, accepted signatures).
+# Structural contract the observer wraps. Each core method lists accepted base signatures.
+# A base marked extensible also accepts an upstream signature that keeps the same leading
+# positional parameters (same names, same required/defaulted split) and only appends
+# parameters with defaults, *args, **kwargs or keyword-only parameters with defaults. The
+# wrappers forward any such extra arguments untouched. Removed, renamed, reordered or new
+# required parameters still disable the observer. Exact bases are older shapes whose
+# wrapper would mis-route an appended positional argument.
 _RUN_ARGS = "self, ids, thinking, tools, max_new, sampling, cancel, force=None"
-CORE_SERVICE = {"run": {_RUN_ARGS}, "_note": {"self, n, evs, st=None, rate=None"},
-                "begin_request": {"self, path, req"}}
-CORE_HANDLER = {"do_POST": {"self"}, "do_GET": {"self"}, "send_response": {"self, code, message=None"},
-                "_note": {"self, **values"}, "_json": {"self, code, obj", "self, code, obj, headers=None",
-                          "self, code, obj, headers=None, retry_after=None"},
-                "_capture": {"self, items, api"}}
+# Strata 0.2.2 adds declared_only=False (MCP and tool routes pass it by keyword); it is one
+# such defaulted extension of _RUN_ARGS and the wrapper forwards it.
+_RUN_ARGS_022 = _RUN_ARGS + ", declared_only=False"
+EXTENSIBLE, EXACT = True, False
+CORE_SERVICE = {"run": ((_RUN_ARGS, EXTENSIBLE),), "_note": (("self, n, evs, st=None, rate=None", EXTENSIBLE),),
+                "begin_request": (("self, path, req", EXTENSIBLE),)}
+CORE_HANDLER = {"do_POST": (("self", EXTENSIBLE),), "do_GET": (("self", EXTENSIBLE),),
+                "send_response": (("self, code, message=None", EXTENSIBLE),),
+                "_note": (("self, **values", EXTENSIBLE),),
+                "_json": (("self, code, obj", EXACT), ("self, code, obj, headers=None", EXACT),
+                          ("self, code, obj, headers=None, retry_after=None", EXTENSIBLE)),
+                "_capture": (("self, items, api", EXTENSIBLE),)}
 OPTIONAL = ("load_state", "expert_stats", "mcp")
 
 
 def _methods(node):
-    return {n.name: ast.unparse(n.args) for n in node.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    return {n.name: n.args for n in node.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+
+
+def _arguments(text):
+    return ast.parse("def f(" + text + "): pass").body[0].args
+
+
+def _positional(args):
+    """[(name, has_default)] for the positional parameters, in order."""
+    params = list(args.posonlyargs) + list(args.args)
+    first_default = len(params) - len(args.defaults)
+    return [(p.arg, i >= first_default) for i, p in enumerate(params)]
+
+
+def signature_compatible(candidate, base, extensible=True):
+    """True when an upstream ast.arguments can be wrapped by the wrapper written for base."""
+    if not isinstance(candidate, ast.arguments):
+        return False
+    base_args = _arguments(base)
+    if not extensible:
+        return ast.unparse(candidate) == ast.unparse(base_args)
+    have, want = _positional(candidate), _positional(base_args)
+    if len(have) < len(want) or have[:len(want)] != want:
+        return False  # removed, renamed, reordered, or a required/optional flip
+    if any(not has_default for _, has_default in have[len(want):]):
+        return False  # a new required positional parameter
+    if any(default is None for default in candidate.kw_defaults):
+        return False  # a new required keyword-only parameter
+    base_kwonly = [a.arg for a in base_args.kwonlyargs]
+    if base_kwonly != [a.arg for a in candidate.kwonlyargs][:len(base_kwonly)]:
+        return False
+    if base_args.vararg is not None and candidate.vararg is None:
+        return False
+    if base_args.kwarg is not None and candidate.kwarg is None:
+        return False
+    return True
+
+
+def _accepted(candidate, bases):
+    return any(signature_compatible(candidate, base, extensible) for base, extensible in bases)
 
 
 def analyze_source(source):
@@ -69,7 +120,7 @@ def analyze_source(source):
 
     Returns {"mode": "structural"|"partial"|"disabled", "capabilities": {...}, "missing": [...]}.
     core = request accounting (Service.run/_note/begin_request and the HTTP handler
-    methods with the exact signatures the wrappers forward). Optional capabilities
+    methods with signatures the wrappers can forward, see signature_compatible). Optional capabilities
     degrade one by one; a missing core disables the observer (public endpoints remain)."""
     try:
         module = ast.parse(source)
@@ -80,13 +131,13 @@ def analyze_source(source):
     service = top.get("Service")
     service_methods = _methods(service) if isinstance(service, ast.ClassDef) else {}
     for name, accepted in CORE_SERVICE.items():
-        if service_methods.get(name) not in accepted:
+        if not _accepted(service_methods.get(name), accepted):
             missing.append("Service." + name)
     factory = top.get("make_handler")
     handler = next((n for n in factory.body if isinstance(n, ast.ClassDef)), None) if isinstance(factory, ast.FunctionDef) else None
     handler_methods = _methods(handler) if handler is not None else {}
     for name, accepted in CORE_HANDLER.items():
-        if handler_methods.get(name) not in accepted:
+        if not _accepted(handler_methods.get(name), accepted):
             missing.append("Handler." + name)
     routes_present = all(repr(route)[1:-1] in source for route in ROUTES)
     if not routes_present:
@@ -610,14 +661,14 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
         return None
 
     @functools.wraps(original_begin)
-    def begin(self, path, req):
+    def begin(self, path, req, *args, **kwargs):
         ctx = _ctx()
         if ctx:
             ctx["stream"] = bool(req.get("stream"))
         capture = getattr(self, "_manager_capture", None)
         if capture is not None and self.api_monitor is not True:
             return capture.begin(path, req)
-        return original_begin(self, path, req)
+        return original_begin(self, path, req, *args, **kwargs)
 
     @functools.wraps(original_note)
     def note(self, n, *args, **kwargs):
@@ -631,10 +682,12 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
         return original_note(self, n, *args, **kwargs)
 
     @functools.wraps(original_run)
-    def run(self, ids, thinking, tools, max_new, sampling, cancel, force=None):
+    def run(self, ids, thinking, tools, max_new, sampling, cancel, force=None, *more, **extra):
+        # more/extra carry arguments newer sources append with defaults (0.2.2 declared_only);
+        # older sources never receive one because their callers never pass it.
         ctx = _ctx()
         if not ctx:
-            yield from original_run(self, ids, thinking, tools, max_new, sampling, cancel, force)
+            yield from original_run(self, ids, thinking, tools, max_new, sampling, cancel, force, *more, **extra)
             return
         # A lazy model may have become ready after HTTP admission. Record only
         # its verified loaded service identity; failed loads remain unknown.
@@ -654,7 +707,7 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
         started = {key: value for key, value in info.items() if key != "clock"}
         started.update(finish="pending", outputTokens=None, durationS=None)
         journal.append("run_start", started)
-        generator = original_run(self, ids, thinking, tools, max_new, sampling, cancel, force)
+        generator = original_run(self, ids, thinking, tools, max_new, sampling, cancel, force, *more, **extra)
         try:
             for kind, value in generator:
                 if kind == "event" and getattr(value, "kind", None) == "tool_call":
@@ -736,7 +789,7 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
         get = handler.do_GET
 
         @functools.wraps(get)
-        def observed_get(self):
+        def observed_get(self, *args, **kwargs):
             if (self.path.partition("?")[0].rstrip("/") == "/api/requests" and svc.api_monitor is not True
                     and capture_control is not None):
                 with capture_control.lock:
@@ -745,7 +798,7 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
                     if self._authorized():
                         with capture_control.lock:
                             if not capture_control.refresh(force=True):
-                                return get(self)
+                                return get(self, *args, **kwargs)
                             request_id = parse_qs(urlsplit(self.path).query).get("id", [None])[0]
                             records = svc.request_records(request_id)
                         return self._json(404 if records is None else 200,
@@ -753,10 +806,10 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
                             {"requests": records, "retention": 100, "persistent": False, "loaded": svc.loaded(),
                              "auto_load": hasattr(svc.engine, "restart")})
                     return
-            return get(self)
+            return get(self, *args, **kwargs)
 
         @functools.wraps(post)
-        def observed_post(self):
+        def observed_post(self, *args, **kwargs):
             path = self.path.partition("?")[0].rstrip("/")
             route = ROUTES.get(path)
             if route is None:
@@ -766,7 +819,7 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
                 try:
                     if admission is False:
                         return self._json(503,{"error":{"type":"server_error","code":"strata_manager_maintenance","message":"The local service is being maintained. Retry shortly."}})
-                    return post(self)
+                    return post(self, *args, **kwargs)
                 finally:
                     if admission:
                         journal.release(request_id)
@@ -789,7 +842,7 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
             try:
                 if admission is False:
                     return self._json(503,{"error":{"type":"server_error","code":"strata_manager_maintenance","message":"The local service is being maintained. Retry shortly."}})
-                return post(self)
+                return post(self, *args, **kwargs)
             except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
                 ctx["cancelled"] = True
                 raise
@@ -813,14 +866,14 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
                         capture_control.active_records.pop(threading.get_ident(), None)
 
         @functools.wraps(send)
-        def observed_send(self, code, message=None):
+        def observed_send(self, code, message=None, *args, **kwargs):
             ctx = getattr(self, "_manager_context", None)
             if ctx:
                 ctx["httpStatus"] = int(code)
-            return send(self, code, message)
+            return send(self, code, message, *args, **kwargs)
 
         @functools.wraps(handler_note)
-        def observed_note(self, **values):
+        def observed_note(self, *args, **values):
             ctx = getattr(self, "_manager_context", None)
             if ctx:
                 if values.get("error"):
@@ -831,16 +884,18 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
                 with capture_control.lock:
                     if not capture_control.allowed_record(self):
                         return
-                    return handler_note(self, **values)
-            return handler_note(self, **values)
+                    return handler_note(self, *args, **values)
+            return handler_note(self, *args, **values)
 
         @functools.wraps(emit_json)
-        def observed_json(self, code, obj, headers=None, retry_after=None):
+        def observed_json(self, code, obj, headers=None, retry_after=None, *more, **kwargs):
             # 0.1.43.1 adds optional headers for retryable 503s and 0.2.0 adds
             # retry_after for 429/503. Older reviewed handlers take fewer
             # arguments, so forward only what the upstream caller supplied.
             def emit():
-                extra = {}
+                if more:  # a newer source appended positional parameters; keep their order
+                    return emit_json(self, code, obj, headers, retry_after, *more, **kwargs)
+                extra = dict(kwargs)
                 if headers is not None:
                     extra["headers"] = headers
                 if retry_after is not None:
@@ -879,12 +934,12 @@ def instrument_globals(namespace, journal=None, source_hash=None, allow_fixture=
             return emit()
 
         @functools.wraps(capture)
-        def observed_capture(self, items, api):
+        def observed_capture(self, items, api, *args, **kwargs):
             record = getattr(self, "record", None)
             temporary = record is not None and record.get("_manager_capture_token")
             # Never hold the capture lock while awaiting the engine's next token.
             # Otherwise a slow stream could prevent the TTL thread from erasing.
-            original = items if temporary else capture(self, items, api)
+            original = items if temporary else capture(self, items, api, *args, **kwargs)
             try:
                 for item in original:
                     if temporary and item is not None:

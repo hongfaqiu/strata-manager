@@ -58,7 +58,7 @@ README、官网截图与使用指南描述当前源码功能；安装包包含�
 - 签名在 CI（`macos-15`）中完成：导入 Developer ID Application 证书，启用硬化运行时（hardened runtime）签名应用和后台 `strata-supervisor`，用 App Store Connect API key 公证 `.app` 并 staple，再把已 staple 的应用放进 DMG、用 Developer ID 签名 DMG（DMG 本身不单独公证），再用 `codesign`、`stapler validate`、`spctl` 检查后才上传。没有证书的 fork 或 PR 构建回退为临时（ad-hoc）签名，本仓库可发布的构建缺少证书或公证凭据时直接失败。
 - 从临时签名的旧版升级到签名版后，macOS 会把它视为签名身份不同的应用：首次读取钥匙串里保存的凭据时可能弹窗询问，选「始终允许」即可；之前给旧版授予的系统权限（如有）可能需要重新授予。
 - **不提供** Intel（`x86_64-apple-darwin`）安装包。上游 Strata Metal 面向 Apple Silicon。
-- **DMG 仍不含引擎。** 第二期起，Manager 在 Apple Silicon 上可下载并校验上游 [v0.2.0-beta](https://github.com/Niko1221/Strata/releases/tag/v0.2.0-beta) 预制包 `strata-engine-*-macos-arm64-metal.tar.gz`（应用内 SHA256，不附带 SHA256SUMS），也可选用已有本地 Strata/`engine` 或 `build-metal` 目录。`./setup.sh` 源码构建仍可手动按 [docs/MAC.md](https://github.com/Niko1221/Strata/blob/main/docs/MAC.md) 操作，Manager 暂不自动调用。真机推理验收仍待进行。
+- **DMG 仍不含引擎。** 第二期起，Manager 在 Apple Silicon 上可下载并校验上游 [v0.2.2](https://github.com/Niko1221/Strata/releases/tag/v0.2.2) 预制包 `strata-engine-0.1.47-macos-arm64-metal.tar.gz`（应用内 SHA256，并逐个文件核对包内签名清单；不附带 SHA256SUMS），也可选用已有本地 Strata/`engine` 或 `build-metal` 目录。`./setup.sh` 源码构建仍可手动按 [docs/MAC.md](https://github.com/Niko1221/Strata/blob/main/docs/MAC.md) 操作，Manager 暂不自动调用。真机推理验收仍待进行。
 - `Info.plist` 最低系统版本为 15.0。CI 本身只证明 runner 能编译并打包；真机上的运行情况以上面的用户反馈为准，Metal 推理仍未验收。
 - 能识别 Apple 芯片显卡：显示芯片名、GPU 核数和 Metal 版本，统一内存只计算一次，并显示 GPU 最多可用的部分（读 Metal 的 `recommendedMaxWorkingSetSize`）。
 - macOS 自带的 `/usr/bin/python3` 是 3.9，达不到 Strata 要求的 3.10+。引导页和 Strata 页会提供「一键安装 Python」：把 python-build-standalone 的 CPython 3.12.15 装到应用目录，按官方字节数和 SHA-256 校验，不需要管理员权限，不改 PATH，也不碰系统或 Homebrew 的 Python。

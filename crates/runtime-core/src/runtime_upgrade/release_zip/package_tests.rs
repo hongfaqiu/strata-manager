@@ -428,6 +428,162 @@ fn every_file_of_the_official_windows_hip_package_is_allowed() {
     }
 }
 
+/// Every file of the 12 signed Strata v0.2.2 engine packages (0.1.47) that Manager's release
+/// flow installs passes the allowlist: the HIP packages ship `tuning/*-hipblaslt-*.txt`.
+#[test]
+fn every_file_of_the_strata_022_engine_packages_is_allowed() {
+    let list = include_str!("../fixtures/engine-0.1.47-paths.txt");
+    let mut packages = HashSet::new();
+    let mut tuning = 0;
+    for line in list.lines().filter(|l| !l.starts_with('#')) {
+        let (package, path) = line.split_once(' ').unwrap();
+        if package.starts_with("macos-") {
+            continue; // Metal installs through its own flow.
+        }
+        packages.insert(package);
+        tuning += usize::from(path.starts_with("tuning/"));
+        assert!(engine_file_allowed(path), "{package}: {path}");
+    }
+    assert_eq!(packages.len(), 11);
+    assert!(tuning >= 5, "{tuning}");
+}
+
+#[test]
+fn strata_022_rx6000_packages_are_listed_and_picked_by_gpu() {
+    let feed = engine_package::verify_feed(
+        include_bytes!("../fixtures/strata-feed-v0.2.2.json"),
+        include_bytes!("../fixtures/strata-feed-v0.2.2.json.sig"),
+        Some(102),
+        now(),
+    )
+    .unwrap();
+    let release: Value =
+        serde_json::from_str(include_str!("../fixtures/release-v0.2.2.json")).unwrap();
+    let info = |platform| RuntimeUpdateInfo {
+        assets: engine_package::feed_assets(&feed, &release, "v0.2.2", platform).unwrap(),
+        ..Default::default()
+    };
+    let (linux, windows) = (info("linux-x86_64"), info("windows-x86_64"));
+    let variants = |info: &RuntimeUpdateInfo| {
+        info.assets
+            .iter()
+            .map(|a| a.variant.clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        variants(&linux),
+        [
+            "cuda12",
+            "cuda13",
+            "hip-halo",
+            "hip-rx6000",
+            "hip-rx7900",
+            "hip"
+        ]
+    );
+    assert_eq!(
+        variants(&windows),
+        ["cuda12", "cuda13", "hip-rdna2", "hip-rdna3", "hip"]
+    );
+    let temp = tempfile::tempdir().unwrap();
+    let rx6800 = || gpu_select::GpuProbe {
+        amd_gfx: vec!["gfx1030".into()],
+        ..Default::default()
+    };
+    let chosen = choose_asset_with(&linux, temp.path(), None, &rx6800).unwrap();
+    assert_eq!(
+        chosen.name,
+        "strata-engine-0.1.47-linux-x86_64-hip-rx6000.tar.gz"
+    );
+    assert!(chosen.match_reason.unwrap().contains("untested"));
+    // Windows first install (no engine yet): an RX 6700 XT gets the RDNA2 package.
+    let rx6700 = || gpu_select::GpuProbe {
+        amd_gfx: vec!["gfx1031".into()],
+        ..Default::default()
+    };
+    let chosen = choose_asset_with(&windows, temp.path(), None, &rx6700).unwrap();
+    assert_eq!(
+        chosen.name,
+        "strata-engine-0.1.47-windows-x86_64-hip-rdna2.tar.gz"
+    );
+    // An installed RX 6000 engine is recognised from its BUILD.json and kept.
+    for (platform, build, variant) in [
+        (
+            "linux-x86_64",
+            r#"{"version":"0.1.47","variant":"rx6000","archs":["gfx1030","gfx1031"]}"#,
+            "hip-rx6000",
+        ),
+        (
+            "windows-x86_64",
+            r#"{"backend":"hip","platform":"windows-x64","archs":["gfx1030","gfx1031"]}"#,
+            "hip-rdna2",
+        ),
+    ] {
+        let build: Value = serde_json::from_str(build).unwrap();
+        assert_eq!(build_variant(&build, platform), Some(variant), "{platform}");
+    }
+}
+
+/// Windows first install with an NVIDIA card: the real v0.2.2 Windows CUDA packages (CUDA 12:
+/// sm_60-sm_89, driver 576.02+; CUDA 13: sm_75+, driver 580.65+) decide by `nvidia-smi`.
+#[test]
+fn windows_first_install_picks_the_cuda_package_the_nvidia_card_runs() {
+    let feed = engine_package::verify_feed(
+        include_bytes!("../fixtures/strata-feed-v0.2.2.json"),
+        include_bytes!("../fixtures/strata-feed-v0.2.2.json.sig"),
+        None,
+        now(),
+    )
+    .unwrap();
+    let release: Value =
+        serde_json::from_str(include_str!("../fixtures/release-v0.2.2.json")).unwrap();
+    let info = RuntimeUpdateInfo {
+        assets: engine_package::feed_assets(&feed, &release, "v0.2.2", "windows-x86_64").unwrap(),
+        ..Default::default()
+    };
+    let temp = tempfile::tempdir().unwrap();
+    let card = |driver: Option<&str>, caps: &[(u32, u32)], amd: &[&str]| gpu_select::GpuProbe {
+        nvidia_driver: driver.map(str::to_owned),
+        nvidia_caps: caps.to_vec(),
+        amd_gfx: amd.iter().map(|g| (*g).to_owned()).collect(),
+    };
+    let choose = |probe: gpu_select::GpuProbe| {
+        choose_asset_with(&info, temp.path(), None, &move || probe.clone())
+    };
+    // RTX 4090 on a current driver, also with a Ryzen iGPU: CUDA 13.
+    for amd in [&[][..], &["gfx1036"][..]] {
+        let chosen = choose(card(Some("581.57"), &[(8, 9)], amd)).unwrap();
+        assert_eq!(chosen.variant, "cuda13");
+        assert!(chosen.match_reason.unwrap().contains("581.57"));
+    }
+    // GTX 1080 (Pascal, sm_61): CUDA 13 dropped it, so CUDA 12.
+    assert_eq!(
+        choose(card(Some("581.57"), &[(6, 1)], &[]))
+            .unwrap()
+            .variant,
+        "cuda12"
+    );
+    // A driver new enough for CUDA 12 but not for CUDA 13.
+    assert_eq!(
+        choose(card(Some("577.00"), &[(8, 9)], &[]))
+            .unwrap()
+            .variant,
+        "cuda12"
+    );
+    // A driver too old for both: an error naming the driver to update to, instead of an
+    // engine that cannot start.
+    let old = choose(card(Some("560.94"), &[(8, 9)], &[])).unwrap_err();
+    assert!(
+        old.contains("576.02") && old.contains("Update the driver"),
+        "{old}"
+    );
+    // nvidia-smi unreadable (no compute capability): CUDA 13 as before.
+    assert_eq!(
+        choose(card(Some("581.57"), &[], &[])).unwrap().variant,
+        "cuda13"
+    );
+}
+
 #[test]
 fn windows_first_install_picks_hip_for_an_amd_only_computer() {
     let temp = tempfile::tempdir().unwrap();
@@ -461,7 +617,7 @@ fn windows_first_install_picks_hip_for_an_amd_only_computer() {
     assert!(choose_asset_with(&info, temp.path(), None, &rx6800)
         .unwrap_err()
         .contains("手动选择"));
-    // NVIDIA, NVIDIA + AMD, or nothing detected: CUDA 13 as before.
+    // A current NVIDIA card (+ AMD iGPU), or nothing detected: CUDA 13 as before.
     let rtx = || gpu_select::GpuProbe {
         nvidia_driver: Some("581.57".into()),
         nvidia_caps: vec![(8, 9)],
@@ -637,22 +793,36 @@ fn requirements_may_only_shrink_in_place() {
 /// `STRATA_020_PACKAGES=/dir` names a folder with them; otherwise it has nothing to check.
 #[test]
 fn real_0_2_0_packages_extract_and_verify() {
-    let Some(dir) = std::env::var_os("STRATA_020_PACKAGES").map(PathBuf::from) else {
-        return;
-    };
-    let feed = engine_package::verify_feed(
+    check_real_packages(
+        "STRATA_020_PACKAGES",
         include_bytes!("../fixtures/strata-feed.json"),
         include_bytes!("../fixtures/strata-feed.json.sig"),
-        None,
-        now(),
-    )
-    .unwrap();
-    let release: Value =
-        serde_json::from_str(include_str!("../fixtures/release-v0.2.0-beta.json")).unwrap();
+        include_str!("../fixtures/release-v0.2.0-beta.json"),
+        "v0.2.0-beta",
+    );
+}
+
+/// The same for Strata v0.2.2 (engine 0.1.47) with `STRATA_022_PACKAGES=/dir`.
+#[test]
+fn real_0_2_2_packages_extract_and_verify() {
+    check_real_packages(
+        "STRATA_022_PACKAGES",
+        include_bytes!("../fixtures/strata-feed-v0.2.2.json"),
+        include_bytes!("../fixtures/strata-feed-v0.2.2.json.sig"),
+        include_str!("../fixtures/release-v0.2.2.json"),
+        "v0.2.2",
+    );
+}
+
+fn check_real_packages(env: &str, feed: &[u8], sig: &[u8], release: &str, tag: &str) {
+    let Some(dir) = std::env::var_os(env).map(PathBuf::from) else {
+        return;
+    };
+    let feed = engine_package::verify_feed(feed, sig, None, now()).unwrap();
+    let release: Value = serde_json::from_str(release).unwrap();
     let mut checked = 0;
     for platform in ["windows-x86_64", "linux-x86_64"] {
-        for asset in engine_package::feed_assets(&feed, &release, "v0.2.0-beta", platform).unwrap()
-        {
+        for asset in engine_package::feed_assets(&feed, &release, tag, platform).unwrap() {
             let archive = dir.join(&asset.name);
             if !archive.exists() {
                 continue;
@@ -685,4 +855,36 @@ fn real_0_2_0_packages_extract_and_verify() {
         }
     }
     assert!(checked > 0, "no packages found in {}", dir.display());
+}
+
+/// The pinned fresh-install source moved from fb58e0d (0.1.41) to Strata v0.2.2: its pinned
+/// Python packages are a subset of the old ones (cmake / ninja moved to the build-only
+/// file), so runtimes prepared from the old pin take the v0.2.2 release update in place.
+#[test]
+fn strata_022_requirements_fit_runtimes_prepared_from_the_previous_pin() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/runtime_upgrade/fixtures");
+    let old = normalized_requirements(&dir.join("requirements-fb58e0d.txt")).unwrap();
+    let new = normalized_requirements(&dir.join("requirements-v0.2.2.txt")).unwrap();
+    assert!(requirements_compatible(&old, &new));
+    assert!(!new
+        .iter()
+        .any(|row| row.starts_with("cmake") || row.starts_with("ninja")));
+    assert!(new.contains(&"regex==2026.9.10".to_owned()));
+}
+
+/// The pinned source's `serve/server.py` is reviewed for the observer, at the same ref.
+#[test]
+fn the_pinned_source_revision_is_a_reviewed_observer_source() {
+    let compat: Value = serde_json::from_str(OBSERVER_COMPAT).unwrap();
+    let entry = compat["reviewed"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["ref"] == installation::SOURCE_REVISION)
+        .expect("observer_compat.json reviews the pinned revision");
+    assert_eq!(entry["version"], "0.2.2");
+    let reviewed = reviewed_observer_hashes();
+    for hash in entry["serverPySha256"].as_array().unwrap() {
+        assert!(reviewed.contains(hash.as_str().unwrap()));
+    }
 }

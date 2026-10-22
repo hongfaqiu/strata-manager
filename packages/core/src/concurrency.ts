@@ -1,3 +1,4 @@
+import { configGpuIds, savedRoles } from './gpu-roles';
 import { isOrcaRouterEvidence } from './orca-import';
 import type { JsonObject } from './types';
 import { TRAINED_CONTEXT } from './context-extension';
@@ -62,7 +63,8 @@ export function readConcurrencySettings(config: JsonObject): ConcurrencySettings
   const batchArg = wholeNumber(argValue(args, '--batch'));
   const slotsArg = wholeNumber(argValue(args, '--slots'));
   const gpu = config.gpu ?? argValue(args, '--gpu');
-  const gpuIds = Array.isArray(gpu) ? gpu.map(Number).filter(Number.isSafeInteger) : typeof gpu === 'string' && gpu.trim() ? gpu.split(',').map(Number).filter(Number.isSafeInteger) : typeof gpu === 'number' ? [gpu] : [];
+  // Strata 0.2.2: "gpu_roles" (Main / Helper / Off) decide the cards unless "gpu" was edited by hand (serve/server.py gpu_list).
+  const gpuIds = savedRoles(config).roles ? configGpuIds(config) : Array.isArray(gpu) ? gpu.map(Number).filter(Number.isSafeInteger) : typeof gpu === 'string' && gpu.trim() ? gpu.split(',').map(Number).filter(Number.isSafeInteger) : typeof gpu === 'number' ? [gpu] : [];
   const layerSplit = typeof config.layer_split === 'string' && config.layer_split.trim() ? config.layer_split.trim() : argValue(args, '--layer-split') || null;
   const kv = argValue(args, '--kv') || '';
   const context = wholeNumber(argValue(args, '--max-context'));

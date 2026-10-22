@@ -3,6 +3,7 @@ import { STARTUP_ENGINE_FLAGS } from './startup-engine-flags';
 import { startupServiceEndpoint } from './config-profile';
 import { concurrencyConfigError } from './concurrency';
 import { contextExtensionError } from './context-extension';
+import { parseSaved } from './gpu-roles';
 export { STARTUP_ENGINE_FLAGS } from './startup-engine-flags';
 
 export interface StartupTuning { context: string; kv: string; threads: string }
@@ -117,6 +118,9 @@ export const STARTUP_TUNING_FIELDS: readonly StartupFieldSpec[] = [
     ['--host-core', '主循环核心', 'Host-loop core', 'text', ['first', 'last']],
     ['--no-host-worker', '禁用主循环工作线程', 'Disable host worker', 'boolean'],
   ]),
+  ...fields('cpu', 'config', [
+    ['pool_cores', '实验：CPU 专家线程使用的逻辑处理器', 'Experimental: logical processors for CPU expert workers', 'text'],
+  ]),
   ...fields('prefill', 'arg', [
     ['--prefill', 'Prefill 分块（token）', 'Prefill chunk (tokens)', 'text', ['auto', 'auto:16384', 'auto:32768']],
     ['--no-prefill-borrow', '不借用专家缓存给 Prefill', 'Disable prefill borrowing', 'boolean'],
@@ -215,6 +219,10 @@ export const STARTUP_TUNING_FIELDS: readonly StartupFieldSpec[] = [
 
 /** Optional one-line explanations shown under a field in the graphical editor (zh + en). */
 export const STARTUP_FIELD_HINTS: Readonly<Record<string, { zh: string; en: string }>> = {
+  pool_cores: {
+    zh: '进阶、默认关闭：把 CPU 专家线程固定到这些逻辑处理器，例如 0,2,4,6 或 2-14:2（起-止:步长）。需要 Strata 0.2.2（引擎 0.1.47）及以上；留空保持默认分配。args 里已有 --pool-cores 时以它为准。',
+    en: 'Advanced, off by default: pins the CPU expert workers to these logical processors, e.g. 0,2,4,6 or 2-14:2 (start-end:step). Needs Strata 0.2.2 (engine 0.1.47) or newer; leave empty for the default placement. A --pool-cores in args wins.',
+  },
   'sampling.experimental_speed_projection': {
     zh: '仅在引擎已加载实验投影控制向量时生效，不会自动加载或下载向量，也不保证提速或效果。只给没带这个参数的请求当默认值：请求里的值和共享采样设置优先，Manager 聊天仍按会话开关发送。保存后重启模型生效；“使用默认设置”会删除这一项，不会强制开启。',
     en: 'Only takes effect when the engine has already loaded an experimental projection control vector; this does not load or download one and promises no speed-up or quality change. It is the default for requests that leave the parameter out: a value in the request and the shared sampling settings come first, and Manager chat keeps sending its per-chat switch. Restart the model after saving; “Use default” removes the entry rather than forcing it on.',
@@ -225,6 +233,12 @@ export const STARTUP_FIELD_HINTS: Readonly<Record<string, { zh: string; en: stri
   },
 };
 
+const POOL_CORES = /^[0-9]+(-[0-9]+(:[0-9]+)?)?(,[0-9]+(-[0-9]+(:[0-9]+)?)?)*$/;
+/** serve/server.py pool_cores_args (v0.2.2): a text like "0,2,4,6" / "2-14:2", or a list of processor numbers. */
+export function poolCoresValid(value: unknown): boolean {
+  if (Array.isArray(value)) return value.length > 0 && value.every(v => Number.isSafeInteger(v) && (v as number) >= 0);
+  return typeof value === 'string' && POOL_CORES.test(value.replace(/ /g, ''));
+}
 /** Config fields whose stored null means the same as leaving them out. */
 const NULL_AS_DEFAULT_FIELDS: ReadonlySet<string> = new Set(['sampling.experimental_speed_projection']);
 
@@ -327,6 +341,8 @@ export function validateStartupConfiguration(config: JsonObject): void {
   if (ropeError) throw new Error(ropeError);
   for (const key of ['exe', 'cwd', 'tokenizer', 'model_name', 'log', 'host']) if (config[key] !== undefined && typeof config[key] !== 'string') throw new Error(`${key}: 必须为字符串 / must be a string`);
   if (config.api_key !== undefined && typeof config.api_key !== 'string' && !(Array.isArray(config.api_key) && config.api_key.every(key => typeof key === 'string' && !!key.trim()))) throw new Error('api_key: 必须为字符串或非空密钥的数组 / must be a string or an array of nonempty keys');
+  if (config.pool_cores !== undefined && config.pool_cores !== null && config.pool_cores !== '' && !poolCoresValid(config.pool_cores)) throw new Error('pool_cores: 逻辑处理器编号，如 "0,2,4,6" 或 "2-14:2" / logical processor numbers like "0,2,4,6" or "2-14:2"');
+  if (config.gpu_roles !== undefined && config.gpu_roles !== null && !parseSaved(config.gpu_roles)) throw new Error('gpu_roles: 每张卡为 main / helper / off，最多一张 main / each card is main, helper or off, with at most one main');
   for (const key of ['sampling', 'env', 'vision']) if (config[key] !== undefined && config[key] !== null && (!config[key] || typeof config[key] !== 'object' || Array.isArray(config[key]))) throw new Error(`${key}: 必须为对象或 null / must be an object or null`);
   for (const key of ['api_monitor', 'open_browser', 'lazy_load', 'fit_max_tokens']) if (config[key] !== undefined && typeof config[key] !== 'boolean') throw new Error(`${key}: 必须为布尔值 / must be a boolean`);
   // Strata refuses to start on a non-boolean here ("false", 0, 1); null and a missing key mean "use the default".

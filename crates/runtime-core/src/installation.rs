@@ -22,12 +22,15 @@ use std::{
     time::{Duration, Instant},
 };
 
-// The reviewed upstream revision also determines observer compatibility.
-pub const SOURCE_REVISION: &str = "fb58e0dbc8399662c0e47c76578c6e878b14f6cf";
+// The reviewed upstream revision also determines observer compatibility: Strata v0.2.2
+// (tag v0.2.2, commit 011c9e6), whose serve/server.py is reviewed in observer_compat.json.
+// New runtimes go to `strata-<first 12>`, so runtimes prepared from an older pin stay as
+// they are; the release update flow moves them.
+pub const SOURCE_REVISION: &str = "011c9e600a93bbc9fd451c563501b5831c32bbca";
 pub const SOURCE_URL: &str =
-    "https://codeload.github.com/Niko1221/Strata/zip/fb58e0dbc8399662c0e47c76578c6e878b14f6cf";
-// Downloaded from the exact HTTPS URL and independently hashed on 2026-10-10.
-pub const SOURCE_SHA256: &str = "b6b559866cf7d422d7acace638d542049ea7e3543720f574cb97b2d0bd530d7b";
+    "https://codeload.github.com/Niko1221/Strata/zip/011c9e600a93bbc9fd451c563501b5831c32bbca";
+// Downloaded twice from the exact HTTPS URL (32,149,291 bytes, same digest) on 2026-10-21.
+pub const SOURCE_SHA256: &str = "0c3139c33e2df981a1542f7b8243ed094d9922c8551c24ab67f01cfcee9eaf5d";
 #[cfg(windows)]
 const PYTHON_VERSION: &str = "3.13.16";
 #[cfg(windows)]
@@ -1584,7 +1587,20 @@ async fn ensure_metal_engine(
             if let Ok(value) =
                 serde_json::from_slice::<serde_json::Value>(&fs::read(build).unwrap_or_default())
             {
-                if value["backend"].as_str() == Some("metal") {
+                let outdated = existing
+                    .parent()
+                    .is_some_and(crate::macos_metal::managed_metal_install_outdated);
+                if outdated {
+                    progress(
+                        state,
+                        id,
+                        format!(
+                            "Manager 安装的 Metal 引擎 {} 低于 {}，正在更新",
+                            value["version"].as_str().unwrap_or("?"),
+                            crate::macos_metal::METAL_ENGINE_VERSION
+                        ),
+                    )?;
+                } else if value["backend"].as_str() == Some("metal") {
                     progress(
                         state,
                         id,
@@ -1670,9 +1686,17 @@ async fn ensure_metal_engine(
             );
         }
     }
-    crate::macos_metal::extract_metal_engine_archive(&archive, &engine_dir, || {
+    let files = crate::macos_metal::extract_metal_engine_archive(&archive, &engine_dir, || {
         cancelled(state, id)
     })?;
+    progress(state, id, "正在按签名清单核对 Metal 引擎文件")?;
+    if let Err(error) =
+        crate::macos_metal::verify_metal_manifest(&engine_dir, &files, &|| cancelled(state, id))
+    {
+        // Never leave files that failed the signed manifest where the engine is looked for.
+        let _ = fs::remove_dir_all(&engine_dir);
+        return Err(error);
+    }
     crate::macos_metal::write_metal_install_marker(&engine_dir)?;
     progress(
         state,

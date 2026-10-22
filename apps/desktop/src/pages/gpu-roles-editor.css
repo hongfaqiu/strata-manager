@@ -1,0 +1,11 @@
+.gpu-roles-editor{padding:12px 16px;display:grid;gap:10px}
+.gpu-roles-heading{display:flex;align-items:center;gap:10px}.gpu-roles-heading h3{margin:0;font-size:14px}
+.gpu-roles-hint{margin:0;font-size:12px;line-height:1.6;color:var(--st-ink-muted)}
+.gpu-roles-list{display:grid;gap:8px}
+.gpu-roles-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:8px 12px;border:1px solid var(--st-border,var(--border));border-radius:8px}
+.gpu-roles-row.is-main{border-color:color-mix(in srgb,var(--accent) 55%,var(--st-border,var(--border)))}
+.gpu-roles-row.is-off .gpu-roles-card{opacity:.65}
+.gpu-roles-card{display:grid;gap:2px;min-width:0}.gpu-roles-card small{color:var(--st-ink-muted);overflow-wrap:anywhere}
+.gpu-roles-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.gpu-roles-footer button{font-size:12px;min-height:30px}
+.gpu-roles-editor .notice{margin:0}

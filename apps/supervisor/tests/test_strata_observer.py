@@ -41,14 +41,19 @@ OFFICIAL_0144_HASH = "2aa0d2060766799be2ea7045dc13ca5bab2cec39ad5c29bc8a54d816ed
 OFFICIAL_01441_HASH = "6c45c639e28a873b854606719d9ce2bb2e0df666f105164e78e2735878b9aa8f"
 # Strata 0.2.0-beta (control package serve/server.py, also shipped by the official App).
 OFFICIAL_020_HASH = "d3c615f50cbfee032968a059aca039c1771abd6f8c077829f8f8fc6791b3cf97"
+OFFICIAL_021_HASH = "f15efbe6a1e3a97d58ddbc0fa9a68ce544c90f6c1b03cbf6cecf50c625a5a5f8"
+# Strata 0.2.2 adds declared_only=False to Service.run (MCP / tool routes pass it by keyword).
+OFFICIAL_022_HASH = "bc09af76400932500f9ce09f401bf097ad7e7b120374d2cfbe3f4142fadd2304"
+SINCE_020_HASHES = {OFFICIAL_020_HASH, OFFICIAL_021_HASH, OFFICIAL_022_HASH}
+DECLARED_ONLY_SOURCE_HASHES = {OFFICIAL_022_HASH}
 KEEP_AWAKE_SOURCE_HASHES = {OFFICIAL_0142_HASH, OFFICIAL_0143_HASH, OFFICIAL_01431_HASH, OFFICIAL_0144_HASH,
-                            OFFICIAL_01441_HASH, OFFICIAL_020_HASH}
+                            OFFICIAL_01441_HASH, *SINCE_020_HASHES}
 NONFINITE_SOURCE_HASHES = {OFFICIAL_0143_HASH, OFFICIAL_01431_HASH, OFFICIAL_0144_HASH, OFFICIAL_01441_HASH,
-                           OFFICIAL_020_HASH}
+                           *SINCE_020_HASHES}
 HEADER_JSON_SOURCE_HASHES = {OFFICIAL_01431_HASH, OFFICIAL_0144_HASH, OFFICIAL_01441_HASH}
 # 0.2.0 adds retry_after=None to Handler._json (429/503 Retry-After).
-RETRY_AFTER_JSON_SOURCE_HASHES = {OFFICIAL_020_HASH}
-RETRYABLE_503_SOURCE_HASHES = {OFFICIAL_01431_HASH, OFFICIAL_0144_HASH, OFFICIAL_01441_HASH, OFFICIAL_020_HASH}
+RETRY_AFTER_JSON_SOURCE_HASHES = set(SINCE_020_HASHES)
+RETRYABLE_503_SOURCE_HASHES = {OFFICIAL_01431_HASH, OFFICIAL_0144_HASH, OFFICIAL_01441_HASH, *SINCE_020_HASHES}
 
 
 class BlockingLazyEngine(server.MockEngine):
@@ -984,7 +989,10 @@ class JournalAndLoader(unittest.TestCase):
         module = ast.parse((ROOT / "serve/server.py").read_text(encoding="utf-8"))
         service = next(n for n in module.body if isinstance(n, ast.ClassDef) and n.name == "Service")
         methods = {n.name: n for n in service.body if isinstance(n, ast.FunctionDef)}
-        signatures = {"run": "self, ids, thinking, tools, max_new, sampling, cancel, force=None",
+        run_arguments = "self, ids, thinking, tools, max_new, sampling, cancel, force=None"
+        if SOURCE_HASH in DECLARED_ONLY_SOURCE_HASHES:
+            run_arguments += ", declared_only=False"
+        signatures = {"run": run_arguments,
                       "ensure_loaded": "self", "metrics": "self, all_requests=False",
                       "_note": "self, n, evs, st=None, rate=None", "begin_request": "self, path, req"}
         for name, arguments in signatures.items():
