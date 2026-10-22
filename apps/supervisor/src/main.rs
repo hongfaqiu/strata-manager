@@ -7,6 +7,10 @@ use tokio_util::sync::CancellationToken;
 fn main() {
     // Engine probes and services must never block on a Windows loader dialog.
     strata_runtime_core::processes::suppress_hard_error_dialogs();
+    // AMD telemetry runs in a child of this exe so a driver fault cannot end the supervisor (#124).
+    if let Some(code) = strata_runtime_core::amd_gpu::run_worker_if_requested() {
+        std::process::exit(code);
+    }
     if let Some(result) = strata_runtime_core::manager_mcp_stdio::run_if_requested() {
         match result {
             Ok(code) => std::process::exit(code),

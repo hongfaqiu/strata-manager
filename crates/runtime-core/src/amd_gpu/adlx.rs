@@ -2,65 +2,22 @@
 //! https://gpuopen.com/manuals/adlx/adlx-_d_o_x__i_a_d_l_x_performance_monitoring_services/
 //!
 //! `amdadlx64.dll` ships with the Adrenalin driver in System32 and is loaded only at run time,
-//! so the app starts and runs normally on PCs without it. ADLX objects stay on one worker thread
-//! that samples about once a second while the monitor is being read and exits when nobody reads
-//! it for a while. Initialization failures (no AMD driver, driver too old) are retried rarely.
+//! so the app starts and runs normally on PCs without it. ADLX is loaded only in a helper child
+//! process (`--amd-adlx-telemetry`, see `isolated.rs`) that samples about once a second while
+//! the monitor is being read; a crash inside the driver library ends only that helper.
 
 use super::{non_negative, positive, AmdGpuSample};
 use adlx::{
     ffi, gpu::Gpu1, helper::AdlxHelper, interface::Interface,
     performance_monitoring_services::PerformanceMonitoringServices, Gpu,
 };
-use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::io::Write;
+use std::time::Duration;
 
 const SAMPLE_EVERY: Duration = Duration::from_secs(1);
-const IDLE_EXIT: Duration = Duration::from_secs(30);
-const STALE_AFTER: Duration = Duration::from_secs(5);
-const RETRY_AFTER_FAILURE: Duration = Duration::from_secs(300);
-
-struct Shared {
-    latest: Option<(Instant, Vec<AmdGpuSample>)>,
-    last_read: Option<Instant>,
-    running: bool,
-    failed_at: Option<Instant>,
-}
-
-static SHARED: Mutex<Shared> = Mutex::new(Shared {
-    latest: None,
-    last_read: None,
-    running: false,
-    failed_at: None,
-});
-
-/// Latest ADLX sample, starting the worker when needed. The first call after start returns
-/// `None` until the worker has read the GPUs once.
-pub(super) fn snapshot() -> Option<Vec<AmdGpuSample>> {
-    let mut shared = SHARED.lock().ok()?;
-    shared.last_read = Some(Instant::now());
-    let may_start = shared
-        .failed_at
-        .is_none_or(|at| at.elapsed() >= RETRY_AFTER_FAILURE);
-    if !shared.running && may_start && driver_dll_present() {
-        shared.running = true;
-        if std::thread::Builder::new()
-            .name("amd-adlx-telemetry".into())
-            .spawn(worker)
-            .is_err()
-        {
-            shared.running = false;
-            shared.failed_at = Some(Instant::now());
-        }
-    }
-    shared
-        .latest
-        .as_ref()
-        .filter(|(at, _)| at.elapsed() < STALE_AFTER)
-        .map(|(_, gpus)| gpus.clone())
-}
 
 /// Only load the driver's own copy; never search PATH or the working directory for it.
-fn driver_dll_present() -> bool {
+pub(super) fn driver_dll_present() -> bool {
     std::env::var_os("SystemRoot")
         .map(|root| {
             std::path::Path::new(&root)
@@ -71,14 +28,53 @@ fn driver_dll_present() -> bool {
         .unwrap_or(false)
 }
 
-fn worker() {
-    let outcome = std::panic::catch_unwind(run);
-    if let Ok(mut shared) = SHARED.lock() {
-        shared.running = false;
-        if !matches!(outcome, Ok(Ok(()))) {
-            shared.failed_at = Some(Instant::now());
-            shared.latest = None;
-        }
+/// Start `<this exe> --amd-adlx-telemetry` with no window. ADLX is never loaded into the
+/// supervisor itself (#124 / #127): see `isolated.rs`.
+pub(super) fn spawn_helper() -> std::io::Result<std::process::Child> {
+    use std::process::{Command, Stdio};
+    if !driver_dll_present() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "amdadlx64.dll is not installed",
+        ));
+    }
+    let mut command = Command::new(std::env::current_exe()?);
+    command
+        .arg(super::WORKER_FLAG)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    crate::processes::hidden(&mut command);
+    command.spawn()
+}
+
+/// Body of the helper process: one JSON line of samples per second on stdout until stdin closes
+/// (the parent stopped it or exited) or stdout can no longer be written.
+pub(super) fn worker_main() -> i32 {
+    // SAFETY: plain Win32 call with no pointers. A fault in the driver library ends this helper
+    // quietly instead of raising a crash dialog; the parent only loses the readings.
+    unsafe {
+        use windows_sys::Win32::System::Diagnostics::Debug::{
+            GetErrorMode, SetErrorMode, SEM_FAILCRITICALERRORS, SEM_NOGPFAULTERRORBOX,
+            SEM_NOOPENFILEERRORBOX,
+        };
+        SetErrorMode(
+            GetErrorMode()
+                | SEM_FAILCRITICALERRORS
+                | SEM_NOGPFAULTERRORBOX
+                | SEM_NOOPENFILEERRORBOX,
+        );
+    }
+    std::thread::spawn(|| {
+        let mut sink = [0u8; 64];
+        let mut stdin = std::io::stdin();
+        while matches!(std::io::Read::read(&mut stdin, &mut sink), Ok(n) if n > 0) {}
+        std::process::exit(0);
+    });
+    match std::panic::catch_unwind(run) {
+        Ok(Ok(())) => 0,
+        Ok(Err(_)) => 3,
+        Err(_) => 4,
     }
 }
 
@@ -87,25 +83,24 @@ fn run() -> Result<(), String> {
     // resolves a name to an already-loaded module before searching any directory.
     let pin = SystemDll::load()?;
     let helper = AdlxHelper::new().map_err(|e| e.to_string())?;
-    {
+    let result = (|| {
         let session = Session::open(&helper)?;
+        let mut stdout = std::io::stdout().lock();
         loop {
-            let gpus = session.sample();
+            let line = serde_json::to_string(&session.sample()).map_err(|e| e.to_string())?;
+            if writeln!(stdout, "{line}")
+                .and_then(|_| stdout.flush())
+                .is_err()
             {
-                let mut shared = SHARED.lock().map_err(|e| e.to_string())?;
-                shared.latest = Some((Instant::now(), gpus));
-                if shared.last_read.is_none_or(|at| at.elapsed() > IDLE_EXIT) {
-                    shared.latest = None;
-                    break;
-                }
+                return Ok(());
             }
             std::thread::sleep(SAMPLE_EVERY);
         }
         // Every ADLX interface is released here, before ADLX terminates with `helper`.
-    }
+    })();
     drop(helper);
     drop(pin);
-    Ok(())
+    result
 }
 
 struct SystemDll(windows_sys::Win32::Foundation::HMODULE);
