@@ -6,9 +6,12 @@
 //! process (`--amd-adlx-telemetry`, see `isolated.rs`) that samples about once a second while
 //! the monitor is being read; a crash inside the driver library ends only that helper.
 
-use super::{non_negative, positive, AmdGpuSample};
+use super::adlx_sample::{
+    card_sample, identity_sample, GpuIdentity, GpuMetricsReadings, Reading, Unavailable,
+};
+use super::AmdGpuSample;
 use adlx::{
-    ffi, gpu::Gpu1, helper::AdlxHelper, interface::Interface,
+    ffi, gpu::Gpu1, gpu_metrics::GpuMetrics, helper::AdlxHelper, interface::Interface,
     performance_monitoring_services::PerformanceMonitoringServices, Gpu,
 };
 use std::io::Write;
@@ -131,17 +134,103 @@ impl Drop for SystemDll {
     }
 }
 
+/// One card, with its `IADLXGPU1` queried once and its static facts read once.
+struct Card {
+    gpu: Gpu,
+    identity: AmdGpuSample,
+}
+
 struct Session {
-    monitoring: PerformanceMonitoringServices,
-    gpus: Vec<Gpu>,
+    /// `None` when the driver has no performance monitoring: the cards are still listed.
+    monitoring: Option<PerformanceMonitoringServices>,
+    cards: Vec<Card>,
+}
+
+/// `QueryInterface` without the extra `Release` of adlx 0.0.0-alpha.1 (#127).
+///
+/// That release's `Interface::cast` copies the pointer into an owned `InterfaceImpl` and drops it,
+/// so every cast releases one reference of `self` that it never acquired (fixed upstream in
+/// Traverse-Research/adlx-rs#21, not published). The 0.2.12–0.2.15 reader cast `IADLXGPU1` on
+/// every sample: the GPU object was freed after the first one and the next sample touched freed
+/// driver memory, which took the supervisor down before #131 and ends the helper since. Giving
+/// `cast` a reference of its own (acquired by `clone`, never released here) keeps the count right
+/// with either crate version.
+fn query<I: Interface>(gpu: &Gpu) -> Option<I> {
+    let lent = std::mem::ManuallyDrop::new(gpu.clone());
+    lent.cast::<I>().ok()
+}
+
+fn reading<T>(result: adlx::Result<T>) -> Reading<T> {
+    result.map_err(|e| {
+        if e.to_string() == "The asked feature is not supported" {
+            Unavailable::NotSupported
+        } else {
+            Unavailable::Failed
+        }
+    })
+}
+
+struct Identity<'a> {
+    gpu: &'a Gpu,
+    gpu1: Option<&'a Gpu1>,
+}
+
+impl GpuIdentity for Identity<'_> {
+    fn name(&self) -> Reading<String> {
+        reading(self.gpu.name().map(str::to_owned))
+    }
+    fn product_name(&self) -> Reading<String> {
+        let gpu1 = self.gpu1.ok_or(Unavailable::NotSupported)?;
+        reading(gpu1.product_name().map(str::to_owned))
+    }
+    fn total_vram_mb(&self) -> Reading<u32> {
+        reading(self.gpu.total_vram())
+    }
+    fn pci_bus_type(&self) -> Reading<i32> {
+        reading(self.gpu1.ok_or(Unavailable::NotSupported)?.pci_bus_type())
+    }
+    fn pci_bus_lane_width(&self) -> Reading<u32> {
+        reading(
+            self.gpu1
+                .ok_or(Unavailable::NotSupported)?
+                .pci_bus_lane_width(),
+        )
+    }
+}
+
+impl GpuMetricsReadings for GpuMetrics {
+    fn usage(&self) -> Reading<f64> {
+        reading(GpuMetrics::usage(self))
+    }
+    fn vram_mb(&self) -> Reading<i32> {
+        reading(self.vram())
+    }
+    fn temperature(&self) -> Reading<f64> {
+        reading(GpuMetrics::temperature(self))
+    }
+    fn hotspot_temperature(&self) -> Reading<f64> {
+        reading(GpuMetrics::hotspot_temperature(self))
+    }
+    fn total_board_power(&self) -> Reading<f64> {
+        reading(GpuMetrics::total_board_power(self))
+    }
+    fn power(&self) -> Reading<f64> {
+        reading(GpuMetrics::power(self))
+    }
+    fn clock_speed(&self) -> Reading<i32> {
+        reading(GpuMetrics::clock_speed(self))
+    }
+    fn vram_clock_speed(&self) -> Reading<i32> {
+        reading(GpuMetrics::vram_clock_speed(self))
+    }
+    fn fan_speed(&self) -> Reading<i32> {
+        reading(GpuMetrics::fan_speed(self))
+    }
 }
 
 impl Session {
     fn open(helper: &AdlxHelper) -> Result<Self, String> {
         let system = helper.system();
-        let monitoring = system
-            .performance_monitoring_services()
-            .map_err(|e| e.to_string())?;
         let list = system.gpus().map_err(|e| e.to_string())?;
         let all: Vec<Gpu> = (0..list.size()).filter_map(|i| list.at(i).ok()).collect();
         // The model runs on a discrete card; an APU's integrated GPU next to it is not shown.
@@ -154,68 +243,33 @@ impl Session {
         if gpus.is_empty() {
             return Err("ADLX found no AMD GPU".into());
         }
-        Ok(Self { monitoring, gpus })
+        let cards = gpus
+            .into_iter()
+            .map(|gpu| {
+                let gpu1 = query::<Gpu1>(&gpu);
+                let identity = identity_sample(&Identity {
+                    gpu: &gpu,
+                    gpu1: gpu1.as_ref(),
+                });
+                Card { gpu, identity }
+            })
+            .collect();
+        Ok(Self {
+            monitoring: system.performance_monitoring_services().ok(),
+            cards,
+        })
     }
 
     fn sample(&self) -> Vec<AmdGpuSample> {
-        self.gpus.iter().map(|gpu| self.read(gpu)).collect()
-    }
-
-    fn read(&self, gpu: &Gpu) -> AmdGpuSample {
-        const MIB: f64 = 1_048_576.0;
-        let gpu1 = gpu.cast::<Gpu1>().ok();
-        let name = gpu1
-            .as_ref()
-            .and_then(|g| g.product_name().ok().map(str::to_owned))
-            .or_else(|| gpu.name().ok().map(str::to_owned))
-            .filter(|n| !n.trim().is_empty());
-        let mut sample = AmdGpuSample {
-            name,
-            mem_total: gpu
-                .total_vram()
-                .ok()
-                .and_then(|mb| positive(f64::from(mb) * MIB)),
-            pcie_gen_max: gpu1
-                .as_ref()
-                .and_then(|g| g.pci_bus_type().ok())
-                .and_then(pcie_generation),
-            pcie_width: gpu1
-                .as_ref()
-                .and_then(|g| g.pci_bus_lane_width().ok())
-                .and_then(|w| positive(f64::from(w))),
-            ..Default::default()
-        };
-        if let Ok(m) = self.monitoring.current_gpu_metrics(gpu) {
-            sample.util = m.usage().ok().and_then(non_negative);
-            sample.mem_used = m
-                .vram()
-                .ok()
-                .and_then(|mb| non_negative(f64::from(mb) * MIB));
-            sample.temp = m.temperature().ok().and_then(positive);
-            sample.hotspot_temp = m.hotspot_temperature().ok().and_then(positive);
-            // Total board power matches what nvidia-smi reports; older ASICs only have GPU power.
-            sample.power = m
-                .total_board_power()
-                .ok()
-                .and_then(positive)
-                .or_else(|| m.power().ok().and_then(positive));
-            sample.clock_mhz = m.clock_speed().ok().and_then(|v| positive(f64::from(v)));
-            sample.mem_clock_mhz = m
-                .vram_clock_speed()
-                .ok()
-                .and_then(|v| positive(f64::from(v)));
-            sample.fan_rpm = m.fan_speed().ok().and_then(|v| positive(f64::from(v)));
-        }
-        sample
-    }
-}
-
-fn pcie_generation(bus: ffi::ADLX_PCI_BUS_TYPE) -> Option<f64> {
-    match bus {
-        ffi::ADLX_PCI_BUS_TYPE_PCIE => Some(1.0),
-        ffi::ADLX_PCI_BUS_TYPE_PCIE_2_0 => Some(2.0),
-        ffi::ADLX_PCI_BUS_TYPE_PCIE_3_0 => Some(3.0),
-        ffi::ADLX_PCI_BUS_TYPE_PCIE_4_0 => Some(4.0),
-        _ => None,
+        self.cards
+            .iter()
+            .map(|card| {
+                let metrics = self
+                    .monitoring
+                    .as_ref()
+                    .and_then(|m| m.current_gpu_metrics(&card.gpu).ok());
+                card_sample(&card.identity, metrics.as_ref())
+            })
+            .collect()
     }
 }

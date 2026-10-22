@@ -15,6 +15,8 @@
 #[cfg(windows)]
 mod adlx;
 #[cfg(any(windows, test))]
+mod adlx_sample;
+#[cfg(any(windows, test))]
 mod isolated;
 #[cfg(any(target_os = "linux", test))]
 mod sysfs;
