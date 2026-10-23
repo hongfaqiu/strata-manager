@@ -136,6 +136,7 @@ export function App() {
   const [showLanguageSetup, setShowLanguageSetup] = useState(false);
   const latestSettings = useRef(settings); latestSettings.current = settings;
   const [monitorModeStatus, setMonitorModeStatus] = useState<MonitorModeStatus>();
+  const firstRunTaskbarStart = useRef(false);
   const monitorModeRevision = useRef(0);
   const monitorSettingsChange = useRef<(patch: Partial<core.FloatingMonitorPreferences>) => void>(() => {});
   const monitorShortcut = useRef<() => Promise<void>>(async () => {});
@@ -255,8 +256,11 @@ export function App() {
       // Repairs the closeToTray:false that v0.1.0 betas persisted as a default (see window-close-settings.ts).
       const s = core.migrateWindowCloseSettings(savedSettings);
       const restored = desktop ? await core.restoreServiceSelection(p, a, item => core.serviceStatus(item.id, item), () => core.discoverLocal(directories.length ? directories : undefined)) : undefined;
+      // A new install (nothing saved yet) on Windows starts with the taskbar monitor on; saved settings are never changed here.
+      const firstRunTaskbar = s === null && tauriShell && !serverMode ? await readMonitorModeStatus().then(status => status.supported === true).catch(() => false) : false;
       if (!mounted) return;
-      const restoredSettings: AppSettings = {...defaults, ...s, ...core.resolveLanguageSettings(s, detectedLanguage.locales, detectedLanguage.installerLanguage), floatingMonitor: {...core.withoutRetiredFloatingMonitorKeys(s?.floatingMonitor), ...normalizeFloatingMonitorPreferences(s?.floatingMonitor)}, ...(serverMode ? { theme: (s?.theme === 'dark' || s?.theme === 'light' || s?.theme === 'system') ? s.theme : 'light', closeToTray: false, autoCheckUpdates: false } : {})};
+      firstRunTaskbarStart.current = firstRunTaskbar;
+      const restoredSettings: AppSettings = {...defaults, ...s, ...core.resolveLanguageSettings(s, detectedLanguage.locales, detectedLanguage.installerLanguage), floatingMonitor: s === null ? core.firstRunFloatingMonitorPreferences(firstRunTaskbar) : {...core.withoutRetiredFloatingMonitorKeys(s?.floatingMonitor), ...normalizeFloatingMonitorPreferences(s?.floatingMonitor)}, ...(serverMode ? { theme: (s?.theme === 'dark' || s?.theme === 'light' || s?.theme === 'system') ? s.theme : 'light', closeToTray: false, autoCheckUpdates: false } : {})};
       setSystemLanguage(detectedLanguage);
       setShowLanguageSetup(s === null);
       storeWriter.seed('conversations', c);
@@ -1006,6 +1010,12 @@ export function App() {
     storeWriter.stage('settings', latestSettings.current);
     await storeWriter.flush('settings');
     setShowLanguageSetup(false);
+    // First run on Windows: show the taskbar monitor now instead of waiting for the next launch.
+    const preferences = normalizeFloatingMonitorPreferences(latestSettings.current.floatingMonitor);
+    if (firstRunTaskbarStart.current && preferences.taskbarEnabled) {
+      firstRunTaskbarStart.current = false;
+      void setMonitorVisibility(true, 'taskbar', preferences, latestSettings.current.language).then(status => { monitorModeRevision.current++; setMonitorModeStatus(status); }).catch(() => {});
+    }
   };
   const SettingsPage = () => <><Header title={t('settings')} /><div className="settings-layout d2-settings">
     <div className="d2-settings-column">

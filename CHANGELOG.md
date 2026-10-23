@@ -7,11 +7,13 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+- **Windows 新安装默认开启任务栏监控**：第一次安装并选好语言后，任务栏通知区左侧会直接显示圆环和生成／预填充速度等读数，不用再去设置里找。可以在「桌面监控」设置里关闭，或右键选「切换为桌面浮条」改用浮条。已经保存过设置的升级用户保持原来的选择，macOS 和 Linux 不变。
 - **修复 Windows 上因无法打开某个 Python 进程而拒绝自动启动**：只要电脑上有一个 `python.exe` / `pythonw.exe` 属于其他账户（例如以 LocalSystem 运行的服务启动的 Python），Manager 打开它时会被系统拒绝访问，之前整个检测就此中止，提示「无法打开 Python 进程核验身份，请检查进程权限；未自动启动」，自己的 Strata 服务也不会启动。现在拒绝访问的进程会被跳过，检测继续核验其余 Python，能正常找到并启动或接管 Strata 服务。其他读取失败仍会停止自动操作；被跳过的进程如果之后变得可以打开，会重新完整检测一次，不会漏掉正在运行的 Strata 服务。外部 MCP 客户端检测也按同样规则跳过此类进程。
 - **浮条布局合并为「条形」和「详细面板」**：原来的「紧凑单行」「清晰双行」和「文字行数」三项设置互相重叠，现在只保留两种布局。条形的单行或两行在「文字行数」里单独选（默认两行，外观和以前一样），右键菜单也能切换；单行放不下时仍会自动改为两行，设置里会提示。详细面板保持网格，文字行数不可选。旧设置自动迁移：清晰双行 → 条形 + 两行（外观不变），紧凑单行 → 条形 + 单行（现在是真正的一行，不再 4+2 换行），详细面板不变。任务栏监控的「自动／单行／两行」不受影响。
 
 ### English
 
+- **Taskbar monitor on by default for new Windows installs**: after a fresh install and the language step, the ring and generation/prefill speed readings appear next to the notification area straight away, without digging through settings. Turn it off in Desktop monitor settings, or choose "Switch to desktop strip" from its context menu to use the strip. Upgrades with saved settings keep their choice, and macOS and Linux are unchanged.
 - **Fixed Windows refusing to start because one Python process could not be opened**: if any `python.exe` / `pythonw.exe` belonged to another account (for example a Python started by a service running as LocalSystem), Windows denied Manager access to it and the whole check stopped with "Cannot open the Python process to verify it; check process permissions. Not started automatically", so your own Strata service did not start either. Processes that deny access are now skipped and the check goes on with the other Python processes, so Strata is found and started or taken over as usual. Other read failures still stop automatic actions, and if a skipped process later becomes readable the check runs again in full, so a running Strata service is never missed. The external MCP client check skips such processes the same way.
 - **Floating monitor layouts merged into Strip and Panel**: the old Compact, Two rows and Text rows settings overlapped, so there are now only two layouts. For the strip, Text rows picks one row or two (two by default, which looks the same as before), also from the context menu; if one row does not fit, it still falls back to two rows with a short note in settings. The panel stays a grid and Text rows is disabled for it. Old settings migrate automatically: Two rows → strip + two rows (unchanged look), Compact → strip + one row (now a true single row, no 4+2 wrap), Panel unchanged. The taskbar monitor's Auto / One row / Two rows setting is unchanged.
 

@@ -8,6 +8,7 @@ import {
   floatingMonitorStripRows,
   FLOATING_MONITOR_MAX_WIDTH,
   floatingMonitorSingleRowFallback,
+  firstRunFloatingMonitorPreferences,
   migrateFloatingMonitorRows,
   normalizeFloatingMonitorPreferences,
   reorderFloatingMonitorMetrics,
@@ -544,5 +545,20 @@ describe('floating monitor migration from the three old presets', () => {
       const once = normalizeFloatingMonitorPreferences(saved);
       expect(normalizeFloatingMonitorPreferences(once)).toEqual(once);
     }
+  });
+});
+
+describe('first-run taskbar monitor default', () => {
+  it('turns the taskbar monitor on only for a new install where the widget exists (Windows)', () => {
+    expect(firstRunFloatingMonitorPreferences(true)).toEqual({ ...normalizeFloatingMonitorPreferences(undefined), taskbarEnabled: true });
+    expect(firstRunFloatingMonitorPreferences(false)).toEqual(normalizeFloatingMonitorPreferences(undefined));
+    // The desktop strip stays the strip, so it is still available.
+    expect(firstRunFloatingMonitorPreferences(true).mode).toBe('floating');
+  });
+
+  it('never changes saved settings, including ones without a taskbar choice', () => {
+    expect(FLOATING_MONITOR_DEFAULTS.taskbarEnabled).toBe(false);
+    expect(normalizeFloatingMonitorPreferences({}).taskbarEnabled).toBe(false);
+    expect(normalizeFloatingMonitorPreferences({ taskbarEnabled: false }).taskbarEnabled).toBe(false);
   });
 });

@@ -214,6 +214,16 @@ export function migrateFloatingMonitorRows(layout: unknown, rows: unknown): Floa
   return layout === 'compact' ? 'single' : 'double';
 }
 
+/**
+ * Floating-monitor settings for an install that has never saved settings.
+ * New Windows installs start with the taskbar monitor switched on; other
+ * platforms (no taskbar widget) keep the defaults. Existing saved settings
+ * never pass through here, so their taskbarEnabled choice is untouched.
+ */
+export function firstRunFloatingMonitorPreferences(taskbarSupported: boolean): ResolvedFloatingMonitorPreferences {
+  return { ...normalizeFloatingMonitorPreferences(undefined), taskbarEnabled: taskbarSupported };
+}
+
 /** Resolve old or malformed persisted preferences without mutating input settings. */
 export function normalizeFloatingMonitorPreferences(value?: unknown): ResolvedFloatingMonitorPreferences {
   const source = value !== null && typeof value === 'object' && !Array.isArray(value)
