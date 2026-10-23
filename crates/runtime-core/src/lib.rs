@@ -13,6 +13,7 @@ mod display_adapters;
 pub mod engine_help;
 pub mod external;
 pub mod external_management;
+pub mod gguf_check;
 mod gpu_power;
 pub mod health_watch;
 pub mod http;
