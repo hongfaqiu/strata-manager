@@ -5,6 +5,7 @@ import * as core from '@strata-manager/core';
 import type { LogEntry, RuntimeInstallationStatus, TaskStatus } from '@strata-manager/core';
 import { Empty, Header, Panel } from '../components';
 import { Dropdown } from '../OfficialControls';
+import { InstalledRuntimesPanel } from './InstalledRuntimesPanel';
 import { RuntimeManagementPanel } from './RuntimeManagementPanel';
 import { StorageLocationPanel } from './StorageLocation';
 import { LocalRuntimePackageFields, useLocalRuntimePackages } from './LocalRuntimePackage';
@@ -232,6 +233,7 @@ export function InstallRuntimePage(props: InstallRuntimePageProps) {
           {errorBlock}
         </Panel>
         <RuntimeManagementPanel operationDisabled={props.operationDisabled} autoCheck={props.autoCheck} language={props.language} desktop={props.desktop} installationStatus={installation} selectedRuntimeDir={detected.installDir} showInstallations={false} onUpdateStarted={props.onUpdateStarted}/>
+        <InstalledRuntimesPanel language={props.language} desktop={props.desktop} operationDisabled={props.operationDisabled || running} onSwitchStarted={props.onUpdateStarted}/>
         {props.onChooseDirectory && <StorageLocationPanel language={props.language} desktop={props.desktop} installDir={detected.installDir} operationDisabled={props.operationDisabled || running} onChooseDirectory={props.onChooseDirectory}/>}
       </> : initial ? <div className="runtime-detecting" role="status"><LoaderCircle size={18} className="spin"/>{text.checking}</div> : loaded && !statusError ? <>
         <ol className="install-runtime-steps" aria-label={text.title}><li className="is-current"><span>1</span>{text.installStep}</li><li><span>2</span>{text.modelStep}</li><li><span>3</span>{text.serviceStep}</li></ol>

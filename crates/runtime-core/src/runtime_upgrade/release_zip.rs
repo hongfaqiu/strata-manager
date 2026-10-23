@@ -555,12 +555,16 @@ async fn independent(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String
         root: root.clone(),
         python,
     };
+    super::installed_runtimes::remember(&state, &source);
     match super::runtime_switch::switch_profiles(state.clone(), &j.task_id, &source, &target).await {
-        Ok(summary) => Ok(format!(
-            "已切换到新的独立运行环境 {}（{summary}）；原运行环境 {} 保留，可在「已安装版本」中切换回去",
-            root.display(),
-            source.display()
-        )),
+        Ok(summary) => {
+            super::installed_runtimes::after_switch(&state, &j.task_id, &source);
+            Ok(format!(
+                "已切换到新的独立运行环境 {}（{summary}）；原运行环境 {} 保留，可在「已安装版本」中切换回去",
+                root.display(),
+                source.display()
+            ))
+        }
         Err(error) => Err(format!(
             "新运行环境已准备在 {}，但切换未通过，已恢复原运行环境：{error}；新环境保留，可在「已安装版本」中重试切换或删除",
             root.display()

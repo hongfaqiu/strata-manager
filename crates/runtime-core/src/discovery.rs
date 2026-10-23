@@ -1305,7 +1305,7 @@ fn runtime_root(profile: &ServiceProfile) -> PathBuf {
 }
 
 pub fn discover_runtimes(profiles: &[ServiceProfile]) -> Vec<DetectedRuntime> {
-    inspect_runtime_directories(profiles, common_directories())
+    inspect_runtime_directories(profiles, common_directories(), &HashMap::new())
 }
 
 /// Include the supervisor's actual state directory, which can be overridden
@@ -1329,12 +1329,32 @@ pub fn discover_runtimes_for_state_with(
             .collect(),
     );
     roots.extend(common_directories());
-    inspect_runtime_directories(profiles, roots)
+    inspect_runtime_directories(profiles, roots, &HashMap::new())
+}
+
+/// Also inspects runtimes the Manager used before (`known`: folder → the
+/// Python it ran with), e.g. the version switched away from, which no saved
+/// configuration references any more.
+pub fn discover_runtimes_with_known(
+    profiles: &[ServiceProfile],
+    data_dir: &Path,
+    engine_root: Option<PathBuf>,
+    known: &HashMap<PathBuf, String>,
+) -> Vec<DetectedRuntime> {
+    let mut roots = expand_runtime_directories(
+        std::iter::once(data_dir.join("runtimes"))
+            .chain(engine_root)
+            .collect(),
+    );
+    roots.extend(known.keys().cloned());
+    roots.extend(common_directories());
+    inspect_runtime_directories(profiles, roots, known)
 }
 
 fn inspect_runtime_directories(
     profiles: &[ServiceProfile],
     directories: Vec<PathBuf>,
+    known: &HashMap<PathBuf, String>,
 ) -> Vec<DetectedRuntime> {
     let hints = process_hints().unwrap_or_default();
     let mut roots: Vec<_> = profiles
@@ -1362,7 +1382,9 @@ fn inspect_runtime_directories(
             .find(|profile| canonical_local(&runtime_root(profile)).is_ok_and(|path| path == root));
         let python = find_python(
             &root,
-            registered.map(|profile| profile.python_path.as_str()),
+            registered
+                .map(|profile| profile.python_path.as_str())
+                .or_else(|| known.get(&root).map(String::as_str)),
             None,
             &mut cache,
         );

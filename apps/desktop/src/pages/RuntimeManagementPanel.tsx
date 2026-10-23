@@ -10,6 +10,7 @@ import { releaseNotes } from '../updateReleaseNotes';
 import { RuntimeUpdateDialog } from './RuntimeUpdateDialog';
 import { RuntimeDownloadSettings } from './RuntimeDownloadSettings';
 import { RuntimeVersionChoice, useRuntimePin } from './RuntimeVersionChoice';
+import { RuntimeSwitchDialog, useInstalledRuntimes, useRuntimeSwitch } from './InstalledRuntimesPanel';
 import './install-runtime.css';
 
 interface Props {
@@ -55,6 +56,10 @@ export function RuntimeManagementPanel({ language, desktop, onInstall, selectedR
   // The release list maps an engine number to its release for folders that do not record one.
   const releaseList = useQuery({ queryKey: ['runtime-release-versions'], queryFn: () => core.runtimeReleaseVersions(), enabled: desktop, staleTime: 6 * 60 * 60 * 1000, retry: false, refetchOnWindowFocus: false }).data?.versions ?? [];
   const downloadPreferences = useQuery({ queryKey: ['runtime-download-preferences'], queryFn: core.getRuntimeDownloadPreferences, enabled: desktop, staleTime: Infinity, retry: false });
+  // Versions already on this machine switch locally instead of downloading again.
+  const inventory = useInstalledRuntimes(desktop && !showInstallations, false);
+  const switcher = useRuntimeSwitch(onUpdateStarted);
+  const localVersions = releaseList.map(item => item.version).filter(version => !!core.installedRuntimeForRelease(inventory.data, version, releaseList));
   const activeTask = tasks.data?.find(task => task.state === 'running' && task.kind === 'update');
   const lastTask = tasks.data?.find(task => task.id === taskId);
   const trialRollback = lastTask?.state === 'failed' ? core.runtimeTrialRollback(lastTask.message) : undefined;
@@ -137,6 +142,8 @@ export function RuntimeManagementPanel({ language, desktop, onInstall, selectedR
   const openVersion = async (version: string) => {
     const runtime = runtimes[0];
     if (!runtime || openingVersion || operationDisabled || !desktop || !downloadPreferences.isSuccess || startingRef.current || activeTask) return;
+    const local = core.installedRuntimeForRelease(inventory.data, version, releaseList);
+    if (local) { setActionError(''); switcher.open(local); return; }
     setOpeningVersion(version); setActionError('');
     try {
       const info = await core.runtimeReleaseInfo(version);
@@ -160,9 +167,10 @@ export function RuntimeManagementPanel({ language, desktop, onInstall, selectedR
     {lastTask?.state === 'completed' && <p className="runtime-update-result runtime-ready" role="status">{text.completed}</p>}
     {lastTask?.state === 'failed' && (trialRollback ? <div className="notice warning runtime-trial-rollback" role="alert" data-testid="runtime-trial-rollback"><strong>{text.trialFailed}</strong><p>{trialRollback.restoredVersion ? text.trialRestored.replace('{version}', trialRollback.restoredVersion) : text.trialUndone}</p>{trialRollback.reason && <div className="runtime-trial-reason"><span>{text.trialReason}</span><code>{core.runtimeReasonText(trialRollback.reason, language === 'zh-CN')}</code></div>}</div> : <p className="notice error" role="alert">{text.failed}: {lastTask.message}</p>)}
     {actionError && <p className="notice error" role="alert">{actionError}</p>}
-    {installed && !showInstallations && runtimes[0] && <RuntimeVersionChoice language={language} desktop={desktop} currentVersion={releaseOf(runtimes[0])} currentEngine={runtimes[0].runtimeVersion} latestVersion={update.data?.latestVersion} latestEngine={latestEngine} runtimes={allRuntimes} disabled={operationDisabled || !downloadPreferences.isSuccess || !!starting || !!activeTask} opening={openingVersion} onChoose={version => void openVersion(version)}/>}
+    {installed && !showInstallations && runtimes[0] && <RuntimeVersionChoice language={language} desktop={desktop} currentVersion={releaseOf(runtimes[0])} currentEngine={runtimes[0].runtimeVersion} latestVersion={update.data?.latestVersion} latestEngine={latestEngine} runtimes={allRuntimes} localVersions={localVersions} disabled={operationDisabled || !downloadPreferences.isSuccess || !!starting || !!activeTask} opening={openingVersion} onChoose={version => void openVersion(version)}/>}
     <RuntimeDownloadSettings language={language} desktop={desktop} runtime={runtimes[0]} release={update.data} releaseLoading={update.isLoading || update.isFetching}/>
     {notes && update.data && <details className="runtime-release-notes"><summary>{text.notes} · {update.data.releaseName ?? update.data.latestVersion}</summary>{update.data.publishedAt && <p className="subtle">{text.published} {new Date(update.data.publishedAt).toLocaleDateString(language)}</p>}<div className="runtime-release-body" tabIndex={0} role="region" aria-label={text.notes}><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml components={{ a: ({ node: _node, title, children, ...props }) => <a {...props} data-tooltip={title} target="_blank" rel="noreferrer">{children}</a>, img: ({ node: _node, title, ...props }) => <img {...props} data-tooltip={title}/> }}>{notes}</ReactMarkdown></div></details>}
     {pending && <RuntimeUpdateDialog language={language} runtime={pending.runtime} release={pending.release} assetName={savedDownload?.assetName} initialDownload={savedDownload?.download} initialPreferences={pendingPreferences} localEntry={!!pending.local} targetVersion={pending.target} busy={!!starting} canConfirm={!operationDisabled && desktop && downloadPreferences.isSuccess && !!tasks.data && !tasks.data.some(task => task.state === 'running') && (pending.target ? pending.release.installable : !update.isFetching && !!update.data?.installable)} error={actionError} onConfirm={(download, selectedAssetName) => { void installUpdate(download, selectedAssetName); }} onDismiss={() => { if (!startingRef.current) { setPending(null); setActionError(''); } }}/>}
+    {switcher.target && <RuntimeSwitchDialog language={language} target={switcher.target} current={inventory.data?.runtimes.find(runtime => runtime.current)} releases={releaseList} busy={switcher.busy} error={switcher.error} onConfirm={() => void switcher.confirm()} onDismiss={switcher.dismiss}/>}
   </Panel>;
 }

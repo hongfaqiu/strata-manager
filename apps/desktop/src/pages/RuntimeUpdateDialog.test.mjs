@@ -307,7 +307,7 @@ test('new release clears a previously prefilled local source and guards its old 
 function parentFixture(kind, savedPreferences = { mode: 'official' }, pin = '') {
   const file = kind === 'manual' ? './RuntimeManagementPanel.tsx' : '../useRuntimeUpdates.ts';
   const compiled = ts.transpileModule(readFileSync(new URL(file, import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
-  const calls = { updates: [], saved: [], canceled: [], started: 0 }, slots = [], effects = [];
+  const calls = { updates: [], saved: [], canceled: [], started: 0, switched: [] }, slots = [], effects = [];
   const tasks = [], detectedRuntime = { ...runtime, readiness: 'ready' };
   const queryData = {
     'runtime-installation': { data: { detectedRuntimes: [detectedRuntime] } },
@@ -316,7 +316,9 @@ function parentFixture(kind, savedPreferences = { mode: 'official' }, pin = '') 
     'runtime-download-preferences': { data: savedPreferences, isSuccess: true, isPending: false },
     'runtime-pin': { data: pin, isSuccess: true, isPending: false },
     'runtime-release-versions': { data: undefined },
+    'runtime-installed-versions': { data: undefined },
   };
+  const switcher = { target: null, busy: false, error: '', open: target => { switcher.target = target; }, dismiss: () => { switcher.target = null; }, confirm: async () => { calls.switched.push(switcher.target.installDir); switcher.target = null; } };
   const queryClient = { invalidateQueries: async () => {}, setQueryData: (key, data) => { queryData[key[0]].data = data; } };
   let cursor = 0, tree;
   const slot = init => { const index = cursor++; return slots[index] ??= init(); };
@@ -346,6 +348,7 @@ function parentFixture(kind, savedPreferences = { mode: 'official' }, pin = '') 
       '../updateReleaseNotes': { releaseNotes }, './RuntimeUpdateDialog': { RuntimeUpdateDialog: 'update-dialog' }, './pages/RuntimeUpdateDialog': { RuntimeUpdateDialog: 'update-dialog' },
       './RuntimeDownloadSettings': { RuntimeDownloadSettings: 'download-settings' },
       './RuntimeVersionChoice': { RuntimeVersionChoice: 'version-choice', useRuntimePin: () => queryData['runtime-pin'] },
+      './InstalledRuntimesPanel': { RuntimeSwitchDialog: 'switch-dialog', useInstalledRuntimes: () => queryData['runtime-installed-versions'], useRuntimeSwitch: () => switcher },
       'react-markdown': { default: 'markdown' }, 'remark-gfm': { default: 'remark-gfm' },
     })[name] ?? {},
   });
@@ -379,6 +382,26 @@ test('choosing an older version opens a targeted confirmation and forwards the c
   assert.equal(f.dialog().props.release.latestVersion, '0.1.30');
   f.dialog().props.onConfirm({}, assets[1].name); await f.settle();
   assert.deepEqual(f.calls.updates, [[runtime.installDir, assets[1].name, true, { targetVersion: '0.1.30' }]]);
+});
+
+test('a version already installed locally is marked and switched to without a download', async () => {
+  const f = parentFixture('manual'); f.props.showInstallations = false;
+  f.queryData['runtime-release-versions'].data = { versions: [{ version: '0.1.42', engineVersion: '0.1.42', installable: true }, { version: '0.1.30', engineVersion: '0.1.30', installable: true }] };
+  const local = { installDir: 'C:\\Manager\\runtimes\\release-a', pythonPath: 'python.exe', releaseVersion: '0.1.30', engineVersion: '0.1.30', readiness: 'ready', owned: true, current: false, running: false, rollback: true, switching: false, profiles: [], cleanup: false };
+  f.queryData['runtime-installed-versions'].data = { runtimes: [{ ...local, installDir: runtime.installDir, releaseVersion: '0.1.41', current: true, rollback: false }, local], leftovers: [], autoCleanup: true, busy: false };
+  f.render(); await f.settle();
+  const choice = nodes(f.tree()).find(node => node.type === 'version-choice');
+  assert.deepEqual([...choice.props.localVersions], ['0.1.30'], 'only the other installed release is offered locally');
+  choice.props.onChoose('0.1.30'); await f.settle();
+  assert.equal(f.dialog(), undefined, 'no download confirmation');
+  const dialog = nodes(f.tree()).find(node => node.type === 'switch-dialog');
+  assert.equal(dialog.props.target.installDir, local.installDir);
+  assert.equal(dialog.props.current.installDir, runtime.installDir);
+  await dialog.props.onConfirm(); await f.settle();
+  assert.deepEqual(f.calls.switched, [local.installDir]);
+  assert.equal(f.calls.updates.length, 0, 'nothing is downloaded');
+  choice.props.onChoose('0.1.42'); await f.settle();
+  assert.equal(f.dialog().props.targetVersion, '0.1.42', 'other versions still download');
 });
 
 test('version direction distinguishes upgrade, downgrade and reinstall', () => {

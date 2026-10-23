@@ -822,6 +822,86 @@ mod tests {
         owned_stop(&f.state, &f.old.id).await.unwrap();
     }
 
+    async fn switch_task(f: &Fixture) -> TaskStatus {
+        switch_task_to(f, &f.target.root).await
+    }
+
+    async fn switch_task_to(f: &Fixture, root: &Path) -> TaskStatus {
+        // The fixture's own placeholder task would block a new runtime task.
+        f.state.tasks.lock().unwrap().remove(&f.task_id);
+        let inventory = super::super::installed_runtimes::inventory(&f.state).unwrap();
+        let target = inventory
+            .runtimes
+            .iter()
+            .find(|r| Path::new(&r.install_dir) == root)
+            .unwrap_or_else(|| panic!("target not listed: {inventory:?}"));
+        assert!(!target.current, "{target:?}");
+        let status = super::super::installed_runtimes::start_switch(
+            f.state.clone(),
+            target.install_dir.clone(),
+            None,
+        )
+        .unwrap();
+        for _ in 0..600 {
+            let task = f.state.tasks.lock().unwrap()[&status.id].status.clone();
+            if task.state != "running" {
+                return task;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        panic!("switch task did not finish");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn switching_to_an_installed_version_keeps_the_previous_one_for_rollback() {
+        let f = fixture(include_str!(
+            "../../tests/fixtures/runtime_upgrade_service.py"
+        ));
+        start_old(&f).await;
+        let task = switch_task(&f).await;
+        assert_eq!(task.state, "completed", "{}", task.message);
+        assert!(task.message.contains("原版本"), "{}", task.message);
+        let current = f.state.registered_profile(&f.old.id).unwrap();
+        assert_eq!(Path::new(&current.install_dir), f.target.root);
+        assert_eq!(health(&f).await["loaded"], true);
+        let inventory = super::super::installed_runtimes::inventory(&f.state).unwrap();
+        let old = inventory
+            .runtimes
+            .iter()
+            .find(|r| Path::new(&r.install_dir) == f.source)
+            .unwrap();
+        assert!(old.rollback && !old.cleanup && !old.current);
+        assert!(f.source.is_dir());
+        // Rollback: switch back to the kept version, again without downloading.
+        let back = switch_task_to(&f, &f.source).await;
+        assert_eq!(back.state, "completed", "{}", back.message);
+        let current = f.state.registered_profile(&f.old.id).unwrap();
+        assert_eq!(Path::new(&current.install_dir), f.source);
+        assert_eq!(health(&f).await["loaded"], true);
+        assert!(
+            f.target.root.is_dir(),
+            "the newer version stays installed too"
+        );
+        untouched(&f);
+        owned_stop(&f.state, &f.old.id).await.unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_failing_switch_to_an_installed_version_restores_the_current_one() {
+        let f = fixture("raise SystemExit(3)\n");
+        start_old(&f).await;
+        let task = switch_task(&f).await;
+        assert_eq!(task.state, "failed");
+        assert!(task.message.contains("已恢复原版本"), "{}", task.message);
+        let current = f.state.registered_profile(&f.old.id).unwrap();
+        assert_eq!(current.install_dir, f.old.install_dir);
+        assert_eq!(health(&f).await["loaded"], true);
+        assert!(f.target.root.is_dir(), "the target stays installed");
+        assert!(!f.state.runtime_upgrading.load(Ordering::Acquire));
+        untouched(&f);
+        owned_stop(&f.state, &f.old.id).await.unwrap();
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn a_configuration_that_cannot_migrate_stops_nothing() {
         let f = fixture(include_str!(

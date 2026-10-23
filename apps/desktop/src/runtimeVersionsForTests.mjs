@@ -3,8 +3,14 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 
-const source = readFileSync(new URL('../../../packages/core/src/runtime-versions.ts', import.meta.url), 'utf8');
-const versionsModule = { exports: {} };
-vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { module: versionsModule, exports: versionsModule.exports, require: () => ({}) });
+const load = (file, require = () => ({})) => {
+  const source = readFileSync(new URL(`../../../packages/core/src/${file}`, import.meta.url), 'utf8');
+  const loaded = { exports: {} };
+  vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { module: loaded, exports: loaded.exports, require });
+  return loaded.exports;
+};
+const versions = load('runtime-versions.ts');
+// The installed-version helpers (「已安装版本」) build on the version helpers.
+const installed = load('installed-runtimes.ts', name => name === './runtime-versions' ? versions : {});
 
-export const runtimeVersions = versionsModule.exports;
+export const runtimeVersions = { ...versions, ...installed };

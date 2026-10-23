@@ -20,6 +20,7 @@ pub const VERSION: &str = "0.1.41";
 pub mod engine_package;
 pub mod github_source;
 pub mod gpu_select;
+pub mod installed_runtimes;
 mod release_versions;
 mod release_zip;
 mod runtime_switch;

@@ -368,6 +368,16 @@ export const updateRuntimeZip = (installDir: string, assetName?: string, stopCur
 });
 /** Every published Strata release (cached for 6 h by the background service). */
 export const runtimeReleaseVersions = (force = false): Promise<import('./runtime-versions').RuntimeReleaseVersions> => native('runtime_release_versions', { force });
+/** Installed Strata versions (「已安装版本」); deletion and cleanup are re-checked by the service. */
+export const installedRuntimes = (): Promise<import('./installed-runtimes').RuntimeInventory> => native('runtime_installed_versions');
+export const installedRuntimeSize = (path: string): Promise<number> => native('runtime_installed_size', { path });
+/** `removeProfiles`: the referencing configurations the user confirmed removing with it. */
+export const deleteInstalledRuntime = (installDir: string, removeProfiles: string[] = []): Promise<number> => native('runtime_delete_version', { installDir, removeProfiles });
+/** Deletes exactly these confirmed items; the service re-checks each one. */
+export const cleanupInstalledRuntimes = (paths: string[]): Promise<import('./installed-runtimes').RuntimeCleanupResult> => native('runtime_cleanup', { paths });
+/** Moves the configurations in use to an installed version (no download, verified, auto-revert). */
+export const switchInstalledRuntime = (installDir: string): Promise<TaskStatus> => native('runtime_switch_version', { installDir });
+
 /** One chosen release, verified like the latest one; read-only. */
 export const runtimeReleaseInfo = (version: string): Promise<import('./runtime-types').RuntimeUpdateInfo> => native('runtime_release_info', { version });
 /** Read-only ZIP integrity or bounded network/Range check; never creates an update task. */

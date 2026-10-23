@@ -91,7 +91,7 @@ fn measure(path: &Path, source: &str, used: bool) -> Location {
 }
 
 /// Bytes of regular files below `root`; links are not followed. Bounded walk.
-fn tree_size(root: &Path) -> u64 {
+pub(crate) fn tree_size(root: &Path) -> u64 {
     let mut total = 0;
     let mut seen = 0;
     let mut stack = vec![root.to_path_buf()];
