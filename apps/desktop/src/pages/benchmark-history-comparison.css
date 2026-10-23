@@ -69,3 +69,16 @@
   .bhc-card { grid-template-columns: minmax(0, 1fr) 48px; }
   .bhc-card-values > b { font-size: 20px; }
 }
+
+/* Context tier comparison: one row group per tier, tier and conditions span the group. */
+.bhc-table-context td.bhc-tier, .bhc-table-context td.bhc-tier-conditions { vertical-align: top; text-align: left; background: var(--st-surface); border-right: 1px solid var(--st-line-soft, var(--st-line)); }
+.bhc-table-context td.bhc-tier strong { display: block; font-size: 14px; font-weight: 700; color: var(--st-ink); }
+.bhc-table-context td:is(.bhc-tier, .bhc-tier-conditions) small { display: block; margin-top: 6px; color: var(--st-ink-muted); font-size: 11px; line-height: 1.5; white-space: normal; }
+.bhc-table-context td.bhc-tier-conditions { max-width: 220px; }
+.bhc-table-context td.bhc-tier-conditions .bhc-chip { white-space: normal; }
+.bhc-table-context tr[data-group-start] td { border-top: 2px solid var(--st-line); }
+.bhc-table-context tbody tr:first-child td { border-top: 0; }
+.bhc-table-context :is(th, td).bhc-left { text-align: left; }
+.bhc-table-context td.bhc-tier { width: 150px; }
+.bhc-table-context tr[data-highlight] td.bhc-tier { font-weight: 400; }
+.bhc-table-context tr[data-highlight] td.bhc-metric { font-weight: 600; }

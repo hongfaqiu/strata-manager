@@ -3,18 +3,14 @@ import { useState } from 'react';
 import * as core from '@strata-manager/core';
 import type { ComparableBenchmarkReport } from '@strata-manager/core';
 import { Panel } from '../components';
-import { Dropdown } from '../OfficialControls';
 import {
   COMPARISON_FIELDS,
   displayMetric,
-  dualBarHeights,
   formatMetric,
-  formatRelative,
   metricDelta,
-  metricWinner,
   type ComparisonMetricKey,
 } from './benchmarkComparisonView';
-import './benchmark-history-comparison.css';
+import { ComparisonHighlightCard, ComparisonPickers, ComparisonValueCells, ComparisonVerdict } from './BenchmarkComparisonParts';
 
 export function BenchmarkComparisonPanel({ reports, current, baseline, language, disabled, replayDisabled, onBaseline, onReplay }: {
   reports: ComparableBenchmarkReport[]; current?: ComparableBenchmarkReport; baseline?: ComparableBenchmarkReport;
@@ -39,8 +35,6 @@ export function BenchmarkComparisonPanel({ reports, current, baseline, language,
   };
   const deltas = COMPARISON_FIELDS.map(field => metricDelta(a?.[field.key] ?? null, b?.[field.key] ?? null, field.key, field.higherBetter));
   const highlights = COMPARISON_FIELDS.filter(field => field.highlight);
-  const win = (delta: typeof deltas[number], side: 'a' | 'b') => { const w = metricWinner(delta); return w === null ? undefined : w === side ? 'yes' : 'no'; };
-  const tone = (improved: boolean | null) => improved === null ? 'flat' : improved ? 'up' : 'down';
   const options = all.map(r => ({ value: r.id, label: label(r) }));
   const canReplay = !!baseline && 'schemaVersion' in baseline && [2, 3].includes(baseline.schemaVersion);
 
@@ -53,54 +47,19 @@ export function BenchmarkComparisonPanel({ reports, current, baseline, language,
       {baseline && <span className="bhc-baseline">{t('已保存基线', 'Saved baseline')}<strong title={label(baseline)}>{label(baseline)}</strong></span>}
     </div>
 
-    <div className="bhc-pickers">
-      <label className="bhc-picker">
-        <span>{t('报告 A', 'Report A')}<em>A</em></span>
-        <Dropdown ariaLabel={t('报告 A', 'Report A')} value={left?.id ?? ''} options={options} onValueChange={setLeftId}/>
-        <span className="bhc-picker-meta">{meta(left) || t('选择一份历史报告', 'Pick a historical report')}</span>
-      </label>
-      <label className="bhc-picker">
-        <span>{t('报告 B', 'Report B')}<em>B</em></span>
-        <Dropdown ariaLabel={t('报告 B', 'Report B')} value={right?.id ?? ''} options={options} onValueChange={setRightId}/>
-        <span className="bhc-picker-meta">{meta(right) || t('选择另一份报告对照', 'Pick another report to compare')}</span>
-      </label>
-    </div>
+    <ComparisonPickers t={t} options={options} leftId={left?.id ?? ''} rightId={right?.id ?? ''} leftMeta={meta(left)} rightMeta={meta(right)} onLeft={setLeftId} onRight={setRightId}/>
 
     {comparison && a && b ? <>
-      <div className="bhc-verdict" data-tone={comparison.comparable ? 'ok' : 'warn'} role="status">
-        <div className="bhc-verdict-head">
-          <strong>{comparison.comparable
-            ? t('条件已核对，可参考速度变化', 'Conditions checked; speed change is informative')
-            : t('可查看数据，条件尚不支持直接提速结论', 'Values can be inspected; conditions do not support a direct speedup conclusion')}</strong>
-          <span>{comparison.comparable
-            ? t('结果仍取决于采样与外部负载；下方以 B 相对 A 的变化为主。', 'Results still depend on sampling and external load. Deltas below are B relative to A.')
-            : t('差异或未核验项已标出；数字可并列查看，但不合并为升级结论。', 'Differences and unverified items are listed. Numbers stay side by side and are not treated as an upgrade conclusion.')}</span>
-        </div>
-        {(comparison.differences.length > 0 || comparison.unknowns.length > 0) && <div className="bhc-chips" aria-label={t('条件说明', 'Condition notes')}>
-          {comparison.differences.map(key => <span key={`d${key}`} className="bhc-chip" data-kind="diff">{t('条件差异', 'Difference')}: {names[key] ?? key}</span>)}
-          {comparison.unknowns.map(key => <span key={`u${key}`} className="bhc-chip" data-kind="unknown">{t('未核验', 'Unverified')}: {names[key] ?? key}</span>)}
-        </div>}
-      </div>
+      <ComparisonVerdict t={t} comparable={comparison.comparable} chips={[
+        ...comparison.differences.map(key => ({ key, kind: 'diff' as const, label: names[key] ?? key })),
+        ...comparison.unknowns.map(key => ({ key, kind: 'unknown' as const, label: names[key] ?? key })),
+      ]}/>
 
       <div className="bhc-highlights" aria-label={t('重点指标', 'Highlighted metrics')}>
-        {highlights.map(field => {
-          const delta = deltas.find(item => item.key === field.key)!;
-          const heights = dualBarHeights(displayMetric(a[field.key], field.key), displayMetric(b[field.key], field.key));
-          return <article key={field.key} className="bhc-card" data-metric={field.key}>
-            <div className="bhc-card-copy">
-              <span className="bhc-card-label">{fieldName(field.key)} · {field.unit}</span>
-              <div className="bhc-card-values">
-                <b data-win={win(delta, 'b')}>{formatMetric(b[field.key], field.key, language)}<small>{field.unit}</small></b>
-                <span className="bhc-card-a" data-win={win(delta, 'a')}>A {formatMetric(a[field.key], field.key, language)}</span>
-                <span className="bhc-delta" data-tone={tone(delta.improved)}>{formatRelative(delta.relative, language)}</span>
-              </div>
-            </div>
-            <div className="bhc-dual" aria-hidden="true">
-              <i data-side="a" style={{ height: `${Math.max(4, heights.a * 68)}px` }}/>
-              <i data-side="b" style={{ height: `${Math.max(4, heights.b * 68)}px` }}/>
-            </div>
-          </article>;
-        })}
+        {highlights.map(field => <ComparisonHighlightCard key={field.key} metric={field.key} label={fieldName(field.key)} unit={field.unit}
+          a={displayMetric(a[field.key], field.key)} b={displayMetric(b[field.key], field.key)}
+          aShown={formatMetric(a[field.key], field.key, language)} bShown={formatMetric(b[field.key], field.key, language)}
+          delta={deltas.find(item => item.key === field.key)!} language={language}/>)}
       </div>
 
       <div className="bhc-table-wrap">
@@ -110,9 +69,7 @@ export function BenchmarkComparisonPanel({ reports, current, baseline, language,
             const delta = deltas.find(item => item.key === field.key)!;
             return <tr key={field.key} data-highlight={field.highlight || undefined}>
               <td>{fieldName(field.key)} ({field.unit})</td>
-              <td className="bhc-value" data-win={win(delta, 'a')}>{formatMetric(a[field.key], field.key, language)}</td>
-              <td className="bhc-value" data-win={win(delta, 'b')}>{formatMetric(b[field.key], field.key, language)}</td>
-              <td><span className="bhc-delta" data-tone={tone(delta.improved)}>{formatRelative(delta.relative, language)}</span></td>
+              <ComparisonValueCells aShown={formatMetric(a[field.key], field.key, language)} bShown={formatMetric(b[field.key], field.key, language)} delta={delta} language={language}/>
             </tr>;
           })}</tbody>
         </table>

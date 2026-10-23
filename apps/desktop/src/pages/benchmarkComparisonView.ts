@@ -51,18 +51,69 @@ export function formatMetric(value: number | null, key: ComparisonMetricKey, lan
   return shown === null ? '—' : shown.toLocaleString(language, { maximumFractionDigits: 2 });
 }
 
-export function metricDelta(left: number | null, right: number | null, key: ComparisonMetricKey, higherBetter: boolean): MetricDelta {
-  const a = displayMetric(left, key), b = displayMetric(right, key);
-  if (a === null || b === null) return { key, left, right, relative: null, absolute: null, improved: null };
+export type ValueDelta = Pick<MetricDelta, 'relative' | 'absolute' | 'improved'>;
+
+/** Direction-aware B-vs-A change on values already in display units. Shared by the scenario and context comparisons. */
+export function valueDelta(a: number | null, b: number | null, higherBetter: boolean): ValueDelta {
+  if (a === null || b === null || !Number.isFinite(a) || !Number.isFinite(b)) return { relative: null, absolute: null, improved: null };
   const absolute = b - a;
   const relative = a === 0 ? null : absolute / a;
   const improved = absolute === 0 ? null : higherBetter ? absolute > 0 : absolute < 0;
-  return { key, left, right, relative, absolute, improved };
+  return { relative, absolute, improved };
+}
+
+export function metricDelta(left: number | null, right: number | null, key: ComparisonMetricKey, higherBetter: boolean): MetricDelta {
+  return { key, left, right, ...valueDelta(displayMetric(left, key), displayMetric(right, key), higherBetter) };
 }
 
 /** Which side holds the better value for this metric; null on ties or missing values. Matches metricDelta. */
-export function metricWinner(delta: MetricDelta): 'a' | 'b' | null {
+export function metricWinner(delta: Pick<MetricDelta, 'improved'>): 'a' | 'b' | null {
   return delta.improved === null ? null : delta.improved ? 'b' : 'a';
+}
+
+/** data-win attribute for one side: 'yes' bold, 'no' muted, undefined on ties or gaps. */
+export function winAttr(delta: Pick<MetricDelta, 'improved'>, side: 'a' | 'b'): 'yes' | 'no' | undefined {
+  const winner = metricWinner(delta);
+  return winner === null ? undefined : winner === side ? 'yes' : 'no';
+}
+
+export function deltaTone(improved: boolean | null): 'up' | 'down' | 'flat' {
+  return improved === null ? 'flat' : improved ? 'up' : 'down';
+}
+
+export function formatValue(value: number | null, language: string, digits = 2): string {
+  return value === null || !Number.isFinite(value) ? '—' : value.toLocaleString(language, { maximumFractionDigits: digits });
+}
+
+/* Context tier comparison: same metrics per tier, times shown in seconds as on the context page. */
+export type ContextComparisonKey = 'decodeTokS' | 'prefillTokS' | 'ttftMs' | 'firstVisibleMs' | 'wallMs' | 'ramPeak' | 'vramPeak';
+export type ContextComparisonField = { key: ContextComparisonKey; nameZh: string; nameEn: string; unit: string; higherBetter: boolean; featured?: boolean };
+
+/** Featured: decode and prefill speed plus TTFT at the longest tier both reports measured. */
+export const CONTEXT_COMPARISON_FIELDS: ContextComparisonField[] = [
+  { key: 'decodeTokS', nameZh: '解码', nameEn: 'Decode', unit: 'tok/s', higherBetter: true, featured: true },
+  { key: 'prefillTokS', nameZh: '预填充', nameEn: 'Prefill', unit: 'tok/s', higherBetter: true, featured: true },
+  { key: 'ttftMs', nameZh: 'TTFT', nameEn: 'TTFT', unit: 's', higherBetter: false, featured: true },
+  { key: 'firstVisibleMs', nameZh: '首正文', nameEn: 'First answer text', unit: 's', higherBetter: false },
+  { key: 'wallMs', nameZh: '请求耗时', nameEn: 'Request time', unit: 's', higherBetter: false },
+  { key: 'ramPeak', nameZh: 'RAM 峰值', nameEn: 'RAM peak', unit: 'GiB', higherBetter: false },
+  { key: 'vramPeak', nameZh: '显存峰值', nameEn: 'VRAM peak', unit: 'GiB', higherBetter: false },
+];
+
+export function contextDisplay(value: number | null | undefined, key: ContextComparisonKey): number | null {
+  if (value === null || value === undefined || !Number.isFinite(value)) return null;
+  if (key.endsWith('Ms')) return value / 1000;
+  if (key.endsWith('Peak')) return value / 2 ** 30;
+  return value;
+}
+
+type ContextMetricRow = { tier: number; left: Partial<Record<ContextComparisonKey, number | null>>; right: Partial<Record<ContextComparisonKey, number | null>> };
+
+/** Longest tier where both reports have this metric; falls back to the longest tier overall. */
+export function featuredTier(rows: ContextMetricRow[], key: ContextComparisonKey): number | null {
+  const sorted = [...rows].sort((x, y) => y.tier - x.tier);
+  const both = sorted.find(row => contextDisplay(row.left[key], key) !== null && contextDisplay(row.right[key], key) !== null);
+  return (both ?? sorted[0])?.tier ?? null;
 }
 
 export function formatRelative(relative: number | null, language: string): string {
