@@ -30,7 +30,7 @@ impl Plan {
 }
 struct Fake {
     snapshots: VecDeque<Result<Vec<u32>, ScanError>>,
-    opens: VecDeque<Result<Rc<RefCell<Plan>>, ScanError>>,
+    opens: VecDeque<Result<Option<Rc<RefCell<Plan>>>, ScanError>>,
     calls: usize,
     held: usize,
 }
@@ -40,7 +40,7 @@ impl Fake {
             snapshots: snapshots.into_iter().map(Ok).collect(),
             opens: plans
                 .into_iter()
-                .map(|plan| Ok(Rc::new(RefCell::new(plan))))
+                .map(|plan| Ok(Some(Rc::new(RefCell::new(plan)))))
                 .collect(),
             calls: 0,
             held: 0,
@@ -59,7 +59,7 @@ impl Census for Fake {
                 .unwrap_or_else(|| Ok(Vec::new()))
         }
     }
-    fn hold(&mut self, _: u32) -> Result<Self::Held, ScanError> {
+    fn hold(&mut self, _: u32) -> Result<Option<Self::Held>, ScanError> {
         self.held += 1;
         self.opens.pop_front().unwrap_or(Err(ScanError::Changed))
     }
@@ -125,7 +125,7 @@ fn held_exit_before_or_during_command_read_is_safely_excluded() {
 }
 
 #[test]
-fn live_unknown_argv_and_permission_failure_never_prove_absence() {
+fn live_unknown_argv_and_non_access_open_failure_never_prove_absence() {
     let mut plan = Plan::args(args());
     plan.reads = (0..2)
         .map(|_| Read {
@@ -142,10 +142,123 @@ fn live_unknown_argv_and_permission_failure_never_prove_absence() {
     let mut source = Fake::new(vec![vec![1]], vec![]);
     source
         .opens
-        .push_back(Err(ScanError::Rejected("ACCESS_DENIED".into())));
-    assert_eq!(run(&mut source).unwrap_err(), "ACCESS_DENIED");
+        .push_back(Err(ScanError::Rejected("open failed".into())));
+    assert_eq!(run(&mut source).unwrap_err(), "open failed");
     assert_eq!(source.held, 1);
     assert_eq!(source.calls, 0);
+}
+
+/// A census source where some PIDs answer OpenProcess with ACCESS_DENIED
+/// (e.g. python.exe children of a LocalSystem service).
+struct Denying {
+    snapshots: VecDeque<Vec<u32>>,
+    denied: HashSet<u32>,
+    plans: std::collections::HashMap<u32, Rc<RefCell<Plan>>>,
+    opens: Vec<u32>,
+}
+impl Census for Denying {
+    type Held = Rc<RefCell<Plan>>;
+    fn snapshot(&mut self, _: Instant) -> Result<Vec<u32>, ScanError> {
+        Ok(if self.snapshots.len() > 1 {
+            self.snapshots.pop_front().unwrap()
+        } else {
+            self.snapshots.front().cloned().unwrap_or_default()
+        })
+    }
+    fn hold(&mut self, pid: u32) -> Result<Option<Self::Held>, ScanError> {
+        self.opens.push(pid);
+        if self.denied.contains(&pid) {
+            return Ok(None);
+        }
+        Ok(self.plans.get(&pid).cloned())
+    }
+    fn exited(&mut self, held: &Self::Held) -> Result<bool, String> {
+        Fake::new(vec![], vec![]).exited(held)
+    }
+    fn identity(&mut self, held: &Self::Held) -> Result<(u64, PathBuf), String> {
+        Fake::new(vec![], vec![]).identity(held)
+    }
+    fn command(&mut self, held: &Self::Held) -> Result<Vec<String>, String> {
+        let plan = held.borrow();
+        plan.reads
+            .front()
+            .map(|read| read.result.clone())
+            .expect("argv")
+    }
+}
+
+#[test]
+fn access_denied_foreign_python_is_skipped_and_serve_python_is_found() {
+    let directory = tempfile::tempdir().unwrap();
+    let config = directory.path().join("config.json");
+    std::fs::write(&config, b"{}").unwrap();
+    // 7 and 9 are LocalSystem pythons we may not open; 8 is our serve process.
+    let mut source = Denying {
+        snapshots: VecDeque::from([vec![7, 8, 9]]),
+        denied: HashSet::from([7, 9]),
+        plans: [(8, Rc::new(RefCell::new(Plan::args(strata(&config)))))].into(),
+        opens: Vec::new(),
+    };
+    let hints = collect(&mut source, Instant::now() + BUDGET).unwrap();
+    assert_eq!(hints.len(), 1);
+    assert_eq!(hints[0].config, config);
+    assert!(source.opens.contains(&7) && source.opens.contains(&9));
+}
+
+#[test]
+fn only_inaccessible_pythons_do_not_block_startup() {
+    let mut source = Denying {
+        snapshots: VecDeque::from([vec![4, 5]]),
+        denied: HashSet::from([4, 5]),
+        plans: Default::default(),
+        opens: Vec::new(),
+    };
+    assert!(collect(&mut source, Instant::now() + BUDGET)
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn a_skipped_pid_that_becomes_openable_forces_a_full_rescan() {
+    let directory = tempfile::tempdir().unwrap();
+    let config = directory.path().join("config.json");
+    std::fs::write(&config, b"{}").unwrap();
+    // First pass: 3 denied. Before the confirming snapshot it becomes openable
+    // (PID reused by our serve python): the census must restart and find it.
+    let plan = Rc::new(RefCell::new(Plan::args(strata(&config))));
+    let mut source = Denying {
+        snapshots: VecDeque::from([vec![3], vec![3]]),
+        denied: HashSet::from([3]),
+        plans: [(3, plan)].into(),
+        opens: Vec::new(),
+    };
+    // Flip access after the first hold, via a wrapper pass.
+    struct Flip<'a>(&'a mut Denying, usize);
+    impl Census for Flip<'_> {
+        type Held = Rc<RefCell<Plan>>;
+        fn snapshot(&mut self, d: Instant) -> Result<Vec<u32>, ScanError> {
+            self.0.snapshot(d)
+        }
+        fn hold(&mut self, pid: u32) -> Result<Option<Self::Held>, ScanError> {
+            self.1 += 1;
+            if self.1 == 2 {
+                self.0.denied.clear();
+            }
+            self.0.hold(pid)
+        }
+        fn exited(&mut self, h: &Self::Held) -> Result<bool, String> {
+            self.0.exited(h)
+        }
+        fn identity(&mut self, h: &Self::Held) -> Result<(u64, PathBuf), String> {
+            self.0.identity(h)
+        }
+        fn command(&mut self, h: &Self::Held) -> Result<Vec<String>, String> {
+            self.0.command(h)
+        }
+    }
+    let hints = collect(&mut Flip(&mut source, 0), Instant::now() + BUDGET).unwrap();
+    assert_eq!(hints.len(), 1);
+    assert_eq!(hints[0].config, config);
 }
 
 #[test]
@@ -345,9 +458,12 @@ impl Census for PrivateNative {
     fn snapshot(&mut self, _: Instant) -> Result<Vec<u32>, ScanError> {
         Ok(if self.include { vec![self.pid] } else { vec![] })
     }
-    fn hold(&mut self, pid: u32) -> Result<Held, ScanError> {
+    fn hold(&mut self, pid: u32) -> Result<Option<Held>, ScanError> {
         assert_eq!(pid, self.pid);
-        self.held.take().map(Ok).unwrap_or_else(|| Native.hold(pid))
+        self.held
+            .take()
+            .map(|held| Ok(Some(held)))
+            .unwrap_or_else(|| Native.hold(pid))
     }
     fn exited(&mut self, held: &Held) -> Result<bool, String> {
         Native.exited(held)
@@ -380,7 +496,7 @@ fn own_cpu_python_handle_preserves_unicode_config_and_does_not_stop_child() {
 #[test]
 fn own_cpu_python_exit_is_proved_by_same_held_os_generation() {
     let (mut fixture, _) = child_fixture();
-    let held = Native.hold(fixture.child.id()).unwrap();
+    let held = Native.hold(fixture.child.id()).unwrap().unwrap();
     assert!(!Native.exited(&held).unwrap());
     std::fs::write(fixture.directory.path().join("stop"), b"stop").unwrap();
     let deadline = Instant::now() + Duration::from_secs(3);
