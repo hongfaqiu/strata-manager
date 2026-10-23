@@ -1648,7 +1648,12 @@ fn launch_task_with_handoff(
                         if status.exit_code == Some(0) {
                             break;
                         }
-                        return Err(format!("命令退出码 {:?}；请查看任务日志", status.exit_code));
+                        drop(records);
+                        return Err(crate::task_failure::explain(
+                            "命令",
+                            status.exit_code,
+                            &crate::task_failure::recent_lines(&logs, &log_id, 40),
+                        ));
                     }
                     if last_save.elapsed() >= Duration::from_secs(1) {
                         persist_task_logs(&database, &logs, &id)?;
