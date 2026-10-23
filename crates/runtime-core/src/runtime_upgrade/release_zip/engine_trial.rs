@@ -32,7 +32,7 @@ pub(super) fn engine_executable(directory: &Path) -> PathBuf {
 }
 
 /// The engine folder, then BUILD.json `lib_dirs` (relative, inside the folder, existing).
-fn library_dirs(directory: &Path) -> Vec<PathBuf> {
+pub(in crate::runtime_upgrade) fn library_dirs(directory: &Path) -> Vec<PathBuf> {
     let mut dirs = vec![directory.to_path_buf()];
     let names = fs::read(directory.join("BUILD.json"))
         .ok()
