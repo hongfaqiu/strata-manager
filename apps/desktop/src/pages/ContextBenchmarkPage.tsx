@@ -11,6 +11,8 @@ import { ContextBenchmarkCharts, contextTierLabel } from './ContextBenchmarkChar
 import { useBenchmarkContext } from './useBenchmarkContext';
 import { createContextBenchmarkImage } from './contextBenchmarkImage';
 import { BenchmarkImagePreviewDialog, type BenchmarkImagePreview } from './BenchmarkImagePreviewDialog';
+import { CONTEXT_COMPARISON_FIELDS, contextDisplay, featuredTier, formatValue, valueDelta } from './benchmarkComparisonView';
+import { ComparisonHighlightCard, ComparisonPickers, ComparisonValueCells, ComparisonVerdict, type ConditionChip } from './BenchmarkComparisonParts';
 
 const STORE_KEY = 'contextBenchmarkReportsV1';
 const isObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -41,7 +43,7 @@ export function ContextBenchmarkPage({ profile, online, disabled, language, onRu
   const { maxContext, loading: contextLoading, error: contextError } = useBenchmarkContext(profile, online);
   const [options, setOptions] = useState<ContextBenchmarkOptions>(() => ({ ...core.DEFAULT_CONTEXT_BENCHMARK_OPTIONS, tiers: [] }));
   const [history, setHistory] = useState<ContextBenchmarkReport[]>([]), [selected, setSelected] = useState<ContextBenchmarkReport>();
-  const [comparisonId, setComparisonId] = useState('');
+  const [comparisonId, setComparisonId] = useState(''), [comparisonLeftId, setComparisonLeftId] = useState('');
   const [samples, setSamples] = useState<ContextBenchmarkSample[]>([]), [progress, setProgress] = useState<ContextBenchmarkProgress>();
   const [running, setRunning] = useState(false), [stopping, setStopping] = useState(false), [loaded, setLoaded] = useState(false), [error, setError] = useState('');
   const [startedAt, setStartedAt] = useState(0), [elapsedMs, setElapsedMs] = useState(0);
@@ -68,6 +70,7 @@ export function ContextBenchmarkPage({ profile, online, disabled, language, onRu
     return () => { mounted.current = false; controller.current?.abort(); onRunningChange(false); };
   }, [onRunningChange]);
   useEffect(() => { controller.current?.abort(); }, [profile?.id, profile?.baseUrl]);
+  useEffect(() => { setComparisonLeftId(''); }, [selected?.id]);
   useEffect(() => { const url = imagePreview?.url; return () => { if (url) URL.revokeObjectURL(url); }; }, [imagePreview?.url]);
   useEffect(() => {
     if (!running) return;
@@ -97,9 +100,19 @@ export function ContextBenchmarkPage({ profile, online, disabled, language, onRu
   const states = { completed: text('完成', 'Completed'), failed: text('失败', 'Failed'), cancelled: text('已停止', 'Stopped') };
   const resultSamples = running ? samples : selected?.samples ?? [];
   const selectedIdentity = selected ? core.contextBenchmarkComparisonAdapter(selected, selected.samples[0]?.targetTokens ?? 0).identity : undefined;
-  const comparisonReport = !running && selected && comparisonId !== selected.id ? history.find(report => report.id === comparisonId) : undefined;
-  const comparisonRows = useMemo(() => selected && comparisonReport ? core.compareContextBenchmarkReports(selected, comparisonReport) : [], [selected, comparisonReport]);
+  // A defaults to the report shown above; B defaults to the most recent other report. Both stay selectable.
+  const comparisonLeft = history.find(report => report.id === comparisonLeftId) ?? selected;
+  const comparisonReport = running || !comparisonLeft ? undefined
+    : history.find(report => report.id === comparisonId && report.id !== comparisonLeft.id) ?? history.find(report => report.id !== comparisonLeft.id);
+  const comparisonRows = useMemo(() => comparisonLeft && comparisonReport ? core.compareContextBenchmarkReports(comparisonLeft, comparisonReport) : [], [comparisonLeft, comparisonReport]);
+  const comparisonChips = useMemo(() => {
+    const chips = new Map<string, { kind: 'diff' | 'unknown'; key: string; tiers: number[] }>();
+    for (const row of comparisonRows) for (const [kind, keys] of [['diff', row.comparison.differences], ['unknown', row.comparison.unknowns]] as const)
+      for (const key of keys) { const chip = chips.get(kind + key) ?? { kind, key, tiers: [] }; chip.tiers.push(row.tier); chips.set(kind + key, chip); }
+    return [...chips.values()];
+  }, [comparisonRows]);
   const conditionName = (key: string) => ({ model: text('模型名称', 'Model name'), options: text('输入、缓存与测试协议', 'Input, cache and test protocol'), hardware: text('硬件条件', 'Hardware'), identity: text('运行时/模型身份', 'Runtime/model identity'), process: text('服务与引擎进程证明', 'Service and engine process evidence'), runtime: text('引擎身份', 'Runtime identity'), runtimeContent: text('运行时内容摘要', 'Runtime content digest'), modelContent: text('模型文件内容', 'Model file content'), modelIdentity: text('模型文件身份', 'Model identity'), effectiveConfiguration: text('生效配置', 'Effective configuration'), testInput: text('测试文本', 'Test text'), inputConditions: text('实际输入量与缓存复用', 'Actual input and cache reuse'), cacheConditions: text('实际缓存计数', 'Actual cache counters'), incomplete: text('完整成功测量', 'Complete successful measurement') }[key] ?? key);
+  const comparisonMetricLabel = { decodeTokS: text('解码 (tok/s)', 'Decode (tok/s)'), prefillTokS: text('预填充 (tok/s)', 'Prefill (tok/s)'), ttftMs: 'TTFT (s)', firstVisibleMs: text('首正文 (s)', 'First answer text (s)'), wallMs: text('请求耗时 (s)', 'Request time (s)'), ramPeak: text('RAM 峰值 (GiB)', 'RAM peak (GiB)'), vramPeak: text('显存峰值 (GiB)', 'VRAM peak (GiB)') };
   const configuration = selected?.options.configurationLabel || selected?.profileName || options.configurationLabel || profile?.name;
   const closeImagePreview = () => { imageRequest.current++; setImagePreview(undefined); };
   const previewImage = async () => {
@@ -153,15 +166,41 @@ export function ContextBenchmarkPage({ profile, online, disabled, language, onRu
       {!!selected?.skippedTiers.length && <ul className="context-benchmark-skipped">{selected.skippedTiers.map(tier => <li key={tier.targetTokens}>{tierName(tier.targetTokens)} · {text('已跳过', 'Skipped')} · {tier.reason}</li>)}</ul>}
       {selected && selected.stopReason !== 'completed' && <p className={`notice${selected.state === 'failed' ? ' error' : ''}`} role="status">{selected.stopReason === 'cancelled' ? text('测试已停止，已完成的结果已保留。', 'Benchmark stopped; completed results were retained.') : selected.stopReason === 'modelChanged' ? text('模型已切换，测试已停止。', 'The model changed; the benchmark was stopped.') : text('测试因请求错误结束，详情见测量结果。', 'The benchmark ended after a request error. See measurements for details.')}</p>}
     </Panel>
-    {!running && selected && history.length > 1 && <Panel title={text('上下文历史对照', 'Context history comparison')} action={<Dropdown ariaLabel={text('对照上下文测试记录', 'Compare context benchmark report')} value={comparisonId} placeholder={text('选择另一份历史记录', 'Select another report')} options={history.filter(report => report.id !== selected.id).map(report => ({ value: report.id, label: `${new Date(report.startedAt).toLocaleString(language)} · ${report.options.configurationLabel || report.profileName}` }))} onValueChange={setComparisonId}/> }>
-      {!comparisonReport ? <p className="subtle">{text('以上方当前记录为 A，选择另一份记录为 B。旧记录仍可对照测量值；身份或条件未核验时不显示提速结论。', 'The current report is A. Select report B. Older measurements remain available; unverified identities or conditions do not establish a speed improvement.')}</p> : <>
-        <p className="subtle">A: {selected.options.configurationLabel || selected.profileName} · {new Date(selected.startedAt).toLocaleString(language)}<br/>B: {comparisonReport.options.configurationLabel || comparisonReport.profileName} · {new Date(comparisonReport.startedAt).toLocaleString(language)}</p>
-        <div className="table-wrap"><table className="context-benchmark-table"><thead><tr>{[text('档位', 'Tier'), text('记录', 'Report'), 'TTFT (s)', text('首正文 (s)', 'First answer text (s)'), text('请求耗时 (s)', 'Request time (s)'), text('预填充 (tok/s)', 'Prefill (tok/s)'), text('解码 (tok/s)', 'Decode (tok/s)'), text('RAM 峰值 (GiB)', 'RAM peak (GiB)'), text('显存峰值 (GiB)', 'VRAM peak (GiB)'), text('条件核验', 'Conditions')].map(label => <th key={label}>{label}</th>)}</tr></thead><tbody>
-          {comparisonRows.flatMap(row => ([['A', row.left, row.leftSamples], ['B', row.right, row.rightSamples]] as const).map(([label, metrics, count], index) => <tr key={`${row.tier}-${label}`}>
-            {index === 0 && <td rowSpan={2}>{tierName(row.tier)}</td>}<td>{label}<small>{count} {text('次成功', 'successful')}</small></td><td>{number(metrics.ttftMs == null ? null : metrics.ttftMs / 1000)}</td><td>{number(metrics.firstVisibleMs == null ? null : metrics.firstVisibleMs / 1000)}</td><td>{number(metrics.wallMs == null ? null : metrics.wallMs / 1000)}</td><td>{number(metrics.prefillTokS)}</td><td>{number(metrics.decodeTokS)}</td><td>{number(metrics.ramPeak == null ? null : metrics.ramPeak / 2 ** 30)}</td><td>{number(metrics.vramPeak == null ? null : metrics.vramPeak / 2 ** 30)}</td>
-            {index === 0 && <td rowSpan={2}>{row.comparison.comparable ? text('条件匹配', 'Conditions match') : text('仅并列展示测量值', 'Measurements shown side by side')} {!!row.comparison.differences.length && <small>{text('差异', 'Differences')}: {row.comparison.differences.map(conditionName).join(' · ')}</small>}{!!row.comparison.unknowns.length && <small>{text('未核验', 'Unverified')}: {row.comparison.unknowns.map(conditionName).join(' · ')}</small>}</td>}
-          </tr>))}
-        </tbody></table></div><p className="subtle">{text('时间与速度为成功请求均值；RAM/显存为对应档位整机采样峰值。不同输入量、缓存命中或生效配置不合并为性能结论。', 'Time and rates are means of successful requests. RAM/VRAM are sampled system peaks for each tier. Different input counts, cache reuse or effective settings do not establish a performance conclusion.')}</p>
+    {!running && selected && history.length > 1 && <Panel title={text('上下文历史对照', 'Context history comparison')} className="benchmark-history-comparison context-history-comparison">
+      <ComparisonPickers t={text} options={history.map(report => ({ value: report.id, label: `${new Date(report.startedAt).toLocaleString(language)} · ${report.options.configurationLabel || report.profileName}` }))}
+        leftId={comparisonLeft?.id ?? ''} rightId={comparisonReport?.id ?? comparisonId} ariaA={text('上下文报告 A', 'Context report A')} ariaB={text('对照上下文测试记录', 'Compare context benchmark report')}
+        leftMeta={comparisonLeft ? `${comparisonLeft.options.configurationLabel || comparisonLeft.profileName} · ${comparisonLeft.model} · ${new Date(comparisonLeft.startedAt).toLocaleString(language)}` : ''}
+        rightMeta={comparisonReport ? `${comparisonReport.options.configurationLabel || comparisonReport.profileName} · ${comparisonReport.model} · ${new Date(comparisonReport.startedAt).toLocaleString(language)}` : ''}
+        placeholderB={text('选择另一份历史记录', 'Select another report')} onLeft={setComparisonLeftId} onRight={setComparisonId}/>
+      {!comparisonReport || !comparisonRows.length ? <p className="bhc-empty">{text('以上方当前记录为 A，选择另一份记录为 B。旧记录仍可对照测量值；身份或条件未核验时不显示提速结论。', 'The current report is A. Select report B. Older measurements remain available; unverified identities or conditions do not establish a speed improvement.')}</p> : <>
+        <ComparisonVerdict t={text} comparable={comparisonRows.every(row => row.comparison.comparable)} chips={comparisonChips.map((chip): ConditionChip => ({ key: chip.key, kind: chip.kind,
+          label: chip.tiers.length === comparisonRows.length ? conditionName(chip.key) : `${conditionName(chip.key)}（${chip.tiers.map(tierName).join('、')}）` }))}/>
+        <div className="bhc-highlights" aria-label={text('重点指标', 'Highlighted metrics')}>
+          {CONTEXT_COMPARISON_FIELDS.filter(field => field.featured).map(field => {
+            const tier = featuredTier(comparisonRows, field.key), row = comparisonRows.find(item => item.tier === tier);
+            const a = contextDisplay(row?.left[field.key], field.key), b = contextDisplay(row?.right[field.key], field.key);
+            return <ComparisonHighlightCard key={field.key} metric={field.key} label={<>{zh ? field.nameZh : field.nameEn}{tier !== null && <> · {tierName(tier)}</>}</>} unit={field.unit}
+              a={a} b={b} aShown={formatValue(a, language)} bShown={formatValue(b, language)} delta={valueDelta(a, b, field.higherBetter)} language={language}/>;
+          })}
+        </div>
+        <div className="bhc-table-wrap">
+          <table className="bhc-table bhc-table-context st-table">
+            <thead><tr><th className="bhc-left">{text('档位', 'Tier')}</th><th className="bhc-left">{text('条件核验', 'Conditions')}</th><th className="bhc-left">{text('指标', 'Metric')}</th><th>{text('记录', 'Report')} A</th><th>{text('记录', 'Report')} B</th><th>{text('B 相对 A', 'B vs A')}</th></tr></thead>
+            <tbody>{comparisonRows.flatMap(row => CONTEXT_COMPARISON_FIELDS.map((field, index) => {
+              const a = contextDisplay(row.left[field.key], field.key), b = contextDisplay(row.right[field.key], field.key);
+              return <tr key={`${row.tier}-${field.key}`} data-highlight={field.featured || undefined} data-group-start={index === 0 || undefined}>
+                {index === 0 && <td rowSpan={CONTEXT_COMPARISON_FIELDS.length} className="bhc-tier"><strong>{tierName(row.tier)}</strong><small>A {row.leftSamples} {text('次成功', 'successful')} · B {row.rightSamples} {text('次成功', 'successful')}</small></td>}
+                {index === 0 && <td rowSpan={CONTEXT_COMPARISON_FIELDS.length} className="bhc-tier-conditions"><span className="bhc-chip" data-kind={row.comparison.comparable ? undefined : 'diff'}>{row.comparison.comparable ? text('条件匹配', 'Conditions match') : text('仅并列展示测量值', 'Measurements shown side by side')}</span>
+                  {!!row.comparison.differences.length && <small>{text('差异', 'Differences')}: {row.comparison.differences.map(conditionName).join(' · ')}</small>}
+                  {!!row.comparison.unknowns.length && <small>{text('未核验', 'Unverified')}: {row.comparison.unknowns.map(conditionName).join(' · ')}</small>}</td>}
+                <td className="bhc-left bhc-metric">{comparisonMetricLabel[field.key]}</td>
+                <ComparisonValueCells aShown={formatValue(a, language)} bShown={formatValue(b, language)} delta={valueDelta(a, b, field.higherBetter)} language={language}/>
+              </tr>;
+            }))}</tbody>
+          </table>
+        </div>
+        <p className="bhc-note">{text('重点卡片取两份记录都测到的最长档位：长上下文下的解码速度、预填充速度与 TTFT 最能体现上下文开销。加粗为该项更好的一方（速度更高，或时间与占用更低）；绿色表示 B 优于 A，灰色为持平或无法计算。', 'Highlight cards use the longest tier both reports measured: decode speed, prefill speed and TTFT at long context show context overhead best. Bold marks the better value (higher speed, or lower time/memory). Green means B improves on A; gray is unchanged or unknown.')}</p>
+        <p className="subtle">{text('时间与速度为成功请求均值；RAM/显存为对应档位整机采样峰值。不同输入量、缓存命中或生效配置不合并为性能结论。', 'Time and rates are means of successful requests. RAM/VRAM are sampled system peaks for each tier. Different input counts, cache reuse or effective settings do not establish a performance conclusion.')}</p>
       </>}
     </Panel>}
     {imagePreview && <BenchmarkImagePreviewDialog image={imagePreview} language={language} onClose={closeImagePreview}/>}

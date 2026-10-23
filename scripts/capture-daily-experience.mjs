@@ -178,11 +178,12 @@ const scenes = [
   } },
   { id: 'history-comparison', hash: 'benchmark', query: 'history', sample: 'Synthetic older historical values with missing identity and unknown test conditions; direct speedup conclusion is withheld', action: async (page, zh) => {
     await page.getByRole('radio', { name: zh ? '场景测试' : 'Scenario suite', exact: true }).click();
-    await page.locator('.benchmark-history-disclosure').filter({ visible: true }).first().locator('summary').click();
     const panel = page.locator('.benchmark-history-comparison').filter({ visible: true }).first();
     await panel.waitFor();
     await panel.getByText(zh ? /条件尚不支持直接提速结论/ : /conditions do not support a direct speedup conclusion/).waitFor();
     assert.match(await panel.innerText(), zh ? /未核验/ : /Unverified/);
+    assert.equal(await panel.locator('.bhc-card').count(), 3);
+    assert.equal(await panel.locator('.bhc-table tbody tr').count(), 8);
     await panel.scrollIntoViewIfNeeded();
   } },
   { id: 'startup-diagnostic', hash: 'overview', query: 'diagnostic', stopped: true, sample: 'Synthetic confirmed port-conflict diagnostic; stopped service remains stopped', action: async (page, zh) => {

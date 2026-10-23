@@ -10,7 +10,7 @@ export const pages = {
   'Strata 运行环境 (environment)': { files: ['pages/InstallRuntimePage.tsx'], app: slice('const EnvironmentPage', 'const changeSettings') },
   '参数调优 (tuning)': { files: ['pages/TuningPage.tsx'], app: slice('const renderTuningPage', 'const pages:') },
   '任务与日志 (tasks)': { files: [], app: slice('const TasksPage', 'const EnvironmentPage') },
-  'Benchmark': { files: ['pages/BenchmarkPage.tsx', 'pages/ContextBenchmarkPage.tsx', 'pages/ScenarioBenchmarkPage.tsx', 'pages/BenchmarkComparisonPanel.tsx'], app: '' },
+  'Benchmark': { files: ['pages/BenchmarkPage.tsx', 'pages/ContextBenchmarkPage.tsx', 'pages/ScenarioBenchmarkPage.tsx', 'pages/BenchmarkComparisonPanel.tsx', 'pages/BenchmarkComparisonParts.tsx'], app: '' },
   '公共设置 (settings)': { files: ['pages/DesktopLifecycleSettings.tsx'], app: slice('const SettingsPage', 'const MonitorSettingsPage') },
   'API 与外部助手 (connections)': { files: ['ServiceConnectionPanel.tsx', 'ServiceCapabilityPanel.tsx', 'McpIntegrationPanel.tsx', 'ServiceSharingPanel.tsx'], app: slice('const renderConnectionsPage', 'const renderRuntimeToolsPage') },
   '显存与会话 (runtime-tools)': { files: ['RuntimeOperationsPanel.tsx'], app: slice('const renderRuntimeToolsPage', 'const restartSelectedService') },
