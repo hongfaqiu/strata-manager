@@ -13,6 +13,9 @@ use std::io::{BufRead, Write};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 
+#[cfg(any(windows, test))]
+#[path = "taskbar_capture.rs"]
+mod capture;
 #[cfg(windows)]
 #[path = "taskbar_host.rs"]
 mod host;
