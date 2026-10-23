@@ -420,9 +420,103 @@ fn group(directory: &Path, first: &str, stem: &str, total: u32) -> LocalModelGro
     }
 }
 
-/// Read-only scan of a folder (or the folder of a chosen GGUF file).
+fn has_model_gguf(directory: &Path) -> bool {
+    fs::read_dir(directory).is_ok_and(|entries| {
+        entries.take(MAX_ENTRIES).flatten().any(|e| {
+            let lower = e.file_name().to_string_lossy().to_ascii_lowercase();
+            lower.ends_with(".gguf") && !lower.starts_with("mmproj") && e.path().is_file()
+        })
+    })
+}
+
+/// Folders below `root` (up to three levels) that hold model GGUFs: a Hugging Face repository downloaded whole
+/// keeps each quantization in its own folder (`UD-Q6_K_XL/`, ISTA-DASLab's `IQ3_S/`), and the hub cache adds
+/// `snapshots/<revision>/`. Hidden folders (`.cache`, `.git`) and the cache's `blobs` are not models.
+fn gguf_folders(root: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let mut level = vec![root.to_owned()];
+    for _ in 0..3 {
+        let mut next = Vec::new();
+        for dir in &level {
+            let Ok(entries) = fs::read_dir(dir) else {
+                continue;
+            };
+            for entry in entries.take(256).flatten() {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                let path = entry.path();
+                if name.starts_with('.') || name == "blobs" || !path.is_dir() {
+                    continue;
+                }
+                if has_model_gguf(&path) {
+                    found.push(path);
+                } else {
+                    next.push(path);
+                }
+            }
+        }
+        if !found.is_empty() || next.is_empty() {
+            break;
+        }
+        level = next;
+    }
+    // The hub cache: only the revision refs/main points to, when it is among them.
+    let snapshot = |p: &Path| {
+        p.ancestors()
+            .find(|a| {
+                a.parent()
+                    .and_then(Path::file_name)
+                    .is_some_and(|n| n == "snapshots")
+            })
+            .map(Path::to_owned)
+    };
+    if let Some(main) = found.iter().find_map(|p| snapshot(p)).and_then(|snap| {
+        let repo = snap.parent()?.parent()?;
+        let revision = fs::read_to_string(repo.join("refs").join("main")).ok()?;
+        Some(repo.join("snapshots").join(revision.trim()))
+    }) {
+        if found.iter().any(|p| p.starts_with(&main)) {
+            found.retain(|p| p.starts_with(&main));
+        }
+    }
+    found.sort();
+    found
+}
+
+/// Read-only scan of a folder (or the folder of a chosen GGUF file). A folder without GGUFs whose model files
+/// are one folder down (a whole Hugging Face repository, or its hub-cache folder) is scanned there when there is
+/// exactly one such folder; otherwise the folders are named.
 pub fn scan(path: &str) -> Result<LocalModelScan, String> {
-    let path = absolute(path, "模型目录或 GGUF 文件")?;
+    let chosen = absolute(path, "模型目录或 GGUF 文件")?;
+    if chosen.is_dir() && !has_model_gguf(&chosen) {
+        let folders = gguf_folders(&chosen);
+        if folders.len() == 1 {
+            return scan_at(&folders[0]);
+        }
+        if folders.len() > 1 {
+            let mut result = scan_at(&chosen)?;
+            let names: Vec<String> = folders
+                .iter()
+                .take(12)
+                .map(|f| {
+                    f.strip_prefix(&chosen)
+                        .unwrap_or(f)
+                        .to_string_lossy()
+                        .into_owned()
+                })
+                .collect();
+            result.problems = vec![format!(
+                "{} 里没有直接放 GGUF 文件，模型在子目录里（Hugging Face 仓库每个量化一个目录）：{}。请选择要用的那个量化目录",
+                chosen.display(),
+                names.join("、")
+            )];
+            return Ok(result);
+        }
+    }
+    scan_at(&chosen)
+}
+
+fn scan_at(path: &Path) -> Result<LocalModelScan, String> {
+    let path = path.to_owned();
     let meta = fs::metadata(&path).map_err(|e| format!("无法访问 {}: {e}", path.display()))?;
     let (directory, selected_file) = if meta.is_file() {
         let name = path
@@ -860,6 +954,84 @@ mod tests {
             problems.iter().any(|p| p.contains("共 4 个")),
             "{problems:?}"
         );
+    }
+
+    /// Hugging Face layouts: `hf download --local-dir` of the whole repo (a folder per quantization plus
+    /// `.cache/huggingface`), and the hub cache (`snapshots/<rev>/<quant>/` symlinks into `blobs/`), under a
+    /// path with spaces and Chinese characters.
+    #[test]
+    fn hugging_face_repo_and_hub_cache_layouts_are_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("我的 模型").join("Qwen3.8-Flash-Next-GGUF");
+        let quant = root.join("UD-Q4_K_XL");
+        fs::create_dir_all(&quant).unwrap();
+        fs::create_dir_all(root.join(".cache/huggingface/download/UD-Q4_K_XL")).unwrap();
+        for i in 1..=4 {
+            gguf(
+                &quant.join(format!(
+                    "Qwen3.8-Flash-Next-UD-Q4_K_XL-{i:05}-of-00004.gguf"
+                )),
+                1024,
+            );
+        }
+        let found = scan(&root.to_string_lossy()).unwrap();
+        assert_eq!(found.directory, quant.to_string_lossy());
+        assert!(found.groups[0].installable, "{found:?}");
+        assert_eq!(found.groups[0].family.as_deref(), Some("unsloth"));
+
+        // Two quantizations: name both instead of guessing.
+        let other = root.join("UD-Q6_K_XL");
+        fs::create_dir_all(&other).unwrap();
+        gguf(
+            &other.join("Qwen3.8-Flash-Next-UD-Q6_K_XL-00001-of-00006.gguf"),
+            1024,
+        );
+        let found = scan(&root.to_string_lossy()).unwrap();
+        assert!(found.groups.is_empty());
+        assert!(
+            found.problems[0].contains("UD-Q4_K_XL") && found.problems[0].contains("UD-Q6_K_XL"),
+            "{:?}",
+            found.problems
+        );
+
+        #[cfg(unix)]
+        {
+            let repo = dir
+                .path()
+                .join("hub")
+                .join("models--unsloth--Qwen3.8-Flash-Next-GGUF");
+            let blobs = repo.join("blobs");
+            let old = repo.join("snapshots").join("aaaa").join("UD-Q4_K_XL");
+            let main = repo.join("snapshots").join("bbbb").join("UD-Q4_K_XL");
+            for d in [&blobs, &old, &main, &repo.join("refs")] {
+                fs::create_dir_all(d).unwrap();
+            }
+            fs::write(repo.join("refs").join("main"), "bbbb").unwrap();
+            for i in 1..=4 {
+                let name = format!("Qwen3.8-Flash-Next-UD-Q4_K_XL-{i:05}-of-00004.gguf");
+                let blob = blobs.join(format!("{i:064x}"));
+                gguf(&blob, 1024);
+                std::os::unix::fs::symlink(&blob, main.join(&name)).unwrap();
+                std::os::unix::fs::symlink(&blob, old.join(&name)).unwrap();
+            }
+            let found = scan(&repo.to_string_lossy()).unwrap();
+            assert_eq!(
+                found.directory,
+                main.to_string_lossy(),
+                "refs/main's revision"
+            );
+            let g = &found.groups[0];
+            assert!(g.installable && g.total_bytes == 4096, "{g:?}");
+            // A blob still downloading: the symlink's shard is cut short and refused.
+            fixture::write(
+                &blobs.join(format!("{:064x}", 3)),
+                Some((2, 4)),
+                &tensors(),
+                1,
+            );
+            let found = scan(&main.to_string_lossy()).unwrap();
+            assert_eq!(found.groups[0].shards[2].state, "tooSmall");
+        }
     }
 
     #[test]
