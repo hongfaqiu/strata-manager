@@ -485,7 +485,10 @@ mod tests {
         assert_eq!(out["args"][1], json!(source.join("models/m.gguf")));
         assert_eq!(out["args"][3], json!("8192"));
         assert_eq!(out["args"][5], json!("auto"));
-        assert_eq!(out["tokenizer"], json!(source.join("packs/tok")));
+        assert_eq!(
+            out["tokenizer"],
+            json!(dunce::canonicalize(source.join("packs/tok")).unwrap())
+        );
         assert_eq!(out["log"], json!(target.join("strata.log")));
         // The old engine folder is inside the source runtime: it is never kept as a library folder.
         assert_eq!(out["lib_dirs"], json!([new_engine]));
