@@ -12,7 +12,15 @@ import type { OrcaImportRequest } from './orca-import';
  */
 export interface LocalModelRequest { ggufDirectory: string; mtpPath?: string }
 export type LocalShardState = 'ok' | 'missing' | 'unreadable' | 'notGguf' | 'tooSmall';
-export interface LocalShard { name: string; bytes: number; state: LocalShardState }
+export interface LocalShard {
+  name: string; bytes: number;
+  /** tooSmall: shorter than its own GGUF header's tensor directory says (not a size floor: a metadata-only first split is ~10 MB). */
+  state: LocalShardState;
+  /** The length the shard's GGUF header needs, when readable. */
+  expectedBytes?: number | null;
+  /** An unfinished download beside it (.part, .incomplete, HF --local-dir cache). */
+  partialDownload?: string | null;
+}
 export type LocalModelKind = 'official' | 'renamed' | 'orca' | 'unsupported' | 'unknown';
 export interface LocalGgufGroup {
   id: string; name: string; firstShard: string; quant: string | null; kind: LocalModelKind; family: string | null;
