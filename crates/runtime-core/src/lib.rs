@@ -6,6 +6,7 @@ mod byte_size;
 pub mod chat_runtime;
 pub mod community_model;
 pub mod configuration_copy;
+pub mod control_vector;
 pub mod diagnostics;
 pub mod discovery;
 pub mod disk;
@@ -1192,6 +1193,11 @@ impl RuntimeState {
             ))),
             "scan_local_models" => value(local_model::scan(&arg::<String>(&params, "path")?)),
             "check_mtp_path" => value(local_model::check_mtp(&arg::<String>(&params, "path")?)),
+            "inspect_control_vector" => {
+                value(Ok::<_, String>(control_vector::inspect(&arg::<String>(
+                    &params, "path",
+                )?)))
+            }
             "run_setup" => value(run_setup_with_options(
                 self.clone(),
                 profile()?,
