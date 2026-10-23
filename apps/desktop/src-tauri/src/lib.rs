@@ -964,6 +964,74 @@ async fn runtime_release_versions(
     }
 }
 
+const OLD_SERVICE: &str = "后台服务版本较旧，暂不支持管理已安装版本；请完全退出并重新打开应用后再试 / The background service is older; quit and reopen the app, then try again";
+
+async fn installed_versions_request(
+    state: &ClientState,
+    method: &str,
+    params: Value,
+) -> Result<Value, String> {
+    match state.ipc.request(method, params).await {
+        Ok(value) => Ok(value),
+        Err(error) if error.code == "unknown_method" => Err(OLD_SERVICE.into()),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+/// Installed Strata versions with their protection state and the cleanup plan.
+#[tauri::command]
+async fn runtime_installed_versions(state: State<'_, ClientState>) -> Result<Value, String> {
+    installed_versions_request(&state, "runtime_installed_versions_v1", json!({})).await
+}
+
+/// Disk size of one listed version or leftover (computed in the background).
+#[tauri::command]
+async fn runtime_installed_size(
+    state: State<'_, ClientState>,
+    path: String,
+) -> Result<Value, String> {
+    installed_versions_request(&state, "runtime_installed_size_v1", json!({"path": path})).await
+}
+
+/// Deletes one Manager-installed version; referenced configurations must be confirmed.
+#[tauri::command]
+async fn runtime_delete_version(
+    state: State<'_, ClientState>,
+    install_dir: String,
+    remove_profiles: Option<Vec<String>>,
+) -> Result<Value, String> {
+    installed_versions_request(
+        &state,
+        "runtime_delete_version_v1",
+        json!({"installDir": install_dir, "removeProfiles": remove_profiles.unwrap_or_default()}),
+    )
+    .await
+}
+
+/// Deletes exactly the confirmed cleanup items (re-checked by the service).
+#[tauri::command]
+async fn runtime_cleanup(
+    state: State<'_, ClientState>,
+    paths: Vec<String>,
+) -> Result<Value, String> {
+    installed_versions_request(&state, "runtime_cleanup_v1", json!({"paths": paths})).await
+}
+
+/// Switches the configurations in use to an installed version (no download).
+#[tauri::command]
+async fn runtime_switch_version(
+    state: State<'_, ClientState>,
+    install_dir: String,
+    request_id: Option<String>,
+) -> Result<Value, String> {
+    installed_versions_request(
+        &state,
+        "runtime_switch_version_v1",
+        json!({"installDir": install_dir, "requestId": request_id}),
+    )
+    .await
+}
+
 /// Engine / model storage locations (user feedback: "everything can only go on C:").
 #[tauri::command]
 async fn storage_locations(
@@ -2258,6 +2326,11 @@ pub fn run() {
             update_runtime_zip,
             runtime_update_info,
             runtime_release_versions,
+            runtime_installed_versions,
+            runtime_installed_size,
+            runtime_delete_version,
+            runtime_cleanup,
+            runtime_switch_version,
             runtime_release_info,
             storage_locations,
             set_engine_install_root,

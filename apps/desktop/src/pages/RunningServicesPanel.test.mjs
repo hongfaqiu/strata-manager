@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
 import { normalizeError } from '../../../../packages/core/src/errors.ts';
+import { runtimeVersions } from '../runtimeVersionsForTests.mjs';
 
 const jsx = (type, props) => ({ type, props: props ?? {} });
 const nodes = tree => !tree || typeof tree !== 'object' ? [] : [tree, ...[tree.props?.children].flat(Infinity).flatMap(nodes)];
@@ -21,7 +22,7 @@ function fixture(extra = {}) {
     useRef: initial => slot(() => ({ current: initial })),
     useState: initial => { const state = slot(() => ({ value: typeof initial === 'function' ? initial() : initial })); return [state.value, next => { state.value = typeof next === 'function' ? next(state.value) : next; }]; },
   };
-  const core = { normalizeError, normalizeBaseUrl: url => url,
+  const core = { normalizeError, normalizeBaseUrl: url => url, runtimeVersionLabel: runtimeVersions.runtimeVersionLabel,
     request: async (profile, path, method) => { calls.request.push({ profile, path, method }); return { service: 'strata', status: 'ok', loaded: false }; },
   };
   const module = { exports: {} };

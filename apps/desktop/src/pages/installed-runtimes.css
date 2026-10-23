@@ -1,0 +1,48 @@
+/* 「已安装版本」: one quiet list, the version in use first; colour only marks the current one. */
+.installed-runtimes-summary{margin:-8px 0 12px;color:var(--st-ink-muted);font-size:12px;font-variant-numeric:tabular-nums}
+.installed-runtimes-leftovers{margin:12px 0 0;color:var(--st-ink-muted);font-size:12px}
+.installed-runtimes-list{list-style:none;margin:0;padding:0;border-top:1px solid var(--st-line-soft)}
+.installed-runtimes-list>li{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid var(--st-line-soft)}
+.installed-runtimes-list>li.is-current{box-shadow:inset 2px 0 var(--st-accent-text);padding-left:12px}
+.installed-runtime-main{display:flex;flex-direction:column;gap:4px;min-width:0}
+.installed-runtime-head{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px}
+.installed-runtime-head strong{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+.installed-runtime-tag{font-size:11px;color:var(--st-ink-muted);white-space:nowrap}
+.installed-runtime-tag+.installed-runtime-tag::before{content:'·';margin-right:10px;color:var(--st-line)}
+.installed-runtime-tag.is-current{color:var(--st-accent-text);font-weight:600}
+.installed-runtime-tag.is-warn{color:var(--st-warn-text)}
+.installed-runtimes-list .installed-runtime-main code{font-family:var(--st-font-mono,ui-monospace,monospace);line-height:1.5;background:none;padding:0;font-size:11px;color:var(--st-ink-muted);overflow-wrap:anywhere;user-select:text}
+.installed-runtime-main small{font-size:11px;color:var(--st-ink-muted);font-variant-numeric:tabular-nums;line-height:1.6}
+.installed-runtime-main .installed-runtime-reason{opacity:.85}
+.installed-runtime-actions{display:flex;gap:8px;flex:none}
+.installed-runtime-actions button{min-height:30px;padding:5px 10px}
+.installed-runtime-actions .installed-runtime-delete{background:transparent;border-color:transparent;color:var(--st-ink-muted)}
+.installed-runtime-actions .installed-runtime-delete:hover:not(:disabled){color:var(--st-danger,var(--danger));background:transparent}
+.installed-runtimes-setting{display:flex;gap:10px;align-items:flex-start;margin-top:16px;cursor:pointer}
+.installed-runtimes-setting .official-checkbox{margin-top:2px}
+.installed-runtimes-setting span{display:flex;flex-direction:column;gap:4px;min-width:0}
+.installed-runtimes-setting strong{font-size:12px;font-weight:600}
+.installed-runtimes-setting small{color:var(--st-ink-muted);font-size:11px;line-height:1.7;max-width:640px}
+.installed-runtimes-result{margin:12px 0 0;font-size:12px;color:var(--st-accent-text)}
+.installed-runtimes>.notice{margin-top:12px}
+.installed-runtimes .notice code{font-size:11px}
+.installed-runtime-dialog{display:flex;flex-direction:column;gap:12px;font-size:13px;line-height:1.7;min-width:0}
+.installed-runtime-dialog p{margin:0}
+.installed-runtime-dialog>code{font-size:11px;color:var(--st-ink-muted);overflow-wrap:anywhere;user-select:text}
+.installed-runtime-dialog-lead{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+.installed-runtime-dialog-note{color:var(--st-ink-muted);font-size:12px;padding-left:10px;border-left:2px solid var(--st-line)}
+.installed-runtime-dialog-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:0}
+.installed-runtime-dialog-pair dt{color:var(--st-ink-muted);font-size:12px}
+.installed-runtime-dialog-pair dd{margin:4px 0 0;font-weight:600;overflow-wrap:anywhere}
+.installed-runtime-notice-body{display:flex;flex-direction:column;gap:6px;min-width:0;flex:1}
+.installed-runtime-notice-body p{margin:0}
+.installed-runtime-dialog .notice ul{margin:6px 0;padding-left:20px}
+.installed-runtime-confirm{display:flex;align-items:center;gap:8px;font-weight:600;cursor:pointer}
+.installed-runtime-cleanup-list{list-style:none;margin:0;padding:0;max-height:260px;overflow:auto;border-top:1px solid var(--st-line-soft)}
+.installed-runtime-cleanup-list li{display:flex;justify-content:space-between;align-items:baseline;gap:14px;padding:8px 0;border-bottom:1px solid var(--st-line-soft)}
+.installed-runtime-cleanup-list span{display:flex;flex-direction:column;min-width:0}
+.installed-runtime-cleanup-list strong{font-size:12px;font-weight:600}
+.installed-runtime-cleanup-list code{font-size:11px;overflow-wrap:anywhere}
+.installed-runtime-cleanup-list em{font-style:normal;font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap}
+.installed-runtime-dialog-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-top:4px}
+@container workspace (max-width:640px){.installed-runtimes-list>li{flex-direction:column;align-items:flex-start}.installed-runtime-dialog-pair{grid-template-columns:1fr}}

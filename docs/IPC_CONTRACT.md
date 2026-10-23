@@ -92,6 +92,15 @@
 - `update_runtime_zip(...,targetVersion?)`：可选 `targetVersion` 指定安装某个版本（可低于当前版本）。队列此时调用后台 `update_runtime_zip_version_v1`；旧后台返回 `unknown_method` 时直接报错，不会退回到安装最新版本。只有指定了 `targetVersion` 时才跳过“禁止降级”检查；包核验、源码核验、试启动与自动回滚不变。`resolve_runtime_zip_asset` 同样接受 `targetVersion`，按所选版本匹配安装包。
 - 固定版本保存在 store 键 `runtimePinnedVersion`（空字符串表示未固定），只由前端用来停止比它新的更新提示。
 
+已安装版本（「已安装版本」列表、删除、一键清理、切换到此版本）：
+
+- `runtime_installed_versions() -> RuntimeInventory`：只读，后台 `runtime_installed_versions_v1`。返回 `runtimes`（每项含 `installDir`、`pythonPath`、`releaseVersion?`、`engineVersion?`、`readiness`、`owned`（在 Manager 运行环境目录里由 Manager 安装，只有这些可删除）、`current`、`running`、`rollback`（保留用于切回的上一个版本）、`switching`（正在切换的目标）、`profiles`（引用它的配置 `{id,name}`）、`installedAt?`、`lastUsedAt?`（毫秒）、`cleanup`（一键清理会删除；保留当前版本和一个可回退版本）、`protectedReason?`（不能删除的原因））、`leftovers`（`{path,kind}`，kind 为 `partialDownload`/`archive`/`failedInstall`/`trash`/`updateWork`）、`autoCleanup` 和 `busy`（有运行环境任务进行中，删除和清理会等待）。不计算大小。
+- `runtime_installed_size({path}) -> number`：只读，`runtime_installed_size_v1`。只接受当前列表里的版本目录或残留路径，返回占用字节数，供界面在后台逐项显示。
+- `runtime_delete_version({installDir,removeProfiles?}) -> number`：受保护变更，`runtime_delete_version_v1`。重新核对列表后删除一个 Manager 安装的版本目录，返回释放的字节数。当前使用、正在运行、正在切换的版本，非 Manager 目录，以及 `Strata-data`、模型文件所在目录都会被拒绝；被配置引用时，`removeProfiles` 必须列出全部引用配置的 id（界面要求用户勾选确认），这些配置的登记随目录一起删除。
+- `runtime_cleanup({paths}) -> RuntimeCleanupResult`：受保护变更，`runtime_cleanup_v1`。只删除确认时给出的 `paths`，且每项都要仍是当前计划中的 `cleanup` 版本或残留；其余跳过并写进 `skipped[{path,reason}]`。返回 `removed`、`skipped`、`freedBytes`。一键清理不会删除被配置引用的版本。
+- `runtime_switch_version({installDir,requestId?}) -> TaskStatus`：受保护变更，`runtime_switch_version_v1`，任务类型 `update`。把当前运行环境的全部配置切到一个已安装且 ready 的版本，不下载；经过与更新相同的切换流程（等待进行中的请求、启动、健康检查），失败自动恢复原版本。切走的版本被记为可回退版本并保留。`requestId` 必须是 UUID，重复提交返回同一任务。
+- store 键 `runtimeAutoCleanup`（默认 true）：更新或切换成功后自动执行一键清理（不会删除被配置引用的版本）。`runtimePreviousInstallDir`、`runtimeLastUsedAt`、`runtimeKnownInstallDirs` 由后台维护，分别记录可回退版本、上次使用时间和 Manager 安装过的目录。
+
 localArchivePath 与 downloadUrl 互斥。镜像只接受经过校验的 HTTPS 地址；传输来源不改变官方版本、文件名、长度和 SHA256 校验条件。本地来源测试读取完整文件并核验长度/摘要；网络来源测试最多 64 KiB，核验可访问性、长度和 Range，不声明完整 SHA256 已验证。实际安装始终校验完整 ZIP 的官方 SHA256/长度及对应源码，并执行解包与替换范围检查。
 
 只读测试和包匹配不调用 `ensure_connected`，因此不为了“测试”启动后台或发起包切换；旧后台 `unknown_method` 返回明确的“后台不支持下载来源测试/自动匹配更新包”错误。它们可以读取官方元数据，不等于完全无网络请求。不得遇到旧后台拒绝便改用其他变更 RPC。

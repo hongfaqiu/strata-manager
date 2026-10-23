@@ -5,15 +5,6 @@ import * as core from '@strata-manager/core';
 import type { AutomaticUpdateGate } from './useAppUpdates';
 import { RuntimeUpdateDialog } from './pages/RuntimeUpdateDialog';
 
-function newer(current: string | undefined, latest: string | undefined) {
-  if (!current || !latest || !/^v?\d+(\.\d+)*$/.test(current) || !/^v?\d+(\.\d+)*$/.test(latest)) return false;
-  const installed = current.replace(/^v/, '').split('.').map(Number), target = latest.replace(/^v/, '').split('.').map(Number);
-  for (let i = 0; i < Math.max(installed.length, target.length); i++) {
-    if ((installed[i] ?? 0) !== (target[i] ?? 0)) return (installed[i] ?? 0) < (target[i] ?? 0);
-  }
-  return false;
-}
-
 interface PendingUpdate { runtime: core.DetectedRuntime; release: core.RuntimeUpdateInfo }
 const updateKey = ({ runtime, release }: PendingUpdate) => `${runtime.installDir}:${release.latestVersion}:${release.checkedAt}`;
 
@@ -51,6 +42,8 @@ export function useRuntimeUpdates(desktop: boolean, ready: boolean, enabled: boo
   const installation = useQuery({ queryKey: ['runtime-installation'], queryFn: core.localRuntimeInstallation, enabled: desktop && ready && enabled, refetchInterval: enabled ? 5 * 60 * 1000 : false, refetchOnWindowFocus: false });
   // A pinned version stops prompts for anything newer (set on the Strata page).
   const pin = useQuery({ queryKey: ['runtime-pin'], queryFn: core.getRuntimePin, enabled: desktop && ready, staleTime: Infinity, retry: false });
+  // Maps an engine number to its release for folders that do not record one.
+  const releaseList = useQuery({ queryKey: ['runtime-release-versions'], queryFn: () => core.runtimeReleaseVersions(), enabled: desktop && ready && enabled, staleTime: 6 * 60 * 60 * 1000, retry: false, refetchOnWindowFocus: false }).data?.versions;
   const release = useQuery({ queryKey: ['runtime-update-info'], queryFn: () => core.runtimeUpdateInfo(), enabled: desktop && ready && enabled, staleTime: 12 * 60 * 60 * 1000, refetchInterval: enabled ? 12 * 60 * 60 * 1000 : false, refetchOnWindowFocus: enabled });
   useEffect(() => {
     if (enabled) {
@@ -86,14 +79,14 @@ export function useRuntimeUpdates(desktop: boolean, ready: boolean, enabled: boo
     }
     if (!enabled && !running.current && !automaticTask.current) releaseGate();
     if (!enabled || !idle || !downloadPreferences.isSuccess || pin.isPending || pending || running.current || automaticTask.current || tasks.some(item => item.state === 'running') || !release.data?.installable) return;
-    if (!core.runtimeUpdateAllowedByPin(release.data.latestVersion, pin.data)) return;
+    if (!core.runtimeUpdateAllowedByPin(release.data.latestVersion, core.runtimePinRelease(pin.data, installation.data?.detectedRuntimes, releaseList))) return;
     if (dismissed.current.has(`${release.data.latestVersion}:${release.data.checkedAt}`)) return;
-    const runtime = installation.data?.detectedRuntimes?.find(item => item.readiness === 'ready' && newer(item.runtimeVersion, release.data?.latestVersion) && !core.runtimeEngineIsCurrent(item.runtimeVersion, release.data) && !attempted.current.has(`${item.installDir}:${release.data?.latestVersion}:${release.data?.checkedAt}`));
+    const runtime = installation.data?.detectedRuntimes?.find(item => item.readiness === 'ready' && !!(item.runtimeVersion || item.releaseVersion) && core.runtimeUpdateAvailable(item, release.data, releaseList) && !attempted.current.has(`${item.installDir}:${release.data?.latestVersion}:${release.data?.checkedAt}`));
     if (!runtime) return;
     const proposed = { runtime, release: release.data };
     attempted.current.add(updateKey(proposed));
     setActionError(''); setPending(proposed);
-  }, [desktop, ready, enabled, idle, hydrated, tasks, release.data, installation.data, downloadPreferences.isSuccess, pin.isPending, pin.data, query, wake, pending]);
+  }, [desktop, ready, enabled, idle, hydrated, tasks, release.data, installation.data, downloadPreferences.isSuccess, pin.isPending, pin.data, releaseList, query, wake, pending]);
 
   const confirm = async (download: core.RuntimeZipDownloadOptions = {}, assetName?: string) => {
     if (!pending || running.current || automaticTask.current || awaitingCreatedTask.current) return;
@@ -107,7 +100,7 @@ export function useRuntimeUpdates(desktop: boolean, ready: boolean, enabled: boo
       attempted.current.add(updateKey(proposed)); setPending(proposed); setActionError(''); return;
     }
     const current = installation.data?.detectedRuntimes?.find(item => item.installDir === pending.runtime.installDir && item.readiness === 'ready');
-    if (!current || !newer(current.runtimeVersion, latest.latestVersion) || core.runtimeEngineIsCurrent(current.runtimeVersion, latest)) { setPending(null); return; }
+    if (!current || !(current.runtimeVersion || current.releaseVersion) || !core.runtimeUpdateAvailable(current, latest, releaseList)) { setPending(null); return; }
     if (!acquireGate()) {
       setActionError(language === 'zh-CN' ? '另一个更新正在进行，请完成后再确认。' : 'Another update is in progress. Confirm again when it finishes.'); return;
     }

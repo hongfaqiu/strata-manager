@@ -20,8 +20,10 @@ pub const VERSION: &str = "0.1.41";
 pub mod engine_package;
 pub mod github_source;
 pub mod gpu_select;
+pub mod installed_runtimes;
 mod release_versions;
 mod release_zip;
+mod runtime_switch;
 pub use release_versions::{RuntimeReleaseVersion, RuntimeReleaseVersions};
 pub use release_zip::{
     resolve_release_download_asset, resolve_release_download_asset_for, start_install_release,

@@ -45,6 +45,7 @@
 .runtime-version-grid>div{display:flex;flex-direction:column;gap:8px;border:1px solid var(--st-line-soft);border-radius:7px;padding:12px}
 .runtime-version-grid span{color:var(--st-ink-muted);font-size:11px}
 .runtime-version-grid strong{font-size:14px;font-weight:600;line-height:1.6;overflow-wrap:anywhere}
+.runtime-version-grid .runtime-version-engine{margin-top:-6px;color:var(--st-ink-muted);font-size:12px;font-variant-numeric:tabular-nums}
 .runtime-release-link{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--st-accent-text);padding:7px 0}
 .runtime-installed-list{display:flex;flex-direction:column;gap:9px}
 .runtime-installed-item{display:flex;justify-content:space-between;gap:16px;align-items:center;padding:12px;border:1px solid var(--st-line-soft);border-radius:6px}

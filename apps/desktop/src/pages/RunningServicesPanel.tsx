@@ -125,7 +125,7 @@ export function RunningServicesPanel({ candidates, language, loading = false, pe
           <div><dt>{text.api}</dt><dd><code>{`${core.normalizeBaseUrl(profile.baseUrl)}/v1`}</code>{onCopy && <button type="button" className="running-service-copy" aria-label={text.copyApi} data-tooltip={text.copyApi} onClick={() => onCopy(`${core.normalizeBaseUrl(profile.baseUrl)}/v1`)}><Copy size={14}/></button>}</dd></div>
           <div><dt>PID</dt><dd>{candidate.pid}</dd></div>
           <div><dt>{text.runtime}</dt><dd><code>{candidate.installDir}</code></dd></div>
-          <div><dt>{text.version}</dt><dd>{candidate.runtimeVersion ?? text.unavailable}</dd></div>
+          <div><dt>{text.version}</dt><dd>{core.runtimeVersionLabel({ release: candidate.releaseVersion, engine: candidate.runtimeVersion }, language === 'zh-CN') || text.unavailable}</dd></div>
           <div><dt>{text.modified}</dt><dd>{modified ? <time dateTime={modified.toISOString()}>{modified.toLocaleString(language)}</time> : text.unavailable}</dd></div>
         </dl>
         {healthError && <div className="running-service-health-error" role="status"><p><CircleAlert size={15}/>{healthError}</p><button type="button" disabled={query.isFetching} onClick={() => void query.refetch()}><RefreshCw size={14} className={query.isFetching ? 'spin' : undefined}/>{text.retry}</button></div>}

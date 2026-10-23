@@ -866,6 +866,9 @@ impl RuntimeState {
                     | "register_configuration_copy"
                     | "resolve_setup_handoff"
                     | "remove_local_installation"
+                    | "runtime_delete_version_v1"
+                    | "runtime_cleanup_v1"
+                    | "runtime_switch_version_v1"
                     | "resolve_profile"
                     | "tuning_start"
                     | "tuning_start_full_v1"
@@ -899,6 +902,9 @@ impl RuntimeState {
                 | "ensure_local_service"
                 | "rename_local_installation"
                 | "remove_local_installation"
+                | "runtime_delete_version_v1"
+                | "runtime_cleanup_v1"
+                | "runtime_switch_version_v1"
                 | "resolve_profile"
         ) || (method == "strata_request"
             && params
@@ -1284,6 +1290,38 @@ impl RuntimeState {
                         .unwrap_or(false),
                     serde_json::from_value(params.clone())
                         .map_err(|error| format!("ZIP 下载参数无效：{error}"))?,
+                ))
+            }
+            "runtime_installed_versions_v1" => {
+                value(runtime_upgrade::installed_runtimes::inventory(&self))
+            }
+            "runtime_installed_size_v1" => value(
+                runtime_upgrade::installed_runtimes::size(self.clone(), arg(&params, "path")?)
+                    .await,
+            ),
+            "runtime_delete_version_v1" => value(runtime_upgrade::installed_runtimes::delete(
+                &self,
+                arg(&params, "installDir")?,
+                params
+                    .get("removeProfiles")
+                    .cloned()
+                    .map(serde_json::from_value)
+                    .transpose()
+                    .map_err(|e| format!("removeProfiles 无效：{e}"))?
+                    .unwrap_or_default(),
+            )),
+            "runtime_cleanup_v1" => value(runtime_upgrade::installed_runtimes::cleanup(
+                &self,
+                arg(&params, "paths")?,
+            )),
+            "runtime_switch_version_v1" => {
+                value(runtime_upgrade::installed_runtimes::start_switch(
+                    self.clone(),
+                    arg(&params, "installDir")?,
+                    params
+                        .get("requestId")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned),
                 ))
             }
             "runtime_upgrade_status" => {

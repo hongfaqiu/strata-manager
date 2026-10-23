@@ -21,7 +21,10 @@ export interface RuntimeInstallationStatus {
 export interface DetectedRuntime {
   installDir: string;
   pythonPath: string;
+  /** Engine build (BUILD.json); not the Strata release users install. */
   runtimeVersion?: string;
+  /** Strata release the folder was installed from (v0.2.2), when it records one. */
+  releaseVersion?: string;
   sourceRevision?: string;
   readiness: 'ready' | 'repair';
   reason?: string;

@@ -98,6 +98,25 @@ pub fn support_diagnostics_text(
     if !python_path.is_empty() {
         lines.push(format!("检测的 Python / Probed Python: {python_path}"));
     }
+    // The release users install (v0.2.2) is reported apart from the engine build (0.1.47).
+    let release_version = extras
+        .get("releaseVersion")
+        .and_then(Value::as_str)
+        .map(|value| value.trim().trim_start_matches('v').to_owned())
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            (!install.is_empty())
+                .then(|| {
+                    crate::discovery::release_version(
+                        std::path::Path::new(install),
+                        (!runtime_version.is_empty()).then_some(runtime_version),
+                    )
+                })
+                .flatten()
+        });
+    if let Some(release) = release_version.filter(|value| value.len() <= 80) {
+        lines.push(format!("Strata Release: v{release}"));
+    }
     if !runtime_version.is_empty() {
         lines.push(format!("引擎版本 / Engine: {runtime_version}"));
     } else if !install.is_empty() {

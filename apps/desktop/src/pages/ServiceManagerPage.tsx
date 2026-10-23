@@ -43,7 +43,7 @@ export interface ServiceManagerPageProps {
   onUseCandidate?: CandidateAction;
   /** Register and open the configuration without loading the model. */
   onConfigCandidate?: CandidateAction;
-  onRepairPython?: (installDir: string) => Promise<void>; onCopyDiagnostics?: (target: { installDir: string; pythonPath?: string; configPath?: string; reason?: string; runtimeVersion?: string; name?: string }) => Promise<void>; onRefreshDiscovery?: () => void | Promise<unknown>;
+  onRepairPython?: (installDir: string) => Promise<void>; onCopyDiagnostics?: (target: { installDir: string; pythonPath?: string; configPath?: string; reason?: string; runtimeVersion?: string; releaseVersion?: string; name?: string }) => Promise<void>; onRefreshDiscovery?: () => void | Promise<unknown>;
   /** Refresh saved records and discovery after deleting model weights or configuration JSON. */
   onModelDeleted?: () => void | Promise<unknown>;
   language: AppLanguage;
@@ -87,7 +87,7 @@ const words = {
     selected: '当前选择', select: '启用配置', repairEnv: '修复运行环境', copyDiag: '复制诊断信息', chat: '聊天', start: '启用此模型', retryEnable: '重试启用', prepare: '准备模型', stop: '停止', restart: '重启',
     load: '加载模型', unload: '释放模型内存', takeover: '接管并启用', config: '运行配置', configShort: '配置', logs: '查看日志', lastActivated: '上次启用',
     details: '详情', hideDetails: '收起', edit: '重命名模型', remove: '移除保存的配置', deleteModel: '删除模型文件', retainConfigurations: '删除模型文件时保留全部 JSON 配置。', repairConfigurations: '待修复配置', repairConfigurationsHelp: '这些配置引用的模型权重缺失；仍可打开运行配置页编辑或删除 JSON。',
-    installDir: 'Strata 目录', python: 'Python 路径', configPath: '模型配置文件', logPath: '引擎日志配置', version: '引擎版本', pid: '进程 ID',
+    installDir: 'Strata 目录', python: 'Python 路径', configPath: '模型配置文件', logPath: '引擎日志配置', version: '版本', pid: '进程 ID',
     desktopRequired: '请在桌面应用中准备本机模型。',
     configure: '这份记录的安装信息不完整，请重新检测模型目录。',
     takeoverHelp: '此模型由其他程序运行。接管会结束已核验的 Strata 进程，再由后台准备；模型文件保留在原位置。',
@@ -120,7 +120,7 @@ const words = {
     selected: 'Selected', select: 'Enable configuration', repairEnv: 'Repair runtime environment', copyDiag: 'Copy diagnostics', chat: 'Chat', start: 'Enable this model', retryEnable: 'Retry enabling', prepare: 'Prepare model', stop: 'Stop', restart: 'Restart',
     load: 'Load model', unload: 'Unload model', takeover: 'Take ownership and enable', config: 'Runtime settings', configShort: 'Settings', logs: 'View logs', lastActivated: 'Last activated',
     details: 'Details', hideDetails: 'Collapse', edit: 'Rename model', remove: 'Remove saved configuration', deleteModel: 'Delete model files', retainConfigurations: 'Deleting model files retains all JSON configurations.', repairConfigurations: 'Configurations to repair', repairConfigurationsHelp: 'The model weights referenced by these configurations are missing. Open Runtime settings to edit or delete the JSON files.',
-    installDir: 'Strata directory', python: 'Python path', configPath: 'Model configuration', logPath: 'Engine log setting', version: 'Engine version', pid: 'Process ID',
+    installDir: 'Strata directory', python: 'Python path', configPath: 'Model configuration', logPath: 'Engine log setting', version: 'Version', pid: 'Process ID',
     desktopRequired: 'Prepare local models in the desktop app.',
     configure: 'The installation details for this record are incomplete. Detect the model directory again.',
     takeoverHelp: 'Another program is running this model. Taking ownership ends the verified Strata process and prepares the model in the background. Model files stay in their original location.',
@@ -262,6 +262,7 @@ export function ServiceManagerPage(props: ServiceManagerPageProps) {
         configPath: entry.profile?.configPath || entry.configPath || entry.candidate?.configPath,
         reason: entry.candidate?.reason,
         runtimeVersion: entry.candidate?.runtimeVersion,
+        releaseVersion: entry.candidate?.releaseVersion,
         name: entry.profile?.name || entry.candidate?.name,
       });
     } catch (error) { setErrors(old => ({ ...old, [key]: core.normalizeError(error).message })); }
@@ -348,6 +349,9 @@ export function ServiceManagerPage(props: ServiceManagerPageProps) {
       const isExpanded = expanded.includes(entry.key);
       const engine = objectValue(metricQueries[index]?.data?.engine);
       const version = textValue(engine.version) ?? textValue(health.engine_version) ?? candidate?.runtimeVersion;
+      const installRoot = profile?.installDir || candidate?.installDir;
+      const release = candidate?.releaseVersion ?? props.runtimes?.find(runtime => runtime.installDir === installRoot)?.releaseVersion;
+      const versionLabel = core.runtimeVersionLabel({ release, engine: version }, language === 'zh-CN') || undefined;
       const config = entry.config ?? configQueries[index]?.data;
       const processLabel = !profile ? candidate?.running ? w.discoveredProcess : w.stopped : !desktop ? w.unknown : processQuery?.isPending ? w.checking : processQuery?.isError ? w.unknown : process?.reason && process.external && !process.pid ? w.unverified : process?.running ? w.running : process?.running === false ? w.stopped : w.unknown;
       const modelLabel = loaded === true ? w.loaded : loaded === false ? w.unloaded : w.unknown;
@@ -394,7 +398,7 @@ export function ServiceManagerPage(props: ServiceManagerPageProps) {
           {config && <details className="model-config-json"><summary>{language === 'zh-CN' ? '查看详细配置（JSON）' : 'View full configuration (JSON)'}</summary><pre>{visibleConfiguration(config)}</pre></details>}
           <dl>
             {profile && <><div><dt>{w.health}</dt><dd>{online ? w.online : w.offline}</dd></div><div><dt>{w.api}</dt><dd><code>{profile.baseUrl}</code></dd></div></>}
-            <div><dt>{w.version}</dt><dd>{metricQueries[index]?.isFetching ? w.checking : version ?? w.unknown}</dd></div><div><dt>{w.installDir}</dt><dd><code>{profile?.installDir || candidate?.installDir || w.configurationMissing}</code></dd></div><div><dt>{w.python}</dt><dd><code>{profile?.pythonPath || candidate?.pythonPath || w.configurationMissing}</code></dd></div><div><dt>{w.configPath}</dt><dd><code>{entry.configPath || w.configurationMissing}</code></dd></div><div><dt>{w.modified}</dt><dd>{modifiedDate(entry.modifiedAt, language)}</dd></div><div><dt>{w.lastActivated}</dt><dd>{modifiedDate(entry.lastActivatedAt, language)}</dd></div>
+            <div><dt>{w.version}</dt><dd>{metricQueries[index]?.isFetching ? w.checking : versionLabel ?? w.unknown}</dd></div><div><dt>{w.installDir}</dt><dd><code>{profile?.installDir || candidate?.installDir || w.configurationMissing}</code></dd></div><div><dt>{w.python}</dt><dd><code>{profile?.pythonPath || candidate?.pythonPath || w.configurationMissing}</code></dd></div><div><dt>{w.configPath}</dt><dd><code>{entry.configPath || w.configurationMissing}</code></dd></div><div><dt>{w.modified}</dt><dd>{modifiedDate(entry.modifiedAt, language)}</dd></div><div><dt>{w.lastActivated}</dt><dd>{modifiedDate(entry.lastActivatedAt, language)}</dd></div>
             {candidate?.modelPath && <><div><dt>{w.modelFile}</dt><dd><code>{candidate.modelPath}</code></dd></div><div><dt>{w.modelSize}</dt><dd>{modelSize(candidate.modelBytes)}</dd></div></>}
             <div><dt>{w.logPath}</dt><dd><code>{configQueries[index]?.isFetching ? w.checking : textValue(config?.log) ?? w.unknown}</code></dd></div>{process?.pid && <div><dt>{w.pid}</dt><dd>{process.pid}</dd></div>}
           </dl>

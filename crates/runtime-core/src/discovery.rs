@@ -44,6 +44,9 @@ pub struct LocalCandidate {
     pub reason: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runtime_version: Option<String>,
+    /// Strata release (what users install and see); `runtime_version` is the engine build.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub release_version: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -70,6 +73,9 @@ pub struct DetectedRuntime {
     pub python_path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runtime_version: Option<String>,
+    /// Strata release (what users install and see); `runtime_version` is the engine build.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub release_version: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_revision: Option<String>,
     pub readiness: String,
@@ -328,6 +334,51 @@ pub(crate) fn runtime_version(root: &Path, exe: Option<&Path>) -> Option<String>
                 .as_str()
                 .map(str::to_owned)
         })
+}
+
+/// Manager's record of the release it installed or updated a folder to.
+pub(crate) const RELEASE_MARKER: &str = ".strata-manager-release.json";
+/// From 0.2.0 the release and engine numbers differ; before, they were the same.
+const FIRST_SEPARATE_RELEASE: [u32; 3] = [0, 1, 45];
+
+/// The Strata release of a runtime folder: Manager's release marker, else the
+/// `PRODUCT_VERSION` upstream ships in `strata_cli` (0.2+), else, for runtimes
+/// older than 0.1.45 whose release and engine numbers were the same, the engine.
+pub(crate) fn release_version(root: &Path, engine: Option<&str>) -> Option<String> {
+    use crate::runtime_upgrade::engine_package::{valid_version, version_key};
+    let marker = read_json(&root.join(RELEASE_MARKER)).ok();
+    if let Some(version) = marker
+        .as_ref()
+        .and_then(|value| value["version"].as_str())
+        .map(|value| value.trim_start_matches('v'))
+        .filter(|value| valid_version(value))
+    {
+        return Some(version.to_owned());
+    }
+    let cli = root.join("strata_cli/__init__.py");
+    let product = fs::symlink_metadata(&cli)
+        .ok()
+        .filter(|meta| meta.is_file() && meta.len() <= 64 * 1024)
+        .and_then(|_| fs::read_to_string(&cli).ok())
+        .and_then(|text| product_version(&text));
+    if product.is_some() {
+        return product;
+    }
+    engine
+        .filter(|engine| {
+            version_key(engine)
+                .is_some_and(|(numbers, _, _)| numbers < FIRST_SEPARATE_RELEASE.to_vec())
+        })
+        .map(str::to_owned)
+}
+
+fn product_version(text: &str) -> Option<String> {
+    text.lines().find_map(|line| {
+        let value = line.trim().strip_prefix("PRODUCT_VERSION")?.trim_start();
+        let value = value.strip_prefix('=')?.trim();
+        let value = value.trim_matches(|c| c == '"' || c == '\'');
+        crate::runtime_upgrade::engine_package::valid_version(value).then(|| value.to_owned())
+    })
 }
 
 /// Resolve the engine binary from a run-config `exe` field.
@@ -786,6 +837,7 @@ fn inspect_config(
             Some(fatal_reasons.join("；"))
         },
         runtime_version: runtime_version(&root, Some(&engine)),
+        release_version: release_version(&root, runtime_version(&root, Some(&engine)).as_deref()),
         source: Some(source.into()),
         availability: Some(
             if fatal_reasons.is_empty() {
@@ -1253,7 +1305,7 @@ fn runtime_root(profile: &ServiceProfile) -> PathBuf {
 }
 
 pub fn discover_runtimes(profiles: &[ServiceProfile]) -> Vec<DetectedRuntime> {
-    inspect_runtime_directories(profiles, common_directories())
+    inspect_runtime_directories(profiles, common_directories(), &HashMap::new())
 }
 
 /// Include the supervisor's actual state directory, which can be overridden
@@ -1277,12 +1329,32 @@ pub fn discover_runtimes_for_state_with(
             .collect(),
     );
     roots.extend(common_directories());
-    inspect_runtime_directories(profiles, roots)
+    inspect_runtime_directories(profiles, roots, &HashMap::new())
+}
+
+/// Also inspects runtimes the Manager used before (`known`: folder → the
+/// Python it ran with), e.g. the version switched away from, which no saved
+/// configuration references any more.
+pub fn discover_runtimes_with_known(
+    profiles: &[ServiceProfile],
+    data_dir: &Path,
+    engine_root: Option<PathBuf>,
+    known: &HashMap<PathBuf, String>,
+) -> Vec<DetectedRuntime> {
+    let mut roots = expand_runtime_directories(
+        std::iter::once(data_dir.join("runtimes"))
+            .chain(engine_root)
+            .collect(),
+    );
+    roots.extend(known.keys().cloned());
+    roots.extend(common_directories());
+    inspect_runtime_directories(profiles, roots, known)
 }
 
 fn inspect_runtime_directories(
     profiles: &[ServiceProfile],
     directories: Vec<PathBuf>,
+    known: &HashMap<PathBuf, String>,
 ) -> Vec<DetectedRuntime> {
     let hints = process_hints().unwrap_or_default();
     let mut roots: Vec<_> = profiles
@@ -1310,7 +1382,9 @@ fn inspect_runtime_directories(
             .find(|profile| canonical_local(&runtime_root(profile)).is_ok_and(|path| path == root));
         let python = find_python(
             &root,
-            registered.map(|profile| profile.python_path.as_str()),
+            registered
+                .map(|profile| profile.python_path.as_str())
+                .or_else(|| known.get(&root).map(String::as_str)),
             None,
             &mut cache,
         );
@@ -1339,10 +1413,12 @@ fn inspect_runtime_directories(
         profile.install_dir = root.to_string_lossy().into();
         profile.python_path = python_path.clone();
         let engine_hint = first_config_engine(&root);
+        let engine_version = runtime_version(&root, engine_hint.as_deref());
         runtimes.push(DetectedRuntime {
             install_dir: root.to_string_lossy().into(),
             python_path,
-            runtime_version: runtime_version(&root, engine_hint.as_deref()),
+            release_version: release_version(&root, engine_version.as_deref()),
+            runtime_version: engine_version,
             source_revision: source_revision(&root),
             readiness: if reasons.is_empty() {
                 "ready"
@@ -2104,6 +2180,7 @@ pub(crate) fn prepare_legacy_import(
         running: None,
         reason: None,
         runtime_version: None,
+        release_version: None,
         source: Some("legacy-profile".into()),
         availability: None,
         pid: None,
@@ -3397,6 +3474,45 @@ mod tests {
         assert!(reason.contains("配置里的引擎路径不存在"), "{reason}");
         assert!(reason.contains("engine_cuda12"), "{reason}");
         assert_eq!(hit.runtime_version.as_deref(), Some("0.1.44.1"));
+    }
+
+    #[test]
+    fn release_version_prefers_the_marker_then_the_shipped_product_version() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        // 0.2+ runtime: the engine number is not the release.
+        assert_eq!(release_version(root, Some("0.1.47")), None);
+        fs::create_dir_all(root.join("strata_cli")).unwrap();
+        fs::write(
+            root.join("strata_cli/__init__.py"),
+            "SCHEMA_VERSION = 1\n#: comment\nPRODUCT_VERSION = \"0.2.2\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            release_version(root, Some("0.1.47")).as_deref(),
+            Some("0.2.2")
+        );
+        fs::write(
+            root.join(RELEASE_MARKER),
+            r#"{"version":"0.2.3","revision":"x"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            release_version(root, Some("0.1.48")).as_deref(),
+            Some("0.2.3")
+        );
+        // Before 0.1.45 the release carried the engine's number.
+        let legacy = tempfile::tempdir().unwrap();
+        assert_eq!(
+            release_version(legacy.path(), Some("0.1.44.1")).as_deref(),
+            Some("0.1.44.1")
+        );
+        assert_eq!(release_version(legacy.path(), Some("0.1.45.3")), None);
+        assert_eq!(
+            product_version("PRODUCT_VERSION = \"0.2.0-beta\"").as_deref(),
+            Some("0.2.0-beta")
+        );
+        assert_eq!(product_version("PRODUCT_VERSION = version()"), None);
     }
 
     #[test]

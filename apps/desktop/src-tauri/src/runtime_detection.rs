@@ -108,6 +108,7 @@ mod tests {
             install_dir: "D:/AI/Strata".into(),
             python_path: "D:/AI/Strata/.venv/Scripts/python.exe".into(),
             runtime_version: Some("0.1.41".into()),
+            release_version: Some("0.1.41".into()),
             source_revision: None,
             readiness: "ready".into(),
             reason: None,
