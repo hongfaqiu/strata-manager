@@ -5,6 +5,8 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+## [0.2.17] - 2026-10-23
+
 ### 中文
 
 - **任务栏监控可选单行或两行**：任务栏监控新增「文字行数」（自动／单行／两行）。单行时去掉小标题并限制字号，较矮的任务栏上也能并排放下多项指标；自动会按任务栏高度选择。
