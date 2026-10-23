@@ -36,6 +36,11 @@ pub struct GgufHeader {
     pub file_bytes: u64,
     /// The length the tensor directory needs (`data_start + max(offset + bytes)`).
     pub need_bytes: u64,
+    /// `general.architecture` when it is a short string (`controlvector` for a llama.cpp control vector).
+    pub architecture: Option<String>,
+    /// Tensors named `direction.<layer>` (a control vector's per-layer directions) and the highest layer seen.
+    pub direction_tensors: u64,
+    pub direction_max_layer: Option<u64>,
 }
 
 /// ggml block geometry (elements per block, bytes per block), tools/gguf_reader.py BLOCK_GEOMETRY.
@@ -256,6 +261,11 @@ fn parse<R: Read + Seek>(r: &mut Reader<R>, have: u64) -> io::Result<Option<Gguf
     for _ in 0..kvs {
         let key = r.string()?;
         let kind = r.u32()?;
+        if key == "general.architecture" && kind == 8 {
+            let text = r.string()?;
+            header.architecture = (!text.is_empty()).then_some(text);
+            continue;
+        }
         let value = r.value(kind)?;
         match key.as_str() {
             "general.alignment" => {
@@ -271,7 +281,22 @@ fn parse<R: Read + Seek>(r: &mut Reader<R>, have: u64) -> io::Result<Option<Gguf
     let mut end = 0_u64;
     for _ in 0..tensors {
         let n = r.u64()?;
-        r.skip(n)?;
+        if n <= 64 {
+            let mut name = vec![0_u8; n as usize];
+            r.inner.read_exact(&mut name)?;
+            r.pos += n;
+            if let Some(layer) = std::str::from_utf8(&name)
+                .ok()
+                .and_then(|name| name.strip_prefix("direction."))
+                .and_then(|layer| layer.parse::<u64>().ok())
+            {
+                header.direction_tensors += 1;
+                header.direction_max_layer =
+                    Some(header.direction_max_layer.map_or(layer, |m| m.max(layer)));
+            }
+        } else {
+            r.skip(n)?;
+        }
         let dims = r.u32()?;
         if dims > MAX_DIMS {
             return Err(io::Error::new(

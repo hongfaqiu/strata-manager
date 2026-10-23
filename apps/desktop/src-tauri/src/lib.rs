@@ -713,6 +713,19 @@ async fn scan_local_models(state: State<'_, ClientState>, path: String) -> Resul
         .map_err(|e| e.to_string())
 }
 
+/// Launch form 「控制向量」: read-only header check of a control vector GGUF.
+#[tauri::command]
+async fn inspect_control_vector(
+    state: State<'_, ClientState>,
+    path: String,
+) -> Result<Value, String> {
+    state
+        .ipc
+        .request("inspect_control_vector", json!({"path":path}))
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// 「使用已有模型」(#75): read-only check of an existing MTP draft layer.
 #[tauri::command]
 async fn check_mtp_path(state: State<'_, ClientState>, path: String) -> Result<Value, String> {
@@ -2241,6 +2254,7 @@ pub fn run() {
             setup_disk_preflight,
             scan_local_models,
             check_mtp_path,
+            inspect_control_vector,
             orca_import_plan,
             run_orca_import,
             run_community_setup,

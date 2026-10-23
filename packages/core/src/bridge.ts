@@ -331,6 +331,8 @@ export const runSetup = (profile: ServiceProfile, model: string, quant: string, 
 /** 「使用已有模型」: read-only scan of a GGUF file or folder, grouped by model and quantization. */
 export const scanLocalModels = (path: string): Promise<import('./local-model').LocalModelScan> => native('scan_local_models', { path });
 /** 「使用已有模型」: read-only check of an existing MTP draft layer (`<x>`, `<x>/rt` or `<x>/mtp/rt`). */
+/** 「控制向量」: read-only GGUF header check of a control vector file. */
+export const inspectControlVector = (path: string): Promise<import('./control-vector').ControlVectorCheck> => native('inspect_control_vector', { path });
 export const checkMtpPath = (path: string): Promise<import('./local-model').MtpCheck> => native('check_mtp_path', { path });
 /** ORCA.md's OrcaRouter IQ3_XXS import: read-only plan, then one tracked setup task that registers its config. */
 export const orcaImportPlan = (profile: ServiceProfile, request: import('./orca-import').OrcaImportRequest): Promise<import('./orca-import').OrcaImportPlan> => native('orca_import_plan', { profile, request });

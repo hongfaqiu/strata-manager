@@ -109,7 +109,9 @@ macOS（Apple 芯片与 Intel）和 glibc Linux（x86_64 / aarch64）找不到�
 
 从“模型 → 我的模型”选择配置并打开“运行配置”，在模型内的二级页面编辑。图形化界面按上下文、KV、内存、缓存、CPU、prefill、推测解码、服务、视觉、采样和网络等类别展示参数；下拉框提供建议，也支持自定义输入。完整参数与其它 JSON 字段可继续编辑，原始 JSON 视图用于直接检查配置。
 
-“默认采样”里的“默认实验投影”有三个选项：开启、关闭、使用默认设置（删除 `sampling.experimental_speed_projection`）。它只给没带这个参数的请求当默认值，请求里的值和共享采样设置优先，聊天页的会话开关照常生效；引擎要先加载实验投影控制向量才有作用，这里不负责加载或下载。保存后重启模型生效。
+“控制向量（Control Vector）”在“常用并发与启动参数”下方，默认关闭。打开后按上游 setup 的写法加入 `--control-vector-scaled <Strata>\data\experimental-speed-projection\Qwen3.8-Flash-Next-experimental-speed-projection.gguf:1.0 --control-vector-layer-range 4 44 --cvec-mode project --cvec-dir per-layer`；关闭时删掉这些参数，其它参数顺序不变。向量文件随 Strata 安装包提供（路径按配置的 `cwd` 推出），页面会显示路径并检查它是否存在、是否为 `controlvector` 格式的 GGUF；找不到、不是控制向量、引擎 `--help` 没有这个参数（需要 Strata 引擎 0.1.44 及以上）或在 Mac 上时开关不可用并写明原因。强度、层范围、模式（project / add）和方向（per-layer / single:L）预填上游预设，可以修改；层范围留空就是引擎默认的第 1 层到最后一层。“改用其他文件…”可选别的 GGUF，Manager 不下载任何向量。上游文档说明随附向量是“拒答方向投影”：开启后模型拒绝的请求大幅减少，等于移除一项安全行为，生成内容由使用者负责；它不是提速选项，且只适用于原版 Qwen3.8-Flash-Next（不适用于 Swift 1.5）。加载后默认对每个请求生效，请求体里写 `"experimental_speed_projection": false` 可关闭单次请求。
+
+“默认采样”里的“默认实验投影”有三个选项：开启、关闭、使用默认设置（删除 `sampling.experimental_speed_projection`）。它只给没带这个参数的请求当默认值，请求里的值和共享采样设置优先，聊天页的会话开关照常生效；引擎要先加载控制向量（见上面的“控制向量”）才有作用，这一项本身不加载或下载向量。保存后重启模型生效。
 
 保存前校验 JSON，并原子写入、保留备份。已发现但尚未使用的配置也能查看和编辑，不会因此启动模型。文件参数通常需重启服务生效；保存成功不等于正在运行的服务已采用新值。服务配置登记用于记录名称、地址、运行环境及配置路径，本身不会创建或复制模型权重。
 

@@ -1,0 +1,24 @@
+.startup-control-vector{margin:0 0 1rem;padding:.9rem 1rem;border:1px solid color-mix(in srgb,var(--border) 88%,transparent);border-radius:14px;background:var(--panel);display:grid;gap:.75rem}
+.startup-control-vector-head{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}
+.startup-control-vector-head>div{display:grid;gap:.3rem}
+.startup-control-vector-head p{margin:0;font-size:.84rem;opacity:.78;line-height:1.45}
+.startup-control-vector-reason{margin:0;font-size:12px;line-height:1.45;color:var(--st-warn-text,#a15c00)}
+.startup-control-vector-file{display:grid;gap:.3rem}
+.startup-control-vector-file code{display:block;padding:.45rem .6rem;border-radius:8px;background:color-mix(in srgb,var(--border) 30%,transparent);font-size:12px;word-break:break-all}
+.startup-control-vector-file small{font-size:12px;opacity:.8}
+.startup-control-vector-file small[data-status=ok]{opacity:1;color:var(--st-accent-text,var(--accent))}
+.startup-control-vector-file small[data-status=notControlVector],.startup-control-vector-file small[data-status=missing],.startup-control-vector-file small[data-status=notGguf],.startup-control-vector-file small[data-status=short],.startup-control-vector-file small[data-status=empty],.startup-control-vector-file small[data-status=unreadable]{opacity:1;color:var(--st-warn-text,#a15c00)}
+.startup-control-vector-file-actions,.startup-control-vector-preset{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem}
+.startup-control-vector-preset small{flex:1 1 260px;font-size:12px;opacity:.75;line-height:1.45}
+.startup-control-vector-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem 1rem}
+.startup-control-vector[data-enabled=false] .startup-control-vector-grid{opacity:.6}
+.startup-control-vector-range{display:flex;align-items:center;gap:.4rem}
+.startup-control-vector-range input{min-width:0;flex:1}
+.startup-control-vector-error{margin:0;font-size:12px;color:var(--st-danger-text,#b42318)}
+.startup-control-vector-notes{margin:0;display:grid;gap:.5rem;font-size:12px;line-height:1.5}
+.startup-control-vector-notes div{display:grid;grid-template-columns:7.5rem 1fr;gap:.75rem}
+.startup-control-vector-notes dt{font-weight:600;opacity:.85}
+.startup-control-vector-notes dd{margin:0;opacity:.8}
+.startup-control-vector-footnote{margin:0;font-size:12px;opacity:.65}
+@media (max-width:640px){.startup-control-vector-notes div{grid-template-columns:1fr;gap:.15rem}}
+.startup-control-vector-hint{display:block;margin-top:.3rem;font-size:12px;opacity:.7;line-height:1.4}
