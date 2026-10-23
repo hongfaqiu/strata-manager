@@ -1,0 +1,76 @@
+/** Pure view helpers for history/upgrade comparison. No React. */
+
+export type ComparisonMetricKey =
+  | 'ttftMs' | 'firstVisibleMs' | 'wallMs' | 'prefillTokS' | 'decodeTokS'
+  | 'cacheHitRate' | 'ramPeak' | 'vramPeak';
+
+export type ComparisonField = {
+  key: ComparisonMetricKey;
+  nameZh: string;
+  nameEn: string;
+  unit: string;
+  /** When true, a higher numeric value is an improvement. */
+  higherBetter: boolean;
+  /** Featured in the primary dual-column strip. */
+  highlight?: boolean;
+};
+
+export const COMPARISON_FIELDS: ComparisonField[] = [
+  { key: 'decodeTokS', nameZh: '输出速度', nameEn: 'Decode', unit: 'tok/s', higherBetter: true, highlight: true },
+  { key: 'prefillTokS', nameZh: '输入处理', nameEn: 'Prefill', unit: 'tok/s', higherBetter: true, highlight: true },
+  { key: 'ttftMs', nameZh: '首 token', nameEn: 'TTFT', unit: 'ms', higherBetter: false, highlight: true },
+  { key: 'firstVisibleMs', nameZh: '首正文', nameEn: 'First answer', unit: 'ms', higherBetter: false },
+  { key: 'wallMs', nameZh: '总耗时', nameEn: 'Wall time', unit: 'ms', higherBetter: false },
+  { key: 'cacheHitRate', nameZh: '缓存命中', nameEn: 'Cache hit', unit: '%', higherBetter: true },
+  { key: 'ramPeak', nameZh: 'RAM 峰值', nameEn: 'Peak RAM', unit: 'GiB', higherBetter: false },
+  { key: 'vramPeak', nameZh: '显存峰值', nameEn: 'Peak VRAM', unit: 'GiB', higherBetter: false },
+];
+
+export type MetricDelta = {
+  key: ComparisonMetricKey;
+  left: number | null;
+  right: number | null;
+  /** Signed relative change of B vs A: (B-A)/A. Null when either side missing or A is 0. */
+  relative: number | null;
+  /** Absolute change B - A in display units (same as formatMetric). */
+  absolute: number | null;
+  /** Whether B is an improvement over A for this metric. Null when equal or unknown. */
+  improved: boolean | null;
+};
+
+/** Convert raw metric storage into the unit shown in the UI. */
+export function displayMetric(value: number | null, key: ComparisonMetricKey): number | null {
+  if (value === null || !Number.isFinite(value)) return null;
+  if (key.endsWith('Peak')) return value / 2 ** 30;
+  if (key === 'cacheHitRate') return value * 100;
+  return value;
+}
+
+export function formatMetric(value: number | null, key: ComparisonMetricKey, language: string): string {
+  const shown = displayMetric(value, key);
+  return shown === null ? '—' : shown.toLocaleString(language, { maximumFractionDigits: 2 });
+}
+
+export function metricDelta(left: number | null, right: number | null, key: ComparisonMetricKey, higherBetter: boolean): MetricDelta {
+  const a = displayMetric(left, key), b = displayMetric(right, key);
+  if (a === null || b === null) return { key, left, right, relative: null, absolute: null, improved: null };
+  const absolute = b - a;
+  const relative = a === 0 ? null : absolute / a;
+  const improved = absolute === 0 ? null : higherBetter ? absolute > 0 : absolute < 0;
+  return { key, left, right, relative, absolute, improved };
+}
+
+export function formatRelative(relative: number | null, language: string): string {
+  if (relative === null || !Number.isFinite(relative)) return '—';
+  if (Math.abs(relative) < 0.0005) return '0%';
+  const pct = Math.abs(relative * 100).toLocaleString(language, { maximumFractionDigits: Math.abs(relative) < 0.1 ? 1 : 0 });
+  return `${relative > 0 ? '+' : '−'}${pct}%`;
+}
+
+/** Dual-column bar heights (0–1) for A and B; share the same scale. */
+export function dualBarHeights(left: number | null, right: number | null): { a: number; b: number } {
+  const a = left === null || !Number.isFinite(left) || left < 0 ? 0 : left;
+  const b = right === null || !Number.isFinite(right) || right < 0 ? 0 : right;
+  const max = Math.max(a, b, 1e-9);
+  return { a: a / max, b: b / max };
+}
