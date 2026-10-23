@@ -9,7 +9,7 @@ import { floatingMonitorDimensions, isDesktop, modelTelemetry, normalizeMetrics 
 import i18n from './i18n';
 import { FloatingMonitorContent } from './FloatingMonitorContent';
 import { appendMonitorHistory, type MonitorHistory } from './floatingMonitorHistory';
-import { FLOATING_MONITOR_ACTIONS, moveMonitorToTaskbar, normalizeFloatingMonitorPreferences, readFloatingMonitor, readMonitorModeStatus, resizeMonitorWindow, showMainFromMonitor, type MonitorModeStatus, type FloatingMonitorAction, type FloatingMonitorSnapshot } from './floatingMonitor';
+import { FLOATING_MONITOR_ACTIONS, moveMonitorToTaskbar, normalizeFloatingMonitorPreferences, readFloatingMonitor, readMonitorModeStatus, resizeMonitorWindow, setMonitorRows, showMainFromMonitor, type MonitorModeStatus, type FloatingMonitorAction, type FloatingMonitorSnapshot } from './floatingMonitor';
 import './floating-telemetry-window.css';
 
 export function FloatingTelemetryWindow() {
@@ -43,7 +43,9 @@ export function FloatingTelemetryWindow() {
   const refreshSnapshot = useRef(snapshot.refetch); refreshSnapshot.current = snapshot.refetch;
   const samplingPaused = useRef(paused); samplingPaused.current = paused;
   const preferences = normalizeFloatingMonitorPreferences(settings?.floatingMonitor);
-  const dimensions = floatingMonitorDimensions(preferences, settings?.language === 'en' ? 'en' : 'zh-CN');
+  // Fall back to two rows rather than run a single row off a narrow screen.
+  const maxWidth = typeof window !== 'undefined' && window.screen?.availWidth ? window.screen.availWidth - 16 : undefined;
+  const dimensions = floatingMonitorDimensions(preferences, settings?.language === 'en' ? 'en' : 'zh-CN', maxWidth);
   const [history, setHistory] = useState<MonitorHistory>({ identity: '', points: [] });
   const language = isAppLanguage(settings?.language) ? settings.language : 'en';
   const theme = ['dark', 'light', 'system'].includes(settings?.theme ?? '') ? settings!.theme : 'system';
@@ -195,6 +197,13 @@ export function FloatingTelemetryWindow() {
         ...(['pause', 'pin'].includes(item.id) ? { checked: item.id === 'pause' ? paused : pinned } : {}),
         action: () => { void actionRef.current(item.id); },
       }));
+      // 文字行数: the same auto / single / double choice as the settings page. The panel stays a grid.
+      const rows = preferences.rows ?? 'auto';
+      const rowChoices = [['auto', text('自动', 'Auto')], ['single', text('单行', 'One row')], ['double', text('两行', 'Two rows')]] as const;
+      items.push({ item: 'Separator' }, {
+        id: 'rows', text: text('文字行数', 'Text rows'), enabled: preferences.layout !== 'panel',
+        items: rowChoices.map(([id, choice]) => ({ id: `rows-${id}`, text: choice, checked: rows === id, action: () => { if (id !== rows) void setMonitorRows(id).catch(error => setActionError(error instanceof Error ? error.message : String(error))); } })),
+      });
       items.push({ item: 'Separator' }, ...(taskbarSupported ? [{ id: 'taskbar', text: label('taskbar'), action: () => { void actionRef.current('taskbar'); } }] : []), { id: 'settings', text: label('settings'), action: () => { void actionRef.current('settings'); } }, { id: 'close', text: label('close'), action: () => { void actionRef.current('close'); } });
       const next = await Menu.new({ items });
       if (!mounted.current) { await next.close(); return; }
@@ -222,7 +231,7 @@ export function FloatingTelemetryWindow() {
     onClickCapture={event => { if (suppressClick.current) { event.preventDefault(); event.stopPropagation(); suppressClick.current = false; } }}
     onContextMenu={event => { event.preventDefault(); void openMenu(new LogicalPosition(event.clientX, event.clientY)); }}
     onKeyDown={event => { if (event.key === 'ContextMenu' || event.shiftKey && event.key === 'F10') { event.preventDefault(); void openMenu(); } }}>
-    <FloatingMonitorContent preferences={preferences} language={language} metric={fresh ? displayMetric : undefined}
+    <FloatingMonitorContent preferences={preferences} maxWidth={maxWidth} language={language} metric={fresh ? displayMetric : undefined}
       history={fresh && history.identity === historyIdentity ? history.points : []} loaded={data?.health?.loaded === true} sampledAt={data?.sampledAt}
       message={error || feedback} status={paused ? text('采样已暂停', 'Sampling paused') : waitingForSample || stale ? text('等待新采样', 'Waiting for fresh data') : valid && data.phase === 'stopped' ? text('未启动', 'Stopped') : valid && data.phase === 'none' ? text('未选择服务', 'No service selected') : displayMetric ? stateLabel(displayMetric.state) : valid && data.phase === 'unavailable' ? text('监控不可用', 'Metrics unavailable') : text('状态待核验', 'Unverified')}/>
   </div>;

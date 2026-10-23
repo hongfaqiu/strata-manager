@@ -8,7 +8,7 @@ import {
   type FloatingMonitorLayout, type FloatingMonitorMetric, type FloatingMonitorPreferences,
 } from '@strata-manager/core';
 import { Panel } from '../components';
-import { Checkbox, Slider, Toggle } from '../OfficialControls';
+import { Checkbox, Segmented, Slider, Toggle } from '../OfficialControls';
 import { FloatingMonitorContent } from '../FloatingMonitorContent';
 import type { MonitorPoint } from '../floatingMonitorHistory';
 import './floating-monitor-settings.css';
@@ -52,7 +52,13 @@ export function FloatingMonitorSettings({ preferences, desktop, language, onChan
   const visibilityChangePending = useRef(false);
   // While the Windows taskbar widget is active the desktop strip is hidden.
   const visible = modeStatus?.mode === 'taskbar' && modeStatus.active ? false : modeStatus?.visible ?? modeStatus?.active ?? false;
-  const update = (patch: Partial<FloatingMonitorPreferences>) => onChange({ ...preferences, ...normalizeFloatingMonitorPreferences({ ...value, ...patch }) });
+  const update = (patch: Partial<FloatingMonitorPreferences>) => {
+    const normalized = normalizeFloatingMonitorPreferences({ ...value, ...patch });
+    const next: FloatingMonitorPreferences = { ...preferences, ...normalized };
+    // `auto` rows are stored as a missing key, so drop a previously saved choice.
+    if (!('rows' in normalized)) delete next.rows;
+    onChange(next);
+  };
 
   useEffect(() => {
     const root = document.documentElement;
@@ -80,7 +86,7 @@ export function FloatingMonitorSettings({ preferences, desktop, language, onChan
 
   const applyPreset = (layout: FloatingMonitorLayout) => {
     const preset = FLOATING_MONITOR_PRESETS[layout];
-    update({ layout, fontSize: preset.fontSize, metrics: [...preset.metrics], showGraphs: preset.showGraphs, showLabels: preset.showLabels, showUnits: preset.showUnits, showStatus: preset.showStatus });
+    update({ layout, fontSize: preset.fontSize, metrics: [...preset.metrics], showGraphs: preset.showGraphs, showLabels: preset.showLabels, showUnits: preset.showUnits, showStatus: preset.showStatus, rows: undefined });
   };
 
   const changeVisibility = async (next: boolean) => {
@@ -161,6 +167,17 @@ export function FloatingMonitorSettings({ preferences, desktop, language, onChan
           ] as const).map(preset => <button type="button" key={preset.id} disabled={!desktop} aria-pressed={value.layout === preset.id} onClick={() => applyPreset(preset.id)}>
             <strong>{preset.label}</strong><small>{preset.hint}</small>
           </button>)}
+        </div>
+        <div className="floating-monitor-settings-rows">
+          <h3 id={`${id}-rows`}>{zh ? '文字行数' : 'Text rows'}<span>{dimensions.rows === 1 ? (zh ? '当前单行' : 'Now one row') : value.layout === 'panel' ? (zh ? '面板为网格' : 'Panel is a grid') : (zh ? '当前两行' : 'Now two rows')}</span></h3>
+          <Segmented ariaLabel={zh ? '浮条文字行数' : 'Strip text rows'} value={value.rows ?? 'auto'} options={([
+            { value: 'auto', label: zh ? '自动' : 'Auto' },
+            { value: 'single', label: zh ? '单行' : 'One row' },
+            { value: 'double', label: zh ? '两行' : 'Two rows' },
+          ]).map(option => ({ ...option, disabled: !desktop || value.layout === 'panel' }))} onValueChange={rows => update({ rows: rows === 'single' || rows === 'double' ? rows : undefined })}/>
+          <p className="floating-monitor-settings-preview-hint">{value.layout === 'panel'
+            ? (zh ? '详细面板固定为两列网格，切换到紧凑单行或清晰双行后可选。' : 'The panel is always a two-column grid. Pick Compact or Two rows to choose.')
+            : (zh ? '单行：所有指标排成一行，名称放在数值左侧，浮条随之加宽（超出屏幕可用宽度时自动改为两行）。两行：指标平均分成上下两行。自动：紧凑单行用单行，清晰双行用两行。' : 'One row keeps every metric on one line with the name beside the value; the strip grows wider and falls back to two rows if it would not fit. Two rows splits metrics evenly. Auto: Compact uses one row, Two rows uses two.')}</p>
         </div>
       </section>
       <section className="floating-monitor-settings-font" aria-labelledby={`${id}-font`}>

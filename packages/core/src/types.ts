@@ -98,8 +98,14 @@ export type TaskbarWidgetRing = 'gpu' | 'vram' | 'context' | 'off';
 /** Metrics whose taskbar colour can be overridden; the status dot stays semantic. `context` is ring-only. */
 export type TaskbarWidgetColorItem = Exclude<TaskbarWidgetItem, 'status'> | 'context';
 
+/**
+ * Text rows (文字行数) of a monitor surface. Shared by the taskbar widget and the
+ * desktop strip, each with its own saved value. `auto` lets the surface decide:
+ * the taskbar uses one row on a short taskbar, the strip follows its layout preset.
+ */
+export type MonitorRows = 'auto' | 'single' | 'double';
 /** Text rows of the taskbar widget; `auto` uses one row on a short taskbar. */
-export type TaskbarWidgetRows = 'auto' | 'single' | 'double';
+export type TaskbarWidgetRows = MonitorRows;
 
 export interface TaskbarWidgetPreferences {
   ring: TaskbarWidgetRing;
@@ -117,6 +123,11 @@ export interface FloatingMonitorPreferences {
   /** Optional on persisted settings from older desktop versions. */
   fontSize?: number;
   layout?: FloatingMonitorLayout;
+  /**
+   * Strip rows for the compact and two-row layouts (the panel stays a grid).
+   * Missing means `auto`: compact keeps one row, two-row keeps two.
+   */
+  rows?: MonitorRows;
   metrics?: FloatingMonitorMetric[];
   showGraphs?: boolean;
   showLabels?: boolean;

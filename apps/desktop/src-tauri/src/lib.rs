@@ -2190,6 +2190,7 @@ pub fn run() {
             floating_monitor::open_monitor_window,
             monitor_shortcut::monitor_shortcut_status,
             floating_monitor::resize_monitor_window,
+            floating_monitor::set_monitor_rows,
             taskbar_monitor::set_monitor_mode,
             taskbar_monitor::set_monitor_visibility,
             taskbar_monitor::monitor_mode_status,

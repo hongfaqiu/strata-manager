@@ -65,15 +65,29 @@ pub async fn apply_preferences(app: &AppHandle, settings: &Value) -> Result<(), 
     Ok(())
 }
 
-fn metric_cell_width(
-    metric: &str,
+/// Text settings shared by every cell of one strip layout.
+#[derive(Clone, Copy)]
+struct CellStyle {
     font: f64,
     label_font: f64,
     labels: bool,
     units: bool,
     compact: bool,
     english: bool,
-) -> f64 {
+    /// One-row strip: the label sits beside the value.
+    inline: bool,
+}
+
+fn metric_cell_width(metric: &str, style: &CellStyle) -> f64 {
+    let CellStyle {
+        font,
+        label_font,
+        labels,
+        units,
+        compact,
+        english,
+        inline,
+    } = *style;
     let (budget, chinese, english_label, unit) = match metric {
         "generation" => (6.0, "生成", "Gen", "t/s"),
         "prefill" => (6.0, "读取", "Read", "t/s"),
@@ -106,7 +120,23 @@ fn metric_cell_width(
     } else {
         0.0
     };
-    (value_width.max(label_width) + 4.0).ceil()
+    if inline {
+        // One-row strip: the label sits beside the value.
+        (label_width + if labels { 3.0 } else { 0.0 } + value_width + 4.0).ceil()
+    } else {
+        (value_width.max(label_width) + 4.0).ceil()
+    }
+}
+
+/// Strip rows like core `floatingMonitorStripRows`: `None` is the panel grid.
+fn strip_rows(layout: &str, rows: Option<&str>) -> Option<usize> {
+    match (layout, rows) {
+        ("panel", _) => None,
+        (_, Some("single")) => Some(1),
+        (_, Some("double")) => Some(2),
+        ("compact", _) => Some(1),
+        _ => Some(2),
+    }
 }
 
 fn initial_size(settings: Option<&Value>) -> (f64, f64) {
@@ -165,48 +195,69 @@ fn initial_size(settings: Option<&Value>) -> (f64, f64) {
     let english = settings.is_some_and(|settings| settings["language"] == "en");
     let header = preferences
         .is_some_and(|value| value["showStatus"] == true || value["showSampleTime"] == true);
-    let (columns, rows) = match layout {
-        "compact" => (count.min(4), count.div_ceil(4)),
-        "panel" => (2, count.div_ceil(2)),
-        _ => (count.div_ceil(2), count.min(2)),
-    };
-    let label_font = (font * 0.7).round().max(8.0);
-    let mut column_widths = vec![0.0_f64; columns];
-    for (index, metric) in metrics.iter().enumerate() {
-        let column = index % columns;
-        column_widths[column] = column_widths[column].max(metric_cell_width(
-            metric,
+    let rows = preferences.and_then(|value| value["rows"].as_str());
+    let measure = |strip: Option<usize>| {
+        let (columns, rows) = match strip {
+            None => (2, count.div_ceil(2)),
+            Some(1) => (count, 1),
+            _ => (count.div_ceil(2), count.min(2)),
+        };
+        let inline = strip == Some(1) && count > 1;
+        let gap = if inline {
+            (font * 0.5).round().max(6.0)
+        } else {
+            2.0
+        };
+        let label_font = (font * 0.7).round().max(8.0);
+        let style = CellStyle {
             font,
             label_font,
             labels,
             units,
-            layout == "compact",
+            compact: layout == "compact",
             english,
-        ));
-    }
-    let cell_height = (font * 1.4).ceil()
-        + if labels { label_font + 2.0 } else { 0.0 }
-        + if graphs {
-            if layout == "compact" {
-                16.0
+            inline,
+        };
+        let mut column_widths = vec![0.0_f64; columns];
+        for (index, metric) in metrics.iter().enumerate() {
+            let column = index % columns;
+            column_widths[column] = column_widths[column].max(metric_cell_width(metric, &style));
+        }
+        let cell_height = (font * 1.4).ceil()
+            + if labels && !inline {
+                label_font + 2.0
             } else {
-                18.0
+                0.0
             }
+            + if graphs {
+                if layout == "compact" {
+                    16.0
+                } else {
+                    18.0
+                }
+            } else {
+                0.0
+            };
+        let header_height = if header {
+            (font * 0.85).ceil() + 4.0
         } else {
             0.0
         };
-    let header_height = if header {
-        (font * 0.85).ceil() + 4.0
-    } else {
-        0.0
+        let padding = if layout == "compact" { 4.0 } else { 5.0 };
+        (
+            (column_widths.iter().sum::<f64>() + (columns - 1) as f64 * gap + padding * 2.0)
+                .max(MIN_WIDTH),
+            (rows as f64 * cell_height + (rows - 1) as f64 * 2.0 + header_height + padding * 2.0)
+                .clamp(MIN_HEIGHT, MAX_HEIGHT),
+        )
     };
-    let padding = if layout == "compact" { 4.0 } else { 5.0 };
-    (
-        (column_widths.iter().sum::<f64>() + (columns - 1) as f64 * 2.0 + padding * 2.0)
-            .clamp(MIN_WIDTH, MAX_WIDTH),
-        (rows as f64 * cell_height + (rows - 1) as f64 * 2.0 + header_height + padding * 2.0)
-            .clamp(MIN_HEIGHT, MAX_HEIGHT),
-    )
+    let strip = strip_rows(layout, rows);
+    let mut size = measure(strip);
+    // A single row wider than the window limit falls back to two rows.
+    if strip == Some(1) && size.0 > MAX_WIDTH {
+        size = measure(Some(2));
+    }
+    (size.0.min(MAX_WIDTH), size.1)
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -475,6 +526,24 @@ pub fn resize_monitor_window(
         "height": f64::from(rect.height) / area.scale,
         "x": rect.x, "y": rect.y, "scaleFactor": area.scale
     }))
+}
+
+fn require_rows(rows: &str) -> Result<(), String> {
+    if matches!(rows, "auto" | "single" | "double") {
+        Ok(())
+    } else {
+        Err("文字行数无效".into())
+    }
+}
+
+/// Strip context menu 「文字行数」: the main window saves the change like any
+/// settings edit, then `monitor-preferences-changed` re-lays out the strip.
+#[tauri::command]
+pub fn set_monitor_rows(app: AppHandle, window: WebviewWindow, rows: String) -> Result<(), String> {
+    require_label(window.label(), LABEL)?;
+    require_rows(&rows)?;
+    app.emit_to("main", "monitor-preferences-patch", json!({ "rows": rows }))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -833,13 +902,13 @@ mod tests {
     }
 
     #[test]
-    fn compact_preset_fits_small_stacked_readings_without_changing_other_layouts() {
+    fn compact_preset_is_one_line_with_inline_labels_without_changing_other_layouts() {
         assert_eq!(
             initial_size(Some(&json!({"floatingMonitor":{
                 "layout":"compact", "fontSize":14,
                 "metrics":["generation","gpu","vram"], "showGraphs":false
             }}))),
-            (180.0, 40.0)
+            (254.0, 28.0)
         );
         assert_eq!(
             initial_size(Some(&json!({"floatingMonitor":{
@@ -854,7 +923,7 @@ mod tests {
                 "layout":"compact", "fontSize":14, "metrics":["generation","gpu","vram"],
                 "showGraphs":false, "showLabels":false
             }}))),
-            (180.0, 28.0)
+            (190.0, 28.0)
         );
         for header in ["showStatus", "showSampleTime"] {
             assert_eq!(
@@ -872,19 +941,19 @@ mod tests {
             initial_size(Some(
                 &json!({"language":"zh-CN", "floatingMonitor":preferences})
             )),
-            (98.0, 30.0)
+            (180.0, 24.0)
         );
         assert_eq!(
             initial_size(Some(
                 &json!({"language":"en", "floatingMonitor":preferences})
             )),
-            (104.0, 30.0)
+            (192.0, 24.0)
         );
         assert_eq!(
             initial_size(Some(
                 &json!({"language":"invalid", "floatingMonitor":preferences})
             )),
-            (98.0, 30.0)
+            (180.0, 24.0)
         );
         for language in ["zh-CN", "en"] {
             assert_eq!(
@@ -920,8 +989,56 @@ mod tests {
                 "layout":"compact", "fontSize":14, "metrics":["generation","gpu","vram"],
                 "showGraphs":false, "showUnits":false
             }}))),
-            (139.0, 40.0)
+            (213.0, 28.0)
         );
+    }
+
+    #[test]
+    fn text_rows_match_core_strip_layout() {
+        let eight = json!([
+            "generation",
+            "prefill",
+            "gpu",
+            "vram",
+            "cpu",
+            "ram",
+            "temperature",
+            "power"
+        ]);
+        let size =
+            |preferences: Value| initial_size(Some(&json!({ "floatingMonitor": preferences })));
+        // Default two rows is unchanged; auto and unknown values keep it.
+        for rows in [json!(null), json!("auto"), json!("double"), json!("three")] {
+            assert_eq!(size(json!({ "rows": rows })), (244.0, 120.0));
+        }
+        assert_eq!(size(json!({ "rows": "single" })), (570.0, 51.0));
+        assert_eq!(
+            size(json!({ "rows": "single", "metrics": eight })),
+            (738.0, 51.0)
+        );
+        assert_eq!(size(json!({ "metrics": eight })), (298.0, 120.0));
+        assert_eq!(
+            size(
+                json!({ "layout": "compact", "fontSize": 14, "metrics": eight, "rows": "double" })
+            ),
+            (262.0, 106.0)
+        );
+        // Too wide for one row: fall back to two rows inside MAX_WIDTH.
+        assert_eq!(
+            size(json!({ "rows": "single", "metrics": eight, "fontSize": 36 })),
+            (613.0, 204.0)
+        );
+        // The panel ignores the choice.
+        assert_eq!(
+            size(json!({ "layout": "panel", "fontSize": 18, "rows": "single", "metrics": eight })),
+            (192.0, 252.0)
+        );
+        assert!(
+            require_rows("single").is_ok()
+                && require_rows("auto").is_ok()
+                && require_rows("double").is_ok()
+        );
+        assert!(require_rows("").is_err() && require_rows("triple").is_err());
     }
 
     #[test]

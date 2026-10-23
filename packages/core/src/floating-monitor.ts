@@ -225,6 +225,8 @@ export function normalizeFloatingMonitorPreferences(value?: unknown): ResolvedFl
     showSampleTime: source.showSampleTime === true,
     fontSize,
     layout: source.layout === 'compact' || source.layout === 'panel' ? source.layout : 'twoRow',
+    // `auto` is the default and is not stored (same rule as the taskbar widget).
+    ...(source.rows === 'single' || source.rows === 'double' ? { rows: source.rows } : {}),
     metrics: metrics.length ? metrics : [...FLOATING_MONITOR_DEFAULTS.metrics],
     showGraphs: source.showGraphs !== false,
     showLabels: source.showLabels !== false,
@@ -274,34 +276,72 @@ export interface FloatingMonitorDimensions {
   columns: number;
   rows: number;
   columnWidths: number[];
+  /** One-row strip: labels sit beside the value instead of above it. */
+  inline: boolean;
+  /** Horizontal gap between cells. */
+  gap: number;
 }
 
-/** Logical pixels shared by the content layout and native floating window. */
-export function floatingMonitorDimensions(preferences: FloatingMonitorPreferences, language: AppLanguage = 'zh-CN'): FloatingMonitorDimensions {
-  const { layout, metrics, fontSize, showLabels, showUnits, showGraphs, showStatus, showSampleTime } = normalizeFloatingMonitorPreferences(preferences);
+/** Widest strip the native window accepts (floating_monitor.rs MAX_WIDTH). */
+export const FLOATING_MONITOR_MAX_WIDTH = 1120;
+
+/**
+ * Rows the strip actually uses. The panel is always a two-column grid. `auto`
+ * follows the preset: compact keeps one row (its name is 紧凑单行), two-row keeps
+ * two balanced rows. Before this, compact wrapped after four metrics (4 + 2).
+ */
+export function floatingMonitorStripRows(preferences: FloatingMonitorPreferences): 1 | 2 | 'grid' {
+  const { layout, rows } = normalizeFloatingMonitorPreferences(preferences);
+  if (layout === 'panel') return 'grid';
+  if (rows === 'single') return 1;
+  if (rows === 'double') return 2;
+  return layout === 'compact' ? 1 : 2;
+}
+
+function measureStrip(value: ResolvedFloatingMonitorPreferences, language: AppLanguage, strip: 1 | 2 | 'grid'): FloatingMonitorDimensions {
+  const { layout, metrics, fontSize, showLabels, showUnits, showGraphs, showStatus, showSampleTime } = value;
   const count = Math.max(1, metrics.length);
-  const columns = layout === 'compact' ? Math.min(count, 4) : layout === 'twoRow' ? Math.ceil(count / 2) : 2;
-  const rows = layout === 'compact' ? Math.ceil(count / 4) : layout === 'twoRow' ? Math.min(count, 2) : Math.ceil(count / 2);
+  const columns = strip === 'grid' ? 2 : strip === 1 ? count : Math.ceil(count / 2);
+  const rows = strip === 'grid' ? Math.ceil(count / 2) : strip === 1 ? 1 : Math.min(count, 2);
+  // A single row of one metric looks the same either way; keep the stacked label.
+  const inline = strip === 1 && count > 1;
   const labelFont = Math.max(8, Math.round(fontSize * 0.7));
   const compact = layout === 'compact';
   const padding = compact ? 4 : 5;
+  const gap = inline ? Math.max(6, Math.round(fontSize * 0.5)) : 2;
   const textWidth = (text: string) => [...text].reduce((width, character) => width + ((character.codePointAt(0) ?? 0) <= 127 ? 0.5 : 1) * labelFont, 0);
   const columnWidths = Array.from({ length: columns }, () => 0);
   metrics.forEach((metric, index) => {
     const unit = FLOATING_MONITOR_DISPLAY_UNITS[metric];
     const valueWidth = FLOATING_MONITOR_VALUE_CHARACTERS[metric] * 0.58 * fontSize + (showUnits && unit ? textWidth(unit) + (compact ? 2 : 3) : 0);
     const labelWidth = showLabels ? textWidth(FLOATING_MONITOR_SHORT_LABELS[language === 'zh-CN' ? 'zh-CN' : 'en'][metric]) : 0;
-    const cellWidth = Math.ceil(Math.max(valueWidth, labelWidth) + 4);
+    const cellWidth = Math.ceil((inline ? labelWidth + (showLabels ? 3 : 0) + valueWidth : Math.max(valueWidth, labelWidth)) + 4);
     const column = index % columns;
     columnWidths[column] = Math.max(columnWidths[column] ?? 0, cellWidth);
   });
-  const cellHeight = Math.ceil(fontSize * 1.4) + (showLabels ? labelFont + 2 : 0) + (showGraphs ? compact ? 16 : 18 : 0);
+  const cellHeight = Math.ceil(fontSize * 1.4) + (showLabels && !inline ? labelFont + 2 : 0) + (showGraphs ? compact ? 16 : 18 : 0);
   const headerHeight = showStatus || showSampleTime ? Math.ceil(fontSize * 0.85) + 4 : 0;
   return {
-    width: Math.max(96, columnWidths.reduce((total, width) => total + width, 0) + (columns - 1) * 2 + padding * 2),
+    width: Math.max(96, columnWidths.reduce((total, width) => total + width, 0) + (columns - 1) * gap + padding * 2),
     height: Math.max(24, rows * cellHeight + (rows - 1) * 2 + headerHeight + padding * 2),
     columns,
     rows,
     columnWidths,
+    inline,
+    gap,
   };
+}
+
+/**
+ * Logical pixels shared by the content layout and native floating window.
+ * `maxWidth` is the room on screen (the strip passes its work-area width);
+ * the native limit FLOATING_MONITOR_MAX_WIDTH always applies.
+ */
+export function floatingMonitorDimensions(preferences: FloatingMonitorPreferences, language: AppLanguage = 'zh-CN', maxWidth = FLOATING_MONITOR_MAX_WIDTH): FloatingMonitorDimensions {
+  const value = normalizeFloatingMonitorPreferences(preferences);
+  const strip = floatingMonitorStripRows(value);
+  const measured = measureStrip(value, language, strip);
+  const limit = Math.min(FLOATING_MONITOR_MAX_WIDTH, Number.isFinite(maxWidth) && maxWidth > 0 ? maxWidth : FLOATING_MONITOR_MAX_WIDTH);
+  // A single row wider than the room it has falls back to two rows.
+  return strip === 1 && measured.width > limit ? measureStrip(value, language, 2) : measured;
 }
