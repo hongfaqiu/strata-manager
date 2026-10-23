@@ -788,7 +788,6 @@ unsafe fn menu_theme(owner: HWND, dark: bool) {
 
 unsafe fn build_menu(entries: &[widget::MenuEntry]) -> Result<HMENU, String> {
     let menu = CreatePopupMenu().map_err(|e| e.to_string())?;
-    let mut radios = Vec::new();
     for entry in entries {
         match entry {
             widget::MenuEntry::Command { id, label } => {
@@ -800,10 +799,9 @@ unsafe fn build_menu(entries: &[widget::MenuEntry]) -> Result<HMENU, String> {
                 let flags = MF_STRING | if *checked { MF_CHECKED } else { MF_UNCHECKED };
                 let _ = AppendMenuW(menu, flags, *id as usize, PCWSTR(text.as_ptr()));
             }
-            widget::MenuEntry::Radio { id, label, checked } => {
+            widget::MenuEntry::Radio { id, label, .. } => {
                 let text = wide(label);
                 let _ = AppendMenuW(menu, MF_STRING, *id as usize, PCWSTR(text.as_ptr()));
-                radios.push((*id, *checked));
             }
             widget::MenuEntry::Header { label } => {
                 let text = wide(label);
@@ -819,10 +817,10 @@ unsafe fn build_menu(entries: &[widget::MenuEntry]) -> Result<HMENU, String> {
             }
         }
     }
-    if let (Some(first), Some(last)) = (radios.first(), radios.last()) {
-        if let Some((checked, _)) = radios.iter().find(|(_, checked)| *checked) {
-            let _ = CheckMenuRadioItem(menu, first.0, last.0, *checked, MF_BYCOMMAND.0);
-        }
+    // One CheckMenuRadioItem per group (ring, text rows): a single call over
+    // every radio would leave only one bullet in the whole menu.
+    for (first, last, checked) in widget::radio_groups(entries) {
+        let _ = CheckMenuRadioItem(menu, first, last, checked, MF_BYCOMMAND.0);
     }
     Ok(menu)
 }

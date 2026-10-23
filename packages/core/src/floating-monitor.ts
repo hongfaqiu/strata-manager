@@ -4,16 +4,20 @@ import type {
   FloatingMonitorLayout,
   FloatingMonitorMetric,
   FloatingMonitorPreferences,
+  FloatingMonitorRows,
+  FloatingMonitorShortcut,
   ResolvedFloatingMonitorPreferences,
   TaskbarWidgetColorItem,
   TaskbarWidgetItem,
   TaskbarWidgetPreferences,
   TaskbarWidgetRing,
+  TaskbarWidgetRows,
 } from './types';
 
 /** Canonical order; must match TaskbarWidget ITEMS in the Rust host. */
 export const TASKBAR_WIDGET_ITEMS: readonly TaskbarWidgetItem[] = ['generation', 'prefill', 'gpu', 'vram', 'temperature', 'status'];
 export const TASKBAR_WIDGET_RINGS: readonly TaskbarWidgetRing[] = ['gpu', 'vram', 'context', 'off'];
+export const TASKBAR_WIDGET_ROWS: readonly TaskbarWidgetRows[] = ['auto', 'single', 'double'];
 export const TASKBAR_WIDGET_DEFAULTS: TaskbarWidgetPreferences = { ring: 'gpu', items: ['generation', 'prefill'] };
 
 /** Same order as COLOR_ITEMS in taskbar_widget.rs. */
@@ -79,7 +83,8 @@ export function normalizeTaskbarWidgetPreferences(value?: unknown): TaskbarWidge
   let ring = TASKBAR_WIDGET_RINGS.find(candidate => candidate === source.ring) ?? TASKBAR_WIDGET_DEFAULTS.ring;
   if (ring === 'off' && items.length === 0) ring = 'gpu';
   const colors = normalizeTaskbarColors(source.colors);
-  return colors ? { ring, items, colors } : { ring, items };
+  const rows = source.rows === 'single' || source.rows === 'double' ? source.rows : undefined;
+  return { ring, items, ...(colors ? { colors } : {}), ...(rows ? { rows } : {}) };
 }
 
 /** Toggle one item, refusing to leave the widget with nothing to show. Colours are kept. */
@@ -150,7 +155,8 @@ export const FLOATING_MONITOR_DEFAULTS: ResolvedFloatingMonitorPreferences = {
   alwaysOnTop: true,
   showSampleTime: false,
   fontSize: 16,
-  layout: 'twoRow',
+  layout: 'strip',
+  rows: 'double',
   metrics: ['generation', 'prefill', 'gpu', 'vram', 'cpu', 'ram'],
   showGraphs: true,
   showLabels: true,
@@ -162,6 +168,18 @@ export const FLOATING_MONITOR_DEFAULTS: ResolvedFloatingMonitorPreferences = {
   taskbarEnabled: false,
   taskbar: TASKBAR_WIDGET_DEFAULTS,
 };
+
+/**
+ * Global show/hide shortcut presets (same list as monitor_shortcut::PRESETS).
+ * Alt+A (WeChat) and Ctrl+Alt+A (QQ) are screenshot keys, so they are never offered.
+ */
+export const FLOATING_MONITOR_SHORTCUTS: readonly FloatingMonitorShortcut[] = ['Ctrl+Alt+M', 'Ctrl+Alt+K', 'Ctrl+Shift+M', ''];
+export const FLOATING_MONITOR_DEFAULT_SHORTCUT: FloatingMonitorShortcut = 'Ctrl+Alt+M';
+
+/** Saved shortcut → effective one: missing or unknown → default, `''` → off. */
+export function resolveFloatingMonitorShortcut(value?: unknown): FloatingMonitorShortcut {
+  return FLOATING_MONITOR_SHORTCUTS.find(shortcut => shortcut === value) ?? FLOATING_MONITOR_DEFAULT_SHORTCUT;
+}
 
 const validMetrics = new Set<string>(FLOATING_MONITOR_METRICS.map(metric => metric.id));
 const validActions = new Set<string>([
@@ -181,6 +199,29 @@ export function withoutRetiredFloatingMonitorKeys(value?: unknown): Record<strin
   const copy: Record<string, unknown> = { ...value as Record<string, unknown> };
   for (const key of RETIRED_FLOATING_MONITOR_KEYS) delete copy[key];
   return copy;
+}
+
+export const FLOATING_MONITOR_ROWS: readonly FloatingMonitorRows[] = ['single', 'double'];
+
+/**
+ * Rows for saved settings. A saved single/double wins. Otherwise (missing, or
+ * `auto` from an unreleased build) the retired preset decides: 紧凑单行
+ * (`compact`) becomes one row, 清晰双行 (`twoRow`), the panel and anything
+ * else become two rows, so the default strip looks exactly as before.
+ */
+export function migrateFloatingMonitorRows(layout: unknown, rows: unknown): FloatingMonitorRows {
+  if (rows === 'single' || rows === 'double') return rows;
+  return layout === 'compact' ? 'single' : 'double';
+}
+
+/**
+ * Floating-monitor settings for an install that has never saved settings.
+ * New Windows installs start with the taskbar monitor switched on; other
+ * platforms (no taskbar widget) keep the defaults. Existing saved settings
+ * never pass through here, so their taskbarEnabled choice is untouched.
+ */
+export function firstRunFloatingMonitorPreferences(taskbarSupported: boolean): ResolvedFloatingMonitorPreferences {
+  return { ...normalizeFloatingMonitorPreferences(undefined), taskbarEnabled: taskbarSupported };
 }
 
 /** Resolve old or malformed persisted preferences without mutating input settings. */
@@ -208,7 +249,8 @@ export function normalizeFloatingMonitorPreferences(value?: unknown): ResolvedFl
     alwaysOnTop: source.alwaysOnTop !== false,
     showSampleTime: source.showSampleTime === true,
     fontSize,
-    layout: source.layout === 'compact' || source.layout === 'panel' ? source.layout : 'twoRow',
+    layout: source.layout === 'panel' ? 'panel' : 'strip',
+    rows: migrateFloatingMonitorRows(source.layout, source.rows),
     metrics: metrics.length ? metrics : [...FLOATING_MONITOR_DEFAULTS.metrics],
     showGraphs: source.showGraphs !== false,
     showLabels: source.showLabels !== false,
@@ -221,14 +263,13 @@ export function normalizeFloatingMonitorPreferences(value?: unknown): ResolvedFl
     mode: 'floating',
     taskbarEnabled: source.taskbarEnabled === true,
     taskbar: normalizeTaskbarWidgetPreferences(source.taskbar),
+    // Kept only once the user picked one, so older settings keep the default.
+    ...(typeof source.shortcut === 'string' ? { shortcut: resolveFloatingMonitorShortcut(source.shortcut) } : {}),
   };
 }
 
 export const FLOATING_MONITOR_PRESETS: Record<FloatingMonitorLayout, ResolvedFloatingMonitorPreferences> = {
-  compact: normalizeFloatingMonitorPreferences({
-    layout: 'compact', fontSize: 14, metrics: ['generation', 'gpu', 'vram'], showGraphs: false, showLabels: true,
-  }),
-  twoRow: normalizeFloatingMonitorPreferences(),
+  strip: normalizeFloatingMonitorPreferences(),
   panel: normalizeFloatingMonitorPreferences({
     layout: 'panel', fontSize: 18,
     metrics: ['generation', 'prefill', 'gpu', 'vram', 'cpu', 'ram', 'temperature', 'power'],
@@ -256,34 +297,73 @@ export interface FloatingMonitorDimensions {
   columns: number;
   rows: number;
   columnWidths: number[];
+  /** One-row strip: labels sit beside the value instead of above it. */
+  inline: boolean;
+  /** Horizontal gap between cells. */
+  gap: number;
 }
 
-/** Logical pixels shared by the content layout and native floating window. */
-export function floatingMonitorDimensions(preferences: FloatingMonitorPreferences, language: AppLanguage = 'zh-CN'): FloatingMonitorDimensions {
-  const { layout, metrics, fontSize, showLabels, showUnits, showGraphs, showStatus, showSampleTime } = normalizeFloatingMonitorPreferences(preferences);
+/** Widest strip the native window accepts (floating_monitor.rs MAX_WIDTH). */
+export const FLOATING_MONITOR_MAX_WIDTH = 1120;
+
+/**
+ * Rows the strip is asked for (before the fit check in floatingMonitorDimensions).
+ * The panel is always a two-column grid.
+ */
+export function floatingMonitorStripRows(preferences: FloatingMonitorPreferences): 1 | 2 | 'grid' {
+  const { layout, rows } = normalizeFloatingMonitorPreferences(preferences);
+  if (layout === 'panel') return 'grid';
+  return rows === 'single' ? 1 : 2;
+}
+
+function measureStrip(value: ResolvedFloatingMonitorPreferences, language: AppLanguage, strip: 1 | 2 | 'grid'): FloatingMonitorDimensions {
+  const { metrics, fontSize, showLabels, showUnits, showGraphs, showStatus, showSampleTime } = value;
   const count = Math.max(1, metrics.length);
-  const columns = layout === 'compact' ? Math.min(count, 4) : layout === 'twoRow' ? Math.ceil(count / 2) : 2;
-  const rows = layout === 'compact' ? Math.ceil(count / 4) : layout === 'twoRow' ? Math.min(count, 2) : Math.ceil(count / 2);
+  const columns = strip === 'grid' ? 2 : strip === 1 ? count : Math.ceil(count / 2);
+  const rows = strip === 'grid' ? Math.ceil(count / 2) : strip === 1 ? 1 : Math.min(count, 2);
+  // A single row of one metric looks the same either way; keep the stacked label.
+  const inline = strip === 1 && count > 1;
   const labelFont = Math.max(8, Math.round(fontSize * 0.7));
-  const compact = layout === 'compact';
-  const padding = compact ? 4 : 5;
+  const padding = 5;
+  const gap = inline ? Math.max(6, Math.round(fontSize * 0.5)) : 2;
   const textWidth = (text: string) => [...text].reduce((width, character) => width + ((character.codePointAt(0) ?? 0) <= 127 ? 0.5 : 1) * labelFont, 0);
   const columnWidths = Array.from({ length: columns }, () => 0);
   metrics.forEach((metric, index) => {
     const unit = FLOATING_MONITOR_DISPLAY_UNITS[metric];
-    const valueWidth = FLOATING_MONITOR_VALUE_CHARACTERS[metric] * 0.58 * fontSize + (showUnits && unit ? textWidth(unit) + (compact ? 2 : 3) : 0);
+    const valueWidth = FLOATING_MONITOR_VALUE_CHARACTERS[metric] * 0.58 * fontSize + (showUnits && unit ? textWidth(unit) + 3 : 0);
     const labelWidth = showLabels ? textWidth(FLOATING_MONITOR_SHORT_LABELS[language === 'zh-CN' ? 'zh-CN' : 'en'][metric]) : 0;
-    const cellWidth = Math.ceil(Math.max(valueWidth, labelWidth) + 4);
+    const cellWidth = Math.ceil((inline ? labelWidth + (showLabels ? 3 : 0) + valueWidth : Math.max(valueWidth, labelWidth)) + 4);
     const column = index % columns;
     columnWidths[column] = Math.max(columnWidths[column] ?? 0, cellWidth);
   });
-  const cellHeight = Math.ceil(fontSize * 1.4) + (showLabels ? labelFont + 2 : 0) + (showGraphs ? compact ? 16 : 18 : 0);
+  const cellHeight = Math.ceil(fontSize * 1.4) + (showLabels && !inline ? labelFont + 2 : 0) + (showGraphs ? 18 : 0);
   const headerHeight = showStatus || showSampleTime ? Math.ceil(fontSize * 0.85) + 4 : 0;
   return {
-    width: Math.max(96, columnWidths.reduce((total, width) => total + width, 0) + (columns - 1) * 2 + padding * 2),
+    width: Math.max(96, columnWidths.reduce((total, width) => total + width, 0) + (columns - 1) * gap + padding * 2),
     height: Math.max(24, rows * cellHeight + (rows - 1) * 2 + headerHeight + padding * 2),
     columns,
     rows,
     columnWidths,
+    inline,
+    gap,
   };
+}
+
+/**
+ * Logical pixels shared by the content layout and native floating window.
+ * `maxWidth` is the room on screen (the strip passes its work-area width);
+ * the native limit FLOATING_MONITOR_MAX_WIDTH always applies.
+ */
+export function floatingMonitorDimensions(preferences: FloatingMonitorPreferences, language: AppLanguage = 'zh-CN', maxWidth = FLOATING_MONITOR_MAX_WIDTH): FloatingMonitorDimensions {
+  const value = normalizeFloatingMonitorPreferences(preferences);
+  const strip = floatingMonitorStripRows(value);
+  const measured = measureStrip(value, language, strip);
+  const limit = Math.min(FLOATING_MONITOR_MAX_WIDTH, Number.isFinite(maxWidth) && maxWidth > 0 ? maxWidth : FLOATING_MONITOR_MAX_WIDTH);
+  // A single row wider than the room it has falls back to two rows.
+  return strip === 1 && measured.width > limit ? measureStrip(value, language, 2) : measured;
+}
+
+/** 单行 was chosen but does not fit, so the strip shows two rows (settings shows a hint). */
+export function floatingMonitorSingleRowFallback(preferences: FloatingMonitorPreferences, language: AppLanguage = 'zh-CN', maxWidth = FLOATING_MONITOR_MAX_WIDTH): boolean {
+  return floatingMonitorStripRows(preferences) === 1 && floatingMonitorDimensions(preferences, language, maxWidth).rows !== 1;
 }

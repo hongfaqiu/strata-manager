@@ -41,5 +41,15 @@ test('the strip collapses into the taskbar monitor instead of the tray', () => {
 
 test('settings no longer offer a tray-monitor switch and old saved values are dropped', () => {
   assert.doesNotMatch(settings, /普通托盘图标|Standard tray icon|floating-monitor-settings-more/);
-  assert.match(app, /floatingMonitor: \{\.\.\.core\.withoutRetiredFloatingMonitorKeys\(s\?\.floatingMonitor\)/);
+  assert.match(app, /floatingMonitor: s === null \? core\.firstRunFloatingMonitorPreferences\(firstRunTaskbar\) : \{\.\.\.core\.withoutRetiredFloatingMonitorKeys\(s\?\.floatingMonitor\)/);
+});
+
+test('new Windows installs start with the taskbar monitor on; saved settings are untouched', () => {
+  // Only when nothing was saved yet, and only where the native widget is supported (Windows).
+  assert.match(app, /const firstRunTaskbar = s === null && tauriShell && !serverMode \? await readMonitorModeStatus\(\)\.then\(status => status\.supported === true\)/);
+  assert.match(app, /floatingMonitor: s === null \? core\.firstRunFloatingMonitorPreferences\(firstRunTaskbar\) : \{\.\.\.core\.withoutRetiredFloatingMonitorKeys\(s\?\.floatingMonitor\), \.\.\.normalizeFloatingMonitorPreferences\(s\?\.floatingMonitor\)\}/);
+  // Shown right after the first-run language step, not only on the next launch.
+  assert.match(app, /if \(firstRunTaskbarStart\.current && preferences\.taskbarEnabled\) \{[\s\S]*?setMonitorVisibility\(true, 'taskbar'/);
+  // Next launches restore it from the saved switch, as for any user who turned it on.
+  assert.match(taskbar, /settings\["floatingMonitor"\]\["taskbarEnabled"\] == true/);
 });

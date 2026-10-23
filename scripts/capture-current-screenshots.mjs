@@ -30,7 +30,7 @@ const before=await sourceSnapshot();
 await mkdir(join(output,'png'),{recursive:true});await mkdir(join(output,'webp'),{recursive:true});
 const fsUrl=file=>'/@fs/'+join(root,file).replaceAll('\\','/');
 const scripts=['apps/desktop/tests/optimization/native-fixture.js','apps/desktop/tests/optimization/benchmark-native-fixture.js','scripts/screenshot-fixtures/benchmark-data.js','scripts/screenshot-fixtures/documentation-data.js','scripts/screenshot-fixtures/report-data.js','scripts/screenshot-fixtures/current-preview.js'];
-const floatingDefinition={width:244,height:120,preferences:{actions:[],alwaysOnTop:true,showSampleTime:false,layout:'twoRow',fontSize:16,showGraphs:true,showLabels:true,showStatus:false,snapToEdge:false},preferencesAreCurrentDefaults:true};
+const floatingDefinition={width:244,height:120,preferences:{actions:[],alwaysOnTop:true,showSampleTime:false,layout:'strip',rows:'double',fontSize:16,showGraphs:true,showLabels:true,showStatus:false,snapToEdge:false},preferencesAreCurrentDefaults:true};
 await writeFile(join(output,'index.html'),`<!doctype html><html><head><meta charset="utf-8"><link rel="icon" href="data:,"><script>window.__captureFloatingDefinition=${JSON.stringify(floatingDefinition)}</script>${scripts.map(file=>`<script src="${fsUrl(file)}"></script>`).join('')}</head><body><div id="root"></div><script type="module" src="${fsUrl('apps/desktop/src/main.tsx')}"></script></body></html>`);
 await writeFile(join(output,'monitor.html'),`<!doctype html><html><head><meta charset="utf-8"><link rel="icon" href="data:,"><script src="${fsUrl('apps/desktop/tests/optimization/native-fixture.js')}"></script><script src="${fsUrl('apps/desktop/tests/optimization/floating-monitor-native-fixture.js')}"></script></head><body><div id="root"></div><script type="module" src="${fsUrl('apps/desktop/src/main.tsx')}"></script></body></html>`);
 const server=await createServer({configFile:false,envFile:false,root:output,cacheDir:join(output,'.vite'),plugins:[react()],resolve:{alias:{react:join(root,'apps/desktop/node_modules/react'),'react-dom':join(root,'apps/desktop/node_modules/react-dom')}},server:{host:'127.0.0.1',port:0,hmr:false,fs:{allow:[root]}}});
@@ -52,7 +52,7 @@ for(const [language,locale] of [['zh','zh-CN'],['en','en']])for(const [view,rout
   try{
     if(floating){
       // Dedicated monitor fixture returns only synthetic snapshots and size changes.
-      await page.goto(`${origin}/monitor.html?window=monitor&language=${locale}&theme=light&layout=twoRow&fontSize=16`);
+      await page.goto(`${origin}/monitor.html?window=monitor&language=${locale}&theme=light&layout=strip&fontSize=16`);
       await page.locator('.floating-telemetry-window strong').first().waitFor();
       await page.waitForFunction(()=>window.__fixture.monitor.size);
       const size=await page.evaluate(()=>window.__fixture.monitor.size);await page.setViewportSize(size);record.logicalSize=size;

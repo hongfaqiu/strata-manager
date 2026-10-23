@@ -16,6 +16,8 @@ pub(crate) const ITEMS: [&str; 6] = [
     "status",
 ];
 pub(crate) const RINGS: [&str; 4] = ["gpu", "vram", "context", "off"];
+/// Text rows: `auto` picks one row on a short (small-icon) taskbar, two otherwise.
+pub(crate) const ROWS: [&str; 3] = ["auto", "single", "double"];
 const DEFAULT_ITEMS: [&str; 2] = ["generation", "prefill"];
 /// Metrics whose colour the user may override. The status dot stays semantic;
 /// `context` is a ring-only metric.
@@ -37,6 +39,16 @@ pub(crate) struct WidgetPrefs {
     /// the tuned light/dark taskbar palette; one override applies to both.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub colors: BTreeMap<String, String>,
+    #[serde(default = "default_rows", skip_serializing_if = "is_auto")]
+    pub rows: String,
+}
+
+fn default_rows() -> String {
+    "auto".into()
+}
+
+fn is_auto(rows: &str) -> bool {
+    rows == "auto"
 }
 
 /// Parses `#rgb`/`#rrggbb` (any case) into canonical lowercase `#rrggbb`.
@@ -64,6 +76,7 @@ impl Default for WidgetPrefs {
             ring: "gpu".into(),
             items: DEFAULT_ITEMS.iter().map(|x| (*x).into()).collect(),
             colors: BTreeMap::new(),
+            rows: default_rows(),
         }
     }
 }
@@ -104,10 +117,15 @@ impl WidgetPrefs {
                     .collect()
             })
             .unwrap_or_default();
+        let rows = value["rows"]
+            .as_str()
+            .filter(|rows| ROWS.contains(rows))
+            .unwrap_or("auto");
         Self {
             ring: ring.into(),
             items,
             colors,
+            rows: rows.into(),
         }
     }
 
@@ -129,9 +147,22 @@ impl WidgetPrefs {
         self.has("generation") && self.has("prefill")
     }
 
-    /// Drawn columns in order: the two speeds collapse into one `"speeds"`.
-    fn columns(&self) -> Vec<&str> {
-        let stack = self.stacks_speeds();
+    /// Whether the text sits on one row at this taskbar size.
+    pub fn single_row(&self, dpi: u32, bar_height: i32) -> bool {
+        match self.rows.as_str() {
+            "single" => true,
+            "double" => false,
+            _ => {
+                let m = metrics(dpi, bar_height);
+                (m.height as f32 / m.scale) < AUTO_SINGLE_BELOW
+            }
+        }
+    }
+
+    /// Drawn columns in order: on two rows the two speeds collapse into one
+    /// stacked `"speeds"` column; on one row each item is its own column.
+    fn columns(&self, single: bool) -> Vec<&str> {
+        let stack = !single && self.stacks_speeds();
         self.items
             .iter()
             .filter(|item| !(stack && *item == "prefill"))
@@ -527,6 +558,10 @@ pub(crate) struct Layout {
     pub ops: Vec<Op>,
 }
 
+/// Logical widget height under which `auto` uses one row (a small-icon
+/// taskbar leaves about 28 px; the default Windows 11 taskbar about 40).
+const AUTO_SINGLE_BELOW: f32 = 34.0;
+
 struct Metrics {
     scale: f32,
     height: i32,
@@ -562,6 +597,18 @@ fn metrics(dpi: u32, bar_height: i32) -> Metrics {
     }
 }
 
+/// Metrics for the chosen row mode. One row keeps numbers at most 12 px
+/// (logical) so a forced single row on a tall taskbar stays compact.
+fn row_metrics(prefs: &WidgetPrefs, dpi: u32, bar_height: i32) -> (Metrics, bool) {
+    let mut m = metrics(dpi, bar_height);
+    let single = prefs.single_row(dpi, bar_height);
+    if single {
+        m.value = m.value.min((12.0 * m.scale).round());
+        m.unit = (m.value * 0.66).round();
+    }
+    (m, single)
+}
+
 /// One column per selected item: value (+ compact unit) over a small label.
 struct Column {
     value: f32,
@@ -575,7 +622,38 @@ fn glyph_box(m: &Metrics) -> (f32, f32) {
     (diameter, (diameter + 2.0 * m.scale).ceil())
 }
 
-fn column(item: &str, english: bool, m: &Metrics) -> Column {
+/// Glyph diameter and advance in front of a one-row speed.
+fn inline_glyph_box(m: &Metrics) -> (f32, f32) {
+    let diameter = (m.value * 0.62).round();
+    (diameter, (diameter + 2.0 * m.scale).ceil())
+}
+
+/// One row: no caption. Units tell GPU (%), VRAM (GB) and temperature (℃)
+/// apart, and the spark/arrow glyphs tell generation from prefill.
+fn inline_column(item: &str, english: bool, m: &Metrics) -> Column {
+    let (value, unit) = template(item, english);
+    let glyph = if matches!(item, "generation" | "prefill") {
+        inline_glyph_box(m).1
+    } else {
+        0.0
+    };
+    let value = text_width(value, m.value).ceil();
+    let unit = if unit.is_empty() {
+        0.0
+    } else {
+        (text_width(unit, m.unit) + m.scale).ceil()
+    };
+    Column {
+        value,
+        unit,
+        width: glyph + value + unit,
+    }
+}
+
+fn column(item: &str, english: bool, m: &Metrics, single: bool) -> Column {
+    if single {
+        return inline_column(item, english, m);
+    }
     if item == "speeds" {
         let (value, unit) = template("generation", english);
         let value = text_width(value, m.stack).ceil();
@@ -603,7 +681,8 @@ fn column(item: &str, english: bool, m: &Metrics) -> Column {
 }
 
 pub(crate) fn size(prefs: &WidgetPrefs, english: bool, dpi: u32, bar_height: i32) -> (i32, i32) {
-    let m = metrics(dpi, bar_height);
+    let (m, single) = row_metrics(prefs, dpi, bar_height);
+    let gap = if single { m.gap * 1.25 } else { m.gap };
     let mut x = m.pad;
     let mut first = true;
     if prefs.ring != "off" {
@@ -614,12 +693,12 @@ pub(crate) fn size(prefs: &WidgetPrefs, english: bool, dpi: u32, bar_height: i32
         x += 6.0 * m.scale;
         first = false;
     }
-    for item in prefs.columns() {
+    for item in prefs.columns(single) {
         if !first {
-            x += m.gap;
+            x += gap;
         }
         first = false;
-        x += column(item, english, &m).width;
+        x += column(item, english, &m, single).width;
     }
     ((x + m.pad).ceil() as i32, m.height)
 }
@@ -632,7 +711,8 @@ pub(crate) fn layout(
     reading: &Reading,
     palette: &Palette,
 ) -> Layout {
-    let m = metrics(dpi, bar_height);
+    let (m, single) = row_metrics(prefs, dpi, bar_height);
+    let gap = if single { m.gap * 1.25 } else { m.gap };
     let (width, height) = size(prefs, english, dpi, bar_height);
     let h = height as f32;
     let tone = palette.tone(reading.tone);
@@ -713,12 +793,32 @@ pub(crate) fn layout(
             other => palette.metric(other),
         }
     };
-    for item in prefs.columns() {
+    for item in prefs.columns(single) {
         if !first {
-            x += m.gap;
+            x += gap;
         }
         first = false;
-        let column = column(item, english, &m);
+        let column = column(item, english, &m, single);
+        if single {
+            let (value, unit) = value_parts(item, reading, english);
+            let color = metric_color(item, &value);
+            inline_item(
+                &mut ops,
+                x,
+                &column,
+                h,
+                &m,
+                item,
+                (
+                    value,
+                    unit,
+                    color,
+                    prefs.color(item).unwrap_or(palette.metric(item)),
+                ),
+            );
+            x += column.width;
+            continue;
+        }
         if item == "speeds" {
             speed_stack(&mut ops, x, &column, h, &m, |line| {
                 let (value, unit) = value_parts(line, reading, english);
@@ -783,6 +883,72 @@ pub(crate) fn layout(
 }
 
 type SpeedLine = (String, &'static str, Color, Color);
+
+/// One-row item: optional speed glyph, right-aligned number, unit; vertically
+/// centred on the taskbar.
+fn inline_item(
+    ops: &mut Vec<Op>,
+    x: f32,
+    column: &Column,
+    h: f32,
+    m: &Metrics,
+    item: &str,
+    (value, unit, color, glyph): SpeedLine,
+) {
+    let line_height = (m.value * 1.25).round();
+    let top = ((h - line_height) / 2.0).round();
+    let bottom = top + line_height;
+    let start = x.round();
+    let shape = match item {
+        "generation" => Some(Glyph::Spark),
+        "prefill" => Some(Glyph::Arrow),
+        _ => None,
+    };
+    let glyph_width = if let Some(shape) = shape {
+        let (diameter, width) = inline_glyph_box(m);
+        ops.push(Op::Glyph {
+            cx: start + diameter / 2.0,
+            cy: bottom - m.value * 0.6,
+            radius: diameter / 2.0,
+            shape,
+            color: glyph,
+        });
+        width
+    } else {
+        0.0
+    };
+    let split = start + glyph_width + column.value;
+    ops.push(Op::Text {
+        left: (start + glyph_width) as i32,
+        top: top as i32,
+        right: split as i32,
+        bottom: bottom as i32,
+        text: value,
+        size: m.value as i32,
+        weight: TEXT_WEIGHT,
+        color,
+        align: if unit.is_empty() {
+            Align::Center
+        } else {
+            Align::Right
+        },
+        bottom_align: true,
+    });
+    if !unit.is_empty() {
+        ops.push(Op::Text {
+            left: (split + m.scale).round() as i32,
+            top: top as i32,
+            right: (split + column.unit) as i32,
+            bottom: bottom as i32 - m.scale.round() as i32,
+            text: unit.into(),
+            size: m.unit as i32,
+            weight: TEXT_WEIGHT,
+            color,
+            align: Align::Left,
+            bottom_align: true,
+        });
+    }
+}
 
 /// Generation over prefill in one column: glyph, right-aligned number, unit.
 /// No caption line; the glyphs (and the settings page) say which is which.
@@ -1086,6 +1252,7 @@ pub(crate) const MENU_SETTINGS: u32 = 4;
 pub(crate) const MENU_COLORS: u32 = 5;
 const MENU_ITEM: u32 = 100;
 const MENU_RING: u32 = 200;
+const MENU_ROWS: u32 = 300;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum MenuAction {
@@ -1130,6 +1297,21 @@ pub(crate) fn menu(prefs: &WidgetPrefs, english: bool, temperature: bool) -> Vec
         });
     }
     custom.push(MenuEntry::Separator);
+    custom.push(MenuEntry::Header {
+        label: t("文字行数", "Text rows"),
+    });
+    for (index, rows) in ROWS.iter().enumerate() {
+        custom.push(MenuEntry::Radio {
+            id: MENU_ROWS + index as u32,
+            label: match *rows {
+                "single" => t("单行", "One row"),
+                "double" => t("两行", "Two rows"),
+                _ => t("自动（按任务栏高度）", "Auto (by taskbar height)"),
+            },
+            checked: prefs.rows == *rows,
+        });
+    }
+    custom.push(MenuEntry::Separator);
     custom.push(MenuEntry::Command {
         id: MENU_SETTINGS,
         label: t("更多设置…", "More settings…"),
@@ -1161,6 +1343,33 @@ pub(crate) fn menu(prefs: &WidgetPrefs, english: bool, temperature: bool) -> Vec
 
 /// Applies a menu command. Removing the last visible element is refused so
 /// the widget never becomes an empty, unclickable strip.
+/// `(first, last, checked)` id range of each radio group in one menu level;
+/// a header or separator ends a group. Groups without a checked entry are skipped.
+pub(crate) fn radio_groups(entries: &[MenuEntry]) -> Vec<(u32, u32, u32)> {
+    let mut groups = Vec::new();
+    let mut current: Option<(u32, u32, Option<u32>)> = None;
+    let mut close = |current: &mut Option<(u32, u32, Option<u32>)>| {
+        if let Some((first, last, Some(checked))) = current.take() {
+            groups.push((first, last, checked));
+        }
+    };
+    for entry in entries {
+        match entry {
+            MenuEntry::Radio { id, checked, .. } => {
+                let group = current.get_or_insert((*id, *id, None));
+                group.1 = *id;
+                if *checked {
+                    group.2 = Some(*id);
+                }
+            }
+            MenuEntry::Header { .. } | MenuEntry::Separator => close(&mut current),
+            _ => {}
+        }
+    }
+    close(&mut current);
+    groups
+}
+
 pub(crate) fn apply(prefs: &WidgetPrefs, id: u32) -> MenuAction {
     let mut next = prefs.clone();
     match id {
@@ -1185,6 +1394,11 @@ pub(crate) fn apply(prefs: &WidgetPrefs, id: u32) -> MenuAction {
         .and_then(|index| RINGS.get(index as usize))
     {
         next.ring = (*ring).into();
+    } else if let Some(rows) = id
+        .checked_sub(MENU_ROWS)
+        .and_then(|index| ROWS.get(index as usize))
+    {
+        next.rows = (*rows).into();
     } else {
         return MenuAction::Nothing;
     }

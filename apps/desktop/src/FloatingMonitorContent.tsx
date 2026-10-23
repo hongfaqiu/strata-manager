@@ -13,6 +13,8 @@ interface Props {
   history: MonitorPoint[]; status: string; loaded?: boolean; sampledAt?: number; message?: string;
   /** Only the settings preview provides this callback; live monitor dragging stays native. */
   onReorder?: (metrics: FloatingMonitorMetric[]) => void;
+  /** Room on screen; a single row wider than this uses two rows (matches the window size). */
+  maxWidth?: number;
 }
 
 interface PreviewDrag {
@@ -28,8 +30,8 @@ interface PreviewDrag {
   element: HTMLDivElement;
 }
 
-export function FloatingMonitorContent({ preferences, language, metric, history, status, loaded = true, sampledAt, message, onReorder }: Props) {
-  const value = normalizeFloatingMonitorPreferences(preferences), dimensions = floatingMonitorDimensions(value, language);
+export function FloatingMonitorContent({ preferences, language, metric, history, status, loaded = true, sampledAt, message, onReorder, maxWidth }: Props) {
+  const value = normalizeFloatingMonitorPreferences(preferences), dimensions = floatingMonitorDimensions(value, language, maxWidth);
   const values = monitorValues(metric, loaded, false), zh = language === 'zh-CN';
   const hintId = useId();
   const grid = useRef<HTMLDivElement>(null);
@@ -124,7 +126,7 @@ export function FloatingMonitorContent({ preferences, language, metric, history,
     setAnnouncement(zh ? '已取消排序，顺序未更改。' : 'Reordering cancelled. Order unchanged.');
   };
 
-  return <section className="floating-monitor-content" data-layout={value.layout} data-reorderable={!!onReorder} aria-label={status} title={[status, message].filter(Boolean).join(' · ')} style={{ '--monitor-font': `${value.fontSize}px`, '--monitor-label-font': `${Math.max(8, Math.round(value.fontSize * .7))}px`, '--monitor-number-height': `${Math.ceil(value.fontSize * 1.4)}px`, '--monitor-header-height': `${Math.ceil(value.fontSize * .85) + 4}px`, '--monitor-columns': dimensions.columns, '--monitor-column-widths': dimensions.columnWidths.map(width => `${width}px`).join(' ') } as CSSProperties}>
+  return <section className="floating-monitor-content" data-layout={value.layout} data-rows={dimensions.rows} data-inline={dimensions.inline || undefined} data-reorderable={!!onReorder} aria-label={status} title={[status, message].filter(Boolean).join(' · ')} style={{ '--monitor-font': `${value.fontSize}px`, '--monitor-label-font': `${Math.max(8, Math.round(value.fontSize * .7))}px`, '--monitor-number-height': `${Math.ceil(value.fontSize * 1.4)}px`, '--monitor-header-height': `${Math.ceil(value.fontSize * .85) + 4}px`, '--monitor-columns': dimensions.columns, '--monitor-gap': `${dimensions.gap}px`, '--monitor-column-widths': dimensions.columnWidths.map(width => `${width}px`).join(' ') } as CSSProperties}>
     {showHeader && <header className="floating-monitor-content-header">
       {value.showStatus && <span className="floating-monitor-state" role="status"><i aria-hidden="true"/>{status}</span>}
       <span>{transientMessage || (value.showSampleTime && sampledAt ? new Date(sampledAt).toLocaleTimeString(language, { hour12: false }) : '')}</span>

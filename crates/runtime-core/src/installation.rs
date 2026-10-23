@@ -1287,9 +1287,10 @@ pub(crate) async fn run_owned(
             if exit_code == Some(0) {
                 return Ok(());
             }
-            return Err(format!(
-                "{description}失败，退出码 {:?}；查看日志后重试",
-                exit_code
+            return Err(crate::task_failure::explain(
+                description,
+                exit_code,
+                &crate::task_failure::recent_lines(&state.logs, id, 40),
             ));
         }
         if last_persist.elapsed() >= Duration::from_secs(1) {

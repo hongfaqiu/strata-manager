@@ -7,6 +7,8 @@ use strata_runtime_core::RuntimeState;
 const DESKTOP_ONLY: &[&str] = &[
     "open_monitor_window",
     "resize_monitor_window",
+    "set_monitor_rows",
+    "monitor_shortcut_status",
     "set_monitor_mode",
     "set_monitor_visibility",
     "monitor_mode_status",

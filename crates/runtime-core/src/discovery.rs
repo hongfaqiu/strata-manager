@@ -1475,6 +1475,12 @@ fn windows_python_inventory(read_cwd: bool) -> Result<WindowsPythonInventory, St
         if !name.eq_ignore_ascii_case("python.exe") && !name.eq_ignore_ascii_case("pythonw.exe") {
             return Err("Python 进程身份发生变化，请重新检测；未自动启动".into());
         }
+        // A Python owned by another account (e.g. a LocalSystem service child)
+        // denies even limited query access, so it cannot be this user's Strata
+        // management script. Skip it instead of blocking the whole check.
+        if process.cmd().is_empty() && windows_open_denied(pid.as_u32()) {
+            continue;
+        }
         commands.push((
             checked_windows_args(process.cmd())?,
             process.cwd().map(Path::to_path_buf),
@@ -1484,6 +1490,22 @@ fn windows_python_inventory(read_cwd: bool) -> Result<WindowsPythonInventory, St
         return Err("读取本机 Python 参数超过时间预算，已停止自动操作".into());
     }
     Ok(commands)
+}
+
+/// True only when OpenProcess fails with ERROR_ACCESS_DENIED for limited
+/// query access, i.e. the process belongs to another security context.
+#[cfg(windows)]
+fn windows_open_denied(pid: u32) -> bool {
+    use windows_sys::Win32::{
+        Foundation::{CloseHandle, GetLastError, ERROR_ACCESS_DENIED},
+        System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION},
+    };
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if handle.is_null() {
+        return unsafe { GetLastError() } == ERROR_ACCESS_DENIED;
+    }
+    unsafe { CloseHandle(handle) };
+    false
 }
 
 #[cfg(windows)]

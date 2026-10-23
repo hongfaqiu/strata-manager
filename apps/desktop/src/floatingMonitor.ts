@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { isDesktop, type AppSettings, type JsonObject, type ProcessStatus, type ServiceProfile } from '@strata-manager/core';
-import type { FloatingMonitorAction, FloatingMonitorPreferences, FloatingMonitorMode } from '@strata-manager/core';
+import type { FloatingMonitorAction, FloatingMonitorPreferences, FloatingMonitorMode, FloatingMonitorRows } from '@strata-manager/core';
 
 export type { FloatingMonitorAction, FloatingMonitorPreferences } from '@strata-manager/core';
 export { normalizeFloatingMonitorPreferences } from '@strata-manager/core';
@@ -43,8 +43,11 @@ export interface MonitorModeStatus { mode: FloatingMonitorMode; supported: boole
 export const setMonitorMode = (mode: FloatingMonitorMode, preferences: FloatingMonitorPreferences, language: AppLanguage = 'zh-CN'): Promise<MonitorModeStatus> => invoke('set_monitor_mode', { mode, preferences: { ...preferences, language } });
 
 export const readMonitorModeStatus = (): Promise<MonitorModeStatus> => invoke('monitor_mode_status');
+export const readMonitorShortcutStatus = (): Promise<{ shortcut: string; active: boolean; message: string }> => invoke('monitor_shortcut_status');
 export const setMonitorVisibility = (visible: boolean, mode: FloatingMonitorMode, preferences: FloatingMonitorPreferences, language: AppLanguage = 'zh-CN'): Promise<MonitorModeStatus> => invoke('set_monitor_visibility', { visible, mode, preferences: { ...preferences, language } });
 // The strip's "收起到任务栏监控": the taskbar widget replaces it and is remembered for the next launch.
 export const moveMonitorToTaskbar = (preferences: FloatingMonitorPreferences, language: AppLanguage = 'zh-CN'): Promise<MonitorModeStatus> => invoke('move_monitor_to_taskbar', { preferences: { ...preferences, language } });
+/** Strip context menu 「文字行数」; the main window saves it like a settings edit. */
+export const setMonitorRows = (rows: FloatingMonitorRows): Promise<void> => invoke('set_monitor_rows', { rows });
 export const resizeMonitorWindow = (width: number, height: number): Promise<{ width: number; height: number }> => invoke('resize_monitor_window', { width, height });
 import type { AppLanguage } from '@strata-manager/core';

@@ -66,7 +66,7 @@ describe('saved runtime download choices', () => {
       if (command === 'store_get') return saved;
       throw new Error(command);
     } } });
-    expect(await getRuntimeDownloadPreferences()).toEqual({ mode: 'official' });
+    expect(await getRuntimeDownloadPreferences()).toEqual({ mode: 'mirror', sourceId: 'gh-proxy' });
     await saveRuntimeDownloadPreferences({ mode: 'mirror', assetName, releaseVersion: '0.1.43', mirrorUrl: ' https://mirror.example/{url} ', localArchivePath: 'discard.zip' });
     expect(await getRuntimeDownloadPreferences()).toEqual({ mode: 'mirror', assetName, releaseVersion: '0.1.43', mirrorUrl: 'https://mirror.example/{url}' });
     expect(calls).toEqual(['store_get', 'store_set', 'store_get']);

@@ -288,7 +288,7 @@ async page => {
     assert(await panel.locator('summary').filter({ hasText: '更多设置' }).count() === 0, 'The retired tray-monitor toggle must be gone');
     const expected = {
       actions: [], alwaysOnTop: false, showSampleTime: true,
-      fontSize: 16, layout: 'twoRow', metrics: ['generation', 'prefill', 'gpu', 'vram', 'cpu', 'ram'],
+      fontSize: 16, layout: 'strip', rows: 'double', metrics: ['generation', 'prefill', 'gpu', 'vram', 'cpu', 'ram'],
       showGraphs: true, showLabels: true, showUnits: true, mode: 'floating',
     };
     await page.waitForFunction(expected => JSON.stringify(window.__fixture.store.settings.floatingMonitor) === JSON.stringify(expected), expected);
@@ -323,11 +323,20 @@ async page => {
     await page.waitForFunction(() => window.__fixture.store.settings.floatingMonitor?.showGraphs === false && window.__fixture.store.settings.floatingMonitor?.metrics?.at(-1) === 'cache');
     const persisted = await page.evaluate(() => window.__fixture.store.settings.floatingMonitor);
     assert(persisted.layout === 'panel' && persisted.fontSize === 24 && persisted.metrics.length === 8, 'Preset, font and metric ordering must be persisted together');
+    assert(await panel.getByRole('radio', { name: '单行', exact: true }).isDisabled(), 'The panel is a grid, so 文字行数 must be disabled');
+    assert(await panel.getByRole('button', { name: /紧凑单行|清晰双行/ }).count() === 0, 'Only the 条形 and 详细面板 presets remain');
     assert((await panel.locator('.floating-monitor-settings-preview').innerText()).includes('示例数据'), 'Settings preview must explicitly identify synthetic data');
     await page.reload(); await page.locator('.boot').waitFor({ state: 'hidden' }); await panel.waitFor();
     assert(JSON.stringify(await page.evaluate(() => window.__fixture.store.settings.floatingMonitor)) === JSON.stringify(persisted), 'Customized preferences must survive reload');
     await panel.getByRole('button', { name: '恢复显示默认', exact: true }).click();
-    await page.waitForFunction(() => window.__fixture.store.settings.floatingMonitor?.layout === 'twoRow' && window.__fixture.store.settings.floatingMonitor?.fontSize === 16);
+    await page.waitForFunction(() => window.__fixture.store.settings.floatingMonitor?.layout === 'strip' && window.__fixture.store.settings.floatingMonitor?.rows === 'double' && window.__fixture.store.settings.floatingMonitor?.fontSize === 16);
+    // 条形 + 文字行数: one row is saved separately from the preset and survives re-applying 条形.
+    await panel.getByRole('radio', { name: '单行', exact: true }).click();
+    await page.waitForFunction(() => window.__fixture.store.settings.floatingMonitor?.rows === 'single');
+    await panel.getByRole('button', { name: '条形 默认推荐', exact: true }).click();
+    await page.waitForFunction(() => window.__fixture.store.settings.floatingMonitor?.layout === 'strip' && window.__fixture.store.settings.floatingMonitor?.rows === 'single');
+    await panel.getByRole('radio', { name: '两行', exact: true }).click();
+    await page.waitForFunction(() => window.__fixture.store.settings.floatingMonitor?.rows === 'double');
     return { keyboardOrder: true, maximumMetrics: 8, persisted };
   }, { width: 1200, height: 1000 }, true);
   await run('main-window-monitor-settings-without-taskbar-switch', 'floating-settings&state=idle', async () => {

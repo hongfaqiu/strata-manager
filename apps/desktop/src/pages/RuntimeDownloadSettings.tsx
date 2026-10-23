@@ -32,7 +32,7 @@ export function RuntimeDownloadSettings({ language, desktop, release, releaseLoa
     catch (failure) { preferenceProblem = core.normalizeError(failure).message; }
   }
   const initialDraft = (): core.RuntimeDownloadPreferences => {
-    const saved = preferences.data ?? { mode: 'official' as const };
+    const saved = preferences.data ?? core.RUNTIME_DOWNLOAD_DEFAULTS;
     const fixedSource = saved.mode === 'local' || saved.mode === 'mirror' && !saved.sourceId && !hasTemplate(saved.mirrorUrl);
     if (!release || !fixedSource || saved.releaseVersion === version) return { ...saved };
     return { ...saved, releaseVersion: version, ...(saved.mode === 'local' ? { localArchivePath: '' } : { mirrorUrl: '' }) };
@@ -96,7 +96,7 @@ export function RuntimeDownloadSettings({ language, desktop, release, releaseLoa
     try { await navigator.clipboard.writeText(value); if (alive.current) setMessage(label); }
     catch { if (alive.current) setError(zh ? '无法自动复制，请选中内容手动复制。' : 'Automatic copying is unavailable. Select and copy the text manually.'); }
   };
-  const savedMode = preferences.data?.mode ?? 'official';
+  const savedMode = preferences.data?.mode ?? core.RUNTIME_DOWNLOAD_DEFAULTS.mode;
   const modeSummary = savedMode === 'local' ? zh ? '本地引擎包' : 'Local package' : savedMode === 'mirror' ? core.runtimeDownloadSources.find(source => source.id === preferences.data?.sourceId)?.label ?? (zh ? '自定义' : 'Custom') : zh ? '官方' : 'Official';
   const summary = preferences.error || preferenceProblem ? zh ? '读取失败' : 'Read failed' : preferences.isPending && desktop ? zh ? '读取中…' : 'Loading…' : `${modeSummary}${savedRequiresSelection ? zh ? ' · 需重选' : ' · Reselect' : ''}`;
   return <section className="runtime-download-settings" aria-label={zh ? '下载设置与测试' : 'Download settings and test'}>
@@ -110,8 +110,9 @@ export function RuntimeDownloadSettings({ language, desktop, release, releaseLoa
         {savedRequiresSelection && draft?.key !== releaseKey && <p className="notice warning" role="status">{zh ? '下载来源已过期，请选择当前包和来源后保存。' : 'The source is outdated; select the current package and source, then save.'}</p>}
         <fieldset disabled={disabled || !!preferences.error}>
           <legend>{zh ? '下载方式' : 'Download source'}</legend>
-          <div className="runtime-download-settings-field"><span>{zh ? '下载来源' : 'Download source'}</span><Dropdown ariaLabel={zh ? '下载方式' : 'Download source'} value={sourceValue} disabled={disabled || !!preferences.error} onValueChange={chooseSource} options={[{ value: 'official', label: zh ? '官方自动下载' : 'Official download' }, ...core.runtimeDownloadSources.map(source => ({ value: source.id, label: source.label })), { value: 'custom', label: zh ? '自定义 HTTPS' : 'Custom HTTPS' }, { value: 'local', label: zh ? '本地已下载的引擎包' : 'Downloaded package' }]}/></div>
+          <div className="runtime-download-settings-field"><span>{zh ? '下载来源' : 'Download source'}</span><Dropdown ariaLabel={zh ? '下载方式' : 'Download source'} value={sourceValue} disabled={disabled || !!preferences.error} onValueChange={chooseSource} options={[{ value: 'official', label: zh ? '官方自动下载' : 'Official download' }, ...core.runtimeDownloadSources.map(source => ({ value: source.id, label: source.id === core.RUNTIME_DOWNLOAD_DEFAULTS.sourceId ? `${source.label}${zh ? '（默认）' : ' (default)'}` : source.label })), { value: 'custom', label: zh ? '自定义 HTTPS' : 'Custom HTTPS' }, { value: 'local', label: zh ? '本地已下载的引擎包' : 'Downloaded package' }]}/></div>
           <div className="runtime-download-settings-field"><span>{zh ? '官方更新包' : 'Official update package'}</span><Dropdown ariaLabel={zh ? '下载设置官方包' : 'Download settings official package'} value={selection.assetName ?? ''} disabled={disabled || !!preferences.error} onValueChange={chooseAsset} options={[{ value: '', label: zh ? '自动匹配当前引擎' : 'Match the current engine' }, ...(release?.assets ?? []).map(asset => ({ value: asset.name, label: core.runtimeAssetLabel(asset, zh) }))]}/></div>
+          {selection.mode !== 'local' && <p className="runtime-download-settings-hint" data-testid="runtime-download-fallback">{selection.mode === 'official' ? zh ? '检查更新和下载直接连接 GitHub；检查更新失败时再试国内镜像。' : 'Update checks and downloads go to GitHub; update checks retry through the mirror if GitHub fails.' : zh ? '检查更新和下载优先走镜像，镜像失败时自动改用 GitHub。无论来源，都按官方 SHA256 和签名清单校验。' : 'Update checks and downloads use the mirror first and fall back to GitHub. Every source is verified against the official SHA-256 and signed feed.'}</p>}
           {!selection.assetName && <p className={automatic.isError || automatic.isSuccess && !automaticAsset ? 'runtime-download-settings-validation' : 'runtime-download-settings-hint'} role={automatic.isError || automatic.isSuccess && !automaticAsset ? 'alert' : 'status'}>{automaticAsset ? `${zh ? '自动匹配' : 'Auto matched'} · ${core.runtimeAssetLabel(automaticAsset, zh)}` : automatic.isError ? zh ? '自动匹配失败，请手动选择包。' : 'Automatic matching failed; select a package manually.' : automatic.isSuccess ? zh ? '包信息已变化，请检查更新或手动选择包。' : 'Package details changed; check for updates or select a package.' : runtime && release?.assets.length ? zh ? '正在匹配当前引擎…' : 'Matching the current engine…' : zh ? '可手动选择更新包。' : 'Select a package manually.'}</p>}
           {!release && <p role="status" className="runtime-download-settings-hint">{releaseLoading ? zh ? '正在读取发布信息…' : 'Loading release information…' : zh ? '请先检查更新。' : 'Check for updates first.'}</p>}
           {!!release && !release.assets.length && <p className="runtime-download-settings-hint">{zh ? '当前平台暂无可安装的引擎包。' : 'No installable engine package is available for this platform.'}</p>}

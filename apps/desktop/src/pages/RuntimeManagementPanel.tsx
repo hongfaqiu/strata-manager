@@ -26,7 +26,7 @@ const labels = {
     notes: '更新日志', published: '发布于', upstream: '官方发布', update: '更新至', install: '安装 Strata', noRuntime: '未安装',
     updating: '正在更新', completed: '更新完成', ready: '已安装', repair: '需要修复', failed: '更新失败',
     localPackage: '使用本地安装包', localPackageChecking: '正在读取发布信息…',
-    package: '更新包', automaticPackage: '自动匹配当前环境', latestInstalled: '已是最新版本', pinnedNotice: '已固定在 {version}，不提示更新', noPackage: '当前平台暂无更新包', cancel: '取消更新', logs: '下载与安装日志',
+    package: '更新包', automaticPackage: '自动匹配当前环境', latestInstalled: '已是最新版本', unconfirmed: '暂时无法确认', pinnedNotice: '已固定在 {version}，不提示更新', noPackage: '当前平台暂无更新包', cancel: '取消更新', logs: '下载与安装日志',
     trialFailed: '新引擎试启动未通过，已自动回滚', trialRestored: '已恢复原版本 {version}，模型与配置未改动，可继续使用。', trialUndone: '已撤销本次安装，模型与配置未改动。', trialReason: '原因',
   },
   en: {
@@ -34,7 +34,7 @@ const labels = {
     notes: 'Release notes', published: 'Published', upstream: 'Official release', update: 'Update to', install: 'Install Strata', noRuntime: 'Not installed',
     updating: 'Updating', completed: 'Update complete', ready: 'Installed', repair: 'Needs repair', failed: 'Update failed',
     localPackage: 'Install from local package', localPackageChecking: 'Loading release information…',
-    package: 'Update package', automaticPackage: 'Match the current runtime', latestInstalled: 'Up to date', pinnedNotice: 'Pinned to {version}; updates are not offered', noPackage: 'No package for this platform', cancel: 'Cancel update', logs: 'Download and installation logs',
+    package: 'Update package', automaticPackage: 'Match the current runtime', latestInstalled: 'Up to date', unconfirmed: 'Not confirmed yet', pinnedNotice: 'Pinned to {version}; updates are not offered', noPackage: 'No package for this platform', cancel: 'Cancel update', logs: 'Download and installation logs',
     trialFailed: 'The new engine failed its trial start and was rolled back', trialRestored: 'Version {version} was restored; models and settings are unchanged and ready to use.', trialUndone: 'This installation was undone; models and settings are unchanged.', trialReason: 'Reason',
   },
 } as const;
@@ -154,7 +154,7 @@ export function RuntimeManagementPanel({ language, desktop, onInstall, selectedR
   return <Panel title={text.title} className="runtime-management">
     <div className="runtime-version-grid">
       <div><span>{text.current}</span><strong>{runtimes.map(runtime => runtime.runtimeVersion).filter(Boolean).filter((version, index, all) => all.indexOf(version) === index).join(' / ') || (installed ? text.ready : text.noRuntime)}</strong></div>
-      <div><span>{text.latest}</span><strong>{update.data?.latestVersion ?? (update.isLoading ? text.checking : text.unknown)}</strong>{installed && update.data?.latestVersion && !updateTargets.length && (pinBlocks ? <small className="runtime-pinned" data-testid="runtime-pinned">{text.pinnedNotice.replace('{version}', pin.data ?? '')}</small> : <small className="runtime-ready">{text.latestInstalled}</small>)}</div>
+      <div><span>{text.latest}</span><strong>{update.data?.error ? text.unconfirmed : update.data?.latestVersion ?? (update.isLoading ? text.checking : text.unknown)}</strong>{installed && update.data?.latestVersion && !update.data.error && !updateTargets.length && (pinBlocks ? <small className="runtime-pinned" data-testid="runtime-pinned">{text.pinnedNotice.replace('{version}', pin.data ?? '')}</small> : <small className="runtime-ready">{text.latestInstalled}</small>)}</div>
     </div>
     {(installation.error || update.error || update.data?.error) && <p className="notice error" role="alert">{core.normalizeError(installation.error ?? update.error ?? update.data?.error).message}</p>}
     <div className="actions">{!installed && onInstall && <button type="button" className="primary" onClick={onInstall}><Download size={15}/>{text.install}</button>}{!showInstallations && updateTargets.map(updateButton)}{installed && <button type="button" data-testid="runtime-local-package" disabled={operationDisabled || !desktop || !downloadPreferences.isSuccess || !!starting || !!activeTask || openingLocal} onClick={() => void openLocalPackage()}>{openingLocal ? <LoaderCircle size={15} className="spin"/> : <FolderOpen size={15}/>}{openingLocal ? text.localPackageChecking : text.localPackage}</button>}<button type="button" disabled={!desktop || checking || update.isFetching} onClick={() => void check()}>{checking || update.isFetching ? <LoaderCircle size={15} className="spin"/> : <RefreshCw size={15}/>} {text.check}</button>{update.data?.releaseUrl && <a className="runtime-release-link" href={update.data.releaseUrl} target="_blank" rel="noreferrer"><ExternalLink size={14}/>{text.upstream}</a>}{installed && updateTargets.length > 0 && !update.isLoading && !update.data?.installable && !update.data?.error && <span className="subtle">{text.noPackage}</span>}</div>

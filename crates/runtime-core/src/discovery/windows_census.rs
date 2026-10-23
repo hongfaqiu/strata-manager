@@ -9,8 +9,8 @@ use std::{
 };
 use windows_sys::Win32::{
     Foundation::{
-        CloseHandle, GetLastError, ERROR_INVALID_PARAMETER, ERROR_NO_MORE_FILES, HANDLE,
-        INVALID_HANDLE_VALUE, WAIT_OBJECT_0, WAIT_TIMEOUT,
+        CloseHandle, GetLastError, ERROR_ACCESS_DENIED, ERROR_INVALID_PARAMETER,
+        ERROR_NO_MORE_FILES, HANDLE, INVALID_HANDLE_VALUE, WAIT_OBJECT_0, WAIT_TIMEOUT,
     },
     System::{
         Diagnostics::ToolHelp::{
@@ -45,7 +45,8 @@ impl From<String> for ScanError {
 trait Census {
     type Held;
     fn snapshot(&mut self, deadline: Instant) -> Result<Vec<u32>, ScanError>;
-    fn hold(&mut self, pid: u32) -> Result<Self::Held, ScanError>;
+    /// `Ok(None)` means the PID cannot be opened (e.g. ACCESS_DENIED) and is not a serve candidate.
+    fn hold(&mut self, pid: u32) -> Result<Option<Self::Held>, ScanError>;
     fn exited(&mut self, held: &Self::Held) -> Result<bool, String>;
     fn identity(&mut self, held: &Self::Held) -> Result<(u64, PathBuf), String>;
     fn command(&mut self, held: &Self::Held) -> Result<Vec<String>, String>;
@@ -170,25 +171,46 @@ fn observe<C: Census>(
 fn scan<C: Census>(source: &mut C, deadline: Instant) -> Result<Vec<ProcessHint>, ScanError> {
     let first = snapshot(source, deadline)?;
     let mut records = Vec::with_capacity(first.len());
+    let mut skipped = HashSet::new();
     for pid in first {
         budget(deadline)?;
-        let held = source.hold(pid)?;
+        // ACCESS_DENIED (and similar) means a foreign Python we cannot inspect —
+        // skip it; do not abort the whole startup census.
+        let Some(held) = source.hold(pid)? else {
+            skipped.insert(pid);
+            continue;
+        };
         let command = observe(source, &held, deadline)?;
         records.push((pid, held, command));
     }
     let current = snapshot(source, deadline)?;
     // A new PID, or an old PID whose held generation exited and was reused,
     // requires a fresh observation. Never reuse that generation's saved argv.
+    // PIDs we already skipped as inaccessible stay skipped unless they become
+    // openable (then the census must rebuild so we never miss a serve process).
     for pid in &current {
-        let Some((_, held, _)) = records.iter().find(|(seen, _, _)| seen == pid) else {
-            return Err(ScanError::Changed);
-        };
-        if source.exited(held)? {
-            let replacement = source.hold(*pid)?;
-            if !source.exited(&replacement)? {
-                return Err(ScanError::Changed);
+        if let Some((_, held, _)) = records.iter().find(|(seen, _, _)| seen == pid) {
+            if source.exited(held)? {
+                match source.hold(*pid)? {
+                    None => {
+                        skipped.insert(*pid);
+                    }
+                    Some(replacement) if !source.exited(&replacement)? => {
+                        return Err(ScanError::Changed);
+                    }
+                    Some(_) => {}
+                }
+            }
+            continue;
+        }
+        if skipped.contains(pid) {
+            match source.hold(*pid)? {
+                None => continue,
+                Some(held) if source.exited(&held)? => continue,
+                Some(_) => return Err(ScanError::Changed),
             }
         }
+        return Err(ScanError::Changed);
     }
     let mut hints = Vec::new();
     for (pid, held, command) in records {
@@ -295,7 +317,7 @@ impl Census for Native {
         }
         Ok(pids)
     }
-    fn hold(&mut self, pid: u32) -> Result<Held, ScanError> {
+    fn hold(&mut self, pid: u32) -> Result<Option<Held>, ScanError> {
         let handle = unsafe {
             OpenProcess(
                 PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE,
@@ -305,15 +327,21 @@ impl Census for Native {
         };
         if handle.is_null() {
             // No held handle means no proven exit. Rebuild the complete census
-            // for an already-disappeared PID; access/other failures stay closed.
-            if unsafe { GetLastError() } == ERROR_INVALID_PARAMETER {
-                return Err(ScanError::Changed);
+            // for an already-disappeared PID. ACCESS_DENIED is a foreign
+            // process (e.g. LocalSystem service child) we cannot inspect — skip
+            // it rather than blocking the whole startup. Other open failures
+            // stay closed because they do not prove the PID is gone or foreign.
+            match unsafe { GetLastError() } {
+                ERROR_INVALID_PARAMETER => return Err(ScanError::Changed),
+                ERROR_ACCESS_DENIED => return Ok(None),
+                _ => {
+                    return Err(ScanError::Rejected(
+                        "无法打开 Python 进程核验身份，请检查进程权限；未自动启动".into(),
+                    ))
+                }
             }
-            return Err(ScanError::Rejected(
-                "无法打开 Python 进程核验身份，请检查进程权限；未自动启动".into(),
-            ));
         }
-        Ok(Held(handle))
+        Ok(Some(Held(handle)))
     }
     fn exited(&mut self, held: &Held) -> Result<bool, String> {
         match unsafe { WaitForSingleObject(held.0, 0) } {

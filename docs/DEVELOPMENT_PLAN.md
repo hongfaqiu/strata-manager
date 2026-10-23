@@ -10,7 +10,7 @@
 
 ## 桌面监控专项（未发布）
 
-已实现清晰双行、字号和指标自定义、双色实时折线、Windows 独立原生任务栏宿主与形态切换。源代码与隔离浏览器验证已完成；任务栏真实挂载、Explorer 重启、自动隐藏、DPI 与多屏仍是发行前独立门槛。详见[实施约定](superpowers/plans/2026-10-13-monitor-presentations.md)及[截图范围](screenshots/monitor-customization/README.md)。
+已实现条形（单行／两行，默认两行）与详细面板布局、字号和指标自定义、双色实时折线、Windows 独立原生任务栏宿主与形态切换。源代码与隔离浏览器验证已完成；任务栏真实挂载、Explorer 重启、自动隐藏、DPI 与多屏仍是发行前独立门槛。详见[实施约定](superpowers/plans/2026-10-13-monitor-presentations.md)及[截图范围](screenshots/monitor-customization/README.md)。
 
 ## 新实施顺序
 
