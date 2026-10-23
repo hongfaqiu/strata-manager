@@ -4,16 +4,19 @@ import type {
   FloatingMonitorLayout,
   FloatingMonitorMetric,
   FloatingMonitorPreferences,
+  FloatingMonitorShortcut,
   ResolvedFloatingMonitorPreferences,
   TaskbarWidgetColorItem,
   TaskbarWidgetItem,
   TaskbarWidgetPreferences,
   TaskbarWidgetRing,
+  TaskbarWidgetRows,
 } from './types';
 
 /** Canonical order; must match TaskbarWidget ITEMS in the Rust host. */
 export const TASKBAR_WIDGET_ITEMS: readonly TaskbarWidgetItem[] = ['generation', 'prefill', 'gpu', 'vram', 'temperature', 'status'];
 export const TASKBAR_WIDGET_RINGS: readonly TaskbarWidgetRing[] = ['gpu', 'vram', 'context', 'off'];
+export const TASKBAR_WIDGET_ROWS: readonly TaskbarWidgetRows[] = ['auto', 'single', 'double'];
 export const TASKBAR_WIDGET_DEFAULTS: TaskbarWidgetPreferences = { ring: 'gpu', items: ['generation', 'prefill'] };
 
 /** Same order as COLOR_ITEMS in taskbar_widget.rs. */
@@ -79,7 +82,8 @@ export function normalizeTaskbarWidgetPreferences(value?: unknown): TaskbarWidge
   let ring = TASKBAR_WIDGET_RINGS.find(candidate => candidate === source.ring) ?? TASKBAR_WIDGET_DEFAULTS.ring;
   if (ring === 'off' && items.length === 0) ring = 'gpu';
   const colors = normalizeTaskbarColors(source.colors);
-  return colors ? { ring, items, colors } : { ring, items };
+  const rows = source.rows === 'single' || source.rows === 'double' ? source.rows : undefined;
+  return { ring, items, ...(colors ? { colors } : {}), ...(rows ? { rows } : {}) };
 }
 
 /** Toggle one item, refusing to leave the widget with nothing to show. Colours are kept. */
@@ -163,6 +167,18 @@ export const FLOATING_MONITOR_DEFAULTS: ResolvedFloatingMonitorPreferences = {
   taskbar: TASKBAR_WIDGET_DEFAULTS,
 };
 
+/**
+ * Global show/hide shortcut presets (same list as monitor_shortcut::PRESETS).
+ * Alt+A (WeChat) and Ctrl+Alt+A (QQ) are screenshot keys, so they are never offered.
+ */
+export const FLOATING_MONITOR_SHORTCUTS: readonly FloatingMonitorShortcut[] = ['Ctrl+Alt+M', 'Ctrl+Alt+K', 'Ctrl+Shift+M', ''];
+export const FLOATING_MONITOR_DEFAULT_SHORTCUT: FloatingMonitorShortcut = 'Ctrl+Alt+M';
+
+/** Saved shortcut → effective one: missing or unknown → default, `''` → off. */
+export function resolveFloatingMonitorShortcut(value?: unknown): FloatingMonitorShortcut {
+  return FLOATING_MONITOR_SHORTCUTS.find(shortcut => shortcut === value) ?? FLOATING_MONITOR_DEFAULT_SHORTCUT;
+}
+
 const validMetrics = new Set<string>(FLOATING_MONITOR_METRICS.map(metric => metric.id));
 const validActions = new Set<string>([
   'main', 'chat', 'monitoring', 'usage', 'tasks', 'quickBenchmark', 'copyApiUrl', 'refresh', 'pause', 'pin',
@@ -221,6 +237,8 @@ export function normalizeFloatingMonitorPreferences(value?: unknown): ResolvedFl
     mode: 'floating',
     taskbarEnabled: source.taskbarEnabled === true,
     taskbar: normalizeTaskbarWidgetPreferences(source.taskbar),
+    // Kept only once the user picked one, so older settings keep the default.
+    ...(typeof source.shortcut === 'string' ? { shortcut: resolveFloatingMonitorShortcut(source.shortcut) } : {}),
   };
 }
 

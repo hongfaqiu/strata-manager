@@ -27,9 +27,10 @@ import { AboutPage } from './OfficialAbout';
 import { AppLayout, Sidebar } from './layouts/AppLayout';
 import { WorkspaceLayout } from './layouts/WorkspaceLayout';
 import { ServiceTelemetryStatusBar } from './layouts/ServiceTelemetryStatusBar';
-import { normalizeFloatingMonitorPreferences, openFloatingMonitor, readMonitorModeStatus, setMonitorVisibility, type MonitorModeStatus, type MonitorDestination } from './floatingMonitor';
+import { normalizeFloatingMonitorPreferences, openFloatingMonitor, readMonitorModeStatus, readMonitorShortcutStatus, setMonitorVisibility, type MonitorModeStatus, type MonitorDestination } from './floatingMonitor';
 import { FloatingMonitorSettings } from './pages/FloatingMonitorSettings';
 import { TaskbarMonitorSettings } from './pages/TaskbarMonitorSettings';
+import { MonitorShortcutSettings } from './pages/MonitorShortcutSettings';
 import type { LocalSetupProgress } from './pages/LocalSetupPage';
 import { DesktopLifecycleSettings } from './pages/DesktopLifecycleSettings';
 import { useAppUpdates } from './useAppUpdates';
@@ -137,6 +138,7 @@ export function App() {
   const [monitorModeStatus, setMonitorModeStatus] = useState<MonitorModeStatus>();
   const monitorModeRevision = useRef(0);
   const monitorSettingsChange = useRef<(patch: Partial<core.FloatingMonitorPreferences>) => void>(() => {});
+  const monitorShortcut = useRef<() => Promise<void>>(async () => {});
   const configurationSave = useRef<SaveDraft | undefined>(undefined);
   const registerConfigurationSave = useCallback((save: SaveDraft | undefined) => { configurationSave.current = save; }, []);
   const connectionSave = useRef<SaveDraft | undefined>(undefined);
@@ -493,6 +495,7 @@ export function App() {
     void import('@tauri-apps/api/event').then(async ({ listen }) => {
       for (const stop of await Promise.all([
         listen<Partial<core.FloatingMonitorPreferences>>('monitor-preferences-patch', event => { if (!disposed) monitorSettingsChange.current(event.payload); }),
+        listen('monitor-shortcut', () => { if (!disposed) void monitorShortcut.current().catch(error => notify(errorText(error), true)); }),
         listen<MonitorModeStatus>('monitor-mode-status', event => {
           if (!disposed) {
             monitorModeRevision.current++;
@@ -972,6 +975,17 @@ export function App() {
     if (status.visible === true || status.active) monitorSettingsChange.current({ mode: status.mode });
     if ((status.visible ?? status.active) !== visible) throw new Error(status.message || 'Monitor visibility could not be changed');
   };
+  // Global shortcut: hide whatever is showing, or show the monitor the user
+  // uses (taskbar widget when switched on, else the strip). Saved settings stay.
+  monitorShortcut.current = async () => {
+    const preferences = normalizeFloatingMonitorPreferences(latestSettings.current.floatingMonitor);
+    const current = await readMonitorModeStatus();
+    const visible = current.visible ?? current.active;
+    const mode = preferences.taskbarEnabled && current.supported ? 'taskbar' : 'floating';
+    const status = await setMonitorVisibility(!visible, mode, preferences, latestSettings.current.language);
+    monitorModeRevision.current++;
+    setMonitorModeStatus(status);
+  };
   const changeTaskbarMonitor = async (enabled: boolean) => {
     const preferences = { ...normalizeFloatingMonitorPreferences(latestSettings.current.floatingMonitor), taskbarEnabled: enabled };
     changeSettings({ floatingMonitor: preferences });
@@ -1004,6 +1018,7 @@ export function App() {
   const MonitorSettingsPage = () => <><Header title={t('monitorSettings')} /><div className="settings-layout settings-layout--single">
     <Panel title={t('monitorRefresh')}><Field label={t('pollInterval')}><Dropdown ariaLabel={t('pollInterval')} value={String(settings.pollInterval)} onValueChange={value => changeSettings({pollInterval:Number(value)})} options={[2000,3000,5000,10000,30000].map(value => ({value:String(value),label:`${value/1000} ${t('seconds')}`}))} /></Field></Panel>
     {!serverMode && <TaskbarMonitorSettings enabled={normalizeFloatingMonitorPreferences(settings.floatingMonitor).taskbarEnabled} widget={normalizeFloatingMonitorPreferences(settings.floatingMonitor).taskbar} desktop={desktop} language={settings.language} modeStatus={monitorModeStatus} onWidgetChange={taskbar => changeSettings({floatingMonitor:{...normalizeFloatingMonitorPreferences(settings.floatingMonitor), taskbar}})} onEnabledChange={changeTaskbarMonitor}/>}
+    {!serverMode && <MonitorShortcutSettings value={normalizeFloatingMonitorPreferences(settings.floatingMonitor).shortcut} desktop={desktop} language={settings.language} readStatus={readMonitorShortcutStatus} onChange={shortcut => changeSettings({floatingMonitor:{...normalizeFloatingMonitorPreferences(settings.floatingMonitor), shortcut}})}/>}
     {!serverMode && <FloatingMonitorSettings preferences={normalizeFloatingMonitorPreferences(settings.floatingMonitor)} desktop={desktop} language={settings.language} onChange={floatingMonitor => changeSettings({floatingMonitor})} modeStatus={monitorModeStatus} onVisibilityChange={changeMonitorVisibility} onOpen={() => {void changeMonitorVisibility(true).catch(error => notify(errorText(error), true));}}/>}
   </div></>;
   const ChatDefaultsPage = () => <><Header title={t('chatDefaults')} /><div className="settings-layout">

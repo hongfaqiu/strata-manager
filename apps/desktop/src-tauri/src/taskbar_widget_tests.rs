@@ -804,6 +804,8 @@ fn widget_preview_export() {
             busy(),
         ),
         ("single-generation", prefs("gpu", &["generation"]), busy()),
+        ("one-row-all", rows("gpu", &ITEMS, "single"), busy()),
+        ("two-rows-all", rows("gpu", &ITEMS, "double"), busy()),
         (
             "no-ring-status",
             prefs("off", &["generation", "vram", "status"]),
@@ -997,11 +999,15 @@ fn native_menu_model_has_unique_ids_contiguous_radios_and_every_ring() {
                 _ => None,
             })
             .collect();
+        let rings: Vec<_> = radios.iter().filter(|r| r.0 < MENU_ROWS).copied().collect();
         assert_eq!(
-            radios.iter().map(|r| r.0).collect::<Vec<_>>(),
+            rings.iter().map(|r| r.0).collect::<Vec<_>>(),
             (200..200 + RINGS.len() as u32).collect::<Vec<_>>()
         );
-        assert_eq!(radios.iter().filter(|r| r.2).count(), 1);
+        assert_eq!(rings.iter().filter(|r| r.2).count(), 1);
+        // Each group gets its own contiguous CheckMenuRadioItem range.
+        assert_eq!(radio_groups(custom), vec![(200, 203, 202), (300, 302, 300)]);
+        let radios = rings;
         assert!(radios[2].2, "context ring is checked");
         assert_eq!(
             radios[2].1,
@@ -1011,12 +1017,177 @@ fn native_menu_model_has_unique_ids_contiguous_radios_and_every_ring() {
                 "上下文占用"
             }
         );
-        // Every id except the already-checked ring maps back to an action.
+        // Every id except the already-checked radios maps back to an action.
         let current = prefs("context", &["generation"]);
         for (id, checked) in all {
-            if !(checked && (200..300).contains(&id)) {
+            if !(checked && (MENU_RING..MENU_ROWS + 100).contains(&id)) {
                 assert_ne!(apply(&current, id), MenuAction::Nothing, "{id}");
             }
         }
     }
+}
+
+fn rows(ring: &str, items: &[&str], rows: &str) -> WidgetPrefs {
+    WidgetPrefs::normalize(&json!({"ring":ring,"items":items,"rows":rows}))
+}
+
+#[test]
+fn rows_default_to_auto_and_unknown_values_fall_back() {
+    assert_eq!(WidgetPrefs::default().rows, "auto");
+    assert_eq!(prefs("gpu", &["generation"]).rows, "auto");
+    assert_eq!(rows("gpu", &["generation"], "single").rows, "single");
+    assert_eq!(rows("gpu", &["generation"], "triple").rows, "auto");
+    assert!(rows("gpu", &["generation"], "double").valid());
+    // Settings written before the option existed still load.
+    let old: WidgetPrefs =
+        serde_json::from_value(json!({"ring":"gpu","items":["generation"]})).unwrap();
+    assert_eq!(old.rows, "auto");
+}
+
+#[test]
+fn auto_uses_one_row_only_on_a_short_taskbar() {
+    let auto = WidgetPrefs::default();
+    // Default Windows 11 taskbar (48 px) at 100 % and 150 %: two rows.
+    assert!(!auto.single_row(96, 48));
+    assert!(!auto.single_row(144, 72));
+    // Small-icon taskbars (32 px logical): one row.
+    assert!(auto.single_row(96, 32));
+    assert!(auto.single_row(144, 48));
+    assert!(rows("gpu", &["gpu"], "single").single_row(96, 48));
+    assert!(!rows("gpu", &["gpu"], "double").single_row(96, 32));
+}
+
+fn text_spans(layout: &Layout) -> Vec<(i32, i32, i32, i32, String)> {
+    layout
+        .ops
+        .iter()
+        .filter_map(|op| match op {
+            Op::Text {
+                left,
+                top,
+                right,
+                bottom,
+                text,
+                ..
+            } => Some((*left, *top, *right, *bottom, text.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn single_row_drops_captions_and_keeps_every_value_inside_the_strip() {
+    let all = rows("gpu", &ITEMS, "single");
+    for (dpi, bar) in [(96, 48), (96, 32), (120, 40), (144, 72), (144, 48)] {
+        let layout = layout(&all, false, dpi, bar, &busy(), &Palette::new(true));
+        let spans = text_spans(&layout);
+        let words: Vec<&str> = spans.iter().map(|span| span.4.as_str()).collect();
+        assert_eq!(
+            words,
+            vec![
+                "76",
+                "21.3",
+                "t/s",
+                "3.2k",
+                "t/s",
+                "76",
+                "%",
+                "19.8",
+                "GB",
+                "52",
+                "℃",
+                "运行中"
+            ],
+            "{dpi}/{bar}"
+        );
+        for (left, top, right, bottom, text) in &spans {
+            assert!(
+                *left >= 0 && *right <= layout.width,
+                "{text} x at {dpi}/{bar}"
+            );
+            assert!(
+                *top >= 0 && *bottom <= layout.height,
+                "{text} y at {dpi}/{bar}"
+            );
+        }
+        // One line: every value shares the same vertical band (the ring label aside).
+        let tops: Vec<i32> = spans[1..].iter().map(|span| span.1).collect();
+        assert!(tops.iter().all(|top| *top == tops[0]), "{tops:?}");
+        // Columns never overlap: left edges grow strictly.
+        let lefts: Vec<i32> = spans[1..].iter().map(|span| span.0).collect();
+        assert!(lefts.windows(2).all(|pair| pair[0] < pair[1]), "{lefts:?}");
+    }
+    assert_eq!(
+        glyphs(&layout(&all, false, 96, 32, &busy(), &Palette::new(true))).len(),
+        2
+    );
+}
+
+#[test]
+fn single_row_widths_for_typical_sets() {
+    // Widths at 100 % on a small (32 px) taskbar. Two rows are measured on the
+    // default 48 px bar for comparison; the strip sits left of the tray.
+    let sets: [(&str, &[&str], i32); 4] = [
+        ("gpu", &["generation", "prefill"], 125),
+        ("gpu", &["generation", "prefill", "gpu"], 160),
+        (
+            "vram",
+            &["generation", "prefill", "gpu", "temperature"],
+            195,
+        ),
+        ("gpu", &ITEMS, 270),
+    ];
+    for (ring, items, limit) in sets {
+        let single = size(&rows(ring, items, "single"), false, 96, 32);
+        assert!(single.0 <= limit, "{items:?}: {} > {limit}", single.0);
+        assert_eq!(single.1, 28);
+        let english = size(&rows(ring, items, "single"), true, 96, 32).0;
+        assert!(english <= limit + 20, "{items:?} en {english}");
+        // Scales with DPI rather than growing extra slack.
+        let scaled = size(&rows(ring, items, "single"), false, 144, 48).0 as f32;
+        assert!(
+            (scaled - single.0 as f32 * 1.5).abs() <= 8.0,
+            "{items:?} {scaled}"
+        );
+    }
+}
+
+#[test]
+fn rows_menu_switches_and_keeps_everything_else() {
+    let start =
+        WidgetPrefs::normalize(&json!({"ring":"vram","items":["gpu"],"colors":{"gpu":"#112233"}}));
+    let entries = menu(&start, false, true);
+    let MenuEntry::Submenu {
+        entries: custom, ..
+    } = &entries[1]
+    else {
+        panic!("customize submenu")
+    };
+    let radios: Vec<(u32, &str, bool)> = custom
+        .iter()
+        .filter_map(|entry| match entry {
+            MenuEntry::Radio { id, label, checked } if *id >= MENU_ROWS => {
+                Some((*id, label.as_str(), *checked))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        radios,
+        vec![
+            (300, "自动（按任务栏高度）", true),
+            (301, "单行", false),
+            (302, "两行", false)
+        ]
+    );
+    let MenuAction::Update(next) = apply(&start, 301) else {
+        panic!("one row")
+    };
+    assert_eq!(next.rows, "single");
+    assert_eq!(
+        (next.ring.as_str(), next.items.clone(), next.colors.clone()),
+        ("vram", start.items.clone(), start.colors.clone())
+    );
+    assert_eq!(apply(&next, 301), MenuAction::Nothing);
+    assert_eq!(apply(&next, 303), MenuAction::Nothing);
 }

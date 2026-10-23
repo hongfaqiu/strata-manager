@@ -62,13 +62,19 @@ test('context ring is offered in settings, menu and core with the same order', (
 });
 
 test('settings preview stacks both speeds with the native glyph outlines', () => {
-  assert.match(page, /stacked = widget\.items\.includes\('generation'\) && widget\.items\.includes\('prefill'\)/);
+  assert.match(page, /stacked = !single && widget\.items\.includes\('generation'\) && widget\.items\.includes\('prefill'\)/);
   const outline = name => {
     const body = native.slice(native.indexOf(`Glyph::${name} => &[`), native.indexOf(']', native.indexOf(`Glyph::${name} => &[`)));
     return [...body.matchAll(/\((-?[\d.]+), (-?[\d.]+)\)/g)].map(m => `${Number(m[1])},${Number(m[2])}`).join(' ');
   };
   assert.ok(page.includes(`generation: '${outline('Spark')}'`), outline('Spark'));
   assert.ok(page.includes(`prefill: '${outline('Arrow')}'`), outline('Arrow'));
+});
+
+test('text rows setting offers auto, one and two rows and the one-row preview drops captions', () => {
+  assert.match(page, /single = widget\.rows === 'single'/);
+  for (const label of ['文字行数', '自动', '单行', '两行']) assert.ok(page.includes(`'${label}'`), label);
+  assert.match(native, /ROWS: \[&str; 3\] = \["auto", "single", "double"\]/);
 });
 
 test('right-click menu is a crisp native Win32 popup owned by a foreground-capable window', () => {
@@ -85,4 +91,16 @@ test('right-click menu is a crisp native Win32 popup owned by a foreground-capab
   assert.match(host, /AppendMenuW\(menu, MF_POPUP/);
   assert.match(host, /CheckMenuRadioItem/);
   assert.match(host, /menu\(menu_owner, &render\)/);
+});
+
+test('global show/hide shortcut avoids WeChat/QQ screenshot keys and stays in sync with the native registry', () => {
+  const ui = readFileSync(new URL('./MonitorShortcutSettings.tsx', import.meta.url), 'utf8');
+  const rust = readFileSync(new URL('../../src-tauri/src/monitor_shortcut.rs', import.meta.url), 'utf8');
+  const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+  assert.match(rust, /DEFAULT: &str = "Ctrl\+Alt\+M"/);
+  assert.match(rust, /PRESETS: \[&str; 4\] = \["Ctrl\+Alt\+M", "Ctrl\+Alt\+K", "Ctrl\+Shift\+M", ""\]/);
+  assert.match(ui, /避开微信截图 Alt\+A 和 QQ 截图 Ctrl\+Alt\+A/);
+  assert.match(ui, /role="alert"/);
+  assert.match(app, /listen\('monitor-shortcut'/);
+  assert.match(app, /preferences\.taskbarEnabled && current\.supported \? 'taskbar' : 'floating'/);
 });

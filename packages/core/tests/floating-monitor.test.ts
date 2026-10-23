@@ -17,6 +17,8 @@ import {
   withoutRetiredFloatingMonitorKeys,
   TASKBAR_WIDGET_COLOR_PRESETS,
   TASKBAR_WIDGET_PALETTE,
+  FLOATING_MONITOR_SHORTCUTS,
+  resolveFloatingMonitorShortcut,
 } from '../src/floating-monitor';
 import type { FloatingMonitorMetric, FloatingMonitorPreferences } from '../src/types';
 
@@ -367,6 +369,28 @@ describe('taskbar widget preferences', () => {
     expect(normalizeTaskbarWidgetPreferences({ ring: 'context', items: ['generation'] })).toEqual({ ring: 'context', items: ['generation'] });
     expect(normalizeTaskbarWidgetPreferences({ ring: 'context', items: [], colors: { context: '#3B82F6' } }))
       .toEqual({ ring: 'context', items: [], colors: { context: '#3b82f6' } });
+  });
+
+  it('keeps the taskbar row mode only when it is one or two rows', () => {
+    expect(normalizeTaskbarWidgetPreferences({ ring: 'gpu', items: ['gpu'], rows: 'single' })).toEqual({ ring: 'gpu', items: ['gpu'], rows: 'single' });
+    expect(normalizeTaskbarWidgetPreferences({ ring: 'gpu', items: ['gpu'], rows: 'double' }).rows).toBe('double');
+    // auto is the default and is not stored, matching the native serialisation.
+    expect(normalizeTaskbarWidgetPreferences({ ring: 'gpu', items: ['gpu'], rows: 'auto' })).toEqual({ ring: 'gpu', items: ['gpu'] });
+    expect(normalizeTaskbarWidgetPreferences({ ring: 'gpu', items: ['gpu'], rows: 3 })).toEqual({ ring: 'gpu', items: ['gpu'] });
+    expect(normalizeFloatingMonitorPreferences({ taskbar: { ring: 'vram', items: ['gpu'], rows: 'single' } }).taskbar.rows).toBe('single');
+  });
+
+  it('resolves the global shortcut away from WeChat/QQ screenshot keys', () => {
+    expect(resolveFloatingMonitorShortcut(undefined)).toBe('Ctrl+Alt+M');
+    expect(resolveFloatingMonitorShortcut('')).toBe('');
+    expect(resolveFloatingMonitorShortcut('Ctrl+Shift+M')).toBe('Ctrl+Shift+M');
+    for (const taken of ['Alt+A', 'Ctrl+Alt+A']) {
+      expect(FLOATING_MONITOR_SHORTCUTS).not.toContain(taken);
+      expect(resolveFloatingMonitorShortcut(taken)).toBe('Ctrl+Alt+M');
+    }
+    expect(normalizeFloatingMonitorPreferences()).not.toHaveProperty('shortcut');
+    expect(normalizeFloatingMonitorPreferences({ shortcut: '' }).shortcut).toBe('');
+    expect(normalizeFloatingMonitorPreferences({ shortcut: 'Alt+A' }).shortcut).toBe('Ctrl+Alt+M');
   });
 
   it('toggles items in canonical order and keeps at least one element', () => {

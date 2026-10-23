@@ -43,6 +43,7 @@ export interface MonitorModeStatus { mode: FloatingMonitorMode; supported: boole
 export const setMonitorMode = (mode: FloatingMonitorMode, preferences: FloatingMonitorPreferences, language: AppLanguage = 'zh-CN'): Promise<MonitorModeStatus> => invoke('set_monitor_mode', { mode, preferences: { ...preferences, language } });
 
 export const readMonitorModeStatus = (): Promise<MonitorModeStatus> => invoke('monitor_mode_status');
+export const readMonitorShortcutStatus = (): Promise<{ shortcut: string; active: boolean; message: string }> => invoke('monitor_shortcut_status');
 export const setMonitorVisibility = (visible: boolean, mode: FloatingMonitorMode, preferences: FloatingMonitorPreferences, language: AppLanguage = 'zh-CN'): Promise<MonitorModeStatus> => invoke('set_monitor_visibility', { visible, mode, preferences: { ...preferences, language } });
 // The strip's "收起到任务栏监控": the taskbar widget replaces it and is remembered for the next launch.
 export const moveMonitorToTaskbar = (preferences: FloatingMonitorPreferences, language: AppLanguage = 'zh-CN'): Promise<MonitorModeStatus> => invoke('move_monitor_to_taskbar', { preferences: { ...preferences, language } });

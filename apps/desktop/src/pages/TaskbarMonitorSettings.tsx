@@ -5,7 +5,7 @@ import { LoaderCircle } from 'lucide-react';
 import {
   TASKBAR_WIDGET_COLOR_ITEMS, TASKBAR_WIDGET_COLOR_PRESETS, TASKBAR_WIDGET_ITEMS, TASKBAR_WIDGET_PALETTE,
   lowContrastTaskbars, normalizeTaskbarWidgetPreferences, setTaskbarWidgetColor, toggleTaskbarWidgetItem,
-  type TaskbarWidgetColorItem, type TaskbarWidgetItem, type TaskbarWidgetPreferences, type TaskbarWidgetRing,
+  type TaskbarWidgetColorItem, type TaskbarWidgetItem, type TaskbarWidgetPreferences, type TaskbarWidgetRing, type TaskbarWidgetRows,
 } from '@strata-manager/core';
 import { Panel } from '../components';
 import { Checkbox, Segmented, Toggle } from '../OfficialControls';
@@ -53,14 +53,17 @@ function Glyph({ item }: { item: 'generation' | 'prefill' }) {
 export function TaskbarWidgetPreview({ widget, language }: { widget: TaskbarWidgetPreferences; language: AppLanguage }) {
   const copy = language === 'zh-CN' ? 'zh-CN' : 'en';
   const percent = widget.ring === 'off' ? 0 : RING_EXAMPLE[widget.ring];
-  // Both speeds share one stacked column (taskbar_widget::stacks_speeds).
-  const stacked = widget.items.includes('generation') && widget.items.includes('prefill');
+  // One row (taskbar_widget::single_row): no captions, speeds side by side.
+  // `auto` is previewed on the default 48 px taskbar, where it uses two rows.
+  const single = widget.rows === 'single';
+  // On two rows both speeds share one stacked column (taskbar_widget::stacks_speeds).
+  const stacked = !single && widget.items.includes('generation') && widget.items.includes('prefill');
   const showDot = !widget.items.includes('status');
   const custom = (item: TaskbarWidgetItem | TaskbarWidgetColorItem, variable: string) => {
     const color = item === 'status' ? undefined : widget.colors?.[item];
     return color ? { [variable]: color } as CSSProperties : undefined;
   };
-  return <div className="taskbar-widget-preview" aria-hidden="true">
+  return <div className="taskbar-widget-preview" data-rows={single ? 'single' : 'double'} aria-hidden="true">
     {widget.ring === 'off'
       ? showDot && <i className="taskbar-widget-preview-dot"/>
       : <span className="taskbar-widget-preview-ring" data-ring={widget.ring} style={custom(widget.ring, '--ring')}>
@@ -80,8 +83,8 @@ export function TaskbarWidgetPreview({ widget, language }: { widget: TaskbarWidg
       : <span key={item} className="taskbar-widget-preview-metric" data-item={item} style={custom(item, '--metric')}>
       {item === 'status'
         ? <b className="taskbar-widget-preview-value">{copy === 'zh-CN' ? '运行中' : 'Busy'}</b>
-        : <b className="taskbar-widget-preview-value">{EXAMPLE[item][0]}<small>{EXAMPLE[item][1]}</small></b>}
-      <em>{SHORT[copy][item]}</em>
+        : <b className="taskbar-widget-preview-value">{single && (item === 'generation' || item === 'prefill') && <Glyph item={item}/>}{EXAMPLE[item][0]}<small>{EXAMPLE[item][1]}</small></b>}
+      {!single && <em>{SHORT[copy][item]}</em>}
     </span>)}
   </div>;
 }
@@ -150,6 +153,11 @@ export function TaskbarMonitorSettings({ enabled, widget, desktop, language, mod
     { value: 'context', label: zh ? '上下文' : 'Context' },
     { value: 'off', label: zh ? '不显示' : 'None' },
   ];
+  const rowOptions: { value: TaskbarWidgetRows; label: string }[] = [
+    { value: 'auto', label: zh ? '自动' : 'Auto' },
+    { value: 'single', label: zh ? '单行' : 'One row' },
+    { value: 'double', label: zh ? '两行' : 'Two rows' },
+  ];
   const status = !desktop ? (zh ? '请在桌面应用中使用。' : 'Available in the desktop app.')
     : !supported ? (zh ? '仅支持 Windows 10 / 11 主屏任务栏。' : 'Windows 10 / 11 primary taskbar only.')
     : active ? modeStatus?.message
@@ -175,6 +183,11 @@ export function TaskbarMonitorSettings({ enabled, widget, desktop, language, mod
           <h3 id="taskbar-monitor-ring">{zh ? '圆环显示' : 'Ring shows'}</h3>
           <Segmented ariaLabel={zh ? '圆环显示' : 'Ring shows'} value={value.ring} options={ringOptions.map(option => ({ ...option, disabled: !desktop || (option.value === 'off' && value.items.length === 0) }))} onValueChange={ring => onWidgetChange(normalizeTaskbarWidgetPreferences({ ...value, ring }))}/>
           {value.ring === 'context' && <p className="taskbar-monitor-settings-hint">{zh ? '上下文占用 = 当前（空闲时为上一次）请求的输入加输出 Token ÷ 模型最大上下文；读不到时圆环留空。' : 'Context usage = input plus output tokens of the current (or, when idle, the last) request ÷ the model’s maximum context. The ring stays empty when unknown.'}</p>}
+        </section>
+        <section aria-labelledby="taskbar-monitor-rows">
+          <h3 id="taskbar-monitor-rows">{zh ? '文字行数' : 'Text rows'}</h3>
+          <Segmented ariaLabel={zh ? '文字行数' : 'Text rows'} value={value.rows ?? 'auto'} options={rowOptions.map(option => ({ ...option, disabled: !desktop }))} onValueChange={rows => onWidgetChange(normalizeTaskbarWidgetPreferences({ ...value, rows }))}/>
+          <p className="taskbar-monitor-settings-hint">{zh ? '单行更矮更紧凑：不显示指标名称，靠单位和图标区分（% 为 GPU、GB 为显存、℃ 为温度，星形为生成、箭头为预填充）。自动：小图标任务栏用单行，默认高度用两行。' : 'One row is shorter and tighter: captions are dropped and units and glyphs tell items apart (% GPU, GB VRAM, ℃ temperature, spark generation, arrow prefill). Auto uses one row on a small-icon taskbar and two rows at the default height.'}</p>
         </section>
         <section aria-labelledby="taskbar-monitor-items">
           <h3 id="taskbar-monitor-items">{zh ? '显示内容' : 'Shown items'}</h3>

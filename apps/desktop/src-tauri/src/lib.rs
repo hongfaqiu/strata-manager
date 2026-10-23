@@ -12,6 +12,7 @@ mod http;
 mod huggingface;
 mod invoke_policy;
 mod model_files;
+mod monitor_shortcut;
 mod png_export;
 mod running_service_connection;
 mod runtime_detection;
@@ -1822,6 +1823,7 @@ async fn apply_settings(
     let english =
         system_locale::uses_english_fallback(settings.get("language").and_then(Value::as_str));
     taskbar_monitor::apply_preferences(&app, &settings)?;
+    monitor_shortcut::apply(&app, &settings, english);
     floating_monitor::apply_preferences(&app, &settings).await?;
     state.tray_english.store(english, Ordering::Relaxed);
     state
@@ -1956,6 +1958,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(monitor_shortcut::plugin())
         .manage(html_preview::HtmlPreviews::default())
         .register_uri_scheme_protocol(html_preview::SCHEME, |context, request| {
             // Only the main chat webview embeds previews; other webviews get nothing.
@@ -2084,6 +2087,8 @@ pub fn run() {
             app.manage(app_updates::AppUpdateStore::default());
             app.manage(taskbar_monitor::TaskbarMonitorState::default());
             taskbar_monitor::restore_on_launch(app.handle(), &saved_settings);
+            app.manage(monitor_shortcut::ShortcutRegistry::default());
+            monitor_shortcut::apply(app.handle(), &saved_settings, english);
             let menu = Menu::with_items(
                 app,
                 &[&service_state, &show, &start, &stop, &quit, &stop_quit],
@@ -2183,6 +2188,7 @@ pub fn run() {
             arena::arena_withdraw,
             arena::arena_get,
             floating_monitor::open_monitor_window,
+            monitor_shortcut::monitor_shortcut_status,
             floating_monitor::resize_monitor_window,
             taskbar_monitor::set_monitor_mode,
             taskbar_monitor::set_monitor_visibility,

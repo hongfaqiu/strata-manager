@@ -98,9 +98,14 @@ export type TaskbarWidgetRing = 'gpu' | 'vram' | 'context' | 'off';
 /** Metrics whose taskbar colour can be overridden; the status dot stays semantic. `context` is ring-only. */
 export type TaskbarWidgetColorItem = Exclude<TaskbarWidgetItem, 'status'> | 'context';
 
+/** Text rows of the taskbar widget; `auto` uses one row on a short taskbar. */
+export type TaskbarWidgetRows = 'auto' | 'single' | 'double';
+
 export interface TaskbarWidgetPreferences {
   ring: TaskbarWidgetRing;
   items: TaskbarWidgetItem[];
+  /** Missing means `auto`. */
+  rows?: TaskbarWidgetRows;
   /** Optional `#rrggbb` per metric; missing entries follow the light/dark taskbar palette. */
   colors?: Partial<Record<TaskbarWidgetColorItem, string>>;
 }
@@ -124,7 +129,14 @@ export interface FloatingMonitorPreferences {
   /** Windows taskbar monitor (任务栏监控). Off by default. */
   taskbarEnabled?: boolean;
   taskbar?: TaskbarWidgetPreferences;
+  /**
+   * Global show/hide shortcut. Missing means the default (Ctrl+Alt+M);
+   * `''` switches it off. One of FLOATING_MONITOR_SHORTCUTS.
+   */
+  shortcut?: FloatingMonitorShortcut;
 }
+
+export type FloatingMonitorShortcut = 'Ctrl+Alt+M' | 'Ctrl+Alt+K' | 'Ctrl+Shift+M' | '';
 
 export interface ResolvedFloatingMonitorPreferences extends FloatingMonitorPreferences {
   fontSize: number;
