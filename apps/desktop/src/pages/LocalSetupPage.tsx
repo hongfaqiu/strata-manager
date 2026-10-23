@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useTranslation } from 'react-i18next';
 import { ArrowRight, Check, CircleAlert, Download, FolderOpen, LoaderCircle, RefreshCw, Search } from 'lucide-react';
 import type { LocalCandidate } from '@strata-manager/core';
+import * as core from '@strata-manager/core';
 import { StartupProgress, type StartupProgressState } from './StartupProgress';
 import './local-setup.css';
 
@@ -192,7 +193,7 @@ export function LocalSetupPage(props: LocalSetupPageProps) {
                 <span className="local-configuration-title"><strong data-tooltip={candidate.configPath}>{candidate.configPath.split(/[\\/]/).pop()}</strong>{candidateBadge(candidate) && <em>{candidateBadge(candidate)}</em>}{candidate.availability === 'repair' && <em className="needs-repair">{t('localSetupNeedsRepair')}</em>}</span>
                 {configSummary(candidate, props.language) && <span>{configSummary(candidate, props.language)}</span>}<small>{text.modified} · {modified(candidate)}</small>
               </button>)}</div></div>
-              <dl><div><dt>{t('localSetupDirectory')}</dt><dd data-tooltip={selected.installDir}>{selected.installDir}</dd></div><div><dt>{t('configPath')}</dt><dd data-tooltip={selected.configPath}>{selected.configPath}</dd></div><div><dt>{text.modified}</dt><dd>{modified(selected)}</dd></div><div><dt>{text.modelPath}</dt><dd data-tooltip={selected.modelPath}>{selected.modelPath}</dd></div><div><dt>{t('localSetupQuantization')}</dt><dd>{quantization(selected) ?? t('localSetupQuantUnknown')}</dd></div><div><dt>{t('localSetupModelSize')}</dt><dd>{formatSize(selected.modelBytes)}</dd></div>{selected.runtimeVersion && <div><dt>{t('localSetupRuntimeVersion')}</dt><dd>{selected.runtimeVersion}</dd></div>}</dl>
+              <dl><div><dt>{t('localSetupDirectory')}</dt><dd data-tooltip={selected.installDir}>{selected.installDir}</dd></div><div><dt>{t('configPath')}</dt><dd data-tooltip={selected.configPath}>{selected.configPath}</dd></div><div><dt>{text.modified}</dt><dd>{modified(selected)}</dd></div><div><dt>{text.modelPath}</dt><dd data-tooltip={selected.modelPath}>{selected.modelPath}</dd></div><div><dt>{t('localSetupQuantization')}</dt><dd>{quantization(selected) ?? t('localSetupQuantUnknown')}</dd></div><div><dt>{t('localSetupModelSize')}</dt><dd>{formatSize(selected.modelBytes)}</dd></div>{selected.runtimeVersion && <div><dt>{t('localSetupRuntimeVersion')}</dt><dd>{core.runtimeVersionLabel({ release: selected.releaseVersion, engine: selected.runtimeVersion }, props.language === 'zh-CN')}</dd></div>}</dl>
               {selected.config && <details className="local-configuration-details"><summary>{text.details}<small>{text.hidden}</small></summary><pre tabIndex={0}>{JSON.stringify(selected.config, null, 2)}</pre></details>}
               {selected.reason && <p className="local-setup-note"><CircleAlert size={15}/><span>{selected.reason}</span></p>}
               <p className="local-setup-import-hint">{selected.availability === 'repair' ? text.runtimeDetected : selected.running ? t('localSetupRunningImportHint') : text.profileHint}</p>

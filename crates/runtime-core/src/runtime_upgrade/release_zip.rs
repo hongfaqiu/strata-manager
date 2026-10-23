@@ -23,13 +23,13 @@ use std::{
 const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS runtime_zip_updates(task_id TEXT PRIMARY KEY,journal TEXT NOT NULL,updated_at INTEGER NOT NULL);";
 const MAX_SOURCE: u64 = 128 * 1024 * 1024;
 const MAX_EXPANDED: u64 = 3 * 1024 * 1024 * 1024;
-const RELEASE_MARKER: &str = ".strata-manager-release.json";
+use crate::discovery::RELEASE_MARKER;
 const OBSERVER_COMPAT: &str =
     include_str!("../../../../apps/supervisor/resources/observer_compat.json");
 
 mod download_check;
 mod download_source;
-mod engine_trial;
+pub(super) mod engine_trial;
 #[cfg(test)]
 mod local_archive_tests;
 #[cfg(test)]
@@ -83,6 +83,13 @@ struct Journal {
     running: Vec<Restart>,
     #[serde(default)]
     migrations: Vec<Migration>,
+    /// Set when the release changed Python dependencies: the runtime this
+    /// update started from, which stays unchanged while a new one is prepared.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    independent_from: Option<PathBuf>,
+    /// Private Python of the independently prepared runtime.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    prepared_python: Option<String>,
     error: Option<String>,
     updated_at: u64,
 }
@@ -397,6 +404,8 @@ fn start(
         changes: vec![],
         running: vec![],
         migrations: vec![],
+        independent_from: None,
+        prepared_python: None,
         error: None,
         updated_at: now(),
     };
@@ -446,7 +455,10 @@ fn start(
     tokio::spawn(async move {
         let _flag = flag;
         let mut j = journal;
-        let result = execute(state.clone(), &mut j).await;
+        let result = match execute(state.clone(), &mut j).await {
+            Err(error) if error == INDEPENDENT_RUNTIME => independent(state.clone(), &mut j).await,
+            other => other,
+        };
         if let Err(error) = &result {
             j.error = Some(error.clone());
             if !matches!(j.phase.as_str(), "rolledBack" | "rollbackFailed") {
@@ -488,6 +500,76 @@ fn start(
         }
     });
     Ok(status)
+}
+
+/// Internal outcome of the dependency check: the update continues in a new runtime folder.
+const INDEPENDENT_RUNTIME: &str = "此Release改变了Python依赖，需要独立运行环境";
+
+/// Turns the in-place update into a new runtime: the release is installed into
+/// a fresh Manager-owned folder with its own private Python and pinned
+/// dependencies (the downloaded archives are reused), then every configuration
+/// is migrated to it through the verified switch. The original folder is never
+/// written to, keeps serving until the switch, and stays installed for rollback.
+async fn independent(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, String> {
+    let source = j.install_dir.clone();
+    let parent = crate::storage_location::engine_runtimes_root(&state)?;
+    let root = parent.join(format!("release-{}", uuid::Uuid::new_v4()));
+    fs::create_dir(&root).map_err(|e| e.to_string())?;
+    let root = dunce::canonicalize(&root).map_err(|e| e.to_string())?;
+    // The checked archives stay in the download cache; only the unpacked work goes.
+    let work = work_dir(&state, &j.task_id)?;
+    fs::remove_dir_all(&work).map_err(|e| e.to_string())?;
+    j.independent_from = Some(source.clone());
+    j.install_dir = root.clone();
+    j.new_install = true;
+    j.changes.clear();
+    j.running.clear();
+    j.migrations.clear();
+    progress(
+        &state,
+        j,
+        "independentRuntime",
+        &format!(
+            "第 1/3 步：此版本的 Python 依赖已变化，正在 {} 准备新的独立运行环境；原运行环境 {} 不做任何修改，当前服务继续运行",
+            root.display(),
+            source.display()
+        ),
+    )?;
+    if let Err(error) = execute(state.clone(), j).await {
+        if reject_link(&root).is_ok() {
+            let _ = fs::remove_dir_all(&root);
+        }
+        return Err(format!("新运行环境准备失败，原运行环境未改变：{error}"));
+    }
+    let python = j
+        .prepared_python
+        .clone()
+        .ok_or("新运行环境的 Python 结果缺失")?;
+    progress(
+        &state,
+        j,
+        "switchingRuntime",
+        "第 3/3 步：新运行环境已通过校验，正在迁移配置并切换；切换失败会自动恢复原运行环境",
+    )?;
+    let target = super::runtime_switch::SwitchTarget {
+        root: root.clone(),
+        python,
+    };
+    super::installed_runtimes::remember(&state, &source);
+    match super::runtime_switch::switch_profiles(state.clone(), &j.task_id, &source, &target).await {
+        Ok(summary) => {
+            super::installed_runtimes::after_switch(&state, &j.task_id, &source);
+            Ok(format!(
+                "已切换到新的独立运行环境 {}（{summary}）；原运行环境 {} 保留，可在「已安装版本」中切换回去",
+                root.display(),
+                source.display()
+            ))
+        }
+        Err(error) => Err(format!(
+            "新运行环境已准备在 {}，但切换未通过，已恢复原运行环境：{error}；新环境保留，可在「已安装版本」中重试切换或删除",
+            root.display()
+        )),
+    }
 }
 
 /// Platform whose engine layout an installed directory is read with.
@@ -564,11 +646,11 @@ fn hip_variant(build: &Value, platform: &str) -> &'static str {
 }
 
 /// Whether an installed engine type may be replaced by a package variant.
-fn variant_compatible(installed: &str, asset: &str) -> bool {
+pub(super) fn variant_compatible(installed: &str, asset: &str) -> bool {
     installed == asset || installed == HIP_MULTI && asset.starts_with("hip")
 }
 
-fn directory_variant(directory: &Path) -> Option<&'static str> {
+pub(super) fn directory_variant(directory: &Path) -> Option<&'static str> {
     directory_variant_for(directory, host_platform())
 }
 
@@ -1425,7 +1507,7 @@ fn verify_observer_source(server: &Path) -> Result<bool, String> {
     let hash = super::canonical_hash(server)?;
     Ok(reviewed_observer_hashes().contains(&hash))
 }
-fn profiles(state: &RuntimeState, root: &Path) -> Result<Vec<ServiceProfile>, String> {
+pub(super) fn profiles(state: &RuntimeState, root: &Path) -> Result<Vec<ServiceProfile>, String> {
     Ok(state
         .registered_profiles()?
         .into_iter()
@@ -2207,17 +2289,14 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
             &release_requirements,
         )
     {
-        return Err("此Release改变了Python依赖；现有Python环境保持原位。请先准备新的独立运行环境后再迁移，当前服务未停止".into());
+        return Err(INDEPENDENT_RUNTIME.into());
     }
     for profile in &associated {
         if !requirements_compatible(
             &normalized_requirements(&Path::new(&profile.install_dir).join("requirements.txt"))?,
             &release_requirements,
         ) {
-            return Err(
-                "关联服务的Python依赖与新版不同；保留其原环境，未停止服务，请先准备独立环境迁移"
-                    .into(),
-            );
+            return Err(INDEPENDENT_RUNTIME.into());
         }
         let mut target = profile.clone();
         target.install_dir = j.install_dir.to_string_lossy().into();
@@ -2420,7 +2499,11 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
                 &state,
                 j,
                 "preparingPython",
-                "运行程序已解包，正在准备独立Python环境和依赖；不会启动模型",
+                if j.independent_from.is_some() {
+                    "第 2/3 步：新运行环境的程序已校验并解包，正在准备私有 Python 和固定版本依赖；当前服务继续运行"
+                } else {
+                    "运行程序已解包，正在准备独立Python环境和依赖；不会启动模型"
+                },
             )?;
             python = Some(prepare_python(&state, j, &asset, bundled_cuda).await?);
         }
@@ -2457,7 +2540,11 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
             }
         }
         cancelled(&state, &j.task_id)?;
-        let publication=if j.new_install {
+        let publication=if j.independent_from.is_some() {
+            // An independent runtime is switched to by this task; it is not a first-run result.
+            j.prepared_python=Some(python.clone().ok_or("新安装Python结果缺失")?);
+            None
+        } else if j.new_install {
             let python=python.clone().ok_or("新安装Python结果缺失")?;
             let installation_id=uuid::Uuid::new_v4().to_string();
             let result=installation::PreparedRuntime{installation_id:installation_id.clone(),source_revision:revision.clone(),install_dir:j.install_dir.to_string_lossy().into(),python_path:python.clone(),prepared_at:now(),profile:ServiceProfile{id:format!("runtime-{installation_id}"),name:"Strata".into(),base_url:"http://127.0.0.1:18081".into(),install_dir:j.install_dir.to_string_lossy().into(),python_path:python,config_path:String::new(),managed:true}};
@@ -2897,6 +2984,8 @@ mod tests {
                 loaded: false,
             }],
             migrations: vec![],
+            independent_from: None,
+            prepared_python: None,
             error: None,
             updated_at: now(),
         };
@@ -3378,6 +3467,8 @@ mod tests {
             changes: vec![],
             running: vec![],
             migrations: vec![],
+            independent_from: None,
+            prepared_python: None,
             error: None,
             updated_at: now(),
         };
@@ -3995,6 +4086,8 @@ mod tests {
                 new: target.clone(),
                 config_sha256: installation::file_hash(&config).unwrap(),
             }],
+            independent_from: None,
+            prepared_python: None,
             error: None,
             updated_at: now(),
         };
@@ -4045,6 +4138,8 @@ mod tests {
             changes,
             running: vec![],
             migrations: vec![],
+            independent_from: None,
+            prepared_python: None,
             error: None,
             updated_at: now(),
         };
@@ -4099,6 +4194,8 @@ mod tests {
                 loaded: true,
             }],
             migrations: vec![],
+            independent_from: None,
+            prepared_python: None,
             error: None,
             updated_at: now(),
         };

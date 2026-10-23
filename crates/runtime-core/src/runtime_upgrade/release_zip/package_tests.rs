@@ -888,3 +888,23 @@ fn the_pinned_source_revision_is_a_reviewed_observer_source() {
         assert!(reviewed.contains(hash.as_str().unwrap()));
     }
 }
+
+/// Strata v0.2.3 bumps certifi and adds truststore. The installed Python keeps
+/// its packages, so the update takes the independent-runtime route instead of
+/// failing; the old runtime's requirements are never rewritten.
+#[test]
+fn strata_023_dependency_change_routes_to_an_independent_runtime() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/runtime_upgrade/fixtures");
+    let old = normalized_requirements(&dir.join("requirements-v0.2.2.txt")).unwrap();
+    let new = normalized_requirements(&dir.join("requirements-v0.2.3.txt")).unwrap();
+    assert!(!requirements_compatible(&old, &new));
+    let added: Vec<_> = new.iter().filter(|row| !old.contains(row)).collect();
+    assert_eq!(added.len(), 2, "{added:?}");
+    assert!(added
+        .iter()
+        .any(|row| row.starts_with("certifi==2026.10.19")));
+    assert!(added
+        .iter()
+        .any(|row| row.starts_with("truststore==0.10.5")));
+    assert!(!INDEPENDENT_RUNTIME.contains("请先准备"));
+}

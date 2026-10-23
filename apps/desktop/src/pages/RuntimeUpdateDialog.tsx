@@ -37,7 +37,12 @@ export function RuntimeUpdateDialog({ language, runtime, release, assetName, ini
   const notes = releaseNotes(release.notes);
   const version = release.latestVersion ?? release.supportedVersion;
   const releaseKey = JSON.stringify([version, release.sourceRevision, release.assets.map(asset => [asset.name, asset.sha256, asset.url])]);
-  const direction = targetVersion ? core.runtimeVersionDirection(runtime.runtimeVersion, targetVersion) : undefined;
+  // Release against release: the folder's engine number (0.1.47) is not a release (v0.2.2).
+  const releaseList = useQuery({ queryKey: ['runtime-release-versions'], queryFn: () => core.runtimeReleaseVersions(), enabled: false }).data?.versions;
+  const installedRelease = core.runtimeReleaseOf(runtime, releaseList);
+  const installedLabel = core.runtimeVersionLabel({ release: installedRelease, engine: runtime.runtimeVersion }, zh) || '—';
+  const targetLabel = core.runtimeVersionLabel({ release: version, engine: core.releaseEngineVersion(release) }, zh);
+  const direction = targetVersion ? core.runtimeVersionDirection(installedRelease, targetVersion) : undefined;
   const automatic = useQuery({ queryKey: ['runtime-download-asset', runtime.installDir, releaseKey, targetVersion ?? ''], queryFn: () => core.resolveRuntimeZipAsset(runtime.installDir, undefined, targetVersion), enabled: core.isDesktop() && !!release.assets.length, retry: false });
   const automaticAsset = automatic.isSuccess ? release.assets.find(asset => asset.name === automatic.data?.name && asset.url === automatic.data?.url && asset.sha256 === automatic.data?.sha256) : undefined;
   const matchReason = automaticAsset && automatic.data?.matchReason ? core.runtimeBilingualText(automatic.data.matchReason, zh) : '';
@@ -112,9 +117,9 @@ export function RuntimeUpdateDialog({ language, runtime, release, assetName, ini
   return <Dialog title={title} wide onClose={dismiss}>
     <div className="runtime-update-dialog">
       <p className="runtime-update-release-name">{release.releaseName || `Strata ${version}`}</p>
-      <dl className="runtime-update-details"><div><dt>{zh ? '本机版本' : 'Installed version'}</dt><dd>{runtime.runtimeVersion ?? '—'}</dd></div><div><dt>{targetVersion ? zh ? '切换到' : 'Switch to' : zh ? '更新至' : 'Update to'}</dt><dd>{version}</dd></div></dl>
+      <dl className="runtime-update-details"><div><dt>{zh ? '本机' : 'Installed'}</dt><dd data-testid="runtime-update-installed">{installedLabel}</dd></div><div><dt>{targetVersion ? zh ? '切换到' : 'Switch to' : zh ? '更新至' : 'Update to'}</dt><dd data-testid="runtime-update-target">{targetLabel}</dd></div></dl>
       <code className="runtime-update-directory">{runtime.installDir}</code>
-      {direction === 'downgrade' && <div className="notice warning runtime-downgrade-warning" role="status" data-testid="runtime-downgrade-warning"><strong>{zh ? `这是降级：${runtime.runtimeVersion ?? '—'} → ${version}` : `This is a downgrade: ${runtime.runtimeVersion ?? '—'} → ${version}`}</strong><p>{zh ? '旧版引擎可能不支持新版本才有的模型、量化或参数，相关模型可能无法启动。模型文件和配置不会被删除；需要时可以在这里再升级回来。若两个版本的 Python 依赖不同，会拒绝安装并保持当前版本。' : 'An older engine may not support models, quantizations or options added later, so some models may not start. Model files and configurations are kept, and you can upgrade again here. If the two versions need different Python packages, the install is refused and the current version stays.'}</p></div>}
+      {direction === 'downgrade' && <div className="notice warning runtime-downgrade-warning" role="status" data-testid="runtime-downgrade-warning"><strong>{zh ? `这是降级：${installedLabel} → ${targetLabel}` : `This is a downgrade: ${installedLabel} → ${targetLabel}`}</strong><p>{zh ? '旧版引擎可能不支持新版本才有的模型、量化或参数，相关模型可能无法启动。模型文件和配置不会被删除；需要时可以在这里再升级回来。若两个版本的 Python 依赖不同，会在 Manager 的存储位置另建独立运行环境并迁移配置，原版本保留，可随时切换回去。' : 'An older engine may not support models, quantizations or options added later, so some models may not start. Model files and configurations are kept, and you can upgrade again here. If the two versions need different Python packages, a separate runtime is prepared in Manager’s storage and the configurations are moved to it; the current version stays installed so you can switch back.'}</p></div>}
       {localEntry && <p className="runtime-update-download-hint" data-testid="runtime-local-entry-hint">{zh ? `选择本机已下载的 Strata ${version} 官方引擎包（tar.gz 或旧版 ZIP），可更新到该版本或重装当前版本。安装前按官方 SHA256 校验，不匹配不会安装。` : `Choose a downloaded official Strata ${version} engine package (tar.gz or legacy ZIP) to update to that version or reinstall it. It is verified against the official SHA256 before installation; a mismatch is not installed.`}</p>}
       <fieldset className="runtime-update-download" disabled={inputsDisabled}>
         <legend>{zh ? '引擎包下载方式' : 'Engine package source'}</legend>

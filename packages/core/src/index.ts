@@ -40,6 +40,7 @@ export * from './model-download';
 export * from './local-model';
 export * from './floating-monitor';
 export * from './runtime-versions';
+export * from './installed-runtimes';
 export * from './languages';
 export * from './public-observation';
 export * from './engine-flag-support';
