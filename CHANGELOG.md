@@ -5,6 +5,14 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **浮条布局合并为「条形」和「详细面板」**：原来的「紧凑单行」「清晰双行」和「文字行数」三项设置互相重叠，现在只保留两种布局。条形的单行或两行在「文字行数」里单独选（默认两行，外观和以前一样），右键菜单也能切换；单行放不下时仍会自动改为两行，设置里会提示。详细面板保持网格，文字行数不可选。旧设置自动迁移：清晰双行 → 条形 + 两行（外观不变），紧凑单行 → 条形 + 单行（现在是真正的一行，不再 4+2 换行），详细面板不变。任务栏监控的「自动／单行／两行」不受影响。
+
+### English
+
+- **Floating monitor layouts merged into Strip and Panel**: the old Compact, Two rows and Text rows settings overlapped, so there are now only two layouts. For the strip, Text rows picks one row or two (two by default, which looks the same as before), also from the context menu; if one row does not fit, it still falls back to two rows with a short note in settings. The panel stays a grid and Text rows is disabled for it. Old settings migrate automatically: Two rows → strip + two rows (unchanged look), Compact → strip + one row (now a true single row, no 4+2 wrap), Panel unchanged. The taskbar monitor's Auto / One row / Two rows setting is unchanged.
+
 ## [0.2.16] - 2026-10-22
 
 ### 中文

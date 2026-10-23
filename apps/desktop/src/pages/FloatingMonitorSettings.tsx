@@ -4,7 +4,7 @@ import { ArrowDown, ArrowUp, Check, LoaderCircle, RotateCcw } from 'lucide-react
 
 import {
   FLOATING_MONITOR_DEFAULTS, FLOATING_MONITOR_METRICS, FLOATING_MONITOR_PALETTES, FLOATING_MONITOR_PRESETS,
-  floatingMonitorDimensions, normalizeFloatingMonitorPreferences, normalizeMetrics,
+  floatingMonitorDimensions, floatingMonitorSingleRowFallback, normalizeFloatingMonitorPreferences, normalizeMetrics,
   type FloatingMonitorLayout, type FloatingMonitorMetric, type FloatingMonitorPreferences,
 } from '@strata-manager/core';
 import { Panel } from '../components';
@@ -43,7 +43,10 @@ export function FloatingMonitorSettings({ preferences, desktop, language, onChan
   const zh = language === 'zh-CN';
   const id = useId();
   const value = normalizeFloatingMonitorPreferences(preferences);
-  const dimensions = floatingMonitorDimensions(value, language);
+  // Same room as the strip window, so the fallback hint matches what the strip shows.
+  const maxWidth = typeof window !== 'undefined' && window.screen?.availWidth ? window.screen.availWidth - 16 : undefined;
+  const dimensions = floatingMonitorDimensions(value, language, maxWidth);
+  const singleRowFallback = floatingMonitorSingleRowFallback(value, language, maxWidth);
   const [changingVisibility, setChangingVisibility] = useState(false);
   const [visibilityError, setVisibilityError] = useState('');
   const [colorDrafts, setColorDrafts] = useState<Partial<Record<FloatingMonitorMetric, string>>>({});
@@ -54,10 +57,8 @@ export function FloatingMonitorSettings({ preferences, desktop, language, onChan
   const visible = modeStatus?.mode === 'taskbar' && modeStatus.active ? false : modeStatus?.visible ?? modeStatus?.active ?? false;
   const update = (patch: Partial<FloatingMonitorPreferences>) => {
     const normalized = normalizeFloatingMonitorPreferences({ ...value, ...patch });
-    const next: FloatingMonitorPreferences = { ...preferences, ...normalized };
-    // `auto` rows are stored as a missing key, so drop a previously saved choice.
-    if (!('rows' in normalized)) delete next.rows;
-    onChange(next);
+    // Normalized values replace retired keys (`compact` / `twoRow` → `strip` + rows).
+    onChange({ ...preferences, ...normalized });
   };
 
   useEffect(() => {
@@ -86,7 +87,8 @@ export function FloatingMonitorSettings({ preferences, desktop, language, onChan
 
   const applyPreset = (layout: FloatingMonitorLayout) => {
     const preset = FLOATING_MONITOR_PRESETS[layout];
-    update({ layout, fontSize: preset.fontSize, metrics: [...preset.metrics], showGraphs: preset.showGraphs, showLabels: preset.showLabels, showUnits: preset.showUnits, showStatus: preset.showStatus, rows: undefined });
+    // 文字行数 is its own choice, so a preset keeps it.
+    update({ layout, fontSize: preset.fontSize, metrics: [...preset.metrics], showGraphs: preset.showGraphs, showLabels: preset.showLabels, showUnits: preset.showUnits, showStatus: preset.showStatus });
   };
 
   const changeVisibility = async (next: boolean) => {
@@ -161,23 +163,21 @@ export function FloatingMonitorSettings({ preferences, desktop, language, onChan
         <h3 id={`${id}-layout`}>{zh ? '布局预设' : 'Layout presets'}</h3>
         <div className="floating-monitor-settings-layout-tabs" role="group" aria-label={zh ? '布局预设' : 'Layout presets'}>
           {([
-            { id: 'compact', label: zh ? '紧凑单行' : 'Compact', hint: zh ? '轻量速览' : 'At a glance' },
-            { id: 'twoRow', label: zh ? '清晰双行' : 'Two rows', hint: zh ? '默认推荐' : 'Recommended' },
+            { id: 'strip', label: zh ? '条形' : 'Strip', hint: zh ? '默认推荐' : 'Recommended' },
             { id: 'panel', label: zh ? '详细面板' : 'Panel', hint: zh ? '更多指标' : 'More metrics' },
           ] as const).map(preset => <button type="button" key={preset.id} disabled={!desktop} aria-pressed={value.layout === preset.id} onClick={() => applyPreset(preset.id)}>
             <strong>{preset.label}</strong><small>{preset.hint}</small>
           </button>)}
         </div>
         <div className="floating-monitor-settings-rows">
-          <h3 id={`${id}-rows`}>{zh ? '文字行数' : 'Text rows'}<span>{dimensions.rows === 1 ? (zh ? '当前单行' : 'Now one row') : value.layout === 'panel' ? (zh ? '面板为网格' : 'Panel is a grid') : (zh ? '当前两行' : 'Now two rows')}</span></h3>
-          <Segmented ariaLabel={zh ? '浮条文字行数' : 'Strip text rows'} value={value.rows ?? 'auto'} options={([
-            { value: 'auto', label: zh ? '自动' : 'Auto' },
+          <h3 id={`${id}-rows`}>{zh ? '文字行数' : 'Text rows'}<span>{value.layout === 'panel' ? (zh ? '面板为网格' : 'Panel is a grid') : singleRowFallback ? (zh ? '单行放不下，已改为两行' : 'One row does not fit; showing two') : dimensions.rows === 1 ? (zh ? '当前单行' : 'Now one row') : (zh ? '当前两行' : 'Now two rows')}</span></h3>
+          <Segmented ariaLabel={zh ? '浮条文字行数' : 'Strip text rows'} value={value.rows} options={([
             { value: 'single', label: zh ? '单行' : 'One row' },
             { value: 'double', label: zh ? '两行' : 'Two rows' },
-          ]).map(option => ({ ...option, disabled: !desktop || value.layout === 'panel' }))} onValueChange={rows => update({ rows: rows === 'single' || rows === 'double' ? rows : undefined })}/>
+          ]).map(option => ({ ...option, disabled: !desktop || value.layout === 'panel' }))} onValueChange={rows => { if (rows === 'single' || rows === 'double') update({ rows }); }}/>
           <p className="floating-monitor-settings-preview-hint">{value.layout === 'panel'
-            ? (zh ? '详细面板固定为两列网格，切换到紧凑单行或清晰双行后可选。' : 'The panel is always a two-column grid. Pick Compact or Two rows to choose.')
-            : (zh ? '单行：所有指标排成一行，名称放在数值左侧，浮条随之加宽（超出屏幕可用宽度时自动改为两行）。两行：指标平均分成上下两行。自动：紧凑单行用单行，清晰双行用两行。' : 'One row keeps every metric on one line with the name beside the value; the strip grows wider and falls back to two rows if it would not fit. Two rows splits metrics evenly. Auto: Compact uses one row, Two rows uses two.')}</p>
+            ? (zh ? '详细面板固定为两列网格，切换到条形后可选。' : 'The panel is always a two-column grid. Switch to Strip to choose.')
+            : (zh ? '单行：所有指标排成一行，名称放在数值左侧，浮条随之加宽；屏幕放不下时自动改为两行。两行：指标平均分成上下两行。' : 'One row keeps every metric on one line with the name beside the value; the strip grows wider and uses two rows when the screen is too narrow. Two rows splits metrics evenly.')}</p>
         </div>
       </section>
       <section className="floating-monitor-settings-font" aria-labelledby={`${id}-font`}>
@@ -243,7 +243,7 @@ export function FloatingMonitorSettings({ preferences, desktop, language, onChan
     <div className="floating-monitor-settings-footer">
       <span><Check size={13} aria-hidden="true"/>{zh ? '设置自动保存' : 'Settings save automatically'}</span>
       <button type="button" disabled={!desktop} onClick={() => update({
-        layout: FLOATING_MONITOR_DEFAULTS.layout, fontSize: FLOATING_MONITOR_DEFAULTS.fontSize, metrics: [...FLOATING_MONITOR_DEFAULTS.metrics],
+        layout: FLOATING_MONITOR_DEFAULTS.layout, rows: FLOATING_MONITOR_DEFAULTS.rows, fontSize: FLOATING_MONITOR_DEFAULTS.fontSize, metrics: [...FLOATING_MONITOR_DEFAULTS.metrics],
         showGraphs: true, showLabels: true, showUnits: true, showStatus: false, snapToEdge: false, showSampleTime: false, alwaysOnTop: true,
       })}><RotateCcw size={14} aria-hidden="true"/>{zh ? '恢复显示默认' : 'Reset appearance'}</button>
     </div>

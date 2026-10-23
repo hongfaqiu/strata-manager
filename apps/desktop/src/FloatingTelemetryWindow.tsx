@@ -197,9 +197,9 @@ export function FloatingTelemetryWindow() {
         ...(['pause', 'pin'].includes(item.id) ? { checked: item.id === 'pause' ? paused : pinned } : {}),
         action: () => { void actionRef.current(item.id); },
       }));
-      // 文字行数: the same auto / single / double choice as the settings page. The panel stays a grid.
-      const rows = preferences.rows ?? 'auto';
-      const rowChoices = [['auto', text('自动', 'Auto')], ['single', text('单行', 'One row')], ['double', text('两行', 'Two rows')]] as const;
+      // 文字行数: the same 单行 / 两行 choice as the settings page. The panel stays a grid.
+      const rows = preferences.rows;
+      const rowChoices = [['single', text('单行', 'One row')], ['double', text('两行', 'Two rows')]] as const;
       items.push({ item: 'Separator' }, {
         id: 'rows', text: text('文字行数', 'Text rows'), enabled: preferences.layout !== 'panel',
         items: rowChoices.map(([id, choice]) => ({ id: `rows-${id}`, text: choice, checked: rows === id, action: () => { if (id !== rows) void setMonitorRows(id).catch(error => setActionError(error instanceof Error ? error.message : String(error))); } })),

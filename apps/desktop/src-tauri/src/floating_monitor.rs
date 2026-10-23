@@ -72,7 +72,6 @@ struct CellStyle {
     label_font: f64,
     labels: bool,
     units: bool,
-    compact: bool,
     english: bool,
     /// One-row strip: the label sits beside the value.
     inline: bool,
@@ -84,7 +83,6 @@ fn metric_cell_width(metric: &str, style: &CellStyle) -> f64 {
         label_font,
         labels,
         units,
-        compact,
         english,
         inline,
     } = *style;
@@ -111,7 +109,7 @@ fn metric_cell_width(metric: &str, style: &CellStyle) -> f64 {
     // Stable type budgets match core: changing telemetry never resizes a cell.
     let value_width = budget * 0.58 * font
         + if units && !unit.is_empty() {
-            text_width(unit) + if compact { 2.0 } else { 3.0 }
+            text_width(unit) + 3.0
         } else {
             0.0
         };
@@ -128,13 +126,15 @@ fn metric_cell_width(metric: &str, style: &CellStyle) -> f64 {
     }
 }
 
-/// Strip rows like core `floatingMonitorStripRows`: `None` is the panel grid.
-fn strip_rows(layout: &str, rows: Option<&str>) -> Option<usize> {
+/// Strip rows like core `floatingMonitorStripRows` + `migrateFloatingMonitorRows`:
+/// `None` is the panel grid. Saved single/double wins; otherwise the retired
+/// 紧凑单行 (`compact`) preset is one row and everything else two rows.
+fn strip_rows(layout: Option<&str>, rows: Option<&str>) -> Option<usize> {
     match (layout, rows) {
-        ("panel", _) => None,
+        (Some("panel"), _) => None,
         (_, Some("single")) => Some(1),
         (_, Some("double")) => Some(2),
-        ("compact", _) => Some(1),
+        (Some("compact"), _) => Some(1),
         _ => Some(2),
     }
 }
@@ -147,10 +147,8 @@ fn initial_size(settings: Option<&Value>) -> (f64, f64) {
         .unwrap_or(16.0)
         .round()
         .clamp(8.0, 36.0);
-    let layout = preferences
-        .and_then(|value| value["layout"].as_str())
-        .filter(|layout| matches!(*layout, "compact" | "twoRow" | "panel"))
-        .unwrap_or("twoRow");
+    // `strip` / `panel`; older settings may still say `compact` / `twoRow`.
+    let layout = preferences.and_then(|value| value["layout"].as_str());
     let mut metrics = Vec::new();
     for metric in preferences
         .and_then(|value| value["metrics"].as_array())
@@ -214,7 +212,6 @@ fn initial_size(settings: Option<&Value>) -> (f64, f64) {
             label_font,
             labels,
             units,
-            compact: layout == "compact",
             english,
             inline,
         };
@@ -229,21 +226,13 @@ fn initial_size(settings: Option<&Value>) -> (f64, f64) {
             } else {
                 0.0
             }
-            + if graphs {
-                if layout == "compact" {
-                    16.0
-                } else {
-                    18.0
-                }
-            } else {
-                0.0
-            };
+            + if graphs { 18.0 } else { 0.0 };
         let header_height = if header {
             (font * 0.85).ceil() + 4.0
         } else {
             0.0
         };
-        let padding = if layout == "compact" { 4.0 } else { 5.0 };
+        let padding = 5.0;
         (
             (column_widths.iter().sum::<f64>() + (columns - 1) as f64 * gap + padding * 2.0)
                 .max(MIN_WIDTH),
@@ -529,7 +518,8 @@ pub fn resize_monitor_window(
 }
 
 fn require_rows(rows: &str) -> Result<(), String> {
-    if matches!(rows, "auto" | "single" | "double") {
+    // The desktop strip has no `auto` (only the taskbar widget does).
+    if matches!(rows, "single" | "double") {
         Ok(())
     } else {
         Err("文字行数无效".into())
@@ -891,8 +881,9 @@ mod tests {
             "cache"
         ]);
         for (layout, expected) in [
-            ("compact", (607.0, 198.0)),
+            ("compact", (613.0, 204.0)),
             ("twoRow", (613.0, 204.0)),
+            ("strip", (613.0, 204.0)),
             ("panel", (352.0, 400.0)),
         ] {
             let settings =
@@ -902,20 +893,20 @@ mod tests {
     }
 
     #[test]
-    fn compact_preset_is_one_line_with_inline_labels_without_changing_other_layouts() {
+    fn single_row_strip_is_one_line_with_inline_labels_without_changing_other_layouts() {
         assert_eq!(
             initial_size(Some(&json!({"floatingMonitor":{
                 "layout":"compact", "fontSize":14,
                 "metrics":["generation","gpu","vram"], "showGraphs":false
             }}))),
-            (254.0, 28.0)
+            (259.0, 30.0)
         );
         assert_eq!(
             initial_size(Some(&json!({"floatingMonitor":{
                 "layout":"compact", "fontSize":14,
                 "metrics":["gpu"], "showGraphs":false
             }}))),
-            (96.0, 40.0)
+            (96.0, 42.0)
         );
         assert_eq!(initial_size(None), (244.0, 120.0));
         assert_eq!(
@@ -923,7 +914,7 @@ mod tests {
                 "layout":"compact", "fontSize":14, "metrics":["generation","gpu","vram"],
                 "showGraphs":false, "showLabels":false
             }}))),
-            (190.0, 28.0)
+            (195.0, 30.0)
         );
         for header in ["showStatus", "showSampleTime"] {
             assert_eq!(
@@ -941,19 +932,19 @@ mod tests {
             initial_size(Some(
                 &json!({"language":"zh-CN", "floatingMonitor":preferences})
             )),
-            (180.0, 24.0)
+            (182.0, 24.0)
         );
         assert_eq!(
             initial_size(Some(
                 &json!({"language":"en", "floatingMonitor":preferences})
             )),
-            (192.0, 24.0)
+            (194.0, 24.0)
         );
         assert_eq!(
             initial_size(Some(
                 &json!({"language":"invalid", "floatingMonitor":preferences})
             )),
-            (180.0, 24.0)
+            (182.0, 24.0)
         );
         for language in ["zh-CN", "en"] {
             assert_eq!(
@@ -989,7 +980,7 @@ mod tests {
                 "layout":"compact", "fontSize":14, "metrics":["generation","gpu","vram"],
                 "showGraphs":false, "showUnits":false
             }}))),
-            (213.0, 28.0)
+            (215.0, 30.0)
         );
     }
 
@@ -1021,7 +1012,7 @@ mod tests {
             size(
                 json!({ "layout": "compact", "fontSize": 14, "metrics": eight, "rows": "double" })
             ),
-            (262.0, 106.0)
+            (268.0, 112.0)
         );
         // Too wide for one row: fall back to two rows inside MAX_WIDTH.
         assert_eq!(
@@ -1033,18 +1024,59 @@ mod tests {
             size(json!({ "layout": "panel", "fontSize": 18, "rows": "single", "metrics": eight })),
             (192.0, 252.0)
         );
+        assert!(require_rows("single").is_ok() && require_rows("double").is_ok());
+        // `auto` belongs to the taskbar widget only.
         assert!(
-            require_rows("single").is_ok()
-                && require_rows("auto").is_ok()
-                && require_rows("double").is_ok()
+            require_rows("auto").is_err()
+                && require_rows("").is_err()
+                && require_rows("triple").is_err()
         );
-        assert!(require_rows("").is_err() && require_rows("triple").is_err());
+    }
+
+    #[test]
+    fn retired_presets_migrate_to_strip_with_rows() {
+        let size =
+            |preferences: Value| initial_size(Some(&json!({ "floatingMonitor": preferences })));
+        let six = json!(["generation", "prefill", "gpu", "vram", "cpu", "ram"]);
+        // 清晰双行 → 条形 + 两行: identical size.
+        for layout in ["twoRow", "strip"] {
+            assert_eq!(
+                size(json!({ "layout": layout, "metrics": six })),
+                size(json!({ "layout": "strip", "rows": "double", "metrics": six }))
+            );
+        }
+        assert_eq!(size(json!({ "layout": "twoRow" })), (244.0, 120.0));
+        // 紧凑单行 → 条形 + 单行: one line, no 4 + 2 wrap.
+        let compact =
+            json!({ "layout": "compact", "fontSize": 14, "metrics": six, "showGraphs": false });
+        let strip = json!({ "layout": "strip", "rows": "single", "fontSize": 14, "metrics": six, "showGraphs": false });
+        assert_eq!(size(compact.clone()), size(strip));
+        assert_eq!(size(compact).1, 30.0);
+        // `auto` from an unreleased build follows the old preset; an explicit choice wins.
+        assert_eq!(
+            size(json!({ "layout": "compact", "rows": "auto", "metrics": six })),
+            size(json!({ "layout": "strip", "rows": "single", "metrics": six }))
+        );
+        assert_eq!(
+            size(json!({ "layout": "compact", "rows": "double", "metrics": six })),
+            (244.0, 120.0)
+        );
+        assert_eq!(
+            size(json!({ "layout": "twoRow", "rows": "single", "metrics": six })),
+            (570.0, 51.0)
+        );
+        // The panel stays a grid.
+        assert_eq!(
+            size(json!({ "layout": "panel", "rows": "single", "fontSize": 18,
+                "metrics": ["generation","prefill","gpu","vram","cpu","ram","temperature","power"] })),
+            (192.0, 252.0)
+        );
     }
 
     #[test]
     fn font_range_eight_to_thirty_six_fits_safe_sizes_and_smaller_text_reduces_height() {
         for language in ["zh-CN", "en"] {
-            for layout in ["compact", "twoRow", "panel"] {
+            for layout in ["compact", "twoRow", "strip", "panel"] {
                 let dimensions = |font| {
                     initial_size(Some(&json!({"language":language, "floatingMonitor":{
                         "layout":layout, "fontSize":font, "showStatus":true,

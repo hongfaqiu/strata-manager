@@ -88,7 +88,10 @@ export interface SetupHandoff {
 
 export type FloatingMonitorAction = 'main' | 'chat' | 'monitoring' | 'usage' | 'tasks' | 'quickBenchmark' | 'copyApiUrl' | 'refresh' | 'pause' | 'pin';
 export type FloatingMonitorMetric = 'generation' | 'prefill' | 'gpu' | 'vram' | 'cpu' | 'ram' | 'temperature' | 'power' | 'running' | 'queued' | 'cache';
-export type FloatingMonitorLayout = 'compact' | 'twoRow' | 'panel';
+/** Layout presets: 条形 (strip) and 详细面板 (panel). The strip's rows are a separate choice. */
+export type FloatingMonitorLayout = 'strip' | 'panel';
+/** Retired presets still found in saved settings; normalize migrates them (see floating-monitor.ts). */
+export type LegacyFloatingMonitorLayout = 'compact' | 'twoRow';
 export type FloatingMonitorMode = 'floating' | 'taskbar';
 /** Items the Windows taskbar widget can show, in display order. */
 export type TaskbarWidgetItem = 'generation' | 'prefill' | 'gpu' | 'vram' | 'temperature' | 'status';
@@ -100,10 +103,12 @@ export type TaskbarWidgetColorItem = Exclude<TaskbarWidgetItem, 'status'> | 'con
 
 /**
  * Text rows (文字行数) of a monitor surface. Shared by the taskbar widget and the
- * desktop strip, each with its own saved value. `auto` lets the surface decide:
- * the taskbar uses one row on a short taskbar, the strip follows its layout preset.
+ * desktop strip, each with its own saved value. `auto` is offered by the taskbar
+ * only (one row on a short taskbar); the desktop strip is always single or double.
  */
 export type MonitorRows = 'auto' | 'single' | 'double';
+/** Rows of the desktop strip (条形): no `auto`. */
+export type FloatingMonitorRows = Exclude<MonitorRows, 'auto'>;
 /** Text rows of the taskbar widget; `auto` uses one row on a short taskbar. */
 export type TaskbarWidgetRows = MonitorRows;
 
@@ -122,10 +127,12 @@ export interface FloatingMonitorPreferences {
   showSampleTime: boolean;
   /** Optional on persisted settings from older desktop versions. */
   fontSize?: number;
-  layout?: FloatingMonitorLayout;
+  /** Older versions saved `compact` / `twoRow`; normalize maps them to `strip`. */
+  layout?: FloatingMonitorLayout | LegacyFloatingMonitorLayout;
   /**
-   * Strip rows for the compact and two-row layouts (the panel stays a grid).
-   * Missing means `auto`: compact keeps one row, two-row keeps two.
+   * Strip rows (文字行数); the panel stays a grid and keeps this for later.
+   * Missing (or `auto` from an earlier build) follows the saved preset:
+   * `compact` → single, anything else → double.
    */
   rows?: MonitorRows;
   metrics?: FloatingMonitorMetric[];
@@ -152,6 +159,7 @@ export type FloatingMonitorShortcut = 'Ctrl+Alt+M' | 'Ctrl+Alt+K' | 'Ctrl+Shift+
 export interface ResolvedFloatingMonitorPreferences extends FloatingMonitorPreferences {
   fontSize: number;
   layout: FloatingMonitorLayout;
+  rows: FloatingMonitorRows;
   metrics: FloatingMonitorMetric[];
   showGraphs: boolean;
   showLabels: boolean;

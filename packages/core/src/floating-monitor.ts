@@ -4,6 +4,7 @@ import type {
   FloatingMonitorLayout,
   FloatingMonitorMetric,
   FloatingMonitorPreferences,
+  FloatingMonitorRows,
   FloatingMonitorShortcut,
   ResolvedFloatingMonitorPreferences,
   TaskbarWidgetColorItem,
@@ -154,7 +155,8 @@ export const FLOATING_MONITOR_DEFAULTS: ResolvedFloatingMonitorPreferences = {
   alwaysOnTop: true,
   showSampleTime: false,
   fontSize: 16,
-  layout: 'twoRow',
+  layout: 'strip',
+  rows: 'double',
   metrics: ['generation', 'prefill', 'gpu', 'vram', 'cpu', 'ram'],
   showGraphs: true,
   showLabels: true,
@@ -199,6 +201,19 @@ export function withoutRetiredFloatingMonitorKeys(value?: unknown): Record<strin
   return copy;
 }
 
+export const FLOATING_MONITOR_ROWS: readonly FloatingMonitorRows[] = ['single', 'double'];
+
+/**
+ * Rows for saved settings. A saved single/double wins. Otherwise (missing, or
+ * `auto` from an unreleased build) the retired preset decides: 紧凑单行
+ * (`compact`) becomes one row, 清晰双行 (`twoRow`), the panel and anything
+ * else become two rows, so the default strip looks exactly as before.
+ */
+export function migrateFloatingMonitorRows(layout: unknown, rows: unknown): FloatingMonitorRows {
+  if (rows === 'single' || rows === 'double') return rows;
+  return layout === 'compact' ? 'single' : 'double';
+}
+
 /** Resolve old or malformed persisted preferences without mutating input settings. */
 export function normalizeFloatingMonitorPreferences(value?: unknown): ResolvedFloatingMonitorPreferences {
   const source = value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -224,9 +239,8 @@ export function normalizeFloatingMonitorPreferences(value?: unknown): ResolvedFl
     alwaysOnTop: source.alwaysOnTop !== false,
     showSampleTime: source.showSampleTime === true,
     fontSize,
-    layout: source.layout === 'compact' || source.layout === 'panel' ? source.layout : 'twoRow',
-    // `auto` is the default and is not stored (same rule as the taskbar widget).
-    ...(source.rows === 'single' || source.rows === 'double' ? { rows: source.rows } : {}),
+    layout: source.layout === 'panel' ? 'panel' : 'strip',
+    rows: migrateFloatingMonitorRows(source.layout, source.rows),
     metrics: metrics.length ? metrics : [...FLOATING_MONITOR_DEFAULTS.metrics],
     showGraphs: source.showGraphs !== false,
     showLabels: source.showLabels !== false,
@@ -245,10 +259,7 @@ export function normalizeFloatingMonitorPreferences(value?: unknown): ResolvedFl
 }
 
 export const FLOATING_MONITOR_PRESETS: Record<FloatingMonitorLayout, ResolvedFloatingMonitorPreferences> = {
-  compact: normalizeFloatingMonitorPreferences({
-    layout: 'compact', fontSize: 14, metrics: ['generation', 'gpu', 'vram'], showGraphs: false, showLabels: true,
-  }),
-  twoRow: normalizeFloatingMonitorPreferences(),
+  strip: normalizeFloatingMonitorPreferences(),
   panel: normalizeFloatingMonitorPreferences({
     layout: 'panel', fontSize: 18,
     metrics: ['generation', 'prefill', 'gpu', 'vram', 'cpu', 'ram', 'temperature', 'power'],
@@ -286,40 +297,36 @@ export interface FloatingMonitorDimensions {
 export const FLOATING_MONITOR_MAX_WIDTH = 1120;
 
 /**
- * Rows the strip actually uses. The panel is always a two-column grid. `auto`
- * follows the preset: compact keeps one row (its name is 紧凑单行), two-row keeps
- * two balanced rows. Before this, compact wrapped after four metrics (4 + 2).
+ * Rows the strip is asked for (before the fit check in floatingMonitorDimensions).
+ * The panel is always a two-column grid.
  */
 export function floatingMonitorStripRows(preferences: FloatingMonitorPreferences): 1 | 2 | 'grid' {
   const { layout, rows } = normalizeFloatingMonitorPreferences(preferences);
   if (layout === 'panel') return 'grid';
-  if (rows === 'single') return 1;
-  if (rows === 'double') return 2;
-  return layout === 'compact' ? 1 : 2;
+  return rows === 'single' ? 1 : 2;
 }
 
 function measureStrip(value: ResolvedFloatingMonitorPreferences, language: AppLanguage, strip: 1 | 2 | 'grid'): FloatingMonitorDimensions {
-  const { layout, metrics, fontSize, showLabels, showUnits, showGraphs, showStatus, showSampleTime } = value;
+  const { metrics, fontSize, showLabels, showUnits, showGraphs, showStatus, showSampleTime } = value;
   const count = Math.max(1, metrics.length);
   const columns = strip === 'grid' ? 2 : strip === 1 ? count : Math.ceil(count / 2);
   const rows = strip === 'grid' ? Math.ceil(count / 2) : strip === 1 ? 1 : Math.min(count, 2);
   // A single row of one metric looks the same either way; keep the stacked label.
   const inline = strip === 1 && count > 1;
   const labelFont = Math.max(8, Math.round(fontSize * 0.7));
-  const compact = layout === 'compact';
-  const padding = compact ? 4 : 5;
+  const padding = 5;
   const gap = inline ? Math.max(6, Math.round(fontSize * 0.5)) : 2;
   const textWidth = (text: string) => [...text].reduce((width, character) => width + ((character.codePointAt(0) ?? 0) <= 127 ? 0.5 : 1) * labelFont, 0);
   const columnWidths = Array.from({ length: columns }, () => 0);
   metrics.forEach((metric, index) => {
     const unit = FLOATING_MONITOR_DISPLAY_UNITS[metric];
-    const valueWidth = FLOATING_MONITOR_VALUE_CHARACTERS[metric] * 0.58 * fontSize + (showUnits && unit ? textWidth(unit) + (compact ? 2 : 3) : 0);
+    const valueWidth = FLOATING_MONITOR_VALUE_CHARACTERS[metric] * 0.58 * fontSize + (showUnits && unit ? textWidth(unit) + 3 : 0);
     const labelWidth = showLabels ? textWidth(FLOATING_MONITOR_SHORT_LABELS[language === 'zh-CN' ? 'zh-CN' : 'en'][metric]) : 0;
     const cellWidth = Math.ceil((inline ? labelWidth + (showLabels ? 3 : 0) + valueWidth : Math.max(valueWidth, labelWidth)) + 4);
     const column = index % columns;
     columnWidths[column] = Math.max(columnWidths[column] ?? 0, cellWidth);
   });
-  const cellHeight = Math.ceil(fontSize * 1.4) + (showLabels && !inline ? labelFont + 2 : 0) + (showGraphs ? compact ? 16 : 18 : 0);
+  const cellHeight = Math.ceil(fontSize * 1.4) + (showLabels && !inline ? labelFont + 2 : 0) + (showGraphs ? 18 : 0);
   const headerHeight = showStatus || showSampleTime ? Math.ceil(fontSize * 0.85) + 4 : 0;
   return {
     width: Math.max(96, columnWidths.reduce((total, width) => total + width, 0) + (columns - 1) * gap + padding * 2),
@@ -344,4 +351,9 @@ export function floatingMonitorDimensions(preferences: FloatingMonitorPreference
   const limit = Math.min(FLOATING_MONITOR_MAX_WIDTH, Number.isFinite(maxWidth) && maxWidth > 0 ? maxWidth : FLOATING_MONITOR_MAX_WIDTH);
   // A single row wider than the room it has falls back to two rows.
   return strip === 1 && measured.width > limit ? measureStrip(value, language, 2) : measured;
+}
+
+/** 单行 was chosen but does not fit, so the strip shows two rows (settings shows a hint). */
+export function floatingMonitorSingleRowFallback(preferences: FloatingMonitorPreferences, language: AppLanguage = 'zh-CN', maxWidth = FLOATING_MONITOR_MAX_WIDTH): boolean {
+  return floatingMonitorStripRows(preferences) === 1 && floatingMonitorDimensions(preferences, language, maxWidth).rows !== 1;
 }

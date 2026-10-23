@@ -959,8 +959,8 @@ export function App() {
     // Sent by the native taskbar widget (right-click menu / close) and the strip's "收起到任务栏监控".
     if (typeof patch.taskbarEnabled === 'boolean') allowed.taskbarEnabled = patch.taskbarEnabled;
     if (patch.taskbar !== undefined) allowed.taskbar = core.normalizeTaskbarWidgetPreferences(patch.taskbar);
-    // Sent by the strip's 文字行数 menu (set_monitor_rows); `auto` drops the saved choice.
-    if (patch.rows === 'auto' || patch.rows === 'single' || patch.rows === 'double') allowed.rows = patch.rows;
+    // Sent by the strip's 文字行数 menu (set_monitor_rows): 单行 or 两行.
+    if (patch.rows === 'single' || patch.rows === 'double') allowed.rows = patch.rows;
     const next = normalizeFloatingMonitorPreferences({ ...previous, ...allowed });
     if (JSON.stringify(previous) !== JSON.stringify(next)) changeSettings({ floatingMonitor: next });
   };
