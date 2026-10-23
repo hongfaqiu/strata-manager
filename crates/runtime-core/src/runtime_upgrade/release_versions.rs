@@ -106,25 +106,16 @@ pub fn parse_releases(releases: &Value, host: Option<&str>) -> Vec<RuntimeReleas
 }
 
 async fn fetch_releases() -> Result<Value, String> {
-    reqwest::Client::builder()
+    let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(8))
         .timeout(Duration::from_secs(25))
         .redirect(reqwest::redirect::Policy::none())
         .user_agent("Strata-Manager-runtime-updates")
         .build()
-        .map_err(|error| error.to_string())?
-        .get(RELEASES_API)
-        .header("Accept", "application/vnd.github+json")
-        .send()
+        .map_err(|error| error.to_string())?;
+    super::github_source::get_json(&client, RELEASES_API, "上游版本列表")
         .await
-        .map_err(|error| format!("无法连接上游版本列表 / Cannot reach the release list: {error}"))?
-        .error_for_status()
-        .map_err(|error| {
-            format!("上游版本列表暂不可用 / The release list is unavailable: {error}")
-        })?
-        .json()
-        .await
-        .map_err(|error| format!("无法读取上游版本列表 / Cannot read the release list: {error}"))
+        .map(|(value, _)| value)
 }
 
 fn fresh(cached: &RuntimeReleaseVersions, checked_now: u64) -> bool {
@@ -138,6 +129,7 @@ fn fresh(cached: &RuntimeReleaseVersions, checked_now: u64) -> bool {
 
 /// Cached for six hours (ten minutes after an error); `force` re-reads GitHub.
 pub async fn list(state: &RuntimeState, force: bool) -> Result<RuntimeReleaseVersions, String> {
+    super::github_source::sync(state);
     let cached = serde_json::from_value::<RuntimeReleaseVersions>(crate::store_get(
         state,
         VERSIONS_KEY.into(),

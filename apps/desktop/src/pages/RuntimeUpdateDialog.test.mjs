@@ -18,7 +18,7 @@ vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../../../../packages
 const versionsModule = { exports: {} };
 vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../../../../packages/core/src/runtime-versions.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { module: versionsModule, exports: versionsModule.exports, require: () => ({}) });
 const { runtimeUpdateAllowedByPin, runtimeVersionDirection } = versionsModule.exports;
-const { resolveRuntimeDownloadPreferences, runtimeDownloadSources, runtimeAssetLabel, runtimeBilingualText, runtimeEngineArchiveFilters, runtimeEngineIsCurrent, runtimeReasonText, runtimeTrialRollback } = downloadModule.exports;
+const { RUNTIME_DOWNLOAD_DEFAULTS, resolveRuntimeDownloadPreferences, runtimeDownloadSources, runtimeAssetLabel, runtimeBilingualText, runtimeEngineArchiveFilters, runtimeEngineIsCurrent, runtimeReasonText, runtimeTrialRollback } = downloadModule.exports;
 const sharedControls = { Dropdown: 'dropdown' };
 const sourceControl = tree => nodes(tree).find(node => node.type === 'dropdown' && node.props.options.some(option => option.value === 'official'));
 const assetControl = tree => nodes(tree).find(node => node.type === 'dropdown' && node.props.options.some(option => option.value === assets[0].name));
@@ -463,7 +463,7 @@ function settingsFixture(overrides = {}) {
     useEffect: (fn, deps) => { const effect = slot(() => ({})); if (!sameDeps(effect.deps, deps)) { effect.deps = deps; effects.push(fn); } },
   };
   const core = {
-    getRuntimeDownloadPreferences: async () => preferences.data, resolveRuntimeDownloadPreferences, runtimeDownloadSources, runtimeAssetLabel, runtimeBilingualText, runtimeEngineArchiveFilters,
+    RUNTIME_DOWNLOAD_DEFAULTS, getRuntimeDownloadPreferences: async () => preferences.data, resolveRuntimeDownloadPreferences, runtimeDownloadSources, runtimeAssetLabel, runtimeBilingualText, runtimeEngineArchiveFilters,
     resolveRuntimeZipAsset: async (_dir, name) => overrides.resolveAsset ? await overrides.resolveAsset() : assets.find(asset => asset.name === name) ?? assets[1],
     normalizeError: error => ({ message: error instanceof Error ? error.message : String(error) }),
     saveRuntimeDownloadPreferences: async value => { calls.saved.push(JSON.parse(JSON.stringify(value))); if (overrides.save) await overrides.save(value); },
