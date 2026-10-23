@@ -51,3 +51,28 @@ test('panel keeps baseline actions and never folds condition notes', () => {
   assert.doesNotMatch(css, /\.horizontal-bar|stacked-bar/i);
   assert.match(css, /\.bhc-dual/);
 });
+
+test('winner bolds the better side: higher for speed/hit, lower for latency/memory; none on ties or gaps', async () => {
+  const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const cache = resolve(here, '../../.cache');
+  mkdirSync(cache, { recursive: true });
+  const modPath = resolve(cache, 'benchmarkComparisonView.winner.mjs');
+  writeFileSync(modPath, compiled);
+  const mod = await import(`${pathToFileURL(modPath).href}?t=${Date.now()}`);
+  const fields = Object.fromEntries(mod.COMPARISON_FIELDS.map(f => [f.key, f]));
+  const winner = (key, a, b) => mod.metricWinner(mod.metricDelta(a, b, key, fields[key].higherBetter));
+  for (const key of ['decodeTokS', 'prefillTokS', 'cacheHitRate']) {
+    assert.equal(winner(key, 0.2, 0.4), 'b', key);
+    assert.equal(winner(key, 0.4, 0.2), 'a', key);
+  }
+  for (const key of ['ttftMs', 'firstVisibleMs', 'wallMs', 'ramPeak', 'vramPeak']) {
+    assert.equal(winner(key, 200, 160), 'b', key);
+    assert.equal(winner(key, 160, 200), 'a', key);
+  }
+  assert.equal(winner('decodeTokS', 20, 20), null);
+  assert.equal(winner('ttftMs', null, 160), null);
+  assert.equal(winner('ramPeak', 8 * 2 ** 30, null), null);
+  assert.match(panel, /data-win=\{win\(delta, 'a'\)\}/);
+  assert.match(panel, /data-win=\{win\(delta, 'b'\)\}/);
+  assert.match(css, /data-win='yes'\]\s*\{\s*font-weight: 700/);
+});

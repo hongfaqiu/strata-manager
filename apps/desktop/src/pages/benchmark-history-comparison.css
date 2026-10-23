@@ -54,6 +54,11 @@
 .bhc-table th:nth-child(n+2) { text-align: right; }
 .bhc-table tr[data-highlight] td:first-child { font-weight: 600; }
 .bhc-table .bhc-delta { height: 20px; padding: 0 7px; font-size: 11px; }
+.bhc-table td.bhc-value { font-weight: 400; color: var(--st-ink); }
+.bhc-table td.bhc-value[data-win='yes'] { font-weight: 700; }
+.bhc-table td.bhc-value[data-win='no'] { color: var(--st-ink-muted); }
+.bhc-card-values > b[data-win='no'] { color: var(--st-ink-soft); }
+.bhc-card-values > .bhc-card-a[data-win='yes'] { font-weight: 700; color: var(--st-ink); }
 .bhc-note { margin: 0; color: var(--st-ink-muted); font-size: 12px; line-height: 1.5; }
 
 @media (max-width: 960px) {

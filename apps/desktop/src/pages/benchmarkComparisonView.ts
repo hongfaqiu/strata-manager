@@ -60,6 +60,11 @@ export function metricDelta(left: number | null, right: number | null, key: Comp
   return { key, left, right, relative, absolute, improved };
 }
 
+/** Which side holds the better value for this metric; null on ties or missing values. Matches metricDelta. */
+export function metricWinner(delta: MetricDelta): 'a' | 'b' | null {
+  return delta.improved === null ? null : delta.improved ? 'b' : 'a';
+}
+
 export function formatRelative(relative: number | null, language: string): string {
   if (relative === null || !Number.isFinite(relative)) return '—';
   if (Math.abs(relative) < 0.0005) return '0%';

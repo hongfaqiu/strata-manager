@@ -11,6 +11,7 @@ import {
   formatMetric,
   formatRelative,
   metricDelta,
+  metricWinner,
   type ComparisonMetricKey,
 } from './benchmarkComparisonView';
 import './benchmark-history-comparison.css';
@@ -38,6 +39,7 @@ export function BenchmarkComparisonPanel({ reports, current, baseline, language,
   };
   const deltas = COMPARISON_FIELDS.map(field => metricDelta(a?.[field.key] ?? null, b?.[field.key] ?? null, field.key, field.higherBetter));
   const highlights = COMPARISON_FIELDS.filter(field => field.highlight);
+  const win = (delta: typeof deltas[number], side: 'a' | 'b') => { const w = metricWinner(delta); return w === null ? undefined : w === side ? 'yes' : 'no'; };
   const tone = (improved: boolean | null) => improved === null ? 'flat' : improved ? 'up' : 'down';
   const options = all.map(r => ({ value: r.id, label: label(r) }));
   const canReplay = !!baseline && 'schemaVersion' in baseline && [2, 3].includes(baseline.schemaVersion);
@@ -88,8 +90,8 @@ export function BenchmarkComparisonPanel({ reports, current, baseline, language,
             <div className="bhc-card-copy">
               <span className="bhc-card-label">{fieldName(field.key)} · {field.unit}</span>
               <div className="bhc-card-values">
-                <b>{formatMetric(b[field.key], field.key, language)}<small>{field.unit}</small></b>
-                <span>A {formatMetric(a[field.key], field.key, language)}</span>
+                <b data-win={win(delta, 'b')}>{formatMetric(b[field.key], field.key, language)}<small>{field.unit}</small></b>
+                <span className="bhc-card-a" data-win={win(delta, 'a')}>A {formatMetric(a[field.key], field.key, language)}</span>
                 <span className="bhc-delta" data-tone={tone(delta.improved)}>{formatRelative(delta.relative, language)}</span>
               </div>
             </div>
@@ -108,14 +110,14 @@ export function BenchmarkComparisonPanel({ reports, current, baseline, language,
             const delta = deltas.find(item => item.key === field.key)!;
             return <tr key={field.key} data-highlight={field.highlight || undefined}>
               <td>{fieldName(field.key)} ({field.unit})</td>
-              <td>{formatMetric(a[field.key], field.key, language)}</td>
-              <td>{formatMetric(b[field.key], field.key, language)}</td>
+              <td className="bhc-value" data-win={win(delta, 'a')}>{formatMetric(a[field.key], field.key, language)}</td>
+              <td className="bhc-value" data-win={win(delta, 'b')}>{formatMetric(b[field.key], field.key, language)}</td>
               <td><span className="bhc-delta" data-tone={tone(delta.improved)}>{formatRelative(delta.relative, language)}</span></td>
             </tr>;
           })}</tbody>
         </table>
       </div>
-      <p className="bhc-note">{t('绿色表示 B 优于 A（延迟与占用更低，或速度与命中更高）；灰色为持平或无法计算。保存基线不会更新或启动模型。', 'Green means B improves on A (lower latency/memory, or higher speed/hit rate). Gray is unchanged or unknown. Saving a baseline does not update or start a model.')}</p>
+      <p className="bhc-note">{t('加粗为该项更好的一方，绿色表示 B 优于 A（延迟与占用更低，或速度与命中更高）；灰色为持平或无法计算。保存基线不会更新或启动模型。', 'Bold marks the better value. Green means B improves on A (lower latency/memory, or higher speed/hit rate). Gray is unchanged or unknown. Saving a baseline does not update or start a model.')}</p>
     </> : <p className="bhc-empty">{t('选择两份不同报告进行对照。保存基线不会更新或启动模型。', 'Select two different reports. Saving a baseline does not update or start a model.')}</p>}
   </Panel>;
 }
