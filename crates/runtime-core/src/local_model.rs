@@ -8,11 +8,14 @@
 //! generated run config then passes `--mtp <...>/mtp/rt` to the engine. An MTP path chosen here is
 //! therefore mapped to `--data-dir <data folder>` for setup, and to the engine's `--mtp` for the
 //! ORCA.md import, which writes its own config.
-use crate::{disk, orca_import};
+use crate::{
+    disk,
+    gguf_check::{self, ShardCheck},
+    orca_import,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
-    io::Read,
     path::{Component, Path, PathBuf},
 };
 
@@ -53,8 +56,6 @@ pub fn setup_supports(family: &str, quant: &str) -> bool {
 
 const FAMILIES: [&str; 5] = ["qwen", "swift", "coder", "unsloth", "qwen36"];
 const SUPPORTED_GGUFS: &str = "Strata 只能运行 ISTA-DASLab 的 GSQ-RCO 文件（Qwen3.8-Flash-Next Q2_0、IQ2_XS、IQ3_XXS、IQ3_S；Swift 1.5；Coder IQ1_M）、Unsloth 的 UD-IQ4_XS、UD-Q4_K_XL、UD-Q5_K_XL、UD-Q6_K_XL、Q8_0，以及 Qwen3.6-35B-A3B 的 UD-Q4_K_XL、UD-Q6_K_XL、Q8_0（上游 setup.py #444）";
-/// A shard below this cannot be a model part (the smallest published shard is tens of GB).
-const MIN_SHARD_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_ENTRIES: usize = 4096;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
@@ -72,8 +73,15 @@ pub struct LocalModelRequest {
 pub struct LocalShard {
     pub name: String,
     pub bytes: u64,
-    /// ok | missing | unreadable | notGguf | tooSmall
+    /// ok | missing | unreadable | notGguf | tooSmall (shorter than its own GGUF tensor directory says)
     pub state: String,
+    /// The length the shard's GGUF header says it needs, when it could be read.
+    pub expected_bytes: Option<u64>,
+    /// A download leftover beside it (`.part`, `.incomplete`, `.downloading`, HF `--local-dir` cache).
+    pub partial_download: Option<String>,
+    /// `split.no` / `split.count` disagree with the file name (a shard of another split).
+    #[serde(skip)]
+    split_mismatch: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -217,55 +225,114 @@ pub(crate) fn inferred_family(stem: &str, quant: &str) -> Option<&'static str> {
     setup_supports(family, quant).then_some(family)
 }
 
-fn read_header(path: &Path) -> Result<bool, String> {
-    let mut file = fs::File::open(path).map_err(|e| format!("无法读取 {}: {e}", path.display()))?;
-    let mut head = [0_u8; 8];
-    if file.read_exact(&mut head).is_err() {
-        return Ok(false);
+/// A leftover of an unfinished download of `name`: `<name>.part` (setup.py), `.incomplete`/`.downloading`
+/// (browsers, download managers), or Hugging Face's `hf download --local-dir` working file
+/// `.cache/huggingface/download/<name>.<hash>.incomplete`.
+fn partial_download(directory: &Path, name: &str) -> Option<String> {
+    for suffix in [
+        ".part",
+        ".incomplete",
+        ".downloading",
+        ".crdownload",
+        ".tmp",
+    ] {
+        let candidate = format!("{name}{suffix}");
+        if directory.join(&candidate).is_file() {
+            return Some(candidate);
+        }
     }
-    let version = u32::from_le_bytes([head[4], head[5], head[6], head[7]]);
-    Ok(&head[..4] == b"GGUF" && (1..=3).contains(&version))
+    let cache = directory
+        .join(".cache")
+        .join("huggingface")
+        .join("download");
+    fs::read_dir(&cache)
+        .ok()?
+        .take(MAX_ENTRIES)
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .find(|n| n.starts_with(name) && n.ends_with(".incomplete"))
+        .map(|n| format!(".cache/huggingface/download/{n}"))
 }
 
-fn shard_state(path: &Path, header: bool) -> LocalShard {
+/// `split`: (1-based index, total) from the file name, checked against gguf-split's `split.no`/`split.count`.
+fn shard_state(path: &Path, split: Option<(u32, u32)>) -> LocalShard {
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
+    let directory = path.parent().unwrap_or(Path::new(""));
     let bytes = disk::file_len(path).unwrap_or(0);
+    let mut expected_bytes = None;
+    let mut split_mismatch = None;
+    // Completeness is the GGUF header's own tensor directory (upstream check_shards), not a size floor:
+    // gguf-split's first shard of an Unsloth upload holds only metadata (about 10 MB) and is whole.
     let state = if !path.is_file() {
         "missing"
-    } else if bytes < MIN_SHARD_BYTES {
-        "tooSmall"
-    } else if !header {
-        "ok"
     } else {
-        match read_header(path) {
-            Ok(true) => "ok",
-            Ok(false) => "notGguf",
-            Err(_) => "unreadable",
+        match gguf_check::check(path) {
+            ShardCheck::Whole(header) => {
+                expected_bytes = Some(header.need_bytes);
+                if let (Some((index, total)), Some(count)) = (split, header.split_count) {
+                    let no = header.split_no.unwrap_or(u64::from(index) - 1);
+                    if count != u64::from(total) || no + 1 != u64::from(index) {
+                        split_mismatch = Some(format!(
+                            "{name} 的 GGUF 头写的是第 {} 个分片、共 {count} 个，与文件名（第 {index} 个、共 {total} 个）不一致；可能混入了其他模型或其他量化的分片",
+                            no + 1
+                        ));
+                    }
+                }
+                "ok"
+            }
+            ShardCheck::Short { need, .. } => {
+                expected_bytes = need;
+                "tooSmall"
+            }
+            ShardCheck::NotGguf => "notGguf",
+            ShardCheck::Unreadable(_) => "unreadable",
         }
+    };
+    let partial_download = if state == "ok" {
+        None
+    } else {
+        partial_download(directory, &name)
     };
     LocalShard {
         name,
         bytes,
         state: state.into(),
+        expected_bytes,
+        partial_download,
+        split_mismatch,
     }
 }
 
 fn describe_shard(shard: &LocalShard) -> Option<String> {
+    let downloading = shard
+        .partial_download
+        .as_deref()
+        .map(|p| format!("；同目录还有未完成的下载 {p}，请等下载完成后再导入"))
+        .unwrap_or_default();
     match shard.state.as_str() {
-        "ok" => None,
+        "ok" => shard.split_mismatch.clone(),
         "missing" => Some(format!(
-            "缺少分片 {}；所有分片需放在同一目录并保留原文件名",
+            "缺少分片 {}；所有分片需放在同一目录并保留原文件名{downloading}",
             shard.name
         )),
-        "tooSmall" => Some(format!(
-            "{} 只有 {} 字节，文件不完整（可能仍在下载或复制中断）",
-            shard.name, shard.bytes
-        )),
+        "tooSmall" => Some(match shard.expected_bytes {
+            Some(need) => format!(
+                "{} 不完整：只有 {} 字节，按它的 GGUF 文件头应有 {} 字节（缺 {} 字节）；可能仍在下载或复制中断{downloading}",
+                shard.name,
+                shard.bytes,
+                need,
+                need.saturating_sub(shard.bytes)
+            ),
+            None => format!(
+                "{} 不完整：只有 {} 字节，GGUF 文件头本身就被截断了；可能仍在下载或复制中断{downloading}",
+                shard.name, shard.bytes
+            ),
+        }),
         "notGguf" => Some(format!(
-            "{} 不是有效的 GGUF 文件（文件头不是 GGUF）；可能已损坏或不是模型文件",
+            "{} 不是有效的 GGUF 文件（文件头不是 GGUF）；可能已损坏或不是模型文件{downloading}",
             shard.name
         )),
         _ => Some(format!("无法读取 {}；请检查文件权限或磁盘连接", shard.name)),
@@ -280,14 +347,22 @@ fn group(directory: &Path, first: &str, stem: &str, total: u32) -> LocalModelGro
     } else {
         vec![first.to_owned()]
     };
-    // Only the first shard carries the GGUF metadata header; later shards also start with GGUF (split files).
+    // Every split file is a GGUF of its own (gguf-split): each header is checked against its length.
     let shards: Vec<LocalShard> = names
         .iter()
-        .map(|n| shard_state(&directory.join(n), true))
+        .enumerate()
+        .map(|(i, n)| {
+            shard_state(
+                &directory.join(n),
+                (total > 1).then_some((i as u32 + 1, total)),
+            )
+        })
         .collect();
     let mut problems: Vec<String> = shards.iter().filter_map(describe_shard).collect();
     let mut warnings = Vec::new();
-    let complete = shards.iter().all(|s| s.state == "ok");
+    let complete = shards
+        .iter()
+        .all(|s| s.state == "ok" && s.split_mismatch.is_none());
     let total_bytes = shards.iter().map(|s| s.bytes).sum();
     let quant = quant_of(stem);
     let (kind, family) = if first.starts_with("Qwen3.8-Flash-Next-Uncensored-") {
@@ -345,9 +420,103 @@ fn group(directory: &Path, first: &str, stem: &str, total: u32) -> LocalModelGro
     }
 }
 
-/// Read-only scan of a folder (or the folder of a chosen GGUF file).
+fn has_model_gguf(directory: &Path) -> bool {
+    fs::read_dir(directory).is_ok_and(|entries| {
+        entries.take(MAX_ENTRIES).flatten().any(|e| {
+            let lower = e.file_name().to_string_lossy().to_ascii_lowercase();
+            lower.ends_with(".gguf") && !lower.starts_with("mmproj") && e.path().is_file()
+        })
+    })
+}
+
+/// Folders below `root` (up to three levels) that hold model GGUFs: a Hugging Face repository downloaded whole
+/// keeps each quantization in its own folder (`UD-Q6_K_XL/`, ISTA-DASLab's `IQ3_S/`), and the hub cache adds
+/// `snapshots/<revision>/`. Hidden folders (`.cache`, `.git`) and the cache's `blobs` are not models.
+fn gguf_folders(root: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let mut level = vec![root.to_owned()];
+    for _ in 0..3 {
+        let mut next = Vec::new();
+        for dir in &level {
+            let Ok(entries) = fs::read_dir(dir) else {
+                continue;
+            };
+            for entry in entries.take(256).flatten() {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                let path = entry.path();
+                if name.starts_with('.') || name == "blobs" || !path.is_dir() {
+                    continue;
+                }
+                if has_model_gguf(&path) {
+                    found.push(path);
+                } else {
+                    next.push(path);
+                }
+            }
+        }
+        if !found.is_empty() || next.is_empty() {
+            break;
+        }
+        level = next;
+    }
+    // The hub cache: only the revision refs/main points to, when it is among them.
+    let snapshot = |p: &Path| {
+        p.ancestors()
+            .find(|a| {
+                a.parent()
+                    .and_then(Path::file_name)
+                    .is_some_and(|n| n == "snapshots")
+            })
+            .map(Path::to_owned)
+    };
+    if let Some(main) = found.iter().find_map(|p| snapshot(p)).and_then(|snap| {
+        let repo = snap.parent()?.parent()?;
+        let revision = fs::read_to_string(repo.join("refs").join("main")).ok()?;
+        Some(repo.join("snapshots").join(revision.trim()))
+    }) {
+        if found.iter().any(|p| p.starts_with(&main)) {
+            found.retain(|p| p.starts_with(&main));
+        }
+    }
+    found.sort();
+    found
+}
+
+/// Read-only scan of a folder (or the folder of a chosen GGUF file). A folder without GGUFs whose model files
+/// are one folder down (a whole Hugging Face repository, or its hub-cache folder) is scanned there when there is
+/// exactly one such folder; otherwise the folders are named.
 pub fn scan(path: &str) -> Result<LocalModelScan, String> {
-    let path = absolute(path, "模型目录或 GGUF 文件")?;
+    let chosen = absolute(path, "模型目录或 GGUF 文件")?;
+    if chosen.is_dir() && !has_model_gguf(&chosen) {
+        let folders = gguf_folders(&chosen);
+        if folders.len() == 1 {
+            return scan_at(&folders[0]);
+        }
+        if folders.len() > 1 {
+            let mut result = scan_at(&chosen)?;
+            let names: Vec<String> = folders
+                .iter()
+                .take(12)
+                .map(|f| {
+                    f.strip_prefix(&chosen)
+                        .unwrap_or(f)
+                        .to_string_lossy()
+                        .into_owned()
+                })
+                .collect();
+            result.problems = vec![format!(
+                "{} 里没有直接放 GGUF 文件，模型在子目录里（Hugging Face 仓库每个量化一个目录）：{}。请选择要用的那个量化目录",
+                chosen.display(),
+                names.join("、")
+            )];
+            return Ok(result);
+        }
+    }
+    scan_at(&chosen)
+}
+
+fn scan_at(path: &Path) -> Result<LocalModelScan, String> {
+    let path = path.to_owned();
     let meta = fs::metadata(&path).map_err(|e| format!("无法访问 {}: {e}", path.display()))?;
     let (directory, selected_file) = if meta.is_file() {
         let name = path
@@ -576,13 +745,33 @@ pub fn migration_hazard(gguf_directory: &Path, data: &Path) -> Option<String> {
 mod tests {
     use super::*;
 
+    use crate::gguf_check::fixture::{self, Tensor};
+
+    /// A metadata-only GGUF padded to `size` (whole: its header lists no tensors).
     fn gguf(path: &Path, size: u64) {
-        let mut file = fs::File::create(path).unwrap();
-        use std::io::Write;
-        file.write_all(b"GGUF\x03\x00\x00\x00").unwrap();
-        file.set_len(size).unwrap();
+        fixture::write(path, None, &[], 0);
+        fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_len(size)
+            .unwrap();
     }
-    const BIG: u64 = MIN_SHARD_BYTES + 1;
+    fn tensors() -> Vec<Tensor> {
+        vec![
+            Tensor {
+                name: "blk.0.ffn_down_exps",
+                dims: vec![256, 512],
+                type_id: 14,
+            },
+            Tensor {
+                name: "output_norm",
+                dims: vec![64],
+                type_id: 0,
+            },
+        ]
+    }
+    const BIG: u64 = 64 * 1024 * 1024 + 1;
 
     #[test]
     fn quant_names_follow_setup_gguf_quant() {
@@ -670,12 +859,179 @@ mod tests {
             "{:?}",
             scan2.groups[0].problems
         );
-        gguf(&second, 1024);
+        fixture::write(&second, Some((1, 2)), &tensors(), 100);
         let scan3 = scan(&dir.path().to_string_lossy()).unwrap();
         assert!(scan3.groups[0]
             .problems
             .iter()
-            .any(|p| p.contains("不完整")));
+            .any(|p| p.contains("不完整") && p.contains("缺 100 字节")));
+    }
+
+    /// The reported false positive: Unsloth's UD-Q6_K_XL shard 1 is gguf-split metadata only, 10,946,624
+    /// bytes (setup.py's pinned size). A 64 MiB size floor called it 「文件不完整」 and the model 不可用.
+    #[test]
+    fn a_small_metadata_only_first_split_is_whole_and_installable() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir
+            .path()
+            .join("Qwen3.8-Flash-Next-UD-Q6_K_XL-00001-of-00006.gguf");
+        fixture::write(&first, Some((0, 6)), &[], 0);
+        fs::File::options()
+            .write(true)
+            .open(&first)
+            .unwrap()
+            .set_len(10_946_624)
+            .unwrap();
+        for i in 2..=6_u16 {
+            fixture::write(
+                &dir.path().join(format!(
+                    "Qwen3.8-Flash-Next-UD-Q6_K_XL-{i:05}-of-00006.gguf"
+                )),
+                Some((i - 1, 6)),
+                &tensors(),
+                0,
+            );
+        }
+        let found = super::scan(&dir.path().to_string_lossy()).unwrap();
+        let g = &found.groups[0];
+        assert_eq!(
+            (g.kind.as_str(), g.family.as_deref(), g.quant.as_deref()),
+            ("official", Some("unsloth"), Some("UD-Q6_K_XL"))
+        );
+        assert!(g.complete && g.installable, "{g:?}");
+        assert_eq!(g.shards[0].bytes, 10_946_624);
+        let request = LocalModelRequest {
+            gguf_directory: dir.path().to_string_lossy().into(),
+            mtp_path: None,
+        };
+        assert!(setup_group(&request, "unsloth", "UD-Q6_K_XL").is_ok());
+
+        // A truncated shard 4 is still refused, with the numbers; a download leftover is named.
+        let fourth = dir
+            .path()
+            .join("Qwen3.8-Flash-Next-UD-Q6_K_XL-00004-of-00006.gguf");
+        fixture::write(&fourth, Some((3, 6)), &tensors(), 4096);
+        let cache = dir.path().join(".cache/huggingface/download");
+        fs::create_dir_all(&cache).unwrap();
+        fs::write(
+            cache.join("Qwen3.8-Flash-Next-UD-Q6_K_XL-00004-of-00006.gguf.abc123.incomplete"),
+            b"x",
+        )
+        .unwrap();
+        let found = super::scan(&dir.path().to_string_lossy()).unwrap();
+        let g = &found.groups[0];
+        assert!(!g.installable);
+        assert_eq!(g.shards[3].state, "tooSmall");
+        assert!(
+            g.problems[0].contains("00004-of-00006")
+                && g.problems[0].contains("缺 4096 字节")
+                && g.problems[0].contains(".incomplete"),
+            "{:?}",
+            g.problems
+        );
+        assert!(setup_group(&request, "unsloth", "UD-Q6_K_XL")
+            .unwrap_err()
+            .contains("不完整"));
+
+        // A missing shard, and a shard of another split put under this name.
+        fs::remove_file(&fourth).unwrap();
+        fixture::write(
+            &dir.path()
+                .join("Qwen3.8-Flash-Next-UD-Q6_K_XL-00005-of-00006.gguf"),
+            Some((4, 4)),
+            &tensors(),
+            0,
+        );
+        let found = super::scan(&dir.path().to_string_lossy()).unwrap();
+        let problems = &found.groups[0].problems;
+        assert!(
+            problems
+                .iter()
+                .any(|p| p.contains("缺少分片") && p.contains("00004")),
+            "{problems:?}"
+        );
+        assert!(
+            problems.iter().any(|p| p.contains("共 4 个")),
+            "{problems:?}"
+        );
+    }
+
+    /// Hugging Face layouts: `hf download --local-dir` of the whole repo (a folder per quantization plus
+    /// `.cache/huggingface`), and the hub cache (`snapshots/<rev>/<quant>/` symlinks into `blobs/`), under a
+    /// path with spaces and Chinese characters.
+    #[test]
+    fn hugging_face_repo_and_hub_cache_layouts_are_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("我的 模型").join("Qwen3.8-Flash-Next-GGUF");
+        let quant = root.join("UD-Q4_K_XL");
+        fs::create_dir_all(&quant).unwrap();
+        fs::create_dir_all(root.join(".cache/huggingface/download/UD-Q4_K_XL")).unwrap();
+        for i in 1..=4 {
+            gguf(
+                &quant.join(format!(
+                    "Qwen3.8-Flash-Next-UD-Q4_K_XL-{i:05}-of-00004.gguf"
+                )),
+                1024,
+            );
+        }
+        let found = scan(&root.to_string_lossy()).unwrap();
+        assert_eq!(found.directory, quant.to_string_lossy());
+        assert!(found.groups[0].installable, "{found:?}");
+        assert_eq!(found.groups[0].family.as_deref(), Some("unsloth"));
+
+        // Two quantizations: name both instead of guessing.
+        let other = root.join("UD-Q6_K_XL");
+        fs::create_dir_all(&other).unwrap();
+        gguf(
+            &other.join("Qwen3.8-Flash-Next-UD-Q6_K_XL-00001-of-00006.gguf"),
+            1024,
+        );
+        let found = scan(&root.to_string_lossy()).unwrap();
+        assert!(found.groups.is_empty());
+        assert!(
+            found.problems[0].contains("UD-Q4_K_XL") && found.problems[0].contains("UD-Q6_K_XL"),
+            "{:?}",
+            found.problems
+        );
+
+        #[cfg(unix)]
+        {
+            let repo = dir
+                .path()
+                .join("hub")
+                .join("models--unsloth--Qwen3.8-Flash-Next-GGUF");
+            let blobs = repo.join("blobs");
+            let old = repo.join("snapshots").join("aaaa").join("UD-Q4_K_XL");
+            let main = repo.join("snapshots").join("bbbb").join("UD-Q4_K_XL");
+            for d in [&blobs, &old, &main, &repo.join("refs")] {
+                fs::create_dir_all(d).unwrap();
+            }
+            fs::write(repo.join("refs").join("main"), "bbbb").unwrap();
+            for i in 1..=4 {
+                let name = format!("Qwen3.8-Flash-Next-UD-Q4_K_XL-{i:05}-of-00004.gguf");
+                let blob = blobs.join(format!("{i:064x}"));
+                gguf(&blob, 1024);
+                std::os::unix::fs::symlink(&blob, main.join(&name)).unwrap();
+                std::os::unix::fs::symlink(&blob, old.join(&name)).unwrap();
+            }
+            let found = scan(&repo.to_string_lossy()).unwrap();
+            assert_eq!(
+                found.directory,
+                main.to_string_lossy(),
+                "refs/main's revision"
+            );
+            let g = &found.groups[0];
+            assert!(g.installable && g.total_bytes == 4096, "{g:?}");
+            // A blob still downloading: the symlink's shard is cut short and refused.
+            fixture::write(
+                &blobs.join(format!("{:064x}", 3)),
+                Some((2, 4)),
+                &tensors(),
+                1,
+            );
+            let found = scan(&main.to_string_lossy()).unwrap();
+            assert_eq!(found.groups[0].shards[2].state, "tooSmall");
+        }
     }
 
     #[test]

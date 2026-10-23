@@ -5,6 +5,16 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **修复「使用已有模型」把完整的 Unsloth 模型判为不完整**：Unsloth 用 gguf-split 切分的模型，第 1 个分片只放元数据，大约 10 MB（例如 UD-Q6_K_XL 的 00001 是 10,946,624 字节，和上游 setup.py 记录的官方大小一致）。之前按「小于 64 MB 就是没下完」判断，结果把下载完整的模型标成「文件过小 · 不可用」。现在和上游安装器一样，读取每个分片的 GGUF 文件头，按里面的张量目录算出这个文件应有的长度，只有实际比它短（或者文件头本身被截断）时才算不完整，提示会写明实际多少字节、应有多少字节、缺多少。分片头里记录的序号或总数和文件名对不上时会单独提示；同目录有 `.part`、`.incomplete` 或 Hugging Face `--local-dir` 的未完成下载时也会点名。
+- **选择 Hugging Face 仓库目录也能找到模型**：整个仓库下载下来时每个量化在单独的子目录里（如 `UD-Q4_K_XL/`），Hugging Face 缓存目录（`models--组织--名称`）里还多了 `snapshots/<版本>/`。以前选这些目录会提示「没有找到 GGUF 模型文件」。现在会往下找三层（跳过 `.cache` 和 `blobs`）：只有一个量化目录时直接使用，缓存里有多个版本时用 `refs/main` 指向的那个，符号链接照常读取；有多个量化目录时会列出来请你选。
+
+### English
+
+- **Fixed 「使用已有模型」 calling complete Unsloth models incomplete**: Unsloth's gguf-split puts only metadata in shard 1, about 10 MB (UD-Q6_K_XL 00001 is 10,946,624 bytes, the size upstream setup.py pins). A 64 MB floor marked such downloads "too small · unusable". Like the upstream installer, each shard's GGUF header is now read and its tensor directory gives the length the file must have; a shard is incomplete only when it is shorter (or its header is cut), and the message gives the bytes found, needed and missing. `split.no`/`split.count` that disagree with the file name are reported, and `.part`, `.incomplete` or Hugging Face `--local-dir` download leftovers are named.
+- **Hugging Face repository folders are found**: a whole repository keeps each quantization in its own folder (`UD-Q4_K_XL/`), and the hub cache (`models--Org--Name`) adds `snapshots/<revision>/`. Choosing these folders used to say no GGUF was found. The scan now looks up to three levels down (skipping `.cache` and `blobs`), uses the folder when there is only one (refs/main's revision in the hub cache, symlinks followed), and lists the quantization folders when there are several.
+
 ## [0.2.17] - 2026-10-23
 
 ### 中文
