@@ -29,6 +29,24 @@ pub struct RuntimeReleaseVersion {
     pub installable: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub release_url: Option<String>,
+    /// Engine build the release ships, read from its asset names (display only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine_version: Option<String>,
+}
+
+/// `strata-engine-0.1.48-…` names the engine of a 0.2+ release; a legacy ZIP release
+/// carried its engine under the release's own number.
+fn release_engine(version: &str, assets: &[Value], feed: bool) -> Option<String> {
+    let named = assets
+        .iter()
+        .filter_map(|asset| asset["name"].as_str())
+        .find_map(|name| {
+            let rest = name.strip_prefix("strata-engine-")?;
+            let end = rest.find(|c: char| !(c.is_ascii_digit() || c == '.'))?;
+            let engine = rest[..end].trim_end_matches('.');
+            engine_package::valid_version(engine).then(|| engine.to_owned())
+        });
+    named.or_else(|| (!feed).then(|| version.to_owned()))
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -90,6 +108,7 @@ pub fn parse_releases(releases: &Value, host: Option<&str>) -> Vec<RuntimeReleas
                 packaging: if feed { "feed" } else { "zip" }.into(),
                 installable: host
                     .is_some_and(|host| assets.iter().any(|asset| installable_asset(asset, host))),
+                engine_version: release_engine(version, &assets, feed),
                 release_url: release["html_url"]
                     .as_str()
                     .filter(|url| url.starts_with("https://github.com/Niko1221/Strata/releases/"))
@@ -226,6 +245,16 @@ mod tests {
         );
         let none = parse_releases(&releases, None);
         assert!(none.iter().all(|v| !v.installable));
+        assert_eq!(windows[0].engine_version.as_deref(), Some("0.1.46"));
+        assert_eq!(
+            windows[1].engine_version.as_deref(),
+            Some("0.1.44"),
+            "a legacy ZIP release shares its engine's number"
+        );
+        let beta: Value =
+            serde_json::from_str(include_str!("fixtures/release-v0.2.0-beta.json")).unwrap();
+        let parsed = parse_releases(&json!([beta]), None);
+        assert_eq!(parsed[0].engine_version.as_deref(), Some("0.1.45.3"));
     }
 
     #[test]

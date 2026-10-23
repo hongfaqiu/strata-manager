@@ -405,7 +405,7 @@ export const deleteModelFiles = (profiles: ServiceProfile[], expectedFiles: impo
 export const listLocalModels = (profile: ServiceProfile): Promise<LocalModel[]> => native('list_local_models', { profile });
 export const exportDiagnostics = (profile: ServiceProfile): Promise<string> => native('export_diagnostics', { profile });
 export const repairPythonDependencies = (installDir: string): Promise<{ pythonPath: string; installed: string[]; alreadyPresent: string[]; message: string }> => native('repair_python_dependencies', { installDir });
-export const supportDiagnosticsText = (input: { profile?: ServiceProfile; installDir?: string; pythonPath?: string; configPath?: string; reason?: string; runtimeVersion?: string; name?: string } = {}): Promise<string> => {
+export const supportDiagnosticsText = (input: { profile?: ServiceProfile; installDir?: string; pythonPath?: string; configPath?: string; reason?: string; runtimeVersion?: string; releaseVersion?: string; name?: string } = {}): Promise<string> => {
   const { profile, ...extras } = input;
   return native('support_diagnostics_text', { ...(profile ? { profile } : {}), extras });
 };

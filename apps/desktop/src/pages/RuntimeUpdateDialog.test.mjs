@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import { releaseNotes } from '../updateReleaseNotes.ts';
 import { configurationPathKey } from '../../../../packages/core/src/model-groups.ts';
+import { runtimeVersions } from '../runtimeVersionsForTests.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
@@ -49,6 +50,7 @@ function fixture(overrides = {}) {
   const query = { isSuccess: false, isPending: true, isError: false, data: undefined, error: null };
   const assetQuery = { isSuccess: false, isPending: true, isError: false, data: undefined, error: null };
   const core = {
+    ...runtimeVersions,
     isDesktop: () => true,
     configurationPathKey,
     runtimeDownloadSources, resolveRuntimeDownloadPreferences, runtimeAssetLabel, runtimeBilingualText, runtimeEngineArchiveFilters, runtimeVersionDirection,
@@ -289,7 +291,7 @@ test('a chosen older version is confirmed as a downgrade and resolves that versi
   f.props.release = { ...f.props.release, latestVersion: '0.1.30' }; f.render(); await f.settle();
   const all = text(f.tree());
   assert.equal(f.tree().props.title, '降级到 Strata 0.1.30');
-  assert.ok(all.includes('这是降级：0.1.41 → 0.1.30'));
+  assert.ok(all.includes('这是降级：Release v0.1.41 · 引擎 0.1.41 → Release v0.1.30'));
   assert.ok(all.includes('切换到'));
   assert.ok(resolved.some(args => args[2] === '0.1.30'), 'the automatic package is matched against the chosen release');
 });
@@ -313,6 +315,7 @@ function parentFixture(kind, savedPreferences = { mode: 'official' }, pin = '') 
     'runtime-update-info': { data: { latestVersion: '0.1.42', supportedVersion: '0.1.41', checkedAt: 100, assets, installable: true } },
     'runtime-download-preferences': { data: savedPreferences, isSuccess: true, isPending: false },
     'runtime-pin': { data: pin, isSuccess: true, isPending: false },
+    'runtime-release-versions': { data: undefined },
   };
   const queryClient = { invalidateQueries: async () => {}, setQueryData: (key, data) => { queryData[key[0]].data = data; } };
   let cursor = 0, tree;
@@ -325,6 +328,7 @@ function parentFixture(kind, savedPreferences = { mode: 'official' }, pin = '') 
     useEffect: (fn, deps) => { const effect = slot(() => ({})); if (!sameDeps(effect.deps, deps)) { effect.deps = deps; effects.push(fn); } },
   };
   const core = {
+    ...runtimeVersions,
     updateRuntimeZip: async (...args) => { calls.updates.push(JSON.parse(JSON.stringify(args))); return { id: 'update-task', kind: 'update', state: 'running' }; },
     listTasks: async () => tasks, loadStore: async () => '', runtimeUpdateAllowedByPin, getRuntimePin: async () => pin,
     runtimeReleaseInfo: async version => ({ ...queryData['runtime-update-info'].data, latestVersion: version, checkedAt: 200 }),
@@ -361,7 +365,7 @@ for (const kind of ['manual', 'automatic']) test(`${kind} update entry stays qui
   const f = parentFixture(kind, { mode: 'official' }, '0.1.41'); f.props.showInstallations = false; f.render(); await f.settle();
   if (kind === 'manual') {
     assert.equal(nodes(f.tree()).find(node => node.type === 'button' && node.props.className === 'primary'), undefined, 'no update button beyond the pin');
-    assert.ok(text(f.tree()).includes('已固定在 0.1.41'));
+    assert.ok(text(f.tree()).includes('已固定在 v0.1.41'));
   }
   assert.equal(f.dialog(), undefined); assert.equal(f.calls.updates.length, 0);
 });
@@ -463,6 +467,7 @@ function settingsFixture(overrides = {}) {
     useEffect: (fn, deps) => { const effect = slot(() => ({})); if (!sameDeps(effect.deps, deps)) { effect.deps = deps; effects.push(fn); } },
   };
   const core = {
+    ...runtimeVersions,
     RUNTIME_DOWNLOAD_DEFAULTS, getRuntimeDownloadPreferences: async () => preferences.data, resolveRuntimeDownloadPreferences, runtimeDownloadSources, runtimeAssetLabel, runtimeBilingualText, runtimeEngineArchiveFilters,
     resolveRuntimeZipAsset: async (_dir, name) => overrides.resolveAsset ? await overrides.resolveAsset() : assets.find(asset => asset.name === name) ?? assets[1],
     normalizeError: error => ({ message: error instanceof Error ? error.message : String(error) }),
@@ -614,4 +619,26 @@ test('the entire official bilingual Release body reaches Markdown unchanged in e
     assert.equal(region.props.role, 'region'); assert.equal(region.props.tabIndex, 0);
     assert.equal(region.props['aria-label'], language === 'zh-CN' ? '更新日志' : 'Release notes');
   }
+});
+
+// The reported bug: 本机 showed the engine (0.1.47) next to the latest release (0.2.3).
+const releaseFacts = (f, pinList) => {
+  f.queryData['runtime-installation'].data = { detectedRuntimes: [{ ...runtime, releaseVersion: '0.2.2', runtimeVersion: '0.1.47', readiness: 'ready' }] };
+  f.queryData['runtime-update-info'].data = { ...f.queryData['runtime-update-info'].data, latestVersion: '0.2.3', assets: assets.map(asset => ({ ...asset, engineVersion: '0.1.48' })) };
+  if (pinList) f.queryData['runtime-release-versions'].data = { versions: [{ version: '0.2.3', engineVersion: '0.1.48' }, { version: '0.2.2', engineVersion: '0.1.47' }] };
+};
+test('the Strata page compares release with release and shows each engine beside it', async () => {
+  const f = parentFixture('manual'); releaseFacts(f); f.props.showInstallations = false; f.render(); await f.settle();
+  const by = id => text(nodes(f.tree()).find(node => node.props?.['data-testid'] === id));
+  assert.equal(by('runtime-current-version'), '本机 Releasev0.2.2引擎 0.1.47');
+  assert.equal(by('runtime-latest-version'), '最新 Releasev0.2.3引擎 0.1.48');
+  assert.equal(text(nodes(f.tree()).find(node => node.type === 'button' && node.props.className === 'primary')), '更新至 v0.2.3');
+});
+for (const kind of ['manual', 'automatic']) test(`${kind} update entry reads an old engine-number pin as the release that shipped it`, async () => {
+  const f = parentFixture(kind, { mode: 'official' }, '0.1.47'); releaseFacts(f, true); f.props.showInstallations = false; f.render(); await f.settle();
+  if (kind === 'manual') assert.ok(text(f.tree()).includes('已固定在 v0.2.2'));
+  assert.equal(f.dialog(), undefined);
+  const unpinned = parentFixture(kind); releaseFacts(unpinned, true); unpinned.props.showInstallations = false; unpinned.render(); await unpinned.settle();
+  if (kind === 'manual') await unpinned.open();
+  else assert.ok(unpinned.dialog(), 'v0.2.3 is offered to an install of v0.2.2 (engine 0.1.47)');
 });

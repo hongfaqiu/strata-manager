@@ -28,7 +28,7 @@ const words = {
     awaitingResult: '正在确认准备结果…',
     callbackFailed: '无法进入模型选择', actionFailed: '操作未完成', details: '技术信息', revision: 'Strata 版本', directory: '运行环境目录', python: 'Python 环境',
     chooseRuntime: '选择运行环境', existingRuntime: '已检测到本机 Strata', runtimeRepair: '需要补齐运行环境',
-    environment: '运行环境', installed: '已安装', version: '引擎版本', notPrepared: '尚未准备引擎',
+    environment: '运行环境', installed: '已安装', version: '版本', notPrepared: '尚未准备引擎',
     prepareRuntime: '准备完整运行环境', repairHint: '在应用管理目录准备完整的独立运行环境，原目录保留。完成后可以切换使用。',
     repairFallback: '已检测到 Strata 文件，但 Python 或运行依赖尚未就绪。',
     startLocal: '使用本地安装包安装', localPackage: '使用本地安装包', localStrata: 'Strata 安装包', localEngine: '引擎安装包',
@@ -49,7 +49,7 @@ const words = {
     awaitingResult: 'Confirming the prepared runtime…',
     callbackFailed: 'Could not open model selection', actionFailed: 'The operation did not complete', details: 'Technical details', revision: 'Strata revision', directory: 'Runtime directory', python: 'Python environment',
     chooseRuntime: 'Choose a runtime', existingRuntime: 'Local Strata detected', runtimeRepair: 'Runtime needs repair',
-    environment: 'Runtime', installed: 'Installed', version: 'Engine version', notPrepared: 'Engine not prepared yet',
+    environment: 'Runtime', installed: 'Installed', version: 'Version', notPrepared: 'Engine not prepared yet',
     prepareRuntime: 'Prepare a complete runtime', repairHint: 'Prepare a complete, separate runtime in the app-managed directory. The original directory is retained; switch after preparation.',
     repairFallback: 'Strata files were detected, but Python or runtime dependencies are not ready.',
     startLocal: 'Install from local package', localPackage: 'Install from local package', localStrata: 'Strata package', localEngine: 'Engine package',
@@ -221,8 +221,8 @@ export function InstallRuntimePage(props: InstallRuntimePageProps) {
       {statusError && <div className="install-runtime-error" role="alert"><CircleAlert size={17}/><div><strong>{text.statusUnavailable}</strong><p>{statusError}</p></div></div>}
       {installed && detected ? <>
         <Panel title={text.environment} className="runtime-installed-summary" action={<button type="button" disabled={refreshing || busy} aria-busy={refreshing} onClick={() => void refresh(true)}><RefreshCw size={15} className={refreshing ? 'spin' : undefined}/>{text.refresh}</button>}>
-          <div className="runtime-summary-selection"><span className={`runtime-summary-status ${detected.readiness === 'ready' ? 'runtime-ready' : 'runtime-repair'}`}>{detected.readiness === 'ready' ? <Check size={14}/> : <CircleAlert size={14}/>} {detected.readiness === 'ready' ? text.installed : text.runtimeRepair}</span><div><span className="runtime-selection-label">{text.chooseRuntime}</span><Dropdown ariaLabel={text.chooseRuntime} value={detected.installDir} disabled={busy || running} onValueChange={setSelectedRuntime} options={runtimes.map(runtime => ({ value: runtime.installDir, label: `${runtime.runtimeVersion ? `Strata ${runtime.runtimeVersion} · ` : ''}${runtime.installDir}${runtime.readiness === 'repair' ? ` · ${text.runtimeRepair}` : ''}` }))}/></div></div>
-          <dl className="runtime-summary-facts"><div><dt>{text.directory}</dt><dd><code>{detected.installDir}</code></dd></div><div><dt>{text.version}</dt><dd>{detected.runtimeVersion ?? text.notPrepared}</dd></div></dl>
+          <div className="runtime-summary-selection"><span className={`runtime-summary-status ${detected.readiness === 'ready' ? 'runtime-ready' : 'runtime-repair'}`}>{detected.readiness === 'ready' ? <Check size={14}/> : <CircleAlert size={14}/>} {detected.readiness === 'ready' ? text.installed : text.runtimeRepair}</span><div><span className="runtime-selection-label">{text.chooseRuntime}</span><Dropdown ariaLabel={text.chooseRuntime} value={detected.installDir} disabled={busy || running} onValueChange={setSelectedRuntime} options={runtimes.map(runtime => ({ value: runtime.installDir, label: `${core.runtimeVersionLabel({ release: runtime.releaseVersion, engine: runtime.runtimeVersion }, props.language === 'zh-CN') ? `${core.runtimeVersionLabel({ release: runtime.releaseVersion, engine: runtime.runtimeVersion }, props.language === 'zh-CN')} · ` : ''}${runtime.installDir}${runtime.readiness === 'repair' ? ` · ${text.runtimeRepair}` : ''}` }))}/></div></div>
+          <dl className="runtime-summary-facts"><div><dt>{text.directory}</dt><dd><code>{detected.installDir}</code></dd></div><div><dt>{text.version}</dt><dd>{core.runtimeVersionLabel({ release: detected.releaseVersion, engine: detected.runtimeVersion }, props.language === 'zh-CN') || text.notPrepared}</dd></div></dl>
           {detected.readiness === 'repair' && <div className="runtime-repair-details" role="status"><p>{detected.reason ?? text.repairFallback}</p><small>{text.repairHint}</small></div>}
           {detected.readiness === 'repair' && !running && core.needsManagedPython(detected.reason) && <ManagedPythonPanel variant="inline" language={props.language} desktop={props.desktop} onInstalled={() => void refresh(true)}/>}
           {detected.readiness === 'repair' && !running && <LocalRuntimePackageFields packages={packages} disabled={busy}/>}

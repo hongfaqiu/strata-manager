@@ -105,6 +105,7 @@ export function OnboardingPage(props: OnboardingPageProps) {
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
 
   const { facts, plan, checks, runtimeTask, setupTask, handoff, readyRuntime, repairReason, target } = props.guide;
+  const readyLabel = core.runtimeVersionLabel({ release: readyRuntime?.releaseVersion, engine: readyRuntime?.runtimeVersion }, props.language === 'zh-CN') || undefined;
   const runtimeFact = facts.runtime, verdict = facts.environment;
   const path: GuidePath | null = progress?.path ?? null;
   const shown = viewing && plan?.steps.some(step => step.id === viewing) ? viewing : plan?.current;
@@ -126,7 +127,7 @@ export function OnboardingPage(props: OnboardingPageProps) {
     if (id === 'environment' && state === 'skipped') return t('obSkippedAuto');
     if (id === 'environment' && checks) return `${checks.filter(check => check.state === 'ok').length}/${checks.length}`;
     if (id === 'runtime' && state === 'running' && runtimeTask) return t('obElapsed', { time: clock(now - runtimeTask.startedAt) });
-    if (id === 'runtime' && settled(state)) return readyRuntime?.runtimeVersion ? `Strata ${readyRuntime.runtimeVersion}` : t('obDetectedDone');
+    if (id === 'runtime' && settled(state)) return readyLabel ?? t('obDetectedDone');
     if (id === 'model' && progress?.selection && state === 'done') return `${modelName(progress.selection.family)} · ${progress.selection.quant}`;
     if (id === 'download' && state === 'running') return setupPercent !== undefined ? `${Math.round(setupPercent)}%` : t('obInProgress');
     if (state === 'skipped') return t('obDetectedDone');
@@ -134,7 +135,7 @@ export function OnboardingPage(props: OnboardingPageProps) {
     return undefined;
   };
 
-  if (!plan || !path || !shown) return <EntryScreen {...props} t={t} runtimeFact={runtimeFact} readyVersion={readyRuntime?.runtimeVersion}/>;
+  if (!plan || !path || !shown) return <EntryScreen {...props} t={t} runtimeFact={runtimeFact} readyVersion={readyLabel}/>;
 
   const rail = <aside className="ob-rail" aria-label={t('guideTitle')}>
     <span className="ob-eyebrow">{t('guideTitle')}</span>
@@ -159,7 +160,7 @@ export function OnboardingPage(props: OnboardingPageProps) {
   const doneNote = viewingDone ? <div className="ob-done-note"><Check size={14}/><span>{t('obStepDone')}</span><button type="button" className="ob-link" onClick={() => setViewing(undefined)}>{t('obGoCurrent')}<ArrowRight size={13}/></button></div> : null;
   const shared = { ...props, t, now, facts, target };
   const body = shown === 'environment' ? <EnvironmentStep {...shared} checks={checks} verdict={verdict} readOnly={viewingDone}/>
-    : shown === 'runtime' ? <RuntimeStep {...shared} runtimeTask={runtimeTask} runtimeFact={runtimeFact} readyVersion={readyRuntime?.runtimeVersion} repairReason={repairReason} onRefreshRuntime={props.onRefreshRuntime}/>
+    : shown === 'runtime' ? <RuntimeStep {...shared} runtimeTask={runtimeTask} runtimeFact={runtimeFact} readyVersion={readyLabel} repairReason={repairReason} onRefreshRuntime={props.onRefreshRuntime}/>
     : shown === 'model' ? <ModelStep {...shared} runtimeProfile={readyRuntime?.profile}/>
     : shown === 'download' ? <DownloadStep {...shared} setupTask={setupTask} handoff={handoff}/>
     : shown === 'start' || shown === 'load' ? <StartStep {...shared}/>
@@ -543,7 +544,7 @@ function DiscoverStep(props: StepProps) {
           <Mark state={candidate.running ? 'ok' : 'none'}/>
           <span className="ob-mono">{candidate.running && candidate.detectedPort ? `127.0.0.1:${candidate.detectedPort}` : t('obConfigured')}</span>
           <span className="ob-found-name"><b>{candidate.name}</b><small>{candidate.configPath}</small></span>
-          <span className="ob-note">{candidate.running ? t('obRunningNow') : candidate.runtimeVersion ?? ''}</span>
+          <span className="ob-note">{candidate.running ? t('obRunningNow') : core.runtimeVersionLabel({ release: candidate.releaseVersion, engine: candidate.runtimeVersion }, props.language === 'zh-CN')}</span>
           <button type="button" className={candidate.running ? 'primary' : 'st-btn st-btn--secondary'} disabled={!!working || props.busy || candidate.availability === 'repair'} onClick={() => void connect(candidate)}>{working === candidate.id && <LoaderCircle size={14} className="spin"/>}{t(candidate.running ? 'obConnect' : 'obStartThis')}</button>
         </div>)
         : <p className="ob-empty">{t('obNothingFound')}</p>}

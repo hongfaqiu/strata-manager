@@ -286,7 +286,7 @@ export interface GuideInput {
   desktop: boolean;
   tasks: core.TaskStatus[];
   handoffs: core.SetupHandoff[];
-  runtime?: { taskId?: string; result?: { installDir: string; pythonPath: string; profile: core.ServiceProfile }; detectedRuntimes?: { readiness: 'ready' | 'repair'; runtimeVersion?: string; reason?: string; profile: core.ServiceProfile }[] };
+  runtime?: { taskId?: string; result?: { installDir: string; pythonPath: string; profile: core.ServiceProfile }; detectedRuntimes?: { readiness: 'ready' | 'repair'; runtimeVersion?: string; releaseVersion?: string; reason?: string; profile: core.ServiceProfile }[] };
   runtimePending: boolean;
   environment?: core.EnvironmentInfo;
   environmentFailed: boolean;
@@ -304,7 +304,7 @@ export interface GuideState {
   runtimeTask?: core.TaskStatus;
   setupTask?: core.TaskStatus;
   handoff?: core.SetupHandoff;
-  readyRuntime?: { runtimeVersion?: string; profile: core.ServiceProfile };
+  readyRuntime?: { runtimeVersion?: string; releaseVersion?: string; profile: core.ServiceProfile };
   /** Why the detected runtime still needs repair (backend fact, shown verbatim). */
   repairReason?: string;
   target?: core.ServiceProfile;

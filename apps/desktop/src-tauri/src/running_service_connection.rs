@@ -519,6 +519,7 @@ mod tests {
                 running: Some(true),
                 reason: None,
                 runtime_version: None,
+                release_version: None,
                 source: None,
                 availability: None,
                 pid: Some(12345),

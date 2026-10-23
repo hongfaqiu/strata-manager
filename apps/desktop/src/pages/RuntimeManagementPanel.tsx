@@ -22,7 +22,7 @@ interface Props {
 }
 const labels = {
   'zh-CN': {
-    title: 'Strata 更新', current: '本机版本', latest: '最新版本', check: '检查更新', checking: '检查中…', unknown: '—',
+    title: 'Strata 更新', current: '本机 Release', latest: '最新 Release', engine: '引擎', check: '检查更新', checking: '检查中…', unknown: '—',
     notes: '更新日志', published: '发布于', upstream: '官方发布', update: '更新至', install: '安装 Strata', noRuntime: '未安装',
     updating: '正在更新', completed: '更新完成', ready: '已安装', repair: '需要修复', failed: '更新失败',
     localPackage: '使用本地安装包', localPackageChecking: '正在读取发布信息…',
@@ -30,7 +30,7 @@ const labels = {
     trialFailed: '新引擎试启动未通过，已自动回滚', trialRestored: '已恢复原版本 {version}，模型与配置未改动，可继续使用。', trialUndone: '已撤销本次安装，模型与配置未改动。', trialReason: '原因',
   },
   en: {
-    title: 'Strata updates', current: 'Installed version', latest: 'Latest version', check: 'Check for updates', checking: 'Checking…', unknown: '—',
+    title: 'Strata updates', current: 'Installed release', latest: 'Latest release', engine: 'Engine', check: 'Check for updates', checking: 'Checking…', unknown: '—',
     notes: 'Release notes', published: 'Published', upstream: 'Official release', update: 'Update to', install: 'Install Strata', noRuntime: 'Not installed',
     updating: 'Updating', completed: 'Update complete', ready: 'Installed', repair: 'Needs repair', failed: 'Update failed',
     localPackage: 'Install from local package', localPackageChecking: 'Loading release information…',
@@ -38,18 +38,6 @@ const labels = {
     trialFailed: 'The new engine failed its trial start and was rolled back', trialRestored: 'Version {version} was restored; models and settings are unchanged and ready to use.', trialUndone: 'This installation was undone; models and settings are unchanged.', trialReason: 'Reason',
   },
 } as const;
-function needsUpdate(current: string | undefined, latest: string | undefined) {
-  if (!latest) return false;
-  if (!current) return true;
-  const numbers = (value: string) => /^v?\d+(\.\d+)*$/.test(value) ? value.replace(/^v/, '').split('.').map(Number) : undefined;
-  const a = numbers(current), b = numbers(latest);
-  if (!a || !b) return current !== latest;
-  for (let index = 0; index < Math.max(a.length, b.length); index++) {
-    if ((a[index] ?? 0) !== (b[index] ?? 0)) return (a[index] ?? 0) < (b[index] ?? 0);
-  }
-  return false;
-}
-
 export function RuntimeManagementPanel({ language, desktop, onInstall, selectedRuntimeDir, showInstallations = true, installationStatus, autoCheck = true, operationDisabled = false, onUpdateStarted }: Props) {
   const text = labels[(language === 'zh-CN' ? 'zh-CN' : 'en')]; const query = useQueryClient();
   const [checking, setChecking] = useState(false), [starting, setStarting] = useState(''), [actionError, setActionError] = useState('');
@@ -64,6 +52,8 @@ export function RuntimeManagementPanel({ language, desktop, onInstall, selectedR
   const tasks = useQuery({ queryKey: ['tasks'], queryFn: core.listTasks, enabled: desktop, refetchInterval: 2000 });
   const update = useQuery({ queryKey: ['runtime-update-info'], queryFn: () => core.runtimeUpdateInfo(), enabled: desktop && autoCheck, staleTime: 12 * 60 * 60 * 1000, refetchInterval: autoCheck ? 12 * 60 * 60 * 1000 : false, refetchOnWindowFocus: autoCheck });
   const pin = useRuntimePin(desktop);
+  // The release list maps an engine number to its release for folders that do not record one.
+  const releaseList = useQuery({ queryKey: ['runtime-release-versions'], queryFn: () => core.runtimeReleaseVersions(), enabled: desktop, staleTime: 6 * 60 * 60 * 1000, retry: false, refetchOnWindowFocus: false }).data?.versions ?? [];
   const downloadPreferences = useQuery({ queryKey: ['runtime-download-preferences'], queryFn: core.getRuntimeDownloadPreferences, enabled: desktop, staleTime: Infinity, retry: false });
   const activeTask = tasks.data?.find(task => task.state === 'running' && task.kind === 'update');
   const lastTask = tasks.data?.find(task => task.id === taskId);
@@ -71,8 +61,15 @@ export function RuntimeManagementPanel({ language, desktop, onInstall, selectedR
   const status = installationStatus ?? installation.data, result = status?.result;
   const allRuntimes: core.DetectedRuntime[] = status?.detectedRuntimes ?? (result ? [{ installDir: result.installDir, pythonPath: result.pythonPath, sourceRevision: result.sourceRevision, readiness: 'ready', profile: result.profile }] : []);
   const runtimes = selectedRuntimeDir ? allRuntimes.filter(runtime => runtime.installDir === selectedRuntimeDir) : allRuntimes;
-  const pinBlocks = !core.runtimeUpdateAllowedByPin(update.data?.latestVersion, pin.data);
-  const updateTargets = pinBlocks ? [] : runtimes.filter(runtime => needsUpdate(runtime.runtimeVersion, update.data?.latestVersion) && !core.runtimeEngineIsCurrent(runtime.runtimeVersion, update.data));
+  const pinned = core.runtimePinRelease(pin.data, allRuntimes, releaseList);
+  const pinBlocks = !core.runtimeUpdateAllowedByPin(update.data?.latestVersion, pinned);
+  const offered = (runtime: core.DetectedRuntime) => core.runtimeUpdateAvailable(runtime, update.data, releaseList);
+  const updateTargets = pinBlocks ? [] : runtimes.filter(offered);
+  const releaseOf = (runtime: core.DetectedRuntime) => core.runtimeReleaseOf(runtime, releaseList);
+  const unique = (values: (string | undefined)[]) => values.filter((value, index, all): value is string => !!value && all.indexOf(value) === index);
+  const currentReleases = unique(runtimes.map(releaseOf)), currentEngines = unique(runtimes.map(runtime => runtime.runtimeVersion));
+  const latestEngine = core.releaseEngineVersion(update.data);
+  const zh = language === 'zh-CN';
   const installed = allRuntimes.length > 0;
   const notes = releaseNotes(update.data?.notes);
   useEffect(() => {
@@ -150,20 +147,20 @@ export function RuntimeManagementPanel({ language, desktop, onInstall, selectedR
   };
   const pendingPreferences: core.RuntimeDownloadPreferences | undefined = pending?.local && downloadPreferences.data ? { ...downloadPreferences.data, mode: 'local', sourceId: undefined, mirrorUrl: undefined, localArchivePath: '', releaseVersion: pending.release.latestVersion ?? pending.release.supportedVersion } : downloadPreferences.data;
   const savedDownload = pending && pendingPreferences ? core.resolveRuntimeDownloadPreferences(pendingPreferences, pending.release) : undefined;
-  const updateButton = (runtime: core.DetectedRuntime) => <button type="button" className="primary" key={runtime.installDir} disabled={operationDisabled || !desktop || !downloadPreferences.isSuccess || !update.data?.installable || !!starting || !!activeTask} onClick={() => { if (update.data && downloadPreferences.isSuccess) { setActionError(''); setPending({ runtime, release: update.data }); } }}><ArrowUpCircle size={15}/>{starting === runtime.installDir ? text.updating : `${text.update} ${update.data?.latestVersion ?? ''}`}</button>;
+  const updateButton = (runtime: core.DetectedRuntime) => <button type="button" className="primary" key={runtime.installDir} disabled={operationDisabled || !desktop || !downloadPreferences.isSuccess || !update.data?.installable || !!starting || !!activeTask} onClick={() => { if (update.data && downloadPreferences.isSuccess) { setActionError(''); setPending({ runtime, release: update.data }); } }}><ArrowUpCircle size={15}/>{starting === runtime.installDir ? text.updating : `${text.update} ${update.data?.latestVersion ? `v${update.data.latestVersion}` : ''}`}</button>;
   return <Panel title={text.title} className="runtime-management">
     <div className="runtime-version-grid">
-      <div><span>{text.current}</span><strong>{runtimes.map(runtime => runtime.runtimeVersion).filter(Boolean).filter((version, index, all) => all.indexOf(version) === index).join(' / ') || (installed ? text.ready : text.noRuntime)}</strong></div>
-      <div><span>{text.latest}</span><strong>{update.data?.error ? text.unconfirmed : update.data?.latestVersion ?? (update.isLoading ? text.checking : text.unknown)}</strong>{installed && update.data?.latestVersion && !update.data.error && !updateTargets.length && (pinBlocks ? <small className="runtime-pinned" data-testid="runtime-pinned">{text.pinnedNotice.replace('{version}', pin.data ?? '')}</small> : <small className="runtime-ready">{text.latestInstalled}</small>)}</div>
+      <div data-testid="runtime-current-version"><span>{text.current}</span><strong>{currentReleases.map(version => `v${version}`).join(' / ') || (currentEngines.length ? `${text.engine} ${currentEngines.join(' / ')}` : installed ? text.ready : text.noRuntime)}</strong>{currentReleases.length > 0 && currentEngines.length > 0 && <small className="runtime-version-engine">{text.engine} {currentEngines.join(' / ')}</small>}</div>
+      <div data-testid="runtime-latest-version"><span>{text.latest}</span><strong>{update.data?.error ? text.unconfirmed : update.data?.latestVersion ? `v${update.data.latestVersion}` : update.isLoading ? text.checking : text.unknown}</strong>{!update.data?.error && latestEngine && <small className="runtime-version-engine">{text.engine} {latestEngine}</small>}{installed && update.data?.latestVersion && !update.data.error && !updateTargets.length && (pinBlocks ? <small className="runtime-pinned" data-testid="runtime-pinned">{text.pinnedNotice.replace('{version}', pinned ? `v${pinned}` : '')}</small> : <small className="runtime-ready">{text.latestInstalled}</small>)}</div>
     </div>
     {(installation.error || update.error || update.data?.error) && <p className="notice error" role="alert">{core.normalizeError(installation.error ?? update.error ?? update.data?.error).message}</p>}
     <div className="actions">{!installed && onInstall && <button type="button" className="primary" onClick={onInstall}><Download size={15}/>{text.install}</button>}{!showInstallations && updateTargets.map(updateButton)}{installed && <button type="button" data-testid="runtime-local-package" disabled={operationDisabled || !desktop || !downloadPreferences.isSuccess || !!starting || !!activeTask || openingLocal} onClick={() => void openLocalPackage()}>{openingLocal ? <LoaderCircle size={15} className="spin"/> : <FolderOpen size={15}/>}{openingLocal ? text.localPackageChecking : text.localPackage}</button>}<button type="button" disabled={!desktop || checking || update.isFetching} onClick={() => void check()}>{checking || update.isFetching ? <LoaderCircle size={15} className="spin"/> : <RefreshCw size={15}/>} {text.check}</button>{update.data?.releaseUrl && <a className="runtime-release-link" href={update.data.releaseUrl} target="_blank" rel="noreferrer"><ExternalLink size={14}/>{text.upstream}</a>}{installed && updateTargets.length > 0 && !update.isLoading && !update.data?.installable && !update.data?.error && <span className="subtle">{text.noPackage}</span>}</div>
-    {showInstallations && !!runtimes.length && <div className="runtime-installed-list">{runtimes.map(runtime => <div className="runtime-installed-item" key={runtime.installDir}><div><strong>{runtime.runtimeVersion ? `Strata ${runtime.runtimeVersion}` : 'Strata'}</strong><span className={runtime.readiness === 'ready' ? 'runtime-ready' : 'runtime-repair'}>{runtime.readiness === 'ready' ? text.ready : text.repair}</span><code>{runtime.installDir}</code></div>{!pinBlocks && needsUpdate(runtime.runtimeVersion, update.data?.latestVersion) && updateButton(runtime)}</div>)}</div>}
+    {showInstallations && !!runtimes.length && <div className="runtime-installed-list">{runtimes.map(runtime => <div className="runtime-installed-item" key={runtime.installDir}><div><strong>{core.runtimeVersionLabel({ release: releaseOf(runtime), engine: runtime.runtimeVersion }, zh) || 'Strata'}</strong><span className={runtime.readiness === 'ready' ? 'runtime-ready' : 'runtime-repair'}>{runtime.readiness === 'ready' ? text.ready : text.repair}</span><code>{runtime.installDir}</code></div>{!pinBlocks && offered(runtime) && updateButton(runtime)}</div>)}</div>}
     {activeTask && <div className="runtime-update-progress" role="status"><LoaderCircle className="spin" size={16}/><div><strong>{activeTask.message || text.updating}</strong>{taskLogs.length > 0 && <details><summary>{text.logs}</summary><pre>{taskLogs.map(entry => entry.message).join('\n')}</pre></details>}<button type="button" onClick={() => void cancel()}><Square size={13}/>{text.cancel}</button></div></div>}
     {lastTask?.state === 'completed' && <p className="runtime-update-result runtime-ready" role="status">{text.completed}</p>}
     {lastTask?.state === 'failed' && (trialRollback ? <div className="notice warning runtime-trial-rollback" role="alert" data-testid="runtime-trial-rollback"><strong>{text.trialFailed}</strong><p>{trialRollback.restoredVersion ? text.trialRestored.replace('{version}', trialRollback.restoredVersion) : text.trialUndone}</p>{trialRollback.reason && <div className="runtime-trial-reason"><span>{text.trialReason}</span><code>{core.runtimeReasonText(trialRollback.reason, language === 'zh-CN')}</code></div>}</div> : <p className="notice error" role="alert">{text.failed}: {lastTask.message}</p>)}
     {actionError && <p className="notice error" role="alert">{actionError}</p>}
-    {installed && !showInstallations && runtimes[0] && <RuntimeVersionChoice language={language} desktop={desktop} currentVersion={runtimes[0].runtimeVersion} latestVersion={update.data?.latestVersion} disabled={operationDisabled || !downloadPreferences.isSuccess || !!starting || !!activeTask} opening={openingVersion} onChoose={version => void openVersion(version)}/>}
+    {installed && !showInstallations && runtimes[0] && <RuntimeVersionChoice language={language} desktop={desktop} currentVersion={releaseOf(runtimes[0])} currentEngine={runtimes[0].runtimeVersion} latestVersion={update.data?.latestVersion} latestEngine={latestEngine} runtimes={allRuntimes} disabled={operationDisabled || !downloadPreferences.isSuccess || !!starting || !!activeTask} opening={openingVersion} onChoose={version => void openVersion(version)}/>}
     <RuntimeDownloadSettings language={language} desktop={desktop} runtime={runtimes[0]} release={update.data} releaseLoading={update.isLoading || update.isFetching}/>
     {notes && update.data && <details className="runtime-release-notes"><summary>{text.notes} · {update.data.releaseName ?? update.data.latestVersion}</summary>{update.data.publishedAt && <p className="subtle">{text.published} {new Date(update.data.publishedAt).toLocaleDateString(language)}</p>}<div className="runtime-release-body" tabIndex={0} role="region" aria-label={text.notes}><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml components={{ a: ({ node: _node, title, children, ...props }) => <a {...props} data-tooltip={title} target="_blank" rel="noreferrer">{children}</a>, img: ({ node: _node, title, ...props }) => <img {...props} data-tooltip={title}/> }}>{notes}</ReactMarkdown></div></details>}
     {pending && <RuntimeUpdateDialog language={language} runtime={pending.runtime} release={pending.release} assetName={savedDownload?.assetName} initialDownload={savedDownload?.download} initialPreferences={pendingPreferences} localEntry={!!pending.local} targetVersion={pending.target} busy={!!starting} canConfirm={!operationDisabled && desktop && downloadPreferences.isSuccess && !!tasks.data && !tasks.data.some(task => task.state === 'running') && (pending.target ? pending.release.installable : !update.isFetching && !!update.data?.installable)} error={actionError} onConfirm={(download, selectedAssetName) => { void installUpdate(download, selectedAssetName); }} onDismiss={() => { if (!startingRef.current) { setPending(null); setActionError(''); } }}/>}

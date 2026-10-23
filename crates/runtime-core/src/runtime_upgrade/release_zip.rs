@@ -23,7 +23,7 @@ use std::{
 const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS runtime_zip_updates(task_id TEXT PRIMARY KEY,journal TEXT NOT NULL,updated_at INTEGER NOT NULL);";
 const MAX_SOURCE: u64 = 128 * 1024 * 1024;
 const MAX_EXPANDED: u64 = 3 * 1024 * 1024 * 1024;
-const RELEASE_MARKER: &str = ".strata-manager-release.json";
+use crate::discovery::RELEASE_MARKER;
 const OBSERVER_COMPAT: &str =
     include_str!("../../../../apps/supervisor/resources/observer_compat.json");
 

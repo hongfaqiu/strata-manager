@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
 import * as modelGroups from '../../../../packages/core/src/model-groups.ts';
+import { runtimeVersions } from '../runtimeVersionsForTests.mjs';
 const { configurationPathKey, groupLocalModels, modelAssetKey } = modelGroups;
 // Version-aware helpers, translation and the stored preference used by the model list.
 const versionDependencies = { 'react-i18next': { useTranslation: () => ({ t: key => key }) }, '../useShowAllVersions': { useShowAllVersions: () => [false, () => {}] } };
@@ -139,7 +140,7 @@ test('two existing main weights render two model rows; orphan configurations app
   const { ServiceManagerPage } = load(compiled('./ServiceManagerPage.tsx'), {
     react: { useRef: value => ({ current: value }), useEffect: () => {}, useState: value => [value, () => {}] },
     '@tanstack/react-query': { useQueries: ({ queries }) => queries.map(() => ({})) },
-    ...versionDependencies, '@strata-manager/core': modelGroups,
+    ...versionDependencies, '@strata-manager/core': { ...modelGroups, runtimeVersionLabel: runtimeVersions.runtimeVersionLabel },
     'react/jsx-runtime': { jsx, jsxs: jsx }, './ModelConfigurationDropdown': { ModelConfigurationDropdown: 'configurations' },
   });
   const tree = ServiceManagerPage({ profiles: [], activeId: '', candidates, language: 'zh-CN', desktop: true });
@@ -156,7 +157,7 @@ test('each model exposes only its own configurations; deleting an inactive candi
   const { ServiceManagerPage } = load(compiled('./ServiceManagerPage.tsx'), {
     react: { useRef: value => ({ current: value }), useEffect: () => {}, useState: value => { const index = cursor++; if (!(index in slots)) slots[index] = value; return [slots[index], next => { slots[index] = typeof next === 'function' ? next(slots[index]) : next; }]; } },
     '@tanstack/react-query': { useQueries: ({ queries }) => queries.map(() => ({})) },
-    ...versionDependencies, '@strata-manager/core': modelGroups,
+    ...versionDependencies, '@strata-manager/core': { ...modelGroups, runtimeVersionLabel: runtimeVersions.runtimeVersionLabel },
     'react/jsx-runtime': { jsx, jsxs: jsx }, './ModelConfigurationDropdown': { ModelConfigurationDropdown: 'configurations' }, './ConfigurationDeletionDialog': { ConfigurationDeletionDialog: 'configuration-deletion' },
   });
   const props = { profiles: [profile], details: [{ profileId: profile.id, config }], activeId: profile.id, candidates: [candidate('inactive'), candidate('other-model', { config: { args: ['--native', 'D:\\Models\\Other.gguf'] } })], language: 'zh-CN', desktop: true, onSelect: () => calls.selected++, onStart: () => calls.started++, onModelDeleted: () => calls.refreshed++ };

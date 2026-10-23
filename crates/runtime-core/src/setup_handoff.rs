@@ -554,6 +554,7 @@ fn find_and_register(
         running: None,
         reason: None,
         runtime_version: None,
+        release_version: None,
         source: None,
         availability: None,
         pid: None,
