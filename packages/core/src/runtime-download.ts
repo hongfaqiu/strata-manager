@@ -5,7 +5,8 @@ const storeKey = 'runtimeDownloadPreferences';
 const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
 
 /**
- * Third-party GitHub release proxies; the official source remains the default.
+ * GitHub release proxies. gh-proxy.org is the default source and GitHub the fallback; every
+ * package is still checked against the official size and SHA-256 whichever host serves it.
  * Labels are the proxy hostnames so the two similarly named services stay distinguishable (#126).
  */
 export const runtimeDownloadSources = [
@@ -13,8 +14,11 @@ export const runtimeDownloadSources = [
   { id: 'ghproxy', label: 'ghproxy.net', urlTemplate: 'https://ghproxy.net/{url}' },
 ] as const;
 
+/** Nothing saved yet: the domestic mirror first, GitHub as the fallback. */
+export const RUNTIME_DOWNLOAD_DEFAULTS: RuntimeDownloadPreferences = { mode: 'mirror', sourceId: 'gh-proxy' };
+
 function normalize(value: unknown): RuntimeDownloadPreferences {
-  if (!value || typeof value !== 'object') return { mode: 'official' };
+  if (!value || typeof value !== 'object') return { ...RUNTIME_DOWNLOAD_DEFAULTS };
   const raw = value as Record<string, unknown>;
   const mode = raw.mode === 'local' || raw.mode === 'mirror' ? raw.mode : 'official';
   return {
@@ -28,7 +32,7 @@ function normalize(value: unknown): RuntimeDownloadPreferences {
 }
 
 export async function getRuntimeDownloadPreferences(): Promise<RuntimeDownloadPreferences> {
-  return normalize(await loadStore<unknown>(storeKey, { mode: 'official' }));
+  return normalize(await loadStore<unknown>(storeKey, RUNTIME_DOWNLOAD_DEFAULTS));
 }
 
 export function saveRuntimeDownloadPreferences(value: RuntimeDownloadPreferences): Promise<void> {

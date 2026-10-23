@@ -139,8 +139,34 @@ pub(super) async fn engine_archive(
             }))
             .build()
             .map_err(|error| error.to_string())?;
-        installation::download_using_client(state, id, url, &asset.sha256, asset.size, &client)
-            .await?
+        match installation::download_using_client(
+            state,
+            id,
+            url,
+            &asset.sha256,
+            asset.size,
+            &client,
+        )
+        .await
+        {
+            Ok(archive) => archive,
+            // The mirror is the default; GitHub is the fallback. Both are held to the
+            // same official size and SHA-256, so falling back never weakens a check.
+            Err(error) => {
+                cancelled(state, id)?;
+                processes::log(
+                    &state.logs,
+                    id,
+                    "warn",
+                    format!("镜像下载未完成（{error}），改用 GitHub 官方地址重试"),
+                );
+                installation::download_release(state, id, &asset.url, &asset.sha256, asset.size)
+                    .await
+                    .map_err(|official| {
+                        format!("镜像和 GitHub 都没能下载引擎包。镜像：{error}；GitHub：{official}")
+                    })?
+            }
+        }
     } else {
         installation::download_release(state, id, &asset.url, &asset.sha256, asset.size).await?
     };

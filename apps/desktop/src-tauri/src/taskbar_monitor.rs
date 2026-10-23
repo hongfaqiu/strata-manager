@@ -95,11 +95,13 @@ impl Preferences {
                 .unwrap_or(16.0)
                 .round()
                 .clamp(8.0, 36.0) as u32,
-            layout: value["layout"]
-                .as_str()
-                .filter(|x| matches!(*x, "compact" | "twoRow" | "panel"))
-                .unwrap_or("twoRow")
-                .into(),
+            // Retired `compact` / `twoRow` presets are the strip (core normalize).
+            layout: if value["layout"] == "panel" {
+                "panel"
+            } else {
+                "strip"
+            }
+            .into(),
             show_graphs: value["showGraphs"] != false,
             show_labels: value["showLabels"] != false,
             show_units: value["showUnits"] != false,

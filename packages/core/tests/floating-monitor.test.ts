@@ -5,6 +5,11 @@ import {
   FLOATING_MONITOR_PALETTES,
   FLOATING_MONITOR_PRESETS,
   floatingMonitorDimensions,
+  floatingMonitorStripRows,
+  FLOATING_MONITOR_MAX_WIDTH,
+  floatingMonitorSingleRowFallback,
+  firstRunFloatingMonitorPreferences,
+  migrateFloatingMonitorRows,
   normalizeFloatingMonitorPreferences,
   reorderFloatingMonitorMetrics,
   normalizeTaskbarWidgetPreferences,
@@ -17,14 +22,21 @@ import {
   withoutRetiredFloatingMonitorKeys,
   TASKBAR_WIDGET_COLOR_PRESETS,
   TASKBAR_WIDGET_PALETTE,
+  FLOATING_MONITOR_SHORTCUTS,
+  resolveFloatingMonitorShortcut,
 } from '../src/floating-monitor';
 import type { FloatingMonitorMetric, FloatingMonitorPreferences } from '../src/types';
+
+/** The retired 紧凑单行 bundle as it migrates: strip + one row, 14 px, three metrics, no graphs. */
+const SMALL_SINGLE = normalizeFloatingMonitorPreferences({
+  layout: 'strip', rows: 'single', fontSize: 14, metrics: ['generation', 'gpu', 'vram'], showGraphs: false,
+});
 
 describe('floating monitor preferences', () => {
   it('defaults to a readable two-row monitor', () => {
     expect(normalizeFloatingMonitorPreferences()).toEqual({
       actions: [], alwaysOnTop: true, showSampleTime: false,
-      fontSize: 16, layout: 'twoRow',
+      fontSize: 16, layout: 'strip', rows: 'double',
       metrics: ['generation', 'prefill', 'gpu', 'vram', 'cpu', 'ram'],
       showGraphs: true, showLabels: true, showUnits: true, mode: 'floating', snapToEdge: false, showStatus: false, metricColors: {},
       taskbarEnabled: false, taskbar: { ring: 'gpu', items: ['generation', 'prefill'] },
@@ -131,11 +143,10 @@ describe('floating monitor preferences', () => {
 });
 
 describe('floating monitor presets and metric catalogue', () => {
-  it('offers compact, readable two-row and larger panel presets', () => {
-    expect(FLOATING_MONITOR_PRESETS.compact).toMatchObject({
-      layout: 'compact', fontSize: 14, metrics: ['generation', 'gpu', 'vram'], showGraphs: false, showLabels: true,
-    });
-    expect(FLOATING_MONITOR_PRESETS.twoRow).toEqual(FLOATING_MONITOR_DEFAULTS);
+  it('offers only the strip (default, two rows) and the larger panel', () => {
+    expect(Object.keys(FLOATING_MONITOR_PRESETS)).toEqual(['strip', 'panel']);
+    expect(FLOATING_MONITOR_PRESETS.strip).toEqual(FLOATING_MONITOR_DEFAULTS);
+    expect(FLOATING_MONITOR_PRESETS.strip).toMatchObject({ layout: 'strip', rows: 'double' });
     expect(FLOATING_MONITOR_PRESETS.panel).toMatchObject({
       layout: 'panel', fontSize: 18,
       metrics: ['generation', 'prefill', 'gpu', 'vram', 'cpu', 'ram', 'temperature', 'power'],
@@ -178,23 +189,23 @@ describe('floating monitor presets and metric catalogue', () => {
 
 describe('floating monitor dimensions', () => {
   it('sizes the default two rows consistently for web and native windows', () => {
-    expect(floatingMonitorDimensions(FLOATING_MONITOR_PRESETS.twoRow))
-      .toEqual({ width: 244, height: 120, columns: 3, rows: 2, columnWidths: [80, 80, 70] });
+    expect(floatingMonitorDimensions(FLOATING_MONITOR_PRESETS.strip))
+      .toEqual({ width: 244, height: 120, columns: 3, rows: 2, columnWidths: [80, 80, 70], inline: false, gap: 2 });
   });
 
-  it('sizes a compact preset with labels and no permanent status row', () => {
-    expect(floatingMonitorDimensions(FLOATING_MONITOR_PRESETS.compact))
-      .toEqual({ width: 180, height: 40, columns: 3, rows: 1, columnWidths: [70, 36, 62] });
+  it('sizes the old compact bundle as one line with labels beside the values', () => {
+    expect(floatingMonitorDimensions(SMALL_SINGLE))
+      .toEqual({ width: 259, height: 30, columns: 3, rows: 1, columnWidths: [94, 55, 86], inline: true, gap: 7 });
   });
 
-  it('removes the compact label row when labels are disabled', () => {
-    const withLabels = floatingMonitorDimensions({ ...FLOATING_MONITOR_PRESETS.compact, showLabels: true });
-    expect(withLabels).toEqual({ width: 180, height: 40, columns: 3, rows: 1, columnWidths: [70, 36, 62] });
-    expect(floatingMonitorDimensions({ ...FLOATING_MONITOR_PRESETS.compact, showLabels: false }))
-      .toEqual({ width: 180, height: 28, columns: 3, rows: 1, columnWidths: [70, 36, 62] });
+  it('removes inline labels from the width, not the height', () => {
+    const withLabels = floatingMonitorDimensions({ ...SMALL_SINGLE, showLabels: true });
+    expect(withLabels).toEqual({ width: 259, height: 30, columns: 3, rows: 1, columnWidths: [94, 55, 86], inline: true, gap: 7 });
+    expect(floatingMonitorDimensions({ ...SMALL_SINGLE, showLabels: false }))
+      .toEqual({ width: 195, height: 30, columns: 3, rows: 1, columnWidths: [71, 37, 63], inline: true, gap: 7 });
   });
 
-  it.each(['compact', 'twoRow', 'panel'] as const)('removes label height for every %s row', layout => {
+  it.each(['strip', 'panel'] as const)('removes label height for every stacked %s row', layout => {
     const preset = FLOATING_MONITOR_PRESETS[layout];
     const withLabels = floatingMonitorDimensions(preset);
     const withoutLabels = floatingMonitorDimensions({ ...preset, showLabels: false });
@@ -208,75 +219,76 @@ describe('floating monitor dimensions', () => {
     { showStatus: false, showSampleTime: true },
     { showStatus: true, showSampleTime: true },
   ])('adds only one header when status or sample time is visible: %j', options => {
-    expect(floatingMonitorDimensions({ ...FLOATING_MONITOR_PRESETS.compact, ...options }))
-      .toEqual({ width: 180, height: 56, columns: 3, rows: 1, columnWidths: [70, 36, 62] });
+    expect(floatingMonitorDimensions({ ...SMALL_SINGLE, ...options }))
+      .toEqual({ width: 259, height: 46, columns: 3, rows: 1, columnWidths: [94, 55, 86], inline: true, gap: 7 });
   });
 
-  it('wraps five compact metrics into two rows with room for graphs', () => {
+  it('keeps five single-row metrics on one row with room for graphs (no more 4 + 1 wrap)', () => {
     expect(floatingMonitorDimensions({
-      ...FLOATING_MONITOR_PRESETS.compact,
+      ...SMALL_SINGLE,
       metrics: ['generation', 'gpu', 'vram', 'cpu', 'ram'],
       showGraphs: true,
-    })).toEqual({ width: 218, height: 106, columns: 4, rows: 2, columnWidths: [70, 36, 62, 36] });
+    })).toEqual({ width: 414, height: 48, columns: 5, rows: 1, columnWidths: [94, 55, 86, 55, 86], inline: true, gap: 7 });
   });
 
-  it('keeps a single compact metric within the minimum width', () => {
-    expect(floatingMonitorDimensions({ ...FLOATING_MONITOR_PRESETS.compact, metrics: ['gpu'] }))
-      .toEqual({ width: 96, height: 40, columns: 1, rows: 1, columnWidths: [36] });
+  it('keeps a single one-row metric stacked within the minimum width', () => {
+    expect(floatingMonitorDimensions({ ...SMALL_SINGLE, metrics: ['gpu'] }))
+      .toEqual({ width: 96, height: 42, columns: 1, rows: 1, columnWidths: [37], inline: false, gap: 2 });
   });
 
-  it('sizes eight compact metrics at the largest supported font', () => {
+  it('falls back to two rows when eight single-row metrics at the largest font exceed the window limit', () => {
     expect(floatingMonitorDimensions({
-      ...FLOATING_MONITOR_PRESETS.compact,
+      ...SMALL_SINGLE,
       fontSize: 36,
       metrics: FLOATING_MONITOR_METRICS.slice(0, 8).map(metric => metric.id),
       showGraphs: true,
-    })).toEqual({ width: 607, height: 198, columns: 4, rows: 2, columnWidths: [169, 169, 107, 148] });
+    })).toEqual({ width: 613, height: 204, columns: 4, rows: 2, columnWidths: [170, 170, 108, 149], inline: false, gap: 2 });
   });
 
+  const sized = { single: SMALL_SINGLE, double: FLOATING_MONITOR_PRESETS.strip, panel: FLOATING_MONITOR_PRESETS.panel };
   it.each([
-    { layout: 'compact', fontSize: 8, width: 124, height: 30 },
-    { layout: 'twoRow', fontSize: 8, width: 151, height: 92 },
+    { layout: 'single', fontSize: 8, width: 190, height: 24 },
+    { layout: 'double', fontSize: 8, width: 151, height: 92 },
     { layout: 'panel', fontSize: 8, width: 106, height: 176 },
-    { layout: 'compact', fontSize: 36, width: 411, height: 86 },
-    { layout: 'twoRow', fontSize: 36, width: 503, height: 204 },
+    { layout: 'single', fontSize: 36, width: 594, height: 61 },
+    { layout: 'double', fontSize: 36, width: 503, height: 204 },
     { layout: 'panel', fontSize: 36, width: 352, height: 400 },
   ] as const)('sizes $layout at $fontSize px without shrinking the selected font', ({ layout, fontSize, width, height }) => {
-    const preferences = normalizeFloatingMonitorPreferences({ ...FLOATING_MONITOR_PRESETS[layout], fontSize });
+    const preferences = normalizeFloatingMonitorPreferences({ ...sized[layout], fontSize });
     expect(preferences.fontSize).toBe(fontSize);
     expect(floatingMonitorDimensions(preferences)).toMatchObject({ width, height });
   });
 
   it('keeps a tiny label-free monitor usable at the minimum window dimensions', () => {
-    expect(floatingMonitorDimensions({ ...FLOATING_MONITOR_PRESETS.compact, fontSize: 8, showLabels: false, metrics: ['generation'] }))
-      .toEqual({ width: 96, height: 24, columns: 1, rows: 1, columnWidths: [46] });
+    expect(floatingMonitorDimensions({ ...SMALL_SINGLE, fontSize: 8, showLabels: false, metrics: ['generation'] }))
+      .toEqual({ width: 96, height: 24, columns: 1, rows: 1, columnWidths: [47], inline: false, gap: 2 });
   });
 
   it('sizes a panel with four rows and labels above the values', () => {
     expect(floatingMonitorDimensions(FLOATING_MONITOR_PRESETS.panel))
-      .toEqual({ width: 192, height: 252, columns: 2, rows: 4, columnWidths: [90, 90] });
+      .toEqual({ width: 192, height: 252, columns: 2, rows: 4, columnWidths: [90, 90], inline: false, gap: 2 });
   });
 
-  it('wraps compact monitors after four items and keeps one metric readable', () => {
-    expect(floatingMonitorDimensions({ ...FLOATING_MONITOR_DEFAULTS, layout: 'compact' }))
-      .toMatchObject({ columns: 4, rows: 2 });
+  it('keeps six single-row metrics on one line and keeps one metric readable', () => {
+    expect(floatingMonitorDimensions({ ...FLOATING_MONITOR_DEFAULTS, fontSize: 14, showGraphs: false, rows: 'single' }))
+      .toMatchObject({ width: 515, height: 30, columns: 6, rows: 1, inline: true });
     expect(floatingMonitorDimensions({ ...FLOATING_MONITOR_DEFAULTS, metrics: ['generation'] }))
       .toMatchObject({ width: 96, columns: 1, rows: 1 });
   });
 
   it('shrinks value budgets when units are hidden', () => {
-    expect(floatingMonitorDimensions({ ...FLOATING_MONITOR_PRESETS.compact, showUnits: false }))
-      .toMatchObject({ width: 139, columnWidths: [53, 29, 45] });
-    expect(floatingMonitorDimensions({ ...FLOATING_MONITOR_PRESETS.twoRow, showUnits: false }))
+    expect(floatingMonitorDimensions({ ...SMALL_SINGLE, showUnits: false }))
+      .toMatchObject({ width: 215, columnWidths: [76, 47, 68] });
+    expect(floatingMonitorDimensions({ ...FLOATING_MONITOR_PRESETS.strip, showUnits: false }))
       .toMatchObject({ width: 185, columnWidths: [60, 60, 51] });
   });
 
   it('uses localized short labels only when labels are enabled', () => {
-    const preferences = { ...FLOATING_MONITOR_PRESETS.compact, fontSize: 8, showUnits: false, metrics: ['cache', 'power', 'queued', 'gpu'] as FloatingMonitorMetric[] };
-    expect(floatingMonitorDimensions(preferences, 'zh-CN')).toMatchObject({ width: 98, columnWidths: [20, 23, 23, 18] });
-    expect(floatingMonitorDimensions(preferences, 'en')).toMatchObject({ width: 104, columnWidths: [24, 24, 24, 18] });
+    const preferences = { ...SMALL_SINGLE, fontSize: 8, showUnits: false, metrics: ['cache', 'power', 'queued', 'gpu'] as FloatingMonitorMetric[] };
+    expect(floatingMonitorDimensions(preferences, 'zh-CN')).toMatchObject({ width: 182, columnWidths: [37, 42, 42, 33] });
+    expect(floatingMonitorDimensions(preferences, 'en')).toMatchObject({ width: 194, columnWidths: [41, 46, 46, 33] });
     for (const language of ['zh-CN', 'en'] as const) {
-      expect(floatingMonitorDimensions({ ...preferences, showLabels: false }, language)).toMatchObject({ width: 96, columnWidths: [18, 23, 23, 18] });
+      expect(floatingMonitorDimensions({ ...preferences, showLabels: false }, language)).toMatchObject({ width: 110, columnWidths: [18, 23, 23, 18] });
     }
   });
 
@@ -295,15 +307,71 @@ describe('floating monitor dimensions', () => {
   });
 
   it('keeps every supported layout bounded at the largest font and metric count', () => {
-    for (const layout of ['compact', 'twoRow', 'panel'] as const) {
+    for (const [layout, rows] of [['strip', 'single'], ['strip', 'double'], ['panel', 'double']] as const) {
       const dimensions = floatingMonitorDimensions({
-        ...FLOATING_MONITOR_DEFAULTS, layout, fontSize: 36,
+        ...FLOATING_MONITOR_DEFAULTS, layout, rows, fontSize: 36,
         metrics: FLOATING_MONITOR_METRICS.slice(0, 8).map(metric => metric.id),
       });
       expect(dimensions.width).toBeLessThanOrEqual(1020);
       expect(dimensions.height).toBeLessThanOrEqual(640);
       expect(dimensions.columns * dimensions.rows).toBeGreaterThanOrEqual(8);
     }
+  });
+});
+
+describe('floating monitor text rows (文字行数)', () => {
+  const eight = FLOATING_MONITOR_METRICS.slice(0, 8).map(metric => metric.id);
+
+  it('always resolves to single or double; the strip has no auto', () => {
+    expect(normalizeFloatingMonitorPreferences({}).rows).toBe('double');
+    expect(normalizeFloatingMonitorPreferences({ rows: 'auto' }).rows).toBe('double');
+    expect(normalizeFloatingMonitorPreferences({ rows: 'three' }).rows).toBe('double');
+    expect(normalizeFloatingMonitorPreferences({ rows: 'single' }).rows).toBe('single');
+    expect(normalizeFloatingMonitorPreferences({ rows: 'double' }).rows).toBe('double');
+    expect(floatingMonitorStripRows(FLOATING_MONITOR_DEFAULTS)).toBe(2);
+    expect(floatingMonitorStripRows({ ...FLOATING_MONITOR_DEFAULTS, rows: 'single' })).toBe(1);
+    expect(floatingMonitorStripRows({ ...FLOATING_MONITOR_DEFAULTS, layout: 'panel', rows: 'single' })).toBe('grid');
+  });
+
+  it('flags a single row that falls back to two rows', () => {
+    expect(floatingMonitorSingleRowFallback({ ...FLOATING_MONITOR_DEFAULTS, rows: 'single' })).toBe(false);
+    expect(floatingMonitorSingleRowFallback({ ...FLOATING_MONITOR_DEFAULTS, rows: 'single' }, 'zh-CN', 400)).toBe(true);
+    expect(floatingMonitorSingleRowFallback({ ...FLOATING_MONITOR_DEFAULTS, rows: 'double' }, 'zh-CN', 400)).toBe(false);
+    expect(floatingMonitorSingleRowFallback({ ...FLOATING_MONITOR_PRESETS.panel, rows: 'single' }, 'zh-CN', 100)).toBe(false);
+  });
+
+  it('keeps the default two-row strip unchanged', () => {
+    expect(floatingMonitorDimensions({ ...FLOATING_MONITOR_DEFAULTS, rows: 'double' })).toEqual(floatingMonitorDimensions(FLOATING_MONITOR_DEFAULTS));
+  });
+
+  it('single row puts every metric on one line with inline labels and a wider, shorter strip', () => {
+    expect(floatingMonitorDimensions({ ...FLOATING_MONITOR_DEFAULTS, rows: 'single' }))
+      .toEqual({ width: 570, height: 51, columns: 6, rows: 1, columnWidths: [105, 105, 60, 95, 60, 95], inline: true, gap: 8 });
+    expect(floatingMonitorDimensions({ ...FLOATING_MONITOR_DEFAULTS, metrics: eight, rows: 'single' }))
+      .toMatchObject({ width: 738, height: 51, columns: 8, rows: 1 });
+    expect(floatingMonitorDimensions({ ...FLOATING_MONITOR_DEFAULTS, metrics: eight }))
+      .toMatchObject({ width: 298, height: 120, columns: 4, rows: 2, inline: false });
+  });
+
+  it('two rows splits small metrics evenly instead of 4 + N', () => {
+    expect(floatingMonitorDimensions({ ...SMALL_SINGLE, metrics: eight, showGraphs: true, rows: 'double' }))
+      .toEqual({ width: 268, height: 112, columns: 4, rows: 2, columnWidths: [71, 71, 47, 63], inline: false, gap: 2 });
+    expect(floatingMonitorDimensions({ ...SMALL_SINGLE, metrics: ['generation', 'gpu', 'vram', 'cpu', 'ram'], rows: 'double' }))
+      .toMatchObject({ columns: 3, rows: 2 });
+  });
+
+  it('falls back to two rows past the native limit or the room on screen', () => {
+    expect(FLOATING_MONITOR_MAX_WIDTH).toBe(1120);
+    const wide = floatingMonitorDimensions({ ...FLOATING_MONITOR_DEFAULTS, metrics: eight, rows: 'single', fontSize: 36 });
+    expect(wide).toMatchObject({ rows: 2, inline: false });
+    expect(wide.width).toBeLessThanOrEqual(FLOATING_MONITOR_MAX_WIDTH);
+    expect(floatingMonitorDimensions({ ...FLOATING_MONITOR_DEFAULTS, rows: 'single' }, 'zh-CN', 400)).toMatchObject({ width: 244, rows: 2 });
+    expect(floatingMonitorDimensions({ ...FLOATING_MONITOR_DEFAULTS, rows: 'single' }, 'zh-CN', 600)).toMatchObject({ width: 570, rows: 1 });
+    expect(floatingMonitorDimensions({ ...FLOATING_MONITOR_DEFAULTS, rows: 'single' }, 'zh-CN', Number.NaN)).toMatchObject({ rows: 1 });
+  });
+
+  it('ignores the rows choice on the panel', () => {
+    expect(floatingMonitorDimensions({ ...FLOATING_MONITOR_PRESETS.panel, rows: 'single' })).toEqual(floatingMonitorDimensions(FLOATING_MONITOR_PRESETS.panel));
   });
 });
 
@@ -369,6 +437,28 @@ describe('taskbar widget preferences', () => {
       .toEqual({ ring: 'context', items: [], colors: { context: '#3b82f6' } });
   });
 
+  it('keeps the taskbar row mode only when it is one or two rows', () => {
+    expect(normalizeTaskbarWidgetPreferences({ ring: 'gpu', items: ['gpu'], rows: 'single' })).toEqual({ ring: 'gpu', items: ['gpu'], rows: 'single' });
+    expect(normalizeTaskbarWidgetPreferences({ ring: 'gpu', items: ['gpu'], rows: 'double' }).rows).toBe('double');
+    // auto is the default and is not stored, matching the native serialisation.
+    expect(normalizeTaskbarWidgetPreferences({ ring: 'gpu', items: ['gpu'], rows: 'auto' })).toEqual({ ring: 'gpu', items: ['gpu'] });
+    expect(normalizeTaskbarWidgetPreferences({ ring: 'gpu', items: ['gpu'], rows: 3 })).toEqual({ ring: 'gpu', items: ['gpu'] });
+    expect(normalizeFloatingMonitorPreferences({ taskbar: { ring: 'vram', items: ['gpu'], rows: 'single' } }).taskbar.rows).toBe('single');
+  });
+
+  it('resolves the global shortcut away from WeChat/QQ screenshot keys', () => {
+    expect(resolveFloatingMonitorShortcut(undefined)).toBe('Ctrl+Alt+M');
+    expect(resolveFloatingMonitorShortcut('')).toBe('');
+    expect(resolveFloatingMonitorShortcut('Ctrl+Shift+M')).toBe('Ctrl+Shift+M');
+    for (const taken of ['Alt+A', 'Ctrl+Alt+A']) {
+      expect(FLOATING_MONITOR_SHORTCUTS).not.toContain(taken);
+      expect(resolveFloatingMonitorShortcut(taken)).toBe('Ctrl+Alt+M');
+    }
+    expect(normalizeFloatingMonitorPreferences()).not.toHaveProperty('shortcut');
+    expect(normalizeFloatingMonitorPreferences({ shortcut: '' }).shortcut).toBe('');
+    expect(normalizeFloatingMonitorPreferences({ shortcut: 'Alt+A' }).shortcut).toBe('Ctrl+Alt+M');
+  });
+
   it('toggles items in canonical order and keeps at least one element', () => {
     const base = normalizeTaskbarWidgetPreferences();
     expect(toggleTaskbarWidgetItem(base, 'gpu').items).toEqual(['generation', 'prefill', 'gpu']);
@@ -410,5 +500,65 @@ describe('taskbar widget colours', () => {
     expect(colorContrast('#000000', '#ffffff')).toBeCloseTo(21, 5);
     for (const color of Object.values(TASKBAR_WIDGET_PALETTE.light)) expect(colorContrast(color, '#f3f3f3')).toBeGreaterThanOrEqual(4.5);
     for (const color of Object.values(TASKBAR_WIDGET_PALETTE.dark)) expect(colorContrast(color, '#202020')).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe('floating monitor migration from the three old presets', () => {
+  const six = [...FLOATING_MONITOR_DEFAULTS.metrics];
+  const eight = FLOATING_MONITOR_METRICS.slice(0, 8).map(metric => metric.id);
+
+  it.each([
+    { saved: { layout: 'twoRow' }, layout: 'strip', rows: 'double' },
+    { saved: { layout: 'compact' }, layout: 'strip', rows: 'single' },
+    { saved: { layout: 'panel' }, layout: 'panel', rows: 'double' },
+    { saved: {}, layout: 'strip', rows: 'double' },
+    { saved: { layout: 'unknown' }, layout: 'strip', rows: 'double' },
+    // `auto` from an unreleased build follows the old preset.
+    { saved: { layout: 'twoRow', rows: 'auto' }, layout: 'strip', rows: 'double' },
+    { saved: { layout: 'compact', rows: 'auto' }, layout: 'strip', rows: 'single' },
+    // An explicit choice always wins.
+    { saved: { layout: 'twoRow', rows: 'single' }, layout: 'strip', rows: 'single' },
+    { saved: { layout: 'compact', rows: 'double' }, layout: 'strip', rows: 'double' },
+    { saved: { layout: 'panel', rows: 'single' }, layout: 'panel', rows: 'single' },
+    { saved: { layout: 'strip', rows: 'single' }, layout: 'strip', rows: 'single' },
+  ] as const)('maps $saved to $layout + $rows', ({ saved, layout, rows }) => {
+    const input = JSON.parse(JSON.stringify(saved));
+    expect(normalizeFloatingMonitorPreferences(input)).toMatchObject({ layout, rows });
+    expect(input).toEqual(saved);
+    expect(migrateFloatingMonitorRows((saved as { layout?: string }).layout, (saved as { rows?: string }).rows)).toBe(rows);
+  });
+
+  it('keeps an old 清晰双行 strip pixel-identical', () => {
+    const old = { actions: [], alwaysOnTop: true, showSampleTime: false, layout: 'twoRow', fontSize: 16, metrics: eight } as unknown as FloatingMonitorPreferences;
+    expect(floatingMonitorDimensions(old)).toEqual(floatingMonitorDimensions({ ...FLOATING_MONITOR_DEFAULTS, metrics: eight }));
+    expect(floatingMonitorDimensions({ layout: 'twoRow' } as unknown as FloatingMonitorPreferences)).toMatchObject({ width: 244, height: 120 });
+  });
+
+  it('turns an old 紧凑单行 strip into a true single row (no 4 + 2 wrap)', () => {
+    const old = { layout: 'compact', fontSize: 14, metrics: six, showGraphs: false } as unknown as FloatingMonitorPreferences;
+    expect(floatingMonitorDimensions(old)).toMatchObject({ columns: 6, rows: 1, inline: true });
+    expect(normalizeFloatingMonitorPreferences(old)).toMatchObject({ layout: 'strip', rows: 'single', fontSize: 14, metrics: six, showGraphs: false });
+  });
+
+  it('round-trips: a normalized value never changes again', () => {
+    for (const saved of [{ layout: 'compact' }, { layout: 'twoRow', rows: 'auto' }, { layout: 'panel', rows: 'single' }]) {
+      const once = normalizeFloatingMonitorPreferences(saved);
+      expect(normalizeFloatingMonitorPreferences(once)).toEqual(once);
+    }
+  });
+});
+
+describe('first-run taskbar monitor default', () => {
+  it('turns the taskbar monitor on only for a new install where the widget exists (Windows)', () => {
+    expect(firstRunFloatingMonitorPreferences(true)).toEqual({ ...normalizeFloatingMonitorPreferences(undefined), taskbarEnabled: true });
+    expect(firstRunFloatingMonitorPreferences(false)).toEqual(normalizeFloatingMonitorPreferences(undefined));
+    // The desktop strip stays the strip, so it is still available.
+    expect(firstRunFloatingMonitorPreferences(true).mode).toBe('floating');
+  });
+
+  it('never changes saved settings, including ones without a taskbar choice', () => {
+    expect(FLOATING_MONITOR_DEFAULTS.taskbarEnabled).toBe(false);
+    expect(normalizeFloatingMonitorPreferences({}).taskbarEnabled).toBe(false);
+    expect(normalizeFloatingMonitorPreferences({ taskbarEnabled: false }).taskbarEnabled).toBe(false);
   });
 });

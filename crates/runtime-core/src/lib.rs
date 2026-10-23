@@ -46,6 +46,7 @@ pub mod storage;
 pub mod storage_location;
 pub mod store;
 pub mod support_diagnostics;
+pub mod task_failure;
 pub mod tuning;
 pub mod types;
 

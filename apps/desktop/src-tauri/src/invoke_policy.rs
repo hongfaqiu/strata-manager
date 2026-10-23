@@ -31,6 +31,7 @@ pub(crate) fn app_command_allowed(window: &str, webview: &str, command: &str) ->
                     | "move_monitor_to_taskbar"
                     | "resize_monitor_window"
                     | "set_monitor_mode"
+                    | "set_monitor_rows"
                     | "set_monitor_visibility"
                     | "monitor_mode_status"
             )
@@ -82,6 +83,7 @@ mod tests {
                     | "move_monitor_to_taskbar"
                     | "resize_monitor_window"
                     | "set_monitor_mode"
+                    | "set_monitor_rows"
                     | "set_monitor_visibility"
                     | "monitor_mode_status"
             );
@@ -103,6 +105,7 @@ mod tests {
                 "move_monitor_to_taskbar",
                 "resize_monitor_window",
                 "set_monitor_mode",
+                "set_monitor_rows",
                 "set_monitor_visibility",
                 "show_main_from_monitor"
             ]

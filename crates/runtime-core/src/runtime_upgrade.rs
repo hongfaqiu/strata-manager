@@ -18,6 +18,7 @@ use std::{
 
 pub const VERSION: &str = "0.1.41";
 pub mod engine_package;
+pub mod github_source;
 pub mod gpu_select;
 mod release_versions;
 mod release_zip;
@@ -187,6 +188,7 @@ pub async fn release_info_for_version(version: &str) -> Result<RuntimeUpdateInfo
 }
 
 pub async fn update_info(state: &RuntimeState, force: bool) -> Result<RuntimeUpdateInfo, String> {
+    github_source::sync(state);
     let cached = crate::store_get(state, UPDATE_INFO_KEY.into())?;
     let info = update_info_with_cache(cached, force).await?;
     crate::store_set(
@@ -341,17 +343,7 @@ async fn fetch_release_info(
         .user_agent("Strata-Manager-runtime-updates")
         .build()
         .map_err(|error| error.to_string())?;
-    let release: Value = client
-        .get(release_api)
-        .header("Accept", "application/vnd.github+json")
-        .send()
-        .await
-        .map_err(|error| format!("无法连接上游更新接口：{error}"))?
-        .error_for_status()
-        .map_err(|error| format!("上游更新接口暂不可用：{error}"))?
-        .json()
-        .await
-        .map_err(|error| format!("无法读取上游发布信息：{error}"))?;
+    let (release, via) = github_source::get_json(&client, release_api, "上游更新信息").await?;
     let mut info = release_update_info(&release)?;
     if expected_version.is_some_and(|expected| info.latest_version.as_deref() != Some(expected)) {
         return Err(
@@ -370,40 +362,31 @@ async fn fetch_release_info(
         Err(error) if info.assets.is_empty() => return Err(error),
         Err(_) => {}
     }
+    if via == github_source::Via::Mirror {
+        trust_legacy_assets_from_github(&client, release_api, &mut info).await;
+    }
     info.installable = zip_installable(&info.assets, std::env::consts::OS, std::env::consts::ARCH);
     if info.assets.is_empty() && info.update_available {
         info.error = Some("此上游版本没有 Manager 可在本平台安装的引擎包；已安装的运行时不受影响 / This upstream release has no engine package Manager can install on this platform; existing runtimes are unaffected".into());
     }
-    let mut reference: Value = client
-        .get(format!(
-            "https://api.github.com/repos/Niko1221/Strata/git/ref/tags/{tag}"
-        ))
-        .header("Accept", "application/vnd.github+json")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .error_for_status()
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
-        .map_err(|e| e.to_string())?;
+    let (mut reference, _) = github_source::get_json(
+        &client,
+        &format!("https://api.github.com/repos/Niko1221/Strata/git/ref/tags/{tag}"),
+        "发布标记",
+    )
+    .await?;
     if reference["object"]["type"] == "tag" {
         let sha = reference["object"]["sha"]
             .as_str()
             .filter(|s| valid_revision(s))
             .ok_or("源码标记SHA无效")?;
-        reference = client
-            .get(format!(
-                "https://api.github.com/repos/Niko1221/Strata/git/tags/{sha}"
-            ))
-            .send()
-            .await
-            .map_err(|e| e.to_string())?
-            .error_for_status()
-            .map_err(|e| e.to_string())?
-            .json()
-            .await
-            .map_err(|e| e.to_string())?;
+        reference = github_source::get_json(
+            &client,
+            &format!("https://api.github.com/repos/Niko1221/Strata/git/tags/{sha}"),
+            "发布标记",
+        )
+        .await?
+        .0;
     }
     let revision = reference["object"]["sha"]
         .as_str()
@@ -420,6 +403,47 @@ async fn fetch_release_info(
 }
 
 /// Fetch and verify `strata-feed.json` (+ `.sig`) when the release carries one.
+/// Engine packages from the signed feed are verified whatever served the release JSON.
+/// Older releases without a feed take their SHA-256 from the release JSON itself, so a
+/// mirrored copy is not trusted for them: those digests are re-read from GitHub, and
+/// without GitHub the release is shown but not installable.
+async fn trust_legacy_assets_from_github(
+    client: &reqwest::Client,
+    release_api: &str,
+    info: &mut RuntimeUpdateInfo,
+) {
+    let legacy =
+        |asset: &RuntimeReleaseAsset| engine_package::legacy_variant(&asset.name).is_some();
+    if !info.assets.iter().any(legacy) {
+        return;
+    }
+    let official = async {
+        let release: Value = client
+            .get(release_api)
+            .header("Accept", "application/vnd.github+json")
+            .send()
+            .await
+            .ok()?
+            .error_for_status()
+            .ok()?
+            .json()
+            .await
+            .ok()?;
+        release_update_info(&release).ok()
+    }
+    .await;
+    let official: Vec<RuntimeReleaseAsset> = official
+        .map(|official| official.assets.into_iter().filter(legacy).collect())
+        .unwrap_or_default();
+    info.assets.retain(|asset| !legacy(asset));
+    if official.is_empty() {
+        info.error.get_or_insert_with(|| {
+            "此版本的引擎包摘要只能从 GitHub 核验，暂时无法连接 GitHub；请稍后重试或在设置中切换下载来源".into()
+        });
+    }
+    info.assets.extend(official);
+}
+
 async fn release_feed_assets(
     release: &Value,
     tag: &str,
@@ -459,6 +483,7 @@ async fn release_feed_assets(
                         "github.com"
                             | "release-assets.githubusercontent.com"
                             | "objects.githubusercontent.com"
+                            | github_source::MIRROR_HOST
                     )
                 )
             {
@@ -472,13 +497,18 @@ async fn release_feed_assets(
     let fetch = |url: String| {
         let client = client.clone();
         async move {
-            let response = client
-                .get(&url)
-                .send()
-                .await
-                .map_err(|error| format!("无法下载上游更新 feed：{error}"))?
-                .error_for_status()
-                .map_err(|error| format!("无法下载上游更新 feed：{error}"))?;
+            let response = client.get(&url).send().await.map_err(|error| {
+                format!(
+                    "无法下载签名更新清单：{}",
+                    github_source::reason(None, "", Some(&error))
+                )
+            })?;
+            if !response.status().is_success() {
+                return Err(format!(
+                    "无法下载签名更新清单：{}",
+                    github_source::reason(Some(response.status().as_u16()), "", None)
+                ));
+            }
             if response
                 .content_length()
                 .is_some_and(|n| n > engine_package::MAX_FEED_BYTES)
@@ -497,8 +527,22 @@ async fn release_feed_assets(
             Ok::<_, String>(bytes)
         }
     };
-    let feed = fetch(feed_url).await?;
-    let signature = fetch(signature_url).await?;
+    // The feed is signed, so the mirror may serve it; GitHub stays the fallback.
+    let fetch_any = |official: String| {
+        let fetch = &fetch;
+        async move {
+            let mut failures = Vec::new();
+            for via in github_source::order() {
+                match fetch(github_source::url(via, &official)).await {
+                    Ok(bytes) => return Ok(bytes),
+                    Err(error) => failures.push(format!("{}：{error}", github_source::label(via))),
+                }
+            }
+            Err::<Vec<u8>, String>(failures.join("；"))
+        }
+    };
+    let feed = fetch_any(feed_url).await?;
+    let signature = fetch_any(signature_url).await?;
     let feed = engine_package::verify_feed(&feed, &signature, previous_sequence, now())?;
     if expected_version.is_some_and(|expected| feed["app"]["version"].as_str() != Some(expected)) {
         return Err(

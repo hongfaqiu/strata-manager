@@ -15,7 +15,8 @@
 .floating-monitor-settings-preview-content{min-width:96px;max-width:none;margin:0 auto}
 .floating-monitor-settings-preview-hint{margin:7px 0 0;color:var(--st-ink-muted,var(--muted));font-size:11px;line-height:1.6}
 .floating-monitor-settings-appearance{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(160px,1fr);gap:24px;margin-bottom:22px}
-.floating-monitor-settings-layout-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;padding:4px;border-radius:13px;background:var(--st-surface-2,var(--bg));border:1px solid var(--st-line,var(--border))}
+.floating-monitor-settings-rows{margin-top:16px}
+.floating-monitor-settings-layout-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;padding:4px;border-radius:13px;background:var(--st-surface-2,var(--bg));border:1px solid var(--st-line,var(--border))}
 .floating-monitor-settings-layout-tabs>button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-width:0;padding:9px 5px;min-height:54px;border:1px solid transparent;border-radius:9px;background:transparent;color:var(--st-ink-muted,var(--muted))}
 .floating-monitor-settings-layout-tabs>button[aria-pressed=true]{color:var(--st-ink,var(--text));background:var(--st-surface,var(--surface));border-color:var(--st-line,var(--border));box-shadow:inset 0 0 0 1px #fff,0 1px 4px #0000000a}
 .floating-monitor-settings-layout-tabs strong{font-size:12px;line-height:1.4;font-weight:600;white-space:normal}
