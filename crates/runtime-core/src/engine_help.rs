@@ -146,6 +146,9 @@ pub fn engine_path(profile: &ServiceProfile) -> Result<PathBuf, String> {
 
 fn engine_path_in(root: &Path, config: &Value) -> Result<PathBuf, String> {
     let exe = config["exe"].as_str().ok_or("配置缺少 exe")?;
+    if let Some(found) = crate::component_engine::expand(exe, config) {
+        return found;
+    }
     let cwd = config["cwd"]
         .as_str()
         .map(PathBuf::from)

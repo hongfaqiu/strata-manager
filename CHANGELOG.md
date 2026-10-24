@@ -5,6 +5,14 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **支持 Strata 官方应用 0.2 版生成的引擎组件配置（`component:strata-engine`），不再误报「引擎文件不存在」**：官方应用 0.2 起，配置里的引擎不再写文件路径，而是写成 `"exe": "component:strata-engine"`，表示使用应用安装在 `%LOCALAPPDATA%\Strata\components` 里的引擎组件。之前启动器把这串字符当成文件路径去找，于是报「引擎文件不存在」。现在按上游规则到组件目录里找对应版本的引擎（回滚时固定的版本优先），启动前检查、配置扫描和调参后重启都能正确识别。
+
+### English
+
+- **Supports engine component configs written by the official Strata app 0.2 (`component:strata-engine`); no more false "engine file not found"**: since the official app 0.2, configs no longer give the engine as a file path but as `"exe": "component:strata-engine"`, meaning the engine component the app installed under `%LOCALAPPDATA%\Strata\components`. The launcher used to treat that string as a file path and reported the engine file as missing. It now finds the matching engine in the components folder following upstream's rules (a version pinned for rollback wins), in the pre-launch check, config scanning and restarts after tuning.
+
 ## [0.2.19] - 2026-10-24
 
 ### 中文

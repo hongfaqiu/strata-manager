@@ -5,6 +5,7 @@ pub mod benchmark_identity;
 mod byte_size;
 pub mod chat_runtime;
 pub mod community_model;
+pub mod component_engine;
 pub mod configuration_copy;
 pub mod control_vector;
 pub mod diagnostics;
@@ -2547,6 +2548,15 @@ fn configured_engine_path(root: &Path, config: &Value) -> Option<PathBuf> {
 }
 
 fn check_engine_exe(root: &Path, config: &Value) -> Result<(), String> {
+    if let Some(found) = config
+        .get("exe")
+        .and_then(Value::as_str)
+        .and_then(|exe| component_engine::expand(exe, config))
+    {
+        return found
+            .map(|_| ())
+            .map_err(|why| diagnostics::error("STARTUP_ENGINE_MISSING", why, "prepare"));
+    }
     let Some(engine) = configured_engine_path(root, config) else {
         return Ok(());
     };

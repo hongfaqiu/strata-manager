@@ -987,8 +987,11 @@ pub(super) async fn verify_flags(
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(&profile.install_dir));
     let exe = config["exe"].as_str().ok_or("引擎路径不可核验")?;
+    let component = crate::component_engine::expand(exe, &config).transpose()?;
     let exe = Path::new(exe);
-    let exe = dunce::canonicalize(if exe.is_absolute() {
+    let exe = dunce::canonicalize(if let Some(component) = component {
+        component
+    } else if exe.is_absolute() {
         exe.to_path_buf()
     } else {
         cwd.join(exe)

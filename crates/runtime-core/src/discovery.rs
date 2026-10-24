@@ -381,6 +381,15 @@ fn product_version(text: &str) -> Option<String> {
     })
 }
 
+/// The engine package a `component:strata-engine` run config names (None: `exe` is a path).
+fn configured_component(
+    exe: &str,
+    config: &Value,
+) -> Option<Result<crate::component_engine::ComponentEngine, String>> {
+    crate::component_engine::is_reference(exe)
+        .then(|| crate::component_engine::resolve(exe, config))
+}
+
 /// Resolve the engine binary from a run-config `exe` field.
 /// If that exact path is missing, try the same file name under known engine folders
 /// (for example `engine_cuda12/` when the config still says `engine/`).
@@ -459,7 +468,11 @@ fn first_config_engine(root: &Path) -> Option<PathBuf> {
             continue;
         };
         let cwd = config_cwd(root, &value);
-        let engine = resolve_engine(&cwd, exe);
+        let engine = match configured_component(exe, &value) {
+            Some(Ok(component)) => component.exe,
+            Some(Err(_)) => continue,
+            None => resolve_engine(&cwd, exe),
+        };
         if engine.is_file() {
             return Some(engine);
         }
@@ -686,16 +699,24 @@ fn inspect_config(
         .ok_or("配置没有引擎 args")?;
     let model = first_model(args)?.ok_or("配置没有可识别的本机模型路径")?;
     let cwd = config_cwd(&root, &value);
-    let engine = resolve_engine(&cwd, exe);
+    let component = configured_component(exe, &value);
+    let engine = match &component {
+        Some(Ok(component)) => component.exe.clone(),
+        _ => resolve_engine(&cwd, exe),
+    };
     let model_path = resolve(&cwd, model);
     let python = find_python(&root, preferred_python, hint, cache);
     let mut fatal_reasons = Vec::new();
     if !cwd.is_dir() {
         fatal_reasons.push("配置工作目录不存在".into());
     }
-    if !engine.is_file() {
+    if let Some(Err(why)) = &component {
+        // Upstream 0.2 app/Terminal configs name "component:strata-engine": the engine is a
+        // package in the per-user component folder, never a file under `cwd`.
+        fatal_reasons.push(crate::component_engine::missing_reason(why));
+    } else if component.is_none() && !engine.is_file() {
         fatal_reasons.push("引擎文件不存在，请修复运行环境".into());
-    } else if !resolve(&cwd, exe).is_file() {
+    } else if component.is_none() && !resolve(&cwd, exe).is_file() {
         // Upstream server.py starts exactly the configured exe; an engine found
         // elsewhere in the folder does not make this configuration startable (#78).
         #[cfg(windows)]
@@ -752,6 +773,9 @@ fn inspect_config(
     if let Some(vision) = value.get("vision").and_then(Value::as_object) {
         for key in ["exe", "model", "mmproj"] {
             if let Some(path) = vision.get(key).and_then(Value::as_str) {
+                if key == "exe" && crate::component_engine::is_reference(path) {
+                    continue; // the same engine package the main `exe` check resolved
+                }
                 let path = resolve(&cwd, path);
                 if !path.is_file() {
                     fatal_reasons.push(format!("视觉 {key} 文件不存在"));
@@ -818,6 +842,10 @@ fn inspect_config(
         &profile,
     )?
     .base_url;
+    let engine_version = runtime_version(&root, Some(&engine)).or_else(|| match &component {
+        Some(Ok(component)) => Some(component.version.clone()),
+        _ => None,
+    });
     let mut candidate = LocalCandidate {
         id,
         name,
@@ -836,8 +864,8 @@ fn inspect_config(
         } else {
             Some(fatal_reasons.join("；"))
         },
-        runtime_version: runtime_version(&root, Some(&engine)),
-        release_version: release_version(&root, runtime_version(&root, Some(&engine)).as_deref()),
+        runtime_version: engine_version.clone(),
+        release_version: release_version(&root, engine_version.as_deref()),
         source: Some(source.into()),
         availability: Some(
             if fatal_reasons.is_empty() {
@@ -3474,6 +3502,95 @@ mod tests {
         assert!(reason.contains("配置里的引擎路径不存在"), "{reason}");
         assert!(reason.contains("engine_cuda12"), "{reason}");
         assert_eq!(hit.runtime_version.as_deref(), Some("0.1.44.1"));
+    }
+
+    /// Upstream 0.2.0-beta desktop install (momo's report): the Control bundle under
+    /// `D:\Program Files\Strata\control`, the run config in the data folder `D:\Strata`, and
+    /// `"exe": "component:strata-engine"` naming the package in
+    /// `%LOCALAPPDATA%\Strata\components\engine\0.1.45-windows-x86_64-cuda`.
+    fn component_engine_fixture(temp: &Path) -> (PathBuf, PathBuf, PathBuf) {
+        let control = temp.join("Program Files/Strata/control");
+        let data = temp.join("D/Strata");
+        let components = temp.join("AppData/Local/Strata/components");
+        fs::create_dir_all(control.join("serve")).unwrap();
+        fs::write(control.join("setup.py"), b"# fixture").unwrap();
+        fs::write(control.join("serve/server.py"), b"# fixture").unwrap();
+        let pack = data.join("models/qwen3.8-flash-next-iq3_s");
+        fs::create_dir_all(pack.join("tokenizer")).unwrap();
+        for (name, body) in [
+            ("vocab.json", "{}"),
+            ("merges.txt", ""),
+            ("token_type.json", "[]"),
+        ] {
+            fs::write(pack.join("tokenizer").join(name), body).unwrap();
+        }
+        fs::write(pack.join("model.gguf"), b"0123456789").unwrap();
+        write_json_new(
+            &data.join("strata-iq3_s.json"),
+            &serde_json::json!({
+                "exe": "component:strata-engine",
+                "cwd": control,
+                "args": ["--native", pack.join("model.gguf"), "--max-context", "32768"],
+                "tokenizer": pack.join("tokenizer"),
+                "model_name": "qwen3.8-flash-next-iq3_s",
+                "port": 18094
+            }),
+        )
+        .unwrap();
+        (control, data, components)
+    }
+
+    fn component_candidate(data: &Path) -> LocalCandidate {
+        discover_local(&[data.to_owned()], &[])
+            .unwrap()
+            .into_iter()
+            .find(|c| c.name == "qwen3.8-flash-next-iq3_s")
+            .expect("the component config is listed")
+    }
+
+    #[test]
+    fn component_engine_config_from_the_upstream_app_is_ready() {
+        let temp = tempfile::tempdir().unwrap();
+        let (_, data, components) = component_engine_fixture(temp.path());
+        let package = components.join("engine/0.1.45-windows-x86_64-cuda");
+        fs::create_dir_all(&package).unwrap();
+        let entry = if cfg!(windows) {
+            "strata.exe"
+        } else {
+            "strata"
+        };
+        fs::write(package.join(entry), b"engine").unwrap();
+        fs::write(
+            package.join("engine-component.json"),
+            serde_json::json!({"schema_version": 2, "id": "strata-engine", "version": "0.1.45",
+                "platform": crate::component_engine::host_platform(), "backend": "cuda",
+                "entrypoint": entry, "build_id": "fixture", "files": []})
+            .to_string(),
+        )
+        .unwrap();
+        let hit = crate::component_engine::with_components_dir(&components, || {
+            component_candidate(&data)
+        });
+        let reason = hit.reason.clone().unwrap_or_default();
+        assert!(!reason.contains("引擎"), "{reason}");
+        assert_eq!(hit.runtime_version.as_deref(), Some("0.1.45"));
+    }
+
+    #[test]
+    fn component_engine_config_without_a_package_says_to_update_the_engine() {
+        let temp = tempfile::tempdir().unwrap();
+        let (_, data, components) = component_engine_fixture(temp.path());
+        let hit = crate::component_engine::with_components_dir(&components, || {
+            component_candidate(&data)
+        });
+        assert_eq!(hit.availability.as_deref(), Some("repair"));
+        let reason = hit.reason.as_deref().unwrap();
+        assert!(reason.contains("component:strata-engine"), "{reason}");
+        assert!(reason.contains("更新引擎"), "{reason}");
+        assert!(
+            !reason.contains("引擎文件不存在，请修复运行环境"),
+            "{reason}"
+        );
     }
 
     #[test]
