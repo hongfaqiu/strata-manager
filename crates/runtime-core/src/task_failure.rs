@@ -40,6 +40,9 @@ pub enum Kind {
     Disk,
     Python,
     Checksum,
+    /// `--gguf-dir`'s own file failed its size or SHA-256 check: upstream leaves it in
+    /// place, so retrying alone fails again.
+    KeptFile,
     Conversion,
     Gpu,
     Other,
@@ -51,7 +54,7 @@ impl Kind {
             Kind::Network => "网络或下载失败",
             Kind::Disk => "磁盘空间不足或无法写入",
             Kind::Python => "Python 运行环境不完整",
-            Kind::Checksum => "文件校验未通过",
+            Kind::Checksum | Kind::KeptFile => "文件校验未通过",
             Kind::Conversion => "模型转换失败",
             Kind::Gpu => "显卡或驱动不满足要求",
             Kind::Other => "准备脚本报错",
@@ -64,6 +67,7 @@ impl Kind {
             Kind::Disk => "请释放磁盘空间或更换模型目录后重试",
             Kind::Python => "请在 Strata 引擎页修复或重新安装运行时后重试",
             Kind::Checksum => "重试会重新下载该文件",
+            Kind::KeptFile => "这个分片和官方发布的文件不一致（多半是下载或复制时损坏），Strata 不会自动删除它，直接重试还会失败；请先删除这个文件（和同名的 .done 文件）再重试，会重新下载",
             Kind::Conversion => "请确认磁盘空间充足后重试；仍失败请把任务日志发给开发者",
             Kind::Gpu => "请按提示检查显卡驱动后重试",
             Kind::Other => "请按上面的提示处理后重试",
@@ -91,12 +95,12 @@ pub fn classify(text: &str) -> Kind {
     } else if contains_any(
         &lower,
         &[
-            "sha-256",
-            "sha256",
-            "checksum",
             "does not match the published",
+            "your file was left as it is",
         ],
     ) {
+        Kind::KeptFile
+    } else if contains_any(&lower, &["sha-256", "sha256", "checksum"]) {
         Kind::Checksum
     } else if contains_any(
         &lower,
@@ -243,6 +247,23 @@ mod tests {
         );
         assert_eq!(classify("none of your GPUs can run Strata"), Kind::Gpu);
         assert_eq!(classify("something odd happened"), Kind::Other);
+    }
+
+    #[test]
+    fn a_kept_file_that_fails_its_sha256_says_to_delete_it_not_just_retry() {
+        // A user's report (v0.2.18): --gguf-dir leaves the damaged shard in place, so
+        // "重试会重新下载" was wrong and every retry failed the same way.
+        let log = lines("  checking Qwen3.8-Flash-Next-UD-Q6_K_XL-00004-of-00006.gguf (SHA-256, 49.8 GB) ...\n  [X]  Qwen3.8-Flash-Next-UD-Q6_K_XL-00004-of-00006.gguf does not match the published file (SHA-256 6f9826d42d8befc7f31321a13031c57b67efcd27a4e5a113a5ebe5a81f0e44cf, expected 0ea4b599880a5a52fcd9c188ba1443f646c69c96571904ddbd6a79246a01a997)\n       it may be damaged or another version; your file was left as it is. Copy the whole published file into the folder\n");
+        let text = explain("模型准备", Some(1), &log);
+        assert!(
+            text.starts_with("文件校验未通过：Qwen3.8-Flash-Next-UD-Q6_K_XL-00004-of-00006.gguf")
+        );
+        assert!(text.contains("请先删除这个文件"));
+        assert!(!text.contains("重试会重新下载该文件"));
+        assert_eq!(
+            classify("x.gguf is 10 bytes; the published file is 20 (it may be cut short or another version; your file was left as it is. Copy the whole published file into the folder)"),
+            Kind::KeptFile
+        );
     }
 
     #[test]

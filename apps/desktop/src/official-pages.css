@@ -254,3 +254,13 @@ html,body,#root{height:100%;min-height:0}body{overflow:hidden}.official-app{heig
 @media(max-width:700px){.workspace-subnav:not(.model-config-breadcrumb){margin:10px 12px 0;max-width:calc(100% - 24px)}}
 
 .startup-tuning-fields .startup-field-hint{display:block;margin-top:4px;color:var(--st-ink-muted);font-size:12px;line-height:1.45;max-width:360px}
+
+/* Task rows: a failed setup's error notice sits in .actions. As a flex item at its
+   max-content width it used to squeeze .task-copy to one character per line; let the
+   actions wrap under the copy instead, aligned with the text (icon 38px + gap 14px). */
+.task-row{flex-wrap:wrap}
+.task-copy{flex:1 1 280px}
+.task-row>.actions{min-width:0;max-width:100%}
+.task-row>.actions:has(>.notice){flex:1 1 calc(100% - 52px);margin-left:52px}
+.task-row>.actions>.notice{flex:1 1 100%;margin:0}
+@media(max-width:700px){.management-content .task-row>.actions:has(>.notice){margin-left:0;flex-basis:100%}}

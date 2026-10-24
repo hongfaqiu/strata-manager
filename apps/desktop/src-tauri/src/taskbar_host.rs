@@ -2,6 +2,7 @@
 //! The only cross-process UI operation is creating our own WS_CHILD under the
 //! discovered taskbar. Explorer windows are never moved, resized or reparented.
 use super::{
+    capture,
     layout::{vacant_rect, Rect},
     read_frame, widget, write_frame, HostFrame, ParentFrame, Preferences, Sample, SampleHistory,
     TaskbarPlacement,
@@ -12,7 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 use windows::{
-    core::{w, PCWSTR},
+    core::{w, PCWSTR, PWSTR},
     Win32::{
         Foundation::{
             CloseHandle, COLORREF, FILETIME, HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM,
@@ -23,7 +24,7 @@ use windows::{
             LibraryLoader::GetModuleHandleW,
             Threading::{
                 GetCurrentProcessId, GetCurrentThreadId, GetProcessTimes, OpenProcess,
-                PROCESS_QUERY_LIMITED_INFORMATION,
+                QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
             },
         },
         UI::{Accessibility::*, HiDpi::*, WindowsAndMessaging::*},
@@ -175,6 +176,53 @@ unsafe fn bounds(hwnd: HWND) -> Result<Rect, String> {
     GetWindowRect(hwnd, &mut r)
         .map_err(|error| format!("无法读取窗口位置 hwnd={:#x}: {error}", hwnd.0 as usize))?;
     Ok(convert(r))
+}
+
+/// Whether `hwnd` (or its top-level window) is a screen-capture overlay such
+/// as Win+Shift+S / PrintScreen snipping or WeChat Alt+A. Reads only the
+/// process image path, extended style and rectangles, never window titles.
+unsafe fn is_capture_overlay(hwnd: HWND) -> bool {
+    if hwnd.0.is_null() {
+        return false;
+    }
+    let root = GetAncestor(hwnd, GA_ROOT);
+    let root = if root.0.is_null() { hwnd } else { root };
+    let mut pid = 0;
+    GetWindowThreadProcessId(root, Some(&mut pid));
+    if pid == 0 || pid == GetCurrentProcessId() {
+        return false;
+    }
+    let Ok(process) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
+        return false;
+    };
+    let mut path = [0u16; 1024];
+    let mut length = path.len() as u32;
+    let named = QueryFullProcessImageNameW(
+        process,
+        PROCESS_NAME_WIN32,
+        PWSTR(path.as_mut_ptr()),
+        &mut length,
+    );
+    let _ = CloseHandle(process);
+    if named.is_err() {
+        return false;
+    }
+    let image = String::from_utf16_lossy(&path[..(length as usize).min(path.len())]);
+    // Compare window and monitor in one coordinate space.
+    let _dpi = ThreadDpiContext::per_monitor_v2().ok();
+    let topmost = GetWindowLongPtrW(root, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST.0 != 0;
+    let Ok(window) = bounds(root) else {
+        return false;
+    };
+    let mut info = MONITORINFO {
+        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+    let monitor = MonitorFromWindow(root, MONITOR_DEFAULTTONEAREST);
+    if !GetMonitorInfoW(monitor, &mut info).as_bool() {
+        return false;
+    }
+    capture::is_capture_overlay(&image, topmost, window, convert(info.rcMonitor))
 }
 
 unsafe fn shell_state(hwnd: HWND) -> Result<ShellState, String> {
@@ -968,6 +1016,8 @@ struct VisibilityProbe {
     visible_style: bool,
     blockers: Vec<Rect>,
     details: Vec<serde_json::Value>,
+    /// A hit landed on a screen-capture overlay (Win+Shift+S, Alt+A...).
+    overlay: bool,
 }
 
 impl VisibilityProbe {
@@ -992,7 +1042,9 @@ unsafe fn inspect_visibility(hwnd: HWND, area: Rect, probes: &[(i32, i32)]) -> V
         visible_style: IsWindowVisible(hwnd).as_bool(),
         blockers: Vec::new(),
         details: Vec::new(),
+        overlay: false,
     };
+    let mut checked: Vec<(usize, bool)> = Vec::new();
     for point in points {
         let hit = WindowFromPhysicalPoint(point);
         let own = hit == hwnd || IsChild(hwnd, hit).as_bool();
@@ -1001,6 +1053,17 @@ unsafe fn inspect_visibility(hwnd: HWND, area: Rect, probes: &[(i32, i32)]) -> V
         let blocking = if own { None } else { bounds(hit).ok() };
         if own {
             result.own += 1;
+        } else {
+            let key = hit.0 as usize;
+            let overlay = match checked.iter().find(|(seen, _)| *seen == key) {
+                Some((_, overlay)) => *overlay,
+                None => {
+                    let overlay = is_capture_overlay(hit);
+                    checked.push((key, overlay));
+                    overlay
+                }
+            };
+            result.overlay |= overlay;
         }
         if let Some(rect) = blocking.filter(|rect| rect.width() > 0 && rect.height() > 0) {
             if !result.blockers.contains(&rect) {
@@ -1012,7 +1075,7 @@ unsafe fn inspect_visibility(hwnd: HWND, area: Rect, probes: &[(i32, i32)]) -> V
     if std::env::var_os("STRATA_MANAGER_TASKBAR_DIAGNOSTICS").is_some() {
         eprintln!(
             "{}",
-            serde_json::json!({"taskbarVisibility":{"hwnd":hwnd.0 as usize,"rect":rect_text(area),"visibleStyle":result.visible_style,"confirmed":result.confirmed(),"awareness":GetAwarenessFromDpiAwarenessContext(GetThreadDpiAwarenessContext()).0,"hits":result.details}})
+            serde_json::json!({"taskbarVisibility":{"hwnd":hwnd.0 as usize,"rect":rect_text(area),"visibleStyle":result.visible_style,"confirmed":result.confirmed(),"overlay":result.overlay,"awareness":GetAwarenessFromDpiAwarenessContext(GetThreadDpiAwarenessContext()).0,"hits":result.details}})
         );
     }
     result
@@ -1145,6 +1208,11 @@ unsafe fn attach(
         let visibility = inspect_visibility(child, area, &probes);
         if !visibility.confirmed() {
             let _ = DestroyWindow(child);
+            // A snipping overlay is covering the screen: its rectangle is not
+            // taskbar space to avoid. Retry after it closes, do not fall back.
+            if visibility.overlay {
+                return Err(capture::BUSY.into());
+            }
             let previous_count = occupied.len();
             for blocker in visibility.blockers {
                 if available.overlaps(blocker) && !occupied.contains(&blocker) {
@@ -1317,6 +1385,8 @@ unsafe fn run_inner() -> Result<(), String> {
     // and the widget re-attaches to the new taskbar instead of exiting.
     let mut lost_since: Option<Instant> = None;
     let mut theme_checked = Instant::now();
+    // Screen-capture overlays pause validation (see taskbar_capture.rs).
+    let mut overlay_gate = capture::OverlayGate::default();
     let _ = inspect_tx.try_send(generation);
     let mut message = MSG::default();
     let outcome = 'main: loop {
@@ -1478,8 +1548,16 @@ unsafe fn run_inner() -> Result<(), String> {
             }
             pending = None;
             last_inspect = Instant::now();
+            let paused =
+                overlay_gate.observe(is_capture_overlay(GetForegroundWindow()), Instant::now());
             match result {
+                // Win+Shift+S, PrintScreen or Alt+A snipping is on screen. The
+                // taskbar may look changed or covered underneath it; keep the
+                // current child as it is and measure again once it is gone.
+                _ if paused => {}
                 Ok(inspection) => {
+                    // Set when attaching hit a capture overlay: retry, no Ready.
+                    let mut deferred = false;
                     let preferences = render
                         .lock()
                         .map_err(|_| "监控偏好不可用")?
@@ -1518,11 +1596,12 @@ unsafe fn run_inner() -> Result<(), String> {
                                 attachment = Some(new);
                                 lost_since = None;
                             }
+                            Err(error) if error == capture::BUSY => deferred = true,
                             Err(_) if within_restart_grace(lost_since) => {}
                             Err(error) => break 'main Err(error),
                         }
                     }
-                    if !ready || !reusable {
+                    if !deferred && (!ready || !reusable) {
                         let location = attachment.as_ref().map(|current| {
                             placement(
                                 current.area,
@@ -1591,6 +1670,7 @@ mod tests {
             visible_style: true,
             blockers: vec![],
             details: vec![],
+            overlay: false,
         };
         assert!(!probe.confirmed());
         probe.own = 5;

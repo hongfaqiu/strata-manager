@@ -413,6 +413,21 @@ fn prepare_plan(
     } else if let Some(directory) = &settings.local_data_directory {
         data = directory.clone();
     }
+    // `--gguf-dir` makes upstream treat the shards as the person's own files: a SHA-256
+    // mismatch then stops setup and the file is never deleted or repaired, so a damaged
+    // shard Strata downloaded itself would fail every retry. Pass it only when the shards
+    // are somewhere setup would not look by itself (a chosen folder, a profile's custom
+    // folder); in <data>/models/<tag> upstream finds them, marks whole copies (#173) and
+    // re-downloads a damaged one.
+    let gguf_directory = match &reuse_directory {
+        Some(directory)
+            if settings.local_gguf_directory.is_none()
+                && *directory == data.join("models").join(&tag) =>
+        {
+            None
+        }
+        other => other.clone(),
+    };
     roots.retain(|r| r != &data);
     roots.insert(0, data.clone());
     let mut reusable = 0_u64;
@@ -529,7 +544,7 @@ fn prepare_plan(
             source: SOURCE.into(),
         },
         data_directory: data,
-        gguf_directory: reuse_directory,
+        gguf_directory,
     })
 }
 
@@ -927,7 +942,10 @@ mod tests {
                 5 * GB,
             ))
         });
-        assert_eq!(p.gguf_directory, Some(dir));
+        // Strata's own folder: upstream finds the shards itself; no --gguf-dir, so a
+        // damaged shard is deleted and downloaded again instead of failing every retry.
+        assert!(p.gguf_directory.is_none());
+        assert_eq!(p.data_directory, f.data);
         assert_eq!(p.report.model_download_bytes_estimate, Some(0));
         assert_eq!(p.report.reusable_model_bytes, 12288);
         assert_eq!(p.report.additional_bytes_estimate, Some(4 * GB));
@@ -981,7 +999,9 @@ mod tests {
         )
         .unwrap();
         assert_eq!(p.data_directory, other);
-        assert_eq!(p.gguf_directory, Some(tag));
+        // --data-dir already points setup at <other>/models/<tag>.
+        assert!(p.gguf_directory.is_none());
+        assert!(tag.is_dir());
         assert_eq!(p.report.model_download_bytes_estimate, Some(0));
     }
 
