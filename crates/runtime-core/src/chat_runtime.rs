@@ -63,12 +63,14 @@ fn executable(config: &Value, profile: &ServiceProfile) -> Result<PathBuf, Strin
         .and_then(Value::as_str)
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(&profile.install_dir));
-    let exe = Path::new(
-        config["exe"]
-            .as_str()
-            .filter(|s| !s.is_empty())
-            .ok_or("运行配置未提供引擎路径")?,
-    );
+    let exe = config["exe"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .ok_or("运行配置未提供引擎路径")?;
+    if let Some(found) = crate::component_engine::expand(exe, config) {
+        return dunce::canonicalize(found?).map_err(|e| e.to_string());
+    }
+    let exe = Path::new(exe);
     dunce::canonicalize(if exe.is_absolute() {
         exe.to_path_buf()
     } else {
