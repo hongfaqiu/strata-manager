@@ -5,6 +5,8 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+## [0.2.19] - 2026-10-24
+
 ### 中文
 
 - **修复 Win+Shift+S 截图时任务栏监控变成桌面浮条**：系统截图（Win+Shift+S、PrintScreen 截图）打开后会盖住整个屏幕。任务栏监控在这段时间里重新检查位置时，会把截图遮罩误当成挡住任务栏的窗口，或者读到截图期间暂时变化的任务栏，于是判定挂载失败，退回并弹出桌面浮条。现在检测到前台是截图遮罩时，任务栏监控保持原样，暂停检查，截图结束约 1.5 秒后再重新测量；挂载时撞上截图遮罩也只会稍后重试，不再退回浮条。截图遮罩按进程名加窗口特征识别（置顶或铺满屏幕），不看窗口标题：Windows 自带的 `ScreenClippingHost.exe`（Win10）、`SnippingTool.exe`（Win11 截图工具）、`ScreenSketch.exe`（截图和草图），以及置顶且铺满屏幕的微信、QQ、TIM、Snipaste、PixPin、ShareX 截图遮罩。普通的截图工具窗口、聊天窗口和游戏、视频等真正的全屏程序不受影响。
