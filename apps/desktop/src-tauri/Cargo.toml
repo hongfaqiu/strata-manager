@@ -1,6 +1,6 @@
 [package]
 name = "strata-manager"
-version = "0.2.19"
+version = "0.2.20"
 description = "Desktop manager for the official Strata runtime"
 edition = "2021"
 
