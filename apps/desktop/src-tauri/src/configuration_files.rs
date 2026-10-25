@@ -155,8 +155,160 @@ fn move_file(source: &Path, destination: &Path) -> Result<(), String> {
     }
 }
 
+#[cfg(test)]
 pub fn archive(profile: &ServiceProfile, data_dir: &Path) -> Result<ArchivedConfiguration, String> {
-    let original = configuration_path(profile)?;
+    archive_path(&configuration_path(profile)?, data_dir)
+}
+
+/// What deleting one configuration must remove so that a rescan cannot list it again.
+pub struct DeletionPlan {
+    /// Existing files to archive. A file that is already gone is not listed.
+    pub files: Vec<PathBuf>,
+    /// Registrations whose private copy or original is among the deleted paths.
+    pub registrations: Vec<ServiceProfile>,
+}
+
+/// A registered setup or discovered configuration is an app-private copy under
+/// `imports/<id>/config.json`; its original stays in the Strata directory and is
+/// rediscovered on every scan. Deleting either side removes both, and a side that
+/// is already missing (for example deleted by hand with the model folder) only
+/// needs its registration removed.
+pub fn deletion_plan(
+    profile: &ServiceProfile,
+    registered: &[ServiceProfile],
+    data_dir: &Path,
+) -> Result<DeletionPlan, String> {
+    let requested = path_key(Path::new(&profile.config_path));
+    if registered
+        .iter()
+        .any(|item| item.id == profile.id && path_key(Path::new(&item.config_path)) != requested)
+    {
+        return Err("登记配置路径已变化，请刷新后重试 / Registered configuration path changed; refresh and try again".into());
+    }
+    let sources: Vec<(&ServiceProfile, Option<String>)> = registered
+        .iter()
+        .map(|item| {
+            (
+                item,
+                crate::configuration_details::source_path(item, data_dir),
+            )
+        })
+        .collect();
+    let mut paths: Vec<(String, PathBuf)> = vec![(requested, PathBuf::from(&profile.config_path))];
+    let mut registrations: Vec<ServiceProfile> = Vec::new();
+    loop {
+        let before = registrations.len();
+        for (item, original) in &sources {
+            if registrations.iter().any(|selected| selected.id == item.id) {
+                continue;
+            }
+            let own = path_key(Path::new(&item.config_path));
+            let source = original.as_deref().map(|path| path_key(Path::new(path)));
+            if !paths
+                .iter()
+                .any(|(key, _)| *key == own || Some(key) == source.as_ref())
+            {
+                continue;
+            }
+            registrations.push((*item).clone());
+            let linked = std::iter::once((own, &item.config_path))
+                .chain(source.into_iter().zip(original.iter()));
+            for (key, path) in linked {
+                if !paths.iter().any(|(known, _)| *known == key) {
+                    paths.push((key, PathBuf::from(path)));
+                }
+            }
+        }
+        if registrations.len() == before {
+            break;
+        }
+    }
+    let mut shared: Vec<_> = registrations
+        .iter()
+        .map(|item| path_key(Path::new(&item.config_path)))
+        .collect();
+    shared.sort();
+    if shared.windows(2).any(|pair| pair[0] == pair[1]) {
+        return Err("多个登记共用此配置文件，无法原子移除，请先整理重复登记 / Multiple registrations share this configuration; consolidate them before deleting".into());
+    }
+    if registrations.is_empty() {
+        // An unregistered path comes from the webview, so it must still be a
+        // readable Strata configuration before anything is moved.
+        return Ok(DeletionPlan {
+            files: vec![configuration_path(profile)?],
+            registrations,
+        });
+    }
+    let mut files = Vec::new();
+    for (_, path) in paths {
+        match fs::symlink_metadata(&path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                return Err(format!(
+                    "配置文件不可用 / Configuration unavailable: {}: {error}",
+                    path.display()
+                ))
+            }
+            Ok(metadata) if !metadata.file_type().is_file() => {
+                return Err(format!(
+                    "配置必须是普通 .json 文件 / Configuration must be a regular .json file: {}",
+                    path.display()
+                ))
+            }
+            Ok(_) => files.push(path),
+        }
+    }
+    Ok(DeletionPlan {
+        files,
+        registrations,
+    })
+}
+
+/// Archive every planned file, restoring the ones already moved if a later one fails.
+pub fn archive_all(
+    files: &[PathBuf],
+    data_dir: &Path,
+) -> Result<Vec<ArchivedConfiguration>, String> {
+    let mut archived = Vec::new();
+    for file in files {
+        match archive_path(file, data_dir) {
+            Ok(item) => archived.push(item),
+            Err(error) => {
+                return Err(match rollback_all(&archived) {
+                    Ok(()) => error,
+                    Err(rollback) => format!("{error}; {rollback}"),
+                })
+            }
+        }
+    }
+    Ok(archived)
+}
+
+pub fn rollback_all(archived: &[ArchivedConfiguration]) -> Result<(), String> {
+    let errors: Vec<_> = archived
+        .iter()
+        .rev()
+        .filter_map(|item| item.rollback().err())
+        .collect();
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("; "))
+    }
+}
+
+fn archive_path(original: &Path, data_dir: &Path) -> Result<ArchivedConfiguration, String> {
+    let metadata = fs::symlink_metadata(original)
+        .map_err(|e| format!("配置文件不可用 / Configuration unavailable: {e}"))?;
+    if !original.is_absolute()
+        || !metadata.file_type().is_file()
+        || original.extension().and_then(|x| x.to_str()) != Some("json")
+    {
+        return Err(
+            "配置必须是普通 .json 文件 / Configuration must be a regular .json file".into(),
+        );
+    }
+    let original = original.to_path_buf();
     let trash = data_dir.join("config-trash");
     if !data_dir.is_absolute() || trash.is_symlink() || (trash.exists() && !trash.is_dir()) {
         return Err("配置归档目录无效 / Invalid configuration archive directory".into());
@@ -369,5 +521,113 @@ mod tests {
             Path::new(&third.config_path).is_file(),
             "the original is restored"
         );
+    }
+
+    /// A Manager setup output in the Strata directory and its registered private copy.
+    fn imported(root: &Path) -> (PathBuf, ServiceProfile, ServiceProfile) {
+        let runtime = root.join("Strata");
+        let data = root.join("app-data");
+        let private = data.join("imports/local-test");
+        fs::create_dir_all(&runtime).unwrap();
+        fs::create_dir_all(&private).unwrap();
+        // The weights this configuration names were deleted by hand.
+        let config = json!({"args":["--native","models/deleted-00001-of-00002.gguf"]});
+        let original = runtime.join("strata-deleted.json");
+        fs::write(&original, config.to_string()).unwrap();
+        fs::write(private.join("config.json"), config.to_string()).unwrap();
+        fs::write(
+            private.join("import.json"),
+            json!({"schemaVersion":1,"installDir":runtime,"originalConfigPath":original})
+                .to_string(),
+        )
+        .unwrap();
+        let registered = ServiceProfile {
+            id: "local-test".into(),
+            name: "Deleted".into(),
+            base_url: "http://127.0.0.1:18081".into(),
+            install_dir: runtime.to_string_lossy().into(),
+            python_path: "python".into(),
+            config_path: private.join("config.json").to_string_lossy().into(),
+            managed: true,
+        };
+        let candidate = ServiceProfile {
+            id: "configuration-candidate".into(),
+            config_path: original.to_string_lossy().into(),
+            managed: false,
+            ..registered.clone()
+        };
+        (data, registered, candidate)
+    }
+
+    fn keys(files: &[PathBuf]) -> Vec<String> {
+        let mut keys: Vec<_> = files.iter().map(|file| path_key(file)).collect();
+        keys.sort();
+        keys
+    }
+
+    #[test]
+    fn deleting_a_registered_copy_also_archives_the_original_rescanned_from_strata() {
+        let temp = tempfile::tempdir().unwrap();
+        let (data, registered, candidate) = imported(temp.path());
+        let both = keys(&[
+            PathBuf::from(&registered.config_path),
+            PathBuf::from(&candidate.config_path),
+        ]);
+        let plan = deletion_plan(&registered, std::slice::from_ref(&registered), &data).unwrap();
+        assert_eq!(keys(&plan.files), both);
+        assert_eq!(plan.registrations.len(), 1);
+        // Selecting the rediscovered original removes the registration with it.
+        let plan = deletion_plan(&candidate, std::slice::from_ref(&registered), &data).unwrap();
+        assert_eq!(keys(&plan.files), both);
+        assert_eq!(plan.registrations[0].id, registered.id);
+
+        let archived = archive_all(&plan.files, &data).unwrap();
+        assert!(!Path::new(&candidate.config_path).exists());
+        assert!(!Path::new(&registered.config_path).exists());
+        rollback_all(&archived).unwrap();
+        assert!(Path::new(&candidate.config_path).is_file());
+        assert!(Path::new(&registered.config_path).is_file());
+    }
+
+    #[test]
+    fn a_registration_whose_files_were_deleted_by_hand_can_still_be_removed() {
+        let temp = tempfile::tempdir().unwrap();
+        let (data, registered, candidate) = imported(temp.path());
+        fs::remove_file(&registered.config_path).unwrap();
+        let plan = deletion_plan(&registered, std::slice::from_ref(&registered), &data).unwrap();
+        assert_eq!(
+            keys(&plan.files),
+            keys(&[PathBuf::from(&candidate.config_path)])
+        );
+        assert_eq!(plan.registrations.len(), 1);
+        fs::remove_file(&candidate.config_path).unwrap();
+        let plan = deletion_plan(&registered, std::slice::from_ref(&registered), &data).unwrap();
+        assert!(plan.files.is_empty());
+        assert_eq!(plan.registrations[0].id, registered.id);
+        // Corrupt JSON in a registered file does not block its removal either.
+        fs::write(&registered.config_path, "not json").unwrap();
+        let plan = deletion_plan(&registered, std::slice::from_ref(&registered), &data).unwrap();
+        assert_eq!(plan.files.len(), 1);
+    }
+
+    #[test]
+    fn unregistered_paths_must_still_be_valid_configurations() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut source = fixture(temp.path());
+        let data = temp.path().join("app-data");
+        let plan = deletion_plan(&source, &[], &data).unwrap();
+        assert_eq!(plan.files.len(), 1);
+        assert!(plan.registrations.is_empty());
+        source.config_path = temp.path().join("gone.json").to_string_lossy().into();
+        assert!(deletion_plan(&source, &[], &data).is_err());
+        source.config_path = temp.path().join("invalid.json").to_string_lossy().into();
+        fs::write(&source.config_path, "not json").unwrap();
+        assert!(deletion_plan(&source, &[], &data).is_err());
+        let mut moved = fixture(temp.path());
+        moved.config_path = source.config_path.clone();
+        assert!(deletion_plan(&moved, &[fixture(temp.path())], &data)
+            .err()
+            .unwrap()
+            .contains("changed"));
     }
 }

@@ -784,10 +784,18 @@ impl RuntimeState {
         let config_target = || -> Result<ServiceProfile, String> {
             let incoming: ServiceProfile = arg(&params, "profile")?;
             let selected = self.authoritative_profile(incoming.clone())?;
-            let original =
-                dunce::canonicalize(storage::config_path(&incoming)?).map_err(|e| e.to_string())?;
-            let current =
-                dunce::canonicalize(storage::config_path(&selected)?).map_err(|e| e.to_string())?;
+            // A configuration file deleted by hand still identifies its registration,
+            // so removing that registration stays possible.
+            let resolve = |profile: &ServiceProfile| -> Result<PathBuf, String> {
+                let path = storage::config_path(profile)?;
+                match dunce::canonicalize(&path) {
+                    Ok(resolved) => Ok(resolved),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(path),
+                    Err(error) => Err(error.to_string()),
+                }
+            };
+            let original = resolve(&incoming)?;
+            let current = resolve(&selected)?;
             if original != current {
                 return Err("PROFILE_CONFIG_CHANGED: 配置目标已改变；草稿已保留，请重新选择配置。 / The selected configuration file changed; your draft is retained.".into());
             }

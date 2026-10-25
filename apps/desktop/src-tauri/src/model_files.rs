@@ -238,12 +238,25 @@ fn bundle(path: &Path) -> Result<Vec<ModelDeletionFile>, String> {
     } else {
         paths.push(path.to_path_buf());
     }
+    // Shards the user already deleted by hand need no further removal.
     let mut files: Vec<_> = paths
         .iter()
-        .map(|path| checked_file(path))
+        .map(|path| present_file(path))
+        .filter_map(Result::transpose)
         .collect::<Result<_, _>>()?;
+    if files.is_empty() {
+        return Err(format!("模型文件已不存在，无需删除；如需移除配置，请使用「删除配置文件」 / Model files are already gone; nothing to delete. Use Delete configuration to remove the configuration: {}", path.display()));
+    }
     files.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(files)
+}
+
+/// `None` when the file no longer exists; any other problem is still an error.
+fn present_file(path: &Path) -> Result<Option<ModelDeletionFile>, String> {
+    match fs::symlink_metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        _ => checked_file(path).map(Some),
+    }
 }
 
 fn references(configuration: &Configuration) -> Result<Vec<PathBuf>, String> {
@@ -351,16 +364,24 @@ pub fn remove(
     }
     verify_expected(&plan.files, expected)?;
     // Check every path, type, header, size and mtime before the first removal.
+    // A file that disappeared since the preview is already deleted; every file
+    // still present must be exactly the one that was confirmed.
     let current = plan
         .files
         .iter()
-        .map(|file| checked_file(Path::new(&file.path)))
+        .map(|file| present_file(Path::new(&file.path)))
+        .filter_map(Result::transpose)
         .collect::<Result<Vec<_>, _>>()?;
-    verify_expected(&current, expected)?;
+    if current.iter().any(|file| !plan.files.contains(file)) {
+        return Err("模型删除预览已变化，请重新检查并确认 / Model deletion preview changed; check and confirm again".into());
+    }
     let mut removed_files: Vec<ModelDeletionFile> = Vec::new();
     let mut removed_bytes = 0;
     for file in current {
         if let Err(error) = fs::remove_file(&file.path) {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                continue;
+            }
             let removed = removed_files
                 .iter()
                 .map(|file| file.path.as_str())
@@ -429,19 +450,8 @@ mod tests {
         assert!(!selected[0].profile.managed);
     }
     #[test]
-    fn missing_shards_and_unknown_formats_are_refused() {
+    fn unknown_formats_are_refused() {
         let temp = tempfile::tempdir().unwrap();
-        gguf(&temp.path().join("weights-00001-of-00002.gguf"));
-        assert!(prepare(
-            &[configuration(
-                temp.path(),
-                "missing",
-                "weights-00001-of-00002.gguf"
-            )],
-            &[]
-        )
-        .is_err());
-        assert!(temp.path().join("weights-00001-of-00002.gguf").exists());
         fs::create_dir(temp.path().join("native")).unwrap();
         assert!(prepare(&[configuration(temp.path(), "directory", "native")], &[]).is_err());
         fs::write(temp.path().join("fake.gguf"), [0u8; 24]).unwrap();
@@ -532,6 +542,43 @@ mod tests {
             selected[0].config = json!({"cwd":"work","args":[flag,"../weights.gguf"]});
             assert!(prepare(&selected, &[]).is_ok());
         }
+    }
+
+    #[test]
+    fn shards_already_deleted_by_hand_do_not_block_removing_the_rest() {
+        let temp = tempfile::tempdir().unwrap();
+        gguf(&temp.path().join("weights-00001-of-00002.gguf"));
+        let selected = vec![configuration(
+            temp.path(),
+            "partial",
+            "weights-00002-of-00002.gguf",
+        )];
+        let prepared = prepare(&selected, &[]).unwrap();
+        assert_eq!(prepared.plan.files.len(), 1);
+        let removed = remove(&prepared.plan, &prepared.plan.files).unwrap();
+        assert_eq!(removed.removed_files.len(), 1);
+        assert!(!temp.path().join("weights-00001-of-00002.gguf").exists());
+        assert!(temp.path().join("partial.json").exists());
+        let error = prepare(&selected, &[]).err().unwrap();
+        assert!(error.contains("already gone"), "{error}");
+    }
+    #[test]
+    fn a_file_removed_after_the_preview_is_treated_as_deleted() {
+        let temp = tempfile::tempdir().unwrap();
+        for part in 1..=2 {
+            gguf(&temp.path().join(format!("weights-{part:05}-of-00002.gguf")));
+        }
+        let selected = vec![configuration(
+            temp.path(),
+            "chosen",
+            "weights-00001-of-00002.gguf",
+        )];
+        let prepared = prepare(&selected, &[]).unwrap();
+        fs::remove_file(temp.path().join("weights-00002-of-00002.gguf")).unwrap();
+        let removed = remove(&prepared.plan, &prepared.plan.files).unwrap();
+        assert_eq!(removed.removed_files.len(), 1);
+        assert_eq!(removed.removed_bytes, 24);
+        assert!(!temp.path().join("weights-00001-of-00002.gguf").exists());
     }
 
     #[test]

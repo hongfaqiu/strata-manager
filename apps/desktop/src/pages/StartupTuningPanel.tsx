@@ -124,7 +124,7 @@ export function StartupTuningPanel({ profile, desktop, language, onError, onMess
         await onCopied?.(copied);
       } else {
         const result=await core.deleteConfiguration(action.profile);
-        setFileAction(null);onMessage?.(`${zh?'配置已删除，恢复副本保存在：':'Configuration deleted. Recovery copy: '}${result.archivedPath}`);
+        setFileAction(null);onMessage?.(result.archivedPath?`${zh?'配置已删除，恢复副本保存在：':'Configuration deleted. Recovery copy: '}${result.archivedPath}`:(zh?'配置文件此前已不存在，已移除配置记录。':'The configuration file was already gone; its saved record was removed.'));
         await onDeleted?.(action.profile);
       }
       await client.invalidateQueries({queryKey:['discovered-local-models']});

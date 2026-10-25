@@ -6,7 +6,11 @@ use strata_runtime_core::types::ServiceProfile;
 
 pub(crate) fn source_path(profile: &ServiceProfile, data_dir: &Path) -> Option<String> {
     let imports = dunce::canonicalize(data_dir.join("imports")).ok()?;
-    let config = dunce::canonicalize(&profile.config_path).ok()?;
+    // The private copy itself may already be gone; its import manifest still names the original.
+    let config = Path::new(&profile.config_path);
+    let config = dunce::canonicalize(config.parent()?)
+        .ok()?
+        .join(config.file_name()?);
     if !config.starts_with(&imports) || config.file_name()? != "config.json" {
         return None;
     }

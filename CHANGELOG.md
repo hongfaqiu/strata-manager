@@ -7,10 +7,12 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+- **修复手动删除模型文件后，配置无法移除、点击重试一直校验**：删除配置现在会同时归档 Strata 目录里的原始 JSON 和应用内的私有副本，并移除对应登记，扫描后不会再出现；配置文件或部分模型分片已被手动删除时，也可以直接移除登记，不再卡在「文件不存在」。
 - **修复「更新到新版本」「切换到此版本」报错 `failed to persist temporary file（os error 183）`**：同一个运行环境下如果有两份保存的配置同名（官方应用 0.2 都叫 `strata-<量化>.json`），切换时会把它们的迁移副本写进同一个文件夹，第二份撞上第一份、报「文件已存在」，整个切换回滚。现在每份配置的迁移副本放在各自的文件夹里，遇到上次尝试遗留的同名文件会原子替换，报错也会写明是哪个文件。
 
 ### English
 
+- **Fixed a configuration that could not be removed after its model files were deleted by hand, with Retry stuck on verifying**: Delete configuration now archives both the original JSON in the Strata folder and the app's private copy and removes the matching registration, so a scan does not list it again. A configuration file or some model shards that were already deleted by hand no longer block removing the registration.
 - **Fixed "Update to the new version" and "Switch to this version" failing with `failed to persist temporary file (os error 183)`**: when a runtime had two saved configurations with the same file name (the official app 0.2 names them `strata-<quant>.json`), their migrated copies were written into one folder and the second collided with the first ("file already exists"), rolling the whole switch back. Each configuration's migrated copy now has its own folder, a leftover from an earlier attempt is replaced atomically, and the error names the file.
 
 ## [0.2.20] - 2026-10-24
