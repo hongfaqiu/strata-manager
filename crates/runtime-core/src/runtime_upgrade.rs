@@ -632,6 +632,170 @@ struct StartupGate {
     path: PathBuf,
     journal: PathBuf,
     token: String,
+    /// Observer request rows left behind by a killed engine, removed under the gate transaction.
+    cleared_stale: usize,
+}
+/// The official observer deletes every `active_requests` row of a service when a new
+/// observer session starts. A row therefore only means a live request while the
+/// service itself runs. For a service verified as stopped, a row that started more than
+/// this long ago is an orphan of a killed engine; younger rows still block.
+const STALE_ACTIVE_REQUEST_MS: u64 = 120_000;
+/// How a switch handles leftover rows that are still younger than the stale threshold:
+/// it polls (without holding any lock) until they age out, at most `max` long.
+#[derive(Clone, Copy)]
+struct ObserverWait {
+    stale_ms: u64,
+    poll: Duration,
+    max: Duration,
+}
+impl ObserverWait {
+    const DEFAULT: Self = Self {
+        stale_ms: STALE_ACTIVE_REQUEST_MS,
+        poll: Duration::from_secs(3),
+        max: Duration::from_secs(150),
+    };
+}
+/// A start time further ahead of the clock than this cannot belong to a live request.
+const ACTIVE_REQUEST_CLOCK_SKEW_MS: u64 = 300_000;
+/// Rows of `service_id` that are too recent to be orphans: `(count, newest start ms)`.
+fn recent_active_requests(
+    db: &rusqlite::Connection,
+    service_id: &str,
+    now_ms: u64,
+    stale_ms: u64,
+) -> Result<Option<(i64, u64)>, rusqlite::Error> {
+    let oldest_fresh = now_ms.saturating_sub(stale_ms) as i64;
+    let newest_valid = now_ms.saturating_add(ACTIVE_REQUEST_CLOCK_SKEW_MS) as i64;
+    let (count, newest): (i64, Option<i64>) = db.query_row(
+        "SELECT COUNT(*),MAX(CAST(started_ms AS INTEGER)) FROM active_requests WHERE service_id=?1 AND CAST(started_ms AS INTEGER)>=?2 AND CAST(started_ms AS INTEGER)<=?3",
+        rusqlite::params![service_id, oldest_fresh, newest_valid],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    Ok((count > 0).then(|| (count, newest.unwrap_or_default().max(0) as u64)))
+}
+fn unreadable_requests(e: rusqlite::Error) -> String {
+    format!("无法读取服务的使用记录，未改动任何数据：{e}")
+}
+/// Plain-language failure for rows that are still there after the automatic wait.
+fn recent_requests_error(count: i64, newest: u64, now_ms: u64, waited: Option<Duration>) -> String {
+    let age = now_ms.saturating_sub(newest) / 1000;
+    let waited = waited.map_or(String::new(), |w| {
+        format!("，已自动等待 {} 秒", w.as_secs())
+    });
+    format!("服务已停止，但使用记录里仍有 {count} 个未结束的请求（最近一个在 {age} 秒前开始{waited}）；可能还有其它 Strata 程序在使用它。请先关闭其它正在使用 Strata 的程序（命令行、其它客户端或另一个 Strata Manager 窗口），再点一次更新或切换")
+}
+/// Removes orphaned rows of a stopped service and errors on recent ones.
+/// Only `active_requests` rows of `service_id` are touched; never the event history.
+fn clear_stale_active_requests(
+    tx: &rusqlite::Transaction<'_>,
+    service_id: &str,
+    now_ms: u64,
+    stale_ms: u64,
+) -> Result<usize, String> {
+    let oldest_fresh = now_ms.saturating_sub(stale_ms) as i64;
+    let newest_valid = now_ms.saturating_add(ACTIVE_REQUEST_CLOCK_SKEW_MS) as i64;
+    let cleared = tx
+        .execute(
+            "DELETE FROM active_requests WHERE service_id=?1 AND (CAST(started_ms AS INTEGER)<?2 OR CAST(started_ms AS INTEGER)>?3)",
+            rusqlite::params![service_id, oldest_fresh, newest_valid],
+        )
+        .map_err(unreadable_requests)?;
+    if let Some((count, newest)) =
+        recent_active_requests(tx, service_id, now_ms, stale_ms).map_err(unreadable_requests)?
+    {
+        return Err(recent_requests_error(count, newest, now_ms, None));
+    }
+    Ok(cleared)
+}
+/// True when neither a Manager-owned process nor anything else serves this installation.
+fn service_stopped(
+    state: &RuntimeState,
+    profile_id: &str,
+    profile: &ServiceProfile,
+) -> Result<bool, String> {
+    let owned_running = state
+        .processes
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get_mut(profile_id)
+        .map(|p| p.refresh())
+        .transpose()?
+        .is_some_and(|s| s.running);
+    Ok(!owned_running
+        && !crate::external::port_accepting(profile)?
+        && !crate::discovery::has_running_installation(Path::new(&profile.install_dir))?)
+}
+/// Instead of failing on rows younger than the stale threshold, waits for them to age out.
+/// Runs before any switch lock is taken, so nothing else is blocked while sleeping; the
+/// reservation in `reserve_stopped_at` re-checks everything afterwards under its own
+/// transaction. Skipped when the service runs (the drain path never reserves).
+async fn wait_out_recent_requests(
+    state: &RuntimeState,
+    journal: &mut Journal,
+    candidate: &ServiceProfile,
+    wait: ObserverWait,
+) -> Result<(), String> {
+    if !service_stopped(state, &journal.profile_id, &journal.old)? {
+        return Ok(());
+    }
+    let directory = installation::owned_directory(state.data_dir(), &["analytics"])?;
+    let path = directory.join("journal.sqlite3");
+    let started = Instant::now();
+    let mut announced = false;
+    loop {
+        cancelled(state, &journal.task_id)?;
+        let recent = {
+            let db = rusqlite::Connection::open(&path).map_err(|e| e.to_string())?;
+            db.busy_timeout(Duration::from_secs(5))
+                .map_err(|e| e.to_string())?;
+            let has_table: i64 = db
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='active_requests'",
+                    [],
+                    |r| r.get(0),
+                )
+                .map_err(unreadable_requests)?;
+            if has_table == 0 {
+                None
+            } else {
+                recent_active_requests(&db, &candidate.id, now(), wait.stale_ms)
+                    .map_err(unreadable_requests)?
+            }
+        };
+        let Some((count, newest)) = recent else {
+            return Ok(());
+        };
+        if !service_stopped(state, &journal.profile_id, &journal.old)?
+            || !service_stopped(state, &candidate.id, candidate)?
+        {
+            return Err(
+                "候选已有运行实例；服务在等待期间被重新启动，更新未进行，请先停止服务再试".into(),
+            );
+        }
+        if started.elapsed() >= wait.max {
+            return Err(recent_requests_error(
+                count,
+                newest,
+                now(),
+                Some(started.elapsed()),
+            ));
+        }
+        if !announced {
+            announced = true;
+            let expires = (newest + wait.stale_ms).saturating_sub(now()) / 1000 + 1;
+            let secs = expires.min(wait.max.as_secs());
+            stage(
+                state,
+                journal,
+                "waitingIdle",
+                &format!("检测到刚结束的服务还留有 {count} 个请求记录，正在自动等待其过期（约 {secs} 秒），无需操作"),
+            )?;
+        }
+        tokio::select! {
+            _ = tokio::time::sleep(wait.poll) => {},
+            _ = wait_cancel(state, &journal.task_id) => {},
+        }
+    }
 }
 impl Drop for StartupGate {
     fn drop(&mut self) {
@@ -651,7 +815,19 @@ impl Drop for StartupGate {
         let _ = tx.commit();
     }
 }
-fn reserve_stopped(state: &RuntimeState, profile: &ServiceProfile) -> Result<StartupGate, String> {
+fn reserve_stopped(
+    state: &RuntimeState,
+    profile: &ServiceProfile,
+    stale_ms: u64,
+) -> Result<StartupGate, String> {
+    reserve_stopped_at(state, profile, now(), stale_ms)
+}
+fn reserve_stopped_at(
+    state: &RuntimeState,
+    profile: &ServiceProfile,
+    now_ms: u64,
+    stale_ms: u64,
+) -> Result<StartupGate, String> {
     state.registered_profile(&profile.id)?;
     if crate::external::port_accepting(profile)?
         || crate::discovery::has_running_installation(Path::new(&profile.install_dir))?
@@ -669,16 +845,7 @@ fn reserve_stopped(state: &RuntimeState, profile: &ServiceProfile) -> Result<Sta
         .map_err(|e| e.to_string())?;
     // The official observer creates this same protocol table on its first admission.
     tx.execute_batch("CREATE TABLE IF NOT EXISTS active_requests(request_id TEXT PRIMARY KEY,service_id TEXT NOT NULL,session_id TEXT NOT NULL,started_ms INTEGER NOT NULL);").map_err(|e|e.to_string())?;
-    let active: i64 = tx
-        .query_row(
-            "SELECT COUNT(*) FROM active_requests WHERE service_id=?1",
-            [&profile.id],
-            |r| r.get(0),
-        )
-        .map_err(|e| e.to_string())?;
-    if active > 0 {
-        return Err("候选存在尚未结束的观察器请求记录，不能自动维护；请先检查使用情况诊断".into());
-    }
+    let cleared_stale = clear_stale_active_requests(&tx, &profile.id, now_ms, stale_ms)?;
     let token = format!(
         "{}{}",
         uuid::Uuid::new_v4().simple(),
@@ -690,6 +857,7 @@ fn reserve_stopped(state: &RuntimeState, profile: &ServiceProfile) -> Result<Sta
         path,
         journal,
         token,
+        cleared_stale,
     };
     tx.commit().map_err(|e| e.to_string())?;
     Ok(guard)
@@ -1617,6 +1785,13 @@ async fn owned_stop(state: &RuntimeState, id: &str) -> Result<(), String> {
     Ok(())
 }
 async fn switch(state: Arc<RuntimeState>, journal: &mut Journal) -> Result<(), String> {
+    switch_with(state, journal, ObserverWait::DEFAULT).await
+}
+async fn switch_with(
+    state: Arc<RuntimeState>,
+    journal: &mut Journal,
+    wait: ObserverWait,
+) -> Result<(), String> {
     cancelled(&state, &journal.task_id)?;
     let candidate = journal.candidate.clone().ok_or("候选尚未准备")?;
     if installation::file_hash(Path::new(&journal.old.config_path))? != journal.old_config_sha256 {
@@ -1627,6 +1802,7 @@ async fn switch(state: Arc<RuntimeState>, journal: &mut Journal) -> Result<(), S
     {
         return Err("候选配置已变化，未停服务".into());
     }
+    wait_out_recent_requests(&state, journal, &candidate, wait).await?;
     let _selection = state.selection_lock.lock().await;
     state
         .selection_changing
@@ -1728,7 +1904,11 @@ async fn switch(state: Arc<RuntimeState>, journal: &mut Journal) -> Result<(), S
         owned_stop(&state, &journal.profile_id).await?;
         registry_replace(&state, &journal.old, &candidate)?;
         if token.is_none() {
-            let reserved = reserve_stopped(&state, &candidate)?;
+            let reserved = reserve_stopped(&state, &candidate, wait.stale_ms)?;
+            if reserved.cleared_stale > 0 {
+                processes::log(&state.logs, &journal.task_id, "warn", format!("服务已停止，已自动清理 {} 条超过 {} 秒的残留请求记录（上次引擎被强制结束时遗留），未改动使用统计与历史", reserved.cleared_stale, wait.stale_ms / 1000));
+                processes::persist_task_logs(&state.database, &state.logs, &journal.task_id)?;
+            }
             token = Some(reserved.token.clone());
             startup_gate = Some(reserved);
         }
@@ -2178,6 +2358,128 @@ mod tests {
                 "browser_download_url":"https://github.com/Niko1221/Strata/releases/download/v0.1.42/strata-windows-x64.zip",
                 "digest":format!("sha256:{}","a".repeat(64))}]
         })
+    }
+
+    const OBSERVER_ROWS: &str = "CREATE TABLE IF NOT EXISTS active_requests(request_id TEXT PRIMARY KEY,service_id TEXT NOT NULL,session_id TEXT NOT NULL,started_ms INTEGER NOT NULL);";
+    fn stopped_fixture(temp: &tempfile::TempDir) -> (Arc<RuntimeState>, ServiceProfile) {
+        let state = RuntimeState::open(temp.path().join("data")).unwrap();
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let install = temp.path().join("install");
+        fs::create_dir_all(&install).unwrap();
+        let profile = ServiceProfile {
+            id: "stale-fixture".into(),
+            name: "stale".into(),
+            base_url: format!("http://127.0.0.1:{port}"),
+            install_dir: install.to_string_lossy().into(),
+            python_path: "python".into(),
+            config_path: temp.path().join("c.json").to_string_lossy().into(),
+            managed: true,
+        };
+        let text = serde_json::to_string(&profile).unwrap();
+        state
+            .database
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO local_installations VALUES(?1,?2,?3,0)",
+                params![profile.id, text, text],
+            )
+            .unwrap();
+        (state, profile)
+    }
+    fn seed_requests(state: &RuntimeState, rows: &[(&str, &str, i64)]) -> rusqlite::Connection {
+        let directory = installation::owned_directory(state.data_dir(), &["analytics"]).unwrap();
+        let db = rusqlite::Connection::open(directory.join("journal.sqlite3")).unwrap();
+        db.execute_batch(OBSERVER_ROWS).unwrap();
+        for (id, service, started) in rows {
+            db.execute(
+                "INSERT INTO active_requests VALUES(?1,?2,'old-session',?3)",
+                params![id, service, started],
+            )
+            .unwrap();
+        }
+        db
+    }
+    fn count(db: &rusqlite::Connection, service: &str) -> i64 {
+        db.query_row(
+            "SELECT COUNT(*) FROM active_requests WHERE service_id=?1",
+            [service],
+            |r| r.get(0),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn orphaned_observer_rows_of_a_stopped_service_are_cleared_and_counted() {
+        let temp = tempfile::tempdir().unwrap();
+        let (state, profile) = stopped_fixture(&temp);
+        let now_ms = now();
+        let hour = 3_600_000_i64;
+        let db = seed_requests(
+            &state,
+            &[
+                ("a", "stale-fixture", now_ms as i64 - hour),
+                ("b", "stale-fixture", 0),
+                ("c", "stale-fixture", now_ms as i64 + hour),
+                ("other", "other-service", now_ms as i64),
+            ],
+        );
+        db.execute_batch("CREATE TABLE events(seq INTEGER PRIMARY KEY,payload TEXT); INSERT INTO events VALUES(1,'keep');").unwrap();
+        let gate = reserve_stopped_at(&state, &profile, now_ms, STALE_ACTIVE_REQUEST_MS).unwrap();
+        assert_eq!(gate.cleared_stale, 3);
+        assert_eq!(count(&db, "stale-fixture"), 0);
+        assert_eq!(count(&db, "other-service"), 1);
+        let events: i64 = db
+            .query_row("SELECT COUNT(*) FROM events", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(events, 1);
+        assert!(gate.path.exists());
+    }
+
+    #[test]
+    fn a_recent_row_still_blocks_with_count_and_age_and_changes_nothing() {
+        let temp = tempfile::tempdir().unwrap();
+        let (state, profile) = stopped_fixture(&temp);
+        let now_ms = now();
+        let db = seed_requests(
+            &state,
+            &[
+                ("old", "stale-fixture", 0),
+                ("fresh", "stale-fixture", now_ms as i64 - 30_000),
+            ],
+        );
+        let error = reserve_stopped_at(&state, &profile, now_ms, STALE_ACTIVE_REQUEST_MS)
+            .err()
+            .unwrap();
+        assert!(
+            error.contains("1 个未结束的请求") && error.contains("30 秒前"),
+            "{error}"
+        );
+        assert!(error.contains("关闭其它正在使用 Strata 的程序"), "{error}");
+        assert!(!error.contains("观察器"), "{error}");
+        // The stale row is only dropped together with a successful reservation.
+        assert_eq!(count(&db, "stale-fixture"), 2);
+        assert!(!state
+            .data_dir()
+            .join("analytics/stale-fixture.maintenance")
+            .exists());
+        // The same fresh row has become an orphan two minutes later.
+        let gate = reserve_stopped_at(&state, &profile, now_ms + 130_000, STALE_ACTIVE_REQUEST_MS)
+            .unwrap();
+        assert_eq!(gate.cleared_stale, 2);
+        assert_eq!(count(&db, "stale-fixture"), 0);
+    }
+
+    #[test]
+    fn a_stopped_service_without_rows_reserves_with_nothing_cleared() {
+        let temp = tempfile::tempdir().unwrap();
+        let (state, profile) = stopped_fixture(&temp);
+        let gate = reserve_stopped_at(&state, &profile, now(), STALE_ACTIVE_REQUEST_MS).unwrap();
+        assert_eq!(gate.cleared_stale, 0);
     }
 
     #[test]
@@ -3608,5 +3910,141 @@ mod tests {
             assert_eq!(installation::file_hash(&path).unwrap(), expected);
         }
         owned_stop(&state, &old.id).await.unwrap();
+    }
+    const SHORT_WAIT: ObserverWait = ObserverWait {
+        stale_ms: 400,
+        poll: Duration::from_millis(40),
+        max: Duration::from_secs(10),
+    };
+    fn task_message(f: &Fixture) -> String {
+        f.state.tasks.lock().unwrap()[&f.journal.task_id]
+            .status
+            .message
+            .clone()
+    }
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn fresh_rows_age_out_during_the_wait_and_the_switch_then_succeeds() {
+        let mut f = fixture();
+        let id = f.candidate.id.clone();
+        let db = seed_requests(&f.state, &[("fresh", &id, now() as i64)]);
+        let begun = Instant::now();
+        switch_with(f.state.clone(), &mut f.journal, SHORT_WAIT)
+            .await
+            .unwrap();
+        assert!(begun.elapsed() >= Duration::from_millis(300));
+        assert_eq!(f.journal.phase, "committed");
+        assert_eq!(count(&db, &id), 0);
+        assert!(!gate(&f).exists());
+    }
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn the_wait_announces_itself_once_in_the_task_status_and_log() {
+        let mut f = fixture();
+        let id = f.candidate.id.clone();
+        seed_requests(&f.state, &[("fresh", &id, now() as i64)]);
+        processes::register_task_logs(&f.state.logs, &f.journal.task_id).unwrap();
+        let candidate = f.candidate.clone();
+        wait_out_recent_requests(&f.state, &mut f.journal, &candidate, SHORT_WAIT)
+            .await
+            .unwrap();
+        assert_eq!(f.journal.phase, "waitingIdle");
+        let message = task_message(&f);
+        assert!(
+            message.contains("正在自动等待") && message.contains("无需操作"),
+            "{message}"
+        );
+        let logs = f.state.logs.lock().unwrap();
+        let announced = logs
+            .get(&f.journal.task_id)
+            .unwrap()
+            .iter()
+            .filter(|line| line.message.contains("正在自动等待"))
+            .count();
+        assert_eq!(announced, 1);
+    }
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn cancelling_during_the_wait_aborts_without_touching_anything() {
+        let mut f = fixture();
+        let id = f.candidate.id.clone();
+        let db = seed_requests(&f.state, &[("fresh", &id, now() as i64)]);
+        let slow = ObserverWait {
+            stale_ms: 60_000,
+            ..SHORT_WAIT
+        };
+        let state = f.state.clone();
+        let task = f.journal.task_id.clone();
+        let canceller = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(150)).await;
+            state
+                .tasks
+                .lock()
+                .unwrap()
+                .get_mut(&task)
+                .unwrap()
+                .cancelled = true;
+        });
+        let begun = Instant::now();
+        let error = switch_with(f.state.clone(), &mut f.journal, slow)
+            .await
+            .unwrap_err();
+        canceller.await.unwrap();
+        assert!(error.contains("已取消"), "{error}");
+        assert!(begun.elapsed() < Duration::from_secs(5));
+        assert_eq!(count(&db, &id), 1);
+        unchanged(&f);
+        assert_eq!(
+            f.state.registered_profile(&f.old.id).unwrap().install_dir,
+            f.old.install_dir
+        );
+    }
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_service_that_starts_during_the_wait_aborts_the_switch() {
+        let mut f = fixture();
+        let id = f.candidate.id.clone();
+        seed_requests(&f.state, &[("fresh", &id, now() as i64)]);
+        let slow = ObserverWait {
+            stale_ms: 60_000,
+            ..SHORT_WAIT
+        };
+        let port = url::Url::parse(&f.old.base_url).unwrap().port().unwrap();
+        let listener = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(150)).await;
+            std::net::TcpListener::bind(("127.0.0.1", port)).unwrap()
+        });
+        let error = switch_with(f.state.clone(), &mut f.journal, slow)
+            .await
+            .unwrap_err();
+        let _listener = listener.await.unwrap();
+        assert!(error.contains("候选已有运行实例"), "{error}");
+        unchanged(&f);
+    }
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn rows_that_never_expire_time_out_with_a_plain_message_before_any_change() {
+        let mut f = fixture();
+        let id = f.candidate.id.clone();
+        let db = seed_requests(
+            &f.state,
+            &[("a", &id, now() as i64), ("b", &id, now() as i64)],
+        );
+        let never = ObserverWait {
+            stale_ms: 3_600_000,
+            poll: Duration::from_millis(40),
+            max: Duration::from_millis(300),
+        };
+        let error = switch_with(f.state.clone(), &mut f.journal, never)
+            .await
+            .unwrap_err();
+        assert!(error.contains("2 个未结束的请求"), "{error}");
+        assert!(error.contains("已自动等待 0 秒"), "{error}");
+        assert!(error.contains("关闭其它正在使用 Strata 的程序"), "{error}");
+        for jargon in ["观察器", "journal", "sqlite", "诊断"] {
+            assert!(!error.contains(jargon), "{error}");
+        }
+        assert_eq!(count(&db, &id), 2);
+        unchanged(&f);
+        assert!(!gate(&f).exists());
+        assert_eq!(
+            f.state.registered_profile(&f.old.id).unwrap().install_dir,
+            f.old.install_dir
+        );
     }
 }

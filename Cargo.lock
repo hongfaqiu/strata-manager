@@ -4182,7 +4182,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "strata-local-ipc"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "dunce",
  "libc",
@@ -4198,7 +4198,7 @@ dependencies = [
 
 [[package]]
 name = "strata-manager"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "base64 0.22.1",
  "dunce",
@@ -4234,7 +4234,7 @@ dependencies = [
 
 [[package]]
 name = "strata-manager-server"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -4259,7 +4259,7 @@ dependencies = [
 
 [[package]]
 name = "strata-runtime-core"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "adlx",
  "base64 0.22.1",
@@ -4288,7 +4288,7 @@ dependencies = [
 
 [[package]]
 name = "strata-supervisor"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "dunce",
  "libc",
@@ -4303,7 +4303,7 @@ dependencies = [
 
 [[package]]
 name = "strata-update-verifier"
-version = "0.2.21"
+version = "0.2.22"
 dependencies = [
  "base64 0.22.1",
  "minisign-verify",
