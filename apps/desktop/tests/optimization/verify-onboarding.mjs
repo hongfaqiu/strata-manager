@@ -120,6 +120,19 @@ try {
     await page.waitForFunction(() => document.querySelector('[data-testid="onboarding"]')?.dataset.step === 'download');
     assert.equal(await page.getByRole('switch', { name: '下载完成后自动启动并加载' }).getAttribute('aria-checked'), 'false', 'auto start defaults to off');
   });
+  await run('a download that cannot reach Hugging Face offers a one-click ModelScope retry', 'onboarding-app.html?state=model-offline&fail=unreachable#guide', async page => {
+    await page.getByRole('button', { name: /下载并准备/ }).click();
+    const retry = page.getByRole('button', { name: '改用国内源 ModelScope 重试' });
+    await retry.waitFor();
+    await page.getByRole('button', { name: '重新选择模型' }).waitFor();
+    if (shots) { await page.waitForTimeout(300); await page.screenshot({ path: resolve(shots, '04c-download-unreachable.png') }); }
+    await retry.click();
+    await page.waitForFunction(() => window.__fixture.state.store.onboardingV1?.setupTaskId === 'setup-new-2');
+    const runs = await page.evaluate(() => window.__fixture.calls.filter(call => call.command === 'run_setup').map(call => call.args.options));
+    assert.equal(runs.length, 2);
+    assert.equal(runs[0].source, 'official'); assert.equal(runs[1].source, 'modelscope');
+    assert.equal(await page.getByRole('button', { name: '改用国内源 ModelScope 重试' }).count(), 0, 'the retry is running; no second button');
+  });
   await run('Mac 48 GB model step greys out unsupported families and explains SSD streaming', 'onboarding-app.html?state=model&mac=m5pro#guide', async page => {
     await page.getByRole('radio', { name: /Qwen3\.8-Flash-Next\s*Q2_0/ }).waitFor();
     const blocked = page.locator('[data-testid="ob-mac-unavailable"]');

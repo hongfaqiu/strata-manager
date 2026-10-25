@@ -704,6 +704,14 @@ export function App() {
     observedTasks.current.set(task.id, task.state);
     setRecipes(old => ({ ...old, [task.id]: recipe })); return task;
   };
+  /** A download that could not reach Hugging Face can restart on ModelScope (the domestic source) in one click. */
+  const modelScopeRetry = (task: TaskStatus, reason: 'setup' | 'retryTask'): (() => Promise<TaskStatus | undefined>) | undefined => {
+    const recipe = recipes[task.id];
+    if (task.state !== 'failed' || !recipe || (recipe.kind !== 'setup' && recipe.kind !== 'community' && recipe.kind !== 'orca')) return undefined;
+    const options = core.modelScopeRetryOptions(recipe.options, task.message);
+    if (!options) return undefined;
+    return () => (reason === 'setup' ? act('setup', () => runRecipe({ ...recipe, options }), 'modelPrepared') : act('retryTask', () => runRecipe({ ...recipe, options }), 'taskStarted')) as Promise<TaskStatus | undefined>;
+  };
   const openConfigProfile = async (configPath: string, previous?: ServiceProfile, activate = true) => {
     const directory = previous?.installDir || configPath.slice(0, Math.max(configPath.lastIndexOf('\\'), configPath.lastIndexOf('/')));
     const found = await core.discoverLocal([directory]);
@@ -751,7 +759,7 @@ export function App() {
     const handoff = handoffs.data?.find(item => item.taskId === task.id);
     if (handoff) return <SetupHandoffActions handoff={handoff} canRecheck={task.state === 'completed'} disabled={!!busy || inferenceBusy || !!localProgress} onResolve={async path => { await core.resolveSetupHandoff(task.id, path); await query.invalidateQueries(); }} onUse={async profileId => { const registered = await core.localInstallations(); const selected = registered.find(item => item.id === profileId); if (!selected) throw new Error(t('noProfileHint')); setProfiles(registered); await activateLocal(selected); go('chat'); }} onView={() => go('profiles')} onError={error => notify(errorText(error), true)}/>;
     const recipe = recipes[task.id];
-    if (task.state === 'failed') return <BadShardAction taskId={task.id} failed language={settings.language} disabled={!!busy} canRetry={!!recipe && recipe.kind !== 'update'} onOpen={shard => setModal({ kind: 'badShard', taskId: task.id, shard, recipe: recipe && recipe.kind !== 'update' ? recipe : undefined })}/>;
+    if (task.state === 'failed') { const retryOnModelScope = modelScopeRetry(task, 'retryTask'); return <>{retryOnModelScope && <button className="st-btn st-btn--primary" disabled={!!busy} onClick={() => void retryOnModelScope()}><RefreshCw size={14} />{settings.language === 'zh-CN' ? '改用国内源 ModelScope 重试' : 'Retry from ModelScope'}</button>}<BadShardAction taskId={task.id} failed language={settings.language} disabled={!!busy} canRetry={!!recipe && recipe.kind !== 'update'} onOpen={shard => setModal({ kind: 'badShard', taskId: task.id, shard, recipe: recipe && recipe.kind !== 'update' ? recipe : undefined })}/></>; }
     if (task.state !== 'completed' || !recipe || recipe.kind === 'update') return null;
     return <>{recipe.kind === 'install' && <button className="st-btn st-btn--secondary" disabled={inferenceBusy} onClick={() => selectPreparationRuntime(recipe.directory)}>{t('prepareModels')}</button>}<button className="st-btn st-btn--secondary" disabled={!!busy || inferenceBusy || !!localProgress} onClick={() => void act('taskProfile', () => createTaskProfile(recipe))}>{t('usePreparedModel')}</button></>;
   };
@@ -830,6 +838,7 @@ export function App() {
     onPrepareModel={request => act('setup', () => runRecipe({ kind: 'setup', ...request }), 'modelPrepared') as Promise<TaskStatus | undefined>}
     onOrcaImport={(runtime, request, options) => act('setup', () => runRecipe({ kind: 'orca', profile: runtime, request, options }), 'modelPrepared') as Promise<TaskStatus | undefined>}
     onCommunitySetup={(runtime, request, context, images, options) => act('setup', () => runRecipe({ kind: 'community', profile: runtime, request, context, images, options }), 'modelPrepared') as Promise<TaskStatus | undefined>}
+    modelScopeRetry={task => modelScopeRetry(task, 'setup')}
     onChooseDirectory={() => choose(true)} onChooseFile={() => choose(false)}
     onStart={async selected => { await activateLocal(selected); }}
     onLoad={async selected => { await core.request(selected, '/load', 'POST', {}); await query.invalidateQueries(); }}

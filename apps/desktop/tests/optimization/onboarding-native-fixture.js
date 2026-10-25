@@ -102,7 +102,15 @@ window.__TAURI_INTERNALS__ = {
     if (command === 'environment_info') return structuredClone(environment);
     if (command === 'read_logs') return structuredClone(state.logs[args.profile?.id] ?? []);
     if (command === 'prepare_local_runtime') { const task = { id: 'rt-new', kind: 'install-runtime', state: 'running', message: '正在下载 Strata 源码包', startedAt: Date.now() }; state.tasks.push(task); state.runtime = { taskId: task.id }; return structuredClone(task); }
-    if (command === 'run_setup') { const task = { id: 'setup-new', kind: 'setup', state: 'running', message: '正在准备下载', startedAt: Date.now() }; state.tasks.push(task); state.handoffs.push({ taskId: task.id, status: 'pending' }); return structuredClone(task); }
+    if (command === 'run_setup') {
+      // ?fail=unreachable: the first download cannot reach huggingface.co (mainland China, WinError 10060); the retry runs.
+      const unreachable = params.get('fail') === 'unreachable' && !state.setupRuns;
+      state.setupRuns = (state.setupRuns ?? 0) + 1;
+      const task = unreachable
+        ? { id: 'setup-new', kind: 'setup', state: 'failed', message: '网络或下载失败：cannot reach huggingface.co (<urlopen error [WinError 10060] 由于连接方在一段时间后没有正确答复或连接的主机没有反应，连接尝试失败。>) (check your internet connection...; if huggingface.co does not reach you (mainland China), the same files are on ModelScope: run setup with --source modelscope)（退出码 1）', startedAt: Date.now() - 60000, finishedAt: Date.now() }
+        : { id: `setup-new${state.setupRuns > 1 ? `-${state.setupRuns}` : ''}`, kind: 'setup', state: 'running', message: '正在准备下载', startedAt: Date.now() };
+      state.tasks.push(task); if (!unreachable) state.handoffs.push({ taskId: task.id, status: 'pending' }); return structuredClone(task);
+    }
     if (command === 'run_community_setup') { const task = { id: 'setup-community', kind: 'setup', state: 'running', message: '正在下载社区模型', startedAt: Date.now() }; state.tasks.push(task); state.handoffs.push({ taskId: task.id, status: 'pending' }); return structuredClone(task); }
     if (command === 'setup_disk_preflight') return { status: 'ready', dataDirectory: runtimeProfile.installDir, modelDirectory: `${runtimeProfile.installDir}\\models`, modelDownloadBytesEstimate: 83.6e9, reusableModelBytes: 0, additionalBytesEstimate: 90e9, estimate: true, volumes: [{ directory: runtimeProfile.installDir, mountPoint: 'D:\\', availableBytes: 405 * GB, requiredAdditionalBytesEstimate: 90e9 }], reason: '', source: 'fixture' };
     if (command === 'assess_setup_resources') return assessment();
