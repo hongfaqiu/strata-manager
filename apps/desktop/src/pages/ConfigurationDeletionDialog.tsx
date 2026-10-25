@@ -16,16 +16,16 @@ export interface ConfigurationDeletionDialogProps {
 const words = {
   'zh-CN': {
     title: '删除配置', path: '实际 JSON 文件',
-    description: '此 JSON 将移入应用的配置归档目录，保留可恢复的副本。模型文件和其他配置保留。正在运行的配置需要先停止服务。',
+    description: '此 JSON 将移入应用的配置归档目录，保留可恢复的副本；已登记配置在 Strata 目录中的原始 JSON 会一并归档，扫描后不再出现。模型文件和其他配置保留。正在运行的配置需要先停止服务。',
     cancel: '取消', close: '关闭', confirm: '确认删除配置', deleting: '正在删除…', refreshing: '正在刷新…',
-    deleted: '配置已删除，可恢复副本已保留。', archivedPath: '可恢复副本',
+    deleted: '配置已删除，可恢复副本已保留。', archivedPath: '可恢复副本', unregistered: '配置文件此前已不存在，已移除配置记录。',
     refreshFailed: '配置已删除，但列表刷新失败：', retryRefresh: '重新刷新列表',
   },
   en: {
     title: 'Delete configuration', path: 'Actual JSON file',
-    description: 'This JSON file will be moved to the application archive, keeping a recoverable copy. Model files and other configurations are retained. Stop this configuration’s service before deleting it.',
+    description: 'This JSON file will be moved to the application archive, keeping a recoverable copy. For a saved configuration, its original JSON in the Strata folder is archived too, so a scan does not list it again. Model files and other configurations are retained. Stop this configuration’s service before deleting it.',
     cancel: 'Cancel', close: 'Close', confirm: 'Confirm configuration deletion', deleting: 'Deleting…', refreshing: 'Refreshing…',
-    deleted: 'Configuration deleted. A recoverable copy has been kept.', archivedPath: 'Recoverable copy',
+    deleted: 'Configuration deleted. A recoverable copy has been kept.', archivedPath: 'Recoverable copy', unregistered: 'The configuration file was already gone; its saved record was removed.',
     refreshFailed: 'Configuration deleted, but the list could not refresh: ', retryRefresh: 'Refresh the list again',
   },
 } as const;
@@ -90,8 +90,8 @@ function ConfigurationDeletionSession({ profile, language, onClose, onDeleted }:
       <dl className="configuration-deletion-path"><dt>{w.path}</dt><dd><code>{target.configPath}</code></dd></dl>
       <p>{w.description}</p>
       {archivedPath !== null && <div className="configuration-deletion-completed">
-        <p role="status"><Archive size={16} aria-hidden="true" />{w.deleted}</p>
-        <dl className="configuration-deletion-path"><dt>{w.archivedPath}</dt><dd><code>{archivedPath}</code></dd></dl>
+        <p role="status"><Archive size={16} aria-hidden="true" />{archivedPath ? w.deleted : w.unregistered}</p>
+        {archivedPath && <dl className="configuration-deletion-path"><dt>{w.archivedPath}</dt><dd><code>{archivedPath}</code></dd></dl>}
       </div>}
       {failure && <p className="notice error configuration-deletion-error" role="alert">{failure.stage === 'refresh' ? w.refreshFailed : ''}{failure.message}</p>}
       <div className="configuration-deletion-actions">

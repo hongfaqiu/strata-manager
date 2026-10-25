@@ -54,6 +54,8 @@ export interface OnboardingPageProps {
   onOrcaImport?: (profile: ServiceProfile, request: core.OrcaImportRequest, options: core.OfficialSetupOptions) => Promise<TaskStatus | undefined>;
   /** A community model from the 「选择模型」 list: pinned download + SHA-256, then setup --gguf-dir. */
   onCommunitySetup?: (profile: ServiceProfile, request: core.CommunitySetupRequest, context: number, images: boolean, options: core.OfficialSetupOptions) => Promise<TaskStatus | undefined>;
+  /** For a download that could not reach Hugging Face: a function that restarts it on ModelScope, else undefined. */
+  modelScopeRetry?: (task: TaskStatus) => (() => Promise<TaskStatus | undefined>) | undefined;
   onChooseDirectory?: () => Promise<string | null>;
   onChooseFile?: () => Promise<string | null>;
   onStart: (profile: ServiceProfile) => Promise<void>;
@@ -477,6 +479,9 @@ function DownloadStep(props: StepProps & { setupTask?: TaskStatus; handoff?: cor
   const cancel = async () => { if (!setupTask || canceling) return; setCanceling(true); try { await core.cancelTask(setupTask.id); } catch (error) { props.onError(error); } finally { setCanceling(false); } };
   const selection = progress?.selection;
   const failed = setupTask && (setupTask.state === 'failed' || setupTask.state === 'cancelled');
+  const retryOnModelScope = setupTask?.state === 'failed' ? props.modelScopeRetry?.(setupTask) : undefined;
+  const [retrying, setRetrying] = useState(false);
+  const retryNow = async () => { if (!retryOnModelScope || retrying) return; setRetrying(true); try { const task = await retryOnModelScope(); if (task) props.onProgress({ setupTaskId: task.id }); } catch (error) { props.onError(error); } finally { setRetrying(false); } };
   return <div className="ob-panel">
     <Head title={selection ? `${t('obStepDownload')} · ${modelName(selection.family)} ${selection.quant}` : t('obStepDownload')} aside={setupTask && running ? <span className="ob-elapsed">{t('obElapsed', { time: clock(props.now - setupTask.startedAt) })}</span> : undefined}>{t('obDownloadIntro')}</Head>
     <div className="ob-download">
@@ -496,7 +501,8 @@ function DownloadStep(props: StepProps & { setupTask?: TaskStatus; handoff?: cor
     </div>
     <footer className="ob-actions">
       {running && <button type="button" className="st-btn st-btn--secondary" disabled={canceling} onClick={() => void cancel()}><Square size={13}/>{t('obCancel')}</button>}
-      {failed && <button type="button" className="primary" onClick={() => props.onProgress({ setupTaskId: undefined })}>{t('obChooseAnother')}</button>}
+      {retryOnModelScope && <button type="button" className="primary" disabled={retrying || props.busy} onClick={() => void retryNow()}>{retrying && <LoaderCircle size={14} className="spin"/>}{t('obRetryModelScope')}</button>}
+      {failed && <button type="button" className={retryOnModelScope ? 'st-btn st-btn--secondary' : 'primary'} onClick={() => props.onProgress({ setupTaskId: undefined })}>{t('obChooseAnother')}</button>}
       <button type="button" className="ob-link" onClick={props.onOpenTasks}>{t('obTaskDetails')}<ArrowRight size={13}/></button>
       <span className="ob-note">{t('obSlowHint')}</span>
     </footer>

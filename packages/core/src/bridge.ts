@@ -1,4 +1,4 @@
-import type { AppSettings, BackgroundPolicy, EnvironmentInfo, JsonObject, LocalCandidate, LogEntry, ProcessStatus, ServiceProfile, SetupDiskPreflight, SetupHandoff, StartupStatus, StreamEvent, SupervisorStatus, TaskStatus } from './types';
+import type { AppSettings, BadShard, BadShardRemoval, BackgroundPolicy, EnvironmentInfo, JsonObject, LocalCandidate, LogEntry, ProcessStatus, ServiceProfile, SetupDiskPreflight, SetupHandoff, StartupStatus, StreamEvent, SupervisorStatus, TaskStatus } from './types';
 import { normalizeError, StrataError } from './errors';
 import { decodeChatChunk, SSEParser, type ChatDelta, type StreamToolEvent } from './chat';
 import type { OfficialSetupOptions, ModelInspectRequest } from './official-setup';
@@ -395,6 +395,9 @@ export const resolveRuntimeZipAsset = (installDir: string, assetName?: string, t
 export const listTasks = (): Promise<TaskStatus[]> => native('list_tasks');
 export const listSetupHandoffs = (): Promise<SetupHandoff[]> => native('list_setup_handoffs');
 export const resolveSetupHandoff = (taskId: string, configPath?: string): Promise<SetupHandoff> => native('resolve_setup_handoff', { taskId, ...(configPath ? { configPath } : {}) });
+export const taskBadShard = (taskId: string): Promise<BadShard | null> => native('task_bad_shard', { taskId });
+/** The supervisor re-derives the folder from the task and refuses any other file name. */
+export const deleteBadShard = (taskId: string, fileName: string): Promise<BadShardRemoval> => native('delete_bad_shard', { taskId, fileName });
 export const cancelTask = (taskId: string): Promise<void> => native('cancel_task', { taskId });
 export const readConfig = (profile: ServiceProfile): Promise<JsonObject> => native('read_config', { profile });
 export interface ConfigSnapshot { config: JsonObject; revision: string }

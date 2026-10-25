@@ -113,3 +113,21 @@ export function snapshotModelDownloadRequest(
     options: normalizeOptions(options),
   };
 }
+
+/** The host a failed setup says it could not reach ("cannot reach huggingface.co (…)"), or null. */
+export function unreachableDownloadHost(message: string | undefined): string | null {
+  const match = /cannot reach ([a-z0-9][a-z0-9.-]*\.[a-z]{2,})/i.exec(message ?? '');
+  return match?.[1]?.toLowerCase() ?? null;
+}
+
+/**
+ * The options for retrying a download that could not reach Hugging Face (or its mirror) on
+ * ModelScope, the domestic source. Null when the failure is not an unreachable host, or the retry
+ * already used ModelScope, so the action is only offered where it can help.
+ */
+export function modelScopeRetryOptions(options: OfficialSetupOptions | undefined, message: string | undefined): OfficialSetupOptions | null {
+  const host = unreachableDownloadHost(message);
+  if (!host || host.includes('modelscope') || options?.source === 'modelscope') return null;
+  const { hfEndpoint: _mirror, ...rest } = normalizeOfficialSetupOptions({ ...options, source: 'modelscope' });
+  return rest;
+}

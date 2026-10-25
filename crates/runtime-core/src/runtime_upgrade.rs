@@ -1297,8 +1297,27 @@ fn migrate_config(
     Ok(out)
 }
 fn atomic_new(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    let mut temp = tempfile::NamedTempFile::new_in(path.parent().ok_or("候选目录无效")?)
-        .map_err(|e| e.to_string())?;
+    let temp = write_temp(path, bytes)?;
+    temp.persist_noclobber(path)
+        .map_err(|e| persist_error(path, &e.error, "已存在，未覆盖"))?;
+    Ok(())
+}
+/// Like [`atomic_new`] for a file only this operation owns (a candidate copy in
+/// a folder keyed by the task): a leftover from an earlier attempt is replaced
+/// atomically instead of failing with "file already exists" (os error 183).
+fn atomic_replace(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let temp = write_temp(path, bytes)?;
+    temp.persist(path)
+        .map_err(|e| persist_error(path, &e.error, "无法替换"))?;
+    Ok(())
+}
+fn persist_error(path: &Path, error: &std::io::Error, what: &str) -> String {
+    format!("候选文件 {} {what}：{error}", path.display())
+}
+fn write_temp(path: &Path, bytes: &[u8]) -> Result<tempfile::NamedTempFile, String> {
+    let parent = path.parent().ok_or("候选目录无效")?;
+    let mut temp = tempfile::NamedTempFile::new_in(parent)
+        .map_err(|e| format!("无法在 {} 创建临时文件：{e}", parent.display()))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -1308,8 +1327,7 @@ fn atomic_new(path: &Path, bytes: &[u8]) -> Result<(), String> {
     }
     temp.write_all(bytes).map_err(|e| e.to_string())?;
     temp.as_file().sync_all().map_err(|e| e.to_string())?;
-    temp.persist_noclobber(path).map_err(|e| e.to_string())?;
-    Ok(())
+    Ok(temp)
 }
 fn shared_settings_path(profile: &ServiceProfile) -> PathBuf {
     let path = Path::new(&profile.config_path);
@@ -1346,7 +1364,7 @@ fn read_shared_settings(path: &Path) -> Result<Option<Vec<u8>>, String> {
 }
 fn copy_shared_settings(old: &ServiceProfile, new: &ServiceProfile) -> Result<(), String> {
     if let Some(bytes) = read_shared_settings(&shared_settings_path(old))? {
-        atomic_new(&shared_settings_path(new), &bytes)?;
+        atomic_replace(&shared_settings_path(new), &bytes)?;
     }
     Ok(())
 }

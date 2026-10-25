@@ -173,3 +173,23 @@ describe('model download request snapshots', () => {
       options: { source: 'mirror', hfEndpoint: 'https://mirror.example', backend: 'cuda', gpus: '2,0' } });
   });
 });
+
+describe('retrying an unreachable Hugging Face download on ModelScope', () => {
+  const message = '网络或下载失败：cannot reach huggingface.co (<urlopen error [WinError 10060] x>)（check your internet connection）';
+  it('names the unreachable host from the failure text', () => {
+    expect(core.unreachableDownloadHost(message)).toBe('huggingface.co');
+    expect(core.unreachableDownloadHost('cannot reach hf-mirror.com (timed out)')).toBe('hf-mirror.com');
+    expect(core.unreachableDownloadHost('磁盘空间不足')).toBeNull();
+    expect(core.unreachableDownloadHost(undefined)).toBeNull();
+  });
+  it('switches only the source, drops a mirror address and keeps the rest', () => {
+    expect(core.modelScopeRetryOptions({ source: 'official', backend: 'cuda', gpus: '1' }, message)).toEqual({ source: 'modelscope', backend: 'cuda', gpus: '1' });
+    expect(core.modelScopeRetryOptions({ source: 'mirror', hfEndpoint: 'https://hf-mirror.com', backend: 'auto', gpus: '' }, 'cannot reach hf-mirror.com (x)')).toEqual({ source: 'modelscope', backend: 'auto', gpus: '' });
+    expect(core.modelScopeRetryOptions(undefined, message)).toEqual({ source: 'modelscope', backend: 'auto', gpus: '' });
+  });
+  it('is not offered when it cannot help', () => {
+    expect(core.modelScopeRetryOptions({ source: 'modelscope' }, message)).toBeNull();
+    expect(core.modelScopeRetryOptions({ source: 'official' }, 'cannot reach www.modelscope.cn (timed out)')).toBeNull();
+    expect(core.modelScopeRetryOptions({ source: 'official' }, 'SHA-256 mismatch')).toBeNull();
+  });
+});

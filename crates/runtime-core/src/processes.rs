@@ -668,12 +668,51 @@ fn capture<R: Read + Send + 'static>(
                     &logs,
                     &id,
                     level,
-                    String::from_utf8_lossy(&bytes).trim_end().to_string(),
+                    child_line_text(&bytes).trim_end().to_string(),
                 ),
             }
         }
         pending.fetch_sub(1, Ordering::Release);
     });
+}
+
+/// A child's output line as text. Python (setup.py) writes to a pipe in the Windows ANSI code page
+/// (GBK on a Chinese system), so an OS error such as WinError 10060's localized message is not UTF-8:
+/// valid UTF-8 is kept as it is, anything else is read in the system code page instead of turning
+/// into U+FFFD.
+fn child_line_text(bytes: &[u8]) -> String {
+    match std::str::from_utf8(bytes) {
+        Ok(text) => text.to_owned(),
+        Err(_) => ansi_text(bytes).unwrap_or_else(|| String::from_utf8_lossy(bytes).into_owned()),
+    }
+}
+
+#[cfg(windows)]
+fn ansi_text(bytes: &[u8]) -> Option<String> {
+    use windows_sys::Win32::Globalization::MultiByteToWideChar;
+    const CP_ACP: u32 = 0;
+    let length = i32::try_from(bytes.len()).ok()?;
+    // SAFETY: both calls only read `bytes` (length checked above) and write into `wide`, which is
+    // sized by the first call.
+    unsafe {
+        let needed =
+            MultiByteToWideChar(CP_ACP, 0, bytes.as_ptr(), length, std::ptr::null_mut(), 0);
+        if needed <= 0 {
+            return None;
+        }
+        let mut wide = vec![0u16; needed as usize];
+        let written =
+            MultiByteToWideChar(CP_ACP, 0, bytes.as_ptr(), length, wide.as_mut_ptr(), needed);
+        if written <= 0 {
+            return None;
+        }
+        Some(String::from_utf16_lossy(&wide[..written as usize]))
+    }
+}
+
+#[cfg(not(windows))]
+fn ansi_text(_bytes: &[u8]) -> Option<String> {
+    None
 }
 
 impl OwnedProcess {
@@ -1526,7 +1565,11 @@ pub fn launch_setup_task(
     steps: Vec<Step>,
 ) -> Result<TaskStatus, String> {
     let runtime_path = Some(runtime_dir(&intent.profile)?);
-    launch_task_with_handoff(
+    let model_directory = steps
+        .iter()
+        .find_map(|step| crate::bad_shard::gguf_directory(&step.args));
+    let model_dirs = state.clone();
+    let status = launch_task_with_handoff(
         state.tasks.clone(),
         state.logs.clone(),
         state.database.clone(),
@@ -1536,7 +1579,12 @@ pub fn launch_setup_task(
         runtime_path,
         None,
         Some(crate::setup_handoff::SetupHook { state, intent }),
-    )
+    )?;
+    // Kept here, never taken from the webview: the only folder a bad-shard deletion may touch.
+    if let (Some(directory), Ok(mut dirs)) = (model_directory, model_dirs.task_model_dirs.lock()) {
+        dirs.insert(status.id.clone(), directory);
+    }
+    Ok(status)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1890,6 +1938,20 @@ pub fn python(profile: &ServiceProfile) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn child_output_keeps_utf8_and_never_turns_ansi_text_into_replacement_characters() {
+        assert_eq!(
+            super::child_line_text("下载 ✓ cannot reach".as_bytes()),
+            "下载 ✓ cannot reach"
+        );
+        // "由于连接方" as Python writes it on a Chinese Windows pipe (GBK): not valid UTF-8.
+        let gbk = b"[WinError 10060] \xd3\xc9\xd3\xda\xc1\xac\xbd\xd3\xb7\xbd".to_vec();
+        assert!(std::str::from_utf8(&gbk).is_err());
+        let text = super::child_line_text(&gbk);
+        assert!(text.starts_with("[WinError 10060] "));
+        #[cfg(windows)]
+        assert!(!text.contains('\u{fffd}'), "{text}");
+    }
     use super::*;
     #[test]
     fn tree_running_reads_the_held_tree_after_root_exit_without_stopping_descendants() {
