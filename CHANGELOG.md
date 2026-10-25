@@ -5,6 +5,14 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **修复「更新到新版本」「切换到此版本」报「候选存在尚未结束的观察器请求记录，不能自动维护」**：引擎被强制结束（任务管理器结束进程、断电、崩溃）时，使用情况记录里会遗留「进行中的请求」，服务停止后没有人清理，于是每次更新和切换都被拒绝。现在确认服务已停止后，会清理超过 2 分钟的残留请求记录（只清理该服务的记录，不动使用统计与历史），并在任务日志里写明清理了多少条；2 分钟内的记录仍会拦住操作，提示里会写明有几个请求、多久前开始、还需等多久。
+
+### English
+
+- **Fixed "Update to the new version" and "Switch to this version" failing with "the candidate has unfinished observer request records and cannot be maintained automatically"**: when the engine is killed (End task, power loss, crash), the usage journal keeps "in-flight request" rows that nothing clears once the service is stopped, so every update and switch was refused. Once the service is confirmed stopped, leftover request rows older than 2 minutes are now cleared (only that service's rows; usage statistics and history are untouched) and the task log says how many were cleared. Rows younger than 2 minutes still block, and the message now says how many requests, how long ago they started, and how long to wait.
+
 ## [0.2.21] - 2026-10-25
 
 ### 中文
