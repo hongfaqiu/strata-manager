@@ -5,6 +5,8 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+## [0.2.21] - 2026-10-25
+
 ### 中文
 
 - **修复手动删除模型文件后，配置无法移除、点击重试一直校验**：删除配置现在会同时归档 Strata 目录里的原始 JSON 和应用内的私有副本，并移除对应登记，扫描后不会再出现；配置文件或部分模型分片已被手动删除时，也可以直接移除登记，不再卡在「文件不存在」。
@@ -20,7 +22,6 @@ Maintain both languages for each version. Move unreleased changes into the actua
 - **A "Delete bad shard and retry" button on the task card when a model shard fails its check**: a folder chosen under "Use existing model" is treated as your own files and Strata never deletes from it, so once a shard is damaged, retrying fails the same way every time. A task that failed this way now shows a "Delete bad shard and retry" button; it first shows the full path of the file to be deleted, and after you confirm it deletes only that shard and its matching `.done` and `.part` leftovers, then starts the preparation again. Only the shard named in that task's log, inside the task's own model folder, can be deleted; no other file is touched.
 - **Fixed garbled text in download errors on Chinese Windows**: on Windows, Python prints localized system errors in the system code page (GBK on Chinese systems), such as the sentence after `[WinError 10060]`, and the app decoded it as UTF-8, which showed a string of replacement characters. The app now reads UTF-8 first and falls back to the system code page when the text is not valid UTF-8, so task messages and logs read correctly.
 - **A "Retry from ModelScope" button when Hugging Face cannot be reached**: when the network cannot reach huggingface.co (`cannot reach huggingface.co`, `WinError 10060`), the first-run guide's download page and the task card show this button, which restarts the download from ModelScope in one click and keeps the files already completed. It applies to that one retry only and does not change your saved default download source.
-
 
 ## [0.2.20] - 2026-10-24
 
