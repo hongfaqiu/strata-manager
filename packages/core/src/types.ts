@@ -274,6 +274,10 @@ export interface ProcessStatus {
 
 export interface LogEntry { timestamp: number; level: string; message: string }
 
+/** A model shard that failed its check in the user's own `--gguf-dir`; upstream never deletes it. */
+export interface BadShard { fileName: string; directory: string; path: string; sizeBytes: number | null }
+export interface BadShardRemoval { removed: string[] }
+
 export interface TaskStatus {
   diagnostic?: import('./startup-diagnostics').StartupFailureDiagnostic;
   id: string;

@@ -103,6 +103,13 @@
 .model-deletion-confirm small{font-size:var(--st-fs-xs);color:var(--st-ink-muted);overflow-wrap:anywhere}
 .model-deletion-dialog .dialog-footer{flex-wrap:wrap;margin-top:0}
 @media(max-width:480px){.model-deletion-files li{grid-template-columns:minmax(0,1fr);gap:var(--st-s-1)}.model-deletion-dialog .dialog-footer button{width:100%;justify-content:center}}
+.bad-shard-dialog{display:grid;gap:var(--st-s-3);min-width:0}
+.bad-shard-name{font-size:var(--st-fs-lg);color:var(--st-ink);overflow-wrap:anywhere}
+.bad-shard-path{padding:var(--st-s-3) var(--st-s-4);font-size:var(--st-fs-xs);color:var(--st-ink-soft);white-space:normal;overflow-wrap:anywhere;background:var(--st-surface-2);border:1px solid var(--st-line);border-radius:var(--st-r-md)}
+.bad-shard-size{font-size:var(--st-fs-sm);color:var(--st-ink-muted)}
+.bad-shard-dialog>p{margin:0;font-size:var(--st-fs-sm);line-height:var(--st-lh-body);color:var(--st-ink-soft)}
+.bad-shard-dialog>.bad-shard-error{color:var(--st-danger-text)}
+.bad-shard-dialog .dialog-footer{margin-top:0}
 @keyframes service-detail-enter{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
 @container workspace (max-width:900px){.service-manager-statuses{grid-template-columns:1fr 1fr}}
 @container workspace (max-width:640px){.official-surface .service-manager .service-manager-card{padding:var(--st-s-4)}.service-manager-card-top{align-items:flex-start}.service-manager-symbol{display:none}.service-manager-toolbar{gap:var(--st-s-2)}.service-manager-details dl{grid-template-columns:1fr}.service-manager-statuses{gap:var(--st-s-3)}.service-manager-name{gap:var(--st-s-2)}}

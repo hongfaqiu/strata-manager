@@ -196,6 +196,26 @@ pub fn cause(lines: &[String]) -> Option<String> {
         .map(|line| line.trim().to_owned())
 }
 
+/// The shard file a kept-file failure is about, read from the last `[X]` line:
+/// `[X]  <name> does not match the published file (...)` or
+/// `[X]  <name> is N bytes; the published file is M (...)`.
+pub fn kept_file_name(lines: &[String]) -> Option<String> {
+    let line = lines
+        .iter()
+        .rev()
+        .find(|line| line.trim_start().starts_with("[X]"))?;
+    let text = line.trim_start()[3..].trim();
+    if classify(text) != Kind::KeptFile {
+        return None;
+    }
+    let end = text.find(" does not match the published").or_else(|| {
+        text.find(" bytes; the published file is")
+            .and_then(|at| text[..at].rfind(" is "))
+    })?;
+    let name = text[..end].trim();
+    (!name.is_empty()).then(|| name.to_owned())
+}
+
 /// `description` is the step's own name, e.g. "模型准备".
 pub fn explain(description: &str, exit_code: Option<i32>, lines: &[String]) -> String {
     let exit = exit_text(exit_code);
@@ -264,6 +284,27 @@ mod tests {
             classify("x.gguf is 10 bytes; the published file is 20 (it may be cut short or another version; your file was left as it is. Copy the whole published file into the folder)"),
             Kind::KeptFile
         );
+    }
+
+    #[test]
+    fn the_kept_file_name_is_read_from_the_last_failure_line() {
+        let sha = lines("  [X]  Qwen-00004-of-00006.gguf does not match the published file (SHA-256 a, expected b)\n       your file was left as it is");
+        assert_eq!(
+            kept_file_name(&sha).as_deref(),
+            Some("Qwen-00004-of-00006.gguf")
+        );
+        let size = lines("  [X]  Qwen-00002-of-00006.gguf is 10 bytes; the published file is 20 (it may be cut short; your file was left as it is)");
+        assert_eq!(
+            kept_file_name(&size).as_deref(),
+            Some("Qwen-00002-of-00006.gguf")
+        );
+        // An earlier kept-file line does not count once a later failure is another kind.
+        let later = lines("  [X]  a.gguf does not match the published file (SHA-256 a, expected b)\n  [X]  cannot reach huggingface.co");
+        assert_eq!(kept_file_name(&later), None);
+        // Upstream already deleted this one itself, so there is nothing for the user to delete.
+        let deleted = lines("  [X]  a.gguf has the wrong SHA-256 (a, expected b): deleted");
+        assert_eq!(kept_file_name(&deleted), None);
+        assert_eq!(kept_file_name(&lines("no failure here")), None);
     }
 
     #[test]

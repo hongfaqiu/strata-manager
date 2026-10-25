@@ -1526,7 +1526,11 @@ pub fn launch_setup_task(
     steps: Vec<Step>,
 ) -> Result<TaskStatus, String> {
     let runtime_path = Some(runtime_dir(&intent.profile)?);
-    launch_task_with_handoff(
+    let model_directory = steps
+        .iter()
+        .find_map(|step| crate::bad_shard::gguf_directory(&step.args));
+    let model_dirs = state.clone();
+    let status = launch_task_with_handoff(
         state.tasks.clone(),
         state.logs.clone(),
         state.database.clone(),
@@ -1536,7 +1540,12 @@ pub fn launch_setup_task(
         runtime_path,
         None,
         Some(crate::setup_handoff::SetupHook { state, intent }),
-    )
+    )?;
+    // Kept here, never taken from the webview: the only folder a bad-shard deletion may touch.
+    if let (Some(directory), Ok(mut dirs)) = (model_directory, model_dirs.task_model_dirs.lock()) {
+        dirs.insert(status.id.clone(), directory);
+    }
+    Ok(status)
 }
 
 #[allow(clippy::too_many_arguments)]

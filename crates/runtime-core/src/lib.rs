@@ -1,6 +1,7 @@
 pub mod amd_gpu;
 pub mod analytics;
 pub mod apple_gpu;
+pub mod bad_shard;
 pub mod benchmark_identity;
 mod byte_size;
 pub mod chat_runtime;
@@ -55,6 +56,8 @@ pub mod types;
 
 #[cfg(test)]
 mod app_update_keep_services_tests;
+#[cfg(test)]
+mod bad_shard_tests;
 #[cfg(test)]
 mod network_runtime_tests;
 #[cfg(test)]
@@ -113,6 +116,8 @@ pub struct RuntimeState {
     runtime_upgrading: AtomicBool,
     recovery_deferred: AtomicBool,
     recovery_resumed: tokio::sync::Notify,
+    /// Setup task id -> the `--gguf-dir` it ran with.
+    task_model_dirs: Mutex<HashMap<String, PathBuf>>,
 }
 impl RuntimeState {
     pub fn open(data_dir: PathBuf) -> Result<Arc<Self>, String> {
@@ -181,6 +186,7 @@ impl RuntimeState {
             runtime_upgrading: AtomicBool::new(false),
             recovery_deferred: AtomicBool::new(deferred),
             recovery_resumed: tokio::sync::Notify::new(),
+            task_model_dirs: Mutex::new(HashMap::new()),
         });
         if !deferred {
             state.finish_startup_recovery()?;
@@ -1343,6 +1349,12 @@ impl RuntimeState {
                 value(runtime_upgrade::status(&self, arg(&params, "profileId")?))
             }
             "list_tasks" => value(list_tasks(&self)),
+            "task_bad_shard" => value(task_bad_shard(&self, &arg::<String>(&params, "taskId")?)),
+            "delete_bad_shard" => value(delete_bad_shard(
+                &self,
+                &arg::<String>(&params, "taskId")?,
+                &arg::<String>(&params, "fileName")?,
+            )),
             "list_setup_handoffs" => value(setup_handoff::list(&self)),
             "resolve_setup_handoff" => {
                 let task_id: String = arg(&params, "taskId")?;
@@ -3761,6 +3773,43 @@ fn list_tasks(state: &RuntimeState) -> Result<Vec<TaskStatus>, String> {
         .collect();
     statuses.sort_by_key(|t| std::cmp::Reverse(t.started_at));
     Ok(statuses)
+}
+/// The bad shard of a failed setup task, if it failed on a kept `--gguf-dir` file.
+fn task_bad_shard(
+    state: &RuntimeState,
+    task_id: &str,
+) -> Result<Option<bad_shard::BadShard>, String> {
+    let failed = state
+        .tasks
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get(task_id)
+        .is_some_and(|record| record.status.state == "failed");
+    let directory = state
+        .task_model_dirs
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get(task_id)
+        .cloned();
+    if !failed || directory.is_none() {
+        return Ok(None);
+    }
+    let lines = task_failure::recent_lines(&state.logs, task_id, 40);
+    Ok(bad_shard::inspect(directory.as_deref(), &lines))
+}
+/// Delete the bad shard (and its leftovers) of a failed task. The folder and the file name both
+/// come from the supervisor's own record of that task, so a caller can only name what the task's
+/// log accused.
+fn delete_bad_shard(
+    state: &RuntimeState,
+    task_id: &str,
+    file_name: &str,
+) -> Result<bad_shard::Removed, String> {
+    let shard = task_bad_shard(state, task_id)?.ok_or("这个任务没有可删除的坏分片")?;
+    if shard.file_name != file_name {
+        return Err("文件名与任务日志指出的坏分片不一致，已拒绝删除".into());
+    }
+    bad_shard::remove(Path::new(&shard.directory), &shard.file_name)
 }
 fn cancel_task(state: &RuntimeState, task_id: String) -> Result<(), String> {
     let mut tasks = state.tasks.lock().map_err(|e| e.to_string())?;

@@ -1183,6 +1183,34 @@ async fn resolve_setup_handoff(
         .map_err(|e| e.to_string())
 }
 
+/// The kept model shard a failed setup task is stuck on, if any.
+#[tauri::command]
+async fn task_bad_shard(state: State<'_, ClientState>, task_id: String) -> Result<Value, String> {
+    state
+        .ipc
+        .request("task_bad_shard", json!({"taskId": task_id}))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Delete that shard and its leftovers. The supervisor re-derives the folder from its own record
+/// of the task and refuses any name the task's log did not accuse.
+#[tauri::command]
+async fn delete_bad_shard(
+    state: State<'_, ClientState>,
+    task_id: String,
+    file_name: String,
+) -> Result<Value, String> {
+    state
+        .ipc
+        .request(
+            "delete_bad_shard",
+            json!({"taskId": task_id, "fileName": file_name}),
+        )
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 async fn cancel_task(state: State<'_, ClientState>, task_id: String) -> Result<Value, String> {
     runtime_update_queue::cancel_task(&state.ipc, task_id).await
@@ -2345,6 +2373,8 @@ pub fn run() {
             list_setup_handoffs,
             resolve_setup_handoff,
             cancel_task,
+            task_bad_shard,
+            delete_bad_shard,
             read_config,
             read_config_snapshot,
             validate_vision_files,

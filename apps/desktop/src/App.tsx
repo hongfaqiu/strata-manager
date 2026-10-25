@@ -56,6 +56,7 @@ import { AppUpdateDialog } from './AppUpdateDialog';
 import { VisionSupportDialog } from './pages/VisionSupportDialog';
 import { ConfigurationList } from './pages/ConfigurationList';
 import { ConfigurationDeletionDialog } from './pages/ConfigurationDeletionDialog';
+import { BadShardAction, BadShardDialog } from './pages/BadShardAction';
 import { RunningServicesPanel } from './pages/RunningServicesPanel';
 import { manageRunningService } from './runningServiceManagement';
 import { automaticallyManageService, selectAutomaticService } from './autoRunningServiceConnection';
@@ -99,7 +100,7 @@ const markdownFileName = (title: string) => {
   return `${/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(clean) ? '_' : ''}${clean}.md`;
 };
 type Recipe = { kind: 'setup'; profile: ServiceProfile; model: string; quant: string; context: number; images: boolean; options?: core.OfficialSetupOptions; localModel?: core.LocalModelRequest } | { kind: 'orca'; profile: ServiceProfile; request: core.OrcaImportRequest; options?: core.OfficialSetupOptions } | { kind: 'community'; profile: ServiceProfile; request: core.CommunitySetupRequest; context: number; images: boolean; options?: core.OfficialSetupOptions } | { kind: 'install'; directory: string } | { kind: 'update'; profile: ServiceProfile };
-type Modal = { kind: 'profile'; profile?: ServiceProfile } | { kind: 'modelProfiles'; models: core.LocalModel[]; runtime: ServiceProfile } | { kind: 'rename'; conversation: Conversation } | { kind: 'deleteConversation'; conversation: Conversation } | { kind: 'request'; value: unknown } | { kind: 'options' } | { kind: 'vision'; profile: ServiceProfile } | { kind: 'deleteConfiguration'; profile: ServiceProfile } | null;
+type Modal = { kind: 'profile'; profile?: ServiceProfile } | { kind: 'modelProfiles'; models: core.LocalModel[]; runtime: ServiceProfile } | { kind: 'rename'; conversation: Conversation } | { kind: 'deleteConversation'; conversation: Conversation } | { kind: 'request'; value: unknown } | { kind: 'options' } | { kind: 'vision'; profile: ServiceProfile } | { kind: 'deleteConfiguration'; profile: ServiceProfile } | { kind: 'badShard'; taskId: string; shard: core.BadShard; recipe?: Recipe } | null;
 
 export function App() {
   const { t: translate } = useTranslation();
@@ -750,6 +751,7 @@ export function App() {
     const handoff = handoffs.data?.find(item => item.taskId === task.id);
     if (handoff) return <SetupHandoffActions handoff={handoff} canRecheck={task.state === 'completed'} disabled={!!busy || inferenceBusy || !!localProgress} onResolve={async path => { await core.resolveSetupHandoff(task.id, path); await query.invalidateQueries(); }} onUse={async profileId => { const registered = await core.localInstallations(); const selected = registered.find(item => item.id === profileId); if (!selected) throw new Error(t('noProfileHint')); setProfiles(registered); await activateLocal(selected); go('chat'); }} onView={() => go('profiles')} onError={error => notify(errorText(error), true)}/>;
     const recipe = recipes[task.id];
+    if (task.state === 'failed') return <BadShardAction taskId={task.id} failed language={settings.language} disabled={!!busy} canRetry={!!recipe && recipe.kind !== 'update'} onOpen={shard => setModal({ kind: 'badShard', taskId: task.id, shard, recipe: recipe && recipe.kind !== 'update' ? recipe : undefined })}/>;
     if (task.state !== 'completed' || !recipe || recipe.kind === 'update') return null;
     return <>{recipe.kind === 'install' && <button className="st-btn st-btn--secondary" disabled={inferenceBusy} onClick={() => selectPreparationRuntime(recipe.directory)}>{t('prepareModels')}</button>}<button className="st-btn st-btn--secondary" disabled={!!busy || inferenceBusy || !!localProgress} onClick={() => void act('taskProfile', () => createTaskProfile(recipe))}>{t('usePreparedModel')}</button></>;
   };
@@ -1173,6 +1175,7 @@ export function App() {
     {modal?.kind === 'request' && <Dialog title={t('requestDetails')} wide onClose={() => setModal(null)}><RequestViewer profile={profile} online={online} language={settings.language} pollInterval={settings.pollInterval} onEnableViewer={desktop && processStatus?.owned === true ? enableRequestViewer : undefined} onOpenUsage={()=>{setModal(null);go('usage');}} initialSelected={typeof object(modal.value).id==='string'?String(object(modal.value).id):undefined} noProfile={<NeedProfile/>} errorText={errorText} onError={error=>notify(errorText(error),true)} onMessage={notify}/></Dialog>}
     {modal?.kind === 'options' && <SamplingDrawer identityToken={`${processStatus?.pid}:${processStatus?.startedAt}:${healthData.loaded}:${healthData.model}`} key={`${profile?.id}:${profile?.baseUrl}:${profile?.configPath}`} profile={profile} options={options} inheritsCommon={inheritsCommon} onCommonSettings={()=>{setModal(null);go('chat-defaults');}} messages={conversation?.messages ?? []} metricsInfo={metric?.raw} preferences={chatPreferences} models={apiModels} hasProjection={hasProjection} online={online} mcpInfo={mcpQuery.data} onApply={(next, ui) => { setOptions(next); setChatPreferences(ui); notify(t('saved')); }} onClose={() => setModal(null)} onError={error => notify(errorText(error), true)} onMessage={notify} />}
     {modal?.kind==='deleteConfiguration'&&<ConfigurationDeletionDialog profile={modal.profile} language={settings.language} onClose={()=>setModal(null)} onDeleted={async deleted=>{if(configProfile?.configPath&&core.configurationPathKey(deleted.configPath)===core.configurationPathKey(configProfile.configPath))await configurationDeleted(deleted);await query.invalidateQueries();}}/>}
+    {modal?.kind === 'badShard' && <BadShardDialog shard={modal.shard} language={settings.language} canRetry={!!modal.recipe} onClose={() => setModal(null)} onConfirm={async () => { await core.deleteBadShard(modal.taskId, modal.shard.fileName); const recipe = modal.recipe; setModal(null); await query.invalidateQueries(); if (recipe) void act('retryTask', () => runRecipe(recipe), 'taskStarted'); }}/>}
     {modal?.kind === 'vision' && <VisionSupportDialog key={`${modal.profile.id}:${modal.profile.configPath}`} profile={modal.profile} language={settings.language} onClose={()=>setModal(null)} onSaved={()=>query.invalidateQueries()} onRestart={modal.profile.id===activeId && processStatus?.owned && processStatus.running && !busy && !inferenceBusy && !localProgress ? ()=>restartSelectedService(modal.profile) : undefined}/>}
     {windowClose.dialog}
     {navigationGuard.dialog}
