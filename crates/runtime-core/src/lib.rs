@@ -46,6 +46,7 @@ pub mod runtime_upgrade;
 pub mod service_sharing;
 pub mod setup_handoff;
 pub mod setup_options;
+pub mod source_probe;
 pub mod storage;
 pub mod storage_location;
 pub mod store;
@@ -1173,32 +1174,42 @@ impl RuntimeState {
             "read_logs" => value(read_logs(&self, profile()?, arg(&params, "limit")?)),
             "environment_info" => value(environment_info(self.clone()).await),
             "orca_import_plan" => value(orca_import_plan(&profile()?, arg(&params, "request")?)),
-            "run_orca_import" => value(run_orca_import(
-                self.clone(),
-                profile()?,
-                arg(&params, "request")?,
-                params
-                    .get("options")
-                    .filter(|v| !v.is_null())
-                    .cloned()
-                    .map(serde_json::from_value::<setup_options::SetupOptions>)
-                    .transpose()
-                    .map_err(|e| e.to_string())?,
-            )),
-            "run_community_setup" => value(run_community_setup(
-                self.clone(),
-                profile()?,
-                arg(&params, "request")?,
-                arg(&params, "context")?,
-                arg(&params, "images")?,
-                params
-                    .get("options")
-                    .filter(|v| !v.is_null())
-                    .cloned()
-                    .map(serde_json::from_value::<setup_options::SetupOptions>)
-                    .transpose()
-                    .map_err(|e| e.to_string())?,
-            )),
+            "run_orca_import" => {
+                let (options, note) = resolve_download_source(
+                    params
+                        .get("options")
+                        .filter(|v| !v.is_null())
+                        .cloned()
+                        .map(serde_json::from_value::<setup_options::SetupOptions>)
+                        .transpose()
+                        .map_err(|e| e.to_string())?,
+                )
+                .await;
+                let task =
+                    run_orca_import(self.clone(), profile()?, arg(&params, "request")?, options);
+                value(note_download_source(&self, task, note))
+            }
+            "run_community_setup" => {
+                let (options, note) = resolve_download_source(
+                    params
+                        .get("options")
+                        .filter(|v| !v.is_null())
+                        .cloned()
+                        .map(serde_json::from_value::<setup_options::SetupOptions>)
+                        .transpose()
+                        .map_err(|e| e.to_string())?,
+                )
+                .await;
+                let task = run_community_setup(
+                    self.clone(),
+                    profile()?,
+                    arg(&params, "request")?,
+                    arg(&params, "context")?,
+                    arg(&params, "images")?,
+                    options,
+                );
+                value(note_download_source(&self, task, note))
+            }
             "setup_disk_preflight" => value(Ok(disk::preflight_with_local(
                 &profile()?,
                 &arg::<String>(&params, "model")?,
@@ -1213,23 +1224,29 @@ impl RuntimeState {
                     &params, "path",
                 )?)))
             }
-            "run_setup" => value(run_setup_with_options(
-                self.clone(),
-                profile()?,
-                arg(&params, "model")?,
-                arg(&params, "quant")?,
-                arg(&params, "context")?,
-                arg(&params, "images")?,
-                params
-                    .get("options")
-                    .filter(|v| !v.is_null())
-                    .cloned()
-                    .map(serde_json::from_value::<setup_options::SetupOptions>)
-                    .transpose()
-                    .map_err(|e| format!("准备选项无效: {e}"))?
-                    .unwrap_or_default(),
-                local_model_param(&params)?,
-            )),
+            "run_setup" => {
+                let (options, note) = resolve_download_source(
+                    params
+                        .get("options")
+                        .filter(|v| !v.is_null())
+                        .cloned()
+                        .map(serde_json::from_value::<setup_options::SetupOptions>)
+                        .transpose()
+                        .map_err(|e| format!("准备选项无效: {e}"))?,
+                )
+                .await;
+                let task = run_setup_with_options(
+                    self.clone(),
+                    profile()?,
+                    arg(&params, "model")?,
+                    arg(&params, "quant")?,
+                    arg(&params, "context")?,
+                    arg(&params, "images")?,
+                    options.unwrap_or_default(),
+                    local_model_param(&params)?,
+                );
+                value(note_download_source(&self, task, note))
+            }
             "inspect_gguf" => value(model_inspect::start(self.clone(), arg(&params, "request")?)),
             "manager_mcp_connection" => value(manager_mcp::connection(
                 &self,
@@ -3462,6 +3479,25 @@ fn local_model_param(params: &Value) -> Result<Option<local_model::LocalModelReq
         .map(serde_json::from_value::<local_model::LocalModelRequest>)
         .transpose()
         .map_err(|e| format!("已有模型参数无效: {e}"))
+}
+
+/// `auto` download source: check Hugging Face off the UI thread, before the task starts.
+async fn resolve_download_source(
+    options: Option<setup_options::SetupOptions>,
+) -> (Option<setup_options::SetupOptions>, Option<&'static str>) {
+    source_probe::resolve(options, source_probe::hf_reachable).await
+}
+
+/// Writes the fallback line into the started task's log; the task status shows the latest line.
+fn note_download_source(
+    state: &RuntimeState,
+    task: Result<TaskStatus, String>,
+    note: Option<&str>,
+) -> Result<TaskStatus, String> {
+    if let (Ok(status), Some(note)) = (&task, note) {
+        processes::log(&state.logs, &status.id, "info", note);
+    }
+    task
 }
 
 #[allow(clippy::too_many_arguments)]

@@ -130,7 +130,7 @@ try {
     await page.waitForFunction(() => window.__fixture.state.store.onboardingV1?.setupTaskId === 'setup-new-2');
     const runs = await page.evaluate(() => window.__fixture.calls.filter(call => call.command === 'run_setup').map(call => call.args.options));
     assert.equal(runs.length, 2);
-    assert.equal(runs[0].source, 'official'); assert.equal(runs[1].source, 'modelscope');
+    assert.equal(runs[0].source, 'auto'); assert.equal(runs[1].source, 'modelscope');
     assert.equal(await page.getByRole('button', { name: '改用国内源 ModelScope 重试' }).count(), 0, 'the retry is running; no second button');
   });
   await run('Mac 48 GB model step greys out unsupported families and explains SSD streaming', 'onboarding-app.html?state=model&mac=m5pro#guide', async page => {

@@ -130,7 +130,7 @@ export function ModelDownloadPage({ machineMemoryGB, language, desktop, fallback
   const modelDirectory = knownDirectory.current?.runtimeKey === runtimeKey ? knownDirectory.current.path : undefined;
   const runtimeStatus = useQuery({ queryKey: ['model-download-runtimes'], queryFn: core.localRuntimeInstallation, enabled: desktop && settingsOpen, staleTime: 15000, retry: false });
   const runtimeChoices = [...runtimes, ...(runtimeStatus.data?.result ? [runtimeStatus.data.result.profile] : []), ...(runtimeStatus.data?.detectedRuntimes ?? []).filter(item => item.readiness === 'ready').map(item => item.profile)].filter((item, index, all) => all.findIndex(other => other.id === item.id) === index);
-  const sourceLabel = saved.options.source === 'modelscope' ? 'ModelScope' : saved.options.source === 'mirror' ? text('HF 镜像', 'HF mirror') : 'Hugging Face';
+  const sourceLabel = saved.options.source === 'modelscope' ? 'ModelScope' : saved.options.source === 'auto' ? text('自动', 'Automatic') : saved.options.source === 'mirror' ? text('HF 镜像', 'HF mirror') : 'Hugging Face';
   const backendLabel = saved.options.backend === 'cuda' ? 'CUDA' : saved.options.backend === 'hip' ? 'HIP' : saved.options.backend === 'sycl' ? 'SYCL' : text('自动', 'Auto');
   const gpuLabel = saved.options.gpus ? `${text('显卡', 'GPU')} ${saved.options.gpus}` : text('显卡自动选择', 'Automatic GPU selection');
   const downloadCount = tasks.filter(task => task.kind.includes('setup') && task.state === 'running').length;

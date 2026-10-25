@@ -56,6 +56,9 @@ try {
   browser=await chromium.launch({headless:true,executablePath:process.env.STRATA_BROWSER_EXECUTABLE||undefined});
   await run('setup-sources-gpus-inspect','setup',async page=>{
     await page.getByTestId('setup-advanced-options').locator('summary').first().click();
+    const sourceBox=page.getByRole('combobox',{name:'下载来源',exact:true});
+    assert.match(await sourceBox.innerText(),/自动/,'the download source starts on Automatic');
+    await sourceBox.click();assert.deepEqual((await page.getByRole('option').allInnerTexts()).slice(0,2).map(t=>t.trim().split('\n')[0]),['自动（推荐）','Hugging Face 官方'],'Automatic is the first choice');await page.keyboard.press('Escape');
     await choose(page,'下载来源','Hugging Face 镜像');await page.getByRole('textbox',{name:'HF 镜像地址'}).fill('http://mirror.example');
     assert.equal(await page.getByRole('button',{name:'提交准备选项'}).isDisabled(),true);
     await page.getByRole('textbox',{name:'HF 镜像地址'}).fill('https://hf-mirror.com/');

@@ -14,7 +14,7 @@ const selection = () => ({ model: 'qwen', quant: 'IQ3_S', context: 32768, images
 describe('model download defaults', () => {
   it('creates fresh official defaults only for absent stored values', () => {
     expect(core.MODEL_DOWNLOAD_DEFAULTS_KEY).toBe('modelDownloadDefaultsV1');
-    const expected = { schemaVersion: 1, options: { source: 'official', backend: 'auto', gpus: '' }, runtime: null };
+    const expected = { schemaVersion: 1, options: { source: 'auto', backend: 'auto', gpus: '' }, runtime: null };
     const first = core.defaultModelDownloadDefaults();
     expect(first).toEqual(expected);
     expect(core.normalizeModelDownloadDefaults(null)).toEqual(expected);
@@ -39,7 +39,14 @@ describe('model download defaults', () => {
       expect(() => core.normalizeModelDownloadDefaults({ ...stored(), options })).toThrow();
     }
     expect(core.normalizeModelDownloadDefaults({ ...stored(), options: {} }).options)
-      .toEqual({ source: 'official', backend: 'auto', gpus: '' });
+      .toEqual({ source: 'auto', backend: 'auto', gpus: '' });
+  });
+
+  it('keeps every saved source as it was stored: only a missing value becomes automatic', () => {
+    for (const source of ['auto', 'official', 'modelscope']) {
+      expect(core.normalizeModelDownloadDefaults({ ...stored(), options: { source, backend: 'auto', gpus: '' } }).options.source).toBe(source);
+    }
+    expect(core.normalizeModelDownloadDefaults(stored()).options.source).toBe('official');
   });
 
   it('rejects invalid mirror addresses and GPU choices without changing source', () => {
@@ -113,7 +120,7 @@ describe('model download request snapshots', () => {
         for (const context of [512, 1048576]) {
           const choice = { model: model.family, quant, context, images: false };
           expect(core.snapshotModelDownloadRequest(runtime(), choice, {})).toEqual({
-            profile: runtime(), ...choice, options: { source: 'official', backend: 'auto', gpus: '' },
+            profile: runtime(), ...choice, options: { source: 'auto', backend: 'auto', gpus: '' },
           });
         }
       }
@@ -185,6 +192,7 @@ describe('retrying an unreachable Hugging Face download on ModelScope', () => {
   it('switches only the source, drops a mirror address and keeps the rest', () => {
     expect(core.modelScopeRetryOptions({ source: 'official', backend: 'cuda', gpus: '1' }, message)).toEqual({ source: 'modelscope', backend: 'cuda', gpus: '1' });
     expect(core.modelScopeRetryOptions({ source: 'mirror', hfEndpoint: 'https://hf-mirror.com', backend: 'auto', gpus: '' }, 'cannot reach hf-mirror.com (x)')).toEqual({ source: 'modelscope', backend: 'auto', gpus: '' });
+    expect(core.modelScopeRetryOptions({ source: 'auto', backend: 'auto', gpus: '' }, message)).toEqual({ source: 'modelscope', backend: 'auto', gpus: '' });
     expect(core.modelScopeRetryOptions(undefined, message)).toEqual({ source: 'modelscope', backend: 'auto', gpus: '' });
   });
   it('is not offered when it cannot help', () => {

@@ -5,6 +5,14 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **新增下载来源「自动（推荐）」，国内网络不用再手动改设置**：首次使用向导和「模型下载」页的「下载来源」新增「自动」并作为新的默认项。选「自动」时，每次开始下载（准备环境、社区模型、ORCA 导入）前，先用最多 3 秒检查能否连上 Hugging Face：连得上就和以前一样用官方源；连不上，这次下载自动改用魔搭（ModelScope），并在任务日志里写一行「检测到无法连接 Hugging Face，已自动改用魔搭下载」。检测会沿用系统代理，且不会卡住界面。手动选了官方、镜像或魔搭时不做检测，行为不变；「改用国内源 ModelScope 重试」按钮保留。已经保存过下载设置的用户保持原来的选择不变，只有从没保存过的用户默认为「自动」。注意：魔搭上的文件是最新版而不是固定版本，个别模型魔搭上没有，这时上游脚本仍会回退到 Hugging Face。
+
+### English
+
+- **A new download source, "Automatic (recommended)", so a network in mainland China no longer needs a manual setting change**: the first-run guide and the Model download page add "Automatic" to the "Download source" list and make it the new default. With "Automatic", before each download starts (environment setup, community model, ORCA import) the app checks for up to 3 seconds whether Hugging Face can be reached: if it can, the official source is used as before; if not, that download switches to ModelScope and the task log gets one line, "检测到无法连接 Hugging Face，已自动改用魔搭下载" (Hugging Face cannot be reached; switched to ModelScope automatically). The check follows the system proxy and never blocks the interface. Choosing Official, Mirror or ModelScope yourself skips the check and behaves as before, and the "Retry from ModelScope" button stays. People who already saved a download setting keep it; only those who never saved one default to "Automatic". Note: ModelScope serves the latest files rather than a pinned revision, and a few models are missing there, in which case the upstream script still falls back to Hugging Face.
+
 ## [0.2.22] - 2026-10-25
 
 ### 中文

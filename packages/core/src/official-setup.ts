@@ -1,7 +1,8 @@
 import { parseRolesText, rolesText } from './gpu-roles';
 /** Explicit per-task overrides for the official setup.py, never shell arguments. */
 export interface OfficialSetupOptions {
-  source?: 'official' | 'mirror' | 'modelscope';
+  /** `auto`: Hugging Face when it can be reached, ModelScope for that task when it cannot (decided by the supervisor). */
+  source?: 'auto' | 'official' | 'mirror' | 'modelscope';
   hfEndpoint?: string;
   backend?: 'auto' | 'cuda' | 'hip' | 'sycl';
   /** Empty means upstream automatic choice; accepts one index, comma-separated indices, or all. */
@@ -14,7 +15,7 @@ export interface ModelInspectRequest {
   target: string;
   variant?: string;
 }
-export const DEFAULT_SETUP_OPTIONS: Readonly<OfficialSetupOptions> = { source: 'official', backend: 'auto', gpus: '' };
+export const DEFAULT_SETUP_OPTIONS: Readonly<OfficialSetupOptions> = { source: 'auto', backend: 'auto', gpus: '' };
 const controls = /[\u0000-\u001f\u007f-\u009f]/;
 export function validateHfEndpoint(value: string): string {
   if (controls.test(value) || /\\/.test(value)) throw new Error('镜像地址不能包含控制字符或反斜线 / Invalid mirror address');
@@ -38,9 +39,9 @@ export function normalizeGpuSelection(value: string): string {
   return indices.join(',');
 }
 export function normalizeOfficialSetupOptions(options: OfficialSetupOptions = {}): OfficialSetupOptions {
-  const source = options.source ?? 'official';
+  const source = options.source ?? 'auto';
   const backend = options.backend ?? 'auto';
-  if (!['official', 'mirror', 'modelscope'].includes(source) || !['auto', 'cuda', 'hip', 'sycl'].includes(backend)) throw new Error('未知安装选项 / Unknown setup option');
+  if (!['auto', 'official', 'mirror', 'modelscope'].includes(source) || !['auto', 'cuda', 'hip', 'sycl'].includes(backend)) throw new Error('未知安装选项 / Unknown setup option');
   const gpus = normalizeGpuSelection(options.gpus ?? '');
   let gpuRoles: string | undefined;
   if (options.gpuRoles?.trim()) {

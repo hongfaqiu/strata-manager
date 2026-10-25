@@ -8,6 +8,8 @@ use std::{
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SetupOptions {
+    /// `auto` is resolved to `official` or `modelscope` before the task starts
+    /// (`source_probe::resolve`); if one slips through it behaves like `official`.
     pub source: Option<String>,
     pub hf_endpoint: Option<String>,
     pub backend: Option<String>,
@@ -126,7 +128,7 @@ impl SetupOptions {
     pub fn validated(&self) -> Result<Self, String> {
         let source = self.source.as_deref().unwrap_or("official");
         let backend = self.backend.as_deref().unwrap_or("auto");
-        if !["official", "mirror", "modelscope"].contains(&source)
+        if !["auto", "official", "mirror", "modelscope"].contains(&source)
             || !["auto", "cuda", "hip", "sycl"].contains(&backend)
         {
             return Err("未知下载源或计算后端".into());
@@ -376,6 +378,31 @@ mod tests {
         for invalid in ["0,0", "-1", "256", "0 --build", "0,", "0\n"] {
             assert!(normalize_gpus(invalid).is_err(), "{invalid}");
         }
+    }
+
+    #[test]
+    fn auto_source_is_valid_and_an_unresolved_one_acts_like_official() {
+        let options = SetupOptions {
+            source: Some("auto".into()),
+            hf_endpoint: Some("https://ignored.example".into()),
+            ..Default::default()
+        };
+        let validated = options.validated().unwrap();
+        assert_eq!(validated.source.as_deref(), Some("auto"));
+        assert!(validated.hf_endpoint.is_none());
+        let mut args = vec![];
+        options.append_args(&mut args).unwrap();
+        assert_eq!(args, ["--source", "huggingface"]);
+        assert_eq!(
+            options.environment().unwrap()["STRATA_SOURCE"],
+            Some("huggingface".into())
+        );
+        assert!(SetupOptions {
+            source: Some("elsewhere".into()),
+            ..Default::default()
+        }
+        .validated()
+        .is_err());
     }
 
     #[test]
