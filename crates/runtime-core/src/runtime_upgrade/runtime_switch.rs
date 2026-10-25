@@ -280,6 +280,7 @@ struct Prepared {
 fn prepare(
     state: &RuntimeState,
     task_id: &str,
+    index: usize,
     profile: &ServiceProfile,
     source: &Path,
     target: &SwitchTarget,
@@ -290,13 +291,19 @@ fn prepare(
     storage::validate(&config)?;
     let migrated = migrate(profile, &config, source, &target.root)
         .map_err(|e| format!("配置「{}」无法迁移：{e}", profile.name))?;
-    let folder = installation::owned_directory(state.data_dir(), &[CONFIG_DIR, task_id])?;
+    // One folder per configuration: several saved configurations of a runtime
+    // often share a file name (`strata-iq3_s.json`), and a shared folder made the
+    // second copy fail with "file already exists" (os error 183).
+    let folder = installation::owned_directory(
+        state.data_dir(),
+        &[CONFIG_DIR, task_id, &format!("config-{index}")],
+    )?;
     let file = config_path.file_name().ok_or("配置文件名为空")?;
     let mut candidate = profile.clone();
     candidate.install_dir = target.root.to_string_lossy().into();
     candidate.python_path = target.python.clone();
     candidate.config_path = folder.join(file).to_string_lossy().into();
-    atomic_new(
+    atomic_replace(
         Path::new(&candidate.config_path),
         &serde_json::to_vec_pretty(&migrated).map_err(|e| e.to_string())?,
     )?;
@@ -357,8 +364,8 @@ pub(super) async fn switch_profiles(
         .into_iter()
         .partition(|p| !p.config_path.is_empty());
     let mut prepared = Vec::new();
-    for profile in &configured {
-        prepared.push(prepare(&state, task_id, profile, &source, &target)?);
+    for (index, profile) in configured.iter().enumerate() {
+        prepared.push(prepare(&state, task_id, index, profile, &source, &target)?);
     }
     let running = configured
         .iter()
@@ -923,5 +930,97 @@ mod tests {
         );
         untouched(&f);
         owned_stop(&f.state, &f.old.id).await.unwrap();
+    }
+
+    /// A second saved configuration of the same runtime with the same file name
+    /// (the official app names them `strata-<quant>.json`) used to collide in the
+    /// shared candidate folder: "failed to persist temporary file (os error 183)".
+    fn add_twin(f: &Fixture) -> ServiceProfile {
+        let folder = f.source.join("twin");
+        fs::create_dir_all(&folder).unwrap();
+        let mut twin = f.old.clone();
+        twin.id = "switch-twin".into();
+        twin.name = "同名配置".into();
+        twin.config_path = folder.join("strata-a.json").to_string_lossy().into();
+        fs::copy(&f.old.config_path, &twin.config_path).unwrap();
+        fs::write(
+            folder.join("strata-a.shared-settings.json"),
+            "{\"temperature\":0.9}\n",
+        )
+        .unwrap();
+        f.state
+            .database
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO local_installations VALUES(?1,?2,?3,?4)",
+                params![
+                    twin.id,
+                    serde_json::to_string(&twin).unwrap(),
+                    serde_json::to_string(&twin).unwrap(),
+                    now() as i64
+                ],
+            )
+            .unwrap();
+        twin
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn configurations_sharing_a_file_name_switch_without_colliding() {
+        let f = fixture(include_str!(
+            "../../tests/fixtures/runtime_upgrade_service.py"
+        ));
+        let twin = add_twin(&f);
+        let summary = switch_profiles(f.state.clone(), &f.task_id, &f.source, &f.target)
+            .await
+            .unwrap();
+        assert!(summary.contains("2 个配置已切换"), "{summary}");
+        let first = f.state.registered_profile(&f.old.id).unwrap();
+        let second = f.state.registered_profile(&twin.id).unwrap();
+        assert_ne!(first.config_path, second.config_path);
+        for (profile, temperature) in [(&first, 0.4), (&second, 0.9)] {
+            let config = Path::new(&profile.config_path);
+            assert!(config.starts_with(f.state.data_dir().join(CONFIG_DIR).join(&f.task_id)));
+            let shared: Value = serde_json::from_slice(
+                &fs::read(config.with_file_name("strata-a.shared-settings.json")).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(shared["temperature"], json!(temperature));
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_leftover_candidate_from_an_earlier_attempt_is_replaced() {
+        let f = fixture(include_str!(
+            "../../tests/fixtures/runtime_upgrade_service.py"
+        ));
+        let leftover = installation::owned_directory(
+            f.state.data_dir(),
+            &[CONFIG_DIR, &f.task_id, "config-0"],
+        )
+        .unwrap();
+        fs::write(leftover.join("strata-a.json"), "stale").unwrap();
+        fs::write(leftover.join("strata-a.shared-settings.json"), "stale").unwrap();
+        let summary = switch_profiles(f.state.clone(), &f.task_id, &f.source, &f.target)
+            .await
+            .unwrap();
+        assert!(summary.contains("1 个配置已切换"), "{summary}");
+        let current = f.state.registered_profile(&f.old.id).unwrap();
+        assert!(storage::read(&current).unwrap()["exe"].is_string());
+        untouched(&f);
+    }
+
+    #[test]
+    fn a_blocked_candidate_write_names_the_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("strata-a.json");
+        atomic_new(&path, b"{}").unwrap();
+        let error = atomic_new(&path, b"{}").unwrap_err();
+        assert!(
+            error.contains("strata-a.json") && error.contains("未覆盖"),
+            "{error}"
+        );
+        atomic_replace(&path, b"{\"a\":1}").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"{\"a\":1}");
     }
 }

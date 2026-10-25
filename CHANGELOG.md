@@ -5,6 +5,14 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **修复「更新到新版本」「切换到此版本」报错 `failed to persist temporary file（os error 183）`**：同一个运行环境下如果有两份保存的配置同名（官方应用 0.2 都叫 `strata-<量化>.json`），切换时会把它们的迁移副本写进同一个文件夹，第二份撞上第一份、报「文件已存在」，整个切换回滚。现在每份配置的迁移副本放在各自的文件夹里，遇到上次尝试遗留的同名文件会原子替换，报错也会写明是哪个文件。
+
+### English
+
+- **Fixed "Update to the new version" and "Switch to this version" failing with `failed to persist temporary file (os error 183)`**: when a runtime had two saved configurations with the same file name (the official app 0.2 names them `strata-<quant>.json`), their migrated copies were written into one folder and the second collided with the first ("file already exists"), rolling the whole switch back. Each configuration's migrated copy now has its own folder, a leftover from an earlier attempt is replaced atomically, and the error names the file.
+
 ## [0.2.20] - 2026-10-24
 
 ### 中文
