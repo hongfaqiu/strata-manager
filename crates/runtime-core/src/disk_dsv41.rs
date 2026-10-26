@@ -248,6 +248,8 @@ mod tests {
         assert!(plan.gguf_directory.is_none());
     }
 
+    // NTFS allocates every byte of a `set_len` file, so the multi-GB fake set fills the CI disk there.
+    #[cfg(not(windows))]
     #[test]
     fn a_complete_set_needs_no_download_and_no_headroom() {
         let temp = tempfile::tempdir().unwrap();
