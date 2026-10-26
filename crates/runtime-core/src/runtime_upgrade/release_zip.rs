@@ -2435,6 +2435,9 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
         .map_err(|_| "正在切换模型")?;
     let _selection_flag = SelectionFlag(state.clone());
     let mut guards = Vec::new();
+    let mode = super::verification_mode(&state);
+    // Quick mode: models that were loaded before the update reload after commit.
+    let mut deferred_loads = Vec::new();
     let owned = owned_update_profiles(&state, &j.install_dir, &associated)?;
     for owner in &owned {
         let profile = &owner.profile;
@@ -2537,7 +2540,10 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
             &state,
             j,
             "verifying",
-            "源码与引擎已同步替换；正在恢复原受管服务状态",
+            match mode {
+                super::Verification::Full => "源码与引擎已同步替换；完整验收：正在核验服务健康、模型加载与短请求 / Files replaced; full check: verifying health, model load and a short request",
+                super::Verification::Quick => "源码与引擎已同步替换；快速校验：正在核验新版服务健康（不加载模型） / Files replaced; quick check: verifying service health (no model load)",
+            },
         )?;
         migrate_registry(&state,j)?;
         // Keep supervisor-owned admission guards until the new service has
@@ -2547,9 +2553,16 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
             let restarted = async {
                 start_lazy_service(state.clone(), target.clone()).await?;
                 wait_health(&state, &j.task_id, &target, false).await?;
-                if running.loaded {
-                    super::post(&state, &target, "/load", json!({}), guards.get(index).map(|guard|guard.token()), 1200).await?;
+                let token = guards.get(index).map(|guard: &maintenance::Guard| guard.token().to_owned());
+                if mode == super::Verification::Full {
+                    super::post(&state, &target, "/load", json!({}), token.as_deref(), 1200).await?;
                     wait_health(&state, &j.task_id, &target, true).await?;
+                    super::short_probe(&state, &target, token.as_deref(), Some(&j.task_id)).await?;
+                    if !running.loaded {
+                        super::unload(&state, &target, token.as_deref()).await?;
+                    }
+                } else if running.loaded {
+                    deferred_loads.push(target.clone());
                 }
                 Ok::<(), String>(())
             }
@@ -2646,6 +2659,11 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
             },
         )?;
         return Err(message);
+    }
+    // Admission guards end with the update; the background load needs no token.
+    drop(guards);
+    for target in deferred_loads {
+        super::spawn_background_load(state.clone(), target, j.task_id.clone());
     }
     Ok(format!(
         "Strata已{}至官方Release v{version}；模型、配置及会话已保留",

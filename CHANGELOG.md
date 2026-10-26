@@ -5,6 +5,14 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **Strata 升级默认改为快速校验，升级后不用再等模型重新加载**：更新、切换已安装版本和自动更新现在只检查新版服务能否正常响应（健康检查），不再先加载模型、发送短请求，检查不通过照常自动恢复原版本。更新前已加载的模型会在切换完成后在后台重新加载，不会拖住更新，只加载一次（之前更新前没加载模型时也会先加载、验收后再卸载，白白多加载一次）；后台加载失败只在日志里提示，不会回滚，可以手动加载，或在「已安装版本」切回原版本。需要更稳妥时，可在「下载设置与测试」里打开「升级后加载模型完整验收」（默认关闭），升级会和以前一样先加载模型并发送短请求，任一失败都会回滚。
+
+### English
+
+- **Strata upgrades now use a quick check by default, so you no longer wait for the model to load again**: updates, switching installed versions and automatic updates now only check that the new service responds (a health check) instead of loading the model and sending a short request first. A failed check still restores the previous version automatically. A model that was loaded before the upgrade reloads in the background after the switch, without holding up the update, and it loads only once. Before, a model that was not loaded was loaded for the check and then unloaded, which wasted a load. If the background load fails, the log shows a warning and nothing rolls back: load the model by hand, or switch back under "Installed versions". For extra safety, turn on "Full model acceptance after upgrades" in "Download settings and test" (off by default): upgrades then load the model and send a short request before switching, as before, and roll back if either fails.
+
 ## [0.2.23] - 2026-10-26
 
 ### 中文

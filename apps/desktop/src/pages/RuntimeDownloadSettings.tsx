@@ -3,11 +3,12 @@ import { Copy, FlaskConical, FolderOpen, LoaderCircle, Save } from 'lucide-react
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as core from '@strata-manager/core';
-import { Dropdown } from '../OfficialControls';
+import { Dropdown, Toggle } from '../OfficialControls';
 import './runtime-download-settings.css';
 
 interface Props { language: AppLanguage; desktop: boolean; release?: core.RuntimeUpdateInfo; releaseLoading?: boolean; runtime?: core.DetectedRuntime }
 const preferencesKey = ['runtime-download-preferences'];
+const fullVerificationKey = ['runtime-upgrade-full-verification'];
 const hasTemplate = (value?: string) => /\{(?:url|version|asset)\}/.test(value ?? '');
 
 export function RuntimeDownloadSettings({ language, desktop, release, releaseLoading = false, runtime }: Props) {
@@ -24,6 +25,18 @@ export function RuntimeDownloadSettings({ language, desktop, release, releaseLoa
   const [result, setResult] = useState<core.RuntimeZipDownloadCheckResult | null>(null);
   const operation = useRef(false), alive = useRef(false), currentRelease = useRef(releaseKey); currentRelease.current = releaseKey;
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  // Upgrade acceptance is independent of the download source: it saves on toggle and never
+  // waits for (or blocks) the download preferences above.
+  const fullVerification = useQuery({ queryKey: fullVerificationKey, queryFn: core.getRuntimeUpgradeFullVerification, enabled: desktop, retry: false });
+  const [verificationSaving, setVerificationSaving] = useState(false), [verificationError, setVerificationError] = useState('');
+  const fullVerificationOn = fullVerification.data === true;
+  const toggleFullVerification = async (enabled: boolean) => {
+    if (!desktop || verificationSaving || fullVerification.isPending || fullVerification.error) return;
+    setVerificationSaving(true); setVerificationError('');
+    try { await core.saveRuntimeUpgradeFullVerification(enabled); query.setQueryData(fullVerificationKey, enabled); }
+    catch (failure) { if (alive.current) setVerificationError(core.normalizeError(failure).message); }
+    finally { if (alive.current) setVerificationSaving(false); }
+  };
   useEffect(() => { setResult(null); setError(''); setMessage(''); }, [releaseKey]);
   let savedRequiresSelection = false;
   let preferenceProblem = '';
@@ -131,6 +144,10 @@ export function RuntimeDownloadSettings({ language, desktop, release, releaseLoa
         {message && <p role="status" className="runtime-download-settings-hint">{message}</p>}
         {error && <p className="notice error" role="alert">{error}</p>}
         {result && <div className="runtime-download-settings-result" role="status"><strong>{result.sha256Verified ? zh ? '文件校验通过' : 'File verified' : zh ? `连接正常${result.rangeSupported != null ? result.rangeSupported ? ' · 支持续传' : ' · 不支持续传' : ''}` : `Connected${result.rangeSupported != null ? result.rangeSupported ? ' · Resume supported' : ' · Resume unavailable' : ''}`}</strong>{!result.sha256Verified && <p>{zh ? '最多 64 KiB 样本，安装时完整校验。' : 'Up to 64 KiB sampled; full verification during installation.'}</p>}<details className="runtime-download-settings-check-details"><summary>{zh ? '测试详情' : 'Test details'}</summary><p>{result.sha256Verified ? zh ? '本地完整 SHA256 校验通过。' : 'Full local SHA256 verification passed.' : zh ? '仅验证网络样本，完整文件 SHA256 尚未验证。' : 'Only a network sample was checked; the full file SHA256 remains unverified.'}</p><p>{zh ? '已读取' : 'Read'} {result.checkedBytes.toLocaleString(language)} {zh ? '字节' : 'bytes'}{result.totalBytes != null ? ` / ${result.totalBytes.toLocaleString(language)} ${zh ? '字节' : 'bytes'}` : ''}</p>{result.rangeSupported != null && <p>{zh ? '断点续传（Range）' : 'Resume support (Range)'}: {result.rangeSupported ? zh ? '支持' : 'Supported' : zh ? '服务器未提供支持' : 'Not supported by this server'}</p>}</details></div>}
+        <div className="runtime-download-settings-verification" data-testid="runtime-upgrade-verification">
+          <div className="runtime-download-settings-verification-row"><div><strong>{zh ? '升级后加载模型完整验收' : 'Full model acceptance after upgrades'}</strong><p className="runtime-download-settings-hint">{fullVerificationOn ? zh ? '已开启：切换前加载模型并发送短请求，任一失败自动回滚；升级会更慢，未加载的模型验收后会卸载。' : 'On: before switching, the model is loaded and a short request is sent; any failure rolls back. Upgrades take longer, and a model that was not loaded is unloaded afterwards.' : zh ? '默认关闭：升级只校验新版服务健康，失败自动回滚；更新前已加载的模型会在后台重新加载，失败只提示、不回滚。' : 'Off by default: upgrades only check the new service health and roll back on failure. A model that was loaded before is reloaded in the background; a failure there only warns and never rolls back.'}</p></div><Toggle ariaLabel={zh ? '升级后加载模型完整验收' : 'Full model acceptance after upgrades'} checked={fullVerificationOn} disabled={!desktop || verificationSaving || fullVerification.isPending || !!fullVerification.error} onCheckedChange={enabled => void toggleFullVerification(enabled)}/></div>
+          {(fullVerification.error || verificationError) && <p className="runtime-download-settings-validation" role="alert">{zh ? '升级验收设置读写失败：' : 'Upgrade acceptance setting failed: '}{verificationError || core.normalizeError(fullVerification.error).message}</p>}
+        </div>
       </div>
     </details>
   </section>;
