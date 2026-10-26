@@ -1631,3 +1631,64 @@ fn restart_candidates_group_workloads_so_each_round_restarts_twice() {
         }
     }
 }
+
+#[test]
+fn mtp_candidate_switches_config_keys_and_keeps_the_draft_layer() {
+    let off = RestartParameters {
+        mtp: Some(false),
+        ..Default::default()
+    };
+    let on = RestartParameters {
+        mtp: Some(true),
+        ..Default::default()
+    };
+    let config = json!({"exe":"engine","args":["--native","w.gguf","--mtp","D:/m/mtp","--spec-min-p","0.2"],"env":{"KEEP":"yes"}});
+    assert_eq!(baseline(&config).unwrap().mtp, Some(true));
+    let edited = with_restart(&config, Some(&off)).unwrap();
+    assert_eq!(edited["mtp"], json!(false));
+    assert!(
+        edited.get("drafting").is_none(),
+        "older engines never see an unknown drafting key it did not have"
+    );
+    assert_eq!(
+        edited["args"], config["args"],
+        "server.py strips the draft flags at start; args stay"
+    );
+    assert_eq!(baseline(&edited).unwrap().mtp, Some(false));
+    let back = with_restart(&edited, Some(&on)).unwrap();
+    assert_eq!(back, config);
+    // 0.1.48 "drafting" is kept in step; a string "mtp" is the draft model path and is never replaced.
+    let modern =
+        json!({"exe":"engine","drafting":"auto","args":["--native","w.gguf","--mtp","D:/m/mtp"]});
+    assert_eq!(
+        with_restart(&modern, Some(&off)).unwrap()["drafting"],
+        "off"
+    );
+    let path = json!({"exe":"engine","mtp":"D:/m/mtp","args":["--native","w.gguf"]});
+    let path_off = with_restart(&path, Some(&off)).unwrap();
+    assert_eq!(path_off["mtp"], "D:/m/mtp");
+    assert_eq!(path_off["drafting"], "off");
+    assert_eq!(
+        with_restart(&path_off, Some(&on)).unwrap()["drafting"],
+        "mtp"
+    );
+    // Nothing to switch without a draft layer; unknown fields stay rejected.
+    let plain = json!({"exe":"engine","args":["--native","w.gguf"]});
+    assert_eq!(baseline(&plain).unwrap().mtp, None);
+    assert!(with_restart(&plain, Some(&off))
+        .unwrap_err()
+        .contains("MTP"));
+    assert_eq!(
+        serde_json::from_value::<RestartParameters>(json!({"mtp":false})).unwrap(),
+        off
+    );
+}
+
+#[test]
+fn engine_reported_drafting_is_read_as_mtp_on_or_off() {
+    assert_eq!(reported_mtp(&json!({"drafting":"off"})), Some(false));
+    assert_eq!(reported_mtp(&json!({"drafting":"MTP"})), Some(true));
+    assert_eq!(reported_mtp(&json!({"mtp":false})), Some(false));
+    assert_eq!(reported_mtp(&json!({"drafting":"dflash2"})), None);
+    assert_eq!(reported_mtp(&json!({})), None);
+}

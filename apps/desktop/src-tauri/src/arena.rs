@@ -80,6 +80,39 @@ pub struct Payload {
     /// Run evidence of a context run; uploaded as signed text next to the result, never inside it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     evidence: Option<Evidence>,
+    /// Track and key launch parameters. Only sent to servers whose /v1/health advertises `extensions: true`;
+    /// older servers reject unknown keys, so it is stripped for them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    extensions: Option<Extensions>,
+}
+/// Enum-only leaderboard context (packages/core/src/arena.ts ArenaExtensions).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct Extensions {
+    track: String,
+    drafting: Option<String>,
+    mtp: Option<bool>,
+    gpu_roles: Option<Vec<String>>,
+    experts: Option<String>,
+}
+impl Extensions {
+    fn valid(&self) -> bool {
+        matches!(self.track.as_str(), "default" | "custom")
+            && self
+                .drafting
+                .as_deref()
+                .is_none_or(|d| matches!(d, "auto" | "mtp" | "dflash2" | "off"))
+            && self.gpu_roles.as_ref().is_none_or(|roles| {
+                roles.len() <= 16
+                    && roles
+                        .iter()
+                        .all(|r| matches!(r.as_str(), "main" | "helper" | "off"))
+            })
+            && self
+                .experts
+                .as_deref()
+                .is_none_or(|e| matches!(e, "resident" | "mmap" | "cache"))
+    }
 }
 /// Content-free trace of the in-app run (services/arena/src/evidence.js): offsets, timings, token counts,
 /// a downsampled resource series and engine counters. Field order here is the signed serialization.
@@ -279,6 +312,9 @@ impl Payload {
         }
         if !finite(&numbers) {
             return Err("arena_payload_invalid: non-finite number".into());
+        }
+        if p.extensions.as_ref().is_some_and(|x| !x.valid()) {
+            return Err("arena_payload_invalid: extensions".into());
         }
         let shape_ok = match p.kind.as_str() {
             "context" => {
@@ -611,11 +647,19 @@ fn evidence_message(key_id: &str, text: &str) -> String {
 }
 /// Upload body: the validated payload plus the consent version, nothing else. The install is identified by its key.
 /// Run evidence travels as its exact serialized text plus the install key's signature over it, so the server can
-/// store and re-verify it independently of the request signature.
-fn upload_body(payload: &Payload, install: Option<(&str, &SigningKey)>) -> Result<Vec<u8>, String> {
+/// store and re-verify it independently of the request signature. `extensions` is kept only when the server
+/// advertised support for it (see `server_accepts_extensions`).
+fn upload_body(
+    payload: &Payload,
+    install: Option<(&str, &SigningKey)>,
+    extensions: bool,
+) -> Result<Vec<u8>, String> {
     let mut value = serde_json::to_value(payload).map_err(|e| e.to_string())?;
     let object: &mut Map<String, Value> = value.as_object_mut().ok_or("payload")?;
     object.remove("evidence");
+    if !extensions {
+        object.remove("extensions");
+    }
     object.insert("consentVersion".into(), json!(CONSENT_VERSION));
     if let (Some(evidence), Some((key_id, signing))) = (&payload.evidence, install) {
         let text = serde_json::to_string(evidence).map_err(|e| e.to_string())?;
@@ -1019,6 +1063,30 @@ async fn ensure_registered(path: &Path, force: bool) -> bool {
     registered
 }
 
+/// Whether a /v1/health answer advertises the optional `extensions` block. Anything else (older servers,
+/// errors, unexpected shapes) means it is stripped from the upload.
+fn health_accepts_extensions(health: &Value) -> bool {
+    health["extensions"].as_bool() == Some(true)
+}
+async fn server_accepts_extensions() -> bool {
+    let Ok(response) = client()
+        .get(format!("{}/v1/health", endpoint()))
+        .send()
+        .await
+    else {
+        return false;
+    };
+    if !response.status().is_success() {
+        return false;
+    }
+    match response.bytes().await {
+        Ok(bytes) if bytes.len() <= MAX_RESPONSE_BYTES => serde_json::from_slice::<Value>(&bytes)
+            .map(|health| health_accepts_extensions(&health))
+            .unwrap_or(false),
+        _ => false,
+    }
+}
+
 /// Uploads due items one at a time. `force` ignores the backoff schedule (user pressed "retry now").
 async fn flush(path: &Path, force: bool) {
     if FLUSHING.swap(true, Ordering::SeqCst) {
@@ -1028,6 +1096,7 @@ async fn flush(path: &Path, force: bool) {
         FLUSHING.store(false, Ordering::SeqCst);
         return;
     }
+    let mut extensions: Option<bool> = None;
     loop {
         let next = {
             let _guard = lock().lock().await;
@@ -1049,8 +1118,17 @@ async fn flush(path: &Path, force: bool) {
             }
         };
         let (payload, key) = next;
+        let send_extensions = if payload.extensions.is_some() {
+            match extensions {
+                Some(known) => known,
+                None => *extensions.insert(server_accepts_extensions().await),
+            }
+        } else {
+            false
+        };
         let prepared = load_signing_key(path, &key).and_then(|signing| {
-            upload_body(&payload, Some((&key.key_id, &signing))).map(|body| (body, signing))
+            upload_body(&payload, Some((&key.key_id, &signing)), send_extensions)
+                .map(|body| (body, signing))
         });
         let outcome = match prepared {
             Ok((body, signing)) => {
@@ -1291,14 +1369,51 @@ mod tests {
     }
 
     #[test]
+    fn extensions_are_enum_only_and_sent_only_to_servers_that_advertise_them() {
+        let mut value = payload();
+        value["extensions"] = json!({"track":"custom","drafting":"off","mtp":false,"gpuRoles":["main","helper"],"experts":"resident"});
+        let parsed = Payload::parse(value.clone()).unwrap();
+        let stripped: Value =
+            serde_json::from_slice(&upload_body(&parsed, None, false).unwrap()).unwrap();
+        assert!(stripped.get("extensions").is_none());
+        let sent: Value =
+            serde_json::from_slice(&upload_body(&parsed, None, true).unwrap()).unwrap();
+        assert_eq!(sent["extensions"]["gpuRoles"], json!(["main", "helper"]));
+        assert_eq!(sent["extensions"]["mtp"], json!(false));
+        // Older queued payloads without extensions still parse and upload unchanged.
+        let old = Payload::parse(payload()).unwrap();
+        let body: Value = serde_json::from_slice(&upload_body(&old, None, true).unwrap()).unwrap();
+        assert!(body.get("extensions").is_none());
+        for (key, bad) in [
+            ("track", json!("mine")),
+            ("drafting", json!("eagle")),
+            ("gpuRoles", json!(["C:/x"])),
+            ("experts", json!("disk")),
+            ("profile", json!("x")),
+        ] {
+            let mut leaky = value.clone();
+            leaky["extensions"][key] = bad;
+            assert!(Payload::parse(leaky).is_err(), "{key}");
+        }
+        assert!(health_accepts_extensions(
+            &json!({"ok":true,"schema":1,"extensions":true})
+        ));
+        assert!(!health_accepts_extensions(
+            &json!({"ok":true,"schema":1,"consentVersion":1})
+        ));
+        assert!(!health_accepts_extensions(&json!({"extensions":"true"})));
+    }
+
+    #[test]
     fn evidence_is_uploaded_as_signed_text_and_only_in_the_whitelisted_shape() {
         use ed25519_dalek::{Signature, Verifier};
         let signing = SigningKey::from_bytes(&[7u8; 32]);
         let key_id = hex(&Sha256::digest(signing.verifying_key().as_bytes()));
         let parsed = Payload::parse(verified_payload()).unwrap();
-        let body: Value =
-            serde_json::from_slice(&upload_body(&parsed, Some((&key_id, &signing))).unwrap())
-                .unwrap();
+        let body: Value = serde_json::from_slice(
+            &upload_body(&parsed, Some((&key_id, &signing)), false).unwrap(),
+        )
+        .unwrap();
         let text = body["evidence"].as_str().expect("evidence travels as text");
         let evidence: Value = serde_json::from_str(text).unwrap();
         assert_eq!(evidence["runs"][0]["promptTokens"], 7592);
@@ -1320,7 +1435,8 @@ mod tests {
             .expect("signed by the install key over the exact text");
         assert!(evidence_message(&key_id, text).starts_with("strata-arena-evidence|v1|"));
         // Without a key nothing about the evidence is sent.
-        let unsigned: Value = serde_json::from_slice(&upload_body(&parsed, None).unwrap()).unwrap();
+        let unsigned: Value =
+            serde_json::from_slice(&upload_body(&parsed, None, false).unwrap()).unwrap();
         assert!(unsigned.get("evidence").is_none() && unsigned.get("evidenceSig").is_none());
         // Anything outside the evidence schema is refused before it is queued.
         let mut leaky = verified_payload();
@@ -1343,7 +1459,8 @@ mod tests {
     #[test]
     fn accepts_the_whitelisted_shape_and_round_trips_it() {
         let parsed = Payload::parse(payload()).unwrap();
-        let body: Value = serde_json::from_slice(&upload_body(&parsed, None).unwrap()).unwrap();
+        let body: Value =
+            serde_json::from_slice(&upload_body(&parsed, None, false).unwrap()).unwrap();
         let mut expected = payload();
         expected["consentVersion"] = json!(1);
         // Numbers may come back as floats (96 -> 96.0); compare them numerically.

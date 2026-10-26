@@ -142,6 +142,89 @@ fn resource_configuration(args: &[String]) -> Option<Value> {
     }
     Some(result)
 }
+/// Draft flags upstream v0.2.6 strips when drafting is "off" (strata_control/drafting.py).
+const DRAFT_VALUE_FLAGS: &[&str] = &["--mtp", "--spec-min-p", "--draft", "--draft-model"];
+const DRAFT_SWITCH_FLAGS: &[&str] = &["--batch-mtp"];
+
+fn flag_name(arg: &str) -> &str {
+    arg.split_once('=').map(|(name, _)| name).unwrap_or(arg)
+}
+
+/// Engine args without the drafting flags: two runs that differ only in MTP on/off share this hash.
+fn base_args(args: &[String]) -> Vec<String> {
+    let mut out = Vec::with_capacity(args.len());
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        let name = flag_name(arg);
+        if DRAFT_VALUE_FLAGS.contains(&name) {
+            if !arg.contains('=') {
+                iter.next();
+            }
+            continue;
+        }
+        if DRAFT_SWITCH_FLAGS.contains(&name) {
+            continue;
+        }
+        out.push(arg.clone());
+    }
+    out
+}
+
+/// What the engine command line actually drafts with.
+fn effective_drafting(args: &[String]) -> &'static str {
+    if option(args, &["--draft"]).is_some_and(|value| value.eq_ignore_ascii_case("dflash2")) {
+        "dflash2"
+    } else if args.iter().any(|arg| flag_name(arg) == "--mtp") {
+        "mtp"
+    } else {
+        "off"
+    }
+}
+
+fn requested_drafting(config: &Value) -> Option<&'static str> {
+    let value = config
+        .get("drafting")?
+        .as_str()?
+        .trim()
+        .to_ascii_lowercase();
+    Some(match value.as_str() {
+        "mtp" => "mtp",
+        "dflash2" => "dflash2",
+        "off" => "off",
+        _ => "auto",
+    })
+}
+
+/// `{"requested": config drafting, "mtpSwitch": the boolean config "mtp" (a path string is not a switch), "effective": from the engine args}`.
+fn drafting_identity(config: &Value, effective_args: Option<&[String]>) -> Value {
+    json!({
+        "requested": requested_drafting(config),
+        "mtpSwitch": config.get("mtp").and_then(Value::as_bool),
+        "effective": effective_args.map(effective_drafting),
+    })
+}
+
+/// Saved GPU roles as tokens ordered by card index; None unless gpu_roles is a valid {index: main|helper|off} map.
+fn gpu_roles(config: &Value) -> Option<Vec<&'static str>> {
+    let roles = config.get("gpu_roles")?.as_object()?;
+    let mut out = Vec::new();
+    for (key, value) in roles {
+        let index: u32 = key.trim().parse().ok()?;
+        let role = match value.as_str()?.trim().to_ascii_lowercase().as_str() {
+            "main" => "main",
+            "helper" => "helper",
+            "off" => "off",
+            _ => return None,
+        };
+        out.push((index, role));
+    }
+    out.sort_by_key(|(index, _)| *index);
+    if out.is_empty() || out.iter().filter(|(_, role)| *role == "main").count() > 1 {
+        return None;
+    }
+    Some(out.into_iter().map(|(_, role)| role).collect())
+}
+
 pub fn capture(state: &RuntimeState, profile: &ServiceProfile) -> Result<Value, String> {
     let owned = state.owned_gui_profile(&profile.id)?;
     if owned.config_path != profile.config_path {
@@ -232,12 +315,20 @@ pub fn capture(state: &RuntimeState, profile: &ServiceProfile) -> Result<Value, 
         .as_ref()
         .and_then(|startup| resource_configuration(&startup.args));
     let effective_hash = startup.as_ref().map(|startup| digest(&json!(startup.args)));
+    let effective_base_hash = startup
+        .as_ref()
+        .map(|startup| digest(&json!(base_args(&startup.args))));
+    let drafting = drafting_identity(
+        &config,
+        startup.as_ref().map(|startup| startup.args.as_slice()),
+    );
+    let gpu_roles = gpu_roles(&config);
     let hardware_signature = crate::resource_assessment::hardware_signature(state)?;
     let engine_process = startup
         .as_ref()
         .map(|s| json!({"pid":s.pid,"startedAt":s.started_at}));
     Ok(
-        json!({"schemaVersion":1,"capturedAt":crate::now(),"process":{"pid":process.pid,"startedAt":process.started_at,"running":process.running},"runtime":{"strength":if runtime.is_some(){"metadata"}else{"unknown"},"fingerprint":runtime.as_ref().map(digest)},"model":{"strength":if files.is_empty(){"unknown"}else{"metadata"},"fingerprint":if files.is_empty(){None}else{Some(digest(&json!(files)))},"files":files},"savedConfigurationHash":digest(&config),"effectiveStartupHash":effective_hash,"effectiveVerified":startup.is_some(),"residentEvidence":resident,"resourceConfiguration":resource_configuration,"hardwareSignature":hardware_signature,"engineProcess":engine_process}),
+        json!({"schemaVersion":1,"capturedAt":crate::now(),"process":{"pid":process.pid,"startedAt":process.started_at,"running":process.running},"runtime":{"strength":if runtime.is_some(){"metadata"}else{"unknown"},"fingerprint":runtime.as_ref().map(digest)},"model":{"strength":if files.is_empty(){"unknown"}else{"metadata"},"fingerprint":if files.is_empty(){None}else{Some(digest(&json!(files)))},"files":files},"savedConfigurationHash":digest(&config),"effectiveStartupHash":effective_hash,"effectiveBaseHash":effective_base_hash,"drafting":drafting,"gpuRoles":gpu_roles,"effectiveVerified":startup.is_some(),"residentEvidence":resident,"resourceConfiguration":resource_configuration,"hardwareSignature":hardware_signature,"engineProcess":engine_process}),
     )
 }
 #[cfg(test)]
@@ -344,5 +435,80 @@ mod resource_tests {
             .any(|arg| arg == "--mmap-experts"));
         args.extend(["--max-context".into(), "131072".into()]);
         assert!(resource_configuration(&args).is_none());
+    }
+}
+
+#[cfg(test)]
+mod drafting_tests {
+    use super::*;
+    fn owned(args: &[&str]) -> Vec<String> {
+        args.iter().map(|arg| arg.to_string()).collect()
+    }
+    #[test]
+    fn mtp_on_and_off_share_the_base_hash_but_not_the_startup_hash() {
+        let on = owned(&[
+            "strata",
+            "--native",
+            "/m/q.gguf",
+            "--mtp",
+            "/m/mtp",
+            "--spec-min-p",
+            "0.2",
+            "--batch-mtp",
+            "--max-context",
+            "32768",
+        ]);
+        let off = owned(&["strata", "--native", "/m/q.gguf", "--max-context", "32768"]);
+        assert_ne!(digest(&json!(on)), digest(&json!(off)));
+        assert_eq!(
+            digest(&json!(base_args(&on))),
+            digest(&json!(base_args(&off)))
+        );
+        assert_eq!(
+            base_args(&owned(&[
+                "s",
+                "--mtp=/m/mtp",
+                "--draft",
+                "dflash2",
+                "--kv",
+                "int8"
+            ])),
+            owned(&["s", "--kv", "int8"])
+        );
+        assert_eq!(effective_drafting(&on), "mtp");
+        assert_eq!(effective_drafting(&off), "off");
+        assert_eq!(
+            effective_drafting(&owned(&["s", "--mtp", "/m", "--draft", "dflash2"])),
+            "dflash2"
+        );
+    }
+    #[test]
+    fn drafting_identity_reads_the_request_and_only_a_boolean_mtp_switch() {
+        let args = owned(&["s", "--mtp", "/m"]);
+        assert_eq!(
+            drafting_identity(&json!({"drafting":"OFF","mtp":false}), Some(&args)),
+            json!({"requested":"off","mtpSwitch":false,"effective":"mtp"})
+        );
+        assert_eq!(
+            drafting_identity(&json!({"drafting":"weird","mtp":"/models/mtp"}), None),
+            json!({"requested":"auto","mtpSwitch":null,"effective":null})
+        );
+        assert_eq!(
+            drafting_identity(&json!({}), Some(&[])),
+            json!({"requested":null,"mtpSwitch":null,"effective":"off"})
+        );
+    }
+    #[test]
+    fn gpu_roles_are_ordered_tokens_or_nothing() {
+        assert_eq!(
+            gpu_roles(&json!({"gpu_roles":{"2":"off","0":"helper","1":"MAIN"}})),
+            Some(vec!["helper", "main", "off"])
+        );
+        assert_eq!(
+            gpu_roles(&json!({"gpu_roles":{"0":"main","1":"main"}})),
+            None
+        );
+        assert_eq!(gpu_roles(&json!({"gpu_roles":{"x":"main"}})), None);
+        assert_eq!(gpu_roles(&json!({"gpu":[0]})), None);
     }
 }

@@ -45,7 +45,7 @@ const zh = {
   contextLimit: '本次上下文上限', contextHint: '限制本次测量，不更改模型容量。长文至少需要 16K 文档及回答余量；超出当前模型容量时后台会拒绝开始。',
   includeVision: '同时检查图像理解', visionHint: '需要当前模型已经配置图像支持；不会下载图像模型或安装组件。未勾选时视觉仍未测试。',
   restartTitle: '需要重启的候选', restartHint: '最多四个独立候选，每次只改一个选项。后台会核验能力与资源，保存恢复记录，加载候选后再复测原配置。',
-  workerTest: '比较 CPU 工作线程', worker: '候选线程数', asyncTest: '比较异步换入', asyncValue: '候选启用异步换入',
+  workerTest: '比较 CPU 工作线程', worker: '候选线程数', asyncTest: '比较异步换入', asyncValue: '候选启用异步换入', mtpTest: '比较预测（MTP 开 / 关）', mtpValue: '候选开启 MTP', mtpSwitch: 'MTP 预测',
   prefillTest: '比较预填充分块', prefill: '候选分块 Token', reserveTest: '比较显存预留', reserve: '候选预留 MiB', reserveHint: '仅允许增加现有预留；原值或生效能力未知时会拒绝候选。',
   durationHint: '完整测量最多 2 小时，单个长文检索任务最多 20 分钟，其余任务最多 10 分钟。取消或超时后仍须恢复原配置，恢复另有 7 分钟期限。这些是硬期限，不是预计耗时；下方显示实际阶段和已用时间。',
   fullScope: '完整场景报告', diagnosticScope: '短请求诊断报告', legacyScope: '历史短请求报告', legacyHint: '该报告不包含完整场景验收，不能新应用推荐参数。已应用的原参数仍可恢复。',
@@ -87,7 +87,7 @@ const en: Record<keyof typeof zh, string> = {
   contextLimit: 'Context limit for this test', contextHint: 'Limits this test without changing model capacity. Long documents require a 16K document plus answer headroom. The background service rejects a test beyond the current model capacity.',
   includeVision: 'Also check image understanding', visionHint: 'Requires image support already configured for this model. Does not download a vision model or install components. Vision remains untested when unchecked.',
   restartTitle: 'Candidates that require a restart', restartHint: 'Up to four independent candidates, changing one option at a time. The background checks support and resources, saves recovery records, loads the candidate and retests the original configuration.',
-  workerTest: 'Compare CPU worker count', worker: 'Candidate workers', asyncTest: 'Compare asynchronous swapping', asyncValue: 'Enable asynchronous swapping for candidate',
+  workerTest: 'Compare CPU worker count', worker: 'Candidate workers', asyncTest: 'Compare asynchronous swapping', asyncValue: 'Enable asynchronous swapping for candidate', mtpTest: 'Compare drafting (MTP on / off)', mtpValue: 'Turn MTP on for candidate', mtpSwitch: 'MTP drafting',
   prefillTest: 'Compare prefill chunk size', prefill: 'Candidate chunk tokens', reserveTest: 'Compare reserved GPU memory', reserve: 'Candidate reserve MiB', reserveHint: 'Only increases the current reserve. Unknown original values or effective support cause the candidate to be rejected.',
   durationHint: 'Full measurements have a 2-hour deadline; each document retrieval workload has 20 minutes and other workloads have 10. Cancellation or timeout still requires original configuration recovery, with a separate 7-minute deadline. These are hard limits, not duration estimates; actual stage and elapsed time appear below.',
   fullScope: 'Full scenario report', diagnosticScope: 'Short request diagnostic report', legacyScope: 'Historical short request report', legacyHint: 'This report does not establish full scenario acceptance and cannot apply a new recommendation. Previously applied parameters can still be restored.',
@@ -134,6 +134,8 @@ export function TuningPage({ profileId, profile, language, desktop, owned, strea
   const [workerTest, setWorkerTest] = useState(false);
   const [poolWorkers, setPoolWorkers] = useState(8);
   const [asyncTest, setAsyncTest] = useState(false);
+  const [mtpTest, setMtpTest] = useState(false);
+  const [mtpOn, setMtpOn] = useState(false);
   const [adaptAsync, setAdaptAsync] = useState(true);
   const [prefillTest, setPrefillTest] = useState(false);
   const [prefill, setPrefill] = useState(4096);
@@ -170,7 +172,7 @@ export function TuningPage({ profileId, profile, language, desktop, owned, strea
   const recommendedResources = job?.candidates.find(candidate => candidate.id === job.recommendedCandidateId)?.resourceAssessment;
   const workloadMeasurements = job?.workloadMeasurements ?? [];
   const selectedMeasurements = workloadMeasurements.filter(measurement => measurement.candidateId === selectedCandidate && measurement.position === 'candidate');
-  const manualRestartCandidates: TuningRestartParameters[] = [...(workerTest ? [{ poolWorkers }] : []), ...(asyncTest ? [{ adaptAsync }] : []), ...(prefillTest ? [{ prefill }] : []), ...(reserveTest ? [{ vramReserveMib }] : []), ...Object.entries(adaptation).map(([key, value]) => ({ [key]: value }))];
+  const manualRestartCandidates: TuningRestartParameters[] = [...(workerTest ? [{ poolWorkers }] : []), ...(asyncTest ? [{ adaptAsync }] : []), ...(prefillTest ? [{ prefill }] : []), ...(reserveTest ? [{ vramReserveMib }] : []), ...(mtpTest ? [{ mtp: mtpOn }] : []), ...Object.entries(adaptation).map(([key, value]) => ({ [key]: value }))];
   const restartCandidates: TuningRestartParameters[] = [...suggested, ...manualRestartCandidates];
   const run = async (operation: () => Promise<unknown>) => {
     if (busy) return;
@@ -185,9 +187,9 @@ export function TuningPage({ profileId, profile, language, desktop, owned, strea
   const headroomSize = (value: number | null | undefined) => value == null ? text.unknownResource : value < 1024 ** 3 ? `${numeric(value / 1024 ** 2)} MiB` : size(value);
   const median = (values: number[]) => { if (!values.length) return null; const sorted = [...values].sort((a, b) => a - b), middle = Math.floor(sorted.length / 2); return sorted.length % 2 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2; };
   const peak = (values: (number | null | undefined)[]) => { const measured = values.filter((value): value is number => value != null && Number.isFinite(value)); return measured.length ? Math.max(...measured) : null; };
-  const restartDescription = (parameters?: TuningRestartParameters) => parameters ? [parameters.poolWorkers == null ? null : `${text.worker}: ${parameters.poolWorkers}`, parameters.adaptAsync == null ? null : `${text.asyncValue}: ${parameters.adaptAsync ? text.enabled : text.disabled}`, parameters.prefill == null ? null : `${text.prefill}: ${parameters.prefill}`, parameters.vramReserveMib == null ? null : `${text.reserve}: ${parameters.vramReserveMib}`, ...Object.entries(parameters).filter(([key]) => ['adaptEvery', 'adaptSwaps', 'adaptDecay'].includes(key)).map(([key, value]) => `${key}: ${value}`)].filter(Boolean).join(' · ') : '—';
-  const parameterLabels: Record<string, string> = { pool_workers: text.worker, adapt_async: text.asyncValue, prefill: text.prefill, vram_reserve_mib: text.reserve, adapt_every: language === 'zh-CN' ? '专家重排间隔' : 'Expert adaptation interval', adapt_swaps: language === 'zh-CN' ? '每轮专家交换上限' : 'Expert swaps per round', adapt_decay: language === 'zh-CN' ? '专家计数衰减' : 'Expert count decay' };
-  const startupValue = (name: string, value: number | null) => value == null ? text.unpublished : name === 'adapt_async' ? value ? text.enabled : text.disabled : numeric(value, name === 'adapt_decay' ? 3 : 0);
+  const restartDescription = (parameters?: TuningRestartParameters) => parameters ? [parameters.poolWorkers == null ? null : `${text.worker}: ${parameters.poolWorkers}`, parameters.adaptAsync == null ? null : `${text.asyncValue}: ${parameters.adaptAsync ? text.enabled : text.disabled}`, parameters.prefill == null ? null : `${text.prefill}: ${parameters.prefill}`, parameters.vramReserveMib == null ? null : `${text.reserve}: ${parameters.vramReserveMib}`, parameters.mtp == null ? null : `${text.mtpSwitch}: ${parameters.mtp ? text.enabled : text.disabled}`, ...Object.entries(parameters).filter(([key]) => ['adaptEvery', 'adaptSwaps', 'adaptDecay'].includes(key)).map(([key, value]) => `${key}: ${value}`)].filter(Boolean).join(' · ') : '—';
+  const parameterLabels: Record<string, string> = { pool_workers: text.worker, adapt_async: text.asyncValue, prefill: text.prefill, vram_reserve_mib: text.reserve, mtp: text.mtpSwitch, adapt_every: language === 'zh-CN' ? '专家重排间隔' : 'Expert adaptation interval', adapt_swaps: language === 'zh-CN' ? '每轮专家交换上限' : 'Expert swaps per round', adapt_decay: language === 'zh-CN' ? '专家计数衰减' : 'Expert count decay' };
+  const startupValue = (name: string, value: number | boolean | null) => value == null ? text.unpublished : name === 'adapt_async' || name === 'mtp' ? value ? text.enabled : text.disabled : typeof value === 'boolean' ? String(value) : numeric(value, name === 'adapt_decay' ? 3 : 0);
   const useCaseLabels = { chat: text.daily, agent: text.agent, longDocument: text.longDocument };
   const recoveryLabels = { notNeeded: text.notNeeded, pending: text.pending, restoring: text.restoring, restored: text.recoveryRestored, failed: text.recoveryFailed };
   const exportReport = () => {
@@ -293,6 +295,7 @@ export function TuningPage({ profileId, profile, language, desktop, owned, strea
           <div><label className="tuning-toggle"><Toggle ariaLabel={text.asyncTest} checked={asyncTest} disabled={anyActive || busy} onCheckedChange={setAsyncTest}/><span>{text.asyncTest}</span></label>{asyncTest && <label className="tuning-toggle"><Toggle ariaLabel={text.asyncValue} checked={adaptAsync} disabled={anyActive || busy} onCheckedChange={setAdaptAsync}/><span>{text.asyncValue}</span></label>}</div>
           <div><label className="tuning-toggle"><Toggle ariaLabel={text.prefillTest} checked={prefillTest} disabled={anyActive || busy} onCheckedChange={setPrefillTest}/><span>{text.prefillTest}</span></label>{prefillTest && <Dropdown ariaLabel={text.prefill} value={String(prefill)} disabled={anyActive || busy} options={[512, 1024, 2048, 4096, 8192, 16384, 32768].map(value => ({ value: String(value), label: value.toLocaleString(language) }))} onValueChange={value => setPrefill(Number(value))}/>}</div>
           <div><label className="tuning-toggle"><Toggle ariaLabel={text.reserveTest} checked={reserveTest} disabled={anyActive || busy} onCheckedChange={setReserveTest}/><span>{text.reserveTest}</span></label>{reserveTest && <Dropdown ariaLabel={text.reserve} value={String(vramReserveMib)} disabled={anyActive || busy} options={[256, 512, 1024, 2048, 4096, 8192].map(value => ({ value: String(value), label: value.toLocaleString(language) }))} onValueChange={value => setVramReserveMib(Number(value))}/>}</div>
+          <div><label className="tuning-toggle"><Toggle ariaLabel={text.mtpTest} checked={mtpTest} disabled={anyActive || busy} onCheckedChange={setMtpTest}/><span>{text.mtpTest}</span></label>{mtpTest && <label className="tuning-toggle"><Toggle ariaLabel={text.mtpValue} checked={mtpOn} disabled={anyActive || busy} onCheckedChange={setMtpOn}/><span>{text.mtpValue}</span></label>}</div>
           <ExpertAdaptationCandidates value={adaptation} onChange={setAdaptation} language={language} disabled={anyActive || busy}/>
         </div><p className="subtle">{text.reserveHint}</p><p className="subtle">{language === 'zh-CN' ? '专家策略在引擎未公开有效值时仅核验启动参数，并保留完整场景质量与耗时比较。' : 'When effective adaptive values are unpublished, the owned startup arguments are checked and full scenario quality and timings are compared.'}</p></section>}
     </Panel>

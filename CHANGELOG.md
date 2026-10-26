@@ -5,6 +5,20 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **启动参数新增「预测（投机解码）：自动 / MTP / 关」**：引擎 0.1.48 及以上写入配置的 `drafting`（自动、MTP、关）；0.1.46–0.1.47 只能关闭，选「关」写入 `"mtp": false`，选「自动」或「MTP」不写任何字段；低于 0.1.46 的引擎不支持切换，选项锁定并说明原因。识别不到引擎版本时，「关」会同时写 `drafting` 与 `mtp`。配置里的 `mtp` 如果是草稿模型路径，不会被覆盖。DFlash2 只在引擎报告支持时才显示。
+- **调参可以比较「MTP 开 / 关」**：手动重启候选里新增「比较预测（MTP 开 / 关）」，候选会切换 MTP 并在重启后按引擎公布的 drafting / mtp 或命令行里的 `--mtp` 核对，未生效则恢复原配置。没有 MTP 草稿层（`--mtp`）的配置会在重启前直接拒绝该候选。
+- **基准对比能识别「只差 MTP」**：基准身份新增 drafting（请求值 / MTP 开关 / 实际生效值）、去掉草稿参数后的启动哈希和 GPU 角色；两份报告只在预测方式上不同时，对比面板标为「预测（投机解码）」差异，仍可直接比较。旧报告不受影响。
+- **Benchmark Arena 上传可附带赛道与关键参数（可选）**：新增 `extensions`（赛道 默认 / 自定义、drafting / MTP、GPU 角色、专家放置方式），全部是枚举值，不含任何路径或文本；只有服务器 `/v1/health` 声明支持时才会发送，旧服务器照常接收不带该字段的上传。
+
+### English
+
+- **New startup option "Drafting (speculative decoding): Auto / MTP / Off"**: engines 0.1.48 and later get `drafting` (auto, mtp, off) in the configuration; on 0.1.46–0.1.47 drafting can only be turned off, so Off writes `"mtp": false` and Auto or MTP write nothing; engines older than 0.1.46 cannot switch it, so the option is locked with an explanation. When the engine version is unknown, Off writes both `drafting` and `mtp`. An `mtp` value that is a draft-model path is never overwritten. DFlash2 is shown only when the engine reports it.
+- **Tuning can compare MTP on / off**: manual restart candidates gain "Compare drafting (MTP on / off)". The candidate switches MTP and, after the restart, is checked against the engine's published drafting / mtp or the `--mtp` flag on its command line; if it did not take effect the original configuration is restored. A configuration without an MTP draft layer (`--mtp`) refuses this candidate before any restart.
+- **Benchmark comparison recognizes "only MTP differs"**: the benchmark identity now records drafting (requested / MTP switch / effective), a startup hash without the drafting flags, and GPU roles. When two reports differ only in drafting, the comparison panel labels it "Drafting (speculative decoding)" and still allows the comparison. Older reports are unaffected.
+- **Benchmark Arena uploads can carry a track and key parameters (optional)**: a new `extensions` block (track default / custom, drafting / MTP, GPU roles, expert placement) made of enum values only, never paths or text. It is sent only when the server's `/v1/health` advertises support; older servers keep receiving uploads without it.
+
 ## [0.2.22] - 2026-10-25
 
 ### 中文

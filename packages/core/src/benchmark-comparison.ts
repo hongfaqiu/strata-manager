@@ -12,7 +12,14 @@ export interface BenchmarkIdentity {
   engineProcess?: { pid: number; startedAt: number } | null;
   /** Whitelisted launch parameters for Benchmark Arena; absent for unrecognized configurations. */
   launch?: import('./arena').ArenaLaunch | null;
+  /** Engine args hash without the drafting flags (--mtp, --spec-min-p, --batch-mtp, --draft, --draft-model); absent on older reports. */
+  effectiveBaseHash?: string | null;
+  /** Requested config "drafting", the boolean config "mtp" switch, and what the effective engine args draft with. */
+  drafting?: BenchmarkDrafting | null;
+  /** Saved gpu_roles as main/helper/off tokens ordered by card index. */
+  gpuRoles?: ('main' | 'helper' | 'off')[] | null;
 }
+export interface BenchmarkDrafting { requested: 'auto' | 'mtp' | 'dflash2' | 'off' | null; mtpSwitch: boolean | null; effective: 'mtp' | 'dflash2' | 'off' | null }
 export interface BenchmarkComparison { comparable: boolean; differences: string[]; unknowns: string[]; }
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const positive = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value > 0;
@@ -33,6 +40,12 @@ export function validBenchmarkIdentity(value: unknown): value is BenchmarkIdenti
     && object(process)&&typeof process.running==='boolean'&&(process.pid===null||counter(process.pid)&&process.pid>0)&&(process.startedAt===null||positive(process.startedAt))
     && (engine===undefined||engine===null||object(engine)&&counter(engine.pid)&&engine.pid>0&&positive(engine.startedAt))
     && typeof v.effectiveVerified==='boolean'&&typeof v.savedConfigurationHash==='string'&&(v.effectiveStartupHash===null||typeof v.effectiveStartupHash==='string');
+}
+const draftingEffective = (value: unknown) => object(value) && ['mtp','dflash2','off'].includes(value.effective as string) ? value.effective as string : null;
+/** The effective args differ only in their drafting flags, and the engine really drafts differently. */
+function draftingOnly(left: BenchmarkIdentity, right: BenchmarkIdentity): boolean {
+  const a = draftingEffective(left.drafting), b = draftingEffective(right.drafting);
+  return typeof left.effectiveBaseHash==='string' && !!left.effectiveBaseHash && left.effectiveBaseHash===right.effectiveBaseHash && !!a && !!b && a!==b;
 }
 function hardwareKnown(value: BenchmarkIdentity['hardwareSignature']): boolean {
   return object(value)&&typeof value.cpuName==='string'&&!!value.cpuName.trim()&&positive(value.totalMemoryBytes)
@@ -67,15 +80,16 @@ export function compareBenchmarkReports(a: ComparableBenchmarkReport, b: Compara
   else {
     if (!left.process.running||!right.process.running||!positive(left.process.pid)||!positive(right.process.pid)||!positive(left.process.startedAt)||!positive(right.process.startedAt)||!left.engineProcess||!right.engineProcess) unknowns.push('process');
     if (!left.effectiveVerified || !right.effectiveVerified || !left.effectiveStartupHash || !right.effectiveStartupHash) unknowns.push('effectiveConfiguration');
-    else if (left.effectiveStartupHash !== right.effectiveStartupHash) differences.push('effectiveConfiguration');
+    else if (left.effectiveStartupHash !== right.effectiveStartupHash) differences.push(draftingOnly(left, right) ? 'drafting' : 'effectiveConfiguration');
     if (left.model.strength !== 'sha256' || right.model.strength !== 'sha256' || !left.model.fingerprint || !right.model.fingerprint) unknowns.push('modelContent');
     if (left.model.fingerprint !== right.model.fingerprint) differences.push('modelIdentity');
     if (left.runtime.fingerprint !== right.runtime.fingerprint) differences.push('runtime');
     if (left.runtime.strength !== 'sha256' || right.runtime.strength !== 'sha256' || !left.runtime.fingerprint || !right.runtime.fingerprint) unknowns.push('runtimeContent');
   }
   if (!complete(a)||!complete(b)) unknowns.push('incomplete');
-  // A runtime change is the intended independent variable for an upgrade comparison.
-  return { comparable: differences.every(key=>key==='runtime') && unknowns.length===0, differences, unknowns };
+  // One independent variable at a time: a runtime upgrade, or MTP on/off with every other engine arg equal.
+  const independent = differences.filter(key=>key==='runtime'||key==='drafting');
+  return { comparable: independent.length===differences.length && independent.length<=1 && unknowns.length===0, differences, unknowns };
 }
 export function benchmarkComparisonMetrics(report: ComparableBenchmarkReport) {
   const samples = report.samples.filter(sample=>!sample.warmup && sample.state==='completed');
