@@ -93,6 +93,25 @@ pub struct RuntimeUpdateInfo {
 }
 
 const UPDATE_INFO_KEY: &str = "strataUpstreamUpdateInfo";
+/// Opt-in: after a Strata update, gate the switch on a model load and a short
+/// request. Off by default; the default quick check only verifies `/health`.
+pub const FULL_VERIFICATION_KEY: &str = "runtimeUpgradeFullVerification";
+
+/// How a switched runtime is accepted before the update commits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Verification {
+    /// `/health` only; a previously loaded model is reloaded in the background.
+    Quick,
+    /// Model load and a short streamed request gate the commit.
+    Full,
+}
+
+pub(crate) fn verification_mode(state: &RuntimeState) -> Verification {
+    match crate::store_get(state, FULL_VERIFICATION_KEY.into()) {
+        Ok(Value::Bool(true)) => Verification::Full,
+        _ => Verification::Quick,
+    }
+}
 const UPDATE_CHECK_INTERVAL: u64 = 12 * 60 * 60 * 1000;
 const INSTALLATION_METADATA_MAX_AGE: u64 = 10 * 60 * 1000;
 
@@ -1193,11 +1212,15 @@ async fn execute(state: Arc<RuntimeState>, journal: &mut Journal) -> Result<Stri
     }
     let asset = artifact(&engine_selection)?;
     prepare_candidate(state.clone(), journal, &config, asset).await?;
-    switch(state, journal).await?;
-    Ok(
-        "运行时已安全更新至固定 v0.1.41；健康、加载与短请求验收通过，原安装和模型文件保持原位"
-            .into(),
-    )
+    Ok(match switch(state, journal).await? {
+        Verification::Full => {
+            "运行时已安全更新至固定 v0.1.41；健康、加载与短请求验收通过，原安装和模型文件保持原位"
+        }
+        Verification::Quick => {
+            "运行时已更新至固定 v0.1.41；新版服务健康检查通过，原安装和模型文件保持原位"
+        }
+    }
+    .into())
 }
 
 async fn prepare_candidate(
@@ -1798,15 +1821,16 @@ async fn owned_stop(state: &RuntimeState, id: &str) -> Result<(), String> {
     }
     Ok(())
 }
-async fn switch(state: Arc<RuntimeState>, journal: &mut Journal) -> Result<(), String> {
+async fn switch(state: Arc<RuntimeState>, journal: &mut Journal) -> Result<Verification, String> {
     switch_with(state, journal, ObserverWait::DEFAULT).await
 }
 async fn switch_with(
     state: Arc<RuntimeState>,
     journal: &mut Journal,
     wait: ObserverWait,
-) -> Result<(), String> {
+) -> Result<Verification, String> {
     cancelled(&state, &journal.task_id)?;
+    let mode = verification_mode(&state);
     let candidate = journal.candidate.clone().ok_or("候选尚未准备")?;
     if installation::file_hash(Path::new(&journal.old.config_path))? != journal.old_config_sha256 {
         return Err("准备期间原配置已变化，保持原安装；重新检查更新即可使用新配置".into());
@@ -1928,33 +1952,48 @@ async fn switch_with(
         }
         cancelled(&state, &journal.task_id)?;
         start_candidate(state.clone(), candidate.clone()).await?;
-        stage(
-            &state,
-            journal,
-            "verifying",
-            "正在核验候选 API、模型加载与完整短请求",
-        )?;
-        verify(
-            &state,
-            &candidate,
-            token.as_deref(),
-            Some(&journal.task_id),
-            true,
-            true,
-        )
-        .await?;
-        maintenance::wait_idle(&state, &candidate).await?;
-        if !journal.was_loaded {
-            unload(&state, &candidate, token.as_deref()).await?;
+        if mode == Verification::Full {
+            stage(
+                &state,
+                journal,
+                "verifying",
+                "完整验收：正在核验候选 API、模型加载与完整短请求",
+            )?;
             verify(
                 &state,
                 &candidate,
                 token.as_deref(),
                 Some(&journal.task_id),
-                false,
-                false,
+                true,
+                true,
             )
             .await?;
+            maintenance::wait_idle(&state, &candidate).await?;
+            if !journal.was_loaded {
+                unload(&state, &candidate, token.as_deref()).await?;
+                verify(
+                    &state,
+                    &candidate,
+                    token.as_deref(),
+                    Some(&journal.task_id),
+                    false,
+                    false,
+                )
+                .await?;
+            }
+        } else {
+            stage(
+                &state,
+                journal,
+                "verifying",
+                "快速校验：正在核验新版服务健康（不加载模型）",
+            )?;
+            let health = verify_health(&state, &candidate, Some(&journal.task_id)).await?;
+            // A runtime without lazy start may load on its own; keep the
+            // pre-update unloaded state instead of leaving VRAM in use.
+            if !journal.was_loaded && health["loaded"] == true {
+                unload(&state, &candidate, token.as_deref()).await?;
+            }
         }
         if !journal.was_running {
             owned_stop(&state, &journal.profile_id).await?;
@@ -1964,7 +2003,11 @@ async fn switch_with(
             &state,
             journal,
             "committed",
-            "候选健康、加载与短请求已验收，更新完成；保留原安装以便恢复",
+            match mode {
+                Verification::Full => "候选健康、加载与短请求已验收，更新完成；保留原安装以便恢复",
+                Verification::Quick if journal.was_running && journal.was_loaded => "新版服务健康检查通过，更新完成；正在后台重新加载模型，保留原安装以便恢复",
+                Verification::Quick => "新版服务健康检查通过，更新完成；保留原安装以便恢复",
+            },
         )?;
         Ok::<(), String>(())
     }
@@ -2015,6 +2058,55 @@ async fn switch_with(
     }
     drop(startup_gate);
     drop(gate);
+    if mode == Verification::Quick && journal.was_running && journal.was_loaded {
+        spawn_background_load(state.clone(), candidate, journal.task_id.clone());
+    }
+    Ok(mode)
+}
+/// Restores the pre-update loaded state after a quick-check commit. The update
+/// has already completed: a failure is reported as a warning and never rolls
+/// back (the previous runtime stays installed for a manual switch back).
+pub(crate) fn spawn_background_load(
+    state: Arc<RuntimeState>,
+    profile: ServiceProfile,
+    task_id: String,
+) -> tokio::task::JoinHandle<Result<(), String>> {
+    tokio::spawn(async move {
+        let log = |level: &str, message: String| {
+            processes::log(&state.logs, &task_id, level, message.clone());
+            processes::log(&state.logs, &profile.id, level, message);
+            let _ = processes::persist_task_logs(&state.database, &state.logs, &task_id);
+        };
+        log(
+            "info",
+            "正在后台重新加载更新前已加载的模型 / Reloading the previously loaded model in the background".into(),
+        );
+        let result = background_load(&state, &profile).await;
+        match &result {
+            Ok(()) => log(
+                "info",
+                "后台模型加载完成 / Background model load finished".into(),
+            ),
+            Err(error) => log(
+                "warning",
+                format!("后台重新加载模型失败：{error}；更新已完成且不会回滚，可手动加载模型，或在「已安装版本」切回原版本 / Background model load failed; the update stays in place: {error}"),
+            ),
+        }
+        result
+    })
+}
+async fn background_load(state: &RuntimeState, profile: &ServiceProfile) -> Result<(), String> {
+    state.owned_gui_profile(&profile.id)?;
+    let health =
+        http::strata_request(state, profile.clone(), "/health".into(), "GET".into(), None).await?;
+    if health["loaded"] == true {
+        return Ok(());
+    }
+    // A cold load can take many minutes; this runs after the update has completed.
+    let result = post(state, profile, "/load", json!({}), None, 1200).await?;
+    if !matches!(result["status"].as_str(), Some("loaded" | "already loaded")) {
+        return Err("模型加载返回无效状态".into());
+    }
     Ok(())
 }
 async fn rollback(
@@ -2113,25 +2205,7 @@ async fn verify(
     load: bool,
     probe: bool,
 ) -> Result<(), String> {
-    let deadline = Instant::now() + Duration::from_secs(30);
-    loop {
-        if let Some(id) = task {
-            cancelled(state, id)?;
-        }
-        state.owned_gui_profile(&profile.id)?;
-        if let Ok(health) =
-            http::strata_request(state, profile.clone(), "/health".into(), "GET".into(), None).await
-        {
-            if health["service"] == "strata" && health["status"] == "ok" {
-                break;
-            }
-            return Err("候选健康响应不是有效 Strata".into());
-        }
-        if Instant::now() >= deadline {
-            return Err("候选 API 30 秒内未就绪".into());
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+    verify_health(state, profile, task).await?;
     if load {
         let result = if let Some(id) = task {
             tokio::select! {result=post(state,profile,"/load",json!({}),token,300)=>result?,_=wait_cancel(state,id)=>return Err("加载候选时取消更新".into())}
@@ -2151,6 +2225,33 @@ async fn verify(
         short_probe(state, profile, token, task).await?;
     }
     Ok(())
+}
+/// Waits up to 30 seconds for the owned service's `/health` to report a
+/// healthy Strata; this is the quick update check.
+async fn verify_health(
+    state: &RuntimeState,
+    profile: &ServiceProfile,
+    task: Option<&str>,
+) -> Result<Value, String> {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        if let Some(id) = task {
+            cancelled(state, id)?;
+        }
+        state.owned_gui_profile(&profile.id)?;
+        if let Ok(health) =
+            http::strata_request(state, profile.clone(), "/health".into(), "GET".into(), None).await
+        {
+            if health["service"] == "strata" && health["status"] == "ok" {
+                return Ok(health);
+            }
+            return Err("候选健康响应不是有效 Strata".into());
+        }
+        if Instant::now() >= deadline {
+            return Err("候选 API 30 秒内未就绪".into());
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
 }
 async fn short_probe(
     state: &RuntimeState,
@@ -2977,6 +3078,29 @@ mod tests {
         .await
         .unwrap()
     }
+    fn full_verification(f: &Fixture) {
+        crate::store_set(&f.state, FULL_VERIFICATION_KEY.into(), json!(true)).unwrap();
+    }
+    /// Quick mode reloads a previously loaded model after the switch commits.
+    async fn wait_loaded(f: &Fixture, within: Duration) {
+        let deadline = Instant::now() + within;
+        while health(f).await["loaded"] != true {
+            assert!(
+                Instant::now() < deadline,
+                "background model load did not finish"
+            );
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+    fn task_logs(f: &Fixture) -> Vec<String> {
+        f.state
+            .logs
+            .lock()
+            .unwrap()
+            .get(&f.journal.task_id)
+            .map(|lines| lines.iter().map(|line| line.message.clone()).collect())
+            .unwrap_or_default()
+    }
     async fn start_old(f: &Fixture, load: bool) -> u32 {
         start_candidate(f.state.clone(), f.old.clone())
             .await
@@ -3184,7 +3308,7 @@ mod tests {
             assert_eq!(request.await.unwrap().unwrap()["status"], "saved");
             assert_eq!(f.journal.phase, "committed");
             assert_eq!(health(&f).await["generation"], "candidate");
-            assert_eq!(health(&f).await["loaded"], true);
+            wait_loaded(&f, Duration::from_secs(10)).await;
             assert_eq!(
                 read_shared_settings(&source).unwrap(),
                 read_shared_settings(&target).unwrap()
@@ -3278,8 +3402,12 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn owned_switch_verifies_real_http_process_and_preserves_all_imported_bytes() {
         let mut f = fixture();
+        full_verification(&f);
         let before = start_old(&f, true).await;
-        switch(f.state.clone(), &mut f.journal).await.unwrap();
+        assert_eq!(
+            switch(f.state.clone(), &mut f.journal).await.unwrap(),
+            Verification::Full
+        );
         assert_eq!(f.journal.phase, "committed");
         assert_ne!(
             f.state
@@ -3457,6 +3585,7 @@ mod tests {
     async fn load_and_probe_failures_restore_old_identity_and_loaded_state() {
         for failure in ["fixture_fail_load", "fixture_bad_probe"] {
             let mut f = fixture();
+            full_verification(&f);
             start_old(&f, true).await;
             change_candidate(&mut f, failure, json!(true));
             assert!(switch(f.state.clone(), &mut f.journal)
@@ -3519,6 +3648,7 @@ mod tests {
     async fn cancellation_during_candidate_loading_restores_old_and_external_requests_are_blocked()
     {
         let mut f = fixture();
+        full_verification(&f);
         start_old(&f, true).await;
         change_candidate(&mut f, "fixture_slow_load", json!(true));
         let state = f.state.clone();
@@ -3563,8 +3693,11 @@ mod tests {
     }
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn preserves_unloaded_and_previously_stopped_states() {
-        for running in [true, false] {
+        for (running, full) in [(true, false), (false, false), (true, true), (false, true)] {
             let mut f = fixture();
+            if full {
+                full_verification(&f);
+            }
             if running {
                 start_old(&f, false).await;
             }
@@ -3924,6 +4057,120 @@ mod tests {
             assert_eq!(installation::file_hash(&path).unwrap(), expected);
         }
         owned_stop(&state, &old.id).await.unwrap();
+    }
+    #[test]
+    fn verification_defaults_to_quick_and_full_is_opt_in() {
+        let f = fixture();
+        assert_eq!(verification_mode(&f.state), Verification::Quick);
+        crate::store_set(&f.state, FULL_VERIFICATION_KEY.into(), json!("yes")).unwrap();
+        assert_eq!(verification_mode(&f.state), Verification::Quick);
+        full_verification(&f);
+        assert_eq!(verification_mode(&f.state), Verification::Full);
+        crate::store_set(&f.state, FULL_VERIFICATION_KEY.into(), json!(false)).unwrap();
+        assert_eq!(verification_mode(&f.state), Verification::Quick);
+    }
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn quick_switch_checks_health_only_without_load_or_short_request() {
+        let mut f = fixture();
+        start_old(&f, false).await;
+        // Either would fail the full check; quick mode must not run them.
+        change_candidate(&mut f, "fixture_fail_load", json!(true));
+        change_candidate(&mut f, "fixture_bad_probe", json!(true));
+        assert_eq!(
+            switch(f.state.clone(), &mut f.journal).await.unwrap(),
+            Verification::Quick
+        );
+        assert_eq!(f.journal.phase, "committed");
+        assert!(!f.journal.was_loaded);
+        assert_eq!(health(&f).await["generation"], "candidate");
+        assert_eq!(health(&f).await["loaded"], false);
+        assert!(!task_logs(&f).iter().any(|line| line.contains("后台")));
+        assert!(!gate(&f).exists());
+        unchanged(&f);
+        owned_stop(&f.state, &f.old.id).await.unwrap();
+    }
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn quick_switch_reloads_previously_loaded_model_in_background_without_gating() {
+        let mut f = fixture();
+        start_old(&f, true).await;
+        change_candidate(&mut f, "fixture_slow_load", json!(true));
+        processes::register_task_logs(&f.state.logs, &f.journal.task_id).unwrap();
+        let begun = Instant::now();
+        switch(f.state.clone(), &mut f.journal).await.unwrap();
+        // The fixture load sleeps 15 s; the commit must not wait for it.
+        assert!(
+            begun.elapsed() < Duration::from_secs(12),
+            "{:?}",
+            begun.elapsed()
+        );
+        assert_eq!(f.journal.phase, "committed");
+        assert!(f.journal.was_loaded);
+        assert_eq!(health(&f).await["generation"], "candidate");
+        assert_eq!(health(&f).await["loaded"], false);
+        assert!(!gate(&f).exists());
+        let signal = Path::new(&f.old.install_dir).join("candidate-loading");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !signal.exists() {
+            assert!(
+                Instant::now() < deadline,
+                "background load never reached the service"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        wait_loaded(&f, Duration::from_secs(30)).await;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !task_logs(&f)
+            .iter()
+            .any(|line| line.contains("后台模型加载完成"))
+        {
+            assert!(Instant::now() < deadline, "{:?}", task_logs(&f));
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        unchanged(&f);
+        owned_stop(&f.state, &f.old.id).await.unwrap();
+    }
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn quick_switch_background_load_failure_only_warns_and_never_rolls_back() {
+        let mut f = fixture();
+        start_old(&f, true).await;
+        change_candidate(&mut f, "fixture_fail_load", json!(true));
+        processes::register_task_logs(&f.state.logs, &f.journal.task_id).unwrap();
+        switch(f.state.clone(), &mut f.journal).await.unwrap();
+        assert_eq!(f.journal.phase, "committed");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !task_logs(&f)
+            .iter()
+            .any(|line| line.contains("后台重新加载模型失败"))
+        {
+            assert!(Instant::now() < deadline, "{:?}", task_logs(&f));
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert_eq!(
+            status(&f.state, f.old.id.clone()).unwrap().unwrap().phase,
+            "committed"
+        );
+        assert_eq!(
+            f.state.registered_profile(&f.old.id).unwrap().install_dir,
+            f.candidate.install_dir
+        );
+        assert_eq!(health(&f).await["generation"], "candidate");
+        assert_eq!(health(&f).await["loaded"], false);
+        unchanged(&f);
+        owned_stop(&f.state, &f.old.id).await.unwrap();
+    }
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn full_switch_gates_on_load_and_probe_and_keeps_unloaded_state() {
+        let mut f = fixture();
+        full_verification(&f);
+        start_old(&f, false).await;
+        change_candidate(&mut f, "fixture_bad_probe", json!(true));
+        let error = switch(f.state.clone(), &mut f.journal).await.unwrap_err();
+        assert!(error.contains("已恢复"), "{error}");
+        assert_eq!(f.journal.phase, "rolledBack");
+        assert_eq!(health(&f).await["generation"], "old");
+        assert_eq!(health(&f).await["loaded"], false);
+        unchanged(&f);
+        owned_stop(&f.state, &f.old.id).await.unwrap();
     }
     const SHORT_WAIT: ObserverWait = ObserverWait {
         stale_ms: 400,

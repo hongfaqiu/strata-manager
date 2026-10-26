@@ -39,6 +39,21 @@ export function saveRuntimeDownloadPreferences(value: RuntimeDownloadPreferences
   return saveStore(storeKey, normalize(value));
 }
 
+/**
+ * Opt-in full acceptance after a Strata upgrade (load the model plus a short request before
+ * committing). Off by default: upgrades only check the new service's /health and reload a
+ * previously loaded model in the background. Read by the native upgrade under the same key.
+ */
+export const RUNTIME_UPGRADE_FULL_VERIFICATION_KEY = 'runtimeUpgradeFullVerification';
+
+export async function getRuntimeUpgradeFullVerification(): Promise<boolean> {
+  return (await loadStore<unknown>(RUNTIME_UPGRADE_FULL_VERIFICATION_KEY, false)) === true;
+}
+
+export function saveRuntimeUpgradeFullVerification(enabled: boolean): Promise<void> {
+  return saveStore(RUNTIME_UPGRADE_FULL_VERIFICATION_KEY, enabled === true);
+}
+
 function validUrl(value: string): boolean {
   try {
     const url = new URL(value);

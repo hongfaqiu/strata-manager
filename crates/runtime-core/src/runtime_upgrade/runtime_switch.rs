@@ -774,6 +774,18 @@ mod tests {
         .unwrap()
     }
 
+    /// The default quick check reloads a previously loaded model after commit.
+    async fn wait_loaded(f: &Fixture) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while health(f).await["loaded"] != true {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "background model load did not finish"
+            );
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn running_service_switches_to_the_new_runtime_and_keeps_the_old_folder() {
         let f = fixture(include_str!(
@@ -798,6 +810,7 @@ mod tests {
             .unwrap()
             .starts_with(&*f.target.root.to_string_lossy()));
         assert_eq!(migrated["args"][1], json!(f.source.join("model.gguf")));
+        wait_loaded(&f).await;
         let health = health(&f).await;
         assert_eq!(
             (health["status"].as_str(), health["loaded"].as_bool()),
@@ -873,7 +886,7 @@ mod tests {
         assert!(task.message.contains("原版本"), "{}", task.message);
         let current = f.state.registered_profile(&f.old.id).unwrap();
         assert_eq!(Path::new(&current.install_dir), f.target.root);
-        assert_eq!(health(&f).await["loaded"], true);
+        wait_loaded(&f).await;
         let inventory = super::super::installed_runtimes::inventory(&f.state).unwrap();
         let old = inventory
             .runtimes
@@ -887,7 +900,7 @@ mod tests {
         assert_eq!(back.state, "completed", "{}", back.message);
         let current = f.state.registered_profile(&f.old.id).unwrap();
         assert_eq!(Path::new(&current.install_dir), f.source);
-        assert_eq!(health(&f).await["loaded"], true);
+        wait_loaded(&f).await;
         assert!(
             f.target.root.is_dir(),
             "the newer version stays installed too"
