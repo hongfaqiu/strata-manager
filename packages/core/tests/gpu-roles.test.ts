@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { gpuRoles as R, readConcurrencySettings, STARTUP_TUNING_FIELDS, applyStartupField, validateStartupConfiguration } from '../src';
 
-// Strata v0.2.2 tests/data/gpu_roles_vectors.json: the same vectors upstream runs against strata_control/gpu_roles.py and apps/host.
-const V = JSON.parse(readFileSync(new URL('./fixtures/gpu-roles-vectors-v0.2.2.json', import.meta.url), 'utf8'));
+// Strata v0.2.6 tests/data/gpu_roles_vectors.json (includes #3655 two_8gb / tiny_second): the same vectors upstream runs against strata_control/gpu_roles.py and apps/host.
+const V = JSON.parse(readFileSync(new URL('./fixtures/gpu-roles-vectors-v0.2.6.json', import.meta.url), 'utf8'));
 const roles = (d: Record<string, R.Role> | null | undefined) => d ? Object.fromEntries(Object.entries(d).map(([k, v]) => [Number(k), v])) as R.Roles : d;
 
 describe('GPU roles (ported from Strata 0.2.2)', () => {

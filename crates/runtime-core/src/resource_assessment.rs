@@ -135,14 +135,15 @@ fn hardware(state: &RuntimeState) -> Result<HardwareSnapshot, String> {
     let mut gpus = gpus;
     #[cfg(windows)]
     if gpus.is_empty() {
-        if let Some(names) = crate::display_adapters::windows_gpu_names() {
-            gpus = names
+        // Integrated GPUs beside a real card are already left out (see display_adapters).
+        if let Some(adapters) = crate::display_adapters::windows_gpu_adapters() {
+            gpus = adapters
                 .into_iter()
                 .enumerate()
-                .map(|(id, name)| GpuSnapshot {
+                .map(|(id, adapter)| GpuSnapshot {
                     id: id as u32,
-                    vendor: "unknown".into(),
-                    name,
+                    vendor: adapter.vendor.unwrap_or("unknown").into(),
+                    name: adapter.name,
                     total_bytes: None,
                     available_bytes: None,
                     source: "windows-video-controller".into(),

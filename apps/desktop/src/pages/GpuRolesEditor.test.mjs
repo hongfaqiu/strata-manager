@@ -10,15 +10,24 @@ const text = tree => nodes(tree).flatMap(node => [node.props.children].flat(Infi
 const compile = file => ts.transpileModule(readFileSync(new URL(file, import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
 const roles = { exports: {} };
 vm.runInNewContext(compile('../../../../packages/core/src/gpu-roles.ts'), { module: roles, exports: roles.exports, require: () => ({}), structuredClone });
+const igpu = { exports: {} };
+vm.runInNewContext(compile('../../../../packages/core/src/integrated-gpu.ts'), { module: igpu, exports: igpu.exports, require: () => ({}) });
 const Segmented = props => jsx('segmented', props);
 const editor = { exports: {} };
-vm.runInNewContext(compile('./GpuRolesEditor.tsx'), { module: editor, exports: editor.exports, structuredClone, require: name => ({ react: { useState: v => [v, () => {}] }, '@strata-manager/core': { gpuRoles: roles.exports }, '../OfficialControls': { Segmented }, 'react/jsx-runtime': { jsx, jsxs: jsx } })[name] ?? {} });
+vm.runInNewContext(compile('./GpuRolesEditor.tsx'), { module: editor, exports: editor.exports, structuredClone, require: name => ({ react: { useState: v => [v, () => {}] }, '@strata-manager/core': { gpuRoles: roles.exports, ...igpu.exports }, '../OfficialControls': { Segmented }, 'react/jsx-runtime': { jsx, jsxs: jsx } })[name] ?? {} });
 const { GpuRolesEditor, cardsFromEnvironment } = editor.exports;
 const cards = cardsFromEnvironment(['NVIDIA GeForce RTX 3060, 560.94, 12288 MiB', 'NVIDIA GeForce RTX 4070 Ti, 560.94, 12282 MiB']);
 const render = (config, extra = {}) => { const changes = []; const tree = GpuRolesEditor({ zh: true, config, cards, mac: false, disabled: false, showParameterNames: false, onChange: next => changes.push(next), ...extra }); return { tree, changes }; };
 
 test('environment lines become numbered cards', () => {
   assert.deepEqual(cards.map(card => [card.index, card.vram_gb, card.vendor]), [[0, 12, 'nvidia'], [1, 12, 'nvidia']]);
+});
+
+test('integrated GPUs are recognized by name (Radeon 760M/780M/890M, Intel Arc iGPU, UHD/Iris)', () => {
+  const lines = ['AMD Radeon 760M Graphics', 'AMD Radeon(TM) 780M', 'AMD Radeon 890M Graphics', 'AMD Radeon(TM) Graphics', 'Intel(R) Arc(TM) Graphics', 'Intel(R) Arc(TM) 140V GPU (16GB)', 'Intel(R) UHD Graphics 770', 'Intel(R) Iris(R) Xe Graphics'];
+  for (const card of cardsFromEnvironment(lines)) assert.equal(card.integrated, true, card.name);
+  const discrete = cardsFromEnvironment(['Intel(R) Arc(TM) A770 Graphics', 'AMD Radeon RX 7900 XTX', 'NVIDIA RTX A6000, 560.94, 49140 MiB']);
+  assert.deepEqual(discrete.map(card => [card.vendor, card.integrated]), [['intel', undefined], ['amd', undefined], ['nvidia', undefined]]);
 });
 
 test('a role click writes gpu_roles with the gpu mirror', () => {

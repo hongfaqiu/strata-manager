@@ -1,8 +1,13 @@
 import { asObject } from './errors';
+import { defaultGpuSet } from './integrated-gpu';
 import type { EnvironmentInfo, GpuDetail, JsonObject } from './types';
 
 /** One card from the official `/metrics` `hardware.gpus` records (bytes, %, °C, W). */
-export interface GpuCard { index: number; name: string | null; memUsed: number | null; memTotal: number | null; util: number | null; temp: number | null; power: number | null }
+export interface GpuCard {
+  index: number; name: string | null; memUsed: number | null; memTotal: number | null; util: number | null; temp: number | null; power: number | null;
+  /** Set by the manager's AMD merge on a small integrated Radeon beside a real card: listed, but not in the All totals. */
+  integrated?: boolean;
+}
 
 const number = (value: unknown): number | null => typeof value === 'number' && Number.isFinite(value) ? value : null;
 
@@ -24,15 +29,23 @@ export function gpuCards(raw: unknown): GpuCard[] {
   const records = Array.isArray(hw.gpus) ? hw.gpus.map(asObject) : [];
   return records.map((gpu: JsonObject, position) => ({
     index: number(gpu.index) ?? position,
-    name: names.length === records.length ? names[position] ?? null : null,
+    name: typeof gpu.name === 'string' && gpu.name.trim() ? gpu.name.trim() : names.length === records.length ? names[position] ?? null : null,
     memUsed: number(gpu.mem_used), memTotal: number(gpu.mem_total), util: number(gpu.util), temp: number(gpu.temp), power: number(gpu.power),
+    ...(gpu.integrated === true ? { integrated: true } : {}),
   }));
+}
+
+/** The cards behind the "All GPUs" totals and count: a small integrated GPU beside a real card is left out (upstream `defaultGpuSet`). */
+export function defaultGpuCards(raw: unknown): GpuCard[] {
+  return defaultGpuSet(gpuCards(raw));
 }
 
 /** Display name for the whole GPU set: per-card names, else the static name, deduplicated as "N× name". */
 export function gpuSetName(raw: unknown): string | null {
   const metrics = asObject(raw), names = splitGpuNames(asObject(metrics.hardware_static).gpu_name);
-  const cards = gpuCards(raw);
+  const all = gpuCards(raw), cards = defaultGpuSet(all);
+  // Named per-card records: the All set's names, so an integrated GPU left out of the totals is not in the title either.
+  if (cards.length < all.length && cards.every(card => card.name)) return gpuSummary(cards.map(card => card.name!));
   if (cards.length > 1 && names.length === 1) return `${cards.length}× ${names[0]}`;
   return names.length ? gpuSummary(names) : null;
 }

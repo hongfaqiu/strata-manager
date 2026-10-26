@@ -5,6 +5,18 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **监控不再把核显算进 GPU 合计**：带独显的电脑（例如 RTX 5070 笔记本 + Radeon 核显、7900 XTX + Ryzen 核显、独显 + Intel UHD/Iris）上，悬浮监控、任务栏监控和概览「全部」的显存、功耗、利用率合计、显卡数量和显卡名称现在只统计独显，规则与官方 Strata 0.2.6 的默认显卡集合一致；核显仍在概览的逐卡列表里显示，并标注「核显 · 不计入合计」。只有核显（APU）或统一内存的电脑照常显示。NVIDIA 独显已存在但引擎尚未上报时，也不会再把 AMD 核显并入合计；没有 nvidia-smi 时的 Windows 显卡列表同样会去掉独显旁边的核显。
+- **GPU 角色推荐与官方 0.2.6 对齐**：8GB 及以下的卡只有在同时有更大的卡时才默认设为关闭（不足 4GB 的卡仍默认关闭）；显卡角色编辑器能识别更多核显（Radeon 760M/780M/890M、8060S、Intel Arc 核显等）。
+- **修复 Pascal 显卡（GTX 10 系列，sm_61）旁边有 Ryzen 核显时运行环境选错**：现在会选择 CUDA 12 版本，不会因为核显误选 AMD 版本。
+
+### English
+
+- **Monitoring no longer counts integrated GPUs in the GPU totals**: on computers with a discrete card (for example an RTX 5070 laptop with Radeon graphics, a 7900 XTX with Ryzen graphics, or a discrete card with Intel UHD/Iris), the floating monitor, taskbar monitor and Overview "All" now total memory, power and utilization, and report the card count and name, from the discrete card only, matching the default GPU set of official Strata 0.2.6. The integrated GPU still appears in the Overview per-card list, marked "Integrated · not in totals". Computers with only an integrated GPU (APUs) or unified memory are shown as before. An AMD integrated GPU is no longer merged in when an NVIDIA card is present but the engine has not reported yet, and the Windows adapter list used without nvidia-smi also drops an integrated GPU beside a discrete card.
+- **GPU role suggestions match official 0.2.6**: a card of 8 GB or less is only set to Off by default when a bigger card is present (cards under 4 GB are still Off by default), and the GPU roles editor recognizes more integrated GPUs (Radeon 760M/780M/890M, 8060S, Intel Arc integrated graphics and more).
+- **Fixed the wrong runtime being picked for Pascal cards (GTX 10 series, sm_61) beside a Ryzen integrated GPU**: the CUDA 12 build is now chosen instead of the AMD build.
+
 ## [0.2.22] - 2026-10-25
 
 ### 中文

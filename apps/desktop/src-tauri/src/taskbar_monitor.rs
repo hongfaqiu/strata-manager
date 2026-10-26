@@ -174,15 +174,43 @@ pub(crate) struct Sample {
 fn number(v: &Value) -> Option<f64> {
     v.as_f64().filter(|n| n.is_finite() && *n >= 0.0)
 }
+/// The "All GPUs" set of per-card records (upstream v0.2.6 `defaultGpuSet`): a small integrated
+/// GPU beside a real card is left out of the totals; a card the manager already flagged as
+/// `integrated` stays out too.
+#[cfg(any(windows, test))]
+fn default_gpu_mask(cards: &[Value]) -> Vec<bool> {
+    use strata_runtime_core::igpu::{default_gpu_mask, GpuFacts};
+    let facts: Vec<_> = cards
+        .iter()
+        .map(|gpu| {
+            GpuFacts::new(
+                gpu["name"].as_str().unwrap_or(""),
+                number(&gpu["mem_total"]),
+            )
+        })
+        .collect();
+    let flagged: Vec<bool> = cards
+        .iter()
+        .map(|gpu| gpu["integrated"] == Value::Bool(true))
+        .collect();
+    let all_flagged = flagged.iter().all(|f| *f);
+    default_gpu_mask(&facts)
+        .into_iter()
+        .zip(flagged)
+        .map(|(keep, flagged)| keep && (all_flagged || !flagged))
+        .collect()
+}
 #[cfg(any(windows, test))]
 fn gpu_number(hw: &Value, aggregate: &str, card: &str, mode: &str) -> Option<f64> {
     if let Some(value) = number(&hw[aggregate]) {
         return Some(value);
     }
-    let values: Vec<_> = hw["gpus"]
-        .as_array()?
+    let cards = hw["gpus"].as_array()?;
+    let values: Vec<_> = cards
         .iter()
-        .filter_map(|gpu| number(&gpu[card]))
+        .zip(default_gpu_mask(cards))
+        .filter(|(_, keep)| *keep)
+        .filter_map(|(gpu, _)| number(&gpu[card]))
         .collect();
     if values.is_empty() {
         return None;
@@ -1322,6 +1350,33 @@ mod tests {
         value["metrics"]["live"]["state"] = json!("prefill");
         assert_eq!(&sample(&value).values[..2], &[None, Some(2200.)]);
     }
+    #[test]
+    fn gpu_fallback_leaves_an_integrated_gpu_out_of_the_totals() {
+        let gib = 1_073_741_824u64;
+        let hw = json!({"gpus":[
+            {"name":"NVIDIA GeForce RTX 5070 Laptop GPU","util":50,"mem_used":4*gib,"mem_total":12*gib,"temp":70,"power":80},
+            {"name":"AMD Radeon(TM) Graphics","util":10,"mem_used":gib/4,"mem_total":gib/2,"temp":90,"power":5}
+        ]});
+        assert_eq!(
+            gpu_number(&hw, "gpu_mem_total", "mem_total", "sum"),
+            Some((12 * gib) as f64)
+        );
+        assert_eq!(gpu_number(&hw, "gpu_util", "util", "mean"), Some(50.0));
+        assert_eq!(gpu_number(&hw, "gpu_temp", "temp", "max"), Some(70.0));
+        // The manager's own flag (AMD merge) is honored.
+        let hw = json!({"gpus":[{"name":"AMD Radeon RX 7900 XTX","mem_total":24*gib},{"name":"x","mem_total":gib,"integrated":true}]});
+        assert_eq!(
+            gpu_number(&hw, "gpu_mem_total", "mem_total", "sum"),
+            Some((24 * gib) as f64)
+        );
+        // An iGPU alone is still the GPU.
+        let hw = json!({"gpus":[{"name":"AMD Radeon(TM) Graphics","mem_total":gib/2}]});
+        assert_eq!(
+            gpu_number(&hw, "gpu_mem_total", "mem_total", "sum"),
+            Some((gib / 2) as f64)
+        );
+    }
+
     #[test]
     fn gpu_fallback_aggregates_and_cache_uses_latest_request() {
         let value = json!({"phase":"online","health":{"loaded":true},"metrics":{"live":{"state":"idle","cache_hit_rate":0.99},"requests":[{"hit_rate":0.25}],"hardware":{"gpus":[{"util":20,"mem_used":1073741824u64,"temp":60,"power":90},{"util":60,"mem_used":2147483648u64,"temp":70,"power":110}]}}});

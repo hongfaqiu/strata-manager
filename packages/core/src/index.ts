@@ -3,6 +3,7 @@ export * from './errors';
 export * from './catalog';
 export * from './metrics';
 export * from './gpu-summary';
+export * from './integrated-gpu';
 export * from './chat';
 export * from './chat-execution';
 export * from './service-capabilities';

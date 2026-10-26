@@ -246,6 +246,14 @@ pub fn pick(
     };
     let nvidia = probe.nvidia_driver.is_some() || !probe.nvidia_caps.is_empty();
     let amd = !probe.amd_gfx.is_empty();
+    // A Ryzen's integrated Radeon (gfx1036, gfx1103, gfx90c …) has no HIP package; beside an
+    // NVIDIA card it is a display adapter, not a choice, so the NVIDIA route decides.
+    let amd_supported = probe.amd_gfx.iter().any(|g| {
+        assets
+            .iter()
+            .any(|a| a.variant.starts_with("hip") && a.archs.iter().any(|arch| arch == g))
+    });
+    let amd = amd && !(nvidia && !amd_supported);
     if nvidia && amd {
         return Err(manual(
             "同时检测到 NVIDIA 和 AMD 显卡，无法确定使用哪一张",
@@ -487,6 +495,29 @@ mod tests {
             reason.contains("580.95.05") && reason.contains("CUDA 13"),
             "{reason}"
         );
+    }
+
+    #[test]
+    fn pascal_cards_pick_cuda12_even_beside_a_ryzen_igpu() {
+        let assets = linux_assets();
+        let pick_variant = |probe: GpuProbe| pick(&assets, &probe).map(|(a, _)| a.variant);
+        // Two GTX 1080 (6.1): CUDA 13 has no sm_61, so CUDA 12 on any new driver.
+        assert_eq!(
+            pick_variant(nvidia("580.95", &[(6, 1), (6, 1)])).unwrap(),
+            "cuda12"
+        );
+        // GTX 1080 Ti next to a Ryzen 7000 iGPU (kfd lists gfx1036, no HIP package): the iGPU
+        // no longer blocks the choice.
+        let mut probe = nvidia("580.95", &[(6, 1)]);
+        probe.amd_gfx = vec!["gfx1036".into()];
+        assert_eq!(pick_variant(probe).unwrap(), "cuda12");
+        let mut probe = nvidia("580.95.05", &[(8, 9)]);
+        probe.amd_gfx = vec!["gfx1103".into()];
+        assert_eq!(pick_variant(probe).unwrap(), "cuda13");
+        // A real AMD card beside the NVIDIA one is still ambiguous.
+        let mut probe = nvidia("580.95", &[(8, 9)]);
+        probe.amd_gfx = vec!["gfx1201".into()];
+        assert!(pick_variant(probe).unwrap_err().contains("NVIDIA"));
     }
 
     #[test]
