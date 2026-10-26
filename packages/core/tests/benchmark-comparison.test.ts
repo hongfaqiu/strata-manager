@@ -51,6 +51,24 @@ describe('benchmark evidence eligibility', () => {
     const a = exportBenchmarkReport(report('a')), b = exportBenchmarkReport(report('b'));
     expect(compareBenchmarkReports(a, b)).toMatchObject({ comparable: false, unknowns: expect.arrayContaining(['testInput']) });
   });
+  it('treats MTP on/off with otherwise equal engine args as the single variable', () => {
+    const a = report('a'), b = report('b');
+    a.identity = { ...a.identity!, effectiveStartupHash: 'with-mtp', effectiveBaseHash: 'base', drafting: { requested: 'auto', mtpSwitch: null, effective: 'mtp' } };
+    b.identity = { ...b.identity!, effectiveStartupHash: 'without-mtp', effectiveBaseHash: 'base', drafting: { requested: 'off', mtpSwitch: false, effective: 'off' } };
+    expect(compareBenchmarkReports(a, b)).toEqual({ comparable: true, differences: ['drafting'], unknowns: [] });
+    b.identity.runtime.fingerprint = 'runtime-b';
+    expect(compareBenchmarkReports(a, b)).toMatchObject({ comparable: false, differences: ['drafting', 'runtime'] });
+  });
+  it('keeps other engine arg changes, or old reports without a base hash, incomparable', () => {
+    const a = report('a'), b = report('b');
+    a.identity = { ...a.identity!, effectiveStartupHash: 'x', effectiveBaseHash: 'base-a', drafting: { requested: null, mtpSwitch: null, effective: 'mtp' } };
+    b.identity = { ...b.identity!, effectiveStartupHash: 'y', effectiveBaseHash: 'base-b', drafting: { requested: 'off', mtpSwitch: null, effective: 'off' } };
+    expect(compareBenchmarkReports(a, b)).toMatchObject({ comparable: false, differences: ['effectiveConfiguration'] });
+    delete a.identity.effectiveBaseHash; delete b.identity.effectiveBaseHash;
+    expect(compareBenchmarkReports(a, b).differences).toEqual(['effectiveConfiguration']);
+    a.identity.effectiveBaseHash = 'same'; b.identity.effectiveBaseHash = 'same'; b.identity.drafting = { requested: 'off', mtpSwitch: null, effective: 'mtp' };
+    expect(compareBenchmarkReports(a, b).differences).toEqual(['effectiveConfiguration']);
+  });
   it('keeps missing or invalid cache counters unknown in displayed metrics', () => {
     const a = report('a'); a.samples[0]!.cachedTokens = undefined as never;
     expect(benchmarkComparisonMetrics(a).cacheHitRate).toBeNull();

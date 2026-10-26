@@ -34,14 +34,24 @@ export interface ArenaPayload {
   model: { family: string; quant: string; sha256: string | null; sizeGB: number | null };
   params: ArenaParams;
   tiers?: ArenaTier[]; scenario?: ArenaScenario; evidence?: ArenaEvidence;
+  /** Optional context for leaderboard tracks. The native side only sends it to servers whose /v1/health advertises `extensions: true`. */
+  extensions?: ArenaExtensions;
 }
-export interface ArenaLaunch extends ArenaParams { family: string; quant: string }
+export type ArenaDrafting = 'auto' | 'mtp' | 'dflash2' | 'off';
+export type ArenaExperts = 'resident' | 'mmap' | 'cache';
+/**
+ * Track and key launch parameters: `default` means the setup recipe with automatic drafting and no saved GPU roles,
+ * `custom` anything else. Every field is an enum or boolean, never free text.
+ */
+export interface ArenaExtensions { track: 'default' | 'custom'; drafting: ArenaDrafting | null; mtp: boolean | null; gpuRoles: ('main' | 'helper' | 'off')[] | null; experts: ArenaExperts | null }
+export interface ArenaLaunch extends ArenaParams { family: string; quant: string; experts?: ArenaExperts | null }
 export interface ArenaEnvironment { os: string; arch: string; appVersion: string; wsl?: boolean }
 export type ArenaBuild = { payload: ArenaPayload } | { skip: 'not_completed' | 'no_identity' | 'no_hardware' | 'unknown_model' | 'no_results' | 'unsupported_platform' };
 
 // The whitelist, as exact key sets. Both the builder and assertArenaPayloadSafe use it.
 export const ARENA_KEYS = {
-  root: ['schema', 'app', 'strata', 'kind', 'day', 'hw', 'model', 'params', 'tiers', 'scenario', 'evidence'],
+  root: ['schema', 'app', 'strata', 'kind', 'day', 'hw', 'model', 'params', 'tiers', 'scenario', 'evidence', 'extensions'],
+  extensions: ['track', 'drafting', 'mtp', 'gpuRoles', 'experts'],
   hw: ['os', 'arch', 'cpu', 'ramGB', 'gpus', 'pcie', 'wsl'], gpu: ['vendor', 'name', 'vramGB'],
   model: ['family', 'quant', 'sha256', 'sizeGB'], params: ['ctx', 'kv', 'gpuCount', 'parallel', 'poolWorkers', 'expertCache', 'pcieFrac', 'vision'],
   tier: ['ctx', 'prefill', 'decode', 'ttftMs', 'peakVramGB', 'peakRamGB', 'ok'], scenario: ['decode', 'prefill', 'ttftMs', 'maxConcurrency', 'requests', 'failed'],
@@ -96,7 +106,8 @@ export function arenaLaunchParams(config: JsonObject | undefined): ArenaLaunch |
   const token = (v: string | undefined) => v && /^[A-Za-z0-9_.-]{1,24}$/.test(v) ? v : null;
   const gpu = Array.isArray(config.gpu) ? config.gpu.length : 1;
   const workers = Number(read('--pool-workers')), frac = Number(read('--pcie-frac'));
-  return { ...model, ctx, kv: token(read('--kv')) ?? (ctx <= 8192 ? 'fp16' : 'int8'), gpuCount: gpu, parallel: Number(config.parallel) || 1,
+  const experts: ArenaExperts | null = args.includes('--resident-experts') ? 'resident' : args.includes('--mmap-experts') ? 'mmap' : read('--expert-cache') ? 'cache' : null;
+  return { ...model, experts, ctx, kv: token(read('--kv')) ?? (ctx <= 8192 ? 'fp16' : 'int8'), gpuCount: gpu, parallel: Number(config.parallel) || 1,
     poolWorkers: Number.isSafeInteger(workers) && workers > 0 ? workers : null, expertCache: token(read('--expert-cache')) ?? 'auto',
     pcieFrac: Number.isFinite(frac) && frac >= 0 && frac <= 1 ? frac : null, vision: config.vision === true };
 }
@@ -107,6 +118,20 @@ export async function arenaModelFingerprint(identity: BenchmarkIdentity | undefi
   if (!files.length || typeof crypto === 'undefined' || !crypto.subtle) return { sha256: null, sizeGB: null };
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(files)));
   return { sha256: [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join(''), sizeGB: round(files.reduce((s, [, n]) => s + n, 0) / GB, 1) };
+}
+
+const DRAFTINGS: readonly ArenaDrafting[] = ['auto', 'mtp', 'dflash2', 'off'];
+const ROLES = ['main', 'helper', 'off'] as const;
+/** Track + key parameters from the benchmark identity (drafting, GPU roles) and the whitelisted launch (experts). */
+export function arenaExtensions(identity: BenchmarkIdentity | undefined, launch: ArenaLaunch | null | undefined): ArenaExtensions {
+  const d = identity?.drafting;
+  const requested = d?.requested && DRAFTINGS.includes(d.requested) ? d.requested : null;
+  const drafting: ArenaDrafting | null = d?.effective && DRAFTINGS.includes(d.effective) ? d.effective : requested;
+  const mtp = d?.effective ? d.effective === 'mtp' : typeof d?.mtpSwitch === 'boolean' ? d.mtpSwitch : null;
+  const roles = Array.isArray(identity?.gpuRoles) && identity!.gpuRoles!.length <= 16 && identity!.gpuRoles!.every(r => (ROLES as readonly string[]).includes(r)) ? [...identity!.gpuRoles!] : null;
+  const experts = launch?.experts === 'resident' || launch?.experts === 'mmap' || launch?.experts === 'cache' ? launch.experts : null;
+  const track = identity?.resourceRequest && (requested === null || requested === 'auto') && d?.mtpSwitch !== false && !roles ? 'default' : 'custom';
+  return { track, drafting, mtp, gpuRoles: roles, experts };
 }
 
 const osOf = (os: string): ArenaPayload['hw']['os'] | null => /windows/i.test(os) ? 'windows' : /linux|ubuntu|debian|fedora|arch/i.test(os) ? 'linux' : /mac|darwin/i.test(os) ? 'macos' : null;
@@ -135,6 +160,7 @@ export async function buildArenaPayload(report: ContextBenchmarkReport | Benchma
     hw: { os, arch, cpu: arenaName(sig.cpuName) ?? 'Unknown CPU', ramGB: Math.max(1, Math.round(sig.totalMemoryBytes / GB)), gpus, pcie, wsl: env.wsl === true },
     model: { family: launch.family, quant: launch.quant, sha256: fp.sha256, sizeGB: fp.sizeGB },
     params: { ctx: launch.ctx, kv: launch.kv, gpuCount: Math.min(launch.gpuCount, gpus.length), parallel: launch.parallel, poolWorkers: launch.poolWorkers, expertCache: launch.expertCache, pcieFrac: launch.pcieFrac, vision: launch.vision },
+    extensions: arenaExtensions(identity, launch),
   };
   if ('skippedTiers' in report) {
     const byTier = new Map<number, ContextBenchmarkReport['samples']>();
@@ -192,6 +218,15 @@ export function assertArenaPayloadSafe(payload: unknown): asserts payload is Are
   p.hw.gpus.forEach((g, i) => exact(g, ARENA_KEYS.gpu, `gpus[${i}]`));
   (p.tiers ?? []).forEach((t, i) => exact(t, ARENA_KEYS.tier, `tiers[${i}]`));
   if (p.scenario) exact(p.scenario, ARENA_KEYS.scenario, 'scenario');
+  if (p.extensions !== undefined) {
+    const x = p.extensions;
+    exact(x, ARENA_KEYS.extensions, 'extensions');
+    if (x.track !== 'default' && x.track !== 'custom') fail('extensions.track');
+    if (x.drafting !== null && !DRAFTINGS.includes(x.drafting)) fail('extensions.drafting');
+    if (x.mtp !== null && typeof x.mtp !== 'boolean') fail('extensions.mtp');
+    if (x.gpuRoles !== null && (!Array.isArray(x.gpuRoles) || x.gpuRoles.length > 16 || !x.gpuRoles.every(r => (ROLES as readonly string[]).includes(r)))) fail('extensions.gpuRoles');
+    if (x.experts !== null && !['resident', 'mmap', 'cache'].includes(x.experts)) fail('extensions.experts');
+  }
   if (p.evidence !== undefined) {
     const e = p.evidence;
     exact(e, ARENA_KEYS.evidence, 'evidence'); exact(e.series, ARENA_KEYS.evidenceSeries, 'evidence.series');

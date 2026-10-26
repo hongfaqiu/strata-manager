@@ -9,6 +9,8 @@ export interface TuningRestartParameters {
   adaptEvery?: number;
   adaptSwaps?: number;
   adaptDecay?: number;
+  /** MTP drafting on/off for the candidate; written as config "mtp": false / "drafting", needs an MTP draft layer. */
+  mtp?: boolean;
 }
 export interface TuningStartRequest {
   /** Omit useCase for the historical short request diagnostic. */
@@ -79,8 +81,8 @@ export interface TuningCandidate extends TuningParameters {
   startupVerification?: {
     parameters: {
       name: string;
-      requested: number;
-      observed: number | null;
+      requested: number | boolean;
+      observed: number | boolean | null;
       status: 'effective' | 'upperBound' | 'reservationRequest' | 'startupRequest';
     }[];
     checkedAt: number;

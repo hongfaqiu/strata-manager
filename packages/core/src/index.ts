@@ -47,6 +47,7 @@ export * from './languages';
 export * from './public-observation';
 export * from './engine-flag-support';
 export * from './control-vector';
+export * from './drafting';
 export * from './arena';
 export * from './concurrency';
 export * from './concurrency-ladder';

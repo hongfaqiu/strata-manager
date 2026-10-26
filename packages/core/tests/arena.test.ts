@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { arenaApplyFilters, arenaFailure, ARENA_SORTS, arenaFacetOptions, arenaGpuVendor, arenaLaunchParams, arenaLeaderboardQuery, arenaModelOf, arenaName, assertArenaPayloadSafe, buildArenaPayload, arenaRecommendQuery } from '../src/arena';
+import { arenaApplyFilters, arenaExtensions, arenaFailure, ARENA_SORTS, arenaFacetOptions, arenaGpuVendor, arenaLaunchParams, arenaLeaderboardQuery, arenaModelOf, arenaName, assertArenaPayloadSafe, buildArenaPayload, arenaRecommendQuery } from '../src/arena';
 import type { ArenaParams, ArenaRow } from '../src/arena';
 import type { ContextBenchmarkReport } from '../src/context-benchmark-types';
 import type { BenchmarkSuiteReport } from '../src/benchmark-suite-types';
@@ -95,6 +95,29 @@ describe('arena payload whitelist', () => {
     for (const secret of SECRETS) expect(text).not.toContain(secret);
   });
 
+  it('adds enum-only extensions: track, drafting / MTP, GPU roles and expert placement', async () => {
+    const built = await buildArenaPayload(contextReport(), env);
+    if (!('payload' in built)) throw new Error('expected payload');
+    // No setup recipe on this identity, so it is a custom run even with automatic drafting.
+    expect(built.payload.extensions).toEqual({ track: 'custom', drafting: null, mtp: null, gpuRoles: null, experts: null });
+    const r = contextReport();
+    r.identity = { ...r.identity!, resourceRequest: {} as never, drafting: { requested: 'auto', mtpSwitch: null, effective: 'mtp' } };
+    const def = await buildArenaPayload(r, env);
+    if (!('payload' in def)) throw new Error('expected payload');
+    expect(def.payload.extensions).toEqual({ track: 'default', drafting: 'mtp', mtp: true, gpuRoles: null, experts: null });
+    expect(() => assertArenaPayloadSafe(def.payload)).not.toThrow();
+    expect(arenaExtensions({ ...r.identity, drafting: { requested: 'off', mtpSwitch: false, effective: 'off' }, gpuRoles: ['main', 'helper', 'off'] }, { ...r.identity.launch!, experts: 'resident' }))
+      .toEqual({ track: 'custom', drafting: 'off', mtp: false, gpuRoles: ['main', 'helper', 'off'], experts: 'resident' });
+    expect(arenaExtensions({ ...r.identity, gpuRoles: ['main', 'C:/x' as never] }, null).gpuRoles).toBeNull();
+    expect(arenaLaunchParams({ args: ['--max-context', '8192', '--native', 'swift-IQ3_S.gguf', '--mmap-experts'] })?.experts).toBe('mmap');
+    expect(arenaLaunchParams({ args: ['--max-context', '8192', '--native', 'swift-IQ3_S.gguf', '--expert-cache', '12'] })?.experts).toBe('cache');
+    const p = def.payload;
+    expect(() => assertArenaPayloadSafe({ ...p, extensions: { ...p.extensions!, profile: 'x' } })).toThrow(/not whitelisted/);
+    expect(() => assertArenaPayloadSafe({ ...p, extensions: { ...p.extensions!, track: 'mine' as never } })).toThrow(/extensions.track/);
+    expect(() => assertArenaPayloadSafe({ ...p, extensions: { ...p.extensions!, gpuRoles: ['boss' as never] } })).toThrow(/extensions.gpuRoles/);
+    expect(() => assertArenaPayloadSafe({ ...p, extensions: { ...p.extensions!, mtp: 'yes' as never } })).toThrow(/extensions.mtp/);
+  });
+
   it('skips instead of guessing', async () => {
     expect(await buildArenaPayload(contextReport({ state: 'cancelled' }), env)).toEqual({ skip: 'not_completed' });
     expect(await buildArenaPayload(contextReport({ identity: undefined }), env)).toEqual({ skip: 'no_identity' });
@@ -128,7 +151,7 @@ describe('arena helpers', () => {
     expect(arenaModelOf('my-model.gguf')).toBeNull();
     expect(arenaModelOf('a-IQ3_S b-IQ2_XS')).toBeNull();
     expect(arenaLaunchParams({ args: ['--max-context', '65536', '--native', 'qwen3.8-flash-next-q2_0.gguf', '--kv', 'q4_0', '--pool-workers', '24', '--pcie-frac', '0.25'], parallel: 2, gpu: [0, 1], vision: true }))
-      .toEqual({ family: 'qwen', quant: 'Q2_0', ctx: 65536, kv: 'q4_0', gpuCount: 2, parallel: 2, poolWorkers: 24, expertCache: 'auto', pcieFrac: 0.25, vision: true });
+      .toEqual({ family: 'qwen', quant: 'Q2_0', ctx: 65536, kv: 'q4_0', gpuCount: 2, parallel: 2, poolWorkers: 24, expertCache: 'auto', pcieFrac: 0.25, vision: true, experts: null });
     expect(arenaLaunchParams({ args: ['--native', 'swift-IQ3_S.gguf'] })).toBeNull();
   });
   it('builds a recommend query', () => {

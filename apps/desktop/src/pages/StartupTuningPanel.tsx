@@ -13,6 +13,7 @@ import { Deepseek41RunOptions } from './Deepseek41RunOptions';
 import { StartupControlVector } from './StartupControlVector';
 import { ContextExtensionNotice } from './ContextExtensionNotice';
 import { GpuRolesEditor, cardsFromEnvironment } from './GpuRolesEditor';
+import { StartupDraftingControl } from './StartupDraftingControl';
 import './startup-tuning.css';
 import './setup-tuning-interactions.css';
 import { useDraftGuard, type SaveDraft } from '../useDraftGuard';
@@ -60,6 +61,9 @@ export function StartupTuningPanel({ profile, desktop, language, onError, onMess
   const [newFlag, setNewFlag] = useState(''); const [newOperands, setNewOperands] = useState<string[]>([]);
   const [customArity, setCustomArity] = useState(1);
   const environment = useQuery({ queryKey: ['environment'], queryFn: core.environmentInfo, enabled: desktop && !!profile?.managed, retry: false, staleTime: 30000 });
+  // The 0.1.48 drafting threshold is an engine version (BUILD.json runtimeVersion), never the release tag.
+  const installation = useQuery({ queryKey: ['runtime-installation'], queryFn: core.localRuntimeInstallation, enabled: desktop && !!profile?.installDir, retry: false, staleTime: 30000 });
+  const engineVersion = installation.data?.detectedRuntimes?.find(runtime => core.installDirKey(runtime.installDir) === core.installDirKey(profile?.installDir))?.runtimeVersion ?? null;
   const config = useQuery({ queryKey: ['startup-config', profile?.id, profile?.configPath], queryFn: () => core.readConfigSnapshot(profile!), enabled: desktop && !!profile?.configPath, retry: false, refetchOnWindowFocus: false });
   const baseline = useRef<core.ConfigSnapshot | undefined>(undefined);
   const dirtyRef = useRef(false);
@@ -230,6 +234,7 @@ export function StartupTuningPanel({ profile, desktop, language, onError, onMess
           {core.isDeepseek41Config(draft) ? <Deepseek41RunOptions language={language} draft={preview ?? draft} disabled={disabled} showParameterNames={showParameterNames} onChange={operation => mutate(operation)}/> : <>
           <ContextExtensionNotice mode="config" language={language} context={contextValue} kv={fieldValue(specOf('--kv'))} scaling={fieldValue(specOf('--rope-scaling'))} scale={fieldValue(specOf('--rope-scale'))} expertCache={fieldValue(specOf('--expert-cache'))} disabled={disabled} onUseRecommended={() => { setFieldEdits(previous => ({ ...previous, '--rope-scaling': 'yarn', '--rope-scale': core.formatRopeFactor(core.ropeFactorFor(contextValue)) })); setMessage(''); setError(''); }}/>
           <StartupQuickParams engineFlags={engineHelp.data?.flags ?? null} engineHelpError={engineHelp.error ? core.normalizeError(engineHelp.error).message : null} language={language} draft={draft} disabled={disabled} showParameterNames={showParameterNames} fieldValue={fieldValue} onFieldChange={editField}/>
+          {preview && <StartupDraftingControl zh={zh} config={preview} engineVersion={engineVersion} dflash2Served={false} disabled={disabled} showParameterNames={showParameterNames} onChange={next => mutate(() => next)}/>}
           <StartupControlVector language={language} draft={preview} disabled={disabled} desktop={desktop} showParameterNames={showParameterNames} engineFlags={engineHelp.data?.flags ?? null} mac={/mac|darwin/i.test(environment.data?.os ?? '')} onApply={settings => mutate(data => core.applyControlVector(data, settings))}/>
           </>}
           <div className="startup-tuning-category"><label><span className="st-label">{zh ? '设置分类' : 'Settings category'}</span><Dropdown ariaLabel={zh ? '设置分类' : 'Settings category'} value={activeGroup} disabled={disabled || !!needle} options={visibleGroups.map(([value, labelZh, labelEn]) => ({ value, label: zh ? labelZh : labelEn }))} onValueChange={value => setSelectedGroup(value as SettingsCategory)}/></label><label className="startup-tuning-parameter-names"><Checkbox checked={showParameterNames} onChange={event => setShowParameterNames(event.target.checked)}/>{zh ? '显示技术参数名称' : 'Show technical parameter names'}</label></div>

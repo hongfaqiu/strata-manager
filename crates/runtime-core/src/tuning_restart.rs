@@ -19,6 +19,9 @@ pub struct RestartParameters {
     pub adapt_swaps: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub adapt_decay: Option<f64>,
+    /// MTP drafting on/off. Written as config keys (`"mtp": false` / `"drafting"`), never as engine args.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mtp: Option<bool>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -261,6 +264,55 @@ fn option_value<'a>(config: &'a Value, flag: &str) -> Result<Option<&'a str>, St
     }
     Ok(found)
 }
+/// The configuration names an MTP draft layer (`--mtp` in args, or a `"mtp"` path that server.py turns into one).
+fn has_mtp_source(config: &Value) -> bool {
+    config["mtp"]
+        .as_str()
+        .is_some_and(|path| !path.trim().is_empty())
+        || config["args"].as_array().is_some_and(|args| {
+            args.iter()
+                .filter_map(Value::as_str)
+                .any(|arg| arg == "--mtp" || arg.starts_with("--mtp="))
+        })
+}
+/// Upstream v0.2.6: `"drafting": "off"` (engine 0.1.48+) or `"mtp": false` (0.1.46+) start without drafting.
+fn mtp_baseline(config: &Value) -> Option<bool> {
+    let drafting = config["drafting"]
+        .as_str()
+        .map(|d| d.trim().to_ascii_lowercase());
+    if config["mtp"] == json!(false) || drafting.as_deref() == Some("off") {
+        Some(false)
+    } else if has_mtp_source(config) {
+        Some(true)
+    } else {
+        None
+    }
+}
+fn apply_mtp(config: &mut Value, on: bool) {
+    let Some(object) = config.as_object_mut() else {
+        return;
+    };
+    let drafting = object
+        .get("drafting")
+        .and_then(Value::as_str)
+        .map(|d| d.trim().to_ascii_lowercase());
+    if on {
+        if object.get("mtp") == Some(&json!(false)) {
+            object.remove("mtp");
+        }
+        if drafting.as_deref() == Some("off") {
+            object.insert("drafting".into(), json!("mtp"));
+        }
+    } else {
+        // A string "mtp" is the draft model path: keep it and switch through "drafting" (0.1.48+) only.
+        if !object.get("mtp").is_some_and(Value::is_string) {
+            object.insert("mtp".into(), json!(false));
+        }
+        if drafting.is_some() || object.get("mtp").is_some_and(Value::is_string) {
+            object.insert("drafting".into(), json!("off"));
+        }
+    }
+}
 fn baseline(config: &Value) -> Result<RestartParameters, String> {
     let integer = |flag| {
         option_value(config, flag)?
@@ -289,6 +341,7 @@ fn baseline(config: &Value) -> Result<RestartParameters, String> {
                     .ok_or_else(|| "--adapt-decay 原值无效".to_string())
             })
             .transpose()?,
+        mtp: mtp_baseline(config),
     })
 }
 fn validate_restart(config: &Value, p: &RestartParameters) -> Result<(), String> {
@@ -316,6 +369,9 @@ fn validate_restart(config: &Value, p: &RestartParameters) -> Result<(), String>
         if reserve < old {
             return Err("调优不能减少原显存保留量；请提高候选reserve或保持原值".into());
         }
+    }
+    if p.mtp.is_some() && !has_mtp_source(config) {
+        return Err("此配置没有 MTP 草稿层（--mtp），无法对比 MTP 开/关".into());
     }
     if p.adapt_async == Some(true) {
         let args = config["args"].as_array().ok_or("启动参数缺失")?;
@@ -411,6 +467,9 @@ pub(super) fn with_restart(config: &Value, p: Option<&RestartParameters>) -> Res
         }
     }
     new["args"] = json!(out);
+    if let Some(on) = p.mtp {
+        apply_mtp(&mut new, on);
+    }
     storage::validate(&new)?;
     Ok(new)
 }
@@ -876,6 +935,18 @@ async fn switch_stage(
         Ok(())
     }=>result }
 }
+/// INFO `engine.drafting` ("mtp" / "dflash2" / "off") or a boolean `engine.mtp`, when the engine publishes one.
+fn reported_mtp(engine: &Value) -> Option<bool> {
+    match engine["drafting"]
+        .as_str()
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("off") => Some(false),
+        Some("mtp") => Some(true),
+        _ => engine["mtp"].as_bool(),
+    }
+}
 fn reported_flag_value(key: &str, value: &Value) -> Result<Option<Value>, String> {
     if value.is_null() {
         return Ok(None);
@@ -926,6 +997,24 @@ pub(super) async fn verify_flags(
         ("adapt_decay", p.adapt_decay.map(|v| json!(v))),
     ];
     let mut unknown = false;
+    if let Some(want) = p.mtp {
+        let observed = reported_mtp(&metrics["engine"]);
+        if observed.is_some_and(|on| on != want) {
+            return Err("重启后 MTP 实际状态不符".into());
+        }
+        unknown |= observed.is_none();
+        verification.parameters.push(VerifiedParameter {
+            name: "mtp".into(),
+            requested: json!(want),
+            observed: observed.map(|on| json!(on)),
+            status: if observed.is_some() {
+                "effective"
+            } else {
+                "startupRequest"
+            }
+            .into(),
+        });
+    }
     for (key, value) in expected {
         if let Some(want) = value {
             let actual = reported_flag_value(key, &metrics["engine"][key])?;
@@ -1047,12 +1136,17 @@ pub(super) async fn verify_flags(
             .iter()
             .map(|a| a.to_string_lossy())
             .collect::<Vec<_>>();
-        if fields.iter().all(|(flag, value)| {
-            value.as_ref().is_none_or(|v| {
-                args.windows(2).any(|a| a[0] == *flag && a[1] == v.as_str())
-                    || args.iter().any(|a| a.as_ref() == format!("{flag}={v}"))
+        let drafts = args
+            .iter()
+            .any(|a| a.as_ref() == "--mtp" || a.starts_with("--mtp="));
+        if p.mtp.is_none_or(|on| on == drafts)
+            && fields.iter().all(|(flag, value)| {
+                value.as_ref().is_none_or(|v| {
+                    args.windows(2).any(|a| a[0] == *flag && a[1] == v.as_str())
+                        || args.iter().any(|a| a.as_ref() == format!("{flag}={v}"))
+                })
             })
-        }) {
+        {
             return Ok(verification);
         }
     }
