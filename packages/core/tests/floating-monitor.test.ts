@@ -22,8 +22,10 @@ import {
   withoutRetiredFloatingMonitorKeys,
   TASKBAR_WIDGET_COLOR_PRESETS,
   TASKBAR_WIDGET_PALETTE,
-  FLOATING_MONITOR_SHORTCUTS,
-  resolveFloatingMonitorShortcut,
+  checkFloatingMonitorShortcut,
+  floatingMonitorShortcutFromKeyboard,
+  formatFloatingMonitorShortcut,
+  normalizeFloatingMonitorShortcut,
 } from '../src/floating-monitor';
 import type { FloatingMonitorMetric, FloatingMonitorPreferences } from '../src/types';
 
@@ -446,17 +448,48 @@ describe('taskbar widget preferences', () => {
     expect(normalizeFloatingMonitorPreferences({ taskbar: { ring: 'vram', items: ['gpu'], rows: 'single' } }).taskbar.rows).toBe('single');
   });
 
-  it('resolves the global shortcut away from WeChat/QQ screenshot keys', () => {
-    expect(resolveFloatingMonitorShortcut(undefined)).toBe('Ctrl+Alt+M');
-    expect(resolveFloatingMonitorShortcut('')).toBe('');
-    expect(resolveFloatingMonitorShortcut('Ctrl+Shift+M')).toBe('Ctrl+Shift+M');
-    for (const taken of ['Alt+A', 'Ctrl+Alt+A']) {
-      expect(FLOATING_MONITOR_SHORTCUTS).not.toContain(taken);
-      expect(resolveFloatingMonitorShortcut(taken)).toBe('Ctrl+Alt+M');
-    }
+  it('has no default shortcut, so new and upgraded settings register nothing', () => {
+    expect(normalizeFloatingMonitorShortcut(undefined)).toBe('');
     expect(normalizeFloatingMonitorPreferences()).not.toHaveProperty('shortcut');
+    // Settings saved before the shortcut existed, or by the old preset picker untouched.
+    expect(normalizeFloatingMonitorPreferences({ layout: 'strip' })).not.toHaveProperty('shortcut');
+    // A preset the user explicitly picked before upgrading is kept.
+    expect(normalizeFloatingMonitorPreferences({ shortcut: 'Ctrl+Alt+K' }).shortcut).toBe('Ctrl+Alt+K');
+    expect(normalizeFloatingMonitorPreferences({ shortcut: 'Ctrl+Alt+M' }).shortcut).toBe('Ctrl+Alt+M');
     expect(normalizeFloatingMonitorPreferences({ shortcut: '' }).shortcut).toBe('');
-    expect(normalizeFloatingMonitorPreferences({ shortcut: 'Alt+A' }).shortcut).toBe('Ctrl+Alt+M');
+    expect(normalizeFloatingMonitorPreferences({ shortcut: 7 })).not.toHaveProperty('shortcut');
+  });
+
+  it('canonicalises recorded shortcuts and rejects unusable ones', () => {
+    expect(checkFloatingMonitorShortcut('shift+ctrl+m')).toEqual({ shortcut: 'Ctrl+Shift+M' });
+    expect(checkFloatingMonitorShortcut('Super+Alt+ArrowUp')).toEqual({ shortcut: 'Alt+Super+Up' });
+    expect(checkFloatingMonitorShortcut('Ctrl+Alt+F9')).toEqual({ shortcut: 'Ctrl+Alt+F9' });
+    expect(checkFloatingMonitorShortcut('F13')).toEqual({ shortcut: 'F13' });
+    expect(checkFloatingMonitorShortcut('Ctrl+Win+Space')).toEqual({ shortcut: 'Ctrl+Super+Space' });
+    // Plain typing keys would be swallowed in every app.
+    for (const typing of ['M', 'Shift+M', 'F5', 'Shift+1']) expect(checkFloatingMonitorShortcut(typing)).toEqual({ shortcut: '', problem: 'modifier' });
+    // WeChat / QQ screenshots, window and IME keys, bare Win+letter.
+    for (const taken of ['Alt+A', 'Ctrl+Alt+A', 'Alt+F4', 'Alt+Space', 'Ctrl+Space', 'Super+L', 'Win+D', 'Super+1']) {
+      expect(checkFloatingMonitorShortcut(taken)).toEqual({ shortcut: '', problem: 'reserved' });
+      expect(normalizeFloatingMonitorPreferences({ shortcut: taken }).shortcut).toBe('');
+    }
+    for (const broken of ['Ctrl+Alt', 'Ctrl+Alt+M+K', 'Ctrl+Tab', 'Ctrl+Alt+Esc', 'Ctrl+F25']) expect(checkFloatingMonitorShortcut(broken).problem).toBe('key');
+    expect(checkFloatingMonitorShortcut('')).toEqual({ shortcut: '' });
+  });
+
+  it('records shortcuts from keydown codes independent of the keyboard layout', () => {
+    const press = (code: string, mods: Partial<Record<'ctrlKey' | 'altKey' | 'shiftKey' | 'metaKey', boolean>> = {}) =>
+      floatingMonitorShortcutFromKeyboard({ code, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...mods });
+    expect(press('ControlLeft', { ctrlKey: true })).toEqual({ pending: 'Ctrl' });
+    expect(press('AltRight', { ctrlKey: true, altKey: true })).toEqual({ pending: 'Ctrl+Alt' });
+    expect(press('KeyM', { ctrlKey: true, altKey: true })).toEqual({ shortcut: 'Ctrl+Alt+M' });
+    expect(press('Digit7', { ctrlKey: true, shiftKey: true })).toEqual({ shortcut: 'Ctrl+Shift+7' });
+    expect(press('ArrowLeft', { metaKey: true, altKey: true })).toEqual({ shortcut: 'Alt+Super+Left' });
+    expect(press('KeyA', { altKey: true })).toEqual({ shortcut: '', problem: 'reserved' });
+    expect(press('Backquote', { ctrlKey: true })).toEqual({ shortcut: '', problem: 'key' });
+    expect(formatFloatingMonitorShortcut('Ctrl+Super+K')).toEqual(['Ctrl', 'Win', 'K']);
+    expect(formatFloatingMonitorShortcut('Alt+Super+K', true)).toEqual(['Option', 'Cmd', 'K']);
+    expect(formatFloatingMonitorShortcut('')).toEqual([]);
   });
 
   it('toggles items in canonical order and keeps at least one element', () => {

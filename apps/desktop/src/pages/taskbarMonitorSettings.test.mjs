@@ -93,14 +93,26 @@ test('right-click menu is a crisp native Win32 popup owned by a foreground-capab
   assert.match(host, /menu\(menu_owner, &render\)/);
 });
 
-test('global show/hide shortcut avoids WeChat/QQ screenshot keys and stays in sync with the native registry', () => {
+test('global show/hide shortcut is user-recorded, off by default, and stays in sync with the native registry', () => {
   const ui = readFileSync(new URL('./MonitorShortcutSettings.tsx', import.meta.url), 'utf8');
+  const panel = readFileSync(new URL('./FloatingMonitorSettings.tsx', import.meta.url), 'utf8');
   const rust = readFileSync(new URL('../../src-tauri/src/monitor_shortcut.rs', import.meta.url), 'utf8');
   const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
-  assert.match(rust, /DEFAULT: &str = "Ctrl\+Alt\+M"/);
-  assert.match(rust, /PRESETS: \[&str; 4\] = \["Ctrl\+Alt\+M", "Ctrl\+Alt\+K", "Ctrl\+Shift\+M", ""\]/);
-  assert.match(ui, /避开微信截图 Alt\+A 和 QQ 截图 Ctrl\+Alt\+A/);
+  // No built-in default or preset list: an unset/legacy value means "no shortcut".
+  assert.doesNotMatch(rust, /DEFAULT: &str|PRESETS/);
+  assert.match(rust, /unwrap_or_default\(\)/);
+  assert.match(rust, /"Alt\+A",\s+"Ctrl\+Alt\+A"/);
+  // Recorder: keyboard capture, Esc cancels, Backspace/Delete clears, inline problems and registration failures.
+  assert.match(ui, /floatingMonitorShortcutFromKeyboard\(event\)/);
+  assert.match(ui, /event\.code === 'Escape'/);
+  assert.match(ui, /event\.code === 'Backspace' \|\| event\.code === 'Delete'/);
+  assert.match(ui, /微信 \/ QQ 截图/);
   assert.match(ui, /role="alert"/);
+  assert.match(ui, /默认不设置/);
+  // Rendered inside the strip settings panel rather than as a separate card.
+  assert.match(panel, /shortcut\?: ReactNode/);
+  assert.match(app, /shortcut=\{<MonitorShortcutSettings /);
+  assert.doesNotMatch(app, /\{!serverMode && <MonitorShortcutSettings/);
   assert.match(app, /listen\('monitor-shortcut'/);
   assert.match(app, /preferences\.taskbarEnabled && current\.supported \? 'taskbar' : 'floating'/);
 });

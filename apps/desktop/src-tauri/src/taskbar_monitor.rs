@@ -724,16 +724,20 @@ async fn set_mode_locked(app: &AppHandle, mode: &str, preferences: Value) -> Res
         start(app, Preferences::normalize(&preferences)).await?;
         #[cfg(not(windows))]
         {
+            // Never substitute the desktop strip for a taskbar request.
             let _ = preferences;
-            crate::floating_monitor::open_window(app).await?;
+            Err("任务栏监控仅支持 Windows".into())
         }
-        notify_visibility(app);
-        Ok(())
+        #[cfg(windows)]
+        {
+            notify_visibility(app);
+            Ok(())
+        }
     }
 }
 
 /// All user-facing restore entries share the presentation switch lock. The
-/// lower-level open_window stays independent so startup failure can recover.
+/// lower-level open_window stays independent for the widget menu switch.
 pub(crate) async fn open_floating(app: &AppHandle) -> Result<(), String> {
     let state = app.state::<TaskbarMonitorState>();
     let _switch = state.switching.lock().await;
@@ -915,7 +919,7 @@ async fn start(app: &AppHandle, preferences: Preferences) -> Result<(), String> 
     {
         Ok(child) => child,
         Err(error) => {
-            crate::floating_monitor::open_window(app).await?;
+            // No automatic strip: it only appears when the user asks for it.
             stop(app, format!("任务栏辅助进程启动失败：{error}"));
             return Ok(());
         }
@@ -1054,7 +1058,7 @@ async fn start(app: &AppHandle, preferences: Preferences) -> Result<(), String> 
                     if let Some(tx) = ready.take() {
                         let _ = tx.send(Err(message));
                     } else {
-                        recover(&event_app, &event_session, message, true).await;
+                        recover(&event_app, &event_session, message, false).await;
                     }
                     break;
                 }
@@ -1092,8 +1096,9 @@ async fn start(app: &AppHandle, preferences: Preferences) -> Result<(), String> 
                 Ok(Ok(Err(message))) => message,
                 _ => "任务栏宿主未在时限内完成首帧绘制".into(),
             };
-            crate::floating_monitor::open_window(app).await?;
-            stop(app, format!("已回到桌面浮条：{reason}"));
+            // Startup restore, Explorer restarts and display changes land here
+            // too; opening the strip from this path made it pop up on its own.
+            stop(app, failure_message(&reason, false));
             return Ok(());
         }
     }
@@ -1128,7 +1133,7 @@ async fn start(app: &AppHandle, preferences: Preferences) -> Result<(), String> 
                     &sampler_app,
                     &session,
                     "任务栏辅助进程输入已断开".into(),
-                    true,
+                    false,
                 )
                 .await;
                 break;
@@ -1149,6 +1154,19 @@ fn current(app: &AppHandle, session: &Session) -> bool {
         == Some(session.id)
 }
 
+/// Status text when the taskbar host stops. Only an explicit "switch to the
+/// desktop strip" (`shown`) brings the strip up; failures just stop.
+#[cfg(any(windows, test))]
+fn failure_message(reason: &str, shown: bool) -> String {
+    if shown {
+        format!("已回到桌面浮条：{reason}")
+    } else {
+        format!("任务栏监控已停止：{reason}")
+    }
+}
+
+/// `show` is true only for the user's own "切换到桌面浮条" choice in the
+/// taskbar widget menu. Host crashes and disconnects never open the strip.
 #[cfg(windows)]
 async fn recover(app: &AppHandle, session: &Session, message: String, show: bool) {
     let state = app.state::<TaskbarMonitorState>();
@@ -1163,17 +1181,73 @@ async fn recover(app: &AppHandle, session: &Session, message: String, show: bool
             return;
         }
     }
-    stop(app, format!("已回到桌面浮条：{message}"));
-    let _ = app.emit_to(
-        "main",
-        "monitor-preferences-patch",
-        json!({"mode":"floating"}),
-    );
+    stop(app, failure_message(&message, show));
+    if show {
+        let _ = app.emit_to(
+            "main",
+            "monitor-preferences-patch",
+            json!({"mode":"floating"}),
+        );
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Production source of this module, without the tests below. Line
+    /// endings are normalised because Windows checkouts may use CRLF.
+    fn production_source() -> String {
+        let source = include_str!("taskbar_monitor.rs").replace("\r\n", "\n");
+        let end = source.find("#[cfg(test)]\nmod tests").unwrap();
+        source[..end].to_owned()
+    }
+
+    #[test]
+    fn strip_opens_only_from_explicit_user_paths() {
+        let source = production_source();
+        let source = source.as_str();
+        // Exactly two callers: the user's "show the strip" switch
+        // (open_floating_locked) and the taskbar widget's own
+        // "切换到桌面浮条" menu item (recover with show = true).
+        assert_eq!(
+            source
+                .matches("crate::floating_monitor::open_window(app)")
+                .count(),
+            2
+        );
+        let floating = &source[source.find("async fn open_floating_locked").unwrap()..];
+        assert!(floating[..200].contains("open_window(app).await?"));
+        let recover_fn = &source[source.find("async fn recover(").unwrap()..];
+        assert!(recover_fn[..600].contains("if show {"));
+        // Host failures and disconnects stop the widget without showing the strip.
+        assert!(source.contains("recover(&event_app, &event_session, message, false)"));
+        assert!(source.contains("\"任务栏辅助进程输入已断开\".into(),\n                    false,"));
+        assert_eq!(source.matches(", true).await").count(), 1);
+        assert!(source
+            .contains("recover(&event_app, &event_session, \"已切换到桌面浮条\".into(), true)"));
+        // Startup restore never falls back to the strip either.
+        let restore = &source[source.find("pub(crate) fn restore_on_launch").unwrap()..];
+        let restore = &restore[..restore.find("\n}\n").unwrap()];
+        assert!(!restore.contains("open_window"));
+        // A taskbar request on a platform without one is an error, not a strip.
+        let set_mode = &source[source.find("async fn set_mode_locked").unwrap()..];
+        let set_mode = &set_mode[..set_mode.find("\n}\n").unwrap()];
+        assert_eq!(set_mode.matches("open_window").count(), 0);
+        assert!(set_mode.contains("Err(\"任务栏监控仅支持 Windows\".into())"));
+    }
+
+    #[test]
+    fn failure_status_does_not_claim_the_strip_came_back() {
+        assert_eq!(
+            failure_message("任务栏宿主未在时限内完成首帧绘制", false),
+            "任务栏监控已停止：任务栏宿主未在时限内完成首帧绘制"
+        );
+        assert_eq!(
+            failure_message("已切换到桌面浮条", true),
+            "已回到桌面浮条：已切换到桌面浮条"
+        );
+    }
 
     #[test]
     fn new_language_packs_use_english_native_text_and_keep_host_preferences() {

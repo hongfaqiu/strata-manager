@@ -1,4 +1,4 @@
-.desktop-app-frame{display:flex;flex-direction:column;height:100vh;height:100dvh;min-width:0;width:100%;overflow:hidden;background:var(--st-bg,var(--bg))}
+.desktop-app-frame{position:relative;display:flex;flex-direction:column;height:100vh;height:100dvh;min-width:0;width:100%;overflow:hidden;background:var(--st-bg,var(--bg))}
 .desktop-app-frame>.manager-shell{flex:1;height:auto;min-height:0;min-width:0}
 .desktop-app-frame>.boot{flex:1;height:auto;min-height:0}
 .window-title-bar{--window-title-bar-height:64px;--window-nav-width:224px;--window-nav-collapsed-width:72px;display:flex;align-items:center;flex:none;height:var(--window-title-bar-height);min-height:var(--window-title-bar-height);width:100%;background:var(--st-surface,var(--surface));color:var(--st-ink-soft,var(--text));border-bottom:1px solid var(--st-line,var(--border));font-family:var(--st-font,inherit);user-select:none;-webkit-user-select:none;position:relative;z-index:1100}
