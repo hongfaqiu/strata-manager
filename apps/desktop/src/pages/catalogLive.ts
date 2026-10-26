@@ -23,7 +23,8 @@ export function rowLive(model: CatalogModel, tasks: TaskStatus[], local: LocalMo
   const quants = model.quants.map(quant => ({ quant, ...quantLive(model, quant, tasks, local, machineGB) }));
   const running = quants.find(item => item.downloading);
   const order: Fit[] = ['fits', 'tight', 'over'];
-  const best = quants.filter(item => item.fit).sort((a, b) => order.indexOf(a.fit!) - order.indexOf(b.fit!) || (model.quantInfo[b.quant]?.ramGB ?? 0) - (model.quantInfo[a.quant]?.ramGB ?? 0))[0];
+  // A manual-only set (DeepSeek-V4.1-Flash 2.25 bpw) is never the card's suggestion.
+  const best = quants.filter(item => item.fit && !model.quantInfo[item.quant]?.manualOnly).sort((a, b) => order.indexOf(a.fit!) - order.indexOf(b.fit!) || (model.quantInfo[b.quant]?.ramGB ?? 0) - (model.quantInfo[a.quant]?.ramGB ?? 0))[0];
   return { local: quants.filter(item => item.local).length, downloading: !!running, progress: running?.progress, failed: quants.some(item => item.failed), fit: best?.fit, bestQuant: best?.fit === 'over' ? undefined : best?.quant };
 }
 

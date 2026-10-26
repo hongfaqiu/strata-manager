@@ -61,3 +61,12 @@ test('row status follows live tasks and local models', () => {
   assert.equal(failed.failed, true);
   assert.equal(failed.fit, undefined, 'without memory the fit is 未实测');
 });
+
+test('DeepSeek-V4.1-Flash: the card never suggests the manual-only 2.25 bpw set', () => {
+  const deepseek = MODEL_CATALOG.find(model => model.family === 'deepseek41');
+  const roomy = live.rowLive(deepseek, [], [], 256);
+  assert.equal(roomy.fit, 'fits');
+  assert.equal(roomy.bestQuant, 'IST-DAS-2.00bpw');
+  assert.equal(live.rowLive(deepseek, [], [], 36).bestQuant, 'IST-DAS-1.75bpw');
+  assert.equal(estimates.catalogRequirement('deepseek-v4.1-flash strata-deepseek-v4.1-flash-ist-das-2.00bpw.json'), undefined, 'a DeepSeek config is never read as another family');
+});
