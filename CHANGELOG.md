@@ -5,6 +5,8 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+## [0.2.25] - 2026-10-26
+
 ### 中文
 
 - **修复引擎日志文件被占用或无权限时启动失败**：旧版 Strata（如 v0.2.1.x）在 Windows 上打不开 `engine.log` 会直接报 `PermissionError: [Errno 13]` 退出。现在每次启动引擎前（导入的和受管的安装都包括），Manager 会先用追加方式试着打开日志文件并立刻关闭；打不开就改用同目录下新的 `engine-<时间>.log`，同目录也写不进时改用 Manager 自己的日志目录或系统临时目录，把新路径写进配置后照常启动，并在日志里提示「原日志文件被占用或无权限，已改写到 …」。查看日志、启动诊断和导出诊断都读实际在用的文件；每个目录只保留最近 3 个替换日志。
