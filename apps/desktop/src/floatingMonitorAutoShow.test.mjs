@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-const rust = file => readFileSync(new URL(`../src-tauri/src/${file}`, import.meta.url), 'utf8');
+const rust = file => readFileSync(new URL(`../src-tauri/src/${file}`, import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const taskbar = rust('taskbar_monitor.rs').split('#[cfg(test)]\nmod tests')[0];
 const fnBody = (source, signature) => {
   const start = source.indexOf(signature);

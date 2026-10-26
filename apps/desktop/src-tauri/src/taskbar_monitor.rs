@@ -1195,15 +1195,18 @@ async fn recover(app: &AppHandle, session: &Session, message: String, show: bool
 mod tests {
     use super::*;
 
-    /// Production source of this module, without the tests below.
-    fn production_source() -> &'static str {
-        let source = include_str!("taskbar_monitor.rs");
-        &source[..source.find("#[cfg(test)]\nmod tests").unwrap()]
+    /// Production source of this module, without the tests below. Line
+    /// endings are normalised because Windows checkouts may use CRLF.
+    fn production_source() -> String {
+        let source = include_str!("taskbar_monitor.rs").replace("\r\n", "\n");
+        let end = source.find("#[cfg(test)]\nmod tests").unwrap();
+        source[..end].to_owned()
     }
 
     #[test]
     fn strip_opens_only_from_explicit_user_paths() {
         let source = production_source();
+        let source = source.as_str();
         // Exactly two callers: the user's "show the strip" switch
         // (open_floating_locked) and the taskbar widget's own
         // "切换到桌面浮条" menu item (recover with show = true).

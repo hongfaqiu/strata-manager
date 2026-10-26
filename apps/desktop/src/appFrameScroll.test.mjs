@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-const css = file => readFileSync(new URL(file, import.meta.url), 'utf8');
+const css = file => readFileSync(new URL(file, import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
 // Regression: on 桌面监控 the sr-only announcements and preview grips of the
 // strip settings were position:absolute with no positioned ancestor, so they
