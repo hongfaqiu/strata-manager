@@ -40,6 +40,9 @@ test('Homepage keeps the v0.1.7 layout, links every current screenshot and rebui
     assert.match(html, new RegExp(`id="${id}"`));
   }
   for (const key of ['windows', 'appimage', 'deb', 'dmg', 'server', 'serverDeb']) assert.match(html, new RegExp(`data-download="${key}"`));
+  // The hero button downloads this visitor's package; every package stays one click away under "Other platforms".
+  assert.match(html, /data-smart-download\b/);
+  for (const key of ['windows', 'appimage', 'deb', 'dmg', 'server', 'serverDeb']) assert.match(html, new RegExp(`data-smart-option="${key}"`));
   // Release checksum files are not offered on the website.
   assert.doesNotMatch(html, /SHA256SUMS|data-download="checksums"|SHA256 校验文件|SHA256 checksums/);
   // Every current product surface (top-level + daily-experience screenshots) has an HTML recreation.
