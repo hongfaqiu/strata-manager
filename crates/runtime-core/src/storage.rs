@@ -53,8 +53,15 @@ static ENGINE_LOG_SESSIONS: Mutex<Option<std::collections::HashMap<PathBuf, u64>
     Mutex::new(None);
 
 fn engine_log_path(profile: &ServiceProfile) -> Option<PathBuf> {
-    let config = read(profile).ok()?;
-    let log = config.get("log").and_then(Value::as_str)?;
+    engine_log_path_in(&read(profile).ok()?, profile)
+}
+
+/// The file upstream opens for `config["log"]`: absolute, else under the config's cwd.
+pub fn engine_log_path_in(config: &Value, profile: &ServiceProfile) -> Option<PathBuf> {
+    let log = config
+        .get("log")
+        .and_then(Value::as_str)
+        .filter(|log| !log.trim().is_empty())?;
     let mut path = PathBuf::from(log);
     if !path.is_absolute() {
         let cwd = config

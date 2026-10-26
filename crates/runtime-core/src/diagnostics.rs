@@ -134,6 +134,28 @@ fn parsed_error(raw: &str) -> (String, String, String, Option<u16>, Value) {
     (code, message, phase, http_status, value)
 }
 
+/// How a failed start relates to an unwritable engine log: `None` when it does
+/// not, `Some(false)` when the engine itself reported `PermissionError` (a new
+/// log file can help) and `Some(true)` when Manager's own preflight found no
+/// writable file (a retry cannot help).
+pub fn log_unwritable(raw: &str) -> Option<bool> {
+    let (code, message, _, _, value) = parsed_error(raw);
+    if code != crate::engine_log::CODE {
+        return None;
+    }
+    let reported = crate::engine_log::is_permission_error(&message)
+        || value["details"]["startupDiagnostic"]["evidence"]
+            .as_array()
+            .is_some_and(|items| {
+                items.iter().any(|item| {
+                    item["message"]
+                        .as_str()
+                        .is_some_and(crate::engine_log::is_permission_error)
+                })
+            });
+    Some(!reported)
+}
+
 pub fn message(raw: &str) -> String {
     parsed_error(raw).1
 }
@@ -307,6 +329,29 @@ pub fn build(
         code = "STARTUP_GPU_ALL_OFF".into();
         message = "显卡角色全部为「关闭」，此引擎至少需要一张主卡或辅助卡才能启动。请在启动配置的「显卡角色」中打开一张卡。 / Every graphics card is set to Off, and this engine needs a Main or Helper card to start. Turn a card on under GPU roles in the startup settings.".into();
     }
+    // Upstream server.py opens config["log"] for appending; a locked, read-only
+    // or ACL-denied file ends the start with PermissionError [Errno 13].
+    let mut log_evidence: Option<(u64, String)> = current
+        .iter()
+        .rev()
+        .find(|entry| crate::engine_log::is_permission_error(&entry.message))
+        .map(|entry| (entry.timestamp, entry.message.clone()));
+    if crate::engine_log::is_permission_error(&message) {
+        log_evidence = Some((failed_at, message.clone()));
+    }
+    if code == crate::engine_log::CODE
+        || (matches!(
+            category,
+            StartupCategory::Unknown | StartupCategory::Engine | StartupCategory::Timeout
+        ) && log_evidence.is_some())
+    {
+        if code != crate::engine_log::CODE {
+            message = crate::engine_log::UNWRITABLE_MESSAGE.into();
+        }
+        category = StartupCategory::Files;
+        confidence = StartupConfidence::Confirmed;
+        code = crate::engine_log::CODE.into();
+    }
     if !matches!(phase.as_str(), "prepare" | "starting" | "loading") {
         phase = "prepare".into();
     }
@@ -326,6 +371,15 @@ pub fn build(
             at: failed_at,
             message: format!("HTTP {status}"),
         });
+    }
+    if code == crate::engine_log::CODE {
+        if let Some((at, text)) = &log_evidence {
+            evidence.push(StartupEvidence {
+                source: "serviceLog".into(),
+                at: *at,
+                message: safe(text),
+            });
+        }
     }
     if confidence == StartupConfidence::Suspected {
         if let Some(entry) = current
@@ -629,6 +683,138 @@ mod tests {
         assert!(!serde_json::to_string(&result)
             .unwrap()
             .contains("secret-value"));
+    }
+
+    #[test]
+    fn engine_log_permission_error_is_classified_with_repair_steps() {
+        // Strata 0.2.1.x serve/server.py on Windows: open(cfg["log"], "a").
+        let logs = vec![LogEntry {
+            timestamp: 15,
+            level: "error".into(),
+            message: r"PermissionError: [Errno 13] Permission denied: 'C:\Users\u\AppData\Roaming\io.strata.manager\imports\local-7d19ff0a\engine.log'".into(),
+        }];
+        for raw in [
+            "exit 1",
+            &error("STARTUP_ENGINE_CRASHED", "engine exited", "starting"),
+            &error("STARTUP_API_TIMEOUT", "timed out", "starting"),
+        ] {
+            let result = build("p", 10, 20, raw, &logs, None);
+            assert_eq!(result.code, crate::engine_log::CODE);
+            assert_eq!(result.category, StartupCategory::Files);
+            assert_eq!(result.confidence, StartupConfidence::Confirmed);
+            assert_eq!(result.actions[0], StartupAction::OpenFiles);
+            for step in [
+                "日志文件被占用或无权限",
+                "残留",
+                "只读",
+                "权限",
+                "360",
+                "火绒",
+                "Read-only",
+            ] {
+                assert!(result.message.contains(step), "{step}");
+            }
+            assert!(result
+                .evidence
+                .iter()
+                .any(|item| item.source == "serviceLog" && item.message.contains("Errno 13")));
+        }
+        let direct = build(
+            "p",
+            10,
+            20,
+            &error(
+                "STARTUP_ENGINE_CRASHED",
+                "PermissionError: [Errno 13] Permission denied: '/data/engine.log'",
+                "starting",
+            ),
+            &[],
+            None,
+        );
+        assert_eq!(direct.code, crate::engine_log::CODE);
+        // Manager's own preflight keeps its message (with the attempted paths).
+        let preflight = build(
+            "p",
+            10,
+            20,
+            &error(
+                crate::engine_log::CODE,
+                "no writable log: /a/engine.log",
+                "prepare",
+            ),
+            &[],
+            None,
+        );
+        assert_eq!(preflight.category, StartupCategory::Files);
+        assert_eq!(preflight.message, "no writable log: /a/engine.log");
+        // Other permission errors and earlier sessions are not this failure.
+        let model = vec![LogEntry {
+            message: "PermissionError: [Errno 13] Permission denied: 'model.gguf'".into(),
+            ..logs[0].clone()
+        }];
+        assert_eq!(
+            build("p", 10, 20, "exit 1", &model, None).code,
+            "STARTUP_UNKNOWN"
+        );
+        let old = vec![LogEntry {
+            timestamp: 5,
+            ..logs[0].clone()
+        }];
+        assert_eq!(
+            build("p", 10, 20, "exit 1", &old, None).code,
+            "STARTUP_UNKNOWN"
+        );
+        // A port conflict stays a port conflict.
+        assert_eq!(
+            build(
+                "p",
+                10,
+                20,
+                &error("STARTUP_PORT_IN_USE", "busy", "prepare"),
+                &logs,
+                None
+            )
+            .code,
+            "STARTUP_PORT_IN_USE"
+        );
+    }
+
+    #[test]
+    fn log_unwritable_separates_the_preflight_from_an_engine_report() {
+        assert_eq!(
+            log_unwritable(&error("STARTUP_ENGINE_CRASHED", "x", "starting")),
+            None
+        );
+        assert_eq!(
+            log_unwritable(&error(crate::engine_log::CODE, "x", "prepare")),
+            Some(true)
+        );
+        let reported = build(
+            "p",
+            10,
+            20,
+            "exit 1",
+            &[LogEntry {
+                timestamp: 15,
+                level: "error".into(),
+                message: "PermissionError: [Errno 13] Permission denied: 'engine.log'".into(),
+            }],
+            None,
+        );
+        assert_eq!(log_unwritable(&encode(&reported)), Some(false));
+        let preflight = build(
+            "p",
+            10,
+            20,
+            &error(
+                crate::engine_log::CODE,
+                "Permission denied (os error 13)",
+                "prepare",
+            ),
+            &[],
+            None,
+        );
+        assert_eq!(log_unwritable(&encode(&preflight)), Some(true));
     }
 
     #[test]
