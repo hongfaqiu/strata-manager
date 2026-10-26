@@ -30,6 +30,27 @@ export function fitState(ramGB: number, totalGB: number | undefined, vramGB?: nu
   return 'over';
 }
 
+/**
+ * The fit a catalog quantization shows for this machine: the catalog card, the quantization table and the onboarding
+ * rows all read it. DeepSeek-V4.1-Flash uses dsv41_fit's own memory class (core.deepseek41MemoryClass, the same function
+ * its download panel shows), so a card never says 适合 where the panel says 偏紧: fits = every CPU-side expert cached
+ * (experts + 9 GiB), tight = at least the set's measured RAM (experts streamed through the RAM store), else over.
+ */
+export function quantFitState(model: core.CatalogModel, quant: string, machineGB: number | undefined, vramGB?: number): 'fits' | 'tight' | 'over' | undefined {
+  const info = model.quantInfo[quant];
+  if (!info || !machineGB) return undefined;
+  if (model.family === 'deepseek41') {
+    const memory = core.deepseek41MemoryClass(quant, machineGB);
+    return memory === 'unknown' ? undefined : memory === 'spills' ? 'over' : memory;
+  }
+  return fitState(info.ramGB, machineGB, vramGB);
+}
+
+/** The quantization a catalog card suggests when its family has its own rule: DeepSeek-V4.1-Flash takes dsv41_fit.recommend (the panel's 推荐), never the manual-only 2.25 bpw set. */
+export function catalogPreferredQuant(model: core.CatalogModel, machineGB: number | undefined): string | undefined {
+  return model.family === 'deepseek41' && machineGB ? core.recommendDeepseek41(machineGB) : undefined;
+}
+
 /** Effective host+GPU budget used for the soft fit meter (GiB). */
 export function usableMemoryGB(totalGB: number | undefined, vramGB?: number): number | undefined {
   if (!totalGB) return undefined;

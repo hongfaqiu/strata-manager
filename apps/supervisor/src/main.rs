@@ -87,6 +87,8 @@ async fn run() -> Result<(), RpcError> {
     let recovery_stop = shutdown.clone();
     let collector = state.clone();
     let collector_stop = shutdown.clone();
+    let sampler = state.clone();
+    let sampler_stop = shutdown.clone();
     tokio::spawn(async move {
         tokio::select! {
             _ = collector_stop.cancelled() => return,
@@ -103,6 +105,20 @@ async fn run() -> Result<(), RpcError> {
                 Ok(Ok(())) => {}
                 Ok(Err(error)) => eprintln!("本机用量采集失败: {error}"),
                 Err(error) => eprintln!("本机用量采集任务失败: {error}"),
+            }
+        }
+    });
+    // Energy: the engine keeps a 1 Hz power history; this only tops it up with one `/metrics` read
+    // when no window has relayed one for a while, so the series keeps going in the background.
+    tokio::spawn(async move {
+        tokio::select! {
+            _ = sampler_stop.cancelled() => return,
+            _ = sampler.wait_for_recovery_resume() => {}
+        }
+        loop {
+            tokio::select! { _=sampler_stop.cancelled()=>break, _=tokio::time::sleep(Duration::from_secs(5))=>{} }
+            if let Err(error) = sampler.clone().energy_tick().await {
+                eprintln!("功耗采样失败: {error}");
             }
         }
     });

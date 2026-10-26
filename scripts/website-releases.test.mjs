@@ -127,3 +127,33 @@ test('initial HTML disables every asset download until metadata is verified', ()
   }
   assert.match(html, /id="download-status"[^>]*role="status"[^>]*aria-live="polite"/);
 });
+
+const pick = runInNewContext(`${source.split(marker)[0]}\nstrataPlatformPick;`);
+const ua = {
+  win: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+  mac: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15',
+  linux: 'Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0',
+  android: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36',
+  iphone: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+};
+
+test('smart download recommends the visitor package from client hints or the user agent', () => {
+  const urls = catalog.assets(release('v0.1.0', { assets: [...release('v0.1.0').assets, { name: 'Strata.Manager_0.1.0_aarch64.dmg', state: 'uploaded', size: 9, browser_download_url: `${base}/download/v0.1.0/Strata.Manager_0.1.0_aarch64.dmg` }] }));
+  const choose = (facts) => { const value = pick.choose(pick.detect(facts), urls); return `${value.key}/${value.note}`; };
+  assert.equal(choose({ ua: ua.win }), 'windows/null');
+  assert.equal(choose({ ua: ua.win, platform: 'Windows', architecture: 'arm', bitness: '64' }), 'windows/winArm');
+  assert.equal(choose({ ua: ua.mac, platform: 'macOS', architecture: 'arm', bitness: '64' }), 'dmg/null');
+  // Safari and Firefox always say "Intel Mac": recommend the Apple Silicon DMG with a note, never guess Intel.
+  assert.equal(choose({ ua: ua.mac }), 'dmg/macArm');
+  assert.equal(choose({ ua: ua.mac, platform: 'macOS', architecture: 'x86', bitness: '64' }), 'null/macIntel');
+  assert.equal(choose({ ua: ua.linux }), 'appimage/null');
+  assert.equal(choose({ ua: ua.linux, platform: 'Linux', architecture: 'arm', bitness: '64' }), 'null/linuxArm');
+  assert.equal(choose({ ua: ua.android, platform: 'Android', mobile: true }), 'null/mobile');
+  assert.equal(choose({ ua: ua.iphone }), 'null/mobile');
+  assert.equal(choose({ ua: ua.mac, maxTouchPoints: 5 }), 'null/mobile');
+  assert.equal(choose({ ua: 'Mozilla/5.0 (PlayStation 5)' }), 'null/unknown');
+  // A release without a DMG must not offer one to Mac visitors.
+  const noDmg = catalog.assets(release('v0.1.0'));
+  assert.equal(pick.choose(pick.detect({ ua: ua.mac }), noDmg).note, 'noMac');
+  assert.deepEqual([...pick.order], [...catalog.keys, ...catalog.optionalKeys].sort((a, b) => pick.order.indexOf(a) - pick.order.indexOf(b)));
+});

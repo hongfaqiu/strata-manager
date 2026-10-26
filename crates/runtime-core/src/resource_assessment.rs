@@ -272,7 +272,41 @@ fn estimate(request: &ResourceAssessmentRequest, hardware: HardwareSnapshot) -> 
     let mut slots = json!({"count":request.parallel,"perSlotVramBytes":null,"totalVramBytes":null});
     let mut recommendations = json!({"context":null,"parallel":null});
     let mut context_extension = Value::Null;
-    if let Some((baseline, arena, budget)) = model(&request.family, &request.quant) {
+    let dsv41_set = (request.family == crate::disk::dsv41::FAMILY)
+        .then(|| crate::disk::dsv41::set(&request.quant))
+        .flatten();
+    if let Some(set) = dsv41_set {
+        // strata_control/dsv41_fit.py _plan_ista, simplified to the RAM classes: experts the cards keep are not
+        // subtracted here (a conservative estimate), so "fits" needs RAM for every expert plus 9 GB for the rest.
+        ram["baselineBytes"] = json!(bytes(set.ram_ok_gb, GB));
+        ram["expertBytes"] = json!(bytes(set.experts_gb, GB));
+        let ram_gb = hardware.total_memory_bytes as f64 / GB;
+        let cards = hardware
+            .gpus
+            .iter()
+            .filter(|gpu| matches!(gpu.vendor.as_str(), "nvidia" | "amd"))
+            .filter(|gpu| {
+                gpu.total_bytes
+                    .is_some_and(|total| total as f64 >= 8.0 * GB)
+            })
+            .count();
+        if request.context != u64::from(crate::disk::dsv41::CONTEXT) || request.images {
+            unknowns.push("model_unknown".into());
+        }
+        if cards == 0 {
+            note("dsv41_no_card", true);
+        }
+        if ram_gb >= set.experts_gb + 9.0 {
+            ram["mode"] = json!("normal");
+        } else if ram_gb >= set.ram_ok_gb {
+            ram["mode"] = json!("mmap");
+            note("dsv41_ram_store", false);
+        } else {
+            ram["mode"] = json!("mmap");
+            note("dsv41_ram_spill", true);
+        }
+        recommendations = json!({"context":crate::disk::dsv41::CONTEXT,"parallel":1});
+    } else if let Some((baseline, arena, budget)) = model(&request.family, &request.quant) {
         ram["baselineBytes"] = json!(bytes(baseline, GIB));
         ram["expertBytes"] = json!(bytes(arena, GB));
         let ram_gib = hardware.total_memory_bytes as f64 / GIB;
@@ -490,6 +524,40 @@ mod tests {
             gpu_ids: vec![],
             parallel: 1,
         }
+    }
+    #[test]
+    fn deepseek41_follows_the_dsv41_fit_ram_classes() {
+        let mut req = request();
+        req.family = "deepseek41".into();
+        req.quant = "IST-DAS-2.00bpw".into();
+        req.context = 8192;
+        let codes = |result: &Value| {
+            result["reasons"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|reason| reason["code"].as_str().unwrap().to_string())
+                .collect::<Vec<_>>()
+        };
+        // 64 GB RAM and a 12 GB card: the RAM store keeps the hot experts ("tight", measured 4.7 tok/s).
+        let tight = estimate(&req, fixture(64.0, 12.0));
+        assert_eq!(tight["status"], "suggested");
+        assert_eq!(tight["recommendations"]["context"], 8192);
+        assert!(codes(&tight).contains(&"dsv41_ram_store".into()));
+        assert_eq!(tight["ram"]["expertBytes"], 132_070_000_000_u64);
+        // Under the set's ram_ok it still runs, slowly.
+        let spill = estimate(&req, fixture(32.0, 12.0));
+        assert_eq!(spill["status"], "risk");
+        assert!(codes(&spill).contains(&"dsv41_ram_spill".into()));
+        assert_eq!(
+            estimate(&req, fixture(192.0, 24.0))["ram"]["mode"],
+            "normal"
+        );
+        // No card of 8 GB or more.
+        assert!(codes(&estimate(&req, fixture(64.0, 6.0))).contains(&"dsv41_no_card".into()));
+        // Anything but 8K text only is outside what setup offers.
+        req.context = 32768;
+        assert_eq!(estimate(&req, fixture(64.0, 12.0))["status"], "unknown");
     }
     #[test]
     fn official_single_gpu_recommendation_and_low_ram_modes() {

@@ -29,11 +29,23 @@ export interface ApiInferenceTotals {
   prefillSpeedSamples: number; cacheHitRate: number | null; cacheRateSamples: number;
   expertCacheHitRate: number | null; expertCacheSamples: number;
 }
+/**
+ * GPU energy stitched from the engine's 1 Hz power readings. Seconds without a reading are never filled in:
+ * `coverage` = sampledS / expectedS, and `wh` stays null when nothing was measured (e.g. Apple GPUs).
+ */
+export interface ApiEnergyTotals {
+  wh: number | null; sampledS: number; expectedS: number; coverage: number | null;
+  maxW: number | null; averageW: number | null; whPer1kTokens: number | null;
+  /** Tokens behind whPer1kTokens: engine work (prompt + generated) or, without observer data, HTTP usage. */
+  tokenBasis?: 'inference' | 'http';
+}
 export interface ApiUsageGroup { route: ApiRoute; clientId: string | null; requests: number; succeeded: number }
 export interface ApiUsageSummary {
   startMs: number; endMs: number; http: ApiHttpTotals; inference: ApiInferenceTotals;
   groups: ApiUsageGroup[]; ttftS: ApiDistribution; durationS: ApiDistribution; decodeTokS: ApiDistribution; prefillTokS: ApiDistribution;
   retentionDays: number; successRateDefinition: string; tokenDefinition: string;
+  /** Optional for compatibility with older analytics backends. */
+  energy?: ApiEnergyTotals;
 }
 export interface ApiUsageRequest {
   requestId: string; serviceId: string; startedAtMs: number; endedAtMs: number | null;
@@ -46,6 +58,8 @@ export interface ApiUsageRequest {
   errorKind: string | null; mcpToolCalls: number; inferenceRuns: number;
   /** Older observer records have no verified model identity. */
   modelId: string | null;
+  /** Estimate: the service's measured power over the request, shared with concurrent requests. Null without readings. */
+  energyWhEstimate?: number | null; energyCoverage?: number | null;
 }
 export interface ApiRequestPage {
   items: ApiUsageRequest[]; nextCursor: string | null; snapshotRowId: number; limit: number;
@@ -64,6 +78,8 @@ export interface ApiTrendBucket {
   firstTokenS: number | null; firstTokenSamples: number; durationS: number | null; durationSamples: number;
   prefillTokS: number | null; prefillSamples: number; decodeTokS: number | null; decodeSamples: number;
   cacheHitRate: number | null; cacheRateSamples: number; expertCacheHitRate: number | null; expertCacheSamples: number;
+  /** Measured GPU energy of the minutes in this bucket (null when none were sampled). */
+  energyWh?: number | null; energySampledS?: number; energyExpectedS?: number; energyCoverage?: number | null; whPer1kTokens?: number | null;
 }
 export interface ApiUsageTrends { bucketMs: number; buckets: ApiTrendBucket[] }
 export interface ApiObserverSession {
@@ -86,6 +102,8 @@ export interface ApiAnalyticsCoverage {
   sessions: ApiObserverSession[]; gaps: ApiCollectionGap[]; observerStatuses: ApiObserverStatus[];
   journalPresent: boolean; metadataOnly: boolean; dataAvailableFromMs: number | null;
   journalSyncFailed?: boolean;
+  /** Live: whether the engine reported GPU power since the supervisor started; null when not observed yet. */
+  powerReadable?: boolean | null;
   collectionScope: string[]; historyRetentionDays: number; journalRetentionDays: number; journalMaxEvents: number;
 }
 export type ApiAnalyticsData = ApiUsageSummary | ApiUsageRequest[] | ApiUsageTrends | ApiRequestPage | ApiRequestOptions | ApiCsvExport;

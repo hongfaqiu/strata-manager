@@ -1,6 +1,7 @@
 export * from './types';
 export * from './errors';
 export * from './catalog';
+export * from './deepseek41-config';
 export * from './metrics';
 export * from './gpu-summary';
 export * from './integrated-gpu';

@@ -28,6 +28,12 @@ function buckets(query: ApiAnalyticsQuery, empty: boolean): ApiTrendBucket[] {
     const active = requests > 0;
     const failed = active && index % 9 === 0 ? 1 : 0, cancelled = active && index % 13 === 0 ? 1 : 0, interrupted = active && index % 29 === 0 ? 1 : 0;
     const succeeded = Math.max(0, requests - failed - cancelled - interrupted);
+    // GPU energy: idle draw plus load; one bucket has a sampling gap and one has no readings at all (left empty).
+    const expectedS = empty ? 0 : Math.round(covered * bucketMs / 1000);
+    const sampledS = index % 23 === 11 ? 0 : index % 17 === 5 ? Math.round(expectedS * 0.6) : expectedS;
+    const watts = 34 + level * 190 + wave(index, 10) * 18;
+    const energyWh = sampledS ? watts * sampledS / 3600 : null;
+    const tokens = requests ? requests * (2960 + Math.round(wave(index, 2) * 3200) + Math.round(wave(index, 3) * 520)) : 0;
     items.push({
       startMs: at, requests, succeeded, failed, cancelled, interrupted, pending: 0,
       inputTokens: requests ? requests * Math.round(2600 + wave(index, 2) * 3200) : null, outputTokens: requests ? requests * Math.round(360 + wave(index, 3) * 520) : null,
@@ -38,6 +44,7 @@ function buckets(query: ApiAnalyticsQuery, empty: boolean): ApiTrendBucket[] {
       decodeTokS: requests ? 40 + wave(index, 7) * 10 : null, decodeSamples: requests,
       cacheHitRate: requests ? 0.42 + wave(index, 8) * 0.3 : null, cacheRateSamples: requests,
       expertCacheHitRate: requests ? 0.7 + wave(index, 9) * 0.2 : null, expertCacheSamples: requests,
+      energyWh, energySampledS: sampledS, energyExpectedS: expectedS, energyCoverage: expectedS ? sampledS / expectedS : null, whPer1kTokens: energyWh != null && tokens ? energyWh * 1000 / tokens : null,
     });
   }
   return items;
@@ -62,6 +69,7 @@ function requests(query: ApiAnalyticsQuery, empty: boolean): ApiUsageRequest[] {
       prefillTokS: 780 + wave(index, 5) * 300, decodeTokS: ok ? 39 + wave(index, 6) * 12 : null, cacheHitRate: 0.4 + wave(index, 7) * 0.4, expertCacheHitRate: 0.72 + wave(index, 8) * 0.18,
       errorKind: outcome === 'failed' ? (index % 2 ? 'engine_error' : 'context_overflow') : null, mcpToolCalls: index % 6 === 0 ? 2 : 0, inferenceRuns: index % 6 === 0 ? 3 : 1,
       modelId: index % 7 === 3 ? null : models[index % 3 === 0 ? 1 : 0]!,
+      energyWhEstimate: index % 11 === 4 ? null : (150 + wave(index, 9) * 120) * 4 / 3600 * (index % 7 === 2 ? 0.6 : 1), energyCoverage: index % 11 === 4 ? 0 : index % 7 === 2 ? 0.6 : 1,
     };
   }).filter(item => item.startedAtMs >= (query.startMs ?? 0) && item.startedAtMs < end);
 }
@@ -75,6 +83,7 @@ export function createApiUsageMockClient(): ApiAnalyticsClient {
       sessions: empty ? [] : [{ sessionId: 'mock-session', serviceId: 'mock-profile-dev', startedAtMs: dayStart.getTime(), endedAtMs: null, supported: true, sourceHash: 'mock' }],
       gaps: [], observerStatuses: [{ serviceId: 'mock-profile-dev', sessionId: 'mock-session', pid: 4242, updatedAtMs: now - 4000, supported: true, journalWriteFailed: false, observerActive: !empty, heartbeatFresh: !empty, error: null, observerMode: 'reviewed' }],
       journalPresent: !empty, metadataOnly: true, dataAvailableFromMs: empty ? null : now - 21 * 86_400_000,
+      powerReadable: !empty,
       collectionScope: ['/v1/chat/completions', '/v1/responses', '/v1/messages'], historyRetentionDays: 90, journalRetentionDays: 7, journalMaxEvents: 100_000,
     };
     if (query.action === 'trends') return { data: { bucketMs: query.bucketMs ?? 900_000, buckets: buckets(query, empty) }, coverage };
@@ -103,13 +112,18 @@ export function createApiUsageMockClient(): ApiAnalyticsClient {
       },
       inference: {
         runs: Math.round(total * 1.14), inputTokens: total ? sum(items, 'inputTokens') : null, outputTokens: total ? sum(items, 'outputTokens') : null, cacheReadTokens: total ? Math.round(sum(items, 'inputTokens') * 0.41) : null,
-        toolCalls: empty ? 0 : 64, inputTokenSamples: total, decodeSpeedSamples: total, prefillTokens: total ? Math.round(sum(items, 'inputTokens') * 0.59) : null, prefillS: null, decodeS: null,
+        toolCalls: empty ? 0 : 64, inputTokenSamples: total, decodeSpeedSamples: total, prefillTokens: total ? Math.round(sum(items, 'inputTokens') * 0.59) : null, prefillS: total ? Math.round(sum(items, 'inputTokens') * 0.59) / 910 : null, decodeS: null,
         prefillSpeedSamples: total, cacheHitRate: weighted(items, 'cacheHitRate', 'cacheRateSamples'), cacheRateSamples: total, expertCacheHitRate: weighted(items, 'expertCacheHitRate', 'expertCacheSamples'), expertCacheSamples: total,
       },
       groups: [...groupTotals.values()],
       ttftS: { samples: total, p50: total ? 0.48 : null, p95: total ? 1.26 : null }, durationS: { samples: total, p50: total ? 5.4 : null, p95: total ? 14.8 : null },
       decodeTokS: { samples: total, p50: total ? 44.6 : null, p95: total ? 51.2 : null, mean: weighted(items, 'decodeTokS', 'decodeSamples'), p20: total ? 40.8 : null },
       prefillTokS: { samples: total, p50: total ? 910 : null, p95: total ? 1060 : null },
+      energy: (() => {
+        const joules = sum(items, 'energyWh') * 3600, sampledS = sum(items, 'energySampledS'), expectedS = sum(items, 'energyExpectedS'), tokens = total ? sum(items, 'inputTokens') + sum(items, 'outputTokens') : 0;
+        const wh = sampledS ? joules / 3600 : null;
+        return { wh, sampledS, expectedS, coverage: expectedS ? sampledS / expectedS : null, maxW: sampledS ? 268 : null, averageW: sampledS ? joules / sampledS : null, whPer1kTokens: wh != null && tokens ? wh * 1000 / tokens : null, tokenBasis: 'inference' as const };
+      })(),
       retentionDays: 90, successRateDefinition: 'succeeded / requests', tokenDefinition: 'provider reported',
     };
     return { data: summary, coverage };

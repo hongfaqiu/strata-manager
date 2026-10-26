@@ -11,7 +11,9 @@ const compile = file => ts.transpileModule(readFileSync(new URL(file, import.met
 const load = (file, modules = {}) => { const module = { exports: {} }; vm.runInNewContext(compile(file), { module, exports: module.exports, structuredClone, require: name => modules[name] ?? {} }); return module.exports; };
 const flags = load('../../../../packages/core/src/startup-engine-flags.ts');
 const support = load('../../../../packages/core/src/engine-flag-support.ts');
-const tuning = load('../../../../packages/core/src/config-tuning.ts', { './startup-engine-flags': flags });
+// Control vectors are Qwen-engine options; the DeepSeek option table (deepseek41-config) is stubbed out.
+const deepseek41 = { isDeepseek41Config: config => config?.arch === 'deepseek41', DEEPSEEK41_ENGINE_FLAGS: {}, deepseek41ArgsError: () => null };
+const tuning = load('../../../../packages/core/src/config-tuning.ts', { './startup-engine-flags': flags, './deepseek41-config': deepseek41 });
 const vector = load('../../../../packages/core/src/control-vector.ts', { './config-tuning': tuning, './engine-flag-support': support });
 const core = { ...vector, normalizeError: error => ({ message: String(error) }) };
 const Toggle = props => jsx('toggle', props);

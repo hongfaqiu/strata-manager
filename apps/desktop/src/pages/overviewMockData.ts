@@ -178,6 +178,8 @@ function baseOverviewMock(state: OverviewMockState) {
     history: {},
     raw: {
       live,
+      // 60 one-second power samples, like the engine telemetry ring buffer.
+      history: { gpu_power: Array.from({ length: 60 }, (_, index) => Math.round((state === 'generating' ? 236 : 92) + Math.sin(index / 4) * (state === 'generating' ? 14 : 5))) },
       engine: { model: health.model, max_context: 131072, expert_slots: 412, expert_cache_mib: 12288 },
       hardware: {
         cpu: state === 'generating' ? 34.2 : 8.1,

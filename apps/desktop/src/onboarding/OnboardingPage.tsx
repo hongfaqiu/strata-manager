@@ -196,7 +196,7 @@ function EntryScreen(props: OnboardingPageProps & { t: Translate; runtimeFact: G
   const gpus = environment?.gpus.map(parseGpu) ?? [];
   const appleGpu = core.unifiedGpu(environment);
   const memory = props.memoryGB;
-  const sizes = core.MODEL_CATALOG.flatMap(model => Object.values(model.quantInfo).map(info => info.downloadGB));
+  const sizes = core.MODEL_CATALOG.filter(model => !model.minRelease).flatMap(model => Object.values(model.quantInfo).map(info => info.downloadGB));
   const suggested: GuidePath = running.length > 0 || profiles.length > 0 ? 'connect' : 'install';
   const [choice, setChoice] = useState<GuidePath>(suggested);
   useEffect(() => setChoice(suggested), [suggested]);
