@@ -1,5 +1,6 @@
 // Ported from Strata v0.2.2 (011c9e6) apps/host/src/lib/gpu-roles.ts, MIT License, Copyright (c) 2026 Niko1221 and the Strata contributors.
-// Keep the rules identical: packages/core/tests/gpu-roles.test.ts runs the upstream vectors (tests/data/gpu_roles_vectors.json).
+// Keep the rules identical: packages/core/tests/gpu-roles.test.ts runs the upstream vectors (tests/data/gpu_roles_vectors.json, v0.2.6).
+// recommend() carries upstream 0351ecb1 (#3655): an 8 GB card starts Off only beside a bigger card (or under 4 GB).
 /**
  * Main / Helper / Off for every graphics card. The same rules as strata_control/gpu_roles.py (the Terminal, setup and the server); both run
  * tests/data/gpu_roles_vectors.json.
@@ -91,17 +92,20 @@ export function pickMain(cs: RoleCard[]): { main: RoleCard | null; why: MainWhy 
 export type OffWhy = 'cannot_run' | 'igpu' | 'small' | 'helper';
 export interface Recommendation { roles: Roles; main: number | null; why: MainWhy; reasons: Record<number, MainWhy | OffWhy> }
 
-/** The best card is Main; every other card starts as Helper, EXCEPT a card with 8 GB or less, built-in graphics beside a real card, and a card the engine cannot run: those start Off. */
+/** The best card is Main; every other card starts as Helper, EXCEPT a card with 8 GB or less when a bigger card is there (or it has under 4 GB), built-in graphics beside a real card, and a card the engine cannot run: those start Off. */
 export function recommend(cards: RoleCard[] | null | undefined, vendor?: string | null): Recommendation {
   const cs = rows(cards, vendor);
   const { main, why } = pickMain(cs);
   const roles: Roles = {}, reasons: Recommendation['reasons'] = {};
+  // Upstream 0351ecb1 (#3655): an 8 GB card is a poor Helper beside a bigger card, but a perfectly good one when 8 GB is all there is
+  // (two GTX 1080s are a working 16 GB pool). A card with 8 GB or less starts Off only when a bigger usable card is there, or it is under 4 GB.
+  const hasBigger = cs.some(c => canRun(c) && !shares(c) && rnd(mem(c)) > OFF_AT_OR_BELOW_GB);
   for (const c of cs) {
     const i = c.index;
     if (main && c === main) { roles[i] = 'main'; reasons[i] = why; }
     else if (!canRun(c)) { roles[i] = 'off'; reasons[i] = 'cannot_run'; }
     else if (shares(c) && main) { roles[i] = 'off'; reasons[i] = 'igpu'; }
-    else if (rnd(mem(c)) <= OFF_AT_OR_BELOW_GB) { roles[i] = 'off'; reasons[i] = 'small'; }
+    else if (rnd(mem(c)) <= OFF_AT_OR_BELOW_GB && (hasBigger || mem(c) < MIN_CARD_GB)) { roles[i] = 'off'; reasons[i] = 'small'; }
     else { roles[i] = 'helper'; reasons[i] = 'helper'; }
   }
   return { roles, main: main ? main.index : null, why, reasons };

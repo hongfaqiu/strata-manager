@@ -1,5 +1,5 @@
 import type { JsonObject } from '@strata-manager/core';
-import { gpuRoles as R } from '@strata-manager/core';
+import { gpuRoles as R, gpuVendorOf, isIntegratedGpuName } from '@strata-manager/core';
 import { useState } from 'react';
 import { Segmented } from '../OfficialControls';
 import './gpu-roles-editor.css';
@@ -15,8 +15,10 @@ export function cardsFromEnvironment(gpus: readonly string[] | undefined): Card[
     const memory = parts.find(part => /\d\s*(MiB|MB|GiB|GB)$/i.test(part));
     const amount = memory ? Number(memory.match(/[\d.]+/)?.[0]) : NaN;
     const vram = Number.isFinite(amount) && amount > 0 ? (/G/i.test(memory!) ? amount : amount / 1024) : 0;
-    const vendor = /nvidia|geforce|rtx|quadro|tesla/i.test(name) ? 'nvidia' : /amd|radeon/i.test(name) ? 'amd' : /intel|arc/i.test(name) ? 'intel' : /apple/i.test(name) ? 'apple' : undefined;
-    return { index, name, vram_gb: Math.round(vram), vendor, integrated: /uhd|iris|integrated|radeon\(tm\) graphics|780m|680m|890m/i.test(name) || undefined };
+    const vendor = gpuVendorOf(name) ?? (/\brtx\b/i.test(name) ? 'nvidia' : /\barc\b/i.test(name) ? 'intel' : undefined);
+    // Same integrated-GPU names as the monitor's All set (core integrated-gpu.ts / runtime-core igpu.rs):
+    // Radeon(TM) Graphics, Radeon 610M–890M / 8060S, Vega 8, Intel UHD / Iris / HD / Arc(TM) Graphics, Arc 140V.
+    return { index, name, vram_gb: Math.round(vram), vendor, integrated: isIntegratedGpuName(name) || undefined };
   });
 }
 

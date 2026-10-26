@@ -4,6 +4,7 @@ export * from './catalog';
 export * from './deepseek41-config';
 export * from './metrics';
 export * from './gpu-summary';
+export * from './integrated-gpu';
 export * from './chat';
 export * from './chat-execution';
 export * from './service-capabilities';

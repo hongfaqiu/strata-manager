@@ -53,6 +53,22 @@ function overviewMockMemory(): { vramUsed: number; vramTotal: number; ramUsed: n
   return { vramUsed: 21.4, vramTotal: 24, ramUsed: 66.4, ramTotal: 96 };
 }
 
+/** DEV-only GPU layout for screenshots: ?mockGpu=igpu is an RTX 5070 Laptop beside a Radeon 890M, totals from the discrete card only. */
+function overviewMockGpu(): string | null {
+  try { return new URLSearchParams(window.location.search).get('mockGpu'); } catch { return null; }
+}
+
+function integratedGpuMock(metric: MetricSnapshot, busy: boolean) {
+  const gb = (n: number) => n * 1024 ** 3;
+  const card = { name: 'NVIDIA GeForce RTX 5070 Laptop GPU', util: busy ? 88 : 16, mem_used: gb(6.9), mem_total: gb(8), temp: busy ? 71 : 52, power: busy ? 92 : 24 };
+  const igpu = { name: 'AMD Radeon 890M Graphics', util: 9, mem_used: gb(0.4), mem_total: gb(0.5), temp: 48, power: 6, integrated: true };
+  Object.assign(metric, { gpuUtil: card.util, gpuMemoryUsed: card.mem_used, gpuMemoryTotal: card.mem_total, gpuTemperature: card.temp, gpuPower: card.power });
+  const raw = metric.raw as JsonObject;
+  const hardware = raw.hardware as JsonObject;
+  Object.assign(hardware, { gpu_util: card.util, gpu_mem_used: card.mem_used, gpu_mem_total: card.mem_total, gpu_temp: card.temp, gpu_power: card.power, gpu_power_limit: 115, gpus: [card, igpu] });
+  raw.hardware_static = { ...(raw.hardware_static as JsonObject), gpu_name: 'NVIDIA GeForce RTX 5070 Laptop GPU', gpu_count: 1 };
+}
+
 const nowSec = () => Math.floor(Date.now() / 1000);
 
 function sampleRequests(state: OverviewMockState): JsonObject[] {
@@ -183,6 +199,8 @@ function baseOverviewMock(state: OverviewMockState) {
       requests,
     },
   };
+
+  if (overviewMockGpu() === 'igpu') integratedGpuMock(metric, state === 'generating');
 
   const tasks: TaskStatus[] = [
     {

@@ -1,4 +1,5 @@
 import { asObject } from './errors';
+import { defaultGpuSet } from './integrated-gpu';
 import type { JsonObject } from './types';
 
 export interface MetricSnapshot {
@@ -27,7 +28,9 @@ export function normalizeMetrics(value: unknown): MetricSnapshot {
   const state = typeof live.state === 'string' ? live.state : 'unknown';
   // The official telemetry sampler sums memory/power, averages utilization and takes the hottest temperature.
   // Prefer its already computed aggregates; retain raw per-card records for detailed presentation.
-  const gpus = Array.isArray(hw.gpus) ? hw.gpus.map(asObject) : [];
+  // Per-card fallback covers the "All GPUs" set only: a small integrated GPU beside a real card stays out (upstream defaultGpuSet).
+  const allGpus = Array.isArray(hw.gpus) ? hw.gpus.map(asObject) : [];
+  const gpus = defaultGpuSet(allGpus.map(gpu => ({ gpu, name: typeof gpu.name === 'string' ? gpu.name : null, memTotal: number(gpu.mem_total), integrated: gpu.integrated === true }))).map(item => item.gpu);
   const gpuMetric = (aggregate: string, perCard: string, mode: 'sum' | 'mean' | 'max'): number | null => {
     const direct = number(hw[aggregate]);
     if (direct !== null) return direct;
