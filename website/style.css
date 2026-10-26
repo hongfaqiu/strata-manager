@@ -732,3 +732,18 @@ button.m-btn:hover{border-color:var(--a-muted)}
 .motion .app-float.is-open{animation:pop-in .26s cubic-bezier(.2,.8,.2,1)}
 @keyframes pop-in{from{opacity:0;transform:translateY(-4px) scale(.97)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.sb-spin,.app-statusbar .sb-dot{animation:none!important}}
+
+/* Smart download: the hero button targets this visitor's package; "Other platforms" lists the rest. */
+.smart-dl{margin-top:12px}
+.smart-dl-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;font-size:13px;color:var(--faint)}
+.smart-dl-toggle{display:inline-flex;align-items:center;gap:4px;padding:2px 0;border:0;background:none;color:var(--muted);font:inherit;cursor:pointer;transition:color .15s}
+.smart-dl-toggle:hover{color:var(--text)}
+.smart-dl-toggle .icon{width:13px;height:13px;transition:transform .18s var(--ease)}
+.smart-dl-toggle[aria-expanded=true] .icon{transform:rotate(180deg)}
+.smart-dl-list{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 0;padding:0;list-style:none}
+.smart-dl-list[hidden],.smart-dl-list li[hidden]{display:none}
+.smart-dl-list a{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border:1px solid var(--line);border-radius:999px;color:var(--text);font-size:13px;transition:border-color .15s,background .15s}
+.smart-dl-list a small{color:var(--faint);font-size:12px}
+.smart-dl-list a[href]:hover{border-color:var(--line-2);background:var(--bg-2)}
+.smart-dl-list a.is-current{border-color:var(--line-2)}
+.smart-dl-list a[aria-disabled=true]{opacity:.45;pointer-events:none}
