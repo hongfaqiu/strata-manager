@@ -151,13 +151,15 @@ export interface FloatingMonitorPreferences {
   taskbarEnabled?: boolean;
   taskbar?: TaskbarWidgetPreferences;
   /**
-   * Global show/hide shortcut. Missing means the default (Ctrl+Alt+M);
-   * `''` switches it off. One of FLOATING_MONITOR_SHORTCUTS.
+   * Global show/hide shortcut recorded by the user, canonical form such as
+   * `Ctrl+Alt+M` (see checkFloatingMonitorShortcut). Missing or `''` means
+   * no shortcut; there is no default.
    */
   shortcut?: FloatingMonitorShortcut;
 }
 
-export type FloatingMonitorShortcut = 'Ctrl+Alt+M' | 'Ctrl+Alt+K' | 'Ctrl+Shift+M' | '';
+/** Canonical accelerator string, or `''` for none. */
+export type FloatingMonitorShortcut = string;
 
 export interface ResolvedFloatingMonitorPreferences extends FloatingMonitorPreferences {
   fontSize: number;

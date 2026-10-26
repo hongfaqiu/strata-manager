@@ -170,15 +170,99 @@ export const FLOATING_MONITOR_DEFAULTS: ResolvedFloatingMonitorPreferences = {
 };
 
 /**
- * Global show/hide shortcut presets (same list as monitor_shortcut::PRESETS).
- * Alt+A (WeChat) and Ctrl+Alt+A (QQ) are screenshot keys, so they are never offered.
+ * Global show/hide shortcut. There is no default: a new or upgraded install
+ * registers nothing until the user records a combination.
+ *
+ * Canonical form (shared with monitor_shortcut.rs): modifiers in the order
+ * Ctrl, Alt, Shift, Super, then one key — `A`–`Z`, `0`–`9`, `F1`–`F24`,
+ * `Space`, `Home`, `End`, `PageUp`, `PageDown`, `Insert`, `Up`, `Down`,
+ * `Left`, `Right`. `''` (or anything unusable) means no shortcut.
  */
-export const FLOATING_MONITOR_SHORTCUTS: readonly FloatingMonitorShortcut[] = ['Ctrl+Alt+M', 'Ctrl+Alt+K', 'Ctrl+Shift+M', ''];
-export const FLOATING_MONITOR_DEFAULT_SHORTCUT: FloatingMonitorShortcut = 'Ctrl+Alt+M';
+export const FLOATING_MONITOR_SHORTCUT_MODIFIERS = ['Ctrl', 'Alt', 'Shift', 'Super'] as const;
+export type FloatingMonitorShortcutModifier = typeof FLOATING_MONITOR_SHORTCUT_MODIFIERS[number];
+export type FloatingMonitorShortcutProblem = 'key' | 'modifier' | 'reserved';
 
-/** Saved shortcut → effective one: missing or unknown → default, `''` → off. */
-export function resolveFloatingMonitorShortcut(value?: unknown): FloatingMonitorShortcut {
-  return FLOATING_MONITOR_SHORTCUTS.find(shortcut => shortcut === value) ?? FLOATING_MONITOR_DEFAULT_SHORTCUT;
+const SHORTCUT_NAMED_KEYS = ['Space', 'Home', 'End', 'PageUp', 'PageDown', 'Insert', 'Up', 'Down', 'Left', 'Right'] as const;
+const SHORTCUT_KEY_ALIASES: Record<string, string> = {
+  control: 'Ctrl', ctrl: 'Ctrl', alt: 'Alt', option: 'Alt', shift: 'Shift', super: 'Super', win: 'Super', meta: 'Super', cmd: 'Super', command: 'Super',
+};
+/**
+ * Combinations that belong to the system or to common apps: WeChat (Alt+A)
+ * and QQ (Ctrl+Alt+A) screenshots, window switching/closing, IME switching.
+ * Bare Super+<letter/digit/Space> is left to Windows as well.
+ */
+export const FLOATING_MONITOR_RESERVED_SHORTCUTS: readonly string[] = [
+  'Alt+A', 'Ctrl+Alt+A', 'Alt+Space', 'Alt+F4', 'Ctrl+Space', 'Shift+Space', 'Ctrl+Shift+Space', 'Ctrl+F4',
+];
+
+function shortcutKey(token: string): string | undefined {
+  if (/^[a-z]$/i.test(token)) return token.toUpperCase();
+  if (/^[0-9]$/.test(token)) return token;
+  const f = /^f([1-9]|1[0-9]|2[0-4])$/i.exec(token);
+  if (f) return `F${f[1]}`;
+  const lower = token.toLowerCase().replace(/^arrow/, '');
+  return SHORTCUT_NAMED_KEYS.find(key => key.toLowerCase() === lower);
+}
+
+/**
+ * Validates a shortcut and returns its canonical spelling, or why it cannot
+ * be used. `''` is a valid "no shortcut".
+ */
+export function checkFloatingMonitorShortcut(value: unknown): { shortcut: string; problem?: FloatingMonitorShortcutProblem } {
+  if (typeof value !== 'string' || !value.trim()) return { shortcut: '' };
+  const tokens = value.split('+').map(token => token.trim()).filter(Boolean);
+  const modifiers = new Set<FloatingMonitorShortcutModifier>();
+  let key: string | undefined;
+  for (const token of tokens) {
+    const modifier = SHORTCUT_KEY_ALIASES[token.toLowerCase()] as FloatingMonitorShortcutModifier | undefined;
+    if (modifier) { modifiers.add(modifier); continue; }
+    if (key !== undefined) return { shortcut: '', problem: 'key' };
+    key = shortcutKey(token);
+    if (!key) return { shortcut: '', problem: 'key' };
+  }
+  if (!key) return { shortcut: '', problem: 'key' };
+  const shortcut = [...FLOATING_MONITOR_SHORTCUT_MODIFIERS.filter(modifier => modifiers.has(modifier)), key].join('+');
+  // A global key without Ctrl/Alt/Win would swallow normal typing everywhere;
+  // only the spare F13–F24 keys may stand alone or with Shift.
+  const strong = modifiers.has('Ctrl') || modifiers.has('Alt') || modifiers.has('Super');
+  if (!strong && !/^F(1[3-9]|2[0-4])$/.test(key)) return { shortcut: '', problem: 'modifier' };
+  const superOnly = modifiers.size === 1 && modifiers.has('Super');
+  if (FLOATING_MONITOR_RESERVED_SHORTCUTS.includes(shortcut) || (superOnly && /^([A-Z0-9]|Space)$/.test(key))) return { shortcut: '', problem: 'reserved' };
+  return { shortcut };
+}
+
+/** Saved shortcut → effective one: missing, invalid or reserved → off (`''`). */
+export function normalizeFloatingMonitorShortcut(value?: unknown): FloatingMonitorShortcut {
+  return checkFloatingMonitorShortcut(value).shortcut;
+}
+
+/** Key name for a KeyboardEvent.code, layout independent; undefined for modifiers or unsupported keys. */
+export function floatingMonitorShortcutKeyFromCode(code: string): string | undefined {
+  const letter = /^Key([A-Z])$/.exec(code);
+  if (letter) return letter[1];
+  const digit = /^(?:Digit|Numpad)([0-9])$/.exec(code);
+  if (digit) return digit[1];
+  if (/^F([1-9]|1[0-9]|2[0-4])$/.test(code)) return code;
+  const named = code.replace(/^Arrow/, '');
+  return (SHORTCUT_NAMED_KEYS as readonly string[]).includes(named) ? named : undefined;
+}
+
+/**
+ * Turns a keydown into a shortcut while recording. Modifier-only presses
+ * return `pending` so the UI can show what is held so far.
+ */
+export function floatingMonitorShortcutFromKeyboard(event: { code: string; ctrlKey: boolean; altKey: boolean; shiftKey: boolean; metaKey: boolean }):
+  { pending: string } | { shortcut: string; problem?: FloatingMonitorShortcutProblem } {
+  const modifiers = [event.ctrlKey && 'Ctrl', event.altKey && 'Alt', event.shiftKey && 'Shift', event.metaKey && 'Super'].filter(Boolean) as string[];
+  if (/^(Control|Alt|Shift|Meta|OS)(Left|Right)?$/.test(event.code)) return { pending: modifiers.join('+') };
+  const key = floatingMonitorShortcutKeyFromCode(event.code);
+  if (!key) return { shortcut: '', problem: 'key' };
+  return checkFloatingMonitorShortcut([...modifiers, key].join('+'));
+}
+
+/** Display form: Super is Win on Windows/Linux and Cmd on macOS. */
+export function formatFloatingMonitorShortcut(shortcut: string, mac = false): string[] {
+  return shortcut ? shortcut.split('+').map(part => part === 'Super' ? (mac ? 'Cmd' : 'Win') : part === 'Alt' && mac ? 'Option' : part) : [];
 }
 
 const validMetrics = new Set<string>(FLOATING_MONITOR_METRICS.map(metric => metric.id));
@@ -263,8 +347,9 @@ export function normalizeFloatingMonitorPreferences(value?: unknown): ResolvedFl
     mode: 'floating',
     taskbarEnabled: source.taskbarEnabled === true,
     taskbar: normalizeTaskbarWidgetPreferences(source.taskbar),
-    // Kept only once the user picked one, so older settings keep the default.
-    ...(typeof source.shortcut === 'string' ? { shortcut: resolveFloatingMonitorShortcut(source.shortcut) } : {}),
+    // Stored only once the user recorded or cleared one. There is no default,
+    // so settings saved before this field (or without it) mean no shortcut.
+    ...(typeof source.shortcut === 'string' ? { shortcut: normalizeFloatingMonitorShortcut(source.shortcut) } : {}),
   };
 }
 

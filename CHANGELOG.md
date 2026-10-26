@@ -5,6 +5,16 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **监控的显示快捷键改为自定义，默认不设置**：「桌面监控 → 监控浮条」里点「录制」后按下想要的组合键即可，可随时更改或清除，保存后立即生效。组合键需包含 `Ctrl`、`Alt` 或 `Win`（`F13`–`F24` 可单独使用）；微信 / QQ 截图（`Alt+A`、`Ctrl+Alt+A`）、`Alt+F4`、输入法切换等常用快捷键会直接提示换一个；被其他程序占用时显示注册失败原因。新安装和升级用户都不再有默认快捷键：以前默认的 `Ctrl+Alt+M` 不再自动注册，之前手动选过的组合会保留。
+- **「监控浮条」设置更紧凑**：快捷键并入浮条设置；布局、文字行数和字号排成一行；每个指标的勾选、配色和排序收进一行；显示选项改为三列，整页高度明显减少。
+
+### English
+
+- **The monitor show/hide shortcut is now user-defined, and off by default**: In Desktop monitor → Monitor strip, click Record and press the combination you want. You can change or clear it at any time, and it takes effect immediately. A combination must include `Ctrl`, `Alt` or `Win` (`F13`–`F24` can be used alone). Common shortcuts such as WeChat / QQ screenshots (`Alt+A`, `Ctrl+Alt+A`), `Alt+F4` and input-method switching are rejected with a hint, and a combination taken by another app shows why it could not be registered. New and upgraded installs have no default shortcut: the old default `Ctrl+Alt+M` is no longer registered automatically, while a combination you picked yourself is kept.
+- **More compact Monitor strip settings**: The shortcut now lives in the strip settings, layout, text rows and font size share one row, each metric's checkbox, color and order fit on one line, and display options use three columns, so the page is much shorter.
+
 ## [0.2.23] - 2026-10-26
 
 ### 中文

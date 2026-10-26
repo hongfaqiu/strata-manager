@@ -1,5 +1,5 @@
 import type { AppLanguage } from '@strata-manager/core';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { ArrowDown, ArrowUp, Check, LoaderCircle, RotateCcw } from 'lucide-react';
 
 import {
@@ -21,6 +21,8 @@ interface Props {
   onOpen: () => void;
   onVisibilityChange?: (visible: boolean) => Promise<void>;
   modeStatus?: { mode: string; supported: boolean; active: boolean; visible?: boolean; message?: string };
+  /** Show/hide shortcut recorder, shown with the visibility switch. */
+  shortcut?: ReactNode;
 }
 
 const exampleMetric = normalizeMetrics({
@@ -39,7 +41,7 @@ const exampleHistory: MonitorPoint[] = [0.66, 0.78, 0.73, 0.87, 0.93, 0.84, 1.04
   },
 }));
 
-export function FloatingMonitorSettings({ preferences, desktop, language, onChange, onOpen, onVisibilityChange, modeStatus }: Props) {
+export function FloatingMonitorSettings({ preferences, desktop, language, onChange, onOpen, onVisibilityChange, modeStatus, shortcut }: Props) {
   const zh = language === 'zh-CN';
   const id = useId();
   const value = normalizeFloatingMonitorPreferences(preferences);
@@ -144,6 +146,7 @@ export function FloatingMonitorSettings({ preferences, desktop, language, onChan
     {!desktop && <p className="floating-monitor-settings-hint" role="status">{zh ? '请在桌面应用中使用监控。' : 'Use monitoring in the desktop app.'}</p>}
     {changingVisibility && <p className="floating-monitor-settings-hint" role="status">{zh ? '正在更新监控显示状态…' : 'Updating monitor visibility…'}</p>}
     {visibilityError && <p className="floating-monitor-settings-error" role="alert">{zh ? '显示状态更新失败：' : 'Could not update visibility: '}{visibilityError}</p>}
+    {shortcut}
 
     <section className="floating-monitor-settings-preview" aria-label={zh ? '桌面监控示例预览' : 'Example floating monitor preview'}>
       <div className="floating-monitor-settings-preview-heading">
@@ -169,28 +172,28 @@ export function FloatingMonitorSettings({ preferences, desktop, language, onChan
             <strong>{preset.label}</strong><small>{preset.hint}</small>
           </button>)}
         </div>
-        <div className="floating-monitor-settings-rows">
-          <h3 id={`${id}-rows`}>{zh ? '文字行数' : 'Text rows'}<span>{value.layout === 'panel' ? (zh ? '面板为网格' : 'Panel is a grid') : singleRowFallback ? (zh ? '单行放不下，已改为两行' : 'One row does not fit; showing two') : dimensions.rows === 1 ? (zh ? '当前单行' : 'Now one row') : (zh ? '当前两行' : 'Now two rows')}</span></h3>
-          <Segmented ariaLabel={zh ? '浮条文字行数' : 'Strip text rows'} value={value.rows} options={([
-            { value: 'single', label: zh ? '单行' : 'One row' },
-            { value: 'double', label: zh ? '两行' : 'Two rows' },
-          ]).map(option => ({ ...option, disabled: !desktop || value.layout === 'panel' }))} onValueChange={rows => { if (rows === 'single' || rows === 'double') update({ rows }); }}/>
-          <p className="floating-monitor-settings-preview-hint">{value.layout === 'panel'
-            ? (zh ? '详细面板固定为两列网格，切换到条形后可选。' : 'The panel is always a two-column grid. Switch to Strip to choose.')
-            : (zh ? '单行：所有指标排成一行，名称放在数值左侧，浮条随之加宽；屏幕放不下时自动改为两行。两行：指标平均分成上下两行。' : 'One row keeps every metric on one line with the name beside the value; the strip grows wider and uses two rows when the screen is too narrow. Two rows splits metrics evenly.')}</p>
-        </div>
+      </section>
+      <section className="floating-monitor-settings-rows" aria-labelledby={`${id}-rows`}>
+        <h3 id={`${id}-rows`}>{zh ? '文字行数' : 'Text rows'}<span>{value.layout === 'panel' ? (zh ? '面板为网格' : 'Panel is a grid') : singleRowFallback ? (zh ? '单行放不下，已改为两行' : 'One row does not fit; showing two') : dimensions.rows === 1 ? (zh ? '当前单行' : 'Now one row') : (zh ? '当前两行' : 'Now two rows')}</span></h3>
+        <Segmented ariaLabel={zh ? '浮条文字行数' : 'Strip text rows'} value={value.rows} options={([
+          { value: 'single', label: zh ? '单行' : 'One row' },
+          { value: 'double', label: zh ? '两行' : 'Two rows' },
+        ]).map(option => ({ ...option, disabled: !desktop || value.layout === 'panel' }))} onValueChange={rows => { if (rows === 'single' || rows === 'double') update({ rows }); }}/>
       </section>
       <section className="floating-monitor-settings-font" aria-labelledby={`${id}-font`}>
         <h3 id={`${id}-font`}>{zh ? '字号' : 'Font size'}<output htmlFor={`${id}-font-slider`}>{value.fontSize} px</output></h3>
         <Slider id={`${id}-font-slider`} ariaLabel={zh ? '监控字号' : 'Monitor font size'} min={8} max={36} step={1} value={value.fontSize} disabled={!desktop} onValueChange={fontSize => update({ fontSize })}/>
         <div className="floating-monitor-settings-font-range"><span>8 px</span><span>36 px</span></div>
       </section>
+      <p className="floating-monitor-settings-preview-hint floating-monitor-settings-appearance-hint">{value.layout === 'panel'
+        ? (zh ? '详细面板固定为两列网格，切换到条形后可选行数。' : 'The panel is always a two-column grid. Switch to Strip to choose rows.')
+        : (zh ? '单行：指标排成一行，屏幕放不下时自动改为两行。两行：指标平均分成上下两行。' : 'One row keeps every metric on one line and falls back to two rows when the screen is too narrow. Two rows splits metrics evenly.')}</p>
     </div>
 
     <section className="floating-monitor-settings-metrics" aria-labelledby={`${id}-metrics`}>
-      <h3 id={`${id}-metrics`}>{zh ? '显示指标' : 'Visible metrics'}<span>{value.metrics.length} / 8</span></h3>
       <span id={`${id}-sort-hint`} className="floating-monitor-settings-announcement">{zh ? '选择 1–8 项。使用箭头按钮或 Alt + ↑ / ↓ 调整顺序。' : 'Choose 1–8 metrics. Use the arrow buttons or Alt + ↑ / ↓ to reorder.'}</span>
       <div className="floating-monitor-settings-palette-heading">
+        <h3 id={`${id}-metrics`}>{zh ? '显示指标' : 'Visible metrics'}<span>{value.metrics.length} / 8</span></h3>
         <span>{zh ? '选择 1–8 项 · 默认配色跟随主题' : 'Choose 1–8 metrics · Default colors follow theme'}</span>
         <button type="button" disabled={!desktop || (!Object.keys(value.metricColors).length && !Object.keys(colorDrafts).length)} onClick={() => { setColorDrafts({}); update({ metricColors: {} }); }}><RotateCcw size={12} aria-hidden="true"/>{zh ? '恢复全部配色' : 'Reset all colors'}</button>
       </div>
@@ -217,22 +220,23 @@ export function FloatingMonitorSettings({ preferences, desktop, language, onChan
               <span>{label}</span>
               {selected && <small aria-label={zh ? `第 ${index + 1} 位` : `Position ${index + 1}`}>{index + 1}</small>}
             </label>
-            {selected && <div className="floating-monitor-settings-metric-actions">
-              <button type="button" disabled={!desktop || index === 0} aria-label={zh ? `上移${label}` : `Move ${label} up`} title={zh ? '上移（Alt + ↑）' : 'Move up (Alt + ↑)'} onClick={() => moveMetric(metric.id, -1)}><ArrowUp size={13} aria-hidden="true"/></button>
-              <button type="button" disabled={!desktop || index === value.metrics.length - 1} aria-label={zh ? `下移${label}` : `Move ${label} down`} title={zh ? '下移（Alt + ↓）' : 'Move down (Alt + ↓)'} onClick={() => moveMetric(metric.id, 1)}><ArrowDown size={13} aria-hidden="true"/></button>
-            </div>}
             <div className="floating-monitor-settings-color-controls">
               <input type="color" aria-label={zh ? `${label}颜色` : `${label} color`} value={customColor ?? automaticColor} disabled={!desktop} onChange={event => setMetricColor(metric.id, event.target.value)}/>
               <input type="text" className="floating-monitor-settings-color-hex" aria-label={zh ? `${label}颜色值（十六进制）` : `${label} hexadecimal color`} aria-invalid={invalidColor || undefined} aria-describedby={invalidColor ? `${id}-${metric.id}-color-hint` : undefined} value={draft ?? customColor ?? ''} placeholder={automaticColor} spellCheck={false} autoComplete="off" maxLength={32} disabled={!desktop} onChange={event => editMetricColor(metric.id, event.target.value)}/>
               <button type="button" aria-label={zh ? `恢复${label}自动配色` : `Reset ${label} to automatic color`} title={zh ? '恢复自动配色' : 'Restore automatic color'} disabled={!desktop || (!customColor && draft === undefined)} onClick={() => setMetricColor(metric.id)}><RotateCcw size={12} aria-hidden="true"/></button>
               {invalidColor && <small id={`${id}-${metric.id}-color-hint`} className="invalid">{zh ? '格式：#RRGGBB' : 'Format: #RRGGBB'}</small>}
             </div>
+            <div className="floating-monitor-settings-metric-actions">{selected && <>
+              <button type="button" disabled={!desktop || index === 0} aria-label={zh ? `上移${label}` : `Move ${label} up`} title={zh ? '上移（Alt + ↑）' : 'Move up (Alt + ↑)'} onClick={() => moveMetric(metric.id, -1)}><ArrowUp size={13} aria-hidden="true"/></button>
+              <button type="button" disabled={!desktop || index === value.metrics.length - 1} aria-label={zh ? `下移${label}` : `Move ${label} down`} title={zh ? '下移（Alt + ↓）' : 'Move down (Alt + ↓)'} onClick={() => moveMetric(metric.id, 1)}><ArrowDown size={13} aria-hidden="true"/></button>
+            </>}</div>
           </div>;
         })}
       </div>
       <span className="floating-monitor-settings-announcement" role="status" aria-live="polite">{announcement}</span>
     </section>
 
+    <h3 className="floating-monitor-settings-section-title">{zh ? '显示选项' : 'Display options'}</h3>
     <div className="floating-monitor-settings-display-options">
       {displayOptions.map(option => <div key={option.key} className="setting-toggle floating-monitor-settings-option">
         <span><strong>{option.title}</strong></span>
