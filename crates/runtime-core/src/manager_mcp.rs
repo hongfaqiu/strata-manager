@@ -61,8 +61,8 @@ pub fn tool_definitions() -> Vec<Value> {
         let input = match *name {
             "strata_logs" => schema(json!({"limit":{"type":"integer","minimum":1,"maximum":500,"default":100}}), &[]),
             "strata_install" => schema(json!({
-                "family":{"type":"string","enum":["qwen","swift","coder","unsloth","qwen36"]},
-                "quant":{"type":"string","enum":["Q2_0","IQ2_XS","IQ3_XXS","IQ3_S","IQ1_M","UD-IQ4_XS","UD-Q4_K_XL","UD-Q5_K_XL","UD-Q6_K_XL","Q8_0"]},
+                "family":{"type":"string","enum":["qwen","swift","coder","unsloth","qwen36","deepseek41"]},
+                "quant":{"type":"string","enum":["Q2_0","IQ2_XS","IQ3_XXS","IQ3_S","IQ1_M","UD-IQ4_XS","UD-Q4_K_XL","UD-Q5_K_XL","UD-Q6_K_XL","Q8_0","IST-DAS-2.00bpw","IST-DAS-1.75bpw","IST-DAS-2.25bpw"]},
                 "context":{"type":"integer","minimum":512,"maximum":1048576,"default":8192},
                 "images":{"type":"boolean","default":false},
                 "confirm":{"type":"boolean","default":false}
@@ -148,6 +148,12 @@ impl InstallArguments {
             ]
             .contains(&self.quant.as_str()),
             "qwen36" => ["UD-Q4_K_XL", "UD-Q6_K_XL", "Q8_0"].contains(&self.quant.as_str()),
+            // DeepSeek-V4.1-Flash: the engine was checked at 8K only, and it reads no pictures.
+            "deepseek41" => {
+                crate::disk::dsv41::set(&self.quant).is_some()
+                    && self.context == crate::disk::dsv41::CONTEXT
+                    && !self.images
+            }
             _ => false,
         };
         if !supported || !(512..=1_048_576).contains(&self.context) {

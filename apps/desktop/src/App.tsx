@@ -745,9 +745,11 @@ export function App() {
     if (!models.length) { selectPreparationRuntime(runtime.installDir); notify(t('prepareBeforeProfile')); return; }
     if (recipe.kind === 'setup' || recipe.kind === 'orca' || recipe.kind === 'community') {
       // setup.py FAMILIES.name determines model_name; verify it against actual discovered configs.
-      const familyNames: Record<string, string> = { qwen: 'qwen3.8-flash-next', swift: 'swift-1.5', coder: 'qwen3.8-flash-next-coder', unsloth: 'qwen3.8-flash-next-unsloth', qwen36: 'qwen3.6-35b-a3b' };
+      const familyNames: Record<string, string> = { qwen: 'qwen3.8-flash-next', swift: 'swift-1.5', coder: 'qwen3.8-flash-next-coder', unsloth: 'qwen3.8-flash-next-unsloth', qwen36: 'qwen3.6-35b-a3b', deepseek41: 'deepseek-v4.1-flash' };
       const expected = recipe.kind === 'orca' ? core.ORCA_MODEL_NAME : recipe.kind === 'community' ? core.communityModelName(recipe.request.slug, recipe.request.quant) : `${familyNames[recipe.model]}-${recipe.quant.toLowerCase()}`;
-      const matches = models.filter(model => model.name.toLowerCase() === expected);
+      // DeepSeek-V4.1-Flash: every set writes model_name "deepseek-v4.1-flash"; the config file (strata-<tag>.json) names the set.
+      const deepseekFile = recipe.kind === 'setup' && recipe.model === 'deepseek41' ? `strata-deepseek-v4.1-flash-${recipe.quant.toLowerCase()}.json` : undefined;
+      const matches = models.filter(model => deepseekFile ? model.configPath.split(/[\\/]/).at(-1)?.toLowerCase() === deepseekFile : model.name.toLowerCase() === expected);
       if (matches.length === 1) { await openConfigProfile(matches[0]!.configPath, runtime); return; }
       setModal({ kind: 'modelProfiles', models, runtime });
       return;

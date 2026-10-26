@@ -8,6 +8,8 @@ export interface RuntimeUpdateInfo {
   notes?: string;
   publishedAt?: string;
   assets: RuntimeReleaseAsset[];
+  /** DeepSeek-V4.1 engine packages from the signed feed (`dsv41` member). */
+  dsv41Assets?: RuntimeReleaseAsset[];
   sourceRevision?: string;
   sourceArchiveUrl?: string;
   selectedAsset?: string;

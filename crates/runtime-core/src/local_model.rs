@@ -50,6 +50,9 @@ pub fn setup_supports(family: &str, quant: &str) -> bool {
         .contains(&quant),
         // setup.py OWN_PATH_FAMILIES qwen36; MIN_ENGINE (0,1,45)
         "qwen36" => ["UD-Q4_K_XL", "UD-Q6_K_XL", "Q8_0"].contains(&quant),
+        // setup.py MULTI_FILE_FAMILIES deepseek41 (Strata 0.2.5+): the official IST-DAS sets only;
+        // Unsloth's 508 GB UD-Q8_K_XL is a multi-GPU set the Manager does not offer.
+        "deepseek41" => crate::disk::DSV41_SETS.iter().any(|set| set.model == quant),
         _ => false,
     }
 }

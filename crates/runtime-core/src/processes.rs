@@ -1556,13 +1556,27 @@ fn launch_task_with_install(
         runtime_path,
         install,
         None,
+        None,
     )
 }
+
+/// Work done inside a task before its first step (on the task's own thread, cancellable through
+/// the task): returns child environment entries added to every step.
+pub type Prelude = Box<dyn FnOnce(&str) -> Result<BTreeMap<String, Option<String>>, String> + Send>;
 
 pub fn launch_setup_task(
     state: Arc<crate::RuntimeState>,
     intent: crate::setup_handoff::SetupIntent,
     steps: Vec<Step>,
+) -> Result<TaskStatus, String> {
+    launch_setup_task_with_prelude(state, intent, steps, None)
+}
+
+pub fn launch_setup_task_with_prelude(
+    state: Arc<crate::RuntimeState>,
+    intent: crate::setup_handoff::SetupIntent,
+    steps: Vec<Step>,
+    prelude: Option<Prelude>,
 ) -> Result<TaskStatus, String> {
     let runtime_path = Some(runtime_dir(&intent.profile)?);
     let model_directory = steps
@@ -1579,6 +1593,7 @@ pub fn launch_setup_task(
         runtime_path,
         None,
         Some(crate::setup_handoff::SetupHook { state, intent }),
+        prelude,
     )?;
     // Kept here, never taken from the webview: the only folder a bad-shard deletion may touch.
     if let (Some(directory), Ok(mut dirs)) = (model_directory, model_dirs.task_model_dirs.lock()) {
@@ -1598,6 +1613,7 @@ fn launch_task_with_handoff(
     runtime_path: Option<PathBuf>,
     install: Option<InstallClaim>,
     setup: Option<crate::setup_handoff::SetupHook>,
+    prelude: Option<Prelude>,
 ) -> Result<TaskStatus, String> {
     let id = Uuid::new_v4().to_string();
     let status = TaskStatus {
@@ -1646,6 +1662,13 @@ fn launch_task_with_handoff(
         let log_id = id.clone();
         let mut last_save = std::time::Instant::now();
         let outcome = (|| -> Result<(), String> {
+            let mut steps = steps;
+            if let Some(prelude) = prelude {
+                let env = prelude(&log_id)?;
+                for step in &mut steps {
+                    step.env.extend(env.clone());
+                }
+            }
             for step in steps {
                 log(
                     &logs,
@@ -2258,7 +2281,6 @@ sys.exit(7)
         );
         stop_owned_for_restart(&processes, "owned").unwrap();
     }
-    #[cfg(windows)]
     fn wait_task(tasks: &Tasks, id: &str) -> TaskStatus {
         let deadline = std::time::Instant::now() + Duration::from_secs(20);
         loop {
@@ -2594,6 +2616,68 @@ sys.exit(7)
             2
         );
     }
+    #[cfg(unix)]
+    #[test]
+    fn a_prelude_runs_first_and_its_environment_reaches_the_steps() {
+        let temp = tempfile::tempdir().unwrap();
+        let tasks: Tasks = Default::default();
+        let logs: Logs = Default::default();
+        let marker = temp.path().join("ran");
+        let step = |cwd: PathBuf| Step {
+            program: "sh".into(),
+            args: vec![
+                "-c".into(),
+                format!(
+                    "test \"$STRATA_DSV41_EXE\" = /x/strata-dsv41 && touch '{}'",
+                    marker.display()
+                ),
+            ],
+            cwd,
+            env: Default::default(),
+        };
+        let prelude: Prelude = Box::new(|_| {
+            Ok(BTreeMap::from([(
+                "STRATA_DSV41_EXE".to_owned(),
+                Some("/x/strata-dsv41".to_owned()),
+            )]))
+        });
+        let task = launch_task_with_handoff(
+            tasks.clone(),
+            logs.clone(),
+            database(),
+            "setup",
+            Some("p1".into()),
+            vec![step(temp.path().to_owned())],
+            None,
+            None,
+            None,
+            Some(prelude),
+        )
+        .unwrap();
+        assert_eq!(wait_task(&tasks, &task.id).state, "completed");
+        assert!(marker.is_file());
+        std::fs::remove_file(&marker).unwrap();
+        // A failed prelude fails the task before any step starts.
+        let failing: Prelude = Box::new(|_| Err("没有适合本机显卡的 DeepSeek 引擎包".into()));
+        let task = launch_task_with_handoff(
+            tasks.clone(),
+            logs,
+            database(),
+            "setup",
+            Some("p2".into()),
+            vec![step(temp.path().to_owned())],
+            None,
+            None,
+            None,
+            Some(failing),
+        )
+        .unwrap();
+        let status = wait_task(&tasks, &task.id);
+        assert_eq!(status.state, "failed");
+        assert!(status.message.contains("DeepSeek"), "{}", status.message);
+        assert!(!marker.exists());
+    }
+
     fn database() -> Arc<Mutex<rusqlite::Connection>> {
         let database = rusqlite::Connection::open_in_memory().unwrap();
         database
