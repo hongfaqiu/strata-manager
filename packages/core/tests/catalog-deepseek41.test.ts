@@ -3,6 +3,8 @@ import {
   MODEL_CATALOG, applyDeepseek41LoadMode, applyDeepseek41Speed, catalogReleaseGate, deepseek41DiskNeedGB, deepseek41EngineVersion,
   deepseek41HasCard, deepseek41LoadMode, deepseek41MemoryClass, deepseek41Speed, deepseek41SpeedSupported, filterCatalogForPlatform,
   isCatalogCombination, isDeepseek41Config, recommendDeepseek41, snapshotModelDownloadRequest, versionAtLeast,
+  STARTUP_TUNING_FIELDS, applyStartupField, deepseek41ArgsError, startupArgumentRows, startupEngineFlagsFor, startupFieldApplies,
+  startupFieldValue, validateStartupConfiguration, DEEPSEEK41_ENGINE_FLAGS, STARTUP_ENGINE_FLAGS,
 } from '../src';
 import type { ServiceProfile } from '../src';
 
@@ -39,7 +41,7 @@ describe('deepseek41 catalog', () => {
     expect(versionAtLeast('0.1.49.2', '0.1.50')).toBe(false);
   });
 
-  it('recommends like dsv41_fit: 1.75 below 40 GB or when only 1.75 fits the disk, else 2.00, never 2.25', () => {
+  it('recommends like dsv41_fit: 1.75 below 40 GiB or when only 1.75 fits the disk, else 2.00, never 2.25', () => {
     expect(recommendDeepseek41(32, 1000)).toBe('IST-DAS-1.75bpw');
     expect(recommendDeepseek41(64, 250)).toBe('IST-DAS-1.75bpw');
     expect(recommendDeepseek41(64, 200)).toBe('IST-DAS-2.00bpw');
@@ -95,9 +97,53 @@ describe('deepseek41 run options', () => {
     expect(deepseek41LoadMode(off)).toBe('off');
     expect(deepseek41LoadMode(applyDeepseek41LoadMode(off, 'on'))).toBe('on');
     expect(applyDeepseek41LoadMode(off, '').args).toEqual(config().args);
-    // A bare flag (no value) reads as "on" and is replaced cleanly.
+    // strata-dsv41 (v0.2.6 ds4_main.cpp) always reads a value: a bare flag would swallow the next option, so it is not a
+    // mode (shown as the default), the config is refused, and the next choice replaces it cleanly.
     const bare = config('0.1.50', ['--mmap-experts', '--pack', '/m/pack']);
-    expect(deepseek41LoadMode(bare)).toBe('on');
+    expect(deepseek41LoadMode(bare)).toBe('');
+    expect(deepseek41ArgsError(bare)).toMatch(/on \/ off \/ auto/);
+    expect(() => validateStartupConfiguration(bare)).toThrow(/--mmap-experts/);
     expect(applyDeepseek41LoadMode(bare, 'auto').args).toEqual(['--pack', '/m/pack', '--mmap-experts', 'auto']);
+    // Another word (the engine reads it as auto) is not shown as a mode and is replaced with its value.
+    const odd = config('0.1.50', ['--mmap-experts', 'yes', '--pack', '/m/pack']);
+    expect(deepseek41LoadMode(odd)).toBe('');
+    expect(applyDeepseek41LoadMode(odd, 'off').args).toEqual(['--pack', '/m/pack', '--mmap-experts', 'off']);
+    expect(applyDeepseek41LoadMode(odd, '').args).toEqual(['--pack', '/m/pack']);
+    expect(() => applyDeepseek41LoadMode(config(), 'yes' as never)).toThrow(/auto \/ off \/ on/);
+    for (const mode of ['auto', 'off', 'on'] as const) {
+      const next = applyDeepseek41LoadMode(applyDeepseek41LoadMode(config(), 'on'), mode);
+      expect((next.args as string[]).filter(arg => arg === '--mmap-experts')).toHaveLength(1);
+      expect(deepseek41ArgsError(next)).toBeNull();
+      expect(() => validateStartupConfiguration(next)).not.toThrow();
+    }
+    expect(deepseek41ArgsError(config('0.1.50', ['--mmap-experts', 'on', '--mmap-experts', 'off']))).toMatch(/重复/);
+    expect(deepseek41ArgsError(config('0.1.50', ['--experts']))).toMatch(/--experts/);
+  });
+
+  it('keeps the Qwen engine fields (the boolean --mmap-experts) away from DeepSeek configs', () => {
+    const mmap = STARTUP_TUNING_FIELDS.find(field => field.key === '--mmap-experts' && field.target === 'arg')!;
+    expect(mmap.kind).toBe('boolean');
+    const deepseek = applyDeepseek41LoadMode(config(), 'off');
+    // Not shown: no Qwen engine option applies; config-file fields (service, sampling) still do.
+    expect(startupFieldApplies(deepseek, mmap)).toBe(false);
+    expect(STARTUP_TUNING_FIELDS.filter(field => field.target === 'arg').every(field => !startupFieldApplies(deepseek, field))).toBe(true);
+    expect(STARTUP_TUNING_FIELDS.filter(field => field.target === 'config').every(field => startupFieldApplies(deepseek, field))).toBe(true);
+    // Not read as the Qwen switch ("true") and never written (no bare flag, no second --mmap-experts).
+    expect(startupFieldValue(deepseek, mmap)).toBe('');
+    expect(() => applyStartupField(deepseek, mmap, 'true')).toThrow(/DeepSeek/);
+    expect(() => applyStartupField(deepseek, mmap, '')).toThrow(/DeepSeek/);
+    // The argument list is split with strata-dsv41's table: "--mmap-experts off" is one option with its value.
+    expect(startupEngineFlagsFor(deepseek)).toBe(DEEPSEEK41_ENGINE_FLAGS);
+    const row = startupArgumentRows(deepseek).find(item => item.tokens[0] === '--mmap-experts')!;
+    expect(row).toMatchObject({ tokens: ['--mmap-experts', 'off'], known: true, arity: 1 });
+    expect(startupArgumentRows(config('0.1.50', ['--mmap-experts'])).at(-1)).toMatchObject({ tokens: ['--mmap-experts'], arity: 1 });
+    expect(() => validateStartupConfiguration(config('0.1.50', ['--pack', '/m/pack', '--mmap-experts']))).toThrow(/缺少参数值/);
+    // Qwen configs keep their switch.
+    const qwen = { args: ['--mmap-experts', '--max-context', '8192'] };
+    expect(startupEngineFlagsFor(qwen)).toBe(STARTUP_ENGINE_FLAGS);
+    expect(startupFieldApplies(qwen, mmap)).toBe(true);
+    expect(startupFieldValue(qwen, mmap)).toBe('true');
+    expect(applyStartupField(qwen, mmap, 'false').args).toEqual(['--max-context', '8192']);
+    expect(startupArgumentRows(qwen)[0]).toMatchObject({ tokens: ['--mmap-experts'], arity: 0 });
   });
 });

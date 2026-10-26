@@ -4,6 +4,7 @@ import { startupServiceEndpoint } from './config-profile';
 import { concurrencyConfigError } from './concurrency';
 import { contextExtensionError } from './context-extension';
 import { parseSaved } from './gpu-roles';
+import { DEEPSEEK41_ENGINE_FLAGS, deepseek41ArgsError, isDeepseek41Config } from './deepseek41-config';
 export { STARTUP_ENGINE_FLAGS } from './startup-engine-flags';
 
 export interface StartupTuning { context: string; kv: string; threads: string }
@@ -243,7 +244,20 @@ export function poolCoresValid(value: unknown): boolean {
 const NULL_AS_DEFAULT_FIELDS: ReadonlySet<string> = new Set(['sampling.experimental_speed_projection']);
 
 export function startupArgsOf(config: JsonObject): string[] { return config.args === undefined ? [] : argsOf(config); }
+/**
+ * Whether a startup field belongs to this config. DeepSeek-V4.1-Flash runs on its own engine (strata-dsv41) with its own
+ * options, set on the run-options card (deepseek41-config): no Qwen engine option field is shown or written for it
+ * (the Qwen switch `--mmap-experts` would be a bare flag there, and the other options mean something else or are unknown).
+ */
+export function startupFieldApplies(config: JsonObject | null | undefined, field: StartupFieldSpec): boolean {
+  return !(field.target === 'arg' && isDeepseek41Config(config));
+}
+/** The option table a config's argument list is read with: strata-dsv41's own for DeepSeek configs, else the Qwen engine's. */
+export function startupEngineFlagsFor(config: JsonObject | null | undefined): Readonly<Record<string, number>> {
+  return isDeepseek41Config(config) ? DEEPSEEK41_ENGINE_FLAGS : STARTUP_ENGINE_FLAGS;
+}
 export function startupFieldValue(config: JsonObject, field: StartupFieldSpec): string {
+  if (!startupFieldApplies(config, field)) return '';
   if (field.target === 'arg') {
     const args = startupArgsOf(config); const index = args.indexOf(field.key);
     return index < 0 ? '' : field.kind === 'boolean' ? 'true' : args[index + 1] ?? '';
@@ -256,6 +270,7 @@ export function startupFieldValue(config: JsonObject, field: StartupFieldSpec): 
 }
 
 export function applyStartupField(config: JsonObject, field: StartupFieldSpec, text: string): JsonObject {
+  if (!startupFieldApplies(config, field)) throw new Error(`${field.key}: DeepSeek 配置使用自己的运行选项，不写入此项 / DeepSeek configs use their own run options`);
   if (field.group === 'power' && !text.trim()) text = '';
   const next = structuredClone(config);
   let value: unknown = text;
@@ -298,11 +313,11 @@ export function applyStartupField(config: JsonObject, field: StartupFieldSpec, t
 export interface StartupArgRow { offset: number; tokens: string[]; known: boolean; arity: number }
 /** Rows keep exact token order, repeated flags, unknown options and positional values. */
 export function startupArgumentRows(config: JsonObject): StartupArgRow[] {
-  const args = startupArgsOf(config); const rows: StartupArgRow[] = [];
+  const args = startupArgsOf(config); const rows: StartupArgRow[] = []; const flags = startupEngineFlagsFor(config);
   for (let offset = 0; offset < args.length;) {
     const token = args[offset]!;
-    const known = Object.hasOwn(STARTUP_ENGINE_FLAGS, token);
-    const arity = known ? STARTUP_ENGINE_FLAGS[token]! : token.startsWith('--') && args[offset + 1] !== undefined && !args[offset + 1]!.startsWith('--') ? 1 : 0;
+    const known = Object.hasOwn(flags, token);
+    const arity = known ? flags[token]! : token.startsWith('--') && args[offset + 1] !== undefined && !args[offset + 1]!.startsWith('--') ? 1 : 0;
     let length = 1;
     while (length <= arity && args[offset + length] !== undefined && !args[offset + length]!.startsWith('--')) length++;
     rows.push({ offset, tokens: args.slice(offset, offset + length), known, arity }); offset += length;
@@ -333,6 +348,7 @@ export function validateStartupConfiguration(config: JsonObject): void {
   const args = startupArgsOf(config);
   if (args.some(value => !value.length)) throw new Error('args 包含空参数，请填写或移除 / remove or fill empty arguments');
   for (const row of startupArgumentRows(config)) if (row.known && row.tokens.length - 1 < row.arity) throw new Error(`${row.tokens[0]} 缺少参数值，需要 ${row.arity} 个 / missing operand(s), expected ${row.arity}`);
+  const deepseekError = deepseek41ArgsError(config); if (deepseekError) throw new Error(deepseekError);
   const context = valueOf(args, '--max-context'); const resident = valueOf(args, '--kv-resident');
   const capacity = integer(context, '--max-context', 2147483647);
   if (resident && (!Number.isSafeInteger(Number(resident)) || Number(resident) < 0)) throw new Error('--kv-resident 必须为非负整数 / must be a nonnegative integer');

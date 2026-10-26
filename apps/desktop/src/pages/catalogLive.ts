@@ -1,7 +1,7 @@
 // Live status for catalog rows: local presence, running download progress, fit, and change tracking.
 import { useEffect, useRef, useState } from 'react';
 import type { CatalogModel, LocalModel, TaskStatus } from '@strata-manager/core';
-import { catalogRequirement, fitState, taskProgress } from './d2Estimates';
+import { catalogPreferredQuant, catalogRequirement, quantFitState, taskProgress } from './d2Estimates';
 
 export type Fit = 'fits' | 'tight' | 'over';
 export interface QuantLive { local: boolean; downloading: boolean; failed: boolean; progress?: number; fit?: Fit }
@@ -15,16 +15,17 @@ export function quantLive(model: CatalogModel, quant: string, tasks: TaskStatus[
   const running = related.find(task => task.state === 'running');
   const latest = related[0];
   const isLocal = !!local?.some(item => { const req = catalogRequirement(`${item.name} ${item.modelPath}`); return req?.family === model.family && req.quant === quant; });
-  const ram = model.quantInfo[quant]?.ramGB;
-  return { local: isLocal, downloading: !!running, failed: !running && latest?.state === 'failed', progress: running ? taskProgress(running.message) : undefined, fit: ram === undefined ? undefined : fitState(ram, machineGB) };
+  return { local: isLocal, downloading: !!running, failed: !running && latest?.state === 'failed', progress: running ? taskProgress(running.message) : undefined, fit: quantFitState(model, quant, machineGB) };
 }
 
 export function rowLive(model: CatalogModel, tasks: TaskStatus[], local: LocalModel[] | undefined, machineGB?: number): RowLive {
   const quants = model.quants.map(quant => ({ quant, ...quantLive(model, quant, tasks, local, machineGB) }));
   const running = quants.find(item => item.downloading);
   const order: Fit[] = ['fits', 'tight', 'over'];
-  // A manual-only set (DeepSeek-V4.1-Flash 2.25 bpw) is never the card's suggestion.
-  const best = quants.filter(item => item.fit && !model.quantInfo[item.quant]?.manualOnly).sort((a, b) => order.indexOf(a.fit!) - order.indexOf(b.fit!) || (model.quantInfo[b.quant]?.ramGB ?? 0) - (model.quantInfo[a.quant]?.ramGB ?? 0))[0];
+  // A family with its own rule (DeepSeek-V4.1-Flash: dsv41_fit.recommend, the panel's 推荐) names the card's set; a
+  // manual-only set (DeepSeek-V4.1-Flash 2.25 bpw) is never the card's suggestion.
+  const preferred = catalogPreferredQuant(model, machineGB);
+  const best = quants.find(item => item.quant === preferred && item.fit) ?? quants.filter(item => item.fit && !model.quantInfo[item.quant]?.manualOnly).sort((a, b) => order.indexOf(a.fit!) - order.indexOf(b.fit!) || (model.quantInfo[b.quant]?.ramGB ?? 0) - (model.quantInfo[a.quant]?.ramGB ?? 0))[0];
   return { local: quants.filter(item => item.local).length, downloading: !!running, progress: running?.progress, failed: quants.some(item => item.failed), fit: best?.fit, bestQuant: best?.fit === 'over' ? undefined : best?.quant };
 }
 

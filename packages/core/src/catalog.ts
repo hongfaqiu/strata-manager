@@ -108,7 +108,7 @@ export function deepseek41DiskNeedGB(quant: string): number | null {
   return info ? Math.round((info.downloadGB + DEEPSEEK41_DISK_HEADROOM_GB) * 10) / 10 : null;
 }
 
-/** dsv41_fit.recommend(): 1.75 below 40 GB of RAM, or when only 1.75 fits the free disk; otherwise 2.00. 2.25 is never automatic. */
+/** dsv41_fit.recommend(): 1.75 below 40 GiB of RAM, or when only 1.75 fits the free disk (GB, 10^9 bytes); otherwise 2.00. 2.25 is never automatic. */
 export function recommendDeepseek41(ramGB?: number | null, diskFreeGB?: number | null): string {
   const need = (quant: string) => deepseek41DiskNeedGB(quant)!;
   if (ramGB != null && ramGB < 40) return 'IST-DAS-1.75bpw';
@@ -116,7 +116,13 @@ export function recommendDeepseek41(ramGB?: number | null, diskFreeGB?: number |
   return 'IST-DAS-2.00bpw';
 }
 
-/** dsv41_fit RAM class: fits (experts + 9 GB), tight (ram_ok_gb: experts streamed from the page cache), spills (read from the SSD, slow but allowed). */
+/**
+ * dsv41_fit RAM class, the one judgment the catalog card, the quantization table and the download panel share
+ * (desktop quantFitState): fits (all experts + 9 GiB cached), tight (ram_ok_gb: the most-used experts cached, the rest
+ * read from the model files), spills (most experts read from the SSD, slow but allowed). RAM is GiB, as setup.py's
+ * ram_gb() measures it (2**30) and compares with these numbers. dsv41_fit subtracts the experts a card holds first; the
+ * catalog does not know the card split, so it counts them all (never more optimistic than setup).
+ */
 export function deepseek41MemoryClass(quant: string, ramGB?: number | null): 'fits' | 'tight' | 'spills' | 'unknown' {
   const info = MODEL_CATALOG.find(entry => entry.family === 'deepseek41')?.quantInfo[quant];
   if (!info?.expertsGB || ramGB == null || !Number.isFinite(ramGB)) return 'unknown';

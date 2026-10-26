@@ -122,7 +122,7 @@ export function resourceAssessmentMessage(code: string, zh: boolean): string {
     model_unknown: ['没有识别到官方模型与量化组合，不能从文件大小推导运行容量。', 'The official model and quantization recipe is unknown; file size cannot establish running capacity.'],
     dsv41_no_card: ['没有 8 GB 以上的 NVIDIA 或 AMD 显卡；DeepSeek-V4.1-Flash 需要独立显卡放置注意力权重和部分专家。', 'No NVIDIA or AMD card with 8 GB or more; DeepSeek-V4.1-Flash needs a discrete GPU for the attention weights and some experts.'],
     dsv41_ram_store: ['内存放不下全部专家：引擎在内存里保留常用专家，其余从 SSD 读取，速度会下降。', 'RAM cannot hold every expert: the engine keeps the most used ones in RAM and reads the rest from the SSD, which is slower.'],
-    dsv41_ram_spill: ['内存低于这个版本的建议值：回答时会频繁从 SSD 读取专家，可以运行但很慢；内存小于 40 GB 时建议选 1.75 bpw，或增加内存。', 'RAM is below this set\'s guidance: experts are read from the SSD while answering, which runs but is slow; under 40 GB of RAM pick 1.75 bpw, or add RAM.'],
+    dsv41_ram_spill: ['内存低于这个版本的建议值：回答时会频繁从 SSD 读取专家，可以运行但很慢；内存小于 40 GiB 时建议选 1.75 bpw，或增加内存。', 'RAM is below this set\'s guidance: experts are read from the SSD while answering, which runs but is slow; under 40 GiB of RAM pick 1.75 bpw, or add RAM.'],
     cpu_experimental: ['处理器不具备 AVX2，官方建议使用实验构建，速度和兼容性另行验证。', 'This CPU lacks AVX2; official setup uses an experimental build requiring separate validation.'],
   };
   return messages[code]?.[zh ? 0 : 1] ?? code;

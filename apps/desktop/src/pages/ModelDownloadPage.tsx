@@ -212,7 +212,7 @@ export function ModelDownloadPage({ machineMemoryGB, language, desktop, fallback
 
 const gb = (bytes: number | null | undefined) => bytes == null ? undefined : bytes / 1e9;
 
-/** DeepSeek-V4.1-Flash requirements: disk need vs free, the dsv41_fit memory class, and the GPU it was measured on. */
+/** DeepSeek-V4.1-Flash requirements: disk need vs free (GB = 10^9 bytes), the dsv41_fit memory class (GiB, as setup.py's ram_gb() measures it; the same judgment as the catalog card, quantFitState), and the GPU it was measured on. */
 function Deepseek41Panel({ language, quant, memoryGB, gpus, disk, recommended }: { language: AppLanguage; quant: string; memoryGB?: number; gpus?: string[]; disk?: core.SetupDiskPreflight; recommended?: string }) {
   const zh = language === 'zh-CN', text = (cn: string, en: string) => zh ? cn : en;
   const info = core.MODEL_CATALOG.find(model => model.family === 'deepseek41')?.quantInfo[quant];
@@ -226,13 +226,13 @@ function Deepseek41Panel({ language, quant, memoryGB, gpus, disk, recommended }:
   };
   const memoryText = {
     fits: text('专家权重可全部放进内存', 'All experts fit in memory'),
-    tight: text('内存偏紧：部分专家按需从页缓存读入，速度略降', 'Tight: some experts stream through the page cache, a bit slower'),
-    spills: text(`内存低于 ${info?.ramGB ?? '—'} GB：专家会从 SSD 读取，明显变慢（仍可运行）`, `Below ${info?.ramGB ?? '—'} GB: experts are read from the SSD, much slower (still runs)`),
+    tight: text('内存偏紧：常用专家放在内存，其余从模型文件读取，速度略降', 'Tight: the most-used experts stay in RAM, the rest are read from the model files, a bit slower'),
+    spills: text(`内存低于 ${info?.ramGB ?? '—'} GiB：专家会从 SSD 读取，明显变慢（仍可运行）`, `Below ${info?.ramGB ?? '—'} GiB: experts are read from the SSD, much slower (still runs)`),
     unknown: text('未取得本机内存', 'Machine memory unknown'),
   }[memory];
   return <section className="dsv41-panel" data-testid="dsv41-panel" aria-label={text('DeepSeek-V4.1-Flash 需求', 'DeepSeek-V4.1-Flash requirements')}>
-    <div><strong>{text('磁盘', 'Disk')}</strong>{bar(needGB, freeGB, freeGB !== undefined && freeGB < needGB, freeGB !== undefined ? text(`需要 ${needGB.toFixed(0)} GB（含 6 GB 余量）· 可用 ${freeGB.toFixed(0)} GB`, `Needs ${needGB.toFixed(0)} GB (incl. 6 GB headroom) · ${freeGB.toFixed(0)} GB free`) : text(`需要 ${needGB.toFixed(0)} GB（含 6 GB 余量）`, `Needs ${needGB.toFixed(0)} GB (incl. 6 GB headroom)`), 'dsv41-disk')}</div>
-    <div><strong>{text('内存', 'Memory')}</strong>{bar(info?.expertsGB ? info.expertsGB + 9 : 0, memoryGB, memory === 'spills', `${memoryGB ? text(`本机 ${Math.round(memoryGB)} GB · `, `This machine ${Math.round(memoryGB)} GB · `) : ''}${info?.expertsGB ? text(`全部专家放进内存约需 ${Math.round(info.expertsGB + 9)} GB · `, `All experts in memory need about ${Math.round(info.expertsGB + 9)} GB · `) : ''}${memoryText}`, 'dsv41-memory')}</div>
+    <div><strong>{text('磁盘', 'Disk')}</strong>{bar(needGB, freeGB, freeGB !== undefined && freeGB < needGB, freeGB !== undefined ? text(`需要 ${needGB.toFixed(0)} GB（含 6 GB 余量）· 可用 ${freeGB.toFixed(0)} GB · 1 GB = 10⁹ 字节`, `Needs ${needGB.toFixed(0)} GB (incl. 6 GB headroom) · ${freeGB.toFixed(0)} GB free · 1 GB = 10⁹ bytes`) : text(`需要 ${needGB.toFixed(0)} GB（含 6 GB 余量）· 1 GB = 10⁹ 字节`, `Needs ${needGB.toFixed(0)} GB (incl. 6 GB headroom) · 1 GB = 10⁹ bytes`), 'dsv41-disk')}</div>
+    <div><strong>{text('内存', 'Memory')}</strong>{bar(info?.expertsGB ? info.expertsGB + 9 : 0, memoryGB, memory === 'spills', `${memoryGB ? text(`本机 ${Math.round(memoryGB)} GiB · `, `This machine ${Math.round(memoryGB)} GiB · `) : ''}${info?.expertsGB ? text(`全部专家放进内存约需 ${Math.round(info.expertsGB + 9)} GiB · `, `All experts in memory need about ${Math.round(info.expertsGB + 9)} GiB · `) : ''}${memoryText}`, 'dsv41-memory')}</div>
     <p className={card === false ? 'is-warn' : undefined}>{card === false ? text('未检测到 NVIDIA 或 AMD 显卡：此模型需要至少 8 GB 显存的独立显卡。', 'No NVIDIA or AMD card detected: this model needs a discrete GPU with at least 8 GB.') : text('显卡：NVIDIA RTX 30/40/50 系或 Radeon AI PRO R9700，至少 8 GB 显存（上游以 12 GB 显卡实测）。', 'GPU: NVIDIA RTX 30/40/50 series or Radeon AI PRO R9700, at least 8 GB (measured upstream on 12 GB cards).')}</p>
     <p>{text(`质量损失 ${info?.qualityLoss ?? '—'}（相对完整模型）。`, `Quality loss ${info?.qualityLoss ?? '—'} vs. the full model.`)}{recommended && recommended !== quant ? text(` 本机推荐 ${recommended}。`, ` Recommended here: ${recommended}.`) : ''}{info?.manualOnly ? text(' 2.25 bpw 不会被自动推荐。', ' 2.25 bpw is never picked automatically.') : ''}</p>
   </section>;

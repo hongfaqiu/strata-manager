@@ -1,6 +1,10 @@
 //! DeepSeek-V4.1-Flash (setup.py MULTI_FILE_FAMILIES "deepseek41", Strata 0.2.5+): the official IST-DAS sets,
 //! their shards and the files every set shares, and the disk plan setup.py's own check makes (setup.py 8100-8142,
 //! strata_control/dsv41_fit.py). Sizes are setup.py v0.2.6's pinned DSV41_ISTA_FILES / DSV41_FILES bytes.
+//! Checked 2026-10-26 against the Hugging Face API (paths-info, LFS size + sha256) at the revisions setup.py downloads
+//! (HF_REVISIONS: ISTA-DASLab/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF cb02422c, unsloth/DeepSeek-V4.1-Flash-1017-GGUF
+//! f924b94f): every size here and every pinned sha256 match. ISTA-DASLab's `main` has since replaced the first shard of each
+//! set (about 11 KB larger); setup.py keeps downloading the pinned revision, so these stay until a Strata release moves the pin.
 
 use std::fs;
 use std::path::{Path, PathBuf};

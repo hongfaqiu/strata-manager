@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
-import { MODEL_CATALOG } from '../../../../packages/core/src/catalog.ts';
+import { MODEL_CATALOG, deepseek41MemoryClass, recommendDeepseek41 } from '../../../../packages/core/src/catalog.ts';
 import { isOrcaRouterEvidence } from '../../../../packages/core/src/orca-import.ts';
 
 const load = (file, modules) => {
@@ -12,7 +12,7 @@ const load = (file, modules) => {
   vm.runInNewContext(source, { module, exports: module.exports, require: name => modules[name] ?? {} });
   return module.exports;
 };
-const estimates = load('./d2Estimates.ts', { '@strata-manager/core': { MODEL_CATALOG, isOrcaRouterEvidence } });
+const estimates = load('./d2Estimates.ts', { '@strata-manager/core': { MODEL_CATALOG, isOrcaRouterEvidence, deepseek41MemoryClass, recommendDeepseek41 } });
 const live = load('./catalogLive.ts', { './d2Estimates': estimates, react: {} });
 const swift = MODEL_CATALOG.find(model => model.family === 'swift');
 
@@ -69,4 +69,31 @@ test('DeepSeek-V4.1-Flash: the card never suggests the manual-only 2.25 bpw set'
   assert.equal(roomy.bestQuant, 'IST-DAS-2.00bpw');
   assert.equal(live.rowLive(deepseek, [], [], 36).bestQuant, 'IST-DAS-1.75bpw');
   assert.equal(estimates.catalogRequirement('deepseek-v4.1-flash strata-deepseek-v4.1-flash-ist-das-2.00bpw.json'), undefined, 'a DeepSeek config is never read as another family');
+});
+
+test('DeepSeek-V4.1-Flash: the card, the quant table and the panel share one fit judgment', () => {
+  const deepseek = MODEL_CATALOG.find(model => model.family === 'deepseek41');
+  const asPanel = { fits: 'fits', tight: 'tight', spills: 'over', unknown: undefined };
+  for (const ram of [24, 32, 34, 36, 40, 48, 64, 96, 128, 141, 160, 256]) {
+    for (const quant of deepseek.quants) {
+      const table = live.quantLive(deepseek, quant, [], [], ram).fit;
+      assert.equal(table, asPanel[deepseek41MemoryClass(quant, ram)], `${quant} at ${ram} GiB: table and panel agree`);
+      assert.equal(estimates.quantFitState(deepseek, quant, ram), table);
+    }
+    const card = live.rowLive(deepseek, [], [], ram);
+    const recommended = recommendDeepseek41(ram);
+    if (card.bestQuant) {
+      assert.equal(card.bestQuant, recommended, `${ram} GiB: the card suggests the panel's 推荐`);
+      assert.equal(card.fit, asPanel[deepseek41MemoryClass(recommended, ram)], `${ram} GiB: the card's label is the panel's for that set`);
+    } else {
+      assert.equal(card.fit, 'over');
+      assert.equal(deepseek41MemoryClass(recommended, ram), 'spills');
+    }
+  }
+  // The 64 GiB case the screenshots showed: 偏紧 on the card and in the panel, 2.00 suggested.
+  assert.deepEqual([live.rowLive(deepseek, [], [], 64).fit, live.rowLive(deepseek, [], [], 64).bestQuant], ['tight', 'IST-DAS-2.00bpw']);
+  // 130 GiB: 1.75 alone would fit, but the card follows dsv41_fit.recommend like the panel.
+  assert.equal(live.rowLive(deepseek, [], [], 130).bestQuant, 'IST-DAS-2.00bpw');
+  assert.equal(live.rowLive(deepseek, [], [], 130).fit, 'tight');
+  assert.equal(live.quantLive(deepseek, 'IST-DAS-2.00bpw', [], [], undefined).fit, undefined, 'unknown memory stays 未实测');
 });
