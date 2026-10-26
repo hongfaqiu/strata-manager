@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Activity, AlertTriangle, ArrowRight, Boxes, Check, ChevronDown, Copy, Cpu, MemoryStick, MessageSquare, MonitorSmartphone, Plug, RefreshCw, RotateCcw, Settings2, SlidersHorizontal } from 'lucide-react';
-import { gpuCards, gpuSetName, isUnifiedGpuName, modelLoadNotice, normalizeBaseUrl, type AppLanguage, type BackgroundHealthSnapshot, type JsonObject, type MetricSnapshot, type ProcessStatus, type ServiceProfile, type TaskStatus } from '@strata-manager/core';
+import { defaultGpuCards, gpuCards, gpuSetName, isUnifiedGpuName, modelLoadNotice, normalizeBaseUrl, type AppLanguage, type BackgroundHealthSnapshot, type JsonObject, type MetricSnapshot, type ProcessStatus, type ServiceProfile, type TaskStatus } from '@strata-manager/core';
 import { ApiIntegrationDialog } from '../ApiIntegrationDialog';
 import { useOverviewUsage } from './OverviewUsage';
 import './overview-dashboard.css';
@@ -89,7 +89,7 @@ export function OverviewDashboard(props: OverviewDashboardProps) {
   const parked = parkedCache.enabled === true ? num(parkedCache.bytes) : null;
   const vramOther = vramUsed === null ? null : Math.max(0, vramUsed - (experts ?? 0)), ramOther = ramUsed === null ? null : Math.max(0, ramUsed - (parked ?? 0));
   const width = (v: number | null, total: number | null) => v !== null && total ? `${Math.max(0, Math.min(100, v / total * 100))}%` : '0%';
-  const cards = gpuCards(raw), multiGpu = cards.length > 1, gpuName = gpuSetName(raw) ?? 'GPU', powerLimit = num(hw.gpu_power_limit);
+  const cards = gpuCards(raw), allSet = new Set(defaultGpuCards(raw).map(card => card.index)), multiGpu = cards.length > 1, gpuName = gpuSetName(raw) ?? 'GPU', powerLimit = num(hw.gpu_power_limit);
   // Apple Silicon: upstream reports the Metal working set of the unified memory, not VRAM, and there is no PCIe link.
   const unifiedGpu = isUnifiedGpuName(gpuName);
   const loadNotice = modelLoadNotice({ online, loaded: health.loaded, metric, loadingSince: props.loadingSince });
@@ -168,9 +168,12 @@ export function OverviewDashboard(props: OverviewDashboardProps) {
         {legend([[t('ovExperts'), experts, 'seg-a'], [t('ovModelRuntime'), vramOther, 'seg-b']], vramUsed !== null && vramTotal !== null ? vramTotal - vramUsed : null)}
         {multiGpu && <ul className="ovw-gpu-cards" aria-label={t('ovGpuCards')} data-testid="overview-gpu-cards">{cards.map(card => {
           const pct = card.memUsed !== null && card.memTotal ? card.memUsed / card.memTotal * 100 : null;
-          return <li key={card.index} title={card.name ?? undefined}>
+          // An integrated GPU beside a real card stays listed but is not in the All totals above (upstream defaultGpuSet).
+          const excluded = !allSet.has(card.index);
+          return <li key={card.index} title={card.name ?? undefined} className={excluded ? 'is-excluded' : undefined}>
             <span className="ovw-gpu-id">GPU {card.index}</span>
-            <span className={`ovw-gpu-bar t-${toneOf(pct, T.memoryWarn, T.memoryBad)}`} aria-hidden="true"><i style={{ width: width(card.memUsed, card.memTotal) }} /></span>
+            {excluded ? <span className="ovw-gpu-igpu">{t('ovIntegratedGpu')}</span>
+              : <span className={`ovw-gpu-bar t-${toneOf(pct, T.memoryWarn, T.memoryBad)}`} aria-hidden="true"><i style={{ width: width(card.memUsed, card.memTotal) }} /></span>}
             <b className="ovw-num">{gib(card.memUsed)}<small> / {gib(card.memTotal, 0)} GB</small></b>
             <span className="ovw-num">{fmt(card.util, 0)}%</span>
             <span className="ovw-num">{fmt(card.temp, 0)}°C</span>

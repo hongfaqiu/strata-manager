@@ -749,5 +749,6 @@
   "ovIssueLoading": "Chargement du modèle ({{seconds}} s écoulées) ; un gros modèle peut prendre plusieurs minutes la première fois",
   "ovIssueLoadingNow": "Chargement du modèle ; un gros modèle peut prendre plusieurs minutes la première fois",
   "ovGpuCards": "Par GPU",
-  "ovPcieFirstCard": "Lien du GPU 0"
+  "ovPcieFirstCard": "Lien du GPU 0",
+  "ovIntegratedGpu": "Intégré · hors total"
 }

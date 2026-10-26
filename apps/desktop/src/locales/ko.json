@@ -749,5 +749,6 @@
   "ovIssueLoading": "모델 로드 중({{seconds}}초 경과). 큰 모델은 처음에 몇 분 걸릴 수 있습니다",
   "ovIssueLoadingNow": "모델 로드 중. 큰 모델은 처음에 몇 분 걸릴 수 있습니다",
   "ovGpuCards": "GPU별",
-  "ovPcieFirstCard": "GPU 0 링크"
+  "ovPcieFirstCard": "GPU 0 링크",
+  "ovIntegratedGpu": "내장 GPU · 합계 제외"
 }

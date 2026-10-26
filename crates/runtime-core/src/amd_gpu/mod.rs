@@ -100,8 +100,40 @@ fn mean(values: impl Iterator<Item = Option<f64>>) -> Option<f64> {
 }
 
 impl AmdTelemetry {
+    /// Which cards count toward the "All GPUs" totals: a Ryzen's small integrated Radeon beside a
+    /// real card is left out (upstream v0.2.6 `defaultGpuSet`); an APU alone keeps it.
+    pub fn default_mask(&self) -> Vec<bool> {
+        let facts: Vec<_> = self
+            .gpus
+            .iter()
+            .map(|g| {
+                let mut facts =
+                    crate::igpu::GpuFacts::new(g.name.as_deref().unwrap_or(""), g.mem_total);
+                facts.vendor = Some("amd".into());
+                facts
+            })
+            .collect();
+        crate::igpu::default_gpu_mask(&facts)
+    }
+    fn default_gpus(&self) -> Vec<&AmdGpuSample> {
+        self.gpus
+            .iter()
+            .zip(self.default_mask())
+            .filter_map(|(gpu, keep)| keep.then_some(gpu))
+            .collect()
+    }
+    /// True when every AMD GPU here is a small integrated one.
+    pub fn only_integrated(&self) -> bool {
+        !self.gpus.is_empty()
+            && self.gpus.iter().all(|g| {
+                let mut facts =
+                    crate::igpu::GpuFacts::new(g.name.as_deref().unwrap_or(""), g.mem_total);
+                facts.vendor = Some("amd".into());
+                facts.is_small_integrated()
+            })
+    }
     fn aggregate(&self) -> Vec<(&'static str, Option<f64>)> {
-        let g = &self.gpus;
+        let g = self.default_gpus();
         // Same aggregation as the engine's sampler: memory/power summed, utilization averaged,
         // hottest temperature.
         vec![
@@ -227,12 +259,44 @@ pub async fn augment_local_metrics(base_url: &str, metrics: &mut Value) {
     if !is_local_base_url(base_url) || !engine_lacks_gpu_telemetry(metrics) {
         return;
     }
-    let Ok(Some((telemetry, history))) =
-        tokio::task::spawn_blocking(|| current().map(|t| (t, history_snapshot()))).await
+    let Ok(Some((telemetry, history, nvidia))) = tokio::task::spawn_blocking(|| {
+        current().map(|t| (t, history_snapshot(), nvidia_present()))
+    })
+    .await
     else {
         return;
     };
+    if !should_merge(&telemetry, nvidia) {
+        return;
+    }
     merge_into_metrics(metrics, &telemetry, &history);
+}
+
+/// An NVIDIA card is installed (its driver is loaded). Checked once per run.
+fn nvidia_present() -> bool {
+    static PRESENT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *PRESENT.get_or_init(|| {
+        #[cfg(target_os = "linux")]
+        {
+            std::path::Path::new("/proc/driver/nvidia/version").exists()
+        }
+        #[cfg(windows)]
+        {
+            crate::display_adapters::windows_gpu_adapters()
+                .is_some_and(|a| a.iter().any(|a| a.vendor == Some("nvidia")))
+        }
+        #[cfg(not(any(target_os = "linux", windows)))]
+        {
+            false
+        }
+    })
+}
+
+/// The engine runs on an NVIDIA card but has not reported a reading yet (or its NVML read
+/// failed): a Ryzen's integrated Radeon must not stand in for that card. AMD telemetry is merged
+/// only when there is an AMD card worth showing, or no NVIDIA card at all (an APU-only PC).
+pub fn should_merge(telemetry: &AmdTelemetry, nvidia_present: bool) -> bool {
+    !telemetry.gpus.is_empty() && !(nvidia_present && telemetry.only_integrated())
 }
 
 fn is_number(value: Option<&Value>) -> bool {
@@ -320,6 +384,7 @@ pub fn merge_into_metrics(metrics: &mut Value, telemetry: &AmdTelemetry, history
                     .any(|key| is_number(gpu.get(*key)))
             })
         });
+    let mask = telemetry.default_mask();
     if replace_cards {
         let cards: Vec<Value> = telemetry
             .gpus
@@ -328,6 +393,10 @@ pub fn merge_into_metrics(metrics: &mut Value, telemetry: &AmdTelemetry, history
             .map(|(index, gpu)| {
                 let mut card = Map::new();
                 card.insert("index".into(), json!(index));
+                if !mask[index] {
+                    // Still listed (and selectable) on its own, but not part of the All totals.
+                    card.insert("integrated".into(), json!(true));
+                }
                 if let Some(name) = &gpu.name {
                     card.insert("name".into(), json!(name));
                 }
@@ -358,8 +427,9 @@ pub fn merge_into_metrics(metrics: &mut Value, telemetry: &AmdTelemetry, history
         *st = Value::Object(Map::new());
     }
     let st = st.as_object_mut().expect("object");
+    let defaults = telemetry.default_gpus();
     let mut names: Vec<&str> = Vec::new();
-    for name in telemetry.gpus.iter().filter_map(|g| g.name.as_deref()) {
+    for name in defaults.iter().filter_map(|g| g.name.as_deref()) {
         if !name.trim().is_empty() && !names.contains(&name) {
             names.push(name);
         }
@@ -373,10 +443,10 @@ pub fn merge_into_metrics(metrics: &mut Value, telemetry: &AmdTelemetry, history
         st.insert("gpu_name".into(), json!(names.join(" + ")));
     }
     if !is_number(st.get("gpu_count")) || st.get("gpu_count").and_then(Value::as_f64) == Some(0.0) {
-        st.insert("gpu_count".into(), json!(telemetry.gpus.len()));
+        st.insert("gpu_count".into(), json!(defaults.len()));
     }
     if !is_number(st.get("gpu_vram_total_mib")) {
-        if let Some(total) = sum(telemetry.gpus.iter().map(|g| g.mem_total)) {
+        if let Some(total) = sum(defaults.iter().map(|g| g.mem_total)) {
             st.insert(
                 "gpu_vram_total_mib".into(),
                 json!((total / 1_048_576.0).round()),
@@ -535,6 +605,81 @@ mod tests {
         assert_eq!(hw["gpus"][1]["index"], 1);
         assert_eq!(metrics["hardware_static"]["gpu_name"], "A");
         assert!(metrics.get("history").is_none());
+    }
+
+    fn igpu() -> AmdGpuSample {
+        AmdGpuSample {
+            mem_total: Some(512.0 * 1_048_576.0),
+            ..card("AMD Radeon(TM) Graphics", 3.0, 0.2, 45.0, 8.0)
+        }
+    }
+
+    #[test]
+    fn integrated_radeon_beside_a_card_stays_out_of_the_all_totals() {
+        let mut metrics = json!({"hardware": {}});
+        let telemetry = AmdTelemetry {
+            source: "amd-adlx",
+            gpus: vec![
+                card("AMD Radeon RX 7900 XTX", 80.0, 10.0, 60.0, 300.0),
+                igpu(),
+            ],
+        };
+        assert_eq!(telemetry.default_mask(), vec![true, false]);
+        merge_into_metrics(&mut metrics, &telemetry, &[]);
+        let hw = &metrics["hardware"];
+        assert_eq!(hw["gpu_util"], 80.0);
+        assert_eq!(hw["gpu_mem_used"], 10.0 * 1_073_741_824.0);
+        assert_eq!(hw["gpu_mem_total"], 24.0 * 1_073_741_824.0);
+        assert_eq!(hw["gpu_power"], 300.0);
+        // Still listed on its own, flagged.
+        assert_eq!(hw["gpus"].as_array().unwrap().len(), 2);
+        assert_eq!(hw["gpus"][1]["integrated"], true);
+        assert!(hw["gpus"][0].get("integrated").is_none());
+        let st = &metrics["hardware_static"];
+        assert_eq!(st["gpu_name"], "AMD Radeon RX 7900 XTX");
+        assert_eq!(st["gpu_count"], 1);
+        assert_eq!(st["gpu_vram_total_mib"], 24576.0);
+    }
+
+    #[test]
+    fn apu_alone_keeps_its_integrated_radeon() {
+        let mut metrics = json!({"hardware": {}});
+        let telemetry = AmdTelemetry {
+            source: "amdgpu-sysfs",
+            gpus: vec![igpu()],
+        };
+        assert!(should_merge(&telemetry, false));
+        merge_into_metrics(&mut metrics, &telemetry, &[]);
+        assert_eq!(metrics["hardware"]["gpu_mem_total"], 512.0 * 1_048_576.0);
+        assert!(metrics["hardware"]["gpus"][0].get("integrated").is_none());
+        assert_eq!(metrics["hardware_static"]["gpu_count"], 1);
+    }
+
+    #[test]
+    fn nvidia_card_without_engine_names_does_not_take_the_integrated_radeon() {
+        // The engine has not reported its NVIDIA card's readings or names yet: the Ryzen iGPU that
+        // ADLX/sysfs sees must not be shown as "the GPU".
+        let telemetry = AmdTelemetry {
+            source: "amd-adlx",
+            gpus: vec![igpu()],
+        };
+        assert!(!should_merge(&telemetry, true));
+        // A real AMD card next to an NVIDIA one is still worth showing.
+        let telemetry = AmdTelemetry {
+            source: "amd-adlx",
+            gpus: vec![
+                card("AMD Radeon RX 7900 XTX", 80.0, 10.0, 60.0, 300.0),
+                igpu(),
+            ],
+        };
+        assert!(should_merge(&telemetry, true));
+        assert!(!should_merge(
+            &AmdTelemetry {
+                source: "amd-adlx",
+                gpus: vec![]
+            },
+            false
+        ));
     }
 
     #[test]

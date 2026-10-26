@@ -22,6 +22,7 @@ mod gpu_power;
 pub mod health_watch;
 pub mod http;
 mod idle_model;
+pub mod igpu;
 pub mod installation;
 pub mod launcher_env;
 pub mod legacy;

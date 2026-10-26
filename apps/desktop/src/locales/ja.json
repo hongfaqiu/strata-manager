@@ -749,5 +749,6 @@
   "ovIssueLoading": "モデルを読み込み中（{{seconds}} 秒経過）。大きなモデルは初回に数分かかることがあります",
   "ovIssueLoadingNow": "モデルを読み込み中。大きなモデルは初回に数分かかることがあります",
   "ovGpuCards": "GPU ごと",
-  "ovPcieFirstCard": "GPU 0 のリンク"
+  "ovPcieFirstCard": "GPU 0 のリンク",
+  "ovIntegratedGpu": "内蔵 GPU · 合計に含めない"
 }
