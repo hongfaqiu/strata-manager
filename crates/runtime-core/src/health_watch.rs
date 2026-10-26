@@ -1026,6 +1026,7 @@ server.serve_forever()
                 last_error: Some("isolated fixture recovery sample".into()),
                 repair_required: false,
                 last_started_at: crate::now().saturating_sub(65_000),
+                ..Default::default()
             };
         }
         fn expire_saved_health(&self) {

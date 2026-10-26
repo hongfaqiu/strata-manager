@@ -15,6 +15,7 @@ pub mod disk;
 mod display_adapters;
 mod energy;
 pub mod engine_help;
+pub mod engine_log;
 pub mod external;
 pub mod external_management;
 pub mod gguf_check;
@@ -92,6 +93,26 @@ struct RecoveryStatus {
     last_error: Option<String>,
     repair_required: bool,
     last_started_at: u64,
+    log_fallback_tried: bool,
+}
+
+/// An unwritable engine log is not retried blindly: the first engine report
+/// gets one quick retry on a new log file (see `prepare_engine_log`), then
+/// recovery stops and asks for a repair.
+fn log_recovery_step(recovery: &mut RecoveryStatus, error: &str, at: u64) -> Option<String> {
+    let preflight = diagnostics::log_unwritable(error)?;
+    if !preflight && !recovery.log_fallback_tried {
+        recovery.log_fallback_tried = true;
+        recovery.repair_required = false;
+        recovery.next_retry_at = at + 2_000;
+        return Some("引擎无法写入日志文件，下次自动恢复将改用新的日志文件 / The engine cannot write its log file; the next recovery attempt uses a new log file".into());
+    }
+    recovery.repair_required = true;
+    recovery.last_error = Some(format!(
+        "{}（已停止自动恢复 / automatic recovery stopped）",
+        engine_log::UNWRITABLE_MESSAGE
+    ));
+    Some("日志文件被占用或无权限，换用新日志文件后仍失败，已停止自动恢复 / Log file in use or not writable even after switching files; automatic recovery stopped".into())
 }
 
 pub struct RuntimeState {
@@ -560,6 +581,9 @@ impl RuntimeState {
                     "error",
                     format!("自动恢复第 {} 次失败: {error}", recovery.attempts),
                 );
+                if let Some(stop) = log_recovery_step(&mut recovery, &error, now()) {
+                    processes::log(&self.logs, id, "warn", stop);
+                }
                 Err(error)
             }
         }
@@ -1809,8 +1833,16 @@ impl RuntimeState {
             "localStartupFailures",
             Value::Object(failures),
         )?;
+        drop(database);
         Ok(match diagnostic {
-            Some(diagnostic) => Err(diagnostics::encode(&diagnostic)),
+            Some(diagnostic) => {
+                let encoded = diagnostics::encode(&diagnostic);
+                // The engine could not open a log Manager could: next start writes a new file.
+                if diagnostics::log_unwritable(&encoded) == Some(false) {
+                    engine_log::request_fallback(profile_id);
+                }
+                Err(encoded)
+            }
             None => result,
         })
     }
@@ -2783,6 +2815,89 @@ fn prepare_startup(
     })
 }
 
+/// Upstream `server.py` opens `config["log"]` for appending and an old release
+/// dies with `PermissionError` when it cannot. Try the same open first; when it
+/// fails (or the engine already reported that it failed), write a fresh
+/// writable log path into the configuration so every Manager reader (logs,
+/// diagnostics, export) follows it, and keep only the newest replacements.
+/// Returns the notice to show once the engine is started.
+fn prepare_engine_log(
+    state: &RuntimeState,
+    plan: &mut StartupPlan,
+) -> Result<Option<String>, String> {
+    let profile = plan.profile.clone();
+    let forced = engine_log::take_fallback_request(&profile.id);
+    let Some(original) = storage::engine_log_path_in(&plan.config_value, &profile) else {
+        return Ok(None);
+    };
+    let safe_id: String = profile
+        .id
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .take(80)
+        .collect();
+    let directories = [
+        state.data_dir.join("engine-logs").join(&safe_id),
+        std::env::temp_dir()
+            .join("strata-manager-engine-logs")
+            .join(&safe_id),
+    ];
+    let choice = engine_log::choose(
+        &original,
+        &directories,
+        now(),
+        forced,
+        engine_log::appendable,
+    )
+    .map_err(|attempts| {
+        diagnostics::error(
+            engine_log::CODE,
+            format!("{}（{attempts}）", engine_log::UNWRITABLE_MESSAGE),
+            "prepare",
+        )
+    })?;
+    let Some(reason) = choice.replaced else {
+        return Ok(None);
+    };
+    let snapshot = storage::read_snapshot(&profile)
+        .map_err(|error| diagnostics::error("STARTUP_CONFIG_INVALID", error, "prepare"))?;
+    let mut config = snapshot.config;
+    config["log"] = Value::String(choice.path.to_string_lossy().into_owned());
+    storage::write_cas(&profile, &config, &snapshot.revision).map_err(|error| {
+        diagnostics::error(
+            engine_log::CODE,
+            format!(
+                "{}（原日志 {} 不可写：{reason}；改写配置失败：{error}）",
+                engine_log::UNWRITABLE_MESSAGE,
+                original.display()
+            ),
+            "prepare",
+        )
+    })?;
+    plan.config_value = config;
+    let notice = format!(
+            "原日志文件被占用或无权限，已改写到 {}（原文件 {}：{reason}） / The original log file is in use or not writable; logging to {} instead",
+            choice.path.display(),
+            original.display(),
+            choice.path.display()
+        );
+    if let Some(directory) = choice.path.parent() {
+        engine_log::prune(
+            directory,
+            &engine_log::base_of(&original),
+            engine_log::KEEP_FALLBACK_LOGS,
+            &[choice.path.as_path(), original.as_path()],
+        );
+    }
+    Ok(Some(notice))
+}
+
 fn start_service_locked(
     state: &RuntimeState,
     profile: ServiceProfile,
@@ -2838,6 +2953,7 @@ fn start_prepared_service_checked(
     network::assert_bind_available(plan.listen_address)?;
     let profile = plan.profile.clone();
     maintenance::clear_abandoned(state, &profile)?;
+    let log_notice = prepare_engine_log(state, &mut plan)?;
     let mut command = Command::new(&plan.python);
     command
         .current_dir(&plan.root)
@@ -2925,6 +3041,10 @@ fn start_prepared_service_checked(
             status.pid
         ),
     );
+    // Logged after the spawn registers this session's log view, so it stays visible.
+    if let Some(notice) = log_notice {
+        processes::log(&state.logs, &profile.id, "warn", notice);
+    }
     Ok(status)
 }
 async fn stop_service(state: &RuntimeState, profile_id: String) -> Result<ProcessStatus, String> {
@@ -3978,6 +4098,74 @@ async fn export_diagnostics(
 mod tuning_service_operation_tests;
 
 #[cfg(test)]
+mod engine_log_recovery_tests {
+    use super::*;
+
+    fn engine_report() -> String {
+        let logs = [LogEntry {
+            timestamp: 15,
+            level: "error".into(),
+            message: "PermissionError: [Errno 13] Permission denied: 'engine.log'".into(),
+        }];
+        diagnostics::encode(&diagnostics::build("p", 10, 20, "exit 1", &logs, None))
+    }
+
+    #[test]
+    fn engine_log_failure_swaps_the_file_once_then_stops_instead_of_three_retries() {
+        let mut recovery = RecoveryStatus {
+            attempts: 1,
+            ..Default::default()
+        };
+        let note = log_recovery_step(&mut recovery, &engine_report(), 1_000).unwrap();
+        assert!(note.contains("新的日志文件"));
+        assert!(recovery.log_fallback_tried && !recovery.repair_required);
+        assert_eq!(recovery.next_retry_at, 3_000);
+        recovery.attempts = 2;
+        let note = log_recovery_step(&mut recovery, &engine_report(), 4_000).unwrap();
+        assert!(note.contains("已停止自动恢复"));
+        // Stopped after two attempts, before the generic third retry.
+        assert!(recovery.repair_required);
+        assert!(recovery
+            .last_error
+            .as_deref()
+            .is_some_and(|error| error.contains("日志文件被占用或无权限")));
+    }
+
+    #[test]
+    fn preflight_without_any_writable_log_stops_at_once() {
+        let mut recovery = RecoveryStatus {
+            attempts: 1,
+            ..Default::default()
+        };
+        let raw = diagnostics::encode(&diagnostics::build(
+            "p",
+            10,
+            20,
+            &diagnostics::error(
+                engine_log::CODE,
+                "Permission denied (os error 13)",
+                "prepare",
+            ),
+            &[],
+            None,
+        ));
+        log_recovery_step(&mut recovery, &raw, 1_000).unwrap();
+        assert!(recovery.repair_required && !recovery.log_fallback_tried);
+    }
+
+    #[test]
+    fn other_failures_keep_the_regular_recovery_schedule() {
+        let mut recovery = RecoveryStatus {
+            attempts: 1,
+            ..Default::default()
+        };
+        let raw = diagnostics::error("STARTUP_ENGINE_CRASHED", "exit 1", "starting");
+        assert_eq!(log_recovery_step(&mut recovery, &raw, 1_000), None);
+        assert!(!recovery.repair_required && recovery.next_retry_at == 0);
+    }
+}
+
+#[cfg(test)]
 mod native_probe_tests {
     use super::*;
 
@@ -4001,6 +4189,7 @@ from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 p=argparse.ArgumentParser();p.add_argument('--host');p.add_argument('--port',type=int);p.add_argument('--config')
 a,_=p.parse_known_args();config=json.loads(Path(a.config).read_text())
+if config.get('log'):open(config['log'],'a').write('fixture started\n')
 if config.get('exit_root_marker'):
  child=subprocess.Popen([sys.executable,'-I','-S','-c','import time;time.sleep(60)'])
  Path(config['exit_root_marker']).write_text(str(child.pid));sys.exit(0)
@@ -4057,6 +4246,64 @@ ThreadingHTTPServer((a.host,a.port),Handler).serve_forever()
         )
         .unwrap();
         profile
+    }
+
+    #[test]
+    fn unwritable_engine_log_is_replaced_before_the_engine_opens_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("runtime");
+        let python = runtime_lease_fixture(&root);
+        let state = RuntimeState::open(temp.path().join("data")).unwrap();
+        let _cleanup = RuntimeLeaseCleanup(vec![state.clone()]);
+        let config_path = root.join("config.json");
+        let profile = runtime_lease_profile(&root, &python, &config_path);
+        // A folder where the log file should be: upstream open(log, "a") fails
+        // on every platform, like a locked or read-only engine.log on Windows.
+        let original = root.join("engine.log");
+        fs::create_dir_all(&original).unwrap();
+        let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+        config["log"] = json!(original.to_string_lossy());
+        fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+        register_gui_fixture(&state, &profile);
+        let plan = prepare_startup(&profile, &state.processes, &state.tasks).unwrap();
+        start_prepared_service(&state, profile.clone(), plan, None).unwrap();
+        let saved = storage::read(&profile).unwrap();
+        let effective = storage::engine_log_path_in(&saved, &profile).unwrap();
+        assert_eq!(effective.parent(), Some(root.as_path()));
+        let name = effective
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert!(
+            name.starts_with("engine-") && name.ends_with(".log"),
+            "{name}"
+        );
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !fs::read_to_string(&effective).is_ok_and(|text| text.contains("fixture started")) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "engine did not write {name}"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let logs = state.logs.lock().unwrap()[&profile.id]
+            .iter()
+            .map(|entry| entry.message.clone())
+            .collect::<Vec<_>>();
+        assert!(
+            logs.iter()
+                .any(|line| line.contains("原日志文件被占用或无权限，已改写到")
+                    && line.contains(&name)),
+            "{logs:#?}"
+        );
+        // The next start's preflight leaves the now writable log alone.
+        let mut plan = prepare_startup(&profile, &state.processes, &state.tasks).unwrap();
+        assert_eq!(prepare_engine_log(&state, &mut plan).unwrap(), None);
+        assert_eq!(
+            storage::engine_log_path_in(&storage::read(&profile).unwrap(), &profile).unwrap(),
+            effective
+        );
     }
 
     #[test]
