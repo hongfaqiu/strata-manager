@@ -105,6 +105,51 @@ const strataReleaseCatalog = (() => {
   return Object.freeze({ repo, keys, optionalKeys, version, compare, select, selectResponses, assets, applyDownloads });
 })();
 
+// Visitor platform → recommended package. Pure: the caller passes navigator facts and validated URLs.
+const strataPlatformPick = (() => {
+  // Every package key the website can offer, in the order the "Other platforms" list shows them.
+  const order = ['windows', 'dmg', 'appimage', 'deb', 'server', 'serverDeb'];
+
+  function detect({ platform = '', architecture = '', bitness = '', mobile, ua = '', navPlatform = '', maxTouchPoints = 0 } = {}) {
+    const text = `${ua} ${navPlatform}`;
+    const p = String(platform).toLowerCase();
+    let os = null;
+    if (/android/i.test(text) || p === 'android') os = 'android';
+    else if (/iphone|ipad|ipod/i.test(text) || p === 'ios' || (/macintosh/i.test(ua) && maxTouchPoints > 1)) os = 'ios';
+    else if (p === 'windows' || /windows|win32|win64/i.test(text)) os = 'windows';
+    else if (p === 'macos' || /mac os x|macintosh|macintel/i.test(text)) os = 'mac';
+    else if (p === 'chrome os' || /cros/i.test(text)) os = 'chromeos';
+    else if (p === 'linux' || /linux|x11/i.test(text)) os = 'linux';
+    const isMobile = os === 'android' || os === 'ios' || mobile === true;
+    let arch = null;
+    const a = String(architecture).toLowerCase();
+    if (a === 'arm') arch = String(bitness) === '32' ? 'arm' : 'arm64';
+    else if (a === 'x86') arch = String(bitness) === '32' ? 'x86' : 'x64';
+    else if (/aarch64|arm64/i.test(text)) arch = 'arm64';
+    else if (/x86_64|x64|amd64|wow64|win64/i.test(text)) arch = 'x64';
+    // Without Client Hints every Mac browser reports "Intel"; leave the Mac architecture unknown.
+    if (os === 'mac' && !a) arch = null;
+    return { os, arch, mobile: isMobile };
+  }
+
+  // Returns the recommended key (or null) and a short note key; urls holds validated download URLs.
+  function choose(info, urls = {}) {
+    if (!info || info.mobile) return { key: null, note: 'mobile' };
+    if (info.os === 'windows') return { key: 'windows', note: info.arch === 'arm64' ? 'winArm' : null };
+    if (info.os === 'mac') {
+      if (info.arch === 'x64') return { key: null, note: 'macIntel' };
+      return urls.dmg || !Object.keys(urls).length ? { key: 'dmg', note: info.arch ? null : 'macArm' } : { key: null, note: 'noMac' };
+    }
+    if (info.os === 'linux' || info.os === 'chromeos') {
+      if (info.arch && info.arch !== 'x64') return { key: null, note: 'linuxArm' };
+      return { key: 'appimage', note: null };
+    }
+    return { key: null, note: 'unknown' };
+  }
+
+  return Object.freeze({ order, detect, choose });
+})();
+
 // Website interactions.
 (() => {
   'use strict';
@@ -1327,6 +1372,7 @@ const strataReleaseCatalog = (() => {
     renderScreen(activeView);
     { const keep = sbState; setSvc(svc); setStatusbar(keep); }
     fitDemo?.refreshLanguage?.();
+    renderSmartDownload();
     updateDemoToggle();
     updateThemeButton();
   }
@@ -1396,7 +1442,71 @@ const strataReleaseCatalog = (() => {
     strataReleaseCatalog.applyDownloads(elements, urls);
     const notesBtn = document.getElementById('release-notes-link');
     if (notesBtn) notesBtn.href = urls.notes || `https://github.com/${strataReleaseCatalog.repo}/releases`;
+    smartUrls = Object.fromEntries(strataPlatformPick.order.filter(key => urls[key]).map(key => [key, urls[key]]));
     renderReleaseStatus();
+    renderSmartDownload();
+  }
+
+  // ---------- Smart download: recommend this visitor's package, list the rest under "Other platforms" ----------
+  let smartUrls = {};
+  let smartInfo = strataPlatformPick.detect({ ua: navigator.userAgent || '', navPlatform: navigator.platform || '', maxTouchPoints: navigator.maxTouchPoints || 0 });
+  const smartText = {
+    zh: { get: '下载 Strata Manager', options: '查看下载选项', download: '下载', windows: 'Windows 版', dmg: 'macOS 版', appimage: 'Linux 版',
+      mobile: '请在电脑上下载安装', winArm: 'x64 版，可在 Windows on ARM 上运行', macArm: '适用于 Apple Silicon',
+      macIntel: '暂无 Intel Mac 安装包', noMac: '本版本暂无 macOS 安装包', linuxArm: '暂只提供 Linux x64 安装包', unknown: '未识别到系统，请选择' },
+    en: { get: 'Get Strata Manager', options: 'See download options', download: 'Download for', windows: 'Windows', dmg: 'macOS', appimage: 'Linux',
+      mobile: 'Download on a computer', winArm: 'x64 build, runs on Windows on ARM', macArm: 'For Apple Silicon',
+      macIntel: 'No Intel Mac build yet', noMac: 'No macOS build in this release', linuxArm: 'Linux builds are x64 only', unknown: 'System not detected, pick one' },
+  };
+  function renderSmartDownload() {
+    const button = $('[data-smart-download]');
+    if (!button) return;
+    const t = smartText[currentLang];
+    const { key, note } = strataPlatformPick.choose(smartInfo, smartUrls);
+    const url = key ? smartUrls[key] : null;
+    const label = $('[data-smart-download-label]', button);
+    const tag = activeReleaseTag && /^v\d/.test(activeReleaseTag) ? activeReleaseTag : ($('[data-app-version]')?.textContent.trim() || '');
+    if (url) {
+      label.textContent = tag ? `${t.download} ${t[key]} · ${tag}` : `${t.download} ${t[key]}`;
+      button.href = url;
+      button.removeAttribute('data-smart-pending');
+    } else {
+      label.textContent = key ? (tag ? `${t.download} ${t[key]} · ${tag}` : `${t.download} ${t[key]}`) : (smartInfo.mobile ? t.options : t.get);
+      button.href = '#get-started';
+      if (key) button.setAttribute('data-smart-pending', '');
+    }
+    const noteEl = $('[data-smart-download-note]');
+    if (noteEl) { noteEl.textContent = note ? t[note] : ''; noteEl.hidden = !note; }
+    $$('[data-smart-option]').forEach(link => {
+      const optionUrl = smartUrls[link.dataset.smartOption];
+      link.closest('li').hidden = Boolean(Object.keys(smartUrls).length) && !optionUrl;
+      link.classList.toggle('is-current', link.dataset.smartOption === key);
+      if (optionUrl) { link.href = optionUrl; link.removeAttribute('aria-disabled'); link.removeAttribute('tabindex'); }
+      else { link.removeAttribute('href'); link.setAttribute('aria-disabled', 'true'); link.setAttribute('tabindex', '-1'); }
+    });
+    // Nothing to recommend (phone, unknown or unsupported system): show every option right away.
+    const toggle = $('[data-smart-download-toggle]');
+    if (!key && toggle && !toggle.dataset.touched) setSmartList(true);
+  }
+  function setSmartList(open) {
+    const toggle = $('[data-smart-download-toggle]');
+    const list = $('#smart-dl-list');
+    if (!toggle || !list) return;
+    toggle.setAttribute('aria-expanded', String(open));
+    list.hidden = !open;
+  }
+  $('[data-smart-download-toggle]')?.addEventListener('click', event => {
+    const toggle = event.currentTarget;
+    toggle.dataset.touched = '1';
+    setSmartList(toggle.getAttribute('aria-expanded') !== 'true');
+  });
+  if (navigator.userAgentData?.getHighEntropyValues) {
+    navigator.userAgentData.getHighEntropyValues(['platform', 'architecture', 'bitness'])
+      .then(hints => {
+        smartInfo = strataPlatformPick.detect({ ...hints, mobile: navigator.userAgentData.mobile, ua: navigator.userAgent || '', navPlatform: navigator.platform || '', maxTouchPoints: navigator.maxTouchPoints || 0 });
+        renderSmartDownload();
+      })
+      .catch(() => {});
   }
 
   async function fetchLatestRelease() {

@@ -941,6 +941,7 @@ pub async fn start(
     super::assert_available(&state)?;
     let profile = state.registered_profile(&profile_id)?;
     let config_path = assert_managed_config(&state, &profile)?;
+    super::assert_tunable(&config_path)?;
     let pid = require_owned(&state, &profile).await?;
     let health = http::strata_request(
         &state,

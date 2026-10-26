@@ -1,7 +1,7 @@
 // Pure first-run guide logic: persisted progress, environment checks, step detection,
 // recommendations and Arena matching. No React or native IO here so it stays testable.
 import * as core from '@strata-manager/core';
-import { fitState } from '../pages/d2Estimates';
+import { quantFitState } from '../pages/d2Estimates';
 
 export const ONBOARDING_KEY = 'onboardingV1';
 export type GuidePath = 'install' | 'connect';
@@ -238,10 +238,12 @@ export function recommendations(scene: Scene, memoryGB: number | undefined, nvid
   // The environment's OS when known (the guide passes it); else the browser's user agent. Mac families the Metal
   // engine cannot run are listed apart, greyed out with the reason (ModelStep), never recommended.
   const catalogPlatform = platform && platform !== 'other' ? platform : core.runtimePackagePlatform();
-  const catalogModels = core.filterCatalogForPlatform(core.MODEL_CATALOG, catalogPlatform).filter(model => !core.officialFamilyBlock(model.family, catalogPlatform));
+  const catalogModels = core.filterCatalogForPlatform(core.MODEL_CATALOG, catalogPlatform).filter(model => !core.officialFamilyBlock(model.family, catalogPlatform))
+    // A family that needs a newer Strata release (DeepSeek-V4.1-Flash: 0.2.5, fixed 8K, 250+ GB) is picked on the download page, never suggested here.
+    .filter(model => !model.minRelease);
   const rows = catalogModels.flatMap(model => core.platformQuants(model.quants, catalogPlatform).map(quant => {
     const info = model.quantInfo[quant]!;
-    return { family: model.family, name: model.name, quant, downloadGB: info.downloadGB, ramGB: info.ramGB, fit: fitState(info.ramGB, memoryGB), experimental: !!info.experimental, nvidiaOnly: !!info.nvidiaOnly, recommended: false };
+    return { family: model.family, name: model.name, quant, downloadGB: info.downloadGB, ramGB: info.ramGB, fit: quantFitState(model, quant, memoryGB), experimental: !!info.experimental, nvidiaOnly: !!info.nvidiaOnly, recommended: false };
   }));
   const penalty = (row: Recommendation) => (row.experimental ? 2 : 0) + (row.nvidiaOnly && !nvidia ? 4 : 0);
   rows.sort((a, b) => fitRank[a.fit ?? 'unknown'] - fitRank[b.fit ?? 'unknown'] || penalty(a) - penalty(b) || order.indexOf(a.family) - order.indexOf(b.family) || (a.fit === 'fits' ? b.ramGB - a.ramGB : a.ramGB - b.ramGB));

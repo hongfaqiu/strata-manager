@@ -8,6 +8,7 @@ import { apiUsageStrings } from './ApiUsageStrings';
 import { apiUsageLayoutText } from './ApiUsageLayoutStrings';
 import { OutcomeDonut, UsageChart, UsageSparkline, bucketMetric, type ChartColor, type ChartSeries, type UsageChartProps } from './ApiUsageCharts';
 import { ApiUsageLive } from './ApiUsageLive';
+import { ApiUsageHighlights } from './ApiUsageHighlights';
 import './api-usage.css';
 
 export interface ApiUsagePageProps {
@@ -17,7 +18,7 @@ export interface ApiUsagePageProps {
   live?: { raw?: JsonObject; sampledAt?: number; stale?: boolean; stopped?: boolean };
 }
 type Period = 'hour' | 'today' | 'day' | 'threeDays' | 'week' | 'history';
-type TrendView = 'requests' | 'tokens' | 'latency' | 'decode' | 'prefill' | 'cache';
+type TrendView = 'requests' | 'tokens' | 'latency' | 'decode' | 'prefill' | 'cache' | 'energy';
 type NotesView = 'coverage' | 'definitions' | 'samples';
 const periods: Period[] = ['hour', 'today', 'day', 'threeDays', 'week', 'history'];
 const periodShortKey = { hour: 'periodHour', today: 'periodToday', day: 'periodDay', threeDays: 'periodThreeDays', week: 'periodWeek', history: 'periodHistory' } as const;
@@ -140,6 +141,8 @@ export function ApiUsagePage({ language, profileId, profileName, desktop, onQuer
     decode: { title: text.decodeTrend, props: { unit: 'tok/s' }, hint: text.engineTrendHint, series: [{ key: 'decodeTokS', label: text.speed, color: 'accent', samples: 'decodeSamples' }] },
     prefill: { title: text.prefillTrend, props: { unit: 'tok/s' }, hint: text.engineTrendHint, series: [{ key: 'prefillTokS', label: text.prefill, color: 'blue', samples: 'prefillSamples' }] },
     cache: { title: text.cacheTrend, props: { percentage: true }, hint: text.cacheTrendHint, series: [{ key: 'cacheHitRate', label: text.cacheRate, color: 'accent', samples: 'cacheRateSamples' }, { key: 'expertCacheHitRate', label: text.expertCache, color: 'blue', samples: 'expertCacheSamples' }] },
+    // A bucket without sampled seconds is a gap in the line, never 0 Wh.
+    energy: { title: layout.energyTrend, props: { unit: 'Wh' }, hint: layout.energyTrendHint.replace('{{value}}', s?.energy?.coverage == null ? '—' : `${number(s.energy.coverage * 100, 1)}%`), series: [{ key: 'energyWh', label: layout.trendEnergy, color: 'gold', samples: 'energySampledS' }] },
   };
   const trend = trends[trendView];
   const outcomes = s ? ([['succeeded', 'accent'], ['failed', 'danger'], ['cancelled', 'gold'], ['interrupted', 'violet'], ['pending', 'muted']] as const).map(([key, color]) => ({ key, color, label: text[key], value: s.http[key] })) : [];
@@ -163,6 +166,7 @@ export function ApiUsagePage({ language, profileId, profileName, desktop, onQuer
       {!snapshot && loading && <div className="api-usage-loading" role="status"><LoaderCircle size={19} className="spin"/>{text.loading}</div>}
       {snapshot && s && <>
         {(unsupported || incomplete) ? <p className="notice" role="status"><AlertTriangle size={16}/> {coverageLabel}</p> : !measured && <div className="api-usage-empty-hint" role="status"><strong>{layout.emptyTitle}</strong><span>{text.noDataHint}</span></div>}
+        <ApiUsageHighlights language={language} layout={layout} summary={s} buckets={buckets} measured={measured} live={live} powerReadable={coverage?.powerReadable}/>
         <section className="api-usage-kpis" aria-label={text.overview}>
           {kpi(layout.kpiRequests, measured ? compact(s.http.requests) : '—', { tooltip: count(s.http.requests), detail: `${text.pending} ${count(s.http.pending)}`, values: cumulative('requests') })}
           {kpi(text.successRate, percentage(s.http.successRate), { detail: layout.kpiSucceededOf.replace('{{count}}', count(s.http.succeeded)), tone: s.http.successRate == null ? 'muted' : undefined })}
@@ -173,27 +177,12 @@ export function ApiUsagePage({ language, profileId, profileName, desktop, onQuer
         </section>
 
         <section className="api-usage-section api-usage-trend-card" aria-label={layout.trendTitle}>
-          <div className="api-usage-section-head"><h2>{trend.title}</h2><Tabs idPrefix="api-usage-trend" label={layout.trendMetric} value={trendView} onChange={setTrendView} options={[{ value: 'requests', label: layout.trendRequests }, { value: 'tokens', label: layout.trendTokens }, { value: 'latency', label: layout.trendLatency }, { value: 'decode', label: layout.trendDecode }, { value: 'prefill', label: layout.trendPrefill }, { value: 'cache', label: layout.trendCache }]}/></div>
+          <div className="api-usage-section-head"><h2>{trend.title}</h2><Tabs idPrefix="api-usage-trend" label={layout.trendMetric} value={trendView} onChange={setTrendView} options={[{ value: 'requests', label: layout.trendRequests }, { value: 'tokens', label: layout.trendTokens }, { value: 'latency', label: layout.trendLatency }, { value: 'decode', label: layout.trendDecode }, { value: 'prefill', label: layout.trendPrefill }, { value: 'cache', label: layout.trendCache }, { value: 'energy', label: layout.trendEnergy }]}/></div>
           <div id="api-usage-trend-panel" role="tabpanel" aria-labelledby={`api-usage-trend-tab-${trendView}`}>
             <UsageChart key={`${period}:${trendView}`} {...chartScope} {...trend.props} trends={snapshot.trends} language={language} title={trend.title} series={trend.series}/>
             <p className="api-usage-caption">{trend.hint}</p>
           </div>
         </section>
-
-        <div className="api-usage-grid-2">
-          <section className="api-usage-section" aria-label={layout.outcomeTitle}>
-            <div className="api-usage-section-head"><h2>{layout.outcomeTitle}</h2><span>{text.runs} {count(s.inference.runs)}</span></div>
-            <div className="api-usage-outcomes">
-              <OutcomeDonut label={layout.outcomeChart} centerLabel={text.successRate} centerValue={percentage(s.http.successRate)} items={outcomes.map(item => ({ label: item.label, value: item.value, color: item.color }))}/>
-              <ul className="api-usage-outcome-list">{outcomes.map(item => <li key={item.key} className={item.key !== 'succeeded' && item.key !== 'pending' && item.value ? 'has-value' : ''}><span className={`api-metric-key api-chart-color-${item.color}`}/><span>{item.label}</span><strong>{count(item.value)}</strong><em>{measured && s.http.requests ? `${number(item.value / s.http.requests * 100, 1)}%` : '—'}</em></li>)}</ul>
-            </div>
-          </section>
-          <section className="api-usage-section" aria-label={text.sources}>
-            <div className="api-usage-section-head"><h2>{layout.sourcesTitle}</h2><span>{text.sources}</span></div>
-            {groups.length ? <div className="api-usage-table-scroll"><table className="api-usage-sources-table"><thead><tr><th>{text.client}</th><th>{text.route}</th><th className="num">{text.requestsCount}</th><th className="num">{text.succeeded}</th><th className="num">{layout.sourceSuccess}</th><th>{layout.share}</th></tr></thead><tbody>{groups.map(group => { const share = groupTotal ? group.requests / groupTotal : 0; return <tr key={JSON.stringify([group.route, group.clientId])}><td>{group.clientId == null ? <span className="muted">{text.unknownClient}</span> : group.clientId}</td><td className="muted">{route(group.route)}</td><td className="num">{number(group.requests)}</td><td className="num">{number(group.succeeded)}</td><td className="num">{group.requests ? `${number(group.succeeded / group.requests * 100, 1)}%` : '—'}</td><td><span className="api-usage-share-cell"><span className="api-usage-share" role="img" aria-label={`${layout.share} ${number(share * 100, 1)}%`}><i style={{ width: `${Math.max(2, share * 100)}%` }}/></span><em className="api-usage-share-value">{number(share * 100, 0)}%</em></span></td></tr>; })}</tbody></table></div> : <p className="api-usage-table-empty">{text.noRequests}</p>}
-            <dl className="api-usage-inline-facts"><div><dt>{text.tools}</dt><dd>{count(s.inference.toolCalls)}</dd></div><div><dt>{text.mcp}</dt><dd>{count(s.http.mcpToolCalls)}</dd></div><div className={s.http.mcpToolFailures ? 'has-failures' : ''}><dt>{text.mcpFailures}</dt><dd>{count(s.http.mcpToolFailures)}</dd></div></dl>
-          </section>
-        </div>
 
         <div className="api-usage-grid-2">
           <section className="api-usage-section" aria-label={text.latency}>
@@ -210,6 +199,21 @@ export function ApiUsagePage({ language, profileId, profileName, desktop, onQuer
               <div><dt>{text.runs}</dt><dd>{count(s.inference.runs)}</dd></div>
               <div><dt>{text.speedDistribution}</dt><dd>{number(meanSpeed, 2)} <small>/ {number(s.decodeTokS.p50, 2)} / {number(s.decodeTokS.p20, 2)}</small></dd><small>{text.mean} / {text.p50} / {text.p20} · {text.speedSamples.replace('{{count}}', number(s.decodeTokS.samples))}</small></div>
             </dl>
+          </section>
+        </div>
+
+        <div className="api-usage-grid-2">
+          <section className="api-usage-section" aria-label={layout.outcomeTitle}>
+            <div className="api-usage-section-head"><h2>{layout.outcomeTitle}</h2><span>{text.runs} {count(s.inference.runs)}</span></div>
+            <div className="api-usage-outcomes">
+              <OutcomeDonut label={layout.outcomeChart} centerLabel={text.successRate} centerValue={percentage(s.http.successRate)} items={outcomes.map(item => ({ label: item.label, value: item.value, color: item.color }))}/>
+              <ul className="api-usage-outcome-list">{outcomes.map(item => <li key={item.key} className={item.key !== 'succeeded' && item.key !== 'pending' && item.value ? 'has-value' : ''}><span className={`api-metric-key api-chart-color-${item.color}`}/><span>{item.label}</span><strong>{count(item.value)}</strong><em>{measured && s.http.requests ? `${number(item.value / s.http.requests * 100, 1)}%` : '—'}</em></li>)}</ul>
+            </div>
+          </section>
+          <section className="api-usage-section" aria-label={text.sources}>
+            <div className="api-usage-section-head"><h2>{layout.sourcesTitle}</h2><span>{text.sources}</span></div>
+            {groups.length ? <div className="api-usage-table-scroll"><table className="api-usage-sources-table"><thead><tr><th>{text.client}</th><th>{text.route}</th><th className="num">{text.requestsCount}</th><th className="num">{text.succeeded}</th><th className="num">{layout.sourceSuccess}</th><th>{layout.share}</th></tr></thead><tbody>{groups.map(group => { const share = groupTotal ? group.requests / groupTotal : 0; return <tr key={JSON.stringify([group.route, group.clientId])}><td>{group.clientId == null ? <span className="muted">{text.unknownClient}</span> : group.clientId}</td><td className="muted">{route(group.route)}</td><td className="num">{number(group.requests)}</td><td className="num">{number(group.succeeded)}</td><td className="num">{group.requests ? `${number(group.succeeded / group.requests * 100, 1)}%` : '—'}</td><td><span className="api-usage-share-cell"><span className="api-usage-share" role="img" aria-label={`${layout.share} ${number(share * 100, 1)}%`}><i style={{ width: `${Math.max(2, share * 100)}%` }}/></span><em className="api-usage-share-value">{number(share * 100, 0)}%</em></span></td></tr>; })}</tbody></table></div> : <p className="api-usage-table-empty">{text.noRequests}</p>}
+            <dl className="api-usage-inline-facts"><div><dt>{text.tools}</dt><dd>{count(s.inference.toolCalls)}</dd></div><div><dt>{text.mcp}</dt><dd>{count(s.http.mcpToolCalls)}</dd></div><div className={s.http.mcpToolFailures ? 'has-failures' : ''}><dt>{text.mcpFailures}</dt><dd>{count(s.http.mcpToolFailures)}</dd></div></dl>
           </section>
         </div>
 
@@ -274,6 +278,7 @@ function MetadataFilter({ label, allLabel, unknownLabel, unknown, labels, value,
 /** Freeze the collection boundary and time range independently of live polling. */
 function RequestHistory({ language, profileId, period, onQuery }: { language: AppLanguage; profileId?: string; period: Period; onQuery: ApiAnalyticsClient }) {
   const text = apiUsageStrings[(language === 'zh-CN' ? 'zh-CN' : 'en')];
+  const layout = apiUsageLayoutText(language);
   const [draft, setDraft] = useState<RequestFilters>(initialFilters);
   const [applied, setApplied] = useState<RequestFilters>(initialFilters);
   const [selection, setSelection] = useState<ApiAnalyticsQuery>(() => ({ ...periodRange(period), serviceId: profileId, sort: 'newest' }));
@@ -362,7 +367,7 @@ function RequestHistory({ language, profileId, period, onQuery }: { language: Ap
     <p className="api-usage-footnote api-request-range">{text.range}: {time(selection.startMs!)} — {time(selection.endMs!)}</p>
     {loading && <div className="api-request-loading" role="status"><LoaderCircle size={16} className="spin"/>{text.historyLoading}</div>}
     {!loading && page && <>
-      <div className="api-usage-table-scroll" tabIndex={0} aria-label={text.requestHistory}><table className="api-usage-recent"><thead><tr><th>{text.time}</th><th>{text.model}</th><th>{text.client}</th><th>{text.route}</th><th>{text.result}</th><th>{text.http}</th><th>{text.stream}</th><th>{text.input} / {text.output}</th><th>{text.ttft}</th><th>{text.duration}</th><th>{text.cacheRate}</th><th>{text.expertCache}</th><th>{text.prefill}</th><th>{text.speed}</th><th>{text.runs}</th></tr></thead><tbody>{page.items.map(request => <tr key={request.requestId} data-tooltip={`${text.requestId}: ${request.requestId}`}><td>{time(request.startedAtMs)}</td><td>{request.modelId ?? text.unknownModel}</td><td>{request.clientId ?? text.unknownClient}</td><td>{route(request.route)}</td><td><span className={`api-usage-outcome ${request.outcome}`}>{outcome(request.outcome)}</span></td><td>{number(request.httpStatus)}</td><td>{request.stream == null ? '—' : request.stream ? text.yes : text.no}</td><td>{number(request.inputTokens)} / {number(request.outputTokens)}</td><td>{seconds(request.firstTokenS)}</td><td>{seconds(request.durationS)}</td><td>{request.cacheHitRate == null ? '—' : `${number(request.cacheHitRate * 100, 1)}%`}</td><td>{request.expertCacheHitRate == null ? '—' : `${number(request.expertCacheHitRate * 100, 1)}%`}</td><td>{request.prefillTokS == null ? '—' : `${number(request.prefillTokS, 1)} tok/s`}</td><td>{request.decodeTokS == null ? '—' : `${number(request.decodeTokS, 1)} tok/s`}</td><td>{number(request.inferenceRuns)}</td></tr>)}</tbody></table></div>
+      <div className="api-usage-table-scroll" tabIndex={0} aria-label={text.requestHistory}><table className="api-usage-recent"><thead><tr><th>{text.time}</th><th>{text.model}</th><th>{text.client}</th><th>{text.route}</th><th>{text.result}</th><th>{text.http}</th><th>{text.stream}</th><th>{text.input} / {text.output}</th><th>{text.ttft}</th><th>{text.duration}</th><th>{text.cacheRate}</th><th>{text.expertCache}</th><th>{text.prefill}</th><th>{text.speed}</th><th>{text.runs}</th><th data-tooltip={layout.energyEstimateTooltip}>{layout.energyEstimate}</th></tr></thead><tbody>{page.items.map(request => <tr key={request.requestId} data-tooltip={`${text.requestId}: ${request.requestId}`}><td>{time(request.startedAtMs)}</td><td>{request.modelId ?? text.unknownModel}</td><td>{request.clientId ?? text.unknownClient}</td><td>{route(request.route)}</td><td><span className={`api-usage-outcome ${request.outcome}`}>{outcome(request.outcome)}</span></td><td>{number(request.httpStatus)}</td><td>{request.stream == null ? '—' : request.stream ? text.yes : text.no}</td><td>{number(request.inputTokens)} / {number(request.outputTokens)}</td><td>{seconds(request.firstTokenS)}</td><td>{seconds(request.durationS)}</td><td>{request.cacheHitRate == null ? '—' : `${number(request.cacheHitRate * 100, 1)}%`}</td><td>{request.expertCacheHitRate == null ? '—' : `${number(request.expertCacheHitRate * 100, 1)}%`}</td><td>{request.prefillTokS == null ? '—' : `${number(request.prefillTokS, 1)} tok/s`}</td><td>{request.decodeTokS == null ? '—' : `${number(request.decodeTokS, 1)} tok/s`}</td><td>{number(request.inferenceRuns)}</td><td data-tooltip={request.energyCoverage != null && request.energyCoverage < 1 ? layout.energyPartial.replace('{{value}}', number(request.energyCoverage * 100, 0)) : undefined}>{request.energyWhEstimate == null ? '—' : `≈${number(request.energyWhEstimate, request.energyWhEstimate < 1 ? 3 : 2)} Wh`}</td></tr>)}</tbody></table></div>
       {!page.items.length && <div className="api-usage-table-empty"><p>{text.historyEmpty}</p><small>{text.noRequestsHint}</small></div>}
     </>}
     <div className="api-request-pagination"><span role="status">{text.page.replace('{{page}}', (pageIndex + 1).toLocaleString(language)).replace('{{count}}', (page?.items.length ?? 0).toLocaleString(language))}</span><div><button type="button" disabled={loading || exporting || !pageIndex} onClick={() => setPageIndex(previous => previous - 1)}><ChevronLeft size={15}/>{text.previousPage}</button><button type="button" disabled={loading || exporting || !page?.nextCursor} onClick={next}>{text.nextPage}<ChevronRight size={15}/></button></div></div>

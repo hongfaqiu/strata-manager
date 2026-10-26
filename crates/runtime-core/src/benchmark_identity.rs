@@ -59,6 +59,7 @@ fn resource_configuration(args: &[String]) -> Option<Value> {
         &["--kv-resident"],
         &["--expert-cache"],
         &["--vram-reserve-mib"],
+        &["--experts"],
     ] {
         let present = args.iter().any(|arg| {
             names
@@ -75,8 +76,14 @@ fn resource_configuration(args: &[String]) -> Option<Value> {
         .ok()
         .filter(|value| (512..=1_048_576).contains(value))?;
     let mut safe = vec!["--max-context".to_owned(), context];
-    let model = option(args, &["--native", "--model", "-m"])?;
-    safe.extend(["--native".into(), basename(&model)?.to_owned()]);
+    // DeepSeek-V4.1-Flash (arch deepseek41) names its model by the --pack folder only.
+    let model = option(args, &["--native", "--model", "-m"]);
+    if model.is_none() && option(args, &["--pack"]).is_none() {
+        return None;
+    }
+    if let Some(model) = model {
+        safe.extend(["--native".into(), basename(&model)?.to_owned()]);
+    }
     if let Some(pack) = option(args, &["--pack"]) {
         safe.extend(["--pack".into(), basename(&pack)?.to_owned()]);
     }
@@ -100,6 +107,9 @@ fn resource_configuration(args: &[String]) -> Option<Value> {
         // Benchmark Arena compares these launch parameters within a model + quant group.
         "--pool-workers",
         "--pcie-frac",
+        // DeepSeek-V4.1 speed choice (5 fast / 6 full quality): a different answer path, so a different benchmark group.
+        "--experts",
+        "--tp",
     ] {
         if let Some(value) = option(args, &[flag]) {
             if value.len() > 64
@@ -113,8 +123,15 @@ fn resource_configuration(args: &[String]) -> Option<Value> {
         }
     }
     for flag in ["--resident-experts", "--mmap-experts", "--vram-elastic"] {
-        if args.iter().any(|arg| arg == flag) {
+        if let Some(index) = args.iter().position(|arg| arg == flag) {
             safe.push(flag.into());
+            // The DeepSeek engine takes `--mmap-experts auto|off|on`; Qwen's is a bare switch.
+            if let Some(value) = args
+                .get(index + 1)
+                .filter(|value| matches!(value.as_str(), "auto" | "off" | "on"))
+            {
+                safe.push(value.clone());
+            }
         }
     }
     let parallel = option(args, &["--batch", "--slots"])
@@ -196,7 +213,11 @@ fn requested_drafting(config: &Value) -> Option<&'static str> {
 }
 
 /// `{"requested": config drafting, "mtpSwitch": the boolean config "mtp" (a path string is not a switch), "effective": from the engine args}`.
+/// DeepSeek-V4.1 (arch deepseek41) runs strata-dsv41, which has no MTP/DFlash drafting: no drafting identity.
 fn drafting_identity(config: &Value, effective_args: Option<&[String]>) -> Value {
+    if config["arch"] == crate::disk::dsv41::FAMILY {
+        return Value::Null;
+    }
     json!({
         "requested": requested_drafting(config),
         "mtpSwitch": config.get("mtp").and_then(Value::as_bool),
@@ -417,6 +438,51 @@ mod resource_tests {
         );
     }
     #[test]
+    fn deepseek41_identity_keeps_the_pack_the_speed_choice_and_the_load_mode() {
+        let base = [
+            "--pack",
+            "/models/packs/deepseek-v4.1-flash-ist-das-2.00bpw",
+            "--max-context",
+            "8192",
+            "--eos",
+            "1",
+            "--dspark",
+            "auto",
+        ]
+        .map(String::from)
+        .to_vec();
+        let plain = resource_configuration(&base).unwrap();
+        assert_eq!(
+            plain["args"],
+            json!([
+                "--max-context",
+                "8192",
+                "--pack",
+                "deepseek-v4.1-flash-ist-das-2.00bpw"
+            ])
+        );
+        let mut fast = base.clone();
+        fast.extend(["--experts", "5", "--mmap-experts", "on"].map(String::from));
+        let fast = resource_configuration(&fast).unwrap();
+        assert_eq!(
+            fast["args"],
+            json!([
+                "--max-context",
+                "8192",
+                "--pack",
+                "deepseek-v4.1-flash-ist-das-2.00bpw",
+                "--experts",
+                "5",
+                "--mmap-experts",
+                "on"
+            ])
+        );
+        let mut full = base;
+        full.extend(["--experts", "6"].map(String::from));
+        assert_ne!(resource_configuration(&full).unwrap()["args"], fast["args"]);
+    }
+
+    #[test]
     fn custom_modes_and_ambiguous_capacity_do_not_become_default_recipes() {
         let mut args = [
             "strata",
@@ -492,6 +558,10 @@ mod drafting_tests {
         assert_eq!(
             drafting_identity(&json!({"drafting":"weird","mtp":"/models/mtp"}), None),
             json!({"requested":"auto","mtpSwitch":null,"effective":null})
+        );
+        assert_eq!(
+            drafting_identity(&json!({"arch":"deepseek41","args":[]}), Some(&[])),
+            Value::Null
         );
         assert_eq!(
             drafting_identity(&json!({}), Some(&[])),

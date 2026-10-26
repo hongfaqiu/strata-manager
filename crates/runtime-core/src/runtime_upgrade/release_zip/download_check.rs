@@ -348,6 +348,7 @@ mod tests {
             notes: None,
             published_at: None,
             assets: vec![asset],
+            dsv41_assets: Vec::new(),
             source_revision: Some(crate::installation::SOURCE_REVISION.into()),
             source_archive_url: Some(crate::installation::SOURCE_URL.into()),
             update_available: true,

@@ -13,6 +13,7 @@ pub mod diagnostics;
 pub mod discovery;
 pub mod disk;
 mod display_adapters;
+mod energy;
 pub mod engine_help;
 pub mod external;
 pub mod external_management;
@@ -118,6 +119,8 @@ pub struct RuntimeState {
     recovery_resumed: tokio::sync::Notify,
     /// Setup task id -> the `--gguf-dir` it ran with.
     task_model_dirs: Mutex<HashMap<String, PathBuf>>,
+    /// GPU energy stitched from the `/metrics` responses the supervisor relays (see `energy`).
+    energy: Mutex<energy::Sampler>,
 }
 impl RuntimeState {
     pub fn open(data_dir: PathBuf) -> Result<Arc<Self>, String> {
@@ -187,6 +190,7 @@ impl RuntimeState {
             recovery_deferred: AtomicBool::new(deferred),
             recovery_resumed: tokio::sync::Notify::new(),
             task_model_dirs: Mutex::new(HashMap::new()),
+            energy: Mutex::new(energy::Sampler::default()),
         });
         if !deferred {
             state.finish_startup_recovery()?;
@@ -358,6 +362,41 @@ impl RuntimeState {
     }
     pub fn data_dir(&self) -> &Path {
         &self.data_dir
+    }
+    pub(crate) fn energy_observe(&self, service: &str, metrics: &Value) {
+        if let Ok(mut sampler) = self.energy.lock() {
+            sampler.observe(service, now() as i64, metrics);
+        }
+    }
+    /// Keeps the 1 Hz energy series covered while no window polls `/metrics`: one read of the engine's own
+    /// 60-second power history per running owned service every 30 s, and none while the dashboard or a
+    /// monitor is already polling. The response is folded in by `http` like any other `/metrics` read.
+    pub async fn energy_tick(self: Arc<Self>) -> Result<(), String> {
+        if self.shutting_down.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        let running: Vec<ServiceProfile> = self
+            .processes
+            .lock()
+            .map_err(|e| e.to_string())?
+            .values()
+            .filter(|process| process.status.running)
+            .filter_map(|process| process.profile.clone())
+            .collect();
+        let now = now() as i64;
+        for profile in running {
+            let stale = self
+                .energy
+                .lock()
+                .map_err(|e| e.to_string())?
+                .last_seen_ms(&profile.id)
+                .is_none_or(|seen| now - seen >= energy::TOP_UP_AFTER_MS);
+            if stale {
+                // An engine still loading or busy answers later; that second range simply stays unsampled.
+                let _ = http::metrics_for_energy(&self, profile).await;
+            }
+        }
+        Ok(())
     }
     fn selection_recovery_load(&self, profile_id: &str) -> Result<Option<bool>, String> {
         if let Some(loaded) = runtime_upgrade::recovery_load(self, profile_id)? {
@@ -3562,6 +3601,21 @@ fn run_setup_with_preflight_options(
             ));
         }
     }
+    let deepseek = model == disk::dsv41::FAMILY;
+    if deepseek {
+        let release =
+            discovery::release_version(&root, discovery::runtime_version(&root, None).as_deref());
+        if !engine_version_at_least(release.as_deref(), &[0, 2, 5]) {
+            return Err(format!(
+                "DeepSeek-V4.1-Flash 需要 Strata 0.2.5 或更新版本（当前：{}）；请先更新 Strata",
+                release.as_deref().unwrap_or("未知")
+            ));
+        }
+        // setup.py DSV41_CONTEXT: the engine was checked at 4K and 8K; it reads no pictures in this version.
+        if context != disk::dsv41::CONTEXT || images {
+            return Err("DeepSeek-V4.1-Flash 只支持 8K 上下文、不支持图像".into());
+        }
+    }
     if options
         .as_ref()
         .is_some_and(|options| options.gpu_roles.is_some())
@@ -3627,6 +3681,7 @@ fn run_setup_with_preflight_options(
             directory.to_string_lossy().into_owned(),
         ]);
     }
+    let root_for_prelude = root.clone();
     let step = Step {
         program: setup_python,
         args,
@@ -3638,7 +3693,26 @@ fn run_setup_with_preflight_options(
             .unwrap_or_default(),
     };
     steps.push(step);
-    processes::launch_setup_task(state.clone(), intent, steps)
+    let prelude = if deepseek {
+        Some(dsv41_prelude(state.clone(), root_for_prelude)?)
+    } else {
+        None
+    };
+    processes::launch_setup_task_with_prelude(state.clone(), intent, steps, prelude)
+}
+/// DeepSeek-V4.1-Flash runs on its own engine package (engine-dsv41/), which setup.py would otherwise fetch from
+/// the newest upstream release. Manager installs the verified package from its own feed first and hands setup the
+/// executable (`STRATA_DSV41_EXE`), so setup neither downloads nor upgrades it.
+fn dsv41_prelude(state: Arc<RuntimeState>, root: PathBuf) -> Result<processes::Prelude, String> {
+    let handle = tokio::runtime::Handle::try_current()
+        .map_err(|_| "DeepSeek 引擎准备需要后台运行时；请重试".to_string())?;
+    Ok(Box::new(move |id: &str| {
+        let exe = handle.block_on(runtime_upgrade::dsv41_engine::prepare(&state, id, &root))?;
+        Ok(std::collections::BTreeMap::from([(
+            "STRATA_DSV41_EXE".to_string(),
+            Some(exe.to_string_lossy().into_owned()),
+        )]))
+    }))
 }
 fn orca_memory() -> (u64, u64) {
     let mut system = sysinfo::System::new();

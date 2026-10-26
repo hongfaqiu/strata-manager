@@ -104,6 +104,9 @@ export function snapshotModelDownloadRequest(
     || selection.context < 512 || selection.context > 1048576) {
     throw new Error('上下文长度须为 512–1048576 的整数 / Context must be an integer from 512 to 1048576');
   }
+  if (model.fixedContext && selection.context !== model.fixedContext) {
+    throw new Error(`${model.name} 只支持 ${model.fixedContext} 上下文 / ${model.name} only supports a ${model.fixedContext} context`);
+  }
   if (typeof selection.images !== 'boolean' || (selection.images && !model.images)) {
     throw new Error('所选模型不支持此图像选项 / Invalid image support option for the selected model');
   }
