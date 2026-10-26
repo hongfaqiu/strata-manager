@@ -1,4 +1,4 @@
-import type { ApiInferenceTotals } from '@strata-manager/core';
+import type { ApiEnergyTotals, ApiInferenceTotals } from '@strata-manager/core';
 
 /** Pure helpers for the API usage "key metrics" row; every value comes from recorded or live samples, never a default. */
 const known = (value: number | null | undefined): value is number => typeof value === 'number' && Number.isFinite(value);
@@ -30,6 +30,30 @@ export function powerReading(input: { watts: number | null; limit?: number | nul
   const samples = (input.history ?? []).map(value => known(value) && value >= 0 ? value : null);
   const valid = samples.filter(known);
   return { kind: 'live', watts: input.watts, limit: known(input.limit) && input.limit > 0 ? input.limit : null, average: valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : null, samples };
+}
+
+export type EnergyReading =
+  | { kind: 'measured'; wh: number; whPer1kTokens: number | null; coverage: number | null; averageW: number | null }
+  | { kind: 'pending' }
+  | { kind: 'unsupported'; reason: 'mac' | 'device' };
+
+/**
+ * Energy for the selected period, from the supervisor's stitched 1 Hz power series. Measured seconds are shown with
+ * their coverage (gaps are never filled in); a GPU that reports no power, or a Mac, says "unsupported" instead of 0 Wh.
+ */
+export function energyReading(energy: ApiEnergyTotals | null | undefined, powerReadable: boolean | null | undefined, mac: boolean): EnergyReading {
+  if (energy && known(energy.wh) && energy.wh >= 0 && energy.sampledS > 0) {
+    const coverage = known(energy.coverage) ? Math.max(0, Math.min(1, energy.coverage)) : null;
+    return { kind: 'measured', wh: energy.wh, whPer1kTokens: known(energy.whPer1kTokens) && energy.whPer1kTokens >= 0 ? energy.whPer1kTokens : null, coverage, averageW: known(energy.averageW) ? energy.averageW : null };
+  }
+  if (powerReadable === false || (mac && powerReadable !== true)) return { kind: 'unsupported', reason: mac ? 'mac' : 'device' };
+  return { kind: 'pending' };
+}
+
+/** Wh with a readable precision; kWh from 1000 Wh. */
+export function energyParts(wh: number): { value: number; unit: 'Wh' | 'kWh'; digits: number } {
+  if (wh >= 1000) return { value: wh / 1000, unit: 'kWh', digits: 2 };
+  return { value: wh, unit: 'Wh', digits: wh < 0.1 ? 3 : wh < 10 ? 2 : wh < 100 ? 1 : 0 };
 }
 
 /** Compact duration in the caller's units: seconds below a minute, minutes below an hour, then hours. */

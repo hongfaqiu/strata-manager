@@ -8,6 +8,8 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{fs, io::Write, path::Path, time::Duration};
 
+/// Raw rows (requests, runs, energy minutes) are kept this long.
+const RETENTION_MS: i64 = 90 * 86_400_000;
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS analytics_cursors(source_id TEXT PRIMARY KEY,seq INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS analytics_sessions(
@@ -44,6 +46,7 @@ fn ensure_schema(database: &Connection) -> Result<(), String> {
         [], |row| row.get::<_, bool>(0),
     ))?;
     sql(database.execute_batch(SCHEMA))?;
+    sql(database.execute_batch(crate::energy::SCHEMA))?;
     let mut columns = sql(database.prepare("PRAGMA table_info(analytics_requests)"))?;
     let names = sql(columns.query_map([], |row| row.get::<_, String>(1)))?;
     let has_model = sql(names.collect::<rusqlite::Result<Vec<_>>>())?
@@ -405,7 +408,7 @@ fn consume_with_after_events(
     sql(tx.execute("INSERT INTO analytics_cursors VALUES(?1,?2) ON CONFLICT(source_id) DO UPDATE SET seq=excluded.seq",params![source,last]))?;
     // Raw per-request metadata has a bounded 90-day retention; gaps/sessions are
     // retained for the same interval. Older aggregates aren't fabricated.
-    let cutoff = now_ms() - 90 * 86_400_000;
+    let cutoff = now_ms() - RETENTION_MS;
     sql(tx.execute("DELETE FROM analytics_runs WHERE started_ms<?1", [cutoff]))?;
     sql(tx.execute("DELETE FROM analytics_request_order WHERE request_id IN (SELECT request_id FROM analytics_requests WHERE started_ms<?1)", [cutoff]))?;
     sql(tx.execute(
@@ -427,10 +430,37 @@ fn consume_with_after_events(
 
 pub fn poll(state: &RuntimeState) -> Result<(), String> {
     let mut database = state.database.lock().map_err(|e| e.to_string())?;
-    consume(
+    let consumed = consume(
         &mut database,
         &state.data_dir.join("analytics/journal.sqlite3"),
-    )?;
+    );
+    flush_energy(state, &mut database, false)?;
+    consumed.map(|_| ())
+}
+
+/// Writes the pending energy minutes about once a minute (always before a query) and applies retention.
+fn flush_energy(
+    state: &RuntimeState,
+    database: &mut Connection,
+    force: bool,
+) -> Result<(), String> {
+    let now = now_ms();
+    let rows = {
+        let mut sampler = state.energy.lock().map_err(|e| e.to_string())?;
+        if !force && !sampler.due(now) {
+            return Ok(());
+        }
+        sampler.drain(now)
+    };
+    sql(database.execute_batch(crate::energy::SCHEMA))?;
+    if let Err(error) = crate::energy::write(database, &rows, now - RETENTION_MS) {
+        state
+            .energy
+            .lock()
+            .map_err(|e| e.to_string())?
+            .restore(rows);
+        return Err(error.to_string());
+    }
     Ok(())
 }
 
@@ -541,11 +571,31 @@ fn summary(database: &Connection, range: &Range) -> Result<Value, String> {
         (Some(hits), Some(lookups)) if lookups > 0 => json!(hits as f64 / lookups as f64),
         _ => Value::Null,
     };
+    // Engine work (prompt + generated tokens of every run) when the observer reported it, HTTP usage otherwise.
+    let tokens = |value: &Value| match (
+        value["inputTokens"].as_i64(),
+        value["outputTokens"].as_i64(),
+    ) {
+        (None, None) => None,
+        (input, output) => Some(input.unwrap_or(0) + output.unwrap_or(0)),
+    };
+    let (energy_tokens, token_basis) = match tokens(&run_totals) {
+        Some(total) if total > 0 => (Some(total), "inference"),
+        _ => (tokens(&totals), "http"),
+    };
+    let (joules, sampled, expected, max_w) = sql(crate::energy::totals(
+        database,
+        range.start,
+        range.end,
+        &range.service,
+    ))?;
+    let mut energy = crate::energy::describe(joules, sampled, expected, max_w, energy_tokens);
+    energy["tokenBasis"] = json!(token_basis);
     let mut stmt=sql(database.prepare("SELECT route,client_id,COUNT(*),SUM(outcome='succeeded') FROM analytics_requests WHERE started_ms>=?1 AND started_ms<?2 AND (?3='' OR service_id=?3) GROUP BY route,client_id ORDER BY COUNT(*) DESC"))?;
     let groups=sql(stmt.query_map(params![range.start,range.end,range.service],|r|Ok(json!({"route":r.get::<_,String>(0)?,"clientId":r.get::<_,Option<String>>(1)?,"requests":r.get::<_,i64>(2)?,"succeeded":r.get::<_,i64>(3)?}))))?;
     let groups = sql(groups.collect::<rusqlite::Result<Vec<_>>>())?;
     Ok(
-        json!({"startMs":range.start,"endMs":range.end,"http":totals,"inference":run_totals,"groups":groups,"ttftS":distribution(database,"first_token_s",range,false)?,"durationS":distribution(database,"duration_s",range,false)?,"decodeTokS":distribution(database,"decode_tok_s",range,true)?,"prefillTokS":distribution(database,"prefill_tok_s",range,true)?,"retentionDays":90,"successRateDefinition":"succeeded / (succeeded + failed + cancelled + interrupted); pending excluded","tokenDefinition":"HTTP usage and inference work are separate; unavailable counters remain null"}),
+        json!({"startMs":range.start,"endMs":range.end,"http":totals,"inference":run_totals,"groups":groups,"ttftS":distribution(database,"first_token_s",range,false)?,"durationS":distribution(database,"duration_s",range,false)?,"decodeTokS":distribution(database,"decode_tok_s",range,true)?,"prefillTokS":distribution(database,"prefill_tok_s",range,true)?,"energy":energy,"retentionDays":90,"successRateDefinition":"succeeded / (succeeded + failed + cancelled + interrupted); pending excluded","tokenDefinition":"HTTP usage and inference work are separate; unavailable counters remain null"}),
     )
 }
 
@@ -555,7 +605,9 @@ fn recent(database: &Connection, range: &Range, limit: i64) -> Result<Value, Str
         params![range.start, range.end, range.service, limit],
         request_row,
     ))?;
-    Ok(json!(sql(rows.collect::<rusqlite::Result<Vec<_>>>())?))
+    let mut items = sql(rows.collect::<rusqlite::Result<Vec<_>>>())?;
+    sql(crate::energy::attribute(database, &mut items))?;
+    Ok(json!(items))
 }
 
 const REQUEST_COLUMNS: &str = "SELECT r.request_id,r.service_id,r.started_ms,r.ended_ms,r.route,r.client_id,r.outcome,r.http_status,r.stream,r.input_tokens,r.output_tokens,r.cache_read_tokens,r.first_token_s,r.duration_s,r.error_kind,r.mcp_tool_calls,(SELECT COUNT(*) FROM analytics_runs x WHERE x.request_id=r.request_id),r.model_id,(SELECT AVG(x.prefill_tok_s) FROM analytics_runs x WHERE x.request_id=r.request_id),(SELECT AVG(x.decode_tok_s) FROM analytics_runs x WHERE x.request_id=r.request_id),(SELECT 1.0*SUM(x.cache_read_tokens)/SUM(x.input_tokens) FROM analytics_runs x WHERE x.request_id=r.request_id AND x.input_tokens>0 AND x.cache_read_tokens BETWEEN 0 AND x.input_tokens),(SELECT 1.0*SUM(x.expert_cache_hits)/SUM(x.expert_cache_lookups) FROM analytics_runs x WHERE x.request_id=r.request_id AND x.expert_cache_lookups>0 AND x.expert_cache_hits BETWEEN 0 AND x.expert_cache_lookups)";
@@ -725,7 +777,9 @@ fn request_rows(
     let statement = format!("{REQUEST_COLUMNS} FROM analytics_requests r JOIN analytics_request_order o ON o.request_id=r.request_id WHERE {clause} ORDER BY r.started_ms {order},r.request_id {order} LIMIT ?{}",bindings.len());
     let mut statement = sql(database.prepare(&statement))?;
     let rows = sql(statement.query_map(rusqlite::params_from_iter(bindings), request_row))?;
-    sql(rows.collect::<rusqlite::Result<Vec<_>>>())
+    let mut items = sql(rows.collect::<rusqlite::Result<Vec<_>>>())?;
+    sql(crate::energy::attribute(database, &mut items))?;
+    Ok(items)
 }
 fn requests(database: &Connection, range: &Range, value: &Value) -> Result<Value, String> {
     let filter = RequestFilter::from(value)?;
@@ -896,6 +950,8 @@ fn export_csv(database: &Connection, range: &Range, value: &Value) -> Result<Val
         "mcpToolCalls",
         "inferenceRuns",
         "errorKind",
+        "energyWhEstimate",
+        "energyCoverage",
     ];
     let parent = dunce::canonicalize(path.parent().ok_or("CSV export requires a directory")?)
         .map_err(|_| "CSV export directory is unavailable")?;
@@ -947,7 +1003,8 @@ fn trends(database: &Connection, range: &Range, bucket_ms: i64) -> Result<Value,
         1.0*SUM(CASE WHEN x.input_tokens>0 AND x.cache_read_tokens BETWEEN 0 AND x.input_tokens THEN x.cache_read_tokens END)/SUM(CASE WHEN x.input_tokens>0 AND x.cache_read_tokens BETWEEN 0 AND x.input_tokens THEN x.input_tokens END),
         SUM(CASE WHEN x.input_tokens>0 AND x.cache_read_tokens BETWEEN 0 AND x.input_tokens THEN 1 ELSE 0 END),
         1.0*SUM(CASE WHEN x.expert_cache_lookups>0 AND x.expert_cache_hits BETWEEN 0 AND x.expert_cache_lookups THEN x.expert_cache_hits END)/SUM(CASE WHEN x.expert_cache_lookups>0 AND x.expert_cache_hits BETWEEN 0 AND x.expert_cache_lookups THEN x.expert_cache_lookups END),
-        SUM(CASE WHEN x.expert_cache_lookups>0 AND x.expert_cache_hits BETWEEN 0 AND x.expert_cache_lookups THEN 1 ELSE 0 END)
+        SUM(CASE WHEN x.expert_cache_lookups>0 AND x.expert_cache_hits BETWEEN 0 AND x.expert_cache_lookups THEN 1 ELSE 0 END),
+        SUM(x.input_tokens),SUM(x.output_tokens)
         FROM analytics_runs x JOIN analytics_requests r ON x.request_id=r.request_id
         WHERE r.started_ms>=?1 AND r.started_ms<?2 AND (?3='' OR r.service_id=?3)
         GROUP BY ((r.started_ms-?1)/?4) ORDER BY 1"#))?;
@@ -955,9 +1012,35 @@ fn trends(database: &Connection, range: &Range, bucket_ms: i64) -> Result<Value,
         "prefillTokS":row.get::<_,Option<f64>>(1)?,"prefillSamples":row.get::<_,i64>(2)?,
         "decodeTokS":row.get::<_,Option<f64>>(3)?,"decodeSamples":row.get::<_,i64>(4)?,
         "cacheHitRate":row.get::<_,Option<f64>>(5)?,"cacheRateSamples":row.get::<_,i64>(6)?,
-        "expertCacheHitRate":row.get::<_,Option<f64>>(7)?,"expertCacheSamples":row.get::<_,i64>(8)?
+        "expertCacheHitRate":row.get::<_,Option<f64>>(7)?,"expertCacheSamples":row.get::<_,i64>(8)?,
+        "inferenceInputTokens":row.get::<_,Option<i64>>(9)?,"inferenceOutputTokens":row.get::<_,Option<i64>>(10)?
     })))))?;
     let mut engine = sql(rows.collect::<rusqlite::Result<std::collections::BTreeMap<_, _>>>())?;
+    // Energy rows are whole minutes; a bucket owns the minutes that start inside it, and the first bucket also
+    // the minute already running at startMs (SQLite truncates the small negative offset to bucket 0).
+    let mut statement = sql(database.prepare("SELECT ((minute_ms-?1)/?4),SUM(energy_j),SUM(sampled_s),SUM(expected_s),MAX(max_w) FROM analytics_energy WHERE minute_ms>=?5 AND minute_ms<?2 AND (?3='' OR service_id=?3) GROUP BY 1"))?;
+    let first_minute = range.start.div_euclid(60_000) * 60_000;
+    let rows = sql(statement.query_map(
+        params![
+            range.start,
+            range.end,
+            range.service,
+            bucket_ms,
+            first_minute
+        ],
+        |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                (
+                    row.get::<_, f64>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, Option<f64>>(4)?,
+                ),
+            ))
+        },
+    ))?;
+    let mut energy = sql(rows.collect::<rusqlite::Result<std::collections::BTreeMap<_, _>>>())?;
     let count = (range.end - range.start + bucket_ms - 1) / bucket_ms;
     let mut result = Vec::with_capacity(count as usize);
     for index in 0..count {
@@ -967,6 +1050,30 @@ fn trends(database: &Connection, range: &Range, bucket_ms: i64) -> Result<Value,
             .as_object_mut()
             .unwrap()
             .extend(performance.as_object().unwrap().clone());
+        let tokens = match (
+            bucket.get("inferenceInputTokens").and_then(Value::as_i64),
+            bucket.get("inferenceOutputTokens").and_then(Value::as_i64),
+        ) {
+            (None, None) => match (
+                bucket["inputTokens"].as_i64(),
+                bucket["outputTokens"].as_i64(),
+            ) {
+                (None, None) => None,
+                (input, output) => Some(input.unwrap_or(0) + output.unwrap_or(0)),
+            },
+            (input, output) => Some(input.unwrap_or(0) + output.unwrap_or(0)),
+        };
+        let (joules, sampled, expected, max_w) = energy.remove(&index).unwrap_or((0.0, 0, 0, None));
+        let described = crate::energy::describe(joules, sampled, expected, max_w, tokens);
+        bucket["energyWh"] = described["wh"].clone();
+        bucket["energySampledS"] = described["sampledS"].clone();
+        bucket["energyExpectedS"] = described["expectedS"].clone();
+        bucket["energyCoverage"] = described["coverage"].clone();
+        bucket["whPer1kTokens"] = described["whPer1kTokens"].clone();
+        if let Some(object) = bucket.as_object_mut() {
+            object.remove("inferenceInputTokens");
+            object.remove("inferenceOutputTokens");
+        }
         bucket["startMs"] = json!(range.start + index * bucket_ms);
         result.push(bucket);
     }
@@ -1034,6 +1141,8 @@ pub fn query(state: &RuntimeState, params: Value) -> Result<Value, String> {
     // A damaged or temporarily busy observer journal must not hide history
     // already committed to the application database.
     ensure_schema(&database)?;
+    // A failed energy write keeps its minutes for the next attempt; history still answers.
+    let _ = flush_energy(state, &mut database, true);
     let action = params
         .get("action")
         .and_then(Value::as_str)
@@ -1064,6 +1173,12 @@ pub fn query(state: &RuntimeState, params: Value) -> Result<Value, String> {
     };
     let mut coverage = coverage(&database, &state.data_dir, &range)?;
     coverage["journalSyncFailed"] = json!(journal_sync_failed);
+    // Live: did the engine report GPU power since the supervisor started (null: not observed yet).
+    coverage["powerReadable"] = json!(state
+        .energy
+        .lock()
+        .map_err(|e| e.to_string())?
+        .readable(&range.service));
     Ok(json!({"data":data,"coverage":coverage}))
 }
 
@@ -1905,5 +2020,59 @@ mod tests {
             assert!(export_csv(&db, &range, &json!({"path":file_link})).is_err());
             assert_eq!(fs::read_to_string(target).unwrap(), "keep");
         }
+    }
+
+    #[test]
+    fn energy_reaches_summary_trends_and_requests() {
+        let temp = tempfile::tempdir().unwrap();
+        let analytics = temp.path().join("analytics");
+        fs::create_dir(&analytics).unwrap();
+        let source = journal(&analytics.join("journal.sqlite3"));
+        let at = now_ms();
+        start(&source, "http", "s", at);
+        end(&source, "http", "succeeded", at + 2, json!(0.25));
+        event(
+            &source,
+            "run_end",
+            json!({"runId":"run","requestId":"http","serviceId":"local","sessionId":"s","startedAtMs":at,"promptTotal":10,"inputTokens":10,"outputTokens":4,"cacheReadTokens":3,"firstTokenS":0.25,"durationS":2.0,"decodeTokS":20.0,"finish":"stop","toolCalls":0}),
+        );
+        let state = RuntimeState::open(temp.path().to_owned()).unwrap();
+        let params = json!({"startMs":at-1,"endMs":at+60_000,"serviceId":"local"});
+        let before = query(&state, params.clone()).unwrap();
+        assert!(before["data"]["energy"]["wh"].is_null());
+        assert!(before["coverage"]["powerReadable"].is_null());
+        // One relayed /metrics response: only its newest reading (180 W, one second) is new.
+        state.energy_observe(
+            "local",
+            &json!({"history":{"gpu_power":[150.0,160.0,180.0]}}),
+        );
+        let after = query(&state, params.clone()).unwrap();
+        let energy = &after["data"]["energy"];
+        assert!((energy["wh"].as_f64().unwrap() - 180.0 / 3600.0).abs() < 1e-12);
+        assert_eq!(energy["coverage"], 1.0);
+        assert_eq!(energy["tokenBasis"], "inference");
+        assert!(
+            (energy["whPer1kTokens"].as_f64().unwrap() - 180.0 / 3600.0 * 1000.0 / 14.0).abs()
+                < 1e-12
+        );
+        assert_eq!(after["coverage"]["powerReadable"], true);
+        let trends = query(&state, json!({"action":"trends","startMs":at-1,"endMs":at+120_000,"serviceId":"local","bucketMs":60_000})).unwrap();
+        let buckets = trends["data"]["buckets"].as_array().unwrap();
+        let wh: f64 = buckets.iter().filter_map(|b| b["energyWh"].as_f64()).sum();
+        assert!((wh - 180.0 / 3600.0).abs() < 1e-12);
+        assert!(buckets
+            .iter()
+            .all(|b| b.get("inferenceInputTokens").is_none()));
+        let measured = buckets.iter().find(|b| b["energyWh"].is_number()).unwrap();
+        assert_eq!(measured["energyCoverage"], 1.0);
+        let unmeasured = buckets.iter().find(|b| b["energyWh"].is_null()).unwrap();
+        assert!(unmeasured["energyCoverage"].is_null() && unmeasured["whPer1kTokens"].is_null());
+        let rows = query(
+            &state,
+            json!({"action":"requests","startMs":at-1,"endMs":at+60_000}),
+        )
+        .unwrap();
+        let item = &rows["data"]["items"][0];
+        assert!(item.get("energyWhEstimate").is_some() && item.get("energyCoverage").is_some());
     }
 }
