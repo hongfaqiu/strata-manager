@@ -10,12 +10,14 @@ Maintain both languages for each version. Move unreleased changes into the actua
 - **监控的显示快捷键改为自定义，默认不设置**：「桌面监控 → 监控浮条」里点「录制」后按下想要的组合键即可，可随时更改或清除，保存后立即生效。组合键需包含 `Ctrl`、`Alt` 或 `Win`（`F13`–`F24` 可单独使用）；微信 / QQ 截图（`Alt+A`、`Ctrl+Alt+A`）、`Alt+F4`、输入法切换等常用快捷键会直接提示换一个；被其他程序占用时显示注册失败原因。新安装和升级用户都不再有默认快捷键：以前默认的 `Ctrl+Alt+M` 不再自动注册，之前手动选过的组合会保留。
 - **「监控浮条」设置更紧凑**：快捷键并入浮条设置；布局、文字行数和字号排成一行；每个指标的勾选、配色和排序收进一行；显示选项改为三列，整页高度明显减少。
 - **修复「桌面监控」页滚动后顶部标题栏和页签消失**：从托盘或浮条菜单打开「设置 / 任务栏颜色」跳转时，整个窗口会被带着滚动，标题栏被推出屏幕；现在只有内容区滚动，标题栏和页签始终可见。
+- **修复监控浮条自己弹出来**：任务栏监控在开机恢复、资源管理器重启、显示器变化或睡眠唤醒后启动失败、首帧超时、辅助进程崩溃或断开时，以前会自动改为打开桌面浮条，关掉后下次又会出现。现在这些情况只停止任务栏监控并显示原因，不再打开浮条；浮条只在你点「打开监控浮条」、在任务栏监控菜单里选「切换到桌面浮条」或按自己设置的快捷键时出现，关掉后保持关闭。非 Windows 系统请求任务栏监控时直接提示不支持，也不会改开浮条。
 
 ### English
 
 - **The monitor show/hide shortcut is now user-defined, and off by default**: In Desktop monitor → Monitor strip, click Record and press the combination you want. You can change or clear it at any time, and it takes effect immediately. A combination must include `Ctrl`, `Alt` or `Win` (`F13`–`F24` can be used alone). Common shortcuts such as WeChat / QQ screenshots (`Alt+A`, `Ctrl+Alt+A`), `Alt+F4` and input-method switching are rejected with a hint, and a combination taken by another app shows why it could not be registered. New and upgraded installs have no default shortcut: the old default `Ctrl+Alt+M` is no longer registered automatically, while a combination you picked yourself is kept.
 - **More compact Monitor strip settings**: The shortcut now lives in the strip settings, layout, text rows and font size share one row, each metric's checkbox, color and order fit on one line, and display options use three columns, so the page is much shorter.
 - **Fixed the title bar and tabs disappearing on Desktop monitor after scrolling**: Opening Settings / Taskbar colors from the tray or strip menu could scroll the whole window and push the title bar off screen. Now only the content area scrolls, and the title bar and tabs stay visible.
+- **Fixed the monitor strip appearing on its own**: When the taskbar monitor failed to start, missed its first frame, or its helper crashed or disconnected (for example when it was restored at sign-in, after an Explorer restart, a display change or sleep/wake), the app used to open the desktop strip instead, and it came back after you closed it. These failures now only stop the taskbar monitor and show the reason. The strip appears only when you click Open floating monitor, choose Switch to desktop strip in the taskbar monitor menu, or press your own shortcut, and it stays closed once you close it. On non-Windows systems a taskbar monitor request now reports that it is not supported instead of opening the strip.
 
 ## [0.2.23] - 2026-10-26
 
