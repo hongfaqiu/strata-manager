@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { cacheSavedSeconds, durationParts, energyParts, energyReading, powerReading, ringDash } from './apiUsageHighlights.ts';
+import { cacheSavedSeconds, durationParts, energyParts, energyReading, powerReading, ringDash } from './apiUsageHighlightsModel.ts';
 
 const page = readFileSync(new URL('./ApiUsagePage.tsx', import.meta.url), 'utf8');
 const highlights = readFileSync(new URL('./ApiUsageHighlights.tsx', import.meta.url), 'utf8');

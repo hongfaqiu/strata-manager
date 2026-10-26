@@ -2,7 +2,7 @@ import { asObject, normalizeMetrics, type ApiTrendBucket, type ApiUsageSummary, 
 import { BatteryCharging, Database, Gauge, Layers, Timer, Zap } from 'lucide-react';
 import type { ApiUsageLayoutText } from './ApiUsageLayoutStrings';
 import { UsageSparkline } from './ApiUsageCharts';
-import { cacheSavedSeconds, durationParts, energyParts, energyReading, powerReading, ringDash } from './apiUsageHighlights';
+import { cacheSavedSeconds, durationParts, energyParts, energyReading, powerReading, ringDash } from './apiUsageHighlightsModel';
 
 export interface ApiUsageHighlightsProps {
   language: AppLanguage; layout: ApiUsageLayoutText; summary: ApiUsageSummary; buckets: ApiTrendBucket[]; measured: boolean;
