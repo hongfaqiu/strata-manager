@@ -103,7 +103,7 @@ export function createApiUsageMockClient(): ApiAnalyticsClient {
       },
       inference: {
         runs: Math.round(total * 1.14), inputTokens: total ? sum(items, 'inputTokens') : null, outputTokens: total ? sum(items, 'outputTokens') : null, cacheReadTokens: total ? Math.round(sum(items, 'inputTokens') * 0.41) : null,
-        toolCalls: empty ? 0 : 64, inputTokenSamples: total, decodeSpeedSamples: total, prefillTokens: total ? Math.round(sum(items, 'inputTokens') * 0.59) : null, prefillS: null, decodeS: null,
+        toolCalls: empty ? 0 : 64, inputTokenSamples: total, decodeSpeedSamples: total, prefillTokens: total ? Math.round(sum(items, 'inputTokens') * 0.59) : null, prefillS: total ? Math.round(sum(items, 'inputTokens') * 0.59) / 910 : null, decodeS: null,
         prefillSpeedSamples: total, cacheHitRate: weighted(items, 'cacheHitRate', 'cacheRateSamples'), cacheRateSamples: total, expertCacheHitRate: weighted(items, 'expertCacheHitRate', 'expertCacheSamples'), expertCacheSamples: total,
       },
       groups: [...groupTotals.values()],

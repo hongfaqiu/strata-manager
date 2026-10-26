@@ -8,6 +8,7 @@ import { apiUsageStrings } from './ApiUsageStrings';
 import { apiUsageLayoutText } from './ApiUsageLayoutStrings';
 import { OutcomeDonut, UsageChart, UsageSparkline, bucketMetric, type ChartColor, type ChartSeries, type UsageChartProps } from './ApiUsageCharts';
 import { ApiUsageLive } from './ApiUsageLive';
+import { ApiUsageHighlights } from './ApiUsageHighlights';
 import './api-usage.css';
 
 export interface ApiUsagePageProps {
@@ -163,6 +164,7 @@ export function ApiUsagePage({ language, profileId, profileName, desktop, onQuer
       {!snapshot && loading && <div className="api-usage-loading" role="status"><LoaderCircle size={19} className="spin"/>{text.loading}</div>}
       {snapshot && s && <>
         {(unsupported || incomplete) ? <p className="notice" role="status"><AlertTriangle size={16}/> {coverageLabel}</p> : !measured && <div className="api-usage-empty-hint" role="status"><strong>{layout.emptyTitle}</strong><span>{text.noDataHint}</span></div>}
+        <ApiUsageHighlights language={language} layout={layout} summary={s} buckets={buckets} measured={measured} live={live}/>
         <section className="api-usage-kpis" aria-label={text.overview}>
           {kpi(layout.kpiRequests, measured ? compact(s.http.requests) : '—', { tooltip: count(s.http.requests), detail: `${text.pending} ${count(s.http.pending)}`, values: cumulative('requests') })}
           {kpi(text.successRate, percentage(s.http.successRate), { detail: layout.kpiSucceededOf.replace('{{count}}', count(s.http.succeeded)), tone: s.http.successRate == null ? 'muted' : undefined })}
@@ -181,21 +183,6 @@ export function ApiUsagePage({ language, profileId, profileName, desktop, onQuer
         </section>
 
         <div className="api-usage-grid-2">
-          <section className="api-usage-section" aria-label={layout.outcomeTitle}>
-            <div className="api-usage-section-head"><h2>{layout.outcomeTitle}</h2><span>{text.runs} {count(s.inference.runs)}</span></div>
-            <div className="api-usage-outcomes">
-              <OutcomeDonut label={layout.outcomeChart} centerLabel={text.successRate} centerValue={percentage(s.http.successRate)} items={outcomes.map(item => ({ label: item.label, value: item.value, color: item.color }))}/>
-              <ul className="api-usage-outcome-list">{outcomes.map(item => <li key={item.key} className={item.key !== 'succeeded' && item.key !== 'pending' && item.value ? 'has-value' : ''}><span className={`api-metric-key api-chart-color-${item.color}`}/><span>{item.label}</span><strong>{count(item.value)}</strong><em>{measured && s.http.requests ? `${number(item.value / s.http.requests * 100, 1)}%` : '—'}</em></li>)}</ul>
-            </div>
-          </section>
-          <section className="api-usage-section" aria-label={text.sources}>
-            <div className="api-usage-section-head"><h2>{layout.sourcesTitle}</h2><span>{text.sources}</span></div>
-            {groups.length ? <div className="api-usage-table-scroll"><table className="api-usage-sources-table"><thead><tr><th>{text.client}</th><th>{text.route}</th><th className="num">{text.requestsCount}</th><th className="num">{text.succeeded}</th><th className="num">{layout.sourceSuccess}</th><th>{layout.share}</th></tr></thead><tbody>{groups.map(group => { const share = groupTotal ? group.requests / groupTotal : 0; return <tr key={JSON.stringify([group.route, group.clientId])}><td>{group.clientId == null ? <span className="muted">{text.unknownClient}</span> : group.clientId}</td><td className="muted">{route(group.route)}</td><td className="num">{number(group.requests)}</td><td className="num">{number(group.succeeded)}</td><td className="num">{group.requests ? `${number(group.succeeded / group.requests * 100, 1)}%` : '—'}</td><td><span className="api-usage-share-cell"><span className="api-usage-share" role="img" aria-label={`${layout.share} ${number(share * 100, 1)}%`}><i style={{ width: `${Math.max(2, share * 100)}%` }}/></span><em className="api-usage-share-value">{number(share * 100, 0)}%</em></span></td></tr>; })}</tbody></table></div> : <p className="api-usage-table-empty">{text.noRequests}</p>}
-            <dl className="api-usage-inline-facts"><div><dt>{text.tools}</dt><dd>{count(s.inference.toolCalls)}</dd></div><div><dt>{text.mcp}</dt><dd>{count(s.http.mcpToolCalls)}</dd></div><div className={s.http.mcpToolFailures ? 'has-failures' : ''}><dt>{text.mcpFailures}</dt><dd>{count(s.http.mcpToolFailures)}</dd></div></dl>
-          </section>
-        </div>
-
-        <div className="api-usage-grid-2">
           <section className="api-usage-section" aria-label={text.latency}>
             <div className="api-usage-section-head"><h2>{layout.performanceTitle}</h2></div>
             <table className="api-usage-dist"><thead><tr><th>{text.metric}</th><th className="num">{text.p50}</th><th className="num">{text.p95}</th><th className="num">{text.samples}</th></tr></thead><tbody>{distributions.map(item => <tr key={item.title}><td>{item.title}</td><td className="num strong">{item.format(item.distribution.p50)}</td><td className="num">{item.format(item.distribution.p95)}</td><td className="num muted">{number(item.distribution.samples)}</td></tr>)}</tbody></table>
@@ -210,6 +197,21 @@ export function ApiUsagePage({ language, profileId, profileName, desktop, onQuer
               <div><dt>{text.runs}</dt><dd>{count(s.inference.runs)}</dd></div>
               <div><dt>{text.speedDistribution}</dt><dd>{number(meanSpeed, 2)} <small>/ {number(s.decodeTokS.p50, 2)} / {number(s.decodeTokS.p20, 2)}</small></dd><small>{text.mean} / {text.p50} / {text.p20} · {text.speedSamples.replace('{{count}}', number(s.decodeTokS.samples))}</small></div>
             </dl>
+          </section>
+        </div>
+
+        <div className="api-usage-grid-2">
+          <section className="api-usage-section" aria-label={layout.outcomeTitle}>
+            <div className="api-usage-section-head"><h2>{layout.outcomeTitle}</h2><span>{text.runs} {count(s.inference.runs)}</span></div>
+            <div className="api-usage-outcomes">
+              <OutcomeDonut label={layout.outcomeChart} centerLabel={text.successRate} centerValue={percentage(s.http.successRate)} items={outcomes.map(item => ({ label: item.label, value: item.value, color: item.color }))}/>
+              <ul className="api-usage-outcome-list">{outcomes.map(item => <li key={item.key} className={item.key !== 'succeeded' && item.key !== 'pending' && item.value ? 'has-value' : ''}><span className={`api-metric-key api-chart-color-${item.color}`}/><span>{item.label}</span><strong>{count(item.value)}</strong><em>{measured && s.http.requests ? `${number(item.value / s.http.requests * 100, 1)}%` : '—'}</em></li>)}</ul>
+            </div>
+          </section>
+          <section className="api-usage-section" aria-label={text.sources}>
+            <div className="api-usage-section-head"><h2>{layout.sourcesTitle}</h2><span>{text.sources}</span></div>
+            {groups.length ? <div className="api-usage-table-scroll"><table className="api-usage-sources-table"><thead><tr><th>{text.client}</th><th>{text.route}</th><th className="num">{text.requestsCount}</th><th className="num">{text.succeeded}</th><th className="num">{layout.sourceSuccess}</th><th>{layout.share}</th></tr></thead><tbody>{groups.map(group => { const share = groupTotal ? group.requests / groupTotal : 0; return <tr key={JSON.stringify([group.route, group.clientId])}><td>{group.clientId == null ? <span className="muted">{text.unknownClient}</span> : group.clientId}</td><td className="muted">{route(group.route)}</td><td className="num">{number(group.requests)}</td><td className="num">{number(group.succeeded)}</td><td className="num">{group.requests ? `${number(group.succeeded / group.requests * 100, 1)}%` : '—'}</td><td><span className="api-usage-share-cell"><span className="api-usage-share" role="img" aria-label={`${layout.share} ${number(share * 100, 1)}%`}><i style={{ width: `${Math.max(2, share * 100)}%` }}/></span><em className="api-usage-share-value">{number(share * 100, 0)}%</em></span></td></tr>; })}</tbody></table></div> : <p className="api-usage-table-empty">{text.noRequests}</p>}
+            <dl className="api-usage-inline-facts"><div><dt>{text.tools}</dt><dd>{count(s.inference.toolCalls)}</dd></div><div><dt>{text.mcp}</dt><dd>{count(s.http.mcpToolCalls)}</dd></div><div className={s.http.mcpToolFailures ? 'has-failures' : ''}><dt>{text.mcpFailures}</dt><dd>{count(s.http.mcpToolFailures)}</dd></div></dl>
           </section>
         </div>
 
