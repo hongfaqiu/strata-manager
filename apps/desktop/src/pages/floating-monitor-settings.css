@@ -1,4 +1,7 @@
 #settings-floating-monitor{grid-column:1 / -1;min-width:0;scroll-margin-top:20px}
+/* Containing block for the sr-only announcements and preview grips, so they
+   scroll inside .main-content instead of stretching the document. */
+.floating-monitor-settings{position:relative}
 .floating-monitor-settings .panel-header{gap:12px;flex-wrap:wrap}
 .floating-monitor-settings-visibility{display:flex;align-items:center;gap:8px;font-size:12px}
 .floating-monitor-settings .panel-header>button,.floating-monitor-settings-footer>button{display:inline-flex;align-items:center;gap:6px}
