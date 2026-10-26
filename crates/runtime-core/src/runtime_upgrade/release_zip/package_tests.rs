@@ -908,3 +908,21 @@ fn strata_023_dependency_change_routes_to_an_independent_runtime() {
         .any(|row| row.starts_with("truststore==0.10.5")));
     assert!(!INDEPENDENT_RUNTIME.contains("请先准备"));
 }
+
+#[test]
+fn every_file_of_the_strata_026_dsv41_packages_is_allowed() {
+    let list = include_str!("../fixtures/dsv41-0.1.51-paths.txt");
+    let mut packages = HashSet::new();
+    let mut exes = 0;
+    for line in list.lines().filter(|l| !l.starts_with('#')) {
+        let (package, path) = line.split_once(' ').unwrap();
+        packages.insert(package);
+        exes += usize::from(path == "strata-dsv41" || path == "strata-dsv41.exe");
+        assert!(dsv41_file_allowed(path), "{package}: {path}");
+    }
+    assert_eq!(packages.len(), 2);
+    assert_eq!(exes, 2);
+    // The Strata engine's own extraction never accepts the DeepSeek program.
+    assert!(!engine_file_allowed("strata-dsv41"));
+    assert!(!engine_file_allowed("strata-dsv41.exe"));
+}

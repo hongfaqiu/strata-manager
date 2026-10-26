@@ -292,6 +292,13 @@ pub(crate) fn known_engine_dir_names() -> &'static [&'static str] {
     &["engine", "engine-cuda12", "engine_cuda12", "build-metal"]
 }
 
+/// A Strata engine folder (`engine`, `engine-…`) of a runtime root; never the DeepSeek-V4.1
+/// engine's own package folder (`engine-dsv41/`), whose engine is not the runtime's engine.
+pub(crate) fn strata_engine_dir_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower.starts_with("engine") && lower != crate::runtime_upgrade::dsv41_engine::DIR
+}
+
 fn engine_build_json_candidates(root: &Path, exe: Option<&Path>) -> Vec<PathBuf> {
     let mut paths: Vec<PathBuf> = Vec::new();
     let mut push = |path: PathBuf| {
@@ -312,7 +319,7 @@ fn engine_build_json_candidates(root: &Path, exe: Option<&Path>) -> Vec<PathBuf>
         for entry in entries.take(MAX_DIRECTORIES).flatten() {
             let name = entry.file_name();
             let name = name.to_string_lossy();
-            if !name.to_ascii_lowercase().starts_with("engine") {
+            if !strata_engine_dir_name(&name) {
                 continue;
             }
             let path = entry.path();
@@ -426,7 +433,7 @@ fn resolve_engine(cwd: &Path, exe: &str) -> PathBuf {
             let name = entry.file_name();
             let name = name.to_string_lossy();
             let lower = name.to_ascii_lowercase();
-            if !(lower.starts_with("engine") || lower == "build-metal") {
+            if !(strata_engine_dir_name(&lower) || lower == "build-metal") {
                 continue;
             }
             let dir = entry.path();

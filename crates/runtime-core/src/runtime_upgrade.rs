@@ -17,6 +17,7 @@ use std::{
 };
 
 pub const VERSION: &str = "0.1.41";
+pub mod dsv41_engine;
 pub mod engine_package;
 pub mod github_source;
 pub mod gpu_select;
@@ -85,6 +86,10 @@ pub struct RuntimeUpdateInfo {
     /// Highest signed feed sequence accepted, so an older feed cannot be replayed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub feed_sequence: Option<u64>,
+    /// The signed feed's DeepSeek-V4.1 engine packages for this platform (feed member
+    /// `dsv41`). Never part of `assets`, so engine updates cannot select one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dsv41_assets: Vec<RuntimeReleaseAsset>,
 }
 
 const UPDATE_INFO_KEY: &str = "strataUpstreamUpdateInfo";
@@ -168,6 +173,7 @@ fn release_update_info(release: &Value) -> Result<RuntimeUpdateInfo, String> {
         published_at: release["published_at"].as_str().map(str::to_owned),
         installable: zip_installable(&assets, std::env::consts::OS, std::env::consts::ARCH),
         assets,
+        dsv41_assets: Vec::new(),
         source_revision: None,
         source_archive_url: None,
         update_available: newer,
@@ -315,6 +321,7 @@ pub async fn update_info_with_cache(
                     notes: None,
                     published_at: None,
                     assets: Vec::new(),
+                    dsv41_assets: Vec::new(),
                     source_revision: None,
                     source_archive_url: None,
                     update_available: false,
@@ -355,9 +362,10 @@ async fn fetch_release_info(
     }
     let tag = release["tag_name"].as_str().ok_or("发布标记缺失")?;
     match release_feed_assets(&release, tag, previous_sequence, expected_version).await {
-        Ok(Some((sequence, assets))) => {
+        Ok(Some((sequence, assets, dsv41))) => {
             info.feed_sequence = Some(sequence.max(previous_sequence.unwrap_or(0)));
             info.assets.extend(assets);
+            info.dsv41_assets = dsv41;
         }
         Ok(None) => {}
         // A legacy release stays installable without a feed; a feed-only one must verify.
@@ -446,12 +454,15 @@ async fn trust_legacy_assets_from_github(
     info.assets.extend(official);
 }
 
+/// Feed sequence, engine packages and DeepSeek-V4.1 engine packages of one release.
+type FeedAssets = (u64, Vec<RuntimeReleaseAsset>, Vec<RuntimeReleaseAsset>);
+
 async fn release_feed_assets(
     release: &Value,
     tag: &str,
     previous_sequence: Option<u64>,
     expected_version: Option<&str>,
-) -> Result<Option<(u64, Vec<RuntimeReleaseAsset>)>, String> {
+) -> Result<Option<FeedAssets>, String> {
     let url_for = |name: &str| {
         release["assets"]
             .as_array()
@@ -555,7 +566,10 @@ async fn release_feed_assets(
     // Linux lists its own packages; every other host keeps the Windows list as before.
     let platform = engine_package::this_release_install_platform().unwrap_or("windows-x86_64");
     let assets = engine_package::feed_assets(&feed, release, tag, platform)?;
-    Ok(Some((sequence, assets)))
+    // An unusable `dsv41` member never blocks a Strata engine update.
+    let dsv41 =
+        engine_package::dsv41_feed_assets(&feed, release, tag, platform).unwrap_or_default();
+    Ok(Some((sequence, assets, dsv41)))
 }
 
 fn valid_revision(value: &str) -> bool {
