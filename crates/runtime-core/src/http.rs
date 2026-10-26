@@ -635,6 +635,13 @@ pub async fn desktop_request(
     )
     .await
 }
+/// The supervisor's own `/metrics` read for the energy series (`RuntimeState::energy_tick`).
+pub(crate) async fn metrics_for_energy(
+    state: &RuntimeState,
+    profile: ServiceProfile,
+) -> Result<Value, String> {
+    request_from(state, profile, "/metrics".into(), "GET".into(), None, None).await
+}
 async fn request_from(
     state: &RuntimeState,
     profile: ServiceProfile,
@@ -682,6 +689,7 @@ async fn request_from(
     if method == "GET" && (path == "/metrics" || path.starts_with("/metrics?")) {
         // The engine reads only NVIDIA cards; fill AMD readings for a service on this PC (#86).
         crate::amd_gpu::augment_local_metrics(&profile.base_url, &mut value).await;
+        state.energy_observe(&profile.id, &value);
     }
     Ok(value)
 }

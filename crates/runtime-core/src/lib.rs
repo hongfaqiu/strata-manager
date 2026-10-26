@@ -13,6 +13,7 @@ pub mod diagnostics;
 pub mod discovery;
 pub mod disk;
 mod display_adapters;
+mod energy;
 pub mod engine_help;
 pub mod external;
 pub mod external_management;
@@ -118,6 +119,8 @@ pub struct RuntimeState {
     recovery_resumed: tokio::sync::Notify,
     /// Setup task id -> the `--gguf-dir` it ran with.
     task_model_dirs: Mutex<HashMap<String, PathBuf>>,
+    /// GPU energy stitched from the `/metrics` responses the supervisor relays (see `energy`).
+    energy: Mutex<energy::Sampler>,
 }
 impl RuntimeState {
     pub fn open(data_dir: PathBuf) -> Result<Arc<Self>, String> {
@@ -187,6 +190,7 @@ impl RuntimeState {
             recovery_deferred: AtomicBool::new(deferred),
             recovery_resumed: tokio::sync::Notify::new(),
             task_model_dirs: Mutex::new(HashMap::new()),
+            energy: Mutex::new(energy::Sampler::default()),
         });
         if !deferred {
             state.finish_startup_recovery()?;
@@ -358,6 +362,41 @@ impl RuntimeState {
     }
     pub fn data_dir(&self) -> &Path {
         &self.data_dir
+    }
+    pub(crate) fn energy_observe(&self, service: &str, metrics: &Value) {
+        if let Ok(mut sampler) = self.energy.lock() {
+            sampler.observe(service, now() as i64, metrics);
+        }
+    }
+    /// Keeps the 1 Hz energy series covered while no window polls `/metrics`: one read of the engine's own
+    /// 60-second power history per running owned service every 30 s, and none while the dashboard or a
+    /// monitor is already polling. The response is folded in by `http` like any other `/metrics` read.
+    pub async fn energy_tick(self: Arc<Self>) -> Result<(), String> {
+        if self.shutting_down.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        let running: Vec<ServiceProfile> = self
+            .processes
+            .lock()
+            .map_err(|e| e.to_string())?
+            .values()
+            .filter(|process| process.status.running)
+            .filter_map(|process| process.profile.clone())
+            .collect();
+        let now = now() as i64;
+        for profile in running {
+            let stale = self
+                .energy
+                .lock()
+                .map_err(|e| e.to_string())?
+                .last_seen_ms(&profile.id)
+                .is_none_or(|seen| now - seen >= energy::TOP_UP_AFTER_MS);
+            if stale {
+                // An engine still loading or busy answers later; that second range simply stays unsampled.
+                let _ = http::metrics_for_energy(&self, profile).await;
+            }
+        }
+        Ok(())
     }
     fn selection_recovery_load(&self, profile_id: &str) -> Result<Option<bool>, String> {
         if let Some(loaded) = runtime_upgrade::recovery_load(self, profile_id)? {
