@@ -20,7 +20,7 @@ const versionsModule = { exports: {} };
 vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../../../../packages/core/src/runtime-versions.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { module: versionsModule, exports: versionsModule.exports, require: () => ({}) });
 const { runtimeUpdateAllowedByPin, runtimeVersionDirection } = versionsModule.exports;
 const { RUNTIME_DOWNLOAD_DEFAULTS, resolveRuntimeDownloadPreferences, runtimeDownloadSources, runtimeAssetLabel, runtimeBilingualText, runtimeEngineArchiveFilters, runtimeEngineIsCurrent, runtimeReasonText, runtimeTrialRollback } = downloadModule.exports;
-const sharedControls = { Dropdown: 'dropdown' };
+const sharedControls = { Dropdown: 'dropdown', Toggle: 'toggle' };
 const sourceControl = tree => nodes(tree).find(node => node.type === 'dropdown' && node.props.options.some(option => option.value === 'official'));
 const assetControl = tree => nodes(tree).find(node => node.type === 'dropdown' && node.props.options.some(option => option.value === assets[0].name));
 const runtime = { id: 'strata', installDir: 'D:\\AI\\Strata', runtimeVersion: '0.1.41' };
@@ -481,6 +481,8 @@ function settingsFixture(overrides = {}) {
   const compiled = ts.transpileModule(readFileSync(new URL('./RuntimeDownloadSettings.tsx', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
   const calls = { saved: [], tested: [], mutations: [], reloaded: 0 }, slots = [], effects = [];
   const preferences = { data: overrides.preferences ?? { mode: 'official' }, isPending: false, isSuccess: true, error: null, refetch: async () => { calls.reloaded++; } };
+  const verification = { data: overrides.fullVerification ?? false, isPending: false, isSuccess: true, error: overrides.verificationError ?? null };
+  calls.verification = [];
   let cursor = 0, tree;
   const slot = init => { const index = cursor++; return slots[index] ??= init(); };
   const sameDeps = (a, b) => a?.length === b?.length && a?.every((value, index) => Object.is(value, b[index]));
@@ -494,6 +496,8 @@ function settingsFixture(overrides = {}) {
     RUNTIME_DOWNLOAD_DEFAULTS, getRuntimeDownloadPreferences: async () => preferences.data, resolveRuntimeDownloadPreferences, runtimeDownloadSources, runtimeAssetLabel, runtimeBilingualText, runtimeEngineArchiveFilters,
     resolveRuntimeZipAsset: async (_dir, name) => overrides.resolveAsset ? await overrides.resolveAsset() : assets.find(asset => asset.name === name) ?? assets[1],
     normalizeError: error => ({ message: error instanceof Error ? error.message : String(error) }),
+    getRuntimeUpgradeFullVerification: async () => verification.data,
+    saveRuntimeUpgradeFullVerification: async value => { calls.verification.push(value); if (overrides.saveVerification) await overrides.saveVerification(value); },
     saveRuntimeDownloadPreferences: async value => { calls.saved.push(JSON.parse(JSON.stringify(value))); if (overrides.save) await overrides.save(value); },
     testRuntimeZipDownload: async (assetName, download) => {
       calls.tested.push({ assetName, download: JSON.parse(JSON.stringify(download)) });
@@ -504,7 +508,7 @@ function settingsFixture(overrides = {}) {
   const module = { exports: {} };
   vm.runInNewContext(compiled, {
     module, exports: module.exports, navigator: { clipboard: { writeText: async () => {} } },
-    require: name => ({ react, 'react/jsx-runtime': { jsx, jsxs: jsx }, '@strata-manager/core': core, '../OfficialControls': sharedControls, '@tanstack/react-query': { useQuery: options => options.queryKey[0] === 'runtime-download-preferences' ? preferences : { data: overrides.assetError ? undefined : assets[1], error: overrides.assetError ?? null, isSuccess: !overrides.assetError, isError: !!overrides.assetError, isPending: false }, useQueryClient: () => ({ setQueryData: (_key, value) => { preferences.data = value; preferences.error = null; preferences.isSuccess = true; } }) } })[name] ?? {},
+    require: name => ({ react, 'react/jsx-runtime': { jsx, jsxs: jsx }, '@strata-manager/core': core, '../OfficialControls': sharedControls, '@tanstack/react-query': { useQuery: options => options.queryKey[0] === 'runtime-download-preferences' ? preferences : options.queryKey[0] === 'runtime-upgrade-full-verification' ? verification : { data: overrides.assetError ? undefined : assets[1], error: overrides.assetError ?? null, isSuccess: !overrides.assetError, isError: !!overrides.assetError, isPending: false }, useQueryClient: () => ({ setQueryData: (key, value) => { if (key[0] === 'runtime-upgrade-full-verification') { verification.data = value; return; } preferences.data = value; preferences.error = null; preferences.isSuccess = true; } }) } })[name] ?? {},
   });
   const props = { desktop: true, language: 'zh-CN', runtime, release: { latestVersion: '0.1.42', supportedVersion: '0.1.41', assets, checkedAt: 100 } };
   const render = () => { cursor = 0; tree = module.exports.RuntimeDownloadSettings(props); while (effects.length) effects.shift()(); return tree; };
@@ -513,7 +517,7 @@ function settingsFixture(overrides = {}) {
   const chooseAsset = value => { assetControl(tree).props.onValueChange(value); render(); };
   const mirror = value => { nodes(tree).find(node => node.props['aria-label'] === '镜像地址或模板').props.onChange({ target: { value } }); render(); };
   const settle = async () => { await tick(); render(); render(); };
-  render(); return { calls, props, preferences, render, button, mode, chooseAsset, mirror, settle, tree: () => tree };
+  render(); return { calls, props, preferences, verification, render, button, mode, chooseAsset, mirror, settle, tree: () => tree };
 }
 
 test('persistent settings separate saving from read-only network and full local integrity tests', async () => {
@@ -531,6 +535,26 @@ test('persistent settings separate saving from read-only network and full local 
   local.button('测试下载来源').props.onClick(); await local.settle();
   assert.ok(text(local.tree()).includes('本地完整 SHA256 校验通过')); assert.equal(text(local.tree()).includes('断点续传（Range）'), false);
   assert.deepEqual(local.calls.mutations, []); assert.equal(local.calls.saved.length, 0);
+});
+
+test('full model acceptance after upgrades is opt-in, saves on toggle and never touches download settings or services', async () => {
+  const toggle = tree => nodes(tree).find(node => node.type === 'toggle' && node.props.ariaLabel === '升级后加载模型完整验收');
+  const f = settingsFixture(); await f.settle();
+  assert.equal(toggle(f.tree()).props.checked, false, 'quick health-only upgrades are the default');
+  assert.ok(text(f.tree()).includes('默认关闭：升级只校验新版服务健康'));
+  toggle(f.tree()).props.onCheckedChange(true); await f.settle();
+  assert.deepEqual(f.calls.verification, [true]); assert.equal(toggle(f.tree()).props.checked, true);
+  assert.ok(text(f.tree()).includes('已开启：切换前加载模型并发送短请求'));
+  assert.equal(f.calls.saved.length, 0, 'the toggle is not a download preference'); assert.deepEqual(f.calls.mutations, []);
+  toggle(f.tree()).props.onCheckedChange(false); await f.settle();
+  assert.deepEqual(f.calls.verification, [true, false]); assert.equal(toggle(f.tree()).props.checked, false);
+  const failing = settingsFixture({ saveVerification: async () => { throw new Error('store locked'); } }); await failing.settle();
+  toggle(failing.tree()).props.onCheckedChange(true); await failing.settle();
+  assert.equal(toggle(failing.tree()).props.checked, false, 'a failed save keeps the persisted state');
+  assert.ok(text(failing.tree()).includes('升级验收设置读写失败：store locked'));
+  const unreadable = settingsFixture({ verificationError: new Error('store unavailable') }); await unreadable.settle();
+  assert.equal(toggle(unreadable.tree()).props.disabled, true);
+  toggle(unreadable.tree()).props.onCheckedChange(true); await unreadable.settle(); assert.deepEqual(unreadable.calls.verification, []);
 });
 
 test('saved built-in presets keep automatic package selection and tests use the actual CUDA12 match', async () => {
