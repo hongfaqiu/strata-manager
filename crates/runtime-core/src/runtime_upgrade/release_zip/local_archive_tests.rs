@@ -60,6 +60,7 @@ fn info(assets: Vec<RuntimeReleaseAsset>) -> RuntimeUpdateInfo {
         notes: None,
         published_at: None,
         assets,
+        dsv41_assets: Vec::new(),
         source_revision: Some(REVISION.into()),
         source_archive_url: Some(format!(
             "https://codeload.github.com/Niko1221/Strata/zip/{REVISION}"

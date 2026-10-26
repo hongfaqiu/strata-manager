@@ -110,7 +110,8 @@ describe('model download request snapshots', () => {
   it('accepts catalog families and quants at both context limits', () => {
     for (const model of MODEL_CATALOG) {
       for (const quant of model.quants) {
-        for (const context of [512, 1048576]) {
+        // A fixed-context family (DeepSeek-V4.1-Flash: 8K) accepts only that size; catalog-deepseek41.test.ts covers the refusal.
+        for (const context of model.fixedContext ? [model.fixedContext] : [512, 1048576]) {
           const choice = { model: model.family, quant, context, images: false };
           expect(core.snapshotModelDownloadRequest(runtime(), choice, {})).toEqual({
             profile: runtime(), ...choice, options: { source: 'official', backend: 'auto', gpus: '' },

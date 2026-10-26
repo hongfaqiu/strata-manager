@@ -591,7 +591,7 @@ fn variant_for(root: &Path, platform: &str) -> Option<&'static str> {
         for entry in entries.take(32).flatten() {
             let name = entry.file_name();
             let name = name.to_string_lossy();
-            if !name.to_ascii_lowercase().starts_with("engine") {
+            if !crate::discovery::strata_engine_dir_name(&name) {
                 continue;
             }
             let path = entry.path();
@@ -837,7 +837,7 @@ fn prevent_downgrade(root: &Path, version: &str) -> Result<(), String> {
         for entry in entries.take(32).flatten() {
             let name = entry.file_name();
             let name = name.to_string_lossy();
-            if !name.to_ascii_lowercase().starts_with("engine") {
+            if !crate::discovery::strata_engine_dir_name(&name) {
                 continue;
             }
             let path = entry.path();
@@ -1285,6 +1285,40 @@ fn extract_package(
     expanded_limit: u64,
     check: impl Fn() -> Result<(), String>,
 ) -> Result<Vec<String>, String> {
+    let files = extract_package_files(
+        archive,
+        destination,
+        expanded_limit,
+        engine_file_allowed,
+        check,
+    )?;
+    let executable = if destination.join("strata.exe").is_file() {
+        "strata.exe"
+    } else {
+        "strata"
+    };
+    if [executable, "BUILD.json", engine_package::MANIFEST_NAME]
+        .into_iter()
+        .any(|name| !destination.join(name).is_file())
+    {
+        return Err("官方引擎包缺少必要程序文件，未修改当前安装".into());
+    }
+    Ok(files)
+}
+
+/// The DeepSeek-V4.1 engine package: the engine's file rules plus `strata-dsv41(.exe)`.
+pub(super) fn dsv41_file_allowed(relative: &str) -> bool {
+    matches!(relative, "strata-dsv41" | "strata-dsv41.exe") || engine_file_allowed(relative)
+}
+
+/// Safe extraction of a flat component package; `allowed` names the runtime files it may hold.
+pub(super) fn extract_package_files(
+    archive: &Path,
+    destination: &Path,
+    expanded_limit: u64,
+    allowed: fn(&str) -> bool,
+    check: impl Fn() -> Result<(), String>,
+) -> Result<Vec<String>, String> {
     fs::create_dir_all(destination).map_err(|e| e.to_string())?;
     reject_link(destination)?;
     let file = File::open(archive).map_err(|e| e.to_string())?;
@@ -1330,7 +1364,7 @@ fn extract_package(
         if total > limit || size > 1024 * 1024 * 1024 {
             return Err("引擎包展开体积超过安全上限".into());
         }
-        if !engine_file_allowed(&relative) {
+        if !allowed(&relative) {
             return Err(format!("引擎包含未识别的运行文件：{relative}"));
         }
         let target = safe_target(destination, &relative)?;
@@ -1343,17 +1377,6 @@ fn extract_package(
                 .map_err(|e| e.to_string())?;
         }
         files.push(relative);
-    }
-    let executable = if destination.join("strata.exe").is_file() {
-        "strata.exe"
-    } else {
-        "strata"
-    };
-    if [executable, "BUILD.json", engine_package::MANIFEST_NAME]
-        .into_iter()
-        .any(|name| !destination.join(name).is_file())
-    {
-        return Err("官方引擎包缺少必要程序文件，未修改当前安装".into());
     }
     Ok(files)
 }

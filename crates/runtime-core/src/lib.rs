@@ -3601,6 +3601,21 @@ fn run_setup_with_preflight_options(
             ));
         }
     }
+    let deepseek = model == disk::dsv41::FAMILY;
+    if deepseek {
+        let release =
+            discovery::release_version(&root, discovery::runtime_version(&root, None).as_deref());
+        if !engine_version_at_least(release.as_deref(), &[0, 2, 5]) {
+            return Err(format!(
+                "DeepSeek-V4.1-Flash 需要 Strata 0.2.5 或更新版本（当前：{}）；请先更新 Strata",
+                release.as_deref().unwrap_or("未知")
+            ));
+        }
+        // setup.py DSV41_CONTEXT: the engine was checked at 4K and 8K; it reads no pictures in this version.
+        if context != disk::dsv41::CONTEXT || images {
+            return Err("DeepSeek-V4.1-Flash 只支持 8K 上下文、不支持图像".into());
+        }
+    }
     if options
         .as_ref()
         .is_some_and(|options| options.gpu_roles.is_some())
@@ -3666,6 +3681,7 @@ fn run_setup_with_preflight_options(
             directory.to_string_lossy().into_owned(),
         ]);
     }
+    let root_for_prelude = root.clone();
     let step = Step {
         program: setup_python,
         args,
@@ -3677,7 +3693,26 @@ fn run_setup_with_preflight_options(
             .unwrap_or_default(),
     };
     steps.push(step);
-    processes::launch_setup_task(state.clone(), intent, steps)
+    let prelude = if deepseek {
+        Some(dsv41_prelude(state.clone(), root_for_prelude)?)
+    } else {
+        None
+    };
+    processes::launch_setup_task_with_prelude(state.clone(), intent, steps, prelude)
+}
+/// DeepSeek-V4.1-Flash runs on its own engine package (engine-dsv41/), which setup.py would otherwise fetch from
+/// the newest upstream release. Manager installs the verified package from its own feed first and hands setup the
+/// executable (`STRATA_DSV41_EXE`), so setup neither downloads nor upgrades it.
+fn dsv41_prelude(state: Arc<RuntimeState>, root: PathBuf) -> Result<processes::Prelude, String> {
+    let handle = tokio::runtime::Handle::try_current()
+        .map_err(|_| "DeepSeek 引擎准备需要后台运行时；请重试".to_string())?;
+    Ok(Box::new(move |id: &str| {
+        let exe = handle.block_on(runtime_upgrade::dsv41_engine::prepare(&state, id, &root))?;
+        Ok(std::collections::BTreeMap::from([(
+            "STRATA_DSV41_EXE".to_string(),
+            Some(exe.to_string_lossy().into_owned()),
+        )]))
+    }))
 }
 fn orca_memory() -> (u64, u64) {
     let mut system = sysinfo::System::new();

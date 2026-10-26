@@ -260,3 +260,11 @@ test('a completed install whose runtime still needs repair stays on step 2 and s
   assert.equal(fixed.plan.current, 'model');
   assert.equal(fixed.plan.steps.find(step => step.id === 'runtime').state, 'done');
 });
+
+test('the guide never suggests a family that needs a newer Strata release (DeepSeek-V4.1-Flash)', () => {
+  for (const scene of ['chat', 'long', 'code']) {
+    const rows = model.recommendations(scene, 512, true, 50, 'windows');
+    assert.ok(rows.length > 0);
+    assert.ok(rows.every(row => row.family !== 'deepseek41'));
+  }
+});

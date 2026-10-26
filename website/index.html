@@ -131,9 +131,20 @@
           <h1 id="hero-title" class="hero-heading"><span data-en="Local inference.">本地大模型的</span><span data-en="Managed clearly.">管理与监控。</span></h1>
           <p class="hero-lead" data-en="An open-source desktop workspace for the Strata inference engine: set up the engine, manage models, connect the API and watch the hardware from one window.">Strata 推理引擎的开源桌面工作台：装引擎、管模型、接 API、看硬件，都在一个窗口里。</p>
           <div class="hero-cta-group">
-            <a class="pill pill-light pill-lg" href="#get-started"><span data-en="Get Strata Manager">下载 Strata Manager</span><svg class="icon" aria-hidden="true"><use href="#icon-download"/></svg></a>
+            <a class="pill pill-light pill-lg" href="#get-started" data-smart-download><span data-smart-download-label data-en="Get Strata Manager">下载 Strata Manager</span><svg class="icon" aria-hidden="true"><use href="#icon-download"/></svg></a>
             <a class="pill pill-dark pill-lg" href="docs/user-guide.html" data-href-en="docs/user-guide.en.html"><span data-en="User guide">使用指南</span><svg class="icon" aria-hidden="true"><use href="#icon-arrow"/></svg></a>
             <a class="text-link hero-video-link" href="#intro-video"><svg class="icon" aria-hidden="true"><use href="#icon-play"/></svg><span data-en="Watch the 2-minute intro">看 2 分钟介绍视频</span></a>
+          </div>
+          <div class="smart-dl" id="smart-dl">
+            <p class="smart-dl-row"><span class="smart-dl-note" data-smart-download-note hidden></span><button class="smart-dl-toggle" type="button" aria-expanded="false" aria-controls="smart-dl-list" data-smart-download-toggle><span data-en="Other platforms">其他平台</span><svg class="icon" aria-hidden="true"><use href="#icon-chevron"/></svg></button></p>
+            <ul class="smart-dl-list" id="smart-dl-list" hidden>
+              <li><a data-smart-option="windows" aria-disabled="true" tabindex="-1">Windows <small>x64 · .exe</small></a></li>
+              <li><a data-smart-option="dmg" aria-disabled="true" tabindex="-1">macOS <small>Apple Silicon · .dmg</small></a></li>
+              <li><a data-smart-option="appimage" aria-disabled="true" tabindex="-1">Linux <small>x64 · AppImage</small></a></li>
+              <li><a data-smart-option="deb" aria-disabled="true" tabindex="-1">Linux <small>x64 · .deb</small></a></li>
+              <li><a data-smart-option="server" aria-disabled="true" tabindex="-1">Linux Server <small>tar.gz</small></a></li>
+              <li><a data-smart-option="serverDeb" aria-disabled="true" tabindex="-1">Linux Server <small>.deb</small></a></li>
+            </ul>
           </div>
           <p class="hero-platforms"><span class="platform-dot" aria-hidden="true"></span><span data-en="Open source · Windows / Linux x64 · macOS Apple Silicon experimental">开源免费 · Windows / Linux x64 · macOS Apple Silicon 实验</span></p>
           <p class="hero-platforms" data-en="Supports Strata 0.2.0 · One-click engine on Windows and Linux · Any version, pinned · Automatic rollback">支持 Strata 0.2.0 · Windows / Linux 一键装引擎 · 任选版本可固定 · 失败自动回滚</p>

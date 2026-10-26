@@ -5,6 +5,16 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **新增 DeepSeek-V4.1-Flash 模型（需要 Strata 0.2.5 及以上）**：「下载模型」里可以选择 1.75 / 2.00 / 2.25 bpw 三个版本，下载约 239 / 257 / 274 GB。按上游 `dsv41_fit` 的规则标出「推荐」：内存低于 40 GiB，或磁盘只够放 1.75 bpw 时推荐 1.75，否则推荐 2.00；2.25 质量最好但只能手动选择。选择后会显示磁盘空间（含 6 GB 余量，1 GB = 10⁹ 字节）和内存（GiB）是否够放下全部专家，模型列表卡片与详情用同一套「适合 / 偏紧 / 超出」判断，并提醒需要 8 GB 以上的 NVIDIA 或 AMD 显卡。这个模型固定 8K 上下文、不支持图片，准备时会一并安装 DeepSeek 专用引擎；Strata 版本低于 0.2.5 或在 Mac 上时不显示。
+- **DeepSeek-V4.1-Flash 的运行设置**：「配置」页提供「速度」（默认 / 快速 / 完整质量，对应 `--experts 5/6`，引擎 0.1.50 起可用，保持默认时不写参数）和「加载方式」（默认 / 自动 / 尽量复制进内存 / 始终从模型文件读取，对应引擎默认或 `--mmap-experts auto/off/on`，总是带值写入）。DeepSeek 配置不显示也不写入 Qwen 引擎的启动参数（例如开关式的 `--mmap-experts`），重复或缺值的参数会在保存前提示。这个模型不支持一键调优和校准，性能测试会把速度档记入测试条件。
+
+### English
+
+- **Added DeepSeek-V4.1-Flash (needs Strata 0.2.5 or later)**: "Download model" offers the 1.75 / 2.00 / 2.25 bpw sets, about 239 / 257 / 274 GB. "Recommended" follows upstream `dsv41_fit`: 1.75 when RAM is below 40 GiB or the disk only fits 1.75, otherwise 2.00; 2.25 has the best quality but is manual only. The selection shows the disk space needed (including 6 GB of headroom, 1 GB = 10⁹ bytes), whether RAM (GiB) holds every expert (the catalog card and the details share one fits / tight / over judgment), and that an NVIDIA or AMD card with 8 GB or more is needed. The model runs at a fixed 8K context without images, and preparing it also installs the DeepSeek engine. It is hidden for Strata older than 0.2.5 and on a Mac.
+- **Run settings for DeepSeek-V4.1-Flash**: the Configuration page offers Speed (Default / Fast / Full quality, `--experts 5/6`, from engine 0.1.50; Default writes no flag) and Load mode (Default / Auto / Copy into RAM where possible / Always read from the model files: the engine default or `--mmap-experts auto/off/on`, always written with a value). DeepSeek configs neither show nor write Qwen engine options (such as the switch-style `--mmap-experts`), and duplicate or valueless options are flagged before saving. Tuning and calibration are not available for this model, and benchmarks record the speed setting as part of the test conditions.
+
 ## [0.2.22] - 2026-10-25
 
 ### 中文

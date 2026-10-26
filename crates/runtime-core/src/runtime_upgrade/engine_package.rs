@@ -66,11 +66,24 @@ fn token(value: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
 }
 
+/// Archive name prefix of the Strata (Qwen) engine packages.
+pub const ENGINE_PACKAGE_PREFIX: &str = "strata-engine-";
+/// Archive name prefix of the DeepSeek-V4.1 engine packages (feed member `dsv41`, 0.2.5+).
+pub const DSV41_PACKAGE_PREFIX: &str = "strata-dsv41-";
+
 /// Parse an upstream component engine file name. Only the exact shape is accepted.
+/// Only `strata-engine-*`: a DeepSeek package never counts as a Strata engine.
 pub fn parse_package_name(name: &str) -> Option<PackageName> {
-    let rest = name
-        .strip_prefix("strata-engine-")?
-        .strip_suffix(".tar.gz")?;
+    parse_prefixed_package_name(name, ENGINE_PACKAGE_PREFIX)
+}
+
+/// `strata-dsv41-<ver>-<platform>-<backend>-<variant>.tar.gz`, the same shape as the engine's.
+pub fn parse_dsv41_package_name(name: &str) -> Option<PackageName> {
+    parse_prefixed_package_name(name, DSV41_PACKAGE_PREFIX)
+}
+
+fn parse_prefixed_package_name(name: &str, prefix: &str) -> Option<PackageName> {
+    let rest = name.strip_prefix(prefix)?.strip_suffix(".tar.gz")?;
     let (version, rest) = rest.split_once('-')?;
     if !numeric_version(version) {
         return None;
@@ -345,6 +358,70 @@ pub fn feed_assets(
     tag: &str,
     platform: &str,
 ) -> Result<Vec<RuntimeReleaseAsset>, String> {
+    member_assets(feed, "engine", parse_package_name, release, tag, platform)
+}
+
+/// DeepSeek-V4.1 engines Manager installs: Windows CUDA 13, Linux CUDA 13 and Linux HIP
+/// (RX 9000 / R9700, gfx1200/gfx1201). Others in the feed are ignored.
+pub fn dsv41_supported(platform: &str, backend: &str, variant: &str) -> bool {
+    matches!(
+        (platform, backend, variant),
+        ("windows-x86_64", "cuda", "cuda13")
+            | ("linux-x86_64", "cuda", "cuda13")
+            | ("linux-x86_64", "hip", "rx9070")
+    )
+}
+
+/// The signed feed's `dsv41` member (the DeepSeek-V4.1 engine, its own package) for
+/// `platform`, held to the same checks as the engine packages. Kept apart from the
+/// engine list so no Strata engine update can ever pick one. Two entries for the same
+/// version/platform/backend/variant make the member ambiguous and are refused.
+pub fn dsv41_feed_assets(
+    feed: &Value,
+    release: &Value,
+    tag: &str,
+    platform: &str,
+) -> Result<Vec<RuntimeReleaseAsset>, String> {
+    let assets = member_assets(
+        feed,
+        "dsv41",
+        parse_dsv41_package_name,
+        release,
+        tag,
+        platform,
+    )?;
+    let mut seen = BTreeSet::new();
+    let mut supported = Vec::new();
+    for asset in assets {
+        let Some(parsed) = parse_dsv41_package_name(&asset.name) else {
+            continue;
+        };
+        if !seen.insert((
+            parsed.version.clone(),
+            parsed.platform,
+            parsed.backend.clone(),
+            parsed.variant.clone(),
+        )) {
+            return Err(format!(
+                "签名 feed 的 DeepSeek 引擎条目重复：{} / The signed feed lists a DeepSeek engine twice",
+                asset.name
+            ));
+        }
+        if dsv41_supported(parsed.platform, &parsed.backend, &parsed.variant) {
+            supported.push(asset);
+        }
+    }
+    Ok(supported)
+}
+
+fn member_assets(
+    feed: &Value,
+    member: &str,
+    parse: fn(&str) -> Option<PackageName>,
+    release: &Value,
+    tag: &str,
+    platform: &str,
+) -> Result<Vec<RuntimeReleaseAsset>, String> {
     let attached: BTreeMap<&str, &Value> = release["assets"]
         .as_array()
         .into_iter()
@@ -352,14 +429,14 @@ pub fn feed_assets(
         .filter_map(|item| Some((item["name"].as_str()?, item)))
         .collect();
     let mut assets = Vec::new();
-    for package in feed["engine"]["packages"].as_array().into_iter().flatten() {
+    for package in feed[member]["packages"].as_array().into_iter().flatten() {
         if package["platform"].as_str() != Some(platform) {
             continue;
         }
         let Some(name) = package["url"].as_str() else {
             continue;
         };
-        let Some(parsed) = parse_package_name(name) else {
+        let Some(parsed) = parse(name) else {
             continue;
         };
         let (Some(version), Some(backend), Some(variant)) = (
@@ -509,7 +586,10 @@ pub fn verify_manifest_bytes(
     let mut payload = String::new();
     canonical_json(&body, &mut payload)?;
     verify_signature(&signature, payload.as_bytes(), "引擎清单")?;
-    let parsed = parse_package_name(&asset.name).ok_or("引擎包名称无效 / Invalid package name")?;
+    // The DeepSeek package's manifest is an engine component too (id "strata-engine").
+    let parsed = parse_package_name(&asset.name)
+        .or_else(|| parse_dsv41_package_name(&asset.name))
+        .ok_or("引擎包名称无效 / Invalid package name")?;
     if manifest["id"].as_str() != Some("strata-engine")
         || manifest["schema_version"].as_u64() != Some(2)
         || manifest["platform"].as_str() != Some(platform)
@@ -905,6 +985,112 @@ mod tests {
         assert_eq!(
             asset_platform("strata-windows-x64.zip"),
             Some("windows-x86_64")
+        );
+    }
+
+    const FEED_026: &[u8] = include_bytes!("fixtures/strata-feed-v0.2.6.json");
+    const FEED_026_SIG: &[u8] = include_bytes!("fixtures/strata-feed-v0.2.6.json.sig");
+    const RELEASE_026: &str = include_str!("fixtures/release-v0.2.6.json");
+    /// The real v0.2.6 Windows DeepSeek-V4.1 engine package's signed manifest.
+    const DSV41_WINDOWS_MANIFEST: &[u8] =
+        include_bytes!("fixtures/manifest-dsv41-windows-cuda13.json");
+    const NOW_026: u64 = 1_793_000_000_000;
+
+    #[test]
+    fn the_real_0_2_6_feed_lists_dsv41_engines_apart_from_the_strata_engine() {
+        let feed = verify_feed(FEED_026, FEED_026_SIG, None, NOW_026).unwrap();
+        let release: Value = serde_json::from_str(RELEASE_026).unwrap();
+        let windows = dsv41_feed_assets(&feed, &release, "v0.2.6", "windows-x86_64").unwrap();
+        assert_eq!(windows.len(), 1);
+        let asset = &windows[0];
+        assert_eq!(
+            asset.name,
+            "strata-dsv41-0.1.51-windows-x86_64-cuda-cuda13.tar.gz"
+        );
+        assert_eq!(asset.variant, "cuda13");
+        assert_eq!(asset.engine_version.as_deref(), Some("0.1.51"));
+        assert_eq!(asset.size, 417_419_650);
+        assert_eq!(asset.installed_bytes, Some(598_115_318));
+        assert!(asset.url.starts_with("https://github.com/"));
+        assert!(asset
+            .url
+            .ends_with("/v0.2.6/strata-dsv41-0.1.51-windows-x86_64-cuda-cuda13.tar.gz"));
+        let linux = dsv41_feed_assets(&feed, &release, "v0.2.6", "linux-x86_64").unwrap();
+        let mut names: Vec<_> = linux.iter().map(|a| (a.variant.as_str(), a.size)).collect();
+        names.sort();
+        assert_eq!(names, [("cuda13", 439_928_756), ("hip", 362_682_652)]);
+        let hip = linux.iter().find(|a| a.variant == "hip").unwrap();
+        assert_eq!(hip.archs, ["gfx1200", "gfx1201"]);
+        let cuda = linux.iter().find(|a| a.variant == "cuda13").unwrap();
+        assert_eq!(cuda.nvidia_min_driver.as_deref(), Some("580.65"));
+        // The Strata engine list never contains a DeepSeek package, and is unchanged by it.
+        for platform in ["windows-x86_64", "linux-x86_64"] {
+            let engines = feed_assets(&feed, &release, "v0.2.6", platform).unwrap();
+            assert!(!engines.is_empty());
+            assert!(engines
+                .iter()
+                .all(|a| a.name.starts_with(ENGINE_PACKAGE_PREFIX)));
+            assert!(engines
+                .iter()
+                .all(|a| installable_variant(&a.name).is_some()));
+        }
+        assert!(installable_variant(&asset.name).is_none());
+        assert!(!is_installable_asset_name(&asset.name));
+        // The real signed manifest verifies for its package (and only for it).
+        let files = verify_manifest_bytes(DSV41_WINDOWS_MANIFEST, asset, "windows-x86_64").unwrap();
+        assert!(files.contains_key("strata-dsv41.exe"));
+        assert!(verify_manifest_bytes(DSV41_WINDOWS_MANIFEST, asset, "linux-x86_64").is_err());
+        assert!(verify_manifest_bytes(DSV41_WINDOWS_MANIFEST, cuda, "linux-x86_64").is_err());
+    }
+
+    #[test]
+    fn dsv41_member_is_filtered_and_duplicates_are_refused() {
+        let feed = verify_feed(FEED_026, FEED_026_SIG, None, NOW_026).unwrap();
+        let release: Value = serde_json::from_str(RELEASE_026).unwrap();
+        // Unsupported combinations are dropped (not errors).
+        assert!(dsv41_supported("windows-x86_64", "cuda", "cuda13"));
+        assert!(dsv41_supported("linux-x86_64", "hip", "rx9070"));
+        assert!(!dsv41_supported("windows-x86_64", "hip", "rx9070"));
+        assert!(!dsv41_supported("linux-x86_64", "cuda", "cuda12"));
+        // A member absent from an older feed is simply empty.
+        let mut older = feed.clone();
+        older.as_object_mut().unwrap().remove("dsv41");
+        assert!(
+            dsv41_feed_assets(&older, &release, "v0.2.6", "linux-x86_64")
+                .unwrap()
+                .is_empty()
+        );
+        // The same package listed twice makes the member ambiguous.
+        let mut twice = feed.clone();
+        let packages = twice["dsv41"]["packages"].as_array_mut().unwrap();
+        let first = packages
+            .iter()
+            .find(|p| p["platform"] == "windows-x86_64")
+            .unwrap()
+            .clone();
+        packages.push(first);
+        assert!(
+            dsv41_feed_assets(&twice, &release, "v0.2.6", "windows-x86_64")
+                .unwrap_err()
+                .contains("重复")
+        );
+        // A dsv41 name placed in the engine member is never an engine asset.
+        let mut misplaced = feed.clone();
+        let package = misplaced["dsv41"]["packages"][0].clone();
+        misplaced["engine"]["packages"]
+            .as_array_mut()
+            .unwrap()
+            .push(package);
+        for platform in ["windows-x86_64", "linux-x86_64"] {
+            assert!(feed_assets(&misplaced, &release, "v0.2.6", platform)
+                .unwrap()
+                .iter()
+                .all(|a| a.name.starts_with(ENGINE_PACKAGE_PREFIX)));
+        }
+        assert!(parse_package_name("strata-dsv41-0.1.51-linux-x86_64-hip-rx9070.tar.gz").is_none());
+        assert!(
+            parse_dsv41_package_name("strata-engine-0.1.51-linux-x86_64-hip-rx9070.tar.gz")
+                .is_none()
         );
     }
 

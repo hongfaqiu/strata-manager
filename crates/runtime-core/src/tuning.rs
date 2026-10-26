@@ -737,6 +737,18 @@ fn assert_managed_config(
     }
     Ok(path)
 }
+/// Tuning and calibration sweep Qwen-engine knobs (--pool-workers, --pcie-frac, batch slots). The DeepSeek-V4.1
+/// engine (arch deepseek41) has none of them, so both are skipped for its configs.
+pub(crate) fn assert_tunable(config_path: &Path) -> Result<(), String> {
+    let config: Value = fs::read(config_path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or(Value::Null);
+    if config["arch"] == crate::disk::dsv41::FAMILY {
+        return Err("DeepSeek-V4.1-Flash 使用独立引擎，暂不支持速度调优和校准".into());
+    }
+    Ok(())
+}
 async fn read_metrics(state: &RuntimeState, profile: &ServiceProfile) -> Result<Value, String> {
     http::strata_request(
         state,
@@ -803,7 +815,7 @@ pub async fn start(
     crate::runtime_upgrade::assert_available(&state)?;
     assert_available(&state)?;
     let profile = state.registered_profile(&profile_id)?;
-    assert_managed_config(&state, &profile)?;
+    assert_tunable(&assert_managed_config(&state, &profile)?)?;
     let pid = require_owned(&state, &profile).await?;
     let health = http::strata_request(
         &state,
@@ -1868,6 +1880,16 @@ mod status_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn deepseek41_configs_are_not_tuned_or_calibrated() {
+        let temp = tempfile::tempdir().unwrap();
+        let deepseek = temp.path().join("deepseek.json");
+        fs::write(&deepseek, br#"{"arch":"deepseek41","args":[]}"#).unwrap();
+        assert!(assert_tunable(&deepseek).unwrap_err().contains("DeepSeek"));
+        let qwen = temp.path().join("qwen.json");
+        fs::write(&qwen, br#"{"args":[]}"#).unwrap();
+        assert!(assert_tunable(&qwen).is_ok());
+    }
     #[test]
     fn baseline_accepts_official_info_strings_and_json_numbers() {
         let actual_0143 =
