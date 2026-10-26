@@ -1,5 +1,7 @@
 //! Durable setup-to-registration handoff. This module never starts a service.
-use crate::{discovery::LocalCandidate, processes::TaskRecord, types::*, RuntimeState};
+use crate::{
+    discovery::LocalCandidate, disk::dsv41, processes::TaskRecord, types::*, RuntimeState,
+};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -267,7 +269,19 @@ fn expected_model_name(intent: &SetupIntent) -> Option<String> {
     {
         return Some(crate::community_model::model_name(slug, &intent.quant));
     }
+    // setup.py MULTI_FILE_FAMILIES: one model_name for every DeepSeek-V4.1-Flash set; the set is in the file name.
+    if intent.family == dsv41::FAMILY {
+        return Some(dsv41::MODEL_NAME.into());
+    }
     family_name(&intent.family).map(|name| format!("{name}-{}", intent.quant.to_ascii_lowercase()))
+}
+
+/// The config file a family that shares one model_name across sets writes: `strata-<tag lower>.json` (setup.py cfg_path).
+fn expected_config_file(intent: &SetupIntent) -> Option<String> {
+    (intent.family == dsv41::FAMILY)
+        .then(|| dsv41::set(&intent.quant))
+        .flatten()
+        .map(|set| format!("strata-{}.json", set.tag().to_lowercase()))
 }
 
 fn context(value: &Value) -> Option<u32> {
@@ -459,6 +473,12 @@ fn find_and_register(
                         .unwrap_or_default()
                         .to_string_lossy()
                         .ends_with(".shared-settings.json")
+            })
+            .filter(|path| {
+                expected_config_file(intent).is_none_or(|name| {
+                    path.file_name()
+                        .is_some_and(|file| file.to_string_lossy().eq_ignore_ascii_case(&name))
+                })
             })
             .take(129)
             .collect();
@@ -869,6 +889,39 @@ sys.exit(spec.get('exit',0))
         assert_eq!(
             registered["model_name"],
             "orcarouter-qwen3.8-flash-next-uncensored-iq3_xxs"
+        );
+    }
+
+    #[test]
+    fn deepseek41_registers_the_config_of_the_chosen_set_only() {
+        let mut fixture = fixture();
+        fixture.intent.family = "deepseek41".into();
+        fixture.intent.quant = "IST-DAS-2.00bpw".into();
+        let mut chosen = config(8192);
+        chosen["model_name"] = json!("deepseek-v4.1-flash");
+        chosen["arch"] = json!("deepseek41");
+        let mut other = chosen.clone();
+        other["args"][1] = json!("part-2.gguf");
+        spec(
+            &fixture,
+            vec![
+                ("strata-deepseek-v4.1-flash-ist-das-1.75bpw.json", other),
+                ("strata-deepseek-v4.1-flash-ist-das-2.00bpw.json", chosen),
+            ],
+            0.0,
+            0,
+        );
+        let task = launch(&fixture);
+        assert_eq!(wait(&fixture.state, &task.id).state, "completed");
+        let result = handoff(&fixture.state, &task.id);
+        assert_eq!(result.status, "registered", "{result:?}");
+        let profiles = fixture.state.registered_profiles().unwrap();
+        assert_eq!(profiles.len(), 1);
+        let registered = checked_config(Path::new(&profiles[0].config_path)).unwrap();
+        assert_eq!(registered["args"][1], "part-1.gguf");
+        assert_eq!(
+            expected_config_file(&fixture.intent).as_deref(),
+            Some("strata-deepseek-v4.1-flash-ist-das-2.00bpw.json")
         );
     }
 

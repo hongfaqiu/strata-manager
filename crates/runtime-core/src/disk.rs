@@ -1,6 +1,9 @@
 //! Read-only preparation-space estimates for the reviewed upstream setup.py.
 //! Counts missing files rather than requiring a second copy of existing weights.
 use crate::{processes, types::*};
+#[path = "disk_dsv41.rs"]
+pub(crate) mod dsv41;
+pub(crate) use dsv41::DSV41_SETS;
 use serde_json::Value;
 use std::{
     fs,
@@ -181,6 +184,10 @@ pub(crate) fn model_spec(
     family: &str,
     quant: &str,
 ) -> Result<(String, Vec<String>, u64, f64), String> {
+    if family == dsv41::FAMILY {
+        let set = dsv41::set(quant).ok_or("模型/量化组合不被已核对的官方安装器支持")?;
+        return Ok((set.tag(), set.shard_names(), set.bytes(), set.experts_gb));
+    }
     // Qwen3.6 OWN_PATH: single Unsloth MTP GGUF (setup.py QWEN36_FILES / OWN_PATH_FAMILIES).
     if family == "qwen36" {
         let (download, arena) = match quant {
@@ -360,6 +367,12 @@ fn prepare_plan(
         .unwrap_or_else(|| root.parent().unwrap_or(root).join("Strata-data"));
     if !data.is_absolute() {
         data = root.join(data);
+    }
+    if family == dsv41::FAMILY {
+        if settings.local_gguf_directory.is_some() || settings.local_data_directory.is_some() {
+            return Err("DeepSeek-V4.1-Flash 暂不支持「使用已有模型」；请用下载准备".into());
+        }
+        return dsv41::plan(root, data, quant);
     }
     let mut roots = source_roots(root, settings, &data)?;
     let mut model_directory = data.join("models").join(&tag);
@@ -1296,5 +1309,49 @@ mod tests {
             );
             assert_eq!(fs::read_dir(&f.root).unwrap().count(), 3);
         }
+    }
+
+    #[test]
+    fn deepseek41_setup_needs_strata_0_2_5_and_8k_text_only_before_any_task() {
+        let f = fixture();
+        let state = RuntimeState::open(f._temp.path().join("manager-data")).unwrap();
+        let profile = ServiceProfile {
+            id: "dsv41-gate".into(),
+            name: "dsv41 fixture".into(),
+            base_url: "http://127.0.0.1:19974".into(),
+            install_dir: f.root.to_string_lossy().into(),
+            config_path: String::new(),
+            python_path: "must-not-start-python".into(),
+            managed: true,
+        };
+        let run = |context: u32, images: bool| {
+            crate::run_setup_with_preflight(
+                state.clone(),
+                profile.clone(),
+                "deepseek41".into(),
+                "IST-DAS-2.00bpw".into(),
+                context,
+                images,
+                |_, _, _, _| Err("preflight must not run".into()),
+            )
+            .err()
+            .expect("the gate must reject setup")
+        };
+        let marker = |version: &str| {
+            fs::write(
+                f.root.join(crate::discovery::RELEASE_MARKER),
+                format!(r#"{{"version":"{version}"}}"#),
+            )
+            .unwrap()
+        };
+        marker("0.2.4");
+        assert!(run(8192, false).contains("需要 Strata 0.2.5"));
+        marker("0.2.6");
+        assert!(run(32768, false).contains("只支持 8K"));
+        assert!(run(8192, true).contains("只支持 8K"));
+        // Past the gate the (failing) preflight runs: nothing else was started.
+        assert_eq!(run(8192, false), "preflight must not run");
+        assert!(state.tasks.lock().unwrap().is_empty());
+        assert!(state.processes.lock().unwrap().is_empty());
     }
 }

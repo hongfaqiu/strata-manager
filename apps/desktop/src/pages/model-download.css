@@ -145,3 +145,19 @@
 .orca-import-submit p{flex:1;min-width:240px;margin:0;font-size:12px;line-height:1.6;color:var(--st-ink-muted)}
 .orca-import-note{margin:0;font-size:13px;color:var(--st-ink-muted)}
 .orca-import-error{margin:0;color:var(--st-danger)!important;font-size:13px;line-height:1.6;overflow-wrap:anywhere}
+
+/* DeepSeek-V4.1-Flash requirements (disk / memory bars, GPU note) */
+.model-download-recommended { color: var(--accent); font-weight: 600; }
+.model-download-manual { color: var(--muted); }
+.dsv41-panel { display: grid; gap: 8px; margin: 12px 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; }
+.dsv41-panel > div { display: grid; grid-template-columns: 48px 1fr; align-items: center; gap: 10px; }
+.dsv41-panel p { margin: 0; font-size: 12px; color: var(--muted); }
+.dsv41-panel p.is-warn, .dsv41-bar.is-warn small { color: var(--warning); }
+.dsv41-bar { display: grid; gap: 4px; }
+.dsv41-bar-track { position: relative; height: 6px; border-radius: 3px; background: var(--surface-raised); }
+.dsv41-bar-track i { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: var(--accent); }
+.dsv41-bar.is-warn .dsv41-bar-track i { background: var(--warning); }
+.dsv41-bar-track b { position: absolute; top: -3px; width: 2px; height: 12px; background: var(--text); }
+.dsv41-bar small { font-size: 12px; color: var(--muted); }
+.model-download-preset.is-locked { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.model-download-preset.is-locked small { flex-basis: 100%; color: var(--muted); }
