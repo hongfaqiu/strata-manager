@@ -5,6 +5,14 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **修复升级运行环境时“检测到其它程序仍在运行此目录，未替换文件”却不说是谁**：此前停掉 Manager 自己的服务后只检查一次，只要还有任何 Strata 服务进程引用该目录就直接失败，既不等进程退出，也不告诉你是哪个进程。现在会先等待最多约 12 秒让刚停止的进程退出再判断；仍有占用时，报错会列出进程名、PID 和配置文件，并区分“本应用管理的服务”（去「服务」页停止）与“其它程序启动的”（关闭对应窗口或应用，或在任务管理器「详细信息」页按 PID 结束）。判断范围、失败后的回滚行为不变，Manager 不会擅自结束不属于它的进程。
+
+### English
+
+- **Fixed the runtime upgrade refusing with "Other programs are still running from this folder" without saying which**: after stopping its own services the upgrade checked once and failed as soon as any Strata server process still referenced the folder, without waiting for it to exit or naming it. It now waits up to about 12 seconds for just-stopped processes to leave before deciding. If something still holds the folder, the error lists the process name, PID and config file and separates services this app manages (stop them on the Services page) from programs started elsewhere (close that window or app, or end the PID in Task Manager → Details). What is checked and the rollback on failure are unchanged, and the Manager never ends processes it does not own.
+
 ## [0.2.26] - 2026-10-27
 
 ### 中文

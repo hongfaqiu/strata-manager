@@ -99,6 +99,17 @@ struct ProcessHint {
     python: PathBuf,
     port: Option<u16>,
     host: Option<String>,
+    /// Filled by the process census; command-line parsing alone cannot know it.
+    pid: Option<u32>,
+    image: Option<String>,
+}
+
+impl ProcessHint {
+    fn observed(mut self, pid: u32, image: Option<String>) -> Self {
+        self.pid = Some(pid);
+        self.image = image;
+        self
+    }
 }
 
 struct InspectedConfig {
@@ -1664,6 +1675,8 @@ fn hint_from_args(args: &[String]) -> Option<ProcessHint> {
         python,
         port,
         host,
+        pid: None,
+        image: None,
     })
 }
 
@@ -1693,7 +1706,12 @@ fn process_hints() -> Result<Vec<ProcessHint>, String> {
                     .map(|v| String::from_utf8(v.to_vec()))
                     .collect::<Result<_, _>>()
                     .ok()?;
-                hint_from_args(&args)
+                let pid = entry.file_name().to_string_lossy().parse::<u32>().ok()?;
+                let image = fs::read_to_string(entry.path().join("comm"))
+                    .ok()
+                    .map(|name| name.trim().to_owned())
+                    .filter(|name| !name.is_empty());
+                hint_from_args(&args).map(|hint| hint.observed(pid, image))
             })
             .collect())
     }
@@ -1741,15 +1759,46 @@ fn prioritized_config_paths(
     paths
 }
 
+/// A live Strata Python server that references an installation directory.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RunningProcess {
+    pub pid: u32,
+    /// Executable file name (e.g. `python.exe`).
+    pub name: String,
+    pub config: PathBuf,
+}
+
+/// Every identified Strata Python server that references this installation.
+/// Read-only: it neither authorizes nor performs stopping any process.
+pub fn running_installation_processes(installation: &Path) -> Result<Vec<RunningProcess>, String> {
+    let root = canonical_local(installation)?;
+    let mut found: Vec<RunningProcess> = process_hints()?
+        .into_iter()
+        .filter(|hint| {
+            hint_root(hint)
+                .and_then(|path| canonical_local(&path).ok())
+                .is_some_and(|path| path_key(&path) == path_key(&root))
+        })
+        .map(|hint| RunningProcess {
+            pid: hint.pid.unwrap_or(0),
+            name: hint.image.unwrap_or_else(|| {
+                hint.python
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "python".into())
+            }),
+            config: hint.config,
+        })
+        .collect();
+    found.sort_by_key(|process| process.pid);
+    found.dedup_by_key(|process| process.pid);
+    Ok(found)
+}
+
 /// Whether *any* identified Strata Python server references this installation.
 /// This is deliberately conservative and does not authorize stopping that process.
 pub fn has_running_installation(installation: &Path) -> Result<bool, String> {
-    let root = canonical_local(installation)?;
-    Ok(process_hints()?.iter().any(|hint| {
-        hint_root(hint)
-            .and_then(|path| canonical_local(&path).ok())
-            .is_some_and(|path| path_key(&path) == path_key(&root))
-    }))
+    Ok(!running_installation_processes(installation)?.is_empty())
 }
 
 /// The Python entry script, rather than an incidental argument or `-c` text.
@@ -2560,8 +2609,13 @@ mod tests {
         );
     }
 
+    /// Tests that start or scan live processes take this so one test's
+    /// half-started child is never read mid-exec by another's whole-system census.
+    static PROCESS_CENSUS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn management_inventory_detects_live_stdio_and_relative_setup_only_in_their_root() {
+        let _census = PROCESS_CENSUS.lock().unwrap_or_else(|e| e.into_inner());
         use std::{
             process::Command,
             time::{Duration, Instant},
@@ -3071,6 +3125,59 @@ mod tests {
         assert!(hint_from_args(&relative).is_none());
     }
 
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn running_installation_processes_reports_pid_and_name_only_for_this_root() {
+        let _census = PROCESS_CENSUS.lock().unwrap_or_else(|e| e.into_inner());
+        let (temp, profile) = fixture();
+        let root = canonical_local(Path::new(&profile.install_dir)).unwrap();
+        fs::write(root.join("setup.py"), b"").unwrap();
+        fs::create_dir_all(root.join("serve")).unwrap();
+        fs::write(
+            root.join("serve/server.py"),
+            b"import time\ntime.sleep(60)\n",
+        )
+        .unwrap();
+        let config = root.join("busy.json");
+        fs::write(&config, b"{}").unwrap();
+        struct Reap(std::process::Child);
+        impl Drop for Reap {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+        let Ok(child) = std::process::Command::new("python3")
+            .current_dir(&root)
+            .args(["-m", "serve.server", "--config"])
+            .arg(&config)
+            .spawn()
+        else {
+            return;
+        };
+        let child = Reap(child);
+        let pid = child.0.id();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let found = loop {
+            let found = running_installation_processes(&root).unwrap();
+            if !found.is_empty() || std::time::Instant::now() >= deadline {
+                break found;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        };
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].pid, pid);
+        assert!(found[0].name.starts_with("python"), "{found:?}");
+        assert_eq!(found[0].config, config);
+        assert!(has_running_installation(&root).unwrap());
+        // Another directory is not blamed for this process.
+        let other = temp.path().join("other-runtime");
+        fs::create_dir_all(other.join("serve")).unwrap();
+        fs::write(other.join("setup.py"), b"").unwrap();
+        fs::write(other.join("serve/server.py"), b"").unwrap();
+        assert!(running_installation_processes(&other).unwrap().is_empty());
+    }
+
     #[test]
     fn observed_config_outside_runtime_precedes_full_directory_scan() {
         let (temp, profile) = fixture();
@@ -3092,6 +3199,8 @@ mod tests {
             python: PathBuf::from(&profile.python_path),
             port: Some(18099),
             host: None,
+            pid: None,
+            image: None,
         };
         assert_eq!(canonical_local(&hint_root(&hint).unwrap()).unwrap(), root);
         assert_eq!(config_paths(&root).len(), MAX_CONFIGS);

@@ -1783,6 +1783,121 @@ fn stop_drained_owned_profiles(
     Ok(None)
 }
 
+/// How long, and how often, to re-check that no Strata server still runs from the
+/// directory after the Manager stopped its own services. A just-killed process
+/// tree can stay in the process list for a moment, and a scan can race its exit.
+const RELEASE_WAIT: Duration = Duration::from_secs(12);
+const RELEASE_POLL: Duration = Duration::from_millis(500);
+
+/// Waits until no Strata Python server references `root`; the Manager has
+/// already stopped (by handle) every service it owns. What remains after the
+/// wait is reported by name and PID, never stopped here.
+async fn wait_runtime_released(
+    state: &RuntimeState,
+    task_id: &str,
+    root: &Path,
+) -> Result<(), String> {
+    let remaining = poll_released(
+        RELEASE_WAIT,
+        RELEASE_POLL,
+        || crate::discovery::running_installation_processes(root),
+        || cancelled(state, task_id),
+    )
+    .await?;
+    if remaining.is_empty() {
+        Ok(())
+    } else {
+        Err(runtime_busy_message(state, &remaining))
+    }
+}
+
+/// Re-scans until nothing is left or `wait` elapses. Returns what was still
+/// running at the end; a scan error is only reported once the time is up.
+async fn poll_released(
+    wait: Duration,
+    poll: Duration,
+    mut scan: impl FnMut() -> Result<Vec<crate::discovery::RunningProcess>, String>,
+    cancel: impl Fn() -> Result<(), String>,
+) -> Result<Vec<crate::discovery::RunningProcess>, String> {
+    let deadline = Instant::now() + wait;
+    loop {
+        let result = scan();
+        if matches!(&result, Ok(list) if list.is_empty()) || Instant::now() >= deadline {
+            return result;
+        }
+        cancel()?;
+        tokio::time::sleep(poll).await;
+    }
+}
+
+/// The user-facing refusal for processes still in the way, built from the
+/// Manager's own running services (PID, name) and the scan result.
+fn runtime_busy_message(state: &RuntimeState, busy: &[crate::discovery::RunningProcess]) -> String {
+    let managed: Vec<(u32, String)> = state
+        .processes
+        .try_lock()
+        .map(|mut processes| {
+            processes
+                .values_mut()
+                .filter_map(|process| {
+                    let running = process.refresh().ok()?.running;
+                    let name = process.profile.as_ref()?.name.clone();
+                    running.then(|| (process.child.id(), name))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    busy_message(&managed, busy)
+}
+
+fn busy_message(managed: &[(u32, String)], busy: &[crate::discovery::RunningProcess]) -> String {
+    let describe = |process: &crate::discovery::RunningProcess| {
+        let config = process
+            .config
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        format!("{} (PID {}, {config})", process.name, process.pid)
+    };
+    let (own, outside): (Vec<_>, Vec<_>) = busy
+        .iter()
+        .partition(|process| managed.iter().any(|(pid, _)| *pid == process.pid));
+    let mut zh = String::from("检测到其它程序仍在运行此目录，未替换文件");
+    let mut en = String::from(
+        "Other programs are still running from this folder, so no files were replaced",
+    );
+    if !outside.is_empty() {
+        let list = outside
+            .iter()
+            .map(|p| describe(p))
+            .collect::<Vec<_>>()
+            .join("、");
+        zh += &format!("：{list}。这不是本应用启动的服务。请先关闭它们（退出启动它的窗口或应用；或在任务管理器「详细信息」页按 PID 结束进程），再重试更新");
+        en += &format!(": {list}. They were not started by this app. Close them (quit the window or app that started them, or end the PID in Task Manager → Details), then retry the update");
+    }
+    if !own.is_empty() {
+        let list = own
+            .iter()
+            .map(|p| {
+                let name = managed
+                    .iter()
+                    .find(|(pid, _)| *pid == p.pid)
+                    .map(|(_, name)| name.as_str())
+                    .unwrap_or_default();
+                format!("{name} / {}", describe(p))
+            })
+            .collect::<Vec<_>>()
+            .join("、");
+        zh += &format!("；本应用管理的服务仍在运行：{list}。请先在「服务」页停止后重试");
+        en += &format!("; services managed by this app are still running: {list}. Stop them on the Services page, then retry");
+    }
+    if outside.is_empty() && own.is_empty() {
+        zh += "。请稍后重试";
+        en += ". Please retry shortly";
+    }
+    format!("{zh} / {en}")
+}
+
 fn engine_directories(
     root: &Path,
     asset: &RuntimeReleaseAsset,
@@ -2477,9 +2592,7 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
         if let Some(error) = stop_error {
             return Err(error);
         }
-        if crate::discovery::has_running_installation(&j.install_dir)? {
-            return Err("检测到其它程序仍在运行此目录，未替换文件".into());
-        }
+        wait_runtime_released(&state, &j.task_id, &j.install_dir).await?;
         progress(
             &state,
             j,
@@ -2785,6 +2898,89 @@ pub(super) fn recover(state: &RuntimeState) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn running(pid: u32, name: &str) -> crate::discovery::RunningProcess {
+        crate::discovery::RunningProcess {
+            pid,
+            name: name.into(),
+            config: PathBuf::from(format!("C:/runtime/strata-{pid}.json")),
+        }
+    }
+
+    #[test]
+    fn busy_message_names_outside_processes_and_keeps_the_historic_prefix() {
+        let message = busy_message(&[], &[running(4242, "python.exe")]);
+        assert!(message.starts_with("检测到其它程序仍在运行此目录，未替换文件"));
+        assert!(message.contains("python.exe (PID 4242, strata-4242.json)"));
+        assert!(message.contains("任务管理器"));
+        assert!(message.contains("Task Manager"));
+        assert!(!message.contains("本应用管理的服务"));
+    }
+
+    #[test]
+    fn busy_message_separates_services_the_manager_owns() {
+        let managed = vec![(7, "Qwen".to_string())];
+        let message = busy_message(
+            &managed,
+            &[running(7, "python.exe"), running(9, "python.exe")],
+        );
+        assert!(message.contains("本应用管理的服务仍在运行：Qwen / python.exe (PID 7"));
+        assert!(message.contains("PID 9"));
+        assert!(message.contains("Stop them on the Services page"));
+        let own_only = busy_message(&managed, &[running(7, "python.exe")]);
+        assert!(!own_only.contains("不是本应用启动"));
+    }
+
+    #[tokio::test]
+    async fn release_wait_tolerates_a_process_that_is_still_exiting() {
+        let scans = std::cell::Cell::new(0);
+        let remaining = poll_released(
+            Duration::from_secs(5),
+            Duration::from_millis(5),
+            || {
+                scans.set(scans.get() + 1);
+                Ok(if scans.get() < 4 {
+                    vec![running(1, "python.exe")]
+                } else {
+                    vec![]
+                })
+            },
+            || Ok(()),
+        )
+        .await
+        .unwrap();
+        assert!(remaining.is_empty());
+        assert_eq!(scans.get(), 4);
+    }
+
+    #[tokio::test]
+    async fn release_wait_reports_a_process_that_never_leaves_and_honours_cancel() {
+        let remaining = poll_released(
+            Duration::from_millis(30),
+            Duration::from_millis(5),
+            || Ok(vec![running(5, "python.exe")]),
+            || Ok(()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(remaining.iter().map(|p| p.pid).collect::<Vec<_>>(), vec![5]);
+        let cancelled = poll_released(
+            Duration::from_secs(5),
+            Duration::from_millis(5),
+            || Ok(vec![running(5, "python.exe")]),
+            || Err("更新已取消".into()),
+        )
+        .await;
+        assert_eq!(cancelled.unwrap_err(), "更新已取消");
+        let failed = poll_released(
+            Duration::from_millis(20),
+            Duration::from_millis(5),
+            || Err("scan failed".into()),
+            || Ok(()),
+        )
+        .await;
+        assert_eq!(failed.unwrap_err(), "scan failed");
+    }
 
     #[cfg(windows)]
     #[test]
