@@ -1202,9 +1202,10 @@ mod tests {
             serde_json::json!({"exe": "engine/strata", "backend": "metal"}).to_string(),
         )
         .unwrap();
+        // Compare as paths: `root.join("engine/strata")` keeps the `/` on Windows.
         assert_eq!(
-            engine_template(root).unwrap().0,
-            engine.join("strata").to_string_lossy()
+            PathBuf::from(engine_template(root).unwrap().0),
+            engine.join("strata")
         );
     }
 }
