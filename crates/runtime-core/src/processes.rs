@@ -1579,6 +1579,17 @@ pub fn launch_setup_task_with_prelude(
     prelude: Option<Prelude>,
 ) -> Result<TaskStatus, String> {
     let runtime_path = Some(runtime_dir(&intent.profile)?);
+    // On an Apple Silicon Mac the prebuilt engine Manager installed is used as it is: setup.py runs in
+    // Control mode and compiles nothing; whatever still compiles is checked for a compiler first.
+    let mut steps = steps;
+    if let Some(root) = &runtime_path {
+        crate::mac_control::prepare_steps(
+            root,
+            &mut steps,
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+        );
+    }
     let model_directory = steps
         .iter()
         .find_map(|step| crate::bad_shard::gguf_directory(&step.args));
@@ -1616,6 +1627,7 @@ fn launch_task_with_handoff(
     prelude: Option<Prelude>,
 ) -> Result<TaskStatus, String> {
     let id = Uuid::new_v4().to_string();
+    let failure_root = runtime_path.clone();
     let status = TaskStatus {
         id: id.clone(),
         kind: kind.into(),
@@ -1676,6 +1688,18 @@ fn launch_task_with_handoff(
                     "info",
                     format!("{} {:?}", step.program, step.args),
                 );
+                if step
+                    .env
+                    .get("STRATA_CONTROL_INSTALL")
+                    .is_some_and(Option::is_some)
+                {
+                    log(
+                        &logs,
+                        &log_id,
+                        "info",
+                        "macOS：使用 Manager 已安装的预制 Metal 引擎，不在本机编译 / macOS: using the prebuilt Metal engine Manager installed; nothing is compiled on this Mac",
+                    );
+                }
                 let mut cmd = Command::new(&step.program);
                 cmd.args(&step.args)
                     .current_dir(step.cwd)
@@ -1720,11 +1744,18 @@ fn launch_task_with_handoff(
                             break;
                         }
                         drop(records);
-                        return Err(crate::task_failure::explain(
-                            "命令",
-                            status.exit_code,
-                            &crate::task_failure::recent_lines(&logs, &log_id, 40),
-                        ));
+                        let lines = crate::task_failure::recent_lines(&logs, &log_id, 40);
+                        let mut message =
+                            crate::task_failure::explain("命令", status.exit_code, &lines);
+                        // A source build that failed: its own log's tail and the usual causes.
+                        if setup.is_some() && cfg!(target_os = "macos") {
+                            if let Some(note) = failure_root.as_deref().and_then(|root| {
+                                crate::mac_control::compile_failure_note(root, &lines)
+                            }) {
+                                message.push_str(&note);
+                            }
+                        }
+                        return Err(message);
                     }
                     if last_save.elapsed() >= Duration::from_secs(1) {
                         persist_task_logs(&database, &logs, &id)?;

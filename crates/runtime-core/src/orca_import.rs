@@ -197,10 +197,16 @@ fn engine_template(root: &Path) -> Option<(String, serde_json::Map<String, Value
         let Some(exe) = value.get("exe").and_then(Value::as_str) else {
             continue;
         };
-        let resolved = if Path::new(exe).is_absolute() {
-            PathBuf::from(exe)
-        } else {
-            root.join(exe)
+        // A Control-mode config (the Mac's) names the engine as `component:strata-engine`.
+        let mut located = Value::Object(value.clone());
+        if located.get("cwd").and_then(Value::as_str).is_none() {
+            located["cwd"] = Value::String(root.to_string_lossy().into_owned());
+        }
+        let resolved = match crate::component_engine::expand(exe, &located) {
+            Some(Ok(path)) => path,
+            Some(Err(_)) => continue,
+            None if Path::new(exe).is_absolute() => PathBuf::from(exe),
+            None => root.join(exe),
         };
         if !resolved.is_file() {
             continue;
@@ -1164,6 +1170,41 @@ mod tests {
             steps.len(),
             2,
             "fetch then config: no repack, no MTP rebuild, draft vocab untouched"
+        );
+    }
+    #[test]
+    fn a_control_mode_config_still_gives_the_import_its_engine() {
+        // The Mac's setup.py (Control mode) writes `exe: component:strata-engine`; the engine Manager
+        // installed sits in <root>/engine. Without expanding it the import found no engine at all.
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let engine = root.join("engine");
+        fs::create_dir_all(&engine).unwrap();
+        let manifest = serde_json::json!({"schema_version": 2, "id": "strata-engine", "name": "strata-engine",
+            "version": "0.1.47", "platform": crate::component_engine::host_platform(), "backend": "metal",
+            "entrypoint": "strata", "build_id": "x", "files": []});
+        fs::write(engine.join("engine-component.json"), manifest.to_string()).unwrap();
+        fs::write(engine.join("strata"), b"engine").unwrap();
+        fs::write(engine.join(".strata-manager-metal.json"), "{}").unwrap();
+        let config = serde_json::json!({"exe": "component:strata-engine", "cwd": root.to_string_lossy(),
+            "backend": "metal", "lib_dirs": []});
+        fs::write(root.join("strata-qwen38-q2_0.json"), config.to_string()).unwrap();
+        let empty = temp.path().join("no-components");
+        let (exe, keep) =
+            crate::component_engine::with_components_dir(&empty, || engine_template(root))
+                .expect("the managed engine is found");
+        assert_eq!(PathBuf::from(exe), engine.join("strata"));
+        assert_eq!(keep["backend"], "metal");
+        // A relative path keeps working as before.
+        fs::remove_file(root.join("strata-qwen38-q2_0.json")).unwrap();
+        fs::write(
+            root.join("strata-old.json"),
+            serde_json::json!({"exe": "engine/strata", "backend": "metal"}).to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            engine_template(root).unwrap().0,
+            engine.join("strata").to_string_lossy()
         );
     }
 }

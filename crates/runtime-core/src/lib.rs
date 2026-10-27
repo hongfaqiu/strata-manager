@@ -28,6 +28,7 @@ pub mod installation;
 pub mod launcher_env;
 pub mod legacy;
 pub mod local_model;
+pub mod mac_control;
 pub mod macos_metal;
 pub mod maintenance;
 pub mod manager_mcp;
@@ -2988,6 +2989,20 @@ fn start_prepared_service_checked(
             state.data_dir.join("analytics"),
         )
         .env("STRATA_MANAGER_SERVICE_ID", &profile.id);
+    // A config that names `component:strata-engine` on a Mac whose engine Manager installed: upstream's
+    // server looks the engine up in the component folder, so show it the one Manager keeps in the runtime.
+    if plan
+        .config_value
+        .get("exe")
+        .and_then(Value::as_str)
+        .is_some_and(component_engine::is_reference)
+    {
+        if let Some(components) =
+            component_engine::ensure_managed_view(&plan.root, &component_engine::host_platform())?
+        {
+            command.env("STRATA_COMPONENTS_DIR", components);
+        }
+    }
     if let Some(operation) = operation {
         operation.validate_processes(state, &mut processes)?;
     }

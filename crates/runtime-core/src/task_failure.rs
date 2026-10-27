@@ -45,6 +45,8 @@ pub enum Kind {
     KeptFile,
     Conversion,
     Gpu,
+    /// The Mac's compiler or Metal Toolchain: only the source-build path needs them.
+    Compiler,
     Other,
 }
 
@@ -57,6 +59,7 @@ impl Kind {
             Kind::Checksum | Kind::KeptFile => "文件校验未通过",
             Kind::Conversion => "模型转换失败",
             Kind::Gpu => "显卡或驱动不满足要求",
+            Kind::Compiler => "Mac 编译环境不可用 / The Mac build tools are not usable",
             Kind::Other => "准备脚本报错",
         }
     }
@@ -70,6 +73,7 @@ impl Kind {
             Kind::KeptFile => "这个分片和官方发布的文件不一致（多半是下载或复制时损坏），Strata 不会自动删除它，直接重试还会失败；请先删除这个文件（和同名的 .done 文件）再重试，会重新下载",
             Kind::Conversion => "请确认磁盘空间充足后重试；仍失败请把任务日志发给开发者",
             Kind::Gpu => "请按提示检查显卡驱动后重试",
+            Kind::Compiler => "请在“终端”运行 xcode-select --install 安装或修复命令行工具后重试；选择 Qwen3.8-Flash-Next 时 Manager 使用预制引擎，不需要编译 / Run xcode-select --install in Terminal to install or repair the Command Line Tools, then retry; Qwen3.8-Flash-Next uses Manager's prebuilt engine and needs no compiler",
             Kind::Other => "请按上面的提示处理后重试",
         }
     }
@@ -92,6 +96,21 @@ pub fn classify(text: &str) -> Kind {
         ],
     ) {
         Kind::Disk
+    } else if contains_any(
+        &lower,
+        &[
+            "invalid active developer path",
+            "xcode-select",
+            "xcrun",
+            "c compiler identification is unknown",
+            "missing metal toolchain",
+            "no usable c/c++ compiler",
+            "metal engine did not build",
+            "image encoder did not build",
+            "没有可用的 c/c++ 编译器",
+        ],
+    ) {
+        Kind::Compiler
     } else if contains_any(
         &lower,
         &[
@@ -267,6 +286,22 @@ mod tests {
         );
         assert_eq!(classify("none of your GPUs can run Strata"), Kind::Gpu);
         assert_eq!(classify("something odd happened"), Kind::Other);
+    }
+
+    #[test]
+    fn mac_build_tool_failures_are_their_own_kind() {
+        for text in [
+            "xcrun: error: invalid active developer path (/Library/Developer/CommandLineTools)",
+            "the Metal engine did not build (see /x/build-metal/build.log)",
+            "CMake Error: The C compiler identification is unknown",
+            "error: missing Metal Toolchain",
+        ] {
+            assert_eq!(classify(text), Kind::Compiler, "{text}");
+        }
+        let log = lines("[X]  这台 Mac 上没有可用的 C/C++ 编译器（xcrun --find clang 或 clang --version 失败） / No usable C/C++ compiler on this Mac\n     请在“终端”运行 xcode-select --install 安装命令行工具后重试 / Run xcode-select --install in Terminal");
+        let text = explain("命令", Some(1), &log);
+        assert!(text.starts_with("Mac 编译环境不可用"), "{text}");
+        assert!(text.contains("xcode-select --install"));
     }
 
     #[test]
