@@ -5,6 +5,16 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **支持 Strata 0.2.7 新增的 Windows Ryzen AI Max（Strix Halo / Radeon 8060S，gfx1151）DeepSeek-V4.1 引擎包**：0.2.7 的签名 feed 新增 `strata-dsv41-0.1.52-windows-x86_64-hip-rdna3`，此前 Manager 只认 Windows CUDA 13、Linux CUDA 13 和 Linux HIP RX 9000 三种 DeepSeek 引擎包，会把它过滤掉，这类机器显示“没有本平台可用的 DeepSeek 引擎包”。现在它会被列出，并按显卡（gfx1151）自动选中。
+- **DeepSeek 引擎升级前的试启动带上包内运行库目录**：这个 Windows HIP 包把 hipBLAS / rocBLAS 放在 `rocm/bin`（由包内 BUILD.json 的 `lib_dirs` 声明），`strata-dsv41.exe` 启动就要加载 `hipblas.dll`。和上游 0.2.7 一样，Manager 试启动新版本（`--version`）时会先把包目录和这些目录加到库搜索路径（Windows 的 `PATH`、Linux 的 `LD_LIBRARY_PATH`）最前面，并在包目录下运行；否则以后升级这个包时会误判“新的 DeepSeek 引擎无法启动”，一直停在旧版本。只接受包内已存在的相对目录。
+
+### English
+
+- **Supports the Windows DeepSeek-V4.1 engine package for Ryzen AI Max (Strix Halo / Radeon 8060S, gfx1151) that Strata 0.2.7 adds**: the 0.2.7 signed feed lists `strata-dsv41-0.1.52-windows-x86_64-hip-rdna3`. Manager only knew the Windows CUDA 13, Linux CUDA 13 and Linux HIP RX 9000 DeepSeek packages and filtered it out, so these PCs were told the feed had no DeepSeek engine for their platform. It is now listed and picked by the GPU target (gfx1151).
+- **The DeepSeek engine's start check before an update gets the package's library folders**: this Windows HIP package keeps hipBLAS / rocBLAS in `rocm/bin` (named by `lib_dirs` in its BUILD.json), and `strata-dsv41.exe` loads `hipblas.dll` as it starts. As upstream 0.2.7 does, Manager now puts the package folder and those folders first on the library path (`PATH` on Windows, `LD_LIBRARY_PATH` on Linux) and runs the check from the package folder when it tries a new version (`--version`). Without this, a later update of the package would fail with "The new DeepSeek engine did not start" and stay on the old version. Only relative folders that exist inside the package are used.
+
 ## [0.2.27] - 2026-10-27
 
 ### 中文
