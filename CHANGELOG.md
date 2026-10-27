@@ -5,6 +5,14 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **修复 macOS 上服务健康状态一直显示「未知」**：健康检查要先确认正在监听健康端口的进程就是 Manager 启动的那个服务，这一步此前读取 Linux 专有的 `/proc/net/tcp`，Mac 上永远读不到，健康状态因此始终是「未知」，依赖它的恢复与预加载判断也不会生效。现在 Mac 通过系统的 libproc 接口逐个读取本账户进程的句柄表（与 `lsof` 相同的方式），找出能接收健康请求的所有监听 socket，并要求它们都由该服务进程自己持有（子进程继承的同一 socket 允许）；端口上有其它进程自己的监听 socket、或服务进程的句柄表读不到时，仍按「未知」处理，不会误判为健康。Linux 和 Windows 的行为不变。
+
+### English
+
+- **Fixed service health always showing "Unknown" on macOS**: before probing, the health check confirms that the process listening on the health port is the service Manager started. That step read Linux's `/proc/net/tcp`, which does not exist on a Mac, so health stayed "Unknown" and the recovery and preload decisions built on it never applied. A Mac now reads each of this account's processes' descriptor tables through the system libproc interface (the way `lsof` does), finds every listening socket that could answer the probe, and requires all of them to be held by the service process itself (a child sharing the same inherited socket is fine). Another process with a listening socket of its own on the port, or a service process whose table cannot be read, still gives "Unknown" rather than a false "Healthy". Linux and Windows are unchanged.
+
 ## [0.2.27] - 2026-10-27
 
 ### 中文
