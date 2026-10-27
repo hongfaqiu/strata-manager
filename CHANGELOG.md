@@ -5,6 +5,14 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **Mac 上选择 DeepSeek-V4.1-Flash 时直接说明不支持，不再先要求装编译器**：Strata 在 Mac 上的安装器（`metal/setup_mac.py`）只提供 Qwen、Unsloth 和 Gyro，上游也没有 Mac 版 DeepSeek 引擎。此前从 Manager 或其它入口在 Mac 上开始安装 DeepSeek，会先进入源码编译前的编译器检查，通过后又被安装器的参数检查拒绝。现在开始安装前就读取该运行环境安装器实际支持的系列，不支持的直接报「暂不支持 Mac」，不编译、不下载。安装器读不到时不做判断；Windows 和 Linux 不受影响。
+
+### English
+
+- **Choosing DeepSeek-V4.1-Flash on a Mac now says it is not supported instead of asking for a compiler first**: Strata's Mac installer (`metal/setup_mac.py`) offers only Qwen, Unsloth and Gyro, and upstream ships no Mac DeepSeek engine. Starting a DeepSeek setup on a Mac (from the Manager or another entry point) used to run the compiler check for a source build and then stop at the installer's own argument check. The setup now reads which families this runtime's Mac installer offers before anything starts and refuses the others with "does not run on a Mac", with nothing compiled or downloaded. When the installer cannot be read nothing is decided; Windows and Linux are unaffected.
+
 ## [0.2.27] - 2026-10-27
 
 ### 中文

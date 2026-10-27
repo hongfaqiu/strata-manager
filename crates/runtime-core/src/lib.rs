@@ -3737,6 +3737,14 @@ fn run_setup_with_preflight_options(
             ));
         }
     }
+    if let Some(refusal) = mac_control::unsupported_family_on_mac(
+        &root,
+        &model,
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+    ) {
+        return Err(refusal);
+    }
     let deepseek = model == disk::dsv41::FAMILY;
     if deepseek {
         let release =

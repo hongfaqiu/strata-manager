@@ -70,6 +70,54 @@ fn string(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
+/// The `--family` choices of the Mac installer (`metal/setup_mac.py`) in this runtime, read from its
+/// `argparse` line. `None` when the file or the line cannot be read; callers then decide nothing.
+fn mac_installer_families(root: &Path) -> Option<Vec<String>> {
+    let source = fs::read_to_string(root.join("metal").join("setup_mac.py")).ok()?;
+    let line = source
+        .lines()
+        .find(|line| line.contains("\"--family\"") && line.contains("choices=["))?;
+    let list = line.split_once("choices=[")?.1.split_once(']')?.0;
+    let families: Vec<String> = list
+        .split(',')
+        .map(|item| item.trim().trim_matches(|c| c == '"' || c == '\''))
+        .filter(|item| !item.is_empty())
+        .map(str::to_owned)
+        .collect();
+    (!families.is_empty()).then_some(families)
+}
+
+/// Refuse up front a model family this runtime's Mac installer does not offer (DeepSeek-V4.1-Flash in
+/// Strata 0.2.x): run plainly, `setup.py` hands it to `metal/setup_mac.py`, which would first make the
+/// user pass the compiler check and then stop at its own argument check. Families Control mode serves
+/// never reach that installer and stay allowed; an unreadable installer decides nothing.
+pub fn unsupported_family_on_mac(
+    root: &Path,
+    family: &str,
+    os: &str,
+    arch: &str,
+) -> Option<String> {
+    if !macos_metal::metal_engine_supported(os, arch) {
+        return None;
+    }
+    if matches!(family, "qwen" | "gyro") && source_supports_control(root) {
+        return None;
+    }
+    let families = mac_installer_families(root)?;
+    if families.iter().any(|known| known == family) {
+        return None;
+    }
+    let name = if family == "deepseek41" {
+        "DeepSeek-V4.1-Flash"
+    } else {
+        family
+    };
+    Some(format!(
+        "{name} 暂不支持 Mac：这个版本的 Strata 在 Mac 上只提供 {}（不会为此编译引擎）/ {name} does not run on a Mac in this Strata version",
+        families.join("、")
+    ))
+}
+
 /// Decide how the `setup.py` step of a setup task runs on this host.
 pub fn decide(root: &Path, step: &Step, os: &str, arch: &str) -> Decision {
     if !macos_metal::metal_engine_supported(os, arch) || !is_setup_step(step) {
@@ -405,13 +453,68 @@ mod tests {
     }
 
     #[test]
+    fn a_family_the_mac_installer_lacks_is_refused_before_any_compile() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        mac_runtime(root);
+        // Not readable yet: nothing is decided.
+        assert_eq!(
+            unsupported_family_on_mac(root, "deepseek41", "macos", "aarch64"),
+            None
+        );
+        write(
+            &root.join("metal/setup_mac.py"),
+            "import argparse\r\n    ap.add_argument(\"--family\", choices=[\"qwen\", \"unsloth\", 'gyro'], default=None,\r\n",
+        );
+        let refusal = unsupported_family_on_mac(root, "deepseek41", "macos", "aarch64").unwrap();
+        assert!(refusal.starts_with("DeepSeek-V4.1-Flash 暂不支持 Mac"));
+        assert!(refusal.contains("qwen、unsloth、gyro"));
+        for family in ["qwen", "unsloth", "gyro"] {
+            assert_eq!(
+                unsupported_family_on_mac(root, family, "macos", "aarch64"),
+                None
+            );
+        }
+        assert!(unsupported_family_on_mac(root, "qwen36", "macos", "aarch64").is_some());
+        // Other hosts are never refused here.
+        for (os, arch) in [
+            ("linux", "x86_64"),
+            ("windows", "x86_64"),
+            ("macos", "x86_64"),
+        ] {
+            assert_eq!(
+                unsupported_family_on_mac(root, "deepseek41", os, arch),
+                None
+            );
+        }
+        // Control mode serves qwen and gyro even if a future installer drops them.
+        write(
+            &root.join("metal/setup_mac.py"),
+            "ap.add_argument(\"--family\", choices=[\"unsloth\"])\n",
+        );
+        assert_eq!(
+            unsupported_family_on_mac(root, "qwen", "macos", "aarch64"),
+            None
+        );
+        // An unparseable line decides nothing.
+        write(
+            &root.join("metal/setup_mac.py"),
+            "ap.add_argument(\"--family\")\n",
+        );
+        assert_eq!(
+            unsupported_family_on_mac(root, "deepseek41", "macos", "aarch64"),
+            None
+        );
+    }
+
+    #[test]
     fn the_families_control_mode_does_not_serve_keep_the_source_build() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
         mac_runtime(root);
         for extra in [
             &["--family", "unsloth", "--model", "UD-Q4_K_XL"][..],
-            &["--family", "dsv41", "--model", "Q4"][..],
+            &["--family", "deepseek41", "--model", "Q4"][..],
             &["--family", "qwen", "--model", "UD-Q5_K_XL"][..],
         ] {
             assert!(matches!(
