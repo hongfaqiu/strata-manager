@@ -235,12 +235,19 @@ fn scan<C: Census>(source: &mut C, deadline: Instant) -> Result<Vec<ProcessHint>
         if source.exited(&held)? {
             continue;
         }
-        hints.push(hint.ok_or_else(|| {
+        let hint = hint.ok_or_else(|| {
             ScanError::Rejected(
                 "检测到无法定位配置的 Strata 进程，不能启动第二个实例；请先完成既有实例的迁移"
                     .into(),
             )
-        })?);
+        })?;
+        // The executable name is only for reporting; an unreadable one is not an error.
+        let image = source.identity(&held).ok().and_then(|(_, image)| {
+            image
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+        });
+        hints.push(hint.observed(pid, image));
     }
     budget(deadline)?;
     Ok(hints)
