@@ -1672,7 +1672,32 @@ fn process_hints() -> Result<Vec<ProcessHint>, String> {
     {
         windows_census::process_hints()
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        // macOS has no /proc: read argv through the system process table (sysctl) instead. Another
+        // account's processes expose no arguments and simply yield no hint.
+        use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+        let mut system = System::new();
+        system.refresh_processes_specifics(
+            ProcessesToUpdate::All,
+            true,
+            ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always),
+        );
+        Ok(system
+            .processes()
+            .values()
+            .take(4096)
+            .filter_map(|process| {
+                let args: Vec<String> = process
+                    .cmd()
+                    .iter()
+                    .map(|arg| arg.to_str().map(str::to_owned))
+                    .collect::<Option<_>>()?;
+                hint_from_args(&args)
+            })
+            .collect())
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         let entries =
             fs::read_dir("/proc").map_err(|_| "此平台无法读取本机进程，不能安全自动启动")?;
@@ -3069,6 +3094,44 @@ mod tests {
         let mut relative = args;
         relative[5] = "strata.json".into();
         assert!(hint_from_args(&relative).is_none());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_lists_a_running_strata_server_without_proc() {
+        // macOS has no /proc: the census reads argv from the system process table.
+        let (temp, _profile) = fixture();
+        let config = dunce::canonicalize(temp.path())
+            .unwrap()
+            .join("census.json");
+        fs::write(&config, b"{}").unwrap();
+        let mut child = std::process::Command::new("python3")
+            .args([
+                "-c",
+                "import time; time.sleep(30)",
+                "-m",
+                "serve.server",
+                "--config",
+            ])
+            .arg(&config)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("python3 is required for this macOS census test");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let found = loop {
+            let hints = process_hints().expect("macOS must be able to list processes");
+            if hints.iter().any(|hint| hint.config == config) {
+                break true;
+            }
+            if std::time::Instant::now() > deadline {
+                break false;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        };
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(found, "the running server's command line was not listed");
     }
 
     #[test]
