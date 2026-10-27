@@ -5,6 +5,8 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+## [0.2.27] - 2026-10-27
+
 ### 中文
 
 - **修复 Mac 上装完模型后显示「模型引擎文件不完整」、模型无法登记（0.2.26 回归）**：0.2.26 起 Mac 上的 Strata 安装走免编译的控制模式，运行配置里的引擎写成 `component:strata-engine`，而不是文件路径。安装完成后的校验仍把它当成路径去找文件，找不到就判定「模型引擎文件不完整」，模型文件已经下好却不会登记。现在这个校验按组件引用解析，使用 Manager 装在运行环境 `engine` 目录里的预制引擎；找不到引擎包时，错误会说明原因并提示在设置里「更新引擎」。旧版留下的半编译目录（`build-metal`）不影响判断。
