@@ -222,15 +222,96 @@ pub fn resolve_in(
         })
 }
 
-/// `resolve_in` against this user's component folder.
+/// Where the engine Manager itself installed (`<root>/engine`, the signed Metal package on a Mac)
+/// is exposed to upstream as a component folder: `<root>/components`.
+pub const MANAGED_COMPONENTS_DIR: &str = "components";
+const MANAGED_ENGINE_DIR: &str = "engine";
+const MANAGED_MARKER: &str = ".strata-manager-metal.json";
+
+/// The engine package Manager installed into `<root>/engine` and verified against the signed
+/// manifest (its marker exists), when it fits this PC. The Mac has no per-user component folder
+/// of its own: the prebuilt Metal engine lives here, so this is what `component:strata-engine`
+/// means for a runtime Manager set up.
+pub fn managed_package(root: &Path, platform: &str) -> Option<ComponentEngine> {
+    let folder = root.join(MANAGED_ENGINE_DIR);
+    if !folder.join(MANAGED_MARKER).is_file() {
+        return None;
+    }
+    read_package(&folder, platform).ok()
+}
+
+/// Makes the managed engine visible the way upstream's `engine_component.scan` expects:
+/// `<root>/components/engine/<version>-<platform>-<backend>` pointing at `<root>/engine`, and
+/// returns `<root>/components` for `STRATA_COMPONENTS_DIR`. `None` when there is no managed
+/// engine (nothing is created then). Links this function made earlier for another version are
+/// replaced; anything else in the folder is left alone.
+pub fn ensure_managed_view(root: &Path, platform: &str) -> Result<Option<PathBuf>, String> {
+    let Some(engine) = managed_package(root, platform) else {
+        return Ok(None);
+    };
+    let components = root.join(MANAGED_COMPONENTS_DIR);
+    let engines = components.join("engine");
+    fs::create_dir_all(&engines)
+        .map_err(|e| format!("无法创建组件目录 {}：{e}", engines.display()))?;
+    let wanted = format!("{}-{platform}-{}", engine.version, engine.backend);
+    let target = Path::new("..").join("..").join(MANAGED_ENGINE_DIR);
+    let mut present = false;
+    if let Ok(entries) = fs::read_dir(&engines) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_symlink() || !fs::read_link(&path).is_ok_and(|link| link == target) {
+                continue;
+            }
+            if entry.file_name().to_string_lossy() == wanted {
+                present = true;
+            } else {
+                // A stale link this function made for an earlier engine version.
+                let _ = fs::remove_file(&path);
+            }
+        }
+    }
+    if present {
+        return Ok(Some(components));
+    }
+    link_dir(&target, &engines.join(&wanted))
+        .map_err(|e| format!("无法链接引擎到组件目录 {}：{e}", engines.display()))?;
+    Ok(Some(components))
+}
+
+#[cfg(unix)]
+fn link_dir(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(target, link)
+}
+
+#[cfg(not(unix))]
+fn link_dir(_target: &Path, _link: &Path) -> std::io::Result<()> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "this platform has no managed component view",
+    ))
+}
+
+/// `resolve_in` against this user's component folder, after the engine Manager installed beside
+/// the run config (`config.cwd`/engine).
 pub fn resolve(reference: &str, config: &Value) -> Result<ComponentEngine, String> {
+    resolve_for(reference, config, &host_platform())
+}
+
+fn resolve_for(reference: &str, config: &Value, platform: &str) -> Result<ComponentEngine, String> {
+    let backend = config.get("backend").and_then(Value::as_str);
+    if let Some(root) = config
+        .get("cwd")
+        .and_then(Value::as_str)
+        .filter(|cwd| !cwd.is_empty())
+    {
+        if let Some(engine) = managed_package(Path::new(root), platform)
+            .filter(|engine| backend.is_none_or(|wanted| wanted == engine.backend))
+        {
+            return Ok(engine);
+        }
+    }
     let components = components_dir().ok_or("无法确定 Strata 组件目录")?;
-    resolve_in(
-        &components,
-        reference,
-        config.get("backend").and_then(Value::as_str),
-        &host_platform(),
-    )
+    resolve_in(&components, reference, backend, platform)
 }
 
 /// The engine path for a run config's `exe`: None when it is a plain path (the caller
@@ -362,5 +443,74 @@ mod tests {
         assert!(resolve_in(root, "component:other", None, "windows-x86_64")
             .unwrap_err()
             .contains("未知组件"));
+    }
+    fn managed_engine(root: &Path, version: &str, marker: bool) {
+        let dir = root.join("engine");
+        fs::create_dir_all(&dir).unwrap();
+        let mut manifest = manifest(version, "macos-arm64", "metal");
+        manifest["entrypoint"] = json!("strata");
+        fs::write(dir.join(MANIFEST), manifest.to_string()).unwrap();
+        fs::write(dir.join("strata"), b"engine").unwrap();
+        if marker {
+            fs::write(dir.join(MANAGED_MARKER), "{}").unwrap();
+        }
+    }
+
+    #[test]
+    fn the_engine_manager_installed_is_what_the_reference_means() {
+        // The Mac user's report: setup.py in CONTROL mode wrote `component:strata-engine`, but the
+        // prebuilt engine is in <root>/engine and there is no per-user component folder.
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("strata");
+        managed_engine(&root, "0.1.47", true);
+        let empty = temp.path().join("nothing-here");
+        let config = json!({"cwd": root.to_string_lossy(), "backend": "metal"});
+        let engine = with_components_dir(&empty, || {
+            let found = resolve_for("component:strata-engine", &config, "macos-arm64").unwrap();
+            // A pinned backend that does not match falls through to the component folder.
+            assert!(resolve_for(
+                "component:strata-engine",
+                &json!({"cwd": root.to_string_lossy(), "backend": "cuda"}),
+                "macos-arm64"
+            )
+            .is_err());
+            found
+        });
+        assert_eq!(engine.exe, root.join("engine").join("strata"));
+        assert_eq!(engine.version, "0.1.47");
+        assert_eq!(engine.backend, "metal");
+        // Without Manager's marker (a hand-made engine folder) nothing is assumed.
+        let other = temp.path().join("other");
+        managed_engine(&other, "0.1.47", false);
+        assert!(managed_package(&other, "macos-arm64").is_none());
+        // And a package for another platform never counts.
+        assert!(managed_package(&root, "windows-x86_64").is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_managed_view_links_the_engine_for_upstreams_scan_and_follows_upgrades() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        assert_eq!(ensure_managed_view(root, "macos-arm64").unwrap(), None);
+        assert!(!root.join(MANAGED_COMPONENTS_DIR).exists());
+        managed_engine(root, "0.1.47", true);
+        let components = ensure_managed_view(root, "macos-arm64").unwrap().unwrap();
+        assert_eq!(components, root.join("components"));
+        let link = components.join("engine/0.1.47-macos-arm64-metal");
+        assert!(link.is_symlink());
+        // Upstream's scan reads the manifest through the link.
+        assert!(link.join(MANIFEST).is_file());
+        assert!(link.join("strata").is_file());
+        // A second call keeps it; a newer engine replaces only the link made for the old one.
+        ensure_managed_view(root, "macos-arm64").unwrap();
+        fs::write(components.join("engine/notes.txt"), "mine").unwrap();
+        managed_engine(root, "0.1.48", true);
+        ensure_managed_view(root, "macos-arm64").unwrap();
+        assert!(!link.is_symlink());
+        assert!(components
+            .join("engine/0.1.48-macos-arm64-metal")
+            .is_symlink());
+        assert!(components.join("engine/notes.txt").is_file());
     }
 }
