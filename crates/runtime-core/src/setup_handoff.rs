@@ -384,7 +384,23 @@ fn asset_check(value: &Value, root: &Path) -> Result<(), String> {
         .get("exe")
         .and_then(Value::as_str)
         .ok_or("配置没有引擎文件")?;
-    if !fs::metadata(resolve(engine)).is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0)
+    if crate::component_engine::is_reference(engine) {
+        // A Mac setup under Strata Control writes `component:strata-engine`, not a path: the engine is
+        // the package Manager installed in `<cwd>/engine` (or one in the user's component folder).
+        // `cwd` is made absolute first so the lookup finds the same folder as the checks below.
+        let mut config = value.clone();
+        config["cwd"] = Value::String(cwd.to_string_lossy().into_owned());
+        let package = crate::component_engine::resolve(engine, &config).map_err(|why| {
+            format!(
+                "模型引擎文件不完整：{}",
+                crate::component_engine::missing_reason(&why)
+            )
+        })?;
+        if !fs::metadata(&package.exe).is_ok_and(|metadata| metadata.len() > 0) {
+            return Err("模型引擎文件不完整".into());
+        }
+    } else if !fs::metadata(resolve(engine))
+        .is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0)
     {
         return Err("模型引擎文件不完整".into());
     }
@@ -1070,6 +1086,75 @@ sys.exit(spec.get('exit',0))
         .unwrap();
         assert_eq!(selected.status, "registered", "{selected:?}");
         assert_eq!(fixture.state.registered_profiles().unwrap().len(), 1);
+    }
+
+    /// The engine package Manager installs in `<root>/engine` (what a Mac setup under Strata Control
+    /// points `component:strata-engine` at), for this host's platform.
+    fn managed_engine(root: &Path) {
+        let dir = root.join("engine");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("engine-component.json"),
+            json!({"id":"strata-engine","version":"0.1.47","platform":crate::component_engine::host_platform(),"backend":"metal","entrypoint":"strata"}).to_string(),
+        )
+        .unwrap();
+        fs::write(dir.join("strata"), b"Never execute this fixture engine").unwrap();
+        fs::write(dir.join(".strata-manager-metal.json"), b"{}").unwrap();
+    }
+    /// What setup.py writes under Strata Control: the engine is a reference and `cwd` is absolute.
+    fn component_config(context: u32, root: &Path) -> Value {
+        let mut value = config(context);
+        value["exe"] = json!("component:strata-engine");
+        value["cwd"] = json!(root.to_string_lossy());
+        value["backend"] = json!("metal");
+        value
+    }
+
+    #[test]
+    fn a_control_mode_config_registers_when_manager_installed_the_engine() {
+        // StarkChan's report (v0.2.26, Mac): setup finished, then "模型引擎文件不完整" because the
+        // run config's exe is `component:strata-engine`, which is not a file under cwd.
+        let fixture = fixture();
+        let root = PathBuf::from(&fixture.intent.profile.install_dir);
+        // The leftovers of an older version's failed source build must not matter.
+        fs::create_dir_all(root.join("build-metal")).unwrap();
+        fs::write(
+            root.join("build-metal/build.log"),
+            b"the Metal engine did not build",
+        )
+        .unwrap();
+        managed_engine(&root);
+        spec(
+            &fixture,
+            vec![("strata-iq2_xs.json", component_config(8192, &root))],
+            0.0,
+            0,
+        );
+        let task = launch(&fixture);
+        assert_eq!(wait(&fixture.state, &task.id).state, "completed");
+        let result = handoff(&fixture.state, &task.id);
+        assert_eq!(result.status, "registered", "{result:?}");
+        let profile = fixture.state.registered_profiles().unwrap().pop().unwrap();
+        let snapshot = checked_config(Path::new(&profile.config_path)).unwrap();
+        assert_eq!(snapshot["exe"], "component:strata-engine");
+    }
+
+    #[test]
+    fn a_control_mode_config_without_an_engine_package_is_not_registered_and_says_why() {
+        let fixture = fixture();
+        // A backend no real package has, so a component folder on the developer's machine cannot
+        // satisfy the reference.
+        let mut config = component_config(8192, Path::new(&fixture.intent.profile.install_dir));
+        config["backend"] = json!("no-such-backend");
+        spec(&fixture, vec![("strata-iq2_xs.json", config)], 0.0, 0);
+        let task = launch(&fixture);
+        assert_eq!(wait(&fixture.state, &task.id).state, "completed");
+        let result = handoff(&fixture.state, &task.id);
+        assert_eq!(result.status, "failed", "{result:?}");
+        let error = result.error.unwrap_or_default();
+        assert!(error.contains("模型引擎文件不完整"), "{error}");
+        assert!(error.contains("更新引擎"), "{error}");
+        assert!(fixture.state.registered_profiles().unwrap().is_empty());
     }
 
     #[test]
