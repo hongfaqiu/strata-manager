@@ -5,6 +5,8 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+## [0.2.26] - 2026-10-27
+
 ### 中文
 
 - **修复 Mac 上装 Strata 时仍要在本机编译、因缺少命令行工具而失败**：Manager 早已把预制的 Metal 引擎装进运行环境，但之前在 Mac 上仍以普通模式运行上游 `setup.py`，它会忽略预制引擎，用 metal-cpp / cmake / clang 从源码再编一遍（首次 5–15 分钟），没装 Xcode 命令行工具或工具链损坏时就报「invalid active developer path」「C compiler identification is unknown」等错误（小红书用户反馈）。现在 Mac 上安装官方模型、社区模型和导入模型都改用上游的「应用控制」模式运行 `setup.py`：只下载模型、写配置，不编译，也不需要命令行工具；配置里的引擎写作 `component:strata-engine`，Manager 在运行环境里自动指给上游服务它自己装的那份预制引擎（含升级引擎后的自动更新）。Windows 和 Linux 的安装流程不变。
