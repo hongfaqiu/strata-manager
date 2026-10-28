@@ -19,8 +19,19 @@ pub(crate) const TAG_PREFIX: &str = "deepseek-v4.1-flash-";
 pub(crate) const MODEL_NAME: &str = "deepseek-v4.1-flash";
 /// setup.py dsv41_shared_dir: `models/<tag prefix>shared`.
 pub(crate) const SHARED_DIR: &str = "deepseek-v4.1-flash-shared";
-/// setup.py DSV41_CONTEXT: the context the engine was checked at.
+/// setup.py DSV41_CONTEXT: the context the engine was checked at, and the default from 0.2.7 on.
 pub(crate) const CONTEXT: u32 = 8192;
+/// Strata 0.2.7 (control 0.1.52, strata_control/dsv41_context.py): setup takes `--context` 8K to 1M. Older
+/// releases were checked at 8K only, so Manager keeps them there.
+pub(crate) const CONTEXT_RELEASE: [u32; 3] = [0, 2, 7];
+/// dsv41_context.TESTED: past this the sizes are "not tested yet".
+pub(crate) const TESTED_CONTEXT: u32 = 262_144;
+/// dsv41_context.NATIVE: the positions the model reads; the most any pack can say.
+pub(crate) const NATIVE_CONTEXT: u32 = 1_048_576;
+/// Graphics memory per context token. Strata 0.2.7 release notes: on an RTX 5070 a 1M context "cost about 1 GB of
+/// graphics memory, which pushed 136 experts off the card"; 136 experts of the 2.25 set (149.06 GB / 15,360) are
+/// 1.32 GB, so ~1,259 bytes a token. It comes out of the card's expert cache.
+pub(crate) const CONTEXT_VRAM_BYTES_PER_TOKEN: u64 = 1259;
 /// dsv41_fit.DISK_HEADROOM_GB: the pack folder and room to work.
 pub(crate) const HEADROOM_BYTES: u64 = 6 * GB;
 /// The pack: the engine's map of the shards, the hash tables and the tokenizer ("a few MB").
@@ -111,6 +122,30 @@ pub(crate) fn set(model: &str) -> Option<&'static Dsv41Set> {
     DSV41_SETS.iter().find(|set| set.model == model)
 }
 
+/// dsv41_context.read_limit: `max_position_embeddings N` in the pack's ds4.txt; None without the file, the line, or
+/// a sane value (under 1024).
+pub(crate) fn pack_context_limit(pack: &Path) -> Option<u32> {
+    let text = fs::read_to_string(pack.join("ds4.txt")).ok()?;
+    text.lines().find_map(|line| {
+        let mut words = line.split_whitespace();
+        (words.next()? == "max_position_embeddings")
+            .then(|| words.next()?.parse::<u32>().ok())
+            .flatten()
+            .filter(|value| words.next().is_none() && *value >= 1024)
+    })
+}
+
+/// dsv41_context.problem: None when the size can run; the pack's limit (or the model's 1M) is the ceiling.
+pub(crate) fn context_problem(context: u32, limit: Option<u32>) -> Option<String> {
+    let cap = limit.unwrap_or(NATIVE_CONTEXT);
+    if context < 1024 {
+        return Some("DeepSeek-V4.1-Flash 上下文至少 1024".into());
+    }
+    (context > cap).then(|| {
+        format!("DeepSeek-V4.1-Flash 最多读取 {cap} 个位置（模型包 ds4.txt），请选更小的上下文")
+    })
+}
+
 /// Bytes still to fetch for one file: 0 when it is complete (a `.done` marker, or `own` = found outside setup's
 /// shared folder at its pinned size, which setup takes as the person's), else its size minus a `.part`.
 fn missing(directory: &Path, name: &str, size: u64, own: bool) -> Result<(u64, u64), String> {
@@ -192,6 +227,44 @@ pub(crate) fn plan(root: &Path, data: PathBuf, model: &str) -> Result<Plan, Stri
         data_directory: data,
         gguf_directory: None,
     })
+}
+
+#[cfg(test)]
+mod context_tests {
+    use super::*;
+
+    #[test]
+    fn pack_limit_and_problem_follow_dsv41_context() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(pack_context_limit(dir.path()), None);
+        fs::write(
+            dir.path().join("ds4.txt"),
+            "arch deepseek4\nmax_position_embeddings 1048576\n",
+        )
+        .unwrap();
+        assert_eq!(pack_context_limit(dir.path()), Some(1_048_576));
+        fs::write(
+            dir.path().join("ds4.txt"),
+            "max_position_embeddings   262144  \n",
+        )
+        .unwrap();
+        assert_eq!(pack_context_limit(dir.path()), Some(262_144));
+        fs::write(dir.path().join("ds4.txt"), "max_position_embeddings 512\n").unwrap();
+        assert_eq!(pack_context_limit(dir.path()), None);
+        fs::write(
+            dir.path().join("ds4.txt"),
+            "max_position_embeddings 4096 extra\n",
+        )
+        .unwrap();
+        assert_eq!(pack_context_limit(dir.path()), None);
+
+        assert_eq!(context_problem(8192, None), None);
+        assert_eq!(context_problem(NATIVE_CONTEXT, None), None);
+        assert!(context_problem(NATIVE_CONTEXT + 1, None).is_some());
+        assert!(context_problem(512, None).is_some());
+        assert!(context_problem(524_288, Some(262_144)).is_some());
+        assert_eq!(context_problem(262_144, Some(262_144)), None);
+    }
 }
 
 #[cfg(test)]

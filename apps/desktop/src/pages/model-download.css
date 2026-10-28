@@ -162,3 +162,8 @@
 .dsv41-bar small { font-size: 12px; color: var(--muted); }
 .model-download-preset.is-locked { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .model-download-preset.is-locked small { flex-basis: 100%; color: var(--muted); }
+.model-download-preset.is-open{padding-bottom:2px}
+.model-download-preset-head{padding:15px;display:flex;align-items:center;gap:10px;font-size:14px}
+.model-download-preset-head>span{font-size:12px;color:var(--st-ink-muted);margin-left:auto}
+.model-download-context-presets button small.is-default{color:var(--st-ink-muted)}
+.model-download-preset-body>p.model-download-warning{color:var(--st-warn-text,#8a4b00)}

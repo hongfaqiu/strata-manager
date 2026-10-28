@@ -290,8 +290,17 @@ fn estimate(request: &ResourceAssessmentRequest, hardware: HardwareSnapshot) -> 
                     .is_some_and(|total| total as f64 >= 8.0 * GB)
             })
             .count();
-        if request.context != u64::from(crate::disk::dsv41::CONTEXT) || request.images {
+        // dsv41_context.py: 1024 to 1M (Strata 0.2.7; run_setup keeps older releases at 8K); text only.
+        let dsv41_context = u32::try_from(request.context).unwrap_or(u32::MAX);
+        if crate::disk::dsv41::context_problem(dsv41_context, None).is_some() || request.images {
             unknowns.push("model_unknown".into());
+        } else if dsv41_context > crate::disk::dsv41::CONTEXT {
+            // The context cache sits in graphics memory and comes out of the card's expert cache (DEEPSEEK41.md).
+            kv["contextVramBytes"] =
+                json!(request.context * crate::disk::dsv41::CONTEXT_VRAM_BYTES_PER_TOKEN);
+            if dsv41_context > crate::disk::dsv41::TESTED_CONTEXT {
+                note("dsv41_context_untested", false);
+            }
         }
         if cards == 0 {
             note("dsv41_no_card", true);
@@ -555,9 +564,23 @@ mod tests {
         );
         // No card of 8 GB or more.
         assert!(codes(&estimate(&req, fixture(64.0, 6.0))).contains(&"dsv41_no_card".into()));
-        // Anything but 8K text only is outside what setup offers.
-        req.context = 32768;
-        assert_eq!(estimate(&req, fixture(64.0, 12.0))["status"], "unknown");
+        assert!(tight["kv"]["contextVramBytes"].is_null());
+        // Strata 0.2.7 offers 8K to 1M: the cache costs graphics memory, past 256K it is untested.
+        req.context = 262_144;
+        let long = estimate(&req, fixture(64.0, 12.0));
+        assert_eq!(long["status"], "suggested");
+        assert_eq!(long["kv"]["contextVramBytes"], 262_144_u64 * 1259);
+        assert!(!codes(&long).contains(&"dsv41_context_untested".into()));
+        req.context = 1_048_576;
+        let native = estimate(&req, fixture(64.0, 12.0));
+        assert_eq!(native["status"], "suggested");
+        assert!(codes(&native).contains(&"dsv41_context_untested".into()));
+        // Past 1M, under 1024 or with images it is outside what setup offers.
+        for (context, images) in [(1_048_577, false), (512, false), (8192, true)] {
+            req.context = context;
+            req.images = images;
+            assert_eq!(estimate(&req, fixture(64.0, 12.0))["status"], "unknown");
+        }
     }
     #[test]
     fn official_single_gpu_recommendation_and_low_ram_modes() {

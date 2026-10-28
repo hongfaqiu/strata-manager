@@ -32,6 +32,11 @@ export interface CatalogModel {
   minRelease?: string;
   /** Fixed launch context (the installer accepts no other); the download page shows no context choice. */
   fixedContext?: number;
+  /**
+   * From this Strata release on, `fixedContext` is only the default: the installer takes the family's own context
+   * choices (DeepSeek: deepseek41-context, 8K to 1M). Older or unknown releases keep the fixed context.
+   */
+  contextChoicesRelease?: string;
   quantInfo: Record<string, CatalogQuantInfo>;
 }
 
@@ -61,9 +66,10 @@ export const MODEL_CATALOG: CatalogModel[] = [
     quantInfo: { 'UD-Q4_K_XL': { downloadGB: 22.9, ramGB: 32 }, 'UD-Q6_K_XL': { downloadGB: 32.6, ramGB: 44 }, Q8_0: { downloadGB: 37.8, ramGB: 52 } } },
   // Strata v0.2.5+ setup.py --family deepseek41 (IST-DAS sets) and strata_control/dsv41_fit.py ISTA_SETS, checked at v0.2.6.
   // downloadGB: four shards + the shared Engram table, meta and DSpark drafter (downloaded once for every set) / 1e9.
-  // ramGB: ISTA_SETS[*].ram_ok_gb (below it the experts are read from the SSD: slow, still allowed). Text only, 8K.
+  // ramGB: ISTA_SETS[*].ram_ok_gb (below it the experts are read from the SSD: slow, still allowed). Text only.
+  // Context: 8K on 0.2.5/0.2.6; Strata 0.2.7 (dsv41_context.py) takes 8K to 1M, 8K stays the default.
   { id: 'deepseek41', family: 'deepseek41', name: 'DeepSeek-V4.1-Flash', quants: ['IST-DAS-2.00bpw', 'IST-DAS-1.75bpw', 'IST-DAS-2.25bpw'], images: false,
-    source: DEEPSEEK41_SOURCE, snapshotDate: '2026-10-26', minRelease: '0.2.5', fixedContext: 8192,
+    source: DEEPSEEK41_SOURCE, snapshotDate: '2026-10-26', minRelease: '0.2.5', fixedContext: 8192, contextChoicesRelease: '0.2.7',
     quantInfo: {
       'IST-DAS-2.00bpw': { downloadGB: 256.8, ramGB: 40, expertsGB: 132.07, qualityLoss: '+15.5%' },
       'IST-DAS-1.75bpw': { downloadGB: 239.3, ramGB: 34, expertsGB: 114.56, qualityLoss: '+21%' },
@@ -189,4 +195,9 @@ export function catalogQuantEngineGate(family: string, quant: string, runtimeVer
     if (x !== y) return { minEngine, ok: x > y };
   }
   return { minEngine, ok: true };
+}
+
+/** Whether a model's context is locked to `fixedContext` on this Strata release (no `contextChoicesRelease`, or an older/unknown release). */
+export function catalogContextLocked(model: CatalogModel, releaseVersion?: string | null): boolean {
+  return !!model.fixedContext && !(model.contextChoicesRelease && versionAtLeast(releaseVersion, model.contextChoicesRelease));
 }

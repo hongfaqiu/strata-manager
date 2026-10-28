@@ -148,10 +148,10 @@ impl InstallArguments {
             ]
             .contains(&self.quant.as_str()),
             "qwen36" => ["UD-Q4_K_XL", "UD-Q6_K_XL", "Q8_0"].contains(&self.quant.as_str()),
-            // DeepSeek-V4.1-Flash: the engine was checked at 8K only, and it reads no pictures.
+            // DeepSeek-V4.1-Flash: text only; 8K to 1M (run_setup refuses past 8K before Strata 0.2.7).
             "deepseek41" => {
                 crate::disk::dsv41::set(&self.quant).is_some()
-                    && self.context == crate::disk::dsv41::CONTEXT
+                    && crate::disk::dsv41::context_problem(self.context, None).is_none()
                     && !self.images
             }
             _ => false,

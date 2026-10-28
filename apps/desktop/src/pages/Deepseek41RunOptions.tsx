@@ -16,11 +16,16 @@ export function Deepseek41RunOptions({ language, draft, disabled, showParameterN
   const speed = core.deepseek41Speed(draft);
   const load = core.deepseek41LoadMode(draft);
   const engine = core.deepseek41EngineVersion(draft.exe);
+  // The context setup wrote (--max-context); changing it means preparing the model again, so it is shown, not edited.
+  const args = Array.isArray(draft.args) ? draft.args : [];
+  const at = args.indexOf('--max-context');
+  const context = at >= 0 ? Number(args[at + 1]) : NaN;
+  const contextText = Number.isInteger(context) && context > 0 ? core.formatContextTokens(context, language) : '8K';
   return (
     <section className="startup-quick-params" data-testid="dsv41-run-options" aria-label={text('DeepSeek-V4.1-Flash 运行选项', 'DeepSeek-V4.1-Flash run options')}>
       <div className="startup-quick-params-heading">
         <strong>{text('DeepSeek-V4.1-Flash 运行选项', 'DeepSeek-V4.1-Flash run options')}</strong>
-        <p>{text(`独立引擎${engine ? ` ${engine}` : ''}，上下文固定 8K、仅文本；不支持速度调优与校准。保存后重启模型生效。`, `Separate engine${engine ? ` ${engine}` : ''}, fixed 8K text-only context; speed tuning and calibration are not supported. Restart the model after saving.`)}</p>
+        <p>{text(`独立引擎${engine ? ` ${engine}` : ''}，上下文 ${contextText}（安装时选定）、仅文本；不支持速度调优与校准。保存后重启模型生效。`, `Separate engine${engine ? ` ${engine}` : ''}, ${contextText} text-only context (chosen at install); speed tuning and calibration are not supported. Restart the model after saving.`)}</p>
       </div>
       <div className="startup-quick-params-grid">
         {speedSupported && <div className="st-field" data-testid="dsv41-speed">

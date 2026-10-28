@@ -1,4 +1,5 @@
-import { MODEL_CATALOG } from './catalog';
+import { MODEL_CATALOG, catalogContextLocked } from './catalog';
+import { deepseek41ContextProblem } from './deepseek41-context';
 import { normalizeOfficialSetupOptions, type OfficialSetupOptions } from './official-setup';
 import type { ServiceProfile } from './types';
 
@@ -94,6 +95,8 @@ export function snapshotModelDownloadRequest(
   profile: ServiceProfile,
   selection: ModelDownloadSelection,
   options: OfficialSetupOptions,
+  /** The runtime's Strata release: from 0.2.7 a DeepSeek install takes 8K to 1M; older or unknown keeps 8K. */
+  releaseVersion?: string | null,
 ): ModelDownloadRequest {
   if (!isRecord(selection)) throw new Error('模型下载选择无效 / Invalid model download selection');
   const model = MODEL_CATALOG.find(entry => entry.family === selection.model);
@@ -104,7 +107,10 @@ export function snapshotModelDownloadRequest(
     || selection.context < 512 || selection.context > 1048576) {
     throw new Error('上下文长度须为 512–1048576 的整数 / Context must be an integer from 512 to 1048576');
   }
-  if (model.fixedContext && selection.context !== model.fixedContext) {
+  if (model.fixedContext && !catalogContextLocked(model, releaseVersion)) {
+    const problem = model.family === 'deepseek41' ? deepseek41ContextProblem(selection.context) : '';
+    if (problem) throw new Error(problem);
+  } else if (model.fixedContext && selection.context !== model.fixedContext) {
     throw new Error(`${model.name} 只支持 ${model.fixedContext} 上下文 / ${model.name} only supports a ${model.fixedContext} context`);
   }
   if (typeof selection.images !== 'boolean' || (selection.images && !model.images)) {

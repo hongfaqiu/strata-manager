@@ -1312,7 +1312,7 @@ mod tests {
     }
 
     #[test]
-    fn deepseek41_setup_needs_strata_0_2_5_and_8k_text_only_before_any_task() {
+    fn deepseek41_setup_gates_release_context_and_pack_limit_before_any_task() {
         let f = fixture();
         let state = RuntimeState::open(f._temp.path().join("manager-data")).unwrap();
         let profile = ServiceProfile {
@@ -1347,10 +1347,38 @@ mod tests {
         marker("0.2.4");
         assert!(run(8192, false).contains("需要 Strata 0.2.5"));
         marker("0.2.6");
-        assert!(run(32768, false).contains("只支持 8K"));
-        assert!(run(8192, true).contains("只支持 8K"));
+        assert!(run(32768, false).contains("需要 Strata 0.2.7"));
+        assert!(run(8192, true).contains("不支持图像"));
         // Past the gate the (failing) preflight runs: nothing else was started.
         assert_eq!(run(8192, false), "preflight must not run");
+        // 0.2.7 (dsv41_context.py): 8K to 1M, text only.
+        marker("0.2.7");
+        assert_eq!(run(524_288, false), "preflight must not run");
+        assert_eq!(run(1_048_576, false), "preflight must not run");
+        assert!(run(1_048_576 + 512, false).contains("512–1048576"));
+        assert!(run(768, false).contains("至少 1024"));
+        assert!(run(32768, true).contains("不支持图像"));
+        // A pack from an earlier install caps it at what its ds4.txt says, before any task.
+        let set = crate::disk::dsv41::set("IST-DAS-2.00bpw").unwrap();
+        let pack = f.data.join("packs").join(set.tag().to_lowercase());
+        fs::create_dir_all(&pack).unwrap();
+        fs::write(pack.join("ds4.txt"), "max_position_embeddings 262144\n").unwrap();
+        let error = crate::run_setup_with_preflight(
+            state.clone(),
+            profile.clone(),
+            "deepseek41".into(),
+            "IST-DAS-2.00bpw".into(),
+            524_288,
+            false,
+            |_, _, _, _| {
+                let mut plan = make_plan(&f);
+                plan.report.status = "ready".into();
+                Ok(plan)
+            },
+        )
+        .err()
+        .expect("the pack limit must reject setup");
+        assert!(error.contains("最多读取 262144"), "{error}");
         assert!(state.tasks.lock().unwrap().is_empty());
         assert!(state.processes.lock().unwrap().is_empty());
     }

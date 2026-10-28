@@ -45,7 +45,8 @@ export interface SetupResourceAssessment {
   sampledAt: number;
   hardware: ResourceHardwareSnapshot;
   ram: { baselineBytes: number | null; expertBytes: number | null; longContextBytes: number | null; mode: 'normal' | 'resident' | 'mmap' | 'budget' | 'unknown' };
-  kv: { streaming: boolean | null; streamingRamBytes: number | null };
+  /** contextVramBytes: DeepSeek-V4.1-Flash past 8K, the context cache taken from the card's expert cache (Strata 0.2.7). */
+  kv: { streaming: boolean | null; streamingRamBytes: number | null; contextVramBytes?: number };
   slots: { count: number; perSlotVramBytes: number | null; totalVramBytes: number | null };
   recommendations: { context: number | null; parallel: number | null };
   /** Present past the trained 262,144 tokens: the yarn factor setup derives and KV + RoPE table bytes. */
@@ -123,6 +124,7 @@ export function resourceAssessmentMessage(code: string, zh: boolean): string {
     dsv41_no_card: ['没有 8 GB 以上的 NVIDIA 或 AMD 显卡；DeepSeek-V4.1-Flash 需要独立显卡放置注意力权重和部分专家。', 'No NVIDIA or AMD card with 8 GB or more; DeepSeek-V4.1-Flash needs a discrete GPU for the attention weights and some experts.'],
     dsv41_ram_store: ['内存放不下全部专家：引擎在内存里保留常用专家，其余从 SSD 读取，速度会下降。', 'RAM cannot hold every expert: the engine keeps the most used ones in RAM and reads the rest from the SSD, which is slower.'],
     dsv41_ram_spill: ['内存低于这个版本的建议值：回答时会频繁从 SSD 读取专家，可以运行但很慢；内存小于 40 GiB 时建议选 1.75 bpw，或增加内存。', 'RAM is below this set\'s guidance: experts are read from the SSD while answering, which runs but is slow; under 40 GiB of RAM pick 1.75 bpw, or add RAM.'],
+    dsv41_context_untested: ['超过 256K 的上下文上游尚未测试：上下文缓存占用显卡的专家缓存，长提示读取较慢，首次回复可能要很多分钟。', 'Contexts past 256K are not tested upstream yet: the context cache takes the card\'s expert cache, long prompts read slowly, and the first reply can take many minutes.'],
     cpu_experimental: ['处理器不具备 AVX2，官方建议使用实验构建，速度和兼容性另行验证。', 'This CPU lacks AVX2; official setup uses an experimental build requiring separate validation.'],
   };
   return messages[code]?.[zh ? 0 : 1] ?? code;
