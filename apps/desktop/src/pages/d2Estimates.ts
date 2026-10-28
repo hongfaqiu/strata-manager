@@ -31,19 +31,33 @@ export function fitState(ramGB: number, totalGB: number | undefined, vramGB?: nu
 }
 
 /**
- * The fit a catalog quantization shows for this machine: the catalog card, the quantization table and the onboarding
+ * The fit a catalog quantization shows for this machine (pass the OS: Windows / Linux use setup.py's verdict, catalogFitState): the catalog card, the quantization table and the onboarding
  * rows all read it. DeepSeek-V4.1-Flash uses dsv41_fit's own memory class (core.deepseek41MemoryClass, the same function
  * its download panel shows), so a card never says 适合 where the panel says 偏紧: fits = every CPU-side expert cached
  * (experts + 9 GiB), tight = at least the set's measured RAM (experts streamed through the RAM store), else over.
  */
-export function quantFitState(model: core.CatalogModel, quant: string, machineGB: number | undefined, vramGB?: number): 'fits' | 'tight' | 'over' | undefined {
+export function quantFitState(model: core.CatalogModel, quant: string, machineGB: number | undefined, vramGB?: number, platform?: core.RuntimePackagePlatform): 'fits' | 'tight' | 'over' | undefined {
   const info = model.quantInfo[quant];
   if (!info || !machineGB) return undefined;
   if (model.family === 'deepseek41') {
     const memory = core.deepseek41MemoryClass(quant, machineGB);
     return memory === 'unknown' ? undefined : memory === 'spills' ? 'over' : memory;
   }
-  return fitState(info.ramGB, machineGB, vramGB);
+  // Windows / Linux: setup.py's own verdict. A Mac (MAC.md's needs / resident-from) or an unknown OS keeps the margin.
+  return platform === 'windows' || platform === 'linux' ? catalogFitState(info.ramGB, machineGB, vramGB) : fitState(info.ramGB, machineGB, vramGB);
+}
+
+/**
+ * setup.py --check's verdict for a catalog size (MODELS "ram_gb", GiB as ram_gb() measures it): fits when RAM reaches
+ * it, tight within 8 GB below it (or when GPU offload covers the shortfall, fitState's soft rule), else over. "ram_gb"
+ * already holds setup's headroom over the experts (IQ3_S: 50 GB experts, ram_gb 62), so fitState's extra 20 % margin
+ * for config peaks is not applied: it marked IQ3_XXS / IQ3_S 偏紧 on a 64 GB PC, where setup and MODELS.md say they fit.
+ */
+export function catalogFitState(ramGB: number, totalGB: number | undefined, vramGB?: number): 'fits' | 'tight' | 'over' | undefined {
+  if (!totalGB) return undefined;
+  if (ramGB <= totalGB) return 'fits';
+  if (ramGB - 8 <= totalGB) return 'tight';
+  return fitState(ramGB, totalGB, vramGB);
 }
 
 /** The quantization a catalog card suggests when its family has its own rule: DeepSeek-V4.1-Flash takes dsv41_fit.recommend (the panel's 推荐), never the manual-only 2.25 bpw set. */
