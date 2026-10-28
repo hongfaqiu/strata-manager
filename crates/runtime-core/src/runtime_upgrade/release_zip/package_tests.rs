@@ -922,6 +922,16 @@ fn every_file_of_the_strata_026_dsv41_packages_is_allowed() {
     }
     assert_eq!(packages.len(), 2);
     assert_eq!(exes, 2);
+    // Strata 0.2.7's Windows package for Ryzen AI Max (hip rdna3) brings its ROCm runtime.
+    let list = include_str!("../fixtures/dsv41-0.1.52-windows-hip-rdna3-paths.txt");
+    let mut rdna3 = 0;
+    for line in list.lines().filter(|l| !l.starts_with('#')) {
+        let (package, path) = line.split_once(' ').unwrap();
+        assert_eq!(package, "windows-hip-rdna3");
+        assert!(dsv41_file_allowed(path), "{package}: {path}");
+        rdna3 += 1;
+    }
+    assert_eq!(rdna3, 283);
     // The Strata engine's own extraction never accepts the DeepSeek program.
     assert!(!engine_file_allowed("strata-dsv41"));
     assert!(!engine_file_allowed("strata-dsv41.exe"));

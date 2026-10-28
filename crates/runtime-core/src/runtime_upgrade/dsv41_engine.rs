@@ -1,6 +1,7 @@
 //! DeepSeek-V4.1's engine (`strata-dsv41`) as its own package: the signed feed member
-//! `dsv41` (Strata 0.2.5+), published for Windows CUDA 13, Linux CUDA 13 and Linux HIP
-//! (RX 9000 / R9700).
+//! `dsv41` (Strata 0.2.5+), published for Windows CUDA 13, Linux CUDA 13, Linux HIP
+//! (RX 9000 / R9700) and, from Strata 0.2.7, Windows HIP for Ryzen AI Max (Strix Halo, gfx1151),
+//! which carries its ROCm runtime in `rocm/bin` (BUILD.json `lib_dirs`).
 //!
 //! It goes in `<runtime>/engine-dsv41/<version>-<platform>-<backend>[-<variant>]/`, beside the
 //! Strata engine and never inside it, the folder upstream's `setup.py` (`dsv41_engine_dir`) and
@@ -105,11 +106,11 @@ pub fn select(
     probe: &gpu_select::GpuProbe,
 ) -> Result<(RuntimeReleaseAsset, String), String> {
     if assets.is_empty() {
-        return Err("此 Strata 版本的签名 feed 没有本平台可用的 DeepSeek 引擎包（需要 Strata 0.2.5 或更新，Windows CUDA 13 / Linux CUDA 13 / Linux HIP RX 9000） / The signed feed has no DeepSeek engine package for this platform".into());
+        return Err("此 Strata 版本的签名 feed 没有本平台可用的 DeepSeek 引擎包（需要 Strata 0.2.5 或更新，Windows CUDA 13 / Linux CUDA 13 / Linux HIP RX 9000；Windows Ryzen AI Max 需要 Strata 0.2.7 或更新） / The signed feed has no DeepSeek engine package for this platform".into());
     }
     gpu_select::pick(assets, probe).map_err(|reason| {
         format!(
-            "没有适合本机显卡的 DeepSeek 引擎包（支持 NVIDIA CUDA 13，驱动 580.65+；Linux 上的 AMD RX 9000 / R9700）：{reason}"
+            "没有适合本机显卡的 DeepSeek 引擎包（支持 NVIDIA CUDA 13，驱动 580.65+；Linux 上的 AMD RX 9000 / R9700；Windows 上的 Ryzen AI Max / Radeon 8060S 等 gfx1151）：{reason}"
         )
     })
 }
@@ -125,8 +126,17 @@ fn clear(path: &Path) {
 /// `strata-dsv41 --version` runs and names itself (no GPU or model needed).
 pub fn test_start(exe: &Path) -> Result<String, String> {
     let program = exe.to_string_lossy().into_owned();
-    let text = crate::output_with_timeout(&program, &["--version"], Duration::from_secs(120))
-        .ok_or("新的 DeepSeek 引擎无法启动 / The new DeepSeek engine did not start")?;
+    let envs: Vec<_> = start_env(exe, std::env::var_os(LIB_VAR))
+        .into_iter()
+        .collect();
+    let text = crate::output_with_timeout_env(
+        &program,
+        &["--version"],
+        &envs,
+        exe.parent(),
+        Duration::from_secs(120),
+    )
+    .ok_or("新的 DeepSeek 引擎无法启动 / The new DeepSeek engine did not start")?;
     let first = text.lines().next().unwrap_or_default().trim().to_owned();
     if !first.starts_with(NAME) {
         return Err(format!(
@@ -135,6 +145,65 @@ pub fn test_start(exe: &Path) -> Result<String, String> {
         ));
     }
     Ok(first)
+}
+
+/// The library search variable of this platform: Windows finds DLLs on `PATH`.
+const LIB_VAR: &str = if cfg!(windows) {
+    "PATH"
+} else {
+    "LD_LIBRARY_PATH"
+};
+
+/// The folders that must be on the library path when this engine starts: its own package
+/// folder, then the folders its BUILD.json names in `lib_dirs` (upstream 0.2.7
+/// `strata_control/dsv41_engine.lib_dirs` / `engine_component.package_lib_dirs`). The Windows
+/// HIP package keeps hipBLAS / rocBLAS in `rocm/bin`, and `strata-dsv41.exe` imports
+/// `hipblas.dll`, so it does not even print its version without them. Only relative folders
+/// that exist inside the package count; anything else in the list is ignored, as upstream does.
+pub fn lib_dirs(exe: &Path) -> Vec<PathBuf> {
+    let Some(folder) = exe.parent() else {
+        return Vec::new();
+    };
+    let mut dirs = vec![folder.to_path_buf()];
+    let names = fs::read_to_string(folder.join("BUILD.json"))
+        .ok()
+        .and_then(|text| {
+            serde_json::from_str::<serde_json::Value>(text.trim_start_matches('\u{feff}')).ok()
+        })
+        .and_then(|build| build.get("lib_dirs").and_then(|v| v.as_array()).cloned())
+        .unwrap_or_default();
+    for name in names.iter().filter_map(|v| v.as_str()) {
+        let relative = Path::new(name);
+        if name.is_empty()
+            || !relative
+                .components()
+                .all(|c| matches!(c, std::path::Component::Normal(_)))
+        {
+            continue;
+        }
+        let path = folder.join(relative);
+        if fs::symlink_metadata(&path).is_ok_and(|m| m.is_dir()) && !dirs.contains(&path) {
+            dirs.push(path);
+        }
+    }
+    dirs
+}
+
+/// The library-path entry to start `exe` with: its [`lib_dirs`] first, then `current` (the
+/// process's own value). `None` when the package has no folders to add.
+fn start_env(
+    exe: &Path,
+    current: Option<std::ffi::OsString>,
+) -> Option<(std::ffi::OsString, std::ffi::OsString)> {
+    let mut dirs = lib_dirs(exe);
+    if dirs.is_empty() {
+        return None;
+    }
+    if let Some(current) = current.filter(|c| !c.is_empty()) {
+        dirs.extend(std::env::split_paths(&current));
+    }
+    let value = std::env::join_paths(dirs).ok()?;
+    Some((LIB_VAR.into(), value))
 }
 
 /// Install a downloaded, SHA-256-checked archive into `dir`: extract into a staging folder,
@@ -764,6 +833,122 @@ mod tests {
         )
         .is_err());
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn windows_ryzen_ai_max_gets_the_hip_rdna3_package() {
+        let windows = |backend: &str, variant: &str, archs: &[&str]| {
+            let name = format!("strata-dsv41-0.1.52-windows-x86_64-{backend}-{variant}.tar.gz");
+            RuntimeReleaseAsset {
+                url: format!("https://github.com/Niko1221/Strata/releases/download/v0.2.7/{name}"),
+                name,
+                size: 1,
+                sha256: "0".repeat(64),
+                variant: if backend == "hip" {
+                    format!("hip-{variant}")
+                } else {
+                    variant.into()
+                },
+                engine_version: Some("0.1.52".into()),
+                manifest_sha256: Some("1".repeat(64)),
+                installed_bytes: Some(1024 * 1024),
+                archs: archs.iter().map(|a| a.to_string()).collect(),
+                nvidia_min_driver: (backend == "cuda").then(|| "580.65".into()),
+                match_reason: None,
+            }
+        };
+        let assets = vec![
+            windows(
+                "cuda",
+                "cuda13",
+                &["sm_86", "sm_89", "sm_120", "compute_120"],
+            ),
+            windows("hip", "rdna3", &["gfx1151"]),
+        ];
+        let halo = gpu_select::GpuProbe {
+            amd_gfx: vec!["gfx1151".into()],
+            ..Default::default()
+        };
+        let (chosen, _) = select(&assets, &halo).unwrap();
+        assert_eq!(chosen.variant, "hip-rdna3");
+        assert_eq!(
+            folder_name(&chosen).as_deref(),
+            Some("0.1.52-windows-x86_64-hip-rdna3")
+        );
+        let nvidia = gpu_select::GpuProbe {
+            nvidia_driver: Some("580.82".into()),
+            nvidia_caps: vec![(12, 0)],
+            amd_gfx: vec![],
+        };
+        assert_eq!(select(&assets, &nvidia).unwrap().0.variant, "cuda13");
+        // A discrete RX 7900 (gfx1100) is not what this package was built for.
+        let rx7900 = gpu_select::GpuProbe {
+            amd_gfx: vec!["gfx1100".into()],
+            ..Default::default()
+        };
+        assert!(select(&assets, &rx7900).unwrap_err().contains("gfx1151"));
+    }
+
+    #[test]
+    fn lib_dirs_are_the_package_folder_and_its_build_json_folders() {
+        let temp = tempfile::tempdir().unwrap();
+        let package = temp.path().join("0.1.52-windows-x86_64-hip-rdna3");
+        fs::create_dir_all(package.join("rocm/bin")).unwrap();
+        fs::create_dir_all(package.join("tuning")).unwrap();
+        let exe = package.join("strata-dsv41.exe");
+        // Without BUILD.json (the CUDA packages keep everything beside the program): the folder alone.
+        assert_eq!(lib_dirs(&exe), std::slice::from_ref(&package));
+        // The real 0.2.7 BUILD.json names rocm/bin; absolute, escaping, empty, missing and
+        // non-string entries are ignored, and a folder is listed once.
+        fs::write(
+            package.join("BUILD.json"),
+            "\u{feff}{\"lib_dirs\":[\"rocm/bin\",\"../outside\",\"/abs\",\"\",\"missing\",7,\"rocm/bin\"],\"backend\":\"hip\"}",
+        )
+        .unwrap();
+        assert_eq!(lib_dirs(&exe), [package.clone(), package.join("rocm/bin")]);
+        let (key, value) =
+            start_env(&exe, Some(std::env::join_paths(["/usr/lib"]).unwrap())).unwrap();
+        assert_eq!(key, LIB_VAR);
+        let parts: Vec<_> = std::env::split_paths(&value).collect();
+        assert_eq!(
+            parts,
+            [
+                package.clone(),
+                package.join("rocm/bin"),
+                PathBuf::from("/usr/lib")
+            ]
+        );
+        let (_, alone) = start_env(&exe, None).unwrap();
+        assert_eq!(std::env::split_paths(&alone).count(), 2);
+        // A malformed BUILD.json falls back to the folder alone.
+        fs::write(package.join("BUILD.json"), "{not json").unwrap();
+        assert_eq!(lib_dirs(&exe), [package]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_start_check_runs_with_the_package_libraries_on_the_path() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempfile::tempdir().unwrap();
+        let package = temp.path().join("0.1.52-linux-x86_64-hip-rx9070");
+        fs::create_dir_all(package.join("rocm/lib")).unwrap();
+        fs::write(package.join("BUILD.json"), br#"{"lib_dirs":["rocm/lib"]}"#).unwrap();
+        let exe = package.join("strata-dsv41");
+        // Like strata-dsv41.exe importing hipblas.dll from rocm/bin: it only starts when its
+        // library folder is on the path (and it runs from its own folder).
+        fs::write(
+            &exe,
+            format!(
+                "#!/bin/sh\ncase \":$LD_LIBRARY_PATH:\" in *\":{}:\"*) ;; *) echo missing >&2; exit 53;; esac\n[ \"$(pwd -P)\" = \"$(cd \"$(dirname \"$0\")\" && pwd -P)\" ] || exit 54\necho \"strata-dsv41 0.1.52\"\n",
+                package.join("rocm/lib").display()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&exe, fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(test_start(&exe).unwrap(), "strata-dsv41 0.1.52");
+        // Without the folder in BUILD.json the same program does not start.
+        fs::write(package.join("BUILD.json"), b"{}").unwrap();
+        assert!(test_start(&exe).is_err());
     }
 
     #[test]
