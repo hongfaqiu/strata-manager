@@ -13,7 +13,7 @@ import { ManagedPythonPanel } from '../pages/ManagedPythonPanel';
 import { useLocalRuntimePackages } from '../pages/LocalRuntimePackage';
 import { ExistingModelPanel } from '../pages/ExistingModelPanel';
 import { catalogCopy, type CatalogCopy } from '../catalog/catalogCopy';
-import { BlockNote, catalogHardware, MacBlockNotes, CommunityBadge, CommunityDisk, CommunityRisks, CommunitySource, EstimateCell, MemoryNote, memoryLine, useCommunityModels } from '../catalog/catalogUi';
+import { basisText, BlockNote, catalogHardware, MacBlockNotes, CommunityBadge, CommunityDisk, CommunityRisks, CommunitySource, EstimateCell, MemoryNote, memoryLine, useCommunityModels } from '../catalog/catalogUi';
 import { GuideStorageRows } from '../pages/StorageLocation';
 import { fetchArenaGroups, fetchArenaTier } from './arenaPublic';
 import {
@@ -429,7 +429,7 @@ function ModelStep(props: StepProps & { runtimeProfile?: ServiceProfile }) {
           <ContextExtensionNotice mode="setup" language={props.language} context={selected.context} kv={selected.context <= 8192 ? 'fp16' : 'int8'}/>
           <div className="ob-field is-row"><span>{t('obImages')}</span><Toggle ariaLabel={t('obImages')} checked={selected.images && imagesAllowed} disabled={!imagesAllowed} onCheckedChange={images => select({ images })}/></div>
         </div>
-        {estimate && <div className="ob-side-sec ob-side-estimate"><h4>{copy.colSpeed}</h4><EstimateCell estimate={estimate} copy={copy}/><small className="ob-note">{copy.basis[estimate.basis]}</small><MemoryNote estimate={estimate} memoryGB={memoryGB} copy={copy}/></div>}
+        {estimate && <div className="ob-side-sec ob-side-estimate"><h4>{copy.colSpeed}</h4><EstimateCell estimate={estimate} copy={copy}/><small className="ob-note">{basisText(estimate, copy)}</small><MemoryNote estimate={estimate} memoryGB={memoryGB} copy={copy}/></div>}
         {communityRow && canDownload && <div className="ob-side-sec"><CommunityDisk model={communityRow.model} quant={communityRow.quant} copy={copy}/></div>}
         {communityRow && <div className="ob-side-sec"><CommunityRisks model={communityRow.model} copy={copy}/></div>}
         {!communityRow && <div className="ob-side-sec"><h4>{t('obFitHeading')}</h4>
