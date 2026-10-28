@@ -8,7 +8,7 @@ use futures_util::StreamExt;
 use rusqlite::{Connection, OpenFlags};
 use serde::Serialize;
 use serde_json::Value;
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 use std::collections::HashSet;
 use std::{
     fs::{self, File},
@@ -353,7 +353,7 @@ fn listener_identity(
     Ok(ids)
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 fn listener_identity(
     state: &RuntimeState,
     lease: &Lease,
@@ -431,6 +431,283 @@ fn listener_identity(
     if !inodes.is_subset(&owned) {
         return Err("健康端口包含未知进程的监听 socket");
     }
+    Ok(vec![pid])
+}
+
+/// The loopback address and port a health probe will connect to, as compared
+/// against the macOS TCP table.
+#[cfg(any(target_os = "macos", test))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ListenTarget {
+    address: std::net::IpAddr,
+    port: u16,
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn listen_target(profile: &ServiceProfile) -> Result<ListenTarget, &'static str> {
+    let url = http::endpoint(profile, "/health").map_err(|_| "健康地址不是有效本机地址")?;
+    let port = crate::external::local_port(profile).map_err(|_| "健康端口无效")?;
+    let address = match url.host() {
+        Some(url::Host::Ipv4(ip)) => std::net::IpAddr::V4(ip),
+        Some(url::Host::Ipv6(ip)) => std::net::IpAddr::V6(ip),
+        _ => return Err("此平台的健康身份核验需要明确的 loopback IP 地址"),
+    };
+    Ok(ListenTarget { address, port })
+}
+
+/// One TCP LISTEN socket that could accept the health probe, as found in one
+/// process's descriptor table: the holder and the kernel socket id (`soi_so`),
+/// which is the same in every process sharing that descriptor.
+#[cfg(any(target_os = "macos", test))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct DarwinListener {
+    pid: u32,
+    socket: u64,
+}
+
+/// The Linux rule on macOS data: every listening socket that could answer the
+/// probe must be one the observer itself holds. Another process may share it
+/// (an inherited descriptor) but may not hold a socket of its own.
+#[cfg(any(target_os = "macos", test))]
+fn darwin_listener_verdict(
+    observer: u32,
+    listeners: &[DarwinListener],
+) -> Result<(), &'static str> {
+    if listeners.is_empty() {
+        return Err("受管健康端口尚未监听");
+    }
+    let owned: Vec<u64> = listeners
+        .iter()
+        .filter(|listener| listener.pid == observer)
+        .map(|listener| listener.socket)
+        .collect();
+    if owned.is_empty()
+        || listeners
+            .iter()
+            .any(|listener| !owned.contains(&listener.socket))
+    {
+        return Err("健康端口包含未知进程的监听 socket");
+    }
+    Ok(())
+}
+
+/// Layout of `struct socket_fdinfo` from `<sys/proc_info.h>` (stable public ABI
+/// used by lsof): `psi` starts at 24, `soi_so` at psi+136, `soi_kind` at psi+232, and the TCP
+/// `soi_proto.pri_tcp` union member at psi+240 holds `in_sockinfo` followed by
+/// `tcpsi_state` at +80.
+#[cfg(any(target_os = "macos", test))]
+mod socket_fdinfo {
+    pub const SIZE: usize = 792;
+    const PSI: usize = 24;
+    const KIND: usize = PSI + 232;
+    const TCP: usize = PSI + 240;
+    const LPORT: usize = TCP + 4;
+    const VFLAG: usize = TCP + 24;
+    const LADDR: usize = TCP + 48;
+    const STATE: usize = TCP + 80;
+    const SOCKET_ID: usize = PSI + 136;
+    const SOCKINFO_TCP: i32 = 2;
+    const TSI_S_LISTEN: i32 = 1;
+    const INI_IPV4: u8 = 0x1;
+    const INI_IPV6: u8 = 0x2;
+
+    fn int(bytes: &[u8], at: usize) -> i32 {
+        i32::from_ne_bytes(bytes[at..at + 4].try_into().unwrap())
+    }
+
+    /// `soi_so`: the kernel's (obfuscated) socket address, as lsof prints it.
+    pub fn socket_id(bytes: &[u8]) -> u64 {
+        u64::from_ne_bytes(bytes[SOCKET_ID..SOCKET_ID + 8].try_into().unwrap())
+    }
+
+    /// Whether one `socket_fdinfo` record is a TCP LISTEN socket that accepts
+    /// connections for `target`.
+    pub fn listens_for(bytes: &[u8], target: super::ListenTarget) -> bool {
+        if bytes.len() < SIZE
+            || int(bytes, KIND) != SOCKINFO_TCP
+            || int(bytes, STATE) != TSI_S_LISTEN
+        {
+            return false;
+        }
+        // `insi_lport` is an int holding the port in network byte order.
+        let port = u16::from_be(int(bytes, LPORT) as u16);
+        if port != target.port {
+            return false;
+        }
+        let vflag = bytes[VFLAG];
+        let v4: [u8; 4] = bytes[LADDR + 12..LADDR + 16].try_into().unwrap();
+        let v6: [u8; 16] = bytes[LADDR..LADDR + 16].try_into().unwrap();
+        match target.address {
+            std::net::IpAddr::V4(ip) => {
+                vflag & INI_IPV4 != 0 && (v4 == [0; 4] || v4 == ip.octets())
+            }
+            std::net::IpAddr::V6(ip) => {
+                vflag & INI_IPV6 != 0 && (v6 == [0; 16] || v6 == ip.octets())
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+const DARWIN_UNREADABLE: &str = "健康监听 socket 归属不可读";
+#[cfg(target_os = "macos")]
+const DARWIN_TOO_MANY: &str = "健康监听句柄数量超出核验范围";
+
+/// Every PID on the system (libproc; readable without privileges).
+#[cfg(target_os = "macos")]
+fn darwin_all_pids() -> Result<Vec<libc::c_int>, &'static str> {
+    const MAX_PIDS: usize = 65_536;
+    let mut pids: Vec<libc::c_int> = vec![0; MAX_PIDS + 1];
+    let capacity = libc::c_int::try_from(pids.len() * std::mem::size_of::<libc::c_int>())
+        .map_err(|_| "本机进程表不可读")?;
+    // SAFETY: the buffer is valid for `capacity` bytes of pid_t values.
+    let count = unsafe { libc::proc_listallpids(pids.as_mut_ptr().cast(), capacity) };
+    let count = usize::try_from(count).map_err(|_| "本机进程表不可读")?;
+    if count == 0 {
+        return Err("本机进程表不可读");
+    }
+    if count > MAX_PIDS {
+        return Err("本机进程表超出核验范围");
+    }
+    pids.truncate(count);
+    Ok(pids)
+}
+
+/// The kernel ids of the TCP LISTEN sockets `pid` holds for `target`, read
+/// from its own descriptor table through libproc (the macOS equivalent of
+/// /proc/PID/fd). Fails when that table cannot be read: another account's
+/// process, or one that has exited.
+#[cfg(target_os = "macos")]
+fn darwin_pid_listeners(pid: libc::c_int, target: ListenTarget) -> Result<Vec<u64>, &'static str> {
+    const PROC_PIDFDSOCKETINFO: libc::c_int = 3;
+    const MAX_FDS: usize = 65_536;
+    let entry = std::mem::size_of::<libc::proc_fdinfo>();
+    // SAFETY: a null buffer asks only for the size the table needs.
+    let needed =
+        unsafe { libc::proc_pidinfo(pid, libc::PROC_PIDLISTFDS, 0, std::ptr::null_mut(), 0) };
+    let needed = usize::try_from(needed).map_err(|_| DARWIN_UNREADABLE)?;
+    if needed == 0 {
+        return Err(DARWIN_UNREADABLE);
+    }
+    // Room for descriptors opened between the two calls; a full buffer may be
+    // truncated and fails closed.
+    let slots = needed / entry + 64;
+    if slots > MAX_FDS {
+        return Err(DARWIN_TOO_MANY);
+    }
+    let mut fds = vec![
+        libc::proc_fdinfo {
+            proc_fd: 0,
+            proc_fdtype: 0
+        };
+        slots
+    ];
+    let capacity = libc::c_int::try_from(slots * entry).map_err(|_| DARWIN_UNREADABLE)?;
+    // SAFETY: the buffer is valid for `capacity` bytes of proc_fdinfo records.
+    let written = unsafe {
+        libc::proc_pidinfo(
+            pid,
+            libc::PROC_PIDLISTFDS,
+            0,
+            fds.as_mut_ptr().cast(),
+            capacity,
+        )
+    };
+    let written = usize::try_from(written).map_err(|_| DARWIN_UNREADABLE)?;
+    if written == 0 {
+        return Err(DARWIN_UNREADABLE);
+    }
+    let count = written / entry;
+    if count >= slots {
+        return Err(DARWIN_TOO_MANY);
+    }
+    let mut info = vec![0u64; socket_fdinfo::SIZE.div_ceil(8)];
+    let size = libc::c_int::try_from(socket_fdinfo::SIZE).map_err(|_| DARWIN_UNREADABLE)?;
+    let mut sockets = Vec::new();
+    for fd in &fds[..count] {
+        if fd.proc_fdtype as libc::c_int != libc::PROX_FDTYPE_SOCKET {
+            continue;
+        }
+        // SAFETY: `info` is 8-byte aligned and at least SIZE bytes long.
+        let read = unsafe {
+            libc::proc_pidfdinfo(
+                pid,
+                fd.proc_fd,
+                PROC_PIDFDSOCKETINFO,
+                info.as_mut_ptr().cast(),
+                size,
+            )
+        };
+        if read != size {
+            // The descriptor may have closed since it was listed.
+            continue;
+        }
+        // SAFETY: `info` holds `SIZE` initialised bytes.
+        let bytes =
+            unsafe { std::slice::from_raw_parts(info.as_ptr().cast::<u8>(), socket_fdinfo::SIZE) };
+        if socket_fdinfo::listens_for(bytes, target) {
+            sockets.push(socket_fdinfo::socket_id(bytes));
+        }
+    }
+    Ok(sockets)
+}
+
+/// Every TCP LISTEN socket for `target` in every process whose descriptor
+/// table this account can read (lsof's view without root). The observer's own
+/// table must be readable.
+#[cfg(target_os = "macos")]
+fn darwin_listeners(
+    observer: u32,
+    target: ListenTarget,
+) -> Result<Vec<DarwinListener>, &'static str> {
+    let mut listeners = Vec::new();
+    let mut observer_read = false;
+    for pid in darwin_all_pids()? {
+        let Ok(owner) = u32::try_from(pid) else {
+            continue;
+        };
+        if owner == 0 {
+            continue;
+        }
+        match darwin_pid_listeners(pid, target) {
+            Ok(sockets) => {
+                observer_read |= owner == observer;
+                listeners.extend(
+                    sockets
+                        .into_iter()
+                        .map(|socket| DarwinListener { pid: owner, socket }),
+                );
+            }
+            // A table too large to read whole could hide a listener.
+            Err(error) if owner == observer || error == DARWIN_TOO_MANY => return Err(error),
+            // Other accounts' processes are not readable without root.
+            Err(_) => {}
+        }
+    }
+    if !observer_read {
+        return Err(DARWIN_UNREADABLE);
+    }
+    Ok(listeners)
+}
+
+#[cfg(target_os = "macos")]
+fn listener_identity(
+    state: &RuntimeState,
+    lease: &Lease,
+    observed: &Activity,
+) -> Result<Vec<u32>, &'static str> {
+    // macOS has no /proc, and its TCP table sysctls only show the caller's own
+    // sockets. libproc reads each process's descriptor table instead: every
+    // listener that could answer the probe must be a socket the fresh observer
+    // PID itself holds.
+    let pid = observed
+        .observer_pid
+        .ok_or("缺少已核验观察器 PID，无法核验健康端口")?;
+    if !owns_pid(state, lease, pid)? {
+        return Err("健康端口 PID 不属于当前受管进程树");
+    }
+    let target = listen_target(&lease.profile)?;
+    darwin_listener_verdict(pid, &darwin_listeners(pid, target)?)?;
     Ok(vec![pid])
 }
 
@@ -1040,6 +1317,149 @@ server.serve_forever()
                 Self::expire(snapshot);
             }
         }
+    }
+
+    fn target(address: &str, port: u16) -> ListenTarget {
+        ListenTarget {
+            address: address.parse().unwrap(),
+            port,
+        }
+    }
+
+    #[test]
+    fn darwin_listeners_must_all_be_sockets_the_observer_holds() {
+        let held = |pid, socket| DarwinListener { pid, socket };
+        assert_eq!(darwin_listener_verdict(7, &[held(7, 0xa)]), Ok(()));
+        // A child that inherited the observer's socket shares it, as on Linux.
+        assert_eq!(
+            darwin_listener_verdict(7, &[held(7, 0xa), held(8, 0xa), held(7, 0xb)]),
+            Ok(())
+        );
+        assert_eq!(darwin_listener_verdict(7, &[]), Err("受管健康端口尚未监听"));
+        // Another process with a socket of its own (a wildcard beside the
+        // loopback listener, or the port without the observer at all).
+        assert_eq!(
+            darwin_listener_verdict(7, &[held(7, 0xa), held(9, 0xc)]),
+            Err("健康端口包含未知进程的监听 socket")
+        );
+        assert_eq!(
+            darwin_listener_verdict(7, &[held(9, 0xc)]),
+            Err("健康端口包含未知进程的监听 socket")
+        );
+    }
+
+    fn fdinfo(kind: i32, state: i32, port: u16, vflag: u8, address: &[u8]) -> Vec<u8> {
+        let mut bytes = vec![0u8; socket_fdinfo::SIZE];
+        bytes[256..260].copy_from_slice(&kind.to_ne_bytes());
+        bytes[344..348].copy_from_slice(&state.to_ne_bytes());
+        let network = i32::from(u16::from_ne_bytes(port.to_be_bytes()));
+        bytes[268..272].copy_from_slice(&network.to_ne_bytes());
+        bytes[288] = vflag;
+        bytes[160..168].copy_from_slice(&0x1234_5678_9abc_def0u64.to_ne_bytes());
+        let start = if address.len() == 4 { 312 + 12 } else { 312 };
+        bytes[start..start + address.len()].copy_from_slice(address);
+        bytes
+    }
+
+    #[test]
+    fn darwin_socket_fdinfo_matches_only_tcp_listeners_for_the_probe_address() {
+        let v4 = target("127.0.0.1", 62758);
+        assert!(socket_fdinfo::listens_for(
+            &fdinfo(2, 1, 62758, 1, &[127, 0, 0, 1]),
+            v4
+        ));
+        assert!(socket_fdinfo::listens_for(
+            &fdinfo(2, 1, 62758, 1, &[0; 4]),
+            v4
+        ));
+        assert!(socket_fdinfo::listens_for(
+            &fdinfo(2, 1, 62758, 3, &[0; 16]),
+            v4
+        ));
+        assert!(!socket_fdinfo::listens_for(
+            &fdinfo(2, 4, 62758, 1, &[127, 0, 0, 1]),
+            v4
+        ));
+        assert!(!socket_fdinfo::listens_for(
+            &fdinfo(1, 1, 62758, 1, &[127, 0, 0, 1]),
+            v4
+        ));
+        assert!(!socket_fdinfo::listens_for(
+            &fdinfo(2, 1, 62759, 1, &[127, 0, 0, 1]),
+            v4
+        ));
+        assert!(!socket_fdinfo::listens_for(
+            &fdinfo(2, 1, 62758, 1, &[10, 0, 0, 1]),
+            v4
+        ));
+        assert!(!socket_fdinfo::listens_for(
+            &fdinfo(2, 1, 62758, 2, &[0; 16]),
+            v4
+        ));
+        assert!(!socket_fdinfo::listens_for(
+            &fdinfo(2, 1, 62758, 1, &[127, 0, 0, 1])[..socket_fdinfo::SIZE - 1],
+            v4
+        ));
+        assert_eq!(
+            socket_fdinfo::socket_id(&fdinfo(2, 1, 62758, 1, &[127, 0, 0, 1])),
+            0x1234_5678_9abc_def0
+        );
+        let v6 = target("::1", 62758);
+        let mut loopback = [0u8; 16];
+        loopback[15] = 1;
+        assert!(socket_fdinfo::listens_for(
+            &fdinfo(2, 1, 62758, 2, &loopback),
+            v6
+        ));
+        assert!(!socket_fdinfo::listens_for(
+            &fdinfo(2, 1, 62758, 1, &[127, 0, 0, 1]),
+            v6
+        ));
+    }
+
+    #[test]
+    fn listen_target_requires_a_literal_loopback_address() {
+        let mut profile = ServiceProfile {
+            id: "target".into(),
+            name: "target".into(),
+            base_url: "http://127.0.0.1:62758".into(),
+            install_dir: String::new(),
+            python_path: String::new(),
+            config_path: String::new(),
+            managed: true,
+        };
+        assert_eq!(listen_target(&profile), Ok(target("127.0.0.1", 62758)));
+        profile.base_url = "http://[::1]:62758".into();
+        assert_eq!(listen_target(&profile), Ok(target("::1", 62758)));
+        profile.base_url = "http://localhost:62758".into();
+        assert!(listen_target(&profile).is_err());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_reads_every_listener_for_the_probe_through_libproc() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let own = target("127.0.0.1", port);
+        let pid = std::process::id();
+        let found = darwin_listeners(pid, own).unwrap();
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].pid, pid);
+        assert_ne!(found[0].socket, 0);
+        assert_eq!(darwin_listener_verdict(pid, &found), Ok(()));
+        // Another observer PID does not hold this socket.
+        assert_eq!(
+            darwin_listener_verdict(pid + 1, &found),
+            Err("健康端口包含未知进程的监听 socket")
+        );
+        assert_eq!(darwin_listeners(pid, target("::1", port)), Ok(vec![]));
+        // The PID table includes this process and at least launchd.
+        let pids = darwin_all_pids().unwrap();
+        assert!(pids.contains(&(pid as libc::c_int)) && pids.contains(&1));
+        drop(listener);
+        assert_eq!(darwin_listeners(pid, own), Ok(vec![]));
+        // A process this account cannot read, or one that does not exist.
+        assert!(darwin_listeners(u32::MAX - 1, own).is_err());
     }
 
     #[tokio::test]
