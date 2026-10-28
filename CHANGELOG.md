@@ -5,6 +5,16 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **新增「官方基准」测试，按上游 `tools/strata_bench.py` 的跑法测速并与官方数字对比**：Benchmark 页新增「官方基准」页签，请求参数、预热、对话 / 4K / 16K / 32K 预填充 / 智能体各项和跳过规则都与上游脚本（提交 46c152a1）一致，指标取引擎返回的首字时间、预填充和解码速度的中位数。结果与维护者公布的同硬件、同模型、同量化数字（Strix Halo 的 Qwen IQ3_S 与 DeepSeek 2.00 bpw、RTX PRO 5000 的 NVFP4-QAD，均附来源）并排显示差异；没有对应配置时注明「官方暂无此配置数据」。原有测试不变。
+- **排行榜默认按官方基准排名**：已同意上传的用户，跑完官方基准后会像上下文测速一样自动上传（附签名运行证据，只比较同模型同量化，数据保留 12 个月）。应用内排行榜和官网 /leaderboard 默认按对话解码速度排名，可切换 4K / 16K / 32K 预填充、智能体解码和机器数；维护者公布的数字以「官方」行附来源列在榜上，不参与排名。原来的 8K 解码排行改名「上下文测速」，保留为可切换视图，筛选、排序和推荐都不变；旧链接仍打开原排行。服务器尚未支持时，应用继续显示原排行，上传留在队列里稍后重试。
+
+### English
+
+- **New "Official benchmark" test that runs upstream `tools/strata_bench.py`'s method and compares with the published numbers**: the Benchmark page gets an "Official benchmark" tab. Request settings, warm-up, the chat / 4K / 16K / 32K prefill / agent items and the skip rules follow the upstream script (commit 46c152a1), and the figures are the medians of the engine's first-token time, prefill and decode speed. Results sit next to the numbers the maintainers published for the same hardware, model and quantization (Strix Halo with Qwen IQ3_S and DeepSeek 2.00 bpw, RTX PRO 5000 with NVFP4-QAD, each with its source), with the difference; without a matching setup it says the maintainers have no numbers for it. Existing tests are unchanged.
+- **The leaderboard now ranks by the official benchmark by default**: if you agreed to share results, an official run uploads after it finishes, like a context run (with signed run evidence, compared only within the same model and quantization, kept for 12 months). The in-app leaderboard and the website's /leaderboard rank by chat decode speed by default and can switch to 4K / 16K / 32K prefill, agent decode or machine count. The maintainers' published numbers appear as "Official" rows with their source and are not ranked. The old 8K decode ranking is now "Context runs", kept as a switchable view with its filters, sorting and recommendations; old links still open it. Until the server supports official runs, the app keeps showing the old ranking and keeps the upload queued for a later retry.
+
 ## [0.2.28] - 2026-10-28
 
 ### 中文
