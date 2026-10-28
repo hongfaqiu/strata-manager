@@ -5,6 +5,8 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+## [0.2.29] - 2026-10-29
+
 ### 中文
 
 - **按显卡型号校正 NVIDIA 速度估算：32 GB 改为区间，RTX 5090 / 3060 / 4060 Ti 用各自实测**：此前只按显存分档，同档显卡的显存带宽差别很大。改动如下：
