@@ -11,6 +11,7 @@
     "test:browser": "node tests/optimization/verify.mjs",
     "test:onboarding": "node tests/optimization/verify-onboarding.mjs",
     "test:concurrency": "node tests/optimization/verify-concurrency.mjs",
+    "test:official-bench": "node tests/optimization/verify-official-bench.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

@@ -1,0 +1,118 @@
+{
+ "_source": "Niko1221/Strata tools/strata_bench.py + tools/ab_engine.py (PROMPTS, long_prompt) + tools/agent_turns_bench.py (SYSTEM, TOOLS) at 46c152a1310f77cd2f0ce2c7cd213962df14fe83 (v0.2.7.1). Copied verbatim; regenerate with scripts if upstream changes.",
+ "upstreamCommit": "46c152a1310f77cd2f0ce2c7cd213962df14fe83",
+ "prompts": [
+  "Write a Python function that merges two sorted lists into one sorted list, with a docstring and two tests.",
+  "Explain in two paragraphs how a refrigerator moves heat from inside to outside.",
+  "List ten practical tips for learning a new language as an adult, one sentence each."
+ ],
+ "system": "You are an autonomous coding agent working in the user's repository. You can read files, search the code, edit files and run commands with the tools below. Work step by step: read the code you need before changing it, make small and correct edits, keep the existing style, and explain briefly what you did. Never invent file contents: read them. When the task is done, give a short summary of the changes and how to test them.",
+ "tools": [
+  {
+   "type": "function",
+   "function": {
+    "name": "read_file",
+    "description": "Read a file of the repository (UTF-8 text).",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "path": {
+       "type": "string",
+       "description": "path from the repository root"
+      }
+     },
+     "required": [
+      "path"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "grep",
+    "description": "Search the repository for a regular expression; returns matching lines.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "pattern": {
+       "type": "string"
+      },
+      "path": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "pattern"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "edit_file",
+    "description": "Replace an exact string in a file with a new one.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "path": {
+       "type": "string"
+      },
+      "old": {
+       "type": "string"
+      },
+      "new": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "path",
+      "old",
+      "new"
+     ]
+    }
+   }
+  },
+  {
+   "type": "function",
+   "function": {
+    "name": "run",
+    "description": "Run a shell command in the repository and return its output.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "command": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "command"
+     ]
+    }
+   }
+  }
+ ],
+ "vocab": [
+  "river",
+  "stone",
+  "market",
+  "lantern",
+  "copper",
+  "winter",
+  "garden",
+  "signal",
+  "harbor",
+  "needle",
+  "orbit",
+  "velvet",
+  "canyon",
+  "ember",
+  "ledger",
+  "quartz",
+  "meadow",
+  "anchor",
+  "violet",
+  "thunder"
+ ]
+}

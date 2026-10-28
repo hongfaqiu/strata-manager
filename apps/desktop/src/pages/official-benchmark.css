@@ -1,0 +1,31 @@
+/* Official benchmark: one button, one step strip, the official-vs-yours cards. */
+.obench-run { display: flex; flex-direction: column; gap: 14px; }
+.obench-run-main { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; }
+.obench-start { min-height: 42px; padding: 0 22px; font-size: 14px; gap: 8px; }
+.obench-stop { min-height: 42px; padding: 0 18px; }
+.obench-params { color: var(--st-ink-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.obench-long { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; font-size: 12px; color: var(--st-ink); }
+.obench-steps { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.obench-steps > li { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 11px; border-radius: var(--st-r-pill); border: 1px solid var(--st-line); background: var(--st-surface); color: var(--st-ink-muted); font-size: 12px; font-weight: 600; }
+.obench-steps > li > i { width: 6px; height: 6px; border-radius: 50%; background: var(--st-line); }
+.obench-steps > li[data-state='now'] { border-color: var(--st-accent); color: var(--st-accent-text); background: var(--st-accent-tint); }
+.obench-steps > li[data-state='done'] { color: var(--st-ink); }
+.obench-steps > li[data-state='done'] svg { color: var(--st-accent); }
+.obench-progress { position: relative; height: 6px; border-radius: 3px; background: var(--st-surface-2); overflow: visible; margin-bottom: 14px; }
+.obench-progress > span { display: block; height: 100%; border-radius: 3px; background: var(--st-accent); transition: width .3s ease; }
+.obench-progress > em { position: absolute; right: 0; top: 10px; font-style: normal; font-size: 11px; color: var(--st-ink-muted); font-variant-numeric: tabular-nums; }
+.obench-result { display: flex; flex-direction: column; gap: 14px; }
+.obench-banner { display: flex; flex-direction: column; gap: 4px; padding: 12px 16px; border-radius: var(--st-r-lg); border: 1px solid var(--st-line); background: var(--st-surface-2); }
+.obench-banner[data-tone='match'] { border-color: color-mix(in srgb, var(--st-accent) 28%, var(--st-line)); background: var(--st-accent-tint); }
+.obench-banner > strong { font-size: 14px; color: var(--st-ink); }
+.obench-banner > span { font-size: 12px; color: var(--st-ink-soft); }
+.obench-banner > small { font-size: 11px; color: var(--st-ink-muted); line-height: 1.5; }
+.obench-source { display: inline-flex; align-items: center; gap: 2px; color: var(--st-accent-text); text-decoration: none; }
+.obench-source:hover { text-decoration: underline; }
+.obench-highlights { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.bhc-card-values > b .bhc-card-side { margin: 0 6px 0 0; font-size: 12px; font-weight: 600; color: var(--st-ink-muted); }
+.obench-table td small { color: var(--st-ink-muted); font-size: 11px; margin-left: 4px; }
+.obench-when { color: var(--st-ink-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.obench-result-panel .official-dropdown { min-width: 220px; }
+@media (max-width: 1100px) { .obench-highlights { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 720px) { .obench-highlights { grid-template-columns: minmax(0, 1fr); } .obench-long { margin-left: 0; } }

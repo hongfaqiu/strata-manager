@@ -1,0 +1,53 @@
+{
+  "_note": "Numbers published by the Strata maintainers and measured with tools/strata_bench.py, copied as printed (no rounding, no derived values). Ranges stay ranges. Add a row only with a link to the line it comes from.",
+  "upstreamCommit": "46c152a1310f77cd2f0ce2c7cd213962df14fe83",
+  "references": [
+    {
+      "id": "strix-halo-windows-qwen-iq3s-0.2.7",
+      "hardware": { "label": "Ryzen AI Max+ 395 · Radeon 8060S (Strix Halo)", "match": "8060S|8050S|Ryzen AI Max|gfx1151|Strix Halo", "detail": "GMKtec NucBox EVO-X2，128 GB 共享内存（BIOS 给显卡 64 GB），Windows 11 Pro，Adrenalin 26.10.1" },
+      "model": { "label": "Qwen3.8-Flash-Next IQ3_S", "family": "qwen", "quant": "IQ3_S" },
+      "setup": "strata launch 默认参数 · 131,072 上下文 · int8 KV",
+      "measured": { "date": "2026-10-26", "strata": "0.2.7 RC（engine 0.1.51, 3e468f5de）", "command": "python tools/strata_bench.py --url http://127.0.0.1:8080 --runs 3 --long" },
+      "source": { "title": "docs/STRIX_HALO_WINDOWS.md §1", "url": "https://github.com/Niko1221/Strata/blob/46c152a1310f77cd2f0ce2c7cd213962df14fe83/docs/STRIX_HALO_WINDOWS.md#1-what-this-pc-reaches" },
+      "metrics": {
+        "chatDecodeTps": { "median": 44.0, "min": 40.6, "max": 59.5, "printed": "44.0" },
+        "chatTtftS": { "median": 0.60, "printed": "0.60" },
+        "p4kTps": { "median": 755 }, "p4kTtftS": { "median": 5.4 },
+        "p16kTps": { "median": 821 }, "p16kTtftS": { "median": 19.6 },
+        "p32kTps": { "median": 792 }, "p32kTtftS": { "median": 40.6 },
+        "agentHitPct": { "median": 69 }, "agentDecodeTps": { "median": 47 }, "agentTurnTtftS": { "median": 4.5 }
+      }
+    },
+    {
+      "id": "strix-halo-windows-deepseek-2.00-0.2.7",
+      "hardware": { "label": "Ryzen AI Max+ 395 · Radeon 8060S (Strix Halo)", "match": "8060S|8050S|Ryzen AI Max|gfx1151|Strix Halo", "detail": "GMKtec NucBox EVO-X2，128 GB 共享内存（BIOS 给显卡 64 GB），Windows 11 Pro，Adrenalin 26.10.1" },
+      "model": { "label": "DeepSeek V4.1-Flash 2.00 bpw", "family": "deepseek41", "quant": "IST-DAS-2.00bpw" },
+      "setup": "strata launch 默认（Faster 模式，草稿模型开）· 4K 在默认 8K 上下文，其余 64K 上下文",
+      "measured": { "date": "2026-10-26", "strata": "0.2.7 RC（engine 0.1.51, 3e468f5de）", "command": "python tools/strata_bench.py --url http://127.0.0.1:8080 --runs 3 --long" },
+      "source": { "title": "docs/STRIX_HALO_WINDOWS.md §1", "url": "https://github.com/Niko1221/Strata/blob/46c152a1310f77cd2f0ce2c7cd213962df14fe83/docs/STRIX_HALO_WINDOWS.md#1-what-this-pc-reaches" },
+      "metrics": {
+        "chatDecodeTps": { "min": 12.1, "max": 13.6 },
+        "p4kTps": { "min": 214, "max": 234 }, "p4kTtftS": { "median": 18, "approx": true },
+        "p16kTps": { "median": 326 }, "p16kTtftS": { "median": 51 },
+        "p32kTps": { "median": 342 }, "p32kTtftS": { "median": 97 },
+        "agentHitPct": { "median": 70 }, "agentDecodeTps": { "median": 14.2 }, "agentTurnTtftS": { "min": 17, "max": 31 }
+      },
+      "notes": ["正式版复测 4K 为 229–234 tok/s（预热后），首次冷启动 186–225 tok/s（release notes 0.2.7）。"],
+      "extraSources": [{ "title": "docs/release-notes-0.2.7.md", "url": "https://github.com/Niko1221/Strata/blob/46c152a1310f77cd2f0ce2c7cd213962df14fe83/docs/release-notes-0.2.7.md" }]
+    },
+    {
+      "id": "rtx-pro-5000-nvfp4-qad",
+      "hardware": { "label": "RTX PRO 5000 72 GB (Blackwell)", "match": "RTX PRO 5000", "detail": "全部专家放入显存，69 GB 内存" },
+      "model": { "label": "Qwen3.8-Flash-Next FP4-Local (NVFP4-QAD)", "family": "qwen", "quant": "NVFP4-QAD" },
+      "setup": "128K 上下文 · int8 KV",
+      "measured": { "date": null, "strata": "未记录", "command": "tools/strata_bench.py" },
+      "source": { "title": "docs/NVFP4.md · NVIDIA's FP4-Local checkpoint", "url": "https://github.com/Niko1221/Strata/blob/46c152a1310f77cd2f0ce2c7cd213962df14fe83/docs/NVFP4.md#nvidias-fp4-local-checkpoint" },
+      "metrics": {
+        "chatDecodeTps": { "median": 159, "min": 137, "max": 216 },
+        "p4kTps": { "median": 3981 }, "p16kTps": { "median": 4813 },
+        "p32kTps": { "median": 4916 }, "p32kTtftS": { "median": 6.6 },
+        "agentDecodeTps": { "median": 151 }
+      }
+    }
+  ]
+}
