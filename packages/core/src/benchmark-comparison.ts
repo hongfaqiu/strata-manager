@@ -12,6 +12,8 @@ export interface BenchmarkIdentity {
   engineProcess?: { pid: number; startedAt: number } | null;
   /** Whitelisted launch parameters for Benchmark Arena; absent for unrecognized configurations. */
   launch?: import('./arena').ArenaLaunch | null;
+  /** The same for the official-method board, which also knows catalog models without an Arena key (NVFP4-QAD, DeepSeek IST-DAS); set only when `launch` is absent. */
+  officialLaunch?: import('./arena').ArenaLaunch | null;
   /** Engine args hash without the drafting flags (--mtp, --spec-min-p, --batch-mtp, --draft, --draft-model); absent on older reports. */
   effectiveBaseHash?: string | null;
   /** Requested config "drafting", the boolean config "mtp" switch, and what the effective engine args draft with. */

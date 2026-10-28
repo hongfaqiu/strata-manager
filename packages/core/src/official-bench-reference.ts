@@ -1,5 +1,5 @@
 /** Published strata_bench.py numbers (official-bench-reference.json) and how a local report is matched against them. */
-import { arenaModelOf } from './arena';
+import { arenaOfficialModelKey } from './arena';
 import type { OfficialBenchMachine, OfficialBenchReport, OfficialMetricKey, OfficialStat } from './official-bench';
 import { officialSummary } from './official-bench';
 import data from './official-bench-reference.json';
@@ -24,15 +24,7 @@ export const OFFICIAL_REFERENCE_COMMIT: string = data.upstreamCommit;
 export interface OfficialModelKey { family: string; quant: string | null }
 /** Family and quant from the served model name, file names and launch parameters (never paths). */
 export function officialModelKey(evidence: readonly string[]): OfficialModelKey | null {
-  const text = evidence.filter(Boolean).join(' ');
-  if (!text.trim()) return null;
-  if (/fp4[-_ ]?local|nvfp4[-_ ]?qad/i.test(text)) return { family: 'qwen', quant: 'NVFP4-QAD' };
-  if (/deepseek|dsv4|ist[-_]?das/i.test(text)) {
-    const bpw = text.match(/(\d\.\d{2})\s*[-_]?\s*bpw/i);
-    return { family: 'deepseek41', quant: bpw ? `IST-DAS-${bpw[1]}bpw` : null };
-  }
-  const model = arenaModelOf(text);
-  return model ? { family: model.family, quant: model.quant } : null;
+  return arenaOfficialModelKey(evidence.filter(Boolean).join(' '));
 }
 
 export function officialHardwareMatches(reference: OfficialReference, machine: Pick<OfficialBenchMachine, 'gpuNames' | 'cpuName'>): boolean {

@@ -10,8 +10,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const ARENA_API = 'https://arena.cosfoc.com';
 export const leaderboardPages = standalonePages.filter((entry) => entry.key === 'leaderboard');
 const copy = {
-  zh: { title: 'Benchmark 排行榜', description: 'Strata Manager 用户自愿上传的 Benchmark 汇总：同一模型、同一量化内，比较不同硬件与启动参数的 8K 解码速度。', home: '返回官网', docs: '文档中心', changelog: '更新日志', other: 'English', theme: '主题', skip: '跳转到正文', privacy: '隐私说明', loading: '正在读取排行榜…', foot: 'Strata 运行环境与本地模型服务，一站管理。' },
-  en: { title: 'Benchmark leaderboard', description: 'Benchmarks voluntarily shared by Strata Manager users: within the same model and quantization, compare 8K decode speed across hardware and launch parameters.', home: 'Website', docs: 'Documentation', changelog: 'Changelog', other: '简体中文', theme: 'Theme', skip: 'Skip to content', privacy: 'Privacy', loading: 'Loading leaderboard…', foot: 'Strata runtimes and local model services, in one workspace.' },
+  zh: { title: 'Benchmark 排行榜', description: 'Strata Manager 用户自愿上传的 Benchmark 汇总：默认按官方 strata_bench.py 跑法的对话解码速度排名，并对照官方公布数字；同一模型、同一量化内比较不同硬件与启动参数。', home: '返回官网', docs: '文档中心', changelog: '更新日志', other: 'English', theme: '主题', skip: '跳转到正文', privacy: '隐私说明', loading: '正在读取排行榜…', foot: 'Strata 运行环境与本地模型服务，一站管理。' },
+  en: { title: 'Benchmark leaderboard', description: 'Benchmarks voluntarily shared by Strata Manager users, ranked by default on chat decode measured the official strata_bench.py way next to the published numbers; within the same model and quantization, compare hardware and launch parameters.', home: 'Website', docs: 'Documentation', changelog: 'Changelog', other: '简体中文', theme: 'Theme', skip: 'Skip to content', privacy: 'Privacy', loading: 'Loading leaderboard…', foot: 'Strata runtimes and local model services, in one workspace.' },
 };
 export function renderLeaderboardPage(entry) {
   const en = entry.lang === 'en', c = copy[entry.lang];
@@ -46,7 +46,7 @@ export function renderLeaderboardPage(entry) {
   <main id="content" class="lb-main" data-api="" data-snapshot="arena-snapshot.json" data-privacy="docs/${en ? 'arena-privacy.en.html' : 'arena-privacy.html'}">
     <section class="lb-hero">
       <h1>${c.title}</h1>
-      <p>${en ? 'Only the same model and the same quantization are compared. Each row is one hardware + launch-parameter combination, ranked by 8K decode median by default; filter by hardware and parameters or switch the ordering.' : '只在同一模型、同一量化内比较。每一行是一种硬件 + 启动参数组合，默认按 8K 解码中位数排序，可按硬件与参数筛选、切换排序。'}</p>
+      <p>${en ? 'Only the same model and the same quantization are compared. Ranked by the official benchmark (chat decode) by default, with the maintainers’ published numbers as Official rows; switch to prefill or to the context runs (8K decode).' : '只在同一模型、同一量化内比较。默认按官方基准的对话解码排名，维护者公布的数字以「官方」行对照；可切换预填充或上下文测速（8K 解码）。'}</p>
       <div class="lb-stats" id="lb-stats" aria-live="polite"></div>
     </section>
     <div id="lb-root" class="lb-root"><p class="lb-status">${c.loading}</p></div>
@@ -69,7 +69,17 @@ export async function fetchArenaSnapshot({ api = ARENA_API, fetchImpl = fetch, t
   if (!Array.isArray(groups?.groups)) throw new Error('groups: unexpected shape');
   const boards = {};
   for (const item of groups.groups.slice(0, limit)) boards[item.group] = await get(`/v1/leaderboard?group=${encodeURIComponent(item.group)}`);
-  return { capturedAt: Date.now(), groups, boards };
+  // The official board (/v1/official) is optional: servers that predate it keep the snapshot as before.
+  let official = null;
+  try {
+    const index = await get('/v1/official');
+    if (Array.isArray(index?.groups)) {
+      const officialBoards = {};
+      for (const item of index.groups.slice(0, limit)) officialBoards[item.group] = item.group === index.group ? index : await get(`/v1/official?group=${encodeURIComponent(item.group)}`);
+      official = { index, boards: officialBoards };
+    }
+  } catch { official = null; }
+  return { capturedAt: Date.now(), groups, boards, ...(official ? { official } : {}) };
 }
 export async function renderLeaderboardPages(output, { refresh = !process.env.STRATA_WEBSITE_OFFLINE } = {}) {
   for (const entry of leaderboardPages) await writeFile(join(output, entry.page), renderLeaderboardPage(entry));

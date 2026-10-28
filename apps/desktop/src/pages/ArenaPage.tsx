@@ -1,11 +1,12 @@
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LoaderCircle, RefreshCw } from 'lucide-react';
 import * as core from '@strata-manager/core';
-import type { AppLanguage, ArenaFacet, ArenaFilters, ArenaSort, ArenaGroups, ArenaLeaderboard, ArenaLogEntry, ArenaParamChange, ArenaParams, ArenaPayload, ArenaRecommendation, ArenaRecommendRow, ArenaRow, ArenaStatus, BenchmarkSuiteReport, ContextBenchmarkReport } from '@strata-manager/core';
+import type { AppLanguage, ArenaOfficialBoard as OfficialBoard, ArenaFacet, ArenaFilters, ArenaSort, ArenaGroups, ArenaLeaderboard, ArenaLogEntry, ArenaParamChange, ArenaParams, ArenaPayload, ArenaRecommendation, ArenaRecommendRow, ArenaRow, ArenaStatus, BenchmarkSuiteReport, ContextBenchmarkReport } from '@strata-manager/core';
 import { Dialog, Empty } from '../components';
 import { Dropdown, Segmented, Toggle } from '../OfficialControls';
-import { ARENA_EVENT, arenaBuild } from './arenaUpload';
+import { ARENA_EVENT, arenaBuild, arenaOfficialBuild } from './arenaUpload';
+import { ArenaOfficialBoard } from './ArenaOfficialBoard';
 import './arena.css';
 
 type Scene = 'chat' | 'long' | 'code';
@@ -43,7 +44,12 @@ export function ArenaPage({ language, active }: { language: AppLanguage; active:
   const number = useCallback((value: number | null | undefined, digits = 1) => value == null || !Number.isFinite(value) ? '—' : value.toLocaleString(language, { maximumFractionDigits: digits, minimumFractionDigits: digits > 0 && value < 1000 ? digits : 0 }), [language]);
   const [status, setStatus] = useState<ArenaStatus>();
   const [dismissed, setDismissed] = useState<boolean>();
-  const [view, setView] = useState<'board' | 'recommend'>('board');
+  // 「官方基准」 is the default view; the context board and recommendations stay one click away.
+  const [view, setView] = useState<'official' | 'board' | 'recommend'>('official');
+  const [officialAvailable, setOfficialAvailable] = useState(true);
+  const [officialBoard, setOfficialBoard] = useState<OfficialBoard>();
+  const [mineOfficial, setMineOfficial] = useState<ArenaPayload>();
+  const officialUnavailable = useCallback(() => { setOfficialAvailable(false); setView(previous => previous === 'official' ? 'board' : previous); }, []);
   const [groups, setGroups] = useState<ArenaGroups>();
   // Why the leaderboard could not load: `network` (unreachable) vs `app` (our own request or response was bad).
   const [failure, setFailure] = useState<{ kind: 'network' | 'app'; code: string }>();
@@ -72,6 +78,9 @@ export function ArenaPage({ language, active }: { language: AppLanguage; active:
     const built = report ? await arenaBuild(report).catch(() => undefined) : undefined;
     const launch = (report?.identity as { launch?: core.ArenaLaunch | null } | undefined)?.launch ?? null;
     setMine({ payload: built && 'payload' in built ? built.payload : undefined, launch, built: true });
+    const official = latest<core.OfficialBenchReport>(await core.loadStore<unknown>('officialBenchmarkReportsV1', []).catch(() => []));
+    const builtOfficial = official ? await arenaOfficialBuild(official).catch(() => undefined) : undefined;
+    setMineOfficial(builtOfficial && 'payload' in builtOfficial ? builtOfficial.payload : undefined);
   }, []);
   const loadGroups = useCallback(async () => {
     setLoading(true);
@@ -198,15 +207,24 @@ export function ArenaPage({ language, active }: { language: AppLanguage; active:
   const myRow = rows.find(isMine);
   const myDecode = decode8k(mine.payload);
   const logStatus = (entry: ArenaLogEntry) => t(entry.status === 'uploaded' && (entry.detail === 'verified' || entry.detail === 'pending') ? `arenaLog_${entry.detail}` : `arenaLog_${entry.status}`);
+  const officialDecode = mineOfficial?.official?.metrics.chatDecodeTps ?? null;
+  const mySection = view === 'official' ? <div className="arena-side-sec">
+    <header><h3>{t('arenaMyMachine')}</h3><span className="arena-muted">{mineOfficial?.hw.gpus[0] ? `${gpuLabel(mineOfficial.hw.gpus[0].name)} · ${number(mineOfficial.hw.ramGB, 0)} GB` : ''}</span></header>
+    {officialDecode != null && mineOfficial ? <>
+      <div className="arena-big"><strong>{number(officialDecode)}</strong><span>{t('arenaOffSort_chatDecode')} tok/s</span></div>
+      <dl className="arena-kv arena-mine-official">{(['p4kTps', 'p16kTps', 'p32kTps', 'agentDecodeTps'] as const).map(key => <Fragment key={key}><dt>{t(`arenaOffMetric_${key}`)}</dt><dd>{number(mineOfficial.official!.metrics[key], key === 'agentDecodeTps' ? 1 : 0)}</dd></Fragment>)}</dl>
+      <p className="arena-muted arena-mine-config">{groupLabel(`${mineOfficial.model.family}:${mineOfficial.model.quant}`).model} <Quant>{mineOfficial.model.quant}</Quant>{chips(mineOfficial.params)}</p>
+    </> : <p className="arena-muted">{t('arenaOfficialNoRun')}</p>}
+  </div> : null;
   const side = <aside className="panel arena-side">
-    <div className="arena-side-sec">
+    {mySection ?? <div className="arena-side-sec">
       <header><h3>{t('arenaMyMachine')}</h3><span className="arena-muted">{myGpu ? `${gpuLabel(myGpu.name)} · ${number(mine.payload?.hw.ramGB, 0)} GB` : ''}</span></header>
       {myDecode != null ? <>
         <div className="arena-big"><strong>{number(myDecode)}</strong><span>{t('arenaDecodeUnit')}</span></div>
         <p className="arena-muted">{myRow ? <><span className={myDecode >= myRow.decode.median ? 'arena-up' : 'arena-down'}>{myDecode >= myRow.decode.median ? '+' : '−'}{number(Math.abs(myDecode - myRow.decode.median))}</span> {t('arenaVsConfig', { median: number(myRow.decode.median), rank: myRow.rank ?? '—', total: rows.length })}</> : t('arenaNoPeers')}</p>
         {mine.payload && <p className="arena-muted arena-mine-config">{groupLabel(`${mine.payload.model.family}:${mine.payload.model.quant}`).model} <Quant>{mine.payload.model.quant}</Quant>{chips(mine.payload.params)}</p>}
       </> : <p className="arena-muted">{mine.payload?.kind === 'scenario' ? t('arenaScenarioOnly') : t('arenaNoRun')}</p>}
-    </div>
+    </div>}
     {desktop && status && <div className="arena-side-sec">
       {status.consented ? <dl className="arena-kv">
         <dt>{t('arenaAutoUpload')}</dt><dd><Toggle checked={status.autoUpload && status.uploadAvailable && !status.banned} disabled={busy === 'toggle' || !status.uploadAvailable || status.banned} onCheckedChange={value => void toggleUpload(value)} ariaLabel={t('arenaAutoUpload')}/></dd>
@@ -232,8 +250,9 @@ export function ArenaPage({ language, active }: { language: AppLanguage; active:
   </Dialog>;
 
   const toolbar = <div className="arena-toolbar">
-    <Segmented ariaLabel={t('arenaView')} value={view} onValueChange={value => setView(value as 'board' | 'recommend')} options={[{ value: 'board', label: t('arenaBoard') }, { value: 'recommend', label: t('arenaRecommend') }]}/>
-    {groups && groups.machines > 0 && <span className="arena-muted">{t('arenaTotals', { machines: groups.machines, runs: groups.runs })}{groups.computedAt ? ' · ' + t('arenaUpdated', { time: new Date(groups.computedAt).toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit' }) }) : ''}</span>}
+    <Segmented ariaLabel={t('arenaView')} value={view} onValueChange={value => setView(value as typeof view)} options={[...(officialAvailable ? [{ value: 'official', label: t('arenaOfficialView') }] : []), { value: 'board', label: t('arenaBoard') }, { value: 'recommend', label: t('arenaRecommend') }]}/>
+    {view === 'official' && officialBoard && officialBoard.machines > 0 && <span className="arena-muted">{t('arenaTotals', { machines: officialBoard.machines, runs: officialBoard.runs })}</span>}
+    {view !== 'official' && groups && groups.machines > 0 && <span className="arena-muted">{t('arenaTotals', { machines: groups.machines, runs: groups.runs })}{groups.computedAt ? ' · ' + t('arenaUpdated', { time: new Date(groups.computedAt).toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit' }) }) : ''}</span>}
     {desktop && status && !status.consented && dismissed && status.uploadAvailable && <button type="button" className="arena-link" onClick={() => void reopen()}>{t('arenaJoin')}</button>}
   </div>;
 
@@ -244,6 +263,11 @@ export function ArenaPage({ language, active }: { language: AppLanguage; active:
       {/* An app-side failure would repeat with the same filters and sort, so retrying starts from the defaults. */}
       <button type="button" className="st-btn st-btn--secondary" disabled={loading} onClick={() => { if (failure.kind === 'app') { setFacets({}); setSort('decode8k'); } setFailure(undefined); void loadGroups(); }}><RefreshCw size={14}/>{t('retry')}</button>
     </Empty> : <div className="arena-loading"><LoaderCircle className="spin" size={18}/></div>}</section>
+    {side}</div>{withdrawDialog}</div>;
+  // ---- official benchmark (default) ----
+  // Before the empty check: published reference rows make the board useful before anyone has uploaded.
+  if (view === 'official') return <div className="arena-page">{toolbar}<div className="arena">
+    <section className="panel arena-main"><ArenaOfficialBoard language={language} active={active} mine={mineOfficial} onUnavailable={officialUnavailable} onLoaded={setOfficialBoard}/></section>
     {side}</div>{withdrawDialog}</div>;
   if (groups && !groups.groups.length) return <div className="arena-page">{toolbar}<div className="arena">
     <section className="panel arena-main"><Empty title={t('arenaEmptyTitle')} hint={t('arenaEmptyHint')}/></section>{side}</div>{withdrawDialog}</div>;

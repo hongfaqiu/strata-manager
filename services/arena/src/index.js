@@ -1,7 +1,11 @@
 import { ArenaError, MAX_BODY_BYTES, validateSubmission, pickTier, CONSENT_VERSION, SCHEMA_VERSION } from './schema.js';
-import { aggregate, facetOptions, filterRows, FILTER_KEYS, recommend } from './stats.js';
+import { aggregate, aggregateOfficial, facetOptions, filterOfficialRows, filterRows, FILTER_KEYS, officialGroups, officialReferenceRows, recommend } from './stats.js';
 import { evaluate } from './trust.js';
-import { parseEvidence, checkEvidence, evidenceMessage } from './evidence.js';
+import { parseEvidence, checkEvidence, checkOfficialEvidence, evidenceMessage } from './evidence.js';
+import referenceData from '../../../packages/core/src/official-bench-reference.json' with { type: 'json' };
+
+/** The maintainers' published strata_bench.py numbers, shipped with the Worker and shown as labelled reference rows. */
+export const OFFICIAL_REFERENCES = officialReferenceRows(referenceData.references);
 import { sha256Hex, hmacHex, safeEqual, signingMessage, verifyEd25519, hexToBytes, leadingZeroBits, powMessage } from './crypto.js';
 import { isApiPath, serveSite } from './site.js';
 
@@ -141,7 +145,8 @@ async function submit(request, env, now) {
   if (body.evidence !== undefined && body.evidence !== null) {
     if (typeof body.evidenceSig !== 'string' || !/^[a-f0-9]{128}$/.test(body.evidenceSig)
       || !(await verifyEd25519(install.public_key, body.evidenceSig, evidenceMessage(keyId, await sha256Hex(String(body.evidence)))))) throw new ArenaError(400, 'invalid_evidence_signature');
-    const verdict = checkEvidence(s, parseEvidence(body.evidence));
+    const parsed = parseEvidence(body.evidence);
+    const verdict = s.kind === 'official' ? checkOfficialEvidence(s, parsed) : checkEvidence(s, parsed);
     evidence = { status: verdict.status, reason: verdict.reasons.join(',').slice(0, 240) || null, text: body.evidence, sig: body.evidenceSig };
   } else if (body.evidenceSig !== undefined) throw new ArenaError(400, 'invalid_evidence_signature');
   const seedToken = request.headers.get('X-Arena-Seed');
@@ -149,25 +154,29 @@ async function submit(request, env, now) {
   const k8 = s.kind === 'context' ? pickTier(s.tiers, 'k8') : null, k32 = s.kind === 'context' ? pickTier(s.tiers, 'k32') : null, k128 = s.kind === 'context' ? pickTier(s.tiers, 'k128') : null;
   const maxOf = key => { if (s.kind !== 'context') return null; const v = s.tiers.map(t => t[key]).filter(x => x !== null); return v.length ? Math.max(...v) : null; };
   const primary = [...s.hw.gpus].sort((a, b) => b.vramGB - a.vramGB)[0];
+  const om = s.official?.metrics ?? {};
   const id = crypto.randomUUID();
   await env.DB.batch([env.DB.prepare(`INSERT INTO submissions (id, install_hash, received_at, day, schema_version, consent_version, app_version, strata_version, kind, os, arch, cpu, ram_gb, wsl,
     gpu_vendor, gpu_name, gpu_count, vram_gb, pcie, family, quant, model_sha256, model_size_gb, ctx, kv, parallel, pool_workers, expert_cache, pcie_frac, vision,
-    decode_8k, prefill_8k, ttft_8k_ms, decode_32k, decode_128k, peak_vram_gb, peak_ram_gb, result_json, seed, evidence_status, evidence_reason, evidence_json, evidence_sig)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+    decode_8k, prefill_8k, ttft_8k_ms, decode_32k, decode_128k, peak_vram_gb, peak_ram_gb, result_json, seed, evidence_status, evidence_reason, evidence_json, evidence_sig,
+    off_chat_decode, off_chat_ttft_s, off_prefill_4k, off_prefill_16k, off_prefill_32k, off_agent_decode, off_agent_hit, off_upstream)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
     id, keyId, now, s.day, SCHEMA_VERSION, s.consentVersion, s.app, s.strata, s.kind, s.hw.os, s.hw.arch, s.hw.cpu, s.hw.ramGB, s.hw.wsl ? 1 : 0,
     primary?.vendor ?? null, primary?.name ?? null, s.params.gpuCount, primary?.vramGB ?? 0, s.hw.pcie, s.model.family, s.model.quant, s.model.sha256, s.model.sizeGB,
     s.params.ctx, s.params.kv, s.params.parallel, s.params.poolWorkers, s.params.expertCache, s.params.pcieFrac, s.params.vision ? 1 : 0,
     k8?.decode ?? null, k8?.prefill ?? null, k8?.ttftMs ?? null, k32?.decode ?? null, k128?.decode ?? null, maxOf('peakVramGB'), maxOf('peakRamGB'),
-    JSON.stringify(s.kind === 'context' ? { tiers: s.tiers } : { scenario: s.scenario }), seed ? 1 : 0, evidence.status, evidence.reason, evidence.text, evidence.sig),
+    JSON.stringify(s.kind === 'context' ? { tiers: s.tiers } : s.kind === 'official' ? { official: s.official } : { scenario: s.scenario }), seed ? 1 : 0, evidence.status, evidence.reason, evidence.text, evidence.sig,
+    om.chatDecodeTps ?? null, om.chatTtftS ?? null, om.p4kTps ?? null, om.p16kTps ?? null, om.p32kTps ?? null, om.agentDecodeTps ?? null, om.agentHitPct ?? null, s.official?.upstream ?? null),
     env.DB.prepare('UPDATE installs SET last_seen_at = ? WHERE key_id = ?').bind(now, keyId)]);
   // A verified run counts right away: rebuild the aggregates now instead of waiting for the hourly cron.
   let counted = false;
-  if (k8) {
+  const ranked = !!k8 || (s.kind === 'official' && om.chatDecodeTps !== null);
+  if (ranked) {
     await recompute(env, now);
     const row = await env.DB.prepare('SELECT s.flag, i.status FROM submissions s JOIN installs i ON i.key_id = s.install_hash WHERE s.id = ?').bind(id).first();
     counted = !row?.flag && !['banned', 'flagged'].includes(row?.status) && (evidence.status === 'verified' || seed || row?.status === 'trusted');
   }
-  return json({ accepted: true, id, ranked: !!k8, seed, evidence: evidence.status, reasons: evidence.reason ? evidence.reason.split(',') : [], counted }, 201);
+  return json({ accepted: true, id, ranked, seed, evidence: evidence.status, reasons: evidence.reason ? evidence.reason.split(',') : [], counted }, 201);
 }
 
 /** Withdraw: deletes every submission and the key registration. A banned key keeps only a tombstone (key_id + ban). */
@@ -192,7 +201,8 @@ async function deleteMine(request, env, now) {
 
 // ---------- aggregates ----------
 const SUB_COLUMNS = `id, install_hash, kind, received_at, family, quant, gpu_name, gpu_count, vram_gb, ram_gb, ctx, kv, parallel, pool_workers, expert_cache, pcie_frac, vision,
-  decode_8k, prefill_8k, ttft_8k_ms, decode_32k, decode_128k, peak_vram_gb, peak_ram_gb, seed, flag, evidence_status`;
+  decode_8k, prefill_8k, ttft_8k_ms, decode_32k, decode_128k, peak_vram_gb, peak_ram_gb, seed, flag, evidence_status,
+  off_chat_decode, off_chat_ttft_s, off_prefill_4k, off_prefill_16k, off_prefill_32k, off_agent_decode, off_agent_hit`;
 async function inChunks(env, stmts, size = 90) { for (let i = 0; i < stmts.length; i += size) await env.DB.batch(stmts.slice(i, i + size)); }
 
 /** Reputation pass, then aggregates from counting runs only: verified evidence (or maintainer trust), unflagged; seed rows always count. */
@@ -211,13 +221,36 @@ export async function recompute(env, now = Date.now()) {
 
   const counting = subs.filter(s => counts(s));
   const groups = aggregate(counting.filter(s => s.kind === 'context' && s.decode_8k !== null));
+  const official = aggregateOfficial(counting.filter(s => s.kind === 'official' && s.off_chat_decode !== null));
+  const officialRuns = counting.filter(s => !s.seed && s.kind === 'official');
   const publicInstalls = new Set(counting.filter(s => !s.seed).map(s => s.install_hash));
   const pending = new Set(subs.filter(s => !s.seed && !publicInstalls.has(s.install_hash)).map(s => s.install_hash));
   const summary = { computedAt: now, machines: publicInstalls.size, runs: counting.filter(s => !s.seed).length, pendingMachines: pending.size,
     groups: groups.map(({ rows, ...g }) => ({ ...g, top: rows.slice(0, 3).map(r => ({ hw: r.hw, params: r.params, seed: r.seed, machines: r.machines, decode: r.decode })) })) };
   await env.DB.batch([env.DB.prepare('DELETE FROM aggregates'), env.DB.prepare('INSERT INTO aggregates (key, json, computed_at) VALUES (?, ?, ?)').bind('groups', JSON.stringify(summary), now),
-    env.DB.prepare('INSERT INTO aggregates (key, json, computed_at) VALUES (?, ?, ?)').bind('all', JSON.stringify(groups), now)]);
+    env.DB.prepare('INSERT INTO aggregates (key, json, computed_at) VALUES (?, ?, ?)').bind('all', JSON.stringify(groups), now),
+    env.DB.prepare('INSERT INTO aggregates (key, json, computed_at) VALUES (?, ?, ?)').bind('official', JSON.stringify({ computedAt: now,
+      machines: new Set(officialRuns.map(s => s.install_hash)).size, runs: officialRuns.length, groups: official }), now)]);
   return summary;
+}
+
+/**
+ * GET /v1/official: the official-method board. Without `group`, the group with the most machines (or the first with
+ * a published reference). Rows are ranked uploads; `references` are the published numbers, never ranked.
+ */
+async function officialBoard(env, p) {
+  const agg = await cached(env, 'official') ?? { computedAt: null, machines: 0, runs: 0, groups: [] };
+  const groups = officialGroups(agg.groups, OFFICIAL_REFERENCES);
+  const key = p.get('group') ?? groups[0]?.group ?? null;
+  const summary = groups.find(g => g.group === key);
+  const base = { computedAt: agg.computedAt, machines: agg.machines, runs: agg.runs, groups, group: summary ? key : null };
+  if (!summary) return { ...base, rows: [], references: [], median: null, total: 0, sort: 'chatDecode' };
+  const group = agg.groups.find(g => g.group === key) ?? { rows: [] };
+  const query = {};
+  for (const k of FILTER_KEYS) { const v = p.get(k); if (v !== null && v.trim() !== '' && v.length <= 128) query[k] = v.trim(); }
+  const result = filterOfficialRows(group, query);
+  return { ...base, family: summary.family, quant: summary.quant, options: facetOptions(group.rows), total: group.rows.length, ...result,
+    references: OFFICIAL_REFERENCES.filter(r => r.group === key) };
 }
 
 export async function maintain(env, now = Date.now()) {
@@ -300,7 +333,7 @@ async function admin(request, env, now, path) {
 async function route(request, env, ctx, now) {
   const url = new URL(request.url), path = url.pathname;
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
-  if (path === '/v1/health' && request.method === 'GET') return json({ ok: true, schema: SCHEMA_VERSION, consentVersion: CONSENT_VERSION }, 200, CORS);
+  if (path === '/v1/health' && request.method === 'GET') return json({ ok: true, schema: SCHEMA_VERSION, consentVersion: CONSENT_VERSION, official: true }, 200, CORS);
   if (path.startsWith('/v1/admin/')) return admin(request, env, now, path);
   if (path === '/v1/register/challenge') { if (request.method !== 'POST') throw new ArenaError(405, 'method_not_allowed'); return issueChallenge(request, env, now); }
   if (path === '/v1/register') { if (request.method !== 'POST') throw new ArenaError(405, 'method_not_allowed'); return register(request, env, now); }
@@ -321,6 +354,7 @@ async function route(request, env, ctx, now) {
     const filter = { gpu: query.gpu ?? null, vram: num('vram'), ram: num('ram'), ctx: num('ctx'), kv: query.kv ?? null, parallel: num('parallel'), gpuCount: num('gpuCount'), expertCache: query.expertCache ?? null, q: query.q ?? null, sort: result.sort };
     return json({ ...g, filter, options: facetOptions(rows), total: rows.length, ...result }, 200, PUBLIC_CACHE);
   }
+  if (path === '/v1/official') return json(await officialBoard(env, url.searchParams), 200, PUBLIC_CACHE);
   if (path === '/v1/recommend') {
     const p = url.searchParams, n = k => { const v = Number(p.get(k)); return p.has(k) && Number.isFinite(v) ? v : undefined; };
     const params = {}; for (const k of ['ctx', 'parallel', 'poolWorkers', 'gpuCount']) if (n(k) !== undefined) params[k] = n(k);

@@ -42,13 +42,13 @@ export function pickTier(tiers, key) {
 
 /** Validates a parsed body and returns the normalized submission. The install is identified by its signing key, never by the body. Throws ArenaError. */
 export function validateSubmission(body) {
-  keys(body, ['schema', 'consentVersion', 'evidence', 'evidenceSig', 'app', 'strata', 'kind', 'day', 'hw', 'model', 'params', 'tiers', 'scenario'], 'body');
+  keys(body, ['schema', 'consentVersion', 'evidence', 'evidenceSig', 'app', 'strata', 'kind', 'day', 'hw', 'model', 'params', 'tiers', 'scenario', 'official'], 'body');
   if (body.schema !== SCHEMA_VERSION) bad('unsupported_schema');
   int(body.consentVersion, 1, 1000, 'consentVersion');
   if (body.consentVersion < CONSENT_VERSION) bad('consent_outdated', 'consent version is older than the current policy');
   const app = str(body.app, /^\d{1,3}\.\d{1,3}\.\d{1,4}$/, 'app');
   const strata = str(body.strata, /^\d{1,3}\.\d{1,3}\.\d{1,4}(?:\.\d{1,4})?$/, 'strata', true);
-  const kind = str(body.kind, /^(?:context|scenario)$/, 'kind');
+  const kind = str(body.kind, /^(?:context|scenario|official)$/, 'kind');
   const day = str(body.day, /^20\d\d-\d\d-\d\d$/, 'day');
 
   keys(body.hw, ['os', 'arch', 'cpu', 'ramGB', 'gpus', 'pcie', 'wsl'], 'hw');
@@ -66,7 +66,8 @@ export function validateSubmission(body) {
   });
 
   keys(body.model, ['family', 'quant', 'sha256', 'sizeGB'], 'model');
-  const model = { family: str(body.model.family, /^[a-z0-9-]{1,32}$/, 'model.family'), quant: str(body.model.quant, /^[A-Z0-9_-]{1,16}$/, 'model.quant'),
+  // Official-method runs also cover catalog quants such as DeepSeek's `IST-DAS-2.00bpw` (mixed case, a dot).
+  const model = { family: str(body.model.family, /^[a-z0-9-]{1,32}$/, 'model.family'), quant: str(body.model.quant, kind === 'official' ? OFFICIAL_QUANT : /^[A-Z0-9_-]{1,16}$/, 'model.quant'),
     sha256: str(body.model.sha256, /^[a-f0-9]{64}$/, 'model.sha256', true), sizeGB: num(body.model.sizeGB, 0.1, 4096, 'model.sizeGB') };
 
   keys(body.params, ['ctx', 'kv', 'gpuCount', 'parallel', 'poolWorkers', 'expertCache', 'pcieFrac', 'vision'], 'params');
@@ -77,8 +78,13 @@ export function validateSubmission(body) {
   if (params.gpuCount > gpus.length) bad('implausible_gpu_count');
 
   const vramTotal = gpus.reduce((s, g) => s + g.vramGB, 0);
-  let tiers = [], scenario = null;
-  if (kind === 'context') {
+  let tiers = [], scenario = null, official = null;
+  if (kind !== 'official' && body.official !== undefined && body.official !== null) bad('unexpected_official');
+  if (kind === 'official') {
+    if (body.tiers !== undefined && body.tiers !== null) bad('unexpected_tiers');
+    if (body.scenario !== undefined && body.scenario !== null) bad('unexpected_scenario');
+    official = validateOfficial(body.official, params);
+  } else if (kind === 'context') {
     if (body.scenario !== undefined && body.scenario !== null) bad('unexpected_scenario');
     if (!Array.isArray(body.tiers) || !body.tiers.length || body.tiers.length > 16) bad('invalid_tiers');
     tiers = body.tiers.map((t, i) => {
@@ -95,7 +101,43 @@ export function validateSubmission(body) {
       maxConcurrency: int(s.maxConcurrency, 1, 256, 'scenario.maxConcurrency'), requests: int(s.requests, 1, 100000, 'scenario.requests'), failed: int(s.failed, 0, 100000, 'scenario.failed') };
     if (scenario.failed > scenario.requests) bad('implausible_scenario');
   }
-  return { app, strata, kind, day, consentVersion: body.consentVersion, hw: { os, arch, cpu, ramGB, pcie, wsl, gpus, vramTotal }, model, params, tiers, scenario };
+  return { app, strata, kind, day, consentVersion: body.consentVersion, hw: { os, arch, cpu, ramGB, pcie, wsl, gpus, vramTotal }, model, params, tiers, scenario, official };
+}
+
+// ---------- official-method runs (Strata tools/strata_bench.py, run in the app) ----------
+const OFFICIAL_QUANT = /^[A-Za-z0-9_.-]{1,24}$/;
+/** Summary medians of one official-method run. Speeds in tok/s, times in seconds, the agent cache hit in %. */
+export const OFFICIAL_METRICS = Object.freeze({
+  chatDecodeTps: [0.05, 1000], chatTtftS: [0.001, 7200],
+  p4kTps: [0.5, 200000], p4kTtftS: [0.001, 7200], p16kTps: [0.5, 200000], p16kTtftS: [0.001, 7200], p32kTps: [0.5, 200000], p32kTtftS: [0.001, 7200],
+  agentHitPct: [0, 100], agentDecodeTps: [0.05, 1000], agentTurnTtftS: [0.001, 7200],
+});
+/** Prompt tiers of the script: [speed key, first-token key, target tokens]. A tier fits when tokens + 24 + 256 <= context. */
+export const OFFICIAL_PROMPT_TIERS = Object.freeze([['p4kTps', 'p4kTtftS', 4096], ['p16kTps', 'p16kTtftS', 16384], ['p32kTps', 'p32kTtftS', 32768]]);
+export const OFFICIAL_AGENT_MIN_CONTEXT = 10240;
+
+export function validateOfficial(o, params) {
+  keys(o, ['upstream', 'runs', 'long', 'metrics'], 'official');
+  const upstream = str(o.upstream, /^[a-f0-9]{7,40}$/, 'official.upstream');
+  const runs = int(o.runs, 1, 10, 'official.runs');
+  const long = bool(o.long, 'official.long');
+  keys(o.metrics, Object.keys(OFFICIAL_METRICS), 'official.metrics');
+  const metrics = {};
+  for (const [k, [lo, hi]] of Object.entries(OFFICIAL_METRICS)) metrics[k] = o.metrics[k] === undefined ? null : num(o.metrics[k], lo, hi, 'official.' + k);
+  if (metrics.chatDecodeTps === null || metrics.chatTtftS === null) bad('incomplete_official', 'the chat test has no result');
+  let last = null;
+  for (const [speed, ttft, tokens] of OFFICIAL_PROMPT_TIERS) {
+    if ((metrics[speed] === null) !== (metrics[ttft] === null)) bad('incomplete_official', speed + ' without its first-token time');
+    if (metrics[speed] === null) continue;
+    if (tokens + 24 + 256 > params.ctx * 1.02) bad('implausible_tier_ctx', 'tier exceeds the configured context');
+    // First token cannot arrive faster than the prompt is processed at the reported speed (generous slack).
+    if (metrics[ttft] * 1000 < tokens * 0.5 / metrics[speed] * 1000 * 0.25) bad('implausible_ttft', 'first-token time is faster than the reported prefill allows');
+    if (last && metrics[ttft] < last * 0.35) bad('implausible_ttft_order');
+    last = metrics[ttft];
+  }
+  if (metrics.p32kTps !== null && !long) bad('implausible_official', '32K without --long');
+  if ((metrics.agentDecodeTps !== null || metrics.agentHitPct !== null) && params.ctx < OFFICIAL_AGENT_MIN_CONTEXT) bad('implausible_tier_ctx', 'agent session below 10K context');
+  return { upstream, runs, long, metrics };
 }
 
 /** Physical-plausibility checks: rejects obviously fabricated or broken measurements. */

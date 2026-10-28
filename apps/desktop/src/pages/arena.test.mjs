@@ -18,7 +18,7 @@ test('finished benchmarks hand their report to the Arena uploader only after the
 });
 
 test('the Arena UI never reaches the network itself and the CSP stays IPC-only', () => {
-  for (const file of ['./ArenaPage.tsx', './arenaUpload.ts', '../onboarding/arenaPublic.ts', '../onboarding/OnboardingPage.tsx']) {
+  for (const file of ['./ArenaPage.tsx', './ArenaOfficialBoard.tsx', './arenaUpload.ts', '../onboarding/arenaPublic.ts', '../onboarding/OnboardingPage.tsx']) {
     const source = read(file);
     assert.doesNotMatch(source, /\bfetch\(|XMLHttpRequest|https?:\/\//, `${file} uses the native bridge only`);
   }
@@ -96,4 +96,29 @@ test('only real network failures show "leaderboard unavailable"; app-side failur
     assert.ok(line, key);
     assert.equal(line.match(/'(?:[^'\\]|\\.)*'/g).length, 10, `${key} has all 10 languages`);
   }
+});
+
+test('the official benchmark is the default board, the context board and recommendations stay as views', () => {
+  const page = read('./ArenaPage.tsx');
+  assert.match(page, /useState<'official' \| 'board' \| 'recommend'>\('official'\)/);
+  for (const view of ["value: 'official'", "value: 'board'", "value: 'recommend'"]) assert.ok(page.includes(view), view);
+  // A server without /v1/official falls back to the context board instead of an error page.
+  assert.match(page, /setOfficialAvailable\(false\); setView\(previous => previous === 'official' \? 'board' : previous\)/);
+  const board = read('./ArenaOfficialBoard.tsx');
+  assert.match(board, /core\.arenaGet<Board>\('official', query\)/);
+  assert.match(board, /useState<ArenaOfficialSort>\('chatDecode'\)/);
+  assert.match(board, /className="is-ref"/);
+  assert.match(board, /t\('arenaOfficialTag'\)/);
+  assert.match(board, /ref\.source\.url/);
+  const strings = read('../ArenaStrings.ts');
+  for (const key of ['chatDecode', 'prefill4k', 'prefill16k', 'prefill32k', 'agentDecode', 'machines']) assert.match(strings, new RegExp(`arenaOffSort_${key}: \\['`));
+  assert.match(strings, /arenaOfficialTag: \['官方'/);
+});
+
+test('official runs upload through the same consent-gated hook, after the local save', () => {
+  const source = read('./OfficialBenchmarkPage.tsx');
+  const save = source.indexOf('await core.saveStore(STORE_KEY, next);'), upload = source.indexOf('void arenaAfterBenchmark(report);');
+  assert.ok(save > 0 && upload > save);
+  assert.equal(source.split('arenaAfterBenchmark(').length - 1, 1);
+  assert.match(read('./arenaUpload.ts'), /isOfficial\(report\) \? await arenaOfficialBuild\(report\) : await arenaBuild\(report\)/);
 });

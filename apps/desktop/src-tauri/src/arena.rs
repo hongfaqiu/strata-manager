@@ -84,6 +84,61 @@ pub struct Payload {
     /// older servers reject unknown keys, so it is stripped for them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     extensions: Option<Extensions>,
+    /// Summary of an official-method run (kind "official", tools/strata_bench.py). Only uploaded to servers whose
+    /// /v1/health advertises `official: true`; for older servers the item stays queued and is retried.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    official: Option<Official>,
+}
+/// Medians of an official-method run (packages/core/src/arena.ts ArenaOfficial): numbers only.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct Official {
+    upstream: String,
+    runs: u32,
+    long: bool,
+    metrics: OfficialMetrics,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct OfficialMetrics {
+    chat_decode_tps: Option<f64>,
+    chat_ttft_s: Option<f64>,
+    p4k_tps: Option<f64>,
+    p4k_ttft_s: Option<f64>,
+    p16k_tps: Option<f64>,
+    p16k_ttft_s: Option<f64>,
+    p32k_tps: Option<f64>,
+    p32k_ttft_s: Option<f64>,
+    agent_hit_pct: Option<f64>,
+    agent_decode_tps: Option<f64>,
+    agent_turn_ttft_s: Option<f64>,
+}
+impl Official {
+    fn numbers(&self) -> [Option<f64>; 11] {
+        let m = &self.metrics;
+        [
+            m.chat_decode_tps,
+            m.chat_ttft_s,
+            m.p4k_tps,
+            m.p4k_ttft_s,
+            m.p16k_tps,
+            m.p16k_ttft_s,
+            m.p32k_tps,
+            m.p32k_ttft_s,
+            m.agent_hit_pct,
+            m.agent_decode_tps,
+            m.agent_turn_ttft_s,
+        ]
+    }
+    fn valid(&self) -> bool {
+        (7..=40).contains(&self.upstream.len())
+            && self
+                .upstream
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            && (1..=10).contains(&self.runs)
+            && self.metrics.chat_decode_tps.is_some()
+    }
 }
 /// Enum-only leaderboard context (packages/core/src/arena.ts ArenaExtensions).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -291,6 +346,12 @@ impl Payload {
         if let Some(s) = &p.scenario {
             numbers.extend([s.decode, s.prefill, s.ttft_ms]);
         }
+        if let Some(o) = &p.official {
+            if !o.valid() {
+                return Err("arena_payload_invalid: official".into());
+            }
+            numbers.extend(o.numbers());
+        }
         if let Some(e) = &p.evidence {
             for r in &e.runs {
                 numbers.extend([Some(r.ttft_ms), Some(r.prefill), Some(r.decode)]);
@@ -300,7 +361,7 @@ impl Payload {
             }
             let points = e.series.vram_gb.len();
             let evidence_ok = e.v == EVIDENCE_VERSION
-                && p.kind == "context"
+                && matches!(p.kind.as_str(), "context" | "official")
                 && e.runs.len() <= MAX_EVIDENCE_RUNS
                 && (1..=MAX_EVIDENCE_POINTS).contains(&points)
                 && e.series.ram_gb.len() == points
@@ -322,8 +383,10 @@ impl Payload {
                     .as_ref()
                     .is_some_and(|t| !t.is_empty() && t.len() <= 8)
                     && p.scenario.is_none()
+                    && p.official.is_none()
             }
-            "scenario" => p.scenario.is_some() && p.tiers.is_none(),
+            "scenario" => p.scenario.is_some() && p.tiers.is_none() && p.official.is_none(),
+            "official" => p.official.is_some() && p.tiers.is_none() && p.scenario.is_none(),
             _ => false,
         };
         if p.schema != SCHEMA_VERSION || !shape_ok || p.hw.gpus.len() > 8 {
@@ -897,6 +960,7 @@ fn arena_request(path: &str, query: Option<Map<String, Value>>) -> Result<ArenaR
     let route = match path {
         "groups" => "/v1/groups",
         "leaderboard" => "/v1/leaderboard",
+        "official" => "/v1/official",
         "recommend" => "/v1/recommend",
         _ => return Err("arena_path_invalid".into()),
     };
@@ -1068,22 +1132,32 @@ async fn ensure_registered(path: &Path, force: bool) -> bool {
 fn health_accepts_extensions(health: &Value) -> bool {
     health["extensions"].as_bool() == Some(true)
 }
-async fn server_accepts_extensions() -> bool {
+/// Whether a /v1/health answer advertises official-method (`kind: "official"`) uploads.
+fn health_accepts_official(health: &Value) -> bool {
+    health["official"].as_bool() == Some(true)
+}
+/// What the server advertises: (extensions, official). Errors and older servers advertise neither.
+async fn server_features() -> (bool, bool) {
     let Ok(response) = client()
         .get(format!("{}/v1/health", endpoint()))
         .send()
         .await
     else {
-        return false;
+        return (false, false);
     };
     if !response.status().is_success() {
-        return false;
+        return (false, false);
     }
     match response.bytes().await {
         Ok(bytes) if bytes.len() <= MAX_RESPONSE_BYTES => serde_json::from_slice::<Value>(&bytes)
-            .map(|health| health_accepts_extensions(&health))
-            .unwrap_or(false),
-        _ => false,
+            .map(|health| {
+                (
+                    health_accepts_extensions(&health),
+                    health_accepts_official(&health),
+                )
+            })
+            .unwrap_or((false, false)),
+        _ => (false, false),
     }
 }
 
@@ -1096,7 +1170,7 @@ async fn flush(path: &Path, force: bool) {
         FLUSHING.store(false, Ordering::SeqCst);
         return;
     }
-    let mut extensions: Option<bool> = None;
+    let mut features: Option<(bool, bool)> = None;
     loop {
         let next = {
             let _guard = lock().lock().await;
@@ -1118,18 +1192,24 @@ async fn flush(path: &Path, force: bool) {
             }
         };
         let (payload, key) = next;
-        let send_extensions = if payload.extensions.is_some() {
-            match extensions {
-                Some(known) => known,
-                None => *extensions.insert(server_accepts_extensions().await),
-            }
+        let (send_extensions, official_ok) =
+            if payload.extensions.is_some() || payload.official.is_some() {
+                match features {
+                    Some(known) => known,
+                    None => *features.insert(server_features().await),
+                }
+            } else {
+                (false, false)
+            };
+        let prepared = if payload.official.is_some() && !official_ok {
+            // An older server would reject the kind for good; keep the run queued until it is updated.
+            Err("official_unsupported".to_string())
         } else {
-            false
+            load_signing_key(path, &key).and_then(|signing| {
+                upload_body(&payload, Some((&key.key_id, &signing)), send_extensions)
+                    .map(|body| (body, signing))
+            })
         };
-        let prepared = load_signing_key(path, &key).and_then(|signing| {
-            upload_body(&payload, Some((&key.key_id, &signing)), send_extensions)
-                .map(|body| (body, signing))
-        });
         let outcome = match prepared {
             Ok((body, signing)) => {
                 signed_request(
@@ -1176,7 +1256,7 @@ fn apply_upload(
             // "verified": the run evidence checked out and the result counts now; otherwise it waits for review.
             let detail = match response["counted"].as_bool() {
                 Some(true) => Some("verified".to_string()),
-                Some(false) if payload.kind == "context" => Some("pending".to_string()),
+                Some(false) if payload.kind != "scenario" => Some("pending".to_string()),
                 _ => None,
             };
             arena.push_log(&kind, "uploaded", detail, group);
@@ -1255,6 +1335,21 @@ mod tests {
                 query(&[("group", "qwen:IQ3_S"), ("sort", sort)]),
             )
             .unwrap_or_else(|e| panic!("sort={sort}: {e}"));
+        }
+        // The official board takes the same filters plus its own sorts and the longer official quant names.
+        for sort in [
+            "prefill4k",
+            "prefill16k",
+            "prefill32k",
+            "agentDecode",
+            "machines",
+        ] {
+            let (route, _) = arena_request(
+                "official",
+                query(&[("group", "deepseek41:IST-DAS-2.00bpw"), ("sort", sort)]),
+            )
+            .unwrap_or_else(|e| panic!("official sort={sort}: {e}"));
+            assert_eq!(route, "/v1/official");
         }
         arena_request(
             "leaderboard",
@@ -1366,6 +1461,110 @@ mod tests {
             !source.contains(&needle),
             "no app key literal in the source"
         );
+    }
+
+    /// An official-method payload (tools/strata_bench.py), with an empty resource series as the script samples none.
+    fn official_payload() -> Value {
+        let mut p = payload();
+        let object = p.as_object_mut().unwrap();
+        object.remove("tiers");
+        object.insert("kind".into(), json!("official"));
+        object.insert("model".into(), json!({ "family": "deepseek41", "quant": "IST-DAS-2.00bpw", "sha256": null, "sizeGB": null }));
+        object.insert("official".into(), json!({ "upstream": "46c152a1310f", "runs": 3, "long": true, "metrics": {
+            "chatDecodeTps": 44.0, "chatTtftS": 0.6, "p4kTps": 755.0, "p4kTtftS": 5.4, "p16kTps": 821.0, "p16kTtftS": 19.6,
+            "p32kTps": null, "p32kTtftS": null, "agentHitPct": 82.0, "agentDecodeTps": 40.1, "agentTurnTtftS": 2.9 } }));
+        object.insert("evidence".into(), json!({
+            "v": 1, "engine": "0.1.44", "durationMs": 9000, "intervalMs": 1000,
+            "runs": [{ "ctx": 512, "startMs": 2000, "endMs": 5000, "ttftMs": 600, "promptTokens": 40, "cachedTokens": 0,
+                "completionTokens": 100, "prefill": 300.0, "decode": 44.0, "resourceSamples": 0 }],
+            "series": { "count": 0, "stepMs": 1000, "vramGB": vec![Value::Null; 9], "ramGB": vec![Value::Null; 9], "gpuUtil": vec![Value::Null; 9] },
+            "counters": null
+        }));
+        p
+    }
+
+    #[test]
+    fn official_runs_parse_with_their_own_block_and_evidence_and_route_to_the_official_board() {
+        let parsed = Payload::parse(official_payload()).unwrap();
+        assert_eq!(parsed.group(), "deepseek41:IST-DAS-2.00bpw");
+        let body: Value =
+            serde_json::from_slice(&upload_body(&parsed, None, false).unwrap()).unwrap();
+        assert_eq!(body["kind"], "official");
+        assert_eq!(body["official"]["metrics"]["chatDecodeTps"], json!(44.0));
+        assert_eq!(body["official"]["metrics"]["p32kTps"], Value::Null);
+        assert!(body.get("tiers").is_none());
+        // Shape: an official run carries no tiers or scenario, and other kinds carry no official block.
+        let mut with_tiers = official_payload();
+        with_tiers["tiers"] = payload()["tiers"].clone();
+        assert!(Payload::parse(with_tiers).is_err());
+        let mut context = payload();
+        context["official"] = official_payload()["official"].clone();
+        assert!(Payload::parse(context).is_err());
+        // Numbers and a commit only: free text, unknown keys or a missing chat result are refused.
+        for (pointer, bad) in [
+            ("/official/upstream", json!("main; rm -rf")),
+            ("/official/runs", json!(0)),
+            ("/official/metrics/chatDecodeTps", Value::Null),
+        ] {
+            let mut p = official_payload();
+            *p.pointer_mut(pointer).unwrap() = bad;
+            assert!(Payload::parse(p).is_err(), "{pointer}");
+        }
+        let mut extra = official_payload();
+        extra["official"]["metrics"]["prompt"] = json!("hello");
+        assert!(Payload::parse(extra).is_err());
+        let mut path = official_payload();
+        path["model"]["quant"] = json!("C:/models/x");
+        assert!(Payload::parse(path).is_err());
+        // The board and its sort keys go through the same validated query path as the others.
+        let (route, pairs) = arena_request(
+            "official",
+            query(&[("group", "qwen:IQ3_S"), ("sort", "prefill16k")]),
+        )
+        .unwrap();
+        assert_eq!(route, "/v1/official");
+        assert_eq!(pairs.len(), 2);
+        assert!(health_accepts_official(&json!({"ok":true,"official":true})));
+        assert!(!health_accepts_official(&json!({"ok":true,"schema":1})));
+    }
+
+    #[test]
+    fn an_official_upload_logs_verified_or_pending_like_a_context_run() {
+        let parsed = Payload::parse(official_payload()).unwrap();
+        for (counted, detail) in [(true, "verified"), (false, "pending")] {
+            let mut arena = ArenaState::default();
+            arena.queue.push(Queued {
+                payload: parsed.clone(),
+                attempts: 0,
+                next_at: 0,
+            });
+            assert!(!apply_upload(
+                &mut arena,
+                0,
+                &parsed,
+                Ok((201, json!({"accepted":true,"counted":counted}))),
+                false
+            ));
+            assert!(arena.queue.is_empty());
+            assert_eq!(arena.log[0].kind, "official");
+            assert_eq!(arena.log[0].detail.as_deref(), Some(detail));
+        }
+        // A server without official support: kept and retried later, not dropped.
+        let mut arena = ArenaState::default();
+        arena.queue.push(Queued {
+            payload: parsed.clone(),
+            attempts: 0,
+            next_at: 0,
+        });
+        apply_upload(
+            &mut arena,
+            0,
+            &parsed,
+            Err("official_unsupported".into()),
+            false,
+        );
+        assert_eq!(arena.queue.len(), 1);
+        assert_eq!(arena.log[0].status, "retrying");
     }
 
     #[test]

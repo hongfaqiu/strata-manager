@@ -20,6 +20,11 @@ const DAY = 86_400_000;
 export const configKey = s => JSON.stringify([s.family, s.quant, s.gpu_name ?? 'CPU', vramTier(s.vram_gb), ramTier(s.ram_gb),
   s.ctx, s.kv, s.parallel, s.pool_workers, s.expert_cache, s.pcie_frac, s.gpu_count, s.vision ? 1 : 0]);
 
+/** The figure peers are compared on: 8K decode for context runs, chat decode for official-method runs. */
+export const peerValue = s => s.kind === 'context' ? s.decode_8k ?? null : s.kind === 'official' ? s.off_chat_decode ?? null : null;
+/** Official-method runs are compared only with each other: their chat decode is not an 8K-context figure. */
+const peerKey = s => s.kind === 'official' ? 'official|' + configKey(s) : configKey(s);
+
 /** Per-run plausibility flag that needs no peers: first token faster than the reported prefill speed permits. */
 export function selfFlag(s) {
   if (s.kind !== 'context' || !s.prefill_8k || !s.ttft_8k_ms) return null;
@@ -47,15 +52,15 @@ export function evaluate(installs, subs) {
   for (const [key, runs] of byInstall) {
     const perConfig = new Map();
     for (const s of runs) {
-      if (s.kind !== 'context' || s.decode_8k === null || s.decode_8k === undefined || flags.get(s.id)) continue;
-      const ck = configKey(s);
+      if (peerValue(s) === null || flags.get(s.id)) continue;
+      const ck = peerKey(s);
       if (!perConfig.has(ck)) perConfig.set(ck, []);
       perConfig.get(ck).push(s);
     }
     for (const [ck, list] of perConfig) {
       const latest = list.sort((a, b) => b.received_at - a.received_at).slice(0, 3);
       if (!configs.has(ck)) configs.set(ck, new Map());
-      configs.get(ck).set(key, { value: median(latest.map(r => r.decode_8k)), runs: list });
+      configs.get(ck).set(key, { value: median(latest.map(peerValue)), runs: list });
     }
   }
   const peerStats = new Map();
@@ -66,7 +71,7 @@ export function evaluate(installs, subs) {
       const v = stats(key);
       if (!peers.length) continue;
       const m = median(peers);
-      for (const run of mine.runs) if (run.decode_8k > m * TRUST.outlierRatio || run.decode_8k < m / TRUST.outlierRatio) flags.set(run.id, 'peer_outlier');
+      for (const run of mine.runs) if (peerValue(run) > m * TRUST.outlierRatio || peerValue(run) < m / TRUST.outlierRatio) flags.set(run.id, 'peer_outlier');
       if (peers.length >= TRUST.minPeers) {
         const mad = median(peers.map(p => Math.abs(p - m)));
         v.compared++;

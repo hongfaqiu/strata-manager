@@ -13,13 +13,14 @@ Website routing (`wrangler.toml` `[assets]`): clean URLs (`html_handling = "auto
 
 | Method | Path | Auth | Notes |
 | --- | --- | --- | --- |
-| GET | `/v1/health` | – | Schema and consent version. |
+| GET | `/v1/health` | – | Schema and consent version; `official: true` when `kind: "official"` uploads and `/v1/official` are supported (the app queues official runs until it sees it). |
 | POST | `/v1/register/challenge` | – | Proof-of-work challenge `{ challenge, bits, expiresAt }`, valid 10 minutes, single use. |
 | POST | `/v1/register` | app key + install key | Body `{ publicKey, challenge, counter, consentVersion }`. Registers an Ed25519 public key. |
 | POST | `/v1/submit` | app key + install key | Body must match the whitelist in `src/schema.js`; unknown keys are rejected. Optional `evidence` (text) + `evidenceSig`, see below. Response `{ accepted, id, ranked, seed, evidence, reasons, counted }`. |
 | DELETE | `/v1/me` | install key | Body `{}`. Deletes every submission of the key and the key registration. |
 | GET | `/v1/groups` | – | Model + quant groups with totals (`machines` counts installs with counted runs, `pendingMachines` installs with runs that do not count). |
 | GET | `/v1/leaderboard?group=&gpu=&vram=` | – | Rows for one group (hardware + launch parameters). Optional filters: `ram` (tier), `ctx`, `kv`, `parallel`, `gpuCount`, `expertCache`, `q` (GPU name keyword); `sort` = `decode8k` (default), `decode128k`, `prefill` or `machines`, ranks recomputed. The response adds `options` (distinct values per facet across the whole group), `total` and `sort`; unknown or malformed values are ignored. |
+| GET | `/v1/official?group=&gpu=&vram=&sort=` | – | The official-method board (tools/strata_bench.py as run in the app): `{ computedAt, machines, runs, groups, group, family, quant, options, total, sort, rows, median, references }`. `groups` lists every group with uploads or a published reference (`references` count). Same filters as `/v1/leaderboard`; `sort` = `chatDecode` (default), `prefill4k`, `prefill16k`, `prefill32k`, `agentDecode` or `machines`. `references` are the maintainers' published numbers (`packages/core/src/official-bench-reference.json`, bundled at build time) labelled `official: true` with their `source`; they are never ranked and never count toward `machines` or `median`. `/v1/groups` and `/v1/leaderboard` are unchanged and do not include official runs. |
 | GET | `/v1/recommend?family=&quant=&gpu=&vram=&ram=&scene=&ctx=&kv=…` | – | Same-model parameter suggestions first, then other models. |
 | GET/POST | `/v1/admin/…` | `Authorization: Bearer ADMIN_TOKEN` | Maintainer endpoints, see below. |
 
@@ -47,6 +48,12 @@ strata-arena-evidence|v1|${keyId}|${sha256hex(evidence)}
 The trace is `{ v, engine, durationMs, intervalMs, runs[], series, counters }`: for each completed request (at most 48) its tier, start/end offsets from the run start, TTFT, prompt / cached / output tokens, prefill and decode speed and resource-sample count; the resource series as sample `count`, bucket `stepMs` and at most 121 buckets of peak VRAM GB, peak RAM GB and mean GPU utilization; and the engine `/metrics` `totals` (requests, prompt tokens, output tokens) before and after the run. Unknown keys are rejected (400), a bad signature too (400 `invalid_evidence_signature`). Prompts, outputs and wall-clock times cannot be represented.
 
 `checkEvidence` then requires, with tolerances: engine version = `strata`; runs ordered, non-overlapping and inside `durationMs`; prompt tokens within 30–100 % of the tier, cached ≤ prompt, output ≥ 1; TTFT within 0.6×–4× (+5 s) of `(prompt − cached) / prefill`; wall time within 0.7×–2× of `TTFT + output / decode`; every ok tier equal (1 %) to the median of its runs and no run without a tier; `stepMs ≥ intervalMs`, bucket count = `ceil(durationMs / stepMs)` ±1, sample count ≥ the runs' samples, ≤ `durationMs / intervalMs + 3 × runs + 20`, and ≥ 30 % of busy time / interval; series peaks equal (5 % / 0.5 GB) the tier peaks and fit the GPU VRAM and host RAM; counter deltas non-negative, requests ≥ runs, prompt tokens ≥ 90 % of the uncached prompt tokens, output tokens ≥ 90 % of the reported ones (loose upper bounds allow token counting and failed attempts in between).
+
+### Official-method runs (`kind: "official"`)
+
+The app's 「官方基准」 runs the strata_bench.py suite and uploads `official: { upstream, runs, long, metrics }` instead of `tiers`: the pinned script commit (hex), runs per item (1–10), whether 32K ran, and the medians `chatDecodeTps`, `chatTtftS`, `p4kTps`, `p4kTtftS`, `p16kTps`, `p16kTtftS`, `p32kTps`, `p32kTtftS`, `agentHitPct`, `agentDecodeTps`, `agentTurnTtftS` (numbers or null). The schema requires chat, each speed with its TTFT, 32K only with `long`, and plausible ranges for the group's context (`implausible_*`, `incomplete_official`). Model keys follow the reference file (`qwen:NVFP4-QAD`, `deepseek41:IST-DAS-2.00bpw`, …); `quant` may be up to 24 characters for this kind only.
+
+Its evidence uses the same signed trace with one run per measured request; `ctx` names the item (`512` chat, `4096` / `16384` / `32768` prompts, `65536` agent follow-up turns) and the series is empty (the script samples no resources). `checkOfficialEvidence` requires ordered, non-overlapping runs inside the duration; prompt tokens fitting each item; the TTFT / prefill and wall / decode relations as above; every median equal (1 %) to its runs, with no figure without runs and no runs without a figure; the agent hit rate consistent with the runs' cached tokens; and counter deltas within the requests the suite sends. Official rows aggregate like context rows (median of each machine's last 3 runs, outliers removed, 3+ machines to rank, seed rows labelled) and are compared only with other official runs.
 
 Passing evidence stores the run as `verified`; failing evidence as `failed` with the reasons (`evidence_reason`); none as `missing`. The stored text and signature can be re-verified later against the install's public key.
 
@@ -89,6 +96,8 @@ curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" https://arena.cosfoc.com/v1
 A banned key cannot submit or register again. If it withdraws, its runs are deleted and only a tombstone (key id + ban) remains.
 
 ## Data and retention
+
+Migrations only add: `0004_official_bench.sql` adds nullable `off_*` columns (chat decode / TTFT, 4K / 16K / 32K prefill, agent decode / hit rate, upstream commit) to `submissions`; nothing is dropped or renamed.
 
 Stored per install: the public key, registration and last-seen time, solved difficulty, override, computed status and trust. No IP addresses: rate-limit keys are `HMAC(IP_SALT, day + ip)`, truncated, and purged after two days. Submissions older than 12 months, and installs not seen for 12 months (except bans), are removed by the cron.
 

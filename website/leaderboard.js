@@ -12,6 +12,9 @@
     legend: m => `● median   ▬ middle 50% of machines   ┆ group median ${m}`, method: 'Only runs measured in Strata Manager whose run evidence passes the consistency checks count, from the first upload. Each machine counts as the median of its last 3 runs; runs far from the same configuration on other machines are removed afterwards. Configurations with fewer than 3 machines are for reference. Maintainer runs are labelled separately. Data is kept for 12 months.', privacy: 'What is uploaded', join: 'Join from Strata Manager → Benchmark → Leaderboard.', noRows: 'No ranked configurations for this hardware yet.', groupLabel: 'Model and quantization', configs: n => `${n} configurations`, tps: 'tok/s',
     sortLabel: 'Sort', sorts: { decode8k: '8K decode', decode128k: '128K decode', prefill: 'Prefill', machines: 'Machines' }, search: 'Search GPU model', filtersLabel: 'Filters',
     facets: { vram: 'VRAM', ram: 'RAM', ctx: 'Context', kv: 'KV cache', parallel: 'Parallel', gpuCount: 'GPUs', expertCache: 'Expert cache' }, any: 'Any', reset: 'Clear filters', shown: (n, t) => `${n} of ${t} configurations`, noMatch: 'No configurations match these filters.', unitMachines: n => n === 1 ? 'machine' : 'machines', gb: v => `${v} GB`,
+    boards: { official: 'Official benchmark', context: 'Context runs' }, boardLabel: 'Leaderboard',
+    officialSorts: { chatDecode: 'Chat decode', prefill4k: '4K prefill', prefill16k: '16K prefill', prefill32k: '32K prefill', agentDecode: 'Agent decode', machines: 'Machines' },
+    officialTag: 'Official', officialRefs: n => `${n} official`, officialEmpty: 'No official benchmark uploads yet.', officialMethod: 'Measured the tools/strata_bench.py way in Strata Manager (Benchmark → Official benchmark), same model and quantization only. Rows marked Official are the numbers the Strata maintainers published, with their source; they are not ranked. Data is kept for 12 months.',
   } : {
     machines: n => `${n} 台机器`, runs: n => `${n} 次测试`, updated: t => `${t} 更新`, snapshot: t => `实时数据暂不可用，显示 ${t} 的快照。`,
     offline: '实时数据暂不可用，也还没有快照。', emptyTitle: '排行榜还没有数据', emptyHint: 'Strata Manager 用户在「Benchmark → 排行榜」加入后，结果会显示在这里。应用内完成的测试，运行证据通过核对后立即计入。',
@@ -19,8 +22,11 @@
     legend: m => `● 中位数　▬ 中间 50% 机器　┆ 组中位数 ${m}`, method: '只统计在 Strata Manager 内完成、运行证据通过一致性核对的结果，第一次上传即计入。每台机器取最近 3 次的中位数；与同配置其他机器差距过大的结果会事后剔除。不足 3 台机器的配置仅供参考。维护者实测单独标注。数据保留 12 个月。', privacy: '会上传什么', join: '在 Strata Manager「Benchmark → 排行榜」中加入。', noRows: '这个硬件范围还没有可排名的配置。', groupLabel: '模型与量化', configs: n => `${n} 种配置`, tps: 'tok/s',
     sortLabel: '排序', sorts: { decode8k: '8K 解码', decode128k: '128K 解码', prefill: '预填充', machines: '机器数' }, search: '搜索 GPU 型号', filtersLabel: '筛选',
     facets: { vram: '显存', ram: '内存', ctx: '上下文', kv: 'KV 缓存', parallel: '并行', gpuCount: 'GPU 数', expertCache: '专家缓存' }, any: '全部', reset: '清除筛选', shown: (n, t) => `显示 ${n} / ${t} 种配置`, noMatch: '没有符合这些条件的配置。', unitMachines: () => '台', gb: v => `${v} GB`,
+    boards: { official: '官方基准', context: '上下文测速' }, boardLabel: '榜单',
+    officialSorts: { chatDecode: '对话解码', prefill4k: '4K 预填充', prefill16k: '16K 预填充', prefill32k: '32K 预填充', agentDecode: '智能体解码', machines: '机器数' },
+    officialTag: '官方', officialRefs: n => `${n} 条官方数据`, officialEmpty: '还没有官方基准上传。', officialMethod: '在 Strata Manager「Benchmark 测试 → 官方基准」按 tools/strata_bench.py 跑法测得，只比较同模型同量化。标「官方」的行是 Strata 维护者公布的数字并附来源，不参与排名。数据保留 12 个月。',
   };
-  const FAMILY = { swift: 'Swift 1.5', qwen: 'Qwen3.8-Flash-Next', coder: 'Qwen3.8-Flash-Next Coder', unsloth: 'Qwen3.8-Flash-Next (Unsloth)' };
+  const FAMILY = { swift: 'Swift 1.5', qwen: 'Qwen3.8-Flash-Next', coder: 'Qwen3.8-Flash-Next Coder', unsloth: 'Qwen3.8-Flash-Next (Unsloth)', deepseek41: 'DeepSeek V4.1-Flash' };
   const family = f => FAMILY[f] || f;
   const gpuLabel = name => String(name).replace(/^NVIDIA GeForce |^NVIDIA |^AMD Radeon |^AMD /, '');
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -42,6 +48,9 @@
   // ---- filtering and sorting (mirrors services/arena/src/stats.js filterRows, so live data and the snapshot behave the same) ----
   const SORTS = { decode8k: r => r.decode?.median ?? null, decode128k: r => r.decode128k ?? null, prefill: r => r.prefill ?? null, machines: r => r.machines ?? null };
   const FACETS = { vram: r => r.hw.vramGB, ram: r => r.hw.ramGB, ctx: r => r.params.ctx, kv: r => r.params.kv, parallel: r => r.params.parallel, gpuCount: r => r.params.gpuCount, expertCache: r => r.params.expertCache ?? 'auto' };
+  // Official board orderings (services/arena/src/stats.js OFFICIAL_SORTS); chat decode is the default.
+  const OFFICIAL_SORTS = { chatDecode: r => r.metrics?.chatDecodeTps ?? null, prefill4k: r => r.metrics?.p4kTps ?? null, prefill16k: r => r.metrics?.p16kTps ?? null, prefill32k: r => r.metrics?.p32kTps ?? null, agentDecode: r => r.metrics?.agentDecodeTps ?? null, machines: r => r.machines ?? null };
+  const OFFICIAL_METRIC = { chatDecode: 'chatDecodeTps', prefill4k: 'p4kTps', prefill16k: 'p16kTps', prefill32k: 'p32kTps', agentDecode: 'agentDecodeTps' };
   const NUMERIC = new Set(['vram', 'ram', 'ctx', 'parallel', 'gpuCount']);
   const FILTERS = ['gpu', 'q', ...Object.keys(FACETS)];
   const blank = () => Object.fromEntries(FILTERS.map(k => [k, '']));
@@ -65,22 +74,40 @@
     return { rows: out.map(r => ({ ...r, rank: value(r) == null ? null : ++rank })), tierMedian: median(out.filter(r => !r.seed).map(r => r.decode.median)) };
   }
 
-  // ---- URL state: #group=<model:quant>&vram=24&sort=prefill (a bare #<model:quant> from older links still works) ----
+  // ---- URL state: #board=official&group=<model:quant>&sort=prefill16k, #board=context&group=…&vram=24&sort=prefill ----
+  // No hash opens the official board; hashes from before it existed (no board key) keep opening the context board.
   const wide = window.matchMedia('(min-width: 851px)');
   // Wide screens always show every filter; narrow screens fold them under one summary row.
   wide.addEventListener?.('change', e => { if (e.matches) root.querySelector('.lb-facets')?.setAttribute('open', ''); });
-  const state = { live: true, groups: null, snapshot: null, group: null, boards: new Map(), f: blank(), sort: 'decode8k' };
+  const state = { live: true, groups: null, snapshot: null, group: null, boards: new Map(), f: blank(), sort: 'decode8k', mode: 'official', official: { live: true, index: null, group: null, boards: new Map(), sort: 'chatDecode', q: '' } };
   function readHash() {
     const raw = location.hash.slice(1);
     if (!raw) return;
+    state.mode = 'context';
     if (!raw.includes('=')) { state.group = decodeURIComponent(raw); return; }
     const p = new URLSearchParams(raw);
+    if (p.get('board') === 'official') {
+      state.mode = 'official';
+      state.official.group = p.get('group') || null;
+      state.official.sort = OFFICIAL_SORTS[p.get('sort')] ? p.get('sort') : 'chatDecode';
+      state.official.q = p.get('q') ?? '';
+      return;
+    }
     state.group = p.get('group') || null;
     for (const k of FILTERS) state.f[k] = p.get(k) ?? '';
     state.sort = SORTS[p.get('sort')] ? p.get('sort') : 'decode8k';
   }
   function writeHash() {
     const p = new URLSearchParams();
+    p.set('board', state.mode);
+    if (state.mode === 'official') {
+      const o = state.official;
+      if (o.group) p.set('group', o.group);
+      if (o.q) p.set('q', o.q);
+      if (o.sort !== 'chatDecode') p.set('sort', o.sort);
+      history.replaceState(null, '', '#' + p.toString().replace(/%3A/gi, ':'));
+      return;
+    }
     if (state.group) p.set('group', state.group);
     for (const k of FILTERS) if (state.f[k] !== '') p.set(k, state.f[k]);
     if (state.sort !== 'decode8k') p.set('sort', state.sort);
@@ -105,7 +132,25 @@
     if (b) state.boards.set(group, b);
     return b;
   }
+  /** One group of the official board (or the default group when `group` is null), fetched once and sorted locally. */
+  async function officialBoard(group) {
+    const o = state.official, key = group ?? '';
+    if (o.boards.has(key)) return o.boards.get(key);
+    let b = null;
+    if (o.live) {
+      try { b = await json(`${api}/v1/official${group ? `?group=${encodeURIComponent(group)}` : ''}`); }
+      catch { o.live = false; }
+    }
+    if (!b) { const snap = (await snapshot())?.official; b = group ? snap?.boards?.[group] ?? null : snap?.index ?? null; }
+    if (b) { o.boards.set(key, b); if (b.group) o.boards.set(b.group, b); }
+    return b;
+  }
   function renderStats() {
+    if (state.mode === 'official') {
+      const b = state.official.index;
+      stats.innerHTML = b && b.machines ? [T.machines(b.machines), T.runs(b.runs), ...(b.computedAt ? [T.updated(time(b.computedAt))] : [])].map(p => `<span>${esc(p)}</span>`).join('') : '';
+      return;
+    }
     const g = state.groups;
     if (!g) { stats.innerHTML = ''; return; }
     const parts = [T.machines(g.machines), T.runs(g.runs)];
@@ -113,9 +158,53 @@
     stats.innerHTML = parts.map(p => `<span>${esc(p)}</span>`).join('');
   }
   function shell(inner, note = '') {
-    root.innerHTML = `${note ? `<p class="lb-note">${esc(note)}</p>` : ''}${inner}<p class="lb-method">${esc(T.method)} <a href="${esc(privacy)}">${esc(T.privacy)}</a> · ${esc(T.join)}</p>`;
+    const method = state.mode === 'official' ? T.officialMethod : T.method;
+    root.innerHTML = `${switcher()}${note ? `<p class="lb-note">${esc(note)}</p>` : ''}${inner}<p class="lb-method">${esc(method)} <a href="${esc(privacy)}">${esc(T.privacy)}</a> · ${esc(T.join)}</p>`;
+    root.querySelectorAll('[data-board]').forEach(btn => btn.addEventListener('click', () => { if (btn.dataset.board === state.mode) return; state.mode = btn.dataset.board; writeHash(); renderStats(); void render(); }));
   }
+  const switcher = () => `<div class="lb-switch" role="group" aria-label="${esc(T.boardLabel)}">${['official', 'context'].map(k => `<button type="button" data-board="${k}" aria-pressed="${k === state.mode}">${esc(T.boards[k])}</button>`).join('')}</div>`;
+
+  // ---- official board: one bar per row; published 官方 numbers sit beside the ranked rows, unranked ----
+  async function renderOfficial() {
+    const o = state.official;
+    const b = await officialBoard(o.group);
+    if (!o.index && b) { o.index = b; renderStats(); }
+    const note = !o.live && state.snapshot?.capturedAt ? T.snapshot(time(state.snapshot.capturedAt)) : '';
+    if (!b || !b.groups?.length) { shell(`<div class="lb-empty"><h2>${esc(b ? T.officialEmpty : T.offline)}</h2></div>`, note); return; }
+    o.group = b.group;
+    const tabs = `<div class="lb-groups" role="tablist" aria-label="${esc(T.groupLabel)}">${b.groups.map(x => `<button type="button" role="tab" aria-selected="${x.group === o.group}" data-ogroup="${esc(x.group)}"><b>${esc(family(x.family))}</b><span class="lb-quant">${esc(x.quant)}</span><em>${x.machines}</em>${x.references ? `<span class="lb-tag official">${esc(T.officialTag)}</span>` : ''}</button>`).join('')}</div>`;
+    const sorter = `<div class="lb-sort" role="group" aria-label="${esc(T.sortLabel)}"><span>${esc(T.sortLabel)}</span>${Object.keys(OFFICIAL_SORTS).map(k => `<button type="button" data-osort="${k}" aria-pressed="${k === o.sort}">${esc(T.officialSorts[k])}</button>`).join('')}</div>`;
+    const summary = b.groups.find(x => x.group === o.group) ?? {};
+    const head = `<div class="lb-toolbar"><div><h2>${esc(family(b.family ?? summary.family))} <span class="lb-quant">${esc(b.quant ?? summary.quant)}</span></h2><span class="lb-muted">${esc(T.machines(summary.machines ?? 0))} · ${esc(T.officialRefs(b.references?.length ?? 0))}</span></div>${sorter}</div>`;
+    const search = `<div class="lb-filters" role="search"><label class="lb-search"><span class="lb-sr">${esc(T.search)}</span><input type="search" data-oq value="${esc(o.q)}" placeholder="${esc(T.search)}" autocomplete="off" spellcheck="false"></label></div>`;
+    shell(`${tabs}<section class="lb-card">${head}${search}<div id="lb-board" class="lb-board"></div></section>`, note);
+    root.querySelectorAll('[data-ogroup]').forEach(btn => btn.addEventListener('click', () => { o.group = btn.dataset.ogroup; writeHash(); void render(); }));
+    root.querySelectorAll('[data-osort]').forEach(btn => btn.addEventListener('click', () => { o.sort = btn.dataset.osort; root.querySelectorAll('[data-osort]').forEach(x => x.setAttribute('aria-pressed', String(x === btn))); writeHash(); renderOfficialBoard(); }));
+    root.querySelector('[data-oq]')?.addEventListener('input', e => { o.q = e.target.value; writeHash(); renderOfficialBoard(); });
+    writeHash();
+    renderOfficialBoard();
+  }
+  function renderOfficialBoard() {
+    const o = state.official, b = o.boards.get(o.group), target = document.getElementById('lb-board');
+    if (!b || !target) return;
+    const value = OFFICIAL_SORTS[o.sort], metric = OFFICIAL_METRIC[o.sort] ?? null, k = o.q.trim().toLowerCase();
+    // Same ordering as filterOfficialRows: the chosen figure, ties by chat decode; rows without the figure go last, unranked.
+    const rows = (b.rows || []).filter(r => !k || String(r.hw.gpu).toLowerCase().includes(k)).sort((x, y) => { const vx = value(x), vy = value(y); if (vx == null || vy == null) return (vx == null) - (vy == null); return vy - vx || y.metrics.chatDecodeTps - x.metrics.chatDecodeTps; });
+    let rank = 0;
+    const lines = [...rows.map(r => ({ r, v: value(r), rank: value(r) == null ? null : ++rank })), ...(b.references || []).map(ref => ({ ref, v: metric ? ref.metrics?.[metric] ?? null : null }))]
+      .sort((x, y) => x.v == null || y.v == null ? (x.v == null) - (y.v == null) : y.v - x.v);
+    if (!lines.length) { target.innerHTML = `<p class="lb-status">${esc(T.officialEmpty)}</p>`; return; }
+    const max = Math.max(1, ...lines.map(l => l.v ?? 0));
+    const w = v => v == null ? '0%' : `${Math.max(2, v / max * 100).toFixed(1)}%`;
+    const digits = o.sort.startsWith('prefill') ? 0 : 1;
+    const val = l => l.v == null ? '—' : o.sort === 'machines' ? `${l.v}<small>${esc(T.unitMachines(l.v))}</small>` : `${l.ref?.printed?.[metric] ? esc(l.ref.printed[metric]) : num(l.v, digits)}<small>${T.tps}</small>`;
+    target.innerHTML = `<ol class="lb-obars">${lines.map(l => l.ref
+      ? `<li class="is-ref"><span class="lb-rank">—</span><div class="lb-obar-who"><b>${esc(l.ref.hardware)}</b><span class="lb-tag official">${esc(T.officialTag)}</span><small class="lb-muted"><a href="${esc(l.ref.source.url)}" target="_blank" rel="noopener">${esc(l.ref.source.title)} ↗</a>${l.ref.measured?.date ? ` · ${esc(l.ref.measured.date)}` : ''}</small></div><div class="lb-obar"><i style="width:${w(l.v)}"></i></div><span class="lb-value">${val(l)}</span></li>`
+      : `<li><span class="lb-rank">${l.rank == null ? '—' : String(l.rank).padStart(2, '0')}</span><div class="lb-obar-who"><b>${esc(gpuLabel(l.r.hw.gpu))}</b> <span class="lb-muted">${l.r.hw.vramGB} GB · ${esc(T.ram(l.r.hw.ramGB))}</span>${l.r.seed ? `<span class="lb-tag">${esc(T.seed)}</span>` : ''}${chips(l.r.params)}</div><div class="lb-obar" title="${esc(T.machines(l.r.machines))}"><i style="width:${w(l.v)}"></i></div><span class="lb-value">${val(l)}</span></li>`).join('')}</ol>`;
+  }
+
   async function render() {
+    if (state.mode === 'official') return renderOfficial();
     const g = state.groups;
     const note = !state.live && state.snapshot?.capturedAt ? T.snapshot(time(state.snapshot.capturedAt)) : '';
     if (!g || !g.groups.length) {
@@ -180,6 +269,8 @@
     catch { state.live = false; const snap = await snapshot(); state.groups = snap?.capturedAt ? snap.groups : null; }
     readHash();
     if (state.group && !state.groups?.groups.some(g => g.group === state.group)) { state.group = null; state.f = blank(); }
+    if (state.mode === 'official') state.official.index = await officialBoard(null);
+    if (state.official.group && !state.official.index?.groups?.some(g => g.group === state.official.group)) state.official.group = null;
     renderStats(); await render();
   }
   void start();

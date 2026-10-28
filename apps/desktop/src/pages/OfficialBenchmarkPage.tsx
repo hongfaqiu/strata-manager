@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as core from '@strata-manager/core';
 import { Badge, Empty, Header, Panel } from '../components';
 import { Dropdown } from '../OfficialControls';
+import { arenaAfterBenchmark } from './arenaUpload';
 import { OfficialBenchmarkResult, OfficialBenchmarkRunCard, officialText } from './OfficialBenchmarkView';
 
 const STORE_KEY = 'officialBenchmarkReportsV1';
@@ -48,6 +49,8 @@ export function OfficialBenchmarkPage({ profile, online, disabled, language, onR
       const report = await core.runOfficialBench(profile, { ...core.DEFAULT_OFFICIAL_BENCH_OPTIONS, long }, event => { if (mounted.current) setProgress(event); }, abort.signal);
       if (!mounted.current) return;
       const next = retain([report, ...historyRef.current]); setHistory(next); setSelectedId(report.id); await core.saveStore(STORE_KEY, next);
+      // Same consent rules as every other run: only with current consent and auto-upload on.
+      if (report.state === 'completed') void arenaAfterBenchmark(report);
     } catch (err) { if (mounted.current) setError(core.normalizeError(err).message); }
     finally { controller.current = null; if (mounted.current) setRunning(false); onRunningChange(false); }
   };
