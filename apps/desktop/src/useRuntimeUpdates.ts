@@ -36,6 +36,9 @@ export function useRuntimeUpdates(desktop: boolean, ready: boolean, enabled: boo
   const [wake, setWake] = useState(0);
   const [pending,setPending] = useState<PendingUpdate | null>(null);
   const [starting,setStarting] = useState(false), [actionError,setActionError] = useState('');
+  // After any task (an update started here or on the Strata page) the installed version is re-read
+  // before anything is proposed: the list read while the task ran still holds the old release.
+  const sawRunning = useRef(false), refreshing = useRef(false);
   const attempted = useRef(new Set<string>());
   const dismissed = useRef(new Set<string>());
   const downloadPreferences = useQuery({ queryKey: ['runtime-download-preferences'], queryFn: core.getRuntimeDownloadPreferences, enabled: desktop && ready, staleTime: Infinity, retry: false });
@@ -78,6 +81,12 @@ export function useRuntimeUpdates(desktop: boolean, ready: boolean, enabled: boo
       void query.invalidateQueries({ queryKey: ['process'] });
     }
     if (!enabled && !running.current && !automaticTask.current) releaseGate();
+    if (tasks.some(item => item.state === 'running')) sawRunning.current = true;
+    else if (sawRunning.current && !refreshing.current) {
+      sawRunning.current = false; refreshing.current = true;
+      void readInstallation().finally(() => { refreshing.current = false; setWake(value => value + 1); });
+    }
+    if (refreshing.current) return;
     if (!enabled || !idle || !downloadPreferences.isSuccess || pin.isPending || pending || running.current || automaticTask.current || tasks.some(item => item.state === 'running') || !release.data?.installable) return;
     if (!core.runtimeUpdateAllowedByPin(release.data.latestVersion, core.runtimePinRelease(pin.data, installation.data?.detectedRuntimes, releaseList))) return;
     if (dismissed.current.has(`${release.data.latestVersion}:${release.data.checkedAt}`)) return;
@@ -87,6 +96,20 @@ export function useRuntimeUpdates(desktop: boolean, ready: boolean, enabled: boo
     attempted.current.add(updateKey(proposed));
     setActionError(''); setPending(proposed);
   }, [desktop, ready, enabled, idle, hydrated, tasks, release.data, installation.data, downloadPreferences.isSuccess, pin.isPending, pin.data, releaseList, query, wake, pending]);
+
+  const readInstallation = async () => {
+    try {
+      const fresh = await core.localRuntimeInstallation();
+      query.setQueryData(['runtime-installation'], fresh);
+      return fresh;
+    } catch { return installation.data; }
+  };
+  // An open proposal follows the installed version: once this folder is current it closes by itself.
+  const live = pending ? installation.data?.detectedRuntimes?.find(item => item.installDir === pending.runtime.installDir) : undefined;
+  useEffect(() => {
+    if (!pending || !live || running.current || refreshing.current || live.readiness !== 'ready' || !(live.runtimeVersion || live.releaseVersion)) return;
+    if (!core.runtimeUpdateAvailable(live, pending.release, releaseList)) { setPending(null); setActionError(''); }
+  }, [pending, live, releaseList]);
 
   const confirm = async (download: core.RuntimeZipDownloadOptions = {}, assetName?: string) => {
     if (!pending || running.current || automaticTask.current || awaitingCreatedTask.current) return;
@@ -99,7 +122,11 @@ export function useRuntimeUpdates(desktop: boolean, ready: boolean, enabled: boo
       const proposed = { runtime: pending.runtime, release: latest };
       attempted.current.add(updateKey(proposed)); setPending(proposed); setActionError(''); return;
     }
-    const current = installation.data?.detectedRuntimes?.find(item => item.installDir === pending.runtime.installDir && item.readiness === 'ready');
+    // Re-read the folder: a stale list would download the release that is already installed again.
+    running.current = true;
+    const fresh = await readInstallation();
+    running.current = false;
+    const current = fresh?.detectedRuntimes?.find(item => item.installDir === pending.runtime.installDir && item.readiness === 'ready');
     if (!current || !(current.runtimeVersion || current.releaseVersion) || !core.runtimeUpdateAvailable(current, latest, releaseList)) { setPending(null); return; }
     if (!acquireGate()) {
       setActionError(language === 'zh-CN' ? '另一个更新正在进行，请完成后再确认。' : 'Another update is in progress. Confirm again when it finishes.'); return;
@@ -137,7 +164,7 @@ export function useRuntimeUpdates(desktop: boolean, ready: boolean, enabled: boo
   };
   const savedDownload = pending && downloadPreferences.data ? core.resolveRuntimeDownloadPreferences(downloadPreferences.data, pending.release) : undefined;
   return { dialog: pending && desktop && ready && enabled ? createElement(RuntimeUpdateDialog, {
-    language, runtime: pending.runtime, release: pending.release, busy: starting,
+    language, runtime: live ?? pending.runtime, release: pending.release, busy: starting,
     assetName: savedDownload?.assetName, initialDownload: savedDownload?.download, initialPreferences: downloadPreferences.data,
     canConfirm: idle && downloadPreferences.isSuccess && !automaticTask.current && !awaitingCreatedTask.current && !!tasks && !tasks.some(item => item.state === 'running') && !release.isFetching && !!release.data?.installable,
     error: actionError || (downloadPreferences.error ? core.normalizeError(downloadPreferences.error).message : undefined), onConfirm: (download, assetName) => { void confirm(download, assetName); }, onDismiss: () => { if (!running.current) { dismissed.current.add(`${pending.release.latestVersion}:${pending.release.checkedAt}`); setPending(null); setActionError(''); } },

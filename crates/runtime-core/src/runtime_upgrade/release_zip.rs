@@ -472,6 +472,9 @@ fn start(
             j.updated_at = now();
             let _ = persist(&state, &j);
         }
+        // Before the task reads as finished: the installation list cached while the files were
+        // replaced still shows the old release, and the update prompt would offer it again.
+        crate::installation::invalidate_discovery(state.data_dir());
         if let Ok(mut tasks) = state.tasks.lock() {
             if let Some(task) = tasks.get_mut(&j.task_id) {
                 task.process.take();
