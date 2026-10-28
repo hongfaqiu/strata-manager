@@ -13,6 +13,8 @@ export interface CatalogCopy {
   macUnavailableHeading: string;
   estimate: string; ttft: string; noData: string; tokS: string;
   basis: Record<PerformanceBasis, string>;
+  /** The figure is the lower bound from a bigger size measured on the same reference (no run of this size there). */
+  inferredFrom: (quant: string) => string;
   mode: Record<PerformanceMode, string>;
   need: (gb: number) => string; machine: (gb: number) => string; download: (gb: number | string) => string;
   streamingNote: (machine: number, need: number, from: number) => string;
@@ -61,12 +63,16 @@ const zh: CatalogCopy = {
     macStreamExtrapolated: '无 IQ3_S 流式实测：由 IQ3_XXS 流式实测按专家体积（43→50 GB）外推',
     pcRtx5070: '参考 RTX 5070 12 GB + 64 GB 内存实测（MODELS.md，短对话 / 128K 上下文）',
     pcRtx4090: '参考 RTX 4090 24 GB 社区实测（上游 bench/results，4K–128K 提示词）；显存越大，缓存在显卡上的专家越多、越快',
-    pcNvidia32: '参考 32 GB 显存 RTX 4080 SUPER + 64 GB 内存的排行榜实测（为下限；RTX 5090 32 GB 上游社区实测 127–170）',
-    pcRx9070xt: '参考 RX 9070 XT 16 GB + 47 GB 内存实测（MODELS.md）',
-    pcR9700: '参考 Radeon AI PRO R9700 32 GB 实测（MODELS.md）',
+    pcNvidia32: '参考 32 GB 显存 RTX 4080 SUPER + 64 GB 内存的排行榜与上游社区实测（4K–128K 提示词）',
+    pcRtx5090: '参考 RTX 5090 32 GB 桌面版上游社区实测（4K–262K 提示词）；IQ2_XS 是较早的引擎 0.1.29 实测，IQ3 是 0.1.33–0.1.39，所以 IQ2_XS 没有比 IQ3_XXS 快',
+    pcRtx3060Bench: '参考 RTX 3060 12 GB + 64 GB 内存上游社区实测（引擎 0.1.41，4K–128K 提示词）；显存带宽较低，明显慢于 RTX 5070',
+    pcRtx4060Ti: '参考 RTX 4060 Ti 16 GB 上游社区实测（PCIe 3.0 x8、DDR3 平台，短对话）；显存带宽较低，明显慢于 RTX 5070',
+    pcRx9070xt: '参考 RX 9070 XT 16 GB 实测（MODELS.md：Q2_0 / IQ2_XS，0.1.40 前的引擎，范围下端是 128K 上下文；IQ3_S 为上游社区实测，引擎 0.1.35，4K–32K 提示词）',
+    pcR9700: '参考 Radeon AI PRO R9700 32 GB 实测（MODELS.md；IQ2_XS 为上游社区实测，引擎 0.1.38）',
     pcRtx3060: '参考 RTX 3060 12 GB 实测（MODELS.md / QWEN36.md）',
     none: '上游文档没有这个组合的实测',
   },
+  inferredFrom: quant => `该参考没有这个量化的实测，按同一参考上更大的 ${quant} 实测作为下限（同一张卡上，更小的量化不会更慢；MODELS.md 也写明 Q2_0 最快）`,
   mode: { macResident: '常驻内存', macStreaming: 'SSD 流式 · 会变慢', macUnsupported: 'Mac 不支持', gpu: '内存够用', lowRam: '低内存模式 · 明显变慢', tooSmall: '内存不足', unknown: '未知' },
   need: gb => `需约 ${gb} GB`, machine: gb => `本机 ${gb} GB`, download: gb => `下载 ${gb} GB`,
   streamingNote: (machine, need, from) => `本机 ${machine} GB 统一内存放不下整个模型（约需 ${need} GB，${from} GB 起可常驻）。引擎会自动把专家从 SSD 流式读取：能运行，不会失败，只是更慢——上游实测 M4 32 GB 的 Q2_0 为 13.5–14.1 tok/s，M1 Max 34 GB 为 7.9 tok/s。内存越大，专家缓存越大、越快；模型需放在内置 SSD。`,
@@ -118,12 +124,16 @@ const en: CatalogCopy = {
     macStreamExtrapolated: 'No IQ3_S streaming measurement: extrapolated from IQ3_XXS streaming by expert bytes (43→50 GB)',
     pcRtx5070: 'Based on RTX 5070 12 GB + 64 GB RAM measurements (MODELS.md, short chat / 128K context)',
     pcRtx4090: 'Based on RTX 4090 24 GB community measurements (upstream bench/results, 4K–128K prompts); more VRAM caches more experts on the card and is faster',
-    pcNvidia32: 'Based on leaderboard runs of an RTX 4080 SUPER with 32 GB VRAM + 64 GB RAM (a lower bound; an RTX 5090 32 GB measured 127–170 in upstream community runs)',
-    pcRx9070xt: 'Based on RX 9070 XT 16 GB + 47 GB RAM measurements (MODELS.md)',
-    pcR9700: 'Based on Radeon AI PRO R9700 32 GB measurements (MODELS.md)',
+    pcNvidia32: 'Based on leaderboard and upstream community runs of an RTX 4080 SUPER with 32 GB VRAM + 64 GB RAM (4K–128K prompts)',
+    pcRtx5090: 'Based on upstream community runs of a desktop RTX 5090 32 GB (4K–262K prompts); IQ2_XS was measured on the older engine 0.1.29 and IQ3 on 0.1.33–0.1.39, which is why IQ2_XS is not faster than IQ3_XXS',
+    pcRtx3060Bench: 'Based on an upstream community run of an RTX 3060 12 GB + 64 GB RAM (engine 0.1.41, 4K–128K prompts); its lower memory bandwidth makes it much slower than an RTX 5070',
+    pcRtx4060Ti: 'Based on an upstream community run of an RTX 4060 Ti 16 GB (PCIe 3.0 x8, DDR3 PC, short chats); its lower memory bandwidth makes it much slower than an RTX 5070',
+    pcRx9070xt: 'Based on RX 9070 XT 16 GB measurements (MODELS.md for Q2_0 / IQ2_XS, engine before 0.1.40, low end at 128K context; IQ3_S from an upstream community run, engine 0.1.35, 4K–32K prompts)',
+    pcR9700: 'Based on Radeon AI PRO R9700 32 GB measurements (MODELS.md; IQ2_XS from an upstream community run, engine 0.1.38)',
     pcRtx3060: 'Based on RTX 3060 12 GB measurements (MODELS.md / QWEN36.md)',
     none: 'Upstream docs have no measurement for this combination',
   },
+  inferredFrom: quant => `No run of this size on the reference: the bigger ${quant} measured there is used as a lower bound (on the same card a smaller size is not slower; MODELS.md lists Q2_0 as the fastest)`,
   mode: { macResident: 'Resident', macStreaming: 'Streams from SSD · slower', macUnsupported: 'Not on Mac', gpu: 'RAM fits', lowRam: 'Low-RAM mode · much slower', tooSmall: 'Too little memory', unknown: 'Unknown' },
   need: gb => `needs ~${gb} GB`, machine: gb => `this machine ${gb} GB`, download: gb => `${gb} GB download`,
   streamingNote: (machine, need, from) => `${machine} GB of unified memory cannot hold the whole model (needs ~${need} GB; resident from ${from} GB). The engine then streams the experts from the SSD by itself: it runs and does not fail, it is just slower — upstream measured 13.5–14.1 tok/s for Q2_0 on an M4 32 GB and 7.9 tok/s on an M1 Max 34 GB. More memory means a bigger expert cache and more speed; keep the model on the internal SSD.`,

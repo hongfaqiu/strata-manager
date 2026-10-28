@@ -113,6 +113,15 @@ export function RuntimeManagementPanel({ language, desktop, onInstall, selectedR
     try {
       const freshTasks = await core.listTasks();
       if (freshTasks.some(task => task.state === 'running')) throw new Error(language === 'zh-CN' ? '有任务正在进行，请完成后再确认更新。' : 'A task is in progress. Confirm the update again when it finishes.');
+      // "Update to the latest" re-reads the folder first: a list read during the last update still
+      // holds the old release and would download the installed one again. A chosen version or a
+      // local package may reinstall on purpose.
+      if (!pending.target && !pending.local) {
+        const fresh = await core.localRuntimeInstallation().catch(() => undefined);
+        if (fresh) query.setQueryData(['runtime-installation'], fresh);
+        const current = fresh?.detectedRuntimes?.find(item => item.installDir === runtime.installDir);
+        if (current?.readiness === 'ready' && (current.runtimeVersion || current.releaseVersion) && !core.runtimeUpdateAvailable(current, latest, releaseList)) { setPending(null); return; }
+      }
       const task = await core.updateRuntimeZip(runtime.installDir, selectedAssetName, true, pending.target ? { ...download, targetVersion: pending.target } : download);
       setTaskId(task.id); observedTask.current = task.id;
       await query.invalidateQueries({ queryKey: ['tasks'] }); setPending(null);
@@ -152,6 +161,10 @@ export function RuntimeManagementPanel({ language, desktop, onInstall, selectedR
     } catch (error) { setActionError(core.runtimeBilingualText(core.normalizeError(error).message, language === 'zh-CN')); }
     finally { setOpeningVersion(''); }
   };
+  // The confirmation shows the folder as it is now, and an offer to update to the latest closes once it is installed.
+  const livePending = pending ? allRuntimes.find(runtime => runtime.installDir === pending.runtime.installDir) : undefined;
+  const pendingSettled = !!pending && !pending.target && !pending.local && !!livePending && livePending.readiness === 'ready' && !!(livePending.runtimeVersion || livePending.releaseVersion) && !core.runtimeUpdateAvailable(livePending, pending.release, releaseList);
+  useEffect(() => { if (pendingSettled && !startingRef.current) { setPending(null); setActionError(''); } }, [pendingSettled]);
   const pendingPreferences: core.RuntimeDownloadPreferences | undefined = pending?.local && downloadPreferences.data ? { ...downloadPreferences.data, mode: 'local', sourceId: undefined, mirrorUrl: undefined, localArchivePath: '', releaseVersion: pending.release.latestVersion ?? pending.release.supportedVersion } : downloadPreferences.data;
   const savedDownload = pending && pendingPreferences ? core.resolveRuntimeDownloadPreferences(pendingPreferences, pending.release) : undefined;
   const updateButton = (runtime: core.DetectedRuntime) => <button type="button" className="primary" key={runtime.installDir} disabled={operationDisabled || !desktop || !downloadPreferences.isSuccess || !update.data?.installable || !!starting || !!activeTask} onClick={() => { if (update.data && downloadPreferences.isSuccess) { setActionError(''); setPending({ runtime, release: update.data }); } }}><ArrowUpCircle size={15}/>{starting === runtime.installDir ? text.updating : `${text.update} ${update.data?.latestVersion ? `v${update.data.latestVersion}` : ''}`}</button>;
@@ -170,7 +183,7 @@ export function RuntimeManagementPanel({ language, desktop, onInstall, selectedR
     {installed && !showInstallations && runtimes[0] && <RuntimeVersionChoice language={language} desktop={desktop} currentVersion={releaseOf(runtimes[0])} currentEngine={runtimes[0].runtimeVersion} latestVersion={update.data?.latestVersion} latestEngine={latestEngine} runtimes={allRuntimes} localVersions={localVersions} disabled={operationDisabled || !downloadPreferences.isSuccess || !!starting || !!activeTask} opening={openingVersion} onChoose={version => void openVersion(version)}/>}
     <RuntimeDownloadSettings language={language} desktop={desktop} runtime={runtimes[0]} release={update.data} releaseLoading={update.isLoading || update.isFetching}/>
     {notes && update.data && <details className="runtime-release-notes"><summary>{text.notes} · {update.data.releaseName ?? update.data.latestVersion}</summary>{update.data.publishedAt && <p className="subtle">{text.published} {new Date(update.data.publishedAt).toLocaleDateString(language)}</p>}<div className="runtime-release-body" tabIndex={0} role="region" aria-label={text.notes}><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml components={{ a: ({ node: _node, title, children, ...props }) => <a {...props} data-tooltip={title} target="_blank" rel="noreferrer">{children}</a>, img: ({ node: _node, title, ...props }) => <img {...props} data-tooltip={title}/> }}>{notes}</ReactMarkdown></div></details>}
-    {pending && <RuntimeUpdateDialog language={language} runtime={pending.runtime} release={pending.release} assetName={savedDownload?.assetName} initialDownload={savedDownload?.download} initialPreferences={pendingPreferences} localEntry={!!pending.local} targetVersion={pending.target} busy={!!starting} canConfirm={!operationDisabled && desktop && downloadPreferences.isSuccess && !!tasks.data && !tasks.data.some(task => task.state === 'running') && (pending.target ? pending.release.installable : !update.isFetching && !!update.data?.installable)} error={actionError} onConfirm={(download, selectedAssetName) => { void installUpdate(download, selectedAssetName); }} onDismiss={() => { if (!startingRef.current) { setPending(null); setActionError(''); } }}/>}
+    {pending && <RuntimeUpdateDialog language={language} runtime={livePending ?? pending.runtime} release={pending.release} assetName={savedDownload?.assetName} initialDownload={savedDownload?.download} initialPreferences={pendingPreferences} localEntry={!!pending.local} targetVersion={pending.target} busy={!!starting} canConfirm={!operationDisabled && desktop && downloadPreferences.isSuccess && !!tasks.data && !tasks.data.some(task => task.state === 'running') && (pending.target ? pending.release.installable : !update.isFetching && !!update.data?.installable)} error={actionError} onConfirm={(download, selectedAssetName) => { void installUpdate(download, selectedAssetName); }} onDismiss={() => { if (!startingRef.current) { setPending(null); setActionError(''); } }}/>}
     {switcher.target && <RuntimeSwitchDialog language={language} target={switcher.target} current={inventory.data?.runtimes.find(runtime => runtime.current)} releases={releaseList} busy={switcher.busy} error={switcher.error} onConfirm={() => void switcher.confirm()} onDismiss={switcher.dismiss}/>}
   </Panel>;
 }
