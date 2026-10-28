@@ -143,9 +143,81 @@ pub(crate) fn windows_gpu_names() -> Option<Vec<String>> {
     windows_gpu_adapters().map(|adapters| adapters.into_iter().map(|a| a.name).collect())
 }
 
+/// The display class's driver keys: each adapter's name and its 64-bit memory size. setup.py
+/// `win_uma_carveout` reads the same value for Strix Halo, whose BIOS carve-out Win32_VideoController's
+/// 32-bit AdapterRAM cannot hold. The value is a QWORD on some drivers and eight bytes on others.
+#[cfg(windows)]
+const MEMORY_QUERY: &str = "Get-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}\\0*' -ErrorAction SilentlyContinue | ForEach-Object { [string]$_.DriverDesc + [char]9 + ((@($_.'HardwareInformation.qwMemorySize') | ForEach-Object { [string]$_ }) -join ' ') }";
+
+/// One row per driver key, `DriverDesc<TAB>value`: a decimal QWORD, or up to eight space-separated
+/// bytes (little-endian). Rows without a name or a positive size are dropped.
+#[cfg(any(windows, test))]
+pub(crate) fn parse_adapter_memory(text: &str) -> Vec<(String, u64)> {
+    text.lines()
+        .filter_map(|line| {
+            let (name, value) = line.split_once('\t')?;
+            let name = name.trim();
+            let parts = value.split_whitespace().collect::<Vec<_>>();
+            let bytes = match parts.as_slice() {
+                [] => return None,
+                [one] => one.parse::<u64>().ok()?,
+                many if many.len() <= 8 => many.iter().rev().try_fold(0_u64, |acc, part| {
+                    part.parse::<u8>()
+                        .ok()
+                        .map(|byte| (acc << 8) | u64::from(byte))
+                })?,
+                _ => return None,
+            };
+            (!name.is_empty() && bytes > 0).then(|| (name.to_string(), bytes))
+        })
+        .collect()
+}
+
+/// The memory size of the driver key whose name is the adapter's (case-insensitive).
+#[cfg(any(windows, test))]
+pub(crate) fn memory_for(rows: &[(String, u64)], adapter_name: &str) -> Option<u64> {
+    let wanted = adapter_name.trim();
+    rows.iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case(wanted))
+        .map(|(_, bytes)| *bytes)
+}
+
+#[cfg(windows)]
+pub(crate) fn windows_adapter_memory() -> Option<Vec<(String, u64)>> {
+    crate::output(
+        "powershell.exe",
+        &["-NoProfile", "-NonInteractive", "-Command", MEMORY_QUERY],
+    )
+    .map(|text| parse_adapter_memory(&text))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn registry_memory_reads_qwords_and_byte_arrays() {
+        let rows = parse_adapter_memory(
+            "AMD Radeon(TM) 8060S Graphics\t68719476736\r\n\
+             Microsoft Basic Display Adapter\t\r\n\
+             AMD Radeon(TM) 8050S Graphics\t0 0 0 0 8 0 0 0\r\n\
+             Broken\tnot-a-number\r\n\
+             \t17179869184\r\n",
+        );
+        assert_eq!(
+            rows,
+            vec![
+                ("AMD Radeon(TM) 8060S Graphics".to_string(), 68_719_476_736),
+                ("AMD Radeon(TM) 8050S Graphics".to_string(), 34_359_738_368),
+            ]
+        );
+        assert_eq!(
+            memory_for(&rows, " amd radeon(tm) 8060s graphics "),
+            Some(68_719_476_736)
+        );
+        assert_eq!(memory_for(&rows, "NVIDIA GeForce RTX 4090"), None);
+        assert!(parse_adapter_memory("X\t1 2 3 4 5 6 7 8 9").is_empty());
+    }
 
     #[test]
     fn meta_virtual_monitor_is_not_a_gpu() {

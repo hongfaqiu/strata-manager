@@ -51,6 +51,8 @@ export interface SetupResourceAssessment {
   recommendations: { context: number | null; parallel: number | null };
   /** Present past the trained 262,144 tokens: the yarn factor setup derives and KV + RoPE table bytes. */
   contextExtension?: { trainedContext: number; scaling: string; scale: number; kvBytes: number; ropeBytes: number } | null;
+  /** DeepSeek on a unified-memory APU (Strix Halo): dsv41_fit.py `_plan_uma`'s one pool of RAM plus carve-out. */
+  uma?: { poolBytes: number; /** The context cache past 8K, taken from the pool before the experts. */ contextBytes: number; dedicatedBytes: number | null; reserveBytes: number; residentExpertBytes: number; streamedExpertBytes: number } | null;
   reasons: ResourceAssessmentReason[];
   unknowns: string[];
   sourceRevision: string;

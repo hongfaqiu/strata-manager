@@ -8,6 +8,10 @@
  *   chips with less memory bandwidth); streaming speeds are the M4 32 GB / M1 Max 34 GB runs (more memory = a bigger
  *   expert arena, MAC.md: "The arena's size matters most", so a 48 GB Mac sits toward the upper end).
  * - PC: the RTX 5070 12 GB / RX 9070 XT 16 GB / R9700 32 GB / RTX 3060 12 GB tables of MODELS.md and QWEN36.md.
+ *   NVIDIA cards with 20 GB or more use the big-card measurements of the same quant when there are any (a bigger card
+ *   caches more experts, so the 12 GB table is far too low there): RTX 4090 24 GB (upstream community benchmarks) and
+ *   modified RTX 4080 SUPER 32 GB (Strata Arena leaderboard; RTX 5090 32 GB measured 127-170 on IQ3_S, so 32 GB is
+ *   shown as a lower bound). Quants without a big-card run fall back to the next smaller tier as a lower bound.
  *   "RAM ≥ experts + 10 GB" (MODELS.md "Will it fit?") else the low-RAM mode (much slower, no published number).
  *   Less VRAM than the reference → the figure is an upper bound; more → a lower bound (MODELS.md: more VRAM is faster).
  * - Time to first token = 4,096 prompt tokens / the measured prompt rate (range over the published rates).
@@ -19,6 +23,10 @@ import type { RuntimePackagePlatform } from './local-runtime-package';
 
 export const PERFORMANCE_DOCS_REVISION = '9de04cd44e927a9a3df6bbc0e94fc1be8b844ba4';
 const doc = (file: string, anchor = '') => `https://github.com/Niko1221/Strata/blob/${PERFORMANCE_DOCS_REVISION}/docs/${file}${anchor}`;
+/** Upstream community benchmark folders (bench/results), pinned to the commit that has all of them. */
+export const PERFORMANCE_BENCH_REVISION = '5e8a4cca7d690ac60ca37eb09e7d0e010099ad6d';
+const bench = (folder: string) => `https://github.com/Niko1221/Strata/tree/${PERFORMANCE_BENCH_REVISION}/bench/results/${folder}`;
+const ARENA_URL = 'https://strata-manager.cosfoc.com/leaderboard';
 export const PERFORMANCE_SOURCES = {
   macM5Max: doc('MAC.md', '#measured-m5-max-128-gb-macos-272'),
   macStream: doc('MAC.md', '#m4-mac-mini-32-gb-experts-streamed-from-the-ssd'),
@@ -27,8 +35,10 @@ export const PERFORMANCE_SOURCES = {
   pcFit: doc('MODELS.md', '#will-it-fit'),
   pcR9700: doc('MODELS.md', '#unsloths-files-ud-iq4_xs-to-q8_0'),
   qwen36: doc('MODELS.md', '#qwen36-35b-a3b'),
+  pcRtx4090: bench('2026-10-03-community-rtx4090-iq3s-140k-code'),
+  pcNvidia32: ARENA_URL,
 } as const;
-export type PerformanceBasis = 'macM5Max' | 'macStream' | 'macStreamExtrapolated' | 'pcRtx5070' | 'pcRx9070xt' | 'pcR9700' | 'pcRtx3060' | 'none';
+export type PerformanceBasis = 'macM5Max' | 'macStream' | 'macStreamExtrapolated' | 'pcRtx5070' | 'pcRtx4090' | 'pcNvidia32' | 'pcRx9070xt' | 'pcR9700' | 'pcRtx3060' | 'none';
 export type PerformanceMode = 'macResident' | 'macStreaming' | 'macUnsupported' | 'gpu' | 'lowRam' | 'tooSmall' | 'unknown';
 export interface Range { low: number; high: number }
 export interface PerformanceHardware { platform: RuntimePackagePlatform; memoryGB?: number; vramGB?: number; gpuVendor?: 'nvidia' | 'amd' | 'other' }
@@ -78,10 +88,27 @@ const PC_RAM: Record<string, Record<string, number>> = {
   unsloth: { 'UD-IQ4_XS': 72, 'UD-Q4_K_XL': 88, 'UD-Q5_K_XL': 108, 'UD-Q6_K_XL': 118, Q8_0: 136 },
   qwen36: { 'UD-Q4_K_XL': 32, 'UD-Q6_K_XL': 44, Q8_0: 52 },
 };
-interface PcRef { basis: PerformanceBasis; vram: number; decode: Range; prompt: Range }
+interface PcRef { basis: PerformanceBasis; vram: number; decode: Range; prompt: Range; bound?: 'lower' }
 /** MODELS.md RTX 5070 12 GB + 64 GB (short chat / 128K context; 4K prompt 910-1,580 tok/s). */
 const RTX5070: Record<string, PcRef> = Object.fromEntries(Object.entries({ Q2_0: [76, 94], IQ2_XS: [63, 79], IQ3_XXS: [49, 62], IQ3_S: [46, 53], IQ1_M: [43, 55] })
   .map(([quant, [low, high]]) => [quant, { basis: 'pcRtx5070' as const, vram: 12, decode: r(low!, high!), prompt: r(910, 1580) }]));
+/**
+ * RTX 4090 24 GB, Strata 0.1.38, one card (bench/results 2026-10-03-community-rtx4090-iq3{s-140k,xxs-200k}-{code,ru}):
+ * decode medians at 4K / 32K / 128K prompts, IQ3_S 76.1-102.5 (code and Russian prose), IQ3_XXS 108.4-127.9 (code);
+ * 4K prompt 1,844-2,084 tok/s.
+ */
+const RTX4090: Record<string, PcRef> = {
+  IQ3_XXS: { basis: 'pcRtx4090', vram: 24, decode: r(108, 128), prompt: r(1844, 1880) },
+  IQ3_S: { basis: 'pcRtx4090', vram: 24, decode: r(76, 102), prompt: r(2058, 2084) },
+};
+/**
+ * 32 GB NVIDIA, IQ3_S: the modified RTX 4080 SUPER 32 GB + 64 GB rows of the Strata Arena leaderboard (decode 84.9-93.7
+ * at 262K / 512K context, prefill 2,174-2,401 tok/s). An RTX 5090 32 GB measured 127-170 (bench/results
+ * 2026-10-02-community-rtx-5090-iq3s, 2026-10-05-community-rtx-5090-9700x-iq3s), so this tier is a lower bound.
+ */
+const NVIDIA32: Record<string, PcRef> = {
+  IQ3_S: { basis: 'pcNvidia32', vram: 32, decode: r(85, 94), prompt: r(2174, 2401), bound: 'lower' },
+};
 /** MODELS.md RX 9070 XT 16 GB + 47 GB (32K prompt rate). */
 const RX9070XT: Record<string, PcRef> = {
   Q2_0: { basis: 'pcRx9070xt', vram: 16, decode: r(48, 60), prompt: r(1160, 1160) },
@@ -107,6 +134,8 @@ function pcReference(family: string, quant: string, vendor: PerformanceHardware[
   if (family === 'unsloth') return R9700[quant];
   if (family === 'qwen' || family === 'swift' || family === 'coder') {
     if (vendor === 'amd') return (vram ?? 0) >= 24 && R9700[quant] ? R9700[quant] : RX9070XT[quant] ?? RTX5070[quant];
+    if (family !== 'coder' && (vram ?? 0) >= 28 && NVIDIA32[quant]) return NVIDIA32[quant];
+    if (family !== 'coder' && (vram ?? 0) >= 20 && RTX4090[quant]) return RTX4090[quant];
     return RTX5070[quant];
   }
   return undefined;
@@ -136,8 +165,9 @@ export function estimatePerformance(family: string, quant: string, hardware: Per
   const ref = pcReference(family, quant, hardware.gpuVendor, hardware.vramGB);
   if (!ref) return { mode: 'gpu', memoryGB: ram, basis: 'none', extrapolated: false, source: PERFORMANCE_SOURCES.pcFit };
   const vram = hardware.vramGB;
-  const bound = vram === undefined ? undefined : vram < ref.vram - 1 ? 'upper' : vram > ref.vram + 1 ? 'lower' : undefined;
-  const source = ref.basis === 'pcR9700' ? (family === 'qwen36' ? PERFORMANCE_SOURCES.qwen36 : PERFORMANCE_SOURCES.pcR9700) : ref.basis === 'pcRtx3060' ? PERFORMANCE_SOURCES.qwen36 : PERFORMANCE_SOURCES.pcRtx5070;
+  const bound = vram === undefined ? undefined : vram < ref.vram - 1 ? 'upper' : vram > ref.vram + 1 || ref.bound === 'lower' ? 'lower' : undefined;
+  const source = ref.basis === 'pcR9700' ? (family === 'qwen36' ? PERFORMANCE_SOURCES.qwen36 : PERFORMANCE_SOURCES.pcR9700) : ref.basis === 'pcRtx3060' ? PERFORMANCE_SOURCES.qwen36
+    : ref.basis === 'pcRtx4090' ? PERFORMANCE_SOURCES.pcRtx4090 : ref.basis === 'pcNvidia32' ? PERFORMANCE_SOURCES.pcNvidia32 : PERFORMANCE_SOURCES.pcRtx5070;
   return { mode: 'gpu', memoryGB: ram, decode: ref.decode, ttft4k: ttft(ref.prompt.low, ref.prompt.high), bound, referenceVramGB: ref.vram, basis: ref.basis, extrapolated: false, source };
 }
 
