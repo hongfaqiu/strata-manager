@@ -48,8 +48,15 @@ describe('performance estimates (doc-referenced, labelled 估算)', () => {
     expect(small).toMatchObject({ basis: 'pcRtx5070', bound: undefined });
     expect(formatRange(small.decode)).toBe('46–53');
     expect(pc(16)).toMatchObject({ basis: 'pcRtx5070', bound: 'lower' });
-    // No 24 / 32 GB run of the 2-bit sizes or the Coder: the RTX 5070 lower bound, as before.
-    expect(pc(32, 'Q2_0')).toMatchObject({ basis: 'pcRtx5070', bound: 'lower' });
+    // No 24 / 32 GB run of the 2-bit sizes: the nearest bigger size measured there is the lower bound (v0.2.28 showed
+    // the 12 GB RTX 5070's "≥ 76" for Q2_0 under IQ3_XXS "≥ 108"). The Coder keeps the RTX 5070 table.
+    expect(pc(32, 'Q2_0')).toMatchObject({ basis: 'pcRtx4090', bound: 'lower', inferredFrom: 'IQ3_XXS' });
+    expect(formatRange(pc(32, 'Q2_0').decode, 'lower')).toBe('≥ 108');
+    expect(pc(24, 'IQ2_XS')).toMatchObject({ basis: 'pcRtx4090', bound: 'lower', inferredFrom: 'IQ3_XXS' });
+    expect(pc(24, 'IQ3_XXS').inferredFrom).toBeUndefined();
+    // Below the 24 GB reference nothing is inferred: 20 GB keeps the RTX 5070 lower bound for the 2-bit sizes.
+    expect(pc(20, 'Q2_0')).toMatchObject({ basis: 'pcRtx5070', bound: 'lower' });
+    expect(pc(20, 'Q2_0').inferredFrom).toBeUndefined();
     expect(estimatePerformance('coder', 'IQ1_M', { platform: 'windows', memoryGB: 64, vramGB: 32, gpuVendor: 'nvidia' }).basis).toBe('pcRtx5070');
     // RAM still comes first; AMD and Mac are unchanged.
     expect(pc(32, 'IQ3_S', 48).mode).toBe('lowRam');
@@ -65,8 +72,9 @@ describe('performance estimates (doc-referenced, labelled 估算)', () => {
     expect(pc('NVIDIA GeForce RTX 5090', 32).source).toContain('rtx-5090');
     expect(range(pc('NVIDIA GeForce RTX 5090', 32, 'IQ3_XXS'))).toBe('172–181');
     expect(range(pc('NVIDIA GeForce RTX 5090', 32, 'IQ2_XS'))).toBe('165–179');
-    // No 5090 run of Q2_0: falls back to the VRAM tiers as a lower bound.
-    expect(pc('NVIDIA GeForce RTX 5090', 32, 'Q2_0')).toMatchObject({ basis: 'pcRtx5070', bound: 'lower' });
+    // No 5090 run of Q2_0: the 5090's IQ2_XS as a lower bound.
+    expect(pc('NVIDIA GeForce RTX 5090', 32, 'Q2_0')).toMatchObject({ basis: 'pcRtx5090', bound: 'lower', inferredFrom: 'IQ2_XS' });
+    expect(range(pc('NVIDIA GeForce RTX 5090', 32, 'Q2_0'))).toBe('≥ 165');
     // The 24 GB laptop 5090 is not the desktop card: VRAM tiers.
     expect(pc('NVIDIA GeForce RTX 5090 Laptop GPU', 24).basis).toBe('pcRtx4090');
     // A 4080 SUPER (modified 32 GB) keeps the 32 GB range.
@@ -77,15 +85,53 @@ describe('performance estimates (doc-referenced, labelled 估算)', () => {
     expect(range(pc('NVIDIA GeForce RTX 3060', 12, 'Q2_0'))).toBe('37–45');
     expect(range(pc('NVIDIA GeForce RTX 3060', 12, 'IQ3_XXS'))).toBe('24–27');
     expect(pc('NVIDIA GeForce RTX 3060', 12).source).toContain('rtx-3060');
-    // RTX 4060 Ti 16 GB: 30-35 on IQ3_S; a size it was not measured on shows no figure, not the 5070's.
+    // RTX 4060 Ti 16 GB: 30-35 on IQ3_S; a size it was not measured on gets its own IQ3_S as a lower bound, never
+    // the faster 5070's figure; a size with nothing bigger measured on it shows no figure (the Coder ignores the name).
     expect(range(pc('NVIDIA GeForce RTX 4060 Ti', 16))).toBe('30–35');
-    expect(pc('NVIDIA GeForce RTX 4060 Ti', 16, 'IQ2_XS')).toMatchObject({ mode: 'gpu', basis: 'none' });
-    expect(pc('NVIDIA GeForce RTX 4060 Ti', 16, 'IQ2_XS').decode).toBeUndefined();
+    expect(pc('NVIDIA GeForce RTX 4060 Ti', 16, 'IQ2_XS')).toMatchObject({ basis: 'pcRtx4060Ti', bound: 'lower', inferredFrom: 'IQ3_S' });
+    expect(range(pc('NVIDIA GeForce RTX 4060 Ti', 16, 'IQ2_XS'))).toBe('≥ 30');
+    expect(pc('NVIDIA GeForce RTX 4060 Ti', 16, 'IQ1_M', 'coder')).toMatchObject({ basis: 'pcRtx5070' });
+    expect(pc('NVIDIA GeForce RTX 4060 Ti', 16, 'IQ1_M').decode).toBeUndefined();
     // Other names (RTX 5070, 5060 Ti, 4070 Ti SUPER ...) keep the VRAM tiers; Coder and AMD ignore the name.
     expect(pc('NVIDIA GeForce RTX 5070', 12)).toMatchObject({ basis: 'pcRtx5070', bound: undefined });
     expect(pc('NVIDIA GeForce RTX 5060 Ti', 16)).toMatchObject({ basis: 'pcRtx5070', bound: 'lower' });
     expect(pc('NVIDIA GeForce RTX 3060', 12, 'IQ1_M', 'coder').basis).toBe('pcRtx5070');
     expect(estimatePerformance('qwen', 'IQ3_S', { platform: 'linux', memoryGB: 96, vramGB: 32, gpuVendor: 'amd', gpuName: 'RTX 5090' }).basis).toBe('pcR9700');
+  });
+  it('a smaller size never shows a lower floor than a bigger one measured on the same tier', () => {
+    const sizes = ['Q2_0', 'IQ2_XS', 'IQ3_XXS', 'IQ3_S'];
+    const low = (hardware: Record<string, unknown>, quant: string) => estimatePerformance('qwen', quant, { platform: 'windows', memoryGB: 128, ...hardware }).decode?.low;
+    // Tiers whose figures are lower bounds or inferred; the 12 GB / 3060 / 16 GB AMD tables are raw upstream runs.
+    const tiers = [
+      { vramGB: 24, gpuVendor: 'nvidia' },
+      { vramGB: 32, gpuVendor: 'nvidia', gpuName: 'NVIDIA GeForce RTX 4080 SUPER' },
+      { vramGB: 16, gpuVendor: 'nvidia', gpuName: 'NVIDIA GeForce RTX 4060 Ti' },
+      { vramGB: 32, gpuVendor: 'amd' },
+    ];
+    for (const tier of tiers) for (let i = 0; i + 1 < sizes.length; i++) {
+      expect(low(tier, sizes[i]!), `${JSON.stringify(tier)} ${sizes[i]}`).toBeGreaterThanOrEqual(low(tier, sizes[i + 1]!)!);
+    }
+    // 2-bit sizes on the 5090 are not below its IQ3_S, and Q2_0 is not below IQ2_XS.
+    const r5090 = { vramGB: 32, gpuVendor: 'nvidia', gpuName: 'NVIDIA GeForce RTX 5090' };
+    expect(low(r5090, 'Q2_0')).toBeGreaterThanOrEqual(low(r5090, 'IQ2_XS')!);
+    expect(low(r5090, 'IQ2_XS')).toBeGreaterThan(low(r5090, 'IQ3_S')!);
+  });
+  it('AMD: R9700 32 GB and RX 9070 XT 16 GB runs, bigger sizes as lower bounds', () => {
+    const amd = (vramGB: number, quant: string) => estimatePerformance('qwen', quant, { platform: 'windows', memoryGB: 128, vramGB, gpuVendor: 'amd' });
+    const range = (estimate: ReturnType<typeof amd>) => formatRange(estimate.decode, estimate.bound);
+    expect(amd(32, 'IQ2_XS')).toMatchObject({ basis: 'pcR9700', bound: undefined });
+    expect(range(amd(32, 'IQ2_XS'))).toBe('88–100');
+    expect(amd(32, 'IQ2_XS').source).toContain('r9700-windows');
+    expect(amd(32, 'Q2_0')).toMatchObject({ basis: 'pcR9700', bound: 'lower', inferredFrom: 'IQ2_XS' });
+    expect(amd(32, 'IQ3_XXS')).toMatchObject({ basis: 'pcR9700', bound: 'lower', inferredFrom: 'IQ3_S' });
+    expect(range(amd(32, 'IQ3_XXS'))).toBe('≥ 75');
+    expect(range(amd(16, 'IQ3_S'))).toBe('45–46');
+    expect(amd(16, 'IQ3_S').source).toContain('rx9070xt-windows');
+    expect(range(amd(16, 'Q2_0'))).toBe('48–60');
+    expect(amd(16, 'IQ3_XXS')).toMatchObject({ basis: 'pcRx9070xt', bound: 'lower', inferredFrom: 'IQ3_S' });
+    // Below the 16 GB reference nothing is inferred.
+    expect(amd(8, 'IQ3_XXS').inferredFrom).toBeUndefined();
+    expect(amd(8, 'IQ3_S').bound).toBe('upper');
   });
   it('formats ranges without false precision', () => {
     expect(formatRange({ low: 7.9, high: 14.1 })).toBe('8–14');

@@ -16,6 +16,11 @@
  *   their own measured table first: RTX 5090 (desktop, 32 GB), RTX 3060 and RTX 4060 Ti (low-bandwidth cards that
  *   measured well below the RTX 5070 12 GB table). A quant without a run on a slow card shows no speed rather than
  *   borrowing a faster card's figure; on the 5090 it falls back to the VRAM tiers as a lower bound.
+ * - A smaller size is not slower than a bigger one on the same card (MODELS.md: Q2_0 "fastest"; every same-machine
+ *   comparison upstream: RTX 5070, RTX 3060, RTX 3090, RTX 4070 Ti SUPER, RX 9070 XT). So when a big-card tier has no
+ *   run of a size, the nearest bigger size measured on that tier is its lower bound (flagged `inferredFrom`) instead of
+ *   the 12 GB table, which showed Q2_0 "≥ 76" under IQ3_XXS "≥ 108" on a 32 GB card. Only when this machine has at
+ *   least the reference's VRAM; a smaller card keeps the old path.
  *   "RAM ≥ experts + 10 GB" (MODELS.md "Will it fit?") else the low-RAM mode (much slower, no published number).
  *   Less VRAM than the reference → the figure is an upper bound; more → a lower bound (MODELS.md: more VRAM is faster).
  * - Time to first token = 4,096 prompt tokens / the measured prompt rate (range over the published rates).
@@ -69,6 +74,8 @@ export interface PerformanceEstimate {
   referenceVramGB?: number;
   basis: PerformanceBasis;
   extrapolated: boolean;
+  /** No run of this size on the reference: the figure is the lower bound from this bigger size on the same reference. */
+  inferredFrom?: string;
   source?: string;
 }
 
@@ -99,7 +106,7 @@ const PC_RAM: Record<string, Record<string, number>> = {
   unsloth: { 'UD-IQ4_XS': 72, 'UD-Q4_K_XL': 88, 'UD-Q5_K_XL': 108, 'UD-Q6_K_XL': 118, Q8_0: 136 },
   qwen36: { 'UD-Q4_K_XL': 32, 'UD-Q6_K_XL': 44, Q8_0: 52 },
 };
-interface PcRef { basis: PerformanceBasis; vram: number; decode: Range; prompt: Range; bound?: 'lower' }
+interface PcRef { basis: PerformanceBasis; vram: number; decode: Range; prompt: Range; bound?: 'lower'; inferredFrom?: string; source?: string }
 /** MODELS.md RTX 5070 12 GB + 64 GB (short chat / 128K context; 4K prompt 910-1,580 tok/s). */
 const RTX5070: Record<string, PcRef> = Object.fromEntries(Object.entries({ Q2_0: [76, 94], IQ2_XS: [63, 79], IQ3_XXS: [49, 62], IQ3_S: [46, 53], IQ1_M: [43, 55] })
   .map(([quant, [low, high]]) => [quant, { basis: 'pcRtx5070' as const, vram: 12, decode: r(low!, high!), prompt: r(910, 1580) }]));
@@ -161,12 +168,16 @@ function namedNvidiaTable(name: string | undefined): Record<string, PcRef> | und
 /** MODELS.md RX 9070 XT 16 GB + 47 GB (32K prompt rate). */
 const RX9070XT: Record<string, PcRef> = {
   Q2_0: { basis: 'pcRx9070xt', vram: 16, decode: r(48, 60), prompt: r(1160, 1160) },
+  // bench/results 2026-10-02-community-rx9070xt-windows: engine 0.1.35, decode 45.2 short / 45-46 at 4K-32K, 4K prompt 370.
+  IQ3_S: { basis: 'pcRx9070xt', vram: 16, decode: r(45, 46), prompt: r(370, 601), source: bench('2026-10-02-community-rx9070xt-windows') },
   IQ2_XS: { basis: 'pcRx9070xt', vram: 16, decode: r(36, 52), prompt: r(1110, 1110) },
   IQ1_M: { basis: 'pcRx9070xt', vram: 16, decode: r(33, 44), prompt: r(1420, 1420) },
 };
 /** MODELS.md Unsloth table, AMD R9700 32 GB (story / code, 32K prompt); IQ3_S row for comparison. */
 const R9700: Record<string, PcRef> = {
   IQ3_S: { basis: 'pcR9700', vram: 32, decode: r(75, 95), prompt: r(1110, 1320) },
+  // bench/results 2026-10-03-community-r9700-windows: engine 0.1.38, decode medians 87.5-99.8 at 4K-248K, 4K prompt 856.
+  IQ2_XS: { basis: 'pcR9700', vram: 32, decode: r(88, 100), prompt: r(856, 1232), source: bench('2026-10-03-community-r9700-windows') },
   'UD-Q4_K_XL': { basis: 'pcR9700', vram: 32, decode: r(63, 87), prompt: r(1110, 1320) },
   'UD-Q5_K_XL': { basis: 'pcR9700', vram: 32, decode: r(57, 82), prompt: r(810, 1260) },
   'UD-Q6_K_XL': { basis: 'pcR9700', vram: 32, decode: r(54, 76), prompt: r(1020, 1020) },
@@ -178,19 +189,40 @@ const QWEN36: Record<'amd' | 'nvidia', PcRef> = {
   nvidia: { basis: 'pcRtx3060', vram: 12, decode: r(59.7, 59.7), prompt: r(2022, 2022) },
 };
 
+/** Qwen-family sizes from smallest to biggest (Unsloth / Coder / Qwen3.6 have their own tables). */
+const SIZE_ORDER = ['Q2_0', 'IQ2_XS', 'IQ3_XXS', 'IQ3_S'];
+/** The nearest bigger size measured on these references, as this size's lower bound; needs at least the reference VRAM. */
+function fromBigger(tables: Record<string, PcRef>[], quant: string, vram: number | undefined): PcRef | undefined {
+  const index = SIZE_ORDER.indexOf(quant);
+  if (index < 0) return undefined;
+  for (const bigger of SIZE_ORDER.slice(index + 1)) for (const table of tables) {
+    const ref = table[bigger];
+    if (ref && (vram === undefined || vram >= ref.vram - 1)) return { ...ref, bound: 'lower', inferredFrom: bigger };
+  }
+  return undefined;
+}
+
 function pcReference(family: string, quant: string, vendor: PerformanceHardware['gpuVendor'], vram: number | undefined, gpuName?: string): PcRef | undefined {
   if (family === 'qwen36') return quant === 'UD-Q4_K_XL' ? QWEN36[vendor === 'amd' ? 'amd' : 'nvidia'] : undefined;
   if (family === 'unsloth') return R9700[quant];
   if (family === 'qwen' || family === 'swift' || family === 'coder') {
-    if (vendor === 'amd') return (vram ?? 0) >= 24 && R9700[quant] ? R9700[quant] : RX9070XT[quant] ?? RTX5070[quant];
-    const named = family === 'coder' ? undefined : namedNvidiaTable(gpuName);
-    // A faster card without its own run of this quant falls through to the tiers below (shown as a lower bound); a
-    // slower one shows no figure rather than a faster card's.
+    const v = vram ?? 0;
+    if (vendor === 'amd') {
+      // The 32 GB tier first (its own run, else its bigger size as a lower bound), then the 16 GB card.
+      for (const table of v >= 24 ? [R9700, RX9070XT] : [RX9070XT]) {
+        const ref = table[quant] ?? (family === 'coder' ? undefined : fromBigger([table], quant, vram));
+        if (ref) return ref;
+      }
+      return RTX5070[quant];
+    }
+    if (family === 'coder') return RTX5070[quant];
+    const named = namedNvidiaTable(gpuName);
+    // A slower named card shows its own runs (or its own bigger size as a lower bound), never a faster card's figure.
     if (named?.[quant]) return named[quant];
-    if (named && named !== RTX5090) return undefined;
-    if (family !== 'coder' && (vram ?? 0) >= 28 && NVIDIA32[quant]) return NVIDIA32[quant];
-    if (family !== 'coder' && (vram ?? 0) >= 20 && RTX4090[quant]) return RTX4090[quant];
-    return RTX5070[quant];
+    if (named && named !== RTX5090) return fromBigger([named], quant, undefined);
+    const big = named ? [named] : v >= 28 ? [NVIDIA32, RTX4090] : v >= 20 ? [RTX4090] : [];
+    for (const table of big) if (table[quant]) return table[quant];
+    return fromBigger(big, quant, vram) ?? RTX5070[quant];
   }
   return undefined;
 }
@@ -223,7 +255,7 @@ export function estimatePerformance(family: string, quant: string, hardware: Per
   const source = ref.basis === 'pcR9700' ? (family === 'qwen36' ? PERFORMANCE_SOURCES.qwen36 : PERFORMANCE_SOURCES.pcR9700) : ref.basis === 'pcRtx3060' ? PERFORMANCE_SOURCES.qwen36
     : ref.basis === 'pcRtx4090' || ref.basis === 'pcNvidia32' || ref.basis === 'pcRtx5090' || ref.basis === 'pcRtx3060Bench' || ref.basis === 'pcRtx4060Ti' ? PERFORMANCE_SOURCES[ref.basis]
     : PERFORMANCE_SOURCES.pcRtx5070;
-  return { mode: 'gpu', memoryGB: ram, decode: ref.decode, ttft4k: ttft(ref.prompt.low, ref.prompt.high), bound, referenceVramGB: ref.vram, basis: ref.basis, extrapolated: false, source };
+  return { mode: 'gpu', memoryGB: ram, decode: ref.decode, ttft4k: ttft(ref.prompt.low, ref.prompt.high), bound, referenceVramGB: ref.vram, basis: ref.basis, extrapolated: false, ...(ref.inferredFrom ? { inferredFrom: ref.inferredFrom } : {}), source: ref.source ?? source };
 }
 
 /** "≈ 8–14" / "≤ 120" / "≥ 60" (rounded, no false precision). */

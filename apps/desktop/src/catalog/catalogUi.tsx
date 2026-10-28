@@ -27,11 +27,16 @@ export function useCommunityModels(platform: RuntimePackagePlatform, enabled: bo
 
 const round = (value: number) => value >= 10 ? Math.round(value) : Math.round(value * 10) / 10;
 
+/** Where the figure comes from, plus how it was derived when it is not a run of this size on this reference. */
+export function basisText(estimate: PerformanceEstimate, copy: CatalogCopy): string {
+  return [copy.basis[estimate.basis], estimate.inferredFrom ? copy.inferredFrom(estimate.inferredFrom) : '', estimate.extrapolated ? copy.basis.macStreamExtrapolated : ''].filter(Boolean).join(' · ');
+}
+
 /** "8–14 tok/s" with "估算 · 首字 22–51 s" below; the basis goes into the tooltip. */
 export function EstimateCell({ estimate, copy }: { estimate: PerformanceEstimate; copy: CatalogCopy }) {
   const decode = core.formatRange(estimate.decode, estimate.bound);
   const ttft = core.formatRange(estimate.ttft4k, undefined, 1);
-  const title = `${copy.basis[estimate.basis]}${estimate.extrapolated ? ' · ' + copy.basis.macStreamExtrapolated : ''}`;
+  const title = basisText(estimate, copy);
   if (!decode) return <span className="cat-est is-none" title={title}><small>{estimate.mode === 'lowRam' ? copy.mode.lowRam : copy.noData}</small></span>;
   return <span className="cat-est" title={title}>
     <span className="cat-est-main"><b>{decode}</b> {copy.tokS}</span>
