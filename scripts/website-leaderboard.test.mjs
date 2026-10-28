@@ -35,7 +35,7 @@ test('the official benchmark is the default board; the context board stays one s
   const sorts = script.match(/const OFFICIAL_SORTS = \{([^\n]+)\};/)[1];
   assert.deepEqual(keys(sorts), Object.keys(OFFICIAL_SORTS), 'same official sort keys as services/arena');
   assert.match(script, /mode: 'official'/, 'no hash opens the official board');
-  assert.match(script, /if \(!raw\) return;\n\s+state\.mode = 'context';/, 'hashes from before the official board keep opening the context board');
+  assert.match(script, /if \(!raw\) return;\r?\n\s+state\.mode = 'context';/, 'hashes from before the official board keep opening the context board');
   assert.match(script, /p\.set\('board', state\.mode\)/);
   assert.match(script, /\$\{api\}\/v1\/official/);
   assert.match(script, /class="is-ref"/, 'published numbers render as reference rows');
