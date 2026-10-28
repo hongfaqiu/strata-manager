@@ -47,16 +47,18 @@ export function ComparisonVerdict({ t, comparable, chips }: { t: Text; comparabl
 }
 
 /** One highlight card: B value large, A beside it, B-vs-A delta and vertical A/B bars on one scale. */
-export function ComparisonHighlightCard({ metric, label, unit, a, b, aShown, bShown, delta, language }: {
+export function ComparisonHighlightCard({ metric, label, unit, a, b, aShown, bShown, delta, language, aLabel = 'A', bLabel }: {
   metric: string; label: ReactNode; unit: string; a: number | null; b: number | null; aShown: string; bShown: string; delta: ValueDelta; language: string;
+  /** Side names; default "A" before the A value and nothing before B, as in the history comparison. */
+  aLabel?: string; bLabel?: string;
 }) {
   const heights = dualBarHeights(a, b);
   return <article className="bhc-card" data-metric={metric}>
     <div className="bhc-card-copy">
       <span className="bhc-card-label">{label} · {unit}</span>
       <div className="bhc-card-values">
-        <b data-win={winAttr(delta, 'b')}>{bShown}<small>{unit}</small></b>
-        <span className="bhc-card-a" data-win={winAttr(delta, 'a')}>A {aShown}</span>
+        <b data-win={winAttr(delta, 'b')}>{bLabel && <small className="bhc-card-side">{bLabel}</small>}{bShown}<small>{unit}</small></b>
+        <span className="bhc-card-a" data-win={winAttr(delta, 'a')}>{aLabel} {aShown}</span>
         <span className="bhc-delta" data-tone={deltaTone(delta.improved)}>{formatRelative(delta.relative, language)}</span>
       </div>
     </div>

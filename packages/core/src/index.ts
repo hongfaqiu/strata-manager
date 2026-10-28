@@ -39,6 +39,8 @@ export * from './benchmark-suite';
 export * from './benchmark-comparison';
 export * from './context-benchmark-types';
 export * from './context-benchmark';
+export * from './official-bench';
+export * from './official-bench-reference';
 export * from './model-download';
 export * from './local-model';
 export * from './floating-monitor';
