@@ -5,6 +5,14 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **修复 macOS 上接管外部 Strata 安装时无法识别「正在运行的管理进程」**：接管前会检查有没有官方的 `setup.py` 或 MCP（`strata_mcp.py`）还在该目录里运行，这个检查此前直接读 `/proc`，Mac 上没有 `/proc`，所以一律报「此平台无法核验完整管理进程清单，禁止恢复本应用管理」，导致 Mac 上无法接管。现在 Mac 通过系统进程表读取命令行、可执行文件和工作目录，判定规则与 Linux 一致：其它账号或系统进程看不到参数就跳过；一旦参数显示它在跑管理脚本却读不出可执行文件，仍然拒绝接管。Windows 和 Linux 的行为不变。
+
+### English
+
+- **Fixed macOS not recognising a running management process before taking over an external Strata install**: before taking over, Manager checks that no official `setup.py` or MCP (`strata_mcp.py`) is still running from the folder. That check read `/proc` directly, which a Mac does not have, so it always failed with "this platform cannot verify the full list of management processes" and a Mac could not take over. A Mac now reads the command line, executable and working directory from the system process table and applies the same rules as Linux: another account's or system processes that expose no arguments are skipped, and a process whose arguments show a management script but whose executable cannot be read still blocks the takeover. Windows and Linux behave as before.
+
 ## [0.2.27] - 2026-10-27
 
 ### 中文
