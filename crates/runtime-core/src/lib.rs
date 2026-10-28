@@ -3468,9 +3468,27 @@ pub(crate) fn output_with_timeout(
     args: &[&str],
     timeout: Duration,
 ) -> Option<String> {
+    output_with_timeout_env(program, args, &[], None, timeout)
+}
+
+/// [`output_with_timeout`] with extra environment entries and a working folder (a program whose
+/// libraries live in folders of its own, such as a Windows HIP package's `rocm/bin`).
+pub(crate) fn output_with_timeout_env(
+    program: &str,
+    args: &[&str],
+    envs: &[(std::ffi::OsString, std::ffi::OsString)],
+    cwd: Option<&Path>,
+    timeout: Duration,
+) -> Option<String> {
     let logs: Logs = Default::default();
     let mut command = Command::new(program);
     command.args(args);
+    for (key, value) in envs {
+        command.env(key, value);
+    }
+    if let Some(cwd) = cwd {
+        command.current_dir(cwd);
+    }
     let mut process = OwnedProcess::spawn(command, logs.clone(), "probe").ok()?;
     let deadline = std::time::Instant::now() + timeout;
     let success = loop {

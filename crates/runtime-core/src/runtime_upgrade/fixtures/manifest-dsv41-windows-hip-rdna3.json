@@ -1,0 +1,1433 @@
+{
+ "schema_version": 2,
+ "id": "strata-engine",
+ "name": "strata-engine",
+ "version": "0.1.52",
+ "platform": "windows-x86_64",
+ "backend": "hip",
+ "archs": [
+  "gfx1151"
+ ],
+ "min_driver": {},
+ "build_id": "a42cc3d7df70+dsv41+rocm-win10.2.0a20260930",
+ "entrypoint": "strata-dsv41.exe",
+ "files": [
+  {
+   "path": "strata-dsv41.exe",
+   "sha256": "f3529a03fa1e82de16a80d0d29b662702e8d8570bfbbde6c01fe8237b373fb85",
+   "bytes": 25182720
+  },
+  {
+   "path": "BUILD.json",
+   "sha256": "d46667f5b896dc0587867fda2aad18e760c78d28efe23d3bdbded627d2cf8e34",
+   "bytes": 281
+  },
+  {
+   "path": "amd_comgr.dll",
+   "sha256": "0dd4e51ff6c32354b859ce8d91bd056eeb6cf4b42bc42fa6e7728ab5637cc954",
+   "bytes": 124121600
+  },
+  {
+   "path": "amdhip64_7.dll",
+   "sha256": "344386dd39b2bba7060d62720054b9375401f23f2bcd29d730dd8d43019683cd",
+   "bytes": 16399360
+  },
+  {
+   "path": "msvcp140.dll",
+   "sha256": "0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9",
+   "bytes": 557728
+  },
+  {
+   "path": "msvcp140_atomic_wait.dll",
+   "sha256": "640b2aefced484d0368eea5bdd06addd0658a3a70a49256e560d6923b404a479",
+   "bytes": 50304
+  },
+  {
+   "path": "rocm/.kpack/blas_lib_gfx1151.kpack",
+   "sha256": "74356dd57a455aa45e40292fd28cf5614a64d9643ad3703fb17b94b544503986",
+   "bytes": 5122725
+  },
+  {
+   "path": "rocm/bin/amd_comgr.dll",
+   "sha256": "0dd4e51ff6c32354b859ce8d91bd056eeb6cf4b42bc42fa6e7728ab5637cc954",
+   "bytes": 124121600
+  },
+  {
+   "path": "rocm/bin/amdhip64_7.dll",
+   "sha256": "344386dd39b2bba7060d62720054b9375401f23f2bcd29d730dd8d43019683cd",
+   "bytes": 16399360
+  },
+  {
+   "path": "rocm/bin/hipblas.dll",
+   "sha256": "1c51904da5e29f1a7747ebf9704ed45694126cbc5f9f401fa1f106341ee12a7d",
+   "bytes": 809472
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/Kernels.so-000-gfx1151.hsaco",
+   "sha256": "7539b4c5fa109c10b91c25065c48063f81ad1507c0832ab298d831fb401a4210",
+   "bytes": 3624336
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_BB_HA_Bias_Aux_SAV_UA_Type_BB_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "4788e1b34e064ae9a8d89fcea19c615bda8ade84fe175ae13c7c7f328842b603",
+   "bytes": 147264
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_BB_HA_Bias_Aux_SAV_UA_Type_BB_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "2a6464db26bfd3f9e180b2ccbf3b96be8bf366cce9650f0f296c2ee827f681ac",
+   "bytes": 9259
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_BB_HA_Bias_Aux_SAV_UA_Type_BB_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "4901801259e7275300d5175ab010469db5094dc904b606673969d37fb7258c4f",
+   "bytes": 221699
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_BB_HA_Bias_Aux_SAV_UA_Type_BB_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "36f97f57be0e18a05950ed54d51f55b34c0b1ee38f86015275539f6356a4c59a",
+   "bytes": 11215
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_BB_HA_Bias_Aux_SAV_UA_Type_BB_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "27b14eaf7b072cdadc379f02608b7654a1d10f4fc53c370e0d45e996625b02c8",
+   "bytes": 257872
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_BB_HA_Bias_Aux_SAV_UA_Type_BB_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "14322abf41824c236a47dce5b268d159217b5497d6d271116626b6267b9a9ae1",
+   "bytes": 11307
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_BB_HA_Bias_Aux_SAV_UA_Type_BB_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "0d30d43dece1cb5f17fee160a134e09231b029f14913179e6f32fb914085f75d",
+   "bytes": 1101631
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_BB_HA_Bias_Aux_SAV_UA_Type_BB_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "396b7220a130867e2467a5230c40cf69591f3665047a8dbaca4bc495a119ac18",
+   "bytes": 79365
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_BB_HA_Bias_SAV_UA_Type_BB_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "4b7af931447583c57df3427e2742915c575e98f13e44dc93ace195c9ec4649aa",
+   "bytes": 141750
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_BB_HA_Bias_SAV_UA_Type_BB_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "267964f8fbfa28876bb58b9ae0d39b1d65a748a29dd66ce821c15a15fe3381d9",
+   "bytes": 9208
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_BB_HA_Bias_SAV_UA_Type_BB_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "d48f0ced10414f3258b023375e85b6c511d469417e2b219034b37af827a2a3b6",
+   "bytes": 461678
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_BB_HA_Bias_SAV_UA_Type_BB_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "1606a5cc602150f75d47521ae5199b389900a0d30fb5aeaed6bd46379b7cc9c7",
+   "bytes": 50643
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_BB_HA_Bias_SAV_UA_Type_BB_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "5ca2f368b7125244e6c477936548a1cec2a6a4d6a35e48c774ad8621d114eb74",
+   "bytes": 250090
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_BB_HA_Bias_SAV_UA_Type_BB_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "adcf68a43c5b2ebe3433fdade2f57904416126937147d0b95bf237d2efa54a68",
+   "bytes": 11204
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_BB_HA_Bias_SAV_UA_Type_BB_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "10eb60fc7bec706c6f7710e4c1d81df4bd2ab33195eab4bde23e65555f4f7079",
+   "bytes": 1020549
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_BB_HA_Bias_SAV_UA_Type_BB_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "8ef69dcd94c3d09abf90fd7684d1d61c767f989af888820eea23c977f7c7bb17",
+   "bytes": 80060
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_BB_HA_SAV_UA_Type_BB_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "5dcd9db0f21cfb4541d9ebd1c9eb157b40708c5e0529ef5f5e02fb40fb2b20fc",
+   "bytes": 39819
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_BB_HA_SAV_UA_Type_BB_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "b556da58c2485ccea64864ba62a7c10ae3bcc7eae5dc0b788b7e21d5ea186704",
+   "bytes": 3415
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_SB_HA_Bias_SAV_UA_Type_BS_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "90ddcb803e152cb6ebb6ff48754745d949f3894d53eaa9383d3ea2232801a0dd",
+   "bytes": 41278
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_SB_HA_Bias_SAV_UA_Type_BS_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "62bc17c3ec5ae0e0b21815c1b34c59ecee7af7aaa335557adf6619e76311e727",
+   "bytes": 3369
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_SB_HA_Bias_SAV_UA_Type_BS_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "953fa2c810814a4059f7e94d3ba2360773f80f7006f67c7704246ee77acf0b0e",
+   "bytes": 47611
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_SB_HA_Bias_SAV_UA_Type_BS_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "08e0da824e1b79f00e1599153d6cf8451d062b795f9f262b315de79209da1e04",
+   "bytes": 3369
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_SB_HA_Bias_SAV_UA_Type_BS_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "9e8031196c123ed51a0c043baa43ea6e813499e7bb5e2e92156743705b03ed20",
+   "bytes": 41134
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_SB_HA_Bias_SAV_UA_Type_BS_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "048ae6136f8c81cd55743661efaf41ab101e25eccb820fd428e81744dd2993db",
+   "bytes": 3288
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_SB_HA_Bias_SAV_UA_Type_BS_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "a1a2bbdcb299605d9226c9091a5dbdb527cefbfdce4c0475fbf6dca0bb891fa4",
+   "bytes": 31814
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_SB_HA_Bias_SAV_UA_Type_BS_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "cae54dd42ad90582e1ed59547eefad30c43397e87b0e3f4044d559183c861d94",
+   "bytes": 3193
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_SB_HA_Bias_Type_BS_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "4aef12684c1be91aa6fcd7d4b4ad1b6db771f0a65cb6d6332950b320964fb104",
+   "bytes": 19609
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_SB_HA_Bias_Type_BS_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "a1c23fb72a7720077e33aedd6d978064f7d96960398d5a13ea637e226ed139c8",
+   "bytes": 15621
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_SB_HA_Bias_Type_BS_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "94d23cb7b04e7eb1519577424260be02172252c48ccbca7c5945f3ad2650cdf9",
+   "bytes": 17838
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_SB_HA_Bias_Type_BS_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "ae5beb5d0c0c8825f601bdd4422a42ab8a58b0664b62675b161e939729692980",
+   "bytes": 15267
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_SB_HA_Bias_Type_BS_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "147d6858c39ffcc664cf0e8a6cc282af07c47bd6c5cfda51130dcd2635462edc",
+   "bytes": 16299
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_BB_SB_HA_Bias_Type_BS_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "5da0592a431d441f6819e771564c25e0d92be7a62c6f89113fb97a30724e4080",
+   "bytes": 15157
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_DD_DD_UA_Type_DD_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "198e65b894647e82e71d699ec56d976ed7e5ddac8f6adc18b5bd03d382351b2b",
+   "bytes": 13452
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_DD_DD_UA_Type_DD_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "ce720904c90a8c150a170d7002d64ac5bf041c14207e91b88608a03a7a6e27da",
+   "bytes": 5692
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_DD_DD_UA_Type_DD_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "d21fee33b02f67abe612b0868fe2ae269682f7e3b6ab56a759f0f60aa6e77e92",
+   "bytes": 13492
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_DD_DD_UA_Type_DD_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "dd3989c68baaa6219d7c498b2cb8dfad77daf5d49e9bd1441812a0c55fa53ca8",
+   "bytes": 5681
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_DD_DD_UA_Type_DD_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "0645dac42235d1837936654cab4081fd5d28995fa1a96a95aa1c9a1a891635ec",
+   "bytes": 13495
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_DD_DD_UA_Type_DD_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "e8f405b79fb8345dafa5bccf915bf88486af5985fece80776299a72a16bba298",
+   "bytes": 5759
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_DD_DD_UA_Type_DD_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "07d84e54dca68c1c99b8a37fcf31bd3d2521b1242c14ab94c2da37ad315c17a8",
+   "bytes": 13532
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_DD_DD_UA_Type_DD_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "2ac2d9d0f74d8d8ae941016ee0f7f8678f4a71bfb021b1f1d7e3997a1c1bdb27",
+   "bytes": 5726
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_HH_HA_Bias_Aux_SAV_UA_Type_HH_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "ac5ea5f3b922f32a5f279baba51925c4c79db78a71e692981a628747819558b8",
+   "bytes": 141395
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_HH_HA_Bias_Aux_SAV_UA_Type_HH_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "91cabbd3b7f33b0158edd7a76111225ad5f903567c9254df3364b6786bd4bdb9",
+   "bytes": 9256
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_HH_HA_Bias_Aux_SAV_UA_Type_HH_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "a2eadc1e21403e27cd84dd07cdd6f855ecde9c0359474a03e91a5ca5abc71b51",
+   "bytes": 189016
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_HH_HA_Bias_Aux_SAV_UA_Type_HH_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "fc3016321eaa15c7adda72cd2e2533816c532b19c29877813e233835d4b81f22",
+   "bytes": 10939
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_HH_HA_Bias_Aux_SAV_UA_Type_HH_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "880cfcf997134b33e4b792d54e6ae140d9288bf75dab47a4a397e6dabe98f498",
+   "bytes": 246480
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_HH_HA_Bias_Aux_SAV_UA_Type_HH_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "816e3b7db9b041439129ffa0e66b40dbd52850d610cd2f141545021e38a9c826",
+   "bytes": 11864
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_HH_HA_Bias_Aux_SAV_UA_Type_HH_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "6a612b2de3fc22ef60b5f31ffe681dadca4e70c964b34d1288b230eceb6aa78a",
+   "bytes": 1040632
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_HH_HA_Bias_Aux_SAV_UA_Type_HH_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "4dd135914100269620224701b2d904c4774ccb9901f5138c82874f8b586fbe1e",
+   "bytes": 79208
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_HH_HA_Bias_SAV_UA_Type_HH_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "98c1e3134b62f08fa41fadb1fa2c035440bfcb8dc181be2ed2997d3a019269c1",
+   "bytes": 137210
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_HH_HA_Bias_SAV_UA_Type_HH_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "25241d187f7c156d5c12ca372d376db3602f67e6ae80972158f68479bfe63709",
+   "bytes": 9157
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_HH_HA_Bias_SAV_UA_Type_HH_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "a0c8ed286b06dfdc020e2e16cdb9b0aff4e0e4403d199bc8b1bf39e2e12e0d82",
+   "bytes": 424868
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_HH_HA_Bias_SAV_UA_Type_HH_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "77cd6d38baf4b7c65f5e51248ea2ae500f09e6e1b13b384b26686b173d14dc8f",
+   "bytes": 50770
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_HH_HA_Bias_SAV_UA_Type_HH_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "feea17ca491ce73ef45a747fb836d6c5d7a2f06794b6ca4f17720b051bedcff3",
+   "bytes": 237328
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_HH_HA_Bias_SAV_UA_Type_HH_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "930d2a1b4bae4d734a1442b2ad38af8b85564f27699c186e29df5d2197171593",
+   "bytes": 11714
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_HH_HA_Bias_SAV_UA_Type_HH_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "3e9b8db813105eb0e7fae6bde77bb72770061365ac285b45ed558a832c233500",
+   "bytes": 972358
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_HH_HA_Bias_SAV_UA_Type_HH_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "32fd3c620a4ca8387b392cc9414754e0464442f323749e67d93a493280e96bab",
+   "bytes": 79542
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_SH_HA_Bias_SAV_UA_Type_HS_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "c4cfc5d738821dbac4bfca644975ed8b0422001bee2f71c31bc499bc3808d5fa",
+   "bytes": 55132
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_SH_HA_Bias_SAV_UA_Type_HS_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "31faee85cf579812a0cc6df70d2afb95277b499619307129c7c5358a6a128f63",
+   "bytes": 3562
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_SH_HA_Bias_SAV_UA_Type_HS_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "8309585d911e5f96b526f40224e21d03db490483d9986d5e1392d70fc356d4a7",
+   "bytes": 47239
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_SH_HA_Bias_SAV_UA_Type_HS_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "5292d4f1b10769b9cd8c6e8c25a7928f8f6c8940f5c2f1f060012cb9de951ad4",
+   "bytes": 3403
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_SH_HA_Bias_SAV_UA_Type_HS_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "d83db4e3b6f885d41ad882b366bfcde7ec2c88acefa052ad5b1d7190687afe94",
+   "bytes": 54706
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_SH_HA_Bias_SAV_UA_Type_HS_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "4335141fdd25ff2dc390baace8fcdbfc6302eb2208c915b3e4449a7a22d02d8f",
+   "bytes": 3668
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_SH_HA_Bias_SAV_UA_Type_HS_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "457f0e3b9443212e5b81a8a9091e03077dfbf3b67c9a44f14f811925ec518f27",
+   "bytes": 27438
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_SH_HA_Bias_SAV_UA_Type_HS_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "d898ba392f230de399cdaaeb1023098c45467deb4a06a5c632e2dd69cbdbdfc0",
+   "bytes": 2936
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_SH_HA_Bias_Type_HS_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "0c51ac34a4ec73bc7aa5a0a6030d362053972ae66abdd4626e88c3993ba19258",
+   "bytes": 19556
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_SH_HA_Bias_Type_HS_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "c87733f3cb15d5c4c7576388861e31efe10710d085b365c574b9a2f80d68e8a2",
+   "bytes": 15611
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_SH_HA_Bias_Type_HS_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "3411019ae99eb307a7fc6465b6b4f6228f2236905d3c8e6d7bf4e851c9eef472",
+   "bytes": 17774
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_SH_HA_Bias_Type_HS_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "58447400710400d6985a0d634866a89d05595de2bf523f88c53124a2ff7c4a55",
+   "bytes": 15303
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_SH_HA_Bias_Type_HS_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "b4f180720b64dc15a874a7ceef6e2b640b53d3fe18556c42bb82a456c3d7b18b",
+   "bytes": 16240
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_HH_SH_HA_Bias_Type_HS_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "ca7b71abd7599ba83ff25f059553828bfa0ae9b5b468a8acff498f897adcde90",
+   "bytes": 15176
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_I8I8_I8I8_HA_SAV_UA_Type_I8I8_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "c4ce3947d4ca9e97a2bfd728edd6950ca5edac05db9cec903d6f3ab69f78745f",
+   "bytes": 33292
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_I8I8_I8I8_HA_SAV_UA_Type_I8I8_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "8e629dfcf09a7b115fc2c02e972d60195b6085a9266d287509d3cb40909f6c0a",
+   "bytes": 3186
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_I8I8_I8I8_HA_SAV_UA_Type_I8I8_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "babe2bafb7e8b1286f13be45ea1c3aa7f74f2f5a53f36152dc2bae7a5d7931c3",
+   "bytes": 38472
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_I8I8_I8I8_HA_SAV_UA_Type_I8I8_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "4621dc1b356620d71bc585a0e078f8c1e2f8cf643835c16bf946aba25677e2fd",
+   "bytes": 3264
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_I8I8_I8I8_HA_SAV_UA_Type_I8I8_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "d5c5d97a2fe377ba018f8b79c88f90885cd47b8dfb3c3459244112d28eeb6b19",
+   "bytes": 56581
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_I8I8_I8I8_HA_SAV_UA_Type_I8I8_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "3ba82106ec1b27333a9117a0a7917795edcad3da76d9b95ae9141d98fab11a50",
+   "bytes": 3441
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_I8I8_I8I8_HA_SAV_UA_Type_I8I8_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "14878318459ddbbaf34dfe710c1ed566ef45555a1c72d4046c86a1ef2eb75954",
+   "bytes": 38904
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_I8I8_I8I8_HA_SAV_UA_Type_I8I8_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "bfa4ca6dca43bfc8bc5d2ece80e600550904c757965d4b4d54b8121b4d09f7d0",
+   "bytes": 3542
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_I8I8_II8_HA_SAV_UA_Type_I8I_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "3f4670504a95c490f119409a045abc0b46ff7dd79858728d93c238aa23b9b29c",
+   "bytes": 28183
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_I8I8_II8_HA_SAV_UA_Type_I8I_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "a5c19ba25538db8960ddd2899923fd1c903a5a541496dd7476a63d5f222c421b",
+   "bytes": 3074
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_I8I8_II8_HA_SAV_UA_Type_I8I_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "93014ecb5f19a0c5f9dd3f36faff0b203f8679ac714bb812ecef58a8209311af",
+   "bytes": 41536
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_I8I8_II8_HA_SAV_UA_Type_I8I_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "deee5959fccfd27c720b74723f4fd122a3927a1896faf6139967738f4bf4f610",
+   "bytes": 3408
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_I8I8_II8_HA_SAV_UA_Type_I8I_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "06982cd0edc13c23f3e72362f2d262c3549fa5754e4d03e7fdf0a61dc9342d91",
+   "bytes": 55503
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_I8I8_II8_HA_SAV_UA_Type_I8I_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "f3a4cf526ce3023da0f9f33feb5acf0844fff7dbc1e6f9ba349013f09cabe0c8",
+   "bytes": 3335
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_I8I8_II8_HA_SAV_UA_Type_I8I_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "73bd5d7897fa61b748d6537110490fde2f3ba02cd753c30972c885632d519ab5",
+   "bytes": 34105
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_I8I8_II8_HA_SAV_UA_Type_I8I_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "35240860943619a94e9c89fb3e007d74971685a47519d50936dfea57e597f52f",
+   "bytes": 3315
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_SS_SS_HA_Bias_SAV_UA_Type_SS_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "b581a5c3d3b84f030d6897d4e399eb3d69ec93a495596a64e15d014ecef86ae7",
+   "bytes": 15701
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_SS_SS_HA_Bias_SAV_UA_Type_SS_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "febe724d339013c8b74c5630bb905c44e81fb177e6fe7f63edeb73287dfd7cee",
+   "bytes": 5887
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_SS_SS_HA_Bias_SAV_UA_Type_SS_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "c9c49debaeb92dbe84af919fb0c826d91d041203f3a40f3aa6489021e3417467",
+   "bytes": 241794
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_SS_SS_HA_Bias_SAV_UA_Type_SS_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "e1dd93d138f15c98ab68cb29bb5289ca194e4178cf5624473ae4c85b6fb1d2bd",
+   "bytes": 26506
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_SS_SS_HA_Bias_SAV_UA_Type_SS_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "158eb193a8718eed5cf0b73c50551439f5899aaa07cc7b6ba9e26e2b4bfea39b",
+   "bytes": 15722
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_SS_SS_HA_Bias_SAV_UA_Type_SS_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "a9698a48795edf873352844f14f23c04667b4e2487206bf72a59eaa5f8e4420a",
+   "bytes": 5825
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_SS_SS_HA_Bias_SAV_UA_Type_SS_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "9fa3f4f5d38d10d0826a52decc79cb1a86419f4abf4769aaf4477160dd44ebb7",
+   "bytes": 386812
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_SS_SS_HA_Bias_SAV_UA_Type_SS_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.dat.zlib",
+   "sha256": "4c986e70d4cf1ec48bf38037037df6d76ba943231eaf574267d53b7951b4520f",
+   "bytes": 33264
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLibrary_lazy_gfx1151.dat.zlib",
+   "sha256": "f4cca3725533b210db524e74308ce6f785dab5fc116b07afca4069a820f00bc1",
+   "bytes": 1297
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/TensileLiteLibrary_lazy_gfx1151_Mapping.dat.zlib",
+   "sha256": "2f4fe5b1fd36035be7fc7616da64f29bee1dfcef2febaf87bdfd8417d12c9bc2",
+   "bytes": 461
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/extop_gfx1151.co",
+   "sha256": "39e01c1640d0b0179cf3fbf079ed9584c9970b13e9b12576e8c4d1ecfe9b815e",
+   "bytes": 41736
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/hipblasltExtOpLibrary_gfx1151.dat.zlib",
+   "sha256": "c86fce17e4b9aca29fd3a2d94adfec1e1a3b7c5db9bfba92d2a939838907b766",
+   "bytes": 362
+  },
+  {
+   "path": "rocm/bin/hipblaslt/library/gfx1151/hipblasltTransform_gfx1151.hsaco",
+   "sha256": "8ec7e2d3dc1a5aa413302b1352019827ac091ccb0bbbc7ddfda68e081cf482b2",
+   "bytes": 289672
+  },
+  {
+   "path": "rocm/bin/libhipblaslt.dll",
+   "sha256": "4ecfc8e9407f89f9434b11533338738c42180eda4ee9478922d6c8c6ceb76795",
+   "bytes": 2490880
+  },
+  {
+   "path": "rocm/bin/libtensilelite-host.dll",
+   "sha256": "42f7cc0dae9db45664e54f988349744e4aa204f96e2833a6e540b3d3c839bf24",
+   "bytes": 4263424
+  },
+  {
+   "path": "rocm/bin/msvcp140.dll",
+   "sha256": "0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9",
+   "bytes": 557728
+  },
+  {
+   "path": "rocm/bin/msvcp140_atomic_wait.dll",
+   "sha256": "640b2aefced484d0368eea5bdd06addd0658a3a70a49256e560d6923b404a479",
+   "bytes": 50304
+  },
+  {
+   "path": "rocm/bin/origami.dll",
+   "sha256": "11d1cf82a4983bb4f0114e797d5a8b7b2fb9ea9d84bd47dffbac5c214d528a1a",
+   "bytes": 375296
+  },
+  {
+   "path": "rocm/bin/rocblas.dll",
+   "sha256": "36d8d37d422ca4259b3ee8a4f41ed16bc845a8fdf656c45f1cdd31dc3744106c",
+   "bytes": 21071872
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/Kernels.so-000-gfx1151.hsaco",
+   "sha256": "fb23015ae760310fbb1ddac0d71d2a8ccac5e8a36d5c3a6b688218763d149123",
+   "bytes": 236664
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_4xi8I_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "fd445b43cb9c9fde35cc745f8ee44533e9b5bc26ca23cc0635fafac969ce0475",
+   "bytes": 41800
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_4xi8I_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "786b209a8b18e8c5c70693afec639a512c26d85ddcee812404accbdb13c6d0a0",
+   "bytes": 187136
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_4xi8I_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "98e7fe3e6c335881dfd5069cceebba77b2bd4754ebb42940177cf05e631fe3a4",
+   "bytes": 35810
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_4xi8I_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "326242af408c0248a4e91155bf053b9f01181ae49013adfabf93ad58cfc86100",
+   "bytes": 156920
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_4xi8I_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "5926ea7f0829da59ee6e5a097ecccc06786b5fd02c7e10866ee83ce8eb03ed76",
+   "bytes": 42144
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_4xi8I_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "7b8d54c51fb7984cb2dacf68a256ee5314888e2229986a667c5598d88ed94a64",
+   "bytes": 185856
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_4xi8I_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "cacae90ff61acf8ba67d57bd66ca92caab03db55cc3a661e81f28ebfa52ed5c3",
+   "bytes": 35978
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_4xi8I_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "821479e7a2def530387be07a870395d965d9dbbd1e9914e8adf4d804748068bd",
+   "bytes": 155384
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_BB_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "28b43dd03d972adbd39477b773224e8bec96c5919fc05457d3f87a0abd620c4f",
+   "bytes": 53991
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_BB_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "4036ef245bfdfbf7e0fe2715bb7ca7b2c1fa4af9a0d8d17c8c7fae2c29de89e1",
+   "bytes": 529760
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_BB_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "d360288307ff91f5fa0bff9757ffc2f8ed60e0a46b84d60a991632d0586a16f1",
+   "bytes": 160252
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_BB_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.dat",
+   "sha256": "0cb9b90b174fa2dbe4c2e14f438b6716bab7615b9e3d016f8dce53935bd5a668",
+   "bytes": 235828
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_BB_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "a5d58fd1a7b63b88bc11b735c2d130fd9ee0fc2e4f9f4581247aad3b273b08ca",
+   "bytes": 51179
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_BB_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "7416d33544f5c415327fbc13866749efa4011d71e68f50c94547cfd5977dd80a",
+   "bytes": 527504
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_BB_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "1b9715745961c07ea913f724203b354f0b7af359ac61a730c8444fe3fee89246",
+   "bytes": 103498
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_BB_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.dat",
+   "sha256": "6fb831f814e675a1fe7cbe9cbfa1cc72f5a0f6798f83a7f3d52afdc5a71a8601",
+   "bytes": 207928
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_BB_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "36bec0c7f3ce941233d73e01a2b157904bebde528e0e85ac8ff1dadeda9d3b14",
+   "bytes": 38122
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_BB_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "e02adb8a7ea096a3c0ca0162909a73f354f8261146db6e2ebb345c848a60502d",
+   "bytes": 209568
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_BB_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "6be8e3d499a275ad132f04769753065ade70414c89a263102cbfbaec7afa7e6c",
+   "bytes": 183949
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_BB_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.dat",
+   "sha256": "8411c24c734aec9601684b12d62c6b47ea9cff6560a6b26b22ecef77b7e94b06",
+   "bytes": 306532
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_BB_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "a585ef00c3dc1857b1064d3c902130d811a8db037e35dc71e67ceafa0a2281b4",
+   "bytes": 51306
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_BB_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "8f13c607431601dc562cb565ebbaeb76755e05891b7e440d33d9bdc81848c5fb",
+   "bytes": 520592
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_BB_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "49221ec96fe3b7183ae2ce033e4d0a60aad256907beb49a9d2ed8e5832ced8f1",
+   "bytes": 75720
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_BB_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.dat",
+   "sha256": "ee188b5a2c06179f74caa01363c2048288fb9cd466b1bd94340f66ebf25c9870",
+   "bytes": 140929
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_BS_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "e4b18c9862216f8be8d8103b843c6e70daa0439dab6df87a33afad4ca8ad9486",
+   "bytes": 52368
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_BS_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "396c7816d0508bbaf583e4dccfc019c5285369d74eeb74b4ecc4a3f66e5249ca",
+   "bytes": 479160
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_BS_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "fb68a67a196872d98f21e778c430dcf9a5b88564efe80c119f2fd99d6aaa1c85",
+   "bytes": 30868
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_BS_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "9201f092fce3c5c4b42b04eab6a95ab061e503996cc0b4c1f11fc4aabf41d54f",
+   "bytes": 274968
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_BS_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "1b498235192bf3bc50a82054ccb46377a53025de8335953980f8eb1385ceca2c",
+   "bytes": 16518
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_BS_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "67cab0c846dc6c0366a94ec28a60c0f2b8f1f78aaf6115927288e0157e3ff438",
+   "bytes": 87792
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_BS_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "c7ad3f115f0b0dd10d78c6db8c669f05d9a75ddd6fd3de221d88539d7d9a0fba",
+   "bytes": 27323
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_BS_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "28528ddcb1043e4276dae1f293ad6cc235de2dcabbe5c82459a9aca845219f14",
+   "bytes": 216840
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_CC_Contraction_l_Ailk_BjlkC_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "906fa36835483fb63474ee4f56ff2d671bc1e6c335705c201e869b61534e722c",
+   "bytes": 7014
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_CC_Contraction_l_Ailk_BjlkC_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "6cc67b91d5a2fc2eea9a07065668c12a6fd0df5c44f245690391de60586a6835",
+   "bytes": 46784
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_CC_Contraction_l_Ailk_Bjlk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "15b0318f46a27d07b5a45600a751ce00cb8e211eee2ac5108da9e738a605fb64",
+   "bytes": 7002
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_CC_Contraction_l_Ailk_Bjlk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "346d94b955f7b6287198ec6b1dacd8710e6c5656b13d347ad221cd02167cc804",
+   "bytes": 46776
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_CC_Contraction_l_Ailk_Bljk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "31605b5eaaad996f2498c6fc1408c46f499f20eaf58d80608fed84fee18f5f84",
+   "bytes": 7018
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_CC_Contraction_l_Ailk_Bljk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "131d0806649e6ca8d62465b52276f806363db1d796bdafcd08c5bc249c254436",
+   "bytes": 46520
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_CC_Contraction_l_AlikC_BjlkC_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "8bbb6f4831ae496bb043e76c8408933cfe4bbfd968d8a17f0a0dd3043b9c54d8",
+   "bytes": 7042
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_CC_Contraction_l_AlikC_BjlkC_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "7e50af063559a32642f0e2223a674d8a327e08f0ac589c284be1b735b752d8a9",
+   "bytes": 48072
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_CC_Contraction_l_AlikC_Bjlk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "3f50d596569567cd0514c3fedaee5a244b4302c7f8b4f0cae560176ac03409ec",
+   "bytes": 7030
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_CC_Contraction_l_AlikC_Bjlk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "645b80be6d79fa098440d4dbc5b69399387a6ed6bebe5d8a512f523f0b6fe2b5",
+   "bytes": 46528
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_CC_Contraction_l_AlikC_Bljk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "80f4518ea44544519bedad673e77e1f68c06c73d6aa59746766f3fbb9dc1d17b",
+   "bytes": 7030
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_CC_Contraction_l_AlikC_Bljk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "452085f554c9199ab01c95bb96b1611833fa60cd15c7c29bfdd90330a02d3d2f",
+   "bytes": 45760
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_CC_Contraction_l_Alik_BjlkC_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "b699d5c1b3caa1da66e17514134610bd95de914ffb75dfd62c6a1360e65b4b89",
+   "bytes": 7030
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_CC_Contraction_l_Alik_BjlkC_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "63ebbcea84c5ed6b04112699f09cd18c9994065610a5f72cbdc10a7a7b228cd4",
+   "bytes": 46528
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_CC_Contraction_l_Alik_Bjlk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "f2b743882bba840b30db6c3c94746911eabbc00d947904d879055131c5f9f013",
+   "bytes": 7018
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_CC_Contraction_l_Alik_Bjlk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "4b4ea101bd46e51b6e03e00ba2b27c52c2fdb0b564617fed1bd86e75afd93aa4",
+   "bytes": 46520
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_CC_Contraction_l_Alik_Bljk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "d1169633e056029585c0c0c7f71138247cff44e7c3f15558b759d9134eecd6e0",
+   "bytes": 7018
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_CC_Contraction_l_Alik_Bljk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "0dd9e1e86c6fe77556b897cee42bc7cb3df2691d2eea1b0e899d478207b0d006",
+   "bytes": 45752
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_DD_Contraction_l_Ailk_Bjlk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "024cb7ce1bc67b75b4358f74342a8f844fd3d009a5bbd52fc2fd0694176ee3b5",
+   "bytes": 6810
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_DD_Contraction_l_Ailk_Bjlk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "8dba61a669237a7c2fbe2a351f0864ecc3f2146d0ebff6718b1b074236469a28",
+   "bytes": 21200
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_DD_Contraction_l_Ailk_Bljk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "6beb64865d86af2c393bf4b3723d592e87a49205879cdfc816f0e282ea4c9d22",
+   "bytes": 8447
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_DD_Contraction_l_Ailk_Bljk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "9644c4649f7ea42d1bd30f1b27dfa2fa8a44d0b67819c3b42d38f32ac8ee042c",
+   "bytes": 36168
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_DD_Contraction_l_Alik_Bjlk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "31b57dde3099ba2d68148551cca712b99a5836971a7775a43e89b8f0f411eaca",
+   "bytes": 6826
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_DD_Contraction_l_Alik_Bjlk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "9f2b71825db5bef3f6da49e06cb6ab1242c4e067f126dbb68e7ecf119860b7bc",
+   "bytes": 21200
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_DD_Contraction_l_Alik_Bljk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "bfc9d5e64fe9aa7a35e01b7d90bcd201582a18ad8d243515009c5f0a26bce593",
+   "bytes": 6826
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_DD_Contraction_l_Alik_Bljk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "3ab18d978c0416054ef5fb6f3c1619a4a372adf0d5ab2385465614a48ed2c193",
+   "bytes": 20944
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_Contraction_l_Ailk_Bjlk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "bb9bae4657986bd0021c40c0de2c776eee574bf4abe3fe53f87103144ab3d08e",
+   "bytes": 26528
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_Contraction_l_Ailk_Bjlk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "a21f6fe6890ea1310bfcb19c2cb567ce147ece3bd4bee1442c7ec0c02abba1b4",
+   "bytes": 209824
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "9f02718c762ee61688f42308b4241d26852c809c94d8ef1e9fb143131630e720",
+   "bytes": 174174
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.dat",
+   "sha256": "ff6fe88fb874342c6f71a010073b57056c49e96cc57a63141e3f187ec093f413",
+   "bytes": 248695
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_Contraction_l_Ailk_Bljk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "5a3f890ad251b9a81b63566b81c5063ed0157558d4b816b930109ebac36f9577",
+   "bytes": 20124
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_Contraction_l_Ailk_Bljk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "f59e4abc4422a1253b738359024eff5a80cd4d0574ee787119c6ccf7b5688a20",
+   "bytes": 100520
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "a127a9a84e3cd7965a2f44439bedcd6a61dd3b28815cc71d3d7200b21f752cbf",
+   "bytes": 148437
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.dat",
+   "sha256": "c881f7b220b71c64f139dc623b7473ee4c7aa49bd03a081cdc2dc56e1fb2ddfb",
+   "bytes": 311293
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_Contraction_l_Alik_Bjlk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "83e9a13a05840c88e0f03ae315cc357129a046ea8b5400b0695e77f01cbdc9f9",
+   "bytes": 20128
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_Contraction_l_Alik_Bjlk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "a36f381d523903d29db3787b6101d4f4fcbef8fa1b473bea5396214dba2c7373",
+   "bytes": 115112
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "9ccd7725bb045eeb0b40700f9c49011f5573ed657d5b5760d874ba0a8daca3e9",
+   "bytes": 145597
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.dat",
+   "sha256": "70595098dd9d21b5c97698f8e4b58bb108b3ee0d42b0dee57905a41fcc9b63d5",
+   "bytes": 231814
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_Contraction_l_Alik_Bljk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "0f5ce4a7ecd95275920ceb6b9be1f7e01895150f13fd9ec782f661d5e914d644",
+   "bytes": 20124
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_Contraction_l_Alik_Bljk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "77e0ad9ebe2b5360893ce2dc6f5f500da65c3d95e44a8a42d76f7ae2359acd6a",
+   "bytes": 99240
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "9eb08711174255e367b69a27451b0abd219e12c71539da7436e897d82b8c2554",
+   "bytes": 75775
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.dat",
+   "sha256": "b38a76598e7e62e41c20a59659053cc68f68dff8f27e2b967dce9c2640bebdbb",
+   "bytes": 159463
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "e3d95c6cfaf30c0e7d865a4893a6e17313648add34e61fe5561df30da86e0bc8",
+   "bytes": 71624
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "b64bddfe464978bea7a83433b3aaec04bb8943474a52d5e75251fa3aa5b0628e",
+   "bytes": 405360
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "6058cf7c922692041d5e5a97dac2f375daa11f299d0c774981d9fc7c9613fb7c",
+   "bytes": 104783
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.dat",
+   "sha256": "43b9729844368147fcd6af5fee46e71e20d9aab2a3aa34e718a8f44e7f152979",
+   "bytes": 135208
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "01742612a053218633ee47647ee08d571bb86df865df78c1fd281d61e225d29a",
+   "bytes": 50406
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "e8d3e33e8a2902520a5098370df5da8f9f985ef16580ba93fcb3b7e34f4190b9",
+   "bytes": 218040
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "709edcc413f8eef8b0852768560cd490a9beaefee0848dfdee6586cf48b2acbd",
+   "bytes": 173890
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.dat",
+   "sha256": "b0c3c6255ee0fcfcad9ebfca13757c7fb0284a2b6485c31d7240da31eb278b4b",
+   "bytes": 377706
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "40a3e045899da6bc8353b49fa3b767803f3040d0a03488f8e3f07108eee278f7",
+   "bytes": 43936
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "bb2543c25214f69621303ff0c2e756c591690a27224db9e2cf59ab580e1810cf",
+   "bytes": 116160
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "61fa911bb2abbc528ffae01191f8e98f6b46d920c53917cba78c5afb77be9baa",
+   "bytes": 137672
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.dat",
+   "sha256": "7e802645a37ef2f8f05c622b46c73e27bf875c2c5dad28727af417468370fecd",
+   "bytes": 242865
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "4d0a76240e42184d4c65534e145bdc48aae7e4aa5f1dc8aae68120de976062c9",
+   "bytes": 43960
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "d01ab5a5c8cefba0f7fd76e4b7a67af721d5b62648de687a900ad23d0849b29c",
+   "bytes": 181192
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "4b913c51c867732ca81bfbadd3df9be4a0444a93c53a3f77baedfded5d9a5607",
+   "bytes": 93639
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HH_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.dat",
+   "sha256": "92d5a9b23ef59b593302e591eb47c5fdbdcb8bf226722b7db2d87fd35053fd06",
+   "bytes": 218746
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HS_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "dcdf00f5bc21b69b9062c5e48e59ed0e31a7a826e856baf23423f2b9bedf7b44",
+   "bytes": 44914
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HS_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "5b6fe49a1d148f3f68a472c97b5758eab60338064d45b68f8a782b5ff97406c7",
+   "bytes": 339080
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HS_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "e85b86f9f35d26eb7b00f5580b7e56b256a82d52111869dee6b0ceb70bda06b4",
+   "bytes": 27097
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HS_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "c0c868449b3a26b7569b2d9db5c8b0070f0e53c3d2e6e6d52a48935fd37d5134",
+   "bytes": 221200
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HS_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "0e7e7cd1ea4bdf09dabba45ff19f31880e0077d0b46b774f579009ace6a03770",
+   "bytes": 19809
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HS_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "26504e6416d6deca7b8086f327649e985f816b09e5686d86be32c497edb4735b",
+   "bytes": 109560
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HS_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "6d3e4cac4eab1367c26378f57241637bcc220fd8e9e2814e457ebb971b4a5c95",
+   "bytes": 30630
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_HS_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "a72c42ed343fa2ff3945894890787f28c9add4d4af5e583468318be070fe51b1",
+   "bytes": 259352
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_I8I_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "8130394e8be73d272c2c5bad53f725c249579005c0d3d4b310e7463da117f105",
+   "bytes": 68538
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_I8I_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "25c66202a22e7e5a5771edfa6b3aff588f81456ca921d5e5e28ce22e72e7c0db",
+   "bytes": 569712
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_I8I_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "eea64ec26c2770d171ffce53ce37880353346f7deaf99afb02bdd5c9967d6c65",
+   "bytes": 241552
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_I8I_HPA_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.dat",
+   "sha256": "e07500fc941f2155919059450e7b1ed173376e8a384e082f85bf3271a88ca306",
+   "bytes": 315964
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_I8I_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "7ea8b6ef11537e5e34015b10482ac1889400aff19248aed3fb9f763d7aefe289",
+   "bytes": 55326
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_I8I_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "6e900d7fcedd399f7fe695a311c76cde81916e9657f0bada2ae649ab8194fec6",
+   "bytes": 389472
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_I8I_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "471c969896c10077dfdc1f8b4a3d1e9ab2ac4aba61c12e0e4269c5fc4ef6ac86",
+   "bytes": 210178
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_I8I_HPA_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.dat",
+   "sha256": "2ad501b43620e4e86119a705dc666066787cb44b3dc26dbb523f6f47ae98cec5",
+   "bytes": 382863
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_I8I_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "4c7acf5c019d1c521ad5051ebf66cee6378de3a73717856bdec57c0bf3893bf1",
+   "bytes": 65579
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_I8I_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "0732f421b90f8aff1f969fc02430f48ba07f8c0be0322f31c38a3be902cdd7a3",
+   "bytes": 543328
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_I8I_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "bbf300e20f65c447dfe0c04c2520abe94dd531872cb145ea27312cca99c817f4",
+   "bytes": 230694
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_I8I_HPA_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.dat",
+   "sha256": "5b88cdd3dde1112b92c89164a7e01e79d87b56793fc362595dd548d6c64490d9",
+   "bytes": 361973
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_I8I_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "2348f95e5cb4d58c8d50eb8e01c9d9ac4bbe1e16e29c7e250e0fd89c98298cbb",
+   "bytes": 63866
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_I8I_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "0d7e9b06a6db1396d14250b903e963a86c64b54bb78e191623522a62da15ef39",
+   "bytes": 481488
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_I8I_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "dfecae56b5d730830120def560e1a6d67362c35045b63ef6819971f9b642daab",
+   "bytes": 125059
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_I8I_HPA_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.dat",
+   "sha256": "44710242dbe505afab24da81a889cd5fb07d0448877e42f599a0a817a1a50502",
+   "bytes": 306843
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_SS_Contraction_l_Ailk_Bjlk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "fddb74cdd1f3f021cbbf7a5b90f709b673d6a27040361ba3549c28b54ecf2f10",
+   "bytes": 6830
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_SS_Contraction_l_Ailk_Bjlk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "0823d9b959128e7abdf0297e458e05e3d2c0cc97fbe06dc68de045b1714f3f85",
+   "bytes": 62680
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_SS_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "07186fd73b76eabcc7279a0fa442d1abb4a5aeb467f69281465a1c39fb36c7e6",
+   "bytes": 4011
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_SS_Contraction_l_Ailk_Bjlk_Cijk_Dijk_gfx1151.dat",
+   "sha256": "4555bb30c0450e2192ba55c40a3cb844d3c6c9d49a0a0831b6b83b65e4f8c360",
+   "bytes": 1936
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_SS_Contraction_l_Ailk_Bljk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "031862c82d2e50c5f6fa54beb97f0f1d9b6785283a61d743d7f3baf787c93ea2",
+   "bytes": 6826
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_SS_Contraction_l_Ailk_Bljk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "99c65d69b83a35d44bbf432ac83e26d62cf62a932c7c86ebcdbeefc2d1d71048",
+   "bytes": 39888
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_SS_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "c6168845de9d71e2ec2a7f05864b2db4d9c3a1e4322995fac2cf864c75b9aa16",
+   "bytes": 4019
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_SS_Contraction_l_Ailk_Bljk_Cijk_Dijk_gfx1151.dat",
+   "sha256": "2453ef942dafdde95580298821c5334928af062b7966c78458a19dfadf0e3518",
+   "bytes": 1936
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_SS_Contraction_l_Alik_Bjlk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "6cf27c84d709304649abdbf5acf0f0e51c1069623bce8f67c8d2020709475e92",
+   "bytes": 6830
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_SS_Contraction_l_Alik_Bjlk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "af93780180a76838cf79e2a47f2ba098903a9e84b5f256ea3610432b993a7ba6",
+   "bytes": 39120
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_SS_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.co",
+   "sha256": "18d2ec5a5a634edd065ee0f29b0c42a5c691ee118685670e83906c89864011d5",
+   "bytes": 4019
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_SS_Contraction_l_Alik_Bjlk_Cijk_Dijk_gfx1151.dat",
+   "sha256": "21ee763efd235543c874235ebeb8c93809254a59b8056709efb76cc33319b637",
+   "bytes": 1936
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_SS_Contraction_l_Alik_Bljk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "bfdc1c1840fa00f321473554921bd068b2c6a8207bd8047e34bf0193694d2558",
+   "bytes": 6830
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_SS_Contraction_l_Alik_Bljk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "f1b56532a939bf6e9d773033a5fc179c69eb078dc72326de5bda4be7b75c05fa",
+   "bytes": 48600
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_SS_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.co",
+   "sha256": "45f390e2e64d830c4a3c985313ca24bfd9566df91e80ed29b07ca4a4187b5199",
+   "bytes": 4019
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_SS_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.dat",
+   "sha256": "9302c6440b9e2a0f878c1272399c97648817cdfb2ee905e263bfb8471103e78a",
+   "bytes": 1936
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_ZZ_Contraction_l_Ailk_BjlkC_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "3f75d141e2b08f6e5ab7d6623ad01e185944401084595d0e9d177ae91a983497",
+   "bytes": 7046
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_ZZ_Contraction_l_Ailk_BjlkC_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "26d624c33932b7b91bf78e439cec47ae3e76f5643222cadfee418a28adbaca42",
+   "bytes": 50880
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_ZZ_Contraction_l_Ailk_Bjlk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "5c389fcbae25cfc47ec1225d9ea93e63041cc54ae3fbf51da01f599ae0707927",
+   "bytes": 7042
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_ZZ_Contraction_l_Ailk_Bjlk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "d63462531f3b7626ce6fc8466fce66eeaea2bd93e4fcea7cb40a4131d59bae25",
+   "bytes": 50872
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_ZZ_Contraction_l_Ailk_Bljk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "87cfe8064632ef0def4744f95e8240a116c84a64f7a0d6f4e736e2b5219ed9b0",
+   "bytes": 7050
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_ZZ_Contraction_l_Ailk_Bljk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "531e03ab6bdffb7ac315e5ac3e70aac36f06333a5b45e2bc4e4204389c0f7d4a",
+   "bytes": 50872
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_ZZ_Contraction_l_AlikC_BjlkC_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "d461e26de30235f1403f4a3eed508a14080bdfef1e598f816be47ea229bd241b",
+   "bytes": 7074
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_ZZ_Contraction_l_AlikC_BjlkC_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "5ba5a697e7041df1a47e90c202b21c2e2486a17765c6214885c1e7a4d220bee2",
+   "bytes": 50888
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_ZZ_Contraction_l_AlikC_Bjlk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "6da6b80bc819fa926c039e137afb6f1db593bb99a7530d4d919acda7c61b74c6",
+   "bytes": 7062
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_ZZ_Contraction_l_AlikC_Bjlk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "258ae1cfcd5d6b55045c1e8ffcf4793cbdec4884e2ef0de8e12f5cfacf965c7f",
+   "bytes": 50880
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_ZZ_Contraction_l_AlikC_Bljk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "9f3ebf62966e3a2ea34f7c7f672d7c475f959695586d9e7a367b566a8437873f",
+   "bytes": 7062
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_ZZ_Contraction_l_AlikC_Bljk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "395203ed6db896026521ca787bba3e209803c267904891fb6cd39fee0ff71b05",
+   "bytes": 50112
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_ZZ_Contraction_l_Alik_BjlkC_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "8d253e217fffad6584ed95a10fc3753e2da29066adc547075193b84bebaba248",
+   "bytes": 7062
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_ZZ_Contraction_l_Alik_BjlkC_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "364987ffa8df4ab23036228e4b9cdde7237b58050732d3f02fb38680b20f59e5",
+   "bytes": 50880
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_ZZ_Contraction_l_Alik_Bjlk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "8c84e1b56d9d366187591194545fbc1cc0e4117367634d8c9b8af545e966bd9c",
+   "bytes": 7050
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_ZZ_Contraction_l_Alik_Bjlk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "244a503fc1f9f96a95e57091b6effa68e350fdcdb5597b2f011da3e551718539",
+   "bytes": 50872
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_ZZ_Contraction_l_Alik_Bljk_Cijk_Dijk_fallback_gfx1151.dat",
+   "sha256": "cfa3c125cfc3085d86a265b97b3cfbd0eb1e2aa81daa860ad6784d6c1c6e2017",
+   "bytes": 7050
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_Type_ZZ_Contraction_l_Alik_Bljk_Cijk_Dijk_fallback_gfx1151.hsaco",
+   "sha256": "19d520170d9d7bd04d7acb07946cd38af7ebba5768b9fca40989952319a54832",
+   "bytes": 50104
+  },
+  {
+   "path": "rocm/bin/rocblas/library/gfx1151/TensileLibrary_lazy_gfx1151.dat",
+   "sha256": "9fe3b387cc588f51a25ef3430951482a8e7272c17b16e77008dbc6c01060a18d",
+   "bytes": 24618
+  },
+  {
+   "path": "rocm/bin/rocm_kpack.dll",
+   "sha256": "2e9734ffe6f6eefe1ff660a55dc85fffbcd2d66f794fce4878c6d95a55787b48",
+   "bytes": 181248
+  },
+  {
+   "path": "rocm/bin/rocsolver.dll",
+   "sha256": "e610462b06f9bd0cbb93f9dbe07763f970026fe15426ef8a0cd8eefb284d614b",
+   "bytes": 26807296
+  },
+  {
+   "path": "rocm/bin/vcruntime140.dll",
+   "sha256": "d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066",
+   "bytes": 124544
+  },
+  {
+   "path": "rocm/bin/vcruntime140_1.dll",
+   "sha256": "1f2d41c4aa5db0bc33ebf7b66d72943a817d7ce6cbe880502a9403823633093f",
+   "bytes": 49792
+  },
+  {
+   "path": "rocm/licenses/NOTICE.txt",
+   "sha256": "540650c82314e9427e02e416b68540e9e5139773683fe9a2bcaf353e6a12aaed",
+   "bytes": 1018
+  },
+  {
+   "path": "rocm/licenses/amd_comgr-LICENSE.txt",
+   "sha256": "efa88a0f81075b46f0b5eed592d8c575a7014ba402b912da68926766464f9513",
+   "bytes": 15289
+  },
+  {
+   "path": "rocm/licenses/hipblas-LICENSE.md",
+   "sha256": "9a78a90bcd69d57887f69758f83b0c95324c3a6479fcb15979fe802a24dbd479",
+   "bytes": 3553
+  },
+  {
+   "path": "rocm/licenses/hipblas-common-LICENSE.md",
+   "sha256": "154c97d6c124961d3186428271aa08779df4a3feddc0a52bf1e582337b152610",
+   "bytes": 1101
+  },
+  {
+   "path": "rocm/licenses/hipblaslt-LICENSE.md",
+   "sha256": "154c97d6c124961d3186428271aa08779df4a3feddc0a52bf1e582337b152610",
+   "bytes": 1101
+  },
+  {
+   "path": "rocm/licenses/rocblas-LICENSE.md",
+   "sha256": "1ed3230c0f9788007710f9c203808d59e4952d8bdd333ead975d2ceed08c7049",
+   "bytes": 9369
+  },
+  {
+   "path": "rocm/licenses/rocm-core-LICENSE.md",
+   "sha256": "154c97d6c124961d3186428271aa08779df4a3feddc0a52bf1e582337b152610",
+   "bytes": 1101
+  },
+  {
+   "path": "rocm/licenses/rocsolver-LICENSE.md",
+   "sha256": "b9bb9a226633f2810ae746845f89bc1acff3796d3207e20199d117f0226dac61",
+   "bytes": 5167
+  },
+  {
+   "path": "rocm_kpack.dll",
+   "sha256": "2e9734ffe6f6eefe1ff660a55dc85fffbcd2d66f794fce4878c6d95a55787b48",
+   "bytes": 181248
+  },
+  {
+   "path": "tuning/gfx1151-hipblaslt-100500.txt",
+   "sha256": "0a4416f53cb856ee76bae666e0b1856c30b8b35c8afd2b538d0d367da9f465dc",
+   "bytes": 1062
+  },
+  {
+   "path": "vcruntime140.dll",
+   "sha256": "d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066",
+   "bytes": 124544
+  },
+  {
+   "path": "vcruntime140_1.dll",
+   "sha256": "1f2d41c4aa5db0bc33ebf7b66d72943a817d7ce6cbe880502a9403823633093f",
+   "bytes": 49792
+  }
+ ],
+ "signature": {
+  "alg": "ed25519",
+  "key_id": "5d1bc23abbeffd0d",
+  "value": "ZGhO4fbLPakPcnNnu5A6NZhQWTjcXLiIg6GZgTkVXtF4z+JMY3ruGAw87UTCKqyaAlilXS7GHhxYa8wTecuhAg=="
+ },
+ "variant": "rdna3",
+ "notes": "DeepSeek-V4.1-Flash for AMD Ryzen AI Max (Strix Halo, gfx1151) on Windows; the ROCm runtime comes from the rdna3 Qwen package"
+}

@@ -1959,7 +1959,7 @@ fn checked_unix_management_command(
     Ok(Some(args))
 }
 
-#[cfg(any(not(windows), test))]
+#[cfg(any(all(not(windows), not(target_os = "macos")), test))]
 fn unix_empty_command_is_inactive(bytes: &[u8], expected_pid: u32) -> Result<bool, String> {
     let invalid = "空参数进程的内核状态不可核验，禁止恢复本应用管理";
     if bytes.len() > 4096 {
@@ -1991,10 +1991,93 @@ fn unix_empty_command_is_inactive(bytes: &[u8], expected_pid: u32) -> Result<boo
     Ok(flags & 0x0020_0000 != 0 || matches!(fields[0], "Z" | "X" | "x"))
 }
 
-#[cfg(not(windows))]
+#[cfg(any(not(windows), test))]
 type UnixPythonInventory = Vec<(Vec<String>, Option<PathBuf>)>;
 
-#[cfg(not(windows))]
+/// One entry of a system process table snapshot (macOS reads it through sysctl).
+#[cfg(any(target_os = "macos", test))]
+struct ProcessRow {
+    pid: u32,
+    cmd: Vec<std::ffi::OsString>,
+    exe: Option<PathBuf>,
+    cwd: Option<PathBuf>,
+}
+
+/// Classify a process table snapshot with the same rules the `/proc` scan uses.
+/// A process whose arguments the OS does not expose at all (another account's,
+/// kernel or exiting processes) cannot be this user's Strata management script
+/// and is skipped. Once the arguments show a setup/MCP script entry, a missing
+/// executable identity fails closed, exactly as an unreadable `/proc/PID/exe`.
+#[cfg(any(target_os = "macos", test))]
+fn management_inventory_from_rows(
+    rows: impl IntoIterator<Item = ProcessRow>,
+) -> Result<UnixPythonInventory, String> {
+    let mut commands = Vec::new();
+    let mut entries = 0;
+    for row in rows {
+        entries += 1;
+        if entries > 4096 {
+            return Err("管理进程清单超过核验上限".into());
+        }
+        if row.cmd.is_empty() {
+            continue;
+        }
+        let mut bytes = Vec::new();
+        for arg in &row.cmd {
+            let arg = arg
+                .to_str()
+                .ok_or_else(|| format!("Python 管理参数包含无效文本（PID {}）", row.pid))?;
+            bytes.extend_from_slice(arg.as_bytes());
+            bytes.push(0);
+        }
+        let exe = row.exe;
+        let Some(args) = checked_unix_management_command(&bytes, || match exe {
+            Some(exe) => Ok(Some(exe)),
+            None => Err(std::io::ErrorKind::PermissionDenied.into()),
+        })
+        .map_err(|error| format!("{error}（PID {}）", row.pid))?
+        else {
+            continue;
+        };
+        commands.push((args, row.cwd));
+        if commands.len() > 64 {
+            return Err("Python 管理进程超过核验上限".into());
+        }
+    }
+    Ok(commands)
+}
+
+#[cfg(target_os = "macos")]
+fn unix_management_inventory() -> Result<UnixPythonInventory, String> {
+    // macOS has no /proc: read argv, executable and cwd from the system process table.
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+    let mut system = System::new();
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing()
+            .with_cmd(UpdateKind::Always)
+            .with_exe(UpdateKind::Always)
+            .with_cwd(UpdateKind::Always),
+    );
+    if system.processes().is_empty() {
+        return Err("此平台无法核验完整管理进程清单，禁止恢复本应用管理".into());
+    }
+    let mut rows: Vec<_> = system
+        .processes()
+        .iter()
+        .map(|(pid, process)| ProcessRow {
+            pid: pid.as_u32(),
+            cmd: process.cmd().to_vec(),
+            exe: process.exe().map(Path::to_path_buf),
+            cwd: process.cwd().map(Path::to_path_buf),
+        })
+        .collect();
+    rows.sort_by_key(|row| row.pid);
+    management_inventory_from_rows(rows)
+}
+
+#[cfg(all(not(windows), not(target_os = "macos")))]
 fn unix_management_inventory() -> Result<UnixPythonInventory, String> {
     use std::io::Read;
     let mut commands = Vec::new();
@@ -2633,6 +2716,90 @@ mod tests {
             .unwrap(),
             "another installation's MCP must not require this root's optional script"
         );
+    }
+
+    #[test]
+    fn process_table_inventory_follows_proc_scan_rules() {
+        let row = |pid: u32, cmd: &[&str], exe: Option<&str>, cwd: Option<&str>| ProcessRow {
+            pid,
+            cmd: cmd.iter().map(std::ffi::OsString::from).collect(),
+            exe: exe.map(PathBuf::from),
+            cwd: cwd.map(PathBuf::from),
+        };
+        let inventory = management_inventory_from_rows([
+            // Another account's, kernel or exiting process: no arguments exposed.
+            row(1, &[], None, None),
+            row(2, &["/usr/sbin/cfprefsd", "agent"], None, None),
+            // An unrelated Python script never needs its executable identity.
+            row(3, &["python3", "app.py"], None, None),
+            // Not Python even though it runs a setup.py entry.
+            row(4, &["ruby", "setup.py"], Some("/usr/bin/ruby"), None),
+            // Real management scripts, including a framework Python.
+            row(
+                5,
+                &["python3", "setup.py"],
+                Some("/opt/py/bin/python3.12"),
+                Some("/rt"),
+            ),
+            row(
+                6,
+                &["/x/Python", "tools/strata_mcp.py"],
+                Some("/x/Python.app/Contents/MacOS/Python"),
+                None,
+            ),
+        ])
+        .unwrap();
+        assert_eq!(
+            inventory,
+            vec![
+                (
+                    vec!["python3".into(), "setup.py".into()],
+                    Some(PathBuf::from("/rt"))
+                ),
+                (vec!["/x/Python".into(), "tools/strata_mcp.py".into()], None),
+            ]
+        );
+    }
+
+    #[test]
+    fn process_table_inventory_fails_closed_when_identity_is_unverifiable() {
+        let row = |cmd: &[&str], exe: Option<&str>| ProcessRow {
+            pid: 77,
+            cmd: cmd.iter().map(std::ffi::OsString::from).collect(),
+            exe: exe.map(PathBuf::from),
+            cwd: None,
+        };
+        let error =
+            management_inventory_from_rows([row(&["python3", "setup.py"], None)]).unwrap_err();
+        assert!(error.contains("PID 77"), "{error}");
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStringExt;
+            let invalid = ProcessRow {
+                pid: 78,
+                cmd: vec![
+                    "python3".into(),
+                    std::ffi::OsString::from_vec(vec![0xff, 0xfe]),
+                ],
+                exe: Some(PathBuf::from("/usr/bin/python3")),
+                cwd: None,
+            };
+            assert!(management_inventory_from_rows([invalid]).is_err());
+        }
+        let too_many = (0..4097).map(|pid| ProcessRow {
+            pid,
+            cmd: Vec::new(),
+            exe: None,
+            cwd: None,
+        });
+        assert!(management_inventory_from_rows(too_many).is_err());
+        let managers = (0..65).map(|pid| ProcessRow {
+            pid,
+            cmd: vec!["python3".into(), "setup.py".into()],
+            exe: Some(PathBuf::from("/usr/bin/python3")),
+            cwd: None,
+        });
+        assert!(management_inventory_from_rows(managers).is_err());
     }
 
     /// Tests that start or scan live processes take this so one test's
