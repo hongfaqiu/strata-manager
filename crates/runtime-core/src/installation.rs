@@ -1717,6 +1717,33 @@ mod tests {
     use std::io::Cursor;
 
     #[test]
+    fn invalidating_discovery_drops_the_list_cached_before_an_update() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = RuntimeState::open(temp.path().join("data")).unwrap();
+        let stale: crate::discovery::DetectedRuntime = serde_json::from_value(serde_json::json!({
+            "installDir": "D:\\AI\\Strata", "pythonPath": "python.exe",
+            "runtimeVersion": "0.1.47", "releaseVersion": "0.2.2", "readiness": "ready",
+            "profile": {"id": "p", "name": "Strata", "baseUrl": "http://127.0.0.1:1", "installDir": "D:\\AI\\Strata", "pythonPath": "python.exe", "configPath": "c.json", "managed": true}
+        }))
+        .unwrap();
+        discovery_cache()
+            .lock()
+            .unwrap()
+            .insert(state.data_dir().to_owned(), (Instant::now(), vec![stale]));
+        let cached = status(&state).unwrap();
+        assert_eq!(cached.detected_runtimes.len(), 1, "a fresh entry is reused");
+        invalidate_discovery(state.data_dir());
+        let fresh = status(&state).unwrap();
+        assert!(
+            fresh
+                .detected_runtimes
+                .iter()
+                .all(|runtime| runtime.release_version.as_deref() != Some("0.2.2")),
+            "the next read discovers again instead of returning the old release"
+        );
+    }
+
+    #[test]
     fn installer_owned_path_rejects_symbolic_links_and_reparse_points() {
         assert!(reject_installer_link_kind(false, false).is_ok());
         assert!(reject_installer_link_kind(true, false).is_err());

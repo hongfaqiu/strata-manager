@@ -66,4 +66,11 @@ describe('release and engine versions', () => {
     expect(runtimeUpdateAllowedByPin('0.2.3', runtimePinRelease('0.1.47', [], releases))).toBe(false);
     expect(runtimeUpdateAllowedByPin('0.2.2', runtimePinRelease('0.1.47', [], releases))).toBe(true);
   });
+  it('the 0.2.7 tag released as "Strata 0.2.7.1" is current once installed', () => {
+    const latest = { latestVersion: '0.2.7', assets: [{ engineVersion: '0.1.52' }] };
+    expect(runtimeUpdateAvailable({ releaseVersion: '0.2.7', runtimeVersion: '0.1.52' }, latest)).toBe(false);
+    expect(runtimeUpdateAvailable({ releaseVersion: '0.2.7.1', runtimeVersion: '0.1.52' }, latest)).toBe(false);
+    expect(runtimeUpdateAvailable({ runtimeVersion: '0.1.52' }, latest, [{ version: '0.2.7', engineVersion: '0.1.52', prerelease: false }])).toBe(false);
+    expect(runtimeUpdateAvailable({ releaseVersion: '0.2.2', runtimeVersion: '0.1.47' }, latest)).toBe(true);
+  });
 });

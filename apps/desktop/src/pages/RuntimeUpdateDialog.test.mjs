@@ -307,8 +307,12 @@ test('new release clears a previously prefilled local source and guards its old 
 function parentFixture(kind, savedPreferences = { mode: 'official' }, pin = '') {
   const file = kind === 'manual' ? './RuntimeManagementPanel.tsx' : '../useRuntimeUpdates.ts';
   const compiled = ts.transpileModule(readFileSync(new URL(file, import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
-  const calls = { updates: [], saved: [], canceled: [], started: 0, switched: [] }, slots = [], effects = [];
-  const tasks = [], detectedRuntime = { ...runtime, readiness: 'ready' };
+  const calls = { updates: [], saved: [], canceled: [], started: 0, switched: [], installationReads: 0 }, slots = [], effects = [];
+  // `disk`: what a fresh installation read returns, when it differs from the cached list.
+  const disk = { data: undefined };
+  // `live.tasks`: a new list as from a fresh poll (the default keeps one array for older tests).
+  const live = { tasks: undefined };
+  const tasks = [], detectedRuntime = { ...runtime, readiness: 'ready' }; live.tasks = tasks;
   const queryData = {
     'runtime-installation': { data: { detectedRuntimes: [detectedRuntime] } },
     'tasks': { data: tasks },
@@ -333,6 +337,7 @@ function parentFixture(kind, savedPreferences = { mode: 'official' }, pin = '') 
     ...runtimeVersions,
     updateRuntimeZip: async (...args) => { calls.updates.push(JSON.parse(JSON.stringify(args))); return { id: 'update-task', kind: 'update', state: 'running' }; },
     listTasks: async () => tasks, loadStore: async () => '', runtimeUpdateAllowedByPin, getRuntimePin: async () => pin,
+    localRuntimeInstallation: async () => { calls.installationReads += 1; return disk.data ?? queryData['runtime-installation'].data; },
     runtimeReleaseInfo: async version => ({ ...queryData['runtime-update-info'].data, latestVersion: version, checkedAt: 200 }),
     resolveRuntimeDownloadPreferences, runtimeAssetLabel, runtimeEngineArchiveFilters, runtimeEngineIsCurrent, runtimeReasonText, runtimeTrialRollback, getRuntimeDownloadPreferences: async () => queryData['runtime-download-preferences'].data,
     saveStore: async (...args) => calls.saved.push(args), cancelTask: async id => calls.canceled.push(id),
@@ -353,7 +358,7 @@ function parentFixture(kind, savedPreferences = { mode: 'official' }, pin = '') 
     })[name] ?? {},
   });
   const props = { language: 'zh-CN', desktop: true, operationDisabled: false, onUpdateStarted: () => { calls.started += 1; } };
-  const render = () => { cursor = 0; tree = kind === 'manual' ? module.exports.RuntimeManagementPanel(props) : module.exports.useRuntimeUpdates(true, true, true, true, tasks, 'zh-CN', undefined, undefined, () => { calls.started += 1; }).dialog; while (effects.length) effects.shift()(); return tree; };
+  const render = () => { cursor = 0; tree = kind === 'manual' ? module.exports.RuntimeManagementPanel(props) : module.exports.useRuntimeUpdates(true, true, true, true, live.tasks, 'zh-CN', undefined, undefined, () => { calls.started += 1; }).dialog; while (effects.length) effects.shift()(); return tree; };
   const dialog = () => nodes(tree).find(node => node.type === 'update-dialog');
   const settle = async () => { await tick(); render(); render(); };
   const open = async () => {
@@ -361,7 +366,55 @@ function parentFixture(kind, savedPreferences = { mode: 'official' }, pin = '') 
     if (kind === 'manual') { nodes(tree).find(node => node.type === 'button' && node.props.className === 'primary').props.onClick(); render(); }
     assert.ok(dialog());
   };
-  return { calls, props, tasks, queryData, render, dialog, settle, open, tree: () => tree };
+  return { calls, props, tasks, live, queryData, disk, render, dialog, settle, open, tree: () => tree };
+}
+
+const updatedRuntime = { ...runtime, runtimeVersion: '0.1.42', readiness: 'ready' };
+
+test('an update finished on the Strata page re-reads the folder before the automatic prompt and stays quiet', async () => {
+  const f = parentFixture('automatic');
+  f.live.tasks = [{ id: 'manual-update', kind: 'update', state: 'running', message: '' }];
+  f.render(); await f.settle();
+  assert.equal(f.dialog(), undefined, 'nothing is proposed while a task runs');
+  // The task replaced the files, but the list read during it still holds the old release.
+  f.disk.data = { detectedRuntimes: [updatedRuntime] };
+  f.live.tasks = [{ ...f.live.tasks[0], state: 'completed' }];
+  f.render(); await f.settle(); await f.settle();
+  assert.ok(f.calls.installationReads >= 1, 'the installed version is re-read after the task');
+  assert.equal(f.queryData['runtime-installation'].data.detectedRuntimes[0].runtimeVersion, '0.1.42');
+  assert.equal(f.dialog(), undefined, 'no prompt for the release that is already installed');
+  assert.equal(f.calls.updates.length, 0, 'nothing is downloaded again');
+});
+
+test('the automatic prompt still opens after a task when the folder really is older', async () => {
+  const f = parentFixture('automatic');
+  f.live.tasks = [{ id: 'other', kind: 'start', state: 'running', message: '' }];
+  f.render(); await f.settle();
+  assert.equal(f.dialog(), undefined);
+  f.live.tasks = [{ ...f.live.tasks[0], state: 'completed' }];
+  f.render(); await f.settle(); await f.settle();
+  assert.ok(f.dialog(), 'an older folder is still offered the latest release');
+});
+
+for (const kind of ['manual', 'automatic']) {
+  test(`${kind} confirmation re-reads the folder and does not download a release that is already installed`, async () => {
+    const f = parentFixture(kind); await f.open();
+    f.disk.data = { detectedRuntimes: [updatedRuntime] };
+    f.dialog().props.onConfirm({}, assets[1].name); await f.settle(); await f.settle();
+    assert.equal(f.calls.updates.length, 0);
+    assert.equal(f.dialog(), undefined, 'the confirmation closes');
+  });
+
+  test(`${kind} open confirmation follows the installed version and closes once it is current`, async () => {
+    const f = parentFixture(kind); await f.open();
+    f.queryData['runtime-installation'].data = { detectedRuntimes: [{ ...runtime, runtimeVersion: '0.1.40', readiness: 'ready' }] };
+    f.render(); await f.settle();
+    assert.equal(f.dialog().props.runtime.runtimeVersion, '0.1.40', 'the dialog shows the folder as it is now, not the version it was opened with');
+    f.queryData['runtime-installation'].data = { detectedRuntimes: [updatedRuntime] };
+    f.render(); await f.settle();
+    assert.equal(f.dialog(), undefined);
+    assert.equal(f.calls.updates.length, 0);
+  });
 }
 
 for (const kind of ['manual', 'automatic']) test(`${kind} update entry stays quiet when Strata is pinned below the latest release`, async () => {

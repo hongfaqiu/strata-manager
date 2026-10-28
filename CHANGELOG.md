@@ -19,6 +19,7 @@ Maintain both languages for each version. Move unreleased changes into the actua
   - AMD 32 GB：新增 R9700 跑 IQ2_XS 的上游社区实测 88–100（引擎 0.1.38）。Q2_0 改为「≥ 88」，此前为「≥ 48」；IQ3_XXS 改为「≥ 75」，此前为「≥ 49」。
   - AMD 16 GB：新增 RX 9070 XT 跑 IQ3_S 的上游社区实测 45–46（引擎 0.1.35），此前借用 RTX 5070 的 46–53。IQ3_XXS 改为「≥ 45」，此前为 49–62。
   - 20 GB 以下、RTX 3060、12 / 16 GB NVIDIA 不变。这些档的数字都是实测，或者参考卡显存比本机大，不做推断。
+- **修复更新完 Strata 后仍弹出「确认更新 Strata」、本机显示旧版本、甚至再下载一次**：更新任务替换完文件后，安装列表仍沿用更新过程中缓存的旧结果（最多 10 秒），自动更新提示据此认为本机还是旧版本（如 Release v0.2.2 · 引擎 0.1.47），又弹出更新到 v0.2.7 的确认框；此时确认会把已安装的版本重新下载安装一遍。现在更新任务结束时先清掉这份缓存；任何任务结束后，自动提示会先重新读取本机版本再判断；确认框里的「本机」跟随当前安装状态，本机已是最新时自动关闭；点「确认更新」前也会重新核对，已是最新就不再下载。选择指定版本和本地安装包仍可重装同一版本。
 
 ### English
 
@@ -34,6 +35,7 @@ Maintain both languages for each version. Move unreleased changes into the actua
   - AMD 32 GB: adds an upstream community R9700 run on IQ2_XS at 88–100 (engine 0.1.38). Q2_0 now shows "≥ 88" (was "≥ 48") and IQ3_XXS "≥ 75" (was "≥ 49").
   - AMD 16 GB: adds an upstream community RX 9070 XT run on IQ3_S at 45–46 (engine 0.1.35), replacing the RTX 5070's 46–53. IQ3_XXS now shows "≥ 45" (was 49–62).
   - Cards under 20 GB, the RTX 3060 and 12 / 16 GB NVIDIA cards are unchanged. Their figures are measurements, or the reference card has more VRAM than the machine, so nothing is inferred.
+- **Fixed the "Update Strata" confirmation reappearing after an update, with the old version as installed, and downloading the same release again**: after the update task replaced the files, the installation list still returned the result cached during the update (up to 10 seconds), so the automatic prompt saw the old version (e.g. Release v0.2.2 · engine 0.1.47) and offered v0.2.7 again; confirming it reinstalled the release already there. The update task now drops that cache when it ends; after any task the automatic prompt re-reads the installed version before deciding; the confirmation shows the folder as it is now and closes once it is current; and confirming re-checks first, so an up-to-date folder is not downloaded again. A chosen version or a local package can still reinstall the same release.
 
 ## [0.2.28] - 2026-10-28
 
