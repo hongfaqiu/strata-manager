@@ -361,14 +361,16 @@ pub fn feed_assets(
     member_assets(feed, "engine", parse_package_name, release, tag, platform)
 }
 
-/// DeepSeek-V4.1 engines Manager installs: Windows CUDA 13, Linux CUDA 13 and Linux HIP
-/// (RX 9000 / R9700, gfx1200/gfx1201). Others in the feed are ignored.
+/// DeepSeek-V4.1 engines Manager installs: Windows CUDA 13, Linux CUDA 13, Linux HIP
+/// (RX 9000 / R9700, gfx1200/gfx1201) and Windows HIP rdna3 (Strata 0.2.7+: Ryzen AI Max /
+/// Strix Halo, gfx1151, its ROCm runtime in `rocm/bin`). Others in the feed are ignored.
 pub fn dsv41_supported(platform: &str, backend: &str, variant: &str) -> bool {
     matches!(
         (platform, backend, variant),
         ("windows-x86_64", "cuda", "cuda13")
             | ("linux-x86_64", "cuda", "cuda13")
             | ("linux-x86_64", "hip", "rx9070")
+            | ("windows-x86_64", "hip", "rdna3")
     )
 }
 
@@ -1043,6 +1045,75 @@ mod tests {
         assert!(verify_manifest_bytes(DSV41_WINDOWS_MANIFEST, cuda, "linux-x86_64").is_err());
     }
 
+    const FEED_027: &[u8] = include_bytes!("fixtures/strata-feed-v0.2.7.json");
+    const FEED_027_SIG: &[u8] = include_bytes!("fixtures/strata-feed-v0.2.7.json.sig");
+    const RELEASE_027: &str = include_str!("fixtures/release-v0.2.7.json");
+    /// The real v0.2.7 Windows DeepSeek-V4.1 engine package for Ryzen AI Max (hip rdna3, gfx1151).
+    const DSV41_WINDOWS_RDNA3_MANIFEST: &[u8] =
+        include_bytes!("fixtures/manifest-dsv41-windows-hip-rdna3.json");
+    const NOW_027: u64 = 1_793_200_000_000;
+
+    #[test]
+    fn the_real_0_2_7_feed_adds_the_windows_strix_halo_dsv41_engine() {
+        let feed = verify_feed(FEED_027, FEED_027_SIG, None, NOW_027).unwrap();
+        let release: Value = serde_json::from_str(RELEASE_027).unwrap();
+        let windows = dsv41_feed_assets(&feed, &release, "v0.2.7", "windows-x86_64").unwrap();
+        let mut names: Vec<_> = windows.iter().map(|a| a.name.as_str()).collect();
+        names.sort();
+        assert_eq!(
+            names,
+            [
+                "strata-dsv41-0.1.52-windows-x86_64-cuda-cuda13.tar.gz",
+                "strata-dsv41-0.1.52-windows-x86_64-hip-rdna3.tar.gz"
+            ]
+        );
+        let halo = windows.iter().find(|a| a.variant == "hip-rdna3").unwrap();
+        assert_eq!(halo.archs, ["gfx1151"]);
+        assert_eq!(halo.engine_version.as_deref(), Some("0.1.52"));
+        assert_eq!(halo.size, 136_927_478);
+        assert_eq!(halo.installed_bytes, Some(399_693_137));
+        assert!(halo.nvidia_min_driver.is_none());
+        assert!(halo
+            .url
+            .ends_with("/v0.2.7/strata-dsv41-0.1.52-windows-x86_64-hip-rdna3.tar.gz"));
+        // Its real signed manifest verifies for it, carries the ROCm runtime and is never an engine asset.
+        let files =
+            verify_manifest_bytes(DSV41_WINDOWS_RDNA3_MANIFEST, halo, "windows-x86_64").unwrap();
+        assert!(files.contains_key("strata-dsv41.exe"));
+        assert!(files.contains_key("rocm/bin/hipblas.dll"));
+        assert!(verify_manifest_bytes(DSV41_WINDOWS_RDNA3_MANIFEST, halo, "linux-x86_64").is_err());
+        let cuda = windows.iter().find(|a| a.variant == "cuda13").unwrap();
+        assert!(
+            verify_manifest_bytes(DSV41_WINDOWS_RDNA3_MANIFEST, cuda, "windows-x86_64").is_err()
+        );
+        assert!(installable_variant(&halo.name).is_none());
+        // Linux keeps its two DeepSeek packages, now 0.1.52.
+        let linux = dsv41_feed_assets(&feed, &release, "v0.2.7", "linux-x86_64").unwrap();
+        let mut linux: Vec<_> = linux.iter().map(|a| a.name.as_str()).collect();
+        linux.sort();
+        assert_eq!(
+            linux,
+            [
+                "strata-dsv41-0.1.52-linux-x86_64-cuda-cuda13.tar.gz",
+                "strata-dsv41-0.1.52-linux-x86_64-hip-rx9070.tar.gz"
+            ]
+        );
+        // The Strata engine 0.1.52 packages are read as before (the same backends as 0.2.6), with
+        // no DeepSeek package among them.
+        for (platform, installable) in [("windows-x86_64", 5), ("linux-x86_64", 6)] {
+            let engines = feed_assets(&feed, &release, "v0.2.7", platform).unwrap();
+            assert!(engines
+                .iter()
+                .all(|a| a.name.starts_with(ENGINE_PACKAGE_PREFIX)
+                    && a.engine_version.as_deref() == Some("0.1.52")));
+            let count = engines
+                .iter()
+                .filter(|a| installable_variant(&a.name).is_some())
+                .count();
+            assert_eq!(count, installable, "{platform}");
+        }
+    }
+
     #[test]
     fn dsv41_member_is_filtered_and_duplicates_are_refused() {
         let feed = verify_feed(FEED_026, FEED_026_SIG, None, NOW_026).unwrap();
@@ -1051,6 +1122,8 @@ mod tests {
         assert!(dsv41_supported("windows-x86_64", "cuda", "cuda13"));
         assert!(dsv41_supported("linux-x86_64", "hip", "rx9070"));
         assert!(!dsv41_supported("windows-x86_64", "hip", "rx9070"));
+        assert!(dsv41_supported("windows-x86_64", "hip", "rdna3"));
+        assert!(!dsv41_supported("linux-x86_64", "hip", "rdna3"));
         assert!(!dsv41_supported("linux-x86_64", "cuda", "cuda12"));
         // A member absent from an older feed is simply empty.
         let mut older = feed.clone();
