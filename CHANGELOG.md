@@ -5,6 +5,24 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **按显卡型号校正 NVIDIA 速度估算：32 GB 改为区间，RTX 5090 / 3060 / 4060 Ti 用各自实测**：此前只按显存分档，同档显卡的显存带宽差别很大。改动如下：
+  - 改装 RTX 4080 SUPER 32 GB 跑 IQ3_S 从「≥ 85 tok/s」改为「85–104」。依据是排行榜实测 84.9–97.9 和上游社区实测 85.3–103.9；用户本机实测中位数约 95。
+  - RTX 5090（桌面版）用上游社区实测：IQ3_S 127–171、IQ3_XXS 172–181、IQ2_XS 165–179。此前显示「≥ 85」，明显低估。
+  - RTX 3060 12 GB 用上游社区实测：IQ3_S 18–21、IQ3_XXS 24–27、Q2_0 37–45、IQ2_XS 38–46。此前套用 RTX 5070 的表，IQ3_S 显示 46–53，高估一倍多。
+  - RTX 4060 Ti 16 GB 用上游社区实测：IQ3_S 30–35、Q2_0 48–56，没有实测的量化不再显示速度。此前显示「≥ 46」/「≥ 76」。
+  - 24 GB（RTX 4090 表）和其它 12 / 16 GB 显卡（RTX 5070 表）与现有实测相符，没有改动。
+
+### English
+
+- **NVIDIA speed estimates now check the card model: 32 GB shows a range, and the RTX 5090 / 3060 / 4060 Ti use their own measurements**: the estimate only looked at VRAM, but memory bandwidth differs a lot within one VRAM tier. Changes:
+  - A modified RTX 4080 SUPER 32 GB on IQ3_S now shows "85–104" instead of "≥ 85 tok/s". This follows leaderboard runs of 84.9–97.9 and an upstream community run of 85.3–103.9; one user's own requests have a median of about 95.
+  - The desktop RTX 5090 uses upstream community runs: IQ3_S 127–171, IQ3_XXS 172–181 and IQ2_XS 165–179. It previously showed "≥ 85", well below what it measures.
+  - The RTX 3060 12 GB uses an upstream community run: IQ3_S 18–21, IQ3_XXS 24–27, Q2_0 37–45 and IQ2_XS 38–46. It used the RTX 5070 table before, so IQ3_S showed 46–53, more than twice the measurement.
+  - The RTX 4060 Ti 16 GB uses an upstream community run: IQ3_S 30–35 and Q2_0 48–56. Sizes it was not measured on show no speed. It previously showed "≥ 46" and "≥ 76".
+  - 24 GB cards (RTX 4090 table) and other 12 / 16 GB cards (RTX 5070 table) match the existing measurements and are unchanged.
+
 ## [0.2.28] - 2026-10-28
 
 ### 中文

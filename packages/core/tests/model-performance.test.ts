@@ -27,13 +27,13 @@ describe('performance estimates (doc-referenced, labelled 估算)', () => {
   });
   it('NVIDIA: the reference follows the VRAM tier, never above what a slower card of that tier measured', () => {
     const pc = (vramGB: number, quant = 'IQ3_S', memoryGB = 63.7) => estimatePerformance('qwen', quant, { platform: 'windows', memoryGB, vramGB, gpuVendor: 'nvidia' });
-    // Feedback: modified RTX 4080 SUPER 32 GB + 64 GB measured ~100 tok/s (leaderboard 85-94), Manager said "≥ 46".
+    // Feedback: modified RTX 4080 SUPER 32 GB + 64 GB measures ~95-100 tok/s (leaderboard 85-98, upstream 85-104);
+    // v0.2.28 said "≥ 85". A range now: the RTX 5090 has its own table (by name, below).
     const big = pc(32);
-    expect(big).toMatchObject({ mode: 'gpu', basis: 'pcNvidia32', referenceVramGB: 32, bound: 'lower', memoryGB: 60 });
-    expect(formatRange(big.decode, big.bound)).toBe('≥ 85');
+    expect(big).toMatchObject({ mode: 'gpu', basis: 'pcNvidia32', referenceVramGB: 32, bound: undefined, memoryGB: 60 });
+    expect(formatRange(big.decode, big.bound)).toBe('85–104');
     expect(big.source).toContain('leaderboard');
-    // RTX 5090 32 GB: measured 127-170, the lower bound stays honest.
-    expect(formatRange(pc(31.8).decode, pc(31.8).bound)).toBe('≥ 85');
+    expect(formatRange(pc(31.8).decode, pc(31.8).bound)).toBe('85–104');
     // RTX 4090 24 GB: the 4090 community runs (76-102), no bound.
     const r4090 = pc(24);
     expect(r4090).toMatchObject({ basis: 'pcRtx4090', bound: undefined });
@@ -55,6 +55,37 @@ describe('performance estimates (doc-referenced, labelled 估算)', () => {
     expect(pc(32, 'IQ3_S', 48).mode).toBe('lowRam');
     expect(estimatePerformance('qwen', 'IQ3_S', { platform: 'linux', memoryGB: 96, vramGB: 32, gpuVendor: 'amd' })).toMatchObject({ basis: 'pcR9700', bound: undefined });
     expect(estimatePerformance('qwen', 'IQ3_S', { platform: 'macos', memoryGB: 128 })).toMatchObject({ basis: 'macM5Max', bound: undefined });
+  });
+  it('NVIDIA: a few card names pick their own measured table (memory bandwidth differs within a VRAM tier)', () => {
+    const pc = (gpuName: string, vramGB: number, quant = 'IQ3_S', family = 'qwen') => estimatePerformance(family, quant, { platform: 'windows', memoryGB: 64, vramGB, gpuVendor: 'nvidia', gpuName });
+    const range = (estimate: ReturnType<typeof pc>) => formatRange(estimate.decode, estimate.bound);
+    // RTX 5090 desktop: measured 127-171 on IQ3_S, well above the 4080 SUPER 32 GB.
+    expect(pc('NVIDIA GeForce RTX 5090', 32)).toMatchObject({ basis: 'pcRtx5090', bound: undefined, referenceVramGB: 32 });
+    expect(range(pc('NVIDIA GeForce RTX 5090', 32))).toBe('127–171');
+    expect(pc('NVIDIA GeForce RTX 5090', 32).source).toContain('rtx-5090');
+    expect(range(pc('NVIDIA GeForce RTX 5090', 32, 'IQ3_XXS'))).toBe('172–181');
+    expect(range(pc('NVIDIA GeForce RTX 5090', 32, 'IQ2_XS'))).toBe('165–179');
+    // No 5090 run of Q2_0: falls back to the VRAM tiers as a lower bound.
+    expect(pc('NVIDIA GeForce RTX 5090', 32, 'Q2_0')).toMatchObject({ basis: 'pcRtx5070', bound: 'lower' });
+    // The 24 GB laptop 5090 is not the desktop card: VRAM tiers.
+    expect(pc('NVIDIA GeForce RTX 5090 Laptop GPU', 24).basis).toBe('pcRtx4090');
+    // A 4080 SUPER (modified 32 GB) keeps the 32 GB range.
+    expect(range(pc('NVIDIA GeForce RTX 4080 SUPER', 32))).toBe('85–104');
+    // RTX 3060 12 GB: measured 18-21 on IQ3_S where the RTX 5070 table said 46-53.
+    expect(pc('NVIDIA GeForce RTX 3060', 12)).toMatchObject({ basis: 'pcRtx3060Bench', bound: undefined });
+    expect(range(pc('NVIDIA GeForce RTX 3060', 12))).toBe('18–21');
+    expect(range(pc('NVIDIA GeForce RTX 3060', 12, 'Q2_0'))).toBe('37–45');
+    expect(range(pc('NVIDIA GeForce RTX 3060', 12, 'IQ3_XXS'))).toBe('24–27');
+    expect(pc('NVIDIA GeForce RTX 3060', 12).source).toContain('rtx-3060');
+    // RTX 4060 Ti 16 GB: 30-35 on IQ3_S; a size it was not measured on shows no figure, not the 5070's.
+    expect(range(pc('NVIDIA GeForce RTX 4060 Ti', 16))).toBe('30–35');
+    expect(pc('NVIDIA GeForce RTX 4060 Ti', 16, 'IQ2_XS')).toMatchObject({ mode: 'gpu', basis: 'none' });
+    expect(pc('NVIDIA GeForce RTX 4060 Ti', 16, 'IQ2_XS').decode).toBeUndefined();
+    // Other names (RTX 5070, 5060 Ti, 4070 Ti SUPER ...) keep the VRAM tiers; Coder and AMD ignore the name.
+    expect(pc('NVIDIA GeForce RTX 5070', 12)).toMatchObject({ basis: 'pcRtx5070', bound: undefined });
+    expect(pc('NVIDIA GeForce RTX 5060 Ti', 16)).toMatchObject({ basis: 'pcRtx5070', bound: 'lower' });
+    expect(pc('NVIDIA GeForce RTX 3060', 12, 'IQ1_M', 'coder').basis).toBe('pcRtx5070');
+    expect(estimatePerformance('qwen', 'IQ3_S', { platform: 'linux', memoryGB: 96, vramGB: 32, gpuVendor: 'amd', gpuName: 'RTX 5090' }).basis).toBe('pcR9700');
   });
   it('formats ranges without false precision', () => {
     expect(formatRange({ low: 7.9, high: 14.1 })).toBe('8–14');

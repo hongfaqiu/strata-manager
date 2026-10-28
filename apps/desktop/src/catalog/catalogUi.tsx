@@ -12,7 +12,7 @@ export function catalogHardware(platform: RuntimePackagePlatform, memoryGB: numb
   const parsed = (gpus ?? []).map(parseGpu);
   const best = [...parsed].sort((a, b) => (b.vramGB ?? 0) - (a.vramGB ?? 0))[0];
   const vendor = !best ? undefined : best.nvidia ? 'nvidia' as const : /amd|radeon|rx\s?\d/i.test(best.name) ? 'amd' as const : 'other' as const;
-  return { platform, memoryGB, vramGB: best?.vramGB, gpuVendor: vendor };
+  return { platform, memoryGB, vramGB: best?.vramGB, gpuVendor: vendor, gpuName: best?.name };
 }
 
 /** Built-in entries at once; discovered ones after the (cached, 24 h) Hugging Face check. Never throws. */

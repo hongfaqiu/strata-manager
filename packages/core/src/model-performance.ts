@@ -10,8 +10,12 @@
  * - PC: the RTX 5070 12 GB / RX 9070 XT 16 GB / R9700 32 GB / RTX 3060 12 GB tables of MODELS.md and QWEN36.md.
  *   NVIDIA cards with 20 GB or more use the big-card measurements of the same quant when there are any (a bigger card
  *   caches more experts, so the 12 GB table is far too low there): RTX 4090 24 GB (upstream community benchmarks) and
- *   modified RTX 4080 SUPER 32 GB (Strata Arena leaderboard; RTX 5090 32 GB measured 127-170 on IQ3_S, so 32 GB is
- *   shown as a lower bound). Quants without a big-card run fall back to the next smaller tier as a lower bound.
+ *   modified RTX 4080 SUPER 32 GB (Strata Arena leaderboard + upstream community run). Quants without a big-card run
+ *   fall back to the next smaller tier as a lower bound.
+ *   VRAM alone does not separate cards of very different memory bandwidth, so a few GPU names (from nvidia-smi) pick
+ *   their own measured table first: RTX 5090 (desktop, 32 GB), RTX 3060 and RTX 4060 Ti (low-bandwidth cards that
+ *   measured well below the RTX 5070 12 GB table). A quant without a run on a slow card shows no speed rather than
+ *   borrowing a faster card's figure; on the 5090 it falls back to the VRAM tiers as a lower bound.
  *   "RAM ≥ experts + 10 GB" (MODELS.md "Will it fit?") else the low-RAM mode (much slower, no published number).
  *   Less VRAM than the reference → the figure is an upper bound; more → a lower bound (MODELS.md: more VRAM is faster).
  * - Time to first token = 4,096 prompt tokens / the measured prompt rate (range over the published rates).
@@ -37,11 +41,18 @@ export const PERFORMANCE_SOURCES = {
   qwen36: doc('MODELS.md', '#qwen36-35b-a3b'),
   pcRtx4090: bench('2026-10-03-community-rtx4090-iq3s-140k-code'),
   pcNvidia32: ARENA_URL,
+  pcRtx5090: bench('2026-10-05-community-rtx-5090-9700x-iq3s'),
+  pcRtx3060Bench: bench('2026-10-09-community-rtx-3060-0141'),
+  pcRtx4060Ti: bench('2026-10-05-community-e5-2673v3-rtx-4060ti'),
 } as const;
-export type PerformanceBasis = 'macM5Max' | 'macStream' | 'macStreamExtrapolated' | 'pcRtx5070' | 'pcRtx4090' | 'pcNvidia32' | 'pcRx9070xt' | 'pcR9700' | 'pcRtx3060' | 'none';
+export type PerformanceBasis = 'macM5Max' | 'macStream' | 'macStreamExtrapolated' | 'pcRtx5070' | 'pcRtx4090' | 'pcNvidia32' | 'pcRtx5090' | 'pcRtx3060Bench' | 'pcRtx4060Ti' | 'pcRx9070xt' | 'pcR9700' | 'pcRtx3060' | 'none';
 export type PerformanceMode = 'macResident' | 'macStreaming' | 'macUnsupported' | 'gpu' | 'lowRam' | 'tooSmall' | 'unknown';
 export interface Range { low: number; high: number }
-export interface PerformanceHardware { platform: RuntimePackagePlatform; memoryGB?: number; vramGB?: number; gpuVendor?: 'nvidia' | 'amd' | 'other' }
+export interface PerformanceHardware {
+  platform: RuntimePackagePlatform; memoryGB?: number; vramGB?: number; gpuVendor?: 'nvidia' | 'amd' | 'other';
+  /** nvidia-smi / adapter name of the card the VRAM came from (picks a card-specific table when there is one). */
+  gpuName?: string;
+}
 export interface PerformanceEstimate {
   mode: PerformanceMode;
   /** Generated tokens per second. */
@@ -102,13 +113,51 @@ const RTX4090: Record<string, PcRef> = {
   IQ3_S: { basis: 'pcRtx4090', vram: 24, decode: r(76, 102), prompt: r(2058, 2084) },
 };
 /**
- * 32 GB NVIDIA, IQ3_S: the modified RTX 4080 SUPER 32 GB + 64 GB rows of the Strata Arena leaderboard (decode 84.9-93.7
- * at 262K / 512K context, prefill 2,174-2,401 tok/s). An RTX 5090 32 GB measured 127-170 (bench/results
- * 2026-10-02-community-rtx-5090-iq3s, 2026-10-05-community-rtx-5090-9700x-iq3s), so this tier is a lower bound.
+ * 32 GB NVIDIA other than an RTX 5090, IQ3_S: the modified RTX 4080 SUPER 32 GB + 64 GB rows of the Strata Arena
+ * leaderboard (decode 84.9-97.9 at 4K-128K prompts, 262K / 512K context; prefill 2,174-2,401 tok/s) and the upstream
+ * RTX 4080 SUPER 32 GB run (bench/results 2026-10-04-community-rtx-4080s-iq3s: decode 85.3-103.9, engine 0.1.38/0.1.39).
+ * A range, not a floor: the 5090 has its own table below.
  */
 const NVIDIA32: Record<string, PcRef> = {
-  IQ3_S: { basis: 'pcNvidia32', vram: 32, decode: r(85, 94), prompt: r(2174, 2401), bound: 'lower' },
+  IQ3_S: { basis: 'pcNvidia32', vram: 32, decode: r(85, 104), prompt: r(2174, 2401) },
 };
+/**
+ * Desktop RTX 5090 32 GB, one card, decode medians at 4K-262K prompts and the 4K prompt rate:
+ * IQ3_S 127.2-170.5, 4K prompt 2,473-3,072 (bench/results 2026-10-02-community-rtx-5090-iq3s, 2026-10-05-community-
+ * rtx-5090-9700x-iq3s); IQ3_XXS 171.7-181.2, 4K 3,775 (2026-10-04-community-rtx-5090-9700x); IQ2_XS 165.0-179.4,
+ * 4K 4,270 (2026-09-30-community-rtx-5090).
+ */
+const RTX5090: Record<string, PcRef> = {
+  IQ2_XS: { basis: 'pcRtx5090', vram: 32, decode: r(165, 179), prompt: r(4270, 4270) },
+  IQ3_XXS: { basis: 'pcRtx5090', vram: 32, decode: r(172, 181), prompt: r(3775, 3775) },
+  IQ3_S: { basis: 'pcRtx5090', vram: 32, decode: r(127, 171), prompt: r(2473, 3072) },
+};
+/**
+ * RTX 3060 12 GB + 64 GB DDR4, engine 0.1.41, Windows (bench/results 2026-10-09-community-rtx-3060-0141): decode
+ * ranges over the 4K-128K sweep, 4K prompt rate. Its 360 GB/s card runs at about 40% of the RTX 5070 table.
+ */
+const RTX3060: Record<string, PcRef> = {
+  Q2_0: { basis: 'pcRtx3060Bench', vram: 12, decode: r(37, 45), prompt: r(882, 882) },
+  IQ2_XS: { basis: 'pcRtx3060Bench', vram: 12, decode: r(38, 46), prompt: r(829, 829) },
+  IQ3_XXS: { basis: 'pcRtx3060Bench', vram: 12, decode: r(24, 27), prompt: r(681, 681) },
+  IQ3_S: { basis: 'pcRtx3060Bench', vram: 12, decode: r(18, 21), prompt: r(568, 568) },
+};
+/**
+ * RTX 4060 Ti 16 GB (288 GB/s) on a PCIe 3.0 x8 / DDR3 PC (bench/results 2026-10-05-community-e5-2673v3-rtx-4060ti):
+ * decode medians on the 0.1.39 path and with the later expert-tier changes, 3,454-token prompt rate.
+ */
+const RTX4060TI: Record<string, PcRef> = {
+  Q2_0: { basis: 'pcRtx4060Ti', vram: 16, decode: r(48, 56), prompt: r(715, 715) },
+  IQ3_S: { basis: 'pcRtx4060Ti', vram: 16, decode: r(30, 35), prompt: r(439, 439) },
+};
+/** Card-specific table by nvidia-smi name; undefined = use the VRAM tiers. */
+function namedNvidiaTable(name: string | undefined): Record<string, PcRef> | undefined {
+  if (!name) return undefined;
+  if (/\bRTX\s*5090\b/i.test(name) && !/laptop|mobile/i.test(name)) return RTX5090;
+  if (/\bRTX\s*3060\b/i.test(name)) return RTX3060;
+  if (/\bRTX\s*4060\s*Ti\b/i.test(name)) return RTX4060TI;
+  return undefined;
+}
 /** MODELS.md RX 9070 XT 16 GB + 47 GB (32K prompt rate). */
 const RX9070XT: Record<string, PcRef> = {
   Q2_0: { basis: 'pcRx9070xt', vram: 16, decode: r(48, 60), prompt: r(1160, 1160) },
@@ -129,11 +178,16 @@ const QWEN36: Record<'amd' | 'nvidia', PcRef> = {
   nvidia: { basis: 'pcRtx3060', vram: 12, decode: r(59.7, 59.7), prompt: r(2022, 2022) },
 };
 
-function pcReference(family: string, quant: string, vendor: PerformanceHardware['gpuVendor'], vram: number | undefined): PcRef | undefined {
+function pcReference(family: string, quant: string, vendor: PerformanceHardware['gpuVendor'], vram: number | undefined, gpuName?: string): PcRef | undefined {
   if (family === 'qwen36') return quant === 'UD-Q4_K_XL' ? QWEN36[vendor === 'amd' ? 'amd' : 'nvidia'] : undefined;
   if (family === 'unsloth') return R9700[quant];
   if (family === 'qwen' || family === 'swift' || family === 'coder') {
     if (vendor === 'amd') return (vram ?? 0) >= 24 && R9700[quant] ? R9700[quant] : RX9070XT[quant] ?? RTX5070[quant];
+    const named = family === 'coder' ? undefined : namedNvidiaTable(gpuName);
+    // A faster card without its own run of this quant falls through to the tiers below (shown as a lower bound); a
+    // slower one shows no figure rather than a faster card's.
+    if (named?.[quant]) return named[quant];
+    if (named && named !== RTX5090) return undefined;
     if (family !== 'coder' && (vram ?? 0) >= 28 && NVIDIA32[quant]) return NVIDIA32[quant];
     if (family !== 'coder' && (vram ?? 0) >= 20 && RTX4090[quant]) return RTX4090[quant];
     return RTX5070[quant];
@@ -162,12 +216,13 @@ export function estimatePerformance(family: string, quant: string, hardware: Per
   const ram = PC_RAM[family]?.[quant];
   if (ram === undefined) return { mode: 'unknown', basis: 'none', extrapolated: false };
   if (hardware.memoryGB !== undefined && hardware.memoryGB < ram) return { mode: 'lowRam', memoryGB: ram, basis: 'none', extrapolated: false, source: PERFORMANCE_SOURCES.pcFit };
-  const ref = pcReference(family, quant, hardware.gpuVendor, hardware.vramGB);
+  const ref = pcReference(family, quant, hardware.gpuVendor, hardware.vramGB, hardware.gpuVendor === 'amd' ? undefined : hardware.gpuName);
   if (!ref) return { mode: 'gpu', memoryGB: ram, basis: 'none', extrapolated: false, source: PERFORMANCE_SOURCES.pcFit };
   const vram = hardware.vramGB;
   const bound = vram === undefined ? undefined : vram < ref.vram - 1 ? 'upper' : vram > ref.vram + 1 || ref.bound === 'lower' ? 'lower' : undefined;
   const source = ref.basis === 'pcR9700' ? (family === 'qwen36' ? PERFORMANCE_SOURCES.qwen36 : PERFORMANCE_SOURCES.pcR9700) : ref.basis === 'pcRtx3060' ? PERFORMANCE_SOURCES.qwen36
-    : ref.basis === 'pcRtx4090' ? PERFORMANCE_SOURCES.pcRtx4090 : ref.basis === 'pcNvidia32' ? PERFORMANCE_SOURCES.pcNvidia32 : PERFORMANCE_SOURCES.pcRtx5070;
+    : ref.basis === 'pcRtx4090' || ref.basis === 'pcNvidia32' || ref.basis === 'pcRtx5090' || ref.basis === 'pcRtx3060Bench' || ref.basis === 'pcRtx4060Ti' ? PERFORMANCE_SOURCES[ref.basis]
+    : PERFORMANCE_SOURCES.pcRtx5070;
   return { mode: 'gpu', memoryGB: ram, decode: ref.decode, ttft4k: ttft(ref.prompt.low, ref.prompt.high), bound, referenceVramGB: ref.vram, basis: ref.basis, extrapolated: false, source };
 }
 
