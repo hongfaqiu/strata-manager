@@ -5,6 +5,14 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **修复更新完 Strata 后仍弹出「确认更新 Strata」、本机显示旧版本、甚至再下载一次**：更新任务替换完文件后，安装列表仍沿用更新过程中缓存的旧结果（最多 10 秒），自动更新提示据此认为本机还是旧版本（如 Release v0.2.2 · 引擎 0.1.47），又弹出更新到 v0.2.7 的确认框；此时确认会把已安装的版本重新下载安装一遍。现在更新任务结束时先清掉这份缓存；任何任务结束后，自动提示会先重新读取本机版本再判断；确认框里的「本机」跟随当前安装状态，本机已是最新时自动关闭；点「确认更新」前也会重新核对，已是最新就不再下载。选择指定版本和本地安装包仍可重装同一版本。
+
+### English
+
+- **Fixed the "Update Strata" confirmation reappearing after an update, with the old version as installed, and downloading the same release again**: after the update task replaced the files, the installation list still returned the result cached during the update (up to 10 seconds), so the automatic prompt saw the old version (e.g. Release v0.2.2 · engine 0.1.47) and offered v0.2.7 again; confirming it reinstalled the release already there. The update task now drops that cache when it ends; after any task the automatic prompt re-reads the installed version before deciding; the confirmation shows the folder as it is now and closes once it is current; and confirming re-checks first, so an up-to-date folder is not downloaded again. A chosen version or a local package can still reinstall the same release.
+
 ## [0.2.28] - 2026-10-28
 
 ### 中文
