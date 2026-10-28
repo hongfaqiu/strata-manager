@@ -366,12 +366,24 @@ fn estimate(request: &ResourceAssessmentRequest, hardware: HardwareSnapshot) -> 
         ram["baselineBytes"] = json!(bytes(set.ram_ok_gb, GB));
         ram["expertBytes"] = json!(bytes(set.experts_gb, GB));
         let ram_gb = hardware.total_memory_bytes as f64 / GB;
-        if request.context != u64::from(crate::disk::dsv41::CONTEXT) || request.images {
+        // dsv41_context.py: 1024 to 1M (Strata 0.2.7; run_setup keeps older releases at 8K); text only.
+        let dsv41_context = u32::try_from(request.context).unwrap_or(u32::MAX);
+        let mut context_vram_bytes = 0_u64;
+        if crate::disk::dsv41::context_problem(dsv41_context, None).is_some() || request.images {
             unknowns.push("model_unknown".into());
+        } else if dsv41_context > crate::disk::dsv41::CONTEXT {
+            // The context cache sits in graphics memory and comes out of the card's expert cache (DEEPSEEK41.md).
+            context_vram_bytes = request.context * crate::disk::dsv41::CONTEXT_VRAM_BYTES_PER_TOKEN;
+            kv["contextVramBytes"] = json!(context_vram_bytes);
+            if dsv41_context > crate::disk::dsv41::TESTED_CONTEXT {
+                note("dsv41_context_untested", false);
+            }
         }
         if let Some(apu) = hardware.gpus.iter().find(|gpu| gpu.uma) {
             // dsv41_fit.py plan(): a unified-memory APU gets the one-pool plan, never "no card".
-            let plan = dsv41_uma_plan(set, dsv41_uma_pool_gb(hardware.total_memory_bytes, apu));
+            // On an APU the graphics memory is the pool, so the context cache past 8K leaves less room for experts.
+            let pool_gb = dsv41_uma_pool_gb(hardware.total_memory_bytes, apu);
+            let plan = dsv41_uma_plan(set, (pool_gb - context_vram_bytes as f64 / GIB).max(0.0));
             match plan.fit {
                 Dsv41Fit::Fits => ram["mode"] = json!("normal"),
                 Dsv41Fit::Tight => {
@@ -383,7 +395,7 @@ fn estimate(request: &ResourceAssessmentRequest, hardware: HardwareSnapshot) -> 
                     note("dsv41_ram_spill", true);
                 }
             }
-            uma = json!({"poolBytes":bytes(plan.pool_gb, GIB),"dedicatedBytes":apu.dedicated_bytes,
+            uma = json!({"poolBytes":bytes(pool_gb, GIB),"contextBytes":context_vram_bytes,"dedicatedBytes":apu.dedicated_bytes,
                 "reserveBytes":bytes(DSV41_UMA_RESERVE_GB, GB),"residentExpertBytes":bytes(plan.resident_gb, GB),
                 "streamedExpertBytes":bytes(plan.streamed_gb, GB)});
         } else {
@@ -661,9 +673,23 @@ mod tests {
         );
         // No card of 8 GB or more.
         assert!(codes(&estimate(&req, fixture(64.0, 6.0))).contains(&"dsv41_no_card".into()));
-        // Anything but 8K text only is outside what setup offers.
-        req.context = 32768;
-        assert_eq!(estimate(&req, fixture(64.0, 12.0))["status"], "unknown");
+        assert!(tight["kv"]["contextVramBytes"].is_null());
+        // Strata 0.2.7 offers 8K to 1M: the cache costs graphics memory, past 256K it is untested.
+        req.context = 262_144;
+        let long = estimate(&req, fixture(64.0, 12.0));
+        assert_eq!(long["status"], "suggested");
+        assert_eq!(long["kv"]["contextVramBytes"], 262_144_u64 * 1259);
+        assert!(!codes(&long).contains(&"dsv41_context_untested".into()));
+        req.context = 1_048_576;
+        let native = estimate(&req, fixture(64.0, 12.0));
+        assert_eq!(native["status"], "suggested");
+        assert!(codes(&native).contains(&"dsv41_context_untested".into()));
+        // Past 1M, under 1024 or with images it is outside what setup offers.
+        for (context, images) in [(1_048_577, false), (512, false), (8192, true)] {
+            req.context = context;
+            req.images = images;
+            assert_eq!(estimate(&req, fixture(64.0, 12.0))["status"], "unknown");
+        }
     }
     fn strix_halo(ram: f64, carve_out: Option<f64>) -> HardwareSnapshot {
         let mut snapshot = fixture(ram, 0.0);
@@ -743,6 +769,47 @@ mod tests {
         assert_eq!(estimate(&req, fixture(64.0, 12.0))["uma"], Value::Null);
         assert!(!is_uma_apu("AMD Radeon RX 7900 XTX"));
         assert!(!is_uma_apu("AMD Radeon(TM) 890M Graphics"));
+    }
+    #[test]
+    fn strix_halo_long_context_takes_the_cache_from_the_pool() {
+        let mut req = request();
+        req.family = "deepseek41".into();
+        req.quant = "IST-DAS-2.00bpw".into();
+        req.context = 8192;
+        let short = estimate(&req, strix_halo(64.0, Some(64.0)));
+        assert_eq!(short["uma"]["contextBytes"], 0);
+        assert!(short["kv"]["contextVramBytes"].is_null());
+        let codes = |result: &Value| {
+            result["reasons"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|reason| reason["code"].as_str().unwrap().to_string())
+                .collect::<Vec<_>>()
+        };
+        // 1M on the 128 GB box: the cache is reported, comes out of the one pool (more experts read from
+        // the SSD), the pool itself is unchanged, and past 256K it is flagged untested; never "no card".
+        req.context = 1_048_576;
+        let long = estimate(&req, strix_halo(64.0, Some(64.0)));
+        let cache = 1_048_576_u64 * crate::disk::dsv41::CONTEXT_VRAM_BYTES_PER_TOKEN;
+        assert_eq!(long["kv"]["contextVramBytes"], cache);
+        assert_eq!(long["uma"]["contextBytes"], cache);
+        assert_eq!(long["uma"]["poolBytes"], short["uma"]["poolBytes"]);
+        let streamed = |result: &Value| result["uma"]["streamedExpertBytes"].as_u64().unwrap();
+        let extra = streamed(&long) as f64 - streamed(&short) as f64;
+        // The pool is counted in GiB as upstream, the set's sizes in GB.
+        let expected = cache as f64 / GIB * GB;
+        assert!((extra - expected).abs() < 1e6, "{extra} vs {expected}");
+        assert_eq!(long["status"], "suggested");
+        assert!(codes(&long).contains(&"dsv41_context_untested".into()));
+        assert!(codes(&long).contains(&"dsv41_ram_store".into()));
+        assert!(!codes(&long).contains(&"dsv41_no_card".into()));
+        // Outside 1024..=1M it stays unknown on an APU too.
+        req.context = 1_048_577;
+        assert_eq!(
+            estimate(&req, strix_halo(64.0, Some(64.0)))["status"],
+            "unknown"
+        );
     }
     #[test]
     fn official_single_gpu_recommendation_and_low_ram_modes() {

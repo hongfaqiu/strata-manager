@@ -5,6 +5,8 @@ import {
   isCatalogCombination, isDeepseek41Config, recommendDeepseek41, snapshotModelDownloadRequest, versionAtLeast,
   STARTUP_TUNING_FIELDS, applyStartupField, deepseek41ArgsError, startupArgumentRows, startupEngineFlagsFor, startupFieldApplies,
   startupFieldValue, validateStartupConfiguration, DEEPSEEK41_ENGINE_FLAGS, STARTUP_ENGINE_FLAGS,
+  catalogContextLocked, deepseek41ContextCost, deepseek41ContextProblem, deepseek41Contexts, deepseek41ContextUnlocked,
+  deepseek41ContextUntested,
 } from '../src';
 import type { ServiceProfile } from '../src';
 
@@ -59,12 +61,43 @@ describe('deepseek41 catalog', () => {
     expect(deepseek41HasCard([])).toBeNull();
   });
 
-  it('refuses another context or images in a download request', () => {
+  it('refuses another context or images in a download request before Strata 0.2.7', () => {
     const profile = { id: 'p', name: 'S', managed: true, installDir: '/s', pythonPath: '/s/.venv/bin/python', configPath: '/s/c.json', baseUrl: 'http://127.0.0.1:8000' } as unknown as ServiceProfile;
     const base = { model: 'deepseek41', quant: 'IST-DAS-2.00bpw', images: false } as const;
     expect(snapshotModelDownloadRequest(profile, { ...base, context: 8192 }, {}).context).toBe(8192);
     expect(() => snapshotModelDownloadRequest(profile, { ...base, context: 32768 }, {})).toThrow(/8192/);
+    expect(() => snapshotModelDownloadRequest(profile, { ...base, context: 32768 }, {}, '0.2.6')).toThrow(/8192/);
     expect(() => snapshotModelDownloadRequest(profile, { ...base, context: 8192, images: true }, {})).toThrow();
+  });
+
+  it('offers 8K to 1M on Strata 0.2.7+, like dsv41_context.py', () => {
+    const profile = { id: 'p', name: 'S', managed: true, installDir: '/s', pythonPath: '/s/.venv/bin/python', configPath: '/s/c.json', baseUrl: 'http://127.0.0.1:8000' } as unknown as ServiceProfile;
+    const base = { model: 'deepseek41', quant: 'IST-DAS-2.00bpw', images: false } as const;
+    const model = MODEL_CATALOG.find(entry => entry.family === 'deepseek41')!;
+    expect(deepseek41ContextUnlocked('0.2.6')).toBe(false);
+    expect(deepseek41ContextUnlocked(undefined)).toBe(false);
+    expect(deepseek41ContextUnlocked('v0.2.7')).toBe(true);
+    expect(catalogContextLocked(model, '0.2.6')).toBe(true);
+    expect(catalogContextLocked(model, '0.2.10')).toBe(false);
+    expect(catalogContextLocked(MODEL_CATALOG.find(entry => entry.family === 'qwen')!, '0.2.0')).toBe(false);
+    expect(deepseek41Contexts()).toEqual([8192, 32768, 65536, 131072, 262144, 524288, 1048576]);
+    expect(deepseek41Contexts(262144)).toEqual([8192, 32768, 65536, 131072, 262144]);
+    expect(deepseek41Contexts(null, 262144).at(-1)).toBe(262144);
+    expect(deepseek41ContextProblem(1048576)).toBe('');
+    expect(deepseek41ContextProblem(1048577)).not.toBe('');
+    expect(deepseek41ContextProblem(512)).not.toBe('');
+    expect(deepseek41ContextProblem(524288, 262144)).not.toBe('');
+    expect(deepseek41ContextUntested(262144)).toBe(false);
+    expect(deepseek41ContextUntested(524288)).toBe(true);
+    // The 0.2.7 measurement: 1M took about 1 GB of graphics memory and 136 experts of the 2.25 set.
+    const native = deepseek41ContextCost(1048576, 'IST-DAS-2.25bpw');
+    expect(native.vramBytes / 1e9).toBeCloseTo(1.32, 2);
+    expect(native.displacedExperts).toBe(137);
+    expect(deepseek41ContextCost(8192, 'unknown').displacedExperts).toBeNull();
+    for (const context of [8192, 32768, 1048576]) expect(snapshotModelDownloadRequest(profile, { ...base, context }, {}, '0.2.7').context).toBe(context);
+    expect(() => snapshotModelDownloadRequest(profile, { ...base, context: 1048577 }, {}, '0.2.7')).toThrow();
+    expect(() => snapshotModelDownloadRequest(profile, { ...base, context: 512 }, {}, '0.2.7')).toThrow();
+    expect(() => snapshotModelDownloadRequest(profile, { ...base, context: 32768, images: true }, {}, '0.2.7')).toThrow();
   });
 });
 

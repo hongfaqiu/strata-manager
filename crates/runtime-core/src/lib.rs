@@ -3773,9 +3773,19 @@ fn run_setup_with_preflight_options(
                 release.as_deref().unwrap_or("未知")
             ));
         }
-        // setup.py DSV41_CONTEXT: the engine was checked at 4K and 8K; it reads no pictures in this version.
-        if context != disk::dsv41::CONTEXT || images {
-            return Err("DeepSeek-V4.1-Flash 只支持 8K 上下文、不支持图像".into());
+        if images {
+            return Err("DeepSeek-V4.1-Flash 暂不支持图像".into());
+        }
+        // Strata 0.2.7 (dsv41_context.py) takes 8K to 1M; 0.2.5/0.2.6 were checked at 8K only.
+        if engine_version_at_least(release.as_deref(), &disk::dsv41::CONTEXT_RELEASE) {
+            if let Some(problem) = disk::dsv41::context_problem(context, None) {
+                return Err(problem);
+            }
+        } else if context != disk::dsv41::CONTEXT {
+            return Err(format!(
+                "DeepSeek-V4.1-Flash 的 8K 以上上下文需要 Strata 0.2.7 或更新版本（当前：{}）；请先更新 Strata，或使用 8K",
+                release.as_deref().unwrap_or("未知")
+            ));
         }
     }
     if options
@@ -3787,6 +3797,18 @@ fn run_setup_with_preflight_options(
     }
     let disk_plan = preflight(&profile, &model, &quant, images)?;
     disk_plan.require_space()?;
+    // A pack left by an earlier install states what the model files read (ds4.txt); refuse past it before setup starts.
+    if let Some(set) = deepseek.then(|| disk::dsv41::set(&quant)).flatten() {
+        let pack = disk_plan
+            .data_directory
+            .join("packs")
+            .join(set.tag().to_lowercase());
+        if let Some(problem) =
+            disk::dsv41::context_problem(context, disk::dsv41::pack_context_limit(&pack))
+        {
+            return Err(problem);
+        }
+    }
     for entry in fs::read_dir(&root).map_err(|e| e.to_string())? {
         let path = entry.map_err(|e| e.to_string())?.path();
         if path
