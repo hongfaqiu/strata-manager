@@ -114,3 +114,28 @@
   .lb-table td.lb-num[data-label]::before { content: attr(data-label) " "; color: var(--muted); }
   .lb-legend { padding: 10px 18px 14px; }
 }
+
+/* Board switch (官方基准 / 上下文测速) and the official board's bars; 官方 reference rows are dashed and unranked. */
+.lb-switch { display: inline-flex; gap: 2px; padding: 3px; margin-bottom: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+.lb-switch button { font: inherit; font-size: 14px; padding: 7px 14px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; }
+.lb-switch button[aria-pressed="true"] { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: 0 0 0 1px var(--border); }
+.lb-switch button:focus-visible { outline: 2px solid var(--green); outline-offset: 1px; }
+.lb-tag.official { color: var(--text); border-color: var(--text); font-weight: 600; }
+.lb-groups button .lb-tag.official { margin-left: 4px; font-size: 11px; line-height: 16px; }
+.lb-obars { list-style: none; margin: 0; padding: 4px 0; }
+.lb-obars > li { display: grid; grid-template-columns: 40px minmax(200px, 1.1fr) minmax(140px, 1.4fr) minmax(104px, auto); align-items: center; gap: 14px; padding: 12px 22px; border-bottom: 1px solid var(--border); }
+.lb-obars > li:last-child { border-bottom: 0; }
+.lb-obar-who { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 14px; }
+.lb-obar-who .lb-tag { margin-left: 0; }
+.lb-obar-who > .lb-params, .lb-obar-who > small { flex-basis: 100%; }
+.lb-obar-who small a { color: var(--green); text-decoration: none; }
+.lb-obar { position: relative; height: 10px; border-radius: 5px; background: var(--raised); }
+.lb-obar > i { position: absolute; inset: 0 auto 0 0; border-radius: 5px; background: var(--green); }
+.lb-obars > li.is-ref .lb-obar { background: transparent; border: 1px dashed var(--border); }
+.lb-obars > li.is-ref .lb-obar > i { background: repeating-linear-gradient(135deg, var(--muted) 0 4px, transparent 4px 7px); opacity: .7; }
+.lb-obars .lb-value { text-align: right; white-space: nowrap; font: 600 15px "Geist Mono", ui-monospace, "SFMono-Regular", Consolas, monospace; font-variant-numeric: tabular-nums; }
+.lb-obars .lb-value small { font: 500 12px var(--font, inherit); color: var(--muted); margin-left: 4px; }
+@media (max-width: 850px) {
+  .lb-obars > li { grid-template-columns: 32px 1fr minmax(84px, auto); padding: 12px 16px; }
+  .lb-obars .lb-obar { grid-column: 2 / 4; grid-row: 2; }
+}

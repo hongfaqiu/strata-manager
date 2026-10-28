@@ -28,12 +28,19 @@ export interface ArenaEvidence {
   counters: { before: ArenaEvidenceCounters; after: ArenaEvidenceCounters } | null;
 }
 /** Exactly what is uploaded (the native side adds consentVersion and signs it with the per-install key). */
+/** Summary medians of an official-method run (tools/strata_bench.py): speeds in tok/s, times in seconds, the agent cache hit in %. */
+export const ARENA_OFFICIAL_METRICS = ['chatDecodeTps', 'chatTtftS', 'p4kTps', 'p4kTtftS', 'p16kTps', 'p16kTtftS', 'p32kTps', 'p32kTtftS', 'agentHitPct', 'agentDecodeTps', 'agentTurnTtftS'] as const;
+export type ArenaOfficialMetric = typeof ARENA_OFFICIAL_METRICS[number];
+/** `upstream` is the commit of the script the run follows; `runs` and `long` are its --runs and --long. */
+export interface ArenaOfficial { upstream: string; runs: number; long: boolean; metrics: Record<ArenaOfficialMetric, number | null> }
 export interface ArenaPayload {
-  schema: 1; app: string; strata: string | null; kind: 'context' | 'scenario'; day: string;
+  schema: 1; app: string; strata: string | null; kind: 'context' | 'scenario' | 'official'; day: string;
   hw: { os: 'windows' | 'linux' | 'macos'; arch: 'x86_64' | 'aarch64'; cpu: string; ramGB: number; gpus: ArenaGpu[]; pcie: string | null; wsl: boolean };
   model: { family: string; quant: string; sha256: string | null; sizeGB: number | null };
   params: ArenaParams;
   tiers?: ArenaTier[]; scenario?: ArenaScenario; evidence?: ArenaEvidence;
+  /** kind 'official' only. The native side only sends it to servers whose /v1/health advertises `official: true`. */
+  official?: ArenaOfficial;
   /** Optional context for leaderboard tracks. The native side only sends it to servers whose /v1/health advertises `extensions: true`. */
   extensions?: ArenaExtensions;
 }
@@ -50,7 +57,8 @@ export type ArenaBuild = { payload: ArenaPayload } | { skip: 'not_completed' | '
 
 // The whitelist, as exact key sets. Both the builder and assertArenaPayloadSafe use it.
 export const ARENA_KEYS = {
-  root: ['schema', 'app', 'strata', 'kind', 'day', 'hw', 'model', 'params', 'tiers', 'scenario', 'evidence', 'extensions'],
+  root: ['schema', 'app', 'strata', 'kind', 'day', 'hw', 'model', 'params', 'tiers', 'scenario', 'evidence', 'extensions', 'official'],
+  official: ['upstream', 'runs', 'long', 'metrics'], officialMetrics: ARENA_OFFICIAL_METRICS,
   extensions: ['track', 'drafting', 'mtp', 'gpuRoles', 'experts'],
   hw: ['os', 'arch', 'cpu', 'ramGB', 'gpus', 'pcie', 'wsl'], gpu: ['vendor', 'name', 'vramGB'],
   model: ['family', 'quant', 'sha256', 'sizeGB'], params: ['ctx', 'kv', 'gpuCount', 'parallel', 'poolWorkers', 'expertCache', 'pcieFrac', 'vision'],
@@ -95,12 +103,28 @@ export function arenaModelOf(evidence: string): { family: string; quant: string 
   return family ? { family, quant } : null;
 }
 
+/**
+ * The model key the official-method board uses: the Arena key where one exists, plus the catalog models the
+ * published strata_bench.py numbers cover (Qwen NVFP4-QAD, DeepSeek IST-DAS-*bpw). `quant` is null when unknown.
+ */
+export function arenaOfficialModelKey(evidence: string): { family: string; quant: string | null } | null {
+  if (!evidence.trim()) return null;
+  if (/fp4[-_ ]?local|nvfp4[-_ ]?qad/i.test(evidence)) return { family: 'qwen', quant: 'NVFP4-QAD' };
+  if (/deepseek|dsv4|ist[-_]?das/i.test(evidence)) {
+    const bpw = evidence.match(/(\d\.\d{2})\s*[-_]?\s*bpw/i);
+    return { family: 'deepseek41', quant: bpw ? `IST-DAS-${bpw[1]}bpw` : null };
+  }
+  return arenaModelOf(evidence);
+}
+/** arenaOfficialModelKey with a known quant, for arenaLaunchParams. */
+export const arenaOfficialModelOf = (evidence: string) => { const key = arenaOfficialModelKey(evidence); return key?.quant ? { family: key.family, quant: key.quant } : null; };
+
 /** Whitelisted launch parameters from the sanitized resource configuration the native identity returns. */
-export function arenaLaunchParams(config: JsonObject | undefined): ArenaLaunch | null {
+export function arenaLaunchParams(config: JsonObject | undefined, modelOf: (evidence: string) => { family: string; quant: string } | null = arenaModelOf): ArenaLaunch | null {
   if (!config || !Array.isArray(config.args) || !config.args.every(a => typeof a === 'string')) return null;
   const args = config.args as string[];
   const read = (flag: string) => { const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : undefined; };
-  const model = arenaModelOf([read('--native'), read('--pack')].filter(Boolean).join(' '));
+  const model = modelOf([read('--native'), read('--pack')].filter(Boolean).join(' '));
   const ctx = Number(read('--max-context'));
   if (!model || !Number.isSafeInteger(ctx) || ctx < 512) return null;
   const token = (v: string | undefined) => v && /^[A-Za-z0-9_.-]{1,24}$/.test(v) ? v : null;
@@ -138,30 +162,38 @@ const osOf = (os: string): ArenaPayload['hw']['os'] | null => /windows/i.test(os
 const archOf = (arch: string): ArenaPayload['hw']['arch'] | null => /x86_64|amd64|x64/i.test(arch) ? 'x86_64' : /aarch64|arm64/i.test(arch) ? 'aarch64' : null;
 const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 
-/** Builds the upload payload from a finished report. Returns a skip reason instead of guessing. */
-export async function buildArenaPayload(report: ContextBenchmarkReport | BenchmarkSuiteReport, env: ArenaEnvironment): Promise<ArenaBuild> {
-  if (report.state !== 'completed') return { skip: 'not_completed' };
-  const identity = report.identity as (BenchmarkIdentity & { launch?: ArenaLaunch | null }) | undefined;
+/** The hardware, model and parameter part every upload kind shares. */
+export async function arenaBase(identity: BenchmarkIdentity | undefined, launch: ArenaLaunch | null | undefined, env: ArenaEnvironment,
+  run: { hardware?: JsonObject | null; engine?: unknown; finishedAt: number }): Promise<{ base: ArenaPayload; engineVersion: string | null } | { skip: 'no_identity' | 'no_hardware' | 'unknown_model' | 'unsupported_platform' }> {
   if (!identity) return { skip: 'no_identity' };
   const sig = identity.hardwareSignature;
   if (!sig || !sig.cpuName || !(sig.totalMemoryBytes > 0)) return { skip: 'no_hardware' };
-  const launch = identity.launch;
   if (!launch) return { skip: 'unknown_model' };
   const os = osOf(env.os), arch = archOf(env.arch), app = /^\d+\.\d+\.\d+$/.test(env.appVersion) ? env.appVersion : null;
   if (!os || !arch || !app) return { skip: 'unsupported_platform' };
   const gpus = sig.gpus.slice(0, 16).flatMap(g => { const name = arenaName(g.name); return name && g.totalBytes > 0 ? [{ vendor: arenaGpuVendor(name), name, vramGB: Math.max(1, Math.round(g.totalBytes / GB)) }] : []; });
-  const hw = report.hardware ?? {};
+  const hw = run.hardware ?? {};
   const gen = Number(hw.gpu_pcie_gen_max ?? hw.gpu_pcie_gen), width = Number(hw.gpu_pcie_width);
   const pcie = gen >= 1 && gen <= 7 && [1, 2, 4, 8, 16].includes(width) ? `Gen${gen} x${width}` : null;
-  const engineVersion = typeof report.engine?.version === 'string' && /^\d+\.\d+\.\d+(?:\.\d+)?$/.test(report.engine.version) ? report.engine.version : null;
+  const engineVersion = typeof run.engine === 'string' && /^\d+\.\d+\.\d+(?:\.\d+)?$/.test(run.engine) ? run.engine : null;
   const fp = await arenaModelFingerprint(identity);
   const base: ArenaPayload = {
-    schema: 1, app, strata: engineVersion, kind: 'context', day: day(report.finishedAt),
+    schema: 1, app, strata: engineVersion, kind: 'context', day: day(run.finishedAt),
     hw: { os, arch, cpu: arenaName(sig.cpuName) ?? 'Unknown CPU', ramGB: Math.max(1, Math.round(sig.totalMemoryBytes / GB)), gpus, pcie, wsl: env.wsl === true },
     model: { family: launch.family, quant: launch.quant, sha256: fp.sha256, sizeGB: fp.sizeGB },
     params: { ctx: launch.ctx, kv: launch.kv, gpuCount: Math.min(launch.gpuCount, gpus.length), parallel: launch.parallel, poolWorkers: launch.poolWorkers, expertCache: launch.expertCache, pcieFrac: launch.pcieFrac, vision: launch.vision },
     extensions: arenaExtensions(identity, launch),
   };
+  return { base, engineVersion };
+}
+
+/** Builds the upload payload from a finished report. Returns a skip reason instead of guessing. */
+export async function buildArenaPayload(report: ContextBenchmarkReport | BenchmarkSuiteReport, env: ArenaEnvironment): Promise<ArenaBuild> {
+  if (report.state !== 'completed') return { skip: 'not_completed' };
+  const identity = report.identity as (BenchmarkIdentity & { launch?: ArenaLaunch | null }) | undefined;
+  const built = await arenaBase(identity, identity?.launch, env, { hardware: report.hardware, engine: report.engine?.version, finishedAt: report.finishedAt });
+  if ('skip' in built) return built;
+  const { base, engineVersion } = built;
   if ('skippedTiers' in report) {
     const byTier = new Map<number, ContextBenchmarkReport['samples']>();
     for (const s of report.samples) { if (!byTier.has(s.targetTokens)) byTier.set(s.targetTokens, []); byTier.get(s.targetTokens)!.push(s); }
@@ -218,6 +250,11 @@ export function assertArenaPayloadSafe(payload: unknown): asserts payload is Are
   p.hw.gpus.forEach((g, i) => exact(g, ARENA_KEYS.gpu, `gpus[${i}]`));
   (p.tiers ?? []).forEach((t, i) => exact(t, ARENA_KEYS.tier, `tiers[${i}]`));
   if (p.scenario) exact(p.scenario, ARENA_KEYS.scenario, 'scenario');
+  if (p.official !== undefined) {
+    exact(p.official, ARENA_KEYS.official, 'official'); exact(p.official.metrics, ARENA_KEYS.officialMetrics, 'official.metrics');
+    if (!/^[a-f0-9]{7,40}$/.test(p.official.upstream)) fail('official.upstream');
+    for (const v of Object.values(p.official.metrics)) if (v !== null && (typeof v !== 'number' || !Number.isFinite(v))) fail('official.metrics');
+  }
   if (p.extensions !== undefined) {
     const x = p.extensions;
     exact(x, ARENA_KEYS.extensions, 'extensions');
@@ -271,8 +308,34 @@ export interface ArenaRecommendation { scene: 'chat' | 'long' | 'code'; level: '
   sameModel: { group: string; level: 'gpu' | 'vram' | 'none'; best: ArenaRecommendRow | null; current: ArenaRecommendRow | null; changes: ArenaParamChange[]; alternatives: ArenaRecommendRow[] } | null;
   otherModels: (ArenaRecommendRow & { group: string; family: string; quant: string; level: 'gpu' | 'vram' | 'none' })[] }
 
+// ---- Official-method board (/v1/official) ----
+/** Orderings of the official board; chat decode, the figure the maintainers headline, is the default. */
+export type ArenaOfficialSort = 'chatDecode' | 'prefill4k' | 'prefill16k' | 'prefill32k' | 'agentDecode' | 'machines';
+export const ARENA_OFFICIAL_SORTS: readonly ArenaOfficialSort[] = ['chatDecode', 'prefill4k', 'prefill16k', 'prefill32k', 'agentDecode', 'machines'];
+/** The figures a board row carries (a subset of ArenaOfficial metrics: the speeds plus chat TTFT and agent cache hit). */
+export type ArenaOfficialRowMetric = 'chatDecodeTps' | 'chatTtftS' | 'p4kTps' | 'p16kTps' | 'p32kTps' | 'agentDecodeTps' | 'agentHitPct';
+export interface ArenaOfficialRow { rank?: number | null; hw: ArenaRowHardware; params: ArenaParams; seed: boolean; machines: number; confidence: ArenaRow['confidence'];
+  metrics: Record<ArenaOfficialRowMetric, number | null>; spread: { p25: number | null; p75: number | null } }
+/** A published maintainer figure (official-bench-reference.json): labelled 官方, never ranked or counted. */
+export interface ArenaOfficialReferenceRow { official: true; id: string; group: string; family: string; quant: string; hardware: string; setup: string;
+  measured: { date: string | null; strata: string }; source: { title: string; url: string }; metrics: Record<ArenaOfficialRowMetric, number | null>; printed: Partial<Record<ArenaOfficialRowMetric, string>> }
+export interface ArenaOfficialGroup { group: string; family: string; quant: string; machines: number; seedMachines: number; configs: number; best: number | null; references: number }
+export interface ArenaOfficialBoard { computedAt: number | null; machines: number; runs: number; groups: ArenaOfficialGroup[]; group: string | null; family?: string; quant?: string;
+  options?: ArenaFacetOptions & { gpus?: { gpu: string; vramGB: number; machines: number }[] }; total: number; sort: ArenaOfficialSort; rows: ArenaOfficialRow[]; median: number | null;
+  references: ArenaOfficialReferenceRow[] }
+/** Query of the official board: same filters as the context board, its own sort key. */
+export function arenaOfficialQuery(group: string | null, filters: ArenaFilters = {}, sort: ArenaOfficialSort = 'chatDecode'): Record<string, string> {
+  const query: Record<string, string> = group ? { group } : {};
+  for (const [key, value] of Object.entries(filters)) if (value !== undefined && value !== '') query[key] = value;
+  if (sort !== 'chatDecode') query.sort = sort;
+  return query;
+}
+/** Value a board sort ranks by, for bars and for reference rows placed beside ranked ones. */
+export const arenaOfficialSortMetric = (sort: ArenaOfficialSort): ArenaOfficialRowMetric | null =>
+  ({ chatDecode: 'chatDecodeTps', prefill4k: 'p4kTps', prefill16k: 'p16kTps', prefill32k: 'p32kTps', agentDecode: 'agentDecodeTps', machines: null } as const)[sort];
+
 // ---- Native state ----
-export interface ArenaLogEntry { at: number; kind: 'context' | 'scenario' | 'withdraw' | 'register'; status: 'queued' | 'uploaded' | 'rejected' | 'retrying' | 'skipped' | 'deleted' | 'registered'; detail?: string; group?: string }
+export interface ArenaLogEntry { at: number; kind: 'context' | 'scenario' | 'official' | 'withdraw' | 'register'; status: 'queued' | 'uploaded' | 'rejected' | 'retrying' | 'skipped' | 'deleted' | 'registered'; detail?: string; group?: string }
 export interface ArenaStatus {
   consented: boolean; consentVersion: number | null; autoUpload: boolean; queued: number; log: ArenaLogEntry[]; endpoint: string;
   /** False in builds without the CI-injected app key: the leaderboard is view-only. */

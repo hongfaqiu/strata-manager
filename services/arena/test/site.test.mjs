@@ -24,7 +24,7 @@ test('the API answers identically on both hosts and never reaches the assets', a
     const e = env();
     const health = await worker.fetch(new Request(`${host}/v1/health`), e, { waitUntil() {} });
     assert.equal(health.status, 200);
-    assert.deepEqual(await health.json(), { ok: true, schema: 1, consentVersion: 1 });
+    assert.deepEqual(await health.json(), { ok: true, schema: 1, consentVersion: 1, official: true });
     assert.equal(health.headers.get('access-control-allow-origin'), '*');
     const preflight = await worker.fetch(new Request(`${host}/v1/groups`, { method: 'OPTIONS' }), e, { waitUntil() {} });
     assert.equal(preflight.status, 204);

@@ -173,3 +173,97 @@ export function recommend(groups, q) {
   const level = sameModel?.level !== 'none' && sameModel ? sameModel.level : others[0]?.level ?? 'none';
   return { scene, level, sameModel, otherModels: others.slice(0, 5) };
 }
+
+// ---------- official-method board (tools/strata_bench.py as run in the app) ----------
+/** Figures a row carries: per-machine medians of the latest three runs, then the median over machines. */
+export const OFFICIAL_ROW_METRICS = Object.freeze({
+  chatDecodeTps: 'off_chat_decode', chatTtftS: 'off_chat_ttft_s', p4kTps: 'off_prefill_4k', p16kTps: 'off_prefill_16k', p32kTps: 'off_prefill_32k',
+  agentDecodeTps: 'off_agent_decode', agentHitPct: 'off_agent_hit',
+});
+/** Orderings of the official board. Chat decode, the figure the maintainers headline, is the default. */
+export const OFFICIAL_SORTS = {
+  chatDecode: r => r.metrics?.chatDecodeTps ?? null, prefill4k: r => r.metrics?.p4kTps ?? null, prefill16k: r => r.metrics?.p16kTps ?? null,
+  prefill32k: r => r.metrics?.p32kTps ?? null, agentDecode: r => r.metrics?.agentDecodeTps ?? null, machines: r => r.machines ?? null,
+};
+export const OFFICIAL_DEFAULT_SORT = 'chatDecode';
+const r2 = v => v === null ? null : Math.round(v * 100) / 100;
+
+/** Rows from counting official-method submissions, grouped by model + quant like the context board. */
+export function aggregateOfficial(subs) {
+  const groups = new Map();
+  for (const s of subs) {
+    if (s.kind !== 'official' || s.off_chat_decode === null || s.off_chat_decode === undefined) continue;
+    const gk = `${s.family}:${s.quant}`;
+    const params = { ctx: s.ctx, kv: s.kv, parallel: s.parallel, poolWorkers: s.pool_workers, expertCache: s.expert_cache, pcieFrac: s.pcie_frac, gpuCount: s.gpu_count, vision: !!s.vision };
+    const hw = { gpu: s.gpu_name ?? 'CPU', vramGB: vramTier(s.vram_gb), ramGB: ramTier(s.ram_gb) };
+    const ck = JSON.stringify([hw.gpu, hw.vramGB, hw.ramGB, ...PARAM_KEYS.map(k => params[k]), s.seed ? 1 : 0]);
+    if (!groups.has(gk)) groups.set(gk, { family: s.family, quant: s.quant, configs: new Map(), machines: new Set(), seedMachines: new Set() });
+    const g = groups.get(gk);
+    (s.seed ? g.seedMachines : g.machines).add(s.install_hash);
+    if (!g.configs.has(ck)) g.configs.set(ck, { hw, params, seed: !!s.seed, runs: new Map() });
+    const c = g.configs.get(ck);
+    if (!c.runs.has(s.install_hash)) c.runs.set(s.install_hash, []);
+    c.runs.get(s.install_hash).push(s);
+  }
+  const out = [];
+  for (const g of groups.values()) {
+    const rows = [];
+    for (const c of g.configs.values()) {
+      const machines = [...c.runs.values()].map(runs => {
+        const latest = runs.sort((a, b) => b.received_at - a.received_at).slice(0, 3);
+        const m = Object.fromEntries(Object.entries(OFFICIAL_ROW_METRICS).map(([k, col]) => [k, median(latest.map(r => r[col] ?? null))]));
+        return { ...m, decode: m.chatDecodeTps };
+      });
+      const kept = filterOutliers(machines);
+      if (!kept.length || (!c.seed && kept.length < MIN_ROW_MACHINES)) continue;
+      const d = kept.map(m => m.decode).sort((a, b) => a - b);
+      const metrics = Object.fromEntries(Object.keys(OFFICIAL_ROW_METRICS).map(k => [k, k === 'chatTtftS' ? r2(median(kept.map(m => m[k]))) : r1(median(kept.map(m => m[k])))]));
+      rows.push({ hw: c.hw, params: c.params, seed: c.seed, machines: kept.length, confidence: c.seed ? 'seed' : confidence(kept.length),
+        metrics, spread: { p25: r1(quantile(d, 0.25)), p75: r1(quantile(d, 0.75)) } });
+    }
+    if (!rows.length) continue;
+    rows.sort((a, b) => b.metrics.chatDecodeTps - a.metrics.chatDecodeTps);
+    out.push({ group: `${g.family}:${g.quant}`, family: g.family, quant: g.quant, machines: g.machines.size, seedMachines: g.seedMachines.size, configs: rows.length,
+      best: rows.find(r => !r.seed)?.metrics.chatDecodeTps ?? rows[0].metrics.chatDecodeTps, rows });
+  }
+  return out.sort((a, b) => b.machines - a.machines);
+}
+
+/** A published figure as one number: the median, else the middle of the published range. */
+const point = v => !v ? null : typeof v.median === 'number' ? v.median : typeof v.min === 'number' && typeof v.max === 'number' ? (v.min + v.max) / 2 : null;
+const printed = v => !v ? null : (v.approx ? '~' : '') + (typeof v.median === 'number' ? v.printed ?? String(v.median) : typeof v.min === 'number' ? `${v.min}–${v.max}` : '');
+/**
+ * Reference rows from the maintainers' published strata_bench.py numbers (packages/core/src/official-bench-reference.json).
+ * They are labelled `official`, never ranked and never part of a group's machines or median.
+ */
+export function officialReferenceRows(references) {
+  return references.map(ref => ({
+    official: true, id: ref.id, group: `${ref.model.family}:${ref.model.quant}`, family: ref.model.family, quant: ref.model.quant,
+    hardware: ref.hardware.label, setup: ref.setup, measured: { date: ref.measured.date, strata: ref.measured.strata }, source: { title: ref.source.title, url: ref.source.url },
+    metrics: Object.fromEntries(Object.keys(OFFICIAL_ROW_METRICS).map(k => [k, point(ref.metrics[k])])),
+    printed: Object.fromEntries(Object.keys(OFFICIAL_ROW_METRICS).flatMap(k => ref.metrics[k] ? [[k, printed(ref.metrics[k])]] : [])),
+  }));
+}
+
+/** Group list of the official board: every group with uploads or a published reference. */
+export function officialGroups(groups, references) {
+  const out = groups.map(({ rows, ...g }) => ({ ...g, references: references.filter(r => r.group === g.group).length }));
+  for (const ref of references) if (!out.some(g => g.group === ref.group))
+    out.push({ group: ref.group, family: ref.family, quant: ref.quant, machines: 0, seedMachines: 0, configs: 0, best: null, references: references.filter(r => r.group === ref.group).length });
+  return out.sort((a, b) => b.machines - a.machines || b.references - a.references || a.group.localeCompare(b.group));
+}
+
+/** filterRows for the official board: the same filters, its own orderings; ties fall back to chat decode. */
+export function filterOfficialRows(group, query = {}) {
+  const sort = OFFICIAL_SORTS[query.sort] ? query.sort : OFFICIAL_DEFAULT_SORT;
+  const { rows } = filterRows({ rows: group.rows.map(r => ({ ...r, decode: { median: r.metrics.chatDecodeTps } })) }, { ...query, sort: undefined });
+  const value = OFFICIAL_SORTS[sort];
+  const ordered = rows.map(({ decode, rank, ...r }) => r).sort((a, b) => {
+    const va = value(a), vb = value(b);
+    if (va === null || vb === null) return (va === null) - (vb === null);
+    return vb - va || b.metrics.chatDecodeTps - a.metrics.chatDecodeTps;
+  });
+  let rank = 0;
+  const middle = sort === 'machines' ? OFFICIAL_SORTS.chatDecode : value;
+  return { sort, rows: ordered.map(r => ({ ...r, rank: value(r) === null ? null : ++rank })), median: r1(median(ordered.filter(r => !r.seed).map(middle))) };
+}

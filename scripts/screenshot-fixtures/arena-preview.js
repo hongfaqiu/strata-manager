@@ -18,7 +18,30 @@
   const recommendation = { scene: 'chat', level: 'gpu', sameModel: { group: 'swift:IQ3_S', level: 'gpu', best: recommendRow, current: { ...recommendRow, params: params(65536, 'q8'), speed: 34.1, decode: { p25: 32.2, median: 34.1, p75: 35.9 }, machines: 4, confidence: 'medium' }, changes: [{ param: 'kv', from: 'q8', to: 'int8', gainPct: 9, machines: 11, confidence: 'high', peakRamGB: 48 }, { param: 'ctx', from: 65536, to: 32768, gainPct: 4, machines: 7, confidence: 'medium', peakRamGB: 44 }], alternatives: [] },
     otherModels: [{ ...recommendRow, group: 'qwen:IQ3_S', family: 'qwen', quant: 'IQ3_S', level: 'gpu', speed: 35.6, decode: { p25: 33.4, median: 35.6, p75: 37.1 } }] };
   const status = { consented: true, consentVersion: 1, autoUpload: true, queued: 0, log: [{ at: Date.now() - 2 * 3600000, kind: 'context', status: 'uploaded', group: 'swift:IQ3_S' }, { at: Date.now() - 26 * 3600000, kind: 'register', status: 'registered' }], endpoint: 'https://strata-manager.cosfoc.com', uploadAvailable: true, registered: true, banned: false };
-  window.__arenaPreview = { groups, boards, fallback, recommendation, status };
+  // 「官方基准」 board: official-method rows plus the maintainers' published numbers as unranked reference rows.
+  const metrics = (chat, scale = 1) => ({ chatDecodeTps: chat, chatTtftS: +(0.5 + 10 / chat).toFixed(2), p4kTps: Math.round(chat * 17 * scale), p16kTps: Math.round(chat * 18.5 * scale), p32kTps: Math.round(chat * 17.6 * scale), agentDecodeTps: +(chat * 1.04).toFixed(1), agentHitPct: 70 });
+  const orow = (rank, gpu, vramGB, ramGB, p, machines, confidence, chat, scale) => ({ rank, hw: { gpu, vramGB, ramGB }, params: p, seed: false, machines, confidence, metrics: metrics(chat, scale), spread: { p25: +(chat * 0.95).toFixed(1), p75: +(chat * 1.04).toFixed(1) } });
+  const official = { computedAt: Date.now() - 18 * 60000, machines: 37, runs: 102, groups: [
+    { group: 'qwen:IQ3_S', family: 'qwen', quant: 'IQ3_S', machines: 21, seedMachines: 0, configs: 6, best: 52.3, references: 1 },
+    { group: 'swift:IQ3_S', family: 'swift', quant: 'IQ3_S', machines: 16, seedMachines: 0, configs: 5, best: 41.6, references: 0 },
+    { group: 'deepseek41:IST-DAS-2.00bpw', family: 'deepseek41', quant: 'IST-DAS-2.00bpw', machines: 0, seedMachines: 0, configs: 0, best: null, references: 1 },
+    { group: 'qwen:NVFP4-QAD', family: 'qwen', quant: 'NVFP4-QAD', machines: 0, seedMachines: 0, configs: 0, best: null, references: 1 },
+  ], rows: [
+    orow(1, 'RTX 5090', 32, 128, params(131072, 'int8'), 4, 'medium', 52.3, 2.4), orow(2, 'RTX 4090', 24, 96, params(131072, 'int8'), 9, 'high', 46.8, 1.9),
+    orow(3, 'AMD Radeon(TM) 8060S Graphics', 96, 128, params(131072, 'int8'), 5, 'medium', 43.1, 1), orow(4, 'RTX 3090', 24, 128, params(65536, 'int8'), 3, 'low', 37.4, 1.4),
+  ], references: [{ official: true, id: 'strix-halo-windows-qwen-iq3s-0.2.7', group: 'qwen:IQ3_S', family: 'qwen', quant: 'IQ3_S', hardware: 'Ryzen AI Max+ 395 · Radeon 8060S (Strix Halo)', setup: 'strata launch 默认参数 · 131,072 上下文 · int8 KV',
+    measured: { date: '2026-10-26', strata: '0.2.7 RC' }, source: { title: 'docs/STRIX_HALO_WINDOWS.md §1', url: 'https://github.com/Niko1221/Strata/blob/46c152a1310f77cd2f0ce2c7cd213962df14fe83/docs/STRIX_HALO_WINDOWS.md#1-what-this-pc-reaches' },
+    metrics: { chatDecodeTps: 44, chatTtftS: 0.6, p4kTps: 755, p16kTps: 821, p32kTps: 792, agentDecodeTps: 47, agentHitPct: 69 }, printed: { chatDecodeTps: '44.0' } }] };
+  const officialKey = { chatDecode: 'chatDecodeTps', prefill4k: 'p4kTps', prefill16k: 'p16kTps', prefill32k: 'p32kTps', agentDecode: 'agentDecodeTps' };
+  const officialBoard = query => {
+    const sort = query?.sort ?? 'chatDecode', key = officialKey[sort], group = query?.group ?? 'qwen:IQ3_S';
+    const value = r => sort === 'machines' ? r.machines : r.metrics[key];
+    const rows = group === 'qwen:IQ3_S' ? structuredClone(official.rows).sort((a, b) => value(b) - value(a)).map((r, i) => ({ ...r, rank: i + 1 })) : [];
+    const summary = official.groups.find(g => g.group === group);
+    return { computedAt: official.computedAt, machines: official.machines, runs: official.runs, groups: structuredClone(official.groups), group, family: summary?.family, quant: summary?.quant, total: rows.length, sort, rows,
+      median: rows.length ? value(rows[Math.floor(rows.length / 2)]) : null, references: structuredClone(official.references.filter(r => r.group === group)) };
+  };
+  window.__arenaPreview = { groups, boards, fallback, recommendation, status, official };
   let bridge;
   Object.defineProperty(window, '__TAURI_INTERNALS__', { configurable: true, get: () => bridge, set: value => {
     const original = value.invoke.bind(value);
@@ -27,6 +50,7 @@
         if (args.path === 'groups') return structuredClone(groups);
         if (args.path === 'leaderboard') { const group = args.query?.group ?? 'swift:IQ3_S'; const summary = groups.groups.find(item => item.group === group) ?? groups.groups[0]; const rows = boards[group] ?? fallback(group); return { ...structuredClone(summary), group, rows: structuredClone(rows), tierMedian: rows[Math.floor(rows.length / 2)].decode.median }; }
         if (args.path === 'recommend') return structuredClone(recommendation);
+        if (args.path === 'official') return officialBoard(args.query);
       }
       if (command === 'arena_status' || command === 'arena_flush' || command === 'arena_set_auto_upload') return structuredClone(status);
       return original(command, args);

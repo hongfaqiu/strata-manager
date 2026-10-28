@@ -14,6 +14,8 @@
 import { benchmarkIdentity, isDesktop, normalizeBaseUrl, request, serviceStatus, streamChat } from './bridge';
 import { acquireBenchmarkEndpoint } from './benchmark';
 import type { BenchmarkIdentity } from './benchmark-comparison';
+import { benchmarkCounters } from './context-benchmark';
+import type { ContextBenchmarkCounters } from './context-benchmark-types';
 import { asObject, normalizeError, StrataError } from './errors';
 import type { JsonObject, ServiceProfile } from './types';
 import script from './official-bench-script.json';
@@ -129,11 +131,13 @@ export function officialStat(values: Iterable<number | null | undefined>): Offic
 }
 
 // ------------------------------------------------------------------------------------------- one request digest
-export interface OfficialRawResponse { first: number | null; total: number; usage: JsonObject | null; timings: JsonObject | null; err: string | null; pieces: number; text?: string }
+/** `at`: when the request was sent, in ms from the start of the run (for Arena run evidence; never a wall-clock time). */
+export interface OfficialRawResponse { first: number | null; total: number; usage: JsonObject | null; timings: JsonObject | null; err: string | null; pieces: number; text?: string; at?: number }
 export interface OfficialRequestDigest {
   ok: boolean; err: string | null; ttftS: number | null; totalS: number; promptTokens: number | null; reusedTokens: number | null; readTokens: number | null;
   generatedTokens: number; promptTps: number | null; promptTpsSource: 'engine' | null; decodeTps: number | null; decodeTpsSource: 'engine' | 'client' | null;
   promptMs: number | null; decodeMs: number | null; draftsOffered: number | null; draftsAccepted: number | null;
+  at?: number;
 }
 const num = (value: unknown): number | null => typeof value === 'number' && Number.isFinite(value) ? value : null;
 /** `digest()`: the engine's own speeds; a client decode estimate only when the engine reported none. */
@@ -149,7 +153,7 @@ export function officialDigest(r: OfficialRawResponse): OfficialRequestDigest {
   if (decode === null && r.first !== null && gen > 1 && r.total > r.first) { decode = round((gen - 1) / (r.total - r.first), 1); source = 'client'; }
   return { ok: r.err === null && r.first !== null, err: r.err, ttftS: r.first === null ? null : round(r.first, 3), totalS: round(r.total, 3),
     promptTokens, reusedTokens: cached, readTokens: read, generatedTokens: gen, promptTps: num(t.prompt_per_second), promptTpsSource: num(t.prompt_per_second) === null ? null : 'engine',
-    decodeTps: decode, decodeTpsSource: source, promptMs: num(t.prompt_ms), decodeMs: num(t.predicted_ms), draftsOffered: num(t.draft_n), draftsAccepted: num(t.draft_n_accepted) };
+    decodeTps: decode, decodeTpsSource: source, promptMs: num(t.prompt_ms), decodeMs: num(t.predicted_ms), draftsOffered: num(t.draft_n), draftsAccepted: num(t.draft_n_accepted), ...(typeof r.at === 'number' ? { at: r.at } : {}) };
 }
 
 // ------------------------------------------------------------------------------------------------ agent figures
@@ -193,6 +197,8 @@ export interface OfficialBenchReport {
   model: string; maxContext: number | null; startedAt: number; finishedAt: number; elapsedMs: number; options: OfficialBenchOptions;
   state: 'completed' | 'failed' | 'cancelled'; calibration: { tokensPerWord: number; overhead: number }; results: OfficialBenchResults;
   machine: OfficialBenchMachine; identity?: BenchmarkIdentity; engineVersion?: string | null;
+  /** Engine counters before the first and after the last request (Arena run evidence); null when the engine reports no totals. */
+  evidence?: { counters: { before: ContextBenchmarkCounters; after: ContextBenchmarkCounters } | null };
 }
 export type OfficialBenchPhase = 'warmup' | 'chat' | OfficialPromptLabel | 'agent' | 'done';
 export interface OfficialBenchProgress { phase: OfficialBenchPhase; done: number; total: number; phases: OfficialBenchPhase[]; last?: OfficialRequestDigest }
@@ -300,7 +306,8 @@ export async function runOfficialBench(profile: ServiceProfile, input: OfficialB
     const step = (last?: OfficialRequestDigest) => onProgress({ phase, done, total: plan.total, phases: plan.phases, ...(last ? { last } : {}) });
     const send = async (messages: JsonObject[], maxTokens: number, tools?: JsonObject[]) => {
       if (controller.signal.aborted) throw new StrataError('CANCELLED', '测试已取消');
-      const raw = await officialChat(profile, messages, maxTokens, options.timeoutMs, controller.signal, tools);
+      const at = Math.round(clock() - began);
+      const raw = { ...await officialChat(profile, messages, maxTokens, options.timeoutMs, controller.signal, tools), at };
       if (controller.signal.aborted) throw new StrataError('CANCELLED', '测试已取消');
       done++;
       return raw;
@@ -365,6 +372,9 @@ export async function runOfficialBench(profile: ServiceProfile, input: OfficialB
       report.state = 'cancelled';
     }
     if (report.state === 'completed' && results.failures.length) report.state = results.chat || Object.keys(results.prompts).length || results.agent ? 'completed' : 'failed';
+    const before = benchmarkCounters(metrics);
+    const after = before && report.state !== 'cancelled' ? await request(profile, '/metrics').then(benchmarkCounters, () => null) : null;
+    report.evidence = { counters: before && after ? { before, after } : null };
     phase = 'done'; step();
     report.finishedAt = Date.now(); report.elapsedMs = Math.max(0, clock() - began);
     return report;

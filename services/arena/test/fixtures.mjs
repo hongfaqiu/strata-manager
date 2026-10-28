@@ -78,3 +78,40 @@ export class Install {
     return call(env, await this.request('POST', '/v1/register', { publicKey: this.publicKey, challenge: opts.challenge ?? c.challenge, counter, consentVersion: 1 }, opts));
   }
 }
+
+/** An official-method (tools/strata_bench.py) submission; `metrics` overrides single figures. */
+export function officialSubmission(over = {}) {
+  const { metrics = {}, official = {}, ...rest } = over;
+  const base = submission({ kind: 'official', ...rest });
+  delete base.tiers;
+  return { ...base, official: { upstream: '46c152a1310f', runs: 3, long: true, ...official,
+    metrics: { chatDecodeTps: 44.0, chatTtftS: 0.6, p4kTps: 755, p4kTtftS: 5.4, p16kTps: 821, p16kTtftS: 19.6, p32kTps: 700, p32kTtftS: 46.8,
+      agentHitPct: 82, agentDecodeTps: 40.1, agentTurnTtftS: 2.9, ...metrics } } };
+}
+
+/**
+ * Evidence consistent with an official submission: 9 chat requests, 3 per prompt tier and 15 agent follow-up turns,
+ * no resource series (the script samples none), counters moving by the reported tokens plus the warm-up.
+ */
+export function officialEvidenceFor(sub, edit = ev => ev) {
+  const m = sub.official.metrics, runs = [];
+  let at = 4000;
+  const add = (ctx, n, promptTokens, cachedTokens, completionTokens, prefill, decode, ttftS) => {
+    for (let i = 0; i < n; i++) {
+      const ttftMs = Math.round(ttftS * 1000), wall = Math.round((ttftMs + (completionTokens - 1) / decode * 1000) * 1.04);
+      runs.push({ ctx, startMs: at, endMs: at + wall, ttftMs, promptTokens, cachedTokens, completionTokens, prefill, decode, resourceSamples: 0 });
+      at += wall + 200;
+    }
+  };
+  add(512, 9, 40, 0, 100, 300, m.chatDecodeTps, m.chatTtftS);
+  if (m.p4kTps !== null) add(4096, 3, 4000, 0, 24, m.p4kTps, 40, m.p4kTtftS);
+  if (m.p16kTps !== null) add(16384, 3, 16000, 0, 24, m.p16kTps, 38, m.p16kTtftS);
+  if (m.agentDecodeTps !== null) add(65536, 15, 4000, Math.round(4000 * m.agentHitPct / 100), 64, 250, m.agentDecodeTps, m.agentTurnTtftS);
+  if (m.p32kTps !== null) add(32768, 3, 32000, 0, 24, m.p32kTps, 35, m.p32kTtftS);
+  const durationMs = at + 500, stepMs = Math.max(1000, Math.ceil(durationMs / 120 / 1000) * 1000), points = Math.ceil(durationMs / stepMs);
+  const sum = k => runs.reduce((n, r) => n + r[k], 0), empty = () => Array(points).fill(null);
+  const ev = { v: 1, engine: sub.strata, durationMs, intervalMs: 1000, runs, series: { count: 0, stepMs, vramGB: empty(), ramGB: empty(), gpuUtil: empty() },
+    counters: { before: { requests: 40, promptTokens: 900_000, outputTokens: 20_000 },
+      after: { requests: 40 + runs.length + 7, promptTokens: 900_000 + sum('promptTokens') + 3000, outputTokens: 20_000 + sum('completionTokens') + 30 } } };
+  return edit(ev) ?? ev;
+}

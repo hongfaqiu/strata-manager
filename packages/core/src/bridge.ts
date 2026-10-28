@@ -8,7 +8,7 @@ import type { ServiceSharingStatus, SetServiceAuthRequest, ServiceAuthResult } f
 import type { BenchmarkIdentity } from './benchmark-comparison';
 import type { RuntimeReleaseAsset, RuntimeZipDownloadOptions, RuntimeZipDownloadCheckResult } from './runtime-types';
 import type { SystemLanguage } from './languages';
-import { arenaLaunchParams, assertArenaPayloadSafe, type ArenaPayload, type ArenaStatus } from './arena';
+import { arenaLaunchParams, arenaOfficialModelOf, assertArenaPayloadSafe, type ArenaPayload, type ArenaStatus } from './arena';
 
 export interface LocalModel { name: string; configPath: string; modelPath: string; sizeBytes: number | null }
 
@@ -432,7 +432,8 @@ export const benchmarkIdentity = async (profile: ServiceProfile): Promise<Benchm
   const { resourceConfiguration, ...identity } = value;
   const recipe = resourceRequestFromConfiguration(resourceConfiguration,profile.id);
   const launch = arenaLaunchParams(resourceConfiguration);
-  return { ...identity, ...(recipe ? { resourceRequest: recipe } : {}), ...(launch ? { launch } : {}) };
+  const officialLaunch = launch ? null : arenaLaunchParams(resourceConfiguration, arenaOfficialModelOf);
+  return { ...identity, ...(recipe ? { resourceRequest: recipe } : {}), ...(launch ? { launch } : {}), ...(officialLaunch ? { officialLaunch } : {}) };
 };
 // Benchmark Arena. Uploads and API reads go through the native side (signing, queue, retry, CSP-safe network).
 export const arenaStatus = (): Promise<ArenaStatus> => native('arena_status');
@@ -442,7 +443,7 @@ export const arenaSetAutoUpload = (enabled: boolean): Promise<ArenaStatus> => na
 export const arenaEnqueue = (payload: ArenaPayload): Promise<ArenaStatus> => { assertArenaPayloadSafe(payload); return native('arena_enqueue', { payload }); };
 export const arenaFlush = (): Promise<ArenaStatus> => native('arena_flush');
 export const arenaWithdraw = (): Promise<{ deleted: number }> => native('arena_withdraw');
-export const arenaGet = <T>(path: 'groups' | 'leaderboard' | 'recommend', query: Record<string, string> = {}): Promise<T> => native('arena_get', { path, query });
+export const arenaGet = <T>(path: 'groups' | 'leaderboard' | 'official' | 'recommend', query: Record<string, string> = {}): Promise<T> => native('arena_get', { path, query });
 export const applySettings = (settings: AppSettings): Promise<void> => native('apply_settings', { settings });
 export const saveMarkdown = (path: string, content: string): Promise<string> => native('write_markdown_export', { path, content });
 /** Save an already-previewed PNG to the path selected in the native Save As dialog. */

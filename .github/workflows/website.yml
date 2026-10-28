@@ -11,6 +11,8 @@ on:
     paths:
       - 'website/**'
       - 'services/arena/**'
+      # The Worker bundles the published official strata_bench.py numbers as reference rows.
+      - 'packages/core/src/official-bench-reference.json'
       - 'CHANGELOG.md'
       - 'scripts/build-website.mjs'
       - 'scripts/build-legacy-redirects.mjs'
@@ -35,6 +37,8 @@ on:
     paths:
       - 'website/**'
       - 'services/arena/**'
+      # The Worker bundles the published official strata_bench.py numbers as reference rows.
+      - 'packages/core/src/official-bench-reference.json'
       - 'CHANGELOG.md'
       - 'scripts/build-website.mjs'
       - 'scripts/build-legacy-redirects.mjs'

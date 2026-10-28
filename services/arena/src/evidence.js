@@ -120,3 +120,78 @@ export function checkEvidence(s, ev) {
   }
   return reasons.length ? { status: 'failed', reasons } : { status: 'verified', reasons: [] };
 }
+
+// ---------- official-method runs (tools/strata_bench.py as run in the app) ----------
+/** Evidence `ctx` slot per part of the script (packages/core/src/official-arena.ts OFFICIAL_EVIDENCE_SLOTS). */
+export const OFFICIAL_SLOTS = Object.freeze({ chat: 512, p4k: 4096, p16k: 16384, p32k: 32768, agent: 65536 });
+// [slot, speed metric (median of), first-token metric, prompt-token bounds, max completion tokens]
+const OFFICIAL_PARTS = [
+  ['chat', 'chatDecodeTps', 'chatTtftS', [1, 512], 100, 'decode'],
+  ['p4k', 'p4kTps', 'p4kTtftS', [4096 * 0.5, 4096 * 1.15], 24, 'prefill'],
+  ['p16k', 'p16kTps', 'p16kTtftS', [16384 * 0.5, 16384 * 1.15], 24, 'prefill'],
+  ['p32k', 'p32kTps', 'p32kTtftS', [32768 * 0.5, 32768 * 1.15], 24, 'prefill'],
+  ['agent', 'agentDecodeTps', 'agentTurnTtftS', [256, 65536], 64, 'decode'],
+];
+
+/**
+ * Internal-consistency checks of a validated official submission against its evidence: one run per measured request
+ * (chat prompts, prompt tiers, agent follow-up turns), whose medians must reproduce the reported figures.
+ * The script samples no resources, so the series must be empty (count 0); everything else is checked as for context runs.
+ */
+export function checkOfficialEvidence(s, ev) {
+  const reasons = [];
+  const fail = r => { if (!reasons.includes(r)) reasons.push(r); };
+  if (s.kind !== 'official') return { status: 'failed', reasons: ['not_official'] };
+  if (ev.engine && s.strata && ev.engine !== s.strata) fail('engine_mismatch');
+  const runs = ev.runs, m = s.official.metrics;
+  if (!runs.length) fail('no_runs');
+  const slots = new Map(OFFICIAL_PARTS.map(p => [OFFICIAL_SLOTS[p[0]], p]));
+  let lastEnd = -1;
+  for (const r of runs) {
+    const part = slots.get(r.ctx);
+    if (!part) { fail('unknown_slot'); continue; }
+    const [, , , [lo, hi], maxOut] = part;
+    if (r.endMs <= r.startMs) fail('timestamps');
+    if (r.startMs < lastEnd - 100) fail('timestamps_overlap');
+    lastEnd = Math.max(lastEnd, r.endMs);
+    if (r.endMs > ev.durationMs + 2000) fail('run_outside_duration');
+    if (r.promptTokens < lo || r.promptTokens > hi) fail('prompt_tokens_vs_tier');
+    if (r.promptTokens > s.params.ctx) fail('prompt_exceeds_context');
+    if (r.cachedTokens !== null && r.cachedTokens > r.promptTokens) fail('cached_tokens');
+    if (r.completionTokens < 1 || r.completionTokens > maxOut + 1) fail('completion_tokens');
+    if (r.resourceSamples !== 0) fail('series_unexpected');
+    const prefillMs = (r.promptTokens - (r.cachedTokens ?? 0)) / r.prefill * 1000;
+    if (r.ttftMs < prefillMs * 0.6 - 50 || r.ttftMs > prefillMs * 4 + 5000) fail('ttft_vs_prefill');
+    const expected = r.ttftMs + Math.max(0, r.completionTokens - 1) / r.decode * 1000, wall = r.endMs - r.startMs;
+    if (wall < expected * 0.7 - 500 || wall > expected * 2 + 10_000) fail('wall_vs_decode');
+  }
+  // Every reported figure is the median of its evidenced requests, and every request backs a reported figure.
+  for (const [slot, speed, ttft, , , field] of OFFICIAL_PARTS) {
+    const mine = runs.filter(r => r.ctx === OFFICIAL_SLOTS[slot]);
+    if (m[speed] === null) { if (mine.length) fail('run_without_tier'); continue; }
+    if (!mine.length) { fail('tier_without_runs'); continue; }
+    if (!close(m[speed], median(mine.map(r => r[field])), 0.01, field === 'decode' ? 0.05 : 0.5)) fail('tier_' + (field === 'decode' ? 'decode' : 'prefill') + '_mismatch');
+    if (m[ttft] !== null && !close(m[ttft] * 1000, median(mine.map(r => r.ttftMs)), 0.01, 2)) fail('tier_ttft_mismatch');
+  }
+  if (m.agentHitPct !== null) {
+    const agent = runs.filter(r => r.ctx === OFFICIAL_SLOTS.agent), prompt = agent.reduce((n, r) => n + r.promptTokens, 0);
+    const hit = prompt ? agent.reduce((n, r) => n + (r.cachedTokens ?? 0), 0) / prompt * 100 : null;
+    if (hit === null || Math.abs(hit - m.agentHitPct) > 10) fail('agent_hit_mismatch');
+  }
+  // No resource sampling in the script: an empty series of the right length.
+  const sr = ev.series;
+  if (sr.count !== 0 || [...sr.vramGB, ...sr.ramGB, ...sr.gpuUtil].some(v => v !== null)) fail('series_unexpected');
+  if (sr.stepMs < ev.intervalMs) fail('series_step');
+  if (Math.abs(sr.vramGB.length - Math.max(1, Math.ceil(ev.durationMs / sr.stepMs))) > 1) fail('series_length');
+  // Engine counters: the warm-up, the agent's first turns and the calibration also move them, so the upper bounds stay loose.
+  if (!ev.counters) fail('no_counters');
+  else {
+    const d = k => ev.counters.after[k] - ev.counters.before[k];
+    if (d('requests') < 0 || d('promptTokens') < 0 || d('outputTokens') < 0) fail('counters_went_backwards');
+    const prompt = runs.reduce((n, r) => n + r.promptTokens, 0), uncached = runs.reduce((n, r) => n + r.promptTokens - (r.cachedTokens ?? 0), 0), out = runs.reduce((n, r) => n + r.completionTokens, 0);
+    if (d('requests') < runs.length || d('requests') > runs.length * 8 + 20) fail('request_count_delta');
+    if (d('promptTokens') < uncached * 0.9 || d('promptTokens') > prompt * 8 + 40_000) fail('prompt_token_delta');
+    if (d('outputTokens') < out * 0.9 || d('outputTokens') > out * 4 + 2000) fail('output_token_delta');
+  }
+  return reasons.length ? { status: 'failed', reasons } : { status: 'verified', reasons: [] };
+}
