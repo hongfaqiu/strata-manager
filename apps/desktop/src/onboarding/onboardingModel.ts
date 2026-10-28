@@ -243,7 +243,7 @@ export function recommendations(scene: Scene, memoryGB: number | undefined, nvid
     .filter(model => !model.minRelease);
   const rows = catalogModels.flatMap(model => core.platformQuants(model.quants, catalogPlatform).map(quant => {
     const info = model.quantInfo[quant]!;
-    return { family: model.family, name: model.name, quant, downloadGB: info.downloadGB, ramGB: info.ramGB, fit: quantFitState(model, quant, memoryGB), experimental: !!info.experimental, nvidiaOnly: !!info.nvidiaOnly, recommended: false };
+    return { family: model.family, name: model.name, quant, downloadGB: info.downloadGB, ramGB: info.ramGB, fit: quantFitState(model, quant, memoryGB, undefined, catalogPlatform), experimental: !!info.experimental, nvidiaOnly: !!info.nvidiaOnly, recommended: false };
   }));
   const penalty = (row: Recommendation) => (row.experimental ? 2 : 0) + (row.nvidiaOnly && !nvidia ? 4 : 0);
   rows.sort((a, b) => fitRank[a.fit ?? 'unknown'] - fitRank[b.fit ?? 'unknown'] || penalty(a) - penalty(b) || order.indexOf(a.family) - order.indexOf(b.family) || (a.fit === 'fits' ? b.ramGB - a.ramGB : a.ramGB - b.ramGB));

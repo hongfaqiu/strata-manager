@@ -1,6 +1,6 @@
 // Live status for catalog rows: local presence, running download progress, fit, and change tracking.
 import { useEffect, useRef, useState } from 'react';
-import type { CatalogModel, LocalModel, TaskStatus } from '@strata-manager/core';
+import type { CatalogModel, LocalModel, RuntimePackagePlatform, TaskStatus } from '@strata-manager/core';
 import { catalogPreferredQuant, catalogRequirement, quantFitState, taskProgress } from './d2Estimates';
 
 export type Fit = 'fits' | 'tight' | 'over';
@@ -10,16 +10,16 @@ export interface RowLive { local: number; downloading: boolean; progress?: numbe
 const isDownloadTask = (task: TaskStatus) => /setup|download|prepare/i.test(task.kind);
 const mentions = (text: string, model: CatalogModel, quant: string) => { const lower = text.toLowerCase(); return lower.includes(quant.toLowerCase()) && (lower.includes(model.family) || lower.includes(model.name.toLowerCase())); };
 
-export function quantLive(model: CatalogModel, quant: string, tasks: TaskStatus[], local: LocalModel[] | undefined, machineGB?: number): QuantLive {
+export function quantLive(model: CatalogModel, quant: string, tasks: TaskStatus[], local: LocalModel[] | undefined, machineGB?: number, platform?: RuntimePackagePlatform): QuantLive {
   const related = tasks.filter(task => isDownloadTask(task) && mentions(task.message ?? '', model, quant));
   const running = related.find(task => task.state === 'running');
   const latest = related[0];
   const isLocal = !!local?.some(item => { const req = catalogRequirement(`${item.name} ${item.modelPath}`); return req?.family === model.family && req.quant === quant; });
-  return { local: isLocal, downloading: !!running, failed: !running && latest?.state === 'failed', progress: running ? taskProgress(running.message) : undefined, fit: quantFitState(model, quant, machineGB) };
+  return { local: isLocal, downloading: !!running, failed: !running && latest?.state === 'failed', progress: running ? taskProgress(running.message) : undefined, fit: quantFitState(model, quant, machineGB, undefined, platform) };
 }
 
-export function rowLive(model: CatalogModel, tasks: TaskStatus[], local: LocalModel[] | undefined, machineGB?: number): RowLive {
-  const quants = model.quants.map(quant => ({ quant, ...quantLive(model, quant, tasks, local, machineGB) }));
+export function rowLive(model: CatalogModel, tasks: TaskStatus[], local: LocalModel[] | undefined, machineGB?: number, platform?: RuntimePackagePlatform): RowLive {
+  const quants = model.quants.map(quant => ({ quant, ...quantLive(model, quant, tasks, local, machineGB, platform) }));
   const running = quants.find(item => item.downloading);
   const order: Fit[] = ['fits', 'tight', 'over'];
   // A family with its own rule (DeepSeek-V4.1-Flash: dsv41_fit.recommend, the panel's 推荐) names the card's set; a

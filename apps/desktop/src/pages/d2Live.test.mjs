@@ -43,6 +43,22 @@ test('fit softens to tight when GPU offload covers the peak RAM shortfall', () =
   assert.equal(estimates.usableMemoryGB(31, 24), 31 + 19);
 });
 
+test('catalog sizes use setup.py --check on a PC: IQ3_S fits 64 GB (ram_gb already holds the headroom)', () => {
+  const qwen = MODEL_CATALOG.find(model => model.family === 'qwen');
+  // Feedback: 64 GB DDR5 (63.7 GiB visible) + RTX 4080 SUPER 32 GB showed IQ3_XXS / IQ3_S as 偏紧; setup says fits.
+  assert.equal(estimates.quantFitState(qwen, 'IQ3_S', 63.7, undefined, 'windows'), 'fits');
+  assert.equal(estimates.quantFitState(qwen, 'IQ3_XXS', 63.7, undefined, 'linux'), 'fits');
+  assert.equal(live.quantLive(qwen, 'IQ3_S', [], [], 63.7, 'windows').fit, 'fits');
+  assert.equal(live.rowLive(qwen, [], [], 63.7, 'windows').bestQuant, 'IQ3_S');
+  assert.equal(estimates.quantFitState(qwen, 'IQ3_S', 56, undefined, 'windows'), 'tight', 'setup: within 8 GB below ram_gb');
+  assert.equal(estimates.quantFitState(qwen, 'IQ3_S', 48, undefined, 'windows'), 'over');
+  assert.equal(estimates.quantFitState(qwen, 'IQ3_S', 48, 32, 'windows'), 'tight', 'GPU offload still softens a shortfall');
+  // A Mac (MAC.md: IQ3_S resident from 96 GB) and an unknown OS keep the 20 % margin; so do config peaks.
+  assert.equal(estimates.quantFitState(qwen, 'IQ3_S', 64, undefined, 'macos'), 'tight');
+  assert.equal(estimates.quantFitState(qwen, 'IQ3_S', 63.7), 'tight');
+  assert.equal(estimates.fitState(62, 64), 'tight');
+});
+
 test('parses download progress from task messages', () => {
   assert.equal(estimates.taskProgress('Downloading 42%'), 42);
   assert.equal(Math.round(estimates.taskProgress('Swift 1.5 IQ3_XXS 下载中 31.2 / 75.8 GB')), 41);
