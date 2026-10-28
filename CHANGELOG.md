@@ -7,10 +7,34 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+- **按显卡型号校正 NVIDIA 速度估算：32 GB 改为区间，RTX 5090 / 3060 / 4060 Ti 用各自实测**：此前只按显存分档，同档显卡的显存带宽差别很大。改动如下：
+  - 改装 RTX 4080 SUPER 32 GB 跑 IQ3_S 从「≥ 85 tok/s」改为「85–104」。依据是排行榜实测 84.9–97.9 和上游社区实测 85.3–103.9；用户本机实测中位数约 95。
+  - RTX 5090（桌面版）用上游社区实测：IQ3_S 127–171、IQ3_XXS 172–181、IQ2_XS 165–179。此前显示「≥ 85」，明显低估。
+  - RTX 3060 12 GB 用上游社区实测：IQ3_S 18–21、IQ3_XXS 24–27、Q2_0 37–45、IQ2_XS 38–46。此前套用 RTX 5070 的表，IQ3_S 显示 46–53，高估一倍多。
+  - RTX 4060 Ti 16 GB 用上游社区实测：IQ3_S 30–35、Q2_0 48–56；IQ2_XS / IQ3_XXS 没有实测，按本卡 IQ3_S 显示「≥ 30」（见下一条）。此前显示「≥ 46」/「≥ 76」。
+  - 24 GB（RTX 4090 表）和其它 12 / 16 GB 显卡（RTX 5070 表）与现有实测相符，没有改动。
+- **修正大显存显卡上 Q2_0 / IQ2_XS 显示得比 IQ3 还慢**：v0.2.28 在 32 GB NVIDIA 上显示 Q2_0「≥ 76」、IQ2_XS「≥ 63」，低于 IQ3_S「85–104」和 IQ3_XXS「≥ 108」。原因不是这两个量化真的更慢：24 / 32 GB 档没有它们的实测，估算退回到 12 GB RTX 5070 的表，只当下限显示。上游 MODELS.md 写明 Q2_0 最快，所有同一台机器上的对比（RTX 5070、RTX 3060、RTX 3090、RTX 4070 Ti SUPER、RX 9070 XT）里，更小的量化都不比更大的慢。现在某一档没有这个量化的实测时，改用同档最近的更大量化实测作下限，并在说明里注明是推断。只在本机显存不低于该参考时推断。改动如下：
+  - 24 / 32 GB NVIDIA：Q2_0、IQ2_XS 从「≥ 76」「≥ 63」改为「≥ 108」，依据是 RTX 4090 的 IQ3_XXS 实测。上游另有 RTX 4090 跑 IQ2_XS 的 116–154、24 GB 笔记本 RTX 5090 跑 Q2_0 的 135–138，都在这个下限之上。
+  - RTX 5090（桌面版）：Q2_0 从「≥ 76」改为「≥ 165」，依据是本卡 IQ2_XS 实测。IQ2_XS 165–179 略低于 IQ3_XXS 172–181，是因为前者用的是较早的引擎 0.1.29，说明中已注明。
+  - AMD 32 GB：新增 R9700 跑 IQ2_XS 的上游社区实测 88–100（引擎 0.1.38）。Q2_0 改为「≥ 88」，此前为「≥ 48」；IQ3_XXS 改为「≥ 75」，此前为「≥ 49」。
+  - AMD 16 GB：新增 RX 9070 XT 跑 IQ3_S 的上游社区实测 45–46（引擎 0.1.35），此前借用 RTX 5070 的 46–53。IQ3_XXS 改为「≥ 45」，此前为 49–62。
+  - 20 GB 以下、RTX 3060、12 / 16 GB NVIDIA 不变。这些档的数字都是实测，或者参考卡显存比本机大，不做推断。
 - **修复更新完 Strata 后仍弹出「确认更新 Strata」、本机显示旧版本、甚至再下载一次**：更新任务替换完文件后，安装列表仍沿用更新过程中缓存的旧结果（最多 10 秒），自动更新提示据此认为本机还是旧版本（如 Release v0.2.2 · 引擎 0.1.47），又弹出更新到 v0.2.7 的确认框；此时确认会把已安装的版本重新下载安装一遍。现在更新任务结束时先清掉这份缓存；任何任务结束后，自动提示会先重新读取本机版本再判断；确认框里的「本机」跟随当前安装状态，本机已是最新时自动关闭；点「确认更新」前也会重新核对，已是最新就不再下载。选择指定版本和本地安装包仍可重装同一版本。
 
 ### English
 
+- **NVIDIA speed estimates now check the card model: 32 GB shows a range, and the RTX 5090 / 3060 / 4060 Ti use their own measurements**: the estimate only looked at VRAM, but memory bandwidth differs a lot within one VRAM tier. Changes:
+  - A modified RTX 4080 SUPER 32 GB on IQ3_S now shows "85–104" instead of "≥ 85 tok/s". This follows leaderboard runs of 84.9–97.9 and an upstream community run of 85.3–103.9; one user's own requests have a median of about 95.
+  - The desktop RTX 5090 uses upstream community runs: IQ3_S 127–171, IQ3_XXS 172–181 and IQ2_XS 165–179. It previously showed "≥ 85", well below what it measures.
+  - The RTX 3060 12 GB uses an upstream community run: IQ3_S 18–21, IQ3_XXS 24–27, Q2_0 37–45 and IQ2_XS 38–46. It used the RTX 5070 table before, so IQ3_S showed 46–53, more than twice the measurement.
+  - The RTX 4060 Ti 16 GB uses an upstream community run: IQ3_S 30–35 and Q2_0 48–56. IQ2_XS and IQ3_XXS were not measured on it, so they show "≥ 30" from its own IQ3_S run (see the next entry). It previously showed "≥ 46" and "≥ 76".
+  - 24 GB cards (RTX 4090 table) and other 12 / 16 GB cards (RTX 5070 table) match the existing measurements and are unchanged.
+- **Q2_0 / IQ2_XS no longer look slower than IQ3 on big-VRAM cards**: v0.2.28 showed Q2_0 "≥ 76" and IQ2_XS "≥ 63" on a 32 GB NVIDIA card, below IQ3_S "85–104" and IQ3_XXS "≥ 108". These sizes are not actually slower. The 24 / 32 GB tiers have no run of them, so the estimate fell back to the 12 GB RTX 5070 table and showed it as a lower bound. Upstream MODELS.md lists Q2_0 as the fastest, and in every comparison on one machine (RTX 5070, RTX 3060, RTX 3090, RTX 4070 Ti SUPER, RX 9070 XT) a smaller size is not slower than a bigger one. When a tier has no run of a size, the nearest bigger size measured on that tier is now its lower bound, and the note says it is inferred. This only happens when the machine has at least the reference card's VRAM. Changes:
+  - 24 / 32 GB NVIDIA: Q2_0 and IQ2_XS now show "≥ 108" instead of "≥ 76" and "≥ 63", from the RTX 4090 IQ3_XXS runs. Upstream also has an RTX 4090 at 116–154 on IQ2_XS and a 24 GB laptop RTX 5090 at 135–138 on Q2_0, both above this bound.
+  - Desktop RTX 5090: Q2_0 now shows "≥ 165" instead of "≥ 76", from its own IQ2_XS run. IQ2_XS at 165–179 is slightly below IQ3_XXS at 172–181 because it was measured on the older engine 0.1.29; the note says so.
+  - AMD 32 GB: adds an upstream community R9700 run on IQ2_XS at 88–100 (engine 0.1.38). Q2_0 now shows "≥ 88" (was "≥ 48") and IQ3_XXS "≥ 75" (was "≥ 49").
+  - AMD 16 GB: adds an upstream community RX 9070 XT run on IQ3_S at 45–46 (engine 0.1.35), replacing the RTX 5070's 46–53. IQ3_XXS now shows "≥ 45" (was 49–62).
+  - Cards under 20 GB, the RTX 3060 and 12 / 16 GB NVIDIA cards are unchanged. Their figures are measurements, or the reference card has more VRAM than the machine, so nothing is inferred.
 - **Fixed the "Update Strata" confirmation reappearing after an update, with the old version as installed, and downloading the same release again**: after the update task replaced the files, the installation list still returned the result cached during the update (up to 10 seconds), so the automatic prompt saw the old version (e.g. Release v0.2.2 · engine 0.1.47) and offered v0.2.7 again; confirming it reinstalled the release already there. The update task now drops that cache when it ends; after any task the automatic prompt re-reads the installed version before deciding; the confirmation shows the folder as it is now and closes once it is current; and confirming re-checks first, so an up-to-date folder is not downloaded again. A chosen version or a local package can still reinstall the same release.
 
 ## [0.2.28] - 2026-10-28
