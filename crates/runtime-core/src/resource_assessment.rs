@@ -55,6 +55,12 @@ struct GpuSnapshot {
     total_bytes: Option<u64>,
     available_bytes: Option<u64>,
     source: String,
+    /// A unified-memory APU (Ryzen AI Max, gfx1151): its graphics memory is the PC's RAM.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    uma: bool,
+    /// The APU's BIOS carve-out (the registry's 64-bit `HardwareInformation.qwMemorySize`), when known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dedicated_bytes: Option<u64>,
 }
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -98,6 +104,8 @@ fn parse_nvidia(text: &str) -> Vec<GpuSnapshot> {
                 total_bytes: total,
                 available_bytes: free,
                 source: "nvidia-smi".into(),
+                uma: false,
+                dedicated_bytes: None,
             })
         })
         .collect()
@@ -137,16 +145,32 @@ fn hardware(state: &RuntimeState) -> Result<HardwareSnapshot, String> {
     if gpus.is_empty() {
         // Integrated GPUs beside a real card are already left out (see display_adapters).
         if let Some(adapters) = crate::display_adapters::windows_gpu_adapters() {
+            // Strix Halo's carve-out is only in the registry (AdapterRAM stops at 4 GiB); read it
+            // only when such an APU is present.
+            let carve_outs = if adapters.iter().any(|adapter| is_uma_apu(&adapter.name)) {
+                crate::display_adapters::windows_adapter_memory().unwrap_or_default()
+            } else {
+                Vec::new()
+            };
             gpus = adapters
                 .into_iter()
                 .enumerate()
-                .map(|(id, adapter)| GpuSnapshot {
-                    id: id as u32,
-                    vendor: adapter.vendor.unwrap_or("unknown").into(),
-                    name: adapter.name,
-                    total_bytes: None,
-                    available_bytes: None,
-                    source: "windows-video-controller".into(),
+                .map(|(id, adapter)| {
+                    let uma = is_uma_apu(&adapter.name);
+                    GpuSnapshot {
+                        id: id as u32,
+                        vendor: adapter.vendor.unwrap_or("unknown").into(),
+                        dedicated_bytes: uma
+                            .then(|| {
+                                crate::display_adapters::memory_for(&carve_outs, &adapter.name)
+                            })
+                            .flatten(),
+                        uma,
+                        name: adapter.name,
+                        total_bytes: None,
+                        available_bytes: None,
+                        source: "windows-video-controller".into(),
+                    }
                 })
                 .collect();
         }
@@ -252,6 +276,66 @@ fn parallel_recommend(vram: f64, arena: f64, context: u64, kv: &str, streaming: 
         .unwrap_or(1)
 }
 
+/// setup.py `is_uma_apu` / `is_strix_halo` for a Windows adapter name: the Radeon 8060S / 8050S /
+/// 8040S of a Ryzen AI Max (gfx1151), whose graphics memory is a BIOS carve-out of the RAM.
+#[cfg(any(windows, test))]
+fn is_uma_apu(name: &str) -> bool {
+    crate::runtime_upgrade::gpu_select::amd_gfx_from_adapter_name(name) == Some("gfx1151")
+}
+
+/// strata_control/dsv41_fit.py (0.2.7) `UMA_RESERVE_GB`: kept for Windows, the desktop and the engine's buffers.
+const DSV41_UMA_RESERVE_GB: f64 = 12.0;
+/// dsv41_fit.py `ISTA_DENSE_GB`: the dense weights of an IST-DAS set.
+const DSV41_ISTA_DENSE_GB: f64 = 6.16;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Dsv41Fit {
+    Fits,
+    Tight,
+    Spills,
+}
+
+/// dsv41_fit.py `_plan_uma` (0.2.7, Ryzen AI Max): the RAM and the carve-out are one pool, counted
+/// once. The experts that fit beside the dense weights and the reserve stay in it, the rest are
+/// read from the SSD. Units as upstream: the pool in GiB (`ram_gb()` and the registry's carve-out),
+/// the set's sizes in GB.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Dsv41UmaPlan {
+    pool_gb: f64,
+    resident_gb: f64,
+    streamed_gb: f64,
+    fit: Dsv41Fit,
+}
+
+/// dsv41_fit.py `uma_total_gb`: the RAM the OS sees plus the BIOS carve-out; without the carve-out the
+/// larger of the RAM and the GPU's own figure.
+fn dsv41_uma_pool_gb(ram_bytes: u64, gpu: &GpuSnapshot) -> f64 {
+    let ram = ram_bytes as f64 / GIB;
+    match gpu.dedicated_bytes.filter(|bytes| *bytes > 0) {
+        Some(carve_out) => ram + carve_out as f64 / GIB,
+        None => ram.max(gpu.total_bytes.map_or(0.0, |bytes| bytes as f64 / GIB)),
+    }
+}
+
+fn dsv41_uma_plan(set: &crate::disk::dsv41::Dsv41Set, pool_gb: f64) -> Dsv41UmaPlan {
+    let room = (pool_gb - DSV41_ISTA_DENSE_GB - DSV41_UMA_RESERVE_GB).max(0.0);
+    let resident_gb = set.experts_gb.min(room);
+    let streamed_gb = (set.experts_gb - room).max(0.0);
+    let fit = if streamed_gb <= 0.5 {
+        Dsv41Fit::Fits
+    } else if pool_gb >= set.ram_ok_gb {
+        Dsv41Fit::Tight
+    } else {
+        Dsv41Fit::Spills
+    };
+    Dsv41UmaPlan {
+        pool_gb,
+        resident_gb,
+        streamed_gb,
+        fit,
+    }
+}
+
 fn estimate(request: &ResourceAssessmentRequest, hardware: HardwareSnapshot) -> Value {
     let mut reasons = vec![json!({"code":"estimate_scope","severity":"info"})];
     let mut unknowns = Vec::<String>::new();
@@ -272,6 +356,7 @@ fn estimate(request: &ResourceAssessmentRequest, hardware: HardwareSnapshot) -> 
     let mut slots = json!({"count":request.parallel,"perSlotVramBytes":null,"totalVramBytes":null});
     let mut recommendations = json!({"context":null,"parallel":null});
     let mut context_extension = Value::Null;
+    let mut uma = Value::Null;
     let dsv41_set = (request.family == crate::disk::dsv41::FAMILY)
         .then(|| crate::disk::dsv41::set(&request.quant))
         .flatten();
@@ -281,29 +366,48 @@ fn estimate(request: &ResourceAssessmentRequest, hardware: HardwareSnapshot) -> 
         ram["baselineBytes"] = json!(bytes(set.ram_ok_gb, GB));
         ram["expertBytes"] = json!(bytes(set.experts_gb, GB));
         let ram_gb = hardware.total_memory_bytes as f64 / GB;
-        let cards = hardware
-            .gpus
-            .iter()
-            .filter(|gpu| matches!(gpu.vendor.as_str(), "nvidia" | "amd"))
-            .filter(|gpu| {
-                gpu.total_bytes
-                    .is_some_and(|total| total as f64 >= 8.0 * GB)
-            })
-            .count();
         if request.context != u64::from(crate::disk::dsv41::CONTEXT) || request.images {
             unknowns.push("model_unknown".into());
         }
-        if cards == 0 {
-            note("dsv41_no_card", true);
-        }
-        if ram_gb >= set.experts_gb + 9.0 {
-            ram["mode"] = json!("normal");
-        } else if ram_gb >= set.ram_ok_gb {
-            ram["mode"] = json!("mmap");
-            note("dsv41_ram_store", false);
+        if let Some(apu) = hardware.gpus.iter().find(|gpu| gpu.uma) {
+            // dsv41_fit.py plan(): a unified-memory APU gets the one-pool plan, never "no card".
+            let plan = dsv41_uma_plan(set, dsv41_uma_pool_gb(hardware.total_memory_bytes, apu));
+            match plan.fit {
+                Dsv41Fit::Fits => ram["mode"] = json!("normal"),
+                Dsv41Fit::Tight => {
+                    ram["mode"] = json!("mmap");
+                    note("dsv41_ram_store", false);
+                }
+                Dsv41Fit::Spills => {
+                    ram["mode"] = json!("mmap");
+                    note("dsv41_ram_spill", true);
+                }
+            }
+            uma = json!({"poolBytes":bytes(plan.pool_gb, GIB),"dedicatedBytes":apu.dedicated_bytes,
+                "reserveBytes":bytes(DSV41_UMA_RESERVE_GB, GB),"residentExpertBytes":bytes(plan.resident_gb, GB),
+                "streamedExpertBytes":bytes(plan.streamed_gb, GB)});
         } else {
-            ram["mode"] = json!("mmap");
-            note("dsv41_ram_spill", true);
+            let cards = hardware
+                .gpus
+                .iter()
+                .filter(|gpu| matches!(gpu.vendor.as_str(), "nvidia" | "amd"))
+                .filter(|gpu| {
+                    gpu.total_bytes
+                        .is_some_and(|total| total as f64 >= 8.0 * GB)
+                })
+                .count();
+            if cards == 0 {
+                note("dsv41_no_card", true);
+            }
+            if ram_gb >= set.experts_gb + 9.0 {
+                ram["mode"] = json!("normal");
+            } else if ram_gb >= set.ram_ok_gb {
+                ram["mode"] = json!("mmap");
+                note("dsv41_ram_store", false);
+            } else {
+                ram["mode"] = json!("mmap");
+                note("dsv41_ram_spill", true);
+            }
         }
         recommendations = json!({"context":crate::disk::dsv41::CONTEXT,"parallel":1});
     } else if let Some((baseline, arena, budget)) = model(&request.family, &request.quant) {
@@ -458,7 +562,7 @@ fn estimate(request: &ResourceAssessmentRequest, hardware: HardwareSnapshot) -> 
     }
     json!({"status":if risk {"risk"} else if !unknowns.is_empty() {"unknown"} else {"suggested"},"estimate":true,
         "sampledAt":hardware.sampled_at,"hardware":hardware,"ram":ram,"kv":kv,"slots":slots,"recommendations":recommendations,
-        "contextExtension":context_extension,"reasons":reasons,"unknowns":unknowns,"sourceRevision":SOURCE_REVISION})
+        "contextExtension":context_extension,"uma":uma,"reasons":reasons,"unknowns":unknowns,"sourceRevision":SOURCE_REVISION})
 }
 
 pub async fn assess(
@@ -506,6 +610,8 @@ mod tests {
                 total_bytes: Some(bytes(vram, GIB)),
                 available_bytes: Some(bytes(vram - 1.0, GIB)),
                 source: "fixture".into(),
+                uma: false,
+                dedicated_bytes: None,
             }],
             cpu_isa: "avx2".into(),
             cpu_name: "Fixture CPU".into(),
@@ -558,6 +664,85 @@ mod tests {
         // Anything but 8K text only is outside what setup offers.
         req.context = 32768;
         assert_eq!(estimate(&req, fixture(64.0, 12.0))["status"], "unknown");
+    }
+    fn strix_halo(ram: f64, carve_out: Option<f64>) -> HardwareSnapshot {
+        let mut snapshot = fixture(ram, 0.0);
+        snapshot.gpus = vec![GpuSnapshot {
+            id: 0,
+            vendor: "amd".into(),
+            name: "AMD Radeon(TM) 8060S Graphics".into(),
+            total_bytes: None,
+            available_bytes: None,
+            source: "windows-video-controller".into(),
+            uma: is_uma_apu("AMD Radeon(TM) 8060S Graphics"),
+            dedicated_bytes: carve_out.map(|gib| bytes(gib, GIB)),
+        }];
+        snapshot
+    }
+    #[test]
+    fn strix_halo_counts_ram_and_carve_out_as_one_pool() {
+        let set = |quant: &str| crate::disk::dsv41::set(quant).unwrap();
+        // dsv41_fit.py _plan_uma: room = pool - 6.16 dense - 12 reserve.
+        let plan = dsv41_uma_plan(set("IST-DAS-2.00bpw"), 128.0);
+        assert_eq!(plan.fit, Dsv41Fit::Tight);
+        assert!((plan.resident_gb - (128.0 - 6.16 - 12.0)).abs() < 1e-9);
+        assert!((plan.streamed_gb - (132.07 - 109.84)).abs() < 1e-9);
+        assert_eq!(
+            dsv41_uma_plan(set("IST-DAS-1.75bpw"), 160.0).fit,
+            Dsv41Fit::Fits
+        );
+        assert_eq!(
+            dsv41_uma_plan(set("IST-DAS-2.25bpw"), 32.0).fit,
+            Dsv41Fit::Spills
+        );
+        assert_eq!(
+            dsv41_uma_plan(set("IST-DAS-2.00bpw"), 10.0).resident_gb,
+            0.0
+        );
+
+        let mut req = request();
+        req.family = "deepseek41".into();
+        req.quant = "IST-DAS-2.00bpw".into();
+        req.context = 8192;
+        let codes = |result: &Value| {
+            result["reasons"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|reason| reason["code"].as_str().unwrap().to_string())
+                .collect::<Vec<_>>()
+        };
+        // The measured box: 128 GB, a 64 GB carve-out and 64 GB for Windows. Not "no card" any more.
+        let measured = estimate(&req, strix_halo(64.0, Some(64.0)));
+        assert!(!codes(&measured).contains(&"dsv41_no_card".into()));
+        assert!(codes(&measured).contains(&"dsv41_ram_store".into()));
+        assert_eq!(measured["status"], "suggested");
+        assert_eq!(measured["ram"]["mode"], "mmap");
+        assert_eq!(measured["uma"]["poolBytes"], bytes(128.0, GIB));
+        assert_eq!(measured["uma"]["dedicatedBytes"], bytes(64.0, GIB));
+        let streamed = measured["uma"]["streamedExpertBytes"].as_u64().unwrap() as f64 / GB;
+        assert!((streamed - 22.23).abs() < 0.01, "{streamed}");
+        // The 1.75 set on the same box keeps all but ~5 GB in memory; still "tight", not a spill.
+        req.quant = "IST-DAS-1.75bpw".into();
+        assert_eq!(
+            estimate(&req, strix_halo(64.0, Some(64.0)))["status"],
+            "suggested"
+        );
+        // A 32 GB Strix Halo spills the 2.25 set.
+        req.quant = "IST-DAS-2.25bpw".into();
+        let small = estimate(&req, strix_halo(16.0, Some(16.0)));
+        assert_eq!(small["status"], "risk");
+        assert!(codes(&small).contains(&"dsv41_ram_spill".into()));
+        // Carve-out unknown: only the RAM Windows sees counts (conservative).
+        req.quant = "IST-DAS-2.00bpw".into();
+        let unknown = estimate(&req, strix_halo(64.0, None));
+        assert_eq!(unknown["uma"]["poolBytes"], bytes(64.0, GIB));
+        assert_eq!(unknown["uma"]["dedicatedBytes"], Value::Null);
+        assert!(codes(&unknown).contains(&"dsv41_ram_store".into()));
+        // A discrete card PC keeps the old path and no "uma" block.
+        assert_eq!(estimate(&req, fixture(64.0, 12.0))["uma"], Value::Null);
+        assert!(!is_uma_apu("AMD Radeon RX 7900 XTX"));
+        assert!(!is_uma_apu("AMD Radeon(TM) 890M Graphics"));
     }
     #[test]
     fn official_single_gpu_recommendation_and_low_ram_modes() {
