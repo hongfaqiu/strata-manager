@@ -252,13 +252,13 @@ export function TuningPage({ profileId, profile, language, desktop, owned, strea
     setBoostNotice(takeNotice());
   });
   const verifyWithScenarios = () => {
-    setSuggested(core.restartCandidatesFromCalibration(calibrationJob));
+    setSuggested(core.restartCandidatesFromCalibration(calibrationJob, health.config));
     setWorkerTest(false); setAdaptation({});
     setAdvancedOpen(true);
     requestAnimationFrame(() => document.querySelector('.tuning-setup')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   };
   const health = useSpeedHealth({ profile, desktop, owned, goal });
-  const canApplyCalibration = !!profile && !busy && !streaming && !anyActive && core.calibrationHasChange(calibrationJob);
+  const canApplyCalibration = !!profile && !busy && !streaming && !anyActive && !health.deepseek && core.calibrationHasChange(calibrationJob);
 
   const recommendedCandidate = job?.candidates.find(candidate => candidate.id === job.recommendedCandidateId);
   const canApply = fullReport && recommendedCandidate?.evaluation?.accepted && recommendedResources?.status === 'checked'
@@ -268,7 +268,7 @@ export function TuningPage({ profileId, profile, language, desktop, owned, strea
   const errorMessages = [...new Set([error, status.error ? core.normalizeError(status.error).message : ''].filter((message): message is string => !!message))];
   const reportErrors = [...new Set([job?.error, ...(job?.measurements.flatMap(measurement => measurement.error ? [measurement.error] : []) ?? [])].filter((message): message is string => !!message).map(message => speedBoostFailureText(message, t)))];
   const qualityFailures = workloadMeasurements.filter(measurement => !measurement.result.complete || !measurement.result.qualityPassed).length;
-  const startDisabled = !desktop || !profileId || !owned || streaming || anyActive || busy || recovery?.state === 'failed';
+  const startDisabled = !desktop || !profileId || !owned || health.deepseek || streaming || anyActive || busy || recovery?.state === 'failed';
   const liveStep = liveSnapshot?.stepKey ?? job?.progress?.phase;
   const tuningStepLabel = liveStep && liveStep in text ? text[liveStep as keyof typeof text] : job?.currentStep ?? text.running;
 
@@ -280,6 +280,7 @@ export function TuningPage({ profileId, profile, language, desktop, owned, strea
         <label className="tuning-field"><span>{text.rounds}</span><Dropdown ariaLabel={text.rounds} value={String(rounds)} disabled={anyActive || busy} options={[2, 3, 4].map(value => ({ value: String(value), label: String(value) }))} onValueChange={value => setRounds(Number(value))}/></label>
         <label className="tuning-field"><span>{text.contextLimit}</span><Dropdown ariaLabel={text.contextLimit} value={String(contextLimit)} disabled={anyActive || busy} options={[4096, 8192, 16384, 32768, 65536, 131072].map(value => ({ value: String(value), label: value.toLocaleString(language) }))} onValueChange={value => setContextLimit(Number(value))}/></label>
       </div>}
+      {health.deepseek && <p className="notice" role="status" data-testid="tuning-deepseek-unsupported">{t('sbDeepseekUnsupported')}</p>}
       {desktop && !fullSupported && <p className="notice" role="status">{capability.isPending ? (language === 'zh-CN' ? '正在核对后台的完整实测能力…' : 'Checking full scenario support…') : capability.error ? core.normalizeError(capability.error).message : language === 'zh-CN' ? '当前后台不支持完整场景实测。请完成当前请求并停止模型服务，让后台更新后再重新核对。' : 'The current supervisor does not support full scenarios. Finish current requests and stop the model service so the supervisor can update, then check again.'}<button disabled={capability.isFetching} onClick={() => void capability.refetch()}>{language === 'zh-CN' ? '重新核对' : 'Check again'}</button></p>}
       <div className="tuning-setup-footer"><p className="tuning-impact">{text.impact}</p>
       <div className="actions">
@@ -301,7 +302,7 @@ export function TuningPage({ profileId, profile, language, desktop, owned, strea
     </Panel>
   </>;
 
-  const blocked = !desktop ? t('sbNeedDesktop') : !profileId ? t('sbNeedProfile') : !owned ? t('sbNeedOwned')
+  const blocked = !desktop ? t('sbNeedDesktop') : !profileId ? t('sbNeedProfile') : health.deepseek ? t('sbDeepseekUnsupported') : !owned ? t('sbNeedOwned')
     : desktop && !capability.isPending && !quickSupported ? t('sbUnsupported') : streaming ? t('sbBusy')
     : active && job ? `${cal.fullMode} · ${text[job.state]}` : recovery?.state === 'failed' ? text.recoveryFailed : undefined;
   const option = (value: string, label: string) => ({ value, label, disabled: anyActive || busy });

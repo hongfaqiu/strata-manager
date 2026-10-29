@@ -445,6 +445,31 @@ fn assert_transaction_fixture_rejects_bad_evidence(measured: &TuningJob) {
 }
 
 #[test]
+fn deepseek41_configs_never_get_qwen_restart_flags() {
+    let config = json!({"arch":"deepseek41","exe":"strata-dsv41","args":["--pack","model","--reserve-mib","600"]});
+    for p in [
+        workers(2),
+        RestartParameters {
+            vram_reserve_mib: Some(2048),
+            ..Default::default()
+        },
+        RestartParameters {
+            prefill: Some(4096),
+            ..Default::default()
+        },
+        RestartParameters {
+            adapt_every: Some(64),
+            ..Default::default()
+        },
+    ] {
+        let error = with_restart(&config, Some(&p)).unwrap_err();
+        assert!(error.contains("DeepSeek"), "{error}");
+    }
+    // No candidate leaves the config untouched.
+    assert_eq!(with_restart(&config, None).unwrap(), config);
+}
+
+#[test]
 fn finite_flags_preserve_model_rope_kv_and_legacy_defaults() {
     let config = json!({"exe":"engine","cwd":".","args":["--native","weights.gguf","--max-context","524288","--kv","q4","--rope-scale","4","--prefill=auto:32768","--pool-workers","4"],"env":{"KEEP":"yes"},"sampling":{"temperature":0.7},"mcp":{"servers":[]}});
     let edited = with_restart(

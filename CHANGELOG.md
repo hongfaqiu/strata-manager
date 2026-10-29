@@ -5,6 +5,14 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **修复 DeepSeek-V4.1-Flash 配置被一键提速、校准结果或重启候选写入 Qwen 专用参数**：体检的「显存余量」「长上下文」修复会写 `--vram-reserve-mib` / `--expert-cache` / `--kv-resident`，套用校准结果会写 `--pcie-frac` / `--spec-min-p` / `--prefill-pipe`，场景复验的重启候选会写 `--pool-workers` / `--vram-reserve-mib` / `--prefill` / `--adapt-*`。这些都是 Qwen 引擎的参数，DeepSeek 的独立引擎（strata-dsv41）不认识，遇到未知参数会停止启动。现在当前配置是 DeepSeek 时：体检只显示一行「引擎：使用独立引擎，检查和修复不适用」；一键提速、套用校准、完整场景实测都显示不可用并说明原因；写入前会检查参数，凡不在 DeepSeek 引擎参数表里的一律拒绝，后台的重启候选和应用调优也同样拦截。功能本身没有删除，Qwen 配置不受影响；DeepSeek 的运行选项仍在启动设置里调整。
+
+### English
+
+- **DeepSeek-V4.1-Flash configs no longer get Qwen-only flags from one-click speed-up, calibration results or restart candidates**: the health-check fixes wrote `--vram-reserve-mib` / `--expert-cache` / `--kv-resident`, applying a calibration wrote `--pcie-frac` / `--spec-min-p` / `--prefill-pipe`, and scenario restart candidates wrote `--pool-workers` / `--vram-reserve-mib` / `--prefill` / `--adapt-*`. These are Qwen engine options. DeepSeek's own engine (strata-dsv41) does not know them and stops on an unknown option. For a DeepSeek config, the health check now shows one row: the engine is separate, so the checks and fixes do not apply. One-click speed-up, applying a calibration and full scenario tests show as unavailable with the reason. Every write first checks the flags and refuses anything outside the DeepSeek engine's option table; the background restart candidates and tuning apply refuse them too. Nothing was removed and Qwen configs behave as before; DeepSeek run options stay in the startup settings.
+
 ## [0.2.29] - 2026-10-29
 
 ### 中文

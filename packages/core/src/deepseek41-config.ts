@@ -40,6 +40,23 @@ export function isDeepseek41Config(config: JsonObject | null | undefined): boole
   return !!config && config.arch === 'deepseek41';
 }
 
+/**
+ * Engine flags among `flags` that strata-dsv41 does not take (not in DEEPSEEK41_ENGINE_FLAGS); always empty for
+ * non-DeepSeek configs. Speed fixes, quick calibration and restart candidates are written for the Qwen engine
+ * (`--vram-reserve-mib`, `--pool-workers`, `--pcie-frac`, …): strata-dsv41 stops on an unknown option, so nothing
+ * outside its own table may reach a DeepSeek config.
+ */
+export function deepseek41ForeignFlags(config: JsonObject | null | undefined, flags: Iterable<string>): string[] {
+  if (!isDeepseek41Config(config)) return [];
+  return [...new Set(flags)].filter(flag => !Object.prototype.hasOwnProperty.call(DEEPSEEK41_ENGINE_FLAGS, flag));
+}
+
+/** Throws when `flags` would put a Qwen-only option into a DeepSeek config. */
+export function assertDeepseek41Flags(config: JsonObject | null | undefined, flags: Iterable<string>): void {
+  const foreign = deepseek41ForeignFlags(config, flags);
+  if (foreign.length) throw new Error(`DeepSeek-V4.1-Flash 使用独立引擎，不能写入 ${foreign.join(' ')} / DeepSeek-V4.1-Flash uses its own engine and does not take ${foreign.join(' ')}`);
+}
+
 /** The engine build of a DeepSeek config (from its exe path), and whether it takes `--experts`. */
 export function deepseek41SpeedSupported(config: JsonObject | null | undefined): boolean {
   return !!config && versionAtLeast(deepseek41EngineVersion(config.exe), DEEPSEEK41_EXPERTS_MIN_ENGINE);

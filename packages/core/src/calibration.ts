@@ -1,4 +1,5 @@
 import type { JsonObject } from './types';
+import { assertDeepseek41Flags, isDeepseek41Config } from './deepseek41-config';
 import type { CalibrationBackend, CalibrationJob, CalibrationStep, TuningLiveSnapshot, TuningRestartParameters } from './tuning-types';
 
 /** Flags quick calibration may write, with their accepted ranges. */
@@ -16,6 +17,8 @@ const CALIBRATION_FLAGS: Record<string, { min: number; max: number; integer?: bo
  */
 export function applyCalibrationSettings(config: JsonObject, settings: Record<string, string | null>, backend: CalibrationBackend): JsonObject {
   if (!Array.isArray(config.args) || !config.args.every(arg => typeof arg === 'string')) throw new Error('args 必须为字符串数组 / args must be a string array');
+  // Quick calibration measures the Qwen engine's knobs; a job finished on a Qwen config must not land in a DeepSeek one.
+  assertDeepseek41Flags(config, Object.keys(settings));
   const args = [...config.args] as string[];
   for (const [flag, value] of Object.entries(settings)) {
     const rule = CALIBRATION_FLAGS[flag];
@@ -41,8 +44,12 @@ export function calibratedConfigName(configPath: string, at: Date): string {
   return `${base}-calibrated-${at.getFullYear()}${pad(at.getMonth() + 1)}${pad(at.getDate())}-${pad(at.getHours())}${pad(at.getMinutes())}.json`;
 }
 
-/** Scenario verification takes at most four restart candidates. */
-export function restartCandidatesFromCalibration(job: Pick<CalibrationJob, 'restartSuggestions'> | null | undefined): TuningRestartParameters[] {
+/**
+ * Scenario verification takes at most four restart candidates. They restart with Qwen-engine flags
+ * (--pool-workers, --vram-reserve-mib, --adapt-*), so a DeepSeek config gets none.
+ */
+export function restartCandidatesFromCalibration(job: Pick<CalibrationJob, 'restartSuggestions'> | null | undefined, config?: JsonObject | null): TuningRestartParameters[] {
+  if (isDeepseek41Config(config)) return [];
   return (job?.restartSuggestions ?? []).slice(0, 4).map(item => ({ ...item }));
 }
 
