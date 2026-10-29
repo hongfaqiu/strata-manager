@@ -20,6 +20,7 @@
 import type { JsonObject } from './types';
 import type { CalibrationGoal, CalibrationJob, CalibrationRates } from './tuning-types';
 import { PCIE_AUTO } from './tuning-types';
+import { assertDeepseek41Flags, isDeepseek41Config } from './deepseek41-config';
 
 export const KV_RESIDENT_TOKENS = 32768;
 export const KV_STREAM_MIN_CONTEXT = 65536;
@@ -28,7 +29,7 @@ const GIB = 1024 ** 3;
 /** RAM that has to stay free on top of the streamed KV. */
 const RAM_MARGIN_BYTES = 4 * GIB;
 
-export type SpeedCheckId = 'vramHeadroom' | 'kvInRam' | 'pcieFixed';
+export type SpeedCheckId = 'vramHeadroom' | 'kvInRam' | 'pcieFixed' | 'engine';
 export type SpeedCheckStatus = 'ok' | 'fix' | 'info' | 'unknown';
 /** Flags a fix writes; null removes a flag. Fixes take effect after a restart. */
 export type SpeedFix = Record<string, string | null>;
@@ -81,6 +82,9 @@ export function vramFloorMib(platform: SpeedHealthInput['platform'], goal: Calib
 }
 
 export function speedHealthCheck(input: SpeedHealthInput): SpeedCheck[] {
+  // The checks and their fixes are Qwen-engine ones (--vram-reserve-mib, --expert-cache, --kv-resident): a DeepSeek
+  // config gets one information row and no fix, so nothing Qwen-only can be written into it.
+  if (isDeepseek41Config(input.config)) return [{ id: 'engine', status: 'info', reason: 'deepseek41', values: {} }];
   const list = args(input.config);
   const engine = input.engine ?? {};
   const checks: SpeedCheck[] = [];
@@ -130,6 +134,7 @@ export function speedHealthCheck(input: SpeedHealthInput): SpeedCheck[] {
 export function applySpeedFixes(config: JsonObject, fixes: SpeedFix[]): JsonObject {
   let list = args(config);
   if (!Array.isArray(config.args) || list.length !== config.args.length) throw new Error('args 必须为字符串数组 / args must be a string array');
+  assertDeepseek41Flags(config, fixes.flatMap(fix => Object.keys(fix)));
   for (const fix of fixes) for (const [flag, value] of Object.entries(fix)) {
     if (!/^--[a-z0-9-]+$/.test(flag)) throw new Error(`invalid flag ${flag}`);
     const next: string[] = [];

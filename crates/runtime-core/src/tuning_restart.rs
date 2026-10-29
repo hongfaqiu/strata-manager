@@ -345,6 +345,11 @@ fn baseline(config: &Value) -> Result<RestartParameters, String> {
     })
 }
 fn validate_restart(config: &Value, p: &RestartParameters) -> Result<(), String> {
+    // Restart candidates write --pool-workers / --vram-reserve-mib / --prefill / --adapt-*: Qwen-engine options that
+    // strata-dsv41 (arch deepseek41) does not take, so a DeepSeek config never gets one.
+    if config["arch"] == crate::disk::dsv41::FAMILY {
+        return Err("DeepSeek-V4.1-Flash 使用独立引擎，重启候选参数不适用".into());
+    }
     if p == &RestartParameters::default() {
         return Err("重启候选必须指定至少一个参数".into());
     }

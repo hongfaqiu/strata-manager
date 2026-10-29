@@ -9,9 +9,10 @@ import { isEarlierFailure, speedBoostFailureText } from './speedBoostFailure';
 
 const active = (job: CalibrationJob | null) => !!job && ['checking', 'running', 'canceling'].includes(job.state);
 const stepKey: Record<string, string> = { warmup: 'sbStepWarmup', prefillPipe: 'sbStepPrefillPipe', pcieFrac: 'sbStepPcieFrac', specMinP: 'sbStepSpecMinP', confirm: 'sbStepConfirm' };
-const checkLabel: Record<SpeedCheck['id'], string> = { vramHeadroom: 'sbCheckVram', kvInRam: 'sbCheckKv', pcieFixed: 'sbCheckPcie' };
+const checkLabel: Record<SpeedCheck['id'], string> = { vramHeadroom: 'sbCheckVram', kvInRam: 'sbCheckKv', pcieFixed: 'sbCheckPcie', engine: 'sbCheckEngine' };
 const checkText = (check: SpeedCheck): string => {
   if (check.reason === 'unknown') return 'sbCheckUnknown';
+  if (check.id === 'engine') return 'sbCheckEngineDeepseek';
   if (check.id === 'vramHeadroom') return ({ ok: 'sbCheckVramOk', low: 'sbCheckVramLow', reserved: 'sbCheckVramReserved' } as Record<string, string>)[check.reason] ?? 'sbCheckUnknown';
   if (check.id === 'kvInRam') return ({ shortContext: 'sbCheckKvShort', enabled: 'sbCheckKvEnabled', off: 'sbCheckKvOff', ramLow: 'sbCheckKvRamLow', ramUnknown: 'sbCheckKvRamUnknown', wsl: 'sbCheckKvWsl' } as Record<string, string>)[check.reason] ?? 'sbCheckUnknown';
   return 'sbCheckPcieFixed';
@@ -40,7 +41,9 @@ export function useSpeedHealth({ profile, desktop, owned, goal }: { profile?: Se
   const platform = typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent) ? 'windows' : 'other';
   const engine = metrics.data && typeof metrics.data.engine === 'object' && metrics.data.engine ? metrics.data.engine as Record<string, unknown> : null;
   const checks = useMemo(() => config ? core.speedHealthCheck({ config, engine: engine as never, hardware: hardware.data ?? null, platform, goal, logs: logs.data?.map(line => line.message) }) : [], [config, engine, hardware.data, platform, goal, logs.data]);
-  return { checks, loading: snapshot.isPending && enabled, refetch: () => { void snapshot.refetch(); void metrics.refetch(); void logs.refetch(); } };
+  // DeepSeek-V4.1 configs run strata-dsv41: the page shows them as unavailable and writes no Qwen flag into them.
+  const deepseek = core.isDeepseek41Config(config);
+  return { checks, config: config ?? null, deepseek, loading: snapshot.isPending && enabled, refetch: () => { void snapshot.refetch(); void metrics.refetch(); void logs.refetch(); } };
 }
 
 export interface SpeedBoostProps {
