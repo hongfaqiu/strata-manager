@@ -45,3 +45,9 @@ describe('DeepSeek-V4.1 configs never get Qwen tuning flags', () => {
     expect(restartCandidatesFromCalibration(job)).toHaveLength(2);
   });
 });
+
+describe('calibration flags', () => {
+  it('none of the quick calibration flags exists in the DeepSeek engine table', () => {
+    for (const flag of ['--pcie-frac', '--spec-min-p', '--prefill-pipe']) expect(DEEPSEEK41_ENGINE_FLAGS).not.toHaveProperty(flag);
+  });
+});
