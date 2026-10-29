@@ -5,6 +5,8 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+## [0.2.30] - 2026-10-29
+
 ### 中文
 
 - **修复 DeepSeek-V4.1-Flash 配置被一键提速、校准结果或重启候选写入 Qwen 专用参数**：体检的「显存余量」「长上下文」修复会写 `--vram-reserve-mib` / `--expert-cache` / `--kv-resident`，套用校准结果会写 `--pcie-frac` / `--spec-min-p` / `--prefill-pipe`，场景复验的重启候选会写 `--pool-workers` / `--vram-reserve-mib` / `--prefill` / `--adapt-*`。这些都是 Qwen 引擎的参数，DeepSeek 的独立引擎（strata-dsv41）不认识，遇到未知参数会停止启动。现在当前配置是 DeepSeek 时：体检只显示一行「引擎：使用独立引擎，检查和修复不适用」；一键提速、套用校准、完整场景实测都显示不可用并说明原因；写入前会检查参数，凡不在 DeepSeek 引擎参数表里的一律拒绝，后台的重启候选和应用调优也同样拦截。功能本身没有删除，Qwen 配置不受影响；DeepSeek 的运行选项仍在启动设置里调整。
