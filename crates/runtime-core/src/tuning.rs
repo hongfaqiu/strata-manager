@@ -1582,6 +1582,10 @@ async fn change_configuration(
     let profile = state.registered_profile(&job.profile_id)?;
     require_owned(&state, &profile).await?;
     let path = assert_managed_config(&state, &profile)?;
+    if parameters.is_some() {
+        // Applying writes Qwen-engine parameters; restoring the original bytes stays allowed for every config.
+        assert_tunable(&path)?;
+    }
     let bytes = fs::read(&path).map_err(|e| e.to_string())?;
     let expected = if parameters.is_some() {
         Some(job.config_fingerprint.clone())
