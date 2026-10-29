@@ -291,9 +291,43 @@ fn validate_size(width: f64, height: f64) -> Result<(), String> {
     }
 }
 
+/// Physical pixels the native frame adds around the webview (outer − inner).
+/// Undecorated Windows windows keep an invisible DWM resize border/shadow
+/// (≈8px left/right/bottom at 100%), so `outer_size` is larger than the size
+/// `set_size` (an inner size) applies. macOS borderless windows report 0.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct FrameInset {
+    width: u32,
+    height: u32,
+}
+
+impl FrameInset {
+    fn between(outer: WindowRect, inner: (u32, u32)) -> Self {
+        Self {
+            width: outer.width.saturating_sub(inner.0),
+            height: outer.height.saturating_sub(inner.1),
+        }
+    }
+}
+
+#[cfg(test)]
 fn fit_window(
     area: &MonitorArea,
     current: Option<WindowRect>,
+    width: f64,
+    height: f64,
+) -> Result<WindowRect, String> {
+    fit_window_framed(area, current, FrameInset::default(), width, height)
+}
+
+/// `current` is the window's outer rect and `width`/`height` the logical
+/// webview size. The result's x/y are the outer position and its
+/// width/height the physical *inner* size passed to `set_size`, so the frame
+/// inset is counted once for placement and never fed back into the size.
+fn fit_window_framed(
+    area: &MonitorArea,
+    current: Option<WindowRect>,
+    inset: FrameInset,
     width: f64,
     height: f64,
 ) -> Result<WindowRect, String> {
@@ -305,12 +339,16 @@ fn fit_window(
     {
         return Err("屏幕工作区不可用".into());
     }
+    let inset_width = f64::from(inset.width.min(area.width.saturating_sub(1)));
+    let inset_height = f64::from(inset.height.min(area.height.saturating_sub(1)));
     let width = (width * area.scale)
         .round()
-        .clamp(1.0, f64::from(area.width));
+        .clamp(1.0, f64::from(area.width) - inset_width);
     let height = (height * area.scale)
         .round()
-        .clamp(1.0, f64::from(area.height));
+        .clamp(1.0, f64::from(area.height) - inset_height);
+    let outer_width = width + inset_width;
+    let outer_height = height + inset_height;
     let left = f64::from(area.x);
     let top = f64::from(area.y);
     let right = left + f64::from(area.width);
@@ -321,25 +359,25 @@ fn fit_window(
         let near_edge = 0.0..=48.0 * area.scale;
         (
             if near_edge.contains(&right_gap) {
-                right - right_gap - width
+                right - right_gap - outer_width
             } else {
                 f64::from(current.x)
             },
             if near_edge.contains(&bottom_gap) {
-                bottom - bottom_gap - height
+                bottom - bottom_gap - outer_height
             } else {
                 f64::from(current.y)
             },
         )
     } else {
         (
-            right - width - 16.0 * area.scale,
-            bottom - height - 16.0 * area.scale,
+            right - outer_width - 16.0 * area.scale,
+            bottom - outer_height - 16.0 * area.scale,
         )
     };
     Ok(WindowRect {
-        x: x.clamp(left, right - width).round() as i32,
-        y: y.clamp(top, bottom - height).round() as i32,
+        x: x.clamp(left, right - outer_width).round() as i32,
+        y: y.clamp(top, bottom - outer_height).round() as i32,
         width: width as u32,
         height: height as u32,
     })
@@ -442,15 +480,44 @@ impl DragState {
     }
 }
 
-fn current_rect(window: &WebviewWindow) -> Result<WindowRect, String> {
+/// Outer rect plus the inner (webview) size. Sizes must be read back from
+/// `inner_size`: `set_size` applies an inner size, so restoring from
+/// `outer_size` grew the strip by the frame inset on every reopen.
+fn current_geometry(window: &WebviewWindow) -> Result<(WindowRect, (u32, u32)), String> {
     let position = window.outer_position().map_err(|e| e.to_string())?;
     let size = window.outer_size().map_err(|e| e.to_string())?;
-    Ok(WindowRect {
-        x: position.x,
-        y: position.y,
-        width: size.width,
-        height: size.height,
-    })
+    let inner = window.inner_size().map_err(|e| e.to_string())?;
+    Ok((
+        WindowRect {
+            x: position.x,
+            y: position.y,
+            width: size.width,
+            height: size.height,
+        },
+        (inner.width, inner.height),
+    ))
+}
+
+/// Reopen keeps the strip's current webview size. Only the inner size is
+/// converted back to logical pixels, and with the same work-area scale that
+/// `fit_window_framed` multiplies by, so the physical size round-trips
+/// exactly and repeated opens are idempotent (even if the window's own DPI
+/// differs from the fallback work area's).
+fn restore_rect(
+    area: &MonitorArea,
+    outer: WindowRect,
+    inner: (u32, u32),
+) -> Result<WindowRect, String> {
+    if !area.scale.is_finite() || area.scale <= 0.0 {
+        return Err("屏幕工作区不可用".into());
+    }
+    fit_window_framed(
+        area,
+        Some(outer),
+        FrameInset::between(outer, inner),
+        (f64::from(inner.0) / area.scale).clamp(MIN_WIDTH, MAX_WIDTH),
+        (f64::from(inner.1) / area.scale).clamp(MIN_HEIGHT, MAX_HEIGHT),
+    )
 }
 
 fn current_area(app: &AppHandle, window: &WebviewWindow) -> Result<MonitorArea, String> {
@@ -471,16 +538,20 @@ fn current_area(app: &AppHandle, window: &WebviewWindow) -> Result<MonitorArea, 
 fn apply_layout(
     window: &WebviewWindow,
     area: &MonitorArea,
+    inset: FrameInset,
     rect: WindowRect,
 ) -> Result<(), String> {
     // A very small work area may be smaller than the usual logical minimum.
     // Physical constraints prevent an obsolete DPI or the old 40px maximum
-    // from forcing a resized/restored window outside that area.
+    // from forcing a resized/restored window outside that area. Constraints
+    // are inner sizes, so leave room for the frame inset.
     let bounded_size = |width: f64, height: f64| {
         tauri::PhysicalSize::new(
-            ((width * area.scale).round() as u32).min(area.width).max(1),
+            ((width * area.scale).round() as u32)
+                .min(area.width.saturating_sub(inset.width))
+                .max(1),
             ((height * area.scale).round() as u32)
-                .min(area.height)
+                .min(area.height.saturating_sub(inset.height))
                 .max(1),
         )
     };
@@ -508,8 +579,10 @@ pub fn resize_monitor_window(
     require_label(window.label(), LABEL)?;
     validate_size(width, height)?;
     let area = current_area(&app, &window)?;
-    let rect = fit_window(&area, Some(current_rect(&window)?), width, height)?;
-    apply_layout(&window, &area, rect)?;
+    let (outer, inner) = current_geometry(&window)?;
+    let inset = FrameInset::between(outer, inner);
+    let rect = fit_window_framed(&area, Some(outer), inset, width, height)?;
+    apply_layout(&window, &area, inset, rect)?;
     Ok(json!({
         "width": f64::from(rect.width) / area.scale,
         "height": f64::from(rect.height) / area.scale,
@@ -551,20 +624,9 @@ pub(crate) async fn open_window(app: &AppHandle) -> Result<(), String> {
         drag::install(&existing, None).await?;
         existing.unminimize().map_err(|e| e.to_string())?;
         let area = current_area(app, &existing)?;
-        let current = current_rect(&existing)?;
-        let scale = existing.scale_factor().map_err(|e| e.to_string())?;
-        let scale = if scale.is_finite() && scale > 0.0 {
-            scale
-        } else {
-            area.scale
-        };
-        let rect = fit_window(
-            &area,
-            Some(current),
-            (f64::from(current.width) / scale).clamp(MIN_WIDTH, MAX_WIDTH),
-            (f64::from(current.height) / scale).clamp(MIN_HEIGHT, MAX_HEIGHT),
-        )?;
-        apply_layout(&existing, &area, rect)?;
+        let (outer, inner) = current_geometry(&existing)?;
+        let rect = restore_rect(&area, outer, inner)?;
+        apply_layout(&existing, &area, FrameInset::between(outer, inner), rect)?;
         existing
             .emit("monitor-restored", ())
             .map_err(|e| e.to_string())?;
@@ -614,8 +676,11 @@ pub(crate) async fn open_window(app: &AppHandle) -> Result<(), String> {
     } else {
         current_area(app, &monitor)?
     };
-    let rect = fit_window(&area, None, width, height)?;
-    apply_layout(&monitor, &area, rect)?;
+    let inset = current_geometry(&monitor)
+        .map(|(outer, inner)| FrameInset::between(outer, inner))
+        .unwrap_or_default();
+    let rect = fit_window_framed(&area, None, inset, width, height)?;
+    apply_layout(&monitor, &area, inset, rect)?;
     monitor.show().map_err(|e| e.to_string())?;
     monitor.set_focus().map_err(|e| e.to_string())
 }
@@ -1132,6 +1197,74 @@ mod tests {
             fit_window(&area(-2560, 120, 2560, 1440, 1.5), None, 588.0, 152.0).unwrap(),
             rect(-906, 1308, 882, 228)
         );
+    }
+
+    /// Regression: reopening the strip (tray/taskbar/hotkey click) must not
+    /// grow it. Windows' undecorated frame makes outer > inner; restoring
+    /// from the outer size added that inset on every click.
+    #[test]
+    fn repeated_reopen_keeps_size_and_edges_stable_with_frame_inset() {
+        for (screen, inset, start) in [
+            // Windows 11 at 150%: ~11px side/bottom borders + 2px top inset.
+            (
+                area(0, 0, 2560, 1392, 1.5),
+                FrameInset {
+                    width: 22,
+                    height: 13,
+                },
+                (1600, 1200, 882, 60),
+            ),
+            // Windows 10 at 100%: 8px borders, no top inset.
+            (
+                area(-1920, 0, 1920, 1040, 1.0),
+                FrameInset {
+                    width: 16,
+                    height: 8,
+                },
+                (-700, 300, 588, 152),
+            ),
+            // macOS Retina borderless (physical work area): no frame.
+            (
+                area(0, 50, 3024, 1864, 2.0),
+                FrameInset::default(),
+                (900, 700, 1176, 80),
+            ),
+        ] {
+            let (x, y, width, height) = start;
+            let outer =
+                |x: i32, y: i32, w: u32, h: u32| rect(x, y, w + inset.width, h + inset.height);
+            let mut window = outer(x, y, width, height);
+            let first = window;
+            for click in 0..12 {
+                let inner = (window.width - inset.width, window.height - inset.height);
+                let next = restore_rect(&screen, window, inner).unwrap();
+                assert_eq!(
+                    (next.width, next.height),
+                    (width, height),
+                    "inner size changed on reopen #{click}"
+                );
+                window = outer(next.x, next.y, next.width, next.height);
+                assert_eq!(window, first, "outer rect drifted on reopen #{click}");
+            }
+        }
+    }
+
+    #[test]
+    fn framed_fit_keeps_outer_edge_distance_when_resizing() {
+        let screen = area(0, 0, 1920, 1040, 1.0);
+        let inset = FrameInset {
+            width: 16,
+            height: 8,
+        };
+        // Outer right/bottom edges 16px inside the work area.
+        let current = rect(1572, 884, 316 + 16, 132 + 8);
+        let next = fit_window_framed(&screen, Some(current), inset, 588.0, 152.0).unwrap();
+        assert_eq!((next.width, next.height), (588, 152));
+        assert_eq!(next.x + 588 + 16, 1920 - 16);
+        assert_eq!(next.y + 152 + 8, 1040 - 16);
+        // Without a current rect the default margin is measured to the outer edge.
+        let fresh = fit_window_framed(&screen, None, inset, 588.0, 152.0).unwrap();
+        assert_eq!(fresh, rect(1920 - 16 - 604, 1040 - 16 - 160, 588, 152));
     }
 
     #[test]
