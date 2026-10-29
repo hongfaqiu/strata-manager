@@ -5,6 +5,14 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **监控浮条反复点击打开不再越变越大**：每次从托盘、任务栏或快捷键重新打开浮条时，程序都会读回窗口尺寸，但读回的是包含边框的外框尺寸（Windows 无边框窗口有一圈看不见的缩放边框/阴影），再按内容区尺寸写回。于是每点一次就多出一圈边框，150% 缩放下约宽 +22、高 +13 像素，直到最大尺寸。现在改为读回内容区尺寸，并用同一个屏幕缩放比换算；摆放位置时把边框计入，靠右下边缘的浮条也不会漂移。
+
+### English
+
+- **Monitor strip no longer grows each time it is reopened**: reopening the strip from the tray, taskbar or hotkey read the window size back as the outer size (Windows keeps an invisible resize border/shadow around undecorated windows) and applied it as the inner size, so every click added the border, about +22×13 px at 150% scaling, up to the maximum size. Reopening now reads the inner size and converts it with a single work-area scale, and placement accounts for the border so a strip docked near the bottom-right edge no longer drifts.
+
 ## [0.2.29] - 2026-10-29
 
 ### 中文
