@@ -750,5 +750,15 @@
   "ovIssueLoadingNow": "モデルを読み込み中。大きなモデルは初回に数分かかることがあります",
   "ovGpuCards": "GPU ごと",
   "ovPcieFirstCard": "GPU 0 のリンク",
-  "ovIntegratedGpu": "内蔵 GPU · 合計に含めない"
+  "ovIntegratedGpu": "内蔵 GPU · 合計に含めない",
+  "appUpdateSource": "ダウンロード元",
+  "appUpdateSourceShared": "エンジンのダウンロードと共通",
+  "appUpdateSourceOfficial": "公式 GitHub",
+  "appUpdateSourceCustom": "カスタム",
+  "appUpdateSourceLocal": "ローカルパッケージ（エンジンのみ）",
+  "appUpdateSourceAuto": "アプリ更新は最速のソースを自動で選びます",
+  "appUpdateSourceEngineOnly": "{version}/{asset} はエンジン専用です。アプリ更新には {url} が必要です",
+  "appUpdateSourceHttps": "HTTPS で、認証情報や # フラグメントを含まないこと",
+  "appUpdateSourceNeedUrl": "{url} を含めてください",
+  "appUpdateSourcePlaceholder": "使えるのは {url} だけです"
 }
