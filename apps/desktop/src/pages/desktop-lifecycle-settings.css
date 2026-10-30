@@ -27,10 +27,10 @@
 .settings-release-body img{max-width:100%;height:auto}
 .settings-release-body table{display:block;overflow:auto}
 @media(max-width:480px){.app-updates-settings .app-update-version{gap:12px}.settings-release-body{padding:12px;max-height:340px}}
-.app-update-source{margin-bottom:8px}
+.app-update-source{margin-bottom:16px}
 .app-update-source-custom{display:flex;gap:8px;align-items:center;margin:2px 0 6px}
 .app-update-source-custom input{flex:1;min-width:0;font-family:var(--st-font-mono,ui-monospace,monospace);font-size:13px}
 .app-update-source-custom input[aria-invalid=true]{border-color:var(--st-danger,#d9363e)}
 .app-update-source-custom button{flex:none}
-.app-update-source-problem{margin:0 0 6px;font-size:12px;color:var(--st-danger-text,#b42318)}
-.app-update-source-auto{margin:0 0 6px;font-size:12px}
+.app-update-source-problem{margin:4px 0 0;font-size:12px;color:var(--st-danger-text,#b42318)}
+.app-update-source-auto{margin:4px 0 0;font-size:12px}
