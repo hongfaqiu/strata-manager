@@ -36,6 +36,34 @@ fn option(args: &[String], names: &[&str]) -> Option<String> {
         None
     }
 }
+/// DeepSeek-V4.1 (arch deepseek41) names its model by the --pack folder only.
+fn is_deepseek41(args: &[String]) -> bool {
+    option(args, &["--pack"]).is_some() && option(args, &["--native", "--model", "-m"]).is_none()
+}
+/// Whether the engine reads pictures. DeepSeek-V4.1 takes `--vision on|off` (upstream v0.2.8 writes
+/// it into every config), so only an explicit on counts there; Qwen's `--vision` is a bare switch.
+fn vision_enabled(args: &[String]) -> bool {
+    let deepseek = is_deepseek41(args);
+    let mut enabled = false;
+    for (index, arg) in args.iter().enumerate() {
+        let value = if arg == "--vision" {
+            args.get(index + 1)
+                .filter(|next| !next.starts_with('-'))
+                .map(String::as_str)
+        } else if let Some(value) = arg.strip_prefix("--vision=") {
+            Some(value)
+        } else {
+            continue;
+        };
+        enabled = match value.map(str::to_ascii_lowercase).as_deref() {
+            Some("off" | "no" | "false" | "0") => false,
+            Some("on" | "yes" | "true" | "1" | "gpu" | "cpu") => true,
+            // DeepSeek's --vision needs a value: a missing or unknown one is not a picture-reading run.
+            Some(_) | None => !deepseek && value.is_none(),
+        };
+    }
+    enabled
+}
 fn basename(value: &str) -> Option<&str> {
     let name = value.rsplit(['/', '\\']).next()?;
     if name.is_empty() || matches!(name, "." | "..") || name.chars().any(char::is_control) {
@@ -59,6 +87,7 @@ fn resource_configuration(args: &[String]) -> Option<Value> {
         &["--kv-resident"],
         &["--expert-cache"],
         &["--vram-reserve-mib"],
+        &["--reserve-mib"],
         &["--experts"],
     ] {
         let present = args.iter().any(|arg| {
@@ -104,6 +133,8 @@ fn resource_configuration(args: &[String]) -> Option<Value> {
         "--kv-resident",
         "--expert-cache",
         "--vram-reserve-mib",
+        // DeepSeek-V4.1 takes the room left for other apps as --reserve-mib (upstream v0.2.8).
+        "--reserve-mib",
         // Benchmark Arena compares these launch parameters within a model + quant group.
         "--pool-workers",
         "--pcie-frac",
@@ -143,7 +174,7 @@ fn resource_configuration(args: &[String]) -> Option<Value> {
         return None;
     }
     let mut result = json!({"args":safe,"parallel":parallel});
-    if args.iter().any(|arg| arg == "--vision") {
+    if vision_enabled(args) {
         result["vision"] = json!(true);
     }
     if let Some(gpu) = option(args, &["--gpu"]) {
@@ -480,6 +511,78 @@ mod resource_tests {
         let mut full = base;
         full.extend(["--experts", "6"].map(String::from));
         assert_ne!(resource_configuration(&full).unwrap()["args"], fast["args"]);
+    }
+
+    #[test]
+    fn deepseek41_vision_reads_on_off_and_reserve_mib_groups() {
+        let base = [
+            "--pack",
+            "/models/packs/deepseek-v4.1-flash-ist-das-2.00bpw",
+            "--max-context",
+            "8192",
+            "--reserve-mib",
+            "600",
+        ]
+        .map(String::from)
+        .to_vec();
+        let with = |extra: &[&str]| {
+            let mut args = base.clone();
+            args.extend(extra.iter().map(|arg| arg.to_string()));
+            resource_configuration(&args).unwrap()
+        };
+        let plain = with(&[]);
+        assert!(plain.get("vision").is_none());
+        assert_eq!(
+            plain["args"],
+            json!([
+                "--max-context",
+                "8192",
+                "--pack",
+                "deepseek-v4.1-flash-ist-das-2.00bpw",
+                "--reserve-mib",
+                "600"
+            ])
+        );
+        assert!(with(&["--vision", "off"]).get("vision").is_none());
+        assert!(with(&["--vision=off"]).get("vision").is_none());
+        assert!(with(&["--vision"]).get("vision").is_none());
+        assert!(with(&["--vision", "--eos", "1"]).get("vision").is_none());
+        assert_eq!(with(&["--vision", "on"])["vision"], json!(true));
+        assert_eq!(with(&["--vision=on"])["vision"], json!(true));
+        let mut other = base.clone();
+        other[5] = "1200".into();
+        assert_ne!(
+            resource_configuration(&other).unwrap()["args"],
+            plain["args"]
+        );
+    }
+
+    #[test]
+    fn qwen_vision_stays_a_bare_switch() {
+        let base = [
+            "--native",
+            "/m/Qwen3.8-IQ3_S.gguf",
+            "--max-context",
+            "32768",
+        ]
+        .map(String::from)
+        .to_vec();
+        assert!(resource_configuration(&base)
+            .unwrap()
+            .get("vision")
+            .is_none());
+        let mut bare = base.clone();
+        bare.push("--vision".into());
+        assert_eq!(
+            resource_configuration(&bare).unwrap()["vision"],
+            json!(true)
+        );
+        let mut middle = vec!["--vision".to_string()];
+        middle.extend(base);
+        assert_eq!(
+            resource_configuration(&middle).unwrap()["vision"],
+            json!(true)
+        );
     }
 
     #[test]

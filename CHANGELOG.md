@@ -5,6 +5,16 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **DeepSeek-V4.1-Flash 的图像开关按 `--vision on|off` 识别**：上游 v0.2.8 起每个 DeepSeek 配置都写有 `--vision on` 或 `--vision off`，此前 Manager 只要看到 `--vision` 就当作开了图像，Arena 测速上传会把关着图像的 DeepSeek 跑分也标成「图像开」。现在 DeepSeek 只有明确写 `on` 才算开，`off` 或缺值都算关；Qwen 的不带值 `--vision` 不变。DeepSeek 留给其他应用的显存 `--reserve-mib` 也计入测速分组。
+- **「启用图像支持」对 DeepSeek 只显示一个开关**：DeepSeek 引擎自带读图，不需要另选视觉引擎、模型和投影文件。此前点「启用图像」会给 DeepSeek 写 Qwen 式的 `vision` 段并追加不带值的 `--vision`，DeepSeek 引擎会把下一个参数当成它的值，或直接报「缺少参数值」。现在打开开关只写 `--vision on`，关闭写 `--vision off`，其他参数不动；Qwen 配置的对话框不变。
+
+### English
+
+- **DeepSeek-V4.1-Flash image input is read from `--vision on|off`**: since upstream v0.2.8 every DeepSeek config carries `--vision on` or `--vision off`. Manager counted any `--vision` as images on, so Arena uploads marked DeepSeek runs with images off as images on. For DeepSeek only an explicit `on` counts now; `off` or a missing value is off. Qwen's bare `--vision` switch is unchanged. DeepSeek's `--reserve-mib` (memory left for other apps) is now part of the benchmark group.
+- **"Enable image support" shows one switch for DeepSeek**: the DeepSeek engine reads images itself, so there is no vision engine, model or projector to choose. Before, enabling images wrote a Qwen-style `vision` section and a bare `--vision` into a DeepSeek config; the engine then took the next option as its value or refused to start with a missing value. The switch now writes only `--vision on` or `--vision off` and leaves every other argument alone. The Qwen dialog is unchanged.
+
 ## [0.2.30] - 2026-10-29
 
 ### 中文

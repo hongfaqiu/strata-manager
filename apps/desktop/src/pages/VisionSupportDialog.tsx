@@ -1,11 +1,12 @@
 import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useRef, useState } from 'react';
-import { Check, FolderOpen, LoaderCircle, RefreshCw } from 'lucide-react';
+import { Check, FolderOpen, ImageIcon, LoaderCircle, RefreshCw } from 'lucide-react';
 import * as core from '@strata-manager/core';
 import type { JsonObject, ServiceProfile } from '@strata-manager/core';
 import { Dialog } from '../components';
-import { Dropdown } from '../OfficialControls';
-import { configureVisionSupport, visionDraftOf, type VisionSupportDraft } from './visionSupportConfiguration';
+import { Dropdown, Toggle } from '../OfficialControls';
+import { configureDeepseek41VisionSupport, configureVisionSupport, visionDraftOf, type VisionSupportDraft } from './visionSupportConfiguration';
+import { visionSupportText } from './visionSupportStrings';
 import './vision-support-dialog.css';
 
 export interface VisionSupportDialogProps {
@@ -20,16 +21,20 @@ export function VisionSupportDialog({ profile, language, onClose, onSaved, onRes
   const [loading, setLoading] = useState(true), [saving, setSaving] = useState(false), [browsing, setBrowsing] = useState(false);
   const [reload, setReload] = useState(0), [error, setError] = useState(''), [message, setMessage] = useState('');
   const [enabled, setEnabled] = useState(false);
+  // DeepSeek-V4.1-Flash reads pictures with its own engine: one on/off switch (--vision on|off), no files.
+  const [deepseekVision, setDeepseekVision] = useState<boolean | null>(null);
+  const text = (key: Parameters<typeof visionSupportText>[1]) => visionSupportText(language, key);
   const current = useRef({ profile, onRestart, onSaved }); current.current = { profile, onRestart, onSaved };
   const savingRef = useRef(false), browsingRef = useRef(false), alive = useRef(false);
   const busy = loading || saving || browsing;
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => {
     let stopped = false;
-    setLoading(true); setBaseline(null); setDraft(null); setError(''); setMessage(''); setEnabled(false);
+    setLoading(true); setBaseline(null); setDraft(null); setDeepseekVision(null); setError(''); setMessage(''); setEnabled(false);
     void core.readConfigSnapshot(profile).then(({ config, revision }) => {
-      const next = visionDraftOf(config, profile.installDir);
-      if (!stopped) { setBaseline({ config, revision, profileId: profile.id, configPath: profile.configPath }); setDraft(next); }
+      const deepseek = core.isDeepseek41Config(config);
+      const next = deepseek ? null : visionDraftOf(config, profile.installDir);
+      if (!stopped) { setBaseline({ config, revision, profileId: profile.id, configPath: profile.configPath }); setDraft(next); setDeepseekVision(deepseek ? core.deepseek41Vision(config) : null); }
     }).catch(failure => { if (!stopped) setError(core.normalizeError(failure).message); }).finally(() => { if (!stopped) setLoading(false); });
     return () => { stopped = true; };
   }, [profile.id, profile.configPath, reload]);
@@ -48,16 +53,17 @@ export function VisionSupportDialog({ profile, language, onClose, onSaved, onRes
     finally { browsingRef.current = false; if (alive.current) setBrowsing(false); }
   };
   const save = async (restart: boolean) => {
-    if (busy || savingRef.current || !baseline || !draft) return;
+    if (busy || savingRef.current || !baseline || (!draft && deepseekVision === null)) return;
     const target = baseline, selectedProfile = profile;
     let persisted = false;
     savingRef.current = true; setSaving(true); setError(''); setMessage('');
     try {
       if (changedProfile(target)) throw new Error(zh ? '当前服务配置已改变，请重新读取。' : 'The selected configuration changed. Reload it.');
       if (restart && !current.current.onRestart) throw new Error(zh ? '当前服务无法重启，请仅保存配置。' : 'Restart is unavailable. Save the configuration only.');
-      const next = configureVisionSupport(target.config, draft);
+      const deepseek = deepseekVision !== null;
+      const next = deepseek ? configureDeepseek41VisionSupport(target.config, deepseekVision) : configureVisionSupport(target.config, draft!);
       core.validateStartupConfiguration(next);
-      await core.validateVisionFiles(selectedProfile, next);
+      if (!deepseek) await core.validateVisionFiles(selectedProfile, next);
       if (changedProfile(target)) throw new Error(zh ? '当前服务配置已改变，请重新读取。' : 'The selected configuration changed. Reload it.');
       const written = await core.writeConfig(selectedProfile, next, target.revision); persisted = true;
       if (!alive.current) return;
@@ -68,6 +74,7 @@ export function VisionSupportDialog({ profile, language, onClose, onSaved, onRes
         setMessage(zh ? '配置已保存，正在启用图像服务…' : 'Configuration saved; enabling vision…');
         await current.current.onRestart();
         const health = await core.request<JsonObject>(selectedProfile, '/health');
+        if (deepseek && !deepseekVision) { if (alive.current) setMessage(text('vsRestartedOff')); await current.current.onSaved?.(); return; }
         if (health.images !== true) throw new Error(zh ? '服务未确认图像支持，请检查视觉引擎和投影文件。' : 'The service did not confirm image support. Check the vision engine and projector.');
         if (alive.current) { setEnabled(true); setMessage(zh ? '图像服务已启用。' : 'Image support is enabled.'); }
       }
@@ -84,6 +91,11 @@ export function VisionSupportDialog({ profile, language, onClose, onSaved, onRes
   return <Dialog title={zh ? '启用图像支持' : 'Enable image support'} onClose={close}>
     <div className="vision-support-dialog">
       {loading && <p className="vision-support-status" role="status"><LoaderCircle size={17} className="spin"/>{zh ? '正在读取现有配置…' : 'Reading the existing configuration…'}</p>}
+      {deepseekVision !== null && baseline && <div className="vision-support-deepseek" data-testid="vision-deepseek">
+        <span className="vision-support-deepseek-icon" aria-hidden="true"><ImageIcon size={20}/></span>
+        <div><strong>{text('vsDeepseekLabel')}</strong><small>{text('vsDeepseekHint')}</small></div>
+        <Toggle checked={deepseekVision} disabled={busy} ariaLabel={text('vsDeepseekLabel')} onCheckedChange={value => { setDeepseekVision(value); setMessage(''); setError(''); setEnabled(false); }}/>
+      </div>}
       {draft && <>
         <p className="vision-support-intro">{zh ? '选择已有的视觉引擎、模型和匹配投影文件。' : 'Choose an existing vision engine, model and matching projector.'}</p>
         <div className="vision-support-paths">{(['exe', 'model', 'mmproj'] as const).map(key => <label key={key}><span>{labels[key]}</span><div><input value={draft[key]} aria-label={labels[key]} disabled={busy} onChange={event => edit(key, event.target.value)} placeholder={key === 'mmproj' ? (zh ? '选择匹配模型的 mmproj GGUF' : 'Choose the matching mmproj GGUF') : ''}/><button type="button" disabled={busy} aria-label={`${zh ? '选择' : 'Choose'} ${labels[key]}`} onClick={() => void browse(key)}><FolderOpen size={16}/></button></div></label>)}</div>
@@ -98,8 +110,10 @@ export function VisionSupportDialog({ profile, language, onClose, onSaved, onRes
       {message && <p className={`notice ${enabled ? 'vision-support-enabled' : ''}`} role="status">{enabled && <Check size={16}/>} {message}</p>}
       <div className="dialog-footer">
         <button type="button" disabled={busy} onClick={close}>{zh ? '关闭' : 'Close'}</button>
-        {error && <button type="button" disabled={busy} onClick={() => setReload(value => value + 1)}><RefreshCw size={15}/>{draft ? (zh ? '放弃草稿并重新读取' : 'Discard draft and reload') : (zh ? '重新读取' : 'Reload')}</button>}
-        <button type="button" className="primary" disabled={busy || !complete || enabled} onClick={() => void save(!!onRestart)}>{saving ? <LoaderCircle size={15} className="spin"/> : <Check size={15}/>} {saving ? (zh ? '正在保存…' : 'Saving…') : onRestart ? (zh ? '保存并启用' : 'Save and enable') : (zh ? '保存图像配置' : 'Save vision configuration')}</button>
+        {error && <button type="button" disabled={busy} onClick={() => setReload(value => value + 1)}><RefreshCw size={15}/>{draft || deepseekVision !== null ? (zh ? '放弃草稿并重新读取' : 'Discard draft and reload') : (zh ? '重新读取' : 'Reload')}</button>}
+        {deepseekVision !== null
+          ? <button type="button" className="primary" disabled={busy || enabled || !baseline || deepseekVision === core.deepseek41Vision(baseline.config)} onClick={() => void save(!!onRestart)}>{saving ? <LoaderCircle size={15} className="spin"/> : <Check size={15}/>} {saving ? (zh ? '正在保存…' : 'Saving…') : text(onRestart ? 'vsSaveRestart' : 'vsSave')}</button>
+          : <button type="button" className="primary" disabled={busy || !complete || enabled} onClick={() => void save(!!onRestart)}>{saving ? <LoaderCircle size={15} className="spin"/> : <Check size={15}/>} {saving ? (zh ? '正在保存…' : 'Saving…') : onRestart ? (zh ? '保存并启用' : 'Save and enable') : (zh ? '保存图像配置' : 'Save vision configuration')}</button>}
       </div>
     </div>
   </Dialog>;
