@@ -750,5 +750,15 @@
   "ovIssueLoadingNow": "Модель загружается; большая модель при первом запуске может грузиться несколько минут",
   "ovGpuCards": "По GPU",
   "ovPcieFirstCard": "Канал GPU 0",
-  "ovIntegratedGpu": "Встроенная · не в сумме"
+  "ovIntegratedGpu": "Встроенная · не в сумме",
+  "appUpdateSource": "Источник загрузки",
+  "appUpdateSourceShared": "Общий с загрузкой движков",
+  "appUpdateSourceOfficial": "Официальный GitHub",
+  "appUpdateSourceCustom": "Свой",
+  "appUpdateSourceLocal": "Локальный пакет (только движок)",
+  "appUpdateSourceAuto": "Обновления приложения автоматически выбирают самый быстрый источник",
+  "appUpdateSourceEngineOnly": "{version}/{asset} только для движков; обновлениям приложения нужен {url}",
+  "appUpdateSourceHttps": "Только HTTPS, без учётных данных и фрагмента #",
+  "appUpdateSourceNeedUrl": "Должен содержать {url}",
+  "appUpdateSourcePlaceholder": "Поддерживается только {url}"
 }

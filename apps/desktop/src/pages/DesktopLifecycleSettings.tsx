@@ -9,6 +9,7 @@ import bundledChangelog from '../../../../CHANGELOG.md?raw';
 import { Dialog, Panel } from '../components';
 import { Dropdown, Toggle } from '../OfficialControls';
 import { appUpdateSourceSummary, type AppUpdateState } from '../appUpdateController';
+import { AppUpdateSourceSetting } from './AppUpdateSourceSetting';
 import { startupStatusHint } from '../startupStatusText';
 import { bundledAppRelease } from '../bundledAppRelease';
 import { localizedReleaseNotes, releaseNotes } from '../updateReleaseNotes';
@@ -82,6 +83,7 @@ export function DesktopLifecycleSettings({ section = 'all', currentVersion = des
     {section !== 'background' && <div id="settings-app-updates"><Panel className="app-updates-settings" title={t('appUpdates')} action={helpAction('updates', zh ? '应用更新帮助' : 'App update help')}>
       <div className="app-update-version d2-update-hero" data-phase={update.error ? 'error' : update.phase}><div><span>{zh ? '当前版本' : 'Current version'}</span><strong>v{currentVersion.replace(/^v/, '')}</strong></div><div className="d2-update-status"><span className={`d2-update-badge is-${update.error ? 'error' : update.phase}`}>{update.phase === 'checking' ? <LoaderCircle className="spin" size={12}/> : <i/>}{t(update.error ? 'd2UpdErr' : `d2Upd_${update.phase}`, { version: update.version ? `v${update.version.replace(/^v/, '')}` : '' })}</span>{!desktop && <small>{t('nativeRequired')}</small>}</div></div>
       {row(t('checkUpdatesAutomatically'), t('checkUpdatesAutomaticallyHint'), autoCheck, !desktop, onAutoCheck)}
+      <AppUpdateSourceSetting desktop={desktop} onError={onError}/>
       {update.phase in phaseKey && <p role="status" aria-live="polite">{t(phaseKey[update.phase as keyof typeof phaseKey], { version: update.version })}</p>}
       {update.error && <div className="notice error" role="alert">{t(update.errorStage === 'download' ? 'updateDownloadFailed' : update.errorStage === 'install' ? 'updateInstallFailed' : 'updateCheckFailed')}<button type="button" onClick={() => setHelp('error')}>{zh ? '查看原因' : 'View reason'}</button></div>}
       {downloading && <p role="status">{t(update.total ? 'downloadBytes' : 'downloadBytesUnknown', { received: formatBytes(update.received), total: formatBytes(update.total ?? 0) })}</p>}

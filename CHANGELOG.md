@@ -20,6 +20,7 @@ Maintain both languages for each version. Move unreleased changes into the actua
   - Intel Arc（SYCL）运行时优先读 `engine-sycl/BUILD.json` 的引擎版本；BUILD.json 里不是版本号的值不再显示或参与比较。
   - 没有官方引擎包的平台不再误按 Windows x86_64 选包，改为提示此平台没有可安装的官方引擎包。
   - 没有合适 DeepSeek 引擎包时，提示写明 NVIDIA 需 Ampere sm_86 或更新的显卡。
+- **「应用更新」里也能选下载来源**：此前 Manager 自身更新跟随的下载来源只能在「环境」页引擎区的「下载设置与测试」里改，不好找。现在「公共设置 → 应用更新」多了一个「下载来源」下拉框（官方 GitHub、gh-proxy.org、ghproxy.net、自定义），和引擎下载共用同一份设置，两边改一处即同步。自定义地址须为 HTTPS、包含 `{url}`、不含账号密码或 `#` 片段；只用 `{version}`/`{asset}` 的模板仅适用于引擎，界面会直接说明。引擎选了本地包时下拉框显示「本地包（仅引擎）」，应用更新照旧自动选来源。覆盖全部 10 种界面语言。
 
 ### English
 
@@ -34,6 +35,7 @@ Maintain both languages for each version. Move unreleased changes into the actua
   - Intel Arc (SYCL) runtimes read the engine version from `engine-sycl/BUILD.json` first; a BUILD.json value that is not a version is no longer shown or compared.
   - Platforms with no official engine package no longer fall back to picking the Windows x86_64 package; they are told no official engine package installs here.
   - When no DeepSeek engine package fits, the message says NVIDIA needs an Ampere sm_86 or newer card.
+- **Pick the download source from App updates too**: the source Manager's own updates follow could only be changed under Environment → engine → "Download settings and test". Settings → App updates now has a "Download source" menu (Official GitHub, gh-proxy.org, ghproxy.net, Custom) that shares the engine setting, so a change in either place shows in both. A custom address must be HTTPS, contain `{url}` and carry no credentials or `#` fragment; templates using only `{version}`/`{asset}` apply to engines only, and the menu says so. When the engine uses a local package, the menu shows "Local package (engine only)" and app updates keep choosing a source automatically. Available in all 10 interface languages.
 
 ## [0.2.30] - 2026-10-29
 

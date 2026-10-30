@@ -750,5 +750,15 @@
   "ovIssueLoadingNow": "模型載入中，大型模型首次載入可能需要幾分鐘",
   "ovGpuCards": "各顯示卡",
   "ovPcieFirstCard": "GPU 0 連結",
-  "ovIntegratedGpu": "內顯 · 不計入合計"
+  "ovIntegratedGpu": "內顯 · 不計入合計",
+  "appUpdateSource": "下載來源",
+  "appUpdateSourceShared": "與引擎下載共用",
+  "appUpdateSourceOfficial": "官方 GitHub",
+  "appUpdateSourceCustom": "自訂",
+  "appUpdateSourceLocal": "本機套件（僅引擎）",
+  "appUpdateSourceAuto": "應用程式更新將自動選擇最快的來源",
+  "appUpdateSourceEngineOnly": "{version}/{asset} 僅用於引擎，應用程式更新需要 {url}",
+  "appUpdateSourceHttps": "須為 HTTPS，不能含帳號密碼或 # 片段",
+  "appUpdateSourceNeedUrl": "須包含 {url}",
+  "appUpdateSourcePlaceholder": "只支援 {url} 佔位符"
 }

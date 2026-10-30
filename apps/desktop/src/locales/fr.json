@@ -750,5 +750,15 @@
   "ovIssueLoadingNow": "Chargement du modèle ; un gros modèle peut prendre plusieurs minutes la première fois",
   "ovGpuCards": "Par GPU",
   "ovPcieFirstCard": "Lien du GPU 0",
-  "ovIntegratedGpu": "Intégré · hors total"
+  "ovIntegratedGpu": "Intégré · hors total",
+  "appUpdateSource": "Source de téléchargement",
+  "appUpdateSourceShared": "Partagée avec les téléchargements du moteur",
+  "appUpdateSourceOfficial": "GitHub officiel",
+  "appUpdateSourceCustom": "Personnalisée",
+  "appUpdateSourceLocal": "Paquet local (moteur uniquement)",
+  "appUpdateSourceAuto": "Les mises à jour de l’app choisissent automatiquement la source la plus rapide",
+  "appUpdateSourceEngineOnly": "{version}/{asset} ne servent qu’aux moteurs ; les mises à jour de l’app exigent {url}",
+  "appUpdateSourceHttps": "Doit être en HTTPS, sans identifiants ni fragment #",
+  "appUpdateSourceNeedUrl": "Doit contenir {url}",
+  "appUpdateSourcePlaceholder": "Seul l’espace réservé {url} est pris en charge"
 }
