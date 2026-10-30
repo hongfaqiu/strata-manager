@@ -575,13 +575,14 @@ async fn independent(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String
     }
 }
 
-/// Platform whose engine layout an installed directory is read with.
-fn host_platform() -> &'static str {
-    engine_package::this_release_install_platform().unwrap_or("windows-x86_64")
+/// Platform whose engine layout an installed directory is read with. `None` on hosts that
+/// install no official release packages (no Windows layout is assumed there).
+fn host_platform() -> Option<&'static str> {
+    engine_package::this_release_install_platform()
 }
 
 fn variant(root: &Path) -> Option<&'static str> {
-    variant_for(root, host_platform())
+    variant_for(root, host_platform()?)
 }
 
 fn variant_for(root: &Path, platform: &str) -> Option<&'static str> {
@@ -654,7 +655,7 @@ pub(super) fn variant_compatible(installed: &str, asset: &str) -> bool {
 }
 
 pub(super) fn directory_variant(directory: &Path) -> Option<&'static str> {
-    directory_variant_for(directory, host_platform())
+    directory_variant_for(directory, host_platform()?)
 }
 
 fn directory_variant_for(directory: &Path, platform: &str) -> Option<&'static str> {
@@ -719,11 +720,11 @@ fn choose_asset(
 }
 
 /// Platform of a release's installable packages (legacy ZIPs are Windows).
-fn release_platform(info: &RuntimeUpdateInfo) -> &'static str {
+fn release_platform(info: &RuntimeUpdateInfo) -> Option<&'static str> {
     info.assets
         .iter()
         .find_map(|asset| engine_package::asset_platform(&asset.name))
-        .unwrap_or_else(host_platform)
+        .or_else(host_platform)
 }
 
 fn choose_asset_with(
@@ -732,7 +733,9 @@ fn choose_asset_with(
     requested: Option<&str>,
     probe: &dyn Fn() -> gpu_select::GpuProbe,
 ) -> Result<RuntimeReleaseAsset, String> {
-    let platform = release_platform(info);
+    let platform = release_platform(info).ok_or(
+        "此平台没有可安装的官方引擎包 / This platform has no installable official engine package",
+    )?;
     let previous = variant_for(root, platform);
     let asset = if let Some(name) = requested {
         info.assets.iter().find(|a| a.name == name).cloned()

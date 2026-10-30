@@ -5,6 +5,26 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **按 Strata 0.2.8 收紧几处判断**：
+  - 加载等待上限取配置 `engine_ready_s` 与 30 分钟中较长者（DeepSeek 配置为 3600 秒），不再在大模型加载到一半时判超时。
+  - AMD HIP 引擎每个批处理窗口 16 槽，并发上限与提示随之改为 16；CUDA、SYCL、Metal 仍为 8。
+  - `tool_call_recovery` 只接受 true / false，与 Strata 一致，保存时即报错，不再等到启动失败。
+  - Intel Arc（SYCL）运行时优先读 `engine-sycl/BUILD.json` 的引擎版本；BUILD.json 里不是版本号的值不再显示或参与比较。
+  - 没有官方引擎包的平台不再误按 Windows x86_64 选包，改为提示此平台没有可安装的官方引擎包。
+  - 没有合适 DeepSeek 引擎包时，提示写明 NVIDIA 需 Ampere sm_86 或更新的显卡。
+
+### English
+
+- **Tighter checks to match Strata 0.2.8**:
+  - The load wait now lasts the longer of the config's `engine_ready_s` and 30 minutes (DeepSeek configs set 3600 s), so a large model is no longer timed out halfway through loading.
+  - AMD HIP engines run 16 slots per batching window, so the concurrency cap and its hint now say 16; CUDA, SYCL and Metal stay at 8.
+  - `tool_call_recovery` accepts only true or false, as Strata does, and saving reports the error instead of a failed start.
+  - Intel Arc (SYCL) runtimes read the engine version from `engine-sycl/BUILD.json` first; a BUILD.json value that is not a version is no longer shown or compared.
+  - Platforms with no official engine package no longer fall back to picking the Windows x86_64 package; they are told no official engine package installs here.
+  - When no DeepSeek engine package fits, the message says NVIDIA needs an Ampere sm_86 or newer card.
+
 ## [0.2.30] - 2026-10-29
 
 ### 中文

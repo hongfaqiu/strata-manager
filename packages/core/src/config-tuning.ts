@@ -360,7 +360,8 @@ export function validateStartupConfiguration(config: JsonObject): void {
   if (config.pool_cores !== undefined && config.pool_cores !== null && config.pool_cores !== '' && !poolCoresValid(config.pool_cores)) throw new Error('pool_cores: 逻辑处理器编号，如 "0,2,4,6" 或 "2-14:2" / logical processor numbers like "0,2,4,6" or "2-14:2"');
   if (config.gpu_roles !== undefined && config.gpu_roles !== null && !parseSaved(config.gpu_roles)) throw new Error('gpu_roles: 每张卡为 main / helper / off，最多一张 main / each card is main, helper or off, with at most one main');
   for (const key of ['sampling', 'env', 'vision']) if (config[key] !== undefined && config[key] !== null && (!config[key] || typeof config[key] !== 'object' || Array.isArray(config[key]))) throw new Error(`${key}: 必须为对象或 null / must be an object or null`);
-  for (const key of ['api_monitor', 'open_browser', 'lazy_load', 'fit_max_tokens']) if (config[key] !== undefined && typeof config[key] !== 'boolean') throw new Error(`${key}: 必须为布尔值 / must be a boolean`);
+  // tool_call_recovery: Strata 0.2.8 turns it on by default and stops the start on anything but true or false (null too).
+  for (const key of ['api_monitor', 'open_browser', 'lazy_load', 'fit_max_tokens', 'tool_call_recovery']) if (config[key] !== undefined && typeof config[key] !== 'boolean') throw new Error(`${key}: 必须为布尔值 / must be a boolean`);
   // Strata refuses to start on a non-boolean here ("false", 0, 1); null and a missing key mean "use the default".
   const projection = (config.sampling as JsonObject | null | undefined)?.experimental_speed_projection;
   if (projection != null && typeof projection !== 'boolean') throw new Error('sampling.experimental_speed_projection: 必须为 true、false 或 null / must be true, false or null');

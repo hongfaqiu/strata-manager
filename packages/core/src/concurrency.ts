@@ -11,6 +11,8 @@ export type ConcurrencyUseCase = 'single' | 'agent' | 'multiUser' | 'batch';
 export const CONCURRENCY_USE_CASES: readonly ConcurrencyUseCase[] = ['single', 'agent', 'multiUser', 'batch'];
 /** Upstream: a batch window holds at most 8 rows; with a layer split, 8 per pipelined group. */
 export const CONCURRENCY_ENGINE_MAX = 8;
+/** Strata 0.2.8 BATCHING.md "Windows of 16 rows": HIP (AMD) builds take 16 rows a window; CUDA, SYCL and Metal stay at 8. */
+export const CONCURRENCY_HIP_ENGINE_MAX = 16;
 /** --batch-mtp doubles the rows of a window: at most 4 slots in one window on a layer split. */
 export const CONCURRENCY_BATCH_MTP_SPLIT_MAX = 4;
 /** Opt-in, off by default upstream (BATCHING.md "One launch for all slots", "Reading a prompt beside pipelined groups"). */
@@ -124,6 +126,8 @@ export interface ConcurrencyPlan {
   parallel: number;
   /** setup.py parallel_recommend for this hardware: 1 when it would cost speed. */
   officialParallel: number;
+  /** Rows of one batch window on this hardware's engine (8; 16 on HIP). */
+  engineMax: number;
   vramGbs: number[];
   cacheGb: number | null;
   arenaGb: number | null;
@@ -158,11 +162,19 @@ export function concurrencyVramGbs(settings: ConcurrencySettings, hardware: Conc
   return chosen.map(gpu => gpu.totalBytes! / GIB);
 }
 
+/** Rows of one batch window for the cards this config uses (else every card): all AMD means the HIP engine. */
+export function concurrencyEngineMax(settings: ConcurrencySettings, hardware: ConcurrencyHardware | null | undefined): number {
+  const gpus = hardware?.gpus ?? [];
+  const chosen = settings.gpuIds.length ? settings.gpuIds.flatMap(id => gpus.filter(gpu => gpu.id === id)) : gpus.filter(gpu => /^(nvidia|amd)$/i.test(gpu.vendor));
+  return chosen.length && chosen.every(gpu => /^amd$/i.test(gpu.vendor)) ? CONCURRENCY_HIP_ENGINE_MAX : CONCURRENCY_ENGINE_MAX;
+}
+
 export function recommendConcurrency(input: { settings: ConcurrencySettings; hardware?: ConcurrencyHardware | null; arenaGb: number | null; useCase: ConcurrencyUseCase }): ConcurrencyPlan {
   const { settings, arenaGb, useCase } = input;
   const context = settings.context ?? 32768;
   const streaming = settings.kvResident !== null && settings.kvResident > 0;
   const vramGbs = concurrencyVramGbs(settings, input.hardware);
+  const engineMax = concurrencyEngineMax(settings, input.hardware);
   const split = vramGbs.length > 1 || (!!settings.layerSplit && settings.gpuCount > 1);
   const cacheGb = vramGbs.length ? vramGbs.reduce((sum, v) => sum + Math.max(0, v - 5), 0) : null;
   const officialParallel = vramGbs.length && arenaGb !== null ? officialRecommend(vramGbs, arenaGb, context, settings.kv, streaming) : 1;
@@ -185,7 +197,7 @@ export function recommendConcurrency(input: { settings: ConcurrencySettings; har
     if (fits) { parallel = officialParallel; reasons.push('use_multi_slots'); }
     else { conversationCache = cacheFor(4); reasons.push('use_multi_small_card'); }
   } else {
-    parallel = fits ? (split ? Math.min(CONCURRENCY_ENGINE_MAX, Math.max(officialParallel, vramGbs.length * 2)) : officialParallel) : 1;
+    parallel = fits ? (split ? Math.min(engineMax, Math.max(officialParallel, vramGbs.length * 2)) : officialParallel) : 1;
     reasons.push(fits ? 'use_batch_slots' : 'use_batch_small_card');
   }
   if (parallel > 1) {
@@ -210,7 +222,7 @@ export function recommendConcurrency(input: { settings: ConcurrencySettings; har
     else slowdown = [0.05, 0.15];
   }
   if (context > TRAINED_CONTEXT && parallel > 1) reasons.push('long_context_conflict');
-  return { useCase, parallel, officialParallel, vramGbs, cacheGb, arenaGb, perSlotVramGb, totalSlotVramGb, perSlotPinnedRamGb: concurrencySlotPinnedRamGb(context, settings.kv, streaming), expertShare, slowdown, conversationCache, companions, reasons, layerSplit: split };
+  return { useCase, parallel, officialParallel, engineMax, vramGbs, cacheGb, arenaGb, perSlotVramGb, totalSlotVramGb, perSlotPinnedRamGb: concurrencySlotPinnedRamGb(context, settings.kv, streaming), expertShare, slowdown, conversationCache, companions, reasons, layerSplit: split };
 }
 
 /** Field edits (STARTUP_TUNING_FIELDS keys) that write a plan; "" removes a value. */
@@ -231,17 +243,18 @@ export function concurrencyPlanEdits(settings: ConcurrencySettings, plan: Concur
 }
 
 export interface ConcurrencyIssue { code: string; severity: 'error' | 'warning' | 'info'; fix?: ConcurrencyChange[]; values?: Record<string, string | number> }
-export function concurrencyIssues(settings: ConcurrencySettings, options: { platform?: 'mac' | 'other'; officialParallel?: number; ramGib?: number | null } = {}): ConcurrencyIssue[] {
+export function concurrencyIssues(settings: ConcurrencySettings, options: { platform?: 'mac' | 'other'; officialParallel?: number; ramGib?: number | null; engineMax?: number } = {}): ConcurrencyIssue[] {
   const issues: ConcurrencyIssue[] = [];
+  const engineMax = options.engineMax ?? CONCURRENCY_ENGINE_MAX;
   const n = settings.parallel, split = !!settings.layerSplit && settings.gpuCount > 1;
   const slotArgs = [settings.batchArg, settings.slotsArg].filter((value): value is number => value !== null);
   if (settings.parallelField !== null && slotArgs.some(value => value !== settings.parallelField)) issues.push({ code: 'parallel_batch_conflict', severity: 'error', values: { parallel: settings.parallelField, batch: slotArgs[0]! }, fix: settings.batchArg !== null ? [{ key: 'parallel', value: String(settings.batchArg) }, { key: '--batch', value: '' }] : undefined });
   else if (settings.parallelField === null && settings.batchArg !== null) issues.push({ code: 'batch_arg_merge', severity: 'info', values: { batch: settings.batchArg }, fix: [{ key: 'parallel', value: String(settings.batchArg) }, { key: '--batch', value: '' }] });
   if (n > 1 && options.platform === 'mac') issues.push({ code: 'metal_unsupported', severity: 'error', fix: [{ key: 'parallel', value: '1' }, { key: '--batch', value: '' }] });
-  if (n > CONCURRENCY_ENGINE_MAX && !split) issues.push({ code: 'engine_cap', severity: 'warning', values: { max: CONCURRENCY_ENGINE_MAX }, fix: [{ key: 'parallel', value: String(CONCURRENCY_ENGINE_MAX) }] });
+  if (n > engineMax && !split) issues.push({ code: 'engine_cap', severity: 'warning', values: { max: engineMax }, fix: [{ key: 'parallel', value: String(engineMax) }] });
   const groups = wholeNumber(settings.batchGroups);
   if (groups !== null && groups > 0 && n > 1 && n % groups !== 0) issues.push({ code: 'groups_divide', severity: 'error', values: { groups, slots: n }, fix: [{ key: '--batch-groups', value: '' }] });
-  if (split && n > CONCURRENCY_ENGINE_MAX && (groups === null ? settings.gpuCount : groups) * CONCURRENCY_ENGINE_MAX < n) issues.push({ code: 'group_cap', severity: 'warning', values: { max: CONCURRENCY_ENGINE_MAX } });
+  if (split && n > engineMax && (groups === null ? settings.gpuCount : groups) * engineMax < n) issues.push({ code: 'group_cap', severity: 'warning', values: { max: engineMax } });
   if (settings.batchGroups && !split) issues.push({ code: 'groups_need_split', severity: 'info' });
   if (settings.batchMtp && !settings.mtp) issues.push({ code: 'batch_mtp_needs_mtp', severity: 'warning', fix: [{ key: '--batch-mtp', value: '' }] });
   if (settings.batchMtp && n <= 1) issues.push({ code: 'batch_mtp_one_slot', severity: 'info' });

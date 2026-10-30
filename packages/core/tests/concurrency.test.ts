@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { applyStartupField, STARTUP_TUNING_FIELDS, validateStartupConfiguration } from '../src/config-tuning';
-import { concurrencyConfigError, concurrencyIssues, concurrencyMessage, concurrencyModelIdentity, concurrencyPlanEdits, concurrencySlotVramGb, modelExpertArenaGb, readConcurrencySettings, recommendConcurrency, type ConcurrencyHardware } from '../src/concurrency';
+import { concurrencyConfigError, concurrencyEngineMax, concurrencyIssues, concurrencyMessage, concurrencyModelIdentity, concurrencyPlanEdits, concurrencySlotVramGb, modelExpertArenaGb, readConcurrencySettings, recommendConcurrency, type ConcurrencyHardware } from '../src/concurrency';
 
 const GIB = 2 ** 30;
 const card = (id: number, gib: number) => ({ id, name: `GPU ${id}`, vendor: 'nvidia', totalBytes: gib * GIB });
@@ -68,6 +68,20 @@ describe('issues', () => {
     expect(codes(config(['--batch', '2']))).toContain('batch_arg_merge');
     expect(codes(config([], { parallel: 2 }), { platform: 'mac' })).toContain('metal_unsupported');
     expect(codes(config([], { parallel: 12 }))).toContain('engine_cap');
+  });
+  it('lets a HIP (AMD) engine run 16 rows a window, Strata 0.2.8', () => {
+    const amd = (gpus: number[]): ConcurrencyHardware => ({ gpus: gpus.map((gib, id) => ({ ...card(id, gib), vendor: 'amd' })), totalMemoryBytes: 128 * GIB });
+    const settings = (extra: Record<string, unknown>) => readConcurrencySettings(config([], extra) as never);
+    expect(concurrencyEngineMax(settings({}), amd([32]))).toBe(16);
+    expect(concurrencyEngineMax(settings({}), hw([32]))).toBe(8);
+    expect(concurrencyEngineMax(settings({}), null)).toBe(8);
+    const mixed: ConcurrencyHardware = { gpus: [{ ...card(0, 32), vendor: 'amd' }, card(1, 32)], totalMemoryBytes: 128 * GIB };
+    expect(concurrencyEngineMax(settings({}), mixed)).toBe(8);
+    expect(concurrencyEngineMax(settings({ gpu: [0] }), mixed)).toBe(16);
+    expect(codes(config([], { parallel: 12 }), { engineMax: 16 })).not.toContain('engine_cap');
+    expect(concurrencyIssues(settings({ parallel: 20 }), { engineMax: 16 }).find(i => i.code === 'engine_cap')).toMatchObject({ values: { max: 16 }, fix: [{ key: 'parallel', value: '16' }] });
+    expect(plan(config([]), amd([32]), 'batch').plan.engineMax).toBe(16);
+    expect(plan(config([]), hw([32]), 'batch').plan.engineMax).toBe(8);
   });
   it('follows BATCHING.md group and MTP rules', () => {
     const split = (args: string[], parallel = 4) => config(['--layer-split', '24', ...args], { gpu: [0, 1], parallel });

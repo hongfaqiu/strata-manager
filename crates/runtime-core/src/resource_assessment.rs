@@ -336,6 +336,29 @@ fn dsv41_uma_plan(set: &crate::disk::dsv41::Dsv41Set, pool_gb: f64) -> Dsv41UmaP
     }
 }
 
+/// Rows of one batch window (Strata 0.2.8 BATCHING.md "Windows of 16 rows"): HIP builds take 16,
+/// CUDA, SYCL and Metal 8. The cards the config uses (else every NVIDIA/AMD card) being all AMD
+/// means the HIP engine.
+fn engine_window_rows(hardware: &HardwareSnapshot, gpu_ids: &[u32]) -> u32 {
+    let cards: Vec<&GpuSnapshot> = if gpu_ids.is_empty() {
+        hardware
+            .gpus
+            .iter()
+            .filter(|gpu| matches!(gpu.vendor.as_str(), "nvidia" | "amd"))
+            .collect()
+    } else {
+        gpu_ids
+            .iter()
+            .filter_map(|id| hardware.gpus.iter().find(|gpu| gpu.id == *id))
+            .collect()
+    };
+    if !cards.is_empty() && cards.iter().all(|gpu| gpu.vendor == "amd") {
+        16
+    } else {
+        8
+    }
+}
+
 fn estimate(request: &ResourceAssessmentRequest, hardware: HardwareSnapshot) -> Value {
     let mut reasons = vec![json!({"code":"estimate_scope","severity":"info"})];
     let mut unknowns = Vec::<String>::new();
@@ -565,7 +588,7 @@ fn estimate(request: &ResourceAssessmentRequest, hardware: HardwareSnapshot) -> 
     } else {
         unknowns.push("model_unknown".into());
     }
-    if request.parallel > 8 {
+    if request.parallel > engine_window_rows(&hardware, &request.gpu_ids) {
         note("engine_slot_cap", true);
     }
     // A partial estimate must not become a positive recommendation for an unsupported mode.
@@ -704,6 +727,34 @@ mod tests {
             dedicated_bytes: carve_out.map(|gib| bytes(gib, GIB)),
         }];
         snapshot
+    }
+    #[test]
+    fn hip_engines_take_sixteen_slots_per_window() {
+        let codes = |result: &Value| {
+            result["reasons"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|reason| reason["code"] == "engine_slot_cap")
+        };
+        let mut req = request();
+        req.parallel = 12;
+        assert!(codes(&estimate(&req, fixture(128.0, 24.0))));
+        let mut amd = fixture(128.0, 32.0);
+        amd.gpus[0].vendor = "amd".into();
+        assert_eq!(engine_window_rows(&amd, &[]), 16);
+        assert!(!codes(&estimate(&req, amd.clone())));
+        req.parallel = 17;
+        assert!(codes(&estimate(&req, amd.clone())));
+        // A mixed pick, or an NVIDIA card chosen by id, keeps 8.
+        let mut mixed = amd.clone();
+        let mut nvidia = mixed.gpus[0].clone();
+        nvidia.id = 1;
+        nvidia.vendor = "nvidia".into();
+        mixed.gpus.push(nvidia);
+        assert_eq!(engine_window_rows(&mixed, &[]), 8);
+        assert_eq!(engine_window_rows(&mixed, &[1]), 8);
+        assert_eq!(engine_window_rows(&mixed, &[0]), 16);
     }
     #[test]
     fn strix_halo_counts_ram_and_carve_out_as_one_pool() {

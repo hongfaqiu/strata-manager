@@ -320,6 +320,11 @@ fn engine_build_json_candidates(root: &Path, exe: Option<&Path>) -> Vec<PathBuf>
             paths.push(path);
         }
     };
+    // An Intel Arc (SYCL) runtime starts `sycl/serve/strata-sycl.sh`; its setup keeps the
+    // engine's BUILD.json in `engine-sycl/` (sycl/setup_intel.py READER_DIR), so read that first.
+    if exe.is_some_and(|exe| sycl_launcher(root, exe)) {
+        push(root.join(SYCL_ENGINE_DIR).join("BUILD.json"));
+    }
     if let Some(parent) = exe.and_then(Path::parent) {
         push(parent.join("BUILD.json"));
     }
@@ -342,7 +347,28 @@ fn engine_build_json_candidates(root: &Path, exe: Option<&Path>) -> Vec<PathBuf>
     paths
 }
 
+/// Where Intel's setup (sycl/setup_intel.py) keeps the SYCL engine's BUILD.json.
+const SYCL_ENGINE_DIR: &str = "engine-sycl";
+
+/// The SYCL launcher `sycl/serve/strata-sycl.sh` (or anything under the root's `sycl/`).
+fn sycl_launcher(root: &Path, exe: &Path) -> bool {
+    let named = exe
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.to_ascii_lowercase().starts_with("strata-sycl"));
+    let under_sycl = exe.strip_prefix(root).ok().is_some_and(|relative| {
+        relative
+            .components()
+            .next()
+            .is_some_and(|first| first.as_os_str().eq_ignore_ascii_case("sycl"))
+    });
+    named || under_sycl
+}
+
+/// The engine version in the first BUILD.json that names one; a value that is not a
+/// version (`"local"`, `"?"`, a path) is skipped rather than shown or compared.
 pub(crate) fn runtime_version(root: &Path, exe: Option<&Path>) -> Option<String> {
+    use crate::runtime_upgrade::engine_package::valid_version;
     engine_build_json_candidates(root, exe)
         .into_iter()
         .find_map(|path| {
@@ -350,6 +376,8 @@ pub(crate) fn runtime_version(root: &Path, exe: Option<&Path>) -> Option<String>
                 .ok()?
                 .get("version")?
                 .as_str()
+                .map(str::trim)
+                .filter(|version| valid_version(version))
                 .map(str::to_owned)
         })
 }
@@ -3047,7 +3075,7 @@ mod tests {
         .unwrap();
         fs::write(
             root.join("engine/BUILD.json"),
-            br#"{"version":"fixture-1"}"#,
+            br#"{"version":"0.1.47-fixture.1"}"#,
         )
         .unwrap();
         fs::write(root.join("part-1.gguf"), b"0123456789").unwrap();
@@ -3086,7 +3114,7 @@ mod tests {
         assert_eq!(inspected.candidate.model_bytes, Some(20));
         assert_eq!(
             inspected.candidate.runtime_version.as_deref(),
-            Some("fixture-1")
+            Some("0.1.47-fixture.1")
         );
         fs::remove_file(Path::new(&profile.install_dir).join("part-2.gguf")).unwrap();
         let inspected = inspect(&profile);
@@ -3600,11 +3628,7 @@ mod tests {
         fs::write(root.join("setup.py"), b"# fixture").unwrap();
         fs::write(root.join("serve/server.py"), b"# fixture").unwrap();
         fs::write(root.join("engine/strata.exe"), b"fixture").unwrap();
-        fs::write(
-            root.join("engine/BUILD.json"),
-            br#"{"version":"fixture-data-dir"}"#,
-        )
-        .unwrap();
+        fs::write(root.join("engine/BUILD.json"), br#"{"version":"0.1.47"}"#).unwrap();
         fs::write(root.join("tokenizer/vocab.json"), b"{}").unwrap();
         fs::write(root.join("tokenizer/merges.txt"), b"").unwrap();
         fs::write(root.join("tokenizer/token_type.json"), b"[]").unwrap();
@@ -4022,11 +4046,54 @@ mod tests {
         fs::write(root.join("serve/server.py"), b"# fixture").unwrap();
         fs::write(
             root.join("engine_cuda12/BUILD.json"),
-            br#"{"version":"cuda12-only"}"#,
+            br#"{"version":"0.1.44-cuda12"}"#,
         )
         .unwrap();
         assert!(!root.join("engine").exists());
-        assert_eq!(runtime_version(&root, None).as_deref(), Some("cuda12-only"));
+        assert_eq!(
+            runtime_version(&root, None).as_deref(),
+            Some("0.1.44-cuda12")
+        );
+    }
+
+    #[test]
+    fn runtime_version_skips_a_build_json_whose_version_is_not_one() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("Strata");
+        fs::create_dir_all(root.join("engine")).unwrap();
+        fs::create_dir_all(root.join("engine-cuda12")).unwrap();
+        fs::write(root.join("engine/BUILD.json"), br#"{"version":"local"}"#).unwrap();
+        assert_eq!(runtime_version(&root, None), None);
+        fs::write(
+            root.join("engine-cuda12/BUILD.json"),
+            br#"{"version":"0.2.8"}"#,
+        )
+        .unwrap();
+        assert_eq!(runtime_version(&root, None).as_deref(), Some("0.2.8"));
+    }
+
+    #[test]
+    fn a_sycl_runtime_reads_engine_sycl_build_json_first() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("Strata");
+        fs::create_dir_all(root.join("engine")).unwrap();
+        fs::create_dir_all(root.join("engine-sycl")).unwrap();
+        fs::create_dir_all(root.join("sycl/serve")).unwrap();
+        fs::write(root.join("engine/BUILD.json"), br#"{"version":"0.2.7"}"#).unwrap();
+        fs::write(
+            root.join("engine-sycl/BUILD.json"),
+            br#"{"version":"0.2.8","source":"local"}"#,
+        )
+        .unwrap();
+        let wrapper = root.join("sycl/serve/strata-sycl.sh");
+        assert_eq!(
+            runtime_version(&root, Some(&wrapper)).as_deref(),
+            Some("0.2.8")
+        );
+        assert_eq!(
+            runtime_version(&root, Some(&root.join("engine/strata"))).as_deref(),
+            Some("0.2.7")
+        );
     }
 
     #[test]

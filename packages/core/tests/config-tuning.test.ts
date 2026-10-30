@@ -151,6 +151,10 @@ describe('network and GPU power startup settings', () => {
     for (const host of ['localhost/path', 'localhost?key=value', 'user@localhost', 'http://localhost', null]) expect(() => validateStartupConfiguration({ ...complete, host })).toThrow('host');
     for (const host of ['localhost', '127.0.0.1', '0.0.0.0', '::', '[::1]', '192.168.1.20']) expect(() => validateStartupConfiguration({ ...complete, host, port: 18082 })).not.toThrow();
   });
+  it('accepts tool_call_recovery only as true or false, as Strata 0.2.8 does', () => {
+    for (const value of [true, false]) expect(() => validateStartupConfiguration({ ...complete, tool_call_recovery: value })).not.toThrow();
+    for (const value of ['true', 0, 1, null, 'recover']) expect(() => validateStartupConfiguration({ ...complete, tool_call_recovery: value })).toThrow('tool_call_recovery');
+  });
   it('accepts positive fractional watts and u32 device indices while rejecting invalid values', () => {
     expect(() => validateStartupConfiguration({ ...complete, manager_gpu_power_limit_watts: null })).not.toThrow();
     expect(() => validateStartupConfiguration({ ...complete, manager_gpu_power_limit_device: null })).not.toThrow();

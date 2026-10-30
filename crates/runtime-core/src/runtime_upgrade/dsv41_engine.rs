@@ -110,7 +110,7 @@ pub fn select(
     }
     gpu_select::pick(assets, probe).map_err(|reason| {
         format!(
-            "没有适合本机显卡的 DeepSeek 引擎包（支持 NVIDIA CUDA 13，驱动 580.65+；Linux 上的 AMD RX 9000 / R9700；Windows 上的 Ryzen AI Max / Radeon 8060S 等 gfx1151）：{reason}"
+            "没有适合本机显卡的 DeepSeek 引擎包（支持 NVIDIA CUDA 13，需 Ampere sm_86 或更新的显卡（RTX 30 系起；A100 等 sm_80 不支持），驱动 580.65+；Linux 上的 AMD RX 9000 / R9700；Windows 上的 Ryzen AI Max / Radeon 8060S 等 gfx1151）：{reason}"
         )
     })
 }
