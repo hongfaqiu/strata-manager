@@ -5,6 +5,8 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+## [0.2.31] - 2026-10-30
+
 ### 中文
 
 - **DeepSeek-V4.1-Flash 的图像开关按 `--vision on|off` 识别**：上游 v0.2.8 起每个 DeepSeek 配置都写有 `--vision on` 或 `--vision off`，此前 Manager 只要看到 `--vision` 就当作开了图像，Arena 测速上传会把关着图像的 DeepSeek 跑分也标成「图像开」。现在 DeepSeek 只有明确写 `on` 才算开，`off` 或缺值都算关；Qwen 的不带值 `--vision` 不变。DeepSeek 留给其他应用的显存 `--reserve-mib` 也计入测速分组。
