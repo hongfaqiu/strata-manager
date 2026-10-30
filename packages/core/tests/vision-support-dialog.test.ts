@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { assertVisionBaseline, configureVisionSupport, visionDraftOf } from '../../../apps/desktop/src/pages/visionSupportConfiguration';
+import { assertVisionBaseline, configureDeepseek41VisionSupport, configureVisionSupport, visionDraftOf } from '../../../apps/desktop/src/pages/visionSupportConfiguration';
+import { applyDeepseek41Vision, deepseek41Vision } from '../src';
 
 describe('quick vision configuration', () => {
   const draft = { exe: 'D:\\Strata\\engine\\strata-vision.exe', model: 'D:\\Models\\weights.gguf', mmproj: 'D:\\Models\\mmproj.gguf', gpu: false, threads: '8', maxTokens: '1024' };
@@ -37,5 +38,32 @@ describe('quick vision configuration', () => {
     expect(() => assertVisionBaseline(baseline, structuredClone(baseline))).not.toThrow();
     expect(() => assertVisionBaseline(baseline, { ...baseline, api_key: 'changed' })).toThrow('Configuration changed');
     expect(() => assertVisionBaseline(baseline, { ...baseline, args: ['--max-context', '8192'] })).toThrow();
+  });
+});
+
+describe('DeepSeek-V4.1-Flash image input', () => {
+  const deepseek = (args: string[]) => ({ arch: 'deepseek41', exe: '/s/engine-dsv41/strata-dsv41', args: ['--pack', '/m/packs/ds4', '--max-context', '8192', ...args] });
+  const draft = { exe: '/s/engine/strata-vision', model: '/m/w.gguf', mmproj: '/m/p.gguf', gpu: false, threads: '8', maxTokens: '1024' };
+  it('only counts an explicit --vision on', () => {
+    expect(deepseek41Vision(deepseek([]))).toBe(false);
+    expect(deepseek41Vision(deepseek(['--vision', 'off']))).toBe(false);
+    expect(deepseek41Vision(deepseek(['--vision']))).toBe(false);
+    expect(deepseek41Vision(deepseek(['--vision', '--eos', '1']))).toBe(false);
+    expect(deepseek41Vision(deepseek(['--vision', 'on']))).toBe(true);
+    expect(deepseek41Vision(deepseek(['--vision=on']))).toBe(true);
+  });
+  it('turns the engine tower on with --vision on, never a vision section or a bare switch', () => {
+    const config = deepseek(['--vision', 'off', '--eos', '1']);
+    const original = structuredClone(config);
+    const next = configureVisionSupport(config, draft);
+    expect(next.args).toEqual(['--pack', '/m/packs/ds4', '--max-context', '8192', '--eos', '1', '--vision', 'on']);
+    expect(next).not.toHaveProperty('vision');
+    expect(config).toEqual(original);
+    expect(configureDeepseek41VisionSupport(deepseek(['--vision']), true).args).toEqual(['--pack', '/m/packs/ds4', '--max-context', '8192', '--vision', 'on']);
+    expect(configureDeepseek41VisionSupport(deepseek(['--vision=on', '--vision', 'on']), false).args).toEqual(['--pack', '/m/packs/ds4', '--max-context', '8192', '--vision', 'off']);
+  });
+  it('leaves Qwen configs on the picture reader path', () => {
+    expect(() => applyDeepseek41Vision({ args: [] }, true)).toThrow('DeepSeek');
+    expect(configureVisionSupport({ args: ['--native', 'w.gguf'] }, draft).args).toEqual(['--native', 'w.gguf', '--vision']);
   });
 });
