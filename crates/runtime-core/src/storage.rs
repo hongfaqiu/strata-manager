@@ -223,7 +223,8 @@ pub fn validate(config: &Value) -> Result<(), String> {
             }
         }
     }
-    for key in ["api_monitor", "open_browser"] {
+    // Strata 0.2.8 stops the start when "tool_call_recovery" is anything but true or false.
+    for key in ["api_monitor", "open_browser", "tool_call_recovery"] {
         if let Some(value) = object.get(key) {
             if !value.is_boolean() {
                 return Err(format!("{key} 必须是布尔值"));
@@ -590,6 +591,18 @@ mod tests {
     fn validates_typed_fields() {
         assert!(validate(&serde_json::json!({"port":0})).is_err());
         assert!(validate(&serde_json::json!({"args":["--model","a"],"port":8080})).is_ok());
+        for ok in [true, false] {
+            assert!(validate(&serde_json::json!({"tool_call_recovery": ok})).is_ok());
+        }
+        for bad in [
+            serde_json::json!("true"),
+            serde_json::json!(1),
+            serde_json::json!(null),
+        ] {
+            assert!(validate(&serde_json::json!({"tool_call_recovery": bad}))
+                .unwrap_err()
+                .contains("tool_call_recovery"));
+        }
     }
     #[test]
     fn recursively_redacts_credentials() {

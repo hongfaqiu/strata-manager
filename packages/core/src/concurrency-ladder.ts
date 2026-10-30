@@ -88,10 +88,10 @@ export function concurrencyLadderMessage(conclusion: ConcurrencyLadderConclusion
 
 /** A configuration version to compare: the slot count plus the companions the recommendation writes. */
 export interface ConcurrencyCandidate { id: string; parallel: number; experimental: boolean; edits: ConcurrencyChange[] }
-/** One at a time, the recommendation and one more slot (capped at the engine's 8), optionally the recommendation with the experimental launch switches. */
+/** One at a time, the recommendation and one more slot (capped at the engine's window: 8, 16 on HIP), optionally the recommendation with the experimental launch switches. */
 export function concurrencyComparisonCandidates(settings: ConcurrencySettings, plan: ConcurrencyPlan, options: { experimental?: boolean } = {}): ConcurrencyCandidate[] {
   const recommended = Math.max(2, plan.officialParallel, plan.parallel);
-  const counts = [...new Set([1, recommended, Math.min(CONCURRENCY_ENGINE_MAX, recommended + 1)])];
+  const counts = [...new Set([1, recommended, Math.min(plan.engineMax ?? CONCURRENCY_ENGINE_MAX, recommended + 1)])];
   const companions = plan.companions.map(({ key, value }) => ({ key, value }));
   const editsFor = (parallel: number): ConcurrencyChange[] => {
     const edits: ConcurrencyChange[] = [{ key: 'parallel', value: parallel > 1 ? String(parallel) : '' }];

@@ -9,11 +9,25 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 - **macOS 27 以下不再能启用图像输入，并直接说明原因**：上游 Metal 引擎包里的读图组件 `strata-vision` 按 macOS 27 构建（Mach-O 最低系统 27.0），更早的系统无法启动它。现在「启用图像支持」窗口会读取读图组件的最低系统要求并与本机对比；不满足时显示「图像输入需要 macOS 27+」提示（本机版本 → 需要版本），保存按钮停用，保存前的文件检查也会拒绝。只读文件头，不会启动任何程序。文字对话不受影响；换用支持本机系统的读图组件后会自动恢复。提示覆盖全部 10 种界面语言。
 - **Mac/Linux 上图像引擎的默认路径不再带 `.exe`**：主引擎不是 `.exe` 时，默认填 `strata-vision`（与主引擎同一文件夹）；Windows 不变。
+- **按 Strata 0.2.8 收紧几处判断**：
+  - 加载等待上限取配置 `engine_ready_s` 与 30 分钟中较长者（DeepSeek 配置为 3600 秒），不再在大模型加载到一半时判超时。
+  - AMD HIP 引擎每个批处理窗口 16 槽，并发上限与提示随之改为 16；CUDA、SYCL、Metal 仍为 8。
+  - `tool_call_recovery` 只接受 true / false，与 Strata 一致，保存时即报错，不再等到启动失败。
+  - Intel Arc（SYCL）运行时优先读 `engine-sycl/BUILD.json` 的引擎版本；BUILD.json 里不是版本号的值不再显示或参与比较。
+  - 没有官方引擎包的平台不再误按 Windows x86_64 选包，改为提示此平台没有可安装的官方引擎包。
+  - 没有合适 DeepSeek 引擎包时，提示写明 NVIDIA 需 Ampere sm_86 或更新的显卡。
 
 ### English
 
 - **Image input can no longer be enabled below macOS 27, and the dialog says why**: the image reader `strata-vision` in the upstream Metal engine package is built for macOS 27 (Mach-O minimum 27.0) so older systems cannot start it. The Enable image support dialog now reads the reader's minimum macOS and compares it with this Mac. When it is too old the dialog shows "Image input needs macOS 27+" (this Mac → needed), save is disabled, and the pre-save file check refuses it too. Only the file header is read; nothing is started. Text chat is unaffected, and choosing a reader built for this macOS lifts the block. The notice covers all 10 interface languages.
 - **The default image engine path on Mac/Linux no longer ends in `.exe`**: when the main engine is not an `.exe`, the default is `strata-vision` in the same folder; Windows is unchanged.
+- **Tighter checks to match Strata 0.2.8**:
+  - The load wait now lasts the longer of the config's `engine_ready_s` and 30 minutes (DeepSeek configs set 3600 s), so a large model is no longer timed out halfway through loading.
+  - AMD HIP engines run 16 slots per batching window, so the concurrency cap and its hint now say 16; CUDA, SYCL and Metal stay at 8.
+  - `tool_call_recovery` accepts only true or false, as Strata does, and saving reports the error instead of a failed start.
+  - Intel Arc (SYCL) runtimes read the engine version from `engine-sycl/BUILD.json` first; a BUILD.json value that is not a version is no longer shown or compared.
+  - Platforms with no official engine package no longer fall back to picking the Windows x86_64 package; they are told no official engine package installs here.
+  - When no DeepSeek engine package fits, the message says NVIDIA needs an Ampere sm_86 or newer card.
 
 ## [0.2.30] - 2026-10-29
 

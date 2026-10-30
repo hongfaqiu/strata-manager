@@ -28,6 +28,23 @@ impl LoadWait {
         poll: Duration::from_secs(2),
         note_every: Duration::from_secs(30),
     };
+
+    /// `STARTUP`, waiting at least as long as the run config's `"engine_ready_s"` (the
+    /// server's own wait for the engine; a DeepSeek-V4.1 config sets 3600). Anything
+    /// that is not a positive number keeps the 30-minute ceiling; 24 h is the cap.
+    pub(crate) fn startup_for(config: &Value) -> LoadWait {
+        let ready = config
+            .get("engine_ready_s")
+            .and_then(Value::as_f64)
+            .filter(|seconds| seconds.is_finite() && *seconds > 0.0)
+            .map(|seconds| Duration::from_secs_f64(seconds.min(24.0 * 3600.0)));
+        LoadWait {
+            ceiling: ready.map_or(Self::STARTUP.ceiling, |ready| {
+                ready.max(Self::STARTUP.ceiling)
+            }),
+            ..Self::STARTUP
+        }
+    }
 }
 
 /// The `/load` request never got an HTTP answer (send failure, reset or the
@@ -393,6 +410,32 @@ mod tests {
             .as_str()
             .unwrap()
             .to_owned()
+    }
+
+    #[test]
+    fn the_startup_ceiling_is_the_longer_of_engine_ready_s_and_thirty_minutes() {
+        let ceiling = |config: Value| LoadWait::startup_for(&config).ceiling.as_secs();
+        assert_eq!(ceiling(serde_json::json!({})), 1800);
+        assert_eq!(ceiling(serde_json::json!({"engine_ready_s": 3600})), 3600);
+        assert_eq!(ceiling(serde_json::json!({"engine_ready_s": 600})), 1800);
+        assert_eq!(ceiling(serde_json::json!({"engine_ready_s": 2400.5})), 2400);
+        for bad in [
+            serde_json::json!(0),
+            serde_json::json!(-5),
+            serde_json::json!("3600"),
+            serde_json::json!(null),
+            serde_json::json!(true),
+        ] {
+            assert_eq!(ceiling(serde_json::json!({"engine_ready_s": bad})), 1800);
+        }
+        assert_eq!(
+            ceiling(serde_json::json!({"engine_ready_s": 1e12})),
+            24 * 3600
+        );
+        assert_eq!(
+            LoadWait::startup_for(&serde_json::json!({})).poll,
+            LoadWait::STARTUP.poll
+        );
     }
 
     #[tokio::test]
