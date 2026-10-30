@@ -582,8 +582,12 @@ async fn release_feed_assets(
         );
     }
     let sequence = feed["sequence"].as_u64().unwrap_or_default();
-    // Linux lists its own packages; every other host keeps the Windows list as before.
-    let platform = engine_package::this_release_install_platform().unwrap_or("windows-x86_64");
+    // Only Windows x64 and Linux x64 install official release packages. Any other host
+    // (e.g. macOS, which uses its own Metal engine flow) gets no packages rather than the
+    // Windows list; the verified sequence still advances the rollback guard.
+    let Some(platform) = engine_package::this_release_install_platform() else {
+        return Ok(Some((sequence, Vec::new(), Vec::new())));
+    };
     let assets = engine_package::feed_assets(&feed, release, tag, platform)?;
     // An unusable `dsv41` member never blocks a Strata engine update.
     let dsv41 =

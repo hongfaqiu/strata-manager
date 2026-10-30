@@ -9,11 +9,25 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 - **DeepSeek-V4.1-Flash 的图像开关按 `--vision on|off` 识别**：上游 v0.2.8 起每个 DeepSeek 配置都写有 `--vision on` 或 `--vision off`，此前 Manager 只要看到 `--vision` 就当作开了图像，Arena 测速上传会把关着图像的 DeepSeek 跑分也标成「图像开」。现在 DeepSeek 只有明确写 `on` 才算开，`off` 或缺值都算关；Qwen 的不带值 `--vision` 不变。DeepSeek 留给其他应用的显存 `--reserve-mib` 也计入测速分组。
 - **「启用图像支持」对 DeepSeek 只显示一个开关**：DeepSeek 引擎自带读图，不需要另选视觉引擎、模型和投影文件。此前点「启用图像」会给 DeepSeek 写 Qwen 式的 `vision` 段并追加不带值的 `--vision`，DeepSeek 引擎会把下一个参数当成它的值，或直接报「缺少参数值」。现在打开开关只写 `--vision on`，关闭写 `--vision off`，其他参数不动；Qwen 配置的对话框不变。
+- **按 Strata 0.2.8 收紧几处判断**：
+  - 加载等待上限取配置 `engine_ready_s` 与 30 分钟中较长者（DeepSeek 配置为 3600 秒），不再在大模型加载到一半时判超时。
+  - AMD HIP 引擎每个批处理窗口 16 槽，并发上限与提示随之改为 16；CUDA、SYCL、Metal 仍为 8。
+  - `tool_call_recovery` 只接受 true / false，与 Strata 一致，保存时即报错，不再等到启动失败。
+  - Intel Arc（SYCL）运行时优先读 `engine-sycl/BUILD.json` 的引擎版本；BUILD.json 里不是版本号的值不再显示或参与比较。
+  - 没有官方引擎包的平台不再误按 Windows x86_64 选包，改为提示此平台没有可安装的官方引擎包。
+  - 没有合适 DeepSeek 引擎包时，提示写明 NVIDIA 需 Ampere sm_86 或更新的显卡。
 
 ### English
 
 - **DeepSeek-V4.1-Flash image input is read from `--vision on|off`**: since upstream v0.2.8 every DeepSeek config carries `--vision on` or `--vision off`. Manager counted any `--vision` as images on, so Arena uploads marked DeepSeek runs with images off as images on. For DeepSeek only an explicit `on` counts now; `off` or a missing value is off. Qwen's bare `--vision` switch is unchanged. DeepSeek's `--reserve-mib` (memory left for other apps) is now part of the benchmark group.
 - **"Enable image support" shows one switch for DeepSeek**: the DeepSeek engine reads images itself, so there is no vision engine, model or projector to choose. Before, enabling images wrote a Qwen-style `vision` section and a bare `--vision` into a DeepSeek config; the engine then took the next option as its value or refused to start with a missing value. The switch now writes only `--vision on` or `--vision off` and leaves every other argument alone. The Qwen dialog is unchanged.
+- **Tighter checks to match Strata 0.2.8**:
+  - The load wait now lasts the longer of the config's `engine_ready_s` and 30 minutes (DeepSeek configs set 3600 s), so a large model is no longer timed out halfway through loading.
+  - AMD HIP engines run 16 slots per batching window, so the concurrency cap and its hint now say 16; CUDA, SYCL and Metal stay at 8.
+  - `tool_call_recovery` accepts only true or false, as Strata does, and saving reports the error instead of a failed start.
+  - Intel Arc (SYCL) runtimes read the engine version from `engine-sycl/BUILD.json` first; a BUILD.json value that is not a version is no longer shown or compared.
+  - Platforms with no official engine package no longer fall back to picking the Windows x86_64 package; they are told no official engine package installs here.
+  - When no DeepSeek engine package fits, the message says NVIDIA needs an Ampere sm_86 or newer card.
 
 ## [0.2.30] - 2026-10-29
 

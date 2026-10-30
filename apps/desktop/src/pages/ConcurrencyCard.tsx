@@ -70,7 +70,7 @@ export function ConcurrencyCard({ draft, fieldValue, onFieldChange, zh, hardware
   const plan = useMemo(() => core.recommendConcurrency({ settings, hardware, arenaGb, useCase }), [settings, hardware, arenaGb, useCase]);
   const os = platform ?? contextPlatform ?? (typeof navigator !== 'undefined' && /Mac/i.test(navigator.userAgent) && !/Windows/i.test(navigator.userAgent) ? 'mac' : 'other');
   const ramGib = hardware?.totalMemoryBytes ? hardware.totalMemoryBytes / 2 ** 30 : null;
-  const issues = useMemo(() => core.concurrencyIssues(settings, { platform: os, officialParallel: hardware ? plan.officialParallel : undefined, ramGib }), [settings, os, hardware, plan.officialParallel, ramGib]);
+  const issues = useMemo(() => core.concurrencyIssues(settings, { platform: os, officialParallel: hardware ? plan.officialParallel : undefined, ramGib, engineMax: plan.engineMax }), [settings, os, hardware, plan.officialParallel, ramGib, plan.engineMax]);
   const edits = useMemo(() => core.concurrencyPlanEdits(settings, plan), [settings, plan]);
   const pending = edits.filter(edit => { const field = fieldByKey(edit.key); return field && fieldValue(field) !== edit.value; });
   const apply = (changes: core.ConcurrencyChange[]) => { for (const change of changes) { const field = fieldByKey(change.key); if (field) onFieldChange(field, change.value); } };

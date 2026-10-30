@@ -261,7 +261,7 @@ pub async fn resolve_release_download_asset_for(
     })
     .await
     .map_err(|_| "匹配更新包超过 20 秒，请检查网络后重试".to_owned())??;
-    if unknown && super::release_platform(&info) != "linux-x86_64" {
+    if unknown && super::release_platform(&info) != Some("linux-x86_64") {
         return Err("无法识别当前 CUDA/HIP 引擎，请手动选择更新包 / The installed CUDA/HIP engine is not recognised; choose the update package".into());
     }
     let install_dir = install_dir.to_owned();

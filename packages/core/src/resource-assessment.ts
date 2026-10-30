@@ -114,7 +114,7 @@ export function resourceAssessmentMessage(code: string, zh: boolean): string {
     above_native_context: ['超过原生 262K 上下文需扩展设置，首版无法完整预估。', 'Contexts above the native 262K window require scaling settings and cannot be fully estimated here.'],
     parallel_cost: ['并发槽占用专家缓存；减少排队等待也可能降低每个请求的速度。', 'Batch slots consume expert-cache VRAM. Less queueing can also lower per-request speed.'],
     parallel_above_recommendation: ['请求并发高于官方资源建议，更多槽位可能使每个请求变慢。', 'Requested concurrency exceeds the official recommendation and may slow each request.'],
-    engine_slot_cap: ['默认批处理窗口至多 8 槽，设置值不等于引擎实际服务容量。', 'The default batch window runs at most 8 slots; configured concurrency is not actual serving capacity.'],
+    engine_slot_cap: ['默认批处理窗口至多 8 槽（AMD HIP 引擎 16 槽），设置值不等于引擎实际服务容量。', 'The default batch window runs at most 8 slots (16 on the AMD HIP engine); configured concurrency is not actual serving capacity.'],
     wsl_streaming_off: ['WSL 按官方规则关闭 KV streaming，长上下文会占用更多显存。', 'Official setup disables KV streaming under WSL; long contexts consume more VRAM.'],
     budget_mode: ['这个 Unsloth 量化采用 RAM 预算和文件读取，首版不计算完整运行容量。', 'This Unsloth quantization uses a RAM budget and file reads; full running capacity is not estimated here.'],
     image_reserve_unknown: ['启用图片需要额外编码器与缓冲空间，首版不估算这部分容量。', 'Images require encoder and buffer memory that this estimate does not cover.'],
