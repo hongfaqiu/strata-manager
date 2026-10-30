@@ -26,9 +26,11 @@ export function visionDraftOf(config: JsonObject, installDir: string): VisionSup
     const cut = Math.max(mainExe.lastIndexOf('/'), mainExe.lastIndexOf('\\'));
     return cut > 0 ? mainExe.slice(0, cut).replace(/[\\/]+$/, '') : '';
   })();
+  // Mac/Linux engines ship `strata-vision` beside `strata`; only Windows builds carry `.exe`.
+  const visionName = mainExe && !/\.exe$/i.test(mainExe) ? 'strata-vision' : 'strata-vision.exe';
   const defaultVisionExe = engineDirFromExe
-    ? `${engineDirFromExe}${separator}strata-vision.exe`
-    : (directory ? `${directory}${separator}engine${separator}strata-vision.exe` : '');
+    ? `${engineDirFromExe}${separator}${visionName}`
+    : (directory ? `${directory}${separator}engine${separator}${visionName}` : '');
   return {
     exe: path(vision.exe) || defaultVisionExe,
     model: path(vision.model) || modelArg('--model') || modelArg('--native'),

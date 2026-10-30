@@ -5,6 +5,16 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **macOS 27 以下不再能启用图像输入，并直接说明原因**：上游 Metal 引擎包里的读图组件 `strata-vision` 按 macOS 27 构建（Mach-O 最低系统 27.0），更早的系统无法启动它。现在「启用图像支持」窗口会读取读图组件的最低系统要求并与本机对比；不满足时显示「图像输入需要 macOS 27+」提示（本机版本 → 需要版本），保存按钮停用，保存前的文件检查也会拒绝。只读文件头，不会启动任何程序。文字对话不受影响；换用支持本机系统的读图组件后会自动恢复。提示覆盖全部 10 种界面语言。
+- **Mac/Linux 上图像引擎的默认路径不再带 `.exe`**：主引擎不是 `.exe` 时，默认填 `strata-vision`（与主引擎同一文件夹）；Windows 不变。
+
+### English
+
+- **Image input can no longer be enabled below macOS 27, and the dialog says why**: the image reader `strata-vision` in the upstream Metal engine package is built for macOS 27 (Mach-O minimum 27.0) so older systems cannot start it. The Enable image support dialog now reads the reader's minimum macOS and compares it with this Mac. When it is too old the dialog shows "Image input needs macOS 27+" (this Mac → needed), save is disabled, and the pre-save file check refuses it too. Only the file header is read; nothing is started. Text chat is unaffected, and choosing a reader built for this macOS lifts the block. The notice covers all 10 interface languages.
+- **The default image engine path on Mac/Linux no longer ends in `.exe`**: when the main engine is not an `.exe`, the default is `strata-vision` in the same folder; Windows is unchanged.
+
 ## [0.2.30] - 2026-10-29
 
 ### 中文

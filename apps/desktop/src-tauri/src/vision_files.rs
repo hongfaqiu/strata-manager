@@ -2,6 +2,8 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 use strata_runtime_core::types::ServiceProfile;
 
+use crate::mac_vision::{self, MacVisionSupport};
+
 fn resolve(base: &Path, value: &str, label: &str) -> Result<PathBuf, String> {
     let path = Path::new(value);
     let resolved = if path.is_absolute() {
@@ -17,12 +19,7 @@ fn resolve(base: &Path, value: &str, label: &str) -> Result<PathBuf, String> {
     Ok(resolved)
 }
 
-/// The server starts in install_dir and resolves vision paths against config.cwd.
-/// Only filesystem metadata is read; no executable or model is opened or started.
-pub fn check(profile: &ServiceProfile, config: &Value) -> Result<(), String> {
-    let vision = config.get("vision").and_then(Value::as_object).ok_or(
-        "视觉配置 vision 缺失或不是对象 / vision configuration is missing or is not an object",
-    )?;
+fn working_directory(profile: &ServiceProfile, config: &Value) -> Result<PathBuf, String> {
     let installation = Path::new(&profile.install_dir);
     let cwd = match config.get("cwd") {
         None | Some(Value::Null) => installation.to_path_buf(),
@@ -40,6 +37,26 @@ pub fn check(profile: &ServiceProfile, config: &Value) -> Result<(), String> {
             cwd.display()
         ));
     }
+    Ok(cwd)
+}
+
+/// Whether this Mac can start the configured picture reader; `None` off macOS or when it cannot be read.
+pub fn mac_support(profile: &ServiceProfile, config: &Value) -> Option<MacVisionSupport> {
+    let exe = config.pointer("/vision/exe")?.as_str()?.trim();
+    if exe.is_empty() {
+        return None;
+    }
+    let cwd = working_directory(profile, config).ok()?;
+    mac_vision::support(&resolve(&cwd, exe, "vision.exe").ok()?)
+}
+
+/// The server starts in install_dir and resolves vision paths against config.cwd.
+/// Only filesystem metadata is read (plus, on macOS, the vision engine's Mach-O header); nothing is started.
+pub fn check(profile: &ServiceProfile, config: &Value) -> Result<(), String> {
+    let vision = config.get("vision").and_then(Value::as_object).ok_or(
+        "视觉配置 vision 缺失或不是对象 / vision configuration is missing or is not an object",
+    )?;
+    let cwd = working_directory(profile, config)?;
     for (key, label) in [
         (
             "exe",
@@ -65,6 +82,14 @@ pub fn check(profile: &ServiceProfile, config: &Value) -> Result<(), String> {
                 "{label} 文件不存在或不是文件 / file is missing or is not a file: {}",
                 path.display()
             ));
+        }
+        if key == "exe" {
+            if let Some(support) = mac_vision::support(&path).filter(|support| !support.supported) {
+                return Err(format!(
+                    "图像输入需要 macOS {} 或更高，本机为 {} / image input needs macOS {} or later; this Mac runs {}",
+                    support.required, support.system, support.required, support.system
+                ));
+            }
         }
     }
     Ok(())

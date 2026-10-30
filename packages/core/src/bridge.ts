@@ -404,6 +404,9 @@ export interface ConfigSnapshot { config: JsonObject; revision: string }
 export const readConfigSnapshot = (profile: ServiceProfile): Promise<ConfigSnapshot> => native('read_config_snapshot', { profile });
 /** Read-only validation of required vision files using the service working directory. */
 export const validateVisionFiles = (profile: ServiceProfile, config: JsonObject): Promise<void> => native('validate_vision_files', { profile, config });
+/** macOS only: the configured vision engine's minimum macOS (Mach-O minos) against this Mac; `null` elsewhere or when unreadable. */
+export interface MacVisionSupport { required: string; system: string; supported: boolean }
+export const macVisionSupport = (profile: ServiceProfile, config: JsonObject): Promise<MacVisionSupport | null> => native('mac_vision_support', { profile, config });
 export const writeConfig = (profile: ServiceProfile, config: JsonObject, expectedRevision: string): Promise<{ revision: string }> => native('write_config', { profile, config, expectedRevision });
 /** Save the full editor draft as a new file; discovery and activation remain explicit. */
 export const copyConfiguration = (profile: ServiceProfile, filename: string, config: JsonObject): Promise<ServiceProfile> => native('copy_configuration', { profile, filename, config });
