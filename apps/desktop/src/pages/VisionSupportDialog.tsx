@@ -1,12 +1,13 @@
 import type { AppLanguage } from "@strata-manager/core";
 import { useEffect, useRef, useState } from 'react';
-import { Check, FolderOpen, ImageIcon, LoaderCircle, RefreshCw } from 'lucide-react';
+import { ArrowRight, Check, FolderOpen, ImageIcon, ImageOff, Laptop, LoaderCircle, RefreshCw } from 'lucide-react';
 import * as core from '@strata-manager/core';
 import type { JsonObject, ServiceProfile } from '@strata-manager/core';
 import { Dialog } from '../components';
 import { Dropdown, Toggle } from '../OfficialControls';
 import { configureDeepseek41VisionSupport, configureVisionSupport, visionDraftOf, type VisionSupportDraft } from './visionSupportConfiguration';
 import { visionSupportText } from './visionSupportStrings';
+import { macVisionText, shortMacVersion } from './macVisionStrings';
 import './vision-support-dialog.css';
 
 export interface VisionSupportDialogProps {
@@ -21,6 +22,7 @@ export function VisionSupportDialog({ profile, language, onClose, onSaved, onRes
   const [loading, setLoading] = useState(true), [saving, setSaving] = useState(false), [browsing, setBrowsing] = useState(false);
   const [reload, setReload] = useState(0), [error, setError] = useState(''), [message, setMessage] = useState('');
   const [enabled, setEnabled] = useState(false);
+  const [mac, setMac] = useState<core.MacVisionSupport | null>(null);
   // DeepSeek-V4.1-Flash reads pictures with its own engine: one on/off switch (--vision on|off), no files.
   const [deepseekVision, setDeepseekVision] = useState<boolean | null>(null);
   const text = (key: Parameters<typeof visionSupportText>[1]) => visionSupportText(language, key);
@@ -28,6 +30,19 @@ export function VisionSupportDialog({ profile, language, onClose, onSaved, onRes
   const savingRef = useRef(false), browsingRef = useRef(false), alive = useRef(false);
   const busy = loading || saving || browsing;
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  // macOS only: the vision engine's minimum macOS against this Mac (null elsewhere or when it can't be read).
+  // DeepSeek reads pictures with its own engine, so its main `exe` is the binary to check.
+  const deepseekExe = deepseekVision !== null && typeof baseline?.config.exe === 'string' ? baseline.config.exe.trim() : '';
+  const visionExe = draft?.exe.trim() ?? deepseekExe;
+  useEffect(() => {
+    let stopped = false;
+    setMac(null);
+    if (!baseline || !visionExe) return;
+    void core.macVisionSupport(profile, { ...baseline.config, vision: { exe: visionExe } })
+      .then(result => { if (!stopped) setMac(result ?? null); }).catch(() => { if (!stopped) setMac(null); });
+    return () => { stopped = true; };
+  }, [baseline, visionExe, profile.id, profile.configPath]);
+  const macBlocked = mac?.supported === false;
   useEffect(() => {
     let stopped = false;
     setLoading(true); setBaseline(null); setDraft(null); setDeepseekVision(null); setError(''); setMessage(''); setEnabled(false);
@@ -53,7 +68,7 @@ export function VisionSupportDialog({ profile, language, onClose, onSaved, onRes
     finally { browsingRef.current = false; if (alive.current) setBrowsing(false); }
   };
   const save = async (restart: boolean) => {
-    if (busy || savingRef.current || !baseline || (!draft && deepseekVision === null)) return;
+    if (busy || savingRef.current || !baseline || (!draft && deepseekVision === null) || (macBlocked && (draft !== null || deepseekVision === true))) return;
     const target = baseline, selectedProfile = profile;
     let persisted = false;
     savingRef.current = true; setSaving(true); setError(''); setMessage('');
@@ -91,10 +106,22 @@ export function VisionSupportDialog({ profile, language, onClose, onSaved, onRes
   return <Dialog title={zh ? '启用图像支持' : 'Enable image support'} onClose={close}>
     <div className="vision-support-dialog">
       {loading && <p className="vision-support-status" role="status"><LoaderCircle size={17} className="spin"/>{zh ? '正在读取现有配置…' : 'Reading the existing configuration…'}</p>}
+      {macBlocked && mac && <div className="vision-support-mac" role="alert">
+        <ImageOff size={22} aria-hidden="true"/>
+        <div>
+          <strong>{macVisionText(language, 'mvTitle', shortMacVersion(mac.required))}</strong>
+          <span className="vision-support-mac-versions">
+            <span className="is-current"><Laptop size={13} aria-hidden="true"/>{macVisionText(language, 'mvThisMac')} {mac.system}</span>
+            <ArrowRight size={13} aria-hidden="true"/>
+            <span>{macVisionText(language, 'mvNeeded')} {shortMacVersion(mac.required)}+</span>
+          </span>
+          <small>{macVisionText(language, 'mvBody')}</small>
+        </div>
+      </div>}
       {deepseekVision !== null && baseline && <div className="vision-support-deepseek" data-testid="vision-deepseek">
         <span className="vision-support-deepseek-icon" aria-hidden="true"><ImageIcon size={20}/></span>
         <div><strong>{text('vsDeepseekLabel')}</strong><small>{text('vsDeepseekHint')}</small></div>
-        <Toggle checked={deepseekVision} disabled={busy} ariaLabel={text('vsDeepseekLabel')} onCheckedChange={value => { setDeepseekVision(value); setMessage(''); setError(''); setEnabled(false); }}/>
+        <Toggle checked={deepseekVision} disabled={busy || (macBlocked && !deepseekVision)} ariaLabel={text('vsDeepseekLabel')} onCheckedChange={value => { setDeepseekVision(value); setMessage(''); setError(''); setEnabled(false); }}/>
       </div>}
       {draft && <>
         <p className="vision-support-intro">{zh ? '选择已有的视觉引擎、模型和匹配投影文件。' : 'Choose an existing vision engine, model and matching projector.'}</p>
@@ -112,8 +139,8 @@ export function VisionSupportDialog({ profile, language, onClose, onSaved, onRes
         <button type="button" disabled={busy} onClick={close}>{zh ? '关闭' : 'Close'}</button>
         {error && <button type="button" disabled={busy} onClick={() => setReload(value => value + 1)}><RefreshCw size={15}/>{draft || deepseekVision !== null ? (zh ? '放弃草稿并重新读取' : 'Discard draft and reload') : (zh ? '重新读取' : 'Reload')}</button>}
         {deepseekVision !== null
-          ? <button type="button" className="primary" disabled={busy || enabled || !baseline || deepseekVision === core.deepseek41Vision(baseline.config)} onClick={() => void save(!!onRestart)}>{saving ? <LoaderCircle size={15} className="spin"/> : <Check size={15}/>} {saving ? (zh ? '正在保存…' : 'Saving…') : text(onRestart ? 'vsSaveRestart' : 'vsSave')}</button>
-          : <button type="button" className="primary" disabled={busy || !complete || enabled} onClick={() => void save(!!onRestart)}>{saving ? <LoaderCircle size={15} className="spin"/> : <Check size={15}/>} {saving ? (zh ? '正在保存…' : 'Saving…') : onRestart ? (zh ? '保存并启用' : 'Save and enable') : (zh ? '保存图像配置' : 'Save vision configuration')}</button>}
+          ? <button type="button" className="primary" disabled={busy || enabled || !baseline || deepseekVision === core.deepseek41Vision(baseline.config) || (macBlocked && deepseekVision)} onClick={() => void save(!!onRestart)}>{saving ? <LoaderCircle size={15} className="spin"/> : <Check size={15}/>} {saving ? (zh ? '正在保存…' : 'Saving…') : text(onRestart ? 'vsSaveRestart' : 'vsSave')}</button>
+          : <button type="button" className="primary" disabled={busy || !complete || enabled || macBlocked} onClick={() => void save(!!onRestart)}>{saving ? <LoaderCircle size={15} className="spin"/> : <Check size={15}/>} {saving ? (zh ? '正在保存…' : 'Saving…') : onRestart ? (zh ? '保存并启用' : 'Save and enable') : (zh ? '保存图像配置' : 'Save vision configuration')}</button>}
       </div>
     </div>
   </Dialog>;

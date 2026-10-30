@@ -32,6 +32,7 @@ const DESKTOP_ONLY: &[&str] = &[
     "register_html_preview",
     "write_html_preview",
     "validate_vision_files",
+    "mac_vision_support",
     "copy_configuration",
     "delete_configuration",
     "plan_config_cleanup",

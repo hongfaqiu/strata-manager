@@ -10,6 +10,13 @@ describe('quick vision configuration', () => {
     expect(visionDraftOf({ exe: '/strata/engine_cuda12/strata.exe', args: ['--native', '/models/main.gguf'] }, '/strata')).toMatchObject({ exe: '/strata/engine_cuda12/strata-vision.exe', model: '/models/main.gguf', mmproj: '' });
     expect(visionDraftOf({ exe: 'D:\\Strata\\engine-cuda12\\strata.exe', args: ['--model', 'D:\\Models\\main.gguf'] }, 'D:\\Strata\\')).toMatchObject({ exe: 'D:\\Strata\\engine-cuda12\\strata-vision.exe', model: 'D:\\Models\\main.gguf' });
 
+  });
+  it('defaults to the Mac/Linux vision binary name beside a main engine without .exe', () => {
+    expect(visionDraftOf({ exe: 'engine/strata', args: ['--model', '/Users/ai/models/main.gguf'] }, '/Users/ai/Strata').exe).toBe('engine/strata-vision');
+    expect(visionDraftOf({ exe: '/opt/strata/engine-cuda12/strata', args: [] }, '/opt/strata').exe).toBe('/opt/strata/engine-cuda12/strata-vision');
+    expect(visionDraftOf({ exe: 'strata', args: [] }, '/Users/ai/Strata').exe).toBe('/Users/ai/Strata/engine/strata-vision');
+    expect(visionDraftOf({ exe: 'D:\\Strata\\engine\\STRATA.EXE', args: [] }, 'D:\\Strata').exe).toBe('D:\\Strata\\engine\\strata-vision.exe');
+
     expect(visionDraftOf({ args: ['--model', '--vision'] }, 'D:\\Strata').model).toBe('');
     expect(visionDraftOf({ args: ['--model', 'a.gguf', '--model', 'b.gguf'] }, 'D:\\Strata').model).toBe('');
   });

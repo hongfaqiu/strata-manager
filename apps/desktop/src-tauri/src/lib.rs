@@ -11,6 +11,7 @@ mod html_preview;
 mod http;
 mod huggingface;
 mod invoke_policy;
+mod mac_vision;
 mod model_files;
 mod monitor_shortcut;
 mod png_export;
@@ -1246,6 +1247,14 @@ fn validate_vision_files(profile: ServiceProfile, config: Value) -> Result<(), S
 }
 
 #[tauri::command]
+fn mac_vision_support(
+    profile: ServiceProfile,
+    config: Value,
+) -> Option<mac_vision::MacVisionSupport> {
+    vision_files::mac_support(&profile, &config)
+}
+
+#[tauri::command]
 async fn copy_configuration(
     state: State<'_, ClientState>,
     profile: ServiceProfile,
@@ -2378,6 +2387,7 @@ pub fn run() {
             read_config,
             read_config_snapshot,
             validate_vision_files,
+            mac_vision_support,
             copy_configuration,
             delete_configuration,
             plan_config_cleanup,
