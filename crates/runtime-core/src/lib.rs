@@ -2237,6 +2237,13 @@ impl RuntimeState {
                     // A cold load can outlast the /load request timeout while the engine
                     // is still working; only a real exit or rejection fails the start.
                     let load_started = types::now();
+                    // A run config's "engine_ready_s" (DeepSeek-V4.1: 3600) lengthens the wait.
+                    let load_wait = std::fs::read(&profile.config_path)
+                        .ok()
+                        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+                        .map_or(model_load_wait::LoadWait::STARTUP, |config| {
+                            model_load_wait::LoadWait::startup_for(&config)
+                        });
                     let python_facts = processes::launcher_env(&profile)
                         .map(|env| model_load_wait::PythonFacts::from_launcher(&env))
                         .unwrap_or_else(|_| model_load_wait::PythonFacts {
@@ -2303,7 +2310,7 @@ impl RuntimeState {
                             model_load_wait::load_failure_error(&failure, &python_facts)
                         },
                         |line| processes::log(&self.logs, &profile.id, "info", &line),
-                        model_load_wait::LoadWait::STARTUP,
+                        load_wait,
                     )
                     .await?;
                 }
