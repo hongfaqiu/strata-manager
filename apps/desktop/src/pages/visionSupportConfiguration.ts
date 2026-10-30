@@ -1,5 +1,5 @@
 import type { JsonObject } from '@strata-manager/core';
-import { applyStartupField, replaceStartupArgument, startupArgsOf, startupArgumentRows, validateStartupConfiguration, type StartupFieldSpec } from '@strata-manager/core';
+import { applyDeepseek41Vision, applyStartupField, isDeepseek41Config, replaceStartupArgument, startupArgsOf, startupArgumentRows, validateStartupConfiguration, type StartupFieldSpec } from '@strata-manager/core';
 
 export interface VisionSupportDraft {
   exe: string; model: string; mmproj: string; gpu: boolean; threads: string; maxTokens: string;
@@ -39,7 +39,16 @@ export function visionDraftOf(config: JsonObject, installDir: string): VisionSup
   };
 }
 
+/** DeepSeek-V4.1-Flash reads pictures with its own engine: only `--vision on|off` changes, no vision section or files. */
+export function configureDeepseek41VisionSupport(config: JsonObject, on: boolean): JsonObject {
+  const next = applyDeepseek41Vision(config, on);
+  validateStartupConfiguration(next);
+  return next;
+}
+
 export function configureVisionSupport(config: JsonObject, draft: VisionSupportDraft): JsonObject {
+  // The Qwen picture reader (vision section + bare --vision) would stop strata-dsv41; DeepSeek turns its own tower on.
+  if (isDeepseek41Config(config)) return configureDeepseek41VisionSupport(config, true);
   if (config.vision != null && !object(config.vision)) throw new Error('vision 必须为对象 / vision must be an object');
   for (const key of ['exe', 'model', 'mmproj'] as const) if (!draft[key].trim()) throw new Error(`vision.${key}: 文件路径不能为空 / a file path is required`);
   let next = structuredClone(config);

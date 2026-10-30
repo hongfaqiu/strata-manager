@@ -118,3 +118,33 @@ export function applyDeepseek41LoadMode(config: JsonObject, mode: Deepseek41Load
   // A following token that is not an option is the old flag's value (even an unknown word, which the engine reads as auto).
   return setValueFlag(config, '--mmap-experts', mode, token => token !== undefined && !token.startsWith('--'));
 }
+
+const VISION_ON = ['on', 'yes', 'true', '1', 'gpu', 'cpu'];
+
+/**
+ * Whether a DeepSeek config reads pictures. strata-dsv41 takes `--vision on|off` with its own picture tower (upstream
+ * v0.2.8 writes it into every DeepSeek config), so only an explicit on counts: `--vision off`, a bare `--vision` or a
+ * missing flag is text only. Same rule as runtime-core benchmark_identity::vision_enabled.
+ */
+export function deepseek41Vision(config: JsonObject): boolean {
+  const args = argsOf(config); let on = false;
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index]!;
+    const value = arg === '--vision' ? args[index + 1] : arg.startsWith('--vision=') ? arg.slice('--vision='.length) : null;
+    if (value === null) continue;
+    const word = value?.toLowerCase();
+    on = !!word && VISION_ON.includes(word);
+  }
+  return on;
+}
+
+/**
+ * Writes `--vision on` or `--vision off` into a DeepSeek config (one occurrence, other arguments untouched). The Qwen
+ * picture reader's `vision` section and the bare Qwen switch are never written: strata-dsv41 reads pictures itself and
+ * would take the next option as the value of a bare `--vision`.
+ */
+export function applyDeepseek41Vision(config: JsonObject, on: boolean): JsonObject {
+  if (!isDeepseek41Config(config)) throw new Error('只用于 DeepSeek-V4.1-Flash 配置 / Only for DeepSeek-V4.1-Flash configurations');
+  const args = argsOf(config).flatMap(arg => arg.startsWith('--vision=') ? ['--vision', arg.slice('--vision='.length)] : [arg]);
+  return setValueFlag({ ...config, args }, '--vision', on ? 'on' : 'off', token => token !== undefined && !token.startsWith('--'));
+}

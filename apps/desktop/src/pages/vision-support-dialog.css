@@ -23,3 +23,8 @@
 .vision-support-mac-versions>span.is-current{color:var(--warning);border-color:color-mix(in srgb,var(--warning) 45%,transparent)}
 @media(max-width:480px){.vision-support-options>div{grid-template-columns:minmax(0,1fr)}.vision-support-dialog .dialog-footer>button{flex:1}}
 @media(prefers-reduced-motion:reduce){.vision-support-dialog .spin{animation:none}}
+.vision-support-deepseek{display:flex;align-items:center;gap:12px;padding:14px;border:1px solid var(--border);border-radius:12px}
+.vision-support-deepseek>div{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0}
+.vision-support-deepseek strong{font-size:13px;font-weight:600}
+.vision-support-deepseek small{font-size:12px;line-height:1.5;color:var(--muted)}
+.vision-support-deepseek-icon{display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:10px;background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent)}
