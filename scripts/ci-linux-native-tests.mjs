@@ -30,6 +30,7 @@ export const IGNORED_POLICY = Object.freeze({
   'strata-runtime-core:model_inspect::tests::isolated_inspect_task_reports_output_and_cancels_without_model_start': 'Explicit isolated Python process fixture requiring an absolute interpreter.',
   'strata-runtime-core:runtime_upgrade::release_zip::download_check::tests::live_official_download_source_probe_readonly': 'Explicit live official/proxy source acceptance; current network metadata and at most 64 KiB per source, without runtime mutation.',
   'strata-runtime-core:runtime_upgrade::release_zip::tests::official_source_zip_fixture_from_environment': 'Separately downloaded official source ZIP fixture.',
+  'strata-runtime-core:setup_prefetch::tests::live_prefetch_places_the_verified_archive': 'Explicit live speed test and pinned llama.cpp source archive download (about 40 MB) through the real download route into a temporary data directory; SHA-256 enforced, no setup run.',
   'strata-runtime-core:tuning::workloads::tests::check_explicit_agent_patch_fixture': 'Explicit saved Agent patch source supplied through STRATA_TUNING_AGENT_SOURCE_FILE; bounded static validation without model or source execution.',
 });
 

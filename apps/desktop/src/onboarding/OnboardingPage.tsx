@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { ArrowRight, Check, Copy, FolderPlus, LoaderCircle, Minus, RefreshCw, Square, TriangleAlert, X } from 'lucide-react';
+import { ArrowRight, Check, Copy, FolderPlus, Globe, LoaderCircle, Minus, RefreshCw, Square, TriangleAlert, X } from 'lucide-react';
 import * as core from '@strata-manager/core';
 import type { LogEntry, ServiceProfile, TaskStatus } from '@strata-manager/core';
 import { Dropdown, Segmented, Toggle } from '../OfficialControls';
@@ -18,7 +18,7 @@ import { GuideStorageRows } from '../pages/StorageLocation';
 import { fetchArenaGroups, fetchArenaTier } from './arenaPublic';
 import {
   arenaLeaderboardQuery, arenaMatch, confidenceBars, defaultContext, gpuRowValue, parseGpu,
-  recommendations, smallestCatalogRamGB, type EnvironmentCheck, type GuideFacts, type GuidePath, type GuidePlan, type GuideState, type GuideSelection, type OnboardingProgress,
+  recommendations, setupDownloadView, setupStatusText, smallestCatalogRamGB, type EnvironmentCheck, type GuideFacts, type GuidePath, type GuidePlan, type GuideState, type GuideSelection, type OnboardingProgress,
   type Scene, type StepId, type StepState,
 } from './onboardingModel';
 import '../pages/d2-visuals.css';
@@ -475,6 +475,12 @@ function DownloadStep(props: StepProps & { setupTask?: TaskStatus; handoff?: cor
   const running = setupTask?.state === 'running';
   const logs = useTaskLogs(setupTask?.id, running);
   const percent = running ? taskProgress(setupTask?.message) : setupTask?.state === 'completed' ? 100 : undefined;
+  const zh = core.legacyLanguage(props.language) === 'zh-CN';
+  // Only the last 80 log lines are read; keep the source and fallback once seen for this task.
+  const seen = useRef<{ id?: string; view: ReturnType<typeof setupDownloadView> }>({ view: { done: false, fallback: false } });
+  const latest = setupDownloadView(logs.data ?? [], zh);
+  if (seen.current.id !== setupTask?.id) seen.current = { id: setupTask?.id, view: { done: false, fallback: false } };
+  const view = seen.current.view = latest.source || latest.fallback ? latest : seen.current.view;
   const [canceling, setCanceling] = useState(false);
   const cancel = async () => { if (!setupTask || canceling) return; setCanceling(true); try { await core.cancelTask(setupTask.id); } catch (error) { props.onError(error); } finally { setCanceling(false); } };
   const selection = progress?.selection;
@@ -487,8 +493,10 @@ function DownloadStep(props: StepProps & { setupTask?: TaskStatus; handoff?: cor
     <div className="ob-download">
       <div className="ob-bignum">{percent !== undefined ? <>{Math.floor(percent)}<small>%</small></> : <LoaderCircle size={28} className="spin"/>}</div>
       <div className="ob-status-body">
-        <b>{failed ? t('obDownloadFailed') : setupTask?.state === 'completed' ? (handoff?.status === 'registered' ? t('obStepDone') : t('obRegistering')) : setupTask?.message || t('obPreparing')}</b>
+        <b>{failed ? t('obDownloadFailed') : setupTask?.state === 'completed' ? (handoff?.status === 'registered' ? t('obStepDone') : t('obRegistering')) : setupTask?.message ? setupStatusText(setupTask.message, zh) : t('obPreparing')}</b>
         <div className={`ob-bar${percent === undefined && !failed ? ' is-indeterminate' : ''}${failed ? ' is-bad' : ''}`}><i style={percent === undefined ? undefined : { width: `${percent}%` }}/></div>
+        {view.source && running && <span className={`ob-dl-source${view.done ? ' is-done' : ''}`} data-testid="setup-download-source">{view.done ? <Check size={12}/> : <Globe size={12}/>}<span>{t('obDownloadSource')}</span><b>{view.source}</b>{view.reason && <small>{view.reason}</small>}</span>}
+        {view.fallback && running && <p className="ob-dl-fallback" role="status" data-testid="setup-prefetch-fallback" title={view.detail}><TriangleAlert size={13}/>{t('obPrefetchFallback')}</p>}
         {failed && setupTask?.message && <small className="is-bad">{setupTask.message}</small>}
       </div>
     </div>

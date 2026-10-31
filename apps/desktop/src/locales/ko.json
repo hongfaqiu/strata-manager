@@ -753,6 +753,7 @@
   "ovIntegratedGpu": "내장 GPU · 합계 제외",
   "appUpdateSource": "다운로드 소스",
   "appUpdateSourceShared": "엔진 다운로드와 공유",
+  "appUpdateSourceAutoOption": "자동(가장 빠른 소스)(기본값)",
   "appUpdateSourceOfficial": "공식 GitHub",
   "appUpdateSourceCustom": "사용자 지정",
   "appUpdateSourceLocal": "로컬 패키지(엔진 전용)",

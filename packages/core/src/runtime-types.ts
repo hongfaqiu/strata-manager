@@ -50,13 +50,16 @@ export interface RuntimeZipDownloadOptions {
   downloadUrl?: string;
   /** Install this official release (up or down) instead of the latest; every source is verified against it. */
   targetVersion?: string;
+  /** `auto`: no fixed URL; the service speed-tests the mirrors and GitHub (fastest first, GitHub last). */
+  source?: 'auto';
 }
 
 /** Saved download choices; a local ZIP or literal URL belongs to one release. */
 export interface RuntimeDownloadPreferences {
   /** Built-in mirror identifier; its template follows the official release. */
   sourceId?: string;
-  mode: 'official' | 'local' | 'mirror';
+  /** `auto` (default): speed test, fastest first; `official`: GitHub only. */
+  mode: 'auto' | 'official' | 'local' | 'mirror';
   assetName?: string;
   releaseVersion?: string;
   localArchivePath?: string;

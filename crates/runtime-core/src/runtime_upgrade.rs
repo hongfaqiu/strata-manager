@@ -17,6 +17,7 @@ use std::{
 };
 
 pub const VERSION: &str = "0.1.41";
+pub mod download_route;
 pub mod dsv41_engine;
 pub mod engine_package;
 pub mod github_source;

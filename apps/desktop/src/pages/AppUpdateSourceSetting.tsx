@@ -40,17 +40,18 @@ export function AppUpdateSourceSetting({ desktop, onError }: { desktop: boolean;
   };
   const canSaveCustom = !disabled && !!mirrorUrl.trim() && !problem && (customDraft !== null && (savedChoice !== 'custom' || customDraft.trim() !== (saved?.mirrorUrl ?? '')));
   const options = [
+    { value: 'auto', label: t('appUpdateSourceAutoOption') },
     { value: 'official', label: t('appUpdateSourceOfficial') },
     ...core.runtimeDownloadSources.map(source => ({ value: source.id, label: source.label })),
     { value: 'custom', label: t('appUpdateSourceCustom') },
     ...(savedChoice === 'local' ? [{ value: 'local', label: t('appUpdateSourceLocal') }] : []),
   ];
-  const automatic = saved && customDraft === null && !appUpdateUsesSource(saved);
+  const automatic = saved && customDraft === null && choice !== 'auto' && !appUpdateUsesSource(saved);
 
   return <div className="app-update-source" data-testid="app-update-source">
     <div className="setting-toggle">
       <span><strong>{t('appUpdateSource')}</strong><small>{t('appUpdateSourceShared')}</small></span>
-      <div style={{ width: 180, maxWidth: '50%', flexShrink: 0 }}><Dropdown ariaLabel={t('appUpdateSource')} value={choice} options={options} disabled={disabled} onValueChange={choose}/></div>
+      <div style={{ width: 220, maxWidth: '55%', flexShrink: 0 }}><Dropdown ariaLabel={t('appUpdateSource')} value={choice} options={options} disabled={disabled} onValueChange={choose}/></div>
     </div>
     {choice === 'custom' && <div className="app-update-source-custom">
       <input type="url" aria-label={t('appUpdateSourceCustom')} placeholder="https://mirror.example.com/{url}" value={mirrorUrl} disabled={disabled} aria-invalid={!!problem} spellCheck={false} onChange={event => setCustomDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && canSaveCustom) void save(withAppUpdateSource(saved, 'custom', mirrorUrl)); }}/>

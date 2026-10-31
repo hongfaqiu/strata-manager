@@ -262,6 +262,7 @@ pub fn start_install_release_with_archives(
             local_archive_path: archives.engine_archive_path,
             download_url: None,
             target_version: None,
+            source: None,
         },
         archives.strata_archive_path,
     );
@@ -3832,6 +3833,7 @@ mod tests {
             local_archive_path: Some(archive.to_string_lossy().into()),
             download_url: None,
             target_version: None,
+            source: None,
         };
         let name = "strata-windows-x64.zip";
         let id = uuid::Uuid::new_v4().to_string();
@@ -3876,6 +3878,7 @@ mod tests {
             local_archive_path: None,
             download_url: Some("https://mirror.example/engine.zip".into()),
             target_version: None,
+            source: None,
         };
         assert!(start_release_request_with_download(
             state.clone(),

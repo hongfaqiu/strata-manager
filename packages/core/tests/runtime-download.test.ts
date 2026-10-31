@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getRuntimeDownloadPreferences, resolveRuntimeDownloadPreferences, runtimeAssetLabel, runtimeBilingualText, runtimeDownloadSources, runtimeEngineArchiveFilters, runtimeEngineIsCurrent, runtimeReasonText, runtimeTrialRollback, saveRuntimeDownloadPreferences } from '../src/runtime-download';
-import { resolveRuntimeZipAsset, testRuntimeZipDownload } from '../src/bridge';
+import { resolveRuntimeZipAsset, testRuntimeZipDownload, updateRuntimeZip } from '../src/bridge';
 import type { RuntimeUpdateInfo } from '../src/runtime-types';
 
 const release = (version = '0.1.43'): RuntimeUpdateInfo => ({
@@ -30,6 +30,20 @@ describe('saved runtime download choices', () => {
       }
       expect(resolveRuntimeDownloadPreferences({ ...preferences, assetName: 'removed.zip' }, release(), assetName).requiresSelection).toBe(true);
     }
+  });
+  it('defaults to the automatic speed test and keeps an explicit choice', () => {
+    expect(resolveRuntimeDownloadPreferences({ mode: 'auto' }, release(), assetName)).toEqual({ assetName, download: { source: 'auto' }, requiresSelection: false });
+    expect(resolveRuntimeDownloadPreferences({ mode: 'official' }, release(), assetName)).toEqual({ assetName, download: {}, requiresSelection: false });
+  });
+  it('sends the automatic source only without a fixed URL or local package', async () => {
+    const invoke = vi.fn(async () => ({}));
+    vi.stubGlobal('window', { __TAURI_INTERNALS__: { invoke } });
+    await updateRuntimeZip('D:\\AI\\Strata', assetName, false, { source: 'auto' });
+    await updateRuntimeZip('D:\\AI\\Strata', assetName, false, { source: 'auto', downloadUrl: 'https://mirror.example/a.zip' });
+    expect(invoke.mock.calls.map(call => (call as unknown[])[1])).toEqual([
+      { installDir: 'D:\\AI\\Strata', assetName, stopCurrentService: false, source: 'auto' },
+      { installDir: 'D:\\AI\\Strata', assetName, stopCurrentService: false, downloadUrl: 'https://mirror.example/a.zip' },
+    ]);
   });
   it('resolves engine compatibility through a read-only command without lifecycle authorization', async () => {
     const invoke = vi.fn(async () => release().assets[0]);
@@ -66,7 +80,7 @@ describe('saved runtime download choices', () => {
       if (command === 'store_get') return saved;
       throw new Error(command);
     } } });
-    expect(await getRuntimeDownloadPreferences()).toEqual({ mode: 'mirror', sourceId: 'gh-proxy' });
+    expect(await getRuntimeDownloadPreferences()).toEqual({ mode: 'auto' });
     await saveRuntimeDownloadPreferences({ mode: 'mirror', assetName, releaseVersion: '0.1.43', mirrorUrl: ' https://mirror.example/{url} ', localArchivePath: 'discard.zip' });
     expect(await getRuntimeDownloadPreferences()).toEqual({ mode: 'mirror', assetName, releaseVersion: '0.1.43', mirrorUrl: 'https://mirror.example/{url}' });
     expect(calls).toEqual(['store_get', 'store_set', 'store_get']);

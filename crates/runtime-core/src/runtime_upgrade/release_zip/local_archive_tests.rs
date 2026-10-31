@@ -237,6 +237,7 @@ fn install_options_accept_a_local_engine_without_an_asset_but_updates_do_not() {
         local_archive_path: Some(local.to_string_lossy().into()),
         download_url: None,
         target_version: None,
+        source: None,
     }
     .validate(None)
     .is_err());
