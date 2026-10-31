@@ -85,6 +85,9 @@ pub struct LocalShard {
     /// `split.no` / `split.count` disagree with the file name (a shard of another split).
     #[serde(skip)]
     split_mismatch: Option<String>,
+    /// `general.architecture` from the shard's GGUF header, when it could be read.
+    #[serde(skip)]
+    architecture: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -211,7 +214,10 @@ fn official_choice(first: &str) -> Option<(String, String)> {
 }
 
 /// For a renamed copy: the family its name points to. setup.py's `gguf_dir_shards` then finds it as the one
-/// first shard in the folder whose name contains the size.
+/// first shard in the folder whose name contains the size. The name must still say which model it is, as the
+/// community catalogue's `inferFamily` requires: ISTA-DASLab's GSQ-RCO layout for Qwen/Swift/Coder, Flash-Next for
+/// every Qwen3.8 family, 35B-A3B for Qwen3.6. A new model (DeepSeek-V4.1-Flash-1017 GGUF, Qwen4-Next) is not
+/// guessed into a Qwen3.8 family just because its quantization is one Strata runs.
 pub(crate) fn inferred_family(stem: &str, quant: &str) -> Option<&'static str> {
     let lower = stem.to_ascii_lowercase();
     let family = if lower.contains("qwen3.6") {
@@ -225,8 +231,31 @@ pub(crate) fn inferred_family(stem: &str, quant: &str) -> Option<&'static str> {
     } else {
         "qwen"
     };
-    setup_supports(family, quant).then_some(family)
+    if !setup_supports(family, quant) {
+        return None;
+    }
+    if matches!(family, "qwen" | "swift" | "coder") && !lower.contains("gsq-rco") {
+        return None;
+    }
+    if family == "qwen36" && !lower.contains("35b-a3b") {
+        return None;
+    }
+    if family != "qwen36" && !lower.contains("flash-next") {
+        return None;
+    }
+    Some(family)
 }
+
+/// The GGUF `general.architecture` a family's engine path reads (upstream `model_family_from_arch`):
+/// Qwen3.6-35B-A3B is `qwen35moe`, every Qwen3.8-Flash-Next family is `qwen4exp`.
+fn family_architecture(family: &str) -> &'static str {
+    match family {
+        "qwen36" => "qwen35moe",
+        _ => "qwen4exp",
+    }
+}
+
+const AWAIT_UPSTREAM: &str = "需等上游支持";
 
 /// A leftover of an unfinished download of `name`: `<name>.part` (setup.py), `.incomplete`/`.downloading`
 /// (browsers, download managers), or Hugging Face's `hf download --local-dir` working file
@@ -267,6 +296,7 @@ fn shard_state(path: &Path, split: Option<(u32, u32)>) -> LocalShard {
     let bytes = disk::file_len(path).unwrap_or(0);
     let mut expected_bytes = None;
     let mut split_mismatch = None;
+    let mut architecture = None;
     // Completeness is the GGUF header's own tensor directory (upstream check_shards), not a size floor:
     // gguf-split's first shard of an Unsloth upload holds only metadata (about 10 MB) and is whole.
     let state = if !path.is_file() {
@@ -275,6 +305,7 @@ fn shard_state(path: &Path, split: Option<(u32, u32)>) -> LocalShard {
         match gguf_check::check(path) {
             ShardCheck::Whole(header) => {
                 expected_bytes = Some(header.need_bytes);
+                architecture = header.architecture.clone();
                 if let (Some((index, total)), Some(count)) = (split, header.split_count) {
                     let no = header.split_no.unwrap_or(u64::from(index) - 1);
                     if count != u64::from(total) || no + 1 != u64::from(index) {
@@ -306,6 +337,7 @@ fn shard_state(path: &Path, split: Option<(u32, u32)>) -> LocalShard {
         expected_bytes,
         partial_download,
         split_mismatch,
+        architecture,
     }
 }
 
@@ -385,7 +417,7 @@ fn group(directory: &Path, first: &str, stem: &str, total: u32) -> LocalModelGro
             }
             None => {
                 problems.push(format!(
-                    "无法确定 {q} 文件对应的官方模型系列；{SUPPORTED_GGUFS}"
+                    "无法从文件名确定 {q} 文件对应的官方模型系列；如果这是 Strata 还没支持的新模型，{AWAIT_UPSTREAM}。{SUPPORTED_GGUFS}"
                 ));
                 ("unknown", None)
             }
@@ -398,6 +430,24 @@ fn group(directory: &Path, first: &str, stem: &str, total: u32) -> LocalModelGro
     } else {
         problems.push(format!("无法从文件名识别量化版本。{SUPPORTED_GGUFS}"));
         ("unknown", None)
+    };
+    // Second check: the first shard's own GGUF header. A file named like a supported model but holding another
+    // architecture (a new DeepSeek or Qwen release) would otherwise be handed to setup as a Qwen3.8 family.
+    let (kind, family) = match (kind, family) {
+        (kind @ ("official" | "renamed"), Some(family)) => {
+            let expected = family_architecture(&family);
+            match shards.first().and_then(|s| s.architecture.as_deref()) {
+                Some(found) if found != expected => {
+                    warnings.clear();
+                    problems.push(format!(
+                        "{first} 的 GGUF 架构是 {found}，不是 Strata 能运行的 {expected}（文件名看起来像 --family {family}）；这可能是 Strata 还没支持的新模型，{AWAIT_UPSTREAM}"
+                    ));
+                    ("unknown", None)
+                }
+                _ => (kind, Some(family)),
+            }
+        }
+        other => other,
     };
     if total > 1 && shards.first().is_some_and(|s| s.name != first) {
         problems.push(format!("请选择第 1 个分片（{}）所在的目录", names[0]));
@@ -1040,7 +1090,11 @@ mod tests {
     #[test]
     fn renamed_files_warn_and_unsupported_quants_explain_the_engine_limit() {
         let dir = tempfile::tempdir().unwrap();
-        gguf(&dir.path().join("my-qwen-IQ3_XXS.gguf"), BIG);
+        gguf(
+            &dir.path()
+                .join("my-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS.gguf"),
+            BIG,
+        );
         gguf(
             &dir.path()
                 .join("Qwen3.8-Flash-Next-UD-Q2_K_XL-00001-of-00001.gguf"),
@@ -1062,6 +1116,122 @@ mod tests {
                 && bad.problems[0].contains("UD-Q2_K_XL")
                 && bad.problems[0].contains("内核")
         );
+    }
+
+    #[test]
+    fn inferred_family_needs_the_model_name_like_the_community_catalogue() {
+        // Families Strata runs keep their renamed copies.
+        for (stem, quant, family) in [
+            ("my-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S", "IQ3_S", "qwen"),
+            ("Qwen3.8-Flash-Next-GSQ-RCO-Q2_0-copy", "Q2_0", "qwen"),
+            (
+                "Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS-v2",
+                "IQ2_XS",
+                "swift",
+            ),
+            ("Coder-Qwen3.8-Flash-Next-GSQ-RCO-IQ1_M", "IQ1_M", "coder"),
+            ("qwen3.8-flash-next-UD-Q4_K_XL", "UD-Q4_K_XL", "unsloth"),
+            ("Qwen3.8-Flash-Next-Q8_0-backup", "Q8_0", "unsloth"),
+            ("Qwen3.6-35B-A3B-UD-Q6_K_XL", "UD-Q6_K_XL", "qwen36"),
+        ] {
+            assert_eq!(inferred_family(stem, quant), Some(family), "{stem}");
+        }
+        // New models with a quantization Strata runs are not guessed into a Qwen3.8 family.
+        for (stem, quant) in [
+            ("DeepSeek-V4.1-Flash-1017-UD-Q4_K_XL", "UD-Q4_K_XL"),
+            ("DeepSeek-V4.1-Flash-1017-Q8_0", "Q8_0"),
+            ("Qwen4-Next-80B-A3B-IQ3_S", "IQ3_S"),
+            ("Qwen4-Next-80B-A3B-UD-Q4_K_XL", "UD-Q4_K_XL"),
+            ("my-qwen-IQ3_XXS", "IQ3_XXS"),
+            ("Qwen3.8-Flash-Next-IQ3_S", "IQ3_S"),
+            ("Qwen3.6-27B-UD-Q4_K_XL", "UD-Q4_K_XL"),
+        ] {
+            assert_eq!(inferred_family(stem, quant), None, "{stem}");
+        }
+    }
+
+    #[test]
+    fn new_models_are_unknown_and_wait_for_upstream() {
+        let dir = tempfile::tempdir().unwrap();
+        for i in 1..=2 {
+            gguf(
+                &dir.path().join(format!(
+                    "DeepSeek-V4.1-Flash-1017-UD-Q4_K_XL-{i:05}-of-00002.gguf"
+                )),
+                BIG,
+            );
+        }
+        gguf(&dir.path().join("Qwen4-Next-80B-A3B-IQ3_S.gguf"), BIG);
+        let found = scan(&dir.path().to_string_lossy()).unwrap();
+        assert_eq!(found.groups.len(), 2, "{found:?}");
+        for g in &found.groups {
+            assert_eq!(
+                (g.kind.as_str(), g.family.as_deref()),
+                ("unknown", None),
+                "{g:?}"
+            );
+            assert!(!g.installable && g.complete, "{g:?}");
+            assert!(
+                g.problems.iter().any(|p| p.contains(AWAIT_UPSTREAM)),
+                "{g:?}"
+            );
+        }
+        let request = LocalModelRequest {
+            gguf_directory: dir.path().to_string_lossy().into(),
+            mtp_path: None,
+        };
+        assert!(setup_group(&request, "unsloth", "UD-Q4_K_XL").is_err());
+        assert!(setup_group(&request, "qwen", "IQ3_S").is_err());
+    }
+
+    #[test]
+    fn a_flash_next_name_with_another_architecture_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        // Named like the official Unsloth upload, but the header says a DeepSeek architecture.
+        fixture::write_arch(
+            &dir.path()
+                .join("Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00001.gguf"),
+            "deepseek41",
+            None,
+            &[],
+            0,
+        );
+        // A renamed GSQ-RCO copy holding a new Qwen architecture.
+        fixture::write_arch(
+            &dir.path().join("my-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S.gguf"),
+            "qwen4next",
+            None,
+            &[],
+            0,
+        );
+        let found = scan(&dir.path().to_string_lossy()).unwrap();
+        assert_eq!(found.groups.len(), 2, "{found:?}");
+        for g in &found.groups {
+            assert_eq!(g.kind, "unknown", "{g:?}");
+            assert!(
+                !g.installable && g.family.is_none() && g.warnings.is_empty(),
+                "{g:?}"
+            );
+            assert!(
+                g.problems
+                    .iter()
+                    .any(|p| p.contains("GGUF 架构") && p.contains(AWAIT_UPSTREAM)),
+                "{g:?}"
+            );
+        }
+        // Qwen3.6 is qwen35moe: its own architecture passes, Flash-Next's does not.
+        let q36 = tempfile::tempdir().unwrap();
+        let name = "my-Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf";
+        fixture::write_arch(&q36.path().join(name), "qwen35moe", None, &[], 0);
+        let g = &scan(&q36.path().to_string_lossy()).unwrap().groups[0];
+        assert_eq!(
+            (g.kind.as_str(), g.family.as_deref()),
+            ("renamed", Some("qwen36")),
+            "{g:?}"
+        );
+        fixture::write_arch(&q36.path().join(name), "qwen4exp", None, &[], 0);
+        let g = &scan(&q36.path().to_string_lossy()).unwrap().groups[0];
+        assert_eq!(g.kind, "unknown", "{g:?}");
     }
 
     #[test]

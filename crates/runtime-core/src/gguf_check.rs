@@ -346,6 +346,17 @@ pub(crate) mod fixture {
     /// A GGUF v3 file with `split.no`/`split.count` (when given), a token array, and `tensors` laid out with
     /// 32-byte alignment. `cut` removes bytes from the end (a truncated copy).
     pub fn write(path: &Path, split: Option<(u16, u16)>, tensors: &[Tensor], cut: u64) -> u64 {
+        write_arch(path, "qwen4exp", split, tensors, cut)
+    }
+
+    /// [`write`] with another `general.architecture` (Qwen3.8-Flash-Next's is `qwen4exp`).
+    pub fn write_arch(
+        path: &Path,
+        architecture: &str,
+        split: Option<(u16, u16)>,
+        tensors: &[Tensor],
+        cut: u64,
+    ) -> u64 {
         let mut out = Vec::new();
         out.extend(b"GGUF");
         out.extend(3_u32.to_le_bytes());
@@ -354,7 +365,7 @@ pub(crate) mod fixture {
         out.extend((kvs as u64).to_le_bytes());
         string(&mut out, "general.architecture");
         out.extend(8_u32.to_le_bytes());
-        string(&mut out, "qwen3next");
+        string(&mut out, architecture);
         string(&mut out, "tokenizer.ggml.tokens");
         out.extend(9_u32.to_le_bytes());
         out.extend(8_u32.to_le_bytes());

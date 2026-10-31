@@ -621,6 +621,115 @@ pub fn suppress_hard_error_dialogs() {
     }
 }
 
+/// Windows (upstream #4733): a process started from a low-priority parent (an IDE or coding-agent terminal, a
+/// service) inherits Low or Very Low I/O priority and an Idle/Below-normal priority class, and so does every engine
+/// it starts: PLE reads ran about 15 times slower and decode lost 14%. Raise the current process back to Normal
+/// I/O priority and, when it is below normal, the Normal priority class. A higher setting chosen by the user is kept.
+/// Elsewhere this does nothing.
+pub fn restore_normal_priority() -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        // SAFETY: the pseudo handle of the current process is always valid.
+        unsafe {
+            windows_priority::normalise(windows_sys::Win32::System::Threading::GetCurrentProcess())
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+mod windows_priority {
+    use std::ffi::c_void;
+    use windows_sys::Win32::{
+        Foundation::HANDLE,
+        System::{
+            LibraryLoader::{GetModuleHandleW, GetProcAddress},
+            Threading::{
+                GetPriorityClass, SetPriorityClass, BELOW_NORMAL_PRIORITY_CLASS,
+                IDLE_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS,
+            },
+        },
+    };
+
+    /// PROCESSINFOCLASS ProcessIoPriority; IO_PRIORITY_HINT IoPriorityNormal.
+    const PROCESS_IO_PRIORITY: i32 = 33;
+    const IO_PRIORITY_NORMAL: u32 = 2;
+    type Query = unsafe extern "system" fn(HANDLE, i32, *mut c_void, u32, *mut u32) -> i32;
+    type Set = unsafe extern "system" fn(HANDLE, i32, *const c_void, u32) -> i32;
+
+    unsafe fn ntdll(name: &std::ffi::CStr) -> Option<unsafe extern "system" fn() -> isize> {
+        let module: Vec<u16> = "ntdll.dll\0".encode_utf16().collect();
+        let handle = GetModuleHandleW(module.as_ptr());
+        if handle.is_null() {
+            return None;
+        }
+        GetProcAddress(handle, name.as_ptr().cast())
+    }
+
+    /// Normal I/O priority and at least the Normal priority class for `process` (needs query and
+    /// set-information access). Every step is tried; the failures are returned together.
+    pub(super) unsafe fn normalise(process: HANDLE) -> Result<(), String> {
+        let mut failures = Vec::new();
+        let class = GetPriorityClass(process);
+        if class == 0 {
+            failures.push(format!(
+                "读取 CPU 优先级失败: {}",
+                std::io::Error::last_os_error()
+            ));
+        } else if (class == IDLE_PRIORITY_CLASS || class == BELOW_NORMAL_PRIORITY_CLASS)
+            && SetPriorityClass(process, NORMAL_PRIORITY_CLASS) == 0
+        {
+            failures.push(format!(
+                "恢复正常 CPU 优先级失败: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+        match (
+            ntdll(c"NtQueryInformationProcess"),
+            ntdll(c"NtSetInformationProcess"),
+        ) {
+            (Some(query), Some(set)) => {
+                let query: Query = std::mem::transmute(query);
+                let set: Set = std::mem::transmute(set);
+                let mut current: u32 = 0;
+                let mut returned = 0;
+                let status = query(
+                    process,
+                    PROCESS_IO_PRIORITY,
+                    (&mut current as *mut u32).cast(),
+                    4,
+                    &mut returned,
+                );
+                // Unknown (query failed) or below Normal: set Normal. High needs a privilege and is kept.
+                if status < 0 || current < IO_PRIORITY_NORMAL {
+                    let normal = IO_PRIORITY_NORMAL;
+                    let status = set(
+                        process,
+                        PROCESS_IO_PRIORITY,
+                        (&normal as *const u32).cast(),
+                        4,
+                    );
+                    if status < 0 {
+                        failures.push(format!(
+                            "恢复正常 I/O 优先级失败（系统状态 0x{:08X}）",
+                            status as u32
+                        ));
+                    }
+                }
+            }
+            _ => failures.push("系统 I/O 优先级接口不可用".into()),
+        }
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(failures.join("；"))
+        }
+    }
+}
+
 pub fn hidden(command: &mut Command) {
     #[cfg(windows)]
     {
@@ -905,6 +1014,16 @@ impl OwnedProcess {
                         windows_sys::Win32::Foundation::CloseHandle(handle);
                     }
                     return Err(format!("无法建立受管进程树，启动已取消: {error}"));
+                }
+                // Still suspended: give the child Normal I/O and CPU priority even if this process could not
+                // restore its own (upstream #4733). A failure is logged; the process still starts.
+                if let Err(error) = windows_priority::normalise(child.as_raw_handle() as _) {
+                    log(
+                        &logs,
+                        id,
+                        "warn",
+                        format!("无法把进程优先级恢复为正常，可能读盘变慢: {error}"),
+                    );
                 }
                 use windows_sys::Win32::System::{Diagnostics::ToolHelp::*, Threading::*};
                 let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
