@@ -5,6 +5,8 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+## [0.2.32] - 2026-10-31
+
 ### 中文
 
 - **Windows 上引擎不再继承低读盘优先级**：从编辑器、AI 编程助手终端等低优先级程序里启动 Manager 时，后台和它拉起的引擎会照搬低 I/O 优先级（CPU 也可能是「低于正常」），上游 #4733 实测读模型慢约 15 倍、生成速度掉 14%。现在后台启动时把自己的 I/O 优先级恢复为正常、CPU 优先级从「低/低于正常」恢复为正常，每个引擎和服务在挂起启动时也再设一次；用户自己调高的优先级不动。设置失败只记日志，不影响启动。macOS、Linux 不变。
