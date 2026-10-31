@@ -367,6 +367,7 @@ export const updateRuntimeZip = (installDir: string, assetName?: string, stopCur
   ...(download.localArchivePath?.trim() ? { localArchivePath: download.localArchivePath.trim() } : {}),
   ...(download.downloadUrl?.trim() ? { downloadUrl: download.downloadUrl.trim() } : {}),
   ...(download.targetVersion?.trim() ? { targetVersion: download.targetVersion.trim() } : {}),
+  ...(download.source === 'auto' && !download.localArchivePath?.trim() && !download.downloadUrl?.trim() ? { source: 'auto' } : {}),
 });
 /** Every published Strata release (cached for 6 h by the background service). */
 export const runtimeReleaseVersions = (force = false): Promise<import('./runtime-versions').RuntimeReleaseVersions> => native('runtime_release_versions', { force });

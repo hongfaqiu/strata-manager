@@ -174,6 +174,15 @@ try {
   await run('download step in dark theme', 'onboarding-app.html?state=download&theme=dark#guide', async page => {
     await page.getByText('Swift 1.5 IQ3_S 下载中 31.2 / 83.6 GB').waitFor();
   }, { theme: 'dark', shot: '05-download-dark.png' });
+  await run('download step shows the engine pre-download source and bytes', 'onboarding-app.html?state=download-engine#guide', async page => {
+    await page.getByText('12.4 MiB / 37.7 MiB（32%）· 4.1 MiB/s', { exact: true }).first().waitFor();
+    assert.equal(await page.locator('.ob-bignum').innerText(), '32%');
+    assert.match(await page.getByTestId('setup-download-source').innerText(), /gh-proxy\.org[\s\S]*测速最快/);
+    assert.equal(await page.getByTestId('setup-prefetch-fallback').count(), 0);
+  }, { shot: '05-download-engine.png' });
+  await run('download step explains the GitHub fallback when the pre-download fails', 'onboarding-app.html?state=download-engine-fallback#guide', async page => {
+    await page.getByTestId('setup-prefetch-fallback').getByText('正在从 GitHub 下载引擎包，可能较慢，可在下载设置切换来源').waitFor();
+  }, { shot: '05-download-engine-fallback.png' });
   await run('start step starts the registered profile and shows startup logs', 'onboarding-app.html?state=start#guide', async page => {
     await page.waitForFunction(() => document.querySelector('[data-testid="onboarding"]')?.dataset.step === 'start');
     await page.getByRole('button', { name: '启动并加载' }).click();

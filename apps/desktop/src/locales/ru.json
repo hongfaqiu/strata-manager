@@ -753,6 +753,7 @@
   "ovIntegratedGpu": "Встроенная · не в сумме",
   "appUpdateSource": "Источник загрузки",
   "appUpdateSourceShared": "Общий с загрузкой движков",
+  "appUpdateSourceAutoOption": "Автоматически (самый быстрый) (по умолчанию)",
   "appUpdateSourceOfficial": "Официальный GitHub",
   "appUpdateSourceCustom": "Свой",
   "appUpdateSourceLocal": "Локальный пакет (только движок)",

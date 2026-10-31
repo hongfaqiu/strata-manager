@@ -753,6 +753,7 @@
   "ovIntegratedGpu": "内蔵 GPU · 合計に含めない",
   "appUpdateSource": "ダウンロード元",
   "appUpdateSourceShared": "エンジンのダウンロードと共通",
+  "appUpdateSourceAutoOption": "自動（最速を測定）（既定）",
   "appUpdateSourceOfficial": "公式 GitHub",
   "appUpdateSourceCustom": "カスタム",
   "appUpdateSourceLocal": "ローカルパッケージ（エンジンのみ）",

@@ -52,12 +52,12 @@ export function RuntimeDownloadSettings({ language, desktop, release, releaseLoa
   };
   const selection = draft?.key === releaseKey ? draft.value : initialDraft();
   const selectedAsset = selection.assetName ? release?.assets.find(asset => asset.name === selection.assetName) : automaticAsset;
-  const sourceValue = selection.mode === 'official' ? 'official' : selection.mode === 'local' ? 'local' : selection.sourceId || 'custom';
+  const sourceValue = selection.mode === 'auto' || selection.mode === 'official' ? selection.mode : selection.mode === 'local' ? 'local' : selection.sourceId || 'custom';
   const shownAssets = selectedAsset ? [selectedAsset] : release?.assets ?? [];
   const busy = saving || testing || browsing;
   const disabled = !desktop || preferences.isPending || busy;
-  const candidate: core.RuntimeDownloadPreferences = selection.mode === 'official'
-    ? { mode: 'official', ...(selection.assetName ? { assetName: selection.assetName } : {}) }
+  const candidate: core.RuntimeDownloadPreferences = selection.mode === 'auto' || selection.mode === 'official'
+    ? { mode: selection.mode, ...(selection.assetName ? { assetName: selection.assetName } : {}) }
     : { mode: selection.mode, ...(selection.assetName ? { assetName: selection.assetName } : {}), releaseVersion: version, ...(selection.mode === 'local' ? { localArchivePath: selection.localArchivePath?.trim() } : selection.sourceId ? { sourceId: selection.sourceId } : { mirrorUrl: selection.mirrorUrl?.trim() }) };
   let resolved: ReturnType<typeof core.resolveRuntimeDownloadPreferences> | undefined;
   let validation = '';
@@ -66,15 +66,15 @@ export function RuntimeDownloadSettings({ language, desktop, release, releaseLoa
     catch (failure) { validation = core.normalizeError(failure).message; }
   }
   if (!validation && selection.mode === 'mirror' && selectedAsset && candidate.mirrorUrl && resolved?.requiresSelection) validation = zh ? '请填写无账号密码或片段的完整 HTTPS 下载地址，模板仅支持 {url}、{version}、{asset}。' : 'Enter a complete HTTPS download URL without credentials or a fragment. Templates support only {url}, {version} and {asset}.';
-  const sourceReady = selection.mode === 'official' && (!selection.assetName || !!selectedAsset) || !!resolved && !resolved.requiresSelection && !!selectedAsset;
-  const canSave = !disabled && !preferences.error && sourceReady && (selection.mode === 'official' || !!release);
+  const sourceReady = (selection.mode === 'auto' || selection.mode === 'official') && (!selection.assetName || !!selectedAsset) || !!resolved && !resolved.requiresSelection && !!selectedAsset;
+  const canSave = !disabled && !preferences.error && sourceReady && (selection.mode === 'auto' || selection.mode === 'official' || !!release);
   const canTest = !disabled && !preferences.error && sourceReady && !!selectedAsset && !!resolved;
   const change = (patch: Partial<core.RuntimeDownloadPreferences>) => {
     if (disabled || operation.current || currentRelease.current !== releaseKey) return;
     setDraft({ key: releaseKey, value: { ...selection, ...patch } }); setResult(null); setError(''); setMessage('');
   };
   const chooseAsset = (assetName: string) => change({ assetName: assetName || undefined, localArchivePath: '', ...(!hasTemplate(selection.mirrorUrl) ? { mirrorUrl: '' } : {}) });
-  const chooseSource = (source: string) => change(source === 'official' ? { mode: 'official', sourceId: undefined } : source === 'local' ? { mode: 'local', sourceId: undefined } : source === 'custom' ? { mode: 'mirror', sourceId: undefined } : { mode: 'mirror', sourceId: source });
+  const chooseSource = (source: string) => change(source === 'auto' || source === 'official' ? { mode: source, sourceId: undefined } : source === 'local' ? { mode: 'local', sourceId: undefined } : source === 'custom' ? { mode: 'mirror', sourceId: undefined } : { mode: 'mirror', sourceId: source });
   const browse = async () => {
     if (disabled || operation.current || currentRelease.current !== releaseKey || selection.mode !== 'local') return;
     const target = releaseKey; operation.current = true; setBrowsing(true); setError(''); setMessage('');
@@ -87,12 +87,12 @@ export function RuntimeDownloadSettings({ language, desktop, release, releaseLoa
   };
   const save = async (reset = false) => {
     if (operation.current || currentRelease.current !== releaseKey || !desktop || (!reset && !canSave)) return;
-    const target = releaseKey, value: core.RuntimeDownloadPreferences = reset ? { mode: 'official' } : candidate;
+    const target = releaseKey, value: core.RuntimeDownloadPreferences = reset ? { ...core.RUNTIME_DOWNLOAD_DEFAULTS } : candidate;
     operation.current = true; setSaving(true); setError(''); setMessage('');
     try {
       await core.saveRuntimeDownloadPreferences(value);
       query.setQueryData(preferencesKey, value);
-      if (alive.current && currentRelease.current === target) { setDraft(null); setResult(null); setMessage(zh ? reset ? '已恢复官方下载。' : '下载设置已保存。' : reset ? 'Official download restored.' : 'Download settings saved.'); }
+      if (alive.current && currentRelease.current === target) { setDraft(null); setResult(null); setMessage(zh ? reset ? '已恢复默认：自动测速选最快来源。' : '下载设置已保存。' : reset ? 'Default restored: the fastest source is picked automatically.' : 'Download settings saved.'); }
     } catch (failure) { if (alive.current && currentRelease.current === target) setError(core.normalizeError(failure).message); }
     finally { operation.current = false; if (alive.current) setSaving(false); }
   };
@@ -110,7 +110,7 @@ export function RuntimeDownloadSettings({ language, desktop, release, releaseLoa
     catch { if (alive.current) setError(zh ? '无法自动复制，请选中内容手动复制。' : 'Automatic copying is unavailable. Select and copy the text manually.'); }
   };
   const savedMode = preferences.data?.mode ?? core.RUNTIME_DOWNLOAD_DEFAULTS.mode;
-  const modeSummary = savedMode === 'local' ? zh ? '本地引擎包' : 'Local package' : savedMode === 'mirror' ? core.runtimeDownloadSources.find(source => source.id === preferences.data?.sourceId)?.label ?? (zh ? '自定义' : 'Custom') : zh ? '官方' : 'Official';
+  const modeSummary = savedMode === 'local' ? zh ? '本地引擎包' : 'Local package' : savedMode === 'mirror' ? core.runtimeDownloadSources.find(source => source.id === preferences.data?.sourceId)?.label ?? (zh ? '自定义' : 'Custom') : savedMode === 'auto' ? zh ? '自动' : 'Automatic' : zh ? '官方' : 'Official';
   const summary = preferences.error || preferenceProblem ? zh ? '读取失败' : 'Read failed' : preferences.isPending && desktop ? zh ? '读取中…' : 'Loading…' : `${modeSummary}${savedRequiresSelection ? zh ? ' · 需重选' : ' · Reselect' : ''}`;
   return <section className="runtime-download-settings" aria-label={zh ? '下载设置与测试' : 'Download settings and test'}>
     <details className="runtime-download-settings-details">
@@ -118,14 +118,14 @@ export function RuntimeDownloadSettings({ language, desktop, release, releaseLoa
       <div className="runtime-download-settings-body">
         {preferences.isPending && desktop && <p role="status">{zh ? '正在读取下载设置…' : 'Loading download settings…'}</p>}
         {!desktop && <p role="status">{zh ? '请在桌面应用中设置。' : 'Open the desktop app to configure downloads.'}</p>}
-        {preferences.error && <div className="notice error" role="alert"><p>{zh ? '设置读取失败，请重试或恢复官方下载。' : 'Settings could not be read; retry or restore official downloading.'}</p><p>{core.normalizeError(preferences.error).message}</p><button type="button" disabled={busy} onClick={() => void preferences.refetch()}>{zh ? '重新读取下载设置' : 'Reload download settings'}</button></div>}
-        {preferenceProblem && <p className="notice error" role="alert">{zh ? '设置无效，请重新设置或恢复官方下载：' : 'Invalid settings; reconfigure or restore official downloading: '}{preferenceProblem}</p>}
+        {preferences.error && <div className="notice error" role="alert"><p>{zh ? '设置读取失败，请重试或恢复默认。' : 'Settings could not be read; retry or restore the default.'}</p><p>{core.normalizeError(preferences.error).message}</p><button type="button" disabled={busy} onClick={() => void preferences.refetch()}>{zh ? '重新读取下载设置' : 'Reload download settings'}</button></div>}
+        {preferenceProblem && <p className="notice error" role="alert">{zh ? '设置无效，请重新设置或恢复默认：' : 'Invalid settings; reconfigure or restore the default: '}{preferenceProblem}</p>}
         {savedRequiresSelection && draft?.key !== releaseKey && <p className="notice warning" role="status">{zh ? '下载来源已过期，请选择当前包和来源后保存。' : 'The source is outdated; select the current package and source, then save.'}</p>}
         <fieldset disabled={disabled || !!preferences.error}>
           <legend>{zh ? '下载方式' : 'Download source'}</legend>
-          <div className="runtime-download-settings-field"><span>{zh ? '下载来源' : 'Download source'}</span><Dropdown ariaLabel={zh ? '下载方式' : 'Download source'} value={sourceValue} disabled={disabled || !!preferences.error} onValueChange={chooseSource} options={[{ value: 'official', label: zh ? '官方自动下载' : 'Official download' }, ...core.runtimeDownloadSources.map(source => ({ value: source.id, label: source.id === core.RUNTIME_DOWNLOAD_DEFAULTS.sourceId ? `${source.label}${zh ? '（默认）' : ' (default)'}` : source.label })), { value: 'custom', label: zh ? '自定义 HTTPS' : 'Custom HTTPS' }, { value: 'local', label: zh ? '本地已下载的引擎包' : 'Downloaded package' }]}/></div>
+          <div className="runtime-download-settings-field"><span>{zh ? '下载来源' : 'Download source'}</span><Dropdown ariaLabel={zh ? '下载方式' : 'Download source'} value={sourceValue} disabled={disabled || !!preferences.error} onValueChange={chooseSource} options={[{ value: 'auto', label: zh ? '自动（测速选最快）（默认）' : 'Automatic (fastest) (default)' }, { value: 'official', label: zh ? '官方 GitHub' : 'Official GitHub' }, ...core.runtimeDownloadSources.map(source => ({ value: source.id, label: source.label })), { value: 'custom', label: zh ? '自定义 HTTPS' : 'Custom HTTPS' }, { value: 'local', label: zh ? '本地已下载的引擎包' : 'Downloaded package' }]}/></div>
           <div className="runtime-download-settings-field"><span>{zh ? '官方更新包' : 'Official update package'}</span><Dropdown ariaLabel={zh ? '下载设置官方包' : 'Download settings official package'} value={selection.assetName ?? ''} disabled={disabled || !!preferences.error} onValueChange={chooseAsset} options={[{ value: '', label: zh ? '自动匹配当前引擎' : 'Match the current engine' }, ...(release?.assets ?? []).map(asset => ({ value: asset.name, label: core.runtimeAssetLabel(asset, zh) }))]}/></div>
-          {selection.mode !== 'local' && <p className="runtime-download-settings-hint" data-testid="runtime-download-fallback">{selection.mode === 'official' ? zh ? '检查更新和下载直接连接 GitHub；检查更新失败时再试国内镜像。' : 'Update checks and downloads go to GitHub; update checks retry through the mirror if GitHub fails.' : zh ? '检查更新和下载优先走镜像，镜像失败时自动改用 GitHub。无论来源，都按官方 SHA256 和签名清单校验。' : 'Update checks and downloads use the mirror first and fall back to GitHub. Every source is verified against the official SHA-256 and signed feed.'}</p>}
+          {selection.mode !== 'local' && <p className="runtime-download-settings-hint" data-testid="runtime-download-fallback">{selection.mode === 'auto' ? zh ? `先测速 ${core.runtimeDownloadSources.map(source => source.label).join('、')} 和 GitHub，从最快的下载，失败依次换下一个，GitHub 兜底。都按官方 SHA256 校验。` : `Speed-tests ${core.runtimeDownloadSources.map(source => source.label).join(', ')} and GitHub, downloads from the fastest, tries the next on failure, GitHub last. Always verified against the official SHA-256.` : selection.mode === 'official' ? zh ? '检查更新和下载直接连接 GitHub；检查更新失败时再试国内镜像。' : 'Update checks and downloads go to GitHub; update checks retry through the mirror if GitHub fails.' : zh ? '检查更新和下载优先走镜像，镜像失败时自动改用 GitHub。无论来源，都按官方 SHA256 和签名清单校验。' : 'Update checks and downloads use the mirror first and fall back to GitHub. Every source is verified against the official SHA-256 and signed feed.'}</p>}
           {!selection.assetName && <p className={automatic.isError || automatic.isSuccess && !automaticAsset ? 'runtime-download-settings-validation' : 'runtime-download-settings-hint'} role={automatic.isError || automatic.isSuccess && !automaticAsset ? 'alert' : 'status'}>{automaticAsset ? `${zh ? '自动匹配' : 'Auto matched'} · ${core.runtimeAssetLabel(automaticAsset, zh)}` : automatic.isError ? zh ? '自动匹配失败，请手动选择包。' : 'Automatic matching failed; select a package manually.' : automatic.isSuccess ? zh ? '包信息已变化，请检查更新或手动选择包。' : 'Package details changed; check for updates or select a package.' : runtime && release?.assets.length ? zh ? '正在匹配当前引擎…' : 'Matching the current engine…' : zh ? '可手动选择更新包。' : 'Select a package manually.'}</p>}
           {!release && <p role="status" className="runtime-download-settings-hint">{releaseLoading ? zh ? '正在读取发布信息…' : 'Loading release information…' : zh ? '请先检查更新。' : 'Check for updates first.'}</p>}
           {!!release && !release.assets.length && <p className="runtime-download-settings-hint">{zh ? '当前平台暂无可安装的引擎包。' : 'No installable engine package is available for this platform.'}</p>}
@@ -140,7 +140,7 @@ export function RuntimeDownloadSettings({ language, desktop, release, releaseLoa
             {selection.mode === 'mirror' && <>{!selection.sourceId && <><p>{zh ? '模板支持 {url}（完整官方链接）、{version}（版本）、{asset}（文件名），版本和文件名会编码。' : 'Templates support {url} (full official URL), {version} and {asset}, with version and filename encoded.'}</p><p>{zh ? '模板可复用于后续版本的同名包，固定地址仅用于当前版本。' : 'Templates can track later releases with the same package name; fixed URLs apply to this release.'}</p></>}{resolved?.download.downloadUrl && <code className="runtime-download-settings-resolved">{zh ? '本次地址：' : 'Resolved URL: '}{resolved.download.downloadUrl}</code>}</>}
           </div></details>
         </fieldset>
-        <div className="runtime-download-settings-actions"><button type="button" className="primary" aria-label={zh ? '保存下载设置' : 'Save download settings'} disabled={!canSave} onClick={() => void save()}>{saving ? <LoaderCircle size={14} className="spin"/> : <Save size={14}/>} {zh ? '保存设置' : 'Save settings'}</button><button type="button" aria-label={zh ? '测试下载来源' : 'Test download source'} disabled={!canTest} onClick={() => void testSource()}>{testing ? <LoaderCircle size={14} className="spin"/> : <FlaskConical size={14}/>} {testing ? zh ? '正在测试…' : 'Testing…' : zh ? '测试' : 'Test'}</button><button type="button" className="runtime-download-settings-reset" aria-label={zh ? '恢复官方自动下载' : 'Restore official download'} disabled={!desktop || busy || preferences.isPending} onClick={() => void save(true)}>{zh ? '恢复官方' : 'Restore official'}</button></div>
+        <div className="runtime-download-settings-actions"><button type="button" className="primary" aria-label={zh ? '保存下载设置' : 'Save download settings'} disabled={!canSave} onClick={() => void save()}>{saving ? <LoaderCircle size={14} className="spin"/> : <Save size={14}/>} {zh ? '保存设置' : 'Save settings'}</button><button type="button" aria-label={zh ? '测试下载来源' : 'Test download source'} disabled={!canTest} onClick={() => void testSource()}>{testing ? <LoaderCircle size={14} className="spin"/> : <FlaskConical size={14}/>} {testing ? zh ? '正在测试…' : 'Testing…' : zh ? '测试' : 'Test'}</button><button type="button" className="runtime-download-settings-reset" aria-label={zh ? '一键恢复默认下载设置' : 'Restore default download settings'} disabled={!desktop || busy || preferences.isPending} onClick={() => void save(true)}>{zh ? '恢复默认' : 'Restore default'}</button></div>
         {message && <p role="status" className="runtime-download-settings-hint">{message}</p>}
         {error && <p className="notice error" role="alert">{error}</p>}
         {result && <div className="runtime-download-settings-result" role="status"><strong>{result.sha256Verified ? zh ? '文件校验通过' : 'File verified' : zh ? `连接正常${result.rangeSupported != null ? result.rangeSupported ? ' · 支持续传' : ' · 不支持续传' : ''}` : `Connected${result.rangeSupported != null ? result.rangeSupported ? ' · Resume supported' : ' · Resume unavailable' : ''}`}</strong>{!result.sha256Verified && <p>{zh ? '最多 64 KiB 样本，安装时完整校验。' : 'Up to 64 KiB sampled; full verification during installation.'}</p>}<details className="runtime-download-settings-check-details"><summary>{zh ? '测试详情' : 'Test details'}</summary><p>{result.sha256Verified ? zh ? '本地完整 SHA256 校验通过。' : 'Full local SHA256 verification passed.' : zh ? '仅验证网络样本，完整文件 SHA256 尚未验证。' : 'Only a network sample was checked; the full file SHA256 remains unverified.'}</p><p>{zh ? '已读取' : 'Read'} {result.checkedBytes.toLocaleString(language)} {zh ? '字节' : 'bytes'}{result.totalBytes != null ? ` / ${result.totalBytes.toLocaleString(language)} ${zh ? '字节' : 'bytes'}` : ''}</p>{result.rangeSupported != null && <p>{zh ? '断点续传（Range）' : 'Resume support (Range)'}: {result.rangeSupported ? zh ? '支持' : 'Supported' : zh ? '服务器未提供支持' : 'Not supported by this server'}</p>}</details></div>}

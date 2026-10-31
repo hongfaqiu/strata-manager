@@ -6,7 +6,7 @@ const runtimeProfile = { id: 'runtime-1', name: 'Strata', baseUrl: 'http://127.0
 const modelProfile = { id: 'swift-iq3', name: 'Swift 1.5 IQ3_S', baseUrl: 'http://127.0.0.1:8080', installDir: runtimeProfile.installDir, pythonPath: runtimeProfile.pythonPath, configPath: 'C:\\Users\\fixture\\AppData\\Strata Manager\\runtime\\configs\\swift-1.5-iq3_s.json', managed: true };
 const progress = (patch) => ({ schemaVersion: 1, status: 'active', path: 'install', scene: 'chat', autoStart: false, startedAt: now - 900000, updatedAt: now - 1000, ...patch });
 const environment = { os: 'Windows 11 Pro 24H2', arch: 'x86_64', cpuName: 'AMD Ryzen 9 7950X', totalMemory: 96 * GB, availableMemory: 71 * GB, gpus: ['NVIDIA GeForce RTX 4090, 560.94, 24564 MiB'], python: null, git: null, appVersion: '0.1.11' };
-const state = { profiles: [], candidates: [], tasks: [], handoffs: [], runtime: {}, running: {}, loaded: {}, store: { settings: { language: 'zh-CN', theme: params.get('theme') || 'light', pollInterval: 60000, autoCheckUpdates: false, closeToTray: false, closeToTrayRevision: 1, skipExitConfirmation: false, languagePreference: 'zh-CN' } }, logs: {}, holdStart: false };
+const state = { profiles: [], candidates: [], tasks: [], handoffs: [], runtime: {}, running: {}, loaded: {}, store: { settings: { language: params.get('lang') || 'zh-CN', theme: params.get('theme') || 'light', pollInterval: 60000, autoCheckUpdates: false, closeToTray: false, closeToTrayRevision: 1, skipExitConfirmation: false, languagePreference: params.get('lang') || 'zh-CN' } }, logs: {}, holdStart: false };
 const readyRuntime = () => { state.runtime = { detectedRuntimes: [{ installDir: runtimeProfile.installDir, pythonPath: runtimeProfile.pythonPath, runtimeVersion: '0.1.44', readiness: 'ready', profile: runtimeProfile }] }; };
 const log = (message, offset) => ({ timestamp: now - offset, level: 'INFO', message });
 if (scenario === 'environment') { environment.gpus = []; environment.totalMemory = 64 * GB; state.store.onboardingV1 = progress({}); }
@@ -31,6 +31,27 @@ if (scenario === 'download' || scenario === 'overview') {
     { id: 'setup-1', kind: 'setup', state: 'running', message: 'Swift 1.5 IQ3_S 下载中 31.2 / 83.6 GB', startedAt: now - 722000 }];
   state.handoffs = [{ taskId: 'setup-1', status: 'pending' }];
   state.logs['setup-1'] = [log('setup.py --model swift --quant IQ3_S --context 131072', 720000), log('镜像源：hf-mirror.com', 719000), log('swift-1.5-IQ3_S-00001-of-00004.gguf 已完成并校验', 300000), log('swift-1.5-IQ3_S-00002-of-00004.gguf 下载中 31.2 / 83.6 GB · 68 MB/s', 2000)];
+}
+// ?state=download-engine: step 4 pre-download of the llama.cpp source through the fastest mirror.
+// ?state=download-engine-fallback: no mirror worked, the installer downloads from GitHub itself.
+if (scenario === 'download-engine' || scenario === 'download-engine-fallback') {
+  readyRuntime();
+  const fallback = scenario === 'download-engine-fallback';
+  state.store.onboardingV1 = progress({ runtimeTaskId: 'rt-1', setupTaskId: 'setup-1', selection: { family: 'qwen', quant: 'IQ3_S', context: 131072, images: false } });
+  state.tasks = [{ id: 'rt-1', kind: 'install-runtime', state: 'completed', message: '运行环境已就绪', startedAt: now - 1700000, finishedAt: now - 1300000 },
+    { id: 'setup-1', kind: 'setup', state: 'running', message: fallback ? '=== Step 4: the Strata engine ===' : '12.4 MiB / 37.7 MiB（32%）· 4.1 MiB/s', startedAt: now - 96000 }];
+  state.handoffs = [{ taskId: 'setup-1', status: 'pending' }];
+  state.logs['setup-1'] = [log('setup.py --model qwen --quant IQ3_S --context 131072', 95000),
+    log('引擎预下载：检查第 4 步（Strata 引擎）需要的文件 / Pre-download: checking what step 4 (the Strata engine) needs', 94000),
+    log(fallback ? '下载来源测速：gh-proxy.org 不可用 · ghproxy.net 不可用 · GitHub 1840 ms / Source speed test: gh-proxy.org unavailable · ghproxy.net unavailable · GitHub 1840 ms' : '下载来源测速：gh-proxy.org 278 ms · ghproxy.net 不可用 · GitHub 578 ms / Source speed test: gh-proxy.org 278 ms · ghproxy.net unavailable · GitHub 578 ms', 93000),
+    ...(fallback ? [
+      log('下载来源：GitHub（测速最快）· llama.cpp 源码 / Download source: GitHub (fastest) · llama.cpp source', 92000),
+      { ...log('预下载未完成：没能预先下载 llama.cpp 源码（GitHub 下载中断: connection reset）。正在从 GitHub 下载引擎包，可能较慢，可在「下载设置」切换来源 / Pre-download failed for the llama.cpp source. Downloading the engine package from GitHub, which may be slow; you can switch the source in Download settings', 30000), level: 'WARN' },
+      log('=== Step 4: the Strata engine ===', 29000),
+    ] : [
+      log('下载来源：gh-proxy.org（测速最快）· llama.cpp 源码 / Download source: gh-proxy.org (fastest) · llama.cpp source', 92000),
+      log('12.4 MiB / 37.7 MiB（32%）· 4.1 MiB/s', 2000),
+    ])];
 }
 if (scenario === 'start' || scenario === 'ready') {
   readyRuntime();

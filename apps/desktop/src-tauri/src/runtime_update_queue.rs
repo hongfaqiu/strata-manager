@@ -332,7 +332,7 @@ async fn health(ipc: &SupervisorClient, profile: &ServiceProfile) -> Result<Valu
 fn backend_params(record: &Record) -> Value {
     // The legacy bridge already stopped the specifically approved services.
     // A newly appearing service must never be stopped by the subsequent ZIP task.
-    json!({"installDir": record.install_dir, "assetName": record.asset_name, "requestId": record.task.id, "stopCurrentService": false, "localArchivePath": record.download.local_archive_path, "downloadUrl": record.download.download_url, "targetVersion": record.download.target_version})
+    json!({"installDir": record.install_dir, "assetName": record.asset_name, "requestId": record.task.id, "stopCurrentService": false, "localArchivePath": record.download.local_archive_path, "downloadUrl": record.download.download_url, "targetVersion": record.download.target_version, "source": record.download.source})
 }
 fn backend_method(download: &RuntimeZipDownloadOptions) -> &'static str {
     // A background service that predates version choice must refuse, not install the latest.
@@ -415,7 +415,7 @@ async fn start_with_download_probe(
         return Err("此 Strata 仍有无法确认归属的外部服务；本次更新不会自动停止它".into());
     }
     let request_id = uuid::Uuid::new_v4().to_string();
-    let params = json!({"installDir": runtime, "assetName": asset_name, "requestId": request_id, "stopCurrentService": stop_current_service, "localArchivePath": download.local_archive_path, "downloadUrl": download.download_url, "targetVersion": download.target_version});
+    let params = json!({"installDir": runtime, "assetName": asset_name, "requestId": request_id, "stopCurrentService": stop_current_service, "localArchivePath": download.local_archive_path, "downloadUrl": download.download_url, "targetVersion": download.target_version, "source": download.source});
     match strata_local_ipc::call(&ipc.data_dir, backend_method(&download), params).await {
         Ok(task) => return Ok(task),
         Err(error) if error.code == "unknown_method" && download.target_version.is_some() => {
@@ -1011,6 +1011,7 @@ mod tests {
                 download_url: (!local)
                     .then(|| "https://mirror.example/strata-windows-x64.zip".into()),
                 target_version: None,
+                source: None,
             };
             let (client, state, stop, server) = fixture(temp.path(), &runtime, false).await;
             let task = start_with_download_probe(
@@ -1037,6 +1038,7 @@ mod tests {
                         local_archive_path: Some(other.to_string_lossy().into()),
                         download_url: None,
                         target_version: None,
+                        source: None,
                     },
                     safe_probe,
                 )
@@ -1097,6 +1099,7 @@ mod tests {
             local_archive_path: None,
             download_url: Some("https://mirror.example/strata-windows-x64.zip".into()),
             target_version: None,
+            source: None,
         };
         let first = start_with_download_probe(
             &client,
@@ -1126,11 +1129,13 @@ mod tests {
                 local_archive_path: None,
                 download_url: Some("https://another.example/strata-windows-x64.zip".into()),
                 target_version: None,
+                source: None,
             },
             RuntimeZipDownloadOptions {
                 local_archive_path: Some(second_archive.to_string_lossy().into()),
                 download_url: None,
                 target_version: None,
+                source: None,
             },
             RuntimeZipDownloadOptions::default(),
         ] {
@@ -1165,6 +1170,7 @@ mod tests {
             local_archive_path: Some(archive.to_string_lossy().into()),
             download_url: None,
             target_version: None,
+            source: None,
         };
         let (client, state, stop, server) = fixture(temp.path(), &runtime, false).await;
         let accepted = start_with_download_probe(
@@ -1207,6 +1213,7 @@ mod tests {
             local_archive_path: Some(temp.path().join("missing.zip").to_string_lossy().into()),
             download_url: None,
             target_version: None,
+            source: None,
         };
         assert!(start_with_download_probe(
             &client,

@@ -188,6 +188,20 @@ pub(super) async fn download_with_client(
     limit: u64,
     client: &reqwest::Client,
 ) -> Result<PathBuf, String> {
+    download_with_client_sized(state, id, url, expected, limit, client, None).await
+}
+
+pub(super) async fn download_with_client_sized(
+    state: &RuntimeState,
+    id: &str,
+    url: &str,
+    expected: &str,
+    limit: u64,
+    client: &reqwest::Client,
+    // The exact size when `limit` is it: shown as the total when the source streams
+    // without a Content-Length (GitHub's source archives). Checks never rely on it.
+    size_hint: Option<u64>,
+) -> Result<PathBuf, String> {
     if expected.len() != 64 || !expected.bytes().all(|byte| byte.is_ascii_hexdigit()) || limit == 0
     {
         return Err("官方下载 SHA256 或安全体积上限无效".into());
@@ -316,7 +330,7 @@ pub(super) async fn download_with_client(
         progress(
             state,
             id,
-            format!("下载进度：{}", amount(received, total, None)),
+            format!("下载进度：{}", amount(received, total.or(size_hint), None)),
         )?;
         let mut last_log = Instant::now();
         let mut logged_received = received;
@@ -348,7 +362,10 @@ pub(super) async fn download_with_client(
                         progress(
                             state,
                             id,
-                            format!("下载进度：{}", amount(received, total, Some(speed))),
+                            format!(
+                                "下载进度：{}",
+                                amount(received, total.or(size_hint), Some(speed))
+                            ),
                         )?;
                         last_log = Instant::now();
                         logged_received = received;

@@ -14,7 +14,8 @@ const load = (file, modules) => {
 const { unifiedGpu } = load('../../../../packages/core/src/gpu-summary.ts', { './errors': { asObject: value => value && typeof value === 'object' && !Array.isArray(value) ? value : {} } });
 const platformModule = load('../../../../packages/core/src/local-runtime-package.ts', {});
 const community = load('../../../../packages/core/src/community-catalog.ts', { './catalog': { MODEL_CATALOG }, './local-runtime-package': platformModule });
-const core = { MODEL_CATALOG, unifiedGpu, ...platformModule, ...community };
+const downloads = load('../../../../packages/core/src/runtime-download.ts', { './bridge': {} });
+const core = { MODEL_CATALOG, unifiedGpu, ...platformModule, ...community, runtimeBilingualText: downloads.runtimeBilingualText };
 const estimates = load('../pages/d2Estimates.ts', { '@strata-manager/core': core });
 const model = load('./onboardingModel.ts', { '@strata-manager/core': core, '../pages/d2Estimates': estimates });
 const GB = 1024 ** 3;
@@ -267,4 +268,15 @@ test('the guide never suggests a family that needs a newer Strata release (DeepS
     assert.ok(rows.length > 0);
     assert.ok(rows.every(row => row.family !== 'deepseek41'));
   }
+});
+
+test('download step shows the source in use and the GitHub fallback notice', () => {
+  const line = message => ({ message });
+  const source = line('下载来源：gh-proxy.org（测速最快）· llama.cpp 源码 / Download source: gh-proxy.org (fastest) · llama.cpp source');
+  assert.deepEqual({ ...model.setupDownloadView([], true) }, { done: false, fallback: false });
+  assert.deepEqual({ ...model.setupDownloadView([line('下载来源测速：gh-proxy.org 278 ms / Source speed test: gh-proxy.org 278 ms'), source, line('1.0 MiB / 37.7 MiB（2%）')], true) }, { done: false, fallback: false, source: 'gh-proxy.org', reason: '测速最快' });
+  const finished = model.setupDownloadView([source, line('引擎预下载：llama.cpp 源码已从 gh-proxy.org 下载并通过 SHA-256 校验，安装器将跳过下载 / Pre-download: ...'), line('=== Step 4: the Strata engine ===')], false);
+  assert.equal(finished.reason, 'fastest'); assert.equal(finished.done, true);
+  const fallback = model.setupDownloadView([source, line('预下载未完成：所有来源都失败。正在从 GitHub 下载引擎包，可能较慢，可在「下载设置」切换来源 / Pre-download failed: every source failed. Downloading from GitHub, which may be slow.')], false);
+  assert.equal(fallback.fallback, true); assert.match(fallback.detail, /^Pre-download failed/); assert.equal(fallback.source, undefined);
 });

@@ -173,6 +173,11 @@ fn custom_source(template: &str) -> Result<SourceSpec, String> {
 
 fn preferred_source_from_preferences(value: &Value) -> Option<SourceSpec> {
     let prefs: RuntimeDownloadPreferences = serde_json::from_value(value.clone()).ok()?;
+    // Same reading as engine downloads (runtime-core download_route): nothing saved or
+    // "auto" probes, "official" is GitHub only, a saved mirror is tried first.
+    if prefs.mode.as_deref() == Some("official") {
+        return Some(official_source());
+    }
     if prefs.mode.as_deref() != Some("mirror") {
         return None;
     }
@@ -222,28 +227,20 @@ fn preferred_order(source: SourceSpec) -> Vec<SourceSpec> {
     }
 }
 
-/// Rank successful probes by latency. Official GitHub stays last unless it won.
-fn order_automatic_sources(mut successes: Vec<(u64, SourceSpec)>) -> Vec<SourceSpec> {
-    successes.sort_by(|(left_ms, left), (right_ms, right)| {
-        left_ms.cmp(right_ms).then_with(|| left.id.cmp(&right.id))
-    });
-    let mut ordered = Vec::new();
-    if let Some((_, winner)) = successes.first() {
-        ordered.push(winner.clone());
-    }
-    for source in builtin_sources() {
-        if !ordered.iter().any(|item| item.id == source.id) {
-            ordered.push(source);
-        }
-    }
-    if ordered.first().map(|source| source.id.as_str()) != Some("official") {
-        ordered.retain(|source| source.id != "official");
-        ordered.push(official_source());
-    }
-    if ordered.is_empty() {
-        ordered.push(official_source());
-    }
-    ordered
+/// Rank successful probes by latency. Official GitHub stays last unless it won. The rule is
+/// shared with engine downloads (`download_route::rank`) so both pick the same way.
+fn order_automatic_sources(successes: Vec<(u64, SourceSpec)>) -> Vec<SourceSpec> {
+    let probes: Vec<(String, Option<u64>)> = successes
+        .iter()
+        .map(|(ms, source)| (source.id.clone(), Some(*ms)))
+        .collect();
+    let mut known = builtin_sources();
+    known.push(official_source());
+    known.extend(successes.into_iter().map(|(_, source)| source));
+    strata_runtime_core::runtime_upgrade::download_route::rank(&probes)
+        .into_iter()
+        .filter_map(|id| known.iter().find(|source| source.id == id).cloned())
+        .collect()
 }
 
 fn source_view(
@@ -791,6 +788,15 @@ mod tests {
             &json!({"mode":"local","localArchivePath":"/tmp/engine.zip"})
         )
         .is_none());
+        // Nothing saved or "auto": probe; "official": GitHub only (same as engine downloads).
+        assert!(preferred_source_from_preferences(&Value::Null).is_none());
+        assert!(preferred_source_from_preferences(&json!({"mode":"auto"})).is_none());
+        assert_eq!(
+            preferred_source_from_preferences(&json!({"mode":"official"}))
+                .unwrap()
+                .id,
+            "official"
+        );
     }
 
     #[test]

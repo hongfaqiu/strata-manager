@@ -13,8 +13,8 @@
 //! manifest digest the feed names, its signature and every extracted file. A new version is
 //! staged next to the old one, started once (`--version`) and only then replaces it (one
 //! generation is kept, as upstream does).
-use super::{engine_package, github_source, gpu_select, release_zip, RuntimeReleaseAsset};
-use crate::{installation, processes, RuntimeState};
+use super::{engine_package, gpu_select, release_zip, RuntimeReleaseAsset};
+use crate::{processes, RuntimeState};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -330,73 +330,25 @@ fn say(state: &RuntimeState, id: &str, message: impl Into<String>) {
     processes::log(&state.logs, id, "info", message);
 }
 
-/// Mirror first (or GitHub first when chosen under download sources); both are held to the
-/// signed size and SHA-256, and the hash-addressed download resumes after an interruption.
+/// Through the saved download route (automatic speed test by default, see download_route);
+/// every source is held to the signed size and SHA-256, and the hash-addressed download
+/// resumes after an interruption.
 async fn download(
     state: &RuntimeState,
     id: &str,
     asset: &RuntimeReleaseAsset,
 ) -> Result<PathBuf, String> {
-    let mut failures = Vec::new();
-    for via in github_source::order() {
-        cancelled(state, id)?;
-        let result = match via {
-            github_source::Via::Official => {
-                installation::download_release(state, id, &asset.url, &asset.sha256, asset.size)
-                    .await
-            }
-            github_source::Via::Mirror => {
-                let client = reqwest::Client::builder()
-                    .connect_timeout(Duration::from_secs(10))
-                    .redirect(reqwest::redirect::Policy::custom(|attempt| {
-                        if attempt.previous().len() >= 5 {
-                            return attempt.error("mirror redirect limit exceeded");
-                        }
-                        if attempt.url().scheme() == "https"
-                            && attempt.url().username().is_empty()
-                            && attempt.url().password().is_none()
-                        {
-                            attempt.follow()
-                        } else {
-                            attempt.error("mirror redirect must remain HTTPS without credentials")
-                        }
-                    }))
-                    .build()
-                    .map_err(|error| error.to_string())?;
-                installation::download_using_client(
-                    state,
-                    id,
-                    &github_source::url(via, &asset.url),
-                    &asset.sha256,
-                    asset.size,
-                    &client,
-                )
-                .await
-            }
-        };
-        match result {
-            Ok(archive) => {
-                if archive.metadata().map_err(|e| e.to_string())?.len() != asset.size {
-                    return Err("DeepSeek 引擎包长度与签名 feed 不符".into());
-                }
-                return Ok(archive);
-            }
-            Err(error) => {
-                cancelled(state, id)?;
-                processes::log(
-                    &state.logs,
-                    id,
-                    "warn",
-                    format!(
-                        "{}下载 DeepSeek 引擎未完成：{error}",
-                        github_source::label(via)
-                    ),
-                );
-                failures.push(format!("{}：{error}", github_source::label(via)));
-            }
-        }
-    }
-    Err(format!("没能下载 DeepSeek 引擎包。{}", failures.join("；")))
+    cancelled(state, id)?;
+    super::download_route::download(
+        state,
+        id,
+        ("DeepSeek 引擎包", "DeepSeek engine package"),
+        &asset.url,
+        &asset.sha256,
+        asset.size,
+    )
+    .await
+    .map(|(archive, _)| archive)
 }
 
 /// Make sure the runtime at `root` has the newest DeepSeek engine the signed feed offers for

@@ -518,6 +518,7 @@ mod tests {
                 local_archive_path: Some(source.to_string_lossy().into()),
                 download_url: None,
                 target_version: None,
+                source: None,
             },
         )
         .await
@@ -551,6 +552,7 @@ mod tests {
                     local_archive_path: Some(source.to_string_lossy().into()),
                     download_url: None,
                     target_version: None,
+                    source: None,
                 },
             )
             .await
@@ -790,6 +792,7 @@ mod tests {
                     local_archive_path: None,
                     download_url: Some(url.into()),
                     target_version: None,
+                    source: None,
                 }
             )
             .await
@@ -838,6 +841,7 @@ mod tests {
                 local_archive_path: None,
                 download_url: (!prefix.is_empty()).then(|| format!("{prefix}{official_url}")),
                 target_version: None,
+                source: None,
             };
             let result = test_release_download(&state, &asset_name, options).await;
             eprintln!(

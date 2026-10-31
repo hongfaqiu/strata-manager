@@ -1,11 +1,11 @@
 import type { RuntimeDownloadPreferences } from '@strata-manager/core';
 
 /**
- * The app updater (src-tauri/src/app_updates.rs) reads the engine download preferences: a built-in
- * mirror or a custom `{url}` wrap template is used for app updates; official, local and engine-only
- * templates leave the app updater on its automatic, signature-checked source choice.
+ * The app updater (src-tauri/src/app_updates.rs) reads the engine download preferences: automatic
+ * (the default) speed-tests the mirrors and GitHub; official, a built-in mirror or a custom `{url}`
+ * wrap template is used as chosen; local and engine-only templates fall back to automatic.
  */
-export type AppUpdateSourceChoice = 'official' | 'gh-proxy' | 'ghproxy' | 'custom' | 'local';
+export type AppUpdateSourceChoice = 'auto' | 'official' | 'gh-proxy' | 'ghproxy' | 'custom' | 'local';
 export type AppUpdateMirrorProblem = 'https' | 'url' | 'engineOnly' | 'placeholder';
 
 const OFFICIAL_MANIFEST_URL = 'https://github.com/hongfaqiu/strata-manager/releases/latest/download/latest.json';
@@ -24,7 +24,8 @@ export function appUpdateMirrorProblem(value: string): AppUpdateMirrorProblem | 
 }
 
 export function appUpdateSourceChoice(value: RuntimeDownloadPreferences | undefined): AppUpdateSourceChoice {
-  if (!value || value.mode === 'official') return 'official';
+  if (!value || value.mode === 'auto') return 'auto';
+  if (value.mode === 'official') return 'official';
   if (value.mode === 'local') return 'local';
   return value.sourceId && BUILT_IN.includes(value.sourceId) ? value.sourceId as AppUpdateSourceChoice : 'custom';
 }
@@ -32,7 +33,7 @@ export function appUpdateSourceChoice(value: RuntimeDownloadPreferences | undefi
 /** Whether the app updater actually uses this saved source (mirrors `preferred_source_from_preferences`). */
 export function appUpdateUsesSource(value: RuntimeDownloadPreferences | undefined): boolean {
   const choice = appUpdateSourceChoice(value);
-  if (choice === 'gh-proxy' || choice === 'ghproxy') return true;
+  if (choice === 'official' || choice === 'gh-proxy' || choice === 'ghproxy') return true;
   return choice === 'custom' && !!value?.mirrorUrl && appUpdateMirrorProblem(value.mirrorUrl) === null;
 }
 
@@ -40,7 +41,7 @@ export function appUpdateUsesSource(value: RuntimeDownloadPreferences | undefine
 export function withAppUpdateSource(value: RuntimeDownloadPreferences | undefined, choice: Exclude<AppUpdateSourceChoice, 'local'>, mirrorUrl = ''): RuntimeDownloadPreferences {
   const keep = { ...(value?.assetName ? { assetName: value.assetName } : {}) };
   const release = value?.releaseVersion ? { releaseVersion: value.releaseVersion } : {};
-  if (choice === 'official') return { mode: 'official', ...keep };
+  if (choice === 'auto' || choice === 'official') return { mode: choice, ...keep };
   if (choice === 'custom') return { mode: 'mirror', ...keep, ...release, mirrorUrl: mirrorUrl.trim() };
   return { mode: 'mirror', ...keep, ...release, sourceId: choice };
 }

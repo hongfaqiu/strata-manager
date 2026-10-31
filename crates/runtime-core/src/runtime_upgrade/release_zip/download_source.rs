@@ -21,6 +21,10 @@ pub struct RuntimeZipDownloadOptions {
     /// with `update_runtime_zip_version_v1`, so an older background service refuses it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_version: Option<String>,
+    /// `"auto"`: no fixed URL, speed-test the mirrors and GitHub (download_route). Absent
+    /// means GitHub only, as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 impl RuntimeZipDownloadOptions {
@@ -41,6 +45,7 @@ impl RuntimeZipDownloadOptions {
             .target_version
             .map(|value| value.trim().trim_start_matches('v').to_owned())
             .filter(|value| !value.is_empty());
+        self.source = self.source.filter(|value| value == "auto");
         if let Some(version) = &self.target_version {
             if !crate::runtime_upgrade::engine_package::valid_version(version) {
                 return Err("所选 Strata 版本号无效 / Invalid Strata version".into());
@@ -167,6 +172,19 @@ pub(super) async fn engine_archive(
                     })?
             }
         }
+    } else if options.source.as_deref() == Some("auto") {
+        // Automatic source (the default): speed test, fastest first, GitHub last.
+        super::super::download_route::download_with(
+            state,
+            id,
+            &super::super::download_route::Choice::Auto,
+            ("引擎包", "engine package"),
+            &asset.url,
+            &asset.sha256,
+            asset.size,
+        )
+        .await?
+        .0
     } else {
         installation::download_release(state, id, &asset.url, &asset.sha256, asset.size).await?
     };
@@ -336,6 +354,7 @@ mod tests {
             local_archive_path: Some(local.clone()),
             download_url: None,
             target_version: None,
+            source: None,
         };
         assert!(options.clone().validate(None).is_err());
         assert!(options.validate(Some("strata-windows-x64.zip")).is_ok());
@@ -349,6 +368,7 @@ mod tests {
                 local_archive_path: None,
                 download_url: Some(url.into()),
                 target_version: None,
+                source: None,
             }
             .validate(Some("strata-windows-x64.zip"))
             .is_err());
@@ -357,6 +377,7 @@ mod tests {
             local_archive_path: Some(local),
             download_url: Some("https://mirror.test/a.zip".into()),
             target_version: None,
+            source: None,
         }
         .validate(Some("strata-windows-x64.zip"))
         .is_err());
@@ -364,6 +385,7 @@ mod tests {
             local_archive_path: None,
             download_url: Some("https://mirror.test/download?token=123".into()),
             target_version: None,
+            source: None,
         }
         .validate(Some("strata-windows-x64.zip"))
         .is_ok());
@@ -371,6 +393,17 @@ mod tests {
             serde_json::from_str::<RuntimeZipDownloadOptions>("{}").unwrap(),
             RuntimeZipDownloadOptions::default()
         );
+        let source = |value: &str| {
+            serde_json::from_value::<RuntimeZipDownloadOptions>(
+                serde_json::json!({"source": value}),
+            )
+            .unwrap()
+            .validate(Some("strata-windows-x64.zip"))
+            .unwrap()
+            .source
+        };
+        assert_eq!(source("auto").as_deref(), Some("auto"));
+        assert_eq!(source("https://elsewhere.test/{url}"), None);
     }
     #[tokio::test]
     async fn local_archive_is_copied_verified_and_never_downloaded_or_modified() {
@@ -384,6 +417,7 @@ mod tests {
             local_archive_path: Some(source.to_string_lossy().into()),
             download_url: None,
             target_version: None,
+            source: None,
         };
         let staged = engine_archive(&state, &id, &asset(bytes), &options, temp.path())
             .await

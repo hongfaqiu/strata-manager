@@ -631,8 +631,8 @@ test('settings block invalid mirrors and preserve the selected source through fa
   f.preferences.error = new Error('store unavailable'); f.render();
   assert.equal(f.button('保存下载设置').props.disabled, true); assert.equal(f.button('测试下载来源').props.disabled, true);
   f.button('重新读取下载设置').props.onClick(); await f.settle(); assert.equal(f.calls.reloaded, 1);
-  f.button('恢复官方自动下载').props.onClick(); await f.settle();
-  assert.deepEqual(f.calls.saved, [{ mode: 'official' }]); assert.deepEqual(f.calls.mutations, []);
+  f.button('一键恢复默认下载设置').props.onClick(); await f.settle();
+  assert.deepEqual(f.calls.saved, [{ mode: 'auto' }]); assert.deepEqual(f.calls.mutations, []);
 });
 
 test('settings discard test results from an older release and stale save handlers cannot persist old sources', async () => {

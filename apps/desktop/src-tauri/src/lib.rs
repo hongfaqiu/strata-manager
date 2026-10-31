@@ -917,6 +917,7 @@ async fn engine_help_flags(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 async fn update_runtime_zip(
     state: State<'_, ClientState>,
     install_dir: String,
@@ -925,6 +926,7 @@ async fn update_runtime_zip(
     local_archive_path: Option<String>,
     download_url: Option<String>,
     target_version: Option<String>,
+    source: Option<String>,
 ) -> Result<Value, String> {
     runtime_update_queue::start(
         &state.ipc,
@@ -935,6 +937,7 @@ async fn update_runtime_zip(
             local_archive_path,
             download_url,
             target_version,
+            source,
         },
     )
     .await

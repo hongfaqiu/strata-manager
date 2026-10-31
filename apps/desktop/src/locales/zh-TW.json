@@ -753,6 +753,7 @@
   "ovIntegratedGpu": "內顯 · 不計入合計",
   "appUpdateSource": "下載來源",
   "appUpdateSourceShared": "與引擎下載共用",
+  "appUpdateSourceAutoOption": "自動（測速選最快）（預設）",
   "appUpdateSourceOfficial": "官方 GitHub",
   "appUpdateSourceCustom": "自訂",
   "appUpdateSourceLocal": "本機套件（僅引擎）",

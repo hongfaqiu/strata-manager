@@ -766,23 +766,70 @@ fn capture<R: Read + Send + 'static>(
 ) {
     pending.fetch_add(1, Ordering::Relaxed);
     std::thread::spawn(move || {
-        // Bound each read and each record even if a child emits a line without newlines.
         let mut reader = BufReader::new(reader);
-        loop {
-            let mut bytes = Vec::new();
-            let result = (&mut reader).take(8192).read_until(b'\n', &mut bytes);
-            match result {
-                Ok(0) | Err(_) => break,
-                Ok(_) => log(
-                    &logs,
-                    &id,
-                    level,
-                    child_line_text(&bytes).trim_end().to_string(),
-                ),
-            }
-        }
+        pump(&mut reader, PROGRESS_INTERVAL, |line| {
+            log(&logs, &id, level, line)
+        });
         pending.fetch_sub(1, Ordering::Release);
     });
+}
+
+/// setup.py redraws download progress in place (`\r  label: 12% ...`, no newline until the
+/// end). Such a redraw becomes a record at most this often, so the log shows progress
+/// without one line per redraw.
+const PROGRESS_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Splits child output into records at `\n`, `\r\n` and, throttled, at a bare `\r`.
+/// Each read and each record stays bounded even if a child never ends a line.
+fn pump<R: BufRead>(reader: &mut R, interval: std::time::Duration, mut emit: impl FnMut(String)) {
+    let mut last_redraw: Option<std::time::Instant> = None;
+    let mut bytes = Vec::new();
+    while let Ok(buffer) = reader.fill_buf() {
+        if buffer.is_empty() {
+            if !bytes.is_empty() {
+                emit(child_line_text(&bytes).trim_end().to_string());
+            }
+            break;
+        }
+        let room = 8192 - bytes.len();
+        let window = &buffer[..buffer.len().min(room)];
+        match window
+            .iter()
+            .position(|byte| *byte == b'\n' || *byte == b'\r')
+        {
+            Some(at) => {
+                let terminator = window[at];
+                bytes.extend_from_slice(&window[..at]);
+                reader.consume(at + 1);
+                let redraw = terminator == b'\r'
+                    && !matches!(reader.fill_buf(), Ok(next) if next.first() == Some(&b'\n'));
+                if terminator == b'\r' && !redraw {
+                    reader.consume(1);
+                }
+                let text = child_line_text(&bytes).trim_end().to_string();
+                bytes.clear();
+                if redraw {
+                    // A redraw prefix (`\r` first) leaves nothing before it; skip that.
+                    if text.trim().is_empty()
+                        || last_redraw.is_some_and(|at| at.elapsed() < interval)
+                    {
+                        continue;
+                    }
+                    last_redraw = Some(std::time::Instant::now());
+                }
+                emit(text);
+            }
+            None => {
+                let taken = window.len();
+                bytes.extend_from_slice(window);
+                reader.consume(taken);
+                if bytes.len() >= 8192 {
+                    emit(child_line_text(&bytes).trim_end().to_string());
+                    bytes.clear();
+                }
+            }
+        }
+    }
 }
 
 /// A child's output line as text. Python (setup.py) writes to a pipe in the Windows ANSI code page
@@ -2111,6 +2158,53 @@ pub fn python(profile: &ServiceProfile) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    fn records(input: &[u8], interval: std::time::Duration) -> Vec<String> {
+        let mut lines = Vec::new();
+        let mut reader = std::io::BufReader::with_capacity(4, input);
+        super::pump(&mut reader, interval, |line| lines.push(line));
+        lines
+    }
+
+    #[test]
+    fn carriage_return_progress_becomes_throttled_records() {
+        // setup.py's in-place progress: `\r  label: n%` redraws, a newline at the end.
+        let input = b"Step 4\n\r  llama.cpp source: 10%\r  llama.cpp source: 20%\r  llama.cpp source: 100%\nnext\r\nlast";
+        assert_eq!(
+            records(input, std::time::Duration::ZERO),
+            [
+                "Step 4",
+                "  llama.cpp source: 10%",
+                "  llama.cpp source: 20%",
+                "  llama.cpp source: 100%",
+                "next",
+                "last"
+            ]
+        );
+        // Redraws closer together than the interval collapse; the final line always shows.
+        assert_eq!(
+            records(input, std::time::Duration::from_secs(3600)),
+            [
+                "Step 4",
+                "  llama.cpp source: 10%",
+                "  llama.cpp source: 100%",
+                "next",
+                "last"
+            ]
+        );
+    }
+
+    #[test]
+    fn records_stay_bounded_without_newlines_and_keep_empty_lines() {
+        let long = vec![b'x'; 9000];
+        let lines = records(&long, std::time::Duration::ZERO);
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0].len(), 8192);
+        assert_eq!(
+            records(b"a\n\nb\n", std::time::Duration::ZERO),
+            ["a", "", "b"]
+        );
+    }
+
     #[test]
     fn child_output_keeps_utf8_and_never_turns_ansi_text_into_replacement_characters() {
         assert_eq!(
