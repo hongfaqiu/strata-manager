@@ -1,19 +1,22 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Check, CircleAlert, CircleDashed, Info, RotateCcw, Square, Zap } from 'lucide-react';
+import { Check, CircleAlert, CircleDashed, Info, RotateCcw, Square, Wrench, Zap } from 'lucide-react';
 import * as core from '@strata-manager/core';
 import type { AppLanguage, CalibrationJob, ServiceProfile, SpeedCheck, SpeedFix, TuningLiveSnapshot } from '@strata-manager/core';
+import { Toggle } from '../../OfficialControls';
 import { appliedFor, dismissJob, dismissedJobs, type SpeedBoostApplied } from './speedBoostRecord';
 import { isEarlierFailure, speedBoostFailureText } from './speedBoostFailure';
 
 const active = (job: CalibrationJob | null) => !!job && ['checking', 'running', 'canceling'].includes(job.state);
 const stepKey: Record<string, string> = { warmup: 'sbStepWarmup', prefillPipe: 'sbStepPrefillPipe', pcieFrac: 'sbStepPcieFrac', specMinP: 'sbStepSpecMinP', confirm: 'sbStepConfirm' };
-const checkLabel: Record<SpeedCheck['id'], string> = { vramHeadroom: 'sbCheckVram', kvInRam: 'sbCheckKv', pcieFixed: 'sbCheckPcie', engine: 'sbCheckEngine' };
+const checkLabel: Record<SpeedCheck['id'], string> = { vramHeadroom: 'sbCheckVram', kvInRam: 'sbCheckKv', pcieFixed: 'sbCheckPcie', engine: 'sbCheckEngine', syclAttnBatch: 'sbSyclTitle', routePrior: 'sbCheckRoutePrior' };
 const checkText = (check: SpeedCheck): string => {
   if (check.reason === 'unknown') return 'sbCheckUnknown';
   if (check.id === 'engine') return 'sbCheckEngineDeepseek';
   if (check.id === 'vramHeadroom') return ({ ok: 'sbCheckVramOk', low: 'sbCheckVramLow', reserved: 'sbCheckVramReserved' } as Record<string, string>)[check.reason] ?? 'sbCheckUnknown';
+  if (check.id === 'routePrior') return check.on ? 'sbCheckRoutePriorOn' : 'sbCheckRoutePriorOff';
+  if (check.id === 'syclAttnBatch') return check.reason === 'set' ? 'sbSyclSet' : 'sbSyclDoNotFit';
   if (check.id === 'kvInRam') return ({ shortContext: 'sbCheckKvShort', enabled: 'sbCheckKvEnabled', off: 'sbCheckKvOff', ramLow: 'sbCheckKvRamLow', ramUnknown: 'sbCheckKvRamUnknown', wsl: 'sbCheckKvWsl' } as Record<string, string>)[check.reason] ?? 'sbCheckUnknown';
   return 'sbCheckPcieFixed';
 };
@@ -40,7 +43,15 @@ export function useSpeedHealth({ profile, desktop, owned, goal }: { profile?: Se
   });
   const platform = typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent) ? 'windows' : 'other';
   const engine = metrics.data && typeof metrics.data.engine === 'object' && metrics.data.engine ? metrics.data.engine as Record<string, unknown> : null;
-  const checks = useMemo(() => config ? core.speedHealthCheck({ config, engine: engine as never, hardware: hardware.data ?? null, platform, goal, logs: logs.data?.map(line => line.message) }) : [], [config, engine, hardware.data, platform, goal, logs.data]);
+  // The engine build of this install (BUILD.json, engine-sycl/ for Intel); the same query as the startup settings.
+  const installation = useQuery({ queryKey: ['runtime-installation'], queryFn: core.localRuntimeInstallation, enabled: enabled && !!profile?.installDir, retry: false, staleTime: 30_000 });
+  const engineVersion = installation.data?.detectedRuntimes?.find(runtime => core.installDirKey(runtime.installDir) === core.installDirKey(profile?.installDir))?.runtimeVersion ?? null;
+  const checks = useMemo(() => {
+    if (!config) return [];
+    // The backend decides which engine-env rows exist: SYCL gets the attention batch card, CUDA the route prior switch.
+    const backend = core.engineBackend(config, metrics.data as never, hardware.data?.gpus);
+    return core.speedHealthCheck({ config, engine: engine as never, hardware: hardware.data ?? null, platform, goal, logs: logs.data?.map(line => line.message), backend, engineVersion });
+  }, [config, engine, metrics.data, hardware.data, platform, goal, logs.data, engineVersion]);
   // DeepSeek-V4.1 configs run strata-dsv41: the page shows them as unavailable and writes no Qwen flag into them.
   const deepseek = core.isDeepseek41Config(config);
   return { checks, config: config ?? null, deepseek, loading: snapshot.isPending && enabled, refetch: () => { void snapshot.refetch(); void metrics.refetch(); void logs.refetch(); } };
@@ -79,6 +90,9 @@ export function SpeedBoost({ language, job, live, clock, profile, blocked, busy,
   const showResult = !!job && !!result && !dismissed.includes(job.id) && !(applied && applied.kind === 'boost' && applied.at >= (job.finishedAt ?? 0));
   const changes = core.speedChanges(job);
   const fixes = checks.filter(check => check.status === 'fix' && check.fix);
+  // #4731: the SYCL attention batch is a card above the rows; everything else is a row.
+  const sycl = checks.find(check => check.id === 'syclAttnBatch' && check.fix);
+  const rows = checks.filter(check => check.id !== 'syclAttnBatch');
 
   const progress = job ? core.calibrationProgress(job, live) : null;
   const steps = job?.steps.filter(step => step.status !== 'skipped') ?? [];
@@ -159,10 +173,17 @@ export function SpeedBoost({ language, job, live, clock, profile, blocked, busy,
     <section className="sb-checks" data-testid="speed-health" aria-labelledby="sb-checks-title">
       <div className="sb-section-head"><div><h3 id="sb-checks-title">{t('sbCheckTitle')}</h3><p className="sb-muted">{fixes.length ? t('sbFixHint') : t('sbCheckHint')}</p></div>
         {fixes.length > 1 && <button type="button" data-testid="speed-fix-all" disabled={busy || running} onClick={() => onFix(fixes.map(check => check.fix!))}>{t('sbFixAll')}</button>}</div>
-      <ul>{checks.map(check => <li key={check.id} className={`is-${check.status}`} data-testid={`speed-check-${check.id}`}>
+      {sycl && <div className={`sb-alert is-${sycl.status}`} role={sycl.status === 'fix' ? 'alert' : 'status'} data-testid="speed-sycl-attn">
+        <span className="sb-alert-icon" aria-hidden>{sycl.status === 'fix' ? <CircleAlert size={18}/> : <Wrench size={18}/>}</span>
+        <div><strong>{t(sycl.reason === 'set' ? 'sbSyclSetTitle' : 'sbSyclTitle')}</strong><p>{t(checkText(sycl), sycl.values)}</p></div>
+        <button type="button" className={sycl.status === 'fix' ? 'primary' : undefined} data-testid={sycl.action === 'reset' ? 'speed-sycl-reset' : 'speed-sycl-fix'} disabled={busy || running} onClick={() => onFix([sycl.fix!])}>
+          {sycl.action === 'reset' ? <><RotateCcw size={14}/>{t('sbResetDefault')}</> : t('sbFix')}</button>
+      </div>}
+      <ul>{rows.map(check => <li key={check.id} className={`is-${check.status}`} data-testid={`speed-check-${check.id}`}>
         <span className="sb-check-icon" aria-hidden>{check.status === 'ok' ? <Check size={15}/> : check.status === 'fix' ? <CircleAlert size={15}/> : check.status === 'info' ? <Info size={15}/> : <CircleDashed size={15}/>}</span>
         <div><strong>{t(checkLabel[check.id])}</strong><p>{t(checkText(check), { ...check.values, ...(typeof check.values.context === 'number' ? { context: `${Math.round(check.values.context / 1024)}K` } : {}) })}</p></div>
-        {check.status === 'fix' && check.fix && <button type="button" data-testid={`speed-fix-${check.id}`} disabled={busy || running} onClick={() => onFix([check.fix!])}>{t('sbFix')}</button>}
+        {check.action === 'toggle' && check.fix ? <Toggle ariaLabel={t(checkLabel[check.id])} checked={!!check.on} disabled={busy || running} onCheckedChange={() => onFix([check.fix!])}/>
+          : check.status === 'fix' && check.fix && <button type="button" data-testid={`speed-fix-${check.id}`} disabled={busy || running} onClick={() => onFix([check.fix!])}>{t('sbFix')}</button>}
       </li>)}</ul>
     </section>
   </>;

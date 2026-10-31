@@ -16,11 +16,21 @@
  * - --pcie-frac: since 0.1.42 (CUDA) / 0.1.43 (RDNA4) the engine refines the
  *   PCIe share itself unless --pcie-frac is set; the quick calibration keeps
  *   it automatic unless a fixed value is clearly faster.
+ * - SYCL prompt attention batch (upstream #4731, fixed after engine 0.1.54 by
+ *   870aedd9): 0.1.54 allocates the FP32 prompt-attention scratch for
+ *   STRATA_ATTN_BATCH=128 but budgets 32, so an Intel card can fail its first
+ *   request with "device buffers … do not fit". STRATA_ATTN_BATCH=32 is the
+ *   upstream default after the fix.
+ * - Route prior (upstream #4735, 0.2.8 "Faster answers on 12 GB NVIDIA
+ *   cards"): STRATA_ROUTE_PRIOR=1.5 on Qwen + CUDA with a discrete NVIDIA card
+ *   of 13 GiB or less. Off by default (long chats can repeat themselves); a
+ *   manual switch only, never a calibration candidate.
  */
 import type { JsonObject } from './types';
 import type { CalibrationGoal, CalibrationJob, CalibrationRates } from './tuning-types';
 import { PCIE_AUTO } from './tuning-types';
 import { assertDeepseek41Flags, isDeepseek41Config } from './deepseek41-config';
+import { gpuVendorOf, isIntegratedGpuName } from './integrated-gpu';
 
 export const KV_RESIDENT_TOKENS = 32768;
 export const KV_STREAM_MIN_CONTEXT = 65536;
@@ -29,9 +39,9 @@ const GIB = 1024 ** 3;
 /** RAM that has to stay free on top of the streamed KV. */
 const RAM_MARGIN_BYTES = 4 * GIB;
 
-export type SpeedCheckId = 'vramHeadroom' | 'kvInRam' | 'pcieFixed' | 'engine';
+export type SpeedCheckId = 'vramHeadroom' | 'kvInRam' | 'pcieFixed' | 'engine' | 'syclAttnBatch' | 'routePrior';
 export type SpeedCheckStatus = 'ok' | 'fix' | 'info' | 'unknown';
-/** Flags a fix writes; null removes a flag. Fixes take effect after a restart. */
+/** Flags (`--flag`) or engine env (`env.NAME`) a fix writes; null removes it. Fixes take effect after a restart. */
 export type SpeedFix = Record<string, string | null>;
 export interface SpeedCheck {
   id: SpeedCheckId;
@@ -40,16 +50,68 @@ export interface SpeedCheck {
   reason: string;
   values: Record<string, number | string>;
   fix?: SpeedFix;
+  /** How the row offers its fix: a fix button (default), a reset-to-default button, or an on/off switch. */
+  action?: 'fix' | 'reset' | 'toggle';
+  /** For a toggle: whether the switch is on now. */
+  on?: boolean;
 }
+export interface SpeedHealthGpu { vendor?: string | null; name?: string | null; totalBytes?: number | null }
 export interface SpeedHealthInput {
   config: JsonObject;
   /** `/metrics` → engine (INFO fields such as vram_free_mib, context, kv_resident). */
   engine?: JsonObject | null;
-  hardware?: { availableMemoryBytes?: number | null; totalMemoryBytes?: number | null; wsl?: boolean } | null;
+  hardware?: { availableMemoryBytes?: number | null; totalMemoryBytes?: number | null; wsl?: boolean; gpus?: SpeedHealthGpu[] } | null;
   platform: 'windows' | 'other';
   goal?: CalibrationGoal;
   /** Recent service log lines; the engine's LOW / WARNING lines name a reserve. */
   logs?: string[];
+  /** The engine backend (`config.backend`, else read from /metrics hardware); see engineBackend. */
+  backend?: EngineBackend;
+  /** The engine build (BUILD.json, ServiceProfile.runtimeVersion). */
+  engineVersion?: string | null;
+}
+
+export type EngineBackend = 'cuda' | 'hip' | 'sycl' | 'unknown';
+/**
+ * Same rule as runtime-core tuning_calibrate::detect_backend: config.backend first, then the engine's hardware text.
+ * With the model stopped (no /metrics), the cards themselves decide when they are all of one make.
+ */
+export function engineBackend(config: JsonObject, metrics?: JsonObject | null, gpus?: SpeedHealthGpu[]): EngineBackend {
+  const named = config.backend;
+  if (named === 'cuda' || named === 'hip' || named === 'sycl') return named;
+  let text = '';
+  try { text = JSON.stringify(metrics?.hardware_static ?? null).toLowerCase(); } catch { text = ''; }
+  if (['amd', 'radeon', 'gfx1', 'gfx9', 'hip'].some(key => text.includes(key))) return 'hip';
+  if (['intel arc', 'sycl', 'level-zero'].some(key => text.includes(key))) return 'sycl';
+  if (['nvidia', 'geforce', 'rtx', 'tesla', 'quadro', 'cuda'].some(key => text.includes(key))) return 'cuda';
+  if (config.backend != null && config.backend !== 'auto') return 'unknown';
+  const makes = new Set((gpus ?? []).filter(gpu => !isIntegratedGpuName(gpu.name)).map(gpu => gpuVendorOf(gpu.vendor) ?? gpuVendorOf(gpu.name)));
+  return makes.size === 1 && makes.has('nvidia') ? 'cuda' : 'unknown';
+}
+
+export const ROUTE_PRIOR_ENV = 'STRATA_ROUTE_PRIOR';
+export const ROUTE_PRIOR_ON = '1.5';
+export const ATTN_BATCH_ENV = 'STRATA_ATTN_BATCH';
+export const ATTN_BATCH_SAFE = '32';
+/** The SYCL engine build whose prompt-attention budget is short (#4731). */
+export const SYCL_ATTN_BATCH_BROKEN = '0.1.54';
+const SMALL_CARD_BYTES = 13 * GIB;
+
+const envOf = (config: JsonObject): Record<string, unknown> => config.env && typeof config.env === 'object' && !Array.isArray(config.env) ? config.env as Record<string, unknown> : {};
+const envValue = (config: JsonObject, name: string): string | undefined => {
+  const value = envOf(config)[name];
+  return typeof value === 'string' ? value : typeof value === 'number' ? String(value) : undefined;
+};
+const isVersion = (version: string | null | undefined, wanted: string) => !!version && new RegExp(`^v?${wanted.replace(/\./g, '\\.')}(?:[.+-]|$)`).test(version.trim());
+/** A discrete NVIDIA card of 13 GiB or less; GB10 / Jetson share system memory and do not count. */
+export function hasSmallNvidiaCard(gpus: SpeedHealthGpu[] | undefined): boolean {
+  return (gpus ?? []).some(gpu => {
+    const name = String(gpu.name ?? '');
+    const nvidia = /nvidia/i.test(String(gpu.vendor ?? '')) || /nvidia|geforce|quadro|tesla|rtx/i.test(name);
+    if (!nvidia || /\bgb10\b|jetson|orin|thor|tegra|spark/i.test(name)) return false;
+    const total = finite(gpu.totalBytes);
+    return total != null && total > 0 && total <= SMALL_CARD_BYTES;
+  });
 }
 
 const args = (config: JsonObject): string[] => Array.isArray(config.args) ? config.args.filter((arg): arg is string => typeof arg === 'string') : [];
@@ -127,15 +189,39 @@ export function speedHealthCheck(input: SpeedHealthInput): SpeedCheck[] {
   // 3. A fixed --pcie-frac turns the engine's own share off; the run compares both.
   const pcie = argValue(list, '--pcie-frac');
   if (pcie != null) checks.push({ id: 'pcieFixed', status: 'info', reason: 'fixed', values: { value: pcie } });
+
+  // 4. Intel SYCL 0.1.54: the prompt attention batch does not fit (#4731). Other backends never see this row.
+  if (input.backend === 'sycl') {
+    const batch = envValue(input.config, ATTN_BATCH_ENV);
+    if (batch != null) checks.push({ id: 'syclAttnBatch', status: 'info', reason: 'set', values: { value: batch }, fix: { [`env.${ATTN_BATCH_ENV}`]: null }, action: 'reset' });
+    else if (isVersion(input.engineVersion, SYCL_ATTN_BATCH_BROKEN) && (input.logs ?? []).some(line => /do not fit/i.test(line)))
+      checks.push({ id: 'syclAttnBatch', status: 'fix', reason: 'doNotFit', values: { value: ATTN_BATCH_SAFE }, fix: { [`env.${ATTN_BATCH_ENV}`]: ATTN_BATCH_SAFE } });
+  }
+
+  // 5. Route prior: a manual switch on Qwen + CUDA + a discrete NVIDIA card of 13 GiB or less (#4735), off by default.
+  if (input.backend === 'cuda' && input.config.arch == null && hasSmallNvidiaCard(input.hardware?.gpus)) {
+    const on = envValue(input.config, ROUTE_PRIOR_ENV) === ROUTE_PRIOR_ON;
+    checks.push({ id: 'routePrior', status: 'info', reason: on ? 'on' : 'off', values: { value: ROUTE_PRIOR_ON }, fix: { [`env.${ROUTE_PRIOR_ENV}`]: on ? null : ROUTE_PRIOR_ON }, action: 'toggle', on });
+  }
   return checks;
 }
 
-/** Writes fixes into a copy of the config's args (`flag value` form), keeping everything else. */
+/** Writes fixes into a copy of the config's args (`flag value` form) and env (`env.NAME`), keeping everything else. */
 export function applySpeedFixes(config: JsonObject, fixes: SpeedFix[]): JsonObject {
   let list = args(config);
   if (!Array.isArray(config.args) || list.length !== config.args.length) throw new Error('args 必须为字符串数组 / args must be a string array');
-  assertDeepseek41Flags(config, fixes.flatMap(fix => Object.keys(fix)));
+  const isEnv = (key: string) => key.startsWith('env.');
+  assertDeepseek41Flags(config, fixes.flatMap(fix => Object.keys(fix).filter(key => !isEnv(key))));
+  const env: Record<string, unknown> = { ...structuredClone(envOf(config)) };
+  let envTouched = false;
   for (const fix of fixes) for (const [flag, value] of Object.entries(fix)) {
+    if (isEnv(flag)) {
+      const name = flag.slice(4);
+      if (!/^STRATA_[A-Z0-9_]+$/.test(name)) throw new Error(`invalid env ${name}`);
+      if (value == null) delete env[name]; else env[name] = value;
+      envTouched = true;
+      continue;
+    }
     if (!/^--[a-z0-9-]+$/.test(flag)) throw new Error(`invalid flag ${flag}`);
     const next: string[] = [];
     for (let i = 0; i < list.length; i += 1) {
@@ -147,7 +233,9 @@ export function applySpeedFixes(config: JsonObject, fixes: SpeedFix[]): JsonObje
     if (value != null) next.push(flag, value);
     list = next;
   }
-  return { ...structuredClone(config), args: list };
+  const result: JsonObject = { ...structuredClone(config), args: list };
+  if (envTouched) { if (Object.keys(env).length) result.env = env as JsonObject; else delete result.env; }
+  return result;
 }
 
 /** File name for a version saved by one-click tuning, next to the current one. */
