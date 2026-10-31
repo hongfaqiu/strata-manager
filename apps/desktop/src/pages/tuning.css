@@ -218,6 +218,14 @@
 .sb-checks li{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:10px;align-items:start;padding:12px 0;border-top:1px solid var(--st-line)}
 .sb-checks li strong{font-size:13px}
 .sb-checks li p{margin:3px 0 0;font-size:12px;line-height:1.6;color:var(--st-ink-muted)}
+.sb-alert{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:10px;align-items:center;margin:4px 0 10px;padding:12px 14px;border:1px solid var(--st-line);border-radius:12px;background:var(--st-surface-2,transparent)}
+.sb-alert.is-fix{border-color:var(--st-accent);}
+.sb-alert strong{font-size:13px}
+.sb-alert p{margin:3px 0 0;font-size:12px;line-height:1.6;color:var(--st-ink-muted)}
+.sb-alert-icon{display:flex;color:var(--st-ink-muted)}
+.sb-alert.is-fix .sb-alert-icon{color:var(--st-accent-text)}
+.sb-alert button{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.sb-checks li>.official-toggle,.sb-checks li>[role=switch]{align-self:center}
 .sb-check-icon{display:flex;padding-top:2px;color:var(--st-ink-muted)}
 .sb-checks li.is-ok .sb-check-icon{color:var(--st-ink)}
 .sb-checks li.is-fix .sb-check-icon{color:var(--st-accent-text)}

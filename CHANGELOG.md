@@ -5,6 +5,16 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **Intel 显卡（SYCL）引擎 0.1.54「显存放不下」一键修复**（上游 #4731）：0.1.54 按注意力批量 128 分配显存、却只按 32 预算，单卡首个请求可能报 `do not fit`。「一键提速 → 体检」在 SYCL + 引擎 0.1.54 且日志出现 `do not fit` 时显示提示卡，一键把 `env.STRATA_ATTN_BATCH` 设为 32（另存新版本并切换）；已设置时显示「恢复默认」一键删除。CUDA、HIP 等其他后端不显示。
+- **12 GB N 卡提速开关**（上游 #4735，0.2.8 起默认关闭）：Qwen + CUDA + 不超过 13 GiB 的独立 NVIDIA 显卡时，体检里多一个开关；打开写 `env.STRATA_ROUTE_PRIOR=1.5`，关闭删除该项（旧版写的 `0` 视为关闭）。说明代价：长对话可能重复文字。只手动开关，不进入自动校准。文案覆盖全部 10 种界面语言。
+
+### English
+
+- **One-click fix for "do not fit" on Intel GPUs (SYCL) with engine 0.1.54** (upstream #4731): 0.1.54 allocates the prompt attention for a batch of 128 but budgets 32, so a single card can fail its first request with `do not fit`. On SYCL + engine 0.1.54 with `do not fit` in the log, Speed-up → Health check shows a card that sets `env.STRATA_ATTN_BATCH` to 32 (saved as a new version and switched to); once set, "Restore default" removes it. Other backends (CUDA, HIP, …) never show it.
+- **"Faster on 12 GB NVIDIA" switch** (upstream #4735, off by default since 0.2.8): for Qwen + CUDA + a discrete NVIDIA card of 13 GiB or less, the health check has a switch; on writes `env.STRATA_ROUTE_PRIOR=1.5`, off removes it (an older `0` reads as off). It states the cost: long chats may repeat text. Manual only, never an auto-calibration candidate. All 10 interface languages.
+
 ## [0.2.31] - 2026-10-30
 
 ### 中文

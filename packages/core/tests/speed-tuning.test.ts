@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyCalibrationSettings, applySpeedFixes, argValue, isPcieAuto, PCIE_AUTO, speedChanges, speedConfigName, speedHealthCheck, speedResult, suggestedReserveFromLogs, validateStartupConfiguration } from '../src';
+import { applyCalibrationSettings, applySpeedFixes, argValue, engineBackend, isPcieAuto, PCIE_AUTO, speedChanges, speedConfigName, speedHealthCheck, speedResult, suggestedReserveFromLogs, validateStartupConfiguration } from '../src';
 import type { CalibrationJob } from '../src';
 
 const GIB = 1024 ** 3;
@@ -88,5 +88,63 @@ describe('one-click result', () => {
     const at = new Date(2026, 9, 18, 9, 5);
     expect(speedConfigName('C:\\Strata\\config-speedfix-20261001-1200.json', at, 'boost')).toBe('config-speedup-20261018-0905.json');
     expect(speedConfigName('/x/config.json', at, 'fix')).toBe('config-speedfix-20261018-0905.json');
+  });
+});
+
+describe('engine env switches in the health check', () => {
+  const RTX3060 = { vendor: 'nvidia', name: 'NVIDIA GeForce RTX 3060', totalBytes: 12 * GIB };
+  const RTX4090 = { vendor: 'nvidia', name: 'NVIDIA GeForce RTX 4090', totalBytes: 24 * GIB };
+  const doNotFit = ['strata: device buffers for a chunk of 512 tokens do not fit (2098 of 32656 MiB free)'];
+
+  it('offers STRATA_ATTN_BATCH=32 only on SYCL 0.1.54 after a "do not fit" line, and a reset once it is set', () => {
+    const sycl = { ...config([]), backend: 'sycl' };
+    const fix = byId(speedHealthCheck({ config: sycl, platform: 'other', backend: 'sycl', engineVersion: '0.1.54', logs: doNotFit }), 'syclAttnBatch');
+    expect(fix.status).toBe('fix');
+    expect(fix.fix).toEqual({ 'env.STRATA_ATTN_BATCH': '32' });
+    const written = applySpeedFixes(sycl, [fix.fix!]);
+    expect(written.env).toEqual({ STRATA_ATTN_BATCH: '32' });
+    const reset = byId(speedHealthCheck({ config: written, platform: 'other', backend: 'sycl', engineVersion: '0.1.54', logs: doNotFit }), 'syclAttnBatch');
+    expect(reset).toMatchObject({ status: 'info', reason: 'set', action: 'reset', fix: { 'env.STRATA_ATTN_BATCH': null } });
+    expect(applySpeedFixes(written, [reset.fix!]).env).toBeUndefined();
+    // no line, another build, or another backend: no row
+    expect(byId(speedHealthCheck({ config: sycl, platform: 'other', backend: 'sycl', engineVersion: '0.1.54', logs: [] }), 'syclAttnBatch')).toBeUndefined();
+    expect(byId(speedHealthCheck({ config: sycl, platform: 'other', backend: 'sycl', engineVersion: '0.1.55', logs: doNotFit }), 'syclAttnBatch')).toBeUndefined();
+    for (const backend of ['cuda', 'hip', 'unknown'] as const)
+      expect(byId(speedHealthCheck({ config: { ...config([]), env: { STRATA_ATTN_BATCH: '32' } }, platform: 'other', backend, engineVersion: '0.1.54', logs: doNotFit }), 'syclAttnBatch')).toBeUndefined();
+  });
+
+  it('shows the route prior switch only for Qwen + CUDA + a discrete NVIDIA card of 13 GiB or less', () => {
+    const off = byId(speedHealthCheck({ config: config([]), platform: 'windows', backend: 'cuda', hardware: { gpus: [RTX3060] } }), 'routePrior');
+    expect(off).toMatchObject({ status: 'info', reason: 'off', action: 'toggle', on: false, fix: { 'env.STRATA_ROUTE_PRIOR': '1.5' } });
+    const on = applySpeedFixes({ ...config([]), env: { STRATA_KVA: '1' } }, [off.fix!]);
+    expect(on.env).toEqual({ STRATA_KVA: '1', STRATA_ROUTE_PRIOR: '1.5' });
+    const back = byId(speedHealthCheck({ config: on, platform: 'windows', backend: 'cuda', hardware: { gpus: [RTX3060] } }), 'routePrior');
+    expect(back).toMatchObject({ reason: 'on', on: true, fix: { 'env.STRATA_ROUTE_PRIOR': null } });
+    expect(applySpeedFixes(on, [back.fix!]).env).toEqual({ STRATA_KVA: '1' });
+    // 0.2.7's Off wrote 0: that reads as off and On replaces it
+    expect(byId(speedHealthCheck({ config: { ...config([]), env: { STRATA_ROUTE_PRIOR: '0' } }, platform: 'other', backend: 'cuda', hardware: { gpus: [RTX3060] } }), 'routePrior').on).toBe(false);
+    const none = (input: Partial<Parameters<typeof speedHealthCheck>[0]>) => byId(speedHealthCheck({ config: config([]), platform: 'other', backend: 'cuda', hardware: { gpus: [RTX3060] }, ...input }), 'routePrior');
+    expect(none({ hardware: { gpus: [RTX4090] } })).toBeUndefined();
+    expect(none({ hardware: { gpus: [{ vendor: 'nvidia', name: 'NVIDIA GB10', totalBytes: 12 * GIB }] } })).toBeUndefined();
+    expect(none({ hardware: { gpus: [{ vendor: 'amd', name: 'AMD Radeon RX 9060 XT', totalBytes: 12 * GIB }] } })).toBeUndefined();
+    expect(none({ backend: 'hip' })).toBeUndefined();
+    expect(none({ backend: 'sycl' })).toBeUndefined();
+    expect(none({ config: { ...config([]), arch: 'deepseek41' } })).toBeUndefined();
+    expect(none({ hardware: null })).toBeUndefined();
+  });
+
+  it('reads the backend like the native calibration does', () => {
+    expect(engineBackend({ backend: 'sycl' })).toBe('sycl');
+    expect(engineBackend({}, { hardware_static: { gpus: [{ name: 'NVIDIA GeForce RTX 3060' }] } })).toBe('cuda');
+    expect(engineBackend({}, { hardware_static: { gpus: [{ name: 'Intel Arc Pro B65' }] } })).toBe('sycl');
+    expect(engineBackend({}, null)).toBe('unknown');
+    // stopped model: the cards decide when they are all NVIDIA (an integrated chip beside them does not count)
+    expect(engineBackend({}, null, [{ vendor: 'intel', name: 'Intel(R) UHD Graphics 770' }, { vendor: 'nvidia', name: 'NVIDIA GeForce RTX 3060' }])).toBe('cuda');
+    expect(engineBackend({}, null, [{ vendor: 'amd', name: 'AMD Radeon RX 7900 XTX' }, { vendor: 'nvidia', name: 'NVIDIA GeForce RTX 3060' }])).toBe('unknown');
+    expect(engineBackend({ backend: 'metal' }, null, [{ vendor: 'nvidia', name: 'NVIDIA GeForce RTX 3060' }])).toBe('unknown');
+  });
+
+  it('refuses env names outside the engine switches', () => {
+    expect(() => applySpeedFixes(config([]), [{ 'env.PATH': '/tmp' }])).toThrow();
   });
 });
