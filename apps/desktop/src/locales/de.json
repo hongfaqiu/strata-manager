@@ -753,6 +753,7 @@
   "ovIntegratedGpu": "Integriert · nicht in der Summe",
   "appUpdateSource": "Downloadquelle",
   "appUpdateSourceShared": "Gemeinsam mit Engine-Downloads",
+  "appUpdateSourceAutoOption": "Automatisch (schnellste) (Standard)",
   "appUpdateSourceOfficial": "Offizielles GitHub",
   "appUpdateSourceCustom": "Benutzerdefiniert",
   "appUpdateSourceLocal": "Lokales Paket (nur Engine)",

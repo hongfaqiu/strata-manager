@@ -5,7 +5,8 @@ const storeKey = 'runtimeDownloadPreferences';
 const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
 
 /**
- * GitHub release proxies. gh-proxy.org is the default source and GitHub the fallback; every
+ * GitHub release proxies. By default (`auto`) the backend speed-tests these and GitHub, tries the
+ * fastest first and GitHub last; every
  * package is still checked against the official size and SHA-256 whichever host serves it.
  * Labels are the proxy hostnames so the two similarly named services stay distinguishable (#126).
  */
@@ -14,13 +15,13 @@ export const runtimeDownloadSources = [
   { id: 'ghproxy', label: 'ghproxy.net', urlTemplate: 'https://ghproxy.net/{url}' },
 ] as const;
 
-/** Nothing saved yet: the domestic mirror first, GitHub as the fallback. */
-export const RUNTIME_DOWNLOAD_DEFAULTS: RuntimeDownloadPreferences = { mode: 'mirror', sourceId: 'gh-proxy' };
+/** Nothing saved yet: speed-test the mirrors and GitHub, fastest first, GitHub as the last fallback. */
+export const RUNTIME_DOWNLOAD_DEFAULTS: RuntimeDownloadPreferences = { mode: 'auto' };
 
 function normalize(value: unknown): RuntimeDownloadPreferences {
   if (!value || typeof value !== 'object') return { ...RUNTIME_DOWNLOAD_DEFAULTS };
   const raw = value as Record<string, unknown>;
-  const mode = raw.mode === 'local' || raw.mode === 'mirror' ? raw.mode : 'official';
+  const mode = raw.mode === 'auto' || raw.mode === 'local' || raw.mode === 'mirror' ? raw.mode : 'official';
   return {
     mode,
     ...(mode === 'mirror' && runtimeDownloadSources.some(source => source.id === raw.sourceId) ? { sourceId: text(raw.sourceId) } : {}),
@@ -69,6 +70,7 @@ export function resolveRuntimeDownloadPreferences(value: RuntimeDownloadPreferen
   const asset = release.assets.find(item => item.name === (preferences.assetName || automaticAssetName));
   const assetName = asset?.name;
   if (preferences.mode === 'official') return { assetName, download: {}, requiresSelection: false };
+  if (preferences.mode === 'auto') return { assetName, download: { source: 'auto' }, requiresSelection: false };
   const version = release.latestVersion ?? release.supportedVersion;
   const sameRelease = preferences.releaseVersion === version;
   if (preferences.mode === 'local') {

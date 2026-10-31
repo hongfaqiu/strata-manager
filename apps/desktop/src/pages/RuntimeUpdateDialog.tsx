@@ -24,7 +24,7 @@ export interface RuntimeUpdateDialogProps {
   targetVersion?: string;
 }
 
-type DownloadMode = 'official' | 'local' | 'mirror';
+type DownloadMode = 'auto' | 'official' | 'local' | 'mirror';
 interface DownloadSelection { key: string; mode: DownloadMode; sourceId?: string; assetName: string; localArchivePath: string; downloadUrl: string; releaseVersion?: string }
 
 function validMirrorUrl(value: string) {
@@ -47,7 +47,7 @@ export function RuntimeUpdateDialog({ language, runtime, release, assetName, ini
   const automaticAsset = automatic.isSuccess ? release.assets.find(asset => asset.name === automatic.data?.name && asset.url === automatic.data?.url && asset.sha256 === automatic.data?.sha256) : undefined;
   const matchReason = automaticAsset && automatic.data?.matchReason ? core.runtimeBilingualText(automatic.data.matchReason, zh) : '';
   const automaticError = automatic.isError ? core.runtimeBilingualText(core.normalizeError(automatic.error).message, zh) : '';
-  const initialMode: DownloadMode = localEntry ? 'local' : initialPreferences?.mode ?? (initialDownload?.localArchivePath !== undefined ? 'local' : initialDownload?.downloadUrl !== undefined ? 'mirror' : 'official');
+  const initialMode: DownloadMode = localEntry ? 'local' : initialPreferences?.mode ?? (initialDownload?.localArchivePath !== undefined ? 'local' : initialDownload?.downloadUrl !== undefined ? 'mirror' : initialDownload?.source === 'auto' ? 'auto' : 'official');
   const selectionKey = JSON.stringify([runtime.installDir, release.latestVersion, release.checkedAt, release.sourceRevision, release.assets.map(asset => [asset.name, asset.sha256, asset.url]), assetName, initialDownload?.localArchivePath, initialDownload?.downloadUrl, initialPreferences]);
   const initialSelection = (): DownloadSelection => {
     const fixedSource = initialMode === 'local' || initialMode === 'mirror' && !initialPreferences?.sourceId && !/\{(?:url|version|asset)\}/.test(initialPreferences?.mirrorUrl ?? '');
@@ -63,18 +63,18 @@ export function RuntimeUpdateDialog({ language, runtime, release, assetName, ini
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => { setSelection(initialSelection()); setDownloadError(''); setCopied(''); }, [selectionKey]);
   const selectedAsset = selection.assetName ? release.assets.find(asset => asset.name === selection.assetName) : automaticAsset;
-  const sourceValue = selection.mode === 'official' ? 'official' : selection.mode === 'local' ? 'local' : selection.sourceId || 'custom';
+  const sourceValue = selection.mode === 'auto' || selection.mode === 'official' ? selection.mode : selection.mode === 'local' ? 'local' : selection.sourceId || 'custom';
   const shownAssets = selectedAsset ? [selectedAsset] : release.assets;
   const inputsDisabled = busy || !canConfirm || browsing;
   const preferences: RuntimeDownloadPreferences = { mode: selection.mode, ...(selection.assetName ? { assetName: selection.assetName } : {}), releaseVersion: selection.releaseVersion, ...(selection.mode === 'local' ? { localArchivePath: selection.localArchivePath } : selection.mode === 'mirror' ? selection.sourceId ? { sourceId: selection.sourceId } : { mirrorUrl: selection.downloadUrl } : {}) };
   const resolved = core.resolveRuntimeDownloadPreferences(preferences, release, automaticAsset?.name);
   const sourceReady = !!selectedAsset && !resolved.requiresSelection;
-  const savedSourceNeedsSelection = !localEntry && initialMode !== 'official' && selection.mode === initialMode && !sourceReady && (!!selectedAsset || automatic.isError || selection.mode === 'local' && !selection.localArchivePath || selection.mode === 'mirror' && !selection.sourceId && !selection.downloadUrl);
+  const savedSourceNeedsSelection = !localEntry && initialMode !== 'official' && initialMode !== 'auto' && selection.mode === initialMode && !sourceReady && (!!selectedAsset || automatic.isError || selection.mode === 'local' && !selection.localArchivePath || selection.mode === 'mirror' && !selection.sourceId && !selection.downloadUrl);
   const changeSelection = (changes: Partial<DownloadSelection>) => {
     if (inputsDisabled || currentState.current.busy || !currentState.current.canConfirm || currentSelection.current !== selection) return;
     setSelection({ ...selection, ...changes }); setDownloadError(''); setCopied('');
   };
-  const chooseSource = (source: string) => changeSelection(source === 'official' ? { mode: 'official', sourceId: undefined } : source === 'local' ? { mode: 'local', sourceId: undefined } : source === 'custom' ? { mode: 'mirror', sourceId: undefined } : { mode: 'mirror', sourceId: source });
+  const chooseSource = (source: string) => changeSelection(source === 'auto' || source === 'official' ? { mode: source, sourceId: undefined } : source === 'local' ? { mode: 'local', sourceId: undefined } : source === 'custom' ? { mode: 'mirror', sourceId: undefined } : { mode: 'mirror', sourceId: source });
   const chooseAsset = (assetName: string) => changeSelection({ assetName, localArchivePath: '', ...(!/\{(?:url|version|asset)\}/.test(selection.downloadUrl) ? { downloadUrl: '' } : {}), releaseVersion: version });
   const browse = async () => {
     if (inputsDisabled || browsingRef.current || selection.mode !== 'local') return;
@@ -123,8 +123,8 @@ export function RuntimeUpdateDialog({ language, runtime, release, assetName, ini
       {localEntry && <p className="runtime-update-download-hint" data-testid="runtime-local-entry-hint">{zh ? `选择本机已下载的 Strata ${version} 官方引擎包（tar.gz 或旧版 ZIP），可更新到该版本或重装当前版本。安装前按官方 SHA256 校验，不匹配不会安装。` : `Choose a downloaded official Strata ${version} engine package (tar.gz or legacy ZIP) to update to that version or reinstall it. It is verified against the official SHA256 before installation; a mismatch is not installed.`}</p>}
       <fieldset className="runtime-update-download" disabled={inputsDisabled}>
         <legend>{zh ? '引擎包下载方式' : 'Engine package source'}</legend>
-        {savedSourceNeedsSelection && <p className="notice warning" role="status">{zh ? '已保存的下载来源需要重新选择，或改用官方下载。' : 'Reselect the saved source, or choose official downloading.'}</p>}
-        <div className="runtime-update-source-options"><span>{zh ? '下载来源' : 'Download source'}</span><Dropdown ariaLabel={zh ? '引擎包下载方式' : 'Engine package source'} value={sourceValue} disabled={inputsDisabled} onValueChange={chooseSource} options={[{ value: 'official', label: zh ? '官方自动下载' : 'Official download' }, ...core.runtimeDownloadSources.map(source => ({ value: source.id, label: source.label })), { value: 'custom', label: zh ? '自定义 HTTPS' : 'Custom HTTPS' }, { value: 'local', label: zh ? '本地已下载的引擎包' : 'Downloaded package' }]}/></div>
+        {savedSourceNeedsSelection && <p className="notice warning" role="status">{zh ? '已保存的下载来源需要重新选择，或改用自动。' : 'Reselect the saved source, or choose Automatic.'}</p>}
+        <div className="runtime-update-source-options"><span>{zh ? '下载来源' : 'Download source'}</span><Dropdown ariaLabel={zh ? '引擎包下载方式' : 'Engine package source'} value={sourceValue} disabled={inputsDisabled} onValueChange={chooseSource} options={[{ value: 'auto', label: zh ? '自动（测速选最快）（默认）' : 'Automatic (fastest) (default)' }, { value: 'official', label: zh ? '官方 GitHub' : 'Official GitHub' }, ...core.runtimeDownloadSources.map(source => ({ value: source.id, label: source.label })), { value: 'custom', label: zh ? '自定义 HTTPS' : 'Custom HTTPS' }, { value: 'local', label: zh ? '本地已下载的引擎包' : 'Downloaded package' }]}/></div>
         <div className="runtime-update-asset-selector"><span>{zh ? '官方更新包' : 'Official update package'}</span><Dropdown ariaLabel={zh ? '官方更新包' : 'Official update package'} value={selection.assetName} disabled={inputsDisabled} onValueChange={chooseAsset} options={[{ value: '', label: zh ? '自动匹配（当前引擎或显卡）' : 'Automatic (current engine or GPU)' }, ...release.assets.map(asset => ({ value: asset.name, label: core.runtimeAssetLabel(asset, zh) }))]}/></div>
         {!selection.assetName && <p className={automatic.isError || automatic.isSuccess && !automaticAsset ? 'runtime-update-validation' : 'runtime-update-download-hint'} role={automatic.isError || automatic.isSuccess && !automaticAsset ? 'alert' : 'status'} data-testid="runtime-auto-match">{automaticAsset ? <>{`${zh ? '自动匹配' : 'Auto matched'} · ${core.runtimeAssetLabel(automaticAsset, zh)}`}{matchReason && <span className="runtime-update-match-reason">{matchReason}</span>}</> : automatic.isError ? automaticError || (zh ? '自动匹配失败，请手动选择包。' : 'Automatic matching failed; select a package manually.') : automatic.isSuccess ? zh ? '包信息已变化，请检查更新或手动选择包。' : 'Package details changed; check for updates or select a package.' : zh ? '正在匹配当前引擎…' : 'Matching the current engine…'}</p>}
         {selection.mode === 'local' && <div className="runtime-update-local-file"><button type="button" onClick={() => void browse()}><FolderOpen size={14}/>{browsing ? zh ? '正在选择…' : 'Choosing…' : zh ? '选择引擎包文件' : 'Choose package file'}</button><code>{selection.localArchivePath || (zh ? '尚未选择文件' : 'No file selected')}</code></div>}

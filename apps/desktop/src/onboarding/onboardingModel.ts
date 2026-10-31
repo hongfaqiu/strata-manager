@@ -340,3 +340,26 @@ export function deriveGuide(input: GuideInput): GuideState {
   const repairReason = runtime === 'repair' ? detected.find(item => item.readiness === 'repair' && item.reason)?.reason : undefined;
   return { facts, plan, checks, runtimeTask, setupTask, handoff, readyRuntime, repairReason, target };
 }
+
+/** What the download step shows next to the bar: the source in use and whether the pre-download fell back. */
+export interface SetupDownloadView { source?: string; reason?: string; done: boolean; fallback: boolean; detail?: string }
+// Backend lines (runtime-core download_route.rs / setup_prefetch.rs).
+const SOURCE_LINE = /^下载来源：(.+?)（(.+?)）· .*? \/ Download source: .+? \((.+?)\) · /;
+const FALLBACK_PREFIX = '预下载未完成';
+const PREFETCH_PREFIX = '引擎预下载：';
+
+export function setupDownloadView(logs: readonly { message: string }[], zh: boolean): SetupDownloadView {
+  const view: SetupDownloadView = { done: false, fallback: false };
+  for (const { message } of logs) {
+    const source = SOURCE_LINE.exec(message);
+    if (source) { view.source = source[1]; view.reason = zh ? source[2] : source[3]; view.done = false; continue; }
+    if (message.startsWith(FALLBACK_PREFIX)) { view.fallback = true; view.detail = core.runtimeBilingualText(message, zh); view.source = view.reason = undefined; continue; }
+    if (view.source && (message.startsWith(PREFETCH_PREFIX) || message.includes('=== Step'))) view.done = true;
+  }
+  return view;
+}
+
+/** Only the Manager's own bilingual status lines are split; setup.py text such as "31.2 / 83.6 GB" stays whole. */
+export function setupStatusText(message: string, zh: boolean): string {
+  return /^(下载来源|引擎预下载|预下载未完成)/.test(message) ? core.runtimeBilingualText(message, zh) : message;
+}

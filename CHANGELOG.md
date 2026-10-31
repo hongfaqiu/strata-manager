@@ -7,13 +7,31 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+- **下载模型时 Step 4 不再「卡住」**：这一步上游脚本要从 GitHub 下载 llama.cpp 源码包（约 38MB），国内直连很慢，而且脚本用回车原地刷新进度、Manager 以前只按换行读取，界面一直不动。现在进入这一步前，Manager 先按「下载来源」把这个包下好，核对 SHA-256 后放到脚本认的位置，脚本直接跳过下载；下载时显示字节进度、速度和当前来源。提前下载失败时显示黄色提示，交给上游脚本自己从 GitHub 下。setup 输出也改为按回车分行，进度能正常刷新。
+- **下载来源默认「自动（测速选最快）」**：gh-proxy.org、ghproxy.net 和 GitHub 一起测速，从最快的开始，失败按顺序换下一个，GitHub 兜底。没改过来源的用户自动用上新默认，手动选过的保持不变，「恢复默认」回到自动；引擎下载、应用更新和 Step 4 共用这套设置。在「应用更新」里手动选「官方」后只走 GitHub。
 - **Intel 显卡（SYCL）引擎 0.1.54「显存放不下」一键修复**（上游 #4731）：0.1.54 按注意力批量 128 分配显存、却只按 32 预算，单卡首个请求可能报 `do not fit`。「一键提速 → 体检」在 SYCL + 引擎 0.1.54 且日志出现 `do not fit` 时显示提示卡，一键把 `env.STRATA_ATTN_BATCH` 设为 32（另存新版本并切换）；已设置时显示「恢复默认」一键删除。CUDA、HIP 等其他后端不显示。
 - **12 GB N 卡提速开关**（上游 #4735，0.2.8 起默认关闭）：Qwen + CUDA + 不超过 13 GiB 的独立 NVIDIA 显卡时，体检里多一个开关；打开写 `env.STRATA_ROUTE_PRIOR=1.5`，关闭删除该项（旧版写的 `0` 视为关闭）。说明代价：长对话可能重复文字。只手动开关，不进入自动校准。文案覆盖全部 10 种界面语言。
 
 ### English
 
+- **Step 4 of model download no longer looks stuck**: upstream setup downloads the llama.cpp source zip (about 38 MB) from GitHub here, which is slow on some networks, and its in-place carriage-return progress was never shown because Manager only split output on newlines. Manager now downloads that zip through the download source first, verifies its SHA-256 and places it where setup expects it, so setup skips the download; the step shows bytes, speed and the current source. If the pre-download fails, a yellow note explains that setup will download it from GitHub itself. Setup output is now also split on carriage returns so progress updates.
+- **Download source now defaults to "Automatic (fastest)"**: gh-proxy.org, ghproxy.net and GitHub are speed-tested, the fastest is tried first and the rest follow in order, with GitHub last. Users who never changed the source get the new default, explicit choices are kept, and "Restore default" returns to automatic. Engine downloads, app updates and Step 4 share this setting. Choosing "Official" for app updates now uses GitHub only.
 - **One-click fix for "do not fit" on Intel GPUs (SYCL) with engine 0.1.54** (upstream #4731): 0.1.54 allocates the prompt attention for a batch of 128 but budgets 32, so a single card can fail its first request with `do not fit`. On SYCL + engine 0.1.54 with `do not fit` in the log, Speed-up → Health check shows a card that sets `env.STRATA_ATTN_BATCH` to 32 (saved as a new version and switched to); once set, "Restore default" removes it. Other backends (CUDA, HIP, …) never show it.
 - **"Faster on 12 GB NVIDIA" switch** (upstream #4735, off by default since 0.2.8): for Qwen + CUDA + a discrete NVIDIA card of 13 GiB or less, the health check has a switch; on writes `env.STRATA_ROUTE_PRIOR=1.5`, off removes it (an older `0` reads as off). It states the cost: long chats may repeat text. Manual only, never an auto-calibration candidate. All 10 interface languages.
+
+## [0.2.32] - 2026-10-31
+
+### 中文
+
+- **Windows 上引擎不再继承低读盘优先级**：从编辑器、AI 编程助手终端等低优先级程序里启动 Manager 时，后台和它拉起的引擎会照搬低 I/O 优先级（CPU 也可能是「低于正常」），上游 #4733 实测读模型慢约 15 倍、生成速度掉 14%。现在后台启动时把自己的 I/O 优先级恢复为正常、CPU 优先级从「低/低于正常」恢复为正常，每个引擎和服务在挂起启动时也再设一次；用户自己调高的优先级不动。设置失败只记日志，不影响启动。macOS、Linux 不变。
+- **导入已有模型时不再把认不出的新模型当成 Qwen3.8**：此前文件名认不出的 GGUF 只要量化名对得上，就会被猜成 Qwen3.8-Flash-Next 系列并标为「可安装」，例如即将发布的 DeepSeek-V4.1-Flash-1017 GGUF 和 Qwen 4 Next。现在文件名须和社区模型列表用同样的规则（GSQ-RCO 系列要带 `GSQ-RCO`，Qwen3.8 系列要带 `Flash-Next`，Qwen3.6 要带 `35B-A3B`），并再核对第一个分片 GGUF 头里的模型架构；认不出或架构不符的标为不可安装，提示「需等上游支持」。官方文件名和已支持的系列不受影响。
+- **引擎试启动失败时保留报错的末尾**：此前只取最后一行的前 300 个字，长路径会把真正的错误挤掉。现在保留输出末尾 1000 个字（多行），按字符截断。
+
+### English
+
+- **Engines on Windows no longer inherit a low disk priority**: when Manager was started from a low-priority program such as an editor or an AI coding-agent terminal, the background service and every engine it started kept a low I/O priority (and sometimes a below-normal CPU class); upstream #4733 measured model reads about 15 times slower and generation 14% slower. The background service now restores its own I/O priority to normal and a low or below-normal CPU class to normal at start, and sets the same on each engine and service while it is still suspended; a higher priority set by the user is kept. A failure is only logged and never stops a start. macOS and Linux are unchanged.
+- **Importing existing models no longer treats unrecognised new models as Qwen3.8**: any GGUF whose name was not recognised but carried a supported quantization was guessed into a Qwen3.8-Flash-Next family and marked installable, for example the coming DeepSeek-V4.1-Flash-1017 GGUF and Qwen 4 Next. The name must now follow the community model list's rules (`GSQ-RCO` for the GSQ-RCO families, `Flash-Next` for Qwen3.8, `35B-A3B` for Qwen3.6), and the model architecture in the first shard's GGUF header is checked too. Anything unrecognised or with another architecture is not installable and says it needs upstream support first. Official file names and supported families are unaffected.
+- **A failed engine trial start keeps the end of the error**: only the first 300 characters of the last line were kept, so a long path could push the real error out. The last 1000 characters of the output (several lines) are kept now, cut on a character boundary.
 
 ## [0.2.31] - 2026-10-30
 

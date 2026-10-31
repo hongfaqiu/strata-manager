@@ -621,6 +621,115 @@ pub fn suppress_hard_error_dialogs() {
     }
 }
 
+/// Windows (upstream #4733): a process started from a low-priority parent (an IDE or coding-agent terminal, a
+/// service) inherits Low or Very Low I/O priority and an Idle/Below-normal priority class, and so does every engine
+/// it starts: PLE reads ran about 15 times slower and decode lost 14%. Raise the current process back to Normal
+/// I/O priority and, when it is below normal, the Normal priority class. A higher setting chosen by the user is kept.
+/// Elsewhere this does nothing.
+pub fn restore_normal_priority() -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        // SAFETY: the pseudo handle of the current process is always valid.
+        unsafe {
+            windows_priority::normalise(windows_sys::Win32::System::Threading::GetCurrentProcess())
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+mod windows_priority {
+    use std::ffi::c_void;
+    use windows_sys::Win32::{
+        Foundation::HANDLE,
+        System::{
+            LibraryLoader::{GetModuleHandleW, GetProcAddress},
+            Threading::{
+                GetPriorityClass, SetPriorityClass, BELOW_NORMAL_PRIORITY_CLASS,
+                IDLE_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS,
+            },
+        },
+    };
+
+    /// PROCESSINFOCLASS ProcessIoPriority; IO_PRIORITY_HINT IoPriorityNormal.
+    const PROCESS_IO_PRIORITY: i32 = 33;
+    const IO_PRIORITY_NORMAL: u32 = 2;
+    type Query = unsafe extern "system" fn(HANDLE, i32, *mut c_void, u32, *mut u32) -> i32;
+    type Set = unsafe extern "system" fn(HANDLE, i32, *const c_void, u32) -> i32;
+
+    unsafe fn ntdll(name: &std::ffi::CStr) -> Option<unsafe extern "system" fn() -> isize> {
+        let module: Vec<u16> = "ntdll.dll\0".encode_utf16().collect();
+        let handle = GetModuleHandleW(module.as_ptr());
+        if handle.is_null() {
+            return None;
+        }
+        GetProcAddress(handle, name.as_ptr().cast())
+    }
+
+    /// Normal I/O priority and at least the Normal priority class for `process` (needs query and
+    /// set-information access). Every step is tried; the failures are returned together.
+    pub(super) unsafe fn normalise(process: HANDLE) -> Result<(), String> {
+        let mut failures = Vec::new();
+        let class = GetPriorityClass(process);
+        if class == 0 {
+            failures.push(format!(
+                "读取 CPU 优先级失败: {}",
+                std::io::Error::last_os_error()
+            ));
+        } else if (class == IDLE_PRIORITY_CLASS || class == BELOW_NORMAL_PRIORITY_CLASS)
+            && SetPriorityClass(process, NORMAL_PRIORITY_CLASS) == 0
+        {
+            failures.push(format!(
+                "恢复正常 CPU 优先级失败: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+        match (
+            ntdll(c"NtQueryInformationProcess"),
+            ntdll(c"NtSetInformationProcess"),
+        ) {
+            (Some(query), Some(set)) => {
+                let query: Query = std::mem::transmute(query);
+                let set: Set = std::mem::transmute(set);
+                let mut current: u32 = 0;
+                let mut returned = 0;
+                let status = query(
+                    process,
+                    PROCESS_IO_PRIORITY,
+                    (&mut current as *mut u32).cast(),
+                    4,
+                    &mut returned,
+                );
+                // Unknown (query failed) or below Normal: set Normal. High needs a privilege and is kept.
+                if status < 0 || current < IO_PRIORITY_NORMAL {
+                    let normal = IO_PRIORITY_NORMAL;
+                    let status = set(
+                        process,
+                        PROCESS_IO_PRIORITY,
+                        (&normal as *const u32).cast(),
+                        4,
+                    );
+                    if status < 0 {
+                        failures.push(format!(
+                            "恢复正常 I/O 优先级失败（系统状态 0x{:08X}）",
+                            status as u32
+                        ));
+                    }
+                }
+            }
+            _ => failures.push("系统 I/O 优先级接口不可用".into()),
+        }
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(failures.join("；"))
+        }
+    }
+}
+
 pub fn hidden(command: &mut Command) {
     #[cfg(windows)]
     {
@@ -657,23 +766,70 @@ fn capture<R: Read + Send + 'static>(
 ) {
     pending.fetch_add(1, Ordering::Relaxed);
     std::thread::spawn(move || {
-        // Bound each read and each record even if a child emits a line without newlines.
         let mut reader = BufReader::new(reader);
-        loop {
-            let mut bytes = Vec::new();
-            let result = (&mut reader).take(8192).read_until(b'\n', &mut bytes);
-            match result {
-                Ok(0) | Err(_) => break,
-                Ok(_) => log(
-                    &logs,
-                    &id,
-                    level,
-                    child_line_text(&bytes).trim_end().to_string(),
-                ),
-            }
-        }
+        pump(&mut reader, PROGRESS_INTERVAL, |line| {
+            log(&logs, &id, level, line)
+        });
         pending.fetch_sub(1, Ordering::Release);
     });
+}
+
+/// setup.py redraws download progress in place (`\r  label: 12% ...`, no newline until the
+/// end). Such a redraw becomes a record at most this often, so the log shows progress
+/// without one line per redraw.
+const PROGRESS_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Splits child output into records at `\n`, `\r\n` and, throttled, at a bare `\r`.
+/// Each read and each record stays bounded even if a child never ends a line.
+fn pump<R: BufRead>(reader: &mut R, interval: std::time::Duration, mut emit: impl FnMut(String)) {
+    let mut last_redraw: Option<std::time::Instant> = None;
+    let mut bytes = Vec::new();
+    while let Ok(buffer) = reader.fill_buf() {
+        if buffer.is_empty() {
+            if !bytes.is_empty() {
+                emit(child_line_text(&bytes).trim_end().to_string());
+            }
+            break;
+        }
+        let room = 8192 - bytes.len();
+        let window = &buffer[..buffer.len().min(room)];
+        match window
+            .iter()
+            .position(|byte| *byte == b'\n' || *byte == b'\r')
+        {
+            Some(at) => {
+                let terminator = window[at];
+                bytes.extend_from_slice(&window[..at]);
+                reader.consume(at + 1);
+                let redraw = terminator == b'\r'
+                    && !matches!(reader.fill_buf(), Ok(next) if next.first() == Some(&b'\n'));
+                if terminator == b'\r' && !redraw {
+                    reader.consume(1);
+                }
+                let text = child_line_text(&bytes).trim_end().to_string();
+                bytes.clear();
+                if redraw {
+                    // A redraw prefix (`\r` first) leaves nothing before it; skip that.
+                    if text.trim().is_empty()
+                        || last_redraw.is_some_and(|at| at.elapsed() < interval)
+                    {
+                        continue;
+                    }
+                    last_redraw = Some(std::time::Instant::now());
+                }
+                emit(text);
+            }
+            None => {
+                let taken = window.len();
+                bytes.extend_from_slice(window);
+                reader.consume(taken);
+                if bytes.len() >= 8192 {
+                    emit(child_line_text(&bytes).trim_end().to_string());
+                    bytes.clear();
+                }
+            }
+        }
+    }
 }
 
 /// A child's output line as text. Python (setup.py) writes to a pipe in the Windows ANSI code page
@@ -905,6 +1061,16 @@ impl OwnedProcess {
                         windows_sys::Win32::Foundation::CloseHandle(handle);
                     }
                     return Err(format!("无法建立受管进程树，启动已取消: {error}"));
+                }
+                // Still suspended: give the child Normal I/O and CPU priority even if this process could not
+                // restore its own (upstream #4733). A failure is logged; the process still starts.
+                if let Err(error) = windows_priority::normalise(child.as_raw_handle() as _) {
+                    log(
+                        &logs,
+                        id,
+                        "warn",
+                        format!("无法把进程优先级恢复为正常，可能读盘变慢: {error}"),
+                    );
                 }
                 use windows_sys::Win32::System::{Diagnostics::ToolHelp::*, Threading::*};
                 let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
@@ -1992,6 +2158,53 @@ pub fn python(profile: &ServiceProfile) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    fn records(input: &[u8], interval: std::time::Duration) -> Vec<String> {
+        let mut lines = Vec::new();
+        let mut reader = std::io::BufReader::with_capacity(4, input);
+        super::pump(&mut reader, interval, |line| lines.push(line));
+        lines
+    }
+
+    #[test]
+    fn carriage_return_progress_becomes_throttled_records() {
+        // setup.py's in-place progress: `\r  label: n%` redraws, a newline at the end.
+        let input = b"Step 4\n\r  llama.cpp source: 10%\r  llama.cpp source: 20%\r  llama.cpp source: 100%\nnext\r\nlast";
+        assert_eq!(
+            records(input, std::time::Duration::ZERO),
+            [
+                "Step 4",
+                "  llama.cpp source: 10%",
+                "  llama.cpp source: 20%",
+                "  llama.cpp source: 100%",
+                "next",
+                "last"
+            ]
+        );
+        // Redraws closer together than the interval collapse; the final line always shows.
+        assert_eq!(
+            records(input, std::time::Duration::from_secs(3600)),
+            [
+                "Step 4",
+                "  llama.cpp source: 10%",
+                "  llama.cpp source: 100%",
+                "next",
+                "last"
+            ]
+        );
+    }
+
+    #[test]
+    fn records_stay_bounded_without_newlines_and_keep_empty_lines() {
+        let long = vec![b'x'; 9000];
+        let lines = records(&long, std::time::Duration::ZERO);
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0].len(), 8192);
+        assert_eq!(
+            records(b"a\n\nb\n", std::time::Duration::ZERO),
+            ["a", "", "b"]
+        );
+    }
+
     #[test]
     fn child_output_keeps_utf8_and_never_turns_ansi_text_into_replacement_characters() {
         assert_eq!(

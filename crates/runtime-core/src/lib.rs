@@ -50,6 +50,7 @@ pub mod runtime_upgrade;
 pub mod service_sharing;
 pub mod setup_handoff;
 pub mod setup_options;
+pub mod setup_prefetch;
 pub mod storage;
 pub mod storage_location;
 pub mod store;
@@ -3884,12 +3885,35 @@ fn run_setup_with_preflight_options(
             .unwrap_or_default(),
     };
     steps.push(step);
-    let prelude = if deepseek {
-        Some(dsv41_prelude(state.clone(), root_for_prelude)?)
+    let prelude = setup_prelude(state.clone(), root_for_prelude, deepseek)?;
+    processes::launch_setup_task_with_prelude(state.clone(), intent, steps, prelude)
+}
+/// Before setup.py: pre-download what its step 4 (the Strata engine) needs through the
+/// user's download route (setup_prefetch), then the DeepSeek engine when that family runs.
+fn setup_prelude(
+    state: Arc<RuntimeState>,
+    root: PathBuf,
+    deepseek: bool,
+) -> Result<Option<processes::Prelude>, String> {
+    let dsv41 = if deepseek {
+        Some(dsv41_prelude(state.clone(), root.clone())?)
     } else {
         None
     };
-    processes::launch_setup_task_with_prelude(state.clone(), intent, steps, prelude)
+    // macOS installs through the control path (mac_control.rs) into its own folder.
+    if cfg!(target_os = "macos") {
+        return Ok(dsv41);
+    }
+    let Ok(handle) = tokio::runtime::Handle::try_current() else {
+        return Ok(dsv41);
+    };
+    Ok(Some(Box::new(move |id: &str| {
+        handle.block_on(setup_prefetch::run(&state, id, &root))?;
+        match dsv41 {
+            Some(dsv41) => dsv41(id),
+            None => Ok(std::collections::BTreeMap::new()),
+        }
+    })))
 }
 /// DeepSeek-V4.1-Flash runs on its own engine package (engine-dsv41/), which setup.py would otherwise fetch from
 /// the newest upstream release. Manager installs the verified package from its own feed first and hands setup the
@@ -4016,7 +4040,8 @@ fn run_community_setup(
         context,
         images,
     };
-    processes::launch_setup_task(state.clone(), intent, steps)
+    let prelude = setup_prelude(state.clone(), root.clone(), false)?;
+    processes::launch_setup_task_with_prelude(state.clone(), intent, steps, prelude)
 }
 fn install_runtime(state: &RuntimeState, directory: String) -> Result<TaskStatus, String> {
     let _operation = state.runtime_operations.lock().map_err(|e| e.to_string())?;

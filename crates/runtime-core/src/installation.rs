@@ -284,14 +284,18 @@ pub fn start_fallback_with_archives(
     Ok(task)
 }
 
-fn cancelled(state: &RuntimeState, id: &str) -> Result<(), String> {
+pub(crate) fn cancelled(state: &RuntimeState, id: &str) -> Result<(), String> {
     let tasks = state.tasks.lock().map_err(|e| e.to_string())?;
     if tasks.get(id).is_none_or(|record| record.cancelled) {
         return Err("准备任务已取消；受管下载文件保留以供重试".into());
     }
     Ok(())
 }
-fn progress(state: &RuntimeState, id: &str, message: impl Into<String>) -> Result<(), String> {
+pub(crate) fn progress(
+    state: &RuntimeState,
+    id: &str,
+    message: impl Into<String>,
+) -> Result<(), String> {
     cancelled(state, id)?;
     let message = message.into();
     processes::log(&state.logs, id, "info", &message);
@@ -923,7 +927,12 @@ pub(crate) async fn download_release(
     expected: &str,
     limit: u64,
 ) -> Result<PathBuf, String> {
-    let client = reqwest::Client::builder()
+    let client = release_client()?;
+    download_with_client(state, id, url, expected, limit, &client).await
+}
+
+fn release_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(10))
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
             if attempt.previous().len() >= 5 {
@@ -934,6 +943,8 @@ pub(crate) async fn download_release(
                     attempt.url().host_str(),
                     Some(
                         "github.com"
+                            // GitHub's source archives (llama.cpp for setup.py's step 4)
+                            | "codeload.github.com"
                             | "release-assets.githubusercontent.com"
                             | "objects.githubusercontent.com"
                     )
@@ -945,8 +956,32 @@ pub(crate) async fn download_release(
             }
         }))
         .build()
-        .map_err(|e| e.to_string())?;
-    download_with_client(state, id, url, expected, limit, &client).await
+        .map_err(|e| e.to_string())
+}
+
+/// [`download_release`] for a file of exactly `size` bytes: progress shows that total even
+/// when the source sends no Content-Length.
+pub(crate) async fn download_release_sized(
+    state: &RuntimeState,
+    id: &str,
+    url: &str,
+    expected: &str,
+    size: u64,
+) -> Result<PathBuf, String> {
+    let client = release_client()?;
+    download::download_with_client_sized(state, id, url, expected, size, &client, Some(size)).await
+}
+
+/// [`download_using_client`] for a file of exactly `size` bytes.
+pub(crate) async fn download_using_client_sized(
+    state: &RuntimeState,
+    id: &str,
+    url: &str,
+    expected: &str,
+    size: u64,
+    client: &reqwest::Client,
+) -> Result<PathBuf, String> {
+    download::download_with_client_sized(state, id, url, expected, size, client, Some(size)).await
 }
 
 async fn download_with_client(

@@ -753,6 +753,7 @@
   "ovIntegratedGpu": "Integrada · fuera del total",
   "appUpdateSource": "Origen de descarga",
   "appUpdateSourceShared": "Compartido con las descargas del motor",
+  "appUpdateSourceAutoOption": "Automático (el más rápido) (predeterminado)",
   "appUpdateSourceOfficial": "GitHub oficial",
   "appUpdateSourceCustom": "Personalizado",
   "appUpdateSourceLocal": "Paquete local (solo motor)",

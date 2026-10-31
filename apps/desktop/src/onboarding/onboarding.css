@@ -88,6 +88,11 @@
 .ob-bar{height:4px;border-radius:2px;background:color-mix(in srgb,var(--st-ink) 9%,transparent);position:relative;overflow:hidden}
 .ob-bar i{position:absolute;left:0;top:0;bottom:0;border-radius:2px;background:var(--st-accent);transition:width .6s ease}
 .ob-bar.is-bad i{background:var(--st-danger)}
+.ob-dl-source{display:inline-flex;align-items:center;gap:6px;justify-self:start;max-width:100%;padding:3px 9px;border-radius:999px;font-size:12px;color:var(--st-ink-muted);background:color-mix(in srgb,var(--st-accent) 9%,transparent)}
+.ob-dl-source svg{color:var(--st-accent);flex-shrink:0}
+.ob-status-body .ob-dl-source b{font-weight:600;color:var(--st-ink)}.ob-status-body .ob-dl-source small{font-size:12px;opacity:.8}
+.ob-dl-fallback{display:flex;align-items:flex-start;gap:6px;margin:0;padding:7px 10px;border-radius:8px;font-size:12px;line-height:1.5;color:var(--st-warn-text);background:color-mix(in srgb,var(--st-warn) 12%,transparent)}
+.ob-dl-fallback svg{flex-shrink:0;margin-top:2px;color:var(--st-warn)}
 .ob-bar.is-indeterminate i{width:30%;animation:ob-slide 1.4s ease-in-out infinite}
 @keyframes ob-slide{0%{left:-30%}100%{left:100%}}
 .ob-logs{max-height:200px;overflow:auto;padding:8px 18px 12px;background:var(--st-surface-2);border-top:1px solid var(--st-line-soft);font:11.5px/1.7 var(--st-font-mono);color:var(--st-ink-soft);user-select:text}
