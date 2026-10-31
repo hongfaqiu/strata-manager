@@ -5,6 +5,8 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+## [0.2.33] - 2026-10-31
+
 ### 中文
 
 - **下载模型时 Step 4 不再「卡住」**：这一步上游脚本要从 GitHub 下载 llama.cpp 源码包（约 38MB），国内直连很慢，而且脚本用回车原地刷新进度、Manager 以前只按换行读取，界面一直不动。现在进入这一步前，Manager 先按「下载来源」把这个包下好，核对 SHA-256 后放到脚本认的位置，脚本直接跳过下载；下载时显示字节进度、速度和当前来源。提前下载失败时显示黄色提示，交给上游脚本自己从 GitHub 下。setup 输出也改为按回车分行，进度能正常刷新。
