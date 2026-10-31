@@ -127,6 +127,22 @@ pub(super) fn run_engine_version(directory: &Path) -> Result<TrialOutput, String
     })
 }
 
+/// How much of a failed trial's output is kept in the failure reason, counted from the end.
+const FAILURE_TAIL_CHARS: usize = 1000;
+
+/// The last `limit` characters of `text` (cut on a character boundary), marked with `…` when cut.
+fn last_chars(text: &str, limit: usize) -> String {
+    let count = text.chars().count();
+    if count <= limit {
+        return text.to_owned();
+    }
+    let start = text
+        .char_indices()
+        .nth(count - limit)
+        .map_or(text.len(), |(index, _)| index);
+    format!("…{}", &text[start..])
+}
+
 /// Upstream's rule: exit 0 passes; an engine built before `--version` existed prints its
 /// usage (at least five of its own options) and exits 2, which proves it loaded too.
 pub(super) fn judge(output: &TrialOutput) -> Result<String, String> {
@@ -151,12 +167,13 @@ pub(super) fn judge(output: &TrialOutput) -> Result<String, String> {
             Ok("engine loaded and listed its options".into())
         }
         code => {
-            let last: String = lines()
-                .next_back()
-                .unwrap_or("(no output)")
-                .chars()
-                .take(300)
-                .collect();
+            // The real error is usually last, after a long path or a banner: keep the end (upstream #4727).
+            let joined = lines().collect::<Vec<_>>().join("\n");
+            let last = if joined.is_empty() {
+                "(no output)".to_owned()
+            } else {
+                last_chars(&joined, FAILURE_TAIL_CHARS)
+            };
             Err(match code {
                 Some(code) => format!("--version 退出码 {code} / --version exited {code}\n{last}"),
                 None => format!("引擎被系统终止 / The engine was killed by a signal\n{last}"),
@@ -272,6 +289,29 @@ mod tests {
             "{error}"
         );
         assert!(judge(&output(None, "")).unwrap_err().contains("signal"));
+    }
+
+    #[test]
+    fn a_failed_trial_keeps_the_end_of_the_output() {
+        // A long path first, the real error last: the old 300-character head lost the error.
+        let path = format!("C:\\Users\\用户\\{}\\strata.exe", "很长的目录".repeat(300));
+        let text = format!("loading {path}\nstrata: error: unknown argument --eos (exit 2)\n");
+        let error = judge(&output(Some(1), &text)).unwrap_err();
+        assert!(
+            error.ends_with("unknown argument --eos (exit 2)"),
+            "{error}"
+        );
+        let kept = error.lines().skip(1).collect::<Vec<_>>().join("\n");
+        assert_eq!(kept.chars().count(), FAILURE_TAIL_CHARS + 1, "{kept}");
+        assert!(kept.starts_with('…'));
+        // Earlier lines survive when there is room; short output is kept whole.
+        let error = judge(&output(Some(3), "first line\n\nsecond line\n")).unwrap_err();
+        assert!(error.ends_with("first line\nsecond line"), "{error}");
+        assert!(judge(&output(Some(3), "  \n"))
+            .unwrap_err()
+            .contains("(no output)"));
+        assert_eq!(last_chars("一二三四", 2), "…三四");
+        assert_eq!(last_chars("abc", 3), "abc");
     }
 
     fn engine_fixture(root: &Path, work: &Path, version: &str) -> Vec<Change> {

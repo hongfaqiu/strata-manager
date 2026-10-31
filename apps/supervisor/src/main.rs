@@ -30,6 +30,10 @@ fn main() {
             }
         }
     }
+    // Engines inherit this process's priority: undo a low one from the launcher (upstream #4733).
+    if let Err(error) = strata_runtime_core::processes::restore_normal_priority() {
+        eprintln!("Strata Supervisor: 无法恢复正常进程优先级（继续启动）: {error}");
+    }
     supervisor_main();
 }
 
