@@ -224,6 +224,104 @@ fn resource_report(message: &str) -> bool {
         || lower.contains("pageable resident complement allocation failed")
 }
 
+/// What an engine memory line says ran out. Order matters: a Windows commit
+/// line also names `cudaMalloc ... out of memory`, and its fix differs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum MemoryReport {
+    /// Only a bare "out of memory": RAM or VRAM, the line does not say.
+    Generic,
+    /// The GPU allocation failed (generate.cpp vram_free_note, cudaMalloc, HIP).
+    Vram,
+    /// Windows commit (RAM + page file) ran out; generate.cpp ~7205-7225.
+    Commit,
+}
+
+pub const VRAM_INSUFFICIENT: &str = "STARTUP_VRAM_INSUFFICIENT";
+pub const WINDOWS_COMMIT_LOW: &str = "STARTUP_WINDOWS_COMMIT_LOW";
+
+fn memory_report(message: &str) -> Option<MemoryReport> {
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("commit left")
+        || lower.contains("room in the page file")
+        || lower.contains("paging file is too small")
+        || lower.contains("os error 1455")
+    {
+        return Some(MemoryReport::Commit);
+    }
+    let gpu = ["cuda", "hip", "vram", "gpu", "expertcache", "expert cache"]
+        .iter()
+        .any(|token| lower.contains(token));
+    if resource_report(message)
+        || lower.contains("vram free on this gpu")
+        || lower.contains("expertcache: cudamalloc failed")
+        || (gpu && lower.contains("out of memory"))
+    {
+        return Some(MemoryReport::Vram);
+    }
+    lower
+        .contains("out of memory")
+        .then_some(MemoryReport::Generic)
+}
+
+/// The engine log named in upstream's EngineDied text: "... (see PATH)".
+/// A path may contain ')' (Program Files (x86)), so take the first candidate ending in ".log".
+fn engine_log_path(message: &str) -> Option<std::path::PathBuf> {
+    let start = message.find("(see ")? + 5;
+    let rest = &message[start..];
+    rest.char_indices()
+        .filter(|(_, c)| *c == ')')
+        .map(|(index, _)| rest[..index].trim())
+        .find(|candidate| candidate.to_ascii_lowercase().ends_with(".log"))
+        .map(std::path::PathBuf::from)
+}
+
+/// At most the last 64 KiB / 200 lines of the engine log, from this start's
+/// "[strata] ... engine started:" line on. Missing, unreadable or older-than-the-attempt
+/// files give nothing; reading never fails a diagnostic.
+fn engine_log_tail(path: &std::path::Path, attempt_started_at: u64) -> Vec<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    const LIMIT: u64 = 64 * 1024;
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return Vec::new();
+    };
+    let Ok(metadata) = file.metadata() else {
+        return Vec::new();
+    };
+    let modified = metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis() as u64);
+    // One second of slack for coarse file-system timestamps.
+    if modified.is_some_and(|modified| modified + 1000 < attempt_started_at) {
+        return Vec::new();
+    }
+    let start = metadata.len().saturating_sub(LIMIT);
+    let mut bytes = Vec::new();
+    if file.seek(SeekFrom::Start(start)).is_err()
+        || file.take(LIMIT).read_to_end(&mut bytes).is_err()
+    {
+        return Vec::new();
+    }
+    let text = String::from_utf8_lossy(&bytes);
+    let mut lines: Vec<&str> = text.lines().collect();
+    if start > 0 && !lines.is_empty() {
+        lines.remove(0); // a partial first line
+    }
+    if let Some(marker) = lines
+        .iter()
+        .rposition(|line| line.starts_with("[strata]") && line.contains("engine started:"))
+    {
+        lines.drain(..marker);
+    }
+    let keep = lines.len().saturating_sub(200);
+    lines[keep..]
+        .iter()
+        .map(|line| line.trim_end().to_string())
+        .filter(|line| !line.is_empty())
+        .collect()
+}
+
 /// The line Strata 0.2.2 exits with when every card in "gpu_roles" is Off.
 fn all_cards_off(text: &str) -> bool {
     text.contains("every graphics card is set to Off")
@@ -309,14 +407,46 @@ pub fn build(
         .iter()
         .filter(|entry| entry.timestamp >= attempt_started_at && entry.timestamp <= failed_at)
         .collect();
-    if category == StartupCategory::Unknown
-        && current.iter().any(|entry| resource_report(&entry.message))
-    {
+    // Memory lines the engine wrote during this attempt: the service log (its stderr,
+    // which carries upstream's 20-line EngineDied tail) and, when the error names it,
+    // the engine log itself. Lines from the file have no time; they get `failed_at`.
+    let engine_crashed = code == "STARTUP_ENGINE_CRASHED";
+    let mut memory_lines: Vec<(u64, String, MemoryReport)> = Vec::new();
+    if category == StartupCategory::Unknown || engine_crashed {
+        for entry in &current {
+            if let Some(kind) = memory_report(&entry.message) {
+                memory_lines.push((entry.timestamp, entry.message.clone(), kind));
+            }
+        }
+        if let Some(path) = engine_log_path(&message) {
+            for line in engine_log_tail(&path, attempt_started_at) {
+                if let Some(kind) = memory_report(&line) {
+                    if !memory_lines.iter().any(|(_, seen, _)| seen.trim() == line) {
+                        memory_lines.push((failed_at, line, kind));
+                    }
+                }
+            }
+        }
+    }
+    let memory = memory_lines.iter().map(|(_, _, kind)| *kind).max();
+    if let Some(kind) = memory {
+        // The engine named the allocation that failed: that is the reason it exited.
+        let reported = engine_crashed && kind != MemoryReport::Generic;
         category = StartupCategory::Resource;
-        confidence = StartupConfidence::Suspected;
+        confidence = if reported {
+            StartupConfidence::Confirmed
+        } else {
+            StartupConfidence::Suspected
+        };
         // Keep a structured original error code where available.
-        if code == "STARTUP_UNKNOWN" {
-            code = "STARTUP_RESOURCE_REPORTED".into();
+        if code == "STARTUP_UNKNOWN" || engine_crashed {
+            code = match kind {
+                MemoryReport::Commit => WINDOWS_COMMIT_LOW,
+                MemoryReport::Vram => VRAM_INSUFFICIENT,
+                MemoryReport::Generic if engine_crashed => VRAM_INSUFFICIENT,
+                MemoryReport::Generic => "STARTUP_RESOURCE_REPORTED",
+            }
+            .into();
         }
     }
     // Strata 0.2.2 serve/server.py card_roles_lines: every card in "gpu_roles" is Off and the
@@ -381,16 +511,27 @@ pub fn build(
             });
         }
     }
-    if confidence == StartupConfidence::Suspected {
-        if let Some(entry) = current
+    if category == StartupCategory::Resource {
+        // The strongest kind first, newest line of it; at most three lines.
+        let strongest = memory.unwrap_or(MemoryReport::Generic);
+        let mut picked: Vec<_> = memory_lines
             .iter()
             .rev()
-            .find(|entry| resource_report(&entry.message))
-        {
+            .filter(|(_, _, kind)| *kind == strongest)
+            .chain(
+                memory_lines
+                    .iter()
+                    .rev()
+                    .filter(|(_, _, kind)| *kind != strongest),
+            )
+            .take(3)
+            .collect();
+        picked.sort_by_key(|(at, _, _)| *at);
+        for (at, text, _) in picked {
             evidence.push(StartupEvidence {
                 source: "serviceLog".into(),
-                at: entry.timestamp,
-                message: safe(&entry.message),
+                at: *at,
+                message: safe(text),
             });
         }
     }
@@ -1279,5 +1420,168 @@ ThreadingHTTPServer((a.host,a.port),Handler).serve_forever()
                 serde_json::to_value(&category).unwrap()
             );
         }
+    }
+
+    fn engine_line(timestamp: u64, message: &str) -> LogEntry {
+        LogEntry {
+            timestamp,
+            level: "stderr".into(),
+            message: message.into(),
+        }
+    }
+
+    fn engine_died(log: &str) -> String {
+        error(
+            "STARTUP_ENGINE_CRASHED",
+            format!("引擎在加载模型时崩溃：EngineDied: the engine exited before it was ready (see {log})。完整报错见启动日志 / See the startup log for the full traceback"),
+            "loading",
+        )
+    }
+
+    #[test]
+    fn engine_crash_with_vram_free_note_is_a_confirmed_vram_shortage() {
+        // generate.cpp vram_free_note() and the auto expert cache's own lines (#4781).
+        let logs = vec![
+            engine_line(11, "strata generate: expert cache auto: 14.80 GiB free, 700 MiB reserved -> 112 slots"),
+            engine_line(12, "strata generate: only 220 MiB free once the slots are written (reserve 700 MiB); shrinking the expert cache"),
+            engine_line(13, "strata generate: the logits buffer failed (310 MiB of 16303 MiB VRAM free on this GPU)"),
+        ];
+        let result = build(
+            "p",
+            10,
+            20,
+            &engine_died(r"C:\Users\Koidz\strata\engine.log"),
+            &logs,
+            None,
+        );
+        assert_eq!(result.code, VRAM_INSUFFICIENT);
+        assert_eq!(result.category, StartupCategory::Resource);
+        assert_eq!(result.confidence, StartupConfidence::Confirmed);
+        assert_eq!(result.actions[0], StartupAction::OpenResources);
+        assert_eq!(result.phase, "loading");
+        assert_eq!(result.evidence[0].source, "startupError");
+        assert_eq!(result.evidence[1].message, logs[2].message);
+        // The normal shrink line is not an allocation failure.
+        assert!(memory_report(&logs[1].message).is_none());
+        assert!(memory_report(&logs[0].message).is_none());
+    }
+
+    #[test]
+    fn upstream_memory_lines_are_classified_by_what_ran_out() {
+        for (line, kind) in [
+            ("strata generate: ExpertCache: cudaMalloc failed: out of memory (Windows has 1.2 GiB of commit left: RAM + page file); trying a smaller expert cache: 64 slots", MemoryReport::Commit),
+            ("strata generate: on Windows the graphics card's memory also needs room in the page file: set it to \"System managed\" (System > About > Advanced system settings > Performance > Advanced > Virtual memory), or lower --expert-cache", MemoryReport::Commit),
+            ("OSError: [WinError 1455] The paging file is too small for this operation to complete", MemoryReport::Commit),
+            ("strata generate: ExpertCache: cudaMalloc failed: out of memory", MemoryReport::Vram),
+            ("native head upload: out of memory (180 MiB of 16303 MiB VRAM free on this GPU)", MemoryReport::Vram),
+            ("CUDA error: out of memory", MemoryReport::Vram),
+            ("hipErrorOutOfMemory", MemoryReport::Vram),
+            ("fatal: out of memory", MemoryReport::Generic),
+        ] {
+            assert_eq!(memory_report(line), Some(kind), "{line}");
+        }
+        assert_eq!(memory_report("strata generate: loading layer 12/48"), None);
+    }
+
+    #[test]
+    fn windows_commit_exhaustion_wins_over_the_cuda_line_it_contains() {
+        let logs = vec![
+            engine_line(11, "strata generate: ExpertCache: cudaMalloc failed: out of memory (Windows has 0.8 GiB of commit left: RAM + page file); trying a smaller expert cache: 32 slots"),
+            engine_line(12, "strata generate: the logits buffer failed (300 MiB of 16303 MiB VRAM free on this GPU)"),
+            engine_line(13, "strata generate: on Windows the graphics card's memory also needs room in the page file: set it to \"System managed\" (System > About > Advanced system settings > Performance > Advanced > Virtual memory), or lower --expert-cache"),
+        ];
+        let result = build("p", 10, 20, &engine_died("engine.log"), &logs, None);
+        assert_eq!(result.code, WINDOWS_COMMIT_LOW);
+        assert_eq!(result.category, StartupCategory::Resource);
+        assert_eq!(result.confidence, StartupConfidence::Confirmed);
+        let shown: Vec<_> = result
+            .evidence
+            .iter()
+            .map(|item| item.message.as_str())
+            .collect();
+        assert!(shown.iter().any(|line| line.contains("commit left")));
+        assert!(shown
+            .iter()
+            .any(|line| line.contains("room in the page file")));
+    }
+
+    #[test]
+    fn a_bare_out_of_memory_in_an_engine_crash_is_suspected() {
+        let logs = vec![engine_line(12, "fatal: out of memory")];
+        let crashed = build("p", 10, 20, &engine_died("engine.log"), &logs, None);
+        assert_eq!(crashed.code, VRAM_INSUFFICIENT);
+        assert_eq!(crashed.confidence, StartupConfidence::Suspected);
+        let unknown = build("p", 10, 20, "exit 1", &logs, None);
+        assert_eq!(unknown.code, "STARTUP_RESOURCE_REPORTED");
+        // An engine crash with no memory line stays an engine crash.
+        let plain = build(
+            "p",
+            10,
+            20,
+            &engine_died("engine.log"),
+            &[engine_line(12, "Traceback (most recent call last):")],
+            None,
+        );
+        assert_eq!(plain.code, "STARTUP_ENGINE_CRASHED");
+        assert_eq!(plain.category, StartupCategory::Engine);
+    }
+
+    #[test]
+    fn the_engine_log_named_in_engine_died_is_read_from_this_start_only() {
+        let directory = tempfile::tempdir().unwrap();
+        let folder = directory.path().join("Program Files (x86)");
+        std::fs::create_dir_all(&folder).unwrap();
+        let log = folder.join("engine.log");
+        std::fs::write(
+            &log,
+            "[strata] 2026-10-31 09:00:00 engine started: strata.exe --serve\n\
+             strata generate: ExpertCache: cudaMalloc failed: out of memory (Windows has 0.5 GiB of commit left: RAM + page file); trying a smaller expert cache: 8 slots\n\
+             [strata] 2026-11-01 09:00:00 engine started: strata.exe --serve\n\
+             strata generate: expert cache auto: 14.80 GiB free, 700 MiB reserved -> 112 slots\n\
+             native head upload: out of memory (120 MiB of 16303 MiB VRAM free on this GPU)\n",
+        )
+        .unwrap();
+        let path = log.to_string_lossy().to_string();
+        assert_eq!(
+            engine_log_path(&format!("x (see {path}) exit 3221225477")),
+            Some(log.clone())
+        );
+        let tail = engine_log_tail(&log, 0);
+        assert!(tail[0].contains("2026-11-01"));
+        assert!(!tail.iter().any(|line| line.contains("commit left")));
+        // Nothing from the service log: the file alone is the evidence.
+        let result = build("p", 10, 20, &engine_died(&path), &[], None);
+        assert_eq!(result.code, VRAM_INSUFFICIENT);
+        assert!(result
+            .evidence
+            .iter()
+            .any(|item| item.source == "serviceLog"
+                && item.at == 20
+                && item.message.contains("VRAM free on this GPU")));
+        // A log not written since the attempt began belongs to an earlier start.
+        assert!(engine_log_tail(&log, u64::MAX / 2).is_empty());
+        // A missing file is not an error.
+        let missing = build(
+            "p",
+            10,
+            20,
+            &engine_died(r"C:\nowhere\engine.log"),
+            &[],
+            None,
+        );
+        assert_eq!(missing.code, "STARTUP_ENGINE_CRASHED");
+        assert!(engine_log_tail(&directory.path().join("missing.log"), 0).is_empty());
+    }
+
+    #[test]
+    fn a_large_engine_log_is_read_as_a_bounded_tail() {
+        let directory = tempfile::tempdir().unwrap();
+        let log = directory.path().join("engine.log");
+        let mut text = "strata generate: CUDA error: out of memory\n".repeat(4000);
+        text.push_str("strata generate: loading layer 48/48\n");
+        std::fs::write(&log, text).unwrap();
+        let tail = engine_log_tail(&log, 0);
+        assert!(tail.len() <= 200);
+        assert_eq!(tail.last().unwrap(), "strata generate: loading layer 48/48");
     }
 }

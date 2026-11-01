@@ -81,6 +81,14 @@ export function latestStartupDiagnostic(failures: unknown, profileId: string, at
     .filter((item): item is StartupFailureDiagnostic => item !== null).sort((left, right) => right.failedAt - left.failedAt)[0];
 }
 
+/** Codes from runtime-core diagnostics.rs when the engine reported a memory failure while loading. */
+export const STARTUP_VRAM_INSUFFICIENT = 'STARTUP_VRAM_INSUFFICIENT';
+export const STARTUP_WINDOWS_COMMIT_LOW = 'STARTUP_WINDOWS_COMMIT_LOW';
+export type StartupMemoryShortage = 'vram' | 'commit';
+export function startupMemoryShortage(diagnostic: Pick<StartupFailureDiagnostic, 'code'>): StartupMemoryShortage | undefined {
+  return diagnostic.code === STARTUP_VRAM_INSUFFICIENT ? 'vram' : diagnostic.code === STARTUP_WINDOWS_COMMIT_LOW ? 'commit' : undefined;
+}
+
 /** Exactly one suggested action; opening or refreshing diagnostics never starts a service. */
 export function primaryStartupDiagnosticAction(diagnostic: StartupFailureDiagnostic): StartupDiagnosticAction {
   return diagnostic.actions.find(action => action !== 'viewLogs' && action !== 'exportDiagnostics'
