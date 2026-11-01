@@ -2268,7 +2268,8 @@ fn prepare_import_inner(
     let destination = imports.join(&inspected.candidate.id);
     let mut profile = inspected.profile.clone();
     profile.config_path = destination.join("config.json").to_string_lossy().into();
-    if destination.exists() {
+    let mut existing = destination.exists() || destination.is_symlink();
+    if existing {
         if destination.is_symlink() || !destination.is_dir() {
             return Err("应用导入目标类型无效".into());
         }
@@ -2282,6 +2283,18 @@ fn prepare_import_inner(
         {
             return Err("导入目标已被其它安装占用，拒绝覆盖".into());
         }
+        let snapshot = Path::new(&profile.config_path);
+        if fs::symlink_metadata(snapshot)
+            .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound)
+        {
+            // The private copy was archived by "delete configuration"; a restored or
+            // regenerated original gets a fresh snapshot instead of a dead record.
+            fs::remove_dir_all(&destination)
+                .map_err(|e| format!("清理已删除配置的导入记录失败: {e}"))?;
+            existing = false;
+        }
+    }
+    if existing {
         let imported = read_json(Path::new(&profile.config_path))?;
         storage::validate(&imported)?;
         profile.base_url = network::endpoint(&imported, &profile)?.base_url;
@@ -2942,6 +2955,26 @@ mod tests {
         assert_eq!(
             read_json(Path::new(&again.profile.config_path)).unwrap()["custom"]["preserve"],
             true
+        );
+    }
+
+    #[test]
+    fn reimport_after_the_private_copy_was_deleted_starts_from_the_source() {
+        let (temp, profile) = fixture();
+        let state = temp.path().join("state");
+        fs::create_dir(&state).unwrap();
+        let candidate = inspect(&profile).candidate;
+        let imported = prepare_import(&candidate, &state, None).unwrap();
+        let private = PathBuf::from(&imported.profile.config_path);
+        let fresh = read_json(&private).unwrap();
+        // Deleting the configuration archives config.json but leaves import.json behind.
+        fs::remove_file(&private).unwrap();
+        assert!(private.with_file_name("import.json").is_file());
+        let again = prepare_import(&candidate, &state, None).unwrap();
+        assert_eq!(again.profile.id, imported.profile.id);
+        assert_eq!(
+            read_json(Path::new(&again.profile.config_path)).unwrap(),
+            fresh
         );
     }
 

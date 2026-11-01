@@ -1314,8 +1314,6 @@ async fn delete_configuration(
 ) -> Result<Value, String> {
     let _guard = configuration_files::OPERATIONS.lock().await;
     let _management = management_file_lock(&state.ipc)?;
-    let path = configuration_files::configuration_path(&profile)?;
-    let key = configuration_files::path_key(&path);
     let registered: Vec<ServiceProfile> = serde_json::from_value(
         state
             .ipc
@@ -1324,31 +1322,17 @@ async fn delete_configuration(
             .map_err(|error| error.to_string())?,
     )
     .map_err(|error| error.to_string())?;
-    if registered.iter().any(|item| {
-        item.id == profile.id
-            && configuration_files::path_key(std::path::Path::new(&item.config_path)) != key
-    }) {
-        return Err("登记配置路径已变化，请刷新后重试 / Registered configuration path changed; refresh and try again".into());
-    }
-    let matching: Vec<ServiceProfile> = registered
-        .into_iter()
-        .filter(|item| {
-            configuration_files::path_key(std::path::Path::new(&item.config_path)) == key
-        })
-        .collect();
-    if matching.len() > 1 {
-        return Err("多个登记共用此配置文件，无法原子移除，请先整理重复登记 / Multiple registrations share this configuration; consolidate them before deleting".into());
-    }
-    let mut inspected = matching.clone();
+    let plan = configuration_files::deletion_plan(&profile, &registered, &state.ipc.data_dir)?;
+    let mut inspected = plan.registrations.clone();
     if !inspected.iter().any(|item| item.id == profile.id) {
         inspected.push(profile.clone());
     }
     assert_configuration_stopped(&state.ipc, &inspected).await?;
-    let archived = configuration_files::archive(&profile, &state.ipc.data_dir)?;
+    let archived = configuration_files::archive_all(&plan.files, &state.ipc.data_dir)?;
     let removal = async {
         // Recheck after the file operation so a concurrent start cannot authorize deletion.
         assert_configuration_stopped(&state.ipc, &inspected).await?;
-        for selected in &matching {
+        for selected in &plan.registrations {
             state
                 .ipc
                 .request(
@@ -1362,12 +1346,18 @@ async fn delete_configuration(
     }
     .await;
     if let Err(error) = removal {
-        return match archived.rollback() {
+        return match configuration_files::rollback_all(&archived) {
             Ok(()) => Err(format!("删除未完成，配置文件已恢复 / Deletion incomplete; configuration file restored: {error}")),
             Err(rollback) => Err(format!("删除未完成 / Deletion incomplete: {error}; {rollback}")),
         };
     }
-    Ok(json!({"archivedPath":archived.archived.to_string_lossy()}))
+    // Empty when the files were already gone and only the registration was removed.
+    let archived_path = archived
+        .iter()
+        .map(|item| item.archived.to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("; ");
+    Ok(json!({"archivedPath":archived_path}))
 }
 
 /// Read-only: which older-version run configurations could be archived.
