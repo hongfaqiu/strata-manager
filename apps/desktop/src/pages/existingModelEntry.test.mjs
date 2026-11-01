@@ -35,7 +35,7 @@ test('#75: a detected but unregistered runtime no longer leaves the Models page 
 
 test('#75: localModel reaches run_setup and the disk preflight; scans are read-only commands', () => {
   assert.match(app, /core\.runSetup\(recipe\.profile, recipe\.model, recipe\.quant, recipe\.context, recipe\.images, recipe\.options, recipe\.localModel\)/);
-  assert.match(panel, /core\.setupDiskPreflight\(setup\.profile, setup\.model, setup\.quant, false, setup\.localModel\)/, 'revalidated right before submitting');
+  assert.match(panel, /core\.setupDiskPreflight\(setup\.profile, setup\.model, setup\.quant, setup\.images, setup\.localModel\)/, 'revalidated right before submitting');
   assert.match(tauri, /"localModel":local_model/);
   assert.match(tauri, /scan_local_models,\s+check_mtp_path,/);
 });
@@ -46,4 +46,13 @@ test('#75: validation and MTP mapping are explained in Chinese and English', () 
   assert.match(copy, /unsupported: '引擎不支持'/);
   assert.match(copy, /renamed: '文件名不同'/);
   assert.match(panel, /disabled=\{disabled \|\| !runtime\?\.installDir \|\| !ready/);
+});
+
+test('#4926: using existing files keeps image support instead of setting it off', () => {
+  assert.doesNotMatch(panel, /images: false/);
+  assert.match(panel, /core\.localModelImages\(group\?\.family, previous\.isSuccess \? previous\.data : null\)/);
+  assert.match(panel, /queryFn: \(\) => core\.readConfig\(runtime!\)/);
+  assert.match(panel, /<Toggle ariaLabel=\{t\.images\} checked=\{images\}/);
+  assert.match(copy, /images: '图像支持', imagesKept: '沿用当前配置'/);
+  assert.match(copy, /images: 'Image support', imagesKept: 'Kept from the current configuration'/);
 });

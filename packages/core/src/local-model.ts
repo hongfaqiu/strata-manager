@@ -1,3 +1,4 @@
+import { MODEL_CATALOG } from './catalog';
 import type { ModelDownloadRequest } from './model-download';
 import type { OrcaImportRequest } from './orca-import';
 
@@ -71,13 +72,31 @@ const quoted = (value: string) => /[\s"&|<>^]/.test(value) ? `"${value.replace(/
  * The equivalent upstream command, shown so the user can see exactly what runs.
  * `windows` selects START-HERE.bat; otherwise `python setup.py`.
  */
-export function localModelCommand(group: LocalGgufGroup, request: LocalModelRequest, mtp: MtpCheck | undefined, context: number, windows: boolean): string {
+/** Whether the official catalog model reads images at all. */
+export function localModelSupportsImages(family: string | null | undefined): boolean {
+  return !!family && MODEL_CATALOG.some(entry => entry.family === family && entry.images);
+}
+
+/**
+ * Upstream #4926: switching to local files must not drop image support. Keep what the
+ * configuration being replaced had (`vision` is an object when on); with none, on when
+ * the model reads images.
+ */
+export function localModelImages(family: string | null | undefined, previous: Record<string, unknown> | null | undefined): boolean {
+  if (!localModelSupportsImages(family)) return false;
+  if (!previous) return true;
+  const vision = previous.vision;
+  return !!vision && typeof vision === 'object' && !Array.isArray(vision);
+}
+
+export function localModelCommand(group: LocalGgufGroup, request: LocalModelRequest, mtp: MtpCheck | undefined, context: number, windows: boolean, images?: boolean): string {
   const launcher = windows ? 'START-HERE.bat' : 'python setup.py';
   if (localModelAction(group) === 'orca') {
     // ORCA.md: tools/convert_to_bf16.py --compat-bf16 + a hand-written config; there is no setup.py flag for it.
     return `ORCA.md: python tools/convert_to_bf16.py --compat-bf16 … → strata-orca-iq3_xxs.json${mtp?.rtDirectory ? ` (--mtp ${quoted(mtp.rtDirectory)})` : ''}`;
   }
   const parts = [launcher, '--family', group.family ?? '?', '--model', group.quant ?? '?', '--gguf-dir', quoted(request.ggufDirectory), '--context', String(context)];
+  if (images !== undefined) parts.push('--vision', images ? 'yes' : 'no');
   if (mtp?.dataDirectory) parts.push('--data-dir', quoted(mtp.dataDirectory));
   return parts.join(' ');
 }

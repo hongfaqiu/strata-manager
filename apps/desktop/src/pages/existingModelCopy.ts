@@ -7,7 +7,7 @@ export interface ExistingModelCopy {
   kind: Record<'official' | 'renamed' | 'orca' | 'unsupported' | 'unknown', string>;
   usable: string; checkFirst: string; unusable: string; shardState: Record<'ok' | 'missing' | 'unreadable' | 'notGguf' | 'tooSmall', string>;
   mtpTitle: string; mtpHint: string; mtpAuto: string; mtpChosen: string; mtpChoose: string; mtpClear: string; mtpNone: string; mtpChecking: string; mtpFound: (gb: string) => string; mtpMapped: string; mtpSetupMap: (dir: string) => string; mtpOrcaMap: string;
-  context: string; orcaContext: string; vision: string; checks: string; checking: string; disk: string; diskReady: string; diskNeed: (gb: string) => string; diskUnknown: string; diskLow: string;
+  context: string; orcaContext: string; images: string; imagesKept: string; textOnly: string; checks: string; checking: string; disk: string; diskReady: string; diskNeed: (gb: string) => string; diskUnknown: string; diskLow: string;
   engine: (min: string, current: string) => string; command: string; commandHint: string; start: string; starting: string; footnote: string; orcaFootnote: string;
   needRuntime: string; needDesktop: string; chooseVariant: string; started: string;
 }
@@ -25,7 +25,7 @@ const zh: ExistingModelCopy = {
   mtpMapped: '将以 --data-dir 指向其所在数据目录',
   mtpSetupMap: dir => `上游 setup.py 没有 --mtp 安装参数；它在数据目录的 mtp/rt 中查找 MTP，因此将以 --data-dir ${dir} 运行。`,
   mtpOrcaMap: '将写入配置并以引擎参数 --mtp 使用。',
-  context: '上下文长度', orcaContext: '上下文固定为 32K（ORCA.md）', vision: '图像支持默认关闭，可稍后在配置页开启。',
+  context: '上下文长度', orcaContext: '上下文固定为 32K（ORCA.md）', images: '图像支持', imagesKept: '沿用当前配置', textOnly: '此模型只支持文本',
   checks: '使用前检查', checking: '正在检查…', disk: '磁盘', diskReady: '空间足够（模型权重不再下载）', diskNeed: gb => `还需约 ${gb} GB（打包、MTP、运行环境）`, diskUnknown: '磁盘空间尚未核验', diskLow: '磁盘空间不足',
   engine: (min, current) => `此模型需要引擎 ${min} 或更新（当前：${current}）。请先更新 Strata。`,
   command: '等效命令', commandHint: 'Manager 会以这些参数运行官方安装器（另加 --yes --setup --no-start）。',
@@ -47,7 +47,7 @@ const en: ExistingModelCopy = {
   mtpMapped: 'Will run with --data-dir pointing at its data folder',
   mtpSetupMap: dir => `Upstream setup.py has no --mtp setup flag; it looks for MTP under the data folder's mtp/rt, so setup runs with --data-dir ${dir}.`,
   mtpOrcaMap: 'Written to the configuration and passed to the engine as --mtp.',
-  context: 'Context length', orcaContext: 'Context is fixed at 32K (ORCA.md)', vision: 'Image support is off by default; turn it on later from the configuration page.',
+  context: 'Context length', orcaContext: 'Context is fixed at 32K (ORCA.md)', images: 'Image support', imagesKept: 'Kept from the current configuration', textOnly: 'This model is text only',
   checks: 'Checks', checking: 'Checking…', disk: 'Disk', diskReady: 'Enough space (weights are not downloaded again)', diskNeed: gb => `About ${gb} GB more needed (pack, MTP, runtime)`, diskUnknown: 'Disk space is unverified', diskLow: 'Insufficient disk space',
   engine: (min, current) => `This model needs engine ${min} or newer (current: ${current}). Update Strata first.`,
   command: 'Equivalent command', commandHint: 'Manager runs the official installer with these arguments (plus --yes --setup --no-start).',

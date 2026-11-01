@@ -61,6 +61,7 @@
 .existing-model-shards li span{white-space:nowrap}
 .existing-model-shards li.is-bad span{color:var(--st-danger-text)}
 .existing-model-context{width:min(240px,100%)}
+.existing-model-toggle{display:flex;align-items:center;gap:10px}
 /* optional / advanced: collapsed by default */
 .existing-model-more{border-top:1px solid var(--st-line-soft);padding-top:14px;min-width:0}
 .existing-model-more>summary{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:600;color:var(--st-ink);width:100%;list-style:none}
