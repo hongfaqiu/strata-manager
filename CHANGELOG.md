@@ -5,6 +5,8 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+## [0.2.35] - 2026-11-01
+
 ### 中文
 
 - **`strata update` 清理旧组件后仍能正常启动**（上游 #4899）：新版 `strata update` 只保留最近两个组件目录，配置里指向已删除的 `components/control/<版本>` 的路径（工作目录、模型/MTP 等参数路径、视觉组件路径和安装目录）会失效。现在发现和启动时会把这些路径改到仍包含该文件的最新同级版本目录，启动前写回配置，并在日志里记一条说明；找不到对应文件的路径保持不变。
