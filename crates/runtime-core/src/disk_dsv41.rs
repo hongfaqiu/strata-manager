@@ -723,6 +723,8 @@ mod tests {
         );
     }
 
+    // Only the tests that skip NTFS (see above) create sparse files.
+    #[cfg(not(windows))]
     fn sparse(path: &Path, size: u64) {
         fs::File::create(path).unwrap().set_len(size).unwrap();
     }
