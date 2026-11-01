@@ -5,6 +5,8 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+## [0.2.34] - 2026-11-01
+
 ### 中文
 
 - **「显存不够没加载上」能认出来了，并可一键修复**：此前引擎在加载模型时因显存或 Windows 虚拟内存不够退出，诊断只显示「引擎崩溃」或「未知原因」。现在诊断会读取本次启动的引擎日志末尾（最多 64 KB、只看最近一次启动），认出上游的显存不足（`cudaMalloc failed`、`out of memory`、「N MiB of M MiB VRAM free」等）和 Windows 提交内存不足（`commit left`、`paging file is too small`、WinError 1455），分别给出「显存不够」和「Windows 虚拟内存不够」的结论，并附上对应日志行作为证据。显存不够时，卡片上多一个按钮「保留显存提到 1536 MiB 并重启」（已不低于 1536 时提到 2048），写入 `--vram-reserve-mib` 后自动重启；同时说明界面上的「空闲显存」是引擎自己占满显存后读到的，不是别的程序占用。虚拟内存不够时，提示把虚拟内存设为「系统管理的大小」并重启电脑。
