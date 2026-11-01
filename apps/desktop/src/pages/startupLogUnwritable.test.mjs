@@ -23,3 +23,21 @@ test('the runtime classifies the log error with every repair step', () => {
   }
   assert.match(source('../../../../crates/runtime-core/src/lib.rs'), /原日志文件被占用或无权限，已改写到 \{\}/);
 });
+
+// A Windows user (2026-11) saw "the engine exited before it was ready" with VRAM mostly free:
+// the engine had filled VRAM itself. The card names the shortage and offers the reserve fix.
+test('a VRAM or commit shortage gets its own title, the free-VRAM note and the reserve fix', () => {
+  const card = source('./StartupDiagnosticCard.tsx');
+  assert.match(card, /'显存不够，模型没加载上' : 'Out of VRAM while loading the model'/);
+  assert.match(card, /系统管理的大小/);
+  assert.match(card, /System managed size/);
+  assert.match(card, /不是别的程序占用/);
+  assert.match(card, /保留显存提到 \$\{reserveFix\} MiB 并重启/);
+  const app = source('../App.tsx');
+  assert.match(app, /core\.startupVramReserveFix\(snapshot\.config\)/);
+  assert.match(app, /await core\.writeConfig\(target, next, snapshot\.revision\)/);
+  assert.match(app, /await activateLocal\(target\)/);
+  // A hook below `if (!ready) return` crashes the app on first render ("Rendered more hooks").
+  assert.ok(app.indexOf("useQuery({ queryKey: ['startupReserveFix'") < app.indexOf('if (serverMode && !serverAuthed) return <ServerAuthGate'));
+});
+

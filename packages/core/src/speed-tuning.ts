@@ -138,6 +138,20 @@ export function suggestedReserveFromLogs(lines: string[] | undefined): number | 
   }
   return found;
 }
+/** The engine's reserve when --vram-reserve-mib is not set (generate.cpp auto expert cache). */
+export const DEFAULT_VRAM_RESERVE_MIB = 700;
+/**
+ * The startup fix after the engine ran out of VRAM while loading (#4781): the auto
+ * expert cache fills free VRAM minus the reserve, so a larger reserve leaves room for
+ * the buffers written after it. 1536 MiB first, 2048 MiB when 1536 is already set;
+ * nothing past 2048 or for a DeepSeek config (strata-dsv41 rejects the flag).
+ */
+export function startupVramReserveFix(config: JsonObject): { mib: number; fix: SpeedFix } | undefined {
+  if (isDeepseek41Config(config)) return undefined;
+  const current = finite(argValue(args(config), '--vram-reserve-mib')) ?? DEFAULT_VRAM_RESERVE_MIB;
+  const mib = [1536, 2048].find(step => step > current);
+  return mib === undefined ? undefined : { mib, fix: { '--vram-reserve-mib': String(mib) } };
+}
 /** Free VRAM below this is a stall risk (upstream 0.1.43.1 warning); the memory goal keeps 2 GiB. */
 export function vramFloorMib(platform: SpeedHealthInput['platform'], goal: CalibrationGoal = 'balanced'): number {
   return goal === 'memory' ? 2048 : platform === 'windows' ? 1024 : 512;

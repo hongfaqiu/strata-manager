@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { latestStartupDiagnostic, parseStartupDiagnostic, primaryStartupDiagnosticAction, readStartupDiagnostic } from '../src/startup-diagnostics';
+import { latestStartupDiagnostic, parseStartupDiagnostic, primaryStartupDiagnosticAction, readStartupDiagnostic, startupMemoryShortage } from '../src/startup-diagnostics';
 
 const diagnostic = { profileId: 'model-a', attemptStartedAt: 100, failedAt: 200, phase: 'starting', category: 'timeout', confidence: 'confirmed',
   code: 'STARTUP_API_TIMEOUT', message: 'API not ready; process retained', evidence: [{ source: 'startupError', at: 200, message: 'not ready' }],
@@ -92,5 +92,22 @@ describe('issue #78 load failure categories', () => {
       expect(value.evidence[0]?.message).toContain('WinError 2');
       expect(primaryStartupDiagnosticAction(value)).toBe(action);
     }
+  });
+});
+
+describe('startup memory shortage', () => {
+  it('maps the runtime memory codes and nothing else', () => {
+    expect(startupMemoryShortage({ code: 'STARTUP_VRAM_INSUFFICIENT' })).toBe('vram');
+    expect(startupMemoryShortage({ code: 'STARTUP_WINDOWS_COMMIT_LOW' })).toBe('commit');
+    expect(startupMemoryShortage({ code: 'STARTUP_ENGINE_CRASHED' })).toBeUndefined();
+    expect(startupMemoryShortage({ code: 'STARTUP_RESOURCE_REPORTED' })).toBeUndefined();
+  });
+  it('keeps a stored memory diagnostic with its resource category and evidence', () => {
+    const stored = { ...diagnostic, phase: 'loading', category: 'resource', code: 'STARTUP_VRAM_INSUFFICIENT', actions: ['openResources', 'viewLogs', 'exportDiagnostics'],
+      evidence: [{ source: 'serviceLog', at: 200, message: 'strata generate: the logits buffer failed (310 MiB of 16303 MiB VRAM free on this GPU)' }] };
+    const parsed = parseStartupDiagnostic(stored, 'model-a')!;
+    expect(startupMemoryShortage(parsed)).toBe('vram');
+    expect(parsed.evidence[0]!.message).toContain('VRAM free on this GPU');
+    expect(primaryStartupDiagnosticAction(parsed)).toBe('openResources');
   });
 });

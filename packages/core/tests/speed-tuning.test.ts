@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyCalibrationSettings, applySpeedFixes, argValue, engineBackend, isPcieAuto, PCIE_AUTO, speedChanges, speedConfigName, speedHealthCheck, speedResult, suggestedReserveFromLogs, validateStartupConfiguration } from '../src';
+import { applyCalibrationSettings, applySpeedFixes, argValue, engineBackend, isPcieAuto, PCIE_AUTO, speedChanges, speedConfigName, speedHealthCheck, speedResult, startupVramReserveFix, suggestedReserveFromLogs, validateStartupConfiguration } from '../src';
 import type { CalibrationJob } from '../src';
 
 const GIB = 1024 ** 3;
@@ -146,5 +146,20 @@ describe('engine env switches in the health check', () => {
 
   it('refuses env names outside the engine switches', () => {
     expect(() => applySpeedFixes(config([]), [{ 'env.PATH': '/tmp' }])).toThrow();
+  });
+});
+
+describe('startup VRAM reserve fix', () => {
+  it('steps the reserve from the 700 MiB default to 1536, then 2048, then stops', () => {
+    expect(startupVramReserveFix(config([]))).toEqual({ mib: 1536, fix: { '--vram-reserve-mib': '1536' } });
+    expect(startupVramReserveFix(config(['--vram-reserve-mib', '1024']))?.mib).toBe(1536);
+    expect(startupVramReserveFix(config(['--vram-reserve-mib', '1536']))?.mib).toBe(2048);
+    expect(startupVramReserveFix(config(['--vram-reserve-mib=1800']))?.mib).toBe(2048);
+    expect(startupVramReserveFix(config(['--vram-reserve-mib', '2048']))).toBeUndefined();
+  });
+  it('writes the flag once, replacing the old value', () => {
+    const fix = startupVramReserveFix(config(['--vram-reserve-mib', '1536']))!;
+    const next = applySpeedFixes(config(['--vram-reserve-mib', '1536', '--ctx', '8192']), [fix.fix]);
+    expect(next.args).toEqual(['--native', 'model.gguf', '--ctx', '8192', '--vram-reserve-mib', '2048']);
   });
 });
