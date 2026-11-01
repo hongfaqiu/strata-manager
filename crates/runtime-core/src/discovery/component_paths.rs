@@ -195,10 +195,12 @@ mod tests {
             "vision": {"exe": vision_old, "mmproj": temp.path().join("mmproj.gguf")},
         });
         let (fixed, changes) = rebase_config(&config).unwrap();
-        assert_eq!(fixed["cwd"], json!(partial));
+        // Compare as paths: Windows mixes `\` from read_dir with `/` in the test's joins.
+        let at = |value: &Value| PathBuf::from(value.as_str().unwrap());
+        assert_eq!(at(&fixed["cwd"]), partial);
         assert_eq!(
-            fixed["args"][3],
-            json!(newer.join("data/expert-profile.bin"))
+            at(&fixed["args"][3]),
+            newer.join("data").join("expert-profile.bin")
         );
         assert_eq!(
             fixed["args"][1],
@@ -206,14 +208,13 @@ mod tests {
             "a path outside components is the person's choice"
         );
         assert_eq!(fixed["args"][5], json!("4096"));
-        assert_eq!(
-            fixed["vision"]["exe"],
-            json!(vision_new),
-            "same backend only"
-        );
+        assert_eq!(at(&fixed["vision"]["exe"]), vision_new, "same backend only");
         assert_eq!(changes.len(), 3);
         assert!(older.is_dir());
-        assert_eq!(current_control_root(&gone), Some(partial.clone()));
+        assert_eq!(
+            current_control_root(&gone).as_deref(),
+            Some(partial.as_path())
+        );
     }
 
     #[test]

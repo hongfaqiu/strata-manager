@@ -4427,7 +4427,10 @@ ThreadingHTTPServer((a.host,a.port),Handler).serve_forever()
         register_gui_fixture(&state, &profile);
 
         let plan = prepare_startup(&profile, &state.processes, &state.tasks).unwrap();
-        assert_eq!(plan.root, root.canonicalize().unwrap());
+        assert_eq!(
+            plan.root.canonicalize().unwrap(),
+            root.canonicalize().unwrap()
+        );
         let saved = storage::read(&profile).unwrap();
         assert_eq!(saved["cwd"], json!(root.to_string_lossy()));
         assert_eq!(
