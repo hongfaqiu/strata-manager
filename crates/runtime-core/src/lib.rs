@@ -2620,6 +2620,8 @@ struct StartupPlan {
     config_value: Value,
     profile: ServiceProfile,
     runtime_lease: Option<strata_local_ipc::SingleInstance>,
+    /// Stale component paths rewritten before the start (#4899), shown once started.
+    component_notice: Option<String>,
 }
 
 impl StartupPlan {
@@ -2738,6 +2740,18 @@ fn prepare_startup(
     processes: &Mutex<HashMap<String, OwnedProcess>>,
     tasks: &Tasks,
 ) -> Result<StartupPlan, String> {
+    // `strata update` prunes old `components/control/<version>` folders (#4899): a profile
+    // adopted from the upstream app follows the newest control folder instead of failing.
+    let followed;
+    let profile = match discovery::current_control_root(Path::new(&profile.install_dir)) {
+        Some(root) if profile.managed => {
+            let mut moved = profile.clone();
+            moved.install_dir = root.to_string_lossy().into_owned();
+            followed = moved;
+            &followed
+        }
+        _ => profile,
+    };
     if profile.managed && Path::new(&profile.install_dir).is_absolute() {
         fs::metadata(&profile.install_dir)
             .map_err(|error| diagnostics::io_error(&error, "无法读取运行环境目录", "prepare"))?;
@@ -2761,6 +2775,7 @@ fn prepare_startup(
         .map_err(|error| diagnostics::error("STARTUP_CONFIG_INVALID", error, "prepare"))?;
     storage::validate(&config_value)
         .map_err(|error| diagnostics::error("STARTUP_CONFIG_INVALID", error, "prepare"))?;
+    let (config_value, component_notice) = follow_current_components(profile, config_value)?;
     let endpoint = network::endpoint(&config_value, profile)
         .map_err(|error| diagnostics::error("STARTUP_CONFIG_INVALID", error, "prepare"))?;
     let mut effective_profile = profile.clone();
@@ -2821,7 +2836,48 @@ fn prepare_startup(
         config_value,
         profile: effective_profile,
         runtime_lease: None,
+        component_notice,
     })
+}
+
+/// Upstream setup.py records absolute paths (`cwd`, `--expert-profile`, the vision reader)
+/// into the component folder in use at setup time; `strata update` keeps only the two newest
+/// control and engine folders, so those paths dangle and the engine start dies (Windows:
+/// WinError 267, #4899). Write the same files of the newest component folder that has them
+/// into the configuration, so the server Manager starts (old or new) finds them. Returns the
+/// notice to show once the engine is started.
+fn follow_current_components(
+    profile: &ServiceProfile,
+    config: Value,
+) -> Result<(Value, Option<String>), String> {
+    if discovery::rebase_component_paths(&config).is_none() {
+        return Ok((config, None));
+    }
+    let snapshot = storage::read_snapshot(profile)
+        .map_err(|error| diagnostics::error("STARTUP_CONFIG_INVALID", error, "prepare"))?;
+    let Some((fixed, changes)) = discovery::rebase_component_paths(&snapshot.config) else {
+        return Ok((snapshot.config, None));
+    };
+    storage::validate(&fixed)
+        .map_err(|error| diagnostics::error("STARTUP_CONFIG_INVALID", error, "prepare"))?;
+    storage::write_cas(profile, &fixed, &snapshot.revision).map_err(|error| {
+        diagnostics::error(
+            "STARTUP_CONFIG_INVALID",
+            format!("配置里的组件目录已被 strata update 清理，改写到当前组件失败：{error}"),
+            "prepare",
+        )
+    })?;
+    let moved = changes
+        .iter()
+        .map(|(old, new)| format!("{old} → {new}"))
+        .collect::<Vec<_>>()
+        .join("；");
+    Ok((
+        fixed,
+        Some(format!(
+            "配置里的旧组件路径已被 strata update 清理，已改用当前组件：{moved} / Paths into a component folder removed by strata update now point at the current one"
+        )),
+    ))
 }
 
 /// Upstream `server.py` opens `config["log"]` for appending and an old release
@@ -2963,6 +3019,7 @@ fn start_prepared_service_checked(
     let profile = plan.profile.clone();
     maintenance::clear_abandoned(state, &profile)?;
     let log_notice = prepare_engine_log(state, &mut plan)?;
+    let component_notice = plan.component_notice.take();
     let mut command = Command::new(&plan.python);
     command
         .current_dir(&plan.root)
@@ -3066,6 +3123,9 @@ fn start_prepared_service_checked(
     );
     // Logged after the spawn registers this session's log view, so it stays visible.
     if let Some(notice) = log_notice {
+        processes::log(&state.logs, &profile.id, "warn", notice);
+    }
+    if let Some(notice) = component_notice {
         processes::log(&state.logs, &profile.id, "warn", notice);
     }
     Ok(status)
@@ -4341,6 +4401,55 @@ ThreadingHTTPServer((a.host,a.port),Handler).serve_forever()
         )
         .unwrap();
         profile
+    }
+
+    #[test]
+    fn paths_into_a_pruned_control_folder_follow_the_current_one_before_the_start() {
+        // #4899: `strata update` removed control/0.1.54 that setup.py wrote into the config.
+        let temp = tempfile::tempdir().unwrap();
+        let control = temp.path().join("components").join("control");
+        let gone = control.join("0.1.54");
+        let root = control.join("0.1.57");
+        let python = runtime_lease_fixture(&root);
+        fs::create_dir_all(root.join("data")).unwrap();
+        fs::write(root.join("data/expert-profile.json"), b"{}").unwrap();
+        let state = RuntimeState::open(temp.path().join("data")).unwrap();
+        let _cleanup = RuntimeLeaseCleanup(vec![state.clone()]);
+        let config_path = temp.path().join("config.json");
+        let mut profile = runtime_lease_profile(&root, &python, &config_path);
+        profile.install_dir = gone.to_string_lossy().into();
+        let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+        let old_profile = gone.join("data").join("expert-profile.json");
+        config["cwd"] = json!(gone.to_string_lossy());
+        config["exe"] = json!(root.join("fixture").to_string_lossy());
+        config["args"] = json!(["--expert-profile", old_profile.to_string_lossy()]);
+        fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+        register_gui_fixture(&state, &profile);
+
+        let plan = prepare_startup(&profile, &state.processes, &state.tasks).unwrap();
+        assert_eq!(
+            plan.root.canonicalize().unwrap(),
+            root.canonicalize().unwrap()
+        );
+        let saved = storage::read(&profile).unwrap();
+        assert_eq!(saved["cwd"], json!(root.to_string_lossy()));
+        assert_eq!(
+            saved["args"][1],
+            json!(root
+                .join("data")
+                .join("expert-profile.json")
+                .to_string_lossy())
+        );
+        assert_eq!(plan.config_value, saved);
+        let notice = plan.component_notice.clone().unwrap();
+        assert!(
+            notice.contains("strata update") && notice.contains("0.1.57"),
+            "{notice}"
+        );
+
+        // Once rewritten, the next start has nothing to follow.
+        let again = prepare_startup(&profile, &state.processes, &state.tasks).unwrap();
+        assert_eq!(again.component_notice, None);
     }
 
     #[test]

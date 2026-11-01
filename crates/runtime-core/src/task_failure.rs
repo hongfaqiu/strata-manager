@@ -44,6 +44,9 @@ pub enum Kind {
     /// place, so retrying alone fails again.
     KeptFile,
     Conversion,
+    /// A third-party GGUF stores the hc tensors quantized while the engine needs BF16
+    /// (#4900): a compatibility problem of that file, not a failed conversion or the disk.
+    CompatBf16,
     Gpu,
     /// The Mac's compiler or Metal Toolchain: only the source-build path needs them.
     Compiler,
@@ -58,6 +61,9 @@ impl Kind {
             Kind::Python => "Python 运行环境不完整",
             Kind::Checksum | Kind::KeptFile => "文件校验未通过",
             Kind::Conversion => "模型转换失败",
+            Kind::CompatBf16 => {
+                "第三方 GGUF 与引擎不兼容 / This third-party GGUF does not fit the engine"
+            }
             Kind::Gpu => "显卡或驱动不满足要求",
             Kind::Compiler => "Mac 编译环境不可用 / The Mac build tools are not usable",
             Kind::Other => "准备脚本报错",
@@ -72,6 +78,7 @@ impl Kind {
             Kind::Checksum => "重试会重新下载该文件",
             Kind::KeptFile => "这个分片和官方发布的文件不一致（多半是下载或复制时损坏），Strata 不会自动删除它，直接重试还会失败；请先删除这个文件（和同名的 .done 文件）再重试，会重新下载",
             Kind::Conversion => "请确认磁盘空间充足后重试；仍失败请把任务日志发给开发者",
+            Kind::CompatBf16 => "这个 GGUF 的 hc 张量不是引擎要求的 BF16（和 OrcaRouter 去审查模型同类的第三方文件），重试和清理磁盘都不会好转；OrcaRouter 模型请用「导入 OrcaRouter 去审查模型」，其他文件请用 iq_pack.py 加 --compat-bf16 转换后再导入 / Its hc tensors are not the BF16 the engine needs, like the OrcaRouter uncensored model; retrying or freeing disk will not help. Use 「Import the OrcaRouter uncensored model」 for OrcaRouter files, or convert others with iq_pack.py --compat-bf16 first",
             Kind::Gpu => "请按提示检查显卡驱动后重试",
             Kind::Compiler => "请在“终端”运行 xcode-select --install 安装或修复命令行工具后重试；选择 Qwen3.8-Flash-Next 时 Manager 使用预制引擎，不需要编译 / Run xcode-select --install in Terminal to install or repair the Command Line Tools, then retry; Qwen3.8-Flash-Next uses Manager's prebuilt engine and needs no compiler",
             Kind::Other => "请按上面的提示处理后重试",
@@ -83,9 +90,18 @@ fn contains_any(text: &str, needles: &[&str]) -> bool {
     needles.iter().any(|needle| text.contains(needle))
 }
 
+const COMPAT_BF16: &[&str] = &[
+    "requires bf16",
+    "--compat-bf16",
+    "hc tensor not bf16",
+    "hc tensors not bf16",
+];
+
 pub fn classify(text: &str) -> Kind {
     let lower = text.to_ascii_lowercase();
-    if contains_any(
+    if contains_any(&lower, COMPAT_BF16) {
+        Kind::CompatBf16
+    } else if contains_any(
         &lower,
         &[
             "no space left",
@@ -246,7 +262,18 @@ pub fn explain(description: &str, exit_code: Option<i32>, lines: &[String]) -> S
     } else {
         cause
     };
-    let kind = classify(&cause);
+    // Upstream lists every offending tensor, then ends on a generic `[X] command failed`:
+    // the BF16 lines are the cause.
+    let (cause, kind) = match lines
+        .iter()
+        .find(|line| contains_any(&line.to_ascii_lowercase(), COMPAT_BF16))
+    {
+        Some(line) => (line.trim().to_owned(), Kind::CompatBf16),
+        None => {
+            let kind = classify(&cause);
+            (cause, kind)
+        }
+    };
     format!("{}：{cause}。{}（{exit}）", kind.title(), kind.advice())
 }
 
@@ -340,6 +367,29 @@ mod tests {
         let deleted = lines("  [X]  a.gguf has the wrong SHA-256 (a, expected b): deleted");
         assert_eq!(kept_file_name(&deleted), None);
         assert_eq!(kept_file_name(&lines("no failure here")), None);
+    }
+
+    #[test]
+    fn a_third_party_gguf_that_needs_bf16_is_not_a_conversion_or_disk_failure() {
+        // #4900: the OrcaRouter GGUF imported by hand. The last `[X]` line is generic.
+        let log = lines("model shards: Qwen3.8-Flash-Next-Uncensored-IQ3_XXS-00001-of-00002.gguf, Qwen3.8-Flash-Next-Uncensored-IQ3_XXS-00002-of-00002.gguf\noutput_hc_down.weight is Q6_K, but the engine requires BF16; use --compat-bf16\nblk.0.hc_attn_up.weight is Q8_0, but the engine requires BF16; use --compat-bf16\n... and 355 more\n  [X]  command failed (exit 1): python.exe\nSetup stopped. Fix the item above and run it again - everything already done is kept and skipped.");
+        let text = explain("模型转换", Some(1), &log);
+        assert!(text.starts_with("第三方 GGUF 与引擎不兼容"), "{text}");
+        assert!(text.contains("output_hc_down.weight is Q6_K"), "{text}");
+        assert!(text.contains("导入 OrcaRouter 去审查模型"));
+        assert!(text.contains("--compat-bf16"));
+        assert!(!text.contains("磁盘空间"), "{text}");
+        for one in [
+            "blk.3.hc_ffn_up.weight is Q8_0, but the engine requires BF16; use --compat-bf16",
+            "hc tensor not BF16: blk.0.hc_attn_down.weight",
+            "rerun iq_pack.py with --compat-bf16",
+        ] {
+            assert_eq!(classify(one), Kind::CompatBf16, "{one}");
+        }
+        assert_eq!(
+            classify("could not convert shard to gguf"),
+            Kind::Conversion
+        );
     }
 
     #[test]

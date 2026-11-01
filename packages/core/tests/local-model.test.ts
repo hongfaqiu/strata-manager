@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultLocalGgufGroup, groupLocalGgufs, localModelAction, localModelBaseName, localModelCommand, localOrcaRequest, localSetupRequest, type LocalGgufGroup } from '../src/local-model';
+import { defaultLocalGgufGroup, groupLocalGgufs, localModelAction, localModelBaseName, localModelCommand, localModelImages, localOrcaRequest, localSetupRequest, type LocalGgufGroup } from '../src/local-model';
 import type { ModelDownloadRequest } from '../src/model-download';
 import { normalizeOfficialSetupOptions } from '../src/official-setup';
 
@@ -42,6 +42,16 @@ describe('使用已有模型 (#75)', () => {
       .toBe('START-HERE.bat --family unsloth --model UD-Q4_K_XL --gguf-dir "D:\\My Models\\gguf" --context 32768 --data-dir D:\\AI');
     expect(localModelCommand(group({}), { ggufDirectory: '/m' }, undefined, 8192, false)).toBe('python setup.py --family unsloth --model UD-Q4_K_XL --gguf-dir /m --context 8192');
     expect(localModelCommand(group({ kind: 'orca', family: 'orca', quant: 'IQ3_XXS' }), { ggufDirectory: '/m' }, mtp, 32768, false)).toContain('--compat-bf16');
+  });
+
+  it('#4926: keeps the replaced configuration\'s image support, else on when the model reads images', () => {
+    expect(localModelImages('unsloth', { vision: { mmproj: 'mmproj.gguf' } })).toBe(true);
+    expect(localModelImages('unsloth', { args: [] })).toBe(false);
+    expect(localModelImages('unsloth', { vision: null })).toBe(false);
+    expect(localModelImages('unsloth', null)).toBe(true);
+    expect(localModelImages('deepseek41', { vision: { mmproj: 'x' } })).toBe(false);
+    expect(localModelImages(undefined, undefined)).toBe(false);
+    expect(localModelCommand(group({}), { ggufDirectory: '/m' }, undefined, 8192, false, true)).toBe('python setup.py --family unsloth --model UD-Q4_K_XL --gguf-dir /m --context 8192 --vision yes');
   });
 
   it('builds run_setup and ORCA import requests only for matching groups', () => {

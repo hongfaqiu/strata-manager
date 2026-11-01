@@ -3,7 +3,7 @@ import * as core from '@strata-manager/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronRight, FileSearch, FolderOpen, RefreshCw, TriangleAlert, X } from 'lucide-react';
-import { Dropdown, Radio } from '../OfficialControls';
+import { Dropdown, Radio, Toggle } from '../OfficialControls';
 import { existingModelCopy } from './existingModelCopy';
 import './existing-model.css';
 
@@ -43,6 +43,7 @@ export function ExistingModelPanel({ language, desktop, runtime, runtimeVersion,
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [mtpOpen, setMtpOpen] = useState(false);
+  const [imagesChoice, setImagesChoice] = useState<boolean>();
   const lock = useRef(false);
   const scan = useQuery({ queryKey: ['local-model-scan', path], queryFn: () => core.scanLocalModels(path), enabled: desktop && !!path, retry: false, staleTime: 15000, refetchOnWindowFocus: false });
   const choices = useMemo(() => core.groupLocalGgufs(scan.data), [scan.data]);
@@ -57,6 +58,13 @@ export function ExistingModelPanel({ language, desktop, runtime, runtimeVersion,
   const mtp = useQuery({ queryKey: ['local-mtp-check', mtpPath], queryFn: () => core.checkMtpPath(mtpPath), enabled: desktop && !!mtpPath, retry: false, staleTime: 15000, refetchOnWindowFocus: false });
   const action = core.localModelAction(group);
   const orca = action === 'orca';
+  // #4926: a switch keeps the current configuration's image support instead of turning it off.
+  const previous = useQuery({ queryKey: ['local-model-previous-config', runtime?.id, runtime?.configPath], queryFn: () => core.readConfig(runtime!), enabled: desktop && !!runtime?.configPath, retry: false, staleTime: 15000, refetchOnWindowFocus: false });
+  const previousPending = desktop && !!runtime?.configPath && previous.isPending;
+  const supportsImages = !orca && core.localModelSupportsImages(group?.family);
+  const imagesDefault = core.localModelImages(group?.family, previous.isSuccess ? previous.data : null);
+  const images = supportsImages && (imagesChoice ?? imagesDefault);
+  useEffect(() => setImagesChoice(undefined), [group?.family]);
   const directory = scan.data?.directory ?? '';
   const request: LocalModelRequest = { ggufDirectory: directory, ...(mtpPath ? { mtpPath } : {}) };
   const mtpProblem = mtpPath ? (mtp.isError ? core.normalizeError(mtp.error).message : mtp.data?.problems[0]) : undefined;
@@ -65,8 +73,8 @@ export function ExistingModelPanel({ language, desktop, runtime, runtimeVersion,
   const engineBlocked = !!engineGate && !engineGate.ok;
   const checkEnabled = desktop && !!runtime?.installDir && !!group && action !== 'blocked' && mtpReady && !mtp.isFetching;
   const disk = useQuery({
-    queryKey: ['local-model-disk', runtime?.id, runtime?.installDir, group?.id, directory, mtpPath],
-    queryFn: () => core.setupDiskPreflight(runtime!, group!.family!, group!.quant!, false, request),
+    queryKey: ['local-model-disk', runtime?.id, runtime?.installDir, group?.id, directory, mtpPath, images],
+    queryFn: () => core.setupDiskPreflight(runtime!, group!.family!, group!.quant!, images, request),
     enabled: checkEnabled && action === 'setup', retry: false, staleTime: 15000, refetchOnWindowFocus: false,
   });
   const orcaPlan = useQuery({
@@ -78,8 +86,8 @@ export function ExistingModelPanel({ language, desktop, runtime, runtimeVersion,
   const checkPending = orca ? orcaPlan.isFetching : disk.isFetching;
   const checkError = orca ? orcaPlan.error : disk.error;
   const checkProblems = orca ? orcaPlan.data?.problems ?? [] : disk.data && disk.data.status !== 'ready' && disk.data.reason ? [disk.data.reason] : [];
-  const ready = !!group && action !== 'blocked' && !engineBlocked && mtpReady && !checkPending && !checkError && (orca ? orcaPlan.data?.status === 'ready' : disk.data?.status === 'ready');
-  const command = group && action !== 'blocked' && directory ? core.localModelCommand(group, request, mtp.data, orca ? core.ORCA_CONTEXT : context, windows) : '';
+  const ready = !!group && action !== 'blocked' && !engineBlocked && mtpReady && !previousPending && !checkPending && !checkError && (orca ? orcaPlan.data?.status === 'ready' : disk.data?.status === 'ready');
+  const command = group && action !== 'blocked' && directory ? core.localModelCommand(group, request, mtp.data, orca ? core.ORCA_CONTEXT : context, windows, orca ? undefined : images) : '';
   const disabled = !desktop || busy || submitting;
 
   const pick = async (kind: 'folder' | 'file' | 'mtp') => {
@@ -98,10 +106,10 @@ export function ExistingModelPanel({ language, desktop, runtime, runtimeVersion,
       if (orca) {
         task = await onOrcaImport?.(runtime, core.localOrcaRequest(group, request, separatorOf(directory)), options);
       } else {
-        const base = core.snapshotModelDownloadRequest(runtime, { model: group.family!, quant: group.quant!, context, images: false }, options);
+        const base = core.snapshotModelDownloadRequest(runtime, { model: group.family!, quant: group.quant!, context, images }, options);
         const setup = core.localSetupRequest(base, group, request);
         // Revalidate the captured files right before submitting (they may have moved since the scan).
-        const checked = await core.setupDiskPreflight(setup.profile, setup.model, setup.quant, false, setup.localModel);
+        const checked = await core.setupDiskPreflight(setup.profile, setup.model, setup.quant, setup.images, setup.localModel);
         if (checked.status !== 'ready') throw new Error(checked.reason || (checked.status === 'insufficient' ? t.diskLow : t.diskUnknown));
         task = await onSetup(setup);
       }
@@ -161,8 +169,12 @@ export function ExistingModelPanel({ language, desktop, runtime, runtimeVersion,
       <div className="existing-model-sec">
         <span className="existing-model-label">{t.context}</span>
         {orca ? <span className="existing-model-hint">{t.orcaContext}</span> : <div className="existing-model-context"><Dropdown ariaLabel={t.context} value={String(context)} onValueChange={value => setContext(Number(value))} options={CONTEXTS.map(value => ({ value: String(value), label: core.formatContextTokens(value, language) }))}/></div>}
-        <small className="existing-model-hint">{t.vision}</small>
       </div>
+      {!orca && <div className="existing-model-sec existing-model-images" data-testid="existing-model-images">
+        <span className="existing-model-label">{t.images}</span>
+        {supportsImages ? <div className="existing-model-toggle"><Toggle ariaLabel={t.images} checked={images} disabled={disabled} onCheckedChange={setImagesChoice}/>{imagesChoice === undefined && previous.isSuccess && <small className="existing-model-hint">{t.imagesKept}</small>}</div>
+          : <small className="existing-model-hint">{t.textOnly}</small>}
+      </div>}
       <details className="existing-model-more" open={mtpOpen} onToggle={event => setMtpOpen(event.currentTarget.open)}>
         <summary data-testid="existing-model-mtp-toggle"><ChevronRight size={14} className="existing-model-chev" aria-hidden="true"/><span>{t.mtpTitle}</span><small className={mtpProblem ? 'is-bad' : ''}>{mtpState}</small></summary>
         <div className="existing-model-more-body">

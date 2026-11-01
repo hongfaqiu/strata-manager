@@ -126,6 +126,9 @@ struct PythonCache {
     missing_modules: HashMap<String, Vec<String>>,
 }
 
+mod component_paths;
+pub(crate) use component_paths::{current_control_root, rebase_config as rebase_component_paths};
+
 fn read_json(path: &Path) -> Result<Value, String> {
     let metadata = fs::symlink_metadata(path).map_err(|e| format!("无法读取配置: {e}"))?;
     if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > MAX_CONFIG_BYTES
@@ -724,7 +727,10 @@ fn inspect_config(
     source: &str,
     cache: &mut PythonCache,
 ) -> Result<InspectedConfig, String> {
-    let root = canonical_local(root)?;
+    // A gone `components/control/<version>` root (pruned by `strata update`, #4899) answers
+    // with the newest control folder; its gone paths in the config likewise.
+    let root = current_control_root(root).unwrap_or_else(|| root.to_owned());
+    let root = canonical_local(&root)?;
     if !root.join("setup.py").is_file() || !root.join("serve/server.py").is_file() {
         return Err("不是可识别的 Strata 安装目录".into());
     }
@@ -733,6 +739,9 @@ fn inspect_config(
     }
     let config = canonical_local(config)?;
     let value = read_json(&config)?;
+    let value = component_paths::rebase_config(&value)
+        .map(|(fixed, _)| fixed)
+        .unwrap_or(value);
     storage::validate(&value)?;
     let exe = value
         .get("exe")
@@ -1187,6 +1196,9 @@ fn nearby_install_roots(data_dir: &Path) -> Vec<PathBuf> {
 /// Resolve the Strata install root from a run-config's cwd / exe / ancestors.
 fn install_root_from_config_file(config: &Path) -> Option<PathBuf> {
     let value = read_json(config).ok()?;
+    let value = component_paths::rebase_config(&value)
+        .map(|(fixed, _)| fixed)
+        .unwrap_or(value);
     let exe = value
         .get("exe")
         .and_then(Value::as_str)
