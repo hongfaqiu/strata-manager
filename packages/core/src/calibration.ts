@@ -95,3 +95,20 @@ export function calibrationHasChange(job: Pick<CalibrationJob, 'state' | 'settin
 export function calibrationConfigChanged(job: Pick<CalibrationJob, 'configFingerprint'> | null | undefined, revision: string): boolean {
   return !!job?.configFingerprint && !!revision && job.configFingerprint.toLowerCase() !== revision.toLowerCase();
 }
+
+/**
+ * Upstream #4841: a calibration measured on an older engine says little about a newer one (0.1.55 changed the parallel
+ * defaults and the GDN kernels). The finished job's engine (identity.engineVersion) against the profile's current engine;
+ * null when they match, either is unknown, or the job did not finish.
+ */
+export function calibrationEngineOutdated(job: Pick<CalibrationJob, 'state' | 'identity'> | null | undefined, currentEngine: string | null | undefined): { from: string; to: string } | null {
+  const plain = (value: unknown) => typeof value === 'string' && /^v?\d+\.\d+\.\d+(?:\.\d+)?$/.test(value.trim()) ? value.trim().replace(/^v/i, '') : null;
+  const from = plain(job?.identity?.engineVersion), to = plain(currentEngine);
+  if (!job || (job.state !== 'completed' && job.state !== 'applied') || !from || !to) return null;
+  const a = from.split('.').map(Number), b = to.split('.').map(Number);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i] ?? 0, y = b[i] ?? 0;
+    if (x !== y) return y > x ? { from, to } : null;
+  }
+  return null;
+}

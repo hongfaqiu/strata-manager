@@ -47,6 +47,12 @@ describe('concurrency comparison candidates', async () => {
   const config = { model_name: 'qwen', args: ['--native', 'Qwen-Q2_0.gguf', '--max-context', '32768', '--mtp', 'm.gguf', '--batch', '2'] };
   const settings = readConcurrencySettings(config);
   const plan = recommendConcurrency({ settings, hardware: { gpus: [{ id: 0, name: 'GPU', vendor: 'nvidia', totalBytes: 32 * GIB }], totalMemoryBytes: 64 * GIB }, arenaGb: 34, useCase: 'multiUser' });
+  it('offers no experimental variant where engine 0.1.55 sets those switches itself (Linux CUDA, upstream #4841)', () => {
+    expect(concurrencyComparisonCandidates(settings, plan, { experimental: true, engineSetsLaunchSwitches: true }).map(c => c.id)).toEqual(['p1', 'p4', 'p5']);
+    expect(concurrencyComparisonCandidates(settings, plan, { experimental: true, engineSetsLaunchSwitches: true }).some(c => c.edits.some(e => e.key.startsWith('env.')))).toBe(false);
+    expect(concurrencyComparisonCandidates(settings, plan, { experimental: true, engineSetsLaunchSwitches: false }).map(c => c.id)).toContain('p4-exp');
+    expect(concurrencyComparisonCandidates(settings, plan, { experimental: true }).map(c => c.id)).toContain('p4-exp');
+  });
   it('compares one at a time, the recommendation and one more, plus an optional experimental variant', () => {
     const list = concurrencyComparisonCandidates(settings, plan, { experimental: true });
     expect(list.map(c => c.id)).toEqual(['p1', 'p4', 'p5', 'p4-exp']);

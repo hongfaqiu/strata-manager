@@ -7,6 +7,7 @@ import { Dialog } from '../../components';
 import { Toggle } from '../../OfficialControls';
 import { ConcurrencyChart } from '../ConcurrencyChart';
 import { useConcurrencyHardware } from '../ConcurrencyCard';
+import { useEngineVersion } from '../useEngineVersion';
 import { cancelComparison, comparisonRunning, comparisonSnapshot, comparisonSubscribe, loadComparison, runComparison, saveCandidateVersions, type ComparisonState } from './concurrencyComparisonRunner';
 import '../concurrency-ladder.css';
 import './concurrency-comparison.css';
@@ -20,6 +21,8 @@ export interface ConcurrencyComparisonViewProps {
   canSave: boolean;
   canRun: boolean;
   unavailable?: string;
+  /** Engine 0.1.55+ sets the experimental switches itself (upstream #4841): no experimental candidate is offered. */
+  serverDefaults?: boolean;
   onExperimental?: (on: boolean) => void;
   onSave?: () => void;
   onRun?: () => void;
@@ -34,7 +37,7 @@ export function candidateLabel(candidate: Pick<ConcurrencyCandidate, 'parallel' 
 }
 
 /** Pure view: candidates, optional version saving and restart run, vertical bars + verdict. */
-export function ConcurrencyComparisonView({ zh, candidates, recommended, state, experimental, canSave, canRun, unavailable, onExperimental, onSave, onRun, onCancel }: ConcurrencyComparisonViewProps) {
+export function ConcurrencyComparisonView({ zh, candidates, recommended, state, experimental, canSave, canRun, unavailable, serverDefaults, onExperimental, onSave, onRun, onCancel }: ConcurrencyComparisonViewProps) {
   const t = (cn: string, en: string) => zh ? cn : en;
   const running = ['saving', 'switching', 'measuring', 'restoring'].includes(state.phase);
   const result = (id: string) => state.results.find(item => item.id === id);
@@ -58,7 +61,8 @@ export function ConcurrencyComparisonView({ zh, candidates, recommended, state, 
         {r?.error && <span className="concurrency-comparison-error">{r.error === 'not_saved' ? t('未保存，已跳过', 'not saved; skipped') : r.error}</span>}
       </li>; })}
     </ol>
-    <label className="concurrency-comparison-exp"><Toggle ariaLabel={t('加入实验开关候选', 'Add an experimental candidate')} checked={experimental} disabled={running} onCheckedChange={on => onExperimental?.(on)}/><span><b>{t('加入实验开关候选', 'Add an experimental candidate')}</b><em className="concurrency-card-tag">{t('实验', 'Experimental')}</em><small>{t('推荐并发数 + STRATA_BATCH_ATTN_ROWS / STRATA_BATCH_GDN_GROUPS，官方默认关闭。', 'Recommended slots + STRATA_BATCH_ATTN_ROWS / STRATA_BATCH_GDN_GROUPS, off by default upstream.')}</small></span></label>
+    {serverDefaults ? <p className="concurrency-comparison-exp" data-testid="concurrency-comparison-engine-defaults"><small>{t('引擎 0.1.55 起，STRATA_BATCH_ATTN_ROWS / STRATA_BATCH_GDN_GROUPS 在这台 Linux + NVIDIA（CUDA）机器上、2 个以上同时运行时由引擎自动开启，不再单独对比。', 'From engine 0.1.55 the engine turns on STRATA_BATCH_ATTN_ROWS / STRATA_BATCH_GDN_GROUPS itself on this Linux machine with NVIDIA (CUDA) when 2 or more run at once, so they are no longer compared separately.')}</small></p>
+    : <label className="concurrency-comparison-exp"><Toggle ariaLabel={t('加入实验开关候选', 'Add an experimental candidate')} checked={experimental} disabled={running} onCheckedChange={on => onExperimental?.(on)}/><span><b>{t('加入实验开关候选', 'Add an experimental candidate')}</b><em className="concurrency-card-tag">{t('实验', 'Experimental')}</em><small>{t('推荐并发数 + STRATA_BATCH_ATTN_ROWS / STRATA_BATCH_GDN_GROUPS，官方默认关闭。', 'Recommended slots + STRATA_BATCH_ATTN_ROWS / STRATA_BATCH_GDN_GROUPS, off by default upstream.')}</small></span></label>}
     <div className="concurrency-comparison-actions">
       <button type="button" disabled={!canSave || running || saved === candidates.length} onClick={onSave} data-testid="concurrency-save-versions"><Save size={14}/>{saved === candidates.length ? t('已保存全部版本', 'All versions saved') : t(`另存为 ${candidates.length - saved} 个配置版本`, `Save ${candidates.length - saved} configuration versions`)}</button>
       {running ? <button type="button" className="benchmark-stop" onClick={onCancel}><Square size={14}/>{t('停止并恢复', 'Stop and restore')}</button>
@@ -92,16 +96,19 @@ export function ConcurrencyComparison({ profile, language, desktop, disabled, on
   const config = snapshot.data?.config;
   const settings = useMemo(() => config ? core.readConcurrencySettings(config) : null, [config]);
   const identity = useMemo(() => config ? core.concurrencyModelIdentity(config) : null, [config]);
+  const engineVersion = useEngineVersion(base, desktop);
   const hardware = useConcurrencyHardware({ installationId: base?.id, desktop, identity, settings: settings ?? core.readConcurrencySettings({}) });
   const arenaGb = identity ? core.modelExpertArenaGb(identity.family, identity.quant) : null;
   const plan = useMemo(() => settings ? core.recommendConcurrency({ settings, hardware, arenaGb, useCase: 'multiUser' }) : null, [settings, hardware, arenaGb]);
-  const candidates = useMemo(() => comparisonRunning() || (state.baseProfileId === profile?.id && state.candidates.length && state.phase !== 'idle') ? state.candidates : settings && plan ? core.concurrencyComparisonCandidates(settings, plan, { experimental }) : [], [settings, plan, experimental, state, profile?.id]);
+  // Upstream #4841: only on Linux CUDA (Qwen) does engine 0.1.55+ turn the two launch switches on itself.
+  const serverDefaults = core.concurrencyServerSetsLaunchSwitches(engineVersion, { os: core.concurrencyHostOs(typeof navigator !== 'undefined' ? navigator.userAgent : ''), config, gpus: hardware?.gpus });
+  const candidates = useMemo(() => comparisonRunning() || (state.baseProfileId === profile?.id && state.candidates.length && state.phase !== 'idle') ? state.candidates : settings && plan ? core.concurrencyComparisonCandidates(settings, plan, { experimental, engineSetsLaunchSwitches: serverDefaults }) : [], [settings, plan, experimental, state, profile?.id, serverDefaults]);
   const recommended = plan ? Math.max(2, plan.officialParallel, plan.parallel) : 2;
   const mac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.userAgent) && !/Windows/i.test(navigator.userAgent);
   const unavailable = !desktop ? t('并发对比需要在桌面应用中进行。', 'The comparison runs in the desktop app.') : mac ? t('Mac（Metal）暂不支持并发（上游 #2715）。', 'Concurrency is not supported on Mac (Metal) yet (upstream #2715).') : !onSwitchVersion ? t('当前服务不由本应用管理，只能保存配置版本，不能自动重启测量。', 'This service is not managed by the app: versions can be saved, but not measured by restarting.') : undefined;
   if (!profile) return null;
   return <>
-    <ConcurrencyComparisonView zh={zh} candidates={candidates} recommended={recommended} state={state.baseProfileId === profile.id || comparisonRunning() ? state : { phase: 'idle', candidates: [], versions: {}, results: [] }} experimental={experimental}
+    <ConcurrencyComparisonView zh={zh} candidates={candidates} recommended={recommended} state={state.baseProfileId === profile.id || comparisonRunning() ? state : { phase: 'idle', candidates: [], versions: {}, results: [] }} experimental={experimental} serverDefaults={serverDefaults}
       canSave={desktop && !mac && !!config && !disabled} canRun={desktop && !mac && !!onSwitchVersion && !disabled} unavailable={unavailable}
       onExperimental={on => setExperimental(on)} onSave={() => void saveCandidateVersions(profile, candidates).then(() => onChanged?.()).catch(() => {})} onRun={() => setConfirm(true)} onCancel={cancelComparison}/>
     {confirm && <Dialog title={t('依次重启并测量？', 'Restart into each version and measure?')} onClose={() => setConfirm(false)}>

@@ -21,12 +21,12 @@ const core = { ...contextExtension.exports, ...concurrency.exports, STARTUP_TUNI
 const Segmented = props => jsx('segmented', props), Toggle = props => jsx('toggle', props);
 const GIB = 2 ** 30;
 
-function render(config, { hardware, values = {}, platform = 'other', zh = true } = {}) {
+function render(config, { hardware, values = {}, platform = 'other', zh = true, engineVersion, hostOs, userAgent = '' } = {}) {
   const module = { exports: {} };
   const react = { useMemo: f => f(), useState: v => [typeof v === 'function' ? v() : v, () => {}], createContext: v => ({ v }), useContext: c => c.v };
-  vm.runInNewContext(compile('./ConcurrencyCard.tsx'), { module, exports: module.exports, navigator: { userAgent: '' }, require: name => ({ react, '@tanstack/react-query': { useQuery: () => ({ data: undefined }) }, '@strata-manager/core': core, '../OfficialControls': { Segmented, Toggle }, './concurrencyContext': { useConcurrencyEnvironment: () => ({ desktop: true, installationId: 'a' }) }, 'react/jsx-runtime': { jsx, jsxs: jsx } })[name] ?? {} });
+  vm.runInNewContext(compile('./ConcurrencyCard.tsx'), { module, exports: module.exports, navigator: { userAgent }, require: name => ({ react, '@tanstack/react-query': { useQuery: () => ({ data: undefined }) }, '@strata-manager/core': core, '../OfficialControls': { Segmented, Toggle }, './concurrencyContext': { useConcurrencyEnvironment: () => ({ desktop: true, installationId: 'a' }) }, 'react/jsx-runtime': { jsx, jsxs: jsx } })[name] ?? {} });
   const changes = [];
-  const tree = module.exports.ConcurrencyCard({ draft: config, fieldValue: field => values[field.key] ?? '', onFieldChange: (field, value) => changes.push([field.key, value]), zh, hardware, platform });
+  const tree = module.exports.ConcurrencyCard({ draft: config, fieldValue: field => values[field.key] ?? '', onFieldChange: (field, value) => changes.push([field.key, value]), zh, hardware, platform, engineVersion, hostOs });
   return { tree, changes, byId: id => nodes(tree).find(node => node.props['data-testid'] === id) };
 }
 const hw = (...gib) => ({ gpus: gib.map((g, id) => ({ id, name: 'GPU', vendor: 'nvidia', totalBytes: g * GIB })), totalMemoryBytes: 64 * GIB });
@@ -55,4 +55,47 @@ test('one at a time hides experimental switches; conflicts show a fix; Metal is 
 test('English copy and unknown hardware stay at one at a time', () => {
   const { byId } = render({ args: ['--native', 'custom.gguf'] }, { hardware: null, zh: false });
   assert.match(text(byId('concurrency-recommendation')), /One at a time/);
+});
+
+test('from engine 0.1.55 the attention / GDN switches are left to the engine on Linux + NVIDIA; a value already set keeps its switch (upstream #4841)', () => {
+  const toggles = tree => nodes(tree).filter(node => typeof node.props.onCheckedChange === 'function').map(node => node.props.ariaLabel);
+  const both = tree => toggles(tree).filter(label => /ATTN_ROWS|GDN_GROUPS/.test(label)).length;
+  const base = { parallel: 4, args: ['--native', 'Qwen-Q2_0.gguf', '--max-context', '32768', '--mtp', 'm.gguf'] };
+  const old = render(base, { hardware: hw(32), engineVersion: '0.1.54', hostOs: 'linux' });
+  assert.equal(old.byId('concurrency-engine-defaults'), undefined);
+  assert.equal(old.byId('concurrency-engine-defaults-elsewhere'), undefined);
+  assert.equal(both(old.tree), 2);
+  const fresh = render(base, { hardware: hw(32), engineVersion: '0.1.55', hostOs: 'linux' });
+  assert.match(text(fresh.byId('concurrency-engine-defaults')), /0\.1\.55 起.*Linux \+ NVIDIA（CUDA）.*不再写入/);
+  assert.equal(both(fresh.tree), 0);
+  assert.ok(toggles(fresh.tree).some(label => /PIPED_CONCURRENT/.test(label)), 'the pipelined switch is still offered');
+  // The host OS comes from the webview's user agent when no fixture sets it.
+  assert.equal(both(render(base, { hardware: hw(32), engineVersion: '0.1.55', userAgent: 'Mozilla/5.0 (X11; Linux x86_64)' }).tree), 0);
+  const en = render(base, { hardware: hw(32), engineVersion: '0.1.56', zh: false, hostOs: 'linux' });
+  assert.match(text(en.byId('concurrency-engine-defaults')), /from engine 0\.1\.55 the engine turns them on itself on Linux with NVIDIA \(CUDA\)/);
+  const kept = render({ ...base, env: { STRATA_BATCH_GDN_GROUPS: '1' } }, { hardware: hw(32), engineVersion: '0.1.55', hostOs: 'linux' });
+  const gdn = nodes(kept.tree).find(node => typeof node.props.onCheckedChange === 'function' && /GDN_GROUPS/.test(node.props.ariaLabel));
+  assert.ok(gdn, 'a value in the config keeps its switch so it can be removed');
+  assert.match(text(kept.byId('concurrency-experimental')), /覆盖引擎默认/);
+  gdn.props.onCheckedChange(false);
+  assert.deepEqual(kept.changes, [['env.STRATA_BATCH_GDN_GROUPS', '']]);
+});
+
+test('Windows, AMD (hip) and DeepSeek keep both switches on engine 0.1.55, where upstream does not turn them on', () => {
+  const both = tree => nodes(tree).filter(node => typeof node.props.onCheckedChange === 'function' && /ATTN_ROWS|GDN_GROUPS/.test(node.props.ariaLabel)).length;
+  const base = { parallel: 4, args: ['--native', 'Qwen-Q2_0.gguf', '--max-context', '32768', '--mtp', 'm.gguf'] };
+  const amd = { gpus: [{ id: 0, name: 'AMD Radeon RX 7900 XTX', vendor: 'amd', totalBytes: 24 * GIB }], totalMemoryBytes: 64 * GIB };
+  const cases = [
+    render(base, { hardware: hw(32), engineVersion: '0.1.55', hostOs: 'windows' }),
+    render(base, { hardware: hw(32), engineVersion: '0.1.55', userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }),
+    render({ ...base, backend: 'hip' }, { hardware: amd, engineVersion: '0.1.55', hostOs: 'linux' }),
+    render(base, { hardware: amd, engineVersion: '0.1.55', hostOs: 'linux' }),
+    render({ ...base, arch: 'deepseek41' }, { hardware: hw(32), engineVersion: '0.1.55', hostOs: 'linux' }),
+  ];
+  for (const view of cases) {
+    assert.equal(both(view.tree), 2);
+    assert.equal(view.byId('concurrency-engine-defaults'), undefined);
+    assert.match(text(view.byId('concurrency-engine-defaults-elsewhere')), /只在 Linux \+ NVIDIA（CUDA）上自动开启.*仍由这里的开关决定/);
+  }
+  assert.match(text(render(base, { hardware: hw(32), engineVersion: '0.1.55', hostOs: 'windows', zh: false }).byId('concurrency-engine-defaults-elsewhere')), /only on Linux with NVIDIA \(CUDA\).*these switches still decide/);
 });

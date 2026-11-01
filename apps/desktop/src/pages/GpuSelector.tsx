@@ -1,14 +1,9 @@
 import type { AppLanguage } from '@strata-manager/core';
-import { normalizeGpuSelection } from '@strata-manager/core';
+import { isIntegratedGpuName, normalizeGpuSelection } from '@strata-manager/core';
 import { Checkbox } from '../OfficialControls';
 import './gpu-selector.css';
 
 export type GpuOption = { id: number; name: string };
-
-export const MOCK_GPUS: GpuOption[] = [
-  { id: 0, name: 'NVIDIA GeForce RTX 4090 (24 GB)' },
-  { id: 1, name: 'NVIDIA GeForce RTX 4090 (24 GB)' },
-];
 
 export function parseGpuSelection(value: string | undefined): { mode: 'auto' | 'all' | 'ids'; ids: number[] } {
   const text = (value ?? '').trim();
@@ -22,20 +17,32 @@ export function parseGpuSelection(value: string | undefined): { mode: 'auto' | '
   }
 }
 
+/**
+ * Strata 0.2.9 multi-GPU defaults (upstream #4841 and the v0.2.9 notes): with no --gpu, DeepSeek on several AMD cards on
+ * Linux and several Intel Arc cards now use them all (an iGPU beside a dGPU is left out; an earlier install moves at its next
+ * start); AMD on Windows stays on one card, Qwen on several AMD cards still needs them named; `strata launch --gpu N` is kept.
+ */
+export function multiGpuAutoNote(zh: boolean): string {
+  return zh
+    ? '多卡电脑：Strata 0.2.9 起，自动选择会让 DeepSeek 在 Linux 上用上全部 AMD 显卡、多张 Intel Arc 显卡也默认全部使用（与独显同在的核显除外）；之前装好的 DeepSeek 下次启动也会改用全部显卡。Windows 上 AMD 仍只用一张；Qwen 用多张 AMD 显卡仍需在「指定显卡」里勾选。只想用一张：在「指定显卡」里选它，或运行 strata launch --gpu N，之后会被记住。'
+    : 'Several GPUs: from Strata 0.2.9, automatic selection runs DeepSeek on every AMD card on Linux, and several Intel Arc cards are all used by default (an integrated GPU beside a discrete one is left out); a DeepSeek install set up earlier moves to all cards at its next start. AMD on Windows still uses one card; Qwen on several AMD cards still needs them picked under “Choose GPUs”. To stay on one card, pick it under “Choose GPUs” or run strata launch --gpu N; it is remembered.';
+}
+
 export function GpuSelector({
-  language, value, onChange, availableGpus, disabled = false, allowMockFallback = true,
+  language, value, onChange, availableGpus, disabled = false,
 }: {
   language: AppLanguage;
   value: string;
   onChange: (gpus: string) => void;
+  /** Cards detected on this machine (empty or missing: none known; nothing is simulated). */
   availableGpus?: GpuOption[];
   disabled?: boolean;
-  allowMockFallback?: boolean;
 }) {
   const zh = language === 'zh-CN';
   const t = (cn: string, en: string) => (zh ? cn : en);
-  const detected = (availableGpus?.length ? availableGpus : allowMockFallback ? MOCK_GPUS : []).slice(0, 8);
-  const usingMock = !availableGpus?.length && allowMockFallback && detected.length > 0;
+  const detected = (availableGpus ?? []).slice(0, 8);
+  // The 0.2.9 all-cards note only matters with 2+ discrete cards detected here (an iGPU beside a dGPU is left out upstream).
+  const multiGpu = detected.filter(gpu => !isIntegratedGpuName(gpu.name)).length > 1;
   const selection = parseGpuSelection(value);
   const setMode = (mode: 'auto' | 'all' | 'ids') => {
     if (mode === 'auto') onChange('');
@@ -49,7 +56,7 @@ export function GpuSelector({
     onChange(ids.length ? ids.join(',') : '');
   };
   return (
-    <div className="gpu-selector" data-testid="gpu-selector" data-mode={selection.mode} data-mock={usingMock || undefined}>
+    <div className="gpu-selector" data-testid="gpu-selector" data-mode={selection.mode}>
       <div className="gpu-selector-modes" role="radiogroup" aria-label={t('显卡选择方式', 'GPU selection mode')}>
         {([['auto', t('自动选择（推荐）', 'Automatic (recommended)')], ['ids', t('指定显卡', 'Choose GPUs')], ['all', t('全部显卡', 'All GPUs')]] as const).map(([mode, label]) => (
           <label key={mode} className={`gpu-selector-mode${selection.mode === mode ? ' is-selected' : ''}`}>
@@ -68,8 +75,8 @@ export function GpuSelector({
           )) : <p className="gpu-selector-empty">{t('未检测到显卡列表，可改回自动选择，或稍后在系统页刷新。', 'No GPU list detected. Use automatic selection, or refresh on the System page later.')}</p>}
         </div>
       )}
+      {selection.mode === 'auto' && multiGpu && <p className="gpu-selector-note" data-testid="gpu-auto-all-cards">{multiGpuAutoNote(zh)}</p>}
       {selection.mode === 'all' && <p className="gpu-selector-note">{t('全部显卡适合多卡推理；资源预估在“全部”模式下无法完整计算，建议改为指定编号后查看建议。', 'All GPUs suit multi-GPU inference. Resource estimates cannot fully cover “all”; choose indices to review guidance.')}</p>}
-      {usingMock && <p className="gpu-selector-note" role="status">{t('浏览器预览使用模拟双卡列表；桌面应用会读取本机检测结果。', 'Browser preview uses a simulated dual-GPU list; the desktop app reads detected hardware.')}</p>}
     </div>
   );
 }

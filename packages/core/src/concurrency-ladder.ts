@@ -88,8 +88,11 @@ export function concurrencyLadderMessage(conclusion: ConcurrencyLadderConclusion
 
 /** A configuration version to compare: the slot count plus the companions the recommendation writes. */
 export interface ConcurrencyCandidate { id: string; parallel: number; experimental: boolean; edits: ConcurrencyChange[] }
-/** One at a time, the recommendation and one more slot (capped at the engine's window: 8, 16 on HIP), optionally the recommendation with the experimental launch switches. */
-export function concurrencyComparisonCandidates(settings: ConcurrencySettings, plan: ConcurrencyPlan, options: { experimental?: boolean } = {}): ConcurrencyCandidate[] {
+/**
+ * One at a time, the recommendation and one more slot (capped at the engine's window: 8, 16 on HIP), optionally the recommendation
+ * with the experimental launch switches. From engine 0.1.55 the server sets those itself, so no experimental variant is written.
+ */
+export function concurrencyComparisonCandidates(settings: ConcurrencySettings, plan: ConcurrencyPlan, options: { experimental?: boolean; /** concurrencyServerSetsLaunchSwitches for this configuration. */ engineSetsLaunchSwitches?: boolean } = {}): ConcurrencyCandidate[] {
   const recommended = Math.max(2, plan.officialParallel, plan.parallel);
   const counts = [...new Set([1, recommended, Math.min(plan.engineMax ?? CONCURRENCY_ENGINE_MAX, recommended + 1)])];
   const companions = plan.companions.map(({ key, value }) => ({ key, value }));
@@ -101,7 +104,7 @@ export function concurrencyComparisonCandidates(settings: ConcurrencySettings, p
     return edits;
   };
   const list: ConcurrencyCandidate[] = counts.map(parallel => ({ id: `p${parallel}`, parallel, experimental: false, edits: editsFor(parallel) }));
-  if (options.experimental) list.push({ id: `p${recommended}-exp`, parallel: recommended, experimental: true, edits: [...editsFor(recommended), { key: 'env.STRATA_BATCH_ATTN_ROWS', value: '1' }, { key: 'env.STRATA_BATCH_GDN_GROUPS', value: '1' }] });
+  if (options.experimental && !options.engineSetsLaunchSwitches) list.push({ id: `p${recommended}-exp`, parallel: recommended, experimental: true, edits: [...editsFor(recommended), { key: 'env.STRATA_BATCH_ATTN_ROWS', value: '1' }, { key: 'env.STRATA_BATCH_GDN_GROUPS', value: '1' }] });
   return list;
 }
 export function applyConcurrencyEdits(config: JsonObject, edits: ConcurrencyChange[]): JsonObject {
