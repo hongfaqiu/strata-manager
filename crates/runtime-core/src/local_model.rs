@@ -50,15 +50,15 @@ pub fn setup_supports(family: &str, quant: &str) -> bool {
         .contains(&quant),
         // setup.py OWN_PATH_FAMILIES qwen36; MIN_ENGINE (0,1,45)
         "qwen36" => ["UD-Q4_K_XL", "UD-Q6_K_XL", "Q8_0"].contains(&quant),
-        // setup.py MULTI_FILE_FAMILIES deepseek41 (Strata 0.2.5+): the official IST-DAS sets only;
-        // Unsloth's 508 GB UD-Q8_K_XL is a multi-GPU set the Manager does not offer.
+        // setup.py MULTI_FILE_FAMILIES deepseek41 (Strata 0.2.5+): the official IST-DAS sets, and from 0.2.9 Unsloth's
+        // UD-IQ1_S / UD-IQ1_M; Unsloth's 508 GB UD-Q8_K_XL is a multi-GPU set the Manager does not offer.
         "deepseek41" => crate::disk::DSV41_SETS.iter().any(|set| set.model == quant),
         _ => false,
     }
 }
 
 const FAMILIES: [&str; 5] = ["qwen", "swift", "coder", "unsloth", "qwen36"];
-const SUPPORTED_GGUFS: &str = "Strata 只能运行 ISTA-DASLab 的 GSQ-RCO 文件（Qwen3.8-Flash-Next Q2_0、IQ2_XS、IQ3_XXS、IQ3_S；Swift 1.5；Coder IQ1_M）、Unsloth 的 UD-IQ4_XS、UD-Q4_K_XL、UD-Q5_K_XL、UD-Q6_K_XL、Q8_0，以及 Qwen3.6-35B-A3B 的 UD-Q4_K_XL、UD-Q6_K_XL、Q8_0（上游 setup.py #444）";
+const SUPPORTED_GGUFS: &str = "Strata 只能运行 ISTA-DASLab 的 GSQ-RCO 文件（Qwen3.8-Flash-Next Q2_0、IQ2_XS、IQ3_XXS、IQ3_S；Swift 1.5；Coder IQ1_M）、Unsloth 的 UD-IQ4_XS、UD-Q4_K_XL、UD-Q5_K_XL、UD-Q6_K_XL、Q8_0，Qwen3.6-35B-A3B 的 UD-Q4_K_XL、UD-Q6_K_XL、Q8_0，以及 DeepSeek-V4.1-Flash 的官方 IST-DAS 和 UD-IQ1_S / UD-IQ1_M 文件（上游 setup.py #444）";
 const MAX_ENTRIES: usize = 4096;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
@@ -473,6 +473,85 @@ fn group(directory: &Path, first: &str, stem: &str, total: u32) -> LocalModelGro
     }
 }
 
+/// DeepSeek-V4.1-Flash's shared files (setup.py md["shared"], the first release's Engram name): setup finds them beside the
+/// shards itself, so they are not models of their own in the scan.
+fn is_dsv41_shared(name: &str) -> bool {
+    disk::dsv41::SHARED_FILES.iter().any(|(n, _)| *n == name) || name == "engram-IQ4_NL.gguf"
+}
+
+/// Strata 0.2.9 setup.py `--gguf-dir` for DeepSeek-V4.1-Flash: an official set's files, checked against the sizes upstream
+/// pins (DSV41_ISTA_FILES, DSV41_NEW_SHARD1, DSV41_ISTA6_FILES, DSV41_UD_FILES). None when the names are not a set's.
+fn deepseek_group(directory: &Path, stem: &str, total: u32) -> Option<LocalModelGroup> {
+    use disk::dsv41::{layout_of, Layout, Recipe};
+    let first = format!("{stem}-00001-of-{total:05}.gguf");
+    let (set, layout) = disk::DSV41_SETS.iter().find_map(|set| {
+        [Layout::Four, Layout::Six]
+            .into_iter()
+            .find(|layout| {
+                set.layout_files(*layout)
+                    .first()
+                    .is_some_and(|(name, _)| *name == first)
+            })
+            .map(|layout| (set, layout))
+    })?;
+    let files = set.layout_files(layout);
+    let shards: Vec<LocalShard> = files
+        .iter()
+        .enumerate()
+        .map(|(i, (name, _))| shard_state(&directory.join(name), Some((i as u32 + 1, total))))
+        .collect();
+    let mut problems: Vec<String> = shards.iter().filter_map(describe_shard).collect();
+    for (shard, (_, sizes)) in shards.iter().zip(&files) {
+        if shard.state == "ok" && !sizes.contains(&shard.bytes) {
+            let expected: Vec<String> = sizes.iter().map(u64::to_string).collect();
+            problems.push(format!(
+                "{} 的大小（{} 字节）与上游固定的官方文件不一致（应为 {} 字节）；Strata 只接受官方发布的 DeepSeek 文件，可能仍在下载或复制中",
+                shard.name,
+                shard.bytes,
+                expected.join(" 或 ")
+            ));
+        }
+    }
+    let complete = shards
+        .iter()
+        .all(|s| s.state == "ok" && s.split_mismatch.is_none());
+    let mut warnings = vec![format!(
+        "DeepSeek-V4.1-Flash {}：使用已有文件需要 Strata 0.2.9 或更新版本；Engram、DSpark 等共用文件在这里、上一级目录或已下载过时直接使用，否则另外下载",
+        set.model
+    )];
+    match layout {
+        Layout::Six => {
+            warnings.push("ISTA-DASLab 2026-10-27 重新切分的六分片文件：前 5 个是模型，第 6 个是 Engram（不必有，缺少时另外下载）".into());
+            if layout_of(set, |n| directory.join(n).exists()) == Layout::Four {
+                warnings.push("同一目录也有这个量化的四分片文件，官方安装器会用四分片那一组".into());
+            }
+        }
+        Layout::Four if set.new_shard1 == shards.first().map(|s| s.bytes) => warnings.push(
+            "第 1 个分片是 ISTA-DASLab 2026-10-26 重新发布的版本（同一权重、更新的聊天模板），Strata 0.2.9 起按它自己的大小接受".into(),
+        ),
+        Layout::Four => {}
+    }
+    if set.recipe == Recipe::UdLow {
+        warnings.push("Unsloth 1-bit 量化：上游没有与原模型对比测量质量（61 项任务答对 53 项，IST-DAS 2.25 为 56 项），也还没在 Windows 和 Strix Halo 上测试过".into());
+    }
+    let total_bytes = shards.iter().map(|s| s.bytes).sum();
+    let installable = complete && problems.is_empty();
+    Some(LocalModelGroup {
+        id: first.clone(),
+        name: stem.to_owned(),
+        first_shard: first,
+        quant: Some(set.model.to_owned()),
+        kind: "official".into(),
+        family: Some(disk::dsv41::FAMILY.to_owned()),
+        shards,
+        total_bytes,
+        complete,
+        installable,
+        warnings,
+        problems,
+    })
+}
+
 fn has_model_gguf(directory: &Path) -> bool {
     fs::read_dir(directory).is_ok_and(|entries| {
         entries.take(MAX_ENTRIES).flatten().any(|e| {
@@ -595,6 +674,7 @@ fn scan_at(path: &Path) -> Result<LocalModelScan, String> {
         let lower = name.to_ascii_lowercase();
         if !lower.ends_with(".gguf")
             || lower.starts_with("mmproj")
+            || is_dsv41_shared(&name)
             || !entry
                 .file_type()
                 .is_ok_and(|t| t.is_file() || t.is_symlink())
@@ -617,7 +697,10 @@ fn scan_at(path: &Path) -> Result<LocalModelScan, String> {
     firsts.dedup();
     let mut groups: Vec<LocalModelGroup> = firsts
         .iter()
-        .map(|(first, stem, total)| group(&directory, first, stem, *total))
+        .map(|(first, stem, total)| {
+            deepseek_group(&directory, stem, *total)
+                .unwrap_or_else(|| group(&directory, first, stem, *total))
+        })
         .collect();
     let rank = |g: &LocalModelGroup| match g.kind.as_str() {
         "official" => 0,
@@ -848,6 +931,59 @@ mod tests {
             Some((2, 2, "A-IQ3_S"))
         );
         assert_eq!(shard_parts("single.gguf"), None);
+    }
+
+    // NTFS allocates every byte of a `set_len` file.
+    #[cfg(not(windows))]
+    #[test]
+    fn deepseek_sets_are_found_at_their_pinned_sizes() {
+        use crate::disk::dsv41::{set, Layout, SHARED_FILES};
+        let dir = tempfile::tempdir().unwrap();
+        let ud = set("UD-IQ1_S").unwrap();
+        for (name, sizes) in ud.layout_files(Layout::Four) {
+            gguf(&dir.path().join(name), sizes[0]);
+        }
+        gguf(
+            &dir.path().join(ud.engram_shard_name().unwrap()),
+            ud.engram_shard.unwrap(),
+        );
+        // The shared DSpark file beside them is not a model of its own.
+        gguf(&dir.path().join(SHARED_FILES[2].0), BIG);
+        let scan = scan(&dir.path().to_string_lossy()).unwrap();
+        assert_eq!(scan.groups.len(), 1, "{:?}", scan.groups);
+        let g = &scan.groups[0];
+        assert_eq!(
+            (g.kind.as_str(), g.family.as_deref(), g.quant.as_deref()),
+            ("official", Some("deepseek41"), Some("UD-IQ1_S"))
+        );
+        assert!(g.installable && g.complete, "{g:?}");
+        assert!(g.warnings.iter().any(|w| w.contains("0.2.9")));
+        assert!(g.warnings.iter().any(|w| w.contains("Strix Halo")));
+        let request = LocalModelRequest {
+            gguf_directory: dir.path().to_string_lossy().into(),
+            mtp_path: None,
+        };
+        assert_eq!(
+            setup_group(&request, "deepseek41", "UD-IQ1_S").unwrap().id,
+            g.id
+        );
+
+        // The six-shard re-split, one shard of another size.
+        let six = tempfile::tempdir().unwrap();
+        let ista = set("IST-DAS-2.25bpw").unwrap();
+        for (i, (name, sizes)) in ista.layout_files(Layout::Six).into_iter().enumerate() {
+            gguf(
+                &six.path().join(name),
+                if i == 3 { sizes[0] - 1 } else { sizes[0] },
+            );
+        }
+        let found = super::scan(&six.path().to_string_lossy()).unwrap();
+        let g = &found.groups[0];
+        assert_eq!(g.quant.as_deref(), Some("IST-DAS-2.25bpw"));
+        assert_eq!(g.shards.len(), 5);
+        assert!(!g.installable, "{g:?}");
+        assert!(g.problems.iter().any(|p| p.contains(&ista.six_names()[3])));
+        assert!(g.warnings.iter().any(|w| w.contains("六分片")));
     }
 
     #[test]

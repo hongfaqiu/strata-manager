@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  MODEL_CATALOG, applyDeepseek41LoadMode, applyDeepseek41Speed, catalogReleaseGate, deepseek41DiskNeedGB, deepseek41EngineVersion,
+  MODEL_CATALOG, applyDeepseek41LoadMode, catalogQuantsForRelease, applyDeepseek41Speed, catalogReleaseGate, deepseek41DiskNeedGB, deepseek41EngineVersion,
   deepseek41HasCard, deepseek41LoadMode, deepseek41MemoryClass, deepseek41Speed, deepseek41SpeedSupported, filterCatalogForPlatform,
   isCatalogCombination, isDeepseek41Config, recommendDeepseek41, snapshotModelDownloadRequest, versionAtLeast,
   STARTUP_TUNING_FIELDS, applyStartupField, deepseek41ArgsError, startupArgumentRows, startupEngineFlagsFor, startupFieldApplies,
@@ -14,10 +14,10 @@ const exe = (version: string) => `C:\\Strata\\engine-dsv41\\${version}-windows-x
 const config = (version = '0.1.50', args: string[] = ['--pack', '/m/pack', '--max-context', '8192']) => ({ arch: 'deepseek41', exe: exe(version), args });
 
 describe('deepseek41 catalog', () => {
-  it('lists the three IST-DAS sets with dsv41_fit sizes, 2.25 manual only, text only at 8K', () => {
+  it('lists the IST-DAS and Unsloth 1-bit sets with dsv41_fit sizes, 2.25 and UD manual only, text only at 8K', () => {
     const model = MODEL_CATALOG.find(entry => entry.family === 'deepseek41')!;
     expect(model.name).toBe('DeepSeek-V4.1-Flash');
-    expect(model.quants).toEqual(['IST-DAS-2.00bpw', 'IST-DAS-1.75bpw', 'IST-DAS-2.25bpw']);
+    expect(model.quants).toEqual(['IST-DAS-2.00bpw', 'IST-DAS-1.75bpw', 'IST-DAS-2.25bpw', 'UD-IQ1_S', 'UD-IQ1_M']);
     expect(model.images).toBe(false);
     expect(model.fixedContext).toBe(8192);
     expect(model.minRelease).toBe('0.2.5');
@@ -27,6 +27,22 @@ describe('deepseek41 catalog', () => {
     expect(isCatalogCombination('deepseek41', 'IST-DAS-1.75bpw')).toBe(true);
     expect(isCatalogCombination('deepseek41', 'UD-Q8_K_XL')).toBe(false);
     expect(deepseek41DiskNeedGB('IST-DAS-2.00bpw')).toBe(262.8);
+    // Strata 0.2.9 (#4814): dsv41_fit ISTA_SETS["UD-IQ1_*"] (set_bytes + the shared Engram and DSpark, 241 / 258 GB).
+    expect(model.quantInfo['UD-IQ1_S']).toMatchObject({ downloadGB: 241.0, ramGB: 36, expertsGB: 115.23, manualOnly: true, minRelease: '0.2.9' });
+    expect(model.quantInfo['UD-IQ1_M']).toMatchObject({ downloadGB: 258.4, ramGB: 40, expertsGB: 132.21, manualOnly: true, minRelease: '0.2.9' });
+    expect(model.quantInfo['UD-IQ1_S']?.qualityNote?.en).toContain('53 of 61');
+    expect(model.quantInfo['UD-IQ1_M']?.qualityNote?.zh).toContain('Strix Halo');
+    expect(deepseek41DiskNeedGB('UD-IQ1_S')).toBe(247);
+  });
+
+  it('offers the Unsloth 1-bit sets only from Strata 0.2.9, never automatically', () => {
+    const model = MODEL_CATALOG.find(entry => entry.family === 'deepseek41')!;
+    const ud = ['UD-IQ1_S', 'UD-IQ1_M'];
+    expect(catalogQuantsForRelease(model, '0.2.8').quants).toEqual(['IST-DAS-2.00bpw', 'IST-DAS-1.75bpw', 'IST-DAS-2.25bpw']);
+    expect(catalogQuantsForRelease(model, undefined).quants.some(quant => ud.includes(quant))).toBe(false);
+    expect(catalogQuantsForRelease(model, '0.2.9')).toBe(model);
+    expect(catalogQuantsForRelease(model, undefined, false)).toBe(model);
+    for (const ram of [16, 36, 40, 64, 256]) expect(ud).not.toContain(recommendDeepseek41(ram, 500));
   });
 
   it('is hidden on a Mac (the Metal engine has no DeepSeek port)', () => {

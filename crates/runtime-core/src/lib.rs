@@ -3766,7 +3766,7 @@ fn run_setup_with_preflight(
     )
 }
 
-fn engine_version_at_least(version: Option<&str>, need: &[u32]) -> bool {
+pub(crate) fn engine_version_at_least(version: Option<&str>, need: &[u32]) -> bool {
     let Some(version) = version else {
         return false;
     };
@@ -3840,6 +3840,17 @@ fn run_setup_with_preflight_options(
                 "DeepSeek-V4.1-Flash 需要 Strata 0.2.5 或更新版本（当前：{}）；请先更新 Strata",
                 release.as_deref().unwrap_or("未知")
             ));
+        }
+        // Strata 0.2.9: Unsloth's UD-IQ1_S / UD-IQ1_M sets.
+        if let Some(set) = disk::dsv41::set(&quant) {
+            if !engine_version_at_least(release.as_deref(), &set.min_release) {
+                let need = set.min_release.map(|n| n.to_string()).join(".");
+                return Err(format!(
+                    "DeepSeek-V4.1-Flash {model} 需要 Strata {need} 或更新版本（当前：{current}）；请先更新 Strata / DeepSeek-V4.1-Flash {model} needs Strata {need} or newer (current: {current}); update Strata first",
+                    model = set.model,
+                    current = release.as_deref().unwrap_or("未知 / unknown")
+                ));
+            }
         }
         if images {
             return Err("DeepSeek-V4.1-Flash 暂不支持图像".into());
