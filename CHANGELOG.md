@@ -5,6 +5,8 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+## [0.2.36] - 2026-11-03
+
 ### 中文
 
 - **修复 Windows AMD 显卡更新引擎时默认选中旧版安装包（#194）**：下载设置里保存过旧版本的具体安装包（如 `strata-engine-0.1.47-windows-x86_64-hip-rdna3.tar.gz`）时，更新弹窗直接沿用这个名字，新版本里没有这个文件，下拉框显示旧包、确认按钮不可用。现在会换成目标版本的同类包，并提示已更换；目标版本没有同类包时改为自动匹配并说明原因。
