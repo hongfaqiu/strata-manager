@@ -16,7 +16,7 @@
       document.getElementById('theme-color').content = theme === 'light' ? '#f7f6f2' : '#14120f';
     })();
   </script>
-  <meta name="description" content="Niko1221/Strata 本地推理的开源桌面工作台：上手引导、模型与多版本配置管理、API/MCP 接入与验证、用量统计、监控、调优和 Benchmark 排行榜。已发布安装包支持 Windows / Linux x64；macOS（Apple Silicon）为实验 DMG。" data-content-en="Open-source desktop workspace for Niko1221/Strata: guided setup, models and multi-version configurations, API/MCP connections and verification, usage statistics, monitoring, tuning and a Benchmark leaderboard. Published installers support Windows / Linux x64; macOS (Apple Silicon) experimental DMG.">
+  <meta name="description" content="Niko1221/Strata 本地推理的开源桌面工作台：上手引导、模型与多版本配置管理、API/MCP 接入与验证、用量统计、监控、调优和 Benchmark 排行榜。已发布安装包支持 Windows / Linux x64 与 macOS（Apple Silicon）。" data-content-en="Open-source desktop workspace for Niko1221/Strata: guided setup, models and multi-version configurations, API/MCP connections and verification, usage statistics, monitoring, tuning and a Benchmark leaderboard. Published installers support Windows / Linux x64 and macOS (Apple Silicon).">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Strata Manager">
   <meta property="og:title" content="Strata Manager · Strata 大模型管理与监控" data-content-en="Strata Manager · Local LLM Management &amp; Monitoring for Strata">
@@ -47,8 +47,8 @@
     "name": "Strata Manager",
     "url": "https://strata-manager.cosfoc.com/",
     "applicationCategory": "UtilitiesApplication",
-    "operatingSystem": "Windows x64, Linux x64, macOS Apple Silicon (experimental)",
-    "description": "Niko1221/Strata 本地推理的开源桌面工作台：环境与模型管理、公共聊天设置、API/MCP 接入、监控、调优和 Benchmark。已发布安装包支持 Windows / Linux x64；macOS（Apple Silicon）为实验 DMG。",
+    "operatingSystem": "Windows x64, Linux x64, macOS Apple Silicon",
+    "description": "Niko1221/Strata 本地推理的开源桌面工作台：环境与模型管理、公共聊天设置、API/MCP 接入、监控、调优和 Benchmark。已发布安装包支持 Windows / Linux x64 与 macOS（Apple Silicon）。",
     "isBasedOn": "https://github.com/Niko1221/Strata",
     "license": "https://github.com/hongfaqiu/strata-manager/blob/main/LICENSE",
     "isAccessibleForFree": true,
@@ -146,8 +146,8 @@
               <li><a data-smart-option="serverDeb" aria-disabled="true" tabindex="-1">Linux Server <small>.deb</small></a></li>
             </ul>
           </div>
-          <p class="hero-platforms"><span class="platform-dot" aria-hidden="true"></span><span data-en="Open source · Windows / Linux x64 · macOS Apple Silicon experimental">开源免费 · Windows / Linux x64 · macOS Apple Silicon 实验</span></p>
-          <p class="hero-platforms" data-en="Supports Strata 0.2.0 · One-click engine on Windows and Linux · Any version, pinned · Automatic rollback">支持 Strata 0.2.0 · Windows / Linux 一键装引擎 · 任选版本可固定 · 失败自动回滚</p>
+          <p class="hero-platforms"><span class="platform-dot" aria-hidden="true"></span><span data-en="Open source · Windows / Linux x64 · macOS Apple Silicon">开源免费 · Windows / Linux x64 · macOS Apple Silicon</span></p>
+          <p class="hero-platforms" data-en="Supports Strata 0.2.0 · One-click engine on Windows, Linux and macOS · Any version, pinned · Automatic rollback">支持 Strata 0.2.0 · Windows / Linux / macOS 一键装引擎 · 任选版本可固定 · 失败自动回滚</p>
         </div>
       </div>
     </section>
@@ -937,7 +937,7 @@ cursor .</pre>
     <section class="download-section section-padding" id="get-started" aria-labelledby="get-started-title">
       <div class="container">
         <div class="section-header">
-          <div><h2 class="section-title" id="get-started-title" data-en="Download Strata Manager">下载 Strata Manager</h2><p class="section-lead" data-en="Published installers are for Windows and Linux x64, plus an experimental headless server for Linux. The macOS (Apple Silicon) DMG is experimental (Developer ID signed and notarized from v0.2.12); its button enables only when a published release includes that file. The DMG has no engine; the app can install the upstream prebuilt Metal engine (preview) and, if needed, Python 3.12.">已发布安装包面向 Windows 与 Linux x64，另有 Linux 无头 Server（实验）。macOS（Apple Silicon）DMG 为实验包（v0.2.12 起已签名并经 Apple 公证），发布页含该文件时按钮才可用。DMG 本身不含引擎，可在应用内安装上游预编译 Metal 引擎（预览），需要时一键安装 Python 3.12。</p></div>
+          <div><h2 class="section-title" id="get-started-title" data-en="Download Strata Manager">下载 Strata Manager</h2><p class="section-lead" data-en="Published installers are for Windows x64, Linux x64 and macOS (Apple Silicon), plus an experimental headless server for Linux. The Mac DMG is Developer ID signed and notarized by Apple. It has no engine; the app installs the upstream prebuilt Metal engine and, if needed, Python 3.12.">已发布安装包面向 Windows x64、Linux x64 与 macOS（Apple Silicon），另有 Linux 无头 Server（实验）。Mac 版 DMG 已签名并经 Apple 公证；DMG 本身不含引擎，应用内一键安装上游预编译 Metal 引擎，需要时一键安装 Python 3.12。</p></div>
           <a class="text-link" href="docs/download.html" data-href-en="docs/download.en.html" data-en="Installation help ↗">安装帮助 ↗</a>
         </div>
         <div class="download-cards-grid">
@@ -955,8 +955,8 @@ cursor .</pre>
             </div>
           </article>
           <article class="download-card">
-            <div class="download-card-heading"><svg class="platform-icon" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M16 7.5c.3-1.8 1.6-3.5 3.6-3.5-.2 2.1-1.5 3.6-3.6 3.5ZM8.5 13.2c0 7.2 2.8 12.3 7.5 12.3 2.1 0 3.4-1.4 5.5-1.4s3.2 1.5 5.5 1.5c4.8 0 6.5-4.7 6.5-4.8-3.6-1.7-4.5-5-4.5-5.1 0-.1.1-.2.1-.2-2.6-2.4-5.1-.6-5.1-.5-.9-.9-2.2-1.4-3.5-1.4-4.2 0-6.2 3.3-7.5 5.1-1.4 1.9-2.5 5.5-2.5 9.5 0 .1 0 .2-.1.2H8.5Z"/><path d="M11 27c.8 1.3 1.9 2.8 3.4 2.8 1.4 0 2-.9 3.7-.9s2.2.9 3.7.9c1.5 0 2.7-1.6 3.5-2.9"/></svg><h3>macOS <small data-en="Apple Silicon · Experimental">Apple Silicon · 实验</small></h3><span class="release-version" data-en="When listed">有资产时</span></div>
-            <p data-en="Experimental DMG, Developer ID signed and notarized by Apple from v0.2.12. Enables only when the published release includes it. Install the prebuilt Metal engine in the app (preview; Metal inference not yet validated on real Macs).">实验 DMG，v0.2.12 起使用 Developer ID 签名并经 Apple 公证。发布页含该文件时才可下载。可在应用内安装预编译 Metal 引擎（预览，Metal 推理尚未真机验收）。</p>
+            <div class="download-card-heading"><svg class="platform-icon" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M16 7.5c.3-1.8 1.6-3.5 3.6-3.5-.2 2.1-1.5 3.6-3.6 3.5ZM8.5 13.2c0 7.2 2.8 12.3 7.5 12.3 2.1 0 3.4-1.4 5.5-1.4s3.2 1.5 5.5 1.5c4.8 0 6.5-4.7 6.5-4.8-3.6-1.7-4.5-5-4.5-5.1 0-.1.1-.2.1-.2-2.6-2.4-5.1-.6-5.1-.5-.9-.9-2.2-1.4-3.5-1.4-4.2 0-6.2 3.3-7.5 5.1-1.4 1.9-2.5 5.5-2.5 9.5 0 .1 0 .2-.1.2H8.5Z"/><path d="M11 27c.8 1.3 1.9 2.8 3.4 2.8 1.4 0 2-.9 3.7-.9s2.2.9 3.7.9c1.5 0 2.7-1.6 3.5-2.9"/></svg><h3>macOS <small>Apple Silicon</small></h3><span class="release-version" data-en="Latest release">最新发布</span></div>
+            <p data-en="DMG, signed and notarized by Apple. The engine is the upstream prebuilt Metal package, pinned to 0.1.47 until upstream #4634. No DeepSeek-V4.1-Flash on Mac; no Intel Mac build.">DMG，已签名并经 Apple 公证。引擎用上游预编译 Metal 包，上游 #4634 解决前固定 0.1.47。Mac 不支持 DeepSeek-V4.1-Flash，不提供 Intel Mac 版。</p>
             <a class="btn btn-primary" data-download="dmg" aria-disabled="true" tabindex="-1"><svg class="icon" aria-hidden="true"><use href="#icon-download"/></svg><span data-en="Download DMG">下载 DMG</span></a>
           </article>
           <article class="download-card">
@@ -1002,7 +1002,7 @@ cursor .</pre>
           </div>
         </nav>
       </div>
-      <div class="footer-bottom"><span class="footer-credit">© 2026 Strata Manager</span><span class="footer-os" data-en="Windows · Linux · macOS (experimental)">Windows · Linux · macOS（实验）</span></div>
+      <div class="footer-bottom"><span class="footer-credit">© 2026 Strata Manager</span><span class="footer-os" data-en="Windows · Linux · macOS">Windows · Linux · macOS</span></div>
     </div>
   </footer>
 
