@@ -18,7 +18,7 @@
 <p>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-287e71" alt="MIT 许可" /></a>
 <img src="https://img.shields.io/badge/desktop-Tauri%202-24c8d8" alt="Tauri 2 桌面应用" />
-<img src="https://img.shields.io/badge/platforms-Windows%20%2F%20Linux%20x64%20%C2%B7%20macOS%20ARM%20experimental-51606f" alt="Windows 和 Linux x64；macOS Apple Silicon 实验包" />
+<img src="https://img.shields.io/badge/platforms-Windows%20%2F%20Linux%20x64%20%C2%B7%20macOS%20Apple%20Silicon-51606f" alt="Windows 和 Linux x64；macOS Apple Silicon" />
 <a href="https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml"><img src="https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml/badge.svg" alt="构建与测试状态" /></a>
 </p>
 
@@ -26,7 +26,7 @@
 
 **Strata Manager 是面向 [Niko1221/Strata 本地大模型推理引擎](https://github.com/Niko1221/Strata) 的开源桌面管理工具。** 将首次上手引导、模型下载与跨 Strata 版本的配置管理、服务控制、聊天、API 与 Agent 接入及在线验证、用量统计、监控、调优，以及可选上传公开排行榜的基准测试集中到同一工作台，降低 Strata 的使用门槛。已有受支持的模型权重保持原位。
 
-**支持 Strata 0.2.0**：可一键安装、更新其签名的 `.tar.gz` 引擎包，Windows 与 Linux x86_64（v0.2.9 起）均可；新引擎先试启动，失败自动回滚。旧版 ZIP 发布仍可使用。
+**支持 Strata 0.2.0**：可一键安装、更新其签名的 `.tar.gz` 引擎包，Windows 与 Linux x86_64（v0.2.9 起）均可，Apple 芯片 Mac 一键安装上游预编译 Metal 引擎；新引擎先试启动，失败自动回滚。旧版 ZIP 发布仍可使用。
 
 [![Strata Manager 总览：服务操作栏、GPU 与系统内存占用图、生成速度和最近请求](docs/screenshots/product-cover.zh.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.zh.webp)
 
@@ -85,13 +85,13 @@ Strata Manager 提供模型下载列表与详情、统一的多显卡及运行�
 | **Windows x64** | NSIS 安装包（`.exe`） | 需要 WebView2；[Windows 安装说明](docs/DOWNLOAD.md#windows-安装)。 |
 | **Linux x64** | AppImage 或 DEB | Ubuntu 22.04 CI 环境构建；[Linux 安装与支持范围](docs/DOWNLOAD.md#linux-安装)。 |
 | **Linux x64 无头 Server（实验）** | `Strata.Manager.Server_<版本>_amd64.tar.gz` 或 `.deb` | 无桌面环境的服务器，浏览器访问；不走桌面自动更新。[Server 说明](docs/SERVER.md)。 |
-| **macOS Apple Silicon** | DMG（实验） | v0.2.12 起使用 Developer ID 签名并经 Apple 公证（更早的为临时签名），仅当发布页列出时下载。DMG 本身不含引擎；应用内可下载并校验上游预编译 Metal 引擎包（预览，Metal 推理尚未完成真机验收），能识别 Apple 显卡与统一内存，并可一键安装 Python 3.12。不提供 Intel。[macOS 说明](docs/DOWNLOAD.md#macosapple-silicon实验)。 |
+| **macOS Apple Silicon** | DMG | 使用 Developer ID 签名并经 Apple 公证。DMG 本身不含引擎；应用内下载并校验上游预编译 Metal 引擎包，能识别 Apple 显卡与统一内存，并可一键安装 Python 3.12。限制：上游 [#4634](https://github.com/Niko1221/Strata/issues/4634) 修复前引擎固定 0.1.47；Mac 不支持 DeepSeek-V4.1-Flash；不提供 Intel Mac 版。[macOS 说明](docs/DOWNLOAD.md#macosapple-silicon)。 |
 
 1. **准备运行环境。** 打开 Strata 页面检查已有安装，或按“开始使用”引导准备；已有受支持环境无需重装。
 2. **选择模型与配置。** “我的模型”列出发现的权重，按需添加搜索目录，选择运行配置或下载新权重。
 3. **点击“使用”。** 跟踪环境检查与加载，等待“模型可用”后开始聊天，或将本机 API 地址复制到其它应用。
 
-桌面安装包包含 Manager 与独立后台。硬件和驱动要求取决于 Strata 与模型。已发布稳定包面向 Windows x64 与 Linux x64。macOS Apple Silicon 的 DMG 为**实验包**（v0.2.12 起已签名并经 Apple 公证）；**仅有 DMG 不能推理**：可在应用内安装上游预编译 Metal 引擎包（预览，Metal 推理尚未完成真机验收），或按上游 `./setup.sh` 本机构建。macOS 只有自带的 Python 3.9 时，应用可一键安装自用的 Python 3.12。不提供 Intel 包。安装步骤及包的支持范围见[下载说明](docs/DOWNLOAD.md)，日常操作见[使用指南](docs/USER_GUIDE.md)。
+桌面安装包包含 Manager 与独立后台。硬件和驱动要求取决于 Strata 与模型。已发布安装包面向 Windows x64、Linux x64 与 macOS Apple Silicon。Mac 版 DMG 已签名并经 Apple 公证；**仅有 DMG 不能推理**：可在应用内安装上游预编译 Metal 引擎包（上游 #4634 修复前固定 0.1.47），或按上游 `./setup.sh` 本机构建。Mac 不支持 DeepSeek-V4.1-Flash。macOS 只有自带的 Python 3.9 时，应用可一键安装自用的 Python 3.12。不提供 Intel 包。安装步骤及包的支持范围见[下载说明](docs/DOWNLOAD.md)，日常操作见[使用指南](docs/USER_GUIDE.md)。
 
 ## 界面一览
 

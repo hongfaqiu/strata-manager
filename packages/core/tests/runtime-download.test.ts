@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getRuntimeDownloadPreferences, resolveRuntimeDownloadPreferences, runtimeAssetLabel, runtimeBilingualText, runtimeDownloadSources, runtimeEngineArchiveFilters, runtimeEngineIsCurrent, runtimeReasonText, runtimeTrialRollback, saveRuntimeDownloadPreferences } from '../src/runtime-download';
+import { getRuntimeDownloadPreferences, resolveRuntimeDownloadPreferences, runtimeAssetLabel, runtimeSavedAsset, runtimeBilingualText, runtimeDownloadSources, runtimeEngineArchiveFilters, runtimeEngineIsCurrent, runtimeReasonText, runtimeTrialRollback, saveRuntimeDownloadPreferences } from '../src/runtime-download';
 import { resolveRuntimeZipAsset, testRuntimeZipDownload, updateRuntimeZip } from '../src/bridge';
 import type { RuntimeUpdateInfo } from '../src/runtime-types';
 
@@ -141,5 +141,28 @@ describe('Strata 0.2 engine packages', () => {
     expect(runtimeEngineIsCurrent('0.1.45.3', info)).toBe(true);
     expect(runtimeEngineIsCurrent('0.1.45', info)).toBe(false);
     expect(runtimeEngineIsCurrent('0.1.45.3', { assets: [{ ...info.assets[0]!, engineVersion: undefined }] })).toBe(false);
+  });
+});
+
+describe('saved package across releases (#194)', () => {
+  const asset = (name: string, variant: 'hip-rdna3' | 'hip-rdna2' | 'cuda13') => ({ name, variant, size: 1, sha256: 'b'.repeat(64), url: `https://github.com/Niko1221/Strata/releases/download/v0.2.9/${name}` });
+  const v029: RuntimeUpdateInfo = {
+    checkedAt: 1, supportedVersion: '0.2.9', supportedRevision: 'c'.repeat(40), latestVersion: '0.2.9', updateAvailable: true, installable: true,
+    assets: [asset('strata-engine-0.1.55-windows-x86_64-hip-rdna3.tar.gz', 'hip-rdna3'), asset('strata-engine-0.1.55-windows-x86_64-hip-rdna2.tar.gz', 'hip-rdna2'), asset('strata-engine-0.1.55-windows-x86_64-cuda-cuda13.tar.gz', 'cuda13')],
+  };
+  const old = 'strata-engine-0.1.47-windows-x86_64-hip-rdna3.tar.gz';
+  it('follows an older engine package to the same platform, backend and variant', () => {
+    expect(runtimeSavedAsset(old, v029)).toEqual({ asset: v029.assets[0], stale: true });
+    expect(resolveRuntimeDownloadPreferences({ mode: 'mirror', sourceId: 'gh-proxy', assetName: old }, v029)).toEqual({
+      assetName: v029.assets[0]!.name, requiresSelection: false,
+      download: { downloadUrl: `https://gh-proxy.org/${v029.assets[0]!.url}` },
+    });
+  });
+  it('keeps an exact match and reports a package this release no longer has', () => {
+    expect(runtimeSavedAsset(v029.assets[1]!.name, v029)).toEqual({ asset: v029.assets[1], stale: false });
+    expect(runtimeSavedAsset('strata-engine-0.1.47-windows-x86_64-hip-rx9070.tar.gz', v029)).toEqual({ stale: true });
+    expect(runtimeSavedAsset('strata-engine-0.1.47-linux-x86_64-hip-rdna3.tar.gz', v029)).toEqual({ stale: true });
+    expect(runtimeSavedAsset('removed.zip', v029)).toEqual({ stale: true });
+    expect(runtimeSavedAsset(undefined, v029)).toEqual({ stale: false });
   });
 });

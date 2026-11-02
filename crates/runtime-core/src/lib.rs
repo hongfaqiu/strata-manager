@@ -51,6 +51,7 @@ pub mod service_sharing;
 pub mod setup_handoff;
 pub mod setup_options;
 pub mod setup_prefetch;
+pub mod shared_settings;
 pub mod storage;
 pub mod storage_location;
 pub mod store;

@@ -1574,6 +1574,7 @@ fn read_shared_settings(path: &Path) -> Result<Option<Vec<u8>>, String> {
 }
 fn copy_shared_settings(old: &ServiceProfile, new: &ServiceProfile) -> Result<(), String> {
     if let Some(bytes) = read_shared_settings(&shared_settings_path(old))? {
+        let bytes = crate::shared_settings::fit_bytes(Path::new(&new.install_dir), &bytes);
         atomic_replace(&shared_settings_path(new), &bytes)?;
     }
     Ok(())
@@ -1587,6 +1588,9 @@ fn refresh_shared_settings(old: &ServiceProfile, new: &ServiceProfile) -> Result
     let source = shared_settings_path(old);
     let target = shared_settings_path(new);
     let snapshot = read_shared_settings(&source)?;
+    let published = snapshot
+        .as_deref()
+        .map(|bytes| crate::shared_settings::fit_bytes(Path::new(&new.install_dir), bytes));
     // The candidate is not running. Never follow a redirected destination when
     // replacing or deleting its preliminary shared-settings copy.
     match fs::symlink_metadata(&target) {
@@ -1597,7 +1601,7 @@ fn refresh_shared_settings(old: &ServiceProfile, new: &ServiceProfile) -> Result
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => return Err(format!("候选共享设置无法核验：{error}")),
     }
-    if let Some(bytes) = &snapshot {
+    if let Some(bytes) = &published {
         let mut temp = tempfile::NamedTempFile::new_in(target.parent().ok_or("候选目录无效")?)
             .map_err(|e| e.to_string())?;
         #[cfg(unix)]
@@ -1620,7 +1624,7 @@ fn refresh_shared_settings(old: &ServiceProfile, new: &ServiceProfile) -> Result
     if read_shared_settings(&source)? != snapshot {
         return Err("排空后共享设置仍在变化，原服务未停止；请等待保存完成后重试更新".into());
     }
-    if read_shared_settings(&target)? != snapshot {
+    if read_shared_settings(&target)? != published {
         return Err("候选共享设置发布后无法核验，原服务未停止".into());
     }
     Ok(())
@@ -3268,6 +3272,31 @@ mod tests {
             .contains("不是有效 JSON"));
         assert_eq!(fs::read(&target).unwrap(), latest);
         assert_eq!(fs::read_to_string(&source).unwrap(), "{\"partialWrite\":");
+        unchanged(&f);
+    }
+    #[test]
+    fn shared_settings_copied_to_a_strict_older_engine_keep_only_known_keys() {
+        let f = fixture();
+        let source = shared_settings_path(&f.old);
+        let target = shared_settings_path(&f.candidate);
+        let server = Path::new(&f.candidate.install_dir).join("serve/server.py");
+        let original = fs::read(&server).unwrap();
+        fs::write(&server, "raise ValueError(f\"unknown setting {key!r}\")\n").unwrap();
+        let latest = b"{\"temperature\":0.89,\"preserve_thinking\":true}\n";
+        fs::write(&source, latest).unwrap();
+        copy_shared_settings(&f.old, &f.candidate).unwrap();
+        let copied: Value = serde_json::from_slice(&fs::read(&target).unwrap()).unwrap();
+        assert_eq!(copied, json!({"temperature":0.89}));
+        fs::write(&target, latest).unwrap();
+        refresh_shared_settings(&f.old, &f.candidate).unwrap();
+        let refreshed: Value = serde_json::from_slice(&fs::read(&target).unwrap()).unwrap();
+        assert_eq!(refreshed, json!({"temperature":0.89}));
+        assert_eq!(
+            fs::read(&source).unwrap(),
+            latest,
+            "the source is never rewritten"
+        );
+        fs::write(&server, original).unwrap();
         unchanged(&f);
     }
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
