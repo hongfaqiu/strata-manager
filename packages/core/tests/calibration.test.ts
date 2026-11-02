@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyCalibrationSettings, calibratedConfigName, calibrationConfigChanged, calibrationHasChange, calibrationProgress, restartCandidatesFromCalibration, sweepPoints, type CalibrationStep } from '../src';
+import { applyCalibrationSettings, calibrationEngineOutdated, calibratedConfigName, calibrationConfigChanged, calibrationHasChange, calibrationProgress, restartCandidatesFromCalibration, sweepPoints, type CalibrationStep } from '../src';
 
 const config = { exe: 'engine/strata.exe', args: ['--native', 'model.gguf', '--pcie-frac', '0.55', '--api-key-env', 'KEY', '--unknown', 'x'], port: 8080 };
 
@@ -58,5 +58,23 @@ describe('quick calibration helpers', () => {
   it('writes --prefill-pipe as an integer within the upstream range', () => {
     expect(applyCalibrationSettings({ args: [] }, { '--prefill-pipe': '1536' }, 'hip').args).toEqual(['--prefill-pipe', '1536']);
     expect(() => applyCalibrationSettings({ args: [] }, { '--prefill-pipe': '262145' }, 'hip')).toThrow();
+  });
+});
+
+describe('calibrationEngineOutdated (upstream #4841)', () => {
+  const job = (engineVersion: unknown, state = 'completed') => ({ state, identity: { engineVersion } }) as never;
+  it('reports a finished calibration measured on an older engine', () => {
+    expect(calibrationEngineOutdated(job('0.1.54'), '0.1.55')).toEqual({ from: '0.1.54', to: '0.1.55' });
+    expect(calibrationEngineOutdated(job('v0.1.9', 'applied'), '0.1.10')).toEqual({ from: '0.1.9', to: '0.1.10' });
+  });
+  it('stays quiet when the engine is the same or older, unknown, or the job did not finish', () => {
+    expect(calibrationEngineOutdated(job('0.1.55'), '0.1.55')).toBeNull();
+    expect(calibrationEngineOutdated(job('0.1.56'), '0.1.55')).toBeNull();
+    expect(calibrationEngineOutdated(job(null), '0.1.55')).toBeNull();
+    expect(calibrationEngineOutdated(job('0.1.54'), null)).toBeNull();
+    expect(calibrationEngineOutdated(job('dev'), '0.1.55')).toBeNull();
+    expect(calibrationEngineOutdated(job('0.1.54', 'failed'), '0.1.55')).toBeNull();
+    expect(calibrationEngineOutdated(job('0.1.54', 'running'), '0.1.55')).toBeNull();
+    expect(calibrationEngineOutdated(null, '0.1.55')).toBeNull();
   });
 });

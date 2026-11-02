@@ -7,6 +7,7 @@ import { Dialog, Field } from '../components';
 import { Dropdown } from '../OfficialControls';
 import { useDraftGuard, type SaveDraft } from '../useDraftGuard';
 import { SetupAdvancedOptions } from './SetupAdvancedOptions';
+import { useDetectedGpus } from './useDetectedGpus';
 import { ModelLocationDialog, freeText, storageCopy, useStorageLocations } from './StorageLocation';
 
 export interface ModelDownloadSettingsDialogProps {
@@ -69,6 +70,7 @@ export function ModelDownloadSettingsDialog({ value, runtimes, modelDirectory, e
   };
   const sameRuntime = (draft.runtime ?? effectiveRuntime)?.installDir === effectiveRuntime?.installDir;
   const storage = useStorageLocations(desktop, effectiveRuntime?.installDir);
+  const detectedGpus = useDetectedGpus((draft.runtime ?? effectiveRuntime)?.id, desktop);
   const [locationOpen, setLocationOpen] = useState(false);
   return <><Dialog title={text('模型下载配置', 'Model download settings')} wide onClose={close}>
     <form className="model-download-settings" onSubmit={event => { event.preventDefault(); void save(); }}>
@@ -83,7 +85,7 @@ export function ModelDownloadSettingsDialog({ value, runtimes, modelDirectory, e
         <div className="model-download-directory"><span>{text('模型保存位置', 'Model storage')}</span><code>{sameRuntime && (storage.data?.model.path ?? modelDirectory) ? storage.data?.model.path ?? modelDirectory : text('保存后根据所选环境检查', 'Checked after saving the selected runtime')}</code>{sameRuntime && storage.data && <small>{freeText(storageCopy(language), storage.data.model)}</small>}{sameRuntime && storage.data && <button type="button" disabled={saving || choosing || !desktop || !!storage.data.movingTaskId} onClick={() => setLocationOpen(true)}><FolderOpen size={16}/>{text('更改保存位置…', 'Change location…')}</button>}</div>
         <p className="model-download-settings-hint">{text('模型文件可以放到任意磁盘；更改时可以把已有模型一起移过去，也可以只让新下载使用新位置。', 'Model files can live on any drive. When you change the location you can move existing models along, or use it for new downloads only.')}</p>
       </section>
-      <section className="model-download-settings-section"><h3>{text('下载与显卡', 'Downloads and GPU')}</h3><SetupAdvancedOptions language={language} value={draft.options} onChange={options => setDraft(current => ({ ...current, options }))} onValidityChange={setValid} disabled={saving || choosing || !desktop} embedded/></section>
+      <section className="model-download-settings-section"><h3>{text('下载与显卡', 'Downloads and GPU')}</h3><SetupAdvancedOptions language={language} value={draft.options} onChange={options => setDraft(current => ({ ...current, options }))} onValidityChange={setValid} disabled={saving || choosing || !desktop} embedded availableGpus={detectedGpus}/></section>
       {error && <p className="model-download-error" role="alert">{error}</p>}
       <div className="model-download-settings-footer"><span>{text('已提交的任务保留提交时的设置。', 'Submitted tasks keep their original settings.')}</span><div><button type="button" disabled={saving || choosing} onClick={close}>{text('取消', 'Cancel')}</button><button className="primary" type="submit" disabled={saving || choosing || !valid || !desktop}>{saving ? text('保存中…', 'Saving…') : text('保存配置', 'Save settings')}</button></div></div>
     </form>

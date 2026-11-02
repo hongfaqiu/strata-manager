@@ -8,6 +8,7 @@ import type { JsonObject, ServiceProfile } from '@strata-manager/core';
 import { Dropdown, NumberField } from '../OfficialControls';
 import { StartupTuningPanel } from './StartupTuningPanel';
 import { ConcurrencyEnvironmentContext } from './concurrencyContext';
+import { useEngineVersion } from './useEngineVersion';
 import './runtime-config.css';
 import { useDraftGuard, type SaveDraft } from '../useDraftGuard';
 
@@ -79,7 +80,8 @@ export function RuntimeConfigPage(props: RuntimeConfigPageProps) {
 
 function RuntimeConfigSession({ profile, online, language, desktop = core.isDesktop(), onError, onMessage, onSharedSettings, onServices, onImages, onCopied, onDeleted, onDirtyChange, onSaveDraftReady, onRestart, configurations }: RuntimeConfigPageProps) {
   const { t } = useTranslation();
-  const concurrencyEnvironment = useMemo(() => ({ installationId: profile?.id, desktop }), [profile?.id, desktop]);
+  const engineVersion = useEngineVersion(profile, desktop);
+  const concurrencyEnvironment = useMemo(() => ({ installationId: profile?.id, desktop, engineVersion: engineVersion ?? undefined }), [profile?.id, desktop, engineVersion]);
   const zh = language === 'zh-CN';
   const localFile = desktop && !!profile?.configPath;
   const active = useRef(true);

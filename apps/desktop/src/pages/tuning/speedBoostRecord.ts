@@ -43,3 +43,12 @@ export function leaveNotice(text: string) {
 export function takeNotice(): string | null {
   try { const text = sessionStorage.getItem(NOTICE_KEY); sessionStorage.removeItem(NOTICE_KEY); return text; } catch { return null; }
 }
+
+const RECALIBRATE_DISMISSED = 'strata.speedBoost.recalibrateDismissed';
+/** "Not now" on the recalibrate notice holds per calibration and engine, so the next engine upgrade asks again. */
+export const recalibrateKey = (jobId: string, engine: string) => `${jobId}@${engine}`;
+export const recalibrateDismissed = (jobId: string, engine: string): boolean => read<string[]>(RECALIBRATE_DISMISSED, []).includes(recalibrateKey(jobId, engine));
+export function dismissRecalibrate(jobId: string, engine: string) {
+  const key = recalibrateKey(jobId, engine);
+  write(RECALIBRATE_DISMISSED, [key, ...read<string[]>(RECALIBRATE_DISMISSED, []).filter(item => item !== key)].slice(0, 20));
+}

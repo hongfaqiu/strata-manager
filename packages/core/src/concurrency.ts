@@ -18,6 +18,59 @@ export const CONCURRENCY_BATCH_MTP_SPLIT_MAX = 4;
 /** Opt-in, off by default upstream (BATCHING.md "One launch for all slots", "Reading a prompt beside pipelined groups"). */
 export const CONCURRENCY_EXPERIMENTAL_ENV = ['STRATA_BATCH_ATTN_ROWS', 'STRATA_BATCH_GDN_GROUPS', 'STRATA_PIPED_CONCURRENT'] as const;
 export type ConcurrencyExperimentalEnv = typeof CONCURRENCY_EXPERIMENTAL_ENV[number];
+/**
+ * Strata 0.2.9 (engine 0.1.55, upstream #4841): serve/server.py parallel_stack_env sets these two itself (setdefault, so a
+ * value in the config still wins: =0 turns one off) when a configuration runs 2+ batch slots, only on Linux
+ * (parallel_stack_platform), never for arch deepseek41 and never with backend sycl / metal / vulkan / hip. Upstream qualified
+ * the stack on Linux CUDA alone ("HIP got no measurement ..., Windows none at all"), so everywhere else these stay
+ * opt-in switches the app keeps offering.
+ */
+export const CONCURRENCY_SERVER_DEFAULT_ENGINE = '0.1.55';
+export const CONCURRENCY_SERVER_DEFAULT_ENV: readonly ConcurrencyExperimentalEnv[] = ['STRATA_BATCH_ATTN_ROWS', 'STRATA_BATCH_GDN_GROUPS'];
+export type ConcurrencyHostOs = 'linux' | 'windows' | 'mac' | 'other';
+export interface ConcurrencyEngineTarget {
+  /** The machine the engine runs on. */
+  os?: ConcurrencyHostOs | null;
+  /** The service configuration (its "arch" and "backend"). */
+  config?: JsonObject | null;
+  /** Detected cards; only used when the configuration names no backend. */
+  gpus?: readonly { name?: unknown; vendor?: unknown }[] | null;
+}
+/** The host OS from a user agent string (Tauri webviews carry the real OS). */
+export function concurrencyHostOs(userAgent: string | null | undefined): ConcurrencyHostOs {
+  const ua = userAgent ?? '';
+  if (/Windows/i.test(ua)) return 'windows';
+  if (/Mac|Darwin/i.test(ua) && !/iPhone|iPad|iPod/i.test(ua)) return 'mac';
+  if (/Linux|X11/i.test(ua) && !/Android/i.test(ua)) return 'linux';
+  return 'other';
+}
+const NO_PARALLEL_STACK_BACKENDS = ['hip', 'sycl', 'metal', 'vulkan', 'cpu'];
+const NVIDIA_CARD = /nvidia|geforce|rtx|quadro|tesla/i;
+/** Engine 0.1.55 or newer: the build whose server can set the parallel stack itself (on its own platforms only). */
+export function concurrencyEngineHasParallelStack(engineVersion: string | null | undefined): boolean {
+  // Inline (not catalog.versionAtLeast): node tests load this module on its own.
+  const parts = (v: string) => v.trim().replace(/^v/i, '').split(/[.+-]/).slice(0, 3).map(Number);
+  if (!engineVersion || !/^v?\d+\.\d+\.\d+/.test(engineVersion.trim())) return false;
+  const have = parts(engineVersion), want = parts(CONCURRENCY_SERVER_DEFAULT_ENGINE);
+  for (let i = 0; i < 3; i++) if (have[i] !== want[i]) return have[i]! > want[i]!;
+  return true;
+}
+/**
+ * Whether the engine turns STRATA_BATCH_ATTN_ROWS / STRATA_BATCH_GDN_GROUPS on itself for this configuration, so the app must
+ * not offer or write them: engine 0.1.55 or newer, Linux, not DeepSeek, and a CUDA engine (backend "cuda", or no backend
+ * named on a machine with an NVIDIA card; an unknown card list counts as CUDA, as upstream treats an unnamed backend).
+ */
+export function concurrencyServerSetsLaunchSwitches(engineVersion: string | null | undefined, target: ConcurrencyEngineTarget = {}): boolean {
+  if (!concurrencyEngineHasParallelStack(engineVersion)) return false;
+  if (target.os !== 'linux') return false;
+  const config = target.config ?? {};
+  if (String(config.arch ?? '') === 'deepseek41') return false;
+  const backend = typeof config.backend === 'string' ? config.backend.trim().toLowerCase() : '';
+  if (NO_PARALLEL_STACK_BACKENDS.includes(backend)) return false;
+  if (backend === 'cuda') return true;
+  const gpus = target.gpus ?? [];
+  return !gpus.length || gpus.some(gpu => NVIDIA_CARD.test(`${gpu.vendor ?? ''} ${gpu.name ?? ''}`));
+}
 
 export interface ConcurrencySettings {
   /** The slot count the service asks for: "parallel", else --batch / --slots, else 1. */

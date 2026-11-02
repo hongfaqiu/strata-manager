@@ -23,6 +23,10 @@ export interface ConcurrencyCardProps {
   /** Test/preview seam: skips the native hardware read. */
   hardware?: core.ConcurrencyHardware | null;
   platform?: 'mac' | 'other';
+  /** Test/preview seam: the installation's engine build (otherwise from the page context). */
+  engineVersion?: string;
+  /** Tests and previews: the host OS. */
+  hostOs?: core.ConcurrencyHostOs;
 }
 
 const gb = (value: number) => value >= 10 ? value.toFixed(0) : value.toFixed(1);
@@ -59,8 +63,8 @@ export function useConcurrencyHardware({ installationId, desktop, identity, sett
   return override !== undefined ? override : query.data ?? null;
 }
 
-export function ConcurrencyCard({ draft, fieldValue, onFieldChange, zh, hardware: hardwareOverride, platform }: ConcurrencyCardProps) {
-  const { installationId, desktop, hardware: contextHardware, platform: contextPlatform } = useConcurrencyEnvironment();
+export function ConcurrencyCard({ draft, fieldValue, onFieldChange, zh, hardware: hardwareOverride, platform, engineVersion, hostOs }: ConcurrencyCardProps) {
+  const { installationId, desktop, hardware: contextHardware, platform: contextPlatform, engineVersion: contextEngine, hostOs: contextHostOs } = useConcurrencyEnvironment();
   const config = useMemo(() => concurrencyDraft(draft, fieldValue), [draft, fieldValue]);
   const settings = useMemo(() => core.readConcurrencySettings(config), [config]);
   const identity = useMemo(() => core.concurrencyModelIdentity(config), [config]);
@@ -82,6 +86,15 @@ export function ConcurrencyCard({ draft, fieldValue, onFieldChange, zh, hardware
   const cacheNote = plan.conversationCache ? t(`+ 会话暂存 ${plan.conversationCache.mib / 1024} GiB × ${plan.conversationCache.slots}`, `+ parking ${plan.conversationCache.mib / 1024} GiB × ${plan.conversationCache.slots}`) : null;
   const gpuLine = plan.vramGbs.length ? plan.vramGbs.map(v => `${gb(v)} GB`).join(' + ') + (plan.layerSplit ? t(' · 多卡层分配', ' · layer split') : '') : t('显卡未知', 'GPU unknown');
   const showExperimental = current > 1;
+  // Upstream #4841: from engine 0.1.55 the server turns these two on itself on Linux CUDA (Qwen); there the card stops offering
+  // them and only keeps a switch for a value the config already holds (it still wins over the engine's default). Windows, AMD
+  // and other platforms upstream left alone keep both switches.
+  const engine = engineVersion ?? contextEngine;
+  const serverDefaults = core.concurrencyServerSetsLaunchSwitches(engine, { os: hostOs ?? contextHostOs ?? core.concurrencyHostOs(typeof navigator !== 'undefined' ? navigator.userAgent : ''), config, gpus: hardware?.gpus });
+  const engineElsewhere = !serverDefaults && core.concurrencyEngineHasParallelStack(engine);
+  const configEnv = config.env && typeof config.env === 'object' && !Array.isArray(config.env) ? config.env as JsonObject : {};
+  const envSet = (key: string) => configEnv[key] != null && String(configEnv[key]).trim() !== '';
+  const experimental = EXPERIMENTAL.filter(item => !serverDefaults || !core.CONCURRENCY_SERVER_DEFAULT_ENV.includes(item.env) || envSet(item.env));
   // The 1M-context warning lives with the context field; this note covers context × slots only.
   const longContext = (settings.context ?? 0) > core.TRAINED_CONTEXT && (current > 1 || plan.parallel > 1);
   const listed = issues.filter(issue => issue.code !== 'long_context_conflict');
@@ -111,8 +124,12 @@ export function ConcurrencyCard({ draft, fieldValue, onFieldChange, zh, hardware
     {showExperimental && <div className="concurrency-card-advanced" data-testid="concurrency-experimental">
       <h4>{t('高级 · 实验开关', 'Advanced · experimental switches')}</h4>
       <p>{t('引擎环境变量，官方默认关闭。可能更快，也可能不稳定；建议先在调优页对比。', 'Engine environment switches, off by default upstream. They may be faster or unstable; compare them on the Tuning page first.')}</p>
-      {EXPERIMENTAL.map(item => { const field = fieldByKey(`env.${item.env}`)!; const disabled = !!item.splitOnly && !plan.layerSplit; return <label key={item.env} className="concurrency-card-switch" data-disabled={disabled}>
-        <span><b>{t(item.cn, item.en)}</b><em className="concurrency-card-tag">{t('实验', 'Experimental')}</em><code>{item.env}</code><small>{t(item.noteCn, item.noteEn)}</small></span>
+      {serverDefaults && <p className="concurrency-card-engine-default" data-testid="concurrency-engine-defaults">{t('注意力合并启动与 GDN 合并启动：引擎 0.1.55 起，Linux + NVIDIA（CUDA）上 2 个以上同时运行时由引擎自动开启，这里不再写入配置。配置里已有的值仍优先（设为 0 即关闭）。',
+        'One attention launch and one GDN launch: from engine 0.1.55 the engine turns them on itself on Linux with NVIDIA (CUDA) when 2 or more run at once, so they are no longer written here. A value already in the configuration still wins (0 turns it off).')}</p>}
+      {engineElsewhere && <p className="concurrency-card-engine-default" data-testid="concurrency-engine-defaults-elsewhere">{t('引擎 0.1.55 只在 Linux + NVIDIA（CUDA）上自动开启注意力合并启动与 GDN 合并启动；这台机器（Windows、AMD 等）上引擎不会自动开启，仍由这里的开关决定。',
+        'Engine 0.1.55 turns on one attention launch and one GDN launch by itself only on Linux with NVIDIA (CUDA). On this machine (Windows, AMD and others) it does not, so these switches still decide.')}</p>}
+      {experimental.map(item => { const field = fieldByKey(`env.${item.env}`)!; const disabled = !!item.splitOnly && !plan.layerSplit; return <label key={item.env} className="concurrency-card-switch" data-disabled={disabled}>
+        <span><b>{t(item.cn, item.en)}</b><em className="concurrency-card-tag">{t('实验', 'Experimental')}</em><code>{item.env}</code><small>{serverDefaults && core.CONCURRENCY_SERVER_DEFAULT_ENV.includes(item.env) ? t('配置里已有此值，会覆盖引擎默认；关掉即交给引擎决定。', 'Set in this configuration, overriding the engine default; turn it off to leave it to the engine.') : t(item.noteCn, item.noteEn)}</small></span>
         <Toggle ariaLabel={`${t(item.cn, item.en)} ${item.env}`} disabled={disabled && !settings.experimental[item.env]} checked={!!settings.experimental[item.env]} onCheckedChange={checked => onFieldChange(field, checked ? '1' : '')}/>
       </label>; })}
     </div>}

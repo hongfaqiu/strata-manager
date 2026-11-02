@@ -138,3 +138,39 @@ describe('decode streams', () => {
     expect(decodeStreams({ live: { tok_s: 40 } })).toEqual([]);
   });
 });
+
+describe('engine-owned parallel launch switches (Strata 0.2.9, upstream #4841)', async () => {
+  const { concurrencyServerSetsLaunchSwitches, concurrencyEngineHasParallelStack, concurrencyHostOs, CONCURRENCY_SERVER_DEFAULT_ENV } = await import('../src/concurrency');
+  const linuxCuda = { os: 'linux' as const, gpus: [{ name: 'NVIDIA GeForce RTX 5090', vendor: 'nvidia' }] };
+  it('starts at engine 0.1.55 and ignores unknown or unparsable versions', () => {
+    for (const v of ['0.1.55', 'v0.1.55', '0.1.56', '0.2.0', '1.0.0', '0.1.55+cuda']) {
+      expect(concurrencyEngineHasParallelStack(v)).toBe(true);
+      expect(concurrencyServerSetsLaunchSwitches(v, linuxCuda)).toBe(true);
+    }
+    for (const v of ['0.1.54', '0.1.9', '0.0.99', '', null, undefined, 'dev', '0.1']) {
+      expect(concurrencyEngineHasParallelStack(v)).toBe(false);
+      expect(concurrencyServerSetsLaunchSwitches(v, linuxCuda)).toBe(false);
+    }
+  });
+  it('mirrors serve/server.py parallel_stack_env: Linux CUDA only, never DeepSeek, HIP, SYCL, Metal or Vulkan', () => {
+    expect(concurrencyServerSetsLaunchSwitches('0.1.55', { ...linuxCuda, config: { backend: 'cuda' } })).toBe(true);
+    expect(concurrencyServerSetsLaunchSwitches('0.1.55', { os: 'linux' })).toBe(true); // no backend named and cards unknown: the CUDA build
+    expect(concurrencyServerSetsLaunchSwitches('0.1.55', { os: 'linux', config: { backend: 'cuda' }, gpus: [{ name: 'AMD Radeon', vendor: 'amd' }] })).toBe(true);
+    expect(concurrencyServerSetsLaunchSwitches('0.1.55')).toBe(false);
+    for (const os of ['windows', 'mac', 'other'] as const) expect(concurrencyServerSetsLaunchSwitches('0.1.55', { ...linuxCuda, os })).toBe(false);
+    for (const backend of ['hip', 'HIP', 'sycl', 'metal', 'vulkan', 'cpu']) expect(concurrencyServerSetsLaunchSwitches('0.1.55', { ...linuxCuda, config: { backend } })).toBe(false);
+    expect(concurrencyServerSetsLaunchSwitches('0.1.55', { ...linuxCuda, config: { arch: 'deepseek41' } })).toBe(false);
+    expect(concurrencyServerSetsLaunchSwitches('0.1.55', { os: 'linux', gpus: [{ name: 'AMD Radeon RX 7900 XTX', vendor: 'amd' }] })).toBe(false);
+    expect(concurrencyServerSetsLaunchSwitches('0.1.55', { os: 'linux', gpus: [{ name: 'Intel Arc B580', vendor: 'intel' }] })).toBe(false);
+  });
+  it('reads the host OS from the webview user agent', () => {
+    expect(concurrencyHostOs('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15')).toBe('linux');
+    expect(concurrencyHostOs('Mozilla/5.0 (Windows NT 10.0; Win64; x64)')).toBe('windows');
+    expect(concurrencyHostOs('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)')).toBe('mac');
+    expect(concurrencyHostOs('Mozilla/5.0 (Linux; Android 14)')).toBe('other');
+    expect(concurrencyHostOs(undefined)).toBe('other');
+  });
+  it('covers only the two switches serve/server.py PARALLEL_STACK_ENV sets', () => {
+    expect([...CONCURRENCY_SERVER_DEFAULT_ENV]).toEqual(['STRATA_BATCH_ATTN_ROWS', 'STRATA_BATCH_GDN_GROUPS']);
+  });
+});

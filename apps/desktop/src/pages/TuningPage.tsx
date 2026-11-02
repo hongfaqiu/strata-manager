@@ -16,7 +16,9 @@ import { QuickCalibrationView } from './tuning/QuickCalibration';
 import { ConcurrencyComparison, QuickCalibrationConcurrencyNote } from './tuning/ConcurrencyComparison';
 import { speedBoostFailureText } from './tuning/speedBoostFailure';
 import { SpeedBoost, useSpeedHealth } from './tuning/SpeedBoost';
-import { appliedFor, dismissJob, forgetApplied, leaveNotice, originFor, rememberApplied, takeNotice, type SpeedBoostApplied } from './tuning/speedBoostRecord';
+import { RecalibrateNotice } from './tuning/RecalibrateNotice';
+import { useEngineVersion } from './useEngineVersion';
+import { appliedFor, dismissJob, dismissRecalibrate, forgetApplied, recalibrateDismissed, recalibrateKey, leaveNotice, originFor, rememberApplied, takeNotice, type SpeedBoostApplied } from './tuning/speedBoostRecord';
 
 const zh = {
   setup: '测试设置', mode: '测试模式', fullMode: '完整场景', diagnosticMode: '短请求诊断',
@@ -121,6 +123,8 @@ export function TuningPage({ profileId, profile, language, desktop, owned, strea
   const [workload, setWorkload] = useState<CalibrationWorkload>('general');
   const [goal, setGoal] = useState<CalibrationGoal>('balanced');
   const [boostNotice, setBoostNotice] = useState<string | null>(takeNotice);
+  const engineVersion = useEngineVersion(profile, desktop);
+  const [recalibrateHidden, setRecalibrateHidden] = useState<string | null>(null);
   const [calibrationRounds, setCalibrationRounds] = useState(2);
   const [suggested, setSuggested] = useState<TuningRestartParameters[]>([]);
   const [notice, setNotice] = useState<ApplyNotice>(null);
@@ -306,13 +310,19 @@ export function TuningPage({ profileId, profile, language, desktop, owned, strea
     : desktop && !capability.isPending && !quickSupported ? t('sbUnsupported') : streaming ? t('sbBusy')
     : active && job ? `${cal.fullMode} · ${text[job.state]}` : recovery?.state === 'failed' ? text.recoveryFailed : undefined;
   const option = (value: string, label: string) => ({ value, label, disabled: anyActive || busy });
+  const startCalibration = () => void run(async () => { setNotice(null); setBoostNotice(null); await core.calibrateStart(profileId!, { rounds: calibrationRounds, workload, goal }); });
+  // Upstream #4841: after an engine upgrade the last calibration was measured on the old engine; offer to measure again.
+  const outdated = calibrationJob && calibrationJob.profileId === profileId && !health.deepseek ? core.calibrationEngineOutdated(calibrationJob, engineVersion) : null;
+  const showRecalibrate = !!outdated && !!calibrationJob && recalibrateHidden !== recalibrateKey(calibrationJob.id, outdated.to) && !recalibrateDismissed(calibrationJob.id, outdated.to);
 
   return <div className="tuning-page">
     <div className="tuning-heading sb-heading"><div><h2><Zap size={19}/>{t('sbTitle')}</h2><p className="sb-subtitle">{t('sbSubtitle')}</p></div><button type="button" className="st-btn st-btn--icon" aria-label={language === 'zh-CN' ? '调优测试帮助' : 'Tuning test help'} data-tooltip={language === 'zh-CN' ? '调优测试帮助' : 'Tuning test help'} onClick={() => setHelpOpen(true)}><CircleHelp size={16}/></button></div>
     {!!errorMessages.length && <div className="notice error tuning-errors" role="alert">{errorMessages.map(message => <p key={message}>{message}</p>)}</div>}
+    {showRecalibrate && outdated && <RecalibrateNotice language={language} from={outdated.from} to={outdated.to} disabled={!!blocked || busy}
+      onStart={startCalibration} onDismiss={() => { dismissRecalibrate(calibrationJob!.id, outdated.to); setRecalibrateHidden(recalibrateKey(calibrationJob!.id, outdated.to)); }}/>}
     <SpeedBoost language={language} job={calibrationJob && calibrationJob.profileId === profileId ? calibrationJob : null} live={calibrationActive ? liveSnapshot : null} clock={clock} profile={profile}
       blocked={blocked} busy={busy} canApply={canApplyCalibration} canSwitch={!!onSwitchVersion} checks={health.checks} notice={boostNotice}
-      onStart={() => void run(async () => { setNotice(null); setBoostNotice(null); await core.calibrateStart(profileId!, { rounds: calibrationRounds, workload, goal }); })}
+      onStart={startCalibration}
       onCancel={() => calibrationJob && void run(() => core.calibrateCancel(calibrationJob.id))}
       onApply={() => void applyCalibration('switch')} onFix={fixes => void applyFixes(fixes)} onRollback={record => void rollback(record)}/>
     <QuickCalibrationConcurrencyNote profile={profile} desktop={desktop} language={language}/>
