@@ -831,6 +831,7 @@ mod tests {
             nvidia_driver: Some("580.82".into()),
             nvidia_caps: vec![(12, 0)],
             amd_gfx: vec![],
+            intel_discrete: false,
         };
         assert_eq!(select(&assets, &nvidia).unwrap().0.variant, "cuda13");
         // A discrete RX 7900 (gfx1100) is not what this package was built for.
@@ -913,6 +914,7 @@ mod tests {
             nvidia_driver: Some("580.82".into()),
             nvidia_caps: vec![(8, 6)],
             amd_gfx: vec![],
+            intel_discrete: false,
         };
         assert_eq!(select(&assets, &nvidia).unwrap().0.variant, "cuda13");
         let blackwell = gpu_select::GpuProbe {

@@ -15,6 +15,8 @@ pub struct GpuProbe {
     pub nvidia_caps: Vec<(u32, u32)>,
     /// AMD GPU targets such as `gfx1100`, `gfx1151`, `gfx1201`.
     pub amd_gfx: Vec<String>,
+    /// An Intel discrete GPU (Arc A/B-series, Arc Pro, Data Center GPU) is present.
+    pub intel_discrete: bool,
 }
 
 fn version_key(value: &str) -> Vec<u32> {
@@ -118,6 +120,42 @@ fn kfd_gfx(root: &Path) -> Vec<String> {
     found
 }
 
+/// Linux DRM cards (`/sys/class/drm/cardN/device`): an Intel (vendor 0x8086) display device
+/// off the root bus. Intel integrated graphics always sit at 0000:00:02.0; Arc cards hang
+/// behind a PCIe bridge, so their bus is never 00.
+fn drm_intel_discrete(root: &Path) -> bool {
+    let Ok(cards) = fs::read_dir(root) else {
+        return false;
+    };
+    cards.take(64).flatten().any(|card| {
+        let name = card.file_name().to_string_lossy().into_owned();
+        if !name.starts_with("card") || name.contains('-') {
+            return false;
+        }
+        let device = card.path().join("device");
+        let vendor = fs::read_to_string(device.join("vendor")).unwrap_or_default();
+        let address = fs::canonicalize(&device)
+            .ok()
+            .and_then(|path| path.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .unwrap_or_default();
+        intel_discrete_pci(vendor.trim(), &address)
+    })
+}
+
+/// Vendor `0x8086` at a PCI address (`0000:03:00.0`) whose bus is not `00`.
+pub fn intel_discrete_pci(vendor: &str, address: &str) -> bool {
+    if !vendor.eq_ignore_ascii_case("0x8086") {
+        return false;
+    }
+    let parts: Vec<&str> = address.split(':').collect();
+    matches!(parts.as_slice(), [_, bus, _] if bus.len() == 2 && bus.bytes().all(|b| b.is_ascii_hexdigit()) && *bus != "00")
+}
+
+/// Windows adapter names of Intel discrete cards ("Intel(R) Arc(TM) A770 Graphics").
+pub fn intel_discrete_name(name: &str) -> bool {
+    crate::igpu::vendor_of(name) == Some("intel") && !crate::igpu::is_integrated_gpu_name(name)
+}
+
 /// Windows has no KFD topology: the AMD target of a display adapter name from
 /// `Win32_VideoController` (the list Manager already shows). Only the discrete RDNA3 /
 /// RDNA4 cards and Strix Halo that official packages are built for; anything else (an
@@ -208,11 +246,13 @@ pub fn probe_host() -> GpuProbe {
             probe.amd_gfx = parse_rocminfo(&text);
         }
     }
+    probe.intel_discrete = drm_intel_discrete(Path::new("/sys/class/drm"));
     #[cfg(windows)]
-    if probe.amd_gfx.is_empty() {
-        if let Some(names) = crate::display_adapters::windows_gpu_names() {
+    if let Some(names) = crate::display_adapters::windows_gpu_names() {
+        if probe.amd_gfx.is_empty() {
             probe.amd_gfx = amd_gfx_from_adapter_names(&names);
         }
+        probe.intel_discrete |= names.iter().any(|name| intel_discrete_name(name));
     }
     probe
 }
@@ -247,13 +287,16 @@ pub fn pick(
     let nvidia = probe.nvidia_driver.is_some() || !probe.nvidia_caps.is_empty();
     let amd = !probe.amd_gfx.is_empty();
     // A Ryzen's integrated Radeon (gfx1036, gfx1103, gfx90c …) has no HIP package; beside an
-    // NVIDIA card it is a display adapter, not a choice, so the NVIDIA route decides.
+    // NVIDIA or Intel discrete card it is a display adapter, not a choice (#4971).
     let amd_supported = probe.amd_gfx.iter().any(|g| {
         assets
             .iter()
             .any(|a| a.variant.starts_with("hip") && a.archs.iter().any(|arch| arch == g))
     });
-    let amd = amd && !(nvidia && !amd_supported);
+    let amd = amd && !((nvidia || probe.intel_discrete) && !amd_supported);
+    if probe.intel_discrete && !nvidia && !amd {
+        return Err("检测到 Intel 独显（Arc），引擎更新暂不提供 Intel（SYCL）包；可在安装页把后端选为 Intel（SYCL）重新安装 / An Intel discrete GPU (Arc) was detected; engine updates do not offer the Intel (SYCL) package yet. Reinstall with the Intel (SYCL) backend on the setup page".into());
+    }
     if nvidia && amd {
         return Err(manual(
             "同时检测到 NVIDIA 和 AMD 显卡，无法确定使用哪一张",
@@ -450,7 +493,7 @@ mod tests {
         GpuProbe {
             nvidia_driver: Some(driver.into()),
             nvidia_caps: caps.to_vec(),
-            amd_gfx: vec![],
+            ..Default::default()
         }
     }
 
@@ -641,6 +684,63 @@ mod tests {
             ..Default::default()
         };
         assert!(pick(&assets, &no_caps).unwrap_err().contains("计算能力"));
+    }
+
+    #[test]
+    fn intel_arc_beside_an_unsupported_amd_igpu_names_intel_not_amd() {
+        let assets = linux_assets();
+        // #4971: Arc Pro B60 with a Ryzen gfx1036 iGPU.
+        let mut arc = amd(&["gfx1036"]);
+        arc.intel_discrete = true;
+        let error = pick(&assets, &arc).unwrap_err();
+        assert!(
+            error.contains("Intel 独显") && error.contains("SYCL"),
+            "{error}"
+        );
+        assert!(
+            !error.contains("gfx1036") && !error.contains("AMD"),
+            "{error}"
+        );
+        arc.amd_gfx.clear();
+        assert!(pick(&assets, &arc).unwrap_err().contains("Intel"));
+        // A supported AMD card or an NVIDIA card still decides beside an Arc.
+        let mut with_amd = amd(&["gfx1036", "gfx1201"]);
+        with_amd.intel_discrete = true;
+        assert_eq!(pick(&assets, &with_amd).unwrap().0.variant, "hip");
+        let mut with_nvidia = nvidia("580.95.05", &[(8, 9)]);
+        with_nvidia.amd_gfx = vec!["gfx1036".into()];
+        with_nvidia.intel_discrete = true;
+        assert_eq!(pick(&assets, &with_nvidia).unwrap().0.variant, "cuda13");
+        // Without Intel the AMD-only wording is unchanged.
+        assert!(pick(&assets, &amd(&["gfx1036"]))
+            .unwrap_err()
+            .contains("AMD 显卡 gfx1036"));
+    }
+
+    #[test]
+    fn intel_discrete_detection_skips_integrated_graphics() {
+        assert!(intel_discrete_pci("0x8086", "0000:03:00.0"));
+        assert!(intel_discrete_pci("0x8086\n".trim(), "0000:0a:00.0"));
+        assert!(!intel_discrete_pci("0x8086", "0000:00:02.0"));
+        assert!(!intel_discrete_pci("0x1002", "0000:03:00.0"));
+        assert!(!intel_discrete_pci("0x8086", "garbage"));
+        assert!(intel_discrete_name("Intel(R) Arc(TM) Pro B60 Graphics"));
+        assert!(intel_discrete_name("Intel(R) Arc(TM) A770 Graphics"));
+        assert!(!intel_discrete_name("Intel(R) Arc(TM) 140V GPU (16GB)"));
+        assert!(!intel_discrete_name("Intel(R) UHD Graphics 770"));
+        assert!(!intel_discrete_name("AMD Radeon RX 7900 XTX"));
+        let root = tempfile::tempdir().unwrap();
+        let pci = root.path().join("pci/0000:03:00.0");
+        fs::create_dir_all(&pci).unwrap();
+        fs::write(pci.join("vendor"), "0x8086\n").unwrap();
+        let drm = root.path().join("drm/card1");
+        fs::create_dir_all(&drm).unwrap();
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&pci, drm.join("device")).unwrap();
+            assert!(drm_intel_discrete(&root.path().join("drm")));
+        }
+        assert!(!drm_intel_discrete(&root.path().join("missing")));
     }
 
     #[test]
