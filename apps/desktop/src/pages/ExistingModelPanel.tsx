@@ -66,14 +66,16 @@ export function ExistingModelPanel({ language, desktop, runtime, runtimeVersion,
   const images = supportsImages && (imagesChoice ?? imagesDefault);
   useEffect(() => setImagesChoice(undefined), [group?.family]);
   const directory = scan.data?.directory ?? '';
-  const request: LocalModelRequest = { ggufDirectory: directory, ...(mtpPath ? { mtpPath } : {}) };
-  const mtpProblem = mtpPath ? (mtp.isError ? core.normalizeError(mtp.error).message : mtp.data?.problems[0]) : undefined;
-  const mtpReady = !mtpPath || (!!mtp.data && !mtp.data.problems.length);
+  // DeepSeek-V4.1-Flash (Strata 0.2.9 `--gguf-dir`) has no MTP layer: its drafter is a shared file setup finds or downloads itself.
+  const noMtp = group?.family === 'deepseek41';
+  const request: LocalModelRequest = { ggufDirectory: directory, ...(mtpPath && !noMtp ? { mtpPath } : {}) };
+  const mtpProblem = mtpPath && !noMtp ? (mtp.isError ? core.normalizeError(mtp.error).message : mtp.data?.problems[0]) : undefined;
+  const mtpReady = noMtp || !mtpPath || (!!mtp.data && !mtp.data.problems.length);
   const engineGate = group?.family && group.quant && action === 'setup' ? (core.catalogQuantEngineGate(group.family, group.quant, runtimeVersion) ?? core.catalogEngineGate(group.family, runtimeVersion)) : null;
   const engineBlocked = !!engineGate && !engineGate.ok;
   const checkEnabled = desktop && !!runtime?.installDir && !!group && action !== 'blocked' && mtpReady && !mtp.isFetching;
   const disk = useQuery({
-    queryKey: ['local-model-disk', runtime?.id, runtime?.installDir, group?.id, directory, mtpPath, images],
+    queryKey: ['local-model-disk', runtime?.id, runtime?.installDir, group?.id, directory, request.mtpPath, images],
     queryFn: () => core.setupDiskPreflight(runtime!, group!.family!, group!.quant!, images, request),
     enabled: checkEnabled && action === 'setup', retry: false, staleTime: 15000, refetchOnWindowFocus: false,
   });
@@ -87,7 +89,7 @@ export function ExistingModelPanel({ language, desktop, runtime, runtimeVersion,
   const checkError = orca ? orcaPlan.error : disk.error;
   const checkProblems = orca ? orcaPlan.data?.problems ?? [] : disk.data && disk.data.status !== 'ready' && disk.data.reason ? [disk.data.reason] : [];
   const ready = !!group && action !== 'blocked' && !engineBlocked && mtpReady && !previousPending && !checkPending && !checkError && (orca ? orcaPlan.data?.status === 'ready' : disk.data?.status === 'ready');
-  const command = group && action !== 'blocked' && directory ? core.localModelCommand(group, request, mtp.data, orca ? core.ORCA_CONTEXT : context, windows, orca ? undefined : images) : '';
+  const command = group && action !== 'blocked' && directory ? core.localModelCommand(group, request, noMtp ? undefined : mtp.data, orca ? core.ORCA_CONTEXT : context, windows, orca ? undefined : images) : '';
   const disabled = !desktop || busy || submitting;
 
   const pick = async (kind: 'folder' | 'file' | 'mtp') => {
@@ -175,7 +177,7 @@ export function ExistingModelPanel({ language, desktop, runtime, runtimeVersion,
         {supportsImages ? <div className="existing-model-toggle"><Toggle ariaLabel={t.images} checked={images} disabled={disabled} onCheckedChange={setImagesChoice}/>{imagesChoice === undefined && previous.isSuccess && <small className="existing-model-hint">{t.imagesKept}</small>}</div>
           : <small className="existing-model-hint">{t.textOnly}</small>}
       </div>}
-      <details className="existing-model-more" open={mtpOpen} onToggle={event => setMtpOpen(event.currentTarget.open)}>
+      {!noMtp && <details className="existing-model-more" open={mtpOpen} onToggle={event => setMtpOpen(event.currentTarget.open)}>
         <summary data-testid="existing-model-mtp-toggle"><ChevronRight size={14} className="existing-model-chev" aria-hidden="true"/><span>{t.mtpTitle}</span><small className={mtpProblem ? 'is-bad' : ''}>{mtpState}</small></summary>
         <div className="existing-model-more-body">
           <small className="existing-model-hint">{t.mtpHint}</small>
@@ -189,7 +191,7 @@ export function ExistingModelPanel({ language, desktop, runtime, runtimeVersion,
           </div>
           {mtpPath && !mtp.isFetching && (mtpProblem ? <p role="alert" className="existing-model-error" data-testid="existing-model-mtp-problem">{mtpProblem}</p> : mtp.data?.rtDirectory && <p className="existing-model-ok" data-testid="existing-model-mtp-ok" title={orca ? t.mtpOrcaMap : mtp.data.dataDirectory ? t.mtpSetupMap(mtp.data.dataDirectory) : undefined}><span className="existing-model-dot" aria-hidden="true"/><span>{t.mtpFound(gb(mtp.data.expertsBytes, language))}{orca ? <small className="existing-model-hint">{t.mtpOrcaMap}</small> : mtp.data.dataDirectory ? <small className="existing-model-hint">{t.mtpMapped}</small> : null}</span></p>)}
         </div>
-      </details>
+      </details>}
       {!runtime?.installDir ? <p className="existing-model-note" role="alert" data-testid="existing-model-need-runtime">{t.needRuntime}</p> : <div className="existing-model-sec existing-model-checks" data-testid="existing-model-checks">
         <span className="existing-model-label">{t.checks}</span>
         {engineBlocked && <p role="alert" className="existing-model-error">{t.engine(engineGate!.minEngine ?? '', runtimeVersion ?? '—')}</p>}

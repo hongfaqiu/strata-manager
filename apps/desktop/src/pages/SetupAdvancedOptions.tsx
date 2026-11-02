@@ -9,7 +9,15 @@ import './official-setup.css';
 import './setup-tuning-interactions.css';
 import './calibrate-entry.css';
 
-export function SetupAdvancedOptions({ language, value, onChange, onValidityChange, disabled = false, embedded = false, availableGpus }: {
+/** Windows HIP runs on one card: with "Automatic" an all-AMD multi-card choice ends up there too. */
+export function autoAmdMultiGpuOnWindows(value: OfficialSetupOptions, availableGpus: GpuOption[] | undefined, windows: boolean) {
+  if (!windows || (value.backend ?? 'auto') !== 'auto' || !availableGpus?.length) return false;
+  const selection = parseGpuSelection(value.gpus);
+  const chosen = selection.mode === 'ids' ? availableGpus.filter(gpu => selection.ids.includes(gpu.id)) : selection.mode === 'all' ? availableGpus : [];
+  return chosen.length > 1 && chosen.some(gpu => /\b(amd|radeon)\b/i.test(gpu.name)) && !chosen.some(gpu => /nvidia|geforce|quadro|tesla/i.test(gpu.name));
+}
+
+export function SetupAdvancedOptions({ language, value, onChange, onValidityChange, disabled = false, embedded = false, availableGpus, windows = typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent) }: {
   language: AppLanguage; value: OfficialSetupOptions;
   onChange: (value: OfficialSetupOptions) => void;
   onValidityChange?: (valid: boolean) => void;
@@ -17,6 +25,8 @@ export function SetupAdvancedOptions({ language, value, onChange, onValidityChan
   /** A shared settings dialog already provides the section heading. */
   embedded?: boolean;
   availableGpus?: GpuOption[];
+  /** Defaults to the user agent; set by tests and previews. */
+  windows?: boolean;
 }) {
   const zh = language === 'zh-CN';
   const [helpOpen, setHelpOpen] = useState(false);
@@ -60,7 +70,7 @@ export function SetupAdvancedOptions({ language, value, onChange, onValidityChan
         </div>
         {selected.length > 1 && <label className="official-setup-wide"><span>{zh ? '主卡（Strata 0.2.2 起）' : 'Main card (Strata 0.2.2+)'}</span><Dropdown ariaLabel={zh ? '主卡' : 'Main card'} value={mainOf(value.gpuRoles) ?? ''} onValueChange={main => update({ gpuRoles: rolesFor(value.gpus ?? '', main) })} options={[{ value: '', label: zh ? '由安装器决定（按编号顺序，最后一张为主卡）' : 'Let setup decide (index order, last is Main)' }, ...selected.map(id => ({ value: String(id), label: `GPU ${id}${availableGpus?.find(gpu => gpu.id === id) ? ` · ${availableGpus.find(gpu => gpu.id === id)!.name}` : ''}` }))]}/><small className="official-setup-note">{zh ? '主卡运行每次回答的最后一段，其余所选显卡为辅助卡，未选的显卡关闭（写入 --gpu-roles）。需要 Strata 0.2.2 或更新的运行环境。' : 'Main runs the last stage of every answer; the other chosen cards are Helpers and the rest are Off (passed as --gpu-roles). Needs a Strata 0.2.2 or newer runtime.'}</small></label>}
       </div>
-      {value.backend === 'hip' && <p className="official-setup-note">{zh ? 'Windows 上的 AMD 显卡仅支持单卡。' : 'AMD on Windows supports one GPU only.'}</p>}
+      {(value.backend === 'hip' || autoAmdMultiGpuOnWindows(value, availableGpus, windows)) && <p className="official-setup-note" data-testid="setup-amd-single-gpu">{zh ? 'Windows 上的 AMD 显卡仅支持单卡。' : 'AMD on Windows supports one GPU only.'}</p>}
       <section className="calibrate-entry" data-testid="calibrate-entry" aria-label={zh ? '一键校准入口' : 'One-click calibrate entry'}>
         <div className="calibrate-entry-heading">
           <div>

@@ -19,7 +19,7 @@ vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../../../../packages
 const versionsModule = { exports: {} };
 vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../../../../packages/core/src/runtime-versions.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { module: versionsModule, exports: versionsModule.exports, require: () => ({}) });
 const { runtimeUpdateAllowedByPin, runtimeVersionDirection } = versionsModule.exports;
-const { RUNTIME_DOWNLOAD_DEFAULTS, resolveRuntimeDownloadPreferences, runtimeDownloadSources, runtimeAssetLabel, runtimeBilingualText, runtimeEngineArchiveFilters, runtimeEngineIsCurrent, runtimeReasonText, runtimeTrialRollback } = downloadModule.exports;
+const { RUNTIME_DOWNLOAD_DEFAULTS, resolveRuntimeDownloadPreferences, runtimeSavedAsset, runtimeDownloadSources, runtimeAssetLabel, runtimeBilingualText, runtimeEngineArchiveFilters, runtimeEngineIsCurrent, runtimeReasonText, runtimeTrialRollback } = downloadModule.exports;
 const sharedControls = { Dropdown: 'dropdown', Toggle: 'toggle' };
 const sourceControl = tree => nodes(tree).find(node => node.type === 'dropdown' && node.props.options.some(option => option.value === 'official'));
 const assetControl = tree => nodes(tree).find(node => node.type === 'dropdown' && node.props.options.some(option => option.value === assets[0].name));
@@ -53,7 +53,7 @@ function fixture(overrides = {}) {
     ...runtimeVersions,
     isDesktop: () => true,
     configurationPathKey,
-    runtimeDownloadSources, resolveRuntimeDownloadPreferences, runtimeAssetLabel, runtimeBilingualText, runtimeEngineArchiveFilters, runtimeVersionDirection,
+    runtimeDownloadSources, resolveRuntimeDownloadPreferences, runtimeSavedAsset, runtimeAssetLabel, runtimeBilingualText, runtimeEngineArchiveFilters, runtimeVersionDirection,
     resolveRuntimeZipAsset: async (...args) => overrides.resolveAsset ? await overrides.resolveAsset(...args) : assets.find(asset => asset.name === args[1]) ?? assets[1],
     normalizeError: error => ({ message: error instanceof Error ? error.message : String(error) }),
     localInstallations: async () => { calls.installations++; return overrides.installations ? await overrides.installations() : profiles; },
@@ -222,6 +222,31 @@ test('failed automatic matching cannot reuse previously successful query data', 
   f.chooseAsset(assets[1].name); assert.equal(f.confirm().props.disabled, false);
 });
 
+test('a package saved for an older release follows to the same AMD package, or says why it falls back (#194)', async () => {
+  const win = ['hip-rdna3', 'hip-rdna2', 'cuda13'].map((variant, index) => ({
+    name: `strata-engine-0.1.55-windows-x86_64-${variant.startsWith('cuda') ? `cuda-${variant}` : variant}.tar.gz`,
+    url: `https://official.example.com/0.2.9/${variant}.tar.gz`, size: 1024 * 1024, sha256: String(index + 3).repeat(64), variant, engineVersion: '0.1.55',
+  }));
+  const release = { latestVersion: '0.2.9', supportedVersion: '0.2.9', checkedAt: 100, assets: win };
+  const stale = 'strata-engine-0.1.47-windows-x86_64-hip-rdna3.tar.gz';
+  const f = fixture({ resolveAsset: async () => win[0], props: { release, initialPreferences: { mode: 'mirror', sourceId: 'gh-proxy', assetName: stale } } });
+  await f.settle();
+  const control = nodes(f.tree()).find(node => node.type === 'dropdown' && node.props.options.some(option => option.value === win[0].name));
+  assert.equal(control.props.value, win[0].name, 'the 0.1.55 rdna3 package replaces the saved 0.1.47 one');
+  assert.ok(text(nodes(f.tree()).find(node => node.props?.['data-testid'] === 'runtime-stale-asset')).includes(stale));
+  assert.equal(f.confirm().props.disabled, false); f.confirm().props.onClick();
+  assert.deepEqual(f.calls.confirmedArgs, [{ download: { downloadUrl: `https://gh-proxy.org/${win[0].url}` }, assetName: win[0].name }]);
+  const gone = 'strata-engine-0.1.47-windows-x86_64-hip-rdna4.tar.gz';
+  const g = fixture({ resolveAsset: async () => win[0], props: { release, initialPreferences: { mode: 'official', assetName: gone } } });
+  await g.settle();
+  const notice = nodes(g.tree()).find(node => node.props?.['data-testid'] === 'runtime-stale-asset');
+  assert.ok(text(notice).includes('没有同类包') && text(notice).includes(gone));
+  const control2 = nodes(g.tree()).find(node => node.type === 'dropdown' && node.props.options.some(option => option.value === win[0].name));
+  assert.equal(control2.props.value, '', 'falls back to automatic instead of keeping the old package');
+  g.confirm().props.onClick();
+  assert.deepEqual(g.calls.confirmedArgs, [{ download: {}, assetName: win[0].name }]);
+});
+
 test('built-in source preferences follow the official URL across releases and switching back keeps automatic matching', async () => {
   let current = assets[1];
   const f = fixture({ resolveAsset: async () => current, props: { initialPreferences: { mode: 'mirror', sourceId: 'gh-proxy', releaseVersion: '0.1.42' } } });
@@ -339,7 +364,7 @@ function parentFixture(kind, savedPreferences = { mode: 'official' }, pin = '') 
     listTasks: async () => tasks, loadStore: async () => '', runtimeUpdateAllowedByPin, getRuntimePin: async () => pin,
     localRuntimeInstallation: async () => { calls.installationReads += 1; return disk.data ?? queryData['runtime-installation'].data; },
     runtimeReleaseInfo: async version => ({ ...queryData['runtime-update-info'].data, latestVersion: version, checkedAt: 200 }),
-    resolveRuntimeDownloadPreferences, runtimeAssetLabel, runtimeEngineArchiveFilters, runtimeEngineIsCurrent, runtimeReasonText, runtimeTrialRollback, getRuntimeDownloadPreferences: async () => queryData['runtime-download-preferences'].data,
+    resolveRuntimeDownloadPreferences, runtimeSavedAsset, runtimeAssetLabel, runtimeEngineArchiveFilters, runtimeEngineIsCurrent, runtimeReasonText, runtimeTrialRollback, getRuntimeDownloadPreferences: async () => queryData['runtime-download-preferences'].data,
     saveStore: async (...args) => calls.saved.push(args), cancelTask: async id => calls.canceled.push(id),
     normalizeError: error => ({ message: error instanceof Error ? error.message : String(error) }),
   };
@@ -546,7 +571,7 @@ function settingsFixture(overrides = {}) {
   };
   const core = {
     ...runtimeVersions,
-    RUNTIME_DOWNLOAD_DEFAULTS, getRuntimeDownloadPreferences: async () => preferences.data, resolveRuntimeDownloadPreferences, runtimeDownloadSources, runtimeAssetLabel, runtimeBilingualText, runtimeEngineArchiveFilters,
+    RUNTIME_DOWNLOAD_DEFAULTS, getRuntimeDownloadPreferences: async () => preferences.data, resolveRuntimeDownloadPreferences, runtimeSavedAsset, runtimeDownloadSources, runtimeAssetLabel, runtimeBilingualText, runtimeEngineArchiveFilters,
     resolveRuntimeZipAsset: async (_dir, name) => overrides.resolveAsset ? await overrides.resolveAsset() : assets.find(asset => asset.name === name) ?? assets[1],
     normalizeError: error => ({ message: error instanceof Error ? error.message : String(error) }),
     getRuntimeUpgradeFullVerification: async () => verification.data,

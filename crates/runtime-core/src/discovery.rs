@@ -2544,9 +2544,12 @@ fn prepare_import_inner(
                 .to_string_lossy()
         ));
         if shared.exists() {
-            let settings = read_json(&shared)?;
+            let mut settings = read_json(&shared)?;
             if !settings.is_object() {
                 return Err("原共享采样设置不是 JSON 对象".into());
+            }
+            if crate::shared_settings::rejects_unknown_keys(Path::new(&profile.install_dir)) {
+                crate::shared_settings::retain_known(&mut settings);
             }
             write_json_new(
                 &temporary.path().join("config.shared-settings.json"),

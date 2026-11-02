@@ -70,7 +70,7 @@ const familyDescription = (family: string, zh: boolean) => ({
   coder: zh ? '代码任务' : 'Coding tasks',
   unsloth: zh ? '量化分发版本' : 'Alternative quantized distribution',
   qwen36: zh ? '读图与多请求并发（引擎 0.1.45+）' : 'Vision and concurrent requests (engine 0.1.45+)',
-  deepseek41: zh ? '284B 大模型，专家权重放内存或读盘，独立引擎（Strata 0.2.5+，仅文本；0.2.7+ 可选 8K–1M 上下文）' : '284B model with experts in memory or read from disk, separate engine (Strata 0.2.5+, text only; 8K–1M context on 0.2.7+)',
+  deepseek41: zh ? '284B 大模型，专家权重放内存或读盘，独立引擎（Strata 0.2.5+，仅文本；0.2.7+ 可选 8K–1M 上下文；0.2.9+ 可选 Unsloth 1-bit 版本、可用已有模型文件）' : '284B model with experts in memory or read from disk, separate engine (Strata 0.2.5+, text only; 8K–1M context on 0.2.7+; Unsloth 1-bit sets and existing model files on 0.2.9+)',
 }[family] ?? (zh ? '官方模型' : 'Official model'));
 
 /** Official families this platform runs, with only the sizes it offers (a Mac: docs/MAC.md sizes). */
@@ -115,7 +115,8 @@ export function ModelDownloadPage({ machineMemoryGB, language, desktop, fallback
   const searchTerm = search.trim().toLocaleLowerCase();
   const runtimeRelease = runtime && runtimeVersions.find(item => item.installDir === runtime.installDir)?.releaseVersion;
   // A family whose installer ships with a newer Strata release (DeepSeek-V4.1-Flash: 0.2.5) is hidden for an older or unknown release.
-  const catalog = platformCatalog(packagePlatform).filter(model => !runtime || core.catalogReleaseGate(model.family, runtimeRelease)?.ok !== false);
+  // A quant whose installer is newer still (DeepSeek's Unsloth UD-IQ1_S / UD-IQ1_M: 0.2.9) is hidden the same way.
+  const catalog = platformCatalog(packagePlatform).filter(model => !runtime || core.catalogReleaseGate(model.family, runtimeRelease)?.ok !== false).map(model => core.catalogQuantsForRelease(model, runtimeRelease, !!runtime));
   const blockedCatalog = core.MODEL_CATALOG.filter(model => core.officialFamilyBlock(model.family, packagePlatform));
   const communityModels = community.models.filter(model => `${model.name} ${model.repo}`.toLocaleLowerCase().includes(searchTerm));
   const communityEntry = communityModels.find(model => model.id === communityId) ?? communityModels[0];
@@ -214,6 +215,8 @@ export function ModelDownloadPage({ machineMemoryGB, language, desktop, fallback
 }
 
 const gb = (bytes: number | null | undefined) => bytes == null ? undefined : bytes / 1e9;
+/** "IST-DAS-2.25bpw" → "2.25 bpw"; other names as they are. */
+const quantLabel = (quant: string) => /^IST-DAS-(\d+(?:\.\d+)?)bpw$/.exec(quant)?.[1]?.concat(' bpw') ?? quant;
 
 /** DeepSeek-V4.1-Flash requirements: disk need vs free (GB = 10^9 bytes), the dsv41_fit memory class (GiB, as setup.py's ram_gb() measures it; the same judgment as the catalog card, quantFitState), and the GPU it was measured on. */
 function Deepseek41Panel({ language, quant, memoryGB, gpus, disk, recommended }: { language: AppLanguage; quant: string; memoryGB?: number; gpus?: string[]; disk?: core.SetupDiskPreflight; recommended?: string }) {
@@ -236,7 +239,7 @@ function Deepseek41Panel({ language, quant, memoryGB, gpus, disk, recommended }:
   return <section className="dsv41-panel" data-testid="dsv41-panel" aria-label={text('DeepSeek-V4.1-Flash 需求', 'DeepSeek-V4.1-Flash requirements')}>
     <div><strong>{text('磁盘', 'Disk')}</strong>{bar(needGB, freeGB, freeGB !== undefined && freeGB < needGB, freeGB !== undefined ? text(`需要 ${needGB.toFixed(0)} GB（含 6 GB 余量）· 可用 ${freeGB.toFixed(0)} GB · 1 GB = 10⁹ 字节`, `Needs ${needGB.toFixed(0)} GB (incl. 6 GB headroom) · ${freeGB.toFixed(0)} GB free · 1 GB = 10⁹ bytes`) : text(`需要 ${needGB.toFixed(0)} GB（含 6 GB 余量）· 1 GB = 10⁹ 字节`, `Needs ${needGB.toFixed(0)} GB (incl. 6 GB headroom) · 1 GB = 10⁹ bytes`), 'dsv41-disk')}</div>
     <div><strong>{text('内存', 'Memory')}</strong>{bar(info?.expertsGB ? info.expertsGB + 9 : 0, memoryGB, memory === 'spills', `${memoryGB ? text(`本机 ${Math.round(memoryGB)} GiB · `, `This machine ${Math.round(memoryGB)} GiB · `) : ''}${info?.expertsGB ? text(`全部专家放进内存约需 ${Math.round(info.expertsGB + 9)} GiB · `, `All experts in memory need about ${Math.round(info.expertsGB + 9)} GiB · `) : ''}${memoryText}`, 'dsv41-memory')}</div>
-    <p className={card === false ? 'is-warn' : undefined}>{card === false ? text('未检测到 NVIDIA 或 AMD 显卡：此模型需要至少 8 GB 显存的独立显卡。', 'No NVIDIA or AMD card detected: this model needs a discrete GPU with at least 8 GB.') : text('显卡：NVIDIA RTX 30/40/50 系或 Radeon AI PRO R9700，至少 8 GB 显存（上游以 12 GB 显卡实测）。', 'GPU: NVIDIA RTX 30/40/50 series or Radeon AI PRO R9700, at least 8 GB (measured upstream on 12 GB cards).')}</p>
-    <p>{text(`质量损失 ${info?.qualityLoss ?? '—'}（相对完整模型）。`, `Quality loss ${info?.qualityLoss ?? '—'} vs. the full model.`)}{recommended && recommended !== quant ? text(` 本机推荐 ${recommended}。`, ` Recommended here: ${recommended}.`) : ''}{info?.manualOnly ? text(' 2.25 bpw 不会被自动推荐。', ' 2.25 bpw is never picked automatically.') : ''}</p>
+    <p className={card === false ? 'is-warn' : undefined}>{card === false ? text('未检测到 NVIDIA 或 AMD 显卡：此模型需要至少 8 GB 显存的独立显卡。', 'No NVIDIA or AMD card detected: this model needs a discrete GPU with at least 8 GB.') : text('显卡：NVIDIA RTX 30/40/50 系或 Radeon AI PRO R9700，至少 8 GB 显存（上游以 12 GB 显卡实测）。Ryzen AI Max（Strix Halo）只在 Windows 上有 DeepSeek 引擎，Linux 上暂无（上游 #4814）。', 'GPU: NVIDIA RTX 30/40/50 series or Radeon AI PRO R9700, at least 8 GB (measured upstream on 12 GB cards). Ryzen AI Max (Strix Halo) has a DeepSeek engine on Windows only, none on Linux yet (upstream #4814).')}</p>
+    <p data-testid="dsv41-quality">{info?.qualityNote ? text(info.qualityNote.zh, info.qualityNote.en) : text(`质量损失 ${info?.qualityLoss ?? '—'}（相对完整模型）。`, `Quality loss ${info?.qualityLoss ?? '—'} vs. the full model.`)}{recommended && recommended !== quant ? text(` 本机推荐 ${recommended}。`, ` Recommended here: ${recommended}.`) : ''}{info?.manualOnly ? text(` ${quantLabel(quant)} 不会被自动推荐。`, ` ${quantLabel(quant)} is never picked automatically.`) : ''}</p>
   </section>;
 }

@@ -105,14 +105,28 @@ pub fn select(
     assets: &[RuntimeReleaseAsset],
     probe: &gpu_select::GpuProbe,
 ) -> Result<(RuntimeReleaseAsset, String), String> {
+    let halo = strix_halo_note(assets, probe);
     if assets.is_empty() {
-        return Err("此 Strata 版本的签名 feed 没有本平台可用的 DeepSeek 引擎包（需要 Strata 0.2.5 或更新，Windows CUDA 13 / Linux CUDA 13 / Linux HIP RX 9000；Windows Ryzen AI Max 需要 Strata 0.2.7 或更新） / The signed feed has no DeepSeek engine package for this platform".into());
+        return Err(format!("此 Strata 版本的签名 feed 没有本平台可用的 DeepSeek 引擎包（需要 Strata 0.2.5 或更新，Windows CUDA 13 / Linux CUDA 13 / Linux HIP RX 9000；Windows Ryzen AI Max 需要 Strata 0.2.7 或更新） / The signed feed has no DeepSeek engine package for this platform{halo}"));
     }
     gpu_select::pick(assets, probe).map_err(|reason| {
         format!(
-            "没有适合本机显卡的 DeepSeek 引擎包（支持 NVIDIA CUDA 13，需 Ampere sm_86 或更新的显卡（RTX 30 系起；A100 等 sm_80 不支持），驱动 580.65+；Linux 上的 AMD RX 9000 / R9700；Windows 上的 Ryzen AI Max / Radeon 8060S 等 gfx1151）：{reason}"
+            "没有适合本机显卡的 DeepSeek 引擎包（支持 NVIDIA CUDA 13，需 Ampere sm_86 或更新的显卡（RTX 30 系起；A100 等 sm_80 不支持），驱动 580.65+；Linux 上的 AMD RX 9000 / R9700；Windows 上的 Ryzen AI Max / Radeon 8060S 等 gfx1151）：{reason}{halo}"
         )
     })
+}
+
+/// Upstream #4814 (Strata 0.2.9, STRIX_HALO.md): Strix Halo (gfx1151) has a DeepSeek engine only on Windows (hip-rdna3);
+/// Linux's hip-halo package carries the Qwen engine alone. Said plainly when such a GPU finds no package here.
+fn strix_halo_note(assets: &[RuntimeReleaseAsset], probe: &gpu_select::GpuProbe) -> String {
+    let halo = probe.amd_gfx.iter().any(|gfx| gfx == "gfx1151");
+    let packaged = assets
+        .iter()
+        .any(|asset| asset.archs.iter().any(|arch| arch == "gfx1151"));
+    if !halo || packaged {
+        return String::new();
+    }
+    "。Strix Halo（Ryzen AI Max / Radeon 8060S）在 Linux 上还没有上游的 DeepSeek 引擎包（上游 #4814；Linux 的 hip-halo 包只有 Qwen 引擎）：DeepSeek 目前只能在 Windows 上用这块显卡运行，Linux 上请先用 Qwen 模型 / Strix Halo (Ryzen AI Max / Radeon 8060S) has no upstream DeepSeek engine on Linux yet (upstream #4814; Linux's hip-halo package carries only the Qwen engine): run DeepSeek on this GPU under Windows, or use a Qwen model on Linux".into()
 }
 
 fn clear(path: &Path) {
@@ -788,6 +802,46 @@ mod tests {
     }
 
     #[test]
+    fn linux_strix_halo_is_told_deepseek_has_no_package_there_yet() {
+        let linux = |variant: &str, archs: &[&str]| {
+            let name = format!("strata-dsv41-0.1.55-linux-x86_64-{variant}.tar.gz");
+            RuntimeReleaseAsset {
+                url: format!("https://github.com/Niko1221/Strata/releases/download/v0.2.9/{name}"),
+                name,
+                size: 1,
+                sha256: "0".repeat(64),
+                variant: variant.into(),
+                engine_version: Some("0.1.55".into()),
+                manifest_sha256: Some("1".repeat(64)),
+                installed_bytes: Some(1024 * 1024),
+                archs: archs.iter().map(|a| a.to_string()).collect(),
+                nvidia_min_driver: variant.starts_with("cuda").then(|| "580.65".into()),
+                match_reason: None,
+            }
+        };
+        let assets = vec![
+            linux("cuda13", &["sm_86", "sm_89", "sm_120", "compute_120"]),
+            linux("hip-rx9000", &["gfx1200", "gfx1201"]),
+        ];
+        let halo = gpu_select::GpuProbe {
+            amd_gfx: vec!["gfx1151".into()],
+            ..Default::default()
+        };
+        let error = select(&assets, &halo).unwrap_err();
+        assert!(
+            error.contains("#4814") && error.contains("Windows"),
+            "{error}"
+        );
+        assert!(select(&[], &halo).unwrap_err().contains("#4814"));
+        // Another AMD card gets the usual message only.
+        let navi = gpu_select::GpuProbe {
+            amd_gfx: vec!["gfx1100".into()],
+            ..Default::default()
+        };
+        assert!(!select(&assets, &navi).unwrap_err().contains("#4814"));
+    }
+
+    #[test]
     fn windows_ryzen_ai_max_gets_the_hip_rdna3_package() {
         let windows = |backend: &str, variant: &str, archs: &[&str]| {
             let name = format!("strata-dsv41-0.1.52-windows-x86_64-{backend}-{variant}.tar.gz");
@@ -831,6 +885,7 @@ mod tests {
             nvidia_driver: Some("580.82".into()),
             nvidia_caps: vec![(12, 0)],
             amd_gfx: vec![],
+            intel_discrete: false,
         };
         assert_eq!(select(&assets, &nvidia).unwrap().0.variant, "cuda13");
         // A discrete RX 7900 (gfx1100) is not what this package was built for.
@@ -913,6 +968,7 @@ mod tests {
             nvidia_driver: Some("580.82".into()),
             nvidia_caps: vec![(8, 6)],
             amd_gfx: vec![],
+            intel_discrete: false,
         };
         assert_eq!(select(&assets, &nvidia).unwrap().0.variant, "cuda13");
         let blackwell = gpu_select::GpuProbe {

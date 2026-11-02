@@ -15,7 +15,7 @@ README、官网截图与使用指南描述当前源码功能；安装包包含�
 | Windows x64 | [NSIS 安装包（.exe）](https://github.com/hongfaqiu/strata-manager/releases/latest) | 需要 WebView2；安装步骤见下方 |
 | Linux x64 | [AppImage / DEB](https://strata-manager.cosfoc.com/#get-started) | Ubuntu 22.04 CI 环境构建；系统安装与 GPU 支持范围见下方 |
 | Linux x64 无头 Server（实验） | [`Strata.Manager.Server_<版本>_amd64.tar.gz` / `.deb`](https://strata-manager.cosfoc.com/#get-started) | 无桌面的服务器，浏览器访问；见 [Server 说明](SERVER.md) |
-| macOS Apple Silicon | [DMG](https://strata-manager.cosfoc.com/#get-started) | **实验包**。当前已发布稳定版可能尚无该文件；发布页列出 `*_aarch64.dmg` 后再下载。说明见下方 |
+| macOS Apple Silicon | [DMG](https://strata-manager.cosfoc.com/#get-started) | 已签名并经 Apple 公证。引擎为上游预编译 Metal 包（上游 #4634 修复前固定 0.1.47）；不支持 DeepSeek-V4.1-Flash；不提供 Intel Mac 版。说明见下方 |
 
 发布页的更新签名文件供更新器验签，初次安装使用 `.exe`、`.AppImage`、`.deb`，或发布页实际列出的 `.dmg`。
 
@@ -49,17 +49,23 @@ README、官网截图与使用指南描述当前源码功能；安装包包含�
 
 没有桌面环境的 Ubuntu 服务器可使用发布页的 `Strata.Manager.Server_<版本>_amd64.tar.gz` 或 `.deb`。它运行 `strata-manager-server`，默认只监听 `127.0.0.1:8787`，首次运行生成访问令牌，通过浏览器使用同一套界面；附 systemd 服务。Server 包不提供更新签名，也不走桌面自动更新，升级时替换包即可。安装与远程访问见 [Server 说明](SERVER.md)。
 
-## macOS（Apple Silicon，实验）
+## macOS（Apple Silicon）
 
-从 v0.2.12 起，DMG 和应用内更新包都使用 **Developer ID 签名并经 Apple 公证**（`.app` 已 staple 公证票据，DMG 用 Developer ID 签名、里面就是这个已 staple 的应用），双击 DMG、把应用拖进「应用程序」后直接打开即可，不需要右键打开或 `xattr` 去隔离。v0.2.11 及更早的 DMG 仍是临时签名、未公证。已有用户在 M5 Pro 上运行，并据其反馈在 0.2.11 修复了显卡识别和 Python 版本问题；但 Manager **仍不**声称已在 Mac 上完成 Metal 模型推理验收。
+从 v0.2.12 起，DMG 和应用内更新包都使用 **Developer ID 签名并经 Apple 公证**（`.app` 已 staple 公证票据，DMG 用 Developer ID 签名、里面就是这个已 staple 的应用），双击 DMG、把应用拖进「应用程序」后直接打开即可，不需要右键打开或 `xattr` 去隔离。v0.2.11 及更早的 DMG 仍是临时签名、未公证。已有用户在 M5 Pro 上运行，并据其反馈在 0.2.11 修复了显卡识别和 Python 版本问题。Metal 推理由上游 Strata 引擎提供，推理速度与模型支持以上游为准。
+
+当前限制：
+
+- 引擎固定使用上游预编译包 `strata-engine-0.1.47-macos-arm64-metal.tar.gz`，在上游 [#4634](https://github.com/Niko1221/Strata/issues/4634) 修复前不升级到更新的 Mac 引擎。
+- 上游没有 DeepSeek-V4.1-Flash 的 Mac 引擎，Mac 上不能运行该模型。
+- 不提供 Intel Mac 版。
 
 - 手工安装文件为 `Strata.Manager_<version>_aarch64.dmg`。官网下载按钮只在该发布**实际包含**这个文件时启用。
 - 应用内更新（若启用）使用 `Strata.Manager_<version>_aarch64.app.tar.gz`；`latest.json` 的 `darwin-aarch64` 指向该归档，不指向 DMG。
 - 签名在 CI（`macos-15`）中完成：导入 Developer ID Application 证书，启用硬化运行时（hardened runtime）签名应用和后台 `strata-supervisor`，用 App Store Connect API key 公证 `.app` 并 staple，再把已 staple 的应用放进 DMG、用 Developer ID 签名 DMG（DMG 本身不单独公证），再用 `codesign`、`stapler validate`、`spctl` 检查后才上传。没有证书的 fork 或 PR 构建回退为临时（ad-hoc）签名，本仓库可发布的构建缺少证书或公证凭据时直接失败。
 - 从临时签名的旧版升级到签名版后，macOS 会把它视为签名身份不同的应用：首次读取钥匙串里保存的凭据时可能弹窗询问，选「始终允许」即可；之前给旧版授予的系统权限（如有）可能需要重新授予。
 - **不提供** Intel（`x86_64-apple-darwin`）安装包。上游 Strata Metal 面向 Apple Silicon。
-- **DMG 仍不含引擎。** 第二期起，Manager 在 Apple Silicon 上可下载并校验上游 [v0.2.2](https://github.com/Niko1221/Strata/releases/tag/v0.2.2) 预制包 `strata-engine-0.1.47-macos-arm64-metal.tar.gz`（应用内 SHA256，并逐个文件核对包内签名清单；不附带 SHA256SUMS），也可选用已有本地 Strata/`engine` 或 `build-metal` 目录。`./setup.sh` 源码构建仍可手动按 [docs/MAC.md](https://github.com/Niko1221/Strata/blob/main/docs/MAC.md) 操作，Manager 暂不自动调用。真机推理验收仍待进行。
-- `Info.plist` 最低系统版本为 15.0。CI 本身只证明 runner 能编译并打包；真机上的运行情况以上面的用户反馈为准，Metal 推理仍未验收。
+- **DMG 仍不含引擎。** 第二期起，Manager 在 Apple Silicon 上可下载并校验上游 [v0.2.2](https://github.com/Niko1221/Strata/releases/tag/v0.2.2) 预制包 `strata-engine-0.1.47-macos-arm64-metal.tar.gz`（应用内 SHA256，并逐个文件核对包内签名清单；不附带 SHA256SUMS），也可选用已有本地 Strata/`engine` 或 `build-metal` 目录。`./setup.sh` 源码构建仍可手动按 [docs/MAC.md](https://github.com/Niko1221/Strata/blob/main/docs/MAC.md) 操作，Manager 暂不自动调用。
+- `Info.plist` 最低系统版本为 15.0。CI 本身只证明 runner 能编译并打包；真机上的运行情况以用户反馈为准。
 - 能识别 Apple 芯片显卡：显示芯片名、GPU 核数和 Metal 版本，统一内存只计算一次，并显示 GPU 最多可用的部分（读 Metal 的 `recommendedMaxWorkingSetSize`）。
 - macOS 自带的 `/usr/bin/python3` 是 3.9，达不到 Strata 要求的 3.10+。引导页和 Strata 页会提供「一键安装 Python」：把 python-build-standalone 的 CPython 3.12.15 装到应用目录，按官方字节数和 SHA-256 校验，不需要管理员权限，不改 PATH，也不碰系统或 Homebrew 的 Python。
 - 窗口使用 macOS 原生的红黄绿按钮（左上角）和原生菜单栏（编辑菜单支持 Cmd+C / Cmd+V；Cmd+Q 退出界面，后台服务保持运行；Cmd+W 关闭窗口；Cmd+M 最小化）。Windows / Linux 仍是自绘标题栏。
@@ -79,7 +85,7 @@ pnpm desktop 启动完整桌面应用和后台。pnpm dev 只运行前端，不�
 
 ## 支持范围
 
-- 已发布稳定安装包仍以 Windows/Linux x64 为主。macOS（Apple Silicon）DMG 为**实验包**（v0.2.12 起已签名并公证），随含该资产的版本标签发布；不提供 Intel 包。**不要**假定 DMG 已含可用 Metal 引擎。模型、硬件、图像和 API 能力以 Strata 运行时与具体模型为准。
+- 已发布安装包面向 Windows x64、Linux x64 与 macOS（Apple Silicon）。Mac DMG 已签名并经 Apple 公证；不提供 Intel 包。**不要**假定 DMG 已含可用 Metal 引擎。模型、硬件、图像和 API 能力以 Strata 运行时与具体模型为准。
 - 当前源码实现全局 Strata 管理与匹配的 Windows x64 ZIP 引擎更新、已有模型自动展示、图形化/JSON 运行配置、服务控制、聊天、持久化元数据统计和完整用途场景调优。已发布包以对应版本说明为准；截图使用示例数据，不代表实机模型性能。
 - 稳定版通过 `latest` 更新通道提供更新；预览版仅手工下载和安装，不替换稳定通道。
 - Windows CI 门禁包含静默安装、桌面启动、私有后台 IPC、正常关闭和卸载；已通过的历史 revision 见 [VERIFICATION](VERIFICATION.md)。

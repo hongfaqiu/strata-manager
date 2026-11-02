@@ -308,6 +308,7 @@ fn linux_picks_the_package_by_detected_gpu_unless_the_engine_already_says() {
         nvidia_driver: Some("580.95.05".into()),
         nvidia_caps: vec![(8, 9)],
         amd_gfx: vec![],
+        intel_discrete: false,
     };
     let halo = || gpu_select::GpuProbe {
         amd_gfx: vec!["gfx1151".into()],
@@ -546,6 +547,7 @@ fn windows_first_install_picks_the_cuda_package_the_nvidia_card_runs() {
         nvidia_driver: driver.map(str::to_owned),
         nvidia_caps: caps.to_vec(),
         amd_gfx: amd.iter().map(|g| (*g).to_owned()).collect(),
+        intel_discrete: false,
     };
     let choose = |probe: gpu_select::GpuProbe| {
         choose_asset_with(&info, temp.path(), None, &move || probe.clone())
@@ -622,11 +624,13 @@ fn windows_first_install_picks_hip_for_an_amd_only_computer() {
         nvidia_driver: Some("581.57".into()),
         nvidia_caps: vec![(8, 9)],
         amd_gfx: vec![],
+        intel_discrete: false,
     };
     let mixed = || gpu_select::GpuProbe {
         nvidia_driver: Some("581.57".into()),
         nvidia_caps: vec![(8, 9)],
         amd_gfx: vec!["gfx1036".into()],
+        intel_discrete: false,
     };
     for probe in [
         &rtx as &dyn Fn() -> gpu_select::GpuProbe,

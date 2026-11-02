@@ -17,6 +17,10 @@ export interface CatalogQuantInfo {
   qualityLoss?: string;
   /** GB of routed experts (dsv41_fit ISTA_SETS[*].experts_gb): all of them fit in RAM at experts + 9 GB. */
   expertsGB?: number;
+  /** Strata release (setup.py PRODUCT_VERSION) whose installer first takes this quant; hidden for an older or unknown release. */
+  minRelease?: string;
+  /** What upstream says of the quality when it has no measured perplexity (dsv41_fit ISTA_SETS[*].quality, release notes). */
+  qualityNote?: { zh: string; en: string };
 }
 export interface CatalogModel {
   id: string;
@@ -41,7 +45,7 @@ export interface CatalogModel {
 }
 
 const source = `https://github.com/Niko1221/Strata/blob/${UPSTREAM_REVISION}/setup.py`;
-const DEEPSEEK41_SOURCE = 'https://github.com/Niko1221/Strata/blob/v0.2.6/setup.py';
+const DEEPSEEK41_SOURCE = 'https://github.com/Niko1221/Strata/blob/v0.2.9/setup.py';
 const snapshotDate = '2026-10-19';
 export const MODEL_CATALOG: CatalogModel[] = [
   { id: 'qwen', family: 'qwen', name: 'Qwen3.8-Flash-Next', quants: ['Q2_0', 'IQ2_XS', 'IQ3_XXS', 'IQ3_S'], images: true, source, snapshotDate,
@@ -68,12 +72,18 @@ export const MODEL_CATALOG: CatalogModel[] = [
   // downloadGB: four shards + the shared Engram table, meta and DSpark drafter (downloaded once for every set) / 1e9.
   // ramGB: ISTA_SETS[*].ram_ok_gb (below it the experts are read from the SSD: slow, still allowed). Text only.
   // Context: 8K on 0.2.5/0.2.6; Strata 0.2.7 (dsv41_context.py) takes 8K to 1M, 8K stays the default.
-  { id: 'deepseek41', family: 'deepseek41', name: 'DeepSeek-V4.1-Flash', quants: ['IST-DAS-2.00bpw', 'IST-DAS-1.75bpw', 'IST-DAS-2.25bpw'], images: false,
+  // Strata 0.2.9 (#4814): Unsloth's UD-IQ1_S / UD-IQ1_M (setup.py DSV41_UD_FILES, dsv41_fit ISTA_SETS["UD-IQ1_*"]): shards 1-4 + the
+  // shared Engram and DSpark (their shard 5 is the Engram; no metadata shard of their own). recommend() never returns them.
+  { id: 'deepseek41', family: 'deepseek41', name: 'DeepSeek-V4.1-Flash', quants: ['IST-DAS-2.00bpw', 'IST-DAS-1.75bpw', 'IST-DAS-2.25bpw', 'UD-IQ1_S', 'UD-IQ1_M'], images: false,
     source: DEEPSEEK41_SOURCE, snapshotDate: '2026-10-26', minRelease: '0.2.5', fixedContext: 8192, contextChoicesRelease: '0.2.7',
     quantInfo: {
       'IST-DAS-2.00bpw': { downloadGB: 256.8, ramGB: 40, expertsGB: 132.07, qualityLoss: '+15.5%' },
       'IST-DAS-1.75bpw': { downloadGB: 239.3, ramGB: 34, expertsGB: 114.56, qualityLoss: '+21%' },
       'IST-DAS-2.25bpw': { downloadGB: 273.8, ramGB: 44, expertsGB: 149.06, qualityLoss: '+7.3%', manualOnly: true },
+      'UD-IQ1_S': { downloadGB: 241.0, ramGB: 36, expertsGB: 115.23, manualOnly: true, minRelease: '0.2.9',
+        qualityNote: { zh: 'Unsloth 最小的动态量化，与 IST-DAS 1.75 bpw 同等大小；上游未测困惑度，任务测试 61 项答对 53 项（IST-DAS 2.25 为 56 项），尚未在 Windows 和 Strix Halo 上测试。', en: 'Unsloth\'s smallest dynamic quant, the size of IST-DAS 1.75 bpw; upstream has not measured its perplexity; 53 of 61 test tasks right (IST-DAS 2.25: 56); not yet tested on Windows or Strix Halo.' } },
+      'UD-IQ1_M': { downloadGB: 258.4, ramGB: 40, expertsGB: 132.21, manualOnly: true, minRelease: '0.2.9',
+        qualityNote: { zh: 'Unsloth 的下一档动态量化，与 IST-DAS 2.00 bpw 同等大小；上游未测困惑度，任务测试 61 项答对 53 项（IST-DAS 2.25 为 56 项），尚未在 Windows 和 Strix Halo 上测试。', en: 'Unsloth\'s next dynamic quant, the size of IST-DAS 2.00 bpw; upstream has not measured its perplexity; 53 of 61 test tasks right (IST-DAS 2.25: 56); not yet tested on Windows or Strix Halo.' } },
     } },
 ];
 
@@ -99,6 +109,16 @@ export function versionAtLeast(have: string | null | undefined, want: string): b
     if (x !== y) return x > y;
   }
   return true;
+}
+
+/** A catalog model with only the quants this Strata release's installer takes (quantInfo minRelease; all of them when no runtime is chosen). */
+export function catalogQuantsForRelease<T extends CatalogModel>(model: T, releaseVersion?: string | null, runtimeChosen = true): T {
+  if (!runtimeChosen) return model;
+  const quants = model.quants.filter(quant => {
+    const need = model.quantInfo[quant]?.minRelease;
+    return !need || versionAtLeast(releaseVersion, need);
+  });
+  return quants.length === model.quants.length ? model : { ...model, quants };
 }
 
 /** Strata release gate for a family (minRelease): null when none; ok=false when the release is unknown or older. */
