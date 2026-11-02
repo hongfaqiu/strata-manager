@@ -730,13 +730,14 @@ mod tests {
         assert!(!intel_discrete_name("Intel(R) UHD Graphics 770"));
         assert!(!intel_discrete_name("AMD Radeon RX 7900 XTX"));
         let root = tempfile::tempdir().unwrap();
-        let pci = root.path().join("pci/0000:03:00.0");
-        fs::create_dir_all(&pci).unwrap();
-        fs::write(pci.join("vendor"), "0x8086\n").unwrap();
-        let drm = root.path().join("drm/card1");
-        fs::create_dir_all(&drm).unwrap();
+        // sysfs layout; a PCI address is not a valid file name on Windows.
         #[cfg(unix)]
         {
+            let pci = root.path().join("pci/0000:03:00.0");
+            fs::create_dir_all(&pci).unwrap();
+            fs::write(pci.join("vendor"), "0x8086\n").unwrap();
+            let drm = root.path().join("drm/card1");
+            fs::create_dir_all(&drm).unwrap();
             std::os::unix::fs::symlink(&pci, drm.join("device")).unwrap();
             assert!(drm_intel_discrete(&root.path().join("drm")));
         }
