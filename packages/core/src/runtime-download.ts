@@ -62,12 +62,29 @@ function validUrl(value: string): boolean {
   } catch { return false; }
 }
 
+/** Package name without its version, so the same platform, backend and variant match across releases. */
+const assetKind = (name: string) => /-\d+\.\d+\.\d+(?=[-.])/.test(name) ? name.replace(/-\d+\.\d+\.\d+(?=[-.])/, '-') : undefined;
+
+/**
+ * A saved package name against another release (#194): the exact package, the same kind of package in
+ * this release (a 0.1.47 `windows-x86_64-hip-rdna3` choice follows to 0.1.55), or none. `stale` marks a
+ * saved name that is not in this release, so callers can say why the selection changed.
+ */
+export function runtimeSavedAsset(savedName: string | undefined, release: Pick<RuntimeUpdateInfo, 'assets'>): { asset?: RuntimeReleaseAsset; stale: boolean } {
+  if (!savedName) return { stale: false };
+  const exact = release.assets.find(item => item.name === savedName);
+  if (exact) return { asset: exact, stale: false };
+  const kind = assetKind(savedName);
+  const same = kind ? release.assets.filter(item => assetKind(item.name) === kind) : [];
+  return { ...(same.length === 1 ? { asset: same[0] } : {}), stale: true };
+}
+
 /** Resolve against the current official asset; stale custom sources require reselection. */
 export function resolveRuntimeDownloadPreferences(value: RuntimeDownloadPreferences, release: RuntimeUpdateInfo, automaticAssetName?: string): {
   assetName?: string; download: RuntimeZipDownloadOptions; requiresSelection: boolean;
 } {
   const preferences = normalize(value);
-  const asset = release.assets.find(item => item.name === (preferences.assetName || automaticAssetName));
+  const asset = preferences.assetName ? runtimeSavedAsset(preferences.assetName, release).asset : release.assets.find(item => item.name === automaticAssetName);
   const assetName = asset?.name;
   if (preferences.mode === 'official') return { assetName, download: {}, requiresSelection: false };
   if (preferences.mode === 'auto') return { assetName, download: { source: 'auto' }, requiresSelection: false };
