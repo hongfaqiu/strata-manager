@@ -369,8 +369,23 @@ fn prepare_plan(
         data = root.join(data);
     }
     if family == dsv41::FAMILY {
-        if settings.local_gguf_directory.is_some() || settings.local_data_directory.is_some() {
-            return Err("DeepSeek-V4.1-Flash 暂不支持「使用已有模型」；请用下载准备".into());
+        if let Some(directory) = &settings.local_gguf_directory {
+            // Strata 0.2.9 `--gguf-dir`: the set's files are used where they are; the shared files and the pack go
+            // under the data folder (a containing models/ tree's parent, like the other families).
+            let containing = directory
+                .ancestors()
+                .find(|p| p.file_name().is_some_and(|name| name == "models"))
+                .and_then(Path::parent)
+                .map(Path::to_owned);
+            let data = settings
+                .local_data_directory
+                .clone()
+                .or(containing)
+                .unwrap_or(data);
+            return dsv41::local_plan(root, data, quant, directory);
+        }
+        if settings.local_data_directory.is_some() {
+            return Err("DeepSeek-V4.1-Flash 不使用 MTP 草稿层（它自带 DSpark 草稿模型）；请清空 MTP 目录 / DeepSeek-V4.1-Flash does not use an MTP layer (it has its own DSpark drafter); clear the MTP folder".into());
         }
         return dsv41::plan(root, data, quant);
     }
@@ -782,6 +797,20 @@ pub(crate) fn plan_with_local(
     let (_, names, _, _) = model_spec(family, quant)?;
     settings.reusable_directory = configured_model_directory(profile, &names)?;
     if let Some(local) = local {
+        if family == dsv41::FAMILY {
+            // setup.py takes DeepSeek files already here (four-shard, re-published shard 1, six-shard, Unsloth's UD-IQ1)
+            // with --gguf-dir from Strata 0.2.9 on.
+            let release = crate::discovery::release_version(
+                &root,
+                crate::discovery::runtime_version(&root, None).as_deref(),
+            );
+            if !crate::engine_version_at_least(release.as_deref(), &dsv41::LOCAL_RELEASE) {
+                return Err(format!(
+                    "DeepSeek-V4.1-Flash 使用已有模型需要 Strata 0.2.9 或更新版本（当前：{0}）；请先更新 Strata / Using DeepSeek-V4.1-Flash files you already have needs Strata 0.2.9 or newer (current: {0}); update Strata first",
+                    release.as_deref().unwrap_or("未知 / unknown")
+                ));
+            }
+        }
         crate::local_model::setup_group(local, family, quant)?;
         let directory = PathBuf::from(local.gguf_directory.trim());
         let data = crate::local_model::setup_mtp_data(local)?;

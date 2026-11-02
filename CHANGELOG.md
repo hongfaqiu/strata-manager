@@ -13,6 +13,7 @@ Maintain both languages for each version. Move unreleased changes into the actua
 - **后端选「自动」时也提示 Windows AMD 仅支持单卡**：此前只有手动选 HIP 才显示。现在 Windows 上选了多张 AMD 显卡时同样提示。
 - **「12 GB N 卡提速」改名「小显存（≤12 GB）N 卡提速」，并写明可能轻微降低准确度**；默认仍关闭。
 - **官网、README 与下载指南把 macOS（Apple Silicon）列为正式支持平台**：去掉「实验」标注，写明已签名并经 Apple 公证，以及当前限制：引擎使用上游预编译 Metal 包，上游 #4634 修复前固定 0.1.47；Mac 不支持 DeepSeek-V4.1-Flash；不提供 Intel Mac 版。
+- **DeepSeek V4.1 Flash 适配 Strata 0.2.9**（上游 #4814）：磁盘检查和「使用已有模型」认得 0.2.9 的 6 分片 ISTA 布局（与旧的 4 分片布局都按上游固定大小核对，已有的文件就地使用、不重复计入下载）。新增 Unsloth 1-bit 版本 UD-IQ1_S（约 241 GB）和 UD-IQ1_M（约 258 GB），只在 Strata 0.2.9 及以上显示、只能手动选择、不会被自动推荐；已有 ISTA 版本时可复用其 Engram，少下载约 111 GB。说明里写明上游 61 题测试成绩（UD-IQ1_S、UD-IQ1_M 各 53，ISTA 2.25 为 56），以及尚未在 Windows 和 Strix Halo 上测过。DeepSeek 不用 MTP 文件，「使用已有模型」不再要求选择。Ryzen AI Max（Strix Halo）在 Linux 上暂无 DeepSeek 引擎包，下载页和引擎选择会直接说明，建议在 Windows 上运行 DeepSeek 或在 Linux 上使用 Qwen。
 
 ### English
 
@@ -22,6 +23,7 @@ Maintain both languages for each version. Move unreleased changes into the actua
 - **The Windows AMD single-GPU notice also shows with the Automatic backend**: it used to appear only when HIP was chosen. It now also shows on Windows when several AMD GPUs are selected.
 - **"Faster on 12 GB NVIDIA" is renamed "Faster on small-VRAM NVIDIA (≤12 GB)" and notes that accuracy may drop slightly**; it stays off by default.
 - **The website, README and download guide list macOS (Apple Silicon) as a supported platform**: the "experimental" label is gone. They say the DMG is signed and notarized by Apple and list the current limits: the engine is the upstream prebuilt Metal package, pinned to 0.1.47 until upstream #4634 is fixed; DeepSeek-V4.1-Flash is not available on Mac; there is no Intel Mac build.
+- **DeepSeek V4.1 Flash support for Strata 0.2.9** (upstream #4814): the disk check and "Use existing model" now recognise 0.2.9's six-shard ISTA layout next to the old four-shard one, check both against upstream's pinned sizes, and use files already on disk instead of counting them as downloads. The Unsloth 1-bit sets UD-IQ1_S (about 241 GB) and UD-IQ1_M (about 258 GB) are offered on Strata 0.2.9 and later only, as manual choices that are never recommended automatically; with an ISTA set already present their Engram is reused, saving about 111 GB. Their notes give upstream's 61-task results (53 for UD-IQ1_S and UD-IQ1_M, 56 for ISTA 2.25) and say they are untested on Windows and Strix Halo. DeepSeek uses no MTP file, so "Use existing model" no longer asks for one. Ryzen AI Max (Strix Halo) has no DeepSeek engine package on Linux yet; the download page and engine selection now say so and suggest running DeepSeek on Windows or Qwen on Linux.
 
 ## [0.2.35] - 2026-11-01
 
