@@ -5,6 +5,24 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **修复 Windows AMD 显卡更新引擎时默认选中旧版安装包（#194）**：下载设置里保存过旧版本的具体安装包（如 `strata-engine-0.1.47-windows-x86_64-hip-rdna3.tar.gz`）时，更新弹窗直接沿用这个名字，新版本里没有这个文件，下拉框显示旧包、确认按钮不可用。现在会换成目标版本的同类包，并提示已更换；目标版本没有同类包时改为自动匹配并说明原因。
+- **切回旧引擎时共享聊天设置不再被清空**：上游 v0.2.9 及更早的引擎只要在 `.shared-settings.json` 里遇到一个不认识的设置项，就会在启动时清空全部共享聊天设置（上游 #4934）。复制 `.shared-settings.json` 到这类引擎时只保留它认识的 8 项（推理强度、温度、top_p、top_k、seed、最大输出、思考预算、速度投影）；能接受新设置项的引擎和无法解析的文件保持原样。
+- **Intel Arc 独显不再被认成 AMD**：Intel 独显旁边有不受支持的 AMD 核显时，引擎更新以前会报 AMD 的错误。现在识别 Intel 独显并忽略这块核显，直接说明引擎更新暂不提供 Intel（SYCL）包、可在安装页选 Intel（SYCL）后端重装。
+- **后端选「自动」时也提示 Windows AMD 仅支持单卡**：此前只有手动选 HIP 才显示。现在 Windows 上选了多张 AMD 显卡时同样提示。
+- **「12 GB N 卡提速」改名「小显存（≤12 GB）N 卡提速」，并写明可能轻微降低准确度**；默认仍关闭。
+- **官网、README 与下载指南把 macOS（Apple Silicon）列为正式支持平台**：去掉「实验」标注，写明已签名并经 Apple 公证，以及当前限制：引擎使用上游预编译 Metal 包，上游 #4634 修复前固定 0.1.47；Mac 不支持 DeepSeek-V4.1-Flash；不提供 Intel Mac 版。
+
+### English
+
+- **Fixed engine updates on Windows AMD defaulting to an old package (#194)**: when download settings had saved a specific package from an older release (such as `strata-engine-0.1.47-windows-x86_64-hip-rdna3.tar.gz`), the update dialog reused that name, which the new release does not have, so the list showed the old package and Confirm stayed disabled. It now switches to the same kind of package in the target release and says so; if the target has none, it falls back to automatic matching and explains why.
+- **Shared chat settings are no longer wiped when switching back to an older engine**: upstream engines up to v0.2.9 drop all shared chat settings at startup when `.shared-settings.json` has a single key they do not know (upstream #4934). When `.shared-settings.json` is copied to such an engine, only the 8 keys it knows are kept (reasoning effort, temperature, top_p, top_k, seed, max tokens, reasoning budget, speed projection). Engines that accept new keys, and files that cannot be parsed, are left unchanged.
+- **Intel Arc discrete GPUs are no longer treated as AMD**: with an unsupported AMD iGPU beside an Intel discrete GPU, engine updates reported an AMD error. The Intel GPU is now recognised, the iGPU is ignored, and the message says engine updates do not offer the Intel (SYCL) package yet and that you can reinstall with the Intel (SYCL) backend on the setup page.
+- **The Windows AMD single-GPU notice also shows with the Automatic backend**: it used to appear only when HIP was chosen. It now also shows on Windows when several AMD GPUs are selected.
+- **"Faster on 12 GB NVIDIA" is renamed "Faster on small-VRAM NVIDIA (≤12 GB)" and notes that accuracy may drop slightly**; it stays off by default.
+- **The website, README and download guide list macOS (Apple Silicon) as a supported platform**: the "experimental" label is gone. They say the DMG is signed and notarized by Apple and list the current limits: the engine is the upstream prebuilt Metal package, pinned to 0.1.47 until upstream #4634 is fixed; DeepSeek-V4.1-Flash is not available on Mac; there is no Intel Mac build.
+
 ## [0.2.35] - 2026-11-01
 
 ### 中文
