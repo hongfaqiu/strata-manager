@@ -18,7 +18,7 @@
 <p>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-287e71" alt="MIT license" /></a>
 <img src="https://img.shields.io/badge/desktop-Tauri%202-24c8d8" alt="Tauri 2 desktop" />
-<img src="https://img.shields.io/badge/platforms-Windows%20%2F%20Linux%20x64%20%C2%B7%20macOS%20ARM%20experimental-51606f" alt="Windows and Linux x64; macOS Apple Silicon experimental" />
+<img src="https://img.shields.io/badge/platforms-Windows%20%2F%20Linux%20x64%20%C2%B7%20macOS%20Apple%20Silicon-51606f" alt="Windows and Linux x64; macOS Apple Silicon" />
 <a href="https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml"><img src="https://github.com/hongfaqiu/strata-manager/actions/workflows/ci.yml/badge.svg" alt="Build and test status" /></a>
 </p>
 
@@ -26,7 +26,7 @@
 
 **Strata Manager is an open-source desktop management app for [Niko1221/Strata](https://github.com/Niko1221/Strata), a local large language model inference engine.** It brings guided first setup, model downloads and configurations across Strata versions, service controls, chat, API and agent connections with online verification, usage statistics, monitoring, tuning and benchmarking with an opt-in public leaderboard into one workspace. Existing supported model weights stay in place.
 
-**Supports Strata 0.2.0**: installs and updates its signed `.tar.gz` engine packages on Windows and, from v0.2.9, Linux x86_64 in one click; a new engine is test-started first and rolled back automatically if it fails. Earlier ZIP releases keep working.
+**Supports Strata 0.2.0**: installs and updates its signed `.tar.gz` engine packages on Windows and, from v0.2.9, Linux x86_64 in one click, and installs the upstream prebuilt Metal engine on Apple Silicon Macs; a new engine is test-started first and rolled back automatically if it fails. Earlier ZIP releases keep working.
 
 [![Strata Manager overview: service controls, GPU and system memory map, generation speed and recent requests](docs/screenshots/product-cover.en.webp)](https://raw.githubusercontent.com/hongfaqiu/strata-manager/main/docs/screenshots/product-cover.en.webp)
 
@@ -85,13 +85,13 @@ Choose a package from the [latest release](https://github.com/hongfaqiu/strata-m
 | **Windows x64** | NSIS installer (`.exe`) | Requires WebView2. [Windows installation](docs/DOWNLOAD.en.md#install-on-windows). |
 | **Linux x64** | AppImage or DEB | Built in Ubuntu 22.04 CI. [Linux installation and support scope](docs/DOWNLOAD.en.md#install-on-linux). |
 | **Linux x64 headless server (experimental)** | `Strata.Manager.Server_<version>_amd64.tar.gz` or `.deb` | For servers without a desktop; use it in a browser. Not covered by the desktop auto-updater. [Server guide](docs/SERVER.en.md). |
-| **macOS Apple Silicon** | DMG (experimental) | Developer ID signed and notarized from v0.2.12 (earlier DMGs are ad-hoc signed); download it when a release lists it. The DMG has no engine; the app can download and verify the upstream prebuilt Metal engine package (preview: Metal inference not yet validated on real Mac hardware). It detects the Apple GPU and unified memory and can install Python 3.12 in one click. Intel not packaged. [macOS notes](docs/DOWNLOAD.en.md#macos-apple-silicon-experimental). |
+| **macOS Apple Silicon** | DMG | Developer ID signed and notarized by Apple. The DMG has no engine; the app downloads and verifies the upstream prebuilt Metal engine package, detects the Apple GPU and unified memory, and can install Python 3.12 in one click. Limits: the engine is pinned to 0.1.47 until upstream [#4634](https://github.com/Niko1221/Strata/issues/4634) is fixed; DeepSeek-V4.1-Flash is not available on Mac; no Intel Mac build. [macOS notes](docs/DOWNLOAD.en.md#macos-apple-silicon). |
 
 1. **Prepare the runtime.** Open Strata to inspect an existing installation, or follow Getting started. An existing supported runtime does not need reinstalling.
 2. **Choose a model and configuration.** My models lists discovered weights. Add a search directory when needed, select a configuration, or download new weights.
 3. **Choose Use.** Follow environment checks and loading until Model ready, then chat or copy the local API address into another application.
 
-The desktop installer contains Manager and its background process. Hardware and driver requirements depend on Strata and the model. Published stable installers target Windows x64 and Linux x64. macOS Apple Silicon DMGs are **experimental** (Developer ID signed and notarized from v0.2.12); the DMG alone does not provide Metal inference. The app can install the upstream prebuilt Metal engine package (preview; Metal inference not yet validated on real Mac hardware), or you can build it with upstream `./setup.sh`. If macOS only has its built-in Python 3.9, the app can install Python 3.12 for itself in one click. Intel Macs are not packaged. Detailed steps and package limitations are in the [download guide](docs/DOWNLOAD.en.md); everyday use is covered in the [user guide](docs/USER_GUIDE.en.md).
+The desktop installer contains Manager and its background process. Hardware and driver requirements depend on Strata and the model. Published installers target Windows x64, Linux x64 and macOS Apple Silicon. The Mac DMG is Developer ID signed and notarized; the DMG alone does not provide Metal inference. The app installs the upstream prebuilt Metal engine package (pinned to 0.1.47 until upstream #4634), or you can build it with upstream `./setup.sh`. DeepSeek-V4.1-Flash is not available on Mac. If macOS only has its built-in Python 3.9, the app can install Python 3.12 for itself in one click. Intel Macs are not packaged. Detailed steps and package limitations are in the [download guide](docs/DOWNLOAD.en.md); everyday use is covered in the [user guide](docs/USER_GUIDE.en.md).
 
 ## Explore the workspace
 

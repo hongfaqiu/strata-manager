@@ -15,7 +15,7 @@ The README, website screenshots and user guide describe the current source. Inst
 | Windows x64 | [NSIS installer (.exe)](https://github.com/hongfaqiu/strata-manager/releases/latest) | Requires WebView2; installation steps below. |
 | Linux x64 | [AppImage / DEB](https://strata-manager.cosfoc.com/en/#get-started) | Built in Ubuntu 22.04 CI; system installation and GPU scope below. |
 | Linux x64 headless server (experimental) | [`Strata.Manager.Server_<version>_amd64.tar.gz` / `.deb`](https://strata-manager.cosfoc.com/en/#get-started) | For servers without a desktop, used in a browser; see the [server guide](SERVER.en.md) |
-| macOS Apple Silicon | [DMG](https://strata-manager.cosfoc.com/en/#get-started) | **Experimental.** The current published stable release may not list this file yet; download only when `*_aarch64.dmg` appears. See notes below. |
+| macOS Apple Silicon | [DMG](https://strata-manager.cosfoc.com/en/#get-started) | Signed and notarized by Apple. The engine is the upstream prebuilt Metal package (pinned to 0.1.47 until upstream #4634 is fixed); DeepSeek-V4.1-Flash is not available; no Intel Mac build. See notes below. |
 
 Update signature files are for updater verification; use the `.exe`, `.AppImage` or `.deb` for initial installation, or the `.dmg` once a release actually lists it.
 
@@ -49,17 +49,23 @@ Download the Linux x64 `.deb` file from the [latest stable release](https://gith
 
 For Ubuntu servers without a desktop, use the release assets `Strata.Manager.Server_<version>_amd64.tar.gz` or `.deb`. They run `strata-manager-server`, which listens on `127.0.0.1:8787` by default, creates an access token on first run and serves the same interface in a browser; a systemd unit is included. Server packages have no updater signature and are not updated by the desktop auto-updater; upgrade by replacing the package. See the [server guide](SERVER.en.md) for installation and remote access.
 
-## macOS (Apple Silicon, experimental)
+## macOS (Apple Silicon)
 
-From v0.2.12, the DMG and the in-app update archive are **signed with a Developer ID and notarized by Apple** (the notarization ticket is stapled to the `.app`, and the Developer ID signed DMG contains that stapled app). Open the DMG, drag the app to Applications and open it normally; no context-menu open or `xattr` quarantine removal is needed. DMGs for v0.2.11 and earlier remain ad-hoc signed and un-notarized. A user runs the app on an M5 Pro, and their reports led to the GPU detection and Python fixes in 0.2.11; Manager still does **not** claim validated Metal model inference on Mac hardware.
+From v0.2.12, the DMG and the in-app update archive are **signed with a Developer ID and notarized by Apple** (the notarization ticket is stapled to the `.app`, and the Developer ID signed DMG contains that stapled app). Open the DMG, drag the app to Applications and open it normally; no context-menu open or `xattr` quarantine removal is needed. DMGs for v0.2.11 and earlier remain ad-hoc signed and un-notarized. A user runs the app on an M5 Pro, and their reports led to the GPU detection and Python fixes in 0.2.11. Metal inference comes from the upstream Strata engine; speed and model support follow upstream.
+
+Current limits:
+
+- The engine is the upstream prebuilt package `strata-engine-0.1.47-macos-arm64-metal.tar.gz`; Manager does not move Macs to a newer engine until upstream [#4634](https://github.com/Niko1221/Strata/issues/4634) is fixed.
+- Upstream has no Mac engine for DeepSeek-V4.1-Flash, so that model does not run on Mac.
+- There is no Intel Mac build.
 
 - The manual installer is `Strata.Manager_<version>_aarch64.dmg`. The website button enables only when that published release actually contains the file.
 - In-app updates (when enabled) use `Strata.Manager_<version>_aarch64.app.tar.gz`. The `darwin-aarch64` entry in `latest.json` points at that archive, not the DMG.
 - Signing happens in CI (`macos-15`): it imports the Developer ID Application certificate, signs the app and the `strata-supervisor` background process with the hardened runtime, notarizes the `.app` with an App Store Connect API key and staples it, puts the stapled app into the DMG and signs the DMG with the Developer ID (the DMG itself is not notarized separately), then checks them with `codesign`, `stapler validate` and `spctl` before uploading. Fork and PR builds without the certificate fall back to ad-hoc signing; release-capable builds in this repository fail if the certificate or notarization credentials are missing.
 - After upgrading from an ad-hoc signed build, macOS treats the signed app as a different signing identity: the first read of credentials saved in the Keychain may ask for permission (choose "Always Allow"), and system permissions granted to the old build, if any, may need to be granted again.
 - **Intel** (`x86_64-apple-darwin`) packages are **not** built. Upstream Strata Metal targets Apple Silicon.
-- **The DMG still does not bundle an engine.** From phase 2, on Apple Silicon Manager can download and verify the upstream [v0.2.2](https://github.com/Niko1221/Strata/releases/tag/v0.2.2) prebuilt package `strata-engine-0.1.47-macos-arm64-metal.tar.gz` (in-app SHA256 plus a per-file check against the signed manifest inside the package; we do not ship SHA256SUMS), or use an existing local Strata/`engine` or `build-metal` directory. A `./setup.sh` source build remains a manual option per [docs/MAC.md](https://github.com/Niko1221/Strata/blob/main/docs/MAC.md); Manager does not invoke it automatically. Real-device inference validation is still pending.
-- `Info.plist` sets the minimum system version to 15.0. CI by itself only shows that a `macos-15` runner can compile and package the app; real-device behavior is limited to the user reports above, and Metal inference is still unvalidated.
+- **The DMG still does not bundle an engine.** From phase 2, on Apple Silicon Manager can download and verify the upstream [v0.2.2](https://github.com/Niko1221/Strata/releases/tag/v0.2.2) prebuilt package `strata-engine-0.1.47-macos-arm64-metal.tar.gz` (in-app SHA256 plus a per-file check against the signed manifest inside the package; we do not ship SHA256SUMS), or use an existing local Strata/`engine` or `build-metal` directory. A `./setup.sh` source build remains a manual option per [docs/MAC.md](https://github.com/Niko1221/Strata/blob/main/docs/MAC.md); Manager does not invoke it automatically.
+- `Info.plist` sets the minimum system version to 15.0. CI by itself only shows that a `macos-15` runner can compile and package the app; real-device behavior follows user reports.
 - The Apple GPU is detected with its chip name, GPU core count and Metal version; unified memory is counted once, together with the share the GPU can use (read from Metal's `recommendedMaxWorkingSetSize`).
 - macOS ships Python 3.9 as `/usr/bin/python3`, below the 3.10+ Strata needs. The guide and the Strata page offer "Install Python": CPython 3.12.15 from python-build-standalone goes into the app folder, checked against the official byte count and SHA-256, with no administrator rights, no PATH change and no change to the system or Homebrew Python.
 - The window uses native macOS traffic-light buttons (top left) and a native menu bar (the Edit menu makes Cmd+C / Cmd+V work; Cmd+Q quits the interface while background services keep running; Cmd+W closes the window; Cmd+M minimizes). Windows and Linux keep the custom title bar.
@@ -79,7 +85,7 @@ pnpm desktop starts the complete desktop app and background process. pnpm dev ru
 
 ## Support scope
 
-- Published stable installers remain primarily Windows/Linux x64. The macOS (Apple Silicon) DMG is **experimental** (signed and notarized from v0.2.12) and ships only with tags that include that asset; Intel packages are not built. **Do not** assume the DMG already includes a working Metal engine. Models, hardware, image input and API capabilities depend on the Strata runtime and chosen model.
+- Published installers target Windows x64, Linux x64 and macOS (Apple Silicon). The Mac DMG is signed and notarized by Apple; Intel packages are not built. **Do not** assume the DMG already includes a working Metal engine. Models, hardware, image input and API capabilities depend on the Strata runtime and chosen model.
 - Current source implements global Strata management and matching Windows x64 ZIP engine updates, automatic local model listings, graphical/JSON runtime configuration, service controls, chat, persistent usage metadata and complete use-case tuning. Published packages have their own release notes; screenshot examples do not establish real-model performance.
 - Stable updates use the `latest` channel; previews remain manual downloads and do not replace that channel.
 - Windows CI gates cover silent installation, desktop startup, private background IPC, clean shutdown and uninstall; [VERIFICATION](VERIFICATION.md) records passing historical revisions.

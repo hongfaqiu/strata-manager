@@ -137,9 +137,13 @@ test('Demo speeds match real measurements (4080 SUPER ~100+/3200, 5090 200+/~500
   assert.ok(target && Number(target[1]) >= 100 && Number(target[1]) + Number(target[2]) <= 112, 'hero decode settles around 100–110 tok/s');
 });
 
-test('English download cards translate the macOS experimental label', async () => {
-  const english = renderHomepage(await read('website/index.html'), 'en');
-  assert.match(english, /Apple Silicon · Experimental/);
+test('macOS is a supported platform: no experimental label in either language', async () => {
+  const html = await read('website/index.html');
+  assert.match(html, /<h3>macOS <small>Apple Silicon<\/small><\/h3>/);
+  assert.match(html, /"operatingSystem": "Windows x64, Linux x64, macOS Apple Silicon"/);
+  assert.match(html, /pinned to 0\.1\.47 until upstream #4634/);
+  assert.doesNotMatch(html, /macOS[^<"，,]{0,40}(实验|experimental)/i);
+  const english = renderHomepage(html, 'en');
   const visible = english.replace(/data-[a-z-]*zh="[^"]*"/g, '').replace(/<script[\s\S]*?<\/script>/g, '');
   assert.doesNotMatch(visible, /实验/);
 });

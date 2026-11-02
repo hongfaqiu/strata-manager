@@ -47,8 +47,12 @@ export function RuntimeDownloadSettings({ language, desktop, release, releaseLoa
   const initialDraft = (): core.RuntimeDownloadPreferences => {
     const saved = preferences.data ?? core.RUNTIME_DOWNLOAD_DEFAULTS;
     const fixedSource = saved.mode === 'local' || saved.mode === 'mirror' && !saved.sourceId && !hasTemplate(saved.mirrorUrl);
-    if (!release || !fixedSource || saved.releaseVersion === version) return { ...saved };
-    return { ...saved, releaseVersion: version, ...(saved.mode === 'local' ? { localArchivePath: '' } : { mirrorUrl: '' }) };
+    // #194: a package saved for an older release follows to the same kind in this one, or back to automatic.
+    const assetName = release && saved.assetName ? core.runtimeSavedAsset(saved.assetName, release).asset?.name : saved.assetName;
+    const current = { ...saved, assetName };
+    if (!assetName) delete current.assetName;
+    if (!release || !fixedSource || saved.releaseVersion === version) return current;
+    return { ...current, releaseVersion: version, ...(saved.mode === 'local' ? { localArchivePath: '' } : { mirrorUrl: '' }) };
   };
   const selection = draft?.key === releaseKey ? draft.value : initialDraft();
   const selectedAsset = selection.assetName ? release?.assets.find(asset => asset.name === selection.assetName) : automaticAsset;

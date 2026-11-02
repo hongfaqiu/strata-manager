@@ -10,7 +10,7 @@ The full English README and real interface screenshots are maintained in [README
 
 This compatibility entry keeps existing English README links working.
 
-Packages are listed on the [latest release page](https://github.com/hongfaqiu/strata-manager/releases/latest). See the [full gallery](README.md#explore-the-workspace) for interface screenshots.
+Installers are published for Windows x64, Linux x64 and macOS (Apple Silicon, notarized DMG). Packages are listed on the [latest release page](https://github.com/hongfaqiu/strata-manager/releases/latest). See the [full gallery](README.md#explore-the-workspace) for interface screenshots.
 
 ## Friends
 
