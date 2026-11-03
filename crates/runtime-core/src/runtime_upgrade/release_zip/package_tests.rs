@@ -450,6 +450,53 @@ fn every_file_of_the_strata_022_engine_packages_is_allowed() {
 }
 
 #[test]
+fn every_file_of_the_strata_0_1_56_packages_is_allowed() {
+    let list = include_str!("../fixtures/engine-0.1.56-paths.txt");
+    let mut packages = HashSet::new();
+    let mut split = 0;
+    for line in list.lines().filter(|l| !l.starts_with('#')) {
+        let (package, path) = line.split_once(' ').unwrap();
+        packages.insert(package);
+        split += usize::from(path.starts_with("strata-split-"));
+        if package.starts_with("dsv41-") {
+            assert!(dsv41_file_allowed(path), "{package}: {path}");
+        } else {
+            assert!(engine_file_allowed(path), "{package}: {path}");
+        }
+    }
+    assert_eq!(packages.len(), 10);
+    assert_eq!(split, 11, "2 CUDA 13 + 3 each for Halo, RX 7900 and RX 9070");
+}
+
+#[test]
+fn only_root_level_split_engines_with_a_lane_count_are_allowed() {
+    for name in [
+        "strata-split-2-sm120",
+        "strata-split-2-sm86",
+        "strata-split-4-amd",
+        "strata-split-8",
+        "strata-split-2-sm120.exe",
+    ] {
+        assert!(engine_file_allowed(name), "{name}");
+    }
+    for name in [
+        "strata-split-",
+        "strata-split-x-amd",
+        "strata-split-123-amd",
+        "strata-split-2-",
+        "strata-split-2-AMD",
+        "strata-split-2-amd-x",
+        "strata-split-2-amd.sh",
+        "strata-split-2/x",
+        "strata-split-../x",
+        "bin/strata-split-2-amd",
+        "strata-splitter",
+    ] {
+        assert!(!engine_file_allowed(name), "{name}");
+    }
+}
+
+#[test]
 fn strata_022_rx6000_packages_are_listed_and_picked_by_gpu() {
     let feed = engine_package::verify_feed(
         include_bytes!("../fixtures/strata-feed-v0.2.2.json"),

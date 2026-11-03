@@ -1270,6 +1270,7 @@ fn engine_file_allowed(relative: &str) -> bool {
     ) || lower.ends_with(".dll")
         || lower.ends_with(".hsaco")
         || !relative.contains('/') && relative.starts_with("lib") && relative.contains(".so")
+        || is_split_engine_binary(relative)
         || [
             "kernels/",
             "licenses/",
@@ -1282,6 +1283,26 @@ fn engine_file_allowed(relative: &str) -> bool {
         ]
         .iter()
         .any(|prefix| relative.starts_with(prefix))
+}
+
+/// Whole-card split engines of the 0.1.56+ Linux packages (`strata-split-2-sm120`,
+/// `strata-split-4-amd`; Strata 0.2.10): root-level `strata-split-<lanes>[-<tag>][.exe]`
+/// with 1–2 digit lanes and a lowercase alphanumeric tag. Nothing else under that prefix.
+fn is_split_engine_binary(relative: &str) -> bool {
+    let Some(rest) = relative.strip_prefix("strata-split-") else {
+        return false;
+    };
+    let rest = rest.strip_suffix(".exe").unwrap_or(rest);
+    let (lanes, tag) = match rest.split_once('-') {
+        Some((lanes, tag)) => (lanes, Some(tag)),
+        None => (rest, None),
+    };
+    (1..=2).contains(&lanes.len())
+        && lanes.bytes().all(|b| b.is_ascii_digit())
+        && tag.is_none_or(|tag| {
+            (1..=16).contains(&tag.len())
+                && tag.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+        })
 }
 
 /// Strata 0.2+ component engine (`.tar.gz`, flat). Same rules as the ZIP path: regular
