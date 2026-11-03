@@ -465,7 +465,10 @@ fn every_file_of_the_strata_0_1_56_packages_is_allowed() {
         }
     }
     assert_eq!(packages.len(), 10);
-    assert_eq!(split, 11, "2 CUDA 13 + 3 each for Halo, RX 7900 and RX 9070");
+    assert_eq!(
+        split, 11,
+        "2 CUDA 13 + 3 each for Halo, RX 7900 and RX 9070"
+    );
 }
 
 #[test]
@@ -986,4 +989,41 @@ fn every_file_of_the_strata_026_dsv41_packages_is_allowed() {
     // The Strata engine's own extraction never accepts the DeepSeek program.
     assert!(!engine_file_allowed("strata-dsv41"));
     assert!(!engine_file_allowed("strata-dsv41.exe"));
+}
+
+#[test]
+fn a_cuda12_runtime_keeps_cuda12_and_is_told_when_its_driver_runs_cuda13() {
+    let temp = tempfile::tempdir().unwrap();
+    let info = linux_info();
+    fs::create_dir_all(temp.path().join("engine")).unwrap();
+    fs::write(
+        temp.path().join("engine/BUILD.json"),
+        br#"{"version":"0.1.45.3","backend":"cuda","variant":"cuda12"}"#,
+    )
+    .unwrap();
+    let driver = |driver: &str| {
+        let driver = driver.to_owned();
+        move || gpu_select::GpuProbe {
+            nvidia_driver: Some(driver.clone()),
+            nvidia_caps: vec![(8, 9)],
+            ..Default::default()
+        }
+    };
+    let chosen = choose_asset_with(&info, temp.path(), None, &driver("580.95.05")).unwrap();
+    assert_eq!(chosen.variant, "cuda12");
+    let hint = chosen.match_reason.unwrap();
+    assert!(hint.contains("580.95.05") && hint.contains("CUDA 13") && hint.contains("新目录"));
+    let old = choose_asset_with(&info, temp.path(), None, &driver("575.51.03")).unwrap();
+    assert_eq!((old.variant.as_str(), old.match_reason), ("cuda12", None));
+    let none = choose_asset_with(&info, temp.path(), None, &gpu_select::GpuProbe::default).unwrap();
+    assert_eq!(none.match_reason, None);
+    // The CUDA 13 package is never chosen for it.
+    let cuda13 = info
+        .assets
+        .iter()
+        .find(|a| a.variant == "cuda13")
+        .unwrap()
+        .name
+        .clone();
+    assert!(choose_asset_with(&info, temp.path(), Some(&cuda13), &driver("580.95.05")).is_err());
 }

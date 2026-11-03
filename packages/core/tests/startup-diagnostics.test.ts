@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { latestStartupDiagnostic, parseStartupDiagnostic, primaryStartupDiagnosticAction, readStartupDiagnostic, startupMemoryShortage } from '../src/startup-diagnostics';
+import { latestStartupDiagnostic, parseStartupDiagnostic, primaryStartupDiagnosticAction, readStartupDiagnostic, startupEngineCrashed, startupMemoryShortage } from '../src/startup-diagnostics';
 
 const diagnostic = { profileId: 'model-a', attemptStartedAt: 100, failedAt: 200, phase: 'starting', category: 'timeout', confidence: 'confirmed',
   code: 'STARTUP_API_TIMEOUT', message: 'API not ready; process retained', evidence: [{ source: 'startupError', at: 200, message: 'not ready' }],
@@ -109,5 +109,13 @@ describe('startup memory shortage', () => {
     expect(startupMemoryShortage(parsed)).toBe('vram');
     expect(parsed.evidence[0]!.message).toContain('VRAM free on this GPU');
     expect(primaryStartupDiagnosticAction(parsed)).toBe('openResources');
+  });
+  it('treats an engine crash or abnormal exit as a reason to fall back, not memory or log problems', () => {
+    expect(startupEngineCrashed({ code: 'STARTUP_ENGINE_CRASH', category: 'engine' })).toBe(true);
+    expect(startupEngineCrashed({ code: 'STARTUP_UNKNOWN', category: 'unknown', exitCode: -1073741819 })).toBe(true);
+    expect(startupEngineCrashed({ code: 'STARTUP_UNKNOWN', category: 'unknown', exitCode: 0 })).toBe(false);
+    expect(startupEngineCrashed({ code: 'STARTUP_API_TIMEOUT', category: 'timeout' })).toBe(false);
+    expect(startupEngineCrashed({ code: 'STARTUP_VRAM_INSUFFICIENT', category: 'engine', exitCode: 1 })).toBe(false);
+    expect(startupEngineCrashed({ code: 'STARTUP_LOG_UNWRITABLE', category: 'engine', exitCode: 1 })).toBe(false);
   });
 });

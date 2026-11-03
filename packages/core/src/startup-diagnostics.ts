@@ -89,6 +89,12 @@ export function startupMemoryShortage(diagnostic: Pick<StartupFailureDiagnostic,
   return diagnostic.code === STARTUP_VRAM_INSUFFICIENT ? 'vram' : diagnostic.code === STARTUP_WINDOWS_COMMIT_LOW ? 'commit' : undefined;
 }
 
+/** The engine crashed or exited abnormally (not a memory, log or setup problem): falling back to the previous engine may help. */
+export function startupEngineCrashed(diagnostic: Pick<StartupFailureDiagnostic, 'code' | 'category' | 'exitCode'>): boolean {
+  if (startupMemoryShortage(diagnostic) || diagnostic.code === 'STARTUP_LOG_UNWRITABLE') return false;
+  return diagnostic.category === 'engine' || (diagnostic.exitCode !== undefined && diagnostic.exitCode !== 0 && ['engine', 'unknown', 'resource'].includes(diagnostic.category));
+}
+
 /** Exactly one suggested action; opening or refreshing diagnostics never starts a service. */
 export function primaryStartupDiagnosticAction(diagnostic: StartupFailureDiagnostic): StartupDiagnosticAction {
   return diagnostic.actions.find(action => action !== 'viewLogs' && action !== 'exportDiagnostics'

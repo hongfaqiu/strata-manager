@@ -63,6 +63,7 @@ export interface InstallRuntimePageProps {
   autoCheck?: boolean;
   operationDisabled?: boolean;
   onUpdateStarted?: () => void;
+  onUpdateDeepseek?: () => void;
   /** Detected OS name; Windows also offers the separate engine ZIP. */
   os?: string;
   /** Native folder picker; enables the storage location panel. */
@@ -232,7 +233,7 @@ export function InstallRuntimePage(props: InstallRuntimePageProps) {
           {detailsOpen && <dl id="install-runtime-details" className="runtime-summary-facts"><div><dt>{text.revision}</dt><dd><code>{detected.sourceRevision ?? '—'}</code></dd></div><div><dt>{text.python}</dt><dd><code>{detected.pythonPath || '—'}</code></dd></div></dl>}
           {errorBlock}
         </Panel>
-        <RuntimeManagementPanel operationDisabled={props.operationDisabled} autoCheck={props.autoCheck} language={props.language} desktop={props.desktop} installationStatus={installation} selectedRuntimeDir={detected.installDir} showInstallations={false} onUpdateStarted={props.onUpdateStarted}/>
+        <RuntimeManagementPanel operationDisabled={props.operationDisabled} autoCheck={props.autoCheck} language={props.language} desktop={props.desktop} installationStatus={installation} selectedRuntimeDir={detected.installDir} showInstallations={false} onUpdateStarted={props.onUpdateStarted} onUpdateDeepseek={props.onUpdateDeepseek}/>
         <InstalledRuntimesPanel language={props.language} desktop={props.desktop} operationDisabled={props.operationDisabled || running} onSwitchStarted={props.onUpdateStarted}/>
         {props.onChooseDirectory && <StorageLocationPanel language={props.language} desktop={props.desktop} installDir={detected.installDir} operationDisabled={props.operationDisabled || running} onChooseDirectory={props.onChooseDirectory}/>}
       </> : initial ? <div className="runtime-detecting" role="status"><LoaderCircle size={18} className="spin"/>{text.checking}</div> : loaded && !statusError ? <>

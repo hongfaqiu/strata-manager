@@ -82,6 +82,9 @@ pub struct DetectedRuntime {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
     pub profile: ServiceProfile,
+    /// DeepSeek engine (separate package) the folder's DeepSeek configurations use or it holds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dsv41_version: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1514,9 +1517,47 @@ fn inspect_runtime_directories(
             .into(),
             reason: (!reasons.is_empty()).then(|| reasons.join("；")),
             profile,
+            dsv41_version: dsv41_version(&root),
         });
     }
     runtimes
+}
+
+/// Version of an exe inside `engine-dsv41/<version>-<platform>-<backend>/`.
+fn dsv41_exe_version(exe: &str) -> Option<String> {
+    let mut parts = exe.split(['/', '\\']);
+    parts.find(|part| part.eq_ignore_ascii_case(crate::runtime_upgrade::dsv41_engine::DIR))?;
+    let folder = parts.next()?;
+    let (version, _) = folder.split_once('-')?;
+    (!version.is_empty()
+        && version.split('.').count() >= 2
+        && version
+            .split('.')
+            .all(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())))
+    .then(|| version.to_owned())
+}
+
+/// The newest DeepSeek engine a runtime folder's configurations point at, else the one it holds.
+fn dsv41_version(root: &Path) -> Option<String> {
+    use crate::runtime_upgrade::dsv41_engine;
+    config_paths(root)
+        .into_iter()
+        .chain(strata_model_configs_in(root))
+        .filter_map(|config| read_json(&config).ok())
+        .filter_map(|value| {
+            value
+                .get("exe")
+                .and_then(Value::as_str)
+                .and_then(dsv41_exe_version)
+        })
+        .reduce(|a, b| {
+            if dsv41_engine::version_at_least(&a, &b) {
+                a
+            } else {
+                b
+            }
+        })
+        .or_else(|| dsv41_engine::installed_version(root))
 }
 
 fn config_paths(root: &Path) -> Vec<PathBuf> {
@@ -2579,6 +2620,44 @@ fn prepare_import_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dsv41_version_comes_from_the_deepseek_engine_folder_a_config_uses() {
+        assert_eq!(
+            dsv41_exe_version(
+                r"D:\AI\Strata\engine-dsv41\0.1.55-windows-x64-cuda\strata-dsv41.exe"
+            )
+            .as_deref(),
+            Some("0.1.55")
+        );
+        assert_eq!(
+            dsv41_exe_version("/opt/s/engine-dsv41/0.1.56-linux-x86_64-cuda-cuda13/strata-dsv41")
+                .as_deref(),
+            Some("0.1.56")
+        );
+        for exe in [
+            "/opt/s/engine/0.1.56-linux-x86_64-cuda/strata",
+            "/opt/s/engine-dsv41/strata-dsv41",
+            "/opt/s/engine-dsv41/v0.1-x/strata-dsv41",
+            "",
+        ] {
+            assert_eq!(dsv41_exe_version(exe), None, "{exe}");
+        }
+        let root = tempfile::tempdir().unwrap();
+        assert_eq!(dsv41_version(root.path()), None);
+        for (name, version) in [("a.json", "0.1.55"), ("b.json", "0.1.56")] {
+            let exe = root.path().join(format!(
+                "engine-dsv41/{version}-linux-x86_64-cuda/strata-dsv41"
+            ));
+            fs::write(
+                root.path().join(name),
+                serde_json::json!({ "exe": exe, "model": "m.gguf" }).to_string(),
+            )
+            .unwrap();
+        }
+        assert_eq!(dsv41_version(root.path()).as_deref(), Some("0.1.56"));
+    }
+
     fn management_cmdline(values: &[&str]) -> Vec<u8> {
         values
             .iter()

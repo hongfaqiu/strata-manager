@@ -76,6 +76,13 @@ export function releaseEngineVersion(info: { assets?: { engineVersion?: string }
   return plain(info?.assets?.find(asset => !!plain(asset.engineVersion))?.engineVersion);
 }
 
+/** A newer DeepSeek engine in the feed than the newest one these runtimes use (DeepSeek setup installs it). */
+export function deepseekEngineUpdate(runtimes: { dsv41Version?: string }[], info: { dsv41Assets?: { engineVersion?: string }[] } | undefined): { from: string; to: string } | undefined {
+  const newest = (values: (string | undefined)[]) => values.map(plain).filter((value): value is string => !!value && !!parts(value)).reduce<string | undefined>((best, value) => !best || compareReleaseVersions(value, best) > 0 ? value : best, undefined);
+  const from = newest(runtimes.map(runtime => runtime.dsv41Version)), to = newest((info?.dsv41Assets ?? []).map(asset => asset.engineVersion));
+  return from && to && compareReleaseVersions(to, from) > 0 ? { from, to } : undefined;
+}
+
 /** 「Release v0.2.2 · 引擎 0.1.47」; either half is left out when unknown. */
 export function runtimeVersionLabel(facts: { release?: string; engine?: string }, zh: boolean): string {
   const release = plain(facts.release), engine = plain(facts.engine);

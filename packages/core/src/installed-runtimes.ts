@@ -49,6 +49,16 @@ export function sortInstalledRuntimes(runtimes: InstalledRuntime[], releases: Re
     || (b.installedAt ?? 0) - (a.installedAt ?? 0));
 }
 
+/** The local version an engine crash can fall back to: the one kept for switching back, else the newest older one. */
+export function installedRollbackTarget(inventory: RuntimeInventory | undefined, releases: Releases = []): InstalledRuntime | undefined {
+  const runtimes = inventory?.runtimes ?? [];
+  const current = runtimes.find(runtime => runtime.current);
+  const usable = runtimes.filter(runtime => !runtime.current && !runtime.switching && runtime.readiness === 'ready' && !!runtime.pythonPath);
+  const version = (runtime: InstalledRuntime) => installedRuntimeRelease(runtime, releases) ?? runtime.engineVersion;
+  const older = current ? usable.filter(runtime => compareReleaseVersions(version(runtime), version(current)) < 0) : usable;
+  return older.find(runtime => runtime.rollback) ?? sortInstalledRuntimes(older, releases)[0];
+}
+
 /** What 一键清理 deletes: older Manager versions plus leftovers. */
 export const cleanupPaths = (inventory: RuntimeInventory | undefined): string[] =>
   inventory ? [...inventory.runtimes.filter(runtime => runtime.cleanup).map(runtime => runtime.installDir), ...inventory.leftovers.map(item => item.path)] : [];

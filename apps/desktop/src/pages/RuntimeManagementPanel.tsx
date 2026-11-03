@@ -20,12 +20,14 @@ interface Props {
   autoCheck?: boolean;
   operationDisabled?: boolean;
   onUpdateStarted?: () => void;
+  /** Opens the DeepSeek model setup, which installs the newer DeepSeek engine. */
+  onUpdateDeepseek?: () => void;
 }
 const labels = {
   'zh-CN': {
     title: 'Strata 更新', current: '本机 Release', latest: '最新 Release', engine: '引擎', check: '检查更新', checking: '检查中…', unknown: '—',
     notes: '更新日志', published: '发布于', upstream: '官方发布', update: '更新至', install: '安装 Strata', noRuntime: '未安装',
-    updating: '正在更新', completed: '更新完成', ready: '已安装', repair: '需要修复', failed: '更新失败',
+    updating: '正在更新', completed: '更新完成', dsv41Update: 'DeepSeek 引擎可更新', dsv41Go: '去更新', dsv41Hint: '在模型页重新准备 DeepSeek-V4.1-Flash 即可更新引擎', ready: '已安装', repair: '需要修复', failed: '更新失败',
     localPackage: '使用本地安装包', localPackageChecking: '正在读取发布信息…',
     package: '更新包', automaticPackage: '自动匹配当前环境', latestInstalled: '已是最新版本', unconfirmed: '暂时无法确认', pinnedNotice: '已固定在 {version}，不提示更新', noPackage: '当前平台暂无更新包', cancel: '取消更新', logs: '下载与安装日志',
     trialFailed: '新引擎试启动未通过，已自动回滚', trialRestored: '已恢复原版本 {version}，模型与配置未改动，可继续使用。', trialUndone: '已撤销本次安装，模型与配置未改动。', trialReason: '原因',
@@ -33,13 +35,13 @@ const labels = {
   en: {
     title: 'Strata updates', current: 'Installed release', latest: 'Latest release', engine: 'Engine', check: 'Check for updates', checking: 'Checking…', unknown: '—',
     notes: 'Release notes', published: 'Published', upstream: 'Official release', update: 'Update to', install: 'Install Strata', noRuntime: 'Not installed',
-    updating: 'Updating', completed: 'Update complete', ready: 'Installed', repair: 'Needs repair', failed: 'Update failed',
+    updating: 'Updating', completed: 'Update complete', dsv41Update: 'DeepSeek engine update available', dsv41Go: 'Update', dsv41Hint: 'Prepare DeepSeek-V4.1-Flash again on the Models page to update its engine', ready: 'Installed', repair: 'Needs repair', failed: 'Update failed',
     localPackage: 'Install from local package', localPackageChecking: 'Loading release information…',
     package: 'Update package', automaticPackage: 'Match the current runtime', latestInstalled: 'Up to date', unconfirmed: 'Not confirmed yet', pinnedNotice: 'Pinned to {version}; updates are not offered', noPackage: 'No package for this platform', cancel: 'Cancel update', logs: 'Download and installation logs',
     trialFailed: 'The new engine failed its trial start and was rolled back', trialRestored: 'Version {version} was restored; models and settings are unchanged and ready to use.', trialUndone: 'This installation was undone; models and settings are unchanged.', trialReason: 'Reason',
   },
 } as const;
-export function RuntimeManagementPanel({ language, desktop, onInstall, selectedRuntimeDir, showInstallations = true, installationStatus, autoCheck = true, operationDisabled = false, onUpdateStarted }: Props) {
+export function RuntimeManagementPanel({ language, desktop, onInstall, selectedRuntimeDir, showInstallations = true, installationStatus, autoCheck = true, operationDisabled = false, onUpdateStarted, onUpdateDeepseek }: Props) {
   const text = labels[(language === 'zh-CN' ? 'zh-CN' : 'en')]; const query = useQueryClient();
   const [checking, setChecking] = useState(false), [starting, setStarting] = useState(''), [actionError, setActionError] = useState('');
   const [taskLogs, setTaskLogs] = useState<core.LogEntry[]>([]);
@@ -74,6 +76,7 @@ export function RuntimeManagementPanel({ language, desktop, onInstall, selectedR
   const unique = (values: (string | undefined)[]) => values.filter((value, index, all): value is string => !!value && all.indexOf(value) === index);
   const currentReleases = unique(runtimes.map(releaseOf)), currentEngines = unique(runtimes.map(runtime => runtime.runtimeVersion));
   const latestEngine = core.releaseEngineVersion(update.data);
+  const deepseekUpdate = core.deepseekEngineUpdate(allRuntimes, update.data);
   const zh = language === 'zh-CN';
   const installed = allRuntimes.length > 0;
   const notes = releaseNotes(update.data?.notes);
@@ -178,6 +181,7 @@ export function RuntimeManagementPanel({ language, desktop, onInstall, selectedR
     {showInstallations && !!runtimes.length && <div className="runtime-installed-list">{runtimes.map(runtime => <div className="runtime-installed-item" key={runtime.installDir}><div><strong>{core.runtimeVersionLabel({ release: releaseOf(runtime), engine: runtime.runtimeVersion }, zh) || 'Strata'}</strong><span className={runtime.readiness === 'ready' ? 'runtime-ready' : 'runtime-repair'}>{runtime.readiness === 'ready' ? text.ready : text.repair}</span><code>{runtime.installDir}</code></div>{!pinBlocks && offered(runtime) && updateButton(runtime)}</div>)}</div>}
     {activeTask && <div className="runtime-update-progress" role="status"><LoaderCircle className="spin" size={16}/><div><strong>{activeTask.message || text.updating}</strong>{taskLogs.length > 0 && <details><summary>{text.logs}</summary><pre>{taskLogs.map(entry => entry.message).join('\n')}</pre></details>}<button type="button" onClick={() => void cancel()}><Square size={13}/>{text.cancel}</button></div></div>}
     {lastTask?.state === 'completed' && <p className="runtime-update-result runtime-ready" role="status">{text.completed}</p>}
+    {lastTask?.state === 'completed' && deepseekUpdate && <p className="runtime-update-result runtime-dsv41-update" role="status" data-testid="runtime-dsv41-update" title={text.dsv41Hint}><ArrowUpCircle size={14}/>{text.dsv41Update} <code>{deepseekUpdate.from} → {deepseekUpdate.to}</code>{onUpdateDeepseek && <button type="button" onClick={onUpdateDeepseek}>{text.dsv41Go}</button>}</p>}
     {lastTask?.state === 'failed' && (trialRollback ? <div className="notice warning runtime-trial-rollback" role="alert" data-testid="runtime-trial-rollback"><strong>{text.trialFailed}</strong><p>{trialRollback.restoredVersion ? text.trialRestored.replace('{version}', trialRollback.restoredVersion) : text.trialUndone}</p>{trialRollback.reason && <div className="runtime-trial-reason"><span>{text.trialReason}</span><code>{core.runtimeReasonText(trialRollback.reason, language === 'zh-CN')}</code></div>}</div> : <p className="notice error" role="alert">{text.failed}: {lastTask.message}</p>)}
     {actionError && <p className="notice error" role="alert">{actionError}</p>}
     {installed && !showInstallations && runtimes[0] && <RuntimeVersionChoice language={language} desktop={desktop} currentVersion={releaseOf(runtimes[0])} currentEngine={runtimes[0].runtimeVersion} latestVersion={update.data?.latestVersion} latestEngine={latestEngine} runtimes={allRuntimes} localVersions={localVersions} disabled={operationDisabled || !downloadPreferences.isSuccess || !!starting || !!activeTask} opening={openingVersion} onChoose={version => void openVersion(version)}/>}
