@@ -30,6 +30,7 @@ const gpu = (id: number, gib: number, name: string) => ({ id, name, vendor: 'nvi
 const cards: Record<string, { config: JsonObject; hardware: core.ConcurrencyHardware }> = {
   'card-16gb': { config: { model_name: 'qwen3.8-iq3_s', args: ['--native', 'D:\\models\\Qwen3.8-IQ3_S-00001-of-00002.gguf', '--max-context', '131072', '--kv', 'int8'] }, hardware: { gpus: [gpu(0, 16, 'RTX 4080')], totalMemoryBytes: 64 * GIB } },
   'card-32gb': { config: { model_name: 'qwen3.8-q2_0', args: ['--native', 'D:\\models\\Qwen3.8-Q2_0.gguf', '--max-context', '32768', '--mtp', 'D:\\models\\mtp.gguf'] }, hardware: { gpus: [gpu(0, 32, 'RTX 5090')], totalMemoryBytes: 96 * GIB } },
+  'card-ssd-spill': { config: { model_name: 'qwen3.8-iq3_s', parallel: 4, args: ['--native', 'D:\\models\\Qwen3.8-IQ3_S-00001-of-00002.gguf', '--max-context', '32768', '--mtp', 'D:\\models\\mtp.gguf'] }, hardware: { gpus: [gpu(0, 32, 'RTX 5090')], totalMemoryBytes: 32 * GIB } },
   'card-multi-gpu': { config: { model_name: 'qwen3.8-iq3_s', gpu: [0, 1], parallel: 4, args: ['--native', 'D:\\models\\Qwen3.8-IQ3_S-00001-of-00002.gguf', '--max-context', '65536', '--layer-split', '24', '--mtp', 'D:\\models\\mtp.gguf', '--batch-mtp'] }, hardware: { gpus: [gpu(0, 24, 'RTX 4090'), gpu(1, 24, 'RTX 4090')], totalMemoryBytes: 128 * GIB } },
 };
 

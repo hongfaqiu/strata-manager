@@ -74,7 +74,7 @@ export function ConcurrencyCard({ draft, fieldValue, onFieldChange, zh, hardware
   const plan = useMemo(() => core.recommendConcurrency({ settings, hardware, arenaGb, useCase }), [settings, hardware, arenaGb, useCase]);
   const os = platform ?? contextPlatform ?? (typeof navigator !== 'undefined' && /Mac/i.test(navigator.userAgent) && !/Windows/i.test(navigator.userAgent) ? 'mac' : 'other');
   const ramGib = hardware?.totalMemoryBytes ? hardware.totalMemoryBytes / 2 ** 30 : null;
-  const issues = useMemo(() => core.concurrencyIssues(settings, { platform: os, officialParallel: hardware ? plan.officialParallel : undefined, ramGib, engineMax: plan.engineMax }), [settings, os, hardware, plan.officialParallel, ramGib, plan.engineMax]);
+  const issues = useMemo(() => core.concurrencyIssues(settings, { platform: os, officialParallel: hardware ? plan.officialParallel : undefined, ramGib, engineMax: plan.engineMax, cacheGb: plan.cacheGb, arenaGb: plan.arenaGb }), [settings, os, hardware, plan.officialParallel, ramGib, plan.engineMax, plan.cacheGb, plan.arenaGb]);
   const edits = useMemo(() => core.concurrencyPlanEdits(settings, plan), [settings, plan]);
   const pending = edits.filter(edit => { const field = fieldByKey(edit.key); return field && fieldValue(field) !== edit.value; });
   const apply = (changes: core.ConcurrencyChange[]) => { for (const change of changes) { const field = fieldByKey(change.key); if (field) onFieldChange(field, change.value); } };
@@ -110,7 +110,7 @@ export function ConcurrencyCard({ draft, fieldValue, onFieldChange, zh, hardware
       <div><dt>{t('专家仍在显存', 'Experts still in VRAM')}</dt><dd>{plan.expertShare === null ? '—' : pct(plan.expertShare)}{plan.arenaGb !== null && plan.cacheGb !== null && <small>{t(`缓存 ${gb(plan.cacheGb)} / 专家 ${gb(plan.arenaGb)} GB`, `cache ${gb(plan.cacheGb)} / experts ${gb(plan.arenaGb)} GB`)}</small>}</dd></div>
       <div><dt>{t('单个请求速度', 'One request alone')}</dt><dd data-tone={plan.slowdown && plan.slowdown[1] > 0.06 ? 'warn' : undefined}>{plan.slowdown ? (plan.slowdown[0] === 0 ? t(`约 −${Math.round(plan.slowdown[1] * 100)}% 以内`, `within −${Math.round(plan.slowdown[1] * 100)}%`) : `−${Math.round(plan.slowdown[0] * 100)}–${Math.round(plan.slowdown[1] * 100)}%`) : t('不变', 'unchanged')}</dd></div>
     </dl>
-    <p className="concurrency-card-reason">{plan.reasons.filter(code => code !== 'long_context_conflict' && code !== 'trim_needs_explicit_split').map(code => msg(code)).join(' ')}</p>
+    <p className="concurrency-card-reason">{plan.reasons.filter(code => code !== 'long_context_conflict' && code !== 'trim_needs_explicit_split' && !(code === 'ssd_spill' && issues.some(issue => issue.code === code))).map(code => msg(code)).join(' ')}</p>
     {longContext && <p className="concurrency-card-long" data-testid="concurrency-long-context">{msg('long_context_conflict')}</p>}
     {plan.companions.length > 0 && <ul className="concurrency-card-companions">{plan.companions.map(item => <li key={item.key}><code>{item.value === '' ? t(`移除 ${item.key}`, `remove ${item.key}`) : item.value === 'true' ? item.key : `${item.key} ${item.value}`}</code><span>{msg(item.reason)}</span></li>)}</ul>}
     <div className="concurrency-card-apply">
