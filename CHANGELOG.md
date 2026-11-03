@@ -5,6 +5,8 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+## [0.2.37] - 2026-11-03
+
 ### 中文
 
 - **适配 Strata 0.2.10（引擎 0.1.56）的 Linux 拆分引擎**：允许安装包根目录下的 `strata-split-<N>` 可执行文件（可带后缀），其它新文件仍会被拦下。
