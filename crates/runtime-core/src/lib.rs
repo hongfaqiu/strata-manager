@@ -3875,8 +3875,9 @@ fn run_setup_with_preflight_options(
     {
         return Err("这个运行环境的官方安装器不支持显卡角色（--gpu-roles 需要 Strata 0.2.2 或更新版本）；请先更新运行环境，或改用“指定显卡”".into());
     }
-    let disk_plan = preflight(&profile, &model, &quant, images)?;
+    let mut disk_plan = preflight(&profile, &model, &quant, images)?;
     disk_plan.require_space()?;
+    let renamed = disk_plan.renamed.take();
     // A pack left by an earlier install states what the model files read (ds4.txt); refuse past it before setup starts.
     if let Some(set) = deepseek.then(|| disk::dsv41::set(&quant)).flatten() {
         let pack = disk_plan
@@ -3911,7 +3912,10 @@ fn run_setup_with_preflight_options(
     let (setup_python, mut steps) = processes::setup_python(&profile, &root)?;
     let intent = setup_handoff::SetupIntent {
         profile: profile.clone(),
-        family: model.clone(),
+        family: match &renamed {
+            Some((copy, _)) => format!("{}{}", local_model::RENAMED_FAMILY_PREFIX, copy.slug),
+            None => model.clone(),
+        },
         quant: quant.clone(),
         context,
         images,
@@ -3956,7 +3960,15 @@ fn run_setup_with_preflight_options(
             .transpose()?
             .unwrap_or_default(),
     };
-    steps.push(step);
+    match &renamed {
+        Some((copy, base)) => steps.extend(local_model::renamed_steps(
+            copy,
+            &disk_plan.data_directory,
+            base,
+            step,
+        )),
+        None => steps.push(step),
+    }
     let prelude = setup_prelude(state.clone(), root_for_prelude, deepseek)?;
     processes::launch_setup_task_with_prelude(state.clone(), intent, steps, prelude)
 }

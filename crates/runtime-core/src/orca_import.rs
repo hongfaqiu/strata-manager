@@ -421,6 +421,7 @@ pub(crate) fn prepare(
         },
         data_directory: data.clone(),
         gguf_directory: None,
+        renamed: None,
     };
     if measure && !disk_plan.report.volumes.is_empty() {
         disk::measure(&mut disk_plan, disk::read_space);

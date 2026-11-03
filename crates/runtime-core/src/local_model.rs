@@ -877,6 +877,143 @@ pub fn migration_hazard(gguf_directory: &Path, data: &Path) -> Option<String> {
     ))
 }
 
+/// The setup family of a renamed copy's intent: `local:<slug>` (setup_handoff registers `local-<slug>-<quant>`).
+pub const RENAMED_FAMILY_PREFIX: &str = "local:";
+
+/// A renamed copy (upstream #5052): setup.py looks for an existing pack by size alone (`find_in(roots, "packs/<tag>")`),
+/// so a renamed IQ3_S (a fine-tune, say) next to an installed official IQ3_S would run the official pack. It is kept apart
+/// like a community model (community_model.rs):
+/// - its own data folder `<data>/local/<slug>-<quant>` with an empty pack folder made first, so setup packs these files;
+///   a pack made from other files of the same name is rebuilt, and the MTP layer and projectors of the data folder setup
+///   would have used are linked in;
+/// - the config setup writes (`strata-<tag>.json`) is renamed to `strata-local-<slug>-<quant>.json` with `model_name`
+///   `local-<slug>-<quant>`, and the official config of that size is put back as it was.
+///
+/// Qwen3.6 has no pack (its own path reads the GGUF) and keeps the plain path.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct RenamedCopy {
+    pub slug: String,
+    /// `local/<slug>-<quant>`, under the data folder setup would otherwise use.
+    pub folder: PathBuf,
+    pub tag: String,
+    pub setup_config: String,
+    pub config_file: String,
+    pub model_name: String,
+    /// Shard names, sizes and modification times: a pack made from other files is not reused.
+    pub source: String,
+}
+
+/// `local-<slug>-<quant>`: the registered model name of a renamed copy.
+pub fn renamed_model_name(slug: &str, quant: &str) -> String {
+    format!("local-{slug}-{}", quant.to_ascii_lowercase())
+}
+
+/// The file name without its quantization, as a folder- and config-safe slug (`qwen3.8-flash-next-gsq-rco-tuned`).
+fn renamed_slug(stem: &str, quant: &str) -> String {
+    let base = if stem.len() >= quant.len()
+        && stem.is_char_boundary(stem.len() - quant.len())
+        && stem[stem.len() - quant.len()..].eq_ignore_ascii_case(quant)
+    {
+        &stem[..stem.len() - quant.len()]
+    } else {
+        stem
+    };
+    let mut slug = String::new();
+    for c in base.chars().map(|c| c.to_ascii_lowercase()) {
+        if c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' {
+            slug.push(c);
+        } else if !slug.ends_with('-') {
+            slug.push('-');
+        }
+    }
+    let slug: String = slug
+        .trim_matches(|c| c == '-' || c == '.')
+        .chars()
+        .take(48)
+        .collect();
+    let slug = slug.trim_end_matches(['-', '.']).to_owned();
+    if slug.is_empty() {
+        "model".into()
+    } else {
+        slug
+    }
+}
+
+/// How a scanned group is installed apart, or None (official files, Qwen3.6, ORCA).
+pub(crate) fn renamed_copy(directory: &Path, group: &LocalModelGroup) -> Option<RenamedCopy> {
+    if group.kind != "renamed" {
+        return None;
+    }
+    let (family, quant) = (group.family.as_deref()?, group.quant.as_deref()?);
+    let tag = crate::community_model::setup_tag(family, quant)?;
+    let slug = renamed_slug(&group.name, quant);
+    let model_name = renamed_model_name(&slug, quant);
+    let source = group
+        .shards
+        .iter()
+        .map(|shard| {
+            let modified = fs::metadata(directory.join(&shard.name))
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            format!("{} {} {modified}", shard.name, shard.bytes)
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    Some(RenamedCopy {
+        folder: Path::new("local").join(format!("{slug}-{}", quant.to_ascii_lowercase())),
+        setup_config: format!("strata-{tag}.json"),
+        config_file: format!("strata-{model_name}.json"),
+        slug,
+        tag,
+        model_name,
+        source,
+    })
+}
+
+/// stash → setup.py (with `--data-dir <own folder>`) → finish, with community_model's helper in the runtime folder.
+pub(crate) fn renamed_steps(
+    copy: &RenamedCopy,
+    data: &Path,
+    base: &Path,
+    setup: crate::processes::Step,
+) -> Vec<crate::processes::Step> {
+    let helper = |args: Vec<String>| crate::processes::Step {
+        program: setup.program.clone(),
+        args: [
+            vec![
+                "-u".into(),
+                "-c".into(),
+                crate::community_model::HELPER.into(),
+                setup.cwd.to_string_lossy().into(),
+            ],
+            args,
+        ]
+        .concat(),
+        cwd: setup.cwd.clone(),
+        env: setup.env.clone(),
+    };
+    let stash = helper(vec![
+        "stash".into(),
+        copy.setup_config.clone(),
+        data.join("packs")
+            .join(&copy.tag)
+            .to_string_lossy()
+            .into_owned(),
+        copy.source.clone(),
+        base.to_string_lossy().into_owned(),
+    ]);
+    let finish = helper(vec![
+        "finish".into(),
+        copy.setup_config.clone(),
+        copy.config_file.clone(),
+        copy.model_name.clone(),
+    ]);
+    vec![stash, setup, finish]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1251,6 +1388,156 @@ mod tests {
             !bad.installable
                 && bad.problems[0].contains("UD-Q2_K_XL")
                 && bad.problems[0].contains("内核")
+        );
+    }
+
+    #[test]
+    fn a_renamed_copy_is_installed_apart_under_its_own_name() {
+        // Upstream #5052: a renamed copy must not run the installed pack of its size.
+        let dir = tempfile::tempdir().unwrap();
+        for i in 1..=2 {
+            gguf(
+                &dir.path().join(format!(
+                    "Qwen3.8-Flash-Next-GSQ-RCO-Tuned_v2-IQ3_S-0000{i}-of-00002.gguf"
+                )),
+                BIG,
+            );
+        }
+        gguf(&dir.path().join("Qwen3.8-Flash-Next-UD-Q4_K_XL.gguf"), BIG);
+        let found = scan(&dir.path().to_string_lossy()).unwrap();
+        let group = found
+            .groups
+            .iter()
+            .find(|g| g.kind == "renamed" && g.quant.as_deref() == Some("IQ3_S"))
+            .unwrap();
+        let copy = renamed_copy(dir.path(), group).unwrap();
+        assert_eq!(copy.slug, "qwen3.8-flash-next-gsq-rco-tuned-v2");
+        assert_eq!(
+            copy.folder,
+            Path::new("local").join("qwen3.8-flash-next-gsq-rco-tuned-v2-iq3_s")
+        );
+        assert_eq!(copy.tag, "iq3_s");
+        assert_eq!(copy.setup_config, "strata-iq3_s.json");
+        assert_eq!(
+            copy.model_name,
+            "local-qwen3.8-flash-next-gsq-rco-tuned-v2-iq3_s"
+        );
+        assert_eq!(
+            copy.config_file,
+            "strata-local-qwen3.8-flash-next-gsq-rco-tuned-v2-iq3_s.json"
+        );
+        assert_eq!(renamed_model_name(&copy.slug, "IQ3_S"), copy.model_name);
+        assert_eq!(copy.source.lines().count(), 2);
+        assert!(copy.source.contains(&format!(
+            "Qwen3.8-Flash-Next-GSQ-RCO-Tuned_v2-IQ3_S-00001-of-00002.gguf {BIG} "
+        )));
+        // Other files under the same name are a different source: their pack is rebuilt.
+        gguf(
+            &dir.path()
+                .join("Qwen3.8-Flash-Next-GSQ-RCO-Tuned_v2-IQ3_S-00002-of-00002.gguf"),
+            BIG + 1,
+        );
+        let again = scan(&dir.path().to_string_lossy()).unwrap();
+        let group2 = again
+            .groups
+            .iter()
+            .find(|g| g.kind == "renamed" && g.quant.as_deref() == Some("IQ3_S"))
+            .unwrap();
+        assert_ne!(
+            renamed_copy(dir.path(), group2).unwrap().source,
+            copy.source
+        );
+        let unsloth = found
+            .groups
+            .iter()
+            .find(|g| g.quant.as_deref() == Some("UD-Q4_K_XL"))
+            .unwrap();
+        let unsloth = renamed_copy(dir.path(), unsloth).unwrap();
+        assert_eq!(
+            (unsloth.slug.as_str(), unsloth.tag.as_str()),
+            ("qwen3.8-flash-next", "unsloth-ud-q4_k_xl")
+        );
+        assert_eq!(unsloth.setup_config, "strata-unsloth-ud-q4_k_xl.json");
+        // Official names, Qwen3.6 (no pack) and ORCA keep their own paths.
+        for (kind, family) in [
+            ("official", "qwen"),
+            ("renamed", "qwen36"),
+            ("orca", "orca"),
+        ] {
+            let other = LocalModelGroup {
+                kind: kind.into(),
+                family: Some(family.into()),
+                ..group.clone()
+            };
+            assert!(
+                renamed_copy(dir.path(), &other).is_none(),
+                "{kind} {family}"
+            );
+        }
+        assert_eq!(renamed_slug("--IQ3_S", "IQ3_S"), "model");
+        assert!(renamed_slug(&format!("{}-IQ3_S", "x".repeat(80)), "IQ3_S").len() <= 48);
+        assert_eq!(renamed_slug("模型-Flash-Next-IQ3_S", "IQ3_S"), "flash-next");
+    }
+
+    #[test]
+    fn renamed_copy_steps_stash_setup_and_rename() {
+        let dir = tempfile::tempdir().unwrap();
+        let group = LocalModelGroup {
+            id: String::new(),
+            name: "Swift-Qwen3.8-Flash-Next-GSQ-RCO-mine-IQ2_XS".into(),
+            first_shard: String::new(),
+            quant: Some("IQ2_XS".into()),
+            kind: "renamed".into(),
+            family: Some("swift".into()),
+            shards: vec![],
+            total_bytes: 0,
+            complete: true,
+            installable: true,
+            warnings: vec![],
+            problems: vec![],
+        };
+        let copy = renamed_copy(dir.path(), &group).unwrap();
+        let (data, base) = (PathBuf::from("/d/local/x"), PathBuf::from("/d"));
+        let setup = crate::processes::Step {
+            program: "python".into(),
+            args: vec![
+                "-u".into(),
+                "setup.py".into(),
+                "--data-dir".into(),
+                data.to_string_lossy().into(),
+            ],
+            cwd: PathBuf::from("/rt"),
+            env: Default::default(),
+        };
+        let steps = renamed_steps(&copy, &data, &base, setup);
+        assert_eq!(steps.len(), 3);
+        assert_eq!(
+            steps[0].args[..3],
+            ["-u", "-c", crate::community_model::HELPER]
+        );
+        assert_eq!(steps[0].args[3], "/rt");
+        assert_eq!(
+            steps[0].args[4..],
+            [
+                "stash".to_string(),
+                "strata-swift-iq2_xs.json".into(),
+                data.join("packs")
+                    .join("swift-iq2_xs")
+                    .to_string_lossy()
+                    .into(),
+                String::new(),
+                "/d".into()
+            ]
+        );
+        assert_eq!(steps[1].args[1], "setup.py");
+        assert_eq!(
+            steps[2].args[4..],
+            [
+                "finish",
+                "strata-swift-iq2_xs.json",
+                "strata-local-swift-qwen3.8-flash-next-gsq-rco-mine-iq2_xs.json",
+                "local-swift-qwen3.8-flash-next-gsq-rco-mine-iq2_xs"
+            ]
         );
     }
 

@@ -6,6 +6,8 @@ export interface ExistingModelCopy {
   noGgufs: string; quantLegend: string; variants: (n: number) => string; shards: (n: number) => string;
   kind: Record<'official' | 'renamed' | 'orca' | 'unsupported' | 'unknown', string>;
   usable: string; checkFirst: string; unusable: string; shardState: Record<'ok' | 'missing' | 'unreadable' | 'notGguf' | 'tooSmall', string>;
+  /** A renamed copy is packed in its own folder and registered under its own name (upstream #5052). */
+  renamedApart: string; mtpLinked: string;
   mtpTitle: string; mtpHint: string; mtpAuto: string; mtpChosen: string; mtpChoose: string; mtpClear: string; mtpNone: string; mtpChecking: string; mtpFound: (gb: string) => string; mtpMapped: string; mtpSetupMap: (dir: string) => string; mtpOrcaMap: string;
   context: string; orcaContext: string; images: string; imagesKept: string; textOnly: string; checks: string; checking: string; disk: string; diskReady: string; diskNeed: (gb: string) => string; diskUnknown: string; diskLow: string;
   engine: (min: string, current: string) => string; command: string; commandHint: string; start: string; starting: string; footnote: string; orcaFootnote: string;
@@ -20,6 +22,7 @@ const zh: ExistingModelCopy = {
   kind: { official: '官方文件', renamed: '文件名不同', orca: 'OrcaRouter 去审查', unsupported: '引擎不支持', unknown: '无法识别' },
   usable: '可用', checkFirst: '可用 · 请确认', unusable: '不可用',
   shardState: { ok: '正常', missing: '缺失', unreadable: '无法读取', notGguf: '不是 GGUF 文件', tooSmall: '不完整' },
+  renamedApart: '单独打包并登记为新配置，不复用、不覆盖已装的同量化模型。', mtpLinked: '将链接到此模型自己的数据目录',
   mtpTitle: 'MTP 草稿层（可选）', mtpHint: '已有 rt/experts.bin 时选择其文件夹，可省去约 5 GB 下载；不选则由安装器自动准备。', mtpAuto: '自动准备', mtpChosen: '已选择',
   mtpChoose: '选择 MTP 文件夹…', mtpClear: '清除', mtpNone: '未选择，安装器会自动查找或下载', mtpChecking: '正在检查 MTP…', mtpFound: gb => `找到 experts.bin（${gb} GB）`,
   mtpMapped: '将以 --data-dir 指向其所在数据目录',
@@ -42,6 +45,7 @@ const en: ExistingModelCopy = {
   kind: { official: 'Official files', renamed: 'Different file name', orca: 'OrcaRouter uncensored', unsupported: 'Not supported by the engine', unknown: 'Not recognized' },
   usable: 'Usable', checkFirst: 'Usable · confirm', unusable: 'Unavailable',
   shardState: { ok: 'OK', missing: 'Missing', unreadable: 'Unreadable', notGguf: 'Not a GGUF file', tooSmall: 'Incomplete' },
+  renamedApart: 'Packed and registered as its own configuration; an installed model of the same size is neither reused nor replaced.', mtpLinked: 'Linked into this model\'s own data folder',
   mtpTitle: 'MTP draft layer (optional)', mtpHint: 'Have rt/experts.bin already? Choose its folder to skip the ~5 GB download. Otherwise the installer prepares it.', mtpAuto: 'Automatic', mtpChosen: 'Chosen',
   mtpChoose: 'Choose MTP folder…', mtpClear: 'Clear', mtpNone: 'Not chosen; the installer finds or downloads it', mtpChecking: 'Checking MTP…', mtpFound: gb => `Found experts.bin (${gb} GB)`,
   mtpMapped: 'Will run with --data-dir pointing at its data folder',

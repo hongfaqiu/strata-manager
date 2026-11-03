@@ -23,12 +23,16 @@ pub(crate) struct Settings {
     pub(crate) local_gguf_directory: Option<PathBuf>,
     /// The data folder holding the chosen `mtp/rt` (setup's `--data-dir`).
     pub(crate) local_data_directory: Option<PathBuf>,
+    /// A renamed copy installed in its own folder under the data folder (local_model::RenamedCopy).
+    pub(crate) local_renamed: Option<crate::local_model::RenamedCopy>,
 }
 
 pub(crate) struct Plan {
     pub report: SetupDiskPreflight,
     pub data_directory: PathBuf,
     pub gguf_directory: Option<PathBuf>,
+    /// A renamed copy and the data folder setup would otherwise have used (its MTP layer and projectors are linked in).
+    pub renamed: Option<(crate::local_model::RenamedCopy, PathBuf)>,
 }
 
 impl Plan {
@@ -392,6 +396,7 @@ fn prepare_plan(
     let mut roots = source_roots(root, settings, &data)?;
     let mut model_directory = data.join("models").join(&tag);
     let mut reuse_directory = None;
+    let mut renamed_base = None;
     // Explicit --gguf-dir prevents re-downloading complete files copied by hand,
     // even without .done markers. Upstream still checks their GGUF directories.
     let mut candidates: Vec<(PathBuf, PathBuf)> = roots
@@ -436,6 +441,10 @@ fn prepare_plan(
             .clone()
             .or(containing)
             .unwrap_or_else(|| data.clone());
+        if let Some(copy) = &settings.local_renamed {
+            renamed_base = Some(data.clone());
+            data = data.join(&copy.folder);
+        }
         model_directory = directory.clone();
         reuse_directory = Some(directory.clone());
     } else if let Some(directory) = &settings.local_data_directory {
@@ -458,6 +467,10 @@ fn prepare_plan(
     };
     roots.retain(|r| r != &data);
     roots.insert(0, data.clone());
+    if let Some(base) = &renamed_base {
+        roots.retain(|r| r != base);
+        roots.insert(1, base.clone());
+    }
     let mut reusable = 0_u64;
     for name in &names {
         let final_path = model_directory.join(name);
@@ -479,8 +492,13 @@ fn prepare_plan(
     } else {
         download.saturating_sub(reusable)
     };
-    let pack = first_existing(&roots, &PathBuf::from("packs").join(tag.to_lowercase()))?
-        .unwrap_or_else(|| data.join("packs").join(tag.to_lowercase()));
+    // A renamed copy never takes another folder's pack of its size: that is the pack of another model.
+    let pack = if renamed_base.is_some() {
+        data.join("packs").join(tag.to_lowercase())
+    } else {
+        first_existing(&roots, &PathBuf::from("packs").join(tag.to_lowercase()))?
+            .unwrap_or_else(|| data.join("packs").join(tag.to_lowercase()))
+    };
     let pack_ready = exists(&pack.join("experts.bin"))? && exists(&pack.join("index.txt"))?;
     let mtp = first_existing(&roots, Path::new("mtp/rt/experts.bin"))?;
     let mtp_directory = mtp
@@ -573,6 +591,7 @@ fn prepare_plan(
         },
         data_directory: data,
         gguf_directory,
+        renamed: settings.local_renamed.clone().zip(renamed_base),
     })
 }
 
@@ -811,16 +830,19 @@ pub(crate) fn plan_with_local(
                 ));
             }
         }
-        crate::local_model::setup_group(local, family, quant)?;
+        let group = crate::local_model::setup_group(local, family, quant)?;
         let directory = PathBuf::from(local.gguf_directory.trim());
         let data = crate::local_model::setup_mtp_data(local)?;
-        if let Some(data) = &data {
+        let renamed = crate::local_model::renamed_copy(&directory, &group);
+        // A renamed copy's --data-dir is a new folder of its own: setup keeps the other data folders where they are.
+        if let Some(data) = data.as_ref().filter(|_| renamed.is_none()) {
             if let Some(hazard) = crate::local_model::migration_hazard(&directory, data) {
                 return Err(hazard);
             }
         }
         settings.local_gguf_directory = Some(directory);
         settings.local_data_directory = data;
+        settings.local_renamed = renamed;
     }
     let mut result = prepare_plan(
         &root,
@@ -1177,6 +1199,79 @@ mod tests {
         let p = prepare_plan(&f.root, "qwen", "IQ3_S", false, &settings, 64.0, false).unwrap();
         assert_eq!(p.gguf_directory, Some(chosen));
         assert_eq!(p.data_directory, f.data);
+    }
+
+    #[test]
+    fn a_renamed_copy_gets_its_own_data_folder_and_never_the_official_pack_of_its_size() {
+        // Upstream #5052: setup.py reuses packs/<tag> by size, so a renamed IQ3_S beside an installed one ran the old model.
+        let f = fixture();
+        let models = f.data.join("models").join("tuned");
+        fs::create_dir_all(&models).unwrap();
+        for i in 1..=2 {
+            fs::write(
+                models.join(format!(
+                    "Qwen3.8-Flash-Next-GSQ-RCO-tuned-IQ3_S-0000{i}-of-00002.gguf"
+                )),
+                b"shard",
+            )
+            .unwrap();
+        }
+        let official_pack = f.data.join("packs").join("iq3_s");
+        fs::create_dir_all(&official_pack).unwrap();
+        fs::write(official_pack.join("experts.bin"), b"x").unwrap();
+        fs::write(official_pack.join("index.txt"), b"x").unwrap();
+        fs::create_dir_all(f.data.join("mtp/rt")).unwrap();
+        fs::write(f.data.join("mtp/rt/experts.bin"), b"x").unwrap();
+        let group = crate::local_model::LocalModelGroup {
+            id: String::new(),
+            name: "Qwen3.8-Flash-Next-GSQ-RCO-tuned-IQ3_S".into(),
+            first_shard: String::new(),
+            quant: Some("IQ3_S".into()),
+            kind: "renamed".into(),
+            family: Some("qwen".into()),
+            shards: vec![],
+            total_bytes: 0,
+            complete: true,
+            installable: true,
+            warnings: vec![],
+            problems: vec![],
+        };
+        let copy = crate::local_model::renamed_copy(&models, &group).unwrap();
+        let settings = Settings {
+            data_dir: Some(f.data.clone()),
+            local_gguf_directory: Some(models.clone()),
+            local_renamed: Some(copy.clone()),
+            ..Settings::default()
+        };
+        let p = prepare_plan(&f.root, "qwen", "IQ3_S", false, &settings, 64.0, false).unwrap();
+        let own = f
+            .data
+            .join("local")
+            .join("qwen3.8-flash-next-gsq-rco-tuned-iq3_s");
+        assert_eq!(p.data_directory, own);
+        assert_eq!(p.gguf_directory, Some(models));
+        assert_eq!(p.renamed, Some((copy, f.data.clone())));
+        assert_eq!(p.report.data_directory, own.to_string_lossy());
+        assert!(p
+            .report
+            .volumes
+            .iter()
+            .all(|v| v.directory != official_pack.to_string_lossy()));
+        // The data folder's MTP layer is linked in: the 2 GB margin, not the 8 GB download.
+        assert!(p
+            .report
+            .volumes
+            .iter()
+            .any(|v| v.directory == f.data.join("mtp").to_string_lossy()
+                && v.required_additional_bytes_estimate == 2 * GB));
+        // The same files under their official name keep the official pack.
+        let official = Settings {
+            local_renamed: None,
+            ..settings
+        };
+        let p = prepare_plan(&f.root, "qwen", "IQ3_S", false, &official, 64.0, false).unwrap();
+        assert_eq!(p.data_directory, f.data);
+        assert!(p.renamed.is_none());
     }
 
     #[test]

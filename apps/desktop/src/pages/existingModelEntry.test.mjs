@@ -56,3 +56,11 @@ test('#4926: using existing files keeps image support instead of setting it off'
   assert.match(copy, /images: '图像支持', imagesKept: '沿用当前配置'/);
   assert.match(copy, /images: 'Image support', imagesKept: 'Kept from the current configuration'/);
 });
+
+test('upstream #5052: a renamed copy says it is installed apart, in Chinese and English', () => {
+  assert.match(panel, /core\.localModelInstalledApart\(group\) && <p className="existing-model-ok" data-testid="existing-model-apart">/);
+  assert.match(panel, /apart \? disk\.data\?\.dataDirectory : undefined/, 'the command shows the own --data-dir from the disk check');
+  assert.match(copy, /renamedApart: '单独打包并登记为新配置，不复用、不覆盖已装的同量化模型。'/);
+  assert.match(copy, /renamedApart: 'Packed and registered as its own configuration; an installed model of the same size is neither reused nor replaced\.'/);
+  assert.match(copy, /mtpLinked: '将链接到此模型自己的数据目录'/);
+});
