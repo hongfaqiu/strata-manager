@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cleanupPaths, formatRuntimeBytes, installedRuntimeForRelease, installedRuntimeRelease, sortInstalledRuntimes, totalBytes, type InstalledRuntime, type RuntimeInventory } from '../src/installed-runtimes';
+import { cleanupPaths, formatRuntimeBytes, installedRollbackTarget, installedRuntimeForRelease, installedRuntimeRelease, sortInstalledRuntimes, totalBytes, type InstalledRuntime, type RuntimeInventory } from '../src/installed-runtimes';
 
 const runtime = (installDir: string, extra: Partial<InstalledRuntime> = {}): InstalledRuntime => ({
   installDir, pythonPath: `${installDir}/python`, readiness: 'ready', owned: true, current: false, running: false, rollback: false, switching: false, profiles: [], cleanup: false, ...extra,
@@ -46,5 +46,14 @@ describe('installed runtimes', () => {
     expect(formatRuntimeBytes(5.5 * 1024 ** 2)).toBe('5.5 MB');
     expect(formatRuntimeBytes(320 * 1024 ** 2)).toBe('320 MB');
     expect(formatRuntimeBytes(2.25 * 1024 ** 3)).toBe('2.3 GB');
+  });
+  it('falls back to the kept version, else the newest older ready one, never a newer or broken one', () => {
+    const current = runtime('/v48', { engineVersion: '0.1.48', current: true });
+    const v47 = runtime('/v47', { engineVersion: '0.1.47' }), v45 = runtime('/v45', { engineVersion: '0.1.45.3' });
+    expect(installedRollbackTarget(inventory([current, v45, v47]), releases)?.installDir).toBe('/v47');
+    expect(installedRollbackTarget(inventory([current, v47, { ...v45, rollback: true }]), releases)?.installDir).toBe('/v45');
+    expect(installedRollbackTarget(inventory([current, { ...v47, readiness: 'broken' }]), releases)).toBeUndefined();
+    expect(installedRollbackTarget(inventory([runtime('/v47', { engineVersion: '0.1.47', current: true }), runtime('/v48', { engineVersion: '0.1.48' })]), releases)).toBeUndefined();
+    expect(installedRollbackTarget(undefined)).toBeUndefined();
   });
 });

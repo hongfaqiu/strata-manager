@@ -1,6 +1,7 @@
 import type { AppLanguage } from "@strata-manager/core";
+import type { ReactNode } from 'react';
 import { AlertTriangle, FileText, RotateCcw } from 'lucide-react';
-import { primaryStartupDiagnosticAction, startupMemoryShortage, type StartupDiagnosticAction, type StartupFailureDiagnostic } from '../../../../packages/core/src/startup-diagnostics';
+import { primaryStartupDiagnosticAction, startupEngineCrashed, startupMemoryShortage, type StartupDiagnosticAction, type StartupFailureDiagnostic } from '../../../../packages/core/src/startup-diagnostics';
 import './startup-diagnostic.css';
 
 export interface StartupDiagnosticCardProps {
@@ -13,9 +14,11 @@ export interface StartupDiagnosticCardProps {
   reserveFixMib?: number;
   /** Writes the reserve into the model configuration and starts the model again. */
   onReserveFix?: (mib: number, diagnostic: StartupFailureDiagnostic) => void;
+  /** Shown when the engine crashed or exited abnormally: the entry to fall back to the previous engine. */
+  engineRollback?: ReactNode;
 }
 
-export function StartupDiagnosticCard({ language, diagnostic, onAction, profileName, disabled = false, reserveFixMib, onReserveFix }: StartupDiagnosticCardProps) {
+export function StartupDiagnosticCard({ language, diagnostic, onAction, profileName, disabled = false, reserveFixMib, onReserveFix, engineRollback }: StartupDiagnosticCardProps) {
   const zh = language === 'zh-CN';
   const category = { resource: ['资源分配可能不足', 'Possible resource shortage'], port: ['监听端口被占用', 'Listen port in use'], files: ['所需文件缺失', 'Required file missing'],
     config: ['配置未通过检查', 'Configuration check failed'], auth: ['连接鉴权失败', 'Connection authentication failed'], timeout: ['等待就绪超时', 'Readiness timed out'],
@@ -50,6 +53,7 @@ export function StartupDiagnosticCard({ language, diagnostic, onAction, profileN
       <p>{zh ? '界面上的「空闲显存」是引擎自己把显存占满后读到的，不是别的程序占用。' : 'The "free VRAM" figure was read after the engine filled VRAM itself; no other program is holding it.'}</p>
       {reserveFix && <button className="primary" data-testid="startup-diagnostic-reserve-fix" disabled={disabled} onClick={() => onReserveFix?.(reserveFix, diagnostic)}><RotateCcw size={14}/> {zh ? `保留显存提到 ${reserveFix} MiB 并重启` : `Reserve ${reserveFix} MiB of VRAM and restart`}</button>}
     </div>}
+    {engineRollback && startupEngineCrashed(diagnostic) && <div className="startup-diagnostic-rollback" data-testid="startup-diagnostic-rollback">{engineRollback}</div>}
     <div className="startup-diagnostic-actions">{shownActions.map(action => <button key={action} className={action === primary && !reserveFix ? 'primary' : ''} disabled={disabled || !onAction} onClick={() => onAction?.(action, diagnostic)}>{action === 'viewLogs' && <FileText size={14}/>} {labels[action]}</button>)}</div>
     <details className="startup-diagnostic-evidence"><summary>{zh ? '查看诊断依据' : 'View diagnostic evidence'} · <code>{diagnostic.code}</code></summary>
       {diagnostic.evidence.map((entry, index) => <p key={`${entry.at}-${index}`}><time>{new Date(entry.at).toLocaleTimeString(language)}</time><span>{entry.message}</span></p>)}

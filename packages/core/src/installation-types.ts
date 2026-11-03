@@ -30,6 +30,8 @@ export interface DetectedRuntime {
   reason?: string;
   /** Unregistered runtimes have an empty configPath; use only for model setup. */
   profile: ServiceProfile;
+  /** DeepSeek engine (separate package) its DeepSeek configurations use. */
+  dsv41Version?: string;
 }
 
 /** Already-downloaded archives used instead of downloading during first-run setup. */

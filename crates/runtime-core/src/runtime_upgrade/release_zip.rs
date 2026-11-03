@@ -769,7 +769,11 @@ fn choose_asset_with(
         legacy.cloned()
     } else {
         let wanted = previous.unwrap_or("cuda13");
-        info.assets.iter().find(|a| a.variant == wanted).cloned()
+        let mut asset = info.assets.iter().find(|a| a.variant == wanted).cloned();
+        if let Some(asset) = asset.as_mut().filter(|a| a.variant == "cuda12") {
+            asset.match_reason = cuda13_hint(&info.assets, &probe());
+        }
+        asset
     }
     .ok_or("此Release没有匹配当前运行环境的可校验官方引擎包 / This release has no verifiable official engine package for this runtime")?;
     if previous.is_some_and(|v| !variant_compatible(v, &asset.variant)) {
@@ -778,6 +782,17 @@ fn choose_asset_with(
         );
     }
     Ok(asset)
+}
+
+/// A CUDA 12 runtime keeps CUDA 12 on update; when the driver already runs this release's
+/// CUDA 13 package, say so (it is not switched automatically).
+fn cuda13_hint(assets: &[RuntimeReleaseAsset], probe: &gpu_select::GpuProbe) -> Option<String> {
+    let cuda13 = assets.iter().find(|a| a.variant == "cuda13")?;
+    let driver = probe.nvidia_driver.as_deref()?;
+    let minimum = cuda13.nvidia_min_driver.as_deref().unwrap_or("580.65");
+    gpu_select::driver_ok(driver, Some(minimum)).then(|| format!(
+        "NVIDIA 驱动 {driver} 已支持 CUDA 13（首次启动约 1 分钟，CUDA 12 约 5 分钟）；更新保留 CUDA 12，如需 CUDA 13 请安装到新目录 / NVIDIA driver {driver} supports CUDA 13 (first start about 1 min vs about 5 min on CUDA 12); updates keep CUDA 12, install to a new folder for CUDA 13"
+    ))
 }
 
 /// First engine for a Windows runtime. An NVIDIA GPU that `nvidia-smi` describes gets the
@@ -1270,6 +1285,7 @@ fn engine_file_allowed(relative: &str) -> bool {
     ) || lower.ends_with(".dll")
         || lower.ends_with(".hsaco")
         || !relative.contains('/') && relative.starts_with("lib") && relative.contains(".so")
+        || is_split_engine_binary(relative)
         || [
             "kernels/",
             "licenses/",
@@ -1282,6 +1298,28 @@ fn engine_file_allowed(relative: &str) -> bool {
         ]
         .iter()
         .any(|prefix| relative.starts_with(prefix))
+}
+
+/// Whole-card split engines of the 0.1.56+ Linux packages (`strata-split-2-sm120`,
+/// `strata-split-4-amd`; Strata 0.2.10): root-level `strata-split-<lanes>[-<tag>][.exe]`
+/// with 1–2 digit lanes and a lowercase alphanumeric tag. Nothing else under that prefix.
+fn is_split_engine_binary(relative: &str) -> bool {
+    let Some(rest) = relative.strip_prefix("strata-split-") else {
+        return false;
+    };
+    let rest = rest.strip_suffix(".exe").unwrap_or(rest);
+    let (lanes, tag) = match rest.split_once('-') {
+        Some((lanes, tag)) => (lanes, Some(tag)),
+        None => (rest, None),
+    };
+    (1..=2).contains(&lanes.len())
+        && lanes.bytes().all(|b| b.is_ascii_digit())
+        && tag.is_none_or(|tag| {
+            (1..=16).contains(&tag.len())
+                && tag
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+        })
 }
 
 /// Strata 0.2+ component engine (`.tar.gz`, flat). Same rules as the ZIP path: regular

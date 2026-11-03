@@ -4,7 +4,9 @@
  *   `"drafting": "off"` strips --mtp / --spec-min-p / --batch-mtp (and --draft / --draft-model) at start.
  * - Engines 0.1.46–0.1.47 only know the older `"mtp": false` switch (draft_layer.is_off); `drafting` arrives in 0.1.48.
  * - apps/host/src/lib/drafting.ts: DFlash2 is offered only for the qwen / gyro families AND only while Control reports
- *   `capabilities.dflash2 === true` (ENGINE_SERVES_DFLASH2). The manager has no such capability source yet, so it stays hidden.
+ *   `capabilities.dflash2 === true` (ENGINE_SERVES_DFLASH2). Strata v0.2.10 (engine 0.1.56) makes DFlash2 the Auto drafter for
+ *   Qwen3.8, so the manager offers it from engine 0.1.56 on (DFLASH2_SINCE). DFlash2 answers one request at a time: with
+ *   `parallel` / `--parallel` / `--batch` / `--slots` of 2 or more Strata runs MTP instead (strata_control/drafting.py blocked_by).
  * - server.py still reads the original `mtp` key: an explicit Auto / MTP must remove a stale `"mtp": false`, or MTP stays off.
  * Every change takes effect on the next start. Nothing here reads or writes files.
  */
@@ -17,6 +19,8 @@ export const DRAFTING_FAMILIES: readonly string[] = ['qwen', 'gyro'];
 export const DRAFTING_KEY_SINCE = '0.1.48';
 /** First engine that honours `"mtp": false`. */
 export const MTP_SWITCH_SINCE = '0.1.46';
+/** First engine that ships DFlash2 as the Auto drafter (Strata v0.2.10). */
+export const DFLASH2_SINCE = '0.1.56';
 /** `drafting`: writes the key; `mtpSwitch`: only `"mtp": false`; `none`: too old; `unknown`: engine version not detected. */
 export type DraftingSupport = 'drafting' | 'mtpSwitch' | 'none' | 'unknown';
 
@@ -34,6 +38,29 @@ export function draftingSupport(engineVersion: string | null | undefined): Draft
   const key = compare(engineVersion, DRAFTING_KEY_SINCE), mtp = compare(engineVersion, MTP_SWITCH_SINCE);
   if (key === null || mtp === null) return 'unknown';
   return key >= 0 ? 'drafting' : mtp >= 0 ? 'mtpSwitch' : 'none';
+}
+
+/** Engine 0.1.56+ serves DFlash2; null when the version is unknown. */
+export function engineServesDflash2(engineVersion: string | null | undefined): boolean | null {
+  if (!engineVersion) return null;
+  const since = compare(engineVersion, DFLASH2_SINCE);
+  return since === null ? null : since >= 0;
+}
+
+/** Concurrent requests the config asks for: `parallel`, else the largest `--parallel` / `--batch` / `--slots` value; 1 when unset. */
+export function draftingRequestsOf(config: JsonObject | undefined | null): number {
+  const counts: number[] = [];
+  const add = (value: unknown) => { const n = Number(typeof value === 'string' ? value.trim() : value); if (Number.isSafeInteger(n) && n > 0) counts.push(n); };
+  add(config?.parallel);
+  const args = Array.isArray(config?.args) ? config.args : [];
+  args.forEach((arg, index) => {
+    if (typeof arg !== 'string') return;
+    for (const flag of ['--parallel', '--batch', '--slots']) {
+      if (arg === flag) add(args[index + 1]);
+      else if (arg.startsWith(`${flag}=`)) add(arg.slice(flag.length + 1));
+    }
+  });
+  return counts.length ? Math.max(...counts) : 1;
 }
 
 /** Upstream drafting.normalize: an unknown or missing value is auto. */

@@ -49,3 +49,21 @@ test('engines older than 0.1.46 lock the toggle with a note; no draft layer is p
   assert.match(text(old.tree), /0\.1\.46/);
   assert.match(text(render({ args: ['--native', 'm.gguf'] }, { engineVersion: '0.1.51' }).tree), /没有 MTP 草稿层/);
 });
+
+test('engine 0.1.56 offers DFlash2 and says it moves to MTP for 2+ concurrent requests', () => {
+  const qwen = { ...mtpArgs, model_name: 'qwen3.8-flash-next-iq3_s' };
+  assert.equal(drafting.exports.engineServesDflash2('0.1.56'), true);
+  assert.equal(drafting.exports.engineServesDflash2('0.1.55'), false);
+  assert.equal(drafting.exports.engineServesDflash2(null), null);
+  const single = render(qwen, { engineVersion: '0.1.56', dflash2Served: true });
+  assert.deepEqual([...single.segmented.props.options.map(o => o.label)], ['自动', 'MTP', 'DFlash2', '关']);
+  assert.match(text(single.tree), /单个请求用 DFlash2/);
+  assert.doesNotMatch(text(single.tree), /改用 MTP/);
+  const several = render({ ...qwen, parallel: 4 }, { engineVersion: '0.1.56', dflash2Served: true });
+  assert.match(text(several.tree), /并发 4 个请求：DFlash2 一次只服务一个请求，将改用 MTP/);
+  const batch = render({ ...qwen, args: [...qwen.args, '--batch=2'], drafting: 'dflash2' }, { zh: false, engineVersion: '0.1.56', dflash2Served: true });
+  assert.match(text(batch.tree), /2 concurrent requests: DFlash2 serves one request at a time/);
+  assert.doesNotMatch(text(render({ ...qwen, parallel: 4, drafting: 'mtp' }, { engineVersion: '0.1.56', dflash2Served: true }).tree), /改用 MTP/);
+  // Auto on one request needs no --mtp layer once DFlash2 is served.
+  assert.doesNotMatch(text(render({ args: ['--native', 'm.gguf'], model_name: 'qwen3.8-flash-next-iq3_s' }, { engineVersion: '0.1.56', dflash2Served: true }).tree), /没有 MTP 草稿层/);
+});

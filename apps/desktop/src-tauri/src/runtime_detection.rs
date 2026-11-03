@@ -121,6 +121,7 @@ mod tests {
                 config_path: String::new(),
                 managed: true,
             },
+            dsv41_version: None,
         }
     }
 

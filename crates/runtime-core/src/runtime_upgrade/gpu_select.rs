@@ -272,7 +272,7 @@ fn cuda_covers(archs: &[String], (major, minor): (u32, u32)) -> bool {
     })
 }
 
-fn driver_ok(driver: &str, minimum: Option<&str>) -> bool {
+pub(crate) fn driver_ok(driver: &str, minimum: Option<&str>) -> bool {
     minimum.is_none_or(|minimum| version_key(driver) >= version_key(minimum))
 }
 

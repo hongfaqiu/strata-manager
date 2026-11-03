@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compareReleaseVersions, releaseEngineVersion, runtimePinRelease, runtimeReleaseIsNewer, runtimeReleaseOf, runtimeUpdateAllowedByPin, runtimeUpdateAvailable, runtimeVersionDirection, runtimeVersionLabel } from '../src/runtime-versions';
+import { compareReleaseVersions, deepseekEngineUpdate, releaseEngineVersion, runtimePinRelease, runtimeReleaseIsNewer, runtimeReleaseOf, runtimeUpdateAllowedByPin, runtimeUpdateAvailable, runtimeVersionDirection, runtimeVersionLabel } from '../src/runtime-versions';
 
 describe('runtime versions', () => {
   it('orders numbers, then a release after its pre-releases', () => {
@@ -72,5 +72,14 @@ describe('release and engine versions', () => {
     expect(runtimeUpdateAvailable({ releaseVersion: '0.2.7.1', runtimeVersion: '0.1.52' }, latest)).toBe(false);
     expect(runtimeUpdateAvailable({ runtimeVersion: '0.1.52' }, latest, [{ version: '0.2.7', engineVersion: '0.1.52', prerelease: false }])).toBe(false);
     expect(runtimeUpdateAvailable({ releaseVersion: '0.2.2', runtimeVersion: '0.1.47' }, latest)).toBe(true);
+  });
+
+  it('offers a newer DeepSeek engine only when one is in use and the feed has a newer one', () => {
+    const feed = { dsv41Assets: [{ engineVersion: '0.1.56' }, { engineVersion: '0.1.56' }] };
+    expect(deepseekEngineUpdate([{ dsv41Version: '0.1.55' }, {}], feed)).toEqual({ from: '0.1.55', to: '0.1.56' });
+    expect(deepseekEngineUpdate([{ dsv41Version: '0.1.55' }, { dsv41Version: '0.1.56' }], feed)).toBeUndefined();
+    expect(deepseekEngineUpdate([{}], feed)).toBeUndefined();
+    expect(deepseekEngineUpdate([{ dsv41Version: '0.1.55' }], { dsv41Assets: [] })).toBeUndefined();
+    expect(deepseekEngineUpdate([{ dsv41Version: '0.1.55' }], undefined)).toBeUndefined();
   });
 });

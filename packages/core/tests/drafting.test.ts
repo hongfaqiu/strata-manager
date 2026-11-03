@@ -1,7 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { applyDrafting, draftingChoices, draftingFamilyOf, draftingModeOf, draftingSupport, effectiveDraftingOf, normalizeDrafting } from '../src/drafting';
+import { applyDrafting, draftingChoices, draftingFamilyOf, draftingModeOf, draftingRequestsOf, draftingSupport, effectiveDraftingOf, engineServesDflash2, normalizeDrafting } from '../src/drafting';
 
 describe('drafting (upstream v0.2.6 drafting.py / drafting.ts)', () => {
+  it('serves DFlash2 from engine 0.1.56 and reads the concurrent request count (Strata v0.2.10)', () => {
+    expect(engineServesDflash2('0.1.56')).toBe(true);
+    expect(engineServesDflash2('0.1.57.1')).toBe(true);
+    expect(engineServesDflash2('0.1.55')).toBe(false);
+    expect(engineServesDflash2('0.1.47')).toBe(false);
+    expect(engineServesDflash2(undefined)).toBeNull();
+    expect(engineServesDflash2('nightly')).toBeNull();
+    expect(draftingRequestsOf({ args: [] })).toBe(1);
+    expect(draftingRequestsOf({ parallel: 4 })).toBe(4);
+    expect(draftingRequestsOf({ parallel: '2' })).toBe(2);
+    expect(draftingRequestsOf({ args: ['--parallel', '3'] })).toBe(3);
+    expect(draftingRequestsOf({ args: ['--batch=2', '--slots', '1'] })).toBe(2);
+    expect(draftingRequestsOf({ args: ['--parallel', 'x'] })).toBe(1);
+    expect(normalizeDrafting('mtp+dflash2')).toBe('auto');
+    expect(normalizeDrafting('both')).toBe('auto');
+  });
   it('maps engine versions to the key they read', () => {
     expect(draftingSupport('0.1.51')).toBe('drafting');
     expect(draftingSupport('0.1.48')).toBe('drafting');
