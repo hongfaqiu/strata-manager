@@ -330,6 +330,8 @@ export const setupDiskPreflight = (profile: ServiceProfile, model: string, quant
 export const runSetup = (profile: ServiceProfile, model: string, quant: string, context: number, images: boolean, options?: OfficialSetupOptions, localModel?: import('./local-model').LocalModelRequest): Promise<TaskStatus> => native('run_setup', { profile, model, quant, context, images, ...(options ? { options } : {}), ...(localModel ? { localModel } : {}) });
 /** 「使用已有模型」: read-only scan of a GGUF file or folder, grouped by model and quantization. */
 export const scanLocalModels = (path: string): Promise<import('./local-model').LocalModelScan> => native('scan_local_models', { path });
+/** Complete GGUF sets already in the upstream app / Terminal / Manager model folders (plus `directories`). */
+export const findDownloadedModels = (directories: string[] = []): Promise<import('./local-model').DownloadedModel[]> => native('find_downloaded_models', { directories });
 /** 「使用已有模型」: read-only check of an existing MTP draft layer (`<x>`, `<x>/rt` or `<x>/mtp/rt`). */
 /** 「控制向量」: read-only GGUF header check of a control vector file. */
 export const inspectControlVector = (path: string): Promise<import('./control-vector').ControlVectorCheck> => native('inspect_control_vector', { path });

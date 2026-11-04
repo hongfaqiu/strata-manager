@@ -2417,6 +2417,97 @@ pub fn has_running_management(installation: &Path) -> Result<bool, String> {
     Ok(false)
 }
 
+/// Data folders whose `models` (or `Models`) folder holds downloaded GGUFs, from `homes` (`STRATA_HOME`,
+/// `~/.strata`, `%LOCALAPPDATA%\Strata`: their `data/state.json` names a moved library in `modelsDir`),
+/// the upstream settings' `data_dir`, and `Documents/Strata` (the 0.2 app's default `Documents\Strata\Models`).
+fn downloaded_model_roots_from(
+    homes: &[PathBuf],
+    settings_files: &[PathBuf],
+    documents: &[PathBuf],
+    extra: &[PathBuf],
+) -> Vec<PathBuf> {
+    let mut data_dirs: Vec<PathBuf> = extra.to_vec();
+    let mut roots: Vec<PathBuf> = extra.to_vec();
+    for home in homes {
+        data_dirs.push(home.clone());
+        data_dirs.push(home.join("Strata-data"));
+        for state in [
+            home.join("data").join("state.json"),
+            home.join("state.json"),
+        ] {
+            if let Some(dir) = read_json(&state).ok().and_then(|value| {
+                value
+                    .get("modelsDir")
+                    .and_then(Value::as_str)
+                    .map(PathBuf::from)
+            }) {
+                if dir.is_absolute() && !in_trash(&dir) {
+                    roots.push(dir);
+                }
+            }
+        }
+    }
+    for file in settings_files {
+        let Ok(value) = read_json(file) else {
+            continue;
+        };
+        if let Some(dir) = value
+            .get("data_dir")
+            .and_then(Value::as_str)
+            .map(PathBuf::from)
+            .filter(|dir| dir.is_absolute() && !in_trash(dir))
+        {
+            data_dirs.push(dir);
+        }
+    }
+    data_dirs.extend(documents.iter().map(|documents| documents.join("Strata")));
+    for dir in data_dirs {
+        roots.push(dir.join("models"));
+        roots.push(dir.join("Models"));
+    }
+    let mut seen = HashSet::new();
+    roots
+        .into_iter()
+        .filter(|root| root.is_dir() && seen.insert(path_key(root)))
+        .take(MAX_DIRECTORIES)
+        .collect()
+}
+
+/// Where the upstream 0.2 app, Terminal and Manager keep downloaded models, plus `extra` folders (the
+/// Manager's own model folder, folders the user added): 「发现 N 个已下载模型」 scans these.
+pub fn downloaded_model_roots(extra: &[PathBuf]) -> Vec<PathBuf> {
+    let layout = upstream_layout();
+    let env_path = |key: &str| {
+        std::env::var_os(key)
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+    };
+    let home = env_path("USERPROFILE").or_else(|| env_path("HOME"));
+    let mut homes: Vec<PathBuf> = env_path("STRATA_HOME").into_iter().collect();
+    homes.extend(home.iter().map(|home| home.join(".strata")));
+    homes.extend(layout.app_base.clone());
+    let mut settings_files = layout.settings_files.clone();
+    if let Some(base) = &layout.app_base {
+        settings_files.push(base.join("app-settings.json"));
+    }
+    let mut documents: Vec<PathBuf> = env_path("STRATA_DOCUMENTS_DIR")
+        .into_iter()
+        .chain(env_path("XDG_DOCUMENTS_DIR"))
+        .collect();
+    if let Some(one_drive) = env_path("OneDrive") {
+        documents.push(one_drive.join("Documents"));
+    }
+    if let Some(home) = &home {
+        documents.push(home.join("Documents"));
+    }
+    let extra: Vec<PathBuf> = extra
+        .iter()
+        .filter(|dir| dir.is_absolute())
+        .cloned()
+        .collect();
+    downloaded_model_roots_from(&homes, &settings_files, &documents, &extra)
+}
+
 /// Discover only explicit/registered roots, conventional roots, and observed
 /// Python Strata processes. No recursive drive or network/port scanning occurs.
 pub fn discover_local(
@@ -4385,6 +4476,58 @@ mod tests {
                 .any(|c| c.to_string_lossy().contains("strata-old")),
             "{configs:?}"
         );
+    }
+
+    #[test]
+    fn downloaded_model_roots_cover_the_upstream_data_folders() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let home = root.join(".strata");
+        let documents = root.join("Documents");
+        let data = root.join("D/Strata");
+        let moved = root.join("E/Library");
+        let added = root.join("F/my-models");
+        for dir in [
+            home.join("models"),
+            home.join("data"),
+            documents.join("Strata/Models"),
+            data.join("models"),
+            moved.clone(),
+            added.clone(),
+        ] {
+            fs::create_dir_all(dir).unwrap();
+        }
+        fs::write(
+            home.join("data/state.json"),
+            serde_json::json!({ "modelsDir": moved }).to_string(),
+        )
+        .unwrap();
+        let settings = root.join("settings.json");
+        fs::write(
+            &settings,
+            serde_json::json!({ "data_dir": data, "installs": [] }).to_string(),
+        )
+        .unwrap();
+        let roots = downloaded_model_roots_from(
+            &[home.clone(), root.join("missing")],
+            &[settings, root.join("missing.json")],
+            std::slice::from_ref(&documents),
+            std::slice::from_ref(&added),
+        );
+        for expected in [
+            home.join("models"),
+            documents.join("Strata/Models"),
+            data.join("models"),
+            moved,
+            added,
+        ] {
+            assert!(
+                roots.iter().any(|path| same_path(path, &expected)),
+                "{expected:?} not in {roots:?}"
+            );
+        }
+        assert!(roots.iter().all(|path| path.is_dir()));
+        assert!(downloaded_model_roots_from(&[], &[], &[], &[]).is_empty());
     }
 
     #[test]

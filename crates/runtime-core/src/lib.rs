@@ -1278,6 +1278,17 @@ impl RuntimeState {
                 local_model_param(&params)?.as_ref(),
             ))),
             "scan_local_models" => value(local_model::scan(&arg::<String>(&params, "path")?)),
+            "find_downloaded_models" => {
+                let directories: Vec<PathBuf> = params
+                    .get("directories")
+                    .filter(|v| !v.is_null())
+                    .map(|v| serde_json::from_value(v.clone()).map_err(|e| e.to_string()))
+                    .transpose()?
+                    .unwrap_or_default();
+                value(Ok::<_, String>(local_model::find_downloaded(
+                    &discovery::downloaded_model_roots(&directories),
+                )))
+            }
             "check_mtp_path" => value(local_model::check_mtp(&arg::<String>(&params, "path")?)),
             "inspect_control_vector" => {
                 value(Ok::<_, String>(control_vector::inspect(&arg::<String>(

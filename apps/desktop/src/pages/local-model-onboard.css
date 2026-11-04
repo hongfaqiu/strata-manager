@@ -1,0 +1,29 @@
+/* 「发现 N 个已下载模型」 card, the 在线下载 / 使用已有模型 choice and the 本机已有 badge. */
+.downloaded-card{display:flex;align-items:center;gap:16px;margin:12px 0 4px;padding:14px 16px;border:1px solid color-mix(in srgb,var(--st-accent) 35%,transparent);border-radius:12px;background:var(--st-accent-tint);color:var(--st-ink);min-width:0}
+.downloaded-card-icon{position:relative;flex:none;display:grid;place-items:center;width:44px;height:44px;border-radius:12px;background:var(--st-surface);color:var(--st-accent-text)}
+.downloaded-card-icon>b{position:absolute;top:-6px;right:-6px;min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:var(--st-accent);color:#fff;font-size:11.5px;line-height:20px;text-align:center}
+.downloaded-card-body{flex:1;min-width:0;display:grid;gap:8px}
+.downloaded-card-body>strong{font-size:14.5px;line-height:1.35}
+.downloaded-card-chips{display:flex;flex-wrap:wrap;gap:6px;margin:0;padding:0;list-style:none;min-width:0}
+.downloaded-card-chips button{display:inline-flex;align-items:center;gap:6px;max-width:100%;min-height:30px;padding:0 8px 0 4px;border:1px solid var(--st-line);border-radius:999px;background:var(--st-surface);color:var(--st-ink);font-size:12.5px;cursor:pointer}
+.downloaded-card-chips button:hover:not(:disabled){border-color:var(--st-accent)}
+.downloaded-card-chips b{padding:2px 7px;border-radius:999px;background:var(--st-accent-tint);color:var(--st-accent-text);font-size:11.5px;font-weight:600}
+.downloaded-card-chips span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.downloaded-card-chips small{color:var(--st-ink-muted);font-size:11.5px}
+.downloaded-card-go{flex:none;display:inline-flex;align-items:center;gap:6px;min-height:36px}
+.model-source-choice{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:14px 0 6px}
+.model-source-card{position:relative;display:flex;align-items:center;gap:12px;min-height:64px;padding:12px 16px;border:1.5px solid var(--st-line);border-radius:12px;background:var(--st-surface);color:var(--st-ink);text-align:left;cursor:pointer}
+.model-source-card:hover{border-color:color-mix(in srgb,var(--st-accent) 50%,var(--st-line))}
+.model-source-card.is-selected{border-color:var(--st-accent);background:var(--st-accent-tint)}
+.model-source-icon{flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:10px;background:var(--st-surface-2);color:var(--st-ink-muted)}
+.model-source-card.is-selected .model-source-icon{background:var(--st-surface);color:var(--st-accent-text)}
+.model-source-text{display:grid;gap:2px;min-width:0}
+.model-source-text strong{font-size:14.5px}
+.model-source-text small{font-size:12px;color:var(--st-ink-muted)}
+.model-source-badge{margin-left:auto;min-width:22px;height:22px;padding:0 6px;border-radius:11px;background:var(--st-accent);color:#fff;font-size:12px;line-height:22px;text-align:center}
+.model-source-existing{margin-top:4px}
+.model-source-existing .existing-model{margin-top:8px}
+.d2-catalog-status b.is-ondisk,.model-download-variant small.is-ondisk{display:inline-flex;align-items:center;gap:4px;color:var(--st-accent-text);font-weight:600}
+.d2-catalog-status b.is-ondisk::before,.model-download-variant small.is-ondisk::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--st-accent)}
+.service-manager-empty .downloaded-card{margin:0 0 14px;text-align:left}
+@media (max-width:720px){.model-source-choice{grid-template-columns:1fr}.downloaded-card{flex-wrap:wrap}.downloaded-card-go{width:100%;justify-content:center}}

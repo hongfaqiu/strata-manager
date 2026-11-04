@@ -24,6 +24,9 @@ export interface ExistingModelPanelProps {
   onChooseFile: () => Promise<string | null>;
   onSetup: (request: LocalSetupRequest) => Promise<TaskStatus | void | undefined>;
   onOrcaImport?: (profile: ServiceProfile, request: OrcaImportRequest, options: OfficialSetupOptions) => Promise<TaskStatus | void | undefined>;
+  /** 「发现 N 个已下载模型 · 一键加入」 / 「直接使用」: open with this folder (and GGUF set) already chosen. */
+  initialPath?: string;
+  initialGroupId?: string;
   /** Called after a task was submitted, with the family/quant/context that was prepared. */
   onStarted?: (task: TaskStatus | void | undefined, selection: { family: string; quant: string; context: number }) => void;
 }
@@ -33,10 +36,10 @@ const gb = (bytes: number, language: string) => (bytes / 1e9).toLocaleString(lan
 const separatorOf = (path: string) => path.includes('\\') ? '\\' : '/';
 
 /** 「使用已有模型」 (#75): one flow for the wizard's model step and the Models page. */
-export function ExistingModelPanel({ language, desktop, runtime, runtimeVersion, busy, options, windows, compact, onChooseDirectory, onChooseFile, onSetup, onOrcaImport, onStarted }: ExistingModelPanelProps) {
+export function ExistingModelPanel({ language, desktop, runtime, runtimeVersion, busy, options, windows, compact, initialPath, initialGroupId, onChooseDirectory, onChooseFile, onSetup, onOrcaImport, onStarted }: ExistingModelPanelProps) {
   const t = existingModelCopy(language);
-  const [path, setPath] = useState('');
-  const [selectedId, setSelectedId] = useState('');
+  const [path, setPath] = useState(initialPath ?? '');
+  const [selectedId, setSelectedId] = useState(initialGroupId ?? '');
   const [mtpPath, setMtpPath] = useState('');
   const [context, setContext] = useState(32768);
   const [submitting, setSubmitting] = useState(false);
