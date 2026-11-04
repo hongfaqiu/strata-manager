@@ -1,6 +1,6 @@
 {
   "name": "strata-manager",
-  "version": "0.2.38",
+  "version": "0.2.39",
   "private": true,
   "packageManager": "pnpm@11.21.0",
   "scripts": {
