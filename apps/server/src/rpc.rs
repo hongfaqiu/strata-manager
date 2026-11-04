@@ -56,6 +56,10 @@ fn map_method(command: &str) -> Result<&str, String> {
         "update_runtime_zip" => "update_runtime_zip_download_v1",
         "test_runtime_zip_download" => "test_runtime_zip_download_v1",
         "resolve_runtime_zip_asset" => "resolve_runtime_zip_asset_v1",
+        "runtime_cpu_check" => "runtime_cpu_check_v1",
+        "dflash2_status" => "dflash2_status_v1",
+        "fetch_dflash2" => "dflash2_fetch_v1",
+        "running_drafting" => "running_drafting_v1",
         "apply_settings" => "server_apply_settings", // handled locally
         "get_system_language" => "server_get_system_language",
         "shutdown_supervisor" => "shutdown_supervisor", // rejected below

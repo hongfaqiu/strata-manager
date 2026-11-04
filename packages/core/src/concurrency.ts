@@ -207,6 +207,16 @@ function officialRecommend(vramGbs: number[], arenaGb: number, context: number, 
   for (const n of [2, 3, 4]) if (n * slot <= 0.2 * cache && cache - n * slot >= 0.5 * arenaGb) best = n;
   return best;
 }
+/**
+ * Whether the experts no longer fit RAM plus the VRAM expert cache once the slots take their VRAM, so the engine reads
+ * some from the SSD (@lasse_ai, 32 GB RAM + 32 GB VRAM: 80 tok/s with slots, 150 tok/s without). Same arithmetic as
+ * setup.py low_ram_fits: RAM − 6 + (cache − 1 GB for MTP) against the arena. False when anything is unknown.
+ */
+export function concurrencySsdSpill(input: { ramGib: number | null | undefined; cacheGb: number | null | undefined; arenaGb: number | null | undefined; slotVramGb: number; mtp?: boolean }): boolean {
+  const { ramGib, cacheGb, arenaGb, slotVramGb } = input;
+  if (!ramGib || ramGib <= 0 || cacheGb == null || arenaGb == null) return false;
+  return ramGib - 6 + Math.max(0, cacheGb - (input.mtp ? 1 : 0)) - slotVramGb < arenaGb;
+}
 /** The cards this config uses (its "gpu" list), else the largest card, as setup chooses. */
 export function concurrencyVramGbs(settings: ConcurrencySettings, hardware: ConcurrencyHardware | null | undefined): number[] {
   if (!hardware?.gpus.length) return [];
@@ -239,15 +249,19 @@ export function recommendConcurrency(input: { settings: ConcurrencySettings; har
   const ramGib = input.hardware?.totalMemoryBytes ? input.hardware.totalMemoryBytes / GIB : null;
   const spareRam = ramGib !== null && arenaGb !== null ? ramGib - arenaGb * GB / GIB - 8 : null; // 8 GiB left for the OS and the engine host side
   const cacheFor = (slots: number) => spareRam === null || spareRam >= 8 ? { mib: 8192, slots } : spareRam >= 4 ? { mib: 4096, slots: Math.min(slots, 2) } : null;
+  const spills = (slots: number) => concurrencySsdSpill({ ramGib, cacheGb, arenaGb, slotVramGb: slots * concurrencySlotVramGb(context, settings.kv, streaming), mtp: settings.mtp });
   if (!vramGbs.length || arenaGb === null) reasons.push('hardware_unknown');
   if (useCase === 'single') { parallel = 1; reasons.push('use_single'); }
   else if (useCase === 'agent') {
-    if (fits) { parallel = Math.min(officialParallel, 4); reasons.push('use_agent_slots'); }
+    const slots = Math.min(officialParallel, 4);
+    if (fits && spills(slots)) reasons.push('ssd_spill');
+    else if (fits) { parallel = slots; reasons.push('use_agent_slots'); }
     else reasons.push('use_agent_cache');
     conversationCache = cacheFor(4);
     if (!conversationCache) reasons.push('ram_no_cache');
   } else if (useCase === 'multiUser') {
-    if (fits) { parallel = officialParallel; reasons.push('use_multi_slots'); }
+    if (fits && spills(officialParallel)) { conversationCache = cacheFor(4); reasons.push('ssd_spill'); }
+    else if (fits) { parallel = officialParallel; reasons.push('use_multi_slots'); }
     else { conversationCache = cacheFor(4); reasons.push('use_multi_small_card'); }
   } else {
     parallel = fits ? (split ? Math.min(engineMax, Math.max(officialParallel, vramGbs.length * 2)) : officialParallel) : 1;
@@ -296,7 +310,7 @@ export function concurrencyPlanEdits(settings: ConcurrencySettings, plan: Concur
 }
 
 export interface ConcurrencyIssue { code: string; severity: 'error' | 'warning' | 'info'; fix?: ConcurrencyChange[]; values?: Record<string, string | number> }
-export function concurrencyIssues(settings: ConcurrencySettings, options: { platform?: 'mac' | 'other'; officialParallel?: number; ramGib?: number | null; engineMax?: number } = {}): ConcurrencyIssue[] {
+export function concurrencyIssues(settings: ConcurrencySettings, options: { platform?: 'mac' | 'other'; officialParallel?: number; ramGib?: number | null; engineMax?: number; cacheGb?: number | null; arenaGb?: number | null } = {}): ConcurrencyIssue[] {
   const issues: ConcurrencyIssue[] = [];
   const engineMax = options.engineMax ?? CONCURRENCY_ENGINE_MAX;
   const n = settings.parallel, split = !!settings.layerSplit && settings.gpuCount > 1;
@@ -320,6 +334,9 @@ export function concurrencyIssues(settings: ConcurrencySettings, options: { plat
   if (settings.experimental.STRATA_PIPED_CONCURRENT && !split) issues.push({ code: 'piped_needs_split', severity: 'info' });
   if (n > 1 && (settings.context ?? 0) > TRAINED_CONTEXT) issues.push({ code: 'long_context_conflict', severity: 'warning' });
   if (n > 1 && options.officialParallel !== undefined && n > Math.max(1, options.officialParallel)) issues.push({ code: options.officialParallel <= 1 ? 'slow_per_request' : 'above_recommendation', severity: 'warning', values: { recommended: options.officialParallel } });
+  if (n > 1 && concurrencySsdSpill({ ramGib: options.ramGib, cacheGb: options.cacheGb, arenaGb: options.arenaGb, slotVramGb: n * concurrencySlotVramGb(settings.context ?? 32768, settings.kv, settings.kvResident !== null && settings.kvResident > 0), mtp: settings.mtp })) {
+    issues.push({ code: 'ssd_spill', severity: 'warning', fix: [{ key: 'parallel', value: '1' }, ...(settings.batchArg !== null ? [{ key: '--batch', value: '' }] : [])] });
+  }
   if (n > 1 && settings.kvResident && settings.context && options.ramGib) {
     const pinned = concurrencySlotPinnedRamGb(settings.context, settings.kv, true) * n * GB / GIB;
     if (pinned > options.ramGib * 0.25) issues.push({ code: 'pinned_ram', severity: 'warning', values: { gib: Math.round(pinned * 10) / 10 } });
@@ -370,6 +387,7 @@ const messages: Record<string, [string, string]> = {
   piped_needs_split: ['并行读取提示词只在多卡流水线分组时生效。', 'Reading prompts beside the slots only applies to pipelined groups on a layer split.'],
   slow_per_request: ['这张卡上并发会让每个请求变慢约 10–25%，换来的是少排队。', 'On this card slots cost about 10–25% speed per request in exchange for less waiting.'],
   above_recommendation: ['高于这台电脑的推荐值 {{recommended}}，更多槽会挤占专家缓存。', 'Above this computer\'s recommendation of {{recommended}}; more slots take expert-cache room.'],
+  ssd_spill: ['开并发会让专家溢出到 SSD，decode 可能慢一半，建议一次一个。', 'Slots would spill experts to the SSD and decode may run about half as fast; keep one at a time.'],
   pinned_ram: ['KV 流式时所有槽共占约 {{gib}} GiB 固定内存。', 'With KV streaming the slots take about {{gib}} GiB of pinned RAM in all.'],
   prompt_cache_off: ['--prompt-cache 0 时请求不会回到单请求快速路径。', 'With --prompt-cache 0 a request never returns to the fast solo path.'],
   parallel_limits: ['并发时不应用重复/频率/存在惩罚，logit_bias 与会话存档（slot save）不可用。', 'With slots, repetition/frequency/presence penalties are not applied; logit_bias and slot save are unavailable.'],

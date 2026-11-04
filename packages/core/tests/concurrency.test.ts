@@ -53,6 +53,22 @@ describe('recommendations', () => {
       { key: '--batch-mtp', value: '', reason: 'batch_mtp_pipeline' },
     ]);
   });
+  it('keeps agents and several users at one slot when slots would spill experts to the SSD (32 GB RAM + 32 GB VRAM)', () => {
+    const cfg = config(['--max-context', '32768', '--mtp', 'm.gguf']);
+    for (const useCase of ['agent', 'multiUser'] as const) {
+      const tight = plan(cfg, hw([32], 32), useCase).plan;
+      expect(tight.officialParallel).toBeGreaterThan(1);
+      expect(tight.parallel).toBe(1);
+      expect(tight.reasons).toContain('ssd_spill');
+      const roomy = plan(cfg, hw([32], 64), useCase).plan;
+      expect(roomy.parallel).toBe(tight.officialParallel);
+      expect(roomy.reasons).not.toContain('ssd_spill');
+    }
+    expect(plan(cfg, hw([32], 32), 'batch').plan.reasons).not.toContain('ssd_spill');
+    expect(plan(cfg, { gpus: [card(0, 32)], totalMemoryBytes: null }, 'agent').plan.reasons).not.toContain('ssd_spill');
+    expect(concurrencyMessage('ssd_spill', true)).toContain('SSD');
+    expect(concurrencyMessage('ssd_spill', false)).toMatch(/half as fast/);
+  });
   it('notes the long-context conflict and unknown hardware', () => {
     expect(plan(config(['--max-context', '1048576', '--kv-resident', '2']), hw([96]), 'multiUser').plan.reasons).toContain('long_context_conflict');
     const settings = readConcurrencySettings(config([]));
@@ -101,6 +117,11 @@ describe('issues', () => {
     expect(codes(config(['--max-context', '524288'], { parallel: 2 }))).toContain('long_context_conflict');
     expect(codes(config(['--max-context', '262144', '--kv-resident', '2'], { parallel: 8 }), { ramGib: 32 })).toContain('pinned_ram');
     expect(codes(config(['--prompt-cache', '0'], { parallel: 2 }))).toEqual(expect.arrayContaining(['prompt_cache_off', 'parallel_limits']));
+    const spill = concurrencyIssues(readConcurrencySettings(config(['--batch', '4', '--mtp', 'm'], { parallel: 4 }) as never), { ramGib: 32, cacheGb: 27, arenaGb: 50.3 }).find(i => i.code === 'ssd_spill');
+    expect(spill).toMatchObject({ severity: 'warning', fix: [{ key: 'parallel', value: '1' }, { key: '--batch', value: '' }] });
+    expect(codes(config(['--mtp', 'm'], { parallel: 4 }), { ramGib: 64, cacheGb: 27, arenaGb: 50.3 })).not.toContain('ssd_spill');
+    expect(codes(config(['--mtp', 'm']), { ramGib: 32, cacheGb: 27, arenaGb: 50.3 })).not.toContain('ssd_spill');
+    expect(codes(config(['--mtp', 'm'], { parallel: 4 }), { ramGib: 32 })).not.toContain('ssd_spill');
     expect(codes(config([]))).toEqual([]);
   });
   it('blocks saving only what the engine refuses', () => {

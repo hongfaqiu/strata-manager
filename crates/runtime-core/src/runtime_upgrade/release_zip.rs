@@ -263,6 +263,7 @@ pub fn start_install_release_with_archives(
             download_url: None,
             target_version: None,
             source: None,
+            source_only: false,
         },
         archives.strata_archive_path,
     );
@@ -303,6 +304,17 @@ fn start(
     };
     if local_source_archive_path.is_some() && !new_install {
         return Err("本地 Strata 安装包仅用于首次安装".into());
+    }
+    if download.source_only && new_install {
+        return Err("首次安装需要官方引擎，不能「只更新代码」 / A first install needs the official engine; \"Update code only\" applies to an existing runtime".into());
+    }
+    // The prebuilt engines need AVX2: refuse before anything is downloaded or stopped.
+    if !download.source_only {
+        if let Some(reason) =
+            super::cpu_floor::engine_block(super::cpu_floor::host_avx2(), new_install)
+        {
+            return Err(reason);
+        }
     }
     if let Some(path) = &local_source_archive_path {
         installation::local_archive::check_path(path, installation::local_archive::STRATA)?;
@@ -795,11 +807,15 @@ fn cuda13_hint(assets: &[RuntimeReleaseAsset], probe: &gpu_select::GpuProbe) -> 
     ))
 }
 
+/// A Windows computer whose display adapters are all Intel.
+pub(crate) const NO_WINDOWS_INTEL_ENGINE: &str = "没有匹配的官方引擎：这台 Windows 电脑只检测到 Intel 显卡，而官方 Windows 引擎只有 NVIDIA（CUDA）和 AMD（HIP）版本，暂无 Intel 版本；不会改装 CUDA 包。如确实要装，请手动选择更新包 / No matching official engine: only Intel graphics were found on this Windows PC, and the official Windows engines are NVIDIA (CUDA) and AMD (HIP) only, with no Intel build. A CUDA package is not installed instead; choose a package by hand if you really want one";
+
 /// First engine for a Windows runtime. An NVIDIA GPU that `nvidia-smi` describes gets the
 /// CUDA package its driver and compute capability can run (CUDA 12 for Pascal / Volta or a
 /// driver below CUDA 13's minimum), and the user picks when neither fits. With only AMD GPUs
 /// the detected AMD architecture decides (a legacy multi-family HIP ZIP when the release
-/// still has one), again asking the user when it cannot. When nothing usable is detected
+/// still has one), again asking the user when it cannot. Only Intel adapters: no official
+/// package, said plainly (never a silent CUDA 13). When nothing usable is detected
 /// (no GPU, or an NVIDIA card without a readable `nvidia-smi`), CUDA 13 as before.
 fn windows_first_asset(
     assets: &[RuntimeReleaseAsset],
@@ -827,6 +843,11 @@ fn windows_first_asset(
         return Ok(Some(asset));
     }
     if probe.amd_gfx.is_empty() {
+        // Only Intel graphics (UHD / Iris Xe / Arc): upstream ships no Windows Intel (SYCL)
+        // engine, and a CUDA package would install but never run here.
+        if probe.intel_only {
+            return Err(NO_WINDOWS_INTEL_ENGINE.into());
+        }
         return Ok(cuda13());
     }
     if let Some(legacy) = assets
@@ -2342,18 +2363,28 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
             .error
             .unwrap_or("官方Release暂没有本平台可验证的引擎包 / The official release has no verifiable engine package for this platform".into()));
     }
-    let asset = match (&j.asset_name, &j.download.local_archive_path) {
-        (None, Some(path)) if j.new_install => {
-            local_engine_asset(&state, &j.task_id, &info, Path::new(path))?
-        }
-        _ => {
-            let (info, root, name) = (info.clone(), j.install_dir.clone(), j.asset_name.clone());
-            tokio::task::spawn_blocking(move || choose_asset(&info, &root, name.as_deref()))
-                .await
-                .map_err(|e| e.to_string())??
-        }
+    // 「只更新代码」: the same-commit source only; the installed engine is not touched.
+    let source_only = j.download.source_only;
+    let asset = if source_only {
+        None
+    } else {
+        Some(match (&j.asset_name, &j.download.local_archive_path) {
+            (None, Some(path)) if j.new_install => {
+                local_engine_asset(&state, &j.task_id, &info, Path::new(path))?
+            }
+            _ => {
+                let (info, root, name) =
+                    (info.clone(), j.install_dir.clone(), j.asset_name.clone());
+                tokio::task::spawn_blocking(move || choose_asset(&info, &root, name.as_deref()))
+                    .await
+                    .map_err(|e| e.to_string())??
+            }
+        })
     };
-    if let Some(reason) = &asset.match_reason {
+    if let Some((asset, reason)) = asset
+        .as_ref()
+        .and_then(|asset| Some((asset, asset.match_reason.as_ref()?)))
+    {
         processes::log(
             &state.logs,
             &j.task_id,
@@ -2367,11 +2398,11 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
     let revision = info.source_revision.clone().ok_or("发布源码提交未核验")?;
     let version = info.latest_version.clone().ok_or("发布版本缺失")?;
     let engine_version = asset
-        .engine_version
-        .clone()
+        .as_ref()
+        .and_then(|asset| asset.engine_version.clone())
         .unwrap_or_else(|| version.clone());
     // Only an explicitly chosen version may go down; trial start and rollback still apply.
-    if !j.new_install && target.is_none() {
+    if !j.new_install && target.is_none() && !source_only {
         prevent_downgrade(&j.install_dir, &engine_version)?;
     }
     if let Some(target) = &target {
@@ -2382,23 +2413,29 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
             format!("安装所选版本 Strata {target}（引擎 {engine_version}）/ Installing the chosen Strata {target} (engine {engine_version})"),
         );
     }
+    // The engine that stays: named in the messages of a code-only update.
+    let kept_engine = crate::discovery::runtime_version(&j.install_dir, None)
+        .unwrap_or_else(|| "未知 / unknown".into());
     j.version = Some(version.clone());
     j.revision = Some(revision.clone());
-    j.asset_name = Some(asset.name.clone());
+    if let Some(asset) = &asset {
+        j.asset_name = Some(asset.name.clone());
+    }
     let work = work_dir(&state, &j.task_id)?;
     for part in ["source", ENGINE_WORK_DIR, "replacement", "backup"] {
         fs::create_dir(work.join(part)).map_err(|e| e.to_string())?;
     }
-    progress(
-        &state,
-        j,
-        "downloading",
-        &format!(
+    let downloading = match &asset {
+        Some(asset) => format!(
             "正在下载官方Release v{version}：{}（{}）及同提交源码",
             asset.name,
             crate::byte_size::human_bytes(asset.size)
         ),
-    )?;
+        None => format!(
+            "只更新代码：正在下载官方Release v{version}的同提交源码，引擎 {kept_engine} 保持不变 / Code only: downloading the v{version} source; engine {kept_engine} stays"
+        ),
+    };
+    progress(&state, j, "downloading", &downloading)?;
     let source = match &j.local_source_archive_path {
         Some(path) => {
             local_source_archive(&state, &j.task_id, Path::new(path), &revision, &version)?
@@ -2432,38 +2469,46 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
             "此Release服务源码不在已审查清单中：统计观察器将在启动时按结构自动探测，必要时降级为公开接口监控",
         )?;
     }
-    progress(
-        &state,
-        j,
-        "downloadingEngine",
-        &format!(
-            "源码兼容检查通过；正在下载官方{}（{}），完成后核验官方SHA256",
-            asset.name,
-            crate::byte_size::human_bytes(asset.size)
-        ),
-    )?;
-    let engine =
-        download_source::engine_archive(&state, &j.task_id, &asset, &j.download, &work).await?;
-    if fs::metadata(&engine).map_err(|e| e.to_string())?.len() != asset.size {
-        return Err("官方引擎包精确长度与Release清单不符".into());
-    }
-    progress(
-        &state,
-        j,
-        "extractingEngine",
-        "官方引擎SHA256和精确长度通过；正在安全解包运行文件",
-    )?;
-    let engine_files = extract_engine(&engine, &engine_work_dir(&work), &asset, || {
-        cancelled(&state, &j.task_id)
-    })?;
-    let build = read_engine_build(&work)?;
-    if build["version"].as_str() != Some(&engine_version) {
-        return Err("引擎包内部版本与Release不一致，未停止服务".into());
-    }
-    let bundled_cuda = engine_files.iter().any(|name| {
-        let name = name.to_ascii_lowercase();
-        name.starts_with("cublas64_") && name.ends_with(".dll") || name.starts_with("libcublas.so")
-    });
+    let (engine_files, bundled_cuda) = match &asset {
+        Some(asset) => {
+            progress(
+                &state,
+                j,
+                "downloadingEngine",
+                &format!(
+                    "源码兼容检查通过；正在下载官方{}（{}），完成后核验官方SHA256",
+                    asset.name,
+                    crate::byte_size::human_bytes(asset.size)
+                ),
+            )?;
+            let engine =
+                download_source::engine_archive(&state, &j.task_id, asset, &j.download, &work)
+                    .await?;
+            if fs::metadata(&engine).map_err(|e| e.to_string())?.len() != asset.size {
+                return Err("官方引擎包精确长度与Release清单不符".into());
+            }
+            progress(
+                &state,
+                j,
+                "extractingEngine",
+                "官方引擎SHA256和精确长度通过；正在安全解包运行文件",
+            )?;
+            let engine_files = extract_engine(&engine, &engine_work_dir(&work), asset, || {
+                cancelled(&state, &j.task_id)
+            })?;
+            let build = read_engine_build(&work)?;
+            if build["version"].as_str() != Some(&engine_version) {
+                return Err("引擎包内部版本与Release不一致，未停止服务".into());
+            }
+            let bundled_cuda = engine_files.iter().any(|name| {
+                let name = name.to_ascii_lowercase();
+                name.starts_with("cublas64_") && name.ends_with(".dll")
+                    || name.starts_with("libcublas.so")
+            });
+            (engine_files, bundled_cuda)
+        }
+        None => (Vec::new(), false),
+    };
     let associated = profiles(&state, &j.install_dir)?;
     let release_requirements = normalized_requirements(&work.join("source/requirements.txt"))?;
     if !j.new_install
@@ -2509,7 +2554,10 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
     if let Some(python) = &python {
         ensure_dependencies(&state, j, python, &work.join("source")).await?;
     }
-    let directories = engine_directories(&j.install_dir, &asset, &associated)?;
+    let directories = match &asset {
+        Some(asset) => engine_directories(&j.install_dir, asset, &associated)?,
+        None => Vec::new(),
+    };
     // Read before any file changes: the version a failed trial start returns to.
     let previous_engine = engine_trial::installed_engine_version(&j.install_dir, &directories);
     for relative in source_files {
@@ -2544,7 +2592,24 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
         }
     }
     let marker = work.join("release-marker.json");
-    fs::write(&marker,serde_json::to_vec_pretty(&json!({"version":version,"revision":revision,"assetName":asset.name,"sha256":asset.sha256,"sourceSha256":installation::file_hash(&source)?,"updatedAt":now()})).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;
+    let marker_value = match &asset {
+        Some(asset) => {
+            json!({"version":version,"revision":revision,"assetName":asset.name,"sha256":asset.sha256,"sourceSha256":installation::file_hash(&source)?,"updatedAt":now()})
+        }
+        // The engine stays: keep the package the earlier marker named, and say the code moved alone.
+        None => {
+            let earlier: Value = fs::read(j.install_dir.join(RELEASE_MARKER))
+                .ok()
+                .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+                .unwrap_or(Value::Null);
+            json!({"version":version,"revision":revision,"assetName":earlier["assetName"],"sha256":earlier["sha256"],"sourceSha256":installation::file_hash(&source)?,"sourceOnly":true,"engineVersion":kept_engine,"updatedAt":now()})
+        }
+    };
+    fs::write(
+        &marker,
+        serde_json::to_vec_pretty(&marker_value).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
     add_change(
         &j.install_dir,
         &work,
@@ -2666,6 +2731,12 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
             .map_err(|e| e.to_string())?
         };
         match applied {
+            Ok(_) if source_only => progress(
+                &state,
+                j,
+                "trialStart",
+                &format!("代码已替换，引擎 {kept_engine} 未改动 / Code replaced; engine {kept_engine} unchanged"),
+            )?,
             Ok(passed) => progress(
                 &state,
                 j,
@@ -2689,7 +2760,8 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
                     "运行程序已解包，正在准备独立Python环境和依赖；不会启动模型"
                 },
             )?;
-            python = Some(prepare_python(&state, j, &asset, bundled_cuda).await?);
+            let asset = asset.as_ref().ok_or("首次安装缺少官方引擎包")?;
+            python = Some(prepare_python(&state, j, asset, bundled_cuda).await?);
         }
         if let Some(python) = &python {
             check_python(&state, &j.task_id, python, &j.install_dir).await?;
@@ -2747,7 +2819,11 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
             let mut status=crate::store_get(&state,"automaticRuntimeInstallation".into())?;
             if status["result"]["installDir"].as_str().is_some_and(|p|dunce::canonicalize(p).is_ok_and(|p|p==j.install_dir)) {status["result"]["sourceRevision"]=json!(revision);Some(status)} else {None}
         };
-        complete(&state,j,publication,&format!("已安装官方Release v{version}同版本源码及{}；模型、配置、会话保留，原程序备份位于 {}",asset.name,work.join("backup").display()))?;
+        let done = match &asset {
+            Some(asset) => format!("已安装官方Release v{version}同版本源码及{}；模型、配置、会话保留，原程序备份位于 {}",asset.name,work.join("backup").display()),
+            None => format!("已只更新代码到官方Release v{version}，引擎 {kept_engine} 保持不变；模型、配置、会话保留，原程序备份位于 {} / Code updated to v{version}; engine {kept_engine} kept",work.join("backup").display()),
+        };
+        complete(&state,j,publication,&done)?;
         Ok::<(), String>(())
     }
     .await;
@@ -3872,6 +3948,7 @@ mod tests {
             download_url: None,
             target_version: None,
             source: None,
+            source_only: false,
         };
         let name = "strata-windows-x64.zip";
         let id = uuid::Uuid::new_v4().to_string();
@@ -3917,6 +3994,7 @@ mod tests {
             download_url: Some("https://mirror.example/engine.zip".into()),
             target_version: None,
             source: None,
+            source_only: false,
         };
         assert!(start_release_request_with_download(
             state.clone(),

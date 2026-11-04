@@ -49,11 +49,13 @@ function fixture(overrides = {}) {
   };
   const query = { isSuccess: false, isPending: true, isError: false, data: undefined, error: null };
   const assetQuery = { isSuccess: false, isPending: true, isError: false, data: undefined, error: null };
+  const cpuQuery = { isSuccess: false, isPending: true, isError: false, data: undefined, error: null };
   const core = {
     ...runtimeVersions,
     isDesktop: () => true,
     configurationPathKey,
     runtimeDownloadSources, resolveRuntimeDownloadPreferences, runtimeSavedAsset, runtimeAssetLabel, runtimeBilingualText, runtimeEngineArchiveFilters, runtimeVersionDirection,
+    runtimeCpuCheck: async () => overrides.cpu ? await overrides.cpu() : { avx2: true, engineBlocked: null },
     resolveRuntimeZipAsset: async (...args) => overrides.resolveAsset ? await overrides.resolveAsset(...args) : assets.find(asset => asset.name === args[1]) ?? assets[1],
     normalizeError: error => ({ message: error instanceof Error ? error.message : String(error) }),
     localInstallations: async () => { calls.installations++; return overrides.installations ? await overrides.installations() : profiles; },
@@ -73,7 +75,7 @@ function fixture(overrides = {}) {
       react, 'react/jsx-runtime': { jsx, jsxs: jsx }, '@strata-manager/core': core,
       '@tanstack/react-query': { useQuery: options => {
         const service = options.queryKey[0] === 'runtime-update-services';
-        const target = service ? query : assetQuery;
+        const target = service ? query : options.queryKey[0] === 'runtime-cpu-check' ? cpuQuery : assetQuery;
         const key = JSON.stringify(options.queryKey);
         if (!started.has(key) && options.enabled !== false) {
           started.add(key);
@@ -766,4 +768,29 @@ for (const kind of ['manual', 'automatic']) test(`${kind} update entry reads an 
   const unpinned = parentFixture(kind); releaseFacts(unpinned, true); unpinned.props.showInstallations = false; unpinned.render(); await unpinned.settle();
   if (kind === 'manual') await unpinned.open();
   else assert.ok(unpinned.dialog(), 'v0.2.3 is offered to an install of v0.2.2 (engine 0.1.47)');
+});
+
+test('a CPU without AVX2 stops the engine update and offers only the code update', async () => {
+  const blocked = '这台电脑的 CPU 不支持 AVX2，官方预编译引擎无法运行，已拦下引擎更新；可选择「只更新代码」，保留当前引擎 / This CPU has no AVX2, which the official prebuilt engines need, so the engine update was stopped; choose "Update code only" to keep the current engine';
+  const f = fixture({ cpu: async () => ({ avx2: false, engineBlocked: blocked }) }); await f.settle(); await f.settle();
+  const warning = nodes(f.tree()).find(node => node.props?.['data-testid'] === 'runtime-cpu-blocked');
+  assert.ok(warning && text(warning).includes('不支持 AVX2') && !text(warning).includes('This CPU'));
+  assert.equal(f.confirm().props.disabled, true, 'the engine update cannot be confirmed');
+  f.confirm().props.onClick(); assert.equal(f.calls.confirmed, 0);
+  const codeOnly = nodes(f.tree()).find(node => node.props?.['data-testid'] === 'runtime-update-code-only');
+  assert.ok(text(codeOnly).includes('只更新代码'));
+  assert.equal(codeOnly.props.disabled, false);
+  codeOnly.props.onClick(); codeOnly.props.onClick();
+  assert.deepEqual(f.calls.confirmedArgs, [{ download: { sourceOnly: true }, assetName: undefined }]);
+  assert.deepEqual(f.calls.mutations, []);
+});
+
+test('a chosen version on a CPU without AVX2 is blocked without a code-only shortcut; AVX2 shows nothing', async () => {
+  const blocked = '这台电脑的 CPU 不支持 AVX2，官方预编译引擎无法运行，已拦下引擎更新；可选择「只更新代码」，保留当前引擎 / This CPU has no AVX2';
+  const chosen = fixture({ cpu: async () => ({ avx2: false, engineBlocked: blocked }), props: { targetVersion: '0.1.40' } }); await chosen.settle(); await chosen.settle();
+  assert.ok(nodes(chosen.tree()).some(node => node.props?.['data-testid'] === 'runtime-cpu-blocked'));
+  assert.equal(nodes(chosen.tree()).some(node => node.props?.['data-testid'] === 'runtime-update-code-only'), false);
+  assert.equal(chosen.confirm().props.disabled, true);
+  const fine = fixture(); await fine.settle(); await fine.settle();
+  assert.equal(nodes(fine.tree()).some(node => node.props?.['data-testid'] === 'runtime-cpu-blocked' || node.props?.['data-testid'] === 'runtime-update-code-only'), false);
 });

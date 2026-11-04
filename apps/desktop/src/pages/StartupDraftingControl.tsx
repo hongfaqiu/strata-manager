@@ -1,6 +1,7 @@
-import type { DraftingMode, JsonObject } from '@strata-manager/core';
+import type { DraftingMode, JsonObject, ServiceProfile } from '@strata-manager/core';
 import * as core from '@strata-manager/core';
 import { Segmented } from '../OfficialControls';
+import { Dflash2Download } from './Dflash2Download';
 import './startup-drafting.css';
 
 const labels: Record<DraftingMode, [string, string]> = { auto: ['自动', 'Auto'], mtp: ['MTP', 'MTP'], dflash2: ['DFlash2', 'DFlash2'], off: ['关', 'Off'] };
@@ -11,11 +12,13 @@ interface Props {
   engineVersion?: string | null;
   /** Whether the engine serves DFlash2 (engine 0.1.56+, `core.engineServesDflash2`); otherwise DFlash2 stays hidden. */
   dflash2Served?: boolean | null;
+  /** The managed configuration, for 「下载 DFlash2」; without it no download is offered. */
+  profile?: ServiceProfile | null;
   onChange: (next: JsonObject) => void;
 }
 
 /** 预测（投机解码）: Auto / MTP / DFlash2 (engine 0.1.56+) / Off, written the way upstream v0.2.6 reads it for this engine version. */
-export function StartupDraftingControl({ zh, config, disabled, showParameterNames, engineVersion, dflash2Served, onChange }: Props) {
+export function StartupDraftingControl({ zh, config, disabled, showParameterNames, engineVersion, dflash2Served, profile, onChange }: Props) {
   const t = (cn: string, en: string) => (zh ? cn : en);
   const support = core.draftingSupport(engineVersion);
   const mode = core.draftingModeOf(config);
@@ -27,6 +30,7 @@ export function StartupDraftingControl({ zh, config, disabled, showParameterName
   const requests = core.draftingRequestsOf(config);
   const mtpInstead = served && requests >= 2 && (mode === 'auto' || mode === 'dflash2');
   const usesMtp = mode === 'mtp' || (mode === 'auto' && (!served || requests >= 2));
+  const offerDownload = served && !mtpInstead && (mode === 'auto' || mode === 'dflash2') && !!profile?.managed;
   const noDraftLayer = usesMtp && !args.some(arg => arg === '--mtp' || arg.startsWith('--mtp='));
   const title = t('预测（投机解码）', 'Drafting (speculative decoding)');
   const note = support === 'drafting' ? t(`写入 "drafting"；关闭时 Strata 启动会去掉 --mtp / --spec-min-p / --batch-mtp。保存并重启后生效。`, `Writes "drafting"; Off makes Strata drop --mtp / --spec-min-p / --batch-mtp at start. Applies after save and restart.`)
@@ -39,9 +43,10 @@ export function StartupDraftingControl({ zh, config, disabled, showParameterName
       <Segmented ariaLabel={title} value={mode} onValueChange={value => { if (!locked) onChange(core.applyDrafting(config, value as DraftingMode, engineVersion)); }}
         options={choices.map(value => ({ value, label: zh ? labels[value][0] : labels[value][1], disabled: locked || (value === 'dflash2' && support !== 'drafting') }))}/>
     </div>
-    {served ? <p className="startup-drafting-hint">{t('自动：单个请求用 DFlash2（首次下载约 1.2 GB），多个请求用 MTP；“关”只用主模型逐词生成。', 'Auto: DFlash2 for one request at a time (about 1.2 GB on first start), MTP for several; Off generates with the main model only.')}</p>
+    {served ? <p className="startup-drafting-hint">{t('自动：单个请求用 DFlash2（需先点「下载 DFlash2」，约 1.2 GB；启动时不会自动下载，未下载时用 MTP），多个请求用 MTP；“关”只用主模型逐词生成。', 'Auto: DFlash2 for one request at a time (click “Download DFlash2” first, about 1.2 GB; a start never downloads it and runs MTP until then), MTP for several; Off generates with the main model only.')}</p>
     : <p className="startup-drafting-hint">{t('MTP 用草稿层一次预测多个词再由主模型校验，通常更快；“自动”按显卡与模型选择，“关”只用主模型逐词生成，便于对比或排查。', 'MTP drafts several tokens with a small layer and the main model checks them, usually faster. Auto picks by card and model; Off generates token by token with the main model only, for comparisons or troubleshooting.')}</p>}
     {mtpInstead && <p className="startup-drafting-hint" role="status" data-testid="drafting-dflash2-parallel">{t(`并发 ${requests} 个请求：DFlash2 一次只服务一个请求，将改用 MTP。`, `${requests} concurrent requests: DFlash2 serves one request at a time, so MTP runs instead.`)}</p>}
+    {offerDownload && profile && <Dflash2Download zh={zh} profile={profile} disabled={disabled}/>}
     <p className="startup-drafting-hint" data-support={support}>{note}</p>
     {noDraftLayer && support !== 'none' && <p className="startup-drafting-hint" role="status">{t('当前配置没有 MTP 草稿层（--mtp），自动 / MTP 实际不会启用预测。', 'This configuration has no MTP draft layer (--mtp), so Auto / MTP will not actually draft.')}</p>}
   </section>;

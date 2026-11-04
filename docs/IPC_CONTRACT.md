@@ -90,6 +90,11 @@
 - `runtime_release_versions({force?}) -> RuntimeReleaseVersions`：只读。上游发布列表（`releases?per_page=100`），去掉草稿和无效标签，从新到旧排序；每项含 `version`、`tag`、`prerelease`、`packaging`（`feed`/`zip`）和 `installable`（本平台有安装包，旧版 ZIP 还需有 GitHub SHA256 摘要）。缓存 6 小时，失败后 10 分钟内不重试，失败时保留上次列表并返回 `error`。
 - `runtime_release_info({version}) -> RuntimeUpdateInfo`：只读。按 `releases/tags/v{version}` 读取并核验指定版本，校验规则与 `runtime_update_info` 相同（签名清单的签名、格式、通道、有效期，以及清单版本等于所选版本），但不做序号防回放、也不保存序号；结果不写入最新版本缓存。
 - `update_runtime_zip(...,targetVersion?)`：可选 `targetVersion` 指定安装某个版本（可低于当前版本）。队列此时调用后台 `update_runtime_zip_version_v1`；旧后台返回 `unknown_method` 时直接报错，不会退回到安装最新版本。只有指定了 `targetVersion` 时才跳过“禁止降级”检查；包核验、源码核验、试启动与自动回滚不变。`resolve_runtime_zip_asset` 同样接受 `targetVersion`，按所选版本匹配安装包。
+- `update_runtime_zip(...,sourceOnly?)`：`sourceOnly: true` 即「只更新代码」：只替换同提交的 Strata 源码，已装引擎保持不变（用于不支持 AVX2 的 CPU，官方预编译引擎需要 AVX2）。队列此时调用后台 `update_runtime_zip_source_only_v1`，旧后台返回 `unknown_method` 时直接报错，不会去装引擎。不能与本地引擎包、镜像地址或指定版本同时使用，首次安装不可用。未设置 `sourceOnly` 时，CPU 已知不支持 AVX2 会在下载前拒绝引擎安装或更新。
+- `runtime_cpu_check() -> {avx2: bool|null, engineBlocked: string|null}`：只读，后台 `runtime_cpu_check_v1`。`engineBlocked` 不为空时更新对话框拦下引擎更新、提供「只更新代码」；旧后台视为不拦截。
+- `dflash2_status({profile}) -> {ready: bool|null, fetchable: bool}`：只读，后台 `dflash2_status_v1`。看这个模型数据目录（由运行配置 `--pack`/`--mtp` 推出）下 `dflash2/` 是否已有 DFlash2 预测器文件；`fetchable` 表示此运行环境有 `strata drafting fetch`（Strata v0.2.10+）。旧后台返回 `{ready:null, fetchable:false}`。
+- `fetch_dflash2({profile}) -> TaskStatus`：后台 `dflash2_fetch_v1`，任务类型 `dflash2-fetch`，运行 `python -u strata.py drafting fetch --config <运行配置> --output jsonl`；进度为任务日志里的 `{"event":"progress",...}` 行。启动服务从不下载。
+- `running_drafting({profileId}) -> {verified, drafter?, reason?}`：只读，后台 `running_drafting_v1`。从已核验的受管引擎命令行读出实际在用的预测器（`dflash2`/`mtp`/`off`）；外部服务或无法核验时 `verified:false`。
 - 固定版本保存在 store 键 `runtimePinnedVersion`（空字符串表示未固定），只由前端用来停止比它新的更新提示。
 
 已安装版本（「已安装版本」列表、删除、一键清理、切换到此版本）：

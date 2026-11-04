@@ -89,7 +89,8 @@ export function ExistingModelPanel({ language, desktop, runtime, runtimeVersion,
   const checkError = orca ? orcaPlan.error : disk.error;
   const checkProblems = orca ? orcaPlan.data?.problems ?? [] : disk.data && disk.data.status !== 'ready' && disk.data.reason ? [disk.data.reason] : [];
   const ready = !!group && action !== 'blocked' && !engineBlocked && mtpReady && !previousPending && !checkPending && !checkError && (orca ? orcaPlan.data?.status === 'ready' : disk.data?.status === 'ready');
-  const command = group && action !== 'blocked' && directory ? core.localModelCommand(group, request, noMtp ? undefined : mtp.data, orca ? core.ORCA_CONTEXT : context, windows, orca ? undefined : images) : '';
+  const apart = core.localModelInstalledApart(group);
+  const command = group && action !== 'blocked' && directory ? core.localModelCommand(group, request, noMtp ? undefined : mtp.data, orca ? core.ORCA_CONTEXT : context, windows, orca ? undefined : images, apart ? disk.data?.dataDirectory : undefined) : '';
   const disabled = !desktop || busy || submitting;
 
   const pick = async (kind: 'folder' | 'file' | 'mtp') => {
@@ -164,6 +165,7 @@ export function ExistingModelPanel({ language, desktop, runtime, runtimeVersion,
         {group && (group.problems.length > 0 || group.warnings.length > 0 || group.shards.some(shard => shard.state !== 'ok')) && <div className="existing-model-detail" data-testid="existing-model-detail" aria-live="polite">
           {group.problems.length > 0 && <ul className="existing-model-problems" role="alert">{group.problems.map(problem => <li key={problem}><X size={13}/>{problem}</li>)}</ul>}
           {group.warnings.length > 0 && <ul className="existing-model-warnings" data-testid="existing-model-warnings">{group.warnings.map(warning => <li key={warning}><TriangleAlert size={13}/>{warning}</li>)}</ul>}
+          {core.localModelInstalledApart(group) && <p className="existing-model-ok" data-testid="existing-model-apart"><span className="existing-model-dot" aria-hidden="true"/><span>{t.renamedApart}</span></p>}
           {group.shards.some(shard => shard.state !== 'ok') && <ul className="existing-model-shards">{group.shards.map(shard => <li key={shard.name} className={`is-${shard.state === 'ok' ? 'ok' : 'bad'}`}><code>{shard.name}</code><span>{t.shardState[shard.state]}</span></li>)}</ul>}
         </div>}
       </>)}
@@ -189,7 +191,7 @@ export function ExistingModelPanel({ language, desktop, runtime, runtimeVersion,
             </div>
             <div className="existing-model-pick"><button type="button" disabled={disabled} data-testid="existing-model-mtp" onClick={() => void pick('mtp')}>{t.mtpChoose}</button></div>
           </div>
-          {mtpPath && !mtp.isFetching && (mtpProblem ? <p role="alert" className="existing-model-error" data-testid="existing-model-mtp-problem">{mtpProblem}</p> : mtp.data?.rtDirectory && <p className="existing-model-ok" data-testid="existing-model-mtp-ok" title={orca ? t.mtpOrcaMap : mtp.data.dataDirectory ? t.mtpSetupMap(mtp.data.dataDirectory) : undefined}><span className="existing-model-dot" aria-hidden="true"/><span>{t.mtpFound(gb(mtp.data.expertsBytes, language))}{orca ? <small className="existing-model-hint">{t.mtpOrcaMap}</small> : mtp.data.dataDirectory ? <small className="existing-model-hint">{t.mtpMapped}</small> : null}</span></p>)}
+          {mtpPath && !mtp.isFetching && (mtpProblem ? <p role="alert" className="existing-model-error" data-testid="existing-model-mtp-problem">{mtpProblem}</p> : mtp.data?.rtDirectory && <p className="existing-model-ok" data-testid="existing-model-mtp-ok" title={orca ? t.mtpOrcaMap : apart ? t.mtpLinked : mtp.data.dataDirectory ? t.mtpSetupMap(mtp.data.dataDirectory) : undefined}><span className="existing-model-dot" aria-hidden="true"/><span>{t.mtpFound(gb(mtp.data.expertsBytes, language))}{orca ? <small className="existing-model-hint">{t.mtpOrcaMap}</small> : apart ? <small className="existing-model-hint">{t.mtpLinked}</small> : mtp.data.dataDirectory ? <small className="existing-model-hint">{t.mtpMapped}</small> : null}</span></p>)}
         </div>
       </details>}
       {!runtime?.installDir ? <p className="existing-model-note" role="alert" data-testid="existing-model-need-runtime">{t.needRuntime}</p> : <div className="existing-model-sec existing-model-checks" data-testid="existing-model-checks">

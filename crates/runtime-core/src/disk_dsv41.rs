@@ -468,6 +468,7 @@ fn report(
         },
         data_directory: data,
         gguf_directory,
+        renamed: None,
     }
 }
 

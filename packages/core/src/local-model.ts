@@ -59,6 +59,14 @@ export function defaultLocalGgufGroup(scan: LocalModelScan | undefined): LocalGg
   return groupLocalGgufs(scan).flatMap(choice => choice.variants).find(group => group.installable);
 }
 
+/**
+ * Upstream #5052: setup.py reuses an installed pack of the same size, so a renamed copy is installed apart (its own data
+ * folder, a fresh pack, a `local-<name>-<quant>` configuration; local_model.rs RenamedCopy). Qwen3.6 has no pack.
+ */
+export function localModelInstalledApart(group: Pick<LocalGgufGroup, 'kind' | 'family'> | undefined): boolean {
+  return group?.kind === 'renamed' && ['qwen', 'swift', 'coder', 'unsloth'].includes(group.family ?? '');
+}
+
 export type LocalModelAction = 'setup' | 'orca' | 'blocked';
 export function localModelAction(group: LocalGgufGroup | undefined): LocalModelAction {
   if (!group?.installable) return 'blocked';
@@ -89,7 +97,8 @@ export function localModelImages(family: string | null | undefined, previous: Re
   return !!vision && typeof vision === 'object' && !Array.isArray(vision);
 }
 
-export function localModelCommand(group: LocalGgufGroup, request: LocalModelRequest, mtp: MtpCheck | undefined, context: number, windows: boolean, images?: boolean): string {
+/** `dataDirectory`: the folder setup is given instead (a renamed copy's own folder, from the disk check). */
+export function localModelCommand(group: LocalGgufGroup, request: LocalModelRequest, mtp: MtpCheck | undefined, context: number, windows: boolean, images?: boolean, dataDirectory?: string): string {
   const launcher = windows ? 'START-HERE.bat' : 'python setup.py';
   if (localModelAction(group) === 'orca') {
     // ORCA.md: tools/convert_to_bf16.py --compat-bf16 + a hand-written config; there is no setup.py flag for it.
@@ -97,7 +106,8 @@ export function localModelCommand(group: LocalGgufGroup, request: LocalModelRequ
   }
   const parts = [launcher, '--family', group.family ?? '?', '--model', group.quant ?? '?', '--gguf-dir', quoted(request.ggufDirectory), '--context', String(context)];
   if (images !== undefined) parts.push('--vision', images ? 'yes' : 'no');
-  if (mtp?.dataDirectory) parts.push('--data-dir', quoted(mtp.dataDirectory));
+  const data = dataDirectory || mtp?.dataDirectory;
+  if (data) parts.push('--data-dir', quoted(data));
   return parts.join(' ');
 }
 

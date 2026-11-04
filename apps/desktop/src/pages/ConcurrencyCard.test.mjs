@@ -52,6 +52,21 @@ test('one at a time hides experimental switches; conflicts show a fix; Metal is 
   assert.ok(conflict.byId('concurrency-long-context'));
 });
 
+test('32 GB RAM + 32 GB VRAM: slots that spill experts to the SSD get one warning with a fix, and the recommendation stays one at a time', () => {
+  const args = ['--native', 'Qwen-IQ3_S.gguf', '--max-context', '32768', '--mtp', 'm.gguf'];
+  const tight = { ...hw(32), totalMemoryBytes: 32 * GIB };
+  const { byId, changes, tree } = render({ parallel: 4, args }, { hardware: tight });
+  assert.match(text(byId('concurrency-recommendation')), /一次一个/);
+  const codes = card => nodes(card.byId('concurrency-issues')).filter(node => node.type === 'li').map(node => node.props['data-code']);
+  assert.ok(codes({ byId }).includes('ssd_spill'));
+  assert.equal(text(tree).split('溢出到 SSD').length - 1, 1, 'the spill note appears once');
+  const spill = nodes(byId('concurrency-issues')).find(node => node.type === 'li' && node.props['data-code'] === 'ssd_spill');
+  nodes(spill).find(node => node.type === 'button').props.onClick();
+  assert.deepEqual(changes, [['parallel', '1']]);
+  assert.ok(!codes(render({ parallel: 4, args }, { hardware: hw(32) })).includes('ssd_spill'), '64 GB RAM holds the experts');
+  assert.match(text(render({ parallel: 4, args }, { hardware: tight, zh: false }).tree), /spill experts to the SSD/);
+});
+
 test('English copy and unknown hardware stay at one at a time', () => {
   const { byId } = render({ args: ['--native', 'custom.gguf'] }, { hardware: null, zh: false });
   assert.match(text(byId('concurrency-recommendation')), /One at a time/);

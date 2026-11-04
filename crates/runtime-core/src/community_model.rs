@@ -58,7 +58,7 @@ pub fn config_file(slug: &str, quant: &str) -> String {
     format!("strata-{}.json", model_name(slug, quant))
 }
 /// setup.py FAMILIES[*]["tag"] + model: the pack folder and config name setup uses.
-fn setup_tag(family: &str, quant: &str) -> Option<String> {
+pub(crate) fn setup_tag(family: &str, quant: &str) -> Option<String> {
     let prefix = match family {
         "qwen" => "",
         "swift" => "swift-",
@@ -304,6 +304,7 @@ pub(crate) fn prepare(
         },
         data_directory: community.clone(),
         gguf_directory: Some(gguf_directory.clone()),
+        renamed: None,
     };
     disk::measure(&mut plan, disk::read_space);
     Ok(Prepared {
@@ -430,6 +431,9 @@ if cmd == "fetch":
     print("community files ready", flush=True)
 elif cmd == "stash":
     generic, pack = rest[0], Path(rest[1])
+    # A renamed local copy (local_model.rs RenamedCopy) also passes the files it was made from and the data folder setup
+    # would have used: a pack built from other files is rebuilt, and that folder's MTP layer and projectors are linked in.
+    source, base = (rest[2] if len(rest) > 2 else None), (Path(rest[3]) if len(rest) > 3 and rest[3] else None)
     cfg, stash, none = root / generic, root / (generic + ".community-stash"), root / (generic + ".community-none")
     for f in (stash, none):
         if f.exists():
@@ -446,7 +450,34 @@ elif cmd == "stash":
         except (OSError, ValueError):
             pass
     write_json(root / (generic + ".community-settings"), snap)
+    own = pack.parent.parent
+    if source is not None:
+        mark = own / "source.txt"
+        if pack.is_dir() and mark.is_file() and mark.read_text(encoding="utf-8", errors="replace") != source:
+            shutil.rmtree(pack)                   # made from other files of the same name: never run that pack
+            print(f"rebuilding {pack.name}: the model files changed", flush=True)
+        mark.parent.mkdir(parents=True, exist_ok=True)
+        mark.write_text(source, encoding="utf-8")
     pack.mkdir(parents=True, exist_ok=True)       # setup takes the data folder's pack first: build ours, not the official one
+    if base is not None and base.resolve() != own.resolve():
+        linked = 0
+        found = [p for p in (base / "mtp").rglob("*") if p.is_file()] if (base / "mtp").is_dir() else []
+        found += list((base / "models").glob("mmproj-*.gguf")) if (base / "models").is_dir() else []
+        for src in found:
+            dst = own / src.relative_to(base)
+            if dst.exists() or src.name.endswith((".part", ".tmp", ".reuse")):
+                continue
+            try:
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                if src.stat().st_size < 64 * 1024 * 1024:
+                    shutil.copy2(src, dst)        # small files setup may rewrite (the draft vocabulary): a copy
+                else:
+                    os.link(src, dst)             # weights: a hard link, no second copy; setup fetches what is not linked
+                linked += 1
+            except OSError as e:
+                print(f"  {src.name} not linked ({e})", flush=True)
+        if linked:
+            print(f"reused {linked} MTP / projector files from {base}", flush=True)
     print(f"official config kept aside: {generic}", flush=True)
 elif cmd == "finish":
     generic, target, name = rest[0], rest[1], rest[2]
@@ -757,6 +788,108 @@ mod tests {
         out.status
             .success()
             .then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned())
+    }
+
+    #[test]
+    fn stash_for_a_renamed_copy_rebuilds_a_pack_of_other_files_and_links_the_mtp_layer() {
+        let Some(python) = python() else {
+            eprintln!("no Python: skipped");
+            return;
+        };
+        let temp = tempfile::tempdir().unwrap();
+        let (root, base) = (temp.path().join("root"), temp.path().join("data"));
+        let own = base.join("local").join("tuned-iq3_s");
+        let pack = own.join("packs").join("iq3_s");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(base.join("mtp").join("rt")).unwrap();
+        fs::create_dir_all(base.join("models")).unwrap();
+        fs::write(
+            root.join("setup.py"),
+            format!(
+                "from pathlib import Path\ndef settings_path(): return Path({:?})\n",
+                temp.path().join("settings.json").to_string_lossy()
+            ),
+        )
+        .unwrap();
+        fs::write(base.join("mtp/rt/experts.bin"), vec![7u8; 64 * 1024 * 1024]).unwrap();
+        fs::write(base.join("mtp/rt/draft_vocab.bin"), b"vocab").unwrap();
+        fs::write(base.join("mtp/rt/experts.bin.part"), b"partial").unwrap();
+        fs::write(
+            base.join("models/mmproj-Qwen3.8-Flash-Next-BF16.gguf"),
+            b"projector",
+        )
+        .unwrap();
+        let stash = |source: &str| {
+            let out = std::process::Command::new(&python)
+                .args([
+                    "-c",
+                    HELPER,
+                    &root.to_string_lossy(),
+                    "stash",
+                    "strata-iq3_s.json",
+                ])
+                .args([
+                    pack.to_string_lossy().as_ref(),
+                    source,
+                    base.to_string_lossy().as_ref(),
+                ])
+                .output()
+                .unwrap();
+            assert!(
+                out.status.success(),
+                "{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            String::from_utf8_lossy(&out.stdout).into_owned()
+        };
+        let first = stash("a.gguf 1 1");
+        assert!(pack.is_dir() && fs::read_dir(&pack).unwrap().next().is_none());
+        assert_eq!(
+            fs::read_to_string(own.join("source.txt")).unwrap(),
+            "a.gguf 1 1"
+        );
+        assert!(first.contains("reused 3 MTP / projector files"), "{first}");
+        assert_eq!(
+            fs::read(own.join("mtp/rt/draft_vocab.bin")).unwrap(),
+            b"vocab"
+        );
+        assert_eq!(
+            fs::read(own.join("models/mmproj-Qwen3.8-Flash-Next-BF16.gguf")).unwrap(),
+            b"projector"
+        );
+        assert!(
+            !own.join("mtp/rt/experts.bin.part").exists(),
+            "unfinished downloads are not linked"
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            let linked = fs::metadata(own.join("mtp/rt/experts.bin")).unwrap();
+            assert_eq!(
+                linked.ino(),
+                fs::metadata(base.join("mtp/rt/experts.bin")).unwrap().ino()
+            );
+            assert_ne!(
+                fs::metadata(own.join("mtp/rt/draft_vocab.bin"))
+                    .unwrap()
+                    .ino(),
+                fs::metadata(base.join("mtp/rt/draft_vocab.bin"))
+                    .unwrap()
+                    .ino(),
+                "small files are copies, so setup's rewrite cannot reach the original"
+            );
+        }
+        // A pack made from the same files is kept; one made from other files is rebuilt.
+        fs::write(pack.join("native_experts.txt"), b"x").unwrap();
+        stash("a.gguf 1 1");
+        assert!(pack.join("native_experts.txt").is_file());
+        let changed = stash("a.gguf 2 2");
+        assert!(changed.contains("rebuilding"), "{changed}");
+        assert!(pack.is_dir() && !pack.join("native_experts.txt").exists());
+        assert!(
+            base.join("mtp/rt/experts.bin").is_file(),
+            "the original MTP layer is untouched"
+        );
     }
 
     #[test]

@@ -9,6 +9,7 @@ pub mod community_model;
 pub mod component_engine;
 pub mod configuration_copy;
 pub mod control_vector;
+pub mod dflash2;
 pub mod diagnostics;
 pub mod discovery;
 pub mod disk;
@@ -901,6 +902,7 @@ impl RuntimeState {
                 | "tuning_restore"
                 | "set_background_policy"
                 | "prepare_app_update"
+                | "dflash2_fetch_v1"
         ) {
             runtime_upgrade::assert_available(&self)?;
         }
@@ -959,6 +961,7 @@ impl RuntimeState {
                     | "tuning_apply"
                     | "tuning_restore"
                     | "set_background_policy"
+                    | "dflash2_fetch_v1"
             )
         {
             return Err("模型正在切换，请等待本次准备完成".into());
@@ -976,6 +979,7 @@ impl RuntimeState {
                 | "update_runtime_zip"
                 | "update_runtime_zip_download_v1"
                 | "update_runtime_zip_version_v1"
+                | "update_runtime_zip_source_only_v1"
                 | "write_config"
                 | "write_config_cas_v1"
                 | "set_api_key"
@@ -1334,6 +1338,12 @@ impl RuntimeState {
                 external_management::assert_profile_manager_owned(&self, &selected)?;
                 Ok(json!({"managed":true}))
             }
+            "dflash2_status_v1" => value(dflash2::status(&profile()?)),
+            "dflash2_fetch_v1" => value(dflash2::start(self.clone(), profile()?)),
+            "running_drafting_v1" => value(Ok::<_, String>(dflash2::running(
+                &self,
+                &arg::<String>(&params, "profileId")?,
+            ))),
             "chat_runtime_evidence" => value(chat_runtime::evidence(
                 &self,
                 &arg::<String>(&params, "profileId")?,
@@ -1357,10 +1367,12 @@ impl RuntimeState {
                     .map(str::to_owned),
             )),
             "update_runtime" => value(runtime_upgrade::start(self.clone(), profile()?.id)),
+            "runtime_cpu_check_v1" => value(Ok::<_, String>(runtime_upgrade::cpu_floor::check())),
             "engine_help_flags" => value(engine_help::flags(&profile()?)),
             "update_runtime_zip"
             | "update_runtime_zip_download_v1"
-            | "update_runtime_zip_version_v1" => {
+            | "update_runtime_zip_version_v1"
+            | "update_runtime_zip_source_only_v1" => {
                 value(runtime_upgrade::start_release_request_with_download(
                     self.clone(),
                     arg(&params, "installDir")?,
@@ -3875,8 +3887,9 @@ fn run_setup_with_preflight_options(
     {
         return Err("这个运行环境的官方安装器不支持显卡角色（--gpu-roles 需要 Strata 0.2.2 或更新版本）；请先更新运行环境，或改用“指定显卡”".into());
     }
-    let disk_plan = preflight(&profile, &model, &quant, images)?;
+    let mut disk_plan = preflight(&profile, &model, &quant, images)?;
     disk_plan.require_space()?;
+    let renamed = disk_plan.renamed.take();
     // A pack left by an earlier install states what the model files read (ds4.txt); refuse past it before setup starts.
     if let Some(set) = deepseek.then(|| disk::dsv41::set(&quant)).flatten() {
         let pack = disk_plan
@@ -3911,7 +3924,10 @@ fn run_setup_with_preflight_options(
     let (setup_python, mut steps) = processes::setup_python(&profile, &root)?;
     let intent = setup_handoff::SetupIntent {
         profile: profile.clone(),
-        family: model.clone(),
+        family: match &renamed {
+            Some((copy, _)) => format!("{}{}", local_model::RENAMED_FAMILY_PREFIX, copy.slug),
+            None => model.clone(),
+        },
         quant: quant.clone(),
         context,
         images,
@@ -3956,7 +3972,15 @@ fn run_setup_with_preflight_options(
             .transpose()?
             .unwrap_or_default(),
     };
-    steps.push(step);
+    match &renamed {
+        Some((copy, base)) => steps.extend(local_model::renamed_steps(
+            copy,
+            &disk_plan.data_directory,
+            base,
+            step,
+        )),
+        None => steps.push(step),
+    }
     let prelude = setup_prelude(state.clone(), root_for_prelude, deepseek)?;
     processes::launch_setup_task_with_prelude(state.clone(), intent, steps, prelude)
 }

@@ -3,7 +3,8 @@
  * - strata_control/drafting.py: MODES auto | mtp | dflash2 | off, default auto; an unknown value reads as auto.
  *   `"drafting": "off"` strips --mtp / --spec-min-p / --batch-mtp (and --draft / --draft-model) at start.
  * - Engines 0.1.46–0.1.47 only know the older `"mtp": false` switch (draft_layer.is_off); `drafting` arrives in 0.1.48.
- * - apps/host/src/lib/drafting.ts: DFlash2 is offered only for the qwen / gyro families AND only while Control reports
+ * - apps/host/src/lib/drafting.ts: DFlash2 is offered only for the qwen / gyro / unsloth families (Unsloth's quantizations of
+ *   the same Qwen3.8-Flash-Next weights, e.g. qwen3.8-flash-next-unsloth-ud-q4_k_xl) AND only while Control reports
  *   `capabilities.dflash2 === true` (ENGINE_SERVES_DFLASH2). Strata v0.2.10 (engine 0.1.56) makes DFlash2 the Auto drafter for
  *   Qwen3.8, so the manager offers it from engine 0.1.56 on (DFLASH2_SINCE). DFlash2 answers one request at a time: with
  *   `parallel` / `--parallel` / `--batch` / `--slots` of 2 or more Strata runs MTP instead (strata_control/drafting.py blocked_by).
@@ -14,7 +15,7 @@ import type { JsonObject } from './types';
 
 export type DraftingMode = 'auto' | 'mtp' | 'dflash2' | 'off';
 export const DRAFTING_MODES: readonly DraftingMode[] = ['auto', 'mtp', 'dflash2', 'off'];
-export const DRAFTING_FAMILIES: readonly string[] = ['qwen', 'gyro'];
+export const DRAFTING_FAMILIES: readonly string[] = ['qwen', 'gyro', 'unsloth'];
 /** First engine that reads `"drafting"`. */
 export const DRAFTING_KEY_SINCE = '0.1.48';
 /** First engine that honours `"mtp": false`. */
@@ -69,11 +70,11 @@ export function normalizeDrafting(value: unknown): DraftingMode {
   return (DRAFTING_MODES as readonly string[]).includes(text) ? text as DraftingMode : 'auto';
 }
 
-/** The qwen / gyro family from the run config's model name (upstream drafting._SUPPORTED_NAME), else null. */
-export function draftingFamilyOf(config: JsonObject | undefined | null): 'qwen' | 'gyro' | null {
+/** The qwen / gyro / unsloth family from the run config's model name (upstream drafting._SUPPORTED_NAME), else null. */
+export function draftingFamilyOf(config: JsonObject | undefined | null): 'qwen' | 'gyro' | 'unsloth' | null {
   const name = typeof config?.model_name === 'string' ? config.model_name.trim() : '';
-  if (!/^qwen3\.8-flash-next(-gyro-[a-z0-9._-]+|-(q|iq|tq)\d[a-z0-9_.]*)?$/i.test(name)) return null;
-  return /-gyro-/i.test(name) ? 'gyro' : 'qwen';
+  if (!/^qwen3\.8-flash-next(-gyro-[a-z0-9._-]+|-unsloth-[a-z0-9._-]+|-(q|iq|tq)\d[a-z0-9_.]*)?$/i.test(name)) return null;
+  return /^qwen3\.8-flash-next-gyro-/i.test(name) ? 'gyro' : /^qwen3\.8-flash-next-unsloth-/i.test(name) ? 'unsloth' : 'qwen';
 }
 
 /** Choices for the toggle. DFlash2 needs a supported family and `dflash2Served === true`; a saved dflash2 still shows. */
@@ -125,4 +126,38 @@ export function effectiveDraftingOf(args: readonly string[] | undefined | null):
   const value = (flag: string) => { const i = args.findIndex(arg => arg === flag || arg.startsWith(`${flag}=`)); return i < 0 ? undefined : args[i] === flag ? args[i + 1] : args[i]!.slice(flag.length + 1); };
   if (value('--draft')?.toLowerCase() === 'dflash2') return 'dflash2';
   return args.some(arg => arg === '--mtp' || arg.startsWith('--mtp=')) ? 'mtp' : 'off';
+}
+
+/** The DFlash2 drafter download (upstream strata_control/drafting.py): about 1.2 GB to fetch, packed to about 0.52 GB on disk. */
+export const DFLASH2_DOWNLOAD = { repo: 'incoai/Qwen3.8-Flash-Next-DFlash2', license: 'Apache-2.0', downloadGb: 1.2, diskGb: 0.52, vramGb: 0.89, vramSelq4Gb: 0.72 } as const;
+
+export interface Dflash2FetchProgress {
+  step?: string; done?: number; total?: number;
+  /** The final line: ok with the pack path, or the error message. */
+  result?: { ok: true; pack: string | null } | { ok: false; message: string };
+}
+
+/** Reads `strata drafting fetch --output jsonl` lines (task log messages): the last progress line and the result line. */
+export function dflash2FetchProgress(lines: readonly string[]): Dflash2FetchProgress {
+  const out: Dflash2FetchProgress = {};
+  for (const line of lines) {
+    const text = line.trim();
+    if (!text.startsWith('{')) continue;
+    let value: unknown;
+    try { value = JSON.parse(text); } catch { continue; }
+    if (!value || typeof value !== 'object') continue;
+    const row = value as Record<string, unknown>;
+    if (row.event === 'progress') {
+      const done = Number(row.done), total = Number(row.total);
+      out.step = typeof row.step === 'string' ? row.step : undefined;
+      out.done = Number.isFinite(done) && done >= 0 ? done : undefined;
+      out.total = Number.isFinite(total) && total > 0 ? total : undefined;
+    } else if (row.ok === true && row.event === 'result') {
+      out.result = { ok: true, pack: typeof row.pack === 'string' ? row.pack : null };
+    } else if (row.ok === false) {
+      const error = row.error as Record<string, unknown> | undefined;
+      out.result = { ok: false, message: typeof error?.message === 'string' ? error.message : String(error?.code ?? 'drafting_failed') };
+    }
+  }
+  return out;
 }

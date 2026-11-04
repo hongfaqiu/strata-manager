@@ -219,7 +219,7 @@ fn base_args(args: &[String]) -> Vec<String> {
 }
 
 /// What the engine command line actually drafts with.
-fn effective_drafting(args: &[String]) -> &'static str {
+pub(crate) fn effective_drafting(args: &[String]) -> &'static str {
     if option(args, &["--draft"]).is_some_and(|value| value.eq_ignore_ascii_case("dflash2")) {
         "dflash2"
     } else if args.iter().any(|arg| flag_name(arg) == "--mtp") {

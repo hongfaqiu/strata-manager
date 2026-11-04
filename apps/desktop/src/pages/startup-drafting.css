@@ -2,3 +2,9 @@
 .startup-drafting-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .startup-drafting-title{display:inline-flex;align-items:center;gap:10px}.startup-drafting-title strong{font-size:14px}
 .startup-drafting-hint{margin:0;font-size:12px;line-height:1.6;color:var(--st-ink-muted)}
+.dflash2-download{display:grid;gap:6px}
+.dflash2-download-row,.dflash2-download-progress{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.dflash2-download-row button,.dflash2-download-progress button{display:inline-flex;align-items:center;gap:6px}
+.dflash2-download-progress span{display:inline-flex;align-items:center;gap:6px;font-size:12px}
+.dflash2-download-progress progress{flex:1 1 160px;min-width:120px;height:8px}
+.dflash2-confirm-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}

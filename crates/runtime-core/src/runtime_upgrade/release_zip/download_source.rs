@@ -25,6 +25,11 @@ pub struct RuntimeZipDownloadOptions {
     /// means GitHub only, as before.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    /// 「只更新代码」: replace the same-commit Strata source and keep the installed engine, for a
+    /// CPU without AVX2 (cpu_floor). Sent only with `update_runtime_zip_source_only_v1`, so an
+    /// older background service refuses it instead of installing an engine.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub source_only: bool,
 }
 
 impl RuntimeZipDownloadOptions {
@@ -50,6 +55,9 @@ impl RuntimeZipDownloadOptions {
             if !crate::runtime_upgrade::engine_package::valid_version(version) {
                 return Err("所选 Strata 版本号无效 / Invalid Strata version".into());
             }
+        }
+        if self.source_only && (self.is_custom() || self.target_version.is_some()) {
+            return Err("「只更新代码」不使用引擎包，不能与本地引擎包、镜像地址或指定版本同时使用 / \"Update code only\" uses no engine package and cannot be combined with a local package, a mirror or a chosen version".into());
         }
         if self.local_archive_path.is_some() && self.download_url.is_some() {
             return Err("本地引擎包 和镜像下载地址只能选择一种".into());
@@ -311,6 +319,42 @@ mod tests {
         }
     }
     #[test]
+    fn code_only_takes_no_engine_package_options() {
+        let code_only = RuntimeZipDownloadOptions {
+            source_only: true,
+            ..Default::default()
+        };
+        assert!(code_only.clone().validate(None).unwrap().source_only);
+        for options in [
+            RuntimeZipDownloadOptions {
+                download_url: Some("https://mirror.example/strata.zip".into()),
+                ..code_only.clone()
+            },
+            RuntimeZipDownloadOptions {
+                local_archive_path: Some("/tmp/strata.zip".into()),
+                ..code_only.clone()
+            },
+            RuntimeZipDownloadOptions {
+                target_version: Some("0.2.10".into()),
+                ..code_only.clone()
+            },
+        ] {
+            assert!(options
+                .validate(Some("strata-windows-x64.zip"))
+                .unwrap_err()
+                .contains("只更新代码"));
+        }
+        // Absent from the wire unless set, so older journals and requests compare equal.
+        assert_eq!(
+            serde_json::to_value(RuntimeZipDownloadOptions::default()).unwrap(),
+            serde_json::json!({})
+        );
+        assert_eq!(
+            serde_json::to_value(&code_only).unwrap(),
+            serde_json::json!({"sourceOnly": true})
+        );
+    }
+    #[test]
     fn a_chosen_version_is_normalized() {
         let chosen = |version: &str| RuntimeZipDownloadOptions {
             target_version: Some(version.into()),
@@ -355,6 +399,7 @@ mod tests {
             download_url: None,
             target_version: None,
             source: None,
+            source_only: false,
         };
         assert!(options.clone().validate(None).is_err());
         assert!(options.validate(Some("strata-windows-x64.zip")).is_ok());
@@ -369,6 +414,7 @@ mod tests {
                 download_url: Some(url.into()),
                 target_version: None,
                 source: None,
+                source_only: false,
             }
             .validate(Some("strata-windows-x64.zip"))
             .is_err());
@@ -378,6 +424,7 @@ mod tests {
             download_url: Some("https://mirror.test/a.zip".into()),
             target_version: None,
             source: None,
+            source_only: false,
         }
         .validate(Some("strata-windows-x64.zip"))
         .is_err());
@@ -386,6 +433,7 @@ mod tests {
             download_url: Some("https://mirror.test/download?token=123".into()),
             target_version: None,
             source: None,
+            source_only: false,
         }
         .validate(Some("strata-windows-x64.zip"))
         .is_ok());
@@ -418,6 +466,7 @@ mod tests {
             download_url: None,
             target_version: None,
             source: None,
+            source_only: false,
         };
         let staged = engine_archive(&state, &id, &asset(bytes), &options, temp.path())
             .await

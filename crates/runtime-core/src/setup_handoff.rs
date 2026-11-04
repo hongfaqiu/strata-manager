@@ -261,13 +261,20 @@ fn family_name(family: &str) -> Option<&'static str> {
 }
 
 /// The model_name a finished setup task registers: setup.py's `<family name>-<quant>`, or Manager's
-/// `community-<slug>-<quant>` for a community model (community_model.rs renames the config to it).
+/// `community-<slug>-<quant>` for a community model (community_model.rs renames the config to it) and
+/// `local-<slug>-<quant>` for a renamed local copy (local_model.rs RenamedCopy).
 fn expected_model_name(intent: &SetupIntent) -> Option<String> {
     if let Some(slug) = intent
         .family
         .strip_prefix(crate::community_model::FAMILY_PREFIX)
     {
         return Some(crate::community_model::model_name(slug, &intent.quant));
+    }
+    if let Some(slug) = intent
+        .family
+        .strip_prefix(crate::local_model::RENAMED_FAMILY_PREFIX)
+    {
+        return Some(crate::local_model::renamed_model_name(slug, &intent.quant));
     }
     // setup.py MULTI_FILE_FAMILIES: one model_name for every DeepSeek-V4.1-Flash set; the set is in the file name.
     if intent.family == dsv41::FAMILY {
@@ -905,6 +912,37 @@ sys.exit(spec.get('exit',0))
         assert_eq!(
             registered["model_name"],
             "orcarouter-qwen3.8-flash-next-uncensored-iq3_xxs"
+        );
+    }
+
+    #[test]
+    fn a_renamed_local_copy_registers_its_own_config_not_the_official_one() {
+        let mut fixture = fixture();
+        fixture.intent.family = "local:qwen3.8-flash-next-gsq-rco-tuned".into();
+        let mut renamed = config(8192);
+        renamed["model_name"] = json!("local-qwen3.8-flash-next-gsq-rco-tuned-iq2_xs");
+        spec(
+            &fixture,
+            vec![
+                ("strata-iq2_xs.json", config(8192)),
+                (
+                    "strata-local-qwen3.8-flash-next-gsq-rco-tuned-iq2_xs.json",
+                    renamed,
+                ),
+            ],
+            0.0,
+            0,
+        );
+        let task = launch(&fixture);
+        assert_eq!(wait(&fixture.state, &task.id).state, "completed");
+        let result = handoff(&fixture.state, &task.id);
+        assert_eq!(result.status, "registered", "{result:?}");
+        let profiles = fixture.state.registered_profiles().unwrap();
+        assert_eq!(profiles.len(), 1);
+        let registered = checked_config(Path::new(&profiles[0].config_path)).unwrap();
+        assert_eq!(
+            registered["model_name"],
+            "local-qwen3.8-flash-next-gsq-rco-tuned-iq2_xs"
         );
     }
 

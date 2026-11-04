@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultLocalGgufGroup, groupLocalGgufs, localModelAction, localModelBaseName, localModelCommand, localModelImages, localOrcaRequest, localSetupRequest, type LocalGgufGroup } from '../src/local-model';
+import { defaultLocalGgufGroup, groupLocalGgufs, localModelAction, localModelBaseName, localModelCommand, localModelImages, localModelInstalledApart, localOrcaRequest, localSetupRequest, type LocalGgufGroup } from '../src/local-model';
 import type { ModelDownloadRequest } from '../src/model-download';
 import { normalizeOfficialSetupOptions } from '../src/official-setup';
 
@@ -42,6 +42,18 @@ describe('使用已有模型 (#75)', () => {
       .toBe('START-HERE.bat --family unsloth --model UD-Q4_K_XL --gguf-dir "D:\\My Models\\gguf" --context 32768 --data-dir D:\\AI');
     expect(localModelCommand(group({}), { ggufDirectory: '/m' }, undefined, 8192, false)).toBe('python setup.py --family unsloth --model UD-Q4_K_XL --gguf-dir /m --context 8192');
     expect(localModelCommand(group({ kind: 'orca', family: 'orca', quant: 'IQ3_XXS' }), { ggufDirectory: '/m' }, mtp, 32768, false)).toContain('--compat-bf16');
+  });
+
+  it('installs a renamed copy apart (upstream #5052) and shows its own --data-dir', () => {
+    expect(localModelInstalledApart(group({ kind: 'renamed' }))).toBe(true);
+    expect(localModelInstalledApart(group({ kind: 'renamed', family: 'swift', quant: 'IQ3_S' }))).toBe(true);
+    expect(localModelInstalledApart(group({ kind: 'renamed', family: 'qwen36' }))).toBe(false);
+    expect(localModelInstalledApart(group({}))).toBe(false);
+    expect(localModelInstalledApart(group({ kind: 'orca', family: 'orca' }))).toBe(false);
+    expect(localModelInstalledApart(undefined)).toBe(false);
+    const mtp = { input: '/ai/mtp/rt', rtDirectory: '/ai/mtp/rt', dataDirectory: '/ai', expertsBytes: 1, problems: [] };
+    expect(localModelCommand(group({ kind: 'renamed' }), { ggufDirectory: '/m' }, mtp, 8192, false, undefined, '/ai/local/tuned-ud-q4_k_xl'))
+      .toBe('python setup.py --family unsloth --model UD-Q4_K_XL --gguf-dir /m --context 8192 --data-dir /ai/local/tuned-ud-q4_k_xl');
   });
 
   it('#4926: keeps the replaced configuration\'s image support, else on when the model reads images', () => {

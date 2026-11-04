@@ -927,6 +927,7 @@ async fn update_runtime_zip(
     download_url: Option<String>,
     target_version: Option<String>,
     source: Option<String>,
+    source_only: Option<bool>,
 ) -> Result<Value, String> {
     runtime_update_queue::start(
         &state.ipc,
@@ -938,9 +939,73 @@ async fn update_runtime_zip(
             download_url,
             target_version,
             source,
+            source_only: source_only.unwrap_or(false),
         },
     )
     .await
+}
+
+/// Whether this CPU can run the official prebuilt engines (AVX2; read-only). An older
+/// background service has no check, which blocks nothing: its update then runs as before.
+#[tauri::command]
+async fn runtime_cpu_check(state: State<'_, ClientState>) -> Result<Value, String> {
+    match state.ipc.request("runtime_cpu_check_v1", json!({})).await {
+        Ok(value) => Ok(value),
+        Err(error) if error.code == "unknown_method" => {
+            Ok(json!({"avx2": null, "engineBlocked": null}))
+        }
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+/// Whether this model's DFlash2 drafter file is downloaded; an older backend reports unknown.
+#[tauri::command]
+async fn dflash2_status(state: State<'_, ClientState>, profile: Value) -> Result<Value, String> {
+    match state
+        .ipc
+        .request("dflash2_status_v1", json!({"profile": profile}))
+        .await
+    {
+        Ok(value) => Ok(value),
+        Err(error) if error.code == "unknown_method" => {
+            Ok(json!({"ready": null, "fetchable": false}))
+        }
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+/// Downloads the DFlash2 drafter (`strata drafting fetch`) as a task.
+#[tauri::command]
+async fn fetch_dflash2(state: State<'_, ClientState>, profile: Value) -> Result<Value, String> {
+    match state
+        .ipc
+        .request("dflash2_fetch_v1", json!({"profile": profile}))
+        .await
+    {
+        Ok(value) => Ok(value),
+        Err(error) if error.code == "unknown_method" => Err(
+            "后台服务版本较旧，不支持下载 DFlash2；请重启 Strata Manager 后重试 / The background service is older and cannot download DFlash2; restart Strata Manager and retry"
+                .into(),
+        ),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+/// The drafter the running engine actually uses, read from its verified command line.
+#[tauri::command]
+async fn running_drafting(
+    state: State<'_, ClientState>,
+    profile_id: String,
+) -> Result<Value, String> {
+    match state
+        .ipc
+        .request("running_drafting_v1", json!({"profileId": profile_id}))
+        .await
+    {
+        Ok(value) => Ok(value),
+        Err(error) if error.code == "unknown_method" => Ok(json!({"verified": false})),
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 /// One chosen Strata release, verified like the latest one (read-only).
@@ -2368,6 +2433,10 @@ pub fn run() {
             update_runtime,
             engine_help_flags,
             update_runtime_zip,
+            runtime_cpu_check,
+            dflash2_status,
+            fetch_dflash2,
+            running_drafting,
             runtime_update_info,
             runtime_release_versions,
             runtime_installed_versions,
