@@ -5,7 +5,8 @@ import * as core from '@strata-manager/core';
 import type { LogEntry, RuntimeInstallationStatus, TaskStatus } from '@strata-manager/core';
 import { Empty, Header, Panel } from '../components';
 import { Dropdown } from '../OfficialControls';
-import { InstalledRuntimesPanel } from './InstalledRuntimesPanel';
+import { InstalledRuntimesPanel, useInstalledRuntimes } from './InstalledRuntimesPanel';
+import { useQuery } from '@tanstack/react-query';
 import { RuntimeManagementPanel } from './RuntimeManagementPanel';
 import { StorageLocationPanel } from './StorageLocation';
 import { LocalRuntimePackageFields, useLocalRuntimePackages } from './LocalRuntimePackage';
@@ -68,6 +69,9 @@ export interface InstallRuntimePageProps {
   os?: string;
   /** Native folder picker; enables the storage location panel. */
   onChooseDirectory?: () => Promise<string | null>;
+  /** The runtime chosen in 「运行环境」; kept by the app so the automatic update prompt follows it. */
+  selectedRuntimeDir?: string;
+  onSelectRuntime?: (installDir: string) => void;
 }
 
 function detectedRuntimes(status: RuntimeInstallationStatus): core.DetectedRuntime[] {
@@ -91,7 +95,12 @@ export function InstallRuntimePage(props: InstallRuntimePageProps) {
   const [cancelRequested, setCancelRequested] = useState('');
   const [logsOpen, setLogsOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [selectedRuntime, setSelectedRuntime] = useState('');
+  const [localSelection, setLocalSelection] = useState('');
+  const selectedRuntime = props.onSelectRuntime ? props.selectedRuntimeDir ?? '' : localSelection;
+  const setSelectedRuntime = (installDir: string) => { if (props.onSelectRuntime) props.onSelectRuntime(installDir); else setLocalSelection(installDir); };
+  const inventory = useInstalledRuntimes(props.desktop, false);
+  const currentRuntimeDir = inventory.data?.runtimes.find(runtime => runtime.current)?.installDir;
+  const releaseList = useQuery({ queryKey: ['runtime-release-versions'], queryFn: () => core.runtimeReleaseVersions(), enabled: props.desktop, staleTime: 6 * 60 * 60 * 1000, retry: false, refetchOnWindowFocus: false }).data?.versions;
   const callbacks = useRef(props);
   callbacks.current = props;
   const mounted = useRef(false);
@@ -208,7 +217,8 @@ export function InstallRuntimePage(props: InstallRuntimePageProps) {
   const running = task?.state === 'running';
   const runtimes = detectedRuntimes(installation);
   const installed = runtimes.length > 0;
-  const detected = runtimes.find(runtime => runtime.installDir === selectedRuntime) ?? runtimes.find(runtime => runtime.readiness === 'ready') ?? runtimes[0];
+  // Last choice, else the backend's 「当前使用」, else the newest ready runtime (same rules as the automatic update prompt).
+  const detected = core.selectedRuntime(runtimes, { chosenDir: selectedRuntime, currentDir: currentRuntimeDir, releases: releaseList });
   const prepared = detected?.readiness === 'ready' ? { installationId: detected.profile.id, sourceRevision: detected.sourceRevision ?? detected.runtimeVersion ?? '', installDir: detected.installDir, pythonPath: detected.pythonPath, preparedAt: Date.now(), profile: detected.profile } : undefined;
   const canceling = running && cancelRequested === task.id;
   const initial = props.desktop && !loaded && !statusError;

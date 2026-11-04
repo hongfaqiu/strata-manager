@@ -9,7 +9,7 @@ interface PendingUpdate { runtime: core.DetectedRuntime; release: core.RuntimeUp
 const updateKey = ({ runtime, release }: PendingUpdate) => `${runtime.installDir}:${release.latestVersion}:${release.checkedAt}`;
 
 /** Automatic checks propose updates; only a confirmed dialog starts a ZIP task. */
-export function useRuntimeUpdates(desktop: boolean, ready: boolean, enabled: boolean, idle: boolean, tasks: core.TaskStatus[] | undefined, language: AppLanguage, onError?: (error: unknown) => void, gate?: AutomaticUpdateGate, onStarted?: () => void) {
+export function useRuntimeUpdates(desktop: boolean, ready: boolean, enabled: boolean, idle: boolean, tasks: core.TaskStatus[] | undefined, language: AppLanguage, onError?: (error: unknown) => void, gate?: AutomaticUpdateGate, onStarted?: () => void, selectedRuntimeDir?: string | null) {
   const query = useQueryClient();
   const enabledRef = useRef(enabled); enabledRef.current = enabled;
   const errorHandler = useRef(onError); errorHandler.current = onError;
@@ -47,6 +47,9 @@ export function useRuntimeUpdates(desktop: boolean, ready: boolean, enabled: boo
   const pin = useQuery({ queryKey: ['runtime-pin'], queryFn: core.getRuntimePin, enabled: desktop && ready, staleTime: Infinity, retry: false });
   // Maps an engine number to its release for folders that do not record one.
   const releaseList = useQuery({ queryKey: ['runtime-release-versions'], queryFn: () => core.runtimeReleaseVersions(), enabled: desktop && ready && enabled, staleTime: 6 * 60 * 60 * 1000, retry: false, refetchOnWindowFocus: false }).data?.versions;
+  // 「当前使用」 from the backend: the runtime the service uses, the second selection rule.
+  const inventory = useQuery({ queryKey: ['runtime-installed-versions'], queryFn: core.installedRuntimes, enabled: desktop && ready && enabled, refetchInterval: enabled ? 5 * 60 * 1000 : false, retry: false, refetchOnWindowFocus: false });
+  const currentRuntimeDir = inventory.data?.runtimes.find(item => item.current)?.installDir;
   const release = useQuery({ queryKey: ['runtime-update-info'], queryFn: () => core.runtimeUpdateInfo(), enabled: desktop && ready && enabled, staleTime: 12 * 60 * 60 * 1000, refetchInterval: enabled ? 12 * 60 * 60 * 1000 : false, refetchOnWindowFocus: enabled });
   useEffect(() => {
     if (enabled) {
@@ -90,12 +93,16 @@ export function useRuntimeUpdates(desktop: boolean, ready: boolean, enabled: boo
     if (!enabled || !idle || !downloadPreferences.isSuccess || pin.isPending || pending || running.current || automaticTask.current || tasks.some(item => item.state === 'running') || !release.data?.installable) return;
     if (!core.runtimeUpdateAllowedByPin(release.data.latestVersion, core.runtimePinRelease(pin.data, installation.data?.detectedRuntimes, releaseList))) return;
     if (dismissed.current.has(`${release.data.latestVersion}:${release.data.checkedAt}`)) return;
-    const runtime = installation.data?.detectedRuntimes?.find(item => item.readiness === 'ready' && !!(item.runtimeVersion || item.releaseVersion) && core.runtimeUpdateAvailable(item, release.data, releaseList) && !attempted.current.has(`${item.installDir}:${release.data?.latestVersion}:${release.data?.checkedAt}`));
-    if (!runtime) return;
+    // Wait for the saved choice (null) and the backend's 「当前使用」 before picking a runtime.
+    if (selectedRuntimeDir === null || inventory.isPending) return;
+    // Only the runtime selected on the Strata page is offered an update: once it is current, an
+    // older folder kept on the same machine (D:\AI\Strata next to a Manager runtime) stays quiet.
+    const runtime = core.selectedRuntime(installation.data?.detectedRuntimes, { chosenDir: selectedRuntimeDir, currentDir: currentRuntimeDir, releases: releaseList });
+    if (!runtime || runtime.readiness !== 'ready' || !(runtime.runtimeVersion || runtime.releaseVersion) || !core.runtimeUpdateAvailable(runtime, release.data, releaseList) || attempted.current.has(`${runtime.installDir}:${release.data.latestVersion}:${release.data.checkedAt}`)) return;
     const proposed = { runtime, release: release.data };
     attempted.current.add(updateKey(proposed));
     setActionError(''); setPending(proposed);
-  }, [desktop, ready, enabled, idle, hydrated, tasks, release.data, installation.data, downloadPreferences.isSuccess, pin.isPending, pin.data, releaseList, query, wake, pending]);
+  }, [desktop, ready, enabled, idle, hydrated, tasks, release.data, installation.data, downloadPreferences.isSuccess, pin.isPending, pin.data, releaseList, query, wake, pending, selectedRuntimeDir, currentRuntimeDir, inventory.isPending]);
 
   const readInstallation = async () => {
     try {
@@ -106,6 +113,11 @@ export function useRuntimeUpdates(desktop: boolean, ready: boolean, enabled: boo
   };
   // An open proposal follows the installed version: once this folder is current it closes by itself.
   const live = pending ? installation.data?.detectedRuntimes?.find(item => item.installDir === pending.runtime.installDir) : undefined;
+  // Choosing another runtime on the Strata page withdraws a proposal made for the previous one.
+  const selectedDir = selectedRuntimeDir === null ? undefined : core.selectedRuntime(installation.data?.detectedRuntimes, { chosenDir: selectedRuntimeDir, currentDir: currentRuntimeDir, releases: releaseList })?.installDir;
+  useEffect(() => {
+    if (pending && selectedDir && selectedDir !== pending.runtime.installDir && !running.current) { setPending(null); setActionError(''); }
+  }, [pending, selectedDir]);
   useEffect(() => {
     if (!pending || !live || running.current || refreshing.current || live.readiness !== 'ready' || !(live.runtimeVersion || live.releaseVersion)) return;
     if (!core.runtimeUpdateAvailable(live, pending.release, releaseList)) { setPending(null); setActionError(''); }

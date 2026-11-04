@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compareReleaseVersions, deepseekEngineUpdate, releaseEngineVersion, runtimePinRelease, runtimeReleaseIsNewer, runtimeReleaseOf, runtimeUpdateAllowedByPin, runtimeUpdateAvailable, runtimeVersionDirection, runtimeVersionLabel } from '../src/runtime-versions';
+import { compareReleaseVersions, selectedRuntime, deepseekEngineUpdate, releaseEngineVersion, runtimePinRelease, runtimeReleaseIsNewer, runtimeReleaseOf, runtimeUpdateAllowedByPin, runtimeUpdateAvailable, runtimeVersionDirection, runtimeVersionLabel } from '../src/runtime-versions';
 
 describe('runtime versions', () => {
   it('orders numbers, then a release after its pre-releases', () => {
@@ -14,6 +14,32 @@ describe('runtime versions', () => {
     expect(runtimeUpdateAllowedByPin('0.1.44', '0.1.44')).toBe(true);
     expect(runtimeUpdateAllowedByPin('0.2.0-beta', '0.2.0')).toBe(true);
     expect(runtimeUpdateAllowedByPin(undefined, '0.1.44')).toBe(true);
+  });
+  it('picks the runtime chosen in 运行环境, else the first ready one', () => {
+    const runtimes = [{ installDir: 'C:/repair', readiness: 'repair' }, { installDir: 'D:/new', readiness: 'ready' }, { installDir: 'D:/old', readiness: 'ready' }];
+    expect(selectedRuntime(runtimes)?.installDir).toBe('D:/new');
+    expect(selectedRuntime(runtimes, 'D:/old')?.installDir).toBe('D:/old');
+    expect(selectedRuntime(runtimes, 'C:/repair')?.installDir).toBe('C:/repair');
+    expect(selectedRuntime(runtimes, 'E:/gone')?.installDir).toBe('D:/new');
+    expect(selectedRuntime([{ installDir: 'C:/repair', readiness: 'repair' }])?.installDir).toBe('C:/repair');
+    expect(selectedRuntime([])).toBeUndefined();
+    expect(selectedRuntime(undefined)).toBeUndefined();
+  });
+  it('selection order: saved choice, then 当前使用, then the newest ready, then the first ready', () => {
+    const old = { installDir: 'D:\\AI\\Strata', readiness: 'ready', releaseVersion: '0.2.2', runtimeVersion: '0.1.47' };
+    const repair = { installDir: 'D:\\AI\\Broken', readiness: 'repair', releaseVersion: '0.2.11' };
+    const fresh = { installDir: 'D:\\AI\\Strata\\runtimes\\release-544', readiness: 'ready', releaseVersion: '0.2.10', runtimeVersion: '0.1.56' };
+    const list = [old, repair, fresh];
+    expect(selectedRuntime(list)?.installDir).toBe(fresh.installDir);
+    expect(selectedRuntime(list, { currentDir: old.installDir })?.installDir).toBe(old.installDir);
+    expect(selectedRuntime(list, { chosenDir: fresh.installDir, currentDir: old.installDir })?.installDir).toBe(fresh.installDir);
+    expect(selectedRuntime(list, { chosenDir: 'E:\\gone', currentDir: old.installDir })?.installDir).toBe(old.installDir);
+    expect(selectedRuntime(list, { chosenDir: 'd:/ai/strata/runtimes/release-544/' })?.installDir).toBe(fresh.installDir);
+    // Engine numbers decide when the folders record no release; the release list maps them.
+    const a = { installDir: 'A', readiness: 'ready', runtimeVersion: '0.1.47' }, b = { installDir: 'B', readiness: 'ready', runtimeVersion: '0.1.56' };
+    expect(selectedRuntime([a, b])?.installDir).toBe('B');
+    expect(selectedRuntime([{ installDir: 'X', readiness: 'ready' }, a])?.installDir).toBe('A');
+    expect(selectedRuntime([{ installDir: 'X', readiness: 'ready' }, { installDir: 'Y', readiness: 'ready' }])?.installDir).toBe('X');
   });
   it('names the direction of a switch', () => {
     expect(runtimeVersionDirection('0.2.1', '0.1.44')).toBe('downgrade');
