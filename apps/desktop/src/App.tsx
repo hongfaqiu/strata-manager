@@ -68,6 +68,7 @@ import { abortableRead } from './abortableRead';
 import { GuideResume, OnboardingPage } from './onboarding/OnboardingPage';
 import { ServerAuthGate } from './ServerAuthGate';
 import { ONBOARDING_KEY, deriveGuide, effectiveStatus, newProgress, normalizeProgress, type OnboardingProgress } from './onboarding/onboardingModel';
+import { configLookupDirectories } from './configLookup';
 
 function useStoredValue(writer: LatestStoreWriter, key: string, value: unknown, enabled: boolean, onError: (error: unknown) => void) {
   useEffect(() => { if (!enabled) return; writer.stage(key, value); void writer.flush(key).catch(onError); }, [writer, key, value, enabled, onError]);
@@ -714,8 +715,8 @@ export function App() {
     return () => (reason === 'setup' ? act('setup', () => runRecipe({ ...recipe, options }), 'modelPrepared') : act('retryTask', () => runRecipe({ ...recipe, options }), 'taskStarted')) as Promise<TaskStatus | undefined>;
   };
   const openConfigProfile = async (configPath: string, previous?: ServiceProfile, activate = true) => {
-    const directory = previous?.installDir || configPath.slice(0, Math.max(configPath.lastIndexOf('\\'), configPath.lastIndexOf('/')));
-    const found = await core.discoverLocal([directory]);
+    // The config's own folder first: an imported upstream config lives outside the runtime it was opened from.
+    const found = await core.discoverLocal(configLookupDirectories(configPath, previous?.installDir));
     const canonical = (value: string) => value.replace(/\\/g, '/').toLocaleLowerCase();
     const candidate = found.find(item => canonical(item.configPath) === canonical(configPath));
     if (!candidate) throw new Error(t('localSetupNothingFoundHint'));

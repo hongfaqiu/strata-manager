@@ -64,3 +64,28 @@ test('upstream #5052: a renamed copy says it is installed apart, in Chinese and 
   assert.match(copy, /renamedApart: 'Packed and registered as its own configuration; an installed model of the same size is neither reused nor replaced\.'/);
   assert.match(copy, /mtpLinked: '将链接到此模型自己的数据目录'/);
 });
+
+test('not recognized: the empty state points to the model folder (Documents\\Strata\\Models), not setup.py', () => {
+  const manager = read('./ServiceManagerPage.tsx');
+  const zh = manager.match(/noServicesDataHelp: '([^']*)'/g);
+  assert.equal(zh.length, 2);
+  for (const line of zh) assert.doesNotMatch(line, /setup\.py/);
+  assert.match(zh[0], /已下载的模型不用删/);
+  assert.match(zh[0], /使用已有模型/);
+  assert.match(zh[0], /文档\\\\Strata\\\\Models/);
+  assert.match(zh[1], /do not need to be deleted/);
+  assert.match(zh[1], /Use an existing model/);
+  assert.match(zh[1], /Documents\\\\Strata\\\\Models/);
+  assert.match(manager, /noServicesHelp: '[^']*已下载的模型不用删[^']*'/);
+  assert.match(manager, /noServicesHelp: '[^']*do not need to be deleted[^']*'/);
+  const i18n = read('../i18n.ts');
+  assert.match(i18n, /localSetupNothingFoundHint: '[^']*已下载的模型不用删[^']*'/);
+  assert.match(i18n, /localSetupNothingFoundHint: '[^']*do not need to be deleted[^']*'/);
+});
+
+test('the delete-model confirmation says a downloaded model can be used from its folder instead', () => {
+  const dialog = read('./ModelDeletionDialog.tsx');
+  assert.match(dialog, /keepHint: '只是没识别出来？已下载的模型不用删[^']*使用已有模型[^']*'/);
+  assert.match(dialog, /keepHint: 'Just not recognized\? Downloaded models do not need to be deleted[^']*Use an existing model[^']*'/);
+  assert.match(dialog, /data-testid="model-deletion-keep-hint">\{w\.keepHint\}/);
+});

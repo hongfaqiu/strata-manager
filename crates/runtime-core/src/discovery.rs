@@ -1304,6 +1304,178 @@ fn expand_user_directory(directory: &Path) -> ExpandedUserDirectory {
     }
 }
 
+/// Where the upstream 0.2 desktop app and Terminal keep their files. Read on every
+/// automatic scan, so a model installed with the official app shows up without the
+/// user hunting for a folder that contains `setup.py`.
+#[derive(Debug, Default)]
+struct UpstreamLayout {
+    /// `%LOCALAPPDATA%\Strata` (beside `components`): `install\`, `app-settings.json`,
+    /// `components\control\<ver>` and `terminal\current` live here.
+    app_base: Option<PathBuf>,
+    /// The app's Control bundle: `%LOCALAPPDATA%\Programs\Strata\control` (per user)
+    /// or `%ProgramFiles%\Strata\control` (per machine).
+    control_dirs: Vec<PathBuf>,
+    /// The command-line Strata's own `settings.json` (`%APPDATA%\Strata`, `~/.config/strata`).
+    settings_files: Vec<PathBuf>,
+}
+
+const MAX_UPSTREAM_INSTALLS: usize = 20;
+
+fn upstream_layout_from(
+    app_base: Option<&Path>,
+    local: Option<&Path>,
+    program_files: &[PathBuf],
+    settings_files: Vec<PathBuf>,
+) -> UpstreamLayout {
+    let mut control_dirs = Vec::new();
+    if let Some(local) = local {
+        control_dirs.push(local.join("Programs").join("Strata").join("control"));
+    }
+    for base in program_files {
+        control_dirs.push(base.join("Strata").join("control"));
+    }
+    UpstreamLayout {
+        app_base: app_base.map(Path::to_owned),
+        control_dirs,
+        settings_files,
+    }
+}
+
+fn upstream_layout() -> UpstreamLayout {
+    let app_base =
+        crate::component_engine::components_dir().and_then(|dir| dir.parent().map(Path::to_owned));
+    let local = std::env::var_os("LOCALAPPDATA")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from);
+    let mut program_files = Vec::new();
+    if cfg!(windows) {
+        for key in ["ProgramW6432", "ProgramFiles", "ProgramFiles(x86)"] {
+            if let Some(value) = std::env::var_os(key).filter(|v| !v.is_empty()) {
+                let path = PathBuf::from(value);
+                if !program_files.contains(&path) {
+                    program_files.push(path);
+                }
+            }
+        }
+    }
+    upstream_layout_from(
+        app_base.as_deref(),
+        if cfg!(windows) {
+            local.as_deref()
+        } else {
+            None
+        },
+        &program_files,
+        official_settings_paths(),
+    )
+}
+
+/// A folder in the Recycle Bin or Trash (a Strata folder deleted with the file manager).
+fn in_trash(path: &Path) -> bool {
+    path.components().any(|part| {
+        let name = part.as_os_str().to_string_lossy().to_ascii_lowercase();
+        name == "$recycle.bin" || name == ".trash" || name.starts_with(".trash-")
+    })
+}
+
+/// `installs` (run-config folders) and `data_dir` from an upstream settings file.
+fn upstream_settings_folders(settings_path: &Path) -> Vec<PathBuf> {
+    let Ok(value) = read_json(settings_path) else {
+        return Vec::new();
+    };
+    let mut folders = Vec::new();
+    if let Some(list) = value.get("installs").and_then(Value::as_array) {
+        for item in list.iter().take(MAX_UPSTREAM_INSTALLS) {
+            if let Some(path) = item.as_str().filter(|path| !path.is_empty()) {
+                folders.push(PathBuf::from(path));
+            }
+        }
+    }
+    if let Some(data_dir) = value
+        .get("data_dir")
+        .and_then(Value::as_str)
+        .filter(|path| !path.is_empty())
+    {
+        folders.push(PathBuf::from(data_dir));
+    }
+    folders
+        .into_iter()
+        .filter(|path| path.is_absolute() && !in_trash(path))
+        .collect()
+}
+
+/// Resolve the upstream 0.2 layout to install roots and the run configs kept outside them
+/// (`%LOCALAPPDATA%\Strata\install\strata-*.json` names its Control folder in `cwd`).
+fn expand_upstream_layout(layout: &UpstreamLayout) -> ExpandedUserDirectory {
+    let mut install_roots = Vec::new();
+    let mut external_configs = Vec::new();
+    let mut seen_installs = HashSet::new();
+    let mut seen_configs = HashSet::new();
+    let mut push_install = |path: PathBuf, roots: &mut Vec<PathBuf>| {
+        if roots.len() < MAX_DIRECTORIES && seen_installs.insert(path_key(&path)) {
+            roots.push(path);
+        }
+    };
+    let mut code_dirs = layout.control_dirs.clone();
+    let mut config_dirs = Vec::new();
+    if let Some(base) = &layout.app_base {
+        code_dirs.push(base.join("terminal").join("current"));
+        let control_versions = base.join("components").join("control");
+        if !control_versions.is_symlink() {
+            if let Ok(entries) = fs::read_dir(&control_versions) {
+                let mut versions: Vec<PathBuf> = entries
+                    .take(MAX_RUNTIME_ENTRIES)
+                    .flatten()
+                    .map(|entry| entry.path())
+                    .filter(|path| path.is_dir() && !path.is_symlink())
+                    .collect();
+                versions.sort();
+                versions.reverse();
+                code_dirs.extend(versions.into_iter().take(MAX_RUNTIME_CHILDREN));
+            }
+        }
+        config_dirs.push(base.join("install"));
+        config_dirs.extend(upstream_settings_folders(&base.join("app-settings.json")));
+    }
+    for settings in &layout.settings_files {
+        config_dirs.extend(upstream_settings_folders(settings));
+    }
+    for dir in code_dirs {
+        let Ok(root) = canonical_local(&dir) else {
+            continue;
+        };
+        if is_runtime_root(&root) {
+            push_install(root, &mut install_roots);
+        }
+    }
+    let mut seen_dirs = HashSet::new();
+    for dir in config_dirs {
+        let Ok(folder) = canonical_local(&dir) else {
+            continue;
+        };
+        if !folder.is_dir() || folder.is_symlink() || !seen_dirs.insert(path_key(&folder)) {
+            continue;
+        }
+        if is_runtime_root(&folder) {
+            push_install(folder.clone(), &mut install_roots);
+        }
+        for config in strata_model_configs_in(&folder) {
+            let Some(install) = install_root_from_config_file(&config) else {
+                continue;
+            };
+            push_install(install.clone(), &mut install_roots);
+            if config_outside_install(&config, &install) && seen_configs.insert(path_key(&config)) {
+                external_configs.push((install, config));
+            }
+        }
+    }
+    ExpandedUserDirectory {
+        install_roots,
+        external_configs,
+        source: "upstream-app",
+    }
+}
+
 /// Manager installations live inside runtimes/release-* or runtimes/strata-*.
 /// Look only one level below a recognized runtime container, with hard bounds;
 /// this never walks drives, model directories, or arbitrary user directories.
@@ -2280,6 +2452,14 @@ pub fn discover_local(
         for (install, config) in expanded.external_configs {
             external_configs.push((install, config, expanded.source));
         }
+    }
+    // The upstream 0.2 desktop app / Terminal layout, read automatically (no folder to add).
+    let upstream = expand_upstream_layout(&upstream_layout());
+    for root in upstream.install_roots {
+        roots.push((root, upstream.source));
+    }
+    for (install, config) in upstream.external_configs {
+        external_configs.push((install, config, upstream.source));
     }
     roots.extend(
         common_directories()
@@ -4089,6 +4269,136 @@ mod tests {
             !reason.contains("引擎文件不存在，请修复运行环境"),
             "{reason}"
         );
+    }
+
+    fn same_path(a: &Path, b: &Path) -> bool {
+        canonical_local(a).ok() == canonical_local(b).ok()
+    }
+
+    /// Upstream 0.2 desktop app (the Xiaohongshu report): Control in
+    /// `%LOCALAPPDATA%\Programs\Strata\control`, the run config in
+    /// `%LOCALAPPDATA%\Strata\install`, found with no folder added.
+    #[test]
+    fn upstream_app_install_folder_is_discovered_automatically() {
+        let temp = tempfile::tempdir().unwrap();
+        let local = temp.path().join("AppData/Local");
+        let base = local.join("Strata");
+        let control = local.join("Programs/Strata/control");
+        write_install_root(&control);
+        let config = base.join("install/strata-ud-q4_k_xl.json");
+        write_model_config(&control, &config, "models/weights.gguf");
+        let layout = upstream_layout_from(Some(&base), Some(&local), &[], Vec::new());
+        let expanded = expand_upstream_layout(&layout);
+        assert_eq!(expanded.source, "upstream-app");
+        assert!(expanded
+            .install_roots
+            .iter()
+            .any(|root| same_path(root, &control)));
+        assert!(
+            expanded
+                .external_configs
+                .iter()
+                .any(|(install, found)| same_path(install, &control) && same_path(found, &config)),
+            "{:?}",
+            expanded.external_configs
+        );
+        let candidates =
+            crate::component_engine::with_components_dir(&base.join("components"), || {
+                discover_local(&[], &[]).unwrap()
+            });
+        let hit = candidates
+            .iter()
+            .find(|candidate| same_path(Path::new(&candidate.config_path), &config))
+            .unwrap_or_else(|| panic!("expected the app's run config, got {candidates:?}"));
+        assert_eq!(hit.source.as_deref(), Some("upstream-app"));
+        assert!(same_path(Path::new(&hit.install_dir), &control));
+    }
+
+    /// Per-machine install (`%ProgramFiles%\Strata\control`), a Control folder under
+    /// `components\control\<ver>`, the Terminal's `terminal\current`, and run configs in
+    /// folders that `app-settings.json` and the Terminal's `settings.json` remember.
+    #[test]
+    fn upstream_control_folders_and_remembered_installs_are_read() {
+        let temp = tempfile::tempdir().unwrap();
+        let base = temp.path().join("AppData/Local/Strata");
+        let program_files = temp.path().join("Program Files");
+        let machine_control = program_files.join("Strata/control");
+        let versioned = base.join("components/control/0.2.5");
+        let terminal = base.join("terminal/current");
+        for root in [&machine_control, &versioned, &terminal] {
+            write_install_root(root);
+        }
+        let app_data = temp.path().join("D/Strata");
+        let app_config = app_data.join("strata-iq3_s.json");
+        write_model_config(&machine_control, &app_config, "models/a.gguf");
+        let remembered = temp.path().join("E/strata-configs");
+        let terminal_config = remembered.join("strata-q2.json");
+        write_model_config(&terminal, &terminal_config, "models/b.gguf");
+        let trashed = temp.path().join("$Recycle.Bin/S-1/strata-old");
+        write_model_config(&terminal, &trashed.join("strata-old.json"), "models/c.gguf");
+        fs::create_dir_all(&base).unwrap();
+        fs::write(
+            base.join("app-settings.json"),
+            serde_json::to_vec(&serde_json::json!({"data_dir": &app_data, "installs": []}))
+                .unwrap(),
+        )
+        .unwrap();
+        let terminal_settings = temp.path().join("Roaming/Strata/settings.json");
+        fs::create_dir_all(terminal_settings.parent().unwrap()).unwrap();
+        fs::write(
+            &terminal_settings,
+            serde_json::to_vec(
+                &serde_json::json!({"installs": [&remembered, &trashed, "relative/dir"]}),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let layout = upstream_layout_from(
+            Some(&base),
+            None,
+            std::slice::from_ref(&program_files),
+            vec![terminal_settings],
+        );
+        let expanded = expand_upstream_layout(&layout);
+        for root in [&machine_control, &versioned, &terminal] {
+            assert!(
+                expanded
+                    .install_roots
+                    .iter()
+                    .any(|found| same_path(found, root)),
+                "{root:?} missing from {:?}",
+                expanded.install_roots
+            );
+        }
+        let configs: Vec<&PathBuf> = expanded.external_configs.iter().map(|(_, c)| c).collect();
+        assert!(
+            configs.iter().any(|c| same_path(c, &app_config)),
+            "{configs:?}"
+        );
+        assert!(
+            configs.iter().any(|c| same_path(c, &terminal_config)),
+            "{configs:?}"
+        );
+        assert!(
+            !configs
+                .iter()
+                .any(|c| c.to_string_lossy().contains("strata-old")),
+            "{configs:?}"
+        );
+    }
+
+    #[test]
+    fn missing_upstream_layout_finds_nothing() {
+        let temp = tempfile::tempdir().unwrap();
+        let layout = upstream_layout_from(
+            Some(&temp.path().join("nope/Strata")),
+            Some(&temp.path().join("nope")),
+            &[temp.path().join("nope/Program Files")],
+            vec![temp.path().join("nope/settings.json")],
+        );
+        let expanded = expand_upstream_layout(&layout);
+        assert!(expanded.install_roots.is_empty());
+        assert!(expanded.external_configs.is_empty());
     }
 
     #[test]
