@@ -130,3 +130,4 @@
 
 .service-manager-repair-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 .d2-req-hint{display:block;margin-top:4px;font-size:11px;line-height:1.5;color:var(--st-ink-muted);font-weight:400}
+.model-deletion-dialog>p.model-deletion-keep-hint{padding:var(--st-s-2) var(--st-s-3);border-radius:var(--st-r-md);background:var(--st-info-tint);color:var(--st-ink)}

@@ -21,6 +21,7 @@ const words = {
   'zh-CN': {
     title: '删除模型文件',
     description: '将永久删除下列模型权重文件。JSON 配置和 Strata 运行环境保留；之后需要重新下载模型才能再次使用。',
+    keepHint: '只是没识别出来？已下载的模型不用删，在「下载模型 → 使用已有模型」直接选择模型所在文件夹就能用。',
     checking: '正在检查模型文件与引用…',
     files: '个文件', total: '合计', empty: '没有可删除的模型文件。',
     blocked: '当前无法删除', retry: '重新检查', cancel: '取消', close: '关闭',
@@ -31,6 +32,7 @@ const words = {
   en: {
     title: 'Delete model files',
     description: 'Permanently deletes the model weights listed below. JSON configurations and the Strata runtime are retained. Download the model again before using it.',
+    keepHint: 'Just not recognized? Downloaded models do not need to be deleted: choose their folder under Download models → Use an existing model to use them directly.',
     checking: 'Checking model files and references…',
     files: 'files', total: 'Total', empty: 'There are no model files to delete.',
     blocked: 'Deletion is blocked', retry: 'Check again', cancel: 'Cancel', close: 'Close',
@@ -111,6 +113,7 @@ export function ModelDeletionDialog({ modelName, profiles, language, disabled = 
     <div className="model-deletion-dialog">
       <strong className="model-deletion-name">{modelName}</strong>
       <p>{w.description}</p>
+      <p className="model-deletion-keep-hint" data-testid="model-deletion-keep-hint">{w.keepHint}</p>
       {checking && <p className="model-deletion-checking" role="status"><LoaderCircle size={16} className="spin" />{w.checking}</p>}
       {plan && <>
         <div className="model-deletion-summary"><span>{plan.files.length} {w.files}</span><strong>{w.total} {fileSize(plan.totalBytes, language)}</strong></div>
