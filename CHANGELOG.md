@@ -5,6 +5,8 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+## [0.2.39] - 2026-11-04
+
 ### 中文
 
 - **自动识别官方 0.2 桌面应用和 Terminal 已下载的模型**：以前只扫描含 setup.py 的解压目录，用官方应用下载的模型显示「尚未发现本机模型」，有人删掉重下。现在每次扫描都会读取 `%LOCALAPPDATA%\Strata\install` 里的运行配置（顺着 cwd 找到 Control 目录）、`%LOCALAPPDATA%\Programs\Strata\control`、`%ProgramFiles%\Strata\control`、`components\control\*`、`terminal\current`，以及 `app-settings.json` 和 Terminal `settings.json` 记录的目录，不用再手动添加。「导入配置」改为先在所选 strata-*.json 所在文件夹里查找，不再只查当前运行环境，所以能导入官方应用的配置了。「尚未发现本机模型」和删除模型的确认框都会提示：已下载的模型不用删，在「下载模型 → 使用已有模型」选择模型所在文件夹（官方应用默认在 `文档\Strata\Models`）就能用。
