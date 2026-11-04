@@ -5,6 +5,8 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+## [0.2.38] - 2026-11-04
+
 ### 中文
 
 - **Qwen3.8 可手动「下载 DFlash2」，带确认和进度**：上游启动时从不下载 DFlash2 预测器，未下载时“自动”实际用 MTP。现在「预测（投机解码）」在 Qwen3.8 上显示「下载 DFlash2」：确认框写明来源 incoai/Qwen3.8-Flash-Next-DFlash2（Apache-2.0）、下载约 1.2 GB、打包后约占 0.52 GB 磁盘、运行时约多用 0.72–0.89 GB 显存；下载时显示进度，可取消，失败会显示原因。原先「首次下载约 1.2 GB」的说法不对，已改正。Unsloth 量化的 Qwen3.8-Flash-Next（如 `qwen3.8-flash-next-unsloth-ud-q4_k_xl`）也可选 DFlash2。
