@@ -106,7 +106,7 @@
   "localSetupDesktopTitle": "Modelle in der Desktop-App vorbereiten",
   "localSetupDesktopHint": "Die Erkennung lokaler Installationen und die Modellverwaltung im Hintergrund erfordern die Desktop-App.",
   "localSetupNothingFound": "Keine Strata-Installation gefunden",
-  "localSetupNothingFoundHint": "Strata bereits installiert? Den zugehörigen Ordner wählen. Andernfalls ein neues Modell installieren und den Vorbereitungsschritten folgen.",
+  "localSetupNothingFoundHint": "Strata bereits installiert? Den zugehörigen Ordner wählen. Heruntergeladene Modelle nicht löschen: unter „Modelle herunterladen → Vorhandenes Modell verwenden“ einfach den Modellordner wählen. Andernfalls ein neues Modell installieren und den Vorbereitungsschritten folgen.",
   "localSetupChooseDirectory": "Strata-Ordner wählen",
   "localSetupInstall": "Neues Modell installieren",
   "localSetupChooseAnother": "Anderen Ordner wählen",

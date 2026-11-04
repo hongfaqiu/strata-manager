@@ -106,7 +106,7 @@
   "localSetupDesktopTitle": "請在桌面應用中準備模型",
   "localSetupDesktopHint": "本機安裝檢測和後臺模型管理需要桌面應用。",
   "localSetupNothingFound": "未檢測到 Strata 安裝",
-  "localSetupNothingFoundHint": "已經安裝過 Strata？選擇它所在的資料夾。還沒有安裝？選擇安裝新模型，按引導完成準備。",
+  "localSetupNothingFoundHint": "已經安裝過 Strata？選擇它所在的資料夾。已下載的模型不用刪，在「下載模型 → 使用已有模型」直接選擇模型所在資料夾就能用。還沒有安裝？選擇安裝新模型，按引導完成準備。",
   "localSetupChooseDirectory": "選擇 Strata 目錄",
   "localSetupInstall": "安裝新模型",
   "localSetupChooseAnother": "選擇其它目錄",
