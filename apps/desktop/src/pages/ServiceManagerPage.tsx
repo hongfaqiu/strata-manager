@@ -15,6 +15,8 @@ import { ConfigurationDeletionDialog } from './ConfigurationDeletionDialog';
 import { ConfigCleanupDialog } from './ConfigCleanupDialog';
 import { useTranslation } from 'react-i18next';
 import { useShowAllVersions } from '../useShowAllVersions';
+import { DownloadedModelsCard } from './DownloadedModelsCard';
+import { useDownloadedModels } from './downloadedModels';
 import './service-manager.css';
 import './config-versions.css';
 
@@ -56,6 +58,8 @@ export interface ServiceManagerPageProps {
   onImport: () => void;
   /** Directories the user added for discovery; used for empty-state guidance. */
   addedDirectories?: string[];
+  /** 「发现 N 个已下载模型 · 一键加入」 in the empty state: 下载模型 → 使用已有模型 with that folder. */
+  onUseDownloaded?: (model: core.DownloadedModel) => void;
   onEdit: Action;
   /** Called after this page's delete confirmation. Remove the profile, never the installation. */
   onDelete: Action;
@@ -202,6 +206,7 @@ export function ServiceManagerPage(props: ServiceManagerPageProps) {
   const scanPending = useRef(false);
   const pendingAction = useRef<string | null>(null);
   const pageBusy = Object.values(busy).some(Boolean) || busyProfileIds.length > 0;
+  const downloaded = useDownloadedModels(desktop && !!props.onUseDownloaded, props.addedDirectories ?? []);
   const interval = Math.max(1000, pollInterval);
   const processQueries = useQueries({ queries: profiles.map(profile => ({
     queryKey: ['service-manager-process', profile.id, profile.baseUrl, profile.installDir, profile.pythonPath, profile.configPath, profile.managed],
@@ -435,7 +440,7 @@ export function ServiceManagerPage(props: ServiceManagerPageProps) {
     </div></div>
     {refreshing && <p className="service-manager-scanning" role="status"><LoaderCircle size={15} className="spin" />{w.scan}</p>}
     {(props.discoveryError || errors.discovery) && <p className="service-manager-error" role="alert">{w.scanFailed}: {errors.discovery || core.normalizeError(props.discoveryError).message}</p>}
-    {!groups.length && !props.discoveryLoading && <div className="service-manager-empty st-card"><Empty title={w.noServices} hint={(props.addedDirectories?.length ?? 0) > 0 ? w.noServicesDataHelp : w.noServicesHelp}><div className="service-manager-toolbar"><button className="primary" onClick={props.onAdd} disabled={!desktop || streaming || pageBusy}><FolderOpen size={16} />{w.add}</button></div></Empty></div>}
+    {!groups.length && !props.discoveryLoading && <div className="service-manager-empty st-card">{props.onUseDownloaded && <DownloadedModelsCard language={language} models={downloaded.data ?? []} disabled={!desktop || streaming || pageBusy} onUse={props.onUseDownloaded}/>}<Empty title={w.noServices} hint={(props.addedDirectories?.length ?? 0) > 0 ? w.noServicesDataHelp : w.noServicesHelp}><div className="service-manager-toolbar"><button className="primary" onClick={props.onAdd} disabled={!desktop || streaming || pageBusy}><FolderOpen size={16} />{w.add}</button></div></Empty></div>}
     <div className="service-manager-list">{modelGroups.map(renderGroup)}</div>
     {!!repairGroups.length && <details className="service-manager-repair-configurations">
       <summary>{w.repairConfigurations} · {repairConfigurationCount} {w.configurations}</summary>

@@ -28,6 +28,8 @@ export interface LocalGgufGroup {
   shards: LocalShard[]; totalBytes: number; complete: boolean; installable: boolean; warnings: string[]; problems: string[];
 }
 export interface LocalModelScan { directory: string; selectedFile: string | null; groups: LocalGgufGroup[]; problems: string[] }
+/** 「发现 N 个已下载模型」: a complete GGUF set in a known models folder (find_downloaded_models). */
+export interface DownloadedModel { directory: string; root: string; group: LocalGgufGroup }
 export interface MtpCheck { input: string; rtDirectory: string | null; dataDirectory: string | null; expertsBytes: number; problems: string[] }
 
 /** One model (file name without the quant) with its quantizations, for the 「量化版本」 choice. */

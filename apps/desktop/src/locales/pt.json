@@ -106,7 +106,7 @@
   "localSetupDesktopTitle": "Preparar modelos na aplicação de ambiente de trabalho",
   "localSetupDesktopHint": "A deteção de instalações locais e a gestão de modelos em segundo plano requerem a aplicação de ambiente de trabalho.",
   "localSetupNothingFound": "Nenhuma instalação do Strata encontrada",
-  "localSetupNothingFoundHint": "Já instalou o Strata? Escolha a sua pasta. Caso contrário, instale um novo modelo e siga os passos de preparação.",
+  "localSetupNothingFoundHint": "Já instalou o Strata? Escolha a sua pasta. Não precisa de apagar os modelos descarregados: escolha a pasta deles em «Descarregar modelos → Utilizar um modelo existente». Caso contrário, instale um novo modelo e siga os passos de preparação.",
   "localSetupChooseDirectory": "Escolher pasta do Strata",
   "localSetupInstall": "Instalar um novo modelo",
   "localSetupChooseAnother": "Escolher outra pasta",

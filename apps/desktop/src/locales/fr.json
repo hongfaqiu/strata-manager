@@ -106,7 +106,7 @@
   "localSetupDesktopTitle": "Préparer des modèles dans l’application de bureau",
   "localSetupDesktopHint": "La détection des installations locales et la gestion des modèles en arrière-plan nécessitent l’application de bureau.",
   "localSetupNothingFound": "Aucune installation Strata trouvée",
-  "localSetupNothingFoundHint": "Strata est déjà installé ? Choisissez son dossier. Sinon, installez un nouveau modèle et suivez les étapes de préparation.",
+  "localSetupNothingFoundHint": "Strata est déjà installé ? Choisissez son dossier. Inutile de supprimer les modèles téléchargés : choisissez leur dossier dans « Télécharger des modèles → Utiliser un modèle existant ». Sinon, installez un nouveau modèle et suivez les étapes de préparation.",
   "localSetupChooseDirectory": "Choisir le dossier Strata",
   "localSetupInstall": "Installer un nouveau modèle",
   "localSetupChooseAnother": "Choisir un autre dossier",

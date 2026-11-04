@@ -14,6 +14,7 @@ use crate::{
     orca_import,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::{
     fs,
     path::{Component, Path, PathBuf},
@@ -726,6 +727,69 @@ fn scan_at(path: &Path) -> Result<LocalModelScan, String> {
     })
 }
 
+/// A complete, installable GGUF set found in a known models folder (upstream app / Terminal / Manager
+/// downloads): 「发现 N 个已下载模型」 offers it to 使用已有模型 instead of a new download.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadedModel {
+    /// The folder that holds the shards: what 使用已有模型 scans and setup gets as `--gguf-dir`.
+    pub directory: String,
+    /// The models folder it was found under (`<data>/models`, `Documents/Strata/Models`, …).
+    pub root: String,
+    pub group: LocalModelGroup,
+}
+
+const MAX_DOWNLOADED: usize = 64;
+
+/// `models` and `Models` are one folder on Windows and macOS volumes.
+fn folder_key(path: &Path) -> String {
+    let text = path.to_string_lossy();
+    if cfg!(target_os = "linux") {
+        text.into_owned()
+    } else {
+        text.to_lowercase()
+    }
+}
+
+/// Read-only: complete, installable GGUF sets directly in each root or up to three folders below it
+/// (`<root>/<tag>/*.gguf`, a Hugging Face repository, its hub cache). Missing roots are skipped.
+pub fn find_downloaded(roots: &[PathBuf]) -> Vec<DownloadedModel> {
+    let mut found = Vec::new();
+    let mut seen_roots = HashSet::new();
+    let mut seen_folders = HashSet::new();
+    for root in roots {
+        let Ok(root) = dunce::canonicalize(root) else {
+            continue;
+        };
+        if !root.is_dir() || !seen_roots.insert(folder_key(&root)) {
+            continue;
+        }
+        let folders = if has_model_gguf(&root) {
+            vec![root.clone()]
+        } else {
+            gguf_folders(&root)
+        };
+        for folder in folders {
+            if !seen_folders.insert(folder_key(&folder)) {
+                continue;
+            }
+            let Ok(scan) = scan_at(&folder) else {
+                continue;
+            };
+            for group in scan.groups {
+                if group.installable && group.complete && found.len() < MAX_DOWNLOADED {
+                    found.push(DownloadedModel {
+                        directory: scan.directory.clone(),
+                        root: root.to_string_lossy().into_owned(),
+                        group,
+                    });
+                }
+            }
+        }
+    }
+    found
+}
+
 /// `--mtp`'s draft layer: an `rt` folder holding `experts.bin`. `<x>/rt`, `<x>/mtp/rt` and `<x>` are accepted.
 pub fn check_mtp(path: &str) -> Result<MtpCheck, String> {
     let input = absolute(path, "MTP 草稿层目录")?;
@@ -1149,6 +1213,47 @@ mod tests {
         assert!(setup_group(&request, "qwen", "IQ3_XXS")
             .unwrap_err()
             .contains("--model IQ3_XXS"));
+    }
+
+    #[test]
+    fn downloaded_models_are_found_below_known_models_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        let models = dir.path().join("Models");
+        let tag = models.join("iq3_s");
+        fs::create_dir_all(&tag).unwrap();
+        for i in 1..=2 {
+            gguf(
+                &tag.join(format!(
+                    "Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-{i:05}-of-00002.gguf"
+                )),
+                BIG,
+            );
+        }
+        // An unfinished download is not offered.
+        let partial = models.join("iq2_xs");
+        fs::create_dir_all(&partial).unwrap();
+        gguf(
+            &partial.join("Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS-00001-of-00002.gguf"),
+            BIG,
+        );
+        let found = find_downloaded(&[models.clone(), models.clone(), dir.path().join("missing")]);
+        assert_eq!(found.len(), 1, "{found:?}");
+        let model = &found[0];
+        assert_eq!(
+            (model.group.family.as_deref(), model.group.quant.as_deref()),
+            (Some("qwen"), Some("IQ3_S"))
+        );
+        assert_eq!(
+            dunce::canonicalize(&model.directory).unwrap(),
+            dunce::canonicalize(&tag).unwrap()
+        );
+        assert_eq!(
+            dunce::canonicalize(&model.root).unwrap(),
+            dunce::canonicalize(&models).unwrap()
+        );
+        // A root that is itself a model folder is offered as is.
+        assert_eq!(find_downloaded(std::slice::from_ref(&tag)).len(), 1);
+        assert!(find_downloaded(&[]).is_empty());
     }
 
     #[test]

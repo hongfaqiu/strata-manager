@@ -106,7 +106,7 @@
   "localSetupDesktopTitle": "Preparar modelos en la aplicación de escritorio",
   "localSetupDesktopHint": "La detección de instalaciones locales y la gestión de modelos en segundo plano requieren la aplicación de escritorio.",
   "localSetupNothingFound": "No se ha encontrado una instalación de Strata",
-  "localSetupNothingFoundHint": "¿Ya has instalado Strata? Elige su carpeta. Si no, instala un modelo nuevo y sigue los pasos de preparación.",
+  "localSetupNothingFoundHint": "¿Ya has instalado Strata? Elige su carpeta. No hace falta borrar los modelos descargados: elige su carpeta en «Descargar modelos → Usar un modelo existente». Si no, instala un modelo nuevo y sigue los pasos de preparación.",
   "localSetupChooseDirectory": "Elegir carpeta de Strata",
   "localSetupInstall": "Instalar un modelo nuevo",
   "localSetupChooseAnother": "Elegir otra carpeta",

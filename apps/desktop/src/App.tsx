@@ -69,6 +69,7 @@ import { GuideResume, OnboardingPage } from './onboarding/OnboardingPage';
 import { ServerAuthGate } from './ServerAuthGate';
 import { ONBOARDING_KEY, deriveGuide, effectiveStatus, newProgress, normalizeProgress, type OnboardingProgress } from './onboarding/onboardingModel';
 import { configLookupDirectories } from './configLookup';
+import type { ExistingPrefill } from './pages/downloadedModels';
 
 function useStoredValue(writer: LatestStoreWriter, key: string, value: unknown, enabled: boolean, onError: (error: unknown) => void) {
   useEffect(() => { if (!enabled) return; writer.stage(key, value); void writer.flush(key).catch(onError); }, [writer, key, value, enabled, onError]);
@@ -168,6 +169,8 @@ export function App() {
   const [recipes, setRecipes] = useState<Record<string, Recipe>>({});
   const observedTasks = useRef<Map<string, TaskStatus['state']> | null>(null);
   const [preparationRuntime, setPreparationRuntime] = useState<ServiceProfile | null>(null);
+  // 「发现 N 个已下载模型 · 一键加入」 on 我的模型 opens 下载模型 → 使用已有模型 with that folder.
+  const [existingRequest, setExistingRequest] = useState<ExistingPrefill | undefined>(undefined);
   const [modal, setModal] = useState<Modal>(null);
   const [busy, setBusy] = useState('');
   const [localProgress, setLocalProgress] = useState<LocalSetupProgress>();
@@ -935,7 +938,7 @@ export function App() {
     notify(t('success'));
   };
   const addModelDirectory = () => { void choose(true).then(directory => { if (!directory) return; setModelDirectories(old => [...new Set([...old, directory])]); void query.invalidateQueries({ queryKey: ['discovered-local-models'] }); }).catch(error => notify(errorText(error), true)); };
-  const ProfilesPage = () => <ServiceManagerPage hardware={hardware} environment={environment.data} hardwareOnline={hardwareOnline} profiles={profiles} activeId={activeId} lastUsedId={lastUsedId} preparingId={startupTarget?.id} details={installationDetails.data} candidates={discoveredCandidates.data} runtimes={detectedRuntimes} discoveryLoading={discoveredCandidates.isPending} discoveryError={discoveredCandidates.error} addedDirectories={modelDirectories} onRepairPython={async installDir => { const result = await core.repairPythonDependencies(installDir); notify(result.message || t('repairPythonEnvDone')); await discoveredCandidates.refetch(); }} onCopyDiagnostics={async target => { const text = await core.supportDiagnosticsText(target); try { await navigator.clipboard.writeText(text); notify(t('copyDiagnosticsDone')); } catch { notify(t('clipboardUnavailable'), true); } }} onUseCandidate={prepareImported} onConfigCandidate={openDiscoveredConfig} onRefreshDiscovery={()=>discoveredCandidates.refetch()} language={settings.language} desktop={desktop} pollInterval={settings.pollInterval} streaming={inferenceBusy} busyProfileIds={busy || localProgress || tasks.data?.some(task => task.state === 'running' && task.kind.includes('update')) ? profiles.map(p=>p.id) : []}
+  const ProfilesPage = () => <ServiceManagerPage hardware={hardware} environment={environment.data} hardwareOnline={hardwareOnline} profiles={profiles} activeId={activeId} lastUsedId={lastUsedId} preparingId={startupTarget?.id} details={installationDetails.data} candidates={discoveredCandidates.data} runtimes={detectedRuntimes} discoveryLoading={discoveredCandidates.isPending} discoveryError={discoveredCandidates.error} addedDirectories={modelDirectories} onUseDownloaded={model => { setExistingRequest({ directory: model.directory, groupId: model.group.id, key: Date.now() }); go('catalog'); }} onRepairPython={async installDir => { const result = await core.repairPythonDependencies(installDir); notify(result.message || t('repairPythonEnvDone')); await discoveredCandidates.refetch(); }} onCopyDiagnostics={async target => { const text = await core.supportDiagnosticsText(target); try { await navigator.clipboard.writeText(text); notify(t('copyDiagnosticsDone')); } catch { notify(t('clipboardUnavailable'), true); } }} onUseCandidate={prepareImported} onConfigCandidate={openDiscoveredConfig} onRefreshDiscovery={()=>discoveredCandidates.refetch()} language={settings.language} desktop={desktop} pollInterval={settings.pollInterval} streaming={inferenceBusy} busyProfileIds={busy || localProgress || tasks.data?.some(task => task.state === 'running' && task.kind.includes('update')) ? profiles.map(p=>p.id) : []}
     onSelect={activateLocal} onAdd={addModelDirectory} onImport={addModelDirectory}
     onEdit={p=>setModal({kind:'profile',profile:p})} onDelete={removeService} onModelDeleted={()=>query.invalidateQueries()}
     onStart={p=>operateService(()=>activateLocal(p))} onStop={p=>operateService(()=>stopManagedService(p.id))} onRestart={p=>operateService(()=>core.restartService(p))} onTakeover={p=>operateService(()=>activateLocal(p))}
@@ -955,6 +958,7 @@ export function App() {
     onCommunitySetup={(runtime, request, context, images, options) => act('setup', () => runRecipe({ kind: 'community', profile: runtime, request, context, images, options }), 'modelPrepared') as Promise<TaskStatus | undefined>}
     onLocalSetup={request => act('setup', () => runRecipe({ kind: 'setup', ...request }), 'modelPrepared') as Promise<TaskStatus | undefined>}
     onTasks={() => go('tasks')} onEnvironment={() => go('environment')}
+    existingRequest={existingRequest} knownModels={discoveredCandidates.data}
     onDirtyChange={setDownloadConfigurationDirty} onSaveDraftReady={registerDownloadConfigurationSave}/>;
 
   const renderChatPage=()=> <ChatPage conversation={conversation} conversations={conversations} activeConversationId={conversationId} onSelectConversation={selectConversation} onRenameConversation={conversation=>setModal({kind:'rename',conversation})} onDeleteConversation={conversation=>setModal({kind:'deleteConversation',conversation})} profile={profile} online={chatReady && !benchmarkRunning} supportsImages={supportsImages} modelName={healthData.model} language={settings.language} draft={draft} onDraftChange={setDraft} attachments={attachments} streaming={streaming} showReasoning={chatPreferences.showReasoning} onSend={send} onCancel={()=>abort.current?.abort()} onNewConversation={addConversation} onExport={exportConversation} onOpenSampling={()=>setModal({kind:'options'})} onAddFiles={addFiles} onRemoveAttachment={id=>setAttachments(old=>old.filter(file=>file.id!==id))} stateLabel={serviceState} onMessage={notify} onCopy={copy}/>;

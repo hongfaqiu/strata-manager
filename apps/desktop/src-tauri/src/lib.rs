@@ -704,6 +704,19 @@ async fn setup_disk_preflight(
         .map_err(|e| e.to_string())
 }
 
+/// 「发现 N 个已下载模型」: read-only scan of the upstream app / Terminal / Manager model folders.
+#[tauri::command]
+async fn find_downloaded_models(
+    state: State<'_, ClientState>,
+    directories: Vec<String>,
+) -> Result<Value, String> {
+    state
+        .ipc
+        .request("find_downloaded_models", json!({"directories":directories}))
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// 「使用已有模型」(#75): read-only scan of a chosen GGUF file or folder.
 #[tauri::command]
 async fn scan_local_models(state: State<'_, ClientState>, path: String) -> Result<Value, String> {
@@ -2417,6 +2430,7 @@ pub fn run() {
             setup_disk_preflight,
             scan_local_models,
             check_mtp_path,
+            find_downloaded_models,
             inspect_control_vector,
             orca_import_plan,
             run_orca_import,

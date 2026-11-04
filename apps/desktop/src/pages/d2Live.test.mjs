@@ -113,3 +113,15 @@ test('DeepSeek-V4.1-Flash: the card, the quant table and the panel share one fit
   assert.equal(live.rowLive(deepseek, [], [], 130).fit, 'tight');
   assert.equal(live.quantLive(deepseek, 'IST-DAS-2.00bpw', [], [], undefined).fit, undefined, 'unknown memory stays 未实测');
 });
+
+test('a downloaded but unconfigured quant is 本机已有, a configured one stays 已下载', () => {
+  const qwen = MODEL_CATALOG.find(model => model.family === 'qwen');
+  const found = [{ directory: 'D:/Strata/Models/iq3_s', root: 'D:/Strata/Models', group: { id: 'g', name: 'Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S', quant: 'IQ3_S', family: 'qwen', totalBytes: 1 } }];
+  assert.equal(live.quantLive(qwen, 'IQ3_S', [], [], 128, 'windows', found).onDisk?.directory, 'D:/Strata/Models/iq3_s');
+  assert.equal(live.quantLive(qwen, 'IQ3_XXS', [], [], 128, 'windows', found).onDisk, undefined);
+  const configured = [{ name: 'Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S', configPath: 'x/strata-iq3_s.json', modelPath: 'packs/iq3_s', sizeBytes: null }];
+  const row = live.quantLive(qwen, 'IQ3_S', [], configured, 128, 'windows', found);
+  assert.equal(row.local, true);
+  assert.equal(row.onDisk, undefined);
+  assert.equal(live.rowLive(qwen, [], [], 128, 'windows', found).onDisk, 1);
+});

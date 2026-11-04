@@ -1,32 +1,38 @@
 // Live status for catalog rows: local presence, running download progress, fit, and change tracking.
 import { useEffect, useRef, useState } from 'react';
-import type { CatalogModel, LocalModel, RuntimePackagePlatform, TaskStatus } from '@strata-manager/core';
+import type { CatalogModel, DownloadedModel, LocalModel, RuntimePackagePlatform, TaskStatus } from '@strata-manager/core';
 import { catalogPreferredQuant, catalogRequirement, quantFitState, taskProgress } from './d2Estimates';
 
 export type Fit = 'fits' | 'tight' | 'over';
-export interface QuantLive { local: boolean; downloading: boolean; failed: boolean; progress?: number; fit?: Fit }
-export interface RowLive { local: number; downloading: boolean; progress?: number; failed: boolean; fit?: Fit; bestQuant?: string }
+export interface QuantLive { local: boolean; /** Downloaded but not configured yet: 本机已有 · 直接使用. */ onDisk?: DownloadedModel; downloading: boolean; failed: boolean; progress?: number; fit?: Fit }
+export interface RowLive { local: number; onDisk: number; downloading: boolean; progress?: number; failed: boolean; fit?: Fit; bestQuant?: string }
+
+/** The downloaded set (find_downloaded_models) for a catalog quant, if one is on disk. */
+export function downloadedFor(model: Pick<CatalogModel, 'family'>, quant: string, found: DownloadedModel[] | undefined): DownloadedModel | undefined {
+  return found?.find(item => item.group.family === model.family && !!item.group.quant && item.group.quant.toUpperCase() === quant.toUpperCase());
+}
 
 const isDownloadTask = (task: TaskStatus) => /setup|download|prepare/i.test(task.kind);
 const mentions = (text: string, model: CatalogModel, quant: string) => { const lower = text.toLowerCase(); return lower.includes(quant.toLowerCase()) && (lower.includes(model.family) || lower.includes(model.name.toLowerCase())); };
 
-export function quantLive(model: CatalogModel, quant: string, tasks: TaskStatus[], local: LocalModel[] | undefined, machineGB?: number, platform?: RuntimePackagePlatform): QuantLive {
+export function quantLive(model: CatalogModel, quant: string, tasks: TaskStatus[], local: LocalModel[] | undefined, machineGB?: number, platform?: RuntimePackagePlatform, downloaded?: DownloadedModel[]): QuantLive {
   const related = tasks.filter(task => isDownloadTask(task) && mentions(task.message ?? '', model, quant));
   const running = related.find(task => task.state === 'running');
   const latest = related[0];
   const isLocal = !!local?.some(item => { const req = catalogRequirement(`${item.name} ${item.modelPath}`); return req?.family === model.family && req.quant === quant; });
-  return { local: isLocal, downloading: !!running, failed: !running && latest?.state === 'failed', progress: running ? taskProgress(running.message) : undefined, fit: quantFitState(model, quant, machineGB, undefined, platform) };
+  const onDisk = isLocal ? undefined : downloadedFor(model, quant, downloaded);
+  return { local: isLocal, onDisk, downloading: !!running, failed: !running && latest?.state === 'failed', progress: running ? taskProgress(running.message) : undefined, fit: quantFitState(model, quant, machineGB, undefined, platform) };
 }
 
-export function rowLive(model: CatalogModel, tasks: TaskStatus[], local: LocalModel[] | undefined, machineGB?: number, platform?: RuntimePackagePlatform): RowLive {
-  const quants = model.quants.map(quant => ({ quant, ...quantLive(model, quant, tasks, local, machineGB, platform) }));
+export function rowLive(model: CatalogModel, tasks: TaskStatus[], local: LocalModel[] | undefined, machineGB?: number, platform?: RuntimePackagePlatform, downloaded?: DownloadedModel[]): RowLive {
+  const quants = model.quants.map(quant => ({ quant, ...quantLive(model, quant, tasks, local, machineGB, platform, downloaded) }));
   const running = quants.find(item => item.downloading);
   const order: Fit[] = ['fits', 'tight', 'over'];
   // A family with its own rule (DeepSeek-V4.1-Flash: dsv41_fit.recommend, the panel's 推荐) names the card's set; a
   // manual-only set (DeepSeek-V4.1-Flash 2.25 bpw) is never the card's suggestion.
   const preferred = catalogPreferredQuant(model, machineGB);
   const best = quants.find(item => item.quant === preferred && item.fit) ?? quants.filter(item => item.fit && !model.quantInfo[item.quant]?.manualOnly).sort((a, b) => order.indexOf(a.fit!) - order.indexOf(b.fit!) || (model.quantInfo[b.quant]?.ramGB ?? 0) - (model.quantInfo[a.quant]?.ramGB ?? 0))[0];
-  return { local: quants.filter(item => item.local).length, downloading: !!running, progress: running?.progress, failed: quants.some(item => item.failed), fit: best?.fit, bestQuant: best?.fit === 'over' ? undefined : best?.quant };
+  return { local: quants.filter(item => item.local).length, onDisk: quants.filter(item => item.onDisk).length, downloading: !!running, progress: running?.progress, failed: quants.some(item => item.failed), fit: best?.fit, bestQuant: best?.fit === 'over' ? undefined : best?.quant };
 }
 
 /** Returns ids whose signature changed since the previous render, for ~1.6s, so rows can flash in place. */

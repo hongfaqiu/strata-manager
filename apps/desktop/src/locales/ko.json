@@ -106,7 +106,7 @@
   "localSetupDesktopTitle": "데스크톱 앱에서 모델 준비",
   "localSetupDesktopHint": "로컬 설치 검색과 백그라운드 모델 관리에는 데스크톱 앱이 필요합니다.",
   "localSetupNothingFound": "Strata 설치를 찾지 못했습니다",
-  "localSetupNothingFoundHint": "Strata를 이미 설치했다면 해당 폴더를 선택하세요. 아직 설치하지 않았다면 새 모델을 설치하고 준비 단계를 따르세요.",
+  "localSetupNothingFoundHint": "Strata를 이미 설치했다면 해당 폴더를 선택하세요. 다운로드한 모델은 삭제할 필요가 없습니다. '모델 다운로드 → 기존 모델 사용'에서 모델 폴더를 선택하면 바로 사용할 수 있습니다. 아직 설치하지 않았다면 새 모델을 설치하고 준비 단계를 따르세요.",
   "localSetupChooseDirectory": "Strata 폴더 선택",
   "localSetupInstall": "새 모델 설치",
   "localSetupChooseAnother": "다른 폴더 선택",

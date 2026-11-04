@@ -106,7 +106,7 @@
   "localSetupDesktopTitle": "デスクトップアプリでモデルを準備",
   "localSetupDesktopHint": "ローカルのインストール検出とバックグラウンドでのモデル管理には、デスクトップアプリが必要です。",
   "localSetupNothingFound": "Strata のインストールが見つかりません",
-  "localSetupNothingFoundHint": "Strata をインストール済みの場合は、そのフォルダーを選択してください。未インストールの場合は、新しいモデルをインストールして準備手順に従ってください。",
+  "localSetupNothingFoundHint": "Strata をインストール済みの場合は、そのフォルダーを選択してください。ダウンロード済みのモデルは削除不要です。「モデルをダウンロード → 既存のモデルを使用」でモデルのフォルダーを選択すればそのまま使えます。未インストールの場合は、新しいモデルをインストールして準備手順に従ってください。",
   "localSetupChooseDirectory": "Strata フォルダーを選択",
   "localSetupInstall": "新しいモデルをインストール",
   "localSetupChooseAnother": "別のフォルダーを選択",
