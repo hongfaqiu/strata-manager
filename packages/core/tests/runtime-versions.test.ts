@@ -25,6 +25,22 @@ describe('runtime versions', () => {
     expect(selectedRuntime([])).toBeUndefined();
     expect(selectedRuntime(undefined)).toBeUndefined();
   });
+  it('selection order: saved choice, then 当前使用, then the newest ready, then the first ready', () => {
+    const old = { installDir: 'D:\\AI\\Strata', readiness: 'ready', releaseVersion: '0.2.2', runtimeVersion: '0.1.47' };
+    const repair = { installDir: 'D:\\AI\\Broken', readiness: 'repair', releaseVersion: '0.2.11' };
+    const fresh = { installDir: 'D:\\AI\\Strata\\runtimes\\release-544', readiness: 'ready', releaseVersion: '0.2.10', runtimeVersion: '0.1.56' };
+    const list = [old, repair, fresh];
+    expect(selectedRuntime(list)?.installDir).toBe(fresh.installDir);
+    expect(selectedRuntime(list, { currentDir: old.installDir })?.installDir).toBe(old.installDir);
+    expect(selectedRuntime(list, { chosenDir: fresh.installDir, currentDir: old.installDir })?.installDir).toBe(fresh.installDir);
+    expect(selectedRuntime(list, { chosenDir: 'E:\\gone', currentDir: old.installDir })?.installDir).toBe(old.installDir);
+    expect(selectedRuntime(list, { chosenDir: 'd:/ai/strata/runtimes/release-544/' })?.installDir).toBe(fresh.installDir);
+    // Engine numbers decide when the folders record no release; the release list maps them.
+    const a = { installDir: 'A', readiness: 'ready', runtimeVersion: '0.1.47' }, b = { installDir: 'B', readiness: 'ready', runtimeVersion: '0.1.56' };
+    expect(selectedRuntime([a, b])?.installDir).toBe('B');
+    expect(selectedRuntime([{ installDir: 'X', readiness: 'ready' }, a])?.installDir).toBe('A');
+    expect(selectedRuntime([{ installDir: 'X', readiness: 'ready' }, { installDir: 'Y', readiness: 'ready' }])?.installDir).toBe('X');
+  });
   it('names the direction of a switch', () => {
     expect(runtimeVersionDirection('0.2.1', '0.1.44')).toBe('downgrade');
     expect(runtimeVersionDirection('0.1.44', '0.2.1')).toBe('upgrade');

@@ -482,6 +482,57 @@ test('the Strata page update card follows the selected runtime among several', a
   assert.ok(text(f.tree()).includes('已是最新版本'));
 });
 
+// The Windows report: the first ready folder is the old D:\AI\Strata (v0.2.2), the Manager runtime is v0.2.10.
+const oldStrata = { ...runtime, installDir: 'D:\\AI\\Strata', releaseVersion: '0.2.2', runtimeVersion: '0.1.47', readiness: 'ready' };
+const newStrata = { ...runtime, installDir: 'D:\\AI\\Strata\\runtimes\\release-544e1da5-ff46-4034-a8bb-a8220be6c53e', releaseVersion: '0.2.10', runtimeVersion: '0.1.56', readiness: 'ready' };
+const inventoryOf = currentDir => ({ runtimes: [oldStrata, newStrata].map(item => ({ installDir: item.installDir, pythonPath: 'python.exe', releaseVersion: item.releaseVersion, engineVersion: item.runtimeVersion, readiness: 'ready', owned: false, current: item.installDir === currentDir, running: false, rollback: false, switching: false, profiles: [], cleanup: false })), leftovers: [] });
+const restartFixture = ({ saved = '', currentDir } = {}) => {
+  const f = parentFixture('automatic');
+  f.queryData['runtime-installation'].data = { detectedRuntimes: [oldStrata, newStrata] };
+  f.queryData['runtime-update-info'].data = { latestVersion: '0.2.10', supportedVersion: '0.2.10', checkedAt: 300, installable: true, assets: assets.map(asset => ({ ...asset, engineVersion: '0.1.56' })) };
+  f.queryData['runtime-installed-versions'] = { data: currentDir === undefined ? undefined : inventoryOf(currentDir), isPending: false };
+  f.props.selectedRuntimeDir = saved;
+  return f;
+};
+
+test('after a restart with nothing saved, the newest ready runtime is used and an older first folder does not prompt', async () => {
+  const f = restartFixture(); f.render(); await f.settle(); await f.settle();
+  assert.equal(f.dialog(), undefined, 'v0.2.10 is the newest ready runtime and already current');
+  assert.equal(f.calls.updates.length, 0);
+});
+
+test('after a restart the backend 「当前使用」 runtime decides before the newest one', async () => {
+  const quiet = restartFixture({ currentDir: newStrata.installDir }); quiet.render(); await quiet.settle(); await quiet.settle();
+  assert.equal(quiet.dialog(), undefined, 'the service runs v0.2.10');
+  const old = restartFixture({ currentDir: oldStrata.installDir }); old.render(); await old.settle(); await old.settle();
+  assert.equal(old.dialog()?.props.runtime.installDir, oldStrata.installDir, 'the service still runs the old folder, so it is offered');
+});
+
+test('the saved choice survives a restart and wins over 「当前使用」; a folder that is gone is ignored', async () => {
+  const chosen = restartFixture({ saved: newStrata.installDir, currentDir: oldStrata.installDir }); chosen.render(); await chosen.settle(); await chosen.settle();
+  assert.equal(chosen.dialog(), undefined, 'the runtime chosen last time is current');
+  const differentCase = restartFixture({ saved: 'd:/ai/strata/runtimes/release-544e1da5-ff46-4034-a8bb-a8220be6c53e/', currentDir: oldStrata.installDir }); differentCase.render(); await differentCase.settle(); await differentCase.settle();
+  assert.equal(differentCase.dialog(), undefined, 'the saved folder matches despite case and separators');
+  const gone = restartFixture({ saved: 'E:\\Removed\\Strata', currentDir: newStrata.installDir }); gone.render(); await gone.settle(); await gone.settle();
+  assert.equal(gone.dialog(), undefined, 'a removed folder falls through to 「当前使用」');
+});
+
+test('the automatic prompt waits for the saved choice and the backend inventory', async () => {
+  const f = restartFixture({ saved: null, currentDir: oldStrata.installDir }); f.render(); await f.settle(); await f.settle();
+  assert.equal(f.dialog(), undefined, 'nothing is proposed before the saved choice is read');
+  f.props.selectedRuntimeDir = ''; f.queryData['runtime-installed-versions'] = { data: undefined, isPending: true }; f.render(); await f.settle();
+  assert.equal(f.dialog(), undefined, 'nor before 「当前使用」 is known');
+});
+
+test('the Strata page uses the same selection rules and saves a hand choice through the app', () => {
+  const page = readFileSync(new URL('./InstallRuntimePage.tsx', import.meta.url), 'utf8');
+  const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+  assert.match(page, /core\.selectedRuntime\(runtimes, \{ chosenDir: selectedRuntime, currentDir: currentRuntimeDir, releases: releaseList \}\)/);
+  assert.match(app, /saveStore\(STRATA_RUNTIME_KEY, installDir\)/);
+  assert.match(app, /loadStore<string>\(STRATA_RUNTIME_KEY, ''\)/);
+  assert.match(app, /onSelectRuntime=\{chooseStrataRuntime\}/);
+});
+
 for (const kind of ['manual', 'automatic']) test(`${kind} update entry stays quiet when Strata is pinned below the latest release`, async () => {
   const f = parentFixture(kind, { mode: 'official' }, '0.1.41'); f.props.showInstallations = false; f.render(); await f.settle();
   if (kind === 'manual') {

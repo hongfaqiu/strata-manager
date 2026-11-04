@@ -98,14 +98,41 @@ export function runtimeReleaseIsNewer(runtime: RuntimeVersionFacts, latest: { la
   return undefined;
 }
 
+/** Where the selection rules find the runtime: the user's last choice and the backend's 「当前使用」. */
+export interface RuntimeSelection {
+  /** Chosen by hand in 「运行环境」 and saved; ignored once that folder is no longer detected. */
+  chosenDir?: string | null;
+  /** The runtime the backend marks as in use (the service's runtime). */
+  currentDir?: string | null;
+  releases?: Pick<RuntimeReleaseVersion, 'version' | 'engineVersion' | 'prerelease'>[];
+}
+/** Same folder, whatever the separators, trailing slash or (on Windows drives) case. */
+export const runtimeDirKey = (dir: string) => {
+  const key = dir.trim().replace(/[\\/]+/g, '/').replace(/\/$/, '');
+  return /^[a-z]:/i.test(key) || dir.includes('\\') ? key.toLowerCase() : key;
+};
+/** Is `a` newer than `b`? Release against release, else engine against engine. */
+function runtimeIsNewer(a: RuntimeVersionFacts, b: RuntimeVersionFacts, releases: RuntimeSelection['releases'] = []): boolean {
+  const ra = runtimeReleaseOf(a, releases), rb = runtimeReleaseOf(b, releases);
+  if (ra && rb && parts(ra) && parts(rb)) return compareReleaseVersions(ra, rb) > 0;
+  const ea = plain(a.runtimeVersion), eb = plain(b.runtimeVersion);
+  if (ea && eb && parts(ea) && parts(eb)) return compareReleaseVersions(ea, eb) > 0;
+  return !!(ra || ea) && !(rb || eb);
+}
+
 /**
- * The runtime the Strata page shows and every update entry follows: the one chosen in 「运行环境」,
- * else the first ready one, else the first. Other folders on the machine (an older D:\AI\Strata
- * kept next to a newer Manager runtime) are never offered an update on their own.
+ * The runtime the Strata page shows and every update entry follows, in this order: the one last
+ * chosen in 「运行环境」 (saved, ignored once the folder is gone); the one the backend marks as in
+ * use; the newest ready one; the first ready one; the first. Other folders on the machine (an
+ * older D:\AI\Strata kept next to a newer Manager runtime) are never offered an update on their own.
  */
-export function selectedRuntime<T extends { installDir: string; readiness: string }>(runtimes: readonly T[] | undefined, chosenDir?: string): T | undefined {
+export function selectedRuntime<T extends RuntimeVersionFacts & { installDir: string; readiness: string }>(runtimes: readonly T[] | undefined, selection: RuntimeSelection | string = {}): T | undefined {
   if (!runtimes?.length) return undefined;
-  return (chosenDir ? runtimes.find(runtime => runtime.installDir === chosenDir) : undefined) ?? runtimes.find(runtime => runtime.readiness === 'ready') ?? runtimes[0];
+  const { chosenDir, currentDir, releases = [] } = typeof selection === 'string' ? { chosenDir: selection } : selection;
+  const find = (dir?: string | null) => dir ? runtimes.find(runtime => runtime.installDir === dir) ?? runtimes.find(runtime => runtimeDirKey(runtime.installDir) === runtimeDirKey(dir)) : undefined;
+  const ready = runtimes.filter(runtime => runtime.readiness === 'ready');
+  const newest = ready.reduce<T | undefined>((best, runtime) => !best || runtimeIsNewer(runtime, best, releases) ? runtime : best, undefined);
+  return find(chosenDir) ?? find(currentDir) ?? newest ?? ready[0] ?? runtimes[0];
 }
 
 /** Offer `latest` to this runtime. Without a comparable pair it is offered unless the engine is already the latest one. */
