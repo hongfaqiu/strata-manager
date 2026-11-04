@@ -83,7 +83,7 @@ const words = {
     noServicesDataHelp: '已添加的目录里没有找到可启动的模型配置。若这是官方数据目录（Strata-data / --data-dir），请改为添加含 setup.py 与 serve/server.py 的安装目录；也可在「下载模型 → 已有模型」用「导入配置」选择 strata-*.json。',
     checking: '检查中', online: '接口可用', offline: '尚未就绪', ready: '已就绪', unknown: '未提供', loaded: '已加载', unloaded: '未加载',
     owned: '后台已接管', external: '等待后台接管', connectionOnly: '等待导入', readyToStart: '尚未启用', localModel: '本机模型', api: '本机 API 地址',
-    process: '进程', stopped: '未启动', running: '运行中', modelState: '模型状态', health: '服务状态',
+    process: '进程', stopped: '未启动', running: '运行中', drafter: '实际预测', drafterUnverified: '无法核验', drafterChosen: '配置为', modelState: '模型状态', health: '服务状态',
     selected: '当前选择', select: '启用配置', repairEnv: '修复运行环境', copyDiag: '复制诊断信息', chat: '聊天', start: '启用此模型', retryEnable: '重试启用', prepare: '准备模型', stop: '停止', restart: '重启',
     load: '加载模型', unload: '释放模型内存', takeover: '接管并启用', config: '运行配置', configShort: '配置', logs: '查看日志', lastActivated: '上次启用',
     details: '详情', hideDetails: '收起', edit: '重命名模型', remove: '移除保存的配置', deleteModel: '删除模型文件', retainConfigurations: '删除模型文件时保留全部 JSON 配置。', repairConfigurations: '待修复配置', repairConfigurationsHelp: '这些配置引用的模型权重缺失；仍可打开运行配置页编辑或删除 JSON。',
@@ -116,7 +116,7 @@ const words = {
     noServicesDataHelp: 'No runnable model configuration was found in the directories you added. If this is an official data folder (Strata-data / --data-dir), add the install directory that contains setup.py and serve/server.py instead, or use Import configuration under Download models → Existing models and pick a strata-*.json file.',
     checking: 'Checking', online: 'API available', offline: 'Not ready', ready: 'Ready', unknown: 'Not reported', loaded: 'Loaded', unloaded: 'Not loaded',
     owned: 'Managed by the background', external: 'Awaiting ownership', connectionOnly: 'Awaiting import', readyToStart: 'Not enabled', localModel: 'Local model', api: 'Local API address',
-    process: 'Process', stopped: 'Not started', running: 'Running', modelState: 'Model state', health: 'Service status',
+    process: 'Process', stopped: 'Not started', running: 'Running', drafter: 'Drafter in use', drafterUnverified: 'Not verified', drafterChosen: 'configured as', modelState: 'Model state', health: 'Service status',
     selected: 'Selected', select: 'Enable configuration', repairEnv: 'Repair runtime environment', copyDiag: 'Copy diagnostics', chat: 'Chat', start: 'Enable this model', retryEnable: 'Retry enabling', prepare: 'Prepare model', stop: 'Stop', restart: 'Restart',
     load: 'Load model', unload: 'Unload model', takeover: 'Take ownership and enable', config: 'Runtime settings', configShort: 'Settings', logs: 'View logs', lastActivated: 'Last activated',
     details: 'Details', hideDetails: 'Collapse', edit: 'Rename model', remove: 'Remove saved configuration', deleteModel: 'Delete model files', retainConfigurations: 'Deleting model files retains all JSON configurations.', repairConfigurations: 'Configurations to repair', repairConfigurationsHelp: 'The model weights referenced by these configurations are missing. Open Runtime settings to edit or delete the JSON files.',
@@ -219,6 +219,13 @@ export function ServiceManagerPage(props: ServiceManagerPageProps) {
     queryFn: () => core.request(profile, '/metrics'),
     enabled: expanded.includes(`profile:${profile.id}`) && healthQueries[index]?.isSuccess === true && (!desktop || processQueries[index]?.data?.running === true),
     refetchOnWindowFocus: false, retry: false,
+  })) });
+  // The drafter the engine really runs (its verified command line): Auto, or a DFlash2 that failed, can end up on MTP.
+  const draftingQueries = useQueries({ queries: profiles.map((profile, index) => ({
+    queryKey: ['service-manager-running-drafting', profile.id, processQueries[index]?.data?.pid],
+    queryFn: () => core.runningDrafting(profile.id),
+    enabled: desktop && expanded.includes(`profile:${profile.id}`) && processQueries[index]?.data?.owned === true && processQueries[index]?.data?.running === true && healthQueries[index]?.isSuccess === true,
+    refetchOnWindowFocus: false, retry: false, staleTime: 30_000,
   })) });
   const configQueries = useQueries({ queries: profiles.map(profile => ({
     queryKey: ['service-manager-local-config', profile.id, profile.configPath],
@@ -355,6 +362,14 @@ export function ServiceManagerPage(props: ServiceManagerPageProps) {
       const config = entry.config ?? configQueries[index]?.data;
       const processLabel = !profile ? candidate?.running ? w.discoveredProcess : w.stopped : !desktop ? w.unknown : processQuery?.isPending ? w.checking : processQuery?.isError ? w.unknown : process?.reason && process.external && !process.pid ? w.unverified : process?.running ? w.running : process?.running === false ? w.stopped : w.unknown;
       const modelLabel = loaded === true ? w.loaded : loaded === false ? w.unloaded : w.unknown;
+      const runningDrafting = index >= 0 ? draftingQueries[index] : undefined;
+      const drafterNames = { dflash2: 'DFlash2', mtp: 'MTP', off: language === 'zh-CN' ? '关' : 'Off', auto: language === 'zh-CN' ? '自动' : 'Auto' } as const;
+      const actualDrafter = runningDrafting?.data?.verified ? runningDrafting.data.drafter : undefined;
+      const chosenDrafting = config && actualDrafter ? core.draftingModeOf(config) : undefined;
+      const chosenNote = (mode: keyof typeof drafterNames) => language === 'zh-CN' ? `（${w.drafterChosen}${drafterNames[mode]}）` : ` (${w.drafterChosen} ${drafterNames[mode]})`;
+      // Auto, or a choice the engine did not honour, also names what the configuration asked for.
+      const draftingLabel = runningDrafting?.isSuccess !== true ? undefined : !actualDrafter ? w.drafterUnverified
+        : chosenDrafting && chosenDrafting !== actualDrafter ? `${drafterNames[actualDrafter]}${chosenNote(chosenDrafting)}` : drafterNames[actualDrafter];
       const ownerLabel = needsRepair && !owned ? w.repair : !profile ? w.discovered : owned ? w.owned : external ? w.external : profile.managed ? w.readyToStart : w.connectionOnly;
       const status = currentEntry ? ownedCurrentEntry && currentReady ? w.ready : w.running : preparingEntry ? w.preparing : needsRepair ? w.repair : !profile ? w.discovered : checking ? w.checking : readyForChat ? w.ready : external ? w.external : process?.running === false ? w.stopped : w.offline;
       return <section key={group.key} className={'service-manager-card st-card ' + (currentEntry ? 'is-current' : '')} data-profile-id={profile?.id} data-configuration-key={entry.key}>
@@ -394,7 +409,7 @@ export function ServiceManagerPage(props: ServiceManagerPageProps) {
           <button className="service-manager-expand" aria-expanded={isExpanded} aria-controls={'service-details-' + entry.key} onClick={() => setExpanded(previous => previous.includes(entry.key) ? previous.filter(key => key !== entry.key) : [...previous, entry.key])}><ChevronDown size={15} />{isExpanded ? w.hideDetails : w.details}</button>
         </div>
         {isExpanded && <div className="service-manager-details" id={'service-details-' + entry.key}>
-          <div className="service-manager-statuses"><div><span>{w.service}</span><strong>{ownerLabel}</strong></div><div><span>{w.process}</span><strong>{processLabel}</strong></div><div><span>{w.modelState}</span><strong>{modelLabel}</strong></div><div className="service-manager-model"><span>{w.model}</span><strong>{online ? textValue(health.model) ?? w.unknown : textValue(config?.model_name) ?? group.name}</strong></div></div>
+          <div className="service-manager-statuses"><div><span>{w.service}</span><strong>{ownerLabel}</strong></div><div><span>{w.process}</span><strong>{processLabel}</strong></div><div><span>{w.modelState}</span><strong>{modelLabel}</strong></div>{owned && online && draftingLabel && <div data-testid="service-manager-drafter"><span>{w.drafter}</span><strong>{draftingLabel}</strong></div>}<div className="service-manager-model"><span>{w.model}</span><strong>{online ? textValue(health.model) ?? w.unknown : textValue(config?.model_name) ?? group.name}</strong></div></div>
           {config && <details className="model-config-json"><summary>{language === 'zh-CN' ? '查看详细配置（JSON）' : 'View full configuration (JSON)'}</summary><pre>{visibleConfiguration(config)}</pre></details>}
           <dl>
             {profile && <><div><dt>{w.health}</dt><dd>{online ? w.online : w.offline}</dd></div><div><dt>{w.api}</dt><dd><code>{profile.baseUrl}</code></dd></div></>}

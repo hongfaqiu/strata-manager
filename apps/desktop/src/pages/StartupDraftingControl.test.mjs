@@ -11,8 +11,9 @@ const compile = file => ts.transpileModule(readFileSync(new URL(file, import.met
 const drafting = { exports: {} };
 vm.runInNewContext(compile('../../../../packages/core/src/drafting.ts'), { module: drafting, exports: drafting.exports, require: () => ({}) });
 const Segmented = props => jsx('segmented', props);
+const Dflash2Download = props => jsx('dflash2-download', props);
 const control = { exports: {} };
-vm.runInNewContext(compile('./StartupDraftingControl.tsx'), { module: control, exports: control.exports, require: name => ({ '@strata-manager/core': drafting.exports, '../OfficialControls': { Segmented }, 'react/jsx-runtime': { jsx, jsxs: jsx } })[name] ?? {} });
+vm.runInNewContext(compile('./StartupDraftingControl.tsx'), { module: control, exports: control.exports, require: name => ({ '@strata-manager/core': drafting.exports, '../OfficialControls': { Segmented }, './Dflash2Download': { Dflash2Download }, 'react/jsx-runtime': { jsx, jsxs: jsx } })[name] ?? {} });
 const { StartupDraftingControl } = control.exports;
 const render = (config, extra = {}) => { const changes = []; const tree = StartupDraftingControl({ zh: true, config, disabled: false, showParameterNames: false, onChange: next => changes.push(JSON.parse(JSON.stringify(next))), ...extra }); return { tree, changes, segmented: nodes(tree).find(node => node.type === Segmented) }; };
 const mtpArgs = { args: ['--native', 'm.gguf', '--mtp', 'D:\\data\\mtp\\rt', '--spec'] };
@@ -66,4 +67,19 @@ test('engine 0.1.56 offers DFlash2 and says it moves to MTP for 2+ concurrent re
   assert.doesNotMatch(text(render({ ...qwen, parallel: 4, drafting: 'mtp' }, { engineVersion: '0.1.56', dflash2Served: true }).tree), /改用 MTP/);
   // Auto on one request needs no --mtp layer once DFlash2 is served.
   assert.doesNotMatch(text(render({ args: ['--native', 'm.gguf'], model_name: 'qwen3.8-flash-next-iq3_s' }, { engineVersion: '0.1.56', dflash2Served: true }).tree), /没有 MTP 草稿层/);
+});
+
+test('a managed Qwen3.8 offers 「下载 DFlash2」; a start never downloads it (no first-start wording)', () => {
+  const qwen = { ...mtpArgs, model_name: 'qwen3.8-flash-next-unsloth-ud-q4_k_xl' };
+  const profile = { id: 'p', managed: true, configPath: '/c.json' };
+  const download = tree => nodes(tree).find(node => node.type === Dflash2Download);
+  const single = render(qwen, { engineVersion: '0.1.56', dflash2Served: true, profile });
+  assert.equal(download(single.tree)?.props.profile, profile);
+  assert.match(text(single.tree), /需先点「下载 DFlash2」，约 1\.2 GB；启动时不会自动下载/);
+  assert.doesNotMatch(text(single.tree), /首次下载/);
+  assert.doesNotMatch(text(render(qwen, { zh: false, engineVersion: '0.1.56', dflash2Served: true, profile }).tree), /on first start/);
+  assert.equal(download(render({ ...qwen, parallel: 2 }, { engineVersion: '0.1.56', dflash2Served: true, profile }).tree), undefined, 'MTP runs for 2+ requests');
+  assert.equal(download(render({ ...qwen, drafting: 'mtp' }, { engineVersion: '0.1.56', dflash2Served: true, profile }).tree), undefined);
+  assert.equal(download(render(qwen, { engineVersion: '0.1.56', dflash2Served: true, profile: { ...profile, managed: false } }).tree), undefined, 'a connected external service has no runtime to run fetch in');
+  assert.equal(download(render(qwen, { engineVersion: '0.1.55', dflash2Served: false, profile }).tree), undefined);
 });

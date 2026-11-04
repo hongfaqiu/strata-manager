@@ -9,6 +9,7 @@ pub mod community_model;
 pub mod component_engine;
 pub mod configuration_copy;
 pub mod control_vector;
+pub mod dflash2;
 pub mod diagnostics;
 pub mod discovery;
 pub mod disk;
@@ -901,6 +902,7 @@ impl RuntimeState {
                 | "tuning_restore"
                 | "set_background_policy"
                 | "prepare_app_update"
+                | "dflash2_fetch_v1"
         ) {
             runtime_upgrade::assert_available(&self)?;
         }
@@ -959,6 +961,7 @@ impl RuntimeState {
                     | "tuning_apply"
                     | "tuning_restore"
                     | "set_background_policy"
+                    | "dflash2_fetch_v1"
             )
         {
             return Err("模型正在切换，请等待本次准备完成".into());
@@ -1335,6 +1338,12 @@ impl RuntimeState {
                 external_management::assert_profile_manager_owned(&self, &selected)?;
                 Ok(json!({"managed":true}))
             }
+            "dflash2_status_v1" => value(dflash2::status(&profile()?)),
+            "dflash2_fetch_v1" => value(dflash2::start(self.clone(), profile()?)),
+            "running_drafting_v1" => value(Ok::<_, String>(dflash2::running(
+                &self,
+                &arg::<String>(&params, "profileId")?,
+            ))),
             "chat_runtime_evidence" => value(chat_runtime::evidence(
                 &self,
                 &arg::<String>(&params, "profileId")?,

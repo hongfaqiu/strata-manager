@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyDrafting, draftingChoices, draftingFamilyOf, draftingModeOf, draftingRequestsOf, draftingSupport, effectiveDraftingOf, engineServesDflash2, normalizeDrafting } from '../src/drafting';
+import { applyDrafting, dflash2FetchProgress, draftingChoices, draftingFamilyOf, draftingModeOf, draftingRequestsOf, draftingSupport, effectiveDraftingOf, engineServesDflash2, normalizeDrafting } from '../src/drafting';
 
 describe('drafting (upstream v0.2.6 drafting.py / drafting.ts)', () => {
   it('serves DFlash2 from engine 0.1.56 and reads the concurrent request count (Strata v0.2.10)', () => {
@@ -46,6 +46,14 @@ describe('drafting (upstream v0.2.6 drafting.py / drafting.ts)', () => {
     expect(draftingFamilyOf({ model_name: 'Qwen3.8-Flash-Next-gyro-v2' })).toBe('gyro');
     expect(draftingFamilyOf({ model_name: 'qwen3.6-35b' })).toBeNull();
   });
+  it('treats Unsloth quantizations of Qwen3.8-Flash-Next as a DFlash2 family (upstream SUPPORTED_FAMILIES)', () => {
+    expect(draftingFamilyOf({ model_name: 'qwen3.8-flash-next-unsloth-ud-q4_k_xl' })).toBe('unsloth');
+    expect(draftingFamilyOf({ model_name: 'Qwen3.8-Flash-Next-Unsloth-UD-Q2_K_XL' })).toBe('unsloth');
+    expect(draftingFamilyOf({ model_name: 'qwen3.8-flash-next-coder-iq1_m' })).toBeNull();
+    expect(draftingFamilyOf({ model_name: 'qwen3.8-flash-next-nvfp4-nvfp4' })).toBeNull();
+    expect(draftingChoices('unsloth', true)).toEqual(['auto', 'mtp', 'dflash2', 'off']);
+    expect(draftingChoices('unsloth', false)).toEqual(['auto', 'mtp', 'off']);
+  });
   it('0.1.48+ writes drafting and clears a stale mtp:false so server.py does not keep MTP off', () => {
     expect(applyDrafting({ args: [], mtp: false }, 'auto', '0.1.51')).toEqual({ args: [], drafting: 'auto' });
     expect(applyDrafting({ args: [] }, 'mtp', '0.1.48')).toEqual({ args: [], drafting: 'mtp' });
@@ -70,5 +78,12 @@ describe('drafting (upstream v0.2.6 drafting.py / drafting.ts)', () => {
     expect(effectiveDraftingOf(['--draft', 'dflash2', '--draft-model', 'p'])).toBe('dflash2');
     expect(effectiveDraftingOf(['--spec'])).toBe('off');
     expect(effectiveDraftingOf(undefined)).toBeNull();
+  });
+  it('reads the DFlash2 download progress and result from strata drafting fetch --output jsonl', () => {
+    expect(dflash2FetchProgress([])).toEqual({});
+    const lines = ['not json', '{"event":"progress","step":"download","done":100,"total":1200}', '{"event":"progress","step":"pack","done":3,"total":6}'];
+    expect(dflash2FetchProgress(lines)).toEqual({ step: 'pack', done: 3, total: 6 });
+    expect(dflash2FetchProgress([...lines, '{"schema_version":1,"ok":true,"event":"result","pack":"/d/dflash2/x.pack"}']).result).toEqual({ ok: true, pack: '/d/dflash2/x.pack' });
+    expect(dflash2FetchProgress(['{"schema_version":1,"ok":false,"error":{"code":"drafting_failed","message":"disk full"}}']).result).toEqual({ ok: false, message: 'disk full' });
   });
 });
