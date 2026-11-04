@@ -47,6 +47,12 @@ export function RuntimeUpdateDialog({ language, runtime, release, assetName, ini
   const automaticAsset = automatic.isSuccess ? release.assets.find(asset => asset.name === automatic.data?.name && asset.url === automatic.data?.url && asset.sha256 === automatic.data?.sha256) : undefined;
   const matchReason = automaticAsset && automatic.data?.matchReason ? core.runtimeBilingualText(automatic.data.matchReason, zh) : '';
   const automaticError = automatic.isError ? core.runtimeBilingualText(core.normalizeError(automatic.error).message, zh) : '';
+  // The prebuilt engines need AVX2: on an older CPU the engine update is stopped here and only
+  // the code can move (「只更新代码」). A failed check blocks nothing; the service checks again.
+  const cpu = useQuery({ queryKey: ['runtime-cpu-check'], queryFn: () => core.runtimeCpuCheck(), enabled: core.isDesktop(), retry: false, staleTime: Infinity });
+  const engineBlocked = cpu.data?.engineBlocked ? core.runtimeBilingualText(cpu.data.engineBlocked, zh) : '';
+  // A chosen version or a local engine package is about the engine itself.
+  const codeOnlyAvailable = !!engineBlocked && !targetVersion && !localEntry;
   const initialMode: DownloadMode = localEntry ? 'local' : initialPreferences?.mode ?? (initialDownload?.localArchivePath !== undefined ? 'local' : initialDownload?.downloadUrl !== undefined ? 'mirror' : initialDownload?.source === 'auto' ? 'auto' : 'official');
   const selectionKey = JSON.stringify([runtime.installDir, release.latestVersion, release.checkedAt, release.sourceRevision, release.assets.map(asset => [asset.name, asset.sha256, asset.url]), assetName, initialDownload?.localArchivePath, initialDownload?.downloadUrl, initialPreferences]);
   // #194: a package saved for an older release follows to the same kind in this one, or falls back to automatic.
@@ -110,9 +116,14 @@ export function RuntimeUpdateDialog({ language, runtime, release, assetName, ini
   const confirming = useRef(false);
   useEffect(() => { if (!busy) confirming.current = false; }, [busy, error, release.checkedAt, runtime.installDir]);
   const confirm = () => {
-    if (confirming.current || busy || !canConfirm || currentState.current.busy || !currentState.current.canConfirm || checkingServices || browsing || browsingRef.current || !sourceReady || currentState.current.selectionKey !== selectionKey || currentSelection.current !== selection) return;
+    if (confirming.current || busy || !canConfirm || currentState.current.busy || !currentState.current.canConfirm || checkingServices || browsing || browsingRef.current || !sourceReady || !!engineBlocked || currentState.current.selectionKey !== selectionKey || currentSelection.current !== selection) return;
     confirming.current = true;
     onConfirm(resolved.download, selectedAsset?.name || selection.assetName || undefined);
+  };
+  const confirmCodeOnly = () => {
+    if (confirming.current || busy || !canConfirm || currentState.current.busy || !currentState.current.canConfirm || checkingServices || !codeOnlyAvailable) return;
+    confirming.current = true;
+    onConfirm({ sourceOnly: true });
   };
   const dismiss = () => { if (!busy && !currentState.current.busy) onDismiss(); };
   const title = targetVersion ? direction === 'downgrade' ? zh ? `降级到 Strata ${version}` : `Downgrade to Strata ${version}` : direction === 'same' ? zh ? `重新安装 Strata ${version}` : `Reinstall Strata ${version}` : zh ? `安装 Strata ${version}` : `Install Strata ${version}`
@@ -147,9 +158,10 @@ export function RuntimeUpdateDialog({ language, runtime, release, assetName, ini
       <details className="runtime-update-release-details"><summary>{zh ? '更新日志' : 'Release notes'}</summary><div className="runtime-update-notes" role="region" aria-label={zh ? '更新日志' : 'Release notes'} tabIndex={0}>
         {notes ? <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml components={{ a: ({ node: _node, title, children, ...props }) => <a {...props} data-tooltip={title} target="_blank" rel="noreferrer">{children}</a>, img: ({ node: _node, title, ...props }) => <img {...props} data-tooltip={title}/> }}>{notes}</ReactMarkdown> : <p>{zh ? '此 Release 暂无更新日志。' : 'This release has no release notes.'}</p>}
       </div></details>
+      {engineBlocked && <div className="notice warning runtime-update-cpu-warning" role="alert" data-testid="runtime-cpu-blocked"><strong>{zh ? '已拦下引擎更新：这台电脑的 CPU 不支持 AVX2' : 'Engine update stopped: this CPU has no AVX2'}</strong><p>{engineBlocked}</p><p>{codeOnlyAvailable ? zh ? '「只更新代码」只替换 Strata 的程序代码，当前引擎保持不变，模型和配置不受影响；新代码中依赖新引擎的选项可能用不了。' : '"Update code only" replaces the Strata code and keeps the current engine, models and settings; options that need the newer engine may not work.' : zh ? '指定版本或本地引擎包都要换引擎，不能只更新代码；可在「检查更新」里对最新版选择「只更新代码」。' : 'A chosen version or a local engine package replaces the engine, so the code cannot be updated alone here; use "Update code only" for the latest release from Check for updates.'}</p></div>}
       {!canConfirm && !busy && <p className="runtime-update-waiting" role="status">{zh ? '当前正在处理请求或任务，空闲后可确认更新。' : 'Requests or tasks are in progress. You can confirm the update when they finish.'}</p>}
       {error && <p className="notice error" role="alert">{error}</p>}
-      <div className="runtime-update-dialog-actions"><button type="button" disabled={busy} onClick={dismiss}>{targetVersion ? zh ? '取消' : 'Cancel' : zh ? '暂不更新' : 'Not now'}</button><button type="button" className="primary" disabled={busy || !canConfirm || checkingServices || browsing || !sourceReady} onClick={confirm}>{busy ? <LoaderCircle size={15} className="spin"/> : <ArrowUpCircle size={15}/>} {busy ? targetVersion ? zh ? '正在开始安装…' : 'Starting install…' : zh ? '正在开始更新…' : 'Starting update…' : confirmLabel}</button></div>
+      <div className="runtime-update-dialog-actions"><button type="button" disabled={busy} onClick={dismiss}>{targetVersion ? zh ? '取消' : 'Cancel' : zh ? '暂不更新' : 'Not now'}</button><button type="button" className="primary" disabled={busy || !canConfirm || checkingServices || browsing || !sourceReady || !!engineBlocked} onClick={confirm}>{busy ? <LoaderCircle size={15} className="spin"/> : <ArrowUpCircle size={15}/>} {busy ? targetVersion ? zh ? '正在开始安装…' : 'Starting install…' : zh ? '正在开始更新…' : 'Starting update…' : confirmLabel}</button>{codeOnlyAvailable && <button type="button" className="primary runtime-update-code-only" data-testid="runtime-update-code-only" disabled={busy || !canConfirm || checkingServices} onClick={confirmCodeOnly}>{busy ? <LoaderCircle size={15} className="spin"/> : <ArrowUpCircle size={15}/>} {willStop ? zh ? '停止服务并只更新代码' : 'Stop services and update code only' : zh ? '只更新代码' : 'Update code only'}</button>}</div>
     </div>
   </Dialog>;
 }

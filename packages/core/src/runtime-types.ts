@@ -52,6 +52,8 @@ export interface RuntimeZipDownloadOptions {
   targetVersion?: string;
   /** `auto`: no fixed URL; the service speed-tests the mirrors and GitHub (fastest first, GitHub last). */
   source?: 'auto';
+  /** 「只更新代码」: the same-commit Strata source only; the installed engine stays (a CPU without AVX2). */
+  sourceOnly?: boolean;
 }
 
 /** Saved download choices; a local ZIP or literal URL belongs to one release. */

@@ -976,6 +976,7 @@ impl RuntimeState {
                 | "update_runtime_zip"
                 | "update_runtime_zip_download_v1"
                 | "update_runtime_zip_version_v1"
+                | "update_runtime_zip_source_only_v1"
                 | "write_config"
                 | "write_config_cas_v1"
                 | "set_api_key"
@@ -1357,10 +1358,12 @@ impl RuntimeState {
                     .map(str::to_owned),
             )),
             "update_runtime" => value(runtime_upgrade::start(self.clone(), profile()?.id)),
+            "runtime_cpu_check_v1" => value(Ok::<_, String>(runtime_upgrade::cpu_floor::check())),
             "engine_help_flags" => value(engine_help::flags(&profile()?)),
             "update_runtime_zip"
             | "update_runtime_zip_download_v1"
-            | "update_runtime_zip_version_v1" => {
+            | "update_runtime_zip_version_v1"
+            | "update_runtime_zip_source_only_v1" => {
                 value(runtime_upgrade::start_release_request_with_download(
                     self.clone(),
                     arg(&params, "installDir")?,

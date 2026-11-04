@@ -519,6 +519,7 @@ mod tests {
                 download_url: None,
                 target_version: None,
                 source: None,
+                source_only: false,
             },
         )
         .await
@@ -553,6 +554,7 @@ mod tests {
                     download_url: None,
                     target_version: None,
                     source: None,
+                    source_only: false,
                 },
             )
             .await
@@ -793,6 +795,7 @@ mod tests {
                     download_url: Some(url.into()),
                     target_version: None,
                     source: None,
+                    source_only: false,
                 }
             )
             .await
@@ -842,6 +845,7 @@ mod tests {
                 download_url: (!prefix.is_empty()).then(|| format!("{prefix}{official_url}")),
                 target_version: None,
                 source: None,
+                source_only: false,
             };
             let result = test_release_download(&state, &asset_name, options).await;
             eprintln!(

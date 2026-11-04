@@ -26,7 +26,7 @@ try {
     const zh = language === 'zh-CN', lang = zh ? 'zh' : 'en';
     const open = async query => {
       await page.goto(`http://127.0.0.1:${port}/linux-engine-rollback.html?${[zh ? '' : 'en', query].filter(Boolean).join('&')}`);
-      await page.getByRole('button', { name: zh ? '更新至 0.2.0-beta' : 'Update to 0.2.0-beta' }).click();
+      await page.getByRole('button', { name: zh ? '更新至 v0.2.0-beta' : 'Update to v0.2.0-beta' }).click();
       const dialog = page.getByRole('dialog');
       await dialog.getByTestId('runtime-auto-match').waitFor();
       return dialog;
@@ -44,6 +44,19 @@ try {
     await page.waitForFunction(() => document.querySelector('[data-testid="runtime-auto-match"]')?.getAttribute('role') === 'alert');
     assert.match(await dialog.getByTestId('runtime-auto-match').innerText(), zh ? /手动选择/ : /choose the engine package/);
     await dialog.screenshot({ path: resolve(output, `${lang}-linux-manual-choice.png`) });
+
+    dialog = await open('gpu=intel');
+    await page.waitForFunction(() => document.querySelector('[data-testid="runtime-auto-match"]')?.getAttribute('role') === 'alert');
+    assert.match(await dialog.getByTestId('runtime-auto-match').innerText(), zh ? /没有匹配的官方引擎/ : /No matching official engine/);
+    await dialog.screenshot({ path: resolve(output, `${lang}-windows-intel-only.png`) });
+
+    dialog = await open('cpu=old');
+    await dialog.getByTestId('runtime-cpu-blocked').waitFor();
+    assert.match(await dialog.getByTestId('runtime-cpu-blocked').innerText(), zh ? /不支持 AVX2/ : /no AVX2/);
+    assert.equal(await dialog.getByRole('button', { name: zh ? '确认更新' : 'Confirm update', exact: true }).isDisabled(), true);
+    await page.waitForFunction(() => !document.querySelector('[data-testid="runtime-update-code-only"]')?.disabled);
+    await dialog.screenshot({ path: resolve(output, `${lang}-no-avx2-code-only.png`) });
+    await page.keyboard.press('Escape');
 
     dialog = await open('fail');
     await page.waitForFunction(() => !document.querySelector('.runtime-update-dialog-actions .primary')?.disabled);

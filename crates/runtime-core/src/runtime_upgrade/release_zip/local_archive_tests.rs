@@ -238,6 +238,7 @@ fn install_options_accept_a_local_engine_without_an_asset_but_updates_do_not() {
         download_url: None,
         target_version: None,
         source: None,
+        source_only: false,
     }
     .validate(None)
     .is_err());

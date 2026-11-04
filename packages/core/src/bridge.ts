@@ -368,7 +368,11 @@ export const updateRuntimeZip = (installDir: string, assetName?: string, stopCur
   ...(download.downloadUrl?.trim() ? { downloadUrl: download.downloadUrl.trim() } : {}),
   ...(download.targetVersion?.trim() ? { targetVersion: download.targetVersion.trim() } : {}),
   ...(download.source === 'auto' && !download.localArchivePath?.trim() && !download.downloadUrl?.trim() ? { source: 'auto' } : {}),
+  ...(download.sourceOnly ? { sourceOnly: true } : {}),
 });
+/** Whether this CPU can run the official prebuilt engines (AVX2). `engineBlocked` set: offer 「只更新代码」. */
+export interface RuntimeCpuCheck { avx2: boolean | null; engineBlocked: string | null }
+export const runtimeCpuCheck = (): Promise<RuntimeCpuCheck> => native('runtime_cpu_check', {});
 /** Every published Strata release (cached for 6 h by the background service). */
 export const runtimeReleaseVersions = (force = false): Promise<import('./runtime-versions').RuntimeReleaseVersions> => native('runtime_release_versions', { force });
 /** Installed Strata versions (「已安装版本」); deletion and cleanup are re-checked by the service. */

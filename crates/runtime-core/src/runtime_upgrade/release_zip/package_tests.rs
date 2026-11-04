@@ -309,6 +309,7 @@ fn linux_picks_the_package_by_detected_gpu_unless_the_engine_already_says() {
         nvidia_caps: vec![(8, 9)],
         amd_gfx: vec![],
         intel_discrete: false,
+        intel_only: false,
     };
     let halo = || gpu_select::GpuProbe {
         amd_gfx: vec!["gfx1151".into()],
@@ -598,6 +599,7 @@ fn windows_first_install_picks_the_cuda_package_the_nvidia_card_runs() {
         nvidia_caps: caps.to_vec(),
         amd_gfx: amd.iter().map(|g| (*g).to_owned()).collect(),
         intel_discrete: false,
+        intel_only: false,
     };
     let choose = |probe: gpu_select::GpuProbe| {
         choose_asset_with(&info, temp.path(), None, &move || probe.clone())
@@ -675,12 +677,14 @@ fn windows_first_install_picks_hip_for_an_amd_only_computer() {
         nvidia_caps: vec![(8, 9)],
         amd_gfx: vec![],
         intel_discrete: false,
+        intel_only: false,
     };
     let mixed = || gpu_select::GpuProbe {
         nvidia_driver: Some("581.57".into()),
         nvidia_caps: vec![(8, 9)],
         amd_gfx: vec!["gfx1036".into()],
         intel_discrete: false,
+        intel_only: false,
     };
     for probe in [
         &rtx as &dyn Fn() -> gpu_select::GpuProbe,
@@ -708,6 +712,40 @@ fn windows_first_install_picks_hip_for_an_amd_only_computer() {
     };
     let chosen = choose_asset_with(&info, temp.path(), None, &watch).unwrap();
     assert_eq!((chosen.variant.as_str(), probed.get()), ("cuda13", false));
+}
+
+#[test]
+fn windows_first_install_with_only_intel_graphics_has_no_official_engine() {
+    let temp = tempfile::tempdir().unwrap();
+    let info = windows_info();
+    for discrete in [false, true] {
+        let intel = || gpu_select::GpuProbe {
+            intel_discrete: discrete,
+            intel_only: true,
+            ..Default::default()
+        };
+        let error = choose_asset_with(&info, temp.path(), None, &intel).unwrap_err();
+        assert!(error.contains("没有匹配的官方引擎"), "{error}");
+        assert!(error.contains("No matching official engine"), "{error}");
+    }
+    // A package the user picks by hand is still installed.
+    let intel = || gpu_select::GpuProbe {
+        intel_only: true,
+        ..Default::default()
+    };
+    let name = info
+        .assets
+        .iter()
+        .find(|a| a.variant == "cuda13")
+        .unwrap()
+        .name
+        .clone();
+    assert_eq!(
+        choose_asset_with(&info, temp.path(), Some(&name), &intel)
+            .unwrap()
+            .variant,
+        "cuda13"
+    );
 }
 
 #[test]

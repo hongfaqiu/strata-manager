@@ -29,6 +29,7 @@ Object.assign(window, {
       fixture.calls.push({ command, args });
       if (command === 'local_installations') return [];
       if (command === 'runtime_update_info') return release;
+      if (command === 'runtime_cpu_check') return { avx2: true, engineBlocked: null };
       if (command === 'resolve_runtime_zip_asset') {
         if (fixture.resolveFailure) throw new Error('Unknown installed engine; select a package explicitly');
         return args.assetName ? release.assets.find(asset => asset.name === args.assetName) : release.assets[1];

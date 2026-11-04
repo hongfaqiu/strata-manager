@@ -17,6 +17,9 @@ pub struct GpuProbe {
     pub amd_gfx: Vec<String>,
     /// An Intel discrete GPU (Arc A/B-series, Arc Pro, Data Center GPU) is present.
     pub intel_discrete: bool,
+    /// Windows: every real display adapter is Intel (integrated graphics or Arc). Upstream
+    /// publishes no Windows Intel (SYCL) engine, so such a computer has no official package.
+    pub intel_only: bool,
 }
 
 fn version_key(value: &str) -> Vec<u32> {
@@ -253,8 +256,39 @@ pub fn probe_host() -> GpuProbe {
             probe.amd_gfx = amd_gfx_from_adapter_names(&names);
         }
         probe.intel_discrete |= names.iter().any(|name| intel_discrete_name(name));
+        probe.intel_only = intel_only_adapters(&names);
     }
     probe
+}
+
+/// Remote-desktop, virtual-machine and basic display adapters say nothing about the GPU.
+fn virtual_adapter(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    [
+        "microsoft basic",
+        "microsoft remote",
+        "remote display",
+        "virtual",
+        "vmware",
+        "hyper-v",
+        "parsec",
+        "displaylink",
+        "citrix",
+        "idd",
+    ]
+    .iter()
+    .any(|word| name.contains(word))
+}
+
+/// Windows adapter names (`Win32_VideoController`): true when at least one real adapter is
+/// listed and all of them are Intel (UHD / Iris Xe / Arc). An unknown or other-vendor
+/// adapter keeps the old behaviour.
+pub fn intel_only_adapters(names: &[String]) -> bool {
+    let mut real = names
+        .iter()
+        .filter(|name| !virtual_adapter(name))
+        .peekable();
+    real.peek().is_some() && real.all(|name| crate::igpu::vendor_of(name) == Some("intel"))
 }
 
 /// A CUDA package runs on a card when it has native code for it (`sm_XY`) or PTX for an
@@ -777,5 +811,31 @@ mod tests {
             parse_rocminfo("  Name:                    gfx1100\n  Name: amdgcn-amd-amdhsa--gfx1100\n Name: gfx90a\n"),
             vec!["gfx1100".to_owned(), "gfx90a".to_owned()]
         );
+    }
+
+    #[test]
+    fn windows_intel_only_adapters_are_recognised() {
+        let names = |list: &[&str]| list.iter().map(|n| (*n).to_owned()).collect::<Vec<_>>();
+        assert!(intel_only_adapters(&names(&["Intel(R) UHD Graphics 770"])));
+        assert!(intel_only_adapters(&names(&[
+            "Intel(R) Iris(R) Xe Graphics",
+            "Microsoft Remote Display Adapter",
+        ])));
+        assert!(intel_only_adapters(&names(&[
+            "Intel(R) Arc(TM) A750 Graphics"
+        ])));
+        assert!(!intel_only_adapters(&names(&[
+            "Intel(R) UHD Graphics 770",
+            "NVIDIA GeForce RTX 4090",
+        ])));
+        assert!(!intel_only_adapters(&names(&[
+            "Intel(R) UHD Graphics",
+            "AMD Radeon RX 6800",
+        ])));
+        assert!(!intel_only_adapters(&names(&[
+            "Microsoft Basic Display Adapter"
+        ])));
+        assert!(!intel_only_adapters(&[]));
+        assert!(!intel_only_adapters(&names(&["Unknown adapter"])));
     }
 }

@@ -42,6 +42,7 @@
     if (command === 'runtime_update_info') return info(latest, 1760900000000);
     if (command === 'runtime_release_versions') return { checkedAt: 1760900000000, versions: structuredClone(releases) };
     if (command === 'runtime_release_info') return info(String(args.version), 1760900100000);
+    if (command === 'runtime_cpu_check') return { avx2: true, engineBlocked: null };
     if (command === 'resolve_runtime_zip_asset') return asset(args.targetVersion || latest);
     return previous(command, args);
   };
