@@ -98,6 +98,16 @@ export function runtimeReleaseIsNewer(runtime: RuntimeVersionFacts, latest: { la
   return undefined;
 }
 
+/**
+ * The runtime the Strata page shows and every update entry follows: the one chosen in 「运行环境」,
+ * else the first ready one, else the first. Other folders on the machine (an older D:\AI\Strata
+ * kept next to a newer Manager runtime) are never offered an update on their own.
+ */
+export function selectedRuntime<T extends { installDir: string; readiness: string }>(runtimes: readonly T[] | undefined, chosenDir?: string): T | undefined {
+  if (!runtimes?.length) return undefined;
+  return (chosenDir ? runtimes.find(runtime => runtime.installDir === chosenDir) : undefined) ?? runtimes.find(runtime => runtime.readiness === 'ready') ?? runtimes[0];
+}
+
 /** Offer `latest` to this runtime. Without a comparable pair it is offered unless the engine is already the latest one. */
 export function runtimeUpdateAvailable(runtime: RuntimeVersionFacts, latest: { latestVersion?: string; assets: { engineVersion?: string }[] } | undefined, releases: Pick<RuntimeReleaseVersion, 'version' | 'engineVersion' | 'prerelease'>[] = []): boolean {
   if (!latest?.latestVersion) return false;

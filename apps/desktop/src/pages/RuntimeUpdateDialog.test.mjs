@@ -385,7 +385,7 @@ function parentFixture(kind, savedPreferences = { mode: 'official' }, pin = '') 
     })[name] ?? {},
   });
   const props = { language: 'zh-CN', desktop: true, operationDisabled: false, onUpdateStarted: () => { calls.started += 1; } };
-  const render = () => { cursor = 0; tree = kind === 'manual' ? module.exports.RuntimeManagementPanel(props) : module.exports.useRuntimeUpdates(true, true, true, true, live.tasks, 'zh-CN', undefined, undefined, () => { calls.started += 1; }).dialog; while (effects.length) effects.shift()(); return tree; };
+  const render = () => { cursor = 0; tree = kind === 'manual' ? module.exports.RuntimeManagementPanel(props) : module.exports.useRuntimeUpdates(true, true, true, true, live.tasks, 'zh-CN', undefined, undefined, () => { calls.started += 1; }, props.selectedRuntimeDir).dialog; while (effects.length) effects.shift()(); return tree; };
   const dialog = () => nodes(tree).find(node => node.type === 'update-dialog');
   const settle = async () => { await tick(); render(); render(); };
   const open = async () => {
@@ -443,6 +443,44 @@ for (const kind of ['manual', 'automatic']) {
     assert.equal(f.calls.updates.length, 0);
   });
 }
+
+// An older D:\\AI\\Strata folder kept next to the current Manager runtime (Windows report, v0.2.39).
+const currentRuntimeDir = 'D:\\AI\\Strata\\runtimes\\release-544e1da5';
+const twoRuntimes = () => ({ detectedRuntimes: [
+  { ...runtime, installDir: currentRuntimeDir, runtimeVersion: '0.1.42', readiness: 'ready' },
+  { ...runtime, runtimeVersion: '0.1.41', readiness: 'ready' },
+] });
+
+test('the automatic prompt stays quiet when the selected runtime is current, even with an older folder on the machine', async () => {
+  const f = parentFixture('automatic');
+  f.queryData['runtime-installation'].data = twoRuntimes();
+  f.render(); await f.settle(); await f.settle();
+  assert.equal(f.dialog(), undefined, 'the first ready runtime (what the Strata page shows) is current');
+  f.props.selectedRuntimeDir = currentRuntimeDir; f.render(); await f.settle();
+  assert.equal(f.dialog(), undefined, 'the runtime chosen in 「运行环境」 is current');
+  assert.equal(f.calls.updates.length, 0);
+});
+
+test('the automatic prompt offers the update for the selected runtime and shows that runtime, not another folder', async () => {
+  const f = parentFixture('automatic');
+  f.queryData['runtime-installation'].data = twoRuntimes();
+  f.props.selectedRuntimeDir = runtime.installDir;
+  f.render(); await f.settle(); await f.settle();
+  assert.equal(f.dialog()?.props.runtime.installDir, runtime.installDir, 'the older folder is offered only once it is the selected one');
+  assert.equal(f.dialog().props.runtime.runtimeVersion, '0.1.41');
+  // Switching 「运行环境」 back to the current runtime withdraws the proposal.
+  f.props.selectedRuntimeDir = currentRuntimeDir; f.render(); await f.settle();
+  assert.equal(f.dialog(), undefined);
+  assert.equal(f.calls.updates.length, 0);
+});
+
+test('the Strata page update card follows the selected runtime among several', async () => {
+  const f = parentFixture('manual'); f.props.showInstallations = false;
+  f.queryData['runtime-installation'].data = twoRuntimes();
+  f.props.selectedRuntimeDir = currentRuntimeDir; f.render(); await f.settle();
+  assert.equal(nodes(f.tree()).find(node => node.type === 'button' && node.props.className === 'primary'), undefined, 'no 更新至 button for a current runtime');
+  assert.ok(text(f.tree()).includes('已是最新版本'));
+});
 
 for (const kind of ['manual', 'automatic']) test(`${kind} update entry stays quiet when Strata is pinned below the latest release`, async () => {
   const f = parentFixture(kind, { mode: 'official' }, '0.1.41'); f.props.showInstallations = false; f.render(); await f.settle();

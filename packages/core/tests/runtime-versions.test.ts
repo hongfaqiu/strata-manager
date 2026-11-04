@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compareReleaseVersions, deepseekEngineUpdate, releaseEngineVersion, runtimePinRelease, runtimeReleaseIsNewer, runtimeReleaseOf, runtimeUpdateAllowedByPin, runtimeUpdateAvailable, runtimeVersionDirection, runtimeVersionLabel } from '../src/runtime-versions';
+import { compareReleaseVersions, selectedRuntime, deepseekEngineUpdate, releaseEngineVersion, runtimePinRelease, runtimeReleaseIsNewer, runtimeReleaseOf, runtimeUpdateAllowedByPin, runtimeUpdateAvailable, runtimeVersionDirection, runtimeVersionLabel } from '../src/runtime-versions';
 
 describe('runtime versions', () => {
   it('orders numbers, then a release after its pre-releases', () => {
@@ -14,6 +14,16 @@ describe('runtime versions', () => {
     expect(runtimeUpdateAllowedByPin('0.1.44', '0.1.44')).toBe(true);
     expect(runtimeUpdateAllowedByPin('0.2.0-beta', '0.2.0')).toBe(true);
     expect(runtimeUpdateAllowedByPin(undefined, '0.1.44')).toBe(true);
+  });
+  it('picks the runtime chosen in 运行环境, else the first ready one', () => {
+    const runtimes = [{ installDir: 'C:/repair', readiness: 'repair' }, { installDir: 'D:/new', readiness: 'ready' }, { installDir: 'D:/old', readiness: 'ready' }];
+    expect(selectedRuntime(runtimes)?.installDir).toBe('D:/new');
+    expect(selectedRuntime(runtimes, 'D:/old')?.installDir).toBe('D:/old');
+    expect(selectedRuntime(runtimes, 'C:/repair')?.installDir).toBe('C:/repair');
+    expect(selectedRuntime(runtimes, 'E:/gone')?.installDir).toBe('D:/new');
+    expect(selectedRuntime([{ installDir: 'C:/repair', readiness: 'repair' }])?.installDir).toBe('C:/repair');
+    expect(selectedRuntime([])).toBeUndefined();
+    expect(selectedRuntime(undefined)).toBeUndefined();
   });
   it('names the direction of a switch', () => {
     expect(runtimeVersionDirection('0.2.1', '0.1.44')).toBe('downgrade');
