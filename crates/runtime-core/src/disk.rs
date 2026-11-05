@@ -184,16 +184,11 @@ fn exists(path: &Path) -> Result<bool, String> {
     Ok(file_meta(path)?.is_some())
 }
 
-
 /// Last-shard size of Unsloth Dynamic v3.1 sets (setup.py UNSLOTH_V31_SHARDS n-gram table).
 const UNSLOTH_V31_TABLE_BYTES: u64 = 28_800_138_432;
 /// Tags whose last shard is the shared v3.1 n-gram table (group A = 3-shard, B = 4-shard).
 fn unsloth_v31_table_siblings(tag: &str) -> Option<&'static [&'static str]> {
-    const A: &[&str] = &[
-        "unsloth-UD-IQ1_M",
-        "unsloth-UD-Q2_0",
-        "unsloth-UD-IQ2_XS",
-    ];
+    const A: &[&str] = &["unsloth-UD-IQ1_M", "unsloth-UD-Q2_0", "unsloth-UD-IQ2_XS"];
     const B: &[&str] = &[
         "unsloth-UD-Q2_K_XL",
         "unsloth-UD-IQ3_XXS",
@@ -223,7 +218,9 @@ fn find_shared_unsloth_table(models_root: &Path, tag: &str, _last_name: &str) ->
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().is_some_and(|e| e == "gguf")
-                && file_len(&path).ok().is_some_and(|n| n == UNSLOTH_V31_TABLE_BYTES)
+                && file_len(&path)
+                    .ok()
+                    .is_some_and(|n| n == UNSLOTH_V31_TABLE_BYTES)
             {
                 return Some(path);
             }
@@ -246,7 +243,10 @@ pub(crate) fn link_unsloth_v31_shared_table(
     }
     let model_directory = data_directory.join("models").join(tag);
     let dest = model_directory.join(last);
-    if file_len(&dest).ok().is_some_and(|n| n == UNSLOTH_V31_TABLE_BYTES) {
+    if file_len(&dest)
+        .ok()
+        .is_some_and(|n| n == UNSLOTH_V31_TABLE_BYTES)
+    {
         return Ok(());
     }
     let Some(src) = find_shared_unsloth_table(&data_directory.join("models"), tag, last) else {
