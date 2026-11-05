@@ -7,6 +7,12 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+### English
+
+## [0.2.41] - 2026-11-05
+
+### 中文
+
 - **适配 Strata 0.2.11 的 Unsloth Dynamic v3.1 七个量化集**：目录新增 UD-IQ1_M、UD-Q2_0、UD-IQ2_XS、UD-Q2_K_XL、UD-IQ3_XXS、UD-Q3_K_XL、UD-IQ4_XS-v31（需引擎 0.1.57）。UD-IQ4_XS-v31 与旧的三片 UD-IQ4_XS 分开；Hub 文件名仍是 UD-IQ4_XS，靠四片区分。同组末片（约 28.8 GB 的 n-gram 表）已下载时按内容复用，下载前硬链接并写 `.done`，不重复占盘。
 - **Qwen3.6 并发槽位按自身公式估算**：不再套用 Flash-Next 的每槽显存；改用上游 `own_path_parallel_slot_gb`（128K 约 5.56 GiB/槽，见上游 #5239），避免推荐过多并行。
 - **Qwen3.6 不再写入 `--vram-reserve-mib`**：该架构目前忽略此参数，上游 #5216 合入后会直接拒绝；调优页与一键提速也不再显示或建议它。
