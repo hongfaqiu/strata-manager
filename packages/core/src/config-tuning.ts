@@ -4,6 +4,7 @@ import { startupServiceEndpoint } from './config-profile';
 import { concurrencyConfigError } from './concurrency';
 import { contextExtensionError } from './context-extension';
 import { parseSaved } from './gpu-roles';
+import { isQwen36Config } from './catalog';
 import { DEEPSEEK41_ENGINE_FLAGS, deepseek41ArgsError, isDeepseek41Config } from './deepseek41-config';
 export { STARTUP_ENGINE_FLAGS } from './startup-engine-flags';
 
@@ -250,7 +251,10 @@ export function startupArgsOf(config: JsonObject): string[] { return config.args
  * (the Qwen switch `--mmap-experts` would be a bare flag there, and the other options mean something else or are unknown).
  */
 export function startupFieldApplies(config: JsonObject | null | undefined, field: StartupFieldSpec): boolean {
-  return !(field.target === 'arg' && isDeepseek41Config(config));
+  if (field.target === 'arg' && isDeepseek41Config(config)) return false;
+  // Qwen3.6's own engine path ignores --vram-reserve-mib today; upstream #5216 will refuse it. Never show or write it.
+  if (field.target === 'arg' && isQwen36Config(config) && (field.key === '--vram-reserve-mib' || field.key === '--vram-reserve-later-mib')) return false;
+  return true;
 }
 /** The option table a config's argument list is read with: strata-dsv41's own for DeepSeek configs, else the Qwen engine's. */
 export function startupEngineFlagsFor(config: JsonObject | null | undefined): Readonly<Record<string, number>> {

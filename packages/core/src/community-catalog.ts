@@ -11,13 +11,20 @@ import { macCatalogFamilyAllowed } from './local-runtime-package';
 import type { RuntimePackagePlatform } from './local-runtime-package';
 
 /** setup.py MODELS / local_model.rs SUPPORTED_QUANTS: the quantizations the engine has kernels for. */
-export const SUPPORTED_QUANTS = ['Q2_0', 'IQ2_XS', 'IQ3_XXS', 'IQ3_S', 'IQ1_M', 'UD-IQ4_XS', 'UD-Q4_K_XL', 'UD-Q5_K_XL', 'UD-Q6_K_XL', 'Q8_0'] as const;
+export const SUPPORTED_QUANTS = [
+  'Q2_0', 'IQ2_XS', 'IQ3_XXS', 'IQ3_S', 'IQ1_M',
+  'UD-IQ1_M', 'UD-Q2_0', 'UD-IQ2_XS', 'UD-Q2_K_XL', 'UD-IQ3_XXS', 'UD-Q3_K_XL', 'UD-IQ4_XS-v31',
+  'UD-IQ4_XS', 'UD-Q4_K_XL', 'UD-Q5_K_XL', 'UD-Q6_K_XL', 'Q8_0',
+] as const;
 /** local_model.rs setup_supports: (family, quant) pairs the official installer accepts. */
 export const SETUP_FAMILY_QUANTS: Record<string, readonly string[]> = {
   qwen: ['Q2_0', 'IQ2_XS', 'IQ3_XXS', 'IQ3_S'],
   swift: ['IQ2_XS', 'IQ3_XXS', 'IQ3_S'],
   coder: ['IQ1_M'],
-  unsloth: ['UD-IQ4_XS', 'UD-Q4_K_XL', 'UD-Q5_K_XL', 'UD-Q6_K_XL', 'Q8_0'],
+  unsloth: [
+    'UD-IQ1_M', 'UD-Q2_0', 'UD-IQ2_XS', 'UD-Q2_K_XL', 'UD-IQ3_XXS', 'UD-Q3_K_XL', 'UD-IQ4_XS-v31',
+    'UD-IQ4_XS', 'UD-Q4_K_XL', 'UD-Q5_K_XL', 'UD-Q6_K_XL', 'Q8_0',
+  ],
   qwen36: ['UD-Q4_K_XL', 'UD-Q6_K_XL', 'Q8_0'],
 };
 export const setupSupports = (family: string, quant: string) => !!SETUP_FAMILY_QUANTS[family]?.includes(quant);
@@ -214,13 +221,21 @@ const SHA = /^[0-9a-f]{64}$/;
 export const isRepoId = (repo: string) => REPO.test(repo) && !repo.includes('..');
 export const isRevision = (revision: string) => REVISION.test(revision);
 
-/** setup.py GGUF_QUANT / local_model.rs quant_of on a file stem (Unsloth's UD- prefix included). */
+/** setup.py GGUF_QUANT / local_model.rs quant_of on a file stem (Unsloth's UD- prefix included).
+ * Catalog name UD-IQ4_XS-v31 ends with -v31; Hub file stems stay UD-IQ4_XS (distinguished by shard count). */
 export function quantOfStem(stem: string): string | undefined {
   const tokens = stem.split('-');
-  const last = tokens[tokens.length - 1] ?? '';
+  let last = tokens[tokens.length - 1] ?? '';
+  let v31 = false;
+  if (/^v\d+$/i.test(last) && tokens.length >= 2) {
+    v31 = last.toLowerCase() === 'v31';
+    last = tokens[tokens.length - 2] ?? '';
+  }
   if (!/^(I?Q\d+(_[A-Za-z0-9]+)*|BF16|F16|F32)$/i.test(last)) return undefined;
-  const ud = tokens.length >= 2 && tokens[tokens.length - 2]!.toUpperCase() === 'UD';
-  return `${ud ? 'UD-' : ''}${last.toUpperCase()}`;
+  const udIndex = tokens.length - (v31 ? 3 : 2);
+  const ud = udIndex >= 0 && tokens[udIndex]!.toUpperCase() === 'UD';
+  const base = `${ud ? 'UD-' : ''}${last.toUpperCase()}`;
+  return v31 ? `${base}-v31` : base;
 }
 /** local_model.rs inferred_family, restricted to layouts Strata's installer reads in place. */
 export function inferFamily(stem: string, quant: string): string | undefined {

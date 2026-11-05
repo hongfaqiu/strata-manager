@@ -103,7 +103,10 @@ const PC_RAM: Record<string, Record<string, number>> = {
   qwen: { Q2_0: 44, IQ2_XS: 45.5, IQ3_XXS: 53, IQ3_S: 60 },
   swift: { IQ2_XS: 45.5, IQ3_XXS: 53, IQ3_S: 60 },
   coder: { IQ1_M: 33 },
-  unsloth: { 'UD-IQ4_XS': 72, 'UD-Q4_K_XL': 88, 'UD-Q5_K_XL': 108, 'UD-Q6_K_XL': 118, Q8_0: 136 },
+  unsloth: {
+    'UD-IQ1_M': 48, 'UD-Q2_0': 48, 'UD-IQ2_XS': 48, 'UD-Q2_K_XL': 48, 'UD-IQ3_XXS': 48, 'UD-Q3_K_XL': 48, 'UD-IQ4_XS-v31': 48,
+    'UD-IQ4_XS': 72, 'UD-Q4_K_XL': 88, 'UD-Q5_K_XL': 108, 'UD-Q6_K_XL': 118, Q8_0: 136,
+  },
   qwen36: { 'UD-Q4_K_XL': 32, 'UD-Q6_K_XL': 44, Q8_0: 52 },
 };
 interface PcRef { basis: PerformanceBasis; vram: number; decode: Range; prompt: Range; bound?: 'lower'; inferredFrom?: string; source?: string }

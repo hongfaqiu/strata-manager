@@ -3900,6 +3900,12 @@ fn run_setup_with_preflight_options(
     }
     let mut disk_plan = preflight(&profile, &model, &quant, images)?;
     disk_plan.require_space()?;
+    // Unsloth Dynamic v3.1: hard-link a sibling set's shared 28.8 GB n-gram table before setup downloads.
+    if model == "unsloth" {
+        if let Ok((tag, names, _, _)) = disk::model_spec(&model, &quant) {
+            disk::link_unsloth_v31_shared_table(&disk_plan.data_directory, &tag, &names)?;
+        }
+    }
     let renamed = disk_plan.renamed.take();
     // A pack left by an earlier install states what the model files read (ds4.txt); refuse past it before setup starts.
     if let Some(set) = deepseek.then(|| disk::dsv41::set(&quant)).flatten() {

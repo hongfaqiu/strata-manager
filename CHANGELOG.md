@@ -5,6 +5,18 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ## [Unreleased]
 
+### 中文
+
+- **适配 Strata 0.2.11 的 Unsloth Dynamic v3.1 七个量化集**：目录新增 UD-IQ1_M、UD-Q2_0、UD-IQ2_XS、UD-Q2_K_XL、UD-IQ3_XXS、UD-Q3_K_XL、UD-IQ4_XS-v31（需引擎 0.1.57）。UD-IQ4_XS-v31 与旧的三片 UD-IQ4_XS 分开；Hub 文件名仍是 UD-IQ4_XS，靠四片区分。同组末片（约 28.8 GB 的 n-gram 表）已下载时按内容复用，下载前硬链接并写 `.done`，不重复占盘。
+- **Qwen3.6 并发槽位按自身公式估算**：不再套用 Flash-Next 的每槽显存；改用上游 `own_path_parallel_slot_gb`（128K 约 5.56 GiB/槽，见上游 #5239），避免推荐过多并行。
+- **Qwen3.6 不再写入 `--vram-reserve-mib`**：该架构目前忽略此参数，上游 #5216 合入后会直接拒绝；调优页与一键提速也不再显示或建议它。
+
+### English
+
+- **Unsloth Dynamic v3.1 sets for Strata 0.2.11**: the catalog adds UD-IQ1_M, UD-Q2_0, UD-IQ2_XS, UD-Q2_K_XL, UD-IQ3_XXS, UD-Q3_K_XL, and UD-IQ4_XS-v31 (engine 0.1.57+). UD-IQ4_XS-v31 is distinct from the old three-shard UD-IQ4_XS; Hub file names stay UD-IQ4_XS and are told apart by the four-shard layout. When a sibling set already has the shared ~28.8 GB n-gram table, that last shard is reused (hard-linked with `.done` before setup) so it is not downloaded again.
+- **Qwen3.6 concurrency uses its own per-slot VRAM**: the Flash-Next slot formula is no longer applied; `own_path_parallel_slot_gb` is used instead (~5.56 GiB/slot at 128K, upstream #5239), so fewer slots are recommended.
+- **Qwen3.6 no longer writes `--vram-reserve-mib`**: that architecture ignores the flag today, and upstream #5216 will refuse it; the tuning page and one-click speed-up no longer show or suggest it.
+
 ## [0.2.40] - 2026-11-04
 
 ### 中文

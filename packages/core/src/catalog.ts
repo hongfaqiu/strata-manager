@@ -1,7 +1,7 @@
 /** Snapshot of official setup.py MODELS / FAMILIES / OWN_PATH_FAMILIES.
- * Checked against Niko1221/Strata v0.1.45 (docs/QWEN36.md, docs/MODELS.md, setup.py).
- * Runtime versions can differ; qwen36 needs >= 0.1.45; Unsloth UD-Q5/Q6 need >= 0.1.44. */
-export const UPSTREAM_REVISION = '477ac13cbe8e582c20484871ce459d20d82df09d';
+ * Checked against Niko1221/Strata v0.2.11 (docs/MODELS.md, setup.py MODELS / OWN_PATH_FAMILIES).
+ * Runtime versions can differ; qwen36 needs >= 0.1.45; Unsloth v3.1 needs >= 0.1.57; UD-Q5/Q6 need >= 0.1.44. */
+export const UPSTREAM_REVISION = 'c3b3f5035506f3e966f1b4b7b188aeaabae92f1d';
 export type CatalogFamily = 'qwen' | 'swift' | 'coder' | 'unsloth' | 'qwen36' | 'deepseek41';
 export interface CatalogQuantInfo {
   downloadGB: number;
@@ -46,7 +46,7 @@ export interface CatalogModel {
 
 const source = `https://github.com/Niko1221/Strata/blob/${UPSTREAM_REVISION}/setup.py`;
 const DEEPSEEK41_SOURCE = 'https://github.com/Niko1221/Strata/blob/v0.2.9/setup.py';
-const snapshotDate = '2026-10-19';
+const snapshotDate = '2026-11-05';
 export const MODEL_CATALOG: CatalogModel[] = [
   { id: 'qwen', family: 'qwen', name: 'Qwen3.8-Flash-Next', quants: ['Q2_0', 'IQ2_XS', 'IQ3_XXS', 'IQ3_S'], images: true, source, snapshotDate,
     quantInfo: { Q2_0: { downloadGB: 66.4, ramGB: 48 }, IQ2_XS: { downloadGB: 68, ramGB: 48 }, IQ3_XXS: { downloadGB: 75.8, ramGB: 60 }, IQ3_S: { downloadGB: 83.6, ramGB: 62 } } },
@@ -54,10 +54,21 @@ export const MODEL_CATALOG: CatalogModel[] = [
     quantInfo: { IQ2_XS: { downloadGB: 68, ramGB: 48 }, IQ3_XXS: { downloadGB: 75.8, ramGB: 60 }, IQ3_S: { downloadGB: 83.6, ramGB: 62 } } },
   { id: 'coder', family: 'coder', name: 'Qwen3.8-Flash-Next Coder', quants: ['IQ1_M'], images: true, source, snapshotDate,
     quantInfo: { IQ1_M: { downloadGB: 58.4, ramGB: 32 } } },
-  // Unsloth: setup.py MODELS — download_gb / ram_gb; higher quants from MODEL-UPDATE (engine 0.1.44 for Q5/Q6).
-  // Vision on for all five (setup vision: True). UD-Q4_K_XL historical Manager flags kept; new tiers are regular menu options.
-  { id: 'unsloth', family: 'unsloth', name: 'Qwen3.8-Flash-Next (Unsloth)', quants: ['UD-IQ4_XS', 'UD-Q4_K_XL', 'UD-Q5_K_XL', 'UD-Q6_K_XL', 'Q8_0'], images: true, source, snapshotDate,
+  // Unsloth: setup.py MODELS — download_gb / ram_gb. Dynamic v3.1 (engine 0.1.57, Strata 0.2.11): seven new sets;
+  // UD-IQ4_XS-v31 is a new catalog name (Hub files still named UD-IQ4_XS, four shards); old UD-IQ4_XS stays three shards.
+  // Vision on for all (setup vision: True). UD-Q4_K_XL historical Manager flags kept.
+  { id: 'unsloth', family: 'unsloth', name: 'Qwen3.8-Flash-Next (Unsloth)', quants: [
+      'UD-IQ1_M', 'UD-Q2_0', 'UD-IQ2_XS', 'UD-Q2_K_XL', 'UD-IQ3_XXS', 'UD-Q3_K_XL', 'UD-IQ4_XS-v31',
+      'UD-IQ4_XS', 'UD-Q4_K_XL', 'UD-Q5_K_XL', 'UD-Q6_K_XL', 'Q8_0',
+    ], images: true, source, snapshotDate,
     quantInfo: {
+      'UD-IQ1_M': { downloadGB: 68.0, ramGB: 48, minEngine: '0.1.57' },
+      'UD-Q2_0': { downloadGB: 70.5, ramGB: 48, minEngine: '0.1.57' },
+      'UD-IQ2_XS': { downloadGB: 75.8, ramGB: 48, minEngine: '0.1.57' },
+      'UD-Q2_K_XL': { downloadGB: 79.6, ramGB: 48, minEngine: '0.1.57' },
+      'UD-IQ3_XXS': { downloadGB: 83.6, ramGB: 48, minEngine: '0.1.57' },
+      'UD-Q3_K_XL': { downloadGB: 89.5, ramGB: 48, minEngine: '0.1.57' },
+      'UD-IQ4_XS-v31': { downloadGB: 93.7, ramGB: 48, minEngine: '0.1.57' },
       'UD-IQ4_XS': { downloadGB: 93.7, ramGB: 48 },
       'UD-Q4_K_XL': { downloadGB: 111.3, ramGB: 48, experimental: true, nvidiaOnly: true, visionUntested: true },
       'UD-Q5_K_XL': { downloadGB: 158.3, ramGB: 108, minEngine: '0.1.44' },
@@ -86,6 +97,11 @@ export const MODEL_CATALOG: CatalogModel[] = [
         qualityNote: { zh: 'Unsloth 的下一档动态量化，与 IST-DAS 2.00 bpw 同等大小；上游未测困惑度，任务测试 61 项答对 53 项（IST-DAS 2.25 为 56 项），尚未在 Windows 和 Strix Halo 上测试。', en: 'Unsloth\'s next dynamic quant, the size of IST-DAS 2.00 bpw; upstream has not measured its perplexity; 53 of 61 test tasks right (IST-DAS 2.25: 56); not yet tested on Windows or Strix Halo.' } },
     } },
 ];
+
+/** Qwen3.6-35B-A3B run configs (setup.py OWN_PATH_FAMILIES: arch "qwen35moe"). */
+export function isQwen36Config(config: { arch?: unknown } | null | undefined): boolean {
+  return !!config && config.arch === 'qwen35moe';
+}
 
 /** setup.py DISK_HEADROOM_GB for deepseek41: setup warns below download + 6 GB; Manager requires it. */
 export const DEEPSEEK41_DISK_HEADROOM_GB = 6;

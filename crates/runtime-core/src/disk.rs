@@ -12,7 +12,7 @@ use std::{
 };
 
 pub(crate) const GB: u64 = 1_000_000_000;
-const SOURCE: &str = "Strata 477ac13cbe8e582c20484871ce459d20d82df09d setup.py MODELS + OWN_PATH_FAMILIES (qwen36); decimal GB. Estimates exclude unknown dependency downloads and do not guarantee RAM/VRAM readiness.";
+const SOURCE: &str = "Strata v0.2.11 c3b3f5035506f3e966f1b4b7b188aeaabae92f1d setup.py MODELS + OWN_PATH_FAMILIES (qwen36) + Unsloth Dynamic v3.1; decimal GB. Estimates exclude unknown dependency downloads and do not guarantee RAM/VRAM readiness.";
 
 #[derive(Default)]
 pub(crate) struct Settings {
@@ -184,6 +184,86 @@ fn exists(path: &Path) -> Result<bool, String> {
     Ok(file_meta(path)?.is_some())
 }
 
+
+/// Last-shard size of Unsloth Dynamic v3.1 sets (setup.py UNSLOTH_V31_SHARDS n-gram table).
+const UNSLOTH_V31_TABLE_BYTES: u64 = 28_800_138_432;
+/// Tags whose last shard is the shared v3.1 n-gram table (group A = 3-shard, B = 4-shard).
+fn unsloth_v31_table_siblings(tag: &str) -> Option<&'static [&'static str]> {
+    const A: &[&str] = &[
+        "unsloth-UD-IQ1_M",
+        "unsloth-UD-Q2_0",
+        "unsloth-UD-IQ2_XS",
+    ];
+    const B: &[&str] = &[
+        "unsloth-UD-Q2_K_XL",
+        "unsloth-UD-IQ3_XXS",
+        "unsloth-UD-Q3_K_XL",
+        "unsloth-UD-IQ4_XS-v31",
+    ];
+    if A.contains(&tag) {
+        Some(A)
+    } else if B.contains(&tag) {
+        Some(B)
+    } else {
+        None
+    }
+}
+/// A sibling set's last shard at the pinned 28.8 GB size, under `models/<sibling>/`.
+fn find_shared_unsloth_table(models_root: &Path, tag: &str, _last_name: &str) -> Option<PathBuf> {
+    let siblings = unsloth_v31_table_siblings(tag)?;
+    for sibling in siblings {
+        if *sibling == tag {
+            continue;
+        }
+        // Last shards share content (and size) across the group but keep each set's own file name.
+        let dir = models_root.join(sibling);
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|e| e == "gguf")
+                && file_len(&path).ok().is_some_and(|n| n == UNSLOTH_V31_TABLE_BYTES)
+            {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
+/// Hard-link a sibling's shared v3.1 n-gram table into `model_directory` and write `.done` so setup skips the download.
+pub(crate) fn link_unsloth_v31_shared_table(
+    data_directory: &Path,
+    tag: &str,
+    names: &[String],
+) -> Result<(), String> {
+    let Some(last) = names.last() else {
+        return Ok(());
+    };
+    if unsloth_v31_table_siblings(tag).is_none() {
+        return Ok(());
+    }
+    let model_directory = data_directory.join("models").join(tag);
+    let dest = model_directory.join(last);
+    if file_len(&dest).ok().is_some_and(|n| n == UNSLOTH_V31_TABLE_BYTES) {
+        return Ok(());
+    }
+    let Some(src) = find_shared_unsloth_table(&data_directory.join("models"), tag, last) else {
+        return Ok(());
+    };
+    fs::create_dir_all(&model_directory).map_err(|e| e.to_string())?;
+    if dest.exists() {
+        return Ok(());
+    }
+    fs::hard_link(&src, &dest).map_err(|e| format!("硬链接共享 Unsloth 表失败: {e}"))?;
+    let done = model_directory.join(format!("{last}.done"));
+    if !done.exists() {
+        fs::write(&done, b"").map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 pub(crate) fn model_spec(
     family: &str,
     quant: &str,
@@ -211,13 +291,22 @@ pub(crate) fn model_spec(
         "qwen" => ("", "Qwen3.8-Flash-Next-GSQ-RCO", 2, 2),
         "swift" => ("swift-", "Swift-Qwen3.8-Flash-Next-GSQ-RCO", 2, 2),
         "coder" => ("coder-", "Qwen3.8-Flash-Next-GSQ-RCO", 2, 2),
-        // setup.py: UD-IQ4_XS 3 shards; UD-Q4_K_XL 4; UD-Q5/Q6/Q8_0 6 (UNSLOTH_BIG_SHARDS).
-        "unsloth" if quant == "UD-IQ4_XS" => ("unsloth-", "Qwen3.8-Flash-Next", 3, 3),
+        // setup.py: v3.1 3-shard (UD-IQ1_M/Q2_0/IQ2_XS); old UD-IQ4_XS 3 shards; v3.1 4-shard + UD-Q4_K_XL;
+        // UD-Q5/Q6/Q8_0 6 (UNSLOTH_BIG_SHARDS). UD-IQ4_XS-v31 Hub files keep the UD-IQ4_XS name.
+        "unsloth" if matches!(quant, "UD-IQ1_M" | "UD-Q2_0" | "UD-IQ2_XS" | "UD-IQ4_XS") => {
+            ("unsloth-", "Qwen3.8-Flash-Next", 3, 3)
+        }
         "unsloth" if matches!(quant, "UD-Q5_K_XL" | "UD-Q6_K_XL" | "Q8_0") => {
             ("unsloth-", "Qwen3.8-Flash-Next", 6, 6)
         }
         "unsloth" => ("unsloth-", "Qwen3.8-Flash-Next", 4, 4),
         _ => return Err("没有经过核对的模型目录规则".into()),
+    };
+    // Hub file stem for UD-IQ4_XS-v31 is still UD-IQ4_XS (four shards); catalog tag keeps -v31.
+    let file_quant = if quant == "UD-IQ4_XS-v31" {
+        "UD-IQ4_XS"
+    } else {
+        quant
     };
     let (download, arena) = match (family, quant) {
         ("qwen", "Q2_0") => (66_400_000_000, 34.0),
@@ -225,9 +314,16 @@ pub(crate) fn model_spec(
         ("qwen" | "swift", "IQ3_XXS") => (75_800_000_000, 42.9),
         ("qwen" | "swift", "IQ3_S") => (83_600_000_000, 50.3),
         ("coder", "IQ1_M") => (58_400_000_000, 23.4),
+        // Unsloth Dynamic v3.1 (setup.py MODELS, engine 0.1.57): download_gb / arena_gb.
+        ("unsloth", "UD-IQ1_M") => (68_000_000_000, 34.8),
+        ("unsloth", "UD-Q2_0") => (70_500_000_000, 37.4),
+        ("unsloth", "UD-IQ2_XS") => (75_800_000_000, 42.3),
+        ("unsloth", "UD-Q2_K_XL") => (79_600_000_000, 46.0),
+        ("unsloth", "UD-IQ3_XXS") => (83_600_000_000, 50.3),
+        ("unsloth", "UD-Q3_K_XL") => (89_500_000_000, 56.2),
+        ("unsloth", "UD-IQ4_XS-v31") => (93_700_000_000, 60.4),
         ("unsloth", "UD-IQ4_XS") => (93_700_000_000, 59.5),
         ("unsloth", "UD-Q4_K_XL") => (111_300_000_000, 77.0),
-        // setup.py MODELS download_gb / arena_gb
         ("unsloth", "UD-Q5_K_XL") => (158_300_000_000, 98.4),
         ("unsloth", "UD-Q6_K_XL") => (169_200_000_000, 109.2),
         ("unsloth", "Q8_0") => (188_200_000_000, 128.3),
@@ -236,7 +332,7 @@ pub(crate) fn model_spec(
     Ok((
         format!("{tag}{quant}"),
         (1..=count)
-            .map(|i| format!("{prefix}-{quant}-{i:05}-of-{suffix:05}.gguf"))
+            .map(|i| format!("{prefix}-{file_quant}-{i:05}-of-{suffix:05}.gguf"))
             .collect(),
         download,
         arena,
@@ -472,7 +568,7 @@ fn prepare_plan(
         roots.insert(1, base.clone());
     }
     let mut reusable = 0_u64;
-    for name in &names {
+    for (index, name) in names.iter().enumerate() {
         let final_path = model_directory.join(name);
         let final_bytes = file_len(&final_path)?;
         if reuse_directory.is_some()
@@ -484,7 +580,15 @@ fn prepare_plan(
             if fs::symlink_metadata(&partial).is_ok_and(|m| m.file_type().is_symlink()) {
                 return Err("断点下载文件指向另一个目录；请核验该文件位置后重试".into());
             }
-            reusable = reusable.saturating_add(file_len(&partial)?);
+            let partial_bytes = file_len(&partial)?;
+            if partial_bytes > 0 {
+                reusable = reusable.saturating_add(partial_bytes);
+            } else if index + 1 == names.len() {
+                // Unsloth v3.1 shared n-gram table: a sibling set's last shard counts as reusable.
+                if find_shared_unsloth_table(&data.join("models"), &tag, name).is_some() {
+                    reusable = reusable.saturating_add(UNSLOTH_V31_TABLE_BYTES);
+                }
+            }
         }
     }
     let missing = if reuse_directory.is_some() {
@@ -1118,6 +1222,34 @@ mod tests {
         assert_eq!(iq4.len(), 3);
         let (_, q4, _, _) = model_spec("unsloth", "UD-Q4_K_XL").unwrap();
         assert_eq!(q4.len(), 4);
+    }
+
+    #[test]
+    fn unsloth_v31_sets_use_shared_table_sizes_and_hub_file_names() {
+        let (tag, names, download, arena) = model_spec("unsloth", "UD-IQ1_M").unwrap();
+        assert_eq!(tag, "unsloth-UD-IQ1_M");
+        assert_eq!(names.len(), 3);
+        assert_eq!(names[0], "Qwen3.8-Flash-Next-UD-IQ1_M-00001-of-00003.gguf");
+        assert_eq!(download, 68_000_000_000);
+        assert!((arena - 34.8).abs() < 1e-9);
+        let (_, iq4v31, d31, a31) = model_spec("unsloth", "UD-IQ4_XS-v31").unwrap();
+        assert_eq!(iq4v31.len(), 4);
+        assert_eq!(
+            iq4v31[0],
+            "Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00004.gguf"
+        );
+        assert_eq!(
+            iq4v31[3],
+            "Qwen3.8-Flash-Next-UD-IQ4_XS-00004-of-00004.gguf"
+        );
+        assert_eq!(d31, 93_700_000_000);
+        assert!((a31 - 60.4).abs() < 1e-9);
+        let siblings = unsloth_v31_table_siblings("unsloth-UD-IQ1_M").unwrap();
+        assert!(siblings.contains(&"unsloth-UD-Q2_0"));
+        assert!(!siblings.contains(&"unsloth-UD-IQ4_XS-v31"));
+        let siblings_b = unsloth_v31_table_siblings("unsloth-UD-IQ4_XS-v31").unwrap();
+        assert!(siblings_b.contains(&"unsloth-UD-Q2_K_XL"));
+        assert_eq!(unsloth_v31_table_siblings("unsloth-UD-IQ4_XS"), None);
     }
 
     #[test]

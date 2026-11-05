@@ -21,7 +21,11 @@ document.documentElement.lang = language;
 const base = 'C:\\Users\\me\\Documents\\Strata\\Models';
 const shards = (name: string, count: number, bytes: number) => Array.from({ length: count }, (_, i) => ({ name: `${name}-${String(i + 1).padStart(5, '0')}-of-${String(count).padStart(5, '0')}.gguf`, bytes: bytes / count, state: 'ok' }));
 const group = (id: string, name: string, family: string, quant: string, count: number, bytes: number) => ({ id, name, firstShard: shards(name, count, bytes)[0]!.name, quant, kind: 'official', family, shards: shards(name, count, bytes), totalBytes: bytes, complete: true, installable: true, warnings: [], problems: [] });
-const found = params.has('none') ? [] : [
+const v31 = params.has('v31');
+const found = params.has('none') ? [] : v31 ? [
+  { directory: `${base}\\ud-iq1_m`, root: base, group: group('unsloth-ud-iq1_m', 'Qwen3.8-Flash-Next-UD-IQ1_M', 'unsloth', 'UD-IQ1_M', 3, 68e9) },
+  { directory: `${base}\\ud-iq4-xs-v31`, root: base, group: group('unsloth-ud-iq4-xs-v31', 'Qwen3.8-Flash-Next-UD-IQ4_XS', 'unsloth', 'UD-IQ4_XS-v31', 4, 93.7e9) },
+] : [
   { directory: `${base}\\iq3_s`, root: base, group: group('qwen-iq3_s', 'Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S', 'qwen', 'IQ3_S', 2, 79.6e9) },
   { directory: `${base}\\swift-iq2_xs`, root: base, group: group('swift-iq2_xs', 'Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS', 'swift', 'IQ2_XS', 2, 56.1e9) },
 ];
@@ -49,7 +53,7 @@ function View() {
   const [request, setRequest] = useState<ExistingPrefill>();
   return view === 'models'
     ? <ServiceManagerPage profiles={[]} candidates={[]} runtimes={[]} language={language} desktop pollInterval={60000} onUseDownloaded={model => { setRequest({ directory: model.directory, groupId: model.group.id, key: Date.now() }); setView('download'); }} onSelect={() => undefined} onAdd={() => undefined} onImport={() => undefined} onEdit={() => undefined} onLogs={() => undefined} onDelete={() => undefined} {...({} as never)}/>
-    : <ModelDownloadPage language={language} desktop machineMemoryGB={128} platform="windows" gpus={['NVIDIA GeForce RTX 4090 24 GB']} fallbackRuntime={profile} runtimes={[profile]} runtimeVersions={[{ installDir: profile.installDir, runtimeVersion: '0.1.56', releaseVersion: '0.2.10' }]} windows busy={false} tasks={[]}
+    : <ModelDownloadPage language={language} desktop machineMemoryGB={128} platform="windows" gpus={['NVIDIA GeForce RTX 4090 24 GB']} fallbackRuntime={profile} runtimes={[profile]} runtimeVersions={[{ installDir: profile.installDir, runtimeVersion: v31 ? '0.1.57' : '0.1.56', releaseVersion: v31 ? '0.2.11' : '0.2.10' }]} windows busy={false} tasks={[]}
       onRuntimeChange={() => undefined} onChooseDirectory={async () => null} onChooseFile={async () => null} onPrepare={noop} onLocalSetup={noop} onImportConfig={noop} onOrcaImport={noop} onTasks={() => undefined} onEnvironment={() => undefined} existingRequest={request}/>;
 }
 createRoot(document.getElementById('root')!).render(<QueryClientProvider client={query}><div className="manager-workspace"><main className="main-content"><View/></main></div></QueryClientProvider>);

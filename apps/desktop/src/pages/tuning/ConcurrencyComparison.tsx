@@ -99,7 +99,7 @@ export function ConcurrencyComparison({ profile, language, desktop, disabled, on
   const engineVersion = useEngineVersion(base, desktop);
   const hardware = useConcurrencyHardware({ installationId: base?.id, desktop, identity, settings: settings ?? core.readConcurrencySettings({}) });
   const arenaGb = identity ? core.modelExpertArenaGb(identity.family, identity.quant) : null;
-  const plan = useMemo(() => settings ? core.recommendConcurrency({ settings, hardware, arenaGb, useCase: 'multiUser' }) : null, [settings, hardware, arenaGb]);
+  const plan = useMemo(() => settings ? core.recommendConcurrency({ settings, hardware, arenaGb, useCase: 'multiUser', family: identity?.family }) : null, [settings, hardware, arenaGb, identity?.family]);
   // Upstream #4841: only on Linux CUDA (Qwen) does engine 0.1.55+ turn the two launch switches on itself.
   const serverDefaults = core.concurrencyServerSetsLaunchSwitches(engineVersion, { os: core.concurrencyHostOs(typeof navigator !== 'undefined' ? navigator.userAgent : ''), config, gpus: hardware?.gpus });
   const candidates = useMemo(() => comparisonRunning() || (state.baseProfileId === profile?.id && state.candidates.length && state.phase !== 'idle') ? state.candidates : settings && plan ? core.concurrencyComparisonCandidates(settings, plan, { experimental, engineSetsLaunchSwitches: serverDefaults }) : [], [settings, plan, experimental, state, profile?.id, serverDefaults]);

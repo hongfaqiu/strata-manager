@@ -350,6 +350,19 @@ fn validate_restart(config: &Value, p: &RestartParameters) -> Result<(), String>
     if config["arch"] == crate::disk::dsv41::FAMILY {
         return Err("DeepSeek-V4.1-Flash 使用独立引擎，重启候选参数不适用".into());
     }
+    // Qwen3.6 (arch qwen35moe) ignores --vram-reserve-mib; upstream #5216 will refuse it. Drop that field.
+    if config["arch"] == "qwen35moe" && p.vram_reserve_mib.is_some() {
+        let only_vram = p.pool_workers.is_none()
+            && p.adapt_async.is_none()
+            && p.prefill.is_none()
+            && p.adapt_every.is_none()
+            && p.adapt_swaps.is_none()
+            && p.adapt_decay.is_none()
+            && p.mtp.is_none();
+        if only_vram {
+            return Err("Qwen3.6-35B-A3B 不支持 --vram-reserve-mib".into());
+        }
+    }
     if p == &RestartParameters::default() {
         return Err("重启候选必须指定至少一个参数".into());
     }
@@ -434,6 +447,11 @@ pub(super) fn with_restart(config: &Value, p: Option<&RestartParameters>) -> Res
     let Some(p) = p else {
         return Ok(config.clone());
     };
+    let mut cleared = p.clone();
+    if config["arch"] == "qwen35moe" {
+        cleared.vram_reserve_mib = None;
+    }
+    let p = &cleared;
     validate_restart(config, p)?;
     let fields = [
         ("--pool-workers", p.pool_workers.map(|v| v.to_string())),

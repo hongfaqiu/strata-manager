@@ -29,6 +29,7 @@
 import type { JsonObject } from './types';
 import type { CalibrationGoal, CalibrationJob, CalibrationRates } from './tuning-types';
 import { PCIE_AUTO } from './tuning-types';
+import { isQwen36Config } from './catalog';
 import { assertDeepseek41Flags, isDeepseek41Config } from './deepseek41-config';
 import { gpuVendorOf, isIntegratedGpuName } from './integrated-gpu';
 
@@ -147,7 +148,7 @@ export const DEFAULT_VRAM_RESERVE_MIB = 700;
  * nothing past 2048 or for a DeepSeek config (strata-dsv41 rejects the flag).
  */
 export function startupVramReserveFix(config: JsonObject): { mib: number; fix: SpeedFix } | undefined {
-  if (isDeepseek41Config(config)) return undefined;
+  if (isDeepseek41Config(config) || isQwen36Config(config)) return undefined;
   const current = finite(argValue(args(config), '--vram-reserve-mib')) ?? DEFAULT_VRAM_RESERVE_MIB;
   const mib = [1536, 2048].find(step => step > current);
   return mib === undefined ? undefined : { mib, fix: { '--vram-reserve-mib': String(mib) } };
@@ -177,7 +178,7 @@ export function speedHealthCheck(input: SpeedHealthInput): SpeedCheck[] {
     // Keep at least the floor free; round up to 256 MiB like the engine's own figures.
     const target = Math.max(suggested ?? 0, Math.ceil((floor + 256) / 256) * 256);
     const fix: SpeedFix = {};
-    if (target > reserve) fix['--vram-reserve-mib'] = String(target);
+    if (target > reserve && !isQwen36Config(input.config)) fix['--vram-reserve-mib'] = String(target);
     if (fixedCache) fix['--expert-cache'] = 'auto';
     checks.push(Object.keys(fix).length
       ? { id: 'vramHeadroom', status: 'fix', reason: 'low', values: { free: free ?? 0, floor, target }, fix }
