@@ -74,7 +74,7 @@ const familyDescription = (family: string, zh: boolean) => ({
   qwen: zh ? '通用对话与长文' : 'General conversation and long text',
   swift: zh ? '官方系列模型' : 'Official model family',
   coder: zh ? '代码任务' : 'Coding tasks',
-  unsloth: zh ? '量化分发版本' : 'Alternative quantized distribution',
+  unsloth: zh ? 'Unsloth 动态量化（含 v3.1）' : 'Unsloth dynamic quants (incl. v3.1)',
   qwen36: zh ? '读图与多请求并发（引擎 0.1.45+）' : 'Vision and concurrent requests (engine 0.1.45+)',
   deepseek41: zh ? '284B 大模型，专家权重放内存或读盘，独立引擎（Strata 0.2.5+，仅文本；0.2.7+ 可选 8K–1M 上下文；0.2.9+ 可选 Unsloth 1-bit 版本、可用已有模型文件）' : '284B model with experts in memory or read from disk, separate engine (Strata 0.2.5+, text only; 8K–1M context on 0.2.7+; Unsloth 1-bit sets and existing model files on 0.2.9+)',
 }[family] ?? (zh ? '官方模型' : 'Official model'));

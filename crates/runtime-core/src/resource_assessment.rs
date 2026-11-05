@@ -229,6 +229,13 @@ fn model(family: &str, quant: &str) -> Option<(f64, f64, bool)> {
         ("qwen" | "swift", "IQ3_XXS") => Some((60.0, 42.9, false)),
         ("qwen" | "swift", "IQ3_S") => Some((62.0, 50.3, false)),
         ("coder", "IQ1_M") => Some((32.0, 23.4, false)),
+        ("unsloth", "UD-IQ1_M") => Some((48.0, 34.8, true)),
+        ("unsloth", "UD-Q2_0") => Some((48.0, 37.4, true)),
+        ("unsloth", "UD-IQ2_XS") => Some((48.0, 42.3, true)),
+        ("unsloth", "UD-Q2_K_XL") => Some((48.0, 46.0, true)),
+        ("unsloth", "UD-IQ3_XXS") => Some((48.0, 50.3, true)),
+        ("unsloth", "UD-Q3_K_XL") => Some((48.0, 56.2, true)),
+        ("unsloth", "UD-IQ4_XS-v31") => Some((48.0, 60.4, true)),
         ("unsloth", "UD-IQ4_XS") => Some((48.0, 59.5, true)),
         ("unsloth", "UD-Q4_K_XL") => Some((48.0, 77.0, true)),
         ("unsloth", "UD-Q5_K_XL") => Some((108.0, 98.4, true)),
@@ -259,8 +266,12 @@ fn rope_table_gb(context: u64) -> f64 {
         0.0
     }
 }
-// setup.py 4538-4560. Its k8v4 batch estimate deliberately uses the conservative int8 rule.
-fn slot_gb(context: u64, kv: &str, streaming: bool) -> f64 {
+// Flash-Next: setup.py parallel_slot_gb. Qwen3.6: own_path_parallel_slot_gb (kv_bytes_per_token=45056, state_gb=0.07);
+// upstream #5239 measured ~5.56 GiB/slot at 128K ≈ 5.97 GB decimal.
+fn slot_gb(context: u64, kv: &str, streaming: bool, family: &str) -> f64 {
+    if family == "qwen36" {
+        return context as f64 * 45056.0 / GB + 0.07;
+    }
     let cells = if streaming {
         context.min(32768)
     } else {
@@ -268,9 +279,16 @@ fn slot_gb(context: u64, kv: &str, streaming: bool) -> f64 {
     };
     cells as f64 * 12.0 * if kv == "q4_0" { 576.0 } else { 1056.0 } / GB + 0.17
 }
-fn parallel_recommend(vram: f64, arena: f64, context: u64, kv: &str, streaming: bool) -> u32 {
+fn parallel_recommend(
+    vram: f64,
+    arena: f64,
+    context: u64,
+    kv: &str,
+    streaming: bool,
+    family: &str,
+) -> u32 {
     let cache = (vram - 5.0).max(0.0);
-    let slot = slot_gb(context, kv, streaming);
+    let slot = slot_gb(context, kv, streaming, family);
     (2..=4)
         .rfind(|n| *n as f64 * slot <= 0.2 * cache && cache - *n as f64 * slot >= 0.5 * arena)
         .unwrap_or(1)
@@ -552,13 +570,19 @@ fn estimate(request: &ResourceAssessmentRequest, hardware: HardwareSnapshot) -> 
                 note("wsl_streaming_off", false);
             }
             if request.parallel > 1 {
-                let slot = slot_gb(request.context, &request.kv, streaming);
+                let slot = slot_gb(request.context, &request.kv, streaming, &request.family);
                 slots["perSlotVramBytes"] = json!(bytes(slot, GB));
                 slots["totalVramBytes"] = json!(bytes(slot * request.parallel as f64, GB));
                 note("parallel_cost", false);
             }
-            let recommended_parallel =
-                parallel_recommend(vram, arena, request.context, &request.kv, streaming);
+            let recommended_parallel = parallel_recommend(
+                vram,
+                arena,
+                request.context,
+                &request.kv,
+                streaming,
+                &request.family,
+            );
             let mut recommended_context = if vram < 14.0 {
                 32768
             } else if vram < 20.0 {
@@ -879,9 +903,17 @@ mod tests {
     }
     #[test]
     fn kv_and_batch_match_official_reference_values() {
-        assert!((slot_gb(32768, "int8", false) - 0.585236096).abs() < 1e-9);
-        assert!((slot_gb(131072, "q4_0", true) - 0.396492416).abs() < 1e-9);
-        assert_eq!(slot_gb(32768, "k8v4", false), slot_gb(32768, "int8", false));
+        assert!((slot_gb(32768, "int8", false, "unsloth") - 0.585236096).abs() < 1e-9);
+        assert!((slot_gb(131072, "q4_0", true, "unsloth") - 0.396492416).abs() < 1e-9);
+        assert_eq!(
+            slot_gb(32768, "k8v4", false, "unsloth"),
+            slot_gb(32768, "int8", false, "unsloth")
+        );
+        // Qwen3.6 own_path_parallel_slot_gb; upstream #5239 ~5.56 GiB at 128K ≈ 5.97 GB.
+        assert!((slot_gb(131072, "int8", false, "qwen36") - 5.975).abs() < 1e-3);
+        assert!(
+            slot_gb(131072, "int8", false, "qwen36") > slot_gb(131072, "int8", false, "unsloth")
+        );
         let mut req = request();
         req.context = 131072;
         req.parallel = 2;

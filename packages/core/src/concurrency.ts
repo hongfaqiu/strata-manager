@@ -142,8 +142,15 @@ export function readConcurrencySettings(config: JsonObject): ConcurrencySettings
   };
 }
 
-/** setup.py parallel_slot_gb: 12 QSA layers of KV (only the 32K window with KV streaming) + ~0.17 GB DeltaNet state. */
-export function concurrencySlotVramGb(context: number, kv: string, streaming: boolean): number {
+/**
+ * Per-slot VRAM (decimal GB).
+ * Flash-Next: setup.py parallel_slot_gb — 12 QSA layers of KV (only the 32K window with KV streaming) + ~0.17 GB DeltaNet state.
+ * Qwen3.6: setup.py own_path_parallel_slot_gb = ctx * kv_bytes_per_token / 1e9 + state_gb
+ *   (kv_bytes_per_token = 11*2*256*2*4 = 45056, state_gb = 0.07). Upstream #5239 measured ~5.56 GiB/slot at 128K
+ *   (= 5.56 * 2^30 / 1e9 ≈ 5.97 GB decimal), matching this formula; the Flash-Next rule under-counted (~1.8 GB).
+ */
+export function concurrencySlotVramGb(context: number, kv: string, streaming: boolean, family?: string | null): number {
+  if (family === 'qwen36') return context * 45056 / 1e9 + 0.07;
   const perToken = 12 * (kv === 'q4_0' ? 576 : 1056);
   return (streaming ? Math.min(context, 32768) : context) * perToken / 1e9 + 0.17;
 }
@@ -154,7 +161,14 @@ export function concurrencySlotPinnedRamGb(context: number, kv: string, streamin
 /** setup.py MODELS arena_gb (decimal GB), the same table as the native resource assessment. */
 export function modelExpertArenaGb(family: string, quant: string): number | null {
   // Flash-Next: setup.py MODELS arena_gb. Qwen3.6: GGUF file size (decimal GB) — no separate pack (docs/QWEN36.md, QWEN36_FILES).
-  const table: Record<string, number> = { 'qwen:Q2_0': 34, 'qwen:IQ2_XS': 35.5, 'swift:IQ2_XS': 35.5, 'qwen:IQ3_XXS': 42.9, 'swift:IQ3_XXS': 42.9, 'qwen:IQ3_S': 50.3, 'swift:IQ3_S': 50.3, 'coder:IQ1_M': 23.4, 'unsloth:UD-IQ4_XS': 59.5, 'unsloth:UD-Q4_K_XL': 77, 'unsloth:UD-Q5_K_XL': 98.4, 'unsloth:UD-Q6_K_XL': 109.2, 'unsloth:Q8_0': 128.3, 'qwen36:UD-Q4_K_XL': 22.9, 'qwen36:UD-Q6_K_XL': 32.6, 'qwen36:Q8_0': 37.8 };
+  const table: Record<string, number> = {
+    'qwen:Q2_0': 34, 'qwen:IQ2_XS': 35.5, 'swift:IQ2_XS': 35.5, 'qwen:IQ3_XXS': 42.9, 'swift:IQ3_XXS': 42.9,
+    'qwen:IQ3_S': 50.3, 'swift:IQ3_S': 50.3, 'coder:IQ1_M': 23.4,
+    'unsloth:UD-IQ1_M': 34.8, 'unsloth:UD-Q2_0': 37.4, 'unsloth:UD-IQ2_XS': 42.3, 'unsloth:UD-Q2_K_XL': 46.0,
+    'unsloth:UD-IQ3_XXS': 50.3, 'unsloth:UD-Q3_K_XL': 56.2, 'unsloth:UD-IQ4_XS-v31': 60.4,
+    'unsloth:UD-IQ4_XS': 59.5, 'unsloth:UD-Q4_K_XL': 77, 'unsloth:UD-Q5_K_XL': 98.4, 'unsloth:UD-Q6_K_XL': 109.2, 'unsloth:Q8_0': 128.3,
+    'qwen36:UD-Q4_K_XL': 22.9, 'qwen36:UD-Q6_K_XL': 32.6, 'qwen36:Q8_0': 37.8,
+  };
   return table[`${family}:${quant}`] ?? null;
 }
 /** The family and quantization named by a config (model name, --native or --pack), or null when ambiguous. */
@@ -163,7 +177,8 @@ export function concurrencyModelIdentity(config: JsonObject): { family: string; 
   const evidence = [config.model_name, argValue(args, '--native'), argValue(args, '--pack')].filter(value => typeof value === 'string').join(' ');
   // OrcaRouter IQ3_XXS (ORCA.md) is not the GSQ-RCO IQ3_XXS of setup.py's table.
   if (isOrcaRouterEvidence(evidence)) return null;
-  const quants = [...evidence.matchAll(/(?:^|[^A-Za-z0-9])(?:UD-(?:IQ4_XS|Q4_K_XL|Q5_K_XL|Q6_K_XL)|IQ(?:1_M|2_XS|3_XXS|3_S)|Q(?:2_0|8_0))(?=$|[^A-Za-z0-9])/gi)].map(match => match[0].replace(/^[^A-Za-z0-9]+/, '').toUpperCase());
+  // UD-IQ4_XS-v31 before UD-IQ4_XS; UD-IQ1_M / UD-Q2_0 before bare IQ1_M / Q2_0.
+  const quants = [...evidence.matchAll(/(?:^|[^A-Za-z0-9])(?:UD-(?:IQ4_XS-v31|IQ1_M|Q2_0|IQ2_XS|Q2_K_XL|IQ3_XXS|Q3_K_XL|IQ4_XS|Q4_K_XL|Q5_K_XL|Q6_K_XL)|IQ(?:1_M|2_XS|3_XXS|3_S)|Q(?:2_0|8_0))(?=$|[^A-Za-z0-9])/gi)].map(match => match[0].replace(/^[^A-Za-z0-9]+/, '').toUpperCase());
   if (new Set(quants).size !== 1) return null;
   const quant = quants[0]!;
   const family = /qwen3\.?6|qwen36/i.test(evidence) ? 'qwen36' : quant.startsWith('UD-') || (quant === 'Q8_0' && /flash-next/i.test(evidence)) || /unsloth/i.test(evidence) ? 'unsloth' : /swift/i.test(evidence) ? 'swift' : /coder/i.test(evidence) ? 'coder' : 'qwen';
@@ -200,9 +215,9 @@ export interface ConcurrencyPlan {
 }
 
 const GB = 1e9, GIB = 2 ** 30;
-function officialRecommend(vramGbs: number[], arenaGb: number, context: number, kv: string, streaming: boolean): number {
+function officialRecommend(vramGbs: number[], arenaGb: number, context: number, kv: string, streaming: boolean, family?: string | null): number {
   const cache = vramGbs.reduce((sum, v) => sum + Math.max(0, v - 5), 0);
-  const slot = concurrencySlotVramGb(context, kv, streaming);
+  const slot = concurrencySlotVramGb(context, kv, streaming, family);
   let best = 1;
   for (const n of [2, 3, 4]) if (n * slot <= 0.2 * cache && cache - n * slot >= 0.5 * arenaGb) best = n;
   return best;
@@ -232,15 +247,16 @@ export function concurrencyEngineMax(settings: ConcurrencySettings, hardware: Co
   return chosen.length && chosen.every(gpu => /^amd$/i.test(gpu.vendor)) ? CONCURRENCY_HIP_ENGINE_MAX : CONCURRENCY_ENGINE_MAX;
 }
 
-export function recommendConcurrency(input: { settings: ConcurrencySettings; hardware?: ConcurrencyHardware | null; arenaGb: number | null; useCase: ConcurrencyUseCase }): ConcurrencyPlan {
+export function recommendConcurrency(input: { settings: ConcurrencySettings; hardware?: ConcurrencyHardware | null; arenaGb: number | null; useCase: ConcurrencyUseCase; family?: string | null }): ConcurrencyPlan {
   const { settings, arenaGb, useCase } = input;
+  const family = input.family ?? null;
   const context = settings.context ?? 32768;
   const streaming = settings.kvResident !== null && settings.kvResident > 0;
   const vramGbs = concurrencyVramGbs(settings, input.hardware);
   const engineMax = concurrencyEngineMax(settings, input.hardware);
   const split = vramGbs.length > 1 || (!!settings.layerSplit && settings.gpuCount > 1);
   const cacheGb = vramGbs.length ? vramGbs.reduce((sum, v) => sum + Math.max(0, v - 5), 0) : null;
-  const officialParallel = vramGbs.length && arenaGb !== null ? officialRecommend(vramGbs, arenaGb, context, settings.kv, streaming) : 1;
+  const officialParallel = vramGbs.length && arenaGb !== null ? officialRecommend(vramGbs, arenaGb, context, settings.kv, streaming, family) : 1;
   const fits = officialParallel >= 2;
   const reasons: string[] = [];
   const companions: ConcurrencyPlan['companions'] = [];
@@ -249,7 +265,7 @@ export function recommendConcurrency(input: { settings: ConcurrencySettings; har
   const ramGib = input.hardware?.totalMemoryBytes ? input.hardware.totalMemoryBytes / GIB : null;
   const spareRam = ramGib !== null && arenaGb !== null ? ramGib - arenaGb * GB / GIB - 8 : null; // 8 GiB left for the OS and the engine host side
   const cacheFor = (slots: number) => spareRam === null || spareRam >= 8 ? { mib: 8192, slots } : spareRam >= 4 ? { mib: 4096, slots: Math.min(slots, 2) } : null;
-  const spills = (slots: number) => concurrencySsdSpill({ ramGib, cacheGb, arenaGb, slotVramGb: slots * concurrencySlotVramGb(context, settings.kv, streaming), mtp: settings.mtp });
+  const spills = (slots: number) => concurrencySsdSpill({ ramGib, cacheGb, arenaGb, slotVramGb: slots * concurrencySlotVramGb(context, settings.kv, streaming, family), mtp: settings.mtp });
   if (!vramGbs.length || arenaGb === null) reasons.push('hardware_unknown');
   if (useCase === 'single') { parallel = 1; reasons.push('use_single'); }
   else if (useCase === 'agent') {
@@ -278,7 +294,7 @@ export function recommendConcurrency(input: { settings: ConcurrencySettings; har
       if (cacheGb !== null && arenaGb !== null && cacheGb < arenaGb && settings.adaptAsync !== '1') companions.push({ key: '--adapt-async', value: '1', reason: 'adapt_async' });
     }
   }
-  const perSlotVramGb = concurrencySlotVramGb(context, settings.kv, streaming);
+  const perSlotVramGb = concurrencySlotVramGb(context, settings.kv, streaming, family);
   const totalSlotVramGb = parallel > 1 ? perSlotVramGb * parallel : 0;
   const expertShare = cacheGb !== null && arenaGb ? Math.max(0, Math.min(1, (cacheGb - totalSlotVramGb) / arenaGb)) : null;
   let slowdown: [number, number] | null = null;
@@ -310,7 +326,7 @@ export function concurrencyPlanEdits(settings: ConcurrencySettings, plan: Concur
 }
 
 export interface ConcurrencyIssue { code: string; severity: 'error' | 'warning' | 'info'; fix?: ConcurrencyChange[]; values?: Record<string, string | number> }
-export function concurrencyIssues(settings: ConcurrencySettings, options: { platform?: 'mac' | 'other'; officialParallel?: number; ramGib?: number | null; engineMax?: number; cacheGb?: number | null; arenaGb?: number | null } = {}): ConcurrencyIssue[] {
+export function concurrencyIssues(settings: ConcurrencySettings, options: { platform?: 'mac' | 'other'; officialParallel?: number; ramGib?: number | null; engineMax?: number; cacheGb?: number | null; arenaGb?: number | null; family?: string | null } = {}): ConcurrencyIssue[] {
   const issues: ConcurrencyIssue[] = [];
   const engineMax = options.engineMax ?? CONCURRENCY_ENGINE_MAX;
   const n = settings.parallel, split = !!settings.layerSplit && settings.gpuCount > 1;
@@ -334,7 +350,7 @@ export function concurrencyIssues(settings: ConcurrencySettings, options: { plat
   if (settings.experimental.STRATA_PIPED_CONCURRENT && !split) issues.push({ code: 'piped_needs_split', severity: 'info' });
   if (n > 1 && (settings.context ?? 0) > TRAINED_CONTEXT) issues.push({ code: 'long_context_conflict', severity: 'warning' });
   if (n > 1 && options.officialParallel !== undefined && n > Math.max(1, options.officialParallel)) issues.push({ code: options.officialParallel <= 1 ? 'slow_per_request' : 'above_recommendation', severity: 'warning', values: { recommended: options.officialParallel } });
-  if (n > 1 && concurrencySsdSpill({ ramGib: options.ramGib, cacheGb: options.cacheGb, arenaGb: options.arenaGb, slotVramGb: n * concurrencySlotVramGb(settings.context ?? 32768, settings.kv, settings.kvResident !== null && settings.kvResident > 0), mtp: settings.mtp })) {
+  if (n > 1 && concurrencySsdSpill({ ramGib: options.ramGib, cacheGb: options.cacheGb, arenaGb: options.arenaGb, slotVramGb: n * concurrencySlotVramGb(settings.context ?? 32768, settings.kv, settings.kvResident !== null && settings.kvResident > 0, options.family), mtp: settings.mtp })) {
     issues.push({ code: 'ssd_spill', severity: 'warning', fix: [{ key: 'parallel', value: '1' }, ...(settings.batchArg !== null ? [{ key: '--batch', value: '' }] : [])] });
   }
   if (n > 1 && settings.kvResident && settings.context && options.ramGib) {

@@ -24,6 +24,12 @@ describe('concurrency settings', () => {
     expect(concurrencySlotVramGb(262144, 'int8', true)).toBeCloseTo(concurrencySlotVramGb(32768, 'int8', false), 6);
     expect(concurrencySlotVramGb(32768, 'q4_0', false)).toBeLessThan(concurrencySlotVramGb(32768, 'int8', false));
   });
+
+  it('uses qwen36 own_path_parallel_slot_gb (upstream #5239 ~5.56 GiB at 128K)', () => {
+    expect(concurrencySlotVramGb(131072, 'int8', false, 'qwen36')).toBeCloseTo(5.975, 2);
+    expect(concurrencySlotVramGb(131072, 'int8', false, 'qwen36')).toBeGreaterThan(concurrencySlotVramGb(131072, 'int8', false));
+    expect(concurrencySlotVramGb(32768, 'int8', false, 'qwen36')).toBeCloseTo(1.548, 2);
+  });
 });
 
 describe('recommendations', () => {

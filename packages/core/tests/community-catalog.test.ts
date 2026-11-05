@@ -140,3 +140,13 @@ describe('discovery parsing', () => {
     expect(mergeCommunityModels([qwen, swift], 'macos').filter(model => model.source === 'discovered').map(model => model.repo)).toEqual(['a/q']);
   });
 });
+
+describe('Unsloth Dynamic v3.1 quant names', () => {
+  it('parses UD-IQ4_XS-v31 from a stem and keeps UD-IQ4_XS distinct', () => {
+    expect(quantOfStem('Qwen3.8-Flash-Next-UD-IQ4_XS-v31')).toBe('UD-IQ4_XS-v31');
+    expect(quantOfStem('Qwen3.8-Flash-Next-UD-IQ4_XS')).toBe('UD-IQ4_XS');
+    expect(quantOfStem('Qwen3.8-Flash-Next-UD-IQ1_M')).toBe('UD-IQ1_M');
+    expect(setupSupports('unsloth', 'UD-IQ1_M')).toBe(true);
+    expect(setupSupports('unsloth', 'UD-IQ4_XS-v31')).toBe(true);
+  });
+});

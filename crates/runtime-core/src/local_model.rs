@@ -22,12 +22,19 @@ use std::{
 
 /// setup.py MODELS: the quantizations Strata runs. Any other quant in a GGUF name is refused upstream
 /// (`gguf_unsupported`, #444): the engine has no kernels for it.
-pub const SUPPORTED_QUANTS: [&str; 10] = [
+pub const SUPPORTED_QUANTS: [&str; 17] = [
     "Q2_0",
     "IQ2_XS",
     "IQ3_XXS",
     "IQ3_S",
     "IQ1_M",
+    "UD-IQ1_M",
+    "UD-Q2_0",
+    "UD-IQ2_XS",
+    "UD-Q2_K_XL",
+    "UD-IQ3_XXS",
+    "UD-Q3_K_XL",
+    "UD-IQ4_XS-v31",
     "UD-IQ4_XS",
     "UD-Q4_K_XL",
     "UD-Q5_K_XL",
@@ -42,6 +49,13 @@ pub fn setup_supports(family: &str, quant: &str) -> bool {
         "swift" => ["IQ2_XS", "IQ3_XXS", "IQ3_S"].contains(&quant),
         "coder" => quant == "IQ1_M",
         "unsloth" => [
+            "UD-IQ1_M",
+            "UD-Q2_0",
+            "UD-IQ2_XS",
+            "UD-Q2_K_XL",
+            "UD-IQ3_XXS",
+            "UD-Q3_K_XL",
+            "UD-IQ4_XS-v31",
             "UD-IQ4_XS",
             "UD-Q4_K_XL",
             "UD-Q5_K_XL",
@@ -59,7 +73,7 @@ pub fn setup_supports(family: &str, quant: &str) -> bool {
 }
 
 const FAMILIES: [&str; 5] = ["qwen", "swift", "coder", "unsloth", "qwen36"];
-const SUPPORTED_GGUFS: &str = "Strata 只能运行 ISTA-DASLab 的 GSQ-RCO 文件（Qwen3.8-Flash-Next Q2_0、IQ2_XS、IQ3_XXS、IQ3_S；Swift 1.5；Coder IQ1_M）、Unsloth 的 UD-IQ4_XS、UD-Q4_K_XL、UD-Q5_K_XL、UD-Q6_K_XL、Q8_0，Qwen3.6-35B-A3B 的 UD-Q4_K_XL、UD-Q6_K_XL、Q8_0，以及 DeepSeek-V4.1-Flash 的官方 IST-DAS 和 UD-IQ1_S / UD-IQ1_M 文件（上游 setup.py #444）";
+const SUPPORTED_GGUFS: &str = "Strata 只能运行 ISTA-DASLab 的 GSQ-RCO 文件（Qwen3.8-Flash-Next Q2_0、IQ2_XS、IQ3_XXS、IQ3_S；Swift 1.5；Coder IQ1_M）、Unsloth 的 UD-IQ1_M、UD-Q2_0、UD-IQ2_XS、UD-Q2_K_XL、UD-IQ3_XXS、UD-Q3_K_XL、UD-IQ4_XS-v31、UD-IQ4_XS、UD-Q4_K_XL、UD-Q5_K_XL、UD-Q6_K_XL、Q8_0，Qwen3.6-35B-A3B 的 UD-Q4_K_XL、UD-Q6_K_XL、Q8_0，以及 DeepSeek-V4.1-Flash 的官方 IST-DAS 和 UD-IQ1_S / UD-IQ1_M 文件（上游 setup.py #444）";
 const MAX_ENTRIES: usize = 4096;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
@@ -183,18 +197,31 @@ fn is_quant_token(token: &str) -> bool {
 }
 
 /// setup.py GGUF_QUANT: the quantization a GGUF's name says (Unsloth's UD- prefix included).
+/// Catalog name `UD-IQ4_XS-v31` may appear on a stem; Hub files for that set stay `…-UD-IQ4_XS-…`
+/// and are distinguished by four shards via `official_choice` / `model_spec`.
 pub fn quant_of(stem: &str) -> Option<String> {
     let tokens: Vec<&str> = stem.split('-').collect();
-    let last = *tokens.last()?;
+    let mut last_i = tokens.len().checked_sub(1)?;
+    let mut v31 = false;
+    let last_tok = tokens[last_i];
+    if last_tok.len() > 1
+        && last_tok.as_bytes()[0].eq_ignore_ascii_case(&b'v')
+        && last_tok[1..].bytes().all(|b| b.is_ascii_digit())
+    {
+        v31 = last_tok.eq_ignore_ascii_case("v31");
+        last_i = last_i.checked_sub(1)?;
+    }
+    let last = tokens[last_i];
     if !is_quant_token(last) {
         return None;
     }
-    let ud = tokens.len() >= 2 && tokens[tokens.len() - 2].eq_ignore_ascii_case("UD");
-    Some(format!(
+    let ud = last_i >= 1 && tokens[last_i - 1].eq_ignore_ascii_case("UD");
+    let base = format!(
         "{}{}",
         if ud { "UD-" } else { "" },
         last.to_ascii_uppercase()
-    ))
+    );
+    Some(if v31 { format!("{base}-v31") } else { base })
 }
 
 /// The published first-shard name of each installable (family, quant), as `--gguf-dir` expects it.
@@ -400,7 +427,15 @@ fn group(directory: &Path, first: &str, stem: &str, total: u32) -> LocalModelGro
         .iter()
         .all(|s| s.state == "ok" && s.split_mismatch.is_none());
     let total_bytes = shards.iter().map(|s| s.bytes).sum();
-    let quant = quant_of(stem);
+    let from_name = quant_of(stem);
+    let official = official_choice(first);
+    // Prefer the catalog quant from the first-shard name so UD-IQ4_XS-v31 (4 shards) is not
+    // collapsed to the old 3-shard UD-IQ4_XS. A renamed 4-shard UD-IQ4_XS set is treated as v31.
+    let quant = match (&official, from_name, total) {
+        (Some((_, q)), _, _) => Some(q.clone()),
+        (_, Some(q), 4) if q == "UD-IQ4_XS" => Some("UD-IQ4_XS-v31".into()),
+        (_, q, _) => q,
+    };
     let (kind, family) = if first.starts_with("Qwen3.8-Flash-Next-Uncensored-") {
         if let Err(reason) = orca_import::check_shard_name(first) {
             problems.push(reason);
@@ -408,8 +443,8 @@ fn group(directory: &Path, first: &str, stem: &str, total: u32) -> LocalModelGro
             warnings.push("OrcaRouter 去审查模型：按上游 ORCA.md 的兼容流程打包（--compat-bf16），上下文固定 32K、仅文本".into());
         }
         ("orca", Some("orca".to_owned()))
-    } else if let Some((family, _)) = official_choice(first) {
-        ("official", Some(family))
+    } else if let Some((family, _)) = &official {
+        ("official", Some(family.clone()))
     } else if let Some(q) = quant.as_deref().filter(|q| SUPPORTED_QUANTS.contains(q)) {
         match inferred_family(stem, q) {
             Some(family) => {
@@ -1121,6 +1156,14 @@ mod tests {
             Some("UD-IQ4_XS")
         );
         assert_eq!(
+            quant_of("Qwen3.8-Flash-Next-UD-IQ4_XS-v31").as_deref(),
+            Some("UD-IQ4_XS-v31")
+        );
+        assert_eq!(
+            quant_of("Qwen3.8-Flash-Next-UD-IQ1_M").as_deref(),
+            Some("UD-IQ1_M")
+        );
+        assert_eq!(
             quant_of("Qwen3.8-Flash-Next-Uncensored-iq3_xxs").as_deref(),
             Some("IQ3_XXS")
         );
@@ -1473,9 +1516,11 @@ mod tests {
                 .join("my-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS.gguf"),
             BIG,
         );
+        // UD-Q2_K_XL is a supported Unsloth Dynamic v3.1 set; keep an unsupported quant here
+        // so the engine-kernel refusal path still has coverage.
         gguf(
             &dir.path()
-                .join("Qwen3.8-Flash-Next-UD-Q2_K_XL-00001-of-00001.gguf"),
+                .join("Qwen3.8-Flash-Next-UD-Q3_K_M-00001-of-00001.gguf"),
             BIG,
         );
         gguf(&dir.path().join("mmproj-F16.gguf"), BIG);
@@ -1491,7 +1536,7 @@ mod tests {
             .unwrap();
         assert!(
             !bad.installable
-                && bad.problems[0].contains("UD-Q2_K_XL")
+                && bad.problems[0].contains("UD-Q3_K_M")
                 && bad.problems[0].contains("内核")
         );
     }

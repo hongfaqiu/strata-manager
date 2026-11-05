@@ -92,7 +92,8 @@ export function arenaGpuVendor(name: string): ArenaGpu['vendor'] {
   if (/apple|\bm[1-9]\b/i.test(name)) return 'apple';
   return 'other';
 }
-const QUANT = /(?:^|[^A-Za-z0-9])((?:UD-)?(?:IQ[1-4]_(?:XXS|XS|S|M|NL)|Q[2-8]_(?:K_(?:XL|S|M|L)|K|0|1)|BF16|F16))(?=$|[^A-Za-z0-9])/gi;
+// Optional -v31 for Unsloth Dynamic v3.1 catalog name UD-IQ4_XS-v31 (Hub files stay UD-IQ4_XS).
+const QUANT = /(?:^|[^A-Za-z0-9])((?:UD-)?(?:IQ[1-4]_(?:XXS|XS|S|M|NL)|Q[2-8]_(?:K_(?:XL|S|M|L)|K|0|1)|BF16|F16)(?:-v31)?)(?=$|[^A-Za-z0-9])/gi;
 /** Model family + quantization from file names only (basenames supplied by the identity), never from paths. */
 export function arenaModelOf(evidence: string): { family: string; quant: string } | null {
   const quants = [...new Set([...evidence.matchAll(QUANT)].map(m => m[1]!.toUpperCase()))];

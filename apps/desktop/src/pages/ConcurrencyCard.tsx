@@ -71,10 +71,10 @@ export function ConcurrencyCard({ draft, fieldValue, onFieldChange, zh, hardware
   const [useCase, setUseCase] = useState<core.ConcurrencyUseCase>(() => defaultUseCase(settings));
   const hardware = useConcurrencyHardware({ installationId, desktop, identity, settings, override: hardwareOverride !== undefined ? hardwareOverride : contextHardware });
   const arenaGb = identity ? core.modelExpertArenaGb(identity.family, identity.quant) : null;
-  const plan = useMemo(() => core.recommendConcurrency({ settings, hardware, arenaGb, useCase }), [settings, hardware, arenaGb, useCase]);
+  const plan = useMemo(() => core.recommendConcurrency({ settings, hardware, arenaGb, useCase, family: identity?.family }), [settings, hardware, arenaGb, useCase, identity?.family]);
   const os = platform ?? contextPlatform ?? (typeof navigator !== 'undefined' && /Mac/i.test(navigator.userAgent) && !/Windows/i.test(navigator.userAgent) ? 'mac' : 'other');
   const ramGib = hardware?.totalMemoryBytes ? hardware.totalMemoryBytes / 2 ** 30 : null;
-  const issues = useMemo(() => core.concurrencyIssues(settings, { platform: os, officialParallel: hardware ? plan.officialParallel : undefined, ramGib, engineMax: plan.engineMax, cacheGb: plan.cacheGb, arenaGb: plan.arenaGb }), [settings, os, hardware, plan.officialParallel, ramGib, plan.engineMax, plan.cacheGb, plan.arenaGb]);
+  const issues = useMemo(() => core.concurrencyIssues(settings, { platform: os, officialParallel: hardware ? plan.officialParallel : undefined, ramGib, engineMax: plan.engineMax, cacheGb: plan.cacheGb, arenaGb: plan.arenaGb, family: identity?.family }), [settings, os, hardware, plan.officialParallel, ramGib, plan.engineMax, plan.cacheGb, plan.arenaGb, identity?.family]);
   const edits = useMemo(() => core.concurrencyPlanEdits(settings, plan), [settings, plan]);
   const pending = edits.filter(edit => { const field = fieldByKey(edit.key); return field && fieldValue(field) !== edit.value; });
   const apply = (changes: core.ConcurrencyChange[]) => { for (const change of changes) { const field = fieldByKey(change.key); if (field) onFieldChange(field, change.value); } };

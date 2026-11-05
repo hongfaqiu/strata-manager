@@ -178,8 +178,12 @@ test('recommendations fit memory, respect scene and push experimental last', () 
   assert.ok(small.some(row => row.family === 'coder' && row.fit === 'fits'));
   const none = model.recommendations('chat', 16, false);
   assert.equal(none[0].recommended, false, 'nothing is recommended when nothing fits');
-  const unsloth = model.recommendations('chat', 200, false, 20).filter(row => row.family === 'unsloth');
+  // Limit must cover every Unsloth set (12 with Dynamic v3.1) so the experimental NVIDIA-only
+  // UD-Q4_K_XL still lands last among them when NVIDIA is absent.
+  const unsloth = model.recommendations('chat', 200, false, 30).filter(row => row.family === 'unsloth');
   assert.equal(unsloth.at(-1).quant, 'UD-Q4_K_XL');
+  assert.equal(unsloth.at(-1).experimental, true);
+  assert.ok(unsloth.some(row => row.quant === 'UD-IQ4_XS-v31'));
   assert.equal(model.defaultContext('long'), 131072);
 });
 
