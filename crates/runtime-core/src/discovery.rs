@@ -1476,6 +1476,20 @@ fn expand_upstream_layout(layout: &UpstreamLayout) -> ExpandedUserDirectory {
     }
 }
 
+/// A run config kept outside its install that this backend finds by itself in the upstream 0.2 app / Terminal layout
+/// (`%LOCALAPPDATA%\Strata\install`, and the folders `app-settings.json` / `settings.json` remember), for exactly this
+/// install root (#214). Re-derived here at import: a path from the UI is never enough, and user-added folders are not
+/// read (they come from the UI too).
+fn upstream_config_of(layout: &UpstreamLayout, root: &Path, config: &Path) -> bool {
+    expand_upstream_layout(layout)
+        .external_configs
+        .iter()
+        .any(|(install, found)| {
+            canonical_local(install).is_ok_and(|install| install == root)
+                && canonical_local(found).is_ok_and(|found| found == config)
+        })
+}
+
 /// Manager installations live inside runtimes/release-* or runtimes/strata-*.
 /// Look only one level below a recognized runtime container, with hard bounds;
 /// this never walks drives, model directories, or arbitrary user directories.
@@ -2760,6 +2774,7 @@ fn prepare_import_inner(
         && !config.starts_with(&state_root)
         && hint.is_none()
         && saved_python.is_none()
+        && !upstream_config_of(&upstream_layout(), &root, &config)
     {
         return Err("配置不属于所选安装，也不是已识别的本机运行配置".into());
     }
@@ -4403,6 +4418,55 @@ mod tests {
             .unwrap_or_else(|| panic!("expected the app's run config, got {candidates:?}"));
         assert_eq!(hit.source.as_deref(), Some("upstream-app"));
         assert!(same_path(Path::new(&hit.install_dir), &control));
+    }
+
+    /// #214: the run config the upstream app keeps in `%LOCALAPPDATA%\Strata\install` imports, because the backend finds
+    /// it again itself for that install; the same config claimed for another install, or a look-alike config in a folder
+    /// the upstream layout does not name, is still refused.
+    #[test]
+    fn an_upstream_app_config_outside_the_install_imports_only_when_rederived() {
+        let temp = tempfile::tempdir().unwrap();
+        let local = temp.path().join("AppData/Local");
+        let base = local.join("Strata");
+        let control = local.join("Programs/Strata/control");
+        write_install_root(&control);
+        let other = temp.path().join("other-install");
+        write_install_root(&other);
+        let config = base.join("install/strata-nvfp4-nvfp4.json");
+        write_model_config(&control, &config, "models/weights.gguf");
+        let loose = temp.path().join("Downloads/strata-nvfp4-nvfp4.json");
+        write_model_config(&control, &loose, "models/weights2.gguf");
+        let state = temp.path().join("state");
+        fs::create_dir(&state).unwrap();
+        crate::component_engine::with_components_dir(&base.join("components"), || {
+            let candidates = discover_local(&[], &[]).unwrap();
+            let found = candidates
+                .iter()
+                .find(|candidate| same_path(Path::new(&candidate.config_path), &config))
+                .expect("the upstream app's run config is discovered")
+                .clone();
+            let imported = prepare_import(&found, &state, None).unwrap();
+            assert!(Path::new(&imported.profile.config_path)
+                .starts_with(dunce::canonicalize(&state).unwrap()));
+            assert!(same_path(
+                Path::new(&imported.profile.install_dir),
+                &control
+            ));
+
+            let refused = "配置不属于所选安装";
+            let mut forged = found.clone();
+            forged.install_dir = other.to_string_lossy().into();
+            assert!(prepare_import(&forged, &state, None)
+                .err()
+                .unwrap()
+                .contains(refused));
+            let mut forged = found.clone();
+            forged.config_path = loose.to_string_lossy().into();
+            assert!(prepare_import(&forged, &state, None)
+                .err()
+                .unwrap()
+                .contains(refused));
+        });
     }
 
     /// Per-machine install (`%ProgramFiles%\Strata\control`), a Control folder under
