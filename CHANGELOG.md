@@ -7,7 +7,11 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+- **官方 NVFP4 三个包（#214）**：目录新增 Qwen3.8-Flash-Next (NVFP4)，含 NVFP4、NVFP4-NVIDIA（各 128 GB，引擎 0.1.44+）和 NVFP4-QAD（102.2 GB，引擎 0.1.45+）。NVFP4-QAD 安装时会在本机转换一次（约 20–40 分钟，另需约 110 GB 和 PyTorch），磁盘检查已把这部分算进去。只在 NVIDIA 显卡上提供；AMD、Intel 和 Mac 上灰显并说明原因，强行安装也会在下载前被拒绝。「使用已有模型」和「发现已下载模型」能认出 `<数据目录>/models/<owner>--<repo>` 下的 NVFP4 包（含已转换的 QAD），用 `--data-dir` 原地安装。
+
 ### English
+
+- **The three official NVFP4 packs (#214)**: the catalog adds Qwen3.8-Flash-Next (NVFP4) with NVFP4 and NVFP4-NVIDIA (128 GB each, engine 0.1.44+) and NVFP4-QAD (102.2 GB, engine 0.1.45+). NVFP4-QAD is converted once on this PC during install (about 20–40 minutes, about 110 GB more disk and PyTorch), and the disk check counts it. Offered on NVIDIA cards only; on AMD, Intel and Mac it is greyed out with the reason, and a forced install is refused before anything downloads. "Use an existing model" and "found downloaded models" recognize NVFP4 packs under `<data folder>/models/<owner>--<repo>` (a converted QAD too) and install them in place with `--data-dir`.
 
 ## [0.2.41] - 2026-11-05
 

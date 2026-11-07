@@ -168,6 +168,7 @@ export function modelExpertArenaGb(family: string, quant: string): number | null
     'unsloth:UD-IQ3_XXS': 50.3, 'unsloth:UD-Q3_K_XL': 56.2, 'unsloth:UD-IQ4_XS-v31': 60.4,
     'unsloth:UD-IQ4_XS': 59.5, 'unsloth:UD-Q4_K_XL': 77, 'unsloth:UD-Q5_K_XL': 98.4, 'unsloth:UD-Q6_K_XL': 109.2, 'unsloth:Q8_0': 128.3,
     'qwen36:UD-Q4_K_XL': 22.9, 'qwen36:UD-Q6_K_XL': 32.6, 'qwen36:Q8_0': 37.8,
+    'nvfp4:NVFP4': 68, 'nvfp4:NVFP4-NVIDIA': 68, 'nvfp4:NVFP4-QAD': 68,
   };
   return table[`${family}:${quant}`] ?? null;
 }
