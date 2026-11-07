@@ -226,7 +226,7 @@ export function suggestedPath(facts: Pick<GuideFacts, 'hasModel' | 'hasProfile'>
 // ---- Recommendations ---------------------------------------------------------------------
 export interface Recommendation { family: core.CatalogModel['family']; name: string; quant: string; downloadGB: number; ramGB: number; fit?: 'fits' | 'tight' | 'over'; experimental: boolean; nvidiaOnly: boolean; recommended: boolean }
 const fitRank = { fits: 0, tight: 1, over: 2, unknown: 1 } as const;
-const sceneFamilies: Record<Scene, core.CatalogModel['family'][]> = { chat: ['swift', 'qwen', 'qwen36', 'unsloth', 'coder'], long: ['qwen', 'qwen36', 'swift', 'unsloth', 'coder'], code: ['coder', 'qwen', 'qwen36', 'swift', 'unsloth'] };
+const sceneFamilies: Record<Scene, core.CatalogModel['family'][]> = { chat: ['swift', 'qwen', 'qwen36', 'unsloth', 'coder', 'nvfp4'], long: ['qwen', 'qwen36', 'swift', 'unsloth', 'coder', 'nvfp4'], code: ['coder', 'qwen', 'qwen36', 'swift', 'unsloth', 'nvfp4'] };
 
 /**
  * Every catalog family+quant ranked for a scene: what fits memory first, then the scene's
@@ -240,7 +240,9 @@ export function recommendations(scene: Scene, memoryGB: number | undefined, nvid
   const catalogPlatform = platform && platform !== 'other' ? platform : core.runtimePackagePlatform();
   const catalogModels = core.filterCatalogForPlatform(core.MODEL_CATALOG, catalogPlatform).filter(model => !core.officialFamilyBlock(model.family, catalogPlatform))
     // A family that needs a newer Strata release (DeepSeek-V4.1-Flash: 0.2.5, fixed 8K, 250+ GB) is picked on the download page, never suggested here.
-    .filter(model => !model.minRelease);
+    .filter(model => !model.minRelease)
+    // NVFP4 (NVIDIA only) is suggested only when an NVIDIA card was found.
+    .filter(model => model.family !== 'nvfp4' || nvidia);
   const rows = catalogModels.flatMap(model => core.platformQuants(model.quants, catalogPlatform).map(quant => {
     const info = model.quantInfo[quant]!;
     return { family: model.family, name: model.name, quant, downloadGB: info.downloadGB, ramGB: info.ramGB, fit: quantFitState(model, quant, memoryGB, undefined, catalogPlatform), experimental: !!info.experimental, nvidiaOnly: !!info.nvidiaOnly, recommended: false };

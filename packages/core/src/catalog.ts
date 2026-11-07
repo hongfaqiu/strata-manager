@@ -2,7 +2,7 @@
  * Checked against Niko1221/Strata v0.2.11 (docs/MODELS.md, setup.py MODELS / OWN_PATH_FAMILIES).
  * Runtime versions can differ; qwen36 needs >= 0.1.45; Unsloth v3.1 needs >= 0.1.57; UD-Q5/Q6 need >= 0.1.44. */
 export const UPSTREAM_REVISION = 'c3b3f5035506f3e966f1b4b7b188aeaabae92f1d';
-export type CatalogFamily = 'qwen' | 'swift' | 'coder' | 'unsloth' | 'qwen36' | 'deepseek41';
+export type CatalogFamily = 'qwen' | 'swift' | 'coder' | 'unsloth' | 'qwen36' | 'deepseek41' | 'nvfp4';
 export interface CatalogQuantInfo {
   downloadGB: number;
   ramGB: number;
@@ -21,6 +21,8 @@ export interface CatalogQuantInfo {
   minRelease?: string;
   /** What upstream says of the quality when it has no measured perplexity (dsv41_fit ISTA_SETS[*].quality, release notes). */
   qualityNote?: { zh: string; en: string };
+  /** setup.py MODELS[*].prepare_gb: GB the one-time conversion on this PC writes (NVFP4-QAD, tools/nvfp4_local_pack.py prepare). */
+  prepareGB?: number;
 }
 export interface CatalogModel {
   id: string;
@@ -96,7 +98,33 @@ export const MODEL_CATALOG: CatalogModel[] = [
       'UD-IQ1_M': { downloadGB: 258.4, ramGB: 40, expertsGB: 132.21, manualOnly: true, minRelease: '0.2.9',
         qualityNote: { zh: 'Unsloth 的下一档动态量化，与 IST-DAS 2.00 bpw 同等大小；上游未测困惑度，任务测试 61 项答对 53 项（IST-DAS 2.25 为 56 项），尚未在 Windows 和 Strix Halo 上测试。', en: 'Unsloth\'s next dynamic quant, the size of IST-DAS 2.00 bpw; upstream has not measured its perplexity; 53 of 61 test tasks right (IST-DAS 2.25: 56); not yet tested on Windows or Strix Halo.' } },
     } },
+  // setup.py FAMILIES nvfp4 (ready: True) + MODELS NVFP4 / NVFP4-NVIDIA / NVFP4-QAD. Ready-made packs, downloaded as the pinned
+  // NVFP4_REPOS file lists (not GGUF shards); NVFP4-QAD is NVIDIA's FP4-Local checkpoint, converted once on this PC
+  // (prepare "fp4-local", ~20-40 min, prepare_gb 110). NVIDIA only: setup's menu leaves it out on AMD/Intel (menu_families).
+  // ramGB: ram_gb (every expert in RAM; below it setup keeps the most-used ones, --resident-budget-gib). Vision: True.
+  { id: 'nvfp4', family: 'nvfp4', name: 'Qwen3.8-Flash-Next (NVFP4)', quants: ['NVFP4', 'NVFP4-NVIDIA', 'NVFP4-QAD'], images: true, source, snapshotDate: '2026-11-07', minEngine: '0.1.44',
+    quantInfo: {
+      NVFP4: { downloadGB: 128.0, ramGB: 80, nvidiaOnly: true, minEngine: '0.1.44',
+        qualityNote: { zh: '三个 NVFP4 版本里质量最好（Strata 用 GPTQ 转换）。RTX 50 有 FP4 张量核心，其它 NVIDIA 卡按 8-bit 精度运行。', en: 'Best quality of the three NVFP4 versions (GPTQ). RTX 50 has FP4 tensor cores; other NVIDIA cards run it at 8-bit precision.' } },
+      'NVFP4-NVIDIA': { downloadGB: 128.0, ramGB: 80, nvidiaOnly: true, minEngine: '0.1.44',
+        qualityNote: { zh: 'NVIDIA 官方 NVFP4 checkpoint 的转换版，大小和速度与 NVFP4 相同。', en: "NVIDIA's own NVFP4 checkpoint, converted; the same size and speed as NVFP4." } },
+      'NVFP4-QAD': { downloadGB: 102.2, ramGB: 80, nvidiaOnly: true, minEngine: '0.1.45', prepareGB: 110,
+        qualityNote: { zh: 'NVIDIA 为 FP4 训练的版本（FP4-Local），短提示略快。', en: "NVIDIA's FP4-trained checkpoint (FP4-Local), slightly faster on short prompts." } },
+    } },
 ];
+
+/**
+ * Disk an NVFP4 install adds (GB = 10^9 bytes), as runtime-core's disk_nvfp4::plan reserves it before the disk preflight
+ * answers: the pinned files, the NVFP4-QAD conversion output (prepare_gb) and its PyTorch packages, setup's MTP draft
+ * layer, the picture reader, and setup's 2 GB working room.
+ */
+export function nvfp4DiskNeedGB(quant: string, images = false): { totalGB: number; downloadGB: number; prepareGB: number } | undefined {
+  const info = MODEL_CATALOG.find(model => model.family === 'nvfp4')?.quantInfo[quant];
+  if (!info) return undefined;
+  const prepareGB = info.prepareGB ?? 0;
+  const totalGB = info.downloadGB + prepareGB + (prepareGB ? 4 : 8) + (images ? 0.9 : 0) + 2;
+  return { totalGB, downloadGB: info.downloadGB, prepareGB };
+}
 
 /** Qwen3.6-35B-A3B run configs (setup.py OWN_PATH_FAMILIES: arch "qwen35moe"). */
 export function isQwen36Config(config: { arch?: unknown } | null | undefined): boolean {

@@ -68,12 +68,14 @@ pub fn setup_supports(family: &str, quant: &str) -> bool {
         // setup.py MULTI_FILE_FAMILIES deepseek41 (Strata 0.2.5+): the official IST-DAS sets, and from 0.2.9 Unsloth's
         // UD-IQ1_S / UD-IQ1_M; Unsloth's 508 GB UD-Q8_K_XL is a multi-GPU set the Manager does not offer.
         "deepseek41" => crate::disk::DSV41_SETS.iter().any(|set| set.model == quant),
+        // setup.py FAMILIES nvfp4 (ready-made packs, NVIDIA only): NVFP4, NVFP4-NVIDIA, NVFP4-QAD (prepared here).
+        "nvfp4" => crate::disk::nvfp4::set(quant).is_some(),
         _ => false,
     }
 }
 
 const FAMILIES: [&str; 5] = ["qwen", "swift", "coder", "unsloth", "qwen36"];
-const SUPPORTED_GGUFS: &str = "Strata 只能运行 ISTA-DASLab 的 GSQ-RCO 文件（Qwen3.8-Flash-Next Q2_0、IQ2_XS、IQ3_XXS、IQ3_S；Swift 1.5；Coder IQ1_M）、Unsloth 的 UD-IQ1_M、UD-Q2_0、UD-IQ2_XS、UD-Q2_K_XL、UD-IQ3_XXS、UD-Q3_K_XL、UD-IQ4_XS-v31、UD-IQ4_XS、UD-Q4_K_XL、UD-Q5_K_XL、UD-Q6_K_XL、Q8_0，Qwen3.6-35B-A3B 的 UD-Q4_K_XL、UD-Q6_K_XL、Q8_0，以及 DeepSeek-V4.1-Flash 的官方 IST-DAS 和 UD-IQ1_S / UD-IQ1_M 文件（上游 setup.py #444）";
+const SUPPORTED_GGUFS: &str = "Strata 只能运行 ISTA-DASLab 的 GSQ-RCO 文件（Qwen3.8-Flash-Next Q2_0、IQ2_XS、IQ3_XXS、IQ3_S；Swift 1.5；Coder IQ1_M）、Unsloth 的 UD-IQ1_M、UD-Q2_0、UD-IQ2_XS、UD-Q2_K_XL、UD-IQ3_XXS、UD-Q3_K_XL、UD-IQ4_XS-v31、UD-IQ4_XS、UD-Q4_K_XL、UD-Q5_K_XL、UD-Q6_K_XL、Q8_0，Qwen3.6-35B-A3B 的 UD-Q4_K_XL、UD-Q6_K_XL、Q8_0，DeepSeek-V4.1-Flash 的官方 IST-DAS 和 UD-IQ1_S / UD-IQ1_M 文件，以及 Qwen3.8-Flash-Next 的 NVFP4 现成包（NVFP4、NVFP4-NVIDIA、NVFP4-QAD，仅 NVIDIA；上游 setup.py #444）";
 const MAX_ENTRIES: usize = 4096;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
@@ -588,6 +590,121 @@ fn deepseek_group(directory: &Path, stem: &str, total: u32) -> Option<LocalModel
     })
 }
 
+/// A folder of an NVFP4 set (setup.py NVFP4_REPOS, `models/<owner>--<repo>`): not GGUF shards but a pinned file list,
+/// read in place by setup from `--data-dir`. Files are shown by their top-level entry (`pack/`, `tensors/`, the GGUFs),
+/// each checked against the pinned sizes; the FP8 n-gram table and the token embedding count when the other ready-made
+/// pack beside it has them (setup links them). The QAD checkpoint counts as whole once it was prepared here.
+fn nvfp4_group(directory: &Path) -> Option<LocalModelGroup> {
+    use disk::nvfp4::{self, Role};
+    let folder = nvfp4::repository_folder(directory)?;
+    let set = nvfp4::set_in(&folder)?;
+    let prepared = set.prepared() && nvfp4::prepared_done(&folder);
+    let sibling_has = |path: &str, bytes: u64| {
+        folder.parent().is_some_and(|models| {
+            nvfp4::SETS
+                .iter()
+                .filter(|o| o.model != set.model)
+                .any(|o| disk::file_len(&models.join(o.folder()).join(path)).ok() == Some(bytes))
+        })
+    };
+    let mut entries: Vec<(String, u64, u64, bool)> = Vec::new(); // (name, have, want, ok)
+    if prepared {
+        for name in ["dense.gguf", "ple-nvfp4.gguf"] {
+            let path = folder.join(nvfp4::PREPARED_DIR).join(name);
+            let have = disk::file_len(&path).unwrap_or(0);
+            entries.push((
+                format!("{}/{name}", nvfp4::PREPARED_DIR),
+                have,
+                have,
+                have > 0,
+            ));
+        }
+    } else {
+        for file in set.files {
+            let top = match file.path.split_once('/') {
+                Some((dir, _)) => format!("{dir}/"),
+                None => file.path.to_owned(),
+            };
+            let have = disk::file_len(&folder.join(file.path)).unwrap_or(0);
+            let ok = have == file.bytes
+                || matches!(file.role, Role::Ple | Role::Embd)
+                    && sibling_has(file.path, file.bytes);
+            match entries.iter_mut().find(|(name, ..)| *name == top) {
+                Some(entry) => {
+                    entry.1 += have;
+                    entry.2 += file.bytes;
+                    entry.3 &= ok;
+                }
+                None => entries.push((top, have, file.bytes, ok)),
+            }
+        }
+    }
+    let shards: Vec<LocalShard> = entries
+        .iter()
+        .map(|(name, have, want, ok)| LocalShard {
+            name: name.clone(),
+            bytes: *have,
+            state: if *ok {
+                "ok"
+            } else if *have == 0 {
+                "missing"
+            } else {
+                "tooSmall"
+            }
+            .into(),
+            expected_bytes: Some(*want),
+            partial_download: None,
+            split_mismatch: None,
+            architecture: None,
+        })
+        .collect();
+    let mut problems: Vec<String> = shards
+        .iter()
+        .filter(|s| s.state != "ok")
+        .map(|s| {
+            format!(
+                "{} 缺少或大小与上游固定的文件不一致（{} / {} 字节）；可能仍在下载或复制中",
+                s.name,
+                s.bytes,
+                s.expected_bytes.unwrap_or(0)
+            )
+        })
+        .collect();
+    if let Err(layout) = nvfp4::local_data_directory(set, &folder) {
+        problems.push(layout);
+    }
+    let complete = shards.iter().all(|s| s.state == "ok");
+    let mut warnings = vec!["仅 NVIDIA 显卡：AMD、Intel 和 Mac 的引擎没有 NVFP4 内核".to_owned()];
+    match set.prepare_gb {
+        Some(_) if prepared => warnings.push(format!(
+            "已在本机转换完成；tensors/ 下约 {:.0} GB 的源文件不再需要，可以删除",
+            set.download_gb
+        )),
+        Some(gb) => warnings.push(format!(
+            "安装时会在本机转换一次（约 20–40 分钟，另需约 {gb:.0} GB 磁盘，并安装 PyTorch / transformers）"
+        )),
+        None => {}
+    }
+    let first = set
+        .dense()
+        .map(|dense| dense.path.to_owned())
+        .unwrap_or_else(|| "tensors/".into());
+    Some(LocalModelGroup {
+        id: set.folder(),
+        name: set.folder(),
+        first_shard: first,
+        quant: Some(set.model.to_owned()),
+        kind: "official".into(),
+        family: Some(nvfp4::FAMILY.to_owned()),
+        total_bytes: shards.iter().map(|s| s.bytes).sum(),
+        installable: complete && problems.is_empty(),
+        complete,
+        shards,
+        warnings,
+        problems,
+    })
+}
+
 fn has_model_gguf(directory: &Path) -> bool {
     fs::read_dir(directory).is_ok_and(|entries| {
         entries.take(MAX_ENTRIES).flatten().any(|e| {
@@ -655,6 +772,9 @@ fn gguf_folders(root: &Path) -> Vec<PathBuf> {
 /// exactly one such folder; otherwise the folders are named.
 pub fn scan(path: &str) -> Result<LocalModelScan, String> {
     let chosen = absolute(path, "模型目录或 GGUF 文件")?;
+    if chosen.is_dir() && nvfp4_group(&chosen).is_some() {
+        return scan_at(&chosen);
+    }
     if chosen.is_dir() && !has_model_gguf(&chosen) {
         let folders = gguf_folders(&chosen);
         if folders.len() == 1 {
@@ -701,6 +821,17 @@ fn scan_at(path: &Path) -> Result<LocalModelScan, String> {
     } else {
         (path.clone(), None)
     };
+    if selected_file.is_none() {
+        if let Some(group) = nvfp4_group(&directory) {
+            let folder = disk::nvfp4::repository_folder(&directory).unwrap_or(directory);
+            return Ok(LocalModelScan {
+                directory: folder.to_string_lossy().into(),
+                selected_file,
+                groups: vec![group],
+                problems: Vec::new(),
+            });
+        }
+    }
     let entries = fs::read_dir(&directory)
         .map_err(|e| format!("无法读取目录 {}: {e}", directory.display()))?;
     let mut firsts: Vec<(String, String, u32)> = Vec::new();
@@ -799,12 +930,23 @@ pub fn find_downloaded(roots: &[PathBuf]) -> Vec<DownloadedModel> {
         if !root.is_dir() || !seen_roots.insert(folder_key(&root)) {
             continue;
         }
-        let folders = if has_model_gguf(&root) {
+        let mut folders = if has_model_gguf(&root) {
             vec![root.clone()]
         } else {
             gguf_folders(&root)
         };
+        // NVFP4 sets sit at models/<owner>--<repo> (the QAD checkpoint has no GGUF until it is prepared).
+        for set in &disk::nvfp4::SETS {
+            let folder = root.join(set.folder());
+            if folder.is_dir() && !folders.contains(&folder) {
+                folders.push(folder);
+            }
+        }
         for folder in folders {
+            // An NVFP4 set's pack/ or prepared/ folder is the set's repository folder.
+            let folder = disk::nvfp4::repository_folder(&folder)
+                .filter(|repo| disk::nvfp4::set_in(repo).is_some())
+                .unwrap_or(folder);
             if !seen_folders.insert(folder_key(&folder)) {
                 continue;
             }
@@ -1899,5 +2041,81 @@ mod tests {
             migration_hazard(&dir.path().join("plain"), &data).is_none(),
             "no models/ ancestor: nothing migrates"
         );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn nvfp4_packs_are_found_and_set_up_from_their_data_folder() {
+        use crate::disk::nvfp4;
+        let temp = tempfile::tempdir().unwrap();
+        let data = temp.path().join("Strata-data");
+        let models = data.join("models");
+        let sparse = |path: PathBuf, size: u64| {
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::File::create(path).unwrap().set_len(size).unwrap();
+        };
+        let gptq = nvfp4::set("NVFP4").unwrap();
+        let folder = models.join(gptq.folder());
+        for file in gptq.files {
+            sparse(folder.join(file.path), file.bytes);
+        }
+        // Choosing the pack/ folder finds the repository folder; one group, the official family and model.
+        let scan = scan(&folder.join("pack").to_string_lossy()).unwrap();
+        assert_eq!(scan.directory, folder.to_string_lossy());
+        assert_eq!(scan.groups.len(), 1);
+        let group = &scan.groups[0];
+        assert_eq!(
+            (
+                group.kind.as_str(),
+                group.family.as_deref(),
+                group.quant.as_deref()
+            ),
+            ("official", Some("nvfp4"), Some("NVFP4"))
+        );
+        assert!(group.installable && group.complete, "{:?}", group.problems);
+        assert!(setup_supports("nvfp4", "NVFP4-QAD") && !setup_supports("nvfp4", "IQ3_S"));
+        let request = LocalModelRequest {
+            gguf_directory: folder.to_string_lossy().into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            setup_group(&request, "nvfp4", "NVFP4").unwrap().id,
+            gptq.folder()
+        );
+
+        // NVIDIA's checkpoint before and after the one-time conversion; both are offered from models/.
+        let qad = nvfp4::set("NVFP4-QAD").unwrap();
+        let source = models.join(qad.folder());
+        for file in qad.files {
+            sparse(source.join(file.path), file.bytes);
+        }
+        let before = scan_at(&source).unwrap();
+        assert_eq!(before.groups[0].quant.as_deref(), Some("NVFP4-QAD"));
+        assert!(before.groups[0]
+            .warnings
+            .iter()
+            .any(|w| w.contains("110 GB")));
+        for mark in nvfp4::PREPARED_MARKS {
+            sparse(source.join(nvfp4::PREPARED_DIR).join(mark), 0);
+        }
+        for name in ["dense.gguf", "ple-nvfp4.gguf"] {
+            sparse(source.join(nvfp4::PREPARED_DIR).join(name), 1000);
+        }
+        fs::remove_dir_all(source.join("tensors")).unwrap();
+        let after = scan_at(&source.join(nvfp4::PREPARED_DIR)).unwrap();
+        assert!(after.groups[0].installable && after.groups[0].complete);
+        let found = find_downloaded(&[models.clone()]);
+        let mut quants: Vec<_> = found.iter().filter_map(|m| m.group.quant.clone()).collect();
+        quants.sort();
+        assert_eq!(quants, ["NVFP4", "NVFP4-QAD"]);
+
+        // Outside <data>/models/<owner>--<repo>, setup cannot find it: listed, not installable.
+        let loose = temp.path().join("Downloads").join("nvfp4");
+        for file in gptq.files {
+            sparse(loose.join(file.path), file.bytes);
+        }
+        let group = &scan_at(&loose).unwrap().groups[0];
+        assert!(!group.installable);
+        assert!(group.problems.iter().any(|p| p.contains("models/")));
     }
 }

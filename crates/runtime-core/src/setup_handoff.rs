@@ -254,6 +254,7 @@ fn family_name(family: &str) -> Option<&'static str> {
         "coder" => Some("qwen3.8-flash-next-coder"),
         "unsloth" => Some("qwen3.8-flash-next-unsloth"),
         "qwen36" => Some("qwen3.6-35b-a3b"), // setup.py OWN_PATH_FAMILIES name
+        "nvfp4" => Some(crate::disk::nvfp4::MODEL_NAME), // setup.py FAMILIES["nvfp4"]["name"]
         // Manager's ORCA.md import (orca_import.rs), not a setup.py family.
         "orca" => Some("orcarouter-qwen3.8-flash-next-uncensored"),
         _ => None,

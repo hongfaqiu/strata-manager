@@ -284,3 +284,11 @@ test('download step shows the source in use and the GitHub fallback notice', () 
   const fallback = model.setupDownloadView([source, line('预下载未完成：所有来源都失败。正在从 GitHub 下载引擎包，可能较慢，可在「下载设置」切换来源 / Pre-download failed: every source failed. Downloading from GitHub, which may be slow.')], false);
   assert.equal(fallback.fallback, true); assert.match(fallback.detail, /^Pre-download failed/); assert.equal(fallback.source, undefined);
 });
+
+test('the guide suggests NVFP4 only with an NVIDIA card, never ahead of the scene families', () => {
+  const without = model.recommendations('chat', 128, false, 50, 'windows');
+  assert.equal(without.some(row => row.family === 'nvfp4'), false);
+  const withCard = model.recommendations('chat', 128, true, 50, 'windows');
+  assert.ok(withCard.some(row => row.family === 'nvfp4'));
+  assert.notEqual(withCard[0].family, 'nvfp4');
+});

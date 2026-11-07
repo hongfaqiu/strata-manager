@@ -7,10 +7,12 @@ export interface CatalogCopy {
   communityBadge: string; discoveredBadge: string; officialBadge: string;
   communityIntro: string; sourceRepo: string; risksHeading: string; revision: string;
   risk: Record<CommunityRisk, string>;
-  block: Record<CommunityMacBlock | 'macQuant', string>;
+  block: Record<CommunityMacBlock | 'macQuant' | 'nvidiaOnly', string>;
   blockSource: string;
   orcaImport: string; orcaOpen: string;
   macUnavailableHeading: string;
+  /** The greyed-out official families on a PC (NVFP4 without an NVIDIA card). */
+  unavailableHeading: string;
   estimate: string; ttft: string; noData: string; tokS: string;
   basis: Record<PerformanceBasis, string>;
   /** The figure is the lower bound from a bigger size measured on the same reference (no run of this size there). */
@@ -50,12 +52,14 @@ const zh: CatalogCopy = {
   block: {
     macGemv: 'Mac 不可用：Metal 引擎的 gemv 没有 IQ3_XXS 专家内核（上游 PR #2931 未合并），且需要 49.8 GiB 专家缓存。',
     macControlVector: '去拒答向量在 Mac 引擎未移植，等同官方版。',
-    macFamily: 'Mac 暂不可用：上游 Metal 引擎目前不支持 Swift、Coder 和 Qwen3.6（MAC.md）。',
+    macFamily: 'Mac 暂不可用：上游 Metal 引擎目前不支持 Swift、Coder、Qwen3.6 和 NVFP4（MAC.md）。',
+    nvidiaOnly: '这台电脑没有 NVIDIA 显卡：NVFP4 只在 NVIDIA 显卡上运行，AMD 和 Intel 引擎没有 NVFP4 内核。大小相近可选 Unsloth UD-IQ4_XS。',
     macQuant: 'Mac 安装器只接受 Qwen3.8-Flash-Next 的 Q2_0、IQ3_XXS、IQ3_S，这个版本在 Mac 上不能一键安装。',
   },
   blockSource: '上游依据',
   orcaImport: '按 ORCA.md 手动兼容流程导入（独立打包，不改名）。', orcaOpen: '打开 OrcaRouter 导入',
   macUnavailableHeading: 'Mac 暂不可用',
+  unavailableHeading: '这台电脑不可用',
   estimate: '估算', ttft: '首字', noData: '无公开数据', tokS: 'tok/s',
   basis: {
     macM5Max: '参考 M5 Max 128 GB 实测（MAC.md）；内存带宽更低的芯片会更慢',
@@ -111,12 +115,14 @@ const en: CatalogCopy = {
   block: {
     macGemv: 'Not available on a Mac: the Metal gemv has no IQ3_XXS expert kernel (upstream PR #2931 is not merged), and it needs a 49.8 GiB expert arena.',
     macControlVector: 'The refusal vector is not ported to the Mac engine; this equals the official model.',
-    macFamily: 'Not available on a Mac yet: the upstream Metal engine does not run Swift, Coder or Qwen3.6 (MAC.md).',
+    macFamily: 'Not available on a Mac yet: the upstream Metal engine does not run Swift, Coder, Qwen3.6 or NVFP4 (MAC.md).',
+    nvidiaOnly: 'No NVIDIA card here: NVFP4 runs on NVIDIA cards only; the AMD and Intel engines have no NVFP4 kernels. Unsloth UD-IQ4_XS is about the same size.',
     macQuant: 'The Mac installer takes only Qwen3.8-Flash-Next Q2_0, IQ3_XXS and IQ3_S, so this build cannot be installed with one click on a Mac.',
   },
   blockSource: 'Upstream reference',
   orcaImport: 'Imported with the manual ORCA.md workflow (standalone pack, no renaming).', orcaOpen: 'Open the OrcaRouter import',
   macUnavailableHeading: 'Not available on a Mac',
+  unavailableHeading: 'Not available on this computer',
   estimate: 'est.', ttft: 'first token', noData: 'No published data', tokS: 'tok/s',
   basis: {
     macM5Max: 'Based on M5 Max 128 GB measurements (MAC.md); chips with less memory bandwidth are slower',

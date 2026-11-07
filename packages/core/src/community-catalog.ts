@@ -26,6 +26,8 @@ export const SETUP_FAMILY_QUANTS: Record<string, readonly string[]> = {
     'UD-IQ4_XS', 'UD-Q4_K_XL', 'UD-Q5_K_XL', 'UD-Q6_K_XL', 'Q8_0',
   ],
   qwen36: ['UD-Q4_K_XL', 'UD-Q6_K_XL', 'Q8_0'],
+  // Ready-made NVFP4 packs (NVFP4_REPOS file lists, not GGUF shards): installed only from the official catalog.
+  nvfp4: ['NVFP4', 'NVFP4-NVIDIA', 'NVFP4-QAD'],
 };
 export const setupSupports = (family: string, quant: string) => !!SETUP_FAMILY_QUANTS[family]?.includes(quant);
 
@@ -82,6 +84,8 @@ const alesha = (quant: string, size: number, sha256: string) => quantEntry([
 export const UPSTREAM_GEMV_SOURCE = 'https://github.com/Niko1221/Strata/pull/2931';
 /** MAC.md: the app offers Q2_0 / IQ3_XXS / IQ3_S; Unsloth's many-shard files need ./setup.sh's repack for now. */
 export const UPSTREAM_MAC_APP_SOURCE = 'https://github.com/Niko1221/Strata/blob/main/docs/MAC.md#the-desktop-app-and-strata-launch-on-a-mac';
+/** MODELS.md "NVFP4 (NVIDIA cards)": the three NVFP4 versions run on NVIDIA cards only. */
+export const NVFP4_SOURCE = 'https://github.com/Niko1221/Strata/blob/main/MODELS.md#nvfp4';
 export const UPSTREAM_MAC_LIMITS_SOURCE = 'https://github.com/Niko1221/Strata/blob/main/docs/MAC.md#limits-this-version';
 
 export const BUILTIN_COMMUNITY_MODELS: CommunityModel[] = [
@@ -189,9 +193,15 @@ export function communityDiskEstimate(model: CommunityModel, quant: string): Com
   return { filesGB, officialGB, packGB, mtpGB, worstGB: Math.round(filesGB + packGB + mtpGB), bestGB: Math.round(filesGB - officialGB + packGB) };
 }
 
-/** Why an official family is unavailable on this platform (Metal engine scope, docs/MAC.md). */
-export function officialFamilyBlock(family: string, platform: RuntimePackagePlatform): 'macFamily' | 'macInstaller' | undefined {
-  if (platform !== 'macos') return undefined;
+/** setup.py menu_families: the NVFP4 packs are NVIDIA only. False when the GPU lines are known and none is an NVIDIA card. */
+export function nvidiaCardPossible(gpus?: readonly string[] | null): boolean {
+  if (!gpus?.length) return true;
+  return gpus.some(line => /nvidia|geforce|rtx|quadro|tesla|\bgb10\b/i.test(line));
+}
+
+/** Why an official family is unavailable here: Metal engine scope (docs/MAC.md), or NVFP4 without an NVIDIA card (setup.py menu_families). */
+export function officialFamilyBlock(family: string, platform: RuntimePackagePlatform, gpus?: readonly string[] | null): 'macFamily' | 'macInstaller' | 'nvidiaOnly' | undefined {
+  if (platform !== 'macos') return family === 'nvfp4' && !nvidiaCardPossible(gpus) ? 'nvidiaOnly' : undefined;
   if (!macCatalogFamilyAllowed(family)) return 'macFamily';
   // setup.py mac_control_setup (the installer the app drives on a Mac) accepts only `--family qwen`.
   return family === 'unsloth' ? 'macInstaller' : undefined;
@@ -318,7 +328,7 @@ export function communityFromTree(info: HfModelInfo, tree: HfTreeEntry[]): Commu
 }
 
 /** Repositories the list already covers (official makers and the built-in entries) are not rediscovered. */
-export const OFFICIAL_REPO_OWNERS = ['ISTA-DASLab', 'ukisai', 'unsloth', 'Qwen', 'nvidia', 'agentionai'];
+export const OFFICIAL_REPO_OWNERS = ['ISTA-DASLab', 'ukisai', 'unsloth', 'Qwen', 'nvidia', 'agentionai', 'Maximilian228'];
 export function isKnownRepo(repo: string): boolean {
   const owner = repo.split('/')[0]!.toLowerCase();
   return OFFICIAL_REPO_OWNERS.some(item => item.toLowerCase() === owner) || BUILTIN_COMMUNITY_MODELS.some(model => model.repo.toLowerCase() === repo.toLowerCase());
