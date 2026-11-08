@@ -1520,9 +1520,7 @@ pub(crate) fn capture_user_args(config: &Value) -> Vec<String> {
         let cur = by_flag(arg_groups(&args));
         let was = by_flag(arg_groups(&written));
         for (flag, gs) in &cur {
-            if !flag.is_empty()
-                && was.iter().find(|(k, _)| k == flag).map(|(_, v)| v) != Some(gs)
-            {
+            if !flag.is_empty() && was.iter().find(|(k, _)| k == flag).map(|(_, v)| v) != Some(gs) {
                 if let Some((_, list)) = mine.iter_mut().find(|(k, _)| k == flag) {
                     *list = gs.clone();
                 } else {
@@ -1571,10 +1569,7 @@ pub(crate) fn sync_tuning_user_args(before: &Value, candidate: &mut Value, touch
         if let Some(launch_set) = obj.get("launch_set").and_then(Value::as_array) {
             let rest: Vec<Value> = launch_set
                 .iter()
-                .filter(|v| {
-                    v.as_str()
-                        .is_some_and(|s| !touched_flags.contains(&s))
-                })
+                .filter(|v| v.as_str().is_some_and(|s| !touched_flags.contains(&s)))
                 .cloned()
                 .collect();
             if rest.is_empty() {

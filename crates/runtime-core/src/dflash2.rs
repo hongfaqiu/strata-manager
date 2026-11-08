@@ -182,20 +182,27 @@ pub fn parse_plan_output(stdout: &str, disk_ready: Option<bool>) -> Option<Dflas
         let selq4 = row.get("selq4").and_then(Value::as_bool);
         let pack = row.get("pack").and_then(Value::as_str).map(str::to_owned);
         let repo = row.get("repo").and_then(Value::as_str).map(str::to_owned);
-        let drafter = row.get("drafter").and_then(Value::as_str).map(str::to_owned);
+        let drafter = row
+            .get("drafter")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
         let choice = row.get("choice").and_then(Value::as_str).map(str::to_owned);
         let note = row.get("note").and_then(Value::as_str).map(str::to_owned);
         let line_text = row.get("line").and_then(Value::as_str).map(str::to_owned);
-        let support = row.get("support").and_then(Value::as_str).map(str::to_owned);
+        let support = row
+            .get("support")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
         let support_line = row
             .get("support_line")
             .and_then(Value::as_str)
             .map(str::to_owned);
         let text = row.get("text").and_then(Value::as_str).map(str::to_owned);
         let is_bf16_tuned = pack.as_deref().is_some_and(|p| p.contains("bf16sel"));
-        let tuned = text.as_deref().is_some_and(|t| {
-            t.contains("signed update feed") || t.contains("Strata tuned")
-        }) || pack.as_deref().is_some_and(|p| p.contains(".strata1."));
+        let tuned = text
+            .as_deref()
+            .is_some_and(|t| t.contains("signed update feed") || t.contains("Strata tuned"))
+            || pack.as_deref().is_some_and(|p| p.contains(".strata1."));
         let default_dl_gb = if tuned {
             if is_bf16_tuned {
                 0.52
@@ -281,7 +288,11 @@ pub fn plan_step(profile: &ServiceProfile, config: &Value) -> Result<Step, Strin
     })
 }
 
-fn run_plan(profile: &ServiceProfile, config: &Value, disk_ready: Option<bool>) -> Option<Dflash2Plan> {
+fn run_plan(
+    profile: &ServiceProfile,
+    config: &Value,
+    disk_ready: Option<bool>,
+) -> Option<Dflash2Plan> {
     let step = plan_step(profile, config).ok()?;
     let mut cmd = std::process::Command::new(&step.program);
     cmd.args(&step.args)
@@ -458,7 +469,10 @@ mod tests {
             std::fs::create_dir_all(&folder).unwrap();
             let file = std::fs::File::create(folder.join(name)).unwrap();
             file.set_len((1 << 20) + 1).unwrap();
-            assert!(pack_ready(temp.path()), "{name} must be recognised as ready");
+            assert!(
+                pack_ready(temp.path()),
+                "{name} must be recognised as ready"
+            );
             if TUNED_PACK_NAMES.contains(&name) {
                 assert!(tuned_pack_ready(temp.path()));
                 assert!(!stock_pack_ready(temp.path()));

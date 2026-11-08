@@ -1737,7 +1737,13 @@ fn tuning_parameters_and_restart_candidates_sync_user_args_and_args_written() {
     .unwrap();
     assert_eq!(
         tuned["user_args"],
-        json!(["--pool-workers", "6", "--control-vector-layer-range", "4", "44"])
+        json!([
+            "--pool-workers",
+            "6",
+            "--control-vector-layer-range",
+            "4",
+            "44"
+        ])
     );
     assert_eq!(tuned["args_written"], tuned["args"]);
     let eff = super::effective_args_of(&tuned).unwrap();
