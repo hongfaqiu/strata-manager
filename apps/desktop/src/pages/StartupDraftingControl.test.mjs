@@ -58,7 +58,7 @@ test('engine 0.1.56 offers DFlash2 and says it moves to MTP for 2+ concurrent re
   assert.equal(drafting.exports.engineServesDflash2(null), null);
   const single = render(qwen, { engineVersion: '0.1.56', dflash2Served: true });
   assert.deepEqual([...single.segmented.props.options.map(o => o.label)], ['自动', 'MTP', 'DFlash2', '关']);
-  assert.match(text(single.tree), /单个请求用 DFlash2/);
+  assert.match(text(single.tree), /单个请求按显卡与模型量化自动选择 DFlash2 或 MTP/);
   assert.doesNotMatch(text(single.tree), /改用 MTP/);
   const several = render({ ...qwen, parallel: 4 }, { engineVersion: '0.1.56', dflash2Served: true });
   assert.match(text(several.tree), /并发 4 个请求：DFlash2 一次只服务一个请求，将改用 MTP/);
@@ -75,11 +75,20 @@ test('a managed Qwen3.8 offers 「下载 DFlash2」; a start never downloads it 
   const download = tree => nodes(tree).find(node => node.type === Dflash2Download);
   const single = render(qwen, { engineVersion: '0.1.56', dflash2Served: true, profile });
   assert.equal(download(single.tree)?.props.profile, profile);
-  assert.match(text(single.tree), /需先点「下载 DFlash2」，约 1\.2 GB；启动时不会自动下载/);
+  assert.match(text(single.tree), /需先点「下载 DFlash2」，启动时不会自动下载/);
   assert.doesNotMatch(text(single.tree), /首次下载/);
   assert.doesNotMatch(text(render(qwen, { zh: false, engineVersion: '0.1.56', dflash2Served: true, profile }).tree), /on first start/);
-  assert.equal(download(render({ ...qwen, parallel: 2 }, { engineVersion: '0.1.56', dflash2Served: true, profile }).tree), undefined, 'MTP runs for 2+ requests');
+  assert.equal(download(render({ ...qwen, parallel: 2 }, { engineVersion: '0.1.56', dflash2Served: true, profile }).tree), undefined, 'MTP runs for 2+ requests under Auto');
   assert.equal(download(render({ ...qwen, drafting: 'mtp' }, { engineVersion: '0.1.56', dflash2Served: true, profile }).tree), undefined);
   assert.equal(download(render(qwen, { engineVersion: '0.1.56', dflash2Served: true, profile: { ...profile, managed: false } }).tree), undefined, 'a connected external service has no runtime to run fetch in');
   assert.equal(download(render(qwen, { engineVersion: '0.1.55', dflash2Served: false, profile }).tree), undefined);
+
+  // Engine 0.1.57+: hand-selected DFlash2 on non-Metal keeps concurrent slots and still offers download; Metal falls back to MTP.
+  const named57 = render({ ...qwen, parallel: 4, drafting: 'dflash2', backend: 'cuda' }, { engineVersion: '0.1.57', dflash2Served: true, profile });
+  assert.equal(download(named57.tree)?.props.profile, profile, 'named DFlash2 on 0.1.57+ CUDA keeps download available with parallel=4');
+  assert.match(text(named57.tree), /已手动选择 DFlash2，引擎将为每个并发槽启用 DFlash2 草稿/);
+
+  const metalNamed57 = render({ ...qwen, parallel: 2, drafting: 'dflash2' }, { engineVersion: '0.1.58', dflash2Served: true, profile, mac: true });
+  assert.equal(download(metalNamed57.tree), undefined, 'Metal still falls back to MTP for 2+ requests');
+  assert.match(text(metalNamed57.tree), /Mac（Metal）引擎不支持多并发 DFlash2，将改用 MTP/);
 });

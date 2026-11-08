@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyDrafting, dflash2FetchProgress, draftingChoices, draftingFamilyOf, draftingModeOf, draftingRequestsOf, draftingSupport, effectiveDraftingOf, engineServesDflash2, normalizeDrafting } from '../src/drafting';
+import { applyDrafting, dflash2DownloadCopy, dflash2FetchProgress, draftingChoices, draftingConcurrencyNote, draftingConcurrencyPolicy, draftingFamilyOf, draftingModeOf, draftingRequestsOf, draftingSupport, effectiveDraftingOf, engineServesDflash2, normalizeDrafting } from '../src/drafting';
 
 describe('drafting (upstream v0.2.6 drafting.py / drafting.ts)', () => {
   it('serves DFlash2 from engine 0.1.56 and reads the concurrent request count (Strata v0.2.10)', () => {
@@ -85,5 +85,60 @@ describe('drafting (upstream v0.2.6 drafting.py / drafting.ts)', () => {
     expect(dflash2FetchProgress(lines)).toEqual({ step: 'pack', done: 3, total: 6 });
     expect(dflash2FetchProgress([...lines, '{"schema_version":1,"ok":true,"event":"result","pack":"/d/dflash2/x.pack"}']).result).toEqual({ ok: true, pack: '/d/dflash2/x.pack' });
     expect(dflash2FetchProgress(['{"schema_version":1,"ok":false,"error":{"code":"drafting_failed","message":"disk full"}}']).result).toEqual({ ok: false, message: 'disk full' });
+  });
+  it('centralizes DFlash2 concurrency rules across engine 0.1.56 vs 0.1.57+, backends, Auto vs named, and --pipeline-windows (U2A)', () => {
+    // 0.1.56: both Auto and named dflash2 fall back to MTP when requests >= 2
+    const legacyAuto = draftingConcurrencyPolicy({ config: { parallel: 4 }, engineVersion: '0.1.56' });
+    expect(legacyAuto).toMatchObject({ blockedToMtp: true, runsNamedBatchDflash2: false, reason: 'auto_multi_request' });
+    expect(draftingConcurrencyNote(legacyAuto, true)).toContain('DFlash2 一次只服务一个请求');
+
+    const legacyNamed = draftingConcurrencyPolicy({ config: { parallel: 2, drafting: 'dflash2' }, engineVersion: '0.1.56' });
+    expect(legacyNamed).toMatchObject({ blockedToMtp: true, runsNamedBatchDflash2: false, reason: 'legacy_multi_request' });
+
+    // 0.1.57+ on CUDA/HIP/SYCL: Auto with 2+ requests still chooses MTP; named dflash2 keeps concurrent slots
+    for (const backend of ['cuda', 'hip', 'sycl'] as const) {
+      const auto57 = draftingConcurrencyPolicy({ config: { parallel: 4, backend }, engineVersion: '0.1.57' });
+      expect(auto57).toMatchObject({ blockedToMtp: true, runsNamedBatchDflash2: false, reason: 'auto_multi_request', namedBatchSupported: true });
+      expect(draftingConcurrencyNote(auto57, true)).toContain('手动选择「DFlash2」');
+
+      const named57 = draftingConcurrencyPolicy({ config: { parallel: 4, drafting: 'dflash2', backend }, engineVersion: '0.1.58' });
+      expect(named57).toMatchObject({ blockedToMtp: false, runsNamedBatchDflash2: true, reason: 'named_batch_allowed', backend });
+      expect(draftingConcurrencyNote(named57, false)).toContain('DFlash2 drafter per request slot');
+    }
+
+    // 0.1.57+ on Metal (macOS): named dflash2 with 2+ requests still falls back to MTP
+    const metalNamed = draftingConcurrencyPolicy({ config: { parallel: 2, drafting: 'dflash2' }, engineVersion: '0.1.58', mac: true });
+    expect(metalNamed).toMatchObject({ blockedToMtp: true, runsNamedBatchDflash2: false, reason: 'metal_multi_request', backend: 'metal' });
+
+    // --pipeline-windows always blocks DFlash2 even at 1 request or on 0.1.58 CUDA named dflash2
+    const piped = draftingConcurrencyPolicy({ config: { drafting: 'dflash2', backend: 'cuda', args: ['--pipeline-windows', '2'] }, engineVersion: '0.1.58' });
+    expect(piped).toMatchObject({ blockedToMtp: true, runsNamedBatchDflash2: false, reason: 'pipeline_windows' });
+  });
+  it('formats DFlash2 download and tuned update copy from drafting plan (U2A)', () => {
+    const stockCopy = dflash2DownloadCopy({ ready: false, fetchable: true }, false);
+    expect(stockCopy.downloadGb).toBe(1.2);
+    expect(stockCopy.confirmSourceParagraph).toContain('incoai/Qwen3.8-Flash-Next-DFlash2');
+    expect(stockCopy.buttonLabel).toBe('Download DFlash2');
+
+    const tunedUpdateCopy = dflash2DownloadCopy({
+      ready: true,
+      fetchable: true,
+      tunedUpdate: true,
+      plan: {
+        ready: false,
+        needed: true,
+        tuned: true,
+        tunedUpdate: true,
+        gb: 0.34,
+        downloadGb: 0.34,
+        diskGb: 0.34,
+        vramGb: 0.72,
+      },
+    }, true);
+    expect(tunedUpdateCopy.tunedUpdate).toBe(true);
+    expect(tunedUpdateCopy.buttonLabel).toBe('更新微调版 DFlash2');
+    expect(tunedUpdateCopy.statusHint).toContain('0.34 GB');
+    expect(tunedUpdateCopy.confirmSourceParagraph).toContain('Strata 签名更新源');
+    expect(tunedUpdateCopy.confirmSourceParagraph).toContain('0.34 GB');
   });
 });

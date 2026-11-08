@@ -22,8 +22,41 @@ export const DRAFTING_KEY_SINCE = '0.1.48';
 export const MTP_SWITCH_SINCE = '0.1.46';
 /** First engine that ships DFlash2 as the Auto drafter (Strata v0.2.10). */
 export const DFLASH2_SINCE = '0.1.56';
+/** First engine where hand-selected DFlash2 (`"drafting": "dflash2"`) runs per-request slot drafts on non-Metal backends (Strata v0.2.11). */
+export const DFLASH2_NAMED_BATCH_SINCE = '0.1.57';
 /** `drafting`: writes the key; `mtpSwitch`: only `"mtp": false`; `none`: too old; `unknown`: engine version not detected. */
 export type DraftingSupport = 'drafting' | 'mtpSwitch' | 'none' | 'unknown';
+export type DraftingBackend = 'cuda' | 'hip' | 'sycl' | 'metal' | 'unknown';
+export type DraftingConcurrencyReason =
+  | 'none'
+  | 'pipeline_windows'
+  | 'auto_multi_request'
+  | 'metal_multi_request'
+  | 'legacy_multi_request'
+  | 'named_batch_allowed';
+
+export interface DraftingConcurrencyInput {
+  config?: JsonObject | null;
+  engineVersion?: string | null;
+  /** Explicit backend ('cuda' | 'hip' | 'sycl' | 'metal'); otherwise inferred from config.backend / mac flag / exe path. */
+  backend?: string | null;
+  mac?: boolean;
+  dflash2Served?: boolean | null;
+}
+
+export interface DraftingConcurrencyDecision {
+  mode: DraftingMode;
+  requests: number;
+  backend: DraftingBackend;
+  hasPipelineWindows: boolean;
+  /** Engine 0.1.57+ supports per-request DFlash2 when DFlash2 is chosen by name on non-Metal backends. */
+  namedBatchSupported: boolean;
+  /** True when the current choice (auto or dflash2) is blocked from running DFlash2 and falls back to MTP. */
+  blockedToMtp: boolean;
+  /** True when DFlash2 is hand-selected with 2+ requests on 0.1.57+ non-Metal and runs per-slot DFlash2. */
+  runsNamedBatchDflash2: boolean;
+  reason: DraftingConcurrencyReason;
+}
 
 const parts = (version: string) => version.trim().replace(/^v/i, '').split(/[.\-+_]/).map(part => /^\d+$/.test(part) ? Number(part) : NaN);
 /** Numeric dotted comparison; null when either side is not a plain engine version such as 0.1.47 or 0.1.43.1. */
@@ -152,8 +185,169 @@ export function effectiveDraftingOf(args: readonly string[] | undefined | null):
   return args.some(arg => arg === '--mtp' || arg.startsWith('--mtp=')) ? 'mtp' : 'off';
 }
 
-/** The DFlash2 drafter download (upstream strata_control/drafting.py): about 1.2 GB to fetch, packed to about 0.52 GB on disk. */
-export const DFLASH2_DOWNLOAD = { repo: 'incoai/Qwen3.8-Flash-Next-DFlash2', license: 'Apache-2.0', downloadGb: 1.2, diskGb: 0.52, vramGb: 0.89, vramSelq4Gb: 0.72 } as const;
+/** The DFlash2 drafter download (upstream strata_control/drafting.py): stock HF ~1.2 GB (0.52 GB on disk), tuned release ~0.34 GB (selq4) or 0.52 GB (bf16sel). */
+export const DFLASH2_DOWNLOAD = { repo: 'incoai/Qwen3.8-Flash-Next-DFlash2', license: 'Apache-2.0', downloadGb: 1.2, diskGb: 0.52, tunedSelq4Gb: 0.34, tunedBf16Gb: 0.52, vramGb: 0.89, vramSelq4Gb: 0.72 } as const;
+
+export interface Dflash2Plan {
+  ready: boolean;
+  needed: boolean;
+  tuned: boolean;
+  tunedUpdate: boolean;
+  gb: number;
+  downloadGb: number;
+  diskGb: number;
+  vramGb?: number | null;
+  selq4?: boolean | null;
+  pack?: string | null;
+  repo?: string | null;
+  drafter?: 'dflash2' | 'mtp' | 'off' | null;
+  choice?: 'dflash2' | 'mtp' | 'off' | null;
+  note?: string | null;
+  line?: string | null;
+  support?: string | null;
+  supportLine?: string | null;
+  text?: string | null;
+}
+
+export interface Dflash2Status {
+  ready: boolean | null;
+  fetchable: boolean;
+  tunedUpdate?: boolean | null;
+  plan?: Dflash2Plan | null;
+}
+
+export interface Dflash2DownloadCopy {
+  tuned: boolean;
+  tunedUpdate: boolean;
+  downloadGb: number;
+  diskGb: number;
+  vramText: string;
+  buttonLabel: string;
+  statusHint: string;
+  confirmSourceParagraph: string;
+  confirmFolderParagraph: string;
+}
+
+function resolveDraftingBackend(input: DraftingConcurrencyInput): DraftingBackend {
+  for (const raw of [input.backend, input.config?.backend]) {
+    if (typeof raw === 'string') {
+      const lower = raw.trim().toLowerCase();
+      if (lower === 'cuda' || lower === 'hip' || lower === 'sycl' || lower === 'metal') return lower;
+    }
+  }
+  if (input.mac === true) return 'metal';
+  const exe = typeof input.config?.exe === 'string' ? input.config.exe.toLowerCase() : '';
+  if (exe.includes('metal')) return 'metal';
+  if (exe.includes('sycl')) return 'sycl';
+  if (exe.includes('hip') || exe.includes('rdna') || exe.includes('rx')) return 'hip';
+  if (exe.includes('cuda')) return 'cuda';
+  return 'unknown';
+}
+
+/**
+ * Centralized DFlash2 concurrency policy (upstream strata_control/drafting.py `blocked_by`, v0.2.10 vs v0.2.11+):
+ * - `--pipeline-windows` always blocks DFlash2 (both Auto and named DFlash2).
+ * - With 2+ concurrent requests (`parallel`, `--parallel`, `--batch`, `--slots`):
+ *   - Auto always switches to MTP (`auto_multi_request`).
+ *   - Named `"dflash2"` on engine 0.1.57+ and non-Metal backends (CUDA/HIP/SYCL) keeps concurrent slots (`named_batch_allowed`).
+ *   - Named `"dflash2"` on Metal (`metal_multi_request`) or on engine <= 0.1.56 (`legacy_multi_request`) falls back to MTP.
+ */
+export function draftingConcurrencyPolicy(input: DraftingConcurrencyInput): DraftingConcurrencyDecision {
+  const config = input.config ?? null;
+  const mode = draftingModeOf(config);
+  const requests = draftingRequestsOf(config);
+  const backend = resolveDraftingBackend(input);
+  const args = effectiveDraftingArgs(config);
+  const hasPipelineWindows = args.some(arg => arg === '--pipeline-windows' || arg.startsWith('--pipeline-windows='));
+  const hasMultiRequestFlag = requests >= 2 || args.some(arg => arg === '--batch' || arg.startsWith('--batch=') || arg === '--slots' || arg.startsWith('--slots=') || arg === '--parallel' || arg.startsWith('--parallel='));
+  const cmp = input.engineVersion ? compare(input.engineVersion, DFLASH2_NAMED_BATCH_SINCE) : null;
+  const namedBatchSupported = cmp !== null && cmp >= 0 && backend !== 'metal';
+  if (mode !== 'auto' && mode !== 'dflash2') {
+    return { mode, requests, backend, hasPipelineWindows, namedBatchSupported, blockedToMtp: false, runsNamedBatchDflash2: false, reason: 'none' };
+  }
+  if (hasPipelineWindows) {
+    return { mode, requests, backend, hasPipelineWindows, namedBatchSupported, blockedToMtp: true, runsNamedBatchDflash2: false, reason: 'pipeline_windows' };
+  }
+  if (hasMultiRequestFlag && requests >= 2) {
+    if (mode === 'auto') {
+      return { mode, requests, backend, hasPipelineWindows, namedBatchSupported, blockedToMtp: true, runsNamedBatchDflash2: false, reason: 'auto_multi_request' };
+    }
+    if (backend === 'metal') {
+      return { mode, requests, backend, hasPipelineWindows, namedBatchSupported, blockedToMtp: true, runsNamedBatchDflash2: false, reason: 'metal_multi_request' };
+    }
+    if (namedBatchSupported) {
+      return { mode, requests, backend, hasPipelineWindows, namedBatchSupported, blockedToMtp: false, runsNamedBatchDflash2: true, reason: 'named_batch_allowed' };
+    }
+    return { mode, requests, backend, hasPipelineWindows, namedBatchSupported, blockedToMtp: true, runsNamedBatchDflash2: false, reason: 'legacy_multi_request' };
+  }
+  return { mode, requests, backend, hasPipelineWindows, namedBatchSupported, blockedToMtp: false, runsNamedBatchDflash2: false, reason: 'none' };
+}
+
+/** Bilingual UI note for `draftingConcurrencyPolicy`; null when no concurrency note applies. */
+export function draftingConcurrencyNote(decision: DraftingConcurrencyDecision, zh: boolean): string | null {
+  switch (decision.reason) {
+    case 'pipeline_windows':
+      return zh
+        ? '已启用 --pipeline-windows：DFlash2 不支持流水线窗口，将改用 MTP。'
+        : '--pipeline-windows is enabled: DFlash2 does not run with pipeline windows, so MTP runs instead.';
+    case 'auto_multi_request':
+      if (decision.namedBatchSupported) {
+        return zh
+          ? `并发 ${decision.requests} 个请求：“自动”在多并发时改用 MTP；若需并发使用 DFlash2，可手动选择「DFlash2」。`
+          : `${decision.requests} concurrent requests: Auto switches to MTP for multiple requests; choose “DFlash2” explicitly to run DFlash2 with concurrent slots.`;
+      }
+      return zh
+        ? `并发 ${decision.requests} 个请求：DFlash2 一次只服务一个请求，将改用 MTP。`
+        : `${decision.requests} concurrent requests: DFlash2 serves one request at a time, so MTP runs instead.`;
+    case 'metal_multi_request':
+      return zh
+        ? `并发 ${decision.requests} 个请求：Mac（Metal）引擎不支持多并发 DFlash2，将改用 MTP。`
+        : `${decision.requests} concurrent requests: the Mac (Metal) engine does not support concurrent DFlash2 slots, so MTP runs instead.`;
+    case 'legacy_multi_request':
+      return zh
+        ? `并发 ${decision.requests} 个请求：DFlash2 一次只服务一个请求，将改用 MTP。`
+        : `${decision.requests} concurrent requests: DFlash2 serves one request at a time, so MTP runs instead.`;
+    case 'named_batch_allowed':
+      return zh
+        ? `并发 ${decision.requests} 个请求：已手动选择 DFlash2，引擎将为每个并发槽启用 DFlash2 草稿。`
+        : `${decision.requests} concurrent requests: with DFlash2 chosen explicitly, the engine runs a DFlash2 drafter per request slot.`;
+    default:
+      return null;
+  }
+}
+
+/** Source, size and confirmation copy for DFlash2 download / tuned update, driven by `strata drafting plan` when available. */
+export function dflash2DownloadCopy(status: Dflash2Status | null | undefined, zh: boolean): Dflash2DownloadCopy {
+  const plan = status?.plan ?? null;
+  const tuned = plan?.tuned === true;
+  const tunedUpdate = status?.tunedUpdate === true || plan?.tunedUpdate === true;
+  const downloadGb = plan?.downloadGb && plan.downloadGb > 0 ? plan.downloadGb : tuned ? DFLASH2_DOWNLOAD.tunedSelq4Gb : DFLASH2_DOWNLOAD.downloadGb;
+  const diskGb = plan?.diskGb && plan.diskGb > 0 ? plan.diskGb : tuned ? DFLASH2_DOWNLOAD.tunedSelq4Gb : DFLASH2_DOWNLOAD.diskGb;
+  const vramText = plan?.vramGb && plan.vramGb > 0 ? String(Number(plan.vramGb.toFixed(2))) : `${DFLASH2_DOWNLOAD.vramSelq4Gb}–${DFLASH2_DOWNLOAD.vramGb}`;
+  const repo = plan?.repo || DFLASH2_DOWNLOAD.repo;
+  const license = DFLASH2_DOWNLOAD.license;
+  const buttonLabel = tunedUpdate
+    ? (zh ? '更新微调版 DFlash2' : 'Update to tuned DFlash2')
+    : (zh ? '下载 DFlash2' : 'Download DFlash2');
+  const statusHint = tunedUpdate
+    ? (zh
+      ? `已有旧版 DFlash2 预测器可用；可下载官方微调版更新（约 ${downloadGb} GB，来自 Strata 签名更新源）。`
+      : `A stock DFlash2 pack is available on disk; a tuned update (about ${downloadGb} GB from Strata's signed update feed) can be downloaded.`)
+    : status?.ready === false
+      ? (zh ? '还没有 DFlash2 预测器文件：未下载时将改用 MTP。' : 'No DFlash2 drafter file yet: without it Strata runs MTP.')
+      : (zh ? '未能确认 DFlash2 预测器文件是否已下载。' : 'Could not confirm whether the DFlash2 drafter is downloaded.');
+  const confirmSourceParagraph = tuned
+    ? (zh
+      ? `将从 Strata 签名更新源（GitHub Release，${license} 许可，基于 ${repo} 微调）下载约 ${downloadGb} GB，在磁盘上约占 ${diskGb} GB，运行时约占 ${vramText} GB 显存（不与 MTP 层同时加载）。`
+      : `Downloads about ${downloadGb} GB from Strata's signed update feed (GitHub Release, ${license}, tuned from ${repo}); takes about ${diskGb} GB on disk and about ${vramText} GB of VRAM when running (the MTP layer is not loaded beside it).`)
+    : (zh
+      ? `将从 ${repo}（${license} 许可）下载约 ${downloadGb} GB，打包后在磁盘上约占 ${diskGb} GB，运行时约占 ${vramText} GB 显存（不与 MTP 层同时加载）。`
+      : `Downloads about ${downloadGb} GB from ${repo} (${license}); takes about ${diskGb} GB on disk after packing and about ${vramText} GB of VRAM when running (the MTP layer is not loaded beside it).`);
+  const confirmFolderParagraph = zh
+    ? '文件放在这个模型的数据目录（dflash2 文件夹）。启动服务不会自动下载；下载完成后，下次启动即可按当前配置启用 DFlash2。'
+    : "The file goes into this model's data folder (dflash2). Starting the service never downloads it; once downloaded, the next start uses DFlash2 according to this configuration.";
+  return { tuned, tunedUpdate, downloadGb, diskGb, vramText, buttonLabel, statusHint, confirmSourceParagraph, confirmFolderParagraph };
+}
 
 export interface Dflash2FetchProgress {
   step?: string; done?: number; total?: number;

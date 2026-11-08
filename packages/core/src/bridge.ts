@@ -376,9 +376,8 @@ export const updateRuntimeZip = (installDir: string, assetName?: string, stopCur
 export interface RuntimeCpuCheck { avx2: boolean | null; engineBlocked: string | null }
 export const runtimeCpuCheck = (): Promise<RuntimeCpuCheck> => native('runtime_cpu_check', {});
 /** Whether this model's DFlash2 drafter is downloaded (`ready` null: data folder unknown); `fetchable`: the runtime has `strata drafting fetch`. */
-export interface Dflash2Status { ready: boolean | null; fetchable: boolean }
-export const dflash2Status = (profile: ServiceProfile): Promise<Dflash2Status> => native('dflash2_status', { profile: normalizedProfile(profile) });
-/** Downloads the DFlash2 drafter (about 1.2 GB) as a task; progress lines are JSON in the task log. */
+export const dflash2Status = (profile: ServiceProfile): Promise<import('./drafting').Dflash2Status> => native('dflash2_status', { profile: normalizedProfile(profile) });
+/** Downloads the DFlash2 drafter as a task; progress lines are JSON in the task log. */
 export const fetchDflash2 = (profile: ServiceProfile): Promise<TaskStatus> => native('fetch_dflash2', { profile: normalizedProfile(profile) });
 /** The drafter the running engine actually uses, from its verified command line. */
 export interface RunningDrafting { verified: boolean; drafter?: 'dflash2' | 'mtp' | 'off'; reason?: string }
