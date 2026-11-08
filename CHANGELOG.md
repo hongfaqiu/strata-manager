@@ -7,6 +7,12 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+### English
+
+## [0.2.42] - 2026-11-08
+
+### 中文
+
 - **官方 NVFP4 三个包（#214）**：目录新增 Qwen3.8-Flash-Next (NVFP4)，含 NVFP4、NVFP4-NVIDIA（各 128 GB，引擎 0.1.44+）和 NVFP4-QAD（102.2 GB，引擎 0.1.45+）。NVFP4-QAD 安装时会在本机转换一次（约 20–40 分钟，另需约 110 GB 和 PyTorch），磁盘检查已把这部分算进去。只在 NVIDIA 显卡上提供；AMD、Intel 和 Mac 上灰显并说明原因，强行安装也会在下载前被拒绝。「使用已有模型」和「发现已下载模型」能认出 `<数据目录>/models/<owner>--<repo>` 下的 NVFP4 包（含已转换的 QAD），用 `--data-dir` 原地安装。
 - **上游 0.2 应用的运行配置可以导入了（#214）**：放在 `%LOCALAPPDATA%\Strata\install`（或上游设置记住的数据目录）里的 `strata-*.json` 能被发现，但导入时会报「配置不属于所选安装，也不是已识别的本机运行配置」。现在后台会在导入时自己重新查找一遍，确认这份配置确实属于所选安装后才放行；界面传来的其它路径仍会被拒绝。
 
