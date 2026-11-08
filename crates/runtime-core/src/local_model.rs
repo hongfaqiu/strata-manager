@@ -2104,7 +2104,7 @@ mod tests {
         fs::remove_dir_all(source.join("tensors")).unwrap();
         let after = scan_at(&source.join(nvfp4::PREPARED_DIR)).unwrap();
         assert!(after.groups[0].installable && after.groups[0].complete);
-        let found = find_downloaded(&[models.clone()]);
+        let found = find_downloaded(std::slice::from_ref(&models));
         let mut quants: Vec<_> = found.iter().filter_map(|m| m.group.quant.clone()).collect();
         quants.sort();
         assert_eq!(quants, ["NVFP4", "NVFP4-QAD"]);

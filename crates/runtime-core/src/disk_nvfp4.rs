@@ -373,9 +373,8 @@ pub(crate) fn plan(
         Some(gb) if !done => (gb * GB as f64).round() as u64,
         _ => 0,
     };
-    let mtp = if set.prepared() {
-        0
-    } else if first_existing(roots, Path::new("mtp/rt/experts.bin"))?.is_some() {
+    let mtp = if set.prepared() || first_existing(roots, Path::new("mtp/rt/experts.bin"))?.is_some()
+    {
         0
     } else {
         MTP_BYTES
@@ -538,7 +537,14 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let (root, data) = (temp.path().join("Strata"), temp.path().join("data"));
         fs::create_dir_all(&root).unwrap();
-        let qad = plan(&root, &[data.clone()], data.clone(), "NVFP4-QAD", true).unwrap();
+        let qad = plan(
+            &root,
+            std::slice::from_ref(&data),
+            data.clone(),
+            "NVFP4-QAD",
+            true,
+        )
+        .unwrap();
         let set = set("NVFP4-QAD").unwrap();
         assert_eq!(qad.report.model_download_bytes_estimate, Some(set.bytes()));
         let prepare = 110 * GB;
@@ -553,7 +559,14 @@ mod tests {
             .any(|v| v.directory.ends_with("prepared")
                 && v.required_additional_bytes_estimate == prepare));
         assert!(qad.gguf_directory.is_none());
-        let gptq = plan(&root, &[data.clone()], data.clone(), "NVFP4", false).unwrap();
+        let gptq = plan(
+            &root,
+            std::slice::from_ref(&data),
+            data.clone(),
+            "NVFP4",
+            false,
+        )
+        .unwrap();
         let bytes = super::set("NVFP4").unwrap().bytes();
         assert_eq!(
             gptq.report.additional_bytes_estimate,
@@ -581,7 +594,14 @@ mod tests {
             .unwrap();
         let gptq = models.join(set("NVFP4").unwrap().folder());
         sparse(&gptq.join(ple.path), ple.bytes);
-        let nvidia = plan(&root, &[data.clone()], data.clone(), "NVFP4-NVIDIA", false).unwrap();
+        let nvidia = plan(
+            &root,
+            std::slice::from_ref(&data),
+            data.clone(),
+            "NVFP4-NVIDIA",
+            false,
+        )
+        .unwrap();
         assert_eq!(
             nvidia.report.model_download_bytes_estimate,
             Some(set("NVFP4-NVIDIA").unwrap().bytes() - ple.bytes)
@@ -597,7 +617,14 @@ mod tests {
         for mark in PREPARED_MARKS {
             sparse(&folder.join(PREPARED_DIR).join(mark), 0);
         }
-        let done = plan(&root, &[data.clone()], data.clone(), "NVFP4-QAD", false).unwrap();
+        let done = plan(
+            &root,
+            std::slice::from_ref(&data),
+            data.clone(),
+            "NVFP4-QAD",
+            false,
+        )
+        .unwrap();
         assert_eq!(done.report.model_download_bytes_estimate, Some(0));
         assert_eq!(done.report.additional_bytes_estimate, Some(2 * GB));
         assert_eq!(set_in(&folder).map(|s| s.model), Some("NVFP4-QAD"));
