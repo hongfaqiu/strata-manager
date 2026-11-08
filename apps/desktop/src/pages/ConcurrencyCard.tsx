@@ -97,10 +97,10 @@ export function ConcurrencyCard({ draft, fieldValue, onFieldChange, zh, hardware
   const experimental = EXPERIMENTAL.filter(item => !serverDefaults || !core.CONCURRENCY_SERVER_DEFAULT_ENV.includes(item.env) || envSet(item.env));
   // The 1M-context warning lives with the context field; this note covers context × slots only.
   const longContext = (settings.context ?? 0) > core.TRAINED_CONTEXT && (current > 1 || plan.parallel > 1);
-  const draftingDecision = typeof core.draftingConcurrencyPolicy === 'function' && core.draftingFamilyOf?.(config) && core.engineServesDflash2?.(engine) === true
-    ? core.draftingConcurrencyPolicy({ config: { ...config, parallel: Math.max(current, plan.parallel) }, engineVersion: engine, mac: os === 'mac', dflash2Served: true })
+  const draftingDecision = core.draftingFamilyOf(config) && core.engineServesDflash2(engine) === true
+    ? core.draftingConcurrencyPolicy({ config: { ...config, parallel: Math.max(current, plan.parallel) }, engineVersion: engine, mac: os === 'mac', gpus: hardware?.gpus, dflash2Served: true })
     : null;
-  const draftingNote = draftingDecision ? core.draftingConcurrencyNote?.(draftingDecision, zh) ?? null : null;
+  const draftingNote = draftingDecision ? core.draftingConcurrencyNote(draftingDecision, zh) : null;
   const listed = issues.filter(issue => issue.code !== 'long_context_conflict');
   return <section className="concurrency-card" data-testid="concurrency-card" aria-label={t('多并发', 'Concurrency')}>
     <header className="concurrency-card-head">

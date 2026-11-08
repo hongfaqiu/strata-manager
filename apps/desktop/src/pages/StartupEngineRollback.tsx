@@ -23,8 +23,8 @@ export function StartupEngineRollback({ language, desktop, disabled = false, mod
   const target = core.installedRollbackTarget(inventory.data, releases);
   const targetEngine = target?.engineVersion ?? (target ? releases.find(r => r.version === core.installedRuntimeRelease(target, releases))?.engineVersion : undefined);
   const modelHints = [modelHint, ...(current?.profiles ?? []).map(p => p.name)];
-  const incompatibility = core.engineRollbackCompatibilityWarning?.(targetEngine, modelHints, zh) ?? null;
-  const retentionNote = core.engineRollbackRetentionNote?.(zh) ?? '';
+  const incompatibility = core.engineRollbackCompatibilityWarning(targetEngine, modelHints, zh);
+  const retentionNote = core.engineRollbackRetentionNote(zh);
   const busy = disabled || !!inventory.data?.busy;
   if (!target && !onChooseVersion) return null;
   return <>

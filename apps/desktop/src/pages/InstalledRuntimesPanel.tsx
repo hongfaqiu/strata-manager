@@ -74,11 +74,11 @@ export function RuntimeSwitchDialog({ language, target, current, releases = [], 
   const t = installedRuntimesCopy(language), z = core.legacyLanguage(language) === 'zh-CN';
   const targetLabel = installedRuntimeLabel(target, releases, z), currentLabel = current ? installedRuntimeLabel(current, releases, z) : '';
   const targetEngine = target.engineVersion ?? releases.find(r => r.version === core.installedRuntimeRelease(target, releases))?.engineVersion;
-  const incompatibility = core.engineRollbackCompatibilityWarning?.(
+  const incompatibility = core.engineRollbackCompatibilityWarning(
     targetEngine,
     [...(modelHints ?? []), ...(current?.profiles ?? []).map(p => p.name), ...(target.profiles ?? []).map(p => p.name)],
     z,
-  ) ?? null;
+  );
   return <Dialog title={fill(t.switchTitle, { version: targetLabel })} onClose={() => { if (!busy) onDismiss(); }}>
     <div className="installed-runtime-dialog" data-testid="runtime-switch-dialog">
       <dl className="installed-runtime-dialog-pair">{current && <div><dt>{t.from}</dt><dd>{currentLabel}</dd></div>}<div><dt>{t.to}</dt><dd>{targetLabel}</dd></div></dl>

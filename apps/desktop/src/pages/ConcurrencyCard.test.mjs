@@ -16,8 +16,10 @@ const gpuRoles = { exports: {} };
 vm.runInNewContext(compile('../../../../packages/core/src/gpu-roles.ts'), { module: gpuRoles, exports: gpuRoles.exports, require: () => ({}), structuredClone });
 const concurrency = { exports: {} };
 vm.runInNewContext(compile('../../../../packages/core/src/concurrency.ts'), { module: concurrency, exports: concurrency.exports, require: name => name === './context-extension' ? contextExtension.exports : name === './orca-import' ? orcaImport.exports : name === './gpu-roles' ? gpuRoles.exports : {} });
+const drafting = { exports: {} };
+vm.runInNewContext(compile('../../../../packages/core/src/drafting.ts'), { module: drafting, exports: drafting.exports, require: () => ({}) });
 const keys = ['parallel', '--batch', '--batch-mtp', '--batch-groups', '--adapt-async', '--trim-stage-weights', '--conversation-cache-mib', '--conversation-cache-slots', '--max-context', 'env.STRATA_BATCH_ATTN_ROWS', 'env.STRATA_BATCH_GDN_GROUPS', 'env.STRATA_PIPED_CONCURRENT'];
-const core = { ...contextExtension.exports, ...concurrency.exports, STARTUP_TUNING_FIELDS: keys.map(key => ({ key })), applyStartupField: config => config, assessSetupResources: async () => { throw Error('not used'); } };
+const core = { ...contextExtension.exports, ...concurrency.exports, ...drafting.exports, STARTUP_TUNING_FIELDS: keys.map(key => ({ key })), applyStartupField: config => config, assessSetupResources: async () => { throw Error('not used'); } };
 const Segmented = props => jsx('segmented', props), Toggle = props => jsx('toggle', props);
 const GIB = 2 ** 30;
 
