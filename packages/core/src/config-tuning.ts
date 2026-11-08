@@ -6,135 +6,46 @@ import { contextExtensionError } from './context-extension';
 import { parseSaved } from './gpu-roles';
 import { isQwen36Config } from './catalog';
 import { DEEPSEEK41_ENGINE_FLAGS, deepseek41ArgsError, isDeepseek41Config } from './deepseek41-config';
+import {
+  ARGS_WRITTEN_KEY,
+  DFLASH2_USER_ARG_FLAGS,
+  USER_ARGS_KEY,
+  argGroups,
+  byFlag,
+  captureUserArgs as captureUserArgsWithFlags,
+  cleanArgLayersMetadata,
+  flagOfGroup,
+  hasUserArgsLayer,
+  mergeUserArgs,
+  stampUserArgs,
+  syncCalibrationUserArgs as syncCalibrationUserArgsWithFlags,
+} from './arg-layers';
 export { STARTUP_ENGINE_FLAGS } from './startup-engine-flags';
+export {
+  ARGS_DERIVED_KEY,
+  ARGS_WRITTEN_KEY,
+  CALIBRATED_KEY,
+  DFLASH2_USER_ARG_FLAGS,
+  LAUNCH_SET_KEY,
+  USER_ARGS_KEY,
+  argGroups,
+  byFlag,
+  cleanArgLayersMetadata,
+  flagOfGroup,
+  hasUserArgsLayer,
+  mergeUserArgs,
+  stampUserArgs,
+} from './arg-layers';
 
 export interface StartupTuning { context: string; kv: string; threads: string }
 const kvKinds = ['fp16', 'int8', 'q4_0', 'k8v4'];
-
-export const USER_ARGS_KEY = 'user_args';
-export const ARGS_WRITTEN_KEY = 'args_written';
-export const ARGS_DERIVED_KEY = 'args_derived';
-export const CALIBRATED_KEY = 'calibrated';
-export const LAUNCH_SET_KEY = 'launch_set';
-/** Flags upstream `drafting.apply` only recognises as hand-set under DFlash2 when present in `user_args`. */
-export const DFLASH2_USER_ARG_FLAGS: ReadonlySet<string> = new Set(['--spec', '--draft-conf']);
-
-export function flagOfGroup(group: readonly string[]): string {
-  const head = group[0];
-  if (!head || !head.startsWith('--')) return '';
-  const eq = head.indexOf('=');
-  return eq >= 0 ? head.slice(0, eq) : head;
-}
-
-/**
- * Split an argv list into option groups (`--flag` + its operand tokens, or a lone positional token).
- * Preserves unknown options, multi-value flags (`--control-vector-layer-range 4 44`), repeated flags,
- * and positional arguments (even after a known 0/N-arity flag).
- */
-export function argGroups(args: unknown, flags?: Readonly<Record<string, number>>): string[][] {
-  const out: string[][] = [];
-  if (!Array.isArray(args)) return out;
-  for (const raw of args) {
-    if (typeof raw !== 'string') continue;
-    if (raw.startsWith('--') || !out.length) {
-      out.push([raw]);
-      continue;
-    }
-    const current = out[out.length - 1]!;
-    const flag = flagOfGroup(current);
-    const knownArity = flag && flags && Object.hasOwn(flags, flag) ? flags[flag] : undefined;
-    if (!flag || current[0]!.includes('=') || (knownArity !== undefined && current.length - 1 >= knownArity)) {
-      out.push([raw]);
-    } else {
-      current.push(raw);
-    }
-  }
-  return out;
-}
-
-/** `args` with `userArgs` merged on top (upstream `strata_control/user_args.py:merge`): every flag in `userArgs` wins. */
-export function mergeUserArgs(args: readonly string[], userArgs: unknown, flags?: Readonly<Record<string, number>>): string[] {
-  const ug = argGroups(userArgs, flags);
-  const mine = new Set(ug.map(flagOfGroup).filter(Boolean));
-  if (!mine.size) return [...args];
-  const kept = argGroups(args, flags).filter(g => !mine.has(flagOfGroup(g)));
-  return [...kept, ...ug].flat();
-}
-
-function byFlag(gs: string[][]): Map<string, string[][]> {
-  const map = new Map<string, string[][]>();
-  for (const g of gs) {
-    const f = flagOfGroup(g);
-    const list = map.get(f);
-    if (list) list.push(g);
-    else map.set(f, [g]);
-  }
-  return map;
-}
-const sameGroups = (a: string[][] | undefined, b: string[][] | undefined): boolean =>
-  JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
 /**
  * Upstream `strata_control/user_args.py:capture`: `user_args` plus any option in `args` that differs from
  * `args_written` (or minus any option in `args_written` that was removed from `args`).
  */
 export function captureUserArgs(config: JsonObject, skip: ReadonlySet<string> = new Set()): string[] {
-  const flags = startupEngineFlagsFor(config);
-  const mine = byFlag(argGroups(config[USER_ARGS_KEY], flags));
-  if (Array.isArray(config[ARGS_WRITTEN_KEY]) && Array.isArray(config.args)) {
-    const cur = byFlag(argGroups(config.args, flags));
-    const was = byFlag(argGroups(config[ARGS_WRITTEN_KEY], flags));
-    for (const [flag, gs] of cur) {
-      if (flag && !skip.has(flag) && !sameGroups(was.get(flag), gs)) {
-        mine.set(flag, gs);
-      }
-    }
-    for (const flag of [...mine.keys()]) {
-      if (was.has(flag) && !cur.has(flag)) {
-        mine.delete(flag);
-      }
-    }
-  }
-  return [...mine.values()].flat(2);
-}
-
-export function hasUserArgsLayer(config: JsonObject | null | undefined): boolean {
-  if (!config) return false;
-  return Array.isArray(config[USER_ARGS_KEY]) || Array.isArray(config[ARGS_WRITTEN_KEY]) || Array.isArray(config[ARGS_DERIVED_KEY]);
-}
-
-export function stampUserArgs(config: JsonObject, userArgs: readonly string[], keepWritten: boolean): void {
-  if (userArgs.length > 0) {
-    config[USER_ARGS_KEY] = [...userArgs];
-  } else {
-    delete config[USER_ARGS_KEY];
-  }
-  if (keepWritten && Array.isArray(config.args)) {
-    config[ARGS_WRITTEN_KEY] = [...(config.args as string[])];
-  } else if (!keepWritten) {
-    delete config[ARGS_WRITTEN_KEY];
-  }
-  if (Array.isArray(config[ARGS_DERIVED_KEY]) && Array.isArray(config.args)) {
-    config[ARGS_DERIVED_KEY] = [...(config.args as string[])];
-  }
-}
-
-function cleanArgLayersMetadata(config: JsonObject, touched: ReadonlySet<string>): void {
-  if (Array.isArray(config[LAUNCH_SET_KEY])) {
-    const rest = (config[LAUNCH_SET_KEY] as unknown[]).filter(x => typeof x === 'string' && !touched.has(x));
-    if (rest.length) config[LAUNCH_SET_KEY] = rest;
-    else delete config[LAUNCH_SET_KEY];
-  }
-  const calibrated = config[CALIBRATED_KEY];
-  if (calibrated && typeof calibrated === 'object' && !Array.isArray(calibrated)) {
-    const rec = calibrated as JsonObject;
-    if (rec.settings && typeof rec.settings === 'object' && !Array.isArray(rec.settings)) {
-      const settings = { ...(rec.settings as JsonObject) };
-      for (const flag of touched) delete settings[flag];
-      if (Object.keys(settings).length) config[CALIBRATED_KEY] = { ...rec, settings };
-      else delete config[CALIBRATED_KEY];
-    }
-  }
+  return captureUserArgsWithFlags(config, skip, startupEngineFlagsFor(config));
 }
 
 /**
@@ -142,16 +53,7 @@ function cleanArgLayersMetadata(config: JsonObject, touched: ReadonlySet<string>
  * calibration/tuning, and refresh `args_written` (only when already present). Configs without `user_args` stay untouched.
  */
 export function syncCalibrationUserArgs(before: JsonObject, next: JsonObject, touchedFlags: Iterable<string>): JsonObject {
-  const touched = new Set(touchedFlags);
-  if (hasUserArgsLayer(before)) {
-    const flags = startupEngineFlagsFor(before);
-    const mine = argGroups(captureUserArgs(before), flags)
-      .filter(g => !touched.has(flagOfGroup(g)))
-      .flat();
-    stampUserArgs(next, mine, Array.isArray(before[ARGS_WRITTEN_KEY]));
-  }
-  cleanArgLayersMetadata(next, touched);
-  return next;
+  return syncCalibrationUserArgsWithFlags(before, next, touchedFlags, { flags: startupEngineFlagsFor(before) });
 }
 
 /**
@@ -534,17 +436,82 @@ export function startupArgumentRows(config: JsonObject): StartupArgRow[] {
   return rows;
 }
 export function replaceStartupArgument(config: JsonObject, row: StartupArgRow, tokens: string[]): JsonObject {
-  const args = startupArgsOf(config);
-  args.splice(row.offset, row.tokens.length, ...tokens);
-  const next: JsonObject = { ...structuredClone(config), args };
+  const flags = startupEngineFlagsFor(config);
+  const rawArgs = rawStartupArgsOf(config);
   const oldFlag = flagOfGroup(row.tokens);
   const newFlag = flagOfGroup(tokens);
   const touchedFlags = [...new Set([oldFlag, newFlag].filter(Boolean))];
-  const flags = startupEngineFlagsFor(config);
-  for (const flag of touchedFlags) {
-    const groupsInArgs = argGroups(args, flags).filter(g => flagOfGroup(g) === flag);
-    syncManualUserArgs(config, next, flag, groupsInArgs);
+  const rawUserArgs = Array.isArray(config[USER_ARGS_KEY])
+    ? (config[USER_ARGS_KEY] as unknown[]).filter((x): x is string => typeof x === 'string')
+    : [];
+  if (!rawUserArgs.length) {
+    rawArgs.splice(row.offset, row.tokens.length, ...tokens);
+    const next: JsonObject = { ...structuredClone(config), args: rawArgs };
+    for (const flag of touchedFlags) {
+      const groupsInArgs = argGroups(rawArgs, flags).filter(g => flagOfGroup(g) === flag);
+      syncManualUserArgs(config, next, flag, groupsInArgs);
+    }
+    return next;
   }
+
+  const rawGroups = argGroups(rawArgs, flags);
+  const userGroups = argGroups(rawUserArgs, flags);
+  const mine = new Set(userGroups.map(flagOfGroup).filter(Boolean));
+  let keptRawLen = 0;
+  let rawPos = 0;
+  let mappedRawOffset: number | undefined;
+  for (const g of rawGroups) {
+    if (!mine.has(flagOfGroup(g))) {
+      if (mappedRawOffset === undefined && row.offset >= keptRawLen && row.offset < keptRawLen + g.length) {
+        mappedRawOffset = rawPos + (row.offset - keptRawLen);
+      }
+      keptRawLen += g.length;
+    }
+    rawPos += g.length;
+  }
+
+  // Appending at the end of the effective list (`appendStartupArgument`).
+  if (row.offset === keptRawLen + rawUserArgs.length && row.tokens.length === 0) {
+    rawArgs.push(...tokens);
+    const next: JsonObject = { ...structuredClone(config), args: rawArgs };
+    if (newFlag) {
+      const effectiveGroups = [...argGroups(rawArgs, flags).filter(g => !mine.has(flagOfGroup(g))), ...userGroups, ...(tokens.length ? [tokens] : [])]
+        .filter(g => flagOfGroup(g) === newFlag);
+      syncManualUserArgs(config, next, newFlag, effectiveGroups);
+    }
+    return next;
+  }
+
+  // Row belongs to the kept portion of `rawArgs` (not overridden by `user_args`).
+  if (mappedRawOffset !== undefined) {
+    rawArgs.splice(mappedRawOffset, row.tokens.length, ...tokens);
+    const next: JsonObject = { ...structuredClone(config), args: rawArgs };
+    for (const flag of touchedFlags) {
+      const groupsInArgs = argGroups(rawArgs, flags).filter(g => flagOfGroup(g) === flag);
+      syncManualUserArgs(config, next, flag, groupsInArgs);
+    }
+    return next;
+  }
+
+  // Row belongs to the `user_args` override slice (`row.offset >= keptRawLen`).
+  const userOffset = row.offset - keptRawLen;
+  const updatedUserFlat = [...rawUserArgs];
+  updatedUserFlat.splice(userOffset, row.tokens.length, ...tokens);
+  const updatedUserGroups = argGroups(updatedUserFlat, flags);
+  const updatedMine = new Set(updatedUserGroups.map(flagOfGroup).filter(Boolean));
+  const filteredRawArgs = oldFlag && !updatedMine.has(oldFlag)
+    ? rawGroups.filter(g => flagOfGroup(g) !== oldFlag).flat()
+    : rawArgs;
+  const next: JsonObject = { ...structuredClone(config), args: filteredRawArgs };
+  const captured = byFlag(argGroups(captureUserArgs(config, new Set(touchedFlags)), flags));
+  const finalUserGroups: string[][] = [...updatedUserGroups];
+  for (const [flag, gs] of captured) {
+    if (flag && !updatedMine.has(flag) && !mine.has(flag)) {
+      finalUserGroups.push(...gs);
+    }
+  }
+  stampUserArgs(next, finalUserGroups.flat(), Array.isArray(config[ARGS_WRITTEN_KEY]));
+  cleanArgLayersMetadata(next, new Set(touchedFlags));
   return next;
 }
 export function appendStartupArgument(config: JsonObject, tokens: string[]): JsonObject {

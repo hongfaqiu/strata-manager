@@ -188,6 +188,41 @@ describe('complete graphical and JSON startup configuration', () => {
     expect(replaceStartupArgument(withConf, confRow, [])).toEqual(base);
     expect(effectiveArgsOf(withConf)).toEqual(['--native', 'm.gguf', '--draft-conf', '0.5']);
   });
+  it('edits a single row in the full argument list without baking unedited user_args overrides into config.args (U4A)', () => {
+    const layered = {
+      args: ['--native', 'm.gguf', '--pcie-frac', '0.4', '--max-context', '32768'],
+      user_args: ['--pcie-frac', '0.75', '--pool-workers', '6'],
+      args_written: ['--native', 'm.gguf', '--pcie-frac', '0.4', '--max-context', '32768'],
+    };
+    const rows = startupArgumentRows(layered);
+    const ctxRow = rows.find(r => r.tokens[0] === '--max-context')!;
+    const editedCtx = replaceStartupArgument(layered, ctxRow, ['--max-context', '65536']);
+    // Unedited overrides (--pcie-frac 0.75, --pool-workers 6) remain in user_args and are not baked into args.
+    expect(editedCtx.args).toEqual(['--native', 'm.gguf', '--pcie-frac', '0.4', '--max-context', '65536']);
+    expect(editedCtx.user_args).toEqual(['--pcie-frac', '0.75', '--pool-workers', '6', '--max-context', '65536']);
+    expect(editedCtx.args_written).toEqual(editedCtx.args);
+    expect(mergeUserArgs(editedCtx.args as string[], editedCtx.user_args)).toEqual([
+      '--native', 'm.gguf', '--pcie-frac', '0.75', '--pool-workers', '6', '--max-context', '65536',
+    ]);
+
+    // Editing a row that came from user_args updates user_args in place without copying other overrides into args.
+    const workersRow = startupArgumentRows(editedCtx).find(r => r.tokens[0] === '--pool-workers')!;
+    const editedWorkers = replaceStartupArgument(editedCtx, workersRow, ['--pool-workers', '8']);
+    expect(editedWorkers.args).toEqual(['--native', 'm.gguf', '--pcie-frac', '0.4', '--max-context', '65536']);
+    expect(editedWorkers.user_args).toEqual(['--pcie-frac', '0.75', '--pool-workers', '8', '--max-context', '65536']);
+    expect(mergeUserArgs(editedWorkers.args as string[], editedWorkers.user_args)).toEqual([
+      '--native', 'm.gguf', '--pcie-frac', '0.75', '--pool-workers', '8', '--max-context', '65536',
+    ]);
+
+    // Deleting an overridden row removes it from both user_args and args so the shadowed raw value does not resurrect.
+    const pcieRow = startupArgumentRows(editedWorkers).find(r => r.tokens[0] === '--pcie-frac')!;
+    const deletedPcie = replaceStartupArgument(editedWorkers, pcieRow, []);
+    expect(deletedPcie.args).toEqual(['--native', 'm.gguf', '--max-context', '65536']);
+    expect(deletedPcie.user_args).toEqual(['--pool-workers', '8', '--max-context', '65536']);
+    expect(mergeUserArgs(deletedPcie.args as string[], deletedPcie.user_args)).toEqual([
+      '--native', 'm.gguf', '--pool-workers', '8', '--max-context', '65536',
+    ]);
+  });
 });
 
 describe('network and GPU power startup settings', () => {
