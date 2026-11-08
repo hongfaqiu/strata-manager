@@ -35,11 +35,20 @@ export type DraftingConcurrencyReason =
   | 'legacy_multi_request'
   | 'named_batch_allowed';
 
+export interface DraftingGpuHint {
+  name?: unknown;
+  vendor?: unknown;
+  integrated?: unknown;
+}
+
 export interface DraftingConcurrencyInput {
   config?: JsonObject | null;
   engineVersion?: string | null;
-  /** Explicit backend ('cuda' | 'hip' | 'sycl' | 'metal'); otherwise inferred from config.backend / mac flag / exe path. */
+  /** Explicit backend ('cuda' | 'hip' | 'sycl' | 'metal') or engine package variant. */
   backend?: string | null;
+  variant?: string | null;
+  /** Detected GPUs from environmentInfo() or resource assessment hardware.gpus. */
+  gpus?: readonly (string | DraftingGpuHint)[] | null;
   mac?: boolean;
   dflash2Served?: boolean | null;
 }
@@ -228,19 +237,75 @@ export interface Dflash2DownloadCopy {
   confirmFolderParagraph: string;
 }
 
-function resolveDraftingBackend(input: DraftingConcurrencyInput): DraftingBackend {
-  for (const raw of [input.backend, input.config?.backend]) {
-    if (typeof raw === 'string') {
-      const lower = raw.trim().toLowerCase();
-      if (lower === 'cuda' || lower === 'hip' || lower === 'sycl' || lower === 'metal') return lower;
-    }
+function normalizeBackendToken(raw: unknown): DraftingBackend | null {
+  if (typeof raw !== 'string') return null;
+  const lower = raw.trim().toLowerCase();
+  if (lower === 'cuda' || lower === 'nvidia') return 'cuda';
+  if (lower === 'hip' || lower === 'rocm' || lower === 'amd') return 'hip';
+  if (lower === 'sycl' || lower === 'intel') return 'sycl';
+  if (lower === 'metal' || lower === 'apple') return 'metal';
+  return null;
+}
+
+function isIntegratedGpuLabel(name: string): boolean {
+  const n = name.toLowerCase().replace(/\(tm\)|\(r\)/g, '');
+  const words = n.split(/[^a-z0-9]+/).filter(Boolean);
+  const has = (w: string) => words.includes(w);
+  const after = (w: string) => words[words.indexOf(w) + 1];
+  if (has('integrated') || has('uhd') || has('iris') || /\bvega [3678]\b/.test(n)) return true;
+  if (has('radeon')) {
+    const next = after('radeon');
+    return next === 'graphics' || /^\d{3,4}[ms]$/.test(next ?? '');
+  }
+  if (has('arc')) {
+    const next = after('arc');
+    return next === undefined || next === 'graphics' || /^\d{3,4}[vt]$/.test(next);
+  }
+  if (has('intel')) return has('graphics') && !has('data') && !has('max') && !has('flex');
+  return false;
+}
+
+function backendFromGpuEntry(entry: string | DraftingGpuHint): { backend: DraftingBackend; integrated: boolean } | null {
+  const rawName = typeof entry === 'string'
+    ? (entry.split(',')[0]?.trim() ?? '')
+    : typeof entry?.name === 'string'
+      ? entry.name.trim()
+      : '';
+  const rawVendor = typeof entry === 'object' && entry !== null ? normalizeBackendToken(entry.vendor) : null;
+  const integrated = (typeof entry === 'object' && entry !== null && entry.integrated === true) || (rawName ? isIntegratedGpuLabel(rawName) : false);
+  if (rawVendor) return { backend: rawVendor, integrated };
+  if (!rawName) return null;
+  if (/^apple\b/i.test(rawName)) return { backend: 'metal', integrated };
+  if (/nvidia|geforce|\brtx\b|quadro|tesla/i.test(rawName)) return { backend: 'cuda', integrated };
+  if (/\bamd\b|radeon|instinct/i.test(rawName)) return { backend: 'hip', integrated };
+  if (/\bintel\b|\barc\b|iris|uhd graphics/i.test(rawName)) return { backend: 'sycl', integrated };
+  return null;
+}
+
+/**
+ * Resolve the engine backend from structured inputs first (`backend`, `variant`, `config.backend`, `config.engine_variant`,
+ * `mac`, detected `gpus`), then from an explicit engine variant token in the executable filename (`strata-cuda.exe`, etc.).
+ * Returns `'unknown'` when uncertain rather than guessing from broad path substrings.
+ */
+export function resolveDraftingBackend(input: DraftingConcurrencyInput): DraftingBackend {
+  for (const raw of [input.backend, input.variant, input.config?.backend, input.config?.engine_variant]) {
+    const parsed = normalizeBackendToken(raw);
+    if (parsed) return parsed;
   }
   if (input.mac === true) return 'metal';
-  const exe = typeof input.config?.exe === 'string' ? input.config.exe.toLowerCase() : '';
-  if (exe.includes('metal')) return 'metal';
-  if (exe.includes('sycl')) return 'sycl';
-  if (exe.includes('hip') || exe.includes('rdna') || exe.includes('rx')) return 'hip';
-  if (exe.includes('cuda')) return 'cuda';
+  if (Array.isArray(input.gpus) && input.gpus.length > 0) {
+    const classified = input.gpus.map(backendFromGpuEntry).filter((x): x is { backend: DraftingBackend; integrated: boolean } => x !== null);
+    const discrete = classified.filter(x => !x.integrated);
+    const relevant = discrete.length > 0 ? discrete : classified;
+    const unique = new Set(relevant.map(x => x.backend));
+    if (unique.size === 1) return [...unique][0]!;
+  }
+  const exe = typeof input.config?.exe === 'string' ? input.config.exe.trim() : '';
+  const exeName = (exe.split(/[\\/]/).at(-1) ?? '').toLowerCase();
+  const variantMatch = exeName.match(/(?:^|[-_.])(cuda|hip|rocm|sycl|metal)(?:$|[-_.])/i);
+  if (variantMatch) {
+    return normalizeBackendToken(variantMatch[1]) ?? 'unknown';
+  }
   return 'unknown';
 }
 
@@ -249,8 +314,9 @@ function resolveDraftingBackend(input: DraftingConcurrencyInput): DraftingBacken
  * - `--pipeline-windows` always blocks DFlash2 (both Auto and named DFlash2).
  * - With 2+ concurrent requests (`parallel`, `--parallel`, `--batch`, `--slots`):
  *   - Auto always switches to MTP (`auto_multi_request`).
- *   - Named `"dflash2"` on engine 0.1.57+ and non-Metal backends (CUDA/HIP/SYCL) keeps concurrent slots (`named_batch_allowed`).
- *   - Named `"dflash2"` on Metal (`metal_multi_request`) or on engine <= 0.1.56 (`legacy_multi_request`) falls back to MTP.
+ *   - Named `"dflash2"` on engine 0.1.57+ and confirmed non-Metal backends (CUDA/HIP/SYCL) keeps concurrent slots (`named_batch_allowed`).
+ *   - Named `"dflash2"` on Metal (`metal_multi_request`), on engine <= 0.1.56, or when backend is `'unknown'` (`legacy_multi_request`)
+ *     conservatively reports falling back to MTP rather than promising concurrent DFlash2.
  */
 export function draftingConcurrencyPolicy(input: DraftingConcurrencyInput): DraftingConcurrencyDecision {
   const config = input.config ?? null;
@@ -261,7 +327,7 @@ export function draftingConcurrencyPolicy(input: DraftingConcurrencyInput): Draf
   const hasPipelineWindows = args.some(arg => arg === '--pipeline-windows' || arg.startsWith('--pipeline-windows='));
   const hasMultiRequestFlag = requests >= 2 || args.some(arg => arg === '--batch' || arg.startsWith('--batch=') || arg === '--slots' || arg.startsWith('--slots=') || arg === '--parallel' || arg.startsWith('--parallel='));
   const cmp = input.engineVersion ? compare(input.engineVersion, DFLASH2_NAMED_BATCH_SINCE) : null;
-  const namedBatchSupported = cmp !== null && cmp >= 0 && backend !== 'metal';
+  const namedBatchSupported = cmp !== null && cmp >= 0 && (backend === 'cuda' || backend === 'hip' || backend === 'sycl');
   if (mode !== 'auto' && mode !== 'dflash2') {
     return { mode, requests, backend, hasPipelineWindows, namedBatchSupported, blockedToMtp: false, runsNamedBatchDflash2: false, reason: 'none' };
   }

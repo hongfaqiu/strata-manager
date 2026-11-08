@@ -91,4 +91,9 @@ test('a managed Qwen3.8 offers 「下载 DFlash2」; a start never downloads it 
   const metalNamed57 = render({ ...qwen, parallel: 2, drafting: 'dflash2' }, { engineVersion: '0.1.58', dflash2Served: true, profile, mac: true });
   assert.equal(download(metalNamed57.tree), undefined, 'Metal still falls back to MTP for 2+ requests');
   assert.match(text(metalNamed57.tree), /Mac（Metal）引擎不支持多并发 DFlash2，将改用 MTP/);
+
+  // Unknown backend (even with 'rx' in directory path) conservatively warns that 2+ requests fall back to MTP.
+  const unknownNamed57 = render({ ...qwen, parallel: 2, drafting: 'dflash2', exe: 'D:\\rx_workspace\\strata\\engine.exe' }, { engineVersion: '0.1.58', dflash2Served: true, profile });
+  assert.equal(download(unknownNamed57.tree), undefined, 'Unknown backend conservatively treats 2+ requests as falling back to MTP');
+  assert.match(text(unknownNamed57.tree), /并发 2 个请求：DFlash2 一次只服务一个请求，将改用 MTP/);
 });

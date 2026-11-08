@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyDrafting, dflash2DownloadCopy, dflash2FetchProgress, draftingChoices, draftingConcurrencyNote, draftingConcurrencyPolicy, draftingFamilyOf, draftingModeOf, draftingRequestsOf, draftingSupport, effectiveDraftingOf, engineServesDflash2, normalizeDrafting } from '../src/drafting';
+import { applyDrafting, dflash2DownloadCopy, dflash2FetchProgress, draftingChoices, draftingConcurrencyNote, draftingConcurrencyPolicy, draftingFamilyOf, draftingModeOf, draftingRequestsOf, draftingSupport, effectiveDraftingOf, engineServesDflash2, normalizeDrafting, resolveDraftingBackend } from '../src/drafting';
 
 describe('drafting (upstream v0.2.6 drafting.py / drafting.ts)', () => {
   it('serves DFlash2 from engine 0.1.56 and reads the concurrent request count (Strata v0.2.10)', () => {
@@ -113,6 +113,25 @@ describe('drafting (upstream v0.2.6 drafting.py / drafting.ts)', () => {
     // --pipeline-windows always blocks DFlash2 even at 1 request or on 0.1.58 CUDA named dflash2
     const piped = draftingConcurrencyPolicy({ config: { drafting: 'dflash2', backend: 'cuda', args: ['--pipeline-windows', '2'] }, engineVersion: '0.1.58' });
     expect(piped).toMatchObject({ blockedToMtp: true, runsNamedBatchDflash2: false, reason: 'pipeline_windows' });
+
+    // Structured backend resolution: config.backend, variant, mac, detected gpus, and explicit exe filename tokens;
+    // never guesses from broad path substrings like 'rx' and falls back conservatively to MTP when backend is unknown.
+    expect(resolveDraftingBackend({ config: { exe: '/Users/rx/models/strata/strata.exe' } })).toBe('unknown');
+    expect(resolveDraftingBackend({ config: { exe: 'C:\\Users\\rx_admin\\hippo\\strata.exe' } })).toBe('unknown');
+    expect(resolveDraftingBackend({ config: { exe: 'C:\\Strata\\strata-hip.exe' } })).toBe('hip');
+    expect(resolveDraftingBackend({ config: { exe: '/opt/strata/strata-cuda' } })).toBe('cuda');
+    expect(resolveDraftingBackend({ gpus: ['AMD Radeon(TM) Graphics, 512 MiB', 'NVIDIA GeForce RTX 4090, 24564 MiB'] })).toBe('cuda');
+    expect(resolveDraftingBackend({ gpus: [{ name: 'AMD Radeon RX 7900 XTX', vendor: 'amd' }] })).toBe('hip');
+    expect(resolveDraftingBackend({ gpus: [{ name: 'Intel(R) Arc(TM) A770 Graphics', vendor: 'intel' }] })).toBe('sycl');
+    expect(resolveDraftingBackend({ variant: 'rocm' })).toBe('hip');
+
+    const unknownAuto58 = draftingConcurrencyPolicy({ config: { parallel: 4, exe: '/Users/rx/strata/engine.exe' }, engineVersion: '0.1.58' });
+    expect(unknownAuto58).toMatchObject({ backend: 'unknown', namedBatchSupported: false, blockedToMtp: true, runsNamedBatchDflash2: false, reason: 'auto_multi_request' });
+    expect(draftingConcurrencyNote(unknownAuto58, true)).toContain('DFlash2 一次只服务一个请求，将改用 MTP');
+
+    const unknownNamed58 = draftingConcurrencyPolicy({ config: { parallel: 4, drafting: 'dflash2', exe: '/Users/rx/strata/engine.exe' }, engineVersion: '0.1.58' });
+    expect(unknownNamed58).toMatchObject({ backend: 'unknown', namedBatchSupported: false, blockedToMtp: true, runsNamedBatchDflash2: false, reason: 'legacy_multi_request' });
+    expect(draftingConcurrencyNote(unknownNamed58, false)).toContain('DFlash2 serves one request at a time, so MTP runs instead');
   });
   it('formats DFlash2 download and tuned update copy from drafting plan (U2A)', () => {
     const stockCopy = dflash2DownloadCopy({ ready: false, fetchable: true }, false);

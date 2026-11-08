@@ -16,11 +16,13 @@ interface Props {
   profile?: ServiceProfile | null;
   /** Whether the host machine is macOS (Metal). */
   mac?: boolean;
+  /** Detected GPUs from environmentInfo() or hardware probe. */
+  gpus?: readonly (string | core.DraftingGpuHint)[] | null;
   onChange: (next: JsonObject) => void;
 }
 
 /** 预测（投机解码）: Auto / MTP / DFlash2 (engine 0.1.56+) / Off, written the way upstream v0.2.6 reads it for this engine version. */
-export function StartupDraftingControl({ zh, config, disabled, showParameterNames, engineVersion, dflash2Served, profile, mac, onChange }: Props) {
+export function StartupDraftingControl({ zh, config, disabled, showParameterNames, engineVersion, dflash2Served, profile, mac, gpus, onChange }: Props) {
   const t = (cn: string, en: string) => (zh ? cn : en);
   const support = core.draftingSupport(engineVersion);
   const mode = core.draftingModeOf(config);
@@ -29,7 +31,7 @@ export function StartupDraftingControl({ zh, config, disabled, showParameterName
   const locked = disabled || support === 'none';
   const args = Array.isArray(config.args) ? config.args.filter((arg): arg is string => typeof arg === 'string') : [];
   const served = dflash2Served === true && support === 'drafting' && core.DRAFTING_FAMILIES.includes(String(family));
-  const concurrency = core.draftingConcurrencyPolicy({ config, engineVersion, mac, dflash2Served });
+  const concurrency = core.draftingConcurrencyPolicy({ config, engineVersion, mac, gpus, dflash2Served });
   const mtpInstead = served && concurrency.blockedToMtp && (mode === 'auto' || mode === 'dflash2');
   const namedBatch = served && concurrency.runsNamedBatchDflash2 && mode === 'dflash2';
   const concurrencyNote = (mtpInstead || namedBatch) ? core.draftingConcurrencyNote(concurrency, zh) : null;
