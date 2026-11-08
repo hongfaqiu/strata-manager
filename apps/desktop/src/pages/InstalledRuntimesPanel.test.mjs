@@ -165,5 +165,6 @@ test('switching to an older engine warns when the current model requires a newer
   const dialog = nodes(f.tree()).find(node => node.type === 'runtime-switch-dialog' || node.type?.name === 'RuntimeSwitchDialog');
   const rendered = dialog.type(dialog.props);
   assert.match(text(rendered), /UD-Q2_K_XL.*0\.1\.57.*0\.1\.47/);
-  assert.match(text(f.tree()), /Unsloth v3\.1 新模型最低需引擎 0\.1\.57/);
+  assert.match(text(f.tree()), /只保留当前版本和 1 个旧版本（多次更新后不保证更早版本长期保留）/);
+  assert.doesNotMatch(text(f.tree()), /Unsloth v3\.1/);
 });

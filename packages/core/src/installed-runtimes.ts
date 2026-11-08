@@ -1,5 +1,6 @@
 // Installed Strata versions: list, delete, 一键清理 and switching between them.
 // The background service decides what is protected; the UI only shows and confirms.
+import { MODEL_CATALOG } from './catalog';
 import { compareReleaseVersions, runtimeReleaseOf, type RuntimeReleaseVersion } from './runtime-versions';
 
 export interface RuntimeReference { id: string; name: string }
@@ -86,46 +87,104 @@ export interface ModelMinEngineRequirement {
   minEngine: string;
 }
 
-const V31_QUANT_RE = /(?:^|[^A-Za-z0-9])(UD-(?:IQ1_M|Q2_0|IQ2_XS|Q2_K_XL|IQ3_XXS|Q3_K_XL|IQ4_XS-v31))(?=$|[^A-Za-z0-9])/i;
 const V31_FOUR_SHARD_RE = /UD-IQ4_XS-0000[1-4]-of-00004\.gguf/i;
 const QWEN36_RE = /\bqwen3\.?6\b|qwen35moe/i;
-const NVFP4_QAD_RE = /\bNVFP4-QAD\b/i;
-const NVFP4_RE = /\bNVFP4(?:-NVIDIA)?\b/i;
-const UD_Q5_Q6_RE = /\b(UD-Q[56]_K_XL)\b/i;
 
-/**
- * Infers a model's minimum Strata engine version from a profile name, model_name, or config object
- * (aligned with `MODEL_CATALOG` in `catalog.ts`: Unsloth Dynamic v3.1 requires 0.1.57, Qwen3.6 / NVFP4-QAD 0.1.45,
- * NVFP4 / UD-Q5_K_XL / UD-Q6_K_XL 0.1.44). DeepSeek configs run `strata-dsv41` and return null here.
- */
-export function modelMinEngineOf(input: string | Record<string, unknown> | null | undefined): ModelMinEngineRequirement | null {
-  if (!input) return null;
-  let evidence = '';
-  if (typeof input === 'string') {
-    evidence = input;
-  } else if (typeof input === 'object') {
-    if (input.arch === 'deepseek41') return null;
-    const args = Array.isArray(input.args) ? input.args.filter(x => typeof x === 'string').join(' ') : '';
-    evidence = [input.name, input.model_name, input.configPath, args].filter(x => typeof x === 'string').join(' ');
+function escapeRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+interface CatalogMinEngineRule {
+  label: string;
+  minEngine: string;
+  pattern: RegExp;
+}
+
+const QWEN36_CATALOG = MODEL_CATALOG.find(model => model.family === 'qwen36');
+const UNSLOTH_V31_IQ4_MIN_ENGINE = MODEL_CATALOG.find(model => model.family === 'unsloth')?.quantInfo['UD-IQ4_XS-v31']?.minEngine;
+
+/** Derived from `MODEL_CATALOG` in `catalog.ts` (longest quant token first so specific variants match before prefixes). */
+const CATALOG_QUANT_RULES: readonly CatalogMinEngineRule[] = (() => {
+  const rules: (CatalogMinEngineRule & { keyLen: number })[] = [];
+  for (const model of MODEL_CATALOG) {
+    if (model.family === 'deepseek41' || model.family === 'qwen36') continue;
+    for (const quant of model.quants) {
+      const minEngine = model.quantInfo[quant]?.minEngine ?? model.minEngine;
+      if (!minEngine || quant === 'Q8_0') continue;
+      const flexQuant = escapeRegex(quant).replace(/[-_]/g, '[-_]');
+      rules.push({
+        label: quant,
+        minEngine,
+        keyLen: quant.length,
+        pattern: new RegExp(`(?:^|[^A-Za-z0-9])(${flexQuant})(?=$|[^A-Za-z0-9])`, 'i'),
+      });
+    }
   }
+  return rules.sort((a, b) => b.keyLen - a.keyLen);
+})();
+
+function matchMinEngineFromText(evidence: string): ModelMinEngineRequirement | null {
   if (!evidence.trim() || /\bdeepseek/i.test(evidence)) return null;
-  const v31 = V31_QUANT_RE.exec(evidence);
-  if (v31) {
-    const raw = v31[1]!;
-    const label = /^ud-iq4_xs-v31$/i.test(raw) ? 'UD-IQ4_XS-v31' : raw.toUpperCase();
-    return { label, minEngine: '0.1.57' };
+  if (QWEN36_CATALOG?.minEngine && QWEN36_RE.test(evidence)) {
+    return { label: QWEN36_CATALOG.name, minEngine: QWEN36_CATALOG.minEngine };
   }
-  if (V31_FOUR_SHARD_RE.test(evidence)) return { label: 'UD-IQ4_XS-v31', minEngine: '0.1.57' };
-  if (QWEN36_RE.test(evidence)) return { label: 'Qwen3.6-35B-A3B', minEngine: '0.1.45' };
-  if (NVFP4_QAD_RE.test(evidence)) return { label: 'NVFP4-QAD', minEngine: '0.1.45' };
-  if (NVFP4_RE.test(evidence)) return { label: 'NVFP4', minEngine: '0.1.44' };
-  const q56 = UD_Q5_Q6_RE.exec(evidence);
-  if (q56) return { label: q56[1]!.toUpperCase(), minEngine: '0.1.44' };
+  if (UNSLOTH_V31_IQ4_MIN_ENGINE && V31_FOUR_SHARD_RE.test(evidence)) {
+    return { label: 'UD-IQ4_XS-v31', minEngine: UNSLOTH_V31_IQ4_MIN_ENGINE };
+  }
+  for (const rule of CATALOG_QUANT_RULES) {
+    if (rule.pattern.test(evidence)) {
+      return { label: rule.label, minEngine: rule.minEngine };
+    }
+  }
   return null;
 }
 
 /**
- * Returns a bilingual warning when any model in `models` requires a newer engine than `targetEngineVersion`
+ * Infers a model's minimum Strata engine version from a config or profile object (prioritizing real config fields
+ * `model_name`, `arch`, `args`, `user_args`, and `configPath` before falling back to a display `name`), derived from
+ * `MODEL_CATALOG` in `catalog.ts`. DeepSeek configs run `strata-dsv41` and return null here.
+ */
+export function modelMinEngineOf(input: string | Record<string, unknown> | null | undefined): ModelMinEngineRequirement | null {
+  if (!input) return null;
+  if (typeof input === 'string') return matchMinEngineFromText(input);
+  if (typeof input !== 'object') return null;
+  const nestedConfig = input.config && typeof input.config === 'object' && !Array.isArray(input.config)
+    ? (input.config as Record<string, unknown>)
+    : null;
+  const arch = nestedConfig?.arch ?? input.arch;
+  if (arch === 'deepseek41') return null;
+  const collectArgs = (obj: Record<string, unknown> | null) => {
+    if (!obj) return '';
+    const raw = Array.isArray(obj.args) ? obj.args.filter(x => typeof x === 'string').join(' ') : '';
+    const user = Array.isArray(obj.user_args) ? obj.user_args.filter(x => typeof x === 'string').join(' ') : '';
+    return `${raw} ${user}`.trim();
+  };
+  const structuredEvidence = [
+    nestedConfig?.model_name,
+    input.model_name,
+    arch,
+    collectArgs(nestedConfig),
+    collectArgs(input),
+    nestedConfig?.configPath,
+    input.configPath,
+  ]
+    .filter(x => typeof x === 'string' && x.trim())
+    .join(' ');
+  if (structuredEvidence) {
+    if (/\bdeepseek/i.test(structuredEvidence)) return null;
+    const matched = matchMinEngineFromText(structuredEvidence);
+    if (matched) return matched;
+    // If real model_name or args are present and have no minEngine gate, do not let a user-edited display name override them.
+    const hasAuthoritativeModelField = [nestedConfig?.model_name, input.model_name, collectArgs(nestedConfig), collectArgs(input)]
+      .some(x => typeof x === 'string' && x.trim().length > 0);
+    if (hasAuthoritativeModelField) return null;
+  }
+  const fallbackName = typeof input.name === 'string' ? input.name : '';
+  return matchMinEngineFromText(fallbackName);
+}
+
+/**
+ * Returns a concise bilingual warning when any model in `models` requires a newer engine than `targetEngineVersion`
  * (for example, Unsloth v3.1 requires 0.1.57 when rolling back to 0.1.55 / 0.1.56); null when compatible or unknown.
  */
 export function engineRollbackCompatibilityWarning(
@@ -139,17 +198,17 @@ export function engineRollbackCompatibilityWarning(
     const req = modelMinEngineOf(item);
     if (req && compareReleaseVersions(target, req.minEngine) < 0) {
       return zh
-        ? `当前模型（${req.label}）最低需要引擎 ${req.minEngine}，所选旧版本（引擎 ${target}）无法直接运行它；回退到 0.1.55 / 0.1.56 需同时换回老格式模型。`
-        : `The current model (${req.label}) requires engine ${req.minEngine}+ and cannot run on engine ${target}; rolling back to 0.1.55 / 0.1.56 requires switching back to an older-format model.`;
+        ? `当前模型（${req.label}）最低需引擎 ${req.minEngine}，回退到引擎 ${target} 需换回老格式模型。`
+        : `The current model (${req.label}) requires engine ${req.minEngine}+; rolling back to engine ${target} requires switching to an older-format model.`;
     }
   }
   return null;
 }
 
-/** Concise compatibility & retention explanation shown at engine rollback / version selection entries (U10A). */
+/** Concise retention rule note (keeps current + 1 previous version). */
 export function engineRollbackRetentionNote(zh: boolean): string {
   return zh
-    ? 'Unsloth v3.1 新模型最低需引擎 0.1.57，回退到 0.1.55 / 0.1.56 需换回老格式模型；开启自动清理时只保留当前版本 + 1 个旧版本（运行中或被配置引用的版本受保护），多次更新后不保证更早版本永久保留。'
-    : 'Unsloth v3.1 models require engine 0.1.57+ (rolling back to 0.1.55 / 0.1.56 requires an older-format model). Automatic cleanup keeps only the current version + 1 previous version (running or referenced versions stay protected), so older versions are not kept permanently across multiple updates.';
+    ? '自动清理只保留当前版本 + 1 个旧版本（运行中或被配置引用的版本受保护），多次更新后不保证更早版本长期保留。'
+    : 'Automatic cleanup keeps only the current version + 1 previous version (running or referenced versions stay protected), so earlier versions are not kept permanently.';
 }
 

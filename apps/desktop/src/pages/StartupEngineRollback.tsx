@@ -18,18 +18,27 @@ export function StartupEngineRollback({ language, desktop, disabled = false, mod
   const zh = core.legacyLanguage(language) === 'zh-CN';
   const inventory = useInstalledRuntimes(desktop, false);
   const releases = useQuery({ queryKey: ['runtime-release-versions'], queryFn: () => core.runtimeReleaseVersions(), enabled: desktop, staleTime: 6 * 60 * 60 * 1000, retry: false, refetchOnWindowFocus: false }).data?.versions ?? [];
+  const profileObj = typeof modelHint === 'object' && modelHint !== null && typeof modelHint.configPath === 'string'
+    ? (modelHint as unknown as core.ServiceProfile)
+    : undefined;
+  const configSnapshot = useQuery({
+    queryKey: ['startup-config', profileObj?.id, profileObj?.configPath],
+    queryFn: () => core.readConfigSnapshot(profileObj!),
+    enabled: desktop && !!profileObj?.configPath,
+    staleTime: 60_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
   const switcher = useRuntimeSwitch(onSwitchStarted);
   const current = inventory.data?.runtimes.find(runtime => runtime.current);
   const target = core.installedRollbackTarget(inventory.data, releases);
   const targetEngine = target?.engineVersion ?? (target ? releases.find(r => r.version === core.installedRuntimeRelease(target, releases))?.engineVersion : undefined);
-  const modelHints = [modelHint, ...(current?.profiles ?? []).map(p => p.name)];
+  const modelHints = [configSnapshot.data?.config, modelHint, ...(current?.profiles ?? []).map(p => p.name)];
   const incompatibility = core.engineRollbackCompatibilityWarning(targetEngine, modelHints, zh);
-  const retentionNote = core.engineRollbackRetentionNote(zh);
   const busy = disabled || !!inventory.data?.busy;
   if (!target && !onChooseVersion) return null;
   return <>
     <p>{zh ? '可能是新版引擎的问题，可回退到上一版引擎再试。' : 'This may be a problem in the new engine; you can fall back to the previous one and try again.'}</p>
-    {retentionNote && <p className="startup-diagnostic-rollback-note" data-testid="startup-rollback-retention-note">{retentionNote}</p>}
     {incompatibility && <p className="notice warning" role="status" data-testid="startup-rollback-min-engine">{incompatibility}</p>}
     {target
       ? <button type="button" data-testid="startup-rollback-local" disabled={busy || !desktop} onClick={() => switcher.open(target)}><History size={14}/>{zh ? '回退到' : 'Fall back to'} {installedRuntimeLabel(target, releases, zh)}</button>

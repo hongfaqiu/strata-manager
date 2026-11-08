@@ -10,11 +10,11 @@ test('an engine crash offers falling back to the previous engine on the fault ca
   assert.match(card, /engineRollback && startupEngineCrashed\(diagnostic\) && <div className="startup-diagnostic-rollback"/);
   const rollback = source('./StartupEngineRollback.tsx');
   assert.match(rollback, /core\.installedRollbackTarget\(inventory\.data, releases\)/);
-  assert.match(rollback, /core\.engineRollbackCompatibilityWarning/);
-  assert.match(rollback, /core\.engineRollbackRetentionNote/);
+  assert.match(rollback, /core\.engineRollbackCompatibilityWarning\(targetEngine, modelHints, zh\)/);
+  assert.match(rollback, /core\.readConfigSnapshot\(profileObj!\)/);
   assert.match(rollback, /switcher\.open\(target\)/);
   assert.match(rollback, /<RuntimeSwitchDialog /);
-  for (const copy of ['回退到上一版引擎再试', "'回退到' : 'Fall back to'", '选择其他引擎版本', 'Choose another engine version', 'startup-rollback-retention-note', 'startup-rollback-min-engine']) assert.ok(rollback.includes(copy), copy);
+  for (const copy of ['回退到上一版引擎再试', "'回退到' : 'Fall back to'", '选择其他引擎版本', 'Choose another engine version', 'startup-rollback-min-engine']) assert.ok(rollback.includes(copy), copy);
   const app = source('../App.tsx');
   assert.match(app, /engineRollback=\{desktop \? <StartupEngineRollback /);
 });

@@ -56,16 +56,19 @@ describe('installed runtimes', () => {
     expect(installedRollbackTarget(inventory([runtime('/v47', { engineVersion: '0.1.47', current: true }), runtime('/v48', { engineVersion: '0.1.48' })]), releases)).toBeUndefined();
     expect(installedRollbackTarget(undefined)).toBeUndefined();
   });
-  it('checks model minEngine compatibility against rollback target engines and explains retention rules (U10A)', () => {
+  it('checks model minEngine compatibility from config/MODEL_CATALOG first (profile name as fallback) and explains retention rules (U10A)', () => {
     expect(modelMinEngineOf('Qwen3.8-Flash-Next (Unsloth) · UD-Q2_K_XL')).toEqual({ label: 'UD-Q2_K_XL', minEngine: '0.1.57' });
     expect(modelMinEngineOf('qwen3.8-flash-next-unsloth-ud-iq4_xs-v31')).toEqual({ label: 'UD-IQ4_XS-v31', minEngine: '0.1.57' });
     expect(modelMinEngineOf({ args: ['--native', '/d/UD-IQ4_XS-00001-of-00004.gguf'] })).toEqual({ label: 'UD-IQ4_XS-v31', minEngine: '0.1.57' });
+    // Real config fields (model_name, args, configPath) take priority even when the user renamed the profile.
+    expect(modelMinEngineOf({ name: '主力对话模型', model_name: 'qwen3.8-flash-next-unsloth-ud-q3_k_xl' })).toEqual({ label: 'UD-Q3_K_XL', minEngine: '0.1.57' });
+    expect(modelMinEngineOf({ name: 'UD-Q2_K_XL renamed', model_name: 'qwen3.8-flash-next-iq3_s', args: ['--native', 'IQ3_S.gguf'] })).toBeNull();
     // Old 3-shard UD-IQ4_XS and DeepSeek UD-IQ1_M do not trigger the 0.1.57 Qwen v3.1 engine gate.
     expect(modelMinEngineOf('qwen3.8-flash-next-unsloth-ud-iq4_xs')).toBeNull();
     expect(modelMinEngineOf({ arch: 'deepseek41', model_name: 'deepseek-v4.1-flash-ud-iq1_m' })).toBeNull();
 
     // Rolling back to 0.1.56 / 0.1.55 with a v3.1 model warns that 0.1.57+ is required.
-    const warnZh = engineRollbackCompatibilityWarning('0.1.56', ['Qwen · UD-Q2_0'], true);
+    const warnZh = engineRollbackCompatibilityWarning('0.1.56', [{ name: '我的模型', model_name: 'qwen3.8-flash-next-unsloth-ud-q2_0' }], true);
     expect(warnZh).toContain('0.1.57');
     expect(warnZh).toContain('0.1.56');
     expect(warnZh).toContain('老格式模型');
@@ -78,10 +81,10 @@ describe('installed runtimes', () => {
     expect(engineRollbackCompatibilityWarning('0.1.57', ['Qwen · UD-Q2_0'], true)).toBeNull();
     expect(engineRollbackCompatibilityWarning('0.1.58', ['Qwen · UD-IQ4_XS-v31'], false)).toBeNull();
 
-    // Retention & compatibility summary note covers both 0.1.57 v3.1 requirement and current+1 cleanup rule.
-    expect(engineRollbackRetentionNote(true)).toContain('0.1.57');
+    // Retention rule note is concise (current + 1 previous version) without repeating model-specific text.
     expect(engineRollbackRetentionNote(true)).toContain('1 个旧版本');
-    expect(engineRollbackRetentionNote(false)).toContain('0.1.57+');
+    expect(engineRollbackRetentionNote(true)).not.toContain('Unsloth');
     expect(engineRollbackRetentionNote(false)).toContain('1 previous version');
+    expect(engineRollbackRetentionNote(false)).not.toContain('Unsloth');
   });
 });
