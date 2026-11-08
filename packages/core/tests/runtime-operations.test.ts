@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { describeRuntimeOperationFailure, operateSessionStorage, probeSessionStorage, requestPrefillTokS, resizeRuntimeVram, runtimeSlots, validateSessionFilename } from '../src/runtime-operations';
+import { describeRuntimeOperationFailure, operateSessionStorage, probeSessionStorage, requestPrefillTokS, resizeRuntimeVram, runtimeSlots, sessionInvalidKvExtentMessage, sessionRestoreAfterFailedSaveWarning, validateSessionFilename } from '../src/runtime-operations';
 import type { ServiceProfile } from '../src/types';
 
 const bridge = vi.hoisted(() => ({ request: vi.fn() }));
@@ -80,6 +80,31 @@ describe('session files', () => {
     expect(describeRuntimeOperationFailure('HTTP 400: {"error":{"message":"VRAM: refilling the cache failed: cuda"}}')).toMatchObject({ needsReload: true });
     expect(describeRuntimeOperationFailure('HTTP 400: {"error":{"message":"session: not with --layer-split"}}')).toMatchObject({ unsupported: true });
     expect(describeRuntimeOperationFailure('HTTP 404: {"error":{"message":"no saved session named unknown.bin"}}')).toMatchObject({ unsupported: false });
+  });
+  it('identifies HTTP 500 conversation snapshot: invalid K/V extent (#5153) without disabling the Save button (U11A)', () => {
+    const kvExtent500 = 'HTTP 500: {"error":{"message":"conversation snapshot: invalid K/V extent"}}';
+    const parsed = describeRuntimeOperationFailure(kvExtent500);
+    expect(parsed).toMatchObject({
+      status: 500,
+      kind: 'session-invalid-kv-extent',
+      unsupported: false,
+      published: false,
+    });
+    expect(sessionInvalidKvExtentMessage(true)).toContain('没有保存成功');
+    expect(sessionInvalidKvExtentMessage(true)).toContain('MTP');
+    expect(sessionInvalidKvExtentMessage(true)).toContain('DFlash2');
+    expect(sessionInvalidKvExtentMessage(true)).not.toContain('0.1.56');
+    expect(sessionInvalidKvExtentMessage(false)).toContain('not saved');
+    expect(sessionInvalidKvExtentMessage(false)).toContain('MTP');
+    expect(sessionInvalidKvExtentMessage(false)).not.toContain('0.1.56');
+
+    expect(sessionRestoreAfterFailedSaveWarning('chat.bin', true)).toContain('chat.bin');
+    expect(sessionRestoreAfterFailedSaveWarning('chat.bin', true)).toContain('没有成功');
+    expect(sessionRestoreAfterFailedSaveWarning('chat.bin', false)).toContain('chat.bin');
+    expect(sessionRestoreAfterFailedSaveWarning('chat.bin', false)).toContain('did not succeed');
+
+    // Other 500 errors do not match session-invalid-kv-extent
+    expect(describeRuntimeOperationFailure('HTTP 500: {"error":{"message":"conversation snapshot: disk write failed"}}').kind).toBeNull();
   });
 });
 
