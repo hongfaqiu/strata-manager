@@ -10,20 +10,212 @@ export { STARTUP_ENGINE_FLAGS } from './startup-engine-flags';
 
 export interface StartupTuning { context: string; kv: string; threads: string }
 const kvKinds = ['fp16', 'int8', 'q4_0', 'k8v4'];
+
+export const USER_ARGS_KEY = 'user_args';
+export const ARGS_WRITTEN_KEY = 'args_written';
+export const ARGS_DERIVED_KEY = 'args_derived';
+export const CALIBRATED_KEY = 'calibrated';
+export const LAUNCH_SET_KEY = 'launch_set';
+/** Flags upstream `drafting.apply` only recognises as hand-set under DFlash2 when present in `user_args`. */
+export const DFLASH2_USER_ARG_FLAGS: ReadonlySet<string> = new Set(['--spec', '--draft-conf']);
+
+export function flagOfGroup(group: readonly string[]): string {
+  const head = group[0];
+  if (!head || !head.startsWith('--')) return '';
+  const eq = head.indexOf('=');
+  return eq >= 0 ? head.slice(0, eq) : head;
+}
+
+/**
+ * Split an argv list into option groups (`--flag` + its operand tokens, or a lone positional token).
+ * Preserves unknown options, multi-value flags (`--control-vector-layer-range 4 44`), repeated flags,
+ * and positional arguments (even after a known 0/N-arity flag).
+ */
+export function argGroups(args: unknown, flags?: Readonly<Record<string, number>>): string[][] {
+  const out: string[][] = [];
+  if (!Array.isArray(args)) return out;
+  for (const raw of args) {
+    if (typeof raw !== 'string') continue;
+    if (raw.startsWith('--') || !out.length) {
+      out.push([raw]);
+      continue;
+    }
+    const current = out[out.length - 1]!;
+    const flag = flagOfGroup(current);
+    const knownArity = flag && flags && Object.hasOwn(flags, flag) ? flags[flag] : undefined;
+    if (!flag || current[0]!.includes('=') || (knownArity !== undefined && current.length - 1 >= knownArity)) {
+      out.push([raw]);
+    } else {
+      current.push(raw);
+    }
+  }
+  return out;
+}
+
+/** `args` with `userArgs` merged on top (upstream `strata_control/user_args.py:merge`): every flag in `userArgs` wins. */
+export function mergeUserArgs(args: readonly string[], userArgs: unknown, flags?: Readonly<Record<string, number>>): string[] {
+  const ug = argGroups(userArgs, flags);
+  const mine = new Set(ug.map(flagOfGroup).filter(Boolean));
+  if (!mine.size) return [...args];
+  const kept = argGroups(args, flags).filter(g => !mine.has(flagOfGroup(g)));
+  return [...kept, ...ug].flat();
+}
+
+function byFlag(gs: string[][]): Map<string, string[][]> {
+  const map = new Map<string, string[][]>();
+  for (const g of gs) {
+    const f = flagOfGroup(g);
+    const list = map.get(f);
+    if (list) list.push(g);
+    else map.set(f, [g]);
+  }
+  return map;
+}
+const sameGroups = (a: string[][] | undefined, b: string[][] | undefined): boolean =>
+  JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+/**
+ * Upstream `strata_control/user_args.py:capture`: `user_args` plus any option in `args` that differs from
+ * `args_written` (or minus any option in `args_written` that was removed from `args`).
+ */
+export function captureUserArgs(config: JsonObject, skip: ReadonlySet<string> = new Set()): string[] {
+  const flags = startupEngineFlagsFor(config);
+  const mine = byFlag(argGroups(config[USER_ARGS_KEY], flags));
+  if (Array.isArray(config[ARGS_WRITTEN_KEY]) && Array.isArray(config.args)) {
+    const cur = byFlag(argGroups(config.args, flags));
+    const was = byFlag(argGroups(config[ARGS_WRITTEN_KEY], flags));
+    for (const [flag, gs] of cur) {
+      if (flag && !skip.has(flag) && !sameGroups(was.get(flag), gs)) {
+        mine.set(flag, gs);
+      }
+    }
+    for (const flag of [...mine.keys()]) {
+      if (was.has(flag) && !cur.has(flag)) {
+        mine.delete(flag);
+      }
+    }
+  }
+  return [...mine.values()].flat(2);
+}
+
+export function hasUserArgsLayer(config: JsonObject | null | undefined): boolean {
+  if (!config) return false;
+  return Array.isArray(config[USER_ARGS_KEY]) || Array.isArray(config[ARGS_WRITTEN_KEY]) || Array.isArray(config[ARGS_DERIVED_KEY]);
+}
+
+export function stampUserArgs(config: JsonObject, userArgs: readonly string[], keepWritten: boolean): void {
+  if (userArgs.length > 0) {
+    config[USER_ARGS_KEY] = [...userArgs];
+  } else {
+    delete config[USER_ARGS_KEY];
+  }
+  if (keepWritten && Array.isArray(config.args)) {
+    config[ARGS_WRITTEN_KEY] = [...(config.args as string[])];
+  } else if (!keepWritten) {
+    delete config[ARGS_WRITTEN_KEY];
+  }
+  if (Array.isArray(config[ARGS_DERIVED_KEY]) && Array.isArray(config.args)) {
+    config[ARGS_DERIVED_KEY] = [...(config.args as string[])];
+  }
+}
+
+function cleanArgLayersMetadata(config: JsonObject, touched: ReadonlySet<string>): void {
+  if (Array.isArray(config[LAUNCH_SET_KEY])) {
+    const rest = (config[LAUNCH_SET_KEY] as unknown[]).filter(x => typeof x === 'string' && !touched.has(x));
+    if (rest.length) config[LAUNCH_SET_KEY] = rest;
+    else delete config[LAUNCH_SET_KEY];
+  }
+  const calibrated = config[CALIBRATED_KEY];
+  if (calibrated && typeof calibrated === 'object' && !Array.isArray(calibrated)) {
+    const rec = calibrated as JsonObject;
+    if (rec.settings && typeof rec.settings === 'object' && !Array.isArray(rec.settings)) {
+      const settings = { ...(rec.settings as JsonObject) };
+      for (const flag of touched) delete settings[flag];
+      if (Object.keys(settings).length) config[CALIBRATED_KEY] = { ...rec, settings };
+      else delete config[CALIBRATED_KEY];
+    }
+  }
+}
+
+/**
+ * Upstream `tune_apply.py` / `arg_layers.record_calibration`: keep `user_args` except for the flags set by
+ * calibration/tuning, and refresh `args_written` (only when already present). Configs without `user_args` stay untouched.
+ */
+export function syncCalibrationUserArgs(before: JsonObject, next: JsonObject, touchedFlags: Iterable<string>): JsonObject {
+  const touched = new Set(touchedFlags);
+  if (hasUserArgsLayer(before)) {
+    const flags = startupEngineFlagsFor(before);
+    const mine = argGroups(captureUserArgs(before), flags)
+      .filter(g => !touched.has(flagOfGroup(g)))
+      .flat();
+    stampUserArgs(next, mine, Array.isArray(before[ARGS_WRITTEN_KEY]));
+  }
+  cleanArgLayersMetadata(next, touched);
+  return next;
+}
+
+/**
+ * Upstream `serve/runconfig.py`: a manual setting edit updates `user_args` (and `args_written` if present) when the
+ * config already uses the `user_args` layer, or when the flag is one (`--spec`, `--draft-conf`) that upstream
+ * `drafting.apply` only respects under DFlash2 from `user_args`.
+ */
+export function syncManualUserArgs(
+  before: JsonObject,
+  next: JsonObject,
+  flag: string,
+  replacementGroups: readonly (readonly string[])[],
+): JsonObject {
+  const needsDflash2Override = DFLASH2_USER_ARG_FLAGS.has(flag) && !isDeepseek41Config(before);
+  if (hasUserArgsLayer(before) || (needsDflash2Override && replacementGroups.length > 0)) {
+    const flags = startupEngineFlagsFor(before);
+    const existing = argGroups(captureUserArgs(before), flags);
+    const out: string[][] = [];
+    let replaced = false;
+    for (const g of existing) {
+      if (flagOfGroup(g) === flag) {
+        if (!replaced && replacementGroups.length > 0) {
+          out.push(...replacementGroups.map(item => [...item]));
+          replaced = true;
+        }
+      } else {
+        out.push(g);
+      }
+    }
+    if (!replaced && replacementGroups.length > 0) {
+      out.push(...replacementGroups.map(item => [...item]));
+    }
+    stampUserArgs(next, out.flat(), Array.isArray(before[ARGS_WRITTEN_KEY]));
+  }
+  cleanArgLayersMetadata(next, new Set([flag]));
+  return next;
+}
+
 function argsOf(config: JsonObject): string[] {
   if (!Array.isArray(config.args) || !config.args.every(x => typeof x === 'string')) throw new Error('args 必须为字符串数组 / args must be a string array');
   return [...config.args] as string[];
 }
+/** Raw `config.args` without `user_args` merged. */
+export function rawStartupArgsOf(config: JsonObject): string[] {
+  return config.args === undefined ? [] : argsOf(config);
+}
+/** Effective engine arguments (`user_args.merge(args, user_args)` when `user_args` is present). */
+export function effectiveArgsOf(config: JsonObject): string[] {
+  const raw = rawStartupArgsOf(config);
+  if (!Array.isArray(config[USER_ARGS_KEY]) || !config[USER_ARGS_KEY].length) return raw;
+  return mergeUserArgs(raw, config[USER_ARGS_KEY], startupEngineFlagsFor(config));
+}
 function valueOf(args: string[], flag: string): string {
-  const positions = args.flatMap((value, i) => value === flag ? [i] : []);
+  const positions = args.flatMap((value, i) => (value === flag || value.startsWith(`${flag}=`)) ? [i] : []);
   if (positions.length > 1) throw new Error(`${flag} 重复，请在原始配置中修正 / duplicate option`);
   if (!positions.length) return '';
-  const value = args[positions[0]! + 1];
+  const at = positions[0]!;
+  if (args[at]!.startsWith(`${flag}=`)) return args[at]!.slice(flag.length + 1);
+  const value = args[at + 1];
   if (!value || value.startsWith('--')) throw new Error(`${flag} 缺少参数 / missing value`);
   return value;
 }
 export function startupTuningOf(config: JsonObject): StartupTuning {
-  const args = argsOf(config);
+  const args = effectiveArgsOf(config);
   const argThreads = valueOf(args, '--threads');
   return { context: valueOf(args, '--max-context'), kv: valueOf(args, '--kv'), threads: config.threads == null ? argThreads : String(config.threads) };
 }
@@ -40,19 +232,21 @@ export function applyStartupTuning(config: JsonObject, tuning: StartupTuning): J
   const threads = integer(tuning.threads, 'threads', 65535);
   if (tuning.kv !== current.kv && tuning.kv && !kvKinds.includes(tuning.kv)) throw new Error('KV 必须为 fp16 / int8 / q4_0 / k8v4');
   const args = argsOf(config);
+  const effective = effectiveArgsOf(config);
   const setArg = (flag: string, value: string | undefined) => {
-    const i = args.indexOf(flag);
-    if (i >= 0) args.splice(i, 2, ...(value ? [flag, value] : []));
+    const i = args.findIndex(item => item === flag || item.startsWith(`${flag}=`));
+    if (i >= 0) args.splice(i, args[i] === flag ? 2 : 1, ...(value ? [flag, value] : []));
     else if (value) args.push(flag, value);
   };
   setArg('--max-context', context == null ? undefined : String(context));
   setArg('--kv', tuning.kv || undefined);
-  if (args.includes('--threads')) setArg('--threads', threads == null ? undefined : String(threads));
-  const resident = valueOf(args, '--kv-resident');
+  const touchesThreads = args.includes('--threads') || effective.includes('--threads');
+  if (touchesThreads) setArg('--threads', threads == null ? undefined : String(threads));
+  const resident = valueOf(mergeUserArgs(args, config[USER_ARGS_KEY], startupEngineFlagsFor(config)), '--kv-resident');
   if (resident && Number(resident) > (context ?? 4096)) throw new Error('上下文不能小于现有 --kv-resident；请通过模型准备重新生成匹配配置 / context is below the existing resident KV window');
   const next: JsonObject = { ...structuredClone(config), args };
-  if (threads == null) delete next.threads; else if ('threads' in config || !config.args || !(config.args as string[]).includes('--threads')) next.threads = threads;
-  return next;
+  if (threads == null) delete next.threads; else if ('threads' in config || !touchesThreads) next.threads = threads;
+  return syncCalibrationUserArgs(config, next, ['--max-context', '--kv', ...(touchesThreads ? ['--threads'] : [])]);
 }
 
 export type StartupFieldGroup = 'context' | 'memory' | 'cache' | 'cpu' | 'prefill' | 'speculation' | 'ple' | 'model' | 'server' | 'vision' | 'sampling' | 'network' | 'power' | 'paths';
@@ -233,6 +427,10 @@ export const STARTUP_FIELD_HINTS: Readonly<Record<string, { zh: string; en: stri
     zh: '仅在跨 GPU 层分配（--layer-split）时生效：按流水线切分提示词分块。0 关闭（默认），1 仅平均分块数，大于 1 为本机 b/a（token，可由快速校准或官方 --calibrate 测得），范围 0–262144。',
     en: 'Only affects a layer split (--layer-split): sizes prompt chunks for the pipeline. 0 off (default), 1 only evens out the chunk count, > 1 is this PC\'s b/a in tokens (measured by quick calibration or the official --calibrate); range 0–262144.',
   },
+  '--spec': {
+    zh: '每轮推测的草稿词数上限：MTP 默认 4，DFlash2 默认 6。在此手动设置后会写入 user_args 作为手动覆盖项，DFlash2 与 MTP 均按所设值运行；“使用默认设置”则恢复当前推测解码策略的默认值。',
+    en: 'Maximum drafted tokens per step: MTP defaults to 4 and DFlash2 defaults to 6. A value set here is recorded in user_args as a manual override so both DFlash2 and MTP honour it; "Use default" restores the active drafting policy default.',
+  },
 };
 
 const POOL_CORES = /^[0-9]+(-[0-9]+(:[0-9]+)?)?(,[0-9]+(-[0-9]+(:[0-9]+)?)?)*$/;
@@ -244,7 +442,7 @@ export function poolCoresValid(value: unknown): boolean {
 /** Config fields whose stored null means the same as leaving them out. */
 const NULL_AS_DEFAULT_FIELDS: ReadonlySet<string> = new Set(['sampling.experimental_speed_projection']);
 
-export function startupArgsOf(config: JsonObject): string[] { return config.args === undefined ? [] : argsOf(config); }
+export function startupArgsOf(config: JsonObject): string[] { return effectiveArgsOf(config); }
 /**
  * Whether a startup field belongs to this config. DeepSeek-V4.1-Flash runs on its own engine (strata-dsv41) with its own
  * options, set on the run-options card (deepseek41-config): no Qwen engine option field is shown or written for it
@@ -263,8 +461,12 @@ export function startupEngineFlagsFor(config: JsonObject | null | undefined): Re
 export function startupFieldValue(config: JsonObject, field: StartupFieldSpec): string {
   if (!startupFieldApplies(config, field)) return '';
   if (field.target === 'arg') {
-    const args = startupArgsOf(config); const index = args.indexOf(field.key);
-    return index < 0 ? '' : field.kind === 'boolean' ? 'true' : args[index + 1] ?? '';
+    const args = effectiveArgsOf(config);
+    const index = args.findIndex(item => item === field.key || item.startsWith(`${field.key}=`));
+    if (index < 0) return '';
+    if (field.kind === 'boolean') return 'true';
+    const token = args[index]!;
+    return token.startsWith(`${field.key}=`) ? token.slice(field.key.length + 1) : args[index + 1] ?? '';
   }
   let value: unknown = config;
   for (const key of field.key.split('.')) value = value && typeof value === 'object' && !Array.isArray(value) && Object.hasOwn(value, key) ? (value as JsonObject)[key] : undefined;
@@ -287,16 +489,20 @@ export function applyStartupField(config: JsonObject, field: StartupFieldSpec, t
     }
   }
   if (field.target === 'arg') {
-    const args = startupArgsOf(config);
-    const positions = args.flatMap((arg, index) => arg === field.key ? [index] : []);
-    if (positions.length > 1) throw new Error(`${field.key}: 参数重复，请在完整参数列表中分别编辑 / edit duplicate options in the full argument list`);
+    const rawArgs = rawStartupArgsOf(config);
+    const effective = effectiveArgsOf(config);
+    const matches = (arg: string) => arg === field.key || arg.startsWith(`${field.key}=`);
+    const rawPositions = rawArgs.flatMap((arg, index) => matches(arg) ? [index] : []);
+    const effPositions = effective.flatMap((arg, index) => matches(arg) ? [index] : []);
+    if (rawPositions.length > 1 || effPositions.length > 1) throw new Error(`${field.key}: 参数重复，请在完整参数列表中分别编辑 / edit duplicate options in the full argument list`);
     const arity = STARTUP_ENGINE_FLAGS[field.key] ?? (field.kind === 'boolean' ? 0 : 1);
     if (arity > 1) throw new Error(`${field.key}: 请在完整参数列表中编辑多个值 / edit multiple operands in the argument list`);
-    const index = positions[0];
+    const index = rawPositions[0];
     const replacement = text === '' || (field.kind === 'boolean' && value === false) ? [] : arity === 0 ? [field.key] : [field.key, String(value)];
-    if (index === undefined) args.push(...replacement);
-    else args.splice(index, 1 + (arity && args[index + 1] !== undefined && !args[index + 1]!.startsWith('--') ? 1 : 0), ...replacement);
-    next.args = args;
+    if (index === undefined) rawArgs.push(...replacement);
+    else rawArgs.splice(index, rawArgs[index]!.startsWith(`${field.key}=`) ? 1 : 1 + (arity && rawArgs[index + 1] !== undefined && !rawArgs[index + 1]!.startsWith('--') ? 1 : 0), ...replacement);
+    next.args = rawArgs;
+    return syncManualUserArgs(config, next, field.key, replacement.length ? [replacement] : []);
   } else {
     const keys = field.key.split('.');
     const apply = (object: JsonObject, index: number): JsonObject => {
@@ -311,7 +517,6 @@ export function applyStartupField(config: JsonObject, field: StartupFieldSpec, t
     };
     return apply(next, 0);
   }
-  return next;
 }
 
 export interface StartupArgRow { offset: number; tokens: string[]; known: boolean; arity: number }
@@ -331,13 +536,33 @@ export function startupArgumentRows(config: JsonObject): StartupArgRow[] {
 export function replaceStartupArgument(config: JsonObject, row: StartupArgRow, tokens: string[]): JsonObject {
   const args = startupArgsOf(config);
   args.splice(row.offset, row.tokens.length, ...tokens);
-  return { ...structuredClone(config), args };
+  const next: JsonObject = { ...structuredClone(config), args };
+  const oldFlag = flagOfGroup(row.tokens);
+  const newFlag = flagOfGroup(tokens);
+  const touchedFlags = [...new Set([oldFlag, newFlag].filter(Boolean))];
+  const flags = startupEngineFlagsFor(config);
+  for (const flag of touchedFlags) {
+    const groupsInArgs = argGroups(args, flags).filter(g => flagOfGroup(g) === flag);
+    syncManualUserArgs(config, next, flag, groupsInArgs);
+  }
+  return next;
+}
+export function appendStartupArgument(config: JsonObject, tokens: string[]): JsonObject {
+  const args = startupArgsOf(config);
+  return replaceStartupArgument(config, { offset: args.length, tokens: [], known: false, arity: 0 }, tokens);
 }
 export function parseStartupConfiguration(raw: string): JsonObject {
   const config: unknown = JSON.parse(raw);
   if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('完整配置必须为 JSON 对象 / configuration must be a JSON object');
-  startupArgsOf(config as JsonObject);
-  return config as JsonObject;
+  rawStartupArgsOf(config as JsonObject);
+  const obj = config as JsonObject;
+  if (obj[USER_ARGS_KEY] !== undefined && (!Array.isArray(obj[USER_ARGS_KEY]) || !(obj[USER_ARGS_KEY] as unknown[]).every(x => typeof x === 'string'))) {
+    throw new Error('user_args 必须为字符串数组 / user_args must be a string array');
+  }
+  if (obj[ARGS_WRITTEN_KEY] !== undefined && (!Array.isArray(obj[ARGS_WRITTEN_KEY]) || !(obj[ARGS_WRITTEN_KEY] as unknown[]).every(x => typeof x === 'string'))) {
+    throw new Error('args_written 必须为字符串数组 / args_written must be a string array');
+  }
+  return obj;
 }
 export function validateStartupConfiguration(config: JsonObject): void {
   startupServiceEndpoint(config);
@@ -349,8 +574,15 @@ export function validateStartupConfiguration(config: JsonObject): void {
     if (typeof value !== 'number') throw new Error(`${field.key}: 必须为数值 / must be a number`);
     applyStartupField(config, field, String(value));
   }
+  const rawArgs = rawStartupArgsOf(config);
+  if (config[USER_ARGS_KEY] !== undefined && (!Array.isArray(config[USER_ARGS_KEY]) || !(config[USER_ARGS_KEY] as unknown[]).every(x => typeof x === 'string'))) {
+    throw new Error('user_args 必须为字符串数组 / user_args must be a string array');
+  }
+  if (config[ARGS_WRITTEN_KEY] !== undefined && (!Array.isArray(config[ARGS_WRITTEN_KEY]) || !(config[ARGS_WRITTEN_KEY] as unknown[]).every(x => typeof x === 'string'))) {
+    throw new Error('args_written 必须为字符串数组 / args_written must be a string array');
+  }
   const args = startupArgsOf(config);
-  if (args.some(value => !value.length)) throw new Error('args 包含空参数，请填写或移除 / remove or fill empty arguments');
+  if (rawArgs.some(value => !value.length) || args.some(value => !value.length)) throw new Error('args 包含空参数，请填写或移除 / remove or fill empty arguments');
   for (const row of startupArgumentRows(config)) if (row.known && row.tokens.length - 1 < row.arity) throw new Error(`${row.tokens[0]} 缺少参数值，需要 ${row.arity} 个 / missing operand(s), expected ${row.arity}`);
   const deepseekError = deepseek41ArgsError(config); if (deepseekError) throw new Error(deepseekError);
   const context = valueOf(args, '--max-context'); const resident = valueOf(args, '--kv-resident');

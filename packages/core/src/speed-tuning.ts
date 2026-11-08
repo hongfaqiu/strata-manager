@@ -30,6 +30,7 @@ import type { JsonObject } from './types';
 import type { CalibrationGoal, CalibrationJob, CalibrationRates } from './tuning-types';
 import { PCIE_AUTO } from './tuning-types';
 import { isQwen36Config } from './catalog';
+import { effectiveArgsOf, rawStartupArgsOf, syncCalibrationUserArgs } from './config-tuning';
 import { assertDeepseek41Flags, isDeepseek41Config } from './deepseek41-config';
 import { gpuVendorOf, isIntegratedGpuName } from './integrated-gpu';
 
@@ -115,7 +116,10 @@ export function hasSmallNvidiaCard(gpus: SpeedHealthGpu[] | undefined): boolean 
   });
 }
 
-const args = (config: JsonObject): string[] => Array.isArray(config.args) ? config.args.filter((arg): arg is string => typeof arg === 'string') : [];
+const args = (config: JsonObject): string[] => {
+  try { return effectiveArgsOf(config); }
+  catch { return Array.isArray(config.args) ? config.args.filter((arg): arg is string => typeof arg === 'string') : []; }
+};
 /** The value of a flag written as `flag value` or `flag=value`; '' for a bare flag. */
 export function argValue(list: string[], flag: string): string | undefined {
   for (let i = 0; i < list.length; i += 1) {
@@ -223,10 +227,11 @@ export function speedHealthCheck(input: SpeedHealthInput): SpeedCheck[] {
 
 /** Writes fixes into a copy of the config's args (`flag value` form) and env (`env.NAME`), keeping everything else. */
 export function applySpeedFixes(config: JsonObject, fixes: SpeedFix[]): JsonObject {
-  let list = args(config);
+  let list = Array.isArray(config.args) && config.args.every(arg => typeof arg === 'string') ? rawStartupArgsOf(config) : [];
   if (!Array.isArray(config.args) || list.length !== config.args.length) throw new Error('args 必须为字符串数组 / args must be a string array');
   const isEnv = (key: string) => key.startsWith('env.');
-  assertDeepseek41Flags(config, fixes.flatMap(fix => Object.keys(fix).filter(key => !isEnv(key))));
+  const touchedFlags = fixes.flatMap(fix => Object.keys(fix).filter(key => !isEnv(key)));
+  assertDeepseek41Flags(config, touchedFlags);
   const env: Record<string, unknown> = { ...structuredClone(envOf(config)) };
   let envTouched = false;
   for (const fix of fixes) for (const [flag, value] of Object.entries(fix)) {
@@ -250,7 +255,7 @@ export function applySpeedFixes(config: JsonObject, fixes: SpeedFix[]): JsonObje
   }
   const result: JsonObject = { ...structuredClone(config), args: list };
   if (envTouched) { if (Object.keys(env).length) result.env = env as JsonObject; else delete result.env; }
-  return result;
+  return syncCalibrationUserArgs(config, result, touchedFlags);
 }
 
 /** File name for a version saved by one-click tuning, next to the current one. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyCalibrationSettings, calibrationEngineOutdated, calibratedConfigName, calibrationConfigChanged, calibrationHasChange, calibrationProgress, restartCandidatesFromCalibration, sweepPoints, type CalibrationStep } from '../src';
+import { applyCalibrationSettings, calibrationEngineOutdated, calibratedConfigName, calibrationConfigChanged, calibrationHasChange, calibrationProgress, mergeUserArgs, restartCandidatesFromCalibration, sweepPoints, type CalibrationStep } from '../src';
 
 const config = { exe: 'engine/strata.exe', args: ['--native', 'model.gguf', '--pcie-frac', '0.55', '--api-key-env', 'KEY', '--unknown', 'x'], port: 8080 };
 
@@ -58,6 +58,42 @@ describe('quick calibration helpers', () => {
   it('writes --prefill-pipe as an integer within the upstream range', () => {
     expect(applyCalibrationSettings({ args: [] }, { '--prefill-pipe': '1536' }, 'hip').args).toEqual(['--prefill-pipe', '1536']);
     expect(() => applyCalibrationSettings({ args: [] }, { '--prefill-pipe': '262145' }, 'hip')).toThrow();
+  });
+  it('clears conflicting user_args overrides and refreshes args_written so calibrated values survive server.py merge (U4A)', () => {
+    const repro = {
+      args: ['--pcie-frac', '0.4'],
+      user_args: ['--pcie-frac', '0.4'],
+      args_written: ['--pcie-frac', '0.4'],
+    };
+    const applied = applyCalibrationSettings(repro, { '--pcie-frac': '0.8' }, 'cuda');
+    expect(applied.args).toEqual(['--pcie-frac', '0.8']);
+    expect(applied.user_args).toBeUndefined();
+    expect(applied.args_written).toEqual(['--pcie-frac', '0.8']);
+    expect(mergeUserArgs(applied.args as string[], applied.user_args)).toEqual(['--pcie-frac', '0.8']);
+
+    // Keeps unrelated user_args, multi-value flags, repeated flags, and hand edits since args_written.
+    const withExtras = {
+      args: ['--native', 'm.gguf', '--pcie-frac', '0.4', '--pool-workers', '12'],
+      user_args: ['--pcie-frac', '0.4', '--control-vector-layer-range', '4', '44', '--control-vector', 'a.gguf', '--control-vector', 'b.gguf', '--unknown-opt', 'v'],
+      args_written: ['--native', 'm.gguf', '--pcie-frac', '0.4', '--pool-workers', '8'],
+      args_derived: ['--native', 'm.gguf', '--pcie-frac', '0.4', '--pool-workers', '8'],
+      launch_set: ['--pcie-frac', '--pool-workers'],
+      calibrated: { settings: { '--pcie-frac': '0.4', '--spec-min-p': '0.50' }, model_name: 'qwen' },
+    };
+    const next = applyCalibrationSettings(withExtras, { '--pcie-frac': '0.8', '--spec-min-p': null }, 'cuda');
+    expect(next.args).toEqual(['--native', 'm.gguf', '--pcie-frac', '0.8', '--pool-workers', '12']);
+    expect(next.user_args).toEqual([
+      '--control-vector-layer-range', '4', '44',
+      '--control-vector', 'a.gguf', '--control-vector', 'b.gguf',
+      '--unknown-opt', 'v',
+      '--pool-workers', '12',
+    ]);
+    expect(next.args_written).toEqual(next.args);
+    expect(next.args_derived).toEqual(next.args);
+    expect(next.launch_set).toEqual(['--pool-workers']);
+    expect(next.calibrated).toEqual({ settings: { '--pcie-frac': '0.8' }, model_name: 'qwen' });
+    expect(mergeUserArgs(next.args as string[], next.user_args)).toContain('0.8');
+    expect(mergeUserArgs(next.args as string[], next.user_args)).not.toContain('0.4');
   });
 });
 

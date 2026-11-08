@@ -95,7 +95,30 @@ export interface ConcurrencySettings {
   experimental: Record<ConcurrencyExperimentalEnv, boolean>;
 }
 
-const argList = (config: JsonObject): string[] => Array.isArray(config.args) ? config.args.filter((arg): arg is string => typeof arg === 'string') : [];
+const groupFlag = (g: readonly string[]): string => {
+  const head = g[0];
+  if (!head || !head.startsWith('--')) return '';
+  const eq = head.indexOf('=');
+  return eq >= 0 ? head.slice(0, eq) : head;
+};
+const groupArgs = (raw: unknown): string[][] => {
+  const out: string[][] = [];
+  if (!Array.isArray(raw)) return out;
+  for (const item of raw) {
+    if (typeof item !== 'string') continue;
+    if (item.startsWith('--') || !out.length || out[out.length - 1]![0]!.includes('=')) out.push([item]);
+    else out[out.length - 1]!.push(item);
+  }
+  return out;
+};
+const argList = (config: JsonObject): string[] => {
+  const base = Array.isArray(config.args) ? config.args.filter((arg): arg is string => typeof arg === 'string') : [];
+  if (!Array.isArray(config.user_args) || !config.user_args.length) return base;
+  const ug = groupArgs(config.user_args);
+  const mine = new Set(ug.map(groupFlag).filter(Boolean));
+  if (!mine.size) return base;
+  return [...groupArgs(base).filter(g => !mine.has(groupFlag(g))), ...ug].flat();
+};
 function argValue(args: string[], flag: string): string | null {
   for (let i = 0; i < args.length; i++) {
     if (args[i] === flag) { const value = args[i + 1]; return value !== undefined && !value.startsWith('--') ? value : ''; }

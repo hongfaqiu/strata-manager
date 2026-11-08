@@ -1717,3 +1717,44 @@ fn engine_reported_drafting_is_read_as_mtp_on_or_off() {
     assert_eq!(reported_mtp(&json!({"drafting":"dflash2"})), None);
     assert_eq!(reported_mtp(&json!({})), None);
 }
+
+#[test]
+fn tuning_parameters_and_restart_candidates_sync_user_args_and_args_written() {
+    let config = json!({
+        "exe": "engine",
+        "args": ["--native", "w.gguf", "--pcie-frac", "0.4", "--pool-workers", "4"],
+        "user_args": ["--pcie-frac", "0.4", "--pool-workers", "6", "--control-vector-layer-range", "4", "44"],
+        "args_written": ["--native", "w.gguf", "--pcie-frac", "0.4", "--pool-workers", "4"]
+    });
+    assert_eq!(baseline(&config).unwrap().pool_workers, Some(6));
+    let tuned = with_parameters(
+        &config,
+        Parameters {
+            pcie_frac: 0.8,
+            spec_min_p: 0.65,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        tuned["user_args"],
+        json!(["--pool-workers", "6", "--control-vector-layer-range", "4", "44"])
+    );
+    assert_eq!(tuned["args_written"], tuned["args"]);
+    let eff = super::effective_args_of(&tuned).unwrap();
+    assert!(eff.windows(2).any(|w| w == ["--pcie-frac", "0.8"]));
+
+    let restarted = with_restart(
+        &tuned,
+        Some(&RestartParameters {
+            pool_workers: Some(8),
+            ..Default::default()
+        }),
+    )
+    .unwrap();
+    assert_eq!(
+        restarted["user_args"],
+        json!(["--control-vector-layer-range", "4", "44"])
+    );
+    assert_eq!(restarted["args_written"], restarted["args"]);
+    assert_eq!(baseline(&restarted).unwrap().pool_workers, Some(8));
+}

@@ -48,14 +48,38 @@ export function engineServesDflash2(engineVersion: string | null | undefined): b
   return since === null ? null : since >= 0;
 }
 
+const groupFlag = (g: readonly string[]): string => {
+  const head = g[0];
+  if (!head || !head.startsWith('--')) return '';
+  const eq = head.indexOf('=');
+  return eq >= 0 ? head.slice(0, eq) : head;
+};
+const groupArgs = (raw: unknown): string[][] => {
+  const out: string[][] = [];
+  if (!Array.isArray(raw)) return out;
+  for (const item of raw) {
+    if (typeof item !== 'string') continue;
+    if (item.startsWith('--') || !out.length || out[out.length - 1]![0]!.includes('=')) out.push([item]);
+    else out[out.length - 1]!.push(item);
+  }
+  return out;
+};
+const effectiveDraftingArgs = (config: JsonObject | undefined | null): string[] => {
+  const base = Array.isArray(config?.args) ? config.args.filter((arg): arg is string => typeof arg === 'string') : [];
+  if (!Array.isArray(config?.user_args) || !config.user_args.length) return base;
+  const ug = groupArgs(config.user_args);
+  const mine = new Set(ug.map(groupFlag).filter(Boolean));
+  if (!mine.size) return base;
+  return [...groupArgs(base).filter(g => !mine.has(groupFlag(g))), ...ug].flat();
+};
+
 /** Concurrent requests the config asks for: `parallel`, else the largest `--parallel` / `--batch` / `--slots` value; 1 when unset. */
 export function draftingRequestsOf(config: JsonObject | undefined | null): number {
   const counts: number[] = [];
   const add = (value: unknown) => { const n = Number(typeof value === 'string' ? value.trim() : value); if (Number.isSafeInteger(n) && n > 0) counts.push(n); };
   add(config?.parallel);
-  const args = Array.isArray(config?.args) ? config.args : [];
+  const args = effectiveDraftingArgs(config);
   args.forEach((arg, index) => {
-    if (typeof arg !== 'string') return;
     for (const flag of ['--parallel', '--batch', '--slots']) {
       if (arg === flag) add(args[index + 1]);
       else if (arg.startsWith(`${flag}=`)) add(arg.slice(flag.length + 1));
