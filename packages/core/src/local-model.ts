@@ -106,7 +106,9 @@ export function localModelCommand(group: LocalGgufGroup, request: LocalModelRequ
     // ORCA.md: tools/convert_to_bf16.py --compat-bf16 + a hand-written config; there is no setup.py flag for it.
     return `ORCA.md: python tools/convert_to_bf16.py --compat-bf16 … → strata-orca-iq3_xxs.json${mtp?.rtDirectory ? ` (--mtp ${quoted(mtp.rtDirectory)})` : ''}`;
   }
-  const parts = [launcher, '--family', group.family ?? '?', '--model', group.quant ?? '?', '--gguf-dir', quoted(request.ggufDirectory), '--context', String(context)];
+  // An NVFP4 pack is found by --data-dir only (setup drops --gguf-dir for ready-made packs): <data>/models/<owner>--<repo>.
+  const where = group.family === 'nvfp4' ? [] : ['--gguf-dir', quoted(request.ggufDirectory)];
+  const parts = [launcher, '--family', group.family ?? '?', '--model', group.quant ?? '?', ...where, '--context', String(context)];
   if (images !== undefined) parts.push('--vision', images ? 'yes' : 'no');
   const data = dataDirectory || mtp?.dataDirectory;
   if (data) parts.push('--data-dir', quoted(data));

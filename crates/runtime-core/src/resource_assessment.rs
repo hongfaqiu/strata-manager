@@ -245,6 +245,11 @@ fn model(family: &str, quant: &str) -> Option<(f64, f64, bool)> {
         ("qwen36", "UD-Q4_K_XL") => Some((32.0, 22.9, false)),
         ("qwen36", "UD-Q6_K_XL") => Some((44.0, 32.6, false)),
         ("qwen36", "Q8_0") => Some((52.0, 37.8, false)),
+        // setup.py MODELS NVFP4 / NVFP4-NVIDIA / NVFP4-QAD: ram_gb 80, arena_gb 68.0. Every expert in RAM above that;
+        // on less RAM setup keeps the most-used ones in RAM (--resident-budget-gib) and reads the rest from experts.bin.
+        ("nvfp4", quant) => {
+            crate::disk::nvfp4::set(quant).map(|set| (set.ram_gb, set.arena_gb, false))
+        }
         _ => None,
     }
 }

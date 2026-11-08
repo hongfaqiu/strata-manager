@@ -108,6 +108,8 @@ const PC_RAM: Record<string, Record<string, number>> = {
     'UD-IQ4_XS': 72, 'UD-Q4_K_XL': 88, 'UD-Q5_K_XL': 108, 'UD-Q6_K_XL': 118, Q8_0: 136,
   },
   qwen36: { 'UD-Q4_K_XL': 32, 'UD-Q6_K_XL': 44, Q8_0: 52 },
+  // setup.py MODELS ram_gb: every NVFP4 expert (68 GB) in RAM.
+  nvfp4: { NVFP4: 80, 'NVFP4-NVIDIA': 80, 'NVFP4-QAD': 80 },
 };
 interface PcRef { basis: PerformanceBasis; vram: number; decode: Range; prompt: Range; bound?: 'lower'; inferredFrom?: string; source?: string }
 /** MODELS.md RTX 5070 12 GB + 64 GB (short chat / 128K context; 4K prompt 910-1,580 tok/s). */

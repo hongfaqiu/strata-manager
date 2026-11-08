@@ -273,7 +273,7 @@ pub async fn augment_local_metrics(base_url: &str, metrics: &mut Value) {
 }
 
 /// An NVIDIA card is installed (its driver is loaded). Checked once per run.
-fn nvidia_present() -> bool {
+pub(crate) fn nvidia_present() -> bool {
     static PRESENT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *PRESENT.get_or_init(|| {
         #[cfg(target_os = "linux")]

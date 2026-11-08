@@ -92,9 +92,10 @@ export function CommunityDisk({ model, quant, copy }: { model: CommunityModel; q
 }
 
 /** The reasons under the greyed-out official families on a Mac: Metal engine scope, and the installer's qwen-only rule for Unsloth. */
-export function MacBlockNotes({ models, platform, copy }: { models: { family: string }[]; platform: RuntimePackagePlatform; copy: CatalogCopy }) {
-  const reasons = new Set(models.map(model => core.officialFamilyBlock(model.family, platform)));
+export function MacBlockNotes({ models, platform, gpus, copy }: { models: { family: string }[]; platform: RuntimePackagePlatform; gpus?: readonly string[] | null; copy: CatalogCopy }) {
+  const reasons = new Set(models.map(model => core.officialFamilyBlock(model.family, platform, gpus)));
   return <>
+    {reasons.has('nvidiaOnly') && <p className="cat-block" data-testid="nvfp4-nvidia-only">{copy.block.nvidiaOnly} <a href={core.NVFP4_SOURCE} target="_blank" rel="noreferrer">MODELS.md<ArrowUpRight size={11}/></a></p>}
     {reasons.has('macFamily') && <BlockNote reason="macFamily" source={core.UPSTREAM_MAC_LIMITS_SOURCE} copy={copy}/>}
     {reasons.has('macInstaller') && <p className="cat-block" data-testid="mac-unsloth-installer">{copy.macUnslothInstaller} <a href={core.UPSTREAM_MAC_APP_SOURCE} target="_blank" rel="noreferrer">MAC.md<ArrowUpRight size={11}/></a></p>}
   </>;

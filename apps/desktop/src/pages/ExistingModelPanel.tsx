@@ -70,7 +70,8 @@ export function ExistingModelPanel({ language, desktop, runtime, runtimeVersion,
   useEffect(() => setImagesChoice(undefined), [group?.family]);
   const directory = scan.data?.directory ?? '';
   // DeepSeek-V4.1-Flash (Strata 0.2.9 `--gguf-dir`) has no MTP layer: its drafter is a shared file setup finds or downloads itself.
-  const noMtp = group?.family === 'deepseek41';
+  // NVFP4: setup builds the draft layer in the pack's own data folder (the QAD conversion makes its own).
+  const noMtp = group?.family === 'deepseek41' || group?.family === 'nvfp4';
   const request: LocalModelRequest = { ggufDirectory: directory, ...(mtpPath && !noMtp ? { mtpPath } : {}) };
   const mtpProblem = mtpPath && !noMtp ? (mtp.isError ? core.normalizeError(mtp.error).message : mtp.data?.problems[0]) : undefined;
   const mtpReady = noMtp || !mtpPath || (!!mtp.data && !mtp.data.problems.length);
@@ -92,7 +93,8 @@ export function ExistingModelPanel({ language, desktop, runtime, runtimeVersion,
   const checkError = orca ? orcaPlan.error : disk.error;
   const checkProblems = orca ? orcaPlan.data?.problems ?? [] : disk.data && disk.data.status !== 'ready' && disk.data.reason ? [disk.data.reason] : [];
   const ready = !!group && action !== 'blocked' && !engineBlocked && mtpReady && !previousPending && !checkPending && !checkError && (orca ? orcaPlan.data?.status === 'ready' : disk.data?.status === 'ready');
-  const apart = core.localModelInstalledApart(group);
+  // A renamed copy's own folder, or the data folder an NVFP4 pack sits in: the command shows that --data-dir.
+  const apart = core.localModelInstalledApart(group) || group?.family === 'nvfp4';
   const command = group && action !== 'blocked' && directory ? core.localModelCommand(group, request, noMtp ? undefined : mtp.data, orca ? core.ORCA_CONTEXT : context, windows, orca ? undefined : images, apart ? disk.data?.dataDirectory : undefined) : '';
   const disabled = !desktop || busy || submitting;
 

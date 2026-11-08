@@ -341,7 +341,7 @@ function ModelStep(props: StepProps & { runtimeProfile?: ServiceProfile }) {
   const [scope, setScope] = useState<'official' | 'community'>(() => core.isCommunityFamily(progress?.selection?.family ?? '') ? 'community' : 'official');
   const community = useCommunityModels(platform, scope === 'community');
   const rows = useMemo(() => recommendations(scene, memoryGB, nvidia, 5, platform), [scene, memoryGB, nvidia, platform]);
-  const blockedFamilies = core.MODEL_CATALOG.filter(model => core.officialFamilyBlock(model.family, platform));
+  const blockedFamilies = core.MODEL_CATALOG.filter(model => core.officialFamilyBlock(model.family, platform, environment?.gpus));
   // An entry this platform cannot download at all shows once (its first size), not once per size.
   const communityRows = community.models.flatMap(model => (core.communityAvailability(model, platform).downloadable ? model.quants : model.quants.slice(0, 1)).map(quant => ({ model, quant, info: model.quantInfo[quant]!, availability: core.communityQuantAvailability(model, quant, platform) })));
   const stored = progress?.selection;
@@ -411,7 +411,7 @@ function ModelStep(props: StepProps & { runtimeProfile?: ServiceProfile }) {
         : communityRows.map(row => <ModelRow key={`${row.model.id}-${row.quant}`} name={row.model.name} quant={row.quant} family={row.model.family} downloadGB={row.info.downloadGB} ramGB={row.info.ramGB} tags={[<CommunityBadge key="c" model={row.model} copy={copy}/>]}
           t={t} copy={copy} hardware={hardware} memoryGB={memoryGB} blocked={row.availability.downloadable ? undefined : row.availability.reason === 'orcaImport' ? undefined : copy.block[row.availability.reason as keyof typeof copy.block]}
           selected={selected?.family === core.communityFamily(row.model.id) && selected.quant === row.quant} onSelect={() => props.onProgress({ selection: { family: core.communityFamily(row.model.id), quant: row.quant, context: selected?.context ?? defaultContext(scene), images: false } })}/>)}
-        {scope === 'official' && blockedFamilies.length > 0 && <div className="ob-blocked" data-testid="ob-mac-unavailable"><span className="ob-blocked-head">{copy.macUnavailableHeading}</span>{blockedFamilies.map(model => <div key={model.id} className="ob-blocked-row" aria-disabled="true"><b>{model.name}</b><small>{model.quants.join(' · ')}</small></div>)}<MacBlockNotes models={blockedFamilies} platform={platform} copy={copy}/></div>}
+        {scope === 'official' && blockedFamilies.length > 0 && <div className="ob-blocked" data-testid="ob-mac-unavailable"><span className="ob-blocked-head">{platform === 'macos' ? copy.macUnavailableHeading : copy.unavailableHeading}</span>{blockedFamilies.map(model => <div key={model.id} className="ob-blocked-row" aria-disabled="true"><b>{model.name}</b><small>{model.quants.join(' · ')}</small></div>)}<MacBlockNotes models={blockedFamilies} platform={platform} gpus={environment?.gpus} copy={copy}/></div>}
       </div>
       <footer className="ob-links">
         <button type="button" className="ob-link" onClick={props.onOpenCatalog}>{t('obAllModels')}<ArrowRight size={13}/></button>

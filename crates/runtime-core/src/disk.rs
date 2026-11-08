@@ -4,6 +4,8 @@ use crate::{processes, types::*};
 #[path = "disk_dsv41.rs"]
 pub(crate) mod dsv41;
 pub(crate) use dsv41::DSV41_SETS;
+#[path = "disk_nvfp4.rs"]
+pub(crate) mod nvfp4;
 use serde_json::Value;
 use std::{
     fs,
@@ -12,7 +14,7 @@ use std::{
 };
 
 pub(crate) const GB: u64 = 1_000_000_000;
-const SOURCE: &str = "Strata v0.2.11 c3b3f5035506f3e966f1b4b7b188aeaabae92f1d setup.py MODELS + OWN_PATH_FAMILIES (qwen36) + Unsloth Dynamic v3.1; decimal GB. Estimates exclude unknown dependency downloads and do not guarantee RAM/VRAM readiness.";
+const SOURCE: &str = "Strata v0.2.11 c3b3f5035506f3e966f1b4b7b188aeaabae92f1d setup.py MODELS + OWN_PATH_FAMILIES (qwen36) + Unsloth Dynamic v3.1 + NVFP4_REPOS (nvfp4); decimal GB. Estimates exclude unknown dependency downloads and do not guarantee RAM/VRAM readiness.";
 
 #[derive(Default)]
 pub(crate) struct Settings {
@@ -272,6 +274,16 @@ pub(crate) fn model_spec(
         let set = dsv41::set(quant).ok_or("模型/量化组合不被已核对的官方安装器支持")?;
         return Ok((set.tag(), set.shard_names(), set.bytes(), set.experts_gb));
     }
+    // NVFP4 (setup.py FAMILIES "nvfp4", ready): a pinned file list under models/<owner>--<repo>, not GGUF shards.
+    if family == nvfp4::FAMILY {
+        let set = nvfp4::set(quant).ok_or("模型/量化组合不被已核对的官方安装器支持")?;
+        return Ok((
+            set.tag(),
+            set.files.iter().map(|file| file.path.to_owned()).collect(),
+            set.bytes(),
+            set.arena_gb,
+        ));
+    }
     // Qwen3.6 OWN_PATH: single Unsloth MTP GGUF (setup.py QWEN36_FILES / OWN_PATH_FAMILIES).
     if family == "qwen36" {
         let (download, arena) = match quant {
@@ -488,6 +500,28 @@ fn prepare_plan(
             return Err("DeepSeek-V4.1-Flash 不使用 MTP 草稿层（它自带 DSpark 草稿模型）；请清空 MTP 目录 / DeepSeek-V4.1-Flash does not use an MTP layer (it has its own DSpark drafter); clear the MTP folder".into());
         }
         return dsv41::plan(root, data, quant);
+    }
+    if family == nvfp4::FAMILY {
+        let set = nvfp4::set(quant).ok_or("模型/量化组合不被已核对的官方安装器支持")?;
+        if let Some(directory) = &settings.local_gguf_directory {
+            let pack_data = nvfp4::local_data_directory(set, directory)?;
+            if settings
+                .local_data_directory
+                .as_ref()
+                .is_some_and(|mtp| mtp != &pack_data)
+            {
+                return Err(format!(
+                    "NVFP4 包和 MTP 草稿层要在同一个数据目录（{}）；请清空 MTP 目录，安装器会在那里准备 / The NVFP4 pack and the MTP layer must share one data folder ({}); clear the MTP folder",
+                    pack_data.display(),
+                    pack_data.display()
+                ));
+            }
+            data = pack_data;
+        } else if let Some(directory) = &settings.local_data_directory {
+            data = directory.clone();
+        }
+        let roots = source_roots(root, settings, &data)?;
+        return nvfp4::plan(root, &roots, data, quant, images);
     }
     let mut roots = source_roots(root, settings, &data)?;
     let mut model_directory = data.join("models").join(&tag);
@@ -939,7 +973,11 @@ pub(crate) fn plan_with_local(
         let data = crate::local_model::setup_mtp_data(local)?;
         let renamed = crate::local_model::renamed_copy(&directory, &group);
         // A renamed copy's --data-dir is a new folder of its own: setup keeps the other data folders where they are.
-        if let Some(data) = data.as_ref().filter(|_| renamed.is_none()) {
+        // NVFP4 packs are found by --data-dir only (no --gguf-dir to move away): prepare_plan checks the folders.
+        if let Some(data) = data
+            .as_ref()
+            .filter(|_| renamed.is_none() && family != nvfp4::FAMILY)
+        {
             if let Some(hazard) = crate::local_model::migration_hazard(&directory, data) {
                 return Err(hazard);
             }

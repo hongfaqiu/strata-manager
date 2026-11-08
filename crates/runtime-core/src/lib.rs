@@ -3790,6 +3790,19 @@ fn run_setup_with_preflight(
     )
 }
 
+/// setup.py menu_families / install: the NVFP4 packs run on NVIDIA cards only (the HIP, SYCL and Metal engines have no
+/// NVFP4 kernels), so `--family nvfp4` is refused before anything is downloaded, with the reason and the same-size choice.
+pub(crate) fn nvfp4_refusal(os: &str, backend: &str, nvidia: bool) -> Option<String> {
+    const OTHER: &str = "同等大小可选 Unsloth UD-IQ4_XS（--family unsloth --model UD-IQ4_XS）/ UD-IQ4_XS (Unsloth) is about the same size and runs there";
+    if os == "macos" {
+        return Some(format!("NVFP4 只能在 NVIDIA 显卡上运行：Mac 的 Metal 引擎没有 NVFP4 内核 / NVFP4 runs on NVIDIA cards only: the Mac engine has no NVFP4 kernels. {OTHER}"));
+    }
+    if matches!(backend, "hip" | "sycl") {
+        return Some(format!("NVFP4 只能在 NVIDIA 显卡上运行：AMD（HIP）和 Intel（SYCL）引擎没有 NVFP4 内核 / NVFP4 runs on NVIDIA cards only: the AMD and Intel engines have no NVFP4 kernels. {OTHER}"));
+    }
+    (!nvidia).then(|| format!("没有检测到 NVIDIA 显卡：NVFP4 只能在 NVIDIA 显卡上运行（AMD、Intel 引擎没有 NVFP4 内核）/ No NVIDIA card found: NVFP4 runs on NVIDIA cards only. {OTHER}"))
+}
+
 pub(crate) fn engine_version_at_least(version: Option<&str>, need: &[u32]) -> bool {
     let Some(version) = version else {
         return false;
@@ -3844,6 +3857,34 @@ fn run_setup_with_preflight_options(
             return Err(format!(
                 "Qwen3.6-35B-A3B 需要引擎 0.1.45 或更新版本（当前：{}）；请先更新 Strata",
                 version.as_deref().unwrap_or("未知")
+            ));
+        }
+    }
+    if let Some(set) = (model == disk::nvfp4::FAMILY)
+        .then(|| disk::nvfp4::set(&quant))
+        .flatten()
+    {
+        let backend = options
+            .as_ref()
+            .and_then(|options| options.backend.as_deref())
+            .unwrap_or("auto");
+        if let Some(refusal) = nvfp4_refusal(
+            std::env::consts::OS,
+            backend,
+            // WSL has no /proc/driver/nvidia: nvidia-smi answering is an NVIDIA card too.
+            amd_gpu::nvidia_present()
+                || output("nvidia-smi", &["--query-gpu=name", "--format=csv,noheader"])
+                    .is_some_and(|text| !text.trim().is_empty()),
+        ) {
+            return Err(refusal);
+        }
+        let version = discovery::runtime_version(&root, None);
+        if !engine_version_at_least(version.as_deref(), &set.min_engine) {
+            let need = set.min_engine.map(|n| n.to_string()).join(".");
+            return Err(format!(
+                "{model} 需要引擎 {need} 或更新版本（当前：{current}）；请先更新 Strata / {model} needs engine {need} or newer (current: {current}); update Strata first",
+                model = set.model,
+                current = version.as_deref().unwrap_or("未知 / unknown")
             ));
         }
     }
