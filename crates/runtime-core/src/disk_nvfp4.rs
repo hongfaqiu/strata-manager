@@ -489,7 +489,8 @@ mod tests {
     use super::*;
     use std::fs;
 
-    /// Sparse files: the real sizes without the real bytes.
+    /// Sparse files: the real sizes without the real bytes. Only the non-Windows test uses them.
+    #[cfg(not(windows))]
     fn sparse(path: &Path, size: u64) {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::File::create(path).unwrap().set_len(size).unwrap();
