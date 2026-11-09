@@ -325,12 +325,13 @@ pub fn expand(exe: &str, config: &Value) -> Option<Result<PathBuf, String>> {
 }
 
 /// W1B: `component:strata-q4-<shape>` is an upstream Qwen4 shape-engine reference. Manager does
-/// not resolve or install those packages (they are not in the current feed); point the user at
-/// the Strata app / `strata launch` without claiming Manager support or that Qwen4 has shipped.
+/// not resolve or install those packages (they are not in the current feed). Point the user at
+/// the upstream Strata app / official tools without naming a specific CLI that may not support
+/// shape engines yet, and without claiming Manager support or that Qwen4 has shipped.
 pub fn unsupported_component_reason(name: &str) -> Option<String> {
     if name.starts_with("strata-q4-") || name == "strata-q4" {
         return Some(format!(
-            "运行配置引用了上游 Qwen4 新形状引擎组件（component:{name}）。这是形状模型专用引擎，Manager 目前不解析也不安装此类组件；请用 Strata 应用或 `strata launch` 运行。 / This run config names an upstream Qwen4 shape engine (component:{name}). That engine is for shape models; Manager does not resolve or install it yet. Run it with the Strata app or `strata launch`."
+            "运行配置引用了上游 Qwen4 新形状引擎组件（component:{name}）。这是形状模型专用引擎，Manager 目前不解析也不安装此类组件；请改用上游 Strata 应用或官方终端工具处理，勿在 Manager 内强行启动。 / This run config names an upstream Qwen4 shape engine (component:{name}). That engine is for shape models; Manager does not resolve or install it yet. Use the upstream Strata app or official terminal tools instead, and do not force-start it in Manager."
         ));
     }
     if !(name.is_empty() || name == COMPONENT_ID) {
@@ -470,11 +471,14 @@ mod tests {
             .contains("未知组件"));
         let q4 = resolve_in(root, "component:strata-q4-demo", None, "windows-x86_64").unwrap_err();
         assert!(q4.contains("strata-q4-demo"), "{q4}");
-        assert!(q4.contains("Qwen4") && q4.contains("strata launch"), "{q4}");
+        assert!(q4.contains("Qwen4") && q4.contains("官方终端工具"), "{q4}");
+        assert!(q4.contains("official terminal tools"), "{q4}");
+        assert!(!q4.contains("strata launch"), "{q4}");
         assert!(
             !q4.contains("已发布") && !q4.contains("already shipped"),
             "{q4}"
         );
+        assert!(!q4.contains("已支持"), "{q4}");
         assert_eq!(explain_component_error(&q4), q4);
         assert!(explain_component_error("没有引擎包").contains("component:strata-engine"));
     }

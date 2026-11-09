@@ -285,9 +285,10 @@ pub fn explain(description: &str, exit_code: Option<i32>, lines: &[String]) -> S
         }
     };
     // W8A: upstream setup.py reports this when --backend is omitted on a non-NVIDIA host.
+    // Auto-SYCL only applies on pure-Intel hosts; do not claim it for AMD/unknown machines.
     if cause.to_ascii_lowercase().contains("no nvidia gpu found") {
         return format!(
-            "{title}：{cause}。这台电脑没有 NVIDIA 显卡；Intel Arc 请在「显卡类型」里选 Intel，或保留「自动识别」（Manager 会改用 SYCL）。 / No NVIDIA GPU on this PC; for Intel Arc choose Intel under GPU type, or leave Automatic (Manager passes SYCL).（{exit}）",
+            "{title}：{cause}。这台电脑没有 NVIDIA 显卡；Intel 显卡请在「显卡类型」里选 Intel。仅检测到 Intel 显卡且保留「自动识别」时，Manager 才会改用 SYCL。 / No NVIDIA GPU on this PC; for Intel GPUs choose Intel under GPU type. Manager passes SYCL only when every detected GPU is Intel and Automatic is kept.（{exit}）",
             title = kind.title(),
         );
     }
@@ -419,6 +420,12 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("GPU type") && text.contains("SYCL"), "{text}");
+        assert!(
+            text.contains("才会改用 SYCL")
+                && text.contains("only when every detected GPU is Intel"),
+            "{text}"
+        );
+        assert!(!text.contains("Manager 会改用 SYCL）"), "{text}");
         assert!(text.starts_with("显卡或驱动不满足要求"), "{text}");
     }
 

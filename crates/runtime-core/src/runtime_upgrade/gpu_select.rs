@@ -321,6 +321,17 @@ pub fn prefers_auto_sycl(probe: &GpuProbe) -> bool {
     probe.intel_only || probe.intel_discrete
 }
 
+/// Effective setup `--backend` after W8A auto-SYCL. `current` is the validated choice
+/// (`auto` / `cuda` / `hip` / `sycl`). Explicit backends are never changed; only `auto` on a
+/// pure-Intel host becomes `sycl`.
+pub fn effective_setup_backend<'a>(current: &'a str, probe: &GpuProbe) -> &'a str {
+    if current == "auto" && prefers_auto_sycl(probe) {
+        "sycl"
+    } else {
+        current
+    }
+}
+
 /// A CUDA package runs on a card when it has native code for it (`sm_XY`) or PTX for an
 /// equal or older architecture (`compute_XY`), which the driver compiles for newer cards.
 fn cuda_covers(archs: &[String], (major, minor): (u32, u32)) -> bool {
@@ -878,6 +889,16 @@ mod tests {
             ..Default::default()
         };
         assert!(prefers_auto_sycl(&windows_intel_only));
+        // Windows UHD/Iris-only is intel_only (same auto-SYCL path as Arc); Linux iGPU-only
+        // without intel_discrete stays on auto (no Arc probe).
+        assert_eq!(effective_setup_backend("auto", &windows_intel_only), "sycl");
+        assert_eq!(effective_setup_backend("auto", &arc_linux), "sycl");
+        assert_eq!(effective_setup_backend("cuda", &windows_intel_only), "cuda");
+        assert_eq!(effective_setup_backend("hip", &arc_linux), "hip");
+        assert_eq!(effective_setup_backend("sycl", &arc_linux), "sycl");
+        assert_eq!(effective_setup_backend("auto", &nvidia), "auto");
+        assert_eq!(effective_setup_backend("auto", &amd), "auto");
+        assert_eq!(effective_setup_backend("auto", &empty), "auto");
     }
 
     #[test]
