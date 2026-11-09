@@ -176,6 +176,13 @@ describe('complete graphical and JSON startup configuration', () => {
     expect(withSpec).not.toHaveProperty('args_written');
     expect(STARTUP_FIELD_HINTS['--spec']!.zh).toContain('user_args');
     expect(STARTUP_FIELD_HINTS['--spec']!.en).toContain('user_args');
+    // W4A: DFlash2 defaults are 6 on most GPUs and 8 on Strix Halo / high-VRAM Blackwell.
+    expect(STARTUP_FIELD_HINTS['--spec']!.zh).toContain('默认 6');
+    expect(STARTUP_FIELD_HINTS['--spec']!.zh).toContain('默认 8');
+    expect(STARTUP_FIELD_HINTS['--spec']!.zh).toContain('Strix Halo');
+    expect(STARTUP_FIELD_HINTS['--spec']!.en).toContain('defaults to 6');
+    expect(STARTUP_FIELD_HINTS['--spec']!.en).toContain('to 8');
+    expect(STARTUP_FIELD_HINTS['--spec']!.en).toContain('Strix Halo');
 
     // Clearing --spec removes it from both args and user_args, leaving no empty user_args array.
     const cleared = applyStartupField(withSpec, field('--spec'), '');

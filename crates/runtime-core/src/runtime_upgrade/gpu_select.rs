@@ -291,6 +291,36 @@ pub fn intel_only_adapters(names: &[String]) -> bool {
     real.peek().is_some() && real.all(|name| crate::igpu::vendor_of(name) == Some("intel"))
 }
 
+/// AMD gfx targets that have (or had) an official HIP engine package. An iGPU such as
+/// gfx1036 beside an Intel Arc is not discrete compute for setup backend selection (#4971).
+fn discrete_amd_gfx(gfx: &str) -> bool {
+    matches!(
+        gfx,
+        "gfx1030"
+            | "gfx1031"
+            | "gfx1100"
+            | "gfx1101"
+            | "gfx1102"
+            | "gfx1151"
+            | "gfx1200"
+            | "gfx1201"
+    )
+}
+
+/// When setup `backend` is `auto`, prefer `--backend sycl` for a pure-Intel host so upstream
+/// setup.py takes the Intel path instead of reporting "no NVIDIA GPU found". Mixed NVIDIA or
+/// discrete AMD machines stay on auto; an explicit backend is never overridden by the caller.
+pub fn prefers_auto_sycl(probe: &GpuProbe) -> bool {
+    let nvidia = probe.nvidia_driver.is_some() || !probe.nvidia_caps.is_empty();
+    if nvidia {
+        return false;
+    }
+    if probe.amd_gfx.iter().any(|gfx| discrete_amd_gfx(gfx)) {
+        return false;
+    }
+    probe.intel_only || probe.intel_discrete
+}
+
 /// A CUDA package runs on a card when it has native code for it (`sm_XY`) or PTX for an
 /// equal or older architecture (`compute_XY`), which the driver compiles for newer cards.
 fn cuda_covers(archs: &[String], (major, minor): (u32, u32)) -> bool {
@@ -811,6 +841,43 @@ mod tests {
             parse_rocminfo("  Name:                    gfx1100\n  Name: amdgcn-amd-amdhsa--gfx1100\n Name: gfx90a\n"),
             vec!["gfx1100".to_owned(), "gfx90a".to_owned()]
         );
+    }
+
+    #[test]
+    fn prefers_auto_sycl_only_for_pure_intel_hosts() {
+        let empty = GpuProbe::default();
+        assert!(!prefers_auto_sycl(&empty));
+        let nvidia = GpuProbe {
+            nvidia_driver: Some("580.95.05".into()),
+            nvidia_caps: vec![(8, 9)],
+            intel_discrete: true,
+            intel_only: false,
+            ..Default::default()
+        };
+        assert!(!prefers_auto_sycl(&nvidia));
+        let amd = GpuProbe {
+            amd_gfx: vec!["gfx1201".into()],
+            intel_discrete: true,
+            ..Default::default()
+        };
+        assert!(!prefers_auto_sycl(&amd));
+        let arc_linux = GpuProbe {
+            intel_discrete: true,
+            ..Default::default()
+        };
+        assert!(prefers_auto_sycl(&arc_linux));
+        // Arc beside an unsupported AMD iGPU still prefers SYCL (#4971).
+        let arc_with_igpu = GpuProbe {
+            amd_gfx: vec!["gfx1036".into()],
+            intel_discrete: true,
+            ..Default::default()
+        };
+        assert!(prefers_auto_sycl(&arc_with_igpu));
+        let windows_intel_only = GpuProbe {
+            intel_only: true,
+            ..Default::default()
+        };
+        assert!(prefers_auto_sycl(&windows_intel_only));
     }
 
     #[test]

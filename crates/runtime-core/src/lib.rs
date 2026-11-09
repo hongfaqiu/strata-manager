@@ -3838,7 +3838,19 @@ fn run_setup_with_preflight_options(
     preflight: impl FnOnce(&ServiceProfile, &str, &str, bool) -> Result<disk::Plan, String>,
     options: Option<crate::setup_options::SetupOptions>,
 ) -> Result<TaskStatus, String> {
-    let options = options.map(|options| options.validated()).transpose()?;
+    let mut options = options.map(|options| options.validated()).transpose()?;
+    // W8A: pure Intel (Arc / intel-only) with backend "auto" → pass --backend sycl so setup.py
+    // does not stop on "no NVIDIA GPU found". Explicit cuda/hip/sycl and mixed NVIDIA/AMD hosts
+    // are left alone. No Arc machine here: detection is covered by gpu_select unit tests.
+    if let Some(ref mut opts) = options {
+        if opts.backend.as_deref() == Some("auto")
+            && crate::runtime_upgrade::gpu_select::prefers_auto_sycl(
+                &crate::runtime_upgrade::gpu_select::probe_host(),
+            )
+        {
+            opts.backend = Some("sycl".into());
+        }
+    }
     let _operation = state.runtime_operations.lock().map_err(|e| e.to_string())?;
     runtime_upgrade::assert_available(&state)?;
     external_management::assert_profile_manager_owned(&state, &profile)?;

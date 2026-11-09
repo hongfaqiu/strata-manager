@@ -180,7 +180,17 @@ pub fn classify(text: &str) -> Kind {
         Kind::Conversion
     } else if contains_any(
         &lower,
-        &["gpu", "cuda", "hip ", "rocm", "nvidia", "driver", "vulkan"],
+        &[
+            "gpu",
+            "cuda",
+            "hip ",
+            "rocm",
+            "nvidia",
+            "driver",
+            "vulkan",
+            "sycl",
+            "intel arc",
+        ],
     ) {
         Kind::Gpu
     } else {
@@ -274,6 +284,13 @@ pub fn explain(description: &str, exit_code: Option<i32>, lines: &[String]) -> S
             (cause, kind)
         }
     };
+    // W8A: upstream setup.py reports this when --backend is omitted on a non-NVIDIA host.
+    if cause.to_ascii_lowercase().contains("no nvidia gpu found") {
+        return format!(
+            "{title}：{cause}。这台电脑没有 NVIDIA 显卡；Intel Arc 请在「显卡类型」里选 Intel，或保留「自动识别」（Manager 会改用 SYCL）。 / No NVIDIA GPU on this PC; for Intel Arc choose Intel under GPU type, or leave Automatic (Manager passes SYCL).（{exit}）",
+            title = kind.title(),
+        );
+    }
     format!("{}：{cause}。{}（{exit}）", kind.title(), kind.advice())
 }
 
@@ -390,6 +407,19 @@ mod tests {
             classify("could not convert shard to gguf"),
             Kind::Conversion
         );
+    }
+
+    #[test]
+    fn no_nvidia_gpu_found_points_at_intel_gpu_type() {
+        let log = lines("Checking GPUs…\n  [X]  no NVIDIA GPU found\n       install an NVIDIA driver, or pass --backend hip|sycl\nSetup stopped.");
+        let text = explain("模型准备", Some(1), &log);
+        assert!(text.contains("no NVIDIA GPU found"), "{text}");
+        assert!(
+            text.contains("显卡类型") && text.contains("Intel"),
+            "{text}"
+        );
+        assert!(text.contains("GPU type") && text.contains("SYCL"), "{text}");
+        assert!(text.starts_with("显卡或驱动不满足要求"), "{text}");
     }
 
     #[test]

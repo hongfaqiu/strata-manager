@@ -771,7 +771,7 @@ fn inspect_config(
     if let Some(Err(why)) = &component {
         // Upstream 0.2 app/Terminal configs name "component:strata-engine": the engine is a
         // package in the per-user component folder, never a file under `cwd`.
-        fatal_reasons.push(crate::component_engine::missing_reason(why));
+        fatal_reasons.push(crate::component_engine::explain_component_error(why));
     } else if component.is_none() && !engine.is_file() {
         fatal_reasons.push("引擎文件不存在，请修复运行环境".into());
     } else if component.is_none() && !resolve(&cwd, exe).is_file() {
