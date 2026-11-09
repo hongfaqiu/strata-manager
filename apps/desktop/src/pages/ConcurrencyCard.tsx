@@ -97,6 +97,10 @@ export function ConcurrencyCard({ draft, fieldValue, onFieldChange, zh, hardware
   const experimental = EXPERIMENTAL.filter(item => !serverDefaults || !core.CONCURRENCY_SERVER_DEFAULT_ENV.includes(item.env) || envSet(item.env));
   // The 1M-context warning lives with the context field; this note covers context × slots only.
   const longContext = (settings.context ?? 0) > core.TRAINED_CONTEXT && (current > 1 || plan.parallel > 1);
+  const draftingDecision = core.draftingFamilyOf(config) && core.engineServesDflash2(engine) === true
+    ? core.draftingConcurrencyPolicy({ config: { ...config, parallel: Math.max(current, plan.parallel) }, engineVersion: engine, mac: os === 'mac', gpus: hardware?.gpus, dflash2Served: true })
+    : null;
+  const draftingNote = draftingDecision ? core.draftingConcurrencyNote(draftingDecision, zh) : null;
   const listed = issues.filter(issue => issue.code !== 'long_context_conflict');
   return <section className="concurrency-card" data-testid="concurrency-card" aria-label={t('多并发', 'Concurrency')}>
     <header className="concurrency-card-head">
@@ -111,6 +115,7 @@ export function ConcurrencyCard({ draft, fieldValue, onFieldChange, zh, hardware
       <div><dt>{t('单个请求速度', 'One request alone')}</dt><dd data-tone={plan.slowdown && plan.slowdown[1] > 0.06 ? 'warn' : undefined}>{plan.slowdown ? (plan.slowdown[0] === 0 ? t(`约 −${Math.round(plan.slowdown[1] * 100)}% 以内`, `within −${Math.round(plan.slowdown[1] * 100)}%`) : `−${Math.round(plan.slowdown[0] * 100)}–${Math.round(plan.slowdown[1] * 100)}%`) : t('不变', 'unchanged')}</dd></div>
     </dl>
     <p className="concurrency-card-reason">{plan.reasons.filter(code => code !== 'long_context_conflict' && code !== 'trim_needs_explicit_split' && !(code === 'ssd_spill' && issues.some(issue => issue.code === code))).map(code => msg(code)).join(' ')}</p>
+    {draftingNote && <p className="concurrency-card-reason" data-testid="concurrency-drafting-note">{draftingNote}</p>}
     {longContext && <p className="concurrency-card-long" data-testid="concurrency-long-context">{msg('long_context_conflict')}</p>}
     {plan.companions.length > 0 && <ul className="concurrency-card-companions">{plan.companions.map(item => <li key={item.key}><code>{item.value === '' ? t(`移除 ${item.key}`, `remove ${item.key}`) : item.value === 'true' ? item.key : `${item.key} ${item.value}`}</code><span>{msg(item.reason)}</span></li>)}</ul>}
     <div className="concurrency-card-apply">

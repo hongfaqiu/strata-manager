@@ -240,8 +240,7 @@ impl Default for FullReport {
         }
     }
 }
-fn option_value<'a>(config: &'a Value, flag: &str) -> Result<Option<&'a str>, String> {
-    let args = config["args"].as_array().ok_or("配置缺少引擎参数")?;
+fn option_value_in_slice<'a>(args: &'a [Value], flag: &str) -> Result<Option<&'a str>, String> {
     let mut found = None;
     for (i, arg) in args.iter().enumerate() {
         let arg = arg.as_str().ok_or("引擎参数不是字符串")?;
@@ -264,14 +263,23 @@ fn option_value<'a>(config: &'a Value, flag: &str) -> Result<Option<&'a str>, St
     }
     Ok(found)
 }
+fn option_value<'a>(config: &'a Value, flag: &str) -> Result<Option<&'a str>, String> {
+    let args = config["args"].as_array().ok_or("配置缺少引擎参数")?;
+    let base = option_value_in_slice(args, flag)?;
+    if let Some(user_args) = config.get("user_args").and_then(Value::as_array) {
+        if let Some(override_val) = option_value_in_slice(user_args, flag)? {
+            return Ok(Some(override_val));
+        }
+    }
+    Ok(base)
+}
 /// The configuration names an MTP draft layer (`--mtp` in args, or a `"mtp"` path that server.py turns into one).
 fn has_mtp_source(config: &Value) -> bool {
     config["mtp"]
         .as_str()
         .is_some_and(|path| !path.trim().is_empty())
-        || config["args"].as_array().is_some_and(|args| {
+        || super::effective_args_of(config).is_ok_and(|args| {
             args.iter()
-                .filter_map(Value::as_str)
                 .any(|arg| arg == "--mtp" || arg.starts_with("--mtp="))
         })
 }
@@ -392,7 +400,8 @@ fn validate_restart(config: &Value, p: &RestartParameters) -> Result<(), String>
         return Err("此配置没有 MTP 草稿层（--mtp），无法对比 MTP 开/关".into());
     }
     if p.adapt_async == Some(true) {
-        let args = config["args"].as_array().ok_or("启动参数缺失")?;
+        let _ = config["args"].as_array().ok_or("启动参数缺失")?;
+        let args = super::effective_args_of(config)?;
         if !args
             .iter()
             .any(|a| a == "--resident-experts" || a == "--resident-cpu-experts")
@@ -484,12 +493,17 @@ pub(super) fn with_restart(config: &Value, p: Option<&RestartParameters>) -> Res
             i += 1;
         }
     }
+    let touched: Vec<&str> = fields
+        .iter()
+        .filter_map(|(flag, value)| value.as_ref().map(|_| *flag))
+        .collect();
     for (flag, value) in fields {
         if let Some(value) = value {
             out.extend([json!(flag), json!(value)]);
         }
     }
     new["args"] = json!(out);
+    super::sync_tuning_user_args(config, &mut new, &touched);
     if let Some(on) = p.mtp {
         apply_mtp(&mut new, on);
     }

@@ -15,7 +15,7 @@ const zh = {
   current: '当前使用', rollback: '可回退', referenced: '被 {{count}} 个配置引用', switching: '正在切换', repair: '需要修复', foreign: '自行安装',
   size: '占用 {{size}}', installedAt: '安装于 {{date}}', lastUsed: '上次使用 {{date}}',
   switch: '切换到此版本', delete: '删除', switchBusy: '有任务进行中，完成后可切换', notReady: '这个版本不完整，需要修复后才能切换',
-  autoCleanup: '更新成功后自动清理旧版本', autoCleanupHint: '更新或切换成功后，自动删除 Manager 安装的更早版本，只保留当前版本和上一个版本，方便随时切回。你自己选择的 Strata 目录、仍被配置使用的版本、模型和共享数据都不会删除。',
+  autoCleanup: '更新成功后自动清理旧版本', autoCleanupHint: '更新或切换成功后，自动删除 Manager 安装的更早版本，只保留当前版本和 1 个旧版本（多次更新后不保证更早版本长期保留）。你自己选择的 Strata 目录、正在运行或仍被配置引用的版本、模型和共享数据都不会删除。',
   leftovers: '另有 {{count}} 项下载残留或失败的安装可清理',
   kind: { partialDownload: '未完成的下载', archive: '已下载的安装包', failedInstall: '安装失败的目录', trash: '未删完的旧版本', updateWork: '更新失败留下的临时文件' },
   cancel: '取消', deleting: '正在删除…', cleaning: '正在清理…', switchingStart: '正在开始切换…',
@@ -32,7 +32,7 @@ const en: typeof zh = {
   current: 'In use', rollback: 'Rollback', referenced: 'Used by {{count}} configurations', switching: 'Switching', repair: 'Needs repair', foreign: 'Your folder',
   size: '{{size}}', installedAt: 'Installed {{date}}', lastUsed: 'Last used {{date}}',
   switch: 'Switch to this version', delete: 'Delete', switchBusy: 'A task is running; switch when it finishes', notReady: 'This version is incomplete; repair it before switching',
-  autoCleanup: 'Clean up old versions after a successful update', autoCleanupHint: 'After an update or switch succeeds, older versions installed by Manager are deleted, keeping the current one and the previous one to switch back to. Folders you chose yourself, versions still used by configurations, models and shared data are never deleted.',
+  autoCleanup: 'Clean up old versions after a successful update', autoCleanupHint: 'After an update or switch succeeds, older versions installed by Manager are deleted, keeping only the current version and 1 previous version (earlier versions are not kept permanently across multiple updates). Folders you chose yourself, running or referenced versions, models and shared data are never deleted.',
   leftovers: '{{count}} leftover downloads or failed installations can be cleaned up',
   kind: { partialDownload: 'Unfinished download', archive: 'Downloaded package', failedInstall: 'Failed installation', trash: 'Partly deleted version', updateWork: 'Files left by a failed update' },
   cancel: 'Cancel', deleting: 'Deleting…', cleaning: 'Cleaning up…', switchingStart: 'Starting switch…',
@@ -67,11 +67,18 @@ export function installedRuntimeLabel(runtime: core.InstalledRuntime, releases: 
 export interface RuntimeSwitchDialogProps {
   language: AppLanguage; target: core.InstalledRuntime; current?: core.InstalledRuntime;
   releases?: Parameters<typeof core.installedRuntimeRelease>[1];
+  modelHints?: Iterable<string | Record<string, unknown> | null | undefined>;
   busy?: boolean; error?: string; onConfirm: () => void; onDismiss: () => void;
 }
-export function RuntimeSwitchDialog({ language, target, current, releases = [], busy = false, error, onConfirm, onDismiss }: RuntimeSwitchDialogProps) {
+export function RuntimeSwitchDialog({ language, target, current, releases = [], modelHints, busy = false, error, onConfirm, onDismiss }: RuntimeSwitchDialogProps) {
   const t = installedRuntimesCopy(language), z = core.legacyLanguage(language) === 'zh-CN';
   const targetLabel = installedRuntimeLabel(target, releases, z), currentLabel = current ? installedRuntimeLabel(current, releases, z) : '';
+  const targetEngine = target.engineVersion ?? releases.find(r => r.version === core.installedRuntimeRelease(target, releases))?.engineVersion;
+  const incompatibility = core.engineRollbackCompatibilityWarning(
+    targetEngine,
+    [...(modelHints ?? []), ...(current?.profiles ?? []).map(p => p.name), ...(target.profiles ?? []).map(p => p.name)],
+    z,
+  );
   return <Dialog title={fill(t.switchTitle, { version: targetLabel })} onClose={() => { if (!busy) onDismiss(); }}>
     <div className="installed-runtime-dialog" data-testid="runtime-switch-dialog">
       <dl className="installed-runtime-dialog-pair">{current && <div><dt>{t.from}</dt><dd>{currentLabel}</dd></div>}<div><dt>{t.to}</dt><dd>{targetLabel}</dd></div></dl>
@@ -79,6 +86,7 @@ export function RuntimeSwitchDialog({ language, target, current, releases = [], 
       <p className="installed-runtime-dialog-lead">{t.switchLocal}</p>
       <p>{t.switchSteps}</p>
       {current && <p className="installed-runtime-dialog-note">{fill(t.switchKeep, { version: currentLabel })}</p>}
+      {incompatibility && <p className="notice warning" role="status" data-testid="runtime-switch-min-engine-warning">{incompatibility}</p>}
       {error && <p className="notice error" role="alert">{error}</p>}
       <div className="installed-runtime-dialog-actions"><button type="button" disabled={busy} onClick={onDismiss}>{t.cancel}</button><button type="button" className="primary" disabled={busy} onClick={onConfirm}>{busy ? <LoaderCircle size={15} className="spin"/> : <Repeat2 size={15}/>}{busy ? t.switchingStart : t.switchConfirm}</button></div>
     </div>

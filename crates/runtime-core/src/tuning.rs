@@ -1430,8 +1430,173 @@ fn annotate_consistency(measurements: &mut [Measurement]) {
                 }));
     }
 }
+pub(crate) fn flag_of_group(group: &[String]) -> &str {
+    match group.first().map(String::as_str) {
+        Some(head) if head.starts_with("--") => head.split('=').next().unwrap_or(head),
+        _ => "",
+    }
+}
+
+pub(crate) fn arg_groups(args: &[String]) -> Vec<Vec<String>> {
+    let mut out: Vec<Vec<String>> = Vec::new();
+    for item in args {
+        if item.starts_with("--")
+            || out.is_empty()
+            || out.last().is_some_and(|g| g[0].contains('='))
+        {
+            out.push(vec![item.clone()]);
+        } else if let Some(last) = out.last_mut() {
+            last.push(item.clone());
+        }
+    }
+    out
+}
+
+pub(crate) fn merge_user_args(args: &[String], user_args: &[String]) -> Vec<String> {
+    let ug = arg_groups(user_args);
+    let mine: std::collections::HashSet<String> = ug
+        .iter()
+        .map(|g| flag_of_group(g).to_owned())
+        .filter(|f| !f.is_empty())
+        .collect();
+    if mine.is_empty() {
+        return args.to_vec();
+    }
+    arg_groups(args)
+        .into_iter()
+        .filter(|g| !mine.contains(flag_of_group(g)))
+        .chain(ug)
+        .flatten()
+        .collect()
+}
+
+pub(crate) fn effective_args_of(config: &Value) -> Result<Vec<String>, String> {
+    let raw = config
+        .get("args")
+        .and_then(Value::as_array)
+        .ok_or("配置缺少引擎参数")?;
+    let mut args = Vec::with_capacity(raw.len());
+    for item in raw {
+        args.push(item.as_str().ok_or("引擎参数不是字符串")?.to_string());
+    }
+    if let Some(user_raw) = config.get("user_args").and_then(Value::as_array) {
+        if !user_raw.is_empty() {
+            let mut user = Vec::with_capacity(user_raw.len());
+            for item in user_raw {
+                user.push(item.as_str().ok_or("user_args必须为字符串")?.to_string());
+            }
+            return Ok(merge_user_args(&args, &user));
+        }
+    }
+    Ok(args)
+}
+
+pub(crate) fn capture_user_args(config: &Value) -> Vec<String> {
+    let list_of = |key: &str| -> Option<Vec<String>> {
+        Some(
+            config
+                .get(key)?
+                .as_array()?
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect(),
+        )
+    };
+    let by_flag = |groups: Vec<Vec<String>>| -> Vec<(String, Vec<Vec<String>>)> {
+        let mut map: Vec<(String, Vec<Vec<String>>)> = Vec::new();
+        for g in groups {
+            let f = flag_of_group(&g).to_owned();
+            if let Some((_, list)) = map.iter_mut().find(|(k, _)| *k == f) {
+                list.push(g);
+            } else {
+                map.push((f, vec![g]));
+            }
+        }
+        map
+    };
+    let mut mine = by_flag(arg_groups(&list_of("user_args").unwrap_or_default()));
+    if let (Some(args), Some(written)) = (list_of("args"), list_of("args_written")) {
+        let cur = by_flag(arg_groups(&args));
+        let was = by_flag(arg_groups(&written));
+        for (flag, gs) in &cur {
+            if !flag.is_empty() && was.iter().find(|(k, _)| k == flag).map(|(_, v)| v) != Some(gs) {
+                if let Some((_, list)) = mine.iter_mut().find(|(k, _)| k == flag) {
+                    *list = gs.clone();
+                } else {
+                    mine.push((flag.clone(), gs.clone()));
+                }
+            }
+        }
+        mine.retain(|(flag, _)| {
+            !(was.iter().any(|(k, _)| k == flag) && !cur.iter().any(|(k, _)| k == flag))
+        });
+    }
+    mine.into_iter()
+        .flat_map(|(_, gs)| gs.into_iter().flatten())
+        .collect()
+}
+
+pub(crate) fn sync_tuning_user_args(before: &Value, candidate: &mut Value, touched_flags: &[&str]) {
+    let has_layer = before.get("user_args").is_some_and(Value::is_array)
+        || before.get("args_written").is_some_and(Value::is_array)
+        || before.get("args_derived").is_some_and(Value::is_array);
+    if has_layer {
+        let mine: Vec<Value> = arg_groups(&capture_user_args(before))
+            .into_iter()
+            .filter(|g| !touched_flags.contains(&flag_of_group(g)))
+            .flatten()
+            .map(Value::String)
+            .collect();
+        let written = candidate["args"].clone();
+        if let Some(obj) = candidate.as_object_mut() {
+            if mine.is_empty() {
+                obj.remove("user_args");
+            } else {
+                obj.insert("user_args".into(), Value::Array(mine));
+            }
+            if before.get("args_written").is_some_and(Value::is_array) {
+                obj.insert("args_written".into(), written.clone());
+            } else {
+                obj.remove("args_written");
+            }
+            if before.get("args_derived").is_some_and(Value::is_array) {
+                obj.insert("args_derived".into(), written);
+            }
+        }
+    }
+    if let Some(obj) = candidate.as_object_mut() {
+        if let Some(launch_set) = obj.get("launch_set").and_then(Value::as_array) {
+            let rest: Vec<Value> = launch_set
+                .iter()
+                .filter(|v| v.as_str().is_some_and(|s| !touched_flags.contains(&s)))
+                .cloned()
+                .collect();
+            if rest.is_empty() {
+                obj.remove("launch_set");
+            } else {
+                obj.insert("launch_set".into(), Value::Array(rest));
+            }
+        }
+        if let Some(calibrated) = obj.get_mut("calibrated").and_then(Value::as_object_mut) {
+            if let Some(settings) = calibrated
+                .get_mut("settings")
+                .and_then(Value::as_object_mut)
+            {
+                for flag in touched_flags {
+                    settings.remove(*flag);
+                }
+                if settings.is_empty() {
+                    obj.remove("calibrated");
+                }
+            }
+        }
+    }
+}
+
 fn with_parameters(config: &Value, parameters: Parameters) -> Result<Value, String> {
     validate_parameters(parameters)?;
+    let before = config.clone();
     let mut config = config.clone();
     let args = config
         .get("args")
@@ -1460,6 +1625,7 @@ fn with_parameters(config: &Value, parameters: Parameters) -> Result<Value, Stri
         json!(parameters.spec_min_p.to_string()),
     ]);
     config["args"] = Value::Array(out);
+    sync_tuning_user_args(&before, &mut config, &["--pcie-frac", "--spec-min-p"]);
     storage::validate(&config)?;
     Ok(config)
 }

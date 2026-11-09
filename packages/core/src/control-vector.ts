@@ -1,5 +1,5 @@
 import type { JsonObject } from './types';
-import { startupArgsOf, startupArgumentRows } from './config-tuning';
+import { argGroups, ARGS_WRITTEN_KEY, captureUserArgs, flagOfGroup, hasUserArgsLayer, rawStartupArgsOf, stampUserArgs, startupArgumentRows, startupEngineFlagsFor } from './config-tuning';
 import { engineFlagSupport } from './engine-flag-support';
 
 /**
@@ -118,11 +118,16 @@ export function controlVectorArgs(settings: ControlVectorSettings): string[] {
 /** Replace every control-vector flag with `settings` (null = off: the flags are removed, all other args stay in order). */
 export function applyControlVector(config: JsonObject, settings: ControlVectorSettings | null): JsonObject {
   if (settings) { const error = controlVectorError(settings); if (error) throw new Error(error); }
-  const rows = startupArgumentRows(config);
-  const drop = new Set<number>();
-  for (const row of rows) if ((CONTROL_VECTOR_FLAGS as readonly string[]).includes(row.tokens[0]!)) for (let i = 0; i < row.tokens.length; i++) drop.add(row.offset + i);
-  const args = startupArgsOf(config).filter((_, index) => !drop.has(index));
-  return { ...structuredClone(config), args: settings ? [...args, ...controlVectorArgs(settings)] : args };
+  const cvecSet: ReadonlySet<string> = new Set(CONTROL_VECTOR_FLAGS);
+  const flags = startupEngineFlagsFor(config);
+  const rawKept = argGroups(rawStartupArgsOf(config), flags).filter(g => !cvecSet.has(flagOfGroup(g))).flat();
+  const cvecArgs = settings ? controlVectorArgs(settings) : [];
+  const next: JsonObject = { ...structuredClone(config), args: [...rawKept, ...cvecArgs] };
+  if (hasUserArgsLayer(config)) {
+    const userKept = argGroups(captureUserArgs(config), flags).filter(g => !cvecSet.has(flagOfGroup(g))).flat();
+    stampUserArgs(next, [...userKept, ...cvecArgs], Array.isArray(config[ARGS_WRITTEN_KEY]));
+  }
+  return next;
 }
 
 export interface ControlVectorAvailability { available: boolean; reason?: { zh: string; en: string } }

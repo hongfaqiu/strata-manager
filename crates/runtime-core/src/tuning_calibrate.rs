@@ -312,15 +312,10 @@ pub fn detect_layer_split(config: &Value, metrics: &Value) -> bool {
     if let Some(stages) = metrics["engine"]["prefill_stages"].as_u64() {
         return stages > 1;
     }
-    let args_split = config
-        .get("args")
-        .and_then(Value::as_array)
-        .is_some_and(|args| {
-            args.iter().any(|arg| {
-                arg.as_str()
-                    .is_some_and(|a| a == "--layer-split" || a.starts_with("--layer-split="))
-            })
-        });
+    let args_split = super::effective_args_of(config).is_ok_and(|args| {
+        args.iter()
+            .any(|a| a == "--layer-split" || a.starts_with("--layer-split="))
+    });
     let key_split = match config.get("layer_split") {
         Some(Value::String(text)) => !text.trim().is_empty() && text.trim() != "0",
         Some(Value::Number(n)) => n.as_f64().is_some_and(|v| v > 0.0),
@@ -417,17 +412,12 @@ pub fn is_auto(pcie_frac: f64) -> bool {
     pcie_frac < 0.0
 }
 
-/// The config sets `--pcie-frac` (as two args or `--pcie-frac=N`).
+/// The config sets `--pcie-frac` (as two args or `--pcie-frac=N`), including in `user_args`.
 pub fn config_sets_pcie(config: &Value) -> bool {
-    config
-        .get("args")
-        .and_then(Value::as_array)
-        .is_some_and(|args| {
-            args.iter().any(|arg| {
-                arg.as_str()
-                    .is_some_and(|a| a == "--pcie-frac" || a.starts_with("--pcie-frac="))
-            })
-        })
+    super::effective_args_of(config).is_ok_and(|args| {
+        args.iter()
+            .any(|a| a == "--pcie-frac" || a.starts_with("--pcie-frac="))
+    })
 }
 
 fn version_at_least(version: &str, want: [u64; 3]) -> bool {
@@ -452,18 +442,14 @@ pub fn pcie_auto_supported(
     backend: Backend,
     layer_split: bool,
 ) -> bool {
-    let args: Vec<&str> = config
-        .get("args")
-        .and_then(Value::as_array)
-        .map(|args| args.iter().filter_map(Value::as_str).collect())
-        .unwrap_or_default();
+    let args = super::effective_args_of(config).unwrap_or_default();
     let has = |flag: &str| {
         args.iter()
-            .any(|a| *a == flag || a.starts_with(&format!("{flag}=")))
+            .any(|a| a == flag || a.starts_with(&format!("{flag}=")))
     };
     let batch = args
         .iter()
-        .position(|a| *a == "--batch")
+        .position(|a| a == "--batch")
         .and_then(|i| args.get(i + 1))
         .is_some_and(|v| v.parse::<u64>().map_or(true, |n| n > 0))
         || args

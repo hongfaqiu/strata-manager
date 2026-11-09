@@ -200,6 +200,18 @@ pub fn validate(config: &Value) -> Result<(), String> {
             return Err("args 必须是字符串数组".into());
         }
     }
+    for key in ["user_args", "args_written", "args_derived"] {
+        if let Some(list) = object.get(key) {
+            if !list.is_null()
+                && !list
+                    .as_array()
+                    .map(|a| a.iter().all(Value::is_string))
+                    .unwrap_or(false)
+            {
+                return Err(format!("{key} 必须是字符串数组"));
+            }
+        }
+    }
     if let Some(port) = object.get("port") {
         if !port
             .as_u64()

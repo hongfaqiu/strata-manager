@@ -34,7 +34,31 @@ export const DEEPSEEK41_ENGINE_FLAGS: Readonly<Record<string, number>> = Object.
   '--n': 1, '--window': 1, '--dump-logits': 1, '--score': 1, '--score-out': 1, '--profile-run': 1, '--spec-eval': 1, '--serve': 0,
   '--pack-info': 0, '--layer-split': 1, '--help': 0,
 });
-const argsOf = (config: JsonObject): string[] => Array.isArray(config.args) ? config.args.map(String) : [];
+const flagOfGroup = (g: readonly string[]): string => {
+  const head = g[0];
+  if (!head || !head.startsWith('--')) return '';
+  const eq = head.indexOf('=');
+  return eq >= 0 ? head.slice(0, eq) : head;
+};
+const groupArgs = (raw: unknown): string[][] => {
+  const out: string[][] = [];
+  if (!Array.isArray(raw)) return out;
+  for (const item of raw) {
+    const token = String(item);
+    if (token.startsWith('--') || !out.length || out[out.length - 1]![0]!.includes('=')) out.push([token]);
+    else out[out.length - 1]!.push(token);
+  }
+  return out;
+};
+const rawArgsOf = (config: JsonObject): string[] => Array.isArray(config.args) ? config.args.map(String) : [];
+const argsOf = (config: JsonObject): string[] => {
+  const base = rawArgsOf(config);
+  if (!Array.isArray(config.user_args) || !config.user_args.length) return base;
+  const ug = groupArgs(config.user_args);
+  const mine = new Set(ug.map(flagOfGroup).filter(Boolean));
+  if (!mine.size) return base;
+  return [...groupArgs(base).filter(g => !mine.has(flagOfGroup(g))), ...ug].flat();
+};
 
 export function isDeepseek41Config(config: JsonObject | null | undefined): boolean {
   return !!config && config.arch === 'deepseek41';
@@ -94,13 +118,23 @@ export function deepseek41ArgsError(config: JsonObject): string | null {
 
 /** Remove every `flag [value]` occurrence, then append `flag value` when a value is chosen. */
 function setValueFlag(config: JsonObject, flag: string, value: string, isValue: (token: string | undefined) => boolean): JsonObject {
-  const args = argsOf(config); const next: string[] = [];
+  const args = rawArgsOf(config); const next: string[] = [];
   for (let index = 0; index < args.length; index++) {
-    if (args[index] !== flag) { next.push(args[index]!); continue; }
-    if (isValue(args[index + 1])) index++;
+    if (args[index] !== flag && !args[index]!.startsWith(`${flag}=`)) { next.push(args[index]!); continue; }
+    if (args[index] === flag && isValue(args[index + 1])) index++;
   }
   if (value) next.push(flag, value);
-  return { ...structuredClone(config), args: next };
+  const out: JsonObject = { ...structuredClone(config), args: next };
+  if (Array.isArray(config.user_args) || Array.isArray(config.args_written) || Array.isArray(config.args_derived)) {
+    const userGroups = groupArgs(config.user_args).filter(g => flagOfGroup(g) !== flag);
+    if (value) userGroups.push([flag, value]);
+    const flatUser = userGroups.flat();
+    if (flatUser.length) out.user_args = flatUser;
+    else delete out.user_args;
+    if (Array.isArray(config.args_written)) out.args_written = [...next];
+    if (Array.isArray(config.args_derived)) out.args_derived = [...next];
+  }
+  return out;
 }
 
 /** Writes `--experts 5|6`, or removes it for the engine default. Refused when the engine predates the flag. */

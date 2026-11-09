@@ -3,7 +3,6 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
-import * as calibration from '../../../../../packages/core/src/calibration.ts';
 
 // Minimal JSX runtime: function components are expanded so the whole tree can be inspected.
 const jsx = (type, props) => ({ type, props: props ?? {} });
@@ -16,7 +15,9 @@ const expand = tree => {
 const nodes = tree => !tree || typeof tree !== 'object' ? [] : Array.isArray(tree) ? tree.flatMap(nodes) : [tree, ...nodes(tree.props?.children)];
 const text = tree => typeof tree === 'string' || typeof tree === 'number' ? String(tree) : !tree || typeof tree !== 'object' ? '' : Array.isArray(tree) ? tree.map(text).join('') : text(tree.props?.children);
 const compiled = file => ts.transpileModule(readFileSync(new URL(file, import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
-const load = (file, dependencies) => { const module = { exports: {} }; vm.runInNewContext(compiled(file), { module, exports: module.exports, require: name => dependencies[name] ?? {}, console, Date, Math, Number, JSON, Object, Array, Set, String }); return module.exports; };
+const load = (file, dependencies) => { const module = { exports: {} }; vm.runInNewContext(compiled(file), { module, exports: module.exports, structuredClone, Map, require: name => dependencies[name] ?? {}, console, Date, Math, Number, JSON, Object, Array, Set, String }); return module.exports; };
+const argLayers = load('../../../../../packages/core/src/arg-layers.ts', {});
+const calibration = load('../../../../../packages/core/src/calibration.ts', { './arg-layers': argLayers });
 const icons = new Proxy({}, { get: () => () => null });
 const react = { useEffect: () => {}, useRef: value => ({ current: value }) };
 const runtime = { jsx, jsxs: jsx, Fragment: 'fragment' };

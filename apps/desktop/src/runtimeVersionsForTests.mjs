@@ -9,8 +9,9 @@ const load = (file, require = () => ({})) => {
   vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { module: loaded, exports: loaded.exports, require });
   return loaded.exports;
 };
+const catalog = load('catalog.ts');
 const versions = load('runtime-versions.ts');
-// The installed-version helpers (「已安装版本」) build on the version helpers.
-const installed = load('installed-runtimes.ts', name => name === './runtime-versions' ? versions : {});
+// The installed-version helpers (「已安装版本」) build on the version helpers and MODEL_CATALOG.
+const installed = load('installed-runtimes.ts', name => name === './runtime-versions' ? versions : name === './catalog' ? catalog : {});
 
 export const runtimeVersions = { ...versions, ...installed };

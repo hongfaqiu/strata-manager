@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyStartupField, applyStartupTuning, STARTUP_FIELD_HINTS, parseStartupConfiguration, replaceStartupArgument, STARTUP_ENGINE_FLAGS, STARTUP_TUNING_FIELDS, startupArgsOf, startupArgumentRows, startupFieldValue, startupTuningOf, validateStartupConfiguration } from '../src/config-tuning';
+import { applyStartupField, applyStartupTuning, appendStartupArgument, captureUserArgs, effectiveArgsOf, mergeUserArgs, STARTUP_FIELD_HINTS, parseStartupConfiguration, replaceStartupArgument, STARTUP_ENGINE_FLAGS, STARTUP_TUNING_FIELDS, startupArgsOf, startupArgumentRows, startupFieldValue, startupTuningOf, validateStartupConfiguration } from '../src/config-tuning';
 
 const config = { exe: 'engine.exe', args: ['--native', '模型.gguf', '--max-context', '524288', '--kv', 'int8', '--rope-scale', '2'], threads: 8, sampling: { temperature: .6 }, vision: { gpu: true }, mcp: [{ name: 'calculator' }], api_key: 'preserved' };
 describe('startup configuration tuning', () => {
@@ -132,6 +132,96 @@ describe('complete graphical and JSON startup configuration', () => {
     const repaired = applyStartupField(broken, field('--max-context'), '8192');
     expect(repaired.args).toEqual(['--max-context', '8192', '--kv', 'int8', '--stats']);
     expect(() => validateStartupConfiguration(repaired)).not.toThrow();
+  });
+  it('reads effective values across user_args and syncs user_args/args_written on edits while preserving unknown/multi-value/repeated options (U4A)', () => {
+    const imported = {
+      args: ['--native', 'm.gguf', '--pcie-frac', '0.4', '--max-context', '32768'],
+      user_args: ['--pcie-frac', '0.75', '--pool-workers', '6', '--control-vector-layer-range', '4', '44', '--custom-rep', 'a', '--custom-rep', 'b'],
+      args_written: ['--native', 'm.gguf', '--pcie-frac', '0.4', '--max-context', '32768'],
+    };
+    expect(startupFieldValue(imported, field('--pcie-frac'))).toBe('0.75');
+    expect(startupFieldValue(imported, field('--pool-workers'))).toBe('6');
+    expect(startupTuningOf(imported).context).toBe('32768');
+
+    // Editing --pcie-frac updates both args and user_args and refreshes args_written.
+    const editedPcie = applyStartupField(imported, field('--pcie-frac'), '0.85');
+    expect(startupFieldValue(editedPcie, field('--pcie-frac'))).toBe('0.85');
+    expect(mergeUserArgs(editedPcie.args as string[], editedPcie.user_args)).toContain('0.85');
+    expect(mergeUserArgs(editedPcie.args as string[], editedPcie.user_args)).not.toContain('0.75');
+    expect(editedPcie.args_written).toEqual(editedPcie.args);
+    expect(editedPcie.user_args).toEqual([
+      '--pcie-frac', '0.85',
+      '--pool-workers', '6',
+      '--control-vector-layer-range', '4', '44',
+      '--custom-rep', 'a', '--custom-rep', 'b',
+    ]);
+
+    // Clearing --pool-workers (which only existed in user_args) removes it from user_args so it no longer applies.
+    const clearedWorkers = applyStartupField(editedPcie, field('--pool-workers'), '');
+    expect(startupFieldValue(clearedWorkers, field('--pool-workers'))).toBe('');
+    expect(clearedWorkers.user_args).not.toContain('--pool-workers');
+
+    // Capture detects hand edits made directly to args relative to args_written.
+    const handEdited = {
+      args: ['--native', 'm.gguf', '--pcie-frac', '0.5'],
+      args_written: ['--native', 'm.gguf', '--pcie-frac', '0.4'],
+    };
+    expect(captureUserArgs(handEdited)).toEqual(['--pcie-frac', '0.5']);
+  });
+  it('records hand-set --spec and --draft-conf in user_args so upstream drafting.apply honours them under DFlash2 (U4A)', () => {
+    const base = { model_name: 'qwen3.8-flash-next-iq3_s', args: ['--native', 'm.gguf'] };
+    const withSpec = applyStartupField(base, field('--spec'), '4');
+    expect(withSpec.args).toEqual(['--native', 'm.gguf', '--spec', '4']);
+    expect(withSpec.user_args).toEqual(['--spec', '4']);
+    expect(withSpec).not.toHaveProperty('args_written');
+    expect(STARTUP_FIELD_HINTS['--spec']!.zh).toContain('user_args');
+    expect(STARTUP_FIELD_HINTS['--spec']!.en).toContain('user_args');
+
+    // Clearing --spec removes it from both args and user_args, leaving no empty user_args array.
+    const cleared = applyStartupField(withSpec, field('--spec'), '');
+    expect(cleared).toEqual(base);
+
+    // Adding --draft-conf via the full argument list also records it in user_args and removes it when deleted.
+    const withConf = appendStartupArgument(base, ['--draft-conf', '0.5']);
+    expect(withConf.user_args).toEqual(['--draft-conf', '0.5']);
+    const confRow = startupArgumentRows(withConf).find(r => r.tokens[0] === '--draft-conf')!;
+    expect(replaceStartupArgument(withConf, confRow, [])).toEqual(base);
+    expect(effectiveArgsOf(withConf)).toEqual(['--native', 'm.gguf', '--draft-conf', '0.5']);
+  });
+  it('edits a single row in the full argument list without baking unedited user_args overrides into config.args (U4A)', () => {
+    const layered = {
+      args: ['--native', 'm.gguf', '--pcie-frac', '0.4', '--max-context', '32768'],
+      user_args: ['--pcie-frac', '0.75', '--pool-workers', '6'],
+      args_written: ['--native', 'm.gguf', '--pcie-frac', '0.4', '--max-context', '32768'],
+    };
+    const rows = startupArgumentRows(layered);
+    const ctxRow = rows.find(r => r.tokens[0] === '--max-context')!;
+    const editedCtx = replaceStartupArgument(layered, ctxRow, ['--max-context', '65536']);
+    // Unedited overrides (--pcie-frac 0.75, --pool-workers 6) remain in user_args and are not baked into args.
+    expect(editedCtx.args).toEqual(['--native', 'm.gguf', '--pcie-frac', '0.4', '--max-context', '65536']);
+    expect(editedCtx.user_args).toEqual(['--pcie-frac', '0.75', '--pool-workers', '6', '--max-context', '65536']);
+    expect(editedCtx.args_written).toEqual(editedCtx.args);
+    expect(mergeUserArgs(editedCtx.args as string[], editedCtx.user_args)).toEqual([
+      '--native', 'm.gguf', '--pcie-frac', '0.75', '--pool-workers', '6', '--max-context', '65536',
+    ]);
+
+    // Editing a row that came from user_args updates user_args in place without copying other overrides into args.
+    const workersRow = startupArgumentRows(editedCtx).find(r => r.tokens[0] === '--pool-workers')!;
+    const editedWorkers = replaceStartupArgument(editedCtx, workersRow, ['--pool-workers', '8']);
+    expect(editedWorkers.args).toEqual(['--native', 'm.gguf', '--pcie-frac', '0.4', '--max-context', '65536']);
+    expect(editedWorkers.user_args).toEqual(['--pcie-frac', '0.75', '--pool-workers', '8', '--max-context', '65536']);
+    expect(mergeUserArgs(editedWorkers.args as string[], editedWorkers.user_args)).toEqual([
+      '--native', 'm.gguf', '--pcie-frac', '0.75', '--pool-workers', '8', '--max-context', '65536',
+    ]);
+
+    // Deleting an overridden row removes it from both user_args and args so the shadowed raw value does not resurrect.
+    const pcieRow = startupArgumentRows(editedWorkers).find(r => r.tokens[0] === '--pcie-frac')!;
+    const deletedPcie = replaceStartupArgument(editedWorkers, pcieRow, []);
+    expect(deletedPcie.args).toEqual(['--native', 'm.gguf', '--max-context', '65536']);
+    expect(deletedPcie.user_args).toEqual(['--pool-workers', '8', '--max-context', '65536']);
+    expect(mergeUserArgs(deletedPcie.args as string[], deletedPcie.user_args)).toEqual([
+      '--native', 'm.gguf', '--pool-workers', '8', '--max-context', '65536',
+    ]);
   });
 });
 

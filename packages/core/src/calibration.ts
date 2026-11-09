@@ -1,7 +1,8 @@
 import type { JsonObject } from './types';
 import type { CalibrationBackend, CalibrationJob, CalibrationStep, TuningLiveSnapshot, TuningRestartParameters } from './tuning-types';
+import { syncCalibrationUserArgs } from './arg-layers';
 
-/** Same test as isDeepseek41Config (deepseek41-config.ts), kept local so this module has no runtime imports. */
+/** Same test as isDeepseek41Config (deepseek41-config.ts), kept local so this module only depends on arg-layers. */
 const isDeepseek41 = (config: JsonObject | null | undefined) => !!config && config.arch === 'deepseek41';
 
 /** Flags quick calibration may write, with their accepted ranges. */
@@ -16,11 +17,13 @@ const CALIBRATION_FLAGS: Record<string, { min: number; max: number; integer?: bo
  * value (model paths, security, MCP, unknown flags). A value of `null` removes
  * the flag so the engine default applies, like upstream calibrate.py.
  * pcie_frac 0 is refused unless the GPU is a confirmed CUDA card (upstream #2498).
+ * Any conflicting override in `user_args` is cleared and `args_written` refreshed
+ * following upstream `strata_control/tune_apply.py` / `arg_layers.record_calibration`.
  */
 export function applyCalibrationSettings(config: JsonObject, settings: Record<string, string | null>, backend: CalibrationBackend): JsonObject {
   if (!Array.isArray(config.args) || !config.args.every(arg => typeof arg === 'string')) throw new Error('args 必须为字符串数组 / args must be a string array');
   // Quick calibration measures the Qwen engine's knobs (none is in DEEPSEEK41_ENGINE_FLAGS); a job finished on a Qwen
-  // config must not land in a DeepSeek one. Checked inline: this module stays free of runtime imports (node tests load it).
+  // config must not land in a DeepSeek one.
   const flags = Object.keys(settings);
   if (isDeepseek41(config) && flags.length) throw new Error(`DeepSeek-V4.1-Flash 使用独立引擎，不能写入 ${flags.join(' ')} / DeepSeek-V4.1-Flash uses its own engine and does not take ${flags.join(' ')}`);
   const args = [...config.args] as string[];
@@ -32,13 +35,16 @@ export function applyCalibrationSettings(config: JsonObject, settings: Record<st
       if (!value.trim() || !Number.isFinite(number) || number < rule.min || number > rule.max || (rule.integer && !Number.isInteger(number))) throw new Error(`${flag} 超出范围 / ${flag} is out of range`);
       if (flag === '--pcie-frac' && number === 0 && backend !== 'cuda') throw new Error('非 NVIDIA 显卡不能使用 pcie_frac 0 / pcie_frac 0 is only allowed on a confirmed NVIDIA GPU');
     }
-    const positions = args.flatMap((arg, i) => arg === flag ? [i] : []);
+    const positions = args.flatMap((arg, i) => (arg === flag || arg.startsWith(`${flag}=`)) ? [i] : []);
     if (positions.length > 1) throw new Error(`${flag} 重复出现，请先在配置中修正 / ${flag} appears more than once`);
     const at = positions[0];
-    if (at != null) args.splice(at, 2, ...(value == null ? [] : [flag, value]));
-    else if (value != null) args.push(flag, value);
+    if (at != null) {
+      const width = args[at]!.startsWith(`${flag}=`) ? 1 : (args[at + 1] != null && !args[at + 1]!.startsWith('--') ? 2 : 1);
+      args.splice(at, width, ...(value == null ? [] : [flag, value]));
+    } else if (value != null) args.push(flag, value);
   }
-  return { ...structuredClone(config), args };
+  const next: JsonObject = { ...structuredClone(config), args };
+  return syncCalibrationUserArgs(config, next, flags, { calibratedUpdates: settings });
 }
 
 /** File name for a new config version, next to the current one. */

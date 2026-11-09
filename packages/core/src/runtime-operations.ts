@@ -83,12 +83,28 @@ export interface RuntimeOperationFailure {
   needsReload: boolean;
 }
 
+export function sessionInvalidKvExtentMessage(zh: boolean): string {
+  return zh
+    ? '本次会话快照没有保存成功：当前未加载 MTP 的组合（如仅使用 DFlash2）可能不支持会话快照，建议在「预测（投机解码）」中改用 MTP 并重启后再试。'
+    : 'This session snapshot was not saved: configurations that do not load MTP (such as DFlash2-only runs) may not support conversation snapshots. Switch Drafting to MTP and restart before trying again.';
+}
+
+export function sessionRestoreAfterFailedSaveWarning(filename: string, zh: boolean): string {
+  return zh
+    ? `上次保存「${filename}」没有成功，恢复时不会包含刚才未保存的会话状态（若保存目录已有旧同名文件，只会恢复旧文件）。`
+    : `The last save of “${filename}” did not succeed; restoring will not include that unsaved session state (or will load an older file if one already exists).`;
+}
+
 export function describeRuntimeOperationFailure(error: unknown): RuntimeOperationFailure {
   const failure = normalizeError(error), details = asObject(asObject(failure.details).error);
   // This exact runtime refusal describes an incompatible cache mode, not an
   // invalid reserve value or a failed GPU. Keep other 400 responses unchanged.
   const residentLowRam = failure.status === 400 && /^VRAM:\s*not with the resident low-RAM mode \(the cache holds experts RAM does not\)$/i.test(failure.message.trim());
-  return { message: failure.message, status: failure.status, kind: residentLowRam ? 'vram-resident-low-ram' : typeof details.kind === 'string' ? details.kind : null,
+  // Upstream #5153: POST /slots/0?action=save returns HTTP 500 "conversation snapshot: invalid K/V extent" when MTP is not loaded (e.g. DFlash2 alone).
+  // Keep unsupported=false so the Save button is not disabled.
+  const snapshotInvalidKvExtent = failure.status === 500 && /conversation snapshot:\s*invalid K\/V extent/i.test(failure.message);
+  return { message: failure.message, status: failure.status,
+    kind: residentLowRam ? 'vram-resident-low-ram' : snapshotInvalidKvExtent ? 'session-invalid-kv-extent' : typeof details.kind === 'string' ? details.kind : null,
     published: details.published === true,
     unsupported: residentLowRam || failure.status === 501 || (failure.status === 400 && /not (?:supported|with|available)|unsupported|disabled|needs an engine started|not implemented/i.test(failure.message)),
     needsReload: /driver refused to release|refilling the cache failed/i.test(failure.message) };

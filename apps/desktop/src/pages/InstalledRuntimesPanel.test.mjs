@@ -155,3 +155,16 @@ test('turning automatic cleanup off is saved', async () => {
   assert.deepEqual(f.calls.saved, [['runtimeAutoCleanup', false]]);
   assert.equal(nodes(f.tree()).find(node => node.type === 'checkbox').props.checked, false);
 });
+
+test('switching to an older engine warns when the current model requires a newer minEngine (U10A)', () => {
+  const data = inventory();
+  data.runtimes[1].profiles = [{ id: 'p-v31', name: 'Qwen3.8-Flash-Next (Unsloth) · UD-Q2_K_XL' }];
+  const f = fixture({ data }); f.render();
+  const row = f.rows().find(item => text(item).includes('/home/me/Strata'));
+  f.button(row, '切换到此版本').props.onClick(); f.render();
+  const dialog = nodes(f.tree()).find(node => node.type === 'runtime-switch-dialog' || node.type?.name === 'RuntimeSwitchDialog');
+  const rendered = dialog.type(dialog.props);
+  assert.match(text(rendered), /UD-Q2_K_XL.*0\.1\.57.*0\.1\.47/);
+  assert.match(text(f.tree()), /只保留当前版本和 1 个旧版本（多次更新后不保证更早版本长期保留）/);
+  assert.doesNotMatch(text(f.tree()), /Unsloth v3\.1/);
+});

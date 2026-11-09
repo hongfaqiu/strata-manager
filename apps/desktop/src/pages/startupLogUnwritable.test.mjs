@@ -41,3 +41,13 @@ test('a VRAM or commit shortage gets its own title, the free-VRAM note and the r
   assert.ok(app.indexOf("useQuery({ queryKey: ['startupReserveFix'") < app.indexOf('if (serverMode && !serverAuthed) return <ServerAuthGate'));
 });
 
+// Upstream #5619: Win11 Smart App Control blocks strata-vision.exe / the main engine (WinError 4551).
+test('a Smart App Control block gets its own title and the Windows Security note', () => {
+  const card = source('./StartupDiagnosticCard.tsx');
+  assert.match(card, /startupWindowsSacBlocked\(diagnostic\)/);
+  assert.match(card, /'Windows 智能应用控制拦截了引擎' : 'Windows Smart App Control blocked the engine'/);
+  assert.match(card, /data-testid="startup-diagnostic-sac"/);
+  assert.match(card, /Windows 安全中心/);
+  assert.match(card, /App & browser control/);
+  assert.match(card, /strata-vision\.exe/);
+});
