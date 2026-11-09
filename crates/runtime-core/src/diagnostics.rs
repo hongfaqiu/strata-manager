@@ -238,6 +238,9 @@ enum MemoryReport {
 
 pub const VRAM_INSUFFICIENT: &str = "STARTUP_VRAM_INSUFFICIENT";
 pub const WINDOWS_COMMIT_LOW: &str = "STARTUP_WINDOWS_COMMIT_LOW";
+/// Windows 11 Smart App Control (or WDAC) blocked the engine / vision binary (#5619).
+pub const WINDOWS_SAC_BLOCKED: &str = "STARTUP_WINDOWS_SAC_BLOCKED";
+pub const WINDOWS_SAC_MESSAGE: &str = "Windows 智能应用控制拦截了引擎或图像程序（WinError 4551）。请在「Windows 安全中心 › 应用和浏览器控制」中关闭智能应用控制，或等待已签名版本后再试。 / Windows Smart App Control blocked the engine or vision program (WinError 4551). Turn off Smart App Control under Windows Security › App & browser control, or wait for a signed build.";
 
 fn memory_report(message: &str) -> Option<MemoryReport> {
     let lower = message.to_ascii_lowercase();
@@ -325,6 +328,15 @@ fn engine_log_tail(path: &std::path::Path, attempt_started_at: u64) -> Vec<Strin
 /// The line Strata 0.2.2 exits with when every card in "gpu_roles" is Off.
 fn all_cards_off(text: &str) -> bool {
     text.contains("every graphics card is set to Off")
+}
+
+/// Win11 Smart App Control / WDAC blocked an engine or vision executable (upstream #5619).
+fn windows_sac_blocked(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("winerror 4551")
+        || lower.contains("os error 4551")
+        || lower.contains("smart app control")
+        || lower.contains("application control policy")
 }
 
 pub fn build(
@@ -458,6 +470,18 @@ pub fn build(
         confidence = StartupConfidence::Confirmed;
         code = "STARTUP_GPU_ALL_OFF".into();
         message = "显卡角色全部为「关闭」，此引擎至少需要一张主卡或辅助卡才能启动。请在启动配置的「显卡角色」中打开一张卡。 / Every graphics card is set to Off, and this engine needs a Main or Helper card to start. Turn a card on under GPU roles in the startup settings.".into();
+    }
+    // Win11 Smart App Control / WDAC: strata-vision.exe or the main engine is blocked (#5619).
+    if matches!(category, StartupCategory::Unknown | StartupCategory::Engine)
+        && (windows_sac_blocked(&message)
+            || current
+                .iter()
+                .any(|entry| windows_sac_blocked(&entry.message)))
+    {
+        category = StartupCategory::Engine;
+        confidence = StartupConfidence::Confirmed;
+        code = WINDOWS_SAC_BLOCKED.into();
+        message = WINDOWS_SAC_MESSAGE.into();
     }
     // Upstream server.py opens config["log"] for appending; a locked, read-only
     // or ACL-denied file ends the start with PermissionError [Errno 13].
@@ -1583,5 +1607,78 @@ ThreadingHTTPServer((a.host,a.port),Handler).serve_forever()
         let tail = engine_log_tail(&log, 0);
         assert!(tail.len() <= 200);
         assert_eq!(tail.last().unwrap(), "strata generate: loading layer 48/48");
+    }
+
+    #[test]
+    fn windows_sac_lines_are_recognized() {
+        for line in [
+            "OSError: [WinError 4551] An Application Control policy has blocked this file.",
+            r"PermissionError: [WinError 4551] An Application Control policy has blocked this file: 'C:\Program Files\Strata\strata-vision.exe'",
+            "failed to start strata-vision.exe: os error 4551",
+            "Smart App Control blocked strata-vision.exe",
+        ] {
+            assert!(windows_sac_blocked(line), "{line}");
+        }
+        assert!(!windows_sac_blocked(
+            "OSError: [WinError 1455] The paging file is too small for this operation to complete"
+        ));
+        assert!(!windows_sac_blocked("FileNotFoundError: [WinError 2]"));
+    }
+
+    #[test]
+    fn windows_sac_block_is_classified_instead_of_a_generic_engine_crash() {
+        // Upstream #5619: Win11 SAC On blocks strata-vision.exe (and can block the main engine).
+        let logs = vec![LogEntry {
+            timestamp: 15,
+            level: "error".into(),
+            message: r"OSError: [WinError 4551] An Application Control policy has blocked this file: 'D:\AI\Strata\strata-vision.exe'".into(),
+        }];
+        for raw in [
+            "exit 1",
+            &error("STARTUP_ENGINE_CRASHED", "engine exited", "loading"),
+            &error(
+                "STARTUP_ENGINE_CRASHED",
+                "OSError: [WinError 4551] An Application Control policy has blocked this file.",
+                "loading",
+            ),
+        ] {
+            let result = build("p", 10, 20, raw, &logs, None);
+            assert_eq!(result.code, WINDOWS_SAC_BLOCKED);
+            assert_eq!(result.category, StartupCategory::Engine);
+            assert_eq!(result.confidence, StartupConfidence::Confirmed);
+            assert_eq!(result.actions[0], StartupAction::ViewLogs);
+            assert!(
+                result.message.contains("智能应用控制")
+                    && result.message.contains("Smart App Control"),
+                "{}",
+                result.message
+            );
+            assert!(
+                result.message.contains("应用和浏览器控制")
+                    || result.message.contains("App & browser control")
+            );
+        }
+        // An older log line before this attempt is not this failure.
+        let old = vec![LogEntry {
+            timestamp: 5,
+            ..logs[0].clone()
+        }];
+        assert_eq!(
+            build("p", 10, 20, "exit 1", &old, None).code,
+            "STARTUP_UNKNOWN"
+        );
+        // A bare engine crash without SAC wording stays an engine crash.
+        assert_eq!(
+            build(
+                "p",
+                10,
+                20,
+                &error("STARTUP_ENGINE_CRASHED", "engine exited", "loading"),
+                &[engine_line(12, "Traceback (most recent call last):")],
+                None,
+            )
+            .code,
+            "STARTUP_ENGINE_CRASHED"
+        );
     }
 }

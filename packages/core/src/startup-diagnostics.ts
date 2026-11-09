@@ -84,14 +84,20 @@ export function latestStartupDiagnostic(failures: unknown, profileId: string, at
 /** Codes from runtime-core diagnostics.rs when the engine reported a memory failure while loading. */
 export const STARTUP_VRAM_INSUFFICIENT = 'STARTUP_VRAM_INSUFFICIENT';
 export const STARTUP_WINDOWS_COMMIT_LOW = 'STARTUP_WINDOWS_COMMIT_LOW';
+/** Win11 Smart App Control / WDAC blocked the engine or vision binary (upstream #5619). */
+export const STARTUP_WINDOWS_SAC_BLOCKED = 'STARTUP_WINDOWS_SAC_BLOCKED';
 export type StartupMemoryShortage = 'vram' | 'commit';
 export function startupMemoryShortage(diagnostic: Pick<StartupFailureDiagnostic, 'code'>): StartupMemoryShortage | undefined {
   return diagnostic.code === STARTUP_VRAM_INSUFFICIENT ? 'vram' : diagnostic.code === STARTUP_WINDOWS_COMMIT_LOW ? 'commit' : undefined;
 }
 
-/** The engine crashed or exited abnormally (not a memory, log or setup problem): falling back to the previous engine may help. */
+export function startupWindowsSacBlocked(diagnostic: Pick<StartupFailureDiagnostic, 'code'>): boolean {
+  return diagnostic.code === STARTUP_WINDOWS_SAC_BLOCKED;
+}
+
+/** The engine crashed or exited abnormally (not a memory, log, SAC or setup problem): falling back to the previous engine may help. */
 export function startupEngineCrashed(diagnostic: Pick<StartupFailureDiagnostic, 'code' | 'category' | 'exitCode'>): boolean {
-  if (startupMemoryShortage(diagnostic) || diagnostic.code === 'STARTUP_LOG_UNWRITABLE') return false;
+  if (startupMemoryShortage(diagnostic) || diagnostic.code === 'STARTUP_LOG_UNWRITABLE' || startupWindowsSacBlocked(diagnostic)) return false;
   return diagnostic.category === 'engine' || (diagnostic.exitCode !== undefined && diagnostic.exitCode !== 0 && ['engine', 'unknown', 'resource'].includes(diagnostic.category));
 }
 

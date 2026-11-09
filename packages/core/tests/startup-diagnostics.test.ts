@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { latestStartupDiagnostic, parseStartupDiagnostic, primaryStartupDiagnosticAction, readStartupDiagnostic, startupEngineCrashed, startupMemoryShortage } from '../src/startup-diagnostics';
+import { latestStartupDiagnostic, parseStartupDiagnostic, primaryStartupDiagnosticAction, readStartupDiagnostic, startupEngineCrashed, startupMemoryShortage, startupWindowsSacBlocked } from '../src/startup-diagnostics';
 
 const diagnostic = { profileId: 'model-a', attemptStartedAt: 100, failedAt: 200, phase: 'starting', category: 'timeout', confidence: 'confirmed',
   code: 'STARTUP_API_TIMEOUT', message: 'API not ready; process retained', evidence: [{ source: 'startupError', at: 200, message: 'not ready' }],
@@ -117,5 +117,16 @@ describe('startup memory shortage', () => {
     expect(startupEngineCrashed({ code: 'STARTUP_API_TIMEOUT', category: 'timeout' })).toBe(false);
     expect(startupEngineCrashed({ code: 'STARTUP_VRAM_INSUFFICIENT', category: 'engine', exitCode: 1 })).toBe(false);
     expect(startupEngineCrashed({ code: 'STARTUP_LOG_UNWRITABLE', category: 'engine', exitCode: 1 })).toBe(false);
+    expect(startupEngineCrashed({ code: 'STARTUP_WINDOWS_SAC_BLOCKED', category: 'engine', exitCode: 1 })).toBe(false);
+  });
+  it('recognizes the Windows Smart App Control diagnostic code', () => {
+    expect(startupWindowsSacBlocked({ code: 'STARTUP_WINDOWS_SAC_BLOCKED' })).toBe(true);
+    expect(startupWindowsSacBlocked({ code: 'STARTUP_ENGINE_CRASHED' })).toBe(false);
+    const stored = { ...diagnostic, phase: 'loading', category: 'engine', confidence: 'confirmed', code: 'STARTUP_WINDOWS_SAC_BLOCKED',
+      message: 'Windows Smart App Control blocked the engine', actions: ['viewLogs', 'exportDiagnostics'],
+      evidence: [{ source: 'serviceLog', at: 200, message: 'OSError: [WinError 4551] An Application Control policy has blocked this file.' }] };
+    const parsed = parseStartupDiagnostic(stored, 'model-a')!;
+    expect(startupWindowsSacBlocked(parsed)).toBe(true);
+    expect(primaryStartupDiagnosticAction(parsed)).toBe('viewLogs');
   });
 });
