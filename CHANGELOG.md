@@ -7,6 +7,12 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+### English
+
+## [0.2.44] - 2026-11-10
+
+### 中文
+
 - **上游 0.2.13 适配（W4A / W8A / W1B）**：`--spec` 说明改为「DFlash2 多数显卡默认 6；Strix Halo 与 ≥48 GB 的 RTX PRO（Blackwell）默认 8，引擎还会按显卡压窗口」；纯 Intel 显卡且「显卡类型」为自动识别时，安装自动带上 `--backend sycl`，并把上游「no NVIDIA GPU found」映射为中英文提示（可选手动选 Intel）；运行配置若引用未来的 `component:strata-q4-*` 形状引擎，给出友好说明并指向上游 Strata 应用或官方终端工具，不解析、不安装，也不宣称已支持或上游已发布。
 
 ### English
