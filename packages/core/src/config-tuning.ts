@@ -330,8 +330,8 @@ export const STARTUP_FIELD_HINTS: Readonly<Record<string, { zh: string; en: stri
     en: 'Only affects a layer split (--layer-split): sizes prompt chunks for the pipeline. 0 off (default), 1 only evens out the chunk count, > 1 is this PC\'s b/a in tokens (measured by quick calibration or the official --calibrate); range 0–262144.',
   },
   '--spec': {
-    zh: '每轮推测的草稿词数上限：MTP 默认 4，DFlash2 默认 6。在此手动设置后会写入 user_args 作为手动覆盖项，DFlash2 与 MTP 均按所设值运行；“使用默认设置”则恢复当前推测解码策略的默认值。',
-    en: 'Maximum drafted tokens per step: MTP defaults to 4 and DFlash2 defaults to 6. A value set here is recorded in user_args as a manual override so both DFlash2 and MTP honour it; "Use default" restores the active drafting policy default.',
+    zh: '每轮推测的草稿词数上限：MTP 默认 4；DFlash2 多数显卡默认 6，Strix Halo 与显存 ≥48 GB 的 RTX PRO（Blackwell，cc12.0）默认 8；引擎还会按显卡把窗口压到上限。在此手动设置后会写入 user_args 作为手动覆盖项，DFlash2 与 MTP 均按所设值运行；“使用默认设置”则恢复当前推测解码策略的默认值。',
+    en: 'Maximum drafted tokens per step: MTP defaults to 4; DFlash2 defaults to 6 on most GPUs and to 8 on Strix Halo and RTX PRO (Blackwell, cc12.0) with 48 GB or more VRAM; the engine may also clamp the window to the card\'s limit. A value set here is recorded in user_args as a manual override so both DFlash2 and MTP honour it; "Use default" restores the active drafting policy default.',
   },
 };
 

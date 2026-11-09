@@ -17,6 +17,19 @@ export function autoAmdMultiGpuOnWindows(value: OfficialSetupOptions, availableG
   return chosen.length > 1 && chosen.some(gpu => /\b(amd|radeon)\b/i.test(gpu.name)) && !chosen.some(gpu => /nvidia|geforce|quadro|tesla/i.test(gpu.name));
 }
 
+/** W8A: with backend "auto", every listed (or selected) GPU is Intel and none is NVIDIA/AMD. */
+export function autoIntelOnlyNeedsSycl(value: OfficialSetupOptions, availableGpus: GpuOption[] | undefined) {
+  if ((value.backend ?? 'auto') !== 'auto' || !availableGpus?.length) return false;
+  const selection = parseGpuSelection(value.gpus);
+  const chosen = selection.mode === 'ids'
+    ? availableGpus.filter(gpu => selection.ids.includes(gpu.id))
+    : availableGpus;
+  if (!chosen.length) return false;
+  const intel = /\bintel\b|\barc\b|iris|uhd graphics/i;
+  const other = /nvidia|geforce|quadro|tesla|\bamd\b|radeon|instinct/i;
+  return chosen.every(gpu => intel.test(gpu.name)) && !chosen.some(gpu => other.test(gpu.name));
+}
+
 export function SetupAdvancedOptions({ language, value, onChange, onValidityChange, disabled = false, embedded = false, availableGpus, windows = typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent) }: {
   language: AppLanguage; value: OfficialSetupOptions;
   onChange: (value: OfficialSetupOptions) => void;
@@ -71,6 +84,7 @@ export function SetupAdvancedOptions({ language, value, onChange, onValidityChan
         {selected.length > 1 && <label className="official-setup-wide"><span>{zh ? '主卡（Strata 0.2.2 起）' : 'Main card (Strata 0.2.2+)'}</span><Dropdown ariaLabel={zh ? '主卡' : 'Main card'} value={mainOf(value.gpuRoles) ?? ''} onValueChange={main => update({ gpuRoles: rolesFor(value.gpus ?? '', main) })} options={[{ value: '', label: zh ? '由安装器决定（按编号顺序，最后一张为主卡）' : 'Let setup decide (index order, last is Main)' }, ...selected.map(id => ({ value: String(id), label: `GPU ${id}${availableGpus?.find(gpu => gpu.id === id) ? ` · ${availableGpus.find(gpu => gpu.id === id)!.name}` : ''}` }))]}/><small className="official-setup-note">{zh ? '主卡运行每次回答的最后一段，其余所选显卡为辅助卡，未选的显卡关闭（写入 --gpu-roles）。需要 Strata 0.2.2 或更新的运行环境。' : 'Main runs the last stage of every answer; the other chosen cards are Helpers and the rest are Off (passed as --gpu-roles). Needs a Strata 0.2.2 or newer runtime.'}</small></label>}
       </div>
       {(value.backend === 'hip' || autoAmdMultiGpuOnWindows(value, availableGpus, windows)) && <p className="official-setup-note" data-testid="setup-amd-single-gpu">{zh ? 'Windows 上的 AMD 显卡仅支持单卡。' : 'AMD on Windows supports one GPU only.'}</p>}
+      {autoIntelOnlyNeedsSycl(value, availableGpus) && <p className="official-setup-note" data-testid="setup-intel-auto-sycl">{zh ? '检测到仅有 Intel 显卡：安装时将自动使用 Intel（SYCL）后端，避免上游报「no NVIDIA GPU found」。也可在「显卡类型」里手动选 Intel。' : 'Only Intel GPUs detected: setup will pass the Intel (SYCL) backend automatically so upstream does not report "no NVIDIA GPU found". You can also choose Intel under GPU type.'}</p>}
       <section className="calibrate-entry" data-testid="calibrate-entry" aria-label={zh ? '一键校准入口' : 'One-click calibrate entry'}>
         <div className="calibrate-entry-heading">
           <div>

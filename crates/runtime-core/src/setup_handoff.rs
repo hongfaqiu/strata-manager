@@ -401,7 +401,7 @@ fn asset_check(value: &Value, root: &Path) -> Result<(), String> {
         let package = crate::component_engine::resolve(engine, &config).map_err(|why| {
             format!(
                 "模型引擎文件不完整：{}",
-                crate::component_engine::missing_reason(&why)
+                crate::component_engine::explain_component_error(&why)
             )
         })?;
         if !fs::metadata(&package.exe).is_ok_and(|metadata| metadata.len() > 0) {

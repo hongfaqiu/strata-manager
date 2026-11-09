@@ -170,8 +170,8 @@ pub fn resolve_in(
     let name = reference
         .strip_prefix(REFERENCE_PREFIX)
         .unwrap_or(reference);
-    if !(name.is_empty() || name == COMPONENT_ID) {
-        return Err(format!("运行配置引用了未知组件 {name}"));
+    if let Some(reason) = unsupported_component_reason(name) {
+        return Err(reason);
     }
     let folder = components.join("engine");
     let Ok(entries) = fs::read_dir(&folder) else {
@@ -320,8 +320,24 @@ pub fn expand(exe: &str, config: &Value) -> Option<Result<PathBuf, String>> {
     is_reference(exe).then(|| {
         resolve(exe, config)
             .map(|engine| engine.exe)
-            .map_err(|why| missing_reason(&why))
+            .map_err(|why| explain_component_error(&why))
     })
+}
+
+/// W1B: `component:strata-q4-<shape>` is an upstream Qwen4 shape-engine reference. Manager does
+/// not resolve or install those packages (they are not in the current feed). Point the user at
+/// the upstream Strata app / official tools without naming a specific CLI that may not support
+/// shape engines yet, and without claiming Manager support or that Qwen4 has shipped.
+pub fn unsupported_component_reason(name: &str) -> Option<String> {
+    if name.starts_with("strata-q4-") || name == "strata-q4" {
+        return Some(format!(
+            "运行配置引用了上游 Qwen4 新形状引擎组件（component:{name}）。这是形状模型专用引擎，Manager 目前不解析也不安装此类组件；请改用上游 Strata 应用或官方终端工具处理，勿在 Manager 内强行启动。 / This run config names an upstream Qwen4 shape engine (component:{name}). That engine is for shape models; Manager does not resolve or install it yet. Use the upstream Strata app or official terminal tools instead, and do not force-start it in Manager."
+        ));
+    }
+    if !(name.is_empty() || name == COMPONENT_ID) {
+        return Some(format!("运行配置引用了未知组件 {name}"));
+    }
+    None
 }
 
 /// The plain sentence when a component reference finds no engine.
@@ -329,6 +345,16 @@ pub fn missing_reason(why: &str) -> String {
     format!(
         "配置使用 Strata 应用安装的引擎组件（component:strata-engine），但没找到本机可用的引擎包（{why}）；请打开 Strata 应用在设置里「更新引擎」，或运行 strata update 后重新扫描"
     )
+}
+
+/// Turn a `resolve` error into the user-facing fatal reason. Shape-engine / unknown-component
+/// messages are already complete; missing-package reasons still go through [`missing_reason`].
+pub fn explain_component_error(why: &str) -> String {
+    if why.contains("strata-q4") || why.contains("未知组件") {
+        why.to_owned()
+    } else {
+        missing_reason(why)
+    }
 }
 
 #[cfg(test)]
@@ -443,6 +469,18 @@ mod tests {
         assert!(resolve_in(root, "component:other", None, "windows-x86_64")
             .unwrap_err()
             .contains("未知组件"));
+        let q4 = resolve_in(root, "component:strata-q4-demo", None, "windows-x86_64").unwrap_err();
+        assert!(q4.contains("strata-q4-demo"), "{q4}");
+        assert!(q4.contains("Qwen4") && q4.contains("官方终端工具"), "{q4}");
+        assert!(q4.contains("official terminal tools"), "{q4}");
+        assert!(!q4.contains("strata launch"), "{q4}");
+        assert!(
+            !q4.contains("已发布") && !q4.contains("already shipped"),
+            "{q4}"
+        );
+        assert!(!q4.contains("已支持"), "{q4}");
+        assert_eq!(explain_component_error(&q4), q4);
+        assert!(explain_component_error("没有引擎包").contains("component:strata-engine"));
     }
     fn managed_engine(root: &Path, version: &str, marker: bool) {
         let dir = root.join("engine");
