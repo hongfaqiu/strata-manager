@@ -7,6 +7,12 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+### English
+
+## [0.2.43] - 2026-11-09
+
+### 中文
+
 - **统一参数有效值与 `user_args` 覆盖同步**：上游 `serve/server.py` 启动时将 `user_args` 合并到 `args` 之上。现在高级设置表、并发与控制向量按合并后的有效值读取展示；手动修改启动参数、应用快速校准、一键提速或调优重启候选时，同步更新或清除 `user_args` 里的同名覆盖项并按上游语义刷新 `args_written`，同时完整保留未知参数、模型路径、重复参数和多值选项。手设 `--spec` / `--draft-conf` 会同步记录到 `user_args`，使 DFlash2 推测解码也能识别手动窗口与置信度设置。
 - **接入 Strata 0.2.12 `drafting plan` 与 DFlash2 并发规则**：状态检查接入 `strata.py drafting plan --config ... --output jsonl`（未启全卡 split 时带 `--no-split`），并在文件名回退检测中补充 `q4_0-selq4.pack` 与两份 0.2.12 微调包（`strata1.q4_0-selq4.pack` 0.34 GB、`strata1.q4_0-bf16sel.pack` 0.52 GB）。已有旧版 stock pack 但可获取微调更新时会保留「更新微调版 DFlash2」入口，下载确认弹窗按实际计划展示来源（Strata 签名更新源或 Hugging Face）与体积。并发提示对齐引擎 0.1.57+ 规则：CUDA/HIP/SYCL 手选 DFlash2 支持保留多并发槽，Auto 与 Metal 多并发仍改用 MTP，`--pipeline-windows` 仍阻挡 DFlash2。
 - **会话快照 `invalid K/V extent` 报错说明**：当未加载 MTP（如仅启用 DFlash2）导致保存会话快照返回 HTTP 500 `conversation snapshot: invalid K/V extent`（上游 #5153）时，明确提示本次快照未保存成功并建议在「预测（投机解码）」中改用 MTP 重启后再试，不禁用保存按钮；同时记录本次保存失败并在点击「恢复会话」前给出提醒。
