@@ -1,6 +1,7 @@
 //! Strata 0.2+ component engine packages next to the legacy ZIP path.
 use super::*;
 use flate2::{write::GzEncoder, Compression};
+use std::io::Write;
 
 enum Item<'a> {
     File(&'a str, &'a [u8]),
@@ -47,6 +48,43 @@ fn valid() -> Vec<Item<'static>> {
     ]
 }
 
+fn gzip_member(data: &[u8]) -> Vec<u8> {
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
+    encoder.write_all(data).unwrap();
+    encoder.finish().unwrap()
+}
+
+/// One tar stream split across two concatenated gzip members (upstream feed packing).
+fn package_concatenated_gzip(dir: &Path, items: &[Item]) -> PathBuf {
+    let mut builder = tar::Builder::new(Vec::new());
+    for item in items {
+        let (name, kind, data) = match item {
+            Item::File(name, data) => (*name, tar::EntryType::Regular, *data),
+            Item::Raw(name, kind, data) => (*name, *kind, *data),
+        };
+        let mut header = tar::Header::new_gnu();
+        let bytes = name.as_bytes();
+        header.as_gnu_mut().unwrap().name[..bytes.len()].copy_from_slice(bytes);
+        header.set_entry_type(kind);
+        header.set_size(data.len() as u64);
+        header.set_mode(0o755);
+        header.set_mtime(0);
+        if kind == tar::EntryType::Symlink {
+            header.set_link_name("/etc/passwd").unwrap();
+        }
+        header.set_cksum();
+        builder.append(&header, data).unwrap();
+    }
+    let tar = builder.into_inner().unwrap();
+    let mid = tar.len() / 2;
+    assert!(mid > 0 && mid < tar.len());
+    let path = dir.join("engine-multi.tar.gz");
+    let mut out = File::create(&path).unwrap();
+    out.write_all(&gzip_member(&tar[..mid])).unwrap();
+    out.write_all(&gzip_member(&tar[mid..])).unwrap();
+    path
+}
+
 #[test]
 fn package_extraction_accepts_a_flat_engine_package() {
     let temp = tempfile::tempdir().unwrap();
@@ -55,6 +93,19 @@ fn package_extraction_accepts_a_flat_engine_package() {
     let files = extract_package(&archive, &out, u64::MAX, || Ok(())).unwrap();
     assert_eq!(files.len(), 4);
     assert_eq!(fs::read(out.join("strata.exe")).unwrap(), b"MZ engine");
+}
+
+#[test]
+fn package_extraction_reads_every_gzip_member() {
+    let temp = tempfile::tempdir().unwrap();
+    let archive = package_concatenated_gzip(temp.path(), &valid());
+    let out = temp.path().join("out");
+    let files = extract_package(&archive, &out, u64::MAX, || Ok(())).unwrap();
+    assert_eq!(files.len(), 4);
+    assert_eq!(fs::read(out.join("BUILD.json")).unwrap(), BUILD);
+    assert_eq!(fs::read(out.join("strata.exe")).unwrap(), b"MZ engine");
+    assert_eq!(fs::read(out.join("cublas64_13.dll")).unwrap(), b"dll");
+    assert_eq!(fs::read(out.join("engine-component.json")).unwrap(), b"{}");
 }
 
 #[test]

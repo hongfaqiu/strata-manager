@@ -308,7 +308,7 @@ export interface GuideState {
   runtimeTask?: core.TaskStatus;
   setupTask?: core.TaskStatus;
   handoff?: core.SetupHandoff;
-  readyRuntime?: { runtimeVersion?: string; releaseVersion?: string; profile: core.ServiceProfile };
+  readyRuntime?: { runtimeVersion?: string; releaseVersion?: string; profile: core.ServiceProfile; hasVisionReader?: boolean };
   /** Why the detected runtime still needs repair (backend fact, shown verbatim). */
   repairReason?: string;
   target?: core.ServiceProfile;

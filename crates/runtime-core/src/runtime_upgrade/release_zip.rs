@@ -1388,7 +1388,9 @@ pub(super) fn extract_package_files(
     fs::create_dir_all(destination).map_err(|e| e.to_string())?;
     reject_link(destination)?;
     let file = File::open(archive).map_err(|e| e.to_string())?;
-    let mut tar = tar::Archive::new(flate2::read::GzDecoder::new(std::io::BufReader::new(file)));
+    let mut tar = tar::Archive::new(flate2::read::MultiGzDecoder::new(std::io::BufReader::new(
+        file,
+    )));
     let mut names = HashSet::new();
     let mut files = Vec::new();
     let mut total = 0u64;

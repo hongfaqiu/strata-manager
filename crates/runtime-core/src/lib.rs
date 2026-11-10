@@ -17,6 +17,7 @@ mod display_adapters;
 mod energy;
 pub mod engine_help;
 pub mod engine_log;
+pub mod engine_vision;
 pub mod external;
 pub mod external_management;
 pub mod gguf_check;

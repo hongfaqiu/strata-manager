@@ -122,6 +122,7 @@ mod tests {
                 managed: true,
             },
             dsv41_version: None,
+            has_vision_reader: true,
         }
     }
 

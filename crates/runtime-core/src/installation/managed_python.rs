@@ -22,7 +22,7 @@ use crate::{
     types::{now, TaskStatus},
     RuntimeState,
 };
-use flate2::read::GzDecoder;
+use flate2::read::MultiGzDecoder;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
@@ -508,7 +508,7 @@ pub(crate) fn extract(
     destination: &Path,
     check: impl Fn() -> Result<(), String>,
 ) -> Result<(), String> {
-    let mut archive = tar::Archive::new(GzDecoder::new(
+    let mut archive = tar::Archive::new(MultiGzDecoder::new(
         File::open(archive).map_err(|e| e.to_string())?,
     ));
     let mut names = HashSet::new();
@@ -708,6 +708,41 @@ mod tests {
             fs::read_link(out.path().join("python/bin/python3")).unwrap(),
             PathBuf::from("python3.12")
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extract_reads_every_gzip_member() {
+        let mut builder = tar::Builder::new(Vec::new());
+        file(&mut builder, "python/bin/python3.12", 0o755, b"#!/bin/sh\n");
+        link(&mut builder, "python/bin/python3", "python3.12");
+        file(
+            &mut builder,
+            "python/lib/python3.12/venv/__init__.py",
+            0o644,
+            b"",
+        );
+        let tar = builder.into_inner().unwrap();
+        let mid = tar.len() / 2;
+        fn gzip(bytes: &[u8]) -> Vec<u8> {
+            let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+            gz.write_all(bytes).unwrap();
+            gz.finish().unwrap()
+        }
+        let mut input = tempfile::NamedTempFile::new().unwrap();
+        input.write_all(&gzip(&tar[..mid])).unwrap();
+        input.write_all(&gzip(&tar[mid..])).unwrap();
+        let out = tempfile::tempdir().unwrap();
+        extract(input.path(), out.path(), || Ok(())).unwrap();
+        assert!(out.path().join("python/bin/python3.12").is_file());
+        assert_eq!(
+            fs::read_link(out.path().join("python/bin/python3")).unwrap(),
+            PathBuf::from("python3.12")
+        );
+        assert!(out
+            .path()
+            .join("python/lib/python3.12/venv/__init__.py")
+            .is_file());
     }
 
     #[test]

@@ -89,3 +89,17 @@ test('the delete-model confirmation says a downloaded model can be used from its
   assert.match(dialog, /keepHint: 'Just not recognized\? Downloaded models do not need to be deleted[^']*Use an existing model[^']*'/);
   assert.match(dialog, /data-testid="model-deletion-keep-hint">\{w\.keepHint\}/);
 });
+
+test('N4A: a package without strata-vision does not offer image input, with a short text-only note', () => {
+  assert.match(panel, /core\.engineAllowsImageInput\(modelImages, hasVisionReader\)/);
+  assert.match(panel, /core\.engineVisionTextOnly\(language\)/);
+  assert.match(page, /core\.engineAllowsImageInput\(!!entry\?\.images, hasVisionReader\)/);
+  assert.match(page, /data-testid="model-download-no-vision"/);
+  assert.match(guide, /core\.engineAllowsImageInput\(/);
+  assert.match(guide, /data-testid="ob-no-vision"/);
+  const dialog = read('./VisionSupportDialog.tsx');
+  assert.match(dialog, /data-testid="vision-no-reader"/);
+  assert.match(dialog, /core\.engineVisionTextOnly\(language\)/);
+  assert.match(dialog, /core\.engineAllowsImageInput\(true, hasReader, \{ deepseek: deepseekVision !== null \}\)/);
+});
+

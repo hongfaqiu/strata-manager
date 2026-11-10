@@ -7,7 +7,13 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+- **解包官方 tar.gz 时读取全部 gzip 成员**：上游 feed 在多线程打包时可能生成拼接的多成员 gzip（尚未默认）。原先只用 `GzDecoder`，只会读到第一个成员，后续文件会解包失败。现已改为 `MultiGzDecoder`，单成员包行为不变。
+- **引擎包没有 strata-vision 时不提供图像输入**：如官方 0.1.59 SYCL 包（上游 #5716）不含读图组件。安装、模型准备和图像设置中不再默认开启或允许打开「图像输入」，并简短说明当前包只能处理文字。不拒收此类引擎包；带视觉二进制的包不受影响。
+
 ### English
+
+- **Read every gzip member when extracting official tar.gz packages**: an upstream feed may emit concatenated multi-member gzip when packing with multiple threads (not the default yet). `GzDecoder` only read the first member, so later files failed to extract. Extraction now uses `MultiGzDecoder`; single-member packages behave as before.
+- **Do not offer image input when the engine package has no strata-vision**: official 0.1.59 SYCL packages (upstream #5716) ship without a picture reader. Setup, model preparation, and image settings no longer default-enable or allow turning on image input, and a short note explains that only text is supported. Such packages are still accepted; packages that include a vision binary are unchanged.
 
 ## [0.2.44] - 2026-11-10
 

@@ -67,6 +67,7 @@
 - `read_config_snapshot({profile}) -> {config:JSON,revision:string}`：Tauri 转发 `read_config_snapshot_v1`；revision 是原始配置字节的 SHA256，不是 JSON 对象的语义版本。
 - `write_config({profile,config,expectedRevision}) -> {revision:string}`：Tauri 只转发 `write_config_cas_v1`；expectedRevision 必须是读取时的 64 字符十六进制 revision。原字节变化时拒绝写入并返回包含 `CONFIG_REVISION_CONFLICT` 的错误，草稿由 UI 保留、重读并合并。成功执行校验、备份、同步临时文件和原子替换，再返回新 revision，不自动重启模型。
 - `validate_vision_files({profile,config}) -> void`：桌面进程对服务工作目录下必需视觉文件做只读核验，无同名 Supervisor RPC。
+- `engine_vision_reader({profile,exe?}) -> {available:boolean,path?}`：只读检查已安装引擎包是否包含 `strata-vision`（或 `strata-vision-hip`）二进制，无同名 Supervisor RPC。
 - `copy_configuration({profile,filename,config}) -> ServiceProfile`：桌面通过配置操作锁和管理文件锁，先请求后台 `assert_profile_management`，再把完整草稿保存为新配置文件；不自动登记、发现或启用。
 - `delete_configuration({profile}) -> {archivedPath:string}`：桌面重查实际配置路径、登记引用及停止状态，归档配置（`config-trash/manifest.json` 记录原路径）并移除匹配登记；失败尝试还原归档。不是权重删除。
 - `plan_config_cleanup({currentInstallDir,directories?}) -> {currentInstallDir,currentVersion?,items:[{profile,configPath,installDir,runtimeVersion?,modelName?,identical,identicalTo?}]}`：只读。列出当前运行环境以外、各版本安装目录根或 `configs/` 下的 `strata-*.json`；排除 `.shared-settings.json`、`models/` `packs/` `mtp/` 下的文件、共享数据目录中的配置、正在运行或已登记（含导入来源）的配置。删除仍逐个调用 `delete_configuration`。

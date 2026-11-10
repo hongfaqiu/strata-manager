@@ -47,6 +47,7 @@
 .model-download-preset-body{padding:4px 16px 16px;display:grid;grid-template-columns:1fr 1fr;gap:16px}.model-download-preset-body>label{font-size:13px;display:grid;gap:8px}
 .model-download-preset-body>p{grid-column:1/-1;font-size:12px;color:var(--st-ink-muted);line-height:1.5;margin:0}
 .model-download-preset-body .model-download-image-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;align-self:end;min-height:44px}
+.model-download-preset-body .model-download-note{margin:0;font-size:12px;line-height:1.55;color:var(--muted)}
 .model-download-detail .resource-assessment{margin:14px 0 0}
 .model-download-detail .resource-assessment--compact{position:relative;padding:12px 16px}
 .model-download-detail .resource-assessment--compact .resource-assessment-heading>.st-btn{height:28px;min-height:28px;width:28px;padding:0}

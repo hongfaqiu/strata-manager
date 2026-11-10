@@ -13,9 +13,11 @@ import './vision-support-dialog.css';
 export interface VisionSupportDialogProps {
   profile: ServiceProfile; language: AppLanguage; onClose: () => void;
   onSaved?: () => Promise<void> | void; onRestart?: () => Promise<void>;
+  /** When false, the installed engine package has no `strata-vision` (e.g. official SYCL). */
+  hasVisionReader?: boolean;
 }
 
-export function VisionSupportDialog({ profile, language, onClose, onSaved, onRestart }: VisionSupportDialogProps) {
+export function VisionSupportDialog({ profile, language, onClose, onSaved, onRestart, hasVisionReader }: VisionSupportDialogProps) {
   const zh = language === 'zh-CN';
   const [baseline, setBaseline] = useState<{ config: JsonObject; revision: string; profileId: string; configPath: string } | null>(null);
   const [draft, setDraft] = useState<VisionSupportDraft | null>(null);
@@ -25,6 +27,7 @@ export function VisionSupportDialog({ profile, language, onClose, onSaved, onRes
   const [mac, setMac] = useState<core.MacVisionSupport | null>(null);
   // DeepSeek-V4.1-Flash reads pictures with its own engine: one on/off switch (--vision on|off), no files.
   const [deepseekVision, setDeepseekVision] = useState<boolean | null>(null);
+  const [hasReader, setHasReader] = useState(hasVisionReader);
   const text = (key: Parameters<typeof visionSupportText>[1]) => visionSupportText(language, key);
   const current = useRef({ profile, onRestart, onSaved }); current.current = { profile, onRestart, onSaved };
   const savingRef = useRef(false), browsingRef = useRef(false), alive = useRef(false);
@@ -53,6 +56,15 @@ export function VisionSupportDialog({ profile, language, onClose, onSaved, onRes
     }).catch(failure => { if (!stopped) setError(core.normalizeError(failure).message); }).finally(() => { if (!stopped) setLoading(false); });
     return () => { stopped = true; };
   }, [profile.id, profile.configPath, reload]);
+  useEffect(() => {
+    if (hasVisionReader !== undefined) { setHasReader(hasVisionReader); return; }
+    if (!core.isDesktop()) { setHasReader(undefined); return; }
+    let stopped = false;
+    void core.engineVisionReader(profile).then(result => {
+      if (!stopped) setHasReader(result.available);
+    }).catch(() => { if (!stopped) setHasReader(undefined); });
+    return () => { stopped = true; };
+  }, [hasVisionReader, profile.id, profile.installDir, profile.configPath]);
   const changedProfile = (target: typeof baseline) => !target || current.current.profile.id !== target.profileId || current.current.profile.configPath !== target.configPath;
   const close = () => { if (!busy && !savingRef.current && !browsingRef.current) onClose(); };
   const edit = <Key extends keyof VisionSupportDraft>(key: Key, value: VisionSupportDraft[Key]) => { setDraft(previous => previous ? { ...previous, [key]: value } : previous); setMessage(''); setError(''); setEnabled(false); };
@@ -68,7 +80,7 @@ export function VisionSupportDialog({ profile, language, onClose, onSaved, onRes
     finally { browsingRef.current = false; if (alive.current) setBrowsing(false); }
   };
   const save = async (restart: boolean) => {
-    if (busy || savingRef.current || !baseline || (!draft && deepseekVision === null) || (macBlocked && (draft !== null || deepseekVision === true))) return;
+    if (busy || savingRef.current || !baseline || (!draft && deepseekVision === null) || (macBlocked && (draft !== null || deepseekVision === true)) || (hasReader === false && deepseekVision === null)) return;
     const target = baseline, selectedProfile = profile;
     let persisted = false;
     savingRef.current = true; setSaving(true); setError(''); setMessage('');
@@ -103,6 +115,7 @@ export function VisionSupportDialog({ profile, language, onClose, onSaved, onRes
   };
   const labels = { exe: zh ? '视觉引擎' : 'Vision engine', model: zh ? '模型 GGUF' : 'Model GGUF', mmproj: zh ? '图像投影文件' : 'Image projector' };
   const complete = !!draft && [draft.exe, draft.model, draft.mmproj].every(path => path.trim()) && Number.isSafeInteger(Number(draft.threads)) && Number(draft.threads) > 0 && Number.isSafeInteger(Number(draft.maxTokens)) && Number(draft.maxTokens) > 0;
+  const noReader = !core.engineAllowsImageInput(true, hasReader, { deepseek: deepseekVision !== null });
   return <Dialog title={zh ? '启用图像支持' : 'Enable image support'} onClose={close}>
     <div className="vision-support-dialog">
       {loading && <p className="vision-support-status" role="status"><LoaderCircle size={17} className="spin"/>{zh ? '正在读取现有配置…' : 'Reading the existing configuration…'}</p>}
@@ -118,12 +131,19 @@ export function VisionSupportDialog({ profile, language, onClose, onSaved, onRes
           <small>{macVisionText(language, 'mvBody')}</small>
         </div>
       </div>}
+      {noReader && !loading && <div className="vision-support-mac" role="status" data-testid="vision-no-reader">
+        <ImageOff size={22} aria-hidden="true"/>
+        <div>
+          <strong>{core.engineVisionUnavailableTitle(language)}</strong>
+          <small>{core.engineVisionTextOnly(language)}</small>
+        </div>
+      </div>}
       {deepseekVision !== null && baseline && <div className="vision-support-deepseek" data-testid="vision-deepseek">
         <span className="vision-support-deepseek-icon" aria-hidden="true"><ImageIcon size={20}/></span>
         <div><strong>{text('vsDeepseekLabel')}</strong><small>{text('vsDeepseekHint')}</small></div>
         <Toggle checked={deepseekVision} disabled={busy || (macBlocked && !deepseekVision)} ariaLabel={text('vsDeepseekLabel')} onCheckedChange={value => { setDeepseekVision(value); setMessage(''); setError(''); setEnabled(false); }}/>
       </div>}
-      {draft && <>
+      {draft && !noReader && <>
         <p className="vision-support-intro">{zh ? '选择已有的视觉引擎、模型和匹配投影文件。' : 'Choose an existing vision engine, model and matching projector.'}</p>
         <div className="vision-support-paths">{(['exe', 'model', 'mmproj'] as const).map(key => <label key={key}><span>{labels[key]}</span><div><input value={draft[key]} aria-label={labels[key]} disabled={busy} onChange={event => edit(key, event.target.value)} placeholder={key === 'mmproj' ? (zh ? '选择匹配模型的 mmproj GGUF' : 'Choose the matching mmproj GGUF') : ''}/><button type="button" disabled={busy} aria-label={`${zh ? '选择' : 'Choose'} ${labels[key]}`} onClick={() => void browse(key)}><FolderOpen size={16}/></button></div></label>)}</div>
         <p className="vision-support-settings">{draft.gpu ? 'GPU' : 'CPU'} · {draft.threads} {zh ? '线程' : 'threads'} · {zh ? '图片上限' : 'Image limit'} {draft.maxTokens} tokens</p>
@@ -140,7 +160,7 @@ export function VisionSupportDialog({ profile, language, onClose, onSaved, onRes
         {error && <button type="button" disabled={busy} onClick={() => setReload(value => value + 1)}><RefreshCw size={15}/>{draft || deepseekVision !== null ? (zh ? '放弃草稿并重新读取' : 'Discard draft and reload') : (zh ? '重新读取' : 'Reload')}</button>}
         {deepseekVision !== null
           ? <button type="button" className="primary" disabled={busy || enabled || !baseline || deepseekVision === core.deepseek41Vision(baseline.config) || (macBlocked && deepseekVision)} onClick={() => void save(!!onRestart)}>{saving ? <LoaderCircle size={15} className="spin"/> : <Check size={15}/>} {saving ? (zh ? '正在保存…' : 'Saving…') : text(onRestart ? 'vsSaveRestart' : 'vsSave')}</button>
-          : <button type="button" className="primary" disabled={busy || !complete || enabled || macBlocked} onClick={() => void save(!!onRestart)}>{saving ? <LoaderCircle size={15} className="spin"/> : <Check size={15}/>} {saving ? (zh ? '正在保存…' : 'Saving…') : onRestart ? (zh ? '保存并启用' : 'Save and enable') : (zh ? '保存图像配置' : 'Save vision configuration')}</button>}
+          : <button type="button" className="primary" disabled={busy || !complete || enabled || macBlocked || noReader} onClick={() => void save(!!onRestart)}>{saving ? <LoaderCircle size={15} className="spin"/> : <Check size={15}/>} {saving ? (zh ? '正在保存…' : 'Saving…') : onRestart ? (zh ? '保存并启用' : 'Save and enable') : (zh ? '保存图像配置' : 'Save vision configuration')}</button>}
       </div>
     </div>
   </Dialog>;
