@@ -7,7 +7,11 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+- **解包官方 tar.gz 时读取全部 gzip 成员**：上游 feed 在多线程打包时可能生成拼接的多成员 gzip（尚未默认）。原先只用 `GzDecoder`，只会读到第一个成员，后续文件会解包失败。现已改为 `MultiGzDecoder`，单成员包行为不变。
+
 ### English
+
+- **Read every gzip member when extracting official tar.gz packages**: an upstream feed may emit concatenated multi-member gzip when packing with multiple threads (not the default yet). `GzDecoder` only read the first member, so later files failed to extract. Extraction now uses `MultiGzDecoder`; single-member packages behave as before.
 
 ## [0.2.44] - 2026-11-10
 

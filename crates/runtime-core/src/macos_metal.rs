@@ -4,7 +4,7 @@
 //! without compiling for darwin. Download/install wiring lives in `installation`.
 //! Phase 2b (`./setup.sh` source build) is not automated; see `manual_build_hint`.
 
-use flate2::read::GzDecoder;
+use flate2::read::MultiGzDecoder;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
@@ -193,7 +193,7 @@ pub fn extract_metal_engine_archive(
         fs::create_dir_all(destination).map_err(|e| e.to_string())?;
     }
     let file = File::open(archive).map_err(|e| e.to_string())?;
-    let decoder = GzDecoder::new(file);
+    let decoder = MultiGzDecoder::new(file);
     let mut archive = tar::Archive::new(decoder);
     let mut names = HashSet::new();
     let mut files = Vec::new();
@@ -682,6 +682,57 @@ mod tests {
         assert!(dest.join("metal/kernels/units.metal").is_file());
         write_metal_install_marker(&dest).unwrap();
         assert!(dest.join(".strata-manager-metal.json").is_file());
+    }
+
+    #[test]
+    fn extract_reads_every_gzip_member() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut builder = tar::Builder::new(Vec::new());
+        for (name, data, mode) in [
+            (
+                "BUILD.json",
+                br#"{"version":"0.1.47","backend":"metal"}"#.as_slice(),
+                0o644,
+            ),
+            (
+                "strata",
+                b"#!/bin/sh\necho metal-fixture\n".as_slice(),
+                0o755,
+            ),
+            (
+                "metal/kernels/units.metal",
+                b"// metal fixture\n".as_slice(),
+                0o644,
+            ),
+        ] {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(data.len() as u64);
+            header.set_mode(mode);
+            header.set_cksum();
+            builder.append_data(&mut header, name, data).unwrap();
+        }
+        let tar = builder.into_inner().unwrap();
+        let mid = tar.len() / 2;
+        fn gzip(bytes: &[u8]) -> Vec<u8> {
+            let mut encoder =
+                flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+            encoder.write_all(bytes).unwrap();
+            encoder.finish().unwrap()
+        }
+        let gz_path = temp.path().join("multi.tar.gz");
+        let mut out = File::create(&gz_path).unwrap();
+        out.write_all(&gzip(&tar[..mid])).unwrap();
+        out.write_all(&gzip(&tar[mid..])).unwrap();
+        drop(out);
+        let dest = temp.path().join("engine");
+        let files = extract_metal_engine_archive(&gz_path, &dest, || Ok(())).unwrap();
+        assert!(files.iter().any(|f| f == "strata"));
+        assert!(files.iter().any(|f| f == "BUILD.json"));
+        assert_eq!(
+            fs::read(dest.join("strata")).unwrap(),
+            b"#!/bin/sh\necho metal-fixture\n"
+        );
+        assert!(dest.join("metal/kernels/units.metal").is_file());
     }
 
     #[test]
