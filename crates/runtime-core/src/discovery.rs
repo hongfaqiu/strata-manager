@@ -85,6 +85,19 @@ pub struct DetectedRuntime {
     /// DeepSeek engine (separate package) the folder's DeepSeek configurations use or it holds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dsv41_version: Option<String>,
+    /// Whether the installed engine package includes a picture reader (`strata-vision`).
+    /// Official SYCL packages (upstream #5716) currently ship without one. Missing from
+    /// older payloads is treated as present so existing fixtures stay unchanged.
+    #[serde(default = "default_has_vision_reader", skip_serializing_if = "is_true")]
+    pub has_vision_reader: bool,
+}
+
+fn default_has_vision_reader() -> bool {
+    true
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
 }
 
 #[derive(Serialize, Deserialize)]
@@ -351,6 +364,14 @@ fn engine_build_json_candidates(root: &Path, exe: Option<&Path>) -> Vec<PathBuf>
         }
     }
     paths
+}
+
+/// Directories that may hold the installed engine package (parents of BUILD.json candidates).
+pub(crate) fn engine_package_dirs(root: &Path, exe: Option<&Path>) -> Vec<PathBuf> {
+    engine_build_json_candidates(root, exe)
+        .into_iter()
+        .filter_map(|path| path.parent().map(Path::to_owned))
+        .collect()
 }
 
 /// Where Intel's setup (sycl/setup_intel.py) keeps the SYCL engine's BUILD.json.
@@ -1704,6 +1725,10 @@ fn inspect_runtime_directories(
             reason: (!reasons.is_empty()).then(|| reasons.join("；")),
             profile,
             dsv41_version: dsv41_version(&root),
+            has_vision_reader: crate::engine_vision::engine_has_vision_reader(
+                &root,
+                engine_hint.as_deref(),
+            ),
         });
     }
     runtimes

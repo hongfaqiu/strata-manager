@@ -32,6 +32,8 @@ export interface DetectedRuntime {
   profile: ServiceProfile;
   /** DeepSeek engine (separate package) its DeepSeek configurations use. */
   dsv41Version?: string;
+  /** Whether the installed engine package includes a picture reader (`strata-vision`). Omitted or true keeps image input available. */
+  hasVisionReader?: boolean;
 }
 
 /** Already-downloaded archives used instead of downloading during first-run setup. */

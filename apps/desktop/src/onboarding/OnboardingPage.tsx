@@ -387,7 +387,7 @@ function ModelStep(props: StepProps & { runtimeProfile?: ServiceProfile }) {
   if (source === 'existing' && props.onChooseDirectory && props.onChooseFile) return <div className="ob-panel" data-testid="ob-existing-model">
     {sourceSwitch}
     <Head title={t('obSourceExisting')}>{existingIntro(props.language)}</Head>
-    <ExistingModelPanel compact language={props.language} desktop={props.desktop} runtime={runtime} runtimeVersion={props.guide.readyRuntime?.runtimeVersion} busy={props.busy} options={options ?? core.normalizeOfficialSetupOptions()} windows={core.runtimePackageIsWindows(environment?.os)}
+    <ExistingModelPanel compact language={props.language} desktop={props.desktop} runtime={runtime} runtimeVersion={props.guide.readyRuntime?.runtimeVersion} hasVisionReader={props.guide.readyRuntime?.hasVisionReader} busy={props.busy} options={options ?? core.normalizeOfficialSetupOptions()} windows={core.runtimePackageIsWindows(environment?.os)}
       onChooseDirectory={props.onChooseDirectory} onChooseFile={props.onChooseFile}
       onSetup={request => props.onPrepareModel(request)} onOrcaImport={props.onOrcaImport}
       onStarted={(task, chosen) => { if (!task) return; props.onProgress({ setupTaskId: task.id, ...(chosen.family !== 'orca' && core.MODEL_CATALOG.some(model => model.family === chosen.family) ? { selection: { family: chosen.family, quant: chosen.quant, context: chosen.context, images: false } } : {}) }); }}/>
@@ -395,7 +395,7 @@ function ModelStep(props: StepProps & { runtimeProfile?: ServiceProfile }) {
   const availability = communityRow?.availability;
   const canDownload = !communityRow || !!availability?.downloadable;
   const downloadGB = communityRow ? communityRow.info.downloadGB : info?.downloadGB ?? 0;
-  const imagesAllowed = communityRow ? communityRow.model.images : !!entry?.images && !info?.visionUntested;
+  const imagesAllowed = core.engineAllowsImageInput(communityRow ? communityRow.model.images : !!entry?.images && !info?.visionUntested, props.guide.readyRuntime?.hasVisionReader);
   return <div className="ob-split">
     <div className="ob-panel">
       {sourceSwitch}
@@ -428,6 +428,7 @@ function ModelStep(props: StepProps & { runtimeProfile?: ServiceProfile }) {
           <label className="ob-field"><span>{t('obContext')}</span><Dropdown ariaLabel={t('obContext')} value={String(selected.context)} onValueChange={value => select({ context: Number(value) })} options={[...new Set([...CONTEXTS, selected.context])].sort((a, b) => a - b).map(value => ({ value: String(value), label: core.isExtendedContext(value) ? `${contextLabel(value)} · ${t('obExperimental')}` : contextLabel(value) }))}/></label>
           <ContextExtensionNotice mode="setup" language={props.language} context={selected.context} kv={selected.context <= 8192 ? 'fp16' : 'int8'}/>
           <div className="ob-field is-row"><span>{t('obImages')}</span><Toggle ariaLabel={t('obImages')} checked={selected.images && imagesAllowed} disabled={!imagesAllowed} onCheckedChange={images => select({ images })}/></div>
+          {!core.detectedHasVisionReader(props.guide.readyRuntime) && <p className="ob-note" data-testid="ob-no-vision">{core.engineVisionTextOnly(props.language)}</p>}
         </div>
         {estimate && <div className="ob-side-sec ob-side-estimate"><h4>{copy.colSpeed}</h4><EstimateCell estimate={estimate} copy={copy}/><small className="ob-note">{basisText(estimate, copy)}</small><MemoryNote estimate={estimate} memoryGB={memoryGB} copy={copy}/></div>}
         {communityRow && canDownload && <div className="ob-side-sec"><CommunityDisk model={communityRow.model} quant={communityRow.quant} copy={copy}/></div>}

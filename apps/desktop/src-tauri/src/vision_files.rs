@@ -1,3 +1,4 @@
+use serde::Serialize;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use strata_runtime_core::types::ServiceProfile;
@@ -38,6 +39,41 @@ fn working_directory(profile: &ServiceProfile, config: &Value) -> Result<PathBuf
         ));
     }
     Ok(cwd)
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EngineVisionReader {
+    pub available: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+/// Whether the installed engine package includes a picture reader (`strata-vision`).
+/// `exe` is an optional main-engine path that helps locate SYCL / component packages.
+pub fn engine_reader(profile: &ServiceProfile, exe: Option<&str>) -> EngineVisionReader {
+    let root = Path::new(&profile.install_dir);
+    let exe_path = exe
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| {
+            let path = Path::new(value);
+            if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                root.join(path)
+            }
+        });
+    match strata_runtime_core::engine_vision::engine_vision_reader(root, exe_path.as_deref()) {
+        Some(path) => EngineVisionReader {
+            available: true,
+            path: Some(path.to_string_lossy().into_owned()),
+        },
+        None => EngineVisionReader {
+            available: false,
+            path: None,
+        },
+    }
 }
 
 /// Whether this Mac can start the configured picture reader; `None` off macOS or when it cannot be read.

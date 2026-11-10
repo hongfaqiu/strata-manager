@@ -418,6 +418,9 @@ export interface ConfigSnapshot { config: JsonObject; revision: string }
 export const readConfigSnapshot = (profile: ServiceProfile): Promise<ConfigSnapshot> => native('read_config_snapshot', { profile });
 /** Read-only validation of required vision files using the service working directory. */
 export const validateVisionFiles = (profile: ServiceProfile, config: JsonObject): Promise<void> => native('validate_vision_files', { profile, config });
+/** Whether the installed engine package includes a picture reader (`strata-vision`). Desktop only. */
+export interface EngineVisionReader { available: boolean; path?: string }
+export const engineVisionReader = (profile: ServiceProfile, exe?: string): Promise<EngineVisionReader> => native('engine_vision_reader', { profile, ...(exe ? { exe } : {}) });
 /** macOS only: the configured vision engine's minimum macOS (Mach-O minos) against this Mac; `null` elsewhere or when unreadable. */
 export interface MacVisionSupport { required: string; system: string; supported: boolean }
 export const macVisionSupport = (profile: ServiceProfile, config: JsonObject): Promise<MacVisionSupport | null> => native('mac_vision_support', { profile, config });

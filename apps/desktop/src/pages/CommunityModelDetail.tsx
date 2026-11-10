@@ -18,6 +18,8 @@ export interface CommunityModelDetailProps {
   language: core.AppLanguage;
   desktop: boolean;
   runtime?: ServiceProfile;
+  /** When false, the installed engine package has no `strata-vision`. */
+  hasVisionReader?: boolean;
   busy: boolean;
   options: core.OfficialSetupOptions;
   onBack: () => void;
@@ -25,7 +27,7 @@ export interface CommunityModelDetailProps {
   onCommunitySetup?: (profile: ServiceProfile, request: core.CommunitySetupRequest, context: number, images: boolean, options: core.OfficialSetupOptions) => Promise<TaskStatus | void | undefined>;
 }
 
-export function CommunityModelDetail({ model, platform, hardware, machineMemoryGB, language, desktop, runtime, busy, options, onBack, onOpenOrca, onCommunitySetup }: CommunityModelDetailProps) {
+export function CommunityModelDetail({ model, platform, hardware, machineMemoryGB, language, desktop, runtime, hasVisionReader, busy, options, onBack, onOpenOrca, onCommunitySetup }: CommunityModelDetailProps) {
   const copy = catalogCopy(language);
   const zh = language === 'zh-CN' || language === 'zh-TW', text = (cn: string, en: string) => zh ? cn : en;
   const first = model.quants.find(item => core.communityQuantAvailability(model, item, platform).downloadable) ?? model.quants[0] ?? '';
@@ -43,10 +45,11 @@ export function CommunityModelDetail({ model, platform, hardware, machineMemoryG
     if (!runtime || !onCommunitySetup || submitting) return;
     setSubmitting(true); setError('');
     try {
-      const snapshot = core.snapshotModelDownloadRequest(runtime, { model: model.family, quant: chosen, context, images: images && model.images }, options);
+      const snapshot = core.snapshotModelDownloadRequest(runtime, { model: model.family, quant: chosen, context, images: images && core.engineAllowsImageInput(model.images, hasVisionReader) }, options);
       await onCommunitySetup(snapshot.profile, core.communitySetupRequest(model, chosen), snapshot.context, snapshot.images, snapshot.options);
     } catch (cause) { setError(core.normalizeError(cause).message); } finally { setSubmitting(false); }
   };
+  const imagesAllowed = core.engineAllowsImageInput(model.images, hasVisionReader);
   return <div className="model-download-detail" data-testid="community-detail"><div className="model-download-detail-body">
     <button type="button" className="model-download-back" onClick={onBack}><ArrowLeft size={16}/>{text('返回模型列表', 'Back to models')}</button>
     <div className="model-download-detail-heading"><CommunityBadge model={model} copy={copy}/><h3 tabIndex={-1}>{model.name}</h3><CommunitySource model={model} copy={copy}/><p>{copy.communityIntro}</p></div>
@@ -70,7 +73,8 @@ export function CommunityModelDetail({ model, platform, hardware, machineMemoryG
     <p className="cat-note">{basisText(estimate, copy)}</p><p className="cat-note">{copy.estimateMethod}</p>
     {availability.downloadable && <div className="cat-preset">
       <div className="model-download-context-presets" role="group" aria-label={text('常用上下文', 'Common contexts')}>{CONTEXTS.map(value => <button key={value} type="button" className={context === value ? 'is-selected' : undefined} aria-pressed={context === value} onClick={() => setContext(value)}>{core.formatContextTokens(value, language)}</button>)}</div>
-      {model.images && <label className="cat-images"><span>{text('图像支持', 'Images')}</span><Toggle ariaLabel={text('图像支持', 'Images')} checked={images} onCheckedChange={setImages}/></label>}
+      {model.images && <label className="cat-images"><span>{text('图像支持', 'Images')}</span><Toggle ariaLabel={text('图像支持', 'Images')} checked={images && imagesAllowed} disabled={!imagesAllowed} onCheckedChange={setImages}/></label>}
+      {model.images && !imagesAllowed && <p className="cat-note" data-testid="community-no-vision">{core.engineVisionTextOnly(language)}</p>}
     </div>}
     {availability.downloadable && <CommunityDisk model={model} quant={chosen} copy={copy}/>}
     <CommunityRisks model={model} copy={copy}/>

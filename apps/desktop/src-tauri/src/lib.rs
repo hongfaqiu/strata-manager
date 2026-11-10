@@ -1328,6 +1328,14 @@ fn validate_vision_files(profile: ServiceProfile, config: Value) -> Result<(), S
 }
 
 #[tauri::command]
+fn engine_vision_reader(
+    profile: ServiceProfile,
+    exe: Option<String>,
+) -> vision_files::EngineVisionReader {
+    vision_files::engine_reader(&profile, exe.as_deref())
+}
+
+#[tauri::command]
 fn mac_vision_support(
     profile: ServiceProfile,
     config: Value,
@@ -2473,6 +2481,7 @@ pub fn run() {
             read_config,
             read_config_snapshot,
             validate_vision_files,
+            engine_vision_reader,
             mac_vision_support,
             copy_configuration,
             delete_configuration,

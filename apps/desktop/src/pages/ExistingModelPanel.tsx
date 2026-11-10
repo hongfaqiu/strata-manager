@@ -14,6 +14,8 @@ export interface ExistingModelPanelProps {
   runtime?: ServiceProfile;
   /** Detected engine version of `runtime`, for the minEngine gate. */
   runtimeVersion?: string;
+  /** When false, the installed engine package has no `strata-vision`. */
+  hasVisionReader?: boolean;
   busy: boolean;
   options: OfficialSetupOptions;
   /** START-HERE.bat on Windows, `python setup.py` elsewhere, in the command preview. */
@@ -36,7 +38,7 @@ const gb = (bytes: number, language: string) => (bytes / 1e9).toLocaleString(lan
 const separatorOf = (path: string) => path.includes('\\') ? '\\' : '/';
 
 /** 「使用已有模型」 (#75): one flow for the wizard's model step and the Models page. */
-export function ExistingModelPanel({ language, desktop, runtime, runtimeVersion, busy, options, windows, compact, initialPath, initialGroupId, onChooseDirectory, onChooseFile, onSetup, onOrcaImport, onStarted }: ExistingModelPanelProps) {
+export function ExistingModelPanel({ language, desktop, runtime, runtimeVersion, hasVisionReader, busy, options, windows, compact, initialPath, initialGroupId, onChooseDirectory, onChooseFile, onSetup, onOrcaImport, onStarted }: ExistingModelPanelProps) {
   const t = existingModelCopy(language);
   const [path, setPath] = useState(initialPath ?? '');
   const [selectedId, setSelectedId] = useState(initialGroupId ?? '');
@@ -64,7 +66,8 @@ export function ExistingModelPanel({ language, desktop, runtime, runtimeVersion,
   // #4926: a switch keeps the current configuration's image support instead of turning it off.
   const previous = useQuery({ queryKey: ['local-model-previous-config', runtime?.id, runtime?.configPath], queryFn: () => core.readConfig(runtime!), enabled: desktop && !!runtime?.configPath, retry: false, staleTime: 15000, refetchOnWindowFocus: false });
   const previousPending = desktop && !!runtime?.configPath && previous.isPending;
-  const supportsImages = !orca && core.localModelSupportsImages(group?.family);
+  const modelImages = !orca && core.localModelSupportsImages(group?.family);
+  const supportsImages = core.engineAllowsImageInput(modelImages, hasVisionReader);
   const imagesDefault = core.localModelImages(group?.family, previous.isSuccess ? previous.data : null);
   const images = supportsImages && (imagesChoice ?? imagesDefault);
   useEffect(() => setImagesChoice(undefined), [group?.family]);
@@ -182,7 +185,7 @@ export function ExistingModelPanel({ language, desktop, runtime, runtimeVersion,
       {!orca && <div className="existing-model-sec existing-model-images" data-testid="existing-model-images">
         <span className="existing-model-label">{t.images}</span>
         {supportsImages ? <div className="existing-model-toggle"><Toggle ariaLabel={t.images} checked={images} disabled={disabled} onCheckedChange={setImagesChoice}/>{imagesChoice === undefined && previous.isSuccess && <small className="existing-model-hint">{t.imagesKept}</small>}</div>
-          : <small className="existing-model-hint">{t.textOnly}</small>}
+          : <small className="existing-model-hint" data-testid="existing-model-text-only">{modelImages ? core.engineVisionTextOnly(language) : t.textOnly}</small>}
       </div>}
       {!noMtp && <details className="existing-model-more" open={mtpOpen} onToggle={event => setMtpOpen(event.currentTarget.open)}>
         <summary data-testid="existing-model-mtp-toggle"><ChevronRight size={14} className="existing-model-chev" aria-hidden="true"/><span>{t.mtpTitle}</span><small className={mtpProblem ? 'is-bad' : ''}>{mtpState}</small></summary>
