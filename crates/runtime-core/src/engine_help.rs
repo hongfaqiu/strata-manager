@@ -177,6 +177,7 @@ pub fn run_help(exe: &Path, env: &[(String, OsString)]) -> Result<EngineHelp, St
     if let Some(parent) = exe.parent() {
         command.current_dir(parent);
     }
+    crate::quiet_crash_env::apply_to_command(&mut command);
     processes::hidden(&mut command);
     let mut child = command
         .spawn()

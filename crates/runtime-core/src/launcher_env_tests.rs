@@ -283,3 +283,30 @@ fn applied_command_runs_from_the_strata_folder_with_the_planned_env() {
         .unwrap()
         .starts_with(&root.join(".venv").join("Scripts").display().to_string()));
 }
+
+#[test]
+fn launch_env_sets_ggml_no_backtrace_unless_already_set_or_developer_switch() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("Strata");
+    strata(&root);
+    windows_venv(&root);
+    let env = resolve(&root, None, all_run).unwrap();
+    let empty = HashMap::<&str, String>::new();
+    let plan = env.env_plan(&host_env(&empty), None);
+    assert_eq!(plan["GGML_NO_BACKTRACE"].as_deref(), Some("1"));
+
+    let already = HashMap::from([("GGML_NO_BACKTRACE", "keep".to_string())]);
+    let plan = env.env_plan(&host_env(&already), None);
+    assert!(
+        !plan.contains_key("GGML_NO_BACKTRACE"),
+        "an inherited value must not be overwritten in the plan"
+    );
+
+    let switched = HashMap::from([("STRATA_BACKTRACE", "1".to_string())]);
+    let plan = env.env_plan(&host_env(&switched), None);
+    assert!(!plan.contains_key("GGML_NO_BACKTRACE"));
+
+    let off = HashMap::from([("STRATA_BACKTRACE", "0".to_string())]);
+    let plan = env.env_plan(&host_env(&off), None);
+    assert_eq!(plan["GGML_NO_BACKTRACE"].as_deref(), Some("1"));
+}

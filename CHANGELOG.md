@@ -7,7 +7,11 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### 中文
 
+- **启动子进程时设置 `GGML_NO_BACKTRACE=1`**：对齐上游 38ad0bc。ggml 异常路径可能拉起 gdb/lldb，把调试器报错写进引擎日志和读图进程的 READY 管道。现在经 `serve.server` 启动服务、运行 `setup.py` 任务、读取引擎 `--help`、以及升级试启动 `--version` 时，只在子进程环境设置该变量（已有值不覆盖；设置了 `STRATA_BACKTRACE` 时不设）。不改变 Manager 自身进程环境。
+
 ### English
+
+- **Set `GGML_NO_BACKTRACE=1` on engine child processes**: matches upstream 38ad0bc. ggml's abort path may fork gdb/lldb and write debugger errors into the engine log and the picture reader's READY pipe. Starting a service through `serve.server`, running `setup.py` tasks, reading engine `--help`, and the upgrade trial `--version` now set the variable in the child environment only (an existing value is left alone; `STRATA_BACKTRACE` leaves it unset). Manager's own process environment is unchanged.
 
 ## [0.2.45] - 2026-11-10
 

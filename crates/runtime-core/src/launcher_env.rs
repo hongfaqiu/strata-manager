@@ -564,6 +564,8 @@ impl LauncherEnv {
         if !plan.contains_key("PYTHONIOENCODING") {
             plan.insert("PYTHONIOENCODING".into(), Some("utf-8".into()));
         }
+        // Child only: ggml must not fork gdb into the engine or picture-reader pipes.
+        crate::quiet_crash_env::apply_to_plan(&mut plan, inherited);
         plan
     }
 
