@@ -97,6 +97,7 @@ pub(super) fn run_engine_version(directory: &Path) -> Result<TrialOutput, String
         .stdin(Stdio::null())
         .stdout(File::create(&stdout).map_err(|e| e.to_string())?)
         .stderr(File::create(&stderr).map_err(|e| e.to_string())?);
+    crate::quiet_crash_env::apply_to_command(&mut command);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

@@ -1016,6 +1016,7 @@ impl OwnedProcess {
             }
             command = normalised;
         }
+        crate::quiet_crash_env::apply_to_command(&mut command);
         hidden(&mut command);
         #[cfg(windows)]
         {

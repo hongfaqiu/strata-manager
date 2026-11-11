@@ -45,6 +45,7 @@ pub mod orca_import;
 pub mod policy;
 pub mod processes;
 pub mod python_repair;
+mod quiet_crash_env;
 mod registry_handoff;
 pub mod request_capture;
 pub mod resource_assessment;
