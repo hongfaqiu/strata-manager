@@ -472,10 +472,12 @@ export function replaceStartupArgument(config: JsonObject, row: StartupArgRow, t
 
   // Appending at the end of the effective list (`appendStartupArgument`).
   if (row.offset === keptRawLen + rawUserArgs.length && row.tokens.length === 0) {
+    // Kept raw groups are read before the push: reading them after it counted the new group twice (#226).
+    const keptRawGroups = rawGroups.filter(g => !mine.has(flagOfGroup(g)));
     rawArgs.push(...tokens);
     const next: JsonObject = { ...structuredClone(config), args: rawArgs };
     if (newFlag) {
-      const effectiveGroups = [...argGroups(rawArgs, flags).filter(g => !mine.has(flagOfGroup(g))), ...userGroups, ...(tokens.length ? [tokens] : [])]
+      const effectiveGroups = [...keptRawGroups, ...userGroups, ...(tokens.length ? [tokens] : [])]
         .filter(g => flagOfGroup(g) === newFlag);
       syncManualUserArgs(config, next, newFlag, effectiveGroups);
     }
@@ -517,6 +519,28 @@ export function replaceStartupArgument(config: JsonObject, row: StartupArgRow, t
 export function appendStartupArgument(config: JsonObject, tokens: string[]): JsonObject {
   const args = startupArgsOf(config);
   return replaceStartupArgument(config, { offset: args.length, tokens: [], known: false, arity: 0 }, tokens);
+}
+/** Engine options that are meant to be given more than once (each `--control-vector` loads one more vector). */
+export const REPEATABLE_STARTUP_FLAGS: ReadonlySet<string> = new Set(['--control-vector', '--control-vector-scaled']);
+/**
+ * Where "Add argument" puts a flag. A known single-use option that is already in the list is updated in place
+ * (the engine keeps only one value, and a second copy blocks the graphical fields); repeatable and unknown
+ * options are appended, so the list still keeps intended repetition.
+ */
+export function startupArgumentAddTarget(config: JsonObject, flag: string): StartupArgRow | undefined {
+  const flags = startupEngineFlagsFor(config);
+  if (!flag.startsWith('--') || !Object.hasOwn(flags, flag) || REPEATABLE_STARTUP_FLAGS.has(flag)) return undefined;
+  return startupArgumentRows(config).find(row => flagOfGroup(row.tokens) === flag);
+}
+/** "Add argument": update the existing row of a single-use option, otherwise append. */
+export function addStartupArgument(config: JsonObject, tokens: string[]): { config: JsonObject; offset: number; updated: boolean } {
+  const flag = flagOfGroup(tokens);
+  const existing = startupArgumentAddTarget(config, flag);
+  const next = existing ? replaceStartupArgument(config, existing, tokens) : appendStartupArgument(config, tokens);
+  // The row can move (an edit recorded in user_args is listed after args), so look it up in the result.
+  const same = flag ? startupArgumentRows(next).filter(row => flagOfGroup(row.tokens) === flag) : [];
+  const row = existing ? same[0] : same.at(-1);
+  return { config: next, offset: row?.offset ?? startupArgsOf(next).length - tokens.length, updated: !!existing };
 }
 export function parseStartupConfiguration(raw: string): JsonObject {
   const config: unknown = JSON.parse(raw);

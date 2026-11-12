@@ -34,6 +34,19 @@ pub struct HandoffResult {
     pub error: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub choices: Vec<ConfigChoice>,
+    /// What differs between the model already in My models and this preparation (#225), so the
+    /// page can name it in the user's language instead of a generic list.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub differences: Vec<SnapshotDifference>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotDifference {
+    /// `model` (model_name), `weights` (weight files), `context` (tokens) or `images` (`true`/`false`).
+    pub field: String,
+    pub current: String,
+    pub prepared: String,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -55,6 +68,7 @@ fn result(task_id: &str, status: &str, error: Option<String>) -> HandoffResult {
         profile_id: None,
         error,
         choices: Vec::new(),
+        differences: Vec::new(),
     }
 }
 
@@ -229,22 +243,30 @@ fn resolve_locked(
             profile_id: Some(profile_id),
             error: None,
             choices: Vec::new(),
+            differences: Vec::new(),
         },
-        Err((status, profile_id, error, choices)) => HandoffResult {
+        Err((status, profile_id, error, choices, differences)) => HandoffResult {
             task_id: task_id.into(),
             status: status.into(),
             profile_id,
             error: Some(error),
             choices,
+            differences,
         },
     };
     write_result(&*state.database.lock().map_err(|e| e.to_string())?, &value)?;
     Ok(value)
 }
 
-type RegistrationError = (&'static str, Option<String>, String, Vec<ConfigChoice>);
+type RegistrationError = (
+    &'static str,
+    Option<String>,
+    String,
+    Vec<ConfigChoice>,
+    Vec<SnapshotDifference>,
+);
 fn failure(error: impl Into<String>) -> RegistrationError {
-    ("failed", None, error.into(), Vec::new())
+    ("failed", None, error.into(), Vec::new(), Vec::new())
 }
 
 fn family_name(family: &str) -> Option<&'static str> {
@@ -329,6 +351,108 @@ fn compatible(value: &Value, intent: &SetupIntent) -> bool {
         .is_some_and(|(name, expected)| name.eq_ignore_ascii_case(&expected))
         && context(value) == Some(intent.context)
         && value.get("vision").is_some_and(Value::is_object) == intent.images
+}
+
+fn context_label(tokens: Option<u32>) -> String {
+    match tokens {
+        Some(tokens) if tokens >= 1024 && tokens % 1024 == 0 => format!("{}K", tokens / 1024),
+        Some(tokens) => tokens.to_string(),
+        None => "?".into(),
+    }
+}
+
+fn file_names(paths: &[PathBuf]) -> String {
+    paths
+        .iter()
+        .map(|path| {
+            path.file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.to_string_lossy().into_owned())
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The fields `compatible` and the weight comparison found different between the model already in
+/// My models (`current`) and this preparation (`prepared`, the user's choice for this run).
+fn snapshot_differences(
+    existing: &Value,
+    intent: &SetupIntent,
+    current_weights: &[PathBuf],
+    prepared_weights: &[PathBuf],
+) -> Vec<SnapshotDifference> {
+    let mut out = Vec::new();
+    let mut push = |field: &str, current: String, prepared: String| {
+        out.push(SnapshotDifference {
+            field: field.into(),
+            current,
+            prepared,
+        })
+    };
+    let current_name = existing
+        .get("model_name")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let expected = expected_model_name(intent).unwrap_or_default();
+    if !current_name.eq_ignore_ascii_case(&expected) {
+        push("model", current_name.into(), expected);
+    }
+    if current_weights != prepared_weights {
+        let (current, prepared) = (file_names(current_weights), file_names(prepared_weights));
+        // Same names in another folder: show the full paths so the two can be told apart.
+        let (current, prepared) = if current == prepared {
+            let full = |paths: &[PathBuf]| {
+                paths
+                    .iter()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            (full(current_weights), full(prepared_weights))
+        } else {
+            (current, prepared)
+        };
+        push("weights", current, prepared);
+    }
+    let current_context = context(existing);
+    if current_context != Some(intent.context) {
+        push(
+            "context",
+            context_label(current_context),
+            context_label(Some(intent.context)),
+        );
+    }
+    let current_images = existing.get("vision").is_some_and(Value::is_object);
+    if current_images != intent.images {
+        push(
+            "images",
+            current_images.to_string(),
+            intent.images.to_string(),
+        );
+    }
+    out
+}
+
+/// Plain-language task message (the page renders `differences` itself, in the user's language).
+fn kept_settings_message(differences: &[SnapshotDifference]) -> String {
+    let on_off = |value: &str| if value == "true" { "开启" } else { "关闭" };
+    let details = differences
+        .iter()
+        .map(|item| match item.field.as_str() {
+            "model" => format!("型号：现在 {}，这次 {}", item.current, item.prepared),
+            "weights" => format!("权重文件：现在 {}，这次 {}", item.current, item.prepared),
+            "context" => format!("上下文：现在 {}，这次 {}", item.current, item.prepared),
+            _ => format!(
+                "图片理解：现在{}，这次{}",
+                on_off(&item.current),
+                on_off(&item.prepared)
+            ),
+        })
+        .collect::<Vec<_>>()
+        .join("；");
+    format!(
+        "“我的模型”里已有这个模型，但设置和这次准备的不同（{details}）。为了不覆盖你的设置，没有替换它。可以继续用现在的设置，或去改设置后重新检测"
+    )
 }
 
 fn model_references(value: &Value, root: &Path) -> Result<Vec<PathBuf>, String> {
@@ -565,6 +689,7 @@ fn find_and_register(
                     candidates.len()
                 ),
                 choices,
+                Vec::new(),
             ));
         }
         candidates.pop().ok_or_else(|| {
@@ -579,6 +704,7 @@ fn find_and_register(
             "needs-choice",
             None,
             "输出配置的上下文或图片能力与本次选择不同；请核对配置，未自动登记".into(),
+            Vec::new(),
             Vec::new(),
         ));
     }
@@ -621,11 +747,18 @@ fn find_and_register(
         .map_err(failure)?;
     let profile = registered.as_ref().unwrap_or(&prepared.profile);
     let existing = checked_config(Path::new(&profile.config_path)).map_err(failure)?;
-    if !compatible(&existing, intent)
-        || model_references(&existing, &root).map_err(failure)?
-            != model_references(&value, &root).map_err(failure)?
-    {
-        return Err(("needs-choice",registered.as_ref().map(|profile|profile.id.clone()),"已有受管快照的型号、权重路径、上下文或图片能力不同，保留其配置。可使用已有模型，或在参数页面明确修改后重试".into(),Vec::new()));
+    let current_weights = model_references(&existing, &root).map_err(failure)?;
+    let prepared_weights = model_references(&value, &root).map_err(failure)?;
+    if !compatible(&existing, intent) || current_weights != prepared_weights {
+        let differences =
+            snapshot_differences(&existing, intent, &current_weights, &prepared_weights);
+        return Err((
+            "needs-choice",
+            registered.as_ref().map(|profile| profile.id.clone()),
+            kept_settings_message(&differences),
+            Vec::new(),
+            differences,
+        ));
     }
     asset_check(&existing, &root).map_err(failure)?;
     if let Some(profile) = registered {
@@ -1215,6 +1348,60 @@ sys.exit(spec.get('exit',0))
     }
 
     #[test]
+    fn snapshot_differences_name_each_changed_field_in_plain_words() {
+        let fixture = fixture();
+        let mut intent = fixture.intent.clone();
+        intent.context = 163840;
+        intent.images = true;
+        let mut existing = config(131072);
+        existing["model_name"] = json!("qwen3.8-flash-next-iq3_s");
+        let root = Path::new("/models");
+        let differences = snapshot_differences(
+            &existing,
+            &intent,
+            &[root.join("a/model.gguf")],
+            &[root.join("b/model.gguf")],
+        );
+        let fields: Vec<_> = differences
+            .iter()
+            .map(|item| {
+                (
+                    item.field.as_str(),
+                    item.current.as_str(),
+                    item.prepared.as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            fields[0],
+            (
+                "model",
+                "qwen3.8-flash-next-iq3_s",
+                "qwen3.8-flash-next-iq2_xs"
+            )
+        );
+        assert_eq!(fields[1].0, "weights");
+        assert!(
+            fields[1].1.contains('a') && fields[1].2.contains('b'),
+            "{fields:?}"
+        );
+        assert_eq!(fields[2], ("context", "128K", "160K"));
+        assert_eq!(fields[3], ("images", "false", "true"));
+        let message = kept_settings_message(&differences);
+        assert!(
+            message.contains("上下文：现在 128K，这次 160K"),
+            "{message}"
+        );
+        assert!(
+            message.contains("图片理解：现在关闭，这次开启"),
+            "{message}"
+        );
+        assert!(message.contains("继续用现在的设置"), "{message}");
+        assert_eq!(context_label(Some(8000)), "8000");
+        assert_eq!(context_label(None), "?");
+    }
+
+    #[test]
     fn changed_setup_context_never_overwrites_registered_snapshot() {
         let mut fixture = fixture();
         spec(&fixture, vec![("strata-iq2_xs.json", config(8192))], 0.0, 0);
@@ -1234,6 +1421,26 @@ sys.exit(spec.get('exit',0))
         let conflict = handoff(&fixture.state, &second.id);
         assert_eq!(conflict.status, "needs-choice");
         assert_eq!(conflict.profile_id.as_deref(), Some(original.id.as_str()));
+        // #225: name what differs instead of listing every field that could.
+        assert_eq!(
+            conflict.differences,
+            vec![SnapshotDifference {
+                field: "context".into(),
+                current: "8K".into(),
+                prepared: "16K".into(),
+            }]
+        );
+        let error = conflict.error.clone().unwrap_or_default();
+        assert!(error.contains("上下文：现在 8K，这次 16K"), "{error}");
+        assert!(!error.contains("受管快照"), "{error}");
+        let task = fixture.state.tasks.lock().unwrap()[&second.id]
+            .status
+            .clone();
+        assert!(
+            task.message.contains("上下文：现在 8K，这次 16K"),
+            "{}",
+            task.message
+        );
         assert_eq!(fs::read(&original.config_path).unwrap(), saved);
         assert_eq!(fixture.state.registered_profiles().unwrap().len(), 1);
     }
@@ -1267,7 +1474,16 @@ sys.exit(spec.get('exit',0))
         );
         let second = launch(&fixture);
         wait(&fixture.state, &second.id);
-        assert_eq!(handoff(&fixture.state, &second.id).status, "needs-choice");
+        let conflict = handoff(&fixture.state, &second.id);
+        assert_eq!(conflict.status, "needs-choice");
+        assert_eq!(
+            conflict
+                .differences
+                .iter()
+                .map(|item| item.field.as_str())
+                .collect::<Vec<_>>(),
+            ["context"]
+        );
         assert!(fixture.state.registered_profiles().unwrap().is_empty());
         assert_eq!(fs::read(&profile.config_path).unwrap(), saved);
     }

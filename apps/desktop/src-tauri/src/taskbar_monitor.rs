@@ -570,15 +570,16 @@ pub(crate) struct TaskbarMonitorState {
 }
 
 pub(crate) fn maybe_run_host() -> bool {
-    if !std::env::args_os()
+    let requested = std::env::args_os()
         .skip(1)
-        .any(|arg| arg == "--strata-taskbar-host")
-    {
-        return false;
-    }
+        .any(|arg| arg == "--strata-taskbar-host");
     #[cfg(windows)]
-    host::run();
-    true
+    {
+        if requested {
+            host::run();
+        }
+    }
+    requested
 }
 
 fn require_window(window: &WebviewWindow) -> Result<(), String> {

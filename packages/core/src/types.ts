@@ -87,6 +87,14 @@ export interface SetupHandoff {
   profileId?: string;
   error?: string;
   choices?: { configPath: string; name: string }[];
+  /** #225: what differs between the model already in My models (`current`) and this preparation. */
+  differences?: SetupHandoffDifference[];
+}
+
+export interface SetupHandoffDifference {
+  field: 'model' | 'weights' | 'context' | 'images';
+  current: string;
+  prepared: string;
 }
 
 export type FloatingMonitorAction = 'main' | 'chat' | 'monitoring' | 'usage' | 'tasks' | 'quickBenchmark' | 'copyApiUrl' | 'refresh' | 'pause' | 'pin';
