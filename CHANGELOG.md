@@ -9,6 +9,18 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### English
 
+## [0.2.47] - 2026-11-13
+
+### 中文
+
+- **添加引擎参数不再重复（#226）**：配置里已有自定义参数（`user_args`）时，在完整引擎参数列表点一次「添加参数」会把同一项写两遍。现在一次只加一条；已经在列表里的单次参数改为就地更新（按钮显示「改第 N 项」，并高亮该行），`--control-vector` 等可重复参数和未知参数仍会追加。
+- **准备模型时说清楚和现有设置差在哪（#225）**：「我的模型」里已有同一模型，而这次准备的型号、权重文件、上下文或图片理解不同时，原先提示「已有受管快照的型号、权重路径、上下文或图片能力不同」。现在任务显示为「待你选择」而不是「已完成」，逐项写出现在和这次的值（例如上下文现在 160K、这次 128K），按钮为「继续用现在的设置」「去改设置」「重新检测」。
+
+### English
+
+- **Adding an engine argument no longer writes it twice (#226)**: when the config already had custom arguments (`user_args`), one click on "Add argument" in the full engine argument list wrote the same option twice. It now adds one copy. A single-use option that is already in the list is updated in place (the button reads "Update item N" and the row is highlighted); repeatable options such as `--control-vector` and unknown options are still appended.
+- **Model preparation says what differs from the current settings (#225)**: when "My models" already has the same model and this preparation differs in model name, weight files, context or image input, the task used to say only that the managed snapshot differed. The task now shows "Needs your choice" instead of "Completed", lists each difference with the current and prepared values (for example context 160K now, 128K this time), and offers Keep current settings, Change settings and Detect again.
+
 ## [0.2.46] - 2026-11-11
 
 ### 中文
