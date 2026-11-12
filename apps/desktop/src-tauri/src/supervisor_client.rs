@@ -1272,14 +1272,23 @@ mod tests {
             let _ = self.0.wait();
         }
     }
+    // Cargo 1.100 keeps test executables under the build directory
+    // (`<profile>/build/<package>/<hash>/out`), not `<profile>/deps`, so look
+    // for the workspace-built supervisor in every ancestor of the test binary.
     fn source() -> PathBuf {
-        std::env::current_exe()
-            .expect("desktop test executable path")
-            .parent()
-            .expect("desktop test deps directory")
-            .parent()
-            .expect("desktop test profile directory")
-            .join("strata-supervisor.exe")
+        let executable = std::env::current_exe().expect("desktop test executable path");
+        executable
+            .ancestors()
+            .skip(1)
+            .map(|directory| directory.join("strata-supervisor.exe"))
+            .find(|candidate| candidate.is_file())
+            .unwrap_or_else(|| {
+                executable
+                    .parent()
+                    .and_then(Path::parent)
+                    .expect("desktop test profile directory")
+                    .join("strata-supervisor.exe")
+            })
     }
     async fn initial(data: &Path, source: &Path) -> Background {
         let directory = data.join("supervisor/previous");

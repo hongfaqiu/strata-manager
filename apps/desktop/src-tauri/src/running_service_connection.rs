@@ -438,43 +438,47 @@ fn same_user_directory(default: &Path, data_dir: &Path) -> bool {
         return false;
     };
     // The caller obtains default from Tauri's app_data_dir, rather than an RPC.
-    if default
+    default
         .parent()
         .is_some_and(|expected| same_path(expected, parent))
+        || windows_roaming_directory(parent)
+}
+
+#[cfg(not(windows))]
+fn windows_roaming_directory(_parent: &Path) -> bool {
+    false
+}
+
+#[cfg(windows)]
+fn windows_roaming_directory(parent: &Path) -> bool {
+    for roaming in [
+        std::env::var_os("APPDATA").map(PathBuf::from),
+        std::env::var_os("USERPROFILE")
+            .map(|profile| PathBuf::from(profile).join("AppData/Roaming")),
+    ]
+    .into_iter()
+    .flatten()
     {
-        return true;
-    }
-    #[cfg(windows)]
-    {
-        for roaming in [
-            std::env::var_os("APPDATA").map(PathBuf::from),
-            std::env::var_os("USERPROFILE")
-                .map(|profile| PathBuf::from(profile).join("AppData/Roaming")),
-        ]
-        .into_iter()
-        .flatten()
-        {
-            if same_path(&roaming, parent) {
-                return true;
-            }
+        if same_path(&roaming, parent) {
+            return true;
         }
-        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
-            let packages = PathBuf::from(local).join("Packages");
-            let canonical = dunce::canonicalize(parent).ok();
-            let base = dunce::canonicalize(packages).ok();
-            if let (Some(parent), Some(base)) = (canonical, base) {
-                if let Ok(relative) = parent.strip_prefix(base) {
-                    let parts: Vec<_> = relative.components().collect();
-                    if parts.len() == 3
-                        && parts[0]
-                            .as_os_str()
-                            .to_str()
-                            .is_some_and(|name| name.starts_with("OpenAI.Codex_"))
-                        && parts[1].as_os_str() == "LocalCache"
-                        && parts[2].as_os_str() == "Roaming"
-                    {
-                        return true;
-                    }
+    }
+    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+        let packages = PathBuf::from(local).join("Packages");
+        let canonical = dunce::canonicalize(parent).ok();
+        let base = dunce::canonicalize(packages).ok();
+        if let (Some(parent), Some(base)) = (canonical, base) {
+            if let Ok(relative) = parent.strip_prefix(base) {
+                let parts: Vec<_> = relative.components().collect();
+                if parts.len() == 3
+                    && parts[0]
+                        .as_os_str()
+                        .to_str()
+                        .is_some_and(|name| name.starts_with("OpenAI.Codex_"))
+                    && parts[1].as_os_str() == "LocalCache"
+                    && parts[2].as_os_str() == "Roaming"
+                {
+                    return true;
                 }
             }
         }
