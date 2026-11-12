@@ -42,13 +42,11 @@ fn fingerprint(source: &[u8]) -> String {
 }
 
 fn local_path(path: &Path) -> bool {
-    if !path.is_absolute() {
-        return false;
-    }
     #[cfg(windows)]
-    return matches!(path.components().next(),Some(std::path::Component::Prefix(prefix)) if matches!(prefix.kind(),std::path::Prefix::Disk(_)|std::path::Prefix::VerbatimDisk(_)));
+    return path.is_absolute()
+        && matches!(path.components().next(),Some(std::path::Component::Prefix(prefix)) if matches!(prefix.kind(),std::path::Prefix::Disk(_)|std::path::Prefix::VerbatimDisk(_)));
     #[cfg(not(windows))]
-    true
+    path.is_absolute()
 }
 fn asset_metadata(hash: &mut Sha256, path: &Path) {
     hash.update(path.to_string_lossy().as_bytes());
