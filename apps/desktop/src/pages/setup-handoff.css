@@ -1,0 +1,10 @@
+/* #225: what differs between the model in My models and this preparation. */
+.notice.setup-kept-settings{display:grid;gap:8px;padding:12px 14px;margin:0 0 10px;line-height:1.6;max-width:620px;align-items:start}
+.setup-kept-settings strong{font-weight:700}
+.setup-kept-settings dl{display:grid;gap:4px;margin:0}
+.setup-kept-settings dl>div{display:grid;grid-template-columns:72px minmax(0,1fr);gap:10px;align-items:baseline}
+.setup-kept-settings dt{color:inherit;opacity:.8}
+.setup-kept-settings dd{margin:0;display:flex;flex-wrap:wrap;gap:8px;overflow-wrap:anywhere}
+.setup-kept-settings dd b{font-weight:600}
+.setup-kept-settings p{margin:0;font-size:13px;opacity:.9}
+.task-icon.needs-choice{color:var(--st-warn-text,var(--warning))}
