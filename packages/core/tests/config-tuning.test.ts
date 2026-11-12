@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyStartupField, applyStartupTuning, appendStartupArgument, captureUserArgs, effectiveArgsOf, mergeUserArgs, STARTUP_FIELD_HINTS, parseStartupConfiguration, replaceStartupArgument, STARTUP_ENGINE_FLAGS, STARTUP_TUNING_FIELDS, startupArgsOf, startupArgumentRows, startupFieldValue, startupTuningOf, validateStartupConfiguration } from '../src/config-tuning';
+import { addStartupArgument, applyStartupField, applyStartupTuning, appendStartupArgument, startupArgumentAddTarget, captureUserArgs, effectiveArgsOf, mergeUserArgs, STARTUP_FIELD_HINTS, parseStartupConfiguration, replaceStartupArgument, STARTUP_ENGINE_FLAGS, STARTUP_TUNING_FIELDS, startupArgsOf, startupArgumentRows, startupFieldValue, startupTuningOf, validateStartupConfiguration } from '../src/config-tuning';
 
 const config = { exe: 'engine.exe', args: ['--native', '模型.gguf', '--max-context', '524288', '--kv', 'int8', '--rope-scale', '2'], threads: 8, sampling: { temperature: .6 }, vision: { gpu: true }, mcp: [{ name: 'calculator' }], api_key: 'preserved' };
 describe('startup configuration tuning', () => {
@@ -229,6 +229,40 @@ describe('complete graphical and JSON startup configuration', () => {
     expect(mergeUserArgs(deletedPcie.args as string[], deletedPcie.user_args)).toEqual([
       '--native', 'm.gguf', '--pool-workers', '8', '--max-context', '65536',
     ]);
+  });
+  it('adds one copy of a new argument when the config already has user_args (#226)', () => {
+    const layered = { args: ['--native', 'm.gguf', '--max-context', '32768'], user_args: ['--pool-workers', '6'], args_written: ['--native', 'm.gguf', '--max-context', '32768'] };
+    for (const tokens of [['--pcie-frac', '0.5'], ['--stats'], ['--custom-x', 'a']]) {
+      const added = appendStartupArgument(layered, tokens);
+      const rows = startupArgumentRows(added).filter(row => row.tokens[0] === tokens[0]);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.tokens).toEqual(tokens);
+      expect(startupArgsOf(added)).toEqual(['--native', 'm.gguf', '--max-context', '32768', '--pool-workers', '6', ...tokens]);
+    }
+    // Configs without user_args were already right and stay so.
+    expect(startupArgsOf(appendStartupArgument({ args: ['--native', 'm.gguf'] }, ['--stats']))).toEqual(['--native', 'm.gguf', '--stats']);
+  });
+  it('updates a single-use option that is already listed instead of adding a second copy; repeatable and unknown options still append (#226)', () => {
+    const layered = { args: ['--native', 'm.gguf', '--pcie-frac', '0.4'], user_args: ['--pool-workers', '6'], args_written: ['--native', 'm.gguf', '--pcie-frac', '0.4'] };
+    const workers = addStartupArgument(layered, ['--pool-workers', '8']);
+    expect(workers.updated).toBe(true);
+    expect(startupArgsOf(workers.config)).toEqual(['--native', 'm.gguf', '--pcie-frac', '0.4', '--pool-workers', '8']);
+    expect(startupArgsOf(workers.config).slice(workers.offset, workers.offset + 2)).toEqual(['--pool-workers', '8']);
+    const pcie = addStartupArgument(layered, ['--pcie-frac', '0.9']);
+    expect(pcie.updated).toBe(true);
+    expect(startupArgsOf(pcie.config).filter(token => token === '--pcie-frac')).toHaveLength(1);
+    expect(startupFieldValue(pcie.config, field('--pcie-frac'))).toBe('0.9');
+    expect(startupArgsOf(pcie.config).slice(pcie.offset, pcie.offset + 2)).toEqual(['--pcie-frac', '0.9']);
+    const plain = { args: ['--native', 'm.gguf', '--stats'] };
+    expect(startupArgumentAddTarget(plain, '--stats')?.offset).toBe(2);
+    expect(startupArgsOf(addStartupArgument(plain, ['--stats']).config)).toEqual(['--native', 'm.gguf', '--stats']);
+    const vectors = addStartupArgument({ args: ['--control-vector', 'a.gguf'] }, ['--control-vector', 'b.gguf']);
+    expect(vectors.updated).toBe(false);
+    expect(startupArgsOf(vectors.config)).toEqual(['--control-vector', 'a.gguf', '--control-vector', 'b.gguf']);
+    expect(vectors.offset).toBe(2);
+    const custom = addStartupArgument({ args: ['--custom-rep', 'a'] }, ['--custom-rep', 'b']);
+    expect(custom.updated).toBe(false);
+    expect(startupArgsOf(custom.config)).toEqual(['--custom-rep', 'a', '--custom-rep', 'b']);
   });
 });
 

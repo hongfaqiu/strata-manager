@@ -20,6 +20,8 @@
 .startup-tuning-fields .st-label{line-height:1.5;min-height:22px}
 .startup-argument-list{display:grid;gap:10px;margin:16px 0}
 .startup-argument-row{display:grid;grid-template-columns:24px minmax(180px,1fr) minmax(180px,1fr) 30px;gap:10px;align-items:start}
+.startup-argument-row.is-added{background:var(--st-accent-tint);border-radius:8px;box-shadow:0 0 0 4px var(--st-accent-tint)}
+.startup-new-argument-note{flex-basis:100%;color:var(--st-ink-muted);font-size:12px}
 .startup-argument-number{padding-top:10px;font:11px var(--st-font-mono,Consolas,monospace);color:var(--st-ink-muted)}
 .startup-argument-operands{display:flex;flex-direction:column;gap:8px;min-width:0}
 .startup-argument-operands small{padding-top:10px;color:var(--st-ink-muted);font-size:12px}
