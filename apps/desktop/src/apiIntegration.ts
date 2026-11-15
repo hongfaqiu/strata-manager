@@ -1,3 +1,4 @@
+import type { ServiceKeyCopyOutcome, ServiceSharingStatus } from '@strata-manager/core';
 export interface ApiConnection {
   rootUrl: string;
   model: string;
@@ -134,4 +135,74 @@ export function codexLaunch(connection: ApiConnection, shell: ApiShell): string 
   return shell === 'powershell'
     ? `$env:STRATA_API_KEY = ${powerShellLiteral(keyPlaceholder(connection))}\ncodex`
     : `export STRATA_API_KEY=${bashLiteral(keyPlaceholder(connection))}\ncodex`;
+}
+
+export type ServiceKeyCopyAvailability = {
+  enabled: boolean;
+  outcome: ServiceKeyCopyOutcome;
+  hintZh: string;
+  hintEn: string;
+};
+
+/** Whether the Connect API dialog can copy the hosted service key. Never includes the key itself. */
+export function serviceKeyCopyAvailability(input: {
+  keyRequired?: boolean;
+  sharing?: Pick<ServiceSharingStatus, 'hasServerKey' | 'keyCount' | 'noKeyChosen' | 'restartRequired' | 'running'> | null;
+  sharingError?: boolean;
+  loading?: boolean;
+}): ServiceKeyCopyAvailability {
+  const hint = (hintZh: string, hintEn: string, outcome: ServiceKeyCopyOutcome, enabled = false): ServiceKeyCopyAvailability => ({ enabled, outcome, hintZh, hintEn });
+  if (input.keyRequired === false) {
+    return hint('当前服务不需要密钥。客户端必填时写 strata-local。', 'The current service does not require a key. Use strata-local if a client asks for one.', 'keyless');
+  }
+  if (input.loading) {
+    return hint('正在确认服务密钥状态…', 'Checking whether a service key is available…', 'unavailable');
+  }
+  if (input.sharingError) {
+    return hint('仅本应用托管的服务可以复制当前服务密钥。', 'The current service key can be copied only for a service this app is hosting.', 'not_owned');
+  }
+  const sharing = input.sharing;
+  if (!sharing) {
+    return hint('尚未确认是否有可复制的服务密钥。', 'It is not yet confirmed whether a service key can be copied.', 'unavailable');
+  }
+  if (sharing.noKeyChosen) {
+    return hint('当前配置明确不使用服务端密钥（api_key 为 none）。', 'This configuration serves without a key on purpose (api_key is none).', 'none_chosen');
+  }
+  if (!sharing.hasServerKey || sharing.keyCount === 0) {
+    return hint(input.keyRequired === true
+      ? '服务需要密钥，但当前托管配置里没有可复制的密钥。'
+      : '当前托管配置里没有可复制的服务密钥。', input.keyRequired === true
+      ? 'The service requires a key, but the hosted configuration has none to copy.'
+      : 'The hosted configuration has no service key to copy.', 'no_key');
+  }
+  if (sharing.keyCount > 1) {
+    return hint('当前配置有多个服务密钥，无法自动选择要复制哪一个。请在局域网共享设置中确认。', 'This configuration has more than one service key, so none is copied automatically. Confirm which key to use under LAN sharing.', 'multiple');
+  }
+  const restart = sharing.restartRequired
+    ? (['配置在启动后有过改动，正在运行的服务可能仍在使用上一份密钥，复制的是当前配置中的密钥。重启后才会一致。', 'The configuration changed after start, so the running service may still use the previous key. The copy is the key now in the configuration; restart to make them match.'] as const)
+    : sharing.running
+      ? (['复制当前托管服务运行配置中的密钥。密钥不会显示在此对话框中。', 'Copy the key from the hosted service run configuration. The key is not shown in this dialog.'] as const)
+      : (['服务当前未运行。复制的是运行配置中的密钥，请确认下次启动仍使用该配置。', 'The service is not running. The copy is the key in the run configuration; confirm the next start still uses it.'] as const);
+  return { enabled: true, outcome: 'ready', hintZh: restart[0], hintEn: restart[1] };
+}
+
+export function serviceKeyCopyFeedback(outcome: ServiceKeyCopyOutcome, extras?: { restartRequired?: boolean; running?: boolean }): { hintZh: string; hintEn: string } {
+  if (outcome === 'copied') {
+    const base = extras?.restartRequired
+      ? ['已复制当前配置中的服务密钥（不会在此显示）。配置在启动后有过改动，正在运行的服务可能仍在使用上一份密钥。', 'Copied the service key from the current configuration (it is not shown here). The configuration changed after start, so the running service may still use the previous key.'] as const
+      : extras?.running === false
+        ? ['已复制运行配置中的服务密钥（不会在此显示）。请确认服务已用该配置启动。', 'Copied the service key from the run configuration (it is not shown here). Confirm the service was started with this configuration.'] as const
+        : ['已复制当前服务密钥（不会在此显示）。', 'Copied the current service key (it is not shown here).'] as const;
+    return { hintZh: base[0], hintEn: base[1] };
+  }
+  if (outcome === 'clipboard_failed') return { hintZh: '复制失败，请检查系统剪贴板权限。', hintEn: 'Copy failed. Check system clipboard permission.' };
+  const availability = serviceKeyCopyAvailability({
+    sharing: outcome === 'none_chosen' ? { hasServerKey: false, keyCount: 0, noKeyChosen: true, restartRequired: false, running: false }
+      : outcome === 'multiple' ? { hasServerKey: true, keyCount: 2, restartRequired: false, running: false }
+      : outcome === 'no_key' ? { hasServerKey: false, keyCount: 0, restartRequired: false, running: false }
+      : undefined,
+    sharingError: outcome === 'not_owned',
+    keyRequired: outcome === 'keyless' ? false : undefined,
+  });
+  return { hintZh: availability.hintZh, hintEn: availability.hintEn };
 }

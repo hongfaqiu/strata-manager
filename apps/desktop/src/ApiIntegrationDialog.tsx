@@ -1,10 +1,10 @@
 import type { AppLanguage } from "@strata-manager/core";
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Copy, ExternalLink } from 'lucide-react';
-import { normalizeBaseUrl, type ServiceProfile } from '@strata-manager/core';
+import { copyCurrentServiceKey, normalizeBaseUrl, serviceSharingStatus, type ServiceKeyCopyResult, type ServiceProfile, type ServiceSharingStatus } from '@strata-manager/core';
 import { Dialog } from './components';
 import { Dropdown, Segmented } from './OfficialControls';
-import { apiCodeExample, apiIntegrationDocs, claudeCodeLaunch, codexConfigToml, codexLaunch, cursorEnvConfig, openCodeConfig, openCodeLaunch, type ApiCodeExample, type ApiConnection, type ApiShell } from './apiIntegration';
+import { apiCodeExample, apiIntegrationDocs, claudeCodeLaunch, codexConfigToml, codexLaunch, cursorEnvConfig, openCodeConfig, openCodeLaunch, serviceKeyCopyAvailability, serviceKeyCopyFeedback, type ApiCodeExample, type ApiConnection, type ApiShell } from './apiIntegration';
 import './api-integration-dialog.css';
 import { ApiVerificationPanel } from './ApiVerificationPanel';
 
@@ -17,15 +17,43 @@ interface Props {
   language: AppLanguage;
   onCopy: (content: string) => void;
   onClose: () => void;
+  /** Preview/tests may inject status so the dialog never reads credentials itself. */
+  sharing?: ServiceSharingStatus | null;
+  sharingError?: boolean;
+  /** Must copy the hosted service key without displaying it. Preview may pass a handler that uses a published fake key. */
+  onCopyServiceKey?: () => Promise<Pick<ServiceKeyCopyResult, 'outcome' | 'restartRequired' | 'running' | 'keyCount'>>;
 }
 
 type Method = 'code' | 'cherry' | 'opencode' | 'claude' | 'cursor' | 'codex';
 
-export function ApiIntegrationDialog({ profile, model, online, loaded, keyRequired, language, onCopy, onClose }: Props) {
+export function ApiIntegrationDialog({ profile, model, online, loaded, keyRequired, language, onCopy, onClose, sharing: sharingProp, sharingError: sharingErrorProp, onCopyServiceKey }: Props) {
   const zh = language === 'zh-CN';
   const [method, setMethod] = useState<Method>('cherry');
   const [example, setExample] = useState<ApiCodeExample>('powershell');
   const [shell, setShell] = useState<ApiShell>('powershell');
+  const injected = sharingProp !== undefined || sharingErrorProp !== undefined || !!onCopyServiceKey;
+  const [sharing, setSharing] = useState<ServiceSharingStatus | null>(sharingProp ?? null);
+  const [sharingError, setSharingError] = useState(sharingErrorProp === true);
+  const [sharingLoading, setSharingLoading] = useState(!injected && sharingProp === undefined);
+  const [copyBusy, setCopyBusy] = useState(false);
+  const [copyFeedback, setCopyFeedback] = useState<{ hintZh: string; hintEn: string } | null>(null);
+  useEffect(() => {
+    if (injected) {
+      setSharing(sharingProp ?? null);
+      setSharingError(sharingErrorProp === true);
+      setSharingLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setSharingLoading(true);
+    void serviceSharingStatus(profile).then(status => {
+      if (!cancelled) { setSharing(status); setSharingError(false); setSharingLoading(false); }
+    }).catch(() => {
+      if (!cancelled) { setSharing(null); setSharingError(true); setSharingLoading(false); }
+    });
+    return () => { cancelled = true; };
+  }, [injected, profile, profile.id, sharingProp, sharingErrorProp]);
+  const availability = serviceKeyCopyAvailability({ keyRequired, sharing, sharingError, loading: sharingLoading });
   let rootUrl = '';
   try { rootUrl = normalizeBaseUrl(profile.baseUrl); } catch { /* Invalid profile addresses cannot generate runnable examples. */ }
   const actualModel = model?.trim() ? model : '';
@@ -44,6 +72,30 @@ export function ApiIntegrationDialog({ profile, model, online, loaded, keyRequir
     {!rootUrl ? <p className="notice error" role="alert">{zh ? '服务地址无效，请检查服务配置。' : 'The service address is invalid. Check the service configuration first.'}</p> : !online ? <p className="notice warning" role="status">{zh ? '当前服务未连接。请确认服务已启动；接入方式可以先看。' : 'The service is disconnected. Check that it is running; you can review the setup steps now.'}</p> : !loaded ? <p className="notice warning" role="status">{zh ? '模型还在加载，完成后再调用。' : 'The model is still loading. Send requests once it is ready.'}</p> : null}
     {!actualModel && <p className="api-integration-hint" role="status">{zh ? '启用模型后会填入模型名，并可复制示例。' : 'Enable a model to fill in its ID and copy the examples.'}</p>}
     <p className="api-integration-hint">{keyRequired === false ? (zh ? '无需密钥。客户端必填时写 strata-local。' : 'No key required. Use strata-local if the client asks for one.') : keyRequired === true ? (zh ? '把 YOUR_STRATA_API_KEY 换成服务密钥。' : 'Replace YOUR_STRATA_API_KEY with your current service key.') : (zh ? '尚未确认是否需要密钥。有密钥就填密钥，没有就写 strata-local。' : 'Key requirement not checked yet. Use your service key, or strata-local if there is none.')}</p>
+    <div className="api-integration-key-copy">
+      <button type="button" className="st-btn" data-testid="api-copy-service-key" disabled={!availability.enabled || copyBusy} onClick={() => {
+        if (copyBusy) return;
+        setCopyBusy(true);
+        setCopyFeedback(null);
+        const finish = (result: Pick<ServiceKeyCopyResult, 'outcome' | 'restartRequired' | 'running'>) => {
+          setCopyFeedback(serviceKeyCopyFeedback(result.outcome, { restartRequired: result.restartRequired, running: result.running }));
+          setCopyBusy(false);
+        };
+        const run = onCopyServiceKey ?? (async () => {
+          const result = await copyCurrentServiceKey(profile);
+          if (result.outcome === 'ready' && result.key) {
+            const value = result.key;
+            result.key = undefined;
+            try { onCopy(value); }
+            finally { /* The hosted key must not stay in dialog state or be rendered. */ }
+            return { ...result, outcome: 'copied' as const };
+          }
+          return result;
+        });
+        void run().then(finish).catch(() => finish({ outcome: 'unavailable', restartRequired: false, running: false }));
+      }}><Copy size={14}/>{copyBusy ? (zh ? '复制中…' : 'Copying…') : (zh ? '复制当前服务密钥' : 'Copy current service key')}</button>
+      <p className="api-integration-hint" data-testid="api-copy-service-key-status" role="status">{zh ? (copyFeedback?.hintZh ?? availability.hintZh) : (copyFeedback?.hintEn ?? availability.hintEn)}</p>
+    </div>
     <ApiVerificationPanel profile={profile} model={model} ready={online && loaded} language={language}/>
     <Segmented ariaLabel={zh ? '接入方式' : 'Connection method'} value={method} onValueChange={value => setMethod(value as Method)} options={[{value:'cherry',label:'Cherry Studio'},{value:'code',label:zh?'代码调用':'Code'},{value:'cursor',label:'Cursor'},{value:'claude',label:'Claude Code'},{value:'codex',label:'Codex'},{value:'opencode',label:'OpenCode'}]}/>
     <div className="api-integration-method">

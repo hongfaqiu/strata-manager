@@ -241,6 +241,13 @@ pub const WINDOWS_COMMIT_LOW: &str = "STARTUP_WINDOWS_COMMIT_LOW";
 /// Windows 11 Smart App Control (or WDAC) blocked the engine / vision binary (#5619).
 pub const WINDOWS_SAC_BLOCKED: &str = "STARTUP_WINDOWS_SAC_BLOCKED";
 pub const WINDOWS_SAC_MESSAGE: &str = "Windows 智能应用控制拦截了引擎或图像程序（WinError 4551）。请在「Windows 安全中心 › 应用和浏览器控制」中关闭智能应用控制，或等待已签名版本后再试。 / Windows Smart App Control blocked the engine or vision program (WinError 4551). Turn off Smart App Control under Windows Security › App & browser control, or wait for a signed build.";
+/// Prefill aborted after `the expert source could not copy experts …` (upstream #5966).
+pub const EXPERT_COPY_FAILED: &str = "STARTUP_EXPERT_COPY_FAILED";
+pub const EXPERT_COPY_FAILED_MESSAGE: &str = "引擎在 prefill 时中止：专家源无法复制专家（日志常见 “could not copy experts 256..”）。这与自动开启的小显存专家缓存路径（small expert cache / PF_SMALL）有关，并非所有崩溃都是同一原因。可在该模型运行配置的 env 中临时设置 STRATA_PF_SMALL=0，以改回默认 prompt 路径后再试；Manager 不会自动写入该变量。这是权宜措施，不保证一定能恢复。若已设置仍失败，则原因可能不同，请查看启动日志。 / The engine aborted during prefill: the expert source could not copy experts (logs often show “could not copy experts 256..”). This has been seen on the automatic small-expert-cache path (PF_SMALL); it is not the cause of every crash. You may temporarily set STRATA_PF_SMALL=0 in this model's run-config env to keep the default prompt path, then try again; Manager does not write this variable for you. This is a workaround, not a guaranteed fix. If it is already set and the engine still fails, the cause is likely different — check the startup log.";
+/// Windows STATUS_STACK_BUFFER_OVERRUN / fail-fast abort. Not a unique root cause (#5995, #5966).
+pub const WINDOWS_STATUS_C0000409: &str = "STARTUP_WINDOWS_STATUS_C0000409";
+pub const WINDOWS_STATUS_C0000409_CODE: u32 = 0xC000_0409;
+pub const WINDOWS_STATUS_C0000409_MESSAGE: &str = "引擎以 Windows 状态 0xC0000409（堆栈缓冲区溢出 / 快速失败中止，无符号退出码 3221226505）退出。该退出码有多种原因，不能据此认定是同一问题，也不保证设置 STRATA_PF_SMALL=0 能修好。若启动日志中还有 “the expert source could not copy experts …”，才与已知的小显存缓存 prefill 问题相符，那时可临时尝试该变量；否则请先查看启动日志，原因尚未确定。 / The engine exited with Windows status 0xC0000409 (stack buffer overrun / fail-fast abort; unsigned exit code 3221226505). This status has more than one cause, so it does not identify a single bug and STRATA_PF_SMALL=0 is not guaranteed to help. Only if the startup log also contains “the expert source could not copy experts …”, does this match the known small-expert-cache prefill issue, and then you may try that variable temporarily; otherwise check the startup log — the cause is not established.";
 
 fn memory_report(message: &str) -> Option<MemoryReport> {
     let lower = message.to_ascii_lowercase();
@@ -337,6 +344,26 @@ fn windows_sac_blocked(message: &str) -> bool {
         || lower.contains("os error 4551")
         || lower.contains("smart app control")
         || lower.contains("application control policy")
+}
+
+/// Official prefill.cpp: `copy_blobs` failed, then `std::abort()`.
+fn expert_copy_failed(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("could not copy experts")
+}
+
+/// Windows STATUS_STACK_BUFFER_OVERRUN as an i32 exit code (unsigned 3221226505).
+fn exit_is_c0000409(code: Option<i32>) -> bool {
+    code.is_some_and(|code| code as u32 == WINDOWS_STATUS_C0000409_CODE)
+}
+
+fn mentions_c0000409(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("0xc0000409") || lower.contains("3221226505") || lower.contains("-1073740791")
+}
+
+fn generic_engine_code(code: &str) -> bool {
+    matches!(code, "STARTUP_ENGINE_CRASHED" | "STARTUP_UNKNOWN")
 }
 
 pub fn build(
@@ -506,6 +533,33 @@ pub fn build(
         confidence = StartupConfidence::Confirmed;
         code = crate::engine_log::CODE.into();
     }
+    // Q6C: only when earlier classifiers (memory, all-cards-off, SAC, unwritable log)
+    // left a generic engine/unknown failure. Copy-experts evidence is specific;
+    // a bare 0xC0000409 is not the same root cause and must stay uncertain.
+    if matches!(category, StartupCategory::Unknown | StartupCategory::Engine)
+        && generic_engine_code(&code)
+    {
+        let copy_failed = expert_copy_failed(&message)
+            || current
+                .iter()
+                .any(|entry| expert_copy_failed(&entry.message));
+        let status_c0000409 = exit_is_c0000409(process.and_then(|status| status.exit_code))
+            || mentions_c0000409(&message)
+            || current
+                .iter()
+                .any(|entry| mentions_c0000409(&entry.message));
+        if copy_failed {
+            category = StartupCategory::Engine;
+            confidence = StartupConfidence::Confirmed;
+            code = EXPERT_COPY_FAILED.into();
+            message = EXPERT_COPY_FAILED_MESSAGE.into();
+        } else if status_c0000409 {
+            category = StartupCategory::Engine;
+            confidence = StartupConfidence::Unknown;
+            code = WINDOWS_STATUS_C0000409.into();
+            message = WINDOWS_STATUS_C0000409_MESSAGE.into();
+        }
+    }
     if !matches!(phase.as_str(), "prepare" | "starting" | "loading") {
         phase = "prepare".into();
     }
@@ -596,6 +650,7 @@ pub fn build(
             StartupAction::CheckStatus
         }
         StartupCategory::Config => StartupAction::OpenConfig,
+        StartupCategory::Engine if code == EXPERT_COPY_FAILED => StartupAction::OpenConfig,
         StartupCategory::Auth => StartupAction::OpenCredentials,
         StartupCategory::Timeout if process.is_some_and(|status| status.running) => {
             StartupAction::CheckStatus
@@ -1680,5 +1735,175 @@ ThreadingHTTPServer((a.host,a.port),Handler).serve_forever()
             .code,
             "STARTUP_ENGINE_CRASHED"
         );
+    }
+
+    fn crashed_process(exit_code: i32) -> ProcessStatus {
+        ProcessStatus {
+            running: false,
+            exit_code: Some(exit_code),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn expert_copy_abort_is_classified_even_without_the_windows_status() {
+        // Official prefill.cpp prints this line then abort(); #5966 also reports 0xC0000409 on Windows.
+        let logs = vec![engine_line(
+            15,
+            "prefill: the expert source could not copy experts 256.. of layer 0",
+        )];
+        for raw in [
+            error("STARTUP_ENGINE_CRASHED", "engine exited", "loading"),
+            error(
+                "STARTUP_ENGINE_CRASHED",
+                "the engine stopped unexpectedly (exit code 3221226505)",
+                "loading",
+            ),
+            "exit 134".into(),
+        ] {
+            let result = build(
+                "p",
+                10,
+                20,
+                &raw,
+                &logs,
+                Some(&crashed_process(0xC000_0409u32 as i32)),
+            );
+            assert_eq!(result.code, EXPERT_COPY_FAILED);
+            assert_eq!(result.category, StartupCategory::Engine);
+            assert_eq!(result.confidence, StartupConfidence::Confirmed);
+            assert_eq!(result.actions[0], StartupAction::OpenConfig);
+            assert!(
+                result.message.contains("STRATA_PF_SMALL=0")
+                    && result.message.contains("不会自动写入")
+                    && result.message.contains("does not write this variable")
+                    && result.message.contains("not a guaranteed fix")
+                    && result.message.contains("could not copy experts 256"),
+                "{}",
+                result.message
+            );
+            assert!(result.message.contains("不保证一定能恢复"));
+        }
+        // A line from an earlier attempt is not this failure.
+        let old = vec![engine_line(
+            5,
+            "prefill: the expert source could not copy experts 256.. of layer 0",
+        )];
+        assert_eq!(
+            build(
+                "p",
+                10,
+                20,
+                &error("STARTUP_ENGINE_CRASHED", "engine exited", "loading"),
+                &old,
+                None,
+            )
+            .code,
+            "STARTUP_ENGINE_CRASHED"
+        );
+    }
+
+    #[test]
+    fn bare_c0000409_is_uncertain_and_does_not_claim_the_small_cache_fix() {
+        let signed = 0xC000_0409u32 as i32;
+        assert_eq!(signed, -1_073_740_791);
+        for (raw, process) in [
+            (
+                error("STARTUP_ENGINE_CRASHED", "engine exited", "loading"),
+                Some(crashed_process(signed)),
+            ),
+            (
+                error("STARTUP_ENGINE_CRASHED", "engine exited", "loading"),
+                Some(crashed_process(3221226505u32 as i32)),
+            ),
+            (
+                error(
+                    "STARTUP_ENGINE_CRASHED",
+                    "[strata] the engine stopped unexpectedly (exit code 3221226505)",
+                    "loading",
+                ),
+                None,
+            ),
+            (
+                error(
+                    "STARTUP_ENGINE_CRASHED",
+                    "engine exited with 0xC0000409",
+                    "loading",
+                ),
+                None,
+            ),
+            ("exit -1073740791".into(), Some(crashed_process(signed))),
+        ] {
+            let result = build("p", 10, 20, &raw, &[], process.as_ref());
+            assert_eq!(result.code, WINDOWS_STATUS_C0000409, "{raw}");
+            assert_eq!(result.category, StartupCategory::Engine);
+            assert_eq!(result.confidence, StartupConfidence::Unknown);
+            assert_eq!(result.actions[0], StartupAction::ViewLogs);
+            assert!(
+                result.message.contains("0xC0000409")
+                    && result.message.contains("3221226505")
+                    && result.message.contains("原因尚未确定")
+                    && result.message.contains("cause is not established")
+                    && result.message.contains("is not guaranteed to help")
+                    && result.message.contains("could not copy experts"),
+                "{}",
+                result.message
+            );
+            // Must not present the env as the diagnosed fix for a bare abort.
+            assert!(
+                !result.message.contains("不会自动写入该变量。这是权宜措施"),
+                "{}",
+                result.message
+            );
+        }
+        // A different NTSTATUS stays a generic engine crash.
+        let other = build(
+            "p",
+            10,
+            20,
+            &error("STARTUP_ENGINE_CRASHED", "engine exited", "loading"),
+            &[],
+            Some(&crashed_process(0xC000_0005u32 as i32)),
+        );
+        assert_eq!(other.code, "STARTUP_ENGINE_CRASHED");
+    }
+
+    #[test]
+    fn earlier_classifiers_keep_priority_over_q6c() {
+        let copy = engine_line(
+            15,
+            "prefill: the expert source could not copy experts 256.. of layer 0",
+        );
+        let vram = build(
+            "p",
+            10,
+            20,
+            &error("STARTUP_ENGINE_CRASHED", "engine exited", "loading"),
+            &[
+                engine_line(
+                    14,
+                    "strata generate: the logits buffer failed (310 MiB of 16303 MiB VRAM free on this GPU)",
+                ),
+                copy.clone(),
+            ],
+            Some(&crashed_process(0xC000_0409u32 as i32)),
+        );
+        assert_eq!(vram.code, VRAM_INSUFFICIENT);
+        assert_eq!(vram.category, StartupCategory::Resource);
+        let sac = build(
+            "p",
+            10,
+            20,
+            &error("STARTUP_ENGINE_CRASHED", "engine exited", "loading"),
+            &[
+                engine_line(
+                    14,
+                    "OSError: [WinError 4551] An Application Control policy has blocked this file.",
+                ),
+                copy,
+            ],
+            Some(&crashed_process(0xC000_0409u32 as i32)),
+        );
+        assert_eq!(sac.code, WINDOWS_SAC_BLOCKED);
     }
 }

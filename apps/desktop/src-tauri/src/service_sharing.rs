@@ -21,6 +21,18 @@ pub async fn service_sharing_status(
 }
 
 #[tauri::command]
+pub async fn copy_current_service_key(
+    state: tauri::State<'_, ClientState>,
+    profile: ServiceProfile,
+) -> Result<Value, String> {
+    state
+        .ipc
+        .request("copy_current_service_key", json!({"profile":profile}))
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub async fn set_service_auth(
     state: tauri::State<'_, ClientState>,
     profile: ServiceProfile,

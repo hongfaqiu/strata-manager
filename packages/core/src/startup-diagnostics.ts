@@ -95,6 +95,18 @@ export function startupWindowsSacBlocked(diagnostic: Pick<StartupFailureDiagnost
   return diagnostic.code === STARTUP_WINDOWS_SAC_BLOCKED;
 }
 
+/** Prefill aborted after the expert source could not copy experts (upstream #5966). */
+export const STARTUP_EXPERT_COPY_FAILED = 'STARTUP_EXPERT_COPY_FAILED';
+export function startupExpertCopyFailed(diagnostic: Pick<StartupFailureDiagnostic, 'code'>): boolean {
+  return diagnostic.code === STARTUP_EXPERT_COPY_FAILED;
+}
+
+/** Windows 0xC0000409 / 3221226505: fail-fast abort, cause not established by the exit code alone. */
+export const STARTUP_WINDOWS_STATUS_C0000409 = 'STARTUP_WINDOWS_STATUS_C0000409';
+export function startupWindowsStatusC0000409(diagnostic: Pick<StartupFailureDiagnostic, 'code'>): boolean {
+  return diagnostic.code === STARTUP_WINDOWS_STATUS_C0000409;
+}
+
 /** The engine crashed or exited abnormally (not a memory, log, SAC or setup problem): falling back to the previous engine may help. */
 export function startupEngineCrashed(diagnostic: Pick<StartupFailureDiagnostic, 'code' | 'category' | 'exitCode'>): boolean {
   if (startupMemoryShortage(diagnostic) || diagnostic.code === 'STARTUP_LOG_UNWRITABLE' || startupWindowsSacBlocked(diagnostic)) return false;

@@ -1011,6 +1011,10 @@ impl RuntimeState {
                 &self,
                 &arg::<ServiceProfile>(&params, "profile")?,
             )),
+            "copy_current_service_key" => value(service_sharing::current_key_for_copy(
+                &self,
+                &arg::<ServiceProfile>(&params, "profile")?,
+            )),
             "set_service_auth" => value(
                 service_sharing::set_auth(
                     self.clone(),

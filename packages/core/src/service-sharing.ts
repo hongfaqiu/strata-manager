@@ -27,6 +27,17 @@ export interface ServiceAuthResult {
   restartRequired: boolean;
   clientCredentialNeedsUpdate: boolean;
 }
+
+/** Metadata for copying the hosted service key. `key` is only present when outcome is `ready`. Never log it. */
+export type ServiceKeyCopyOutcome = 'ready' | 'copied' | 'no_key' | 'none_chosen' | 'multiple' | 'not_owned' | 'unavailable' | 'keyless' | 'clipboard_failed';
+export interface ServiceKeyCopyResult {
+  outcome: ServiceKeyCopyOutcome;
+  keyCount: number;
+  noKeyChosen: boolean;
+  restartRequired: boolean;
+  running: boolean;
+  key?: string;
+}
 export interface SharingPreview {
   hostChanged: boolean;
   portChanged: boolean;
