@@ -58,10 +58,12 @@ import { serviceKeyCopyAvailability, serviceKeyCopyFeedback } from './apiIntegra
 
 const sharing = { hasServerKey: true, keyCount: 1, noKeyChosen: false, restartRequired: false, running: true };
 
-test('the service-key copy control is enabled only when the hosted config has exactly one key', () => {
+test('the service-key copy control is enabled only when the running service still matches a single key', () => {
   const ready = serviceKeyCopyAvailability({ keyRequired: true, sharing });
   assert.equal(ready.enabled, true);
   assert.equal(ready.outcome, 'ready');
+  assert.match(ready.hintZh, /正在使用的密钥/);
+  assert.match(ready.hintEn, /currently using/);
   assert.match(ready.hintZh, /不会显示/);
   assert.match(ready.hintEn, /not shown/);
   const keyless = serviceKeyCopyAvailability({ keyRequired: false, sharing });
@@ -80,10 +82,29 @@ test('the service-key copy control is enabled only when the hosted config has ex
   const foreign = serviceKeyCopyAvailability({ sharingError: true, keyRequired: true });
   assert.equal(foreign.outcome, 'not_owned');
   assert.equal(foreign.enabled, false);
-  const copied = serviceKeyCopyFeedback('copied', { running: true });
+  const stopped = serviceKeyCopyAvailability({ keyRequired: true, sharing: { ...sharing, running: false } });
+  assert.equal(stopped.enabled, false);
+  assert.equal(stopped.outcome, 'not_running');
+  assert.match(stopped.hintZh, /请先启动/);
+  assert.match(stopped.hintEn, /Start the hosted service/);
+  const stale = serviceKeyCopyAvailability({ keyRequired: true, sharing: { ...sharing, restartRequired: true } });
+  assert.equal(stale.enabled, false);
+  assert.equal(stale.outcome, 'stale');
+  assert.match(stale.hintZh, /请先重启/);
+  assert.match(stale.hintEn, /Restart the service/);
+  // Stale and stopped take precedence over key-count messages; IPC also withholds the key.
+  const staleMany = serviceKeyCopyAvailability({ sharing: { ...sharing, keyCount: 2, restartRequired: true } });
+  assert.equal(staleMany.outcome, 'stale');
+  assert.equal(staleMany.enabled, false);
+  const copied = serviceKeyCopyFeedback('copied');
   assert.match(copied.hintZh, /不会在此显示/);
+  assert.doesNotMatch(copied.hintZh, /可能仍在使用/);
   assert.doesNotMatch(copied.hintZh, /preview-test-key-not-real/);
   assert.doesNotMatch(copied.hintEn, /preview-test-key-not-real/);
+  const staleFeedback = serviceKeyCopyFeedback('stale');
+  assert.equal(staleFeedback.hintZh, stale.hintZh);
+  const stoppedFeedback = serviceKeyCopyFeedback('not_running');
+  assert.equal(stoppedFeedback.hintZh, stopped.hintZh);
 });
 
 test('the connect-API dialog copies the service key without rendering it', () => {

@@ -29,7 +29,7 @@ export interface ServiceAuthResult {
 }
 
 /** Metadata for copying the hosted service key. `key` is only present when outcome is `ready`. Never log it. */
-export type ServiceKeyCopyOutcome = 'ready' | 'copied' | 'no_key' | 'none_chosen' | 'multiple' | 'not_owned' | 'unavailable' | 'keyless' | 'clipboard_failed';
+export type ServiceKeyCopyOutcome = 'ready' | 'copied' | 'no_key' | 'none_chosen' | 'multiple' | 'not_owned' | 'unavailable' | 'keyless' | 'clipboard_failed' | 'not_running' | 'stale';
 export interface ServiceKeyCopyResult {
   outcome: ServiceKeyCopyOutcome;
   keyCount: number;

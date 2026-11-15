@@ -78,7 +78,7 @@ export function ApiIntegrationDialog({ profile, model, online, loaded, keyRequir
         setCopyBusy(true);
         setCopyFeedback(null);
         const finish = (result: Pick<ServiceKeyCopyResult, 'outcome' | 'restartRequired' | 'running'>) => {
-          setCopyFeedback(serviceKeyCopyFeedback(result.outcome, { restartRequired: result.restartRequired, running: result.running }));
+          setCopyFeedback(serviceKeyCopyFeedback(result.outcome));
           setCopyBusy(false);
         };
         const run = onCopyServiceKey ?? (async () => {

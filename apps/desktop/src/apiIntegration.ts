@@ -165,6 +165,12 @@ export function serviceKeyCopyAvailability(input: {
   if (!sharing) {
     return hint('尚未确认是否有可复制的服务密钥。', 'It is not yet confirmed whether a service key can be copied.', 'unavailable');
   }
+  if (!sharing.running) {
+    return hint('服务未运行，没有正在使用的服务密钥。请先启动托管服务，再复制。', 'The service is not running, so there is no key in use. Start the hosted service, then copy.', 'not_running');
+  }
+  if (sharing.restartRequired) {
+    return hint('配置在启动后已更改，无法确认运行中服务仍使用这份密钥。请先重启服务，再复制。', 'The configuration changed after start, so this key may not be the one the running service is using. Restart the service, then copy.', 'stale');
+  }
   if (sharing.noKeyChosen) {
     return hint('当前配置明确不使用服务端密钥（api_key 为 none）。', 'This configuration serves without a key on purpose (api_key is none).', 'none_chosen');
   }
@@ -178,28 +184,20 @@ export function serviceKeyCopyAvailability(input: {
   if (sharing.keyCount > 1) {
     return hint('当前配置有多个服务密钥，无法自动选择要复制哪一个。请在局域网共享设置中确认。', 'This configuration has more than one service key, so none is copied automatically. Confirm which key to use under LAN sharing.', 'multiple');
   }
-  const restart = sharing.restartRequired
-    ? (['配置在启动后有过改动，正在运行的服务可能仍在使用上一份密钥，复制的是当前配置中的密钥。重启后才会一致。', 'The configuration changed after start, so the running service may still use the previous key. The copy is the key now in the configuration; restart to make them match.'] as const)
-    : sharing.running
-      ? (['复制当前托管服务运行配置中的密钥。密钥不会显示在此对话框中。', 'Copy the key from the hosted service run configuration. The key is not shown in this dialog.'] as const)
-      : (['服务当前未运行。复制的是运行配置中的密钥，请确认下次启动仍使用该配置。', 'The service is not running. The copy is the key in the run configuration; confirm the next start still uses it.'] as const);
-  return { enabled: true, outcome: 'ready', hintZh: restart[0], hintEn: restart[1] };
+  return hint('复制当前托管服务正在使用的密钥。密钥不会显示在此对话框中。', 'Copy the key the hosted service is currently using. The key is not shown in this dialog.', 'ready', true);
 }
 
-export function serviceKeyCopyFeedback(outcome: ServiceKeyCopyOutcome, extras?: { restartRequired?: boolean; running?: boolean }): { hintZh: string; hintEn: string } {
+export function serviceKeyCopyFeedback(outcome: ServiceKeyCopyOutcome): { hintZh: string; hintEn: string } {
   if (outcome === 'copied') {
-    const base = extras?.restartRequired
-      ? ['已复制当前配置中的服务密钥（不会在此显示）。配置在启动后有过改动，正在运行的服务可能仍在使用上一份密钥。', 'Copied the service key from the current configuration (it is not shown here). The configuration changed after start, so the running service may still use the previous key.'] as const
-      : extras?.running === false
-        ? ['已复制运行配置中的服务密钥（不会在此显示）。请确认服务已用该配置启动。', 'Copied the service key from the run configuration (it is not shown here). Confirm the service was started with this configuration.'] as const
-        : ['已复制当前服务密钥（不会在此显示）。', 'Copied the current service key (it is not shown here).'] as const;
-    return { hintZh: base[0], hintEn: base[1] };
+    return { hintZh: '已复制当前服务密钥（不会在此显示）。', hintEn: 'Copied the current service key (it is not shown here).' };
   }
   if (outcome === 'clipboard_failed') return { hintZh: '复制失败，请检查系统剪贴板权限。', hintEn: 'Copy failed. Check system clipboard permission.' };
   const availability = serviceKeyCopyAvailability({
-    sharing: outcome === 'none_chosen' ? { hasServerKey: false, keyCount: 0, noKeyChosen: true, restartRequired: false, running: false }
-      : outcome === 'multiple' ? { hasServerKey: true, keyCount: 2, restartRequired: false, running: false }
-      : outcome === 'no_key' ? { hasServerKey: false, keyCount: 0, restartRequired: false, running: false }
+    sharing: outcome === 'none_chosen' ? { hasServerKey: false, keyCount: 0, noKeyChosen: true, restartRequired: false, running: true }
+      : outcome === 'multiple' ? { hasServerKey: true, keyCount: 2, restartRequired: false, running: true }
+      : outcome === 'no_key' ? { hasServerKey: false, keyCount: 0, restartRequired: false, running: true }
+      : outcome === 'stale' ? { hasServerKey: true, keyCount: 1, restartRequired: true, running: true }
+      : outcome === 'not_running' ? { hasServerKey: true, keyCount: 1, restartRequired: false, running: false }
       : undefined,
     sharingError: outcome === 'not_owned',
     keyRequired: outcome === 'keyless' ? false : undefined,
