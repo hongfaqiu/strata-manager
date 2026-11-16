@@ -1,0 +1,497 @@
+{
+ "app": {
+  "notes": "",
+  "platforms": {
+   "darwin-aarch64": {
+    "sha256": "28754ce6c32b51ab8b67c9b15539c5dbe05aa9c0dd14ea64b1f6bdcdfa5d705e",
+    "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSZUgxSUZtWm13dGpMNURjZjg5S2xyVUE5RnZkTnRlQnJ5K0tqMlpaaVF4NnFGU0JKWXVLcGhZNkVOaTN4NHhRdU12Y3ppWldzaTREZWRTS1hKaWk5a0tmZ3c2MmliUXdvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0ODE4MDI0CWZpbGU6U3RyYXRhLmFwcC50YXIuZ3oKTEZCMzRsQVF3RFM1bXJuVVNDdTY3LysvQWdWY1JTMlBYYitkdXJYZ2d0SC9BT2xjdHYwcGxyZ0U0Q1AwK2NrMlhkWmc3ZVJmRHVXbjk4OEpwSmYzQkE9PQo=",
+    "size": 166796125,
+    "url": "https://github.com/Niko1221/Strata/releases/latest/download/Strata.app.tar.gz"
+   },
+   "linux-x86_64": {
+    "sha256": "2dc6fa2e6aa20c9a9231970aff764db5dd456c60f324cb157861e952bf76e287",
+    "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSZUgxSUZtWm13dHJHSjFjOW02VThEeE12UmpaZVZ6SXY4aDR1OXh3WWk2eFFaTjlFQkxuMmt1MFR6ZzlFSmJpVnVjSVpMN2xDRG50ZnJkSDVLSnFxTEpmcXZmUTZtdXdnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0ODExMjM1CWZpbGU6U3RyYXRhLTAuMi4xNS1saW51eC14ODZfNjQuQXBwSW1hZ2UKNzB2NEdGKzlLTHZVR3NERDgxa3p2aithd3pMYnFQL3JZUVVKQmtGOGFaNW96UElKVnlFd2FHTGMxb0FiSHVIUGJaT3JiUGNlZTdkWVo3ZjlxZUJKREE9PQo=",
+    "size": 302934520,
+    "url": "https://github.com/Niko1221/Strata/releases/latest/download/Strata-0.2.15-linux-x86_64.AppImage"
+   },
+   "windows-x86_64": {
+    "sha256": "17fb1b6fc0972ffd45b99b3cb6da33813c9248e96cda938c0d2be7b6e6df073a",
+    "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSZUgxSUZtWm13dGpDNm9UaTlaNVFxUGlYdUQxb1g0UFZNTkhZV1daYUl1VXdSRW5sSEV1dFFzUTJ0eEFUNWVOQml4MElCcXJVam5mZ0l1NnY0RlRtb2JyWm91WVpidEFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0ODExMTU3CWZpbGU6U3RyYXRhLTAuMi4xNS13aW5kb3dzLXg2NC1zZXR1cC5leGUKR3Z6UkhKWjVCK2FEaUJhZWpTaFZzZ1NWdXFYWEQzYjEwakdKeEJyN3ZDWURtRXR3N3plbHZLVHkwQU5FVmJIVlVLREJaTit2bG9nb1l0Vnl6RWZVQkE9PQo=",
+    "size": 111469924,
+    "url": "https://github.com/Niko1221/Strata/releases/latest/download/Strata-0.2.15-windows-x64-setup.exe"
+   }
+  },
+  "pub_date": "2026-11-16T08:34:03Z",
+  "version": "0.2.15"
+ },
+ "channel": "stable",
+ "control": {
+  "packages": [
+   {
+    "entry": "strata.py",
+    "format": "tar.gz",
+    "installed_bytes": 331190398,
+    "platform": "linux-x86_64",
+    "sha256": "e780b9748bcd9e8427e4cf93f6ef79535173898c83ffbff8833f0ad9385bb36d",
+    "size": 97550582,
+    "url": "strata-control-0.1.61-linux-x86_64.tar.gz"
+   },
+   {
+    "entry": "strata.py",
+    "format": "tar.gz",
+    "installed_bytes": 145576502,
+    "platform": "macos-arm64",
+    "sha256": "b5fcda16daee894260efc9726d19b526b70df869c46ed73f22e5345833c92a86",
+    "size": 48715939,
+    "url": "strata-control-0.1.61-macos-arm64.tar.gz"
+   },
+   {
+    "entry": "strata.py",
+    "format": "zip",
+    "installed_bytes": 225425293,
+    "platform": "windows-x86_64",
+    "sha256": "cf03e68347921f805325553b2147754cfecb6911b931ba78518fd9728a6fbb7b",
+    "size": 70894921,
+    "url": "strata-control-0.1.61-windows-x86_64.zip"
+   }
+  ],
+  "version": "0.1.61"
+ },
+ "drafters": {
+  "packages": [
+   {
+    "backends": [
+     "sycl"
+    ],
+    "base": "incoai/Qwen3.8-Flash-Next-DFlash2@a22a1744e85c17364dcc54a6a420af7135d4c7f6",
+    "licence": "Apache-2.0",
+    "name": "qwen3.8-flash-next-dflash2.strata1.q4_0-bf16sel.pack",
+    "notes": "",
+    "sha256": "34ca17fee701ff088b6069acc35a26661d237953f5d114be0a3f7dae3ec5cda9",
+    "size": 522458112,
+    "url": "https://github.com/Niko1221/Strata/releases/download/v0.2.14/qwen3.8-flash-next-dflash2.strata1.q4_0-bf16sel.pack",
+    "version": "1"
+   },
+   {
+    "backends": [
+     "metal",
+     "cuda",
+     "hip"
+    ],
+    "base": "incoai/Qwen3.8-Flash-Next-DFlash2@a22a1744e85c17364dcc54a6a420af7135d4c7f6",
+    "licence": "Apache-2.0",
+    "name": "qwen3.8-flash-next-dflash2.strata1.q4_0-selq4.pack",
+    "notes": "",
+    "sha256": "4df2e5ab2b47c064afbe662e16e4f06569877125c2d0e2123a4ac755266c664c",
+    "size": 339694592,
+    "url": "https://github.com/Niko1221/Strata/releases/download/v0.2.14/qwen3.8-flash-next-dflash2.strata1.q4_0-selq4.pack",
+    "version": "1"
+   }
+  ]
+ },
+ "dsv41": {
+  "packages": [
+   {
+    "archs": [
+     "sm_86",
+     "sm_89",
+     "sm_120",
+     "compute_120"
+    ],
+    "backend": "cuda",
+    "build_id": "712fec6b4297+dsv41+cuda13.0",
+    "format": "tar.gz",
+    "installed_bytes": 697611854,
+    "manifest_sha256": "bb774889c7b5a3fa981762ac3033fed78ae2c2b089cf7777e4942e4a95a5d446",
+    "min_driver": {
+     "nvidia": "580.65"
+    },
+    "min_runtime": null,
+    "notes": "",
+    "platform": "linux-x86_64",
+    "sha256": "4440a62b6aaf51d740f8c37fcc0e7b28cf79ba37aaa199a214b98067c5bf36ad",
+    "size": 445221867,
+    "url": "https://github.com/Niko1221/Strata/releases/download/v0.2.13/strata-dsv41-0.1.59-linux-x86_64-cuda-cuda13.tar.gz",
+    "variant": "cuda13",
+    "version": "0.1.59"
+   },
+   {
+    "archs": [
+     "gfx1200",
+     "gfx1201"
+    ],
+    "backend": "hip",
+    "build_id": "712fec6b4297+dsv41+rocm",
+    "format": "tar.gz",
+    "installed_bytes": 1227883485,
+    "manifest_sha256": "9541db6093cbc97929db44390f9da7c9b687f5b308d69f95bc102ecfd4046ad4",
+    "min_driver": {},
+    "min_runtime": null,
+    "notes": "",
+    "platform": "linux-x86_64",
+    "sha256": "fcc7b94f8274887b532a40e10817b58adf62ef7f2c9c32bb4b6317e224aa58d0",
+    "size": 367074106,
+    "url": "https://github.com/Niko1221/Strata/releases/download/v0.2.13/strata-dsv41-0.1.59-linux-x86_64-hip-rx9070.tar.gz",
+    "variant": "rx9070",
+    "version": "0.1.59"
+   },
+   {
+    "archs": [
+     "apple-gpu"
+    ],
+    "backend": "metal",
+    "build_id": "712fec6b4",
+    "format": "tar.gz",
+    "installed_bytes": 4833527,
+    "manifest_sha256": "3e821f365feeb7b45374bd0c5f5cd2dde272118ffc294a107ca4d7ab86625293",
+    "min_driver": {},
+    "min_runtime": null,
+    "notes": "",
+    "platform": "macos-arm64",
+    "sha256": "2fcbd44259db297782b0bdf54065b65a3882a0f52723b12940fdff40b928013d",
+    "size": 1809511,
+    "url": "https://github.com/Niko1221/Strata/releases/download/v0.2.13/strata-dsv41-0.1.59-macos-arm64-metal.tar.gz",
+    "variant": "",
+    "version": "0.1.59"
+   },
+   {
+    "archs": [
+     "sm_86",
+     "sm_89",
+     "sm_120",
+     "compute_120"
+    ],
+    "backend": "cuda",
+    "build_id": "712fec6b4297+dsv41+cuda13.0",
+    "format": "tar.gz",
+    "installed_bytes": 626782213,
+    "manifest_sha256": "5a54612300e57eea89cdac94be3102d936beb943cb6916d220ff351a23e801d1",
+    "min_driver": {
+     "nvidia": "580.65"
+    },
+    "min_runtime": null,
+    "notes": "",
+    "platform": "windows-x86_64",
+    "sha256": "1ae0f2d7c820e5b5b3c02cdafc86dbdddb6d7a66aa4bde70309a3e78aa714d2c",
+    "size": 422621585,
+    "url": "https://github.com/Niko1221/Strata/releases/download/v0.2.13/strata-dsv41-0.1.59-windows-x86_64-cuda-cuda13.tar.gz",
+    "variant": "cuda13",
+    "version": "0.1.59"
+   },
+   {
+    "archs": [
+     "gfx1151"
+    ],
+    "backend": "hip",
+    "build_id": "712fec6b4297+dsv41+rocm-win10.2.0a20260930",
+    "format": "tar.gz",
+    "installed_bytes": 400410927,
+    "manifest_sha256": "b8d54f86563a64777008e259c4f25984af51cd27d0300af30caa28f3c9c4d511",
+    "min_driver": {},
+    "min_runtime": null,
+    "notes": "DeepSeek-V4.1-Flash for AMD Ryzen AI Max (Strix Halo, gfx1151) on Windows; the ROCm runtime comes from the rdna3 Qwen package",
+    "platform": "windows-x86_64",
+    "sha256": "3e10beaedbd24c94c9f107c106afca93be177c82200890bae3beb92cee447834",
+    "size": 137202725,
+    "url": "https://github.com/Niko1221/Strata/releases/download/v0.2.13/strata-dsv41-0.1.59-windows-x86_64-hip-rdna3.tar.gz",
+    "variant": "rdna3",
+    "version": "0.1.59"
+   }
+  ]
+ },
+ "engine": {
+  "packages": [
+   {
+    "archs": [
+     "intel-arc"
+    ],
+    "backend": "sycl",
+    "build_id": "712fec6b4297c9cfd32ab43daaa2979a9aa01edf-oneapi2026.1.1",
+    "format": "tar.gz",
+    "installed_bytes": 685535209,
+    "manifest_sha256": "012a40354bd0cdcb73a9b3435c03d4e661071de8ae840a553047bb228cff6243",
+    "min_driver": {},
+    "min_runtime": null,
+    "notes": "",
+    "platform": "linux-x86_64",
+    "sha256": "8b2586ab57a2ad8df593d11dc6a3509620ca49fb352692ae0f7f4f7d014a7839",
+    "size": 186923151,
+    "url": "https://github.com/Niko1221/Strata/releases/download/v0.2.13/strata-engine-0.1.59-linux-x86_64-sycl.tar.gz",
+    "variant": "",
+    "version": "0.1.59"
+   },
+   {
+    "archs": [
+     "sm_60",
+     "sm_61",
+     "sm_70",
+     "sm_75",
+     "sm_80",
+     "sm_86",
+     "sm_89",
+     "compute_89"
+    ],
+    "backend": "cuda",
+    "build_id": "09b603886925+cuda12.9",
+    "format": "tar.gz",
+    "installed_bytes": 1338995043,
+    "manifest_sha256": "12974fd2e979d377665153c8087ae7d63f79653f93379deb99aadde9b8aaa914",
+    "min_driver": {
+     "nvidia": "575.51"
+    },
+    "min_runtime": null,
+    "notes": "",
+    "platform": "linux-x86_64",
+    "sha256": "a50a4d1efd7fbf0da03a0a2d4d91b0ac059d92579ae41f611e49bc9228262856",
+    "size": 875179152,
+    "url": "https://github.com/Niko1221/Strata/releases/download/v0.2.14/strata-engine-0.1.60-linux-x86_64-cuda-cuda12.tar.gz",
+    "variant": "cuda12",
+    "version": "0.1.60"
+   },
+   {
+    "archs": [
+     "sm_75",
+     "sm_86",
+     "sm_89",
+     "sm_120",
+     "compute_120"
+    ],
+    "backend": "cuda",
+    "build_id": "09b603886925+cuda13.0",
+    "format": "tar.gz",
+    "installed_bytes": 1021936994,
+    "manifest_sha256": "7ccffb928f8a1a7da281099cf34927b1cbc8f33d653567f4042e5ce611a1f8cf",
+    "min_driver": {
+     "nvidia": "580.65"
+    },
+    "min_runtime": null,
+    "notes": "",
+    "platform": "linux-x86_64",
+    "sha256": "a72c194c8f6de96629ed53079b5e344ab81223d45667a53f6a6d79398895aa50",
+    "size": 672845287,
+    "url": "https://github.com/Niko1221/Strata/releases/download/v0.2.14/strata-engine-0.1.60-linux-x86_64-cuda-cuda13.tar.gz",
+    "variant": "cuda13",
+    "version": "0.1.60"
+   },
+   {
+    "archs": [
+     "gfx1151"
+    ],
+    "backend": "hip",
+    "build_id": "9dcebebcd3dd+rocm",
+    "format": "tar.gz",
+    "installed_bytes": 1099425167,
+    "manifest_sha256": "d6b86509d2f6d58493b4aad410271c27251166498ffecfc6d3f4a5a18708b4c1",
+    "min_driver": {},
+    "min_runtime": null,
+    "notes": "AMD halo build: engine, CPU picture reader, GPU picture reader",
+    "platform": "linux-x86_64",
+    "sha256": "cea2393ecea5e0f3b1ae90ba525d2db8a7f3ef2817dda184cfcfe6be8ddf081a",
+    "size": 246644069,
+    "url": "https://github.com/Niko1221/Strata/releases/download/v0.2.14/strata-engine-0.1.60-linux-x86_64-hip-halo.tar.gz",
+    "variant": "halo",
+    "version": "0.1.60"
+   },
+   {
+    "archs": [
+     "gfx1030",
+     "gfx1031"
+    ],
+    "backend": "hip",
+    "build_id": "00157e14b534+rocm",
+    "format": "tar.gz",
+    "installed_bytes": 1003267892,
+    "manifest_sha256": "bdb104eb2eb9e185f5ed9f474320c971431212049ede3bca2da6542b4d7afc9e",
+    "min_driver": {},
+    "min_runtime": null,
+    "notes": "AMD rx6000 build: engine, CPU picture reader, GPU picture reader (built, not tested on a real RX 6000 card)",
+    "platform": "linux-x86_64",
+    "sha256": "45b1e3aed1241e72594e9980cb07171d2b976c7e473940faaf007b9eb1cfbb51",
+    "size": 201115234,
+    "url": "https://github.com/Niko1221/Strata/releases/download/v0.2.14/strata-engine-0.1.60-linux-x86_64-hip-rx6000.tar.gz",
+    "variant": "rx6000",
+    "version": "0.1.60"
+   },
+   {
+    "archs": [
+     "gfx1100",
+     "gfx1101",
+     "gfx1102"
+    ],
+    "backend": "hip",
+    "build_id": "00157e14b534+rocm",
+    "format": "tar.gz",
+    "installed_bytes": 1392902963,
+    "manifest_sha256": "09cb87e82240c40099ade15e6c8ec34ba23029fb1eeeab8c607bfd2ee787568b",
+    "min_driver": {},
+    "min_runtime": null,
+    "notes": "AMD rx7900 build: engine, CPU picture reader, GPU picture reader",
+    "platform": "linux-x86_64",
+    "sha256": "ff8093d4d48e85d10b9bc317cc4fd518961e011af6dc0097e9d6384bd04bab82",
+    "size": 322924154,
+    "url": "https://github.com/Niko1221/Strata/releases/download/v0.2.14/strata-engine-0.1.60-linux-x86_64-hip-rx7900.tar.gz",
+    "variant": "rx7900",
+    "version": "0.1.60"
+   },
+   {
+    "archs": [
+     "gfx1200",
+     "gfx1201"
+    ],
+    "backend": "hip",
+    "build_id": "09b603886925+rocm",
+    "format": "tar.gz",
+    "installed_bytes": 2458058453,
+    "manifest_sha256": "6c1208b4092ab2190819461abc97067f35532b46dc5d3cf1c2b95205a6d332f3",
+    "min_driver": {},
+    "min_runtime": null,
+    "notes": "AMD rx9070 build: engine, CPU picture reader, GPU picture reader (TheRock 7.13.0 runtime libraries)",
+    "platform": "linux-x86_64",
+    "sha256": "4fc045afc0905cf1338b39c7bc9f940d2f4905a82330d9e07ab185215af77ad8",
+    "size": 669906954,
+    "url": "https://github.com/Niko1221/Strata/releases/download/v0.2.14/strata-engine-0.1.60-linux-x86_64-hip-rx9070.tar.gz",
+    "variant": "rx9070",
+    "version": "0.1.60"
+   },
+   {
+    "archs": [
+     "apple-gpu"
+    ],
+    "backend": "metal",
+    "build_id": "00157e14b+metal",
+    "format": "tar.gz",
+    "installed_bytes": 15808567,
+    "manifest_sha256": "d3539a451285b92006e940ade1c899f416ffe680d7b18c24cb59e7ef32f4f2b4",
+    "min_driver": {},
+    "min_runtime": null,
+    "notes": "",
+    "platform": "macos-arm64",
+    "sha256": "31ce1cd98bef83938434c15fcc94c1768340037b8fe7f292ee82836db0ca074d",
+    "size": 5754720,
+    "url": "https://github.com/Niko1221/Strata/releases/download/v0.2.14/strata-engine-0.1.60-macos-arm64-metal.tar.gz",
+    "variant": "",
+    "version": "0.1.60"
+   },
+   {
+    "archs": [
+     "sm_60",
+     "sm_61",
+     "sm_70",
+     "sm_75",
+     "sm_80",
+     "sm_86",
+     "sm_89",
+     "compute_89"
+    ],
+    "backend": "cuda",
+    "build_id": "09b603886925+cuda12.9",
+    "format": "tar.gz",
+    "installed_bytes": 1240004836,
+    "manifest_sha256": "c582889467465c646f70286049d8ff6aaa93dce665d6a509a8d571e82febe6c3",
+    "min_driver": {
+     "nvidia": "576.02"
+    },
+    "min_runtime": null,
+    "notes": "",
+    "platform": "windows-x86_64",
+    "sha256": "eeb3e486f79b75f7cc99e001eec0da9d307461e41e5d80d189e73ddc9ca8f5c0",
+    "size": 844552521,
+    "url": "https://github.com/Niko1221/Strata/releases/download/v0.2.14/strata-engine-0.1.60-windows-x86_64-cuda-cuda12.tar.gz",
+    "variant": "cuda12",
+    "version": "0.1.60"
+   },
+   {
+    "archs": [
+     "sm_75",
+     "sm_86",
+     "sm_89",
+     "sm_120",
+     "compute_120"
+    ],
+    "backend": "cuda",
+    "build_id": "09b603886925+cuda13.0",
+    "format": "tar.gz",
+    "installed_bytes": 809566453,
+    "manifest_sha256": "3c6cf75bd471e0b6251f8db0080cb6c4dd1afb2cbd86e41a214bc4c4662f169c",
+    "min_driver": {
+     "nvidia": "580.65"
+    },
+    "min_runtime": null,
+    "notes": "",
+    "platform": "windows-x86_64",
+    "sha256": "a54cc75a84aa7b93839c330197bdc35395f6fcc5ee31e25008f380558da5b18c",
+    "size": 577971407,
+    "url": "https://github.com/Niko1221/Strata/releases/download/v0.2.14/strata-engine-0.1.60-windows-x86_64-cuda-cuda13.tar.gz",
+    "variant": "cuda13",
+    "version": "0.1.60"
+   },
+   {
+    "archs": [
+     "gfx1030",
+     "gfx1031"
+    ],
+    "backend": "hip",
+    "build_id": "00157e14b534+rocm-win10.2.0a20260930",
+    "format": "tar.gz",
+    "installed_bytes": 561175821,
+    "manifest_sha256": "a33def4b5652e10da605e8b6e5703f59744a87d0d51d56f936fc1b4cee5c4ccd",
+    "min_driver": {},
+    "min_runtime": null,
+    "notes": "AMD RX 6000 (gfx1030, gfx1031; built, not tested on a real RX 6000 card); engine, CPU picture reader, GPU picture reader, hipBLASLt tuning tables",
+    "platform": "windows-x86_64",
+    "sha256": "49f95f39efe8f843694954988f657242b21bd7889ed376f6c14b7ca88dd0eb4d",
+    "size": 169870706,
+    "url": "https://github.com/Niko1221/Strata/releases/download/v0.2.14/strata-engine-0.1.60-windows-x86_64-hip-rdna2.tar.gz",
+    "variant": "rdna2",
+    "version": "0.1.60"
+   },
+   {
+    "archs": [
+     "gfx1100",
+     "gfx1101",
+     "gfx1102",
+     "gfx1151"
+    ],
+    "backend": "hip",
+    "build_id": "09b603886925+rocm-win10.2.0a20260930",
+    "format": "tar.gz",
+    "installed_bytes": 859460324,
+    "manifest_sha256": "767a25d8412173f760e1809657f053eff81b0cd543593aed9634c10e5d05e265",
+    "min_driver": {},
+    "min_runtime": null,
+    "notes": "AMD rdna3: RX 7000 (gfx1100, gfx1101, gfx1102) and Ryzen AI Max (gfx1151); engine, CPU picture reader, GPU picture reader, hipBLASLt tuning tables",
+    "platform": "windows-x86_64",
+    "sha256": "5dee84572b24cf51949d326b9250720dbca92eead617bdb7c9d727f3c7b95994",
+    "size": 274512649,
+    "url": "https://github.com/Niko1221/Strata/releases/download/v0.2.14/strata-engine-0.1.60-windows-x86_64-hip-rdna3.tar.gz",
+    "variant": "rdna3",
+    "version": "0.1.60"
+   },
+   {
+    "archs": [
+     "gfx1200",
+     "gfx1201"
+    ],
+    "backend": "hip",
+    "build_id": "09b603886925+rocm-win10.2.0a20260930",
+    "format": "tar.gz",
+    "installed_bytes": 985994389,
+    "manifest_sha256": "f4d19207c7182a0c7fad8f5372691e0dc7aaca73e86bea7d1d2bfa15633398d3",
+    "min_driver": {},
+    "min_runtime": null,
+    "notes": "AMD RX 9000 and Radeon AI PRO R9700 (gfx1200, gfx1201); engine, CPU picture reader, GPU picture reader, hipBLASLt tuning tables",
+    "platform": "windows-x86_64",
+    "sha256": "0de11cd4ca2f0894a9b84a926a903d03585d09b141375ee94efbfb369a305a32",
+    "size": 565983753,
+    "url": "https://github.com/Niko1221/Strata/releases/download/v0.2.14/strata-engine-0.1.60-windows-x86_64-hip-rx9070.tar.gz",
+    "variant": "rx9070",
+    "version": "0.1.60"
+   }
+  ]
+ },
+ "expires_at": null,
+ "feed": "strata-updates",
+ "generated_at": "2026-11-16T08:34:07Z",
+ "schema_version": 1,
+ "sequence": 127
+}

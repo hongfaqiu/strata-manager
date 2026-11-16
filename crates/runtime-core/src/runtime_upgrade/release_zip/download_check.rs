@@ -34,20 +34,14 @@ fn select_official_asset(
         .iter()
         .find(|asset| asset.name == name)
         .ok_or("此 Release 没有所选的可校验官方引擎包")?;
-    let version = info
-        .latest_version
-        .as_deref()
-        .ok_or("官方 Release 版本缺失")?;
+    if info.latest_version.as_deref().is_none() {
+        return Err("官方 Release 版本缺失".into());
+    }
     if !super::engine_package::is_installable_asset_name(name)
         || !(1..=super::engine_package::MAX_PACKAGE_BYTES).contains(&asset.size)
         || asset.sha256.len() != 64
         || !asset.sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
-        || ![format!("v{version}"), version.to_owned()]
-            .iter()
-            .any(|tag| {
-                asset.url
-                    == format!("https://github.com/Niko1221/Strata/releases/download/{tag}/{name}")
-            })
+        || !super::engine_package::is_official_download_url(&asset.url, name)
     {
         return Err("官方更新包的下载地址、长度或 SHA256 元数据无效".into());
     }

@@ -16,6 +16,7 @@ use std::{
     io::Read,
     path::Path,
 };
+use url::Url;
 
 /// Release feed key shipped in upstream `strata_control/update_keys.json` (0.2.0, key id below).
 pub const FEED_KEY_ID: &str = "5d1bc23abbeffd0d";
@@ -350,6 +351,141 @@ fn hex64(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
+/// Largest number of other official releases a signed feed may name. v0.2.15 uses two
+/// (`v0.2.14` for the 0.1.60 engines, `v0.2.13` for the frozen DeepSeek / SYCL packages).
+pub const MAX_FOREIGN_FEED_RELEASES: usize = 8;
+
+/// A file on an official Strata GitHub Release (`tag` includes the leading `v`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OfficialDownload {
+    pub tag: String,
+    pub name: String,
+}
+
+fn official_release_tag(tag: &str) -> Option<&str> {
+    let version = tag.strip_prefix('v')?;
+    (tag.len() <= 81 && valid_version(version)).then_some(tag)
+}
+
+/// A file name Manager may fetch from an official Release: a component engine
+/// archive or a legacy Windows ZIP. No slashes, encoding or `..`.
+pub fn package_file_name(value: &str) -> Option<&str> {
+    if value.is_empty()
+        || value.len() > 160
+        || value.contains("..")
+        || !value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_'))
+    {
+        return None;
+    }
+    let component = (value.starts_with(ENGINE_PACKAGE_PREFIX)
+        || value.starts_with(DSV41_PACKAGE_PREFIX))
+        && value.ends_with(".tar.gz");
+    (component || legacy_variant(value).is_some()).then_some(value)
+}
+
+pub fn official_download_url(tag: &str, name: &str) -> String {
+    format!("https://github.com/Niko1221/Strata/releases/download/{tag}/{name}")
+}
+
+/// Only `https://github.com/Niko1221/Strata/releases/download/<tag>/<filename>`. The
+/// reconstructed URL must match `url` exactly (no userinfo, port, query, fragment,
+/// trailing slash or percent-encoding).
+pub fn parse_official_download_url(url: &str) -> Option<OfficialDownload> {
+    let parsed = Url::parse(url).ok()?;
+    if parsed.scheme() != "https"
+        || parsed.host_str() != Some("github.com")
+        || parsed.port().is_some()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return None;
+    }
+    let segments: Vec<&str> = parsed.path_segments()?.collect();
+    if segments.len() != 6
+        || segments[0] != "Niko1221"
+        || segments[1] != "Strata"
+        || segments[2] != "releases"
+        || segments[3] != "download"
+    {
+        return None;
+    }
+    let tag = official_release_tag(segments[4])?;
+    let name = package_file_name(segments[5])?;
+    (url == official_download_url(tag, name)).then(|| OfficialDownload {
+        tag: tag.to_owned(),
+        name: name.to_owned(),
+    })
+}
+
+pub fn is_official_download_url(url: &str, name: &str) -> bool {
+    parse_official_download_url(url).is_some_and(|location| location.name == name)
+}
+
+/// Whether cached installation metadata may reuse this official asset URL.
+///
+/// Component engine / dsv41 archives may be hosted on an older official tag
+/// (the v0.2.15 feed serves 0.1.60 engines from v0.2.14, and dsv41 from
+/// v0.2.13). Legacy ZIPs were only published on the advertised app release,
+/// so a tag that does not match `release_version` is treated as a corrupted
+/// cache rather than a cross-release package.
+pub fn is_reusable_official_asset_url(url: &str, name: &str, release_version: &str) -> bool {
+    let Some(location) = parse_official_download_url(url) else {
+        return false;
+    };
+    if location.name != name {
+        return false;
+    }
+    if legacy_variant(name).is_some() {
+        location.tag == format!("v{release_version}") || location.tag == release_version
+    } else {
+        true
+    }
+}
+
+/// Resolve a signed feed `url` field: a bare package name on `current_tag`, or an official
+/// absolute GitHub Release URL (possibly on an older tag).
+pub fn feed_package_location(url: &str, current_tag: &str) -> Option<OfficialDownload> {
+    if let Some(name) = package_file_name(url) {
+        official_release_tag(current_tag)?;
+        return Some(OfficialDownload {
+            tag: current_tag.to_owned(),
+            name: name.to_owned(),
+        });
+    }
+    parse_official_download_url(url)
+}
+
+/// Older official tags a verified feed names. Unknown or unsafe `url` values are ignored;
+/// too many distinct tags are refused so a feed cannot trigger an unbounded API walk.
+pub fn foreign_feed_tags(feed: &Value, current_tag: &str) -> Result<Vec<String>, String> {
+    let mut tags = BTreeSet::new();
+    for member in ["engine", "dsv41"] {
+        for package in feed[member]["packages"].as_array().into_iter().flatten() {
+            let Some(url) = package["url"].as_str() else {
+                continue;
+            };
+            let Some(location) = feed_package_location(url, current_tag) else {
+                continue;
+            };
+            if location.tag != current_tag {
+                tags.insert(location.tag);
+            }
+        }
+    }
+    if tags.len() > MAX_FOREIGN_FEED_RELEASES {
+        return Err(format!(
+            "签名 feed 指向过多历史发布（{}），已拒绝 / The signed feed points at too many other releases ({})",
+            tags.len(),
+            tags.len()
+        ));
+    }
+    Ok(tags.into_iter().collect())
+}
+
 /// Engine packages for `platform` listed by a verified feed and actually attached to the release.
 /// GitHub's own digest and size must equal the signed feed's, so neither source alone decides.
 pub fn feed_assets(
@@ -358,7 +494,27 @@ pub fn feed_assets(
     tag: &str,
     platform: &str,
 ) -> Result<Vec<RuntimeReleaseAsset>, String> {
-    member_assets(feed, "engine", parse_package_name, release, tag, platform)
+    feed_assets_from(feed, release, tag, platform, &BTreeMap::new())
+}
+
+/// Like [`feed_assets`], but packages whose signed `url` points at another official tag
+/// are checked against that release in `other_releases` (keyed by tag, e.g. `v0.2.14`).
+pub fn feed_assets_from(
+    feed: &Value,
+    release: &Value,
+    tag: &str,
+    platform: &str,
+    other_releases: &BTreeMap<String, Value>,
+) -> Result<Vec<RuntimeReleaseAsset>, String> {
+    member_assets(
+        feed,
+        "engine",
+        parse_package_name,
+        release,
+        tag,
+        platform,
+        other_releases,
+    )
 }
 
 /// DeepSeek-V4.1 engines Manager installs: Windows CUDA 13, Linux CUDA 13, Linux HIP
@@ -384,6 +540,17 @@ pub fn dsv41_feed_assets(
     tag: &str,
     platform: &str,
 ) -> Result<Vec<RuntimeReleaseAsset>, String> {
+    dsv41_feed_assets_from(feed, release, tag, platform, &BTreeMap::new())
+}
+
+/// Like [`dsv41_feed_assets`], resolving official absolute URLs via `other_releases`.
+pub fn dsv41_feed_assets_from(
+    feed: &Value,
+    release: &Value,
+    tag: &str,
+    platform: &str,
+    other_releases: &BTreeMap<String, Value>,
+) -> Result<Vec<RuntimeReleaseAsset>, String> {
     let assets = member_assets(
         feed,
         "dsv41",
@@ -391,6 +558,7 @@ pub fn dsv41_feed_assets(
         release,
         tag,
         platform,
+        other_releases,
     )?;
     let mut seen = BTreeSet::new();
     let mut supported = Vec::new();
@@ -416,6 +584,15 @@ pub fn dsv41_feed_assets(
     Ok(supported)
 }
 
+fn release_attached_assets(release: &Value) -> BTreeMap<&str, &Value> {
+    release["assets"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|item| Some((item["name"].as_str()?, item)))
+        .collect()
+}
+
 fn member_assets(
     feed: &Value,
     member: &str,
@@ -423,21 +600,34 @@ fn member_assets(
     release: &Value,
     tag: &str,
     platform: &str,
+    other_releases: &BTreeMap<String, Value>,
 ) -> Result<Vec<RuntimeReleaseAsset>, String> {
-    let attached: BTreeMap<&str, &Value> = release["assets"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|item| Some((item["name"].as_str()?, item)))
-        .collect();
+    let current_attached = release_attached_assets(release);
+    let mut foreign_attached: BTreeMap<&str, BTreeMap<&str, &Value>> = BTreeMap::new();
+    for (foreign_tag, foreign) in other_releases {
+        if foreign_tag != tag && foreign["tag_name"].as_str() == Some(foreign_tag.as_str()) {
+            foreign_attached.insert(foreign_tag.as_str(), release_attached_assets(foreign));
+        }
+    }
+    let attached_on = |package_tag: &str| -> Option<&BTreeMap<&str, &Value>> {
+        if package_tag == tag {
+            Some(&current_attached)
+        } else {
+            foreign_attached.get(package_tag)
+        }
+    };
     let mut assets = Vec::new();
     for package in feed[member]["packages"].as_array().into_iter().flatten() {
         if package["platform"].as_str() != Some(platform) {
             continue;
         }
-        let Some(name) = package["url"].as_str() else {
+        let Some(url) = package["url"].as_str() else {
             continue;
         };
+        let Some(location) = feed_package_location(url, tag) else {
+            continue;
+        };
+        let name = location.name.as_str();
         let Some(parsed) = parse(name) else {
             continue;
         };
@@ -474,10 +664,10 @@ fn member_assets(
         {
             continue;
         }
-        let Some(item) = attached.get(name) else {
+        let Some(item) = attached_on(&location.tag).and_then(|attached| attached.get(name)) else {
             continue;
         };
-        let url = format!("https://github.com/Niko1221/Strata/releases/download/{tag}/{name}");
+        let url = official_download_url(&location.tag, name);
         if item["browser_download_url"].as_str() != Some(url.as_str())
             || item["size"].as_u64() != Some(size)
             || item["digest"]
@@ -1280,5 +1470,281 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.contains("不一致"), "{error}");
+    }
+
+    const FEED_0214: &[u8] = include_bytes!("fixtures/strata-feed-v0.2.14.json");
+    const FEED_0214_SIG: &[u8] = include_bytes!("fixtures/strata-feed-v0.2.14.json.sig");
+    const RELEASE_0214: &str = include_str!("fixtures/release-v0.2.14.json");
+    const FEED_0215: &[u8] = include_bytes!("fixtures/strata-feed-v0.2.15.json");
+    const FEED_0215_SIG: &[u8] = include_bytes!("fixtures/strata-feed-v0.2.15.json.sig");
+    const RELEASE_0215: &str = include_str!("fixtures/release-v0.2.15.json");
+    const RELEASE_0213: &str = include_str!("fixtures/release-v0.2.13.json");
+    const NOW_0215: u64 = 1_794_800_000_000;
+
+    fn releases_0214_and_0213() -> BTreeMap<String, Value> {
+        BTreeMap::from([
+            (
+                "v0.2.14".into(),
+                serde_json::from_str(RELEASE_0214).unwrap(),
+            ),
+            (
+                "v0.2.13".into(),
+                serde_json::from_str(RELEASE_0213).unwrap(),
+            ),
+        ])
+    }
+
+    #[test]
+    fn official_download_urls_are_restricted_to_the_strata_release_path() {
+        let ok = "https://github.com/Niko1221/Strata/releases/download/v0.2.14/strata-engine-0.1.60-windows-x86_64-cuda-cuda13.tar.gz";
+        let parsed = parse_official_download_url(ok).unwrap();
+        assert_eq!(parsed.tag, "v0.2.14");
+        assert_eq!(
+            parsed.name,
+            "strata-engine-0.1.60-windows-x86_64-cuda-cuda13.tar.gz"
+        );
+        assert!(is_official_download_url(
+            ok,
+            "strata-engine-0.1.60-windows-x86_64-cuda-cuda13.tar.gz"
+        ));
+        assert!(!is_official_download_url(
+            ok,
+            "strata-engine-0.1.60-linux-x86_64-cuda-cuda13.tar.gz"
+        ));
+        let relative = "strata-engine-0.1.60-windows-x86_64-cuda-cuda13.tar.gz";
+        assert_eq!(
+            feed_package_location(relative, "v0.2.14").unwrap(),
+            OfficialDownload {
+                tag: "v0.2.14".into(),
+                name: relative.into(),
+            }
+        );
+        let rejected = [
+            "http://github.com/Niko1221/Strata/releases/download/v0.2.14/strata-engine-0.1.60-windows-x86_64-cuda-cuda13.tar.gz",
+            "https://github.com.evil.example/Niko1221/Strata/releases/download/v0.2.14/strata-engine-0.1.60-windows-x86_64-cuda-cuda13.tar.gz",
+            "https://github.com/evil/Strata/releases/download/v0.2.14/strata-engine-0.1.60-windows-x86_64-cuda-cuda13.tar.gz",
+            "https://github.com/Niko1221/Strata/archive/refs/tags/v0.2.14.tar.gz",
+            "https://user:pass@github.com/Niko1221/Strata/releases/download/v0.2.14/strata-engine-0.1.60-windows-x86_64-cuda-cuda13.tar.gz",
+            "https://github.com/Niko1221/Strata/releases/download/v0.2.14/strata-engine-0.1.60-windows-x86_64-cuda-cuda13.tar.gz?token=1",
+            "https://github.com/Niko1221/Strata/releases/download/v0.2.14/strata-engine-0.1.60-windows-x86_64-cuda-cuda13.tar.gz#x",
+            "https://github.com/Niko1221/Strata/releases/download/v0.2.14/../v0.2.15/strata-engine-0.1.60-windows-x86_64-cuda-cuda13.tar.gz",
+            "https://github.com/Niko1221/Strata/releases/download/v0.2.14/strata-engine-0.1.60-windows-x86_64-cuda-cuda13.tar.gz%2f..%2fpasswd",
+            "https://github.com/Niko1221/Strata/releases/download/v0.2.14/%2e%2e/strata-engine-0.1.60-windows-x86_64-cuda-cuda13.tar.gz",
+            "https://github.com:443/Niko1221/Strata/releases/download/v0.2.14/strata-engine-0.1.60-windows-x86_64-cuda-cuda13.tar.gz",
+            "https://github.com/Niko1221/Strata/releases/download/v0.2.14/strata-control-0.1.61-windows-x86_64.zip",
+            "../strata-engine-0.1.60-windows-x86_64-cuda-cuda13.tar.gz",
+            "strata-engine-0.1.60-windows-x86_64-cuda-cuda13.tar.gz/../x",
+        ];
+        for url in rejected {
+            assert!(
+                feed_package_location(url, "v0.2.15").is_none(),
+                "accepted unsafe url: {url}"
+            );
+        }
+    }
+
+    #[test]
+    fn cached_official_asset_urls_allow_cross_release_component_packages_only() {
+        let engine = "https://github.com/Niko1221/Strata/releases/download/v0.2.14/strata-engine-0.1.60-windows-x86_64-cuda-cuda13.tar.gz";
+        let engine_name = "strata-engine-0.1.60-windows-x86_64-cuda-cuda13.tar.gz";
+        assert!(is_reusable_official_asset_url(
+            engine,
+            engine_name,
+            "0.2.15"
+        ));
+        assert!(is_reusable_official_asset_url(
+            engine,
+            engine_name,
+            "0.2.14"
+        ));
+        assert!(!is_reusable_official_asset_url(
+            engine,
+            "strata-engine-0.1.60-linux-x86_64-cuda-cuda13.tar.gz",
+            "0.2.15"
+        ));
+        assert!(!is_reusable_official_asset_url(
+            "https://example.org/strata-engine-0.1.60-windows-x86_64-cuda-cuda13.tar.gz",
+            engine_name,
+            "0.2.15"
+        ));
+        assert!(!is_reusable_official_asset_url(
+            "https://github.com/evil/Strata/releases/download/v0.2.14/strata-engine-0.1.60-windows-x86_64-cuda-cuda13.tar.gz",
+            engine_name,
+            "0.2.15"
+        ));
+
+        let zip =
+            "https://github.com/Niko1221/Strata/releases/download/v0.1.42/strata-windows-x64.zip";
+        let zip_name = "strata-windows-x64.zip";
+        assert!(is_reusable_official_asset_url(zip, zip_name, "0.1.42"));
+        assert!(!is_reusable_official_asset_url(
+            zip,
+            zip_name,
+            "0.1.42-preview"
+        ));
+        assert!(!is_reusable_official_asset_url(
+            "https://github.com/Niko1221/Strata/releases/download/v0.1.41/strata-windows-x64.zip",
+            zip_name,
+            "0.1.42"
+        ));
+    }
+
+    #[test]
+    fn the_real_0_2_14_relative_feed_still_lists_windows_and_linux_engines() {
+        let feed = verify_feed(FEED_0214, FEED_0214_SIG, None, NOW_0215).unwrap();
+        assert_eq!(feed["sequence"].as_u64(), Some(126));
+        let release: Value = serde_json::from_str(RELEASE_0214).unwrap();
+        let windows = feed_assets(&feed, &release, "v0.2.14", "windows-x86_64").unwrap();
+        let linux = feed_assets(&feed, &release, "v0.2.14", "linux-x86_64").unwrap();
+        assert_eq!(windows.len(), 5);
+        assert_eq!(linux.len(), 6);
+        assert!(windows.iter().all(|asset| {
+            asset.engine_version.as_deref() == Some("0.1.60")
+                && asset.url.starts_with(
+                    "https://github.com/Niko1221/Strata/releases/download/v0.2.14/strata-engine-0.1.60-windows-x86_64-",
+                )
+        }));
+        assert!(linux.iter().all(|asset| {
+            asset.engine_version.as_deref() == Some("0.1.60")
+                && asset
+                    .url
+                    .starts_with("https://github.com/Niko1221/Strata/releases/download/v0.2.14/strata-engine-0.1.60-linux-x86_64-")
+        }));
+        // SYCL stays listed in the feed as an absolute v0.2.13 URL; Manager still has no SYCL variant.
+        let sycl = feed["engine"]["packages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|package| package["backend"] == "sycl")
+            .unwrap();
+        assert!(sycl["url"]
+            .as_str()
+            .unwrap()
+            .starts_with("https://github.com/Niko1221/Strata/releases/download/v0.2.13/"));
+        assert!(manager_variant("sycl", "").is_none());
+        assert!(linux.iter().all(|asset| asset.variant != "sycl"));
+    }
+
+    #[test]
+    fn the_real_0_2_15_feed_resolves_cross_release_engine_and_dsv41_packages() {
+        let feed = verify_feed(FEED_0215, FEED_0215_SIG, None, NOW_0215).unwrap();
+        assert_eq!(feed["schema_version"].as_u64(), Some(1));
+        assert_eq!(feed["feed"].as_str(), Some("strata-updates"));
+        assert_eq!(feed["channel"].as_str(), Some("stable"));
+        assert_eq!(feed["sequence"].as_u64(), Some(127));
+        let release: Value = serde_json::from_str(RELEASE_0215).unwrap();
+        let others = releases_0214_and_0213();
+        assert_eq!(
+            foreign_feed_tags(&feed, "v0.2.15").unwrap(),
+            ["v0.2.13", "v0.2.14"]
+        );
+        // Without the older release metadata, names parse but the files are not on v0.2.15.
+        assert!(feed_assets(&feed, &release, "v0.2.15", "windows-x86_64")
+            .unwrap()
+            .is_empty());
+        let windows =
+            feed_assets_from(&feed, &release, "v0.2.15", "windows-x86_64", &others).unwrap();
+        let linux = feed_assets_from(&feed, &release, "v0.2.15", "linux-x86_64", &others).unwrap();
+        let windows_dsv41 =
+            dsv41_feed_assets_from(&feed, &release, "v0.2.15", "windows-x86_64", &others).unwrap();
+        let linux_dsv41 =
+            dsv41_feed_assets_from(&feed, &release, "v0.2.15", "linux-x86_64", &others).unwrap();
+        assert_eq!(
+            windows.len(),
+            5,
+            "{:?}",
+            windows.iter().map(|a| &a.name).collect::<Vec<_>>()
+        );
+        assert_eq!(linux.len(), 6);
+        assert_eq!(windows_dsv41.len(), 2);
+        assert_eq!(linux_dsv41.len(), 2);
+        for asset in windows.iter().chain(&linux) {
+            assert_eq!(asset.engine_version.as_deref(), Some("0.1.60"));
+            assert!(asset.url.starts_with(
+                "https://github.com/Niko1221/Strata/releases/download/v0.2.14/strata-engine-0.1.60-"
+            ));
+            let package = feed["engine"]["packages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|package| package["url"].as_str().is_some_and(|url| url == asset.url))
+                .unwrap();
+            assert_eq!(package["size"].as_u64(), Some(asset.size));
+            assert_eq!(
+                package["sha256"].as_str().unwrap().to_ascii_lowercase(),
+                asset.sha256
+            );
+        }
+        for asset in windows_dsv41.iter().chain(&linux_dsv41) {
+            assert_eq!(asset.engine_version.as_deref(), Some("0.1.59"));
+            assert!(asset.url.starts_with(
+                "https://github.com/Niko1221/Strata/releases/download/v0.2.13/strata-dsv41-0.1.59-"
+            ));
+            let package = feed["dsv41"]["packages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|package| package["url"].as_str().is_some_and(|url| url == asset.url))
+                .unwrap();
+            assert_eq!(package["size"].as_u64(), Some(asset.size));
+            assert_eq!(
+                package["sha256"].as_str().unwrap().to_ascii_lowercase(),
+                asset.sha256
+            );
+        }
+        assert!(windows.iter().any(|asset| asset.variant == "cuda13"
+            && asset.name == "strata-engine-0.1.60-windows-x86_64-cuda-cuda13.tar.gz"
+            && asset.size == 577_971_407));
+        assert!(linux.iter().any(|asset| asset.variant == "cuda13"
+            && asset.name == "strata-engine-0.1.60-linux-x86_64-cuda-cuda13.tar.gz"
+            && asset.size == 672_845_287));
+        // SYCL's absolute URL is accepted as a location, but Manager still has no SYCL variant.
+        let sycl_url = feed["engine"]["packages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|package| package["backend"] == "sycl")
+            .and_then(|package| package["url"].as_str())
+            .unwrap();
+        let sycl = parse_official_download_url(sycl_url).unwrap();
+        assert_eq!(sycl.tag, "v0.2.13");
+        assert_eq!(sycl.name, "strata-engine-0.1.59-linux-x86_64-sycl.tar.gz");
+        assert!(manager_variant("sycl", "").is_none());
+        assert!(linux.iter().all(|asset| !asset.name.contains("sycl")));
+        // A Linux package is not offered on Windows, and the other way around.
+        assert!(windows
+            .iter()
+            .all(|asset| asset_platform(&asset.name) == Some("windows-x86_64")));
+        assert!(linux
+            .iter()
+            .all(|asset| asset_platform(&asset.name) == Some("linux-x86_64")));
+        // macOS official Metal 0.1.60 would resolve, but Manager does not install it from the feed.
+        let macos = feed_assets_from(&feed, &release, "v0.2.15", "macos-arm64", &others).unwrap();
+        assert_eq!(macos.len(), 1);
+        assert_eq!(
+            macos[0].url,
+            "https://github.com/Niko1221/Strata/releases/download/v0.2.14/strata-engine-0.1.60-macos-arm64-metal.tar.gz"
+        );
+        assert_eq!(release_install_platform("macos", "aarch64"), None);
+    }
+
+    #[test]
+    fn a_cross_release_package_must_still_match_the_older_release_digest() {
+        let feed = verify_feed(FEED_0215, FEED_0215_SIG, None, NOW_0215).unwrap();
+        let release: Value = serde_json::from_str(RELEASE_0215).unwrap();
+        let mut others = releases_0214_and_0213();
+        for item in others.get_mut("v0.2.14").unwrap()["assets"]
+            .as_array_mut()
+            .unwrap()
+        {
+            if item["name"] == "strata-engine-0.1.60-windows-x86_64-cuda-cuda13.tar.gz" {
+                item["size"] = json!(1);
+            }
+        }
+        assert!(
+            feed_assets_from(&feed, &release, "v0.2.15", "windows-x86_64", &others)
+                .unwrap_err()
+                .contains("不一致")
+        );
     }
 }

@@ -106,8 +106,12 @@ pub fn parse_releases(releases: &Value, host: Option<&str>) -> Vec<RuntimeReleas
                 published_at: release["published_at"].as_str().map(str::to_owned),
                 prerelease: release["prerelease"].as_bool().unwrap_or(false),
                 packaging: if feed { "feed" } else { "zip" }.into(),
-                installable: host
-                    .is_some_and(|host| assets.iter().any(|asset| installable_asset(asset, host))),
+                // A signed feed may list engines hosted on an older official release (v0.2.15
+                // points at v0.2.14 / v0.2.13). The list is advisory; installing re-reads and
+                // verifies that feed.
+                installable: host.is_some_and(|host| {
+                    assets.iter().any(|asset| installable_asset(asset, host)) || feed
+                }),
                 engine_version: release_engine(version, &assets, feed),
                 release_url: release["html_url"]
                     .as_str()
@@ -235,8 +239,8 @@ mod tests {
         );
         assert_eq!(windows[0].packaging, "feed");
         assert!(
-            !windows[0].installable,
-            "a Linux package does not install on Windows"
+            windows[0].installable,
+            "a signed feed may host this platform's engines on another official release"
         );
         assert!(windows[1].installable && windows[1].packaging == "zip");
         assert!(
@@ -255,6 +259,32 @@ mod tests {
             serde_json::from_str(include_str!("fixtures/release-v0.2.0-beta.json")).unwrap();
         let parsed = parse_releases(&json!([beta]), None);
         assert_eq!(parsed[0].engine_version.as_deref(), Some("0.1.45.3"));
+        let cross = parse_releases(
+            &json!([release(
+                "v0.2.15",
+                json!([
+                    {"name": "strata-feed.json"},
+                    {"name": "strata-feed.json.sig"},
+                    {"name": "strata-engine-0.1.59-linux-aarch64-cuda-cuda13.tar.gz"}
+                ])
+            )]),
+            Some("windows-x86_64"),
+        );
+        assert!(cross[0].installable && cross[0].packaging == "feed");
+        assert!(
+            !parse_releases(
+                &json!([release(
+                    "v0.2.15",
+                    json!([
+                        {"name": "strata-feed.json"},
+                        {"name": "strata-feed.json.sig"},
+                        {"name": "strata-engine-0.1.59-linux-aarch64-cuda-cuda13.tar.gz"}
+                    ])
+                )]),
+                None
+            )[0]
+            .installable
+        );
     }
 
     #[test]
